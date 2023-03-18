@@ -1,0 +1,156 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#define APSTUDIO_HIDDEN_SYMBOLS
+#include "windows.h"
+#undef APSTUDIO_HIDDEN_SYMBOLS
+#include "resource.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// English (United States) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+#pragma code_page(1252)
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDI_FRACTALS            ICON                    "Fractals.ICO"
+
+IDI_SMALL               ICON                    "SMALL.ICO"
+
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+2 TEXTINCLUDE 
+BEGIN
+    "#define APSTUDIO_HIDDEN_SYMBOLS\r\n"
+    "#include ""windows.h""\r\n"
+    "#undef APSTUDIO_HIDDEN_SYMBOLS\r\n"
+    "#include ""resource.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE 
+BEGIN
+    "\r\n"
+    "\0"
+END
+
+1 TEXTINCLUDE 
+BEGIN
+    "resource.h\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Menu
+//
+
+IDR_MENU_POPUP MENU
+BEGIN
+    POPUP "POPUP"
+    BEGIN
+        MENUITEM "&Back",                       IDM_BACK
+        MENUITEM "&Standard View",              IDM_STANDARDVIEW
+        MENUITEM "Square &View",                IDM_SQUAREVIEW
+        MENUITEM "Center View &Here",           IDM_CENTERVIEW
+        MENUITEM SEPARATOR
+        MENUITEM "Toggle Re&painting",          IDM_REPAINTING
+        MENUITEM "&Toggle Window Size",         IDM_WINDOWED
+        MENUITEM "&Minimize Window",            IDM_MINIMIZE
+        MENUITEM SEPARATOR
+        POPUP "Iteration Antialiasing"
+        BEGIN
+            MENUITEM "1x (fast)",                   IDM_ITERATION_ANTIALIASING_1X
+            MENUITEM "4x",                          IDM_ITERATION_ANTIALIASING_4X
+            MENUITEM "9x",                          IDM_ITERATION_ANTIALIASING_9X
+            MENUITEM "16x (better quality)",        IDM_ITERATION_ANTIALIASING_16X
+        END
+        POPUP "GPU Antialiasing"
+        BEGIN
+            MENUITEM "1x (fast)",                   IDM_GPUANTIALIASING_1X
+            MENUITEM "4x",                          IDM_GPUANTIALIASING_4X
+            MENUITEM "9x",                          IDM_GPUANTIALIASING_9X
+            MENUITEM "16x (better quality)",        IDM_GPUANTIALIASING_16X
+        END
+        POPUP "Iteration Precision"
+        BEGIN
+            MENUITEM "4x (fast)",                   IDM_ITERATIONPRECISION_4X
+            MENUITEM "3x",                          IDM_ITERATIONPRECISION_3X
+            MENUITEM "2x",                          IDM_ITERATIONPRECISION_2X
+            MENUITEM "1x (better quality)",         IDM_ITERATIONPRECISION_1X
+        END
+        POPUP "Choose &Render Algorithm"
+        BEGIN
+            MENUITEM "Very High Precision CPU",     IDM_ALG_CPU_HIGH
+            MENUITEM "1x64 CPU",                    IDM_ALG_CPU_1_64
+            MENUITEM "2x64 GPU",                    IDM_ALG_GPU_2_64
+            MENUITEM "1x64 GPU",                    IDM_ALG_GPU_1_64
+            MENUITEM "2x32 GPU",                    IDM_ALG_GPU_2_32
+            MENUITEM "1x32 GPU",                    IDM_ALG_GPU_1_32
+            MENUITEM "~64 GPU Combo",               IDM_ALG_GPU_2_64_32
+        END
+        MENUITEM "De&fault Iterations",         IDM_RESETITERATIONS
+        POPUP "&Increase Iterations"
+        BEGIN
+            MENUITEM "1.5x",                        IDM_INCREASEITERATIONS_1P5X
+            MENUITEM "6x",                          IDM_INCREASEITERATIONS_6X
+            MENUITEM "24x",                         IDM_INCREASEITERATIONS_24X
+        END
+        MENUITEM "&Decrease Iterations",        IDM_DECREASEITERATIONS
+        MENUITEM SEPARATOR
+        MENUITEM "Current Position",            IDM_CURPOS
+        MENUITEM "Pa&lette Rotation",           IDM_PALETTEROTATE
+        MENUITEM "&Create New Palette",         IDM_CREATENEWPALETTE
+        MENUITEM SEPARATOR
+        MENUITEM "Save Location...",            IDM_SAVELOCATION
+        MENUITEM "Load Location...",            IDM_LOADLOCATION, GRAYED
+        MENUITEM "Save Bitmap Ima&ge",          IDM_SAVEBMP
+        MENUITEM "Save High Res Bitmap",        IDM_SAVEHIRESBMP
+        POPUP "Benchmark"
+        BEGIN
+            MENUITEM "Accurate",                    IDM_BENCHMARK_ACCURATE
+            MENUITEM "Quick",                       IDM_BENCHMARK_QUICK
+        END
+        MENUITEM SEPARATOR
+        MENUITEM "E&xit",                       IDM_EXIT
+    END
+END
+
+#endif    // English (United States) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+

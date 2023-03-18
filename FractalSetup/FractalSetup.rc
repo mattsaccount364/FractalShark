@@ -1,0 +1,272 @@
+// Microsoft Visual C++ generated resource script.
+//
+#include "resource.h"
+
+#define APSTUDIO_READONLY_SYMBOLS
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 2 resource.
+//
+#include "afxres.h"
+
+/////////////////////////////////////////////////////////////////////////////
+#undef APSTUDIO_READONLY_SYMBOLS
+
+/////////////////////////////////////////////////////////////////////////////
+// English (U.S.) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+#ifdef _WIN32
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
+#pragma code_page(1252)
+#endif //_WIN32
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_FRACTALSETUP_DIALOG DIALOGEX 0, 0, 429, 286
+STYLE DS_SETFONT | DS_MODALFRAME | WS_POPUP | WS_VISIBLE | WS_CAPTION | 
+    WS_SYSMENU
+EXSTYLE WS_EX_APPWINDOW
+CAPTION "FractalSetup"
+FONT 8, "MS Sans Serif", 0, 0, 0x1
+BEGIN
+    LTEXT           "Fraction of work for client (1 to 100):",IDC_STATIC,7,7,
+                    131,15,SS_CENTERIMAGE
+    EDITTEXT        IDC_EDIT_WORKCLIENT,138,7,47,15,ES_AUTOHSCROLL
+    LTEXT           "Fraction of work for servers (1 to 100):",IDC_STATIC,7,
+                    21,131,15,SS_CENTERIMAGE
+    EDITTEXT        IDC_EDIT_WORKSERVER1,138,20,47,15,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_WORKSERVER2,138,35,47,15,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_WORKSERVER3,138,49,47,15,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_WORKSERVER4,138,63,47,15,ES_AUTOHSCROLL
+    LTEXT           "Local IP:",IDC_STATIC,191,7,54,15,SS_CENTERIMAGE
+    EDITTEXT        IDC_EDIT_LOCALIP,245,7,118,14,ES_AUTOHSCROLL
+    LTEXT           "Server 1 IP:",IDC_STATIC,191,21,54,15,SS_CENTERIMAGE
+    EDITTEXT        IDC_EDIT_SERVERIP1,245,21,118,14,ES_AUTOHSCROLL
+    LTEXT           "Server 2 IP:",IDC_STATIC,191,35,54,15,SS_CENTERIMAGE
+    EDITTEXT        IDC_EDIT_SERVERIP2,245,35,118,14,ES_AUTOHSCROLL
+    LTEXT           "Server 3 IP:",IDC_STATIC,191,49,54,15,SS_CENTERIMAGE
+    EDITTEXT        IDC_EDIT_SERVERIP3,245,49,118,14,ES_AUTOHSCROLL
+    LTEXT           "Server 4 IP:",IDC_STATIC,191,63,54,15,SS_CENTERIMAGE
+    EDITTEXT        IDC_EDIT_SERVERIP4,245,63,118,14,ES_AUTOHSCROLL
+    CONTROL         "Use?",IDC_CHECK_USE1,"Button",BS_AUTOCHECKBOX | 
+                    BS_CENTER | BS_PUSHLIKE | WS_TABSTOP,363,21,53,15
+    CONTROL         "Use?",IDC_CHECK_USE2,"Button",BS_AUTOCHECKBOX | 
+                    BS_CENTER | BS_PUSHLIKE | WS_TABSTOP,363,35,53,15
+    CONTROL         "Use?",IDC_CHECK_USE3,"Button",BS_AUTOCHECKBOX | 
+                    BS_CENTER | BS_PUSHLIKE | WS_TABSTOP,363,49,53,15
+    CONTROL         "Use?",IDC_CHECK_USE4,"Button",BS_AUTOCHECKBOX | 
+                    BS_CENTER | BS_PUSHLIKE | WS_TABSTOP,363,63,53,15
+    LTEXT           "Location:",IDC_STATIC,7,81,178,8
+    EDITTEXT        IDC_EDIT_LOCATION1,7,89,178,42,ES_MULTILINE | WS_VSCROLL
+    CONTROL         "Be a network client",IDC_CHECK_BENETWORKCLIENT,"Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP,191,89,172,10
+    CONTROL         "Be a network server",IDC_CHECK_BENETWORKSERVER,"Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP,191,104,172,10
+    LTEXT           "Number of frames to calculate:",IDC_STATIC,7,131,120,14,
+                    SS_CENTERIMAGE
+    EDITTEXT        IDC_EDIT_NUMFRAMES,127,131,58,14,ES_AUTOHSCROLL
+    CONTROL         "Draw progress during Autozoom mode",
+                    IDC_CHECK_SHOWPROGRESS,"Button",BS_AUTOCHECKBOX | 
+                    WS_TABSTOP,7,145,178,10
+    CONTROL         "Save images",IDC_CHECK_SAVEIMAGES,"Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP,7,155,178,10
+    CONTROL         "Enable Autozoom in Screen Saver",IDC_CHECK_SS_AUTOZOOM,
+                    "Button",BS_AUTOCHECKBOX | WS_TABSTOP,7,175,178,10
+    CONTROL         "Save 1/4 size (vs 1x size) when Autozooming?",
+                    IDC_CHECK_SAVEREDUCEDSIZE,"Button",BS_AUTOCHECKBOX | 
+                    WS_TABSTOP,7,185,178,10
+    LTEXT           "Choose high resolution algorithm:",IDC_STATIC,7,202,178,
+                    8
+    CONTROL         "Experimental Algorithm",IDC_RADIO1,"Button",
+                    BS_AUTORADIOBUTTON | WS_GROUP,7,210,178,10
+    CONTROL         "C Algorithm",IDC_RADIO2,"Button",BS_AUTORADIOBUTTON,7,
+                    220,178,10
+    CONTROL         "Assembly Algorithm",IDC_RADIO3,"Button",
+                    BS_AUTORADIOBUTTON,7,230,178,10
+    CONTROL         "SSE2 Algorithm",IDC_RADIO4,"Button",BS_AUTORADIOBUTTON,
+                    7,240,178,10
+    LTEXT           "Choose low resolution algorithm:",IDC_STATIC,191,202,
+                    172,8
+    CONTROL         "3d Now! Algorithm",IDC_RADIO5,"Button",
+                    BS_AUTORADIOBUTTON | WS_GROUP,191,210,172,10
+    CONTROL         "SSE Algorithm",IDC_RADIO6,"Button",BS_AUTORADIOBUTTON,
+                    191,220,172,10
+    DEFPUSHBUTTON   "OK",IDOK,7,265,50,14
+    PUSHBUTTON      "Cancel",IDCANCEL,127,265,58,14
+    LTEXT           "Save directory:",IDC_STATIC,191,265,54,14,
+                    SS_CENTERIMAGE
+    EDITTEXT        IDC_EDIT_SAVEDIR,245,265,118,14,ES_AUTOHSCROLL
+    CONTROL         "Use Alternate Drawing scheme",IDC_CHECK_ALTDRAW,"Button",
+                    BS_AUTOCHECKBOX | WS_TABSTOP,191,131,172,10
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Version
+//
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 1,0,0,1
+ PRODUCTVERSION 1,0,0,1
+ FILEFLAGSMASK 0x3fL
+#ifdef _DEBUG
+ FILEFLAGS 0x1L
+#else
+ FILEFLAGS 0x0L
+#endif
+ FILEOS 0x4L
+ FILETYPE 0x1L
+ FILESUBTYPE 0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904b0"
+        BEGIN
+            VALUE "FileDescription", "FractalSetup"
+            VALUE "FileVersion", "1, 0, 0, 1"
+            VALUE "InternalName", "FractalSetup"
+            VALUE "LegalCopyright", "Copyright (C) 2002"
+            VALUE "OriginalFilename", "FractalSetup.EXE"
+            VALUE "ProductName", "FractalSetup Application"
+            VALUE "ProductVersion", "1, 0, 0, 1"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO 
+BEGIN
+    IDD_FRACTALSETUP_DIALOG, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 422
+        VERTGUIDE, 185
+        VERTGUIDE, 191
+        VERTGUIDE, 245
+        VERTGUIDE, 363
+        VERTGUIDE, 416
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 279
+        HORZGUIDE, 21
+        HORZGUIDE, 35
+        HORZGUIDE, 49
+        HORZGUIDE, 63
+        HORZGUIDE, 77
+        HORZGUIDE, 81
+        HORZGUIDE, 89
+        HORZGUIDE, 131
+        HORZGUIDE, 145
+        HORZGUIDE, 155
+        HORZGUIDE, 165
+        HORZGUIDE, 175
+        HORZGUIDE, 185
+        HORZGUIDE, 195
+        HORZGUIDE, 210
+        HORZGUIDE, 220
+        HORZGUIDE, 230
+        HORZGUIDE, 240
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+#endif    // English (U.S.) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+/////////////////////////////////////////////////////////////////////////////
+// English (Canada) resources
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENC)
+#ifdef _WIN32
+LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_CAN
+#pragma code_page(1252)
+#endif //_WIN32
+
+#ifdef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// TEXTINCLUDE
+//
+
+1 TEXTINCLUDE 
+BEGIN
+    "resource.h\0"
+END
+
+2 TEXTINCLUDE 
+BEGIN
+    "#include ""afxres.h""\r\n"
+    "\0"
+END
+
+3 TEXTINCLUDE 
+BEGIN
+    "#define _AFX_NO_SPLITTER_RESOURCES\r\n"
+    "#define _AFX_NO_OLE_RESOURCES\r\n"
+    "#define _AFX_NO_TRACKER_RESOURCES\r\n"
+    "#define _AFX_NO_PROPERTY_RESOURCES\r\n"
+    "\r\n"
+    "#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)\r\n"
+    "#ifdef _WIN32\r\n"
+    "LANGUAGE 9, 1\r\n"
+    "#pragma code_page(1252)\r\n"
+    "#endif //_WIN32\r\n"
+    "#include ""res\\FractalSetup.rc2""  // non-Microsoft Visual C++ edited resources\r\n"
+    "#include ""afxres.rc""         // Standard components\r\n"
+    "#endif\r\n"
+    "\0"
+END
+
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Icon
+//
+
+// Icon with lowest ID value placed first to ensure application icon
+// remains consistent on all systems.
+IDR_MAINFRAME           ICON                    "res\\FractalSetup.ico"
+#endif    // English (Canada) resources
+/////////////////////////////////////////////////////////////////////////////
+
+
+
+#ifndef APSTUDIO_INVOKED
+/////////////////////////////////////////////////////////////////////////////
+//
+// Generated from the TEXTINCLUDE 3 resource.
+//
+#define _AFX_NO_SPLITTER_RESOURCES
+#define _AFX_NO_OLE_RESOURCES
+#define _AFX_NO_TRACKER_RESOURCES
+#define _AFX_NO_PROPERTY_RESOURCES
+
+#if !defined(AFX_RESOURCE_DLL) || defined(AFX_TARG_ENU)
+#ifdef _WIN32
+LANGUAGE 9, 1
+#pragma code_page(1252)
+#endif //_WIN32
+#include "res\FractalSetup.rc2"  // non-Microsoft Visual C++ edited resources
+#include "afxres.rc"         // Standard components
+#endif
+
+/////////////////////////////////////////////////////////////////////////////
+#endif    // not APSTUDIO_INVOKED
+

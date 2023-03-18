@@ -1,0 +1,49 @@
+Microsoft Visual Studio Solution File, Format Version 10.00
+# Visual Studio 2008
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalSaver", "..\FractalSaver\FractalSaver.vcproj", "{BED28EC7-7C85-4AA7-A4BE-EBC09C166F58}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalServer2", "..\FractalServer2\FractalServer2.vcproj", "{B7397A4C-EABB-4DAF-94A2-0B93914458DD}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalSetup", "..\FractalSetup\FractalSetup.vcproj", "{4306BDAB-C271-42C9-ABAF-BBC8DFAEB7E5}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Fractals", "Fractals.vcproj", "{EACBDA33-1E2A-465B-B436-8D96DD70EFC4}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalMovie", "..\FractalMovie\FractalMovie.vcproj", "{73FCD639-2B0B-4B70-B634-5764E3C7095A}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalTray", "..\FractalTray\FractalTray.vcproj", "{B7468E51-1CF3-4959-B1C8-394EA78CE79C}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Release|Win32 = Release|Win32
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{BED28EC7-7C85-4AA7-A4BE-EBC09C166F58}.Debug|Win32.ActiveCfg = Debug|Win32
+		{BED28EC7-7C85-4AA7-A4BE-EBC09C166F58}.Debug|Win32.Build.0 = Debug|Win32
+		{BED28EC7-7C85-4AA7-A4BE-EBC09C166F58}.Release|Win32.ActiveCfg = Release|Win32
+		{BED28EC7-7C85-4AA7-A4BE-EBC09C166F58}.Release|Win32.Build.0 = Release|Win32
+		{B7397A4C-EABB-4DAF-94A2-0B93914458DD}.Debug|Win32.ActiveCfg = Debug|Win32
+		{B7397A4C-EABB-4DAF-94A2-0B93914458DD}.Debug|Win32.Build.0 = Debug|Win32
+		{B7397A4C-EABB-4DAF-94A2-0B93914458DD}.Release|Win32.ActiveCfg = Release|Win32
+		{B7397A4C-EABB-4DAF-94A2-0B93914458DD}.Release|Win32.Build.0 = Release|Win32
+		{4306BDAB-C271-42C9-ABAF-BBC8DFAEB7E5}.Debug|Win32.ActiveCfg = Debug|Win32
+		{4306BDAB-C271-42C9-ABAF-BBC8DFAEB7E5}.Debug|Win32.Build.0 = Debug|Win32
+		{4306BDAB-C271-42C9-ABAF-BBC8DFAEB7E5}.Release|Win32.ActiveCfg = Release|Win32
+		{4306BDAB-C271-42C9-ABAF-BBC8DFAEB7E5}.Release|Win32.Build.0 = Release|Win32
+		{EACBDA33-1E2A-465B-B436-8D96DD70EFC4}.Debug|Win32.ActiveCfg = Debug|Win32
+		{EACBDA33-1E2A-465B-B436-8D96DD70EFC4}.Debug|Win32.Build.0 = Debug|Win32
+		{EACBDA33-1E2A-465B-B436-8D96DD70EFC4}.Release|Win32.ActiveCfg = Release|Win32
+		{EACBDA33-1E2A-465B-B436-8D96DD70EFC4}.Release|Win32.Build.0 = Release|Win32
+		{73FCD639-2B0B-4B70-B634-5764E3C7095A}.Debug|Win32.ActiveCfg = Debug|Win32
+		{73FCD639-2B0B-4B70-B634-5764E3C7095A}.Debug|Win32.Build.0 = Debug|Win32
+		{73FCD639-2B0B-4B70-B634-5764E3C7095A}.Release|Win32.ActiveCfg = Release|Win32
+		{73FCD639-2B0B-4B70-B634-5764E3C7095A}.Release|Win32.Build.0 = Release|Win32
+		{B7468E51-1CF3-4959-B1C8-394EA78CE79C}.Debug|Win32.ActiveCfg = Debug|Win32
+		{B7468E51-1CF3-4959-B1C8-394EA78CE79C}.Debug|Win32.Build.0 = Debug|Win32
+		{B7468E51-1CF3-4959-B1C8-394EA78CE79C}.Release|Win32.ActiveCfg = Release|Win32
+		{B7468E51-1CF3-4959-B1C8-394EA78CE79C}.Release|Win32.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

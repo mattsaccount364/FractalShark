@@ -57,7 +57,7 @@ private:
         bool UseSensoCursor);
     void Uninitialize(void);
     bool PalIncrease(std::vector<uint16_t>& pal, int i1, int length, int val1, int val2);
-    int PalTransition(int paletteIndex, int i1, int length, int r, int g, int b);
+    int PalTransition(size_t paletteIndex, int i1, int length, int r, int g, int b);
 
 public:
     static unsigned long WINAPI CheckForAbortThread(void *fractal);

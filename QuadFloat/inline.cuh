@@ -23,10 +23,10 @@ namespace GQF {
 		float quick_two_sum(float a, float b, float& err)
 	{
 
-		if (b == 0.0f) {
-			err = 0.0f;
-			return (a + b);
-		}
+		//if (b == 0.0f) {
+		//	err = 0.0f;
+		//	return (a + b);
+		//}
 
 		float s = a + b;
 		err = b - (s - a);
@@ -38,10 +38,10 @@ namespace GQF {
 		float two_sum(float a, float b, float& err)
 	{
 
-		if ((a == 0.0f) || (b == 0.0f)) {
-			err = 0.0f;
-			return (a + b);
-		}
+		//if ((a == 0.0f) || (b == 0.0f)) {
+		//	err = 0.0f;
+		//	return (a + b);
+		//}
 
 		float s = a + b;
 		float bb = s - a;
@@ -55,10 +55,10 @@ namespace GQF {
 	__host__ __device__
 		float quick_two_diff(float a, float b, float& err)
 	{
-		if (a == b) {
-			err = 0.0f;
-			return 0.0f;
-		}
+		//if (a == b) {
+		//	err = 0.0f;
+		//	return 0.0f;
+		//}
 
 		float s;
 
@@ -79,10 +79,10 @@ namespace GQF {
 	__host__ __device__
 		float two_diff(float a, float b, float& err)
 	{
-		if (a == b) {
-			err = 0.0f;
-			return 0.0f;
-		}
+		//if (a == b) {
+		//	err = 0.0f;
+		//	return 0.0f;
+		//}
 
 		float s = a - b;
 

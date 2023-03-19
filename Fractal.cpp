@@ -1,3 +1,4 @@
+// Search for TODO
 // Make the screen saver render high-res versions of screens that have
 //      been saved to a queue.  High res images made at idle time
 // Make this code run in a separate thread so it doesn't interfere with the windows
@@ -11,13 +12,16 @@
 #include <io.h>
 #include <time.h>
 
+#include <locale>
+#include <codecvt>
+
 #include <GL/gl.h>      /* OpenGL header file */
 #include <GL/glu.h>     /* OpenGL utilities header file */
 
 #include "Fractal.h"
 #include "FractalNetwork.h"
 #include "FractalSetupData.h"
-#include "CBitmapWriter.h"
+//#include "CBitmapWriter.h"
 
 #include <thread>
 
@@ -88,19 +92,20 @@ void Fractal::Initialize(int width,
         m_PalR[PaletteIndex].resize(MAXITERS);
         m_PalG[PaletteIndex].resize(MAXITERS);
         m_PalB[PaletteIndex].resize(MAXITERS);
+        int depth_total = (int) (1 << Depth);
 
         int index = 0;
         PalTransition(PaletteIndex, 0, MAXITERS, 0, 0, 0);
         for (;;)
         {
             int max_val = 65535;
-            index = PalTransition(PaletteIndex, index, 1 << Depth, max_val, 0, 0);       if (index == -1) break;
-            index = PalTransition(PaletteIndex, index, 1 << Depth, max_val, max_val, 0); if (index == -1) break;
-            index = PalTransition(PaletteIndex, index, 1 << Depth, 0, max_val, 0);       if (index == -1) break;
-            index = PalTransition(PaletteIndex, index, 1 << Depth, 0, max_val, max_val); if (index == -1) break;
-            index = PalTransition(PaletteIndex, index, 1 << Depth, 0, 0, max_val);       if (index == -1) break;
-            index = PalTransition(PaletteIndex, index, 1 << Depth, max_val, 0, max_val); if (index == -1) break;
-            index = PalTransition(PaletteIndex, index, 1 << Depth, 0, 0, 0);             if (index == -1) break;
+            index = PalTransition(PaletteIndex, index, depth_total, max_val, 0, 0);       if (index == -1) break;
+            index = PalTransition(PaletteIndex, index, depth_total, max_val, max_val, 0); if (index == -1) break;
+            index = PalTransition(PaletteIndex, index, depth_total, 0, max_val, 0);       if (index == -1) break;
+            index = PalTransition(PaletteIndex, index, depth_total, 0, max_val, max_val); if (index == -1) break;
+            index = PalTransition(PaletteIndex, index, depth_total, 0, 0, max_val);       if (index == -1) break;
+            index = PalTransition(PaletteIndex, index, depth_total, max_val, 0, max_val); if (index == -1) break;
+            index = PalTransition(PaletteIndex, index, depth_total, 0, 0, 0);             if (index == -1) break;
         }
     };
 
@@ -220,68 +225,68 @@ void Fractal::Uninitialize(void)
     }
 
     // Disconnect from the remote server if necessary
-    if (m_NetworkRender == 'a')
-    {
-        char data[512];
-        strcpy(data, "done");
+    //if (m_NetworkRender == 'a')
+    //{
+    //    char data[512];
+    //    strcpy(data, "done");
 
-        for (int i = 0; i < MAXSERVERS; i++)
-        {
-            if (m_SetupData.m_UseThisServer[i] == 'n')
-            {
-                continue;
-            }
+    //    for (int i = 0; i < MAXSERVERS; i++)
+    //    {
+    //        if (m_SetupData.m_UseThisServer[i] == 'n')
+    //        {
+    //            continue;
+    //        }
 
-            m_ClientMainNetwork[i]->SendData(data, 512);
-            m_ClientMainNetwork[i]->ShutdownConnection();
-            delete m_ClientMainNetwork[i];
-            delete m_ClientSubNetwork[i];
-        }
-    } // Shutdown the various server threads if necessary.
-    else if (m_NetworkRender >= 'b' || m_NetworkRender == 'S')
-    {
-        FractalNetwork exitNetwork;
+    //        m_ClientMainNetwork[i]->SendData(data, 512);
+    //        m_ClientMainNetwork[i]->ShutdownConnection();
+    //        delete m_ClientMainNetwork[i];
+    //        delete m_ClientSubNetwork[i];
+    //    }
+    //} // Shutdown the various server threads if necessary.
+    //else if (m_NetworkRender >= 'b' || m_NetworkRender == 'S')
+    //{
+    //    FractalNetwork exitNetwork;
 
-        char quittime[512];
-        strcpy(quittime, "exit");
+    //    char quittime[512];
+    //    strcpy(quittime, "exit");
 
-        // First, shutdown secondary thread.
-        if (exitNetwork.CreateConnection(m_SetupData.m_LocalIP, PORTNUM) == true)
-        {
-            exitNetwork.SendData(quittime, 512);
-            exitNetwork.ShutdownConnection();
-        }
-        else
-        {
-            ::MessageBox(NULL, L"Error connecting to server thread #1!", L"", MB_OK);
-        }
+    //    // First, shutdown secondary thread.
+    //    if (exitNetwork.CreateConnection(m_SetupData.m_LocalIP, PORTNUM) == true)
+    //    {
+    //        exitNetwork.SendData(quittime, 512);
+    //        exitNetwork.ShutdownConnection();
+    //    }
+    //    else
+    //    {
+    //        ::MessageBox(NULL, L"Error connecting to server thread #1!", L"", MB_OK);
+    //    }
 
-        if (WaitForSingleObject(m_ServerSubThread, INFINITE) != WAIT_OBJECT_0)
-        {
-            ::MessageBox(NULL, L"Error waiting for server thread #1!", L"", MB_OK);
-        }
-        CloseHandle(m_ServerSubThread);
+    //    if (WaitForSingleObject(m_ServerSubThread, INFINITE) != WAIT_OBJECT_0)
+    //    {
+    //        ::MessageBox(NULL, L"Error waiting for server thread #1!", L"", MB_OK);
+    //    }
+    //    CloseHandle(m_ServerSubThread);
 
-        // Then shutdown primary thread.
-        if (exitNetwork.CreateConnection(m_SetupData.m_LocalIP, PERM_PORTNUM) == true)
-        {
-            exitNetwork.SendData(quittime, 512);
-            exitNetwork.ShutdownConnection();
-        }
-        else
-        {
-            ::MessageBox(NULL, L"Error connecting to server thread #2!", L"", MB_OK);
-        }
+    //    // Then shutdown primary thread.
+    //    if (exitNetwork.CreateConnection(m_SetupData.m_LocalIP, PERM_PORTNUM) == true)
+    //    {
+    //        exitNetwork.SendData(quittime, 512);
+    //        exitNetwork.ShutdownConnection();
+    //    }
+    //    else
+    //    {
+    //        ::MessageBox(NULL, L"Error connecting to server thread #2!", L"", MB_OK);
+    //    }
 
-        if (WaitForSingleObject(m_ServerMainThread, INFINITE) != WAIT_OBJECT_0)
-        {
-            ::MessageBox(NULL, L"Error waiting for server thread #2!", L"", MB_OK);
-        }
-        CloseHandle(m_ServerMainThread);
+    //    if (WaitForSingleObject(m_ServerMainThread, INFINITE) != WAIT_OBJECT_0)
+    //    {
+    //        ::MessageBox(NULL, L"Error waiting for server thread #2!", L"", MB_OK);
+    //    }
+    //    CloseHandle(m_ServerMainThread);
 
-        delete m_ServerMainNetwork;
-        delete m_ServerSubNetwork;
-    }
+    //    delete m_ServerMainNetwork;
+    //    delete m_ServerSubNetwork;
+    //}
 
     // Deallocate the big arrays.
     int i;
@@ -314,19 +319,25 @@ void Fractal::Uninitialize(void)
 //   total_length == 256
 bool Fractal::PalIncrease(std::vector<uint16_t> &pal, int i1, int length, int val1, int val2)
 {
+    bool ret = true;
+    if (pal.size() > INT32_MAX) {
+        return false;
+    }
+
+    if (i1 + length >= pal.size())
+    {
+        length = (int)pal.size() - i1;
+        ret = false;
+    }
+
     double delta = (double)((double)(val2 - val1)) / length;
     for (int i = i1; i < i1 + length; i++)
     {
-        if (i >= pal.size())  // Defensive programming
-        {
-            return false;
-        }
-
         double result = ((double)val1 + (double)delta * (i - i1 + 1));
         pal[i] = (unsigned short)result;
     }
 
-    return true;
+    return ret;
 }
 
 // Transitions to the color specified.
@@ -334,7 +345,7 @@ bool Fractal::PalIncrease(std::vector<uint16_t> &pal, int i1, int length, int va
 // length must be > 0
 // Returns index immediately following the last index we filled here
 // Returns -1 if we are at the end.
-int Fractal::PalTransition(int PaletteIndex, int i1, int length, int r, int g, int b)
+int Fractal::PalTransition(size_t PaletteIndex, int i1, int length, int r, int g, int b)
 {
     int curR, curB, curG;
     if (i1 > 0)
@@ -471,16 +482,18 @@ bool Fractal::CenterAtPoint(int x, int y)
 void Fractal::StandardView(void)
 {
     // Limits of 4x64 GPU
-    HighPrecision minX = HighPrecision{ "-1.763399177066752695854220120818493394874764715075525070697085376173644156624573649873526729559691534754284706803085481158" };
-    HighPrecision minY = HighPrecision{ "0.04289211262806512836473285627858318635734695759291867302112730624188941270466703058975670804976478935827994844038526618063053858" };
-    HighPrecision maxX = HighPrecision{ "-1.763399177066752695854220120818493394874764715075525070697085355870272824868052108014289980411203646967653925705407102169" };
-    HighPrecision maxY = HighPrecision{ "0.04289211262806512836473285627858318635734695759291867302112731461463330922125985949917962768812338316745717506303752530265831841" };
+    //HighPrecision minX = HighPrecision{ "-1.763399177066752695854220120818493394874764715075525070697085376173644156624573649873526729559691534754284706803085481158" };
+    //HighPrecision minY = HighPrecision{ "0.04289211262806512836473285627858318635734695759291867302112730624188941270466703058975670804976478935827994844038526618063053858" };
+    //HighPrecision maxX = HighPrecision{ "-1.763399177066752695854220120818493394874764715075525070697085355870272824868052108014289980411203646967653925705407102169" };
+    //HighPrecision maxY = HighPrecision{ "0.04289211262806512836473285627858318635734695759291867302112731461463330922125985949917962768812338316745717506303752530265831841" };
+    //RecenterViewCalc(minX, minY, maxX, maxY);
 
-    // Limits of 4x32 GPU
-    HighPrecision minX = HighPrecision{ "-1.768969486867357972775564951275461551052751499509997185691881950786253743769635708375905775793656954725307354460920979983" };
-    HighPrecision minY = HighPrecision{ "0.05699280690304670893115636892860647833175463644922652375916712719872599382335388157040896288795946562522749757591414246314107544" };
-    HighPrecision maxX = HighPrecision{ "-1.768969486867357972775564950929487934553496494563941335911085292699250368065865432159590460057564657941788398574759610411" };
-    HighPrecision maxY = HighPrecision{ "0.05699280690304670893115636907127975355127952306391692141273804706041783710937876987367435542131127321801128526034375237132904264" };
+    //// Limits of 4x32 GPU
+    //HighPrecision minX = HighPrecision{ "-1.768969486867357972775564951275461551052751499509997185691881950786253743769635708375905775793656954725307354460920979983" };
+    //HighPrecision minY = HighPrecision{ "0.05699280690304670893115636892860647833175463644922652375916712719872599382335388157040896288795946562522749757591414246314107544" };
+    //HighPrecision maxX = HighPrecision{ "-1.768969486867357972775564950929487934553496494563941335911085292699250368065865432159590460057564657941788398574759610411" };
+    //HighPrecision maxY = HighPrecision{ "0.05699280690304670893115636907127975355127952306391692141273804706041783710937876987367435542131127321801128526034375237132904264" };
+    //RecenterViewCalc(minX, minY, maxX, maxY);
 
     //HighPrecision minX = HighPrecision{"-0.58495503626130003601029848213118066005878420809359614438890887303577302491190715010346117018574877216397030492770124781195671802"};
     //HighPrecision minY = HighPrecision{"0.65539077238267043815632402306524090571012503143059005580600414572477379600345575745505251230357715199720080866919744892255565016"};
@@ -1002,7 +1015,7 @@ void Fractal::DrawFractalLine(size_t output_y)
                 {
                     numIters += m_PaletteRotate;
                     if (numIters >= MAXITERS) {
-                        numIters -= MAXITERS;
+                        numIters = MAXITERS - 1;
                     }
 
                     acc_r += m_PalR[m_PaletteDepthIndex][numIters] / 65536.0f;
@@ -1574,7 +1587,7 @@ int Fractal::SaveCurrentFractal(const std::wstring filename_base)
 
     i = 0;
 
-    WPngImage image(m_ScrnWidth, m_ScrnHeight, WPngImage::Pixel16(0, 0, 0));
+    WPngImage image((int)m_ScrnWidth, (int)m_ScrnHeight, WPngImage::Pixel16(0, 0, 0));
 
     for (output_y = 0; output_y < m_ScrnHeight; output_y++)
     {
@@ -1621,7 +1634,9 @@ int Fractal::SaveCurrentFractal(const std::wstring filename_base)
             //data[i] = (unsigned char)acc_b;
             //i++;
 
-            image.set(output_x, output_y, WPngImage::Pixel16((uint16_t)acc_r, (uint16_t)acc_g, (uint16_t)acc_b));
+            image.set((int)output_x,
+                      (int)output_y,
+                      WPngImage::Pixel16((uint16_t)acc_r, (uint16_t)acc_g, (uint16_t)acc_b));
         }
     }
 
@@ -1646,7 +1661,13 @@ int Fractal::SaveCurrentFractal(const std::wstring filename_base)
     //    }
     //}
 
-    const std::string filename_png_c(filename_png.begin(), filename_png.end());
+    //const std::string filename_png_c(filename_png.begin(), filename_png.end());
+
+    //setup converter
+    using convert_type = std::codecvt_utf8<wchar_t>;
+    std::wstring_convert<convert_type, wchar_t> converter;
+    //use converter (.to_bytes: wstr->str, .from_bytes: str->wstr)
+    const std::string filename_png_c = converter.to_bytes(filename_png);
 
     ret = image.saveImage(filename_png_c, WPngImage::PngFileFormat::kPngFileFormat_RGBA16);
 
@@ -1667,7 +1688,7 @@ int Fractal::SaveCurrentFractal(const std::wstring filename_base)
 //////////////////////////////////////////////////////////////////////////////
 int Fractal::SaveHiResFractal(const std::wstring filename)
 {
-    CBitmapWriter bmpWriter;
+    //CBitmapWriter bmpWriter;
 
     size_t OldScrnWidth = m_ScrnWidth;
     size_t OldScrnHeight = m_ScrnHeight;

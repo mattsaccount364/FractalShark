@@ -29,7 +29,7 @@ void ClearOutput (void);
 
 // Global Variables:
 HINSTANCE hInst;                // current instance
-wchar_t *szWindowClass = L"FractalServerClass";
+const wchar_t *szWindowClass = L"FractalServerClass";
 
 // Foward declarations of functions included in this code module:
 ATOM        MyRegisterClass (HINSTANCE hInstance);

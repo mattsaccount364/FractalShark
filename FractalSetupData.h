@@ -55,22 +55,22 @@ public:
   int m_AlgLowRes;
 
 private:
-  void ReadString(wchar_t *fromDisk, wchar_t *defValue, int length);
+  void ReadString(wchar_t *fromDisk, const wchar_t *defValue, int length);
   void WriteString(wchar_t *toDisk, int length);
 
-  void ReadString (char *fromDisk, char *defValue, int length);
+  void ReadString (char *fromDisk, const char *defValue, int length);
   void WriteString (char *toDisk, int length);
 
-  void ReadChar(wchar_t *fromDisk, wchar_t defValue);
+  void ReadChar(wchar_t *fromDisk, const wchar_t defValue);
   void WriteChar(wchar_t toDisk);
 
-  void ReadChar (char *fromDisk, char defValue);
+  void ReadChar (char *fromDisk, const char defValue);
   void WriteChar (char toDisk);
 
-  void ReadInt (int *fromDisk, int defValue);
+  void ReadInt (int *fromDisk, const int defValue);
   void WriteInt (int toDisk);
 
-  void ReadDouble (double *fromDisk, double defValue);
+  void ReadDouble (double *fromDisk, const double defValue);
   void WriteDouble (double toDisk);
 
   FILE *m_File;

@@ -169,7 +169,7 @@ void FractalSetupData::Save (void)
   fclose (m_File);
 }
 
-void FractalSetupData::ReadString(wchar_t *fromDisk, wchar_t *defValue, int length)
+void FractalSetupData::ReadString(wchar_t *fromDisk, const wchar_t *defValue, int length)
 {
     int i;
     if (m_File == NULL)
@@ -189,7 +189,7 @@ void FractalSetupData::ReadString(wchar_t *fromDisk, wchar_t *defValue, int leng
 }
 
 
-void FractalSetupData::ReadString (char *fromDisk, char *defValue, int length)
+void FractalSetupData::ReadString (char *fromDisk, const char *defValue, int length)
 { int i;
   if (m_File == NULL)
   { for (i = 0; i < length; i++)
@@ -216,14 +216,14 @@ void FractalSetupData::WriteString(wchar_t *toDisk, int length)
     }
 }
 
-void FractalSetupData::ReadChar (char *fromDisk, char defValue)
+void FractalSetupData::ReadChar (char *fromDisk, const char defValue)
 { if (m_File == NULL)
   { *fromDisk = defValue; }
   else
   { fread (fromDisk, sizeof (char), 1, m_File); }
 }
 
-void FractalSetupData::ReadChar(wchar_t *fromDisk, wchar_t defValue)
+void FractalSetupData::ReadChar(wchar_t *fromDisk, const wchar_t defValue)
 {
     char temp;
     if (m_File == NULL)
@@ -252,7 +252,7 @@ void FractalSetupData::WriteChar(wchar_t toDisk)
     }
 }
 
-void FractalSetupData::ReadInt (int *fromDisk, int defValue)
+void FractalSetupData::ReadInt (int *fromDisk, const int defValue)
 { if (m_File == NULL)
   { *fromDisk = defValue; }
   else
@@ -264,7 +264,7 @@ void FractalSetupData::WriteInt (int toDisk)
   { fwrite (&toDisk, sizeof (int), 1, m_File); }
 }
 
-void FractalSetupData::ReadDouble (double *fromDisk, double defValue)
+void FractalSetupData::ReadDouble (double *fromDisk, const double defValue)
 { if (m_File == NULL)
   { *fromDisk = defValue; }
   else

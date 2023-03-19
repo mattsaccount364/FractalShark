@@ -821,13 +821,11 @@ void GPURenderer::render_gpu2(
     unsigned int w_block = local_width / NB_THREADS_W + (local_width % NB_THREADS_W != 0);
     unsigned int h_block = local_height / NB_THREADS_H + (local_height % NB_THREADS_H != 0);
     size_t N_cu = w_block * NB_THREADS_W * h_block * NB_THREADS_H;
-    int* iter_matrix = new int[N_cu];
     int* iter_matrix_cu;
     cudaError_t err;
 
-    err = cudaMalloc(&iter_matrix_cu, N_cu * sizeof(int));
+    err = cudaMallocManaged(&iter_matrix_cu, N_cu * sizeof(int), cudaMemAttachGlobal);
     if (err != cudaSuccess) {
-        delete[] iter_matrix;
         return;
     }
 
@@ -975,17 +973,11 @@ void GPURenderer::render_gpu2(
             n_iterations);
     }
     else {
-        delete[] iter_matrix;
         cudaFree(iter_matrix_cu);
         return;
     }
 
-    err = cudaMemcpy(iter_matrix, iter_matrix_cu, N_cu * sizeof(int), cudaMemcpyDeviceToHost);
-    if (err != cudaSuccess) {
-        delete[] iter_matrix;
-        cudaFree(iter_matrix_cu);
-        return;
-    }
+    cudaDeviceSynchronize();
 
     size_t aax, aay;
     double temp;
@@ -997,7 +989,7 @@ void GPURenderer::render_gpu2(
             temp = 0.0;
             for (aay = y * antialiasing; aay < y * antialiasing + antialiasing; aay++) {
                 for (aax = x * antialiasing; aax < x * antialiasing + antialiasing; aax++) {
-                    temp += iter_matrix[aay * local_width + aax];
+                    temp += iter_matrix_cu[aay * local_width + aax];
                 }
             }
 
@@ -1006,6 +998,5 @@ void GPURenderer::render_gpu2(
         }
     }
 
-    delete[] iter_matrix;
     cudaFree(iter_matrix_cu);
 }

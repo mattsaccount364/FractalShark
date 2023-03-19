@@ -42,20 +42,20 @@ namespace GQF {
 
 		s0 = c0;
 		s1 = c1;
-		if (s1 != 0.0f) {
+		//if (s1 != 0.0f) {
 			s1 = quick_two_sum(s1, c2, s2);
-			if (s2 != 0.0f)
+			//if (s2 != 0.0f)
 				s2 = quick_two_sum(s2, c3, s3);
-			else
-				s1 = quick_two_sum(s1, c3, s2);
-		}
-		else {
-			s0 = quick_two_sum(s0, c2, s1);
-			if (s1 != 0.0f)
-				s1 = quick_two_sum(s1, c3, s2);
-			else
-				s0 = quick_two_sum(s0, c3, s1);
-		}
+		//	else
+		//		s1 = quick_two_sum(s1, c3, s2);
+		//}
+		//else {
+		//	s0 = quick_two_sum(s0, c2, s1);
+		//	if (s1 != 0.0f)
+		//		s1 = quick_two_sum(s1, c3, s2);
+		//	else
+		//		s0 = quick_two_sum(s0, c3, s1);
+		//}
 
 		c0 = s0;
 		c1 = s1;
@@ -80,41 +80,41 @@ namespace GQF {
 		s1 = c1;
 
 		s0 = quick_two_sum(c0, c1, s1);
-		if (s1 != 0.0f)
-		{
+		//if (s1 != 0.0f)
+		//{
 			s1 = quick_two_sum(s1, c2, s2);
-			if (s2 != 0.0f) {
+			//if (s2 != 0.0f) {
 				s2 = quick_two_sum(s2, c3, s3);
-				if (s3 != 0.0f)
+				//if (s3 != 0.0f)
 					s3 += c4;
-				else
-					s2 += c4;
-			}
-			else {
-				s1 = quick_two_sum(s1, c3, s2);
-				if (s2 != 0.0f)
-					s2 = quick_two_sum(s2, c4, s3);
-				else
-					s1 = quick_two_sum(s1, c4, s2);
-			}
-		}
-		else {
-			s0 = quick_two_sum(s0, c2, s1);
-			if (s1 != 0.0f) {
-				s1 = quick_two_sum(s1, c3, s2);
-				if (s2 != 0.0f)
-					s2 = quick_two_sum(s2, c4, s3);
-				else
-					s1 = quick_two_sum(s1, c4, s2);
-			}
-			else {
-				s0 = quick_two_sum(s0, c3, s1);
-				if (s1 != 0.0f)
-					s1 = quick_two_sum(s1, c4, s2);
-				else
-					s0 = quick_two_sum(s0, c4, s1);
-			}
-		}
+		//		else
+		//			s2 += c4;
+		//	}
+		//	else {
+		//		s1 = quick_two_sum(s1, c3, s2);
+		//		if (s2 != 0.0f)
+		//			s2 = quick_two_sum(s2, c4, s3);
+		//		else
+		//			s1 = quick_two_sum(s1, c4, s2);
+		//	}
+		//}
+		//else {
+		//	s0 = quick_two_sum(s0, c2, s1);
+		//	if (s1 != 0.0f) {
+		//		s1 = quick_two_sum(s1, c3, s2);
+		//		if (s2 != 0.0f)
+		//			s2 = quick_two_sum(s2, c4, s3);
+		//		else
+		//			s1 = quick_two_sum(s1, c4, s2);
+		//	}
+		//	else {
+		//		s0 = quick_two_sum(s0, c3, s1);
+		//		if (s1 != 0.0f)
+		//			s1 = quick_two_sum(s1, c4, s2);
+		//		else
+		//			s0 = quick_two_sum(s0, c4, s1);
+		//	}
+		//}
 
 		c0 = s0;
 		c1 = s1;

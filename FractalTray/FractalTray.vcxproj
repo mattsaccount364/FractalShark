@@ -21,6 +21,7 @@
     <PlatformToolset>v143</PlatformToolset>
     <UseOfMfc>Dynamic</UseOfMfc>
     <CharacterSet>Unicode</CharacterSet>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
@@ -69,8 +70,9 @@
       <WarningLevel>Level4</WarningLevel>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SDLCheck>false</SDLCheck>
-      <AdditionalIncludeDirectories>..\boost_1_58_0</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\boost_1_81_0</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -100,8 +102,14 @@
       <WarningLevel>Level4</WarningLevel>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SDLCheck>false</SDLCheck>
-      <AdditionalIncludeDirectories>..\boost_1_58_0</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\boost_1_81_0</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
+      <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <OmitFramePointers>true</OmitFramePointers>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -120,7 +128,6 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="..\CBitmapWriter.cpp" />
     <ClCompile Include="..\Fractal.cpp" />
     <ClCompile Include="..\FractalNetwork.cpp" />
     <ClCompile Include="..\FractalSetupData.cpp" />
@@ -135,7 +142,6 @@
     <ClCompile Include="TrayIcon.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\CBitmapWriter.h" />
     <ClInclude Include="..\cximage599a_full\CxImage\ximage.h" />
     <ClInclude Include="..\dbldbl.cuh" />
     <ClInclude Include="..\Fractal.h" />

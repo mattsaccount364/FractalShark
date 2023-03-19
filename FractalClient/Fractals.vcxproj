@@ -53,7 +53,7 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
-    <OutDir>..\Release\</OutDir>
+    <OutDir>.\Release\</OutDir>
     <IntDir>.\Release\</IntDir>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -80,8 +80,9 @@
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SDLCheck>false</SDLCheck>
-      <AdditionalIncludeDirectories>..\boost_1_58_0;..\WPngImage;..\QuadDouble\inc</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\boost_1_81_0;..\WPngImage;..\QuadDouble\inc</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -129,11 +130,14 @@
       <WarningLevel>Level4</WarningLevel>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <SDLCheck>false</SDLCheck>
-      <AdditionalIncludeDirectories>..\boost_1_58_0;..\WPngImage;..\QuadDouble\inc</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\boost_1_81_0;..\WPngImage;..\QuadDouble\inc</AdditionalIncludeDirectories>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <OmitFramePointers>true</OmitFramePointers>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <EnableParallelCodeGeneration>true</EnableParallelCodeGeneration>
+      <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
     </ClCompile>
     <ResourceCompile>
       <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -164,11 +168,6 @@
     </CudaLink>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="..\CBitmapWriter.cpp">
-      <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Disabled</Optimization>
-      <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">EnableFastChecks</BasicRuntimeChecks>
-      <Optimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Disabled</Optimization>
-    </ClCompile>
     <ClCompile Include="..\Fractal.cpp">
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Disabled</Optimization>
       <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">EnableFastChecks</BasicRuntimeChecks>
@@ -203,7 +202,6 @@
     <ResourceCompile Include="Fractals.rc" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\CBitmapWriter.h" />
     <ClInclude Include="..\cximage599a_full\CxImage\ximage.h" />
     <ClInclude Include="..\dbldbl.cuh" />
     <ClInclude Include="..\dblflt.cuh" />

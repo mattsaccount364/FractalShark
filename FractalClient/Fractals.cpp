@@ -32,9 +32,10 @@ void MenuWindowed(HWND hWnd);
 void MenuIncreaseIterations(HWND hWnd, double factor);
 void MenuDecreaseIterations(HWND hWnd);
 void MenuResetIterations(HWND hWnd);
-void MenuGetCurPos(HWND hWnd);
+void MenuPaletteDepth(int depth);
 void MenuPaletteRotation(HWND hWnd);
 void MenuCreateNewPalette(HWND hWnd);
+void MenuGetCurPos(HWND hWnd);
 void MenuSaveCurrentLocation(HWND hWnd);
 void MenuSaveBMP(HWND hWnd);
 void MenuSaveHiResBMP(HWND hWnd);
@@ -347,20 +348,28 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     { gFractal->SetRenderAlgorithm('l');
     break;
     }
+    case IDM_ALG_GPU_1_64:
+    { gFractal->SetRenderAlgorithm('f');
+    break;
+    }
     case IDM_ALG_GPU_2_64:
     { gFractal->SetRenderAlgorithm('d');
     break;
     }
-    case IDM_ALG_GPU_1_64:
-    { gFractal->SetRenderAlgorithm('f');
+    case IDM_ALG_GPU_4_64:
+    { gFractal->SetRenderAlgorithm('q');
+    break;
+    }
+    case IDM_ALG_GPU_1_32:
+    { gFractal->SetRenderAlgorithm('F');
     break;
     }
     case IDM_ALG_GPU_2_32:
     { gFractal->SetRenderAlgorithm('D');
     break;
     }
-    case IDM_ALG_GPU_1_32:
-    { gFractal->SetRenderAlgorithm('F');
+    case IDM_ALG_GPU_4_32:
+    { gFractal->SetRenderAlgorithm('Q');
     break;
     }
     case IDM_ALG_GPU_2_64_32:
@@ -394,20 +403,40 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     { MenuResetIterations(hWnd);
     break;
     }
+
+
+    case IDM_PALETTEROTATE:
+    { MenuPaletteRotation(hWnd);
+    break;
+    }
+    case IDM_CREATENEWPALETTE:
+    {
+        MenuCreateNewPalette(hWnd);
+        break;
+    }
+
+    case IDM_PALETTE_8:
+    {
+        MenuPaletteDepth(8);
+        break;
+    }
+    case IDM_PALETTE_12:
+    {
+        MenuPaletteDepth(12);
+        break;
+    }
+    case IDM_PALETTE_16:
+    {
+        MenuPaletteDepth(16);
+        break;
+    }
+
     // Put the current window position on
     // the clipboard.  The coordinates put
     // on the clipboard are the "calculator"
     // coordinates, not screen coordinates.
     case IDM_CURPOS:
     { MenuGetCurPos(hWnd);
-    break;
-    }
-    case IDM_PALETTEROTATE:
-    { MenuPaletteRotation(hWnd);
-    break;
-    }
-    case IDM_CREATENEWPALETTE:
-    { MenuCreateNewPalette(hWnd);
     break;
     }
     // Save/load current location
@@ -821,6 +850,11 @@ void MenuPaletteRotation(HWND)
 
     gFractal->ResetFractalPalette();
     gFractal->DrawFractal(false);
+}
+
+void MenuPaletteDepth(int depth)
+{
+    gFractal->UsePalette(depth);
 }
 
 void MenuCreateNewPalette(HWND)

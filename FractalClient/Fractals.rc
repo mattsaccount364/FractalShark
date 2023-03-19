@@ -107,10 +107,12 @@ BEGIN
             MENUITEM "Very High Precision CPU",     IDM_ALG_CPU_HIGH
             MENUITEM "1x64 CPU",                    IDM_ALG_CPU_1_64
             MENUITEM "2x64 GPU",                    IDM_ALG_GPU_2_64
+            MENUITEM "4x64 GPU",                    IDM_ALG_GPU_4_64
             MENUITEM "1x64 GPU",                    IDM_ALG_GPU_1_64
             MENUITEM "2x32 GPU",                    IDM_ALG_GPU_2_32
+            MENUITEM "4x32 GPU (broken)",           IDM_ALG_GPU_4_32
             MENUITEM "1x32 GPU",                    IDM_ALG_GPU_1_32
-            MENUITEM "~64 GPU Combo",               IDM_ALG_GPU_2_64_32
+            MENUITEM "~64 GPU combo (broken)",      IDM_ALG_GPU_2_64_32
         END
         MENUITEM "De&fault Iterations",         IDM_RESETITERATIONS
         POPUP "&Increase Iterations"
@@ -121,10 +123,16 @@ BEGIN
         END
         MENUITEM "&Decrease Iterations",        IDM_DECREASEITERATIONS
         MENUITEM SEPARATOR
-        MENUITEM "Current Position",            IDM_CURPOS
+        POPUP "Palette Color Depth"
+        BEGIN
+            MENUITEM "8-bit",                       IDM_PALETTE_8
+            MENUITEM "12-bit",                      IDM_PALETTE_12
+            MENUITEM "16-bit",                      IDM_PALETTE_16
+        END
         MENUITEM "Pa&lette Rotation",           IDM_PALETTEROTATE
         MENUITEM "&Create New Palette",         IDM_CREATENEWPALETTE
         MENUITEM SEPARATOR
+        MENUITEM "Current Position",            IDM_CURPOS
         MENUITEM "Save Location...",            IDM_SAVELOCATION
         MENUITEM "Load Location...",            IDM_LOADLOCATION, GRAYED
         MENUITEM "Save Bitmap Ima&ge",          IDM_SAVEBMP

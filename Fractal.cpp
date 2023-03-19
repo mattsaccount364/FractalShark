@@ -18,8 +18,6 @@
 #include "FractalNetwork.h"
 #include "FractalSetupData.h"
 #include "CBitmapWriter.h"
-//#include "..\cximage599a_full\CxImage\xImage.h"
-#include "..\WPngImage\WPngImage.hh"
 
 #include <thread>
 
@@ -45,7 +43,7 @@ Fractal::~Fractal()
 
 void Fractal::Initialize(int width,
     int height,
-    void(*pOutputMessage) (const wchar_t *, ...),
+    void(*pOutputMessage) (const wchar_t*, ...),
     HWND hWnd,
     bool UseSensoCursor)
 { // Create the control-key-down/mouse-movement-monitoring thread.
@@ -86,24 +84,34 @@ void Fractal::Initialize(int width,
     m_ChangedIterations = true;
 
     // Initialize the palette
-    m_PalR = new unsigned short[MAXITERS];
-    m_PalG = new unsigned short[MAXITERS];
-    m_PalB = new unsigned short[MAXITERS];
-    m_PaletteRotate = 0;
+    auto PaletteGen = [&](size_t PaletteIndex, size_t Depth) {
+        m_PalR[PaletteIndex].resize(MAXITERS);
+        m_PalG[PaletteIndex].resize(MAXITERS);
+        m_PalB[PaletteIndex].resize(MAXITERS);
 
-    PalTransition(0, MAXITERS, MAXITERS, 0, 0, 0);
-    int index = 0;
-    for (;;)
-    {
-        int max_val = 65535;
-        index = PalTransition(index, 4096, MAXITERS, max_val, 0, 0);       if (index == -1) break;
-        index = PalTransition(index, 4096, MAXITERS, max_val, max_val, 0); if (index == -1) break;
-        index = PalTransition(index, 4096, MAXITERS, 0, max_val, 0);       if (index == -1) break;
-        index = PalTransition(index, 4096, MAXITERS, 0, max_val, max_val); if (index == -1) break;
-        index = PalTransition(index, 4096, MAXITERS, 0, 0, max_val);       if (index == -1) break;
-        index = PalTransition(index, 4096, MAXITERS, max_val, 0, max_val); if (index == -1) break;
-        index = PalTransition(index, 4096, MAXITERS, 0, 0, 0);             if (index == -1) break;
-    }
+        int index = 0;
+        PalTransition(PaletteIndex, 0, MAXITERS, 0, 0, 0);
+        for (;;)
+        {
+            int max_val = 65535;
+            index = PalTransition(PaletteIndex, index, 1 << Depth, max_val, 0, 0);       if (index == -1) break;
+            index = PalTransition(PaletteIndex, index, 1 << Depth, max_val, max_val, 0); if (index == -1) break;
+            index = PalTransition(PaletteIndex, index, 1 << Depth, 0, max_val, 0);       if (index == -1) break;
+            index = PalTransition(PaletteIndex, index, 1 << Depth, 0, max_val, max_val); if (index == -1) break;
+            index = PalTransition(PaletteIndex, index, 1 << Depth, 0, 0, max_val);       if (index == -1) break;
+            index = PalTransition(PaletteIndex, index, 1 << Depth, max_val, 0, max_val); if (index == -1) break;
+            index = PalTransition(PaletteIndex, index, 1 << Depth, 0, 0, 0);             if (index == -1) break;
+        }
+    };
+
+    std::vector<std::unique_ptr<std::thread>> threads;
+    std::unique_ptr<std::thread> t1(new std::thread(PaletteGen, 0, 8));
+    std::unique_ptr<std::thread> t2(new std::thread(PaletteGen, 1, 12));
+    std::unique_ptr<std::thread> t3(new std::thread(PaletteGen, 2, 16));
+
+    m_PaletteDepth = 8;
+    m_PaletteDepthIndex = 0;
+    m_PaletteRotate = 0;
 
     // Allocate the iterations array.
     int i;
@@ -115,6 +123,11 @@ void Fractal::Initialize(int width,
     }
 
     m_RatioMemory = nullptr; // Lazy init later
+
+    // Wait for all this shit to get done
+    t1->join();
+    t2->join();
+    t3->join();
 
     // Initialize the networking
     for (i = 0; i < MAXSERVERS; i++)
@@ -270,11 +283,6 @@ void Fractal::Uninitialize(void)
         delete m_ServerSubNetwork;
     }
 
-    // Deallocate the palette
-    delete[] m_PalR;
-    delete[] m_PalG;
-    delete[] m_PalB;
-
     // Deallocate the big arrays.
     int i;
     for (i = 0; i < MaxFractalSize; i++)
@@ -304,12 +312,12 @@ void Fractal::Uninitialize(void)
 // total_length = number of elements in pal.
 // e.g. unsigned char pal[256];
 //   total_length == 256
-bool Fractal::PalIncrease(unsigned short *pal, int i1, int length, int total_length, int val1, int val2)
+bool Fractal::PalIncrease(std::vector<uint16_t> &pal, int i1, int length, int val1, int val2)
 {
     double delta = (double)((double)(val2 - val1)) / length;
     for (int i = i1; i < i1 + length; i++)
     {
-        if (i >= total_length)  // Defensive programming
+        if (i >= pal.size())  // Defensive programming
         {
             return false;
         }
@@ -326,14 +334,14 @@ bool Fractal::PalIncrease(unsigned short *pal, int i1, int length, int total_len
 // length must be > 0
 // Returns index immediately following the last index we filled here
 // Returns -1 if we are at the end.
-int Fractal::PalTransition(int i1, int length, int total_length, int r, int g, int b)
+int Fractal::PalTransition(int PaletteIndex, int i1, int length, int r, int g, int b)
 {
     int curR, curB, curG;
     if (i1 > 0)
     {
-        curR = m_PalR[i1 - 1];
-        curG = m_PalG[i1 - 1];
-        curB = m_PalB[i1 - 1];
+        curR = m_PalR[PaletteIndex][i1 - 1];
+        curG = m_PalG[PaletteIndex][i1 - 1];
+        curB = m_PalB[PaletteIndex][i1 - 1];
     }
     else
     {
@@ -344,9 +352,9 @@ int Fractal::PalTransition(int i1, int length, int total_length, int r, int g, i
 
     // This code will fill out the palettes to the very end.
     bool shouldcontinue;
-    shouldcontinue = PalIncrease(m_PalR, i1, length, total_length, curR, r);
-    shouldcontinue &= PalIncrease(m_PalG, i1, length, total_length, curG, g);
-    shouldcontinue &= PalIncrease(m_PalB, i1, length, total_length, curB, b);
+    shouldcontinue = PalIncrease(m_PalR[PaletteIndex], i1, length, curR, r);
+    shouldcontinue &= PalIncrease(m_PalG[PaletteIndex], i1, length, curG, g);
+    shouldcontinue &= PalIncrease(m_PalB[PaletteIndex], i1, length, curB, b);
 
     if (shouldcontinue)
     {
@@ -462,6 +470,24 @@ bool Fractal::CenterAtPoint(int x, int y)
 //////////////////////////////////////////////////////////////////////////////
 void Fractal::StandardView(void)
 {
+    // Limits of 4x64 GPU
+    HighPrecision minX = HighPrecision{ "-1.763399177066752695854220120818493394874764715075525070697085376173644156624573649873526729559691534754284706803085481158" };
+    HighPrecision minY = HighPrecision{ "0.04289211262806512836473285627858318635734695759291867302112730624188941270466703058975670804976478935827994844038526618063053858" };
+    HighPrecision maxX = HighPrecision{ "-1.763399177066752695854220120818493394874764715075525070697085355870272824868052108014289980411203646967653925705407102169" };
+    HighPrecision maxY = HighPrecision{ "0.04289211262806512836473285627858318635734695759291867302112731461463330922125985949917962768812338316745717506303752530265831841" };
+
+    // Limits of 4x32 GPU
+    HighPrecision minX = HighPrecision{ "-1.768969486867357972775564951275461551052751499509997185691881950786253743769635708375905775793656954725307354460920979983" };
+    HighPrecision minY = HighPrecision{ "0.05699280690304670893115636892860647833175463644922652375916712719872599382335388157040896288795946562522749757591414246314107544" };
+    HighPrecision maxX = HighPrecision{ "-1.768969486867357972775564950929487934553496494563941335911085292699250368065865432159590460057564657941788398574759610411" };
+    HighPrecision maxY = HighPrecision{ "0.05699280690304670893115636907127975355127952306391692141273804706041783710937876987367435542131127321801128526034375237132904264" };
+
+    //HighPrecision minX = HighPrecision{"-0.58495503626130003601029848213118066005878420809359614438890887303577302491190715010346117018574877216397030492770124781195671802"};
+    //HighPrecision minY = HighPrecision{"0.65539077238267043815632402306524090571012503143059005580600414572477379600345575745505251230357715199720080866919744892255565016"};
+    //HighPrecision maxX = HighPrecision{"-0.58495503626130003601029848186508480376748852380830163262290451155972369401636122663125472706742227530136237906642559212881715395"};
+    //HighPrecision maxY = HighPrecision{"0.65539077238267043815632402317497403427516092222190248300856418146463464284705444362984488601344316801714300684703725236796367606" };
+    //RecenterViewCalc(minX, minY, maxX, maxY);
+
     RecenterViewCalc(-2.5, -1.5, 1.5, 1.5);
     ResetNumIterations();
 }
@@ -828,10 +854,12 @@ void Fractal::CalcFractal(bool MemoryOnly)
     switch(GetRenderAlgorithm()) {
     case 'B':
         FillRatioArrayIfNeeded();
+    case 'q':
     case 'd':
     case 'f':
     case 'D':
     case 'F':
+    case 'Q':
         CalcGpuFractal(MemoryOnly);
         break;
     default:
@@ -857,6 +885,30 @@ void Fractal::CalcFractal(bool MemoryOnly)
     SetCursor(LoadCursor(NULL, IDC_ARROW));
 }
 
+void Fractal::UsePalette(int depth)
+{
+    switch (depth) {
+    case 8:
+        m_PaletteDepthIndex = 0;
+        m_PaletteDepth = depth;
+        break;
+    case 12:
+        m_PaletteDepthIndex = 1;
+        m_PaletteDepth = depth;
+        break;
+    case 16:
+        m_PaletteDepthIndex = 2;
+        m_PaletteDepth = depth;
+        break;
+    default:
+        m_PaletteDepthIndex = 0;
+        m_PaletteDepth = 8;
+        break;
+    }
+
+    DrawFractal(false);
+}
+
 void Fractal::ResetFractalPalette(void)
 {
     m_PaletteRotate = 0;
@@ -873,24 +925,24 @@ void Fractal::RotateFractalPalette(int delta)
 
 void Fractal::CreateNewFractalPalette(void)
 {
-    int index, i;
+    //int index, i;
 
-    srand((unsigned int)time(NULL));
-    index = 0;
-    index = PalTransition(index, 256, MAXITERS, (rand() % 2) * 255, (rand() % 2) * 255, (rand() % 2) * 255);
-    if (index != -1)
-    {
-        for (i = 0; i < 1000; i++)
-        {
-            index = PalTransition(index, 256, MAXITERS, (rand() % 4) * 85, (rand() % 4) * 85, (rand() % 4) * 85);
-            if (index == -1)
-            {
-                break;
-            }
-        }
-    }
+    //srand((unsigned int)time(NULL));
+    //index = 0;
+    //index = PalTransition(index, 256, MAXITERS, (rand() % 2) * 255, (rand() % 2) * 255, (rand() % 2) * 255);
+    //if (index != -1)
+    //{
+    //    for (i = 0; i < 1000; i++)
+    //    {
+    //        index = PalTransition(index, 256, MAXITERS, (rand() % 4) * 85, (rand() % 4) * 85, (rand() % 4) * 85);
+    //        if (index == -1)
+    //        {
+    //            break;
+    //        }
+    //    }
+    //}
 
-    DrawFractal(false);
+    //DrawFractal(false);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -905,10 +957,10 @@ void Fractal::DrawFractal(bool MemoryOnly)
         return;
     }
 
-    if (m_SetupData.m_AltDraw == 'y') {
-        DrawFractal2();
-    }
-    else {
+    //if (m_SetupData.m_AltDraw == 'y') {
+        // DrawFractal2();
+    //}
+    //else {
         size_t py;
 
         //glClear(GL_COLOR_BUFFER_BIT);
@@ -916,7 +968,7 @@ void Fractal::DrawFractal(bool MemoryOnly)
         for (py = 0; py < m_ScrnHeight; py++) {
             DrawFractalLine(py);
         }
-    }
+    //}
 }
 
 void Fractal::DrawFractalLine(size_t output_y)
@@ -953,9 +1005,9 @@ void Fractal::DrawFractalLine(size_t output_y)
                         numIters -= MAXITERS;
                     }
 
-                    acc_r += m_PalR[numIters] / 65536.0f;
-                    acc_g += m_PalG[numIters] / 65536.0f;
-                    acc_b += m_PalB[numIters] / 65536.0f;
+                    acc_r += m_PalR[m_PaletteDepthIndex][numIters] / 65536.0f;
+                    acc_g += m_PalG[m_PaletteDepthIndex][numIters] / 65536.0f;
+                    acc_b += m_PalB[m_PaletteDepthIndex][numIters] / 65536.0f;
                 }
             }
         }
@@ -976,29 +1028,29 @@ void Fractal::DrawFractalLine(size_t output_y)
 
 void Fractal::DrawFractal2(void)
 {
-    glClear(GL_COLOR_BUFFER_BIT);
-    glRasterPos2i(0, 0);
+    //glClear(GL_COLOR_BUFFER_BIT);
+    //glRasterPos2i(0, 0);
 
-    unsigned short *data = new unsigned short[m_ScrnWidth * m_ScrnHeight * 3];
+    //unsigned short *data = new unsigned short[m_ScrnWidth * m_ScrnHeight * 3];
 
-    size_t x, y, i = 0;
-    for (y = m_ScrnHeight - 1; y >= 0; y--)
-    {
-        for (x = 0; x < m_ScrnWidth; x++)
-        {
-            data[i] = m_PalR[(m_ItersArray[y][x] == m_NumIterations) ? 0 : ((m_ItersArray[y][x] + m_PaletteRotate) % MAXITERS)];
-            i++;
-            data[i] = m_PalG[(m_ItersArray[y][x] == m_NumIterations) ? 0 : ((m_ItersArray[y][x] + m_PaletteRotate) % MAXITERS)];
-            i++;
-            data[i] = m_PalB[(m_ItersArray[y][x] == m_NumIterations) ? 0 : ((m_ItersArray[y][x] + m_PaletteRotate) % MAXITERS)];
-            i++;
-        }
-    }
+    //size_t x, y, i = 0;
+    //for (y = m_ScrnHeight - 1; y >= 0; y--)
+    //{
+    //    for (x = 0; x < m_ScrnWidth; x++)
+    //    {
+    //        data[i] = m_PalR[(m_ItersArray[y][x] == m_NumIterations) ? 0 : ((m_ItersArray[y][x] + m_PaletteRotate) % MAXITERS)];
+    //        i++;
+    //        data[i] = m_PalG[(m_ItersArray[y][x] == m_NumIterations) ? 0 : ((m_ItersArray[y][x] + m_PaletteRotate) % MAXITERS)];
+    //        i++;
+    //        data[i] = m_PalB[(m_ItersArray[y][x] == m_NumIterations) ? 0 : ((m_ItersArray[y][x] + m_PaletteRotate) % MAXITERS)];
+    //        i++;
+    //    }
+    //}
 
-    glDrawPixels((GLint)m_ScrnWidth, (GLint)m_ScrnHeight, GL_RGB, GL_UNSIGNED_SHORT, data);
+    //glDrawPixels((GLint)m_ScrnWidth, (GLint)m_ScrnHeight, GL_RGB, GL_UNSIGNED_SHORT, data);
 
-    glFlush();
-    delete[] data;
+    //glFlush();
+    //delete[] data;
 }
 
 void Fractal::FillRatioMemory(double Ratio, double &FinalRatio) {
@@ -1101,9 +1153,50 @@ void Fractal::CalcGpuFractal(bool MemoryOnly)
 
     MattCoords cx2{}, cy2{}, dx2{}, dy2{};
 
-    // TODO this 'd' algorithm is wrong.
     // 'f' works fine.
-    // 'd' - how do we get more precision out of HighPrecision
+    // 'd' - double double
+
+    // 4x32 bit
+    cx2.qflt.v1 = Convert<HighPrecision, float>(m_MinX);
+    cx2.qflt.v2 = Convert<HighPrecision, float>(m_MinX - HighPrecision{ cx2.qflt.v1 });
+    cx2.qflt.v3 = Convert<HighPrecision, float>(m_MinX - HighPrecision{ cx2.qflt.v1 } - HighPrecision{ cx2.qflt.v2 });
+    cx2.qflt.v4 = Convert<HighPrecision, float>(m_MinX - HighPrecision{ cx2.qflt.v1 } - HighPrecision{ cx2.qflt.v2 } - HighPrecision{ cx2.qflt.v3 });
+
+    cy2.qflt.v1 = Convert<HighPrecision, float>(m_MinY);
+    cy2.qflt.v2 = Convert<HighPrecision, float>(m_MinY - HighPrecision{ cy2.qflt.v1 });
+    cy2.qflt.v3 = Convert<HighPrecision, float>(m_MinY - HighPrecision{ cy2.qflt.v1 } - HighPrecision{ cy2.qflt.v2 });
+    cy2.qflt.v4 = Convert<HighPrecision, float>(m_MinY - HighPrecision{ cy2.qflt.v1 } - HighPrecision{ cy2.qflt.v2 } - HighPrecision{ cy2.qflt.v3 });
+
+    dx2.qflt.v1 = Convert<HighPrecision, float>(src_dx);
+    dx2.qflt.v2 = Convert<HighPrecision, float>(src_dx - HighPrecision{ dx2.qflt.v1 });
+    dx2.qflt.v3 = Convert<HighPrecision, float>(src_dx - HighPrecision{ dx2.qflt.v1 } - HighPrecision{ dx2.qflt.v2 });
+    dx2.qflt.v4 = Convert<HighPrecision, float>(src_dx - HighPrecision{ dx2.qflt.v1 } - HighPrecision{ dx2.qflt.v2 } - HighPrecision{ dx2.qflt.v3 });
+
+    dy2.qflt.v1 = Convert<HighPrecision, float>(src_dy);
+    dy2.qflt.v2 = Convert<HighPrecision, float>(src_dy - HighPrecision{ dy2.qflt.v1 });
+    dy2.qflt.v3 = Convert<HighPrecision, float>(src_dy - HighPrecision{ dy2.qflt.v1 } - HighPrecision{ dy2.qflt.v2 });
+    dy2.qflt.v4 = Convert<HighPrecision, float>(src_dy - HighPrecision{ dy2.qflt.v1 } - HighPrecision{ dy2.qflt.v2 } - HighPrecision{ dy2.qflt.v3 });
+
+    // 4x64 bit
+    cx2.qdbl.v1 = Convert<HighPrecision, double>(m_MinX);
+    cx2.qdbl.v2 = Convert<HighPrecision, double>(m_MinX - HighPrecision{ cx2.qdbl.v1 });
+    cx2.qdbl.v3 = Convert<HighPrecision, double>(m_MinX - HighPrecision{ cx2.qdbl.v1 } - HighPrecision{ cx2.qdbl.v2 });
+    cx2.qdbl.v4 = Convert<HighPrecision, double>(m_MinX - HighPrecision{ cx2.qdbl.v1 } - HighPrecision{ cx2.qdbl.v2 } - HighPrecision{ cx2.qdbl.v3 });
+
+    cy2.qdbl.v1 = Convert<HighPrecision, double>(m_MinY);
+    cy2.qdbl.v2 = Convert<HighPrecision, double>(m_MinY - HighPrecision{ cy2.qdbl.v1 });
+    cy2.qdbl.v3 = Convert<HighPrecision, double>(m_MinY - HighPrecision{ cy2.qdbl.v1 } - HighPrecision{ cy2.qdbl.v2 });
+    cy2.qdbl.v4 = Convert<HighPrecision, double>(m_MinY - HighPrecision{ cy2.qdbl.v1 } - HighPrecision{ cy2.qdbl.v2 } - HighPrecision{ cy2.qdbl.v3 });
+
+    dx2.qdbl.v1 = Convert<HighPrecision, double>(src_dx);
+    dx2.qdbl.v2 = Convert<HighPrecision, double>(src_dx - HighPrecision{ dx2.qdbl.v1 });
+    dx2.qdbl.v3 = Convert<HighPrecision, double>(src_dx - HighPrecision{ dx2.qdbl.v1 } - HighPrecision{ dx2.qdbl.v2 });
+    dx2.qdbl.v4 = Convert<HighPrecision, double>(src_dx - HighPrecision{ dx2.qdbl.v1 } - HighPrecision{ dx2.qdbl.v2 } - HighPrecision{ dx2.qdbl.v3 });
+
+    dy2.qdbl.v1 = Convert<HighPrecision, double>(src_dy);
+    dy2.qdbl.v2 = Convert<HighPrecision, double>(src_dy - HighPrecision{ dy2.qdbl.v1 });
+    dy2.qdbl.v3 = Convert<HighPrecision, double>(src_dy - HighPrecision{ dy2.qdbl.v1 } - HighPrecision{ dy2.qdbl.v2 });
+    dy2.qdbl.v4 = Convert<HighPrecision, double>(src_dy - HighPrecision{ dy2.qdbl.v1 } - HighPrecision{ dy2.qdbl.v2 } - HighPrecision{ dy2.qdbl.v3 });
 
     // 2x64 bit
     cx2.dbl.head = dbl_cx;
@@ -1506,9 +1599,9 @@ int Fractal::SaveCurrentFractal(const std::wstring filename_base)
                             numIters -= MAXITERS;
                         }
 
-                        acc_r += m_PalR[numIters];
-                        acc_g += m_PalG[numIters];
-                        acc_b += m_PalB[numIters];
+                        acc_r += m_PalR[m_PaletteDepthIndex][numIters];
+                        acc_g += m_PalG[m_PaletteDepthIndex][numIters];
+                        acc_b += m_PalB[m_PaletteDepthIndex][numIters];
                     }
                 }
             }
@@ -1555,7 +1648,7 @@ int Fractal::SaveCurrentFractal(const std::wstring filename_base)
 
     const std::string filename_png_c(filename_png.begin(), filename_png.end());
 
-    image.saveImage(filename_png_c, WPngImage::PngFileFormat::kPngFileFormat_RGBA16);
+    ret = image.saveImage(filename_png_c, WPngImage::PngFileFormat::kPngFileFormat_RGBA16);
 
     //delete[] data;
 

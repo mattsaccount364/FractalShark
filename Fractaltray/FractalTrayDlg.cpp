@@ -9,7 +9,7 @@
 #include <math.h>
 #include <io.h>
 #include "..\Fractal.h"
-#include "..\cximage599a_full\CxImage\xImage.h"
+//#include "..\cximage599a_full\CxImage\xImage.h"
 
 #ifdef _DEBUG
 #define new DEBUG_NEW

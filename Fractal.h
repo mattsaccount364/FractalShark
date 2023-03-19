@@ -21,6 +21,7 @@
 #include "FractalNetwork.h"
 #include "render_gpu.h"
 
+#include "..\WPngImage\WPngImage.hh"
 #include <boost/multiprecision/cpp_dec_float.hpp>
 
 const int MAXITERS = 256 * 256 * 256 * 32;
@@ -55,8 +56,8 @@ private:
         HWND hWnd,
         bool UseSensoCursor);
     void Uninitialize(void);
-    bool PalIncrease(unsigned short *pal, int i1, int length, int total_length, int val1, int val2);
-    int PalTransition(int i1, int length, int total_length, int r, int g, int b);
+    bool PalIncrease(std::vector<uint16_t>& pal, int i1, int length, int val1, int val2);
+    int PalTransition(int paletteIndex, int i1, int length, int r, int g, int b);
 
 public:
     static unsigned long WINAPI CheckForAbortThread(void *fractal);
@@ -123,6 +124,7 @@ public: // Drawing functions
     void DrawFractal(bool MemoryOnly);
     void DrawFractal2(void);
 
+    void UsePalette(int depth);
     void ResetFractalPalette(void);
     void RotateFractalPalette(int delta);
     void CreateNewFractalPalette(void);
@@ -249,8 +251,11 @@ private:
     uint32_t m_RenderAlgorithm;
 
     // The palette!
-    unsigned short *m_PalR, *m_PalG, *m_PalB;
+    std::vector<uint16_t> m_PalR[3], m_PalG[3], m_PalB[3];
     int m_PaletteRotate; // Used to shift the palette
+    int m_PaletteDepth; // 8, 12, 16
+    int m_PaletteDepthIndex; // 0, 1, 2
+    static constexpr int NumPalettes = 3;
 
     // Holds the number of iterations it took to decide if
     // we were in or not in the fractal.  Has a number

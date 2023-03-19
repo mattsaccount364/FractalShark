@@ -80,7 +80,7 @@
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SDLCheck>false</SDLCheck>
-      <AdditionalIncludeDirectories>..\boost_1_58_0;..\WPngImage</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\boost_1_58_0;..\WPngImage;..\QuadDouble\inc</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
     </ClCompile>
     <ResourceCompile>
@@ -129,7 +129,7 @@
       <WarningLevel>Level4</WarningLevel>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <SDLCheck>false</SDLCheck>
-      <AdditionalIncludeDirectories>..\boost_1_58_0;..\WPngImage</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\boost_1_58_0;..\WPngImage;..\QuadDouble\inc</AdditionalIncludeDirectories>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
       <OmitFramePointers>true</OmitFramePointers>
       <IntrinsicFunctions>true</IntrinsicFunctions>
@@ -210,6 +210,15 @@
     <ClInclude Include="..\Fractal.h" />
     <ClInclude Include="..\FractalNetwork.h" />
     <ClInclude Include="..\FractalSetupData.h" />
+    <ClInclude Include="..\QuadDouble\common.cuh" />
+    <ClInclude Include="..\QuadDouble\cuda_header.cuh" />
+    <ClInclude Include="..\QuadDouble\gqd_basic.cuh" />
+    <ClInclude Include="..\QuadDouble\gqd_type.h" />
+    <ClInclude Include="..\QuadDouble\inline.cuh" />
+    <ClInclude Include="..\QuadFloat\common.cuh" />
+    <ClInclude Include="..\QuadFloat\cuda_header.cuh" />
+    <ClInclude Include="..\QuadFloat\gqf_basic.cuh" />
+    <ClInclude Include="..\QuadFloat\inline.cuh" />
     <ClInclude Include="..\render_gpu.h" />
     <ClInclude Include="..\WPngImage\lodepng.h" />
     <ClInclude Include="..\WPngImage\WPngImage.hh" />
@@ -227,17 +236,6 @@
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="..\render_gpu.cu" />
-  </ItemGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\cximage599a_full\CxImage\cximage.vcxproj">
-      <Project>{d2882fdc-d20e-46a3-adad-61c0518bc0e9}</Project>
-    </ProjectReference>
-    <ProjectReference Include="..\cximage599a_full\png\png.vcxproj">
-      <Project>{9ba118a4-d036-4c77-b10d-f442b52120cc}</Project>
-    </ProjectReference>
-    <ProjectReference Include="..\cximage599a_full\zlib\zlib.vcxproj">
-      <Project>{a9355e88-d91a-45b3-98a1-573f1df4fd4f}</Project>
-    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

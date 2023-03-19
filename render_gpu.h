@@ -11,9 +11,23 @@ struct MattDblflt {
     float tail;
 };
 
+struct MattQFltflt {
+    float v1; // MSB
+    float v2;
+    float v3;
+    float v4; // LSB
+};
+
 struct MattDbldbl {
     double head;
     double tail;
+};
+
+struct MattQDbldbl {
+    double v1; // MSB
+    double v2;
+    double v3;
+    double v4; // LSB
 };
 
 struct MattCoords {
@@ -21,6 +35,8 @@ struct MattCoords {
     double doubleOnly;
     MattDblflt flt;
     MattDbldbl dbl;
+    MattQDbldbl qdbl;
+    MattQFltflt qflt;
 };
 
 class GPURenderer {

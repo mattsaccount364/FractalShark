@@ -14,12 +14,6 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalMovie", "..\FractalM
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalTray", "..\FractalTray\FractalTray.vcxproj", "{B7468E51-1CF3-4959-B1C8-394EA78CE79C}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "CxImage", "..\cximage599a_full\CxImage\cximage.vcxproj", "{D2882FDC-D20E-46A3-ADAD-61C0518BC0E9}"
-EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "png", "..\cximage599a_full\png\png.vcxproj", "{9BA118A4-D036-4C77-B10D-F442B52120CC}"
-EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "zlib", "..\cximage599a_full\zlib\zlib.vcxproj", "{A9355E88-D91A-45B3-98A1-573F1DF4FD4F}"
-EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -50,18 +44,6 @@ Global
 		{B7468E51-1CF3-4959-B1C8-394EA78CE79C}.Debug|x64.Build.0 = Debug|x64
 		{B7468E51-1CF3-4959-B1C8-394EA78CE79C}.Release|x64.ActiveCfg = Release|x64
 		{B7468E51-1CF3-4959-B1C8-394EA78CE79C}.Release|x64.Build.0 = Release|x64
-		{D2882FDC-D20E-46A3-ADAD-61C0518BC0E9}.Debug|x64.ActiveCfg = Debug|x64
-		{D2882FDC-D20E-46A3-ADAD-61C0518BC0E9}.Debug|x64.Build.0 = Debug|x64
-		{D2882FDC-D20E-46A3-ADAD-61C0518BC0E9}.Release|x64.ActiveCfg = Release|x64
-		{D2882FDC-D20E-46A3-ADAD-61C0518BC0E9}.Release|x64.Build.0 = Release|x64
-		{9BA118A4-D036-4C77-B10D-F442B52120CC}.Debug|x64.ActiveCfg = Debug|x64
-		{9BA118A4-D036-4C77-B10D-F442B52120CC}.Debug|x64.Build.0 = Debug|x64
-		{9BA118A4-D036-4C77-B10D-F442B52120CC}.Release|x64.ActiveCfg = Release|x64
-		{9BA118A4-D036-4C77-B10D-F442B52120CC}.Release|x64.Build.0 = Release|x64
-		{A9355E88-D91A-45B3-98A1-573F1DF4FD4F}.Debug|x64.ActiveCfg = Debug|x64
-		{A9355E88-D91A-45B3-98A1-573F1DF4FD4F}.Debug|x64.Build.0 = Debug|x64
-		{A9355E88-D91A-45B3-98A1-573F1DF4FD4F}.Release|x64.ActiveCfg = Release|x64
-		{A9355E88-D91A-45B3-98A1-573F1DF4FD4F}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -4,10 +4,146 @@
 #include "render_gpu.h"
 #include "dbldbl.cuh"
 #include "dblflt.cuh"
+#include "../QuadDouble/gqd_basic.cuh"
+#include "../QuadFloat/gqf_basic.cuh"
 
 // Match in Fractal.cpp
 constexpr static auto NB_THREADS_W = 16;
 constexpr static auto NB_THREADS_H = 8;
+
+
+__global__
+void mandel_4x_float(int* iter_matrix,
+    int width,
+    int height,
+    GQF::gqf_real cx,
+    GQF::gqf_real cy,
+    GQF::gqf_real dx,
+    GQF::gqf_real dy,
+    int n_iterations)
+{
+    using namespace GQF;
+    int X = blockIdx.x * blockDim.x + threadIdx.x;
+    int Y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (X >= width || Y >= height)
+        return;
+
+    size_t idx = width * (height - Y - 1) + X;
+
+    // Approach 2
+    //// For reference
+    ////{
+    ////    x = 0;
+    ////    y = 0;
+    ////    float zrsqr = x * x;
+    ////    float zisqr = y * y;
+    ////    while (zrsqr + zisqr <= 4.0 && iter < n_iterations)
+    ////    {
+    ////        y = x * y;
+    ////        y += y; // Multiply by two
+    ////        y += y0;
+    ////        x = zrsqr - zisqr + x0;
+    ////        zrsqr = x * x;
+    ////        zisqr = y * y;
+    ////        iter++;
+    ////    }
+    ////}
+
+    int iter = 0;
+    gqf_real x = make_qf(0.0f, 0.0f, 0.0f, 0.0f);
+    gqf_real y = make_qf(0.0f, 0.0f, 0.0f, 0.0f);
+
+    gqf_real y0;
+    gqf_real Y_QF = make_qf(Y, 0.0f, 0.0f, 0.0f);
+    y0 = cy + dy * Y_QF;
+
+    gqf_real x0;
+    gqf_real X_QF = make_qf(X, 0.0f, 0.0f, 0.0f);
+    x0 = cx + dx * X_QF;
+
+    gqf_real four;
+    four = make_qf(4.0f, 0.0f, 0.0f, 0.0f);
+
+    gqf_real zrsqr = sqr(x);
+    gqf_real zisqr = sqr(y);
+    while (zrsqr + zisqr <= four && iter < n_iterations)
+    {
+        y = x * y;
+        y = mul_pwr2(y, 2.0f); // Multiply by two
+        y = y + y0;
+        x = zrsqr - zisqr + x0;
+        zrsqr = sqr(x);
+        zisqr = sqr(y);
+        iter++;
+    }
+
+    iter_matrix[idx] = iter;
+}
+
+__global__
+void mandel_4x_double(int* iter_matrix,
+    int width,
+    int height,
+    GQD::gqd_real cx,
+    GQD::gqd_real cy,
+    GQD::gqd_real dx,
+    GQD::gqd_real dy,
+    int n_iterations)
+{
+    using namespace GQD;
+    int X = blockIdx.x * blockDim.x + threadIdx.x;
+    int Y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (X >= width || Y >= height)
+        return;
+
+    size_t idx = width * (height - Y - 1) + X;
+
+    // Approach 2
+    //// For reference
+    ////{
+    ////    x = 0;
+    ////    y = 0;
+    ////    float zrsqr = x * x;
+    ////    float zisqr = y * y;
+    ////    while (zrsqr + zisqr <= 4.0 && iter < n_iterations)
+    ////    {
+    ////        y = x * y;
+    ////        y += y; // Multiply by two
+    ////        y += y0;
+    ////        x = zrsqr - zisqr + x0;
+    ////        zrsqr = x * x;
+    ////        zisqr = y * y;
+    ////        iter++;
+    ////    }
+    ////}
+
+    int iter = 0;
+    gqd_real x = make_qd(0, 0, 0, 0);
+    gqd_real y = make_qd(0, 0, 0, 0);
+    gqd_real y0;
+    y0 = cy + dy * Y;
+
+    gqd_real x0;
+    x0 = cx + dx * X;
+
+    gqd_real zrsqr = x * x;
+    gqd_real zisqr = y * y;
+    while (zrsqr + zisqr <= 4.0 && iter < n_iterations)
+    {
+        y = x * y;
+        y = y * 2.0; // Multiply by two
+        y = y + y0;
+        x = zrsqr - zisqr + x0;
+        zrsqr = x * x;
+        zisqr = y * y;
+        iter++;
+    }
+
+    iter_matrix[idx] = iter;
+}
+
 
 /*
 * 
@@ -71,8 +207,7 @@ void mandel_2x_double(int* iter_matrix,
     dbldbl x0;
     x0 = add_dbldbl(cx2, mul_dbldbl(dx2, X2));
 
-    dbldbl y0 =
-    y0 = add_dbldbl(cy2, mul_dbldbl(dy2, Y2));
+    dbldbl y0 = add_dbldbl(cy2, mul_dbldbl(dy2, Y2));
 
     dbldbl x = add_double_to_dbldbl(0,0);
     dbldbl y = add_double_to_dbldbl(0, 0);
@@ -735,6 +870,24 @@ void GPURenderer::render_gpu2(
             local_width, local_height, cx2, cy2, dx2, dy2,
             n_iterations);
     }
+    else if (algorithm == 'q') {
+        using namespace GQD;
+        gqd_real cx2;
+        cx2 = make_qd(cx.qdbl.v1, cx.qdbl.v2, cx.qdbl.v3, cx.qdbl.v4);
+
+        gqd_real cy2;
+        cy2 = make_qd(cy.qdbl.v1, cy.qdbl.v2, cy.qdbl.v3, cy.qdbl.v4);
+
+        gqd_real dx2;
+        dx2 = make_qd(dx.qdbl.v1, dx.qdbl.v2, dx.qdbl.v3, dx.qdbl.v4);
+
+        gqd_real dy2;
+        dy2 = make_qd(dy.qdbl.v1, dy.qdbl.v2, dy.qdbl.v3, dy.qdbl.v4);
+
+        mandel_4x_double << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
+            local_width, local_height, cx2, cy2, dx2, dy2,
+            n_iterations);
+    }
     else if (algorithm == 'F') {
         switch (iteration_precision) {
         case 1:
@@ -791,6 +944,24 @@ void GPURenderer::render_gpu2(
         default:
             break;
         }
+    }
+    else if (algorithm == 'Q') {
+        using namespace GQF;
+        gqf_real cx2;
+        cx2 = make_qf(cx.qflt.v1, cx.qflt.v2, cx.qflt.v3, cx.qflt.v4);
+
+        gqf_real cy2;
+        cy2 = make_qf(cy.qflt.v1, cy.qflt.v2, cy.qflt.v3, cy.qflt.v4);
+
+        gqf_real dx2;
+        dx2 = make_qf(dx.qflt.v1, dx.qflt.v2, dx.qflt.v3, dx.qflt.v4);
+
+        gqf_real dy2;
+        dy2 = make_qf(dy.qflt.v1, dy.qflt.v2, dy.qflt.v3, dy.qflt.v4);
+
+        mandel_4x_float << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
+            local_width, local_height, cx2, cy2, dx2, dy2,
+            n_iterations);
     }
     else if (algorithm == 'B') {
         dblflt cx2{ cx.flt.head, cx.flt.tail };

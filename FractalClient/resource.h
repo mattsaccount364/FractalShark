@@ -96,6 +96,17 @@
 #define IDM_ALG_CPU_HIGH                32869
 #define ID_CHOOSERENDERALGORITHM_       32870
 #define IDM_ALG_GPU_2_64_32             32871
+#define ID_CHOOSERENDERALGORITHM_4X64GPU 32872
+#define IDM_ALG_GPU_4_64                32873
+#define ID_POPUP_PALETTECOLORDEPTH      32874
+#define ID_PALETTECOLORDEPTH_8          32875
+#define ID_PALETTECOLORDEPTH_12         32876
+#define ID_PALETTECOLORDEPTH_16         32877
+#define IDM_PALETTE_8                   32878
+#define IDM_PALETTE_12                  32879
+#define IDM_PALETTE_16                  32880
+#define ID_CHOOSERENDERALGORITHM_4X32GPU 32881
+#define IDM_ALG_GPU_4_32                32882
 #define IDC_STATIC                      -1
 
 // Next default values for new objects
@@ -103,7 +114,7 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        131
-#define _APS_NEXT_COMMAND_VALUE         32872
+#define _APS_NEXT_COMMAND_VALUE         32883
 #define _APS_NEXT_CONTROL_VALUE         1000
 #define _APS_NEXT_SYMED_VALUE           110
 #endif

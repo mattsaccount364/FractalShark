@@ -1479,14 +1479,8 @@ void Fractal::CalcPixelRow_Multi(unsigned int* rowBuffer, size_t row)
             zy += cy;
         }
         cx += dx;
-        if (i == m_NumIterations)
-        {
-            *rowBuffer = 0;
-        }
-        else
-        {
-            *rowBuffer = i;
-        }
+        *rowBuffer = 0;
+        *rowBuffer = i;
 
         rowBuffer++;
     }
@@ -1520,15 +1514,7 @@ bool Fractal::CalcPixelRow_C(unsigned int* rowBuffer, size_t row)
             zy += cy;
         }
         cx += dx;
-        if (i == m_NumIterations)
-        {
-            *rowBuffer = 0;
-        }
-        else
-        {
-            *rowBuffer = i;
-        }
-
+        *rowBuffer = i;
         rowBuffer++;
     }
 

@@ -149,6 +149,7 @@ BEGIN
         BEGIN
             MENUITEM "Accurate",                    IDM_BENCHMARK_ACCURATE
             MENUITEM "Quick",                       IDM_BENCHMARK_QUICK
+            MENUITEM "Accurate - Reference Point",  IDM_BENCHMARK_ACCURATE_REFPT
         END
         MENUITEM SEPARATOR
         MENUITEM "E&xit",                       IDM_EXIT

@@ -125,6 +125,9 @@
 #define ID_CHOOSERENDERALGORITHM_1X32GPU 32898
 #define IDM_ALG_GPU_1_32_PERTURB        32899
 #define IDM_ALG_GPU_1_32_PERTURB_BLA    32900
+#define ID_BENCHMARK_ACCURATE           32901
+#define ID_BENCHMARK_ACCURATE_REFPT     32902
+#define IDM_BENCHMARK_ACCURATE_REFPT    32903
 #define IDC_STATIC                      -1
 
 // Next default values for new objects
@@ -132,7 +135,7 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        131
-#define _APS_NEXT_COMMAND_VALUE         32901
+#define _APS_NEXT_COMMAND_VALUE         32904
 #define _APS_NEXT_CONTROL_VALUE         1000
 #define _APS_NEXT_SYMED_VALUE           110
 #endif

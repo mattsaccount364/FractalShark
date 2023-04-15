@@ -23,15 +23,23 @@
 
 #include "..\WPngImage\WPngImage.hh"
 #include <boost/multiprecision/cpp_dec_float.hpp>
+#include <boost/multiprecision/gmp.hpp>
 
 //const int MAXITERS = 256 * 32; // 256 * 256 * 256 * 32
 const int MAXITERS = 256 * 256 * 256 * 32;
 
-using HighPrecision = boost::multiprecision::cpp_dec_float_100;
+using HighPrecision = boost::multiprecision::mpf_float_100;
 template<class From, class To>
 To Convert(From data) {
     return data.convert_to<To>();
 }
+
+
+//using HighPrecision = boost::multiprecision::cpp_dec_float_100;
+//template<class From, class To>
+//To Convert(From data) {
+//    return data.convert_to<To>();
+//}
 
 //using HighPrecision = double;
 //template<class From, class To>
@@ -90,8 +98,8 @@ private: // For saving the current location
     void SaveCurPos(void);
 
 public: // Iterations
-    void SetNumIterations(int num);
-    int GetNumIterations(void);
+    void SetNumIterations(size_t num);
+    size_t GetNumIterations(void);
     void ResetNumIterations(void);
 
 public:
@@ -142,6 +150,7 @@ private:
     struct PerturbationResults {
         HighPrecision hiX, hiY;
         size_t scrnX, scrnY;
+        size_t MaxIterations;
 
         std::vector<double> x;
         std::vector<double> x2;
@@ -163,6 +172,7 @@ private:
     };
 
     std::vector<PerturbationResults> m_PerturbationResults;
+    void AddPerturbationReferencePoint();
 
     static void FillCoordArray(const double *src, size_t size, MattCoordsArray& dest);
     static void FillCoord(HighPrecision& src, MattCoords& dest);
@@ -186,9 +196,25 @@ public: // Saving images of the fractal
     int SaveHiResFractal(const std::wstring filename_base);
 
 public: // Benchmarking
-    HighPrecision Benchmark(int numIters);
+    HighPrecision Benchmark(size_t numIters);
+    HighPrecision BenchmarkReferencePoint(size_t numIters);
 
 private:
+    struct BenchmarkData {
+        BenchmarkData(Fractal& fractal);
+        Fractal& fractal;
+
+        LARGE_INTEGER freq;
+        LARGE_INTEGER startTime;
+        LARGE_INTEGER endTime;
+
+        size_t prevScrnWidth;
+            size_t prevScrnHeight;
+
+        bool BenchmarkSetup(size_t numIters);
+        HighPrecision BenchmarkFinish();
+    };
+
     __int64 FindTotalItersUsed(void);
 
 private: // Unit conversion helpers
@@ -231,8 +257,8 @@ private:
     FractalSetupData m_SetupData;
 
     // Defaults
-    //static constexpr size_t DefaultIterations = 256 * 32;
-    static constexpr size_t DefaultIterations = 256;
+    static constexpr size_t DefaultIterations = 256 * 32;
+    //static constexpr size_t DefaultIterations = 256;
 
     // Handle to the thread which checks to see if we should quit or not
     HANDLE m_CheckForAbortThread;
@@ -262,7 +288,7 @@ private:
     // The maximum number of iterations to go through on a pixel
     // in an effort to determine whether the point is within the set
     // or not.
-    DWORD m_NumIterations;
+    size_t m_NumIterations;
     bool m_ChangedIterations;
 
     // Antialiasing;

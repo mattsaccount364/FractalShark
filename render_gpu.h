@@ -125,7 +125,7 @@ public:
         MattCoords cy,
         MattCoords dx,
         MattCoords dy,
-        int n_iterations,
+        uint32_t n_iterations,
         int iteration_precision);
 
     void RenderPerturbGlitchy(
@@ -138,7 +138,7 @@ public:
         MattCoords dy,
         MattCoords centerX,
         MattCoords centerY,
-        int n_iterations,
+        uint32_t n_iterations,
         int iteration_precision);
 
     void RenderPerturbBLA(
@@ -151,7 +151,7 @@ public:
         MattCoords dy,
         MattCoords centerX,
         MattCoords centerY,
-        int n_iterations,
+        uint32_t n_iterations,
         int iteration_precision);
 
     void InitializeMemory(
@@ -167,7 +167,7 @@ private:
     void ExtractIters(uint32_t* buffer);
 
     uint8_t* ratioMemory_cu = nullptr;
-    int* iter_matrix_cu;
+    uint32_t* iter_matrix_cu;
 
     uint32_t width;
     uint32_t height;

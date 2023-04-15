@@ -551,7 +551,7 @@ void Fractal::ApproachTarget(void)
 
     SaveCurPos();
 
-    int baseIters = m_NumIterations;
+    size_t baseIters = m_NumIterations;
     HighPrecision incIters = (HighPrecision)((HighPrecision)targetIters - (HighPrecision)baseIters) / (HighPrecision)numFrames;
     for (int i = 0; i < numFrames; i++)
     {
@@ -756,7 +756,7 @@ void Fractal::SaveCurPos(void)
 ///////////////////////////////////////////////////////////////////////////////
 // Functions for dealing with the number of iterations
 ///////////////////////////////////////////////////////////////////////////////
-void Fractal::SetNumIterations(int num)
+void Fractal::SetNumIterations(size_t num)
 {
     if (num <= MAXITERS)
     {
@@ -768,10 +768,9 @@ void Fractal::SetNumIterations(int num)
     }
 
     m_ChangedIterations = true;
-    m_PerturbationResults.clear();
 }
 
-int Fractal::GetNumIterations(void)
+size_t Fractal::GetNumIterations(void)
 {
     return m_NumIterations;
 }
@@ -990,7 +989,9 @@ void Fractal::DrawPerturbationResults(bool LeaveScreen) {
 
     for (size_t i = 0; i < m_PerturbationResults.size(); i++)
     {
-        if (m_PerturbationResults[i].scrnX != MAXSIZE_T) {
+        if (m_PerturbationResults[i].scrnX != MAXSIZE_T &&
+            m_PerturbationResults[i].scrnY != MAXSIZE_T &&
+            m_PerturbationResults[i].MaxIterations >= m_PerturbationResults[i].x.size()) {
             glColor3f((GLfloat)255, (GLfloat)255, (GLfloat)255);
 
             // Coordinates are weird in OGL mode.
@@ -1254,7 +1255,7 @@ void Fractal::CalcGpuFractal(bool MemoryOnly)
                cy2,
                dx2,
                dy2,
-               m_NumIterations,
+               (uint32_t)m_NumIterations,
                m_IterationPrecision);
 
     DrawFractal(MemoryOnly);
@@ -1668,6 +1669,21 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                 const double DeltaSubNXOrig = DeltaSubNX;
                 const double DeltaSubNYOrig = DeltaSubNY;
 
+                //
+                // https://mathr.co.uk/blog/2021-05-14_deep_zoom_theory_and_practice.html#a2021-05-14_deep_zoom_theory_and_practice_rescaling
+                // 
+                // DeltaSubN = 2 * DeltaSubN * results.complex[RefIteration] + DeltaSubN * DeltaSubN + DeltaSub0;
+                // S * w = 2 * S * w * results.complex[RefIteration] + S * w * S * w + S * c
+                // 
+                // S * (DeltaSubNWX + DeltaSubNWY I) = 2 * S * (DeltaSubNWX + DeltaSubNWY I) * (results.x[RefIteration] + results.y[RefIteration] * I) +
+                //                                     S * S * (DeltaSubNWX + DeltaSubNWY I) * (DeltaSubNWX + DeltaSubNWY I) +
+                //                                     S * d
+                // 
+                // (DeltaSubNWX + DeltaSubNWY I) = 2 * (DeltaSubNWX + DeltaSubNWY I) * (results.x[RefIteration] + results.y[RefIteration] * I) +
+                //                                 S * (DeltaSubNWX + DeltaSubNWY I) * (DeltaSubNWX + DeltaSubNWY I) +
+                //                                 d
+                // 
+
                 DeltaSubNX = DeltaSubNXOrig * (results.x2[RefIteration] + DeltaSubNXOrig) -
                              DeltaSubNYOrig * (results.y2[RefIteration] + DeltaSubNYOrig) +
                              DeltaSub0X;
@@ -1781,7 +1797,7 @@ void Fractal::CalcGpuPerturbationFractalGlitchy(bool MemoryOnly) {
             dy2,
             centerX2,
             centerY2,
-            m_NumIterations,
+            (uint32_t)m_NumIterations,
             m_IterationPrecision);
 
         for (size_t y = 0; y < m_ScrnHeight; y++) {
@@ -1830,6 +1846,7 @@ void Fractal::CalcGpuPerturbationFractalGlitchy(bool MemoryOnly) {
             results.hiY = cy;
             results.scrnX = (size_t)pt.x;
             results.scrnY = (size_t)pt.y;
+            results.MaxIterations = m_NumIterations;
 
             HighPrecision zx, zy;
             HighPrecision zx2, zy2;
@@ -1886,7 +1903,7 @@ void Fractal::CalcGpuPerturbationFractalGlitchy(bool MemoryOnly) {
                 dy2,
                 centerX2,
                 centerY2,
-                m_NumIterations,
+                (uint32_t)m_NumIterations,
                 m_IterationPrecision);
 
             totalX = 0;
@@ -1921,13 +1938,74 @@ void Fractal::CalcGpuPerturbationFractalGlitchy(bool MemoryOnly) {
     DrawFractal(MemoryOnly);
 }
 
+void Fractal::AddPerturbationReferencePoint() {
+    m_PerturbationResults.push_back({});
+    PerturbationResults *results = &m_PerturbationResults[m_PerturbationResults.size() - 1];
+
+    double initX = (double)m_ScrnWidth / 2;
+    double initY = (double)m_ScrnHeight / 2;
+
+    Point pt = { initX, initY };
+
+    HighPrecision dxHigh = (m_MaxX - m_MinX) / m_ScrnWidth;
+    HighPrecision dyHigh = (m_MaxY - m_MinY) / m_ScrnHeight;
+
+    HighPrecision cx = m_MinX + dxHigh * ((HighPrecision)pt.x);
+    HighPrecision cy = m_MaxY - dyHigh * ((HighPrecision)pt.y);
+
+    results->hiX = cx;
+    results->hiY = cy;
+    results->scrnX = (size_t)pt.x;
+    results->scrnY = (size_t)pt.y;
+    results->MaxIterations = m_NumIterations + 1; // +1 for push_back(0) below
+
+    HighPrecision zx, zy;
+    HighPrecision zx2, zy2;
+    unsigned int i;
+
+    results->x.reserve(1000000);
+    results->x2.reserve(1000000);
+    results->y.reserve(1000000);
+    results->y2.reserve(1000000);
+
+    results->x.push_back(0);
+    results->x2.push_back(0);
+    results->y.push_back(0);
+    results->y2.push_back(0);
+
+    zx = cx;
+    zy = cy;
+    for (i = 0; i < m_NumIterations; i++)
+    {
+        zx2 = zx * 2;
+        zy2 = zy * 2;
+
+        results->x.push_back((double)zx);
+        results->x2.push_back((double)zx2);
+        results->y.push_back((double)zy);
+        results->y2.push_back((double)zy2);
+
+        // x^2+2*I*x*y-y^2
+        zx = zx * zx - zy * zy + cx;
+        zy = zx2 * zy + cy;
+
+        const double tempZX = (double)zx + (double)cx;
+        const double tempZY = (double)zy + (double)cy;
+        const double zn_size = tempZX * tempZX + tempZY * tempZY;
+        if (zn_size > 256) {
+            break;
+        }
+    }
+}
+
 void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
     std::vector<PerturbationResults*> useful_results;
 
     if (!m_PerturbationResults.empty()) {
         for (size_t i = 0; i < m_PerturbationResults.size(); i++) {
             if (m_PerturbationResults[i].hiX >= m_MinX && m_PerturbationResults[i].hiX <= m_MaxX &&
-                m_PerturbationResults[i].hiY >= m_MinY && m_PerturbationResults[i].hiY <= m_MaxY) {
+                m_PerturbationResults[i].hiY >= m_MinY && m_PerturbationResults[i].hiY <= m_MaxY &&
+                m_PerturbationResults[i].MaxIterations >= m_PerturbationResults[i].x.size()) {
                 useful_results.push_back(&m_PerturbationResults[i]);
 
                 m_PerturbationResults[i].scrnX = (size_t) ((m_PerturbationResults[i].hiX - m_MinX) / (m_MaxX - m_MinX) * HighPrecision{ m_ScrnWidth });
@@ -1941,21 +2019,15 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
     }
 
     PerturbationResults* results = nullptr;
-    bool calc_ref = false;
 
     if (!useful_results.empty()) {
         results = useful_results[useful_results.size() - 1];
     }
     else {
-        m_PerturbationResults.push_back({});
+        AddPerturbationReferencePoint();
+
         results = &m_PerturbationResults[m_PerturbationResults.size() - 1];
-        calc_ref = true;
     }
-
-    MattCoords cx2{}, cy2{}, dx2{}, dy2{};
-    MattCoords centerX2{}, centerY2{};
-
-    FillGpuCoords(cx2, cy2, dx2, dy2);
 
     m_r.InitializeMemory(m_ScrnWidth * m_GpuAntialiasing,
         m_ScrnHeight * m_GpuAntialiasing,
@@ -1964,61 +2036,10 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
 
     m_r.ClearMemory();
 
-    if (calc_ref) {
-        double initX = (double)m_ScrnWidth / 2;
-        double initY = (double)m_ScrnHeight / 2;
+    MattCoords cx2{}, cy2{}, dx2{}, dy2{};
+    MattCoords centerX2{}, centerY2{};
 
-        Point pt = { initX, initY };
-
-        HighPrecision dxHigh = (m_MaxX - m_MinX) / m_ScrnWidth;
-        HighPrecision dyHigh = (m_MaxY - m_MinY) / m_ScrnHeight;
-
-        HighPrecision cx = m_MinX + dxHigh * ((HighPrecision)pt.x);
-        HighPrecision cy = m_MaxY - dyHigh * ((HighPrecision)pt.y);
-
-        results->hiX = cx;
-        results->hiY = cy;
-        results->scrnX = (size_t)pt.x;
-        results->scrnY = (size_t)pt.y;
-
-        HighPrecision zx, zy;
-        HighPrecision zx2, zy2;
-        unsigned int i;
-
-        results->x.reserve(1000000);
-        results->x2.reserve(1000000);
-        results->y.reserve(1000000);
-        results->y2.reserve(1000000);
-
-        results->x.push_back(0);
-        results->x2.push_back(0);
-        results->y.push_back(0);
-        results->y2.push_back(0);
-
-        zx = cx;
-        zy = cy;
-        for (i = 0; i < m_NumIterations; i++)
-        {
-            zx2 = zx * 2;
-            zy2 = zy * 2;
-
-            results->x.push_back((double)zx);
-            results->x2.push_back((double)zx2);
-            results->y.push_back((double)zy);
-            results->y2.push_back((double)zy2);
-
-            // x^2+2*I*x*y-y^2
-            zx = zx * zx - zy * zy + cx;
-            zy = zx2 * zy + cy;
-
-            const double tempZX = (double)zx + (double)cx;
-            const double tempZY = (double)zy + (double)cy;
-            const double zn_size = tempZX * tempZX + tempZY * tempZY;
-            if (zn_size > 256) {
-                break;
-            }
-        }
-    }
+    FillGpuCoords(cx2, cy2, dx2, dy2);
 
     HighPrecision centerX = results->hiX - m_MinX;
     HighPrecision centerY = results->hiY - m_MaxY;
@@ -2044,7 +2065,7 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
         dy2,
         centerX2,
         centerY2,
-        m_NumIterations,
+        (uint32_t)m_NumIterations,
         m_IterationPrecision);
 
     DrawFractal(MemoryOnly);
@@ -2348,44 +2369,68 @@ int Fractal::SaveHiResFractal(const std::wstring filename)
     return ret;
 }
 
-HighPrecision Fractal::Benchmark(int numIters)
+HighPrecision Fractal::Benchmark(size_t numIters)
 {
-    size_t prevScrnWidth = m_ScrnWidth;
-    size_t prevScrnHeight = m_ScrnHeight;
+    BenchmarkData bm(*this);
+    if (!bm.BenchmarkSetup(numIters)) {
+        return {};
+    }
 
-    Reset(500, 500);
-    SetNumIterations(numIters);
-    SetIterationAntialiasing(1);
-    SetGpuAntialiasing(1);
-    //SetIterationPrecision(1);
-    //RecenterViewCalc(-.1, -.1, .1, .1);
-    RecenterViewCalc(-1.5, -.75, 1, .75);
+    CalcFractal(true);
+    return bm.BenchmarkFinish();
+}
 
-    LARGE_INTEGER freq;
-    LARGE_INTEGER startTime;
-    LARGE_INTEGER endTime;
+HighPrecision Fractal::BenchmarkReferencePoint(size_t numIters) {
+    BenchmarkData bm(*this);
+    if (!bm.BenchmarkSetup(numIters)) {
+        return {};
+    }
+
+    AddPerturbationReferencePoint();
+    return bm.BenchmarkFinish();
+
+}
+
+Fractal::BenchmarkData::BenchmarkData(Fractal& fractal) :
+    fractal(fractal) {}
+
+bool Fractal::BenchmarkData::BenchmarkSetup(size_t numIters) {
+    prevScrnWidth = fractal.m_ScrnWidth;
+    prevScrnHeight = fractal.m_ScrnHeight;
+
+    fractal.Reset(500, 500);
+    fractal.SetNumIterations(numIters);
+    fractal.SetIterationAntialiasing(1);
+    fractal.SetGpuAntialiasing(1);
+    //fractal.SetIterationPrecision(1);
+    //fractal.RecenterViewCalc(-.1, -.1, .1, .1);
+    fractal.RecenterViewCalc(-1.5, -.75, 1, .75);
 
     startTime.QuadPart = 0;
     endTime.QuadPart = 1;
-    if (QueryPerformanceFrequency(&freq) != 0)
-    {
-        QueryPerformanceCounter(&startTime);
-        CalcFractal(true);
-        QueryPerformanceCounter(&endTime);
+    if (QueryPerformanceFrequency(&freq) == 0) {
+        return false;
     }
+
+    QueryPerformanceCounter(&startTime);
+    return true;
+}
+
+HighPrecision Fractal::BenchmarkData::BenchmarkFinish() {
+    QueryPerformanceCounter(&endTime);
 
     __int64 freq64 = freq.QuadPart;
     __int64 startTime64 = startTime.QuadPart;
     __int64 endTime64 = endTime.QuadPart;
-    __int64 totalIters = FindTotalItersUsed();
+    __int64 totalIters = fractal.FindTotalItersUsed();
 
     __int64 deltaTime = endTime64 - startTime64;
     HighPrecision timeTaken = (HighPrecision)((HighPrecision)deltaTime / (HighPrecision)freq64);
 
-    Reset(prevScrnWidth, prevScrnHeight);
-    StandardView();
+    fractal.Reset(prevScrnWidth, prevScrnHeight);
+    fractal.StandardView();
 
-    ChangedMakeDirty();
+    fractal.ChangedMakeDirty();
 
     return (HighPrecision)(totalIters / timeTaken) / 1000000.0;
 }

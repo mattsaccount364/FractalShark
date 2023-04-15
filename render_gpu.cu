@@ -13,14 +13,14 @@ constexpr static auto NB_THREADS_H = 8;
 
 
 __global__
-void mandel_4x_float(int* iter_matrix,
+void mandel_4x_float(uint32_t* iter_matrix,
     int width,
     int height,
     GQF::gqf_real cx,
     GQF::gqf_real cy,
     GQF::gqf_real dx,
     GQF::gqf_real dy,
-    int n_iterations)
+    uint32_t n_iterations)
 {
     using namespace GQF;
     int X = blockIdx.x * blockDim.x + threadIdx.x;
@@ -82,14 +82,14 @@ void mandel_4x_float(int* iter_matrix,
 }
 
 __global__
-void mandel_4x_double(int* iter_matrix,
+void mandel_4x_double(uint32_t* iter_matrix,
     int width,
     int height,
     GQD::gqd_real cx,
     GQD::gqd_real cy,
     GQD::gqd_real dx,
     GQD::gqd_real dy,
-    int n_iterations)
+    uint32_t n_iterations)
 {
     using namespace GQD;
     int X = blockIdx.x * blockDim.x + threadIdx.x;
@@ -174,14 +174,14 @@ x2 = 1.00000000010e-05 ax2**2+bx2+c = 0.00000000000e+00
 */
 
 __global__
-void mandel_2x_double(int* iter_matrix,
+void mandel_2x_double(uint32_t* iter_matrix,
     int width,
     int height,
     dbldbl cx,
     dbldbl cy,
     dbldbl dx,
     dbldbl dy,
-    int n_iterations)
+    uint32_t n_iterations)
 {
     int X = blockIdx.x * blockDim.x + threadIdx.x;
     int Y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -292,14 +292,14 @@ void mandel_2x_double(int* iter_matrix,
 
 template<int iteration_precision>
 __global__
-void mandel_1x_double(int* iter_matrix,
+void mandel_1x_double(uint32_t* iter_matrix,
                  int width,
                  int height,
                  double cx,
                  double cy,
                  double dx,
                  double dy,
-                 int n_iterations)
+                 uint32_t n_iterations)
 {
     int X = blockIdx.x * blockDim.x + threadIdx.x;
     int Y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -388,7 +388,7 @@ void mandel_1x_double(int* iter_matrix,
 }
 
 __global__
-void mandel_1x_double_perturb_glitchy(int* iter_matrix,
+void mandel_1x_double_perturb_glitchy(uint32_t* iter_matrix,
     double* results_x,
     double* results_x2,
     double* results_y,
@@ -403,7 +403,7 @@ void mandel_1x_double_perturb_glitchy(int* iter_matrix,
     double dy,
     double centerX,
     double centerY,
-    int n_iterations)
+    uint32_t n_iterations)
 {
     int X = blockIdx.x * blockDim.x + threadIdx.x;
     int Y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -466,7 +466,7 @@ void mandel_1x_double_perturb_glitchy(int* iter_matrix,
 }
 
 __global__
-void mandel_1x_double_perturb_bla(int* iter_matrix,
+void mandel_1x_double_perturb_bla(uint32_t* iter_matrix,
     double* results_x,
     double* results_x2,
     double* results_y,
@@ -481,7 +481,7 @@ void mandel_1x_double_perturb_bla(int* iter_matrix,
     double dy,
     double centerX,
     double centerY,
-    int n_iterations)
+    uint32_t n_iterations)
 {
     int X = blockIdx.x * blockDim.x + threadIdx.x;
     int Y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -545,14 +545,14 @@ void mandel_1x_double_perturb_bla(int* iter_matrix,
 
 template<int iteration_precision>
 __global__
-void mandel_2x_float(int* iter_matrix,
+void mandel_2x_float(uint32_t* iter_matrix,
     int width,
     int height,
     dblflt cx,
     dblflt cy,
     dblflt dx,
     dblflt dy,
-    int n_iterations)
+    uint32_t n_iterations)
 {
     int X = blockIdx.x * blockDim.x + threadIdx.x;
     int Y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -739,7 +739,7 @@ void mandel_2x_float_perturb_glitchy_setup(
 }
 
 __global__
-void mandel_2x_float_perturb_glitchy(int* iter_matrix,
+void mandel_2x_float_perturb_glitchy(uint32_t* iter_matrix,
     dblflt* results_x,
     dblflt* results_x2,
     dblflt* results_y,
@@ -754,7 +754,7 @@ void mandel_2x_float_perturb_glitchy(int* iter_matrix,
     dblflt dy,
     dblflt centerX,
     dblflt centerY,
-    int n_iterations)
+    uint32_t n_iterations)
 {
 
     //int X = blockIdx.x * blockDim.x + threadIdx.x;
@@ -911,7 +911,7 @@ void mandel_2x_float_perturb_bla_setup(
 }
 
 __global__
-void mandel_2x_float_perturb_bla(int* iter_matrix,
+void mandel_2x_float_perturb_bla(uint32_t* iter_matrix,
     dblflt* results_x,
     dblflt* results_x2,
     dblflt* results_y,
@@ -926,7 +926,7 @@ void mandel_2x_float_perturb_bla(int* iter_matrix,
     dblflt dy,
     dblflt centerX,
     dblflt centerY,
-    int n_iterations)
+    uint32_t n_iterations)
 {
 
     //int X = blockIdx.x * blockDim.x + threadIdx.x;
@@ -1065,14 +1065,14 @@ void mandel_2x_float_perturb_bla(int* iter_matrix,
 
 template<int iteration_precision>
 __global__
-void mandel_1x_float(int* iter_matrix,
+void mandel_1x_float(uint32_t* iter_matrix,
     int width,
     int height,
     float cx,
     float cy,
     float dx,
     float dy,
-    int n_iterations)
+    uint32_t n_iterations)
 {
     int X = blockIdx.x * blockDim.x + threadIdx.x;
     int Y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -1179,7 +1179,7 @@ void mandel_1x_float(int* iter_matrix,
 }
 
 __global__
-void mandel_1x_float_perturb_bla(int* iter_matrix,
+void mandel_1x_float_perturb_bla(uint32_t* iter_matrix,
     float* results_x,
     float* results_x2,
     float* results_y,
@@ -1194,7 +1194,7 @@ void mandel_1x_float_perturb_bla(int* iter_matrix,
     float dy,
     float centerX,
     float centerY,
-    int n_iterations)
+    uint32_t n_iterations)
 {
     int X = blockIdx.x * blockDim.x + threadIdx.x;
     int Y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -1223,13 +1223,16 @@ void mandel_1x_float_perturb_bla(int* iter_matrix,
         const float DeltaSubNXOrig = DeltaSubNX;
         const float DeltaSubNYOrig = DeltaSubNY;
 
+        const float tempSubX = results_x2[RefIteration] + DeltaSubNXOrig;
+        const float tempSubY = results_y2[RefIteration] + DeltaSubNYOrig;
+
         DeltaSubNX =
-            DeltaSubNXOrig * (results_x2[RefIteration] + DeltaSubNXOrig) -
-            DeltaSubNYOrig * (results_y2[RefIteration] + DeltaSubNYOrig) +
+            DeltaSubNXOrig * tempSubX -
+            DeltaSubNYOrig * tempSubY +
             DeltaSub0X;
         DeltaSubNY =
-            DeltaSubNXOrig * (results_y2[RefIteration] + DeltaSubNYOrig) +
-            DeltaSubNYOrig * (results_x2[RefIteration] + DeltaSubNXOrig) +
+            DeltaSubNXOrig * tempSubY +
+            DeltaSubNYOrig * tempSubX +
             DeltaSub0Y;
 
         ++RefIteration;
@@ -1257,7 +1260,7 @@ void mandel_1x_float_perturb_bla(int* iter_matrix,
 }
 
 __global__
-void mandel_float_double_combo(int* iter_matrix,
+void mandel_float_double_combo(uint32_t* iter_matrix,
     uint8_t *ratio_matrix,
     int width,
     int height,
@@ -1269,7 +1272,7 @@ void mandel_float_double_combo(int* iter_matrix,
     double cy_orig,
     double dx_orig,
     double dy_orig,
-    int n_iterations)
+    uint32_t n_iterations)
 {
     int X = blockIdx.x * blockDim.x + threadIdx.x;
     int Y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -1454,7 +1457,7 @@ void GPURenderer::Render(
     MattCoords cy,
     MattCoords dx,
     MattCoords dy,
-    int n_iterations,
+    uint32_t n_iterations,
     int iteration_precision)
 {
     if (iter_matrix_cu == nullptr) {
@@ -1621,7 +1624,7 @@ void GPURenderer::RenderPerturbGlitchy(
     MattCoords dy,
     MattCoords centerX,
     MattCoords centerY,
-    int n_iterations,
+    uint32_t n_iterations,
     int /*iteration_precision*/)
 {
     if (iter_matrix_cu == nullptr) {
@@ -1769,7 +1772,7 @@ void GPURenderer::RenderPerturbBLA(
     MattCoords dy,
     MattCoords centerX,
     MattCoords centerY,
-    int n_iterations,
+    uint32_t n_iterations,
     int /*iteration_precision*/)
 {
     if (iter_matrix_cu == nullptr) {

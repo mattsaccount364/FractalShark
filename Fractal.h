@@ -24,6 +24,7 @@
 #include "..\WPngImage\WPngImage.hh"
 #include <boost/multiprecision/cpp_dec_float.hpp>
 
+//const int MAXITERS = 256 * 32; // 256 * 256 * 256 * 32
 const int MAXITERS = 256 * 256 * 256 * 32;
 
 using HighPrecision = boost::multiprecision::cpp_dec_float_100;
@@ -94,14 +95,8 @@ public: // Iterations
     void ResetNumIterations(void);
 
 public:
-    // Render algorithm: 'h' = high res CPU, 'l' = low res CPU
-    // 'f' = 1x64-bit double
-    // 'd' = 2x64-bit double (128-bit)
-    // 'F' = 1x32-bit float
-    // 'D' = 2x32-bit float
-    // 'B' = blend
-    inline uint32_t GetRenderAlgorithm(void) { return m_RenderAlgorithm; }
-    inline void SetRenderAlgorithm(uint32_t alg) { m_RenderAlgorithm = alg; }
+    inline RenderAlgorithm GetRenderAlgorithm(void) { return m_RenderAlgorithm; }
+    inline void SetRenderAlgorithm(RenderAlgorithm alg) { m_RenderAlgorithm = alg; }
 
     inline uint32_t GetIterationAntialiasing(void) { return m_IterationAntialiasing; }
     inline void SetIterationAntialiasing(uint32_t antialiasing) { m_IterationAntialiasing = antialiasing; }
@@ -129,6 +124,8 @@ public: // Drawing functions
     void RotateFractalPalette(int delta);
     void CreateNewFractalPalette(void);
 
+    void DrawPerturbationResults(bool MemoryOnly);
+
 private:
     void DrawRotatedFractal(void);
     void DrawFractalLine(size_t row);
@@ -136,8 +133,46 @@ private:
     void FillRatioMemory(double CurRatio, double &FinalRatio);
     void FillRatioArrayIfNeeded();
     void CalcCpuFractal(bool MemoryOnly);
+
+    struct Point {
+        double x, y;
+        size_t iteration;
+    };
+
+    struct PerturbationResults {
+        HighPrecision hiX, hiY;
+        size_t scrnX, scrnY;
+
+        std::vector<double> x;
+        std::vector<double> x2;
+        std::vector<double> y;
+        std::vector<double> y2;
+        std::vector<double> tolerancy;
+        std::vector<std::complex<double>> complex;
+        std::vector<std::complex<double>> complex2;
+
+        void clear() {
+            x.clear();
+            y.clear();
+            x2.clear();
+            y2.clear();
+            tolerancy.clear();
+            complex.clear();
+            complex2.clear();
+        }
+    };
+
+    std::vector<PerturbationResults> m_PerturbationResults;
+
+    static void FillCoordArray(const double *src, size_t size, MattCoordsArray& dest);
+    static void FillCoord(HighPrecision& src, MattCoords& dest);
+    void FillGpuCoords(MattCoords& cx2, MattCoords& cy2, MattCoords& dx2, MattCoords& dy2);
     void CalcGpuFractal(bool MemoryOnly);
     void CalcNetworkFractal(bool MemoryOnly);
+    void CalcCpuPerturbationFractalGlitchy(bool MemoryOnly);
+    void CalcGpuPerturbationFractalGlitchy(bool MemoryOnly);
+    void CalcCpuPerturbationFractalBLA(bool MemoryOnly);
+    void CalcGpuPerturbationFractalBLA(bool MemoryOnly);
 
     void CalcPixelRow_Multi(unsigned int *rowBuffer, size_t row); // Multiprecision
     bool CalcPixelRow_Exp(unsigned int *rowBuffer, size_t row); // Experimental
@@ -196,7 +231,8 @@ private:
     FractalSetupData m_SetupData;
 
     // Defaults
-    static constexpr size_t DefaultIterations = 256 * 32;
+    //static constexpr size_t DefaultIterations = 256 * 32;
+    static constexpr size_t DefaultIterations = 256;
 
     // Handle to the thread which checks to see if we should quit or not
     HANDLE m_CheckForAbortThread;
@@ -248,7 +284,7 @@ private:
     uint32_t m_IterationPrecision;
 
     // Render algorithm
-    uint32_t m_RenderAlgorithm;
+    RenderAlgorithm m_RenderAlgorithm;
 
     // The palette!
     std::vector<uint16_t> m_PalR[3], m_PalG[3], m_PalB[3];

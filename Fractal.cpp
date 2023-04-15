@@ -78,7 +78,7 @@ void Fractal::Initialize(int width,
     // Setup member variables with initial values:
     Reset(width, height);
     StandardView();
-    SetRenderAlgorithm('l');
+    SetRenderAlgorithm(RenderAlgorithm::Gpu2x32);
     SetIterationAntialiasing(1);
     SetGpuAntialiasing(1);
     SetIterationPrecision(1);
@@ -86,6 +86,8 @@ void Fractal::Initialize(int width,
     m_ChangedWindow = true;
     m_ChangedScrn = true;
     m_ChangedIterations = true;
+
+    srand((unsigned int) time(NULL));
 
     // Initialize the palette
     auto PaletteGen = [&](size_t PaletteIndex, size_t Depth) {
@@ -766,6 +768,7 @@ void Fractal::SetNumIterations(int num)
     }
 
     m_ChangedIterations = true;
+    m_PerturbationResults.clear();
 }
 
 int Fractal::GetNumIterations(void)
@@ -865,18 +868,38 @@ void Fractal::CalcFractal(bool MemoryOnly)
 
     // Draw the local fractal.
     switch(GetRenderAlgorithm()) {
-    case 'B':
+    case RenderAlgorithm::CpuHigh:
+    case RenderAlgorithm::Cpu64:
+        CalcCpuFractal(MemoryOnly);
+        break;
+    case RenderAlgorithm::Cpu64PerturbedGlitchy:
+        CalcCpuPerturbationFractalGlitchy(MemoryOnly);
+        break;
+    case RenderAlgorithm::Cpu64PerturbedBLA:
+        CalcCpuPerturbationFractalBLA(MemoryOnly);
+        break;
+    case RenderAlgorithm::Blend:
         FillRatioArrayIfNeeded();
-    case 'q':
-    case 'd':
-    case 'f':
-    case 'D':
-    case 'F':
-    case 'Q':
+        // fall through
+    case RenderAlgorithm::Gpu1x64:
+    case RenderAlgorithm::Gpu2x64:
+    case RenderAlgorithm::Gpu4x64:
+    case RenderAlgorithm::Gpu1x32:
+    case RenderAlgorithm::Gpu2x32:
+    case RenderAlgorithm::Gpu4x32:
         CalcGpuFractal(MemoryOnly);
         break;
+    case RenderAlgorithm::Gpu1x64PerturbedGlitchy:
+    case RenderAlgorithm::Gpu2x32PerturbedGlitchy:
+        CalcGpuPerturbationFractalGlitchy(MemoryOnly);
+        break;
+    case RenderAlgorithm::Gpu1x32PerturbedBLA:
+    case RenderAlgorithm::Gpu1x64PerturbedBLA:
+    case RenderAlgorithm::Gpu2x32PerturbedBLA:
+        CalcGpuPerturbationFractalBLA(MemoryOnly);
+        break;
     default:
-        CalcCpuFractal(MemoryOnly);
+        break;
     }
 
     // Read in data from the network and draw it.
@@ -958,6 +981,27 @@ void Fractal::CreateNewFractalPalette(void)
     //DrawFractal(false);
 }
 
+void Fractal::DrawPerturbationResults(bool LeaveScreen) {
+    if (!LeaveScreen) {
+        glClear(GL_COLOR_BUFFER_BIT);
+    }
+
+    glBegin(GL_POINTS);
+
+    for (size_t i = 0; i < m_PerturbationResults.size(); i++)
+    {
+        if (m_PerturbationResults[i].scrnX != MAXSIZE_T) {
+            glColor3f((GLfloat)255, (GLfloat)255, (GLfloat)255);
+
+            // Coordinates are weird in OGL mode.
+            glVertex2i((GLint)m_PerturbationResults[i].scrnX, (GLint)m_PerturbationResults[i].scrnY);
+        }
+    }
+
+    glEnd();
+    glFlush();
+}
+
 //////////////////////////////////////////////////////////////////////////////
 // Redraws the fractal using OpenGL calls.
 // Note that coordinates here are weird, so we have to make a few tweaks to
@@ -982,6 +1026,8 @@ void Fractal::DrawFractal(bool MemoryOnly)
             DrawFractalLine(py);
         }
     //}
+
+    DrawPerturbationResults(true);
 }
 
 void Fractal::DrawFractalLine(size_t output_y)
@@ -1097,7 +1143,7 @@ void Fractal::FillRatioArrayIfNeeded() {
             m_RatioArray[i] = &m_RatioMemory[i * MaxFractalSize];
         }
 
-        SetRenderAlgorithm('B');
+        SetRenderAlgorithm(RenderAlgorithm::Blend);
 
         double FinalRatio1, FinalRatio2, FinalRatio3;
 
@@ -1142,125 +1188,74 @@ void Fractal::FillRatioArrayIfNeeded() {
     }
 }
 
+void Fractal::FillCoordArray(const double *src, size_t size, MattCoordsArray &dest) {
+    // note incomplete
+    for (size_t i = 0; i < size; i++) {
+        dest.doubleOnly[i] = src[i];
+        dest.floatOnly[i] = (float)src[i];
+        dest.flt[i].head = (float)src[i];
+        dest.flt[i].tail = (float)(src[i] - (double) ((float)dest.flt[i].head));
+    }
+}
+
+void Fractal::FillCoord(HighPrecision& src, MattCoords& dest) {
+    dest.qflt.v1 = Convert<HighPrecision, float>(src);
+    dest.qflt.v2 = Convert<HighPrecision, float>(src - HighPrecision{ dest.qflt.v1 });
+    dest.qflt.v3 = Convert<HighPrecision, float>(src - HighPrecision{ dest.qflt.v1 } - HighPrecision{ dest.qflt.v2 });
+    dest.qflt.v4 = Convert<HighPrecision, float>(src - HighPrecision{ dest.qflt.v1 } - HighPrecision{ dest.qflt.v2 } - HighPrecision{ dest.qflt.v3 });
+
+    dest.qdbl.v1 = Convert<HighPrecision, double>(src);
+    dest.qdbl.v2 = Convert<HighPrecision, double>(src - HighPrecision{ dest.qdbl.v1 });
+    dest.qdbl.v3 = Convert<HighPrecision, double>(src - HighPrecision{ dest.qdbl.v1 } - HighPrecision{ dest.qdbl.v2 });
+    dest.qdbl.v4 = Convert<HighPrecision, double>(src - HighPrecision{ dest.qdbl.v1 } - HighPrecision{ dest.qdbl.v2 } - HighPrecision{ dest.qdbl.v3 });
+
+    dest.dbl.head = Convert<HighPrecision, double>(src);
+    dest.dbl.tail = Convert<HighPrecision, double>(src - HighPrecision{ dest.dbl.head });
+
+    dest.doubleOnly = Convert<HighPrecision, double>(src);
+
+    dest.flt.head = Convert<HighPrecision, float>(src);
+    dest.flt.tail = Convert<HighPrecision, float>(src - HighPrecision{ dest.flt.head });
+
+    dest.floatOnly = Convert<HighPrecision, float>(src);
+}
+
+void Fractal::FillGpuCoords(MattCoords &cx2, MattCoords &cy2, MattCoords &dx2, MattCoords &dy2) {
+    HighPrecision src_dy =
+        (m_MaxY - m_MinY) /
+        (HighPrecision)(m_ScrnHeight * m_IterationAntialiasing * m_GpuAntialiasing);
+
+    HighPrecision src_dx =
+        (m_MaxX - m_MinX) /
+        (HighPrecision)(m_ScrnWidth * m_IterationAntialiasing * m_GpuAntialiasing);
+
+    FillCoord(m_MinX, cx2);
+    FillCoord(m_MinY, cy2);
+    FillCoord(src_dx, dx2);
+    FillCoord(src_dy, dy2);
+}
+
 void Fractal::CalcGpuFractal(bool MemoryOnly)
 {
     OutputMessage(L"\r\n");
 
-    HighPrecision src_dy =
-        (m_MaxY - m_MinY) /
-        HighPrecision{ m_ScrnHeight * m_IterationAntialiasing * m_GpuAntialiasing };
-    double dbl_dy = Convert<HighPrecision, double>(src_dy);
-    float flt_dy = Convert<HighPrecision, float>(src_dy);
-
-    HighPrecision src_dx =
-        (m_MaxX - m_MinX) /
-        HighPrecision{ m_ScrnWidth * m_IterationAntialiasing * m_GpuAntialiasing };
-    double dbl_dx = Convert<HighPrecision, double>(src_dx);
-    float flt_dx = Convert<HighPrecision, float>(src_dx);
-
-    double dbl_cx = Convert<HighPrecision, double>(m_MinX);
-    float flt_cx = Convert<HighPrecision, float>(m_MinX);
-
-    double dbl_cy = Convert<HighPrecision, double>(m_MinY);
-    float flt_cy = Convert<HighPrecision, float>(m_MinY);
-
     MattCoords cx2{}, cy2{}, dx2{}, dy2{};
 
-    // 'f' works fine.
-    // 'd' - double double
+    FillGpuCoords(cx2, cy2, dx2, dy2);
 
-    // 4x32 bit
-    cx2.qflt.v1 = Convert<HighPrecision, float>(m_MinX);
-    cx2.qflt.v2 = Convert<HighPrecision, float>(m_MinX - HighPrecision{ cx2.qflt.v1 });
-    cx2.qflt.v3 = Convert<HighPrecision, float>(m_MinX - HighPrecision{ cx2.qflt.v1 } - HighPrecision{ cx2.qflt.v2 });
-    cx2.qflt.v4 = Convert<HighPrecision, float>(m_MinX - HighPrecision{ cx2.qflt.v1 } - HighPrecision{ cx2.qflt.v2 } - HighPrecision{ cx2.qflt.v3 });
+    m_r.InitializeMemory(m_ScrnWidth * m_GpuAntialiasing,
+                         m_ScrnHeight * m_GpuAntialiasing,
+                         m_IterationAntialiasing,
+                         MaxFractalSize);
 
-    cy2.qflt.v1 = Convert<HighPrecision, float>(m_MinY);
-    cy2.qflt.v2 = Convert<HighPrecision, float>(m_MinY - HighPrecision{ cy2.qflt.v1 });
-    cy2.qflt.v3 = Convert<HighPrecision, float>(m_MinY - HighPrecision{ cy2.qflt.v1 } - HighPrecision{ cy2.qflt.v2 });
-    cy2.qflt.v4 = Convert<HighPrecision, float>(m_MinY - HighPrecision{ cy2.qflt.v1 } - HighPrecision{ cy2.qflt.v2 } - HighPrecision{ cy2.qflt.v3 });
-
-    dx2.qflt.v1 = Convert<HighPrecision, float>(src_dx);
-    dx2.qflt.v2 = Convert<HighPrecision, float>(src_dx - HighPrecision{ dx2.qflt.v1 });
-    dx2.qflt.v3 = Convert<HighPrecision, float>(src_dx - HighPrecision{ dx2.qflt.v1 } - HighPrecision{ dx2.qflt.v2 });
-    dx2.qflt.v4 = Convert<HighPrecision, float>(src_dx - HighPrecision{ dx2.qflt.v1 } - HighPrecision{ dx2.qflt.v2 } - HighPrecision{ dx2.qflt.v3 });
-
-    dy2.qflt.v1 = Convert<HighPrecision, float>(src_dy);
-    dy2.qflt.v2 = Convert<HighPrecision, float>(src_dy - HighPrecision{ dy2.qflt.v1 });
-    dy2.qflt.v3 = Convert<HighPrecision, float>(src_dy - HighPrecision{ dy2.qflt.v1 } - HighPrecision{ dy2.qflt.v2 });
-    dy2.qflt.v4 = Convert<HighPrecision, float>(src_dy - HighPrecision{ dy2.qflt.v1 } - HighPrecision{ dy2.qflt.v2 } - HighPrecision{ dy2.qflt.v3 });
-
-    // 4x64 bit
-    cx2.qdbl.v1 = Convert<HighPrecision, double>(m_MinX);
-    cx2.qdbl.v2 = Convert<HighPrecision, double>(m_MinX - HighPrecision{ cx2.qdbl.v1 });
-    cx2.qdbl.v3 = Convert<HighPrecision, double>(m_MinX - HighPrecision{ cx2.qdbl.v1 } - HighPrecision{ cx2.qdbl.v2 });
-    cx2.qdbl.v4 = Convert<HighPrecision, double>(m_MinX - HighPrecision{ cx2.qdbl.v1 } - HighPrecision{ cx2.qdbl.v2 } - HighPrecision{ cx2.qdbl.v3 });
-
-    cy2.qdbl.v1 = Convert<HighPrecision, double>(m_MinY);
-    cy2.qdbl.v2 = Convert<HighPrecision, double>(m_MinY - HighPrecision{ cy2.qdbl.v1 });
-    cy2.qdbl.v3 = Convert<HighPrecision, double>(m_MinY - HighPrecision{ cy2.qdbl.v1 } - HighPrecision{ cy2.qdbl.v2 });
-    cy2.qdbl.v4 = Convert<HighPrecision, double>(m_MinY - HighPrecision{ cy2.qdbl.v1 } - HighPrecision{ cy2.qdbl.v2 } - HighPrecision{ cy2.qdbl.v3 });
-
-    dx2.qdbl.v1 = Convert<HighPrecision, double>(src_dx);
-    dx2.qdbl.v2 = Convert<HighPrecision, double>(src_dx - HighPrecision{ dx2.qdbl.v1 });
-    dx2.qdbl.v3 = Convert<HighPrecision, double>(src_dx - HighPrecision{ dx2.qdbl.v1 } - HighPrecision{ dx2.qdbl.v2 });
-    dx2.qdbl.v4 = Convert<HighPrecision, double>(src_dx - HighPrecision{ dx2.qdbl.v1 } - HighPrecision{ dx2.qdbl.v2 } - HighPrecision{ dx2.qdbl.v3 });
-
-    dy2.qdbl.v1 = Convert<HighPrecision, double>(src_dy);
-    dy2.qdbl.v2 = Convert<HighPrecision, double>(src_dy - HighPrecision{ dy2.qdbl.v1 });
-    dy2.qdbl.v3 = Convert<HighPrecision, double>(src_dy - HighPrecision{ dy2.qdbl.v1 } - HighPrecision{ dy2.qdbl.v2 });
-    dy2.qdbl.v4 = Convert<HighPrecision, double>(src_dy - HighPrecision{ dy2.qdbl.v1 } - HighPrecision{ dy2.qdbl.v2 } - HighPrecision{ dy2.qdbl.v3 });
-
-    // 2x64 bit
-    cx2.dbl.head = dbl_cx;
-    cx2.dbl.tail = Convert<HighPrecision, double>(m_MinX - HighPrecision{ dbl_cx });
-
-    cy2.dbl.head = dbl_cy;
-    cy2.dbl.tail = Convert<HighPrecision, double>(m_MinY - HighPrecision{ dbl_cy });
-
-    dx2.dbl.head = dbl_dx;
-    dx2.dbl.tail = Convert<HighPrecision, double>(src_dx - HighPrecision{ dbl_dx });
-
-    dy2.dbl.head = dbl_dy;
-    dy2.dbl.tail = Convert<HighPrecision, double>(src_dy - HighPrecision{ dbl_dy });
-
-    // 64-bit
-    cx2.doubleOnly = dbl_cx;
-    cy2.doubleOnly = dbl_cy;
-    dx2.doubleOnly = dbl_dx;
-    dy2.doubleOnly = dbl_dy;
-
-    // 2x32 bit
-    cx2.flt.head = flt_cx;
-    cx2.flt.tail = Convert<HighPrecision, float>(m_MinX - HighPrecision{ flt_cx });
-
-    cy2.flt.head = flt_cy;
-    cy2.flt.tail = Convert<HighPrecision, float>(m_MinY - HighPrecision{ flt_cy });
-
-    dx2.flt.head = flt_dx;
-    dx2.flt.tail = Convert<HighPrecision, float>(src_dx - HighPrecision{ flt_dx });
-
-    dy2.flt.head = flt_dy;
-    dy2.flt.tail = Convert<HighPrecision, float>(src_dy - HighPrecision{ flt_dy });
-
-    // 32 bit
-    cx2.floatOnly = flt_cx;
-    cy2.floatOnly = flt_cy;
-    dx2.floatOnly = flt_dx;
-    dy2.floatOnly = flt_dy;
-
-    m_r.render_gpu2(m_RenderAlgorithm,
-        (uint32_t*)m_ItersMemory,
-        MaxFractalSize,
-        m_ScrnWidth * m_GpuAntialiasing,
-        m_ScrnHeight * m_GpuAntialiasing,
-        cx2,
-        cy2,
-        dx2,
-        dy2,
-        m_NumIterations,
-        m_IterationAntialiasing,
-        m_IterationPrecision);
+    m_r.Render(m_RenderAlgorithm,
+               (uint32_t*)m_ItersMemory,
+               cx2,
+               cy2,
+               dx2,
+               dy2,
+               m_NumIterations,
+               m_IterationPrecision);
 
     DrawFractal(MemoryOnly);
 }
@@ -1290,14 +1285,14 @@ void Fractal::CalcCpuFractal(bool MemoryOnly)
         { // Calculate only those pixels assigned to us
             if (m_ProcessPixelRow[py] == m_NetworkRender)
             {
-                if (m_RenderAlgorithm == 'h')
+                if (m_RenderAlgorithm == RenderAlgorithm::CpuHigh)
                 {
                     //CalcPixelRow_Multi ((unsigned int *) m_ItersArray[py], py);
                     std::unique_ptr<std::thread> t1(new std::thread(&Fractal::CalcPixelRow_Multi, this, (unsigned int *)m_ItersArray[py], py));
                     threads.push_back(std::move(t1));
                     threads_py.push_back(py);
                 }
-                else if (m_RenderAlgorithm == 'l')
+                else if (m_RenderAlgorithm == RenderAlgorithm::Cpu64)
                 {
                     //CalcPixelRow_Multi ((unsigned int *) m_ItersArray[py], py);
                     std::unique_ptr<std::thread> t1(new std::thread(&Fractal::CalcPixelRow_C, this, (unsigned int*)m_ItersArray[py], py));
@@ -1402,6 +1397,657 @@ void Fractal::CalcNetworkFractal(bool MemoryOnly)
             }
         }
     }
+}
+
+void Fractal::CalcCpuPerturbationFractalGlitchy(bool MemoryOnly) {
+    PerturbationResults results;
+    std::vector<Point> glitched;
+
+    double initX = (double)(rand() % m_ScrnWidth);
+    double initY = (double)(rand() % m_ScrnHeight);
+    //double initX = m_ScrnWidth / 2;
+    //double initY = m_ScrnHeight / 2;
+    glitched.push_back({ initX, initY, 0 });
+
+    for (size_t row = 0; row < m_ScrnHeight; row++) {
+        memset(m_ItersArray[row], 0, MaxFractalSize * sizeof(uint32_t));
+    }
+
+    for (size_t count = 0; count < 5; count++) {
+        double centerX, centerY;
+
+        int randIndex = rand() % glitched.size();
+        auto pt = glitched[randIndex];
+
+        results.clear();
+
+        double dx = Convert<HighPrecision, double>((m_MaxX - m_MinX) / m_ScrnWidth);
+        double dy = Convert<HighPrecision, double>((m_MaxY - m_MinY) / m_ScrnHeight);
+
+        {
+            HighPrecision dxHigh = (m_MaxX - m_MinX) / m_ScrnWidth;
+            HighPrecision dyHigh = (m_MaxY - m_MinY) / m_ScrnHeight;
+
+            HighPrecision cx = m_MinX + dxHigh * ((HighPrecision)pt.x);
+            HighPrecision cy = m_MaxY - dyHigh * ((HighPrecision)pt.y);
+
+            HighPrecision zx, zy;
+            HighPrecision zx2, zy2;
+            unsigned int i;
+
+            centerX = (double)(cx - m_MinX);
+            centerY = (double)(cy - m_MaxY);
+
+            zx = cx;
+            zy = cy;
+            for (i = 0; i < m_NumIterations; i++)
+            {
+                // x^2+2*I*x*y-y^2
+                zx2 = zx * 2;
+                zy2 = zy * 2;
+
+                results.x.push_back((double)zx);
+                results.x2.push_back((double)zx2);
+                results.y.push_back((double)zy);
+                results.y2.push_back((double)zy2);
+                //results.complex2.push_back({ (double)zx2, (double)zy2 });
+
+                const double glitchTolerancy = 0.0000001;
+                double tolerancyReal = (double)zx * glitchTolerancy;
+                double tolerancyImag = (double)zy * glitchTolerancy;
+                std::complex<double> tolerancy(tolerancyReal, tolerancyImag);
+                results.tolerancy.push_back(std::norm(tolerancy));
+
+                zx = zx * zx - zy * zy + cx;
+                zy = zx2 * zy + cy;
+            }
+        }
+
+        size_t iter;
+        const size_t max_iter = results.x.size() - 1;
+
+        double zn_size;
+
+        // (zx + zy)^2 = zx^2 + 2*zx*zy + zy^2
+        // (zx + zy)^3 = zx^3 + 3*zx^2*zy + 3*zx*zy^2 + zy
+        for (size_t y = 0; y < m_ScrnHeight; y++) {
+            for (size_t x = 0; x < m_ScrnWidth; x++)
+            {
+                if (m_ItersArray[y][x] != 0) {
+                    continue;
+                }
+
+                iter = 0;
+
+                //double deltaReal = dx * x - centerX;
+                //double deltaImaginary = -dy * y - centerY;
+
+                //std::complex<double> DeltaSub0(deltaReal, deltaImaginary);
+                //std::complex<double> DeltaSubN;
+
+                //DeltaSubN = DeltaSub0;
+
+                //bool glitched = false;
+
+                //do
+                //{
+                //    DeltaSubN *= results.complex2[iter] + DeltaSubN;
+                //    DeltaSubN += DeltaSub0;
+
+                //    ++iter;
+                //    zn_size = std::norm(results.complex2[iter] * 0.5 + DeltaSubN);
+
+                //    if (glitched == false &&
+                //        zn_size < results.tolerancy[iter]) {
+                //        glitched = true;
+                //        break;
+                //    }
+                //} while (zn_size < 256 && iter < max_iter);
+
+                double deltaReal = dx * x - centerX;
+                double deltaImaginary = -dy * y - centerY;
+
+                double DeltaSub0X = deltaReal;
+                double DeltaSub0Y = deltaImaginary;
+                double DeltaSubNX, DeltaSubNY;
+
+                DeltaSubNX = DeltaSub0X;
+                DeltaSubNY = DeltaSub0Y;
+
+                bool bglitched = false;
+
+                do {
+                    const double DeltaSubNXOrig = DeltaSubNX;
+                    const double DeltaSubNYOrig = DeltaSubNY;
+
+                    DeltaSubNX = DeltaSubNXOrig * (results.x2[iter] + DeltaSubNXOrig) -
+                                 DeltaSubNYOrig * (results.y2[iter] + DeltaSubNYOrig);
+                    DeltaSubNX += DeltaSub0X;
+
+                    DeltaSubNY = DeltaSubNXOrig * (results.y2[iter] + DeltaSubNYOrig) +
+                                 DeltaSubNYOrig * (results.x2[iter] + DeltaSubNXOrig);
+                    DeltaSubNY += DeltaSub0Y;
+
+                    ++iter;
+
+                    const double tempX = results.x[iter] + DeltaSubNX;
+                    const double tempY = results.y[iter] + DeltaSubNY;
+                    zn_size = tempX * tempX + tempY * tempY;
+
+                    if (bglitched == false &&
+                        zn_size < results.tolerancy[iter]) {
+                        bglitched = true;
+                        break;
+                    }
+                } while (zn_size < 256 && iter < max_iter);
+
+                if (bglitched == false) {
+                    m_ItersArray[y][x] = (uint32_t)iter;
+                }
+                else {
+                    m_ItersArray[y][x] = 0;
+                    glitched.push_back({ (double)x,(double)y,iter });
+                }
+            }
+        }
+
+        if (glitched.size() < 100) {
+            break;
+        }
+    }
+
+    DrawFractal(MemoryOnly);
+}
+
+void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
+    PerturbationResults results;
+
+    double initX = (double)m_ScrnWidth / 2;
+    double initY = (double)m_ScrnHeight / 2;
+
+    for (size_t row = 0; row < m_ScrnHeight; row++) {
+        memset(m_ItersArray[row], 0, MaxFractalSize * sizeof(uint32_t));
+    }
+
+    double centerX, centerY;
+
+    results.clear();
+
+    double dx = Convert<HighPrecision, double>((m_MaxX - m_MinX) / m_ScrnWidth);
+    double dy = Convert<HighPrecision, double>((m_MaxY - m_MinY) / m_ScrnHeight);
+
+    {
+        HighPrecision dxHigh = (m_MaxX - m_MinX) / m_ScrnWidth;
+        HighPrecision dyHigh = (m_MaxY - m_MinY) / m_ScrnHeight;
+
+        HighPrecision cx = m_MinX + dxHigh * ((HighPrecision)initX);
+        HighPrecision cy = m_MaxY - dyHigh * ((HighPrecision)initY);
+
+        HighPrecision zx, zy;
+        HighPrecision zx2, zy2;
+        unsigned int i;
+
+        centerX = (double)(cx - m_MinX);
+        centerY = (double)(cy - m_MaxY);
+
+        results.x.push_back(0);
+        results.x2.push_back(0);
+        results.y.push_back(0);
+        results.y2.push_back(0);
+        results.complex.push_back({ 0,0 });
+        results.complex2.push_back({ 0,0 });
+        results.tolerancy.push_back(0);
+
+        zx = cx;
+        zy = cy;
+        for (i = 0; i < m_NumIterations; i++)
+        {
+            // x^2+2*I*x*y-y^2
+            zx2 = zx * 2;
+            zy2 = zy * 2;
+
+            results.x.push_back((double)zx);
+            results.x2.push_back((double)zx2);
+            results.y.push_back((double)zy);
+            results.y2.push_back((double)zy2);
+            results.complex.push_back({ (double)zx, (double)zy });
+            results.complex2.push_back({ (double)zx2, (double)zy2 });
+
+            const double glitchTolerancy = 0.0000001;
+            double tolerancyReal = (double)zx * glitchTolerancy;
+            double tolerancyImag = (double)zy * glitchTolerancy;
+            std::complex<double> tolerancy(tolerancyReal, tolerancyImag);
+            results.tolerancy.push_back(std::norm(tolerancy));
+
+            zx = zx * zx - zy * zy + cx;
+            zy = zx2 * zy + cy;
+        }
+    }
+
+
+    //
+    // From https://fractalforums.org/fractal-mathematics-and-new-theories/28/another-solution-to-perturbation-glitches/4360/msg29835#msg29835
+    //
+
+    //complex Reference[]; // Reference orbit (MUST START WITH ZERO)
+    //int MaxRefIteration; // The last valid iteration of the reference (the iteration just before it escapes)
+    //complex dz = 0, dc; // Delta z and Delta c
+    //int Iteration = 0, RefIteration = 0;
+
+    //while (Iteration < MaxIteration) {
+    //    dz = 2 * dz * Reference[RefIteration] + dz * dz + dc;
+    //    RefIteration++;
+
+    //    complex z = Reference[RefIteration] + dz;
+    //    if (| z | > BailoutRadius) break;
+    //    if (| z | < | dz| || RefIteration == MaxRefIteration) {
+    //        dz = z;
+    //        RefIteration = 0;
+    //    }
+    //    Iteration++;
+    //}
+
+    for (size_t y = 0; y < m_ScrnHeight; y++) {
+        for (size_t x = 0; x < m_ScrnWidth; x++)
+        {
+            if (m_ItersArray[y][x] != 0) {
+                continue;
+            }
+
+            size_t iter = 0;
+            size_t RefIteration = 0;
+            double deltaReal = dx * x - centerX;
+            double deltaImaginary = -dy * y - centerY;
+
+            double DeltaSub0X = deltaReal;
+            double DeltaSub0Y = deltaImaginary;
+            double DeltaSubNX = 0;
+            double DeltaSubNY = 0;
+
+            while (iter < m_NumIterations) {
+                const double DeltaSubNXOrig = DeltaSubNX;
+                const double DeltaSubNYOrig = DeltaSubNY;
+
+                DeltaSubNX = DeltaSubNXOrig * (results.x2[RefIteration] + DeltaSubNXOrig) -
+                             DeltaSubNYOrig * (results.y2[RefIteration] + DeltaSubNYOrig) +
+                             DeltaSub0X;
+                DeltaSubNY = DeltaSubNXOrig * (results.y2[RefIteration] + DeltaSubNYOrig) +
+                             DeltaSubNYOrig * (results.x2[RefIteration] + DeltaSubNXOrig) +
+                             DeltaSub0Y;
+
+                ++RefIteration;
+
+                const double tempZX = results.x[RefIteration] + DeltaSubNX;
+                const double tempZY = results.y[RefIteration] + DeltaSubNY;
+                const double zn_size = tempZX * tempZX + tempZY * tempZY;
+                const double normDeltaSubN = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
+
+                if (zn_size > 256) {
+                    break;
+                }
+
+                if (zn_size < normDeltaSubN ||
+                    RefIteration == results.x.size() - 1) {
+                    DeltaSubNX = tempZX;
+                    DeltaSubNY = tempZY;
+                    RefIteration = 0;
+                }
+
+                ++iter;
+            }
+
+            m_ItersArray[y][x] = (uint32_t)iter;
+        }
+    }
+
+    DrawFractal(MemoryOnly);
+}
+
+void Fractal::CalcGpuPerturbationFractalGlitchy(bool MemoryOnly) {
+    //m_PerturbationResults.clear(); // TODO
+
+    std::vector<Point> glitched;
+
+    if (!m_PerturbationResults.empty()) {
+        for (size_t i = m_PerturbationResults.size() - 1; i >= 0; i--) {
+            if (m_PerturbationResults[i].hiX >= m_MinX && m_PerturbationResults[i].hiX <= m_MaxX &&
+                m_PerturbationResults[i].hiY >= m_MinY && m_PerturbationResults[i].hiY <= m_MaxY) {
+                continue;
+            }
+
+            m_PerturbationResults.erase(m_PerturbationResults.begin() + i);
+        }
+    }
+
+    for (size_t row = 0; row < m_ScrnHeight; row++) {
+        memset(m_ItersArray[row], 0, MaxFractalSize * sizeof(uint32_t));
+    }
+
+    MattCoords cx2{}, cy2{}, dx2{}, dy2{};
+    MattCoords centerX2{}, centerY2{};
+
+    FillGpuCoords(cx2, cy2, dx2, dy2);
+
+    m_r.InitializeMemory(m_ScrnWidth * m_GpuAntialiasing,
+        m_ScrnHeight * m_GpuAntialiasing,
+        m_IterationAntialiasing,
+        MaxFractalSize);
+
+    m_r.ClearMemory();
+
+    if (glitched.empty()) {
+        double initX = (double)m_ScrnWidth / 2;
+        double initY = (double)m_ScrnHeight / 2;
+        glitched.push_back({ initX, initY, 0 });
+    }
+
+    if (!m_PerturbationResults.empty()) {
+        size_t max_iters = 0;
+        size_t max_index = 0;
+
+        for (int count = 0; count < m_PerturbationResults.size(); count++) {
+            PerturbationResults& results = m_PerturbationResults[count];
+            if (results.x.size() > max_iters) {
+                max_iters = results.x.size();
+                max_index = count;
+            }
+        }
+
+        PerturbationResults& results = m_PerturbationResults[max_index];
+        glitched.clear();
+
+        HighPrecision centerX = results.hiX - m_MinX;
+        HighPrecision centerY = results.hiY - m_MaxY;
+
+        FillCoord(centerX, centerX2);
+        FillCoord(centerY, centerY2);
+
+        MattPerturbResults gpu_results{ results.x.size() };
+        FillCoordArray(results.x.data(), results.x.size(), gpu_results.x);
+        FillCoordArray(results.x2.data(), results.x2.size(), gpu_results.x2);
+        FillCoordArray(results.y.data(), results.y.size(), gpu_results.y);
+        FillCoordArray(results.y2.data(), results.y2.size(), gpu_results.y2);
+        FillCoordArray(results.tolerancy.data(), results.tolerancy.size(), gpu_results.tolerancy);
+
+        // all sizes should be the same anyway just pick one
+        gpu_results.size = results.tolerancy.size();
+
+        m_r.RenderPerturbGlitchy (m_RenderAlgorithm,
+            (uint32_t*)m_ItersMemory,
+            &gpu_results,
+            cx2,
+            cy2,
+            dx2,
+            dy2,
+            centerX2,
+            centerY2,
+            m_NumIterations,
+            m_IterationPrecision);
+
+        for (size_t y = 0; y < m_ScrnHeight; y++) {
+            for (size_t x = 0; x < m_ScrnWidth; x++)
+            {
+                if (m_ItersArray[y][x] == 0) {
+                    glitched.push_back({ (double)x,(double)y, 0 });
+                }
+            }
+        }
+    }
+
+    if (!glitched.empty()) {
+
+        double totalX = 0;
+        double totalY = 0;
+        bool alt = false;
+
+        for (size_t count = 0; count < 10; count++) {
+            Point pt;
+
+            if (alt == false && (totalX != 0 || totalY != 0)) {
+                pt = Point{ totalX, totalY };
+                alt = true;
+            }
+            else if (!glitched.empty()) {
+                int randIndex = rand() % glitched.size();
+                pt = glitched[randIndex];
+                alt = false;
+            }
+            else
+            {
+                break;
+            }
+
+            m_PerturbationResults.push_back({});
+            PerturbationResults& results = m_PerturbationResults[count];
+
+            HighPrecision dxHigh = (m_MaxX - m_MinX) / m_ScrnWidth;
+            HighPrecision dyHigh = (m_MaxY - m_MinY) / m_ScrnHeight;
+
+            HighPrecision cx = m_MinX + dxHigh * ((HighPrecision)pt.x);
+            HighPrecision cy = m_MaxY - dyHigh * ((HighPrecision)pt.y);
+
+            results.hiX = cx;
+            results.hiY = cy;
+            results.scrnX = (size_t)pt.x;
+            results.scrnY = (size_t)pt.y;
+
+            HighPrecision zx, zy;
+            HighPrecision zx2, zy2;
+            unsigned int i;
+
+            HighPrecision centerX = cx - m_MinX;
+            HighPrecision centerY = cy - m_MaxY;
+
+            FillCoord(centerX, centerX2);
+            FillCoord(centerY, centerY2);
+
+            zx = cx;
+            zy = cy;
+            for (i = 0; i < m_NumIterations; i++)
+            {
+                // x^2+2*I*x*y-y^2
+                zx2 = zx * 2;
+                zy2 = zy * 2;
+
+                results.x.push_back((double)zx);
+                results.x2.push_back((double)zx2);
+                results.y.push_back((double)zy);
+                results.y2.push_back((double)zy2);
+
+                const double glitchTolerancy = 0.0000001;
+                double tolerancyReal = (double)zx * glitchTolerancy;
+                double tolerancyImag = (double)zy * glitchTolerancy;
+                std::complex<double> tolerancy(tolerancyReal, tolerancyImag);
+                results.tolerancy.push_back(std::norm(tolerancy));
+
+                zx = zx * zx - zy * zy + cx;
+                zy = zx2 * zy + cy;
+            }
+
+
+            glitched.clear();
+
+            MattPerturbResults gpu_results{ results.x.size() };
+            FillCoordArray(results.x.data(), results.x.size(), gpu_results.x);
+            FillCoordArray(results.x2.data(), results.x2.size(), gpu_results.x2);
+            FillCoordArray(results.y.data(), results.y.size(), gpu_results.y);
+            FillCoordArray(results.y2.data(), results.y2.size(), gpu_results.y2);
+            FillCoordArray(results.tolerancy.data(), results.tolerancy.size(), gpu_results.tolerancy);
+
+            // all sizes should be the same anyway just pick one
+            gpu_results.size = results.tolerancy.size();
+
+            m_r.RenderPerturbGlitchy (m_RenderAlgorithm,
+                (uint32_t*)m_ItersMemory,
+                &gpu_results,
+                cx2,
+                cy2,
+                dx2,
+                dy2,
+                centerX2,
+                centerY2,
+                m_NumIterations,
+                m_IterationPrecision);
+
+            totalX = 0;
+            totalY = 0;
+
+            for (size_t y = 0; y < m_ScrnHeight; y++) {
+                for (size_t x = 0; x < m_ScrnWidth; x++)
+                {
+                    if (m_ItersArray[y][x] == 0) {
+                        glitched.push_back({ (double)x,(double)y, 0 });
+                        totalX += x;
+                        totalY += y;
+                    }
+                }
+            }
+
+            totalX /= (double)glitched.size();
+            totalY /= (double)glitched.size();
+
+            if (m_ItersArray[(size_t)totalY][(size_t)totalX] != 0)
+            {
+                totalX = 0;
+                totalY = 0;
+            }
+
+            if (glitched.size() < 100) {
+                break;
+            }
+        }
+    }
+
+    DrawFractal(MemoryOnly);
+}
+
+void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
+    std::vector<PerturbationResults*> useful_results;
+
+    if (!m_PerturbationResults.empty()) {
+        for (size_t i = 0; i < m_PerturbationResults.size(); i++) {
+            if (m_PerturbationResults[i].hiX >= m_MinX && m_PerturbationResults[i].hiX <= m_MaxX &&
+                m_PerturbationResults[i].hiY >= m_MinY && m_PerturbationResults[i].hiY <= m_MaxY) {
+                useful_results.push_back(&m_PerturbationResults[i]);
+
+                m_PerturbationResults[i].scrnX = (size_t) ((m_PerturbationResults[i].hiX - m_MinX) / (m_MaxX - m_MinX) * HighPrecision{ m_ScrnWidth });
+                m_PerturbationResults[i].scrnY = (size_t) ((m_PerturbationResults[i].hiY - m_MinY) / (m_MaxY - m_MinY) * HighPrecision { m_ScrnHeight });
+            }
+            else {
+                m_PerturbationResults[i].scrnX = MAXSIZE_T;
+                m_PerturbationResults[i].scrnY = MAXSIZE_T;
+            }
+        }
+    }
+
+    PerturbationResults* results = nullptr;
+    bool calc_ref = false;
+
+    if (!useful_results.empty()) {
+        results = useful_results[useful_results.size() - 1];
+    }
+    else {
+        m_PerturbationResults.push_back({});
+        results = &m_PerturbationResults[m_PerturbationResults.size() - 1];
+        calc_ref = true;
+    }
+
+    MattCoords cx2{}, cy2{}, dx2{}, dy2{};
+    MattCoords centerX2{}, centerY2{};
+
+    FillGpuCoords(cx2, cy2, dx2, dy2);
+
+    m_r.InitializeMemory(m_ScrnWidth * m_GpuAntialiasing,
+        m_ScrnHeight * m_GpuAntialiasing,
+        m_IterationAntialiasing,
+        MaxFractalSize);
+
+    m_r.ClearMemory();
+
+    if (calc_ref) {
+        double initX = (double)m_ScrnWidth / 2;
+        double initY = (double)m_ScrnHeight / 2;
+
+        Point pt = { initX, initY };
+
+        HighPrecision dxHigh = (m_MaxX - m_MinX) / m_ScrnWidth;
+        HighPrecision dyHigh = (m_MaxY - m_MinY) / m_ScrnHeight;
+
+        HighPrecision cx = m_MinX + dxHigh * ((HighPrecision)pt.x);
+        HighPrecision cy = m_MaxY - dyHigh * ((HighPrecision)pt.y);
+
+        results->hiX = cx;
+        results->hiY = cy;
+        results->scrnX = (size_t)pt.x;
+        results->scrnY = (size_t)pt.y;
+
+        HighPrecision zx, zy;
+        HighPrecision zx2, zy2;
+        unsigned int i;
+
+        results->x.reserve(1000000);
+        results->x2.reserve(1000000);
+        results->y.reserve(1000000);
+        results->y2.reserve(1000000);
+
+        results->x.push_back(0);
+        results->x2.push_back(0);
+        results->y.push_back(0);
+        results->y2.push_back(0);
+
+        zx = cx;
+        zy = cy;
+        for (i = 0; i < m_NumIterations; i++)
+        {
+            zx2 = zx * 2;
+            zy2 = zy * 2;
+
+            results->x.push_back((double)zx);
+            results->x2.push_back((double)zx2);
+            results->y.push_back((double)zy);
+            results->y2.push_back((double)zy2);
+
+            // x^2+2*I*x*y-y^2
+            zx = zx * zx - zy * zy + cx;
+            zy = zx2 * zy + cy;
+
+            const double tempZX = (double)zx + (double)cx;
+            const double tempZY = (double)zy + (double)cy;
+            const double zn_size = tempZX * tempZX + tempZY * tempZY;
+            if (zn_size > 256) {
+                break;
+            }
+        }
+    }
+
+    HighPrecision centerX = results->hiX - m_MinX;
+    HighPrecision centerY = results->hiY - m_MaxY;
+
+    FillCoord(centerX, centerX2);
+    FillCoord(centerY, centerY2);
+
+    MattPerturbResults gpu_results{ results->x.size() };
+    FillCoordArray(results->x.data(), results->x.size(), gpu_results.x);
+    FillCoordArray(results->x2.data(), results->x2.size(), gpu_results.x2);
+    FillCoordArray(results->y.data(), results->y.size(), gpu_results.y);
+    FillCoordArray(results->y2.data(), results->y2.size(), gpu_results.y2);
+
+    // all sizes should be the same anyway just pick one
+    gpu_results.size = results->x.size();
+
+    m_r.RenderPerturbBLA(m_RenderAlgorithm,
+        (uint32_t*)m_ItersMemory,
+        &gpu_results,
+        cx2,
+        cy2,
+        dx2,
+        dy2,
+        centerX2,
+        centerY2,
+        m_NumIterations,
+        m_IterationPrecision);
+
+    DrawFractal(MemoryOnly);
 }
 
 bool Fractal::CalcPixelRow_Exp(unsigned int *rowBuffer, size_t row)
@@ -2177,7 +2823,7 @@ bool Fractal::ServerBeginCalc(void)
     m_ServerSubNetwork->ReadData(buffer, 512);
 
     // TODO:
-    char RenderAlgorithm = 0;
+    RenderAlgorithm RenderAlgorithm = RenderAlgorithm::Cpu64;
     int ScreenWidth = 0, ScreenHeight = 0;
     uint32_t NumIters = 0;
     HighPrecision MinX = 0, MaxX = 0, MinY = 0, MaxY = 0;

@@ -341,39 +341,67 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     }
     // Change rendering algorithm
     case IDM_ALG_CPU_HIGH:
-    { gFractal->SetRenderAlgorithm('h');
+    { gFractal->SetRenderAlgorithm(RenderAlgorithm::CpuHigh);
     break;
     }
     case IDM_ALG_CPU_1_64:
-    { gFractal->SetRenderAlgorithm('l');
+    { gFractal->SetRenderAlgorithm(RenderAlgorithm::Cpu64);
+    break;
+    }
+    case IDM_ALG_CPU_1_64_PERTURB:
+    { gFractal->SetRenderAlgorithm(RenderAlgorithm::Cpu64PerturbedGlitchy);
+    break;
+    }
+    case IDM_ALG_CPU_1_64_PERTURB_BLA:
+    { gFractal->SetRenderAlgorithm(RenderAlgorithm::Cpu64PerturbedBLA);
     break;
     }
     case IDM_ALG_GPU_1_64:
-    { gFractal->SetRenderAlgorithm('f');
+    { gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu1x64);
+    break;
+    }
+    case IDM_ALG_GPU_1_64_PERTURB:
+    { gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu1x64PerturbedGlitchy);
+    break;
+    }
+    case IDM_ALG_GPU_1_64_PERTURB_BLA:
+    { gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu1x64PerturbedBLA);
     break;
     }
     case IDM_ALG_GPU_2_64:
-    { gFractal->SetRenderAlgorithm('d');
+    { gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu2x64);
     break;
     }
     case IDM_ALG_GPU_4_64:
-    { gFractal->SetRenderAlgorithm('q');
+    { gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu4x64);
     break;
     }
     case IDM_ALG_GPU_1_32:
-    { gFractal->SetRenderAlgorithm('F');
+    { gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu1x32);
+    break;
+    }
+    case IDM_ALG_GPU_1_32_PERTURB_BLA:
+    { gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedBLA);
     break;
     }
     case IDM_ALG_GPU_2_32:
-    { gFractal->SetRenderAlgorithm('D');
+    { gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu2x32);
+    break;
+    }
+    case IDM_ALG_GPU_2_32_PERTURB:
+    { gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu2x32PerturbedGlitchy);
+    break;
+    }
+    case IDM_ALG_GPU_2_32_PERTURB_BLA:
+    { gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu2x32PerturbedBLA);
     break;
     }
     case IDM_ALG_GPU_4_32:
-    { gFractal->SetRenderAlgorithm('Q');
+    { gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu4x32);
     break;
     }
     case IDM_ALG_GPU_2_64_32:
-    { gFractal->SetRenderAlgorithm('B');
+    { gFractal->SetRenderAlgorithm(RenderAlgorithm::Blend);
     break;
     }
 
@@ -401,6 +429,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     // Reset the number of iterations to the default
     case IDM_RESETITERATIONS:
     { MenuResetIterations(hWnd);
+    break;
+    }
+
+    case IDM_PERTURB_RESULTS:
+    { gFractal->DrawPerturbationResults(false);
     break;
     }
 

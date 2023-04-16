@@ -73,7 +73,13 @@ BEGIN
     POPUP "POPUP"
     BEGIN
         MENUITEM "&Back",                       IDM_BACK
-        MENUITEM "&Standard View",              IDM_STANDARDVIEW
+        POPUP "Built-In Views"
+        BEGIN
+            MENUITEM "&Standard View",              IDM_STANDARDVIEW
+            MENUITEM "#1 - 4x32 GPU limit",         IDM_VIEW1
+            MENUITEM "#2",                          IDM_VIEW2
+            MENUITEM "#3 - 32-bit BLA max",         IDM_VIEW3
+        END
         MENUITEM "Square &View",                IDM_SQUAREVIEW
         MENUITEM "Center View &Here",           IDM_CENTERVIEW
         MENUITEM SEPARATOR
@@ -119,6 +125,7 @@ BEGIN
             MENUITEM "4x32 GPU",                    IDM_ALG_GPU_4_32
             MENUITEM "1x32 GPU",                    IDM_ALG_GPU_1_32
             MENUITEM "1x32 GPU - Perturbation BLA", IDM_ALG_GPU_1_32_PERTURB_BLA
+            MENUITEM "1x32 GPU - Perturbation Scaled", IDM_ALG_GPU_1_32_PERTURB_SCALED
             MENUITEM "~64 GPU combo (broken)",      IDM_ALG_GPU_2_64_32
         END
         MENUITEM "De&fault Iterations",         IDM_RESETITERATIONS

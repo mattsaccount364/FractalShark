@@ -128,6 +128,15 @@
 #define ID_BENCHMARK_ACCURATE           32901
 #define ID_BENCHMARK_ACCURATE_REFPT     32902
 #define IDM_BENCHMARK_ACCURATE_REFPT    32903
+#define ID_POPUP_BUILT                  32904
+#define ID_BUILT_VIEW                   32905
+#define IDM_VIEW1                       32906
+#define ID_BUILT_                       32907
+#define IDM_VIEW2                       32908
+#define ID_BUILT_32909                  32909
+#define IDM_VIEW3                       32910
+#define ID_CHOOSERENDERALGORITHM_1X32GPU32911 32911
+#define IDM_ALG_GPU_1_32_PERTURB_SCALED 32912
 #define IDC_STATIC                      -1
 
 // Next default values for new objects
@@ -135,7 +144,7 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        131
-#define _APS_NEXT_COMMAND_VALUE         32904
+#define _APS_NEXT_COMMAND_VALUE         32913
 #define _APS_NEXT_CONTROL_VALUE         1000
 #define _APS_NEXT_SYMED_VALUE           110
 #endif

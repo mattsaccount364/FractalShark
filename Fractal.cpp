@@ -72,13 +72,10 @@ void Fractal::Initialize(int width,
         m_CheckForAbortThread = NULL;
     }
 
-    // Reset our location in the Back array.
-    m_CurPos = 0;
-
     // Setup member variables with initial values:
     Reset(width, height);
-    StandardView();
-    SetRenderAlgorithm(RenderAlgorithm::Gpu2x32);
+    View(0);
+    SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedScaled);
     SetIterationAntialiasing(1);
     SetGpuAntialiasing(1);
     SetIterationPrecision(1);
@@ -481,30 +478,46 @@ bool Fractal::CenterAtPoint(int x, int y)
 // Resets the fractal to the standard view.
 // Make sure the view is square on all monitors at all weird aspect ratios.
 //////////////////////////////////////////////////////////////////////////////
-void Fractal::StandardView(void)
+void Fractal::View(size_t view)
 {
-    // Limits of 4x64 GPU
-    //HighPrecision minX = HighPrecision{ "-1.763399177066752695854220120818493394874764715075525070697085376173644156624573649873526729559691534754284706803085481158" };
-    //HighPrecision minY = HighPrecision{ "0.04289211262806512836473285627858318635734695759291867302112730624188941270466703058975670804976478935827994844038526618063053858" };
-    //HighPrecision maxX = HighPrecision{ "-1.763399177066752695854220120818493394874764715075525070697085355870272824868052108014289980411203646967653925705407102169" };
-    //HighPrecision maxY = HighPrecision{ "0.04289211262806512836473285627858318635734695759291867302112731461463330922125985949917962768812338316745717506303752530265831841" };
-    //RecenterViewCalc(minX, minY, maxX, maxY);
+    HighPrecision minX;
+    HighPrecision minY;
+    HighPrecision maxX;
+    HighPrecision maxY;
 
-    //// Limits of 4x32 GPU
-    //HighPrecision minX = HighPrecision{ "-1.768969486867357972775564951275461551052751499509997185691881950786253743769635708375905775793656954725307354460920979983" };
-    //HighPrecision minY = HighPrecision{ "0.05699280690304670893115636892860647833175463644922652375916712719872599382335388157040896288795946562522749757591414246314107544" };
-    //HighPrecision maxX = HighPrecision{ "-1.768969486867357972775564950929487934553496494563941335911085292699250368065865432159590460057564657941788398574759610411" };
-    //HighPrecision maxY = HighPrecision{ "0.05699280690304670893115636907127975355127952306391692141273804706041783710937876987367435542131127321801128526034375237132904264" };
-    //RecenterViewCalc(minX, minY, maxX, maxY);
+    m_PerturbationResults.clear();
 
-    //HighPrecision minX = HighPrecision{"-0.58495503626130003601029848213118066005878420809359614438890887303577302491190715010346117018574877216397030492770124781195671802"};
-    //HighPrecision minY = HighPrecision{"0.65539077238267043815632402306524090571012503143059005580600414572477379600345575745505251230357715199720080866919744892255565016"};
-    //HighPrecision maxX = HighPrecision{"-0.58495503626130003601029848186508480376748852380830163262290451155972369401636122663125472706742227530136237906642559212881715395"};
-    //HighPrecision maxY = HighPrecision{"0.65539077238267043815632402317497403427516092222190248300856418146463464284705444362984488601344316801714300684703725236796367606" };
-    //RecenterViewCalc(minX, minY, maxX, maxY);
-
-    RecenterViewCalc(-2.5, -1.5, 1.5, 1.5);
-    ResetNumIterations();
+    switch (view) {
+    case 1:
+        // Limits of 4x64 GPU
+        minX = HighPrecision{ "-1.763399177066752695854220120818493394874764715075525070697085376173644156624573649873526729559691534754284706803085481158" };
+        minY = HighPrecision{ "0.04289211262806512836473285627858318635734695759291867302112730624188941270466703058975670804976478935827994844038526618063053858" };
+        maxX = HighPrecision{ "-1.763399177066752695854220120818493394874764715075525070697085355870272824868052108014289980411203646967653925705407102169" };
+        maxY = HighPrecision{ "0.04289211262806512836473285627858318635734695759291867302112731461463330922125985949917962768812338316745717506303752530265831841" };
+        RecenterViewCalc(minX, minY, maxX, maxY);
+        break;
+    case 2:
+        // Limits of 4x32 GPU
+        minX = HighPrecision{ "-1.768969486867357972775564951275461551052751499509997185691881950786253743769635708375905775793656954725307354460920979983" };
+        minY = HighPrecision{ "0.05699280690304670893115636892860647833175463644922652375916712719872599382335388157040896288795946562522749757591414246314107544" };
+        maxX = HighPrecision{ "-1.768969486867357972775564950929487934553496494563941335911085292699250368065865432159590460057564657941788398574759610411" };
+        maxY = HighPrecision{ "0.05699280690304670893115636907127975355127952306391692141273804706041783710937876987367435542131127321801128526034375237132904264" };
+        RecenterViewCalc(minX, minY, maxX, maxY);
+        break;
+    case 3:
+        // Limit of 1x32 + Perturbation with no scaling
+        minX = HighPrecision{ "-1.44656726997022737062295806977817803829443061688656117623800256312303751202920456713778693247098684334495241572095045" };
+        minY = HighPrecision{ "7.64163245263840450044318279619820153508302789530826527979427966642829357717061175013838301474813332434725222956221212e-18" };
+        maxX = HighPrecision{ "-1.44656726997022737062295806977817803829442603529959040638812674667522697557115287788808403561611427018141845213679032" };
+        maxY = HighPrecision{ "7.641632452638404500443184705192772689187142818828186336651801203615669784193475322289855499574866715163283993737498e-18" };
+        RecenterViewCalc(minX, minY, maxX, maxY);
+        break;
+    case 0:
+    default:
+        RecenterViewCalc(-2.5, -1.5, 1.5, 1.5);
+        ResetNumIterations();
+        break;
+    }
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -645,13 +658,17 @@ bool Fractal::FileExists(const wchar_t *filename)
 //////////////////////////////////////////////////////////////////////////////
 bool Fractal::Back(void)
 {
-    if (m_CurPos > 0)
+    if (!m_PrevMinX.empty())
     {
-        m_CurPos--;
-        m_MinX = m_PrevMinX[m_CurPos];
-        m_MinY = m_PrevMinY[m_CurPos];
-        m_MaxX = m_PrevMaxX[m_CurPos];
-        m_MaxY = m_PrevMaxY[m_CurPos];
+        m_MinX = m_PrevMinX.back();
+        m_MinY = m_PrevMinY.back();
+        m_MaxX = m_PrevMaxX.back();
+        m_MaxY = m_PrevMaxY.back();
+
+        m_PrevMinX.pop_back();
+        m_PrevMinY.pop_back();
+        m_PrevMaxX.pop_back();
+        m_PrevMaxY.pop_back();
 
         m_ChangedWindow = true;
         return true;
@@ -742,15 +759,10 @@ bool Fractal::IsValidLocation(void)
 //////////////////////////////////////////////////////////////////////////////
 void Fractal::SaveCurPos(void)
 {
-    m_PrevMinX[m_CurPos] = m_MinX;
-    m_PrevMinY[m_CurPos] = m_MinY;
-    m_PrevMaxX[m_CurPos] = m_MaxX;
-    m_PrevMaxY[m_CurPos] = m_MaxY;
-    m_CurPos++;
-    if (m_CurPos >= 256) // Don't allow the "back" option to work
-    {
-        m_CurPos = 255;
-    } // after so many levels.
+    m_PrevMinX.push_back(m_MinX);
+    m_PrevMinY.push_back(m_MinY);
+    m_PrevMaxX.push_back(m_MaxX);
+    m_PrevMaxY.push_back(m_MaxY);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -893,6 +905,7 @@ void Fractal::CalcFractal(bool MemoryOnly)
         CalcGpuPerturbationFractalGlitchy(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu1x32PerturbedBLA:
+    case RenderAlgorithm::Gpu1x32PerturbedScaled:
     case RenderAlgorithm::Gpu1x64PerturbedBLA:
     case RenderAlgorithm::Gpu2x32PerturbedBLA:
         CalcGpuPerturbationFractalBLA(MemoryOnly);
@@ -1670,19 +1683,36 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                 const double DeltaSubNYOrig = DeltaSubNY;
 
                 //
+                // wrn = (2 * Xr + wr * s) * wr - (2 * Xi + wi * s) * wi + ur;
+                // win = 2 * ((Xr + wr * s) * wi + Xi * wr) + ui;
+                //     = 2 * (Xr * wi + wr * s * wi + Xi * wr) + ui;
+                //     = 2 * Xr * wi + 2 * wr * s * wi + 2 * Xi * wr + ui;
+                //
                 // https://mathr.co.uk/blog/2021-05-14_deep_zoom_theory_and_practice.html#a2021-05-14_deep_zoom_theory_and_practice_rescaling
                 // 
                 // DeltaSubN = 2 * DeltaSubN * results.complex[RefIteration] + DeltaSubN * DeltaSubN + DeltaSub0;
-                // S * w = 2 * S * w * results.complex[RefIteration] + S * w * S * w + S * c
+                // S * w = 2 * S * w * results.complex[RefIteration] + S * w * S * w + S * d
                 // 
                 // S * (DeltaSubNWX + DeltaSubNWY I) = 2 * S * (DeltaSubNWX + DeltaSubNWY I) * (results.x[RefIteration] + results.y[RefIteration] * I) +
                 //                                     S * S * (DeltaSubNWX + DeltaSubNWY I) * (DeltaSubNWX + DeltaSubNWY I) +
-                //                                     S * d
+                //                                     S * (dX + dY I)
                 // 
                 // (DeltaSubNWX + DeltaSubNWY I) = 2 * (DeltaSubNWX + DeltaSubNWY I) * (results.x[RefIteration] + results.y[RefIteration] * I) +
                 //                                 S * (DeltaSubNWX + DeltaSubNWY I) * (DeltaSubNWX + DeltaSubNWY I) +
-                //                                 d
-                // 
+                //                                 (dX + dY I)
+                // DeltaSubNWX = 2 * (DeltaSubNWX * results.x[RefIteration] - DeltaSubNWY * results.y[RefIteration]) +
+                //               S * (DeltaSubNWX * DeltaSubNWX - DeltaSubNWY * DeltaSubNWY) +
+                //               dX
+                // DeltaSubNWX = 2 * DeltaSubNWX * results.x[RefIteration] - 2 * DeltaSubNWY * results.y[RefIteration] +
+                //               S * DeltaSubNWX * DeltaSubNWX - S * DeltaSubNWY * DeltaSubNWY +
+                //               dX
+                //
+                // DeltaSubNWY = 2 * DeltaSubNWX * results.y[RefIteration] + 2 * DeltaSubNWY * results.x[RefIteration] +
+                //               S * DeltaSubNWX * DeltaSubNWY + S * DeltaSubNWY * DeltaSubNWX +
+                //               dY
+                // DeltaSubNWY = 2 * DeltaSubNWX * results.y[RefIteration] + 2 * DeltaSubNWY * results.x[RefIteration] +
+                //               2 * S * DeltaSubNWX * DeltaSubNWY +
+                //               dY
 
                 DeltaSubNX = DeltaSubNXOrig * (results.x2[RefIteration] + DeltaSubNXOrig) -
                              DeltaSubNYOrig * (results.y2[RefIteration] + DeltaSubNYOrig) +
@@ -2005,7 +2035,7 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
         for (size_t i = 0; i < m_PerturbationResults.size(); i++) {
             if (m_PerturbationResults[i].hiX >= m_MinX && m_PerturbationResults[i].hiX <= m_MaxX &&
                 m_PerturbationResults[i].hiY >= m_MinY && m_PerturbationResults[i].hiY <= m_MaxY &&
-                m_PerturbationResults[i].MaxIterations >= m_PerturbationResults[i].x.size()) {
+                m_PerturbationResults[i].MaxIterations > m_PerturbationResults[i].x.size()) {
                 useful_results.push_back(&m_PerturbationResults[i]);
 
                 m_PerturbationResults[i].scrnX = (size_t) ((m_PerturbationResults[i].hiX - m_MinX) / (m_MaxX - m_MinX) * HighPrecision{ m_ScrnWidth });
@@ -2428,7 +2458,7 @@ HighPrecision Fractal::BenchmarkData::BenchmarkFinish() {
     HighPrecision timeTaken = (HighPrecision)((HighPrecision)deltaTime / (HighPrecision)freq64);
 
     fractal.Reset(prevScrnWidth, prevScrnHeight);
-    fractal.StandardView();
+    fractal.View(0);
 
     fractal.ChangedMakeDirty();
 

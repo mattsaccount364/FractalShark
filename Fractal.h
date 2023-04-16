@@ -80,7 +80,7 @@ public: // Changing the view
     bool RecenterViewCalc(HighPrecision MinX, HighPrecision MinY, HighPrecision MaxX, HighPrecision MaxY);
     bool RecenterViewScreen(RECT rect);
     bool CenterAtPoint(int x, int y);
-    void StandardView(void);
+    void View(size_t i);
     void SquareCurrentView(void);
     void ApproachTarget(void);
 
@@ -269,11 +269,10 @@ private:
 
     // Holds all previous positions within the fractal.
     // Allows us to go "back."
-    HighPrecision m_PrevMinX[256];
-    HighPrecision m_PrevMinY[256];
-    HighPrecision m_PrevMaxX[256];
-    HighPrecision m_PrevMaxY[256];
-    int    m_CurPos;
+    std::vector<HighPrecision> m_PrevMinX;
+    std::vector<HighPrecision> m_PrevMinY;
+    std::vector<HighPrecision> m_PrevMaxX;
+    std::vector<HighPrecision> m_PrevMaxY;
 
     // Describes the exact spot within the fractal
     // we are currently looking at.

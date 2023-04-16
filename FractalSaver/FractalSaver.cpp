@@ -267,7 +267,7 @@ unsigned long WINAPI DrawingThread (void *)
   
     // If we are in too far, reset to standard.
     if (gFractal->IsValidLocation () == false)
-    { gFractal->StandardView (); }
+    { gFractal->View(0); }
 
     if (gTimeToExit == true)
     { break; }

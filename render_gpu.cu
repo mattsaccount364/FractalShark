@@ -1260,6 +1260,123 @@ void mandel_1x_float_perturb_bla(uint32_t* iter_matrix,
 }
 
 __global__
+void mandel_1x_float_perturb_bla_scaled(uint32_t* iter_matrix,
+    float* results_x,
+    float* results_x2,
+    float* results_y,
+    float* results_y2,
+    float* results_tolerancy,
+    size_t sz,
+    int width,
+    int height,
+    float cx,
+    float cy,
+    float dx,
+    float dy,
+    float centerX,
+    float centerY,
+    uint32_t n_iterations)
+{
+    int X = blockIdx.x * blockDim.x + threadIdx.x;
+    int Y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (X >= width || Y >= height)
+        return;
+
+    //size_t idx = width * (height - Y - 1) + X;
+    size_t idx = width * Y + X;
+
+    if (iter_matrix[idx] != 0) {
+        return;
+    }
+
+    size_t iter = 0;
+    size_t RefIteration = 0;
+    float deltaReal = dx * X - centerX;
+    float deltaImaginary = -dy * Y - centerY;
+
+    // DeltaSubNWX = 2 * DeltaSubNWX * results.x[RefIteration] - 2 * DeltaSubNWY * results.y[RefIteration] +
+    //               S * DeltaSubNWX * DeltaSubNWX - S * DeltaSubNWY * DeltaSubNWY +
+    //               dX
+    // DeltaSubNWY = 2 * DeltaSubNWX * results.y[RefIteration] + 2 * DeltaSubNWY * results.x[RefIteration] +
+    //               2 * S * DeltaSubNWX * DeltaSubNWY +
+    //               dY
+    // 
+    // wrn = (2 * Xr + wr * s) * wr - (2 * Xi + wi * s) * wi + ur;
+    //     = 2 * Xr * wr + wr * wr * s - 2 * Xi * wi - wi * wi * s + ur;
+    // win = 2 * ((Xr + wr * s) * wi + Xi * wr) + ui;
+    //     = 2 * (Xr * wi + wr * s * wi + Xi * wr) + ui;
+    //     = 2 * Xr * wi + 2 * wr * s * wi + 2 * Xi * wr + ui;
+
+    //float S = sqrt(deltaReal * deltaReal + deltaImaginary * deltaImaginary);
+    float S = 1;
+    float DeltaSub0DX = deltaReal / S;
+    float DeltaSub0DY = deltaImaginary / S;
+    float DeltaSubNWX = 0;
+    float DeltaSubNWY = 0;
+
+    while (iter < n_iterations) {
+        //const float DeltaSubNXOrig = DeltaSubNWX;
+        //const float DeltaSubNYOrig = DeltaSubNWY;
+
+        //const float tempSubX = results_x2[RefIteration] + DeltaSubNXOrig;
+        //const float tempSubY = results_y2[RefIteration] + DeltaSubNYOrig;
+
+        //DeltaSubNWX =
+        //    DeltaSubNXOrig * tempSubX -
+        //    DeltaSubNYOrig * tempSubY +
+        //    DeltaSub0DX;
+        //DeltaSubNWY =
+        //    DeltaSubNXOrig * tempSubY +
+        //    DeltaSubNYOrig * tempSubX +
+        //    DeltaSub0DY;
+
+        const float DeltaSubNWXOrig = DeltaSubNWX;
+        const float DeltaSubNWYOrig = DeltaSubNWY;
+
+        DeltaSubNWX = DeltaSubNWXOrig * results_x2[RefIteration] - DeltaSubNWYOrig * results_y2[RefIteration] +
+                      S * DeltaSubNWXOrig * DeltaSubNWXOrig - S * DeltaSubNWYOrig * DeltaSubNWYOrig +
+                      DeltaSub0DX;
+        DeltaSubNWY = DeltaSubNWXOrig * results_y2[RefIteration] + DeltaSubNWYOrig * results_x2[RefIteration] +
+                      2 * S * DeltaSubNWXOrig * DeltaSubNWYOrig +
+                      DeltaSub0DY;
+
+        ++RefIteration;
+
+        const float tempZX = results_x[RefIteration] + DeltaSubNWX * S;
+        const float tempZY = results_y[RefIteration] + DeltaSubNWY * S;
+        const float zn_size = tempZX * tempZX + tempZY * tempZY;
+        const float normDeltaSubN = DeltaSubNWX * DeltaSubNWX * S * S + DeltaSubNWY * DeltaSubNWY * S * S;
+
+        if (zn_size > 256.0) {
+            break;
+        }
+
+        if (zn_size < normDeltaSubN ||
+            RefIteration == sz - 1) {
+            DeltaSubNWX = tempZX / S;
+            DeltaSubNWY = tempZY / S;
+            RefIteration = 0;
+        }
+
+        DeltaSubNWX = DeltaSubNWX * S;
+        DeltaSubNWY = DeltaSubNWY * S;
+
+        S = sqrt(DeltaSubNWX * DeltaSubNWX + DeltaSubNWY * DeltaSubNWY);
+        //S = 1;
+
+        DeltaSub0DX = deltaReal / S;
+        DeltaSub0DY = deltaImaginary / S;
+        DeltaSubNWX = DeltaSubNWX / S;
+        DeltaSubNWY = DeltaSubNWY / S;
+
+        ++iter;
+    }
+
+    iter_matrix[idx] = (uint32_t)iter;
+}
+
+__global__
 void mandel_float_double_combo(uint32_t* iter_matrix,
     uint8_t *ratio_matrix,
     int width,
@@ -1905,7 +2022,8 @@ void GPURenderer::RenderPerturbBLA(
         cudaFree(results_y);
         cudaFree(results_y2);
         cudaFree(results_tolerancy);
-    } else if (algorithm == RenderAlgorithm::Gpu1x32PerturbedBLA) {
+    } else if (algorithm == RenderAlgorithm::Gpu1x32PerturbedBLA ||
+               algorithm == RenderAlgorithm::Gpu1x32PerturbedScaled) {
         float* results_x;
         float* results_y;
         float* results_x2;
@@ -1950,11 +2068,20 @@ void GPURenderer::RenderPerturbBLA(
         cudaMemcpy(results_y2, results->y2.floatOnly, results->size * sizeof(float), cudaMemcpyDefault);
         cudaMemcpy(results_tolerancy, results->tolerancy.floatOnly, results->size * sizeof(float), cudaMemcpyDefault);
 
-        mandel_1x_float_perturb_bla << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
-            results_x, results_x2, results_y, results_y2, results_tolerancy, results->size,
-            local_width, local_height, cx.floatOnly, cy.floatOnly, dx.floatOnly, dy.floatOnly,
-            centerX.floatOnly, centerY.floatOnly,
-            n_iterations);
+        if (algorithm == RenderAlgorithm::Gpu1x32PerturbedBLA) {
+            mandel_1x_float_perturb_bla << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
+                results_x, results_x2, results_y, results_y2, results_tolerancy, results->size,
+                local_width, local_height, cx.floatOnly, cy.floatOnly, dx.floatOnly, dy.floatOnly,
+                centerX.floatOnly, centerY.floatOnly,
+                n_iterations);
+        }
+        else if (algorithm == RenderAlgorithm::Gpu1x32PerturbedScaled) {
+            mandel_1x_float_perturb_bla_scaled << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
+                results_x, results_x2, results_y, results_y2, results_tolerancy, results->size,
+                local_width, local_height, cx.floatOnly, cy.floatOnly, dx.floatOnly, dy.floatOnly,
+                centerX.floatOnly, centerY.floatOnly,
+                n_iterations);
+        }
 
         cudaFree(results_x);
         cudaFree(results_x2);

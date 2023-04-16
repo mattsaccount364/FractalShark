@@ -77,7 +77,7 @@
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SDLCheck>false</SDLCheck>
-      <AdditionalIncludeDirectories>..\boost_1_81_0</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\mpir\lib\x64\Debug;..\boost_1_81_0</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
@@ -93,6 +93,8 @@
       <RandomizedBaseAddress>false</RandomizedBaseAddress>
       <DataExecutionPrevention>
       </DataExecutionPrevention>
+      <AdditionalDependencies>mpir.lib;</AdditionalDependencies>
+      <AdditionalLibraryDirectories>..\mpir\lib\x64\Debug;</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -120,7 +122,7 @@
       <WarningLevel>Level4</WarningLevel>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <SDLCheck>false</SDLCheck>
-      <AdditionalIncludeDirectories>..\boost_1_81_0</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\mpir\lib\x64\Release;..\boost_1_81_0</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <LanguageStandard>stdcpp20</LanguageStandard>
     </ClCompile>
@@ -135,6 +137,8 @@
       <RandomizedBaseAddress>false</RandomizedBaseAddress>
       <DataExecutionPrevention>
       </DataExecutionPrevention>
+      <AdditionalDependencies>mpir.lib;</AdditionalDependencies>
+      <AdditionalLibraryDirectories>..\mpir\lib\x64\Release;</AdditionalLibraryDirectories>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>

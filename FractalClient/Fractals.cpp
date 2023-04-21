@@ -268,20 +268,25 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         }
 
         case IDM_VIEW1:
-        {
-            MenuStandardView(hWnd, 1);
-            break;
-        }
-
         case IDM_VIEW2:
-        {
-            MenuStandardView(hWnd, 2);
-            break;
-        }
-
         case IDM_VIEW3:
+        case IDM_VIEW4:
+        case IDM_VIEW5:
+        case IDM_VIEW6:
+        case IDM_VIEW7:
+        case IDM_VIEW8:
+        case IDM_VIEW9:
         {
-            MenuStandardView(hWnd, 3);
+            assert(IDM_VIEW2 == IDM_VIEW1 + 1);
+            assert(IDM_VIEW3 == IDM_VIEW1 + 2);
+            assert(IDM_VIEW4 == IDM_VIEW1 + 3);
+            assert(IDM_VIEW5 == IDM_VIEW1 + 4);
+            assert(IDM_VIEW6 == IDM_VIEW1 + 5);
+            assert(IDM_VIEW7 == IDM_VIEW1 + 6);
+            assert(IDM_VIEW8 == IDM_VIEW1 + 7);
+            assert(IDM_VIEW9 == IDM_VIEW1 + 8);
+
+            MenuStandardView(hWnd, wmId - IDM_VIEW1 + 1);
             break;
         }
 

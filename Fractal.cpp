@@ -531,6 +531,14 @@ void Fractal::View(size_t view)
         SetNumIterations(4718592);
         break;
 
+    case 6:
+        minX = HighPrecision{ "-1.62255305450955440939378327148551933698151664905869252353104459232379125385047258325092560042047016238522629559594083098223417266682375778834339133006238920276472324234755457331393094458851116858311147694848841596" };
+        minY = HighPrecision{ "0.00111756723889676861194528779365036804209780569430979619191368070328529017585467903172612672326547213179350763847958679337505222596731849199612523558174828577157001867880648672642532771232871426081434407251435914074" };
+        maxX = HighPrecision{ "-1.62255305450955440939378327148551933698151664905869252353104429583242030285096643229417996369340129943574278960280761817027268017422742268567490196481088815694964219151969846442135371735742571143445989179099342395" };
+        maxY = HighPrecision{ "0.0011175672388967686119452877936503680420978056943097961919138042413565197589822419303701420262108316940783018022850921316923407645491247847746624711032070548611871231904131987649991723919476547394191712214706058148" };
+        SetNumIterations(4718592);
+        break;
+
     case 0:
     default:
         minX = HighPrecision{ "-2.5" };
@@ -1038,6 +1046,10 @@ void Fractal::DrawPerturbationResults(bool LeaveScreen) {
 
     glEnd();
     glFlush();
+}
+
+void Fractal::ClearPerturbationResults() {
+    m_PerturbationResults.clear();
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -2017,15 +2029,22 @@ void Fractal::AddPerturbationReferencePoint() {
     HighPrecision zx2, zy2;
     unsigned int i;
 
-    results->x.reserve(1000000);
-    results->x2.reserve(1000000);
-    results->y.reserve(1000000);
-    results->y2.reserve(1000000);
+    const double small_float = 1.1754944e-38f;
+
+    results->x.reserve(m_NumIterations);
+    results->x2.reserve(m_NumIterations);
+    results->y.reserve(m_NumIterations);
+    results->y2.reserve(m_NumIterations);
+    results->bad.reserve(m_NumIterations);
 
     results->x.push_back(0);
     results->x2.push_back(0);
     results->y.push_back(0);
     results->y2.push_back(0);
+    results->bad.push_back(false);
+
+    //double glitch = std::exp(std::log(0.0001));
+    double glitch = 0.0001;
 
     zx = cx;
     zy = cy;
@@ -2038,6 +2057,12 @@ void Fractal::AddPerturbationReferencePoint() {
         results->x2.push_back((double)zx2);
         results->y.push_back((double)zy);
         results->y2.push_back((double)zy2);
+
+        double norm = ((double)zx * (double)zx + (double)zy * (double)zy) * glitch;
+        bool underflow = (fabs(zx) <= small_float ||
+                          fabs(zy) <= small_float ||
+                          fabs(norm) <= small_float);
+        results->bad.push_back(underflow);
 
         // x^2+2*I*x*y-y^2
         zx = zx * zx - zy * zy + cx;
@@ -2052,6 +2077,22 @@ void Fractal::AddPerturbationReferencePoint() {
     }
 }
 
+bool Fractal::RequiresReferencePoints() const {
+    switch (GetRenderAlgorithm()) {
+        case RenderAlgorithm::Cpu64PerturbedGlitchy:
+        case RenderAlgorithm::Cpu64PerturbedBLA:
+        case RenderAlgorithm::Gpu1x64PerturbedGlitchy:
+        case RenderAlgorithm::Gpu2x32PerturbedGlitchy:
+        case RenderAlgorithm::Gpu1x32PerturbedBLA:
+        case RenderAlgorithm::Gpu1x32PerturbedScaled:
+        case RenderAlgorithm::Gpu1x64PerturbedBLA:
+        case RenderAlgorithm::Gpu2x32PerturbedBLA:
+            return true;
+    }
+
+    return false;
+}
+
 void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
     std::vector<PerturbationResults*> useful_results;
 
@@ -2059,7 +2100,8 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
         for (size_t i = 0; i < m_PerturbationResults.size(); i++) {
             if (m_PerturbationResults[i].hiX >= m_MinX && m_PerturbationResults[i].hiX <= m_MaxX &&
                 m_PerturbationResults[i].hiY >= m_MinY && m_PerturbationResults[i].hiY <= m_MaxY &&
-                m_PerturbationResults[i].MaxIterations > m_PerturbationResults[i].x.size()) {
+                (m_PerturbationResults[i].MaxIterations > m_PerturbationResults[i].x.size() || 
+                 m_PerturbationResults[i].MaxIterations >= m_NumIterations)) {
                 useful_results.push_back(&m_PerturbationResults[i]);
 
                 m_PerturbationResults[i].scrnX = (size_t) ((m_PerturbationResults[i].hiX - m_MinX) / (m_MaxX - m_MinX) * HighPrecision{ m_ScrnWidth });
@@ -2106,6 +2148,7 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
     FillCoordArray(results->x2.data(), results->x2.size(), gpu_results.x2);
     FillCoordArray(results->y.data(), results->y.size(), gpu_results.y);
     FillCoordArray(results->y2.data(), results->y2.size(), gpu_results.y2);
+    memcpy(gpu_results.bad, results->bad.data(), results->bad.size() * sizeof(bool));
 
     // all sizes should be the same anyway just pick one
     gpu_results.size = results->x.size();
@@ -2426,7 +2469,13 @@ int Fractal::SaveHiResFractal(const std::wstring filename)
 HighPrecision Fractal::Benchmark(size_t numIters)
 {
     BenchmarkData bm(*this);
-    if (!bm.BenchmarkSetup(numIters)) {
+    bm.BenchmarkSetup(numIters);
+
+    if (RequiresReferencePoints()) {
+        AddPerturbationReferencePoint();
+    }
+
+    if (!bm.StartTimer()) {
         return {};
     }
 
@@ -2436,7 +2485,9 @@ HighPrecision Fractal::Benchmark(size_t numIters)
 
 HighPrecision Fractal::BenchmarkReferencePoint(size_t numIters) {
     BenchmarkData bm(*this);
-    if (!bm.BenchmarkSetup(numIters)) {
+    bm.BenchmarkSetup(numIters);
+
+    if (!bm.StartTimer()) {
         return {};
     }
 
@@ -2448,10 +2499,11 @@ HighPrecision Fractal::BenchmarkReferencePoint(size_t numIters) {
 Fractal::BenchmarkData::BenchmarkData(Fractal& fractal) :
     fractal(fractal) {}
 
-bool Fractal::BenchmarkData::BenchmarkSetup(size_t numIters) {
+void Fractal::BenchmarkData::BenchmarkSetup(size_t numIters) {
     prevScrnWidth = fractal.m_ScrnWidth;
     prevScrnHeight = fractal.m_ScrnHeight;
 
+    fractal.ClearPerturbationResults();
     fractal.Reset(500, 500);
     fractal.SetNumIterations(numIters);
     fractal.SetIterationAntialiasing(1);
@@ -2459,7 +2511,9 @@ bool Fractal::BenchmarkData::BenchmarkSetup(size_t numIters) {
     //fractal.SetIterationPrecision(1);
     //fractal.RecenterViewCalc(-.1, -.1, .1, .1);
     fractal.RecenterViewCalc(-1.5, -.75, 1, .75);
+}
 
+bool Fractal::BenchmarkData::StartTimer() {
     startTime.QuadPart = 0;
     endTime.QuadPart = 1;
     if (QueryPerformanceFrequency(&freq) == 0) {

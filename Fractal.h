@@ -28,7 +28,7 @@
 //const int MAXITERS = 256 * 32; // 256 * 256 * 256 * 32
 const int MAXITERS = 256 * 256 * 256 * 32;
 
-using HighPrecision = boost::multiprecision::mpf_float_100;
+using HighPrecision = boost::multiprecision::number<boost::multiprecision::gmp_float<200>>;
 template<class From, class To>
 To Convert(From data) {
     return data.convert_to<To>();
@@ -103,16 +103,16 @@ public: // Iterations
     void ResetNumIterations(void);
 
 public:
-    inline RenderAlgorithm GetRenderAlgorithm(void) { return m_RenderAlgorithm; }
+    inline RenderAlgorithm GetRenderAlgorithm(void) const { return m_RenderAlgorithm; }
     inline void SetRenderAlgorithm(RenderAlgorithm alg) { m_RenderAlgorithm = alg; }
 
-    inline uint32_t GetIterationAntialiasing(void) { return m_IterationAntialiasing; }
+    inline uint32_t GetIterationAntialiasing(void) const { return m_IterationAntialiasing; }
     inline void SetIterationAntialiasing(uint32_t antialiasing) { m_IterationAntialiasing = antialiasing; }
 
-    inline uint32_t GetGpuAntialiasing(void) { return m_GpuAntialiasing; }
+    inline uint32_t GetGpuAntialiasing(void) const { return m_GpuAntialiasing; }
     inline void SetGpuAntialiasing(uint32_t antialiasing) { m_GpuAntialiasing = antialiasing; }
 
-    inline uint32_t GetIterationPrecision(void) { return m_IterationPrecision; }
+    inline uint32_t GetIterationPrecision(void) const { return m_IterationPrecision; }
     inline void SetIterationPrecision(uint32_t iteration_precision) { m_IterationPrecision = iteration_precision;  }
 
 private: // Keeps track of what has changed and what hasn't since the last draw
@@ -133,6 +133,7 @@ public: // Drawing functions
     void CreateNewFractalPalette(void);
 
     void DrawPerturbationResults(bool MemoryOnly);
+    void ClearPerturbationResults();
 
 private:
     void DrawRotatedFractal(void);
@@ -157,6 +158,7 @@ private:
         std::vector<double> y;
         std::vector<double> y2;
         std::vector<double> tolerancy;
+        std::vector<uint8_t> bad;
         std::vector<std::complex<double>> complex;
         std::vector<std::complex<double>> complex2;
 
@@ -166,6 +168,7 @@ private:
             x2.clear();
             y2.clear();
             tolerancy.clear();
+            bad.clear();
             complex.clear();
             complex2.clear();
         }
@@ -173,6 +176,7 @@ private:
 
     std::vector<PerturbationResults> m_PerturbationResults;
     void AddPerturbationReferencePoint();
+    bool RequiresReferencePoints() const;
 
     static void FillCoordArray(const double *src, size_t size, MattCoordsArray& dest);
     static void FillCoord(HighPrecision& src, MattCoords& dest);
@@ -211,7 +215,8 @@ private:
         size_t prevScrnWidth;
             size_t prevScrnHeight;
 
-        bool BenchmarkSetup(size_t numIters);
+        void BenchmarkSetup(size_t numIters);
+        bool StartTimer();
         HighPrecision BenchmarkFinish();
     };
 

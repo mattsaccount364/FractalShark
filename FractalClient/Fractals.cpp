@@ -526,7 +526,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             gFractal->DrawPerturbationResults(false);
             break;
         }
-
+        case IDM_PERTURB_CLEAR:
+        {
+            gFractal->ClearPerturbationResults();
+            break;
+        }
 
         case IDM_PALETTEROTATE:
         {

@@ -84,13 +84,13 @@ struct MattCoordsArray {
     }
 
     ~MattCoordsArray() {
-        delete[]floatOnly;
-        delete[]doubleOnly;
-        delete[]flt;
-        delete[]dbl;
-        delete[]qflt;
-        delete[]qdbl;
-    }
+        delete[] floatOnly;
+        delete[] doubleOnly;
+        delete[] flt;
+        delete[] dbl;
+        delete[] qflt;
+        delete[] qdbl;
+     }
 };
 
 struct MattPerturbResults {
@@ -99,6 +99,7 @@ struct MattPerturbResults {
     MattCoordsArray y;
     MattCoordsArray y2;
     MattCoordsArray tolerancy;
+    uint8_t* bad;
     size_t size;
 
     MattPerturbResults(size_t size) :
@@ -106,8 +107,14 @@ struct MattPerturbResults {
         x2(size),
         y(size),
         y2(size),
-        tolerancy(size) {
+        tolerancy(size),
+        bad(nullptr),
+        size(size) {
+        bad = new uint8_t[size];
+    }
 
+    ~MattPerturbResults() {
+        delete[] bad;
     }
 };
 

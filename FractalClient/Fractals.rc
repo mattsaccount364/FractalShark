@@ -134,15 +134,19 @@ BEGIN
             MENUITEM "1x32 GPU - Perturbation Scaled", IDM_ALG_GPU_1_32_PERTURB_SCALED
             MENUITEM "~64 GPU combo (broken)",      IDM_ALG_GPU_2_64_32
         END
-        MENUITEM "De&fault Iterations",         IDM_RESETITERATIONS
-        POPUP "&Increase Iterations"
+        POPUP "Iterations"
         BEGIN
-            MENUITEM "1.5x",                        IDM_INCREASEITERATIONS_1P5X
-            MENUITEM "6x",                          IDM_INCREASEITERATIONS_6X
-            MENUITEM "24x",                         IDM_INCREASEITERATIONS_24X
+            MENUITEM "De&fault Iterations",         IDM_RESETITERATIONS
+            MENUITEM "+1.5x",                       IDM_INCREASEITERATIONS_1P5X
+            MENUITEM "+6x",                         IDM_INCREASEITERATIONS_6X
+            MENUITEM "+24x",                        IDM_INCREASEITERATIONS_24X
+            MENUITEM "&Decrease Iterations",        IDM_DECREASEITERATIONS
         END
-        MENUITEM "&Decrease Iterations",        IDM_DECREASEITERATIONS
-        MENUITEM "Show Perturbation Results",   IDM_PERTURB_RESULTS
+        POPUP "Perturbation"
+        BEGIN
+            MENUITEM "Clear Perturbation References", IDM_PERTURB_CLEAR
+            MENUITEM "Show Perturbation Results",   IDM_PERTURB_RESULTS
+        END
         MENUITEM SEPARATOR
         POPUP "Palette Color Depth"
         BEGIN
@@ -155,7 +159,7 @@ BEGIN
         MENUITEM SEPARATOR
         MENUITEM "Current Position",            IDM_CURPOS
         MENUITEM "Save Location...",            IDM_SAVELOCATION
-        MENUITEM "Load Location...",            IDM_LOADLOCATION, GRAYED
+        MENUITEM "Load Location...",            IDM_LOADLOCATION
         MENUITEM "Save Bitmap Ima&ge",          IDM_SAVEBMP
         MENUITEM "Save High Res Bitmap",        IDM_SAVEHIRESBMP
         POPUP "Benchmark"

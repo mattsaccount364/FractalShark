@@ -1395,13 +1395,7 @@ void mandel_1x_float_perturb_bla_scaled(uint32_t* iter_matrix,
     bool full_iteration = false;
 
     while (iter < n_iterations) {
-        if (RefIteration < results.size - 1) {
-            full_iteration = results.bad[RefIteration + 1];
-        }
-        else {
-            full_iteration = results.bad[0];
-        }
-        //full_iteration = true;
+        full_iteration = results.bad[RefIteration];
 
         if (full_iteration) {
             // Do full iteration at double precision

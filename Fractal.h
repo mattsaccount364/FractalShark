@@ -28,7 +28,9 @@
 //const int MAXITERS = 256 * 32; // 256 * 256 * 256 * 32
 const int MAXITERS = 256 * 256 * 256 * 32;
 
-using HighPrecision = boost::multiprecision::number<boost::multiprecision::gmp_float<200>>;
+using HighPrecision = boost::multiprecision::number<
+    boost::multiprecision::gmp_float<350>,
+    boost::multiprecision::et_on>;
 template<class From, class To>
 To Convert(From data) {
     return data.convert_to<To>();
@@ -64,6 +66,7 @@ private:
         void(*OutputMessage) (const wchar_t *, ...),
         HWND hWnd,
         bool UseSensoCursor);
+    void InitializeMemory();
     void Uninitialize(void);
     bool PalIncrease(std::vector<uint16_t>& pal, int i1, int length, int val1, int val2);
     int PalTransition(size_t paletteIndex, int i1, int length, int r, int g, int b);
@@ -85,7 +88,7 @@ public: // Changing the view
     void ApproachTarget(void);
 
 private:
-    bool FileExists(const wchar_t *filename);  // Used only by ApproachTarget
+    static bool FileExists(const wchar_t *filename);  // Used only by ApproachTarget
 
 public:
     bool Back(void);
@@ -192,12 +195,15 @@ private:
     bool CalcPixelRow_Exp(unsigned int *rowBuffer, size_t row); // Experimental
     bool CalcPixelRow_C(unsigned int *rowBuffer, size_t row);
 
+    bool IsPerturbationResultUsefulHere(size_t i) const;
+
 private:
     uint32_t FindMaxItersUsed(void);
 
 public: // Saving images of the fractal
     int SaveCurrentFractal(const std::wstring filename_base);
     int SaveHiResFractal(const std::wstring filename_base);
+    void CleanupThreads();
 
 public: // Benchmarking
     HighPrecision Benchmark(size_t numIters);
@@ -343,6 +349,33 @@ private:
 
     // GPU rendering
     GPURenderer m_r;
+
+    // 
+    struct CurrentFractalSave {
+        CurrentFractalSave(std::wstring filename_base, Fractal& fractal);
+        ~CurrentFractalSave();
+        void Run();
+        void StartThread();
+
+        CurrentFractalSave(CurrentFractalSave&&) = default;
+
+        Fractal &m_Fractal;
+        size_t m_ScrnWidth;
+        size_t m_ScrnHeight;
+        uint32_t m_GpuAntialiasing;
+        size_t m_NumIterations;
+        int m_PaletteRotate; // Used to shift the palette
+        int m_PaletteDepth; // 8, 12, 16
+        int m_PaletteDepthIndex; // 0, 1, 2
+        std::vector<uint16_t> *m_PalR, *m_PalG, *m_PalB;
+        uint32_t* m_ItersMemory;
+        uint32_t* m_ItersArray[MaxFractalSize];
+        std::wstring m_FilenameBase;
+        std::unique_ptr<std::thread> m_Thread;
+        bool m_Destructable;
+    };
+
+    std::vector<std::unique_ptr<CurrentFractalSave>> m_FractalSavesInProgress;
 };
 
 #endif

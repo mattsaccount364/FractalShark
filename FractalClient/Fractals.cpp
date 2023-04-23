@@ -41,6 +41,7 @@ void MenuSaveBMP(HWND hWnd);
 void MenuSaveHiResBMP(HWND hWnd);
 void MenuBenchmark(HWND hWnd, bool fastbenchmark);
 void MenuBenchmarkRefPt(HWND hWnd);
+void MenuBenchmarkThis(HWND hWnd);
 void PaintAsNecessary(HWND hWnd);
 void glResetView(HWND hWnd);
 void glResetViewDim(int width, int height);
@@ -409,12 +410,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             break;
         }
     
-        case IDM_ALG_CPU_1_64_PERTURB:
-        {
-            gFractal->SetRenderAlgorithm(RenderAlgorithm::Cpu64PerturbedGlitchy);
-            break;
-        }
-    
         case IDM_ALG_CPU_1_64_PERTURB_BLA:
         {
             gFractal->SetRenderAlgorithm(RenderAlgorithm::Cpu64PerturbedBLA);
@@ -427,11 +422,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             break;
         }
 
-        case IDM_ALG_GPU_1_64_PERTURB:
-        {
-            gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu1x64PerturbedGlitchy);
-            break;
-        }
         case IDM_ALG_GPU_1_64_PERTURB_BLA:
         {
             gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu1x64PerturbedBLA);
@@ -468,11 +458,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu2x32);
             break;
         }
-        case IDM_ALG_GPU_2_32_PERTURB:
-        {
-            gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu2x32PerturbedGlitchy);
-        break;
-        }
         case IDM_ALG_GPU_2_32_PERTURB_BLA:
         {
             gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu2x32PerturbedBLA);
@@ -483,12 +468,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu4x32);
             break;
         }
-        case IDM_ALG_GPU_2_64_32:
-        {
-            gFractal->SetRenderAlgorithm(RenderAlgorithm::Blend);
-            break;
-        }
-
 
         // Increase the number of iterations we are using.
         // This will slow down rendering, but image quality
@@ -600,6 +579,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         case IDM_BENCHMARK_ACCURATE_REFPT:
         {
             MenuBenchmarkRefPt(hWnd);
+            break;
+        }
+        case IDM_BENCHMARK_THIS:
+        {
+            MenuBenchmarkThis(hWnd);
             break;
         }
         // Exit the program
@@ -1088,29 +1072,33 @@ void MenuSaveHiResBMP(HWND)
     gFractal->SaveHiResFractal(L"output");
 }
 
-void MenuBenchmark(HWND hWnd, bool fastbenchmark)
-{
-    HighPrecision megaIters = gFractal->Benchmark(fastbenchmark ? 5000 : 5000000);
+void BenchmarkMessage(HWND hWnd, HighPrecision megaIters) {
     std::stringstream ss;
     ss << std::string("Your computer calculated ");
-    ss << megaIters << " iterations per second";
+    ss << megaIters << " million iterations per second";
     std::string s = ss.str();
     const std::wstring ws(s.begin(), s.end());
     MessageBox(hWnd, ws.c_str(), L"", MB_OK);
 
+}
+
+void MenuBenchmark(HWND hWnd, bool fastbenchmark)
+{
+    HighPrecision megaIters = gFractal->Benchmark(fastbenchmark ? 5000 : 5000000);
+    BenchmarkMessage(hWnd, megaIters);
     gFractal->DrawFractal(false);
 }
 
 void MenuBenchmarkRefPt(HWND hWnd)
 {
     HighPrecision megaIters = gFractal->BenchmarkReferencePoint(5000000);
-    std::stringstream ss;
-    ss << std::string("Your computer calculated ");
-    ss << megaIters << " iterations per second";
-    std::string s = ss.str();
-    const std::wstring ws(s.begin(), s.end());
-    MessageBox(hWnd, ws.c_str(), L"", MB_OK);
+    BenchmarkMessage(hWnd, megaIters);
+    gFractal->DrawFractal(false);
+}
 
+void MenuBenchmarkThis(HWND hWnd) {
+    HighPrecision megaIters = gFractal->BenchmarkThis();
+    BenchmarkMessage(hWnd, megaIters);
     gFractal->DrawFractal(false);
 }
 

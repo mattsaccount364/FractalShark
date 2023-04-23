@@ -142,8 +142,6 @@ private:
     void DrawRotatedFractal(void);
     void DrawFractalLine(size_t row);
 
-    void FillRatioMemory(double CurRatio, double &FinalRatio);
-    void FillRatioArrayIfNeeded();
     void CalcCpuFractal(bool MemoryOnly);
 
     struct Point {
@@ -160,26 +158,23 @@ private:
         std::vector<double> x2;
         std::vector<double> y;
         std::vector<double> y2;
-        std::vector<double> tolerancy;
         std::vector<uint8_t> bad;
-        std::vector<std::complex<double>> complex;
-        std::vector<std::complex<double>> complex2;
+        std::vector<uint32_t> bad_counts;
 
         void clear() {
             x.clear();
             y.clear();
             x2.clear();
             y2.clear();
-            tolerancy.clear();
             bad.clear();
-            complex.clear();
-            complex2.clear();
+            bad_counts.clear();
         }
     };
 
     std::vector<PerturbationResults> m_PerturbationResults;
     void AddPerturbationReferencePoint();
     bool RequiresReferencePoints() const;
+    PerturbationResults* GetUsefulPerturbationResults();
 
     static void FillCoordArray(const double *src, size_t size, MattCoordsArray& dest);
     static void FillCoord(HighPrecision& src, MattCoords& dest);
@@ -208,6 +203,7 @@ public: // Saving images of the fractal
 public: // Benchmarking
     HighPrecision Benchmark(size_t numIters);
     HighPrecision BenchmarkReferencePoint(size_t numIters);
+    HighPrecision BenchmarkThis();
 
 private:
     struct BenchmarkData {
@@ -223,7 +219,8 @@ private:
 
         void BenchmarkSetup(size_t numIters);
         bool StartTimer();
-        HighPrecision BenchmarkFinish();
+        HighPrecision StopTimer();
+        void BenchmarkFinish();
     };
 
     __int64 FindTotalItersUsed(void);
@@ -335,8 +332,6 @@ private:
     static constexpr size_t MaxFractalSize = 65536;
     uint32_t *m_ItersMemory;
     uint32_t *m_ItersArray[MaxFractalSize];
-    uint8_t* m_RatioMemory;
-    uint8_t* m_RatioArray[MaxFractalSize];
     BYTE m_ProcessPixelRow[MaxFractalSize];
 
     // Network member variables

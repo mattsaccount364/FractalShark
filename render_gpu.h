@@ -15,10 +15,8 @@
 enum class RenderAlgorithm {
     CpuHigh,
     Cpu64,
-    Cpu64PerturbedGlitchy,
     Cpu64PerturbedBLA,
     Gpu1x64,
-    Gpu1x64PerturbedGlitchy,
     Gpu1x64PerturbedBLA,
     Gpu2x64,
     Gpu4x64,
@@ -26,10 +24,8 @@ enum class RenderAlgorithm {
     Gpu1x32PerturbedBLA,
     Gpu1x32PerturbedScaled,
     Gpu2x32,
-    Gpu2x32PerturbedGlitchy,
     Gpu2x32PerturbedBLA,
     Gpu4x32,
-    Blend
 };
 
 struct MattDblflt {
@@ -98,19 +94,24 @@ struct MattPerturbResults {
     MattCoordsArray x2;
     MattCoordsArray y;
     MattCoordsArray y2;
-    MattCoordsArray tolerancy;
     uint8_t* bad;
     size_t size;
 
-    MattPerturbResults(size_t size) :
+    uint32_t* bad_counts;
+    size_t bad_counts_size;
+
+    MattPerturbResults(size_t size,
+                       size_t bad_counts_size) :
         x(size),
         x2(size),
         y(size),
         y2(size),
-        tolerancy(size),
         bad(nullptr),
-        size(size) {
+        size(size),
+        bad_counts(nullptr),
+        bad_counts_size(bad_counts_size) {
         bad = new uint8_t[size];
+        bad_counts = new uint32_t[bad_counts_size];
     }
 
     ~MattPerturbResults() {
@@ -123,8 +124,7 @@ public:
     GPURenderer();
     ~GPURenderer();
 
-    void ResetRatioMemory();
-    void SetRatioMemory(uint8_t* ratioMemory, size_t MaxFractalSize);
+    void ResetMemory();
 
     void Render(
         RenderAlgorithm algorithm,
@@ -133,19 +133,6 @@ public:
         MattCoords cy,
         MattCoords dx,
         MattCoords dy,
-        uint32_t n_iterations,
-        int iteration_precision);
-
-    void RenderPerturbGlitchy(
-        RenderAlgorithm algorithm,
-        uint32_t* buffer,
-        MattPerturbResults *results,
-        MattCoords cx,
-        MattCoords cy,
-        MattCoords dx,
-        MattCoords dy,
-        MattCoords centerX,
-        MattCoords centerY,
         uint32_t n_iterations,
         int iteration_precision);
 
@@ -174,7 +161,6 @@ private:
     void ClearLocals();
     void ExtractIters(uint32_t* buffer);
 
-    uint8_t* ratioMemory_cu = nullptr;
     uint32_t* iter_matrix_cu;
 
     uint32_t width;

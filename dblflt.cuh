@@ -319,6 +319,20 @@ extern "C" {
         return z;
     }
 
+    __device__ __forceinline__ double dblflt_to_double(dblflt a)
+    {
+        return (double)a.y + (double)a.x;
+    }
+
+    __device__ __forceinline__ dblflt double_to_dblflt(double a)
+    {
+        // ?? 2^23 = 8388608.0
+        dblflt res;
+        res.y = (float)a;
+        res.x = (float)(a - (double)res.y);
+        return res;
+    }
+
 #if defined(__cplusplus)
 }
 #endif /* __cplusplus */

@@ -66,7 +66,6 @@ private:
         void(*OutputMessage) (const wchar_t *, ...),
         HWND hWnd,
         bool UseSensoCursor);
-    void InitializeMemory();
     void Uninitialize(void);
     bool PalIncrease(std::vector<uint16_t>& pal, int i1, int length, int val1, int val2);
     int PalTransition(size_t paletteIndex, int i1, int length, int r, int g, int b);
@@ -79,7 +78,10 @@ private:
     void CheckForAbort(void);
 
 public: // Changing the view
-    void Reset(size_t width, size_t height);
+    void ResetDimensions(size_t width = MAXSIZE_T,
+                         size_t height = MAXSIZE_T,
+                         uint32_t iteration_antialiasing = UINT32_MAX,
+                         uint32_t gpu_antialiasing = UINT32_MAX);
     bool RecenterViewCalc(HighPrecision MinX, HighPrecision MinY, HighPrecision MaxX, HighPrecision MaxY);
     bool RecenterViewScreen(RECT rect);
     bool CenterAtPoint(int x, int y);
@@ -110,11 +112,7 @@ public:
     inline void SetRenderAlgorithm(RenderAlgorithm alg) { m_RenderAlgorithm = alg; }
 
     inline uint32_t GetIterationAntialiasing(void) const { return m_IterationAntialiasing; }
-    inline void SetIterationAntialiasing(uint32_t antialiasing) { m_IterationAntialiasing = antialiasing; }
-
     inline uint32_t GetGpuAntialiasing(void) const { return m_GpuAntialiasing; }
-    inline void SetGpuAntialiasing(uint32_t antialiasing) { m_GpuAntialiasing = antialiasing; }
-
     inline uint32_t GetIterationPrecision(void) const { return m_IterationPrecision; }
     inline void SetIterationPrecision(uint32_t iteration_precision) { m_IterationPrecision = iteration_precision;  }
 
@@ -128,7 +126,6 @@ public: // Drawing functions
     void CalcDiskFractal(wchar_t *filename);
     void CalcFractal(bool MemoryOnly);
     void DrawFractal(bool MemoryOnly);
-    void DrawFractal2(void);
 
     void UsePalette(int depth);
     void ResetFractalPalette(void);
@@ -176,7 +173,6 @@ private:
     bool RequiresReferencePoints() const;
     PerturbationResults* GetUsefulPerturbationResults();
 
-    static void FillCoordArray(const double *src, size_t size, MattCoordsArray& dest);
     static void FillCoord(HighPrecision& src, MattCoords& dest);
     void FillGpuCoords(MattCoords& cx2, MattCoords& cy2, MattCoords& dx2, MattCoords& dy2);
     void CalcGpuFractal(bool MemoryOnly);
@@ -329,10 +325,34 @@ private:
     // Holds the number of iterations it took to decide if
     // we were in or not in the fractal.  Has a number
     // for every point on the screen.
-    static constexpr size_t MaxFractalSize = 65536;
-    uint32_t *m_ItersMemory;
-    uint32_t *m_ItersArray[MaxFractalSize];
-    BYTE m_ProcessPixelRow[MaxFractalSize];
+    struct ItersMemoryContainer {
+        ItersMemoryContainer(size_t width, size_t height, size_t total_antialiasing);
+        ItersMemoryContainer(ItersMemoryContainer&&);
+        ItersMemoryContainer& operator=(ItersMemoryContainer&&);
+        ~ItersMemoryContainer();
+
+        ItersMemoryContainer(ItersMemoryContainer&) = delete;
+        ItersMemoryContainer& operator=(const ItersMemoryContainer&) = delete;
+
+        uint32_t* m_ItersMemory;
+        uint32_t** m_ItersArray;
+
+        // These are a bit bigger than m_ScrnWidth / m_ScrnHeight!
+        size_t m_Width;
+        size_t m_Height;
+        size_t m_Total;
+    };
+
+    void InitializeMemory();
+    void GetIterMemory();
+    void ReturnIterMemory(ItersMemoryContainer&& to_return);
+
+    ItersMemoryContainer m_CurIters;
+    std::mutex m_ItersMemoryStorageLock;
+    std::vector<struct ItersMemoryContainer> m_ItersMemoryStorage;
+
+    static constexpr size_t BrokenMaxFractalSize = 1; // TODO
+    BYTE m_ProcessPixelRow[BrokenMaxFractalSize];
 
     // Network member variables
     FractalNetwork *m_ClientMainNetwork[MAXSERVERS], *m_ClientSubNetwork[MAXSERVERS];
@@ -344,6 +364,7 @@ private:
 
     // GPU rendering
     GPURenderer m_r;
+    void MessageBoxCudaError(uint32_t err);
 
     // 
     struct CurrentFractalSave {
@@ -363,8 +384,7 @@ private:
         int m_PaletteDepth; // 8, 12, 16
         int m_PaletteDepthIndex; // 0, 1, 2
         std::vector<uint16_t> *m_PalR, *m_PalG, *m_PalB;
-        uint32_t* m_ItersMemory;
-        uint32_t* m_ItersArray[MaxFractalSize];
+        ItersMemoryContainer m_CurIters;
         std::wstring m_FilenameBase;
         std::unique_ptr<std::thread> m_Thread;
         bool m_Destructable;

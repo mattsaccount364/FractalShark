@@ -1,3 +1,5 @@
+// TODO: 2x32 BLA is busted, do git diff
+// Re-run  profile on current default view
 #include <stdio.h>
 #include <iostream>
 
@@ -7,82 +9,86 @@
 #include "../QuadDouble/gqd_basic.cuh"
 #include "../QuadFloat/gqf_basic.cuh"
 
+static_assert(sizeof(MattReferenceSingleIter<float>) == 24, "Float");
+static_assert(sizeof(MattReferenceSingleIter<double>) == 40, "Double");
+static_assert(sizeof(MattReferenceSingleIter<dblflt>) == 40, "Dblflt");
+
+//char(*__kaboom1)[sizeof(MattReferenceSingleIter<float>)] = 1;
+//char(*__kaboom2)[sizeof(MattReferenceSingleIter<double>)] = 1;
+//char(*__kaboom3)[sizeof(MattReferenceSingleIter<dblflt>)] = 1;
 
 template<typename Type>
 struct MattPerturbSingleResults {
-    Type* x;
-    Type* x2;
-    Type* y;
-    Type* y2;
-    uint8_t* bad;
+    MattReferenceSingleIter<Type>* iters;
     uint32_t* bad_counts;
     size_t size;
     size_t bad_counts_size;
+    bool own;
+    cudaError_t err;
 
     MattPerturbSingleResults(
         size_t sz,
-        Type* in_x,
-        Type* in_x2,
-        Type* in_y,
-        Type* in_y2,
-        uint8_t* in_bad,
+        MattReferenceSingleIter<Type> *in_iters,
         uint32_t* in_bad_counts,
         size_t in_bad_counts_size)
         : size(sz),
-        x(nullptr),
-        x2(nullptr),
-        y(nullptr),
-        y2(nullptr),
-        bad(nullptr),
+        iters(nullptr),
         bad_counts(nullptr),
-        bad_counts_size(in_bad_counts_size) {
+        bad_counts_size(in_bad_counts_size),
+        own(true),
+        err(cudaSuccess) {
 
-        cudaError_t err;
+        static_assert(sizeof(MattDblflt) == sizeof(dblflt), "No");
 
-        err = cudaMallocManaged(&x, size * sizeof(Type), cudaMemAttachGlobal);
+        err = cudaMallocManaged(&iters, size * sizeof(MattReferenceSingleIter<Type>), cudaMemAttachGlobal);
         if (err != cudaSuccess) {
+            size = 0;
+            bad_counts_size = 0;
             return;
         }
 
-        err = cudaMallocManaged(&x2, size * sizeof(Type), cudaMemAttachGlobal);
+        err = cudaMallocManaged(&bad_counts, bad_counts_size * sizeof(uint32_t), cudaMemAttachGlobal);
         if (err != cudaSuccess) {
+            size = 0;
+            bad_counts_size = 0;
             return;
         }
 
-        err = cudaMallocManaged(&y, size * sizeof(Type), cudaMemAttachGlobal);
-        if (err != cudaSuccess) {
-            return;
-        }
-
-        err = cudaMallocManaged(&y2, size * sizeof(Type), cudaMemAttachGlobal);
-        if (err != cudaSuccess) {
-            return;
-        }
-
-        err = cudaMallocManaged(&bad, size * sizeof(uint8_t), cudaMemAttachGlobal);
-        if (err != cudaSuccess) {
-            return;
-        }
-
-        err = cudaMallocManaged(&bad_counts, bad_counts_size * sizeof(uint8_t), cudaMemAttachGlobal);
-        if (err != cudaSuccess) {
-            return;
-        }
-
-        cudaMemcpy(x, in_x, size * sizeof(Type), cudaMemcpyDefault);
-        cudaMemcpy(x2, in_x2, size * sizeof(Type), cudaMemcpyDefault);
-        cudaMemcpy(y, in_y, size * sizeof(Type), cudaMemcpyDefault);
-        cudaMemcpy(y2, in_y2, size * sizeof(Type), cudaMemcpyDefault);
-        cudaMemcpy(bad, in_bad, size * sizeof(uint8_t), cudaMemcpyDefault);
+        cudaMemcpy(iters, in_iters, size * sizeof(MattReferenceSingleIter<Type>), cudaMemcpyDefault);
         cudaMemcpy(bad_counts, in_bad_counts, bad_counts_size * sizeof(uint32_t), cudaMemcpyDefault);
     }
 
+    // funny semantics, copy doesn't own the pointers.
+    MattPerturbSingleResults(const MattPerturbSingleResults& other) {
+        if (this == &other) {
+            return;
+        }
+
+        iters = other.iters;
+        bad_counts = other.bad_counts;
+        size = other.size;
+        bad_counts_size = other.bad_counts_size;
+        own = false;
+    }
+
+    uint32_t CheckValid() const {
+        return err;
+    }
+
+    MattPerturbSingleResults(MattPerturbSingleResults&& other) = delete;
+    MattPerturbSingleResults &operator=(const MattPerturbSingleResults& other) = delete;
+    MattPerturbSingleResults &operator=(MattPerturbSingleResults&& other) = delete;
+
     ~MattPerturbSingleResults() {
-        cudaFree(x);
-        cudaFree(x2);
-        cudaFree(y);
-        cudaFree(y2);
-        cudaFree(bad_counts);
+        if (own) {
+            if (iters != nullptr) {
+                cudaFree(iters);
+            }
+
+            if (bad_counts != nullptr) {
+                cudaFree(bad_counts);
+            }
+        }
     }
 };
 
@@ -469,11 +475,7 @@ void mandel_1x_double(uint32_t* iter_matrix,
 
 __global__
 void mandel_1x_double_perturb_bla(uint32_t* iter_matrix,
-    double* results_x,
-    double* results_x2,
-    double* results_y,
-    double* results_y2,
-    size_t sz,
+    MattPerturbSingleResults<double> results,
     int width,
     int height,
     double cx,
@@ -506,24 +508,28 @@ void mandel_1x_double_perturb_bla(uint32_t* iter_matrix,
     double DeltaSub0Y = deltaImaginary;
     double DeltaSubNX = 0;
     double DeltaSubNY = 0;
+    size_t MaxRefIteration = results.size - 1;
 
     while (iter < n_iterations) {
+        MattReferenceSingleIter<double> *CurIter = &results.iters[RefIteration];
+
         const double DeltaSubNXOrig = DeltaSubNX;
         const double DeltaSubNYOrig = DeltaSubNY;
 
         DeltaSubNX =
-            DeltaSubNXOrig * (results_x2[RefIteration] + DeltaSubNXOrig) -
-            DeltaSubNYOrig * (results_y2[RefIteration] + DeltaSubNYOrig) +
+            DeltaSubNXOrig * (CurIter->x2 + DeltaSubNXOrig) -
+            DeltaSubNYOrig * (CurIter->y2 + DeltaSubNYOrig) +
             DeltaSub0X;
         DeltaSubNY =
-            DeltaSubNXOrig * (results_y2[RefIteration] + DeltaSubNYOrig) +
-            DeltaSubNYOrig * (results_x2[RefIteration] + DeltaSubNXOrig) +
+            DeltaSubNXOrig * (CurIter->y2 + DeltaSubNYOrig) +
+            DeltaSubNYOrig * (CurIter->x2 + DeltaSubNXOrig) +
             DeltaSub0Y;
 
         ++RefIteration;
+        CurIter = &results.iters[RefIteration];
 
-        const double tempZX = results_x[RefIteration] + DeltaSubNX;
-        const double tempZY = results_y[RefIteration] + DeltaSubNY;
+        const double tempZX = CurIter->x + DeltaSubNX;
+        const double tempZY = CurIter->y + DeltaSubNY;
         const double zn_size = tempZX * tempZX + tempZY * tempZY;
         const double normDeltaSubN = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
 
@@ -532,7 +538,7 @@ void mandel_1x_double_perturb_bla(uint32_t* iter_matrix,
         }
 
         if (zn_size < normDeltaSubN ||
-            RefIteration == sz - 1) {
+            RefIteration == MaxRefIteration) {
             DeltaSubNX = tempZX;
             DeltaSubNY = tempZY;
             RefIteration = 0;
@@ -719,31 +725,22 @@ void mandel_2x_float(uint32_t* iter_matrix,
 }
 
 __global__
-void mandel_2x_float_perturb_bla_setup(
-    dblflt* results_x,
-    dblflt* results_x2,
-    dblflt* results_y,
-    dblflt* results_y2,
-    size_t sz)
+void mandel_2x_float_perturb_bla_setup(MattPerturbSingleResults<dblflt> results)
 {
     if (blockIdx.x != 0 || blockIdx.y != 0 || threadIdx.x != 0 || threadIdx.y != 0)
         return;
 
-    for (size_t i = 0; i < sz; i++) {
-        results_x[i] = add_float_to_dblflt(results_x[i].y, results_x[i].x);
-        results_x2[i] = add_float_to_dblflt(results_x2[i].y, results_x2[i].x);
-        results_y[i] = add_float_to_dblflt(results_y[i].y, results_y[i].x);
-        results_y2[i] = add_float_to_dblflt(results_y2[i].y, results_y2[i].x);
+    for (size_t i = 0; i < results.size; i++) {
+        results.iters[i].x = add_float_to_dblflt(results.iters[i].x.y, results.iters[i].x.x);
+        results.iters[i].x2 = add_float_to_dblflt(results.iters[i].x2.y, results.iters[i].x2.x);
+        results.iters[i].y = add_float_to_dblflt(results.iters[i].y.y, results.iters[i].y.x);
+        results.iters[i].y2 = add_float_to_dblflt(results.iters[i].y2.y, results.iters[i].y2.x);
     }
 }
 
 __global__
 void mandel_2x_float_perturb_bla(uint32_t* iter_matrix,
-    dblflt* results_x,
-    dblflt* results_x2,
-    dblflt* results_y,
-    dblflt* results_y2,
-    size_t sz,
+    MattPerturbSingleResults<dblflt> results,
     int width,
     int height,
     dblflt cx,
@@ -841,15 +838,19 @@ void mandel_2x_float_perturb_bla(uint32_t* iter_matrix,
     dblflt DeltaSub0Y = deltaImaginary;
     dblflt DeltaSubNX, DeltaSubNY;
 
+    size_t MaxRefIteration = results.size - 1;
+
     DeltaSubNX = add_float_to_dblflt(0, 0);
     DeltaSubNY = add_float_to_dblflt(0, 0);
 
     while (iter < n_iterations) {
+        MattReferenceSingleIter<dblflt>* CurIter = &results.iters[RefIteration];
+
         const dblflt DeltaSubNXOrig = DeltaSubNX;
         const dblflt DeltaSubNYOrig = DeltaSubNY;
 
-        const dblflt tempTermX1 = add_dblflt(results_x2[RefIteration], DeltaSubNXOrig);
-        const dblflt tempTermX2 = add_dblflt(results_y2[RefIteration], DeltaSubNYOrig);
+        const dblflt tempTermX1 = add_dblflt(CurIter->x2, DeltaSubNXOrig);
+        const dblflt tempTermX2 = add_dblflt(CurIter->y2, DeltaSubNYOrig);
 
         DeltaSubNX =
             sub_dblflt(
@@ -866,9 +867,10 @@ void mandel_2x_float_perturb_bla(uint32_t* iter_matrix,
         DeltaSubNY = add_dblflt(DeltaSubNY, DeltaSub0Y);
 
         ++RefIteration;
+        CurIter = &results.iters[RefIteration];
 
-        const dblflt tempZX = add_dblflt(results_x[RefIteration], DeltaSubNX);
-        const dblflt tempZY = add_dblflt(results_y[RefIteration], DeltaSubNY);
+        const dblflt tempZX = add_dblflt(CurIter->x, DeltaSubNX);
+        const dblflt tempZY = add_dblflt(CurIter->y, DeltaSubNY);
         const dblflt zn_size = add_dblflt(sqr_dblflt(tempZX), sqr_dblflt(tempZY));
         const dblflt normDeltaSubN = add_dblflt(sqr_dblflt(DeltaSubNX), sqr_dblflt(DeltaSubNY));
 
@@ -877,7 +879,7 @@ void mandel_2x_float_perturb_bla(uint32_t* iter_matrix,
         }
 
         if (zn_size.y < normDeltaSubN.y ||
-            RefIteration == sz - 1) {
+            RefIteration == MaxRefIteration) {
             DeltaSubNX = tempZX;
             DeltaSubNY = tempZY;
             RefIteration = 0;
@@ -1039,13 +1041,16 @@ void mandel_1x_float_perturb_bla(uint32_t* iter_matrix,
     float DeltaSub0Y = deltaImaginary;
     float DeltaSubNX = 0;
     float DeltaSubNY = 0;
+    size_t MaxRefIteration = results.size - 1;
 
     while (iter < n_iterations) {
+        const MattReferenceSingleIter<float> *curIter = &results.iters[RefIteration];
+
         const float DeltaSubNXOrig = DeltaSubNX;
         const float DeltaSubNYOrig = DeltaSubNY;
 
-        const float tempSubX = results.x2[RefIteration] + DeltaSubNXOrig;
-        const float tempSubY = results.y2[RefIteration] + DeltaSubNYOrig;
+        const float tempSubX = curIter->x2 + DeltaSubNXOrig;
+        const float tempSubY = curIter->y2 + DeltaSubNYOrig;
 
         DeltaSubNX =
             DeltaSubNXOrig * tempSubX -
@@ -1057,9 +1062,10 @@ void mandel_1x_float_perturb_bla(uint32_t* iter_matrix,
             DeltaSub0Y;
 
         ++RefIteration;
+        curIter = &results.iters[RefIteration];
 
-        const float tempZX = results.x[RefIteration] + DeltaSubNX;
-        const float tempZY = results.y[RefIteration] + DeltaSubNY;
+        const float tempZX = curIter->x + DeltaSubNX;
+        const float tempZY = curIter->y + DeltaSubNY;
         const float zn_size = tempZX * tempZX + tempZY * tempZY;
         const float normDeltaSubN = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
 
@@ -1068,7 +1074,7 @@ void mandel_1x_float_perturb_bla(uint32_t* iter_matrix,
         }
 
         if (zn_size < normDeltaSubN ||
-            RefIteration == results.size - 1) {
+            RefIteration == MaxRefIteration) {
             DeltaSubNX = tempZX;
             DeltaSubNY = tempZY;
             RefIteration = 0;
@@ -1080,9 +1086,8 @@ void mandel_1x_float_perturb_bla(uint32_t* iter_matrix,
     iter_matrix[idx] = (uint32_t)iter;
 }
 
-/*
 __global__
-void mandel_1x_float_perturb_bla_scaled(uint32_t* iter_matrix,
+void mandel_1x_float_perturb_scaled(uint32_t* iter_matrix,
     MattPerturbSingleResults<float> results,
     MattPerturbSingleResults<double> doubleResults,
     int width,
@@ -1136,319 +1141,98 @@ void mandel_1x_float_perturb_bla_scaled(uint32_t* iter_matrix,
     float DeltaSubNWY = 0;
 
     float s = (float)S;
-    float s2 = s * s;
     float twos = 2 * s;
     const float w2threshold = exp(log(LARGE_MANTISSA) / 2);
-    const double W2threshold = exp(log(LARGE_MANTISSA) / 2);
-    size_t cur_iter = 0;
-    size_t cur_bad_count_iter = 0;
+    size_t MaxRefIteration = results.size - 1;
 
     while (iter < n_iterations) {
-        cur_iter = 0;
-        while (cur_iter < results.bad_counts[cur_bad_count_iter] && iter < n_iterations) {
+        const MattReferenceSingleIter<float> *curFloatIter = &results.iters[RefIteration];
+        const MattReferenceSingleIter<double> *curDoubleIter = &doubleResults.iters[RefIteration];
+
+        if (curFloatIter->bad == false) {
             const float DeltaSubNWXOrig = DeltaSubNWX;
             const float DeltaSubNWYOrig = DeltaSubNWY;
 
             DeltaSubNWX =
-                DeltaSubNWXOrig * results.x2[RefIteration] - DeltaSubNWYOrig * results.y2[RefIteration] +
+                DeltaSubNWXOrig * curFloatIter->x2 -
+                DeltaSubNWYOrig * curFloatIter->y2 +
                 s * DeltaSubNWXOrig * DeltaSubNWXOrig - s * DeltaSubNWYOrig * DeltaSubNWYOrig +
                 DeltaSub0DX;
 
             DeltaSubNWY =
-                DeltaSubNWXOrig * results.y2[RefIteration] + DeltaSubNWYOrig * results.x2[RefIteration] +
-                twos * DeltaSubNWXOrig * DeltaSubNWYOrig +
+                DeltaSubNWXOrig * (curFloatIter->y2 + twos * DeltaSubNWYOrig) +
+                DeltaSubNWYOrig * curFloatIter->x2 +
                 DeltaSub0DY;
 
             ++RefIteration;
+            curFloatIter = &results.iters[RefIteration];
+            curDoubleIter = &doubleResults.iters[RefIteration];
 
             const float tempZX =
-                results.x[RefIteration] + DeltaSubNWX * s; // Xxrd
+                curFloatIter->x + DeltaSubNWX * s; // Xxrd
 
             const float tempZY =
-                results.y[RefIteration] + DeltaSubNWY * s; // Xxid
+                curFloatIter->y + DeltaSubNWY * s; // Xxid
 
             const float zn_size =
                 tempZX * tempZX + tempZY * tempZY;
-
-            const float normDeltaSubN =
-                DeltaSubNWX * DeltaSubNWX * s2 +
-                DeltaSubNWY * DeltaSubNWY * s2;
-
-            if (zn_size > 256.0f) {
-                goto end;
-            }
-
-            double DoubleTempZX;
-            double DoubleTempZY;
-
-            if (zn_size < normDeltaSubN ||
-                RefIteration == results.size - 1) {
-                DoubleTempZX = (doubleResults.x[RefIteration] + (double)DeltaSubNWX * S); // Xxrd, xr
-                DoubleTempZY = (doubleResults.y[RefIteration] + (double)DeltaSubNWY * S); // Xxid, xi
-
-                S = sqrt(DoubleTempZX * DoubleTempZX + DoubleTempZY * DoubleTempZY);
-                s = (float)S;
-                s2 = s * s;
-                twos = 2 * s;
-
-                DeltaSub0DX = (float)(deltaReal / S);
-                DeltaSub0DY = (float)(deltaImaginary / S);
-                DeltaSubNWX = (float)(DoubleTempZX / S);
-                DeltaSubNWY = (float)(DoubleTempZY / S);
-
-                RefIteration = 0;
-                cur_iter = 0;
-                cur_bad_count_iter = 0;
-                continue;
-            }
-            else {
-                const float w2 = DeltaSubNWX * DeltaSubNWX + DeltaSubNWY * DeltaSubNWY;
-                if (w2 >= w2threshold)
-                {
-                    DoubleTempZX = DeltaSubNWX * S;
-                    DoubleTempZY = DeltaSubNWY * S;
-
-                    S = sqrt(DoubleTempZX * DoubleTempZX + DoubleTempZY * DoubleTempZY);
-                    s = (float)S;
-                    s2 = s * s;
-                    twos = 2 * s;
-
-                    DeltaSub0DX = (float)(deltaReal / S);
-                    DeltaSub0DY = (float)(deltaImaginary / S);
-                    DeltaSubNWX = (float)(DoubleTempZX / S);
-                    DeltaSubNWY = (float)(DoubleTempZY / S);
-                }
-            }
-
-            ++iter;
-            ++cur_iter;
-        }
-
-        ++cur_bad_count_iter;
-        cur_iter = 0;
-        while (cur_iter < results.bad_counts[cur_bad_count_iter] && iter < n_iterations) {
-            // Do full iteration at double precision
-            double DeltaSubNWXOrig = DeltaSubNWX;
-            double DeltaSubNWYOrig = DeltaSubNWY;
-
-            const double DoubleTempDeltaSubNWX =
-                DeltaSubNWXOrig * doubleResults.x2[RefIteration] - DeltaSubNWYOrig * doubleResults.y2[RefIteration] +
-                S * DeltaSubNWXOrig * DeltaSubNWXOrig - S * DeltaSubNWYOrig * DeltaSubNWYOrig +
-                deltaReal / S;
-            const double DoubleTempDeltaSubNWY =
-                DeltaSubNWXOrig * doubleResults.y2[RefIteration] + DeltaSubNWYOrig * doubleResults.x2[RefIteration] +
-                2 * S * DeltaSubNWXOrig * DeltaSubNWYOrig +
-                deltaImaginary / S;
-
-            ++RefIteration;
-
-            const double tempZX =
-                doubleResults.x[RefIteration] +
-                DoubleTempDeltaSubNWX * S; // Xxrd
-
-            const double tempZY =
-                doubleResults.y[RefIteration] +
-                DoubleTempDeltaSubNWY * S; // Xxid
-
-            const double zn_size =
-                tempZX * tempZX + tempZY * tempZY;
-
-            const double normDeltaSubN =
-                DoubleTempDeltaSubNWX * DoubleTempDeltaSubNWX * S * S +
-                DoubleTempDeltaSubNWY * DoubleTempDeltaSubNWY * S * S;
-
-            if (zn_size > 256.0) {
-                goto end;
-            }
-
-            double DeltaSubNWXNew;
-            double DeltaSubNWYNew;
-
-            if (zn_size < normDeltaSubN ||
-                RefIteration == doubleResults.size - 1) {
-                DeltaSubNWXNew = (doubleResults.x[RefIteration] + DoubleTempDeltaSubNWX * S); // Xxrd, xr
-                DeltaSubNWYNew = (doubleResults.y[RefIteration] + DoubleTempDeltaSubNWY * S); // Xxid, xi
-
-                S = sqrt(DeltaSubNWXNew * DeltaSubNWXNew + DeltaSubNWYNew * DeltaSubNWYNew);
-                s = (float)S;
-                s2 = s * s;
-                twos = 2 * s;
-
-                DeltaSub0DX = (float)(deltaReal / S);
-                DeltaSub0DY = (float)(deltaImaginary / S);
-                DeltaSubNWX = (float)(DeltaSubNWXNew / S);
-                DeltaSubNWY = (float)(DeltaSubNWYNew / S);
-
-                RefIteration = 0;
-                cur_iter = 0;
-                cur_bad_count_iter = -1;
-                break;
-            }
-            else {
-                DeltaSubNWXNew = DoubleTempDeltaSubNWX * S;
-                DeltaSubNWYNew = DoubleTempDeltaSubNWY * S;
-
-                S = sqrt(DeltaSubNWXNew * DeltaSubNWXNew + DeltaSubNWYNew * DeltaSubNWYNew);
-                s = (float)S;
-                s2 = s * s;
-                twos = 2 * s;
-
-                DeltaSub0DX = (float)(deltaReal / S);
-                DeltaSub0DY = (float)(deltaImaginary / S);
-                DeltaSubNWX = (float)(DeltaSubNWXNew / S);
-                DeltaSubNWY = (float)(DeltaSubNWYNew / S);
-            }
-
-            ++iter;
-            ++cur_iter;
-        }
-
-        ++cur_bad_count_iter;
-    }
-
-end:
-    iter_matrix[idx] = (uint32_t)iter;
-}
-*/
-
-__global__
-void mandel_1x_float_perturb_bla_scaled(uint32_t* iter_matrix,
-    MattPerturbSingleResults<float> results,
-    MattPerturbSingleResults<double> doubleResults,
-    int width,
-    int height,
-    double cx,
-    double cy,
-    double dx,
-    double dy,
-    double centerX,
-    double centerY,
-    uint32_t n_iterations)
-{
-    int X = blockIdx.x * blockDim.x + threadIdx.x;
-    int Y = blockIdx.y * blockDim.y + threadIdx.y;
-    const float LARGE_MANTISSA = 1e30;
-
-    if (X >= width || Y >= height)
-        return;
-
-    //size_t idx = width * (height - Y - 1) + X;
-    size_t idx = width * Y + X;
-
-    if (iter_matrix[idx] != 0) {
-        return;
-    }
-
-    size_t iter = 0;
-    size_t RefIteration = 0;
-    const double deltaReal = dx * X - centerX;
-    const double deltaImaginary = -dy * Y - centerY;
-
-    // DeltaSubNWX = 2 * DeltaSubNWX * results.x[RefIteration] - 2 * DeltaSubNWY * results.y[RefIteration] +
-    //               S * DeltaSubNWX * DeltaSubNWX - S * DeltaSubNWY * DeltaSubNWY +
-    //               dX
-    // DeltaSubNWY = 2 * DeltaSubNWX * results.y[RefIteration] + 2 * DeltaSubNWY * results.x[RefIteration] +
-    //               2 * S * DeltaSubNWX * DeltaSubNWY +
-    //               dY
-    // 
-    // wrn = (2 * Xr + wr * s) * wr - (2 * Xi + wi * s) * wi + ur;
-    //     = 2 * Xr * wr + wr * wr * s - 2 * Xi * wi - wi * wi * s + ur;
-    // win = 2 * ((Xr + wr * s) * wi + Xi * wr) + ui;
-    //     = 2 * (Xr * wi + wr * s * wi + Xi * wr) + ui;
-    //     = 2 * Xr * wi + 2 * wr * s * wi + 2 * Xi * wr + ui;
-
-    double S = sqrt(deltaReal * deltaReal + deltaImaginary * deltaImaginary);
-
-    //double S = 1;
-    float DeltaSub0DX = (float)(deltaReal / S);
-    float DeltaSub0DY = (float)(deltaImaginary / S);
-    float DeltaSubNWX = 0;
-    float DeltaSubNWY = 0;
-
-    float s = (float)S;
-    float s2 = s * s;
-    float twos = 2 * s;
-    const float w2threshold = exp(log(LARGE_MANTISSA) / 2);
-    const double W2threshold = exp(log(LARGE_MANTISSA) / 2);
-    bool full_iteration = false;
-
-    while (iter < n_iterations) {
-        full_iteration = results.bad[RefIteration];
-
-        if (full_iteration == false) {
-            const float DeltaSubNWXOrig = DeltaSubNWX;
-            const float DeltaSubNWYOrig = DeltaSubNWY;
-
-            DeltaSubNWX =
-                DeltaSubNWXOrig * results.x2[RefIteration] -
-                DeltaSubNWYOrig * results.y2[RefIteration] +
-                s * (DeltaSubNWXOrig * DeltaSubNWXOrig - DeltaSubNWYOrig * DeltaSubNWYOrig) +
-                DeltaSub0DX;
-
-            DeltaSubNWY =
-                DeltaSubNWXOrig * (results.y2[RefIteration] + twos * DeltaSubNWYOrig) +
-                DeltaSubNWYOrig * results.x2[RefIteration] +
-                DeltaSub0DY;
-
-            ++RefIteration;
-
-            const float tempZX =
-                results.x[RefIteration] + DeltaSubNWX * s; // Xxrd
-
-            const float tempZY =
-                results.y[RefIteration] + DeltaSubNWY * s; // Xxid
-
-            const float zn_size =
-                tempZX * tempZX + tempZY * tempZY;
-
-            if (zn_size > 256.0f) {
-                break;
-            }
 
             const float DeltaSubNWXSquared = DeltaSubNWX * DeltaSubNWX;
             const float DeltaSubNWYSquared = DeltaSubNWY * DeltaSubNWY;
-
-            const float normDeltaSubN =
-                DeltaSubNWXSquared * s2 +
-                DeltaSubNWYSquared * s2;
+            const float w2 = DeltaSubNWXSquared + DeltaSubNWYSquared;
+            const float normDeltaSubN = w2 * s * s;
 
             double DoubleTempZX;
             double DoubleTempZY;
 
-            if (zn_size < normDeltaSubN ||
-                RefIteration == results.size - 1) {
-                DoubleTempZX = (doubleResults.x[RefIteration] + (double)DeltaSubNWX * S); // Xxrd, xr
-                DoubleTempZY = (doubleResults.y[RefIteration] + (double)DeltaSubNWY * S); // Xxid, xi
+            const bool zn_size_OK = (zn_size < 256.0f);
+            const bool test1a = (zn_size < normDeltaSubN);
+            const bool test1b = (RefIteration == MaxRefIteration);
+            const bool test1ab = test1a || (test1b && zn_size_OK);
+            const bool testw2 = (w2 >= w2threshold) && zn_size_OK;
+            const bool none = !test1ab && !testw2 && zn_size_OK;
+
+            if (none) {
+                ++iter;
+                continue;
+            } else if (test1ab) {
+                DoubleTempZX = (curDoubleIter->x + (double)DeltaSubNWX * S); // Xxrd, xr
+                DoubleTempZY = (curDoubleIter->y + (double)DeltaSubNWY * S); // Xxid, xi
 
                 RefIteration = 0;
 
                 S = sqrt(DoubleTempZX * DoubleTempZX + DoubleTempZY * DoubleTempZY);
                 s = (float)S;
-                s2 = s * s;
                 twos = 2 * s;
 
                 DeltaSub0DX = (float)(deltaReal / S);
                 DeltaSub0DY = (float)(deltaImaginary / S);
                 DeltaSubNWX = (float)(DoubleTempZX / S);
                 DeltaSubNWY = (float)(DoubleTempZY / S);
+
+                ++iter;
+                continue;
+            }
+            else if (testw2)
+            {
+                DoubleTempZX = DeltaSubNWX * S;
+                DoubleTempZY = DeltaSubNWY * S;
+
+                S = sqrt(DoubleTempZX * DoubleTempZX + DoubleTempZY * DoubleTempZY);
+                s = (float)S;
+                twos = 2 * s;
+
+                DeltaSub0DX = (float)(deltaReal / S);
+                DeltaSub0DY = (float)(deltaImaginary / S);
+                DeltaSubNWX = (float)(DoubleTempZX / S);
+                DeltaSubNWY = (float)(DoubleTempZY / S);
+
+                ++iter;
+                continue;
             }
             else {
-                const float w2 = DeltaSubNWXSquared + DeltaSubNWYSquared;
-                if (w2 >= w2threshold)
-                {
-                    DoubleTempZX = DeltaSubNWX * S;
-                    DoubleTempZY = DeltaSubNWY * S;
-
-                    S = sqrt(DoubleTempZX * DoubleTempZX + DoubleTempZY * DoubleTempZY);
-                    s = (float)S;
-                    s2 = s * s;
-                    twos = 2 * s;
-
-                    DeltaSub0DX = (float)(deltaReal / S);
-                    DeltaSub0DY = (float)(deltaImaginary / S);
-                    DeltaSubNWX = (float)(DoubleTempZX / S);
-                    DeltaSubNWY = (float)(DoubleTempZY / S);
-                }
+                // zn_size fail
+                break;
             }
         } else {
             // Do full iteration at double precision
@@ -1456,24 +1240,26 @@ void mandel_1x_float_perturb_bla_scaled(uint32_t* iter_matrix,
             double DeltaSubNWYOrig = DeltaSubNWY;
 
             const double DoubleTempDeltaSubNWX =
-                DeltaSubNWXOrig * doubleResults.x2[RefIteration] -
-                DeltaSubNWYOrig * doubleResults.y2[RefIteration] +
-                S * (DeltaSubNWXOrig * DeltaSubNWXOrig - DeltaSubNWYOrig * DeltaSubNWYOrig) +
+                DeltaSubNWXOrig * curDoubleIter->x2 -
+                DeltaSubNWYOrig * curDoubleIter->y2 +
+                S * DeltaSubNWXOrig * DeltaSubNWXOrig - S * DeltaSubNWYOrig * DeltaSubNWYOrig +
                 deltaReal / S;
 
             const double DoubleTempDeltaSubNWY =
-                DeltaSubNWXOrig * (doubleResults.y2[RefIteration] + 2 * S * DeltaSubNWYOrig) +
-                DeltaSubNWYOrig * doubleResults.x2[RefIteration] +
+                DeltaSubNWXOrig * (curDoubleIter->y2 + 2 * S * DeltaSubNWYOrig) +
+                DeltaSubNWYOrig * curDoubleIter->x2 +
                 deltaImaginary / S;
 
             ++RefIteration;
+            curFloatIter = &results.iters[RefIteration];
+            curDoubleIter = &doubleResults.iters[RefIteration];
 
             const double tempZX =
-                doubleResults.x[RefIteration] +
+                curDoubleIter->x +
                 DoubleTempDeltaSubNWX * S; // Xxrd
 
             const double tempZY =
-                doubleResults.y[RefIteration] +
+                curDoubleIter->y +
                 DoubleTempDeltaSubNWY * S; // Xxid
 
             const double zn_size =
@@ -1492,9 +1278,9 @@ void mandel_1x_float_perturb_bla_scaled(uint32_t* iter_matrix,
             double DeltaSubNWYNew;
 
             if (zn_size < normDeltaSubN ||
-                RefIteration == doubleResults.size - 1) {
-                DeltaSubNWXNew = (doubleResults.x[RefIteration] + DoubleTempDeltaSubNWX * S); // Xxrd, xr
-                DeltaSubNWYNew = (doubleResults.y[RefIteration] + DoubleTempDeltaSubNWY * S); // Xxid, xi
+                RefIteration == MaxRefIteration) {
+                DeltaSubNWXNew = (curDoubleIter->x + DoubleTempDeltaSubNWX * S); // Xxrd, xr
+                DeltaSubNWYNew = (curDoubleIter->y + DoubleTempDeltaSubNWY * S); // Xxid, xi
 
                 RefIteration = 0;
             }
@@ -1505,13 +1291,232 @@ void mandel_1x_float_perturb_bla_scaled(uint32_t* iter_matrix,
 
             S = sqrt(DeltaSubNWXNew * DeltaSubNWXNew + DeltaSubNWYNew * DeltaSubNWYNew);
             s = (float)S;
-            s2 = s * s;
             twos = 2 * s;
 
             DeltaSub0DX = (float)(deltaReal / S);
             DeltaSub0DY = (float)(deltaImaginary / S);
             DeltaSubNWX = (float)(DeltaSubNWXNew / S);
             DeltaSubNWY = (float)(DeltaSubNWYNew / S);
+        }
+
+        ++iter;
+    }
+
+    iter_matrix[idx] = (uint32_t)iter;
+}
+
+__global__
+void mandel_2x_float_perturb_scaled(uint32_t* iter_matrix,
+    MattPerturbSingleResults<dblflt> results,
+    MattPerturbSingleResults<double> doubleResults,
+    int width,
+    int height,
+    double cx,
+    double cy,
+    double dx,
+    double dy,
+    double centerX,
+    double centerY,
+    uint32_t n_iterations)
+{
+    int X = blockIdx.x * blockDim.x + threadIdx.x;
+    int Y = blockIdx.y * blockDim.y + threadIdx.y;
+    const float LARGE_MANTISSA = 1e30;
+
+    if (X >= width || Y >= height)
+        return;
+
+    //size_t idx = width * (height - Y - 1) + X;
+    size_t idx = width * Y + X;
+
+    if (iter_matrix[idx] != 0) {
+        return;
+    }
+
+    size_t iter = 0;
+    size_t RefIteration = 0;
+    const double deltaReal = dx * X - centerX;
+    const double deltaImaginary = -dy * Y - centerY;
+
+    // DeltaSubNWX = 2 * DeltaSubNWX * results.x[RefIteration] - 2 * DeltaSubNWY * results.y[RefIteration] +
+    //               S * DeltaSubNWX * DeltaSubNWX - S * DeltaSubNWY * DeltaSubNWY +
+    //               dX
+    // DeltaSubNWY = 2 * DeltaSubNWX * results.y[RefIteration] + 2 * DeltaSubNWY * results.x[RefIteration] +
+    //               2 * S * DeltaSubNWX * DeltaSubNWY +
+    //               dY
+    // 
+    // wrn = (2 * Xr + wr * s) * wr - (2 * Xi + wi * s) * wi + ur;
+    //     = 2 * Xr * wr + wr * wr * s - 2 * Xi * wi - wi * wi * s + ur;
+    // win = 2 * ((Xr + wr * s) * wi + Xi * wr) + ui;
+    //     = 2 * (Xr * wi + wr * s * wi + Xi * wr) + ui;
+    //     = 2 * Xr * wi + 2 * wr * s * wi + 2 * Xi * wr + ui;
+
+    double S = sqrt(deltaReal * deltaReal + deltaImaginary * deltaImaginary);
+
+    //double S = 1;
+    dblflt DeltaSub0DX = double_to_dblflt(deltaReal / S);
+    dblflt DeltaSub0DY = double_to_dblflt(deltaImaginary / S);
+    dblflt DeltaSubNWX = add_float_to_dblflt(0, 0);
+    dblflt DeltaSubNWY = add_float_to_dblflt(0, 0);
+
+    dblflt s = double_to_dblflt(S);
+    dblflt twos = add_dblflt(s, s);
+    const dblflt w2threshold = double_to_dblflt(exp(log(LARGE_MANTISSA) / 2));
+    size_t MaxRefIteration = results.size - 1;
+
+    while (iter < n_iterations) {
+        const MattReferenceSingleIter<dblflt>* curDblFloatIter = &results.iters[RefIteration];
+        const MattReferenceSingleIter<double>* curDoubleIter = &doubleResults.iters[RefIteration];
+
+        if (curDblFloatIter->bad == false) {
+            const dblflt DeltaSubNWXOrig = DeltaSubNWX;
+            const dblflt DeltaSubNWYOrig = DeltaSubNWY;
+
+            DeltaSubNWX = mul_dblflt(DeltaSubNWXOrig, curDblFloatIter->x2);
+            DeltaSubNWX = sub_dblflt(DeltaSubNWX, mul_dblflt(DeltaSubNWYOrig, curDblFloatIter->y2));
+            DeltaSubNWX = add_dblflt(DeltaSubNWX, mul_dblflt(mul_dblflt(s, DeltaSubNWXOrig), DeltaSubNWXOrig));
+            DeltaSubNWX = sub_dblflt(DeltaSubNWX, mul_dblflt(mul_dblflt(s, DeltaSubNWYOrig), DeltaSubNWYOrig));
+            DeltaSubNWX = add_dblflt(DeltaSubNWX, DeltaSub0DX);
+
+            DeltaSubNWY = mul_dblflt(DeltaSubNWXOrig, (add_dblflt(curDblFloatIter->y2, mul_dblflt(twos, DeltaSubNWYOrig))));
+            DeltaSubNWY = add_dblflt(DeltaSubNWY, mul_dblflt(DeltaSubNWYOrig, curDblFloatIter->x2));
+            DeltaSubNWY = add_dblflt(DeltaSubNWY, DeltaSub0DY);
+
+            ++RefIteration;
+            curDblFloatIter = &results.iters[RefIteration];
+            curDoubleIter = &doubleResults.iters[RefIteration];
+
+            const dblflt tempZX =
+                add_dblflt(curDblFloatIter->x, mul_dblflt(DeltaSubNWX, s)); // Xxrd
+
+            const dblflt tempZY =
+                add_dblflt(curDblFloatIter->y, mul_dblflt(DeltaSubNWY, s)); // Xxid
+
+            const dblflt zn_size =
+                add_dblflt(sqr_dblflt(tempZX), sqr_dblflt(tempZY));
+
+            const dblflt DeltaSubNWXSquared = sqr_dblflt(DeltaSubNWX);
+            const dblflt DeltaSubNWYSquared = sqr_dblflt(DeltaSubNWY);
+            const dblflt w2 = add_dblflt(DeltaSubNWXSquared, DeltaSubNWYSquared);
+            const dblflt normDeltaSubN = mul_dblflt(w2, sqr_dblflt(s));
+
+            double DoubleTempZX;
+            double DoubleTempZY;
+
+            const bool zn_size_OK = (zn_size.y < 256.0f);
+            const bool test1a = (zn_size.y < normDeltaSubN.y);
+            const bool test1b = (RefIteration == MaxRefIteration);
+            const bool test1ab = test1a || (test1b && zn_size_OK);
+            const bool testw2 = (w2.y >= w2threshold.y) && zn_size_OK;
+            const bool none = !test1ab && !testw2 && zn_size_OK;
+
+            if (none) {
+                ++iter;
+                continue;
+            }
+            else if (test1ab) {
+                DoubleTempZX = (curDoubleIter->x + dblflt_to_double(DeltaSubNWX) * S); // Xxrd, xr
+                DoubleTempZY = (curDoubleIter->y + dblflt_to_double(DeltaSubNWY) * S); // Xxid, xi
+
+                RefIteration = 0;
+
+                S = sqrt(DoubleTempZX * DoubleTempZX + DoubleTempZY * DoubleTempZY);
+                s = double_to_dblflt(S);
+                twos = add_dblflt(s, s);
+
+                DeltaSub0DX = double_to_dblflt(deltaReal / S);
+                DeltaSub0DY = double_to_dblflt(deltaImaginary / S);
+                DeltaSubNWX = double_to_dblflt(DoubleTempZX / S);
+                DeltaSubNWY = double_to_dblflt(DoubleTempZY / S);
+
+                ++iter;
+                continue;
+            }
+            else if (testw2)
+            {
+                DoubleTempZX = dblflt_to_double(DeltaSubNWX) * S;
+                DoubleTempZY = dblflt_to_double(DeltaSubNWY) * S;
+
+                S = sqrt(DoubleTempZX * DoubleTempZX + DoubleTempZY * DoubleTempZY);
+                s = double_to_dblflt(S);
+                twos = add_dblflt(s, s);
+
+                DeltaSub0DX = double_to_dblflt(deltaReal / S);
+                DeltaSub0DY = double_to_dblflt(deltaImaginary / S);
+                DeltaSubNWX = double_to_dblflt(DoubleTempZX / S);
+                DeltaSubNWY = double_to_dblflt(DoubleTempZY / S);
+
+                ++iter;
+                continue;
+            }
+            else {
+                // zn_size fail
+                break;
+            }
+        }
+        else {
+            // Do full iteration at double precision
+            double DeltaSubNWXOrig = dblflt_to_double(DeltaSubNWX);
+            double DeltaSubNWYOrig = dblflt_to_double(DeltaSubNWY);
+
+            const double DoubleTempDeltaSubNWX =
+                DeltaSubNWXOrig * curDoubleIter->x2 -
+                DeltaSubNWYOrig * curDoubleIter->y2 +
+                S * DeltaSubNWXOrig * DeltaSubNWXOrig - S * DeltaSubNWYOrig * DeltaSubNWYOrig +
+                deltaReal / S;
+
+            const double DoubleTempDeltaSubNWY =
+                DeltaSubNWXOrig * (curDoubleIter->y2 + 2 * S * DeltaSubNWYOrig) +
+                DeltaSubNWYOrig * curDoubleIter->x2 +
+                deltaImaginary / S;
+
+            ++RefIteration;
+            curDblFloatIter = &results.iters[RefIteration];
+            curDoubleIter = &doubleResults.iters[RefIteration];
+
+            const double tempZX =
+                curDoubleIter->x +
+                DoubleTempDeltaSubNWX * S; // Xxrd
+
+            const double tempZY =
+                curDoubleIter->y +
+                DoubleTempDeltaSubNWY * S; // Xxid
+
+            const double zn_size =
+                tempZX * tempZX + tempZY * tempZY;
+
+            if (zn_size > 256.0) {
+                break;
+            }
+
+            const double TwoS = S * S;
+            const double normDeltaSubN =
+                DoubleTempDeltaSubNWX * DoubleTempDeltaSubNWX * TwoS +
+                DoubleTempDeltaSubNWY * DoubleTempDeltaSubNWY * TwoS;
+
+            double DeltaSubNWXNew;
+            double DeltaSubNWYNew;
+
+            if (zn_size < normDeltaSubN ||
+                RefIteration == MaxRefIteration) {
+                DeltaSubNWXNew = (curDoubleIter->x + DoubleTempDeltaSubNWX * S); // Xxrd, xr
+                DeltaSubNWYNew = (curDoubleIter->y + DoubleTempDeltaSubNWY * S); // Xxid, xi
+
+                RefIteration = 0;
+            }
+            else {
+                DeltaSubNWXNew = DoubleTempDeltaSubNWX * S;
+                DeltaSubNWYNew = DoubleTempDeltaSubNWY * S;
+            }
+
+            S = sqrt(DeltaSubNWXNew * DeltaSubNWXNew + DeltaSubNWYNew * DeltaSubNWYNew);
+            s = double_to_dblflt(S);
+            twos = add_dblflt(s, s);
+
+            DeltaSub0DX = double_to_dblflt(deltaReal / S);
+            DeltaSub0DY = double_to_dblflt(deltaImaginary / S);
+            DeltaSubNWX = double_to_dblflt(DeltaSubNWXNew / S);
+            DeltaSubNWY = double_to_dblflt(DeltaSubNWYNew / S);
         }
 
         ++iter;
@@ -1557,15 +1562,16 @@ void GPURenderer::ClearMemory() {
     cudaMemset(iter_matrix_cu, 0, N_cu * sizeof(int));
 }
 
-void GPURenderer::InitializeMemory(
+uint32_t GPURenderer::InitializeMemory(
     size_t w,
     size_t h,
     uint32_t aa,
     size_t MaxFractSize)
 {
     if ((local_width == w * aa) &&
-        (local_height == h * aa)) {
-        return;
+        (local_height == h * aa) &&
+        (array_width == MaxFractSize)) {
+        return 0;
     }
 
     width = (uint32_t)w;
@@ -1576,7 +1582,7 @@ void GPURenderer::InitializeMemory(
     w_block = local_width / NB_THREADS_W + (local_width % NB_THREADS_W != 0);
     h_block = local_height / NB_THREADS_H + (local_height % NB_THREADS_H != 0);
     N_cu = w_block * NB_THREADS_W * h_block * NB_THREADS_H;
-    MaxFractalSize = MaxFractSize;
+    array_width = MaxFractSize;
 
     if (iter_matrix_cu != nullptr) {
         cudaFree(iter_matrix_cu);
@@ -1585,13 +1591,14 @@ void GPURenderer::InitializeMemory(
     cudaError_t err = cudaMallocManaged(&iter_matrix_cu, N_cu * sizeof(int), cudaMemAttachGlobal);
     if (err != cudaSuccess) {
         ClearLocals();
-        return;
+        return err;
     }
 
     ClearMemory();
+    return 0;
 }
 
-void GPURenderer::Render(
+uint32_t GPURenderer::Render(
     RenderAlgorithm algorithm,
     uint32_t* buffer,
     MattCoords cx,
@@ -1602,7 +1609,7 @@ void GPURenderer::Render(
     int iteration_precision)
 {
     if (iter_matrix_cu == nullptr) {
-        return;
+        return cudaSuccess;
     }
 
     dim3 nb_blocks(w_block, h_block, 1);
@@ -1689,10 +1696,10 @@ void GPURenderer::Render(
         }
     }
     else if (algorithm == RenderAlgorithm::Gpu2x32) {
-        dblflt cx2{ cx.flt.head, cx.flt.tail };
-        dblflt cy2{ cy.flt.head, cy.flt.tail };
-        dblflt dx2{ dx.flt.head, dx.flt.tail };
-        dblflt dy2{ dy.flt.head, dy.flt.tail };
+        dblflt cx2{ cx.flt.x, cx.flt.y };
+        dblflt cy2{ cy.flt.x, cy.flt.y };
+        dblflt dx2{ dx.flt.x, dx.flt.y };
+        dblflt dy2{ dy.flt.x, dy.flt.y };
 
         switch (iteration_precision) {
         case 1:
@@ -1738,13 +1745,13 @@ void GPURenderer::Render(
             n_iterations);
     }
     else {
-        return;
+        return cudaSuccess;
     }
 
-    ExtractIters(buffer);
+    return ExtractIters(buffer);
 }
 
-void GPURenderer::RenderPerturbBLA(
+uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
     uint32_t* buffer,
     MattPerturbResults* results,
@@ -1757,8 +1764,10 @@ void GPURenderer::RenderPerturbBLA(
     uint32_t n_iterations,
     int /*iteration_precision*/)
 {
+    uint32_t result = cudaSuccess;
+
     if (iter_matrix_cu == nullptr) {
-        return;
+        return result;
     }
 
     dim3 nb_blocks(w_block, h_block, 1);
@@ -1767,57 +1776,63 @@ void GPURenderer::RenderPerturbBLA(
     if (algorithm == RenderAlgorithm::Gpu1x64PerturbedBLA) {
         MattPerturbSingleResults<double> cudaResults(
             results->size,
-            results->x.doubleOnly,
-            results->x2.doubleOnly,
-            results->y.doubleOnly,
-            results->y2.doubleOnly,
-            results->bad,
+            results->double_iters,
             results->bad_counts,
             results->bad_counts_size);
 
+        result = cudaResults.CheckValid();
+        if (result != 0) {
+            return result;
+        }
+
         mandel_1x_double_perturb_bla << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
-            cudaResults.x, cudaResults.x2, cudaResults.y, cudaResults.y2, cudaResults.size,
+            cudaResults,
             local_width, local_height, cx.doubleOnly, cy.doubleOnly, dx.doubleOnly, dy.doubleOnly,
             centerX.doubleOnly, centerY.doubleOnly,
             n_iterations);
+
+        result = ExtractIters(buffer);
     }
     else if (algorithm == RenderAlgorithm::Gpu2x32PerturbedBLA) {
         MattPerturbSingleResults<dblflt> cudaResults(
             results->size,
-            (dblflt*)results->x.flt,
-            (dblflt*)results->x2.flt,
-            (dblflt*)results->y.flt,
-            (dblflt*)results->y2.flt,
-            results->bad,
+            results->dblflt_iters,
             results->bad_counts,
             results->bad_counts_size);
 
-        dblflt cx2{ cx.flt.head, cx.flt.tail };
-        dblflt cy2{ cy.flt.head, cy.flt.tail };
-        dblflt dx2{ dx.flt.head, dx.flt.tail };
-        dblflt dy2{ dy.flt.head, dy.flt.tail };
-        dblflt centerX2{ centerX.flt.head, centerX.flt.tail };
-        dblflt centerY2{ centerY.flt.head, centerY.flt.tail };
+        result = cudaResults.CheckValid();
+        if (result != 0) {
+            return result;
+        }
 
-        mandel_2x_float_perturb_bla_setup << <nb_blocks, threads_per_block >> > (
-            cudaResults.x, cudaResults.x2, cudaResults.y, cudaResults.y2, results->size);
+        dblflt cx2{ cx.flt.x, cx.flt.y };
+        dblflt cy2{ cy.flt.x, cy.flt.y };
+        dblflt dx2{ dx.flt.x, dx.flt.y };
+        dblflt dy2{ dy.flt.x, dy.flt.y };
+        dblflt centerX2{ centerX.flt.x, centerX.flt.y };
+        dblflt centerY2{ centerY.flt.x, centerY.flt.y };
+
+        mandel_2x_float_perturb_bla_setup << <nb_blocks, threads_per_block >> > (cudaResults);
 
         mandel_2x_float_perturb_bla << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
-            cudaResults.x, cudaResults.x2, cudaResults.y, cudaResults.y2, results->size,
+            cudaResults,
             local_width, local_height, cx2, cy2, dx2, dy2,
             centerX2, centerY2,
             n_iterations);
+
+        result = ExtractIters(buffer);
     } else if (algorithm == RenderAlgorithm::Gpu1x32PerturbedBLA ||
                algorithm == RenderAlgorithm::Gpu1x32PerturbedScaled) {
         MattPerturbSingleResults<float> cudaResults(
             results->size,
-            results->x.floatOnly,
-            results->x2.floatOnly,
-            results->y.floatOnly,
-            results->y2.floatOnly,
-            results->bad,
+            results->float_iters,
             results->bad_counts,
             results->bad_counts_size);
+
+        result = cudaResults.CheckValid();
+        if (result != 0) {
+            return result;
+        }
 
         if (algorithm == RenderAlgorithm::Gpu1x32PerturbedBLA) {
             mandel_1x_float_perturb_bla << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
@@ -1825,40 +1840,86 @@ void GPURenderer::RenderPerturbBLA(
                 local_width, local_height, cx.floatOnly, cy.floatOnly, dx.floatOnly, dy.floatOnly,
                 centerX.floatOnly, centerY.floatOnly,
                 n_iterations);
+
+            result = ExtractIters(buffer);
         }
         else if (algorithm == RenderAlgorithm::Gpu1x32PerturbedScaled) {
             MattPerturbSingleResults<double> cudaResultsDouble(
                 results->size,
-                results->x.doubleOnly,
-                results->x2.doubleOnly,
-                results->y.doubleOnly,
-                results->y2.doubleOnly,
-                results->bad,
+                results->double_iters,
                 results->bad_counts,
                 results->bad_counts_size);
 
-            mandel_1x_float_perturb_bla_scaled << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
+            result = cudaResultsDouble.CheckValid();
+            if (result != 0) {
+                return result;
+            }
+
+            mandel_1x_float_perturb_scaled << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
                 cudaResults, cudaResultsDouble,
                 local_width, local_height, cx.doubleOnly, cy.doubleOnly, dx.doubleOnly, dy.doubleOnly,
                 centerX.doubleOnly, centerY.doubleOnly,
                 n_iterations);
+
+            result = ExtractIters(buffer);
         }
+    } else if (algorithm == RenderAlgorithm::Gpu2x32PerturbedScaled) {
+        MattPerturbSingleResults<dblflt> cudaResults(
+            results->size,
+            results->dblflt_iters,
+            results->bad_counts,
+            results->bad_counts_size);
+
+        result = cudaResults.CheckValid();
+        if (result != 0) {
+            return result;
+        }
+
+        MattPerturbSingleResults<double> cudaResultsDouble(
+            results->size,
+            results->double_iters,
+            results->bad_counts,
+            results->bad_counts_size);
+
+        result = cudaResultsDouble.CheckValid();
+        if (result != 0) {
+            return result;
+        }
+
+        mandel_2x_float_perturb_bla_setup << <nb_blocks, threads_per_block >> > (cudaResults);
+
+        mandel_2x_float_perturb_scaled << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
+            cudaResults, cudaResultsDouble,
+            local_width, local_height, cx.doubleOnly, cy.doubleOnly, dx.doubleOnly, dy.doubleOnly,
+            centerX.doubleOnly, centerY.doubleOnly,
+            n_iterations);
+
+        result = ExtractIters(buffer);
     }
 
-    ExtractIters(buffer);
+    return result;
 }
 
-void GPURenderer::ExtractIters(uint32_t* buffer) {
+uint32_t GPURenderer::ExtractIters(uint32_t* buffer) {
     size_t aax, aay;
     double temp;
 
-    cudaDeviceSynchronize();
+    const size_t ERROR_COLOR = 255;
+    cudaError_t result = cudaDeviceSynchronize();
+    if (result != cudaSuccess) {
+        for (size_t y = 0; y < height; y++) {
+            for (size_t x = 0; x < width; x++) {
+                buffer[y * array_width + x] = ERROR_COLOR;
+            }
+        }
+        return result;
+    }
 
     if (antialiasing != 1) {
         for (size_t y = 0; y < height; y++) {
             for (size_t x = 0; x < width; x++) {
 
-                buffer[y * MaxFractalSize + x] = 0;
+                buffer[y * array_width + x] = 0;
                 temp = 0.0;
                 for (aay = y * antialiasing; aay < y * antialiasing + antialiasing; aay++) {
                     for (aax = x * antialiasing; aax < x * antialiasing + antialiasing; aax++) {
@@ -1868,15 +1929,17 @@ void GPURenderer::ExtractIters(uint32_t* buffer) {
 
                 temp /= antialiasing * antialiasing;
 
-                buffer[y * MaxFractalSize + x] = (int)temp;
+                buffer[y * array_width + x] = (int)temp;
             }
         }
     }
     else {
         for (size_t y = 0; y < height; y++) {
             for (size_t x = 0; x < width; x++) {
-                buffer[y * MaxFractalSize + x] = (int)iter_matrix_cu[y * local_width + x];
+                buffer[y * array_width + x] = (int)iter_matrix_cu[y * local_width + x];
             }
         }
     }
+
+    return cudaSuccess;
 }

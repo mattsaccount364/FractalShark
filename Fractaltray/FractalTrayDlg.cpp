@@ -182,7 +182,7 @@ void GetTokensFromString(const CString& str,
     size_t i = 0;
     while (std::getline(check1, intermediate, L' '))
     {
-        char temp[256];
+        char temp[1024];
         tokens.push_back(intermediate);
         tokens_wstr.push_back(tokens[i].c_str());
 
@@ -292,7 +292,7 @@ void CFractalTrayDlg::OnBnClickedButtonGenerate ()
     curMaxY += deltaYMax;
     curIters += (double) incIters;
 
-    sprintf(outputImageFilename, "output%04zd", i);
+    sprintf(outputImageFilename, "output%05zd", i);
 
     std::stringstream ss;
     ss << std::setprecision(std::numeric_limits<HighPrecision>::max_digits10);
@@ -395,7 +395,8 @@ DWORD WINAPI CalcProc (LPVOID lpParameter)
   setup.m_AlgLowRes = 0;
   GetCurrentDirectory (128, setup.m_SaveDir);
 
-  Fractal *fractal = new Fractal (&setup, 0, 0, OutputMessage, NULL, false);
+  // default width/height:
+  Fractal *fractal = new Fractal (&setup, 3840, 1600, OutputMessage, NULL, false);
 
   for (int i = 0;; i++)
   { if (locationFile.ReadString (line) == FALSE)
@@ -421,12 +422,10 @@ DWORD WINAPI CalcProc (LPVOID lpParameter)
     if (FileExists (filename) || FileExists (filename_png) || FileExists(filename_bmp))
     { continue; }
 
-    fractal->Reset (resX, resY);
-    fractal->RecenterViewCalc (minX, minY, maxX, maxY);
     fractal->SetNumIterations (numIters);
-    fractal->SetIterationAntialiasing(iterationAntialiasing);
-    fractal->SetGpuAntialiasing(gpuAntialiasing);
     fractal->SetIterationPrecision(iterationPrecision);
+    fractal->ResetDimensions(resX, resY, iterationAntialiasing, gpuAntialiasing);
+    fractal->RecenterViewCalc(minX, minY, maxX, maxY);
     fractal->CalcFractal (true);
     fractal->SaveCurrentFractal (filename);
     //fractal->CalcDiskFractal (filename_bmp);

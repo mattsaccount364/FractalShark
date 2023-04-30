@@ -27,14 +27,62 @@
 
 void DefaultOutputMessage(const wchar_t *, ...);
 
+Fractal::ItersMemoryContainer::ItersMemoryContainer(size_t width, size_t height, size_t total_antialiasing)
+    : m_ItersMemory(nullptr),
+      m_ItersArray(nullptr),
+      m_Width((width + 32) * total_antialiasing),
+      m_Height((height + 32) * total_antialiasing),
+      m_Total(m_Width * m_Height) {
+    m_ItersMemory = new uint32_t[m_Total];
+    memset(m_ItersMemory, 0, m_Total * sizeof(uint32_t));
 
+    m_ItersArray = new uint32_t*[m_Height];
+    for (size_t i = 0; i < m_Height; i++) {
+        m_ItersArray[i] = &m_ItersMemory[i * m_Width];
+    }
+};
 
-Fractal::Fractal(FractalSetupData *setupData,
+Fractal::ItersMemoryContainer::ItersMemoryContainer(Fractal::ItersMemoryContainer&& other) {
+    *this = std::move(other);
+}
+
+Fractal::ItersMemoryContainer &Fractal::ItersMemoryContainer::operator=(Fractal::ItersMemoryContainer&& other) {
+    if (this == &other) {
+        return *this;
+    }
+
+    m_ItersMemory = other.m_ItersMemory;
+    other.m_ItersMemory = nullptr;
+
+    m_ItersArray = other.m_ItersArray;
+    other.m_ItersArray = nullptr;
+
+    m_Width = other.m_Width;
+    m_Height = other.m_Height;
+    m_Total = other.m_Total;
+
+    return *this;
+}
+
+Fractal::ItersMemoryContainer::~ItersMemoryContainer() {
+    if (m_ItersMemory) {
+        delete[] m_ItersMemory;
+        m_ItersMemory = nullptr;
+    }
+
+    if (m_ItersArray) {
+        delete[] m_ItersArray;
+        m_ItersArray = nullptr;
+    }
+}
+
+Fractal::Fractal(FractalSetupData* setupData,
     int width,
     int height,
-    void(*pOutputMessage) (const wchar_t *, ...),
+    void(*pOutputMessage) (const wchar_t*, ...),
     HWND hWnd,
-    bool UseSensoCursor)
+    bool UseSensoCursor) :
+    m_CurIters(width, height, 1)
 {
     setupData->CopyFromThisTo(&m_SetupData);
     Initialize(width, height, pOutputMessage, hWnd, UseSensoCursor);
@@ -73,12 +121,11 @@ void Fractal::Initialize(int width,
     }
 
     // Setup member variables with initial values:
-    Reset(width, height);
-    View(3);
     SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedScaled);
-    SetIterationAntialiasing(1);
-    SetGpuAntialiasing(1);
     SetIterationPrecision(1);
+
+    ResetDimensions(width, height, 1, 1);
+    View(0);
 
     m_ChangedWindow = true;
     m_ChangedScrn = true;
@@ -206,10 +253,46 @@ void Fractal::Initialize(int width,
 }
 
 void Fractal::InitializeMemory() {
-    m_ItersMemory = new uint32_t[MaxFractalSize * MaxFractalSize];
-    memset(m_ItersMemory, 0, MaxFractalSize * MaxFractalSize * sizeof(uint32_t));
-    for (size_t i = 0; i < MaxFractalSize; i++) {
-        m_ItersArray[i] = &m_ItersMemory[i * MaxFractalSize];
+    // Wait until anyone using any of this memory is done.
+    m_FractalSavesInProgress.clear();
+
+    // Set up new memory.
+    std::unique_lock<std::mutex> lock(m_ItersMemoryStorageLock);
+    m_ItersMemoryStorage.clear();
+    for (size_t i = 0; i < 3; i++) {
+        const size_t total_aa = GetGpuAntialiasing() * GetIterationAntialiasing();
+        ItersMemoryContainer container(m_ScrnWidth,
+                                       m_ScrnHeight,
+                                       total_aa);
+        m_ItersMemoryStorage.push_back(std::move(container));
+    }
+
+    m_CurIters = std::move(m_ItersMemoryStorage.back());
+    m_ItersMemoryStorage.pop_back();
+}
+
+void Fractal::ReturnIterMemory(ItersMemoryContainer&& to_return) {
+    std::unique_lock<std::mutex> lock(m_ItersMemoryStorageLock);
+    m_ItersMemoryStorage.push_back(std::move(to_return));
+}
+
+void Fractal::GetIterMemory() {
+    std::unique_lock<std::mutex> lock(m_ItersMemoryStorageLock);
+    if (!m_ItersMemoryStorage.empty()) {
+        m_CurIters = std::move(m_ItersMemoryStorage.back());
+        m_ItersMemoryStorage.pop_back();
+        return;
+    }
+
+    for (;;) {
+        lock.unlock();
+        Sleep(100);
+        lock.lock();
+        if (!m_ItersMemoryStorage.empty()) {
+            m_CurIters = std::move(m_ItersMemoryStorage.back());
+            m_ItersMemoryStorage.pop_back();
+            return;
+        }
     }
 }
 
@@ -287,16 +370,6 @@ void Fractal::Uninitialize(void)
     //    delete m_ServerMainNetwork;
     //    delete m_ServerSubNetwork;
     //}
-
-    // Deallocate the big arrays.
-    int i;
-    for (i = 0; i < MaxFractalSize; i++)
-    {
-        m_ItersArray[i] = nullptr;
-    }
-
-    delete[] m_ItersMemory;
-    m_ItersMemory = nullptr;
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -372,16 +445,40 @@ int Fractal::PalTransition(size_t PaletteIndex, int i1, int length, int r, int g
 //////////////////////////////////////////////////////////////////////////////
 // Resets the dimensions of the screen to width x height.
 //////////////////////////////////////////////////////////////////////////////
-void Fractal::Reset(size_t width, size_t height)
+void Fractal::ResetDimensions(size_t width,
+                              size_t height,
+                              uint32_t iteration_antialiasing,
+                              uint32_t gpu_antialiasing)
 {
+    if (width == MAXSIZE_T) {
+        width = m_ScrnWidth;
+    }
+    if (height == MAXSIZE_T) {
+        height = m_ScrnHeight;
+    }
+
+    if (iteration_antialiasing == UINT32_MAX) {
+        iteration_antialiasing = m_IterationAntialiasing;
+    }
+    
+    if (gpu_antialiasing == UINT32_MAX) {
+        gpu_antialiasing = m_GpuAntialiasing;
+    }
+
     if (m_ScrnWidth != width ||
-        m_ScrnHeight != height)
+        m_ScrnHeight != height ||
+        m_IterationAntialiasing != iteration_antialiasing ||
+        m_GpuAntialiasing != gpu_antialiasing)
     {
         m_ScrnWidth = width;
         m_ScrnHeight = height;
+        m_IterationAntialiasing = iteration_antialiasing;
+        m_GpuAntialiasing = gpu_antialiasing;
+
         m_ChangedScrn = true;
 
         SquareCurrentView();
+        InitializeMemory();
     }
 }
 
@@ -542,6 +639,8 @@ void Fractal::View(size_t view)
         SetNumIterations(4718592);
         break;
 
+    case 8:
+    case 9:
     case 0:
     default:
         minX = HighPrecision{ "-2.5" };
@@ -753,7 +852,7 @@ void Fractal::FindInterestingLocation(RECT *rect)
                     break;
                 }
 
-                numberAtMax += m_ItersArray[y][x];
+                numberAtMax += m_CurIters.m_ItersArray[y][x];
             }
         }
 
@@ -934,6 +1033,7 @@ void Fractal::CalcFractal(bool MemoryOnly)
     case RenderAlgorithm::Gpu1x32PerturbedScaled:
     case RenderAlgorithm::Gpu1x64PerturbedBLA:
     case RenderAlgorithm::Gpu2x32PerturbedBLA:
+    case RenderAlgorithm::Gpu2x32PerturbedScaled:
         CalcGpuPerturbationFractalBLA(MemoryOnly);
         break;
     default:
@@ -1056,18 +1156,13 @@ void Fractal::DrawFractal(bool MemoryOnly)
         return;
     }
 
-    //if (m_SetupData.m_AltDraw == 'y') {
-        // DrawFractal2();
-    //}
-    //else {
-        size_t py;
+    size_t py;
 
-        //glClear(GL_COLOR_BUFFER_BIT);
+    //glClear(GL_COLOR_BUFFER_BIT);
 
-        for (py = 0; py < m_ScrnHeight; py++) {
-            DrawFractalLine(py);
-        }
-    //}
+    for (py = 0; py < m_ScrnHeight; py++) {
+        DrawFractalLine(py);
+    }
 
     DrawPerturbationResults(true);
 }
@@ -1098,7 +1193,7 @@ void Fractal::DrawFractalLine(size_t output_y)
                 input_y < (output_y + 1) * m_GpuAntialiasing;
                 input_y++) {
 
-                numIters = m_ItersArray[input_y][input_x];
+                numIters = m_CurIters.m_ItersArray[input_y][input_x];
                 if (numIters < m_NumIterations)
                 {
                     numIters += m_PaletteRotate;
@@ -1127,43 +1222,6 @@ void Fractal::DrawFractalLine(size_t output_y)
     glFlush();
 }
 
-void Fractal::DrawFractal2(void)
-{
-    //glClear(GL_COLOR_BUFFER_BIT);
-    //glRasterPos2i(0, 0);
-
-    //unsigned short *data = new unsigned short[m_ScrnWidth * m_ScrnHeight * 3];
-
-    //size_t x, y, i = 0;
-    //for (y = m_ScrnHeight - 1; y >= 0; y--)
-    //{
-    //    for (x = 0; x < m_ScrnWidth; x++)
-    //    {
-    //        data[i] = m_PalR[(m_ItersArray[y][x] == m_NumIterations) ? 0 : ((m_ItersArray[y][x] + m_PaletteRotate) % MAXITERS)];
-    //        i++;
-    //        data[i] = m_PalG[(m_ItersArray[y][x] == m_NumIterations) ? 0 : ((m_ItersArray[y][x] + m_PaletteRotate) % MAXITERS)];
-    //        i++;
-    //        data[i] = m_PalB[(m_ItersArray[y][x] == m_NumIterations) ? 0 : ((m_ItersArray[y][x] + m_PaletteRotate) % MAXITERS)];
-    //        i++;
-    //    }
-    //}
-
-    //glDrawPixels((GLint)m_ScrnWidth, (GLint)m_ScrnHeight, GL_RGB, GL_UNSIGNED_SHORT, data);
-
-    //glFlush();
-    //delete[] data;
-}
-
-void Fractal::FillCoordArray(const double *src, size_t size, MattCoordsArray &dest) {
-    // note incomplete
-    for (size_t i = 0; i < size; i++) {
-        dest.doubleOnly[i] = src[i];
-        dest.floatOnly[i] = (float)src[i];
-        dest.flt[i].head = (float)src[i];
-        dest.flt[i].tail = (float)(src[i] - (double) ((float)dest.flt[i].head));
-    }
-}
-
 void Fractal::FillCoord(HighPrecision& src, MattCoords& dest) {
     dest.qflt.v1 = Convert<HighPrecision, float>(src);
     dest.qflt.v2 = Convert<HighPrecision, float>(src - HighPrecision{ dest.qflt.v1 });
@@ -1180,8 +1238,8 @@ void Fractal::FillCoord(HighPrecision& src, MattCoords& dest) {
 
     dest.doubleOnly = Convert<HighPrecision, double>(src);
 
-    dest.flt.head = Convert<HighPrecision, float>(src);
-    dest.flt.tail = Convert<HighPrecision, float>(src - HighPrecision{ dest.flt.head });
+    dest.flt.y = Convert<HighPrecision, float>(src);
+    dest.flt.x = Convert<HighPrecision, float>(src - HighPrecision{ dest.flt.y });
 
     dest.floatOnly = Convert<HighPrecision, float>(src);
 }
@@ -1209,19 +1267,27 @@ void Fractal::CalcGpuFractal(bool MemoryOnly)
 
     FillGpuCoords(cx2, cy2, dx2, dy2);
 
-    m_r.InitializeMemory(m_ScrnWidth * m_GpuAntialiasing,
-                         m_ScrnHeight * m_GpuAntialiasing,
-                         m_IterationAntialiasing,
-                         MaxFractalSize);
+    uint32_t err =
+        m_r.InitializeMemory(m_ScrnWidth * m_GpuAntialiasing,
+                             m_ScrnHeight * m_GpuAntialiasing,
+                             m_IterationAntialiasing,
+                             m_CurIters.m_Width);
+    if (err) {
+        MessageBoxCudaError(err);
+        return;
+    }
 
-    m_r.Render(m_RenderAlgorithm,
-               (uint32_t*)m_ItersMemory,
-               cx2,
-               cy2,
-               dx2,
-               dy2,
-               (uint32_t)m_NumIterations,
-               m_IterationPrecision);
+    err = m_r.Render(m_RenderAlgorithm,
+                     (uint32_t*)m_CurIters.m_ItersMemory,
+                     cx2,
+                     cy2,
+                     dx2,
+                     dy2,
+                     (uint32_t)m_NumIterations,
+                     m_IterationPrecision);
+    if (err) {
+        MessageBoxCudaError(err);
+    }
 
     DrawFractal(MemoryOnly);
 }
@@ -1253,15 +1319,13 @@ void Fractal::CalcCpuFractal(bool MemoryOnly)
             {
                 if (m_RenderAlgorithm == RenderAlgorithm::CpuHigh)
                 {
-                    //CalcPixelRow_Multi ((unsigned int *) m_ItersArray[py], py);
-                    std::unique_ptr<std::thread> t1(new std::thread(&Fractal::CalcPixelRow_Multi, this, (unsigned int *)m_ItersArray[py], py));
+                    std::unique_ptr<std::thread> t1(new std::thread(&Fractal::CalcPixelRow_Multi, this, (unsigned int *)m_CurIters.m_ItersArray[py], py));
                     threads.push_back(std::move(t1));
                     threads_py.push_back(py);
                 }
                 else if (m_RenderAlgorithm == RenderAlgorithm::Cpu64)
                 {
-                    //CalcPixelRow_Multi ((unsigned int *) m_ItersArray[py], py);
-                    std::unique_ptr<std::thread> t1(new std::thread(&Fractal::CalcPixelRow_C, this, (unsigned int*)m_ItersArray[py], py));
+                    std::unique_ptr<std::thread> t1(new std::thread(&Fractal::CalcPixelRow_C, this, (unsigned int*)m_CurIters.m_ItersArray[py], py));
                     threads.push_back(std::move(t1));
                     threads_py.push_back(py);
                 }
@@ -1354,7 +1418,7 @@ void Fractal::CalcNetworkFractal(bool MemoryOnly)
                     numIters = numItersS;
                 }
 
-                m_ItersArray[ny][nx] = numIters;
+                m_CurIters.m_ItersArray[ny][nx] = numIters;
             }
 
             if (MemoryOnly == false)
@@ -1364,168 +1428,6 @@ void Fractal::CalcNetworkFractal(bool MemoryOnly)
         }
     }
 }
-
-#if 0
-void Fractal::CalcCpuPerturbationFractalGlitchy(bool MemoryOnly) {
-    PerturbationResults results;
-    std::vector<Point> glitched;
-
-    double initX = (double)(rand() % m_ScrnWidth);
-    double initY = (double)(rand() % m_ScrnHeight);
-    //double initX = m_ScrnWidth / 2;
-    //double initY = m_ScrnHeight / 2;
-    glitched.push_back({ initX, initY, 0 });
-
-    for (size_t row = 0; row < m_ScrnHeight; row++) {
-        memset(m_ItersArray[row], 0, MaxFractalSize * sizeof(uint32_t));
-    }
-
-    for (size_t count = 0; count < 5; count++) {
-        double centerX, centerY;
-
-        int randIndex = rand() % glitched.size();
-        auto pt = glitched[randIndex];
-
-        results.clear();
-
-        double dx = Convert<HighPrecision, double>((m_MaxX - m_MinX) / m_ScrnWidth);
-        double dy = Convert<HighPrecision, double>((m_MaxY - m_MinY) / m_ScrnHeight);
-
-        {
-            HighPrecision dxHigh = (m_MaxX - m_MinX) / m_ScrnWidth;
-            HighPrecision dyHigh = (m_MaxY - m_MinY) / m_ScrnHeight;
-
-            HighPrecision cx = m_MinX + dxHigh * ((HighPrecision)pt.x);
-            HighPrecision cy = m_MaxY - dyHigh * ((HighPrecision)pt.y);
-
-            HighPrecision zx, zy;
-            HighPrecision zx2, zy2;
-            unsigned int i;
-
-            centerX = (double)(cx - m_MinX);
-            centerY = (double)(cy - m_MaxY);
-
-            zx = cx;
-            zy = cy;
-            for (i = 0; i < m_NumIterations; i++)
-            {
-                // x^2+2*I*x*y-y^2
-                zx2 = zx * 2;
-                zy2 = zy * 2;
-
-                results.x.push_back((double)zx);
-                results.x2.push_back((double)zx2);
-                results.y.push_back((double)zy);
-                results.y2.push_back((double)zy2);
-                //results.complex2.push_back({ (double)zx2, (double)zy2 });
-
-                const double glitchTolerancy = 0.0000001;
-                double tolerancyReal = (double)zx * glitchTolerancy;
-                double tolerancyImag = (double)zy * glitchTolerancy;
-                std::complex<double> tolerancy(tolerancyReal, tolerancyImag);
-                results.tolerancy.push_back(std::norm(tolerancy));
-
-                zx = zx * zx - zy * zy + cx;
-                zy = zx2 * zy + cy;
-            }
-        }
-
-        size_t iter;
-        const size_t max_iter = results.x.size() - 1;
-
-        double zn_size;
-
-        // (zx + zy)^2 = zx^2 + 2*zx*zy + zy^2
-        // (zx + zy)^3 = zx^3 + 3*zx^2*zy + 3*zx*zy^2 + zy
-        for (size_t y = 0; y < m_ScrnHeight; y++) {
-            for (size_t x = 0; x < m_ScrnWidth; x++)
-            {
-                if (m_ItersArray[y][x] != 0) {
-                    continue;
-                }
-
-                iter = 0;
-
-                //double deltaReal = dx * x - centerX;
-                //double deltaImaginary = -dy * y - centerY;
-
-                //std::complex<double> DeltaSub0(deltaReal, deltaImaginary);
-                //std::complex<double> DeltaSubN;
-
-                //DeltaSubN = DeltaSub0;
-
-                //bool glitched = false;
-
-                //do
-                //{
-                //    DeltaSubN *= results.complex2[iter] + DeltaSubN;
-                //    DeltaSubN += DeltaSub0;
-
-                //    ++iter;
-                //    zn_size = std::norm(results.complex2[iter] * 0.5 + DeltaSubN);
-
-                //    if (glitched == false &&
-                //        zn_size < results.tolerancy[iter]) {
-                //        glitched = true;
-                //        break;
-                //    }
-                //} while (zn_size < 256 && iter < max_iter);
-
-                double deltaReal = dx * x - centerX;
-                double deltaImaginary = -dy * y - centerY;
-
-                double DeltaSub0X = deltaReal;
-                double DeltaSub0Y = deltaImaginary;
-                double DeltaSubNX, DeltaSubNY;
-
-                DeltaSubNX = DeltaSub0X;
-                DeltaSubNY = DeltaSub0Y;
-
-                bool bglitched = false;
-
-                do {
-                    const double DeltaSubNXOrig = DeltaSubNX;
-                    const double DeltaSubNYOrig = DeltaSubNY;
-
-                    DeltaSubNX = DeltaSubNXOrig * (results.x2[iter] + DeltaSubNXOrig) -
-                                 DeltaSubNYOrig * (results.y2[iter] + DeltaSubNYOrig);
-                    DeltaSubNX += DeltaSub0X;
-
-                    DeltaSubNY = DeltaSubNXOrig * (results.y2[iter] + DeltaSubNYOrig) +
-                                 DeltaSubNYOrig * (results.x2[iter] + DeltaSubNXOrig);
-                    DeltaSubNY += DeltaSub0Y;
-
-                    ++iter;
-
-                    const double tempX = results.x[iter] + DeltaSubNX;
-                    const double tempY = results.y[iter] + DeltaSubNY;
-                    zn_size = tempX * tempX + tempY * tempY;
-
-                    if (bglitched == false &&
-                        zn_size < results.tolerancy[iter]) {
-                        bglitched = true;
-                        break;
-                    }
-                } while (zn_size < 256 && iter < max_iter);
-
-                if (bglitched == false) {
-                    m_ItersArray[y][x] = (uint32_t)iter;
-                }
-                else {
-                    m_ItersArray[y][x] = 0;
-                    glitched.push_back({ (double)x,(double)y,iter });
-                }
-            }
-        }
-
-        if (glitched.size() < 100) {
-            break;
-        }
-    }
-
-    DrawFractal(MemoryOnly);
-}
-#endif
 
 void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
     PerturbationResults* results = GetUsefulPerturbationResults();
@@ -1649,233 +1551,12 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                 ++iter;
             }
 
-            m_ItersArray[y][x] = (uint32_t)iter;
+            m_CurIters.m_ItersArray[y][x] = (uint32_t)iter;
         }
     }
 
     DrawFractal(MemoryOnly);
 }
-
-#if 0
-void Fractal::CalcGpuPerturbationFractalGlitchy(bool MemoryOnly) {
-    //m_PerturbationResults.clear(); // TODO
-
-    std::vector<Point> glitched;
-
-    if (!m_PerturbationResults.empty()) {
-        for (size_t i = m_PerturbationResults.size() - 1; i >= 0; i--) {
-            if (m_PerturbationResults[i].hiX >= m_MinX && m_PerturbationResults[i].hiX <= m_MaxX &&
-                m_PerturbationResults[i].hiY >= m_MinY && m_PerturbationResults[i].hiY <= m_MaxY) {
-                continue;
-            }
-
-            m_PerturbationResults.erase(m_PerturbationResults.begin() + i);
-        }
-    }
-
-    for (size_t row = 0; row < m_ScrnHeight; row++) {
-        memset(m_ItersArray[row], 0, MaxFractalSize * sizeof(uint32_t));
-    }
-
-    MattCoords cx2{}, cy2{}, dx2{}, dy2{};
-    MattCoords centerX2{}, centerY2{};
-
-    FillGpuCoords(cx2, cy2, dx2, dy2);
-
-    m_r.InitializeMemory(m_ScrnWidth * m_GpuAntialiasing,
-        m_ScrnHeight * m_GpuAntialiasing,
-        m_IterationAntialiasing,
-        MaxFractalSize);
-
-    m_r.ClearMemory();
-
-    if (glitched.empty()) {
-        double initX = (double)m_ScrnWidth / 2;
-        double initY = (double)m_ScrnHeight / 2;
-        glitched.push_back({ initX, initY, 0 });
-    }
-
-    if (!m_PerturbationResults.empty()) {
-        size_t max_iters = 0;
-        size_t max_index = 0;
-
-        for (int count = 0; count < m_PerturbationResults.size(); count++) {
-            PerturbationResults& results = m_PerturbationResults[count];
-            if (results.x.size() > max_iters) {
-                max_iters = results.x.size();
-                max_index = count;
-            }
-        }
-
-        PerturbationResults& results = m_PerturbationResults[max_index];
-        glitched.clear();
-
-        HighPrecision centerX = results.hiX - m_MinX;
-        HighPrecision centerY = results.hiY - m_MaxY;
-
-        FillCoord(centerX, centerX2);
-        FillCoord(centerY, centerY2);
-
-        MattPerturbResults gpu_results{ results.x.size() };
-        FillCoordArray(results.x.data(), results.x.size(), gpu_results.x);
-        FillCoordArray(results.x2.data(), results.x2.size(), gpu_results.x2);
-        FillCoordArray(results.y.data(), results.y.size(), gpu_results.y);
-        FillCoordArray(results.y2.data(), results.y2.size(), gpu_results.y2);
-        FillCoordArray(results.tolerancy.data(), results.tolerancy.size(), gpu_results.tolerancy);
-
-        // all sizes should be the same anyway just pick one
-        gpu_results.size = results.tolerancy.size();
-
-        m_r.RenderPerturbGlitchy (m_RenderAlgorithm,
-            (uint32_t*)m_ItersMemory,
-            &gpu_results,
-            cx2,
-            cy2,
-            dx2,
-            dy2,
-            centerX2,
-            centerY2,
-            (uint32_t)m_NumIterations,
-            m_IterationPrecision);
-
-        for (size_t y = 0; y < m_ScrnHeight; y++) {
-            for (size_t x = 0; x < m_ScrnWidth; x++)
-            {
-                if (m_ItersArray[y][x] == 0) {
-                    glitched.push_back({ (double)x,(double)y, 0 });
-                }
-            }
-        }
-    }
-
-    if (!glitched.empty()) {
-
-        double totalX = 0;
-        double totalY = 0;
-        bool alt = false;
-
-        for (size_t count = 0; count < 10; count++) {
-            Point pt;
-
-            if (alt == false && (totalX != 0 || totalY != 0)) {
-                pt = Point{ totalX, totalY };
-                alt = true;
-            }
-            else if (!glitched.empty()) {
-                int randIndex = rand() % glitched.size();
-                pt = glitched[randIndex];
-                alt = false;
-            }
-            else
-            {
-                break;
-            }
-
-            m_PerturbationResults.push_back({});
-            PerturbationResults& results = m_PerturbationResults[count];
-
-            HighPrecision dxHigh = (m_MaxX - m_MinX) / m_ScrnWidth;
-            HighPrecision dyHigh = (m_MaxY - m_MinY) / m_ScrnHeight;
-
-            HighPrecision cx = m_MinX + dxHigh * ((HighPrecision)pt.x);
-            HighPrecision cy = m_MaxY - dyHigh * ((HighPrecision)pt.y);
-
-            results.hiX = cx;
-            results.hiY = cy;
-            results.scrnX = (size_t)pt.x;
-            results.scrnY = (size_t)pt.y;
-            results.MaxIterations = m_NumIterations;
-
-            HighPrecision zx, zy;
-            HighPrecision zx2, zy2;
-            unsigned int i;
-
-            HighPrecision centerX = cx - m_MinX;
-            HighPrecision centerY = cy - m_MaxY;
-
-            FillCoord(centerX, centerX2);
-            FillCoord(centerY, centerY2);
-
-            zx = cx;
-            zy = cy;
-            for (i = 0; i < m_NumIterations; i++)
-            {
-                // x^2+2*I*x*y-y^2
-                zx2 = zx * 2;
-                zy2 = zy * 2;
-
-                results.x.push_back((double)zx);
-                results.x2.push_back((double)zx2);
-                results.y.push_back((double)zy);
-                results.y2.push_back((double)zy2);
-
-                const double glitchTolerancy = 0.0000001;
-                double tolerancyReal = (double)zx * glitchTolerancy;
-                double tolerancyImag = (double)zy * glitchTolerancy;
-                std::complex<double> tolerancy(tolerancyReal, tolerancyImag);
-                results.tolerancy.push_back(std::norm(tolerancy));
-
-                zx = zx * zx - zy * zy + cx;
-                zy = zx2 * zy + cy;
-            }
-
-
-            glitched.clear();
-
-            MattPerturbResults gpu_results{ results.x.size() };
-            FillCoordArray(results.x.data(), results.x.size(), gpu_results.x);
-            FillCoordArray(results.x2.data(), results.x2.size(), gpu_results.x2);
-            FillCoordArray(results.y.data(), results.y.size(), gpu_results.y);
-            FillCoordArray(results.y2.data(), results.y2.size(), gpu_results.y2);
-            FillCoordArray(results.tolerancy.data(), results.tolerancy.size(), gpu_results.tolerancy);
-
-            // all sizes should be the same anyway just pick one
-            gpu_results.size = results.tolerancy.size();
-
-            m_r.RenderPerturbGlitchy (m_RenderAlgorithm,
-                (uint32_t*)m_ItersMemory,
-                &gpu_results,
-                cx2,
-                cy2,
-                dx2,
-                dy2,
-                centerX2,
-                centerY2,
-                (uint32_t)m_NumIterations,
-                m_IterationPrecision);
-
-            totalX = 0;
-            totalY = 0;
-
-            for (size_t y = 0; y < m_ScrnHeight; y++) {
-                for (size_t x = 0; x < m_ScrnWidth; x++)
-                {
-                    if (m_ItersArray[y][x] == 0) {
-                        glitched.push_back({ (double)x,(double)y, 0 });
-                        totalX += x;
-                        totalY += y;
-                    }
-                }
-            }
-
-            totalX /= (double)glitched.size();
-            totalY /= (double)glitched.size();
-
-            if (m_ItersArray[(size_t)totalY][(size_t)totalX] != 0)
-            {
-                totalX = 0;
-                totalY = 0;
-            }
-
-            if (glitched.size() < 100) {
-                break;
-            }
-        }
-    }
-
-    DrawFractal(MemoryOnly);
-}
-#endif
 
 void Fractal::AddPerturbationReferencePoint() {
     m_PerturbationResults.push_back({});
@@ -1975,6 +1656,7 @@ bool Fractal::RequiresReferencePoints() const {
         case RenderAlgorithm::Gpu1x32PerturbedScaled:
         case RenderAlgorithm::Gpu1x64PerturbedBLA:
         case RenderAlgorithm::Gpu2x32PerturbedBLA:
+        case RenderAlgorithm::Gpu2x32PerturbedScaled:
             return true;
     }
 
@@ -1994,6 +1676,10 @@ Fractal::PerturbationResults* Fractal::GetUsefulPerturbationResults() {
     std::vector<PerturbationResults*> useful_results;
 
     if (!m_PerturbationResults.empty()) {
+        if (m_PerturbationResults.size() > 64) {
+            m_PerturbationResults.erase(m_PerturbationResults.begin());
+        }
+
         for (size_t i = 0; i < m_PerturbationResults.size(); i++) {
             if (IsPerturbationResultUsefulHere(i)) {
                 useful_results.push_back(&m_PerturbationResults[i]);
@@ -2025,10 +1711,15 @@ Fractal::PerturbationResults* Fractal::GetUsefulPerturbationResults() {
 void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
     PerturbationResults* results = GetUsefulPerturbationResults();
 
-    m_r.InitializeMemory(m_ScrnWidth * m_GpuAntialiasing,
-        m_ScrnHeight * m_GpuAntialiasing,
-        m_IterationAntialiasing,
-        MaxFractalSize);
+    uint32_t err =
+        m_r.InitializeMemory(m_ScrnWidth * m_GpuAntialiasing,
+                             m_ScrnHeight * m_GpuAntialiasing,
+                             m_IterationAntialiasing,
+                             m_CurIters.m_Width);
+    if (err) {
+        MessageBoxCudaError(err);
+        return;
+    }
 
     m_r.ClearMemory();
 
@@ -2043,19 +1734,21 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
     FillCoord(centerX, centerX2);
     FillCoord(centerY, centerY2);
 
-    MattPerturbResults gpu_results{ results->x.size(), results->bad_counts.size() };
-    FillCoordArray(results->x.data(), results->x.size(), gpu_results.x);
-    FillCoordArray(results->x2.data(), results->x2.size(), gpu_results.x2);
-    FillCoordArray(results->y.data(), results->y.size(), gpu_results.y);
-    FillCoordArray(results->y2.data(), results->y2.size(), gpu_results.y2);
-    memcpy(gpu_results.bad, results->bad.data(), results->bad.size() * sizeof(bool));
-    memcpy(gpu_results.bad_counts, results->bad_counts.data(), results->bad_counts.size() * sizeof(uint32_t));
+    MattPerturbResults gpu_results{
+        results->x.size(),
+        results->bad_counts.size(),
+        results->x.data(),
+        results->x2.data(),
+        results->y.data(),
+        results->y2.data(),
+        results->bad.data(),
+        results->bad_counts.data() };
 
     // all sizes should be the same anyway just pick one
     gpu_results.size = results->x.size();
 
-    m_r.RenderPerturbBLA(m_RenderAlgorithm,
-        (uint32_t*)m_ItersMemory,
+    auto result = m_r.RenderPerturbBLA(m_RenderAlgorithm,
+        (uint32_t*)m_CurIters.m_ItersMemory,
         &gpu_results,
         cx2,
         cy2,
@@ -2067,6 +1760,16 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
         m_IterationPrecision);
 
     DrawFractal(MemoryOnly);
+
+    if (result) {
+        MessageBoxCudaError(result);
+    }
+}
+
+void Fractal::MessageBoxCudaError(uint32_t result) {
+    wchar_t error[256];
+    wsprintf(error, L"Error from cuda: %u\n", result);
+    ::MessageBox(NULL, error, L"", MB_OK);
 }
 
 bool Fractal::CalcPixelRow_Exp(unsigned int *rowBuffer, size_t row)
@@ -2199,9 +1902,9 @@ uint32_t Fractal::FindMaxItersUsed(void)
     {
         for (x = 0; x < m_ScrnWidth; x++)
         {
-            if (m_ItersArray[y][x] > prevMaxIters)
+            if (m_CurIters.m_ItersArray[y][x] > prevMaxIters)
             {
-                prevMaxIters = m_ItersArray[y][x];
+                prevMaxIters = m_CurIters.m_ItersArray[y][x];
             }
         }
     }
@@ -2229,15 +1932,10 @@ Fractal::CurrentFractalSave::CurrentFractalSave(
     m_PaletteDepthIndex(fractal.m_PaletteDepthIndex),
     m_PalR(fractal.m_PalR),
     m_PalG(fractal.m_PalG),
-    m_PalB(fractal.m_PalB) {
-    m_ItersMemory = fractal.m_ItersMemory;
-    for (size_t i = 0; i < fractal.MaxFractalSize; i++) {
-        m_ItersArray[i] = fractal.m_ItersArray[i];
-        fractal.m_ItersArray[i] = nullptr;
-    }
+    m_PalB(fractal.m_PalB),
+    m_CurIters(std::move(fractal.m_CurIters)) {
 
-    fractal.m_ItersMemory = nullptr;
-    fractal.InitializeMemory();
+    fractal.GetIterMemory();
 
     m_Thread = nullptr;
     m_Destructable = false;
@@ -2261,21 +1959,28 @@ void Fractal::CurrentFractalSave::Run() {
     double acc_r, acc_b, acc_g;
     size_t input_x, input_y;
     size_t output_x, output_y;
-    size_t i;
     size_t numIters;
 
-    std::wstring filename_bmp = m_FilenameBase + std::wstring(L".bmp");
     std::wstring filename_png;
 
-    i = 0;
-    do {
+    if (m_FilenameBase != L"") {
         wchar_t temp[512];
-        wsprintf(temp, L"%s%05d", m_FilenameBase.c_str(), i);
+        wsprintf(temp, L"%s", m_FilenameBase.c_str());
         filename_png = std::wstring(temp) + std::wstring(L".png");
-        i++;
-    } while (Fractal::FileExists(filename_png.c_str()));
-
-    i = 0;
+        if (Fractal::FileExists(filename_png.c_str())) {
+            ::MessageBox(NULL, L"Not saving, file exists", L"", MB_OK);
+            return;
+        }
+    }
+    else {
+        size_t i = 0;
+        do {
+            wchar_t temp[512];
+            wsprintf(temp, L"output%05d", i);
+            filename_png = std::wstring(temp) + std::wstring(L".png");
+            i++;
+        } while (Fractal::FileExists(filename_png.c_str()));
+    }
 
     WPngImage image((int)m_ScrnWidth, (int)m_ScrnHeight, WPngImage::Pixel16(0, 0, 0));
 
@@ -2294,7 +1999,7 @@ void Fractal::CurrentFractalSave::Run() {
                     input_y < (output_y + 1) * m_GpuAntialiasing;
                     input_y++) {
 
-                    numIters = m_ItersArray[input_y][input_x];
+                    numIters = m_CurIters.m_ItersArray[input_y][input_x];
                     if (numIters < m_NumIterations)
                     {
                         numIters += m_PaletteRotate;
@@ -2330,8 +2035,7 @@ void Fractal::CurrentFractalSave::Run() {
         }
     }
 
-    delete[] m_ItersMemory;
-    m_ItersMemory = nullptr;
+    m_Fractal.ReturnIterMemory(std::move(m_CurIters));
 
     //setup converter
     using convert_type = std::codecvt_utf8<wchar_t>;
@@ -2394,14 +2098,8 @@ int Fractal::SaveHiResFractal(const std::wstring filename)
     size_t OldScrnHeight = m_ScrnHeight;
 
     // Set us up with high res
-    Reset(16384, 16384);
+    ResetDimensions(16384, 16384);
     SquareCurrentView();
-
-    if (m_ScrnWidth * m_GpuAntialiasing * m_IterationAntialiasing >= MaxFractalSize ||
-        m_ScrnHeight * m_GpuAntialiasing * m_IterationAntialiasing >= MaxFractalSize) {
-        ::MessageBox(NULL, L"Increase MaxFractalSize and recompile", L"", MB_OK);
-        return 0;
-    }
 
     // Calculate the high res image.
     // Do it in memory! :)
@@ -2411,7 +2109,7 @@ int Fractal::SaveHiResFractal(const std::wstring filename)
     int ret = SaveCurrentFractal(filename);
 
     // Back to the previous res.
-    Reset(OldScrnWidth, OldScrnHeight);
+    ResetDimensions(OldScrnWidth, OldScrnHeight);
 
     return ret;
 }
@@ -2471,10 +2169,8 @@ void Fractal::BenchmarkData::BenchmarkSetup(size_t numIters) {
     prevScrnHeight = fractal.m_ScrnHeight;
 
     fractal.ClearPerturbationResults();
-    fractal.Reset(500, 500);
     fractal.SetNumIterations(numIters);
-    fractal.SetIterationAntialiasing(1);
-    fractal.SetGpuAntialiasing(1);
+    fractal.ResetDimensions(500, 500, 1, 1);
     //fractal.SetIterationPrecision(1);
     //fractal.RecenterViewCalc(-.1, -.1, .1, .1);
     fractal.RecenterViewCalc(-1.5, -.75, 1, .75);
@@ -2506,7 +2202,7 @@ HighPrecision Fractal::BenchmarkData::StopTimer() {
 
 void Fractal::BenchmarkData::BenchmarkFinish() {
 
-    fractal.Reset(prevScrnWidth, prevScrnHeight);
+    fractal.ResetDimensions(prevScrnWidth, prevScrnHeight);
     fractal.View(0);
     fractal.ChangedMakeDirty();
 }
@@ -2523,16 +2219,7 @@ __int64 Fractal::FindTotalItersUsed(void)
     {
         for (x = 0; x < m_ScrnWidth; x++)
         {
-            //if (m_ItersArray[y][x] == 0) // note possible bug
-            //{
-            //    numIters += (__int64)m_NumIterations;
-            //}
-            //else
-            //{
-            //    numIters += (__int64)m_ItersArray[y][x];
-            //}
-
-            numIters += (__int64)m_ItersArray[y][x];
+            numIters += (__int64)m_CurIters.m_ItersArray[y][x];
         }
     }
 
@@ -2594,7 +2281,7 @@ void Fractal::ClientInitializeServers(void)
                 m_ClientMainNetwork[i]->SendData(temp, 512);
 
                 // Tell the server who is processing what
-                for (j = 0; j < MaxFractalSize; j++)
+                for (j = 0; j < BrokenMaxFractalSize; j++)
                 {
                     m_ClientMainNetwork[i]->BufferedSendByte(m_ProcessPixelRow[j]);
                 }
@@ -2629,7 +2316,7 @@ void Fractal::NetworkCreateWorkload(void)
     if (m_NetworkRender == '0') // Do everything locally
     {
         int i;
-        for (i = 0; i < MaxFractalSize; i++)
+        for (i = 0; i < BrokenMaxFractalSize; i++)
         {
             m_ProcessPixelRow[i] = '0';
         }
@@ -2650,7 +2337,7 @@ void Fractal::NetworkCreateWorkload(void)
             total += m_SetupData.m_WorkServers[i];
         }
 
-        for (i = 0; i < MaxFractalSize; i++) // Default to having the client do everything
+        for (i = 0; i < BrokenMaxFractalSize; i++) // Default to having the client do everything
         {
             m_ProcessPixelRow[i] = 'a';
         }
@@ -2666,7 +2353,7 @@ void Fractal::NetworkCreateWorkload(void)
                 }
 
                 double counter;
-                for (counter = 0; counter < MaxFractalSize; counter += 100.0 / m_SetupData.m_WorkServers[i])
+                for (counter = 0; counter < BrokenMaxFractalSize; counter += 100.0 / m_SetupData.m_WorkServers[i])
                 { // If this row is already assigned, move on to the next one.
                     while (m_ProcessPixelRow[(int)counter] != 'a')
                     {
@@ -2674,7 +2361,7 @@ void Fractal::NetworkCreateWorkload(void)
                     }
 
                     // Don't overwrite other memory!
-                    if (counter >= MaxFractalSize)
+                    if (counter >= BrokenMaxFractalSize)
                     {
                         break;
                     }
@@ -2694,7 +2381,7 @@ void Fractal::NetworkCreateWorkload(void)
     else if (m_NetworkRender == 'S')
     {
         int i;
-        for (i = 0; i < MaxFractalSize; i++)      // Placeholder until the server
+        for (i = 0; i < BrokenMaxFractalSize; i++)      // Placeholder until the server
         {
             m_ProcessPixelRow[i] = 'S';
         } // gets its actual workload from the client
@@ -2804,7 +2491,7 @@ void Fractal::ServerReadProcessPixelRow(void)
 
     m_ServerMainNetwork->BufferedReadEmpty();
 
-    for (i = 0; i < MaxFractalSize; i++)
+    for (i = 0; i < BrokenMaxFractalSize; i++)
     {
         m_ServerMainNetwork->BufferedReadByte(&m_ProcessPixelRow[i]);
     }
@@ -2975,7 +2662,7 @@ bool Fractal::ServerBeginCalc(void)
     OutputMessage(L"MinY:         %.15f\r\n", Convert<HighPrecision, double>(MinY));
     OutputMessage(L"MaxY:         %.15f\r\n", Convert<HighPrecision, double>(MaxY));
 
-    Reset(ScreenWidth, ScreenHeight);
+    ResetDimensions(ScreenWidth, ScreenHeight);
     RecenterViewCalc(MinX, MinY, MaxX, MaxY);
     SetNumIterations(NumIters);
     SetRenderAlgorithm(RenderAlgorithm);
@@ -2993,11 +2680,11 @@ bool Fractal::ServerBeginCalc(void)
         {
             if (NumIters >= 65536)
             {
-                m_ServerSubNetwork->BufferedSendLong(m_ItersArray[y][x]);
+                m_ServerSubNetwork->BufferedSendLong(m_CurIters.m_ItersArray[y][x]);
             }
             else
             {
-                m_ServerSubNetwork->BufferedSendShort((unsigned short)m_ItersArray[y][x]);
+                m_ServerSubNetwork->BufferedSendShort((unsigned short)m_CurIters.m_ItersArray[y][x]);
             }
         }
     }

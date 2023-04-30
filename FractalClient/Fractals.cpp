@@ -329,46 +329,46 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
         case IDM_ITERATION_ANTIALIASING_1X:
         {
-            gFractal->SetIterationAntialiasing(1);
+            gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 1, UINT32_MAX);
             break;
         }
 
         case IDM_ITERATION_ANTIALIASING_4X:
         {
-            gFractal->SetIterationAntialiasing(2);
+            gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 2, UINT32_MAX);
             break;
         }
 
         case IDM_ITERATION_ANTIALIASING_9X:
         {
-            gFractal->SetIterationAntialiasing(3);
+            gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 3, UINT32_MAX);
             break;
         }
         case IDM_ITERATION_ANTIALIASING_16X:
         {
-            gFractal->SetIterationAntialiasing(4);
+            gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 4, UINT32_MAX);
             break;
         }
 
         case IDM_GPUANTIALIASING_1X:
         {
-            gFractal->SetGpuAntialiasing(1);
+            gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, UINT32_MAX, 1);
             break;
         }
         case IDM_GPUANTIALIASING_4X:
         {
-            gFractal->SetGpuAntialiasing(2);
+            gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, UINT32_MAX, 2);
             break;
         }
         case IDM_GPUANTIALIASING_9X:
         {
-            gFractal->SetGpuAntialiasing(3);
+            gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, UINT32_MAX, 3);
             break;
         }
 
         case IDM_GPUANTIALIASING_16X:
         {
-            gFractal->SetGpuAntialiasing(4);
+            gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, UINT32_MAX, 4);
             break;
         }
 
@@ -461,6 +461,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         case IDM_ALG_GPU_2_32_PERTURB_BLA:
         {
             gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu2x32PerturbedBLA);
+            break;
+        }
+        case IDM_ALG_GPU_2_32_PERTURB_SCALED:
+        {
+            gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu2x32PerturbedScaled);
             break;
         }
         case IDM_ALG_GPU_4_32:
@@ -606,7 +611,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         if (gFractal != NULL)
         {
             glResetViewDim(LOWORD(lParam), HIWORD(lParam));
-            gFractal->Reset(LOWORD(lParam), HIWORD(lParam));
+            gFractal->ResetDimensions(LOWORD(lParam), HIWORD(lParam));
             PaintAsNecessary(hWnd);
         }
         break;
@@ -795,8 +800,7 @@ void MenuStandardView(HWND hWnd, size_t i)
     PaintAsNecessary(hWnd);
 }
 
-void MenuSquareView(HWND hWnd)
-{
+void MenuSquareView(HWND hWnd){
     gFractal->SquareCurrentView();
     PaintAsNecessary(hWnd);
 }
@@ -843,7 +847,7 @@ void MenuWindowed(HWND hWnd)
 
         RECT rt;
         GetClientRect(hWnd, &rt);
-        gFractal->Reset(rt.right, rt.bottom);
+        gFractal->ResetDimensions(rt.right, rt.bottom);
 
         glResetView(hWnd);
     }
@@ -871,7 +875,7 @@ void MenuWindowed(HWND hWnd)
 
         RECT rt;
         GetClientRect(hWnd, &rt);
-        gFractal->Reset(rt.right, rt.bottom);
+        gFractal->ResetDimensions(rt.right, rt.bottom);
 
         glResetView(hWnd);
     }
@@ -1064,12 +1068,12 @@ void MenuSaveCurrentLocation(HWND hWnd)
 
 void MenuSaveBMP(HWND)
 {
-    gFractal->SaveCurrentFractal(L"output");
+    gFractal->SaveCurrentFractal(L"");
 }
 
 void MenuSaveHiResBMP(HWND)
 {
-    gFractal->SaveHiResFractal(L"output");
+    gFractal->SaveHiResFractal(L"");
 }
 
 void BenchmarkMessage(HWND hWnd, HighPrecision megaIters) {

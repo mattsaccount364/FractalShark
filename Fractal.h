@@ -20,34 +20,13 @@
 #include "FractalSetupData.h"
 #include "FractalNetwork.h"
 #include "render_gpu.h"
+#include "PerturbationResults.h"
 
 #include "..\WPngImage\WPngImage.hh"
-#include <boost/multiprecision/cpp_dec_float.hpp>
-#include <boost/multiprecision/gmp.hpp>
+#include "HighPrecision.h"
 
 //const int MAXITERS = 256 * 32; // 256 * 256 * 256 * 32
 const int MAXITERS = 256 * 256 * 256 * 32;
-
-using HighPrecision = boost::multiprecision::number<
-    boost::multiprecision::gmp_float<350>,
-    boost::multiprecision::et_on>;
-template<class From, class To>
-To Convert(From data) {
-    return data.convert_to<To>();
-}
-
-
-//using HighPrecision = boost::multiprecision::cpp_dec_float_100;
-//template<class From, class To>
-//To Convert(From data) {
-//    return data.convert_to<To>();
-//}
-
-//using HighPrecision = double;
-//template<class From, class To>
-//To Convert(From data) {
-//    return static_cast<To>(data);
-//}
 
 class Fractal
 {
@@ -146,28 +125,6 @@ private:
         size_t iteration;
     };
 
-    struct PerturbationResults {
-        HighPrecision hiX, hiY;
-        size_t scrnX, scrnY;
-        size_t MaxIterations;
-
-        std::vector<double> x;
-        std::vector<double> x2;
-        std::vector<double> y;
-        std::vector<double> y2;
-        std::vector<uint8_t> bad;
-        std::vector<uint32_t> bad_counts;
-
-        void clear() {
-            x.clear();
-            y.clear();
-            x2.clear();
-            y2.clear();
-            bad.clear();
-            bad_counts.clear();
-        }
-    };
-
     std::vector<PerturbationResults> m_PerturbationResults;
     void AddPerturbationReferencePoint();
     bool RequiresReferencePoints() const;
@@ -177,8 +134,7 @@ private:
     void FillGpuCoords(MattCoords& cx2, MattCoords& cy2, MattCoords& dx2, MattCoords& dy2);
     void CalcGpuFractal(bool MemoryOnly);
     void CalcNetworkFractal(bool MemoryOnly);
-    void CalcCpuPerturbationFractalGlitchy(bool MemoryOnly);
-    void CalcGpuPerturbationFractalGlitchy(bool MemoryOnly);
+    void CalcCpuPerturbationFractal(bool MemoryOnly);
     void CalcCpuPerturbationFractalBLA(bool MemoryOnly);
     void CalcGpuPerturbationFractalBLA(bool MemoryOnly);
 

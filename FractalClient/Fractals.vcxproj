@@ -205,12 +205,16 @@
     <ResourceCompile Include="Fractals.rc" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\BLA.h" />
+    <ClInclude Include="..\BLAS.h" />
     <ClInclude Include="..\cximage599a_full\CxImage\ximage.h" />
     <ClInclude Include="..\dbldbl.cuh" />
     <ClInclude Include="..\dblflt.cuh" />
     <ClInclude Include="..\Fractal.h" />
     <ClInclude Include="..\FractalNetwork.h" />
     <ClInclude Include="..\FractalSetupData.h" />
+    <ClInclude Include="..\HighPrecision.h" />
+    <ClInclude Include="..\PerturbationResults.h" />
     <ClInclude Include="..\QuadDouble\common.cuh" />
     <ClInclude Include="..\QuadDouble\cuda_header.cuh" />
     <ClInclude Include="..\QuadDouble\gqd_basic.cuh" />

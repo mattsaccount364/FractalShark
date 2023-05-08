@@ -426,6 +426,7 @@ DWORD WINAPI CalcProc (LPVOID lpParameter)
     fractal->SetIterationPrecision(iterationPrecision);
     fractal->ResetDimensions(resX, resY, iterationAntialiasing, gpuAntialiasing);
     fractal->RecenterViewCalc(minX, minY, maxX, maxY);
+    fractal->UsePalette(16);
     fractal->CalcFractal (true);
     fractal->SaveCurrentFractal (filename);
     //fractal->CalcDiskFractal (filename_bmp);

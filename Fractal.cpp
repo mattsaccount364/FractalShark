@@ -12,6 +12,7 @@
 #include <io.h>
 #include <time.h>
 
+#include <deque>
 #include <locale>
 #include <codecvt>
 
@@ -22,6 +23,8 @@
 #include "FractalNetwork.h"
 #include "FractalSetupData.h"
 //#include "CBitmapWriter.h"
+
+#include "BLAS.h"
 
 #include <thread>
 
@@ -121,7 +124,8 @@ void Fractal::Initialize(int width,
     }
 
     // Setup member variables with initial values:
-    SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedScaled);
+    //SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedScaled);
+    SetRenderAlgorithm(RenderAlgorithm::Cpu64PerturbedBLA);
     SetIterationPrecision(1);
 
     ResetDimensions(width, height, 1, 1);
@@ -1315,7 +1319,7 @@ void Fractal::CalcCpuFractal(bool MemoryOnly)
         py = i;
         while (py < m_ScrnHeight)
         { // Calculate only those pixels assigned to us
-            if (m_ProcessPixelRow[py] == m_NetworkRender)
+            //if (m_ProcessPixelRow[py] == m_NetworkRender)
             {
                 if (m_RenderAlgorithm == RenderAlgorithm::CpuHigh)
                 {
@@ -1339,24 +1343,24 @@ void Fractal::CalcCpuFractal(bool MemoryOnly)
             py += 10;
 
             // todo check this status indicator
-            if (m_NetworkRender >= 'b')
-            {
-                displayProgress++;
-                if (displayProgress == 10)
-                {
-                    OutputMessage(L"%03.0f\b\b\b", (double)i * 10.0 + (double)py / m_ScrnHeight * 10.0);
-                    displayProgress = 0;
-                }
-            }
+            //if (m_NetworkRender >= 'b')
+            //{
+            //    displayProgress++;
+            //    if (displayProgress == 10)
+            //    {
+            //        OutputMessage(L"%03.0f\b\b\b", (double)i * 10.0 + (double)py / m_ScrnHeight * 10.0);
+            //        displayProgress = 0;
+            //    }
+            //}
 
-            if (m_StopCalculating == true)
-            {
-                if (m_NetworkRender == 'a')
-                {
-                    ClientSendQuitMessages();
-                }
-                break;
-            }
+            //if (m_StopCalculating == true)
+            //{
+            //    if (m_NetworkRender == 'a')
+            //    {
+            //        ClientSendQuitMessages();
+            //    }
+            //    break;
+            //}
 
             if (threads.size() > 128) {
                 threads[0].get()->join();
@@ -1429,8 +1433,11 @@ void Fractal::CalcNetworkFractal(bool MemoryOnly)
     }
 }
 
-void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
+void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
     PerturbationResults* results = GetUsefulPerturbationResults();
+
+    BLAS blas(*results);
+    blas.init(results->x.size(), Convert<HighPrecision, double>(results->maxRadius));
 
     double initX = (double)m_ScrnWidth / 2;
     double initY = (double)m_ScrnHeight / 2;
@@ -1451,6 +1458,11 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
         centerY = (double)(cy - m_MaxY);
     }
 
+    static constexpr size_t num_threads = 32;
+    std::deque<std::atomic_uint64_t> atomics;
+    std::vector<std::unique_ptr<std::thread>> threads;
+    atomics.resize(m_ScrnHeight);
+    threads.reserve(num_threads);
 
     //
     // From https://fractalforums.org/fractal-mathematics-and-new-theories/28/another-solution-to-perturbation-glitches/4360/msg29835#msg29835
@@ -1474,85 +1486,237 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
     //    Iteration++;
     //}
 
-    for (size_t y = 0; y < m_ScrnHeight; y++) {
-        for (size_t x = 0; x < m_ScrnWidth; x++)
-        {
-            size_t iter = 0;
-            size_t RefIteration = 0;
-            double deltaReal = dx * x - centerX;
-            double deltaImaginary = -dy * y - centerY;
-
-            double DeltaSub0X = deltaReal;
-            double DeltaSub0Y = deltaImaginary;
-            double DeltaSubNX = 0;
-            double DeltaSubNY = 0;
-
-            while (iter < m_NumIterations) {
-                const double DeltaSubNXOrig = DeltaSubNX;
-                const double DeltaSubNYOrig = DeltaSubNY;
-
-                //
-                // wrn = (2 * Xr + wr * s) * wr - (2 * Xi + wi * s) * wi + ur;
-                // win = 2 * ((Xr + wr * s) * wi + Xi * wr) + ui;
-                //     = 2 * (Xr * wi + wr * s * wi + Xi * wr) + ui;
-                //     = 2 * Xr * wi + 2 * wr * s * wi + 2 * Xi * wr + ui;
-                //
-                // https://mathr.co.uk/blog/2021-05-14_deep_zoom_theory_and_practice.html#a2021-05-14_deep_zoom_theory_and_practice_rescaling
-                // 
-                // DeltaSubN = 2 * DeltaSubN * results.complex[RefIteration] + DeltaSubN * DeltaSubN + DeltaSub0;
-                // S * w = 2 * S * w * results.complex[RefIteration] + S * w * S * w + S * d
-                // 
-                // S * (DeltaSubNWX + DeltaSubNWY I) = 2 * S * (DeltaSubNWX + DeltaSubNWY I) * (results.x[RefIteration] + results.y[RefIteration] * I) +
-                //                                     S * S * (DeltaSubNWX + DeltaSubNWY I) * (DeltaSubNWX + DeltaSubNWY I) +
-                //                                     S * (dX + dY I)
-                // 
-                // (DeltaSubNWX + DeltaSubNWY I) = 2 * (DeltaSubNWX + DeltaSubNWY I) * (results.x[RefIteration] + results.y[RefIteration] * I) +
-                //                                 S * (DeltaSubNWX + DeltaSubNWY I) * (DeltaSubNWX + DeltaSubNWY I) +
-                //                                 (dX + dY I)
-                // DeltaSubNWX = 2 * (DeltaSubNWX * results.x[RefIteration] - DeltaSubNWY * results.y[RefIteration]) +
-                //               S * (DeltaSubNWX * DeltaSubNWX - DeltaSubNWY * DeltaSubNWY) +
-                //               dX
-                // DeltaSubNWX = 2 * DeltaSubNWX * results.x[RefIteration] - 2 * DeltaSubNWY * results.y[RefIteration] +
-                //               S * DeltaSubNWX * DeltaSubNWX - S * DeltaSubNWY * DeltaSubNWY +
-                //               dX
-                //
-                // DeltaSubNWY = 2 * DeltaSubNWX * results.y[RefIteration] + 2 * DeltaSubNWY * results.x[RefIteration] +
-                //               S * DeltaSubNWX * DeltaSubNWY + S * DeltaSubNWY * DeltaSubNWX +
-                //               dY
-                // DeltaSubNWY = 2 * DeltaSubNWX * results.y[RefIteration] + 2 * DeltaSubNWY * results.x[RefIteration] +
-                //               2 * S * DeltaSubNWX * DeltaSubNWY +
-                //               dY
-
-                DeltaSubNX = DeltaSubNXOrig * (results->x2[RefIteration] + DeltaSubNXOrig) -
-                             DeltaSubNYOrig * (results->y2[RefIteration] + DeltaSubNYOrig) +
-                             DeltaSub0X;
-                DeltaSubNY = DeltaSubNXOrig * (results->y2[RefIteration] + DeltaSubNYOrig) +
-                             DeltaSubNYOrig * (results->x2[RefIteration] + DeltaSubNXOrig) +
-                             DeltaSub0Y;
-
-                ++RefIteration;
-
-                const double tempZX = results->x[RefIteration] + DeltaSubNX;
-                const double tempZY = results->y[RefIteration] + DeltaSubNY;
-                const double zn_size = tempZX * tempZX + tempZY * tempZY;
-                const double normDeltaSubN = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
-
-                if (zn_size > 256) {
-                    break;
-                }
-
-                if (zn_size < normDeltaSubN ||
-                    RefIteration == results->x.size() - 1) {
-                    DeltaSubNX = tempZX;
-                    DeltaSubNY = tempZY;
-                    RefIteration = 0;
-                }
-
-                ++iter;
+    auto one_thread = [&]() {
+        for (size_t y = 0; y < m_ScrnHeight; y++) {
+            uint64_t expected = 0;
+            if (atomics[y].compare_exchange_strong(expected, 1llu) == false) {
+                continue;
             }
 
-            m_CurIters.m_ItersArray[y][x] = (uint32_t)iter;
+            for (size_t x = 0; x < m_ScrnWidth; x++)
+            {
+                size_t iter = 0;
+                size_t RefIteration = 0;
+                double deltaReal = dx * x - centerX;
+                double deltaImaginary = -dy * y - centerY;
+
+                double DeltaSub0X = deltaReal;
+                double DeltaSub0Y = deltaImaginary;
+                double DeltaSubNX = 0;
+                double DeltaSubNY = 0;
+
+                while (iter < m_NumIterations) {
+                    const double DeltaSubNXOrig = DeltaSubNX;
+                    const double DeltaSubNYOrig = DeltaSubNY;
+
+                    //
+                    // wrn = (2 * Xr + wr * s) * wr - (2 * Xi + wi * s) * wi + ur;
+                    // win = 2 * ((Xr + wr * s) * wi + Xi * wr) + ui;
+                    //     = 2 * (Xr * wi + wr * s * wi + Xi * wr) + ui;
+                    //     = 2 * Xr * wi + 2 * wr * s * wi + 2 * Xi * wr + ui;
+                    //
+                    // https://mathr.co.uk/blog/2021-05-14_deep_zoom_theory_and_practice.html#a2021-05-14_deep_zoom_theory_and_practice_rescaling
+                    // 
+                    // DeltaSubN = 2 * DeltaSubN * results.complex[RefIteration] + DeltaSubN * DeltaSubN + DeltaSub0;
+                    // S * w = 2 * S * w * results.complex[RefIteration] + S * w * S * w + S * d
+                    // 
+                    // S * (DeltaSubNWX + DeltaSubNWY I) = 2 * S * (DeltaSubNWX + DeltaSubNWY I) * (results.x[RefIteration] + results.y[RefIteration] * I) +
+                    //                                     S * S * (DeltaSubNWX + DeltaSubNWY I) * (DeltaSubNWX + DeltaSubNWY I) +
+                    //                                     S * (dX + dY I)
+                    // 
+                    // (DeltaSubNWX + DeltaSubNWY I) = 2 * (DeltaSubNWX + DeltaSubNWY I) * (results.x[RefIteration] + results.y[RefIteration] * I) +
+                    //                                 S * (DeltaSubNWX + DeltaSubNWY I) * (DeltaSubNWX + DeltaSubNWY I) +
+                    //                                 (dX + dY I)
+                    // DeltaSubNWX = 2 * (DeltaSubNWX * results.x[RefIteration] - DeltaSubNWY * results.y[RefIteration]) +
+                    //               S * (DeltaSubNWX * DeltaSubNWX - DeltaSubNWY * DeltaSubNWY) +
+                    //               dX
+                    // DeltaSubNWX = 2 * DeltaSubNWX * results.x[RefIteration] - 2 * DeltaSubNWY * results.y[RefIteration] +
+                    //               S * DeltaSubNWX * DeltaSubNWX - S * DeltaSubNWY * DeltaSubNWY +
+                    //               dX
+                    //
+                    // DeltaSubNWY = 2 * DeltaSubNWX * results.y[RefIteration] + 2 * DeltaSubNWY * results.x[RefIteration] +
+                    //               S * DeltaSubNWX * DeltaSubNWY + S * DeltaSubNWY * DeltaSubNWX +
+                    //               dY
+                    // DeltaSubNWY = 2 * DeltaSubNWX * results.y[RefIteration] + 2 * DeltaSubNWY * results.x[RefIteration] +
+                    //               2 * S * DeltaSubNWX * DeltaSubNWY +
+                    //               dY
+
+                    DeltaSubNX = DeltaSubNXOrig * (results->x2[RefIteration] + DeltaSubNXOrig) -
+                        DeltaSubNYOrig * (results->y2[RefIteration] + DeltaSubNYOrig) +
+                        DeltaSub0X;
+                    DeltaSubNY = DeltaSubNXOrig * (results->y2[RefIteration] + DeltaSubNYOrig) +
+                        DeltaSubNYOrig * (results->x2[RefIteration] + DeltaSubNXOrig) +
+                        DeltaSub0Y;
+
+                    ++RefIteration;
+
+                    const double tempZX = results->x[RefIteration] + DeltaSubNX;
+                    const double tempZY = results->y[RefIteration] + DeltaSubNY;
+                    const double zn_size = tempZX * tempZX + tempZY * tempZY;
+                    const double normDeltaSubN = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
+
+                    if (zn_size > 256) {
+                        break;
+                    }
+
+                    if (zn_size < normDeltaSubN ||
+                        RefIteration == results->x.size() - 1) {
+                        DeltaSubNX = tempZX;
+                        DeltaSubNY = tempZY;
+                        RefIteration = 0;
+                    }
+
+                    ++iter;
+                }
+
+                m_CurIters.m_ItersArray[y][x] = (uint32_t)iter;
+            }
         }
+    };
+
+    for (size_t cur_thread = 0; cur_thread < num_threads; cur_thread++) {
+        threads.push_back(std::make_unique<std::thread>(one_thread));
+    }
+
+    for (size_t cur_thread = 0; cur_thread < threads.size(); cur_thread++) {
+        threads[cur_thread]->join();
+    }
+
+    DrawFractal(MemoryOnly);
+}
+
+void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
+    PerturbationResults* results = GetUsefulPerturbationResults();
+
+    BLAS blas(*results);
+    blas.init(results->x.size(), Convert<HighPrecision, double>(results->maxRadius));
+
+    double initX = (double)m_ScrnWidth / 2;
+    double initY = (double)m_ScrnHeight / 2;
+
+    double centerX, centerY;
+
+    double dx = Convert<HighPrecision, double>((m_MaxX - m_MinX) / m_ScrnWidth);
+    double dy = Convert<HighPrecision, double>((m_MaxY - m_MinY) / m_ScrnHeight);
+
+    {
+        HighPrecision dxHigh = (m_MaxX - m_MinX) / m_ScrnWidth;
+        HighPrecision dyHigh = (m_MaxY - m_MinY) / m_ScrnHeight;
+
+        HighPrecision cx = m_MinX + dxHigh * ((HighPrecision)initX);
+        HighPrecision cy = m_MaxY - dyHigh * ((HighPrecision)initY);
+
+        centerX = (double)(cx - m_MinX);
+        centerY = (double)(cy - m_MaxY);
+    }
+
+    static constexpr size_t num_threads = 32;
+    std::deque<std::atomic_uint64_t> atomics;
+    std::vector<std::unique_ptr<std::thread>> threads;
+    atomics.resize(m_ScrnHeight);
+    threads.reserve(num_threads);
+
+    auto one_thread = [&]() {
+        for (size_t y = 0; y < m_ScrnHeight; y++) {
+            uint64_t expected = 0;
+            if (atomics[y].compare_exchange_strong(expected, 1llu) == false) {
+                continue;
+            }
+
+            double normDeltaSubN = 0;
+
+            for (size_t x = 0; x < m_ScrnWidth; x++)
+            {
+                size_t iter = 0;
+                size_t RefIteration = 0;
+                double deltaReal = dx * x - centerX;
+                double deltaImaginary = -dy * y - centerY;
+
+                double DeltaSub0X = deltaReal;
+                double DeltaSub0Y = deltaImaginary;
+                double DeltaSubNX = 0;
+                double DeltaSubNY = 0;
+
+                while (iter < m_NumIterations) {
+                    BLA *b = nullptr;
+                    while ((b = blas.lookupBackwards(RefIteration, normDeltaSubN)) != nullptr) {
+                        int l = b->getL();
+
+                        if (iter + l >= m_NumIterations) {
+                            break;
+                        }
+
+                        iter += l;
+
+                        std::complex<double> DeltaSub0(DeltaSub0X, DeltaSub0Y);
+                        std::complex<double> DeltaSubN = b->getValue(DeltaSubN, DeltaSub0);
+                        std::complex<double> DeltaNormSquared = std::norm(DeltaSubN);
+
+                        RefIteration += l;
+
+                        const double tempZX = results->x[RefIteration] + DeltaSubNX;
+                        const double tempZY = results->y[RefIteration] + DeltaSubNY;
+                        const double zn_size = tempZX * tempZX + tempZY * tempZY;
+                        normDeltaSubN = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
+
+                        if (zn_size > 256) {
+                            break;
+                        }
+
+                        if (zn_size < normDeltaSubN ||
+                            RefIteration >= results->x.size() - 1) {
+                            DeltaSubNX = tempZX;
+                            DeltaSubNY = tempZY;
+                            RefIteration = 0;
+                        }
+                    }
+
+                    if (iter >= m_NumIterations) {
+                        break;
+                    }
+
+                    const double DeltaSubNXOrig = DeltaSubNX;
+                    const double DeltaSubNYOrig = DeltaSubNY;
+
+                    DeltaSubNX = DeltaSubNXOrig * (results->x2[RefIteration] + DeltaSubNXOrig) -
+                        DeltaSubNYOrig * (results->y2[RefIteration] + DeltaSubNYOrig) +
+                        DeltaSub0X;
+                    DeltaSubNY = DeltaSubNXOrig * (results->y2[RefIteration] + DeltaSubNYOrig) +
+                        DeltaSubNYOrig * (results->x2[RefIteration] + DeltaSubNXOrig) +
+                        DeltaSub0Y;
+
+                    ++RefIteration;
+
+                    const double tempZX = results->x[RefIteration] + DeltaSubNX;
+                    const double tempZY = results->y[RefIteration] + DeltaSubNY;
+                    const double zn_size = tempZX * tempZX + tempZY * tempZY;
+                    normDeltaSubN = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
+
+                    if (zn_size > 256) {
+                        break;
+                    }
+
+                    if (zn_size < normDeltaSubN ||
+                        RefIteration == results->x.size() - 1) {
+                        DeltaSubNX = tempZX;
+                        DeltaSubNY = tempZY;
+                        RefIteration = 0;
+                    }
+
+                    ++iter;
+                }
+
+                m_CurIters.m_ItersArray[y][x] = (uint32_t)iter;
+            }
+        }
+    };
+
+    for (size_t cur_thread = 0; cur_thread < num_threads; cur_thread++) {
+        threads.push_back(std::make_unique<std::thread>(one_thread));
+    }
+
+    for (size_t cur_thread = 0; cur_thread < threads.size(); cur_thread++) {
+        threads[cur_thread]->join();
     }
 
     DrawFractal(MemoryOnly);
@@ -1570,11 +1734,16 @@ void Fractal::AddPerturbationReferencePoint() {
     HighPrecision dxHigh = (m_MaxX - m_MinX) / m_ScrnWidth;
     HighPrecision dyHigh = (m_MaxY - m_MinY) / m_ScrnHeight;
 
-    HighPrecision cx = m_MinX + dxHigh * ((HighPrecision)pt.x);
-    HighPrecision cy = m_MaxY - dyHigh * ((HighPrecision)pt.y);
+    HighPrecision radiusX = dxHigh * ((HighPrecision)pt.x);
+    HighPrecision radiusY = dyHigh * ((HighPrecision)pt.y);
+    HighPrecision cx = m_MinX + radiusX;
+    HighPrecision cy = m_MaxY - radiusY;
 
     results->hiX = cx;
     results->hiY = cy;
+    results->radiusX = radiusX;
+    results->radiusY = radiusY;
+    results->maxRadius = (radiusX > radiusY) ? radiusX : radiusY;
     results->scrnX = (size_t)pt.x;
     results->scrnY = (size_t)pt.y;
     results->MaxIterations = m_NumIterations + 1; // +1 for push_back(0) below
@@ -1672,7 +1841,7 @@ bool Fractal::IsPerturbationResultUsefulHere(size_t i) const {
             m_PerturbationResults[i].MaxIterations >= m_NumIterations);
 }
 
-Fractal::PerturbationResults* Fractal::GetUsefulPerturbationResults() {
+PerturbationResults* Fractal::GetUsefulPerturbationResults() {
     std::vector<PerturbationResults*> useful_results;
 
     if (!m_PerturbationResults.empty()) {
@@ -1710,6 +1879,9 @@ Fractal::PerturbationResults* Fractal::GetUsefulPerturbationResults() {
 
 void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
     PerturbationResults* results = GetUsefulPerturbationResults();
+
+    BLAS blas(*results);
+    blas.init(results->x.size(), Convert<HighPrecision, double>(results->maxRadius));
 
     uint32_t err =
         m_r.InitializeMemory(m_ScrnWidth * m_GpuAntialiasing,

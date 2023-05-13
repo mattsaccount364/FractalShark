@@ -33,20 +33,23 @@ public:
         double zy = DeltaSubN.imag();
         double cx = DeltaSub0.real();
         double cy = DeltaSub0.imag();
-        return Complex(Ax * zx - Ay * zy + Bx * cx - By * cy, Ax * zy + Ay * zx + Bx * cy + By * cx);
+        return Complex(Ax * zx - Ay * zy + Bx * cx - By * cy,
+                       Ax * zy + Ay * zx + Bx * cy + By * cx);
         //return  Complex.AtXpBtY(A, DeltaSubN, B, DeltaSub0);
     }
 
     Complex getValue(Complex DeltaSubN, double cx) {
         double zx = DeltaSubN.real();
         double zy = DeltaSubN.imag();
-        return Complex(Ax * zx - Ay * zy + Bx * cx, Ax * zy + Ay * zx + By * cx);
+        return Complex(Ax * zx - Ay * zy + Bx * cx,
+                       Ax * zy + Ay * zx + By * cx);
     }
 
     Complex getValue(Complex DeltaSubN) {
         double zx = DeltaSubN.real();
         double zy = DeltaSubN.imag();
-        return Complex(Ax * zx - Ay * zy, Ax * zy + Ay * zx);
+        return Complex(Ax * zx - Ay * zy,
+                       Ax * zy + Ay * zx);
     }
 
     double hypotA() {
@@ -79,14 +82,16 @@ public:
 
     // A = y.A * x.A
     static Complex getNewA(BLA x, BLA y) {
-        return Complex(y.Ax * x.Ax - y.Ay * x.Ay, y.Ax * x.Ay + y.Ay * x.Ax);
+        return Complex(y.Ax * x.Ax - y.Ay * x.Ay,
+                       y.Ax * x.Ay + y.Ay * x.Ax);
     }
 
     // B = y.A * x.B + y.B
     static Complex getNewB(BLA x, BLA y) {
         double xBx = x.getBx();
         double xBy = x.getBy();
-        return Complex(y.Ax * xBx - y.Ay * xBy + y.getBx(), y.Ax * xBy + y.Ay * xBx + y.getBy());
+        return Complex(y.Ax * xBx - y.Ay * xBy + y.getBx(),
+                       y.Ax * xBy + y.Ay * xBx + y.getBy());
     }
 
     int getL() {

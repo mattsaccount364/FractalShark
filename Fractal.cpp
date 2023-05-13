@@ -129,7 +129,7 @@ void Fractal::Initialize(int width,
     SetIterationPrecision(1);
 
     ResetDimensions(width, height, 1, 1);
-    View(0);
+    View(8);
 
     m_ChangedWindow = true;
     m_ChangedScrn = true;
@@ -628,6 +628,7 @@ void Fractal::View(size_t view)
         break;
 
     case 6:
+        // Scale float with pixellation
         minX = HighPrecision{ "-1.62255305450955440939378327148551933698151664905869252353104459177017978418891616690380136311469569647746535255597152879870544828084030266459696312328585298881005139386870908363177752552421427177179281096147769415" };
         minY = HighPrecision{  "0.00111756723889676861194528779365036804209780569430979619191368365101767584234238739006014642030867082584879980084600891029652194894033981012912620372948556514051537500942007730195548392246463251930450398477496176544" };
         maxX = HighPrecision{ "-1.62255305450955440939378327148551933698151664905869252353104459177017978418891616690380136311469569647746535255597152879870544828084030250153999905750113975818926710341658168707379760602146485062960529816708172165" };
@@ -636,6 +637,7 @@ void Fractal::View(size_t view)
         break;
 
     case 7:
+        // Scaled float limit with circle
         minX = HighPrecision{ "-1.62255305450955440939378327148551933698151664905869252353104459177017978418891616690380136311469569647746535255597152879870544828084030252478540752851056038295732180048485849836719480635256962570788141443758414653" };
         minY = HighPrecision{  "0.0011175672388967686119452877936503680420978056943097961919136836510176758423423873900601464203086708258487998008460089102965219489403398329852555703126748646225896578863028142955526188647404920935367487584932956791" };
         maxX = HighPrecision{ "-1.62255305450955440939378327148551933698151664905869252353104459177017978418891616690380136311469569647746535255597152879870544828084030252478540752851056038295729331767859389716189380600126795460282679236765495185" };
@@ -644,6 +646,14 @@ void Fractal::View(size_t view)
         break;
 
     case 8:
+        // Full BLA test
+        minX = HighPrecision{ "-0.73198732629843320440204976927241262302865557668926323067907189191303572618456166820968874072402159997625420009666704345781677506621292458045712758673688395452668227635979898014441200747973251590103395489752085660025815039468080358849516199571780945485167631234003282215249532325026337114967584315527302929014070769647388129102508004668427421878414139639523504366866712" };
+        minY = HighPrecision{ "0.168551219955066602450857684291218156300083497911317973583050597001478465218981183137439786526519040565783979013189488828294624083190238716864177970162720141151059941811388858157678439839291010444609585826087853669052343805389112843515477164832278357299322499467357831668268389147768565099109917523901197980150988627409178625493832131786965502660398647751643363880613" };
+        maxX = HighPrecision{ "-0.73198711278411562860976923611757670326501681760613040979799153622365168352615277812643778690141397882000970796454699989818273281342296259355135081024529675472346701207658925643942943829071362022273606437127895303527746921408670822016734143274746985669135866602338077444815138791879406189673678065195261513943708472873576703784395775345318271550455800744078719690529401" };
+        maxY = HighPrecision{ "0.16855130800451760694861870163628690390460609216071062689497565448933568323026627631972480735787769231227305079485074498667466459247298274714116671429828548167851387556091815660055162944189796322695068863491583698598561526811049739729599498355981609295200333367768758481392123970943429283930409545024424389959120250602521105099244814567974510474736220689025616952385081" };
+        SetNumIterations(4718592);
+        break;
+
     case 9:
     case 0:
     default:
@@ -1623,8 +1633,6 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                 continue;
             }
 
-            double normDeltaSubN = 0;
-
             for (size_t x = 0; x < m_ScrnWidth; x++)
             {
                 size_t iter = 0;
@@ -1636,10 +1644,13 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                 double DeltaSub0Y = deltaImaginary;
                 double DeltaSubNX = 0;
                 double DeltaSubNY = 0;
+                double DeltaNormSquared = 0;
+                std::complex<double> DeltaSub0(DeltaSub0X, DeltaSub0Y);
+                std::complex<double> DeltaSubN{};
 
                 while (iter < m_NumIterations) {
                     BLA *b = nullptr;
-                    while ((b = blas.lookupBackwards(RefIteration, normDeltaSubN)) != nullptr) {
+                    while ((b = blas.lookupBackwards(RefIteration, DeltaNormSquared)) != nullptr) {
                         int l = b->getL();
 
                         if (iter + l >= m_NumIterations) {
@@ -1648,25 +1659,30 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
 
                         iter += l;
 
-                        std::complex<double> DeltaSub0(DeltaSub0X, DeltaSub0Y);
-                        std::complex<double> DeltaSubN = b->getValue(DeltaSubN, DeltaSub0);
-                        std::complex<double> DeltaNormSquared = std::norm(DeltaSubN);
+                        DeltaSubN = { DeltaSubNX, DeltaSubNY };
+
+                        DeltaSubN = b->getValue(DeltaSubN, DeltaSub0);
+                        // DeltaNormSquared = std::norm(DeltaSubN);
+
+                        DeltaSubNX = DeltaSubN.real();
+                        DeltaSubNY = DeltaSubN.imag();
 
                         RefIteration += l;
 
                         const double tempZX = results->x[RefIteration] + DeltaSubNX;
                         const double tempZY = results->y[RefIteration] + DeltaSubNY;
-                        const double zn_size = tempZX * tempZX + tempZY * tempZY;
-                        normDeltaSubN = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
+                        const double normSquared = tempZX * tempZX + tempZY * tempZY;
+                        DeltaNormSquared = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
 
-                        if (zn_size > 256) {
+                        if (normSquared > 256) {
                             break;
                         }
 
-                        if (zn_size < normDeltaSubN ||
+                        if (normSquared < DeltaNormSquared ||
                             RefIteration >= results->x.size() - 1) {
                             DeltaSubNX = tempZX;
                             DeltaSubNY = tempZY;
+                            DeltaNormSquared = normSquared;
                             RefIteration = 0;
                         }
                     }
@@ -1689,17 +1705,18 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
 
                     const double tempZX = results->x[RefIteration] + DeltaSubNX;
                     const double tempZY = results->y[RefIteration] + DeltaSubNY;
-                    const double zn_size = tempZX * tempZX + tempZY * tempZY;
-                    normDeltaSubN = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
+                    const double normSquared = tempZX * tempZX + tempZY * tempZY;
+                    DeltaNormSquared = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
 
-                    if (zn_size > 256) {
+                    if (normSquared > 256) {
                         break;
                     }
 
-                    if (zn_size < normDeltaSubN ||
-                        RefIteration == results->x.size() - 1) {
+                    if (normSquared < DeltaNormSquared ||
+                        RefIteration >= results->x.size() - 1) {
                         DeltaSubNX = tempZX;
                         DeltaSubNY = tempZY;
+                        DeltaNormSquared = normSquared;
                         RefIteration = 0;
                     }
 

@@ -17,11 +17,11 @@ private:
 
     std::vector<uint32_t> elementsPerLevel;
 
-    uint32_t firstLevel;
+    int firstLevel;
     bool returnL1;
 
     static constexpr uint32_t BLA_BITS = 23;
-    static constexpr uint32_t BLA_STARTING_LEVEL = 2;
+    static constexpr int BLA_STARTING_LEVEL = 2;
 
     using Complex = std::complex<double>;
 
@@ -156,31 +156,17 @@ public:
             return;
         }
 
-        std::vector<uint32_t> elemPerLevel;
+        elementsPerLevel.clear();
 
-        long total = 1;
         uint32_t count = 1;
         for (; m > 1; m = (m + 1) >> 1) {
-            elemPerLevel.push_back(m);
-            total += m;
+            elementsPerLevel.push_back(m);
             count++;
         }
 
-        elemPerLevel.push_back(m);
-
-        long finalTotal = total;
-        long removedTotal = 0;
-
-        if (firstLevel > 0) {
-            for (uint32_t i = 0; i < firstLevel && i < elemPerLevel.size(); i++) {
-                removedTotal += elemPerLevel[i];
-            }
-            finalTotal -= removedTotal;
-        }
+        elementsPerLevel.push_back(m);
 
         returnL1 = firstLevel == 0;
-
-        elementsPerLevel = elemPerLevel;
 
         L = count;
         b.clear();
@@ -239,7 +225,7 @@ public:
             return nullptr;
         }
 
-        uint32_t zeros;
+        int zeros;
         uint32_t ix;
         if (k == 0) {
             if (z2 >= b[firstLevel][0].r2) { //k >> firstLevel, This could be done for all K values, but it was shown through statistics that most effort is done on k == 0
@@ -249,20 +235,22 @@ public:
             ix = 0;
         }
         else if (k > 10) {
-            float v = (k & -k);
+            float v = (int)((int)k & (int)-k);
             uint32_t bits = *reinterpret_cast<uint32_t*>(&v);
             zeros = (bits >> 23) - 0x7f;
             ix = k >> zeros;
         }
         else {
-            float v = (k & -k);
+            float v = (int)((int)k & (int)-k);
             uint32_t bits = *reinterpret_cast<uint32_t*>(&v);
             zeros = (bits >> 23) - 0x7f;
             ix = k >> zeros;
         }
 
-        uint32_t startLevel = zeros <= LM2 ? zeros : LM2;
-        for (uint32_t level = startLevel; level >= firstLevel; --level) {
+        int startLevel = (zeros <= LM2) ? zeros : LM2;
+        for (int level = startLevel; level >= firstLevel; --level) {
+            assert(level < b.size());
+            assert(ix < b[level].size());
             if (z2 < (tempB = &b[level][ix])->r2) {
                 return tempB;
             }

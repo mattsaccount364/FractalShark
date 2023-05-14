@@ -122,13 +122,14 @@ BEGIN
             MENUITEM "2x64 GPU",                    IDM_ALG_GPU_2_64
             MENUITEM "4x64 GPU",                    IDM_ALG_GPU_4_64
             MENUITEM "1x64 GPU",                    IDM_ALG_GPU_1_64
+            MENUITEM "1x64 GPU - Perturbation",     IDM_ALG_GPU_1_64_PERTURB
             MENUITEM "1x64 GPU - Perturbation BLA", IDM_ALG_GPU_1_64_PERTURB_BLA
             MENUITEM "2x32 GPU",                    IDM_ALG_GPU_2_32
-            MENUITEM "2x32 GPU - Perturbation BLA", IDM_ALG_GPU_2_32_PERTURB_BLA
+            MENUITEM "2x32 GPU - Perturbation",     IDM_ALG_GPU_2_32_PERTURB
             MENUITEM "2x32 GPU - Perturbation Scaled", IDM_ALG_GPU_2_32_PERTURB_SCALED
             MENUITEM "4x32 GPU",                    IDM_ALG_GPU_4_32
             MENUITEM "1x32 GPU",                    IDM_ALG_GPU_1_32
-            MENUITEM "1x32 GPU - Perturbation BLA", IDM_ALG_GPU_1_32_PERTURB_BLA
+            MENUITEM "1x32 GPU - Perturbation",     IDM_ALG_GPU_1_32_PERTURB
             MENUITEM "1x32 GPU - Perturbation Scaled", IDM_ALG_GPU_1_32_PERTURB_SCALED
         END
         POPUP "Iterations"

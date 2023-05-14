@@ -150,6 +150,7 @@
 #define IDM_BENCHMARK_THIS              32932
 #define ID_CHOOSERENDERALGORITHM_2X32GPU32933 32933
 #define IDM_ALG_GPU_2_32_PERTURB_SCALED 32934
+#define ID_CHOOSERENDERALGORITHM_1X64GPU32935 32935
 #define IDC_STATIC                      -1
 
 // Next default values for new objects
@@ -157,7 +158,7 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        131
-#define _APS_NEXT_COMMAND_VALUE         32935
+#define _APS_NEXT_COMMAND_VALUE         32936
 #define _APS_NEXT_CONTROL_VALUE         1000
 #define _APS_NEXT_SYMED_VALUE           110
 #endif

@@ -6,6 +6,9 @@
 #ifndef GPGPU_RENDER_GPU_HPP
 #define GPGPU_RENDER_GPU_HPP
 
+#include "BLA.h"
+#include "BLAS.h"
+
 // Render algorithm: 'h' = high res CPU, 'l' = low res CPU
 // 'f' = 1x64-bit double
 // 'd' = 2x64-bit double (128-bit)
@@ -17,14 +20,15 @@ enum class RenderAlgorithm {
     Cpu64,
     Cpu64PerturbedBLA,
     Gpu1x64,
+    Gpu1x64Perturbed,
     Gpu1x64PerturbedBLA,
     Gpu2x64,
     Gpu4x64,
     Gpu1x32,
-    Gpu1x32PerturbedBLA,
+    Gpu1x32Perturbed,
     Gpu1x32PerturbedScaled,
     Gpu2x32,
-    Gpu2x32PerturbedBLA,
+    Gpu2x32Perturbed,
     Gpu2x32PerturbedScaled,
     Gpu4x32,
 };
@@ -169,6 +173,7 @@ public:
         RenderAlgorithm algorithm,
         uint32_t* buffer,
         MattPerturbResults* results,
+        BLAS *blas,
         MattCoords cx,
         MattCoords cy,
         MattCoords dx,

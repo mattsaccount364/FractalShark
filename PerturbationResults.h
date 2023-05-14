@@ -4,7 +4,8 @@
 #include <stdint.h>
 #include "HighPrecision.h"
 
-struct PerturbationResults {
+class PerturbationResults {
+public:
     HighPrecision hiX, hiY, radiusX, radiusY, maxRadius;
     size_t scrnX, scrnY;
     size_t MaxIterations;

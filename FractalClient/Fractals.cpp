@@ -277,6 +277,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         case IDM_VIEW7:
         case IDM_VIEW8:
         case IDM_VIEW9:
+        case IDM_VIEW10:
+        case IDM_VIEW11:
+        case IDM_VIEW12:
+        case IDM_VIEW13:
         {
             assert(IDM_VIEW2 == IDM_VIEW1 + 1);
             assert(IDM_VIEW3 == IDM_VIEW1 + 2);
@@ -286,6 +290,10 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             assert(IDM_VIEW7 == IDM_VIEW1 + 6);
             assert(IDM_VIEW8 == IDM_VIEW1 + 7);
             assert(IDM_VIEW9 == IDM_VIEW1 + 8);
+            assert(IDM_VIEW10 == IDM_VIEW1 + 9);
+            assert(IDM_VIEW11 == IDM_VIEW1 + 10);
+            assert(IDM_VIEW12 == IDM_VIEW1 + 11);
+            assert(IDM_VIEW13 == IDM_VIEW1 + 12);
 
             MenuStandardView(hWnd, wmId - IDM_VIEW1 + 1);
             break;
@@ -458,7 +466,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         {
             gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedScaled);
             break;
-        }        
+        }
+        case IDM_ALG_GPU_1_32_PERTURB_SCALED_BLA:
+        {
+            gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedScaledBLA);
+            break;
+        }
         case IDM_ALG_GPU_2_32:
         {
             gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu2x32);

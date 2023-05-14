@@ -5,28 +5,29 @@
 
 class PerturbationResults;
 
+template<class T>
 class BLAS {
 public:
     size_t m_M;
     size_t m_L;
-    std::vector<std::vector<BLA>> m_B;
+    std::vector<std::vector<BLA<T>>> m_B;
     int32_t m_LM2;//Level -1 is not attainable due to Zero R
     size_t m_FirstLevel;
 
     BLAS(PerturbationResults& results);
 
 private:
-    void initLStep(size_t level, size_t m, double blaSize, double epsilon);
-    BLA mergeTwoBlas(BLA x, BLA y, double blaSize);
-    BLA createLStep(size_t level, size_t m, double blaSize, double epsilon);
-    BLA createOneStep(size_t m, double epsilon);
-    void initInternal(double blaSize, double epsilon);
-    void mergeOneStep(size_t m, size_t elementsSrc, size_t src, size_t dest, double blaSize);
-    void merge(double blaSize);
+    void InitLStep(size_t level, size_t m, T blaSize, T epsilon);
+    BLA<T> MergeTwoBlas(BLA<T> x, BLA<T> y, T blaSize);
+    BLA<T> CreateLStep(size_t level, size_t m, T blaSize, T epsilon);
+    BLA<T> CreateOneStep(size_t m, T epsilon);
+    void InitInternal(T blaSize, T epsilon);
+    void MergeOneStep(size_t m, size_t elementsSrc, size_t src, size_t dest, T blaSize);
+    void Merge(T blaSize);
 
 public:
-    void init(size_t InM, double blaSize);
-    BLA* lookupBackwards(size_t m, double z2);
+    void Init(size_t InM, T blaSize);
+    BLA<T>* LookupBackwards(size_t m, T z2);
 
 private:
     long m_Done;

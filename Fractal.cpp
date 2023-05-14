@@ -124,8 +124,8 @@ void Fractal::Initialize(int width,
     }
 
     // Setup member variables with initial values:
-    //SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedScaled);
-    SetRenderAlgorithm(RenderAlgorithm::Cpu64PerturbedBLA);
+    SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedScaledBLA);
+    //SetRenderAlgorithm(RenderAlgorithm::Cpu64PerturbedBLA);
     SetIterationPrecision(1);
 
     ResetDimensions(width, height, 1, 1);
@@ -646,9 +646,8 @@ void Fractal::View(size_t view)
         SetNumIterations(4718592);
         break;
 
-           
     case 8:
-        // Full BLA test
+        // Full BLA test 10^300 or so.
         minX = HighPrecision{ "-1.6225530545095544093937832714855193369815166490586925235310445917701797841889161669038013631146956964774653525559715287987054482808403025247854075285105603829572963367477346607819868788618326566279105639888311967675411749870701252538283718679795588893001251269163560063451488987336953970733326914945285910843052283752676450811025582831872386892613197548438952501603343" };
         minY = HighPrecision{ "0.0011175672388967686119452877936503680420978056943097961919136836510176758423423873900601464203086708258487998008460089102965219489403398329852555703126748646226118355222840756725438548472552647319463823283712140095265616631749416089099252161796207475587913942656282747486752953460348999988151734425124093456537087587225792860301105518586770299335587957029922871893013319" };
         maxX = HighPrecision{ "-1.6225530545095544093937832714855193369815166490586925235310445917701797841889161669038013631146956964774653525559715287987054482808403025247854075285105603829572963367477346607819868788618326566279105639888311967675411749870701252538283718679795588893001251269163560063451488987336953970733326914945285910843052283752676120790168132094288089193860759126588744791510385" };
@@ -657,6 +656,35 @@ void Fractal::View(size_t view)
         break;
 
     case 9:
+        // Current debug spot
+        // Starts failing with scaled/BLA/32-bit but works with regular scaled 32-bit.
+        minX = HighPrecision{ "-0.7483637942536300149503483214787034876591588411716933148186745513477244682570730516417622419808698292581482958014791704644565629000555509682153589709079382456689931580963129631758649894107825943703087439928414641651444362689519549254204846154926596121590912184282196146643043078678714060985887002716080586668490292983394730321504843621114015194797701155788204224604921" };
+        minY = HighPrecision{ "-0.06744780927701335119415722995059170914204410549488939856276713700069965046725434093158528402364591969750087517693203035021583062328882637072820717521285184531690139123820284407899463906779357518574820657755838159003077331450979793198906608176322691865205598530852830385345767321526425688541101362130891363458886206558756783457806483014890069718507540521064981102965257" };
+        maxX = HighPrecision{ "-0.74836379425363001495034832147870348765915884117169331481867433187401065255783016055089059668801973745851548723225680077302941610826313399595717357034234449928086303787522807162527281675222310279327102341439954670484722882754113271398864781791213972240089820570031805566451574870561115609430798868191313945870166698496668127704727678368440262539279975889176381385504076" };
+        maxY = HighPrecision{ "-0.067447809277013351194157229950591709142044105494889398562767046493701193416045047963366441840970068619583043311554914622271582261091114020153740373090838894288008277652802673691394718968303669425227929361055051514588168357033981427169851116968741801469506295904472361894468267390743503211032923742242698263338165959443279104509270938940285203610910294845473266242724579" };
+        SetNumIterations(4718592);
+        break;
+
+    case 10:
+        // Deep 64-bit BLA minibrot, expensive.  Definitely want BLA.
+        minX = HighPrecision{ "-0.74836379425363001495034832147870348765915884117169331481867446308835696434466935951547711102992018626978440198743149091261372581285665035687120029198906617605605510855257420632354156296576179447208472896898373888227101465892259186897512844666452987771932772660900027322857227304542813531418009161921222139833398640646172853946782763379032017364708068855894638757625732" };
+        minY = HighPrecision{ "-0.067447809277013351194157229950591709142044105494889398562767083245272358986393568877342912793094694060325280478251034622845966413227553367015477785010816153440242196295928684840847373033856763268195693833678634813646266998567103269711076222244976313774560141254321254431257189070368801115884420723538654659386062295378495174855833735900440573177795780186279949333507073" };
+        maxX = HighPrecision{ "-0.74836379425363001495034832147870348765915884117169331481867446308835696434466935951547711102992018462594046844957581650905813676440987039360077008151409029581456215249275257359475838231130722114611785232168456165544398599953534047934833343078054827516646989985196347611959619854824007266959802596225077396905787600904060483692219811995610251090826541072213648318510324" };
+        maxY = HighPrecision{ "-0.06744780927701335119415722995059170914204410549488939856276708324527235898639356887734291279309469338243371082413006920773857239849556540734572010115282505067538728367104945959172692183007853943072981500640835501286660040555641093379992150950373311356126200283300387639995855604057351400222151222072034527879266105069171488618801379997510212464017311052220199295814133" };
+        SetNumIterations(113246208);
+        break;
+
+    case 11:
+        // Debug spot: Current iteration limit
+        minX = HighPrecision{ "-0.7483637942536300149503483214787034876591588411716933148186744630883569643446693595154771110299201854417718816507212864046192442728464125634426465133246962948967118305469121927164144153123461942343520258284320948123478441845419054003982620092712126326637511961789484054753950798432789870162297248825592222733842248427247627272854375338198952507636161019162870632073476" };
+        minY = HighPrecision{ "-0.067447809277013351194157229950591709142044105494889398562767083245272358986393568877342912793094693730687288781042017748181124784725846463350827992512739480269662777646800025983832791116766303758143018565935509528476881257220897238458909913528761439426784703326677389688542372132679411305505448934835188486721937811172636446746874262083287986495713450444454215920906036" };
+        maxX = HighPrecision{ "-0.74836379425363001495034832147870348765915884117169331481867446308835696434466935951547711102992018544177113302385585675657963976236536811183304568353303891135714338779137946926826015006074340855623400221445853836525425158883135457773608338377494024588079723867890216767980502004040123034011212032560552631786611750406550070478230864658343935560260438966529644594231798" };
+        maxY = HighPrecision{ "-0.067447809277013351194157229950591709142044105494889398562767083245272358986393568877342912793094693730686980060834133328790186093625058982256837304046714976879263619196721998370900339654143119317953739153247568622172807920269956552932953775207633372264454267547539749128556125015647975446413928902429309671907020514117977501475384595048736919551036007721852628738160347" };
+        SetNumIterations(536870912);
+        break;
+
+    case 12:
+    case 13:
     case 0:
     default:
         minX = HighPrecision{ "-2.5" };
@@ -1047,6 +1075,7 @@ void Fractal::CalcFractal(bool MemoryOnly)
         break;
     case RenderAlgorithm::Gpu1x32Perturbed:
     case RenderAlgorithm::Gpu1x32PerturbedScaled:
+    case RenderAlgorithm::Gpu1x32PerturbedScaledBLA:
     case RenderAlgorithm::Gpu1x64Perturbed:
     case RenderAlgorithm::Gpu1x64PerturbedBLA:
     case RenderAlgorithm::Gpu2x32Perturbed:
@@ -1447,25 +1476,8 @@ void Fractal::CalcNetworkFractal(bool MemoryOnly)
 void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
     PerturbationResults* results = GetUsefulPerturbationResults();
 
-    //double initX = (double)m_ScrnWidth / 2;
-    //double initY = (double)m_ScrnHeight / 2;
-
-    //double centerX, centerY;
-
     double dx = Convert<HighPrecision, double>((m_MaxX - m_MinX) / m_ScrnWidth);
     double dy = Convert<HighPrecision, double>((m_MaxY - m_MinY) / m_ScrnHeight);
-
-    //{
-    //    HighPrecision dxHigh = (m_MaxX - m_MinX) / m_ScrnWidth;
-    //    HighPrecision dyHigh = (m_MaxY - m_MinY) / m_ScrnHeight;
-
-    //    HighPrecision cx = m_MinX + dxHigh * ((HighPrecision)initX);
-    //    HighPrecision cy = m_MaxY - dyHigh * ((HighPrecision)initY);
-
-    //    centerX = (double)(cx - m_MinX);
-    //    centerY = (double)(cy - m_MaxY);
-
-    //}
 
     double centerX = (double)(results->hiX - m_MinX);
     double centerY = (double)(results->hiY - m_MaxY);
@@ -1604,27 +1616,14 @@ void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
 void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
     PerturbationResults* results = GetUsefulPerturbationResults();
 
-    BLAS blas(*results);
-    blas.init(results->x.size(), Convert<HighPrecision, double>(results->maxRadius));
-
-    double initX = (double)m_ScrnWidth / 2;
-    double initY = (double)m_ScrnHeight / 2;
-
-    double centerX, centerY;
+    BLAS<double> blas(*results);
+    blas.Init(results->x.size(), Convert<HighPrecision, double>(results->maxRadius));
 
     double dx = Convert<HighPrecision, double>((m_MaxX - m_MinX) / m_ScrnWidth);
     double dy = Convert<HighPrecision, double>((m_MaxY - m_MinY) / m_ScrnHeight);
 
-    {
-        HighPrecision dxHigh = (m_MaxX - m_MinX) / m_ScrnWidth;
-        HighPrecision dyHigh = (m_MaxY - m_MinY) / m_ScrnHeight;
-
-        HighPrecision cx = m_MinX + dxHigh * ((HighPrecision)initX);
-        HighPrecision cy = m_MaxY - dyHigh * ((HighPrecision)initY);
-
-        centerX = (double)(cx - m_MinX);
-        centerY = (double)(cy - m_MaxY);
-    }
+    double centerX = (double)(results->hiX - m_MinX);
+    double centerY = (double)(results->hiY - m_MaxY);
 
     static constexpr size_t num_threads = 32;
     std::deque<std::atomic_uint64_t> atomics;
@@ -1655,12 +1654,10 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                 double DeltaSubNX = 0;
                 double DeltaSubNY = 0;
                 double DeltaNormSquared = 0;
-                Complex DeltaSub0(DeltaSub0X, DeltaSub0Y);
-                Complex DeltaSubN{};
 
                 while (iter < m_NumIterations) {
-                    BLA *b = nullptr;
-                    while ((b = blas.lookupBackwards(RefIteration, DeltaNormSquared)) != nullptr) {
+                    BLA<double> *b = nullptr;
+                    while ((b = blas.LookupBackwards(RefIteration, DeltaNormSquared)) != nullptr) {
                         int l = b->getL();
 
                         if (iter + l >= m_NumIterations) {
@@ -1669,13 +1666,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
 
                         iter += l;
 
-                        DeltaSubN = { DeltaSubNX, DeltaSubNY };
-
-                        DeltaSubN = b->getValue(DeltaSubN, DeltaSub0);
-                        // DeltaNormSquared = std::norm(DeltaSubN);
-
-                        DeltaSubNX = DeltaSubN.Real;
-                        DeltaSubNY = DeltaSubN.Imag;
+                        b->getValue(DeltaSubNX, DeltaSubNY, DeltaSub0X, DeltaSub0Y);
 
                         RefIteration += l;
 
@@ -1797,7 +1788,8 @@ void Fractal::AddPerturbationReferencePoint() {
     // Note: results->bad is not here.  See end of this function.
 
     //double glitch = std::exp(std::log(0.0001));
-    double glitch = 0.0001;
+    //double glitch = 0.0001;
+    double glitch = 0.0000001;
 
     zx = cx;
     zy = cy;
@@ -1850,6 +1842,7 @@ bool Fractal::RequiresReferencePoints() const {
         case RenderAlgorithm::Cpu64PerturbedBLA:
         case RenderAlgorithm::Gpu1x32Perturbed:
         case RenderAlgorithm::Gpu1x32PerturbedScaled:
+        case RenderAlgorithm::Gpu1x32PerturbedScaledBLA:
         case RenderAlgorithm::Gpu1x64Perturbed:
         case RenderAlgorithm::Gpu1x64PerturbedBLA:
         case RenderAlgorithm::Gpu2x32Perturbed:
@@ -1908,8 +1901,11 @@ PerturbationResults* Fractal::GetUsefulPerturbationResults() {
 void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
     PerturbationResults* results = GetUsefulPerturbationResults();
 
-    BLAS blas(*results);
-    blas.init(results->x.size(), Convert<HighPrecision, double>(results->maxRadius));
+    BLAS<double> doubleBlas(*results);
+    doubleBlas.Init(results->x.size(), Convert<HighPrecision, double>(results->maxRadius));
+
+    //BLAS<float> floatBlas(*results);
+    //floatBlas.init(results->x.size(), Convert<HighPrecision, float>(results->maxRadius));
 
     uint32_t err =
         m_r.InitializeMemory(m_ScrnWidth * m_GpuAntialiasing,
@@ -1950,7 +1946,8 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
     auto result = m_r.RenderPerturbBLA(m_RenderAlgorithm,
         (uint32_t*)m_CurIters.m_ItersMemory,
         &gpu_results,
-        &blas,
+        &doubleBlas,
+        nullptr,  // TODO
         cx2,
         cy2,
         dx2,

@@ -2,35 +2,42 @@
 #include "PerturbationResults.h"
 #include "BLAS.h"
 
-BLAS::BLAS(PerturbationResults& results) :
+template<class T>
+BLAS<T>::BLAS(PerturbationResults& results) :
     m_PerturbationResults(results) {
 }
 
-void BLAS::initLStep(size_t level, size_t m, double blaSize, double epsilon) {
-    m_B[level][m - 1] = createLStep(level, m, blaSize, epsilon);
+template<class T>
+void BLAS<T>::InitLStep(size_t level, size_t m, T blaSize, T epsilon) {
+    m_B[level][m - 1] = CreateLStep(level, m, blaSize, epsilon);
 }
 
-BLA BLAS::mergeTwoBlas(BLA x, BLA y, double blaSize) {
+template<class T>
+BLA<T> BLAS<T>::MergeTwoBlas(BLA<T> x, BLA<T> y, T blaSize) {
     uint32_t l = x.getL() + y.getL();
     // A = y.A * x.A
-    Complex A = BLA::getNewA(x, y);
+    T RealA, ImagA;
+    BLA<T>::getNewA(x, y, RealA, ImagA);
+
     // B = y.A * x.B + y.B
-    Complex B = BLA::getNewB(x, y);
-    double xA = x.hypotA();
-    double xB = x.hypotB();
+    T RealB, ImagB;
+    BLA<T>::getNewB(x, y, RealB, ImagB);
+    T xA = x.hypotA();
+    T xB = x.hypotB();
 
     // TODO
 
-    double r = min(sqrt(x.getR2()), max(0, (sqrt(y.getR2()) - xB * blaSize) / xA));
-    double r2 = r * r;
+    T r = min(sqrt(x.getR2()), max(0, (sqrt(y.getR2()) - xB * blaSize) / xA));
+    T r2 = r * r;
 
-    return BLA::getGenericStep(r2, A, B, l);
+    return BLA<T>::getGenericStep(r2, RealA, ImagA, RealB, ImagB, l);
 }
 
-BLA BLAS::createLStep(size_t level, size_t m, double blaSize, double epsilon) {
+template<class T>
+BLA<T> BLAS<T>::CreateLStep(size_t level, size_t m, T blaSize, T epsilon) {
 
     if (level == 0) {
-        return createOneStep(m, epsilon);
+        return CreateOneStep(m, epsilon);
     }
 
     size_t m2 = m << 1;
@@ -39,53 +46,61 @@ BLA BLAS::createLStep(size_t level, size_t m, double blaSize, double epsilon) {
     size_t levelm1 = level - 1;
     if (my <= m_ElementsPerLevel[levelm1]) {
 
-        BLA x = createLStep(levelm1, mx, blaSize, epsilon);
+        BLA<T> x = CreateLStep(levelm1, mx, blaSize, epsilon);
 
-        BLA y = createLStep(levelm1, my, blaSize, epsilon);
+        BLA<T> y = CreateLStep(levelm1, my, blaSize, epsilon);
 
-        return mergeTwoBlas(x, y, blaSize);
+        return MergeTwoBlas(x, y, blaSize);
     }
     else {
-        return createLStep(levelm1, mx, blaSize, epsilon);
+        return CreateLStep(levelm1, mx, blaSize, epsilon);
     }
 }
 
-BLA BLAS::createOneStep(size_t m, double epsilon) {
-    Complex A = Complex(m_PerturbationResults.x2[m], m_PerturbationResults.y2[m]);
+template<class T>
+BLA<T> BLAS<T>::CreateOneStep(size_t m, T epsilon) {
+    T RealA = static_cast<T>(m_PerturbationResults.x2[m]);
+    T ImagA = static_cast<T>(m_PerturbationResults.y2[m]);
 
-    double mA = sqrt(A.Real * A.Real + A.Imag * A.Imag);
+    T mA = sqrt(RealA * RealA + ImagA * ImagA);
 
-    double r = mA * epsilon;
+    T r = mA * epsilon;
 
-    double r2 = r * r;
+    T r2 = r * r;
 
-    return BLA(r2, A, Complex(1, 0), 1); // BLA1Step
+    const T RealB = 1;
+    const T ImagB = 0;
+    const int l = 1;
+    return BLA<T>(r2, RealA, ImagA, RealB, ImagB, l); // BLA1Step
 }
 
-void BLAS::initInternal(double blaSize, double epsilon) {
+template<class T>
+void BLAS<T>::InitInternal(T blaSize, T epsilon) {
 
     size_t elements = m_ElementsPerLevel[m_FirstLevel] + 1;
     m_Done = 0;
     for (size_t m = 1; m < elements; m++) {
-        initLStep(m_FirstLevel, m, blaSize, epsilon);
+        InitLStep(m_FirstLevel, m, blaSize, epsilon);
     }
 }
 
-void BLAS::mergeOneStep(size_t m, size_t elementsSrc, size_t src, size_t dest, double blaSize) {
+template<class T>
+void BLAS<T>::MergeOneStep(size_t m, size_t elementsSrc, size_t src, size_t dest, T blaSize) {
     size_t mx = m << 1;
     size_t my = mx + 1;
     if (my < elementsSrc) {
-        BLA x = m_B[src][mx];
-        BLA y = m_B[src][my];
+        BLA<T> x = m_B[src][mx];
+        BLA<T> y = m_B[src][my];
 
-        m_B[dest][m] = mergeTwoBlas(x, y, blaSize);
+        m_B[dest][m] = MergeTwoBlas(x, y, blaSize);
     }
     else {
         m_B[dest][m] = m_B[src][mx];
     }
 }
 
-void BLAS::merge(double blaSize) {
+template<class T>
+void BLAS<T>::Merge(T blaSize) {
 
     size_t elementsDst = 0;
     size_t src = m_FirstLevel;
@@ -101,15 +116,16 @@ void BLAS::merge(double blaSize) {
         const size_t destFinal = dst;
 
         for (size_t m = 0; m < elementsDst; m++) {
-            mergeOneStep(m, elementsSrcFinal, srcFinal, destFinal, blaSize);
+            MergeOneStep(m, elementsSrcFinal, srcFinal, destFinal, blaSize);
         }
 
         elementsSrc = elementsDst;
     }
 }
 
-void BLAS::init(size_t InM, double blaSize) {
-    double precision = 1 / ((double)(1L << BLA_BITS));
+template<class T>
+void BLAS<T>::Init(size_t InM, T blaSize) {
+    T precision = 1 / ((T)(1L << BLA_BITS));
     m_FirstLevel = BLA_STARTING_LEVEL - 1;
 
     this->m_M = InM;
@@ -142,18 +158,19 @@ void BLAS::init(size_t InM, double blaSize) {
         m_B[l].resize(m_ElementsPerLevel[l]);
     }
 
-    initInternal(blaSize, precision);
+    InitInternal(blaSize, precision);
 
-    merge(blaSize);
+    Merge(blaSize);
 }
 
-BLA* BLAS::lookupBackwards(size_t m, double z2) {
+template<class T>
+BLA<T>* BLAS<T>::LookupBackwards(size_t m, T z2) {
 
     if (m == 0) {
         return nullptr;
     }
 
-    BLA* tempB = nullptr;
+    BLA<T>* tempB = nullptr;
 
     int32_t k = (int32_t)m - 1;
 
@@ -191,3 +208,6 @@ BLA* BLAS::lookupBackwards(size_t m, double z2) {
     }
     return nullptr;
 }
+
+template class BLAS<float>;
+template class BLAS<double>;

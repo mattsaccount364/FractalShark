@@ -141,6 +141,10 @@
 #define IDM_VIEW7                       32919
 #define IDM_VIEW8                       32920
 #define IDM_VIEW9                       32921
+#define IDM_VIEW10                      32922
+#define IDM_VIEW11                      32923
+#define IDM_VIEW12                      32924
+#define IDM_VIEW13                      32925
 #define ID_POPUP_CLEARREFERENCES        32926
 #define ID_POPUP_PERTURBATION           32927
 #define ID_POPUP_ITERATIONS             32928
@@ -151,6 +155,12 @@
 #define ID_CHOOSERENDERALGORITHM_2X32GPU32933 32933
 #define IDM_ALG_GPU_2_32_PERTURB_SCALED 32934
 #define ID_CHOOSERENDERALGORITHM_1X64GPU32935 32935
+#define ID_CHOOSERENDERALGORITHM_1X32GPU32936 32936
+#define IDM_ALG_GPU_1_32_PERTURB_SCALED_BLA 32937
+#define ID_BUILT_                       32938
+#define ID_BUILT_32939                  32939
+#define ID_BUILT_32940                  32940
+#define ID_BUILT_32941                  32941
 #define IDC_STATIC                      -1
 
 // Next default values for new objects
@@ -158,7 +168,7 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        131
-#define _APS_NEXT_COMMAND_VALUE         32936
+#define _APS_NEXT_COMMAND_VALUE         32942
 #define _APS_NEXT_CONTROL_VALUE         1000
 #define _APS_NEXT_SYMED_VALUE           110
 #endif

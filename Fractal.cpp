@@ -129,8 +129,8 @@ void Fractal::Initialize(int width,
     SetIterationPrecision(1);
 
     ResetDimensions(width, height, 1, 1);
-    //View(8);
-    View(0);
+    View(5);
+    //View(0);
 
     m_ChangedWindow = true;
     m_ChangedScrn = true;
@@ -1740,9 +1740,112 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
     DrawFractal(MemoryOnly);
 }
 
+//void Fractal::AddPerturbationReferencePoint() {
+//    m_PerturbationResults.push_back({});
+//    PerturbationResults *results = &m_PerturbationResults[m_PerturbationResults.size() - 1];
+//
+//    double initX = (double)m_ScrnWidth / 2;
+//    double initY = (double)m_ScrnHeight / 2;
+//
+//    Point pt = { initX, initY };
+//
+//    HighPrecision dxHigh = (m_MaxX - m_MinX) / m_ScrnWidth;
+//    HighPrecision dyHigh = (m_MaxY - m_MinY) / m_ScrnHeight;
+//
+//    HighPrecision radiusX = dxHigh * ((HighPrecision)pt.x);
+//    HighPrecision radiusY = dyHigh * ((HighPrecision)pt.y);
+//    HighPrecision cx = m_MinX + radiusX;
+//    HighPrecision cy = m_MaxY - radiusY;
+//
+//    results->hiX = cx;
+//    results->hiY = cy;
+//    results->radiusX = radiusX;
+//    results->radiusY = radiusY;
+//    results->maxRadius = (radiusX > radiusY) ? radiusX : radiusY;
+//    results->scrnX = (size_t)pt.x;
+//    results->scrnY = (size_t)pt.y;
+//    results->MaxIterations = m_NumIterations + 1; // +1 for push_back(0) below
+//
+//    HighPrecision zx, zy;
+//    HighPrecision zx2, zy2;
+//    unsigned int i;
+//
+//    const double small_float = 1.1754944e-38;
+//
+//    results->x.reserve(m_NumIterations);
+//    results->x2.reserve(m_NumIterations);
+//    results->y.reserve(m_NumIterations);
+//    results->y2.reserve(m_NumIterations);
+//    results->bad.reserve(m_NumIterations);
+//    results->bad_counts.reserve(m_NumIterations);
+//
+//    results->x.push_back(0);
+//    results->x2.push_back(0);
+//    results->y.push_back(0);
+//    results->y2.push_back(0);
+//    results->bad_counts.push_back(0);
+//    bool cur_bad_count_underflow = false;
+//    // Note: results->bad is not here.  See end of this function.
+//
+//    //double glitch = std::exp(std::log(0.0001));
+//    //double glitch = 0.0001;
+//    double glitch = 0.0000001;
+//
+//    zx = cx;
+//    zy = cy;
+//    for (i = 0; i < m_NumIterations; i++)
+//    {
+//        zx2 = zx * 2;
+//        zy2 = zy * 2;
+//
+//        double double_zx = (double)zx;
+//        double double_zx2 = (double)zx2;
+//        double double_zy = (double)zy;
+//        double double_zy2 = (double)zy2;
+//
+//        results->x.push_back(double_zx);
+//        results->x2.push_back(double_zx2);
+//        results->y.push_back(double_zy);
+//        results->y2.push_back(double_zy2);
+//
+//        double norm = (double_zx * double_zx + double_zy * double_zy) * glitch;
+//        bool underflow = (fabs(zx) <= small_float ||
+//                          fabs(zy) <= small_float ||
+//                          norm <= small_float);
+//        results->bad.push_back(underflow);
+//        if (cur_bad_count_underflow != underflow) {
+//            results->bad_counts.push_back(1);
+//            cur_bad_count_underflow = !cur_bad_count_underflow;
+//        }
+//        else {
+//            results->bad_counts.back()++;
+//        }
+//
+//        // x^2+2*I*x*y-y^2
+//        zx = zx * zx - zy * zy + cx;
+//        zy = zx2 * zy + cy;
+//
+//        const double tempZX = double_zx + (double)cx;
+//        const double tempZY = double_zy + (double)cy;
+//        const double zn_size = tempZX * tempZX + tempZY * tempZY;
+//        if (zn_size > 256) {
+//            break;
+//        }
+//    }
+//
+//    results->bad.push_back(false);
+//    assert(results->bad.size() == results->x.size());
+//}
+
+template<class Type>
+struct ThreadPtrs {
+    std::atomic<Type*> In;
+    std::atomic<Type*> Out;
+};
+
 void Fractal::AddPerturbationReferencePoint() {
     m_PerturbationResults.push_back({});
-    PerturbationResults *results = &m_PerturbationResults[m_PerturbationResults.size() - 1];
+    PerturbationResults* results = &m_PerturbationResults[m_PerturbationResults.size() - 1];
 
     double initX = (double)m_ScrnWidth / 2;
     double initY = (double)m_ScrnHeight / 2;
@@ -1756,6 +1859,9 @@ void Fractal::AddPerturbationReferencePoint() {
     HighPrecision radiusY = dyHigh * ((HighPrecision)pt.y);
     HighPrecision cx = m_MinX + radiusX;
     HighPrecision cy = m_MaxY - radiusY;
+    HighPrecision zx, zy;
+    HighPrecision zx2, zy2;
+    HighPrecision zx_sq, zy_sq;
 
     results->hiX = cx;
     results->hiY = cy;
@@ -1766,8 +1872,6 @@ void Fractal::AddPerturbationReferencePoint() {
     results->scrnY = (size_t)pt.y;
     results->MaxIterations = m_NumIterations + 1; // +1 for push_back(0) below
 
-    HighPrecision zx, zy;
-    HighPrecision zx2, zy2;
     unsigned int i;
 
     const double small_float = 1.1754944e-38;
@@ -1791,17 +1895,267 @@ void Fractal::AddPerturbationReferencePoint() {
     //double glitch = 0.0001;
     double glitch = 0.0000001;
 
+    struct ThreadZxData {
+        HighPrecision zx;
+        HighPrecision* zx_sq;
+    };
+
+    struct ThreadZyData {
+        HighPrecision zy;
+        HighPrecision* zy_sq;
+    };
+
+    struct Thread1Data {
+        HighPrecision* zx_sq;
+        HighPrecision* zy_sq;
+        HighPrecision* zx2;
+        HighPrecision* zy2;
+        HighPrecision* zx;
+        HighPrecision zy;
+        HighPrecision* cx;
+    };
+
+    struct Thread2Data {
+        HighPrecision zx2;
+        HighPrecision* zy2;
+        HighPrecision zy;
+        HighPrecision* cy;
+    };
+
+    auto* ThreadZxMemory = (ThreadPtrs<ThreadZxData> *)
+        _aligned_malloc(sizeof(ThreadPtrs<ThreadZxData>), 64);
+    memset(ThreadZxMemory, 0, sizeof(*ThreadZxMemory));
+
+    auto* ThreadZyMemory = (ThreadPtrs<ThreadZyData> *)
+        _aligned_malloc(sizeof(ThreadPtrs<ThreadZyData>), 64);
+    memset(ThreadZyMemory, 0, sizeof(*ThreadZyMemory));
+
+    auto* Thread1Memory = (ThreadPtrs<Thread1Data> *)
+        _aligned_malloc(sizeof(ThreadPtrs<Thread1Data>), 64);
+    memset(Thread1Memory, 0, sizeof(*Thread1Memory));
+
+    auto* Thread2Memory = (ThreadPtrs<Thread2Data>*)
+        _aligned_malloc(sizeof(ThreadPtrs<Thread2Data>), 64);
+    memset(Thread2Memory, 0, sizeof(*Thread2Memory));
+
+#define CheckStartCriteria \
+    if (expected == nullptr || \
+        ThreadMemory->In.compare_exchange_weak( \
+            expected, \
+            nullptr, \
+            std::memory_order_release) == false) { \
+        continue; \
+    } \
+ \
+    if (expected == (void*)0x1) { \
+        break; \
+    } \
+    ok = expected; \
+
+#define CheckFinishCriteria \
+    expected = nullptr; \
+    for (;;) { \
+        bool result = ThreadMemory->Out.compare_exchange_weak( \
+            expected, \
+            ok, \
+            std::memory_order_release); \
+        if (result) { \
+            break; \
+        } \
+    } \
+
+    auto ThreadSqZx = [](ThreadPtrs<ThreadZxData>* ThreadMemory) {
+        for (;;) {
+            ThreadZxData* expected = ThreadMemory->In.load();
+            ThreadZxData* ok = nullptr;
+
+            CheckStartCriteria;
+
+            *ok->zx_sq = ok->zx * ok->zx;
+
+            // Give result back.
+            CheckFinishCriteria;
+        }
+    };
+
+    auto ThreadSqZy = [](ThreadPtrs<ThreadZyData>* ThreadMemory) {
+        for (;;) {
+            ThreadZyData* expected = ThreadMemory->In.load();
+            ThreadZyData* ok = nullptr;
+
+            CheckStartCriteria;
+
+            *ok->zy_sq = ok->zy * ok->zy;
+
+            // Give result back.
+            CheckFinishCriteria;
+        }
+    };
+
+    auto Thread1 = [](ThreadPtrs<Thread1Data>* ThreadMemory,
+                      ThreadZxData *threadZxdata,
+                      ThreadZyData* threadZydata,
+                      ThreadPtrs<ThreadZxData>* ThreadZxMemory,
+                      ThreadPtrs<ThreadZyData>* ThreadZyMemory) {
+        HighPrecision temp3;
+
+        bool doneZx = false;
+        bool doneZy = false;
+
+        ThreadZxData* expectedZx = nullptr;
+        ThreadZyData* expectedZy = nullptr;
+
+        for (;;) {
+            Thread1Data* expected = ThreadMemory->In.load();
+            Thread1Data* ok = nullptr;
+
+            CheckStartCriteria;
+
+            // Wait for squaring
+            doneZx = false;
+            doneZy = false;
+
+            for (;;) {
+                expectedZx = threadZxdata;
+
+                if (!doneZx &&
+                    ThreadZxMemory->Out.compare_exchange_weak(expectedZx, nullptr, std::memory_order_relaxed) == false) {
+                    continue;
+                }
+
+                doneZx = true;
+
+                expectedZy = threadZydata;
+
+                if (!doneZy &&
+                    ThreadZyMemory->Out.compare_exchange_weak(expectedZy, nullptr, std::memory_order_relaxed) == false) {
+                    continue;
+                }
+
+                doneZy = true;
+                break;
+            }
+
+            std::atomic_thread_fence(std::memory_order_release);
+
+            temp3 = *ok->zx_sq - *ok->zy_sq;
+            *ok->zx = temp3 + *ok->cx;
+            *ok->zx2 = *ok->zx * 2;
+
+            // Give result back.
+            CheckFinishCriteria;
+        }
+    };
+
+    auto Thread2 = [](ThreadPtrs<Thread2Data>* ThreadMemory) {
+        HighPrecision temp1;
+        for (;;) {
+            Thread2Data* expected = ThreadMemory->In.load();
+            Thread2Data* ok = nullptr;
+
+            CheckStartCriteria;
+
+            temp1 = ok->zx2 * ok->zy;
+            ok->zy = temp1 + *ok->cy;
+            *ok->zy2 = ok->zy * 2;
+
+            // Give result back.
+            CheckFinishCriteria;
+        }
+    };
+
+    auto* threadZxdata = (ThreadZxData*)_aligned_malloc(sizeof(ThreadZxData), 64);
+    auto* threadZydata = (ThreadZyData*)_aligned_malloc(sizeof(ThreadZyData), 64);
+    auto* thread1data = (Thread1Data*)_aligned_malloc(sizeof(Thread1Data), 64);
+    auto* thread2data = (Thread2Data*)_aligned_malloc(sizeof(Thread2Data), 64);
+
+    new (threadZxdata) (ThreadZxData){};
+    new (threadZydata) (ThreadZyData){};
+    new (thread1data) (Thread1Data){};
+    new (thread2data) (Thread2Data){};
+
+    threadZxdata->zx_sq = &zx_sq;
+
+    threadZydata->zy_sq = &zy_sq;
+
+    thread1data->zx2 = &zx2;
+    thread1data->zy2 = &zy2;
+    thread1data->zx_sq = &zx_sq;
+    thread1data->zy_sq = &zy_sq;
+    thread1data->zx = &zx;
+    thread1data->cx = &cx;
+
+    thread2data->zy2 = &zy2;
+    thread2data->cy = &cy;
+
+    std::unique_ptr<std::thread> tZx(new std::thread(ThreadSqZx, ThreadZxMemory));
+    std::unique_ptr<std::thread> tZy(new std::thread(ThreadSqZy, ThreadZyMemory));
+    std::unique_ptr<std::thread> t1(new std::thread(Thread1, Thread1Memory, threadZxdata, threadZydata, ThreadZxMemory, ThreadZyMemory));
+    std::unique_ptr<std::thread> t2(new std::thread(Thread2, Thread2Memory));
+
+    SetThreadAffinityMask(GetCurrentThread(), 0x1 << 0);
+    SetThreadAffinityMask(tZx->native_handle(), 0x1 << 2);
+    SetThreadAffinityMask(tZy->native_handle(), 0x1 << 4);
+    SetThreadAffinityMask(t1->native_handle(), 0x1 << 6);
+    SetThreadAffinityMask(t2->native_handle(), 0x1 << 8);
+
+    ThreadZxData* expectedZx = nullptr;
+    ThreadZyData* expectedZy = nullptr;
+    Thread1Data* expected1 = nullptr;
+    Thread2Data* expected2 = nullptr;
+
+    bool done1 = false;
+    bool done2 = false;
+
     zx = cx;
     zy = cy;
+    zx2 = zx * 2;
+    zy2 = zy * 2;
+
     for (i = 0; i < m_NumIterations; i++)
     {
-        zx2 = zx * 2;
-        zy2 = zy * 2;
+        // Start Thread 2: zy = 2 * zx * zy + cy;
+        thread2data->zx2 = zx2;
+        thread2data->zy = zy;
+
+        double double_zy2 = (double)zy2;
+
+        expected2 = nullptr;
+        Thread2Memory->In.compare_exchange_strong(
+            expected2,
+            thread2data,
+            std::memory_order_release);
+
+        // Start Zx squaring thread
+        threadZxdata->zx = zx;
+
+        expectedZx = nullptr;
+        ThreadZxMemory->In.compare_exchange_strong(
+            expectedZx,
+            threadZxdata,
+            std::memory_order_release);
+
+        // Start Zy squaring thread
+        threadZydata->zy = zy;
+
+        expectedZy = nullptr;
+        ThreadZyMemory->In.compare_exchange_strong(
+            expectedZy,
+            threadZydata,
+            std::memory_order_release);
 
         double double_zx = (double)zx;
         double double_zx2 = (double)zx2;
         double double_zy = (double)zy;
-        double double_zy2 = (double)zy2;
+
+        // Start Thread 1: zx = zx * zx - zy * zy + cx;
+        thread1data->zy = zy;
+
+        expected1 = nullptr;
+        Thread1Memory->In.compare_exchange_strong(
+            expected1,
+            thread1data,
+            std::memory_order_release);
 
         results->x.push_back(double_zx);
         results->x2.push_back(double_zx2);
@@ -1809,9 +2163,9 @@ void Fractal::AddPerturbationReferencePoint() {
         results->y2.push_back(double_zy2);
 
         double norm = (double_zx * double_zx + double_zy * double_zy) * glitch;
-        bool underflow = (fabs(zx) <= small_float ||
-                          fabs(zy) <= small_float ||
-                          norm <= small_float);
+        bool underflow = (fabs(double_zx) <= small_float ||
+            fabs(double_zy) <= small_float ||
+            norm <= small_float);
         results->bad.push_back(underflow);
         if (cur_bad_count_underflow != underflow) {
             results->bad_counts.push_back(1);
@@ -1821,13 +2175,42 @@ void Fractal::AddPerturbationReferencePoint() {
             results->bad_counts.back()++;
         }
 
-        // x^2+2*I*x*y-y^2
-        zx = zx * zx - zy * zy + cx;
-        zy = zx2 * zy + cy;
-
         const double tempZX = double_zx + (double)cx;
         const double tempZY = double_zy + (double)cy;
         const double zn_size = tempZX * tempZX + tempZY * tempZY;
+
+        done1 = false;
+        done2 = false;
+
+        for (;;) {
+            expected1 = thread1data;
+
+            if (!done1 &&
+                Thread1Memory->Out.compare_exchange_weak(expected1,
+                                                         nullptr,
+                                                         std::memory_order_relaxed) == false) {
+                continue;
+            }
+
+            done1 = true;
+
+            expected2 = thread2data;
+
+            if (!done2 &&
+                Thread2Memory->Out.compare_exchange_weak(expected2,
+                                                         nullptr,
+                                                         std::memory_order_relaxed) == false) {
+                continue;
+            }
+
+            done2 = true;
+            break;
+        }
+
+        std::atomic_thread_fence(std::memory_order_release);
+
+        zy = std::move(thread2data->zy);
+
         if (zn_size > 256) {
             break;
         }
@@ -1835,6 +2218,38 @@ void Fractal::AddPerturbationReferencePoint() {
 
     results->bad.push_back(false);
     assert(results->bad.size() == results->x.size());
+
+    expectedZx = nullptr;
+    ThreadZxMemory->In.compare_exchange_strong(expectedZx, (ThreadZxData*)0x1, std::memory_order_release);
+
+    expectedZy = nullptr;
+    ThreadZyMemory->In.compare_exchange_strong(expectedZy, (ThreadZyData*)0x1, std::memory_order_release);
+
+    expected1 = nullptr;
+    Thread1Memory->In.compare_exchange_strong(expected1, (Thread1Data*)0x1, std::memory_order_release);
+
+    expected2 = nullptr;
+    Thread2Memory->In.compare_exchange_strong(expected2, (Thread2Data*)0x1, std::memory_order_release);
+
+    tZx->join();
+    tZy->join();
+    t1->join();
+    t2->join();
+
+    _aligned_free(ThreadZxMemory);
+    _aligned_free(ThreadZyMemory);
+    _aligned_free(Thread1Memory);
+    _aligned_free(Thread2Memory);
+
+    threadZxdata->~ThreadZxData();
+    threadZydata->~ThreadZyData();
+    thread1data->~Thread1Data();
+    thread2data->~Thread2Data();
+
+    _aligned_free(threadZxdata);
+    _aligned_free(threadZydata);
+    _aligned_free(thread1data);
+    _aligned_free(thread2data);
 }
 
 bool Fractal::RequiresReferencePoints() const {
@@ -2341,7 +2756,7 @@ HighPrecision Fractal::BenchmarkReferencePoint(size_t numIters) {
 
     AddPerturbationReferencePoint();
 
-    auto result = bm.StopTimer();
+    auto result = bm.StopTimerNoIters();
     bm.BenchmarkFinish();
     return result;
 }
@@ -2392,6 +2807,19 @@ HighPrecision Fractal::BenchmarkData::StopTimer() {
     __int64 startTime64 = startTime.QuadPart;
     __int64 endTime64 = endTime.QuadPart;
     __int64 totalIters = fractal.FindTotalItersUsed();
+
+    __int64 deltaTime = endTime64 - startTime64;
+    HighPrecision timeTaken = (HighPrecision)((HighPrecision)deltaTime / (HighPrecision)freq64);
+    return (HighPrecision)(totalIters / timeTaken) / 1000000.0;
+}
+
+HighPrecision Fractal::BenchmarkData::StopTimerNoIters() {
+    QueryPerformanceCounter(&endTime);
+
+    __int64 freq64 = freq.QuadPart;
+    __int64 startTime64 = startTime.QuadPart;
+    __int64 endTime64 = endTime.QuadPart;
+    __int64 totalIters = fractal.GetNumIterations();
 
     __int64 deltaTime = endTime64 - startTime64;
     HighPrecision timeTaken = (HighPrecision)((HighPrecision)deltaTime / (HighPrecision)freq64);

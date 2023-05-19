@@ -172,6 +172,7 @@ private:
         void BenchmarkSetup(size_t numIters);
         bool StartTimer();
         HighPrecision StopTimer();
+        HighPrecision StopTimerNoIters();
         void BenchmarkFinish();
     };
 

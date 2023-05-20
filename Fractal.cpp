@@ -1,10 +1,3 @@
-// Search for TODO
-// Make the screen saver render high-res versions of screens that have
-//      been saved to a queue.  High res images made at idle time
-// Make this code run in a separate thread so it doesn't interfere with the windows
-//      message pump.  Make it use callback functions so whoever is using this code
-//      can see the progress, be notified when it is done, whatever.
-
 #include "stdafx.h"
 #include <windows.h>
 #include <stdio.h>
@@ -140,26 +133,21 @@ void Fractal::Initialize(int width,
 
     // Initialize the palette
     auto PaletteGen = [&](size_t PaletteIndex, size_t Depth) {
-        m_PalR[PaletteIndex].resize(MAXITERS);
-        m_PalG[PaletteIndex].resize(MAXITERS);
-        m_PalB[PaletteIndex].resize(MAXITERS);
         int depth_total = (int) (1 << Depth);
 
-        int index = 0;
-        PalTransition(PaletteIndex, 0, MAXITERS, 0, 0, 0);
-        for (;;)
-        {
-            int max_val = 65535;
-            index = PalTransition(PaletteIndex, index, depth_total, max_val, 0, 0);       if (index == -1) break;
-            index = PalTransition(PaletteIndex, index, depth_total, max_val, max_val, 0); if (index == -1) break;
-            index = PalTransition(PaletteIndex, index, depth_total, 0, max_val, 0);       if (index == -1) break;
-            index = PalTransition(PaletteIndex, index, depth_total, 0, max_val, max_val); if (index == -1) break;
-            index = PalTransition(PaletteIndex, index, depth_total, 0, 0, max_val);       if (index == -1) break;
-            index = PalTransition(PaletteIndex, index, depth_total, max_val, 0, max_val); if (index == -1) break;
-            index = PalTransition(PaletteIndex, index, depth_total, 0, 0, 0);             if (index == -1) break;
-        }
+        int max_val = 65535;
+        PalTransition(PaletteIndex, depth_total, max_val, 0, 0);
+        PalTransition(PaletteIndex, depth_total, max_val, max_val, 0);
+        PalTransition(PaletteIndex, depth_total, 0, max_val, 0);
+        PalTransition(PaletteIndex, depth_total, 0, max_val, max_val);
+        PalTransition(PaletteIndex, depth_total, 0, 0, max_val);
+        PalTransition(PaletteIndex, depth_total, max_val, 0, max_val);
+        PalTransition(PaletteIndex, depth_total, 0, 0, 0);
+
+        m_PalIters[PaletteIndex] = (uint32_t) m_PalR[PaletteIndex].size();
     };
 
+    m_PalIters.resize(3);
     std::vector<std::unique_ptr<std::thread>> threads;
     std::unique_ptr<std::thread> t1(new std::thread(PaletteGen, 0, 8));
     std::unique_ptr<std::thread> t2(new std::thread(PaletteGen, 1, 12));
@@ -389,27 +377,14 @@ void Fractal::Uninitialize(void)
 // total_length = number of elements in pal.
 // e.g. unsigned char pal[256];
 //   total_length == 256
-bool Fractal::PalIncrease(std::vector<uint16_t> &pal, int i1, int length, int val1, int val2)
+void Fractal::PalIncrease(std::vector<uint16_t> &pal, int length, int val1, int val2)
 {
-    bool ret = true;
-    if (pal.size() > INT32_MAX) {
-        return false;
-    }
-
-    if (i1 + length >= pal.size())
-    {
-        length = (int)pal.size() - i1;
-        ret = false;
-    }
-
     double delta = (double)((double)(val2 - val1)) / length;
-    for (int i = i1; i < i1 + length; i++)
+    for (int i = 0; i < length; i++)
     {
-        double result = ((double)val1 + (double)delta * (i - i1 + 1));
-        pal[i] = (unsigned short)result;
+        double result = ((double)val1 + (double)delta * (i + 1));
+        pal.push_back((unsigned short)result);
     }
-
-    return ret;
 }
 
 // Transitions to the color specified.
@@ -417,14 +392,14 @@ bool Fractal::PalIncrease(std::vector<uint16_t> &pal, int i1, int length, int va
 // length must be > 0
 // Returns index immediately following the last index we filled here
 // Returns -1 if we are at the end.
-int Fractal::PalTransition(size_t PaletteIndex, int i1, int length, int r, int g, int b)
+void Fractal::PalTransition(size_t PaletteIndex, int length, int r, int g, int b)
 {
     int curR, curB, curG;
-    if (i1 > 0)
+    if (!m_PalR[PaletteIndex].empty())
     {
-        curR = m_PalR[PaletteIndex][i1 - 1];
-        curG = m_PalG[PaletteIndex][i1 - 1];
-        curB = m_PalB[PaletteIndex][i1 - 1];
+        curR = m_PalR[PaletteIndex][m_PalR[PaletteIndex].size() - 1];
+        curG = m_PalG[PaletteIndex][m_PalG[PaletteIndex].size() - 1];
+        curB = m_PalB[PaletteIndex][m_PalB[PaletteIndex].size() - 1];
     }
     else
     {
@@ -434,17 +409,9 @@ int Fractal::PalTransition(size_t PaletteIndex, int i1, int length, int r, int g
     }
 
     // This code will fill out the palettes to the very end.
-    bool shouldcontinue;
-    shouldcontinue = PalIncrease(m_PalR[PaletteIndex], i1, length, curR, r);
-    shouldcontinue &= PalIncrease(m_PalG[PaletteIndex], i1, length, curG, g);
-    shouldcontinue &= PalIncrease(m_PalB[PaletteIndex], i1, length, curB, b);
-
-    if (shouldcontinue)
-    {
-        return i1 + length;
-    }
-
-    return -1;
+    PalIncrease(m_PalR[PaletteIndex], length, curR, r);
+    PalIncrease(m_PalG[PaletteIndex], length, curG, g);
+    PalIncrease(m_PalB[PaletteIndex], length, curB, b);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -1247,9 +1214,11 @@ void Fractal::DrawFractalLine(size_t output_y)
                         numIters = MAXITERS - 1;
                     }
 
-                    acc_r += m_PalR[m_PaletteDepthIndex][numIters] / 65536.0f;
-                    acc_g += m_PalG[m_PaletteDepthIndex][numIters] / 65536.0f;
-                    acc_b += m_PalB[m_PaletteDepthIndex][numIters] / 65536.0f;
+                    auto palIndex = numIters % m_PalIters[m_PaletteDepthIndex];
+
+                    acc_r += m_PalR[m_PaletteDepthIndex][palIndex] / 65536.0f;
+                    acc_g += m_PalG[m_PaletteDepthIndex][palIndex] / 65536.0f;
+                    acc_b += m_PalB[m_PaletteDepthIndex][palIndex] / 65536.0f;
                 }
             }
         }
@@ -1943,13 +1912,14 @@ void Fractal::AddPerturbationReferencePoint() {
         ThreadMemory->In.compare_exchange_weak( \
             expected, \
             nullptr, \
-            std::memory_order_release) == false) { \
+            std::memory_order_relaxed) == false) { \
         continue; \
     } \
  \
     if (expected == (void*)0x1) { \
         break; \
     } \
+    _mm_prefetch((const char*)expected, _MM_HINT_T0); \
     ok = expected; \
 
 #define CheckFinishCriteria \
@@ -1999,9 +1969,6 @@ void Fractal::AddPerturbationReferencePoint() {
                       ThreadPtrs<ThreadZyData>* ThreadZyMemory) {
         HighPrecision temp3;
 
-        bool doneZx = false;
-        bool doneZy = false;
-
         ThreadZxData* expectedZx = nullptr;
         ThreadZyData* expectedZy = nullptr;
 
@@ -2012,31 +1979,36 @@ void Fractal::AddPerturbationReferencePoint() {
             CheckStartCriteria;
 
             // Wait for squaring
-            doneZx = false;
-            doneZy = false;
-
             for (;;) {
                 expectedZx = threadZxdata;
 
-                if (!doneZx &&
-                    ThreadZxMemory->Out.compare_exchange_weak(expectedZx, nullptr, std::memory_order_relaxed) == false) {
+                if (ThreadZxMemory->Out.compare_exchange_weak(expectedZx, nullptr, std::memory_order_relaxed) == false) {
                     continue;
                 }
 
-                doneZx = true;
+                _mm_prefetch((const char*)ok->zx_sq, _MM_HINT_T0);
+                _mm_prefetch((const char*)&ok->zx_sq->backend().data(), _MM_HINT_T0);
+                break;
+            }
 
+            for (;;) {
                 expectedZy = threadZydata;
 
-                if (!doneZy &&
-                    ThreadZyMemory->Out.compare_exchange_weak(expectedZy, nullptr, std::memory_order_relaxed) == false) {
+                if (ThreadZyMemory->Out.compare_exchange_weak(expectedZy, nullptr, std::memory_order_relaxed) == false) {
                     continue;
                 }
 
-                doneZy = true;
+                _mm_prefetch((const char*)ok->zy_sq, _MM_HINT_T0);
+                _mm_prefetch((const char*)&ok->zy_sq->backend().data(), _MM_HINT_T0);
                 break;
             }
 
             std::atomic_thread_fence(std::memory_order_release);
+
+            _mm_prefetch((const char*)ok, _MM_HINT_T0);
+            _mm_prefetch((const char*)ok->cx, _MM_HINT_T0);
+            _mm_prefetch((const char*)&ok->cx->backend().data(), _MM_HINT_T0);
+            _mm_prefetch((const char*)&ok->zx->backend().data(), _MM_HINT_T0);
 
             temp3 = *ok->zx_sq - *ok->zy_sq;
             *ok->zx = temp3 + *ok->cx;
@@ -2054,6 +2026,9 @@ void Fractal::AddPerturbationReferencePoint() {
             Thread2Data* ok = nullptr;
 
             CheckStartCriteria;
+
+            _mm_prefetch((const char*)ok->cy, _MM_HINT_T0);
+            _mm_prefetch((const char*)ok->zy2, _MM_HINT_T0);
 
             temp1 = ok->zx2 * ok->zy;
             ok->zy = temp1 + *ok->cy;
@@ -2093,11 +2068,11 @@ void Fractal::AddPerturbationReferencePoint() {
     std::unique_ptr<std::thread> t1(new std::thread(Thread1, Thread1Memory, threadZxdata, threadZydata, ThreadZxMemory, ThreadZyMemory));
     std::unique_ptr<std::thread> t2(new std::thread(Thread2, Thread2Memory));
 
-    SetThreadAffinityMask(GetCurrentThread(), 0x1 << 0);
-    SetThreadAffinityMask(tZx->native_handle(), 0x1 << 2);
-    SetThreadAffinityMask(tZy->native_handle(), 0x1 << 4);
-    SetThreadAffinityMask(t1->native_handle(), 0x1 << 6);
-    SetThreadAffinityMask(t2->native_handle(), 0x1 << 8);
+    SetThreadAffinityMask(GetCurrentThread(), 0x1 << 1);
+    SetThreadAffinityMask(tZx->native_handle(), 0x1 << 3);
+    SetThreadAffinityMask(tZy->native_handle(), 0x1 << 5);
+    SetThreadAffinityMask(t1->native_handle(), 0x1 << 7);
+    SetThreadAffinityMask(t2->native_handle(), 0x1 << 9);
 
     ThreadZxData* expectedZx = nullptr;
     ThreadZyData* expectedZy = nullptr;
@@ -2112,35 +2087,30 @@ void Fractal::AddPerturbationReferencePoint() {
     zx2 = zx * 2;
     zy2 = zy * 2;
 
+    thread2data->zy = zy;
+
     for (i = 0; i < m_NumIterations; i++)
     {
         // Start Thread 2: zy = 2 * zx * zy + cy;
         thread2data->zx2 = zx2;
-        thread2data->zy = zy;
 
         double double_zy2 = (double)zy2;
 
-        expected2 = nullptr;
-        Thread2Memory->In.compare_exchange_strong(
-            expected2,
+        Thread2Memory->In.store(
             thread2data,
             std::memory_order_release);
 
         // Start Zx squaring thread
         threadZxdata->zx = zx;
 
-        expectedZx = nullptr;
-        ThreadZxMemory->In.compare_exchange_strong(
-            expectedZx,
+        ThreadZxMemory->In.store(
             threadZxdata,
             std::memory_order_release);
 
         // Start Zy squaring thread
         threadZydata->zy = zy;
 
-        expectedZy = nullptr;
-        ThreadZyMemory->In.compare_exchange_strong(
-            expectedZy,
+        ThreadZyMemory->In.store(
             threadZydata,
             std::memory_order_release);
 
@@ -2151,9 +2121,7 @@ void Fractal::AddPerturbationReferencePoint() {
         // Start Thread 1: zx = zx * zx - zy * zy + cx;
         thread1data->zy = zy;
 
-        expected1 = nullptr;
-        Thread1Memory->In.compare_exchange_strong(
-            expected1,
+        Thread1Memory->In.store(
             thread1data,
             std::memory_order_release);
 
@@ -2209,7 +2177,7 @@ void Fractal::AddPerturbationReferencePoint() {
 
         std::atomic_thread_fence(std::memory_order_release);
 
-        zy = std::move(thread2data->zy);
+        zy = thread2data->zy;
 
         if (zn_size > 256) {
             break;

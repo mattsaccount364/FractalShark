@@ -7,15 +7,20 @@
 //   pixels don't suck up so much time (skip chunks on the interior).
 // - Multisample antialiasing, where we look for the "edges" and recalculating
 //   those only?
-// - Add a FP32 GPU for quick rendering at start up.
 // - Put all this in GIT
 // - Can we do a e.g. 256 bit float on GPU e.g. using fixed point integers etc
 //   like fractint
 // - Can we calculate several frames in parallel on GPU
-// - Profile 128-bit implementation on GPU and optimize?
 // - Add text box in UI to import a set of coordinates so we can navigate
 //   somewhere saved.
 //
+// Search for TODO
+// Make the screen saver render high-res versions of screens that have
+//      been saved to a queue.  High res images made at idle time
+// Make this code run in a separate thread so it doesn't interfere with the windows
+//      message pump.  Make it use callback functions so whoever is using this code
+//      can see the progress, be notified when it is done, whatever.
+
 
 #include "FractalSetupData.h"
 #include "FractalNetwork.h"
@@ -25,8 +30,13 @@
 #include "..\WPngImage\WPngImage.hh"
 #include "HighPrecision.h"
 
+
 //const int MAXITERS = 256 * 32; // 256 * 256 * 256 * 32
+
+// TODO: to increase past this, redo MattPerturbResults
+// Look at that class and see that it allocates way too much
 const int MAXITERS = 256 * 256 * 256 * 32;
+//const int MAXITERS = INT32_MAX - 1;
 
 class Fractal
 {
@@ -46,8 +56,8 @@ private:
         HWND hWnd,
         bool UseSensoCursor);
     void Uninitialize(void);
-    bool PalIncrease(std::vector<uint16_t>& pal, int i1, int length, int val1, int val2);
-    int PalTransition(size_t paletteIndex, int i1, int length, int r, int g, int b);
+    void PalIncrease(std::vector<uint16_t>& pal, int length, int val1, int val2);
+    void PalTransition(size_t paletteIndex, int length, int r, int g, int b);
 
 public:
     static unsigned long WINAPI CheckForAbortThread(void *fractal);
@@ -274,6 +284,7 @@ private:
 
     // The palette!
     std::vector<uint16_t> m_PalR[3], m_PalG[3], m_PalB[3];
+    std::vector<uint32_t> m_PalIters;
     int m_PaletteRotate; // Used to shift the palette
     int m_PaletteDepth; // 8, 12, 16
     int m_PaletteDepthIndex; // 0, 1, 2

@@ -61,6 +61,8 @@ int APIENTRY WinMain(HINSTANCE hInstance,
         MessageBox(NULL, L"Cannot initialize WinSock!", L"WSAStartup", MB_OK);
     }
 
+    SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
+
     // Initialize global strings
     MyRegisterClass(hInstance);
 

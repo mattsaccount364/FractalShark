@@ -1818,7 +1818,7 @@ void mandel_1x_float_perturb_scaled(uint32_t* iter_matrix,
 
 __global__
 void mandel_1x_float_perturb_scaled_bla(uint32_t* iter_matrix,
-    MattPerturbSingleResults<float> FloatResults,
+    MattPerturbSingleResults<float> PerturbFloat,
     MattPerturbSingleResults<double> PerturbDouble,
     GPUBLAS<double> doubleBlas,
     int width,
@@ -1859,10 +1859,10 @@ void mandel_1x_float_perturb_scaled_bla(uint32_t* iter_matrix,
     float s = (float)S;
     float twos = 2 * s;
     const float w2threshold = exp(log(LARGE_MANTISSA) / 2);
-    size_t MaxRefIteration = FloatResults.size - 1;
+    size_t MaxRefIteration = PerturbFloat.size - 1;
 
     while (iter < n_iterations) {
-        MattReferenceSingleIter<float> *curFloatIter = &FloatResults.iters[RefIteration];
+        MattReferenceSingleIter<float> *curFloatIter = &PerturbFloat.iters[RefIteration];
         MattReferenceSingleIter<double> *curDoubleIter = &PerturbDouble.iters[RefIteration];
 
         double DeltaSubNX = DeltaSubNWX * S;
@@ -1884,10 +1884,10 @@ void mandel_1x_float_perturb_scaled_bla(uint32_t* iter_matrix,
 
                 b->getValue(DeltaSubNX, DeltaSubNY, DeltaReal, DeltaImaginary);
 
-                //if (RefIteration >= FloatResults.size) {
-                //    iter_matrix[idx] = 255;
-                //    return;
-                //}
+                if (RefIteration >= PerturbFloat.size) { // TODO remove
+                    iter_matrix[idx] = 255;
+                    return;
+                }
 
                 curDoubleIter = &PerturbDouble.iters[RefIteration];
                 const double tempZX = curDoubleIter->x + DeltaSubNX;
@@ -1900,7 +1900,7 @@ void mandel_1x_float_perturb_scaled_bla(uint32_t* iter_matrix,
                 }
 
                 if (normSquared < DeltaNormSquared ||
-                    RefIteration >= FloatResults.size - 1) {
+                    RefIteration >= PerturbFloat.size - 1) {
                     DeltaSubNX = tempZX;
                     DeltaSubNY = tempZY;
                     DeltaNormSquared = normSquared;
@@ -1930,7 +1930,7 @@ void mandel_1x_float_perturb_scaled_bla(uint32_t* iter_matrix,
             break;
         }
 
-        curFloatIter = &FloatResults.iters[RefIteration];
+        curFloatIter = &PerturbFloat.iters[RefIteration];
         curDoubleIter = &PerturbDouble.iters[RefIteration];
 
         if (curFloatIter->bad == false) {
@@ -1949,7 +1949,7 @@ void mandel_1x_float_perturb_scaled_bla(uint32_t* iter_matrix,
                 DeltaSub0DY;
 
             ++RefIteration;
-            curFloatIter = &FloatResults.iters[RefIteration];
+            curFloatIter = &PerturbFloat.iters[RefIteration];
             curDoubleIter = &PerturbDouble.iters[RefIteration];
 
             const float tempZX =
@@ -2038,7 +2038,7 @@ void mandel_1x_float_perturb_scaled_bla(uint32_t* iter_matrix,
                 DeltaImaginary / S;
 
             ++RefIteration;
-            curFloatIter = &FloatResults.iters[RefIteration];
+            curFloatIter = &PerturbFloat.iters[RefIteration];
             curDoubleIter = &PerturbDouble.iters[RefIteration];
 
             const double tempZX =
@@ -2096,7 +2096,7 @@ void mandel_1x_float_perturb_scaled_bla(uint32_t* iter_matrix,
 
 //__global__
 //void mandel_1x_float_perturb_scaled2_bla(uint32_t* iter_matrix,
-//    MattPerturbSingleResults<float> FloatResults,
+//    MattPerturbSingleResults<float> PerturbFloat,
 //    MattPerturbSingleResults<double> PerturbDouble,
 //    ScaledGPUBLAS floatBlas,
 //    int width,
@@ -2137,10 +2137,10 @@ void mandel_1x_float_perturb_scaled_bla(uint32_t* iter_matrix,
 //    float s = (float)S;
 //    float twos = 2 * s;
 //    const float w2threshold = exp(log(LARGE_MANTISSA) / 2);
-//    size_t MaxRefIteration = FloatResults.size - 1;
+//    size_t MaxRefIteration = PerturbFloat.size - 1;
 //
 //    while (iter < n_iterations) {
-//        MattReferenceSingleIter<float>* curFloatIter = &FloatResults.iters[RefIteration];
+//        MattReferenceSingleIter<float>* curFloatIter = &PerturbFloat.iters[RefIteration];
 //        MattReferenceSingleIter<double>* curDoubleIter = &PerturbDouble.iters[RefIteration];
 //
 //        double DeltaSubNX = DeltaSubNWX * S;
@@ -2162,7 +2162,7 @@ void mandel_1x_float_perturb_scaled_bla(uint32_t* iter_matrix,
 //
 //                b->getValue(DeltaSubNX, DeltaSubNY, DeltaReal, DeltaImaginary);
 //
-//                //if (RefIteration >= FloatResults.size) {
+//                //if (RefIteration >= PerturbFloat.size) {
 //                //    iter_matrix[idx] = 255;
 //                //    return;
 //                //}
@@ -2178,7 +2178,7 @@ void mandel_1x_float_perturb_scaled_bla(uint32_t* iter_matrix,
 //                }
 //
 //                if (normSquared < DeltaNormSquared ||
-//                    RefIteration >= FloatResults.size - 1) {
+//                    RefIteration >= PerturbFloat.size - 1) {
 //                    DeltaSubNX = tempZX;
 //                    DeltaSubNY = tempZY;
 //                    DeltaNormSquared = normSquared;
@@ -2208,7 +2208,7 @@ void mandel_1x_float_perturb_scaled_bla(uint32_t* iter_matrix,
 //            break;
 //        }
 //
-//        curFloatIter = &FloatResults.iters[RefIteration];
+//        curFloatIter = &PerturbFloat.iters[RefIteration];
 //        curDoubleIter = &PerturbDouble.iters[RefIteration];
 //
 //        if (curFloatIter->bad == false) {
@@ -2227,7 +2227,7 @@ void mandel_1x_float_perturb_scaled_bla(uint32_t* iter_matrix,
 //                DeltaSub0DY;
 //
 //            ++RefIteration;
-//            curFloatIter = &FloatResults.iters[RefIteration];
+//            curFloatIter = &PerturbFloat.iters[RefIteration];
 //            curDoubleIter = &PerturbDouble.iters[RefIteration];
 //
 //            const float tempZX =
@@ -2318,7 +2318,7 @@ void mandel_1x_float_perturb_scaled_bla(uint32_t* iter_matrix,
 //                DeltaImaginary / S;
 //
 //            ++RefIteration;
-//            curFloatIter = &FloatResults.iters[RefIteration];
+//            curFloatIter = &PerturbFloat.iters[RefIteration];
 //            curDoubleIter = &PerturbDouble.iters[RefIteration];
 //
 //            const double tempZX =

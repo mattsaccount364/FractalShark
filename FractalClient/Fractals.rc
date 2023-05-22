@@ -84,14 +84,15 @@ BEGIN
             MENUITEM "#6 - Scale float with pixellation", IDM_VIEW6
             MENUITEM "#7 - Scaled float limit with circle", IDM_VIEW7
             MENUITEM "#8 - Full BLA test 10^300 or so.", IDM_VIEW8
-            MENUITEM "#9 - Current debug spot",     IDM_VIEW9
+            MENUITEM "#9 - bug: scaled/BLA/32-bit failure", IDM_VIEW9
             MENUITEM "#10 - Deep 64-bit BLA minibrot, expensive", IDM_VIEW10
-            MENUITEM "#11",                         IDM_VIEW11
-            MENUITEM "#12",                         IDM_VIEW12
+            MENUITEM "#11 - bug: 500 million iterations, memory use", IDM_VIEW11
+            MENUITEM "#12 - bug: HDRFloat test",    IDM_VIEW12
             MENUITEM "#13",                         IDM_VIEW13
         END
         MENUITEM "Square &View",                IDM_SQUAREVIEW
         MENUITEM "Center View &Here",           IDM_CENTERVIEW
+        MENUITEM "Zoom out",                    IDM_ZOOMOUT
         MENUITEM SEPARATOR
         MENUITEM "Toggle Re&painting",          IDM_REPAINTING
         MENUITEM "&Toggle Window Size",         IDM_WINDOWED
@@ -122,7 +123,9 @@ BEGIN
         BEGIN
             MENUITEM "Very High Precision CPU",     IDM_ALG_CPU_HIGH
             MENUITEM "1x64 CPU",                    IDM_ALG_CPU_1_64
+            MENUITEM "1x64 CPU - HDR",              IDM_ALG_CPU_1_64_HDR
             MENUITEM "1x64 CPU - Perturbation BLA", IDM_ALG_CPU_1_64_PERTURB_BLA
+            MENUITEM "1x64 CPU - Perturbation BLA HDR", IDM_ALG_CPU_1_64_PERTURB_BLA_HDR
             MENUITEM "2x64 GPU",                    IDM_ALG_GPU_2_64
             MENUITEM "4x64 GPU",                    IDM_ALG_GPU_4_64
             MENUITEM "1x64 GPU",                    IDM_ALG_GPU_1_64
@@ -149,6 +152,9 @@ BEGIN
         BEGIN
             MENUITEM "Clear Perturbation References", IDM_PERTURB_CLEAR
             MENUITEM "Show Perturbation Results",   IDM_PERTURB_RESULTS
+            MENUITEM SEPARATOR
+            MENUITEM "Single Thread",               IDM_PERTURBATION_SINGLETHREAD
+            MENUITEM "Multi Thread",                IDM_PERTURBATION_MULTITHREAD
         END
         MENUITEM SEPARATOR
         POPUP "Palette Color Depth"
@@ -169,7 +175,8 @@ BEGIN
         BEGIN
             MENUITEM "Accurate",                    IDM_BENCHMARK_ACCURATE
             MENUITEM "Quick",                       IDM_BENCHMARK_QUICK
-            MENUITEM "Accurate - Reference Point",  IDM_BENCHMARK_ACCURATE_REFPT
+            MENUITEM "Accurate - Reference Point (Double)", IDM_BENCHMARK_ACCURATE_REFPT_DOUBLE
+            MENUITEM "Accurate - Reference Point (HDRFloat)", IDM_BENCHMARK_ACCURATE_REFPT_HDRFLOAT
             MENUITEM "This Screen",                 IDM_BENCHMARK_THIS
         END
         MENUITEM SEPARATOR

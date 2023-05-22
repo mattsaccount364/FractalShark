@@ -24,7 +24,7 @@ public:
     GPUBLAS& operator=(const GPUBLAS& other) = delete;
     GPUBLAS& operator=(GPUBLAS&& other) = delete;
 
-    __host__ __device__ GPUBLA_TYPE* LookupBackwards(size_t m, T z2);
+    CUDA_CRAP GPUBLA_TYPE* LookupBackwards(size_t m, T z2);
 
 protected:
     size_t* m_ElementsPerLevel;
@@ -58,7 +58,7 @@ public:
     ScaledGPUBLAS& operator=(const ScaledGPUBLAS& other) = delete;
     ScaledGPUBLAS& operator=(ScaledGPUBLAS&& other) = delete;
 
-    __host__ __device__ GPUBLA_TYPE* LookupBackwards(size_t m, float z2, float scale);
+    CUDA_CRAP GPUBLA_TYPE* LookupBackwards(size_t m, float z2, float scale);
 
 private:
     GPUBLA_TYPE** m_ScaledB;

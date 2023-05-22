@@ -17,8 +17,10 @@
 // 'B' = blend
 enum class RenderAlgorithm {
     CpuHigh,
+    CpuHDR,
     Cpu64,
     Cpu64PerturbedBLA,
+    Cpu64PerturbedBLAHDR,
     Gpu1x64,
     Gpu1x64Perturbed,
     Gpu1x64PerturbedBLA,

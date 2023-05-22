@@ -29,7 +29,7 @@
 
 #include "..\WPngImage\WPngImage.hh"
 #include "HighPrecision.h"
-
+#include "HDRFloat.h"
 
 //const int MAXITERS = 256 * 32; // 256 * 256 * 256 * 32
 
@@ -74,6 +74,7 @@ public: // Changing the view
     bool RecenterViewCalc(HighPrecision MinX, HighPrecision MinY, HighPrecision MaxX, HighPrecision MaxY);
     bool RecenterViewScreen(RECT rect);
     bool CenterAtPoint(int x, int y);
+    void ZoomOut(int factor);
     void View(size_t i);
     void SquareCurrentView(void);
     void ApproachTarget(void);
@@ -121,30 +122,57 @@ public: // Drawing functions
     void RotateFractalPalette(int delta);
     void CreateNewFractalPalette(void);
 
+    enum class PerturbationAlg {
+        ST,
+        MT
+    };
+
+    template<class T>
     void DrawPerturbationResults(bool MemoryOnly);
     void ClearPerturbationResults();
+    void SetPerturbationAlg(PerturbationAlg alg) { m_PerturbationAlg = alg; }
 
 private:
     void DrawRotatedFractal(void);
     void DrawFractalLine(size_t row);
 
-    void CalcCpuFractal(bool MemoryOnly);
-
+    template<class T>
     struct Point {
-        double x, y;
+        T x, y;
         size_t iteration;
     };
 
-    std::vector<PerturbationResults> m_PerturbationResults;
+    std::vector<PerturbationResults<double>> m_PerturbationResultsDouble;
+    std::vector<PerturbationResults<HDRFloat>> m_PerturbationResultsHDRFloat;
+
+    PerturbationAlg m_PerturbationAlg;
+
+    template<class T>
+    std::vector<PerturbationResults<T>> &GetPerturbationResults();
+
+    template<class T>
     void AddPerturbationReferencePoint();
+
+    template<class T>
+    void AddPerturbationReferencePointST();
+
+    template<class T>
+    void AddPerturbationReferencePointMT();
     bool RequiresReferencePoints() const;
-    PerturbationResults* GetUsefulPerturbationResults();
+
+    template<class T>
+    PerturbationResults<T>* GetUsefulPerturbationResults();
 
     static void FillCoord(HighPrecision& src, MattCoords& dest);
     void FillGpuCoords(MattCoords& cx2, MattCoords& cy2, MattCoords& dx2, MattCoords& dy2);
     void CalcGpuFractal(bool MemoryOnly);
     void CalcNetworkFractal(bool MemoryOnly);
     void CalcCpuPerturbationFractal(bool MemoryOnly);
+
+    template<class T>
+    void CalcCpuHDR(bool MemoryOnly);
+
+    template<class T>
     void CalcCpuPerturbationFractalBLA(bool MemoryOnly);
     void CalcGpuPerturbationFractalBLA(bool MemoryOnly);
 
@@ -152,6 +180,7 @@ private:
     bool CalcPixelRow_Exp(unsigned int *rowBuffer, size_t row); // Experimental
     bool CalcPixelRow_C(unsigned int *rowBuffer, size_t row);
 
+    template<class T>
     bool IsPerturbationResultUsefulHere(size_t i) const;
 
 private:
@@ -164,6 +193,8 @@ public: // Saving images of the fractal
 
 public: // Benchmarking
     HighPrecision Benchmark(size_t numIters);
+
+    template<class T>
     HighPrecision BenchmarkReferencePoint(size_t numIters);
     HighPrecision BenchmarkThis();
 
@@ -228,8 +259,8 @@ private:
     FractalSetupData m_SetupData;
 
     // Defaults
-    static constexpr size_t DefaultIterations = 256 * 32;
-    //static constexpr size_t DefaultIterations = 256;
+    //static constexpr size_t DefaultIterations = 256 * 32;
+    static constexpr size_t DefaultIterations = 256;
 
     // Handle to the thread which checks to see if we should quit or not
     HANDLE m_CheckForAbortThread;

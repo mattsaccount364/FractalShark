@@ -100,6 +100,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="..\BLAS.cpp" />
     <ClCompile Include="..\Fractal.cpp" />
     <ClCompile Include="..\FractalNetwork.cpp" />
     <ClCompile Include="..\FractalSetupData.cpp" />
@@ -112,9 +113,12 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\BLA.h" />
+    <ClInclude Include="..\BLAS.h" />
     <ClInclude Include="..\Fractal.h" />
     <ClInclude Include="..\FractalNetwork.h" />
     <ClInclude Include="..\FractalSetupData.h" />
+    <ClInclude Include="..\GPUBLAS.h" />
     <ClInclude Include="..\render_gpu.h" />
     <ClInclude Include="..\WPngImage\lodepng.h" />
     <ClInclude Include="..\WPngImage\WPngImage.hh" />

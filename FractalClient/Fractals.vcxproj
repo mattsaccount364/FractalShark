@@ -103,6 +103,7 @@
     <CudaCompile>
       <AdditionalCompilerOptions>
       </AdditionalCompilerOptions>
+      <AdditionalOptions>-std=c++20 -Xcompiler "/std:c++20" %(AdditionalOptions)</AdditionalOptions>
     </CudaCompile>
     <CudaLink>
       <AdditionalDependencies>
@@ -165,6 +166,7 @@
       </AdditionalCompilerOptions>
       <Optimization>O3</Optimization>
       <InterleaveSourceInPTX>true</InterleaveSourceInPTX>
+      <AdditionalOptions>-std=c++20 -Xcompiler "/std:c++20" %(AdditionalOptions)</AdditionalOptions>
     </CudaCompile>
     <CudaLink />
     <CudaLink>
@@ -187,6 +189,7 @@
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Disabled</Optimization>
       <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">EnableFastChecks</BasicRuntimeChecks>
     </ClCompile>
+    <ClCompile Include="..\HDRFloat.cpp" />
     <ClCompile Include="..\WPngImage\lodepng.cpp" />
     <ClCompile Include="..\WPngImage\WPngImage.cc" />
     <ClCompile Include="Fractals.cpp">
@@ -213,6 +216,7 @@
     <ClInclude Include="..\FractalNetwork.h" />
     <ClInclude Include="..\FractalSetupData.h" />
     <ClInclude Include="..\GPUBLAS.h" />
+    <ClInclude Include="..\HDRFloat.h" />
     <ClInclude Include="..\HighPrecision.h" />
     <ClInclude Include="..\PerturbationResults.h" />
     <ClInclude Include="..\QuadDouble\common.cuh" />

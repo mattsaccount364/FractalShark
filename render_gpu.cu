@@ -12,23 +12,54 @@
 #include "GPUBLAS.h"
 
 #include "BLA.h"
+#include "HDRFloat.h"
+
+#ifdef __CUDACC__
+__device__ double twoPowExpData[2048];
+
+#ifdef __CUDA_ARCH__
+__device__ void InitStatics()
+{
+    //LN2 = ::log(2);
+    //LN2_REC = 1.0 / LN2;
+
+    twoPowExp = twoPowExpData;
+
+    static constexpr int MaxDoubleExponent = 1023;
+    static constexpr int MinDoubleExponent = -1022;
+
+    //twoPowExp.resize(MaxDoubleExponent - MinDoubleExponent + 1);
+    for (int i = MinDoubleExponent; i <= MaxDoubleExponent; i++) {
+        double d = scalbn(1.0, i);
+        int index = i - MinDoubleExponent;
+        twoPowExp[index] = d;
+    }
+}
+#endif
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////////////
 // Bilinear approximation
 ////////////////////////////////////////////////////////////////////////////////////////
 
 template<class T>
-__host__ __device__ BLA<T>::BLA(T r2, T RealA, T ImagA, T RealB, T ImagB, int l) {
+CUDA_CRAP BLA<T>::BLA(T r2, T RealA, T ImagA, T RealB, T ImagB, int l) {
     this->Ax = RealA;
     this->Ay = ImagA;
     this->Bx = RealB;
     this->By = ImagB;
     this->r2 = r2;
     this->l = l;
+
+    HdrReduce(this->Ax);
+    HdrReduce(this->Ay);
+    HdrReduce(this->Bx);
+    HdrReduce(this->By);
+    HdrReduce(this->r2);
 }
 
 template<class T>
-__host__ __device__ void BLA<T>::getValue(
+CUDA_CRAP void BLA<T>::getValue(
     T &RealDeltaSubN,
     T &ImagDeltaSubN,
     T RealDeltaSub0,
@@ -40,21 +71,28 @@ __host__ __device__ void BLA<T>::getValue(
     T NewRealValue = Ax * RealDeltaSubN - Ay * ImagDeltaSubN + Bx * RealDeltaSub0 - By * ImagDeltaSub0;
     T NewImagValue = Ax * ImagDeltaSubN + Ay * RealDeltaSubN + Bx * ImagDeltaSub0 + By * RealDeltaSub0;
     RealDeltaSubN = NewRealValue;
+    HdrReduce(RealDeltaSubN);
+
     ImagDeltaSubN = NewImagValue;
+    HdrReduce(ImagDeltaSubN);
 }
 
 template<class T>
-__host__ __device__ T BLA<T>::hypotA() const {
-    return sqrt(Ax * Ax + Ay * Ay);
+CUDA_CRAP T BLA<T>::hypotA() const {
+    auto ret = HdrSqrt<T>(Ax * Ax + Ay * Ay);
+    HdrReduce(ret);
+    return ret;
 }
 
 template<class T>
-__host__ __device__ T BLA<T>::hypotB() const {
-    return sqrt(Bx * Bx + By * By);
+CUDA_CRAP T BLA<T>::hypotB() const {
+    auto ret = HdrSqrt<T>(Bx * Bx + By * By);
+    HdrReduce(ret);
+    return ret;
 }
 
 template<class T>
-__host__ __device__ BLA<T> BLA<T>::getGenericStep(
+CUDA_CRAP BLA<T> BLA<T>::getGenericStep(
     T r2,
     T RealA,
     T ImagA,
@@ -67,106 +105,39 @@ __host__ __device__ BLA<T> BLA<T>::getGenericStep(
 
 // A = y.A * x.A
 template<class T>
-__host__ __device__ void BLA<T>::getNewA(const BLA &x, const BLA &y, T &RealValue, T &ImagValue) {
+CUDA_CRAP void BLA<T>::getNewA(const BLA &x, const BLA &y, T &RealValue, T &ImagValue) {
     RealValue = y.Ax * x.Ax - y.Ay * x.Ay;
+    HdrReduce(RealValue);
+
     ImagValue = y.Ax * x.Ay + y.Ay * x.Ax;
+    HdrReduce(ImagValue);
 }
 
 // B = y.A * x.B + y.B
 template<class T>
-__host__ __device__ void BLA<T>::getNewB(const BLA &x, const BLA &y, T& RealValue, T& ImagValue) {
+CUDA_CRAP void BLA<T>::getNewB(const BLA &x, const BLA &y, T& RealValue, T& ImagValue) {
     T xBx = x.Bx;
     T xBy = x.By;
     RealValue = y.Ax * xBx - y.Ay * xBy + y.Bx;
+    HdrReduce(RealValue);
+
     ImagValue = y.Ax * xBy + y.Ay * xBx + y.By;
+    HdrReduce(ImagValue);
 }
 
 template<class T>
-__host__ __device__ int BLA<T>::getL() const {
+CUDA_CRAP int BLA<T>::getL() const {
     return l;
 }
 
 template<class T>
-__host__ __device__ T BLA<T>::getR2() const {
+CUDA_CRAP T BLA<T>::getR2() const {
     return r2;
 }
 
 template class BLA<float>;
 template class BLA<double>;
-
-//////////////////////////////////////////////////////////////////////////////
-
-template<class T>
-__host__ __device__ ScaledBLA<T>::ScaledBLA(T r2, T RealA, T ImagA, T RealB, T ImagB, int l)
-    : bla(r2, RealA, ImagA, RealB, ImagB, l) {
-}
-
-template<class T>
-ScaledBLA<T>::ScaledBLA(const BLA<double>& other) {
-    double As = other.hypotA();
-    double Bs = other.hypotB();
-    bla.Ax = (float)(other.Ax / As);
-    bla.Ay = (float)(other.Ay / As);
-    bla.Bx = (float)(other.Bx / Bs);
-    bla.By = (float)(other.By / Bs);
-
-    as = (float)As;
-    bs = (float)Bs;
-    r2s = (float)sqrt(other.r2);
-    // TODO
-
-    bla.r2 = r2s;
-    bla.l = other.l;
-}
-
-template<class T>
-ScaledBLA<T>& ScaledBLA<T>::operator=(const ScaledBLA<T>& other) {
-    if (this == &other) {
-        return *this;
-    }
-
-    this->bla = other.bla;
-    this->as = other.as;
-    this->bs = other.bs;
-    this->r2s = other.r2s;
-    // TODO
-
-    return *this;
-}
-
-template<class T>
-__host__ __device__ void ScaledBLA<T>::getValue(
-    T& RealDeltaSubN,
-    T& ImagDeltaSubN,
-    T RealDeltaSub0,
-    T ImagDeltaSub0,
-    T &s
-) {
-
-    //T zxn = Ax * zx - Ay * zy + Bx * cx - By * cy;
-    //T zyn = Ax * zy + Ay * zx + Bx * cy + By * cx;
-    T NewRealValue = bla.Ax * RealDeltaSubN - bla.Ay * ImagDeltaSubN + bla.Bx * RealDeltaSub0 - bla.By * ImagDeltaSub0;
-    T NewImagValue = bla.Ax * ImagDeltaSubN + bla.Ay * RealDeltaSubN + bla.Bx * ImagDeltaSub0 + bla.By * RealDeltaSub0;
-    RealDeltaSubN = NewRealValue;
-    ImagDeltaSubN = NewImagValue;
-    (void)s;
-    // TODO
-}
-
-template<class T>
-__host__ __device__ int ScaledBLA<T>::getL() const {
-    return bla.l;
-}
-
-template<class T>
-__host__ __device__ void ScaledBLA<T>::getR2(T &outR2, T &outR2s) const {
-    outR2 = this->bla.r2;
-    outR2s = this->r2s;
-    // TODO
-}
-
-template class ScaledBLA<float>;
-//template class ScaledBLA<double>;
+template class BLA<HDRFloat>;
 
 ////////////////////////////////////////////////////////////////////////////////////////
 // Bilinear approximation.  GPU copy.
@@ -265,7 +236,7 @@ uint32_t GPUBLAS<T>::CheckValid() const {
 }
 
 template<class T>
-GPUBLAS<T>::GPUBLA_TYPE* GPUBLAS<T>::LookupBackwards(size_t m, T z2) {
+CUDA_CRAP GPUBLAS<T>::GPUBLA_TYPE* GPUBLAS<T>::LookupBackwards(size_t m, T z2) {
 
     if (m == 0) {
         return nullptr;
@@ -312,96 +283,6 @@ GPUBLAS<T>::GPUBLA_TYPE* GPUBLAS<T>::LookupBackwards(size_t m, T z2) {
 template class GPUBLAS<float>;
 template class GPUBLAS<double>;
 
-
-////////////////////////////////////////////////////////////////////////////////////////
-
-ScaledGPUBLAS::ScaledGPUBLAS(const std::vector<std::vector<GPUBLAS<double>::GPUBLA_TYPE>>& B,
-    int32_t LM2,
-    size_t FirstLevel)
-    : GPUBLAS<double>::GPUBLAS(B, LM2, FirstLevel) {
-
-    for (size_t i = 0; i < B.size(); i++) {
-        m_Err = cudaMallocManaged(&m_ScaledB[i],
-            sizeof(GPUBLA_TYPE) * m_ElementsPerLevel[i],
-            cudaMemAttachGlobal);
-
-        if (m_Err != cudaSuccess) {
-            return;
-        }
-
-        for (size_t j = 0; j < m_ElementsPerLevel[i]; j++) {
-            m_ScaledB[i][j] = ScaledBLA<float>(B[i][j]);
-        }
-    }
-}
-
-ScaledGPUBLAS::~ScaledGPUBLAS() {
-    GPUBLAS<double>::~GPUBLAS();
-
-    if (m_Owned) {
-        for (size_t i = 0; i < m_NumLevels; i++) {
-            cudaFree(m_ScaledB[i]);
-            m_ScaledB[i] = nullptr;
-        }
-    }
-}
-
-ScaledGPUBLAS::ScaledGPUBLAS(const ScaledGPUBLAS& other)
-    : GPUBLAS<double>::GPUBLAS(other)
-{
-}
-
-ScaledGPUBLAS::GPUBLA_TYPE* ScaledGPUBLAS::LookupBackwards(size_t m, float z2, float scale) {
-
-    if (m == 0) {
-        return nullptr;
-    }
-
-    GPUBLA_TYPE * tempB = nullptr;
-
-    int32_t k = (int32_t)m - 1;
-
-    if ((k & 1) == 1) { // m - 1 is odd
-        return nullptr;
-    }
-
-    int32_t zeros;
-    uint32_t ix;
-    if (k == 0) {
-        // k >> m_FirstLevel,
-        // This could be done for all K values, but it was shown through statistics that
-        // most effort is done on k == 0
-        float r2, r2s;
-        m_ScaledB[m_FirstLevel][0].getR2(r2, r2s);
-        if (z2 * scale >= r2 * r2s) {
-            return nullptr;
-        }
-        zeros = 32;
-        ix = 0;
-    }
-    else {
-        float v = (float)(k & -k);
-        uint32_t bits = *reinterpret_cast<uint32_t*>(&v);
-        zeros = (bits >> 23) - 0x7f;
-        ix = k >> zeros;
-    }
-
-    int32_t startLevel = ((zeros <= m_LM2) ? zeros : m_LM2);
-    for (int32_t level = startLevel; level >= m_FirstLevel; --level) {
-        float r2, r2s;
-        tempB = &m_ScaledB[level][ix];
-        tempB->getR2(r2, r2s);
-        if (z2 * scale < r2 * r2s) {
-            return tempB;
-        }
-        ix = ix << 1;
-    }
-    return nullptr;
-}
-
-
-//template class ScaledGPUBLAS<float>;
-//template class ScaledGPUBLAS<double>;
 
 ////////////////////////////////////////////////////////////////////////////////////////
 // Perturbation results
@@ -1000,10 +881,10 @@ void mandel_1x_double_perturb_bla(uint32_t* iter_matrix,
 
             b->getValue(DeltaSubNX, DeltaSubNY, DeltaSub0X, DeltaSub0Y);
 
-            //if (RefIteration >= PerturbDouble.size) {
-            //    iter_matrix[idx] = 255;
-            //    return;
-            //}
+            if (RefIteration >= PerturbDouble.size - 1) { // TODO remove?
+                iter_matrix[idx] = 255;
+                return;
+            }
 
             const double tempZX = PerturbDouble.iters[RefIteration].x + DeltaSubNX;
             const double tempZY = PerturbDouble.iters[RefIteration].y + DeltaSubNY;
@@ -1884,7 +1765,7 @@ void mandel_1x_float_perturb_scaled_bla(uint32_t* iter_matrix,
 
                 b->getValue(DeltaSubNX, DeltaSubNY, DeltaReal, DeltaImaginary);
 
-                if (RefIteration >= PerturbFloat.size) { // TODO remove
+                if (RefIteration >= PerturbFloat.size - 1) { // TODO remove?
                     iter_matrix[idx] = 255;
                     return;
                 }

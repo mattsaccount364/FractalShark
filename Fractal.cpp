@@ -116,14 +116,17 @@ void Fractal::Initialize(int width,
         m_CheckForAbortThread = NULL;
     }
 
+    InitStatics();
+
     // Setup member variables with initial values:
-    SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedScaledBLA);
+    SetRenderAlgorithm(RenderAlgorithm::Cpu64PerturbedBLAHDR);
     //SetRenderAlgorithm(RenderAlgorithm::Cpu64PerturbedBLA);
     SetIterationPrecision(1);
+    SetPerturbationAlg(PerturbationAlg::MT);
 
     ResetDimensions(width, height, 1, 1);
-    View(5);
-    //View(0);
+    View(0);
+    //View(12);
 
     m_ChangedWindow = true;
     m_ChangedScrn = true;
@@ -538,6 +541,12 @@ bool Fractal::CenterAtPoint(int x, int y)
         newCenterX + width / 2, newCenterY + height / 2);
 }
 
+void Fractal::ZoomOut(int factor) {
+    HighPrecision deltaX = (m_MaxX - m_MinX) * factor;
+    HighPrecision deltaY = (m_MaxY - m_MinY) * factor;
+    RecenterViewCalc(m_MinX - deltaX, m_MinY - deltaY, m_MaxX + deltaX, m_MaxY + deltaY);
+}
+
 //////////////////////////////////////////////////////////////////////////////
 // Resets the fractal to the standard view.
 // Make sure the view is square on all monitors at all weird aspect ratios.
@@ -549,7 +558,7 @@ void Fractal::View(size_t view)
     HighPrecision maxX;
     HighPrecision maxY;
 
-    m_PerturbationResults.clear();
+    ClearPerturbationResults();
 
     switch (view) {
     case 1:
@@ -651,6 +660,14 @@ void Fractal::View(size_t view)
         break;
 
     case 12:
+        // HDRFloat CPU test
+        minX = HighPrecision{ "-1.6225530545095544093937832714855193369815166490586925235310445917701797841889161669038013631146956964774653525559715287987054482808403025247854075285105603829572963367477346607819868788618326566279105639888311967675411749870701252538283718679795588893001251269163560063451488987336953970733326914945285910877379464976953385059247922487170112943832761438391871968914548" };
+        minY = HighPrecision{ "0.0011175672388967686119452877936503680420978056943097961919136836510176758423423873900601464203086708258487998008460089102965219489403398329852555703126748646226118355222840756725438548472552647319463823283712140095265616631749416089099252161796207475587913942656282747486752953460348999988151734425124093442381177596521873490362617077314990301298558986671583574250454538" };
+        maxX = HighPrecision{ "-1.62255305450955440939378327148551933698151664905869252353104459177017978418891616690380136311469569647746535255597152879870544828084030252478540752851056038295729633674773466078198687886183265662791056398883119676754117498707012525382837186797955888930012512691635600634514889873369539707333269149452859108087251025283991865419457924389903631426411952366358253241989" };
+        maxY = HighPrecision{ "0.0011175672388967686119452877936503680420978056943097961919136836510176758423423873900601464203086708258487998008460089102965219489403398329852555703126748646226118355222840756725438548472552647319463823283712140095265616631749416089099252161796207475587913942656282747486752953460348999988151734425124093470692997577929848324884901556784708739775248931362167342742847038" };
+        SetNumIterations(4718592);
+        break;
+
     case 13:
     case 0:
     default:
@@ -1026,11 +1043,19 @@ void Fractal::CalcFractal(bool MemoryOnly)
     // Draw the local fractal.
     switch(GetRenderAlgorithm()) {
     case RenderAlgorithm::CpuHigh:
+        CalcCpuHDR<HighPrecision>(MemoryOnly);
+        break;
     case RenderAlgorithm::Cpu64:
-        CalcCpuFractal(MemoryOnly);
+        CalcCpuHDR<double>(MemoryOnly);
+        break;
+    case RenderAlgorithm::CpuHDR:
+        CalcCpuHDR<HDRFloat>(MemoryOnly);
         break;
     case RenderAlgorithm::Cpu64PerturbedBLA:
-        CalcCpuPerturbationFractalBLA(MemoryOnly);
+        CalcCpuPerturbationFractalBLA<double>(MemoryOnly);
+        break;
+    case RenderAlgorithm::Cpu64PerturbedBLAHDR:
+        CalcCpuPerturbationFractalBLA<HDRFloat>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu1x64:
     case RenderAlgorithm::Gpu2x64:
@@ -1132,6 +1157,7 @@ void Fractal::CreateNewFractalPalette(void)
     //DrawFractal(false);
 }
 
+template<class T>
 void Fractal::DrawPerturbationResults(bool LeaveScreen) {
     if (!LeaveScreen) {
         glClear(GL_COLOR_BUFFER_BIT);
@@ -1139,13 +1165,14 @@ void Fractal::DrawPerturbationResults(bool LeaveScreen) {
 
     glBegin(GL_POINTS);
 
-    for (size_t i = 0; i < m_PerturbationResults.size(); i++)
+    auto& results = GetPerturbationResults<T>();
+    for (size_t i = 0; i < results.size(); i++)
     {
-        if (IsPerturbationResultUsefulHere(i)) {
+        if (IsPerturbationResultUsefulHere<T>(i)) {
             glColor3f((GLfloat)255, (GLfloat)255, (GLfloat)255);
 
             // Coordinates are weird in OGL mode.
-            glVertex2i((GLint)m_PerturbationResults[i].scrnX, (GLint)m_PerturbationResults[i].scrnY);
+            glVertex2i((GLint)results[i].scrnX, (GLint)results[i].scrnY);
         }
     }
 
@@ -1154,7 +1181,8 @@ void Fractal::DrawPerturbationResults(bool LeaveScreen) {
 }
 
 void Fractal::ClearPerturbationResults() {
-    m_PerturbationResults.clear();
+    m_PerturbationResultsDouble.clear();
+    m_PerturbationResultsHDRFloat.clear();
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -1177,7 +1205,8 @@ void Fractal::DrawFractal(bool MemoryOnly)
         DrawFractalLine(py);
     }
 
-    DrawPerturbationResults(true);
+    DrawPerturbationResults<double>(true);
+    DrawPerturbationResults<HDRFloat>(true);
 }
 
 void Fractal::DrawFractalLine(size_t output_y)
@@ -1207,8 +1236,8 @@ void Fractal::DrawFractalLine(size_t output_y)
                 input_y++) {
 
                 numIters = m_CurIters.m_ItersArray[input_y][input_x];
-                if (numIters < m_NumIterations)
-                {
+                //if (numIters < m_NumIterations)
+                //{
                     numIters += m_PaletteRotate;
                     if (numIters >= MAXITERS) {
                         numIters = MAXITERS - 1;
@@ -1219,7 +1248,7 @@ void Fractal::DrawFractalLine(size_t output_y)
                     acc_r += m_PalR[m_PaletteDepthIndex][palIndex] / 65536.0f;
                     acc_g += m_PalG[m_PaletteDepthIndex][palIndex] / 65536.0f;
                     acc_b += m_PalB[m_PaletteDepthIndex][palIndex] / 65536.0f;
-                }
+                //}
             }
         }
 
@@ -1308,87 +1337,6 @@ void Fractal::CalcGpuFractal(bool MemoryOnly)
 }
 
 //////////////////////////////////////////////////////////////////////////////
-// This function recalculates the local component of the fractal.  That is,
-// it draws only those parts of the fractal delegated to the client computer.
-// It does not calculate the parts of the fractal delegated to the remote computer.
-// If we are not using network rendering, this function calculates and draws the
-// entire fractal.
-//////////////////////////////////////////////////////////////////////////////
-void Fractal::CalcCpuFractal(bool MemoryOnly)
-{
-    size_t py;
-    //uint32_t prevMaxIters = FindMaxItersUsed ();
-
-    OutputMessage(L"\r\n");
-
-    std::vector<std::unique_ptr<std::thread>> threads;
-    std::vector<size_t> threads_py;
-    for (int i = 0; i < 10; i++)
-    {
-        py = i;
-        while (py < m_ScrnHeight)
-        { // Calculate only those pixels assigned to us
-            //if (m_ProcessPixelRow[py] == m_NetworkRender)
-            {
-                if (m_RenderAlgorithm == RenderAlgorithm::CpuHigh)
-                {
-                    std::unique_ptr<std::thread> t1(new std::thread(&Fractal::CalcPixelRow_Multi, this, (unsigned int *)m_CurIters.m_ItersArray[py], py));
-                    threads.push_back(std::move(t1));
-                    threads_py.push_back(py);
-                }
-                else if (m_RenderAlgorithm == RenderAlgorithm::Cpu64)
-                {
-                    std::unique_ptr<std::thread> t1(new std::thread(&Fractal::CalcPixelRow_C, this, (unsigned int*)m_CurIters.m_ItersArray[py], py));
-                    threads.push_back(std::move(t1));
-                    threads_py.push_back(py);
-                }
-
-                // Display progress if we're doing this locally or as a client.
-                //if (m_NetworkRender == 'a' || m_NetworkRender == '0')
-                //{ if (MemoryOnly == false)
-                //  { DrawFractalLine (py); }
-                //}
-            }
-            py += 10;
-
-            // todo check this status indicator
-            //if (m_NetworkRender >= 'b')
-            //{
-            //    displayProgress++;
-            //    if (displayProgress == 10)
-            //    {
-            //        OutputMessage(L"%03.0f\b\b\b", (double)i * 10.0 + (double)py / m_ScrnHeight * 10.0);
-            //        displayProgress = 0;
-            //    }
-            //}
-
-            //if (m_StopCalculating == true)
-            //{
-            //    if (m_NetworkRender == 'a')
-            //    {
-            //        ClientSendQuitMessages();
-            //    }
-            //    break;
-            //}
-
-            if (threads.size() > 128) {
-                threads[0].get()->join();
-                threads.erase(threads.begin());
-
-                //DrawFractalLine(threads_py[0]);
-                threads_py.erase(threads_py.begin());
-            }
-        }
-    }
-
-    for (size_t i = 0; i < threads.size(); i++) {
-        threads[i].get()->join();
-    }
-
-    DrawFractal(MemoryOnly);
-}
-
-//////////////////////////////////////////////////////////////////////////////
 // Draw the network part of the fractal.  This function is very similar
 // to the previous one, except it reads data in from the network instead
 // of calculating it locally.  The network can be much faster.
@@ -1443,7 +1391,7 @@ void Fractal::CalcNetworkFractal(bool MemoryOnly)
 }
 
 void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
-    PerturbationResults* results = GetUsefulPerturbationResults();
+    auto* results = GetUsefulPerturbationResults<double>();
 
     double dx = Convert<HighPrecision, double>((m_MaxX - m_MinX) / m_ScrnWidth);
     double dy = Convert<HighPrecision, double>((m_MaxY - m_MinY) / m_ScrnHeight);
@@ -1582,17 +1530,102 @@ void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
     DrawFractal(MemoryOnly);
 }
 
+//////////////////////////////////////////////////////////////////////////////
+// old comment
+// This function recalculates the local component of the fractal.  That is,
+// it draws only those parts of the fractal delegated to the client computer.
+// It does not calculate the parts of the fractal delegated to the remote computer.
+// If we are not using network rendering, this function calculates and draws the
+// entire fractal.
+//////////////////////////////////////////////////////////////////////////////
+template<class T>
+void Fractal::CalcCpuHDR(bool MemoryOnly) {
+    const T dx = T((m_MaxX - m_MinX) / m_ScrnWidth);
+    const T dy = T((m_MaxY - m_MinY) / m_ScrnHeight);
+
+    static constexpr size_t num_threads = 32;
+    std::deque<std::atomic_uint64_t> atomics;
+    std::vector<std::unique_ptr<std::thread>> threads;
+    atomics.resize(m_ScrnHeight);
+    threads.reserve(num_threads);
+
+    const T Four{ 4 };
+    const T Two{ 2 };
+
+    auto one_thread = [&]() {
+        for (size_t y = 0; y < m_ScrnHeight; y++) {
+            if (atomics[y] != 0) {
+                continue;
+            }
+
+            uint64_t expected = 0;
+            if (atomics[y].compare_exchange_strong(expected, 1llu) == false) {
+                continue;
+            }
+
+            T cx = T{ m_MinX };
+            T cy = T{ m_MaxY - dy * (double)y };
+            T zx, zy;
+            T zx2, zy2;
+            T sum;
+            unsigned int i;
+
+            for (size_t x = 0; x < m_ScrnWidth; x++)
+            {
+                // (zx + zy)^2 = zx^2 + 2*zx*zy + zy^2
+                // (zx + zy)^3 = zx^3 + 3*zx^2*zy + 3*zx*zy^2 + zy
+                zx = cx;
+                zy = cy;
+                for (i = 0; i < m_NumIterations; i++)
+                { // x^2+2*I*x*y-y^2
+                    zx2 = zx * zx;
+                    zy2 = zy * zy;
+                    sum = zx2 + zy2;
+                    HdrReduce(sum);
+                    if (sum > Four) break;
+
+                    zy = Two * zx * zy;
+                    zx = zx2 - zy2;
+
+                    zx += cx;
+                    zy += cy;
+
+                    HdrReduce(zx);
+                    HdrReduce(zy);
+                }
+                cx += dx;
+                //HdrReduce(cx);
+
+                m_CurIters.m_ItersArray[y][x] = (uint32_t)i;
+            }
+        }
+    };
+
+    for (size_t cur_thread = 0; cur_thread < num_threads; cur_thread++) {
+        threads.push_back(std::make_unique<std::thread>(one_thread));
+    }
+
+    for (size_t cur_thread = 0; cur_thread < threads.size(); cur_thread++) {
+        threads[cur_thread]->join();
+    }
+
+    DrawFractal(MemoryOnly);
+}
+
+template<class T>
 void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
-    PerturbationResults* results = GetUsefulPerturbationResults();
+    auto* results = GetUsefulPerturbationResults<T>();
 
-    BLAS<double> blas(*results);
-    blas.Init(results->x.size(), Convert<HighPrecision, double>(results->maxRadius));
+    BLAS<T> blas(*results);
+    blas.Init(results->x.size(), T{ results->maxRadius });
 
-    double dx = Convert<HighPrecision, double>((m_MaxX - m_MinX) / m_ScrnWidth);
-    double dy = Convert<HighPrecision, double>((m_MaxY - m_MinY) / m_ScrnHeight);
+    T dx = T((m_MaxX - m_MinX) / m_ScrnWidth);
+    T dy = T((m_MaxY - m_MinY) / m_ScrnHeight);
 
-    double centerX = (double)(results->hiX - m_MinX);
-    double centerY = (double)(results->hiY - m_MaxY);
+    T centerX = (T)(results->hiX - m_MinX);
+    HdrReduce(centerX);
+    T centerY = (T)(results->hiY - m_MaxY);
+    HdrReduce(centerY);
 
     static constexpr size_t num_threads = 32;
     std::deque<std::atomic_uint64_t> atomics;
@@ -1615,34 +1648,56 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
             {
                 size_t iter = 0;
                 size_t RefIteration = 0;
-                double deltaReal = dx * x - centerX;
-                double deltaImaginary = -dy * y - centerY;
+                T deltaReal = dx * (double)x;
+                HdrReduce(deltaReal);
+                deltaReal -= centerX;
 
-                double DeltaSub0X = deltaReal;
-                double DeltaSub0Y = deltaImaginary;
-                double DeltaSubNX = 0;
-                double DeltaSubNY = 0;
-                double DeltaNormSquared = 0;
+                T deltaImaginary = -dy * (double)y;
+                HdrReduce(deltaImaginary);
+                deltaImaginary -= centerY;
+
+                HdrReduce(deltaReal);
+                HdrReduce(deltaImaginary);
+
+                T DeltaSub0X = deltaReal;
+                T DeltaSub0Y = deltaImaginary;
+                T DeltaSubNX = 0;
+                T DeltaSubNY = 0;
+                T DeltaNormSquared = 0;
 
                 while (iter < m_NumIterations) {
-                    BLA<double> *b = nullptr;
+                    BLA<T> *b = nullptr;
                     while ((b = blas.LookupBackwards(RefIteration, DeltaNormSquared)) != nullptr) {
                         int l = b->getL();
 
-                        if (iter + l >= m_NumIterations) {
+                        if (iter + l >= m_NumIterations ||
+                            RefIteration + l >= results->x.size() - 1) { // TODO this second RefIteration + l check bugs me
                             break;
                         }
 
                         iter += l;
 
-                        b->getValue(DeltaSubNX, DeltaSubNY, DeltaSub0X, DeltaSub0Y);
+                        //double t1 = (double)DeltaSubNX;
+                        //double t2 = (double)DeltaSubNY;
+                        //b->getValue(t1, t2, (double)DeltaSub0X, (double)DeltaSub0Y);
+                        //DeltaSubNX = t1;
+                        //DeltaSubNY = t2;
+
+                        b->getValue(DeltaSubNX, DeltaSubNY, (double)DeltaSub0X, (double)DeltaSub0Y);
 
                         RefIteration += l;
 
-                        const double tempZX = results->x[RefIteration] + DeltaSubNX;
-                        const double tempZY = results->y[RefIteration] + DeltaSubNY;
-                        const double normSquared = tempZX * tempZX + tempZY * tempZY;
+                        T tempZX = results->x[RefIteration] + DeltaSubNX;
+                        HdrReduce(tempZX);
+
+                        T tempZY = results->y[RefIteration] + DeltaSubNY;
+                        HdrReduce(tempZY);
+
+                        T normSquared = tempZX * tempZX + tempZY * tempZY;
+                        HdrReduce(normSquared);
+
                         DeltaNormSquared = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
+                        HdrReduce(DeltaNormSquared);
 
                         if (normSquared > 256) {
                             break;
@@ -1661,24 +1716,59 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                         break;
                     }
 
-                    const double DeltaSubNXOrig = DeltaSubNX;
-                    const double DeltaSubNYOrig = DeltaSubNY;
+                    const T DeltaSubNXOrig = DeltaSubNX;
+                    const T DeltaSubNYOrig = DeltaSubNY;
 
-                    DeltaSubNX = DeltaSubNXOrig * (results->x2[RefIteration] + DeltaSubNXOrig) -
-                        DeltaSubNYOrig * (results->y2[RefIteration] + DeltaSubNYOrig) +
-                        DeltaSub0X;
-                    DeltaSubNY = DeltaSubNXOrig * (results->y2[RefIteration] + DeltaSubNYOrig) +
-                        DeltaSubNYOrig * (results->x2[RefIteration] + DeltaSubNXOrig) +
-                        DeltaSub0Y;
+                    T Term1 = results->x2[RefIteration] + DeltaSubNXOrig;
+                    //HdrReduce(Term1);
+                    T Term2 = results->y2[RefIteration] + DeltaSubNYOrig;
+                    //HdrReduce(Term2);
+                    T TermB1 = DeltaSubNXOrig * Term1;
+                    //HdrReduce(TermB1);
+                    T TermB2 = DeltaSubNYOrig * Term2;
+                    //HdrReduce(TermB2);
+
+                    DeltaSubNX = TermB1 - TermB2;
+                    //HdrReduce(DeltaSubNX);
+                    DeltaSubNX += DeltaSub0X;
+                    HdrReduce(DeltaSubNX);
+
+                    T Term3 = results->y2[RefIteration] + DeltaSubNYOrig;
+                    //HdrReduce(Term3);
+                    T Term4 = results->x2[RefIteration] + DeltaSubNXOrig;
+                    //HdrReduce(Term4);
+                    T TermC1 = DeltaSubNXOrig * Term3;
+                    //HdrReduce(TermC1);
+                    T TermC2 = DeltaSubNYOrig* Term4;
+                    //HdrReduce(TermC2);
+                    DeltaSubNY = TermC1 + TermC2;
+                    //HdrReduce(DeltaSubNY);
+                    DeltaSubNY += DeltaSub0Y;
+                    HdrReduce(DeltaSubNY);
 
                     ++RefIteration;
 
-                    const double tempZX = results->x[RefIteration] + DeltaSubNX;
-                    const double tempZY = results->y[RefIteration] + DeltaSubNY;
-                    const double normSquared = tempZX * tempZX + tempZY * tempZY;
-                    DeltaNormSquared = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
+                    T tempZX = results->x[RefIteration] + DeltaSubNX;
+                    //HdrReduce(tempZX);
 
-                    if (normSquared > 256) {
+                    T tempZY = results->y[RefIteration] + DeltaSubNY;
+                    //HdrReduce(tempZY);
+
+                    T nT1 = tempZX * tempZX;
+                    //HdrReduce(nT1);
+                    T nT2 = tempZY * tempZY;
+                    //HdrReduce(nT2);
+                    T normSquared = nT1 + nT2;
+                    HdrReduce(normSquared);
+
+                    T dNT1 = DeltaSubNX * DeltaSubNX;
+                    //HdrReduce(dNT1);
+                    T dNT2 = DeltaSubNY * DeltaSubNY;
+                    //HdrReduce(dNT2);
+                    DeltaNormSquared = dNT1 + dNT2;
+                    HdrReduce(DeltaNormSquared);
+
+                    if (normSquared > T(256)) {
                         break;
                     }
 
@@ -1709,102 +1799,128 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
     DrawFractal(MemoryOnly);
 }
 
-//void Fractal::AddPerturbationReferencePoint() {
-//    m_PerturbationResults.push_back({});
-//    PerturbationResults *results = &m_PerturbationResults[m_PerturbationResults.size() - 1];
-//
-//    double initX = (double)m_ScrnWidth / 2;
-//    double initY = (double)m_ScrnHeight / 2;
-//
-//    Point pt = { initX, initY };
-//
-//    HighPrecision dxHigh = (m_MaxX - m_MinX) / m_ScrnWidth;
-//    HighPrecision dyHigh = (m_MaxY - m_MinY) / m_ScrnHeight;
-//
-//    HighPrecision radiusX = dxHigh * ((HighPrecision)pt.x);
-//    HighPrecision radiusY = dyHigh * ((HighPrecision)pt.y);
-//    HighPrecision cx = m_MinX + radiusX;
-//    HighPrecision cy = m_MaxY - radiusY;
-//
-//    results->hiX = cx;
-//    results->hiY = cy;
-//    results->radiusX = radiusX;
-//    results->radiusY = radiusY;
-//    results->maxRadius = (radiusX > radiusY) ? radiusX : radiusY;
-//    results->scrnX = (size_t)pt.x;
-//    results->scrnY = (size_t)pt.y;
-//    results->MaxIterations = m_NumIterations + 1; // +1 for push_back(0) below
-//
-//    HighPrecision zx, zy;
-//    HighPrecision zx2, zy2;
-//    unsigned int i;
-//
-//    const double small_float = 1.1754944e-38;
-//
-//    results->x.reserve(m_NumIterations);
-//    results->x2.reserve(m_NumIterations);
-//    results->y.reserve(m_NumIterations);
-//    results->y2.reserve(m_NumIterations);
-//    results->bad.reserve(m_NumIterations);
-//    results->bad_counts.reserve(m_NumIterations);
-//
-//    results->x.push_back(0);
-//    results->x2.push_back(0);
-//    results->y.push_back(0);
-//    results->y2.push_back(0);
-//    results->bad_counts.push_back(0);
-//    bool cur_bad_count_underflow = false;
-//    // Note: results->bad is not here.  See end of this function.
-//
-//    //double glitch = std::exp(std::log(0.0001));
-//    //double glitch = 0.0001;
-//    double glitch = 0.0000001;
-//
-//    zx = cx;
-//    zy = cy;
-//    for (i = 0; i < m_NumIterations; i++)
-//    {
-//        zx2 = zx * 2;
-//        zy2 = zy * 2;
-//
-//        double double_zx = (double)zx;
-//        double double_zx2 = (double)zx2;
-//        double double_zy = (double)zy;
-//        double double_zy2 = (double)zy2;
-//
-//        results->x.push_back(double_zx);
-//        results->x2.push_back(double_zx2);
-//        results->y.push_back(double_zy);
-//        results->y2.push_back(double_zy2);
-//
-//        double norm = (double_zx * double_zx + double_zy * double_zy) * glitch;
-//        bool underflow = (fabs(zx) <= small_float ||
-//                          fabs(zy) <= small_float ||
-//                          norm <= small_float);
-//        results->bad.push_back(underflow);
-//        if (cur_bad_count_underflow != underflow) {
-//            results->bad_counts.push_back(1);
-//            cur_bad_count_underflow = !cur_bad_count_underflow;
-//        }
-//        else {
-//            results->bad_counts.back()++;
-//        }
-//
-//        // x^2+2*I*x*y-y^2
-//        zx = zx * zx - zy * zy + cx;
-//        zy = zx2 * zy + cy;
-//
-//        const double tempZX = double_zx + (double)cx;
-//        const double tempZY = double_zy + (double)cy;
-//        const double zn_size = tempZX * tempZX + tempZY * tempZY;
-//        if (zn_size > 256) {
-//            break;
-//        }
-//    }
-//
-//    results->bad.push_back(false);
-//    assert(results->bad.size() == results->x.size());
-//}
+template<class T>
+std::vector<PerturbationResults<T>>& Fractal::GetPerturbationResults() {
+    if constexpr (std::is_same<T, double>::value) {
+        return m_PerturbationResultsDouble;
+    }
+    else {
+        static_assert(std::is_same<T, HDRFloat>::value, "No");
+        return m_PerturbationResultsHDRFloat;
+    }
+}
+
+template<class T>
+void Fractal::AddPerturbationReferencePoint() {
+    if (m_PerturbationAlg == PerturbationAlg::ST) {
+        AddPerturbationReferencePointST<T>();
+    }
+    else if (m_PerturbationAlg == PerturbationAlg::MT) {
+        AddPerturbationReferencePointMT<T>();
+    }
+}
+
+template<class T>
+void Fractal::AddPerturbationReferencePointST() {
+    auto &PerturbationResults = GetPerturbationResults<T>();
+    PerturbationResults.push_back({});
+    auto *results = &PerturbationResults[PerturbationResults.size() - 1];
+
+    double initX = (double)m_ScrnWidth / 2;
+    double initY = (double)m_ScrnHeight / 2;
+
+    Point<double> pt = { initX, initY };
+
+    HighPrecision dxHigh = (m_MaxX - m_MinX) / m_ScrnWidth;
+    HighPrecision dyHigh = (m_MaxY - m_MinY) / m_ScrnHeight;
+
+    HighPrecision radiusX = dxHigh * ((HighPrecision)pt.x);
+    HighPrecision radiusY = dyHigh * ((HighPrecision)pt.y);
+    HighPrecision cx = m_MinX + radiusX;
+    HighPrecision cy = m_MaxY - radiusY;
+
+    results->hiX = cx;
+    results->hiY = cy;
+    results->radiusX = radiusX;
+    results->radiusY = radiusY;
+    results->maxRadius = (radiusX > radiusY) ? radiusX : radiusY;
+    results->scrnX = (size_t)pt.x;
+    results->scrnY = (size_t)pt.y;
+    results->MaxIterations = m_NumIterations + 1; // +1 for push_back(0) below
+
+    HighPrecision zx, zy;
+    HighPrecision zx2, zy2;
+    unsigned int i;
+
+    const double small_float = 1.1754944e-38;
+
+    results->x.reserve(m_NumIterations);
+    results->x2.reserve(m_NumIterations);
+    results->y.reserve(m_NumIterations);
+    results->y2.reserve(m_NumIterations);
+    results->bad.reserve(m_NumIterations);
+    results->bad_counts.reserve(m_NumIterations);
+
+    results->x.push_back(0);
+    results->x2.push_back(0);
+    results->y.push_back(0);
+    results->y2.push_back(0);
+    results->bad_counts.push_back(0);
+    bool cur_bad_count_underflow = false;
+    // Note: results->bad is not here.  See end of this function.
+
+    //double glitch = std::exp(std::log(0.0001));
+    //double glitch = 0.0001;
+    double glitch = 0.0000001;
+
+    zx = cx;
+    zy = cy;
+    for (i = 0; i < m_NumIterations; i++)
+    {
+        zx2 = zx * 2;
+        zy2 = zy * 2;
+
+        T double_zx = (T)zx;
+        T double_zx2 = (T)zx2;
+        T double_zy = (T)zy;
+        T double_zy2 = (T)zy2;
+
+        results->x.push_back(double_zx);
+        results->x2.push_back(double_zx2);
+        results->y.push_back(double_zy);
+        results->y2.push_back(double_zy2);
+
+        T sq_x = double_zx * double_zx;
+        T sq_y = double_zy * double_zy;
+        T norm = (sq_x + sq_y) * glitch;
+
+        bool underflow = (fabs(zx) <= small_float ||
+                          fabs(zy) <= small_float ||
+                          norm <= small_float);
+        results->bad.push_back(underflow);
+        if (cur_bad_count_underflow != underflow) {
+            results->bad_counts.push_back(1);
+            cur_bad_count_underflow = !cur_bad_count_underflow;
+        }
+        else {
+            results->bad_counts.back()++;
+        }
+
+        // x^2+2*I*x*y-y^2
+        zx = zx * zx - zy * zy + cx;
+        zy = zx2 * zy + cy;
+
+        T tempZX = double_zx + (T)cx;
+        T tempZY = double_zy + (T)cy;
+        T zn_size = tempZX * tempZX + tempZY * tempZY;
+        if (zn_size > 256) {
+            break;
+        }
+    }
+
+    results->bad.push_back(false);
+    assert(results->bad.size() == results->x.size());
+}
 
 template<class Type>
 struct ThreadPtrs {
@@ -1812,9 +1928,11 @@ struct ThreadPtrs {
     std::atomic<Type*> Out;
 };
 
-void Fractal::AddPerturbationReferencePoint() {
-    m_PerturbationResults.push_back({});
-    PerturbationResults* results = &m_PerturbationResults[m_PerturbationResults.size() - 1];
+template<class T>
+void Fractal::AddPerturbationReferencePointMT() {
+    auto& PerturbationResults = GetPerturbationResults<T>();
+    PerturbationResults.push_back({});
+    auto* results = &PerturbationResults[PerturbationResults.size() - 1];
 
     double initX = (double)m_ScrnWidth / 2;
     double initY = (double)m_ScrnHeight / 2;
@@ -1840,8 +1958,6 @@ void Fractal::AddPerturbationReferencePoint() {
     results->scrnX = (size_t)pt.x;
     results->scrnY = (size_t)pt.y;
     results->MaxIterations = m_NumIterations + 1; // +1 for push_back(0) below
-
-    unsigned int i;
 
     const double small_float = 1.1754944e-38;
 
@@ -2039,6 +2155,124 @@ void Fractal::AddPerturbationReferencePoint() {
         }
     };
 
+    struct WorkBundle {
+        HighPrecision zx, zy;
+        HighPrecision zx2, zy2;
+        T double_zx;
+        T double_zy;
+        T double_zx2;
+        T double_zy2;
+        size_t iter;
+    };
+
+    size_t NumWorkBundleThreads = 1;
+    if constexpr (std::is_same<T, double>::value) {
+        // TODO really we should not use this at all for doubles
+        NumWorkBundleThreads = 2;
+    }
+    else if constexpr (std::is_same<T, HDRFloat>::value) {
+        NumWorkBundleThreads = 2;
+        //NumWorkBundleThreads = std::thread::hardware_concurrency() - 5;
+    }
+
+    size_t NumWorkBundles = NumWorkBundleThreads * 2;
+    size_t CurrentWorkBundleIndex = 0;
+
+    std::vector<WorkBundle> WorkBundles(NumWorkBundles);
+    std::vector<std::atomic<WorkBundle*>> CleanWorkBundles(NumWorkBundles);
+    std::vector<std::atomic<WorkBundle*>> DirtyWorkBundles(NumWorkBundles);
+
+    auto ThreadWorkBundle = [results, glitch, small_float, NumWorkBundles, &CleanWorkBundles, &DirtyWorkBundles]() {
+        HighPrecision temp1;
+        size_t CurWorkIndex = 0;
+        size_t numExits = 0;
+        for (;;) {
+            WorkBundle* curWorkBundle;
+
+            for (;;) {
+                if (numExits == NumWorkBundles) {
+                    return;
+                }
+
+                curWorkBundle = DirtyWorkBundles[CurWorkIndex].load();
+                if (curWorkBundle == (void*)0x1) {
+                    numExits++;
+                    CurWorkIndex++;
+                    CurWorkIndex %= NumWorkBundles;
+                    continue;
+                }
+
+                numExits = 0;
+
+                if (curWorkBundle != nullptr &&
+                    DirtyWorkBundles[CurWorkIndex].compare_exchange_weak(
+                        curWorkBundle,
+                        nullptr,
+                        std::memory_order_seq_cst) == true) {
+                    CurWorkIndex++;
+                    CurWorkIndex %= NumWorkBundles;
+                    break;
+                }
+
+                CurWorkIndex++;
+                CurWorkIndex %= NumWorkBundles;
+            }
+
+            size_t iter = curWorkBundle->iter;
+
+            curWorkBundle->double_zx = (T)curWorkBundle->zx;
+            curWorkBundle->double_zx2 = (T)curWorkBundle->zx2;
+            curWorkBundle->double_zy = (T)curWorkBundle->zy;
+            curWorkBundle->double_zy2 = (T)curWorkBundle->zy2;
+
+            // Note treatment of iter.
+            // "bad" is off by one.  This is correct.
+            results->x[iter + 1] = curWorkBundle->double_zx;
+            results->x2[iter + 1] = curWorkBundle->double_zx2;
+            results->y[iter + 1] = curWorkBundle->double_zy;
+            results->y2[iter + 1] = curWorkBundle->double_zy2;
+
+            T norm = (curWorkBundle->double_zx * curWorkBundle->double_zx +
+                      curWorkBundle->double_zy * curWorkBundle->double_zy) * glitch;
+            bool underflow =
+                (HdrAbs(curWorkBundle->double_zx) <= small_float ||
+                 HdrAbs(curWorkBundle->double_zy) <= small_float ||
+                 norm <= small_float);
+            results->bad[iter] = underflow;
+
+            //if (cur_bad_count_underflow != underflow) {
+            //    results->bad_counts.push_back(1);
+            //    cur_bad_count_underflow = !cur_bad_count_underflow;
+            //}
+            //else {
+            //    results->bad_counts.back()++;
+            //}
+
+            // Give result back.
+            WorkBundle* targetWorkBundle;
+            for (;;) {
+                targetWorkBundle = CleanWorkBundles[CurWorkIndex].load();
+
+                if (targetWorkBundle == nullptr &&
+                    CleanWorkBundles[CurWorkIndex].compare_exchange_weak(
+                        targetWorkBundle,
+                        curWorkBundle,
+                        std::memory_order_seq_cst) == true) {
+                    break;
+                }
+
+                CurWorkIndex++;
+                CurWorkIndex %= NumWorkBundles;
+            }
+        }
+    };
+
+    for (size_t i = 0; i < NumWorkBundles; i++)
+    {
+        CleanWorkBundles[i].store(&WorkBundles[i]);
+        DirtyWorkBundles[i].store(nullptr);
+    }
+
     auto* threadZxdata = (ThreadZxData*)_aligned_malloc(sizeof(ThreadZxData), 64);
     auto* threadZydata = (ThreadZyData*)_aligned_malloc(sizeof(ThreadZyData), 64);
     auto* thread1data = (Thread1Data*)_aligned_malloc(sizeof(Thread1Data), 64);
@@ -2063,16 +2297,24 @@ void Fractal::AddPerturbationReferencePoint() {
     thread2data->zy2 = &zy2;
     thread2data->cy = &cy;
 
+    // Five threads + use rest for HDRFloat
     std::unique_ptr<std::thread> tZx(new std::thread(ThreadSqZx, ThreadZxMemory));
     std::unique_ptr<std::thread> tZy(new std::thread(ThreadSqZy, ThreadZyMemory));
     std::unique_ptr<std::thread> t1(new std::thread(Thread1, Thread1Memory, threadZxdata, threadZydata, ThreadZxMemory, ThreadZyMemory));
     std::unique_ptr<std::thread> t2(new std::thread(Thread2, Thread2Memory));
 
-    SetThreadAffinityMask(GetCurrentThread(), 0x1 << 1);
-    SetThreadAffinityMask(tZx->native_handle(), 0x1 << 3);
-    SetThreadAffinityMask(tZy->native_handle(), 0x1 << 5);
-    SetThreadAffinityMask(t1->native_handle(), 0x1 << 7);
-    SetThreadAffinityMask(t2->native_handle(), 0x1 << 9);
+    std::vector<std::unique_ptr<std::thread>> workBundleThreads;
+    workBundleThreads.resize(NumWorkBundleThreads);
+
+    for (size_t i = 0; i < workBundleThreads.size(); i++) {
+        workBundleThreads[i] = std::make_unique<std::thread>(ThreadWorkBundle);
+    }
+
+    SetThreadAffinityMask(GetCurrentThread(), 0x1 << 3);
+    SetThreadAffinityMask(tZx->native_handle(), 0x1 << 5);
+    SetThreadAffinityMask(tZy->native_handle(), 0x1 << 7);
+    SetThreadAffinityMask(t1->native_handle(), 0x1 << 9);
+    SetThreadAffinityMask(t2->native_handle(), 0x1 << 11);
 
     ThreadZxData* expectedZx = nullptr;
     ThreadZyData* expectedZy = nullptr;
@@ -2089,12 +2331,41 @@ void Fractal::AddPerturbationReferencePoint() {
 
     thread2data->zy = zy;
 
-    for (i = 0; i < m_NumIterations; i++)
+    for (uint32_t i = 0; i < m_NumIterations; i++)
     {
         // Start Thread 2: zy = 2 * zx * zy + cy;
         thread2data->zx2 = zx2;
 
-        double double_zy2 = (double)zy2;
+        WorkBundle* curWorkBundle;
+        {
+            for (;;) {
+                curWorkBundle = CleanWorkBundles[CurrentWorkBundleIndex].load();
+
+                if (curWorkBundle != nullptr &&
+                    CleanWorkBundles[CurrentWorkBundleIndex].compare_exchange_weak(
+                        curWorkBundle,
+                        nullptr,
+                        std::memory_order_seq_cst) == true) {
+                    break;
+                }
+
+                CurrentWorkBundleIndex++;
+                CurrentWorkBundleIndex %= NumWorkBundles;
+            }
+
+            curWorkBundle->zx = zx;
+            curWorkBundle->zx2 = zx2;
+            curWorkBundle->zy = zy;
+            curWorkBundle->zy2 = zy2;
+            curWorkBundle->iter = i;
+
+            // TODO get this out of the loop
+            results->x.push_back(0);
+            results->x2.push_back(0);
+            results->y.push_back(0);
+            results->y2.push_back(0);
+            results->bad.push_back(false);
+        }
 
         Thread2Memory->In.store(
             thread2data,
@@ -2114,10 +2385,6 @@ void Fractal::AddPerturbationReferencePoint() {
             threadZydata,
             std::memory_order_release);
 
-        double double_zx = (double)zx;
-        double double_zx2 = (double)zx2;
-        double double_zy = (double)zy;
-
         // Start Thread 1: zx = zx * zx - zy * zy + cx;
         thread1data->zy = zy;
 
@@ -2125,26 +2392,38 @@ void Fractal::AddPerturbationReferencePoint() {
             thread1data,
             std::memory_order_release);
 
-        results->x.push_back(double_zx);
-        results->x2.push_back(double_zx2);
-        results->y.push_back(double_zy);
-        results->y2.push_back(double_zy2);
+        WorkBundle* destWorkBundle;
+        for (;;) {
+            destWorkBundle = DirtyWorkBundles[CurrentWorkBundleIndex].load();
 
-        double norm = (double_zx * double_zx + double_zy * double_zy) * glitch;
-        bool underflow = (fabs(double_zx) <= small_float ||
-            fabs(double_zy) <= small_float ||
-            norm <= small_float);
-        results->bad.push_back(underflow);
-        if (cur_bad_count_underflow != underflow) {
-            results->bad_counts.push_back(1);
-            cur_bad_count_underflow = !cur_bad_count_underflow;
-        }
-        else {
-            results->bad_counts.back()++;
+            if (destWorkBundle == nullptr &&
+                DirtyWorkBundles[CurrentWorkBundleIndex].compare_exchange_weak(
+                    destWorkBundle,
+                    curWorkBundle,
+                    std::memory_order_seq_cst) == true) {
+                break;
+            }
+
+            CurrentWorkBundleIndex++;
+            CurrentWorkBundleIndex %= NumWorkBundles;
         }
 
-        const double tempZX = double_zx + (double)cx;
-        const double tempZY = double_zy + (double)cy;
+        //T norm = (double_zx * double_zx + double_zy * double_zy) * glitch;
+        //bool underflow = (HdrAbs(double_zx) <= small_float ||
+        //    HdrAbs(double_zy) <= small_float ||
+        //    norm <= small_float);
+        //results->bad.push_back(underflow);
+        //if (cur_bad_count_underflow != underflow) {
+        //    results->bad_counts.push_back(1);
+        //    cur_bad_count_underflow = !cur_bad_count_underflow;
+        //}
+        //else {
+        //    results->bad_counts.back()++;
+        //}
+
+        // Note: not T.
+        const double tempZX = (double)zx + (double)cx;
+        const double tempZY = (double)zy + (double)cy;
         const double zn_size = tempZX * tempZX + tempZY * tempZY;
 
         done1 = false;
@@ -2184,9 +2463,6 @@ void Fractal::AddPerturbationReferencePoint() {
         }
     }
 
-    results->bad.push_back(false);
-    assert(results->bad.size() == results->x.size());
-
     expectedZx = nullptr;
     ThreadZxMemory->In.compare_exchange_strong(expectedZx, (ThreadZxData*)0x1, std::memory_order_release);
 
@@ -2199,10 +2475,35 @@ void Fractal::AddPerturbationReferencePoint() {
     expected2 = nullptr;
     Thread2Memory->In.compare_exchange_strong(expected2, (Thread2Data*)0x1, std::memory_order_release);
 
+    for (size_t i = 0; i < NumWorkBundles; i++) {
+        for (;;) {
+            WorkBundle* curWorkBundle = DirtyWorkBundles[i].load();
+
+            if (curWorkBundle == nullptr &&
+                DirtyWorkBundles[i].compare_exchange_strong(
+                    curWorkBundle,
+                    (WorkBundle *)0x1,
+                    std::memory_order_seq_cst) == true) {
+                break;
+            }
+        }
+    }
+
+    for (size_t i = 0; i < workBundleThreads.size(); i++) {
+        workBundleThreads[i]->join();
+    }
+
+    for (size_t i = 0; i < NumWorkBundles; i++) {
+        assert(CleanWorkBundles[i].load() != nullptr);
+    }
+
     tZx->join();
     tZy->join();
     t1->join();
     t2->join();
+
+    results->bad.push_back(false);
+    assert(results->bad.size() == results->x.size());
 
     _aligned_free(ThreadZxMemory);
     _aligned_free(ThreadZyMemory);
@@ -2223,6 +2524,7 @@ void Fractal::AddPerturbationReferencePoint() {
 bool Fractal::RequiresReferencePoints() const {
     switch (GetRenderAlgorithm()) {
         case RenderAlgorithm::Cpu64PerturbedBLA:
+        case RenderAlgorithm::Cpu64PerturbedBLAHDR:
         case RenderAlgorithm::Gpu1x32Perturbed:
         case RenderAlgorithm::Gpu1x32PerturbedScaled:
         case RenderAlgorithm::Gpu1x32PerturbedScaledBLA:
@@ -2236,53 +2538,75 @@ bool Fractal::RequiresReferencePoints() const {
     return false;
 }
 
+template<class T>
 bool Fractal::IsPerturbationResultUsefulHere(size_t i) const {
-    return m_PerturbationResults[i].hiX >= m_MinX &&
-           m_PerturbationResults[i].hiX <= m_MaxX &&
-           m_PerturbationResults[i].hiY >= m_MinY &&
-           m_PerturbationResults[i].hiY <= m_MaxY &&
-           (m_PerturbationResults[i].MaxIterations > m_PerturbationResults[i].x.size() ||
-            m_PerturbationResults[i].MaxIterations >= m_NumIterations);
+    if constexpr (std::is_same<T, double>::value) {
+        return m_PerturbationResultsDouble[i].hiX >= m_MinX &&
+            m_PerturbationResultsDouble[i].hiX <= m_MaxX &&
+            m_PerturbationResultsDouble[i].hiY >= m_MinY &&
+            m_PerturbationResultsDouble[i].hiY <= m_MaxY &&
+            (m_PerturbationResultsDouble[i].MaxIterations > m_PerturbationResultsDouble[i].x.size() ||
+                m_PerturbationResultsDouble[i].MaxIterations >= m_NumIterations);
+    }
+    else {
+        static_assert(std::is_same<T, HDRFloat>::value, "No");
+        return m_PerturbationResultsHDRFloat[i].hiX >= m_MinX &&
+            m_PerturbationResultsHDRFloat[i].hiX <= m_MaxX &&
+            m_PerturbationResultsHDRFloat[i].hiY >= m_MinY &&
+            m_PerturbationResultsHDRFloat[i].hiY <= m_MaxY &&
+            (m_PerturbationResultsHDRFloat[i].MaxIterations > m_PerturbationResultsHDRFloat[i].x.size() ||
+                m_PerturbationResultsHDRFloat[i].MaxIterations >= m_NumIterations);
+    }
 }
 
-PerturbationResults* Fractal::GetUsefulPerturbationResults() {
-    std::vector<PerturbationResults*> useful_results;
+template<class T>
+PerturbationResults<T>* Fractal::GetUsefulPerturbationResults() {
+    std::vector<PerturbationResults<T>*> useful_results;
+    std::vector<PerturbationResults<T>>* cur_array = nullptr;
 
-    if (!m_PerturbationResults.empty()) {
-        if (m_PerturbationResults.size() > 64) {
-            m_PerturbationResults.erase(m_PerturbationResults.begin());
+    if constexpr (std::is_same<T, double>::value) {
+        cur_array = &m_PerturbationResultsDouble;
+    }
+    else {
+        static_assert(std::is_same<T, HDRFloat>::value, "No");
+        cur_array = &m_PerturbationResultsHDRFloat;
+    }
+
+    if (!cur_array->empty()) {
+        if (cur_array->size() > 64) {
+            cur_array->erase(cur_array->begin());
         }
 
-        for (size_t i = 0; i < m_PerturbationResults.size(); i++) {
-            if (IsPerturbationResultUsefulHere(i)) {
-                useful_results.push_back(&m_PerturbationResults[i]);
+        for (size_t i = 0; i < cur_array->size(); i++) {
+            if (IsPerturbationResultUsefulHere<T>(i)) {
+                useful_results.push_back(&(*cur_array)[i]);
 
-                m_PerturbationResults[i].scrnX = (size_t)((m_PerturbationResults[i].hiX - m_MinX) / (m_MaxX - m_MinX) * HighPrecision { m_ScrnWidth });
-                m_PerturbationResults[i].scrnY = (size_t)((m_PerturbationResults[i].hiY - m_MinY) / (m_MaxY - m_MinY) * HighPrecision { m_ScrnHeight });
+                (*cur_array)[i].scrnX = (size_t)(((*cur_array)[i].hiX - m_MinX) / (m_MaxX - m_MinX) * HighPrecision { m_ScrnWidth });
+                (*cur_array)[i].scrnY = (size_t)(((*cur_array)[i].hiY - m_MinY) / (m_MaxY - m_MinY) * HighPrecision { m_ScrnHeight });
             }
             else {
-                m_PerturbationResults[i].scrnX = MAXSIZE_T;
-                m_PerturbationResults[i].scrnY = MAXSIZE_T;
+                (*cur_array)[i].scrnX = MAXSIZE_T;
+                (*cur_array)[i].scrnY = MAXSIZE_T;
             }
         }
     }
 
-    PerturbationResults* results = nullptr;
+    PerturbationResults<T>* results = nullptr;
 
     if (!useful_results.empty()) {
         results = useful_results[useful_results.size() - 1];
     }
     else {
-        AddPerturbationReferencePoint();
+        AddPerturbationReferencePoint<T>();
 
-        results = &m_PerturbationResults[m_PerturbationResults.size() - 1];
+        results = &(*cur_array)[cur_array->size() - 1];
     }
 
     return results;
 }
 
 void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
-    PerturbationResults* results = GetUsefulPerturbationResults();
+    auto* results = GetUsefulPerturbationResults<double>();
 
     BLAS<double> doubleBlas(*results);
     doubleBlas.Init(results->x.size(), Convert<HighPrecision, double>(results->maxRadius));
@@ -2701,7 +3025,7 @@ HighPrecision Fractal::Benchmark(size_t numIters)
     bm.BenchmarkSetup(numIters);
 
     if (RequiresReferencePoints()) {
-        AddPerturbationReferencePoint();
+        AddPerturbationReferencePoint<double>();
     }
 
     if (!bm.StartTimer()) {
@@ -2714,6 +3038,7 @@ HighPrecision Fractal::Benchmark(size_t numIters)
     return result;
 }
 
+template<class T>
 HighPrecision Fractal::BenchmarkReferencePoint(size_t numIters) {
     BenchmarkData bm(*this);
     bm.BenchmarkSetup(numIters);
@@ -2722,12 +3047,15 @@ HighPrecision Fractal::BenchmarkReferencePoint(size_t numIters) {
         return {};
     }
 
-    AddPerturbationReferencePoint();
+    AddPerturbationReferencePoint<T>();
 
     auto result = bm.StopTimerNoIters();
     bm.BenchmarkFinish();
     return result;
 }
+
+template HighPrecision Fractal::BenchmarkReferencePoint<double>(size_t numIters);
+template HighPrecision Fractal::BenchmarkReferencePoint<HDRFloat>(size_t numIters);
 
 HighPrecision Fractal::BenchmarkThis() {
     BenchmarkData bm(*this);

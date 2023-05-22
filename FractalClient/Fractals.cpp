@@ -27,6 +27,7 @@ void MenuGoBack(HWND hWnd);
 void MenuStandardView(HWND hWnd, size_t i);
 void MenuSquareView(HWND hWnd);
 void MenuCenterView(HWND hWnd, int x, int y);
+void MenuZoomOut(HWND hWnd);
 void MenuRepainting(HWND hWnd);
 void MenuWindowed(HWND hWnd);
 void MenuIncreaseIterations(HWND hWnd, double factor);
@@ -40,7 +41,8 @@ void MenuSaveCurrentLocation(HWND hWnd);
 void MenuSaveBMP(HWND hWnd);
 void MenuSaveHiResBMP(HWND hWnd);
 void MenuBenchmark(HWND hWnd, bool fastbenchmark);
-void MenuBenchmarkRefPt(HWND hWnd);
+void MenuBenchmarkRefPtDouble(HWND hWnd);
+void MenuBenchmarkRefPtHDRFloat(HWND hWnd);
 void MenuBenchmarkThis(HWND hWnd);
 void PaintAsNecessary(HWND hWnd);
 void glResetView(HWND hWnd);
@@ -61,7 +63,7 @@ int APIENTRY WinMain(HINSTANCE hInstance,
         MessageBox(NULL, L"Cannot initialize WinSock!", L"WSAStartup", MB_OK);
     }
 
-    SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
+    // SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
 
     // Initialize global strings
     MyRegisterClass(hInstance);
@@ -317,6 +319,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             break;
         }
 
+        case IDM_ZOOMOUT:
+        {
+            MenuZoomOut(hWnd);
+            break;
+        }
+
         case IDM_REPAINTING:
         {
             MenuRepainting(hWnd);
@@ -419,10 +427,22 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             gFractal->SetRenderAlgorithm(RenderAlgorithm::Cpu64);
             break;
         }
+
+        case IDM_ALG_CPU_1_64_HDR:
+        {
+            gFractal->SetRenderAlgorithm(RenderAlgorithm::CpuHDR);
+            break;
+        }
     
         case IDM_ALG_CPU_1_64_PERTURB_BLA:
         {
             gFractal->SetRenderAlgorithm(RenderAlgorithm::Cpu64PerturbedBLA);
+            break;
+        }
+
+        case IDM_ALG_CPU_1_64_PERTURB_BLA_HDR:
+        {
+            gFractal->SetRenderAlgorithm(RenderAlgorithm::Cpu64PerturbedBLAHDR);
             break;
         }
 
@@ -528,12 +548,25 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
         case IDM_PERTURB_RESULTS:
         {
-            gFractal->DrawPerturbationResults(false);
+            gFractal->DrawPerturbationResults<double>(false);
+            gFractal->DrawPerturbationResults<HDRFloat>(false);
             break;
         }
         case IDM_PERTURB_CLEAR:
         {
             gFractal->ClearPerturbationResults();
+            break;
+        }
+
+        case IDM_PERTURBATION_SINGLETHREAD:
+        {
+            gFractal->SetPerturbationAlg(Fractal::PerturbationAlg::ST);
+            break;
+        }
+
+        case IDM_PERTURBATION_MULTITHREAD:
+        {
+            gFractal->SetPerturbationAlg(Fractal::PerturbationAlg::MT);
             break;
         }
 
@@ -602,9 +635,14 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             MenuBenchmark(hWnd, true);
             break;
         }
-        case IDM_BENCHMARK_ACCURATE_REFPT:
+        case IDM_BENCHMARK_ACCURATE_REFPT_DOUBLE:
         {
-            MenuBenchmarkRefPt(hWnd);
+            MenuBenchmarkRefPtDouble(hWnd);
+            break;
+        }
+        case IDM_BENCHMARK_ACCURATE_REFPT_HDRFLOAT:
+        {
+            MenuBenchmarkRefPtHDRFloat(hWnd);
             break;
         }
         case IDM_BENCHMARK_THIS:
@@ -830,6 +868,11 @@ void MenuCenterView(HWND hWnd, int x, int y)
 {
     gFractal->CenterAtPoint(x, y);
     PaintAsNecessary(hWnd);
+}
+
+void MenuZoomOut(HWND)
+{
+    gFractal->ZoomOut(1);
 }
 
 void MenuRepainting(HWND hWnd)
@@ -1114,9 +1157,16 @@ void MenuBenchmark(HWND hWnd, bool fastbenchmark)
     gFractal->DrawFractal(false);
 }
 
-void MenuBenchmarkRefPt(HWND hWnd)
+void MenuBenchmarkRefPtDouble(HWND hWnd)
 {
-    HighPrecision megaIters = gFractal->BenchmarkReferencePoint(5000000);
+    HighPrecision megaIters = gFractal->BenchmarkReferencePoint<double>(5000000);
+    BenchmarkMessage(hWnd, megaIters);
+    gFractal->DrawFractal(false);
+}
+
+void MenuBenchmarkRefPtHDRFloat(HWND hWnd)
+{
+    HighPrecision megaIters = gFractal->BenchmarkReferencePoint<HDRFloat>(5000000);
     BenchmarkMessage(hWnd, megaIters);
     gFractal->DrawFractal(false);
 }

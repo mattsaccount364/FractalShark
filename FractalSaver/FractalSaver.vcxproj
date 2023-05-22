@@ -142,6 +142,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="..\BLAS.cpp" />
     <ClCompile Include="..\Fractal.cpp">
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Disabled</Optimization>
       <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">EnableFastChecks</BasicRuntimeChecks>
@@ -176,9 +177,12 @@
     <ResourceCompile Include="FractalSaver.rc" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\BLA.h" />
+    <ClInclude Include="..\BLAS.h" />
     <ClInclude Include="..\Fractal.h" />
     <ClInclude Include="..\FractalNetwork.h" />
     <ClInclude Include="..\FractalSetupData.h" />
+    <ClInclude Include="..\GPUBLAS.h" />
     <ClInclude Include="..\render_gpu.h" />
     <ClInclude Include="..\WPngImage\lodepng.h" />
     <ClInclude Include="..\WPngImage\WPngImage.hh" />

@@ -1,9 +1,10 @@
 #include "stdafx.h"
 #include "PerturbationResults.h"
 #include "BLAS.h"
+#include "HDRFloat.h"
 
 template<class T>
-BLAS<T>::BLAS(PerturbationResults& results) :
+BLAS<T>::BLAS(PerturbationResults<T>& results) :
     m_PerturbationResults(results) {
 }
 
@@ -26,10 +27,11 @@ BLA<T> BLAS<T>::MergeTwoBlas(BLA<T> x, BLA<T> y, T blaSize) {
     T xB = x.hypotB();
 
     // TODO
+    T tempR = (HdrSqrt(y.getR2()) - xB * blaSize) / xA;
+    HdrReduce(tempR);
 
-    T r = min(sqrt(x.getR2()), max(0, (sqrt(y.getR2()) - xB * blaSize) / xA));
+    T r = min(HdrSqrt(x.getR2()), max(0, tempR));
     T r2 = r * r;
-
     return BLA<T>::getGenericStep(r2, RealA, ImagA, RealB, ImagB, l);
 }
 
@@ -62,7 +64,7 @@ BLA<T> BLAS<T>::CreateOneStep(size_t m, T epsilon) {
     T RealA = static_cast<T>(m_PerturbationResults.x2[m]);
     T ImagA = static_cast<T>(m_PerturbationResults.y2[m]);
 
-    T mA = sqrt(RealA * RealA + ImagA * ImagA);
+    T mA = HdrSqrt(RealA * RealA + ImagA * ImagA);
 
     T r = mA * epsilon;
 
@@ -211,3 +213,4 @@ BLA<T>* BLAS<T>::LookupBackwards(size_t m, T z2) {
 
 template class BLAS<float>;
 template class BLAS<double>;
+template class BLAS<HDRFloat>;

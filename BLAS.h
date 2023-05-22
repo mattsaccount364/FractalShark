@@ -3,6 +3,7 @@
 #include "BLA.h"
 #include <vector>
 
+template<class T>
 class PerturbationResults;
 
 template<class T>
@@ -14,7 +15,7 @@ public:
     int32_t m_LM2;//Level -1 is not attainable due to Zero R
     size_t m_FirstLevel;
 
-    BLAS(PerturbationResults& results);
+    BLAS(PerturbationResults<T>& results);
 
 private:
     void InitLStep(size_t level, size_t m, T blaSize, T epsilon);
@@ -38,7 +39,7 @@ private:
     static constexpr size_t BLA_BITS = 23;
     static constexpr size_t BLA_STARTING_LEVEL = 2;
 
-    PerturbationResults& m_PerturbationResults;
+    PerturbationResults<T>& m_PerturbationResults;
 };
 
 

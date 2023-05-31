@@ -2159,124 +2159,6 @@ void Fractal::AddPerturbationReferencePointMT() {
         }
     };
 
-    struct WorkBundle {
-        HighPrecision zx, zy;
-        HighPrecision zx2, zy2;
-        T double_zx;
-        T double_zy;
-        T double_zx2;
-        T double_zy2;
-        size_t iter;
-    };
-
-    size_t NumWorkBundleThreads = 1;
-    if constexpr (std::is_same<T, double>::value) {
-        // TODO really we should not use this at all for doubles
-        NumWorkBundleThreads = 2;
-    }
-    else if constexpr (std::is_same<T, HDRFloat>::value) {
-        NumWorkBundleThreads = 2;
-        //NumWorkBundleThreads = std::thread::hardware_concurrency() - 5;
-    }
-
-    size_t NumWorkBundles = NumWorkBundleThreads * 2;
-    size_t CurrentWorkBundleIndex = 0;
-
-    std::vector<WorkBundle> WorkBundles(NumWorkBundles);
-    std::vector<std::atomic<WorkBundle*>> CleanWorkBundles(NumWorkBundles);
-    std::vector<std::atomic<WorkBundle*>> DirtyWorkBundles(NumWorkBundles);
-
-    auto ThreadWorkBundle = [results, glitch, small_float, NumWorkBundles, &CleanWorkBundles, &DirtyWorkBundles]() {
-        HighPrecision temp1;
-        size_t CurWorkIndex = 0;
-        size_t numExits = 0;
-        for (;;) {
-            WorkBundle* curWorkBundle;
-
-            for (;;) {
-                if (numExits == NumWorkBundles) {
-                    return;
-                }
-
-                curWorkBundle = DirtyWorkBundles[CurWorkIndex].load();
-                if (curWorkBundle == (void*)0x1) {
-                    numExits++;
-                    CurWorkIndex++;
-                    CurWorkIndex %= NumWorkBundles;
-                    continue;
-                }
-
-                numExits = 0;
-
-                if (curWorkBundle != nullptr &&
-                    DirtyWorkBundles[CurWorkIndex].compare_exchange_weak(
-                        curWorkBundle,
-                        nullptr,
-                        std::memory_order_seq_cst) == true) {
-                    CurWorkIndex++;
-                    CurWorkIndex %= NumWorkBundles;
-                    break;
-                }
-
-                CurWorkIndex++;
-                CurWorkIndex %= NumWorkBundles;
-            }
-
-            size_t iter = curWorkBundle->iter;
-
-            curWorkBundle->double_zx = (T)curWorkBundle->zx;
-            curWorkBundle->double_zx2 = (T)curWorkBundle->zx2;
-            curWorkBundle->double_zy = (T)curWorkBundle->zy;
-            curWorkBundle->double_zy2 = (T)curWorkBundle->zy2;
-
-            // Note treatment of iter.
-            // "bad" is off by one.  This is correct.
-            results->x[iter + 1] = curWorkBundle->double_zx;
-            results->x2[iter + 1] = curWorkBundle->double_zx2;
-            results->y[iter + 1] = curWorkBundle->double_zy;
-            results->y2[iter + 1] = curWorkBundle->double_zy2;
-
-            T norm = (curWorkBundle->double_zx * curWorkBundle->double_zx +
-                      curWorkBundle->double_zy * curWorkBundle->double_zy) * glitch;
-            bool underflow =
-                (HdrAbs(curWorkBundle->double_zx) <= small_float ||
-                 HdrAbs(curWorkBundle->double_zy) <= small_float ||
-                 norm <= small_float);
-            results->bad[iter] = underflow;
-
-            //if (cur_bad_count_underflow != underflow) {
-            //    results->bad_counts.push_back(1);
-            //    cur_bad_count_underflow = !cur_bad_count_underflow;
-            //}
-            //else {
-            //    results->bad_counts.back()++;
-            //}
-
-            // Give result back.
-            WorkBundle* targetWorkBundle;
-            for (;;) {
-                targetWorkBundle = CleanWorkBundles[CurWorkIndex].load();
-
-                if (targetWorkBundle == nullptr &&
-                    CleanWorkBundles[CurWorkIndex].compare_exchange_weak(
-                        targetWorkBundle,
-                        curWorkBundle,
-                        std::memory_order_seq_cst) == true) {
-                    break;
-                }
-
-                CurWorkIndex++;
-                CurWorkIndex %= NumWorkBundles;
-            }
-        }
-    };
-
-    for (size_t i = 0; i < NumWorkBundles; i++)
-    {
-        CleanWorkBundles[i].store(&WorkBundles[i]);
-        DirtyWorkBundles[i].store(nullptr);
-    }
-
     auto* threadZxdata = (ThreadZxData*)_aligned_malloc(sizeof(ThreadZxData), 64);
     auto* threadZydata = (ThreadZyData*)_aligned_malloc(sizeof(ThreadZyData), 64);
     auto* thread1data = (Thread1Data*)_aligned_malloc(sizeof(Thread1Data), 64);
@@ -2307,13 +2189,6 @@ void Fractal::AddPerturbationReferencePointMT() {
     std::unique_ptr<std::thread> t1(new std::thread(Thread1, Thread1Memory, threadZxdata, threadZydata, ThreadZxMemory, ThreadZyMemory));
     std::unique_ptr<std::thread> t2(new std::thread(Thread2, Thread2Memory));
 
-    std::vector<std::unique_ptr<std::thread>> workBundleThreads;
-    workBundleThreads.resize(NumWorkBundleThreads);
-
-    for (size_t i = 0; i < workBundleThreads.size(); i++) {
-        workBundleThreads[i] = std::make_unique<std::thread>(ThreadWorkBundle);
-    }
-
     SetThreadAffinityMask(GetCurrentThread(), 0x1 << 3);
     SetThreadAffinityMask(tZx->native_handle(), 0x1 << 5);
     SetThreadAffinityMask(tZy->native_handle(), 0x1 << 7);
@@ -2340,36 +2215,7 @@ void Fractal::AddPerturbationReferencePointMT() {
         // Start Thread 2: zy = 2 * zx * zy + cy;
         thread2data->zx2 = zx2;
 
-        WorkBundle* curWorkBundle;
-        {
-            for (;;) {
-                curWorkBundle = CleanWorkBundles[CurrentWorkBundleIndex].load();
-
-                if (curWorkBundle != nullptr &&
-                    CleanWorkBundles[CurrentWorkBundleIndex].compare_exchange_weak(
-                        curWorkBundle,
-                        nullptr,
-                        std::memory_order_seq_cst) == true) {
-                    break;
-                }
-
-                CurrentWorkBundleIndex++;
-                CurrentWorkBundleIndex %= NumWorkBundles;
-            }
-
-            curWorkBundle->zx = zx;
-            curWorkBundle->zx2 = zx2;
-            curWorkBundle->zy = zy;
-            curWorkBundle->zy2 = zy2;
-            curWorkBundle->iter = i;
-
-            // TODO get this out of the loop
-            results->x.push_back(0);
-            results->x2.push_back(0);
-            results->y.push_back(0);
-            results->y2.push_back(0);
-            results->bad.push_back(false);
-        }
+        T double_zy2 = (T)zy2;
 
         Thread2Memory->In.store(
             thread2data,
@@ -2389,6 +2235,10 @@ void Fractal::AddPerturbationReferencePointMT() {
             threadZydata,
             std::memory_order_release);
 
+        T double_zx = (T)zx;
+        T double_zx2 = (T)zx2;
+        T double_zy = (T)zy;
+
         // Start Thread 1: zx = zx * zx - zy * zy + cx;
         thread1data->zy = zy;
 
@@ -2396,38 +2246,27 @@ void Fractal::AddPerturbationReferencePointMT() {
             thread1data,
             std::memory_order_release);
 
-        WorkBundle* destWorkBundle;
-        for (;;) {
-            destWorkBundle = DirtyWorkBundles[CurrentWorkBundleIndex].load();
+        results->x.push_back(double_zx);
+        results->x2.push_back(double_zx2);
+        results->y.push_back(double_zy);
+        results->y2.push_back(double_zy2);
 
-            if (destWorkBundle == nullptr &&
-                DirtyWorkBundles[CurrentWorkBundleIndex].compare_exchange_weak(
-                    destWorkBundle,
-                    curWorkBundle,
-                    std::memory_order_seq_cst) == true) {
-                break;
-            }
-
-            CurrentWorkBundleIndex++;
-            CurrentWorkBundleIndex %= NumWorkBundles;
+        T norm = (double_zx * double_zx + double_zy * double_zy) * glitch;
+        bool underflow = (HdrAbs(double_zx) <= small_float ||
+            HdrAbs(double_zy) <= small_float ||
+            norm <= small_float);
+        results->bad.push_back(underflow);
+        if (cur_bad_count_underflow != underflow) {
+            results->bad_counts.push_back(1);
+            cur_bad_count_underflow = !cur_bad_count_underflow;
+        }
+        else {
+            results->bad_counts.back()++;
         }
 
-        //T norm = (double_zx * double_zx + double_zy * double_zy) * glitch;
-        //bool underflow = (HdrAbs(double_zx) <= small_float ||
-        //    HdrAbs(double_zy) <= small_float ||
-        //    norm <= small_float);
-        //results->bad.push_back(underflow);
-        //if (cur_bad_count_underflow != underflow) {
-        //    results->bad_counts.push_back(1);
-        //    cur_bad_count_underflow = !cur_bad_count_underflow;
-        //}
-        //else {
-        //    results->bad_counts.back()++;
-        //}
-
         // Note: not T.
-        const double tempZX = (double)zx + (double)cx;
-        const double tempZY = (double)zy + (double)cy;
+        const double tempZX = double_zx + (double)cx;
+        const double tempZY = double_zy + (double)cy;
         const double zn_size = tempZX * tempZX + tempZY * tempZY;
 
         done1 = false;
@@ -2467,6 +2306,9 @@ void Fractal::AddPerturbationReferencePointMT() {
         }
     }
 
+    results->bad.push_back(false);
+    assert(results->bad.size() == results->x.size());
+
     expectedZx = nullptr;
     ThreadZxMemory->In.compare_exchange_strong(expectedZx, (ThreadZxData*)0x1, std::memory_order_release);
 
@@ -2479,35 +2321,10 @@ void Fractal::AddPerturbationReferencePointMT() {
     expected2 = nullptr;
     Thread2Memory->In.compare_exchange_strong(expected2, (Thread2Data*)0x1, std::memory_order_release);
 
-    for (size_t i = 0; i < NumWorkBundles; i++) {
-        for (;;) {
-            WorkBundle* curWorkBundle = DirtyWorkBundles[i].load();
-
-            if (curWorkBundle == nullptr &&
-                DirtyWorkBundles[i].compare_exchange_strong(
-                    curWorkBundle,
-                    (WorkBundle *)0x1,
-                    std::memory_order_seq_cst) == true) {
-                break;
-            }
-        }
-    }
-
-    for (size_t i = 0; i < workBundleThreads.size(); i++) {
-        workBundleThreads[i]->join();
-    }
-
-    for (size_t i = 0; i < NumWorkBundles; i++) {
-        assert(CleanWorkBundles[i].load() != nullptr);
-    }
-
     tZx->join();
     tZy->join();
     t1->join();
     t2->join();
-
-    results->bad.push_back(false);
-    assert(results->bad.size() == results->x.size());
 
     _aligned_free(ThreadZxMemory);
     _aligned_free(ThreadZyMemory);

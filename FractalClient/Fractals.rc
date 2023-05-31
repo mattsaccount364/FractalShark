@@ -83,11 +83,11 @@ BEGIN
             MENUITEM "#5 - 32-bit Scaled Limit (minibrot problem)", IDM_VIEW5
             MENUITEM "#6 - Scale float with pixellation", IDM_VIEW6
             MENUITEM "#7 - Scaled float limit with circle", IDM_VIEW7
-            MENUITEM "#8 - Full BLA test 10^300 or so.", IDM_VIEW8
+            MENUITEM "#8 - Full BLA test 10^330 or so.", IDM_VIEW8
             MENUITEM "#9 - bug: scaled/BLA/32-bit failure", IDM_VIEW9
             MENUITEM "#10 - Deep 64-bit BLA minibrot, expensive", IDM_VIEW10
             MENUITEM "#11 - bug: 500 million iterations, memory use", IDM_VIEW11
-            MENUITEM "#12 - bug: HDRFloat test",    IDM_VIEW12
+            MENUITEM "#12",                         IDM_VIEW12
             MENUITEM "#13",                         IDM_VIEW13
         END
         MENUITEM "Square &View",                IDM_SQUAREVIEW

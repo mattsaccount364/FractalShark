@@ -1670,8 +1670,9 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                     while ((b = blas.LookupBackwards(RefIteration, DeltaNormSquared)) != nullptr) {
                         int l = b->getL();
 
+                        // TODO this second RefIteration + l check bugs me
                         if (iter + l >= m_NumIterations ||
-                            RefIteration + l >= results->x.size() - 1) { // TODO this second RefIteration + l check bugs me
+                            RefIteration + l >= results->x.size() - 1) {
                             break;
                         }
 
@@ -1688,19 +1689,10 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                         RefIteration += l;
 
                         T tempZX = results->x[RefIteration] + DeltaSubNX;
-                        //HdrReduce(tempZX);
-
                         T tempZY = results->y[RefIteration] + DeltaSubNY;
-                        //HdrReduce(tempZY);
-
-                        T term1 = tempZX * tempZX;
-                        T term2 = tempZY * tempZY;
-                        T normSquared = term1 + term2;
+                        T normSquared = tempZX * tempZX + tempZY * tempZY;
+                        DeltaNormSquared = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
                         HdrReduce(normSquared);
-
-                        T Term3 = DeltaSubNX * DeltaSubNX;
-                        T Term4 = DeltaSubNY * DeltaSubNY;
-                        DeltaNormSquared = Term3 + Term4;
                         HdrReduce(DeltaNormSquared);
 
                         if (normSquared > T(256)) {
@@ -1723,53 +1715,29 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                     const T DeltaSubNXOrig = DeltaSubNX;
                     const T DeltaSubNYOrig = DeltaSubNY;
 
-                    T Term1 = results->x2[RefIteration] + DeltaSubNXOrig;
-                    //HdrReduce(Term1);
-                    T Term2 = results->y2[RefIteration] + DeltaSubNYOrig;
-                    //HdrReduce(Term2);
-                    T TermB1 = DeltaSubNXOrig * Term1;
-                    //HdrReduce(TermB1);
-                    T TermB2 = DeltaSubNYOrig * Term2;
-                    //HdrReduce(TermB2);
+                    T TermB1 = DeltaSubNXOrig * (results->x2[RefIteration] + DeltaSubNXOrig);
+                    T TermB2 = DeltaSubNYOrig * (results->y2[RefIteration] + DeltaSubNYOrig);
 
                     DeltaSubNX = TermB1 - TermB2;
-                    //HdrReduce(DeltaSubNX);
                     DeltaSubNX += DeltaSub0X;
                     HdrReduce(DeltaSubNX);
 
                     T Term3 = results->y2[RefIteration] + DeltaSubNYOrig;
-                    //HdrReduce(Term3);
                     T Term4 = results->x2[RefIteration] + DeltaSubNXOrig;
-                    //HdrReduce(Term4);
-                    T TermC1 = DeltaSubNXOrig * Term3;
-                    //HdrReduce(TermC1);
-                    T TermC2 = DeltaSubNYOrig * Term4;
-                    //HdrReduce(TermC2);
-                    DeltaSubNY = TermC1 + TermC2;
-                    //HdrReduce(DeltaSubNY);
+                    DeltaSubNY = DeltaSubNXOrig * Term3 + DeltaSubNYOrig * Term4;
                     DeltaSubNY += DeltaSub0Y;
                     HdrReduce(DeltaSubNY);
 
                     ++RefIteration;
 
                     T tempZX = results->x[RefIteration] + DeltaSubNX;
-                    //HdrReduce(tempZX);
-
                     T tempZY = results->y[RefIteration] + DeltaSubNY;
-                    //HdrReduce(tempZY);
-
                     T nT1 = tempZX * tempZX;
-                    //HdrReduce(nT1);
                     T nT2 = tempZY * tempZY;
-                    //HdrReduce(nT2);
                     T normSquared = nT1 + nT2;
                     HdrReduce(normSquared);
 
-                    T dNT1 = DeltaSubNX * DeltaSubNX;
-                    //HdrReduce(dNT1);
-                    T dNT2 = DeltaSubNY * DeltaSubNY;
-                    //HdrReduce(dNT2);
-                    DeltaNormSquared = dNT1 + dNT2;
+                    DeltaNormSquared = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
                     HdrReduce(DeltaNormSquared);
 
                     if (normSquared > T(256)) {

@@ -421,7 +421,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             gFractal->SetRenderAlgorithm(RenderAlgorithm::CpuHigh);
             break;
         }
-    
+
+        case IDM_ALG_CPU_1_32_HDR:
+        {
+            gFractal->SetRenderAlgorithm(RenderAlgorithm::CpuHDR32);
+            break;
+        }
+
+        case IDM_ALG_CPU_1_32_PERTURB_BLA_HDR:
+        {
+            gFractal->SetRenderAlgorithm(RenderAlgorithm::Cpu32PerturbedBLAHDR);
+            break;
+        }
+
         case IDM_ALG_CPU_1_64:
         {
             gFractal->SetRenderAlgorithm(RenderAlgorithm::Cpu64);
@@ -430,7 +442,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
         case IDM_ALG_CPU_1_64_HDR:
         {
-            gFractal->SetRenderAlgorithm(RenderAlgorithm::CpuHDR);
+            gFractal->SetRenderAlgorithm(RenderAlgorithm::CpuHDR64);
             break;
         }
     
@@ -549,7 +561,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         case IDM_PERTURB_RESULTS:
         {
             gFractal->DrawPerturbationResults<double>(false);
-            gFractal->DrawPerturbationResults<HDRFloat>(false);
+            gFractal->DrawPerturbationResults<HDRFloat<double>>(false);
             break;
         }
         case IDM_PERTURB_CLEAR:
@@ -1159,14 +1171,14 @@ void MenuBenchmark(HWND hWnd, bool fastbenchmark)
 
 void MenuBenchmarkRefPtDouble(HWND hWnd)
 {
-    HighPrecision megaIters = gFractal->BenchmarkReferencePoint<double>(5000000);
+    HighPrecision megaIters = gFractal->BenchmarkReferencePoint<double, double>(5000000);
     BenchmarkMessage(hWnd, megaIters);
     gFractal->DrawFractal(false);
 }
 
 void MenuBenchmarkRefPtHDRFloat(HWND hWnd)
 {
-    HighPrecision megaIters = gFractal->BenchmarkReferencePoint<HDRFloat>(5000000);
+    HighPrecision megaIters = gFractal->BenchmarkReferencePoint<HDRFloat<double>, double>(5000000);
     BenchmarkMessage(hWnd, megaIters);
     gFractal->DrawFractal(false);
 }

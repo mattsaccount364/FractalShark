@@ -143,24 +143,25 @@ private:
     };
 
     std::vector<PerturbationResults<double>> m_PerturbationResultsDouble;
-    std::vector<PerturbationResults<HDRFloat>> m_PerturbationResultsHDRFloat;
+    std::vector<PerturbationResults<HDRFloat<double>>> m_PerturbationResultsHDRDouble;
+    std::vector<PerturbationResults<HDRFloat<float>>> m_PerturbationResultsHDRFloat;
 
     PerturbationAlg m_PerturbationAlg;
 
     template<class T>
     std::vector<PerturbationResults<T>> &GetPerturbationResults();
 
-    template<class T>
+    template<class T, class SubType>
     void AddPerturbationReferencePoint();
 
-    template<class T>
+    template<class T, class SubType>
     void AddPerturbationReferencePointST();
 
-    template<class T>
+    template<class T, class SubType>
     void AddPerturbationReferencePointMT();
     bool RequiresReferencePoints() const;
 
-    template<class T>
+    template<class T, class SubType>
     PerturbationResults<T>* GetUsefulPerturbationResults();
 
     static void FillCoord(HighPrecision& src, MattCoords& dest);
@@ -169,10 +170,10 @@ private:
     void CalcNetworkFractal(bool MemoryOnly);
     void CalcCpuPerturbationFractal(bool MemoryOnly);
 
-    template<class T>
+    template<class T, class SubType>
     void CalcCpuHDR(bool MemoryOnly);
 
-    template<class T>
+    template<class T, class SubType>
     void CalcCpuPerturbationFractalBLA(bool MemoryOnly);
     void CalcGpuPerturbationFractalBLA(bool MemoryOnly);
 
@@ -194,7 +195,7 @@ public: // Saving images of the fractal
 public: // Benchmarking
     HighPrecision Benchmark(size_t numIters);
 
-    template<class T>
+    template<class T, class SubType>
     HighPrecision BenchmarkReferencePoint(size_t numIters);
     HighPrecision BenchmarkThis();
 
@@ -326,8 +327,8 @@ private:
     // for every point on the screen.
     struct ItersMemoryContainer {
         ItersMemoryContainer(size_t width, size_t height, size_t total_antialiasing);
-        ItersMemoryContainer(ItersMemoryContainer&&);
-        ItersMemoryContainer& operator=(ItersMemoryContainer&&);
+        ItersMemoryContainer(ItersMemoryContainer&&) noexcept;
+        ItersMemoryContainer& operator=(ItersMemoryContainer&&) noexcept;
         ~ItersMemoryContainer();
 
         ItersMemoryContainer(ItersMemoryContainer&) = delete;

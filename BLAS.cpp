@@ -213,4 +213,5 @@ BLA<T>* BLAS<T>::LookupBackwards(size_t m, T z2) {
 
 template class BLAS<float>;
 template class BLAS<double>;
-template class BLAS<HDRFloat>;
+template class BLAS<HDRFloat<double>>;
+template class BLAS<HDRFloat<float>>;

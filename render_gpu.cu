@@ -137,7 +137,8 @@ CUDA_CRAP T BLA<T>::getR2() const {
 
 template class BLA<float>;
 template class BLA<double>;
-template class BLA<HDRFloat>;
+template class BLA<HDRFloat<float>>;
+template class BLA<HDRFloat<double>>;
 
 ////////////////////////////////////////////////////////////////////////////////////////
 // Bilinear approximation.  GPU copy.

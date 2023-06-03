@@ -17,9 +17,11 @@
 // 'B' = blend
 enum class RenderAlgorithm {
     CpuHigh,
-    CpuHDR,
+    CpuHDR32,
+    CpuHDR64,
     Cpu64,
     Cpu64PerturbedBLA,
+    Cpu32PerturbedBLAHDR,
     Cpu64PerturbedBLAHDR,
     Gpu1x64,
     Gpu1x64Perturbed,
@@ -86,12 +88,14 @@ struct MattCoords {
     MattDbldbl dbl;
     MattQDbldbl qdbl;
     MattQFltflt qflt;
+    HDRFloat<float> hdrflt;
 };
 
 struct MattPerturbResults {
     MattReferenceSingleIter<float> *float_iters;
     MattReferenceSingleIter<double> *double_iters;
     MattReferenceSingleIter<float2> *dblflt_iters;
+    MattReferenceSingleIter<HDRFloat<float>>* hdrflt_iters;
     uint32_t* bad_counts;
     size_t bad_counts_size;
     size_t size;
@@ -107,6 +111,7 @@ struct MattPerturbResults {
         float_iters(new MattReferenceSingleIter<float>[in_size]),
         double_iters(new MattReferenceSingleIter<double>[in_size]),
         dblflt_iters(new MattReferenceSingleIter<float2>[in_size]),
+        hdrflt_iters(new MattReferenceSingleIter<HDRFloat<float>>[in_size]),
         bad_counts(new uint32_t[in_bad_counts_size]),
         bad_counts_size(in_bad_counts_size),
         size(in_size) {
@@ -142,6 +147,8 @@ struct MattPerturbResults {
             dblflt_iters[i].y2.y = (float)in_y2[i];
             dblflt_iters[i].y2.x = (float)(in_y2[i] - (double)((float)dblflt_iters[i].y2.y));
             dblflt_iters[i].bad = in_bad[i];
+
+            //hdrflt_iters[i].x = 
         }
 
         memcpy(bad_counts, in_bad_counts, bad_counts_size);

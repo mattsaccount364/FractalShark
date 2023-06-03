@@ -38,11 +38,11 @@ Fractal::ItersMemoryContainer::ItersMemoryContainer(size_t width, size_t height,
     }
 };
 
-Fractal::ItersMemoryContainer::ItersMemoryContainer(Fractal::ItersMemoryContainer&& other) {
+Fractal::ItersMemoryContainer::ItersMemoryContainer(Fractal::ItersMemoryContainer&& other) noexcept {
     *this = std::move(other);
 }
 
-Fractal::ItersMemoryContainer &Fractal::ItersMemoryContainer::operator=(Fractal::ItersMemoryContainer&& other) {
+Fractal::ItersMemoryContainer &Fractal::ItersMemoryContainer::operator=(Fractal::ItersMemoryContainer&& other) noexcept {
     if (this == &other) {
         return *this;
     }
@@ -624,10 +624,10 @@ void Fractal::View(size_t view)
 
     case 8:
         // Full BLA test 10^360 or so.
-        minX = HighPrecision{ "-1.622553054509554409393783271485519336981516649058692523531044591770179784188916166903801363114695696477465352555971528798705448280840302524785407528510560382957296336747734660781986878861832656627910563988831196767541174987070125253828371867979558889300125126916356006345148898733695397073332691494528591084305228375267624747632537984863862572085039742052399126752607027568841345391694070851920491494187355003100448867118859764853803957469541628770987298608674937316673256477434582864532007680412808414681260064145907402712945028988821955677940325504580154486497582643571691679360759853810190749850832277012569241116979222502451851409741731154108001640232435506830085226247670816886577556412949783161529744304946395162192891323748217804427081263274266862404450468081623224216576116659931511855191925432808834418373689406300976092846478549490232309236506933852506494399639125251748000154530767700396596972577276825204805234426335046197591340265558381123169028474841398273468494625959086487655557593938644" };
-        minY = HighPrecision{ "0.00111756723889676861194528779365036804209780569430979619191368365101767584234238739006014642030867082584879980084600891029652194894033983298525557031267486462261183552228407567254385484725526473194638232837121400952656166317494160890992521617962074755879139426562827474867529534603489999881517344251240934565370875872258567402006485364663037360867995949333428455354690633193437251847575671496304606408931613451615953162004555889724389613871549481568580878745583539337319667489554900314686750910008973137803701574863246924912660874804125153992235291785278296967546587444770671853455811436008820718618519027205127956023211033616169513372083836261878045778780913037208612823539576526697476914499738714628821216677041193261549935328509081460911899407030624427117381744229953793818045973626028016791171629958976347002858914802581479759561394041757926963682299837495293547320573336782182969357613899673657746605190033330452409979044981108494418713507061184290892488785182549399263744006341921607913385282477182" };
-        maxX = HighPrecision{ "-1.622553054509554409393783271485519336981516649058692523531044591770179784188916166903801363114695696477465352555971528798705448280840302524785407528510560382957296336747734660781986878861832656627910563988831196767541174987070125253828371867979558889300125126916356006345148898733695397073332691494528591084305228375267624747632537984863862572085039742052399126752579974408328629311753005782469956078445136301544638280343919231248121090733319486739319034650374760755343316755943202336391299058141731160980515331874352409717232952668297397580074524618381038293535569878646443700872700324359365988915164870821060197869774450053991832805368485787757563338170369769884611231779233987131981061754032250755801148604693556308850822377253415991061521149980306186721622447892310077271875935441821170235515827096901995335908183884954168663268314912095744802266310837519120213646115842474925983894943433036146468945389092677574689905407275089752838743530742878343756649923795964536576591330824192355621050339581219" };
-        maxY = HighPrecision{ "0.001117567238896768611945287793650368042097805694309796191913683651017675842342387390060146420308670825848799800846008910296521948940339832985255570312674864622611835522284075672543854847255264731946382328371214009526561663174941608909925216179620747558791394265628274748675295346034899998815173442512409345653708758722585674020064853646630373608679959493334284553558062567067108530455650285051252169426873269575376279366689451559398530585027458948367474826922749757069593642939738454940465083656787906303947487713712335195941767188719269727184954962214013466878058756520762810397944677921656025704251602269179353008449818176922227464800256441292151132195355651483913284401288392857275317309692654969427076920389893222608608583056819159470257634704646795733242455358773899689772454719174618317473842895614304665630838539305243254913786353320027947747302605782110132048373257115241611844696624330472464469918591172778433149427900559125644890720361789799161878477107707402280694097973191927400814179123269254" };
+        minX = HighPrecision{ "-1.62255305450955440939378327148551933698151664905869252353104459177017978418891616690380136311469569647746535255597152879870544828084030252478540752851056038295729633674773466078198687886183265662791056398883119676754117498707012525382837186797955888930012512691635600634514889873369539707333269149452859108430522837526762474763253798486386257208503974205239912675259349340008776407708569677295369740405907058973366258877563151903779464511636945839516386308328494024213511219752716518302022662987679262358085544541002721853167281710093810714299096604311282208205908295670433759294140313712576796040079649572308561033978027803136598376884680906713660890822005539104519130255824826331930479134103309636809226374155289157129161470878787209824874737822507233632487350397630456146306551098182199610920388706061845157626201299626139082113062421153978560572225537930435492119383184595620913402694583807118680800820973284884395716486365014927767819839422324824417755883590697006585792565856068724086328040064137" };
+        minY = HighPrecision{ "0.001117567238896768611945287793650368042097805694309796191913683651017675842342387390060146420308670825848799800846008910296521948940339832985255570312674864622611835522284075672543854847255264731946382328371214009526561663174941608909925216179620747558791394265628274748675295346034899998815173442512409345653708758722585674020064853646630373608679959493334284553551589569916541364238590636231225237325378756320302367832071342389048681393539754524197200678944000421791540075260205749947459505161153736745897141709886485103327397302711009503559286123363837240334404158291124414624896366558532078805893040409715129669641670264418469514245323062222948368776509132211781867200069858148733733695016161999252935082217816555338948107387458164732495255484485686714552845363705380071726708167938691390654931378895578392284226697502266645082637959762780336340755195092008923568377179046783091510629474042530552453839767655910733466999435448447145470941375865730365675257390451218491252820346919474162436936891109576" };
+        maxX = HighPrecision{ "-1.62255305450955440939378327148551933698151664905869252353104459177017978418891616690380136311469569647746535255597152879870544828084030252478540752851056038295729633674773466078198687886183265662791056398883119676754117498707012525382837186797955888930012512691635600634514889873369539707333269149452859108430522837526762474763253798486386257208503974205239912675259349339993621714477465666728462293703742649503870179489247179287996776446784550075982410851183862851695905621332179489926872799723967034679759350573724486110258084629059616061370124277754829804135155004747783326697611755813465859617980360755270750673298434428967010543112214704371402599005592955594869845188782035478942743391129780955577574763327329737135122170204107397021162103795449415348169694015299996341475690463973331508590697359986147383763178831806663172637673526109587698641991806689884969066720771562632575414989447972380925083421404361785488703710879867938852822339388558335368088481536710025301829673113957703476787560062618" };
+        maxY = HighPrecision{ "0.00111756723889676861194528779365036804209780569430979619191368365101767584234238739006014642030867082584879980084600891029652194894033983298525557031267486462261183552228407567254385484725526473194638232837121400952656166317494160890992521617962074755879139426562827474867529534603489999881517344251240934565370875872258567402006485364663037360867995949333428455355158956997903658396391987183242803432381121090070068052470699021698778327692896265713374165121934198317054322509515907787436292869356617617488134138607060521836742304086881116778894115312969028125576872631422640843849262316242083026323848117672309894295835647689116645729442293127339442002362503272901344150592312997689931760885243452521347110588400807745497586357999926055473098657193293315460362142095481032669552484416204043803760398128539187736468661201490077334945680291541001880226470587413227676561042481765839926685317166112381580051375072808146228148805730329125453723217618294124205814309052344980916905169686313732664898978299826" };
         SetNumIterations(4718592);
         break;
 
@@ -1043,19 +1043,25 @@ void Fractal::CalcFractal(bool MemoryOnly)
     // Draw the local fractal.
     switch(GetRenderAlgorithm()) {
     case RenderAlgorithm::CpuHigh:
-        CalcCpuHDR<HighPrecision>(MemoryOnly);
+        CalcCpuHDR<HighPrecision, double>(MemoryOnly);
+        break;
+    case RenderAlgorithm::CpuHDR32:
+        CalcCpuHDR<HDRFloat<float>, float>(MemoryOnly);
+        break;
+    case RenderAlgorithm::Cpu32PerturbedBLAHDR:
+        CalcCpuPerturbationFractalBLA<HDRFloat<float>, float>(MemoryOnly);
         break;
     case RenderAlgorithm::Cpu64:
-        CalcCpuHDR<double>(MemoryOnly);
+        CalcCpuHDR<double, double>(MemoryOnly);
         break;
-    case RenderAlgorithm::CpuHDR:
-        CalcCpuHDR<HDRFloat>(MemoryOnly);
+    case RenderAlgorithm::CpuHDR64:
+        CalcCpuHDR<HDRFloat<double>, double>(MemoryOnly);
         break;
     case RenderAlgorithm::Cpu64PerturbedBLA:
-        CalcCpuPerturbationFractalBLA<double>(MemoryOnly);
+        CalcCpuPerturbationFractalBLA<double, double>(MemoryOnly);
         break;
     case RenderAlgorithm::Cpu64PerturbedBLAHDR:
-        CalcCpuPerturbationFractalBLA<HDRFloat>(MemoryOnly);
+        CalcCpuPerturbationFractalBLA<HDRFloat<double>, double>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu1x64:
     case RenderAlgorithm::Gpu2x64:
@@ -1182,6 +1188,7 @@ void Fractal::DrawPerturbationResults(bool LeaveScreen) {
 
 void Fractal::ClearPerturbationResults() {
     m_PerturbationResultsDouble.clear();
+    m_PerturbationResultsHDRDouble.clear();
     m_PerturbationResultsHDRFloat.clear();
 }
 
@@ -1206,7 +1213,7 @@ void Fractal::DrawFractal(bool MemoryOnly)
     }
 
     DrawPerturbationResults<double>(true);
-    DrawPerturbationResults<HDRFloat>(true);
+    DrawPerturbationResults<HDRFloat<double>>(true);
 }
 
 void Fractal::DrawFractalLine(size_t output_y)
@@ -1281,6 +1288,8 @@ void Fractal::FillCoord(HighPrecision& src, MattCoords& dest) {
     dest.dbl.tail = Convert<HighPrecision, double>(src - HighPrecision{ dest.dbl.head });
 
     dest.doubleOnly = Convert<HighPrecision, double>(src);
+
+    dest.hdrflt = (HDRFloat<float>)src;
 
     dest.flt.y = Convert<HighPrecision, float>(src);
     dest.flt.x = Convert<HighPrecision, float>(src - HighPrecision{ dest.flt.y });
@@ -1391,7 +1400,7 @@ void Fractal::CalcNetworkFractal(bool MemoryOnly)
 }
 
 void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
-    auto* results = GetUsefulPerturbationResults<double>();
+    auto* results = GetUsefulPerturbationResults<double, double>();
 
     double dx = Convert<HighPrecision, double>((m_MaxX - m_MinX) / m_ScrnWidth);
     double dy = Convert<HighPrecision, double>((m_MaxY - m_MinY) / m_ScrnHeight);
@@ -1538,7 +1547,7 @@ void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
 // If we are not using network rendering, this function calculates and draws the
 // entire fractal.
 //////////////////////////////////////////////////////////////////////////////
-template<class T>
+template<class T, class SubType>
 void Fractal::CalcCpuHDR(bool MemoryOnly) {
     const T dx = T((m_MaxX - m_MinX) / m_ScrnWidth);
     const T dy = T((m_MaxY - m_MinY) / m_ScrnHeight);
@@ -1564,7 +1573,7 @@ void Fractal::CalcCpuHDR(bool MemoryOnly) {
             }
 
             T cx = T{ m_MinX };
-            T cy = T{ m_MaxY - dy * (double)y };
+            T cy = T{ m_MaxY - dy * (SubType)y };
             T zx, zy;
             T zx2, zy2;
             T sum;
@@ -1612,9 +1621,9 @@ void Fractal::CalcCpuHDR(bool MemoryOnly) {
     DrawFractal(MemoryOnly);
 }
 
-template<class T>
+template<class T, class SubType>
 void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
-    auto* results = GetUsefulPerturbationResults<T>();
+    auto* results = GetUsefulPerturbationResults<T, SubType>();
 
     BLAS<T> blas(*results);
     blas.Init(results->x.size(), T{ results->maxRadius });
@@ -1648,11 +1657,11 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
             {
                 size_t iter = 0;
                 size_t RefIteration = 0;
-                T deltaReal = dx * (double)x;
+                T deltaReal = dx * (SubType)x;
                 HdrReduce(deltaReal);
                 deltaReal -= centerX;
 
-                T deltaImaginary = -dy * (double)y;
+                T deltaImaginary = -dy * (SubType)y;
                 HdrReduce(deltaImaginary);
                 deltaImaginary -= centerY;
 
@@ -1776,23 +1785,24 @@ std::vector<PerturbationResults<T>>& Fractal::GetPerturbationResults() {
     if constexpr (std::is_same<T, double>::value) {
         return m_PerturbationResultsDouble;
     }
-    else {
-        static_assert(std::is_same<T, HDRFloat>::value, "No");
+    else if constexpr (std::is_same<T, HDRFloat<double>>::value) {
+        return m_PerturbationResultsHDRDouble;
+    } else if constexpr (std::is_same<T, HDRFloat<float>>::value) {
         return m_PerturbationResultsHDRFloat;
     }
 }
 
-template<class T>
+template<class T, class SubType>
 void Fractal::AddPerturbationReferencePoint() {
     if (m_PerturbationAlg == PerturbationAlg::ST) {
-        AddPerturbationReferencePointST<T>();
+        AddPerturbationReferencePointST<T, SubType>();
     }
     else if (m_PerturbationAlg == PerturbationAlg::MT) {
-        AddPerturbationReferencePointMT<T>();
+        AddPerturbationReferencePointMT<T, SubType>();
     }
 }
 
-template<class T>
+template<class T, class SubType>
 void Fractal::AddPerturbationReferencePointST() {
     auto &PerturbationResults = GetPerturbationResults<T>();
     PerturbationResults.push_back({});
@@ -1843,7 +1853,7 @@ void Fractal::AddPerturbationReferencePointST() {
 
     //double glitch = std::exp(std::log(0.0001));
     //double glitch = 0.0001;
-    double glitch = 0.0000001;
+    SubType glitch = 0.0000001;
 
     zx = cx;
     zy = cy;
@@ -1900,7 +1910,7 @@ struct ThreadPtrs {
     std::atomic<Type*> Out;
 };
 
-template<class T>
+template<class T, class SubType>
 void Fractal::AddPerturbationReferencePointMT() {
     auto& PerturbationResults = GetPerturbationResults<T>();
     PerturbationResults.push_back({});
@@ -1950,7 +1960,7 @@ void Fractal::AddPerturbationReferencePointMT() {
 
     //double glitch = std::exp(std::log(0.0001));
     //double glitch = 0.0001;
-    double glitch = 0.0000001;
+    SubType glitch = 0.0000001;
 
     struct ThreadZxData {
         HighPrecision zx;
@@ -2233,9 +2243,9 @@ void Fractal::AddPerturbationReferencePointMT() {
         }
 
         // Note: not T.
-        const double tempZX = (double)double_zx + (double)cx;
-        const double tempZY = (double)double_zy + (double)cy;
-        const double zn_size = tempZX * tempZX + tempZY * tempZY;
+        const SubType tempZX = (SubType)double_zx + (SubType)cx;
+        const SubType tempZY = (SubType)double_zy + (SubType)cy;
+        const SubType zn_size = tempZX * tempZX + tempZY * tempZY;
 
         done1 = false;
         done2 = false;
@@ -2330,16 +2340,26 @@ bool Fractal::RequiresReferencePoints() const {
 template<class T>
 bool Fractal::IsPerturbationResultUsefulHere(size_t i) const {
     if constexpr (std::is_same<T, double>::value) {
-        return m_PerturbationResultsDouble[i].hiX >= m_MinX &&
+        return
+            m_PerturbationResultsDouble[i].hiX >= m_MinX &&
             m_PerturbationResultsDouble[i].hiX <= m_MaxX &&
             m_PerturbationResultsDouble[i].hiY >= m_MinY &&
             m_PerturbationResultsDouble[i].hiY <= m_MaxY &&
             (m_PerturbationResultsDouble[i].MaxIterations > m_PerturbationResultsDouble[i].x.size() ||
                 m_PerturbationResultsDouble[i].MaxIterations >= m_NumIterations);
     }
-    else {
-        static_assert(std::is_same<T, HDRFloat>::value, "No");
-        return m_PerturbationResultsHDRFloat[i].hiX >= m_MinX &&
+    else if constexpr (std::is_same<T, HDRFloat<double>>::value) {
+        return
+            m_PerturbationResultsHDRDouble[i].hiX >= m_MinX &&
+            m_PerturbationResultsHDRDouble[i].hiX <= m_MaxX &&
+            m_PerturbationResultsHDRDouble[i].hiY >= m_MinY &&
+            m_PerturbationResultsHDRDouble[i].hiY <= m_MaxY &&
+            (m_PerturbationResultsHDRDouble[i].MaxIterations > m_PerturbationResultsHDRDouble[i].x.size() ||
+                m_PerturbationResultsHDRDouble[i].MaxIterations >= m_NumIterations);
+    }
+    else if constexpr (std::is_same<T, HDRFloat<float>>::value) {
+        return
+            m_PerturbationResultsHDRFloat[i].hiX >= m_MinX &&
             m_PerturbationResultsHDRFloat[i].hiX <= m_MaxX &&
             m_PerturbationResultsHDRFloat[i].hiY >= m_MinY &&
             m_PerturbationResultsHDRFloat[i].hiY <= m_MaxY &&
@@ -2348,7 +2368,7 @@ bool Fractal::IsPerturbationResultUsefulHere(size_t i) const {
     }
 }
 
-template<class T>
+template<class T, class SubType>
 PerturbationResults<T>* Fractal::GetUsefulPerturbationResults() {
     std::vector<PerturbationResults<T>*> useful_results;
     std::vector<PerturbationResults<T>>* cur_array = nullptr;
@@ -2356,8 +2376,9 @@ PerturbationResults<T>* Fractal::GetUsefulPerturbationResults() {
     if constexpr (std::is_same<T, double>::value) {
         cur_array = &m_PerturbationResultsDouble;
     }
-    else {
-        static_assert(std::is_same<T, HDRFloat>::value, "No");
+    else if constexpr (std::is_same<T, HDRFloat<double>>::value) {
+        cur_array = &m_PerturbationResultsHDRDouble;
+    } else if constexpr (std::is_same<T, HDRFloat<float>>::value) {
         cur_array = &m_PerturbationResultsHDRFloat;
     }
 
@@ -2386,7 +2407,7 @@ PerturbationResults<T>* Fractal::GetUsefulPerturbationResults() {
         results = useful_results[useful_results.size() - 1];
     }
     else {
-        AddPerturbationReferencePoint<T>();
+        AddPerturbationReferencePoint<T, SubType>();
 
         results = &(*cur_array)[cur_array->size() - 1];
     }
@@ -2395,7 +2416,7 @@ PerturbationResults<T>* Fractal::GetUsefulPerturbationResults() {
 }
 
 void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
-    auto* results = GetUsefulPerturbationResults<double>();
+    auto* results = GetUsefulPerturbationResults<double, double>();
 
     BLAS<double> doubleBlas(*results);
     doubleBlas.Init(results->x.size(), Convert<HighPrecision, double>(results->maxRadius));
@@ -2814,7 +2835,7 @@ HighPrecision Fractal::Benchmark(size_t numIters)
     bm.BenchmarkSetup(numIters);
 
     if (RequiresReferencePoints()) {
-        AddPerturbationReferencePoint<double>();
+        AddPerturbationReferencePoint<double, double>();
     }
 
     if (!bm.StartTimer()) {
@@ -2827,7 +2848,7 @@ HighPrecision Fractal::Benchmark(size_t numIters)
     return result;
 }
 
-template<class T>
+template<class T, class SubType>
 HighPrecision Fractal::BenchmarkReferencePoint(size_t numIters) {
     BenchmarkData bm(*this);
     bm.BenchmarkSetup(numIters);
@@ -2836,15 +2857,16 @@ HighPrecision Fractal::BenchmarkReferencePoint(size_t numIters) {
         return {};
     }
 
-    AddPerturbationReferencePoint<T>();
+    AddPerturbationReferencePoint<T, SubType>();
 
     auto result = bm.StopTimerNoIters();
     bm.BenchmarkFinish();
     return result;
 }
 
-template HighPrecision Fractal::BenchmarkReferencePoint<double>(size_t numIters);
-template HighPrecision Fractal::BenchmarkReferencePoint<HDRFloat>(size_t numIters);
+template HighPrecision Fractal::BenchmarkReferencePoint<double, double>(size_t numIters);
+template HighPrecision Fractal::BenchmarkReferencePoint<HDRFloat<double>, double>(size_t numIters);
+template HighPrecision Fractal::BenchmarkReferencePoint<HDRFloat<float>, float>(size_t numIters);
 
 HighPrecision Fractal::BenchmarkThis() {
     BenchmarkData bm(*this);

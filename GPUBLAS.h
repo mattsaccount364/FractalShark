@@ -6,11 +6,9 @@
 template<class T>
 class BLAS;
 
-template<class T>
+template<class T, class GPUBLA_TYPE>
 class GPUBLAS {
 public:
-    using GPUBLA_TYPE = BLA<double>;
-
     GPUBLAS(const std::vector<std::vector<GPUBLA_TYPE>>& B,
         int32_t LM2,
         size_t FirstLevel);
@@ -41,25 +39,4 @@ protected:
     cudaError_t m_Err;
 
     bool m_Owned;
-};
-
-class ScaledGPUBLAS : public GPUBLAS<double> {
-public:
-    using GPUBLA_TYPE = ScaledBLA<float>;
-
-    ScaledGPUBLAS(const std::vector<std::vector<GPUBLAS<double>::GPUBLA_TYPE>>& B,
-        int32_t LM2,
-        size_t FirstLevel);
-    ~ScaledGPUBLAS();
-
-    ScaledGPUBLAS(const ScaledGPUBLAS& other);
-
-    ScaledGPUBLAS(ScaledGPUBLAS&& other) = delete;
-    ScaledGPUBLAS& operator=(const ScaledGPUBLAS& other) = delete;
-    ScaledGPUBLAS& operator=(ScaledGPUBLAS&& other) = delete;
-
-    CUDA_CRAP GPUBLA_TYPE* LookupBackwards(size_t m, float z2, float scale);
-
-private:
-    GPUBLA_TYPE** m_ScaledB;
 };

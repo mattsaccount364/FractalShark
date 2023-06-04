@@ -9,13 +9,8 @@
 #include "BLA.h"
 #include "BLAS.h"
 
-// Render algorithm: 'h' = high res CPU, 'l' = low res CPU
-// 'f' = 1x64-bit double
-// 'd' = 2x64-bit double (128-bit)
-// 'F' = 1x32-bit float
-// 'D' = 2x32-bit float
-// 'B' = blend
 enum class RenderAlgorithm {
+    // CPU algorithms
     CpuHigh,
     CpuHDR32,
     CpuHDR64,
@@ -23,13 +18,17 @@ enum class RenderAlgorithm {
     Cpu64PerturbedBLA,
     Cpu32PerturbedBLAHDR,
     Cpu64PerturbedBLAHDR,
+
+    // GPU:
     Gpu1x64,
     Gpu1x64Perturbed,
     Gpu1x64PerturbedBLA,
+    GpuHDRx64PerturbedBLA,
     Gpu2x64,
     Gpu4x64,
     Gpu1x32,
     Gpu1x32Perturbed,
+    GpuHDRx32PerturbedBLA,
     Gpu1x32PerturbedScaled,
     Gpu1x32PerturbedScaledBLA,
     Gpu2x32,
@@ -89,29 +88,25 @@ struct MattCoords {
     MattQDbldbl qdbl;
     MattQFltflt qflt;
     HDRFloat<float> hdrflt;
+    HDRFloat<double> hdrdbl;
 };
 
+template<class T>
 struct MattPerturbResults {
-    MattReferenceSingleIter<float> *float_iters;
-    MattReferenceSingleIter<double> *double_iters;
-    MattReferenceSingleIter<float2> *dblflt_iters;
-    MattReferenceSingleIter<HDRFloat<float>>* hdrflt_iters;
+    MattReferenceSingleIter<T> *iters;
     uint32_t* bad_counts;
     size_t bad_counts_size;
     size_t size;
 
     MattPerturbResults(size_t in_size,
                        size_t in_bad_counts_size,
-                       double *in_x,
-                       double *in_x2,
-                       double *in_y,
-                       double *in_y2,
+                       T *in_x,
+                       T *in_x2,
+                       T *in_y,
+                       T *in_y2,
                        uint8_t *in_bad,
                        uint32_t *in_bad_counts) :
-        float_iters(new MattReferenceSingleIter<float>[in_size]),
-        double_iters(new MattReferenceSingleIter<double>[in_size]),
-        dblflt_iters(new MattReferenceSingleIter<float2>[in_size]),
-        hdrflt_iters(new MattReferenceSingleIter<HDRFloat<float>>[in_size]),
+        iters(new MattReferenceSingleIter<T>[in_size]),
         bad_counts(new uint32_t[in_bad_counts_size]),
         bad_counts_size(in_bad_counts_size),
         size(in_size) {
@@ -123,41 +118,22 @@ struct MattPerturbResults {
         static_assert(sizeof(MattReferenceSingleIter<float>) == 24, "Float");
         static_assert(sizeof(MattReferenceSingleIter<double>) == 40, "Double");
         static_assert(sizeof(MattReferenceSingleIter<float2>) == 40, "float2");
+        //static_assert(sizeof(MattReferenceSingleIter<HDRFloat<float>>) == 12 * 4, "float2");
         static_assert(sizeof(float2) == 8, "float2 type");
 
         for (size_t i = 0; i < size; i++) {
-            float_iters[i].x = (float)in_x[i];
-            float_iters[i].x2 = (float)in_x2[i];
-            float_iters[i].y = (float)in_y[i];
-            float_iters[i].y2 = (float)in_y2[i];
-            float_iters[i].bad = in_bad[i];
-
-            double_iters[i].x = in_x[i];
-            double_iters[i].x2 = in_x2[i];
-            double_iters[i].y = in_y[i];
-            double_iters[i].y2 = in_y2[i];
-            double_iters[i].bad = in_bad[i];
-
-            dblflt_iters[i].x.y = (float)in_x[i];
-            dblflt_iters[i].x.x = (float)(in_x[i] - (double)((float)dblflt_iters[i].x.y));
-            dblflt_iters[i].x2.y = (float)in_x2[i];
-            dblflt_iters[i].x2.x = (float)(in_x2[i] - (double)((float)dblflt_iters[i].x2.y));
-            dblflt_iters[i].y.y = (float)in_y[i];
-            dblflt_iters[i].y.x = (float)(in_y[i] - (double)((float)dblflt_iters[i].y.y));
-            dblflt_iters[i].y2.y = (float)in_y2[i];
-            dblflt_iters[i].y2.x = (float)(in_y2[i] - (double)((float)dblflt_iters[i].y2.y));
-            dblflt_iters[i].bad = in_bad[i];
-
-            //hdrflt_iters[i].x = 
+            iters[i].x = in_x[i];
+            iters[i].x2 = in_x2[i];
+            iters[i].y = in_y[i];
+            iters[i].y2 = in_y2[i];
+            iters[i].bad = in_bad[i];
         }
 
         memcpy(bad_counts, in_bad_counts, bad_counts_size);
     }
 
     ~MattPerturbResults() {
-        delete[] float_iters;
-        delete[] double_iters;
-        delete[] dblflt_iters;
+        delete[] iters;
         delete[] bad_counts;
     }
 };
@@ -182,9 +158,79 @@ public:
     uint32_t RenderPerturbBLA(
         RenderAlgorithm algorithm,
         uint32_t* buffer,
-        MattPerturbResults* results,
-        BLAS<double> *doubleBlas,
-        BLAS<float>* floatBlas,
+        MattPerturbResults<float>* results,
+        BLAS<float>* blas,
+        MattCoords cx,
+        MattCoords cy,
+        MattCoords dx,
+        MattCoords dy,
+        MattCoords centerX,
+        MattCoords centerY,
+        uint32_t n_iterations,
+        int iteration_precision);
+
+    uint32_t RenderPerturbBLA(
+        RenderAlgorithm algorithm,
+        uint32_t* buffer,
+        MattPerturbResults<double>* results,
+        BLAS<double> *blas,
+        MattCoords cx,
+        MattCoords cy,
+        MattCoords dx,
+        MattCoords dy,
+        MattCoords centerX,
+        MattCoords centerY,
+        uint32_t n_iterations,
+        int iteration_precision);
+
+    uint32_t RenderPerturbBLA(
+        RenderAlgorithm algorithm,
+        uint32_t* buffer,
+        MattPerturbResults<double>* double_perturb,
+        MattPerturbResults<float>* float_perturb,
+        BLAS<double>* blas,
+        MattCoords cx,
+        MattCoords cy,
+        MattCoords dx,
+        MattCoords dy,
+        MattCoords centerX,
+        MattCoords centerY,
+        uint32_t n_iterations,
+        int iteration_precision);
+
+    uint32_t RenderPerturbBLA(
+        RenderAlgorithm algorithm,
+        uint32_t* buffer,
+        MattPerturbResults<float2>* results,
+        BLAS<float2>* blas,
+        MattCoords cx,
+        MattCoords cy,
+        MattCoords dx,
+        MattCoords dy,
+        MattCoords centerX,
+        MattCoords centerY,
+        uint32_t n_iterations,
+        int iteration_precision);
+
+    uint32_t RenderPerturbBLA(
+        RenderAlgorithm algorithm,
+        uint32_t* buffer,
+        MattPerturbResults<HDRFloat<float>>* results,
+        BLAS<HDRFloat<float>>* blas,
+        MattCoords cx,
+        MattCoords cy,
+        MattCoords dx,
+        MattCoords dy,
+        MattCoords centerX,
+        MattCoords centerY,
+        uint32_t n_iterations,
+        int iteration_precision);
+
+    uint32_t RenderPerturbBLA(
+        RenderAlgorithm algorithm,
+        uint32_t* buffer,
+        MattPerturbResults<HDRFloat<double>>* results,
+        BLAS<HDRFloat<double>>* blas,
         MattCoords cx,
         MattCoords cy,
         MattCoords dx,

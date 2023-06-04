@@ -143,6 +143,7 @@ private:
     };
 
     std::vector<PerturbationResults<double>> m_PerturbationResultsDouble;
+    std::vector<PerturbationResults<float>> m_PerturbationResultsFloat;
     std::vector<PerturbationResults<HDRFloat<double>>> m_PerturbationResultsHDRDouble;
     std::vector<PerturbationResults<HDRFloat<float>>> m_PerturbationResultsHDRFloat;
 
@@ -161,8 +162,11 @@ private:
     void AddPerturbationReferencePointMT();
     bool RequiresReferencePoints() const;
 
-    template<class T, class SubType>
+    template<class T, class SubType, bool Copy>
     PerturbationResults<T>* GetUsefulPerturbationResults();
+
+    template<class SrcT>
+    void CopyUsefulPerturbationResults(PerturbationResults<SrcT>& src_array);
 
     static void FillCoord(HighPrecision& src, MattCoords& dest);
     void FillGpuCoords(MattCoords& cx2, MattCoords& cy2, MattCoords& dx2, MattCoords& dy2);
@@ -175,7 +179,12 @@ private:
 
     template<class T, class SubType>
     void CalcCpuPerturbationFractalBLA(bool MemoryOnly);
+
+    template<class T, class SubType>
     void CalcGpuPerturbationFractalBLA(bool MemoryOnly);
+
+    template<class T, class SubType, class T2, class SubType2>
+    void CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly);
 
     void CalcPixelRow_Multi(unsigned int *rowBuffer, size_t row); // Multiprecision
     bool CalcPixelRow_Exp(unsigned int *rowBuffer, size_t row); // Experimental

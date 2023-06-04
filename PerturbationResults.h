@@ -31,4 +31,26 @@ public:
         radiusY = {};
         maxRadius = {};
     }
+
+    template<class Other>
+    void Copy(PerturbationResults<Other>& other) {
+        clear();
+
+        x.reserve(other.x.size());
+        y.reserve(other.y.size());
+        x2.reserve(other.x2.size());
+        y2.reserve(other.y2.size());
+        bad.reserve(other.bad.size());
+        bad_counts.reserve(other.bad_counts.size());
+
+        for (size_t i = 0; i < other.x.size(); i++) {
+            x.push_back((T)other.x[i]);
+            y.push_back((T)other.y[i]);
+            x2.push_back((T)other.x2[i]);
+            y2.push_back((T)other.y2[i]);
+        }
+
+        bad = other.bad;
+        bad_counts = other.bad_counts;
+    }
 };

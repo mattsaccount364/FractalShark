@@ -53,6 +53,12 @@ public:
         exp = other.exp;
     }
 
+    template<class SrcT>
+    CUDA_CRAP HDRFloat(const HDRFloat<SrcT>& other) {
+        mantissa = (T)other.mantissa;
+        exp = other.exp;
+    }
+
     CUDA_CRAP HDRFloat(T mantissa, int64_t exp) {
         this->mantissa = mantissa;
         this->exp = exp < MIN_BIG_EXPONENT() ? MIN_BIG_EXPONENT() : exp;

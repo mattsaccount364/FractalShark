@@ -144,8 +144,8 @@ template class BLA<HDRFloat<double>>;
 // Bilinear approximation.  GPU copy.
 ////////////////////////////////////////////////////////////////////////////////////////
 
-template<class T>
-GPUBLAS<T>::GPUBLAS(const std::vector<std::vector<GPUBLA_TYPE>>& B,
+template<class T, class GPUBLA_TYPE>
+GPUBLAS<T, GPUBLA_TYPE>::GPUBLAS(const std::vector<std::vector<GPUBLA_TYPE>>& B,
     int32_t LM2,
     size_t FirstLevel)
     : m_ElementsPerLevel(nullptr),
@@ -192,8 +192,8 @@ GPUBLAS<T>::GPUBLAS(const std::vector<std::vector<GPUBLA_TYPE>>& B,
     }
 }
 
-template<class T>
-GPUBLAS<T>::~GPUBLAS() {
+template<class T, class GPUBLA_TYPE>
+GPUBLAS<T, GPUBLA_TYPE>::~GPUBLAS() {
     if (m_Owned) {
         if (m_ElementsPerLevel != nullptr) {
             cudaFree(m_ElementsPerLevel);
@@ -212,8 +212,8 @@ GPUBLAS<T>::~GPUBLAS() {
     }
 }
 
-template<class T>
-GPUBLAS<T>::GPUBLAS(const GPUBLAS& other) {
+template<class T, class GPUBLA_TYPE>
+GPUBLAS<T, GPUBLA_TYPE>::GPUBLAS(const GPUBLAS& other) {
     if (this == &other) {
         return;
     }
@@ -221,9 +221,9 @@ GPUBLAS<T>::GPUBLAS(const GPUBLAS& other) {
     m_ElementsPerLevel = other.m_ElementsPerLevel;
     m_NumLevels = other.m_NumLevels;
     m_B = other.m_B;
-    for (size_t i = 0; i < m_NumLevels; i++) {
-        m_B[i] = other.m_B[i];
-    }
+    //for (size_t i = 0; i < m_NumLevels; i++) {
+    //    m_B[i] = other.m_B[i];
+    //}
 
     m_LM2 = other.m_LM2;
     m_FirstLevel = other.m_FirstLevel;
@@ -231,13 +231,13 @@ GPUBLAS<T>::GPUBLAS(const GPUBLAS& other) {
     m_Owned = false;
 }
 
-template<class T>
-uint32_t GPUBLAS<T>::CheckValid() const {
+template<class T, class GPUBLA_TYPE>
+uint32_t GPUBLAS<T, GPUBLA_TYPE>::CheckValid() const {
     return m_Err;
 }
 
-template<class T>
-CUDA_CRAP GPUBLAS<T>::GPUBLA_TYPE* GPUBLAS<T>::LookupBackwards(size_t m, T z2) {
+template<class T, class GPUBLA_TYPE>
+CUDA_CRAP GPUBLA_TYPE* GPUBLAS<T, GPUBLA_TYPE>::LookupBackwards(size_t m, T z2) {
 
     if (m == 0) {
         return nullptr;
@@ -281,8 +281,10 @@ CUDA_CRAP GPUBLAS<T>::GPUBLA_TYPE* GPUBLAS<T>::LookupBackwards(size_t m, T z2) {
 }
 
 
-template class GPUBLAS<float>;
-template class GPUBLAS<double>;
+template class GPUBLAS<float, BLA<double>>;
+template class GPUBLAS<double, BLA<double>>;
+template class GPUBLAS<HDRFloat<double>, BLA<HDRFloat<double>>>;
+template class GPUBLAS<HDRFloat<float>, BLA<HDRFloat<float>>>;
 
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -833,7 +835,7 @@ void mandel_1x_double_perturb(uint32_t* iter_matrix,
 __global__
 void mandel_1x_double_perturb_bla(uint32_t* iter_matrix,
     MattPerturbSingleResults<double> PerturbDouble,
-    GPUBLAS<double> doubleBlas,
+    GPUBLAS<double, BLA<double>> doubleBlas,
     int width,
     int height,
     double cx,
@@ -932,6 +934,144 @@ void mandel_1x_double_perturb_bla(uint32_t* iter_matrix,
 
         if (normSquared < DeltaNormSquared ||
             RefIteration >= PerturbDouble.size - 1) {
+            DeltaSubNX = tempZX;
+            DeltaSubNY = tempZY;
+            DeltaNormSquared = normSquared;
+            RefIteration = 0;
+        }
+
+        ++iter;
+    }
+
+    iter_matrix[idx] = (uint32_t)iter;
+}
+
+__global__
+void mandel_1xHDR_InitStatics()
+{
+    if (blockIdx.x == 0 &&
+        threadIdx.x == 0 &&
+        blockIdx.y == 0 &&
+        threadIdx.y == 0) {
+        InitStatics();
+    }
+}
+
+template<class HDRFloatType>
+__global__
+void mandel_1xHDR_float_perturb_bla(uint32_t* iter_matrix,
+    MattPerturbSingleResults<HDRFloatType> Perturb,
+    GPUBLAS<HDRFloatType, BLA<HDRFloatType>> blas,
+    int width,
+    int height,
+    HDRFloatType cx,
+    HDRFloatType cy,
+    HDRFloatType dx,
+    HDRFloatType dy,
+    HDRFloatType centerX,
+    HDRFloatType centerY,
+    uint32_t n_iterations)
+{
+    int X = blockIdx.x * blockDim.x + threadIdx.x;
+    int Y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (X >= width || Y >= height)
+        return;
+
+    //size_t idx = width * (height - Y - 1) + X;
+    size_t idx = width * Y + X;
+
+    if (iter_matrix[idx] != 0) {
+        return;
+    }
+
+    HdrReduce(centerX);
+    HdrReduce(centerY);
+
+    size_t iter = 0;
+    size_t RefIteration = 0;
+    HDRFloatType DeltaReal = dx * X - centerX;
+    HDRFloatType DeltaImaginary = -dy * Y - centerY;
+
+    HDRFloatType DeltaSub0X = DeltaReal;
+    HDRFloatType DeltaSub0Y = DeltaImaginary;
+    HDRFloatType DeltaSubNX = 0;
+    HDRFloatType DeltaSubNY = 0;
+    HDRFloatType DeltaNormSquared = 0;
+
+    while (iter < n_iterations) {
+        BLA<HDRFloatType>* b = nullptr;
+        while ((b = blas.LookupBackwards(RefIteration, DeltaNormSquared)) != nullptr) {
+            int l = b->getL();
+
+            iter += l;
+            RefIteration += l;
+
+            if (iter >= n_iterations) {
+                break;
+            }
+
+            b->getValue(DeltaSubNX, DeltaSubNY, DeltaSub0X, DeltaSub0Y);
+
+            if (RefIteration >= Perturb.size - 1) { // TODO remove?
+                iter_matrix[idx] = 255;
+                return;
+            }
+
+            HDRFloatType tempZX = Perturb.iters[RefIteration].x + DeltaSubNX;
+            HDRFloatType tempZY = Perturb.iters[RefIteration].y + DeltaSubNY;
+            HDRFloatType normSquared = tempZX * tempZX + tempZY * tempZY;
+            HdrReduce(normSquared);
+
+            DeltaNormSquared = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
+            HdrReduce(DeltaNormSquared);
+
+            if (normSquared > 256) {
+                break;
+            }
+
+            if (normSquared < DeltaNormSquared ||
+                RefIteration >= Perturb.size - 1) {
+                DeltaSubNX = tempZX;
+                DeltaSubNY = tempZY;
+                DeltaNormSquared = normSquared;
+                RefIteration = 0;
+            }
+        }
+
+        if (iter >= n_iterations) {
+            break;
+        }
+
+        HDRFloatType DeltaSubNXOrig = DeltaSubNX;
+        HDRFloatType DeltaSubNYOrig = DeltaSubNY;
+
+        DeltaSubNX = DeltaSubNXOrig * (Perturb.iters[RefIteration].x2 + DeltaSubNXOrig) -
+            DeltaSubNYOrig * (Perturb.iters[RefIteration].y2 + DeltaSubNYOrig) +
+            DeltaSub0X;
+        HdrReduce(DeltaSubNX);
+
+        DeltaSubNY = DeltaSubNXOrig * (Perturb.iters[RefIteration].y2 + DeltaSubNYOrig) +
+            DeltaSubNYOrig * (Perturb.iters[RefIteration].x2 + DeltaSubNXOrig) +
+            DeltaSub0Y;
+        HdrReduce(DeltaSubNY);
+
+        ++RefIteration;
+
+        HDRFloatType tempZX = Perturb.iters[RefIteration].x + DeltaSubNX;
+        HDRFloatType tempZY = Perturb.iters[RefIteration].y + DeltaSubNY;
+        HDRFloatType normSquared = tempZX * tempZX + tempZY * tempZY;
+        HdrReduce(normSquared);
+
+        DeltaNormSquared = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
+        HdrReduce(DeltaNormSquared);
+
+        if (normSquared > 256) {
+            break;
+        }
+
+        if (normSquared < DeltaNormSquared ||
+            RefIteration >= Perturb.size - 1) {
             DeltaSubNX = tempZX;
             DeltaSubNY = tempZY;
             DeltaNormSquared = normSquared;
@@ -1702,7 +1842,7 @@ __global__
 void mandel_1x_float_perturb_scaled_bla(uint32_t* iter_matrix,
     MattPerturbSingleResults<float> PerturbFloat,
     MattPerturbSingleResults<double> PerturbDouble,
-    GPUBLAS<double> doubleBlas,
+    GPUBLAS<double, BLA<double>> doubleBlas,
     int width,
     int height,
     double cx,
@@ -2705,9 +2845,55 @@ uint32_t GPURenderer::Render(
 uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
     uint32_t* buffer,
-    MattPerturbResults* Perturb,
-    BLAS<double> *doubleBlas,
-    BLAS<float>* /*floatBlas*/,
+    MattPerturbResults<float>* float_perturb,
+    BLAS<float> *blas,
+    MattCoords cx,
+    MattCoords cy,
+    MattCoords dx,
+    MattCoords dy,
+    MattCoords centerX,
+    MattCoords centerY,
+    uint32_t n_iterations,
+    int /*iteration_precision*/)
+{
+    uint32_t result = cudaSuccess;
+
+    if (iter_matrix_cu == nullptr) {
+        return result;
+    }
+
+    dim3 nb_blocks(w_block, h_block, 1);
+    dim3 threads_per_block(NB_THREADS_W, NB_THREADS_H, 1);
+
+    MattPerturbSingleResults<float> cudaResults(
+        float_perturb->size,
+        float_perturb->iters,
+        float_perturb->bad_counts,
+        float_perturb->bad_counts_size);
+
+    result = cudaResults.CheckValid();
+    if (result != 0) {
+        return result;
+    }
+
+    if (algorithm == RenderAlgorithm::Gpu1x32Perturbed) {
+        mandel_1x_float_perturb << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
+            cudaResults,
+            local_width, local_height, cx.floatOnly, cy.floatOnly, dx.floatOnly, dy.floatOnly,
+            centerX.floatOnly, centerY.floatOnly,
+            n_iterations);
+
+        result = ExtractIters(buffer);
+    }
+
+    return result;
+}
+
+uint32_t GPURenderer::RenderPerturbBLA(
+    RenderAlgorithm algorithm,
+    uint32_t* buffer,
+    MattPerturbResults<double>* double_perturb,
+    BLAS<double> *blas,
     MattCoords cx,
     MattCoords cy,
     MattCoords dx,
@@ -2728,10 +2914,10 @@ uint32_t GPURenderer::RenderPerturbBLA(
 
     if (algorithm == RenderAlgorithm::Gpu1x64Perturbed) {
         MattPerturbSingleResults<double> cudaResults(
-            Perturb->size,
-            Perturb->double_iters,
-            Perturb->bad_counts,
-            Perturb->bad_counts_size);
+            double_perturb->size,
+            double_perturb->iters,
+            double_perturb->bad_counts,
+            double_perturb->bad_counts_size);
 
         result = cudaResults.CheckValid();
         if (result != 0) {
@@ -2747,17 +2933,17 @@ uint32_t GPURenderer::RenderPerturbBLA(
         result = ExtractIters(buffer);
     } else if (algorithm == RenderAlgorithm::Gpu1x64PerturbedBLA) {
         MattPerturbSingleResults<double> cudaResults(
-            Perturb->size,
-            Perturb->double_iters,
-            Perturb->bad_counts,
-            Perturb->bad_counts_size);
+            double_perturb->size,
+            double_perturb->iters,
+            double_perturb->bad_counts,
+            double_perturb->bad_counts_size);
 
         result = cudaResults.CheckValid();
         if (result != 0) {
             return result;
         }
 
-        GPUBLAS<double> gpu_blas(doubleBlas->m_B, doubleBlas->m_LM2, doubleBlas->m_FirstLevel);
+        GPUBLAS<double, BLA<double>> gpu_blas(blas->m_B, blas->m_LM2, blas->m_FirstLevel);
         result = gpu_blas.CheckValid();
         if (result != 0) {
             return result;
@@ -2772,18 +2958,184 @@ uint32_t GPURenderer::RenderPerturbBLA(
 
         result = ExtractIters(buffer);
     }
-    else if (algorithm == RenderAlgorithm::Gpu2x32Perturbed) {
-        MattPerturbSingleResults<dblflt> cudaResults(
-            Perturb->size,
-            Perturb->dblflt_iters,
-            Perturb->bad_counts,
-            Perturb->bad_counts_size);
+    //else if (algorithm == RenderAlgorithm::Gpu2x32PerturbedScaled) {
+    //    MattPerturbSingleResults<dblflt> cudaResults(
+    //        Perturb->size,
+    //        Perturb->iters,
+    //        Perturb->bad_counts,
+    //        Perturb->bad_counts_size);
 
-        result = cudaResults.CheckValid();
+    //    result = cudaResults.CheckValid();
+    //    if (result != 0) {
+    //        return result;
+    //    }
+
+    //    MattPerturbSingleResults<double> cudaResultsDouble(
+    //        Perturb->size,
+    //        Perturb->iters,
+    //        Perturb->bad_counts,
+    //        Perturb->bad_counts_size);
+
+    //    result = cudaResultsDouble.CheckValid();
+    //    if (result != 0) {
+    //        return result;
+    //    }
+
+    //    mandel_2x_float_perturb_setup << <nb_blocks, threads_per_block >> > (cudaResults);
+
+    //    mandel_2x_float_perturb_scaled << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
+    //        cudaResults, cudaResultsDouble,
+    //        local_width, local_height, cx.doubleOnly, cy.doubleOnly, dx.doubleOnly, dy.doubleOnly,
+    //        centerX.doubleOnly, centerY.doubleOnly,
+    //        n_iterations);
+
+    //    result = ExtractIters(buffer);
+    //}
+
+    return result;
+}
+
+uint32_t GPURenderer::RenderPerturbBLA(
+    RenderAlgorithm algorithm,
+    uint32_t* buffer,
+    MattPerturbResults<double>* double_perturb,
+    MattPerturbResults<float>* float_perturb,
+    BLAS<double>* blas,
+    MattCoords cx,
+    MattCoords cy,
+    MattCoords dx,
+    MattCoords dy,
+    MattCoords centerX,
+    MattCoords centerY,
+    uint32_t n_iterations,
+    int /*iteration_precision*/)
+{
+    uint32_t result = cudaSuccess;
+
+    if (iter_matrix_cu == nullptr) {
+        return result;
+    }
+
+    dim3 nb_blocks(w_block, h_block, 1);
+    dim3 threads_per_block(NB_THREADS_W, NB_THREADS_H, 1);
+
+    MattPerturbSingleResults<float> cudaResults(
+        float_perturb->size,
+        float_perturb->iters,
+        float_perturb->bad_counts,
+        float_perturb->bad_counts_size);
+
+    result = cudaResults.CheckValid();
+    if (result != 0) {
+        return result;
+    }
+
+    MattPerturbSingleResults<double> cudaResultsDouble(
+        double_perturb->size,
+        double_perturb->iters,
+        double_perturb->bad_counts,
+        double_perturb->bad_counts_size);
+
+    result = cudaResultsDouble.CheckValid();
+    if (result != 0) {
+        return result;
+    }
+
+    if (algorithm == RenderAlgorithm::Gpu1x32PerturbedScaled) {
+        mandel_1x_float_perturb_scaled << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
+            cudaResults, cudaResultsDouble,
+            local_width, local_height, cx.doubleOnly, cy.doubleOnly, dx.doubleOnly, dy.doubleOnly,
+            centerX.doubleOnly, centerY.doubleOnly,
+            n_iterations);
+
+        result = ExtractIters(buffer);
+    }
+    else if (algorithm == RenderAlgorithm::Gpu1x32PerturbedScaledBLA) {
+        GPUBLAS<double, BLA<double>> doubleGpuBlas(blas->m_B, blas->m_LM2, blas->m_FirstLevel);
+        result = doubleGpuBlas.CheckValid();
         if (result != 0) {
             return result;
         }
 
+        //GPUBLAS<float, BLA<double>> floatGpuBlas(blas->m_B, blas->m_LM2, blas->m_FirstLevel);
+        //result = floatGpuBlas.CheckValid();
+        //if (result != 0) {
+        //    return result;
+        //}
+
+        mandel_1x_float_perturb_scaled_bla << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
+            cudaResults, cudaResultsDouble, doubleGpuBlas,
+            local_width, local_height, cx.doubleOnly, cy.doubleOnly, dx.doubleOnly, dy.doubleOnly,
+            centerX.doubleOnly, centerY.doubleOnly,
+            n_iterations);
+
+        result = ExtractIters(buffer);
+
+
+        //MattPerturbSingleResults<double> cudaResultsDouble(
+        //    Perturb->size,
+        //    Perturb->iters,
+        //    Perturb->bad_counts,
+        //    Perturb->bad_counts_size);
+
+        //result = cudaResultsDouble.CheckValid();
+        //if (result != 0) {
+        //    return result;
+        //}
+
+        //ScaledGPUBLAS floatGpuBlas(blas->m_B, blas->m_LM2, blas->m_FirstLevel);
+        //result = floatGpuBlas.CheckValid();
+        //if (result != 0) {
+        //    return result;
+        //}
+
+        //mandel_1x_float_perturb_scaled2_bla << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
+        //    cudaResults, cudaResultsDouble, floatGpuBlas,
+        //    local_width, local_height, cx.doubleOnly, cy.doubleOnly, dx.doubleOnly, dy.doubleOnly,
+        //    centerX.doubleOnly, centerY.doubleOnly,
+        //    n_iterations);
+
+        //result = ExtractIters(buffer);
+    }
+
+    return result;
+}
+
+uint32_t GPURenderer::RenderPerturbBLA(
+    RenderAlgorithm algorithm,
+    uint32_t* buffer,
+    MattPerturbResults<dblflt>* dblflt_perturb,
+    BLAS<dblflt>* blas,
+    MattCoords cx,
+    MattCoords cy,
+    MattCoords dx,
+    MattCoords dy,
+    MattCoords centerX,
+    MattCoords centerY,
+    uint32_t n_iterations,
+    int /*iteration_precision*/)
+{
+    uint32_t result = cudaSuccess;
+
+    if (iter_matrix_cu == nullptr) {
+        return result;
+    }
+
+    dim3 nb_blocks(w_block, h_block, 1);
+    dim3 threads_per_block(NB_THREADS_W, NB_THREADS_H, 1);
+
+    MattPerturbSingleResults<dblflt> cudaResults(
+        dblflt_perturb->size,
+        dblflt_perturb->iters,
+        dblflt_perturb->bad_counts,
+        dblflt_perturb->bad_counts_size);
+
+    result = cudaResults.CheckValid();
+    if (result != 0) {
+        return result;
+    }
+
+    if (algorithm == RenderAlgorithm::Gpu2x32Perturbed) {
         dblflt cx2{ cx.flt.x, cx.flt.y };
         dblflt cy2{ cy.flt.x, cy.flt.y };
         dblflt dx2{ dx.flt.x, dx.flt.y };
@@ -2800,136 +3152,120 @@ uint32_t GPURenderer::RenderPerturbBLA(
             n_iterations);
 
         result = ExtractIters(buffer);
-    } else if (algorithm == RenderAlgorithm::Gpu1x32Perturbed ||
-               algorithm == RenderAlgorithm::Gpu1x32PerturbedScaled ||
-               algorithm == RenderAlgorithm::Gpu1x32PerturbedScaledBLA) {
-        MattPerturbSingleResults<float> cudaResults(
-            Perturb->size,
-            Perturb->float_iters,
-            Perturb->bad_counts,
-            Perturb->bad_counts_size);
+    }
+
+    return result;
+}
+
+uint32_t GPURenderer::RenderPerturbBLA(
+    RenderAlgorithm algorithm,
+    uint32_t* buffer,
+    MattPerturbResults<HDRFloat<float>>* perturb,
+    BLAS<HDRFloat<float>>* blas,
+    MattCoords cx,
+    MattCoords cy,
+    MattCoords dx,
+    MattCoords dy,
+    MattCoords centerX,
+    MattCoords centerY,
+    uint32_t n_iterations,
+    int /*iteration_precision*/)
+{
+    uint32_t result = cudaSuccess;
+
+    if (iter_matrix_cu == nullptr) {
+        return result;
+    }
+
+    dim3 nb_blocks(w_block, h_block, 1);
+    dim3 threads_per_block(NB_THREADS_W, NB_THREADS_H, 1);
+
+    if (algorithm == RenderAlgorithm::GpuHDRx32PerturbedBLA) {
+        MattPerturbSingleResults<HDRFloat<float>> cudaResults(
+            perturb->size,
+            perturb->iters,
+            perturb->bad_counts,
+            perturb->bad_counts_size);
 
         result = cudaResults.CheckValid();
         if (result != 0) {
             return result;
         }
 
-        if (algorithm == RenderAlgorithm::Gpu1x32Perturbed) {
-            mandel_1x_float_perturb << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
-                cudaResults,
-                local_width, local_height, cx.floatOnly, cy.floatOnly, dx.floatOnly, dy.floatOnly,
-                centerX.floatOnly, centerY.floatOnly,
-                n_iterations);
-
-            result = ExtractIters(buffer);
+        GPUBLAS<HDRFloat<float>, BLA<HDRFloat<float>>> gpu_blas(
+            blas->m_B,
+            blas->m_LM2,
+            blas->m_FirstLevel);
+        result = gpu_blas.CheckValid();
+        if (result != 0) {
+            return result;
         }
-        else if (algorithm == RenderAlgorithm::Gpu1x32PerturbedScaled) {
-            MattPerturbSingleResults<double> cudaResultsDouble(
-                Perturb->size,
-                Perturb->double_iters,
-                Perturb->bad_counts,
-                Perturb->bad_counts_size);
 
-            result = cudaResultsDouble.CheckValid();
-            if (result != 0) {
-                return result;
-            }
+        mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
 
-            mandel_1x_float_perturb_scaled << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
-                cudaResults, cudaResultsDouble,
-                local_width, local_height, cx.doubleOnly, cy.doubleOnly, dx.doubleOnly, dy.doubleOnly,
-                centerX.doubleOnly, centerY.doubleOnly,
-                n_iterations);
+        mandel_1xHDR_float_perturb_bla<HDRFloat<float>> << <nb_blocks, threads_per_block >> > (
+            iter_matrix_cu,
+            cudaResults,
+            gpu_blas,
+            local_width, local_height, cx.hdrflt, cy.hdrflt, dx.hdrflt, dy.hdrflt,
+            centerX.hdrflt, centerY.hdrflt,
+            n_iterations);
 
-            result = ExtractIters(buffer);
-        }
-        else if (algorithm == RenderAlgorithm::Gpu1x32PerturbedScaledBLA) {
-            MattPerturbSingleResults<double> cudaResultsDouble(
-                Perturb->size,
-                Perturb->double_iters,
-                Perturb->bad_counts,
-                Perturb->bad_counts_size);
+        result = ExtractIters(buffer);
+    }
 
-            result = cudaResultsDouble.CheckValid();
-            if (result != 0) {
-                return result;
-            }
+    return result;
+}
 
-            GPUBLAS<double> doubleGpuBlas(doubleBlas->m_B, doubleBlas->m_LM2, doubleBlas->m_FirstLevel);
-            result = doubleGpuBlas.CheckValid();
-            if (result != 0) {
-                return result;
-            }
+uint32_t GPURenderer::RenderPerturbBLA(
+    RenderAlgorithm algorithm,
+    uint32_t* buffer,
+    MattPerturbResults<HDRFloat<double>>* perturb,
+    BLAS<HDRFloat<double>>* blas,
+    MattCoords cx,
+    MattCoords cy,
+    MattCoords dx,
+    MattCoords dy,
+    MattCoords centerX,
+    MattCoords centerY,
+    uint32_t n_iterations,
+    int /*iteration_precision*/)
+{
+    uint32_t result = cudaSuccess;
 
-            //GPUBLAS<float> floatGpuBlas(doubleBlas->m_B, doubleBlas->m_LM2, doubleBlas->m_FirstLevel);
-            //result = floatGpuBlas.CheckValid();
-            //if (result != 0) {
-            //    return result;
-            //}
+    if (iter_matrix_cu == nullptr) {
+        return result;
+    }
 
-            mandel_1x_float_perturb_scaled_bla << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
-                cudaResults, cudaResultsDouble, doubleGpuBlas, 
-                local_width, local_height, cx.doubleOnly, cy.doubleOnly, dx.doubleOnly, dy.doubleOnly,
-                centerX.doubleOnly, centerY.doubleOnly,
-                n_iterations);
+    dim3 nb_blocks(w_block, h_block, 1);
+    dim3 threads_per_block(NB_THREADS_W, NB_THREADS_H, 1);
 
-            result = ExtractIters(buffer);
-
-
-            //MattPerturbSingleResults<double> cudaResultsDouble(
-            //    Perturb->size,
-            //    Perturb->double_iters,
-            //    Perturb->bad_counts,
-            //    Perturb->bad_counts_size);
-
-            //result = cudaResultsDouble.CheckValid();
-            //if (result != 0) {
-            //    return result;
-            //}
-
-            //ScaledGPUBLAS floatGpuBlas(doubleBlas->m_B, doubleBlas->m_LM2, doubleBlas->m_FirstLevel);
-            //result = floatGpuBlas.CheckValid();
-            //if (result != 0) {
-            //    return result;
-            //}
-
-            //mandel_1x_float_perturb_scaled2_bla << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
-            //    cudaResults, cudaResultsDouble, floatGpuBlas,
-            //    local_width, local_height, cx.doubleOnly, cy.doubleOnly, dx.doubleOnly, dy.doubleOnly,
-            //    centerX.doubleOnly, centerY.doubleOnly,
-            //    n_iterations);
-
-            //result = ExtractIters(buffer);
-        }
-    } else if (algorithm == RenderAlgorithm::Gpu2x32PerturbedScaled) {
-        MattPerturbSingleResults<dblflt> cudaResults(
-            Perturb->size,
-            Perturb->dblflt_iters,
-            Perturb->bad_counts,
-            Perturb->bad_counts_size);
+    if (algorithm == RenderAlgorithm::GpuHDRx64PerturbedBLA) {
+        MattPerturbSingleResults<HDRFloat<double>> cudaResults(
+            perturb->size,
+            perturb->iters,
+            perturb->bad_counts,
+            perturb->bad_counts_size);
 
         result = cudaResults.CheckValid();
         if (result != 0) {
             return result;
         }
 
-        MattPerturbSingleResults<double> cudaResultsDouble(
-            Perturb->size,
-            Perturb->double_iters,
-            Perturb->bad_counts,
-            Perturb->bad_counts_size);
-
-        result = cudaResultsDouble.CheckValid();
+        GPUBLAS<HDRFloat<double>, BLA<HDRFloat<double>>> gpu_blas(blas->m_B, blas->m_LM2, blas->m_FirstLevel);
+        result = gpu_blas.CheckValid();
         if (result != 0) {
             return result;
         }
 
-        mandel_2x_float_perturb_setup << <nb_blocks, threads_per_block >> > (cudaResults);
+        mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
 
-        mandel_2x_float_perturb_scaled << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
-            cudaResults, cudaResultsDouble,
-            local_width, local_height, cx.doubleOnly, cy.doubleOnly, dx.doubleOnly, dy.doubleOnly,
-            centerX.doubleOnly, centerY.doubleOnly,
+        mandel_1xHDR_float_perturb_bla<HDRFloat<double>> << <nb_blocks, threads_per_block >> > (
+            iter_matrix_cu,
+            cudaResults,
+            gpu_blas,
+            local_width, local_height, cx.hdrdbl, cy.hdrdbl, dx.hdrdbl, dy.hdrdbl,
+            centerX.hdrdbl, centerY.hdrdbl,
             n_iterations);
 
         result = ExtractIters(buffer);

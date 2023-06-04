@@ -87,7 +87,7 @@ BEGIN
             MENUITEM "#9 - bug: scaled/BLA/32-bit failure", IDM_VIEW9
             MENUITEM "#10 - Deep 64-bit BLA minibrot, expensive", IDM_VIEW10
             MENUITEM "#11 - bug: 500 million iterations, memory use", IDM_VIEW11
-            MENUITEM "#12",                         IDM_VIEW12
+            MENUITEM "#12 - bug: HDRx32 GPU fails", IDM_VIEW12
             MENUITEM "#13",                         IDM_VIEW13
         END
         MENUITEM "Square &View",                IDM_SQUAREVIEW
@@ -122,25 +122,30 @@ BEGIN
         POPUP "Choose &Render Algorithm"
         BEGIN
             MENUITEM "Very High Precision CPU",     IDM_ALG_CPU_HIGH
+            MENUITEM SEPARATOR
+            MENUITEM "1x64 CPU",                    IDM_ALG_CPU_1_64
+            MENUITEM "1x64 CPU - Perturbation BLA", IDM_ALG_CPU_1_64_PERTURB_BLA
             MENUITEM "HDRx32 CPU",                  IDM_ALG_CPU_1_32_HDR
             MENUITEM "HDRx32 CPU - Perturbation BLA", IDM_ALG_CPU_1_32_PERTURB_BLA_HDR
-            MENUITEM "1x64 CPU",                    IDM_ALG_CPU_1_64
             MENUITEM "HDRx64 CPU",                  IDM_ALG_CPU_1_64_HDR
-            MENUITEM "1x64 CPU - Perturbation BLA", IDM_ALG_CPU_1_64_PERTURB_BLA
             MENUITEM "HDRx64 CPU - Perturbation BLA", IDM_ALG_CPU_1_64_PERTURB_BLA_HDR
+            MENUITEM SEPARATOR
+            MENUITEM "1x32 GPU",                    IDM_ALG_GPU_1_32
+            MENUITEM "2x32 GPU",                    IDM_ALG_GPU_2_32
+            MENUITEM "1x64 GPU",                    IDM_ALG_GPU_1_64
+            MENUITEM "4x32 GPU",                    IDM_ALG_GPU_4_32
             MENUITEM "2x64 GPU",                    IDM_ALG_GPU_2_64
             MENUITEM "4x64 GPU",                    IDM_ALG_GPU_4_64
-            MENUITEM "1x64 GPU",                    IDM_ALG_GPU_1_64
-            MENUITEM "1x64 GPU - Perturbation",     IDM_ALG_GPU_1_64_PERTURB
-            MENUITEM "1x64 GPU - Perturbation BLA", IDM_ALG_GPU_1_64_PERTURB_BLA
-            MENUITEM "2x32 GPU",                    IDM_ALG_GPU_2_32
-            MENUITEM "2x32 GPU - Perturbation",     IDM_ALG_GPU_2_32_PERTURB
-            MENUITEM "2x32 GPU - Perturbation Scaled", IDM_ALG_GPU_2_32_PERTURB_SCALED
-            MENUITEM "4x32 GPU",                    IDM_ALG_GPU_4_32
-            MENUITEM "1x32 GPU",                    IDM_ALG_GPU_1_32
+            MENUITEM SEPARATOR
             MENUITEM "1x32 GPU - Perturbation",     IDM_ALG_GPU_1_32_PERTURB
             MENUITEM "1x32 GPU - Perturbation Scaled", IDM_ALG_GPU_1_32_PERTURB_SCALED
             MENUITEM "1x32 GPU - Perturbation Scaled BLA", IDM_ALG_GPU_1_32_PERTURB_SCALED_BLA
+            MENUITEM "2x32 GPU - Perturbation (broken)", IDM_ALG_GPU_2_32_PERTURB
+            MENUITEM "2x32 GPU - Perturbation Scaled (broken)", IDM_ALG_GPU_2_32_PERTURB_SCALED
+            MENUITEM "1x64 GPU - Perturbation",     IDM_ALG_GPU_1_64_PERTURB
+            MENUITEM "1x64 GPU - Perturbation BLA", IDM_ALG_GPU_1_64_PERTURB_BLA
+            MENUITEM "HDRx32 GPU - Perturbation BLA", IDM_ALG_GPU_HDR_32_PERTURB_BLA
+            MENUITEM "HDRx64 GPU - Perturbation BLA", IDM_ALG_GPU_HDR_64_PERTURB_BLA
         END
         POPUP "Iterations"
         BEGIN

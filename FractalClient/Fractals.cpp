@@ -28,6 +28,7 @@ void MenuStandardView(HWND hWnd, size_t i);
 void MenuSquareView(HWND hWnd);
 void MenuCenterView(HWND hWnd, int x, int y);
 void MenuZoomOut(HWND hWnd);
+void MenuAutoZoom();
 void MenuRepainting(HWND hWnd);
 void MenuWindowed(HWND hWnd);
 void MenuIncreaseIterations(HWND hWnd, double factor);
@@ -231,6 +232,33 @@ void UnInit(void)
     WSACleanup();
 }
 
+void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/) {
+    POINT mousePt;
+    GetCursorPos(&mousePt);
+    if (ScreenToClient(hWnd, &mousePt) == 0) {
+        return;
+    }
+
+    SHORT nState = GetKeyState(VK_SHIFT);
+
+    switch (wParam) {
+    case 0x5A: // 'Z'
+        if (nState & 0x1000) {
+            // zoom out
+            gFractal->Zoom(mousePt.x, mousePt.y, 1);
+        }
+        break;
+    case 0x7A: // 'z'
+        if ((nState & 0x1000) == 0) {
+            // zoom in
+            gFractal->Zoom(mousePt.x, mousePt.y, -.45);
+        }
+        break;
+    default:
+        break;
+    }
+}
+
 //
 //  PURPOSE:  Processes messages for the main window.
 //
@@ -253,441 +281,463 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     switch (message)
     {
     case WM_COMMAND:
-    { int wmId, wmEvent;
-    wmId = LOWORD(wParam);
-    wmEvent = HIWORD(wParam);
+    {
+        int wmId, wmEvent;
+        wmId = LOWORD(wParam);
+        wmEvent = HIWORD(wParam);
 
-    switch (wmId)
-    { // Go back to the previous location
-        case IDM_BACK:
-        {
-            MenuGoBack(hWnd);
-            break;
-        }
+        switch (wmId)
+        { // Go back to the previous location
+            case IDM_BACK:
+            {
+                MenuGoBack(hWnd);
+                break;
+            }
 
-        // Reset the view of the fractal to standard
-        case IDM_STANDARDVIEW:
-        {
-            MenuStandardView(hWnd, 0);
-            break;
-        }
+            // Reset the view of the fractal to standard
+            case IDM_STANDARDVIEW:
+            {
+                MenuStandardView(hWnd, 0);
+                break;
+            }
 
-        case IDM_VIEW1:
-        case IDM_VIEW2:
-        case IDM_VIEW3:
-        case IDM_VIEW4:
-        case IDM_VIEW5:
-        case IDM_VIEW6:
-        case IDM_VIEW7:
-        case IDM_VIEW8:
-        case IDM_VIEW9:
-        case IDM_VIEW10:
-        case IDM_VIEW11:
-        case IDM_VIEW12:
-        case IDM_VIEW13:
-        {
-            assert(IDM_VIEW2 == IDM_VIEW1 + 1);
-            assert(IDM_VIEW3 == IDM_VIEW1 + 2);
-            assert(IDM_VIEW4 == IDM_VIEW1 + 3);
-            assert(IDM_VIEW5 == IDM_VIEW1 + 4);
-            assert(IDM_VIEW6 == IDM_VIEW1 + 5);
-            assert(IDM_VIEW7 == IDM_VIEW1 + 6);
-            assert(IDM_VIEW8 == IDM_VIEW1 + 7);
-            assert(IDM_VIEW9 == IDM_VIEW1 + 8);
-            assert(IDM_VIEW10 == IDM_VIEW1 + 9);
-            assert(IDM_VIEW11 == IDM_VIEW1 + 10);
-            assert(IDM_VIEW12 == IDM_VIEW1 + 11);
-            assert(IDM_VIEW13 == IDM_VIEW1 + 12);
+            case IDM_VIEW1:
+            case IDM_VIEW2:
+            case IDM_VIEW3:
+            case IDM_VIEW4:
+            case IDM_VIEW5:
+            case IDM_VIEW6:
+            case IDM_VIEW7:
+            case IDM_VIEW8:
+            case IDM_VIEW9:
+            case IDM_VIEW10:
+            case IDM_VIEW11:
+            case IDM_VIEW12:
+            case IDM_VIEW13:
+            {
+                assert(IDM_VIEW2 == IDM_VIEW1 + 1);
+                assert(IDM_VIEW3 == IDM_VIEW1 + 2);
+                assert(IDM_VIEW4 == IDM_VIEW1 + 3);
+                assert(IDM_VIEW5 == IDM_VIEW1 + 4);
+                assert(IDM_VIEW6 == IDM_VIEW1 + 5);
+                assert(IDM_VIEW7 == IDM_VIEW1 + 6);
+                assert(IDM_VIEW8 == IDM_VIEW1 + 7);
+                assert(IDM_VIEW9 == IDM_VIEW1 + 8);
+                assert(IDM_VIEW10 == IDM_VIEW1 + 9);
+                assert(IDM_VIEW11 == IDM_VIEW1 + 10);
+                assert(IDM_VIEW12 == IDM_VIEW1 + 11);
+                assert(IDM_VIEW13 == IDM_VIEW1 + 12);
 
-            MenuStandardView(hWnd, wmId - IDM_VIEW1 + 1);
-            break;
-        }
+                MenuStandardView(hWnd, wmId - IDM_VIEW1 + 1);
+                break;
+            }
 
-        // Reset the view of the fractal to "square", taking into
-        // account window aspect ratio.  Eliminates distortion.
-        case IDM_SQUAREVIEW:
-        {
-            MenuSquareView(hWnd);
-            break;
-        }
+            // Reset the view of the fractal to "square", taking into
+            // account window aspect ratio.  Eliminates distortion.
+            case IDM_SQUAREVIEW:
+            {
+                MenuSquareView(hWnd);
+                break;
+            }
 
-        // Recenter the current view at the point where the menu was
-        // created, not the current mouse position or some bs like that.
-        case IDM_CENTERVIEW:
-        {
-            MenuCenterView(hWnd, menuX, menuY);
-            break;
-        }
+            // Recenter the current view at the point where the menu was
+            // created, not the current mouse position or some bs like that.
+            case IDM_CENTERVIEW:
+            {
+                MenuCenterView(hWnd, menuX, menuY);
+                break;
+            }
 
-        case IDM_ZOOMOUT:
-        {
-            MenuZoomOut(hWnd);
-            break;
-        }
+            case IDM_ZOOMOUT:
+            {
+                // TODO
+                // MenuZoomOut(hWnd);
+                break;
+            }
 
-        case IDM_REPAINTING:
-        {
-            MenuRepainting(hWnd);
-            break;
-        }
+            case IDM_AUTOZOOM:
+            {
+                MenuAutoZoom();
+                break;
+            }
 
-        // Make the fractal window a "window" instead of fullscreen
-        case IDM_WINDOWED:
-        {
-            MenuWindowed(hWnd);
-            break;
-        }
+            case IDM_REPAINTING:
+            {
+                MenuRepainting(hWnd);
+                break;
+            }
 
-        // Minimize the window
-        case IDM_MINIMIZE:
-        {
-            PostMessage(hWnd, WM_SYSCOMMAND, SC_MINIMIZE, 0);
-            break;
-        }
+            // Make the fractal window a "window" instead of fullscreen
+            case IDM_WINDOWED:
+            {
+                MenuWindowed(hWnd);
+                break;
+            }
 
-        case IDM_ITERATION_ANTIALIASING_1X:
-        {
-            gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 1, UINT32_MAX);
-            break;
-        }
+            // Minimize the window
+            case IDM_MINIMIZE:
+            {
+                PostMessage(hWnd, WM_SYSCOMMAND, SC_MINIMIZE, 0);
+                break;
+            }
 
-        case IDM_ITERATION_ANTIALIASING_4X:
-        {
-            gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 2, UINT32_MAX);
-            break;
-        }
+            case IDM_ITERATION_ANTIALIASING_1X:
+            {
+                gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 1, UINT32_MAX);
+                break;
+            }
 
-        case IDM_ITERATION_ANTIALIASING_9X:
-        {
-            gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 3, UINT32_MAX);
-            break;
-        }
-        case IDM_ITERATION_ANTIALIASING_16X:
-        {
-            gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 4, UINT32_MAX);
-            break;
-        }
+            case IDM_ITERATION_ANTIALIASING_4X:
+            {
+                gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 2, UINT32_MAX);
+                break;
+            }
 
-        case IDM_GPUANTIALIASING_1X:
-        {
-            gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, UINT32_MAX, 1);
-            break;
-        }
-        case IDM_GPUANTIALIASING_4X:
-        {
-            gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, UINT32_MAX, 2);
-            break;
-        }
-        case IDM_GPUANTIALIASING_9X:
-        {
-            gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, UINT32_MAX, 3);
-            break;
-        }
+            case IDM_ITERATION_ANTIALIASING_9X:
+            {
+                gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 3, UINT32_MAX);
+                break;
+            }
+            case IDM_ITERATION_ANTIALIASING_16X:
+            {
+                gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 4, UINT32_MAX);
+                break;
+            }
 
-        case IDM_GPUANTIALIASING_16X:
-        {
-            gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, UINT32_MAX, 4);
-            break;
-        }
+            case IDM_GPUANTIALIASING_1X:
+            {
+                gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, UINT32_MAX, 1);
+                break;
+            }
+            case IDM_GPUANTIALIASING_4X:
+            {
+                gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, UINT32_MAX, 2);
+                break;
+            }
+            case IDM_GPUANTIALIASING_9X:
+            {
+                gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, UINT32_MAX, 3);
+                break;
+            }
 
-        // Iteration precision
-        case IDM_ITERATIONPRECISION_1X:
-        {
-            gFractal->SetIterationPrecision(1);
-            break;
-        }
+            case IDM_GPUANTIALIASING_16X:
+            {
+                gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, UINT32_MAX, 4);
+                break;
+            }
+
+            // Iteration precision
+            case IDM_ITERATIONPRECISION_1X:
+            {
+                gFractal->SetIterationPrecision(1);
+                break;
+            }
     
-        case IDM_ITERATIONPRECISION_2X:
-        {
-            gFractal->SetIterationPrecision(4);
-            break;
-        }
+            case IDM_ITERATIONPRECISION_2X:
+            {
+                gFractal->SetIterationPrecision(4);
+                break;
+            }
     
-        case IDM_ITERATIONPRECISION_3X:
-        {
-            gFractal->SetIterationPrecision(8);
-            break;
-        }
+            case IDM_ITERATIONPRECISION_3X:
+            {
+                gFractal->SetIterationPrecision(8);
+                break;
+            }
     
-        case IDM_ITERATIONPRECISION_4X:
-        {
-            gFractal->SetIterationPrecision(16);
-            break;
-        }
+            case IDM_ITERATIONPRECISION_4X:
+            {
+                gFractal->SetIterationPrecision(16);
+                break;
+            }
     
-        // Change rendering algorithm
-        case IDM_ALG_CPU_HIGH:
-        {
-            gFractal->SetRenderAlgorithm(RenderAlgorithm::CpuHigh);
-            break;
-        }
+            // Change rendering algorithm
+            case IDM_ALG_CPU_HIGH:
+            {
+                gFractal->SetRenderAlgorithm(RenderAlgorithm::CpuHigh);
+                break;
+            }
 
-        case IDM_ALG_CPU_1_32_HDR:
-        {
-            gFractal->SetRenderAlgorithm(RenderAlgorithm::CpuHDR32);
-            break;
-        }
+            case IDM_ALG_CPU_1_32_HDR:
+            {
+                gFractal->SetRenderAlgorithm(RenderAlgorithm::CpuHDR32);
+                break;
+            }
 
-        case IDM_ALG_CPU_1_32_PERTURB_BLA_HDR:
-        {
-            gFractal->SetRenderAlgorithm(RenderAlgorithm::Cpu32PerturbedBLAHDR);
-            break;
-        }
+            case IDM_ALG_CPU_1_32_PERTURB_BLA_HDR:
+            {
+                gFractal->SetRenderAlgorithm(RenderAlgorithm::Cpu32PerturbedBLAHDR);
+                break;
+            }
 
-        case IDM_ALG_CPU_1_64:
-        {
-            gFractal->SetRenderAlgorithm(RenderAlgorithm::Cpu64);
-            break;
-        }
+            case IDM_ALG_CPU_1_64:
+            {
+                gFractal->SetRenderAlgorithm(RenderAlgorithm::Cpu64);
+                break;
+            }
 
-        case IDM_ALG_CPU_1_64_HDR:
-        {
-            gFractal->SetRenderAlgorithm(RenderAlgorithm::CpuHDR64);
-            break;
-        }
+            case IDM_ALG_CPU_1_64_HDR:
+            {
+                gFractal->SetRenderAlgorithm(RenderAlgorithm::CpuHDR64);
+                break;
+            }
     
-        case IDM_ALG_CPU_1_64_PERTURB_BLA:
-        {
-            gFractal->SetRenderAlgorithm(RenderAlgorithm::Cpu64PerturbedBLA);
-            break;
-        }
+            case IDM_ALG_CPU_1_64_PERTURB_BLA:
+            {
+                gFractal->SetRenderAlgorithm(RenderAlgorithm::Cpu64PerturbedBLA);
+                break;
+            }
 
-        case IDM_ALG_CPU_1_64_PERTURB_BLA_HDR:
-        {
-            gFractal->SetRenderAlgorithm(RenderAlgorithm::Cpu64PerturbedBLAHDR);
-            break;
-        }
+            case IDM_ALG_CPU_1_64_PERTURB_BLA_HDR:
+            {
+                gFractal->SetRenderAlgorithm(RenderAlgorithm::Cpu64PerturbedBLAHDR);
+                break;
+            }
 
-        case IDM_ALG_GPU_1_64:
-        { 
-            gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu1x64);
-            break;
-        }
+            case IDM_ALG_GPU_1_64:
+            { 
+                gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu1x64);
+                break;
+            }
 
-        case IDM_ALG_GPU_1_64_PERTURB:
-        {
-            gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu1x64Perturbed);
-            break;
-        }
+            case IDM_ALG_GPU_1_64_PERTURB:
+            {
+                gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu1x64Perturbed);
+                break;
+            }
 
-        case IDM_ALG_GPU_1_64_PERTURB_BLA:
-        {
-            gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu1x64PerturbedBLA);
-            break;
-        }
+            case IDM_ALG_GPU_1_64_PERTURB_BLA:
+            {
+                gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu1x64PerturbedBLA);
+                break;
+            }
 
-        case IDM_ALG_GPU_2_64:
-        {
-            gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu2x64);
-            break;
-        }
-        case IDM_ALG_GPU_4_64:
-        {
-            gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu4x64);
-            break;
-        }
-        case IDM_ALG_GPU_1_32:
-        {
-            gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu1x32);
-            break;
-        }
-        case IDM_ALG_GPU_1_32_PERTURB:
-        {
-            gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu1x32Perturbed);
-            break;
-        }
-        case IDM_ALG_GPU_1_32_PERTURB_SCALED:
-        {
-            gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedScaled);
-            break;
-        }
-        case IDM_ALG_GPU_1_32_PERTURB_SCALED_BLA:
-        {
-            gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedScaledBLA);
-            break;
-        }
-        case IDM_ALG_GPU_2_32:
-        {
-            gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu2x32);
-            break;
-        }
-        case IDM_ALG_GPU_2_32_PERTURB:
-        {
-            gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu2x32Perturbed);
-            break;
-        }
-        case IDM_ALG_GPU_2_32_PERTURB_SCALED:
-        {
-            gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu2x32PerturbedScaled);
-            break;
-        }
-        case IDM_ALG_GPU_4_32:
-        {
-            gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu4x32);
-            break;
-        }
+            case IDM_ALG_GPU_2_64:
+            {
+                gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu2x64);
+                break;
+            }
+            case IDM_ALG_GPU_4_64:
+            {
+                gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu4x64);
+                break;
+            }
+            case IDM_ALG_GPU_1_32:
+            {
+                gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu1x32);
+                break;
+            }
+            case IDM_ALG_GPU_1_32_PERTURB:
+            {
+                gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu1x32Perturbed);
+                break;
+            }
+            case IDM_ALG_GPU_1_32_PERTURB_SCALED:
+            {
+                gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedScaled);
+                break;
+            }
+            case IDM_ALG_GPU_1_32_PERTURB_SCALED_BLA:
+            {
+                gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedScaledBLA);
+                break;
+            }
+            case IDM_ALG_GPU_2_32:
+            {
+                gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu2x32);
+                break;
+            }
+            case IDM_ALG_GPU_2_32_PERTURB:
+            {
+                gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu2x32Perturbed);
+                break;
+            }
+            case IDM_ALG_GPU_2_32_PERTURB_SCALED:
+            {
+                gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu2x32PerturbedScaled);
+                break;
+            }
+            case IDM_ALG_GPU_4_32:
+            {
+                gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu4x32);
+                break;
+            }
 
-        case IDM_ALG_GPU_HDR_32_PERTURB_BLA:
-        {
-            gFractal->SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedBLA);
-            break;
-        }
+            case IDM_ALG_GPU_HDR_32_PERTURB_BLA:
+            {
+                gFractal->SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedBLA);
+                break;
+            }
 
-        case IDM_ALG_GPU_HDR_64_PERTURB_BLA:
-        {
-            gFractal->SetRenderAlgorithm(RenderAlgorithm::GpuHDRx64PerturbedBLA);
-            break;
-        }
+            case IDM_ALG_GPU_HDR_64_PERTURB_BLA:
+            {
+                gFractal->SetRenderAlgorithm(RenderAlgorithm::GpuHDRx64PerturbedBLA);
+                break;
+            }
 
-        // Increase the number of iterations we are using.
-        // This will slow down rendering, but image quality
-        // will be improved.
-        case IDM_INCREASEITERATIONS_1P5X:
-        {
-            MenuIncreaseIterations(hWnd, 1.5);
-            break;
-        }
-        case IDM_INCREASEITERATIONS_6X:
-        { MenuIncreaseIterations(hWnd, 6.0);
-            break;
-        }
+            // Increase the number of iterations we are using.
+            // This will slow down rendering, but image quality
+            // will be improved.
+            case IDM_INCREASEITERATIONS_1P5X:
+            {
+                MenuIncreaseIterations(hWnd, 1.5);
+                break;
+            }
+            case IDM_INCREASEITERATIONS_6X:
+            { MenuIncreaseIterations(hWnd, 6.0);
+                break;
+            }
 
-        case IDM_INCREASEITERATIONS_24X:
-        {
-            MenuIncreaseIterations(hWnd, 24.0);
-            break;
-        }
-        // Decrease the number of iterations we are using
-        case IDM_DECREASEITERATIONS:
-        {
-            MenuDecreaseIterations(hWnd);
-            break;
-        }
-        // Reset the number of iterations to the default
-        case IDM_RESETITERATIONS:
-        {
-            MenuResetIterations(hWnd);
-            break;
-        }
+            case IDM_INCREASEITERATIONS_24X:
+            {
+                MenuIncreaseIterations(hWnd, 24.0);
+                break;
+            }
+            // Decrease the number of iterations we are using
+            case IDM_DECREASEITERATIONS:
+            {
+                MenuDecreaseIterations(hWnd);
+                break;
+            }
+            // Reset the number of iterations to the default
+            case IDM_RESETITERATIONS:
+            {
+                MenuResetIterations(hWnd);
+                break;
+            }
 
-        case IDM_PERTURB_RESULTS:
-        {
-            gFractal->DrawPerturbationResults<double>(false);
-            gFractal->DrawPerturbationResults<HDRFloat<double>>(false);
-            break;
-        }
-        case IDM_PERTURB_CLEAR:
-        {
-            gFractal->ClearPerturbationResults();
-            break;
-        }
+            case IDM_PERTURB_RESULTS:
+            {
+                gFractal->DrawPerturbationResults<float>(false);
+                gFractal->DrawPerturbationResults<double>(true);
+                gFractal->DrawPerturbationResults<HDRFloat<float>>(true);
+                gFractal->DrawPerturbationResults<HDRFloat<double>>(true);
+                break;
+            }
+            case IDM_PERTURB_CLEAR:
+            {
+                gFractal->ClearPerturbationResults();
+                break;
+            }
 
-        case IDM_PERTURBATION_SINGLETHREAD:
-        {
-            gFractal->SetPerturbationAlg(Fractal::PerturbationAlg::ST);
-            break;
-        }
+            case IDM_PERTURBATION_SINGLETHREAD:
+            {
+                gFractal->SetPerturbationAlg(Fractal::PerturbationAlg::ST);
+                break;
+            }
 
-        case IDM_PERTURBATION_MULTITHREAD:
-        {
-            gFractal->SetPerturbationAlg(Fractal::PerturbationAlg::MT);
-            break;
-        }
+            case IDM_PERTURBATION_MULTITHREAD:
+            {
+                gFractal->SetPerturbationAlg(Fractal::PerturbationAlg::MT);
+                break;
+            }
 
-        case IDM_PALETTEROTATE:
-        {
-            MenuPaletteRotation(hWnd);
-            break;
-        }
-        case IDM_CREATENEWPALETTE:
-        {
-            MenuCreateNewPalette(hWnd);
-            break;
-        }
+            case IDM_PERTURBATION_SINGLETHREAD_PERIODICITY:
+            {
+                gFractal->SetPerturbationAlg(Fractal::PerturbationAlg::STPeriodicity);
+                break;
+            }
 
-        case IDM_PALETTE_8:
-        {
-            MenuPaletteDepth(8);
-            break;
-        }
-        case IDM_PALETTE_12:
-        {
-            MenuPaletteDepth(12);
-            break;
-        }
-        case IDM_PALETTE_16:
-        {
-            MenuPaletteDepth(16);
-            break;
-        }
+            case IDM_PERTURBATION_MULTITHREAD_PERIODICITY:
+            {
+                gFractal->SetPerturbationAlg(Fractal::PerturbationAlg::MTPeriodicity);
+                break;
+            }
 
-        // Put the current window position on
-        // the clipboard.  The coordinates put
-        // on the clipboard are the "calculator"
-        // coordinates, not screen coordinates.
-        case IDM_CURPOS:
-        {
-            MenuGetCurPos(hWnd);
-            break;
-        }
-        // Save/load current location
-        case (IDM_SAVELOCATION):
-        {
-            MenuSaveCurrentLocation(hWnd);
-            break;
-        }
-        //case (IDM_LOADLOCATION):
-        //{
-        //}
-        case IDM_SAVEBMP:
-        {
-            MenuSaveBMP(hWnd);
-            break;
-        }
-        case IDM_SAVEHIRESBMP:
-        {
-            MenuSaveHiResBMP(hWnd);
-            break;
-        }
-        case IDM_BENCHMARK_ACCURATE:
-        {
-            MenuBenchmark(hWnd, false);
-            break;
-        }
-        case IDM_BENCHMARK_QUICK:
-        {
-            MenuBenchmark(hWnd, true);
-            break;
-        }
-        case IDM_BENCHMARK_ACCURATE_REFPT_DOUBLE:
-        {
-            MenuBenchmarkRefPtDouble(hWnd);
-            break;
-        }
-        case IDM_BENCHMARK_ACCURATE_REFPT_HDRFLOAT:
-        {
-            MenuBenchmarkRefPtHDRFloat(hWnd);
-            break;
-        }
-        case IDM_BENCHMARK_THIS:
-        {
-            MenuBenchmarkThis(hWnd);
-            break;
-        }
-        // Exit the program
-        case IDM_EXIT:
-        {
-            DestroyWindow(hWnd);
-            break;
-        }
-        // Catch-all
-        default:
-        {
-            return DefWindowProc(hWnd, message, wParam, lParam); }
-        }
+            case IDM_PALETTEROTATE:
+            {
+                MenuPaletteRotation(hWnd);
+                break;
+            }
+            case IDM_CREATENEWPALETTE:
+            {
+                MenuCreateNewPalette(hWnd);
+                break;
+            }
 
-        break;
-    }
+            case IDM_PALETTE_8:
+            {
+                MenuPaletteDepth(8);
+                break;
+            }
+            case IDM_PALETTE_12:
+            {
+                MenuPaletteDepth(12);
+                break;
+            }
+            case IDM_PALETTE_16:
+            {
+                MenuPaletteDepth(16);
+                break;
+            }
+
+            // Put the current window position on
+            // the clipboard.  The coordinates put
+            // on the clipboard are the "calculator"
+            // coordinates, not screen coordinates.
+            case IDM_CURPOS:
+            {
+                MenuGetCurPos(hWnd);
+                break;
+            }
+            // Save/load current location
+            case (IDM_SAVELOCATION):
+            {
+                MenuSaveCurrentLocation(hWnd);
+                break;
+            }
+            //case (IDM_LOADLOCATION):
+            //{
+            //}
+            case IDM_SAVEBMP:
+            {
+                MenuSaveBMP(hWnd);
+                break;
+            }
+            case IDM_SAVEHIRESBMP:
+            {
+                MenuSaveHiResBMP(hWnd);
+                break;
+            }
+            case IDM_BENCHMARK_ACCURATE:
+            {
+                MenuBenchmark(hWnd, false);
+                break;
+            }
+            case IDM_BENCHMARK_QUICK:
+            {
+                MenuBenchmark(hWnd, true);
+                break;
+            }
+            case IDM_BENCHMARK_ACCURATE_REFPT_DOUBLE:
+            {
+                MenuBenchmarkRefPtDouble(hWnd);
+                break;
+            }
+            case IDM_BENCHMARK_ACCURATE_REFPT_HDRFLOAT:
+            {
+                MenuBenchmarkRefPtHDRFloat(hWnd);
+                break;
+            }
+            case IDM_BENCHMARK_THIS:
+            {
+                MenuBenchmarkThis(hWnd);
+                break;
+            }
+            // Exit the program
+            case IDM_EXIT:
+            {
+                DestroyWindow(hWnd);
+                break;
+            }
+            // Catch-all
+            default:
+            {
+                return DefWindowProc(hWnd, message, wParam, lParam); }
+            }
+
+            break;
+        }
 
     case WM_SIZE:
     {
@@ -860,6 +910,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         break;
     }
 
+    case WM_CHAR:
+    {
+        HandleKeyDown(hWnd, message, wParam, lParam);
+        PaintAsNecessary(hWnd);
+        break;
+    }
+
     // Catch-all.
     default:
     {
@@ -894,9 +951,14 @@ void MenuCenterView(HWND hWnd, int x, int y)
     PaintAsNecessary(hWnd);
 }
 
-void MenuZoomOut(HWND)
+void MenuZoomOut(HWND hWnd)
 {
-    gFractal->ZoomOut(1);
+    gFractal->Zoom(1);
+    PaintAsNecessary(hWnd);
+}
+
+void MenuAutoZoom() {
+    gFractal->AutoZoom();
 }
 
 void MenuRepainting(HWND hWnd)
@@ -992,28 +1054,7 @@ void MenuResetIterations(HWND hWnd)
 
 void MenuGetCurPos(HWND hWnd)
 {
-    wchar_t temp[256];
-
-    double minX, minY;
-    double maxX, maxY;
-
-    minX = Convert<HighPrecision, double>(gFractal->GetMinX());
-    minY = Convert<HighPrecision, double>(gFractal->GetMinY());
-    maxX = Convert<HighPrecision, double>(gFractal->GetMaxX());
-    maxY = Convert<HighPrecision, double>(gFractal->GetMaxY());
-
-    wsprintf(temp, L"int ScreenWidth = %d;\r\nint ScreenHeight = %d;\r\ndouble MinX = %.15f;\r\ndouble MinY = %.15f;\r\ndouble MaxX = %.15f;\r\ndouble MaxY = %.15f;\r\nint numIters = %d;",
-        gFractal->GetRenderWidth(), gFractal->GetRenderHeight(),
-        minX, minY,
-        maxX, maxY,
-        gFractal->GetNumIterations());
-    ::MessageBox(hWnd, temp, L"", MB_OK);
-
-    wsprintf(temp, L"%.15f %.15f %.15f %.15f %d",
-        //gFractal->GetRenderWidth (), gFractal->GetRenderHeight (),
-        minX, minY,
-        maxX, maxY,
-        gFractal->GetNumIterations());
+    constexpr size_t numBytes = 32768;
 
     BOOL ret = OpenClipboard(hWnd);
     if (ret == 0)
@@ -1030,7 +1071,7 @@ void MenuGetCurPos(HWND hWnd)
         return;
     }
 
-    HGLOBAL hData = GlobalAlloc(GMEM_MOVEABLE, 256);
+    HGLOBAL hData = GlobalAlloc(GMEM_MOVEABLE, numBytes);
     if (hData == NULL)
     {
         MessageBox(hWnd, L"Insufficient memory.", L"", MB_OK);
@@ -1038,7 +1079,7 @@ void MenuGetCurPos(HWND hWnd)
         return;
     }
 
-    char *mem = (char *)GlobalLock(hData);
+    char* mem = (char*)GlobalLock(hData);
     if (mem == NULL)
     {
         MessageBox(hWnd, L"Insufficient memory.", L"", MB_OK);
@@ -1046,10 +1087,55 @@ void MenuGetCurPos(HWND hWnd)
         return;
     }
 
-    memcpy(mem, temp, 256);
-    mem[255] = 0;
+    HighPrecision minX, minY;
+    HighPrecision maxX, maxY;
+
+    minX = gFractal->GetMinX();
+    minY = gFractal->GetMinY();
+    maxX = gFractal->GetMaxX();
+    maxY = gFractal->GetMaxY();
+
+    std::stringstream ss;
+    std::string s;
+
+    auto setupSS = [&](const HighPrecision& num) -> std::string {
+        ss.str("");
+        ss.clear();
+        ss << std::setprecision(std::numeric_limits<HighPrecision>::max_digits10);
+        ss << num;
+        return ss.str();
+    };
+
+    s = setupSS(minX);
+    auto sminX = std::string(s.begin(), s.end());
+
+    s = setupSS(minY);
+    auto sminY = std::string(s.begin(), s.end());
+
+    s = setupSS(maxX);
+    auto smaxX = std::string(s.begin(), s.end());
+
+    s = setupSS(maxY);
+    auto smaxY = std::string(s.begin(), s.end());
+
+    snprintf(
+        mem,
+        numBytes,
+        "minX = HighPrecision{ \"%s\" };\r\n"
+        "minY = HighPrecision{ \"%s\" };\r\n"
+        "maxX = HighPrecision{ \"%s\" };\r\n"
+        "maxY = HighPrecision{ \"%s\" };\r\n"
+        "SetNumIterations(%zu);\r\n",
+        sminX.c_str(), sminY.c_str(),
+        smaxX.c_str(), smaxY.c_str(),
+        gFractal->GetNumIterations());
+    ::MessageBoxA(hWnd, mem, "", MB_OK);
 
     GlobalUnlock(hData);
+
+    //
+    // This is not a memory leak - we don't "free" hData.
+    //
 
     HANDLE clpData = SetClipboardData(CF_TEXT, hData);
     if (clpData == NULL)

@@ -7,7 +7,7 @@
 
 #ifndef __CUDACC__ 
 using HighPrecision = boost::multiprecision::number<
-    boost::multiprecision::gmp_float<1000>,
+    boost::multiprecision::gmp_float<2000>,
     boost::multiprecision::et_on>;
 template<class From, class To>
 To Convert(From data) {

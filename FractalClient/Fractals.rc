@@ -87,12 +87,13 @@ BEGIN
             MENUITEM "#9 - bug: scaled/BLA/32-bit failure", IDM_VIEW9
             MENUITEM "#10 - Deep 64-bit BLA minibrot, expensive", IDM_VIEW10
             MENUITEM "#11 - bug: 500 million iterations, memory use", IDM_VIEW11
-            MENUITEM "#12 - bug: HDRx32 GPU fails", IDM_VIEW12
+            MENUITEM "#12 - Full BLA test 10^700 or so, low iterations", IDM_VIEW12
             MENUITEM "#13",                         IDM_VIEW13
         END
         MENUITEM "Square &View",                IDM_SQUAREVIEW
         MENUITEM "Center View &Here",           IDM_CENTERVIEW
         MENUITEM "Zoom out",                    IDM_ZOOMOUT
+        MENUITEM "Auto-Zoom",                   IDM_AUTOZOOM
         MENUITEM SEPARATOR
         MENUITEM "Toggle Re&painting",          IDM_REPAINTING
         MENUITEM "&Toggle Window Size",         IDM_WINDOWED
@@ -162,6 +163,8 @@ BEGIN
             MENUITEM SEPARATOR
             MENUITEM "Single Thread",               IDM_PERTURBATION_SINGLETHREAD
             MENUITEM "Multi Thread",                IDM_PERTURBATION_MULTITHREAD
+            MENUITEM "Single Thread - Periodicity", IDM_PERTURBATION_SINGLETHREAD_PERIODICITY
+            MENUITEM "Multi Thread - Periodicity",  IDM_PERTURBATION_MULTITHREAD_PERIODICITY
         END
         MENUITEM SEPARATOR
         POPUP "Palette Color Depth"

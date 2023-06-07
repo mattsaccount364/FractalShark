@@ -1004,19 +1004,19 @@ void mandel_1xHDR_float_perturb_bla(uint32_t* iter_matrix,
         while ((b = blas.LookupBackwards(RefIteration, DeltaNormSquared)) != nullptr) {
             int l = b->getL();
 
-            iter += l;
-            RefIteration += l;
-
-            if (iter >= n_iterations) {
+            // TODO this first RefIteration + l check bugs me
+            if (RefIteration + l >= Perturb.size) {
                 break;
             }
 
-            b->getValue(DeltaSubNX, DeltaSubNY, DeltaSub0X, DeltaSub0Y);
-
-            if (RefIteration >= Perturb.size - 1) { // TODO remove?
-                iter_matrix[idx] = 255;
-                return;
+            if (iter + l >= n_iterations) {
+                break;
             }
+
+            iter += l;
+            RefIteration += l;
+
+            b->getValue(DeltaSubNX, DeltaSubNY, DeltaSub0X, DeltaSub0Y);
 
             HDRFloatType tempZX = Perturb.iters[RefIteration].x + DeltaSubNX;
             HDRFloatType tempZY = Perturb.iters[RefIteration].y + DeltaSubNY;
@@ -1057,6 +1057,11 @@ void mandel_1xHDR_float_perturb_bla(uint32_t* iter_matrix,
         HdrReduce(DeltaSubNY);
 
         ++RefIteration;
+        if (RefIteration >= Perturb.size) {
+            // TODO this first RefIteration + l check bugs me
+            iter_matrix[idx] = 255;
+            return;
+        }
 
         HDRFloatType tempZX = Perturb.iters[RefIteration].x + DeltaSubNX;
         HDRFloatType tempZY = Perturb.iters[RefIteration].y + DeltaSubNY;

@@ -73,8 +73,10 @@ public: // Changing the view
                          uint32_t gpu_antialiasing = UINT32_MAX);
     bool RecenterViewCalc(HighPrecision MinX, HighPrecision MinY, HighPrecision MaxX, HighPrecision MaxY);
     bool RecenterViewScreen(RECT rect);
-    bool CenterAtPoint(int x, int y);
-    void ZoomOut(int factor);
+    bool CenterAtPoint(size_t x, size_t y);
+    void Zoom(double factor);
+    void Zoom(size_t scrnX, size_t scrnY, double factor);
+    void AutoZoom();
     void View(size_t i);
     void SquareCurrentView(void);
     void ApproachTarget(void);
@@ -124,7 +126,9 @@ public: // Drawing functions
 
     enum class PerturbationAlg {
         ST,
-        MT
+        MT,
+        STPeriodicity,
+        MTPeriodicity
     };
 
     template<class T>
@@ -147,19 +151,25 @@ private:
     std::vector<PerturbationResults<HDRFloat<double>>> m_PerturbationResultsHDRDouble;
     std::vector<PerturbationResults<HDRFloat<float>>> m_PerturbationResultsHDRFloat;
 
+    HighPrecision m_PerturbationGuessCalcX;
+    HighPrecision m_PerturbationGuessCalcY;
+
     PerturbationAlg m_PerturbationAlg;
+
+    bool IsThisPerturbationArrayUsed(void* check) const;
+    void OptimizeMemory();
 
     template<class T>
     std::vector<PerturbationResults<T>> &GetPerturbationResults();
 
-    template<class T, class SubType>
+    template<class T, class SubType, bool BenchmarkMode = false>
     void AddPerturbationReferencePoint();
 
-    template<class T, class SubType>
-    void AddPerturbationReferencePointST();
+    template<class T, class SubType, bool Periodicity, bool BenchmarkMode = false>
+    void AddPerturbationReferencePointST(HighPrecision initX, HighPrecision initY);
 
-    template<class T, class SubType>
-    void AddPerturbationReferencePointMT();
+    template<class T, class SubType, bool Periodicity, bool BenchmarkMode = false>
+    void AddPerturbationReferencePointMT(HighPrecision initX, HighPrecision initY);
     bool RequiresReferencePoints() const;
 
     template<class T, class SubType, bool Copy>
@@ -223,6 +233,8 @@ private:
         void BenchmarkSetup(size_t numIters);
         bool StartTimer();
         HighPrecision StopTimer();
+
+        template<class T>
         HighPrecision StopTimerNoIters();
         void BenchmarkFinish();
     };

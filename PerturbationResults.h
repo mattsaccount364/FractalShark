@@ -8,7 +8,6 @@ template<class T>
 class PerturbationResults {
 public:
     HighPrecision hiX, hiY, radiusX, radiusY, maxRadius;
-    size_t scrnX, scrnY;
     size_t MaxIterations;
 
     std::vector<T> x;
@@ -17,6 +16,8 @@ public:
     std::vector<T> y2;
     std::vector<uint8_t> bad;
     std::vector<uint32_t> bad_counts;
+
+    bool m_Periodic;
 
     void clear() {
         x.clear();
@@ -30,6 +31,7 @@ public:
         radiusX = {};
         radiusY = {};
         maxRadius = {};
+        m_Periodic = {};
     }
 
     template<class Other>
@@ -52,5 +54,7 @@ public:
 
         bad = other.bad;
         bad_counts = other.bad_counts;
+
+        m_Periodic = other.m_Periodic;
     }
 };

@@ -165,7 +165,6 @@
       <AdditionalCompilerOptions>
       </AdditionalCompilerOptions>
       <Optimization>O3</Optimization>
-      <InterleaveSourceInPTX>true</InterleaveSourceInPTX>
       <AdditionalOptions>-std=c++20 -Xcompiler "/std:c++20" %(AdditionalOptions)</AdditionalOptions>
     </CudaCompile>
     <CudaLink />

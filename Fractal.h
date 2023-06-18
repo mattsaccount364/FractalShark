@@ -7,10 +7,6 @@
 //   pixels don't suck up so much time (skip chunks on the interior).
 // - Multisample antialiasing, where we look for the "edges" and recalculating
 //   those only?
-// - Put all this in GIT
-// - Can we do a e.g. 256 bit float on GPU e.g. using fixed point integers etc
-//   like fractint
-// - Can we calculate several frames in parallel on GPU
 // - Add text box in UI to import a set of coordinates so we can navigate
 //   somewhere saved.
 //
@@ -35,8 +31,8 @@
 
 // TODO: to increase past this, redo MattPerturbResults
 // Look at that class and see that it allocates way too much
-const int MAXITERS = 256 * 256 * 256 * 32;
-//const int MAXITERS = INT32_MAX - 1;
+//const size_t MAXITERS = 256 * 256 * 256 * 32;
+const size_t MAXITERS = INT32_MAX - 1;
 
 class Fractal
 {
@@ -203,8 +199,7 @@ private:
     template<class T>
     bool IsPerturbationResultUsefulHere(size_t i) const;
 
-private:
-    uint32_t FindMaxItersUsed(void);
+    size_t FindMaxItersUsed(void) const;
 
 public: // Saving images of the fractal
     int SaveCurrentFractal(const std::wstring filename_base);

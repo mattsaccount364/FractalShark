@@ -4,10 +4,11 @@
 #include <boost/multiprecision/gmp.hpp>
 #include <boost/multiprecision/number.hpp>
 
-
 #ifndef __CUDACC__ 
+constexpr const size_t DigitPrecision = 2000;
+
 using HighPrecision = boost::multiprecision::number<
-    boost::multiprecision::gmp_float<2000>,
+    boost::multiprecision::gmp_float<DigitPrecision>,
     boost::multiprecision::et_on>;
 template<class From, class To>
 To Convert(From data) {

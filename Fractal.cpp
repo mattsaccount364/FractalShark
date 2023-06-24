@@ -672,22 +672,31 @@ void Fractal::AutoZoom() {
             break;
         }
 
+        ULONG shiftWidth = (ULONG)m_ScrnWidth / 8;
+        ULONG shiftHeight = (ULONG)m_ScrnHeight / 8;
+
         RECT antiRect;
-        antiRect.left = 0;
-        antiRect.right = (ULONG)m_ScrnWidth;
-        antiRect.top = 0;
-        antiRect.bottom = (ULONG)m_ScrnHeight;
+        antiRect.left = shiftWidth;
+        antiRect.right = (ULONG)m_ScrnWidth - shiftWidth;
+        antiRect.top = shiftHeight;
+        antiRect.bottom = (ULONG)m_ScrnHeight - shiftHeight;
 
         antiRect.left *= GetGpuAntialiasing();
         antiRect.right *= GetGpuAntialiasing();
         antiRect.top *= GetGpuAntialiasing();
         antiRect.bottom *= GetGpuAntialiasing();
 
+        size_t maxiter = 0;
         double totaliters = 0;
         for (auto y = antiRect.top; y < antiRect.bottom; y++) {
             for (auto x = antiRect.left; x < antiRect.right; x++) {
                 auto curiter = m_CurIters.m_ItersArray[y][x];
                 totaliters += curiter;
+
+                if (curiter > maxiter) {
+                    maxiter = curiter;
+                }
+
                 //if (top100.empty() ||
                 //    (!top100.empty() && curiter > top100[0])) {
                 //    top100.push_back(curiter);
@@ -703,15 +712,14 @@ void Fractal::AutoZoom() {
         double avgiters = totaliters / ((antiRect.bottom - antiRect.top) * (antiRect.right - antiRect.left));
 
         size_t numAtMax = 0;
-        double midpointX = ((double) antiRect.left + antiRect.right) / 2.0;
-        double midpointY = ((double) antiRect.top + antiRect.bottom) / 2.0;
+        //double midpointX = ((double) antiRect.left + antiRect.right) / 2.0;
+        //double midpointY = ((double) antiRect.top + antiRect.bottom) / 2.0;
         double antirectWidth = antiRect.right - antiRect.left;
         double antirectHeight = antiRect.bottom - antiRect.top;
 
         double widthOver2 = antirectWidth / 2.0;
         double heightOver2 = antirectHeight / 2.0;
         double maxDistance = sqrt(widthOver2 * widthOver2 + heightOver2 * heightOver2);
-        size_t maxiter = 0;
 
         for (auto y = antiRect.top; y < antiRect.bottom; y++) {
             for (auto x = antiRect.left; x < antiRect.right; x++) {
@@ -731,6 +739,10 @@ void Fractal::AutoZoom() {
                 double distanceX = fabs(widthOver2 - fabs(widthOver2 - fabs(x - antiRect.left)));
                 double distanceY = fabs(heightOver2 - fabs(heightOver2 - fabs(y - antiRect.top)));
                 double normalizedIters = (double)curiter / (double)GetNumIterations();
+
+                if (curiter == maxiter) {
+                    normalizedIters *= normalizedIters;
+                }
                 double normalizedDist = (sqrt(distanceX * distanceX + distanceY * distanceY) / maxDistance);
                 double sq = normalizedIters * normalizedDist;
                 geometricMeanSum += sq;
@@ -1492,17 +1504,116 @@ void Fractal::ClearPerturbationResults() {
 //////////////////////////////////////////////////////////////////////////////
 void Fractal::DrawFractal(bool MemoryOnly)
 {
+
     if (MemoryOnly) {
         return;
     }
 
-    size_t py;
+    //size_t py;
 
     //glClear(GL_COLOR_BUFFER_BIT);
 
-    for (py = 0; py < m_ScrnHeight; py++) {
-        DrawFractalLine(py);
+    //for (py = 0; py < m_ScrnHeight; py++) {
+    //    DrawFractalLine(py);
+    //}
+
+    std::unique_ptr<GLubyte[]> outBytes = std::make_unique<GLubyte[]>(m_ScrnWidth * m_ScrnHeight * 4);
+    size_t outputIndex = 0;
+
+    size_t input_x = 0;
+    size_t input_y;
+    size_t output_y;
+    size_t output_x;
+    size_t numIters;
+    double acc_r, acc_g, acc_b;
+
+    for (output_y = 0;
+         output_y < m_ScrnHeight;
+         output_y++) {
+        for (output_x = 0;
+             output_x < m_ScrnWidth;
+             output_x++)
+        {
+            acc_r = 0;
+            acc_g = 0;
+            acc_b = 0;
+
+            for (input_x = output_x * GetGpuAntialiasing();
+                 input_x < (output_x + 1) * GetGpuAntialiasing();
+                 input_x++) {
+                for (input_y = output_y * GetGpuAntialiasing();
+                    input_y < (output_y + 1) * GetGpuAntialiasing();
+                    input_y++) {
+
+                    numIters = m_CurIters.m_ItersArray[input_y][input_x];
+                    if (numIters < m_NumIterations)
+                    {
+                        numIters += m_PaletteRotate;
+                        if (numIters >= MAXITERS) {
+                            numIters = MAXITERS - 1;
+                        }
+
+                        auto palIndex = numIters % m_PalIters[m_PaletteDepthIndex];
+
+                        acc_r += m_PalR[m_PaletteDepthIndex][palIndex] / 256.0f;
+                        acc_g += m_PalG[m_PaletteDepthIndex][palIndex] / 256.0f;
+                        acc_b += m_PalB[m_PaletteDepthIndex][palIndex] / 256.0f;
+                    }
+                }
+            }
+
+            acc_r /= GetGpuAntialiasing() * GetGpuAntialiasing();
+            acc_g /= GetGpuAntialiasing() * GetGpuAntialiasing();
+            acc_b /= GetGpuAntialiasing() * GetGpuAntialiasing();
+
+            outBytes[outputIndex] = (GLubyte)acc_r;
+            //outBytes[outputIndex] = (GLubyte)128;
+            outputIndex++;
+
+            outBytes[outputIndex] = (GLubyte)acc_g;
+            //outBytes[outputIndex] = (GLubyte)128;
+            outputIndex++;
+
+            outBytes[outputIndex] = (GLubyte)acc_b;
+            //outBytes[outputIndex] = (GLubyte)128;
+            outputIndex++;
+
+            outBytes[outputIndex] = 255;
+            outputIndex++;
+
+            // Coordinates are weird in OGL mode.
+            //glVertex2i((GLint)output_x, (GLint)(m_ScrnHeight - output_y));
+        }
     }
+
+    //glBegin(GL_POINTS);
+
+    GLuint texid;
+    glEnable(GL_TEXTURE_2D);
+    glGenTextures(1, &texid);
+    glBindTexture(GL_TEXTURE_2D, texid);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);  //Always set the base and max mipmap levels of a texture.
+    //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+    glTexImage2D(
+        GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)m_ScrnWidth, (GLsizei)m_ScrnHeight, 0,
+        GL_RGBA, GL_UNSIGNED_BYTE, outBytes.get());
+
+    glBegin(GL_QUADS);
+
+    glTexCoord2i(0, 0); glVertex2i(0, (GLint)m_ScrnHeight);
+    glTexCoord2i(0, 1); glVertex2i(0, 0);
+    glTexCoord2i(1, 1); glVertex2i((GLint)m_ScrnWidth, 0);
+    glTexCoord2i(1, 0); glVertex2i((GLint)m_ScrnWidth, (GLint)m_ScrnHeight);
+
+    glEnd();
+
+
+    //glEnd();
+    glFlush();
+
+    glDeleteTextures(1, &texid);
 
     DrawPerturbationResults<double>(true);
     DrawPerturbationResults<float>(true);
@@ -2338,8 +2449,8 @@ void Fractal::AddPerturbationReferencePointMT(HighPrecision initX, HighPrecision
     HighPrecision zx2, zy2;
     HighPrecision zx_sq, zy_sq;
 
-    HighPrecision dzdcX = 1.0;
-    HighPrecision dzdcY = 0.0;
+    T dzdcX = 1.0;
+    T dzdcY = 0.0;
 
     results->hiX = cx;
     results->hiY = cy;
@@ -2600,18 +2711,18 @@ void Fractal::AddPerturbationReferencePointMT(HighPrecision initX, HighPrecision
 
     thread2data->zy = zy;
 
-    HighPrecision zxCopy;
-    HighPrecision zyCopy;
+    T zxCopy;
+    T zyCopy;
     bool periodicity_should_break = false;
 
-    static const auto HighOne = HighPrecision{ 1.0 };
-    static const auto HighTwo = HighPrecision{ 2.0 };
+    static const auto HighOne = T{ 1.0 };
+    static const auto HighTwo = T{ 2.0 };
 
     for (size_t i = 0; i < m_NumIterations; i++)
     {
         if constexpr (Periodicity) {
-            zxCopy = zx;
-            zyCopy = zy;
+            zxCopy = T{ zx };
+            zyCopy = T{ zy };
         }
 
         // Start Thread 2: zy = 2 * zx * zy + cy;
@@ -2702,9 +2813,26 @@ void Fractal::AddPerturbationReferencePointMT(HighPrecision initX, HighPrecision
             //    end
             //end
 
-            HighPrecision r0 = max(boost::multiprecision::abs(dzdcX), boost::multiprecision::abs(dzdcY));
-            HighPrecision n2 = max(boost::multiprecision::abs(zxCopy), boost::multiprecision::abs(zyCopy));
-            if (results->maxRadius * r0 * HighTwo > n2) {
+            HdrReduce(dzdcX);
+            auto dzdcX1 = HdrAbs(dzdcX);
+
+            HdrReduce(dzdcY);
+            auto dzdcY1 = HdrAbs(dzdcY);
+            
+            HdrReduce(zxCopy);
+            auto zxCopy1 = HdrAbs(zxCopy);
+            
+            HdrReduce(zyCopy);
+            auto zyCopy1 = HdrAbs(zyCopy);
+
+            T n2 = max(zxCopy1, zyCopy1);
+
+            T r0 = max(dzdcX1, dzdcY1);
+            T maxRadiusHdr{ results->maxRadius };
+            auto n3 = maxRadiusHdr * r0 * HighTwo;
+            HdrReduce(n3);
+
+            if (n3 > n2) {
                 if constexpr (!BenchmarkMode) {
                     periodicity_should_break = true;
                 }

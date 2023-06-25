@@ -632,15 +632,27 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 break;
             }
 
-            case IDM_PERTURBATION_SINGLETHREAD_PERIODICITY:
+            case IDM_PERTURBATION_SINGLETHREAD2_PERIODICITY:
             {
-                gFractal->SetPerturbationAlg(Fractal::PerturbationAlg::STPeriodicity);
+                gFractal->SetPerturbationAlg(Fractal::PerturbationAlg::STPeriodicity2);
                 break;
             }
 
-            case IDM_PERTURBATION_MULTITHREAD_PERIODICITY:
+            case IDM_PERTURBATION_MULTITHREAD2_PERIODICITY:
             {
-                gFractal->SetPerturbationAlg(Fractal::PerturbationAlg::MTPeriodicity);
+                gFractal->SetPerturbationAlg(Fractal::PerturbationAlg::MTPeriodicity2);
+                break;
+            }
+
+            case IDM_PERTURBATION_SINGLETHREAD5_PERIODICITY:
+            {
+                gFractal->SetPerturbationAlg(Fractal::PerturbationAlg::STPeriodicity5);
+                break;
+            }
+
+            case IDM_PERTURBATION_MULTITHREAD5_PERIODICITY:
+            {
+                gFractal->SetPerturbationAlg(Fractal::PerturbationAlg::MTPeriodicity5);
                 break;
             }
 

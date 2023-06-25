@@ -123,8 +123,10 @@ public: // Drawing functions
     enum class PerturbationAlg {
         ST,
         MT,
-        STPeriodicity,
-        MTPeriodicity
+        STPeriodicity2,
+        MTPeriodicity2,
+        STPeriodicity5,
+        MTPeriodicity5
     };
 
     template<class T>
@@ -165,7 +167,11 @@ private:
     void AddPerturbationReferencePointST(HighPrecision initX, HighPrecision initY);
 
     template<class T, class SubType, bool Periodicity, bool BenchmarkMode = false>
-    void AddPerturbationReferencePointMT(HighPrecision initX, HighPrecision initY);
+    void AddPerturbationReferencePointMT2(HighPrecision initX, HighPrecision initY);
+
+    template<class T, class SubType, bool Periodicity, bool BenchmarkMode = false>
+    void AddPerturbationReferencePointMT5(HighPrecision initX, HighPrecision initY);
+
     bool RequiresReferencePoints() const;
 
     template<class T, class SubType, bool Copy>

@@ -163,8 +163,10 @@ BEGIN
             MENUITEM SEPARATOR
             MENUITEM "Single Thread",               IDM_PERTURBATION_SINGLETHREAD
             MENUITEM "Multi Thread",                IDM_PERTURBATION_MULTITHREAD
-            MENUITEM "Single Thread - Periodicity", IDM_PERTURBATION_SINGLETHREAD_PERIODICITY
-            MENUITEM "Multi Thread - Periodicity",  IDM_PERTURBATION_MULTITHREAD_PERIODICITY
+            MENUITEM "Single Thread 2 - Periodicity", IDM_PERTURBATION_SINGLETHREAD2_PERIODICITY
+            MENUITEM "Multi Thread 2 - Periodicity", IDM_PERTURBATION_MULTITHREAD2_PERIODICITY
+            MENUITEM "Single Thread 5 - Periodicity", IDM_PERTURBATION_SINGLETHREAD5_PERIODICITY
+            MENUITEM "Multi Thread 5 - Periodicity", IDM_PERTURBATION_MULTITHREAD5_PERIODICITY
         END
         MENUITEM SEPARATOR
         POPUP "Palette Color Depth"

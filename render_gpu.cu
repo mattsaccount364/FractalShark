@@ -302,21 +302,15 @@ static_assert(sizeof(MattReferenceSingleIter<dblflt>) == 40, "Dblflt");
 template<typename Type>
 struct MattPerturbSingleResults {
     MattReferenceSingleIter<Type>* iters;
-    uint32_t* bad_counts;
     size_t size;
-    size_t bad_counts_size;
     bool own;
     cudaError_t err;
 
     MattPerturbSingleResults(
         size_t sz,
-        MattReferenceSingleIter<Type> *in_iters,
-        uint32_t* in_bad_counts,
-        size_t in_bad_counts_size)
+        MattReferenceSingleIter<Type> *in_iters)
         : size(sz),
         iters(nullptr),
-        bad_counts(nullptr),
-        bad_counts_size(in_bad_counts_size),
         own(true),
         err(cudaSuccess) {
 
@@ -325,19 +319,10 @@ struct MattPerturbSingleResults {
         err = cudaMallocManaged(&iters, size * sizeof(MattReferenceSingleIter<Type>), cudaMemAttachGlobal);
         if (err != cudaSuccess) {
             size = 0;
-            bad_counts_size = 0;
-            return;
-        }
-
-        err = cudaMallocManaged(&bad_counts, bad_counts_size * sizeof(uint32_t), cudaMemAttachGlobal);
-        if (err != cudaSuccess) {
-            size = 0;
-            bad_counts_size = 0;
             return;
         }
 
         cudaMemcpy(iters, in_iters, size * sizeof(MattReferenceSingleIter<Type>), cudaMemcpyDefault);
-        cudaMemcpy(bad_counts, in_bad_counts, bad_counts_size * sizeof(uint32_t), cudaMemcpyDefault);
     }
 
     // funny semantics, copy doesn't own the pointers.
@@ -347,9 +332,7 @@ struct MattPerturbSingleResults {
         }
 
         iters = other.iters;
-        bad_counts = other.bad_counts;
         size = other.size;
-        bad_counts_size = other.bad_counts_size;
         own = false;
     }
 
@@ -365,10 +348,6 @@ struct MattPerturbSingleResults {
         if (own) {
             if (iters != nullptr) {
                 cudaFree(iters);
-            }
-
-            if (bad_counts != nullptr) {
-                cudaFree(bad_counts);
             }
         }
     }
@@ -2592,9 +2571,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
 
     MattPerturbSingleResults<float> cudaResults(
         float_perturb->size,
-        float_perturb->iters,
-        float_perturb->bad_counts,
-        float_perturb->bad_counts_size);
+        float_perturb->iters);
 
     result = cudaResults.CheckValid();
     if (result != 0) {
@@ -2640,9 +2617,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
     if (algorithm == RenderAlgorithm::Gpu1x64Perturbed) {
         MattPerturbSingleResults<double> cudaResults(
             double_perturb->size,
-            double_perturb->iters,
-            double_perturb->bad_counts,
-            double_perturb->bad_counts_size);
+            double_perturb->iters);
 
         result = cudaResults.CheckValid();
         if (result != 0) {
@@ -2659,9 +2634,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
     } else if (algorithm == RenderAlgorithm::Gpu1x64PerturbedBLA) {
         MattPerturbSingleResults<double> cudaResults(
             double_perturb->size,
-            double_perturb->iters,
-            double_perturb->bad_counts,
-            double_perturb->bad_counts_size);
+            double_perturb->iters);
 
         result = cudaResults.CheckValid();
         if (result != 0) {
@@ -2686,9 +2659,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
     //else if (algorithm == RenderAlgorithm::Gpu2x32PerturbedScaled) {
     //    MattPerturbSingleResults<dblflt> cudaResults(
     //        Perturb->size,
-    //        Perturb->iters,
-    //        Perturb->bad_counts,
-    //        Perturb->bad_counts_size);
+    //        Perturb->iters);
 
     //    result = cudaResults.CheckValid();
     //    if (result != 0) {
@@ -2697,9 +2668,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
 
     //    MattPerturbSingleResults<double> cudaResultsDouble(
     //        Perturb->size,
-    //        Perturb->iters,
-    //        Perturb->bad_counts,
-    //        Perturb->bad_counts_size);
+    //        Perturb->iters);
 
     //    result = cudaResultsDouble.CheckValid();
     //    if (result != 0) {
@@ -2746,9 +2715,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
 
     MattPerturbSingleResults<float> cudaResults(
         float_perturb->size,
-        float_perturb->iters,
-        float_perturb->bad_counts,
-        float_perturb->bad_counts_size);
+        float_perturb->iters);
 
     result = cudaResults.CheckValid();
     if (result != 0) {
@@ -2757,9 +2724,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
 
     MattPerturbSingleResults<double> cudaResultsDouble(
         double_perturb->size,
-        double_perturb->iters,
-        double_perturb->bad_counts,
-        double_perturb->bad_counts_size);
+        double_perturb->iters);
 
     result = cudaResultsDouble.CheckValid();
     if (result != 0) {
@@ -2825,9 +2790,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
 
     MattPerturbSingleResults<dblflt> cudaResults(
         dblflt_perturb->size,
-        dblflt_perturb->iters,
-        dblflt_perturb->bad_counts,
-        dblflt_perturb->bad_counts_size);
+        dblflt_perturb->iters);
 
     result = cudaResults.CheckValid();
     if (result != 0) {
@@ -2882,9 +2845,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
     if (algorithm == RenderAlgorithm::GpuHDRx32PerturbedBLA) {
         MattPerturbSingleResults<HDRFloat<float>> cudaResults(
             perturb->size,
-            perturb->iters,
-            perturb->bad_counts,
-            perturb->bad_counts_size);
+            perturb->iters);
 
         result = cudaResults.CheckValid();
         if (result != 0) {
@@ -2942,9 +2903,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
     if (algorithm == RenderAlgorithm::GpuHDRx64PerturbedBLA) {
         MattPerturbSingleResults<HDRFloat<double>> cudaResults(
             perturb->size,
-            perturb->iters,
-            perturb->bad_counts,
-            perturb->bad_counts_size);
+            perturb->iters);
 
         result = cudaResults.CheckValid();
         if (result != 0) {

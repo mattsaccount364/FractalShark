@@ -123,9 +123,8 @@ public: // Drawing functions
     enum class PerturbationAlg {
         ST,
         MT,
-        STPeriodicity2,
+        STPeriodicity,
         MTPeriodicity2,
-        STPeriodicity5,
         MTPeriodicity5
     };
 

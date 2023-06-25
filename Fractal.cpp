@@ -2286,10 +2286,9 @@ void Fractal::AddPerturbationReferencePoint() {
         AddPerturbationReferencePointST<T, SubType, false, BenchmarkMode>(m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
     }
     else if (m_PerturbationAlg == PerturbationAlg::MT) {
-        AddPerturbationReferencePointMT5<T, SubType, false, BenchmarkMode>(m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
+        AddPerturbationReferencePointMT2<T, SubType, false, BenchmarkMode>(m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
     }
-    else if (m_PerturbationAlg == PerturbationAlg::STPeriodicity2 ||
-             m_PerturbationAlg == PerturbationAlg::STPeriodicity5) {
+    else if (m_PerturbationAlg == PerturbationAlg::STPeriodicity) {
         AddPerturbationReferencePointST<T, SubType, true, BenchmarkMode>(m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
     }
     else if (m_PerturbationAlg == PerturbationAlg::MTPeriodicity2) {
@@ -2329,14 +2328,11 @@ void Fractal::AddPerturbationReferencePointST(HighPrecision initX, HighPrecision
     results->y.reserve(m_NumIterations);
     results->y2.reserve(m_NumIterations);
     results->bad.reserve(m_NumIterations);
-    results->bad_counts.reserve(m_NumIterations);
 
     results->x.push_back(0);
     results->x2.push_back(0);
     results->y.push_back(0);
     results->y2.push_back(0);
-    results->bad_counts.push_back(0);
-    bool cur_bad_count_underflow = false;
     // Note: results->bad is not here.  See end of this function.
 
     SubType glitch;
@@ -2391,13 +2387,6 @@ void Fractal::AddPerturbationReferencePointST(HighPrecision initX, HighPrecision
                           HdrAbs((T)zy) <= small_float ||
                           norm <= small_float);
         results->bad.push_back(underflow);
-        if (cur_bad_count_underflow != underflow) {
-            results->bad_counts.push_back(1);
-            cur_bad_count_underflow = !cur_bad_count_underflow;
-        }
-        else {
-            results->bad_counts.back()++;
-        }
 
         if constexpr (Periodicity) {
             // x^2+2*I*x*y-y^2
@@ -2486,17 +2475,30 @@ struct ThreadPtrs {
         bool result = ThreadMemory->Out.compare_exchange_weak( \
             expected, \
             ok, \
-            std::memory_order_release); \
+            std::memory_order_relaxed); \
         if (result) { \
             break; \
         } \
     } \
 
+static inline void prefetch_range(void* addr, std::size_t len) {
+    constexpr uintptr_t prefetch_stride = 64;
+    void* vp = addr;
+    void* end = reinterpret_cast<void*>(
+        reinterpret_cast<uintptr_t>(addr) + static_cast<uintptr_t>(len));
+    while (vp < end) {
+        ENABLE_PREFETCH((const char*)vp, _MM_HINT_T0);
+        vp = reinterpret_cast<void*>(
+            reinterpret_cast<uintptr_t>(vp) + static_cast<uintptr_t>(prefetch_stride));
+    }
+}
+
 static inline void PrefetchHighPrec(HighPrecision& target) {
     ENABLE_PREFETCH((const char*)&target.backend().data(), _MM_HINT_T0);
-    for (size_t i = 0; i < target.backend().data()->_mp_prec + 1; i++) {
-        ENABLE_PREFETCH((const char*)&target.backend().data()->_mp_d[i], _MM_HINT_T0);
-    }
+    size_t lastindex = abs(target.backend().data()->_mp_size);
+    size_t size_elt = sizeof(mp_limb_t);
+    size_t total = size_elt * lastindex;
+    prefetch_range(target.backend().data()->_mp_d, total);
 }
 
 template<class T, class SubType, bool Periodicity, bool BenchmarkMode>
@@ -2511,7 +2513,6 @@ void Fractal::AddPerturbationReferencePointMT2(HighPrecision initX, HighPrecisio
     HighPrecision cy = initY;
 
     HighPrecision zx, zy;
-    //HighPrecision zx_sq, zy_sq;
 
     T dzdcX = 1.0;
     T dzdcY = 0.0;
@@ -2523,11 +2524,6 @@ void Fractal::AddPerturbationReferencePointMT2(HighPrecision initX, HighPrecisio
     results->maxRadius = (radiusX > radiusY) ? radiusX : radiusY;
     results->MaxIterations = m_NumIterations + 1; // +1 for push_back(0) below
 
-    //volatile double tempX = Convert<HighPrecision, double>(initX);
-    //volatile double tempY = Convert<HighPrecision, double>(initY);
-    //volatile double intX = Convert<HighPrecision, double>(XFromCalcToScreen(initX));
-    //volatile double intY = Convert<HighPrecision, double>(YFromCalcToScreen(initY));
-
     const T small_float = T((SubType)1.1754944e-38);
 
     results->x.reserve(m_NumIterations);
@@ -2535,14 +2531,11 @@ void Fractal::AddPerturbationReferencePointMT2(HighPrecision initX, HighPrecisio
     results->y.reserve(m_NumIterations);
     results->y2.reserve(m_NumIterations);
     results->bad.reserve(m_NumIterations);
-    results->bad_counts.reserve(m_NumIterations);
-
+    
     results->x.push_back(0);
     results->x2.push_back(0);
     results->y.push_back(0);
     results->y2.push_back(0);
-    results->bad_counts.push_back(0);
-    bool cur_bad_count_underflow = false;
     // Note: results->bad is not here.  See end of this function.
 
     SubType glitch;
@@ -2645,13 +2638,12 @@ void Fractal::AddPerturbationReferencePointMT2(HighPrecision initX, HighPrecisio
 
     for (size_t i = 0; i < m_NumIterations; i++)
     {
-        if constexpr (Periodicity) {
-            zxCopy = T{ zx };
-            zyCopy = T{ zy };
-        }
-
         // Start Zx squaring thread
         threadZxdata->zx = zx;
+
+        if (!zyStarted) {
+            threadZydata->zy = zy;
+        }
 
         ThreadZxMemory->In.store(
             threadZxdata,
@@ -2659,13 +2651,16 @@ void Fractal::AddPerturbationReferencePointMT2(HighPrecision initX, HighPrecisio
 
         if (!zyStarted) {
             // Start Zy squaring thread
-            threadZydata->zy = zy;
-
             ThreadZyMemory->In.store(
                 threadZydata,
-                std::memory_order_release);
+                std::memory_order_relaxed);
 
             zyStarted = true;
+        }
+
+        if constexpr (Periodicity) {
+            zxCopy = T{ zx };
+            zyCopy = T{ zy };
         }
 
         T double_zx = (T)zx;
@@ -2683,13 +2678,6 @@ void Fractal::AddPerturbationReferencePointMT2(HighPrecision initX, HighPrecisio
             HdrAbs(double_zy) <= small_float ||
             norm <= small_float);
         results->bad.push_back(underflow);
-        if (cur_bad_count_underflow != underflow) {
-            results->bad_counts.push_back(1);
-            cur_bad_count_underflow = !cur_bad_count_underflow;
-        }
-        else {
-            results->bad_counts.back()++;
-        }
 
         // Note: not T.
         const SubType tempZX = (SubType)double_zx + (SubType)cx;
@@ -2735,15 +2723,6 @@ void Fractal::AddPerturbationReferencePointMT2(HighPrecision initX, HighPrecisio
         bool quitting = false;
 
         for (;;) {
-            expectedZx = threadZxdata;
-
-            if (!done1 &&
-                ThreadZxMemory->Out.compare_exchange_weak(expectedZx,
-                    nullptr,
-                    std::memory_order_release)) {
-                done1 = true;
-            }
-
             expectedZy = threadZydata;
 
             if (!done2 &&
@@ -2751,6 +2730,8 @@ void Fractal::AddPerturbationReferencePointMT2(HighPrecision initX, HighPrecisio
                     nullptr,
                     std::memory_order_release)) {
                 done2 = true;
+
+                PrefetchHighPrec(threadZydata->zy_sq);
 
                 if constexpr (Periodicity) {
                     if (periodicity_should_break) {
@@ -2773,6 +2754,17 @@ void Fractal::AddPerturbationReferencePointMT2(HighPrecision initX, HighPrecisio
                         threadZydata,
                         std::memory_order_release);
                 }
+            }
+
+            expectedZx = threadZxdata;
+
+            if (!done1 &&
+                ThreadZxMemory->Out.compare_exchange_weak(expectedZx,
+                    nullptr,
+                    std::memory_order_release)) {
+                done1 = true;
+
+                PrefetchHighPrec(threadZxdata->zx_sq);
             }
 
             if (done1 && done2) {
@@ -2848,14 +2840,11 @@ void Fractal::AddPerturbationReferencePointMT5(HighPrecision initX, HighPrecisio
     results->y.reserve(m_NumIterations);
     results->y2.reserve(m_NumIterations);
     results->bad.reserve(m_NumIterations);
-    results->bad_counts.reserve(m_NumIterations);
 
     results->x.push_back(0);
     results->x2.push_back(0);
     results->y.push_back(0);
     results->y2.push_back(0);
-    results->bad_counts.push_back(0);
-    bool cur_bad_count_underflow = false;
     // Note: results->bad is not here.  See end of this function.
 
     SubType glitch;
@@ -3130,13 +3119,6 @@ void Fractal::AddPerturbationReferencePointMT5(HighPrecision initX, HighPrecisio
             HdrAbs(double_zy) <= small_float ||
             norm <= small_float);
         results->bad.push_back(underflow);
-        if (cur_bad_count_underflow != underflow) {
-            results->bad_counts.push_back(1);
-            cur_bad_count_underflow = !cur_bad_count_underflow;
-        }
-        else {
-            results->bad_counts.back()++;
-        }
 
         // Note: not T.
         const SubType tempZX = (SubType)double_zx + (SubType)cx;
@@ -3440,13 +3422,11 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
 
     MattPerturbResults<T> gpu_results{
         results->x.size(),
-        results->bad_counts.size(),
         results->x.data(),
         results->x2.data(),
         results->y.data(),
         results->y2.data(),
-        results->bad.data(),
-        results->bad_counts.data() };
+        results->bad.data() };
 
     // all sizes should be the same anyway just pick one
     gpu_results.size = results->x.size();
@@ -3504,26 +3484,22 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
 
     MattPerturbResults<T> gpu_results{
         results->x.size(),
-        results->bad_counts.size(),
         results->x.data(),
         results->x2.data(),
         results->y.data(),
         results->y2.data(),
-        results->bad.data(),
-        results->bad_counts.data() };
+        results->bad.data() };
 
     // all sizes should be the same anyway just pick one
     gpu_results.size = results->x.size();
 
     MattPerturbResults<T2> gpu_results2{
         results2->x.size(),
-        results2->bad_counts.size(),
         results2->x.data(),
         results2->x2.data(),
         results2->y.data(),
         results2->y2.data(),
-        results2->bad.data(),
-        results2->bad_counts.data() };
+        results2->bad.data() };
 
     gpu_results2.size = results2->x.size();
 

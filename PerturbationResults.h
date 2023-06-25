@@ -15,7 +15,6 @@ public:
     std::vector<T> y;
     std::vector<T> y2;
     std::vector<uint8_t> bad;
-    std::vector<uint32_t> bad_counts;
 
     bool m_Periodic;
 
@@ -25,7 +24,6 @@ public:
         x2.clear();
         y2.clear();
         bad.clear();
-        bad_counts.clear();
         hiX = {};
         hiY = {};
         radiusX = {};
@@ -43,7 +41,6 @@ public:
         x2.reserve(other.x2.size());
         y2.reserve(other.y2.size());
         bad.reserve(other.bad.size());
-        bad_counts.reserve(other.bad_counts.size());
 
         for (size_t i = 0; i < other.x.size(); i++) {
             x.push_back((T)other.x[i]);
@@ -53,7 +50,6 @@ public:
         }
 
         bad = other.bad;
-        bad_counts = other.bad_counts;
 
         m_Periodic = other.m_Periodic;
     }

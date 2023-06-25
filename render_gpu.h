@@ -94,21 +94,15 @@ struct MattCoords {
 template<class T>
 struct MattPerturbResults {
     MattReferenceSingleIter<T> *iters;
-    uint32_t* bad_counts;
-    size_t bad_counts_size;
     size_t size;
 
     MattPerturbResults(size_t in_size,
-                       size_t in_bad_counts_size,
                        T *in_x,
                        T *in_x2,
                        T *in_y,
                        T *in_y2,
-                       uint8_t *in_bad,
-                       uint32_t *in_bad_counts) :
+                       uint8_t *in_bad) :
         iters(new MattReferenceSingleIter<T>[in_size]),
-        bad_counts(new uint32_t[in_bad_counts_size]),
-        bad_counts_size(in_bad_counts_size),
         size(in_size) {
 
         //char(*__kaboom1)[sizeof(MattReferenceSingleIter<float>)] = 1;
@@ -128,13 +122,10 @@ struct MattPerturbResults {
             iters[i].y2 = in_y2[i];
             iters[i].bad = in_bad[i];
         }
-
-        memcpy(bad_counts, in_bad_counts, bad_counts_size);
     }
 
     ~MattPerturbResults() {
         delete[] iters;
-        delete[] bad_counts;
     }
 };
 

@@ -761,8 +761,8 @@ void Fractal::AutoZoom() {
             double meanX = geometricMeanX / geometricMeanSum;
             double meanY = geometricMeanY / geometricMeanSum;
 
-            guessX = XFromScreenToCalc(meanX);
-            guessY = YFromScreenToCalc(meanY);
+            guessX = XFromScreenToCalc<true>(meanX);
+            guessY = YFromScreenToCalc<true>(meanY);
 
             //wchar_t temps[256];
             //swprintf(temps, 256, L"Coords: %f %f", meanX, meanY);
@@ -1517,7 +1517,7 @@ void Fractal::DrawFractal(bool MemoryOnly)
     //    DrawFractalLine(py);
     //}
 
-    std::unique_ptr<GLubyte[]> outBytes = std::make_unique<GLubyte[]>(m_ScrnWidth * m_ScrnHeight * 4);
+    auto outBytes = std::make_unique<GLushort[]>(m_ScrnWidth * m_ScrnHeight * 4);
     size_t outputIndex = 0;
 
     size_t input_x = 0;
@@ -1555,9 +1555,9 @@ void Fractal::DrawFractal(bool MemoryOnly)
 
                         auto palIndex = numIters % m_PalIters[m_PaletteDepthIndex];
 
-                        acc_r += m_PalR[m_PaletteDepthIndex][palIndex] / 256.0f;
-                        acc_g += m_PalG[m_PaletteDepthIndex][palIndex] / 256.0f;
-                        acc_b += m_PalB[m_PaletteDepthIndex][palIndex] / 256.0f;
+                        acc_r += m_PalR[m_PaletteDepthIndex][palIndex];
+                        acc_g += m_PalG[m_PaletteDepthIndex][palIndex];
+                        acc_b += m_PalB[m_PaletteDepthIndex][palIndex];
                     }
                 }
             }
@@ -1566,27 +1566,19 @@ void Fractal::DrawFractal(bool MemoryOnly)
             acc_g /= GetGpuAntialiasing() * GetGpuAntialiasing();
             acc_b /= GetGpuAntialiasing() * GetGpuAntialiasing();
 
-            outBytes[outputIndex] = (GLubyte)acc_r;
-            //outBytes[outputIndex] = (GLubyte)128;
+            outBytes[outputIndex] = (GLushort)acc_r;
             outputIndex++;
 
-            outBytes[outputIndex] = (GLubyte)acc_g;
-            //outBytes[outputIndex] = (GLubyte)128;
+            outBytes[outputIndex] = (GLushort)acc_g;
             outputIndex++;
 
-            outBytes[outputIndex] = (GLubyte)acc_b;
-            //outBytes[outputIndex] = (GLubyte)128;
+            outBytes[outputIndex] = (GLushort)acc_b;
             outputIndex++;
 
             outBytes[outputIndex] = 255;
             outputIndex++;
-
-            // Coordinates are weird in OGL mode.
-            //glVertex2i((GLint)output_x, (GLint)(m_ScrnHeight - output_y));
         }
     }
-
-    //glBegin(GL_POINTS);
 
     GLuint texid;
     glEnable(GL_TEXTURE_2D);
@@ -1597,20 +1589,15 @@ void Fractal::DrawFractal(bool MemoryOnly)
     //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);  //Always set the base and max mipmap levels of a texture.
     //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
     glTexImage2D(
-        GL_TEXTURE_2D, 0, GL_RGBA8, (GLsizei)m_ScrnWidth, (GLsizei)m_ScrnHeight, 0,
-        GL_RGBA, GL_UNSIGNED_BYTE, outBytes.get());
+        GL_TEXTURE_2D, 0, GL_RGBA16, (GLsizei)m_ScrnWidth, (GLsizei)m_ScrnHeight, 0,
+        GL_RGBA, GL_UNSIGNED_SHORT, outBytes.get());
 
     glBegin(GL_QUADS);
-
     glTexCoord2i(0, 0); glVertex2i(0, (GLint)m_ScrnHeight);
     glTexCoord2i(0, 1); glVertex2i(0, 0);
     glTexCoord2i(1, 1); glVertex2i((GLint)m_ScrnWidth, 0);
     glTexCoord2i(1, 0); glVertex2i((GLint)m_ScrnWidth, (GLint)m_ScrnHeight);
-
     glEnd();
-
-
-    //glEnd();
     glFlush();
 
     glDeleteTextures(1, &texid);
@@ -3394,6 +3381,7 @@ Fractal::CurrentFractalSave::CurrentFractalSave(
     m_PalR(fractal.m_PalR),
     m_PalG(fractal.m_PalG),
     m_PalB(fractal.m_PalB),
+    m_PalIters(fractal.m_PalIters),
     m_CurIters(std::move(fractal.m_CurIters)) {
 
     fractal.GetIterMemory();
@@ -3465,12 +3453,14 @@ void Fractal::CurrentFractalSave::Run() {
                     {
                         numIters += m_PaletteRotate;
                         if (numIters >= MAXITERS) {
-                            numIters -= MAXITERS;
+                            numIters = MAXITERS - 1;
                         }
 
-                        acc_r += m_PalR[m_PaletteDepthIndex][numIters];
-                        acc_g += m_PalG[m_PaletteDepthIndex][numIters];
-                        acc_b += m_PalB[m_PaletteDepthIndex][numIters];
+                        auto palIndex = numIters % m_PalIters[m_PaletteDepthIndex];
+
+                        acc_r += m_PalR[m_PaletteDepthIndex][palIndex];
+                        acc_g += m_PalG[m_PaletteDepthIndex][palIndex];
+                        acc_b += m_PalB[m_PaletteDepthIndex][palIndex];
                     }
                 }
             }
@@ -3718,16 +3708,20 @@ __int64 Fractal::FindTotalItersUsed(void)
 // the x-y axes.  "Screen coordinates" are those one thinks of with regards
 // to most computer screens.
 //////////////////////////////////////////////////////////////////////////////
+template<bool IncludeGpuAntialiasing>
 HighPrecision Fractal::XFromScreenToCalc(HighPrecision x)
 {
-    HighPrecision OriginX = (HighPrecision)m_ScrnWidth / (m_MaxX - m_MinX) * -m_MinX;
-    return (x - OriginX) * (m_MaxX - m_MinX) / m_ScrnWidth;
+    size_t aa = (IncludeGpuAntialiasing ? GetGpuAntialiasing() : 1);
+    HighPrecision OriginX = (HighPrecision)(m_ScrnWidth * aa) / (m_MaxX - m_MinX) * -m_MinX;
+    return (x - OriginX) * (m_MaxX - m_MinX) / (m_ScrnWidth * aa);
 }
 
+template<bool IncludeGpuAntialiasing>
 HighPrecision Fractal::YFromScreenToCalc(HighPrecision y)
 {
-    HighPrecision OriginY = (HighPrecision)m_ScrnHeight / (m_MaxY - m_MinY) * m_MaxY;
-    return -(y - OriginY) * (m_MaxY - m_MinY) / (double)m_ScrnHeight;
+    size_t aa = (IncludeGpuAntialiasing ? GetGpuAntialiasing() : 1);
+    HighPrecision OriginY = (HighPrecision)(m_ScrnHeight * aa) / (m_MaxY - m_MinY) * m_MaxY;
+    return -(y - OriginY) * (m_MaxY - m_MinY) / (m_ScrnHeight * aa);
 }
 
 HighPrecision Fractal::XFromCalcToScreen(HighPrecision x)

@@ -237,8 +237,12 @@ private:
     __int64 FindTotalItersUsed(void);
 
 private: // Unit conversion helpers
+    template<bool IncludeGpuAntialiasing = false>
     HighPrecision XFromScreenToCalc(HighPrecision x);
+
+    template<bool IncludeGpuAntialiasing = false>
     HighPrecision YFromScreenToCalc(HighPrecision y);
+
     HighPrecision XFromCalcToScreen(HighPrecision x);
     HighPrecision YFromCalcToScreen(HighPrecision y);
 
@@ -276,8 +280,8 @@ private:
     FractalSetupData m_SetupData;
 
     // Defaults
-    //static constexpr size_t DefaultIterations = 256 * 32;
-    static constexpr size_t DefaultIterations = 256;
+    static constexpr size_t DefaultIterations = 256 * 32;
+    //static constexpr size_t DefaultIterations = 256;
 
     // Handle to the thread which checks to see if we should quit or not
     HANDLE m_CheckForAbortThread;
@@ -400,6 +404,7 @@ private:
         int m_PaletteDepth; // 8, 12, 16
         int m_PaletteDepthIndex; // 0, 1, 2
         std::vector<uint16_t> *m_PalR, *m_PalG, *m_PalB;
+        std::vector<uint32_t> m_PalIters;
         ItersMemoryContainer m_CurIters;
         std::wstring m_FilenameBase;
         std::unique_ptr<std::thread> m_Thread;

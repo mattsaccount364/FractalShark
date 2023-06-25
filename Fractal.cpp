@@ -2511,7 +2511,7 @@ void Fractal::AddPerturbationReferencePointMT2(HighPrecision initX, HighPrecisio
     HighPrecision cy = initY;
 
     HighPrecision zx, zy;
-    //HighPrecision zx_sq, zy_sq;
+    HighPrecision zx_sq, zy_sq;
 
     T dzdcX = 1.0;
     T dzdcY = 0.0;
@@ -2563,18 +2563,9 @@ void Fractal::AddPerturbationReferencePointMT2(HighPrecision initX, HighPrecisio
         HighPrecision zx_sq;
     };
 
-    struct ThreadZyData {
-        HighPrecision zy;
-        HighPrecision zy_sq;
-    };
-
     auto* ThreadZxMemory = (ThreadPtrs<ThreadZxData> *)
         _aligned_malloc(sizeof(ThreadPtrs<ThreadZxData>), 64);
     memset(ThreadZxMemory, 0, sizeof(*ThreadZxMemory));
-
-    auto* ThreadZyMemory = (ThreadPtrs<ThreadZyData> *)
-        _aligned_malloc(sizeof(ThreadPtrs<ThreadZyData>), 64);
-    memset(ThreadZyMemory, 0, sizeof(*ThreadZyMemory));
 
     auto ThreadSqZx = [](ThreadPtrs<ThreadZxData>* ThreadMemory) {
         for (;;) {
@@ -2591,45 +2582,18 @@ void Fractal::AddPerturbationReferencePointMT2(HighPrecision initX, HighPrecisio
         }
     };
 
-    auto ThreadSqZy = [](ThreadPtrs<ThreadZyData>* ThreadMemory) {
-        for (;;) {
-            ThreadZyData* expected = ThreadMemory->In.load();
-            ThreadZyData* ok = nullptr;
-
-            CheckStartCriteria;
-            PrefetchHighPrec(ok->zy);
-
-            ok->zy_sq = ok->zy * ok->zy;
-
-            // Give result back.
-            CheckFinishCriteria;
-        }
-    };
-
     auto* threadZxdata = (ThreadZxData*)_aligned_malloc(sizeof(ThreadZxData), 64);
-    auto* threadZydata = (ThreadZyData*)_aligned_malloc(sizeof(ThreadZyData), 64);
 
     new (threadZxdata) (ThreadZxData){};
-    new (threadZydata) (ThreadZyData){};
-
-    //threadZxdata->zx_sq = &zx_sq;
-
-    //threadZydata->zy_sq = &zy_sq;
 
     std::unique_ptr<std::thread> tZx(new std::thread(ThreadSqZx, ThreadZxMemory));
-    std::unique_ptr<std::thread> tZy(new std::thread(ThreadSqZy, ThreadZyMemory));
 
     SetThreadAffinityMask(GetCurrentThread(), 0x1 << 3);
     SetThreadAffinityMask(tZx->native_handle(), 0x1 << 5);
-    SetThreadAffinityMask(tZy->native_handle(), 0x1 << 7);
 
     ThreadZxData* expectedZx = nullptr;
-    ThreadZyData* expectedZy = nullptr;
 
     bool done1 = false;
-    bool done2 = false;
-
-    HighPrecision zy_sq_orig;
 
     zx = cx;
     zy = cy;
@@ -2640,8 +2604,6 @@ void Fractal::AddPerturbationReferencePointMT2(HighPrecision initX, HighPrecisio
 
     static const auto HighOne = T{ 1.0 };
     static const auto HighTwo = T{ 2.0 };
-
-    bool zyStarted = false;
 
     for (size_t i = 0; i < m_NumIterations; i++)
     {
@@ -2656,17 +2618,6 @@ void Fractal::AddPerturbationReferencePointMT2(HighPrecision initX, HighPrecisio
         ThreadZxMemory->In.store(
             threadZxdata,
             std::memory_order_release);
-
-        if (!zyStarted) {
-            // Start Zy squaring thread
-            threadZydata->zy = zy;
-
-            ThreadZyMemory->In.store(
-                threadZydata,
-                std::memory_order_release);
-
-            zyStarted = true;
-        }
 
         T double_zx = (T)zx;
         T double_zx2 = (T)zx * 2;
@@ -2728,11 +2679,10 @@ void Fractal::AddPerturbationReferencePointMT2(HighPrecision initX, HighPrecisio
             }
         }
 
+        zy_sq = zy * zy;
         zy = zx * 2 * zy + cy;
 
         done1 = false;
-        done2 = false;
-        bool quitting = false;
 
         for (;;) {
             expectedZx = threadZxdata;
@@ -2744,49 +2694,23 @@ void Fractal::AddPerturbationReferencePointMT2(HighPrecision initX, HighPrecisio
                 done1 = true;
             }
 
-            expectedZy = threadZydata;
-
-            if (!done2 &&
-                ThreadZyMemory->Out.compare_exchange_weak(expectedZy,
-                    nullptr,
-                    std::memory_order_release)) {
-                done2 = true;
-
-                if constexpr (Periodicity) {
-                    if (periodicity_should_break) {
-                        results->m_Periodic = true;
-                        quitting = true;
-                    }
-                }
-
-                if (zn_size > 256) {
-                    quitting = true;
-                }
-
-                if (!quitting) {
-                    zy_sq_orig = threadZydata->zy_sq;
-
-                    // Restart right away!
-                    threadZydata->zy = zy;
-
-                    ThreadZyMemory->In.store(
-                        threadZydata,
-                        std::memory_order_release);
-                }
-            }
-
-            if (done1 && done2) {
+            if (done1) {
                 break;
             }
         }
 
-        zx = threadZxdata->zx_sq - zy_sq_orig + cx;
+        zx = threadZxdata->zx_sq - zy_sq + cx;
 
-        if (!quitting) {
-            continue;
+        if constexpr (Periodicity) {
+            if (periodicity_should_break) {
+                results->m_Periodic = true;
+                break;
+            }
         }
 
-        break;
+        if (zn_size > 256) {
+            break;
+        }
     }
 
     results->bad.push_back(false);
@@ -2795,20 +2719,13 @@ void Fractal::AddPerturbationReferencePointMT2(HighPrecision initX, HighPrecisio
     expectedZx = nullptr;
     ThreadZxMemory->In.compare_exchange_strong(expectedZx, (ThreadZxData*)0x1, std::memory_order_release);
 
-    expectedZy = nullptr;
-    ThreadZyMemory->In.compare_exchange_strong(expectedZy, (ThreadZyData*)0x1, std::memory_order_release);
-
     tZx->join();
-    tZy->join();
 
     _aligned_free(ThreadZxMemory);
-    _aligned_free(ThreadZyMemory);
 
     threadZxdata->~ThreadZxData();
-    threadZydata->~ThreadZyData();
 
     _aligned_free(threadZxdata);
-    _aligned_free(threadZydata);
 }
 
 template<class T, class SubType, bool Periodicity, bool BenchmarkMode>

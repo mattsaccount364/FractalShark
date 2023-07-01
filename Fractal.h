@@ -27,6 +27,8 @@
 #include "HighPrecision.h"
 #include "HDRFloat.h"
 
+#include <deque>
+
 //const int MAXITERS = 256 * 32; // 256 * 256 * 256 * 32
 
 // TODO: to increase past this, redo MattPerturbResults
@@ -53,7 +55,7 @@ private:
         bool UseSensoCursor);
     void Uninitialize(void);
     void PalIncrease(std::vector<uint16_t>& pal, int length, int val1, int val2);
-    void PalTransition(size_t paletteIndex, int length, int r, int g, int b);
+    void PalTransition(size_t WhichPalette, size_t paletteIndex, int length, int r, int g, int b);
 
 public:
     static unsigned long WINAPI CheckForAbortThread(void *fractal);
@@ -92,7 +94,7 @@ private: // For saving the current location
 
 public: // Iterations
     void SetNumIterations(size_t num);
-    size_t GetNumIterations(void);
+    size_t GetNumIterations(void) const;
     void ResetNumIterations(void);
 
 public:
@@ -111,11 +113,19 @@ private: // Keeps track of what has changed and what hasn't since the last draw
     inline bool ChangedItersOnly(void) const { return (m_ChangedIterations && !(m_ChangedScrn || m_ChangedWindow)); }
 
 public: // Drawing functions
-    void CalcDiskFractal(wchar_t *filename);
     void CalcFractal(bool MemoryOnly);
     void DrawFractal(bool MemoryOnly);
 
+    // The palette!
+    enum Palette : size_t {
+        Default = 0,
+        Patriotic,
+        Summer,
+        Num
+    };
+
     void UsePalette(int depth);
+    void UsePaletteType(Palette type);
     void ResetFractalPalette(void);
     void RotateFractalPalette(int delta);
     void CreateNewFractalPalette(void);
@@ -134,8 +144,38 @@ public: // Drawing functions
     void SetPerturbationAlg(PerturbationAlg alg) { m_PerturbationAlg = alg; }
 
 private:
-    void DrawRotatedFractal(void);
-    void DrawFractalLine(size_t row);
+    static void DrawFractalThread(size_t index, Fractal* fractal);
+
+    std::unique_ptr<uint16_t[]> m_DrawOutBytes;
+    std::deque<std::atomic_uint64_t> m_DrawThreadAtomics;
+    struct DrawThreadSync {
+        //DrawThreadSync& operator=(const DrawThreadSync&) = delete;
+        //DrawThreadSync(const DrawThreadSync&) = delete;
+        DrawThreadSync(
+            size_t index,
+            std::unique_ptr<std::thread> thread,
+            std::deque<std::atomic_uint64_t>& draw_thread_atomics
+        ) :
+            m_Index(index),
+            m_Thread(std::move(thread)),
+            m_DrawThreadAtomics(draw_thread_atomics),
+            m_DrawThreadReady{},
+            m_DrawThreadProcessed{},
+            m_TimeToExit{}
+        {
+        }
+
+        size_t m_Index;
+        std::mutex m_DrawThreadMutex;
+        std::condition_variable m_DrawThreadCV;
+        std::unique_ptr<std::thread> m_Thread;
+        std::deque<std::atomic_uint64_t> &m_DrawThreadAtomics;
+        bool m_DrawThreadReady;
+        bool m_DrawThreadProcessed;
+        bool m_TimeToExit;
+    };
+
+    std::vector<std::unique_ptr<DrawThreadSync>> m_DrawThreads;
 
     template<class T>
     struct Point {
@@ -339,11 +379,15 @@ private:
     // Render algorithm
     RenderAlgorithm m_RenderAlgorithm;
 
-    // The palette!
-    std::vector<uint16_t> m_PalR[3], m_PalG[3], m_PalB[3];
-    std::vector<uint32_t> m_PalIters;
+    static constexpr const size_t NumBitDepths = 5;
+
+    std::vector<uint16_t> m_PalR[Palette::Num][NumBitDepths];
+    std::vector<uint16_t> m_PalG[Palette::Num][NumBitDepths];
+    std::vector<uint16_t> m_PalB[Palette::Num][NumBitDepths];
+    std::vector<uint32_t> m_PalIters[Palette::Num];
+    enum Palette m_WhichPalette;
+
     int m_PaletteRotate; // Used to shift the palette
-    int m_PaletteDepth; // 8, 12, 16
     int m_PaletteDepthIndex; // 0, 1, 2
     static constexpr int NumPalettes = 3;
 
@@ -406,10 +450,10 @@ private:
         uint32_t m_GpuAntialiasing;
         size_t m_NumIterations;
         int m_PaletteRotate; // Used to shift the palette
-        int m_PaletteDepth; // 8, 12, 16
         int m_PaletteDepthIndex; // 0, 1, 2
-        std::vector<uint16_t> *m_PalR, *m_PalG, *m_PalB;
-        std::vector<uint32_t> m_PalIters;
+        std::vector<uint16_t> *m_PalR[Fractal::Palette::Num], *m_PalG[Fractal::Palette::Num], *m_PalB[Fractal::Palette::Num];
+        Fractal::Palette m_WhichPalette;
+        std::vector<uint32_t> m_PalIters[Fractal::Palette::Num];
         ItersMemoryContainer m_CurIters;
         std::wstring m_FilenameBase;
         std::unique_ptr<std::thread> m_Thread;

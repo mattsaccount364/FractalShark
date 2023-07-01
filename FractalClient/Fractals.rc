@@ -170,9 +170,15 @@ BEGIN
         MENUITEM SEPARATOR
         POPUP "Palette Color Depth"
         BEGIN
+            MENUITEM "Default",                     IDM_PALETTE_TYPE_0
+            MENUITEM "Patriotic",                   IDM_PALETTE_TYPE_1
+            MENUITEM "Summer",                      IDM_PALETTE_TYPE_2
+            MENUITEM SEPARATOR
+            MENUITEM "6-bit",                       IDM_PALETTE_6
             MENUITEM "8-bit",                       IDM_PALETTE_8
             MENUITEM "12-bit",                      IDM_PALETTE_12
             MENUITEM "16-bit",                      IDM_PALETTE_16
+            MENUITEM "20-bit",                      IDM_PALETTE_20
         END
         MENUITEM "Pa&lette Rotation",           IDM_PALETTEROTATE
         MENUITEM "&Create New Palette",         IDM_CREATENEWPALETTE

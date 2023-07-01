@@ -5,7 +5,6 @@
 #include <io.h>
 #include <time.h>
 
-#include <deque>
 #include <locale>
 #include <codecvt>
 
@@ -139,29 +138,103 @@ void Fractal::Initialize(int width,
 
     srand((unsigned int) time(NULL));
 
+    m_WhichPalette = Palette::Summer;
+
     // Initialize the palette
-    auto PaletteGen = [&](size_t PaletteIndex, size_t Depth) {
+    auto DefaultPaletteGen = [&](Palette WhichPalette, size_t PaletteIndex, size_t Depth) {
         int depth_total = (int) (1 << Depth);
 
         int max_val = 65535;
-        PalTransition(PaletteIndex, depth_total, max_val, 0, 0);
-        PalTransition(PaletteIndex, depth_total, max_val, max_val, 0);
-        PalTransition(PaletteIndex, depth_total, 0, max_val, 0);
-        PalTransition(PaletteIndex, depth_total, 0, max_val, max_val);
-        PalTransition(PaletteIndex, depth_total, 0, 0, max_val);
-        PalTransition(PaletteIndex, depth_total, max_val, 0, max_val);
-        PalTransition(PaletteIndex, depth_total, 0, 0, 0);
+        PalTransition(WhichPalette, PaletteIndex, depth_total, max_val, 0, 0);
+        PalTransition(WhichPalette, PaletteIndex, depth_total, max_val, max_val, 0);
+        PalTransition(WhichPalette, PaletteIndex, depth_total, 0, max_val, 0);
+        PalTransition(WhichPalette, PaletteIndex, depth_total, 0, max_val, max_val);
+        PalTransition(WhichPalette, PaletteIndex, depth_total, 0, 0, max_val);
+        PalTransition(WhichPalette, PaletteIndex, depth_total, max_val, 0, max_val);
+        PalTransition(WhichPalette, PaletteIndex, depth_total, 0, 0, 0);
 
-        m_PalIters[PaletteIndex] = (uint32_t) m_PalR[PaletteIndex].size();
+        m_PalIters[WhichPalette][PaletteIndex] = (uint32_t) m_PalR[WhichPalette][PaletteIndex].size();
     };
 
-    m_PalIters.resize(3);
-    std::vector<std::unique_ptr<std::thread>> threads;
-    std::unique_ptr<std::thread> t1(new std::thread(PaletteGen, 0, 8));
-    std::unique_ptr<std::thread> t2(new std::thread(PaletteGen, 1, 12));
-    std::unique_ptr<std::thread> t3(new std::thread(PaletteGen, 2, 16));
+    auto PatrioticPaletteGen = [&](Palette WhichPalette, size_t PaletteIndex, size_t Depth) {
+        int depth_total = (int)(1 << Depth);
 
-    m_PaletteDepth = 8;
+        int max_val = 65535;
+
+        // R=0xBF G=0x0A B=0x30 
+        const auto RR = (int)(((double)0xBF / (double)0xFF) * max_val);
+        const auto RG = (int)(((double)0x0A / (double)0xFF) * max_val);
+        const auto RB = (int)(((double)0x30 / (double)0xFF) * max_val);
+
+        // R=0x00 G=0x28 B=0x68 
+        const auto BR = (int)0;
+        const auto BG = (int)(((double)0x28 / (double)0xFF) * max_val);
+        const auto BB = (int)(((double)0x68 / (double)0xFF) * max_val);
+
+        PalTransition(WhichPalette, PaletteIndex, depth_total, RR, RG, RB);
+        PalTransition(WhichPalette, PaletteIndex, depth_total, max_val, max_val, max_val);
+        PalTransition(WhichPalette, PaletteIndex, depth_total, BR, BG, BB);
+        PalTransition(WhichPalette, PaletteIndex, depth_total, RR, RG, RB);
+        PalTransition(WhichPalette, PaletteIndex, depth_total, 0, 0, 0);
+
+        m_PalIters[WhichPalette][PaletteIndex] = (uint32_t)m_PalR[WhichPalette][PaletteIndex].size();
+    };
+
+    auto SummerPaletteGen = [&](Palette WhichPalette, size_t PaletteIndex, size_t Depth) {
+        int depth_total = (int)(1 << Depth);
+
+        int max_val = 65535;
+
+        PalTransition(WhichPalette, PaletteIndex, depth_total, max_val, 0, 0);
+        PalTransition(WhichPalette, PaletteIndex, depth_total, 0, max_val / 2, 0);
+        PalTransition(WhichPalette, PaletteIndex, depth_total, max_val, max_val, 0);
+        PalTransition(WhichPalette, PaletteIndex, depth_total, max_val, max_val, max_val);
+        PalTransition(WhichPalette, PaletteIndex, depth_total, max_val / 2, max_val / 2, max_val);
+        PalTransition(WhichPalette, PaletteIndex, depth_total, max_val, max_val * 2 / 3, 0);
+        PalTransition(WhichPalette, PaletteIndex, depth_total, 0, 0, 0);
+
+        m_PalIters[WhichPalette][PaletteIndex] = (uint32_t)m_PalR[WhichPalette][PaletteIndex].size();
+    };
+
+    for (size_t i = 0; i < Palette::Num; i++) {
+        m_PalIters[i].resize(NumBitDepths);
+    }
+
+    std::vector<std::unique_ptr<std::thread>> threads;
+
+    threads.push_back(std::make_unique<std::thread>(DefaultPaletteGen, Palette::Default, 0, 6));
+    threads.push_back(std::make_unique<std::thread>(DefaultPaletteGen, Palette::Default, 1, 8));
+    threads.push_back(std::make_unique<std::thread>(DefaultPaletteGen, Palette::Default, 2, 12));
+    threads.push_back(std::make_unique<std::thread>(DefaultPaletteGen, Palette::Default, 3, 16));
+    threads.push_back(std::make_unique<std::thread>(DefaultPaletteGen, Palette::Default, 4, 20));
+
+    threads.push_back(std::make_unique<std::thread>(PatrioticPaletteGen, Palette::Patriotic, 0, 6));
+    threads.push_back(std::make_unique<std::thread>(PatrioticPaletteGen, Palette::Patriotic, 1, 8));
+    threads.push_back(std::make_unique<std::thread>(PatrioticPaletteGen, Palette::Patriotic, 2, 12));
+    threads.push_back(std::make_unique<std::thread>(PatrioticPaletteGen, Palette::Patriotic, 3, 16));
+    threads.push_back(std::make_unique<std::thread>(PatrioticPaletteGen, Palette::Patriotic, 4, 20));
+
+    threads.push_back(std::make_unique<std::thread>(SummerPaletteGen, Palette::Summer, 0, 6));
+    threads.push_back(std::make_unique<std::thread>(SummerPaletteGen, Palette::Summer, 1, 8));
+    threads.push_back(std::make_unique<std::thread>(SummerPaletteGen, Palette::Summer, 2, 12));
+    threads.push_back(std::make_unique<std::thread>(SummerPaletteGen, Palette::Summer, 3, 16));
+    threads.push_back(std::make_unique<std::thread>(SummerPaletteGen, Palette::Summer, 4, 20));
+
+    for (size_t i = 0; i < std::thread::hardware_concurrency(); i++) {
+        m_DrawThreads.emplace_back(
+            std::make_unique<DrawThreadSync>(
+                i,
+                nullptr,
+                m_DrawThreadAtomics
+            )
+        );
+    }
+
+    for (size_t i = 0; i < m_DrawThreads.size(); i++) {
+        auto thread = std::make_unique<std::thread>(DrawFractalThread, i, this);
+        m_DrawThreads[i]->m_Thread = std::move(thread);
+    }
+
     m_PaletteDepthIndex = 0;
     m_PaletteRotate = 0;
 
@@ -170,9 +243,9 @@ void Fractal::Initialize(int width,
     InitializeMemory();
 
     // Wait for all this shit to get done
-    t1->join();
-    t2->join();
-    t3->join();
+    for (auto& it : threads) {
+        it->join();
+    }
 
     // Initialize the networking
     for (i = 0; i < MAXSERVERS; i++)
@@ -270,6 +343,9 @@ void Fractal::InitializeMemory() {
 
     m_CurIters = std::move(m_ItersMemoryStorage.back());
     m_ItersMemoryStorage.pop_back();
+
+    m_DrawThreadAtomics.resize(m_ScrnHeight);
+    m_DrawOutBytes = std::make_unique<GLushort[]>(m_ScrnWidth * m_ScrnHeight * 4); // RGBA
 }
 
 void Fractal::ReturnIterMemory(ItersMemoryContainer&& to_return) {
@@ -306,6 +382,20 @@ void Fractal::Uninitialize(void)
         {
             ::MessageBox(NULL, L"Error waiting for abort thread!", L"", MB_OK);
         }
+    }
+
+    for (auto& thread : m_DrawThreads) {
+        {
+            std::lock_guard lk(thread->m_DrawThreadMutex);
+            thread->m_DrawThreadReady = true;
+            thread->m_TimeToExit = true;
+            std::cout << "main() signals data ready for processing\n";
+        }
+        thread->m_DrawThreadCV.notify_one();
+    }
+
+    for (auto& thread : m_DrawThreads) {
+        thread->m_Thread->join();
     }
 
     // Disconnect from the remote server if necessary
@@ -400,14 +490,14 @@ void Fractal::PalIncrease(std::vector<uint16_t> &pal, int length, int val1, int 
 // length must be > 0
 // Returns index immediately following the last index we filled here
 // Returns -1 if we are at the end.
-void Fractal::PalTransition(size_t PaletteIndex, int length, int r, int g, int b)
+void Fractal::PalTransition(size_t WhichPalette, size_t PaletteIndex, int length, int r, int g, int b)
 {
     int curR, curB, curG;
-    if (!m_PalR[PaletteIndex].empty())
+    if (!m_PalR[WhichPalette][PaletteIndex].empty())
     {
-        curR = m_PalR[PaletteIndex][m_PalR[PaletteIndex].size() - 1];
-        curG = m_PalG[PaletteIndex][m_PalG[PaletteIndex].size() - 1];
-        curB = m_PalB[PaletteIndex][m_PalB[PaletteIndex].size() - 1];
+        curR = m_PalR[WhichPalette][PaletteIndex][m_PalR[WhichPalette][PaletteIndex].size() - 1];
+        curG = m_PalG[WhichPalette][PaletteIndex][m_PalG[WhichPalette][PaletteIndex].size() - 1];
+        curB = m_PalB[WhichPalette][PaletteIndex][m_PalB[WhichPalette][PaletteIndex].size() - 1];
     }
     else
     {
@@ -417,9 +507,9 @@ void Fractal::PalTransition(size_t PaletteIndex, int length, int r, int g, int b
     }
 
     // This code will fill out the palettes to the very end.
-    PalIncrease(m_PalR[PaletteIndex], length, curR, r);
-    PalIncrease(m_PalG[PaletteIndex], length, curG, g);
-    PalIncrease(m_PalB[PaletteIndex], length, curB, b);
+    PalIncrease(m_PalR[WhichPalette][PaletteIndex], length, curR, r);
+    PalIncrease(m_PalG[WhichPalette][PaletteIndex], length, curG, g);
+    PalIncrease(m_PalB[WhichPalette][PaletteIndex], length, curB, b);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -805,7 +895,7 @@ void Fractal::AutoZoom() {
             weightedNewMaxY);
 
         CalcFractal(false);
-        DrawFractal(false);
+        //DrawFractal(false);
 
         if (numAtMax > 500) {
             break;
@@ -1228,7 +1318,7 @@ void Fractal::SetNumIterations(size_t num)
     m_ChangedIterations = true;
 }
 
-size_t Fractal::GetNumIterations(void)
+size_t Fractal::GetNumIterations(void) const
 {
     return m_NumIterations;
 }
@@ -1242,61 +1332,6 @@ void Fractal::ResetNumIterations(void)
 ///////////////////////////////////////////////////////////////////////////////
 // Functions for drawing the fractal
 ///////////////////////////////////////////////////////////////////////////////
-void Fractal::CalcDiskFractal(wchar_t * /*filename*/)
-{
-    // TODO busted, no support for antialiasing etc.
-    return;
-
-    //CBitmapWriter writer;
-    //writer.beginWrite(filename, m_ScrnWidth, m_ScrnHeight);
-    //uint32_t *data = new uint32_t[m_ScrnWidth + (4 - m_ScrnWidth % 4)];
-    //int maxLines = 1000000 / (m_ScrnWidth * 3);
-    //unsigned char *bitmapData = new unsigned char[maxLines * m_ScrnWidth * 3];
-
-    //int numLinesInBuff = 0, i = 0;
-    //for (int py = m_ScrnHeight - 1; py >= 0; py--)
-    //{
-    //    if (m_RenderAlgorithm == 'h')
-    //    {
-    //        CalcPixelRow_Multi((unsigned int *)data, py);
-    //    }
-    //    else if (m_RenderAlgorithm == 'l')
-    //    {
-    //        CalcPixelRow_C((unsigned int*)data, py);
-    //    }
-
-    //    int x;
-    //    for (x = 0; x < m_ScrnWidth; x++)
-    //    {
-    //        bitmapData[i] = m_PalB[(data[x] == m_NumIterations) ? 0 : data[x]];
-    //        i++;
-    //        bitmapData[i] = m_PalG[(data[x] == m_NumIterations) ? 0 : data[x]];
-    //        i++;
-    //        bitmapData[i] = m_PalR[(data[x] == m_NumIterations) ? 0 : data[x]];
-    //        i++;
-    //    }
-
-    //    numLinesInBuff++;
-    //    if (numLinesInBuff == maxLines)
-    //    {
-    //        writer.writeLines(bitmapData, m_ScrnWidth, numLinesInBuff);
-    //        i = 0;
-    //        numLinesInBuff = 0;
-    //    }
-
-    //    if (py % 10 == 0)
-    //    {
-    //        OutputMessage(L"%.2f", (double)((double)m_ScrnHeight - (double)py) / (double)m_ScrnHeight * 100.0f);
-    //    }
-    //}
-
-    //writer.writeLines(bitmapData, m_ScrnWidth, numLinesInBuff);
-    //writer.endWrite();
-
-    //delete[] data;
-    //delete[] bitmapData;
-}
-
 void Fractal::CalcFractal(bool MemoryOnly)
 {
     SetCursor(LoadCursor(NULL, IDC_WAIT));
@@ -1400,24 +1435,32 @@ void Fractal::CalcFractal(bool MemoryOnly)
     SetCursor(LoadCursor(NULL, IDC_ARROW));
 }
 
+void Fractal::UsePaletteType(Palette type)
+{
+    m_WhichPalette = type;
+    DrawFractal(false);
+}
+
 void Fractal::UsePalette(int depth)
 {
     switch (depth) {
-    case 8:
+    case 6:
         m_PaletteDepthIndex = 0;
-        m_PaletteDepth = depth;
+        break;
+    case 8:
+        m_PaletteDepthIndex = 1;
         break;
     case 12:
-        m_PaletteDepthIndex = 1;
-        m_PaletteDepth = depth;
+        m_PaletteDepthIndex = 2;
         break;
     case 16:
-        m_PaletteDepthIndex = 2;
-        m_PaletteDepth = depth;
+        m_PaletteDepthIndex = 3;
+        break;
+    case 20:
+        m_PaletteDepthIndex = 4;
         break;
     default:
         m_PaletteDepthIndex = 0;
-        m_PaletteDepth = 8;
         break;
     }
 
@@ -1509,75 +1552,25 @@ void Fractal::DrawFractal(bool MemoryOnly)
         return;
     }
 
-    //size_t py;
+    for (auto &it : m_DrawThreadAtomics) {
+        it.store(0);
+    }
 
-    //glClear(GL_COLOR_BUFFER_BIT);
-
-    //for (py = 0; py < m_ScrnHeight; py++) {
-    //    DrawFractalLine(py);
-    //}
-
-    auto outBytes = std::make_unique<GLushort[]>(m_ScrnWidth * m_ScrnHeight * 4);
-    size_t outputIndex = 0;
-
-    size_t input_x = 0;
-    size_t input_y;
-    size_t output_y;
-    size_t output_x;
-    size_t numIters;
-    double acc_r, acc_g, acc_b;
-
-    for (output_y = 0;
-         output_y < m_ScrnHeight;
-         output_y++) {
-        for (output_x = 0;
-             output_x < m_ScrnWidth;
-             output_x++)
+    for (auto &thread : m_DrawThreads) {
         {
-            acc_r = 0;
-            acc_g = 0;
-            acc_b = 0;
-
-            for (input_x = output_x * GetGpuAntialiasing();
-                 input_x < (output_x + 1) * GetGpuAntialiasing();
-                 input_x++) {
-                for (input_y = output_y * GetGpuAntialiasing();
-                    input_y < (output_y + 1) * GetGpuAntialiasing();
-                    input_y++) {
-
-                    numIters = m_CurIters.m_ItersArray[input_y][input_x];
-                    if (numIters < m_NumIterations)
-                    {
-                        numIters += m_PaletteRotate;
-                        if (numIters >= MAXITERS) {
-                            numIters = MAXITERS - 1;
-                        }
-
-                        auto palIndex = numIters % m_PalIters[m_PaletteDepthIndex];
-
-                        acc_r += m_PalR[m_PaletteDepthIndex][palIndex];
-                        acc_g += m_PalG[m_PaletteDepthIndex][palIndex];
-                        acc_b += m_PalB[m_PaletteDepthIndex][palIndex];
-                    }
-                }
-            }
-
-            acc_r /= GetGpuAntialiasing() * GetGpuAntialiasing();
-            acc_g /= GetGpuAntialiasing() * GetGpuAntialiasing();
-            acc_b /= GetGpuAntialiasing() * GetGpuAntialiasing();
-
-            outBytes[outputIndex] = (GLushort)acc_r;
-            outputIndex++;
-
-            outBytes[outputIndex] = (GLushort)acc_g;
-            outputIndex++;
-
-            outBytes[outputIndex] = (GLushort)acc_b;
-            outputIndex++;
-
-            outBytes[outputIndex] = 255;
-            outputIndex++;
+            std::lock_guard lk(thread->m_DrawThreadMutex);
+            thread->m_DrawThreadProcessed = false;
+            thread->m_DrawThreadReady = true;
         }
+        thread->m_DrawThreadCV.notify_one();
+    }
+
+    for (auto& thread : m_DrawThreads) {
+        std::unique_lock lk(thread->m_DrawThreadMutex);
+        thread->m_DrawThreadCV.wait(lk, [&] {
+            return thread->m_DrawThreadProcessed;
+            }
+        );
     }
 
     GLuint texid;
@@ -1588,9 +1581,11 @@ void Fractal::DrawFractal(bool MemoryOnly)
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);  //Always set the base and max mipmap levels of a texture.
     //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
+
+    // Change m_DrawOutBytes size if GL_RGBA is changed
     glTexImage2D(
         GL_TEXTURE_2D, 0, GL_RGBA16, (GLsizei)m_ScrnWidth, (GLsizei)m_ScrnHeight, 0,
-        GL_RGBA, GL_UNSIGNED_SHORT, outBytes.get());
+        GL_RGBA, GL_UNSIGNED_SHORT, m_DrawOutBytes.get());
 
     glBegin(GL_QUADS);
     glTexCoord2i(0, 0); glVertex2i(0, (GLint)m_ScrnHeight);
@@ -1608,61 +1603,95 @@ void Fractal::DrawFractal(bool MemoryOnly)
     DrawPerturbationResults<HDRFloat<float>>(true);
 }
 
-void Fractal::DrawFractalLine(size_t output_y)
-{
-    size_t numIters;
-    size_t input_x = 0;
-    size_t input_y;
-    size_t output_x;
+void Fractal::DrawFractalThread(size_t index, Fractal* fractal) {
+    DrawThreadSync &sync = *fractal->m_DrawThreads[index].get();
 
-    double acc_r, acc_g, acc_b;
+    constexpr size_t BytesPerPixel = 4;
 
-    glBegin(GL_POINTS);
+    for (;;) {
+        // Wait until main() sends data
+        std::unique_lock lk(sync.m_DrawThreadMutex);
+        
+        sync.m_DrawThreadCV.wait(lk, [&] {
+            return sync.m_DrawThreadReady;
+            }
+        );
 
-    for (output_x = 0;
-         output_x < m_ScrnWidth;
-         output_x++)
-    {
-        acc_r = 0;
-        acc_g = 0;
-        acc_b = 0;
+        if (sync.m_TimeToExit) {
+            break;
+        }
 
-        for (input_x = output_x * GetGpuAntialiasing();
-             input_x < (output_x + 1) * GetGpuAntialiasing();
-             input_x++) {
-            for (input_y = output_y * GetGpuAntialiasing();
-                input_y < (output_y + 1) * GetGpuAntialiasing();
-                input_y++) {
+        sync.m_DrawThreadReady = false;
 
-                numIters = m_CurIters.m_ItersArray[input_y][input_x];
-                if (numIters < m_NumIterations)
-                {
-                    numIters += m_PaletteRotate;
-                    if (numIters >= MAXITERS) {
-                        numIters = MAXITERS - 1;
+        double acc_r, acc_g, acc_b;
+        size_t outputIndex = 0;
+
+        for (size_t output_y = 0; output_y < fractal->m_ScrnHeight; output_y++) {
+            if (sync.m_DrawThreadAtomics[output_y] != 0) {
+                continue;
+            }
+
+            uint64_t expected = 0;
+            if (sync.m_DrawThreadAtomics[output_y].compare_exchange_strong(expected, 1llu) == false) {
+                continue;
+            }
+
+            outputIndex = output_y * fractal->m_ScrnWidth * BytesPerPixel;
+
+            for (size_t output_x = 0;
+                output_x < fractal->m_ScrnWidth;
+                output_x++)
+            {
+                acc_r = 0;
+                acc_g = 0;
+                acc_b = 0;
+
+                for (size_t input_x = output_x * fractal->GetGpuAntialiasing();
+                    input_x < (output_x + 1) * fractal->GetGpuAntialiasing();
+                    input_x++) {
+                    for (size_t input_y = output_y * fractal->GetGpuAntialiasing();
+                        input_y < (output_y + 1) * fractal->GetGpuAntialiasing();
+                        input_y++) {
+
+                        size_t numIters = fractal->m_CurIters.m_ItersArray[input_y][input_x];
+                        if (numIters < fractal->GetNumIterations())
+                        {
+                            numIters += fractal->m_PaletteRotate;
+                            if (numIters >= MAXITERS) {
+                                numIters = MAXITERS - 1;
+                            }
+
+                            auto palIndex = numIters % fractal->m_PalIters[fractal->m_WhichPalette][fractal->m_PaletteDepthIndex];
+
+                            acc_r += fractal->m_PalR[fractal->m_WhichPalette][fractal->m_PaletteDepthIndex][palIndex];
+                            acc_g += fractal->m_PalG[fractal->m_WhichPalette][fractal->m_PaletteDepthIndex][palIndex];
+                            acc_b += fractal->m_PalB[fractal->m_WhichPalette][fractal->m_PaletteDepthIndex][palIndex];
+                        }
                     }
-
-                    auto palIndex = numIters % m_PalIters[m_PaletteDepthIndex];
-
-                    acc_r += m_PalR[m_PaletteDepthIndex][palIndex] / 65536.0f;
-                    acc_g += m_PalG[m_PaletteDepthIndex][palIndex] / 65536.0f;
-                    acc_b += m_PalB[m_PaletteDepthIndex][palIndex] / 65536.0f;
                 }
+
+                acc_r /= fractal->GetGpuAntialiasing() * fractal->GetGpuAntialiasing();
+                acc_g /= fractal->GetGpuAntialiasing() * fractal->GetGpuAntialiasing();
+                acc_b /= fractal->GetGpuAntialiasing() * fractal->GetGpuAntialiasing();
+
+                fractal->m_DrawOutBytes[outputIndex] = (GLushort)acc_r;
+                outputIndex++;
+
+                fractal->m_DrawOutBytes[outputIndex] = (GLushort)acc_g;
+                outputIndex++;
+
+                fractal->m_DrawOutBytes[outputIndex] = (GLushort)acc_b;
+                outputIndex++;
+
+                fractal->m_DrawOutBytes[outputIndex] = 255;
+                outputIndex++;
             }
         }
 
-        acc_r /= GetGpuAntialiasing() * GetGpuAntialiasing();
-        acc_g /= GetGpuAntialiasing() * GetGpuAntialiasing();
-        acc_b /= GetGpuAntialiasing() * GetGpuAntialiasing();
-
-        glColor3f((GLfloat)acc_r, (GLfloat)acc_g, (GLfloat)acc_b);
-
-        // Coordinates are weird in OGL mode.
-        glVertex2i((GLint) output_x, (GLint) (m_ScrnHeight - output_y));
+        sync.m_DrawThreadProcessed = true;
+        lk.unlock();
+        sync.m_DrawThreadCV.notify_one();
     }
-
-    glEnd();
-    glFlush();
 }
 
 void Fractal::FillCoord(HighPrecision& src, MattCoords& dest) {
@@ -1787,7 +1816,9 @@ void Fractal::CalcNetworkFractal(bool MemoryOnly)
 
             if (MemoryOnly == false)
             {
-                DrawFractalLine(ny);
+                assert(false);
+                // TODO broken
+                //DrawFractalLine(ny);
             }
         }
     }
@@ -3686,15 +3717,19 @@ Fractal::CurrentFractalSave::CurrentFractalSave(
     m_GpuAntialiasing(fractal.m_GpuAntialiasing),
     m_NumIterations(fractal.m_NumIterations),
     m_PaletteRotate(fractal.m_PaletteRotate),
-    m_PaletteDepth(fractal.m_PaletteDepth),
     m_PaletteDepthIndex(fractal.m_PaletteDepthIndex),
-    m_PalR(fractal.m_PalR),
-    m_PalG(fractal.m_PalG),
-    m_PalB(fractal.m_PalB),
-    m_PalIters(fractal.m_PalIters),
+    m_WhichPalette(fractal.m_WhichPalette),
     m_CurIters(std::move(fractal.m_CurIters)) {
 
     fractal.GetIterMemory();
+
+    for (size_t i = 0; i < Fractal::Palette::Num; i++) {
+        m_PalR[i] = fractal.m_PalR[i];
+        m_PalG[i] = fractal.m_PalG[i];
+        m_PalB[i] = fractal.m_PalB[i];
+
+        m_PalIters[i] = fractal.m_PalIters[i];
+    }
 
     m_Thread = nullptr;
     m_Destructable = false;
@@ -3766,11 +3801,11 @@ void Fractal::CurrentFractalSave::Run() {
                             numIters = MAXITERS - 1;
                         }
 
-                        auto palIndex = numIters % m_PalIters[m_PaletteDepthIndex];
+                        auto palIndex = numIters % m_PalIters[m_WhichPalette][m_PaletteDepthIndex];
 
-                        acc_r += m_PalR[m_PaletteDepthIndex][palIndex];
-                        acc_g += m_PalG[m_PaletteDepthIndex][palIndex];
-                        acc_b += m_PalB[m_PaletteDepthIndex][palIndex];
+                        acc_r += m_PalR[m_WhichPalette][m_PaletteDepthIndex][palIndex];
+                        acc_g += m_PalG[m_WhichPalette][m_PaletteDepthIndex][palIndex];
+                        acc_b += m_PalB[m_WhichPalette][m_PaletteDepthIndex][palIndex];
                     }
                 }
             }

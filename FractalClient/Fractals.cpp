@@ -34,6 +34,7 @@ void MenuWindowed(HWND hWnd);
 void MenuIncreaseIterations(HWND hWnd, double factor);
 void MenuDecreaseIterations(HWND hWnd);
 void MenuResetIterations(HWND hWnd);
+void MenuPaletteType(Fractal::Palette type);
 void MenuPaletteDepth(int depth);
 void MenuPaletteRotation(HWND hWnd);
 void MenuCreateNewPalette(HWND hWnd);
@@ -661,19 +662,51 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 break;
             }
 
+            case IDM_PALETTE_TYPE_0:
+            {
+                MenuPaletteType(Fractal::Palette::Default);
+                break;
+            }
+
+            case IDM_PALETTE_TYPE_1:
+            {
+                MenuPaletteType(Fractal::Palette::Patriotic);
+                break;
+            }
+
+            case IDM_PALETTE_TYPE_2:
+            {
+                MenuPaletteType(Fractal::Palette::Summer);
+                break;
+            }
+
+            case IDM_PALETTE_6:
+            {
+                MenuPaletteDepth(6);
+                break;
+            }
+
             case IDM_PALETTE_8:
             {
                 MenuPaletteDepth(8);
                 break;
             }
+
             case IDM_PALETTE_12:
             {
                 MenuPaletteDepth(12);
                 break;
             }
+
             case IDM_PALETTE_16:
             {
                 MenuPaletteDepth(16);
+                break;
+            }
+
+            case IDM_PALETTE_20:
+            {
+                MenuPaletteDepth(20);
                 break;
             }
 
@@ -1176,18 +1209,19 @@ void MenuPaletteRotation(HWND)
     gFractal->DrawFractal(false);
 }
 
-void MenuPaletteDepth(int depth)
-{
+void MenuPaletteType(Fractal::Palette type) {
+    gFractal->UsePaletteType(type);
+}
+
+void MenuPaletteDepth(int depth) {
     gFractal->UsePalette(depth);
 }
 
-void MenuCreateNewPalette(HWND)
-{
+void MenuCreateNewPalette(HWND) {
     gFractal->CreateNewFractalPalette();
 }
 
-void MenuSaveCurrentLocation(HWND hWnd)
-{
+void MenuSaveCurrentLocation(HWND hWnd) {
     int response = ::MessageBox(hWnd, L"Scale dimensions to maximum?", L"Choose!", MB_YESNO);
     char filename[256];
     SYSTEMTIME time_struct;
@@ -1246,13 +1280,11 @@ void MenuSaveCurrentLocation(HWND hWnd)
     fclose(file);
 }
 
-void MenuSaveBMP(HWND)
-{
+void MenuSaveBMP(HWND) {
     gFractal->SaveCurrentFractal(L"");
 }
 
-void MenuSaveHiResBMP(HWND)
-{
+void MenuSaveHiResBMP(HWND) {
     gFractal->SaveHiResFractal(L"");
 }
 

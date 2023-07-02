@@ -2360,20 +2360,18 @@ void GPURenderer::ClearMemory() {
 uint32_t GPURenderer::InitializeMemory(
     size_t w,
     size_t h,
-    uint32_t aa,
     size_t MaxFractSize)
 {
-    if ((local_width == w * aa) &&
-        (local_height == h * aa) &&
+    if ((local_width == w) &&
+        (local_height == h) &&
         (array_width == MaxFractSize)) {
         return 0;
     }
 
     width = (uint32_t)w;
     height = (uint32_t)h;
-    antialiasing = aa;
-    local_width = width * antialiasing;
-    local_height = height * antialiasing;
+    local_width = width;
+    local_height = height;
     w_block = local_width / NB_THREADS_W + (local_width % NB_THREADS_W != 0);
     h_block = local_height / NB_THREADS_H + (local_height % NB_THREADS_H != 0);
     N_cu = w_block * NB_THREADS_W * h_block * NB_THREADS_H;
@@ -2933,9 +2931,6 @@ uint32_t GPURenderer::RenderPerturbBLA(
 }
 
 uint32_t GPURenderer::ExtractIters(uint32_t* buffer) {
-    size_t aax, aay;
-    double temp;
-
     const size_t ERROR_COLOR = 255;
     cudaError_t result = cudaDeviceSynchronize();
     if (result != cudaSuccess) {
@@ -2947,29 +2942,9 @@ uint32_t GPURenderer::ExtractIters(uint32_t* buffer) {
         return result;
     }
 
-    if (antialiasing != 1) {
-        for (size_t y = 0; y < height; y++) {
-            for (size_t x = 0; x < width; x++) {
-
-                buffer[y * array_width + x] = 0;
-                temp = 0.0;
-                for (aay = y * antialiasing; aay < y * antialiasing + antialiasing; aay++) {
-                    for (aax = x * antialiasing; aax < x * antialiasing + antialiasing; aax++) {
-                        temp += iter_matrix_cu[aay * local_width + aax];
-                    }
-                }
-
-                temp /= antialiasing * antialiasing;
-
-                buffer[y * array_width + x] = (int)temp;
-            }
-        }
-    }
-    else {
-        for (size_t y = 0; y < height; y++) {
-            for (size_t x = 0; x < width; x++) {
-                buffer[y * array_width + x] = (int)iter_matrix_cu[y * local_width + x];
-            }
+    for (size_t y = 0; y < height; y++) {
+        for (size_t x = 0; x < width; x++) {
+            buffer[y * array_width + x] = (int)iter_matrix_cu[y * local_width + x];
         }
     }
 

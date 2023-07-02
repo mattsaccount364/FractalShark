@@ -23,7 +23,6 @@ void ConvertCStringToDest(const CString& str,
     HighPrecision& maxX,
     HighPrecision& maxY,
     uint32_t *iters = nullptr,
-    uint32_t *iterationAntialiasing = nullptr,
     uint32_t *gpuAntialiasing = nullptr,
     uint32_t *iterationPrecision = nullptr,
     std::wstring* filename = nullptr);
@@ -200,7 +199,6 @@ void ConvertCStringToDest(const CString& str,
     HighPrecision& maxX,
     HighPrecision& maxY,
     uint32_t *iters,
-    uint32_t *iterationAntialiasing,
     uint32_t *gpuAntialiasing,
     uint32_t* iterationPrecision,
     std::wstring *filename) {
@@ -220,10 +218,6 @@ void ConvertCStringToDest(const CString& str,
 
     if (iters != nullptr) {
         *iters = atoi(tokens_str[6].c_str());
-    }
-
-    if (iterationAntialiasing != nullptr) {
-        *iterationAntialiasing = atoi(tokens_str[7].c_str());
     }
 
     if (gpuAntialiasing != nullptr) {
@@ -261,12 +255,11 @@ void CFractalTrayDlg::OnBnClickedButtonGenerate ()
   uint32_t srcWidth;
   uint32_t srcHeight;
 
-  uint32_t iterationAntialiasing;
   uint32_t gpuAntialiasing;
   uint32_t iterationPrecision;
 
-  ConvertCStringToDest(m_SourceCoords, srcWidth, srcHeight, curMinX, curMinY, curMaxX, curMaxY, &sourceIters, &iterationAntialiasing, &gpuAntialiasing, &iterationPrecision);
-  ConvertCStringToDest(m_DestCoords, destWidth, destHeight, destMinX, destMinY, destMaxX, destMaxY, &targetIters, &iterationAntialiasing, &gpuAntialiasing, &iterationPrecision);
+  ConvertCStringToDest(m_SourceCoords, srcWidth, srcHeight, curMinX, curMinY, curMaxX, curMaxY, &sourceIters, &gpuAntialiasing, &iterationPrecision);
+  ConvertCStringToDest(m_DestCoords, destWidth, destHeight, destMinX, destMinY, destMaxX, destMaxY, &targetIters, &gpuAntialiasing, &iterationPrecision);
 
   curIters = sourceIters;
 
@@ -303,7 +296,6 @@ void CFractalTrayDlg::OnBnClickedButtonGenerate ()
     ss << curMaxX << " ";
     ss << curMaxY << " ";
     ss << curIters << " ";
-    ss << iterationAntialiasing << " ";
     ss << gpuAntialiasing << " ";
     ss << iterationPrecision << " ";
     ss << std::string(outputImageFilename) << std::endl;
@@ -383,7 +375,6 @@ DWORD WINAPI CalcProc (LPVOID lpParameter)
   HighPrecision minX, minY, maxX, maxY;
   uint32_t numIters;
 
-  uint32_t iterationAntialiasing;
   uint32_t gpuAntialiasing;
   uint32_t iterationPrecision;
 
@@ -411,7 +402,6 @@ DWORD WINAPI CalcProc (LPVOID lpParameter)
         maxX,
         maxY,
         &numIters,
-        &iterationAntialiasing,
         &gpuAntialiasing,
         &iterationPrecision,
         &filename);
@@ -424,7 +414,7 @@ DWORD WINAPI CalcProc (LPVOID lpParameter)
 
     fractal->SetNumIterations (numIters);
     fractal->SetIterationPrecision(iterationPrecision);
-    fractal->ResetDimensions(resX, resY, iterationAntialiasing, gpuAntialiasing);
+    fractal->ResetDimensions(resX, resY, gpuAntialiasing);
     fractal->RecenterViewCalc(minX, minY, maxX, maxY);
     fractal->UsePalette(16);
     fractal->CalcFractal (true);

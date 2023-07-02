@@ -234,7 +234,6 @@ public:
     uint32_t InitializeMemory(
         size_t w, // width
         size_t h, // height
-        uint32_t aa, // antialiasing
         size_t MaxFractSize);
 
     void ClearMemory();
@@ -247,7 +246,6 @@ private:
 
     uint32_t width;
     uint32_t height;
-    uint32_t antialiasing;
     uint32_t local_width;
     uint32_t local_height;
     uint32_t w_block;

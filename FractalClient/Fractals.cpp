@@ -28,7 +28,6 @@ void MenuStandardView(HWND hWnd, size_t i);
 void MenuSquareView(HWND hWnd);
 void MenuCenterView(HWND hWnd, int x, int y);
 void MenuZoomOut(HWND hWnd);
-void MenuAutoZoom();
 void MenuRepainting(HWND hWnd);
 void MenuWindowed(HWND hWnd);
 void MenuIncreaseIterations(HWND hWnd, double factor);
@@ -356,9 +355,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 break;
             }
 
-            case IDM_AUTOZOOM:
+            case IDM_AUTOZOOM_DEFAULT:
             {
-                MenuAutoZoom();
+                gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Default>();
+                break;
+            }
+
+            case IDM_AUTOZOOM_MAX:
+            {
+                gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Max>();
                 break;
             }
 
@@ -382,48 +387,25 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 break;
             }
 
-            case IDM_ITERATION_ANTIALIASING_1X:
-            {
-                gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 1, UINT32_MAX);
-                break;
-            }
-
-            case IDM_ITERATION_ANTIALIASING_4X:
-            {
-                gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 2, UINT32_MAX);
-                break;
-            }
-
-            case IDM_ITERATION_ANTIALIASING_9X:
-            {
-                gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 3, UINT32_MAX);
-                break;
-            }
-            case IDM_ITERATION_ANTIALIASING_16X:
-            {
-                gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 4, UINT32_MAX);
-                break;
-            }
-
             case IDM_GPUANTIALIASING_1X:
             {
-                gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, UINT32_MAX, 1);
+                gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 1);
                 break;
             }
             case IDM_GPUANTIALIASING_4X:
             {
-                gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, UINT32_MAX, 2);
+                gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 2);
                 break;
             }
             case IDM_GPUANTIALIASING_9X:
             {
-                gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, UINT32_MAX, 3);
+                gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 3);
                 break;
             }
 
             case IDM_GPUANTIALIASING_16X:
             {
-                gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, UINT32_MAX, 4);
+                gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 4);
                 break;
             }
 
@@ -992,12 +974,8 @@ void MenuCenterView(HWND hWnd, int x, int y)
 
 void MenuZoomOut(HWND hWnd)
 {
-    gFractal->Zoom(1);
+    gFractal->Zoom(-.45);
     PaintAsNecessary(hWnd);
-}
-
-void MenuAutoZoom() {
-    gFractal->AutoZoom();
 }
 
 void MenuRepainting(HWND hWnd)
@@ -1266,7 +1244,6 @@ void MenuSaveCurrentLocation(HWND hWnd) {
     ss << gFractal->GetMaxX() << " ";
     ss << gFractal->GetMaxY() << " ";
     ss << gFractal->GetNumIterations() << " ";
-    ss << gFractal->GetIterationAntialiasing() << " ";
     ss << gFractal->GetGpuAntialiasing() << " ";
     ss << gFractal->GetIterationPrecision() << " ";
     ss << filename << std::endl;

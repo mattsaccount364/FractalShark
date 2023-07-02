@@ -67,14 +67,21 @@ private:
 public: // Changing the view
     void ResetDimensions(size_t width = MAXSIZE_T,
                          size_t height = MAXSIZE_T,
-                         uint32_t iteration_antialiasing = UINT32_MAX,
                          uint32_t gpu_antialiasing = UINT32_MAX);
     bool RecenterViewCalc(HighPrecision MinX, HighPrecision MinY, HighPrecision MaxX, HighPrecision MaxY);
     bool RecenterViewScreen(RECT rect);
     bool CenterAtPoint(size_t x, size_t y);
     void Zoom(double factor);
     void Zoom(size_t scrnX, size_t scrnY, double factor);
+
+    enum class AutoZoomHeuristic {
+        Default,
+        Max
+    };
+
+    template<AutoZoomHeuristic h>
     void AutoZoom();
+
     void View(size_t i);
     void SquareCurrentView(void);
     void ApproachTarget(void);
@@ -101,7 +108,6 @@ public:
     inline RenderAlgorithm GetRenderAlgorithm(void) const { return m_RenderAlgorithm; }
     inline void SetRenderAlgorithm(RenderAlgorithm alg) { m_RenderAlgorithm = alg; }
 
-    inline uint32_t GetIterationAntialiasing(void) const { return m_IterationAntialiasing; }
     inline uint32_t GetGpuAntialiasing(void) const { return m_GpuAntialiasing; }
     inline uint32_t GetIterationPrecision(void) const { return m_IterationPrecision; }
     inline void SetIterationPrecision(uint32_t iteration_precision) { m_IterationPrecision = iteration_precision;  }
@@ -364,9 +370,7 @@ private:
     // 3 = 3x3 grid average
     // 4 = 4x4 grid average
 
-    // m_IterationAntialiasing = average iteration count
     // m_GpuAntialiasing = average final colors picked
-    uint32_t m_IterationAntialiasing;
     uint32_t m_GpuAntialiasing;
 
     // Iteration precision

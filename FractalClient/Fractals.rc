@@ -93,19 +93,16 @@ BEGIN
         MENUITEM "Square &View",                IDM_SQUAREVIEW
         MENUITEM "Center View &Here",           IDM_CENTERVIEW
         MENUITEM "Zoom out",                    IDM_ZOOMOUT
-        MENUITEM "Auto-Zoom",                   IDM_AUTOZOOM
+        POPUP "AutoZoom"
+        BEGIN
+            MENUITEM "Default",                     IDM_AUTOZOOM_DEFAULT
+            MENUITEM "Max",                         IDM_AUTOZOOM_MAX
+        END
         MENUITEM SEPARATOR
         MENUITEM "Toggle Re&painting",          IDM_REPAINTING
         MENUITEM "&Toggle Window Size",         IDM_WINDOWED
         MENUITEM "&Minimize Window",            IDM_MINIMIZE
         MENUITEM SEPARATOR
-        POPUP "Iteration Antialiasing"
-        BEGIN
-            MENUITEM "1x (fast)",                   IDM_ITERATION_ANTIALIASING_1X
-            MENUITEM "4x",                          IDM_ITERATION_ANTIALIASING_4X
-            MENUITEM "9x",                          IDM_ITERATION_ANTIALIASING_9X
-            MENUITEM "16x (better quality)",        IDM_ITERATION_ANTIALIASING_16X
-        END
         POPUP "GPU Antialiasing"
         BEGIN
             MENUITEM "1x (fast)",                   IDM_GPUANTIALIASING_1X

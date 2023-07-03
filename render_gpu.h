@@ -233,8 +233,7 @@ public:
 
     uint32_t InitializeMemory(
         size_t w, // width
-        size_t h, // height
-        size_t MaxFractSize);
+        size_t h); // height
 
     void ClearMemory();
 

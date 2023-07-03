@@ -238,7 +238,7 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
         return;
     }
 
-    SHORT nState = GetKeyState(VK_SHIFT);
+    //SHORT nState = GetKeyState(VK_SHIFT);
 
     switch (wParam) {
     case 'Z':

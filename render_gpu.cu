@@ -2359,23 +2359,28 @@ void GPURenderer::ClearMemory() {
 
 uint32_t GPURenderer::InitializeMemory(
     size_t w,
-    size_t h,
-    size_t MaxFractSize)
+    size_t h)
 {
     if ((local_width == w) &&
-        (local_height == h) &&
-        (array_width == MaxFractSize)) {
+        (local_height == h)) {
         return 0;
+    }
+
+    if (local_width % NB_THREADS_W != 0) {
+        return 100;
+    }
+
+    if (local_height % NB_THREADS_H != 0) {
+        return 101;
     }
 
     width = (uint32_t)w;
     height = (uint32_t)h;
     local_width = width;
     local_height = height;
-    w_block = local_width / NB_THREADS_W + (local_width % NB_THREADS_W != 0);
-    h_block = local_height / NB_THREADS_H + (local_height % NB_THREADS_H != 0);
+    w_block = local_width / NB_THREADS_W;
+    h_block = local_height / NB_THREADS_H;
     N_cu = w_block * NB_THREADS_W * h_block * NB_THREADS_H;
-    array_width = MaxFractSize;
 
     if (iter_matrix_cu != nullptr) {
         cudaFree(iter_matrix_cu);
@@ -2934,18 +2939,16 @@ uint32_t GPURenderer::ExtractIters(uint32_t* buffer) {
     const size_t ERROR_COLOR = 255;
     cudaError_t result = cudaDeviceSynchronize();
     if (result != cudaSuccess) {
-        for (size_t y = 0; y < height; y++) {
-            for (size_t x = 0; x < width; x++) {
-                buffer[y * array_width + x] = ERROR_COLOR;
-            }
-        }
+        cudaMemset(buffer, ERROR_COLOR, sizeof(int) * width * height);
         return result;
     }
 
-    for (size_t y = 0; y < height; y++) {
-        for (size_t x = 0; x < width; x++) {
-            buffer[y * array_width + x] = (int)iter_matrix_cu[y * local_width + x];
-        }
+    result = cudaMemcpy(buffer,
+                        iter_matrix_cu,
+                        sizeof(int) * N_cu,
+                        cudaMemcpyDefault);
+    if (result != cudaSuccess) {
+        return result;
     }
 
     return cudaSuccess;

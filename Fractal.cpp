@@ -21,14 +21,29 @@
 #include <thread>
 #include <psapi.h>
 
+// Match in render_gpu.cu
+constexpr static auto NB_THREADS_W = 16;
+constexpr static auto NB_THREADS_H = 8;
+
 void DefaultOutputMessage(const wchar_t *, ...);
 
 Fractal::ItersMemoryContainer::ItersMemoryContainer(size_t width, size_t height, size_t total_antialiasing)
     : m_ItersMemory(nullptr),
       m_ItersArray(nullptr),
-      m_Width((width + 32) * total_antialiasing),
-      m_Height((height + 32) * total_antialiasing),
-      m_Total(m_Width * m_Height) {
+      m_Width(),
+      m_Height(),
+      m_Total() {
+    size_t antialias_width = width * total_antialiasing;
+    size_t antialias_height = height * total_antialiasing;
+
+    size_t w_block = antialias_width / NB_THREADS_W + (antialias_width % NB_THREADS_W != 0);
+    size_t h_block = antialias_height / NB_THREADS_H + (antialias_height % NB_THREADS_H != 0);
+
+    // This array must be identical in size to iter_matrix_cu in CUDA
+
+    m_Width = w_block * NB_THREADS_W;
+    m_Height = h_block * NB_THREADS_H;
+    m_Total = m_Width * m_Height;
     m_ItersMemory = new uint32_t[m_Total];
     memset(m_ItersMemory, 0, m_Total * sizeof(uint32_t));
 
@@ -1894,9 +1909,8 @@ void Fractal::CalcGpuFractal(bool MemoryOnly)
     FillGpuCoords(cx2, cy2, dx2, dy2);
 
     uint32_t err =
-        m_r.InitializeMemory(m_ScrnWidth * GetGpuAntialiasing(),
-                             m_ScrnHeight * GetGpuAntialiasing(),
-                             m_CurIters.m_Width);
+        m_r.InitializeMemory(m_CurIters.m_Width,
+                             m_CurIters.m_Height);
     if (err) {
         MessageBoxCudaError(err);
         return;
@@ -3590,9 +3604,8 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
     blas.Init(results->x.size(), T(results->maxRadius));
 
     uint32_t err =
-        m_r.InitializeMemory(m_ScrnWidth * GetGpuAntialiasing(),
-                             m_ScrnHeight * GetGpuAntialiasing(),
-                             m_CurIters.m_Width);
+        m_r.InitializeMemory(m_CurIters.m_Width,
+                             m_CurIters.m_Height);
     if (err) {
         MessageBoxCudaError(err);
         return;
@@ -3651,9 +3664,8 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
     blas.Init(results->x.size(), T(results->maxRadius));
 
     uint32_t err =
-        m_r.InitializeMemory(m_ScrnWidth * GetGpuAntialiasing(),
-            m_ScrnHeight * GetGpuAntialiasing(),
-            m_CurIters.m_Width);
+        m_r.InitializeMemory(m_CurIters.m_Width,
+                             m_CurIters.m_Height);
     if (err) {
         MessageBoxCudaError(err);
         return;

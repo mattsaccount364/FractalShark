@@ -64,6 +64,14 @@ private:
     bool IsDownControl(void);
     void CheckForAbort(void);
 
+    void SetPrecision(
+        size_t prec,
+        HighPrecision &minX,
+        HighPrecision &minY,
+        HighPrecision &maxX,
+        HighPrecision &maxY);
+    void SetPrecision();
+
 public: // Changing the view
     void ResetDimensions(size_t width = MAXSIZE_T,
                          size_t height = MAXSIZE_T,
@@ -102,6 +110,13 @@ private: // For saving the current location
 public: // Iterations
     void SetNumIterations(size_t num);
     size_t GetNumIterations(void) const;
+
+    size_t GetPrecision(
+        const HighPrecision& minX,
+        const HighPrecision& minY,
+        const HighPrecision& maxX,
+        const HighPrecision& maxY) const;
+    size_t GetPrecision(void) const;
     void ResetNumIterations(void);
 
 public:

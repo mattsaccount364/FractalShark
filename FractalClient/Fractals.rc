@@ -72,7 +72,7 @@ IDR_MENU_POPUP MENU
 BEGIN
     POPUP "POPUP"
     BEGIN
-        MENUITEM "&Back",                       IDM_BACK
+        MENUITEM "Back",                        IDM_BACK
         POPUP "Built-In Views"
         BEGIN
             MENUITEM "&Standard View",              IDM_STANDARDVIEW
@@ -90,8 +90,8 @@ BEGIN
             MENUITEM "#12 - Full BLA test 10^700 or so, low iterations", IDM_VIEW12
             MENUITEM "#13",                         IDM_VIEW13
         END
-        MENUITEM "Square &View",                IDM_SQUAREVIEW
-        MENUITEM "Center View &Here",           IDM_CENTERVIEW
+        MENUITEM "Square View",                 IDM_SQUAREVIEW
+        MENUITEM "Center View Here",            IDM_CENTERVIEW
         MENUITEM "Zoom out",                    IDM_ZOOMOUT
         POPUP "AutoZoom"
         BEGIN
@@ -99,9 +99,9 @@ BEGIN
             MENUITEM "Max",                         IDM_AUTOZOOM_MAX
         END
         MENUITEM SEPARATOR
-        MENUITEM "Toggle Re&painting",          IDM_REPAINTING
-        MENUITEM "&Toggle Window Size",         IDM_WINDOWED
-        MENUITEM "&Minimize Window",            IDM_MINIMIZE
+        MENUITEM "Toggle Repainting",           IDM_REPAINTING
+        MENUITEM "Toggle Window Size",          IDM_WINDOWED
+        MENUITEM "Minimize Window",             IDM_MINIMIZE
         MENUITEM SEPARATOR
         POPUP "GPU Antialiasing"
         BEGIN

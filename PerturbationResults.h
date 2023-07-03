@@ -7,7 +7,8 @@
 template<class T>
 class PerturbationResults {
 public:
-    HighPrecision hiX, hiY, radiusX, radiusY, maxRadius;
+    HighPrecision hiX, hiY, radiusX, radiusY;
+    T maxRadius;
     size_t MaxIterations;
 
     std::vector<T> x;

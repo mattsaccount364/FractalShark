@@ -48,7 +48,7 @@ public:
         exp = MIN_BIG_EXPONENT();
     }
 
-    CUDA_CRAP HDRFloat(const HDRFloat &other) {
+    CUDA_CRAP HDRFloat(const HDRFloat<T> &other) {
         mantissa = other.mantissa;
         exp = other.exp;
     }
@@ -107,7 +107,7 @@ public:
     }
 
 #ifndef __CUDACC__ 
-    HDRFloat(HighPrecision number) {
+    HDRFloat(const HighPrecision &number) {
 
         if (number == 0) {
             mantissa = 0.0;
@@ -715,37 +715,6 @@ public:
 
     static CUDA_CRAP HDRFloat HDRMin(HDRFloat a, HDRFloat b) {
         return a.compareTo(b) < 0 ? a : b;
-    }
-
-    CUDA_CRAP HDRFloat pow(int n) const {
-        switch (n) {
-        case 0: return HDRFloat(1.0);
-        case 1: return HDRFloat(*this);
-        case 2: return square();
-        case 3: return multiply(square());
-        case 4: return square().square();
-        case 5: return multiply(square().square());
-        case 6: return multiply(square()).square();
-        case 7: return multiply(multiply(square()).square());
-        case 8: return square().square().square();
-        default:
-        {
-            if (n < 0) {
-                return HDRFloat();
-            }
-            HDRFloat y = HDRFloat(1.0);
-            HDRFloat x = HDRFloat(*this);
-            while (n > 1)
-            {
-                if ((n & 1) != 0)
-                    y.multiply_mutable(x);
-
-                x.square_mutable();
-                n >>= 1;
-            }
-            return x.multiply(y);
-        }
-        }
     }
 };
 

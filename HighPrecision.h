@@ -4,8 +4,16 @@
 #include <boost/multiprecision/gmp.hpp>
 #include <boost/multiprecision/number.hpp>
 
-#ifndef __CUDACC__ 
-constexpr const size_t DigitPrecision = 2000;
+#ifndef __CUDACC__
+
+// THIS IS SO STUPID BUT I DON'T KNOW HOW TO FIX IT
+// CAN WE REMOVE THIS IFDEF AND USE CONSTEXPR
+// #define CONSTANT_PRECISION
+
+// 1) Toggle the above pre-processor definition if necessary.
+// 2) Set to non-zero to force specific precision
+// 3) Set to zero for dynamic.
+constexpr const size_t DigitPrecision = 0;
 
 using HighPrecision = boost::multiprecision::number<
     boost::multiprecision::gmp_float<DigitPrecision>,

@@ -30,8 +30,7 @@ void MenuCenterView(HWND hWnd, int x, int y);
 void MenuZoomOut(HWND hWnd);
 void MenuRepainting(HWND hWnd);
 void MenuWindowed(HWND hWnd);
-void MenuIncreaseIterations(HWND hWnd, double factor);
-void MenuDecreaseIterations(HWND hWnd);
+void MenuMultiplyIterations(HWND hWnd, double factor);
 void MenuResetIterations(HWND hWnd);
 void MenuPaletteType(Fractal::Palette type);
 void MenuPaletteDepth(int depth);
@@ -242,17 +241,33 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
     SHORT nState = GetKeyState(VK_SHIFT);
 
     switch (wParam) {
-    case 0x5A: // 'Z'
-        if (nState & 0x1000) {
-            // zoom out
-            gFractal->Zoom(mousePt.x, mousePt.y, 1);
-        }
+    case 'Z':
+        // zoom out
+        gFractal->Zoom(mousePt.x, mousePt.y, 1);
         break;
-    case 0x7A: // 'z'
-        if ((nState & 0x1000) == 0) {
-            // zoom in
-            gFractal->Zoom(mousePt.x, mousePt.y, -.45);
-        }
+    case 'z':
+        // zoom in
+        gFractal->Zoom(mousePt.x, mousePt.y, -.45);
+        break;
+    case 'c':
+        MenuCenterView(hWnd, mousePt.x, mousePt.y);
+        break;
+    case '=':
+        MenuMultiplyIterations(hWnd, 24.0);
+        break;
+    case '-':
+        MenuMultiplyIterations(hWnd, 2.0/3.0);
+        break;
+    case 'a':
+        MenuCenterView(hWnd, mousePt.x, mousePt.y);
+        gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Default>();
+        break;
+    case 'A':
+        MenuCenterView(hWnd, mousePt.x, mousePt.y);
+        gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Max>();
+        break;
+    case 'b':
+        MenuGoBack(hWnd);
         break;
     default:
         break;
@@ -350,8 +365,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             case IDM_ZOOMOUT:
             {
-                // TODO
-                // MenuZoomOut(hWnd);
+                MenuZoomOut(hWnd);
                 break;
             }
 
@@ -563,23 +577,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             // will be improved.
             case IDM_INCREASEITERATIONS_1P5X:
             {
-                MenuIncreaseIterations(hWnd, 1.5);
+                MenuMultiplyIterations(hWnd, 1.5);
                 break;
             }
             case IDM_INCREASEITERATIONS_6X:
-            { MenuIncreaseIterations(hWnd, 6.0);
+            {
+                MenuMultiplyIterations(hWnd, 6.0);
                 break;
             }
 
             case IDM_INCREASEITERATIONS_24X:
             {
-                MenuIncreaseIterations(hWnd, 24.0);
+                MenuMultiplyIterations(hWnd, 24.0);
                 break;
             }
             // Decrease the number of iterations we are using
             case IDM_DECREASEITERATIONS:
             {
-                MenuDecreaseIterations(hWnd);
+                MenuMultiplyIterations(hWnd, 2.0/3.0);
                 break;
             }
             // Reset the number of iterations to the default
@@ -1048,19 +1063,12 @@ void MenuWindowed(HWND hWnd)
     }
 }
 
-void MenuIncreaseIterations(HWND hWnd, double factor)
+void MenuMultiplyIterations(HWND hWnd, double factor)
 {
     size_t curIters = gFractal->GetNumIterations();
     curIters = (size_t)((double)curIters * (double)factor);
     gFractal->SetNumIterations(curIters);
     PaintAsNecessary(hWnd);
-}
-
-void MenuDecreaseIterations(HWND)
-{
-    size_t curIters = gFractal->GetNumIterations();
-    curIters = (curIters * 2) / 3;
-    gFractal->SetNumIterations(curIters);
 }
 
 void MenuResetIterations(HWND hWnd)
@@ -1107,6 +1115,8 @@ void MenuGetCurPos(HWND hWnd)
     HighPrecision minX, minY;
     HighPrecision maxX, maxY;
 
+    size_t prec = gFractal->GetPrecision();
+
     minX = gFractal->GetMinX();
     minY = gFractal->GetMinY();
     maxX = gFractal->GetMaxX();
@@ -1138,11 +1148,13 @@ void MenuGetCurPos(HWND hWnd)
     snprintf(
         mem,
         numBytes,
+        "SetPrecision(%zu);\r\n"
         "minX = HighPrecision{ \"%s\" };\r\n"
         "minY = HighPrecision{ \"%s\" };\r\n"
         "maxX = HighPrecision{ \"%s\" };\r\n"
         "maxY = HighPrecision{ \"%s\" };\r\n"
         "SetNumIterations(%zu);\r\n",
+        prec,
         sminX.c_str(), sminY.c_str(),
         smaxX.c_str(), smaxY.c_str(),
         gFractal->GetNumIterations());

@@ -139,12 +139,14 @@ public: // Drawing functions
 
     // The palette!
     enum Palette : size_t {
-        Default = 0,
+        Basic = 0,
+        Default,
         Patriotic,
         Summer,
         Num
     };
 
+    int GetPaletteDepthFromIndex(size_t index);
     void UsePalette(int depth);
     void UsePaletteType(Palette type);
     void ResetFractalPalette(void);
@@ -273,11 +275,11 @@ public: // Saving images of the fractal
     void CleanupThreads();
 
 public: // Benchmarking
-    HighPrecision Benchmark(size_t numIters);
+    HighPrecision Benchmark(size_t numIters, size_t &millseconds);
 
     template<class T, class SubType>
-    HighPrecision BenchmarkReferencePoint(size_t numIters);
-    HighPrecision BenchmarkThis();
+    HighPrecision BenchmarkReferencePoint(size_t numIters, size_t& millseconds);
+    HighPrecision BenchmarkThis(size_t& millseconds);
 
 private:
     struct BenchmarkData {
@@ -293,10 +295,10 @@ private:
 
         void BenchmarkSetup(size_t numIters);
         bool StartTimer();
-        HighPrecision StopTimer();
+        HighPrecision StopTimer(size_t &milliseconds);
 
         template<class T>
-        HighPrecision StopTimerNoIters();
+        HighPrecision StopTimerNoIters(size_t &milliseconds);
         void BenchmarkFinish();
     };
 

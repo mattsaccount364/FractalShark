@@ -76,13 +76,45 @@ BLA<T> BLAS<T>::CreateOneStep(size_t m, T epsilon) {
     return BLA<T>(r2, RealA, ImagA, RealB, ImagB, l); // BLA1Step
 }
 
+constexpr size_t WorkThreshholdForThreads = 5000;
+
 template<class T>
 void BLAS<T>::InitInternal(T blaSize, T epsilon) {
 
+    std::vector<std::unique_ptr<std::thread>> threads;
+
+    auto RunInit = [&](size_t firstLevel, size_t mStart, size_t mEnd, T blaSize, T epsilon) {
+        for (size_t m = mStart; m < mEnd; m++) {
+            InitLStep(firstLevel, m, blaSize, epsilon);
+        }
+    };
+
     size_t elements = m_ElementsPerLevel[m_FirstLevel] + 1;
-    m_Done = 0;
-    for (size_t m = 1; m < elements; m++) {
-        InitLStep(m_FirstLevel, m, blaSize, epsilon);
+    size_t optThreads = elements / WorkThreshholdForThreads;
+    if (optThreads > std::thread::hardware_concurrency()) {
+        optThreads = std::thread::hardware_concurrency();
+    }
+    else if (optThreads == 0) {
+        optThreads = 1;
+    }
+
+    size_t mDelta = elements / optThreads;
+    size_t mConsumed = 1;
+
+    if (mDelta > WorkThreshholdForThreads && optThreads > 1) {
+        for (size_t i = 0; i < optThreads - 1; i++) {
+            threads.push_back(std::make_unique<std::thread>(RunInit, m_FirstLevel, mConsumed, mConsumed + mDelta, blaSize, epsilon));
+            mConsumed += mDelta;
+        }
+
+        threads.push_back(std::make_unique<std::thread>(RunInit, m_FirstLevel, mConsumed, elements, blaSize, epsilon));
+
+        for (size_t i = 0; i < threads.size(); i++) {
+            threads[i]->join();
+        }
+    }
+    else {
+        RunInit(m_FirstLevel, 1, elements, blaSize, epsilon);
     }
 }
 
@@ -108,17 +140,47 @@ void BLAS<T>::Merge(T blaSize) {
     size_t src = m_FirstLevel;
     size_t maxLevel = m_ElementsPerLevel.size() - 1;
     for (size_t elementsSrc = m_ElementsPerLevel[src]; src < maxLevel && elementsSrc > 1; src++) {
+        std::vector<std::unique_ptr<std::thread>> threads;
 
         size_t srcp1 = src + 1;
         elementsDst = m_ElementsPerLevel[srcp1];
         size_t dst = srcp1;
 
+        size_t optThreads = elementsDst / WorkThreshholdForThreads;
+        if (optThreads > std::thread::hardware_concurrency()) {
+            optThreads = std::thread::hardware_concurrency();
+        }
+        else if (optThreads == 0) {
+            optThreads = 1;
+        }
+
         const size_t elementsSrcFinal = elementsSrc;
         const size_t srcFinal = src;
         const size_t destFinal = dst;
 
-        for (size_t m = 0; m < elementsDst; m++) {
-            MergeOneStep(m, elementsSrcFinal, srcFinal, destFinal, blaSize);
+        auto SubMerge = [&](size_t mStart, size_t mEnd) {
+            for (size_t m = mStart; m < mEnd; m++) {
+                MergeOneStep(m, elementsSrcFinal, srcFinal, destFinal, blaSize);
+            }
+        };
+
+        size_t mDelta = elementsDst / optThreads;
+        size_t mConsumed = 0;
+
+        if (mDelta > WorkThreshholdForThreads && optThreads > 1) {
+            for (size_t i = 0; i < optThreads - 1; i++) {
+                threads.push_back(std::make_unique<std::thread>(SubMerge, mConsumed, mConsumed + mDelta));
+                mConsumed += mDelta;
+            }
+
+            threads.push_back(std::make_unique<std::thread>(SubMerge, mConsumed, elementsDst));
+
+            for (size_t i = 0; i < threads.size(); i++) {
+                threads[i]->join();
+            }
+        }
+        else {
+            SubMerge(0, elementsDst);
         }
 
         elementsSrc = elementsDst;

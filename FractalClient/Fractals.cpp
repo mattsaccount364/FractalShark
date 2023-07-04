@@ -661,17 +661,23 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             case IDM_PALETTE_TYPE_0:
             {
-                MenuPaletteType(Fractal::Palette::Default);
+                MenuPaletteType(Fractal::Palette::Basic);
                 break;
             }
 
             case IDM_PALETTE_TYPE_1:
             {
-                MenuPaletteType(Fractal::Palette::Patriotic);
+                MenuPaletteType(Fractal::Palette::Default);
                 break;
             }
 
             case IDM_PALETTE_TYPE_2:
+            {
+                MenuPaletteType(Fractal::Palette::Patriotic);
+                break;
+            }
+
+            case IDM_PALETTE_TYPE_3:
             {
                 MenuPaletteType(Fractal::Palette::Summer);
                 break;
@@ -1201,14 +1207,17 @@ void MenuPaletteRotation(HWND)
 
 void MenuPaletteType(Fractal::Palette type) {
     gFractal->UsePaletteType(type);
+    gFractal->DrawFractal(false);
 }
 
 void MenuPaletteDepth(int depth) {
     gFractal->UsePalette(depth);
+    gFractal->DrawFractal(false);
 }
 
 void MenuCreateNewPalette(HWND) {
     gFractal->CreateNewFractalPalette();
+    gFractal->DrawFractal(false);
 }
 
 void MenuSaveCurrentLocation(HWND hWnd) {
@@ -1277,10 +1286,10 @@ void MenuSaveHiResBMP(HWND) {
     gFractal->SaveHiResFractal(L"");
 }
 
-void BenchmarkMessage(HWND hWnd, HighPrecision megaIters) {
+void BenchmarkMessage(HWND hWnd, HighPrecision megaIters, size_t milliseconds) {
     std::stringstream ss;
     ss << std::string("Your computer calculated ");
-    ss << megaIters << " million iterations per second";
+    ss << megaIters << " million iterations per second, took " << milliseconds << "ms.";
     std::string s = ss.str();
     const std::wstring ws(s.begin(), s.end());
     MessageBox(hWnd, ws.c_str(), L"", MB_OK);
@@ -1289,28 +1298,32 @@ void BenchmarkMessage(HWND hWnd, HighPrecision megaIters) {
 
 void MenuBenchmark(HWND hWnd, bool fastbenchmark)
 {
-    HighPrecision megaIters = gFractal->Benchmark(fastbenchmark ? 5000 : 5000000);
-    BenchmarkMessage(hWnd, megaIters);
+    size_t milliseconds;
+    HighPrecision megaIters = gFractal->Benchmark(fastbenchmark ? 5000 : 5000000, milliseconds);
+    BenchmarkMessage(hWnd, megaIters, milliseconds);
     gFractal->DrawFractal(false);
 }
 
 void MenuBenchmarkRefPtDouble(HWND hWnd)
 {
-    HighPrecision megaIters = gFractal->BenchmarkReferencePoint<double, double>(5000000);
-    BenchmarkMessage(hWnd, megaIters);
+    size_t milliseconds;
+    HighPrecision megaIters = gFractal->BenchmarkReferencePoint<double, double>(5000000, milliseconds);
+    BenchmarkMessage(hWnd, megaIters, milliseconds);
     gFractal->DrawFractal(false);
 }
 
 void MenuBenchmarkRefPtHDRFloat(HWND hWnd)
 {
-    HighPrecision megaIters = gFractal->BenchmarkReferencePoint<HDRFloat<double>, double>(5000000);
-    BenchmarkMessage(hWnd, megaIters);
+    size_t milliseconds;
+    HighPrecision megaIters = gFractal->BenchmarkReferencePoint<HDRFloat<double>, double>(5000000, milliseconds);
+    BenchmarkMessage(hWnd, megaIters, milliseconds);
     gFractal->DrawFractal(false);
 }
 
 void MenuBenchmarkThis(HWND hWnd) {
-    HighPrecision megaIters = gFractal->BenchmarkThis();
-    BenchmarkMessage(hWnd, megaIters);
+    size_t milliseconds;
+    HighPrecision megaIters = gFractal->BenchmarkThis(milliseconds);
+    BenchmarkMessage(hWnd, megaIters, milliseconds);
     gFractal->DrawFractal(false);
 }
 

@@ -31,7 +31,6 @@ public:
     BLA<T>* LookupBackwards(size_t m, T z2);
 
 private:
-    long m_Done;
     long m_OldChunk;
 
     std::vector<size_t> m_ElementsPerLevel;

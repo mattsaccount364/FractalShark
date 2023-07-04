@@ -153,7 +153,7 @@ void Fractal::Initialize(int width,
 
     srand((unsigned int) time(NULL));
 
-    m_WhichPalette = Palette::Summer;
+    UsePaletteType(Palette::Default);
 
     // Initialize the palette
     auto DefaultPaletteGen = [&](Palette WhichPalette, size_t PaletteIndex, size_t Depth) {
@@ -176,25 +176,31 @@ void Fractal::Initialize(int width,
 
         int max_val = 65535;
 
+        // R=0xBB G=0x13 B=0x3E
+        // R=0xB3 G=0x19 B=0x42
         // R=0xBF G=0x0A B=0x30 
-        const auto RR = (int)(((double)0xBF / (double)0xFF) * max_val);
-        const auto RG = (int)(((double)0x0A / (double)0xFF) * max_val);
-        const auto RB = (int)(((double)0x30 / (double)0xFF) * max_val);
+        const auto RR = (int)(((double)0xB3 / (double)0xFF) * max_val);
+        const auto RG = (int)(((double)0x19 / (double)0xFF) * max_val);
+        const auto RB = (int)(((double)0x42 / (double)0xFF) * max_val);
 
+        // R=0x00 G=0x21 B=0x47
+        // R=0x0A G=0x31 B=0x61
         // R=0x00 G=0x28 B=0x68 
-        const auto BR = (int)0;
-        const auto BG = (int)(((double)0x28 / (double)0xFF) * max_val);
-        const auto BB = (int)(((double)0x68 / (double)0xFF) * max_val);
+        const auto BR = (int)(((double)0x0A / (double)0xFF) * max_val);
+        const auto BG = (int)(((double)0x31 / (double)0xFF) * max_val);
+        const auto BB = (int)(((double)0x61 / (double)0xFF) * max_val);
+
+        m_PalR[WhichPalette][PaletteIndex].push_back(static_cast<uint16_t>(max_val));
+        m_PalG[WhichPalette][PaletteIndex].push_back(static_cast<uint16_t>(max_val));
+        m_PalB[WhichPalette][PaletteIndex].push_back(static_cast<uint16_t>(max_val));
 
         PalTransition(WhichPalette, PaletteIndex, depth_total, RR, RG, RB);
-        PalTransition(WhichPalette, PaletteIndex, depth_total, max_val, max_val, max_val);
         PalTransition(WhichPalette, PaletteIndex, depth_total, BR, BG, BB);
-        PalTransition(WhichPalette, PaletteIndex, depth_total, RR, RG, RB);
-        PalTransition(WhichPalette, PaletteIndex, depth_total, 0, 0, 0);
+        PalTransition(WhichPalette, PaletteIndex, depth_total, max_val, max_val, max_val);
 
         m_PalIters[WhichPalette][PaletteIndex] = (uint32_t)m_PalR[WhichPalette][PaletteIndex].size();
     };
-
+        
     auto SummerPaletteGen = [&](Palette WhichPalette, size_t PaletteIndex, size_t Depth) {
         int depth_total = (int)(1 << Depth);
 
@@ -250,7 +256,7 @@ void Fractal::Initialize(int width,
         m_DrawThreads[i]->m_Thread = std::move(thread);
     }
 
-    m_PaletteDepthIndex = 0;
+    UsePalette(8);
     m_PaletteRotate = 0;
 
     // Allocate the iterations array.
@@ -1165,24 +1171,30 @@ void Fractal::View(size_t view)
 
     case 10:
         // Deep 64-bit BLA minibrot, expensive.  Definitely want BLA.
-        minX = HighPrecision{ "-0.74836379425363001495034832147870348765915884117169331481867446308835696434466935951547711102992018626978440198743149091261372581285665035687120029198906617605605510855257420632354156296576179447208472896898373888227101465892259186897512844666452987771932772660900027322857227304542813531418009161921222139833398640646172853946782763379032017364708068855894638757625732" };
-        minY = HighPrecision{ "-0.067447809277013351194157229950591709142044105494889398562767083245272358986393568877342912793094694060325280478251034622845966413227553367015477785010816153440242196295928684840847373033856763268195693833678634813646266998567103269711076222244976313774560141254321254431257189070368801115884420723538654659386062295378495174855833735900440573177795780186279949333507073" };
-        maxX = HighPrecision{ "-0.74836379425363001495034832147870348765915884117169331481867446308835696434466935951547711102992018462594046844957581650905813676440987039360077008151409029581456215249275257359475838231130722114611785232168456165544398599953534047934833343078054827516646989985196347611959619854824007266959802596225077396905787600904060483692219811995610251090826541072213648318510324" };
-        maxY = HighPrecision{ "-0.06744780927701335119415722995059170914204410549488939856276708324527235898639356887734291279309469338243371082413006920773857239849556540734572010115282505067538728367104945959172692183007853943072981500640835501286660040555641093379992150950373311356126200283300387639995855604057351400222151222072034527879266105069171488618801379997510212464017311052220199295814133" };
-        SetNumIterations(113246208);
+        // For Kalles Fraktaler etc:
+        // -0.7483637942536300149503483214787034876591588411716933148186744630883569643446693595154771110299201854417716821473485
+        // -0.0674478092770133511941572299505917091420441054948893985627670832452723589863935688773429127930946937306872903076587
+        // 6.103515625e+105
+        // 2147483646
+
+        minX = HighPrecision{ "-0.7483637942536300149503483214787034876591588411716933148186744630883569643446693595154771110299201854417718816507212864046192442728464126" };
+        minY = HighPrecision{ "-0.06744780927701335119415722995059170914204410549488939856276708324527235898639356887734291279309469373068729038486837338182723971219233698" };
+        maxX = HighPrecision{ "-0.7483637942536300149503483214787034876591588411716933148186744630883569643446693595154771110299201854417711330238558567565796397623653681" };
+        maxY = HighPrecision{ "-0.06744780927701335119415722995059170914204410549488939856276708324527235898639356887734291279309469373068697845700777769514407116615856846" };
+        SetNumIterations(2147483646);
         break;
 
     case 11:
-        // Debug spot: Current iteration limit
-        minX = HighPrecision{ "-0.7483637942536300149503483214787034876591588411716933148186744630883569643446693595154771110299201854417718816507212864046192442728464125634426465133246962948967118305469121927164144153123461942343520258284320948123478441845419054003982620092712126326637511961789484054753950798432789870162297248825592222733842248427247627272854375338198952507636161019162870632073476" };
-        minY = HighPrecision{ "-0.067447809277013351194157229950591709142044105494889398562767083245272358986393568877342912793094693730687288781042017748181124784725846463350827992512739480269662777646800025983832791116766303758143018565935509528476881257220897238458909913528761439426784703326677389688542372132679411305505448934835188486721937811172636446746874262083287986495713450444454215920906036" };
-        maxX = HighPrecision{ "-0.74836379425363001495034832147870348765915884117169331481867446308835696434466935951547711102992018544177113302385585675657963976236536811183304568353303891135714338779137946926826015006074340855623400221445853836525425158883135457773608338377494024588079723867890216767980502004040123034011212032560552631786611750406550070478230864658343935560260438966529644594231798" };
-        maxY = HighPrecision{ "-0.067447809277013351194157229950591709142044105494889398562767083245272358986393568877342912793094693730686980060834133328790186093625058982256837304046714976879263619196721998370900339654143119317953739153247568622172807920269956552932953775207633372264454267547539749128556125015647975446413928902429309671907020514117977501475384595048736919551036007721852628738160347" };
-        SetNumIterations(536870912);
         break;
 
     case 12:
         // Low iterations centered on minibrot ~10^750
+        // For Kalles Fraktaler etc:
+        // -1.76910833040747728089230624355777848356006391186234006507787883404189297159859080844234601990886820204375798539711744042815186207867460953613415842432757944592767829349335811233344529101414256593211862449597012320484442182435300186806636928772790198745922046142684209058217860629186666350353426119156588068800663472823306396040025965062872111452567447461778249159612483961826938045120616222919425540724435314735525341255820663672868054494834304368733487681716181154843412847462148699796875704432080579735378707932099259943340496912407404541830241707067347835140775121643369435009399783998167487300390631920225320820254728695870927954776295601127590160537830979541161007773653115528776772709046068463437303643702179432428030338435000806480
+        // -0.00902068805707261760036093598494762011230558467412386688972791981712911000027307032573465274857726041164197728426795343558667918574806252145218561840172051237592827928284001732546143539590034733383167886737270960837393773203586137673223357330612418801177955434724672703229251690060990669896274784498860242840497701851849033318045752945025236339275315448898727818174162698044355889583608736485127229946909629832632750839622459160046934443901886226621505107842448159935017841941045354364042323342824193503392819832038805610324279071648709936971740195644028490370367453551798296170098754444868309749391071986751540687669916301587186977458689535397730634082592706549618026786866330689857703728968664890931318074163369981746242981795864371396
+        // 4.0517578124997939E712
+        // 2880000 iterations
+
         minX = HighPrecision{ "-1.769108330407477280892306243557778483560063911862340065077878834041892971598590808442346019908868202043757985397117440428151862078674609536134158424327579445927678293493358112333445291014142565932118624495970123204844421824353001868066369287727901987459220461426842090582178606291866663503534261191565880688006634728233063960400259650628721114525674474617782491596124839618269380451206162229194255407244353147355253412558206636728680544948343043687334876817161811548434128474621486997968757044320805797353787079320992599433404969124074045418302417070673478351407751216433694350093997839981674873003906319202253208202547286958709279547762956011275901605378309795411610077736531155287767727090460684634373036437021849939558081154827035966322541319864476469606578987384818141802086140871082590860960091777689102849781889131421151893374373923872281234460683461953146946783351680424907509438258067061062136495370430128426260576349247467954001002250166013425144708446174956227820466386363571779749724416127365" };
         minY = HighPrecision{ "-0.009020688057072617600360935984947620112305584674123866889727919817129110000273070325734652748577260411641977284267953435586679185748062521452185618401720512375928279282840017325461435395900347333831678867372709608373937732035861376732233573306124188011779554347246727032292516900609906698962747844988602428404977018518490333180457529450252363392753154488987278181741626980443558895836087364851272299469096298326327508396224591600469344439018862266215051078424481599350178419410453543640423233428241935033928198320388056103242790716487099369717401956440284903703674535517982961700987544448683097493910719867515406876699163015871869774586895353977306340825927065496180267868663306898577037289686648909313180741633720660506874259671345628579528566082199707266953582331381477204845958749313226525982433412485094171338066030864231223182859124950336577946409926601514095926041462597061333401178051740876104003994845997683393109587807745687517577651571044175605197417318412485990475703151931020039994351872796158" };
         maxX = HighPrecision{ "-1.769108330407477280892306243557778483560063911862340065077878834041892971598590808442346019908868202043757985397117440428151862078674609536134158424327579445927678293493358112333445291014142565932118624495970123204844421824353001868066369287727901987459220461426842090582178606291866663503534261191565880688006634728233063960400259650628721114525674474617782491596124839618269380451206162229194255407244353147355253412558206636728680544948343043687334876817161811548434128474621486997968757044320805797353787079320992599433404969124074045418302417070673478351407751216433694350093997839981674873003906319202253208202547286958709279547762956011275901605378309795411610077736531155287767727090460684634373036437021723023848332310708579010440266742180377555833452293488480928863794034113380717085247450477413409955521865484776069659968888982957089040699836537328435625787365406852114641414906701003244203291394842947052469974908497764264157006872226432364177441648413430211646947924195417953122886076275359" };
@@ -1603,7 +1615,18 @@ void Fractal::CalcFractal(bool MemoryOnly)
 void Fractal::UsePaletteType(Palette type)
 {
     m_WhichPalette = type;
-    DrawFractal(false);
+}
+
+int Fractal::GetPaletteDepthFromIndex(size_t index)
+{
+    switch (index) {
+    case 0: return 6;
+    case 1: return 8;
+    case 2: return 12;
+    case 3: return 16;
+    case 4: return 20;
+    default: return 6;
+    }
 }
 
 void Fractal::UsePalette(int depth)
@@ -1628,8 +1651,6 @@ void Fractal::UsePalette(int depth)
         m_PaletteDepthIndex = 0;
         break;
     }
-
-    DrawFractal(false);
 }
 
 void Fractal::ResetFractalPalette(void)
@@ -1788,8 +1809,37 @@ void Fractal::DrawFractalThread(size_t index, Fractal* fractal) {
 
         sync.m_DrawThreadReady = false;
 
-        double acc_r, acc_g, acc_b;
+        size_t acc_r, acc_g, acc_b;
         size_t outputIndex = 0;
+
+        size_t totalAA = fractal->GetGpuAntialiasing() * fractal->GetGpuAntialiasing();
+        size_t palIters = fractal->m_PalIters[fractal->m_WhichPalette][fractal->m_PaletteDepthIndex];
+        const uint16_t* palR = fractal->m_PalR[fractal->m_WhichPalette][fractal->m_PaletteDepthIndex].data();
+        const uint16_t* palG = fractal->m_PalG[fractal->m_WhichPalette][fractal->m_PaletteDepthIndex].data();
+        const uint16_t* palB = fractal->m_PalB[fractal->m_WhichPalette][fractal->m_PaletteDepthIndex].data();
+        size_t basicFactor = 65536 / fractal->GetNumIterations();
+        if (basicFactor == 0) {
+            basicFactor = 1;
+        }
+
+        auto GetBasicColor = [&](
+            size_t numIters,
+            size_t& acc_r,
+            size_t& acc_g,
+            size_t& acc_b) {
+
+            if (fractal->m_WhichPalette != Palette::Basic) {
+                auto palIndex = numIters % palIters;
+                acc_r += palR[palIndex];
+                acc_g += palG[palIndex];
+                acc_b += palB[palIndex];
+            }
+            else {
+                acc_r += (numIters * basicFactor) & ((1llu << 16) - 1);
+                acc_g += (numIters * basicFactor) & ((1llu << 16) - 1);
+                acc_b += (numIters * basicFactor) & ((1llu << 16) - 1);
+            }
+        };
 
         for (size_t output_y = 0; output_y < fractal->m_ScrnHeight; output_y++) {
             if (sync.m_DrawThreadAtomics[output_y] != 0) {
@@ -1807,49 +1857,60 @@ void Fractal::DrawFractalThread(size_t index, Fractal* fractal) {
                 output_x < fractal->m_ScrnWidth;
                 output_x++)
             {
-                acc_r = 0;
-                acc_g = 0;
-                acc_b = 0;
+                if (fractal->GetGpuAntialiasing() == 1) {
+                    acc_r = 0;
+                    acc_g = 0;
+                    acc_b = 0;
 
-                for (size_t input_x = output_x * fractal->GetGpuAntialiasing();
-                    input_x < (output_x + 1) * fractal->GetGpuAntialiasing();
-                    input_x++) {
-                    for (size_t input_y = output_y * fractal->GetGpuAntialiasing();
-                        input_y < (output_y + 1) * fractal->GetGpuAntialiasing();
-                        input_y++) {
+                    const size_t input_x = output_x;
+                    const size_t input_y = output_y;
+                    size_t numIters = fractal->m_CurIters.m_ItersArray[input_y][input_x];
 
-                        size_t numIters = fractal->m_CurIters.m_ItersArray[input_y][input_x];
-                        if (numIters < fractal->GetNumIterations())
-                        {
-                            numIters += fractal->m_PaletteRotate;
-                            if (numIters >= MAXITERS) {
-                                numIters = MAXITERS - 1;
-                            }
-
-                            auto palIndex = numIters % fractal->m_PalIters[fractal->m_WhichPalette][fractal->m_PaletteDepthIndex];
-
-                            acc_r += fractal->m_PalR[fractal->m_WhichPalette][fractal->m_PaletteDepthIndex][palIndex];
-                            acc_g += fractal->m_PalG[fractal->m_WhichPalette][fractal->m_PaletteDepthIndex][palIndex];
-                            acc_b += fractal->m_PalB[fractal->m_WhichPalette][fractal->m_PaletteDepthIndex][palIndex];
+                    if (numIters < fractal->GetNumIterations())
+                    {
+                        numIters += fractal->m_PaletteRotate;
+                        if (numIters >= MAXITERS) {
+                            numIters = MAXITERS - 1;
                         }
+
+                        GetBasicColor(numIters, acc_r, acc_g, acc_b);
                     }
                 }
+                else {
+                    acc_r = 0;
+                    acc_g = 0;
+                    acc_b = 0;
 
-                acc_r /= fractal->GetGpuAntialiasing() * fractal->GetGpuAntialiasing();
-                acc_g /= fractal->GetGpuAntialiasing() * fractal->GetGpuAntialiasing();
-                acc_b /= fractal->GetGpuAntialiasing() * fractal->GetGpuAntialiasing();
+                    for (size_t input_x = output_x * fractal->GetGpuAntialiasing();
+                        input_x < (output_x + 1) * fractal->GetGpuAntialiasing();
+                        input_x++) {
+                        for (size_t input_y = output_y * fractal->GetGpuAntialiasing();
+                            input_y < (output_y + 1) * fractal->GetGpuAntialiasing();
+                            input_y++) {
+
+                            size_t numIters = fractal->m_CurIters.m_ItersArray[input_y][input_x];
+                            if (numIters < fractal->GetNumIterations())
+                            {
+                                numIters += fractal->m_PaletteRotate;
+                                if (numIters >= MAXITERS) {
+                                    numIters = MAXITERS - 1;
+                                }
+
+                                GetBasicColor(numIters, acc_r, acc_g, acc_b);
+                            }
+                        }
+                    }
+
+                    acc_r /= totalAA;
+                    acc_g /= totalAA;
+                    acc_b /= totalAA;
+                }
 
                 fractal->m_DrawOutBytes[outputIndex] = (GLushort)acc_r;
-                outputIndex++;
-
-                fractal->m_DrawOutBytes[outputIndex] = (GLushort)acc_g;
-                outputIndex++;
-
-                fractal->m_DrawOutBytes[outputIndex] = (GLushort)acc_b;
-                outputIndex++;
-
-                fractal->m_DrawOutBytes[outputIndex] = 255;
-                outputIndex++;
+                fractal->m_DrawOutBytes[outputIndex + 1] = (GLushort)acc_g;
+                fractal->m_DrawOutBytes[outputIndex + 2] = (GLushort)acc_b;
+                fractal->m_DrawOutBytes[outputIndex + 3] = 255;
+                outputIndex += 4;
             }
         }
 
@@ -4086,7 +4147,7 @@ int Fractal::SaveHiResFractal(const std::wstring filename)
     return ret;
 }
 
-HighPrecision Fractal::Benchmark(size_t numIters)
+HighPrecision Fractal::Benchmark(size_t numIters, size_t& milliseconds)
 {
     BenchmarkData bm(*this);
     bm.BenchmarkSetup(numIters);
@@ -4100,13 +4161,13 @@ HighPrecision Fractal::Benchmark(size_t numIters)
     }
 
     CalcFractal(true);
-    auto result = bm.StopTimer();
+    auto result = bm.StopTimer(milliseconds);
     bm.BenchmarkFinish();
     return result;
 }
 
 template<class T, class SubType>
-HighPrecision Fractal::BenchmarkReferencePoint(size_t numIters) {
+HighPrecision Fractal::BenchmarkReferencePoint(size_t numIters, size_t& milliseconds) {
     BenchmarkData bm(*this);
     bm.BenchmarkSetup(numIters);
 
@@ -4116,17 +4177,17 @@ HighPrecision Fractal::BenchmarkReferencePoint(size_t numIters) {
 
     AddPerturbationReferencePoint<T, SubType, true>();
 
-    auto result = bm.StopTimerNoIters<T>();
+    auto result = bm.StopTimerNoIters<T>(milliseconds);
     bm.BenchmarkFinish();
     return result;
 }
 
-template HighPrecision Fractal::BenchmarkReferencePoint<float, float>(size_t numIters);
-template HighPrecision Fractal::BenchmarkReferencePoint<double, double>(size_t numIters);
-template HighPrecision Fractal::BenchmarkReferencePoint<HDRFloat<double>, double>(size_t numIters);
-template HighPrecision Fractal::BenchmarkReferencePoint<HDRFloat<float>, float>(size_t numIters);
+template HighPrecision Fractal::BenchmarkReferencePoint<float, float>(size_t numIters, size_t& milliseconds);
+template HighPrecision Fractal::BenchmarkReferencePoint<double, double>(size_t numIters, size_t& milliseconds);
+template HighPrecision Fractal::BenchmarkReferencePoint<HDRFloat<double>, double>(size_t numIters, size_t& milliseconds);
+template HighPrecision Fractal::BenchmarkReferencePoint<HDRFloat<float>, float>(size_t numIters, size_t& milliseconds);
 
-HighPrecision Fractal::BenchmarkThis() {
+HighPrecision Fractal::BenchmarkThis(size_t& milliseconds) {
     BenchmarkData bm(*this);
 
     if (!bm.StartTimer()) {
@@ -4136,7 +4197,7 @@ HighPrecision Fractal::BenchmarkThis() {
     ChangedMakeDirty();
     CalcFractal(true);
 
-    return bm.StopTimer();
+    return bm.StopTimer(milliseconds);
 }
 
 Fractal::BenchmarkData::BenchmarkData(Fractal& fractal) :
@@ -4165,7 +4226,7 @@ bool Fractal::BenchmarkData::StartTimer() {
     return true;
 }
 
-HighPrecision Fractal::BenchmarkData::StopTimer() {
+HighPrecision Fractal::BenchmarkData::StopTimer(size_t& milliseconds) {
     QueryPerformanceCounter(&endTime);
 
     uint64_t freq64 = freq.QuadPart;
@@ -4175,11 +4236,12 @@ HighPrecision Fractal::BenchmarkData::StopTimer() {
 
     uint64_t deltaTime = endTime64 - startTime64;
     HighPrecision timeTaken = (HighPrecision)((HighPrecision)deltaTime / (HighPrecision)freq64);
+    milliseconds = (size_t)(timeTaken * HighPrecision{ 1000 }).convert_to<size_t>();
     return (HighPrecision)(totalIters / timeTaken) / 1000000.0;
 }
 
 template<class T>
-HighPrecision Fractal::BenchmarkData::StopTimerNoIters() {
+HighPrecision Fractal::BenchmarkData::StopTimerNoIters(size_t &milliseconds) {
     QueryPerformanceCounter(&endTime);
 
     uint64_t freq64 = freq.QuadPart;
@@ -4189,6 +4251,7 @@ HighPrecision Fractal::BenchmarkData::StopTimerNoIters() {
 
     uint64_t deltaTime = endTime64 - startTime64;
     HighPrecision timeTaken = (HighPrecision)((HighPrecision)deltaTime / (HighPrecision)freq64);
+    milliseconds = (size_t)(timeTaken * HighPrecision{ 1000 }).convert_to<size_t>();
     return (HighPrecision)(totalIters / timeTaken) / 1000000.0;
 }
 

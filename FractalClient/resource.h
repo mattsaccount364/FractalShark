@@ -210,6 +210,8 @@
 #define ID_AUTOZOOM_MAX                 32988
 #define IDM_AUTOZOOM_DEFAULT            32989
 #define IDM_AUTOZOOM_MAX                32990
+#define ID_PALETTECOLORDEPTH_BASIC      32991
+#define IDM_PALETTE_TYPE_3              32992
 #define IDC_STATIC                      -1
 
 // Next default values for new objects
@@ -217,7 +219,7 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        131
-#define _APS_NEXT_COMMAND_VALUE         32991
+#define _APS_NEXT_COMMAND_VALUE         32993
 #define _APS_NEXT_CONTROL_VALUE         1000
 #define _APS_NEXT_SYMED_VALUE           110
 #endif

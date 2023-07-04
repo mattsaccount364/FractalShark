@@ -86,7 +86,7 @@ BEGIN
             MENUITEM "#8 - Full BLA test 10^330 or so.", IDM_VIEW8
             MENUITEM "#9 - bug: scaled/BLA/32-bit failure", IDM_VIEW9
             MENUITEM "#10 - Deep 64-bit BLA minibrot, expensive", IDM_VIEW10
-            MENUITEM "#11 - bug: 500 million iterations, memory use", IDM_VIEW11
+            MENUITEM "#11",                         IDM_VIEW11
             MENUITEM "#12 - Full BLA test 10^700 or so, low iterations", IDM_VIEW12
             MENUITEM "#13",                         IDM_VIEW13
         END
@@ -167,9 +167,10 @@ BEGIN
         MENUITEM SEPARATOR
         POPUP "Palette Color Depth"
         BEGIN
-            MENUITEM "Default",                     IDM_PALETTE_TYPE_0
-            MENUITEM "Patriotic",                   IDM_PALETTE_TYPE_1
-            MENUITEM "Summer",                      IDM_PALETTE_TYPE_2
+            MENUITEM "Basic",                       IDM_PALETTE_TYPE_0
+            MENUITEM "Default",                     IDM_PALETTE_TYPE_1
+            MENUITEM "Patriotic",                   IDM_PALETTE_TYPE_2
+            MENUITEM "Summer",                      IDM_PALETTE_TYPE_3
             MENUITEM SEPARATOR
             MENUITEM "6-bit",                       IDM_PALETTE_6
             MENUITEM "8-bit",                       IDM_PALETTE_8

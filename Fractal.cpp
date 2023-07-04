@@ -2590,18 +2590,20 @@ void Fractal::AddPerturbationReferencePointST(HighPrecision initX, HighPrecision
     results->y2.push_back(0);
     // Note: results->bad is not here.  See end of this function.
 
-    SubType glitch;
-    if constexpr (std::is_same<SubType, double>::value) {
-        glitch = (SubType)0.0000001;
-    }
-    else if constexpr (std::is_same<SubType, float>::value) {
-        glitch = (SubType)0.0001;
-    }
-    else {
-        ::MessageBox(NULL, L"Confused", L"", MB_OK);
-        assert(false);
-        return;
-    }
+    //SubType glitch;
+    //if constexpr (std::is_same<SubType, double>::value) {
+    //    glitch = (SubType)0.0000001;
+    //}
+    //else if constexpr (std::is_same<SubType, float>::value) {
+    //    glitch = (SubType)0.0001;
+    //}
+    //else {
+    //    ::MessageBox(NULL, L"Confused", L"", MB_OK);
+    //    assert(false);
+    //    return;
+    //}
+
+    SubType glitch = (SubType)0.0000001;
 
     T dzdcX = 1.0;
     T dzdcY = 0.0;
@@ -2795,18 +2797,20 @@ void Fractal::AddPerturbationReferencePointMT2(HighPrecision initX, HighPrecisio
     results->y2.push_back(0);
     // Note: results->bad is not here.  See end of this function.
 
-    SubType glitch;
-    if constexpr (std::is_same<SubType, double>::value) {
-        glitch = (SubType)0.0000001;
-    }
-    else if constexpr (std::is_same<SubType, float>::value) {
-        glitch = (SubType)0.0001;
-    }
-    else {
-        ::MessageBox(NULL, L"Confused", L"", MB_OK);
-        assert(false);
-        return;
-    }
+    //SubType glitch;
+    //if constexpr (std::is_same<SubType, double>::value) {
+    //    glitch = (SubType)0.0000001;
+    //}
+    //else if constexpr (std::is_same<SubType, float>::value) {
+    //    glitch = (SubType)0.0001;
+    //}
+    //else {
+    //    ::MessageBox(NULL, L"Confused", L"", MB_OK);
+    //    assert(false);
+    //    return;
+    //}
+
+    SubType glitch = (SubType)0.0000001;
 
     struct ThreadZxData {
         HighPrecision zx;
@@ -3114,18 +3118,19 @@ void Fractal::AddPerturbationReferencePointMT5(HighPrecision initX, HighPrecisio
     results->y2.push_back(0);
     // Note: results->bad is not here.  See end of this function.
 
-    SubType glitch;
-    if constexpr (std::is_same<SubType, double>::value) {
-        glitch = (SubType)0.0000001;
-    }
-    else if constexpr (std::is_same<SubType, float>::value) {
-        glitch = (SubType)0.0001;
-    }
-    else {
-        ::MessageBox(NULL, L"Confused", L"", MB_OK);
-        assert(false);
-        return;
-    }
+    //if constexpr (std::is_same<SubType, double>::value) {
+    //    glitch = (SubType)0.0000001;
+    //}
+    //else if constexpr (std::is_same<SubType, float>::value) {
+    //    glitch = (SubType)0.0001;
+    //}
+    //else {
+    //    ::MessageBox(NULL, L"Confused", L"", MB_OK);
+    //    assert(false);
+    //    return;
+    //}
+
+    SubType glitch = (SubType)0.0000001;
 
     struct ThreadZxData {
         HighPrecision zx;

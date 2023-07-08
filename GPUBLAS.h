@@ -22,18 +22,15 @@ public:
     GPUBLAS& operator=(const GPUBLAS& other) = delete;
     GPUBLAS& operator=(GPUBLAS&& other) = delete;
 
-    CUDA_CRAP GPUBLA_TYPE* LookupBackwards(size_t m, T z2);
+    CUDA_CRAP const GPUBLA_TYPE* LookupBackwards(size_t m, T z2) const;
 
 protected:
-    size_t* m_ElementsPerLevel;
+    size_t* __restrict__ m_ElementsPerLevel;
 
     size_t m_NumLevels;
-    GPUBLA_TYPE** m_B;
+    GPUBLA_TYPE** __restrict__ m_B;
 
-    static constexpr size_t BLA_BITS = 23;
-    static constexpr size_t BLA_STARTING_LEVEL = 2;
-
-    int32_t m_LM2;//Level -1 is not attainable due to Zero R
+    uint32_t m_LM2;//Level -1 is not attainable due to Zero R
     size_t m_FirstLevel;
 
     cudaError_t m_Err;

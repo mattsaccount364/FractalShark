@@ -66,7 +66,7 @@ CUDA_CRAP void BLA<T>::getValue(
     T &ImagDeltaSubN,
     T RealDeltaSub0,
     T ImagDeltaSub0
-) {
+) const {
 
     //T zxn = Ax * zx - Ay * zy + Bx * cx - By * cy;
     //T zyn = Ax * zy + Ay * zx + Bx * cy + By * cx;
@@ -160,28 +160,31 @@ GPUBLAS<T, GPUBLA_TYPE>::GPUBLAS(const std::vector<std::vector<GPUBLA_TYPE>>& B,
 
     m_NumLevels = B.size();
 
-    m_Err = cudaMallocManaged(&m_B, m_NumLevels * sizeof(GPUBLA_TYPE*), cudaMemAttachGlobal);
+    GPUBLA_TYPE** tempB;
+    m_Err = cudaMallocManaged(&tempB, m_NumLevels * sizeof(GPUBLA_TYPE*), cudaMemAttachGlobal);
     if (m_Err != cudaSuccess) {
         return;
     }
 
+    m_B = tempB;
     cudaMemset(m_B, 0, m_NumLevels * sizeof(GPUBLA_TYPE*));
 
-    m_Err = cudaMallocManaged(&m_ElementsPerLevel,
+    size_t* elementsPerLevel;
+    m_Err = cudaMallocManaged(&elementsPerLevel,
         m_NumLevels * sizeof(size_t),
         cudaMemAttachGlobal);
     if (m_Err != cudaSuccess) {
         return;
     }
 
+    m_ElementsPerLevel = elementsPerLevel;
     for (size_t i = 0; i < B.size(); i++) {
         m_ElementsPerLevel[i] = B[i].size();
     }
 
     for (size_t i = 0; i < B.size(); i++) {
-        m_Err = cudaMallocManaged(&m_B[i],
-            sizeof(GPUBLA_TYPE) * m_ElementsPerLevel[i],
-            cudaMemAttachGlobal);
+        m_Err = cudaMalloc(&m_B[i],
+            sizeof(GPUBLA_TYPE) * m_ElementsPerLevel[i]);
 
         if (m_Err != cudaSuccess) {
             return;
@@ -239,38 +242,21 @@ uint32_t GPUBLAS<T, GPUBLA_TYPE>::CheckValid() const {
 }
 
 template<class T, class GPUBLA_TYPE>
-CUDA_CRAP GPUBLA_TYPE* GPUBLAS<T, GPUBLA_TYPE>::LookupBackwards(size_t m, T z2) {
-
-    if (m == 0) {
-        return nullptr;
-    }
-
-    GPUBLA_TYPE* tempB = nullptr;
+CUDA_CRAP const GPUBLA_TYPE* GPUBLAS<T, GPUBLA_TYPE>::LookupBackwards(size_t m, T z2) const {
 
     int32_t k = (int32_t)m - 1;
-
-    if ((k & 1) == 1) { // m - 1 is odd
+    bool ret = (m == 0) || ((k & 1) == 1) || (k == 0 && z2 >= m_B[m_FirstLevel][0].getR2());
+    if (ret) {
         return nullptr;
     }
 
-    int32_t zeros;
+    GPUBLA_TYPE* __restrict__ tempB = nullptr;
+    uint32_t zeros;
     uint32_t ix;
-    if (k == 0) {
-        // k >> m_FirstLevel,
-        // This could be done for all K values, but it was shown through statistics that
-        // most effort is done on k == 0
-        if (z2 >= m_B[m_FirstLevel][0].getR2()) {
-            return nullptr;
-        }
-        zeros = 32;
-        ix = 0;
-    }
-    else {
-        float v = (float)(k & -k);
-        uint32_t bits = *reinterpret_cast<uint32_t*>(&v);
-        zeros = (bits >> 23) - 0x7f;
-        ix = k >> zeros;
-    }
+    float v = (float)(k & -k);
+    uint32_t bits = *reinterpret_cast<const uint32_t* __restrict__>(&v);
+    zeros = (bits >> 23) - 0x7f;
+    ix = k >> zeros;
 
     int32_t startLevel = ((zeros <= m_LM2) ? zeros : m_LM2);
     for (int32_t level = startLevel; level >= m_FirstLevel; --level) {
@@ -280,6 +266,21 @@ CUDA_CRAP GPUBLA_TYPE* GPUBLAS<T, GPUBLA_TYPE>::LookupBackwards(size_t m, T z2) 
         ix = ix << 1;
     }
     return nullptr;
+
+    //GPUBLA_TYPE* __restrict__ tempB = nullptr;
+    //uint32_t zeros;
+    //uint32_t ix;
+    //float v = (float)(k & -k);
+    //uint32_t bits = *reinterpret_cast<const uint32_t * __restrict__>(&v);
+    //zeros = (bits >> 23) - 0x7f;
+    //ix = k >> zeros;
+    //int32_t startLevel = ((zeros <= m_LM2) ? zeros : m_LM2);
+    //ix = ix << (startLevel - m_FirstLevel);
+    //for (int32_t level = m_FirstLevel; level <= startLevel; level++) {
+    //    tempB = (z2 < m_B[level][ix].getR2()) ? &m_B[level][ix] : tempB;
+    //    ix = ix >> 1;
+    //}
+    //return tempB;
 }
 
 
@@ -303,7 +304,7 @@ static_assert(sizeof(MattReferenceSingleIter<dblflt>) == 40, "Dblflt");
 
 template<typename Type>
 struct MattPerturbSingleResults {
-    MattReferenceSingleIter<Type>* iters;
+    MattReferenceSingleIter<Type>* __restrict__ iters;
     size_t size;
     bool own;
     cudaError_t err;
@@ -318,13 +319,24 @@ struct MattPerturbSingleResults {
 
         static_assert(sizeof(MattDblflt) == sizeof(dblflt), "No");
 
-        err = cudaMallocManaged(&iters, size * sizeof(MattReferenceSingleIter<Type>), cudaMemAttachGlobal);
+        MattReferenceSingleIter<Type>* tempIters;
+        err = cudaMalloc(&tempIters, size * sizeof(MattReferenceSingleIter<Type>));
         if (err != cudaSuccess) {
             size = 0;
             return;
         }
 
+        iters = tempIters;
         cudaMemcpy(iters, in_iters, size * sizeof(MattReferenceSingleIter<Type>), cudaMemcpyDefault);
+
+        //err = cudaMemAdvise(iters,
+        //    size * sizeof(MattReferenceSingleIter<Type>),
+        //    cudaMemAdviseSetReadMostly,
+        //    0);
+        //if (err != cudaSuccess) {
+        //    size = 0;
+        //    return;
+        //}
     }
 
     // funny semantics, copy doesn't own the pointers.
@@ -852,7 +864,7 @@ void mandel_1x_double_perturb_bla(uint32_t* iter_matrix,
     double DeltaNormSquared = 0;
 
     while (iter < n_iterations) {
-        BLA<double>* b = nullptr;
+        const BLA<double>* b = nullptr;
         while ((b = doubleBlas.LookupBackwards(RefIteration, DeltaNormSquared)) != nullptr) {
             int l = b->getL();
 
@@ -982,16 +994,13 @@ void mandel_1xHDR_float_perturb_bla(uint32_t* iter_matrix,
     HDRFloatType TwoFiftySix = HDRFloatType(256);
 
     while (iter < n_iterations) {
-        BLA<HDRFloatType>* b = nullptr;
+        const BLA<HDRFloatType>* b = nullptr;
         while ((b = blas.LookupBackwards(RefIteration, DeltaNormSquared)) != nullptr) {
             int l = b->getL();
 
             // TODO this first RefIteration + l check bugs me
-            if (RefIteration + l >= Perturb.size) {
-                break;
-            }
-
-            if (iter + l >= n_iterations) {
+            if ((RefIteration + l >= Perturb.size) ||
+                (iter + l >= n_iterations)) {
                 break;
             }
 
@@ -1021,10 +1030,6 @@ void mandel_1xHDR_float_perturb_bla(uint32_t* iter_matrix,
             }
         }
 
-        if (iter >= n_iterations) {
-            break;
-        }
-
         HDRFloatType DeltaSubNXOrig = DeltaSubNX;
         HDRFloatType DeltaSubNYOrig = DeltaSubNY;
 
@@ -1041,8 +1046,8 @@ void mandel_1xHDR_float_perturb_bla(uint32_t* iter_matrix,
         ++RefIteration;
         if (RefIteration >= Perturb.size) {
             // TODO this first RefIteration + l check bugs me
-            iter_matrix[idx] = 255;
-            return;
+            iter = 255;
+            break;
         }
 
         HDRFloatType tempZX = Perturb.iters[RefIteration].x + DeltaSubNX;
@@ -1053,7 +1058,7 @@ void mandel_1xHDR_float_perturb_bla(uint32_t* iter_matrix,
         DeltaNormSquared = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
         HdrReduce(DeltaNormSquared);
 
-        if (normSquared > TwoFiftySix) {
+        if (normSquared > TwoFiftySix || iter >= n_iterations) {
             break;
         }
 
@@ -1899,7 +1904,7 @@ void mandel_1x_float_perturb_scaled_bla(uint32_t* iter_matrix,
         double DeltaSubNX = DeltaSubNWX * S;
         double DeltaSubNY = DeltaSubNWY * S;
 
-        BLA<double>* b = nullptr;
+        const BLA<double>* b = nullptr;
 
         b = doubleBlas.LookupBackwards(RefIteration, DeltaNormSquared);
         if (b != nullptr) {

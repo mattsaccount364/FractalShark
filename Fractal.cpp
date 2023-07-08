@@ -146,7 +146,7 @@ void Fractal::Initialize(int width,
 
     ResetDimensions(width, height, 1);
     //View(0);
-    View(11);
+    View(5);
 
     m_ChangedWindow = true;
     m_ChangedScrn = true;

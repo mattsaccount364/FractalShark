@@ -32,7 +32,7 @@ public:
     CUDA_CRAP void getValue(T &RealDeltaSubN,
                                       T &ImagDeltaSubN,
                                       T RealDeltaSub0,
-                                      T ImagDeltaSub0);
+                                      T ImagDeltaSub0) const;
 
     CUDA_CRAP T hypotA() const;
     CUDA_CRAP T hypotB() const;

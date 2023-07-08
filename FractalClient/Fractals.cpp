@@ -534,6 +534,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedScaled);
                 break;
             }
+            case IDM_ALG_GPU_HDR_32_PERTURB_SCALED:
+            {
+                gFractal->SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedScaled);
+                break;
+            }
             case IDM_ALG_GPU_1_32_PERTURB_SCALED_BLA:
             {
                 gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedScaledBLA);

@@ -212,6 +212,9 @@
 #define IDM_AUTOZOOM_MAX                32990
 #define ID_PALETTECOLORDEPTH_BASIC      32991
 #define IDM_PALETTE_TYPE_3              32992
+#define ID_CHOOSERENDERALGORITHM_HDRX32GPU32993 32993
+#define IDM_ALG_GPU_HDR_32_PERTURB_SCALED_BLA 32994
+#define IDM_ALG_GPU_HDR_32_PERTURB_SCALED 32995
 #define IDC_STATIC                      -1
 
 // Next default values for new objects
@@ -219,7 +222,7 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        131
-#define _APS_NEXT_COMMAND_VALUE         32993
+#define _APS_NEXT_COMMAND_VALUE         32996
 #define _APS_NEXT_CONTROL_VALUE         1000
 #define _APS_NEXT_SYMED_VALUE           110
 #endif

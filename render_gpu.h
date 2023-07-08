@@ -29,6 +29,7 @@ enum class RenderAlgorithm {
     Gpu1x32,
     Gpu1x32Perturbed,
     GpuHDRx32PerturbedBLA,
+    GpuHDRx32PerturbedScaled,
     Gpu1x32PerturbedScaled,
     Gpu1x32PerturbedScaledBLA,
     Gpu2x32,
@@ -174,12 +175,13 @@ public:
         uint32_t n_iterations,
         int iteration_precision);
 
+    template<class T>
     uint32_t RenderPerturbBLA(
         RenderAlgorithm algorithm,
         uint32_t* buffer,
-        MattPerturbResults<double>* double_perturb,
+        MattPerturbResults<T>* double_perturb,
         MattPerturbResults<float>* float_perturb,
-        BLAS<double>* blas,
+        BLAS<T>* blas,
         MattCoords cx,
         MattCoords cy,
         MattCoords dx,

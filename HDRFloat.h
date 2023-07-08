@@ -165,7 +165,7 @@ public:
         return mantissa * getMultiplier(exp - exponent);
     }
 
-    explicit operator T() const { return toDouble(); }
+    CUDA_CRAP explicit operator T() const { return toDouble(); }
 
     CUDA_CRAP T getMantissa() const { return  mantissa; }
 

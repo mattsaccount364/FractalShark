@@ -14,6 +14,8 @@
 #include "BLA.h"
 #include "HDRFloat.h"
 
+#include <type_traits>
+
 #ifdef __CUDACC__
 __device__ double twoPowExpData[2048];
 
@@ -1604,18 +1606,19 @@ void mandel_1x_float_perturb(uint32_t* iter_matrix,
     iter_matrix[idx] = (uint32_t)iter;
 }
 
+template<class T>
 __global__
 void mandel_1x_float_perturb_scaled(uint32_t* iter_matrix,
     MattPerturbSingleResults<float> PerturbFloat,
-    MattPerturbSingleResults<double> PerturbDouble,
+    MattPerturbSingleResults<T> PerturbDouble,
     int width,
     int height,
-    double cx,
-    double cy,
-    double dx,
-    double dy,
-    double centerX,
-    double centerY,
+    T cx,
+    T cy,
+    T dx,
+    T dy,
+    T centerX,
+    T centerY,
     uint32_t n_iterations)
 {
     int X = blockIdx.x * blockDim.x + threadIdx.x;
@@ -1633,8 +1636,11 @@ void mandel_1x_float_perturb_scaled(uint32_t* iter_matrix,
 
     size_t iter = 0;
     size_t RefIteration = 0;
-    const double DeltaReal = dx * X - centerX;
-    const double DeltaImaginary = -dy * Y - centerY;
+    T DeltaReal = dx * X - centerX;
+    HdrReduce(DeltaReal);
+
+    T DeltaImaginary = -dy * Y - centerY;
+    HdrReduce(DeltaImaginary);
 
     // DeltaSubNWX = 2 * DeltaSubNWX * PerturbFloat.x[RefIteration] - 2 * DeltaSubNWY * PerturbFloat.y[RefIteration] +
     //               S * DeltaSubNWX * DeltaSubNWX - S * DeltaSubNWY * DeltaSubNWY +
@@ -1649,7 +1655,8 @@ void mandel_1x_float_perturb_scaled(uint32_t* iter_matrix,
     //     = 2 * (Xr * wi + wr * s * wi + Xi * wr) + ui;
     //     = 2 * Xr * wi + 2 * wr * s * wi + 2 * Xi * wr + ui;
 
-    double S = sqrt(DeltaReal * DeltaReal + DeltaImaginary * DeltaImaginary);
+    T S = HdrSqrt(DeltaReal * DeltaReal + DeltaImaginary * DeltaImaginary);
+    HdrReduce(S);
 
     //double S = 1;
     float DeltaSub0DX = (float)(DeltaReal / S);
@@ -1664,7 +1671,7 @@ void mandel_1x_float_perturb_scaled(uint32_t* iter_matrix,
 
     while (iter < n_iterations) {
         const MattReferenceSingleIter<float> *curFloatIter = &PerturbFloat.iters[RefIteration];
-        const MattReferenceSingleIter<double> *curDoubleIter = &PerturbDouble.iters[RefIteration];
+        const MattReferenceSingleIter<T> *curDoubleIter = &PerturbDouble.iters[RefIteration];
 
         if (curFloatIter->bad == false) {
             const float DeltaSubNWXOrig = DeltaSubNWX;
@@ -1699,8 +1706,8 @@ void mandel_1x_float_perturb_scaled(uint32_t* iter_matrix,
             const float w2 = DeltaSubNWXSquared + DeltaSubNWYSquared;
             const float normDeltaSubN = w2 * s * s;
 
-            double DoubleTempZX;
-            double DoubleTempZY;
+            T DoubleTempZX;
+            T DoubleTempZY;
 
             const bool zn_size_OK = (zn_size < 256.0f);
             const bool test1a = (zn_size < normDeltaSubN);
@@ -1713,11 +1720,14 @@ void mandel_1x_float_perturb_scaled(uint32_t* iter_matrix,
                 ++iter;
                 continue;
             } else if (test1ab) {
-                DoubleTempZX = (curDoubleIter->x + (double)DeltaSubNWX * S); // Xxrd, xr
-                DoubleTempZY = (curDoubleIter->y + (double)DeltaSubNWY * S); // Xxid, xi
+                DoubleTempZX = (curDoubleIter->x + (T)DeltaSubNWX * S); // Xxrd, xr
+                //HdrReduce(DoubleTempZX);
+                DoubleTempZY = (curDoubleIter->y + (T)DeltaSubNWY * S); // Xxid, xi
+                //HdrReduce(DoubleTempZY);
 
                 RefIteration = 0;
-                S = sqrt(DoubleTempZX * DoubleTempZX + DoubleTempZY * DoubleTempZY);
+                S = HdrSqrt(DoubleTempZX * DoubleTempZX + DoubleTempZY * DoubleTempZY);
+                HdrReduce(S);
                 s = (float)S;
                 twos = 2 * s;
 
@@ -1732,9 +1742,12 @@ void mandel_1x_float_perturb_scaled(uint32_t* iter_matrix,
             else if (testw2)
             {
                 DoubleTempZX = DeltaSubNWX * S;
+                //HdrReduce(DoubleTempZX);
                 DoubleTempZY = DeltaSubNWY * S;
+                //HdrReduce(DoubleTempZY);
 
-                S = sqrt(DoubleTempZX * DoubleTempZX + DoubleTempZY * DoubleTempZY);
+                S = HdrSqrt(DoubleTempZX * DoubleTempZX + DoubleTempZY * DoubleTempZY);
+                HdrReduce(S);
                 s = (float)S;
                 twos = 2 * s;
 
@@ -1752,46 +1765,55 @@ void mandel_1x_float_perturb_scaled(uint32_t* iter_matrix,
             }
         } else {
             // Do full iteration at double precision
-            double DeltaSubNWXOrig = DeltaSubNWX;
-            double DeltaSubNWYOrig = DeltaSubNWY;
+            T DeltaSubNWXOrig = DeltaSubNWX;
+            T DeltaSubNWYOrig = DeltaSubNWY;
 
-            const double DoubleTempDeltaSubNWX =
-                DeltaSubNWXOrig * curDoubleIter->x2 -
-                DeltaSubNWYOrig * curDoubleIter->y2 +
-                S * DeltaSubNWXOrig * DeltaSubNWXOrig - S * DeltaSubNWYOrig * DeltaSubNWYOrig +
-                DeltaReal / S;
+            T DoubleTempDeltaSubNWX = DeltaSubNWXOrig * curDoubleIter->x2;
+            //HdrReduce(DoubleTempDeltaSubNWX);
+            DoubleTempDeltaSubNWX -= DeltaSubNWYOrig * curDoubleIter->y2;
+            //HdrReduce(DoubleTempDeltaSubNWX);
+            DoubleTempDeltaSubNWX += S * DeltaSubNWXOrig * DeltaSubNWXOrig;
+            //HdrReduce(DoubleTempDeltaSubNWX);
+            DoubleTempDeltaSubNWX -= S * DeltaSubNWYOrig * DeltaSubNWYOrig;
+            //HdrReduce(DoubleTempDeltaSubNWX);
+            DoubleTempDeltaSubNWX += DeltaReal / S;
+            HdrReduce(DoubleTempDeltaSubNWX);
 
-            const double DoubleTempDeltaSubNWY =
-                DeltaSubNWXOrig * (curDoubleIter->y2 + 2 * S * DeltaSubNWYOrig) +
-                DeltaSubNWYOrig * curDoubleIter->x2 +
-                DeltaImaginary / S;
+            T DoubleTempDeltaSubNWY = DeltaSubNWXOrig * (curDoubleIter->y2 + 2 * S * DeltaSubNWYOrig);
+            //HdrReduce(DoubleTempDeltaSubNWY);
+            DoubleTempDeltaSubNWY += DeltaSubNWYOrig * curDoubleIter->x2;
+            //HdrReduce(DoubleTempDeltaSubNWY);
+            DoubleTempDeltaSubNWY += DeltaImaginary / S;
+            HdrReduce(DoubleTempDeltaSubNWY);
 
             ++RefIteration;
             curFloatIter = &PerturbFloat.iters[RefIteration];
             curDoubleIter = &PerturbDouble.iters[RefIteration];
 
-            const double tempZX =
+            const T tempZX =
                 curDoubleIter->x +
                 DoubleTempDeltaSubNWX * S; // Xxrd
 
-            const double tempZY =
+            const T tempZY =
                 curDoubleIter->y +
                 DoubleTempDeltaSubNWY * S; // Xxid
 
-            const double zn_size =
+            T zn_size =
                 tempZX * tempZX + tempZY * tempZY;
+            HdrReduce(zn_size);
 
             if (zn_size > 256.0) {
                 break;
             }
 
-            const double TwoS = S * S;
-            const double normDeltaSubN =
+            const T TwoS = S * S;
+            T normDeltaSubN =
                 DoubleTempDeltaSubNWX * DoubleTempDeltaSubNWX * TwoS +
                 DoubleTempDeltaSubNWY * DoubleTempDeltaSubNWY * TwoS;
+            HdrReduce(normDeltaSubN);
 
-            double DeltaSubNWXNew;
-            double DeltaSubNWYNew;
+            T DeltaSubNWXNew;
+            T DeltaSubNWYNew;
 
             if (zn_size < normDeltaSubN ||
                 RefIteration == MaxRefIteration) {
@@ -1805,7 +1827,8 @@ void mandel_1x_float_perturb_scaled(uint32_t* iter_matrix,
                 DeltaSubNWYNew = DoubleTempDeltaSubNWY * S;
             }
 
-            S = sqrt(DeltaSubNWXNew * DeltaSubNWXNew + DeltaSubNWYNew * DeltaSubNWYNew);
+            S = HdrSqrt(DeltaSubNWXNew * DeltaSubNWXNew + DeltaSubNWYNew * DeltaSubNWYNew);
+            HdrReduce(S);
             s = (float)S;
             twos = 2 * s;
 
@@ -2691,12 +2714,13 @@ uint32_t GPURenderer::RenderPerturbBLA(
     return result;
 }
 
+template<class T>
 uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
     uint32_t* buffer,
-    MattPerturbResults<double>* double_perturb,
+    MattPerturbResults<T>* double_perturb,
     MattPerturbResults<float>* float_perturb,
-    BLAS<double>* blas,
+    BLAS<T>* blas,
     MattCoords cx,
     MattCoords cy,
     MattCoords dx,
@@ -2724,7 +2748,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
         return result;
     }
 
-    MattPerturbSingleResults<double> cudaResultsDouble(
+    MattPerturbSingleResults<T> cudaResultsDouble(
         double_perturb->size,
         double_perturb->iters);
 
@@ -2734,38 +2758,80 @@ uint32_t GPURenderer::RenderPerturbBLA(
     }
 
     if (algorithm == RenderAlgorithm::Gpu1x32PerturbedScaled) {
-        mandel_1x_float_perturb_scaled << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
-            cudaResults, cudaResultsDouble,
-            local_width, local_height, cx.doubleOnly, cy.doubleOnly, dx.doubleOnly, dy.doubleOnly,
-            centerX.doubleOnly, centerY.doubleOnly,
-            n_iterations);
+        if constexpr (std::is_same<T, double>::value) {
+            mandel_1x_float_perturb_scaled<T> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
+                cudaResults, cudaResultsDouble,
+                local_width, local_height, cx.doubleOnly, cy.doubleOnly, dx.doubleOnly, dy.doubleOnly,
+                centerX.doubleOnly, centerY.doubleOnly,
+                n_iterations);
 
-        result = ExtractIters(buffer);
-    }
-    else if (algorithm == RenderAlgorithm::Gpu1x32PerturbedScaledBLA) {
-        GPUBLAS<double, BLA<double>> doubleGpuBlas(blas->m_B, blas->m_LM2, blas->m_FirstLevel);
-        result = doubleGpuBlas.CheckValid();
-        if (result != 0) {
-            return result;
+            result = ExtractIters(buffer);
         }
-
-        //GPUBLAS<float, BLA<double>> floatGpuBlas(blas->m_B, blas->m_LM2, blas->m_FirstLevel);
-        //result = floatGpuBlas.CheckValid();
-        //if (result != 0) {
-        //    return result;
-        //}
-
-        mandel_1x_float_perturb_scaled_bla << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
-            cudaResults, cudaResultsDouble, doubleGpuBlas,
-            local_width, local_height, cx.doubleOnly, cy.doubleOnly, dx.doubleOnly, dy.doubleOnly,
-            centerX.doubleOnly, centerY.doubleOnly,
-            n_iterations);
-
-        result = ExtractIters(buffer);
     }
+    else if (algorithm == RenderAlgorithm::GpuHDRx32PerturbedScaled) {
+        if constexpr (std::is_same<T, HDRFloat<float>>::value) {
+            mandel_1x_float_perturb_scaled<T> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
+                cudaResults, cudaResultsDouble,
+                local_width, local_height, cx.hdrflt, cy.hdrflt, dx.hdrflt, dy.hdrflt,
+                centerX.hdrflt, centerY.hdrflt,
+                n_iterations);
+
+            result = ExtractIters(buffer);
+        }
+    }
+    
+    // TODO re-enable with template
+    //else if (algorithm == RenderAlgorithm::Gpu1x32PerturbedScaledBLA) {
+    //    GPUBLAS<double, BLA<double>> doubleGpuBlas(blas->m_B, blas->m_LM2, blas->m_FirstLevel);
+    //    result = doubleGpuBlas.CheckValid();
+    //    if (result != 0) {
+    //        return result;
+    //    }
+
+    //    mandel_1x_float_perturb_scaled_bla << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
+    //        cudaResults, cudaResultsDouble, doubleGpuBlas,
+    //        local_width, local_height, cx.doubleOnly, cy.doubleOnly, dx.doubleOnly, dy.doubleOnly,
+    //        centerX.doubleOnly, centerY.doubleOnly,
+    //        n_iterations);
+
+    //    result = ExtractIters(buffer);
+    //}
 
     return result;
 }
+
+template uint32_t GPURenderer::RenderPerturbBLA<double>(
+    RenderAlgorithm algorithm,
+    uint32_t* buffer,
+    MattPerturbResults<double>* double_perturb,
+    MattPerturbResults<float>* float_perturb,
+    BLAS<double>* blas,
+    MattCoords cx,
+    MattCoords cy,
+    MattCoords dx,
+    MattCoords dy,
+    MattCoords centerX,
+    MattCoords centerY,
+    uint32_t n_iterations,
+    int /*iteration_precision*/
+);
+
+template uint32_t GPURenderer::RenderPerturbBLA<HDRFloat<float>>(
+    RenderAlgorithm algorithm,
+    uint32_t* buffer,
+    MattPerturbResults<HDRFloat<float>>* double_perturb,
+    MattPerturbResults<float>* float_perturb,
+    BLAS<HDRFloat<float>>* blas,
+    MattCoords cx,
+    MattCoords cy,
+    MattCoords dx,
+    MattCoords dy,
+    MattCoords centerX,
+    MattCoords centerY,
+    uint32_t n_iterations,
+    int /*iteration_precision*/
+);
+
 
 uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,

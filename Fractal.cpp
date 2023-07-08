@@ -137,6 +137,7 @@ void Fractal::Initialize(int width,
     //SetRenderAlgorithm(RenderAlgorithm::Cpu64PerturbedBLAHDR);
     //SetRenderAlgorithm(RenderAlgorithm::Cpu64PerturbedBLA);
     SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedBLA);
+    //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedScaled);
     SetIterationPrecision(1);
     SetPerturbationAlg(PerturbationAlg::MTPeriodicity2);
 
@@ -144,8 +145,8 @@ void Fractal::Initialize(int width,
     m_PerturbationGuessCalcY = 0;
 
     ResetDimensions(width, height, 1);
-    View(0);
-    //View(12);
+    //View(0);
+    View(11);
 
     m_ChangedWindow = true;
     m_ChangedScrn = true;
@@ -1185,6 +1186,11 @@ void Fractal::View(size_t view)
         break;
 
     case 11:
+        minX = HighPrecision{ "-0.9225837252220836442380682905062839979087904812701478975021202513277557678493257742585958941166199410512957938475766149929718155234080301303126877648228354119037152386584540549" };
+        minY = HighPrecision{ "0.3101054229664775247118092309878450265997500181207805139942842842632061379116828179519893355354064444350287109494480557003773990753105163530757409662042930547521243602754174815" };
+        maxX = HighPrecision{ "-0.9225837252220836442380682905062839979087904812701478975021202513277557678493257742585958941166199410512957938475766149929718155234080301303126877643767128233130766463441209464" };
+        maxY = HighPrecision{ "0.3101054229664775247118092309878450265997500181207805139942842842632061379116828179519893355354064444350287109494480557003773990753105163530757409663901774666648904404063896101" };
+        SetNumIterations(196608);
         break;
 
     case 12:
@@ -1572,6 +1578,9 @@ void Fractal::CalcFractal(bool MemoryOnly)
     case RenderAlgorithm::Gpu1x32PerturbedScaled:
     case RenderAlgorithm::Gpu1x32PerturbedScaledBLA:
         CalcGpuPerturbationFractalScaledBLA<double, double, float, float>(MemoryOnly);
+        break;
+    case RenderAlgorithm::GpuHDRx32PerturbedScaled:
+        CalcGpuPerturbationFractalScaledBLA<HDRFloat<float>, float, float, float>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu1x64Perturbed:
     case RenderAlgorithm::Gpu1x64PerturbedBLA:
@@ -2458,6 +2467,7 @@ bool Fractal::IsThisPerturbationArrayUsed(void* check) const {
             return false;
         case RenderAlgorithm::Cpu32PerturbedBLAHDR:
         case RenderAlgorithm::GpuHDRx32PerturbedBLA:
+        case RenderAlgorithm::GpuHDRx32PerturbedScaled:
             return check == &m_PerturbationResultsHDRFloat;
         case RenderAlgorithm::Cpu64PerturbedBLAHDR:
         case RenderAlgorithm::GpuHDRx64PerturbedBLA:
@@ -2941,7 +2951,9 @@ void Fractal::AddPerturbationReferencePointMT2(HighPrecision initX, HighPrecisio
         }
         
         T double_zx2 = double_zx * 2;
+        //HdrReduce(double_zx2);
         T double_zy2 = double_zy * 2;
+        //HdrReduce(double_zy2);
 
         results->x.push_back(double_zx);
         results->x2.push_back(double_zx2);
@@ -2949,6 +2961,7 @@ void Fractal::AddPerturbationReferencePointMT2(HighPrecision initX, HighPrecisio
         results->y2.push_back(double_zy2);
 
         T norm = (double_zx * double_zx + double_zy * double_zy) * glitch;
+        //HdrReduce(norm);
         bool underflow = (HdrAbs(double_zx) <= small_float ||
             HdrAbs(double_zy) <= small_float ||
             norm <= small_float);
@@ -3548,6 +3561,7 @@ bool Fractal::RequiresReferencePoints() const {
         case RenderAlgorithm::Cpu64PerturbedBLAHDR:
         case RenderAlgorithm::Gpu1x32Perturbed:
         case RenderAlgorithm::Gpu1x32PerturbedScaled:
+        case RenderAlgorithm::GpuHDRx32PerturbedScaled:
         case RenderAlgorithm::Gpu1x32PerturbedScaledBLA:
         case RenderAlgorithm::Gpu1x64Perturbed:
         case RenderAlgorithm::Gpu1x64PerturbedBLA:
@@ -3664,7 +3678,10 @@ PerturbationResults<DestT> *Fractal::CopyUsefulPerturbationResults(
         return dest;
     }
     else if constexpr (std::is_same<SrcT, HDRFloat<float>>::value) {
-        return nullptr;
+        m_PerturbationResultsFloat.push_back({});
+        auto* dest = &m_PerturbationResultsFloat[m_PerturbationResultsFloat.size() - 1];
+        dest->Copy(src_array);
+        return dest;
     }
     else {
         return nullptr;
@@ -3785,7 +3802,7 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
         return;
     }
 
-    auto result = m_r.RenderPerturbBLA(m_RenderAlgorithm,
+    auto result = m_r.RenderPerturbBLA<T>(m_RenderAlgorithm,
         (uint32_t*)m_CurIters.m_ItersMemory,
         &gpu_results,
         &gpu_results2,

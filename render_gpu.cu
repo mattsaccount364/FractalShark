@@ -17,7 +17,7 @@
 #include <type_traits>
 
 #ifdef __CUDACC__
-__device__ double twoPowExpData[2048];
+__device__ __constant__ double twoPowExpData[2048];
 
 #ifdef __CUDA_ARCH__
 __device__ void InitStatics()
@@ -1893,8 +1893,8 @@ void mandel_1x_float_perturb_scaled_bla(uint32_t* iter_matrix,
     size_t MaxRefIteration = PerturbFloat.size - 1;
 
     while (iter < n_iterations) {
-        MattReferenceSingleIter<float> *curFloatIter = &PerturbFloat.iters[RefIteration];
-        MattReferenceSingleIter<double> *curDoubleIter = &PerturbDouble.iters[RefIteration];
+        const MattReferenceSingleIter<float> *curFloatIter = &PerturbFloat.iters[RefIteration];
+        const MattReferenceSingleIter<double> *curDoubleIter = &PerturbDouble.iters[RefIteration];
 
         double DeltaSubNX = DeltaSubNWX * S;
         double DeltaSubNY = DeltaSubNWY * S;
@@ -2781,24 +2781,23 @@ uint32_t GPURenderer::RenderPerturbBLA(
 
             result = ExtractIters(buffer);
         }
+    } else if (algorithm == RenderAlgorithm::Gpu1x32PerturbedScaledBLA) {
+        if constexpr (std::is_same<T, double>::value) {
+            GPUBLAS<double, BLA<double>> doubleGpuBlas(blas->m_B, blas->m_LM2, blas->m_FirstLevel);
+            result = doubleGpuBlas.CheckValid();
+            if (result != 0) {
+                return result;
+            }
+
+            mandel_1x_float_perturb_scaled_bla << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
+                cudaResults, cudaResultsDouble, doubleGpuBlas,
+                local_width, local_height, cx.doubleOnly, cy.doubleOnly, dx.doubleOnly, dy.doubleOnly,
+                centerX.doubleOnly, centerY.doubleOnly,
+                n_iterations);
+
+            result = ExtractIters(buffer);
+        }
     }
-    
-    // TODO re-enable with template
-    //else if (algorithm == RenderAlgorithm::Gpu1x32PerturbedScaledBLA) {
-    //    GPUBLAS<double, BLA<double>> doubleGpuBlas(blas->m_B, blas->m_LM2, blas->m_FirstLevel);
-    //    result = doubleGpuBlas.CheckValid();
-    //    if (result != 0) {
-    //        return result;
-    //    }
-
-    //    mandel_1x_float_perturb_scaled_bla << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
-    //        cudaResults, cudaResultsDouble, doubleGpuBlas,
-    //        local_width, local_height, cx.doubleOnly, cy.doubleOnly, dx.doubleOnly, dy.doubleOnly,
-    //        centerX.doubleOnly, centerY.doubleOnly,
-    //        n_iterations);
-
-    //    result = ExtractIters(buffer);
-    //}
 
     return result;
 }

@@ -6,7 +6,7 @@
 
 #ifdef __CUDA_ARCH__
 #define CUDA_CRAP __device__
-static __device__ double* twoPowExp;
+static __device__ double* __restrict__ twoPowExp;
 #else
 #define CUDA_CRAP
 extern double* twoPowExp;
@@ -78,15 +78,15 @@ public:
         this->exp = exp;
     }
 
-    CUDA_CRAP constexpr HDRFloat(TExp exp, T mantissa, bool /*check*/) {
-        this->mantissa = mantissa;
-        if (mantissa == 0) {
-            this->exp = MIN_BIG_EXPONENT();
-        }
-        else {
-            this->exp = exp;
-        }
-    }
+    //CUDA_CRAP constexpr HDRFloat(TExp exp, T mantissa, bool /*check*/) {
+    //    this->mantissa = mantissa;
+    //    if (mantissa == 0) {
+    //        this->exp = MIN_BIG_EXPONENT();
+    //    }
+    //    else {
+    //        this->exp = exp;
+    //    }
+    //}
 
     CUDA_CRAP constexpr explicit HDRFloat(T number) {
         if (number == 0) {

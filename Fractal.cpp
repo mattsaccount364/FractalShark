@@ -2334,9 +2334,9 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
 
                 T DeltaSub0X = deltaReal;
                 T DeltaSub0Y = deltaImaginary;
-                T DeltaSubNX = 0;
-                T DeltaSubNY = 0;
-                T DeltaNormSquared = 0;
+                T DeltaSubNX = T(0);
+                T DeltaSubNY = T(0);
+                T DeltaNormSquared = T(0);
 
                 while (iter < m_NumIterations) {
                     BLA<T> *b = nullptr;
@@ -2600,10 +2600,10 @@ void Fractal::AddPerturbationReferencePointST(HighPrecision initX, HighPrecision
     results->y2.reserve(m_NumIterations);
     results->bad.reserve(m_NumIterations);
 
-    results->x.push_back(0);
-    results->x2.push_back(0);
-    results->y.push_back(0);
-    results->y2.push_back(0);
+    results->x.push_back(T(0));
+    results->x2.push_back(T(0));
+    results->y.push_back(T(0));
+    results->y2.push_back(T(0));
     // Note: results->bad is not here.  See end of this function.
 
     //SubType glitch;
@@ -2621,14 +2621,15 @@ void Fractal::AddPerturbationReferencePointST(HighPrecision initX, HighPrecision
 
     SubType glitch = (SubType)0.0000001;
 
-    T dzdcX = 1.0;
-    T dzdcY = 0.0;
+    T dzdcX = T(1.0);
+    T dzdcY = T(0.0);
 
     T zxCopy;
     T zyCopy;
 
     static const T HighOne = T{ 1.0 };
     static const T HighTwo = T{ 2.0 };
+    static const T TwoFiftySix = T(256);
 
     zx = cx;
     zy = cy;
@@ -2709,7 +2710,7 @@ void Fractal::AddPerturbationReferencePointST(HighPrecision initX, HighPrecision
         T tempZX = double_zx + (T)cx;
         T tempZY = double_zy + (T)cy;
         T zn_size = tempZX * tempZX + tempZY * tempZY;
-        if (zn_size > 256) {
+        if (zn_size > TwoFiftySix) {
             break;
         }
     }
@@ -2789,8 +2790,8 @@ void Fractal::AddPerturbationReferencePointMT2(HighPrecision initX, HighPrecisio
 
     HighPrecision zx, zy;
 
-    T dzdcX = 1.0;
-    T dzdcY = 0.0;
+    T dzdcX = T(1.0);
+    T dzdcY = T(0.0);
 
     results->hiX = cx;
     results->hiY = cy;
@@ -2807,10 +2808,10 @@ void Fractal::AddPerturbationReferencePointMT2(HighPrecision initX, HighPrecisio
     results->y2.reserve(m_NumIterations);
     results->bad.reserve(m_NumIterations);
     
-    results->x.push_back(0);
-    results->x2.push_back(0);
-    results->y.push_back(0);
-    results->y2.push_back(0);
+    results->x.push_back(T(0));
+    results->x2.push_back(T(0));
+    results->y.push_back(T(0));
+    results->y2.push_back(T(0));
     // Note: results->bad is not here.  See end of this function.
 
     //SubType glitch;
@@ -2910,6 +2911,7 @@ void Fractal::AddPerturbationReferencePointMT2(HighPrecision initX, HighPrecisio
 
     static const T HighOne = T{ 1.0 };
     static const T HighTwo = T{ 2.0 };
+    static const T TwoFiftySix = T(256);
 
     bool zyStarted = false;
 
@@ -3108,8 +3110,8 @@ void Fractal::AddPerturbationReferencePointMT5(HighPrecision initX, HighPrecisio
     HighPrecision zx2, zy2;
     HighPrecision zx_sq, zy_sq;
 
-    T dzdcX = 1.0;
-    T dzdcY = 0.0;
+    T dzdcX = T(1.0);
+    T dzdcY = T(0.0);
 
     results->hiX = cx;
     results->hiY = cy;
@@ -3131,10 +3133,10 @@ void Fractal::AddPerturbationReferencePointMT5(HighPrecision initX, HighPrecisio
     results->y2.reserve(m_NumIterations);
     results->bad.reserve(m_NumIterations);
 
-    results->x.push_back(0);
-    results->x2.push_back(0);
-    results->y.push_back(0);
-    results->y2.push_back(0);
+    results->x.push_back(T(0));
+    results->x2.push_back(T(0));
+    results->y.push_back(T(0));
+    results->y2.push_back(T(0));
     // Note: results->bad is not here.  See end of this function.
 
     //if constexpr (std::is_same<SubType, double>::value) {
@@ -3358,6 +3360,7 @@ void Fractal::AddPerturbationReferencePointMT5(HighPrecision initX, HighPrecisio
 
     static const T HighOne = T{ 1.0 };
     static const T HighTwo = T{ 2.0 };
+    static const T TwoFiftySix = T(256);
 
     for (size_t i = 0; i < m_NumIterations; i++)
     {

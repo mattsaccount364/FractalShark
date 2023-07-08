@@ -30,7 +30,7 @@ BLA<T> BLAS<T>::MergeTwoBlas(BLA<T> x, BLA<T> y, T blaSize) {
     T tempR = (HdrSqrt(y.getR2()) - xB * blaSize) / xA;
     HdrReduce(tempR);
 
-    T r = min(HdrSqrt(x.getR2()), max(0, tempR));
+    T r = min(HdrSqrt(x.getR2()), max(T(0), tempR));
     T r2 = r * r;
     return BLA<T>::getGenericStep(r2, RealA, ImagA, RealB, ImagB, l);
 }
@@ -70,8 +70,8 @@ BLA<T> BLAS<T>::CreateOneStep(size_t m, T epsilon) {
 
     T r2 = r * r;
 
-    const T RealB = 1;
-    const T ImagB = 0;
+    const T RealB = T(1);
+    const T ImagB = T(0);
     const int l = 1;
     return BLA<T>(r2, RealA, ImagA, RealB, ImagB, l); // BLA1Step
 }
@@ -189,7 +189,7 @@ void BLAS<T>::Merge(T blaSize) {
 
 template<class T>
 void BLAS<T>::Init(size_t InM, T blaSize) {
-    T precision = 1 / ((T)(1L << BLA_BITS));
+    T precision = T(1) / ((T)(1L << BLA_BITS));
     m_FirstLevel = BLA_STARTING_LEVEL - 1;
 
     this->m_M = InM;

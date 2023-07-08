@@ -976,9 +976,10 @@ void mandel_1xHDR_float_perturb_bla(uint32_t* iter_matrix,
 
     HDRFloatType DeltaSub0X = DeltaReal;
     HDRFloatType DeltaSub0Y = DeltaImaginary;
-    HDRFloatType DeltaSubNX = 0;
-    HDRFloatType DeltaSubNY = 0;
-    HDRFloatType DeltaNormSquared = 0;
+    HDRFloatType DeltaSubNX = HDRFloatType(0);
+    HDRFloatType DeltaSubNY = HDRFloatType(0);
+    HDRFloatType DeltaNormSquared = HDRFloatType(0);
+    HDRFloatType TwoFiftySix = HDRFloatType(256);
 
     while (iter < n_iterations) {
         BLA<HDRFloatType>* b = nullptr;
@@ -1007,7 +1008,7 @@ void mandel_1xHDR_float_perturb_bla(uint32_t* iter_matrix,
             DeltaNormSquared = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
             HdrReduce(DeltaNormSquared);
 
-            if (normSquared > 256) {
+            if (normSquared > TwoFiftySix) {
                 break;
             }
 
@@ -1052,7 +1053,7 @@ void mandel_1xHDR_float_perturb_bla(uint32_t* iter_matrix,
         DeltaNormSquared = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
         HdrReduce(DeltaNormSquared);
 
-        if (normSquared > 256) {
+        if (normSquared > TwoFiftySix) {
             break;
         }
 
@@ -1669,6 +1670,8 @@ void mandel_1x_float_perturb_scaled(uint32_t* iter_matrix,
     const float w2threshold = exp(log(LARGE_MANTISSA) / 2);
     size_t MaxRefIteration = PerturbFloat.size - 1;
 
+    T TwoFiftySix = T(256.0);
+
     while (iter < n_iterations) {
         const MattReferenceSingleIter<float> *curFloatIter = &PerturbFloat.iters[RefIteration];
         const MattReferenceSingleIter<T> *curDoubleIter = &PerturbDouble.iters[RefIteration];
@@ -1741,9 +1744,9 @@ void mandel_1x_float_perturb_scaled(uint32_t* iter_matrix,
             }
             else if (testw2)
             {
-                DoubleTempZX = DeltaSubNWX * S;
+                DoubleTempZX = (T)DeltaSubNWX * S;
                 //HdrReduce(DoubleTempZX);
-                DoubleTempZY = DeltaSubNWY * S;
+                DoubleTempZY = (T)DeltaSubNWY * S;
                 //HdrReduce(DoubleTempZY);
 
                 S = HdrSqrt(DoubleTempZX * DoubleTempZX + DoubleTempZY * DoubleTempZY);
@@ -1765,8 +1768,8 @@ void mandel_1x_float_perturb_scaled(uint32_t* iter_matrix,
             }
         } else {
             // Do full iteration at double precision
-            T DeltaSubNWXOrig = DeltaSubNWX;
-            T DeltaSubNWYOrig = DeltaSubNWY;
+            T DeltaSubNWXOrig = (T)DeltaSubNWX;
+            T DeltaSubNWYOrig = (T)DeltaSubNWY;
 
             T DoubleTempDeltaSubNWX = DeltaSubNWXOrig * curDoubleIter->x2;
             //HdrReduce(DoubleTempDeltaSubNWX);
@@ -1779,7 +1782,7 @@ void mandel_1x_float_perturb_scaled(uint32_t* iter_matrix,
             DoubleTempDeltaSubNWX += DeltaReal / S;
             HdrReduce(DoubleTempDeltaSubNWX);
 
-            T DoubleTempDeltaSubNWY = DeltaSubNWXOrig * (curDoubleIter->y2 + 2 * S * DeltaSubNWYOrig);
+            T DoubleTempDeltaSubNWY = DeltaSubNWXOrig * (curDoubleIter->y2 + T(2) * S * DeltaSubNWYOrig);
             //HdrReduce(DoubleTempDeltaSubNWY);
             DoubleTempDeltaSubNWY += DeltaSubNWYOrig * curDoubleIter->x2;
             //HdrReduce(DoubleTempDeltaSubNWY);
@@ -1802,7 +1805,7 @@ void mandel_1x_float_perturb_scaled(uint32_t* iter_matrix,
                 tempZX * tempZX + tempZY * tempZY;
             HdrReduce(zn_size);
 
-            if (zn_size > 256.0) {
+            if (zn_size > TwoFiftySix) {
                 break;
             }
 

@@ -236,11 +236,11 @@ private:
 
     bool RequiresReferencePoints() const;
 
-    template<class T, class SubType, bool Copy>
+    template<class T, class SubType>
     PerturbationResults<T>* GetUsefulPerturbationResults();
 
-    template<class SrcT>
-    void CopyUsefulPerturbationResults(PerturbationResults<SrcT>& src_array);
+    template<class SrcT, class DestT>
+    PerturbationResults<DestT>* CopyUsefulPerturbationResults(PerturbationResults<SrcT>& src_array);
 
     static void FillCoord(HighPrecision& src, MattCoords& dest);
     void FillGpuCoords(MattCoords& cx2, MattCoords& cy2, MattCoords& dx2, MattCoords& dy2);

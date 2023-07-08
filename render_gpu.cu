@@ -1606,7 +1606,7 @@ void mandel_1x_float_perturb(uint32_t* iter_matrix,
 
 __global__
 void mandel_1x_float_perturb_scaled(uint32_t* iter_matrix,
-    MattPerturbSingleResults<float> PerturnFloat,
+    MattPerturbSingleResults<float> PerturbFloat,
     MattPerturbSingleResults<double> PerturbDouble,
     int width,
     int height,
@@ -1636,10 +1636,10 @@ void mandel_1x_float_perturb_scaled(uint32_t* iter_matrix,
     const double DeltaReal = dx * X - centerX;
     const double DeltaImaginary = -dy * Y - centerY;
 
-    // DeltaSubNWX = 2 * DeltaSubNWX * PerturnFloat.x[RefIteration] - 2 * DeltaSubNWY * PerturnFloat.y[RefIteration] +
+    // DeltaSubNWX = 2 * DeltaSubNWX * PerturbFloat.x[RefIteration] - 2 * DeltaSubNWY * PerturbFloat.y[RefIteration] +
     //               S * DeltaSubNWX * DeltaSubNWX - S * DeltaSubNWY * DeltaSubNWY +
     //               dX
-    // DeltaSubNWY = 2 * DeltaSubNWX * PerturnFloat.y[RefIteration] + 2 * DeltaSubNWY * PerturnFloat.x[RefIteration] +
+    // DeltaSubNWY = 2 * DeltaSubNWX * PerturbFloat.y[RefIteration] + 2 * DeltaSubNWY * PerturbFloat.x[RefIteration] +
     //               2 * S * DeltaSubNWX * DeltaSubNWY +
     //               dY
     // 
@@ -1660,10 +1660,10 @@ void mandel_1x_float_perturb_scaled(uint32_t* iter_matrix,
     float s = (float)S;
     float twos = 2 * s;
     const float w2threshold = exp(log(LARGE_MANTISSA) / 2);
-    size_t MaxRefIteration = PerturnFloat.size - 1;
+    size_t MaxRefIteration = PerturbFloat.size - 1;
 
     while (iter < n_iterations) {
-        const MattReferenceSingleIter<float> *curFloatIter = &PerturnFloat.iters[RefIteration];
+        const MattReferenceSingleIter<float> *curFloatIter = &PerturbFloat.iters[RefIteration];
         const MattReferenceSingleIter<double> *curDoubleIter = &PerturbDouble.iters[RefIteration];
 
         if (curFloatIter->bad == false) {
@@ -1682,7 +1682,7 @@ void mandel_1x_float_perturb_scaled(uint32_t* iter_matrix,
                 DeltaSub0DY;
 
             ++RefIteration;
-            curFloatIter = &PerturnFloat.iters[RefIteration];
+            curFloatIter = &PerturbFloat.iters[RefIteration];
             curDoubleIter = &PerturbDouble.iters[RefIteration];
 
             const float tempZX =
@@ -1717,7 +1717,6 @@ void mandel_1x_float_perturb_scaled(uint32_t* iter_matrix,
                 DoubleTempZY = (curDoubleIter->y + (double)DeltaSubNWY * S); // Xxid, xi
 
                 RefIteration = 0;
-
                 S = sqrt(DoubleTempZX * DoubleTempZX + DoubleTempZY * DoubleTempZY);
                 s = (float)S;
                 twos = 2 * s;
@@ -1768,7 +1767,7 @@ void mandel_1x_float_perturb_scaled(uint32_t* iter_matrix,
                 DeltaImaginary / S;
 
             ++RefIteration;
-            curFloatIter = &PerturnFloat.iters[RefIteration];
+            curFloatIter = &PerturbFloat.iters[RefIteration];
             curDoubleIter = &PerturbDouble.iters[RefIteration];
 
             const double tempZX =

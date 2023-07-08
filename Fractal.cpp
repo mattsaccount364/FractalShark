@@ -1787,6 +1787,12 @@ void Fractal::DrawFractal(bool MemoryOnly)
     DrawPerturbationResults<float>(true);
     DrawPerturbationResults<HDRFloat<double>>(true);
     DrawPerturbationResults<HDRFloat<float>>(true);
+
+    //while (GetMessage(&msg, NULL, 0, 0) > 0)
+    //{
+    //    TranslateMessage(&msg);
+    //    DispatchMessage(&msg);
+    //}
 }
 
 void Fractal::DrawFractalThread(size_t index, Fractal* fractal) {
@@ -2049,7 +2055,7 @@ void Fractal::CalcNetworkFractal(bool MemoryOnly)
 }
 
 void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
-    auto* results = GetUsefulPerturbationResults<double, double, false>();
+    auto* results = GetUsefulPerturbationResults<double, double>();
 
     double dx = Convert<HighPrecision, double>((m_MaxX - m_MinX) / m_ScrnWidth);
     double dy = Convert<HighPrecision, double>((m_MaxY - m_MinY) / m_ScrnHeight);
@@ -2272,7 +2278,7 @@ void Fractal::CalcCpuHDR(bool MemoryOnly) {
 
 template<class T, class SubType>
 void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
-    auto* results = GetUsefulPerturbationResults<T, SubType, false>();
+    auto* results = GetUsefulPerturbationResults<T, SubType>();
 
     BLAS<T> blas(*results);
     blas.Init(results->x.size(), T{ results->maxRadius });
@@ -3594,7 +3600,7 @@ bool Fractal::IsPerturbationResultUsefulHere(size_t i) const {
     }
 }
 
-template<class T, class SubType, bool Copy>
+template<class T, class SubType>
 PerturbationResults<T>* Fractal::GetUsefulPerturbationResults() {
     std::vector<PerturbationResults<T>*> useful_results;
     std::vector<PerturbationResults<T>>* cur_array = nullptr;
@@ -3633,38 +3639,41 @@ PerturbationResults<T>* Fractal::GetUsefulPerturbationResults() {
         AddPerturbationReferencePoint<T, SubType>();
 
         results = &(*cur_array)[cur_array->size() - 1];
-
-        if (Copy) {
-            CopyUsefulPerturbationResults(*results);
-        }
     }
 
     return results;
 }
 
-template<class SrcT>
-void Fractal::CopyUsefulPerturbationResults(PerturbationResults<SrcT> &src_array) {
+template<class SrcT, class DestT>
+PerturbationResults<DestT> *Fractal::CopyUsefulPerturbationResults(
+    PerturbationResults<SrcT> &src_array)
+{
     if constexpr (std::is_same<SrcT, double>::value) {
         m_PerturbationResultsFloat.push_back({});
         auto* dest = &m_PerturbationResultsFloat[m_PerturbationResultsFloat.size() - 1];
         dest->Copy(src_array);
+        return dest;
     }
     else if constexpr (std::is_same<SrcT, float>::value) {
-        return;
+        return nullptr;
     }
     else if constexpr (std::is_same<SrcT, HDRFloat<double>>::value) {
         m_PerturbationResultsHDRFloat.push_back({});
         auto* dest = &m_PerturbationResultsHDRFloat[m_PerturbationResultsHDRFloat.size() - 1];
         dest->Copy(src_array);
+        return dest;
     }
     else if constexpr (std::is_same<SrcT, HDRFloat<float>>::value) {
-        return;
+        return nullptr;
+    }
+    else {
+        return nullptr;
     }
 }
 
 template<class T, class SubType>
 void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
-    auto* results = GetUsefulPerturbationResults<T, SubType, false>();
+    auto* results = GetUsefulPerturbationResults<T, SubType>();
 
     BLAS<T> blas(*results);
     blas.Init(results->x.size(), T(results->maxRadius));
@@ -3723,8 +3732,8 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
 
 template<class T, class SubType, class T2, class SubType2>
 void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
-    auto* results = GetUsefulPerturbationResults<T, SubType, true>();
-    auto* results2 = GetUsefulPerturbationResults<T2, SubType2, true>();
+    auto* results = GetUsefulPerturbationResults<T, SubType>();
+    auto* results2 = CopyUsefulPerturbationResults<T, T2>(*results);
 
     BLAS<T> blas(*results);
     blas.Init(results->x.size(), T(results->maxRadius));
@@ -3770,6 +3779,11 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
         results2->bad.data() };
 
     gpu_results2.size = results2->x.size();
+
+    if (gpu_results.size != gpu_results2.size) {
+        ::MessageBox(NULL, L"Mismatch on size", L"", MB_OK);
+        return;
+    }
 
     auto result = m_r.RenderPerturbBLA(m_RenderAlgorithm,
         (uint32_t*)m_CurIters.m_ItersMemory,
@@ -4780,9 +4794,10 @@ void DefaultOutputMessage(const wchar_t *, ...)
 
 bool Fractal::IsDownControl(void)
 {
-    return ((GetAsyncKeyState(VK_CONTROL) & 0x8000) == 0x8000) &&
-        ((m_hWnd != NULL && GetForegroundWindow() == m_hWnd) ||
-        (m_hWnd == NULL));
+    return ((GetAsyncKeyState(VK_CONTROL) & 0x8000) == 0x8000);
+    //return ((GetAsyncKeyState(VK_CONTROL) & 0x8000) == 0x8000) &&
+    //    ((m_hWnd != NULL && GetForegroundWindow() == m_hWnd) ||
+    //    (m_hWnd == NULL));
 };
 
 void Fractal::CheckForAbort(void)

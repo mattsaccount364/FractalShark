@@ -42,9 +42,7 @@ enum class RenderAlgorithm {
 template<typename Type>
 struct MattReferenceSingleIter {
     Type x;
-    Type x2;
     Type y;
-    Type y2;
     uint32_t bad;
     uint32_t padding;
 };
@@ -99,9 +97,7 @@ struct MattPerturbResults {
 
     MattPerturbResults(size_t in_size,
                        T *in_x,
-                       T *in_x2,
                        T *in_y,
-                       T *in_y2,
                        uint8_t *in_bad) :
         iters(new MattReferenceSingleIter<T>[in_size]),
         size(in_size) {
@@ -110,17 +106,15 @@ struct MattPerturbResults {
         //char(*__kaboom2)[sizeof(MattReferenceSingleIter<double>)] = 1;
         //char(*__kaboom3)[sizeof(MattReferenceSingleIter<float2>)] = 1;
 
-        static_assert(sizeof(MattReferenceSingleIter<float>) == 24, "Float");
-        static_assert(sizeof(MattReferenceSingleIter<double>) == 40, "Double");
-        static_assert(sizeof(MattReferenceSingleIter<float2>) == 40, "float2");
+        static_assert(sizeof(MattReferenceSingleIter<float>) == 16, "Float");
+        static_assert(sizeof(MattReferenceSingleIter<double>) == 24, "Double");
+        static_assert(sizeof(MattReferenceSingleIter<float2>) == 24, "float2");
         //static_assert(sizeof(MattReferenceSingleIter<HDRFloat<float>>) == 12 * 4, "float2");
         static_assert(sizeof(float2) == 8, "float2 type");
 
         for (size_t i = 0; i < size; i++) {
             iters[i].x = in_x[i];
-            iters[i].x2 = in_x2[i];
             iters[i].y = in_y[i];
-            iters[i].y2 = in_y2[i];
             iters[i].bad = in_bad[i];
         }
     }

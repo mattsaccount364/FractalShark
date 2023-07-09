@@ -294,9 +294,9 @@ template class GPUBLAS<HDRFloat<float>, BLA<HDRFloat<float>>>;
 // Perturbation results
 ////////////////////////////////////////////////////////////////////////////////////////
 
-static_assert(sizeof(MattReferenceSingleIter<float>) == 24, "Float");
-static_assert(sizeof(MattReferenceSingleIter<double>) == 40, "Double");
-static_assert(sizeof(MattReferenceSingleIter<dblflt>) == 40, "Dblflt");
+static_assert(sizeof(MattReferenceSingleIter<float>) == 16, "Float");
+static_assert(sizeof(MattReferenceSingleIter<double>) == 24, "Double");
+static_assert(sizeof(MattReferenceSingleIter<dblflt>) == 24, "Dblflt");
 
 //char(*__kaboom1)[sizeof(MattReferenceSingleIter<float>)] = 1;
 //char(*__kaboom2)[sizeof(MattReferenceSingleIter<double>)] = 1;
@@ -792,12 +792,12 @@ void mandel_1x_double_perturb(uint32_t* iter_matrix,
         const double DeltaSubNYOrig = DeltaSubNY;
 
         DeltaSubNX =
-            DeltaSubNXOrig * (CurIter->x2 + DeltaSubNXOrig) -
-            DeltaSubNYOrig * (CurIter->y2 + DeltaSubNYOrig) +
+            DeltaSubNXOrig * (CurIter->x * 2 + DeltaSubNXOrig) -
+            DeltaSubNYOrig * (CurIter->y * 2 + DeltaSubNYOrig) +
             DeltaSub0X;
         DeltaSubNY =
-            DeltaSubNXOrig * (CurIter->y2 + DeltaSubNYOrig) +
-            DeltaSubNYOrig * (CurIter->x2 + DeltaSubNXOrig) +
+            DeltaSubNXOrig * (CurIter->y * 2 + DeltaSubNYOrig) +
+            DeltaSubNYOrig * (CurIter->x * 2 + DeltaSubNXOrig) +
             DeltaSub0Y;
 
         ++RefIteration;
@@ -907,11 +907,11 @@ void mandel_1x_double_perturb_bla(uint32_t* iter_matrix,
         const double DeltaSubNXOrig = DeltaSubNX;
         const double DeltaSubNYOrig = DeltaSubNY;
 
-        DeltaSubNX = DeltaSubNXOrig * (PerturbDouble.iters[RefIteration].x2 + DeltaSubNXOrig) -
-            DeltaSubNYOrig * (PerturbDouble.iters[RefIteration].y2 + DeltaSubNYOrig) +
+        DeltaSubNX = DeltaSubNXOrig * (PerturbDouble.iters[RefIteration].x * 2 + DeltaSubNXOrig) -
+            DeltaSubNYOrig * (PerturbDouble.iters[RefIteration].y * 2 + DeltaSubNYOrig) +
             DeltaSub0X;
-        DeltaSubNY = DeltaSubNXOrig * (PerturbDouble.iters[RefIteration].y2 + DeltaSubNYOrig) +
-            DeltaSubNYOrig * (PerturbDouble.iters[RefIteration].x2 + DeltaSubNXOrig) +
+        DeltaSubNY = DeltaSubNXOrig * (PerturbDouble.iters[RefIteration].y * 2 + DeltaSubNYOrig) +
+            DeltaSubNYOrig * (PerturbDouble.iters[RefIteration].x * 2 + DeltaSubNXOrig) +
             DeltaSub0Y;
 
         ++RefIteration;
@@ -1033,13 +1033,13 @@ void mandel_1xHDR_float_perturb_bla(uint32_t* iter_matrix,
         HDRFloatType DeltaSubNXOrig = DeltaSubNX;
         HDRFloatType DeltaSubNYOrig = DeltaSubNY;
 
-        DeltaSubNX = DeltaSubNXOrig * (Perturb.iters[RefIteration].x2 + DeltaSubNXOrig) -
-            DeltaSubNYOrig * (Perturb.iters[RefIteration].y2 + DeltaSubNYOrig) +
+        DeltaSubNX = DeltaSubNXOrig * (Perturb.iters[RefIteration].x * 2 + DeltaSubNXOrig) -
+            DeltaSubNYOrig * (Perturb.iters[RefIteration].y * 2 + DeltaSubNYOrig) +
             DeltaSub0X;
         HdrReduce(DeltaSubNX);
 
-        DeltaSubNY = DeltaSubNXOrig * (Perturb.iters[RefIteration].y2 + DeltaSubNYOrig) +
-            DeltaSubNYOrig * (Perturb.iters[RefIteration].x2 + DeltaSubNXOrig) +
+        DeltaSubNY = DeltaSubNXOrig * (Perturb.iters[RefIteration].y * 2 + DeltaSubNYOrig) +
+            DeltaSubNYOrig * (Perturb.iters[RefIteration].x * 2 + DeltaSubNXOrig) +
             DeltaSub0Y;
         HdrReduce(DeltaSubNY);
 
@@ -1258,9 +1258,7 @@ void mandel_2x_float_perturb_setup(MattPerturbSingleResults<dblflt> PerturbDblFl
 
     for (size_t i = 0; i < PerturbDblFlt.size; i++) {
         PerturbDblFlt.iters[i].x = add_float_to_dblflt(PerturbDblFlt.iters[i].x.y, PerturbDblFlt.iters[i].x.x);
-        PerturbDblFlt.iters[i].x2 = add_float_to_dblflt(PerturbDblFlt.iters[i].x2.y, PerturbDblFlt.iters[i].x2.x);
         PerturbDblFlt.iters[i].y = add_float_to_dblflt(PerturbDblFlt.iters[i].y.y, PerturbDblFlt.iters[i].y.x);
-        PerturbDblFlt.iters[i].y2 = add_float_to_dblflt(PerturbDblFlt.iters[i].y2.y, PerturbDblFlt.iters[i].y2.x);
     }
 }
 
@@ -1353,6 +1351,8 @@ void mandel_2x_float_perturb(uint32_t* iter_matrix,
     int iter = 0;
     size_t RefIteration = 0;
 
+    dblflt Two = add_float_to_dblflt(0, 2);
+
     dblflt X2 = add_float_to_dblflt(X, 0);
     dblflt Y2 = add_float_to_dblflt(Y, 0);
     dblflt MinusY2 = add_float_to_dblflt(-Y, 0);
@@ -1375,8 +1375,11 @@ void mandel_2x_float_perturb(uint32_t* iter_matrix,
         const dblflt DeltaSubNXOrig = DeltaSubNX;
         const dblflt DeltaSubNYOrig = DeltaSubNY;
 
-        const dblflt tempTermX1 = add_dblflt(CurIter->x2, DeltaSubNXOrig);
-        const dblflt tempTermX2 = add_dblflt(CurIter->y2, DeltaSubNYOrig);
+        const dblflt tempX = mul_dblflt(CurIter->x, Two);
+        const dblflt tempY = mul_dblflt(CurIter->y, Two);
+
+        const dblflt tempTermX1 = add_dblflt(tempX, DeltaSubNXOrig);
+        const dblflt tempTermX2 = add_dblflt(tempY, DeltaSubNYOrig);
 
         DeltaSubNX =
             sub_dblflt(
@@ -1575,8 +1578,8 @@ void mandel_1x_float_perturb(uint32_t* iter_matrix,
         const float DeltaSubNXOrig = DeltaSubNX;
         const float DeltaSubNYOrig = DeltaSubNY;
 
-        const float tempSubX = curIter->x2 + DeltaSubNXOrig;
-        const float tempSubY = curIter->y2 + DeltaSubNYOrig;
+        const float tempSubX = curIter->x * 2 + DeltaSubNXOrig;
+        const float tempSubY = curIter->y * 2 + DeltaSubNYOrig;
 
         DeltaSubNX =
             DeltaSubNXOrig * tempSubX -
@@ -1686,14 +1689,14 @@ void mandel_1x_float_perturb_scaled(uint32_t* iter_matrix,
             const float DeltaSubNWYOrig = DeltaSubNWY;
 
             DeltaSubNWX =
-                DeltaSubNWXOrig * curFloatIter->x2 -
-                DeltaSubNWYOrig * curFloatIter->y2 +
+                DeltaSubNWXOrig * curFloatIter->x * 2 -
+                DeltaSubNWYOrig * curFloatIter->y * 2 +
                 s * DeltaSubNWXOrig * DeltaSubNWXOrig - s * DeltaSubNWYOrig * DeltaSubNWYOrig +
                 DeltaSub0DX;
 
             DeltaSubNWY =
-                DeltaSubNWXOrig * (curFloatIter->y2 + twos * DeltaSubNWYOrig) +
-                DeltaSubNWYOrig * curFloatIter->x2 +
+                DeltaSubNWXOrig * (curFloatIter->y * 2 + twos * DeltaSubNWYOrig) +
+                DeltaSubNWYOrig * curFloatIter->x * 2 +
                 DeltaSub0DY;
 
             ++RefIteration;
@@ -1776,9 +1779,9 @@ void mandel_1x_float_perturb_scaled(uint32_t* iter_matrix,
             T DeltaSubNWXOrig = (T)DeltaSubNWX;
             T DeltaSubNWYOrig = (T)DeltaSubNWY;
 
-            T DoubleTempDeltaSubNWX = DeltaSubNWXOrig * curDoubleIter->x2;
+            T DoubleTempDeltaSubNWX = DeltaSubNWXOrig * curDoubleIter->x * 2;
             //HdrReduce(DoubleTempDeltaSubNWX);
-            DoubleTempDeltaSubNWX -= DeltaSubNWYOrig * curDoubleIter->y2;
+            DoubleTempDeltaSubNWX -= DeltaSubNWYOrig * curDoubleIter->y * 2;
             //HdrReduce(DoubleTempDeltaSubNWX);
             DoubleTempDeltaSubNWX += S * DeltaSubNWXOrig * DeltaSubNWXOrig;
             //HdrReduce(DoubleTempDeltaSubNWX);
@@ -1787,9 +1790,9 @@ void mandel_1x_float_perturb_scaled(uint32_t* iter_matrix,
             DoubleTempDeltaSubNWX += DeltaReal / S;
             HdrReduce(DoubleTempDeltaSubNWX);
 
-            T DoubleTempDeltaSubNWY = DeltaSubNWXOrig * (curDoubleIter->y2 + T(2) * S * DeltaSubNWYOrig);
+            T DoubleTempDeltaSubNWY = DeltaSubNWXOrig * (curDoubleIter->y * 2 + T(2) * S * DeltaSubNWYOrig);
             //HdrReduce(DoubleTempDeltaSubNWY);
-            DoubleTempDeltaSubNWY += DeltaSubNWYOrig * curDoubleIter->x2;
+            DoubleTempDeltaSubNWY += DeltaSubNWYOrig * curDoubleIter->x * 2;
             //HdrReduce(DoubleTempDeltaSubNWY);
             DoubleTempDeltaSubNWY += DeltaImaginary / S;
             HdrReduce(DoubleTempDeltaSubNWY);
@@ -1974,14 +1977,14 @@ void mandel_1x_float_perturb_scaled_bla(uint32_t* iter_matrix,
             const float DeltaSubNWYOrig = DeltaSubNWY;
 
             DeltaSubNWX =
-                DeltaSubNWXOrig * curFloatIter->x2 -
-                DeltaSubNWYOrig * curFloatIter->y2 +
+                DeltaSubNWXOrig * curFloatIter->x * 2 -
+                DeltaSubNWYOrig * curFloatIter->y * 2 +
                 s * DeltaSubNWXOrig * DeltaSubNWXOrig - s * DeltaSubNWYOrig * DeltaSubNWYOrig +
                 DeltaSub0DX;
 
             DeltaSubNWY =
-                DeltaSubNWXOrig * (curFloatIter->y2 + twos * DeltaSubNWYOrig) +
-                DeltaSubNWYOrig * curFloatIter->x2 +
+                DeltaSubNWXOrig * (curFloatIter->y * 2 + twos * DeltaSubNWYOrig) +
+                DeltaSubNWYOrig * curFloatIter->x * 2 +
                 DeltaSub0DY;
 
             ++RefIteration;
@@ -2063,14 +2066,14 @@ void mandel_1x_float_perturb_scaled_bla(uint32_t* iter_matrix,
             double DeltaSubNWYOrig = DeltaSubNWY;
 
             const double DoubleTempDeltaSubNWX =
-                DeltaSubNWXOrig * curDoubleIter->x2 -
-                DeltaSubNWYOrig * curDoubleIter->y2 +
+                DeltaSubNWXOrig * curDoubleIter->x * 2 -
+                DeltaSubNWYOrig * curDoubleIter->y * 2 +
                 S * DeltaSubNWXOrig * DeltaSubNWXOrig - S * DeltaSubNWYOrig * DeltaSubNWYOrig +
                 DeltaReal / S;
 
             const double DoubleTempDeltaSubNWY =
-                DeltaSubNWXOrig * (curDoubleIter->y2 + 2 * S * DeltaSubNWYOrig) +
-                DeltaSubNWYOrig * curDoubleIter->x2 +
+                DeltaSubNWXOrig * (curDoubleIter->y * 2 + 2 * S * DeltaSubNWYOrig) +
+                DeltaSubNWYOrig * curDoubleIter->x * 2 +
                 DeltaImaginary / S;
 
             ++RefIteration;
@@ -2197,14 +2200,18 @@ void mandel_2x_float_perturb_scaled(uint32_t* iter_matrix,
             const dblflt DeltaSubNWXOrig = DeltaSubNWX;
             const dblflt DeltaSubNWYOrig = DeltaSubNWY;
 
-            DeltaSubNWX = mul_dblflt(DeltaSubNWXOrig, curDblFloatIter->x2);
-            DeltaSubNWX = sub_dblflt(DeltaSubNWX, mul_dblflt(DeltaSubNWYOrig, curDblFloatIter->y2));
+            const dblflt Two = add_float_to_dblflt(0, 2);
+            const dblflt tempX = mul_dblflt(curDblFloatIter->x, Two);
+            const dblflt tempY = mul_dblflt(curDblFloatIter->y, Two);
+
+            DeltaSubNWX = mul_dblflt(DeltaSubNWXOrig, tempX);
+            DeltaSubNWX = sub_dblflt(DeltaSubNWX, mul_dblflt(DeltaSubNWYOrig, tempY));
             DeltaSubNWX = add_dblflt(DeltaSubNWX, mul_dblflt(mul_dblflt(s, DeltaSubNWXOrig), DeltaSubNWXOrig));
             DeltaSubNWX = sub_dblflt(DeltaSubNWX, mul_dblflt(mul_dblflt(s, DeltaSubNWYOrig), DeltaSubNWYOrig));
             DeltaSubNWX = add_dblflt(DeltaSubNWX, DeltaSub0DX);
 
-            DeltaSubNWY = mul_dblflt(DeltaSubNWXOrig, (add_dblflt(curDblFloatIter->y2, mul_dblflt(twos, DeltaSubNWYOrig))));
-            DeltaSubNWY = add_dblflt(DeltaSubNWY, mul_dblflt(DeltaSubNWYOrig, curDblFloatIter->x2));
+            DeltaSubNWY = mul_dblflt(DeltaSubNWXOrig, (add_dblflt(tempY, mul_dblflt(twos, DeltaSubNWYOrig))));
+            DeltaSubNWY = add_dblflt(DeltaSubNWY, mul_dblflt(DeltaSubNWYOrig, tempX));
             DeltaSubNWY = add_dblflt(DeltaSubNWY, DeltaSub0DY);
 
             ++RefIteration;
@@ -2285,14 +2292,14 @@ void mandel_2x_float_perturb_scaled(uint32_t* iter_matrix,
             double DeltaSubNWYOrig = dblflt_to_double(DeltaSubNWY);
 
             const double DoubleTempDeltaSubNWX =
-                DeltaSubNWXOrig * curDoubleIter->x2 -
-                DeltaSubNWYOrig * curDoubleIter->y2 +
+                DeltaSubNWXOrig * curDoubleIter->x * 2 -
+                DeltaSubNWYOrig * curDoubleIter->y * 2 +
                 S * DeltaSubNWXOrig * DeltaSubNWXOrig - S * DeltaSubNWYOrig * DeltaSubNWYOrig +
                 DeltaReal / S;
 
             const double DoubleTempDeltaSubNWY =
-                DeltaSubNWXOrig * (curDoubleIter->y2 + 2 * S * DeltaSubNWYOrig) +
-                DeltaSubNWYOrig * curDoubleIter->x2 +
+                DeltaSubNWXOrig * (curDoubleIter->y * 2 + 2 * S * DeltaSubNWYOrig) +
+                DeltaSubNWYOrig * curDoubleIter->x * 2 +
                 DeltaImaginary / S;
 
             ++RefIteration;

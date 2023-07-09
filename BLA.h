@@ -22,7 +22,7 @@ public:
 
     BLA() = default;
 
-    CUDA_CRAP BLA(T r2,
+    CUDA_CRAP constexpr BLA(T r2,
                             T RealA,
                             T ImagA,
                             T RealB,
@@ -57,5 +57,6 @@ public:
 
     CUDA_CRAP int getL() const;
     CUDA_CRAP T getR2() const;
+    CUDA_CRAP const T *getR2Addr() const;
 };
 

@@ -6,10 +6,12 @@
 
 #ifdef __CUDA_ARCH__
 #define CUDA_CRAP __device__
-static __device__ double* __restrict__ twoPowExp;
+static __device__ double* __restrict__ twoPowExpDbl;
+static __device__ float* __restrict__ twoPowExpFlt;
 #else
 #define CUDA_CRAP
-extern double* twoPowExp;
+extern double* twoPowExpDbl;
+extern float* twoPowExpFlt;
 #endif
 
 CUDA_CRAP void InitStatics();
@@ -52,6 +54,9 @@ public:
     static constexpr int MaxDoubleExponent = 1023;
     static constexpr int MinDoubleExponent = -1022;
 
+    static constexpr int MaxFloatExponent = 127;
+    static constexpr int MinFloatExponent = -126;
+
     CUDA_CRAP constexpr HDRFloat() {
         mantissa = 0.0;
         exp = MIN_BIG_EXPONENT();
@@ -88,7 +93,36 @@ public:
     //    }
     //}
 
-    CUDA_CRAP constexpr explicit HDRFloat(T number) {
+    //CUDA_CRAP constexpr int32_t internal_exponent(T x)
+    //{
+    //    return abs(x) >= 2 ? exponent(x / 2) + 1 :
+    //        abs(x) < 1 ? exponent(x * 2) - 1 : 0;
+    //}
+
+    //CUDA_CRAP constexpr T internal_scalbn(T value, int exponent)
+    //{
+    //    return exponent == 0 ? value : exponent > 0 ? scalbn(value * 2, exponent - 1) :
+    //        scalbn(value / 2, exponent + 1);
+    //}
+
+    //CUDA_CRAP constexpr unsigned internal_mantissa(T x)
+    //{
+    //    return abs(x) < std::numeric_limits<T>::infinity() ?
+    //        // remove hidden 1 and bias the exponent to get integer
+    //        internal_scalbn(internal_scalbn(abs(x), -internal_exponent(x)) - 1, 23) : 0;
+    //}
+
+    template <class To, class From, class Res = typename std::enable_if<
+        (sizeof(To) == sizeof(From)) &&
+        (alignof(To) == alignof(From)) &&
+        std::is_trivially_copyable<From>::value&&
+        std::is_trivially_copyable<To>::value,
+        To>::type>
+    CUDA_CRAP const Res& bit_cast(const From& src) noexcept {
+        return *reinterpret_cast<const To*>(&src);
+    }
+
+    CUDA_CRAP explicit HDRFloat(const T number) {
         if (number == 0) {
             mantissa = 0;
             exp = MIN_BIG_EXPONENT();
@@ -96,19 +130,21 @@ public:
         }
 
         if constexpr (std::is_same<T, double>::value) {
-            uint64_t bits = *reinterpret_cast<uint64_t*>(&number);
-            int32_t f_exp = (int32_t)((bits & 0x7FF0'0000'0000'0000UL) >> 52UL) + MIN_SMALL_EXPONENT_INT();
-            uint64_t val = (bits & 0x800F'FFFF'FFFF'FFFFL) | 0x3FF0'0000'0000'0000L;
-            T f_val = *reinterpret_cast<T*>(&val);
+            // TODO use std::bit_cast once that works in CUDA
+            const uint64_t bits = bit_cast<uint64_t>(number);
+            //constexpr uint64_t bits = __builtin_bit_cast(std::uint64_t, &number);
+            const int32_t f_exp = (int32_t)((bits & 0x7FF0'0000'0000'0000UL) >> 52UL) + MIN_SMALL_EXPONENT_INT();
+            const uint64_t val = (bits & 0x800F'FFFF'FFFF'FFFFL) | 0x3FF0'0000'0000'0000L;
+            const T f_val = bit_cast<T>(val);
 
             mantissa = f_val;
             exp = (TExp)f_exp;
         }
         else if constexpr (std::is_same<T, float>::value) {
-            uint32_t bits = *reinterpret_cast<uint32_t*>(&number);
-            int32_t f_exp = (int32_t)((bits & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
-            uint64_t val = (bits & 0x807F'FFFFL) | 0x3F80'0000L;
-            T f_val = *reinterpret_cast<T*>(&val);
+            const uint32_t bits = bit_cast<uint32_t>(number);
+            const int32_t f_exp = (int32_t)((bits & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
+            const uint32_t val = (bits & 0x807F'FFFFL) | 0x3F80'0000L;
+            const T f_val = bit_cast<T>(val);
 
             mantissa = f_val;
             exp = (TExp)f_exp;
@@ -131,9 +167,9 @@ public:
 #endif
 
     CUDA_CRAP constexpr void Reduce() {
-        if (mantissa == 0) {
-            return;
-        }
+        //if (mantissa == 0) {
+        //    return;
+        //}
 
         if constexpr (std::is_same<T, double>::value) {
             uint64_t bits = *reinterpret_cast<uint64_t*>(&mantissa);
@@ -161,7 +197,12 @@ public:
             return INFINITY;
         }
 
-        return (T)twoPowExp[(int)scaleFactor - MinDoubleExponent];
+        if constexpr (std::is_same<T, double>::value) {
+            return (T)twoPowExpDbl[(int)scaleFactor - MinDoubleExponent];
+        }
+        else {
+            return (T)twoPowExpFlt[(int)scaleFactor - MinFloatExponent];
+        }
     }
 
     CUDA_CRAP constexpr T toDouble() const
@@ -753,7 +794,7 @@ static CUDA_CRAP T HdrSqrt(const T &incoming) {
 }
 
 template<class T>
-static CUDA_CRAP T HdrAbs(const T& incoming) {
+static CUDA_CRAP constexpr T HdrAbs(const T& incoming) {
     static_assert(std::is_same<T, double>::value ||
         std::is_same<T, float>::value ||
         std::is_same<T, HDRFloat<double>>::value ||
@@ -769,7 +810,7 @@ static CUDA_CRAP T HdrAbs(const T& incoming) {
 }
 
 template<class T>
-static CUDA_CRAP void HdrReduce(T& incoming) {
+static CUDA_CRAP constexpr void HdrReduce(T& incoming) {
     if constexpr (std::is_same<T, HDRFloat<double>>::value ||
                   std::is_same<T, HDRFloat<float>>::value) {
         incoming.Reduce();

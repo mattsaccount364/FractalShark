@@ -165,7 +165,7 @@
       <AdditionalCompilerOptions>
       </AdditionalCompilerOptions>
       <Optimization>O3</Optimization>
-      <AdditionalOptions>-std=c++20 -Xcompiler "/std:c++20" %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>-std=c++20 -Xcompiler "/std:c++20"  --expt-relaxed-constexpr %(AdditionalOptions)</AdditionalOptions>
       <CodeGeneration>compute_89,sm_89</CodeGeneration>
     </CudaCompile>
     <CudaLink />

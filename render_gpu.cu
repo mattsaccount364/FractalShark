@@ -15,9 +15,12 @@
 #include "HDRFloat.h"
 
 #include <type_traits>
+#include <cuda/pipeline>
+#include <cuda_pipeline.h>
 
 #ifdef __CUDACC__
-__device__ __constant__ double twoPowExpData[2048];
+__device__ __constant__ double twoPowExpDataDbl[2048];
+__device__ __constant__ float twoPowExpDataFlt[256];
 
 #ifdef __CUDA_ARCH__
 __device__ void InitStatics()
@@ -25,16 +28,26 @@ __device__ void InitStatics()
     //LN2 = ::log(2);
     //LN2_REC = 1.0 / LN2;
 
-    twoPowExp = twoPowExpData;
+    twoPowExpDbl = twoPowExpDataDbl;
+    twoPowExpFlt = twoPowExpDataFlt;
 
     static constexpr int MaxDoubleExponent = 1023;
     static constexpr int MinDoubleExponent = -1022;
+
+    static constexpr int MaxFloatExponent = 127;
+    static constexpr int MinFloatExponent = -126;
 
     //twoPowExp.resize(MaxDoubleExponent - MinDoubleExponent + 1);
     for (int i = MinDoubleExponent; i <= MaxDoubleExponent; i++) {
         double d = scalbn(1.0, i);
         int index = i - MinDoubleExponent;
-        twoPowExp[index] = d;
+        twoPowExpDbl[index] = d;
+    }
+
+    for (int i = MinFloatExponent; i <= MaxFloatExponent; i++) {
+        float f = scalbn(1.0, i);
+        int index = i - MinFloatExponent;
+        twoPowExpFlt[index] = f;
     }
 }
 #endif
@@ -45,14 +58,13 @@ __device__ void InitStatics()
 ////////////////////////////////////////////////////////////////////////////////////////
 
 template<class T>
-CUDA_CRAP BLA<T>::BLA(T r2, T RealA, T ImagA, T RealB, T ImagB, int l) {
-    this->Ax = RealA;
-    this->Ay = ImagA;
-    this->Bx = RealB;
-    this->By = ImagB;
-    this->r2 = r2;
-    this->l = l;
-
+CUDA_CRAP constexpr BLA<T>::BLA(T r2, T RealA, T ImagA, T RealB, T ImagB, int l)
+    : Ax(RealA),
+      Ay(ImagA),
+      Bx(RealB),
+      By(ImagB),
+      r2(r2),
+      l(l) {
     HdrReduce(this->Ax);
     HdrReduce(this->Ay);
     HdrReduce(this->Bx);
@@ -135,6 +147,11 @@ CUDA_CRAP int BLA<T>::getL() const {
 template<class T>
 CUDA_CRAP T BLA<T>::getR2() const {
     return r2;
+}
+
+template<class T>
+CUDA_CRAP const T *BLA<T>::getR2Addr() const {
+    return &r2;
 }
 
 template class BLA<float>;
@@ -241,8 +258,81 @@ uint32_t GPUBLAS<T, GPUBLA_TYPE>::CheckValid() const {
     return m_Err;
 }
 
+#ifdef __CUDA_ARCH__
 template<class T, class GPUBLA_TYPE>
-CUDA_CRAP const GPUBLA_TYPE* GPUBLAS<T, GPUBLA_TYPE>::LookupBackwards(size_t m, T z2) const {
+CUDA_CRAP const GPUBLA_TYPE* GPUBLAS<T, GPUBLA_TYPE>::LookupBackwards(
+    const GPUBLA_TYPE* __restrict__ *altB,
+    //const GPUBLA_TYPE* nullBla,
+    /*T* curBR2,*/
+    size_t m,
+    T z2) const {
+
+    int32_t k = (int32_t)m - 1;
+    bool ret = (m == 0) || ((k & 1) == 1) || (k == 0 && z2 >= altB[m_FirstLevel][0].getR2());
+    if (ret) {
+        return nullptr;
+        //return nullBla;
+    }
+
+    const GPUBLA_TYPE* __restrict__ tempB = nullptr;
+    uint32_t zeros;
+    uint32_t ix;
+    //uint32_t ixcopy;
+    float v = (float)(k & -k);
+    uint32_t bits = *reinterpret_cast<const uint32_t * __restrict__>(&v);
+    zeros = (bits >> 23) - 0x7f;
+    ix = k >> zeros;
+    //ixcopy = ix;
+
+    int32_t startLevel = ((zeros <= m_LM2) ? zeros : m_LM2);
+
+    //for (int32_t level = startLevel; level >= m_FirstLevel; --level) {
+    //    __pipeline_memcpy_async(
+    //        &curBR2[level],
+    //        altB[level][ix].getR2Addr(),
+    //        sizeof(T),
+    //        0);
+    //    ix = ix << 1;
+    //}
+    //__pipeline_commit();
+
+    //ix = ixcopy;
+
+    //__pipeline_wait_prior(0);
+
+    for (int32_t level = startLevel; level >= m_FirstLevel; --level) {
+        if (z2 < (tempB = &altB[level][ix])->getR2()) {
+        //if (z2 < curBR2[level]) {
+            return tempB;
+        }
+        ix = ix << 1;
+    }
+    return nullptr;
+    //return nullBla;
+
+    //GPUBLA_TYPE* __restrict__ tempB = nullptr;
+    //uint32_t zeros;
+    //uint32_t ix;
+    //float v = (float)(k & -k);
+    //uint32_t bits = *reinterpret_cast<const uint32_t * __restrict__>(&v);
+    //zeros = (bits >> 23) - 0x7f;
+    //ix = k >> zeros;
+    //int32_t startLevel = ((zeros <= m_LM2) ? zeros : m_LM2);
+    //ix = ix << (startLevel - m_FirstLevel);
+    //for (int32_t level = m_FirstLevel; level <= startLevel; level++) {
+    //    tempB = (z2 < m_B[level][ix].getR2()) ? &m_B[level][ix] : tempB;
+    //    ix = ix >> 1;
+    //}
+    //return tempB;
+}
+#endif
+
+template<class T, class GPUBLA_TYPE>
+CUDA_CRAP const GPUBLA_TYPE* GPUBLAS<T, GPUBLA_TYPE>::LookupBackwards(
+    size_t m,
+    T z2) const {
+
+    // Compatible version don't touch
 
     int32_t k = (int32_t)m - 1;
     bool ret = (m == 0) || ((k & 1) == 1) || (k == 0 && z2 >= m_B[m_FirstLevel][0].getR2());
@@ -266,21 +356,6 @@ CUDA_CRAP const GPUBLA_TYPE* GPUBLAS<T, GPUBLA_TYPE>::LookupBackwards(size_t m, 
         ix = ix << 1;
     }
     return nullptr;
-
-    //GPUBLA_TYPE* __restrict__ tempB = nullptr;
-    //uint32_t zeros;
-    //uint32_t ix;
-    //float v = (float)(k & -k);
-    //uint32_t bits = *reinterpret_cast<const uint32_t * __restrict__>(&v);
-    //zeros = (bits >> 23) - 0x7f;
-    //ix = k >> zeros;
-    //int32_t startLevel = ((zeros <= m_LM2) ? zeros : m_LM2);
-    //ix = ix << (startLevel - m_FirstLevel);
-    //for (int32_t level = m_FirstLevel; level <= startLevel; level++) {
-    //    tempB = (z2 < m_B[level][ix].getR2()) ? &m_B[level][ix] : tempB;
-    //    ix = ix >> 1;
-    //}
-    //return tempB;
 }
 
 
@@ -826,6 +901,17 @@ void mandel_1x_double_perturb(uint32_t* iter_matrix,
 }
 
 __global__
+void mandel_1xHDR_InitStatics()
+{
+    if (blockIdx.x == 0 &&
+        threadIdx.x == 0 &&
+        blockIdx.y == 0 &&
+        threadIdx.y == 0) {
+        InitStatics();
+    }
+}
+
+__global__
 void mandel_1x_double_perturb_bla(uint32_t* iter_matrix,
     MattPerturbSingleResults<double> PerturbDouble,
     GPUBLAS<double, BLA<double>> doubleBlas,
@@ -939,15 +1025,40 @@ void mandel_1x_double_perturb_bla(uint32_t* iter_matrix,
     iter_matrix[idx] = (uint32_t)iter;
 }
 
-__global__
-void mandel_1xHDR_InitStatics()
+template<class HDRFloatType>
+struct SharedMemStruct {
+    using GPUBLA_TYPE = BLA<HDRFloatType>;
+    const GPUBLA_TYPE* __restrict__ altB[32];
+    //GPUBLA_TYPE nullBla;
+    //struct {
+    //    //HDRFloatType curBR2[16];
+    //    //MattReferenceSingleIter<HDRFloatType> CurResult;
+    //    //HDRFloatType NextX1;
+    //    //HDRFloatType NextY1;
+    //} PerThread[NB_THREADS_W][NB_THREADS_H];
+};
+
+#define DEVICE_STATIC_INTRINSIC_QUALIFIERS  static __device__ __forceinline__
+
+#if (defined(_MSC_VER) && defined(_WIN64)) || defined(__LP64__)
+#define PXL_GLOBAL_PTR   "l"
+#else
+#define PXL_GLOBAL_PTR   "r"
+#endif
+
+DEVICE_STATIC_INTRINSIC_QUALIFIERS void __prefetch_global_l1(const void* const ptr)
 {
-    if (blockIdx.x == 0 &&
-        threadIdx.x == 0 &&
-        blockIdx.y == 0 &&
-        threadIdx.y == 0) {
-        InitStatics();
-    }
+    asm("prefetch.global.L1 [%0];" : : PXL_GLOBAL_PTR(ptr));
+}
+
+DEVICE_STATIC_INTRINSIC_QUALIFIERS void __prefetch_global_uniform(const void* const ptr)
+{
+    asm("prefetchu.L1 [%0];" : : PXL_GLOBAL_PTR(ptr));
+}
+
+DEVICE_STATIC_INTRINSIC_QUALIFIERS void __prefetch_global_l2(const void* const ptr)
+{
+    asm("prefetch.global.L2 [%0];" : : PXL_GLOBAL_PTR(ptr));
 }
 
 template<class HDRFloatType>
@@ -978,48 +1089,168 @@ void mandel_1xHDR_float_perturb_bla(uint32_t* iter_matrix,
         return;
     }
 
+    using GPUBLA_TYPE = BLA<HDRFloatType>;
+    char __shared__ SharedMem[sizeof(SharedMemStruct<HDRFloatType>)];
+    auto* shared =
+        reinterpret_cast<SharedMemStruct<HDRFloatType>*>(SharedMem);
+
+    if (threadIdx.x == 0 && threadIdx.y == 0) {
+        size_t NumElts;
+        GPUBLA_TYPE**elts = blas.GetB(NumElts);
+
+        for (size_t i = 0; i < NumElts; i++) {
+            shared->altB[i] = elts[i];
+        }
+
+        //const GPUBLA_TYPE nullBla{
+        //    HDRFloatType(),
+        //    HDRFloatType(1.0f),
+        //    HDRFloatType(),
+        //    HDRFloatType(),
+        //    HDRFloatType(),
+        //    0 };
+        //shared->nullBla = nullBla;
+    }
+
+    __syncthreads();
+
     HdrReduce(centerX);
     HdrReduce(centerY);
 
     size_t iter = 0;
     size_t RefIteration = 0;
-    HDRFloatType DeltaReal = dx * X - centerX;
-    HDRFloatType DeltaImaginary = -dy * Y - centerY;
+    const HDRFloatType DeltaReal = dx * X - centerX;
+    const HDRFloatType DeltaImaginary = -dy * Y - centerY;
 
-    HDRFloatType DeltaSub0X = DeltaReal;
-    HDRFloatType DeltaSub0Y = DeltaImaginary;
+    const HDRFloatType DeltaSub0X = DeltaReal;
+    const HDRFloatType DeltaSub0Y = DeltaImaginary;
     HDRFloatType DeltaSubNX = HDRFloatType(0);
     HDRFloatType DeltaSubNY = HDRFloatType(0);
     HDRFloatType DeltaNormSquared = HDRFloatType(0);
-    HDRFloatType TwoFiftySix = HDRFloatType(256);
+    const HDRFloatType TwoFiftySix = HDRFloatType(256);
 
     while (iter < n_iterations) {
         const BLA<HDRFloatType>* b = nullptr;
-        while ((b = blas.LookupBackwards(RefIteration, DeltaNormSquared)) != nullptr) {
-            int l = b->getL();
+
+        for (;;) {
+            b = blas.LookupBackwards(
+                shared->altB,
+                /*shared->PerThread[threadIdx.x][threadIdx.y].curBR2,*/
+                //&shared->nullBla,
+                RefIteration,
+                DeltaNormSquared);
+            if (b == nullptr) {
+                break;
+            }
+
+            const int l = b->getL();
 
             // TODO this first RefIteration + l check bugs me
-            if ((RefIteration + l >= Perturb.size) ||
-                (iter + l >= n_iterations)) {
+            bool res1 = (RefIteration + l >= Perturb.size);
+            bool res2 = (iter + l >= n_iterations);
+            bool res3 = l == 0;
+            if ((res3 || res1 || res2) == false) {
+                iter += l;
+                RefIteration += l;
+
+                b->getValue(DeltaSubNX, DeltaSubNY, DeltaSub0X, DeltaSub0Y);
+
+                if (/*normSquared < DeltaNormSquared ||*/
+                    RefIteration < Perturb.size - 1) {
+
+                    DeltaNormSquared = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
+                    HdrReduce(DeltaNormSquared);
+                }
+                else {
+                    //__pipeline_memcpy_async(
+                    //    &shared->PerThread[threadIdx.x][threadIdx.y].CurResult.x,
+                    //    &Perturb.iters[RefIteration].x,
+                    //    sizeof(Perturb.iters[RefIteration].x),
+                    //    0);
+                    //__pipeline_memcpy_async(
+                    //    &shared->PerThread[threadIdx.x][threadIdx.y].CurResult.y,
+                    //    &Perturb.iters[RefIteration].y,
+                    //    sizeof(Perturb.iters[RefIteration].y),
+                    //    0);
+                    //__pipeline_commit();
+                    //__pipeline_wait_prior(0);
+
+                    //HDRFloatType tempZX = shared->PerThread[threadIdx.x][threadIdx.y].CurResult.x + DeltaSubNX;
+                    //HDRFloatType tempZY = shared->PerThread[threadIdx.x][threadIdx.y].CurResult.y + DeltaSubNY;
+                    HDRFloatType tempZX = Perturb.iters[RefIteration].x + DeltaSubNX;
+                    HDRFloatType tempZY = Perturb.iters[RefIteration].y + DeltaSubNY;
+
+                    DeltaSubNX = tempZX;
+                    DeltaSubNY = tempZY;
+
+                    DeltaNormSquared = tempZX.square_mutable() + tempZY.square_mutable();
+                    HdrReduce(DeltaNormSquared);
+                    RefIteration = 0;
+                    break;
+                }
+            }
+            else {
                 break;
             }
+        }
 
-            iter += l;
-            RefIteration += l;
+        //auto* next1X = &shared->PerThread[threadIdx.x][threadIdx.y].NextX1;
+        //auto* next1Y = &shared->PerThread[threadIdx.x][threadIdx.y].NextY1;
+        //__pipeline_memcpy_async(
+        //    next1X,
+        //    &Perturb.iters[RefIteration + 1].x,
+        //    sizeof(Perturb.iters[RefIteration + 1].x),
+        //    0);
+        //__pipeline_memcpy_async(
+        //    next1Y,
+        //    &Perturb.iters[RefIteration + 1].y,
+        //    sizeof(Perturb.iters[RefIteration + 1].y),
+        //    0);
+        //__pipeline_commit();
 
-            b->getValue(DeltaSubNX, DeltaSubNY, DeltaSub0X, DeltaSub0Y);
+        const HDRFloatType DeltaSubNXOrig = DeltaSubNX;
+        const HDRFloatType DeltaSubNYOrig = DeltaSubNY;
 
-            HDRFloatType tempZX = Perturb.iters[RefIteration].x + DeltaSubNX;
-            HDRFloatType tempZY = Perturb.iters[RefIteration].y + DeltaSubNY;
-            HDRFloatType normSquared = tempZX * tempZX + tempZY * tempZY;
-            HdrReduce(normSquared);
+        //__prefetch_global_l2(&Perturb.iters[RefIteration + 1].x);
+        //__prefetch_global_l2(&Perturb.iters[RefIteration + 1].y);
 
+        const auto tempMulX2 = Perturb.iters[RefIteration].x * 2;
+        const auto tempMulY2 = Perturb.iters[RefIteration].y * 2;
+
+        ++RefIteration;
+
+        //if (RefIteration >= Perturb.size) {
+        //    // TODO this first RefIteration + l check bugs me
+        //    iter = 255;
+        //    break;
+        //}
+
+        const auto tempSum1 = (tempMulY2 + DeltaSubNYOrig);
+        const auto tempSum2 = (tempMulX2 + DeltaSubNXOrig);
+
+        DeltaSubNX = DeltaSubNXOrig * tempSum2 -
+            DeltaSubNYOrig * tempSum1 +
+            DeltaSub0X;
+        HdrReduce(DeltaSubNX);
+
+        DeltaSubNY = DeltaSubNXOrig * tempSum1 +
+            DeltaSubNYOrig * tempSum2 +
+            DeltaSub0Y;
+        HdrReduce(DeltaSubNY);
+
+        //__pipeline_wait_prior(0);
+
+        const auto tempVal1X = Perturb.iters[RefIteration].x;
+        const auto tempVal1Y = Perturb.iters[RefIteration].y;
+
+        const HDRFloatType tempZX = tempVal1X + DeltaSubNX;
+        const HDRFloatType tempZY = tempVal1Y + DeltaSubNY;
+        HDRFloatType normSquared = tempZX * tempZX + tempZY * tempZY;
+        HdrReduce(normSquared);
+
+        if (normSquared <= TwoFiftySix && iter < n_iterations) {
             DeltaNormSquared = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
             HdrReduce(DeltaNormSquared);
-
-            if (normSquared > TwoFiftySix) {
-                break;
-            }
 
             if (normSquared < DeltaNormSquared ||
                 RefIteration >= Perturb.size - 1) {
@@ -1028,49 +1259,12 @@ void mandel_1xHDR_float_perturb_bla(uint32_t* iter_matrix,
                 DeltaNormSquared = normSquared;
                 RefIteration = 0;
             }
+
+            ++iter;
         }
-
-        HDRFloatType DeltaSubNXOrig = DeltaSubNX;
-        HDRFloatType DeltaSubNYOrig = DeltaSubNY;
-
-        DeltaSubNX = DeltaSubNXOrig * (Perturb.iters[RefIteration].x * 2 + DeltaSubNXOrig) -
-            DeltaSubNYOrig * (Perturb.iters[RefIteration].y * 2 + DeltaSubNYOrig) +
-            DeltaSub0X;
-        HdrReduce(DeltaSubNX);
-
-        DeltaSubNY = DeltaSubNXOrig * (Perturb.iters[RefIteration].y * 2 + DeltaSubNYOrig) +
-            DeltaSubNYOrig * (Perturb.iters[RefIteration].x * 2 + DeltaSubNXOrig) +
-            DeltaSub0Y;
-        HdrReduce(DeltaSubNY);
-
-        ++RefIteration;
-        if (RefIteration >= Perturb.size) {
-            // TODO this first RefIteration + l check bugs me
-            iter = 255;
+        else {
             break;
         }
-
-        HDRFloatType tempZX = Perturb.iters[RefIteration].x + DeltaSubNX;
-        HDRFloatType tempZY = Perturb.iters[RefIteration].y + DeltaSubNY;
-        HDRFloatType normSquared = tempZX * tempZX + tempZY * tempZY;
-        HdrReduce(normSquared);
-
-        DeltaNormSquared = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
-        HdrReduce(DeltaNormSquared);
-
-        if (normSquared > TwoFiftySix || iter >= n_iterations) {
-            break;
-        }
-
-        if (normSquared < DeltaNormSquared ||
-            RefIteration >= Perturb.size - 1) {
-            DeltaSubNX = tempZX;
-            DeltaSubNY = tempZY;
-            DeltaNormSquared = normSquared;
-            RefIteration = 0;
-        }
-
-        ++iter;
     }
 
     iter_matrix[idx] = (uint32_t)iter;

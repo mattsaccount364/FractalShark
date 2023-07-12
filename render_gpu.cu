@@ -163,18 +163,12 @@ template class BLA<HDRFloat<double>>;
 // Bilinear approximation.  GPU copy.
 ////////////////////////////////////////////////////////////////////////////////////////
 
-template<class T, class GPUBLA_TYPE>
-GPUBLAS<T, GPUBLA_TYPE>::GPUBLAS(const std::vector<std::vector<GPUBLA_TYPE>>& B,
-    int32_t LM2,
-    size_t FirstLevel)
+template<class T, class GPUBLA_TYPE, int32_t LM2>
+GPUBLAS<T, GPUBLA_TYPE, LM2>::GPUBLAS(const std::vector<std::vector<GPUBLA_TYPE>>& B)
     : m_ElementsPerLevel(nullptr),
-    m_NumLevels(0),
     m_B(nullptr),
-    m_LM2(LM2),
     m_Err(),
     m_Owned(true) {
-
-    m_NumLevels = B.size();
 
     GPUBLA_TYPE** tempB;
     m_Err = cudaMallocManaged(&tempB, m_NumLevels * sizeof(GPUBLA_TYPE*), cudaMemAttachGlobal);
@@ -213,8 +207,8 @@ GPUBLAS<T, GPUBLA_TYPE>::GPUBLAS(const std::vector<std::vector<GPUBLA_TYPE>>& B,
     }
 }
 
-template<class T, class GPUBLA_TYPE>
-GPUBLAS<T, GPUBLA_TYPE>::~GPUBLAS() {
+template<class T, class GPUBLA_TYPE, int32_t LM2>
+GPUBLAS<T, GPUBLA_TYPE, LM2>::~GPUBLAS() {
     if (m_Owned) {
         if (m_ElementsPerLevel != nullptr) {
             cudaFree(m_ElementsPerLevel);
@@ -233,32 +227,27 @@ GPUBLAS<T, GPUBLA_TYPE>::~GPUBLAS() {
     }
 }
 
-template<class T, class GPUBLA_TYPE>
-GPUBLAS<T, GPUBLA_TYPE>::GPUBLAS(const GPUBLAS& other) {
+template<class T, class GPUBLA_TYPE, int32_t LM2>
+GPUBLAS<T, GPUBLA_TYPE, LM2>::GPUBLAS(const GPUBLAS& other) : m_Owned(false) {
     if (this == &other) {
         return;
     }
 
     m_ElementsPerLevel = other.m_ElementsPerLevel;
-    m_NumLevels = other.m_NumLevels;
     m_B = other.m_B;
     //for (size_t i = 0; i < m_NumLevels; i++) {
     //    m_B[i] = other.m_B[i];
     //}
-
-    m_LM2 = other.m_LM2;
-
-    m_Owned = false;
 }
 
-template<class T, class GPUBLA_TYPE>
-uint32_t GPUBLAS<T, GPUBLA_TYPE>::CheckValid() const {
+template<class T, class GPUBLA_TYPE, int32_t LM2>
+uint32_t GPUBLAS<T, GPUBLA_TYPE, LM2>::CheckValid() const {
     return m_Err;
 }
 
 #ifdef __CUDA_ARCH__
-template<class T, class GPUBLA_TYPE>
-CUDA_CRAP const GPUBLA_TYPE* GPUBLAS<T, GPUBLA_TYPE>::LookupBackwards(
+template<class T, class GPUBLA_TYPE, int32_t LM2>
+CUDA_CRAP const GPUBLA_TYPE* GPUBLAS<T, GPUBLA_TYPE, LM2>::LookupBackwards(
     const GPUBLA_TYPE* __restrict__ *altB,
     //const GPUBLA_TYPE* __restrict__ nullBla,
     /*T* curBR2,*/
@@ -276,7 +265,7 @@ CUDA_CRAP const GPUBLA_TYPE* GPUBLAS<T, GPUBLA_TYPE>::LookupBackwards(
     ix = k >> zeros;
     //ixcopy = ix;
 
-    int32_t startLevel = ((zeros <= m_LM2) ? zeros : m_LM2);
+    int32_t startLevel = ((zeros <= LM2) ? zeros : LM2);
 
     //for (int32_t level = startLevel; level >= m_FirstLevel; --level) {
     //    __pipeline_memcpy_async(
@@ -319,8 +308,8 @@ CUDA_CRAP const GPUBLA_TYPE* GPUBLAS<T, GPUBLA_TYPE>::LookupBackwards(
 }
 #endif
 
-template<class T, class GPUBLA_TYPE>
-CUDA_CRAP const GPUBLA_TYPE* GPUBLAS<T, GPUBLA_TYPE>::LookupBackwards(
+template<class T, class GPUBLA_TYPE, int32_t LM2>
+CUDA_CRAP const GPUBLA_TYPE* GPUBLAS<T, GPUBLA_TYPE, LM2>::LookupBackwards(
     size_t m,
     T z2) const {
 
@@ -340,7 +329,7 @@ CUDA_CRAP const GPUBLA_TYPE* GPUBLAS<T, GPUBLA_TYPE>::LookupBackwards(
     zeros = (bits >> 23) - 0x7f;
     ix = k >> zeros;
 
-    int32_t startLevel = ((zeros <= m_LM2) ? zeros : m_LM2);
+    int32_t startLevel = ((zeros <= LM2) ? zeros : LM2);
     for (int32_t level = startLevel; level >= m_FirstLevel; --level) {
         if (z2 < (tempB = &m_B[level][ix])->getR2()) {
             return tempB;
@@ -350,11 +339,10 @@ CUDA_CRAP const GPUBLA_TYPE* GPUBLAS<T, GPUBLA_TYPE>::LookupBackwards(
     return nullptr;
 }
 
-
-template class GPUBLAS<float, BLA<double>>;
-template class GPUBLAS<double, BLA<double>>;
-template class GPUBLAS<HDRFloat<double>, BLA<HDRFloat<double>>>;
-template class GPUBLAS<HDRFloat<float>, BLA<HDRFloat<float>>>;
+//template class GPUBLAS<float, BLA<double>, 1>;
+//template class GPUBLAS<double, BLA<double>, 1>;
+//template class GPUBLAS<HDRFloat<double>, BLA<HDRFloat<double>>, 1>;
+//template class GPUBLAS<HDRFloat<float>, BLA<HDRFloat<float>>, 1>;
 
 
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -903,10 +891,11 @@ void mandel_1xHDR_InitStatics()
     }
 }
 
+template<int32_t LM2>
 __global__
 void mandel_1x_double_perturb_bla(uint32_t* iter_matrix,
     MattPerturbSingleResults<double> PerturbDouble,
-    GPUBLAS<double, BLA<double>> doubleBlas,
+    GPUBLAS<double, BLA<double>, LM2> doubleBlas,
     int width,
     int height,
     double cx,
@@ -1053,11 +1042,11 @@ DEVICE_STATIC_INTRINSIC_QUALIFIERS void __prefetch_global_l2(const void* const p
     asm("prefetch.global.L2 [%0];" : : PXL_GLOBAL_PTR(ptr));
 }
 
-template<class HDRFloatType>
+template<class HDRFloatType, int32_t LM2>
 __global__
 void mandel_1xHDR_float_perturb_bla(uint32_t* iter_matrix,
     MattPerturbSingleResults<HDRFloatType> Perturb,
-    GPUBLAS<HDRFloatType, BLA<HDRFloatType>> blas,
+    GPUBLAS<HDRFloatType, BLA<HDRFloatType>, LM2> blas,
     int width,
     int height,
     const HDRFloatType cx,
@@ -1087,10 +1076,9 @@ void mandel_1xHDR_float_perturb_bla(uint32_t* iter_matrix,
         reinterpret_cast<SharedMemStruct<HDRFloatType>*>(SharedMem);
 
     if (threadIdx.x == 0 && threadIdx.y == 0) {
-        size_t NumElts;
-        GPUBLA_TYPE**elts = blas.GetB(NumElts);
+        GPUBLA_TYPE**elts = blas.GetB();
 
-        for (size_t i = 0; i < NumElts; i++) {
+        for (size_t i = 0; i < blas.m_NumLevels; i++) {
             shared->altB[i] = elts[i];
         }
 
@@ -2043,11 +2031,12 @@ void mandel_1x_float_perturb_scaled(uint32_t* iter_matrix,
     iter_matrix[idx] = (uint32_t)iter;
 }
 
+template<int32_t LM2>
 __global__
 void mandel_1x_float_perturb_scaled_bla(uint32_t* iter_matrix,
     MattPerturbSingleResults<float> PerturbFloat,
     MattPerturbSingleResults<double> PerturbDouble,
-    GPUBLAS<double, BLA<double>> doubleBlas,
+    GPUBLAS<double, BLA<double>, LM2> doubleBlas,
     int width,
     int height,
     double cx,
@@ -2869,13 +2858,14 @@ uint32_t GPURenderer::RenderPerturbBLA(
             return result;
         }
 
-        GPUBLAS<double, BLA<double>> gpu_blas(blas->m_B, blas->m_LM2, blas->m_FirstLevel);
+        // blas->m_LM2
+        GPUBLAS<double, BLA<double>, 1> gpu_blas(blas->m_B);
         result = gpu_blas.CheckValid();
         if (result != 0) {
             return result;
         }
 
-        mandel_1x_double_perturb_bla << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
+        mandel_1x_double_perturb_bla<1> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
             cudaResults,
             gpu_blas,
             local_width, local_height, cx.doubleOnly, cy.doubleOnly, dx.doubleOnly, dy.doubleOnly,
@@ -2983,13 +2973,14 @@ uint32_t GPURenderer::RenderPerturbBLA(
         }
     } else if (algorithm == RenderAlgorithm::Gpu1x32PerturbedScaledBLA) {
         if constexpr (std::is_same<T, double>::value) {
-            GPUBLAS<double, BLA<double>> doubleGpuBlas(blas->m_B, blas->m_LM2, blas->m_FirstLevel);
+            // blas->m_LM2
+            GPUBLAS<double, BLA<double>, 1> doubleGpuBlas(blas->m_B);
             result = doubleGpuBlas.CheckValid();
             if (result != 0) {
                 return result;
             }
 
-            mandel_1x_float_perturb_scaled_bla << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
+            mandel_1x_float_perturb_scaled_bla<1> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
                 cudaResults, cudaResultsDouble, doubleGpuBlas,
                 local_width, local_height, cx.doubleOnly, cy.doubleOnly, dx.doubleOnly, dy.doubleOnly,
                 centerX.doubleOnly, centerY.doubleOnly,
@@ -3122,26 +3113,63 @@ uint32_t GPURenderer::RenderPerturbBLA(
             return result;
         }
 
-        GPUBLAS<HDRFloat<float>, BLA<HDRFloat<float>>> gpu_blas(
-            blas->m_B,
-            blas->m_LM2,
-            blas->m_FirstLevel);
-        result = gpu_blas.CheckValid();
-        if (result != 0) {
-            return result;
+        // blas->m_LM2
+
+        auto Run = [&]<int32_t LM2>() -> uint32_t {
+            GPUBLAS<HDRFloat<float>, BLA<HDRFloat<float>>, LM2> gpu_blas(blas->m_B);
+            result = gpu_blas.CheckValid();
+            if (result != 0) {
+                return result;
+            }
+
+            mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
+
+            mandel_1xHDR_float_perturb_bla<HDRFloat<float>, LM2> << <nb_blocks, threads_per_block >> > (
+                iter_matrix_cu,
+                cudaResults,
+                gpu_blas,
+                local_width, local_height, cx.hdrflt, cy.hdrflt, dx.hdrflt, dy.hdrflt,
+                centerX.hdrflt, centerY.hdrflt,
+                n_iterations);
+
+            return ExtractIters(buffer);
+        };
+
+        switch (blas->m_LM2) {
+        case  0: result = Run.template operator()<0>(); break;
+        case  1: result = Run.template operator()<1>(); break;
+        case  2: result = Run.template operator()<2>(); break;
+        case  3: result = Run.template operator()<3>(); break;
+        case  4: result = Run.template operator()<4>(); break;
+        case  5: result = Run.template operator()<5>(); break;
+        case  6: result = Run.template operator()<6>(); break;
+        case  7: result = Run.template operator()<7>(); break;
+        case  8: result = Run.template operator()<8>(); break;
+        case  9: result = Run.template operator()<9>(); break;
+        case 10: result = Run.template operator()<10>(); break;
+        case 11: result = Run.template operator()<11>(); break;
+        case 12: result = Run.template operator()<12>(); break;
+        case 13: result = Run.template operator()<13>(); break;
+        case 14: result = Run.template operator()<14>(); break;
+        case 15: result = Run.template operator()<15>(); break;
+        case 16: result = Run.template operator()<16>(); break;
+        case 17: result = Run.template operator()<17>(); break;
+        case 18: result = Run.template operator()<18>(); break;
+        case 19: result = Run.template operator()<19>(); break;
+        case 20: result = Run.template operator()<20>(); break;
+        case 21: result = Run.template operator()<21>(); break;
+        case 22: result = Run.template operator()<22>(); break;
+        case 23: result = Run.template operator()<23>(); break;
+        case 24: result = Run.template operator()<24>(); break;
+        case 25: result = Run.template operator()<25>(); break;
+        case 26: result = Run.template operator()<26>(); break;
+        case 27: result = Run.template operator()<27>(); break;
+        case 28: result = Run.template operator()<28>(); break;
+        case 29: result = Run.template operator()<29>(); break;
+        case 30: result = Run.template operator()<30>(); break;
+        case 31: result = Run.template operator()<31>(); break;
+        default: break;
         }
-
-        mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
-
-        mandel_1xHDR_float_perturb_bla<HDRFloat<float>> << <nb_blocks, threads_per_block >> > (
-            iter_matrix_cu,
-            cudaResults,
-            gpu_blas,
-            local_width, local_height, cx.hdrflt, cy.hdrflt, dx.hdrflt, dy.hdrflt,
-            centerX.hdrflt, centerY.hdrflt,
-            n_iterations);
-
-        result = ExtractIters(buffer);
     }
 
     return result;
@@ -3180,7 +3208,8 @@ uint32_t GPURenderer::RenderPerturbBLA(
             return result;
         }
 
-        GPUBLAS<HDRFloat<double>, BLA<HDRFloat<double>>> gpu_blas(blas->m_B, blas->m_LM2, blas->m_FirstLevel);
+        // blas->m_LM2
+        GPUBLAS<HDRFloat<double>, BLA<HDRFloat<double>>, 1> gpu_blas(blas->m_B);
         result = gpu_blas.CheckValid();
         if (result != 0) {
             return result;
@@ -3188,7 +3217,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
 
         mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
 
-        mandel_1xHDR_float_perturb_bla<HDRFloat<double>> << <nb_blocks, threads_per_block >> > (
+        mandel_1xHDR_float_perturb_bla<HDRFloat<double>, 1> << <nb_blocks, threads_per_block >> > (
             iter_matrix_cu,
             cudaResults,
             gpu_blas,

@@ -6,12 +6,10 @@
 template<class T>
 class BLAS;
 
-template<class T, class GPUBLA_TYPE>
+template<class T, class GPUBLA_TYPE, int32_t LM2>
 class GPUBLAS {
 public:
-    GPUBLAS(const std::vector<std::vector<GPUBLA_TYPE>>& B,
-        int32_t LM2,
-        size_t FirstLevel);
+    GPUBLAS(const std::vector<std::vector<GPUBLA_TYPE>>& B);
     ~GPUBLAS();
 
     GPUBLAS(const GPUBLAS& other);
@@ -35,23 +33,21 @@ public:
         size_t m,
         T z2) const;
 
-    CUDA_CRAP GPUBLA_TYPE** GetB(size_t &NumLevels) const {
-        NumLevels = m_NumLevels;
+    static constexpr size_t m_NumLevels = LM2 + 2;
+
+    CUDA_CRAP GPUBLA_TYPE** GetB() const {
         return m_B;
     }
 
 protected:
     size_t* __restrict__ m_ElementsPerLevel;
 
-    size_t m_NumLevels;
     GPUBLA_TYPE** m_B;
-
-    uint32_t m_LM2;//Level -1 is not attainable due to Zero R
 
     static constexpr size_t BLA_STARTING_LEVEL = 3;
     static constexpr size_t m_FirstLevel = BLA_STARTING_LEVEL - 1;
 
     cudaError_t m_Err;
 
-    bool m_Owned;
+    const bool m_Owned;
 };

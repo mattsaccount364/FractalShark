@@ -192,13 +192,21 @@ GPUBLAS<T, GPUBLA_TYPE, LM2>::GPUBLAS(const std::vector<std::vector<GPUBLA_TYPE>
         m_ElementsPerLevel[i] = B[i].size();
     }
 
-    for (size_t i = 0; i < B.size(); i++) {
-        m_Err = cudaMalloc(&m_B[i],
-            sizeof(GPUBLA_TYPE) * m_ElementsPerLevel[i]);
+    size_t total = 0;
 
-        if (m_Err != cudaSuccess) {
-            return;
-        }
+    for (size_t i = 0; i < B.size(); i++) {
+        total += sizeof(GPUBLA_TYPE) * m_ElementsPerLevel[i];
+    }
+
+    m_Err = cudaMalloc(&m_BMem, total);
+    if (m_Err != cudaSuccess) {
+        return;
+    }
+
+    size_t curTotal = 0;
+    for (size_t i = 0; i < B.size(); i++) {
+        m_B[i] = &m_BMem[curTotal];
+        curTotal += m_ElementsPerLevel[i];
 
         cudaMemcpy(m_B[i],
             B[i].data(),
@@ -215,9 +223,9 @@ GPUBLAS<T, GPUBLA_TYPE, LM2>::~GPUBLAS() {
             m_ElementsPerLevel = nullptr;
         }
 
-        for (size_t i = 0; i < m_NumLevels; i++) {
-            cudaFree(m_B[i]);
-            m_B[i] = nullptr;
+        if (m_BMem != nullptr) {
+            cudaFree(m_BMem);
+            m_BMem = nullptr;
         }
 
         if (m_B != nullptr) {
@@ -234,6 +242,7 @@ GPUBLAS<T, GPUBLA_TYPE, LM2>::GPUBLAS(const GPUBLAS& other) : m_Owned(false) {
     }
 
     m_ElementsPerLevel = other.m_ElementsPerLevel;
+    m_BMem = other.m_BMem;
     m_B = other.m_B;
     //for (size_t i = 0; i < m_NumLevels; i++) {
     //    m_B[i] = other.m_B[i];
@@ -265,7 +274,7 @@ CUDA_CRAP const GPUBLA_TYPE* GPUBLAS<T, GPUBLA_TYPE, LM2>::LookupBackwards(
     ix = k >> zeros;
     //ixcopy = ix;
 
-    int32_t startLevel = ((zeros <= LM2) ? zeros : LM2);
+    int32_t startLevel = ((zeros < LM2) ? zeros : LM2);
 
     //for (int32_t level = startLevel; level >= m_FirstLevel; --level) {
     //    __pipeline_memcpy_async(

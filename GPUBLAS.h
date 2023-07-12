@@ -42,6 +42,7 @@ public:
 protected:
     size_t* __restrict__ m_ElementsPerLevel;
 
+    GPUBLA_TYPE* m_BMem;
     GPUBLA_TYPE** m_B;
 
     static constexpr size_t BLA_STARTING_LEVEL = 3;

@@ -40,8 +40,6 @@ public:
     }
 
 protected:
-    size_t* __restrict__ m_ElementsPerLevel;
-
     GPUBLA_TYPE* m_BMem;
     GPUBLA_TYPE** m_B;
 

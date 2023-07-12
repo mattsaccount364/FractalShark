@@ -165,10 +165,9 @@ template class BLA<HDRFloat<double>>;
 
 template<class T, class GPUBLA_TYPE, int32_t LM2>
 GPUBLAS<T, GPUBLA_TYPE, LM2>::GPUBLAS(const std::vector<std::vector<GPUBLA_TYPE>>& B)
-    : m_ElementsPerLevel(nullptr),
-    m_B(nullptr),
-    m_Err(),
-    m_Owned(true) {
+    : m_B(nullptr),
+      m_Err(),
+      m_Owned(true) {
 
     GPUBLA_TYPE** tempB;
     m_Err = cudaMallocManaged(&tempB, m_NumLevels * sizeof(GPUBLA_TYPE*), cudaMemAttachGlobal);
@@ -187,15 +186,10 @@ GPUBLAS<T, GPUBLA_TYPE, LM2>::GPUBLAS(const std::vector<std::vector<GPUBLA_TYPE>
         return;
     }
 
-    m_ElementsPerLevel = elementsPerLevel;
-    for (size_t i = 0; i < B.size(); i++) {
-        m_ElementsPerLevel[i] = B[i].size();
-    }
-
     size_t total = 0;
 
     for (size_t i = 0; i < B.size(); i++) {
-        total += sizeof(GPUBLA_TYPE) * m_ElementsPerLevel[i];
+        total += sizeof(GPUBLA_TYPE) * B[i].size();
     }
 
     m_Err = cudaMalloc(&m_BMem, total);
@@ -206,11 +200,11 @@ GPUBLAS<T, GPUBLA_TYPE, LM2>::GPUBLAS(const std::vector<std::vector<GPUBLA_TYPE>
     size_t curTotal = 0;
     for (size_t i = 0; i < B.size(); i++) {
         m_B[i] = &m_BMem[curTotal];
-        curTotal += m_ElementsPerLevel[i];
+        curTotal += B[i].size();
 
         cudaMemcpy(m_B[i],
             B[i].data(),
-            sizeof(GPUBLA_TYPE) * m_ElementsPerLevel[i],
+            sizeof(GPUBLA_TYPE) * B[i].size(),
             cudaMemcpyDefault);
     }
 }
@@ -218,11 +212,6 @@ GPUBLAS<T, GPUBLA_TYPE, LM2>::GPUBLAS(const std::vector<std::vector<GPUBLA_TYPE>
 template<class T, class GPUBLA_TYPE, int32_t LM2>
 GPUBLAS<T, GPUBLA_TYPE, LM2>::~GPUBLAS() {
     if (m_Owned) {
-        if (m_ElementsPerLevel != nullptr) {
-            cudaFree(m_ElementsPerLevel);
-            m_ElementsPerLevel = nullptr;
-        }
-
         if (m_BMem != nullptr) {
             cudaFree(m_BMem);
             m_BMem = nullptr;
@@ -241,7 +230,6 @@ GPUBLAS<T, GPUBLA_TYPE, LM2>::GPUBLAS(const GPUBLAS& other) : m_Owned(false) {
         return;
     }
 
-    m_ElementsPerLevel = other.m_ElementsPerLevel;
     m_BMem = other.m_BMem;
     m_B = other.m_B;
     //for (size_t i = 0; i < m_NumLevels; i++) {

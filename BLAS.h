@@ -8,12 +8,16 @@ class PerturbationResults;
 
 template<class T>
 class BLAS {
+private:
+    static constexpr size_t BLA_BITS = 23;
+    static constexpr size_t BLA_STARTING_LEVEL = 3;
+
 public:
     size_t m_M;
     size_t m_L;
     std::vector<std::vector<BLA<T>>> m_B;
     int32_t m_LM2;//Level -1 is not attainable due to Zero R
-    size_t m_FirstLevel;
+    static constexpr size_t m_FirstLevel = BLA_STARTING_LEVEL - 1;
 
     BLAS(PerturbationResults<T>& results);
 
@@ -34,9 +38,6 @@ private:
     long m_OldChunk;
 
     std::vector<size_t> m_ElementsPerLevel;
-
-    static constexpr size_t BLA_BITS = 23;
-    static constexpr size_t BLA_STARTING_LEVEL = 2;
 
     PerturbationResults<T>& m_PerturbationResults;
 };

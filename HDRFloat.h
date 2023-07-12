@@ -16,6 +16,8 @@ extern float* twoPowExpFlt;
 
 CUDA_CRAP void InitStatics();
 
+// TExp can work with float, int16_t or int64_t but all seem to offer worse perf
+// float is quite close though.
 template<class T, class TExp = int32_t>
 class HDRFloat {
 public:
@@ -38,7 +40,14 @@ public:
     }
 
     static CUDA_CRAP constexpr TExp MIN_BIG_EXPONENT() {
-        return INT32_MIN >> 3;
+        if constexpr (
+            std::is_same<TExp, int32_t>::value ||
+            std::is_same<TExp, float>::value) {
+            return INT32_MIN >> 3;
+        }
+        else {
+            return INT16_MIN >> 3;
+        }
     }
 
 //private:
@@ -58,7 +67,7 @@ public:
     static constexpr int MinFloatExponent = -126;
 
     CUDA_CRAP constexpr HDRFloat() {
-        mantissa = 0.0;
+        mantissa = (T)0.0;
         exp = MIN_BIG_EXPONENT();
     }
 
@@ -155,7 +164,7 @@ public:
     HDRFloat(const HighPrecision &number) {
 
         if (number == 0) {
-            mantissa = 0.0;
+            mantissa = (T)0.0;
             exp = MIN_BIG_EXPONENT();
             return;
         }
@@ -191,7 +200,7 @@ public:
 
     static CUDA_CRAP constexpr T getMultiplier(TExp scaleFactor) {
         if (scaleFactor <= MIN_SMALL_EXPONENT()) {
-            return 0.0;
+            return (T)0.0;
         }
         else if (scaleFactor >= 1024) {
             return INFINITY;
@@ -233,14 +242,14 @@ public:
     }
 
     CUDA_CRAP constexpr HDRFloat reciprocal() const {
-        T local_mantissa = 1.0 / this->mantissa;
+        T local_mantissa = (T)1.0 / this->mantissa;
         TExp local_exp = -this->exp;
 
         return HDRFloat(local_mantissa, local_exp);
     }
 
     CUDA_CRAP constexpr HDRFloat &reciprocal_mutable() {
-        mantissa = 1.0 / mantissa;
+        mantissa = (T)1.0 / mantissa;
         exp = -exp;
 
         return *this;

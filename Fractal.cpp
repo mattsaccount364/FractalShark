@@ -22,7 +22,7 @@
 #include <psapi.h>
 
 // Match in render_gpu.cu
-constexpr static auto NB_THREADS_W = 16;
+constexpr static auto NB_THREADS_W = 8; // W=16, H=8 previously seemed OK
 constexpr static auto NB_THREADS_H = 8;
 
 void DefaultOutputMessage(const wchar_t *, ...);
@@ -1088,6 +1088,7 @@ void Fractal::View(size_t view)
 
     // Kludgy.  Resets at end of function.
     SetPrecision(50000, minX, minY, maxX, maxY);
+    ResetDimensions(MAXSIZE_T, MAXSIZE_T, 1);
 
     switch (view) {
     case 1:
@@ -1131,6 +1132,7 @@ void Fractal::View(size_t view)
         maxX = HighPrecision{ "-0.54820574807047570845821256754673302937669927060844097486102930067962289200412659019319306589187062772276993544341295" };
         maxY = HighPrecision{ "-0.577570838903603842805108982201850558675551726802772104952059640378694274662197291893029522164691495936927144187595881" };
         SetNumIterations(4718592);
+        ResetDimensions(MAXSIZE_T, MAXSIZE_T, 2);
         break;
 
     case 6:

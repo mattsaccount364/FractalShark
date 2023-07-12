@@ -26,7 +26,7 @@ public:
     CUDA_CRAP const GPUBLA_TYPE* LookupBackwards(
         const GPUBLA_TYPE* __restrict__ *altB,
         /*T* curBR2,*/
-        //const GPUBLA_TYPE *nullBla,
+        //const GPUBLA_TYPE * __restrict__ nullBla,
         size_t m,
         T z2) const;
 #endif
@@ -47,7 +47,9 @@ protected:
     GPUBLA_TYPE** m_B;
 
     uint32_t m_LM2;//Level -1 is not attainable due to Zero R
-    size_t m_FirstLevel;
+
+    static constexpr size_t BLA_STARTING_LEVEL = 3;
+    static constexpr size_t m_FirstLevel = BLA_STARTING_LEVEL - 1;
 
     cudaError_t m_Err;
 

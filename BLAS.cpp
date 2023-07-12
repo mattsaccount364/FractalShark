@@ -190,7 +190,6 @@ void BLAS<T>::Merge(T blaSize) {
 template<class T>
 void BLAS<T>::Init(size_t InM, T blaSize) {
     T precision = T(1) / ((T)(1L << BLA_BITS));
-    m_FirstLevel = BLA_STARTING_LEVEL - 1;
 
     this->m_M = InM;
 

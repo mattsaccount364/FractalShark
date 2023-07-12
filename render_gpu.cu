@@ -251,18 +251,29 @@ CUDA_CRAP const GPUBLA_TYPE* GPUBLAS<T, GPUBLA_TYPE, LM2>::LookupBackwards(
     size_t m,
     T z2) const {
 
-    int32_t k = (int32_t)m - 1;
-    const GPUBLA_TYPE* __restrict__ tempB = nullptr;
-    uint32_t zeros;
-    uint32_t ix;
-    //uint32_t ixcopy;
-    float v = (float)(k & -k);
-    uint32_t bits = *reinterpret_cast<const uint32_t * __restrict__>(&v);
-    zeros = (bits >> 23) - 0x7f;
-    ix = k >> zeros;
-    //ixcopy = ix;
+    const int32_t k = (int32_t)m - 1;
 
-    int32_t startLevel = ((zeros < LM2) ? zeros : LM2);
+    // Option A:
+    const GPUBLA_TYPE* __restrict__ tempB = nullptr;
+    const float v = (float)(k & -k);
+    const uint32_t bits = *reinterpret_cast<const uint32_t * __restrict__>(&v);
+    const uint32_t zeros = (bits >> 23) - 0x7f;
+    uint32_t ix = k >> zeros;
+
+    //// Option B: pretty similar results:
+    //const GPUBLA_TYPE* __restrict__ tempB = nullptr;
+    //uint32_t zeros;
+    //uint32_t ix;
+    //int r;           // result goes here
+    //static constexpr int MultiplyDeBruijnBitPosition[32] =
+    //{
+    //  0, 1, 28, 2, 29, 14, 24, 3, 30, 22, 20, 15, 25, 17, 4, 8,
+    //  31, 27, 13, 23, 21, 19, 16, 7, 26, 12, 18, 6, 11, 5, 10, 9
+    //};
+    //zeros = MultiplyDeBruijnBitPosition[((uint32_t)((k & -k) * 0x077CB531U)) >> 27];
+    //ix = k >> zeros;
+
+    const int32_t startLevel = ((zeros < LM2) ? zeros : LM2);
 
     //for (int32_t level = startLevel; level >= m_FirstLevel; --level) {
     //    __pipeline_memcpy_async(
@@ -318,6 +329,7 @@ CUDA_CRAP const GPUBLA_TYPE* GPUBLAS<T, GPUBLA_TYPE, LM2>::LookupBackwards(
         return nullptr;
     }
 
+    // Option A
     GPUBLA_TYPE* __restrict__ tempB = nullptr;
     uint32_t zeros;
     uint32_t ix;

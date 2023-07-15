@@ -29,10 +29,6 @@ public:
         T z2) const;
 #endif
 
-    CUDA_CRAP const GPUBLA_TYPE* LookupBackwards(
-        size_t m,
-        T z2) const;
-
     static constexpr size_t m_NumLevels = LM2 + 2;
 
     CUDA_CRAP GPUBLA_TYPE** GetB() const {

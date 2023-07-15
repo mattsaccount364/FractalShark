@@ -328,43 +328,44 @@ CUDA_CRAP const GPUBLA_TYPE* GPUBLAS<T, GPUBLA_TYPE, LM2>::LookupBackwards(
 }
 #endif
 
-template<class T, class GPUBLA_TYPE, int32_t LM2>
-CUDA_CRAP const GPUBLA_TYPE* GPUBLAS<T, GPUBLA_TYPE, LM2>::LookupBackwards(
-    size_t m,
-    T z2) const {
-
-    // Compatible version don't touch
-
-    int32_t k = (int32_t)m - 1;
-    bool ret = (m == 0) || ((k & 1) == 1) || (k == 0 && z2 >= m_B[m_FirstLevel][0].getR2());
-    if (ret) {
-        return nullptr;
-    }
-
-    // Option A
-    GPUBLA_TYPE* __restrict__ tempB = nullptr;
-    uint32_t zeros;
-    uint32_t ix;
-    float v = (float)(k & -k);
-    uint32_t bits = *reinterpret_cast<const uint32_t* __restrict__>(&v);
-    zeros = (bits >> 23) - 0x7f;
-    ix = k >> zeros;
-
-    int32_t startLevel = ((zeros <= LM2) ? zeros : LM2);
-    for (int32_t level = startLevel; level >= m_FirstLevel; --level) {
-        if (z2 < (tempB = &m_B[level][ix])->getR2()) {
-            return tempB;
+#define LargeSwitch \
+        switch (blas->m_LM2) {                                         \
+        case -2:                                                       \
+        case -1:                                                       \
+        case  0: result = Run.template operator()<0> (); break;     \
+        case  1: result = Run.template operator()<1> (); break;     \
+        case  2: result = Run.template operator()<2> (); break;     \
+        case  3: result = Run.template operator()<3> (); break;     \
+        case  4: result = Run.template operator()<4> (); break;     \
+        case  5: result = Run.template operator()<5> (); break;     \
+        case  6: result = Run.template operator()<6> (); break;     \
+        case  7: result = Run.template operator()<7> (); break;     \
+        case  8: result = Run.template operator()<8> (); break;     \
+        case  9: result = Run.template operator()<9> (); break;     \
+        case 10: result = Run.template operator()<10> (); break;    \
+        case 11: result = Run.template operator()<11> (); break;    \
+        case 12: result = Run.template operator()<12> (); break;    \
+        case 13: result = Run.template operator()<13> (); break;    \
+        case 14: result = Run.template operator()<14> (); break;    \
+        case 15: result = Run.template operator()<15> (); break;    \
+        case 16: result = Run.template operator()<16> (); break;    \
+        case 17: result = Run.template operator()<17> (); break;    \
+        case 18: result = Run.template operator()<18> (); break;    \
+        case 19: result = Run.template operator()<19> (); break;    \
+        case 20: result = Run.template operator()<20> (); break;    \
+        case 21: result = Run.template operator()<21> (); break;    \
+        case 22: result = Run.template operator()<22> (); break;    \
+        case 23: result = Run.template operator()<23> (); break;    \
+        case 24: result = Run.template operator()<24> (); break;    \
+        case 25: result = Run.template operator()<25> (); break;    \
+        case 26: result = Run.template operator()<26> (); break;    \
+        case 27: result = Run.template operator()<27> (); break;    \
+        case 28: result = Run.template operator()<28> (); break;    \
+        case 29: result = Run.template operator()<29> (); break;    \
+        case 30: result = Run.template operator()<30> (); break;    \
+        case 31: result = Run.template operator()<31> (); break;    \
+        default: break;                                                \
         }
-        ix = ix << 1;
-    }
-    return nullptr;
-}
-
-//template class GPUBLAS<float, BLA<double>, 1>;
-//template class GPUBLAS<double, BLA<double>, 1>;
-//template class GPUBLAS<HDRFloat<double>, BLA<HDRFloat<double>>, 1>;
-//template class GPUBLAS<HDRFloat<float>, BLA<HDRFloat<float>>, 1>;
-
 
 ////////////////////////////////////////////////////////////////////////////////////////
 // Perturbation results
@@ -912,6 +913,19 @@ void mandel_1xHDR_InitStatics()
     }
 }
 
+template<class HDRFloatType>
+struct SharedMemStruct {
+    using GPUBLA_TYPE = BLA<HDRFloatType>;
+    const GPUBLA_TYPE* __restrict__ altB[32];
+    //GPUBLA_TYPE nullBla;
+    //struct {
+    //    //HDRFloatType curBR2[16];
+    //    //MattReferenceSingleIter<HDRFloatType> CurResult;
+    //    //HDRFloatType NextX1;
+    //    //HDRFloatType NextY1;
+    //} PerThread[NB_THREADS_W][NB_THREADS_H];
+};
+
 template<int32_t LM2>
 __global__
 void mandel_1x_double_perturb_bla(uint32_t* iter_matrix,
@@ -940,6 +954,21 @@ void mandel_1x_double_perturb_bla(uint32_t* iter_matrix,
         return;
     }
 
+    using GPUBLA_TYPE = BLA<double>;
+    char __shared__ SharedMem[sizeof(SharedMemStruct<double>)];
+    auto* shared =
+        reinterpret_cast<SharedMemStruct<double>*>(SharedMem);
+
+    if (threadIdx.x == 0 && threadIdx.y == 0) {
+        GPUBLA_TYPE** elts = doubleBlas.GetB();
+
+        for (size_t i = 0; i < doubleBlas.m_NumLevels; i++) {
+            shared->altB[i] = elts[i];
+        }
+    }
+
+    __syncthreads();
+
     size_t iter = 0;
     size_t RefIteration = 0;
     double DeltaReal = dx * X - centerX;
@@ -953,7 +982,7 @@ void mandel_1x_double_perturb_bla(uint32_t* iter_matrix,
 
     while (iter < n_iterations) {
         const BLA<double>* b = nullptr;
-        while ((b = doubleBlas.LookupBackwards(RefIteration, DeltaNormSquared)) != nullptr) {
+        while ((b = doubleBlas.LookupBackwards(shared->altB, RefIteration, DeltaNormSquared)) != nullptr) {
             int l = b->getL();
 
             // TODO this first RefIteration + l check bugs me
@@ -1027,19 +1056,6 @@ void mandel_1x_double_perturb_bla(uint32_t* iter_matrix,
     iter_matrix[idx] = (uint32_t)iter;
 }
 
-template<class HDRFloatType>
-struct SharedMemStruct {
-    using GPUBLA_TYPE = BLA<HDRFloatType>;
-    const GPUBLA_TYPE* __restrict__ altB[32];
-    //GPUBLA_TYPE nullBla;
-    //struct {
-    //    //HDRFloatType curBR2[16];
-    //    //MattReferenceSingleIter<HDRFloatType> CurResult;
-    //    //HDRFloatType NextX1;
-    //    //HDRFloatType NextY1;
-    //} PerThread[NB_THREADS_W][NB_THREADS_H];
-};
-
 //#define DEVICE_STATIC_INTRINSIC_QUALIFIERS  static __device__ __forceinline__
 
 //#if (defined(_MSC_VER) && defined(_WIN64)) || defined(__LP64__)
@@ -1065,7 +1081,9 @@ struct SharedMemStruct {
 
 template<class HDRFloatType, int32_t LM2>
 __global__
-void mandel_1xHDR_float_perturb_bla(uint32_t* iter_matrix,
+void
+//__launch_bounds__(NB_THREADS_W * NB_THREADS_H, 2)
+mandel_1xHDR_float_perturb_bla(uint32_t* iter_matrix,
     MattPerturbSingleResults<HDRFloatType> Perturb,
     GPUBLAS<HDRFloatType, BLA<HDRFloatType>, LM2> blas,
     int width,
@@ -1087,7 +1105,7 @@ void mandel_1xHDR_float_perturb_bla(uint32_t* iter_matrix,
     //size_t idx = width * (height - Y - 1) + X;
     size_t idx = width * Y + X;
 
-    if (iter_matrix[idx] != 0) {
+    if (iter_matrix[idx] != 0) { 
         return;
     }
 
@@ -2081,6 +2099,21 @@ void mandel_1x_float_perturb_scaled_bla(uint32_t* iter_matrix,
         return;
     }
 
+    using GPUBLA_TYPE = BLA<double>;
+    char __shared__ SharedMem[sizeof(SharedMemStruct<double>)];
+    auto* shared =
+        reinterpret_cast<SharedMemStruct<double>*>(SharedMem);
+
+    if (threadIdx.x == 0 && threadIdx.y == 0) {
+        GPUBLA_TYPE** elts = doubleBlas.GetB();
+
+        for (size_t i = 0; i < doubleBlas.m_NumLevels; i++) {
+            shared->altB[i] = elts[i];
+        }
+    }
+
+    __syncthreads();
+
     size_t iter = 0;
     size_t RefIteration = 0;
     const double DeltaReal = dx * X - centerX;
@@ -2107,7 +2140,7 @@ void mandel_1x_float_perturb_scaled_bla(uint32_t* iter_matrix,
 
         const BLA<double>* b = nullptr;
 
-        b = doubleBlas.LookupBackwards(RefIteration, DeltaNormSquared);
+        b = doubleBlas.LookupBackwards(shared->altB, RefIteration, DeltaNormSquared);
         if (b != nullptr) {
             for (;;) {
                 int l = b->getL();
@@ -2144,7 +2177,7 @@ void mandel_1x_float_perturb_scaled_bla(uint32_t* iter_matrix,
                     RefIteration = 0;
                 }
 
-                b = doubleBlas.LookupBackwards(RefIteration, DeltaNormSquared);
+                b = doubleBlas.LookupBackwards(shared->altB, RefIteration, DeltaNormSquared);
                 if (b == nullptr) {
                     double DoubleTempZX = DeltaSubNX;
                     double DoubleTempZY = DeltaSubNY;
@@ -2879,21 +2912,26 @@ uint32_t GPURenderer::RenderPerturbBLA(
             return result;
         }
 
-        // blas->m_LM2
-        GPUBLAS<double, BLA<double>, 1> gpu_blas(blas->m_B);
-        result = gpu_blas.CheckValid();
-        if (result != 0) {
-            return result;
-        }
+        auto Run = [&]<int32_t LM2>() -> uint32_t {
+            GPUBLAS<double, BLA<double>, LM2> gpu_blas(blas->m_B);
+            result = gpu_blas.CheckValid();
+            if (result != 0) {
+                return result;
+            }
 
-        mandel_1x_double_perturb_bla<1> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
-            cudaResults,
-            gpu_blas,
-            local_width, local_height, cx.doubleOnly, cy.doubleOnly, dx.doubleOnly, dy.doubleOnly,
-            centerX.doubleOnly, centerY.doubleOnly,
-            n_iterations);
+            mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
 
-        result = ExtractIters(buffer);
+            mandel_1x_double_perturb_bla<LM2> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
+                cudaResults,
+                gpu_blas,
+                local_width, local_height, cx.doubleOnly, cy.doubleOnly, dx.doubleOnly, dy.doubleOnly,
+                centerX.doubleOnly, centerY.doubleOnly,
+                n_iterations);
+
+            return ExtractIters(buffer);
+        };
+
+        LargeSwitch
     }
     //else if (algorithm == RenderAlgorithm::Gpu2x32PerturbedScaled) {
     //    MattPerturbSingleResults<dblflt> cudaResults(
@@ -2994,20 +3032,26 @@ uint32_t GPURenderer::RenderPerturbBLA(
         }
     } else if (algorithm == RenderAlgorithm::Gpu1x32PerturbedScaledBLA) {
         if constexpr (std::is_same<T, double>::value) {
-            // blas->m_LM2
-            GPUBLAS<double, BLA<double>, 1> doubleGpuBlas(blas->m_B);
-            result = doubleGpuBlas.CheckValid();
-            if (result != 0) {
-                return result;
-            }
 
-            mandel_1x_float_perturb_scaled_bla<1> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
-                cudaResults, cudaResultsDouble, doubleGpuBlas,
-                local_width, local_height, cx.doubleOnly, cy.doubleOnly, dx.doubleOnly, dy.doubleOnly,
-                centerX.doubleOnly, centerY.doubleOnly,
-                n_iterations);
+            auto Run = [&]<int32_t LM2>() -> uint32_t {
+                GPUBLAS<double, BLA<double>, LM2> doubleGpuBlas(blas->m_B);
+                result = doubleGpuBlas.CheckValid();
+                if (result != 0) {
+                    return result;
+                }
 
-            result = ExtractIters(buffer);
+                mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
+
+                mandel_1x_float_perturb_scaled_bla<LM2> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
+                    cudaResults, cudaResultsDouble, doubleGpuBlas,
+                    local_width, local_height, cx.doubleOnly, cy.doubleOnly, dx.doubleOnly, dy.doubleOnly,
+                    centerX.doubleOnly, centerY.doubleOnly,
+                    n_iterations);
+
+                return ExtractIters(buffer);
+            };
+
+            LargeSwitch
         }
     }
 
@@ -3101,45 +3145,6 @@ uint32_t GPURenderer::RenderPerturbBLA(
     return result;
 }
 
-#define LargeSwitch \
-        switch (blas->m_LM2) {                                         \
-        case -2:                                                       \
-        case -1:                                                       \
-        case  0: result = Run.template operator() < 0 > (); break;     \
-        case  1: result = Run.template operator() < 1 > (); break;     \
-        case  2: result = Run.template operator() < 2 > (); break;     \
-        case  3: result = Run.template operator() < 3 > (); break;     \
-        case  4: result = Run.template operator() < 4 > (); break;     \
-        case  5: result = Run.template operator() < 5 > (); break;     \
-        case  6: result = Run.template operator() < 6 > (); break;     \
-        case  7: result = Run.template operator() < 7 > (); break;     \
-        case  8: result = Run.template operator() < 8 > (); break;     \
-        case  9: result = Run.template operator() < 9 > (); break;     \
-        case 10: result = Run.template operator() < 10 > (); break;    \
-        case 11: result = Run.template operator() < 11 > (); break;    \
-        case 12: result = Run.template operator() < 12 > (); break;    \
-        case 13: result = Run.template operator() < 13 > (); break;    \
-        case 14: result = Run.template operator() < 14 > (); break;    \
-        case 15: result = Run.template operator() < 15 > (); break;    \
-        case 16: result = Run.template operator() < 16 > (); break;    \
-        case 17: result = Run.template operator() < 17 > (); break;    \
-        case 18: result = Run.template operator() < 18 > (); break;    \
-        case 19: result = Run.template operator() < 19 > (); break;    \
-        case 20: result = Run.template operator() < 20 > (); break;    \
-        case 21: result = Run.template operator() < 21 > (); break;    \
-        case 22: result = Run.template operator() < 22 > (); break;    \
-        case 23: result = Run.template operator() < 23 > (); break;    \
-        case 24: result = Run.template operator() < 24 > (); break;    \
-        case 25: result = Run.template operator() < 25 > (); break;    \
-        case 26: result = Run.template operator() < 26 > (); break;    \
-        case 27: result = Run.template operator() < 27 > (); break;    \
-        case 28: result = Run.template operator() < 28 > (); break;    \
-        case 29: result = Run.template operator() < 29 > (); break;    \
-        case 30: result = Run.template operator() < 30 > (); break;    \
-        case 31: result = Run.template operator() < 31 > (); break;    \
-        default: break;                                                \
-        }
-
 uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
     uint32_t* buffer,
@@ -3172,8 +3177,6 @@ uint32_t GPURenderer::RenderPerturbBLA(
         if (result != 0) {
             return result;
         }
-
-        // blas->m_LM2
 
         auto Run = [&]<int32_t LM2>() -> uint32_t {
             GPUBLAS<HDRFloat<float>, BLA<HDRFloat<float>>, LM2> gpu_blas(blas->m_B);

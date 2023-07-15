@@ -101,8 +101,6 @@
       <AdditionalLibraryDirectories>..\mpir\lib\x64\Debug;%(AdditionalLibraryDirectories);$(CudaToolkitLibDir)</AdditionalLibraryDirectories>
     </Link>
     <CudaCompile>
-      <AdditionalCompilerOptions>
-      </AdditionalCompilerOptions>
       <AdditionalOptions>-std=c++20 -Xcompiler "/std:c++20" %(AdditionalOptions)</AdditionalOptions>
     </CudaCompile>
     <CudaLink>
@@ -162,8 +160,6 @@
       <FixedBaseAddress>true</FixedBaseAddress>
     </Link>
     <CudaCompile>
-      <AdditionalCompilerOptions>
-      </AdditionalCompilerOptions>
       <Optimization>O3</Optimization>
       <AdditionalOptions>-std=c++20 -Xcompiler "/std:c++20"  --expt-relaxed-constexpr %(AdditionalOptions)</AdditionalOptions>
     </CudaCompile>

@@ -845,7 +845,7 @@ void Fractal::AutoZoom() {
 
     HighPrecision Divisor;
     if constexpr (h == AutoZoomHeuristic::Default) {
-        Divisor = 4;
+        Divisor = 3;
     }
 
     if constexpr (h == AutoZoomHeuristic::Max) {
@@ -2308,9 +2308,9 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
     threads.reserve(num_threads);
 
     auto one_thread = [&]() {
-        T dzdcX = T(1.0);
-        T dzdcY = T(0.0);
-        bool periodicity_should_break = false;
+        //T dzdcX = T(1.0);
+        //T dzdcY = T(0.0);
+        //bool periodicity_should_break = false;
 
         for (size_t y = 0; y < m_ScrnHeight; y++) {
             if (atomics[y] != 0) {

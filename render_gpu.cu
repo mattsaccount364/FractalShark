@@ -15,8 +15,8 @@
 #include "HDRFloat.h"
 
 #include <type_traits>
-#include <cuda/pipeline>
-#include <cuda_pipeline.h>
+//#include <cuda/pipeline>
+//#include <cuda_pipeline.h>
 
 #ifdef __CUDACC__
 __device__ __constant__ double twoPowExpDataDbl[2048];
@@ -253,12 +253,12 @@ CUDA_CRAP const GPUBLA_TYPE* GPUBLAS<T, GPUBLA_TYPE, LM2>::LookupBackwards(
 
     const int32_t k = (int32_t)m - 1;
 
-    // Option A:
-    const GPUBLA_TYPE* __restrict__ tempB = nullptr;
-    const float v = (float)(k & -k);
-    const uint32_t bits = *reinterpret_cast<const uint32_t * __restrict__>(&v);
-    const uint32_t zeros = (bits >> 23) - 0x7f;
-    uint32_t ix = k >> zeros;
+    //// Option A:
+    //const GPUBLA_TYPE* __restrict__ tempB = nullptr;
+    //const float v = (float)(k & -k);
+    //const uint32_t bits = *reinterpret_cast<const uint32_t * __restrict__>(&v);
+    //const uint32_t zeros = (bits >> 23) - 0x7f;
+    //uint32_t ix = k >> zeros;
 
     //// Option B: pretty similar results:
     //const GPUBLA_TYPE* __restrict__ tempB = nullptr;
@@ -272,6 +272,18 @@ CUDA_CRAP const GPUBLA_TYPE* GPUBLAS<T, GPUBLA_TYPE, LM2>::LookupBackwards(
     //};
     //zeros = MultiplyDeBruijnBitPosition[((uint32_t)((k & -k) * 0x077CB531U)) >> 27];
     //ix = k >> zeros;
+
+    //// Option C:
+    // Get position of low-order 1 bit, subtract 1.
+    //const GPUBLA_TYPE* __restrict__ tempB = nullptr;
+    //const uint32_t zeros = __ffs(k) - 1;
+    //uint32_t ix = k >> zeros;
+
+    // Option D:
+    // Reverse bit order, count high order zeros.
+    const GPUBLA_TYPE* __restrict__ tempB = nullptr;
+    const uint32_t zeros = __clz(__brev(k));
+    uint32_t ix = k >> zeros;
 
     const int32_t startLevel = ((zeros < LM2) ? zeros : LM2);
 
@@ -1028,28 +1040,28 @@ struct SharedMemStruct {
     //} PerThread[NB_THREADS_W][NB_THREADS_H];
 };
 
-#define DEVICE_STATIC_INTRINSIC_QUALIFIERS  static __device__ __forceinline__
+//#define DEVICE_STATIC_INTRINSIC_QUALIFIERS  static __device__ __forceinline__
 
-#if (defined(_MSC_VER) && defined(_WIN64)) || defined(__LP64__)
-#define PXL_GLOBAL_PTR   "l"
-#else
-#define PXL_GLOBAL_PTR   "r"
-#endif
+//#if (defined(_MSC_VER) && defined(_WIN64)) || defined(__LP64__)
+//#define PXL_GLOBAL_PTR   "l"
+//#else
+//#define PXL_GLOBAL_PTR   "r"
+//#endif
 
-DEVICE_STATIC_INTRINSIC_QUALIFIERS void __prefetch_global_l1(const void* const ptr)
-{
-    asm("prefetch.global.L1 [%0];" : : PXL_GLOBAL_PTR(ptr));
-}
-
-DEVICE_STATIC_INTRINSIC_QUALIFIERS void __prefetch_global_uniform(const void* const ptr)
-{
-    asm("prefetchu.L1 [%0];" : : PXL_GLOBAL_PTR(ptr));
-}
-
-DEVICE_STATIC_INTRINSIC_QUALIFIERS void __prefetch_global_l2(const void* const ptr)
-{
-    asm("prefetch.global.L2 [%0];" : : PXL_GLOBAL_PTR(ptr));
-}
+//DEVICE_STATIC_INTRINSIC_QUALIFIERS void __prefetch_global_l1(const void* const ptr)
+//{
+//    asm("prefetch.global.L1 [%0];" : : PXL_GLOBAL_PTR(ptr));
+//}
+//
+//DEVICE_STATIC_INTRINSIC_QUALIFIERS void __prefetch_global_uniform(const void* const ptr)
+//{
+//    asm("prefetchu.L1 [%0];" : : PXL_GLOBAL_PTR(ptr));
+//}
+//
+//DEVICE_STATIC_INTRINSIC_QUALIFIERS void __prefetch_global_l2(const void* const ptr)
+//{
+//    asm("prefetch.global.L2 [%0];" : : PXL_GLOBAL_PTR(ptr));
+//}
 
 template<class HDRFloatType, int32_t LM2>
 __global__
@@ -3089,6 +3101,45 @@ uint32_t GPURenderer::RenderPerturbBLA(
     return result;
 }
 
+#define LargeSwitch \
+        switch (blas->m_LM2) {                                         \
+        case -2:                                                       \
+        case -1:                                                       \
+        case  0: result = Run.template operator() < 0 > (); break;     \
+        case  1: result = Run.template operator() < 1 > (); break;     \
+        case  2: result = Run.template operator() < 2 > (); break;     \
+        case  3: result = Run.template operator() < 3 > (); break;     \
+        case  4: result = Run.template operator() < 4 > (); break;     \
+        case  5: result = Run.template operator() < 5 > (); break;     \
+        case  6: result = Run.template operator() < 6 > (); break;     \
+        case  7: result = Run.template operator() < 7 > (); break;     \
+        case  8: result = Run.template operator() < 8 > (); break;     \
+        case  9: result = Run.template operator() < 9 > (); break;     \
+        case 10: result = Run.template operator() < 10 > (); break;    \
+        case 11: result = Run.template operator() < 11 > (); break;    \
+        case 12: result = Run.template operator() < 12 > (); break;    \
+        case 13: result = Run.template operator() < 13 > (); break;    \
+        case 14: result = Run.template operator() < 14 > (); break;    \
+        case 15: result = Run.template operator() < 15 > (); break;    \
+        case 16: result = Run.template operator() < 16 > (); break;    \
+        case 17: result = Run.template operator() < 17 > (); break;    \
+        case 18: result = Run.template operator() < 18 > (); break;    \
+        case 19: result = Run.template operator() < 19 > (); break;    \
+        case 20: result = Run.template operator() < 20 > (); break;    \
+        case 21: result = Run.template operator() < 21 > (); break;    \
+        case 22: result = Run.template operator() < 22 > (); break;    \
+        case 23: result = Run.template operator() < 23 > (); break;    \
+        case 24: result = Run.template operator() < 24 > (); break;    \
+        case 25: result = Run.template operator() < 25 > (); break;    \
+        case 26: result = Run.template operator() < 26 > (); break;    \
+        case 27: result = Run.template operator() < 27 > (); break;    \
+        case 28: result = Run.template operator() < 28 > (); break;    \
+        case 29: result = Run.template operator() < 29 > (); break;    \
+        case 30: result = Run.template operator() < 30 > (); break;    \
+        case 31: result = Run.template operator() < 31 > (); break;    \
+        default: break;                                                \
+        }
+
 uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
     uint32_t* buffer,
@@ -3144,41 +3195,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
             return ExtractIters(buffer);
         };
 
-        switch (blas->m_LM2) {
-        case  0: result = Run.template operator()<0>(); break;
-        case  1: result = Run.template operator()<1>(); break;
-        case  2: result = Run.template operator()<2>(); break;
-        case  3: result = Run.template operator()<3>(); break;
-        case  4: result = Run.template operator()<4>(); break;
-        case  5: result = Run.template operator()<5>(); break;
-        case  6: result = Run.template operator()<6>(); break;
-        case  7: result = Run.template operator()<7>(); break;
-        case  8: result = Run.template operator()<8>(); break;
-        case  9: result = Run.template operator()<9>(); break;
-        case 10: result = Run.template operator()<10>(); break;
-        case 11: result = Run.template operator()<11>(); break;
-        case 12: result = Run.template operator()<12>(); break;
-        case 13: result = Run.template operator()<13>(); break;
-        case 14: result = Run.template operator()<14>(); break;
-        case 15: result = Run.template operator()<15>(); break;
-        case 16: result = Run.template operator()<16>(); break;
-        case 17: result = Run.template operator()<17>(); break;
-        case 18: result = Run.template operator()<18>(); break;
-        case 19: result = Run.template operator()<19>(); break;
-        case 20: result = Run.template operator()<20>(); break;
-        case 21: result = Run.template operator()<21>(); break;
-        case 22: result = Run.template operator()<22>(); break;
-        case 23: result = Run.template operator()<23>(); break;
-        case 24: result = Run.template operator()<24>(); break;
-        case 25: result = Run.template operator()<25>(); break;
-        case 26: result = Run.template operator()<26>(); break;
-        case 27: result = Run.template operator()<27>(); break;
-        case 28: result = Run.template operator()<28>(); break;
-        case 29: result = Run.template operator()<29>(); break;
-        case 30: result = Run.template operator()<30>(); break;
-        case 31: result = Run.template operator()<31>(); break;
-        default: break;
-        }
+        LargeSwitch
     }
 
     return result;
@@ -3217,24 +3234,27 @@ uint32_t GPURenderer::RenderPerturbBLA(
             return result;
         }
 
-        // blas->m_LM2
-        GPUBLAS<HDRFloat<double>, BLA<HDRFloat<double>>, 1> gpu_blas(blas->m_B);
-        result = gpu_blas.CheckValid();
-        if (result != 0) {
-            return result;
-        }
+        auto Run = [&]<int32_t LM2>() -> uint32_t {
+            GPUBLAS<HDRFloat<double>, BLA<HDRFloat<double>>, LM2> gpu_blas(blas->m_B);
+            result = gpu_blas.CheckValid();
+            if (result != 0) {
+                return result;
+            }
 
-        mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
+            mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
 
-        mandel_1xHDR_float_perturb_bla<HDRFloat<double>, 1> << <nb_blocks, threads_per_block >> > (
-            iter_matrix_cu,
-            cudaResults,
-            gpu_blas,
-            local_width, local_height, cx.hdrdbl, cy.hdrdbl, dx.hdrdbl, dy.hdrdbl,
-            centerX.hdrdbl, centerY.hdrdbl,
-            n_iterations);
+            mandel_1xHDR_float_perturb_bla<HDRFloat<double>, LM2> << <nb_blocks, threads_per_block >> > (
+                iter_matrix_cu,
+                cudaResults,
+                gpu_blas,
+                local_width, local_height, cx.hdrflt, cy.hdrflt, dx.hdrflt, dy.hdrflt,
+                centerX.hdrflt, centerY.hdrflt,
+                n_iterations);
 
-        result = ExtractIters(buffer);
+            return ExtractIters(buffer);
+        };
+
+        LargeSwitch
     }
 
     return result;

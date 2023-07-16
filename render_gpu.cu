@@ -1173,15 +1173,28 @@ mandel_1xHDR_float_perturb_bla(uint32_t* iter_matrix,
         const auto tempSum1 = (tempMulY2 + DeltaSubNYOrig);
         const auto tempSum2 = (tempMulX2 + DeltaSubNXOrig);
 
-        DeltaSubNX = DeltaSubNXOrig * tempSum2 -
-            DeltaSubNYOrig * tempSum1 +
-            DeltaSub0X;
-        HdrReduce(DeltaSubNX);
+        //DeltaSubNX = DeltaSubNXOrig * tempSum2 -
+        //    DeltaSubNYOrig * tempSum1 +
+        //    DeltaSub0X;
+        //HdrReduce(DeltaSubNX);
+        DeltaSubNX = HDRFloatType::custom_perturb1<false>(
+            DeltaSubNXOrig,
+            tempSum2,
+            DeltaSubNYOrig,
+            tempSum1,
+            DeltaSub0X);
 
-        DeltaSubNY = DeltaSubNXOrig * tempSum1 +
-            DeltaSubNYOrig * tempSum2 +
-            DeltaSub0Y;
-        HdrReduce(DeltaSubNY);
+        DeltaSubNY = HDRFloatType::custom_perturb1<true>(
+            DeltaSubNXOrig,
+            tempSum1,
+            DeltaSubNYOrig,
+            tempSum2,
+            DeltaSub0Y);
+
+        //DeltaSubNY = DeltaSubNXOrig * tempSum1 +
+        //    DeltaSubNYOrig * tempSum2 +
+        //    DeltaSub0Y;
+        //HdrReduce(DeltaSubNY);
 
         //__pipeline_wait_prior(0);
 
@@ -1788,6 +1801,9 @@ void mandel_1x_float_perturb(uint32_t* iter_matrix,
         const float tempSubX = curIter->x * 2 + DeltaSubNXOrig;
         const float tempSubY = curIter->y * 2 + DeltaSubNYOrig;
 
+        ++RefIteration;
+        curIter = &PerturbFloat.iters[RefIteration];
+
         DeltaSubNX =
             DeltaSubNXOrig * tempSubX -
             DeltaSubNYOrig * tempSubY +
@@ -1796,9 +1812,6 @@ void mandel_1x_float_perturb(uint32_t* iter_matrix,
             DeltaSubNXOrig * tempSubY +
             DeltaSubNYOrig * tempSubX +
             DeltaSub0Y;
-
-        ++RefIteration;
-        curIter = &PerturbFloat.iters[RefIteration];
 
         const float tempZX = curIter->x + DeltaSubNX;
         const float tempZY = curIter->y + DeltaSubNY;

@@ -15,6 +15,8 @@ constexpr size_t PrecisionLimit = 50000;
 constexpr double DefaultScaleFactor = 75;
 constexpr int DefaultWidth = 3840;
 constexpr int DefaultHeight = 1600;
+constexpr auto *fileprefix = L"\\\\192.168.4.1\\Archive\\Fractal Saves\\2023_10e4000\\";
+constexpr int startAt = 456781;
 
 #ifdef _DEBUG
 #define new DEBUG_NEW
@@ -391,94 +393,103 @@ LRESULT CFractalTrayDlg::OnFinishedCalculating (WPARAM, LPARAM)
 }
 
 DWORD WINAPI CalcProc (LPVOID lpParameter)
-{ CThreadParam *param = (CThreadParam *) lpParameter;
-  CStdioFile locationFile;
+{
+    CThreadParam *param = (CThreadParam *) lpParameter;
+    CStdioFile locationFile;
 
-  // Open the location file.
-  if (locationFile.Open (*param->LocationFilename, CFile::modeRead | CFile::typeText) == 0)
-  { PostMessage (param->hWnd, WM_FINISHED_CALCULATING, 0, 0);
-    return 1;
-  }
-
-  CString line;
-  uint32_t resX, resY;
-  HighPrecision minX, minY, maxX, maxY;
-  uint32_t numIters;
-
-  uint32_t gpuAntialiasing;
-  uint32_t iterationPrecision;
-
-  std::wstring filename, filename_bmp, filename_png;
-
-  FractalSetupData setup;
-  setup.Load (true);
-  setup.m_AlgHighRes = param->Algorithm;
-  setup.m_AlgLowRes = 0;
-  GetCurrentDirectory (128, setup.m_SaveDir);
-
-  // default width/height:
-  Fractal *fractal = new Fractal (&setup, DefaultWidth, DefaultHeight, OutputMessage, NULL, false);
-
-  for (int i = 0;; i++)
-  { if (locationFile.ReadString (line) == FALSE)
-    { break; }
-
-    ConvertCStringToDest(
-      line,
-      nullptr,
-      nullptr,
-      nullptr,
-      nullptr,
-      nullptr,
-      nullptr,
-      nullptr,
-      nullptr,
-      nullptr,
-      &filename);
-
-    filename_bmp = filename + std::wstring(L".bmp");
-    filename_png = filename + std::wstring(L".png");
-
-    if (FileExists(filename) || FileExists(filename_png) || FileExists(filename_bmp)) {
-        continue;
+    // Open the location file.
+    if (locationFile.Open (*param->LocationFilename, CFile::modeRead | CFile::typeText) == 0) {
+        PostMessage (param->hWnd, WM_FINISHED_CALCULATING, 0, 0);
+        return 1;
     }
 
-    Fractal::SetPrecision(PrecisionLimit, minX, minY, maxX, maxY);
+    CString line;
+    uint32_t resX, resY;
+    HighPrecision minX, minY, maxX, maxY;
+    uint32_t numIters;
 
-    ConvertCStringToDest(
-        line,
-        &resX,
-        &resY,
-        &minX,
-        &minY,
-        &maxX,
-        &maxY,
-        &numIters,
-        &gpuAntialiasing,
-        &iterationPrecision,
-        &filename);
+    uint32_t gpuAntialiasing;
+    uint32_t iterationPrecision;
 
-    auto prec = Fractal::GetPrecision(minX, minY, maxX, maxY);
-    Fractal::SetPrecision(prec, minX, minY, maxX, maxY);
+    std::wstring filename, filename_bmp, filename_png;
 
-    fractal->SetNumIterations (numIters);
-    fractal->SetIterationPrecision(iterationPrecision);
-    fractal->ResetDimensions(resX, resY, 2);
-    fractal->RecenterViewCalc(minX, minY, maxX, maxY);
-    fractal->UsePalette(8);
-    fractal->CalcFractal (true);
-    fractal->SaveCurrentFractal (filename);
-    //fractal->CalcDiskFractal (filename_bmp);
+    FractalSetupData setup;
+    setup.Load (true);
+    setup.m_AlgHighRes = param->Algorithm;
+    setup.m_AlgLowRes = 0;
+    GetCurrentDirectory (128, setup.m_SaveDir);
 
-    if (param->stop == true)
-    { break; }
-  }
+    // default width/height:
+    Fractal *fractal = new Fractal (&setup, DefaultWidth, DefaultHeight, OutputMessage, NULL, false);
 
-  delete fractal;
+    for (int i = 0;; i++) { 
+        if (param->stop == true) {
+            break;
+        }
 
-  locationFile.Close ();
-  PostMessage (param->hWnd, WM_FINISHED_CALCULATING, 0, 0);
-  return 0;
+        if (locationFile.ReadString (line) == FALSE) {
+            break;
+        }
+
+        if (startAt != 0 && i < startAt) {
+            continue;
+        }
+
+        ConvertCStringToDest(
+            line,
+            nullptr,
+            nullptr,
+            nullptr,
+            nullptr,
+            nullptr,
+            nullptr,
+            nullptr,
+            nullptr,
+            nullptr,
+            &filename);
+
+        filename_bmp = fileprefix + filename + std::wstring(L".bmp");
+        filename_png = fileprefix + filename + std::wstring(L".png");
+
+        if (FileExists(filename) || FileExists(filename_png) || FileExists(filename_bmp)) {
+            continue;
+        }
+
+        Fractal::SetPrecision(PrecisionLimit, minX, minY, maxX, maxY);
+
+        ConvertCStringToDest(
+          line,
+          &resX,
+          &resY,
+          &minX,
+          &minY,
+          &maxX,
+          &maxY,
+          &numIters,
+          &gpuAntialiasing,
+          &iterationPrecision,
+          &filename);
+
+        filename = fileprefix + filename;
+
+        auto prec = Fractal::GetPrecision(minX, minY, maxX, maxY);
+        Fractal::SetPrecision(prec, minX, minY, maxX, maxY);
+
+        fractal->SetNumIterations (numIters);
+        fractal->SetIterationPrecision(iterationPrecision);
+        fractal->ResetDimensions(resX, resY, 2);
+        fractal->RecenterViewCalc(minX, minY, maxX, maxY);
+        fractal->UsePalette(8);
+        fractal->CalcFractal (true);
+        fractal->SaveCurrentFractal (filename);
+        //fractal->CalcDiskFractal (filename_bmp);
+    }
+
+    delete fractal;
+
+    locationFile.Close ();
+    PostMessage (param->hWnd, WM_FINISHED_CALCULATING, 0, 0);
+    return 0;
 }
 
 bool FileExists (const std::wstring &filename)

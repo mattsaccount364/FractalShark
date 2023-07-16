@@ -210,7 +210,46 @@ public:
             return (T)twoPowExpDbl[(int)scaleFactor - MinDoubleExponent];
         }
         else {
+            //return scalbnf(1.0, scaleFactor);
             return (T)twoPowExpFlt[(int)scaleFactor - MinFloatExponent];
+        }
+    }
+
+    static CUDA_CRAP constexpr T getMultiplierPos(TExp scaleFactor) {
+        if (scaleFactor >= 1024) {
+            return INFINITY;
+        }
+
+        if constexpr (std::is_same<T, double>::value) {
+            return (T)twoPowExpDbl[(int)scaleFactor - MinDoubleExponent];
+        }
+        else {
+            //return scalbnf(1.0, scaleFactor);
+            return (T)twoPowExpFlt[(int)scaleFactor - MinFloatExponent];
+        }
+    }
+
+    static CUDA_CRAP constexpr T getMultiplierNeg(TExp scaleFactor) {
+        //if constexpr (std::is_same<T, double>::value) {
+        //    return scalbn(1.0, scaleFactor);
+        //}
+        //else {
+        //    return scalbnf(1.0f, scaleFactor);
+        //}
+
+        if constexpr (std::is_same<T, double>::value) {
+            if (scaleFactor <= MIN_SMALL_EXPONENT()) {
+                return 0.0;
+            }
+
+            return twoPowExpDbl[(int)scaleFactor - MinDoubleExponent];
+        }
+        else {
+            if (scaleFactor <= MIN_SMALL_EXPONENT()) {
+                return 0.0f;
+            }
+            //return scalbnf(1.0, scaleFactor);
+            return twoPowExpFlt[(int)scaleFactor - MinFloatExponent];
         }
     }
 
@@ -316,6 +355,61 @@ public:
         return *this;
     }
 
+    template<bool plus>
+    static CUDA_CRAP HDRFloat custom_perturb1(
+        const HDRFloat &DeltaSubNXOrig,
+        const HDRFloat &tempSum1,
+        const HDRFloat &DeltaSubNYOrig,
+        const HDRFloat &tempSum2,
+        const HDRFloat &DeltaSub0Y) {
+
+        const T local_mantissa1 = DeltaSubNXOrig.mantissa * tempSum1.mantissa;
+        const TExp local_exp1 = DeltaSubNXOrig.exp + tempSum1.exp;
+
+        const T local_mantissa2 = DeltaSubNYOrig.mantissa * tempSum2.mantissa;
+        const TExp local_exp2 = DeltaSubNYOrig.exp + tempSum2.exp;
+
+        HDRFloat sum1;
+        if constexpr (plus) {
+            const TExp expDiff1 = local_exp1 - local_exp2;
+            const T mul = getMultiplierNeg(-abs(expDiff1));
+            const TExp maxexp = max(local_exp1, local_exp2);
+            if (local_exp1 >= local_exp2) {
+                // TODO constexpr double path
+                sum1 = HDRFloat(maxexp, __fmaf_rn(local_mantissa2, mul, local_mantissa1));
+            }
+            else {
+                sum1 = HDRFloat(maxexp, __fmaf_rn(local_mantissa1, mul, local_mantissa2));
+            }
+        }
+        else {
+            const TExp expDiff1 = local_exp1 - local_exp2;
+            const T mul = getMultiplierNeg(-abs(expDiff1));
+            const TExp maxexp = max(local_exp1, local_exp2);
+
+            if (local_exp1 >= local_exp2) {
+                sum1 = HDRFloat(maxexp, __fmaf_rn(-local_mantissa2, mul, local_mantissa1));
+            }
+            else {
+                sum1 = HDRFloat(maxexp, __fmaf_rn(local_mantissa1, mul, -local_mantissa2));
+            }
+        }
+
+        const TExp expDiff2 = sum1.exp - DeltaSub0Y.exp;
+        const T mul = getMultiplierNeg(-abs(expDiff2));
+        const TExp maxexp = max(sum1.exp, DeltaSub0Y.exp);
+        HDRFloat sum2;
+        if (sum1.exp >= DeltaSub0Y.exp) {
+            sum2 = HDRFloat(maxexp, __fmaf_rn(DeltaSub0Y.mantissa, mul, sum1.mantissa));
+        }
+        else {
+            sum2 = HDRFloat(maxexp, __fmaf_rn(sum1.mantissa, mul, DeltaSub0Y.mantissa));
+        }
+
+        HdrReduce(sum2);
+        return sum2;
+    }
+
     // friends defined inside class body are inline and are hidden from non-ADL lookup
     friend CUDA_CRAP constexpr HDRFloat operator*(HDRFloat lhs,        // passing lhs by value helps optimize chained a+b+c
         const HDRFloat& rhs) // otherwise, both parameters may be const references
@@ -397,27 +491,6 @@ public:
         return *this;
     }
 
-    CUDA_CRAP constexpr HDRFloat addOld(HDRFloat value) const {
-
-        T temp_mantissa = 0;
-        TExp temp_exp = exp;
-
-        if (exp == value.exp) {
-            temp_mantissa = mantissa + value.mantissa;
-        }
-        else if (exp > value.exp) {
-            temp_mantissa = mantissa + getMultiplier(value.exp - exp) * value.mantissa;
-        }
-        else {
-            temp_mantissa = getMultiplier(exp - value.exp) * mantissa;
-            temp_exp = value.exp;
-            temp_mantissa = temp_mantissa + value.mantissa;
-        }
-
-        return HDRFloat(temp_exp, temp_mantissa);
-
-    }
-
     CUDA_CRAP constexpr HDRFloat add(HDRFloat value) const {
 
         TExp expDiff = exp - value.exp;
@@ -426,11 +499,11 @@ public:
             return HDRFloat(exp, mantissa, true);
         }
         else if (expDiff >= 0) {
-            T mul = getMultiplier(-expDiff);
+            T mul = getMultiplierNeg(-expDiff);
             return HDRFloat(exp, mantissa + value.mantissa * mul, true);
         }
         else if (expDiff > MINUS_EXPONENT_DIFF_IGNORED) {
-            T mul = getMultiplier(expDiff);
+            T mul = getMultiplierNeg(expDiff);
             return HDRFloat(value.exp, mantissa * mul + value.mantissa, true);
         }
         else {
@@ -446,11 +519,11 @@ public:
             return *this;
         }
         else if (expDiff >= 0) {
-            T mul = getMultiplier(-expDiff);
+            T mul = getMultiplierNeg(-expDiff);
             mantissa = mantissa + value.mantissa * mul;
         }
         else if (expDiff > MINUS_EXPONENT_DIFF_IGNORED) {
-            T mul = getMultiplier(expDiff);
+            T mul = getMultiplierNeg(expDiff);
             exp = value.exp;
             mantissa = mantissa * mul + value.mantissa;
         }
@@ -487,11 +560,11 @@ public:
             return HDRFloat(exp, mantissa, true);
         }
         else if (expDiff >= 0) {
-            T mul = getMultiplier(-expDiff);
+            T mul = getMultiplierNeg(-expDiff);
             return HDRFloat(exp, mantissa - value.mantissa * mul, true);
         }
         else if (expDiff > MINUS_EXPONENT_DIFF_IGNORED) {
-            T mul = getMultiplier(expDiff);
+            T mul = getMultiplierNeg(expDiff);
             return HDRFloat(value.exp, mantissa * mul - value.mantissa, true);
         }
         else {
@@ -507,11 +580,11 @@ public:
             return *this;
         }
         else if (expDiff >= 0) {
-            T mul = getMultiplier(-expDiff);
+            T mul = getMultiplierNeg(-expDiff);
             mantissa = mantissa - value.mantissa * mul;
         }
         else if (expDiff > MINUS_EXPONENT_DIFF_IGNORED) {
-            T mul = getMultiplier(expDiff);
+            T mul = getMultiplierNeg(expDiff);
             exp = value.exp;
             mantissa = mantissa * mul - value.mantissa;
         }

@@ -598,7 +598,7 @@ size_t Fractal::GetPrecision(
     const HighPrecision& minX,
     const HighPrecision& minY,
     const HighPrecision& maxX,
-    const HighPrecision& maxY) const
+    const HighPrecision& maxY)
 {
     if constexpr (DigitPrecision != 0) {
         return DigitPrecision;
@@ -611,7 +611,7 @@ size_t Fractal::GetPrecision(
         int temp_expX;
         boost::multiprecision::frexp(deltaX, &temp_expX);
         int temp_expY;
-        boost::multiprecision::frexp(deltaX, &temp_expY);
+        boost::multiprecision::frexp(deltaY, &temp_expY);
 
         double expX = temp_expX / log(10) * log(2);
         double expY = temp_expY / log(10) * log(2);

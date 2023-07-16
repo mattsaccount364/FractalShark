@@ -227,6 +227,7 @@ public:
         uint32_t n_iterations,
         int iteration_precision);
 
+    // Side effect is this initializes CUDA the first time it's run
     uint32_t InitializeMemory(
         size_t w, // width
         size_t h); // height

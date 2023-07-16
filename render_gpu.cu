@@ -178,14 +178,6 @@ GPUBLAS<T, GPUBLA_TYPE, LM2>::GPUBLAS(const std::vector<std::vector<GPUBLA_TYPE>
     m_B = tempB;
     cudaMemset(m_B, 0, m_NumLevels * sizeof(GPUBLA_TYPE*));
 
-    size_t* elementsPerLevel;
-    m_Err = cudaMallocManaged(&elementsPerLevel,
-        m_NumLevels * sizeof(size_t),
-        cudaMemAttachGlobal);
-    if (m_Err != cudaSuccess) {
-        return;
-    }
-
     size_t total = 0;
 
     for (size_t i = 0; i < B.size(); i++) {
@@ -2635,11 +2627,11 @@ uint32_t GPURenderer::InitializeMemory(
     }
 
     if (local_width % NB_THREADS_W != 0) {
-        return 100;
+        return 10000;
     }
 
     if (local_height % NB_THREADS_H != 0) {
-        return 101;
+        return 10001;
     }
 
     width = (uint32_t)w;

@@ -11,17 +11,22 @@
 #include "..\Fractal.h"
 //#include "..\cximage599a_full\CxImage\xImage.h"
 
+constexpr size_t PrecisionLimit = 50000;
+constexpr double DefaultScaleFactor = 75;
+constexpr int DefaultWidth = 3840;
+constexpr int DefaultHeight = 1600;
+
 #ifdef _DEBUG
 #define new DEBUG_NEW
 #endif
 
 void ConvertCStringToDest(const CString& str,
-    uint32_t& width,
-    uint32_t& height,
-    HighPrecision& minX,
-    HighPrecision& minY,
-    HighPrecision& maxX,
-    HighPrecision& maxY,
+    uint32_t *width,
+    uint32_t *height,
+    HighPrecision *minX,
+    HighPrecision *minY,
+    HighPrecision *maxX,
+    HighPrecision *maxY,
     uint32_t *iters = nullptr,
     uint32_t *gpuAntialiasing = nullptr,
     uint32_t *iterationPrecision = nullptr,
@@ -33,9 +38,9 @@ CFractalTrayDlg *theActiveOne;
 CFractalTrayDlg::CFractalTrayDlg (CWnd* pParent /*=NULL*/)
   : CDialog (CFractalTrayDlg::IDD, pParent)
   , m_DestCoords (_T ("16384 6826 -0.91160860655737704918032786885245901639344262295081967213114754098360655737704918032786885245901639344262295081962950819609401041 0.234257812499999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999953905244375 -0.90897008984867591424968474148802017654476670870113493064312736443883984867591424968474148802017654476670870113498701134965572916 0.235359374999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999999953905244375 8192 1 2 1"))
-  , m_ScaleFactor (75)
-  , m_ResX (3840)
-  , m_ResY (1600)
+  , m_ScaleFactor (DefaultScaleFactor)
+  , m_ResX (DefaultWidth)
+  , m_ResY (DefaultHeight)
   , m_SourceCoords (_T ("16384 6826 -4.118537200504413619167717528373266078184110970996216897856242118537200504413619167717528373266078184110970996216756329721 -1.5 3.118537200504413619167717528373266078184110970996216897856242118537200504413619167717528373266078184110970996216756329721 1.5 8192 1 2 1"))
   , m_LocationFilename ("locations.txt")
   , m_Messages (_T (""))
@@ -181,7 +186,7 @@ void GetTokensFromString(const CString& str,
     size_t i = 0;
     while (std::getline(check1, intermediate, L' '))
     {
-        char temp[1024];
+        char temp[65535];
         tokens.push_back(intermediate);
         tokens_wstr.push_back(tokens[i].c_str());
 
@@ -192,12 +197,12 @@ void GetTokensFromString(const CString& str,
 }
 
 void ConvertCStringToDest(const CString& str,
-    uint32_t& width,
-    uint32_t& height,
-    HighPrecision& minX,
-    HighPrecision& minY,
-    HighPrecision& maxX,
-    HighPrecision& maxY,
+    uint32_t *width,
+    uint32_t *height,
+    HighPrecision *minX,
+    HighPrecision *minY,
+    HighPrecision *maxX,
+    HighPrecision *maxY,
     uint32_t *iters,
     uint32_t *gpuAntialiasing,
     uint32_t* iterationPrecision,
@@ -208,28 +213,44 @@ void ConvertCStringToDest(const CString& str,
     std::vector<std::string> tokens_str;
     GetTokensFromString(str, tokens, tokens_wstr, tokens_str);
 
-    width = atoi(tokens_str[0].c_str());
-    height = atoi(tokens_str[1].c_str());
+    if (width != nullptr) {
+        *width = atoi(tokens_str[0].c_str());
+    }
 
-    minX = HighPrecision(tokens_str[2].c_str());
-    minY = HighPrecision(tokens_str[3].c_str());
-    maxX = HighPrecision(tokens_str[4].c_str());
-    maxY = HighPrecision(tokens_str[5].c_str());
+    if (height != nullptr) {
+        *height = atoi(tokens_str[1].c_str());
+    }
+
+    if (minX != nullptr) {
+        *minX = HighPrecision(tokens_str[2].c_str());
+    }
+
+    if (minY != nullptr) {
+        *minY = HighPrecision(tokens_str[3].c_str());
+    }
+
+    if (maxX != nullptr) {
+        *maxX = HighPrecision(tokens_str[4].c_str());
+    }
+
+    if (maxY != nullptr) {
+        *maxY = HighPrecision(tokens_str[5].c_str());
+    }
 
     if (iters != nullptr) {
         *iters = atoi(tokens_str[6].c_str());
     }
 
     if (gpuAntialiasing != nullptr) {
-        *gpuAntialiasing = atoi(tokens_str[8].c_str());
+        *gpuAntialiasing = atoi(tokens_str[7].c_str());
     }
 
     if (iterationPrecision != nullptr) {
-        *iterationPrecision = atoi(tokens_str[9].c_str());
+        *iterationPrecision = atoi(tokens_str[8].c_str());
     }
 
     if (filename != nullptr) {
-        *filename = tokens_wstr[10];
+        *filename = tokens_wstr[9];
     }
 }
 
@@ -240,7 +261,7 @@ void CFractalTrayDlg::OnBnClickedButtonGenerate ()
   }
 
   UpdateData (TRUE);
-  CStdioFile locationFile (m_LocationFilename, CFile::modeCreate | CFile::modeWrite | CFile::typeText);
+  CStdioFile locationFile (m_LocationFilename, CFile::modeCreate | CFile::modeWrite | CFile::typeText | CFile::shareDenyNone);
 
   HighPrecision destMinX, destMinY, destMaxX, destMaxY;
   HighPrecision curMinX, curMinY, curMaxX, curMaxY;
@@ -258,8 +279,17 @@ void CFractalTrayDlg::OnBnClickedButtonGenerate ()
   uint32_t gpuAntialiasing;
   uint32_t iterationPrecision;
 
-  ConvertCStringToDest(m_SourceCoords, srcWidth, srcHeight, curMinX, curMinY, curMaxX, curMaxY, &sourceIters, &gpuAntialiasing, &iterationPrecision);
-  ConvertCStringToDest(m_DestCoords, destWidth, destHeight, destMinX, destMinY, destMaxX, destMaxY, &targetIters, &gpuAntialiasing, &iterationPrecision);
+  // Presumably 50k is enough
+  // TODO vary dynamically as zoom deepens
+  // TODO or just use float exp
+  Fractal::SetPrecision(PrecisionLimit, destMinX, destMinY, destMaxX, destMaxY);
+
+  ConvertCStringToDest(m_SourceCoords, &srcWidth, &srcHeight, &curMinX, &curMinY, &curMaxX, &curMaxY, &sourceIters, &gpuAntialiasing, &iterationPrecision);
+  ConvertCStringToDest(m_DestCoords, &destWidth, &destHeight, &destMinX, &destMinY, &destMaxX, &destMaxY, &targetIters, &gpuAntialiasing, &iterationPrecision);
+
+  // Reduce precision to something semi-sane
+  auto prec = Fractal::GetPrecision(destMinX, destMinY, destMaxX, destMaxY);
+  Fractal::SetPrecision(prec, destMinX, destMinY, destMaxX, destMaxY);
 
   curIters = sourceIters;
 
@@ -285,10 +315,10 @@ void CFractalTrayDlg::OnBnClickedButtonGenerate ()
     curMaxY += deltaYMax;
     curIters += (double) incIters;
 
-    sprintf(outputImageFilename, "output%05zd", i);
+    sprintf(outputImageFilename, "output%06zd", i);
 
     std::stringstream ss;
-    ss << std::setprecision(std::numeric_limits<HighPrecision>::max_digits10);
+    ss << std::setprecision(prec);
     ss << m_ResX << " ";
     ss << m_ResY << " ";
     ss << curMinX << " ";
@@ -319,8 +349,8 @@ int CFractalTrayDlg::HowManyFrames (void)
   uint32_t srcWidth, srcHeight;
   uint32_t destWidth, destHeight;
 
-  ConvertCStringToDest(m_SourceCoords, srcWidth, srcHeight, curMinX, curMinY, curMaxX, curMaxY);
-  ConvertCStringToDest(m_DestCoords, destWidth, destHeight, destMinX, destMinY, destMaxX, destMaxY);
+  ConvertCStringToDest(m_SourceCoords, &srcWidth, &srcHeight, &curMinX, &curMinY, &curMaxX, &curMaxY);
+  ConvertCStringToDest(m_DestCoords, &destWidth, &destHeight, &destMinX, &destMinY, &destMaxX, &destMaxY);
 
   int i;
   for (i = 0;; i++)
@@ -387,36 +417,55 @@ DWORD WINAPI CalcProc (LPVOID lpParameter)
   GetCurrentDirectory (128, setup.m_SaveDir);
 
   // default width/height:
-  Fractal *fractal = new Fractal (&setup, 3840, 1600, OutputMessage, NULL, false);
+  Fractal *fractal = new Fractal (&setup, DefaultWidth, DefaultHeight, OutputMessage, NULL, false);
 
   for (int i = 0;; i++)
   { if (locationFile.ReadString (line) == FALSE)
     { break; }
 
     ConvertCStringToDest(
+      line,
+      nullptr,
+      nullptr,
+      nullptr,
+      nullptr,
+      nullptr,
+      nullptr,
+      nullptr,
+      nullptr,
+      nullptr,
+      &filename);
+
+    filename_bmp = filename + std::wstring(L".bmp");
+    filename_png = filename + std::wstring(L".png");
+
+    if (FileExists(filename) || FileExists(filename_png) || FileExists(filename_bmp)) {
+        continue;
+    }
+
+    Fractal::SetPrecision(PrecisionLimit, minX, minY, maxX, maxY);
+
+    ConvertCStringToDest(
         line,
-        resX,
-        resY,
-        minX,
-        minY,
-        maxX,
-        maxY,
+        &resX,
+        &resY,
+        &minX,
+        &minY,
+        &maxX,
+        &maxY,
         &numIters,
         &gpuAntialiasing,
         &iterationPrecision,
         &filename);
 
-    filename_bmp = filename + std::wstring(L".bmp");
-    filename_png = filename + std::wstring(L".png");
-
-    if (FileExists (filename) || FileExists (filename_png) || FileExists(filename_bmp))
-    { continue; }
+    auto prec = Fractal::GetPrecision(minX, minY, maxX, maxY);
+    Fractal::SetPrecision(prec, minX, minY, maxX, maxY);
 
     fractal->SetNumIterations (numIters);
     fractal->SetIterationPrecision(iterationPrecision);
-    fractal->ResetDimensions(resX, resY, gpuAntialiasing);
+    fractal->ResetDimensions(resX, resY, 2);
     fractal->RecenterViewCalc(minX, minY, maxX, maxY);
-    fractal->UsePalette(16);
+    fractal->UsePalette(8);
     fractal->CalcFractal (true);
     fractal->SaveCurrentFractal (filename);
     //fractal->CalcDiskFractal (filename_bmp);
@@ -433,14 +482,18 @@ DWORD WINAPI CalcProc (LPVOID lpParameter)
 }
 
 bool FileExists (const std::wstring &filename)
-{ _wfinddata_t fileinfo;
-  intptr_t handle = _wfindfirst (filename.c_str(), &fileinfo);
-  if (handle == -1)
-  { return false; }
+{
+  //_wfinddata_t fileinfo;
+  //intptr_t handle = _wfindfirst (filename.c_str(), &fileinfo);
+  //if (handle == -1)
+  //{ return false; }
 
-  _findclose (handle);
+  //_findclose (handle);
 
-  return true;
+    DWORD dwAttrib = GetFileAttributes(filename.c_str());
+    
+    return (dwAttrib != INVALID_FILE_ATTRIBUTES &&
+        !(dwAttrib & FILE_ATTRIBUTE_DIRECTORY));
 }
 
 void OutputMessage (const wchar_t *szFormat, ...)
@@ -450,8 +503,8 @@ void OutputMessage (const wchar_t *szFormat, ...)
   va_list argList;
   va_start (argList, szFormat);
 
-  wchar_t newMessage[2048];
-  vswprintf (newMessage, 2048, szFormat, argList);
+  wchar_t newMessage[32768];
+  vswprintf (newMessage, 32768, szFormat, argList);
 
   theActiveOne->m_Messages = newMessage;
   //theActiveOne->UpdateData (FALSE);

@@ -3334,3 +3334,8 @@ uint32_t GPURenderer::ExtractIters(uint32_t* buffer) {
 
     return cudaSuccess;
 }
+
+const char* GPURenderer::ConvertErrorToString(uint32_t err) {
+    auto typeNotExposedOutSideHere = static_cast<cudaError_t>(err);
+    return cudaGetErrorString(typeNotExposedOutSideHere);
+}

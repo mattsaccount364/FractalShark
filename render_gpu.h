@@ -235,6 +235,8 @@ public:
 
     void ClearMemory();
 
+    static const char* ConvertErrorToString(uint32_t err);
+
 private:
     void ClearLocals();
     uint32_t ExtractIters(uint32_t* buffer);

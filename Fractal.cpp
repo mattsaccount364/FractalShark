@@ -3864,9 +3864,9 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
 }
 
 void Fractal::MessageBoxCudaError(uint32_t result) {
-    wchar_t error[256];
-    wsprintf(error, L"Error from cuda: %u\n", result);
-    ::MessageBox(NULL, error, L"", MB_OK);
+    char error[256];
+    sprintf(error, "Error from cuda: %u.  Message: \"%s\"\n", result, GPURenderer::ConvertErrorToString(result));
+    ::MessageBoxA(NULL, error, "", MB_OK);
 }
 
 bool Fractal::CalcPixelRow_Exp(unsigned int *rowBuffer, size_t row)

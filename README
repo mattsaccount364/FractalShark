@@ -1,7 +1,13 @@
 Why FractalShark?  Because fractals and sharks are both cool, so why not?  And it's relatively unique so hopefully it can be google'd.
 
-Here's a summary.  FractalShark is:
-- Downloadable from here.  https://github.com/mattsaccount364/FractalShark
+Its main contributions relative to everything else I can find are:
+- CUDA-based bilinear approximation rendering
+- Multi-threaded reference orbit calculation for a little better performance (three threads, two for squaring and one for coordinating).
+- Numerous CUDA implementations with different strategies for rendering the Mandelbrot
+- It defaults to HDRx32 / bilinear approximation, which is fairly optimized.  That's the default when you just run the program.  This mode of operation gets you > 10e4000 zoom capability.
+
+FractalShark is:
+- Downloadable from here:  https://github.com/mattsaccount364/FractalShark
 - A work in progress, many bugs, lots of messed up code, and basically just a huge blob of hacks. This will never compete with many others, e.g. FractalZoomer has great polish, and Imagina will probably beat it on performance in the long term.
 - Much of the code in the repo is dead.  FractalShark is the main project and is the live part.
 - Designed exclusively for use with Nvidia GPUs on Windows.  I have an RTX 4090 and it's optimized for operation on that, but I believe it'll work fine on anything since the GTX 9xx series from ~2016.
@@ -10,18 +16,18 @@ Here's a summary.  FractalShark is:
 - Includes most algorithmic enhancements I'm aware of: bilinear approximation, high-precision MPIR perturbation for the reference orbit, high-dynamic range float/float exp, many CUDA implementations, periodicity detection for reference calculation
 - GPLv3.
 
-Its main contributions relative to everything else I can find are:
-- CUDA-based bilinear approximation rendering
-- Multi-threaded reference orbit calculation for a little better performance (three threads, two for squaring and one for coordinating).
-- Numerous CUDA implementations with different strategies for rendering the Mandelbrot
-- It defaults to HDRx32 / bilinear approximation, which is fairly optimized.  That's the default when you just run the program.
-
-
 System requirements:
 - AVX-2 CPU - used for reference orbit/MPIR library
 - CUDA-capable NVIDIA 900-series or newer (~2016)
 - Windows
 - Try updating your Nvidia driver if you get a "cuda error 35" when you run it.
+
+Operational instructions:
+- Download fractals.exe from github
+- Run it.  If you get a blank screen or error message and believe you meet the system requirements then let me know and I'll speculate about the problem.
+- Right click to get a pop up menu.  Some of the options are buggy and will just crash/misbehave but most of the basic things should be fine.
+- Left-click / drag to zoom in on a box
+- Alternatively, use hot keys:  z to zoom in at mouse cursor, shift-Z to zoom out a bit, b to go back, - or = to increase/decrease iterations.
 
 What it doesn't have and "never" will because I suspect I won't be motivated enough:
 - Support for non-Mandelbrot
@@ -32,13 +38,6 @@ What it doesn't have but I'd like to add:
 - Periodicity detection with bilinear approximation in CUDA.  I don't understand the details here well enough yet.
 - Minibrot detection/location.  Imagina has this I know, not sure who else has it.
 - TBD - depends on motivation.
-
-Operational instructions:
-- Download fractals.exe from github
-- Run it.  If you get a blank screen or error message and believe you meet the system requirements then let me know and I'll speculate about the problem.
-- Right click to get a pop up menu.  Some of the options are buggy and will just crash/misbehave but most of the basic things should be fine.
-- Left-click / drag to zoom in on a box
-- Alternatively, use hot keys:  z to zoom in at mouse cursor, shift-Z to zoom out a bit, b to go back, - or = to increase/decrease iterations.
 
 Known bugs:
 - Will not work and will probably crash or something if you don't meet the system requirement
@@ -51,7 +50,7 @@ Known bugs:
 - Too many to list - don't expect much.
 
 Interesting technical bits:
-- All the CUDA kernels are in render_gpu.cu.  The most interesting is probably "mandel_1xHDR_float_perturb_bla" which is the one I've spent the most time on lately.  For better performance at low zoom levels, you could look at "mandel_1x_float_perturb" which leaves out linear approximation and just does straight perturbation.
+- All the CUDA kernels are in render_gpu.cu.  The most interesting is probably "mandel_1xHDR_float_perturb_bla" which is the one I've spent the most time on lately.  For better performance at low zoom levels, you could look at "mandel_1x_float_perturb" which leaves out linear approximation and just does straight perturbation up to ~10e30, which corresponds with the float exponent range.
 - The mandel_1x_float is the classic 32-bit float mandelbrot and is screaming fast on a GPU.  This one is optimized with fused multiply-add for fun even though it's kind of useless.
 - The most interesting reference orbit calculation is at AddPerturbationReferencePointMT2.  It includes a "bad" calculation which is used for the "scaled" CUDA kernels - I need to templatize that as an option rather than a requirement but haven't bothered.
 - There are CPU renderers but they were mostly to learn/debug more easily and aren't optimized as heavily.

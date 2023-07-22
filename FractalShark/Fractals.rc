@@ -136,6 +136,7 @@ BEGIN
             MENUITEM "4x64 GPU",                    IDM_ALG_GPU_4_64
             MENUITEM SEPARATOR
             MENUITEM "1x32 GPU - Perturbation",     IDM_ALG_GPU_1_32_PERTURB
+            MENUITEM "1x32 GPU - Perturbation, Periodic (broken)", IDM_ALG_GPU_1_32_PERTURB_PERIODIC
             MENUITEM "1x32 GPU - Perturbation Scaled", IDM_ALG_GPU_1_32_PERTURB_SCALED
             MENUITEM "HDRx32 GPU - Perturbation Scaled", IDM_ALG_GPU_HDR_32_PERTURB_SCALED
             MENUITEM "1x32 GPU - Perturbation Scaled BLA", IDM_ALG_GPU_1_32_PERTURB_SCALED_BLA
@@ -187,6 +188,7 @@ BEGIN
         MENUITEM "Load Location...",            IDM_LOADLOCATION
         MENUITEM "Save Bitmap Ima&ge",          IDM_SAVEBMP
         MENUITEM "Save High Res Bitmap",        IDM_SAVEHIRESBMP
+        MENUITEM "Save Iterations as Text",     IDM_SAVE_ITERS_TEXT
         POPUP "Benchmark"
         BEGIN
             MENUITEM "Accurate",                    IDM_BENCHMARK_ACCURATE

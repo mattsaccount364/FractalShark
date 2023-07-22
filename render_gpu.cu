@@ -1755,6 +1755,7 @@ void mandel_1x_float(uint32_t* iter_matrix,
     iter_matrix[idx] = iter;
 }
 
+template<bool Periodic>
 __global__
 void mandel_1x_float_perturb(uint32_t* iter_matrix,
     MattPerturbSingleResults<float> PerturbFloat,
@@ -1792,6 +1793,15 @@ void mandel_1x_float_perturb(uint32_t* iter_matrix,
     float DeltaSubNY = 0;
     size_t MaxRefIteration = PerturbFloat.size - 1;
 
+    //float dzdcX = max(max(x.dzdc), 1.0f);
+    float scalingFactor = 1.0f / (max(max(abs(dx), abs(dy)), 1.0f));
+    //float scalingFactor = 1.0f;
+    float dzdcX = scalingFactor;
+    float dzdcY = float(0.0);
+
+    float maxRadius = max(abs(dx), abs(dy));
+    float maxRadiusSq = maxRadius * maxRadius;
+
     while (iter < n_iterations) {
         const MattReferenceSingleIter<float> *curIter = &PerturbFloat.iters[RefIteration];
 
@@ -1820,6 +1830,33 @@ void mandel_1x_float_perturb(uint32_t* iter_matrix,
 
         if (zn_size > 256) {
             break;
+        }
+
+        // Just finds the interesting Misiurewicz points.  Breaks so they're colored differently
+        if constexpr (Periodic) {
+            auto n3 = maxRadiusSq * (dzdcX * dzdcX + dzdcY * dzdcY);
+            if (zn_size >= n3) {
+                // dzdc = dzdc * 2.0 * z + ScalingFactor;
+                // dzdc = dzdc * 2.0 * tempZ + ScalingFactor;
+                // dzdc = (dzdcX + dzdcY * i) * 2.0 * (tempZX + tempZY * i) + ScalingFactor;
+                // dzdc = (dzdcX * 2.0 + dzdcY * i * 2.0) * (tempZX + tempZY * i) + ScalingFactor;
+                // dzdc = (dzdcX * 2.0) * tempZX +
+                //        (dzdcX * 2.0) * (tempZY * i) +
+                //        (dzdcY * i * 2.0) * tempZX +
+                //        (dzdcY * i * 2.0) * tempZY * i
+                //
+                // dzdcX = (dzdcX * 2.0) * tempZX -
+                //         (dzdcY * 2.0) * tempZY
+                // dzdcY = (dzdcX * 2.0) * (tempZY) +
+                //         (dzdcY * 2.0) * tempZX
+                auto dzdcXOrig = dzdcX;
+                dzdcX = 2.0f * tempZX * dzdcX - 2.0f * tempZY * dzdcY + scalingFactor;
+                dzdcY = 2.0f * tempZY * dzdcXOrig + 2.0f * tempZX * dzdcY;
+            }
+            else {
+                //iter = n_iterations;
+                break;
+            }
         }
 
         if (zn_size < normDeltaSubN ||
@@ -2855,7 +2892,16 @@ uint32_t GPURenderer::RenderPerturbBLA(
     }
 
     if (algorithm == RenderAlgorithm::Gpu1x32Perturbed) {
-        mandel_1x_float_perturb << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
+        mandel_1x_float_perturb<false> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
+            cudaResults,
+            local_width, local_height, cx.floatOnly, cy.floatOnly, dx.floatOnly, dy.floatOnly,
+            centerX.floatOnly, centerY.floatOnly,
+            n_iterations);
+
+        result = ExtractIters(buffer);
+    }
+    else if (algorithm == RenderAlgorithm::Gpu1x32PerturbedPeriodic) {
+        mandel_1x_float_perturb<true> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
             cudaResults,
             local_width, local_height, cx.floatOnly, cy.floatOnly, dx.floatOnly, dy.floatOnly,
             centerX.floatOnly, centerY.floatOnly,
@@ -3027,6 +3073,8 @@ uint32_t GPURenderer::RenderPerturbBLA(
     }
     else if (algorithm == RenderAlgorithm::GpuHDRx32PerturbedScaled) {
         if constexpr (std::is_same<T, HDRFloat<float>>::value) {
+            mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
+
             mandel_1x_float_perturb_scaled<T> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
                 cudaResults, cudaResultsDouble,
                 local_width, local_height, cx.hdrflt, cy.hdrflt, dx.hdrflt, dy.hdrflt,

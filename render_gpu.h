@@ -28,6 +28,7 @@ enum class RenderAlgorithm {
     Gpu4x64,
     Gpu1x32,
     Gpu1x32Perturbed,
+    Gpu1x32PerturbedPeriodic,
     GpuHDRx32PerturbedBLA,
     GpuHDRx32PerturbedScaled,
     Gpu1x32PerturbedScaled,

@@ -40,6 +40,7 @@ void MenuGetCurPos(HWND hWnd);
 void MenuSaveCurrentLocation(HWND hWnd);
 void MenuSaveBMP(HWND hWnd);
 void MenuSaveHiResBMP(HWND hWnd);
+void MneuSaveItersAsText();
 void MenuBenchmark(HWND hWnd, bool fastbenchmark);
 void MenuBenchmarkRefPtDouble(HWND hWnd);
 void MenuBenchmarkRefPtHDRFloat(HWND hWnd);
@@ -238,16 +239,19 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
         return;
     }
 
-    //SHORT nState = GetKeyState(VK_SHIFT);
+    SHORT nState = GetAsyncKeyState(VK_SHIFT);
+    bool shiftDown = (nState & 0x8000) != 0;
 
     switch (wParam) {
     case 'Z':
-        // zoom out
-        gFractal->Zoom(mousePt.x, mousePt.y, 1);
-        break;
     case 'z':
-        // zoom in
-        gFractal->Zoom(mousePt.x, mousePt.y, -.45);
+        // zoom out
+        if (shiftDown) {
+            gFractal->Zoom(mousePt.x, mousePt.y, 1);
+        } else {
+            // zoom in
+            gFractal->Zoom(mousePt.x, mousePt.y, -.45);
+        }
         break;
     case 'c':
         MenuCenterView(hWnd, mousePt.x, mousePt.y);
@@ -258,16 +262,26 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
     case '-':
         MenuMultiplyIterations(hWnd, 2.0/3.0);
         break;
-    case 'a':
-        MenuCenterView(hWnd, mousePt.x, mousePt.y);
-        gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Default>();
-        break;
     case 'A':
-        MenuCenterView(hWnd, mousePt.x, mousePt.y);
-        gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Max>();
+    case 'a':
+        if (!shiftDown) {
+            MenuCenterView(hWnd, mousePt.x, mousePt.y);
+            gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Default>();
+        } else {
+            MenuCenterView(hWnd, mousePt.x, mousePt.y);
+            gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Max>();
+        }
         break;
     case 'b':
         MenuGoBack(hWnd);
+        break;
+    case 'P':
+    case 'p':
+        if (shiftDown) {
+            //::MessageBoxA(hWnd, "Yay", "", MB_OK);
+            gFractal->ClearPerturbationResults();
+        }
+        MenuBenchmarkThis(hWnd);
         break;
     default:
         break;
@@ -529,6 +543,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu1x32Perturbed);
                 break;
             }
+            case IDM_ALG_GPU_1_32_PERTURB_PERIODIC:
+            {
+                gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedPeriodic);
+                break;
+            }
             case IDM_ALG_GPU_1_32_PERTURB_SCALED:
             {
                 gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedScaled);
@@ -744,6 +763,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             case IDM_SAVEHIRESBMP:
             {
                 MenuSaveHiResBMP(hWnd);
+                break;
+            }
+            case IDM_SAVE_ITERS_TEXT:
+            {
+                MneuSaveItersAsText();
                 break;
             }
             case IDM_BENCHMARK_ACCURATE:
@@ -1289,6 +1313,10 @@ void MenuSaveBMP(HWND) {
 
 void MenuSaveHiResBMP(HWND) {
     gFractal->SaveHiResFractal(L"");
+}
+
+void MneuSaveItersAsText() {
+    gFractal->SaveItersAsText(L"");
 }
 
 void BenchmarkMessage(HWND hWnd, HighPrecision megaIters, size_t milliseconds) {

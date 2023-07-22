@@ -15,6 +15,7 @@
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
     <CudaToolkitCustomDir>
     </CudaToolkitCustomDir>
+    <ProjectName>FractalShark</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
@@ -186,7 +187,7 @@
     <ClCompile Include="..\HDRFloat.cpp" />
     <ClCompile Include="..\WPngImage\lodepng.cpp" />
     <ClCompile Include="..\WPngImage\WPngImage.cc" />
-    <ClCompile Include="Fractals.cpp">
+    <ClCompile Include="FractalShark.cpp">
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Disabled</Optimization>
       <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">EnableFastChecks</BasicRuntimeChecks>
     </ClCompile>

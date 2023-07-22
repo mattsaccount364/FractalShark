@@ -271,9 +271,69 @@ private:
 public: // Saving images of the fractal
     int SaveCurrentFractal(const std::wstring filename_base);
     int SaveHiResFractal(const std::wstring filename_base);
+    int SaveItersAsText(const std::wstring filename_base);
     void CleanupThreads();
 
+private:
+    // Holds the number of iterations it took to decide if
+    // we were in or not in the fractal.  Has a number
+    // for every point on the screen.
+    struct ItersMemoryContainer {
+        ItersMemoryContainer(size_t width, size_t height, size_t total_antialiasing);
+        ItersMemoryContainer(ItersMemoryContainer&&) noexcept;
+        ItersMemoryContainer& operator=(ItersMemoryContainer&&) noexcept;
+        ~ItersMemoryContainer();
+
+        ItersMemoryContainer(ItersMemoryContainer&) = delete;
+        ItersMemoryContainer& operator=(const ItersMemoryContainer&) = delete;
+
+        uint32_t* m_ItersMemory;
+        uint32_t** m_ItersArray;
+
+        // These are a bit bigger than m_ScrnWidth / m_ScrnHeight!
+        size_t m_Width;
+        size_t m_Height;
+        size_t m_Total;
+    };
+
+    // 
+    struct CurrentFractalSave {
+        enum class Type {
+            ItersText,
+            PngImg
+        };
+
+        CurrentFractalSave(enum Type typ, std::wstring filename_base, Fractal& fractal);
+        ~CurrentFractalSave();
+        void Run();
+        void StartThread();
+
+        CurrentFractalSave(CurrentFractalSave&&) = default;
+
+        Type m_Type;
+        Fractal& m_Fractal;
+        size_t m_ScrnWidth;
+        size_t m_ScrnHeight;
+        uint32_t m_GpuAntialiasing;
+        size_t m_NumIterations;
+        int m_PaletteRotate; // Used to shift the palette
+        int m_PaletteDepthIndex; // 0, 1, 2
+        std::vector<uint16_t>* m_PalR[Fractal::Palette::Num], * m_PalG[Fractal::Palette::Num], * m_PalB[Fractal::Palette::Num];
+        Fractal::Palette m_WhichPalette;
+        std::vector<uint32_t> m_PalIters[Fractal::Palette::Num];
+        ItersMemoryContainer m_CurIters;
+        std::wstring m_FilenameBase;
+        std::unique_ptr<std::thread> m_Thread;
+        bool m_Destructable;
+    };
+
+    std::vector<std::unique_ptr<CurrentFractalSave>> m_FractalSavesInProgress;
+
+    template<CurrentFractalSave::Type Typ>
+    int SaveFractalData(const std::wstring filename_base);
+
 public: // Benchmarking
+ 
     HighPrecision Benchmark(size_t numIters, size_t &millseconds);
 
     template<class T, class SubType>
@@ -411,27 +471,6 @@ private:
     int m_PaletteDepthIndex; // 0, 1, 2
     static constexpr int NumPalettes = 3;
 
-    // Holds the number of iterations it took to decide if
-    // we were in or not in the fractal.  Has a number
-    // for every point on the screen.
-    struct ItersMemoryContainer {
-        ItersMemoryContainer(size_t width, size_t height, size_t total_antialiasing);
-        ItersMemoryContainer(ItersMemoryContainer&&) noexcept;
-        ItersMemoryContainer& operator=(ItersMemoryContainer&&) noexcept;
-        ~ItersMemoryContainer();
-
-        ItersMemoryContainer(ItersMemoryContainer&) = delete;
-        ItersMemoryContainer& operator=(const ItersMemoryContainer&) = delete;
-
-        uint32_t* m_ItersMemory;
-        uint32_t** m_ItersArray;
-
-        // These are a bit bigger than m_ScrnWidth / m_ScrnHeight!
-        size_t m_Width;
-        size_t m_Height;
-        size_t m_Total;
-    };
-
     void InitializeMemory();
     void GetIterMemory();
     void ReturnIterMemory(ItersMemoryContainer&& to_return);
@@ -454,33 +493,6 @@ private:
     // GPU rendering
     GPURenderer m_r;
     void MessageBoxCudaError(uint32_t err);
-
-    // 
-    struct CurrentFractalSave {
-        CurrentFractalSave(std::wstring filename_base, Fractal& fractal);
-        ~CurrentFractalSave();
-        void Run();
-        void StartThread();
-
-        CurrentFractalSave(CurrentFractalSave&&) = default;
-
-        Fractal &m_Fractal;
-        size_t m_ScrnWidth;
-        size_t m_ScrnHeight;
-        uint32_t m_GpuAntialiasing;
-        size_t m_NumIterations;
-        int m_PaletteRotate; // Used to shift the palette
-        int m_PaletteDepthIndex; // 0, 1, 2
-        std::vector<uint16_t> *m_PalR[Fractal::Palette::Num], *m_PalG[Fractal::Palette::Num], *m_PalB[Fractal::Palette::Num];
-        Fractal::Palette m_WhichPalette;
-        std::vector<uint32_t> m_PalIters[Fractal::Palette::Num];
-        ItersMemoryContainer m_CurIters;
-        std::wstring m_FilenameBase;
-        std::unique_ptr<std::thread> m_Thread;
-        bool m_Destructable;
-    };
-
-    std::vector<std::unique_ptr<CurrentFractalSave>> m_FractalSavesInProgress;
 };
 
 #endif

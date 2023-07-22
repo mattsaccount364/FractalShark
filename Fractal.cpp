@@ -20,6 +20,8 @@
 
 #include <thread>
 #include <psapi.h>
+#include <iostream>
+#include <fstream>
 
 // Match in render_gpu.cu
 constexpr static auto NB_THREADS_W = 8; // W=16, H=8 previously seemed OK
@@ -138,6 +140,8 @@ void Fractal::Initialize(int width,
     //SetRenderAlgorithm(RenderAlgorithm::Cpu64PerturbedBLA);
     SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedBLA);
     //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedScaled);
+    //SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedPeriodic);
+    
     SetIterationPrecision(1);
     SetPerturbationAlg(PerturbationAlg::MTPeriodicity2);
 
@@ -145,8 +149,8 @@ void Fractal::Initialize(int width,
     m_PerturbationGuessCalcY = 0;
 
     ResetDimensions(width, height, 1);
-    //View(0);
-    View(5);
+    View(0);
+    //View(9);
 
     m_ChangedWindow = true;
     m_ChangedScrn = true;
@@ -1164,11 +1168,10 @@ void Fractal::View(size_t view)
 
     case 9:
         // Current debug spot
-        // Starts failing with scaled/BLA/32-bit but works with regular scaled 32-bit.
-        minX = HighPrecision{ "-0.7483637942536300149503483214787034876591588411716933148186745513477244682570730516417622419808698292581482958014791704644565629000555509682153589709079382456689931580963129631758649894107825943703087439928414641651444362689519549254204846154926596121590912184282196146643043078678714060985887002716080586668490292983394730321504843621114015194797701155788204224604921" };
-        minY = HighPrecision{ "-0.06744780927701335119415722995059170914204410549488939856276713700069965046725434093158528402364591969750087517693203035021583062328882637072820717521285184531690139123820284407899463906779357518574820657755838159003077331450979793198906608176322691865205598530852830385345767321526425688541101362130891363458886206558756783457806483014890069718507540521064981102965257" };
-        maxX = HighPrecision{ "-0.74836379425363001495034832147870348765915884117169331481867433187401065255783016055089059668801973745851548723225680077302941610826313399595717357034234449928086303787522807162527281675222310279327102341439954670484722882754113271398864781791213972240089820570031805566451574870561115609430798868191313945870166698496668127704727678368440262539279975889176381385504076" };
-        maxY = HighPrecision{ "-0.067447809277013351194157229950591709142044105494889398562767046493701193416045047963366441840970068619583043311554914622271582261091114020153740373090838894288008277652802673691394718968303669425227929361055051514588168357033981427169851116968741801469506295904472361894468267390743503211032923742242698263338165959443279104509270938940285203610910294845473266242724579" };
+        minX = HighPrecision{ "-0.81394199275609878875136988079089581768282857072187918528787" };
+        minY = HighPrecision{ "0.1940970983639155545870683099069152939779956506822050342848" };
+        maxX = HighPrecision{ "-0.81394199275609878875136264371649480889415711511526384374298" };
+        maxY = HighPrecision{ "0.19409709836391555458707132535458238097327542385162809326184" };
         SetNumIterations(4718592);
         break;
 
@@ -1574,6 +1577,7 @@ void Fractal::CalcFractal(bool MemoryOnly)
         CalcGpuFractal(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu1x32Perturbed:
+    case RenderAlgorithm::Gpu1x32PerturbedPeriodic:
         CalcGpuPerturbationFractalBLA<float, float>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu1x32PerturbedScaled:
@@ -2466,7 +2470,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                         //auto n3 = maxRadiusHdr * r0 * HighTwo;
                         //HdrReduce(n3);
 
-                        //if (n3 > n2) {
+                        //if (n2 < n3) {
                         //    periodicity_should_break = true;
                         //}
                         //else {
@@ -2538,6 +2542,7 @@ bool Fractal::IsThisPerturbationArrayUsed(void* check) const {
         case RenderAlgorithm::GpuHDRx64PerturbedBLA:
             return check == &m_PerturbationResultsHDRDouble;
         case RenderAlgorithm::Gpu1x32Perturbed:
+        case RenderAlgorithm::Gpu1x32PerturbedPeriodic:
             return check == &m_PerturbationResultsFloat;
         case RenderAlgorithm::Cpu64PerturbedBLA:
         case RenderAlgorithm::Gpu1x32PerturbedScaled:
@@ -2749,7 +2754,7 @@ void Fractal::AddPerturbationReferencePointST(HighPrecision initX, HighPrecision
             auto n3 = maxRadiusHdr * r0 * HighTwo;
             HdrReduce(n3);
 
-            if (n3 > n2) {
+            if (n2 < n3) {
                 if constexpr (!BenchmarkMode) {
                     break;
                 }
@@ -3040,7 +3045,7 @@ void Fractal::AddPerturbationReferencePointMT2(HighPrecision initX, HighPrecisio
             auto n3 = maxRadiusHdr * r0 * HighTwo;
             HdrReduce(n3);
 
-            if (n3 > n2) {
+            if (n2 < n3) {
                 if constexpr (!BenchmarkMode) {
                     periodicity_should_break = true;
                 }
@@ -3506,7 +3511,7 @@ void Fractal::AddPerturbationReferencePointMT5(HighPrecision initX, HighPrecisio
             auto n3 = maxRadiusHdr * r0 * HighTwo;
             HdrReduce(n3);
 
-            if (n3 > n2) {
+            if (n2 < n3) {
                 if constexpr (!BenchmarkMode) {
                     periodicity_should_break = true;
                 }
@@ -3600,6 +3605,7 @@ bool Fractal::RequiresReferencePoints() const {
         case RenderAlgorithm::Cpu64PerturbedBLA:
         case RenderAlgorithm::Cpu64PerturbedBLAHDR:
         case RenderAlgorithm::Gpu1x32Perturbed:
+        case RenderAlgorithm::Gpu1x32PerturbedPeriodic:
         case RenderAlgorithm::Gpu1x32PerturbedScaled:
         case RenderAlgorithm::GpuHDRx32PerturbedScaled:
         case RenderAlgorithm::Gpu1x32PerturbedScaledBLA:
@@ -4010,9 +4016,11 @@ size_t Fractal::FindMaxItersUsed(void) const
 //////////////////////////////////////////////////////////////////////////////
 
 Fractal::CurrentFractalSave::CurrentFractalSave(
+    enum Type typ,
     std::wstring filename_base,
     Fractal& fractal)
-    : m_FilenameBase(filename_base),
+    : m_Type(typ),
+    m_FilenameBase(filename_base),
     m_Fractal(fractal),
     m_ScrnWidth(fractal.m_ScrnWidth),
     m_ScrnHeight(fractal.m_ScrnHeight),
@@ -4049,21 +4057,22 @@ void Fractal::CurrentFractalSave::StartThread() {
 }
 
 void Fractal::CurrentFractalSave::Run() {
-    //CBitmapWriter bmpWriter;
     int ret;
-    //unsigned char *data = new unsigned char[m_ScrnWidth * m_ScrnHeight * 3];
-    double acc_r, acc_b, acc_g;
-    size_t input_x, input_y;
-    size_t output_x, output_y;
-    size_t numIters;
+    std::wstring final_filename;
 
-    std::wstring filename_png;
+    std::wstring ext;
+    if (m_Type == Type::PngImg) {
+        ext = L".png";
+    }
+    else {
+        ext = L".txt";
+    }
 
     if (m_FilenameBase != L"") {
         wchar_t temp[512];
         wsprintf(temp, L"%s", m_FilenameBase.c_str());
-        filename_png = std::wstring(temp) + std::wstring(L".png");
-        if (Fractal::FileExists(filename_png.c_str())) {
+        final_filename = std::wstring(temp) + ext;
+        if (Fractal::FileExists(final_filename.c_str())) {
             ::MessageBox(NULL, L"Not saving, file exists", L"", MB_OK);
             return;
         }
@@ -4073,86 +4082,124 @@ void Fractal::CurrentFractalSave::Run() {
         do {
             wchar_t temp[512];
             wsprintf(temp, L"output%05d", i);
-            filename_png = std::wstring(temp) + std::wstring(L".png");
+            final_filename = std::wstring(temp) + ext;
             i++;
-        } while (Fractal::FileExists(filename_png.c_str()));
+        } while (Fractal::FileExists(final_filename.c_str()));
     }
-
-    WPngImage image((int)m_ScrnWidth, (int)m_ScrnHeight, WPngImage::Pixel16(0, 0, 0));
-
-    for (output_y = 0; output_y < m_ScrnHeight; output_y++)
-    {
-        for (output_x = 0; output_x < m_ScrnWidth; output_x++)
-        {
-            acc_r = 0;
-            acc_g = 0;
-            acc_b = 0;
-
-            for (input_x = output_x * m_GpuAntialiasing;
-                input_x < (output_x + 1) * m_GpuAntialiasing;
-                input_x++) {
-                for (input_y = output_y * m_GpuAntialiasing;
-                    input_y < (output_y + 1) * m_GpuAntialiasing;
-                    input_y++) {
-
-                    numIters = m_CurIters.m_ItersArray[input_y][input_x];
-                    if (numIters < m_NumIterations)
-                    {
-                        numIters += m_PaletteRotate;
-                        if (numIters >= MAXITERS) {
-                            numIters = MAXITERS - 1;
-                        }
-
-                        auto palIndex = numIters % m_PalIters[m_WhichPalette][m_PaletteDepthIndex];
-
-                        acc_r += m_PalR[m_WhichPalette][m_PaletteDepthIndex][palIndex];
-                        acc_g += m_PalG[m_WhichPalette][m_PaletteDepthIndex][palIndex];
-                        acc_b += m_PalB[m_WhichPalette][m_PaletteDepthIndex][palIndex];
-                    }
-                }
-            }
-
-            acc_r /= m_GpuAntialiasing * m_GpuAntialiasing;
-            acc_g /= m_GpuAntialiasing * m_GpuAntialiasing;
-            acc_b /= m_GpuAntialiasing * m_GpuAntialiasing;
-
-            //if (index > MAXITERS) {
-            //    index = MAXITERS - 1;
-            //}
-
-            //data[i] = (unsigned char)acc_r;
-            //i++;
-            //data[i] = (unsigned char)acc_g;
-            //i++;
-            //data[i] = (unsigned char)acc_b;
-            //i++;
-
-            image.set((int)output_x,
-                (int)output_y,
-                WPngImage::Pixel16((uint16_t)acc_r, (uint16_t)acc_g, (uint16_t)acc_b));
-        }
-    }
-
-    m_Fractal.ReturnIterMemory(std::move(m_CurIters));
 
     //setup converter deprecated
     //using convert_type = std::codecvt_utf8<wchar_t>;
     //std::wstring_convert<convert_type, wchar_t> converter;
     ////use converter (.to_bytes: wstr->str, .from_bytes: str->wstr)
-    //const std::string filename_png_c = converter.to_bytes(filename_png);
+    //const std::string filename_c = converter.to_bytes(final_filename);
 
-    std::string filename_png_c;
-    std::transform(filename_png.begin(), filename_png.end(), std::back_inserter(filename_png_c), [](wchar_t c) {
+    std::string filename_c;
+    std::transform(final_filename.begin(), final_filename.end(), std::back_inserter(filename_c), [](wchar_t c) {
         return (char)c;
-    });
+        });
 
-    ret = image.saveImage(filename_png_c, WPngImage::PngFileFormat::kPngFileFormat_RGBA16);
+    if (m_Type == Type::PngImg) {
+        double acc_r, acc_b, acc_g;
+        size_t input_x, input_y;
+        size_t output_x, output_y;
+        size_t numIters;
+
+        WPngImage image((int)m_ScrnWidth, (int)m_ScrnHeight, WPngImage::Pixel16(0, 0, 0));
+
+        for (output_y = 0; output_y < m_ScrnHeight; output_y++)
+        {
+            for (output_x = 0; output_x < m_ScrnWidth; output_x++)
+            {
+                acc_r = 0;
+                acc_g = 0;
+                acc_b = 0;
+
+                for (input_x = output_x * m_GpuAntialiasing;
+                    input_x < (output_x + 1) * m_GpuAntialiasing;
+                    input_x++) {
+                    for (input_y = output_y * m_GpuAntialiasing;
+                        input_y < (output_y + 1) * m_GpuAntialiasing;
+                        input_y++) {
+
+                        numIters = m_CurIters.m_ItersArray[input_y][input_x];
+                        if (numIters < m_NumIterations)
+                        {
+                            numIters += m_PaletteRotate;
+                            if (numIters >= MAXITERS) {
+                                numIters = MAXITERS - 1;
+                            }
+
+                            auto palIndex = numIters % m_PalIters[m_WhichPalette][m_PaletteDepthIndex];
+
+                            acc_r += m_PalR[m_WhichPalette][m_PaletteDepthIndex][palIndex];
+                            acc_g += m_PalG[m_WhichPalette][m_PaletteDepthIndex][palIndex];
+                            acc_b += m_PalB[m_WhichPalette][m_PaletteDepthIndex][palIndex];
+                        }
+                    }
+                }
+
+                acc_r /= m_GpuAntialiasing * m_GpuAntialiasing;
+                acc_g /= m_GpuAntialiasing * m_GpuAntialiasing;
+                acc_b /= m_GpuAntialiasing * m_GpuAntialiasing;
+
+                //if (index > MAXITERS) {
+                //    index = MAXITERS - 1;
+                //}
+
+                //data[i] = (unsigned char)acc_r;
+                //i++;
+                //data[i] = (unsigned char)acc_g;
+                //i++;
+                //data[i] = (unsigned char)acc_b;
+                //i++;
+
+                image.set((int)output_x,
+                    (int)output_y,
+                    WPngImage::Pixel16((uint16_t)acc_r, (uint16_t)acc_g, (uint16_t)acc_b));
+            }
+        }
+
+        m_Fractal.ReturnIterMemory(std::move(m_CurIters));
+
+        ret = image.saveImage(filename_c, WPngImage::PngFileFormat::kPngFileFormat_RGBA16);
+    }
+    else {
+        constexpr size_t buf_size = 128;
+        char one_val[buf_size];
+        std::string out_str;
+
+        for (uint32_t output_y = 0; output_y < m_ScrnHeight * m_GpuAntialiasing; output_y++) {
+            for (uint32_t output_x = 0; output_x < m_ScrnWidth * m_GpuAntialiasing; output_x++) {
+                uint32_t numiters = m_CurIters.m_ItersArray[output_y][output_x];;
+                memset(one_val, ' ', sizeof(one_val));
+                sprintf(one_val, "(%u,%u):%u ", output_x, output_y, numiters);
+
+                // Wow what a kludge
+                //size_t orig_len = strlen(one_val);
+                //one_val[orig_len] = ' ';
+                //one_val[orig_len + 1] = 0;
+
+                out_str += one_val;
+            }
+
+            out_str += "\n";
+        }
+
+        std::ofstream out(filename_c);
+        out << out_str;
+        out.close();
+    }
 
     m_Destructable = true;
     return;
 }
 
-int Fractal::SaveCurrentFractal(const std::wstring filename_base)
+int Fractal::SaveCurrentFractal(const std::wstring filename_base) {
+    return SaveFractalData<CurrentFractalSave::Type::PngImg>(filename_base);
+}
+
+template<Fractal::CurrentFractalSave::Type Typ>
+int Fractal::SaveFractalData(const std::wstring filename_base)
 {
     for (;;) {
         MEMORYSTATUSEX statex;
@@ -4164,7 +4211,7 @@ int Fractal::SaveCurrentFractal(const std::wstring filename_base)
             Sleep(100);
         }
         else {
-            auto newPtr = std::make_unique<CurrentFractalSave>(filename_base, *this);
+            auto newPtr = std::make_unique<CurrentFractalSave>(Typ, filename_base, *this);
             m_FractalSavesInProgress.push_back(std::move(newPtr));
             m_FractalSavesInProgress.back()->StartThread();
             break;
@@ -4215,6 +4262,10 @@ int Fractal::SaveHiResFractal(const std::wstring filename)
     ResetDimensions(OldScrnWidth, OldScrnHeight);
 
     return ret;
+}
+
+int Fractal::SaveItersAsText(const std::wstring filename_base) {
+    return SaveFractalData<CurrentFractalSave::Type::ItersText>(filename_base);
 }
 
 HighPrecision Fractal::Benchmark(size_t numIters, size_t& milliseconds)

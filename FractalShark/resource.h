@@ -218,6 +218,8 @@
 #define IDM_ALG_GPU_1_32_PERTURB_PERIODIC 32996
 #define ID_POPUP_SAVEITERATIONSASTEXT   32997
 #define IDM_SAVE_ITERS_TEXT             32998
+#define ID_POPUP_TOGGLEWINDOWSIZE       32999
+#define IDM_WINDOWED_SQ                 33000
 #define IDC_STATIC                      -1
 
 // Next default values for new objects
@@ -225,7 +227,7 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        131
-#define _APS_NEXT_COMMAND_VALUE         32999
+#define _APS_NEXT_COMMAND_VALUE         33001
 #define _APS_NEXT_CONTROL_VALUE         1000
 #define _APS_NEXT_SYMED_VALUE           110
 #endif

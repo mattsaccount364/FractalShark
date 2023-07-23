@@ -272,7 +272,7 @@ public: // Saving images of the fractal
     int SaveCurrentFractal(const std::wstring filename_base);
     int SaveHiResFractal(const std::wstring filename_base);
     int SaveItersAsText(const std::wstring filename_base);
-    void CleanupThreads();
+    void CleanupThreads(bool all);
 
 private:
     // Holds the number of iterations it took to decide if

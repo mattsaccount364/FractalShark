@@ -29,7 +29,7 @@ void MenuSquareView(HWND hWnd);
 void MenuCenterView(HWND hWnd, int x, int y);
 void MenuZoomOut(HWND hWnd);
 void MenuRepainting(HWND hWnd);
-void MenuWindowed(HWND hWnd);
+void MenuWindowed(HWND hWnd, bool square);
 void MenuMultiplyIterations(HWND hWnd, double factor);
 void MenuResetIterations(HWND hWnd);
 void MenuPaletteType(Fractal::Palette type);
@@ -404,7 +404,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             // Make the fractal window a "window" instead of fullscreen
             case IDM_WINDOWED:
             {
-                MenuWindowed(hWnd);
+                MenuWindowed(hWnd, false);
+                break;
+            }
+
+            case IDM_WINDOWED_SQ:
+            {
+                MenuWindowed(hWnd, true);
                 break;
             }
 
@@ -1034,7 +1040,7 @@ void MenuRepainting(HWND hWnd)
     PaintAsNecessary(hWnd);
 }
 
-void MenuWindowed(HWND hWnd)
+void MenuWindowed(HWND hWnd, bool square)
 {
     if (gWindowed == false)
     {
@@ -1054,12 +1060,27 @@ void MenuWindowed(HWND hWnd)
 
         RECT rect;
         GetWindowRect(hWnd, &rect);
-        SetWindowPos(hWnd, HWND_NOTOPMOST,
-            (rect.right - rect.left) / 4,
-            (rect.bottom - rect.top) / 4,
-            (rect.right - rect.left) / 2,
-            (rect.bottom - rect.top) / 2,
-            SWP_SHOWWINDOW);
+
+        if (square) {
+            auto width = min(
+                (rect.right + rect.left) / 2,
+                (rect.bottom + rect.top) / 2);
+            //width /= 2;
+            SetWindowPos(hWnd, HWND_NOTOPMOST,
+                (rect.right + rect.left) / 2 - width / 2,
+                (rect.bottom + rect.top) / 2 - width / 2,
+                width,
+                width,
+                SWP_SHOWWINDOW);
+        }
+        else {
+            SetWindowPos(hWnd, HWND_NOTOPMOST,
+                (rect.right - rect.left) / 4,
+                (rect.bottom - rect.top) / 4,
+                (rect.right - rect.left) / 2,
+                (rect.bottom - rect.top) / 2,
+                SWP_SHOWWINDOW);
+        }
         gWindowed = true;
 
         RECT rt;

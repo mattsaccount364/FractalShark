@@ -400,7 +400,10 @@ void Fractal::GetIterMemory() {
 }
 
 void Fractal::Uninitialize(void)
-{ // Get rid of the abort thread, but only if we actually used it.
+{
+    CleanupThreads(true);
+
+    // Get rid of the abort thread, but only if we actually used it.
     if (m_CheckForAbortThread != NULL)
     {
         m_AbortThreadQuitFlag = true;
@@ -1259,7 +1262,7 @@ void Fractal::SquareCurrentView(void)
 
     m_ChangedWindow = true;
 
-    CleanupThreads();
+    CleanupThreads(false);
     OptimizeMemory();
 }
 
@@ -4207,7 +4210,7 @@ int Fractal::SaveFractalData(const std::wstring filename_base)
         GlobalMemoryStatusEx(&statex);
 
         if (m_FractalSavesInProgress.size() > 32 || statex.dwMemoryLoad > 90) {
-            CleanupThreads();
+            CleanupThreads(false);
             Sleep(100);
         }
         else {
@@ -4220,11 +4223,22 @@ int Fractal::SaveFractalData(const std::wstring filename_base)
     return 0;
 }
 
-void Fractal::CleanupThreads() {
-    for (size_t i = 0; i < m_FractalSavesInProgress.size(); i++) {
-        auto& it = m_FractalSavesInProgress[i];
-        if (it->m_Destructable) {
-            m_FractalSavesInProgress.erase(m_FractalSavesInProgress.begin() + i);
+void Fractal::CleanupThreads(bool all) {
+    bool continueCriteria = true;
+
+    while (continueCriteria) {
+        for (size_t i = 0; i < m_FractalSavesInProgress.size(); i++) {
+            auto& it = m_FractalSavesInProgress[i];
+            if (it->m_Destructable) {
+                m_FractalSavesInProgress.erase(m_FractalSavesInProgress.begin() + i);
+                break;
+            }
+        }
+
+        if (all) {
+            continueCriteria = !m_FractalSavesInProgress.empty();
+        }
+        else {
             break;
         }
     }

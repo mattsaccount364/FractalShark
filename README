@@ -70,4 +70,16 @@ Some history:
 - 2017 I resurrected it and added high precision but no perturbation or anything else
 - 2023 I bought this new video card and wanted to play with it, so ended up learning about CUDA and all these clever algorithmic approaches you all have found out to speed this up.  So here we are.
 
+Build instructions:
+- git clone https://github.com/mattsaccount364/FractalShark.git
+- cd FractalShark
+- Download boost from: https://www.boost.org/
+- Decompress it under the FractalShark clone.  Name the directory it goes in boost_1_81_0 if the version is slightly different.  No need to build this.  We just use a few headers.
+- git clone https://github.com/BrianGladman/mpir.git
+- Open mpir\msvc\vs22\mpir.sln
+- Rebuild everything.  Note, you probably want YASM installed at: 'C:\Program Files\yasm\*'.  This may take a little while.
+- The distributed version of FractalShark uses the static lib_mpir_skylake_avx incarnation of MPIR.
+- Install Nvidia Nsight Compute SDK.  The distributed version of FractalShark uses 12.2
+- 
+
 Have fun, hopefully :)

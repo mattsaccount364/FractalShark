@@ -80,6 +80,6 @@ Build instructions:
 - Rebuild everything.  Note, you probably want YASM installed at: 'C:\Program Files\yasm\*'.  This may take a little while.
 - The distributed version of FractalShark uses the static lib_mpir_skylake_avx incarnation of MPIR.
 - Install Nvidia Nsight Compute SDK.  The distributed version of FractalShark uses 12.2
-- 
+- At this point you should be able to build all the FractalShark projects.  The one called FractalShark is the most interesting.  FractalTray basically works.  The rest are effectively dead code.
 
 Have fun, hopefully :)

@@ -861,6 +861,10 @@ void Fractal::AutoZoom() {
 
     for (;;) {
         //SaveCurPos();
+        {
+            MSG msg;
+            PeekMessage(&msg, NULL, 0, 0, PM_NOREMOVE);
+        }
 
         double geometricMeanX = 0;
         double geometricMeanSum = 0;

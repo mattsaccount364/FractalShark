@@ -1,12 +1,31 @@
+Introduction
+
 Why FractalShark?  Because fractals and sharks are both cool, so why not?  And it's relatively unique so hopefully it can be google'd.
 
-Its main contributions relative to everything else I can find are:
-- CUDA-based bilinear approximation rendering
-- Multi-threaded reference orbit calculation for a little better performance (three threads, two for squaring and one for coordinating).
-- Numerous CUDA implementations with different strategies for rendering the Mandelbrot
-- It defaults to HDRx32 / bilinear approximation, which is fairly optimized.  That's the default when you just run the program.  This mode of operation gets you > 10e4000 zoom capability.
+The Mandelbrot set is defined as the set of complex numbers that do not diverge to infinity when iterated according to Z_(n+1) <-- Z_n ^ 2 + c, with Z_0 initialized to 0.  It's possible to visualize the set by assigning a color depending on how many iterations were necessary to make a determination about whether the point was in the set.  In FractalShark, points are left black to denote membership, and colored if they escape (diverge) to infinity after some number of iterations.  Points determined to be in the set are necessarily approximate.  Infinite iterations are necessary in the general case, but the software can simply use a large fixed number because it's "good enough."
 
-FractalShark is:
+
+Why do we need another Mandelbrot Set renderer?  Thousands of others already exist!
+
+FractalShark includes a few innovations relative to most other renderers, most related to engineering rather than funamdentals.
+
+First, it includes numerous Nvidia CUDA implementations demonstrating distinct strategies for rendering the Mandelbrot.  These are cool in their own right, because I was not able to find existing implementations.  Thus, unlike most other implementations, FractalShark is optimized for use on high-end video cards.
+
+Second, and more importantly, it includes a CUDA-based bilinear approximation implementation.  Bilinear approximation is a relatively new technique for getting high performance visualizations, and no existing CUDA implementations appear to exist.
+
+Third, it includes a multi-threaded reference orbit calculation for a little better performance.  Using three threads total, with two for squaring and one for coordinating appears to offer superior performance, at least on an AMD-5950X.  Calculating the reference orbit is probably the single-largest bottleneck to high magnification renders, so it's important to spend some time on that.
+
+
+CUDA?  What are the system requirements?
+
+- AVX-2 CPU - used for reference orbit/MPIR library
+- CUDA-capable NVIDIA 900-series or newer (~2016)
+- Try updating your Nvidia driver if you get a "cuda error 35" when you run it.
+- Windows
+
+
+Where do I download it?
+
 - Downloadable from here:  https://github.com/mattsaccount364/FractalShark
 - A work in progress, many bugs, lots of messed up code, and basically just a huge blob of hacks. This will never compete with many others, e.g. FractalZoomer has great polish, and Imagina will probably beat it on performance in the long term.
 - Much of the code in the repo is dead.  FractalShark is the main project and is the live part.
@@ -16,59 +35,82 @@ FractalShark is:
 - Includes most algorithmic enhancements I'm aware of: bilinear approximation, high-precision MPIR perturbation for the reference orbit, high-dynamic range float/float exp, many CUDA implementations, periodicity detection for reference calculation
 - GPLv3.
 
-System requirements:
-- AVX-2 CPU - used for reference orbit/MPIR library
-- CUDA-capable NVIDIA 900-series or newer (~2016)
-- Windows
-- Try updating your Nvidia driver if you get a "cuda error 35" when you run it.
 
-Operational instructions:
-- Download fractals.exe from github
+How do I use it?
+
+- Download FractalShark.exe from github
 - Run it.  If you get a blank screen or error message and believe you meet the system requirements then let me know and I'll speculate about the problem.
 - Right click to get a pop up menu.  Some of the options are buggy and will just crash/misbehave but most of the basic things should be fine.
-- Left-click / drag to zoom in on a box
-- Alternatively, use hot keys:  z to zoom in at mouse cursor, shift-Z to zoom out a bit, b to go back, - or = to increase/decrease iterations.
+- Left-click / drag to zoom in on a box.  Alternatively, use hot keys:  z to zoom in at mouse cursor, shift-Z to zoom out a bit, b to go back, - or = to increase/decrease iterations.
 
-What it doesn't have and "never" will because I suspect I won't be motivated enough:
-- Support for non-Mandelbrot
+
+What features will it never have?
+
+- Support for non-Mandelbrot fractals.  Too much dinking around.
 - Support for AMD cards unless I buy one
-- Proper CPU support (Zhuoran's Imagina easily has that covered - he did a great job).
+- Proper CPU support (Zhuoran's Imagina easily has that covered - he did a great job).  It does have a CPU-based bilinear approximation implementation but it's not well optimized and is intended primarily for testing.
+
 
 What it doesn't have but I'd like to add:
+
 - Periodicity detection with bilinear approximation in CUDA.  I don't understand the details here well enough yet.
 - Minibrot detection/location.  Imagina has this I know, not sure who else has it.
 - TBD - depends on motivation.
 
-Known bugs:
+
+What bugs does it have?
+
 - Will not work and will probably crash or something if you don't meet the system requirement
 - Autozoom is busted and should be replaced.  Don't use it.
 - Some of the palette stuff is messed up
-- Load location/save location have weird nuances - future work.  Current position will copy your location to the clipboard.
+- Load location/save location have weird nuances - future work.  The "current position" will copy your location to the clipboard.
 - Some CUDA kernels are busted.
-- I don't have build instructions yet or a README so deal with it.
 - If it's slow and taking a long time, there's no way to abort it.  Use task manager and terminate it that way if you don't want to wait.
 - Too many to list - don't expect much.
 
-Interesting technical bits:
-- All the CUDA kernels are in render_gpu.cu.  The most interesting is probably "mandel_1xHDR_float_perturb_bla" which is the one I've spent the most time on lately.  For better performance at low zoom levels, you could look at "mandel_1x_float_perturb" which leaves out linear approximation and just does straight perturbation up to ~10e30, which corresponds with the float exponent range.
+
+Where are the most interesting parts of the implementation in the code?
+
+- All the CUDA kernels are in render_gpu.cu.  The most interesting is probably "mandel_1xHDR_float_perturb_bla" which is the one I've spent the most time on lately.  For better performance at low zoom levels, you could look at "mandel_1x_float_perturb" which leaves out linear approximation and just does straight perturbation up to ~10e30, which corresponds with the 32-bit float exponent range.
+
 - The mandel_1x_float is the classic 32-bit float mandelbrot and is screaming fast on a GPU.  This one is optimized with fused multiply-add for fun even though it's kind of useless.
+
 - The most interesting reference orbit calculation is at AddPerturbationReferencePointMT2.  It includes a "bad" calculation which is used for the "scaled" CUDA kernels - I need to templatize that as an option rather than a requirement but haven't bothered.
+
 - There are CPU renderers but they were mostly to learn/debug more easily and aren't optimized as heavily.
 
-Credits:
-- I used a little bit of perturbation code from Kalles Fraktaler.  It certainly helped clarify some things.  And Claude's blog was a great help.
-- I used Imagina for some inspiration on the reference orbit periodicity checking.
-- I used FractalZoomer code for Float/Exp and the bilinear approximation.
+
+Credits?
+
+I used a number of other sources for inspiration and code.  Sources include:
+
+- Perturbation code from Kalles Fraktaler.  It certainly helped clarify some things.  And Claude's blog was a great help.  https://mathr.co.uk/kf/kf.html
+
+https://mathr.co.uk/blog/2021-05-14_deep_zoom_theory_and_practice.html
+
+https://mathr.co.uk/blog/2022-02-21_deep_zoom_theory_and_practice_again.html
+
+- Imagina for some inspiration on the reference orbit periodicity checking.
+
+https://github.com/5E-324/Imagina
+
+- FractalZoomer code for Float/Exp and the bilinear approximation.
+
+https://sourceforge.net/projects/fractalzoomer/
+
 - Libraries I can think of offhand: MPIR, Boost, WPngImage (https://github.com/WarpRules/WPngImage), and a CUDA QuadDouble and DblDbl implementation whose origins escape me but are fun to play with.
+
 - This implementation would probably not have happened without the work of these folks so thank you!
 
 If you're bored and want to try yet another Mandelbrot set renderer, give it a go.  You can download the v.1 release from the github page I think.  I just threw it up there today.  YMMV, caveat emptor, don't bother running it unless you meet the system requirements because it'll probably just spew some opaque error and exit.  I'll put a proper readme together eventually.  In terms of time investment, I'll probably only spend a couple hours on weekends fussing with it so don't expect dramatic rewrites.
+
 
 Some history:
 - First version I did when I was a freshman in college in 2001.  I added a basic network/distributed strategy to speed it up.  It's split the work across machines.  This feature is now broken and won't be revived.
 - 2008 I did a distributed version that ran on the University of Wisconsin's "Condor" platform. That was pretty cool and allowed for fast creation of zoom movies
 - 2017 I resurrected it and added high precision but no perturbation or anything else
 - 2023 I bought this new video card and wanted to play with it, so ended up learning about CUDA and all these clever algorithmic approaches you all have found out to speed this up.  So here we are.
+
 
 Build instructions:
 - git clone https://github.com/mattsaccount364/FractalShark.git
@@ -81,5 +123,6 @@ Build instructions:
 - The distributed version of FractalShark uses the static lib_mpir_skylake_avx incarnation of MPIR.
 - Install Nvidia Nsight Compute SDK.  The distributed version of FractalShark uses 12.2
 - At this point you should be able to build all the FractalShark projects.  The one called FractalShark is the most interesting.  FractalTray basically works.  The rest are effectively dead code.
+
 
 Have fun, hopefully :)

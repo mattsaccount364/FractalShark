@@ -211,6 +211,9 @@ void BLAS<T>::Init(size_t InM, T blaSize) {
     m_B.clear();
     m_B.resize(m_L);
     m_LM2 = (int32_t)m_L - 2;
+    if (m_LM2 < 0) {
+        m_LM2 = 0;
+    }
 
     if (m_FirstLevel >= m_ElementsPerLevel.size()) {
         return;

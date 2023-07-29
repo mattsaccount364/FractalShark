@@ -99,7 +99,8 @@ struct MattPerturbResults {
     MattPerturbResults(size_t in_size,
                        T *in_x,
                        T *in_y,
-                       uint8_t *in_bad) :
+                       uint8_t *in_bad,
+                       size_t in_bad_size) :
         iters(new MattReferenceSingleIter<T>[in_size]),
         size(in_size) {
 
@@ -113,10 +114,19 @@ struct MattPerturbResults {
         //static_assert(sizeof(MattReferenceSingleIter<HDRFloat<float>>) == 12 * 4, "float2");
         static_assert(sizeof(float2) == 8, "float2 type");
 
-        for (size_t i = 0; i < size; i++) {
-            iters[i].x = in_x[i];
-            iters[i].y = in_y[i];
-            iters[i].bad = in_bad[i];
+        if (in_bad_size == in_size) {
+            for (size_t i = 0; i < size; i++) {
+                iters[i].x = in_x[i];
+                iters[i].y = in_y[i];
+                iters[i].bad = in_bad[i];
+            }
+        }
+        else {
+            for (size_t i = 0; i < size; i++) {
+                iters[i].x = in_x[i];
+                iters[i].y = in_y[i];
+                iters[i].bad = 0;
+            }
         }
     }
 

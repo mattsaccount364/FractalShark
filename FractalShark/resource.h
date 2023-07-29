@@ -220,6 +220,8 @@
 #define IDM_SAVE_ITERS_TEXT             32998
 #define ID_POPUP_TOGGLEWINDOWSIZE       32999
 #define IDM_WINDOWED_SQ                 33000
+#define ID_PERTURBATION_MULTITHREAD2    33001
+#define IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB 33002
 #define IDC_STATIC                      -1
 
 // Next default values for new objects
@@ -227,7 +229,7 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        131
-#define _APS_NEXT_COMMAND_VALUE         33001
+#define _APS_NEXT_COMMAND_VALUE         33003
 #define _APS_NEXT_CONTROL_VALUE         1000
 #define _APS_NEXT_SYMED_VALUE           110
 #endif

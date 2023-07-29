@@ -157,6 +157,7 @@ public: // Drawing functions
         MT,
         STPeriodicity,
         MTPeriodicity2,
+        MTPeriodicity2Perturb,
         MTPeriodicity5
     };
 
@@ -205,37 +206,48 @@ private:
         size_t iteration;
     };
 
-    std::vector<PerturbationResults<double>> m_PerturbationResultsDouble;
-    std::vector<PerturbationResults<float>> m_PerturbationResultsFloat;
-    std::vector<PerturbationResults<HDRFloat<double>>> m_PerturbationResultsHDRDouble;
-    std::vector<PerturbationResults<HDRFloat<float>>> m_PerturbationResultsHDRFloat;
+    std::vector<std::unique_ptr<PerturbationResults<double>>> m_PerturbationResultsDouble;
+    std::vector<std::unique_ptr<PerturbationResults<float>>> m_PerturbationResultsFloat;
+    std::vector<std::unique_ptr<PerturbationResults<HDRFloat<double>>>> m_PerturbationResultsHDRDouble;
+    std::vector<std::unique_ptr<PerturbationResults<HDRFloat<float>>>> m_PerturbationResultsHDRFloat;
 
     HighPrecision m_PerturbationGuessCalcX;
     HighPrecision m_PerturbationGuessCalcY;
 
     PerturbationAlg m_PerturbationAlg;
 
+    bool RequiresBadCalc() const;
     bool IsThisPerturbationArrayUsed(void* check) const;
     void OptimizeMemory();
 
     template<class T>
-    std::vector<PerturbationResults<T>> &GetPerturbationResults();
+    std::vector<std::unique_ptr<PerturbationResults<T>>> &GetPerturbationResults();
 
     template<class T, class SubType, bool BenchmarkMode = false>
     void AddPerturbationReferencePoint();
 
-    template<class T, class SubType, bool Periodicity, bool BenchmarkMode = false>
+    template<class T, class SubType, bool Periodicity, bool BenchmarkMode, bool CalcBad>
+    bool AddPerturbationReferencePointSTReuse(HighPrecision initX, HighPrecision initY);
+
+    template<class T, class SubType, bool Periodicity, bool BenchmarkMode, bool CalcBad>
     void AddPerturbationReferencePointST(HighPrecision initX, HighPrecision initY);
 
-    template<class T, class SubType, bool Periodicity, bool BenchmarkMode = false>
+    template<class T, class SubType, bool Periodicity, bool BenchmarkMode, bool CalcBad>
     void AddPerturbationReferencePointMT2(HighPrecision initX, HighPrecision initY);
 
-    template<class T, class SubType, bool Periodicity, bool BenchmarkMode = false>
+    template<class T, class SubType, bool Periodicity, bool BenchmarkMode, bool CalcBad>
     void AddPerturbationReferencePointMT5(HighPrecision initX, HighPrecision initY);
 
     bool RequiresReferencePoints() const;
+    bool IsReferencePerturbationEnabled() const;
 
     template<class T, class SubType>
+    PerturbationResults<T>* GetAndCreateUsefulPerturbationResults();
+
+    template<class T>
+    std::vector<std::unique_ptr<PerturbationResults<T>>>* GetPerturbationArray();
+
+    template<class T, class SubType, bool Authoritative>
     PerturbationResults<T>* GetUsefulPerturbationResults();
 
     template<class SrcT, class DestT>
@@ -263,7 +275,7 @@ private:
     bool CalcPixelRow_Exp(unsigned int *rowBuffer, size_t row); // Experimental
     bool CalcPixelRow_C(unsigned int *rowBuffer, size_t row);
 
-    template<class T>
+    template<class T, bool Authoritative>
     bool IsPerturbationResultUsefulHere(size_t i) const;
 
     size_t FindMaxItersUsed(void) const;
@@ -407,8 +419,8 @@ private:
     FractalSetupData m_SetupData;
 
     // Defaults
-    static constexpr size_t DefaultIterations = 256 * 32;
-    //static constexpr size_t DefaultIterations = 256;
+    //static constexpr size_t DefaultIterations = 256 * 32;
+    static constexpr size_t DefaultIterations = 256;
 
     // Handle to the thread which checks to see if we should quit or not
     HANDLE m_CheckForAbortThread;

@@ -277,7 +277,8 @@ CUDA_CRAP const GPUBLA_TYPE* GPUBLAS<T, GPUBLA_TYPE, LM2>::LookupBackwards(
     const uint32_t zeros = __clz(__brev(k));
     uint32_t ix = k >> zeros;
 
-    const int32_t startLevel = ((zeros < LM2) ? zeros : LM2);
+    const int32_t startLevel =
+        (LM2 == 0) ? 0 : (((zeros < LM2) ? zeros : LM2));
 
     //for (int32_t level = startLevel; level >= m_FirstLevel; --level) {
     //    __pipeline_memcpy_async(
@@ -322,8 +323,6 @@ CUDA_CRAP const GPUBLA_TYPE* GPUBLAS<T, GPUBLA_TYPE, LM2>::LookupBackwards(
 
 #define LargeSwitch \
         switch (blas->m_LM2) {                                         \
-        case -2:                                                       \
-        case -1:                                                       \
         case  0: result = Run.template operator()<0> (); break;     \
         case  1: result = Run.template operator()<1> (); break;     \
         case  2: result = Run.template operator()<2> (); break;     \

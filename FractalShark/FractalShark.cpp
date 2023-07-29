@@ -281,7 +281,7 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
             //::MessageBoxA(hWnd, "Yay", "", MB_OK);
             gFractal->ClearPerturbationResults();
         }
-        MenuBenchmarkThis(hWnd);
+        MenuSquareView(hWnd);
         break;
     default:
         break;
@@ -669,6 +669,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             case IDM_PERTURBATION_MULTITHREAD2_PERIODICITY:
             {
                 gFractal->SetPerturbationAlg(Fractal::PerturbationAlg::MTPeriodicity2);
+                break;
+            }
+
+            case IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB:
+            {
+                gFractal->SetPerturbationAlg(Fractal::PerturbationAlg::MTPeriodicity2Perturb);
                 break;
             }
 

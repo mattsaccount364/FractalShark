@@ -220,22 +220,37 @@ private:
     bool IsThisPerturbationArrayUsed(void* check) const;
     void OptimizeMemory();
 
+    enum class ReuseMode {
+        DontSaveForReuse,
+        SaveForReuse
+    };
+
+    enum class CalcBad {
+        Disable,
+        Enable
+    };
+
+    enum class BenchmarkMode {
+        Disable,
+        Enable
+    };
+
     template<class T>
     std::vector<std::unique_ptr<PerturbationResults<T>>> &GetPerturbationResults();
 
-    template<class T, class SubType, bool BenchmarkMode = false>
+    template<class T, class SubType, BenchmarkMode BenchmarkState>
     void AddPerturbationReferencePoint();
 
-    template<class T, class SubType, bool Periodicity, bool BenchmarkMode, bool CalcBad>
+    template<class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, CalcBad Bad>
     bool AddPerturbationReferencePointSTReuse(HighPrecision initX, HighPrecision initY);
 
-    template<class T, class SubType, bool Periodicity, bool BenchmarkMode, bool CalcBad>
+    template<class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, CalcBad Bad, ReuseMode Reuse>
     void AddPerturbationReferencePointST(HighPrecision initX, HighPrecision initY);
 
-    template<class T, class SubType, bool Periodicity, bool BenchmarkMode, bool CalcBad>
+    template<class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, CalcBad Bad, ReuseMode Reuse>
     void AddPerturbationReferencePointMT2(HighPrecision initX, HighPrecision initY);
 
-    template<class T, class SubType, bool Periodicity, bool BenchmarkMode, bool CalcBad>
+    template<class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, CalcBad Bad, ReuseMode Reuse>
     void AddPerturbationReferencePointMT5(HighPrecision initX, HighPrecision initY);
 
     bool RequiresReferencePoints() const;

@@ -82,13 +82,13 @@ BEGIN
             MENUITEM "#4 - 32-bit Scaled Limit",    IDM_VIEW4
             MENUITEM "#5 - 32-bit Scaled Limit (minibrot problem)", IDM_VIEW5
             MENUITEM "#6 - Scale float with pixellation", IDM_VIEW6
-            MENUITEM "#7 - Scaled float limit with circle", IDM_VIEW7
-            MENUITEM "#8 - Full BLA test 10^330 or so.", IDM_VIEW8
+            MENUITEM "#7 - Scaled float limit with square", IDM_VIEW7
+            MENUITEM "#8 - ~10^700 or so, 0.5b iterations", IDM_VIEW8
             MENUITEM "#9 - bug: scaled/BLA/32-bit failure", IDM_VIEW9
-            MENUITEM "#10 - Deep 64-bit BLA minibrot, expensive", IDM_VIEW10
+            MENUITEM "#10 - ~10^130, ~2b iterations", IDM_VIEW10
             MENUITEM "#11",                         IDM_VIEW11
-            MENUITEM "#12 - Full BLA test 10^700 or so, low iterations", IDM_VIEW12
-            MENUITEM "#13",                         IDM_VIEW13
+            MENUITEM "#12 - ~10^700 or so, ~3m iterations", IDM_VIEW12
+            MENUITEM "#13 - ~10^4000, ~100m iterations", IDM_VIEW13
         END
         MENUITEM "Recalculate, Reuse Reference", IDM_SQUAREVIEW
         MENUITEM "Center View Here",            IDM_CENTERVIEW
@@ -165,7 +165,7 @@ BEGIN
             MENUITEM "Multi Thread",                IDM_PERTURBATION_MULTITHREAD
             MENUITEM "Single Thread - Periodicity", IDM_PERTURBATION_SINGLETHREAD_PERIODICITY
             MENUITEM "Multi Thread 2 - Periodicity", IDM_PERTURBATION_MULTITHREAD2_PERIODICITY
-            MENUITEM "Multi Thread 2 - Periodicity + Perturb", IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB
+            MENUITEM "Multi Thread 2 - Periodicity + Perturb (broken)", IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB
             MENUITEM "Multi Thread 5 - Periodicity", IDM_PERTURBATION_MULTITHREAD5_PERIODICITY
         END
         MENUITEM SEPARATOR

@@ -243,38 +243,35 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
     bool shiftDown = (nState & 0x8000) != 0;
 
     switch (wParam) {
-    case 'Z':
-    case 'z':
-        // zoom out
-        if (shiftDown) {
-            gFractal->Zoom(mousePt.x, mousePt.y, 1);
-        } else {
-            // zoom in
-            gFractal->Zoom(mousePt.x, mousePt.y, -.45);
-        }
-        break;
-    case 'c':
-        MenuCenterView(hWnd, mousePt.x, mousePt.y);
-        break;
-    case '=':
-        MenuMultiplyIterations(hWnd, 24.0);
-        break;
-    case '-':
-        MenuMultiplyIterations(hWnd, 2.0/3.0);
-        break;
     case 'A':
     case 'a':
         if (!shiftDown) {
             MenuCenterView(hWnd, mousePt.x, mousePt.y);
             gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Default>();
-        } else {
+        }
+        else {
             MenuCenterView(hWnd, mousePt.x, mousePt.y);
             gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Max>();
         }
         break;
+
     case 'b':
         MenuGoBack(hWnd);
         break;
+
+    case 'c':
+        MenuCenterView(hWnd, mousePt.x, mousePt.y);
+        break;
+
+    case 'O':
+    case 'o':
+        if (shiftDown) {
+            //::MessageBoxA(hWnd, "Yay", "", MB_OK);
+            gFractal->ClearPerturbationResults();
+        }
+        MenuBenchmarkThis(hWnd);
+        break;
+
     case 'P':
     case 'p':
         if (shiftDown) {
@@ -283,6 +280,26 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
         }
         MenuSquareView(hWnd);
         break;
+
+    case 'Z':
+    case 'z':
+        // zoom out
+        if (shiftDown) {
+            gFractal->Zoom(mousePt.x, mousePt.y, 1);
+        }
+        else {
+            // zoom in
+            gFractal->Zoom(mousePt.x, mousePt.y, -.45);
+        }
+        break;
+
+    case '=':
+        MenuMultiplyIterations(hWnd, 24.0);
+        break;
+    case '-':
+        MenuMultiplyIterations(hWnd, 2.0 / 3.0);
+        break;
+
     default:
         break;
     }

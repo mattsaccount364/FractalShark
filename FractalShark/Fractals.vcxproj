@@ -185,6 +185,7 @@
       <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">EnableFastChecks</BasicRuntimeChecks>
     </ClCompile>
     <ClCompile Include="..\HDRFloat.cpp" />
+    <ClCompile Include="..\RefOrbitCalc.cpp" />
     <ClCompile Include="..\WPngImage\lodepng.cpp" />
     <ClCompile Include="..\WPngImage\WPngImage.cc" />
     <ClCompile Include="FractalShark.cpp">
@@ -223,6 +224,7 @@
     <ClInclude Include="..\QuadFloat\cuda_header.cuh" />
     <ClInclude Include="..\QuadFloat\gqf_basic.cuh" />
     <ClInclude Include="..\QuadFloat\inline.cuh" />
+    <ClInclude Include="..\RefOrbitCalc.h" />
     <ClInclude Include="..\render_gpu.h" />
     <ClInclude Include="..\WPngImage\lodepng.h" />
     <ClInclude Include="..\WPngImage\WPngImage.hh" />

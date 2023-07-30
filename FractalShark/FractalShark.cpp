@@ -667,37 +667,37 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             case IDM_PERTURBATION_SINGLETHREAD:
             {
-                gFractal->SetPerturbationAlg(Fractal::PerturbationAlg::ST);
+                gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::ST);
                 break;
             }
 
             case IDM_PERTURBATION_MULTITHREAD:
             {
-                gFractal->SetPerturbationAlg(Fractal::PerturbationAlg::MT);
+                gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MT);
                 break;
             }
 
             case IDM_PERTURBATION_SINGLETHREAD_PERIODICITY:
             {
-                gFractal->SetPerturbationAlg(Fractal::PerturbationAlg::STPeriodicity);
+                gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::STPeriodicity);
                 break;
             }
 
             case IDM_PERTURBATION_MULTITHREAD2_PERIODICITY:
             {
-                gFractal->SetPerturbationAlg(Fractal::PerturbationAlg::MTPeriodicity2);
+                gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity2);
                 break;
             }
 
             case IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB:
             {
-                gFractal->SetPerturbationAlg(Fractal::PerturbationAlg::MTPeriodicity2Perturb);
+                gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity2Perturb);
                 break;
             }
 
             case IDM_PERTURBATION_MULTITHREAD5_PERIODICITY:
             {
-                gFractal->SetPerturbationAlg(Fractal::PerturbationAlg::MTPeriodicity5);
+                gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity5);
                 break;
             }
 

@@ -27,6 +27,8 @@
 #include "HighPrecision.h"
 #include "HDRFloat.h"
 
+#include "RefOrbitCalc.h"
+
 #include <deque>
 
 //const int MAXITERS = 256 * 32; // 256 * 256 * 256 * 32
@@ -126,6 +128,9 @@ public:
     inline uint32_t GetIterationPrecision(void) const { return m_IterationPrecision; }
     inline void SetIterationPrecision(uint32_t iteration_precision) { m_IterationPrecision = iteration_precision;  }
 
+    void SetPerturbationAlg(RefOrbitCalc::PerturbationAlg alg) { m_RefOrbit.SetPerturbationAlg(alg); }
+    void ClearPerturbationResults() { m_RefOrbit.ClearPerturbationResults(); }
+
 private: // Keeps track of what has changed and what hasn't since the last draw
     inline void ChangedMakeClean(void) { m_ChangedWindow = m_ChangedScrn = m_ChangedIterations = false; }
     inline void ChangedMakeDirty(void) { m_ChangedWindow = m_ChangedScrn = m_ChangedIterations = true; }
@@ -152,23 +157,13 @@ public: // Drawing functions
     void RotateFractalPalette(int delta);
     void CreateNewFractalPalette(void);
 
-    enum class PerturbationAlg {
-        ST,
-        MT,
-        STPeriodicity,
-        MTPeriodicity2,
-        MTPeriodicity2Perturb,
-        MTPeriodicity5
-    };
-
     template<class T>
     void DrawPerturbationResults(bool MemoryOnly);
-    void ClearPerturbationResults();
-    void SetPerturbationAlg(PerturbationAlg alg) { m_PerturbationAlg = alg; }
 
 private:
     static void DrawFractalThread(size_t index, Fractal* fractal);
 
+    RefOrbitCalc m_RefOrbit;
     std::unique_ptr<uint16_t[]> m_DrawOutBytes;
     std::deque<std::atomic_uint64_t> m_DrawThreadAtomics;
     struct DrawThreadSync {
@@ -206,68 +201,6 @@ private:
         size_t iteration;
     };
 
-    std::vector<std::unique_ptr<PerturbationResults<double>>> m_PerturbationResultsDouble;
-    std::vector<std::unique_ptr<PerturbationResults<float>>> m_PerturbationResultsFloat;
-    std::vector<std::unique_ptr<PerturbationResults<HDRFloat<double>>>> m_PerturbationResultsHDRDouble;
-    std::vector<std::unique_ptr<PerturbationResults<HDRFloat<float>>>> m_PerturbationResultsHDRFloat;
-
-    HighPrecision m_PerturbationGuessCalcX;
-    HighPrecision m_PerturbationGuessCalcY;
-
-    PerturbationAlg m_PerturbationAlg;
-
-    bool RequiresBadCalc() const;
-    bool IsThisPerturbationArrayUsed(void* check) const;
-    void OptimizeMemory();
-
-    enum class ReuseMode {
-        DontSaveForReuse,
-        SaveForReuse
-    };
-
-    enum class CalcBad {
-        Disable,
-        Enable
-    };
-
-    enum class BenchmarkMode {
-        Disable,
-        Enable
-    };
-
-    template<class T>
-    std::vector<std::unique_ptr<PerturbationResults<T>>> &GetPerturbationResults();
-
-    template<class T, class SubType, BenchmarkMode BenchmarkState>
-    void AddPerturbationReferencePoint();
-
-    template<class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, CalcBad Bad>
-    bool AddPerturbationReferencePointSTReuse(HighPrecision initX, HighPrecision initY);
-
-    template<class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, CalcBad Bad, ReuseMode Reuse>
-    void AddPerturbationReferencePointST(HighPrecision initX, HighPrecision initY);
-
-    template<class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, CalcBad Bad, ReuseMode Reuse>
-    void AddPerturbationReferencePointMT2(HighPrecision initX, HighPrecision initY);
-
-    template<class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, CalcBad Bad, ReuseMode Reuse>
-    void AddPerturbationReferencePointMT5(HighPrecision initX, HighPrecision initY);
-
-    bool RequiresReferencePoints() const;
-    bool IsReferencePerturbationEnabled() const;
-
-    template<class T, class SubType>
-    PerturbationResults<T>* GetAndCreateUsefulPerturbationResults();
-
-    template<class T>
-    std::vector<std::unique_ptr<PerturbationResults<T>>>* GetPerturbationArray();
-
-    template<class T, class SubType, bool Authoritative>
-    PerturbationResults<T>* GetUsefulPerturbationResults();
-
-    template<class SrcT, class DestT>
-    PerturbationResults<DestT>* CopyUsefulPerturbationResults(PerturbationResults<SrcT>& src_array);
-
     static void FillCoord(HighPrecision& src, MattCoords& dest);
     void FillGpuCoords(MattCoords& cx2, MattCoords& cy2, MattCoords& dx2, MattCoords& dy2);
     void CalcGpuFractal(bool MemoryOnly);
@@ -289,9 +222,6 @@ private:
     void CalcPixelRow_Multi(unsigned int *rowBuffer, size_t row); // Multiprecision
     bool CalcPixelRow_Exp(unsigned int *rowBuffer, size_t row); // Experimental
     bool CalcPixelRow_C(unsigned int *rowBuffer, size_t row);
-
-    template<class T, bool Authoritative>
-    bool IsPerturbationResultUsefulHere(size_t i) const;
 
     size_t FindMaxItersUsed(void) const;
 
@@ -401,12 +331,12 @@ private: // Unit conversion helpers
     HighPrecision YFromCalcToScreen(HighPrecision y);
 
 public: // Used for retrieving our current location
-    inline HighPrecision GetMinX(void) { return m_MinX; }
-    inline HighPrecision GetMaxX(void) { return m_MaxX; }
-    inline HighPrecision GetMinY(void) { return m_MinY; }
-    inline HighPrecision GetMaxY(void) { return m_MaxY; }
-    inline size_t GetRenderWidth(void) { return m_ScrnWidth; }
-    inline size_t GetRenderHeight(void) { return m_ScrnHeight; }
+    inline const HighPrecision  &GetMinX(void) const { return m_MinX; }
+    inline const HighPrecision  &GetMaxX(void) const { return m_MaxX; }
+    inline const HighPrecision  &GetMinY(void) const { return m_MinY; }
+    inline const HighPrecision  &GetMaxY(void) const { return m_MaxY; }
+    inline size_t GetRenderWidth(void) const { return m_ScrnWidth; }
+    inline size_t GetRenderHeight(void) const { return m_ScrnHeight; }
 
     // Networking functions.
 private:

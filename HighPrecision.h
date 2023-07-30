@@ -24,8 +24,9 @@ To Convert(From data) {
 }
 #endif
 
-constexpr size_t ExtraPrecision = 20;
-constexpr size_t MpirEstPrecision = 15;
+constexpr size_t AuthoritativeMinExtraPrecision = 20;
+constexpr size_t AuthoritativeReuseExtraPrecision = 30;
+//constexpr size_t NonAuthoritativeExtraPrecision = 20;
 
 //using HighPrecision = boost::multiprecision::cpp_dec_float_100;
 //template<class From, class To>

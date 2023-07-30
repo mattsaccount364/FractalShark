@@ -28,16 +28,18 @@ public:
         ST,
         MT,
         STPeriodicity,
-        MTPeriodicity2,
-        MTPeriodicity2Perturb,
+        MTPeriodicity3,
+        MTPeriodicity3Perturb,
         MTPeriodicity5
     };
 
     RefOrbitCalc(Fractal &Fractal);
     bool RequiresBadCalc() const;
+    bool RequiresReuse() const;
     bool IsThisPerturbationArrayUsed(void* check) const;
     void OptimizeMemory();
     void SetPerturbationAlg(PerturbationAlg alg) { m_PerturbationAlg = alg; }
+    PerturbationAlg GetPerturbationAlg() const { return m_PerturbationAlg; }
 
     template<class T>
     std::vector<std::unique_ptr<PerturbationResults<T>>>& GetPerturbationResults();
@@ -48,11 +50,14 @@ public:
     template<class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, CalcBad Bad>
     bool AddPerturbationReferencePointSTReuse(HighPrecision initX, HighPrecision initY);
 
+    template<class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, CalcBad Bad>
+    bool AddPerturbationReferencePointMT3Reuse(HighPrecision initX, HighPrecision initY);
+
     template<class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, CalcBad Bad, ReuseMode Reuse>
     void AddPerturbationReferencePointST(HighPrecision initX, HighPrecision initY);
 
     template<class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, CalcBad Bad, ReuseMode Reuse>
-    void AddPerturbationReferencePointMT2(HighPrecision initX, HighPrecision initY);
+    void AddPerturbationReferencePointMT3(HighPrecision initX, HighPrecision initY);
 
     template<class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, CalcBad Bad, ReuseMode Reuse>
     void AddPerturbationReferencePointMT5(HighPrecision initX, HighPrecision initY);

@@ -75,7 +75,7 @@ Where are the most interesting parts of the implementation in the code?
 
 - The mandel_1x_float is the classic 32-bit float mandelbrot and is screaming fast on a GPU.  This one is optimized with fused multiply-add for fun even though it's kind of useless.
 
-- The most interesting reference orbit calculation is at AddPerturbationReferencePointMT2.  It includes a "bad" calculation which is used for the "scaled" CUDA kernels - I need to templatize that as an option rather than a requirement but haven't bothered.
+- The most interesting reference orbit calculation is at AddPerturbationReferencePointMT3.  It includes a "bad" calculation which is used for the "scaled" CUDA kernels - I need to templatize that as an option rather than a requirement but haven't bothered.
 
 - There are CPU renderers but they were mostly to learn/debug more easily and aren't optimized as heavily.
 

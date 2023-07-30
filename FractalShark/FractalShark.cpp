@@ -685,13 +685,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             case IDM_PERTURBATION_MULTITHREAD2_PERIODICITY:
             {
-                gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity2);
+                gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3);
                 break;
             }
 
             case IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB:
             {
-                gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity2Perturb);
+                gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3Perturb);
                 break;
             }
 
@@ -1227,7 +1227,7 @@ void MenuGetCurPos(HWND hWnd)
     snprintf(
         mem,
         numBytes,
-        "SetPrecision(%zu);\r\n"
+        "auto precision = %zu;\r\n"
         "minX = HighPrecision{ \"%s\" };\r\n"
         "minY = HighPrecision{ \"%s\" };\r\n"
         "maxX = HighPrecision{ \"%s\" };\r\n"

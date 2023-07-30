@@ -62,11 +62,11 @@ private:
 public:
     static unsigned long WINAPI CheckForAbortThread(void *fractal);
 
-    static size_t GetPrecision(
+    size_t GetPrecision(
         const HighPrecision& minX,
         const HighPrecision& minY,
         const HighPrecision& maxX,
-        const HighPrecision& maxY);
+        const HighPrecision& maxY) const;
     size_t GetPrecision(void) const;
     static void SetPrecision(
         size_t prec,

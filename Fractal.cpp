@@ -1720,32 +1720,7 @@ void Fractal::CreateNewFractalPalette(void)
     //}
 
     //DrawFractal(false);
-}
-
-template<class T>
-void Fractal::DrawPerturbationResults(bool LeaveScreen) {
-    if (!LeaveScreen) {
-        glClear(GL_COLOR_BUFFER_BIT);
-    }
-
-    glBegin(GL_POINTS);
-
-    auto& results = m_RefOrbit.GetPerturbationResults<T>();
-    for (size_t i = 0; i < results.size(); i++)
-    {
-        if (m_RefOrbit.IsPerturbationResultUsefulHere<T, false>(i)) {
-            glColor3f((GLfloat)255, (GLfloat)255, (GLfloat)255);
-
-            GLint scrnX = Convert<HighPrecision, GLint>(XFromCalcToScreen(results[i]->hiX));
-            GLint scrnY = static_cast<GLint>(m_ScrnHeight) - Convert<HighPrecision, GLint>(YFromCalcToScreen(results[i]->hiY));
-
-            // Coordinates are weird in OGL mode.
-            glVertex2i(scrnX, scrnY);
-        }
-    }
-
-    glEnd();
-    glFlush();
+    ::MessageBox(NULL, L"TODO CreateNewFractalPalette", L"", MB_OK);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -1816,6 +1791,34 @@ void Fractal::DrawFractal(bool MemoryOnly)
     //    TranslateMessage(&msg);
     //    DispatchMessage(&msg);
     //}
+}
+
+template<class T>
+void Fractal::DrawPerturbationResults(bool LeaveScreen) {
+    if (!LeaveScreen) {
+        glClear(GL_COLOR_BUFFER_BIT);
+    }
+
+    glBegin(GL_POINTS);
+
+    // TODO can we just integrate all this with DrawFractal
+
+    auto& results = m_RefOrbit.GetPerturbationResults<T>();
+    for (size_t i = 0; i < results.size(); i++)
+    {
+        if (m_RefOrbit.IsPerturbationResultUsefulHere<T, false>(i)) {
+            glColor3f((GLfloat)255, (GLfloat)255, (GLfloat)255);
+
+            GLint scrnX = Convert<HighPrecision, GLint>(XFromCalcToScreen(results[i]->hiX));
+            GLint scrnY = static_cast<GLint>(m_ScrnHeight) - Convert<HighPrecision, GLint>(YFromCalcToScreen(results[i]->hiY));
+
+            // Coordinates are weird in OGL mode.
+            glVertex2i(scrnX, scrnY);
+        }
+    }
+
+    glEnd();
+    glFlush();
 }
 
 void Fractal::DrawFractalThread(size_t index, Fractal* fractal) {

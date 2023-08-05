@@ -24,9 +24,12 @@ To Convert(From data) {
 }
 #endif
 
+
+// Amount of extra precision before forcing a full-precision recalculation
 constexpr size_t AuthoritativeMinExtraPrecision = 20;
-constexpr size_t AuthoritativeReuseExtraPrecision = 30;
-//constexpr size_t NonAuthoritativeExtraPrecision = 20;
+
+// Amount of precision used for medium-precision reference orbit.
+constexpr size_t AuthoritativeReuseExtraPrecision = 50;
 
 //using HighPrecision = boost::multiprecision::cpp_dec_float_100;
 //template<class From, class To>

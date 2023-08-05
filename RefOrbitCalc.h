@@ -34,9 +34,14 @@ public:
     };
 
     RefOrbitCalc(Fractal &Fractal);
-    bool RequiresBadCalc() const;
+
     bool RequiresReuse() const;
+
+private:
+    bool RequiresBadCalc() const;
     bool IsThisPerturbationArrayUsed(void* check) const;
+
+public:
     void OptimizeMemory();
     void SetPerturbationAlg(PerturbationAlg alg) { m_PerturbationAlg = alg; }
     PerturbationAlg GetPerturbationAlg() const { return m_PerturbationAlg; }
@@ -47,10 +52,11 @@ public:
     template<class T, class SubType, BenchmarkMode BenchmarkState>
     void AddPerturbationReferencePoint();
 
-    template<class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, CalcBad Bad>
+private:
+    template<class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState>
     bool AddPerturbationReferencePointSTReuse(HighPrecision initX, HighPrecision initY);
 
-    template<class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, CalcBad Bad>
+    template<class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState>
     bool AddPerturbationReferencePointMT3Reuse(HighPrecision initX, HighPrecision initY);
 
     template<class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, CalcBad Bad, ReuseMode Reuse>
@@ -62,6 +68,7 @@ public:
     template<class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, CalcBad Bad, ReuseMode Reuse>
     void AddPerturbationReferencePointMT5(HighPrecision initX, HighPrecision initY);
 
+public:
     template<class T, bool Authoritative>
     bool IsPerturbationResultUsefulHere(size_t i) const;
 
@@ -71,12 +78,14 @@ public:
     template<class T, class SubType>
     PerturbationResults<T>* GetAndCreateUsefulPerturbationResults();
 
+private:
     template<class T>
     std::vector<std::unique_ptr<PerturbationResults<T>>>* GetPerturbationArray();
 
     template<class T, class SubType, bool Authoritative>
     PerturbationResults<T>* GetUsefulPerturbationResults();
 
+public:
     template<class SrcT, class DestT>
     PerturbationResults<DestT>* CopyUsefulPerturbationResults(PerturbationResults<SrcT>& src_array);
 
@@ -84,6 +93,9 @@ public:
     void ResetGuess(HighPrecision x = HighPrecision(0), HighPrecision y = HighPrecision(0));
 
 private:
+    template<class T, class PerturbationResultsType, CalcBad Bad, ReuseMode Reuse>
+    void InitResults(PerturbationResultsType&results, const HighPrecision &initX, const HighPrecision &initY);
+
     PerturbationAlg m_PerturbationAlg;
     Fractal& m_Fractal;
 

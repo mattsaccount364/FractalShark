@@ -125,7 +125,8 @@ bool RefOrbitCalc::RequiresBadCalc() const {
 
 bool RefOrbitCalc::RequiresReuse() const {
     switch (m_PerturbationAlg) {
-    case PerturbationAlg::MTPeriodicity3Perturb:
+    case PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed:
+    case PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed:
         return true;
     default:
         return false;
@@ -201,7 +202,12 @@ void RefOrbitCalc::OptimizeMemory() {
 
     GetProcessMemoryInfo(GetCurrentProcess(), (PPROCESS_MEMORY_COUNTERS)&checkHappy, sizeof(checkHappy));
     if (checkHappy.PagefileUsage > OMGAlotOfMemory) {
-        ClearPerturbationResults();
+        ClearPerturbationResults(PerturbationResultType::MediumRes);
+    }
+
+    GetProcessMemoryInfo(GetCurrentProcess(), (PPROCESS_MEMORY_COUNTERS)&checkHappy, sizeof(checkHappy));
+    if (checkHappy.PagefileUsage > OMGAlotOfMemory) {
+        ClearPerturbationResults(PerturbationResultType::HighRes);
     }
 
     GetProcessMemoryInfo(GetCurrentProcess(), (PPROCESS_MEMORY_COUNTERS)&checkHappy, sizeof(checkHappy));
@@ -250,12 +256,9 @@ void RefOrbitCalc::AddPerturbationReferencePoint() {
                 m_PerturbationGuessCalcX,
                 m_PerturbationGuessCalcY);
         }
-        else if (m_PerturbationAlg == PerturbationAlg::MTPeriodicity3) {
-            AddPerturbationReferencePointMT3<T, SubType, true, BenchmarkState, CalcBad::Enable, ReuseMode::DontSaveForReuse>(
-                m_PerturbationGuessCalcX,
-                m_PerturbationGuessCalcY);
-        }
-        else if (m_PerturbationAlg == PerturbationAlg::MTPeriodicity3Perturb) {
+        else if (m_PerturbationAlg == PerturbationAlg::MTPeriodicity3 ||
+                 m_PerturbationAlg == PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed ||
+                 m_PerturbationAlg == PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed) {
             // Note: this path we don't bother saving/reusing.  Useless for low zoom depths.
             AddPerturbationReferencePointMT3<T, SubType, true, BenchmarkState, CalcBad::Enable, ReuseMode::DontSaveForReuse>(
                 m_PerturbationGuessCalcX,
@@ -288,7 +291,8 @@ void RefOrbitCalc::AddPerturbationReferencePoint() {
                 m_PerturbationGuessCalcX,
                 m_PerturbationGuessCalcY);
         }
-        else if (m_PerturbationAlg == PerturbationAlg::MTPeriodicity3Perturb) {
+        else if (m_PerturbationAlg == PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed ||
+                 m_PerturbationAlg == PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed) {
             AddPerturbationReferencePointMT3<T, SubType, true, BenchmarkState, CalcBad::Disable, ReuseMode::SaveForReuse>(
                 m_PerturbationGuessCalcX,
                 m_PerturbationGuessCalcY);
@@ -619,6 +623,338 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
 
 template<class T, class SubType, bool Periodicity, RefOrbitCalc::BenchmarkMode BenchmarkState>
 bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighPrecision cy) {
+    auto& PerturbationResultsArray = GetPerturbationResults<T>();
+    PerturbationResultsArray.push_back(std::make_unique<PerturbationResults<T>>());
+
+    auto* existingResults = GetUsefulPerturbationResults<T, SubType, true>();
+    if (existingResults == nullptr || existingResults->ReuseX.size() < 5) {
+        // TODO Lame hack with < 5.
+        PerturbationResultsArray.pop_back();
+        return false;
+    }
+
+    auto* results = PerturbationResultsArray[PerturbationResultsArray.size() - 1].get();
+
+    auto NewPrec = m_Fractal.GetPrecision(
+        m_Fractal.GetMinX(),
+        m_Fractal.GetMinY(),
+        m_Fractal.GetMaxX(),
+        m_Fractal.GetMaxY());
+    uint32_t precNum = AuthoritativeReuseExtraPrecision;
+
+    // This all generally works and only starts to suffer precision problems after
+    // about 10^AuthoritativeReuseExtraPrecision. The problem naturally is the original
+    // reference orbit is calculated only to so many digits.
+    if (NewPrec - existingResults->AuthoritativePrecision >= AuthoritativeReuseExtraPrecision - AuthoritativeMinExtraPrecision) {
+        ::MessageBox(NULL, L"Regenerating authoritative orbit is required", L"", MB_OK);
+        PerturbationResultsArray.pop_back();
+        return false;
+    }
+
+    // TODO seems like we should be able to avoid all these annoying .precision calls below
+    // via this mechanism.  Read the awful boost docs more...
+    scoped_mpfr_precision prec(AuthoritativeReuseExtraPrecision);
+
+    InitResults<T, decltype(*results), CalcBad::Disable, ReuseMode::DontSaveForReuse>(*results, cx, cy);
+
+    HighPrecision zx, zy;
+    unsigned int i;
+
+    HighPrecision HighOne = 1.0;
+    HighPrecision HighTwo = 2.0;
+    HighPrecision TwoFiftySix = 256.0;
+    HighPrecision DeltaReal = cx - existingResults->hiX;
+    HighPrecision DeltaImaginary = cy - existingResults->hiY;
+    HighPrecision DeltaSub0X = DeltaReal;
+    HighPrecision DeltaSub0Y = DeltaImaginary;
+    HighPrecision DeltaSubNX = 0;
+    HighPrecision DeltaSubNY = 0;
+
+    // Must come after subtraction above
+    cx.precision(precNum);
+    cy.precision(precNum);
+    HighOne.precision(precNum);
+    HighTwo.precision(precNum);
+    TwoFiftySix.precision(precNum);
+    DeltaReal.precision(precNum);
+    DeltaImaginary.precision(precNum);
+    DeltaSub0X.precision(precNum);
+    DeltaSub0Y.precision(precNum);
+    DeltaSubNX.precision(precNum);
+    DeltaSubNY.precision(precNum);
+
+    size_t RefIteration = 0;
+    size_t MaxRefIteration = existingResults->x.size() - 1;
+
+    T dzdcX = T(1.0);
+    T dzdcY = T(0.0);
+
+    T zxCopy;
+    T zyCopy;
+
+    HighPrecision tempZX;
+    HighPrecision tempZY;
+    HighPrecision zn_size;
+    HighPrecision normDeltaSubN;
+
+    tempZX.precision(precNum);
+    tempZY.precision(precNum);
+    zn_size.precision(precNum);
+    normDeltaSubN.precision(precNum);
+
+    zx = cx;
+    zy = cy;
+
+    struct ThreadZxData {
+        ThreadZxData(uint32_t precNum) {
+            ReferenceIteration = 0;
+            DeltaSubNXOrig.precision(precNum);
+            DeltaSubNYOrig.precision(precNum);
+            DeltaSub0X.precision(precNum);
+            DeltaSubNX.precision(precNum);
+        }
+
+        size_t ReferenceIteration;
+        HighPrecision DeltaSubNXOrig;
+        HighPrecision DeltaSubNYOrig;
+        HighPrecision DeltaSub0X;
+        HighPrecision DeltaSubNX;
+    };
+
+    struct ThreadZyData {
+        ThreadZyData(uint32_t precNum) {
+            ReferenceIteration = 0;
+            DeltaSubNXOrig.precision(precNum);
+            DeltaSubNYOrig.precision(precNum);
+            DeltaSub0Y.precision(precNum);
+            DeltaSubNY.precision(precNum);
+        }
+
+        size_t ReferenceIteration;
+        HighPrecision DeltaSubNXOrig;
+        HighPrecision DeltaSubNYOrig;
+        HighPrecision DeltaSub0Y;
+        HighPrecision DeltaSubNY;
+    };
+
+    auto* ThreadZxMemory = (ThreadPtrs<ThreadZxData> *)
+        _aligned_malloc(sizeof(ThreadPtrs<ThreadZxData>), 64);
+    memset(ThreadZxMemory, 0, sizeof(*ThreadZxMemory));
+
+    auto* ThreadZyMemory = (ThreadPtrs<ThreadZyData> *)
+        _aligned_malloc(sizeof(ThreadPtrs<ThreadZyData>), 64);
+    memset(ThreadZyMemory, 0, sizeof(*ThreadZyMemory));
+
+    const std::vector<HighPrecision>& existingReuseX = existingResults->ReuseX;
+    const std::vector<HighPrecision>& existingReuseY = existingResults->ReuseY;
+
+    auto ThreadSqZx = [&](ThreadPtrs<ThreadZxData>* ThreadMemory) {
+        for (;;) {
+            ThreadZxData* expected = ThreadMemory->In.load();
+            ThreadZxData* ok = nullptr;
+
+            CheckStartCriteria;
+            PrefetchHighPrec(ok->DeltaSubNXOrig);
+            PrefetchHighPrec(ok->DeltaSubNYOrig);
+            //PrefetchHighPrec(ok->existingReuseX[ok->ReferenceIteration]);
+            //PrefetchHighPrec(ok->existingReuseY[ok->ReferenceIteration]);
+
+            ok->DeltaSubNX =
+                ok->DeltaSubNXOrig * (existingReuseX[ok->ReferenceIteration] * HighTwo + ok->DeltaSubNXOrig) -
+                ok->DeltaSubNYOrig * (existingReuseY[ok->ReferenceIteration] * HighTwo + ok->DeltaSubNYOrig) +
+                ok->DeltaSub0X;
+
+            // Give result back.
+            CheckFinishCriteria;
+        }
+    };
+
+    auto ThreadSqZy = [&](ThreadPtrs<ThreadZyData>* ThreadMemory) {
+        for (;;) {
+            ThreadZyData* expected = ThreadMemory->In.load();
+            ThreadZyData* ok = nullptr;
+
+            CheckStartCriteria;
+            PrefetchHighPrec(ok->DeltaSubNXOrig);
+            PrefetchHighPrec(ok->DeltaSubNYOrig);
+
+            ok->DeltaSubNY =
+                ok->DeltaSubNXOrig * (existingReuseY[ok->ReferenceIteration] * HighTwo + ok->DeltaSubNYOrig) +
+                ok->DeltaSubNYOrig * (existingReuseX[ok->ReferenceIteration] * HighTwo + ok->DeltaSubNXOrig) +
+                ok->DeltaSub0Y;
+
+            // Give result back.
+            CheckFinishCriteria;
+        }
+    };
+
+    auto* threadZxdata = (ThreadZxData*)_aligned_malloc(sizeof(ThreadZxData), 64);
+    auto* threadZydata = (ThreadZyData*)_aligned_malloc(sizeof(ThreadZyData), 64);
+
+    new (threadZxdata) (ThreadZxData){precNum};
+    new (threadZydata) (ThreadZyData){precNum};
+
+    std::unique_ptr<std::thread> tZx(new std::thread(ThreadSqZx, ThreadZxMemory));
+    std::unique_ptr<std::thread> tZy(new std::thread(ThreadSqZy, ThreadZyMemory));
+
+    SetThreadAffinityMask(GetCurrentThread(), 0x1 << 3);
+    SetThreadAffinityMask(tZx->native_handle(), 0x1 << 5);
+    SetThreadAffinityMask(tZy->native_handle(), 0x1 << 7);
+
+    ThreadZxData* expectedZx = nullptr;
+    ThreadZyData* expectedZy = nullptr;
+
+    for (i = 0; i < m_Fractal.GetNumIterations(); i++) {
+        const HighPrecision DeltaSubNXOrig = DeltaSubNX;
+        const HighPrecision DeltaSubNYOrig = DeltaSubNY;
+
+        threadZxdata->ReferenceIteration = RefIteration;
+        threadZxdata->DeltaSubNXOrig = DeltaSubNX;
+        threadZxdata->DeltaSubNYOrig = DeltaSubNY;
+        threadZxdata->DeltaSub0X = DeltaSub0X;
+
+        ThreadZxMemory->In.store(
+            threadZxdata,
+            std::memory_order_release);
+
+        threadZydata->ReferenceIteration = RefIteration;
+        threadZydata->DeltaSubNXOrig = DeltaSubNX;
+        threadZydata->DeltaSubNYOrig = DeltaSubNY;
+        threadZydata->DeltaSub0Y = DeltaSub0Y;
+
+        ThreadZyMemory->In.store(
+            threadZydata,
+            std::memory_order_relaxed);
+
+        if constexpr (Periodicity) {
+            zxCopy = T(zx);
+            zyCopy = T(zy);
+        }
+
+        //threadZxdata->DeltaSubNX =
+        //    threadZxdata->DeltaSubNXOrig * (existingReuseX[threadZxdata->ReferenceIteration] * HighTwo + threadZxdata->DeltaSubNXOrig) -
+        //    threadZxdata->DeltaSubNYOrig * (existingReuseY[threadZxdata->ReferenceIteration] * HighTwo + threadZxdata->DeltaSubNYOrig) +
+        //    threadZxdata->DeltaSub0X;
+
+        //threadZydata->DeltaSubNY =
+        //    threadZydata->DeltaSubNXOrig * (existingReuseY[threadZydata->ReferenceIteration] * HighTwo + threadZydata->DeltaSubNYOrig) +
+        //    threadZydata->DeltaSubNYOrig * (existingReuseX[threadZydata->ReferenceIteration] * HighTwo + threadZydata->DeltaSubNXOrig) +
+        //    threadZydata->DeltaSub0Y;
+
+        //DeltaSubNX = threadZxdata->DeltaSubNX;
+        //DeltaSubNY = threadZydata->DeltaSubNY;
+
+        ++RefIteration;
+
+        bool done1 = false;
+        bool done2 = false;
+
+        for (;;) {
+            expectedZy = threadZydata;
+
+            _mm_pause();
+            if (!done2 &&
+                ThreadZyMemory->Out.compare_exchange_weak(expectedZy,
+                    nullptr,
+                    std::memory_order_release)) {
+                done2 = true;
+                DeltaSubNY = threadZydata->DeltaSubNY;
+            }
+
+            expectedZx = threadZxdata;
+
+            _mm_pause();
+            if (!done1 &&
+                ThreadZxMemory->Out.compare_exchange_weak(expectedZx,
+                    nullptr,
+                    std::memory_order_release)) {
+                done1 = true;
+                DeltaSubNX = threadZxdata->DeltaSubNX;
+            }
+
+            if (done1 && done2) {
+                break;
+            }
+        }
+
+        tempZX = existingReuseX[RefIteration] + DeltaSubNX;
+        tempZY = existingReuseY[RefIteration] + DeltaSubNY;
+        zn_size = tempZX * tempZX + tempZY * tempZY;
+        normDeltaSubN = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
+
+        if (zn_size > TwoFiftySix) {
+            break;
+        }
+
+        if (zn_size < normDeltaSubN ||
+            RefIteration == MaxRefIteration) {
+            DeltaSubNX = tempZX;
+            DeltaSubNY = tempZY;
+            RefIteration = 0;
+        }
+
+        zx = tempZX;
+        zy = tempZY;
+
+        if constexpr (Periodicity) {
+            HdrReduce(dzdcX);
+            auto dzdcX1 = HdrAbs(dzdcX);
+
+            HdrReduce(dzdcY);
+            auto dzdcY1 = HdrAbs(dzdcY);
+
+            HdrReduce(zxCopy);
+            auto zxCopy1 = HdrAbs(zxCopy);
+
+            HdrReduce(zyCopy);
+            auto zyCopy1 = HdrAbs(zyCopy);
+
+            T n2 = max(zxCopy1, zyCopy1);
+
+            T r0 = max(dzdcX1, dzdcY1);
+            T maxRadiusHdr{ results->maxRadius };
+            auto n3 = maxRadiusHdr * r0 * T(2.0);
+            HdrReduce(n3);
+
+            if (n2 < n3) {
+                if constexpr (BenchmarkState == BenchmarkMode::Disable) {
+                    // Break before adding the result.
+                    break;
+                }
+            }
+            else {
+                auto dzdcXOrig = dzdcX;
+                dzdcX = T(2.0) * (zxCopy * dzdcX - zyCopy * dzdcY) + T(1.0);
+                dzdcY = T(2.0) * (zxCopy * dzdcY + zyCopy * dzdcXOrig);
+            }
+        }
+
+        T reducedZx = (T)zx;
+        T reducedZy = (T)zy;
+
+        results->x.push_back(reducedZx);
+        results->y.push_back(reducedZy);
+    }
+
+    expectedZx = nullptr;
+    ThreadZxMemory->In.compare_exchange_strong(expectedZx, (ThreadZxData*)0x1, std::memory_order_release);
+
+    expectedZy = nullptr;
+    ThreadZyMemory->In.compare_exchange_strong(expectedZy, (ThreadZyData*)0x1, std::memory_order_release);
+
+    tZx->join();
+    tZy->join();
+
+    _aligned_free(ThreadZxMemory);
+    _aligned_free(ThreadZyMemory);
+
+    threadZxdata->~ThreadZxData();
+    threadZydata->~ThreadZyData();
+
+    _aligned_free(threadZxdata);
+    _aligned_free(threadZydata);
+
+
     return true;
 }
 
@@ -692,10 +1028,6 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
 
     new (threadZxdata) (ThreadZxData){};
     new (threadZydata) (ThreadZyData){};
-
-    //threadZxdata->zx_sq = &zx_sq;
-
-    //threadZydata->zy_sq = &zy_sq;
 
     std::unique_ptr<std::thread> tZx(new std::thread(ThreadSqZx, ThreadZxMemory));
     std::unique_ptr<std::thread> tZy(new std::thread(ThreadSqZy, ThreadZyMemory));
@@ -1341,15 +1673,6 @@ bool RefOrbitCalc::RequiresReferencePoints() const {
     return false;
 }
 
-bool RefOrbitCalc::IsReferencePerturbationEnabled() const {
-    switch (m_PerturbationAlg) {
-    case PerturbationAlg::MTPeriodicity3Perturb:
-        return true;
-    default:
-        return false;
-    }
-}
-
 template<class T, bool Authoritative>
 bool RefOrbitCalc::IsPerturbationResultUsefulHere(size_t i) const {
     if constexpr (std::is_same<T, double>::value) {
@@ -1417,7 +1740,7 @@ bool RefOrbitCalc::IsPerturbationResultUsefulHere(size_t i) const {
 template<class T, class SubType>
 PerturbationResults<T>* RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
     bool added = false;
-    if (IsReferencePerturbationEnabled()) {
+    if (RequiresReuse()) {
         if (m_PerturbationGuessCalcX == 0 && m_PerturbationGuessCalcY == 0) {
             m_PerturbationGuessCalcX = (m_Fractal.GetMaxX() + m_Fractal.GetMinX()) / 2;
             m_PerturbationGuessCalcY = (m_Fractal.GetMaxY() + m_Fractal.GetMinY()) / 2;
@@ -1425,7 +1748,18 @@ PerturbationResults<T>* RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
 
         PerturbationResults<T>* results = GetUsefulPerturbationResults<T, SubType, false>();
         if (results == nullptr) {
-            added = AddPerturbationReferencePointSTReuse<T, SubType, true, BenchmarkMode::Disable>(m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
+            switch (GetPerturbationAlg()) {
+            case PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed:
+                added = AddPerturbationReferencePointSTReuse<T, SubType, true, BenchmarkMode::Disable>(m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
+                break;
+            case PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed:
+                added = AddPerturbationReferencePointMT3Reuse<T, SubType, true, BenchmarkMode::Disable>(m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
+                break;
+            default:
+                ::MessageBox(NULL, L"Some stupid bug #2343 :(", L"", MB_OK);
+                assert(false);
+                break;
+            }
         }
     }
 
@@ -1535,11 +1869,29 @@ RefOrbitCalc::CopyUsefulPerturbationResults<HDRFloat<double>, HDRFloat<float>>(P
 template PerturbationResults<float>*
 RefOrbitCalc::CopyUsefulPerturbationResults<HDRFloat<float>, float>(PerturbationResults<HDRFloat<float>>&);
 
-void RefOrbitCalc::ClearPerturbationResults() {
-    m_PerturbationResultsDouble.clear();
-    m_PerturbationResultsFloat.clear();
-    m_PerturbationResultsHDRDouble.clear();
-    m_PerturbationResultsHDRFloat.clear();
+void RefOrbitCalc::ClearPerturbationResults(PerturbationResultType type) {
+    auto IsMarkedToDelete = [&](const auto& o) -> bool {
+        if (type == PerturbationResultType::All ||
+            (type == PerturbationResultType::MediumRes &&
+                o->AuthoritativePrecision == 0) ||
+            (type == PerturbationResultType::HighRes &&
+                o->AuthoritativePrecision != 0)) {
+            return true;
+        }
+
+        return false;
+    };
+
+    auto ClearOne = [&](auto &arr) {
+        arr.erase(
+            std::remove_if(arr.begin(), arr.end(), IsMarkedToDelete),
+            arr.end());
+    };
+
+    ClearOne(m_PerturbationResultsDouble);
+    ClearOne(m_PerturbationResultsFloat);
+    ClearOne(m_PerturbationResultsHDRDouble);
+    ClearOne(m_PerturbationResultsHDRFloat);
 
     m_PerturbationGuessCalcX = 0;
     m_PerturbationGuessCalcY = 0;

@@ -29,8 +29,15 @@ public:
         MT,
         STPeriodicity,
         MTPeriodicity3,
-        MTPeriodicity3Perturb,
+        MTPeriodicity3PerturbMTHighSTMed,
+        MTPeriodicity3PerturbMTHighMTMed,
         MTPeriodicity5
+    };
+
+    enum class PerturbationResultType {
+        MediumRes,
+        HighRes,
+        All
     };
 
     RefOrbitCalc(Fractal &Fractal);
@@ -73,7 +80,6 @@ public:
     bool IsPerturbationResultUsefulHere(size_t i) const;
 
     bool RequiresReferencePoints() const;
-    bool IsReferencePerturbationEnabled() const;
 
     template<class T, class SubType>
     PerturbationResults<T>* GetAndCreateUsefulPerturbationResults();
@@ -89,7 +95,7 @@ public:
     template<class SrcT, class DestT>
     PerturbationResults<DestT>* CopyUsefulPerturbationResults(PerturbationResults<SrcT>& src_array);
 
-    void ClearPerturbationResults();
+    void ClearPerturbationResults(PerturbationResultType type);
     void ResetGuess(HighPrecision x = HighPrecision(0), HighPrecision y = HighPrecision(0));
 
 private:

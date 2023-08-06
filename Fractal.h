@@ -129,7 +129,7 @@ public:
     inline void SetIterationPrecision(uint32_t iteration_precision) { m_IterationPrecision = iteration_precision;  }
 
     void SetPerturbationAlg(RefOrbitCalc::PerturbationAlg alg) { m_RefOrbit.SetPerturbationAlg(alg); }
-    void ClearPerturbationResults() { m_RefOrbit.ClearPerturbationResults(); }
+    void ClearPerturbationResults(RefOrbitCalc::PerturbationResultType type) { m_RefOrbit.ClearPerturbationResults(type); }
 
 private: // Keeps track of what has changed and what hasn't since the last draw
     inline void ChangedMakeClean(void) { m_ChangedWindow = m_ChangedScrn = m_ChangedIterations = false; }

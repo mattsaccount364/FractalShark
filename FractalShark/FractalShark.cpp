@@ -263,11 +263,18 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
         MenuCenterView(hWnd, mousePt.x, mousePt.y);
         break;
 
+    case 'I':
+    case 'i':
+        if (shiftDown) {
+            gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::MediumRes);
+        }
+        MenuBenchmarkThis(hWnd);
+        break;
+
     case 'O':
     case 'o':
         if (shiftDown) {
-            //::MessageBoxA(hWnd, "Yay", "", MB_OK);
-            gFractal->ClearPerturbationResults();
+            gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
         }
         MenuBenchmarkThis(hWnd);
         break;
@@ -275,8 +282,7 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
     case 'P':
     case 'p':
         if (shiftDown) {
-            //::MessageBoxA(hWnd, "Yay", "", MB_OK);
-            gFractal->ClearPerturbationResults();
+            gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
         }
         MenuSquareView(hWnd);
         break;
@@ -659,9 +665,21 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 gFractal->DrawPerturbationResults<HDRFloat<double>>(true);
                 break;
             }
-            case IDM_PERTURB_CLEAR:
+            case IDM_PERTURB_CLEAR_ALL:
             {
-                gFractal->ClearPerturbationResults();
+                gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+                break;
+            }
+
+            case IDM_PERTURB_CLEAR_MED:
+            {
+                gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::MediumRes);
+                break;
+            }
+
+            case IDM_PERTURB_CLEAR_HIGH:
+            {
+                gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::HighRes);
                 break;
             }
 
@@ -689,9 +707,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 break;
             }
 
-            case IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB:
+            case IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_STMED:
             {
-                gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3Perturb);
+                gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed);
+                break;
+            }
+
+            case IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_MTMED:
+            {
+                gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed);
                 break;
             }
 

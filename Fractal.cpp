@@ -144,7 +144,7 @@ void Fractal::Initialize(int width,
     //SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedPeriodic);
     
     SetIterationPrecision(1);
-    m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3Perturb);
+    m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3);
     m_RefOrbit.ResetGuess();
 
@@ -3141,7 +3141,7 @@ void Fractal::BenchmarkData::BenchmarkSetup(size_t numIters) {
     prevScrnWidth = fractal.m_ScrnWidth;
     prevScrnHeight = fractal.m_ScrnHeight;
 
-    fractal.m_RefOrbit.ClearPerturbationResults();
+    fractal.m_RefOrbit.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
     fractal.SetNumIterations(numIters);
     fractal.ResetDimensions(500, 500, 1);
     //fractal.SetIterationPrecision(1);

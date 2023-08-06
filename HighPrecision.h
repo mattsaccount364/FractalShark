@@ -29,7 +29,7 @@ To Convert(From data) {
 constexpr size_t AuthoritativeMinExtraPrecision = 20;
 
 // Amount of precision used for medium-precision reference orbit.
-constexpr size_t AuthoritativeReuseExtraPrecision = 50;
+constexpr size_t AuthoritativeReuseExtraPrecision = 100;
 
 //using HighPrecision = boost::multiprecision::cpp_dec_float_100;
 //template<class From, class To>

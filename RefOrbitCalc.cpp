@@ -99,7 +99,7 @@ static inline void prefetch_range(void* addr, std::size_t len) {
     }
 }
 
-static inline void PrefetchHighPrec(HighPrecision& target) {
+static inline void PrefetchHighPrec(const HighPrecision& target) {
     ENABLE_PREFETCH((const char*)&target.backend().data(), _MM_HINT_T0);
     size_t lastindex = abs(target.backend().data()->_mp_size);
     size_t size_elt = sizeof(mp_limb_t);
@@ -707,32 +707,26 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     struct ThreadZxData {
         ThreadZxData(uint32_t precNum) {
             ReferenceIteration = 0;
-            DeltaSubNXOrig.precision(precNum);
-            DeltaSubNYOrig.precision(precNum);
-            DeltaSub0X.precision(precNum);
             DeltaSubNX.precision(precNum);
         }
 
         size_t ReferenceIteration;
-        HighPrecision DeltaSubNXOrig;
-        HighPrecision DeltaSubNYOrig;
-        HighPrecision DeltaSub0X;
+        const HighPrecision *DeltaSubNXOrig;
+        const HighPrecision *DeltaSubNYOrig;
+        const HighPrecision *DeltaSub0X;
         HighPrecision DeltaSubNX;
     };
 
     struct ThreadZyData {
         ThreadZyData(uint32_t precNum) {
             ReferenceIteration = 0;
-            DeltaSubNXOrig.precision(precNum);
-            DeltaSubNYOrig.precision(precNum);
-            DeltaSub0Y.precision(precNum);
             DeltaSubNY.precision(precNum);
         }
 
         size_t ReferenceIteration;
-        HighPrecision DeltaSubNXOrig;
-        HighPrecision DeltaSubNYOrig;
-        HighPrecision DeltaSub0Y;
+        const HighPrecision *DeltaSubNXOrig;
+        const HighPrecision *DeltaSubNYOrig;
+        const HighPrecision *DeltaSub0Y;
         HighPrecision DeltaSubNY;
     };
 
@@ -753,15 +747,15 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
             ThreadZxData* ok = nullptr;
 
             CheckStartCriteria;
-            PrefetchHighPrec(ok->DeltaSubNXOrig);
-            PrefetchHighPrec(ok->DeltaSubNYOrig);
+            PrefetchHighPrec(*ok->DeltaSubNXOrig);
+            PrefetchHighPrec(*ok->DeltaSubNYOrig);
             //PrefetchHighPrec(ok->existingReuseX[ok->ReferenceIteration]);
             //PrefetchHighPrec(ok->existingReuseY[ok->ReferenceIteration]);
 
             ok->DeltaSubNX =
-                ok->DeltaSubNXOrig * (existingReuseX[ok->ReferenceIteration] * HighTwo + ok->DeltaSubNXOrig) -
-                ok->DeltaSubNYOrig * (existingReuseY[ok->ReferenceIteration] * HighTwo + ok->DeltaSubNYOrig) +
-                ok->DeltaSub0X;
+                (*ok->DeltaSubNXOrig) * (existingReuseX[ok->ReferenceIteration] * HighTwo + (*ok->DeltaSubNXOrig)) -
+                (*ok->DeltaSubNYOrig) * (existingReuseY[ok->ReferenceIteration] * HighTwo + (*ok->DeltaSubNYOrig)) +
+                (*ok->DeltaSub0X);
 
             // Give result back.
             CheckFinishCriteria;
@@ -774,13 +768,13 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
             ThreadZyData* ok = nullptr;
 
             CheckStartCriteria;
-            PrefetchHighPrec(ok->DeltaSubNXOrig);
-            PrefetchHighPrec(ok->DeltaSubNYOrig);
+            PrefetchHighPrec(*ok->DeltaSubNXOrig);
+            PrefetchHighPrec(*ok->DeltaSubNYOrig);
 
             ok->DeltaSubNY =
-                ok->DeltaSubNXOrig * (existingReuseY[ok->ReferenceIteration] * HighTwo + ok->DeltaSubNYOrig) +
-                ok->DeltaSubNYOrig * (existingReuseX[ok->ReferenceIteration] * HighTwo + ok->DeltaSubNXOrig) +
-                ok->DeltaSub0Y;
+                (*ok->DeltaSubNXOrig) * (existingReuseY[ok->ReferenceIteration] * HighTwo + (*ok->DeltaSubNYOrig)) +
+                (*ok->DeltaSubNYOrig) * (existingReuseX[ok->ReferenceIteration] * HighTwo + (*ok->DeltaSubNXOrig)) +
+                (*ok->DeltaSub0Y);
 
             // Give result back.
             CheckFinishCriteria;
@@ -807,30 +801,36 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     T tempDeltaSubNYLow = T(0);
 
     T Low256 = T(256);
+    T tempZYLow = T(0);
+    T tempZXLow = T(0);
+
+    bool RanOnce = false;
 
     for (i = 0; i < m_Fractal.GetNumIterations(); i++) {
-        const HighPrecision DeltaSubNXOrig = DeltaSubNX;
-        const HighPrecision DeltaSubNYOrig = DeltaSubNY;
-
         threadZxdata->ReferenceIteration = RefIteration;
-        threadZxdata->DeltaSubNXOrig = DeltaSubNX;
-        threadZxdata->DeltaSubNYOrig = DeltaSubNY;
-        threadZxdata->DeltaSub0X = DeltaSub0X;
+        threadZxdata->DeltaSubNXOrig = &DeltaSubNX;
+        threadZxdata->DeltaSubNYOrig = &DeltaSubNY;
+        threadZxdata->DeltaSub0X = &DeltaSub0X;
 
         ThreadZxMemory->In.store(
             threadZxdata,
             std::memory_order_release);
 
         threadZydata->ReferenceIteration = RefIteration;
-        threadZydata->DeltaSubNXOrig = DeltaSubNX;
-        threadZydata->DeltaSubNYOrig = DeltaSubNY;
-        threadZydata->DeltaSub0Y = DeltaSub0Y;
+        threadZydata->DeltaSubNXOrig = &DeltaSubNX;
+        threadZydata->DeltaSubNYOrig = &DeltaSubNY;
+        threadZydata->DeltaSub0Y = &DeltaSub0Y;
 
         ThreadZyMemory->In.store(
             threadZydata,
             std::memory_order_relaxed);
 
         ++RefIteration;
+
+        if (RanOnce) {
+            results->x.push_back(tempZXLow);
+            results->y.push_back(tempZYLow);
+        }
 
         if constexpr (Periodicity) {
             zxCopy = T(zx);
@@ -880,8 +880,9 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
                     nullptr,
                     std::memory_order_release)) {
                 done2 = true;
-                DeltaSubNY = threadZydata->DeltaSubNY;
                 tempDeltaSubNYLow = T(threadZydata->DeltaSubNY);
+                tempZY = existingReuseY[RefIteration] + threadZydata->DeltaSubNY;
+                tempZYLow = T(tempZY);
             }
 
             expectedZx = threadZxdata;
@@ -892,8 +893,9 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
                     nullptr,
                     std::memory_order_release)) {
                 done1 = true;
-                DeltaSubNX = threadZxdata->DeltaSubNX;
                 tempDeltaSubNXLow = T(threadZxdata->DeltaSubNX);
+                tempZX = existingReuseX[RefIteration] + threadZxdata->DeltaSubNX;
+                tempZXLow = T(tempZX);
             }
 
             if (done1 && done2) {
@@ -901,11 +903,9 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
             }
         }
 
-        tempZX = existingReuseX[RefIteration] + DeltaSubNX;
-        tempZY = existingReuseY[RefIteration] + DeltaSubNY;
+        DeltaSubNY = threadZydata->DeltaSubNY;
+        DeltaSubNX = threadZxdata->DeltaSubNX;
 
-        auto tempZXLow = T(tempZX);
-        auto tempZYLow = T(tempZY);
         zn_size = tempZXLow * tempZXLow + tempZYLow * tempZYLow;
         HdrReduce(zn_size);
         normDeltaSubN = tempDeltaSubNXLow * tempDeltaSubNXLow + tempDeltaSubNYLow * tempDeltaSubNYLow;
@@ -925,11 +925,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
         zx = tempZX;
         zy = tempZY;
 
-        T reducedZx = (T)zx;
-        T reducedZy = (T)zy;
-
-        results->x.push_back(reducedZx);
-        results->y.push_back(reducedZy);
+        RanOnce = true;
     }
 
     expectedZx = nullptr;

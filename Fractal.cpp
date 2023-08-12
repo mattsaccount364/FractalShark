@@ -23,6 +23,9 @@
 #include <iostream>
 #include <fstream>
 
+#include "HDRFloatComplex.h"
+#include "ATInfo.h"
+
 // Match in render_gpu.cu
 constexpr static auto NB_THREADS_W = 8; // W=16, H=8 previously seemed OK
 constexpr static auto NB_THREADS_H = 8;

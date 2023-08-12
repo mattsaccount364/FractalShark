@@ -1,11 +1,11 @@
-package fractalzoomer.core.la;
-
-import fractalzoomer.core.Complex;
-import fractalzoomer.core.GenericComplex;
-import fractalzoomer.core.MantExp;
+//package fractalzoomer.core.la;
+//
+//import fractalzoomer.core.Complex;
+//import fractalzoomer.core.GenericComplex;
+//import fractalzoomer.core.MantExp;
 import fractalzoomer.core.MantExpComplex;
 
-public abstract class GenericLAInfo {
+class GenericLAInfo {
 
     protected abstract GenericLAInfo Composite(LAInfo LA);
     protected abstract GenericLAInfo Composite(LAInfoDeep LA);

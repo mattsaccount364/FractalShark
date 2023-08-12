@@ -1,93 +1,75 @@
-package fractalzoomer.core;
+#pragma once
 
+#include "HDRFloat.h"
+#include <algorithm>
+#include <math.h>
+//package fractalzoomer.core;
+//
+//
+//import fractalzoomer.core.mpfr.MpfrBigNum;
+//import fractalzoomer.core.mpir.MpirBigNum;
+//import org.apfloat.Apfloat;
 
-import fractalzoomer.core.mpfr.MpfrBigNum;
-import fractalzoomer.core.mpir.MpirBigNum;
-import org.apfloat.Apfloat;
+template<class T>
+class HDRFloatComplex {
 
-public class MantExpComplex extends GenericComplex {
+private:
+    int32_t exp;
+    T mantissaReal;
+    T mantissaImag;
 
-    private long exp;
-    private double mantissaReal;
-    private double mantissaImag;
+    using HDRFloat = HDRFloat<T>;
+    using Complex = std::complex<T>;
 
-    public MantExpComplex() {
+public:
+    HDRFloatComplex() {
         mantissaReal = 0.0;
         mantissaImag = 0.0;
-        exp = MantExp.MIN_BIG_EXPONENT;
+        exp = HDRFloat::MIN_BIG_EXPONENT();
     }
 
-    public MantExpComplex(double mantissaReal, double mantissaImag, long exp) {
-        this.mantissaReal = mantissaReal;
-        this.mantissaImag = mantissaImag;
-        this.exp = exp < MantExp.MIN_BIG_EXPONENT ? MantExp.MIN_BIG_EXPONENT : exp;
+    HDRFloatComplex(T mantissaReal, T mantissaImag, long exp) {
+        this->mantissaReal = mantissaReal;
+        this->mantissaImag = mantissaImag;
+        this->exp = exp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : exp;
     }
 
-    public MantExpComplex(long exp, double mantissaReal, double mantissaImag) {
-        this.mantissaReal = mantissaReal;
-        this.mantissaImag = mantissaImag;
-        this.exp = exp;
+    HDRFloatComplex(long exp, T mantissaReal, T mantissaImag) {
+        this->mantissaReal = mantissaReal;
+        this->mantissaImag = mantissaImag;
+        this->exp = exp;
     }
 
-    public MantExpComplex(MantExpComplex other) {
-        this.mantissaReal = other.mantissaReal;
-        this.mantissaImag = other.mantissaImag;
-        this.exp = other.exp;
+    HDRFloatComplex(const HDRFloatComplex &other) {
+        this->mantissaReal = other.mantissaReal;
+        this->mantissaImag = other.mantissaImag;
+        this->exp = other.exp;
     }
 
-    public MantExpComplex(MantExpComplex other, int exp) {
-        this.mantissaReal = other.mantissaReal;
-        this.mantissaImag = other.mantissaImag;
-        this.exp = exp;
+    HDRFloatComplex(HDRFloatComplex other, int exp) {
+        this->mantissaReal = other.mantissaReal;
+        this->mantissaImag = other.mantissaImag;
+        this->exp = exp;
     }
 
-    public MantExpComplex(Complex c) {
-        setMantexp(new MantExp(c.getRe()), new MantExp(c.getIm()));
+    HDRFloatComplex(Complex c) {
+        setMantexp(MantExp(c.getRe()), MantExp(c.getIm()));
     }
 
-    public MantExpComplex(DDComplex c) {
-        setMantexp(new MantExp(c.getRe().doubleValue()), new MantExp(c.getIm().doubleValue()));
-    }
-
-    public MantExpComplex(BigComplex c) {
-        setMantexp(new MantExp(c.getRe()), new MantExp(c.getIm()));
-    }
-
-    public MantExpComplex(BigNumComplex c) {
-        setMantexp(c.getRe().getMantExp(), c.getIm().getMantExp());
-    }
-
-    public MantExpComplex(MpfrBigNumComplex c) {
-
-        //setMantexp(c.getRe().getMantExp(), c.getIm().getMantExp());
-        MantExp[] res = MpfrBigNum.get_d_2exp(c.getRe(), c.getIm());
-        setMantexp(res[0], res[1]);
-    }
-
-    public MantExpComplex(MpirBigNumComplex c) {
-
-        //setMantexp(c.getRe().getMantExp(), c.getIm().getMantExp());
-        MantExp[] res = MpirBigNum.get_d_2exp(c.getRe(), c.getIm());
-        setMantexp(res[0], res[1]);
-    }
-
-    public MantExpComplex(Apfloat re, Apfloat im) {
-        setMantexp(new MantExp(re), new MantExp(im));
-    }
-
-    public MantExpComplex(MantExp re, MantExp im) {
+    HDRFloatComplex(HDRFloat re, HDRFloat im) {
         setMantexp(re, im);
     }
 
-    public MantExpComplex(double re, double im) {
-        setMantexp(new MantExp(re), new MantExp(im));
+    HDRFloatComplex(T re, T im) {
+        setMantexp(HDRFloat(re), HDRFloat(im));
     }
 
-    private void setMantexp(MantExp realIn, MantExp imagIn) {
+private:
+    void setMantexp(HDRFloat realIn, HDRFloat imagIn) {
 
-        exp = Math.max(realIn.exp, imagIn.exp);
-        mantissaReal = realIn.mantissa * MantExp.getMultiplier(realIn.exp-exp);
-        mantissaImag = imagIn.mantissa * MantExp.getMultiplier(imagIn.exp-exp);
+        exp = max(realIn.exp, imagIn.exp);
+        mantissaReal = realIn.mantissa * HDRFloat::getMultiplier(realIn.exp-exp);
+        mantissaImag = imagIn.mantissa * HDRFloat::getMultiplier(imagIn.exp-exp);
 
         /*if (realIn.exp == imagIn.exp) {
             exp = realIn.exp;
@@ -96,104 +78,59 @@ public class MantExpComplex extends GenericComplex {
         }
         else if (realIn.exp > imagIn.exp) {
 
-            //double temp = imagIn.mantissa / MantExp.toExp(realIn.exp - imagIn.exp);
+            //T temp = imagIn.mantissa / HDRFloat::toExp(realIn.exp - imagIn.exp);
 
             exp = realIn.exp;
 
             mantissaReal = realIn.mantissa;
             //mantissaImag = temp;
-            //mantissaImag = MantExp.toDouble(imagIn.mantissa, imagIn.exp - realIn.exp);
-            mantissaImag = imagIn.mantissa * MantExp.getMultiplier(imagIn.exp - realIn.exp);
+            //mantissaImag = HDRFloat::toDouble(imagIn.mantissa, imagIn.exp - realIn.exp);
+            mantissaImag = imagIn.mantissa * HDRFloat::getMultiplier(imagIn.exp - realIn.exp);
         }
         else {
-            //double temp = realIn.mantissa / MantExp.toExp(imagIn.exp - realIn.exp);
+            //T temp = realIn.mantissa / HDRFloat::toExp(imagIn.exp - realIn.exp);
 
             exp = imagIn.exp;
 
             //mantissaReal = temp;
-            //mantissaReal = MantExp.toDouble(realIn.mantissa, realIn.exp - imagIn.exp);
-            mantissaReal = realIn.mantissa * MantExp.getMultiplier(realIn.exp - imagIn.exp);
+            //mantissaReal = HDRFloat::toDouble(realIn.mantissa, realIn.exp - imagIn.exp);
+            mantissaReal = realIn.mantissa * HDRFloat::getMultiplier(realIn.exp - imagIn.exp);
             mantissaImag = imagIn.mantissa;
         }*/
     }
 
-    public MantExpComplex plus(MantExpComplex value) {
+public:
+
+    HDRFloatComplex plus(HDRFloatComplex value) {
 
         long expDiff = exp - value.exp;
 
-        if(expDiff >= MantExp.EXPONENT_DIFF_IGNORED) {
-            return new MantExpComplex(exp, mantissaReal, mantissaImag);
+        if(expDiff >= HDRFloat::EXPONENT_DIFF_IGNORED) {
+            return HDRFloatComplex(exp, mantissaReal, mantissaImag);
         } else if(expDiff >= 0) {
-            double mul = MantExp.getMultiplier(-expDiff);
-            return new MantExpComplex(exp, mantissaReal + value.mantissaReal * mul, mantissaImag + value.mantissaImag * mul);
+            T mul = HDRFloat::getMultiplier(-expDiff);
+            return HDRFloatComplex(exp, mantissaReal + value.mantissaReal * mul, mantissaImag + value.mantissaImag * mul);
         }
         /*else if(expDiff == 0) {
-            return new MantExpComplex(exp, mantissaReal + value.mantissaReal, mantissaImag + value.mantissaImag);
+            return HDRFloatComplex(exp, mantissaReal + value.mantissaReal, mantissaImag + value.mantissaImag);
         }*/
-        else if(expDiff > MantExp.MINUS_EXPONENT_DIFF_IGNORED) {
-            double mul = MantExp.getMultiplier(expDiff);
-            return new MantExpComplex(value.exp, mantissaReal * mul + value.mantissaReal, mantissaImag * mul + value.mantissaImag);
+        else if(expDiff > HDRFloat::MINUS_EXPONENT_DIFF_IGNORED) {
+            T mul = HDRFloat::getMultiplier(expDiff);
+            return HDRFloatComplex(value.exp, mantissaReal * mul + value.mantissaReal, mantissaImag * mul + value.mantissaImag);
         } else {
-            return new MantExpComplex(value.exp, value.mantissaReal, value.mantissaImag);
+            return HDRFloatComplex(value.exp, value.mantissaReal, value.mantissaImag);
         }
 
     }
 
-    @Deprecated
-    public MantExpComplex plusOld(MantExpComplex value) {
-
-        double temp_mantissa_real = 0;
-        double temp_mantissa_imag = 0;
-        long temp_exp = 0;
-
-        if(exp == value.exp) {
-            temp_exp = exp;
-            temp_mantissa_real = mantissaReal + value.mantissaReal;
-            temp_mantissa_imag = mantissaImag + value.mantissaImag;
-        }
-        else if (exp > value.exp) {
-            //double temp = MantExp.toExp(exp - value.exp);
-            //temp_mantissa_real = mantissaReal + value.mantissaReal / temp;
-            //temp_mantissa_imag = mantissaImag + value.mantissaImag / temp;
-
-            temp_exp = exp;
-
-            long diff = value.exp - exp;
-            //temp_mantissa_real = mantissaReal + MantExp.toDouble(value.mantissaReal, diff);
-            //temp_mantissa_imag = mantissaImag + MantExp.toDouble(value.mantissaImag, diff);
-            double d = MantExp.getMultiplier(diff);
-            temp_mantissa_real = mantissaReal + value.mantissaReal * d;
-            temp_mantissa_imag = mantissaImag + value.mantissaImag * d;
-
-        }
-        else {
-            //double temp = MantExp.toExp(value.exp - exp);
-            //temp_mantissa_real  = mantissaReal / temp + value.mantissaReal;
-            //temp_mantissa_imag  = mantissaImag / temp + value.mantissaImag;
-
-            temp_exp = value.exp;
-
-            long diff = exp - value.exp;
-            //temp_mantissa_real = MantExp.toDouble(mantissaReal, diff) + value.mantissaReal;
-            //temp_mantissa_imag = MantExp.toDouble(mantissaImag, diff) + value.mantissaImag;
-            double d = MantExp.getMultiplier(diff);
-            temp_mantissa_real = mantissaReal * d + value.mantissaReal;
-            temp_mantissa_imag = mantissaImag * d + value.mantissaImag;
-
-        }
-
-        return new MantExpComplex(temp_exp, temp_mantissa_real, temp_mantissa_imag);
-
-    }
-
-    public MantExpComplex plus_mutable(MantExpComplex value) {
+    HDRFloatComplex plus_mutable(HDRFloatComplex value) {
 
         long expDiff = exp - value.exp;
 
-        if(expDiff >= MantExp.EXPONENT_DIFF_IGNORED) {
-            return this;
+        if(expDiff >= HDRFloat::EXPONENT_DIFF_IGNORED) {
+            return *this;
         } else if(expDiff >= 0) {
-            double mul = MantExp.getMultiplier(-expDiff);
+            T mul = HDRFloat::getMultiplier(-expDiff);
             mantissaReal = mantissaReal + value.mantissaReal * mul;
             mantissaImag = mantissaImag + value.mantissaImag * mul;
         }
@@ -201,8 +138,8 @@ public class MantExpComplex extends GenericComplex {
             mantissaReal = mantissaReal + value.mantissaReal;
             mantissaImag = mantissaImag + value.mantissaImag;
         }*/
-        else if(expDiff > MantExp.MINUS_EXPONENT_DIFF_IGNORED) {
-            double mul = MantExp.getMultiplier(expDiff);
+        else if(expDiff > HDRFloat::MINUS_EXPONENT_DIFF_IGNORED) {
+            T mul = HDRFloat::getMultiplier(expDiff);
             exp = value.exp;
             mantissaReal = mantissaReal * mul + value.mantissaReal;
             mantissaImag =  mantissaImag * mul + value.mantissaImag;
@@ -211,214 +148,214 @@ public class MantExpComplex extends GenericComplex {
             mantissaReal = value.mantissaReal;
             mantissaImag = value.mantissaImag;
         }
-        return this;
+        return *this;
 
     }
 
 
-    public MantExpComplex times(MantExpComplex factor) {
-        double tempMantissaReal = (mantissaReal * factor.mantissaReal) - (mantissaImag * factor.mantissaImag);
+    HDRFloatComplex times(HDRFloatComplex factor) {
+        T tempMantissaReal = (mantissaReal * factor.mantissaReal) - (mantissaImag * factor.mantissaImag);
 
-        double tempMantissaImag = (mantissaReal * factor.mantissaImag) + (mantissaImag * factor.mantissaReal);
+        T tempMantissaImag = (mantissaReal * factor.mantissaImag) + (mantissaImag * factor.mantissaReal);
 
-        return new MantExpComplex(tempMantissaReal, tempMantissaImag, exp + factor.exp);
+        return HDRFloatComplex(tempMantissaReal, tempMantissaImag, exp + factor.exp);
 
-        /*double absRe = Math.abs(tempMantissaReal);
-        double absIm = Math.abs(tempMantissaImag);
+        /*T absRe = Math.abs(tempMantissaReal);
+        T absIm = Math.abs(tempMantissaImag);
         if (absRe > 1e50 || absIm > 1e50 || absRe < 1e-50 || absIm < 1e-50) {
             p.Reduce();
         }*/
 
     }
 
-    public MantExpComplex times_mutable(MantExpComplex factor) {
-        double tempMantissaReal = (mantissaReal * factor.mantissaReal) - (mantissaImag * factor.mantissaImag);
+    HDRFloatComplex times_mutable(HDRFloatComplex factor) {
+        T tempMantissaReal = (mantissaReal * factor.mantissaReal) - (mantissaImag * factor.mantissaImag);
 
-        double tempMantissaImag = (mantissaReal * factor.mantissaImag) + (mantissaImag * factor.mantissaReal);
+        T tempMantissaImag = (mantissaReal * factor.mantissaImag) + (mantissaImag * factor.mantissaReal);
 
-        long exp = this.exp + factor.exp;
+        long exp = this->exp + factor.exp;
 
         mantissaReal = tempMantissaReal;
         mantissaImag = tempMantissaImag;
-        this.exp = exp < MantExp.MIN_BIG_EXPONENT ? MantExp.MIN_BIG_EXPONENT : exp;
+        this->exp = exp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : exp;
 
-        /*double absRe = Math.abs(tempMantissaReal);
-        double absIm = Math.abs(tempMantissaImag);
+        /*T absRe = Math.abs(tempMantissaReal);
+        T absIm = Math.abs(tempMantissaImag);
         if (absRe > 1e50 || absIm > 1e50 || absRe < 1e-50 || absIm < 1e-50) {
             Reduce();
         }*/
 
-        return this;
+        return *this;
     }
 
-    public MantExpComplex times(double factor) {
-        return times(new MantExp(factor));
+    HDRFloatComplex times(T factor) {
+        return times(HDRFloat(factor));
     }
 
-    public MantExpComplex times_mutable(double factor) {
-        return times_mutable(new MantExp(factor));
+    HDRFloatComplex times_mutable(T factor) {
+        return times_mutable(HDRFloat(factor));
     }
 
-    public MantExpComplex times(MantExp factor) {
-        double tempMantissaReal = mantissaReal * factor.mantissa;
+    HDRFloatComplex times(HDRFloat factor) {
+        T tempMantissaReal = mantissaReal * factor.mantissa;
 
-        double tempMantissaImag = mantissaImag * factor.mantissa;
+        T tempMantissaImag = mantissaImag * factor.mantissa;
 
-        return new MantExpComplex(tempMantissaReal, tempMantissaImag, exp + factor.exp);
+        return HDRFloatComplex(tempMantissaReal, tempMantissaImag, exp + factor.exp);
 
-        /*double absRe = Math.abs(tempMantissaReal);
-        double absIm = Math.abs(tempMantissaImag);
+        /*T absRe = Math.abs(tempMantissaReal);
+        T absIm = Math.abs(tempMantissaImag);
         if (absRe > 1e50 || absIm > 1e50 || absRe < 1e-50 || absIm < 1e-50) {
             p.Reduce();
         }*/
     }
 
-    public MantExpComplex times_mutable(MantExp factor) {
-        double tempMantissaReal = mantissaReal * factor.mantissa;
+    HDRFloatComplex times_mutable(HDRFloat factor) {
+        T tempMantissaReal = mantissaReal * factor.mantissa;
 
-        double tempMantissaImag = mantissaImag * factor.mantissa;
+        T tempMantissaImag = mantissaImag * factor.mantissa;
 
-        long exp = this.exp + factor.exp;
+        long exp = this->exp + factor.exp;
 
         mantissaReal = tempMantissaReal;
         mantissaImag = tempMantissaImag;
-        this.exp = exp < MantExp.MIN_BIG_EXPONENT ? MantExp.MIN_BIG_EXPONENT : exp;
+        this->exp = exp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : exp;
 
-        /*double absRe = Math.abs(tempMantissaReal);
-        double absIm = Math.abs(tempMantissaImag);
+        /*T absRe = Math.abs(tempMantissaReal);
+        T absIm = Math.abs(tempMantissaImag);
         if (absRe > 1e50 || absIm > 1e50 || absRe < 1e-50 || absIm < 1e-50) {
             Reduce();
         }*/
 
-        return this;
+        return *this;
     }
 
-    public MantExpComplex divide2() {
-        return new MantExpComplex(mantissaReal, mantissaImag, exp - 1);
+    HDRFloatComplex divide2() {
+        return HDRFloatComplex(mantissaReal, mantissaImag, exp - 1);
     }
 
-    public MantExpComplex divide2_mutable() {
+    HDRFloatComplex divide2_mutable() {
 
-        long exp = this.exp - 1;
-        this.exp = exp < MantExp.MIN_BIG_EXPONENT ? MantExp.MIN_BIG_EXPONENT : exp;
-        return this;
-
-    }
-
-    public MantExpComplex divide4() {
-        return new MantExpComplex(mantissaReal, mantissaImag, exp - 2);
-    }
-
-    public MantExpComplex divide4_mutable() {
-
-        long exp = this.exp - 2;
-        this.exp = exp < MantExp.MIN_BIG_EXPONENT ? MantExp.MIN_BIG_EXPONENT : exp;
-        return this;
+        long exp = this->exp - 1;
+        this->exp = exp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : exp;
+        return *this;
 
     }
 
-    @Override
-    public MantExpComplex times2() {
-        return new MantExpComplex(exp + 1, mantissaReal, mantissaImag);
+    HDRFloatComplex divide4() {
+        return HDRFloatComplex(mantissaReal, mantissaImag, exp - 2);
     }
 
-    @Override
-    public MantExpComplex times2_mutable() {
+    HDRFloatComplex divide4_mutable() {
+
+        long exp = this->exp - 2;
+        this->exp = exp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : exp;
+        return *this;
+
+    }
+
+    
+    HDRFloatComplex times2() {
+        return HDRFloatComplex(exp + 1, mantissaReal, mantissaImag);
+    }
+
+    
+    HDRFloatComplex times2_mutable() {
 
         exp++;
-        return this;
+        return *this;
 
     }
 
-    @Override
-    public MantExpComplex times4() {
-        return new MantExpComplex(exp + 2, mantissaReal, mantissaImag);
+    
+    HDRFloatComplex times4() {
+        return HDRFloatComplex(exp + 2, mantissaReal, mantissaImag);
     }
 
-    public MantExpComplex times4_mutable() {
+    HDRFloatComplex times4_mutable() {
 
         exp += 2;
-        return this;
+        return *this;
 
     }
 
-    public MantExpComplex times8() {
-        return new MantExpComplex(exp + 3, mantissaReal, mantissaImag);
+    HDRFloatComplex times8() {
+        return HDRFloatComplex(exp + 3, mantissaReal, mantissaImag);
     }
 
-    public MantExpComplex times8_mutable() {
+    HDRFloatComplex times8_mutable() {
 
         exp += 3;
-        return this;
+        return *this;
 
     }
 
-    public MantExpComplex times16() {
-        return new MantExpComplex(exp + 4, mantissaReal, mantissaImag);
+    HDRFloatComplex times16() {
+        return HDRFloatComplex(exp + 4, mantissaReal, mantissaImag);
     }
 
-    public MantExpComplex times16_mutable() {
+    HDRFloatComplex times16_mutable() {
 
         exp += 4;
-        return this;
+        return *this;
 
     }
 
-    public MantExpComplex times32() {
-        return new MantExpComplex(exp + 5, mantissaReal, mantissaImag);
+    HDRFloatComplex times32() {
+        return HDRFloatComplex(exp + 5, mantissaReal, mantissaImag);
     }
 
-    public MantExpComplex times32_mutable() {
+    HDRFloatComplex times32_mutable() {
 
         exp += 5;
-        return this;
+        return *this;
 
     }
 
-    public MantExpComplex plus(double real) {
-        return plus(new MantExp(real));
+    HDRFloatComplex plus(T real) {
+        return plus(HDRFloat(real));
     }
 
-    public MantExpComplex plus_mutable(double real) {
-        return plus_mutable(new MantExp(real));
+    HDRFloatComplex plus_mutable(T real) {
+        return plus_mutable(HDRFloat(real));
     }
 
-    public MantExpComplex plus(MantExp real) {
+    HDRFloatComplex plus(HDRFloat real) {
 
         long expDiff = exp - real.exp;
 
-        if(expDiff >= MantExp.EXPONENT_DIFF_IGNORED) {
-            return new MantExpComplex(exp, mantissaReal, mantissaImag);
+        if(expDiff >= HDRFloat::EXPONENT_DIFF_IGNORED) {
+            return HDRFloatComplex(exp, mantissaReal, mantissaImag);
         } else if(expDiff >= 0) {
-            double mul = MantExp.getMultiplier(-expDiff);
-            return new MantExpComplex(exp, mantissaReal + real.mantissa * mul, mantissaImag);
+            T mul = HDRFloat::getMultiplier(-expDiff);
+            return HDRFloatComplex(exp, mantissaReal + real.mantissa * mul, mantissaImag);
         }
         /*else if(expDiff == 0) {
-            return new MantExpComplex(exp, mantissaReal + real.mantissa, mantissaImag);
+            return HDRFloatComplex(exp, mantissaReal + real.mantissa, mantissaImag);
         }*/
-        else if(expDiff > MantExp.MINUS_EXPONENT_DIFF_IGNORED) {
-            double mul = MantExp.getMultiplier(expDiff);
-            return new MantExpComplex(real.exp, mantissaReal * mul + real.mantissa, mantissaImag * mul);
+        else if(expDiff > HDRFloat::MINUS_EXPONENT_DIFF_IGNORED) {
+            T mul = HDRFloat::getMultiplier(expDiff);
+            return HDRFloatComplex(real.exp, mantissaReal * mul + real.mantissa, mantissaImag * mul);
         } else {
-            return new MantExpComplex(real.exp, real.mantissa, 0.0);
+            return HDRFloatComplex(real.exp, real.mantissa, 0.0);
         }
     }
 
-    public MantExpComplex plus_mutable(MantExp real) {
+    HDRFloatComplex plus_mutable(HDRFloat real) {
 
         long expDiff = exp - real.exp;
 
-        if(expDiff >= MantExp.EXPONENT_DIFF_IGNORED) {
-            return this;
+        if(expDiff >= HDRFloat::EXPONENT_DIFF_IGNORED) {
+            return *this;
         } else if(expDiff >= 0) {
-            double mul = MantExp.getMultiplier(-expDiff);
+            T mul = HDRFloat::getMultiplier(-expDiff);
             mantissaReal = mantissaReal + real.mantissa * mul;
         }
         /*else if(expDiff == 0) {
             mantissaReal = mantissaReal + real.mantissa;
         }*/
-        else if(expDiff > MantExp.MINUS_EXPONENT_DIFF_IGNORED) {
-            double mul = MantExp.getMultiplier(expDiff);
+        else if(expDiff > HDRFloat::MINUS_EXPONENT_DIFF_IGNORED) {
+            T mul = HDRFloat::getMultiplier(expDiff);
             exp = real.exp;
             mantissaReal = mantissaReal * mul + real.mantissa;
             mantissaImag =  mantissaImag * mul;
@@ -427,40 +364,40 @@ public class MantExpComplex extends GenericComplex {
             mantissaReal = real.mantissa;
             mantissaImag = 0.0;
         }
-        return this;
+        return *this;
 
     }
 
-    public MantExpComplex sub(MantExpComplex value) {
+    HDRFloatComplex sub(HDRFloatComplex value) {
 
         long expDiff = exp - value.exp;
 
-        if(expDiff >= MantExp.EXPONENT_DIFF_IGNORED) {
-            return new MantExpComplex(exp, mantissaReal, mantissaImag);
+        if(expDiff >= HDRFloat::EXPONENT_DIFF_IGNORED) {
+            return HDRFloatComplex(exp, mantissaReal, mantissaImag);
         } else if(expDiff >= 0) {
-            double mul = MantExp.getMultiplier(-expDiff);
-            return new MantExpComplex(exp, mantissaReal - value.mantissaReal * mul, mantissaImag - value.mantissaImag * mul);
+            T mul = HDRFloat::getMultiplier(-expDiff);
+            return HDRFloatComplex(exp, mantissaReal - value.mantissaReal * mul, mantissaImag - value.mantissaImag * mul);
         }
         /*else if(expDiff == 0) {
-            return new MantExpComplex(exp, mantissaReal - value.mantissaReal, mantissaImag - value.mantissaImag);
+            return HDRFloatComplex(exp, mantissaReal - value.mantissaReal, mantissaImag - value.mantissaImag);
         }*/
-        else if(expDiff > MantExp.MINUS_EXPONENT_DIFF_IGNORED) {
-            double mul = MantExp.getMultiplier(expDiff);
-            return new MantExpComplex(value.exp, mantissaReal * mul - value.mantissaReal, mantissaImag * mul - value.mantissaImag);
+        else if(expDiff > HDRFloat::MINUS_EXPONENT_DIFF_IGNORED) {
+            T mul = HDRFloat::getMultiplier(expDiff);
+            return HDRFloatComplex(value.exp, mantissaReal * mul - value.mantissaReal, mantissaImag * mul - value.mantissaImag);
         } else {
-            return new MantExpComplex(value.exp, -value.mantissaReal, -value.mantissaImag);
+            return HDRFloatComplex(value.exp, -value.mantissaReal, -value.mantissaImag);
         }
 
     }
 
-    public MantExpComplex sub_mutable(MantExpComplex value) {
+    HDRFloatComplex sub_mutable(HDRFloatComplex value) {
 
         long expDiff = exp - value.exp;
 
-        if(expDiff >= MantExp.EXPONENT_DIFF_IGNORED) {
-            return this;
+        if(expDiff >= HDRFloat::EXPONENT_DIFF_IGNORED) {
+            return *this;
         } else if(expDiff >= 0) {
-            double mul = MantExp.getMultiplier(-expDiff);
+            T mul = HDRFloat::getMultiplier(-expDiff);
             mantissaReal = mantissaReal - value.mantissaReal * mul;
             mantissaImag = mantissaImag - value.mantissaImag * mul;
         }
@@ -468,8 +405,8 @@ public class MantExpComplex extends GenericComplex {
             mantissaReal = mantissaReal - value.mantissaReal;
             mantissaImag = mantissaImag - value.mantissaImag;
         }*/
-        else if(expDiff > MantExp.MINUS_EXPONENT_DIFF_IGNORED) {
-            double mul = MantExp.getMultiplier(expDiff);
+        else if(expDiff > HDRFloat::MINUS_EXPONENT_DIFF_IGNORED) {
+            T mul = HDRFloat::getMultiplier(expDiff);
             exp = value.exp;
             mantissaReal = mantissaReal * mul - value.mantissaReal;
             mantissaImag =  mantissaImag * mul - value.mantissaImag;
@@ -478,46 +415,46 @@ public class MantExpComplex extends GenericComplex {
             mantissaReal = -value.mantissaReal;
             mantissaImag = -value.mantissaImag;
         }
-        return this;
+        return *this;
 
     }
 
-    public MantExpComplex sub(MantExp real) {
+    HDRFloatComplex sub(HDRFloat real) {
 
         long expDiff = exp - real.exp;
 
-        if(expDiff >= MantExp.EXPONENT_DIFF_IGNORED) {
-            return new MantExpComplex(exp, mantissaReal, mantissaImag);
+        if(expDiff >= HDRFloat::EXPONENT_DIFF_IGNORED) {
+            return HDRFloatComplex(exp, mantissaReal, mantissaImag);
         } else if(expDiff >= 0) {
-            double mul = MantExp.getMultiplier(-expDiff);
-            return new MantExpComplex(exp, mantissaReal - real.mantissa * mul, mantissaImag);
+            T mul = HDRFloat::getMultiplier(-expDiff);
+            return HDRFloatComplex(exp, mantissaReal - real.mantissa * mul, mantissaImag);
         }
         /*else if(expDiff == 0) {
-            return new MantExpComplex(exp, mantissaReal - real.mantissa, mantissaImag);
+            return HDRFloatComplex(exp, mantissaReal - real.mantissa, mantissaImag);
         }*/
-        else if(expDiff > MantExp.MINUS_EXPONENT_DIFF_IGNORED) {
-            double mul = MantExp.getMultiplier(expDiff);
-            return new MantExpComplex(real.exp, mantissaReal * mul - real.mantissa, mantissaImag * mul);
+        else if(expDiff > HDRFloat::MINUS_EXPONENT_DIFF_IGNORED) {
+            T mul = HDRFloat::getMultiplier(expDiff);
+            return HDRFloatComplex(real.exp, mantissaReal * mul - real.mantissa, mantissaImag * mul);
         } else {
-            return new MantExpComplex(real.exp, -real.mantissa, 0.0);
+            return HDRFloatComplex(real.exp, -real.mantissa, 0.0);
         }
     }
 
-    public MantExpComplex sub_mutable(MantExp real) {
+    HDRFloatComplex sub_mutable(HDRFloat real) {
 
         long expDiff = exp - real.exp;
 
-        if(expDiff >= MantExp.EXPONENT_DIFF_IGNORED) {
-            return this;
+        if(expDiff >= HDRFloat::EXPONENT_DIFF_IGNORED) {
+            return *this;
         } else if(expDiff >= 0) {
-            double mul = MantExp.getMultiplier(-expDiff);
+            T mul = HDRFloat::getMultiplier(-expDiff);
             mantissaReal = mantissaReal - real.mantissa * mul;
         }
         /*else if(expDiff == 0) {
             mantissaReal = mantissaReal - real.mantissa;
         }*/
-        else if(expDiff > MantExp.MINUS_EXPONENT_DIFF_IGNORED) {
-            double mul = MantExp.getMultiplier(expDiff);
+        else if(expDiff > HDRFloat::MINUS_EXPONENT_DIFF_IGNORED) {
+            T mul = HDRFloat::getMultiplier(expDiff);
             exp = real.exp;
             mantissaReal = mantissaReal * mul - real.mantissa;
             mantissaImag =  mantissaImag * mul;
@@ -526,44 +463,46 @@ public class MantExpComplex extends GenericComplex {
             mantissaReal = -real.mantissa;
             mantissaImag = 0;
         }
-        return this;
+        return *this;
 
     }
 
-    public MantExpComplex sub(double real) {
-        return sub(new MantExp(real));
+    HDRFloatComplex sub(T real) {
+        return sub(HDRFloat(real));
     }
 
-    public MantExpComplex sub_mutable(double real) {
-        return sub_mutable(new MantExp(real));
+    HDRFloatComplex sub_mutable(T real) {
+        return sub_mutable(HDRFloat(real));
     }
 
-    public void Reduce() {
+    void Reduce() {
         if(mantissaReal == 0 && mantissaImag == 0) {
             return;
         }
 
-        long bitsRe = Double.doubleToRawLongBits(mantissaReal);
-        long expDiffRe = ((bitsRe & 0x7FF0000000000000L) >> 52);
+        assert(false);
 
-        long bitsIm = Double.doubleToRawLongBits(mantissaImag);
-        long expDiffIm = ((bitsIm & 0x7FF0000000000000L) >> 52);
+        //long bitsRe = Double.doubleToRawLongBits(mantissaReal);
+        //long expDiffRe = ((bitsRe & 0x7FF0000000000000L) >> 52);
 
-        long expDiff = Math.max(expDiffRe, expDiffIm) + MantExp.MIN_SMALL_EXPONENT;
+        //long bitsIm = Double.doubleToRawLongBits(mantissaImag);
+        //long expDiffIm = ((bitsIm & 0x7FF0000000000000L) >> 52);
 
-        long expCombined = exp + expDiff;
-        double mul = MantExp.getMultiplier(-expDiff);
-        mantissaReal *= mul;
-        mantissaImag *= mul;
-        exp = expCombined;
+        //long expDiff = Math.max(expDiffRe, expDiffIm) + HDRFloat::MIN_SMALL_EXPONENT;
+
+        //long expCombined = exp + expDiff;
+        //T mul = HDRFloat::getMultiplier(-expDiff);
+        //mantissaReal *= mul;
+        //mantissaImag *= mul;
+        //exp = expCombined;
     }
 
 
-    /*public void Reduce2() {
+    /*void Reduce2() {
 
-        MantExp mantissaRealTemp = new MantExp(mantissaReal);
+        HDRFloat mantissaRealTemp = HDRFloat(mantissaReal);
 
-        MantExp mantissaImagTemp = new MantExp(mantissaImag);
+        HDRFloat mantissaImagTemp = HDRFloat(mantissaImag);
 
         long realExp = exp;
         long imagExp = exp;
@@ -592,378 +531,366 @@ public class MantExpComplex extends GenericComplex {
             mantissaReal = mantissaRealTemp.mantissa;
         }
         else if (realExp > imagExp) {
-            //double mantissa_temp = mantissaImagTemp.mantissa / MantExp.toExp(realExp - imagExp);
+            //T mantissa_temp = mantissaImagTemp.mantissa / HDRFloat::toExp(realExp - imagExp);
 
             exp = realExp;
             mantissaReal = mantissaRealTemp.mantissa;
             //mantissaImag = mantissa_temp;
-            //mantissaImag = MantExp.toDouble(mantissaImagTemp.mantissa, imagExp - realExp);
-            mantissaImag = mantissaImagTemp.mantissa * MantExp.getMultiplier(imagExp - realExp);
+            //mantissaImag = HDRFloat::toDouble(mantissaImagTemp.mantissa, imagExp - realExp);
+            mantissaImag = mantissaImagTemp.mantissa * HDRFloat::getMultiplier(imagExp - realExp);
         }
         else {
-            //double mantissa_temp = mantissaRealTemp.mantissa / MantExp.toExp(imagExp - realExp);
+            //T mantissa_temp = mantissaRealTemp.mantissa / HDRFloat::toExp(imagExp - realExp);
 
             exp = imagExp;
             //mantissaReal = mantissa_temp;
-            //mantissaReal = MantExp.toDouble(mantissaRealTemp.mantissa, realExp - imagExp);
-            mantissaReal = mantissaRealTemp.mantissa * MantExp.getMultiplier(realExp - imagExp);
+            //mantissaReal = HDRFloat::toDouble(mantissaRealTemp.mantissa, realExp - imagExp);
+            mantissaReal = mantissaRealTemp.mantissa * HDRFloat::getMultiplier(realExp - imagExp);
             mantissaImag = mantissaImagTemp.mantissa;
         }
     }*/
 
-    @Override
-    public MantExpComplex square() {
-        double temp = mantissaReal * mantissaImag;
-        return new MantExpComplex((mantissaReal + mantissaImag) * (mantissaReal - mantissaImag), temp + temp, exp << 1);
+    
+    HDRFloatComplex square() {
+        T temp = mantissaReal * mantissaImag;
+        return HDRFloatComplex((mantissaReal + mantissaImag) * (mantissaReal - mantissaImag), temp + temp, exp << 1);
 
-        /*double absRe = Math.abs(p.mantissaReal);
-        double absIm = Math.abs(p.mantissaImag);
+        /*T absRe = Math.abs(p.mantissaReal);
+        T absIm = Math.abs(p.mantissaImag);
         if (absRe > 1e50 || absIm > 1e50 || absRe < 1e-50 || absIm < 1e-50) {
             p.Reduce();
         }*/
     }
 
-    @Override
-    public MantExpComplex square_mutable() {
-        double temp = mantissaReal * mantissaImag;
+    
+    HDRFloatComplex square_mutable() {
+        T temp = mantissaReal * mantissaImag;
 
-        long exp = this.exp << 1;
+        long exp = this->exp << 1;
         mantissaReal = (mantissaReal + mantissaImag) * (mantissaReal - mantissaImag);
         mantissaImag = temp + temp;
-        this.exp = exp < MantExp.MIN_BIG_EXPONENT ? MantExp.MIN_BIG_EXPONENT : exp;
+        this->exp = exp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : exp;
 
-        /*double absRe = Math.abs(mantissaReal);
-        double absIm = Math.abs(mantissaImag);
+        /*T absRe = Math.abs(mantissaReal);
+        T absIm = Math.abs(mantissaImag);
         if (absRe > 1e50 || absIm > 1e50 || absRe < 1e-50 || absIm < 1e-50) {
             Reduce();
         }*/
 
-        return this;
+        return *this;
     }
 
-    @Override
-    public MantExpComplex cube() {
-        double temp = mantissaReal * mantissaReal;
-        double temp2 = mantissaImag * mantissaImag;
+    
+    HDRFloatComplex cube() {
+        T temp = mantissaReal * mantissaReal;
+        T temp2 = mantissaImag * mantissaImag;
 
-        return new MantExpComplex(mantissaReal * (temp - 3 * temp2), mantissaImag * (3 * temp - temp2), 3 * exp);
+        return HDRFloatComplex(mantissaReal * (temp - 3 * temp2), mantissaImag * (3 * temp - temp2), 3 * exp);
 
-        /*double absRe = Math.abs(p.mantissaReal);
-        double absIm = Math.abs(p.mantissaImag);
+        /*T absRe = Math.abs(p.mantissaReal);
+        T absIm = Math.abs(p.mantissaImag);
         if (absRe > 1e50 || absIm > 1e50 || absRe < 1e-50 || absIm < 1e-50) {
             p.Reduce();
         }*/
     }
 
-    public MantExpComplex cube_mutable() {
-        double temp = mantissaReal * mantissaReal;
-        double temp2 = mantissaImag * mantissaImag;
+    HDRFloatComplex cube_mutable() {
+        T temp = mantissaReal * mantissaReal;
+        T temp2 = mantissaImag * mantissaImag;
 
-        long exp = 3 * this.exp;
+        long exp = 3 * this->exp;
         mantissaReal = mantissaReal * (temp - 3 * temp2);
         mantissaImag = mantissaImag * (3 * temp - temp2);
-        this.exp = exp < MantExp.MIN_BIG_EXPONENT ? MantExp.MIN_BIG_EXPONENT : exp;
+        this->exp = exp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : exp;
 
-        /*double absRe = Math.abs(mantissaReal);
-        double absIm = Math.abs(mantissaImag);
+        /*T absRe = Math.abs(mantissaReal);
+        T absIm = Math.abs(mantissaImag);
         if (absRe > 1e50 || absIm > 1e50 || absRe < 1e-50 || absIm < 1e-50) {
             Reduce();
         }*/
 
-        return this;
+        return *this;
     }
 
-    @Override
-    public MantExpComplex fourth() {
-        double temp = mantissaReal * mantissaReal;
-        double temp2 = mantissaImag * mantissaImag;
+    
+    HDRFloatComplex fourth() {
+        T temp = mantissaReal * mantissaReal;
+        T temp2 = mantissaImag * mantissaImag;
 
-        return new MantExpComplex(temp * (temp - 6 * temp2) + temp2 * temp2, 4 * mantissaReal * mantissaImag * (temp - temp2), exp << 2);
+        return HDRFloatComplex(temp * (temp - 6 * temp2) + temp2 * temp2, 4 * mantissaReal * mantissaImag * (temp - temp2), exp << 2);
 
-        /*double absRe = Math.abs(p.mantissaReal);
-        double absIm = Math.abs(p.mantissaImag);
+        /*T absRe = Math.abs(p.mantissaReal);
+        T absIm = Math.abs(p.mantissaImag);
         if (absRe > 1e50 || absIm > 1e50 || absRe < 1e-50 || absIm < 1e-50) {
             p.Reduce();
         }*/
     }
 
-    public MantExpComplex fourth_mutable() {
-        double temp = mantissaReal * mantissaReal;
-        double temp2 = mantissaImag * mantissaImag;
+    HDRFloatComplex fourth_mutable() {
+        T temp = mantissaReal * mantissaReal;
+        T temp2 = mantissaImag * mantissaImag;
 
-        long exp = this.exp << 2;
+        long exp = this->exp << 2;
 
-        double temp_re = temp * (temp - 6 * temp2) + temp2 * temp2;
+        T temp_re = temp * (temp - 6 * temp2) + temp2 * temp2;
         mantissaImag = 4 * mantissaReal * mantissaImag * (temp - temp2);
         mantissaReal = temp_re;
-        this.exp = exp < MantExp.MIN_BIG_EXPONENT ? MantExp.MIN_BIG_EXPONENT : exp;
+        this->exp = exp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : exp;
 
-        /*double absRe = Math.abs(mantissaReal);
-        double absIm = Math.abs(mantissaImag);
+        /*T absRe = Math.abs(mantissaReal);
+        T absIm = Math.abs(mantissaImag);
         if (absRe > 1e50 || absIm > 1e50 || absRe < 1e-50 || absIm < 1e-50) {
             Reduce();
         }*/
 
-        return this;
+        return *this;
     }
 
-    @Override
-    public MantExpComplex fifth() {
+    
+    HDRFloatComplex fifth() {
 
-        double temp = mantissaReal * mantissaReal;
-        double temp2 = mantissaImag * mantissaImag;
+        T temp = mantissaReal * mantissaReal;
+        T temp2 = mantissaImag * mantissaImag;
 
-        return new MantExpComplex(mantissaReal * (temp * temp + temp2 * (5 * temp2 - 10 * temp)), mantissaImag * (temp2 * temp2 + temp * (5 * temp - 10 * temp2)), 5 * exp);
+        return HDRFloatComplex(mantissaReal * (temp * temp + temp2 * (5 * temp2 - 10 * temp)), mantissaImag * (temp2 * temp2 + temp * (5 * temp - 10 * temp2)), 5 * exp);
 
-        /*double absRe = Math.abs(p.mantissaReal);
-        double absIm = Math.abs(p.mantissaImag);
+        /*T absRe = Math.abs(p.mantissaReal);
+        T absIm = Math.abs(p.mantissaImag);
         if (absRe > 1e50 || absIm > 1e50 || absRe < 1e-50 || absIm < 1e-50) {
             p.Reduce();
         }*/
     }
 
-    public MantExpComplex fifth_mutable() {
-        double temp = mantissaReal * mantissaReal;
-        double temp2 = mantissaImag * mantissaImag;
+    HDRFloatComplex fifth_mutable() {
+        T temp = mantissaReal * mantissaReal;
+        T temp2 = mantissaImag * mantissaImag;
 
-        long exp = 5 * this.exp;
+        long exp = 5 * this->exp;
         mantissaReal = mantissaReal * (temp * temp + temp2 * (5 * temp2 - 10 * temp));
         mantissaImag = mantissaImag * (temp2 * temp2 + temp * (5 * temp - 10 * temp2));
-        this.exp = exp < MantExp.MIN_BIG_EXPONENT ? MantExp.MIN_BIG_EXPONENT : exp;
+        this->exp = exp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : exp;
 
-        /*double absRe = Math.abs(mantissaReal);
-        double absIm = Math.abs(mantissaImag);
+        /*T absRe = Math.abs(mantissaReal);
+        T absIm = Math.abs(mantissaImag);
         if (absRe > 1e50 || absIm > 1e50 || absRe < 1e-50 || absIm < 1e-50) {
             Reduce();
         }*/
 
-        return this;
+        return *this;
     }
 
-    public MantExp norm_squared() {
-        return new MantExp(mantissaReal * mantissaReal + mantissaImag * mantissaImag, exp << 1);
+    HDRFloat norm_squared() {
+        return HDRFloat(mantissaReal * mantissaReal + mantissaImag * mantissaImag, exp << 1);
     }
 
-    public MantExp distance_squared(MantExpComplex other) {
+    HDRFloat distance_squared(HDRFloatComplex other) {
         return sub(other).norm_squared();
     }
 
-    public MantExp norm() {
-        return new MantExp(exp, Math.sqrt(mantissaReal * mantissaReal + mantissaImag * mantissaImag));
+    HDRFloat norm() {
+        return HDRFloat(exp, sqrt(mantissaReal * mantissaReal + mantissaImag * mantissaImag));
     }
 
-    public MantExp distance(MantExpComplex other) {
+    HDRFloat distance(HDRFloatComplex other) {
         return sub(other).norm();
     }
 
-    public MantExp hypot() {
-        return new MantExp(exp, Math.hypot(mantissaReal, mantissaImag));
-    }
+    HDRFloatComplex divide(HDRFloatComplex factor) {
 
-    public static MantExp hypot(double mRe, double mIm, long exp) {return new MantExp(exp, Math.hypot(mRe, mIm));}
+        T temp = 1.0 / (factor.mantissaReal * factor.mantissaReal + factor.mantissaImag * factor.mantissaImag);
 
-    public final MantExpComplex divide(MantExpComplex factor) {
+        T tempMantissaReal = (mantissaReal * factor.mantissaReal + mantissaImag * factor.mantissaImag) * temp;
 
-        double temp = 1.0 / (factor.mantissaReal * factor.mantissaReal + factor.mantissaImag * factor.mantissaImag);
+        T tempMantissaImag = (mantissaImag * factor.mantissaReal - mantissaReal * factor.mantissaImag)  * temp;
 
-        double tempMantissaReal = (mantissaReal * factor.mantissaReal + mantissaImag * factor.mantissaImag) * temp;
+        return HDRFloatComplex(tempMantissaReal , tempMantissaImag, exp - factor.exp);
 
-        double tempMantissaImag = (mantissaImag * factor.mantissaReal - mantissaReal * factor.mantissaImag)  * temp;
-
-        return new MantExpComplex(tempMantissaReal , tempMantissaImag, exp - factor.exp);
-
-        /*double absRe = Math.abs(tempMantissaReal);
-        double absIm = Math.abs(tempMantissaImag);
+        /*T absRe = Math.abs(tempMantissaReal);
+        T absIm = Math.abs(tempMantissaImag);
         if (absRe > 1e50 || absIm > 1e50 || absRe < 1e-50 || absIm < 1e-50) {
             p.Reduce();
         }*/
     }
 
-    public final MantExpComplex divide_mutable(MantExpComplex factor) {
+    HDRFloatComplex divide_mutable(HDRFloatComplex factor) {
 
-        double temp = 1.0 / (factor.mantissaReal * factor.mantissaReal + factor.mantissaImag * factor.mantissaImag);
+        T temp = 1.0 / (factor.mantissaReal * factor.mantissaReal + factor.mantissaImag * factor.mantissaImag);
 
-        double tempMantissaReal = (mantissaReal * factor.mantissaReal + mantissaImag * factor.mantissaImag) * temp;
+        T tempMantissaReal = (mantissaReal * factor.mantissaReal + mantissaImag * factor.mantissaImag) * temp;
 
-        double tempMantissaImag = (mantissaImag * factor.mantissaReal - mantissaReal * factor.mantissaImag)  * temp;
+        T tempMantissaImag = (mantissaImag * factor.mantissaReal - mantissaReal * factor.mantissaImag)  * temp;
 
-        long exp = this.exp - factor.exp;
+        long exp = this->exp - factor.exp;
         mantissaReal = tempMantissaReal;
         mantissaImag = tempMantissaImag;
-        this.exp = exp < MantExp.MIN_BIG_EXPONENT ? MantExp.MIN_BIG_EXPONENT : exp;
+        this->exp = exp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : exp;
 
-        /*double absRe = Math.abs(tempMantissaReal);
-        double absIm = Math.abs(tempMantissaImag);
+        /*T absRe = Math.abs(tempMantissaReal);
+        T absIm = Math.abs(tempMantissaImag);
         if (absRe > 1e50 || absIm > 1e50 || absRe < 1e-50 || absIm < 1e-50) {
             Reduce();
         }*/
 
-        return this;
+        return *this;
     }
 
-    public final MantExpComplex reciprocal() {
+    HDRFloatComplex reciprocal() {
 
-        double temp = 1.0 / (mantissaReal * mantissaReal + mantissaImag * mantissaImag);
+        T temp = 1.0 / (mantissaReal * mantissaReal + mantissaImag * mantissaImag);
 
-        return new MantExpComplex(mantissaReal * temp , -mantissaImag * temp, -exp);
+        return HDRFloatComplex(mantissaReal * temp , -mantissaImag * temp, -exp);
 
     }
 
-    public final MantExpComplex reciprocal_mutable() {
+    HDRFloatComplex reciprocal_mutable() {
 
-        double temp = 1.0 / (mantissaReal * mantissaReal + mantissaImag * mantissaImag);
+        T temp = 1.0 / (mantissaReal * mantissaReal + mantissaImag * mantissaImag);
 
         mantissaReal = mantissaReal * temp;
         mantissaImag = -mantissaImag * temp;
         exp = -exp;
 
-        return this;
+        return *this;
 
     }
 
 
-    public final MantExpComplex divide(MantExp real) {
+    HDRFloatComplex divide(HDRFloat real) {
 
-        double temp = 1.0 / real.mantissa;
-        return new MantExpComplex(mantissaReal * temp, mantissaImag * temp, exp - real.exp);
+        T temp = 1.0 / real.mantissa;
+        return HDRFloatComplex(mantissaReal * temp, mantissaImag * temp, exp - real.exp);
 
-        /*double absRe = Math.abs(p.mantissaReal);
-        double absIm = Math.abs(p.mantissaImag);
+        /*T absRe = Math.abs(p.mantissaReal);
+        T absIm = Math.abs(p.mantissaImag);
         if (absRe > 1e50 || absIm > 1e50 || absRe < 1e-50 || absIm < 1e-50) {
             p.Reduce();
         }*/
     }
 
-    public final MantExpComplex divide_mutable(MantExp real) {
+    HDRFloatComplex divide_mutable(HDRFloat real) {
 
-        long exp = this.exp - real.exp;
-        double temp = 1.0 / real.mantissa;
+        long exp = this->exp - real.exp;
+        T temp = 1.0 / real.mantissa;
         mantissaReal = mantissaReal * temp;
         mantissaImag = mantissaImag * temp;
-        this.exp = exp < MantExp.MIN_BIG_EXPONENT ? MantExp.MIN_BIG_EXPONENT : exp;
+        this->exp = exp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : exp;
 
-        /*double absRe = Math.abs(mantissaReal);
-        double absIm = Math.abs(mantissaImag);
+        /*T absRe = Math.abs(mantissaReal);
+        T absIm = Math.abs(mantissaImag);
         if (absRe > 1e50 || absIm > 1e50 || absRe < 1e-50 || absIm < 1e-50) {
             Reduce();
         }*/
 
-        return this;
+        return *this;
     }
 
-    public final MantExpComplex divide(double real) {
+    HDRFloatComplex divide(T real) {
 
-        return divide(new MantExp(real));
-
-    }
-
-    public final MantExpComplex divide_mutable(double real) {
-
-        return divide_mutable(new MantExp(real));
+        return divide(HDRFloat(real));
 
     }
 
-    @Override
-    public MantExpComplex negative() {
+    HDRFloatComplex divide_mutable(T real) {
 
-        return new MantExpComplex(exp, -mantissaReal, -mantissaImag);
+        return divide_mutable(HDRFloat(real));
 
     }
 
-    @Override
-    public MantExpComplex negative_mutable() {
+    
+    HDRFloatComplex negative() {
+
+        return HDRFloatComplex(exp, -mantissaReal, -mantissaImag);
+
+    }
+
+    
+    HDRFloatComplex negative_mutable() {
 
         mantissaReal = -mantissaReal;
         mantissaImag = -mantissaImag;
-        return this;
+        return *this;
 
     }
 
-    public MantExpComplex abs() {
+    HDRFloatComplex abs() {
 
-        return new MantExpComplex(exp, Math.abs(mantissaReal), Math.abs(mantissaImag));
-
-    }
-
-    @Override
-    public MantExpComplex abs_mutable() {
-
-        mantissaReal = Math.abs(mantissaReal);
-        mantissaImag = Math.abs(mantissaImag);
-        return this;
+        return HDRFloatComplex(exp, HdrAbs(mantissaReal), HdrAbs(mantissaImag));
 
     }
 
-    public MantExpComplex conjugate() {
+    
+    HDRFloatComplex abs_mutable() {
 
-        return new MantExpComplex(exp, mantissaReal, -mantissaImag);
+        mantissaReal = HdrAbs(mantissaReal);
+        mantissaImag = HdrAbs(mantissaImag);
+        return *this;
 
     }
 
-    @Override
-    public MantExpComplex conjugate_mutable() {
+    HDRFloatComplex conjugate() {
+
+        return HDRFloatComplex(exp, mantissaReal, -mantissaImag);
+
+    }
+
+    
+    HDRFloatComplex conjugate_mutable() {
 
         mantissaImag = -mantissaImag;
-        return this;
+        return *this;
 
     }
 
-    @Override
-    public Complex toComplex() {
+    Complex toComplex() {
         //return new Complex(mantissaReal * MantExp.toExp(exp), mantissaImag * MantExp.toExp(exp));
-        double d = MantExp.getMultiplier(exp);
+        double d = HDRFloat::getMultiplier(exp);
         //return new Complex(MantExp.toDouble(mantissaReal, exp), MantExp.toDouble(mantissaImag, exp));
-        return new Complex(mantissaReal * d, mantissaImag * d);
+        return Complex(mantissaReal * d, mantissaImag * d);
     }
+    
+    HDRFloat getRe() {
 
-    @Override
-    public String toString() {
-        return "" + mantissaReal + "*2^" + exp + " " + mantissaImag + "*2^" + exp + " " + toComplex();
-    }
-
-    public final MantExp getRe() {
-
-        return new MantExp(exp, mantissaReal);
+        return HDRFloat(exp, mantissaReal);
 
     }
 
-    public final MantExp getIm() {
+    HDRFloat getIm() {
 
-        return new MantExp(exp, mantissaImag);
+        return HDRFloat(exp, mantissaImag);
 
     }
 
-    public final double getMantissaReal() {
+    T getMantissaReal() {
         return mantissaReal;
     }
 
-    public final double getMantissaImag() {
+    T getMantissaImag() {
         return mantissaImag;
     }
 
-    public final long getExp() {
+    long getExp() {
 
         return exp;
 
     }
 
-    public void setExp(long exp) {
-        this.exp = exp;
+    void setExp(long exp) {
+        this->exp = exp;
     }
-    public void addExp(long exp) {
-        this.exp += exp;
-    }
-
-    public void subExp(long exp) {
-        this.exp -= exp;
-        this.exp = this.exp < MantExp.MIN_BIG_EXPONENT ? MantExp.MIN_BIG_EXPONENT : this.exp;
+    void addExp(long exp) {
+        this->exp += exp;
     }
 
-    public static MantExp DiffAbs(MantExp c, MantExp d)
+    void subExp(long exp) {
+        this->exp -= exp;
+        this->exp = this->exp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : this->exp;
+    }
+
+    static HDRFloat DiffAbs(HDRFloat c, HDRFloat d)
     {
-        MantExp cd = c.add(d);
-        if (c.compareTo(MantExp.ZERO) >= 0.0) {
-            if (cd.compareTo(MantExp.ZERO) >= 0.0) {
+        HDRFloat cd = c.add(d);
+        if (c.compareTo(HDRFloat{}) >= 0.0) {
+            if (cd.compareTo(HDRFloat{}) >= 0.0) {
                 return d;
             }
             else {
@@ -971,7 +898,7 @@ public class MantExpComplex extends GenericComplex {
             }
         }
         else {
-            if (cd.compareTo(MantExp.ZERO) > 0.0)  {
+            if (cd.compareTo(HDRFloat{}) > 0.0) {
                 return d.add(c.multiply2());
             }
             else {
@@ -980,17 +907,10 @@ public class MantExpComplex extends GenericComplex {
         }
     }
 
-    public long log2normApprox() {
-        double temp = mantissaReal * mantissaReal + mantissaImag * mantissaImag;
-        long bits = Double.doubleToRawLongBits(temp);
-        long exponent = ((bits & 0x7FF0000000000000L) >> 52) + MantExp.MIN_SMALL_EXPONENT;
-        return (exponent / 2) + exp;
-    }
-
     /*
      *  A*X + B*Y
      */
-    public static final MantExpComplex AtXpBtY(MantExpComplex A, MantExpComplex X, MantExpComplex B, MantExpComplex Y) {
+    static HDRFloatComplex AtXpBtY(HDRFloatComplex A, HDRFloatComplex X, HDRFloatComplex B, HDRFloatComplex Y) {
 
         return A.times(X).plus_mutable(B.times(Y));
 
@@ -999,7 +919,7 @@ public class MantExpComplex extends GenericComplex {
     /*
      *  A*X + B*Y
      */
-    public static final MantExpComplex AtXpBtY(MantExpComplex A, MantExpComplex X, MantExpComplex B, MantExp Y) {
+    static HDRFloatComplex AtXpBtY(HDRFloatComplex A, HDRFloatComplex X, HDRFloatComplex B, HDRFloat Y) {
 
         return A.times(X).plus_mutable(B.times(Y));
 
@@ -1008,7 +928,7 @@ public class MantExpComplex extends GenericComplex {
     /*
      *  A*X +Y
      */
-    public static final MantExpComplex AtXpY(MantExpComplex A, MantExpComplex X, MantExpComplex Y) {
+    static HDRFloatComplex AtXpY(HDRFloatComplex A, HDRFloatComplex X, HDRFloatComplex Y) {
 
         return A.times(X).plus_mutable(Y);
 
@@ -1017,7 +937,7 @@ public class MantExpComplex extends GenericComplex {
     /*
      *  A*X +Y
      */
-    public static final MantExpComplex AtXpY(MantExpComplex A, MantExpComplex X, MantExp Y) {
+    static HDRFloatComplex AtXpY(HDRFloatComplex A, HDRFloatComplex X, HDRFloat Y) {
 
         return A.times(X).plus_mutable(Y);
 
@@ -1026,76 +946,31 @@ public class MantExpComplex extends GenericComplex {
     /*
      *  A*X
      */
-    public static final MantExpComplex AtX(MantExpComplex A, MantExpComplex X) {
+    static HDRFloatComplex AtX(HDRFloatComplex A, HDRFloatComplex X) {
 
         return A.times(X);
 
     }
 
 
-    public final boolean equals(MantExpComplex z2) {
+    bool equals(HDRFloatComplex z2) {
 
         return z2.exp == exp && z2.mantissaReal == mantissaReal && z2.mantissaImag == mantissaImag;
 
     }
 
-    public final void assign(MantExpComplex z) {
+    void assign(HDRFloatComplex z) {
         mantissaReal = z.mantissaReal;
         mantissaImag = z.mantissaImag;
         exp = z.exp;
     }
 
-    @Override
-    public void set(GenericComplex za) {
-        MantExpComplex z = (MantExpComplex) za;
-        mantissaReal = z.mantissaReal;
-        mantissaImag = z.mantissaImag;
-        exp = z.exp;
+    
+    HDRFloat chebychevNorm() {
+        return HDRFloat::maxBothPositive(HdrAbs(getRe()), HdrAbs(getIm()));
     }
 
-    @Override
-    public MantExpComplex plus_mutable(GenericComplex v) {
-
-        MantExpComplex value = (MantExpComplex) v;
-
-        long expDiff = exp - value.exp;
-
-        if(expDiff >= MantExp.EXPONENT_DIFF_IGNORED) {
-            return this;
-        } else if(expDiff >= 0) {
-            double mul = MantExp.getMultiplier(-expDiff);
-            mantissaReal = mantissaReal + value.mantissaReal * mul;
-            mantissaImag = mantissaImag + value.mantissaImag * mul;
-        }
-        /*else if(expDiff == 0) {
-            mantissaReal = mantissaReal + value.mantissaReal;
-            mantissaImag = mantissaImag + value.mantissaImag;
-        }*/
-        else if(expDiff > MantExp.MINUS_EXPONENT_DIFF_IGNORED) {
-            double mul = MantExp.getMultiplier(expDiff);
-            exp = value.exp;
-            mantissaReal = mantissaReal * mul + value.mantissaReal;
-            mantissaImag =  mantissaImag * mul + value.mantissaImag;
-        } else {
-            exp = value.exp;
-            mantissaReal = value.mantissaReal;
-            mantissaImag = value.mantissaImag;
-        }
-        return this;
-
-    }
-
-    public MantExp chebychevNorm() {
-        return MantExp.maxBothPositive(getRe().abs(), getIm().abs());
-    }
-
-    @Override
-    public MantExpComplex toMantExpComplex() {return this;}
-
-    public static void main(String[] args) {
-        MantExpComplex a = new MantExpComplex(1.321, -4.5);
-        System.out.println(a.reciprocal());
-        System.out.println(new MantExpComplex(1, 0).divide(a));
-    }
-}
+    
+    HDRFloatComplex toMantExpComplex() {return *this;}
+};
 

@@ -323,7 +323,7 @@ static void AddReused(T &results, const HighPrecision& zx, const HighPrecision& 
     ReducedZx = zx;
     ReducedZy = zy;
 
-    assert(RequiresReuse());
+    //assert(RequiresReuse());
     ReducedZx.precision(AuthoritativeReuseExtraPrecision);
     ReducedZy.precision(AuthoritativeReuseExtraPrecision);
 
@@ -335,7 +335,7 @@ template<class T>
 static void InitReused(T &results) {
     HighPrecision Zero = 0;
 
-    assert(RequiresReuse());
+    //assert(RequiresReuse());
     Zero.precision(AuthoritativeReuseExtraPrecision);
 
     results.ReuseX.push_back(Zero);

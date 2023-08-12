@@ -171,6 +171,9 @@
     </CudaLink>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="..\ATInfo.h" />
+    <ClInclude Include="..\ATResult.h" />
+    <ClCompile Include="..\ATInfo.cpp" />
     <ClCompile Include="..\BLAS.cpp" />
     <ClCompile Include="..\Fractal.cpp">
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Disabled</Optimization>
@@ -185,6 +188,9 @@
       <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">EnableFastChecks</BasicRuntimeChecks>
     </ClCompile>
     <ClCompile Include="..\HDRFloat.cpp" />
+    <ClInclude Include="..\LAInfoDeep.h" />
+    <ClInclude Include="..\LAReference.h" />
+    <ClInclude Include="..\LAstep.h" />
     <ClCompile Include="..\RefOrbitCalc.cpp" />
     <ClCompile Include="..\WPngImage\lodepng.cpp" />
     <ClCompile Include="..\WPngImage\WPngImage.cc" />
@@ -213,6 +219,7 @@
     <ClInclude Include="..\FractalSetupData.h" />
     <ClInclude Include="..\GPUBLAS.h" />
     <ClInclude Include="..\HDRFloat.h" />
+    <ClInclude Include="..\HDRFloatComplex.h" />
     <ClInclude Include="..\HighPrecision.h" />
     <ClInclude Include="..\PerturbationResults.h" />
     <ClInclude Include="..\QuadDouble\common.cuh" />

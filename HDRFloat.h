@@ -273,13 +273,6 @@ public:
         this->exp = localexp;
     }
 
-    CUDA_CRAP constexpr HDRFloat divide(HDRFloat factor) const {
-        T local_mantissa = this->mantissa / factor.mantissa;
-        TExp local_exp = this->exp - factor.exp;
-
-        return HDRFloat(local_mantissa, local_exp);
-    }
-
     CUDA_CRAP constexpr HDRFloat reciprocal() const {
         T local_mantissa = (T)1.0 / this->mantissa;
         TExp local_exp = -this->exp;
@@ -312,11 +305,6 @@ public:
         return lhs; // return the result by value (uses move constructor)
     }
 
-    CUDA_CRAP constexpr HDRFloat divide(T factor) const {
-        HDRFloat factorMant = HDRFloat(factor);
-        return divide(factorMant);
-    }
-
     CUDA_CRAP constexpr HDRFloat &divide_mutable(T factor) {
         HDRFloat factorMant = HDRFloat(factor);
         return divide_mutable(factorMant);
@@ -332,18 +320,6 @@ public:
 
     CUDA_CRAP constexpr HDRFloat& operator/=(const HDRFloat& other) {
         return divide_mutable(other);
-    }
-
-    CUDA_CRAP constexpr HDRFloat multiply(HDRFloat factor) const {
-        T local_mantissa = this->mantissa * factor.mantissa;
-        TExp local_exp = this->exp + factor.exp;
-
-        return HDRFloat(local_mantissa, local_exp);
-    }
-
-    CUDA_CRAP constexpr HDRFloat multiply(T factor) const {
-        HDRFloat factorMant = HDRFloat(factor);
-        return multiply(factorMant);
     }
 
     CUDA_CRAP constexpr HDRFloat &multiply_mutable(HDRFloat factor) {

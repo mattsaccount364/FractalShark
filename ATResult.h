@@ -8,7 +8,7 @@
 
 class ATResult {
 public:
-    using Complex = std::complex<float>;
+    using Complex = HDRFloatComplex<float>;
     using HDRFloatComplex = HDRFloatComplex<float>;
 
     ATResult() {

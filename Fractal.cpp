@@ -25,6 +25,7 @@
 
 #include "HDRFloatComplex.h"
 #include "ATInfo.h"
+#include "LAInfoDeep.h"
 
 // Match in render_gpu.cu
 constexpr static auto NB_THREADS_W = 8; // W=16, H=8 previously seemed OK

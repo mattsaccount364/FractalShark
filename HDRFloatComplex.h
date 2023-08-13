@@ -53,7 +53,7 @@ public:
     }
 
     HDRFloatComplex(Complex c) {
-        setMantexp(MantExp(c.getRe()), MantExp(c.getIm()));
+        setMantexp(HDRFloat(c.real()), HDRFloat(c.imag()));
     }
 
     HDRFloatComplex(HDRFloat re, HDRFloat im) {
@@ -173,11 +173,11 @@ public:
 
         T tempMantissaImag = (mantissaReal * factor.mantissaImag) + (mantissaImag * factor.mantissaReal);
 
-        long exp = this->exp + factor.exp;
+        long localExp = this->exp + factor.exp;
 
         mantissaReal = tempMantissaReal;
         mantissaImag = tempMantissaImag;
-        this->exp = exp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : exp;
+        this->exp = localExp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : localExp;
 
         /*T absRe = Math.abs(tempMantissaReal);
         T absIm = Math.abs(tempMantissaImag);
@@ -680,7 +680,7 @@ public:
     }
 
     HDRFloat norm_squared() {
-        return HDRFloat(mantissaReal * mantissaReal + mantissaImag * mantissaImag, exp << 1);
+        return HDRFloat(exp << 1, mantissaReal * mantissaReal + mantissaImag * mantissaImag);
     }
 
     HDRFloat distance_squared(HDRFloatComplex other) {
@@ -736,7 +736,7 @@ public:
 
     HDRFloatComplex reciprocal() {
 
-        T temp = 1.0 / (mantissaReal * mantissaReal + mantissaImag * mantissaImag);
+        T temp = 1.0f / (mantissaReal * mantissaReal + mantissaImag * mantissaImag);
 
         return HDRFloatComplex(mantissaReal * temp , -mantissaImag * temp, -exp);
 
@@ -744,7 +744,7 @@ public:
 
     HDRFloatComplex reciprocal_mutable() {
 
-        T temp = 1.0 / (mantissaReal * mantissaReal + mantissaImag * mantissaImag);
+        T temp = 1.0f / (mantissaReal * mantissaReal + mantissaImag * mantissaImag);
 
         mantissaReal = mantissaReal * temp;
         mantissaImag = -mantissaImag * temp;
@@ -842,9 +842,9 @@ public:
     }
 
     Complex toComplex() {
-        //return new Complex(mantissaReal * MantExp.toExp(exp), mantissaImag * MantExp.toExp(exp));
-        double d = HDRFloat::getMultiplier(exp);
-        //return new Complex(MantExp.toDouble(mantissaReal, exp), MantExp.toDouble(mantissaImag, exp));
+        //return new Complex(mantissaReal * HDRFloat.toExp(exp), mantissaImag * HDRFloat.toExp(exp));
+        T d = HDRFloat::getMultiplier(exp);
+        //return new Complex(HDRFloat.toDouble(mantissaReal, exp), HDRFloat.toDouble(mantissaImag, exp));
         return Complex(mantissaReal * d, mantissaImag * d);
     }
     

@@ -147,6 +147,7 @@ bool RefOrbitCalc::IsThisPerturbationArrayUsed(void* check) const {
     case RenderAlgorithm::Gpu4x32:
         return false;
     case RenderAlgorithm::Cpu32PerturbedBLAHDR:
+    case RenderAlgorithm::Cpu32PerturbedBLAV2HDR:
     case RenderAlgorithm::GpuHDRx32PerturbedBLA:
     case RenderAlgorithm::GpuHDRx32PerturbedScaled:
         return check == &m_PerturbationResultsHDRFloat;
@@ -935,10 +936,16 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     }
 
     expectedZx = nullptr;
-    ThreadZxMemory->In.compare_exchange_strong(expectedZx, (ThreadZxData*)0x1, std::memory_order_release);
+    bool res1 = ThreadZxMemory->In.compare_exchange_strong(expectedZx, (ThreadZxData*)0x1, std::memory_order_release);
+    if (res1 != true) {
+        ::MessageBox(NULL, L"Some stupid bug #56898a :(", L"", MB_OK);
+    }
 
     expectedZy = nullptr;
-    ThreadZyMemory->In.compare_exchange_strong(expectedZy, (ThreadZyData*)0x1, std::memory_order_release);
+    res1 = ThreadZyMemory->In.compare_exchange_strong(expectedZy, (ThreadZyData*)0x1, std::memory_order_release);
+    if (res1 != true) {
+        ::MessageBox(NULL, L"Some stupid bug #56898b :(", L"", MB_OK);
+    }
 
     //results->x.erase(results->x.begin());
     //results->y.erase(results->y.begin());
@@ -1069,7 +1076,6 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
 
     ThreadZxData* expectedZx = nullptr;
     ThreadZyData* expectedZy = nullptr;
-    ThreadReusedData* expectedReused = nullptr;
 
     bool done1 = false;
     bool done2 = false;

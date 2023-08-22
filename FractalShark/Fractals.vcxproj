@@ -192,6 +192,7 @@
     <ClInclude Include="..\LAReference.h" />
     <ClInclude Include="..\LAstep.h" />
     <ClCompile Include="..\LAInfoDeep.cpp" />
+    <ClCompile Include="..\LAReference.cpp" />
     <ClCompile Include="..\LAstep.cpp" />
     <ClCompile Include="..\RefOrbitCalc.cpp" />
     <ClCompile Include="..\WPngImage\lodepng.cpp" />

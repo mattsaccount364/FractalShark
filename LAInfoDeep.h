@@ -87,7 +87,7 @@ public:
     HDRFloatComplex Evaluate(HDRFloatComplex newdz, HDRFloatComplex dc);
     HDRFloatComplex EvaluateDzdc(HDRFloatComplex z, HDRFloatComplex dzdc);
     HDRFloatComplex EvaluateDzdc2(HDRFloatComplex z, HDRFloatComplex dzdc2, HDRFloatComplex dzdc);
-    ATInfo CreateAT(LAInfoDeep Next);
+    void CreateAT(ATInfo &Result, LAInfoDeep Next);
     HDRFloat getLAThreshold();
     HDRFloat getLAThresholdC();
 };

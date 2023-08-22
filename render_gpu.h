@@ -17,6 +17,7 @@ enum class RenderAlgorithm {
     Cpu64,
     Cpu64PerturbedBLA,
     Cpu32PerturbedBLAHDR,
+    Cpu32PerturbedBLAV2HDR,
     Cpu64PerturbedBLAHDR,
 
     // GPU:

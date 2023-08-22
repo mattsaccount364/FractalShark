@@ -4,6 +4,8 @@
 #include <stdint.h>
 #include "HighPrecision.h"
 
+#include "HDRFloatComplex.h"
+
 template<class T>
 class PerturbationResults {
 public:
@@ -39,7 +41,7 @@ public:
     }
 
     template<class Other>
-    void Copy(PerturbationResults<Other>& other) {
+    void Copy(const PerturbationResults<Other>& other) {
         clear();
 
         x.reserve(other.x.size());
@@ -61,5 +63,10 @@ public:
         bad = other.bad;
 
         m_Periodic = other.m_Periodic;
+    }
+
+    template<class U>
+    HDRFloatComplex<U> GetComplex(size_t index) const {
+        return { x[index], y[index] };
     }
 };

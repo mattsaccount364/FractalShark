@@ -9,8 +9,8 @@ class LAInfoDeep;
 
 class LAstep {
 public:
-    int step;
-    int nextStageLAindex;
+    size_t step;
+    size_t nextStageLAindex;
 
 public:
     using HDRFloatComplex = HDRFloatComplex<float>;

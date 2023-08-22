@@ -20,7 +20,7 @@ class ATInfo {
     static HDRFloat factor;
 
 public:
-    int StepLength;
+    size_t StepLength;
     HDRFloat ThresholdC;
     double SqrEscapeRadius;
     HDRFloatComplex RefC;

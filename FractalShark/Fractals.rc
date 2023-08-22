@@ -126,6 +126,7 @@ BEGIN
             MENUITEM "1x64 CPU - Perturbation BLA", IDM_ALG_CPU_1_64_PERTURB_BLA
             MENUITEM "HDRx32 CPU",                  IDM_ALG_CPU_1_32_HDR
             MENUITEM "HDRx32 CPU - Perturbation BLA", IDM_ALG_CPU_1_32_PERTURB_BLA_HDR
+            MENUITEM "HDRx32 CPU - Perturbation BLAv2", IDM_ALG_CPU_1_32_PERTURB_BLAV2_HDR
             MENUITEM "HDRx64 CPU",                  IDM_ALG_CPU_1_64_HDR
             MENUITEM "HDRx64 CPU - Perturbation BLA", IDM_ALG_CPU_1_64_PERTURB_BLA_HDR
             MENUITEM SEPARATOR

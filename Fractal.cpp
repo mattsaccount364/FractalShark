@@ -26,6 +26,7 @@
 #include "HDRFloatComplex.h"
 #include "ATInfo.h"
 #include "LAInfoDeep.h"
+#include "LAReference.h"
 
 // Match in render_gpu.cu
 constexpr static auto NB_THREADS_W = 8; // W=16, H=8 previously seemed OK
@@ -1579,6 +1580,9 @@ void Fractal::CalcFractal(bool MemoryOnly)
     case RenderAlgorithm::Cpu32PerturbedBLAHDR:
         CalcCpuPerturbationFractalBLA<HDRFloat<float>, float>(MemoryOnly);
         break;
+    case RenderAlgorithm::Cpu32PerturbedBLAV2HDR:
+        CalcCpuPerturbationFractalBLAV2<HDRFloat<float>, float>(MemoryOnly);
+        break;
     case RenderAlgorithm::Cpu64:
         CalcCpuHDR<double, double>(MemoryOnly);
         break;
@@ -2520,6 +2524,234 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
 
                     ++iter;
                 }
+
+                m_CurIters.m_ItersArray[y][x] = (uint32_t)iter;
+            }
+        }
+    };
+
+    for (size_t cur_thread = 0; cur_thread < num_threads; cur_thread++) {
+        threads.push_back(std::make_unique<std::thread>(one_thread));
+    }
+
+    for (size_t cur_thread = 0; cur_thread < threads.size(); cur_thread++) {
+        threads[cur_thread]->join();
+    }
+
+    DrawFractal(MemoryOnly);
+}
+
+HDRFloatComplex<float> *Fractal::initializeFromBLA2(
+    LAReference &laReference,
+    HDRFloatComplex<float> d0,
+    size_t &BLA2SkippedIterations,
+    size_t &BLA2SkippedSteps) {
+
+    int derivatives = 0;
+    BLA2SkippedIterations = 0;
+    BLA2SkippedSteps = 0;
+
+    if (laReference.isValid && laReference.UseAT && laReference.AT.isValid(d0)) {
+        ATResult res = laReference.AT.PerformAT(m_NumIterations, d0, derivatives);
+        BLA2SkippedIterations = res.bla_iterations;
+        BLA2SkippedSteps = res.bla_steps;
+
+        return new HDRFloatComplex<float>{ res.dz, d0, res.dzdc, res.dzdc2 };
+    }
+
+    return new HDRFloatComplex<float>{ MantExpComplex(), d0, MantExpComplex(), MantExpComplex() };
+}
+
+template<class T, class SubType>
+void Fractal::CalcCpuPerturbationFractalBLAV2(bool MemoryOnly) {
+    auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<T, SubType>();
+
+    //BLAS<T> blas(*results);
+    //blas.Init(results->x.size(), T{ results->maxRadius });
+    LAReference LaReference{*results};
+    LaReference.GenerateApproximationData(results->maxRadius, results->MaxIterations);
+
+    T dx = T((m_MaxX - m_MinX) / m_ScrnWidth);
+    T dy = T((m_MaxY - m_MinY) / m_ScrnHeight);
+
+    T centerX = (T)(results->hiX - m_MinX);
+    HdrReduce(centerX);
+    T centerY = (T)(results->hiY - m_MaxY);
+    HdrReduce(centerY);
+
+    static constexpr size_t num_threads = 32;
+    std::deque<std::atomic_uint64_t> atomics;
+    std::vector<std::unique_ptr<std::thread>> threads;
+    atomics.resize(m_ScrnHeight);
+    threads.reserve(num_threads);
+
+    auto one_thread = [&]() {
+        //T dzdcX = T(1.0);
+        //T dzdcY = T(0.0);
+        //bool periodicity_should_break = false;
+
+        for (size_t y = 0; y < m_ScrnHeight; y++) {
+            if (atomics[y] != 0) {
+                continue;
+            }
+
+            uint64_t expected = 0;
+            if (atomics[y].compare_exchange_strong(expected, 1llu) == false) {
+                continue;
+            }
+
+            for (size_t x = 0; x < m_ScrnWidth; x++)
+            {
+                size_t BLA2SkippedIterations;
+                size_t BLA2SkippedSteps;
+                initializeFromBLA2(LaReference, TODOWhatIsTheCoords, BLA2SkippedIterations, BLA2SkippedSteps);
+
+                size_t iter = 0;
+                int RefIteration = 0;
+                int MaxRefIteration = getReferenceFinalIterationNumber(true, referenceData);
+
+                Complex[] deltas = initializePerturbation(dpixel);
+                Complex DeltaSubN = deltas[0]; // Delta z
+                Complex DeltaSub0 = deltas[1]; // Delta c
+
+                iterations = BLA2SkippedIterations;
+
+                Complex pixel = dpixel.plus(refPointSmall);
+
+                int ReferencePeriod = getPeriod();
+                if (iterations != 0 && RefIteration < MaxRefIteration) {
+                    complex[0] = getArrayValue(reference, RefIteration).plus_mutable(DeltaSubN);
+                }
+                else if (iterations != 0 && ReferencePeriod != 0) {
+                    RefIteration = RefIteration % ReferencePeriod;
+                    complex[0] = getArrayValue(reference, RefIteration).plus_mutable(DeltaSubN);
+                }
+
+                int CurrentLAStage = laReference.isValid ? laReference.LAStageCount : 0;
+
+
+                while (CurrentLAStage > 0) {
+                    //            if (Ref.LAStages[HRContext.CurrentLAStage - 1].UseDoublePrecision) {
+                    //				goto DPEvaluation;
+                    //            }
+                    CurrentLAStage--;
+
+                    int LAIndex = laReference.getLAIndex(CurrentLAStage);
+
+                    if (laReference.isLAStageInvalid(LAIndex, DeltaSub0)) {
+                        continue;
+                    }
+
+                    int MacroItCount = laReference.getMacroItCount(CurrentLAStage);
+
+
+                    int j = RefIteration;
+                    while (iterations < max_iterations) {
+
+                        LAstep las = laReference.getLA(LAIndex, DeltaSubN, DeltaSub0, j, iterations, max_iterations);
+
+                        if (las.unusable) {
+                            RefIteration = las.nextStageLAindex;
+                            break;
+                        }
+
+                        //No update values
+
+                        int l = las.step;
+                        iterations += l;
+
+                        DeltaSubN = las.Evaluate(DeltaSub0);
+
+                        j++;
+
+                        zold2.assign(zold);
+                        zold.assign(complex[0]);
+
+                        //No Plane influence work
+                        //No Pre filters work
+                        complex[0] = las.getZ(DeltaSubN);
+                        //No Post filters work
+
+                        // rebase
+
+                        if (complex[0].chebychevNorm() < DeltaSubN.chebychevNorm() || j >= MacroItCount) {
+                            DeltaSubN = complex[0];
+                            j = 0;
+                        }
+
+                        if (statistic != null) {
+                            statistic.insert(complex[0], zold, zold2, iterations, complex[1], start, c0, las);
+                        }
+                    }
+
+                    if (iterations >= max_iterations) {
+                        break;
+                    }
+                }
+
+
+                double normSquared = 0;
+
+                if (iterations < max_iterations) {
+                    normSquared = complex[0].normSquared();
+                }
+
+                for (; iterations < max_iterations; iterations++) {
+
+                    //No update values
+
+                    if (bailout_algorithm2.escaped(complex[0], zold, zold2, iterations, complex[1], start, c0, normSquared, pixel)) {
+                        escaped = true;
+
+                        Object[] object = { iterations, complex[0], zold, zold2, complex[1], start, c0, pixel };
+                        double res = out_color_algorithm.getResult(object);
+
+                        res = getFinalValueOut(res, complex[0]);
+
+                        if (outTrueColorAlgorithm != null) {
+                            setTrueColorOut(complex[0], zold, zold2, iterations, complex[1], start, c0, pixel);
+                        }
+
+                        return getAndAccumulateStatsBLA(res);
+                    }
+
+                    // perturbation iteration
+                    DeltaSubN = perturbationFunction(DeltaSubN, DeltaSub0, RefIteration);
+
+                    RefIteration++;
+
+                    // rebase
+                    zold2.assign(zold);
+                    zold.assign(complex[0]);
+
+                    //No Plane influence work
+                    //No Pre filters work
+                    if (max_iterations > 1) {
+                        complex[0] = getArrayValue(reference, RefIteration).plus_mutable(DeltaSubN);
+                    }
+                    //No Post filters work
+                    normSquared = complex[0].norm_squared();
+
+                    if (normSquared < DeltaSubN.norm_squared() || (RefIteration >= MaxRefIteration)) { //* 64
+                        DeltaSubN = complex[0];
+                        RefIteration = 0;
+                    }
+
+                    if (statistic != null) {
+                        statistic.insert(complex[0], zold, zold2, iterations, complex[1], start, c0);
+                    }
+                }
+
+                Object[] object = { complex[0], zold, zold2, complex[1], start, c0, pixel };
+                double in = in_color_algorithm.getResult(object);
+
+                in = getFinalValueIn(in, complex[0]);
+
+                if (inTrueColorAlgorithm != null) {
+                    setTrueColorIn(complex[0], zold, zold2, iterations, complex[1], start, c0, pixel);
+                }
+
+                return getAndAccumulateStatsBLA(in);
 
                 m_CurIters.m_ItersArray[y][x] = (uint32_t)iter;
             }

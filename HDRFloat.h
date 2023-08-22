@@ -415,7 +415,7 @@ public:
         T local_mantissa = this->mantissa * this->mantissa;
         TExp local_exp = this->exp * 2;
 
-        return HDRFloat(local_mantissa, local_exp);
+        return HDRFloat(local_exp, local_mantissa);
     }
 
     CUDA_CRAP constexpr HDRFloat &square_mutable() {

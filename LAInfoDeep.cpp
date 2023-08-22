@@ -271,9 +271,7 @@ LAInfoDeep::HDRFloatComplex LAInfoDeep::EvaluateDzdc2(HDRFloatComplex z, HDRFloa
         .plus_mutable(dzdc.square()).times2_mutable().times_mutable(HDRFloatComplex(ZCoeffExp, ZCoeffRe, ZCoeffIm));
 }
 
-ATInfo LAInfoDeep::CreateAT(LAInfoDeep Next) {
-    ATInfo Result = ATInfo();
-
+void LAInfoDeep::CreateAT(ATInfo &Result, LAInfoDeep Next) {
     HDRFloatComplex ZCoeff = HDRFloatComplex(ZCoeffExp, ZCoeffRe, ZCoeffIm);
     HDRFloatComplex CCoeff = HDRFloatComplex(CCoeffExp, CCoeffRe, CCoeffIm);
     HDRFloat LAThreshold = HDRFloat(LAThresholdExp, LAThresholdMant);
@@ -304,8 +302,6 @@ ATInfo LAInfoDeep::CreateAT(LAInfoDeep Next) {
     Result.SqrEscapeRadius = HDRFloat::minBothPositive(ZCoeff.norm_squared() * LAThreshold, atLimit).toDouble();
 
     Result.ThresholdC = HDRFloat::minBothPositive(LAThresholdC, atLimit / Result.CCoeff.chebychevNorm());
-
-    return Result;
 }
 
 LAInfoDeep::HDRFloat LAInfoDeep::getLAThreshold() {

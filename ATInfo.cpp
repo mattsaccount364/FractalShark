@@ -35,7 +35,7 @@ ATInfo::Complex ATInfo::getC(HDRFloatComplex dc) {
 
 ATResult ATInfo::PerformAT(int max_iterations, HDRFloatComplex DeltaSub0, int derivatives) {
     //int ATMaxIt = (max_iterations - 1) / StepLength + 1;
-    int ATMaxIt = max_iterations / StepLength;
+    size_t ATMaxIt = max_iterations / StepLength;
 
     Complex c;
     c = getC((HDRFloatComplex)DeltaSub0);
@@ -44,7 +44,7 @@ ATResult ATInfo::PerformAT(int max_iterations, HDRFloatComplex DeltaSub0, int de
     Complex dzdc = Complex();
     Complex dzdc2 = Complex();
 
-    int i;
+    size_t i;
     for (i = 0; i < ATMaxIt; i++) {
 
         if (std::norm(z) > SqrEscapeRadius) {

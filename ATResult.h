@@ -20,6 +20,6 @@ public:
 
     HDRFloatComplex dzdc;
     HDRFloatComplex dzdc2;
-    int bla_iterations;
-    int bla_steps;
+    size_t bla_iterations;
+    size_t bla_steps;
 };

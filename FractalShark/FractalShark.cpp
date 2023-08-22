@@ -510,6 +510,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 break;
             }
 
+            case IDM_ALG_CPU_1_32_PERTURB_BLAV2_HDR:
+            {
+                gFractal->SetRenderAlgorithm(RenderAlgorithm::Cpu32PerturbedBLAV2HDR);
+                break;
+            }
+
             case IDM_ALG_CPU_1_64:
             {
                 gFractal->SetRenderAlgorithm(RenderAlgorithm::Cpu64);

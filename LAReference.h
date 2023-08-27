@@ -48,7 +48,11 @@ private:
 
 public:
     LAReference(const PerturbationResults<HDRFloat> &PerturbationResults) :
-        m_PerturbationResults(PerturbationResults) {
+        m_PerturbationResults(PerturbationResults),
+        UseAT{},
+        AT{},
+        LAStageCount{},
+        isValid{} {
     }
 
     void init();
@@ -60,8 +64,6 @@ public:
     int LAStageCount;
 
     bool isValid;
-
-    bool DoublePrecisionPT;
 
 private:
     static constexpr int MaxLAStages = 512;

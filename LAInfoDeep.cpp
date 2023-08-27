@@ -10,8 +10,22 @@ LAInfoDeep::HDRFloat LAInfoDeep::LAThresholdCScale(DefaultLAThresholdCScale);
 
 LAInfoDeep::HDRFloat LAInfoDeep::atLimit(0x1.0p256);
 
-LAInfoDeep::LAInfoDeep() {
-
+LAInfoDeep::LAInfoDeep() :
+    RefRe{},
+    RefIm{},
+    RefExp{},
+    ZCoeffRe{},
+    ZCoeffIm{},
+    ZCoeffExp{},
+    CCoeffRe{},
+    CCoeffIm{},
+    CCoeffExp{},
+    LAThresholdMant{},
+    LAThresholdExp{},
+    LAThresholdCMant{},
+    LAThresholdCExp{},
+    MinMagMant{},
+    MinMagExp{} {
 }
 
 LAInfoDeep::LAInfoDeep(HDRFloatComplex z) {
@@ -74,7 +88,7 @@ LAInfoDeep::HDRFloatComplex LAInfoDeep::getCCoeff() {
 }
 
 
-bool LAInfoDeep::Step(LAInfoDeep out, HDRFloatComplex z) {
+bool LAInfoDeep::Step(LAInfoDeep &out, HDRFloatComplex z) {
     HDRFloat ChebyMagz = z.chebychevNorm();
 
     HDRFloatComplex ZCoeff = HDRFloatComplex(ZCoeffExp, ZCoeffRe, ZCoeffIm);
@@ -152,7 +166,7 @@ LAInfoDeep LAInfoDeep::Step(HDRFloatComplex z) {
 }
 
 
-bool LAInfoDeep::Composite(LAInfoDeep out, LAInfoDeep LA) {
+bool LAInfoDeep::Composite(LAInfoDeep &out, LAInfoDeep LA) {
     HDRFloatComplex z = HDRFloatComplex(LA.RefExp, LA.RefRe, LA.RefIm);
     HDRFloat ChebyMagz = z.chebychevNorm();
 
@@ -290,7 +304,7 @@ void LAInfoDeep::CreateAT(ATInfo &Result, LAInfoDeep Next) {
     Result.CCoeffInvZCoeff = Result.CCoeff.times(Result.InvZCoeff);
     Result.CCoeffInvZCoeff.Reduce();
 
-    Result.RefC = Next.getRef().toMantExpComplex().times(ZCoeff);
+    Result.RefC = Next.getRef().times(ZCoeff);
     Result.RefC.Reduce();
 
     Result.CCoeffNormSqr = Result.CCoeff.norm_squared();

@@ -5,6 +5,20 @@
 
 HDRFloat<float> ATInfo::factor(0x1.0p32);
 
+ATInfo::ATInfo() :
+    StepLength{},
+    ThresholdC{},
+    SqrEscapeRadius{},
+    RefC{},
+    ZCoeff{},
+    CCoeff{},
+    InvZCoeff{},
+    CCoeffSqrInvZCoeff{},
+    CCoeffInvZCoeff{},
+    CCoeffNormSqr{},
+    RefCNormSqr{} {
+}
+
 bool ATInfo::isValid(HDRFloatComplex DeltaSub0) {
     return DeltaSub0.chebychevNorm().compareToBothPositiveReduced(ThresholdC) <= 0;
 }

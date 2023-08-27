@@ -9,6 +9,15 @@ class LAInfoDeep;
 
 class LAstep {
 public:
+    LAstep() :
+        step{},
+        nextStageLAindex{},
+        LAjdeep{},
+        Refp1Deep{},
+        newDzDeep{},
+        unusable{true} {
+    }
+
     size_t step;
     size_t nextStageLAindex;
 

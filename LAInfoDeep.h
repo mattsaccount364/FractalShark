@@ -77,11 +77,11 @@ public:
     HDRFloatComplex getRef();
     HDRFloatComplex getZCoeff();
     HDRFloatComplex getCCoeff();
-    bool Step(LAInfoDeep out, HDRFloatComplex z);
+    bool Step(LAInfoDeep &out, HDRFloatComplex z);
     bool isLAThresholdZero();
     bool isZCoeffZero();
     LAInfoDeep Step(HDRFloatComplex z);
-    bool Composite(LAInfoDeep out, LAInfoDeep LA);
+    bool Composite(LAInfoDeep &out, LAInfoDeep LA);
     LAInfoDeep Composite(LAInfoDeep LA);
     LAstep Prepare(HDRFloatComplex dz);
     HDRFloatComplex Evaluate(HDRFloatComplex newdz, HDRFloatComplex dc);

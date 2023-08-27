@@ -2622,14 +2622,15 @@ void Fractal::CalcCpuPerturbationFractalBLAV2(bool MemoryOnly) {
 
                 DeltaSub0 = { deltaReal, deltaImaginary };
                 DeltaSubN = { 0, 0 };
-                /*
+
                 if (LaReference.isValid && LaReference.UseAT && LaReference.AT.isValid(DeltaSub0)) {
                     ATResult res = LaReference.AT.PerformAT(m_NumIterations, DeltaSub0, derivatives);
                     BLA2SkippedIterations = res.bla_iterations;
                     BLA2SkippedSteps = res.bla_steps;
 
                     //return new HDRFloatComplex<float>{ res.dz, d0, res.dzdc, res.dzdc2 };
-                }*/
+                }
+
                 //return new HDRFloatComplex<float>{ MantExpComplex(), d0, MantExpComplex(), MantExpComplex() };
 
                 size_t iterations = 0;
@@ -2638,22 +2639,20 @@ void Fractal::CalcCpuPerturbationFractalBLAV2(bool MemoryOnly) {
 
                 iterations = BLA2SkippedIterations;
 
-                //TComplex z{ deltaReal, deltaImaginary };
+                TComplex z{ deltaReal, deltaImaginary };
 
                 TComplex complex0{ };
 
-                //int ReferencePeriod = getPeriod();
-                //if (iterations != 0 && RefIteration < MaxRefIteration) {
-                //    z = getArrayValue(reference, RefIteration).plus_mutable(DeltaSubN);
-                //}
-                //else if (iterations != 0 && ReferencePeriod != 0) {
+                //int ReferencePeriod = getPeriod(); // TODO
+                if (iterations != 0 && RefIteration < MaxRefIteration) {
+                    z = results->GetComplex<SubType>(RefIteration).plus_mutable(DeltaSubN);
+                }
+                //else if (iterations != 0 && ReferencePeriod != 0) { // TODO
                 //    RefIteration = RefIteration % ReferencePeriod;
-                //    z = getArrayValue(reference, RefIteration).plus_mutable(DeltaSubN);
+                //    z = results->GetComplex<SubType>(RefIteration).plus_mutable(DeltaSubN);
                 //}
-                /*
+
                 size_t CurrentLAStage = LaReference.isValid ? LaReference.LAStageCount : 0;
-
-
                 while (CurrentLAStage > 0) {
                     //            if (Ref.LAStages[HRContext.CurrentLAStage - 1].UseDoublePrecision) {
                     //				goto DPEvaluation;
@@ -2667,8 +2666,6 @@ void Fractal::CalcCpuPerturbationFractalBLAV2(bool MemoryOnly) {
                     }
 
                     size_t MacroItCount = LaReference.getMacroItCount(CurrentLAStage);
-
-
                     size_t j = RefIteration;
                     while (iterations < GetNumIterations()) {
 
@@ -2709,8 +2706,7 @@ void Fractal::CalcCpuPerturbationFractalBLAV2(bool MemoryOnly) {
                     if (iterations >= GetNumIterations()) {
                         break;
                     }
-                }*/
-
+                }
 
                 T normSquared{};
 

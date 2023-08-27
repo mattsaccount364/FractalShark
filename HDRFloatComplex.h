@@ -981,8 +981,5 @@ public:
     HDRFloat chebychevNorm() {
         return HDRFloat::maxBothPositive(HdrAbs(getRe()), HdrAbs(getIm()));
     }
-
-    
-    HDRFloatComplex toMantExpComplex() {return *this;}
 };
 

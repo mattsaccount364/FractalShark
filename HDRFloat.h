@@ -14,6 +14,9 @@ extern double* twoPowExpDbl;
 extern float* twoPowExpFlt;
 #endif
 
+template<class T>
+class HDRFloatComplex;
+
 CUDA_CRAP void InitStatics();
 
 // TExp can work with float, int16_t or int64_t but all seem to offer worse perf
@@ -853,7 +856,8 @@ static CUDA_CRAP T HdrSqrt(const T &incoming) {
 
 template<class T>
 static CUDA_CRAP constexpr T HdrAbs(const T& incoming) {
-    static_assert(std::is_same<T, double>::value ||
+    static_assert(
+        std::is_same<T, double>::value ||
         std::is_same<T, float>::value ||
         std::is_same<T, HDRFloat<double>>::value ||
         std::is_same<T, HDRFloat<float>>::value, "No");
@@ -869,8 +873,26 @@ static CUDA_CRAP constexpr T HdrAbs(const T& incoming) {
 
 template<class T>
 static CUDA_CRAP constexpr void HdrReduce(T& incoming) {
+    constexpr auto HighPrecPossible = // LOLZ I imagine there's a nicer way to do this here
+#ifndef __CUDACC__
+        std::is_same<T, HighPrecision>::value;
+#else
+        false;
+#endif
+
+    static_assert(
+        std::is_same<T, double>::value ||
+        std::is_same<T, float>::value ||
+        std::is_same<T, HDRFloat<double>>::value ||
+        std::is_same<T, HDRFloat<float>>::value ||
+        std::is_same<T, HDRFloatComplex<double>>::value ||
+        std::is_same<T, HDRFloatComplex<float>>::value ||
+        HighPrecPossible, "No");
+
     if constexpr (std::is_same<T, HDRFloat<double>>::value ||
-                  std::is_same<T, HDRFloat<float>>::value) {
+                  std::is_same<T, HDRFloat<float>>::value ||
+                  std::is_same<T, HDRFloatComplex<double>>::value ||
+                  std::is_same<T, HDRFloatComplex<float>>::value) {
         incoming.Reduce();
     }
 }

@@ -15,10 +15,11 @@ HDC gHDC;
 
 // Fractal:
 Fractal *gFractal = NULL;
+HGLRC hRC = NULL;
 
 // Foward declarations of functions included in this code module:
 ATOM              MyRegisterClass(HINSTANCE hInstance);
-HWND              InitInstance(HINSTANCE);
+HWND              InitInstance(HINSTANCE, int);
 LRESULT CALLBACK  WndProc(HWND, UINT, WPARAM, LPARAM);
 void              UnInit(void);
 
@@ -70,24 +71,11 @@ int APIENTRY WinMain(HINSTANCE hInstance,
     MyRegisterClass(hInstance);
 
     // Perform application initialization:
-    HWND hWnd = InitInstance(hInstance);
+    HWND hWnd = InitInstance(hInstance, nCmdShow);
     if (hWnd == NULL)
     {
         return 1;
     }
-
-    // More opengl initialization
-    gHDC = GetDC(hWnd); // Grab on and don't let go until the program is done.
-    HGLRC hRC = wglCreateContext(gHDC);
-    wglMakeCurrent(gHDC, hRC);
-
-    glClearColor(0.0, 0.0, 0.0, 0.0);
-    glShadeModel(GL_FLAT);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-
-    // Display!
-    ShowWindow(hWnd, nCmdShow);
-    SendMessage(hWnd, WM_SYSCOMMAND, SC_MAXIMIZE, 0);
 
     // Main message loop:
     MSG msg;
@@ -141,14 +129,41 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
 //     Here we create the main window and return its handle,
 //     and we perform other initialization.
 //
-HWND InitInstance(HINSTANCE hInstance)
+HWND InitInstance(HINSTANCE hInstance, int nCmdShow)
 { // Store instance handle in our global variable
     hInst = hInstance;
+
+    constexpr bool startWindowed = true;
+
+    const auto scrnWidth = GetSystemMetrics(SM_CXSCREEN);
+    const auto scrnHeight = GetSystemMetrics(SM_CYSCREEN);
+
+    DWORD startX, startY;
+    DWORD width, height;
+
+    if constexpr (startWindowed) {
+        width = min(scrnWidth / 2, scrnHeight / 2);
+        height = width;
+        startX = scrnWidth / 2 - width / 2;
+        startY = scrnHeight / 2 - width / 2;
+
+        // Uncomment to start in smaller window
+        gWindowed = false;
+        //MenuWindowed(hWnd, true);
+    }
+    else {
+        startX = 0;
+        startY = 0;
+        width = scrnWidth;
+        height = scrnHeight;
+
+        gWindowed = true;
+    }
 
     // Create the window
     HWND hWnd;
     hWnd = CreateWindow(szWindowClass, L"", WS_POPUP | WS_THICKFRAME,
-        0, 0, GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN),
+        startX, startY, width, height,
         NULL, NULL, hInstance, NULL);
 
     if (!hWnd)
@@ -199,7 +214,6 @@ HWND InitInstance(HINSTANCE hInstance)
     gPopupMenu = LoadMenu(hInst, MAKEINTRESOURCE(IDR_MENU_POPUP));
 
     // Initialize some global variables
-    gWindowed = false;
     gRepainting = true;
 
     // Create the fractal
@@ -217,6 +231,24 @@ HWND InitInstance(HINSTANCE hInstance)
     else
     {
         gAltDraw = false;
+    }
+
+    // More opengl initialization
+    gHDC = GetDC(hWnd); // Grab on and don't let go until the program is done.
+    hRC = wglCreateContext(gHDC);
+    wglMakeCurrent(gHDC, hRC);
+
+    glClearColor(0.0, 0.0, 0.0, 0.0);
+    glShadeModel(GL_FLAT);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+    // Display!
+    ShowWindow(hWnd, nCmdShow);
+
+    glResetView(hWnd);
+
+    if constexpr (startWindowed == false) {
+        SendMessage(hWnd, WM_SYSCOMMAND, SC_MAXIMIZE, 0);
     }
 
     return hWnd;
@@ -1136,9 +1168,11 @@ void MenuWindowed(HWND hWnd, bool square)
         }
         gWindowed = true;
 
-        RECT rt;
-        GetClientRect(hWnd, &rt);
-        gFractal->ResetDimensions(rt.right, rt.bottom);
+        if (gFractal) {
+            RECT rt;
+            GetClientRect(hWnd, &rt);
+            gFractal->ResetDimensions(rt.right, rt.bottom);
+        }
 
         glResetView(hWnd);
     }
@@ -1164,9 +1198,11 @@ void MenuWindowed(HWND hWnd, bool square)
 
         gWindowed = false;
 
-        RECT rt;
-        GetClientRect(hWnd, &rt);
-        gFractal->ResetDimensions(rt.right, rt.bottom);
+        if (gFractal) {
+            RECT rt;
+            GetClientRect(hWnd, &rt);
+            gFractal->ResetDimensions(rt.right, rt.bottom);
+        }
 
         glResetView(hWnd);
     }

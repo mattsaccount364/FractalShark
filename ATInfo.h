@@ -44,5 +44,5 @@ public:
     HDRFloatComplex getDZDC(Complex dzdc);
     HDRFloatComplex getDZDC2(Complex dzdc2);
     Complex getC(HDRFloatComplex dc);
-    ATResult PerformAT(int max_iterations, HDRFloatComplex DeltaSub0, int derivatives);
+    ATResult PerformAT(size_t max_iterations, HDRFloatComplex DeltaSub0, size_t derivatives);
 };

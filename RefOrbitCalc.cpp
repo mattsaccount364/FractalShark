@@ -935,16 +935,15 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
         RanOnce = true;
     }
 
-    expectedZx = nullptr;
-    bool res1 = ThreadZxMemory->In.compare_exchange_strong(expectedZx, (ThreadZxData*)0x1, std::memory_order_release);
-    if (res1 != true) {
-        ::MessageBox(NULL, L"Some stupid bug #56898a :(", L"", MB_OK);
+    bool res1 = false, res2 = false;
+    while (!res1) {
+        expectedZx = nullptr;
+        res1 = ThreadZxMemory->In.compare_exchange_strong(expectedZx, (ThreadZxData*)0x1, std::memory_order_release);
     }
 
-    expectedZy = nullptr;
-    res1 = ThreadZyMemory->In.compare_exchange_strong(expectedZy, (ThreadZyData*)0x1, std::memory_order_release);
-    if (res1 != true) {
-        ::MessageBox(NULL, L"Some stupid bug #56898b :(", L"", MB_OK);
+    while (!res2) {
+        expectedZy = nullptr;
+        res2 = ThreadZyMemory->In.compare_exchange_strong(expectedZy, (ThreadZyData*)0x1, std::memory_order_release);
     }
 
     //results->x.erase(results->x.begin());
@@ -1045,7 +1044,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
             ThreadReusedData* ok = nullptr;
 
             CheckStartCriteria;
-            
+
             AddReused(*results, ok->zx, ok->zy);
 
             // Give result back.
@@ -1243,11 +1242,16 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
         assert(results->bad.size() == results->x.size());
     }
 
-    expectedZx = nullptr;
-    ThreadZxMemory->In.compare_exchange_strong(expectedZx, (ThreadZxData*)0x1, std::memory_order_release);
+    bool res1 = false, res2 = false;
+    while (!res1) {
+        expectedZx = nullptr;
+        res1 = ThreadZxMemory->In.compare_exchange_strong(expectedZx, (ThreadZxData*)0x1, std::memory_order_release);
+    }
 
-    expectedZy = nullptr;
-    ThreadZyMemory->In.compare_exchange_strong(expectedZy, (ThreadZyData*)0x1, std::memory_order_release);
+    while (!res2) {
+        expectedZy = nullptr;
+        res2 = ThreadZyMemory->In.compare_exchange_strong(expectedZy, (ThreadZyData*)0x1, std::memory_order_release);
+    }
 
     tZx->join();
     tZy->join();
@@ -1660,17 +1664,27 @@ void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecis
         assert(results->bad.size() == results->x.size());
     }
 
-    expectedZx = nullptr;
-    ThreadZxMemory->In.compare_exchange_strong(expectedZx, (ThreadZxData*)0x1, std::memory_order_release);
+    bool resZx = false, resZy = false;
+    bool res1 = false, res2 = false;
+    while (!resZx) {
+        expectedZx = nullptr;
+        resZx = ThreadZxMemory->In.compare_exchange_strong(expectedZx, (ThreadZxData*)0x1, std::memory_order_release);
+    }
 
-    expectedZy = nullptr;
-    ThreadZyMemory->In.compare_exchange_strong(expectedZy, (ThreadZyData*)0x1, std::memory_order_release);
+    while (!resZy) {
+        expectedZy = nullptr;
+        resZy = ThreadZyMemory->In.compare_exchange_strong(expectedZy, (ThreadZyData*)0x1, std::memory_order_release);
+    }
 
-    expected1 = nullptr;
-    Thread1Memory->In.compare_exchange_strong(expected1, (Thread1Data*)0x1, std::memory_order_release);
+    while (!res1) {
+        expected1 = nullptr;
+        res1 = Thread1Memory->In.compare_exchange_strong(expected1, (Thread1Data*)0x1, std::memory_order_release);
+    }
 
-    expected2 = nullptr;
-    Thread2Memory->In.compare_exchange_strong(expected2, (Thread2Data*)0x1, std::memory_order_release);
+    while (!res2) {
+        expected2 = nullptr;
+        res2 = Thread2Memory->In.compare_exchange_strong(expected2, (Thread2Data*)0x1, std::memory_order_release);
+    }
 
     tZx->join();
     tZy->join();

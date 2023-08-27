@@ -215,13 +215,12 @@ private:
     template<class T, class SubType>
     void CalcCpuPerturbationFractalBLA(bool MemoryOnly);
 
-    HDRFloatComplex<float>* initializeFromBLA2(
-        LAReference& laReference,
-        HDRFloatComplex<float> dpixel,
-        size_t& BLA2SkippedIterations,
-        size_t& BLA2SkippedSteps);
+    //HDRFloatComplex<float>* initializeFromBLA2(
+    //    LAReference& laReference,
+    //    HDRFloatComplex<float> dpixel,
+    //    size_t& BLA2SkippedIterations,
+    //    size_t& BLA2SkippedSteps);
 
-    template<class T, class SubType>
     void CalcCpuPerturbationFractalBLAV2(bool MemoryOnly);
 
     template<class T, class SubType>

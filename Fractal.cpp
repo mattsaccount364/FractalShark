@@ -144,13 +144,15 @@ void Fractal::Initialize(int width,
     // Setup member variables with initial values:
     //SetRenderAlgorithm(RenderAlgorithm::Cpu64PerturbedBLAHDR);
     //SetRenderAlgorithm(RenderAlgorithm::Cpu64PerturbedBLA);
-    SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedBLA);
+    //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedBLA);
+    SetRenderAlgorithm(RenderAlgorithm::Cpu32PerturbedBLAV2HDR);
     //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedScaled);
     //SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedPeriodic);
     
     SetIterationPrecision(1);
-    m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed);
-    //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3);
+    //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed);
+    m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3);
+    //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MT);
     m_RefOrbit.ResetGuess();
 
     ResetDimensions(width, height, 1);
@@ -1581,7 +1583,7 @@ void Fractal::CalcFractal(bool MemoryOnly)
         CalcCpuPerturbationFractalBLA<HDRFloat<float>, float>(MemoryOnly);
         break;
     case RenderAlgorithm::Cpu32PerturbedBLAV2HDR:
-        CalcCpuPerturbationFractalBLAV2<HDRFloat<float>, float>(MemoryOnly);
+        CalcCpuPerturbationFractalBLAV2(MemoryOnly);
         break;
     case RenderAlgorithm::Cpu64:
         CalcCpuHDR<double, double>(MemoryOnly);
@@ -2541,38 +2543,32 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
     DrawFractal(MemoryOnly);
 }
 
-HDRFloatComplex<float> *Fractal::initializeFromBLA2(
-    LAReference &laReference,
-    HDRFloatComplex<float> d0,
-    size_t &BLA2SkippedIterations,
-    size_t &BLA2SkippedSteps) {
+//HDRFloatComplex<float> *Fractal::initializeFromBLA2(
+//    LAReference &laReference,
+//    HDRFloatComplex<float> d0,
+//    size_t &BLA2SkippedIterations,
+//    size_t &BLA2SkippedSteps) {
+//
+//
+//}
 
-    int derivatives = 0;
-    BLA2SkippedIterations = 0;
-    BLA2SkippedSteps = 0;
-
-    if (laReference.isValid && laReference.UseAT && laReference.AT.isValid(d0)) {
-        ATResult res = laReference.AT.PerformAT(m_NumIterations, d0, derivatives);
-        BLA2SkippedIterations = res.bla_iterations;
-        BLA2SkippedSteps = res.bla_steps;
-
-        return new HDRFloatComplex<float>{ res.dz, d0, res.dzdc, res.dzdc2 };
-    }
-
-    return new HDRFloatComplex<float>{ MantExpComplex(), d0, MantExpComplex(), MantExpComplex() };
-}
-
-template<class T, class SubType>
 void Fractal::CalcCpuPerturbationFractalBLAV2(bool MemoryOnly) {
+    using T = HDRFloat<float>;
+    using SubType = float;
+    using TComplex = HDRFloatComplex<float>;
+
+    m_RefOrbit.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All); // TODO
     auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<T, SubType>();
 
     //BLAS<T> blas(*results);
     //blas.Init(results->x.size(), T{ results->maxRadius });
     LAReference LaReference{*results};
-    LaReference.GenerateApproximationData(results->maxRadius, results->MaxIterations);
+    LaReference.GenerateApproximationData(results->maxRadius, results->x.size() - 1);
 
     T dx = T((m_MaxX - m_MinX) / m_ScrnWidth);
+    HdrReduce(dx);
     T dy = T((m_MaxY - m_MinY) / m_ScrnHeight);
+    HdrReduce(dy);
 
     T centerX = (T)(results->hiX - m_MinX);
     HdrReduce(centerX);
@@ -2604,30 +2600,58 @@ void Fractal::CalcCpuPerturbationFractalBLAV2(bool MemoryOnly) {
             {
                 size_t BLA2SkippedIterations;
                 size_t BLA2SkippedSteps;
-                initializeFromBLA2(LaReference, TODOWhatIsTheCoords, BLA2SkippedIterations, BLA2SkippedSteps);
+                /*initializeFromBLA2(LaReference, TODOWhatIsTheCoords, BLA2SkippedIterations, BLA2SkippedSteps);*/
 
-                size_t iter = 0;
-                int RefIteration = 0;
-                int MaxRefIteration = getReferenceFinalIterationNumber(true, referenceData);
+                size_t derivatives = 0;
+                BLA2SkippedIterations = 0;
+                BLA2SkippedSteps = 0;
 
-                Complex[] deltas = initializePerturbation(dpixel);
-                Complex DeltaSubN = deltas[0]; // Delta z
-                Complex DeltaSub0 = deltas[1]; // Delta c
+                TComplex DeltaSub0;
+                TComplex DeltaSubN;
+
+                T deltaReal = dx * (SubType)x;
+                HdrReduce(deltaReal);
+                deltaReal -= centerX;
+
+                T deltaImaginary = -dy * (SubType)y;
+                HdrReduce(deltaImaginary);
+                deltaImaginary -= centerY;
+
+                HdrReduce(deltaReal);
+                HdrReduce(deltaImaginary);
+
+                DeltaSub0 = { deltaReal, deltaImaginary };
+                DeltaSubN = { 0, 0 };
+                /*
+                if (LaReference.isValid && LaReference.UseAT && LaReference.AT.isValid(DeltaSub0)) {
+                    ATResult res = LaReference.AT.PerformAT(m_NumIterations, DeltaSub0, derivatives);
+                    BLA2SkippedIterations = res.bla_iterations;
+                    BLA2SkippedSteps = res.bla_steps;
+
+                    //return new HDRFloatComplex<float>{ res.dz, d0, res.dzdc, res.dzdc2 };
+                }*/
+                //return new HDRFloatComplex<float>{ MantExpComplex(), d0, MantExpComplex(), MantExpComplex() };
+
+                size_t iterations = 0;
+                size_t RefIteration = 0;
+                size_t MaxRefIteration = results->x.size() - 1;
 
                 iterations = BLA2SkippedIterations;
 
-                Complex pixel = dpixel.plus(refPointSmall);
+                //TComplex z{ deltaReal, deltaImaginary };
 
-                int ReferencePeriod = getPeriod();
-                if (iterations != 0 && RefIteration < MaxRefIteration) {
-                    complex[0] = getArrayValue(reference, RefIteration).plus_mutable(DeltaSubN);
-                }
-                else if (iterations != 0 && ReferencePeriod != 0) {
-                    RefIteration = RefIteration % ReferencePeriod;
-                    complex[0] = getArrayValue(reference, RefIteration).plus_mutable(DeltaSubN);
-                }
+                TComplex complex0{ };
 
-                int CurrentLAStage = laReference.isValid ? laReference.LAStageCount : 0;
+                //int ReferencePeriod = getPeriod();
+                //if (iterations != 0 && RefIteration < MaxRefIteration) {
+                //    z = getArrayValue(reference, RefIteration).plus_mutable(DeltaSubN);
+                //}
+                //else if (iterations != 0 && ReferencePeriod != 0) {
+                //    RefIteration = RefIteration % ReferencePeriod;
+                //    z = getArrayValue(reference, RefIteration).plus_mutable(DeltaSubN);
+                //}
+                /*
+                size_t CurrentLAStage = LaReference.isValid ? LaReference.LAStageCount : 0;
 
 
                 while (CurrentLAStage > 0) {
@@ -2636,19 +2660,19 @@ void Fractal::CalcCpuPerturbationFractalBLAV2(bool MemoryOnly) {
                     //            }
                     CurrentLAStage--;
 
-                    int LAIndex = laReference.getLAIndex(CurrentLAStage);
+                    size_t LAIndex = LaReference.getLAIndex(CurrentLAStage);
 
-                    if (laReference.isLAStageInvalid(LAIndex, DeltaSub0)) {
+                    if (LaReference.isLAStageInvalid(LAIndex, DeltaSub0)) {
                         continue;
                     }
 
-                    int MacroItCount = laReference.getMacroItCount(CurrentLAStage);
+                    size_t MacroItCount = LaReference.getMacroItCount(CurrentLAStage);
 
 
-                    int j = RefIteration;
-                    while (iterations < max_iterations) {
+                    size_t j = RefIteration;
+                    while (iterations < GetNumIterations()) {
 
-                        LAstep las = laReference.getLA(LAIndex, DeltaSubN, DeltaSub0, j, iterations, max_iterations);
+                        LAstep las = LaReference.getLA(LAIndex, DeltaSubN, j, iterations, GetNumIterations());
 
                         if (las.unusable) {
                             RefIteration = las.nextStageLAindex;
@@ -2657,103 +2681,108 @@ void Fractal::CalcCpuPerturbationFractalBLAV2(bool MemoryOnly) {
 
                         //No update values
 
-                        int l = las.step;
+                        size_t l = las.step;
                         iterations += l;
 
                         DeltaSubN = las.Evaluate(DeltaSub0);
 
                         j++;
 
-                        zold2.assign(zold);
-                        zold.assign(complex[0]);
+                        //zold2.assign(zold); // TODO
+                        //zold.assign(complex[0]); // TODO
 
                         //No Plane influence work
                         //No Pre filters work
-                        complex[0] = las.getZ(DeltaSubN);
+                        //complex[0] = las.getZ(DeltaSubN);
+                        z = las.getZ(DeltaSubN);
+                        complex0 = z;
                         //No Post filters work
 
                         // rebase
 
-                        if (complex[0].chebychevNorm() < DeltaSubN.chebychevNorm() || j >= MacroItCount) {
-                            DeltaSubN = complex[0];
+                        if (complex0.chebychevNorm() < DeltaSubN.chebychevNorm() || j >= MacroItCount) {
+                            DeltaSubN = complex0;
                             j = 0;
                         }
-
-                        if (statistic != null) {
-                            statistic.insert(complex[0], zold, zold2, iterations, complex[1], start, c0, las);
-                        }
                     }
 
-                    if (iterations >= max_iterations) {
+                    if (iterations >= GetNumIterations()) {
                         break;
                     }
+                }*/
+
+
+                T normSquared{};
+
+                if (iterations < GetNumIterations()) {
+                    normSquared = complex0.norm_squared();
                 }
 
-
-                double normSquared = 0;
-
-                if (iterations < max_iterations) {
-                    normSquared = complex[0].normSquared();
-                }
-
-                for (; iterations < max_iterations; iterations++) {
+                for (; iterations < GetNumIterations(); iterations++) {
 
                     //No update values
 
-                    if (bailout_algorithm2.escaped(complex[0], zold, zold2, iterations, complex[1], start, c0, normSquared, pixel)) {
-                        escaped = true;
+                    //if (bailout_algorithm2.escaped(complex[0], zold, zold2, iterations, complex[1], start, c0, normSquared, pixel)) {
+                    //    escaped = true;
 
-                        Object[] object = { iterations, complex[0], zold, zold2, complex[1], start, c0, pixel };
-                        double res = out_color_algorithm.getResult(object);
+                    //    Object[] object = { iterations, complex[0], zold, zold2, complex[1], start, c0, pixel };
+                    //    double res = out_color_algorithm.getResult(object);
 
-                        res = getFinalValueOut(res, complex[0]);
+                    //    res = getFinalValueOut(res, complex[0]);
 
-                        if (outTrueColorAlgorithm != null) {
-                            setTrueColorOut(complex[0], zold, zold2, iterations, complex[1], start, c0, pixel);
-                        }
+                    //    if (outTrueColorAlgorithm != null) {
+                    //        setTrueColorOut(complex[0], zold, zold2, iterations, complex[1], start, c0, pixel);
+                    //    }
 
-                        return getAndAccumulateStatsBLA(res);
-                    }
+                    //    return getAndAccumulateStatsBLA(res);
+                    //}
+
+                    // TODO bailout.
 
                     // perturbation iteration
-                    DeltaSubN = perturbationFunction(DeltaSubN, DeltaSub0, RefIteration);
+                    //DeltaSubN = perturbationFunction(DeltaSubN, DeltaSub0, RefIteration);
+                    //return getArrayValue(reference, RefIteration).times_mutable(2).plus_mutable(DeltaSubN).times_mutable(DeltaSubN).plus_mutable(DeltaSub0);
+                    // (curIter * 2 + DeltaSubN) * DeltaSubN + DeltaSub0
+                    // DeltaSubN * curIter * 2 + DeltaSubN  * DeltaSubN + DeltaSub0
+
+                    auto curIter = results->GetComplex<SubType>(RefIteration);
+                    curIter = curIter.times2_mutable();
+                    curIter = curIter.plus_mutable(DeltaSubN);
+                    DeltaSubN = DeltaSubN.times_mutable(curIter);
+                    DeltaSubN = DeltaSubN.plus_mutable(DeltaSub0);
+                    HdrReduce(DeltaSubN);
 
                     RefIteration++;
 
                     // rebase
-                    zold2.assign(zold);
-                    zold.assign(complex[0]);
+                    //zold2.assign(zold);
+                    //zold.assign(complex[0]);
 
                     //No Plane influence work
                     //No Pre filters work
-                    if (max_iterations > 1) {
-                        complex[0] = getArrayValue(reference, RefIteration).plus_mutable(DeltaSubN);
-                    }
-                    //No Post filters work
-                    normSquared = complex[0].norm_squared();
 
-                    if (normSquared < DeltaSubN.norm_squared() || (RefIteration >= MaxRefIteration)) { //* 64
-                        DeltaSubN = complex[0];
+                    complex0 = results->GetComplex<SubType>(RefIteration).plus(DeltaSubN);
+                    HdrReduce(complex0);
+
+                    // TODO
+                    //No Post filters work
+                    normSquared = complex0.norm_squared();
+                    HdrReduce(normSquared);
+
+                    auto DeltaNormSquared = DeltaSubN.norm_squared();
+                    HdrReduce(DeltaNormSquared);
+
+                    if (normSquared > T(256)) {
+                        break;
+                    }
+
+                    if (normSquared < DeltaNormSquared || (RefIteration >= MaxRefIteration)) { //* 64
+                        DeltaSubN = complex0;
                         RefIteration = 0;
                     }
-
-                    if (statistic != null) {
-                        statistic.insert(complex[0], zold, zold2, iterations, complex[1], start, c0);
-                    }
                 }
 
-                Object[] object = { complex[0], zold, zold2, complex[1], start, c0, pixel };
-                double in = in_color_algorithm.getResult(object);
-
-                in = getFinalValueIn(in, complex[0]);
-
-                if (inTrueColorAlgorithm != null) {
-                    setTrueColorIn(complex[0], zold, zold2, iterations, complex[1], start, c0, pixel);
-                }
-
-                return getAndAccumulateStatsBLA(in);
-
-                m_CurIters.m_ItersArray[y][x] = (uint32_t)iter;
+                m_CurIters.m_ItersArray[y][x] = (uint32_t)iterations;
             }
         }
     };

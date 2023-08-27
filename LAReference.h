@@ -86,8 +86,8 @@ public:
     void CreateATFromLA(HDRFloat radius);
 
 public:
-    bool isLAStageInvalid(int LAIndex, HDRFloatComplex dc);
-    size_t getLAIndex(int CurrentLAStage);
-    size_t getMacroItCount(int CurrentLAStage);
-    LAstep getLA(int LAIndex, HDRFloatComplex dz, /*HDRFloatComplex dc, */int j, int iterations, int max_iterations);
+    bool isLAStageInvalid(size_t LAIndex, HDRFloatComplex dc);
+    size_t getLAIndex(size_t CurrentLAStage);
+    size_t getMacroItCount(size_t CurrentLAStage);
+    LAstep getLA(size_t LAIndex, HDRFloatComplex dz, /*HDRFloatComplex dc, */size_t j, size_t iterations, size_t max_iterations);
 };

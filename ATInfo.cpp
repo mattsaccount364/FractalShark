@@ -33,7 +33,7 @@ ATInfo::Complex ATInfo::getC(HDRFloatComplex dc) {
     return temp.toComplex();
 }
 
-ATResult ATInfo::PerformAT(int max_iterations, HDRFloatComplex DeltaSub0, int derivatives) {
+ATResult ATInfo::PerformAT(size_t max_iterations, HDRFloatComplex DeltaSub0, size_t derivatives) {
     //int ATMaxIt = (max_iterations - 1) / StepLength + 1;
     size_t ATMaxIt = max_iterations / StepLength;
 

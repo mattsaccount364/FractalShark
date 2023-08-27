@@ -20,6 +20,7 @@ private:
 
     using HDRFloat = HDRFloat<T>;
     using Complex = std::complex<T>;
+    using TExp = int32_t;
 
 public:
     HDRFloatComplex() {
@@ -28,13 +29,13 @@ public:
         exp = HDRFloat::MIN_BIG_EXPONENT();
     }
 
-    HDRFloatComplex(T mantissaReal, T mantissaImag, long exp) {
+    HDRFloatComplex(T mantissaReal, T mantissaImag, TExp exp) {
         this->mantissaReal = mantissaReal;
         this->mantissaImag = mantissaImag;
         this->exp = exp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : exp;
     }
 
-    HDRFloatComplex(long exp, T mantissaReal, T mantissaImag) {
+    HDRFloatComplex(TExp exp, T mantissaReal, T mantissaImag) {
         this->mantissaReal = mantissaReal;
         this->mantissaImag = mantissaImag;
         this->exp = exp;
@@ -103,7 +104,7 @@ public:
 
     HDRFloatComplex plus(HDRFloatComplex value) {
 
-        long expDiff = exp - value.exp;
+        TExp expDiff = exp - value.exp;
 
         if(expDiff >= HDRFloat::EXPONENT_DIFF_IGNORED) {
             return HDRFloatComplex(exp, mantissaReal, mantissaImag);
@@ -125,7 +126,7 @@ public:
 
     HDRFloatComplex plus_mutable(HDRFloatComplex value) {
 
-        long expDiff = exp - value.exp;
+        TExp expDiff = exp - value.exp;
 
         if(expDiff >= HDRFloat::EXPONENT_DIFF_IGNORED) {
             return *this;
@@ -173,7 +174,7 @@ public:
 
         T tempMantissaImag = (mantissaReal * factor.mantissaImag) + (mantissaImag * factor.mantissaReal);
 
-        long localExp = this->exp + factor.exp;
+        TExp localExp = this->exp + factor.exp;
 
         mantissaReal = tempMantissaReal;
         mantissaImag = tempMantissaImag;
@@ -215,7 +216,7 @@ public:
 
         T tempMantissaImag = mantissaImag * factor.mantissa;
 
-        long exp = this->exp + factor.exp;
+        TExp exp = this->exp + factor.exp;
 
         mantissaReal = tempMantissaReal;
         mantissaImag = tempMantissaImag;
@@ -236,7 +237,7 @@ public:
 
     HDRFloatComplex divide2_mutable() {
 
-        long exp = this->exp - 1;
+        TExp exp = this->exp - 1;
         this->exp = exp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : exp;
         return *this;
 
@@ -248,7 +249,7 @@ public:
 
     HDRFloatComplex divide4_mutable() {
 
-        long exp = this->exp - 2;
+        TExp exp = this->exp - 2;
         this->exp = exp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : exp;
         return *this;
 
@@ -322,7 +323,7 @@ public:
 
     HDRFloatComplex plus(HDRFloat real) {
 
-        long expDiff = exp - real.exp;
+        TExp expDiff = exp - real.exp;
 
         if(expDiff >= HDRFloat::EXPONENT_DIFF_IGNORED) {
             return HDRFloatComplex(exp, mantissaReal, mantissaImag);
@@ -343,7 +344,7 @@ public:
 
     HDRFloatComplex plus_mutable(HDRFloat real) {
 
-        long expDiff = exp - real.exp;
+        TExp expDiff = exp - real.exp;
 
         if(expDiff >= HDRFloat::EXPONENT_DIFF_IGNORED) {
             return *this;
@@ -370,7 +371,7 @@ public:
 
     HDRFloatComplex sub(HDRFloatComplex value) {
 
-        long expDiff = exp - value.exp;
+        TExp expDiff = exp - value.exp;
 
         if(expDiff >= HDRFloat::EXPONENT_DIFF_IGNORED) {
             return HDRFloatComplex(exp, mantissaReal, mantissaImag);
@@ -392,7 +393,7 @@ public:
 
     HDRFloatComplex sub_mutable(HDRFloatComplex value) {
 
-        long expDiff = exp - value.exp;
+        TExp expDiff = exp - value.exp;
 
         if(expDiff >= HDRFloat::EXPONENT_DIFF_IGNORED) {
             return *this;
@@ -421,7 +422,7 @@ public:
 
     HDRFloatComplex sub(HDRFloat real) {
 
-        long expDiff = exp - real.exp;
+        TExp expDiff = exp - real.exp;
 
         if(expDiff >= HDRFloat::EXPONENT_DIFF_IGNORED) {
             return HDRFloatComplex(exp, mantissaReal, mantissaImag);
@@ -442,7 +443,7 @@ public:
 
     HDRFloatComplex sub_mutable(HDRFloat real) {
 
-        long expDiff = exp - real.exp;
+        TExp expDiff = exp - real.exp;
 
         if(expDiff >= HDRFloat::EXPONENT_DIFF_IGNORED) {
             return *this;
@@ -480,23 +481,34 @@ public:
             return;
         }
 
-        assert(false);
+        //TExp bitsRe = Double.doubleToRawLongBits(mantissaReal);
+        //TExp expDiffRe = ((bitsRe & 0x7FF0000000000000L) >> 52);
 
-        //long bitsRe = Double.doubleToRawLongBits(mantissaReal);
-        //long expDiffRe = ((bitsRe & 0x7FF0000000000000L) >> 52);
+        //TExp bitsIm = Double.doubleToRawLongBits(mantissaImag);
+        //TExp expDiffIm = ((bitsIm & 0x7FF0000000000000L) >> 52);
 
-        //long bitsIm = Double.doubleToRawLongBits(mantissaImag);
-        //long expDiffIm = ((bitsIm & 0x7FF0000000000000L) >> 52);
+        //TExp expDiff = Math.max(expDiffRe, expDiffIm) + HDRFloat::MIN_SMALL_EXPONENT;
 
-        //long expDiff = Math.max(expDiffRe, expDiffIm) + HDRFloat::MIN_SMALL_EXPONENT;
-
-        //long expCombined = exp + expDiff;
+        //TExp expCombined = exp + expDiff;
         //T mul = HDRFloat::getMultiplier(-expDiff);
         //mantissaReal *= mul;
         //mantissaImag *= mul;
         //exp = expCombined;
-    }
 
+        uint64_t bitsReal = *reinterpret_cast<uint64_t*>(&mantissaReal);
+        TExp f_expReal = (TExp)((bitsReal & 0x7F80'0000UL) >> 23UL);
+
+        uint64_t bitsImag = *reinterpret_cast<uint64_t*>(&mantissaImag);
+        TExp f_expImag = (TExp)((bitsImag & 0x7F80'0000UL) >> 23UL);
+
+        TExp expDiff = max(f_expReal, f_expImag) + HDRFloat::MIN_SMALL_EXPONENT();
+        TExp expCombined = exp + expDiff;
+        T mul = HDRFloat::getMultiplier(-expDiff);
+
+        mantissaReal *= mul;
+        mantissaImag *= mul;
+        exp = expCombined;
+    }
 
     /*void Reduce2() {
 
@@ -504,8 +516,8 @@ public:
 
         HDRFloat mantissaImagTemp = HDRFloat(mantissaImag);
 
-        long realExp = exp;
-        long imagExp = exp;
+        TExp realExp = exp;
+        TExp imagExp = exp;
 
         boolean a1 = mantissaRealTemp.mantissa == mantissaReal;
         boolean a2 =  mantissaImagTemp.mantissa == mantissaImag;
@@ -566,7 +578,7 @@ public:
     HDRFloatComplex square_mutable() {
         T temp = mantissaReal * mantissaImag;
 
-        long exp = this->exp << 1;
+        TExp exp = this->exp << 1;
         mantissaReal = (mantissaReal + mantissaImag) * (mantissaReal - mantissaImag);
         mantissaImag = temp + temp;
         this->exp = exp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : exp;
@@ -598,7 +610,7 @@ public:
         T temp = mantissaReal * mantissaReal;
         T temp2 = mantissaImag * mantissaImag;
 
-        long exp = 3 * this->exp;
+        TExp exp = 3 * this->exp;
         mantissaReal = mantissaReal * (temp - 3 * temp2);
         mantissaImag = mantissaImag * (3 * temp - temp2);
         this->exp = exp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : exp;
@@ -630,7 +642,7 @@ public:
         T temp = mantissaReal * mantissaReal;
         T temp2 = mantissaImag * mantissaImag;
 
-        long exp = this->exp << 2;
+        TExp exp = this->exp << 2;
 
         T temp_re = temp * (temp - 6 * temp2) + temp2 * temp2;
         mantissaImag = 4 * mantissaReal * mantissaImag * (temp - temp2);
@@ -665,7 +677,7 @@ public:
         T temp = mantissaReal * mantissaReal;
         T temp2 = mantissaImag * mantissaImag;
 
-        long exp = 5 * this->exp;
+        TExp exp = 5 * this->exp;
         mantissaReal = mantissaReal * (temp * temp + temp2 * (5 * temp2 - 10 * temp));
         mantissaImag = mantissaImag * (temp2 * temp2 + temp * (5 * temp - 10 * temp2));
         this->exp = exp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : exp;
@@ -720,7 +732,7 @@ public:
 
         T tempMantissaImag = (mantissaImag * factor.mantissaReal - mantissaReal * factor.mantissaImag)  * temp;
 
-        long exp = this->exp - factor.exp;
+        TExp exp = this->exp - factor.exp;
         mantissaReal = tempMantissaReal;
         mantissaImag = tempMantissaImag;
         this->exp = exp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : exp;
@@ -769,7 +781,7 @@ public:
 
     HDRFloatComplex divide_mutable(HDRFloat real) {
 
-        long exp = this->exp - real.exp;
+        TExp exp = this->exp - real.exp;
         T temp = 1.0 / real.mantissa;
         mantissaReal = mantissaReal * temp;
         mantissaImag = mantissaImag * temp;
@@ -868,20 +880,20 @@ public:
         return mantissaImag;
     }
 
-    long getExp() {
+    TExp getExp() {
 
         return exp;
 
     }
 
-    void setExp(long exp) {
+    void setExp(TExp exp) {
         this->exp = exp;
     }
-    void addExp(long exp) {
+    void addExp(TExp exp) {
         this->exp += exp;
     }
 
-    void subExp(long exp) {
+    void subExp(TExp exp) {
         this->exp -= exp;
         this->exp = this->exp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : this->exp;
     }

@@ -162,7 +162,8 @@ bool LAReference::CreateLAFromOrbit(size_t maxRefIteration) {
                 LA = LAInfoDeep(m_PerturbationResults.GetComplex<float>(i));
             }
             else {
-                LA = LAInfoDeep(m_PerturbationResults.GetComplex<float>(i)).Step(m_PerturbationResults.GetComplex<float>(ip1));
+                LA = LAInfoDeep(m_PerturbationResults.GetComplex<float>(i)).Step(
+                    m_PerturbationResults.GetComplex<float>(ip1));
                 i++;
             }
         }
@@ -399,21 +400,21 @@ void LAReference::CreateATFromLA(HDRFloat radius) {
     UseAT = false;
 }
 
-bool LAReference::isLAStageInvalid(int LAIndex, HDRFloatComplex dc) {
+bool LAReference::isLAStageInvalid(size_t LAIndex, HDRFloatComplex dc) {
     return (dc.chebychevNorm().compareToBothPositiveReduced((LAs[LAIndex]).getLAThresholdC()) >= 0);
 }
 
-size_t LAReference::getLAIndex(int CurrentLAStage) {
+size_t LAReference::getLAIndex(size_t CurrentLAStage) {
     return LAStages[CurrentLAStage].LAIndex;
 }
 
-size_t LAReference::getMacroItCount(int CurrentLAStage) {
+size_t LAReference::getMacroItCount(size_t CurrentLAStage) {
     return LAStages[CurrentLAStage].MacroItCount;
 }
 
-LAstep LAReference::getLA(int LAIndex, HDRFloatComplex dz, /*HDRFloatComplex dc, */ int j, int iterations, int max_iterations) {
+LAstep LAReference::getLA(size_t LAIndex, HDRFloatComplex dz, /*HDRFloatComplex dc, */ size_t j, size_t iterations, size_t max_iterations) {
 
-    int LAIndexj = LAIndex + j;
+    size_t LAIndexj = LAIndex + j;
     LAInfoI LAIj = LAIs[LAIndexj];
 
     LAstep las;

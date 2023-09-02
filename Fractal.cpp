@@ -2093,8 +2093,8 @@ void Fractal::CalcNetworkFractal(bool MemoryOnly)
 void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
     auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<double, double>();
 
-    double dx = Convert<HighPrecision, double>((m_MaxX - m_MinX) / m_ScrnWidth);
-    double dy = Convert<HighPrecision, double>((m_MaxY - m_MinY) / m_ScrnHeight);
+    double dx = Convert<HighPrecision, double>((m_MaxX - m_MinX) / (m_ScrnWidth * GetGpuAntialiasing()));
+    double dy = Convert<HighPrecision, double>((m_MaxY - m_MinY) / (m_ScrnHeight * GetGpuAntialiasing()));
 
     double centerX = (double)(results->hiX - m_MinX);
     double centerY = (double)(results->hiY - m_MaxY);
@@ -2102,7 +2102,7 @@ void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
     static constexpr size_t num_threads = 32;
     std::deque<std::atomic_uint64_t> atomics;
     std::vector<std::unique_ptr<std::thread>> threads;
-    atomics.resize(m_ScrnHeight);
+    atomics.resize(m_ScrnHeight * GetGpuAntialiasing());
     threads.reserve(num_threads);
 
     //
@@ -2128,7 +2128,7 @@ void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
     //}
 
     auto one_thread = [&]() {
-        for (size_t y = 0; y < m_ScrnHeight; y++) {
+        for (size_t y = 0; y < m_ScrnHeight * GetGpuAntialiasing(); y++) {
             if (atomics[y] != 0) {
                 continue;
             }
@@ -2138,7 +2138,7 @@ void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
                 continue;
             }
 
-            for (size_t x = 0; x < m_ScrnWidth; x++)
+            for (size_t x = 0; x < m_ScrnWidth * GetGpuAntialiasing(); x++)
             {
                 size_t iter = 0;
                 size_t RefIteration = 0;
@@ -2240,20 +2240,20 @@ void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
 //////////////////////////////////////////////////////////////////////////////
 template<class T, class SubType>
 void Fractal::CalcCpuHDR(bool MemoryOnly) {
-    const T dx = T((m_MaxX - m_MinX) / m_ScrnWidth);
-    const T dy = T((m_MaxY - m_MinY) / m_ScrnHeight);
+    const T dx = T((m_MaxX - m_MinX) / (m_ScrnWidth * GetGpuAntialiasing()));
+    const T dy = T((m_MaxY - m_MinY) / (m_ScrnHeight * GetGpuAntialiasing()));
 
     static constexpr size_t num_threads = 32;
     std::deque<std::atomic_uint64_t> atomics;
     std::vector<std::unique_ptr<std::thread>> threads;
-    atomics.resize(m_ScrnHeight);
+    atomics.resize(m_ScrnHeight * GetGpuAntialiasing());
     threads.reserve(num_threads);
 
     const T Four{ 4 };
     const T Two{ 2 };
 
     auto one_thread = [&]() {
-        for (size_t y = 0; y < m_ScrnHeight; y++) {
+        for (size_t y = 0; y < m_ScrnHeight * GetGpuAntialiasing(); y++) {
             if (atomics[y] != 0) {
                 continue;
             }
@@ -2270,7 +2270,7 @@ void Fractal::CalcCpuHDR(bool MemoryOnly) {
             T sum;
             unsigned int i;
 
-            for (size_t x = 0; x < m_ScrnWidth; x++)
+            for (size_t x = 0; x < m_ScrnWidth * GetGpuAntialiasing(); x++)
             {
                 // (zx + zy)^2 = zx^2 + 2*zx*zy + zy^2
                 // (zx + zy)^3 = zx^3 + 3*zx^2*zy + 3*zx*zy^2 + zy
@@ -2319,8 +2319,8 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
     BLAS<T> blas(*results);
     blas.Init(results->x.size(), T{ results->maxRadius });
 
-    T dx = T((m_MaxX - m_MinX) / m_ScrnWidth);
-    T dy = T((m_MaxY - m_MinY) / m_ScrnHeight);
+    T dx = T((m_MaxX - m_MinX) / (m_ScrnWidth * GetGpuAntialiasing()));
+    T dy = T((m_MaxY - m_MinY) / (m_ScrnHeight * GetGpuAntialiasing()));
 
     T centerX = (T)(results->hiX - m_MinX);
     HdrReduce(centerX);
@@ -2330,7 +2330,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
     static constexpr size_t num_threads = 32;
     std::deque<std::atomic_uint64_t> atomics;
     std::vector<std::unique_ptr<std::thread>> threads;
-    atomics.resize(m_ScrnHeight);
+    atomics.resize(m_ScrnHeight * GetGpuAntialiasing());
     threads.reserve(num_threads);
 
     auto one_thread = [&]() {
@@ -2338,7 +2338,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
         //T dzdcY = T(0.0);
         //bool periodicity_should_break = false;
 
-        for (size_t y = 0; y < m_ScrnHeight; y++) {
+        for (size_t y = 0; y < m_ScrnHeight * GetGpuAntialiasing(); y++) {
             if (atomics[y] != 0) {
                 continue;
             }
@@ -2348,7 +2348,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                 continue;
             }
 
-            for (size_t x = 0; x < m_ScrnWidth; x++)
+            for (size_t x = 0; x < m_ScrnWidth * GetGpuAntialiasing(); x++)
             {
                 size_t iter = 0;
                 size_t RefIteration = 0;

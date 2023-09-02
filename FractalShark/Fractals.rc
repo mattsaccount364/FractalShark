@@ -77,7 +77,7 @@ BEGIN
         BEGIN
             MENUITEM "&Standard View",              IDM_STANDARDVIEW
             MENUITEM "#1 - 4x64 GPU Limit",         IDM_VIEW1
-            MENUITEM "#2 - 4x32 GPU Limit",         IDM_VIEW2
+            MENUITEM "#2 - Debug spot LAv2 discontinuity", IDM_VIEW2
             MENUITEM "#3 - 32-bit BLA Limit",       IDM_VIEW3
             MENUITEM "#4 - 32-bit Scaled Limit",    IDM_VIEW4
             MENUITEM "#5 - 32-bit Scaled Limit, 4xAA", IDM_VIEW5

@@ -61,7 +61,7 @@ public:
 
     ATInfo AT;
 
-    int LAStageCount;
+    size_t LAStageCount;
 
     bool isValid;
 

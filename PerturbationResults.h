@@ -12,6 +12,7 @@ public:
     HighPrecision hiX, hiY, radiusX, radiusY;
     T maxRadius;
     size_t MaxIterations;
+    size_t PeriodMaybeZero;  // Zero if not worked out
 
     std::vector<T> x;
     std::vector<T> y;
@@ -24,6 +25,14 @@ public:
     bool m_Periodic;
 
     void clear() {
+        hiX = {};
+        hiY = {};
+        radiusX = {};
+        radiusY = {};
+        maxRadius = {};
+        MaxIterations = 0;
+        PeriodMaybeZero = 0;
+
         x.clear();
         y.clear();
         bad.clear();
@@ -31,13 +40,6 @@ public:
         AuthoritativePrecision = false;
         ReuseX.clear();
         ReuseY.clear();
-
-        hiX = {};
-        hiY = {};
-        radiusX = {};
-        radiusY = {};
-        maxRadius = {};
-        m_Periodic = {};
     }
 
     template<class Other>
@@ -61,8 +63,6 @@ public:
         ReuseY = other.ReuseY;
 
         bad = other.bad;
-
-        m_Periodic = other.m_Periodic;
     }
 
     template<class U>

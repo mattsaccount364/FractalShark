@@ -41,7 +41,7 @@ void MenuGetCurPos(HWND hWnd);
 void MenuSaveCurrentLocation(HWND hWnd);
 void MenuSaveBMP(HWND hWnd);
 void MenuSaveHiResBMP(HWND hWnd);
-void MneuSaveItersAsText();
+void MenuSaveItersAsText();
 void MenuBenchmark(HWND hWnd, bool fastbenchmark);
 void MenuBenchmarkRefPtDouble(HWND hWnd);
 void MenuBenchmarkRefPtHDRFloat(HWND hWnd);
@@ -858,7 +858,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             }
             case IDM_SAVE_ITERS_TEXT:
             {
-                MneuSaveItersAsText();
+                MenuSaveItersAsText();
                 break;
             }
             case IDM_BENCHMARK_ACCURATE:
@@ -1425,7 +1425,7 @@ void MenuSaveHiResBMP(HWND) {
     gFractal->SaveHiResFractal(L"");
 }
 
-void MneuSaveItersAsText() {
+void MenuSaveItersAsText() {
     gFractal->SaveItersAsText(L"");
 }
 

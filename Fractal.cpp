@@ -1128,12 +1128,12 @@ void Fractal::View(size_t view)
         break;
 
     case 2:
-        // Limits of 4x32 GPU
-        minX = HighPrecision{ "-1.768969486867357972775564951275461551052751499509997185691881950786253743769635708375905775793656954725307354460920979983" };
-        minY = HighPrecision{  "0.05699280690304670893115636892860647833175463644922652375916712719872599382335388157040896288795946562522749757591414246314107544" };
-        maxX = HighPrecision{ "-1.768969486867357972775564950929487934553496494563941335911085292699250368065865432159590460057564657941788398574759610411" };
-        maxY = HighPrecision{  "0.05699280690304670893115636907127975355127952306391692141273804706041783710937876987367435542131127321801128526034375237132904264" };
-        SetNumIterations(196608);
+        // Debug spot - LAv2 discontinuity
+        minX = HighPrecision{ "-0.6941698145877515911152169432463122650253" };
+        minY = HighPrecision{ "0.3259701748935705682928159796949003173179" };
+        maxX = HighPrecision{ "-0.6941698145877515814657844085679145141245" };
+        maxY = HighPrecision{ "0.3259701748935705723134128691442327135265" };
+        SetNumIterations(6144);
         break;
 
     case 3:
@@ -2543,25 +2543,12 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
     DrawFractal(MemoryOnly);
 }
 
-//HDRFloatComplex<float> *Fractal::initializeFromBLA2(
-//    LAReference &laReference,
-//    HDRFloatComplex<float> d0,
-//    size_t &BLA2SkippedIterations,
-//    size_t &BLA2SkippedSteps) {
-//
-//
-//}
-
 void Fractal::CalcCpuPerturbationFractalBLAV2(bool MemoryOnly) {
     using T = HDRFloat<float>;
     using SubType = float;
     using TComplex = HDRFloatComplex<float>;
-
-    m_RefOrbit.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All); // TODO
     auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<T, SubType>();
 
-    //BLAS<T> blas(*results);
-    //blas.Init(results->x.size(), T{ results->maxRadius });
     LAReference LaReference{*results};
     LaReference.GenerateApproximationData(results->maxRadius, results->x.size() - 1);
 
@@ -2582,10 +2569,6 @@ void Fractal::CalcCpuPerturbationFractalBLAV2(bool MemoryOnly) {
     threads.reserve(num_threads);
 
     auto one_thread = [&]() {
-        //T dzdcX = T(1.0);
-        //T dzdcY = T(0.0);
-        //bool periodicity_should_break = false;
-
         for (size_t y = 0; y < m_ScrnHeight; y++) {
             if (atomics[y] != 0) {
                 continue;
@@ -2596,11 +2579,9 @@ void Fractal::CalcCpuPerturbationFractalBLAV2(bool MemoryOnly) {
                 continue;
             }
 
-            for (size_t x = 0; x < m_ScrnWidth; x++)
-            {
+            for (size_t x = 0; x < m_ScrnWidth; x++) {
                 size_t BLA2SkippedIterations;
                 size_t BLA2SkippedSteps;
-                /*initializeFromBLA2(LaReference, TODOWhatIsTheCoords, BLA2SkippedIterations, BLA2SkippedSteps);*/
 
                 size_t derivatives = 0;
                 BLA2SkippedIterations = 0;
@@ -2628,10 +2609,8 @@ void Fractal::CalcCpuPerturbationFractalBLAV2(bool MemoryOnly) {
                     BLA2SkippedIterations = res.bla_iterations;
                     BLA2SkippedSteps = res.bla_steps;
 
-                    //return new HDRFloatComplex<float>{ res.dz, d0, res.dzdc, res.dzdc2 };
+                    DeltaSubN = res.dz;
                 }
-
-                //return new HDRFloatComplex<float>{ MantExpComplex(), d0, MantExpComplex(), MantExpComplex() };
 
                 size_t iterations = 0;
                 size_t RefIteration = 0;
@@ -2639,24 +2618,18 @@ void Fractal::CalcCpuPerturbationFractalBLAV2(bool MemoryOnly) {
 
                 iterations = BLA2SkippedIterations;
 
-                TComplex z{ deltaReal, deltaImaginary };
+                TComplex complex0{ deltaReal, deltaImaginary };
 
-                TComplex complex0{ };
-
-                //int ReferencePeriod = getPeriod(); // TODO
                 if (iterations != 0 && RefIteration < MaxRefIteration) {
-                    z = results->GetComplex<SubType>(RefIteration).plus_mutable(DeltaSubN);
+                    complex0 = results->GetComplex<SubType>(RefIteration).plus_mutable(DeltaSubN);
+                } else if (iterations != 0 && results->PeriodMaybeZero != 0) {
+                    RefIteration = RefIteration % results->PeriodMaybeZero;
+                    complex0 = results->GetComplex<SubType>(RefIteration).plus_mutable(DeltaSubN);
                 }
-                //else if (iterations != 0 && ReferencePeriod != 0) { // TODO
-                //    RefIteration = RefIteration % ReferencePeriod;
-                //    z = results->GetComplex<SubType>(RefIteration).plus_mutable(DeltaSubN);
-                //}
 
                 size_t CurrentLAStage = LaReference.isValid ? LaReference.LAStageCount : 0;
+
                 while (CurrentLAStage > 0) {
-                    //            if (Ref.LAStages[HRContext.CurrentLAStage - 1].UseDoublePrecision) {
-                    //				goto DPEvaluation;
-                    //            }
                     CurrentLAStage--;
 
                     size_t LAIndex = LaReference.getLAIndex(CurrentLAStage);
@@ -2667,8 +2640,8 @@ void Fractal::CalcCpuPerturbationFractalBLAV2(bool MemoryOnly) {
 
                     size_t MacroItCount = LaReference.getMacroItCount(CurrentLAStage);
                     size_t j = RefIteration;
-                    while (iterations < GetNumIterations()) {
 
+                    while (iterations < GetNumIterations()) {
                         LAstep las = LaReference.getLA(LAIndex, DeltaSubN, j, iterations, GetNumIterations());
 
                         if (las.unusable) {
@@ -2676,26 +2649,10 @@ void Fractal::CalcCpuPerturbationFractalBLAV2(bool MemoryOnly) {
                             break;
                         }
 
-                        //No update values
-
-                        size_t l = las.step;
-                        iterations += l;
-
+                        iterations += las.step;
                         DeltaSubN = las.Evaluate(DeltaSub0);
-
+                        complex0 = las.getZ(DeltaSubN);
                         j++;
-
-                        //zold2.assign(zold); // TODO
-                        //zold.assign(complex[0]); // TODO
-
-                        //No Plane influence work
-                        //No Pre filters work
-                        //complex[0] = las.getZ(DeltaSubN);
-                        z = las.getZ(DeltaSubN);
-                        complex0 = z;
-                        //No Post filters work
-
-                        // rebase
 
                         if (complex0.chebychevNorm() < DeltaSubN.chebychevNorm() || j >= MacroItCount) {
                             DeltaSubN = complex0;
@@ -2715,32 +2672,6 @@ void Fractal::CalcCpuPerturbationFractalBLAV2(bool MemoryOnly) {
                 }
 
                 for (; iterations < GetNumIterations(); iterations++) {
-
-                    //No update values
-
-                    //if (bailout_algorithm2.escaped(complex[0], zold, zold2, iterations, complex[1], start, c0, normSquared, pixel)) {
-                    //    escaped = true;
-
-                    //    Object[] object = { iterations, complex[0], zold, zold2, complex[1], start, c0, pixel };
-                    //    double res = out_color_algorithm.getResult(object);
-
-                    //    res = getFinalValueOut(res, complex[0]);
-
-                    //    if (outTrueColorAlgorithm != null) {
-                    //        setTrueColorOut(complex[0], zold, zold2, iterations, complex[1], start, c0, pixel);
-                    //    }
-
-                    //    return getAndAccumulateStatsBLA(res);
-                    //}
-
-                    // TODO bailout.
-
-                    // perturbation iteration
-                    //DeltaSubN = perturbationFunction(DeltaSubN, DeltaSub0, RefIteration);
-                    //return getArrayValue(reference, RefIteration).times_mutable(2).plus_mutable(DeltaSubN).times_mutable(DeltaSubN).plus_mutable(DeltaSub0);
-                    // (curIter * 2 + DeltaSubN) * DeltaSubN + DeltaSub0
-                    // DeltaSubN * curIter * 2 + DeltaSubN  * DeltaSubN + DeltaSub0
-
                     auto curIter = results->GetComplex<SubType>(RefIteration);
                     curIter = curIter.times2_mutable();
                     curIter = curIter.plus_mutable(DeltaSubN);
@@ -2750,18 +2681,9 @@ void Fractal::CalcCpuPerturbationFractalBLAV2(bool MemoryOnly) {
 
                     RefIteration++;
 
-                    // rebase
-                    //zold2.assign(zold);
-                    //zold.assign(complex[0]);
-
-                    //No Plane influence work
-                    //No Pre filters work
-
                     complex0 = results->GetComplex<SubType>(RefIteration).plus(DeltaSubN);
                     HdrReduce(complex0);
 
-                    // TODO
-                    //No Post filters work
                     normSquared = complex0.norm_squared();
                     HdrReduce(normSquared);
 
@@ -2772,7 +2694,7 @@ void Fractal::CalcCpuPerturbationFractalBLAV2(bool MemoryOnly) {
                         break;
                     }
 
-                    if (normSquared < DeltaNormSquared || (RefIteration >= MaxRefIteration)) { //* 64
+                    if (normSquared < DeltaNormSquared || (RefIteration >= MaxRefIteration)) {
                         DeltaSubN = complex0;
                         RefIteration = 0;
                     }

@@ -426,6 +426,7 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
 
             if (n2 < n3) {
                 if constexpr (BenchmarkState == BenchmarkMode::Disable) {
+                    results->PeriodMaybeZero = results->x.size();
                     break;
                 }
             }
@@ -605,6 +606,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
             if (n2 < n3) {
                 if constexpr (BenchmarkState == BenchmarkMode::Disable) {
                     // Break before adding the result.
+                    results->PeriodMaybeZero = results->x.size();
                     break;
                 }
             }
@@ -868,6 +870,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
             if (n2 < n3) {
                 if constexpr (BenchmarkState == BenchmarkMode::Disable) {
                     // Break before adding the result.
+                    results->PeriodMaybeZero = results->x.size();
                     break;
                 }
             }
@@ -1190,7 +1193,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
 
                 if constexpr (Periodicity) {
                     if (periodicity_should_break) {
-                        results->m_Periodic = true;
+                        results->PeriodMaybeZero = results->x.size();
                         quitting = true;
                     }
                 }
@@ -1653,7 +1656,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecis
 
         if constexpr (Periodicity) {
             if (periodicity_should_break) {
-                results->m_Periodic = true;
+                results->PeriodMaybeZero = results->x.size();
                 break;
             }
         }

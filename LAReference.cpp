@@ -45,7 +45,7 @@ bool LAReference::CreateLAFromOrbit(size_t maxRefIteration) {
 
     init();
 
-    int Period = 0;
+    size_t Period = 0;
 
     LAInfoDeep LA;
 
@@ -60,7 +60,7 @@ bool LAReference::CreateLAFromOrbit(size_t maxRefIteration) {
         return false;
     }
 
-    int i;
+    size_t i;
     for (i = 2; i < maxRefIteration; i++) {
 
         LAInfoDeep NewLA;
@@ -93,8 +93,8 @@ bool LAReference::CreateLAFromOrbit(size_t maxRefIteration) {
 
     LAStageCount = 1;
 
-    int PeriodBegin = Period;
-    int PeriodEnd = PeriodBegin + Period;
+    size_t PeriodBegin = Period;
+    size_t PeriodEnd = PeriodBegin + Period;
 
     if (Period == 0) {
         if (maxRefIteration > lowBound) {
@@ -103,7 +103,7 @@ bool LAReference::CreateLAFromOrbit(size_t maxRefIteration) {
             i = 2;
 
             double NthRoot = std::round(std::log(maxRefIteration) / log16);
-            Period = (int)std::round(std::pow(maxRefIteration, 1.0 / NthRoot));
+            Period = (size_t)std::round(std::pow(maxRefIteration, 1.0 / NthRoot));
 
             PeriodBegin = 0;
             PeriodEnd = Period;
@@ -129,7 +129,7 @@ bool LAReference::CreateLAFromOrbit(size_t maxRefIteration) {
         i = 2;
 
         double NthRoot = std::round(std::log(Period) / log16);
-        Period = (int)std::round(std::pow(Period, 1.0 / NthRoot));
+        Period = (size_t)std::round(std::pow(Period, 1.0 / NthRoot));
 
         PeriodBegin = 0;
         PeriodEnd = Period;
@@ -152,7 +152,7 @@ bool LAReference::CreateLAFromOrbit(size_t maxRefIteration) {
             PeriodBegin = i;
             PeriodEnd = PeriodBegin + Period;
 
-            int ip1 = i + 1;
+            size_t ip1 = i + 1;
 
             bool detected;
 
@@ -204,6 +204,10 @@ bool LAReference::CreateNewLAStage(size_t maxRefIteration) {
     LAInfoI PrevStageLAIp1 = LAIs[PrevStageLAIndex + 1];
 
     size_t Period = 0;
+
+    if (PrevStage > MaxLAStages) {
+        ::MessageBox(NULL, L"Too many stages :(", L"", MB_OK);
+    }
 
     if (CurrentStage >= MaxLAStages) {
         ::MessageBox(NULL, L"Too many stages :(", L"", MB_OK);
@@ -275,7 +279,7 @@ bool LAReference::CreateNewLAStage(size_t maxRefIteration) {
 
             double Ratio = ((double)(maxRefIteration)) / PrevStageLAI.StepLength;
             double NthRoot = std::round(std::log(Ratio) / log16); // log16
-            Period = PrevStageLAI.StepLength * (int)std::round(std::pow(Ratio, 1.0 / NthRoot));
+            Period = PrevStageLAI.StepLength * (size_t)std::round(std::pow(Ratio, 1.0 / NthRoot));
 
             PeriodBegin = 0;
             PeriodEnd = Period;
@@ -307,7 +311,7 @@ bool LAReference::CreateNewLAStage(size_t maxRefIteration) {
         double Ratio = ((double)(Period)) / PrevStageLAI.StepLength;
 
         double NthRoot = std::round(std::log(Ratio) / log16);
-        Period = PrevStageLAI.StepLength * ((int)std::round(std::pow(Ratio, 1.0 / NthRoot)));
+        Period = PrevStageLAI.StepLength * ((size_t)std::round(std::pow(Ratio, 1.0 / NthRoot)));
 
         PeriodBegin = 0;
         PeriodEnd = Period;
@@ -387,7 +391,7 @@ void LAReference::CreateATFromLA(HDRFloat radius) {
     HDRFloat SqrRadius = radius.square();
     SqrRadius.Reduce();
 
-    for (int Stage = LAStageCount; Stage > 0; ) {
+    for (auto Stage = LAStageCount; Stage > 0; ) {
         Stage--;
         size_t LAIndex = LAStages[Stage].LAIndex;
         LAs[LAIndex].CreateAT(AT, LAs[LAIndex + 1]);

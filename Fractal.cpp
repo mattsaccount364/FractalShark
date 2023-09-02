@@ -2552,9 +2552,9 @@ void Fractal::CalcCpuPerturbationFractalBLAV2(bool MemoryOnly) {
     LAReference LaReference{*results};
     LaReference.GenerateApproximationData(results->maxRadius, results->x.size() - 1);
 
-    T dx = T((m_MaxX - m_MinX) / m_ScrnWidth);
+    T dx = T((m_MaxX - m_MinX) / (m_ScrnWidth * GetGpuAntialiasing()));
     HdrReduce(dx);
-    T dy = T((m_MaxY - m_MinY) / m_ScrnHeight);
+    T dy = T((m_MaxY - m_MinY) / (m_ScrnHeight * GetGpuAntialiasing()));
     HdrReduce(dy);
 
     T centerX = (T)(results->hiX - m_MinX);
@@ -2565,11 +2565,11 @@ void Fractal::CalcCpuPerturbationFractalBLAV2(bool MemoryOnly) {
     static constexpr size_t num_threads = 32;
     std::deque<std::atomic_uint64_t> atomics;
     std::vector<std::unique_ptr<std::thread>> threads;
-    atomics.resize(m_ScrnHeight);
+    atomics.resize(m_ScrnHeight * GetGpuAntialiasing());
     threads.reserve(num_threads);
 
     auto one_thread = [&]() {
-        for (size_t y = 0; y < m_ScrnHeight; y++) {
+        for (size_t y = 0; y < m_ScrnHeight * GetGpuAntialiasing(); y++) {
             if (atomics[y] != 0) {
                 continue;
             }
@@ -2579,7 +2579,7 @@ void Fractal::CalcCpuPerturbationFractalBLAV2(bool MemoryOnly) {
                 continue;
             }
 
-            for (size_t x = 0; x < m_ScrnWidth; x++) {
+            for (size_t x = 0; x < m_ScrnWidth * GetGpuAntialiasing(); x++) {
                 size_t BLA2SkippedIterations;
                 size_t BLA2SkippedSteps;
 

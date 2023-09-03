@@ -11,7 +11,7 @@ public:
     using Complex = HDRFloatComplex<float>;
     using HDRFloatComplex = HDRFloatComplex<float>;
 
-    ATResult() {
+    CUDA_CRAP_BOTH ATResult() {
         dzdc = HDRFloatComplex();
         dzdc2 = HDRFloatComplex();
     }

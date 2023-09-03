@@ -10,38 +10,23 @@
 #include "HDRFloat.h"
 #include "LAstep.h"
 #include "LAInfoDeep.h"
-#include "PerturbationResults.h"
+#include "LAInfoI.h"
 
+template<class T>
 class ATInfo;
-class LAStageInfo;
 
+class LAStageInfo;
 class RefOrbitCalc;
 
-class LAStageInfo {
-public:
-    size_t LAIndex;
-    size_t MacroItCount;
-};
-
-class  LAInfoI {
-public:
-    size_t StepLength, NextStageLAIndex;
-
-    LAInfoI() {
-        StepLength = 0;
-        NextStageLAIndex = 0;
-    }
-
-    LAInfoI(const LAInfoI &other) {
-        StepLength = other.StepLength;
-        NextStageLAIndex = other.NextStageLAIndex;
-    }
-};
+template<class T>
+class PerturbationResults;
 
 class LAReference {
 private:
     using HDRFloat = HDRFloat<float>;
     using HDRFloatComplex = HDRFloatComplex<float>;
+
+    friend class LAReferenceCuda;
 
     static const int lowBound = 64;
     static const double log16;
@@ -59,7 +44,7 @@ public:
 
     bool UseAT;
 
-    ATInfo AT;
+    ATInfo<HDRFloat> AT;
 
     size_t LAStageCount;
 
@@ -68,14 +53,14 @@ public:
 private:
     static constexpr int MaxLAStages = 512;
     static constexpr int DEFAULT_SIZE = 10000;
-    std::vector<LAInfoDeep> LAs;
+    std::vector<LAInfoDeep<float>> LAs;
     std::vector<LAInfoI> LAIs;
 
     std::vector<LAStageInfo> LAStages;
 
     const PerturbationResults<HDRFloat>& m_PerturbationResults;
 
-    void addToLA(LAInfoDeep la);
+    void addToLA(LAInfoDeep<float> la);
     size_t LAsize();
     void addToLAI(LAInfoI lai);
     void popLA();
@@ -91,5 +76,7 @@ public:
     bool isLAStageInvalid(size_t LAIndex, HDRFloatComplex dc);
     size_t getLAIndex(size_t CurrentLAStage);
     size_t getMacroItCount(size_t CurrentLAStage);
-    LAstep getLA(size_t LAIndex, HDRFloatComplex dz, /*HDRFloatComplex dc, */size_t j, size_t iterations, size_t max_iterations);
+
+    LAstep<HDRFloatComplex>
+    getLA(size_t LAIndex, HDRFloatComplex dz, /*HDRFloatComplex dc, */size_t j, size_t iterations, size_t max_iterations);
 };

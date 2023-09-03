@@ -663,6 +663,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 break;
             }
 
+            case IDM_ALG_GPU_HDR_32_PERTURB_LAV2:
+            {
+                gFractal->SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedLAv2);
+                break;
+            }
+
             // Increase the number of iterations we are using.
             // This will slow down rendering, but image quality
             // will be improved.

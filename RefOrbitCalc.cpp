@@ -150,6 +150,7 @@ bool RefOrbitCalc::IsThisPerturbationArrayUsed(void* check) const {
     case RenderAlgorithm::Cpu32PerturbedBLAV2HDR:
     case RenderAlgorithm::GpuHDRx32PerturbedBLA:
     case RenderAlgorithm::GpuHDRx32PerturbedScaled:
+    case RenderAlgorithm::GpuHDRx32PerturbedLAv2:
         return check == &m_PerturbationResultsHDRFloat;
     case RenderAlgorithm::Cpu64PerturbedBLAHDR:
     case RenderAlgorithm::GpuHDRx64PerturbedBLA:
@@ -1726,6 +1727,7 @@ bool RefOrbitCalc::RequiresReferencePoints() const {
     case RenderAlgorithm::Gpu2x32PerturbedScaled:
     case RenderAlgorithm::GpuHDRx32PerturbedBLA:
     case RenderAlgorithm::GpuHDRx64PerturbedBLA:
+    case RenderAlgorithm::GpuHDRx32PerturbedLAv2:
         return true;
     }
 

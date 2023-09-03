@@ -148,6 +148,7 @@ BEGIN
             MENUITEM "1x64 GPU - Perturbation BLA", IDM_ALG_GPU_1_64_PERTURB_BLA
             MENUITEM "HDRx32 GPU - Perturbation BLA", IDM_ALG_GPU_HDR_32_PERTURB_BLA
             MENUITEM "HDRx64 GPU - Perturbation BLA", IDM_ALG_GPU_HDR_64_PERTURB_BLA
+            MENUITEM "HDRx32 GPU - Perturbation LAv2", IDM_ALG_GPU_HDR_32_PERTURB_LAV2
         END
         POPUP "Iterations"
         BEGIN

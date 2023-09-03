@@ -1,8 +1,9 @@
 #include "stdafx.h"
 #include "LAReference.h"
 #include "RefOrbitCalc.h"
+#include "PerturbationResults.h"
 
-#include <Windows.h>
+//#include <Windows.h>
 
 const double LAReference::log16 = std::log(16);
 
@@ -20,7 +21,7 @@ void LAReference::init() {
     LAStages[0].LAIndex = 0;
 }
 
-void LAReference::addToLA(LAInfoDeep la) {
+void LAReference::addToLA(LAInfoDeep<float> la) {
     LAs.push_back(la);
 }
 
@@ -47,10 +48,10 @@ bool LAReference::CreateLAFromOrbit(size_t maxRefIteration) {
 
     size_t Period = 0;
 
-    LAInfoDeep LA;
+    LAInfoDeep<float> LA;
 
 
-    LA = LAInfoDeep(HDRFloatComplex());
+    LA = LAInfoDeep<float>(HDRFloatComplex());
     LA.Step(LA, m_PerturbationResults.GetComplex<float>(1));
 
     LAInfoI LAI = LAInfoI();
@@ -63,10 +64,10 @@ bool LAReference::CreateLAFromOrbit(size_t maxRefIteration) {
     size_t i;
     for (i = 2; i < maxRefIteration; i++) {
 
-        LAInfoDeep NewLA;
+        LAInfoDeep<float> NewLA;
         bool PeriodDetected;
 
-        NewLA = LAInfoDeep();
+        NewLA = LAInfoDeep<float>();
         PeriodDetected = LA.Step(NewLA, m_PerturbationResults.GetComplex<float>(i));
 
         if (PeriodDetected) {
@@ -79,11 +80,11 @@ bool LAReference::CreateLAFromOrbit(size_t maxRefIteration) {
             LAI.NextStageLAIndex = i;
 
             if (i + 1 < maxRefIteration) {
-                LA = LAInfoDeep(m_PerturbationResults.GetComplex<float>(i)).Step(m_PerturbationResults.GetComplex<float>(i + 1));
+                LA = LAInfoDeep<float>(m_PerturbationResults.GetComplex<float>(i)).Step(m_PerturbationResults.GetComplex<float>(i + 1));
                 i += 2;
             }
             else {
-                LA = LAInfoDeep(m_PerturbationResults.GetComplex<float>(i));
+                LA = LAInfoDeep<float>(m_PerturbationResults.GetComplex<float>(i));
                 i += 1;
             }
             break;
@@ -98,7 +99,7 @@ bool LAReference::CreateLAFromOrbit(size_t maxRefIteration) {
 
     if (Period == 0) {
         if (maxRefIteration > lowBound) {
-            LA = LAInfoDeep(m_PerturbationResults.GetComplex<float>(0)).Step(m_PerturbationResults.GetComplex<float>(1));
+            LA = LAInfoDeep<float>(m_PerturbationResults.GetComplex<float>(0)).Step(m_PerturbationResults.GetComplex<float>(1));
             LAI.NextStageLAIndex = 0;
             i = 2;
 
@@ -113,7 +114,7 @@ bool LAReference::CreateLAFromOrbit(size_t maxRefIteration) {
 
             addToLA(LA);
             addToLAI(LAInfoI(LAI));
-            addToLA(LAInfoDeep(m_PerturbationResults.GetComplex<float>(maxRefIteration)));
+            addToLA(LAInfoDeep<float>(m_PerturbationResults.GetComplex<float>(maxRefIteration)));
 
             LAStages[0].MacroItCount = 1;
 
@@ -124,7 +125,7 @@ bool LAReference::CreateLAFromOrbit(size_t maxRefIteration) {
         popLA();
         popLAI();
 
-        LA = LAInfoDeep(m_PerturbationResults.GetComplex<float>(0)).Step(m_PerturbationResults.GetComplex<float>(1));
+        LA = LAInfoDeep<float>(m_PerturbationResults.GetComplex<float>(0)).Step(m_PerturbationResults.GetComplex<float>(1));
         LAI.NextStageLAIndex = 0;
         i = 2;
 
@@ -136,10 +137,10 @@ bool LAReference::CreateLAFromOrbit(size_t maxRefIteration) {
     }
 
     for (; i < maxRefIteration; i++) {
-        LAInfoDeep NewLA;
+        LAInfoDeep<float> NewLA;
         bool PeriodDetected;
 
-        NewLA = LAInfoDeep();
+        NewLA = LAInfoDeep<float>();
         PeriodDetected = LA.Step(NewLA, m_PerturbationResults.GetComplex<float>(i));
 
         if (PeriodDetected || i >= PeriodEnd) {
@@ -159,10 +160,10 @@ bool LAReference::CreateLAFromOrbit(size_t maxRefIteration) {
             detected = NewLA.DetectPeriod(m_PerturbationResults.GetComplex<float>(ip1));
 
             if (detected || ip1 >= maxRefIteration) {
-                LA = LAInfoDeep(m_PerturbationResults.GetComplex<float>(i));
+                LA = LAInfoDeep<float>(m_PerturbationResults.GetComplex<float>(i));
             }
             else {
-                LA = LAInfoDeep(m_PerturbationResults.GetComplex<float>(i)).Step(
+                LA = LAInfoDeep<float>(m_PerturbationResults.GetComplex<float>(i)).Step(
                     m_PerturbationResults.GetComplex<float>(ip1));
                 i++;
             }
@@ -179,7 +180,7 @@ bool LAReference::CreateLAFromOrbit(size_t maxRefIteration) {
 
     LAStages[0].MacroItCount = LAsize();
 
-    addToLA(LAInfoDeep(m_PerturbationResults.GetComplex<float>(maxRefIteration)));
+    addToLA(LAInfoDeep<float>(m_PerturbationResults.GetComplex<float>(maxRefIteration)));
     addToLAI(LAInfoI());
 
     return true;
@@ -187,7 +188,7 @@ bool LAReference::CreateLAFromOrbit(size_t maxRefIteration) {
 
 
 bool LAReference::CreateNewLAStage(size_t maxRefIteration) {
-    LAInfoDeep LA;
+    LAInfoDeep<float> LA;
     LAInfoI LAI = LAInfoI();
     size_t i;
     size_t PeriodBegin;
@@ -197,10 +198,10 @@ bool LAReference::CreateNewLAStage(size_t maxRefIteration) {
     size_t CurrentStage = LAStageCount;
     size_t PrevStageLAIndex = LAStages[PrevStage].LAIndex;
     size_t PrevStageMacroItCount = LAStages[PrevStage].MacroItCount;
-    LAInfoDeep PrevStageLA = LAs[PrevStageLAIndex];
+    LAInfoDeep<float> PrevStageLA = LAs[PrevStageLAIndex];
     LAInfoI PrevStageLAI = LAIs[PrevStageLAIndex];
 
-    LAInfoDeep PrevStageLAp1 = LAs[PrevStageLAIndex + 1];
+    LAInfoDeep<float> PrevStageLAp1 = LAs[PrevStageLAIndex + 1];
     LAInfoI PrevStageLAIp1 = LAIs[PrevStageLAIndex + 1];
 
     size_t Period = 0;
@@ -221,12 +222,12 @@ bool LAReference::CreateNewLAStage(size_t maxRefIteration) {
     size_t j;
 
     for (j = 2; j < PrevStageMacroItCount; j++) {
-        LAInfoDeep NewLA;
+        LAInfoDeep<float> NewLA;
 
-        NewLA = LAInfoDeep();
+        NewLA = LAInfoDeep<float>();
 
         size_t PrevStageLAIndexj = PrevStageLAIndex + j;
-        LAInfoDeep PrevStageLAj = LAs[PrevStageLAIndexj];
+        LAInfoDeep<float> PrevStageLAj = LAs[PrevStageLAIndexj];
         LAInfoI PrevStageLAIj = LAIs[PrevStageLAIndexj];
         bool PeriodDetected = LA.Composite(NewLA, PrevStageLAj);
 
@@ -242,7 +243,7 @@ bool LAReference::CreateNewLAStage(size_t maxRefIteration) {
             LAI.NextStageLAIndex = j;
 
             size_t PrevStageLAIndexjp1 = PrevStageLAIndexj + 1;
-            LAInfoDeep PrevStageLAjp1 = LAs[PrevStageLAIndexjp1];
+            LAInfoDeep<float> PrevStageLAjp1 = LAs[PrevStageLAIndexjp1];
             LAInfoI PrevStageLAIjp1 = LAIs[PrevStageLAIndexjp1];
 
             if (NewLA.DetectPeriod(PrevStageLAjp1.getRef()) || j + 1 >= PrevStageMacroItCount) {
@@ -291,7 +292,7 @@ bool LAReference::CreateNewLAStage(size_t maxRefIteration) {
             addToLAI(LAInfoI(LAI));
 
 
-            addToLA(LAInfoDeep(m_PerturbationResults.GetComplex<float>(maxRefIteration)));
+            addToLA(LAInfoDeep<float>(m_PerturbationResults.GetComplex<float>(maxRefIteration)));
 
             LAStages[CurrentStage].MacroItCount = 1;
 
@@ -318,12 +319,12 @@ bool LAReference::CreateNewLAStage(size_t maxRefIteration) {
     }
 
     for (; j < PrevStageMacroItCount; j++) {
-        LAInfoDeep NewLA;
+        LAInfoDeep<float> NewLA;
 
-        NewLA = LAInfoDeep();
+        NewLA = LAInfoDeep<float>();
         size_t PrevStageLAIndexj = PrevStageLAIndex + j;
 
-        LAInfoDeep PrevStageLAj = LAs[PrevStageLAIndexj];
+        LAInfoDeep<float> PrevStageLAj = LAs[PrevStageLAIndexj];
         LAInfoI PrevStageLAIj = LAIs[PrevStageLAIndexj];
         bool PeriodDetected = LA.Composite(NewLA, PrevStageLAj);
 
@@ -337,7 +338,7 @@ bool LAReference::CreateNewLAStage(size_t maxRefIteration) {
             PeriodBegin = i;
             PeriodEnd = PeriodBegin + Period;
 
-            LAInfoDeep PrevStageLAjp1 = LAs[PrevStageLAIndexj + 1];
+            LAInfoDeep<float> PrevStageLAjp1 = LAs[PrevStageLAIndexj + 1];
 
             if (NewLA.DetectPeriod(PrevStageLAjp1.getRef()) || j + 1 >= PrevStageMacroItCount) {
                 LA = PrevStageLAj;
@@ -362,7 +363,7 @@ bool LAReference::CreateNewLAStage(size_t maxRefIteration) {
 
     LAStages[CurrentStage].MacroItCount = LAsize() - LAStages[CurrentStage].LAIndex;
 
-    addToLA(LAInfoDeep(m_PerturbationResults.GetComplex<float>(maxRefIteration)));
+    addToLA(LAInfoDeep<float>(m_PerturbationResults.GetComplex<float>(maxRefIteration)));
     addToLAI(LAInfoI());
     return true;
 }
@@ -416,18 +417,19 @@ size_t LAReference::getMacroItCount(size_t CurrentLAStage) {
     return LAStages[CurrentLAStage].MacroItCount;
 }
 
-LAstep LAReference::getLA(size_t LAIndex, HDRFloatComplex dz, /*HDRFloatComplex dc, */ size_t j, size_t iterations, size_t max_iterations) {
+LAstep<HDRFloatComplex<float>>
+LAReference::getLA(size_t LAIndex, HDRFloatComplex dz, /*HDRFloatComplex dc, */ size_t j, size_t iterations, size_t max_iterations) {
 
     size_t LAIndexj = LAIndex + j;
     LAInfoI LAIj = LAIs[LAIndexj];
 
-    LAstep las;
+    LAstep<HDRFloatComplex> las;
 
     size_t l = LAIj.StepLength;
     bool usuable = iterations + l <= max_iterations;
 
     if (usuable) {
-        LAInfoDeep &LAj = LAs[LAIndexj];
+        LAInfoDeep<float> &LAj = LAs[LAIndexj];
 
         las = LAj.Prepare(dz);
 
@@ -438,7 +440,7 @@ LAstep LAReference::getLA(size_t LAIndex, HDRFloatComplex dz, /*HDRFloatComplex 
         }
     }
     else {
-        las = LAstep();
+        las = LAstep<HDRFloatComplex>();
         las.unusable = true;
     }
 

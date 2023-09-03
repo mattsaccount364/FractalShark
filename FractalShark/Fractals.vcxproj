@@ -173,7 +173,6 @@
   <ItemGroup>
     <ClInclude Include="..\ATInfo.h" />
     <ClInclude Include="..\ATResult.h" />
-    <ClCompile Include="..\ATInfo.cpp" />
     <ClCompile Include="..\BLAS.cpp" />
     <ClCompile Include="..\Fractal.cpp">
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Disabled</Optimization>
@@ -189,11 +188,11 @@
     </ClCompile>
     <ClCompile Include="..\HDRFloat.cpp" />
     <ClInclude Include="..\LAInfoDeep.h" />
+    <ClInclude Include="..\LAInfoI.h" />
     <ClInclude Include="..\LAReference.h" />
+    <ClInclude Include="..\LAReferenceCuda.h" />
     <ClInclude Include="..\LAstep.h" />
-    <ClCompile Include="..\LAInfoDeep.cpp" />
     <ClCompile Include="..\LAReference.cpp" />
-    <ClCompile Include="..\LAstep.cpp" />
     <ClCompile Include="..\RefOrbitCalc.cpp" />
     <ClCompile Include="..\WPngImage\lodepng.cpp" />
     <ClCompile Include="..\WPngImage\WPngImage.cc" />

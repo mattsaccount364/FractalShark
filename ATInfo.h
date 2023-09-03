@@ -6,45 +6,105 @@
 #include "HDRFloatComplex.h"
 #include "ATResult.h"
 
-//package fractalzoomer.core.la;
-//
-//import fractalzoomer.core.Complex;
-//import fractalzoomer.core.GenericComplex;
-//import fractalzoomer.core.HDRFloat;
-//import fractalzoomer.core.HDRFloatComplex;
-
+template<class T>
 class ATInfo {
-    using HDRFloat = HDRFloat<float>;
+    using HDRFloat = T;
     using HDRFloatComplex = HDRFloatComplex<float>;
 
-    static HDRFloat factor;
 
 public:
-    ATInfo();
+    CUDA_CRAP ATInfo();
 
+public:
     size_t StepLength;
     HDRFloat ThresholdC;
-    double SqrEscapeRadius;
+    float SqrEscapeRadius;
     HDRFloatComplex RefC;
     HDRFloatComplex ZCoeff, CCoeff, InvZCoeff;
     HDRFloatComplex CCoeffSqrInvZCoeff;
     HDRFloatComplex CCoeffInvZCoeff;
-
     HDRFloat CCoeffNormSqr;
     HDRFloat RefCNormSqr;
-
-    using Complex = std::complex<float>;
-
-    bool Usable(HDRFloat SqrRadius) {
-        auto result = CCoeffNormSqr * SqrRadius * factor;
-        return result.compareToBothPositive(RefCNormSqr) > 0 && SqrEscapeRadius > 4.0;
-    }
+    HDRFloat factor;
 
 public:
-    bool isValid(HDRFloatComplex DeltaSub0);
-    HDRFloatComplex getDZ(Complex z);
-    HDRFloatComplex getDZDC(Complex dzdc);
-    HDRFloatComplex getDZDC2(Complex dzdc2);
-    Complex getC(HDRFloatComplex dc);
-    ATResult PerformAT(size_t max_iterations, HDRFloatComplex DeltaSub0, size_t derivatives);
+    CUDA_CRAP bool Usable(HDRFloat SqrRadius) {
+        auto result = CCoeffNormSqr * SqrRadius * factor;
+        return result.compareToBothPositive(RefCNormSqr) > 0 && SqrEscapeRadius > 4.0f;
+    }
+
+    CUDA_CRAP bool isValid(HDRFloatComplex DeltaSub0);
+    CUDA_CRAP HDRFloatComplex getC(HDRFloatComplex dc);
+    CUDA_CRAP HDRFloatComplex getDZ(HDRFloatComplex z);
+
+    CUDA_CRAP void PerformAT(size_t max_iterations, HDRFloatComplex DeltaSub0, ATResult &result);
 };
+
+
+template<class T>
+CUDA_CRAP
+ATInfo<T>::ATInfo() :
+    StepLength{},
+    ThresholdC{},
+    SqrEscapeRadius{},
+    RefC{},
+    ZCoeff{},
+    CCoeff{},
+    InvZCoeff{},
+    CCoeffSqrInvZCoeff{},
+    CCoeffInvZCoeff{},
+    CCoeffNormSqr{},
+    RefCNormSqr{} {
+    factor = HDRFloat(0x1.0p32);
+}
+
+template<class T>
+CUDA_CRAP
+bool ATInfo<T>::isValid(HDRFloatComplex DeltaSub0) {
+    return DeltaSub0.chebychevNorm().compareToBothPositiveReduced(ThresholdC) <= 0;
+}
+
+template<class T>
+CUDA_CRAP
+ATInfo<T>::HDRFloatComplex ATInfo<T>::getC(HDRFloatComplex dc) {
+    HDRFloatComplex temp = dc.times(CCoeff).plus_mutable(RefC);
+    temp.Reduce();
+    return temp;
+}
+
+template<class T>
+CUDA_CRAP
+ATInfo<T>::HDRFloatComplex ATInfo<T>::getDZ(HDRFloatComplex z) {
+    HDRFloatComplex temp = z.times(InvZCoeff);
+    temp.Reduce();
+    return temp;
+}
+
+template<class T>
+CUDA_CRAP
+void ATInfo<T>::PerformAT(
+    size_t max_iterations,
+    HDRFloatComplex DeltaSub0,
+    ATResult& result) {
+    //int ATMaxIt = (max_iterations - 1) / StepLength + 1;
+    size_t ATMaxIt = max_iterations / StepLength;
+
+    HDRFloatComplex c = getC((HDRFloatComplex)DeltaSub0);
+    HDRFloatComplex z{};
+
+    size_t i;
+    for (i = 0; i < ATMaxIt; i++) {
+
+        auto nsq = z.norm_squared();
+        HdrReduce(nsq);
+        if (nsq > HDRFloat(SqrEscapeRadius)) {
+            break;
+        }
+
+        z = z.square().plus(c);
+    }
+
+    result.dz = getDZ(z);
+    result.bla_iterations = i * StepLength;
+    result.bla_steps = i;
+}

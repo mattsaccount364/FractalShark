@@ -11,8 +11,14 @@
 
 #include "GPUBLAS.h"
 
+#include "HDRFloatComplex.h"
 #include "BLA.h"
 #include "HDRFloat.h"
+
+#include "LAReferenceCuda.h"
+
+#include "LAInfoDeep.h"
+#include "LAReference.h"
 
 #include <type_traits>
 //#include <cuda/pipeline>
@@ -376,11 +382,14 @@ struct MattPerturbSingleResults {
     size_t size;
     bool own;
     cudaError_t err;
+    size_t PeriodMaybeZero;
 
     MattPerturbSingleResults(
         size_t sz,
+        size_t PeriodMaybeZero,
         MattReferenceSingleIter<Type> *in_iters)
         : size(sz),
+        PeriodMaybeZero(PeriodMaybeZero),
         iters(nullptr),
         own(true),
         err(cudaSuccess) {
@@ -415,11 +424,16 @@ struct MattPerturbSingleResults {
 
         iters = other.iters;
         size = other.size;
+        PeriodMaybeZero = other.PeriodMaybeZero;
         own = false;
     }
 
     uint32_t CheckValid() const {
         return err;
+    }
+
+    __device__ HDRFloatComplex<float> GetComplex(size_t index) const {
+        return HDRFloatComplex<float>(iters[index].x, iters[index].y);
     }
 
     MattPerturbSingleResults(MattPerturbSingleResults&& other) = delete;
@@ -435,6 +449,96 @@ struct MattPerturbSingleResults {
     }
 };
 
+
+//////////////////////////////////////////////////////////////////////////////
+// LAReferenceCuda
+//////////////////////////////////////////////////////////////////////////////
+
+__host__
+LAReferenceCuda::LAReferenceCuda(const LAReference& other) :
+    UseAT{},
+    AT{},
+    LAStageCount{},
+    isValid{},
+    LAs{},
+    LAIs{},
+    LAStages{},
+    m_Owned(true) {
+
+    m_Err = cudaMallocManaged(&LAs, other.LAs.size() * sizeof(LAInfoDeep<float>), cudaMemAttachGlobal);
+    if (m_Err != cudaSuccess) {
+        return;
+    }
+
+    m_Err = cudaMallocManaged(&LAIs, other.LAIs.size() * sizeof(LAInfoI), cudaMemAttachGlobal);
+    if (m_Err != cudaSuccess) {
+        return;
+    }
+
+    m_Err = cudaMallocManaged(&LAStages, other.LAStages.size() * sizeof(LAStageInfo), cudaMemAttachGlobal);
+    if (m_Err != cudaSuccess) {
+        return;
+    }
+
+    m_Err = cudaMemcpy(LAs, other.LAs.data(),
+        other.LAs.size() * sizeof(LAInfoDeep<float>),
+        cudaMemcpyDefault);
+    if (m_Err != cudaSuccess) {
+        return;
+    }
+
+    m_Err = cudaMemcpy(LAIs, other.LAIs.data(),
+        other.LAIs.size() * sizeof(LAInfoI),
+        cudaMemcpyDefault);
+    if (m_Err != cudaSuccess) {
+        return;
+    }
+
+    m_Err = cudaMemcpy(LAStages, other.LAStages.data(),
+        other.LAStages.size() * sizeof(LAStageInfo),
+        cudaMemcpyDefault);
+    if (m_Err != cudaSuccess) {
+        return;
+    }
+}
+
+LAReferenceCuda::~LAReferenceCuda() {
+    if (m_Owned) {
+        if (LAs != nullptr) {
+            cudaFree(LAs);
+            LAs = nullptr;
+        }
+
+        if (LAIs != nullptr) {
+            cudaFree(LAIs);
+            LAIs = nullptr;
+        }
+
+        if (LAStages != nullptr) {
+            cudaFree(LAStages);
+            LAStages = nullptr;
+        }
+    }
+}
+
+__host__
+LAReferenceCuda::LAReferenceCuda(const LAReferenceCuda& other) : m_Owned(false) {
+    if (this == &other) {
+        return;
+    }
+
+    this->UseAT = other.UseAT;
+    this->AT = other.AT;
+    this->LAStageCount = other.LAStageCount;
+    this->isValid = other.isValid;
+    this->m_Err = cudaSuccess;
+    this->LAs = other.LAs;
+    this->LAIs = other.LAIs;
+    this->LAStages = other.LAStages;
+}
+
+
+//////////////////////////////////////////////////////////////////////////////
 
 // Match in Fractal.cpp
 constexpr static auto NB_THREADS_W = 8;  // W=16, H=8 previously seemed OK
@@ -1289,6 +1393,160 @@ mandel_1xHDR_float_perturb_bla(uint32_t* iter_matrix,
             else {
                 break;
             }
+        }
+    }
+
+    iter_matrix[idx] = (uint32_t)iter;
+}
+
+template<class HDRFloatType>
+__global__
+void
+//__launch_bounds__(NB_THREADS_W * NB_THREADS_H, 2)
+mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
+    MattPerturbSingleResults<HDRFloat<float>> Perturb,
+    LAReferenceCuda LaReference, // "copy"
+    int width,
+    int height,
+    const HDRFloatType cx,
+    const HDRFloatType cy,
+    const HDRFloatType dx,
+    const HDRFloatType dy,
+    const HDRFloatType centerX,
+    const HDRFloatType centerY,
+    uint32_t n_iterations)
+{
+    const int X = blockIdx.x * blockDim.x + threadIdx.x;
+    const int Y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (X >= width || Y >= height)
+        return;
+
+    //size_t idx = width * (height - Y - 1) + X;
+    size_t idx = width * Y + X;
+
+    if (iter_matrix[idx] != 0) {
+        return;
+    }
+
+    size_t iter = 0;
+    size_t RefIteration = 0;
+    const HDRFloatType DeltaReal = dx * X - centerX;
+    const HDRFloatType DeltaImaginary = -dy * Y - centerY;
+
+    const HDRFloatType DeltaSub0X = DeltaReal;
+    const HDRFloatType DeltaSub0Y = DeltaImaginary;
+    HDRFloatType DeltaSubNX = HDRFloatType(0);
+    HDRFloatType DeltaSubNY = HDRFloatType(0);
+    HDRFloatType DeltaNormSquared = HDRFloatType(0);
+    const HDRFloatType TwoFiftySix = HDRFloatType(256);
+    const HDRFloatType Two = HDRFloatType(2);
+
+    using SubType = float;
+    using TComplex = HDRFloatComplex<float>;
+
+    ////////////
+    size_t BLA2SkippedIterations;
+
+    BLA2SkippedIterations = 0;
+    
+    TComplex DeltaSub0;
+    TComplex DeltaSubN;
+
+    DeltaSub0 = { DeltaReal, DeltaImaginary };
+    DeltaSubN = { 0, 0 };
+
+    if (LaReference.isValid && LaReference.UseAT && LaReference.AT.isValid(DeltaSub0)) {
+        ATResult res;
+        LaReference.AT.PerformAT(n_iterations, DeltaSub0, res);
+        BLA2SkippedIterations = res.bla_iterations;
+        DeltaSubN = res.dz;
+    }
+
+    size_t MaxRefIteration = Perturb.size - 1;
+
+    iter = BLA2SkippedIterations;
+
+    TComplex complex0{ DeltaReal, DeltaImaginary };
+
+    if (iter != 0 && RefIteration < MaxRefIteration) {
+        complex0 = Perturb.GetComplex(RefIteration).plus_mutable(DeltaSubN);
+    }
+    else if (iter != 0 && Perturb.PeriodMaybeZero != 0) {
+        RefIteration = RefIteration % Perturb.PeriodMaybeZero;
+        complex0 = Perturb.GetComplex(RefIteration).plus_mutable(DeltaSubN);
+    }
+
+    size_t CurrentLAStage = LaReference.isValid ? LaReference.LAStageCount : 0;
+
+    while (CurrentLAStage > 0) {
+        CurrentLAStage--;
+
+        size_t LAIndex = LaReference.getLAIndex(CurrentLAStage);
+
+        if (LaReference.isLAStageInvalid(LAIndex, DeltaSub0)) {
+            continue;
+        }
+
+        size_t MacroItCount = LaReference.getMacroItCount(CurrentLAStage);
+        size_t j = RefIteration;
+
+        while (iter < n_iterations) {
+            LAstep las = LaReference.getLA(LAIndex, DeltaSubN, j, iter, n_iterations);
+
+            if (las.unusable) {
+                RefIteration = las.nextStageLAindex;
+                break;
+            }
+
+            iter += las.step;
+            DeltaSubN = las.Evaluate(DeltaSub0);
+            complex0 = las.getZ(DeltaSubN);
+            j++;
+
+            if (complex0.chebychevNorm() < DeltaSubN.chebychevNorm() || j >= MacroItCount) {
+                DeltaSubN = complex0;
+                j = 0;
+            }
+        }
+
+        if (iter >= n_iterations) {
+            break;
+        }
+    }
+
+    HDRFloatType normSquared{};
+
+    if (iter < n_iterations) {
+        normSquared = complex0.norm_squared();
+    }
+
+    for (; iter < n_iterations; iter++) {
+        auto curIter = Perturb.GetComplex(RefIteration);
+        curIter = curIter.times2_mutable();
+        curIter = curIter.plus_mutable(DeltaSubN);
+        DeltaSubN = DeltaSubN.times_mutable(curIter);
+        DeltaSubN = DeltaSubN.plus_mutable(DeltaSub0);
+        HdrReduce(DeltaSubN);
+
+        RefIteration++;
+
+        complex0 = Perturb.GetComplex(RefIteration).plus(DeltaSubN);
+        HdrReduce(complex0);
+
+        normSquared = complex0.norm_squared();
+        HdrReduce(normSquared);
+
+        auto DeltaNormSquared = DeltaSubN.norm_squared();
+        HdrReduce(DeltaNormSquared);
+
+        if (normSquared > HDRFloatType(256)) {
+            break;
+        }
+
+        if (normSquared < DeltaNormSquared || (RefIteration >= MaxRefIteration)) {
+            DeltaSubN = complex0;
+            RefIteration = 0;
         }
     }
 
@@ -2883,6 +3141,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
 
     MattPerturbSingleResults<float> cudaResults(
         float_perturb->size,
+        float_perturb->PeriodMaybeZero,
         float_perturb->iters);
 
     result = cudaResults.CheckValid();
@@ -2904,6 +3163,59 @@ uint32_t GPURenderer::RenderPerturbBLA(
             cudaResults,
             local_width, local_height, cx.floatOnly, cy.floatOnly, dx.floatOnly, dy.floatOnly,
             centerX.floatOnly, centerY.floatOnly,
+            n_iterations);
+
+        result = ExtractIters(buffer);
+    }
+
+    return result;
+}
+
+uint32_t GPURenderer::RenderPerturbLAv2(
+    RenderAlgorithm algorithm,
+    uint32_t* buffer,
+    MattPerturbResults<HDRFloat<float>>* float_perturb,
+    const LAReference &LaReference,
+    MattCoords cx,
+    MattCoords cy,
+    MattCoords dx,
+    MattCoords dy,
+    MattCoords centerX,
+    MattCoords centerY,
+    uint32_t n_iterations)
+{
+    uint32_t result = cudaSuccess;
+
+    if (iter_matrix_cu == nullptr) {
+        return result;
+    }
+
+    dim3 nb_blocks(w_block, h_block, 1);
+    dim3 threads_per_block(NB_THREADS_W, NB_THREADS_H, 1);
+
+    MattPerturbSingleResults<HDRFloat<float>> cudaResults(
+        float_perturb->size,
+        float_perturb->PeriodMaybeZero,
+        float_perturb->iters);
+
+    result = cudaResults.CheckValid();
+    if (result != 0) {
+        return result;
+    }
+
+    LAReferenceCuda laReferenceCuda{LaReference};
+    result = laReferenceCuda.CheckValid();
+    if (result != 0) {
+        return result;
+    }
+
+    if (algorithm == RenderAlgorithm::GpuHDRx32PerturbedLAv2) {
+        mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
+
+        mandel_1xHDR_float_perturb_lav2<HDRFloat<float>> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
+            cudaResults, laReferenceCuda,
+            local_width, local_height, cx.hdrflt, cy.hdrflt, dx.hdrflt, dy.hdrflt,
+            centerX.hdrflt, centerY.hdrflt,
             n_iterations);
 
         result = ExtractIters(buffer);
@@ -2938,6 +3250,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
     if (algorithm == RenderAlgorithm::Gpu1x64Perturbed) {
         MattPerturbSingleResults<double> cudaResults(
             double_perturb->size,
+            double_perturb->PeriodMaybeZero,
             double_perturb->iters);
 
         result = cudaResults.CheckValid();
@@ -2955,6 +3268,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
     } else if (algorithm == RenderAlgorithm::Gpu1x64PerturbedBLA) {
         MattPerturbSingleResults<double> cudaResults(
             double_perturb->size,
+            double_perturb->PeriodMaybeZero,
             double_perturb->iters);
 
         result = cudaResults.CheckValid();
@@ -2986,6 +3300,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
     //else if (algorithm == RenderAlgorithm::Gpu2x32PerturbedScaled) {
     //    MattPerturbSingleResults<dblflt> cudaResults(
     //        Perturb->size,
+    //        Perturb->PeriodMaybeZero,
     //        Perturb->iters);
 
     //    result = cudaResults.CheckValid();
@@ -2995,6 +3310,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
 
     //    MattPerturbSingleResults<double> cudaResultsDouble(
     //        Perturb->size,
+    //        Perturb->PeriodMaybeZero,
     //        Perturb->iters);
 
     //    result = cudaResultsDouble.CheckValid();
@@ -3043,6 +3359,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
 
     MattPerturbSingleResults<float> cudaResults(
         float_perturb->size,
+        float_perturb->PeriodMaybeZero,
         float_perturb->iters);
 
     result = cudaResults.CheckValid();
@@ -3052,6 +3369,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
 
     MattPerturbSingleResults<T> cudaResultsDouble(
         double_perturb->size,
+        float_perturb->PeriodMaybeZero,
         double_perturb->iters);
 
     result = cudaResultsDouble.CheckValid();
@@ -3168,6 +3486,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
 
     MattPerturbSingleResults<dblflt> cudaResults(
         dblflt_perturb->size,
+        dblflt_perturb->PeriodMaybeZero,
         dblflt_perturb->iters);
 
     result = cudaResults.CheckValid();
@@ -3223,6 +3542,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
     if (algorithm == RenderAlgorithm::GpuHDRx32PerturbedBLA) {
         MattPerturbSingleResults<HDRFloat<float>> cudaResults(
             perturb->size,
+            perturb->PeriodMaybeZero,
             perturb->iters);
 
         result = cudaResults.CheckValid();
@@ -3282,6 +3602,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
     if (algorithm == RenderAlgorithm::GpuHDRx64PerturbedBLA) {
         MattPerturbSingleResults<HDRFloat<double>> cudaResults(
             perturb->size,
+            perturb->PeriodMaybeZero,
             perturb->iters);
 
         result = cudaResults.CheckValid();

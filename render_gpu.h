@@ -8,6 +8,8 @@
 
 #include "BLA.h"
 #include "BLAS.h"
+#include "LAstep.h"
+class LAReference;
 
 enum class RenderAlgorithm {
     // CPU algorithms
@@ -31,6 +33,7 @@ enum class RenderAlgorithm {
     Gpu1x32Perturbed,
     Gpu1x32PerturbedPeriodic,
     GpuHDRx32PerturbedBLA,
+    GpuHDRx32PerturbedLAv2,
     GpuHDRx32PerturbedScaled,
     Gpu1x32PerturbedScaled,
     Gpu1x32PerturbedScaledBLA,
@@ -96,14 +99,17 @@ template<class T>
 struct MattPerturbResults {
     MattReferenceSingleIter<T> *iters;
     size_t size;
+    size_t PeriodMaybeZero;
 
     MattPerturbResults(size_t in_size,
                        T *in_x,
                        T *in_y,
                        uint8_t *in_bad,
-                       size_t in_bad_size) :
+                       size_t in_bad_size,
+                       size_t PeriodMaybeZero) :
         iters(new MattReferenceSingleIter<T>[in_size]),
-        size(in_size) {
+        size(in_size),
+        PeriodMaybeZero(PeriodMaybeZero) {
 
         //char(*__kaboom1)[sizeof(MattReferenceSingleIter<float>)] = 1;
         //char(*__kaboom2)[sizeof(MattReferenceSingleIter<double>)] = 1;
@@ -129,6 +135,10 @@ struct MattPerturbResults {
                 iters[i].bad = 0;
             }
         }
+    }
+
+    T* GetComplex(size_t index) {
+        return HDRFloatComplex<T>(iters[index].x, iters[index].y);
     }
 
     ~MattPerturbResults() {
@@ -224,6 +234,19 @@ public:
         MattCoords centerY,
         uint32_t n_iterations,
         int iteration_precision);
+
+    uint32_t RenderPerturbLAv2(
+        RenderAlgorithm algorithm,
+        uint32_t* buffer,
+        MattPerturbResults<HDRFloat<float>>* float_perturb,
+        const LAReference &LaReference,
+        MattCoords cx,
+        MattCoords cy,
+        MattCoords dx,
+        MattCoords dy,
+        MattCoords centerX,
+        MattCoords centerY,
+        uint32_t n_iterations);
 
     uint32_t RenderPerturbBLA(
         RenderAlgorithm algorithm,

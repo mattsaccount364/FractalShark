@@ -1632,6 +1632,9 @@ void Fractal::CalcFractal(bool MemoryOnly)
     case RenderAlgorithm::GpuHDRx64PerturbedBLA:
         CalcGpuPerturbationFractalBLA<HDRFloat<double>, double>(MemoryOnly);
         break;
+    case RenderAlgorithm::GpuHDRx32PerturbedLAv2:
+        CalcGpuPerturbationFractalLAv2<HDRFloat<float>, float>(MemoryOnly);
+        break;
     default:
         break;
     }
@@ -2581,11 +2584,8 @@ void Fractal::CalcCpuPerturbationFractalBLAV2(bool MemoryOnly) {
 
             for (size_t x = 0; x < m_ScrnWidth * GetGpuAntialiasing(); x++) {
                 size_t BLA2SkippedIterations;
-                size_t BLA2SkippedSteps;
 
-                size_t derivatives = 0;
                 BLA2SkippedIterations = 0;
-                BLA2SkippedSteps = 0;
 
                 TComplex DeltaSub0;
                 TComplex DeltaSubN;
@@ -2605,10 +2605,9 @@ void Fractal::CalcCpuPerturbationFractalBLAV2(bool MemoryOnly) {
                 DeltaSubN = { 0, 0 };
 
                 if (LaReference.isValid && LaReference.UseAT && LaReference.AT.isValid(DeltaSub0)) {
-                    ATResult res = LaReference.AT.PerformAT(m_NumIterations, DeltaSub0, derivatives);
+                    ATResult res;
+                    LaReference.AT.PerformAT(m_NumIterations, DeltaSub0, res);
                     BLA2SkippedIterations = res.bla_iterations;
-                    BLA2SkippedSteps = res.bla_steps;
-
                     DeltaSubN = res.dz;
                 }
 
@@ -2642,7 +2641,7 @@ void Fractal::CalcCpuPerturbationFractalBLAV2(bool MemoryOnly) {
                     size_t j = RefIteration;
 
                     while (iterations < GetNumIterations()) {
-                        LAstep las = LaReference.getLA(LAIndex, DeltaSubN, j, iterations, GetNumIterations());
+                        LAstep<HDRFloatComplex<float>> las = LaReference.getLA(LAIndex, DeltaSubN, j, iterations, GetNumIterations());
 
                         if (las.unusable) {
                             RefIteration = las.nextStageLAindex;
@@ -2749,7 +2748,8 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
         results->x.data(),
         results->y.data(),
         results->bad.data(),
-        results->bad.size() };
+        results->bad.size(),
+        results->PeriodMaybeZero };
 
     // all sizes should be the same anyway just pick one
     gpu_results.size = results->x.size();
@@ -2766,6 +2766,67 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
         centerY2,
         (uint32_t)m_NumIterations,
         m_IterationPrecision);
+
+    DrawFractal(MemoryOnly);
+
+    if (result) {
+        MessageBoxCudaError(result);
+    }
+}
+
+template<class T, class SubType>
+void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
+    auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<T, SubType>();
+
+    //BLAS<T> blas(*results);
+    //blas.Init(results->x.size(), T(results->maxRadius));
+
+    uint32_t err =
+        m_r.InitializeMemory(m_CurIters.m_Width,
+            m_CurIters.m_Height);
+    if (err) {
+        MessageBoxCudaError(err);
+        return;
+    }
+
+    m_r.ClearMemory();
+
+    MattCoords cx2{}, cy2{}, dx2{}, dy2{};
+    MattCoords centerX2{}, centerY2{};
+
+    FillGpuCoords(cx2, cy2, dx2, dy2);
+
+    HighPrecision centerX = results->hiX - m_MinX;
+    HighPrecision centerY = results->hiY - m_MaxY;
+
+    FillCoord(centerX, centerX2);
+    FillCoord(centerY, centerY2);
+
+    MattPerturbResults<T> gpu_results{
+        results->x.size(),
+        results->x.data(),
+        results->y.data(),
+        results->bad.data(),
+        results->bad.size(),
+        results->PeriodMaybeZero };
+
+    // all sizes should be the same anyway just pick one
+    gpu_results.size = results->x.size();
+
+    LAReference LaReference{ *results };
+    LaReference.GenerateApproximationData(results->maxRadius, results->x.size() - 1);
+
+    auto result = m_r.RenderPerturbLAv2(GetRenderAlgorithm(),
+        (uint32_t*)m_CurIters.m_ItersMemory,
+        &gpu_results,
+        LaReference,
+        cx2,
+        cy2,
+        dx2,
+        dy2,
+        centerX2,
+        centerY2,
+        (uint32_t)m_NumIterations);
 
     DrawFractal(MemoryOnly);
 
@@ -2808,7 +2869,8 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
         results->x.data(),
         results->y.data(),
         results->bad.data(),
-        results->bad.size() };
+        results->bad.size(),
+        results->PeriodMaybeZero };
 
     // all sizes should be the same anyway just pick one
     gpu_results.size = results->x.size();
@@ -2818,7 +2880,8 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
         results2->x.data(),
         results2->y.data(),
         results2->bad.data(),
-        results2->bad.size() };
+        results2->bad.size(),
+        results->PeriodMaybeZero };
 
     gpu_results2.size = results2->x.size();
 

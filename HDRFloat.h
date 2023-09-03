@@ -6,10 +6,12 @@
 
 #ifdef __CUDA_ARCH__
 #define CUDA_CRAP __device__
+#define CUDA_CRAP_BOTH __host__ __device__
 static __device__ double* __restrict__ twoPowExpDbl;
 static __device__ float* __restrict__ twoPowExpFlt;
 #else
 #define CUDA_CRAP
+#define CUDA_CRAP_BOTH
 extern double* twoPowExpDbl;
 extern float* twoPowExpFlt;
 #endif
@@ -134,8 +136,8 @@ public:
         return *reinterpret_cast<const To*>(&src);
     }
 
-    CUDA_CRAP explicit HDRFloat(const T number) {
-        if (number == 0) {
+    CUDA_CRAP explicit HDRFloat(const T number) { // TODO add constexpr once that compiles
+        if (number == T(0)) {
             mantissa = 0;
             exp = MIN_BIG_EXPONENT();
             return;
@@ -206,7 +208,7 @@ public:
             return (T)0.0;
         }
         else if (scaleFactor >= 1024) {
-            return INFINITY;
+            return (T)INFINITY;
         }
 
         if constexpr (std::is_same<T, double>::value) {
@@ -220,7 +222,7 @@ public:
 
     static CUDA_CRAP constexpr T getMultiplierPos(TExp scaleFactor) {
         if (scaleFactor >= 1024) {
-            return INFINITY;
+            return (T)INFINITY;
         }
 
         if constexpr (std::is_same<T, double>::value) {
@@ -267,6 +269,15 @@ public:
     }
 
     CUDA_CRAP explicit constexpr operator T() const { return toDouble(); }
+
+    CUDA_CRAP bool operator==(const HDRFloat<T>& other) const {
+        if (this->exp == other.exp &&
+            this->mantissa == other.mantissa) {
+            return true;
+        }
+
+        return false;
+    }
 
     CUDA_CRAP constexpr T getMantissa() const { return  mantissa; }
 

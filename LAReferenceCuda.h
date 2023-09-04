@@ -43,45 +43,45 @@ private:
     static constexpr int MaxLAStages = 512;
     static constexpr int DEFAULT_SIZE = 10000;
 
-    LAInfoDeep<float> *LAs;
-    LAInfoI *LAIs;
-    LAStageInfo *LAStages;
+    LAInfoDeep<float> * __restrict__ LAs;
+    LAInfoI * __restrict__ LAIs;
+    LAStageInfo * __restrict__ LAStages;
 
 public:
-    CUDA_CRAP bool isLAStageInvalid(size_t LAIndex, HDRFloatComplex dc);
-    CUDA_CRAP size_t getLAIndex(size_t CurrentLAStage);
-    CUDA_CRAP size_t getMacroItCount(size_t CurrentLAStage);
-    CUDA_CRAP LAstep<HDRFloatComplex> getLA(size_t LAIndex, HDRFloatComplex dz, /*HDRFloatComplex dc, */size_t j, size_t iterations, size_t max_iterations);// keep
+    CUDA_CRAP bool isLAStageInvalid(size_t LAIndex, HDRFloatComplex dc) const;
+    CUDA_CRAP size_t getLAIndex(size_t CurrentLAStage) const;
+    CUDA_CRAP size_t getMacroItCount(size_t CurrentLAStage) const;
+    CUDA_CRAP LAstep<HDRFloatComplex> getLA(size_t LAIndex, HDRFloatComplex dz, /*HDRFloatComplex dc, */size_t j, size_t iterations, size_t max_iterations) const;
 };
 
 CUDA_CRAP
-bool LAReferenceCuda::isLAStageInvalid(size_t LAIndex, HDRFloatComplex dc) {
+bool LAReferenceCuda::isLAStageInvalid(size_t LAIndex, HDRFloatComplex dc) const {
     return (dc.chebychevNorm().compareToBothPositiveReduced((LAs[LAIndex]).getLAThresholdC()) >= 0);
 }
 
 CUDA_CRAP
-size_t LAReferenceCuda::getLAIndex(size_t CurrentLAStage) {
+size_t LAReferenceCuda::getLAIndex(size_t CurrentLAStage) const {
     return LAStages[CurrentLAStage].LAIndex;
 }
 
 CUDA_CRAP
-size_t LAReferenceCuda::getMacroItCount(size_t CurrentLAStage) {
+size_t LAReferenceCuda::getMacroItCount(size_t CurrentLAStage) const {
     return LAStages[CurrentLAStage].MacroItCount;
 }
 
 CUDA_CRAP
 LAstep<LAReferenceCuda::HDRFloatComplex>
-LAReferenceCuda::getLA(size_t LAIndex, HDRFloatComplex dz, /*HDRFloatComplex dc, */ size_t j, size_t iterations, size_t max_iterations) {
+LAReferenceCuda::getLA(size_t LAIndex, HDRFloatComplex dz, /*HDRFloatComplex dc, */ size_t j, size_t iterations, size_t max_iterations) const {
 
-    size_t LAIndexj = LAIndex + j;
-    LAInfoI LAIj = LAIs[LAIndexj];
+    const size_t LAIndexj = LAIndex + j;
+    const LAInfoI &LAIj = LAIs[LAIndexj];
 
     LAstep<HDRFloatComplex> las;
 
-    size_t l = LAIj.StepLength;
-    bool usuable = iterations + l <= max_iterations;
+    const size_t l = LAIj.StepLength;
+    const bool usable = iterations + l <= max_iterations;
 
-    if (usuable) {
+    if (usable) {
         LAInfoDeep<float>& LAj = LAs[LAIndexj];
 
         las = LAj.Prepare(dz);

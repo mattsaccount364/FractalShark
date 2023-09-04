@@ -74,7 +74,7 @@ public:
     CUDA_CRAP LAInfoDeep Step(HDRFloatComplex z);
     CUDA_CRAP bool Composite(LAInfoDeep &out, LAInfoDeep LA);
     CUDA_CRAP LAInfoDeep Composite(LAInfoDeep LA);
-    CUDA_CRAP LAstep<HDRFloatComplex> Prepare(HDRFloatComplex dz);
+    CUDA_CRAP LAstep<HDRFloatComplex> Prepare(HDRFloatComplex dz) const;
     CUDA_CRAP HDRFloatComplex Evaluate(HDRFloatComplex newdz, HDRFloatComplex dc);
     CUDA_CRAP HDRFloatComplex EvaluateDzdc(HDRFloatComplex z, HDRFloatComplex dzdc);
     CUDA_CRAP HDRFloatComplex EvaluateDzdc2(HDRFloatComplex z, HDRFloatComplex dzdc2, HDRFloatComplex dzdc);
@@ -347,7 +347,7 @@ LAInfoDeep<SubType> LAInfoDeep<SubType>::Composite(LAInfoDeep LA) {
 
 template<class SubType>
 CUDA_CRAP
-LAstep<HDRFloatComplex<SubType>> LAInfoDeep<SubType>::Prepare(HDRFloatComplex dz) {
+LAstep<HDRFloatComplex<SubType>> LAInfoDeep<SubType>::Prepare(HDRFloatComplex dz) const {
     //*2 is + 1
     HDRFloatComplex newdz = dz.times(HDRFloatComplex(RefExp + 1, RefRe, RefIm).plus_mutable(dz));
     newdz.Reduce();

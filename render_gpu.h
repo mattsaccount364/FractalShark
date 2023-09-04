@@ -43,9 +43,9 @@ enum class RenderAlgorithm {
     Gpu4x32,
 };
 
-#pragma pack(push, 8)
+#pragma pack(push, 16)
 template<typename Type>
-struct MattReferenceSingleIter {
+struct alignas(16) MattReferenceSingleIter {
     Type x;
     Type y;
     uint32_t bad;
@@ -116,8 +116,8 @@ struct MattPerturbResults {
         //char(*__kaboom3)[sizeof(MattReferenceSingleIter<float2>)] = 1;
 
         static_assert(sizeof(MattReferenceSingleIter<float>) == 16, "Float");
-        static_assert(sizeof(MattReferenceSingleIter<double>) == 24, "Double");
-        static_assert(sizeof(MattReferenceSingleIter<float2>) == 24, "float2");
+        static_assert(sizeof(MattReferenceSingleIter<double>) == 32, "Double");
+        static_assert(sizeof(MattReferenceSingleIter<float2>) == 32, "float2");
         //static_assert(sizeof(MattReferenceSingleIter<HDRFloat<float>>) == 12 * 4, "float2");
         static_assert(sizeof(float2) == 8, "float2 type");
 
@@ -270,6 +270,10 @@ public:
     void ClearMemory();
 
     static const char* ConvertErrorToString(uint32_t err);
+
+    // Match in Fractal.cpp
+    static const int32_t NB_THREADS_W = 16;  // W=16, H=8 previously seemed OK
+    static const int32_t NB_THREADS_H = 8;
 
 private:
     void ClearLocals();

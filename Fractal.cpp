@@ -28,10 +28,6 @@
 #include "LAInfoDeep.h"
 #include "LAReference.h"
 
-// Match in render_gpu.cu
-constexpr static auto NB_THREADS_W = 8; // W=16, H=8 previously seemed OK
-constexpr static auto NB_THREADS_H = 8;
-
 void DefaultOutputMessage(const wchar_t *, ...);
 
 Fractal::ItersMemoryContainer::ItersMemoryContainer(size_t width, size_t height, size_t total_antialiasing)
@@ -43,13 +39,13 @@ Fractal::ItersMemoryContainer::ItersMemoryContainer(size_t width, size_t height,
     size_t antialias_width = width * total_antialiasing;
     size_t antialias_height = height * total_antialiasing;
 
-    size_t w_block = antialias_width / NB_THREADS_W + (antialias_width % NB_THREADS_W != 0);
-    size_t h_block = antialias_height / NB_THREADS_H + (antialias_height % NB_THREADS_H != 0);
+    size_t w_block = antialias_width / GPURenderer::NB_THREADS_W + (antialias_width % GPURenderer::NB_THREADS_W != 0);
+    size_t h_block = antialias_height / GPURenderer::NB_THREADS_H + (antialias_height % GPURenderer::NB_THREADS_H != 0);
 
     // This array must be identical in size to iter_matrix_cu in CUDA
 
-    m_Width = w_block * NB_THREADS_W;
-    m_Height = h_block * NB_THREADS_H;
+    m_Width = w_block * GPURenderer::NB_THREADS_W;
+    m_Height = h_block * GPURenderer::NB_THREADS_H;
     m_Total = m_Width * m_Height;
     m_ItersMemory = new uint32_t[m_Total];
     memset(m_ItersMemory, 0, m_Total * sizeof(uint32_t));
@@ -145,10 +141,11 @@ void Fractal::Initialize(int width,
     //SetRenderAlgorithm(RenderAlgorithm::Cpu64PerturbedBLAHDR);
     //SetRenderAlgorithm(RenderAlgorithm::Cpu64PerturbedBLA);
     //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedBLA);
-    SetRenderAlgorithm(RenderAlgorithm::Cpu32PerturbedBLAV2HDR);
     //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedScaled);
     //SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedPeriodic);
-    
+    //SetRenderAlgorithm(RenderAlgorithm::Cpu32PerturbedBLAV2HDR);
+    SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedLAv2);
+
     SetIterationPrecision(1);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed);
     m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3);
@@ -156,8 +153,8 @@ void Fractal::Initialize(int width,
     m_RefOrbit.ResetGuess();
 
     ResetDimensions(width, height, 1);
-    View(0);
-    //View(9);
+    //View(0);
+    View(5);
 
     m_ChangedWindow = true;
     m_ChangedScrn = true;

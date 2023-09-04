@@ -369,8 +369,8 @@ CUDA_CRAP const GPUBLA_TYPE* GPUBLAS<T, GPUBLA_TYPE, LM2>::LookupBackwards(
 ////////////////////////////////////////////////////////////////////////////////////////
 
 static_assert(sizeof(MattReferenceSingleIter<float>) == 16, "Float");
-static_assert(sizeof(MattReferenceSingleIter<double>) == 24, "Double");
-static_assert(sizeof(MattReferenceSingleIter<dblflt>) == 24, "Dblflt");
+static_assert(sizeof(MattReferenceSingleIter<double>) == 32, "Double");
+static_assert(sizeof(MattReferenceSingleIter<dblflt>) == 32, "Dblflt");
 
 //char(*__kaboom1)[sizeof(MattReferenceSingleIter<float>)] = 1;
 //char(*__kaboom2)[sizeof(MattReferenceSingleIter<double>)] = 1;
@@ -433,7 +433,16 @@ struct MattPerturbSingleResults {
     }
 
     __device__ HDRFloatComplex<float> GetComplex(size_t index) const {
-        return HDRFloatComplex<float>(iters[index].x, iters[index].y);
+        
+        auto temp = *(float4*)(&iters[index].x);
+        const auto &re = *(HDRFloat<float>*)&temp.x;
+        const auto &im = *(HDRFloat<float>*)&temp.z;
+        static_assert(sizeof(iters[index].x) == 8, "Misaligned");
+        static_assert(sizeof(iters[index].y) == 8, "Misaligned");
+        static_assert(sizeof(HDRFloat<float>) == 8, "Misaligned");
+        static_assert(sizeof(float4) == 16, "Misaligned float4");
+        //return HDRFloatComplex<float>(iters[index].x, iters[index].y);
+        return HDRFloatComplex<float>(re, im);
     }
 
     MattPerturbSingleResults(MattPerturbSingleResults&& other) = delete;
@@ -465,20 +474,30 @@ LAReferenceCuda::LAReferenceCuda(const LAReference& other) :
     LAStages{},
     m_Owned(true) {
 
-    m_Err = cudaMallocManaged(&LAs, other.LAs.size() * sizeof(LAInfoDeep<float>), cudaMemAttachGlobal);
+    LAInfoDeep<float>* tempLAs;
+    LAInfoI* tempLAIs;
+    LAStageInfo* tempLAStages;
+
+    m_Err = cudaMallocManaged(&tempLAs, other.LAs.size() * sizeof(LAInfoDeep<float>), cudaMemAttachGlobal);
     if (m_Err != cudaSuccess) {
         return;
     }
 
-    m_Err = cudaMallocManaged(&LAIs, other.LAIs.size() * sizeof(LAInfoI), cudaMemAttachGlobal);
+    LAs = tempLAs;
+
+    m_Err = cudaMallocManaged(&tempLAIs, other.LAIs.size() * sizeof(LAInfoI), cudaMemAttachGlobal);
     if (m_Err != cudaSuccess) {
         return;
     }
 
-    m_Err = cudaMallocManaged(&LAStages, other.LAStages.size() * sizeof(LAStageInfo), cudaMemAttachGlobal);
+    LAIs = tempLAIs;
+
+    m_Err = cudaMallocManaged(&tempLAStages, other.LAStages.size() * sizeof(LAStageInfo), cudaMemAttachGlobal);
     if (m_Err != cudaSuccess) {
         return;
     }
+
+    LAStages = tempLAStages;
 
     m_Err = cudaMemcpy(LAs, other.LAs.data(),
         other.LAs.size() * sizeof(LAInfoDeep<float>),
@@ -539,11 +558,6 @@ LAReferenceCuda::LAReferenceCuda(const LAReferenceCuda& other) : m_Owned(false) 
 
 
 //////////////////////////////////////////////////////////////////////////////
-
-// Match in Fractal.cpp
-constexpr static auto NB_THREADS_W = 8;  // W=16, H=8 previously seemed OK
-constexpr static auto NB_THREADS_H = 8;
-
 
 __global__
 void mandel_4x_float(uint32_t* iter_matrix,

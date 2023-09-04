@@ -14,7 +14,6 @@
 #error "Please provide a definition for MY_ALIGN macro for your host compiler!"
 #endif
 
-
 template<class T>
 class HDRFloatComplex {
 
@@ -24,7 +23,6 @@ private:
     int32_t exp;
 
     using HDRFloat = HDRFloat<T>;
-    using Complex = std::complex<T>;
     using TExp = int32_t;
 
 public:
@@ -56,10 +54,6 @@ public:
         this->mantissaReal = other.mantissaReal;
         this->mantissaImag = other.mantissaImag;
         this->exp = exp;
-    }
-
-    CUDA_CRAP HDRFloatComplex(Complex c) {
-        setMantexp(HDRFloat(c.real()), HDRFloat(c.imag()));
     }
 
     CUDA_CRAP HDRFloatComplex(HDRFloat re, HDRFloat im) {
@@ -107,7 +101,7 @@ private:
 
 public:
 
-    HDRFloatComplex CUDA_CRAP plus(HDRFloatComplex value) {
+    HDRFloatComplex CUDA_CRAP plus(HDRFloatComplex value) const {
 
         TExp expDiff = exp - value.exp;
 
@@ -159,7 +153,7 @@ public:
     }
 
 
-    HDRFloatComplex CUDA_CRAP times(HDRFloatComplex factor) {
+    HDRFloatComplex CUDA_CRAP times(HDRFloatComplex factor) const {
         T tempMantissaReal = (mantissaReal * factor.mantissaReal) - (mantissaImag * factor.mantissaImag);
 
         T tempMantissaImag = (mantissaReal * factor.mantissaImag) + (mantissaImag * factor.mantissaReal);
@@ -194,7 +188,7 @@ public:
         return *this;
     }
 
-    HDRFloatComplex CUDA_CRAP times(T factor) {
+    HDRFloatComplex CUDA_CRAP times(T factor) const {
         return times(HDRFloat(factor));
     }
 
@@ -202,7 +196,7 @@ public:
         return times_mutable(HDRFloat(factor));
     }
 
-    HDRFloatComplex CUDA_CRAP times(HDRFloat factor) {
+    HDRFloatComplex CUDA_CRAP times(HDRFloat factor) const {
         T tempMantissaReal = mantissaReal * factor.mantissa;
 
         T tempMantissaImag = mantissaImag * factor.mantissa;
@@ -236,7 +230,7 @@ public:
         return *this;
     }
 
-    HDRFloatComplex CUDA_CRAP divide2() {
+    HDRFloatComplex CUDA_CRAP divide2() const {
         return HDRFloatComplex(mantissaReal, mantissaImag, exp - 1);
     }
 
@@ -248,7 +242,7 @@ public:
 
     }
 
-    HDRFloatComplex CUDA_CRAP divide4() {
+    HDRFloatComplex CUDA_CRAP divide4() const {
         return HDRFloatComplex(mantissaReal, mantissaImag, exp - 2);
     }
 
@@ -261,7 +255,7 @@ public:
     }
 
     
-    HDRFloatComplex CUDA_CRAP times2() {
+    HDRFloatComplex CUDA_CRAP times2() const {
         return HDRFloatComplex(exp + 1, mantissaReal, mantissaImag);
     }
 
@@ -274,7 +268,7 @@ public:
     }
 
     
-    HDRFloatComplex CUDA_CRAP times4() {
+    HDRFloatComplex CUDA_CRAP times4() const {
         return HDRFloatComplex(exp + 2, mantissaReal, mantissaImag);
     }
 
@@ -318,7 +312,7 @@ public:
 
     }
 
-    HDRFloatComplex CUDA_CRAP plus(T real) {
+    HDRFloatComplex CUDA_CRAP plus(T real) const {
         return plus(HDRFloat(real));
     }
 
@@ -326,7 +320,7 @@ public:
         return plus_mutable(HDRFloat(real));
     }
 
-    HDRFloatComplex CUDA_CRAP plus(HDRFloat real) {
+    HDRFloatComplex CUDA_CRAP plus(HDRFloat real) const {
 
         TExp expDiff = exp - real.exp;
 
@@ -374,7 +368,7 @@ public:
 
     }
 
-    HDRFloatComplex CUDA_CRAP sub(HDRFloatComplex value) {
+    HDRFloatComplex CUDA_CRAP sub(HDRFloatComplex value) const {
 
         TExp expDiff = exp - value.exp;
 
@@ -425,7 +419,7 @@ public:
 
     }
 
-    HDRFloatComplex CUDA_CRAP sub(HDRFloat real) {
+    HDRFloatComplex CUDA_CRAP sub(HDRFloat real) const {
 
         TExp expDiff = exp - real.exp;
 
@@ -473,7 +467,7 @@ public:
 
     }
 
-    HDRFloatComplex CUDA_CRAP sub(T real) {
+    HDRFloatComplex CUDA_CRAP sub(T real) const {
         return sub(HDRFloat(real));
     }
 
@@ -568,7 +562,7 @@ public:
     }*/
 
     
-    HDRFloatComplex CUDA_CRAP square() {
+    HDRFloatComplex CUDA_CRAP square() const {
         T temp = mantissaReal * mantissaImag;
         return HDRFloatComplex((mantissaReal + mantissaImag) * (mantissaReal - mantissaImag), temp + temp, exp << 1);
 
@@ -597,118 +591,19 @@ public:
         return *this;
     }
 
-    
-    HDRFloatComplex CUDA_CRAP cube() {
-        T temp = mantissaReal * mantissaReal;
-        T temp2 = mantissaImag * mantissaImag;
-
-        return HDRFloatComplex(mantissaReal * (temp - 3 * temp2), mantissaImag * (3 * temp - temp2), 3 * exp);
-
-        /*T absRe = Math.abs(p.mantissaReal);
-        T absIm = Math.abs(p.mantissaImag);
-        if (absRe > 1e50 || absIm > 1e50 || absRe < 1e-50 || absIm < 1e-50) {
-            p.Reduce();
-        }*/
-    }
-
-    HDRFloatComplex CUDA_CRAP cube_mutable() {
-        T temp = mantissaReal * mantissaReal;
-        T temp2 = mantissaImag * mantissaImag;
-
-        TExp exp = 3 * this->exp;
-        mantissaReal = mantissaReal * (temp - 3 * temp2);
-        mantissaImag = mantissaImag * (3 * temp - temp2);
-        this->exp = exp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : exp;
-
-        /*T absRe = Math.abs(mantissaReal);
-        T absIm = Math.abs(mantissaImag);
-        if (absRe > 1e50 || absIm > 1e50 || absRe < 1e-50 || absIm < 1e-50) {
-            Reduce();
-        }*/
-
-        return *this;
-    }
-
-    
-    HDRFloatComplex CUDA_CRAP fourth() {
-        T temp = mantissaReal * mantissaReal;
-        T temp2 = mantissaImag * mantissaImag;
-
-        return HDRFloatComplex(temp * (temp - 6 * temp2) + temp2 * temp2, 4 * mantissaReal * mantissaImag * (temp - temp2), exp << 2);
-
-        /*T absRe = Math.abs(p.mantissaReal);
-        T absIm = Math.abs(p.mantissaImag);
-        if (absRe > 1e50 || absIm > 1e50 || absRe < 1e-50 || absIm < 1e-50) {
-            p.Reduce();
-        }*/
-    }
-
-    HDRFloatComplex CUDA_CRAP fourth_mutable() {
-        T temp = mantissaReal * mantissaReal;
-        T temp2 = mantissaImag * mantissaImag;
-
-        TExp exp = this->exp << 2;
-
-        T temp_re = temp * (temp - 6 * temp2) + temp2 * temp2;
-        mantissaImag = 4 * mantissaReal * mantissaImag * (temp - temp2);
-        mantissaReal = temp_re;
-        this->exp = exp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : exp;
-
-        /*T absRe = Math.abs(mantissaReal);
-        T absIm = Math.abs(mantissaImag);
-        if (absRe > 1e50 || absIm > 1e50 || absRe < 1e-50 || absIm < 1e-50) {
-            Reduce();
-        }*/
-
-        return *this;
-    }
-
-    
-    HDRFloatComplex CUDA_CRAP fifth() {
-
-        T temp = mantissaReal * mantissaReal;
-        T temp2 = mantissaImag * mantissaImag;
-
-        return HDRFloatComplex(mantissaReal * (temp * temp + temp2 * (5 * temp2 - 10 * temp)), mantissaImag * (temp2 * temp2 + temp * (5 * temp - 10 * temp2)), 5 * exp);
-
-        /*T absRe = Math.abs(p.mantissaReal);
-        T absIm = Math.abs(p.mantissaImag);
-        if (absRe > 1e50 || absIm > 1e50 || absRe < 1e-50 || absIm < 1e-50) {
-            p.Reduce();
-        }*/
-    }
-
-    HDRFloatComplex CUDA_CRAP fifth_mutable() {
-        T temp = mantissaReal * mantissaReal;
-        T temp2 = mantissaImag * mantissaImag;
-
-        TExp exp = 5 * this->exp;
-        mantissaReal = mantissaReal * (temp * temp + temp2 * (5 * temp2 - 10 * temp));
-        mantissaImag = mantissaImag * (temp2 * temp2 + temp * (5 * temp - 10 * temp2));
-        this->exp = exp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : exp;
-
-        /*T absRe = Math.abs(mantissaReal);
-        T absIm = Math.abs(mantissaImag);
-        if (absRe > 1e50 || absIm > 1e50 || absRe < 1e-50 || absIm < 1e-50) {
-            Reduce();
-        }*/
-
-        return *this;
-    }
-
-    HDRFloat CUDA_CRAP norm_squared() {
+    HDRFloat CUDA_CRAP norm_squared() const {
         return HDRFloat(exp << 1, mantissaReal * mantissaReal + mantissaImag * mantissaImag);
     }
 
-    HDRFloat CUDA_CRAP distance_squared(HDRFloatComplex other) {
+    HDRFloat CUDA_CRAP distance_squared(HDRFloatComplex other) const {
         return sub(other).norm_squared();
     }
 
-    HDRFloat CUDA_CRAP norm() {
+    HDRFloat CUDA_CRAP norm() const {
         return HDRFloat(exp, sqrt(mantissaReal * mantissaReal + mantissaImag * mantissaImag));
     }
 
-    HDRFloat CUDA_CRAP distance(HDRFloatComplex other) {
+    HDRFloat CUDA_CRAP distance(HDRFloatComplex other) const {
         return sub(other).norm();
     }
 
@@ -751,7 +646,7 @@ public:
         return *this;
     }
 
-    HDRFloatComplex CUDA_CRAP reciprocal() {
+    HDRFloatComplex CUDA_CRAP reciprocal() const {
 
         T temp = 1.0f / (mantissaReal * mantissaReal + mantissaImag * mantissaImag);
 
@@ -772,7 +667,7 @@ public:
     }
 
 
-    HDRFloatComplex CUDA_CRAP divide(HDRFloat real) {
+    HDRFloatComplex CUDA_CRAP divide(HDRFloat real) const {
 
         T temp = 1.0 / real.mantissa;
         return HDRFloatComplex(mantissaReal * temp, mantissaImag * temp, exp - real.exp);
@@ -801,7 +696,7 @@ public:
         return *this;
     }
 
-    HDRFloatComplex CUDA_CRAP divide(T real) {
+    HDRFloatComplex CUDA_CRAP divide(T real) const {
 
         return divide(HDRFloat(real));
 
@@ -814,7 +709,7 @@ public:
     }
 
     
-    HDRFloatComplex CUDA_CRAP negative() {
+    HDRFloatComplex CUDA_CRAP negative() const {
 
         return HDRFloatComplex(exp, -mantissaReal, -mantissaImag);
 
@@ -829,7 +724,7 @@ public:
 
     }
 
-    HDRFloatComplex CUDA_CRAP abs() {
+    HDRFloatComplex CUDA_CRAP abs() const {
 
         return HDRFloatComplex(exp, HdrAbs(mantissaReal), HdrAbs(mantissaImag));
 
@@ -844,48 +739,27 @@ public:
 
     }
 
-    HDRFloatComplex CUDA_CRAP conjugate() {
-
-        return HDRFloatComplex(exp, mantissaReal, -mantissaImag);
-
-    }
-
-    
-    HDRFloatComplex CUDA_CRAP conjugate_mutable() {
-
-        mantissaImag = -mantissaImag;
-        return *this;
-
-    }
-
-    Complex CUDA_CRAP toComplex() {
-        //return new Complex(mantissaReal * HDRFloat.toExp(exp), mantissaImag * HDRFloat.toExp(exp));
-        T d = HDRFloat::getMultiplier(exp);
-        //return new Complex(HDRFloat.toDouble(mantissaReal, exp), HDRFloat.toDouble(mantissaImag, exp));
-        return Complex(mantissaReal * d, mantissaImag * d);
-    }
-    
-    HDRFloat CUDA_CRAP getRe() {
+    HDRFloat CUDA_CRAP getRe() const {
 
         return HDRFloat(exp, mantissaReal);
 
     }
 
-    HDRFloat CUDA_CRAP getIm() {
+    HDRFloat CUDA_CRAP getIm() const {
 
         return HDRFloat(exp, mantissaImag);
 
     }
 
-    T CUDA_CRAP getMantissaReal() {
+    T CUDA_CRAP getMantissaReal() const {
         return mantissaReal;
     }
 
-    T CUDA_CRAP getMantissaImag() {
+    T CUDA_CRAP getMantissaImag() const {
         return mantissaImag;
     }
 
-    TExp CUDA_CRAP getExp() {
+    TExp CUDA_CRAP getExp() const {
 
         return exp;
 
@@ -970,7 +844,7 @@ public:
     }
 
 
-    bool CUDA_CRAP equals(HDRFloatComplex z2) {
+    bool CUDA_CRAP equals(HDRFloatComplex z2) const {
 
         return z2.exp == exp && z2.mantissaReal == mantissaReal && z2.mantissaImag == mantissaImag;
 
@@ -983,8 +857,7 @@ public:
     }
 
     
-    HDRFloat CUDA_CRAP chebychevNorm() {
+    HDRFloat CUDA_CRAP chebychevNorm() const {
         return HDRFloat::maxBothPositive(HdrAbs(getRe()), HdrAbs(getIm()));
     }
 };
-

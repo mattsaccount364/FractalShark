@@ -2550,7 +2550,7 @@ void Fractal::CalcCpuPerturbationFractalBLAV2(bool MemoryOnly) {
     auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<T, SubType>();
 
     LAReference LaReference{*results};
-    LaReference.GenerateApproximationData(results->maxRadius, results->x.size() - 1);
+    LaReference.GenerateApproximationData(results->maxRadius, (int32_t)results->x.size() - 1);
 
     T dx = T((m_MaxX - m_MinX) / (m_ScrnWidth * GetGpuAntialiasing()));
     HdrReduce(dx);
@@ -2580,7 +2580,7 @@ void Fractal::CalcCpuPerturbationFractalBLAV2(bool MemoryOnly) {
             }
 
             for (size_t x = 0; x < m_ScrnWidth * GetGpuAntialiasing(); x++) {
-                size_t BLA2SkippedIterations;
+                int32_t BLA2SkippedIterations;
 
                 BLA2SkippedIterations = 0;
 
@@ -2603,8 +2603,8 @@ void Fractal::CalcCpuPerturbationFractalBLAV2(bool MemoryOnly) {
 
                 if (LaReference.isValid && LaReference.UseAT && LaReference.AT.isValid(DeltaSub0)) {
                     ATResult res;
-                    LaReference.AT.PerformAT(m_NumIterations, DeltaSub0, res);
-                    BLA2SkippedIterations = res.bla_iterations;
+                    LaReference.AT.PerformAT((int32_t)m_NumIterations, DeltaSub0, res);
+                    BLA2SkippedIterations = (int32_t)res.bla_iterations;
                     DeltaSubN = res.dz;
                 }
 
@@ -2623,22 +2623,27 @@ void Fractal::CalcCpuPerturbationFractalBLAV2(bool MemoryOnly) {
                     complex0 = results->GetComplex<SubType>(RefIteration).plus_mutable(DeltaSubN);
                 }
 
-                size_t CurrentLAStage = LaReference.isValid ? LaReference.LAStageCount : 0;
+                auto CurrentLAStage = LaReference.isValid ? LaReference.LAStageCount : 0;
 
                 while (CurrentLAStage > 0) {
                     CurrentLAStage--;
 
-                    size_t LAIndex = LaReference.getLAIndex(CurrentLAStage);
+                    auto LAIndex = LaReference.getLAIndex(CurrentLAStage);
 
                     if (LaReference.isLAStageInvalid(LAIndex, DeltaSub0)) {
                         continue;
                     }
 
-                    size_t MacroItCount = LaReference.getMacroItCount(CurrentLAStage);
-                    size_t j = RefIteration;
+                    auto MacroItCount = LaReference.getMacroItCount(CurrentLAStage);
+                    auto j = RefIteration;
 
                     while (iterations < GetNumIterations()) {
-                        LAstep<HDRFloatComplex<float>> las = LaReference.getLA(LAIndex, DeltaSubN, j, iterations, GetNumIterations());
+                        LAstep<HDRFloatComplex<float>> las = LaReference.getLA(
+                            LAIndex,
+                            DeltaSubN,
+                            (int32_t)j,
+                            (int32_t)iterations,
+                            (int32_t)GetNumIterations());
 
                         if (las.unusable) {
                             RefIteration = las.nextStageLAindex;
@@ -2650,7 +2655,7 @@ void Fractal::CalcCpuPerturbationFractalBLAV2(bool MemoryOnly) {
                         complex0 = las.getZ(DeltaSubN);
                         j++;
 
-                        if (complex0.chebychevNorm() < DeltaSubN.chebychevNorm() || j >= MacroItCount) {
+                        if (complex0.chebychevNorm() < DeltaSubN.chebychevNorm() || (int32_t)j >= MacroItCount) {
                             DeltaSubN = complex0;
                             j = 0;
                         }
@@ -2811,7 +2816,7 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
     gpu_results.size = results->x.size();
 
     LAReference LaReference{ *results };
-    LaReference.GenerateApproximationData(results->maxRadius, results->x.size() - 1);
+    LaReference.GenerateApproximationData(results->maxRadius, (int32_t)results->x.size() - 1);
 
     auto result = m_r.RenderPerturbLAv2(GetRenderAlgorithm(),
         (uint32_t*)m_CurIters.m_ItersMemory,

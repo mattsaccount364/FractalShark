@@ -26,7 +26,7 @@ private:
     using HDRFloat = HDRFloat<float>;
     using HDRFloatComplex = HDRFloatComplex<float>;
 
-    friend class LAReferenceCuda;
+    friend class GPU_LAReference;
 
     static const int lowBound = 64;
     static const double log16;
@@ -46,7 +46,7 @@ public:
 
     ATInfo<HDRFloat> AT;
 
-    size_t LAStageCount;
+    int32_t LAStageCount;
 
     bool isValid;
 
@@ -54,29 +54,25 @@ private:
     static constexpr int MaxLAStages = 512;
     static constexpr int DEFAULT_SIZE = 10000;
     std::vector<LAInfoDeep<float>> LAs;
-    std::vector<LAInfoI> LAIs;
-
     std::vector<LAStageInfo> LAStages;
 
     const PerturbationResults<HDRFloat>& m_PerturbationResults;
 
     void addToLA(LAInfoDeep<float> la);
-    size_t LAsize();
-    void addToLAI(LAInfoI lai);
+    int32_t LAsize();
     void popLA();
-    void popLAI();
-    bool CreateLAFromOrbit(size_t maxRefIteration);
-    bool CreateNewLAStage(size_t maxRefIteration);
+    bool CreateLAFromOrbit(int32_t maxRefIteration);
+    bool CreateNewLAStage(int32_t maxRefIteration);
 
 public:
-    void GenerateApproximationData(HDRFloat radius, size_t maxRefIteration);
+    void GenerateApproximationData(HDRFloat radius, int32_t maxRefIteration);
     void CreateATFromLA(HDRFloat radius);
 
 public:
-    bool isLAStageInvalid(size_t LAIndex, HDRFloatComplex dc);
-    size_t getLAIndex(size_t CurrentLAStage);
-    size_t getMacroItCount(size_t CurrentLAStage);
+    bool isLAStageInvalid(int32_t LAIndex, HDRFloatComplex dc);
+    int32_t getLAIndex(int32_t CurrentLAStage);
+    int32_t getMacroItCount(int32_t CurrentLAStage);
 
     LAstep<HDRFloatComplex>
-    getLA(size_t LAIndex, HDRFloatComplex dz, /*HDRFloatComplex dc, */size_t j, size_t iterations, size_t max_iterations);
+    getLA(int32_t LAIndex, HDRFloatComplex dz, /*HDRFloatComplex dc, */int32_t j, int32_t iterations, int32_t max_iterations);
 };

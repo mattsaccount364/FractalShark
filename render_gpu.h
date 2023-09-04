@@ -43,9 +43,9 @@ enum class RenderAlgorithm {
     Gpu4x32,
 };
 
-#pragma pack(push, 16)
+#pragma pack(push, 8)
 template<typename Type>
-struct alignas(16) MattReferenceSingleIter {
+struct alignas(8) MattReferenceSingleIter {
     Type x;
     Type y;
     uint32_t bad;
@@ -116,8 +116,8 @@ struct MattPerturbResults {
         //char(*__kaboom3)[sizeof(MattReferenceSingleIter<float2>)] = 1;
 
         static_assert(sizeof(MattReferenceSingleIter<float>) == 16, "Float");
-        static_assert(sizeof(MattReferenceSingleIter<double>) == 32, "Double");
-        static_assert(sizeof(MattReferenceSingleIter<float2>) == 32, "float2");
+        static_assert(sizeof(MattReferenceSingleIter<double>) == 24, "Double");
+        static_assert(sizeof(MattReferenceSingleIter<float2>) == 24, "float2");
         //static_assert(sizeof(MattReferenceSingleIter<HDRFloat<float>>) == 12 * 4, "float2");
         static_assert(sizeof(float2) == 8, "float2 type");
 

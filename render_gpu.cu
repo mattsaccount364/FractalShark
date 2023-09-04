@@ -9,15 +9,15 @@
 #include "../QuadDouble/gqd_basic.cuh"
 #include "../QuadFloat/gqf_basic.cuh"
 
-#include "GPUBLAS.h"
+#include "GPU_BLAS.h"
 
 #include "HDRFloatComplex.h"
 #include "BLA.h"
 #include "HDRFloat.h"
 
-#include "LAReferenceCuda.h"
+#include "GPU_LAReference.h"
 
-#include "LAInfoDeep.h"
+#include "GPU_LAInfoDeep.h"
 #include "LAReference.h"
 
 #include <type_traits>
@@ -170,7 +170,7 @@ template class BLA<HDRFloat<double>>;
 ////////////////////////////////////////////////////////////////////////////////////////
 
 template<class T, class GPUBLA_TYPE, int32_t LM2>
-GPUBLAS<T, GPUBLA_TYPE, LM2>::GPUBLAS(const std::vector<std::vector<GPUBLA_TYPE>>& B)
+GPU_BLAS<T, GPUBLA_TYPE, LM2>::GPU_BLAS(const std::vector<std::vector<GPUBLA_TYPE>>& B)
     : m_B(nullptr),
       m_Err(),
       m_Owned(true) {
@@ -208,7 +208,7 @@ GPUBLAS<T, GPUBLA_TYPE, LM2>::GPUBLAS(const std::vector<std::vector<GPUBLA_TYPE>
 }
 
 template<class T, class GPUBLA_TYPE, int32_t LM2>
-GPUBLAS<T, GPUBLA_TYPE, LM2>::~GPUBLAS() {
+GPU_BLAS<T, GPUBLA_TYPE, LM2>::~GPU_BLAS() {
     if (m_Owned) {
         if (m_BMem != nullptr) {
             cudaFree(m_BMem);
@@ -223,7 +223,7 @@ GPUBLAS<T, GPUBLA_TYPE, LM2>::~GPUBLAS() {
 }
 
 template<class T, class GPUBLA_TYPE, int32_t LM2>
-GPUBLAS<T, GPUBLA_TYPE, LM2>::GPUBLAS(const GPUBLAS& other) : m_Owned(false) {
+GPU_BLAS<T, GPUBLA_TYPE, LM2>::GPU_BLAS(const GPU_BLAS& other) : m_Owned(false) {
     if (this == &other) {
         return;
     }
@@ -236,13 +236,13 @@ GPUBLAS<T, GPUBLA_TYPE, LM2>::GPUBLAS(const GPUBLAS& other) : m_Owned(false) {
 }
 
 template<class T, class GPUBLA_TYPE, int32_t LM2>
-uint32_t GPUBLAS<T, GPUBLA_TYPE, LM2>::CheckValid() const {
+uint32_t GPU_BLAS<T, GPUBLA_TYPE, LM2>::CheckValid() const {
     return m_Err;
 }
 
 #ifdef __CUDA_ARCH__
 template<class T, class GPUBLA_TYPE, int32_t LM2>
-CUDA_CRAP const GPUBLA_TYPE* GPUBLAS<T, GPUBLA_TYPE, LM2>::LookupBackwards(
+CUDA_CRAP const GPUBLA_TYPE* GPU_BLAS<T, GPUBLA_TYPE, LM2>::LookupBackwards(
     const GPUBLA_TYPE* __restrict__ *altB,
     //const GPUBLA_TYPE* __restrict__ nullBla,
     /*T* curBR2,*/
@@ -369,8 +369,8 @@ CUDA_CRAP const GPUBLA_TYPE* GPUBLAS<T, GPUBLA_TYPE, LM2>::LookupBackwards(
 ////////////////////////////////////////////////////////////////////////////////////////
 
 static_assert(sizeof(MattReferenceSingleIter<float>) == 16, "Float");
-static_assert(sizeof(MattReferenceSingleIter<double>) == 32, "Double");
-static_assert(sizeof(MattReferenceSingleIter<dblflt>) == 32, "Dblflt");
+static_assert(sizeof(MattReferenceSingleIter<double>) == 24, "Double");
+static_assert(sizeof(MattReferenceSingleIter<dblflt>) == 24, "Dblflt");
 
 //char(*__kaboom1)[sizeof(MattReferenceSingleIter<float>)] = 1;
 //char(*__kaboom2)[sizeof(MattReferenceSingleIter<double>)] = 1;
@@ -434,15 +434,15 @@ struct MattPerturbSingleResults {
 
     __device__ HDRFloatComplex<float> GetComplex(size_t index) const {
         
-        auto temp = *(float4*)(&iters[index].x);
-        const auto &re = *(HDRFloat<float>*)&temp.x;
-        const auto &im = *(HDRFloat<float>*)&temp.z;
-        static_assert(sizeof(iters[index].x) == 8, "Misaligned");
-        static_assert(sizeof(iters[index].y) == 8, "Misaligned");
-        static_assert(sizeof(HDRFloat<float>) == 8, "Misaligned");
-        static_assert(sizeof(float4) == 16, "Misaligned float4");
-        //return HDRFloatComplex<float>(iters[index].x, iters[index].y);
-        return HDRFloatComplex<float>(re, im);
+        //auto temp = *(float4*)(&iters[index].x);
+        //const auto &re = *(HDRFloat<float>*)&temp.x;
+        //const auto &im = *(HDRFloat<float>*)&temp.z;
+        //static_assert(sizeof(iters[index].x) == 8, "Misaligned");
+        //static_assert(sizeof(iters[index].y) == 8, "Misaligned");
+        //static_assert(sizeof(HDRFloat<float>) == 8, "Misaligned");
+        //static_assert(sizeof(float4) == 16, "Misaligned float4");
+        //return HDRFloatComplex<float>(re, im);
+        return HDRFloatComplex<float>(iters[index].x, iters[index].y);
     }
 
     MattPerturbSingleResults(MattPerturbSingleResults&& other) = delete;
@@ -460,37 +460,28 @@ struct MattPerturbSingleResults {
 
 
 //////////////////////////////////////////////////////////////////////////////
-// LAReferenceCuda
+// GPU_LAReference
 //////////////////////////////////////////////////////////////////////////////
 
 __host__
-LAReferenceCuda::LAReferenceCuda(const LAReference& other) :
+GPU_LAReference::GPU_LAReference(const LAReference& other) :
     UseAT{},
     AT{},
     LAStageCount{},
     isValid{},
     LAs{},
-    LAIs{},
     LAStages{},
     m_Owned(true) {
 
-    LAInfoDeep<float>* tempLAs;
-    LAInfoI* tempLAIs;
+    GPU_LAInfoDeep<float>* tempLAs;
     LAStageInfo* tempLAStages;
 
-    m_Err = cudaMallocManaged(&tempLAs, other.LAs.size() * sizeof(LAInfoDeep<float>), cudaMemAttachGlobal);
+    m_Err = cudaMallocManaged(&tempLAs, other.LAs.size() * sizeof(GPU_LAInfoDeep<float>), cudaMemAttachGlobal);
     if (m_Err != cudaSuccess) {
         return;
     }
 
     LAs = tempLAs;
-
-    m_Err = cudaMallocManaged(&tempLAIs, other.LAIs.size() * sizeof(LAInfoI), cudaMemAttachGlobal);
-    if (m_Err != cudaSuccess) {
-        return;
-    }
-
-    LAIs = tempLAIs;
 
     m_Err = cudaMallocManaged(&tempLAStages, other.LAStages.size() * sizeof(LAStageInfo), cudaMemAttachGlobal);
     if (m_Err != cudaSuccess) {
@@ -499,18 +490,22 @@ LAReferenceCuda::LAReferenceCuda(const LAReference& other) :
 
     LAStages = tempLAStages;
 
-    m_Err = cudaMemcpy(LAs, other.LAs.data(),
-        other.LAs.size() * sizeof(LAInfoDeep<float>),
-        cudaMemcpyDefault);
-    if (m_Err != cudaSuccess) {
-        return;
-    }
+    for (size_t i = 0; i < other.LAs.size(); i++) {
+        LAs[i].RefRe = other.LAs[i].RefRe;
+        LAs[i].RefIm = other.LAs[i].RefIm;
+        LAs[i].RefExp = other.LAs[i].RefExp;
+        LAs[i].LAThresholdMant = other.LAs[i].LAThresholdMant;
+        LAs[i].LAThresholdExp = other.LAs[i].LAThresholdExp;
 
-    m_Err = cudaMemcpy(LAIs, other.LAIs.data(),
-        other.LAIs.size() * sizeof(LAInfoI),
-        cudaMemcpyDefault);
-    if (m_Err != cudaSuccess) {
-        return;
+        LAs[i].ZCoeffRe = other.LAs[i].ZCoeffRe;
+        LAs[i].ZCoeffIm = other.LAs[i].ZCoeffIm;
+        LAs[i].ZCoeffExp = other.LAs[i].ZCoeffExp;
+
+        LAs[i].CCoeffRe = other.LAs[i].CCoeffRe;
+        LAs[i].CCoeffIm = other.LAs[i].CCoeffIm;
+        LAs[i].CCoeffExp = other.LAs[i].CCoeffExp;
+
+        LAs[i].LAi = other.LAs[i].LAi;
     }
 
     m_Err = cudaMemcpy(LAStages, other.LAStages.data(),
@@ -521,16 +516,11 @@ LAReferenceCuda::LAReferenceCuda(const LAReference& other) :
     }
 }
 
-LAReferenceCuda::~LAReferenceCuda() {
+GPU_LAReference::~GPU_LAReference() {
     if (m_Owned) {
         if (LAs != nullptr) {
             cudaFree(LAs);
             LAs = nullptr;
-        }
-
-        if (LAIs != nullptr) {
-            cudaFree(LAIs);
-            LAIs = nullptr;
         }
 
         if (LAStages != nullptr) {
@@ -541,7 +531,7 @@ LAReferenceCuda::~LAReferenceCuda() {
 }
 
 __host__
-LAReferenceCuda::LAReferenceCuda(const LAReferenceCuda& other) : m_Owned(false) {
+GPU_LAReference::GPU_LAReference(const GPU_LAReference& other) : m_Owned(false) {
     if (this == &other) {
         return;
     }
@@ -552,7 +542,6 @@ LAReferenceCuda::LAReferenceCuda(const LAReferenceCuda& other) : m_Owned(false) 
     this->isValid = other.isValid;
     this->m_Err = cudaSuccess;
     this->LAs = other.LAs;
-    this->LAIs = other.LAIs;
     this->LAStages = other.LAStages;
 }
 
@@ -1039,7 +1028,7 @@ template<int32_t LM2>
 __global__
 void mandel_1x_double_perturb_bla(uint32_t* iter_matrix,
     MattPerturbSingleResults<double> PerturbDouble,
-    GPUBLAS<double, BLA<double>, LM2> doubleBlas,
+    GPU_BLAS<double, BLA<double>, LM2> doubleBlas,
     int width,
     int height,
     double cx,
@@ -1194,7 +1183,7 @@ void
 //__launch_bounds__(NB_THREADS_W * NB_THREADS_H, 2)
 mandel_1xHDR_float_perturb_bla(uint32_t* iter_matrix,
     MattPerturbSingleResults<HDRFloatType> Perturb,
-    GPUBLAS<HDRFloatType, BLA<HDRFloatType>, LM2> blas,
+    GPU_BLAS<HDRFloatType, BLA<HDRFloatType>, LM2> blas,
     int width,
     int height,
     const HDRFloatType cx,
@@ -1419,7 +1408,7 @@ void
 //__launch_bounds__(NB_THREADS_W * NB_THREADS_H, 2)
 mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
     MattPerturbSingleResults<HDRFloat<float>> Perturb,
-    LAReferenceCuda LaReference, // "copy"
+    GPU_LAReference LaReference, // "copy"
     int width,
     int height,
     const HDRFloatType cx,
@@ -1506,7 +1495,7 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
         size_t j = RefIteration;
 
         while (iter < n_iterations) {
-            LAstep las = LaReference.getLA(LAIndex, DeltaSubN, j, iter, n_iterations);
+            GPU_LAstep las = LaReference.getLA(LAIndex, DeltaSubN, j, iter, n_iterations);
 
             if (las.unusable) {
                 RefIteration = las.nextStageLAindex;
@@ -2388,7 +2377,7 @@ __global__
 void mandel_1x_float_perturb_scaled_bla(uint32_t* iter_matrix,
     MattPerturbSingleResults<float> PerturbFloat,
     MattPerturbSingleResults<double> PerturbDouble,
-    GPUBLAS<double, BLA<double>, LM2> doubleBlas,
+    GPU_BLAS<double, BLA<double>, LM2> doubleBlas,
     int width,
     int height,
     double cx,
@@ -3217,7 +3206,7 @@ uint32_t GPURenderer::RenderPerturbLAv2(
         return result;
     }
 
-    LAReferenceCuda laReferenceCuda{LaReference};
+    GPU_LAReference laReferenceCuda{LaReference};
     result = laReferenceCuda.CheckValid();
     if (result != 0) {
         return result;
@@ -3291,7 +3280,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
         }
 
         auto Run = [&]<int32_t LM2>() -> uint32_t {
-            GPUBLAS<double, BLA<double>, LM2> gpu_blas(blas->m_B);
+            GPU_BLAS<double, BLA<double>, LM2> gpu_blas(blas->m_B);
             result = gpu_blas.CheckValid();
             if (result != 0) {
                 return result;
@@ -3418,7 +3407,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
         if constexpr (std::is_same<T, double>::value) {
 
             auto Run = [&]<int32_t LM2>() -> uint32_t {
-                GPUBLAS<double, BLA<double>, LM2> doubleGpuBlas(blas->m_B);
+                GPU_BLAS<double, BLA<double>, LM2> doubleGpuBlas(blas->m_B);
                 result = doubleGpuBlas.CheckValid();
                 if (result != 0) {
                     return result;
@@ -3565,7 +3554,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
         }
 
         auto Run = [&]<int32_t LM2>() -> uint32_t {
-            GPUBLAS<HDRFloat<float>, BLA<HDRFloat<float>>, LM2> gpu_blas(blas->m_B);
+            GPU_BLAS<HDRFloat<float>, BLA<HDRFloat<float>>, LM2> gpu_blas(blas->m_B);
             result = gpu_blas.CheckValid();
             if (result != 0) {
                 return result;
@@ -3625,7 +3614,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
         }
 
         auto Run = [&]<int32_t LM2>() -> uint32_t {
-            GPUBLAS<HDRFloat<double>, BLA<HDRFloat<double>>, LM2> gpu_blas(blas->m_B);
+            GPU_BLAS<HDRFloat<double>, BLA<HDRFloat<double>>, LM2> gpu_blas(blas->m_B);
             result = gpu_blas.CheckValid();
             if (result != 0) {
                 return result;

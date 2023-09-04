@@ -189,10 +189,11 @@
       <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">EnableFastChecks</BasicRuntimeChecks>
     </ClCompile>
     <ClCompile Include="..\HDRFloat.cpp" />
+    <ClInclude Include="..\GPU_LAInfoDeep.h" />
     <ClInclude Include="..\LAInfoDeep.h" />
     <ClInclude Include="..\LAInfoI.h" />
     <ClInclude Include="..\LAReference.h" />
-    <ClInclude Include="..\LAReferenceCuda.h" />
+    <ClInclude Include="..\GPU_LAReference.h" />
     <ClInclude Include="..\LAstep.h" />
     <ClCompile Include="..\LAReference.cpp" />
     <ClCompile Include="..\RefOrbitCalc.cpp" />
@@ -221,7 +222,7 @@
     <ClInclude Include="..\Fractal.h" />
     <ClInclude Include="..\FractalNetwork.h" />
     <ClInclude Include="..\FractalSetupData.h" />
-    <ClInclude Include="..\GPUBLAS.h" />
+    <ClInclude Include="..\GPU_BLAS.h" />
     <ClInclude Include="..\HDRFloat.h" />
     <ClInclude Include="..\HDRFloatComplex.h" />
     <ClInclude Include="..\HighPrecision.h" />

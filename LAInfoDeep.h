@@ -4,6 +4,10 @@
 #include "HDRFloatComplex.h"
 #include "LAStep.h"
 #include "ATInfo.h"
+#include  "LAInfoI.h"
+
+template<class SubType>
+class GPU_LAInfoDeep;
 
 template<class SubType>
 class LAInfoDeep {
@@ -11,6 +15,8 @@ public:
     using HDRFloat = HDRFloat<SubType>;
     using HDRFloatComplex = HDRFloatComplex<SubType>;
     using T = SubType;
+
+    friend class GPU_LAInfoDeep<SubType>;
 
     static constexpr int DEFAULT_DETECTION_METHOD = 1;
     static constexpr T DefaultStage0PeriodDetectionThreshold = 0x1.0p-10;
@@ -41,25 +47,28 @@ public:
     T LAThresholdScale = DefaultLAThresholdScale;
     T LAThresholdCScale = DefaultLAThresholdCScale;
 
-private:
+public:
 
     T RefRe, RefIm;
-    long RefExp;
-
-    T ZCoeffRe, ZCoeffIm;
-    long ZCoeffExp;
-
-    T CCoeffRe, CCoeffIm;
-    long CCoeffExp;
+    int32_t RefExp;
 
     T LAThresholdMant;
-    long LAThresholdExp;
+    int32_t LAThresholdExp;
+
+    T ZCoeffRe, ZCoeffIm;
+    int32_t ZCoeffExp;
+
+    T CCoeffRe, CCoeffIm;
+    int32_t CCoeffExp;
 
     T LAThresholdCMant;
-    long LAThresholdCExp;
+    int32_t LAThresholdCExp;
+
+    LAInfoI LAi;
 
     T MinMagMant;
-    long MinMagExp;
+    int32_t MinMagExp;
+
 
 public:
     CUDA_CRAP LAInfoDeep();
@@ -81,6 +90,8 @@ public:
     CUDA_CRAP void CreateAT(ATInfo<HDRFloat> &Result, LAInfoDeep Next);
     CUDA_CRAP HDRFloat getLAThreshold();
     CUDA_CRAP HDRFloat getLAThresholdC();
+    CUDA_CRAP void SetLAi(const LAInfoI &other);
+    CUDA_CRAP const LAInfoI &GetLAi() const;
 };
 
 template<class SubType>
@@ -100,7 +111,8 @@ LAInfoDeep<SubType>::LAInfoDeep() :
     LAThresholdCMant{},
     LAThresholdCExp{},
     MinMagMant{},
-    MinMagExp{} {
+    MinMagExp{},
+    LAi{} {
 }
 
 template<class SubType>
@@ -136,6 +148,7 @@ LAInfoDeep<SubType>::LAInfoDeep(HDRFloatComplex z) {
         MinMagExp = MinMag.getExp();
     }
 
+    LAi = {};
 }
 
 template<class SubType>
@@ -431,3 +444,12 @@ LAInfoDeep<SubType>::HDRFloat LAInfoDeep<SubType>::getLAThresholdC() {
     return HDRFloat(LAThresholdCExp, LAThresholdCMant);
 }
 
+template<class SubType>
+CUDA_CRAP void LAInfoDeep<SubType>::SetLAi(const LAInfoI& other) {
+    this->LAi = other;
+}
+
+template<class SubType>
+CUDA_CRAP const LAInfoI& LAInfoDeep<SubType>::GetLAi() const {
+    return this->LAi;
+}

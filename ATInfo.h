@@ -16,7 +16,7 @@ public:
     CUDA_CRAP ATInfo();
 
 public:
-    size_t StepLength;
+    int32_t StepLength;
     HDRFloat ThresholdC;
     float SqrEscapeRadius;
     HDRFloatComplex RefC;
@@ -37,7 +37,7 @@ public:
     CUDA_CRAP HDRFloatComplex getC(HDRFloatComplex dc);
     CUDA_CRAP HDRFloatComplex getDZ(HDRFloatComplex z);
 
-    CUDA_CRAP void PerformAT(size_t max_iterations, HDRFloatComplex DeltaSub0, ATResult &result);
+    CUDA_CRAP void PerformAT(int32_t max_iterations, HDRFloatComplex DeltaSub0, ATResult &result);
 };
 
 
@@ -83,16 +83,16 @@ ATInfo<T>::HDRFloatComplex ATInfo<T>::getDZ(HDRFloatComplex z) {
 template<class T>
 CUDA_CRAP
 void ATInfo<T>::PerformAT(
-    size_t max_iterations,
+    int32_t max_iterations,
     HDRFloatComplex DeltaSub0,
     ATResult& result) {
     //int ATMaxIt = (max_iterations - 1) / StepLength + 1;
-    size_t ATMaxIt = max_iterations / StepLength;
+    int32_t ATMaxIt = max_iterations / StepLength;
 
     HDRFloatComplex c = getC((HDRFloatComplex)DeltaSub0);
     HDRFloatComplex z{};
 
-    size_t i;
+    int32_t i;
     for (i = 0; i < ATMaxIt; i++) {
 
         auto nsq = z.norm_squared();

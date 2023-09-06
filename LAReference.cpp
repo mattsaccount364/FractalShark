@@ -180,7 +180,7 @@ bool LAReference::CreateLAFromOrbit(int32_t maxRefIteration) {
     return true;
 }
 
-
+//#pragma optimize( "", off )
 bool LAReference::CreateNewLAStage(int32_t maxRefIteration) {
     LAInfoDeep<float> LA;
     LAInfoI LAI = LAInfoI();
@@ -317,7 +317,6 @@ bool LAReference::CreateNewLAStage(int32_t maxRefIteration) {
         int32_t PrevStageLAIndexj = PrevStageLAIndex + j;
 
         LAInfoDeep<float> PrevStageLAj = LAs[PrevStageLAIndexj];
-        const LAInfoI *PrevStageLAIj = &LAs[PrevStageLAIndexj].GetLAi();
         bool PeriodDetected = LA.Composite(NewLA, PrevStageLAj);
 
         if (PeriodDetected || i >= PeriodEnd) {
@@ -337,15 +336,17 @@ bool LAReference::CreateNewLAStage(int32_t maxRefIteration) {
             }
             else {
                 LA = PrevStageLAj.Composite(PrevStageLAjp1);
-                i += PrevStageLAIj->StepLength;
+
+                const LAInfoI &PrevStageLAIj = LAs[PrevStageLAIndexj].GetLAi();
+                i += PrevStageLAIj.StepLength;
                 j++;
             }
         }
         else {
             LA = NewLA;
         }
-        PrevStageLAIj = &LAs[PrevStageLAIndex + j].GetLAi();
-        i += PrevStageLAIj->StepLength;
+        const LAInfoI &PrevStageLAIj = LAs[PrevStageLAIndex + j].GetLAi();
+        i += PrevStageLAIj.StepLength;
     }
 
     LAI.StepLength = i - PeriodBegin;
@@ -360,6 +361,7 @@ bool LAReference::CreateNewLAStage(int32_t maxRefIteration) {
     addToLA(LA);
     return true;
 }
+//#pragma optimize( "", on )
 
 void LAReference::GenerateApproximationData(HDRFloat radius, int32_t maxRefIteration) {
 

@@ -465,10 +465,10 @@ struct MattPerturbSingleResults {
 
 __host__
 GPU_LAReference::GPU_LAReference(const LAReference& other) :
-    UseAT{},
-    AT{},
-    LAStageCount{},
-    isValid{},
+    UseAT{other.UseAT},
+    AT{other.AT},
+    LAStageCount{other.LAStageCount},
+    isValid{other.isValid},
     LAs{},
     LAStages{},
     m_Owned(true) {
@@ -1520,36 +1520,59 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
 
     HDRFloatType normSquared{};
 
-    if (iter < n_iterations) {
-        normSquared = complex0.norm_squared();
-    }
+    DeltaSubNX = DeltaSubN.getRe();
+    DeltaSubNY = DeltaSubN.getIm();
 
-    for (; iter < n_iterations; iter++) {
-        auto curIter = Perturb.GetComplex(RefIteration);
-        curIter = curIter.times2_mutable();
-        curIter = curIter.plus_mutable(DeltaSubN);
-        DeltaSubN = DeltaSubN.times_mutable(curIter);
-        DeltaSubN = DeltaSubN.plus_mutable(DeltaSub0);
-        HdrReduce(DeltaSubN);
+    for (;;) {
+        const HDRFloatType DeltaSubNXOrig = DeltaSubNX;
+        const HDRFloatType DeltaSubNYOrig = DeltaSubNY;
 
-        RefIteration++;
+        const auto tempMulX2 = Perturb.iters[RefIteration].x * Two;
+        const auto tempMulY2 = Perturb.iters[RefIteration].y * Two;
 
-        complex0 = Perturb.GetComplex(RefIteration).plus(DeltaSubN);
-        HdrReduce(complex0);
+        ++RefIteration;
 
-        normSquared = complex0.norm_squared();
+        const auto tempSum1 = (tempMulY2 + DeltaSubNYOrig);
+        const auto tempSum2 = (tempMulX2 + DeltaSubNXOrig);
+
+        DeltaSubNX = HDRFloatType::custom_perturb1<false>(
+            DeltaSubNXOrig,
+            tempSum2,
+            DeltaSubNYOrig,
+            tempSum1,
+            DeltaSub0X);
+
+        DeltaSubNY = HDRFloatType::custom_perturb1<true>(
+            DeltaSubNXOrig,
+            tempSum1,
+            DeltaSubNYOrig,
+            tempSum2,
+            DeltaSub0Y);
+
+        const auto tempVal1X = Perturb.iters[RefIteration].x;
+        const auto tempVal1Y = Perturb.iters[RefIteration].y;
+
+        const HDRFloatType tempZX = tempVal1X + DeltaSubNX;
+        const HDRFloatType tempZY = tempVal1Y + DeltaSubNY;
+        HDRFloatType normSquared = tempZX * tempZX + tempZY * tempZY;
         HdrReduce(normSquared);
 
-        auto DeltaNormSquared = DeltaSubN.norm_squared();
-        HdrReduce(DeltaNormSquared);
+        if (normSquared <= TwoFiftySix && iter < n_iterations) {
+            DeltaNormSquared = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
+            HdrReduce(DeltaNormSquared);
 
-        if (normSquared > HDRFloatType(256)) {
-            break;
+            if (normSquared < DeltaNormSquared ||
+                RefIteration >= Perturb.size - 1) {
+                DeltaSubNX = tempZX;
+                DeltaSubNY = tempZY;
+                DeltaNormSquared = normSquared;
+                RefIteration = 0;
+            }
+
+            ++iter;
         }
-
-        if (normSquared < DeltaNormSquared || (RefIteration >= MaxRefIteration)) {
-            DeltaSubN = complex0;
-            RefIteration = 0;
+        else {
+            break;
         }
     }
 

@@ -40,8 +40,6 @@ public:
         isValid{} {
     }
 
-    void init();
-
     bool UseAT;
 
     ATInfo<HDRFloat> AT;
@@ -60,7 +58,6 @@ private:
 
     void addToLA(LAInfoDeep<float> la);
     int32_t LAsize();
-    void popLA();
     bool CreateLAFromOrbit(int32_t maxRefIteration);
     bool CreateNewLAStage(int32_t maxRefIteration);
 

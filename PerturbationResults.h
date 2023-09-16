@@ -22,8 +22,6 @@ public:
     std::vector<HighPrecision> ReuseX;
     std::vector<HighPrecision> ReuseY;
 
-    bool m_Periodic;
-
     void clear() {
         hiX = {};
         hiY = {};

@@ -221,7 +221,7 @@ private:
     //    size_t& BLA2SkippedIterations,
     //    size_t& BLA2SkippedSteps);
 
-    void CalcCpuPerturbationFractalBLAV2(bool MemoryOnly);
+    void CalcCpuPerturbationFractalLAV2(bool MemoryOnly);
 
     template<class T, class SubType>
     void CalcGpuPerturbationFractalBLA(bool MemoryOnly);

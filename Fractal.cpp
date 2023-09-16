@@ -1117,12 +1117,12 @@ void Fractal::View(size_t view)
 
     switch (view) {
     case 1:
-        // Debug spot - difference between LAv2 CPU and LAv2 GPU
-        minX = HighPrecision{ "-0.7520305136813304157459652169343445239106849152427280155142572152141658010727841" };
-        minY = HighPrecision{ "-0.03249164740372145996998748119592284224147745347045880348463377980254168826626708" };
-        maxX = HighPrecision{ "-0.7520305136813304157459652169343445239106597538888004760545494449613906457760511" };
-        maxY = HighPrecision{ "-0.03249164740372145996998748119592284224145229211653126402492600954976653296953402" };
-        SetNumIterations(2038431744);
+        // Limits of 4x64 GPU
+        minX = HighPrecision{ "-1.763399177066752695854220120818493394874764715075525070697085376173644156624573649873526729559691534754284706803085481158" };
+        minY = HighPrecision{ "0.04289211262806512836473285627858318635734695759291867302112730624188941270466703058975670804976478935827994844038526618063053858" };
+        maxX = HighPrecision{ "-1.763399177066752695854220120818493394874764715075525070697085355870272824868052108014289980411203646967653925705407102169" };
+        maxY = HighPrecision{ "0.04289211262806512836473285627858318635734695759291867302112731461463330922125985949917962768812338316745717506303752530265831841" };
+        SetNumIterations(196608);
         break;
 
     case 2:
@@ -1581,7 +1581,7 @@ void Fractal::CalcFractal(bool MemoryOnly)
         CalcCpuPerturbationFractalBLA<HDRFloat<float>, float>(MemoryOnly);
         break;
     case RenderAlgorithm::Cpu32PerturbedBLAV2HDR:
-        CalcCpuPerturbationFractalBLAV2(MemoryOnly);
+        CalcCpuPerturbationFractalLAV2(MemoryOnly);
         break;
     case RenderAlgorithm::Cpu64:
         CalcCpuHDR<double, double>(MemoryOnly);
@@ -1980,8 +1980,9 @@ void Fractal::FillCoord(HighPrecision& src, MattCoords& dest) {
     dest.doubleOnly = Convert<HighPrecision, double>(src);
 
     dest.hdrflt = (HDRFloat<float>)src;
-
     dest.hdrdbl = (HDRFloat<double>)src;
+    HdrReduce(dest.hdrflt);
+    HdrReduce(dest.hdrdbl);
 
     dest.flt.y = Convert<HighPrecision, float>(src);
     dest.flt.x = Convert<HighPrecision, float>(src - HighPrecision{ dest.flt.y });
@@ -2544,7 +2545,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
     DrawFractal(MemoryOnly);
 }
 
-void Fractal::CalcCpuPerturbationFractalBLAV2(bool MemoryOnly) {
+void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
     using T = HDRFloat<float>;
     using SubType = float;
     using TComplex = HDRFloatComplex<float>;
@@ -2754,9 +2755,6 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
         results->bad.size(),
         results->PeriodMaybeZero };
 
-    // all sizes should be the same anyway just pick one
-    gpu_results.size = results->x.size();
-
     auto result = m_r.RenderPerturbBLA(GetRenderAlgorithm(),
         (uint32_t*)m_CurIters.m_ItersMemory,
         &gpu_results,
@@ -2780,9 +2778,6 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
 template<class T, class SubType>
 void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
     auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<T, SubType>();
-
-    //BLAS<T> blas(*results);
-    //blas.Init(results->x.size(), T(results->maxRadius));
 
     uint32_t err =
         m_r.InitializeMemory(m_CurIters.m_Width,
@@ -2812,9 +2807,6 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
         results->bad.data(),
         results->bad.size(),
         results->PeriodMaybeZero };
-
-    // all sizes should be the same anyway just pick one
-    gpu_results.size = results->x.size();
 
     LAReference LaReference{ *results };
     LaReference.GenerateApproximationData(results->maxRadius, (int32_t)results->x.size() - 1);
@@ -2874,9 +2866,6 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
         results->bad.data(),
         results->bad.size(),
         results->PeriodMaybeZero };
-
-    // all sizes should be the same anyway just pick one
-    gpu_results.size = results->x.size();
 
     MattPerturbResults<T2> gpu_results2{
         results2->x.size(),

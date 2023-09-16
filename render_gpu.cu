@@ -469,9 +469,10 @@ GPU_LAReference::GPU_LAReference(const LAReference& other) :
     AT{other.AT},
     LAStageCount{other.LAStageCount},
     isValid{other.isValid},
+    m_Err{},
+    m_Owned(true),
     LAs{},
-    LAStages{},
-    m_Owned(true) {
+    LAStages{} {
 
     GPU_LAInfoDeep<float>* tempLAs;
     LAStageInfo* tempLAStages;
@@ -491,28 +492,11 @@ GPU_LAReference::GPU_LAReference(const LAReference& other) :
     LAStages = tempLAStages;
 
     for (size_t i = 0; i < other.LAs.size(); i++) {
-        LAs[i].RefRe = other.LAs[i].RefRe;
-        LAs[i].RefIm = other.LAs[i].RefIm;
-        LAs[i].RefExp = other.LAs[i].RefExp;
-        LAs[i].LAThresholdMant = other.LAs[i].LAThresholdMant;
-        LAs[i].LAThresholdExp = other.LAs[i].LAThresholdExp;
-
-        LAs[i].ZCoeffRe = other.LAs[i].ZCoeffRe;
-        LAs[i].ZCoeffIm = other.LAs[i].ZCoeffIm;
-        LAs[i].ZCoeffExp = other.LAs[i].ZCoeffExp;
-
-        LAs[i].CCoeffRe = other.LAs[i].CCoeffRe;
-        LAs[i].CCoeffIm = other.LAs[i].CCoeffIm;
-        LAs[i].CCoeffExp = other.LAs[i].CCoeffExp;
-
-        LAs[i].LAi = other.LAs[i].LAi;
+        LAs[i] = other.LAs[i];
     }
 
-    m_Err = cudaMemcpy(LAStages, other.LAStages.data(),
-        other.LAStages.size() * sizeof(LAStageInfo),
-        cudaMemcpyDefault);
-    if (m_Err != cudaSuccess) {
-        return;
+    for (size_t i = 0; i < other.LAStages.size(); i++) {
+        LAStages[i] = other.LAStages[i];
     }
 }
 
@@ -532,10 +516,6 @@ GPU_LAReference::~GPU_LAReference() {
 
 __host__
 GPU_LAReference::GPU_LAReference(const GPU_LAReference& other) : m_Owned(false) {
-    if (this == &other) {
-        return;
-    }
-
     this->UseAT = other.UseAT;
     this->AT = other.AT;
     this->LAStageCount = other.LAStageCount;
@@ -1425,15 +1405,13 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
     if (X >= width || Y >= height)
         return;
 
-    //size_t idx = width * (height - Y - 1) + X;
-    size_t idx = width * Y + X;
-
+    int32_t idx = width * Y + X;
     if (iter_matrix[idx] != 0) {
         return;
     }
 
-    size_t iter = 0;
-    size_t RefIteration = 0;
+    int32_t iter = 0;
+    int32_t RefIteration = 0;
     const HDRFloatType DeltaReal = dx * X - centerX;
     const HDRFloatType DeltaImaginary = -dy * Y - centerY;
 
@@ -1449,7 +1427,7 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
     using TComplex = HDRFloatComplex<float>;
 
     ////////////
-    size_t BLA2SkippedIterations;
+    int32_t BLA2SkippedIterations;
 
     BLA2SkippedIterations = 0;
     
@@ -1466,7 +1444,7 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
         DeltaSubN = res.dz;
     }
 
-    size_t MaxRefIteration = Perturb.size - 1;
+    int32_t MaxRefIteration = Perturb.size - 1;
 
     iter = BLA2SkippedIterations;
 
@@ -1480,19 +1458,19 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
         complex0 = Perturb.GetComplex(RefIteration).plus_mutable(DeltaSubN);
     }
 
-    size_t CurrentLAStage = LaReference.isValid ? LaReference.LAStageCount : 0;
+    int32_t CurrentLAStage = LaReference.isValid ? LaReference.LAStageCount : 0;
 
     while (CurrentLAStage > 0) {
         CurrentLAStage--;
 
-        size_t LAIndex = LaReference.getLAIndex(CurrentLAStage);
+        int32_t LAIndex = LaReference.getLAIndex(CurrentLAStage);
 
         if (LaReference.isLAStageInvalid(LAIndex, DeltaSub0)) {
             continue;
         }
 
-        size_t MacroItCount = LaReference.getMacroItCount(CurrentLAStage);
-        size_t j = RefIteration;
+        int32_t MacroItCount = LaReference.getMacroItCount(CurrentLAStage);
+        int32_t j = RefIteration;
 
         while (iter < n_iterations) {
             GPU_LAstep las = LaReference.getLA(LAIndex, DeltaSubN, j, iter, n_iterations);
@@ -1511,6 +1489,8 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
                 DeltaSubN = complex0;
                 j = 0;
             }
+
+            HdrReduce(DeltaSubN); // maybe don't need
         }
 
         if (iter >= n_iterations) {

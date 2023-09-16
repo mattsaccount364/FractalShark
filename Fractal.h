@@ -377,8 +377,8 @@ private:
     FractalSetupData m_SetupData;
 
     // Defaults
-    //static constexpr size_t DefaultIterations = 256 * 32;
-    static constexpr size_t DefaultIterations = 256;
+    static constexpr size_t DefaultIterations = 256 * 32;
+    //static constexpr size_t DefaultIterations = 256;
 
     // Handle to the thread which checks to see if we should quit or not
     HANDLE m_CheckForAbortThread;

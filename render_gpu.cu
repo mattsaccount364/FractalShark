@@ -1485,12 +1485,17 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
             complex0 = las.getZ(DeltaSubN);
             j++;
 
-            if (complex0.chebychevNorm() < DeltaSubN.chebychevNorm() || j >= MacroItCount) {
+            auto lhs = complex0.chebychevNorm();
+            HdrReduce(lhs);
+            auto rhs = DeltaSubN.chebychevNorm();
+            HdrReduce(rhs);
+
+            if (lhs < rhs || j >= MacroItCount) {
                 DeltaSubN = complex0;
                 j = 0;
             }
 
-            HdrReduce(DeltaSubN); // maybe don't need
+            //HdrReduce(DeltaSubN); // maybe don't need
         }
 
         if (iter >= n_iterations) {

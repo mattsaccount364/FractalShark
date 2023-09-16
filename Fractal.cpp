@@ -143,8 +143,8 @@ void Fractal::Initialize(int width,
     //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedBLA);
     //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedScaled);
     //SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedPeriodic);
-    SetRenderAlgorithm(RenderAlgorithm::Cpu32PerturbedBLAV2HDR);
-    //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedLAv2);
+    //SetRenderAlgorithm(RenderAlgorithm::Cpu32PerturbedBLAV2HDR);
+    SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedLAv2);
 
     SetIterationPrecision(1);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed);
@@ -153,9 +153,9 @@ void Fractal::Initialize(int width,
     m_RefOrbit.ResetGuess();
 
     ResetDimensions(width, height, 1);
-    //View(0);
+    View(0);
     //View(5);
-    View(2);
+    //View(2);
 
     m_ChangedWindow = true;
     m_ChangedScrn = true;
@@ -2657,7 +2657,12 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
                         complex0 = las.getZ(DeltaSubN);
                         j++;
 
-                        if (complex0.chebychevNorm() < DeltaSubN.chebychevNorm() || (int32_t)j >= MacroItCount) {
+                        auto lhs = complex0.chebychevNorm();
+                        HdrReduce(lhs);
+                        auto rhs = DeltaSubN.chebychevNorm();
+                        HdrReduce(rhs);
+
+                        if (lhs < rhs || (int32_t)j >= MacroItCount) {
                             DeltaSubN = complex0;
                             j = 0;
                         }

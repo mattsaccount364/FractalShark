@@ -1520,59 +1520,35 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
 
     HDRFloatType normSquared{};
 
-    DeltaSubNX = DeltaSubN.getRe();
-    DeltaSubNY = DeltaSubN.getIm();
+    if (iter < n_iterations) {
+        normSquared = complex0.norm_squared();
+    }
 
-    for (;;) {
-        const HDRFloatType DeltaSubNXOrig = DeltaSubNX;
-        const HDRFloatType DeltaSubNYOrig = DeltaSubNY;
+    for (; iter < n_iterations; iter++) {
+        auto curIter = Perturb.GetComplex(RefIteration);
+        curIter = curIter.times2_mutable();
+        curIter = curIter.plus_mutable(DeltaSubN);
+        DeltaSubN = DeltaSubN.times_mutable(curIter);
+        DeltaSubN = DeltaSubN.plus_mutable(DeltaSub0);
+        HdrReduce(DeltaSubN);
 
-        const auto tempMulX2 = Perturb.iters[RefIteration].x * Two;
-        const auto tempMulY2 = Perturb.iters[RefIteration].y * Two;
+        RefIteration++;
 
-        ++RefIteration;
+        complex0 = Perturb.GetComplex(RefIteration).plus(DeltaSubN);
+        HdrReduce(complex0);
 
-        const auto tempSum1 = (tempMulY2 + DeltaSubNYOrig);
-        const auto tempSum2 = (tempMulX2 + DeltaSubNXOrig);
+        normSquared = complex0.norm_squared();
 
-        DeltaSubNX = HDRFloatType::custom_perturb1<false>(
-            DeltaSubNXOrig,
-            tempSum2,
-            DeltaSubNYOrig,
-            tempSum1,
-            DeltaSub0X);
+        auto DeltaNormSquared = DeltaSubN.norm_squared();
+        HdrReduce(DeltaNormSquared);
 
-        DeltaSubNY = HDRFloatType::custom_perturb1<true>(
-            DeltaSubNXOrig,
-            tempSum1,
-            DeltaSubNYOrig,
-            tempSum2,
-            DeltaSub0Y);
-
-        const auto tempVal1X = Perturb.iters[RefIteration].x;
-        const auto tempVal1Y = Perturb.iters[RefIteration].y;
-
-        const HDRFloatType tempZX = tempVal1X + DeltaSubNX;
-        const HDRFloatType tempZY = tempVal1Y + DeltaSubNY;
-        HDRFloatType normSquared = tempZX * tempZX + tempZY * tempZY;
-        HdrReduce(normSquared);
-
-        if (normSquared <= TwoFiftySix && iter < n_iterations) {
-            DeltaNormSquared = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
-            HdrReduce(DeltaNormSquared);
-
-            if (normSquared < DeltaNormSquared ||
-                RefIteration >= Perturb.size - 1) {
-                DeltaSubNX = tempZX;
-                DeltaSubNY = tempZY;
-                DeltaNormSquared = normSquared;
-                RefIteration = 0;
-            }
-
-            ++iter;
-        }
-        else {
+        if (normSquared > HDRFloatType(256)) {
             break;
+        }
+
+        if (normSquared < DeltaNormSquared || (RefIteration >= MaxRefIteration)) {
+            DeltaSubN = complex0;
+            RefIteration = 0;
         }
     }
 

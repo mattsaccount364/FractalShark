@@ -214,10 +214,10 @@ bool LAInfoDeep<SubType>::Step(LAInfoDeep& out, HDRFloatComplex z) {
     out.LAThresholdCExp = outLAThresholdC.getExp();
     out.LAThresholdCMant = outLAThresholdC.getMantissa();
 
-    HDRFloatComplex z2 = z.times2();
-    HDRFloatComplex outZCoeff = z2.times(ZCoeff);
+    HDRFloatComplex z2 = z * HDRFloat(2);
+    HDRFloatComplex outZCoeff = z2 * ZCoeff;
     outZCoeff.Reduce();
-    HDRFloatComplex outCCoeff = z2.times(CCoeff).plus_mutable(HDRFloat{ 1 });
+    HDRFloatComplex outCCoeff = z2 * CCoeff + HDRFloat{ 1 };
     outCCoeff.Reduce();
 
     out.ZCoeffExp = outZCoeff.getExp();
@@ -287,11 +287,11 @@ bool LAInfoDeep<SubType>::Composite(LAInfoDeep& out, LAInfoDeep LA) {
     HDRFloat outLAThreshold = HDRFloat::minBothPositiveReduced(LAThreshold, temp1);
     HDRFloat outLAThresholdC = HDRFloat::minBothPositiveReduced(LAThresholdC, temp2);
 
-    HDRFloatComplex z2 = z.times2();
-    HDRFloatComplex outZCoeff = z2.times(ZCoeff);
+    HDRFloatComplex z2 = z * HDRFloat(2);
+    HDRFloatComplex outZCoeff = z2 * ZCoeff;
     outZCoeff.Reduce();
     //double RescaleFactor = out.LAThreshold / LAThreshold;
-    HDRFloatComplex outCCoeff = z2.times(CCoeff);
+    HDRFloatComplex outCCoeff = z2 * CCoeff;
     outCCoeff.Reduce();
 
     ChebyMagZCoeff = outZCoeff.chebychevNorm();
@@ -310,10 +310,10 @@ bool LAInfoDeep<SubType>::Composite(LAInfoDeep& out, LAInfoDeep LA) {
 
     outLAThreshold = HDRFloat::minBothPositiveReduced(outLAThreshold, temp1);
     outLAThresholdC = HDRFloat::minBothPositiveReduced(outLAThresholdC, temp2);
-    outZCoeff = outZCoeff.times(LAZCoeff);
+    outZCoeff = outZCoeff * LAZCoeff;
     outZCoeff.Reduce();
     //RescaleFactor = out.LAThreshold / temp;
-    outCCoeff = outCCoeff.times(LAZCoeff).plus_mutable(LACCoeff);
+    outCCoeff = outCCoeff * LAZCoeff + LACCoeff;
     outCCoeff.Reduce();
 
     out.LAThresholdExp = outLAThreshold.getExp();
@@ -362,7 +362,7 @@ template<class SubType>
 CUDA_CRAP
 LAstep<HDRFloatComplex<SubType>> LAInfoDeep<SubType>::Prepare(HDRFloatComplex dz) const {
     //*2 is + 1
-    HDRFloatComplex newdz = dz.times(HDRFloatComplex(RefExp + 1, RefRe, RefIm).plus_mutable(dz));
+    HDRFloatComplex newdz = dz * (HDRFloatComplex(RefExp + 1, RefRe, RefIm) + dz);
     newdz.Reduce();
 
     LAstep<HDRFloatComplex> temp = LAstep<HDRFloatComplex>();
@@ -374,20 +374,19 @@ LAstep<HDRFloatComplex<SubType>> LAInfoDeep<SubType>::Prepare(HDRFloatComplex dz
 template<class SubType>
 CUDA_CRAP
 LAInfoDeep<SubType>::HDRFloatComplex LAInfoDeep<SubType>::Evaluate(HDRFloatComplex newdz, HDRFloatComplex dc) {
-    return newdz.times(HDRFloatComplex(ZCoeffExp, ZCoeffRe, ZCoeffIm)).plus_mutable(dc.times(HDRFloatComplex(CCoeffExp, CCoeffRe, CCoeffIm)));
+    return newdz * HDRFloatComplex(ZCoeffExp, ZCoeffRe, ZCoeffIm) + dc * HDRFloatComplex(CCoeffExp, CCoeffRe, CCoeffIm);
 }
 
 template<class SubType>
 CUDA_CRAP
 LAInfoDeep<SubType>::HDRFloatComplex LAInfoDeep<SubType>::EvaluateDzdc(HDRFloatComplex z, HDRFloatComplex dzdc) {
-    return  dzdc.times2().times_mutable(z).times_mutable(HDRFloatComplex(ZCoeffExp, ZCoeffRe, ZCoeffIm)).plus_mutable(HDRFloatComplex(CCoeffExp, CCoeffRe, CCoeffIm));
+    return  dzdc * HDRFloat(2) * z * HDRFloatComplex(ZCoeffExp, ZCoeffRe, ZCoeffIm) + HDRFloatComplex(CCoeffExp, CCoeffRe, CCoeffIm);
 }
 
 template<class SubType>
 CUDA_CRAP
 LAInfoDeep<SubType>::HDRFloatComplex LAInfoDeep<SubType>::EvaluateDzdc2(HDRFloatComplex z, HDRFloatComplex dzdc2, HDRFloatComplex dzdc) {
-    return  dzdc2.times(z)
-        .plus_mutable(dzdc.square()).times2_mutable().times_mutable(HDRFloatComplex(ZCoeffExp, ZCoeffRe, ZCoeffIm));
+    return (dzdc2 * z + dzdc.square()) * HDRFloat(2) * HDRFloatComplex(ZCoeffExp, ZCoeffRe, ZCoeffIm);
 }
 
 template<class SubType>
@@ -399,19 +398,19 @@ void LAInfoDeep<SubType>::CreateAT(ATInfo<HDRFloat>& Result, LAInfoDeep Next) {
     HDRFloat LAThresholdC = HDRFloat(LAThresholdCExp, LAThresholdCMant);
 
     Result.ZCoeff = ZCoeff;
-    Result.CCoeff = ZCoeff.times(CCoeff);
+    Result.CCoeff = ZCoeff * CCoeff;
     Result.CCoeff.Reduce();
 
     Result.InvZCoeff = ZCoeff.reciprocal();
     Result.InvZCoeff.Reduce();
 
-    Result.CCoeffSqrInvZCoeff = Result.CCoeff.square().times_mutable(Result.InvZCoeff);
+    Result.CCoeffSqrInvZCoeff = Result.CCoeff * Result.CCoeff * Result.InvZCoeff;
     Result.CCoeffSqrInvZCoeff.Reduce();
 
-    Result.CCoeffInvZCoeff = Result.CCoeff.times(Result.InvZCoeff);
+    Result.CCoeffInvZCoeff = Result.CCoeff * Result.InvZCoeff;
     Result.CCoeffInvZCoeff.Reduce();
 
-    Result.RefC = Next.getRef().times(ZCoeff);
+    Result.RefC = Next.getRef() * ZCoeff;
     Result.RefC.Reduce();
 
     Result.CCoeffNormSqr = Result.CCoeff.norm_squared();

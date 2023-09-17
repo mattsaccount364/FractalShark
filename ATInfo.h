@@ -67,7 +67,7 @@ bool ATInfo<T>::isValid(HDRFloatComplex DeltaSub0) {
 template<class T>
 CUDA_CRAP
 ATInfo<T>::HDRFloatComplex ATInfo<T>::getC(HDRFloatComplex dc) {
-    HDRFloatComplex temp = dc.times(CCoeff).plus_mutable(RefC);
+    HDRFloatComplex temp = dc * CCoeff + RefC;
     temp.Reduce();
     return temp;
 }
@@ -75,7 +75,7 @@ ATInfo<T>::HDRFloatComplex ATInfo<T>::getC(HDRFloatComplex dc) {
 template<class T>
 CUDA_CRAP
 ATInfo<T>::HDRFloatComplex ATInfo<T>::getDZ(HDRFloatComplex z) {
-    HDRFloatComplex temp = z.times(InvZCoeff);
+    HDRFloatComplex temp = z * InvZCoeff;
     temp.Reduce();
     return temp;
 }
@@ -87,21 +87,21 @@ void ATInfo<T>::PerformAT(
     HDRFloatComplex DeltaSub0,
     ATResult& result) {
     //int ATMaxIt = (max_iterations - 1) / StepLength + 1;
-    int32_t ATMaxIt = max_iterations / StepLength;
-
-    HDRFloatComplex c = getC((HDRFloatComplex)DeltaSub0);
+    HDRFloat nsq;
+    const int32_t ATMaxIt = max_iterations / StepLength;
+    const HDRFloatComplex c = getC((HDRFloatComplex)DeltaSub0);
     HDRFloatComplex z{};
-
     int32_t i;
+
     for (i = 0; i < ATMaxIt; i++) {
 
-        auto nsq = z.norm_squared();
+        nsq = z.norm_squared();
         HdrReduce(nsq);
         if (nsq > HDRFloat(SqrEscapeRadius)) {
             break;
         }
 
-        z = z.square().plus(c);
+        z = z * z + c;
     }
 
     result.dz = getDZ(z);

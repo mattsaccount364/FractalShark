@@ -63,7 +63,7 @@ LAstep<T>::HDRFloatComplex LAstep<T>::EvaluateDzdc2Deep(HDRFloatComplex z, HDRFl
 template<class T>
 CUDA_CRAP
 LAstep<T>::HDRFloatComplex LAstep<T>::getZ(HDRFloatComplex DeltaSubN) {
-    return Refp1Deep.plus(DeltaSubN);
+    return Refp1Deep + DeltaSubN;
 }
 
 
@@ -86,7 +86,6 @@ public:
     int32_t step;
     int32_t nextStageLAindex;
 
-public:
     using HDRFloatComplex = T;
     const GPU_LAInfoDeep<float>* LAjdeep;
     HDRFloatComplex Refp1Deep;
@@ -122,5 +121,5 @@ GPU_LAstep<T>::HDRFloatComplex GPU_LAstep<T>::EvaluateDzdc2Deep(HDRFloatComplex 
 template<class T>
 CUDA_CRAP
 GPU_LAstep<T>::HDRFloatComplex GPU_LAstep<T>::getZ(HDRFloatComplex DeltaSubN) const {
-    return Refp1Deep.plus(DeltaSubN);
+    return Refp1Deep + DeltaSubN;
 }

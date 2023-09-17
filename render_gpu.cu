@@ -925,9 +925,9 @@ void mandel_1x_double_perturb(uint32_t* iter_matrix,
     //size_t idx = width * (height - Y - 1) + X;
     size_t idx = width * Y + X;
 
-    if (iter_matrix[idx] != 0) {
-        return;
-    }
+    //if (iter_matrix[idx] != 0) {
+    //    return;
+    //}
 
     size_t iter = 0;
     size_t RefIteration = 0;
@@ -1028,9 +1028,9 @@ void mandel_1x_double_perturb_bla(uint32_t* iter_matrix,
     //size_t idx = width * (height - Y - 1) + X;
     size_t idx = width * Y + X;
 
-    if (iter_matrix[idx] != 0) {
-        return;
-    }
+    //if (iter_matrix[idx] != 0) {
+    //    return;
+    //}
 
     using GPUBLA_TYPE = BLA<double>;
     char __shared__ SharedMem[sizeof(SharedMemStruct<double>)];
@@ -1183,9 +1183,9 @@ mandel_1xHDR_float_perturb_bla(uint32_t* iter_matrix,
     //size_t idx = width * (height - Y - 1) + X;
     size_t idx = width * Y + X;
 
-    if (iter_matrix[idx] != 0) { 
-        return;
-    }
+    //if (iter_matrix[idx] != 0) { 
+    //    return;
+    //}
 
     using GPUBLA_TYPE = BLA<HDRFloatType>;
     char __shared__ SharedMem[sizeof(SharedMemStruct<HDRFloatType>)];
@@ -1406,9 +1406,9 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
         return;
 
     int32_t idx = width * Y + X;
-    if (iter_matrix[idx] != 0) {
-        return;
-    }
+    //if (iter_matrix[idx] != 0) {
+    //    return;
+    //}
 
     int32_t iter = 0;
     int32_t RefIteration = 0;
@@ -1427,10 +1427,6 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
     using TComplex = HDRFloatComplex<float>;
 
     ////////////
-    int32_t BLA2SkippedIterations;
-
-    BLA2SkippedIterations = 0;
-    
     TComplex DeltaSub0;
     TComplex DeltaSubN;
 
@@ -1440,40 +1436,36 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
     if (LaReference.isValid && LaReference.UseAT && LaReference.AT.isValid(DeltaSub0)) {
         ATResult res;
         LaReference.AT.PerformAT(n_iterations, DeltaSub0, res);
-        BLA2SkippedIterations = res.bla_iterations;
+        iter = res.bla_iterations;
         DeltaSubN = res.dz;
     }
 
     int32_t MaxRefIteration = Perturb.size - 1;
-
-    iter = BLA2SkippedIterations;
-
     TComplex complex0{ DeltaReal, DeltaImaginary };
+    int32_t CurrentLAStage = LaReference.isValid ? LaReference.LAStageCount : 0;
 
     if (iter != 0 && RefIteration < MaxRefIteration) {
-        complex0 = Perturb.GetComplex(RefIteration).plus_mutable(DeltaSubN);
+        complex0 = Perturb.GetComplex(RefIteration) + DeltaSubN;
     }
     else if (iter != 0 && Perturb.PeriodMaybeZero != 0) {
         RefIteration = RefIteration % Perturb.PeriodMaybeZero;
-        complex0 = Perturb.GetComplex(RefIteration).plus_mutable(DeltaSubN);
+        complex0 = Perturb.GetComplex(RefIteration) + DeltaSubN;
     }
-
-    int32_t CurrentLAStage = LaReference.isValid ? LaReference.LAStageCount : 0;
 
     while (CurrentLAStage > 0) {
         CurrentLAStage--;
 
-        int32_t LAIndex = LaReference.getLAIndex(CurrentLAStage);
+        const int32_t LAIndex = LaReference.getLAIndex(CurrentLAStage);
 
         if (LaReference.isLAStageInvalid(LAIndex, DeltaSub0)) {
             continue;
         }
 
-        int32_t MacroItCount = LaReference.getMacroItCount(CurrentLAStage);
+        const int32_t MacroItCount = LaReference.getMacroItCount(CurrentLAStage);
         int32_t j = RefIteration;
 
         while (iter < n_iterations) {
-            GPU_LAstep las = LaReference.getLA(LAIndex, DeltaSubN, j, iter, n_iterations);
+            const GPU_LAstep las = LaReference.getLA(LAIndex, DeltaSubN, j, iter, n_iterations);
 
             if (las.unusable) {
                 RefIteration = las.nextStageLAindex;
@@ -1485,17 +1477,20 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
             complex0 = las.getZ(DeltaSubN);
             j++;
 
-            auto lhs = complex0.chebychevNorm();
-            HdrReduce(lhs);
-            auto rhs = DeltaSubN.chebychevNorm();
-            HdrReduce(rhs);
+            float reLhs;
+            float imgLhs;
+            complex0.toComplex(reLhs, imgLhs);
+            const auto lhs = max(abs(reLhs), abs(imgLhs));
+
+            float reRhs;
+            float imgRhs;
+            DeltaSubN.toComplex(reRhs, imgRhs);
+            const auto rhs = max(abs(reRhs), abs(imgRhs));
 
             if (lhs < rhs || j >= MacroItCount) {
                 DeltaSubN = complex0;
                 j = 0;
             }
-
-            //HdrReduce(DeltaSubN); // maybe don't need
         }
 
         if (iter >= n_iterations) {
@@ -1503,11 +1498,88 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
         }
     }
 
-    HDRFloatType normSquared{};
+    //iter_matrix[idx] = (uint32_t)RefIteration;
 
     DeltaSubNX = DeltaSubN.getRe();
     DeltaSubNY = DeltaSubN.getIm();
 
+    //////////////////////
+    //__syncthreads();
+
+    //int maxRefIteration = 0;
+    //const int XStart = blockIdx.x * blockDim.x;
+    //const int YStart = blockIdx.y * blockDim.y;
+    //for (auto yiter = YStart; yiter < YStart + blockDim.y; yiter++) {
+    //    for (auto xiter = XStart; xiter < XStart + blockDim.x; xiter++) {
+    //        const int32_t curidx = width * yiter + xiter;
+    //        maxRefIteration = max(maxRefIteration, iter_matrix[curidx]);
+    //    }
+    //}
+
+    //__syncthreads();
+
+    //if (RefIteration < maxRefIteration) {
+    //    for (;;) {
+    //        const HDRFloatType DeltaSubNXOrig = DeltaSubNX;
+    //        const HDRFloatType DeltaSubNYOrig = DeltaSubNY;
+
+    //        const auto tempMulX2 = Perturb.iters[RefIteration].x * Two;
+    //        const auto tempMulY2 = Perturb.iters[RefIteration].y * Two;
+
+    //        ++RefIteration;
+
+    //        if (RefIteration == maxRefIteration + 1) {
+    //            RefIteration--;
+    //            break;
+    //        }
+
+    //        const auto tempSum1 = (tempMulY2 + DeltaSubNYOrig);
+    //        const auto tempSum2 = (tempMulX2 + DeltaSubNXOrig);
+
+    //        DeltaSubNX = HDRFloatType::custom_perturb1<false>(
+    //            DeltaSubNXOrig,
+    //            tempSum2,
+    //            DeltaSubNYOrig,
+    //            tempSum1,
+    //            DeltaSub0X);
+
+    //        DeltaSubNY = HDRFloatType::custom_perturb1<true>(
+    //            DeltaSubNXOrig,
+    //            tempSum1,
+    //            DeltaSubNYOrig,
+    //            tempSum2,
+    //            DeltaSub0Y);
+
+    //        const auto tempVal1X = Perturb.iters[RefIteration].x;
+    //        const auto tempVal1Y = Perturb.iters[RefIteration].y;
+
+    //        const HDRFloatType tempZX = tempVal1X + DeltaSubNX;
+    //        const HDRFloatType tempZY = tempVal1Y + DeltaSubNY;
+    //        HDRFloatType normSquared = tempZX * tempZX + tempZY * tempZY;
+    //        HdrReduce(normSquared);
+
+    //        if (normSquared <= TwoFiftySix && iter < n_iterations) {
+    //            DeltaNormSquared = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
+    //            HdrReduce(DeltaNormSquared);
+
+    //            if (normSquared < DeltaNormSquared ||
+    //                RefIteration >= Perturb.size - 1) {
+    //                DeltaSubNX = tempZX;
+    //                DeltaSubNY = tempZY;
+    //                DeltaNormSquared = normSquared;
+    //                RefIteration = 0;
+    //            }
+
+    //            ++iter;
+    //        }
+    //        else {
+    //            break;
+    //        }
+    //    }
+    //}
+
+    //__syncthreads();
+    //////////////////////
     for (;;) {
         const HDRFloatType DeltaSubNXOrig = DeltaSubNX;
         const HDRFloatType DeltaSubNYOrig = DeltaSubNY;
@@ -1832,9 +1904,9 @@ void mandel_2x_float_perturb(uint32_t* iter_matrix,
     //size_t idx = width * (height - Y - 1) + X;
     size_t idx = width * Y + X;
 
-    if (iter_matrix[idx] != 0) {
-        return;
-    }
+    //if (iter_matrix[idx] != 0) {
+    //    return;
+    //}
 
     int iter = 0;
     size_t RefIteration = 0;
@@ -2046,9 +2118,9 @@ void mandel_1x_float_perturb(uint32_t* iter_matrix,
     //size_t idx = width * (height - Y - 1) + X;
     size_t idx = width * Y + X;
 
-    if (iter_matrix[idx] != 0) {
-        return;
-    }
+    //if (iter_matrix[idx] != 0) {
+    //    return;
+    //}
 
     size_t iter = 0;
     size_t RefIteration = 0;
@@ -2164,9 +2236,9 @@ void mandel_1x_float_perturb_scaled(uint32_t* iter_matrix,
 
     size_t idx = width * Y + X;
 
-    if (iter_matrix[idx] != 0) {
-        return;
-    }
+    //if (iter_matrix[idx] != 0) {
+    //    return;
+    //}
 
     size_t iter = 0;
     size_t RefIteration = 0;
@@ -2405,9 +2477,9 @@ void mandel_1x_float_perturb_scaled_bla(uint32_t* iter_matrix,
 
     size_t idx = width * Y + X;
 
-    if (iter_matrix[idx] != 0) {
-        return;
-    }
+    //if (iter_matrix[idx] != 0) {
+    //    return;
+    //}
 
     using GPUBLA_TYPE = BLA<double>;
     char __shared__ SharedMem[sizeof(SharedMemStruct<double>)];
@@ -2698,9 +2770,9 @@ void mandel_2x_float_perturb_scaled(uint32_t* iter_matrix,
     //size_t idx = width * (height - Y - 1) + X;
     size_t idx = width * Y + X;
 
-    if (iter_matrix[idx] != 0) {
-        return;
-    }
+    //if (iter_matrix[idx] != 0) {
+    //    return;
+    //}
 
     size_t iter = 0;
     size_t RefIteration = 0;

@@ -99,7 +99,7 @@ template<class SubType>
 CUDA_CRAP
 GPU_LAstep<HDRFloatComplex<SubType>> GPU_LAInfoDeep<SubType>::Prepare(HDRFloatComplex dz) const {
     //*2 is + 1
-    HDRFloatComplex newdz = dz.times(HDRFloatComplex(RefExp + 1, RefRe, RefIm).plus_mutable(dz));
+    HDRFloatComplex newdz = dz * (HDRFloatComplex(RefExp + 1, RefRe, RefIm) + dz);
     newdz.Reduce();
 
     GPU_LAstep<HDRFloatComplex> temp;
@@ -123,7 +123,7 @@ GPU_LAInfoDeep<SubType>::HDRFloat GPU_LAInfoDeep<SubType>::getLAThresholdC() con
 template<class SubType>
 CUDA_CRAP
 GPU_LAInfoDeep<SubType>::HDRFloatComplex GPU_LAInfoDeep<SubType>::Evaluate(HDRFloatComplex newdz, HDRFloatComplex dc) const {
-    return newdz.times(HDRFloatComplex(ZCoeffExp, ZCoeffRe, ZCoeffIm)).plus_mutable(dc.times(HDRFloatComplex(CCoeffExp, CCoeffRe, CCoeffIm)));
+    return newdz * HDRFloatComplex(ZCoeffExp, ZCoeffRe, ZCoeffIm) + dc * HDRFloatComplex(CCoeffExp, CCoeffRe, CCoeffIm);
 }
 
 template<class SubType>

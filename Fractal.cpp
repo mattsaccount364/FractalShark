@@ -153,8 +153,8 @@ void Fractal::Initialize(int width,
     m_RefOrbit.ResetGuess();
 
     ResetDimensions(width, height, 1);
-    View(0);
-    //View(5);
+    //View(0);
+    View(5);
     //View(2);
 
     m_ChangedWindow = true;
@@ -2635,10 +2635,10 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
                 TComplex complex0{ deltaReal, deltaImaginary };
 
                 if (iterations != 0 && RefIteration < MaxRefIteration) {
-                    complex0 = results->GetComplex<SubType>(RefIteration).plus_mutable(DeltaSubN);
+                    complex0 = results->GetComplex<SubType>(RefIteration) + DeltaSubN;
                 } else if (iterations != 0 && results->PeriodMaybeZero != 0) {
                     RefIteration = RefIteration % results->PeriodMaybeZero;
-                    complex0 = results->GetComplex<SubType>(RefIteration).plus_mutable(DeltaSubN);
+                    complex0 = results->GetComplex<SubType>(RefIteration) + DeltaSubN;
                 }
 
                 auto CurrentLAStage = LaReference.isValid ? LaReference.LAStageCount : 0;
@@ -2697,15 +2697,15 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
 
                 for (; iterations < GetNumIterations(); iterations++) {
                     auto curIter = results->GetComplex<SubType>(RefIteration);
-                    curIter = curIter.times2_mutable();
-                    curIter = curIter.plus_mutable(DeltaSubN);
-                    DeltaSubN = DeltaSubN.times_mutable(curIter);
-                    DeltaSubN = DeltaSubN.plus_mutable(DeltaSub0);
+                    curIter = curIter * T(2);
+                    curIter = curIter + DeltaSubN;
+                    DeltaSubN = DeltaSubN * curIter;
+                    DeltaSubN = DeltaSubN + DeltaSub0;
                     HdrReduce(DeltaSubN);
 
                     RefIteration++;
 
-                    complex0 = results->GetComplex<SubType>(RefIteration).plus(DeltaSubN);
+                    complex0 = results->GetComplex<SubType>(RefIteration) + DeltaSubN;
                     HdrReduce(complex0);
 
                     normSquared = complex0.norm_squared();

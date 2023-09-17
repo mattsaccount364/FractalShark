@@ -23,8 +23,13 @@ CUDA_CRAP void InitStatics();
 
 // TExp can work with float, int16_t or int64_t but all seem to offer worse perf
 // float is quite close though.
+//#ifndef __CUDA_ARCH__
 template<class T, class TExp = int32_t>
 class HDRFloat {
+//#else
+//template<class T, class TExp = int32_t>
+//class __align__(8) HDRFloat {
+//#endif
 public:
     static CUDA_CRAP constexpr TExp MIN_SMALL_EXPONENT() {
         if constexpr (std::is_same<T, double>::value) {

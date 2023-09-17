@@ -50,7 +50,12 @@ public:
     CUDA_CRAP bool isLAStageInvalid(int32_t LAIndex, HDRFloatComplex dc) const;
     CUDA_CRAP int32_t getLAIndex(int32_t CurrentLAStage) const;
     CUDA_CRAP int32_t getMacroItCount(int32_t CurrentLAStage) const;
-    CUDA_CRAP GPU_LAstep<HDRFloatComplex> getLA(int32_t LAIndex, HDRFloatComplex dz, /*HDRFloatComplex dc, */int32_t j, int32_t iterations, int32_t max_iterations) const;
+    CUDA_CRAP GPU_LAstep<HDRFloatComplex> getLA(
+        int32_t LAIndex,
+        HDRFloatComplex dz,
+        int32_t j,
+        int32_t iterations,
+        int32_t max_iterations) const;
 };
 
 CUDA_CRAP

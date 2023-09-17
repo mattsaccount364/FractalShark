@@ -89,6 +89,7 @@ BEGIN
             MENUITEM "#11 - ~10^700 or so, ~3m iterations", IDM_VIEW11
             MENUITEM "#12 - Nearby #11",            IDM_VIEW12
             MENUITEM "#13 - ~10^4000, ~100m iterations, 16xAA", IDM_VIEW13
+            MENUITEM "#14 - ~10^6000, ~2b iterations, 16xAA", IDM_VIEW14
         END
         MENUITEM "Recalculate, Reuse Reference", IDM_SQUAREVIEW
         MENUITEM "Center View Here",            IDM_CENTERVIEW
@@ -181,6 +182,7 @@ BEGIN
             MENUITEM "Patriotic",                   IDM_PALETTE_TYPE_2
             MENUITEM "Summer",                      IDM_PALETTE_TYPE_3
             MENUITEM SEPARATOR
+            MENUITEM "5-bit",                       IDM_PALETTE_5
             MENUITEM "6-bit",                       IDM_PALETTE_6
             MENUITEM "8-bit",                       IDM_PALETTE_8
             MENUITEM "12-bit",                      IDM_PALETTE_12

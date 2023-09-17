@@ -148,7 +148,7 @@ HWND InitInstance(HINSTANCE hInstance, int nCmdShow)
         startY = scrnHeight / 2 - width / 2;
 
         // Uncomment to start in smaller window
-        gWindowed = false;
+        gWindowed = true;
         //MenuWindowed(hWnd, true);
     }
     else {
@@ -157,7 +157,7 @@ HWND InitInstance(HINSTANCE hInstance, int nCmdShow)
         width = scrnWidth;
         height = scrnHeight;
 
-        gWindowed = true;
+        gWindowed = false;
     }
 
     // Create the window
@@ -406,19 +406,51 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             case IDM_VIEW11:
             case IDM_VIEW12:
             case IDM_VIEW13:
+            case IDM_VIEW14:
+            case IDM_VIEW15:
+            case IDM_VIEW16:
+            case IDM_VIEW17:
+            case IDM_VIEW18:
+            case IDM_VIEW19:
+            case IDM_VIEW20:
+            case IDM_VIEW21:
+            case IDM_VIEW22:
+            case IDM_VIEW23:
+            case IDM_VIEW24:
+            case IDM_VIEW25:
+            case IDM_VIEW26:
+            case IDM_VIEW27:
+            case IDM_VIEW28:
+            case IDM_VIEW29:
             {
-                assert(IDM_VIEW2 == IDM_VIEW1 + 1);
-                assert(IDM_VIEW3 == IDM_VIEW1 + 2);
-                assert(IDM_VIEW4 == IDM_VIEW1 + 3);
-                assert(IDM_VIEW5 == IDM_VIEW1 + 4);
-                assert(IDM_VIEW6 == IDM_VIEW1 + 5);
-                assert(IDM_VIEW7 == IDM_VIEW1 + 6);
-                assert(IDM_VIEW8 == IDM_VIEW1 + 7);
-                assert(IDM_VIEW9 == IDM_VIEW1 + 8);
-                assert(IDM_VIEW10 == IDM_VIEW1 + 9);
-                assert(IDM_VIEW11 == IDM_VIEW1 + 10);
-                assert(IDM_VIEW12 == IDM_VIEW1 + 11);
-                assert(IDM_VIEW13 == IDM_VIEW1 + 12);
+                static_assert(IDM_VIEW2 == IDM_VIEW1 + 1, "!");
+                static_assert(IDM_VIEW3 == IDM_VIEW1 + 2, "!");
+                static_assert(IDM_VIEW4 == IDM_VIEW1 + 3, "!");
+                static_assert(IDM_VIEW5 == IDM_VIEW1 + 4, "!");
+                static_assert(IDM_VIEW6 == IDM_VIEW1 + 5, "!");
+                static_assert(IDM_VIEW7 == IDM_VIEW1 + 6, "!");
+                static_assert(IDM_VIEW8 == IDM_VIEW1 + 7, "!");
+                static_assert(IDM_VIEW9 == IDM_VIEW1 + 8, "!");
+                static_assert(IDM_VIEW10 == IDM_VIEW1 + 9, "!");
+                static_assert(IDM_VIEW11 == IDM_VIEW1 + 10, "!");
+                static_assert(IDM_VIEW12 == IDM_VIEW1 + 11, "!");
+                static_assert(IDM_VIEW13 == IDM_VIEW1 + 12, "!");
+                static_assert(IDM_VIEW14 == IDM_VIEW1 + 13, "!");
+                static_assert(IDM_VIEW15 == IDM_VIEW1 + 14, "!");
+                static_assert(IDM_VIEW16 == IDM_VIEW1 + 15, "!");
+                static_assert(IDM_VIEW17 == IDM_VIEW1 + 16, "!");
+                static_assert(IDM_VIEW18 == IDM_VIEW1 + 17, "!");
+                static_assert(IDM_VIEW19 == IDM_VIEW1 + 18, "!");
+                static_assert(IDM_VIEW20 == IDM_VIEW1 + 19, "!");
+                static_assert(IDM_VIEW21 == IDM_VIEW1 + 20, "!");
+                static_assert(IDM_VIEW22 == IDM_VIEW1 + 21, "!");
+                static_assert(IDM_VIEW23 == IDM_VIEW1 + 22, "!");
+                static_assert(IDM_VIEW24 == IDM_VIEW1 + 23, "!");
+                static_assert(IDM_VIEW25 == IDM_VIEW1 + 24, "!");
+                static_assert(IDM_VIEW26 == IDM_VIEW1 + 25, "!");
+                static_assert(IDM_VIEW27 == IDM_VIEW1 + 26, "!");
+                static_assert(IDM_VIEW28 == IDM_VIEW1 + 27, "!");
+                static_assert(IDM_VIEW29 == IDM_VIEW1 + 28, "!");
 
                 MenuStandardView(hWnd, wmId - IDM_VIEW1 + 1);
                 break;
@@ -809,6 +841,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             case IDM_PALETTE_TYPE_3:
             {
                 MenuPaletteType(Fractal::Palette::Summer);
+                break;
+            }
+
+            case IDM_PALETTE_5:
+            {
+                MenuPaletteDepth(5);
                 break;
             }
 

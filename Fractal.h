@@ -429,7 +429,7 @@ private:
     // Render algorithm
     RenderAlgorithm m_RenderAlgorithm;
 
-    static constexpr const size_t NumBitDepths = 5;
+    static constexpr const size_t NumBitDepths = 6;
 
     std::vector<uint16_t> m_PalR[Palette::Num][NumBitDepths];
     std::vector<uint16_t> m_PalG[Palette::Num][NumBitDepths];

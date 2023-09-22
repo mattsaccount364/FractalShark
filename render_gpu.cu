@@ -1481,11 +1481,16 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
             float imgLhs;
             complex0.toComplex(reLhs, imgLhs);
             const auto lhs = max(abs(reLhs), abs(imgLhs));
-
+            
             float reRhs;
             float imgRhs;
             DeltaSubN.toComplex(reRhs, imgRhs);
             const auto rhs = max(abs(reRhs), abs(imgRhs));
+
+            //auto lhs = complex0.chebychevNorm();
+            //HdrReduce(lhs);
+            //auto rhs = DeltaSubN.chebychevNorm();
+            //HdrReduce(rhs);
 
             if (lhs < rhs || j >= MacroItCount) {
                 DeltaSubN = complex0;
@@ -1498,140 +1503,102 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
         }
     }
 
-    //iter_matrix[idx] = (uint32_t)RefIteration;
-
     DeltaSubNX = DeltaSubN.getRe();
     DeltaSubNY = DeltaSubN.getIm();
 
     //////////////////////
-    //__syncthreads();
 
-    //int maxRefIteration = 0;
-    //const int XStart = blockIdx.x * blockDim.x;
-    //const int YStart = blockIdx.y * blockDim.y;
-    //for (auto yiter = YStart; yiter < YStart + blockDim.y; yiter++) {
-    //    for (auto xiter = XStart; xiter < XStart + blockDim.x; xiter++) {
-    //        const int32_t curidx = width * yiter + xiter;
-    //        maxRefIteration = max(maxRefIteration, iter_matrix[curidx]);
-    //    }
-    //}
+    auto perturbLoop = [&](uint32_t maxIterations) {
+        for (;;) {
+            const HDRFloatType DeltaSubNXOrig = DeltaSubNX;
+            const HDRFloatType DeltaSubNYOrig = DeltaSubNY;
 
-    //__syncthreads();
+            const auto tempMulX2 = Perturb.iters[RefIteration].x * Two;
+            const auto tempMulY2 = Perturb.iters[RefIteration].y * Two;
 
-    //if (RefIteration < maxRefIteration) {
-    //    for (;;) {
-    //        const HDRFloatType DeltaSubNXOrig = DeltaSubNX;
-    //        const HDRFloatType DeltaSubNYOrig = DeltaSubNY;
+            ++RefIteration;
 
-    //        const auto tempMulX2 = Perturb.iters[RefIteration].x * Two;
-    //        const auto tempMulY2 = Perturb.iters[RefIteration].y * Two;
+            const auto tempSum1 = (tempMulY2 + DeltaSubNYOrig);
+            const auto tempSum2 = (tempMulX2 + DeltaSubNXOrig);
 
-    //        ++RefIteration;
+            DeltaSubNX = HDRFloatType::custom_perturb1<false>(
+                DeltaSubNXOrig,
+                tempSum2,
+                DeltaSubNYOrig,
+                tempSum1,
+                DeltaSub0X);
 
-    //        if (RefIteration == maxRefIteration + 1) {
-    //            RefIteration--;
-    //            break;
-    //        }
+            DeltaSubNY = HDRFloatType::custom_perturb1<true>(
+                DeltaSubNXOrig,
+                tempSum1,
+                DeltaSubNYOrig,
+                tempSum2,
+                DeltaSub0Y);
 
-    //        const auto tempSum1 = (tempMulY2 + DeltaSubNYOrig);
-    //        const auto tempSum2 = (tempMulX2 + DeltaSubNXOrig);
+            const auto tempVal1X = Perturb.iters[RefIteration].x;
+            const auto tempVal1Y = Perturb.iters[RefIteration].y;
 
-    //        DeltaSubNX = HDRFloatType::custom_perturb1<false>(
-    //            DeltaSubNXOrig,
-    //            tempSum2,
-    //            DeltaSubNYOrig,
-    //            tempSum1,
-    //            DeltaSub0X);
+            const HDRFloatType tempZX = tempVal1X + DeltaSubNX;
+            const HDRFloatType tempZY = tempVal1Y + DeltaSubNY;
+            HDRFloatType normSquared = tempZX * tempZX + tempZY * tempZY;
+            HdrReduce(normSquared);
 
-    //        DeltaSubNY = HDRFloatType::custom_perturb1<true>(
-    //            DeltaSubNXOrig,
-    //            tempSum1,
-    //            DeltaSubNYOrig,
-    //            tempSum2,
-    //            DeltaSub0Y);
+            if (normSquared <= TwoFiftySix && iter < maxIterations) {
+                DeltaNormSquared = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
+                HdrReduce(DeltaNormSquared);
 
-    //        const auto tempVal1X = Perturb.iters[RefIteration].x;
-    //        const auto tempVal1Y = Perturb.iters[RefIteration].y;
+                if (normSquared < DeltaNormSquared ||
+                    RefIteration >= Perturb.size - 1) {
+                    DeltaSubNX = tempZX;
+                    DeltaSubNY = tempZY;
+                    DeltaNormSquared = normSquared;
+                    RefIteration = 0;
+                }
 
-    //        const HDRFloatType tempZX = tempVal1X + DeltaSubNX;
-    //        const HDRFloatType tempZY = tempVal1Y + DeltaSubNY;
-    //        HDRFloatType normSquared = tempZX * tempZX + tempZY * tempZY;
-    //        HdrReduce(normSquared);
-
-    //        if (normSquared <= TwoFiftySix && iter < n_iterations) {
-    //            DeltaNormSquared = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
-    //            HdrReduce(DeltaNormSquared);
-
-    //            if (normSquared < DeltaNormSquared ||
-    //                RefIteration >= Perturb.size - 1) {
-    //                DeltaSubNX = tempZX;
-    //                DeltaSubNY = tempZY;
-    //                DeltaNormSquared = normSquared;
-    //                RefIteration = 0;
-    //            }
-
-    //            ++iter;
-    //        }
-    //        else {
-    //            break;
-    //        }
-    //    }
-    //}
-
-    //__syncthreads();
-    //////////////////////
-    for (;;) {
-        const HDRFloatType DeltaSubNXOrig = DeltaSubNX;
-        const HDRFloatType DeltaSubNYOrig = DeltaSubNY;
-
-        const auto tempMulX2 = Perturb.iters[RefIteration].x * Two;
-        const auto tempMulY2 = Perturb.iters[RefIteration].y * Two;
-
-        ++RefIteration;
-
-        const auto tempSum1 = (tempMulY2 + DeltaSubNYOrig);
-        const auto tempSum2 = (tempMulX2 + DeltaSubNXOrig);
-
-        DeltaSubNX = HDRFloatType::custom_perturb1<false>(
-            DeltaSubNXOrig,
-            tempSum2,
-            DeltaSubNYOrig,
-            tempSum1,
-            DeltaSub0X);
-
-        DeltaSubNY = HDRFloatType::custom_perturb1<true>(
-            DeltaSubNXOrig,
-            tempSum1,
-            DeltaSubNYOrig,
-            tempSum2,
-            DeltaSub0Y);
-
-        const auto tempVal1X = Perturb.iters[RefIteration].x;
-        const auto tempVal1Y = Perturb.iters[RefIteration].y;
-
-        const HDRFloatType tempZX = tempVal1X + DeltaSubNX;
-        const HDRFloatType tempZY = tempVal1Y + DeltaSubNY;
-        HDRFloatType normSquared = tempZX * tempZX + tempZY * tempZY;
-        HdrReduce(normSquared);
-
-        if (normSquared <= TwoFiftySix && iter < n_iterations) {
-            DeltaNormSquared = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
-            HdrReduce(DeltaNormSquared);
-
-            if (normSquared < DeltaNormSquared ||
-                RefIteration >= Perturb.size - 1) {
-                DeltaSubNX = tempZX;
-                DeltaSubNY = tempZY;
-                DeltaNormSquared = normSquared;
-                RefIteration = 0;
+                ++iter;
             }
-
-            ++iter;
+            else {
+                break;
+            }
         }
-        else {
+    };
+
+    for (;;) {
+        __syncthreads();
+
+        bool differences = false;
+        int maxRefIteration = 0;
+        const int XStart = blockIdx.x * blockDim.x;
+        const int YStart = blockIdx.y * blockDim.y;
+
+        int32_t curidx = width * YStart + XStart;
+        maxRefIteration = iter_matrix[curidx];
+
+        for (auto yiter = YStart; yiter < YStart + blockDim.y; yiter++) {
+            for (auto xiter = XStart; xiter < XStart + blockDim.x; xiter++) {
+                curidx = width * yiter + xiter;
+                if (maxRefIteration < iter_matrix[curidx]) {
+                    differences = true;
+                    maxRefIteration = iter_matrix[curidx];
+                }
+            }
+        }
+
+        if (differences == false) {
             break;
         }
+
+        __syncthreads();
+
+        // Give it one chance to synchronize memory access
+        if (RefIteration < maxRefIteration) {
+            perturbLoop(maxRefIteration);
+        }
     }
+
+    __syncthreads();
+
+    perturbLoop(n_iterations);
 
     iter_matrix[idx] = (uint32_t)iter;
 }

@@ -1138,6 +1138,8 @@ void Fractal::View(size_t view)
         SetNumIterations(3538944);
         break;
 
+        //The 10^6000 view doesnt work.  Why
+
     case 3:
         // Limit of 1x32 + Perturbation with no scaling
         minX = HighPrecision{ "-1.44656726997022737062295806977817803829443061688656117623800256312303751202920456713778693247098684334495241572095045" };

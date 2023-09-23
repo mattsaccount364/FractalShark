@@ -250,8 +250,15 @@ BLA<T>* BLAS<T>::LookupBackwards(size_t m, T z2) {
         // k >> m_FirstLevel,
         // This could be done for all K values, but it was shown through statistics that
         // most effort is done on k == 0
-        if (z2 >= m_B[m_FirstLevel][0].getR2()) {
-            return nullptr;
+        if constexpr (std::is_same<T, HDRFloat<float>>::value || std::is_same<T, HDRFloat<double>>::value) {
+            if (z2.compareToBothPositiveReduced(m_B[m_FirstLevel][0].getR2()) >= 0) {
+                return nullptr;
+            }
+        }
+        else {
+            if (z2 >= m_B[m_FirstLevel][0].getR2()) {
+                return nullptr;
+            }
         }
         zeros = 32;
         ix = 0;

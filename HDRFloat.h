@@ -816,10 +816,10 @@ public:
         return l.compareTo(r) > 0;
     }
 
-    friend CUDA_CRAP constexpr bool operator>=(const HDRFloat& l, const HDRFloat& r)
-    {
-        return l.compareTo(r) >= 0;
-    }
+    //friend CUDA_CRAP constexpr bool operator>=(const HDRFloat& l, const HDRFloat& r)
+    //{
+    //    return l.compareTo(r) >= 0;
+    //}
 
     static CUDA_CRAP constexpr HDRFloat HDRMax(HDRFloat a, HDRFloat b) {
         return a.compareTo(b) > 0 ? a : b;

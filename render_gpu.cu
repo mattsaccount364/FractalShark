@@ -1477,22 +1477,10 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
             complex0 = las.getZ(DeltaSubN);
             j++;
 
-            float reLhs;
-            float imgLhs;
-            complex0.toComplex(reLhs, imgLhs);
-            const auto lhs = max(abs(reLhs), abs(imgLhs));
-            
-            float reRhs;
-            float imgRhs;
-            DeltaSubN.toComplex(reRhs, imgRhs);
-            const auto rhs = max(abs(reRhs), abs(imgRhs));
+            const auto complex0Norm = complex0.chebychevNorm();
+            const auto DeltaSubNNorm = DeltaSubN.chebychevNorm();
 
-            //auto lhs = complex0.chebychevNorm();
-            //HdrReduce(lhs);
-            //auto rhs = DeltaSubN.chebychevNorm();
-            //HdrReduce(rhs);
-
-            if (lhs < rhs || j >= MacroItCount) {
+            if (complex0Norm.compareToBothPositiveReduced(DeltaSubNNorm) < 0 || j >= MacroItCount) {
                 DeltaSubN = complex0;
                 j = 0;
             }
@@ -1543,11 +1531,11 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
             HDRFloatType normSquared = tempZX * tempZX + tempZY * tempZY;
             HdrReduce(normSquared);
 
-            if (normSquared <= TwoFiftySix && iter < maxIterations) {
+            if (normSquared.compareToBothPositiveReduced(TwoFiftySix) <= 0 && iter < maxIterations) {
                 DeltaNormSquared = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
                 HdrReduce(DeltaNormSquared);
 
-                if (normSquared < DeltaNormSquared ||
+                if (normSquared.compareToBothPositiveReduced(DeltaNormSquared) < 0 ||
                     RefIteration >= Perturb.size - 1) {
                     DeltaSubNX = tempZX;
                     DeltaSubNY = tempZY;

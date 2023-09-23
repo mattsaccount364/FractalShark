@@ -428,7 +428,7 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
             auto n3 = maxRadiusHdr * r0 * HighTwo;
             HdrReduce(n3);
 
-            if (n2 < n3) {
+            if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
                 if constexpr (BenchmarkState == BenchmarkMode::Disable) {
                     results->PeriodMaybeZero = results->x.size();
                     break;
@@ -579,7 +579,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
             break;
         }
 
-        if (zn_size < normDeltaSubN ||
+        if (HdrCompareToBothPositiveReducedLT(zn_size, normDeltaSubN) ||
             RefIteration == MaxRefIteration) {
             DeltaSubNX = zx;
             DeltaSubNY = zy;
@@ -606,7 +606,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
             auto n3 = maxRadiusHdr * r0 * T(2.0);
             HdrReduce(n3);
 
-            if (n2 < n3) {
+            if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
                 if constexpr (BenchmarkState == BenchmarkMode::Disable) {
                     // Break before adding the result.
                     results->PeriodMaybeZero = results->x.size();
@@ -869,7 +869,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
             auto n3 = maxRadiusHdr * r0 * T(2.0);
             HdrReduce(n3);
 
-            if (n2 < n3) {
+            if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
                 if constexpr (BenchmarkState == BenchmarkMode::Disable) {
                     // Break before adding the result.
                     results->PeriodMaybeZero = results->x.size();
@@ -930,7 +930,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
             break;
         }
 
-        if (zn_size < normDeltaSubN ||
+        if (HdrCompareToBothPositiveReducedLT(zn_size, normDeltaSubN) ||
             RefIteration == MaxRefIteration) {
             DeltaSubNX = zx;
             DeltaSubNY = zy;
@@ -1166,7 +1166,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
             auto n3 = maxRadiusHdr * r0 * HighTwo;
             HdrReduce(n3);
 
-            if (n2 < n3) {
+            if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
                 if constexpr (BenchmarkState == BenchmarkMode::Disable) {
                     periodicity_should_break = true;
                 }
@@ -1624,7 +1624,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecis
             auto n3 = maxRadiusHdr * r0 * HighTwo;
             HdrReduce(n3);
 
-            if (n2 < n3) {
+            if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
                 if constexpr (BenchmarkState == BenchmarkMode::Disable) {
                     periodicity_should_break = true;
                 }

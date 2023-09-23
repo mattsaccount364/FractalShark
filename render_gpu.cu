@@ -301,7 +301,7 @@ CUDA_CRAP const GPUBLA_TYPE* GPU_BLAS<T, GPUBLA_TYPE, LM2>::LookupBackwards(
     //__pipeline_wait_prior(0);
 
     for (int32_t level = startLevel; level >= m_FirstLevel; --level) {
-        if (z2 < (tempB = &altB[level][ix])->getR2()) {
+        if (HdrCompareToBothPositiveReducedLT(z2, (tempB = &altB[level][ix])->getR2())) {
         //if (z2 < curBR2[level]) {
             return tempB;
         }
@@ -1296,7 +1296,7 @@ mandel_1xHDR_float_perturb_bla(uint32_t* iter_matrix,
             DeltaNormSquared = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
             HdrReduce(DeltaNormSquared);
 
-            if (normSquared < DeltaNormSquared ||
+            if (HdrCompareToBothPositiveReducedLT(normSquared, DeltaNormSquared) ||
                 RefIteration >= Perturb.size - 1) {
                 DeltaSubNX = tempZX;
                 DeltaSubNY = tempZY;
@@ -1477,12 +1477,9 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
             complex0 = las.getZ(DeltaSubN);
             j++;
 
-            auto complex0Norm = complex0.chebychevNorm();
-            HdrReduce(complex0Norm);
-            auto DeltaSubNNorm = DeltaSubN.chebychevNorm();
-            HdrReduce(DeltaSubNNorm);
-
-            if (complex0Norm.compareToBothPositiveReduced(DeltaSubNNorm) < 0 || j >= MacroItCount) {
+            const auto complex0Norm = HdrReduce(complex0.chebychevNorm());
+            const auto DeltaSubNNorm = HdrReduce(DeltaSubN.chebychevNorm());
+            if (HdrCompareToBothPositiveReducedLT(complex0Norm, DeltaSubNNorm) || j >= MacroItCount) {
                 DeltaSubN = complex0;
                 j = 0;
             }
@@ -1530,14 +1527,12 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
 
             const HDRFloatType tempZX = tempVal1X + DeltaSubNX;
             const HDRFloatType tempZY = tempVal1Y + DeltaSubNY;
-            HDRFloatType normSquared = tempZX * tempZX + tempZY * tempZY;
-            HdrReduce(normSquared);
+            const HDRFloatType normSquared = HdrReduce(tempZX * tempZX + tempZY * tempZY);
 
-            if (normSquared.compareToBothPositiveReduced(TwoFiftySix) <= 0 && iter < maxIterations) {
-                DeltaNormSquared = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
-                HdrReduce(DeltaNormSquared);
+            if (HdrCompareToBothPositiveReducedLT(normSquared, TwoFiftySix) && iter < maxIterations) {
+                DeltaNormSquared = HdrReduce(DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY);
 
-                if (normSquared.compareToBothPositiveReduced(DeltaNormSquared) < 0 ||
+                if (HdrCompareToBothPositiveReducedLT(normSquared, DeltaNormSquared) ||
                     RefIteration >= Perturb.size - 1) {
                     DeltaSubNX = tempZX;
                     DeltaSubNY = tempZY;
@@ -2380,7 +2375,7 @@ void mandel_1x_float_perturb_scaled(uint32_t* iter_matrix,
             T DeltaSubNWXNew;
             T DeltaSubNWYNew;
 
-            if (zn_size < normDeltaSubN ||
+            if (HdrCompareToBothPositiveReducedLT(zn_size, normDeltaSubN) ||
                 RefIteration == MaxRefIteration) {
                 DeltaSubNWXNew = (curDoubleIter->x + DoubleTempDeltaSubNWX * S); // Xxrd, xr
                 DeltaSubNWYNew = (curDoubleIter->y + DoubleTempDeltaSubNWY * S); // Xxid, xi

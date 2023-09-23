@@ -2427,7 +2427,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                             break;
                         }
 
-                        if (normSquared < DeltaNormSquared ||
+                        if (HdrCompareToBothPositiveReducedLT(normSquared, DeltaNormSquared) ||
                             RefIteration >= results->x.size() - 1) {
                             DeltaSubNX = tempZX;
                             DeltaSubNY = tempZY;
@@ -2536,7 +2536,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                         break;
                     }
 
-                    if (normSquared < DeltaNormSquared ||
+                    if (HdrCompareToBothPositiveReducedLT(normSquared, DeltaNormSquared) ||
                         RefIteration >= results->x.size() - 1) {
                         DeltaSubNX = tempZX;
                         DeltaSubNY = tempZY;
@@ -2680,7 +2680,7 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
                         auto rhs = DeltaSubN.chebychevNorm();
                         HdrReduce(rhs);
 
-                        if (lhs < rhs || (int32_t)j >= MacroItCount) {
+                        if (HdrCompareToBothPositiveReducedLT(lhs, rhs) || (int32_t)j >= MacroItCount) {
                             DeltaSubN = complex0;
                             j = 0;
                         }
@@ -2720,7 +2720,8 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
                         break;
                     }
 
-                    if (normSquared < DeltaNormSquared || (RefIteration >= MaxRefIteration)) {
+                    if (HdrCompareToBothPositiveReducedLT(normSquared, DeltaNormSquared) ||
+                        (RefIteration >= MaxRefIteration)) {
                         DeltaSubN = complex0;
                         RefIteration = 0;
                     }

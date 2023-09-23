@@ -274,7 +274,7 @@ BLA<T>* BLAS<T>::LookupBackwards(size_t m, T z2) {
     for (int32_t level = startLevel; level >= m_FirstLevel; --level) {
         assert(level < m_B.size());
         assert(ix < m_B[level].size());
-        if (z2 < (tempB = &m_B[level][ix])->getR2()) {
+        if (HdrCompareToBothPositiveReducedLT(z2, (tempB = &m_B[level][ix])->getR2())) {
             return tempB;
         }
         ix = ix << 1;

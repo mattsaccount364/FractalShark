@@ -803,10 +803,10 @@ public:
         }
     }
 
-    friend CUDA_CRAP constexpr bool operator<(const HDRFloat& l, const HDRFloat& r)
-    {
-        return l.compareTo(r) < 0;
-    }
+    //friend CUDA_CRAP constexpr bool operator<(const HDRFloat& l, const HDRFloat& r)
+    //{
+    //    return l.compareTo(r) < 0;
+    //}
 
     //friend CUDA_CRAP constexpr bool operator<=(const HDRFloat& l, const HDRFloat& r)
     //{
@@ -1005,18 +1005,10 @@ static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedLT(const T& one, 
 
     if constexpr (std::is_same<T, HDRFloat<double>>::value ||
                   std::is_same<T, HDRFloat<float>>::value) {
-        if (one.compareToBothPositiveReduced(two) < 0) {
-            return true;
-        }
-
-        return false;
+        return one.compareToBothPositiveReduced(two) < 0;
     }
     else {
-        if (one < two) {
-            return true;
-        }
-
-        return false;
+        return one < two;
     }
 }
 
@@ -1038,18 +1030,10 @@ static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedLE(const T& one, 
 
     if constexpr (std::is_same<T, HDRFloat<double>>::value ||
         std::is_same<T, HDRFloat<float>>::value) {
-        if (one.compareToBothPositiveReduced(two) <= 0) {
-            return true;
-        }
-
-        return false;
+        return one.compareToBothPositiveReduced(two) <= 0;
     }
     else {
-        if (one <= two) {
-            return true;
-        }
-
-        return false;
+        return one <= two;
     }
 }
 
@@ -1071,18 +1055,10 @@ static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedGT(const T& one, 
 
     if constexpr (std::is_same<T, HDRFloat<double>>::value ||
         std::is_same<T, HDRFloat<float>>::value) {
-        if (one.compareToBothPositiveReduced(two) > 0) {
-            return true;
-        }
-
-        return false;
+        return one.compareToBothPositiveReduced(two) > 0;
     }
     else {
-        if (one > two) {
-            return true;
-        }
-
-        return false;
+        return one > two;
     }
 }
 
@@ -1104,17 +1080,9 @@ static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedGE(const T& one, 
 
     if constexpr (std::is_same<T, HDRFloat<double>>::value ||
         std::is_same<T, HDRFloat<float>>::value) {
-        if (one.compareToBothPositiveReduced(two) >= 0) {
-            return true;
-        }
-
-        return false;
+        return one.compareToBothPositiveReduced(two) >= 0;
     }
     else {
-        if (one >= two) {
-            return true;
-        }
-
-        return false;
+        return one >= two;
     }
 }

@@ -156,7 +156,7 @@ CUDA_CRAP
 bool LAInfoDeep<SubType>::DetectPeriod(HDRFloatComplex z) {
     if constexpr (DEFAULT_DETECTION_METHOD == 1) {
         //return z.chebychevNorm().compareToBothPositive(HDRFloat(MinMagExp, MinMagMant).multiply(PeriodDetectionThreshold2)) < 0;
-        return z.chebychevNorm() < HDRFloat(MinMagExp, MinMagMant) * Stage0PeriodDetectionThreshold2;
+        return z.chebychevNorm().compareToBothPositive(HDRFloat(MinMagExp, MinMagMant) * Stage0PeriodDetectionThreshold2);
     }
     else {
         //return z.chebychevNorm().divide(HDRFloatComplex(ZCoeffExp, ZCoeffRe, ZCoeffIm).chebychevNorm()).multiply_mutable(LAThresholdScale).compareToBothPositive(HDRFloat(LAThresholdExp, LAThresholdMant).multiply(PeriodDetectionThreshold)) < 0;

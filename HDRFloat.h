@@ -185,7 +185,7 @@ public:
     }
 #endif
 
-    CUDA_CRAP constexpr void Reduce() {
+    CUDA_CRAP constexpr HDRFloat Reduce() {
         //if (mantissa == 0) {
         //    return;
         //}
@@ -206,6 +206,8 @@ public:
             exp += f_exp;
             mantissa = f_val;
         }
+
+        return *this;
     }
 
     static CUDA_CRAP constexpr T getMultiplier(TExp scaleFactor) {
@@ -806,10 +808,10 @@ public:
         return l.compareTo(r) < 0;
     }
 
-    friend CUDA_CRAP constexpr bool operator<=(const HDRFloat& l, const HDRFloat& r)
-    {
-        return l.compareTo(r) <= 0;
-    }
+    //friend CUDA_CRAP constexpr bool operator<=(const HDRFloat& l, const HDRFloat& r)
+    //{
+    //    return l.compareTo(r) <= 0;
+    //}
 
     //friend CUDA_CRAP constexpr bool operator>(const HDRFloat& l, const HDRFloat& r)
     //{
@@ -905,14 +907,43 @@ static CUDA_CRAP constexpr void HdrReduce(T& incoming) {
         std::is_same<T, HDRFloatComplex<float>>::value ||
         HighPrecPossible, "No");
 
-    if constexpr (std::is_same<T, HDRFloat<double>>::value ||
-                  std::is_same<T, HDRFloat<float>>::value ||
-                  std::is_same<T, HDRFloatComplex<double>>::value ||
-                  std::is_same<T, HDRFloatComplex<float>>::value) {
+    if constexpr (
+        std::is_same<T, HDRFloat<double>>::value ||
+        std::is_same<T, HDRFloat<float>>::value ||
+        std::is_same<T, HDRFloatComplex<double>>::value ||
+        std::is_same<T, HDRFloatComplex<float>>::value) {
         incoming.Reduce();
     }
 }
 
+template<class T>
+static CUDA_CRAP constexpr T HdrReduce(T&& incoming) {
+    constexpr auto HighPrecPossible = // LOLZ I imagine there's a nicer way to do this here
+#ifndef __CUDACC__
+        std::is_same<T, HighPrecision>::value;
+#else
+        false;
+#endif
+
+    using no_const = std::remove_cv_t<T>;
+    static_assert(
+        std::is_same<no_const, double>::value ||
+        std::is_same<no_const, float>::value ||
+        std::is_same<no_const, HDRFloat<double>>::value ||
+        std::is_same<no_const, HDRFloat<float>>::value ||
+        std::is_same<no_const, HDRFloatComplex<double>>::value ||
+        std::is_same<no_const, HDRFloatComplex<float>>::value ||
+        HighPrecPossible, "No");
+
+    if constexpr (std::is_same<no_const, HDRFloat<double>>::value ||
+                  std::is_same<no_const, HDRFloat<float>>::value ||
+                  std::is_same<no_const, HDRFloatComplex<double>>::value ||
+                  std::is_same<no_const, HDRFloatComplex<float>>::value) {
+        incoming.Reduce();
+    }
+
+    return incoming;
+}
 
 template<class T>
 static CUDA_CRAP constexpr T HdrMaxPositiveReduced(const T& one, const T& two) {
@@ -1068,7 +1099,8 @@ static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedGE(const T& one, 
         std::is_same<T, double>::value ||
         std::is_same<T, float>::value ||
         std::is_same<T, HDRFloat<double>>::value ||
-        std::is_same<T, HDRFloat<float>>::value, "No");
+        std::is_same<T, HDRFloat<float>>::value ||
+        HighPrecPossible, "No");
 
     if constexpr (std::is_same<T, HDRFloat<double>>::value ||
         std::is_same<T, HDRFloat<float>>::value) {

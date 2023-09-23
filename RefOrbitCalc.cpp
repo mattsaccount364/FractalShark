@@ -385,13 +385,16 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
         }
 
         if constexpr (Bad == CalcBad::Enable) {
-            T sq_x = double_zx * double_zx;
-            T sq_y = double_zy * double_zy;
-            T norm = (sq_x + sq_y) * glitch;
+            const T sq_x = double_zx * double_zx;
+            const T sq_y = double_zy * double_zy;
+            const T norm = HdrReduce((sq_x + sq_y) * glitch);
 
-            bool underflow = (HdrAbs((T)zx) <= small_float ||
-                HdrAbs((T)zy) <= small_float ||
-                norm <= small_float);
+            const auto zx_reduced = HdrReduce(HdrAbs((T)zx));
+            const auto zy_reduced = HdrReduce(HdrAbs((T)zy));
+            const bool underflow =
+                (HdrCompareToBothPositiveReducedLE(zx_reduced, small_float) ||
+                 HdrCompareToBothPositiveReducedLE(zy_reduced, small_float) ||
+                 HdrCompareToBothPositiveReducedLE(norm, small_float));
             results->bad.push_back(underflow);
         }
 
@@ -1127,11 +1130,14 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
         }
 
         if constexpr (Bad == CalcBad::Enable) {
-            T norm = (double_zx * double_zx + double_zy * double_zy) * glitch;
-            //HdrReduce(norm);
-            bool underflow = (HdrAbs(double_zx) <= small_float ||
-                HdrAbs(double_zy) <= small_float ||
-                norm <= small_float);
+            const T norm = HdrReduce((double_zx * double_zx + double_zy * double_zy) * glitch);
+            const auto zx_reduced = HdrReduce(HdrAbs((T)double_zx));
+            const auto zy_reduced = HdrReduce(HdrAbs((T)double_zy));
+
+            const bool underflow =
+                (HdrCompareToBothPositiveReducedLE(zx_reduced, small_float) ||
+                 HdrCompareToBothPositiveReducedLE(zy_reduced, small_float) ||
+                 HdrCompareToBothPositiveReducedLE(norm, small_float));
             results->bad.push_back(underflow);
         }
 
@@ -1546,10 +1552,20 @@ void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecis
         results->y.push_back(double_zy);
 
         if constexpr (Bad == CalcBad::Enable) {
-            T norm = (double_zx * double_zx + double_zy * double_zy) * glitch;
-            bool underflow = (HdrAbs(double_zx) <= small_float ||
-                HdrAbs(double_zy) <= small_float ||
-                norm <= small_float);
+            //T norm = (double_zx * double_zx + double_zy * double_zy) * glitch;
+            //bool underflow = (HdrAbs(double_zx) <= small_float ||
+            //    HdrAbs(double_zy) <= small_float ||
+            //    norm <= small_float);
+
+            const T norm = HdrReduce((double_zx * double_zx + double_zy * double_zy) * glitch);
+            const auto zx_reduced = HdrReduce(HdrAbs((T)double_zx));
+            const auto zy_reduced = HdrReduce(HdrAbs((T)double_zy));
+
+            const bool underflow =
+                (HdrCompareToBothPositiveReducedLE(zx_reduced, small_float) ||
+                 HdrCompareToBothPositiveReducedLE(zy_reduced, small_float) ||
+                 HdrCompareToBothPositiveReducedLE(norm, small_float));
+
             results->bad.push_back(underflow);
         }
 

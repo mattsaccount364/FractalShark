@@ -1292,7 +1292,7 @@ mandel_1xHDR_float_perturb_bla(uint32_t* iter_matrix,
         HDRFloatType normSquared = tempZX * tempZX + tempZY * tempZY;
         HdrReduce(normSquared);
 
-        if (normSquared <= TwoFiftySix && iter < n_iterations) {
+        if (HdrCompareToBothPositiveReducedLE(normSquared, TwoFiftySix) && iter < n_iterations) {
             DeltaNormSquared = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
             HdrReduce(DeltaNormSquared);
 

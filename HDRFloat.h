@@ -811,10 +811,10 @@ public:
         return l.compareTo(r) <= 0;
     }
 
-    friend CUDA_CRAP constexpr bool operator>(const HDRFloat& l, const HDRFloat& r)
-    {
-        return l.compareTo(r) > 0;
-    }
+    //friend CUDA_CRAP constexpr bool operator>(const HDRFloat& l, const HDRFloat& r)
+    //{
+    //    return l.compareTo(r) > 0;
+    //}
 
     //friend CUDA_CRAP constexpr bool operator>=(const HDRFloat& l, const HDRFloat& r)
     //{
@@ -910,5 +910,179 @@ static CUDA_CRAP constexpr void HdrReduce(T& incoming) {
                   std::is_same<T, HDRFloatComplex<double>>::value ||
                   std::is_same<T, HDRFloatComplex<float>>::value) {
         incoming.Reduce();
+    }
+}
+
+
+template<class T>
+static CUDA_CRAP constexpr T HdrMaxPositiveReduced(const T& one, const T& two) {
+    static_assert(
+        std::is_same<T, double>::value ||
+        std::is_same<T, float>::value ||
+        std::is_same<T, HDRFloat<double>>::value ||
+        std::is_same<T, HDRFloat<float>>::value, "No");
+
+    if constexpr (std::is_same<T, HDRFloat<double>>::value ||
+                  std::is_same<T, HDRFloat<float>>::value) {
+        if (one.compareToBothPositiveReduced(two) > 0) {
+            return one;
+        }
+
+        return two;
+    }
+    else {
+        return (one > two) ? one : two;
+    }
+}
+
+template<class T>
+static CUDA_CRAP constexpr T HdrMinPositiveReduced(const T& one, const T& two) {
+    static_assert(
+        std::is_same<T, double>::value ||
+        std::is_same<T, float>::value ||
+        std::is_same<T, HDRFloat<double>>::value ||
+        std::is_same<T, HDRFloat<float>>::value, "No");
+
+    if constexpr (std::is_same<T, HDRFloat<double>>::value ||
+                  std::is_same<T, HDRFloat<float>>::value) {
+        if (one.compareToBothPositiveReduced(two) < 0) {
+            return one;
+        }
+
+        return two;
+    }
+    else {
+        return (one < two) ? one : two;
+    }
+}
+
+template<class T>
+static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedLT(const T& one, const T& two) {
+    constexpr auto HighPrecPossible = // LOLZ I imagine there's a nicer way to do this here
+#ifndef __CUDACC__
+        std::is_same<T, HighPrecision>::value;
+#else
+        false;
+#endif
+
+    static_assert(
+        std::is_same<T, double>::value ||
+        std::is_same<T, float>::value ||
+        std::is_same<T, HDRFloat<double>>::value ||
+        std::is_same<T, HDRFloat<float>>::value ||
+        HighPrecPossible, "No");
+
+    if constexpr (std::is_same<T, HDRFloat<double>>::value ||
+                  std::is_same<T, HDRFloat<float>>::value) {
+        if (one.compareToBothPositiveReduced(two) < 0) {
+            return true;
+        }
+
+        return false;
+    }
+    else {
+        if (one < two) {
+            return true;
+        }
+
+        return false;
+    }
+}
+
+template<class T>
+static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedLE(const T& one, const T& two) {
+    constexpr auto HighPrecPossible = // LOLZ I imagine there's a nicer way to do this here
+#ifndef __CUDACC__
+        std::is_same<T, HighPrecision>::value;
+#else
+        false;
+#endif
+
+    static_assert(
+        std::is_same<T, double>::value ||
+        std::is_same<T, float>::value ||
+        std::is_same<T, HDRFloat<double>>::value ||
+        std::is_same<T, HDRFloat<float>>::value ||
+        HighPrecPossible, "No");
+
+    if constexpr (std::is_same<T, HDRFloat<double>>::value ||
+        std::is_same<T, HDRFloat<float>>::value) {
+        if (one.compareToBothPositiveReduced(two) <= 0) {
+            return true;
+        }
+
+        return false;
+    }
+    else {
+        if (one <= two) {
+            return true;
+        }
+
+        return false;
+    }
+}
+
+template<class T>
+static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedGT(const T& one, const T& two) {
+    constexpr auto HighPrecPossible = // LOLZ I imagine there's a nicer way to do this here
+#ifndef __CUDACC__
+        std::is_same<T, HighPrecision>::value;
+#else
+        false;
+#endif
+
+    static_assert(
+        std::is_same<T, double>::value ||
+        std::is_same<T, float>::value ||
+        std::is_same<T, HDRFloat<double>>::value ||
+        std::is_same<T, HDRFloat<float>>::value ||
+        HighPrecPossible, "No");
+
+    if constexpr (std::is_same<T, HDRFloat<double>>::value ||
+        std::is_same<T, HDRFloat<float>>::value) {
+        if (one.compareToBothPositiveReduced(two) > 0) {
+            return true;
+        }
+
+        return false;
+    }
+    else {
+        if (one > two) {
+            return true;
+        }
+
+        return false;
+    }
+}
+
+template<class T>
+static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedGE(const T& one, const T& two) {
+    constexpr auto HighPrecPossible = // LOLZ I imagine there's a nicer way to do this here
+#ifndef __CUDACC__
+        std::is_same<T, HighPrecision>::value;
+#else
+        false;
+#endif
+
+    static_assert(
+        std::is_same<T, double>::value ||
+        std::is_same<T, float>::value ||
+        std::is_same<T, HDRFloat<double>>::value ||
+        std::is_same<T, HDRFloat<float>>::value, "No");
+
+    if constexpr (std::is_same<T, HDRFloat<double>>::value ||
+        std::is_same<T, HDRFloat<float>>::value) {
+        if (one.compareToBothPositiveReduced(two) >= 0) {
+            return true;
+        }
+
+        return false;
+    }
+    else {
+        if (one >= two) {
+            return true;
+        }
+
+        return false;
     }
 }

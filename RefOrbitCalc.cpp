@@ -418,9 +418,9 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
             HdrReduce(double_zy);
             auto zyCopy1 = HdrAbs(double_zy);
 
-            T n2 = max(zxCopy1, zyCopy1);
+            T n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
 
-            T r0 = max(dzdcX1, dzdcY1);
+            T r0 = HdrMaxPositiveReduced(dzdcX1, dzdcY1);
             T maxRadiusHdr{ results->maxRadius };
             auto n3 = maxRadiusHdr * r0 * HighTwo;
             HdrReduce(n3);
@@ -444,7 +444,7 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
         T tempZX = double_zx + (T)cx;
         T tempZY = double_zy + (T)cy;
         T zn_size = tempZX * tempZX + tempZY * tempZY;
-        if (zn_size > TwoFiftySix) {
+        if (HdrCompareToBothPositiveReducedGT(zn_size, TwoFiftySix)) {
             break;
         }
     }
@@ -496,7 +496,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
 
     HighPrecision HighOne = 1.0;
     HighPrecision HighTwo = 2.0;
-    HighPrecision TwoFiftySix = 256.0;
+    static const T TwoFiftySix = T(256.0);
     HighPrecision DeltaReal = cx - existingResults->hiX;
     HighPrecision DeltaImaginary = cy - existingResults->hiY;
     HighPrecision DeltaSub0X = DeltaReal;
@@ -509,7 +509,6 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
     cy.precision(precNum);
     HighOne.precision(precNum);
     HighTwo.precision(precNum);
-    TwoFiftySix.precision(precNum);
     DeltaReal.precision(precNum);
     DeltaImaginary.precision(precNum);
     DeltaSub0X.precision(precNum);
@@ -573,7 +572,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
         normDeltaSubN = tempDeltaSubNXLow * tempDeltaSubNXLow + tempDeltaSubNYLow * tempDeltaSubNYLow;
         HdrReduce(normDeltaSubN);
 
-        if (zn_size > TwoFiftySix) {
+        if (HdrCompareToBothPositiveReducedGT(zn_size, TwoFiftySix)) {
             break;
         }
 
@@ -597,9 +596,9 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
             HdrReduce(zyCopy);
             auto zyCopy1 = HdrAbs(zyCopy);
 
-            T n2 = max(zxCopy1, zyCopy1);
+            T n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
 
-            T r0 = max(dzdcX1, dzdcY1);
+            T r0 = HdrMaxPositiveReduced(dzdcX1, dzdcY1);
             T maxRadiusHdr{ results->maxRadius };
             auto n3 = maxRadiusHdr * r0 * T(2.0);
             HdrReduce(n3);
@@ -670,7 +669,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
 
     HighPrecision HighOne = 1.0;
     HighPrecision HighTwo = 2.0;
-    HighPrecision TwoFiftySix = 256.0;
+    static const T TwoFiftySix = T(256.0);
     HighPrecision DeltaReal = cx - existingResults->hiX;
     HighPrecision DeltaImaginary = cy - existingResults->hiY;
     HighPrecision DeltaSub0X = DeltaReal;
@@ -683,7 +682,6 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     cy.precision(precNum);
     HighOne.precision(precNum);
     HighTwo.precision(precNum);
-    TwoFiftySix.precision(precNum);
     DeltaReal.precision(precNum);
     DeltaImaginary.precision(precNum);
     DeltaSub0X.precision(precNum);
@@ -861,9 +859,9 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
             HdrReduce(zyCopy);
             auto zyCopy1 = HdrAbs(zyCopy);
 
-            T n2 = max(zxCopy1, zyCopy1);
+            T n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
 
-            T r0 = max(dzdcX1, dzdcY1);
+            T r0 = HdrMaxPositiveReduced(dzdcX1, dzdcY1);
             T maxRadiusHdr{ results->maxRadius };
             auto n3 = maxRadiusHdr * r0 * T(2.0);
             HdrReduce(n3);
@@ -925,7 +923,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
         normDeltaSubN = tempDeltaSubNXLow * tempDeltaSubNXLow + tempDeltaSubNYLow * tempDeltaSubNYLow;
         HdrReduce(normDeltaSubN);
 
-        if (zn_size > Low256) {
+        if (HdrCompareToBothPositiveReducedGT(zn_size, Low256)) {
             break;
         }
 
@@ -1155,9 +1153,9 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
             HdrReduce(double_zy);
             auto zyCopy1 = HdrAbs(double_zy);
 
-            T n2 = max(zxCopy1, zyCopy1);
+            T n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
 
-            T r0 = max(dzdcX1, dzdcY1);
+            T r0 = HdrMaxPositiveReduced(dzdcX1, dzdcY1);
             T maxRadiusHdr{ results->maxRadius };
             auto n3 = maxRadiusHdr * r0 * HighTwo;
             HdrReduce(n3);
@@ -1603,9 +1601,9 @@ void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecis
             HdrReduce(zyCopy);
             auto zyCopy1 = HdrAbs(zyCopy);
 
-            T n2 = max(zxCopy1, zyCopy1);
+            T n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
 
-            T r0 = max(dzdcX1, dzdcY1);
+            T r0 = HdrMaxPositiveReduced(dzdcX1, dzdcY1);
             T maxRadiusHdr{ results->maxRadius };
             auto n3 = maxRadiusHdr * r0 * HighTwo;
             HdrReduce(n3);

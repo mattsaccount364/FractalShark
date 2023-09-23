@@ -30,7 +30,7 @@ BLA<T> BLAS<T>::MergeTwoBlas(BLA<T> x, BLA<T> y, T blaSize) {
     T tempR = (HdrSqrt(y.getR2()) - xB * blaSize) / xA;
     HdrReduce(tempR);
 
-    T r = min(HdrSqrt(x.getR2()), max(T(0), tempR));
+    T r = HdrMinPositiveReduced(HdrSqrt(x.getR2()), HdrMaxPositiveReduced(T(0), tempR));
     T r2 = r * r;
     return BLA<T>::getGenericStep(r2, RealA, ImagA, RealB, ImagB, l);
 }

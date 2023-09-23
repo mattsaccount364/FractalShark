@@ -2302,7 +2302,7 @@ void Fractal::CalcCpuHDR(bool MemoryOnly) {
                     zy2 = zy * zy;
                     sum = zx2 + zy2;
                     HdrReduce(sum);
-                    if (sum > Four) break;
+                    if (HdrCompareToBothPositiveReducedGT(sum, Four)) break;
 
                     zy = Two * zx * zy;
                     zx = zx2 - zy2;
@@ -2423,7 +2423,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                         HdrReduce(normSquared);
                         HdrReduce(DeltaNormSquared);
 
-                        if (normSquared > T(256)) {
+                        if (HdrCompareToBothPositiveReducedGT(normSquared, T(256))) {
                             break;
                         }
 
@@ -2532,7 +2532,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                     DeltaNormSquared = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
                     HdrReduce(DeltaNormSquared);
 
-                    if (normSquared > T(256)) {
+                    if (HdrCompareToBothPositiveReducedGT(normSquared, T(256))) {
                         break;
                     }
 
@@ -2716,7 +2716,7 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
                     auto DeltaNormSquared = DeltaSubN.norm_squared();
                     HdrReduce(DeltaNormSquared);
 
-                    if (normSquared > T(256)) {
+                    if (HdrCompareToBothPositiveReducedGT(normSquared, T(256))) {
                         break;
                     }
 

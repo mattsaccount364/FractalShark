@@ -1477,8 +1477,10 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
             complex0 = las.getZ(DeltaSubN);
             j++;
 
-            const auto complex0Norm = complex0.chebychevNorm();
-            const auto DeltaSubNNorm = DeltaSubN.chebychevNorm();
+            auto complex0Norm = complex0.chebychevNorm();
+            HdrReduce(complex0Norm);
+            auto DeltaSubNNorm = DeltaSubN.chebychevNorm();
+            HdrReduce(DeltaSubNNorm);
 
             if (complex0Norm.compareToBothPositiveReduced(DeltaSubNNorm) < 0 || j >= MacroItCount) {
                 DeltaSubN = complex0;
@@ -2365,7 +2367,7 @@ void mandel_1x_float_perturb_scaled(uint32_t* iter_matrix,
                 tempZX * tempZX + tempZY * tempZY;
             HdrReduce(zn_size);
 
-            if (zn_size > TwoFiftySix) {
+            if (HdrCompareToBothPositiveReducedGT(zn_size, TwoFiftySix)) {
                 break;
             }
 

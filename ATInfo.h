@@ -97,7 +97,7 @@ void ATInfo<T>::PerformAT(
 
         nsq = z.norm_squared();
         HdrReduce(nsq);
-        if (nsq > HDRFloat(SqrEscapeRadius)) {
+        if (nsq.compareToBothPositiveReduced(HDRFloat(SqrEscapeRadius)) > 0) {
             break;
         }
 

@@ -185,7 +185,7 @@ public:
     }
 #endif
 
-    CUDA_CRAP constexpr HDRFloat Reduce() {
+    CUDA_CRAP constexpr HDRFloat &Reduce() & {
         //if (mantissa == 0) {
         //    return;
         //}
@@ -210,6 +210,31 @@ public:
         return *this;
     }
 
+    CUDA_CRAP constexpr HDRFloat &&Reduce() && {
+        //if (mantissa == 0) {
+        //    return;
+        //}
+
+        if constexpr (std::is_same<T, double>::value) {
+            uint64_t bits = *reinterpret_cast<uint64_t*>(&mantissa);
+            int32_t f_exp = (int32_t)((bits & 0x7FF0'0000'0000'0000UL) >> 52UL) + MIN_SMALL_EXPONENT_INT();
+            uint64_t val = (bits & 0x800F'FFFF'FFFF'FFFFL) | 0x3FF0'0000'0000'0000L;
+            T f_val = *reinterpret_cast<T*>(&val);
+            exp += f_exp;
+            mantissa = f_val;
+        }
+        else if constexpr (std::is_same<T, float>::value) {
+            uint64_t bits = *reinterpret_cast<uint64_t*>(&mantissa);
+            int32_t f_exp = (int32_t)((bits & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
+            uint64_t val = (bits & 0x807F'FFFFL) | 0x3F80'0000L;
+            T f_val = *reinterpret_cast<T*>(&val);
+            exp += f_exp;
+            mantissa = f_val;
+        }
+
+        return std::move(*this);
+    }
+
     static CUDA_CRAP constexpr T getMultiplier(TExp scaleFactor) {
         if (scaleFactor <= MIN_SMALL_EXPONENT()) {
             return (T)0.0;
@@ -227,9 +252,12 @@ public:
         }
     }
 
+    template<bool IncludeCheck = true>
     static CUDA_CRAP constexpr T getMultiplierPos(TExp scaleFactor) {
-        if (scaleFactor >= 1024) {
-            return (T)INFINITY;
+        if constexpr (IncludeCheck) {
+            if (scaleFactor >= 1024) {
+                return (T)INFINITY;
+            }
         }
 
         if constexpr (std::is_same<T, double>::value) {
@@ -241,6 +269,7 @@ public:
         }
     }
 
+    template<bool IncludeCheck = true>
     static CUDA_CRAP constexpr T getMultiplierNeg(TExp scaleFactor) {
         //if constexpr (std::is_same<T, double>::value) {
         //    return scalbn(1.0, scaleFactor);
@@ -250,16 +279,21 @@ public:
         //}
 
         if constexpr (std::is_same<T, double>::value) {
-            if (scaleFactor <= MIN_SMALL_EXPONENT()) {
-                return 0.0;
+            if constexpr (IncludeCheck) {
+                if (scaleFactor <= MIN_SMALL_EXPONENT()) {
+                    return 0.0;
+                }
             }
 
             return twoPowExpDbl[(int)scaleFactor - MinDoubleExponent];
         }
         else {
-            if (scaleFactor <= MIN_SMALL_EXPONENT()) {
-                return 0.0f;
+            if constexpr (IncludeCheck) {
+                if (scaleFactor <= MIN_SMALL_EXPONENT()) {
+                    return 0.0f;
+                }
             }
+
             //return scalbnf(1.0, scaleFactor);
             return twoPowExpFlt[(int)scaleFactor - MinFloatExponent];
         }
@@ -391,6 +425,16 @@ public:
                 sum1 = HDRFloat(maxexp, __fmaf_rn(local_mantissa1, mul, -local_mantissa2));
             }
         }
+
+        //const TExp expDiff2 = sum1.exp - DeltaSub0Y.exp;
+        //const T mul = getMultiplierNeg(-abs(expDiff2));
+        //const TExp maxexp = max(sum1.exp, DeltaSub0Y.exp);
+        //if (sum1.exp >= DeltaSub0Y.exp) {
+        //    return HdrReduce(HDRFloat(maxexp, __fmaf_rn(DeltaSub0Y.mantissa, mul, sum1.mantissa)));
+        //}
+        //else {
+        //    return HdrReduce(HDRFloat(maxexp, __fmaf_rn(sum1.mantissa, mul, DeltaSub0Y.mantissa)));
+        //}
 
         const TExp expDiff2 = sum1.exp - DeltaSub0Y.exp;
         const T mul = getMultiplierNeg(-abs(expDiff2));
@@ -917,7 +961,7 @@ static CUDA_CRAP constexpr void HdrReduce(T& incoming) {
 }
 
 template<class T>
-static CUDA_CRAP constexpr T HdrReduce(T&& incoming) {
+static CUDA_CRAP constexpr T &&HdrReduce(T&& incoming) {
     constexpr auto HighPrecPossible = // LOLZ I imagine there's a nicer way to do this here
 #ifndef __CUDACC__
         std::is_same<T, HighPrecision>::value;
@@ -939,10 +983,10 @@ static CUDA_CRAP constexpr T HdrReduce(T&& incoming) {
                   std::is_same<no_const, HDRFloat<float>>::value ||
                   std::is_same<no_const, HDRFloatComplex<double>>::value ||
                   std::is_same<no_const, HDRFloatComplex<float>>::value) {
-        incoming.Reduce();
+        return std::move(incoming.Reduce());
     }
 
-    return incoming;
+    return std::move(incoming);
 }
 
 template<class T>

@@ -1497,8 +1497,8 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
 
     auto perturbLoop = [&](uint32_t maxIterations) {
         for (;;) {
-            const HDRFloatType DeltaSubNXOrig = DeltaSubNX;
-            const HDRFloatType DeltaSubNYOrig = DeltaSubNY;
+            const HDRFloatType DeltaSubNXOrig{ DeltaSubNX };
+            const HDRFloatType DeltaSubNYOrig{ DeltaSubNY };
 
             const auto tempMulX2 = Perturb.iters[RefIteration].x * Two;
             const auto tempMulY2 = Perturb.iters[RefIteration].y * Two;
@@ -1525,9 +1525,9 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
             const auto tempVal1X = Perturb.iters[RefIteration].x;
             const auto tempVal1Y = Perturb.iters[RefIteration].y;
 
-            const HDRFloatType tempZX = tempVal1X + DeltaSubNX;
-            const HDRFloatType tempZY = tempVal1Y + DeltaSubNY;
-            const HDRFloatType normSquared = HdrReduce(tempZX * tempZX + tempZY * tempZY);
+            const HDRFloatType tempZX{ tempVal1X + DeltaSubNX };
+            const HDRFloatType tempZY{ tempVal1Y + DeltaSubNY };
+            const HDRFloatType normSquared{ HdrReduce(tempZX * tempZX + tempZY * tempZY) };
 
             if (HdrCompareToBothPositiveReducedLT(normSquared, TwoFiftySix) && iter < maxIterations) {
                 DeltaNormSquared = HdrReduce(DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY);
@@ -1548,10 +1548,10 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
         }
     };
 
-    for (;;) {
+//    for (;;) {
         __syncthreads();
 
-        bool differences = false;
+        //bool differences = false;
         int maxRefIteration = 0;
         const int XStart = blockIdx.x * blockDim.x;
         const int YStart = blockIdx.y * blockDim.y;
@@ -1563,15 +1563,15 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
             for (auto xiter = XStart; xiter < XStart + blockDim.x; xiter++) {
                 curidx = width * yiter + xiter;
                 if (maxRefIteration < iter_matrix[curidx]) {
-                    differences = true;
+                    //differences = true;
                     maxRefIteration = iter_matrix[curidx];
                 }
             }
         }
 
-        if (differences == false) {
-            break;
-        }
+        //if (differences == false) {
+        //    break;
+        //}
 
         __syncthreads();
 
@@ -1579,7 +1579,7 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
         if (RefIteration < maxRefIteration) {
             perturbLoop(maxRefIteration);
         }
-    }
+    //}
 
     __syncthreads();
 

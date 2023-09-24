@@ -1221,7 +1221,6 @@ mandel_1xHDR_float_perturb_bla(uint32_t* iter_matrix,
     HDRFloatType DeltaSubNX = HDRFloatType(0);
     HDRFloatType DeltaSubNY = HDRFloatType(0);
     HDRFloatType DeltaNormSquared = HDRFloatType(0);
-    const HDRFloatType TwoFiftySix = HDRFloatType(256);
     const HDRFloatType Two = HDRFloatType(2);
 
     while (iter < n_iterations) {
@@ -1303,7 +1302,7 @@ mandel_1xHDR_float_perturb_bla(uint32_t* iter_matrix,
         HDRFloatType normSquared = tempZX * tempZX + tempZY * tempZY;
         HdrReduce(normSquared);
 
-        if (HdrCompareToBothPositiveReducedLE(normSquared, TwoFiftySix) && iter < n_iterations) {
+        if (HdrCompareToBothPositiveReducedLT<HDRFloatType, 256>(normSquared) && iter < n_iterations) {
             DeltaNormSquared = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
             HdrReduce(DeltaNormSquared);
 
@@ -1430,8 +1429,6 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
     const HDRFloatType DeltaSub0Y = DeltaImaginary;
     HDRFloatType DeltaSubNX = HDRFloatType(0);
     HDRFloatType DeltaSubNY = HDRFloatType(0);
-    const HDRFloatType TwoFiftySix = HDRFloatType(256);
-    const HDRFloatType Two = HDRFloatType(2);
 
     using SubType = float;
     using TComplex = HDRFloatComplex<float>;
@@ -1452,7 +1449,7 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
 
     int32_t MaxRefIteration = Perturb.size - 1;
     TComplex complex0{ DeltaReal, DeltaImaginary };
-    int32_t CurrentLAStage = LaReference.isValid ? LaReference.LAStageCount : 0;
+    int32_t CurrentLAStage{ LaReference.isValid ? LaReference.LAStageCount : 0 };
 
     if (iter != 0 && RefIteration < MaxRefIteration) {
         complex0 = Perturb.GetComplex(RefIteration) + DeltaSubN;
@@ -1465,17 +1462,17 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
     while (CurrentLAStage > 0) {
         CurrentLAStage--;
 
-        const int32_t LAIndex = LaReference.getLAIndex(CurrentLAStage);
+        const int32_t LAIndex{ LaReference.getLAIndex(CurrentLAStage) };
 
         if (LaReference.isLAStageInvalid(LAIndex, DeltaSub0)) {
             continue;
         }
 
-        const int32_t MacroItCount = LaReference.getMacroItCount(CurrentLAStage);
+        const int32_t MacroItCount{ LaReference.getMacroItCount(CurrentLAStage) };
         int32_t j = RefIteration;
 
         while (iter < n_iterations) {
-            const GPU_LAstep las = LaReference.getLA(LAIndex, DeltaSubN, j, iter, n_iterations);
+            const GPU_LAstep las{ LaReference.getLA(LAIndex, DeltaSubN, j, iter, n_iterations) };
 
             if (las.unusable) {
                 RefIteration = las.nextStageLAindex;
@@ -1487,8 +1484,8 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
             complex0 = las.getZ(DeltaSubN);
             j++;
 
-            const auto complex0Norm = HdrReduce(complex0.chebychevNorm());
-            const auto DeltaSubNNorm = HdrReduce(DeltaSubN.chebychevNorm());
+            const auto complex0Norm{ HdrReduce(complex0.chebychevNorm()) };
+            const auto DeltaSubNNorm{ HdrReduce(DeltaSubN.chebychevNorm()) };
             if (HdrCompareToBothPositiveReducedLT(complex0Norm, DeltaSubNNorm) || j >= MacroItCount) {
                 DeltaSubN = complex0;
                 j = 0;
@@ -1510,13 +1507,13 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
             const HDRFloatType DeltaSubNXOrig{ DeltaSubNX };
             const HDRFloatType DeltaSubNYOrig{ DeltaSubNY };
 
-            const auto tempMulX2 = Perturb.iters[RefIteration].x.multiply2();
-            const auto tempMulY2 = Perturb.iters[RefIteration].y.multiply2();
+            const auto tempMulX2{ Perturb.iters[RefIteration].x.multiply2() };
+            const auto tempMulY2{ Perturb.iters[RefIteration].y.multiply2() };
 
             ++RefIteration;
 
-            const auto tempSum1 = (tempMulY2 + DeltaSubNYOrig);
-            const auto tempSum2 = (tempMulX2 + DeltaSubNXOrig);
+            const auto tempSum1{ tempMulY2 + DeltaSubNYOrig };
+            const auto tempSum2{ tempMulX2 + DeltaSubNXOrig };
 
             HDRFloatType::custom_perturb2(
                 DeltaSubNX,
@@ -1528,15 +1525,15 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
                 DeltaSub0X,
                 DeltaSub0Y);
 
-            const auto tempVal1X = Perturb.iters[RefIteration].x;
-            const auto tempVal1Y = Perturb.iters[RefIteration].y;
+            const auto tempVal1X{ Perturb.iters[RefIteration].x };
+            const auto tempVal1Y{ Perturb.iters[RefIteration].y };
 
             const HDRFloatType tempZX{ tempVal1X + DeltaSubNX };
             const HDRFloatType tempZY{ tempVal1Y + DeltaSubNY };
             const HDRFloatType normSquared{ HdrReduce(tempZX.square() + tempZY.square())};
 
-            if (HdrCompareToBothPositiveReducedLT(normSquared, TwoFiftySix) && iter < maxIterations) {
-                const auto DeltaNormSquared = HdrReduce(DeltaSubNX.square() + DeltaSubNY.square());
+            if (HdrCompareToBothPositiveReducedLT<HDRFloatType, 256>(normSquared) && iter < maxIterations) {
+                const auto DeltaNormSquared{ HdrReduce(DeltaSubNX.square() + DeltaSubNY.square()) };
 
                 if (HdrCompareToBothPositiveReducedLT(normSquared, DeltaNormSquared) ||
                     RefIteration >= Perturb.size - 1) {
@@ -2367,7 +2364,7 @@ void mandel_1x_float_perturb_scaled(uint32_t* iter_matrix,
                 tempZX * tempZX + tempZY * tempZY;
             HdrReduce(zn_size);
 
-            if (HdrCompareToBothPositiveReducedGT(zn_size, TwoFiftySix)) {
+            if (!HdrCompareToBothPositiveReducedLT<T, 256>(zn_size)) {
                 break;
             }
 

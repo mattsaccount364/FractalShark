@@ -60,10 +60,6 @@ public:
         }
     }
 
-//private:
-//    static double LN2;
-//    static double LN2_REC;
-
 public:
     static constexpr TExp EXPONENT_DIFF_IGNORED = 120;
     static constexpr TExp MINUS_EXPONENT_DIFF_IGNORED = -EXPONENT_DIFF_IGNORED;
@@ -86,50 +82,39 @@ public:
         exp = other.exp;
     }
 
+    CUDA_CRAP constexpr HDRFloat(HDRFloat<T>&& other) {
+        mantissa = other.mantissa;
+        exp = other.exp;
+    }
+
+    CUDA_CRAP constexpr HDRFloat &operator=(const HDRFloat<T>& other) {
+        mantissa = other.mantissa;
+        exp = other.exp;
+        return *this;
+    }
+
+    CUDA_CRAP constexpr HDRFloat& operator=(HDRFloat<T>&& other) {
+        mantissa = other.mantissa;
+        exp = other.exp;
+        return *this;
+    }
+
     template<class SrcT>
     CUDA_CRAP constexpr HDRFloat(const HDRFloat<SrcT>& other) {
         mantissa = (T)other.mantissa;
         exp = other.exp;
     }
 
-    //CUDA_CRAP HDRFloat(T mantissa, TExp exp) {
-    //    this->mantissa = mantissa;
-    //    this->exp = exp < MIN_BIG_EXPONENT() ? MIN_BIG_EXPONENT() : exp;
-    //}
+    template<class SrcT>
+    CUDA_CRAP constexpr HDRFloat(HDRFloat<SrcT>&& other) {
+        mantissa = (T)other.mantissa;
+        exp = other.exp;
+    }
 
     CUDA_CRAP constexpr HDRFloat(TExp exp, T mantissa) {
         this->mantissa = mantissa;
         this->exp = exp;
     }
-
-    //CUDA_CRAP constexpr HDRFloat(TExp exp, T mantissa, bool /*check*/) {
-    //    this->mantissa = mantissa;
-    //    if (mantissa == 0) {
-    //        this->exp = MIN_BIG_EXPONENT();
-    //    }
-    //    else {
-    //        this->exp = exp;
-    //    }
-    //}
-
-    //CUDA_CRAP constexpr int32_t internal_exponent(T x)
-    //{
-    //    return abs(x) >= 2 ? exponent(x / 2) + 1 :
-    //        abs(x) < 1 ? exponent(x * 2) - 1 : 0;
-    //}
-
-    //CUDA_CRAP constexpr T internal_scalbn(T value, int exponent)
-    //{
-    //    return exponent == 0 ? value : exponent > 0 ? scalbn(value * 2, exponent - 1) :
-    //        scalbn(value / 2, exponent + 1);
-    //}
-
-    //CUDA_CRAP constexpr unsigned internal_mantissa(T x)
-    //{
-    //    return abs(x) < std::numeric_limits<T>::infinity() ?
-    //        // remove hidden 1 and bias the exponent to get integer
-    //        internal_scalbn(internal_scalbn(abs(x), -internal_exponent(x)) - 1, 23) : 0;
-    //}
 
     template <class To, class From, class Res = typename std::enable_if<
         (sizeof(To) == sizeof(From)) &&
@@ -199,9 +184,9 @@ public:
             mantissa = f_val;
         }
         else if constexpr (std::is_same<T, float>::value) {
-            uint64_t bits = *reinterpret_cast<uint64_t*>(&mantissa);
+            uint32_t bits = *reinterpret_cast<uint32_t*>(&mantissa);
             int32_t f_exp = (int32_t)((bits & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
-            uint64_t val = (bits & 0x807F'FFFFL) | 0x3F80'0000L;
+            uint32_t val = (bits & 0x807F'FFFFL) | 0x3F80'0000L;
             T f_val = *reinterpret_cast<T*>(&val);
             exp += f_exp;
             mantissa = f_val;
@@ -224,9 +209,9 @@ public:
             mantissa = f_val;
         }
         else if constexpr (std::is_same<T, float>::value) {
-            uint64_t bits = *reinterpret_cast<uint64_t*>(&mantissa);
+            uint32_t bits = *reinterpret_cast<uint32_t*>(&mantissa);
             int32_t f_exp = (int32_t)((bits & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
-            uint64_t val = (bits & 0x807F'FFFFL) | 0x3F80'0000L;
+            uint32_t val = (bits & 0x807F'FFFFL) | 0x3F80'0000L;
             T f_val = *reinterpret_cast<T*>(&val);
             exp += f_exp;
             mantissa = f_val;
@@ -766,6 +751,23 @@ public:
         }
     }
 
+    template<int32_t SomeConstant = 256>
+    CUDA_CRAP inline int compareToBothPositiveReducedTemplate() const {
+        if (exp > 1) {
+            return 1;
+        }
+        else if (exp < 1) {
+            return -1;
+        }
+        else {
+            if (mantissa >= SomeConstant) {
+                return 1;
+            } else {
+                return -1;
+            }
+        }
+    }
+
     // Matt: be sure both numbers are reduced
     CUDA_CRAP constexpr int compareToBothPositive(HDRFloat compareTo) const {
         if (exp > compareTo.exp) {
@@ -1098,6 +1100,31 @@ static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedLT(const T& one, 
     }
     else {
         return one < two;
+    }
+}
+
+template<class T, int32_t CompareAgainst>
+static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedLT(const T& one) {
+    constexpr auto HighPrecPossible = // LOLZ I imagine there's a nicer way to do this here
+#ifndef __CUDACC__
+        std::is_same<T, HighPrecision>::value;
+#else
+        false;
+#endif
+
+    static_assert(
+        std::is_same<T, double>::value ||
+        std::is_same<T, float>::value ||
+        std::is_same<T, HDRFloat<double>>::value ||
+        std::is_same<T, HDRFloat<float>>::value ||
+        HighPrecPossible, "No");
+
+    if constexpr (std::is_same<T, HDRFloat<double>>::value ||
+        std::is_same<T, HDRFloat<float>>::value) {
+        return one.compareToBothPositiveReducedTemplate() < 0;
+    }
+    else {
+        return one < CompareAgainst;
     }
 }
 

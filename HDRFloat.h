@@ -252,22 +252,6 @@ public:
         }
     }
 
-    template<bool IncludeCheck = true>
-    static CUDA_CRAP constexpr T getMultiplierPos(TExp scaleFactor) {
-        if constexpr (IncludeCheck) {
-            if (scaleFactor >= 1024) {
-                return (T)INFINITY;
-            }
-        }
-
-        if constexpr (std::is_same<T, double>::value) {
-            return (T)twoPowExpDbl[(int)scaleFactor - MinDoubleExponent];
-        }
-        else {
-            //return scalbnf(1.0, scaleFactor);
-            return (T)twoPowExpFlt[(int)scaleFactor - MinFloatExponent];
-        }
-    }
 
     template<bool IncludeCheck = true>
     static CUDA_CRAP constexpr T getMultiplierNeg(TExp scaleFactor) {
@@ -469,7 +453,9 @@ public:
         const TExp expDiff2F = maxexpF - DeltaSub0X.exp;
         const TExp finalMaxexpF = max(maxexpF, DeltaSub0X.exp);
         const T mul2F = getMultiplierNeg(-abs(expDiff2F));
-
+        //const int ZeroOrOne = (int)(expDiff2F >= 0);
+        //DeltaSubNX = HDRFloat(ZeroOrOne * finalMaxexpF, ZeroOrOne * __fmaf_rn(DeltaSub0X.mantissa, mul2F, mantissaSum1F)) +
+        //             HDRFloat((1 - ZeroOrOne) * finalMaxexpF, (1 - ZeroOrOne) * __fmaf_rn(mantissaSum1F, mul2F, DeltaSub0X.mantissa));
         if (expDiff2F >= 0) {
             DeltaSubNX = HDRFloat(finalMaxexpF, __fmaf_rn(DeltaSub0X.mantissa, mul2F, mantissaSum1F));
         }

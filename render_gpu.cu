@@ -21,9 +21,8 @@
 #include "LAReference.h"
 
 #include <type_traits>
-
-#include <cuda/pipeline>
-#include <cuda_pipeline.h>
+//#include <cuda/pipeline>
+//#include <cuda_pipeline.h>
 
 #ifdef __CUDACC__
 __device__ __constant__ double twoPowExpDataDbl[2048];
@@ -1506,39 +1505,13 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
 
     //////////////////////
 
-#define vsmemX(index) somesharedX[((threadIdx.y * GPURenderer::NB_THREADS_W + threadIdx.x) * maxNumPrefetch + index)]
-#define vsmemY(index) somesharedY[((threadIdx.y * GPURenderer::NB_THREADS_W + threadIdx.x) * maxNumPrefetch + index)]
-
-    constexpr size_t maxNumPrefetch = 4;
-    __shared__ HDRFloatType somesharedX[maxNumPrefetch * GPURenderer::NB_THREADS_W * GPURenderer::NB_THREADS_H];
-    __shared__ HDRFloatType somesharedY[maxNumPrefetch * GPURenderer::NB_THREADS_W * GPURenderer::NB_THREADS_H];
-
-    auto pref = [&](int32_t initRefIteration) {
-        size_t numPrefetch = maxNumPrefetch;
-        if (initRefIteration + numPrefetch >= Perturb.size) {
-            numPrefetch = Perturb.size - initRefIteration;
-        }
-
-        for (size_t k = 0; k < numPrefetch; ++k) { // fill the prefetch buffer asynchronously
-            __pipeline_memcpy_async(&vsmemX(k), &Perturb.iters[initRefIteration + k].x, sizeof(HDRFloatType));
-            __pipeline_memcpy_async(&vsmemY(k), &Perturb.iters[initRefIteration + k].y, sizeof(HDRFloatType));
-        }
-        __pipeline_wait_prior(0); //wait on needed prefetch value
-    };
-
     auto perturbLoop = [&](uint32_t maxIterations) {
-        int32_t initRefIteration = RefIteration;
-        int32_t prefIndex;
-
-        pref(initRefIteration);
-
         for (;;) {
             const HDRFloatType DeltaSubNXOrig{ DeltaSubNX };
             const HDRFloatType DeltaSubNYOrig{ DeltaSubNY };
 
-            prefIndex = RefIteration - initRefIteration;
-            const auto tempMulX2 = vsmemX(prefIndex).multiply2();
-            const auto tempMulY2 = vsmemY(prefIndex).multiply2();
+            const auto tempMulX2 = Perturb.iters[RefIteration].x.multiply2();
+            const auto tempMulY2 = Perturb.iters[RefIteration].y.multiply2();
 
             ++RefIteration;
 
@@ -1555,15 +1528,14 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
                 DeltaSub0X,
                 DeltaSub0Y);
 
-            prefIndex = RefIteration - initRefIteration;
-            const auto tempVal1X = vsmemX(prefIndex);
-            const auto tempVal1Y = vsmemY(prefIndex);
+            const auto tempVal1X = Perturb.iters[RefIteration].x;
+            const auto tempVal1Y = Perturb.iters[RefIteration].y;
 
             const HDRFloatType tempZX{ tempVal1X + DeltaSubNX };
             const HDRFloatType tempZY{ tempVal1Y + DeltaSubNY };
             const HDRFloatType normSquared{ HdrReduce(tempZX.square() + tempZY.square())};
 
-            if (HdrCompareToBothPositiveReducedLT(normSquared, TwoFiftySix) && iter <= maxIterations) {
+            if (HdrCompareToBothPositiveReducedLT(normSquared, TwoFiftySix) && iter < maxIterations) {
                 const auto DeltaNormSquared = HdrReduce(DeltaSubNX.square() + DeltaSubNY.square());
 
                 if (HdrCompareToBothPositiveReducedLT(normSquared, DeltaNormSquared) ||
@@ -1571,11 +1543,6 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
                     DeltaSubNX = tempZX;
                     DeltaSubNY = tempZY;
                     RefIteration = 0;
-                    initRefIteration = RefIteration;
-                    pref(initRefIteration);
-                } else if (prefIndex >= maxNumPrefetch - 1) {
-                    initRefIteration = RefIteration;
-                    pref(initRefIteration);
                 }
 
                 ++iter;
@@ -1586,42 +1553,42 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
         }
     };
 
-    ////for (;;) {
-    //    __syncthreads();
+//    for (;;) {
+        __syncthreads();
 
-    //    //bool differences = false;
-    //    int maxRefIteration = 0;
-    //    const int XStart = blockIdx.x * blockDim.x;
-    //    const int YStart = blockIdx.y * blockDim.y;
+        //bool differences = false;
+        int maxRefIteration = 0;
+        const int XStart = blockIdx.x * blockDim.x;
+        const int YStart = blockIdx.y * blockDim.y;
 
-    //    int32_t curidx = width * YStart + XStart;
-    //    maxRefIteration = iter_matrix[curidx];
+        int32_t curidx = width * YStart + XStart;
+        maxRefIteration = iter_matrix[curidx];
 
-    //    for (auto yiter = YStart; yiter < YStart + blockDim.y; yiter++) {
-    //        for (auto xiter = XStart; xiter < XStart + blockDim.x; xiter++) {
-    //            curidx = width * yiter + xiter;
-    //            if (maxRefIteration < iter_matrix[curidx]) {
-    //                //differences = true;
-    //                maxRefIteration = iter_matrix[curidx];
-    //            }
-    //        }
-    //    }
+        for (auto yiter = YStart; yiter < YStart + blockDim.y; yiter++) {
+            for (auto xiter = XStart; xiter < XStart + blockDim.x; xiter++) {
+                curidx = width * yiter + xiter;
+                if (maxRefIteration < iter_matrix[curidx]) {
+                    //differences = true;
+                    maxRefIteration = iter_matrix[curidx];
+                }
+            }
+        }
 
-    //    //if (differences == false) {
-    //    //    break;
-    //    //}
+        //if (differences == false) {
+        //    break;
+        //}
 
-    //    __syncthreads();
+        __syncthreads();
 
-    //    // Give it one chance to synchronize memory access
-    //    if (RefIteration < maxRefIteration) {
-    //        perturbLoop(maxRefIteration);
-    //    }
-    ////}
+        // Give it one chance to synchronize memory access
+        if (RefIteration < maxRefIteration) {
+            perturbLoop(maxRefIteration);
+        }
+    //}
 
     __syncthreads();
 
-    perturbLoop(n_iterations - 1);
+    perturbLoop(n_iterations);
 
     iter_matrix[idx] = (uint32_t)iter;
 }

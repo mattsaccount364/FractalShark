@@ -25,21 +25,7 @@ public:
     static constexpr T DefaultPeriodDetectionThreshold2 = 0x1.0p-3;
     static constexpr T DefaultLAThresholdScale = 0x1.0p-24;
     static constexpr T DefaultLAThresholdCScale = 0x1.0p-24;
-    static constexpr int DEFAULT_SERIES_APPROXIMATION_TERMS = 5;
-    static constexpr long DEFAULT_SERIES_APPROXIMATION_OOM_DIFFERENCE = 2;
-    static constexpr int DEFAULT_SERIES_APPROXIMATION_MAX_SKIP_ITER = INT32_MAX;
-    static constexpr int DEFAULT_BLA_BITS = 23;
-    static constexpr int DEFAULT_BLA_STARTING_LEVEL = 2;
-    static constexpr int DEFAULT_NANOMB1_N = 8;
-    static constexpr int DEFAULT_NANOMB1_M = 16;
-
-    //LAInfoDeep::HDRFloat LAInfoDeep::Stage0PeriodDetectionThreshold(DefaultStage0PeriodDetectionThreshold);
-    //LAInfoDeep::HDRFloat LAInfoDeep::PeriodDetectionThreshold(DefaultPeriodDetectionThreshold);
-    //LAInfoDeep::HDRFloat LAInfoDeep::Stage0PeriodDetectionThreshold2(DefaultStage0PeriodDetectionThreshold2);
-    //LAInfoDeep::HDRFloat LAInfoDeep::PeriodDetectionThreshold2(DefaultPeriodDetectionThreshold2);
-    //LAInfoDeep::HDRFloat LAInfoDeep::LAThresholdScale(DefaultLAThresholdScale);
-    //LAInfoDeep::HDRFloat LAInfoDeep::LAThresholdCScale(DefaultLAThresholdCScale);
-
+    
     T Stage0PeriodDetectionThreshold = DefaultStage0PeriodDetectionThreshold;
     T PeriodDetectionThreshold = DefaultPeriodDetectionThreshold;
     T Stage0PeriodDetectionThreshold2 = DefaultStage0PeriodDetectionThreshold2;

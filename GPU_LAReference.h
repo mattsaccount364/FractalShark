@@ -11,9 +11,6 @@ private:
     using HDRFloat = HDRFloat<float>;
     using HDRFloatComplex = HDRFloatComplex<float>;
 
-    static const int lowBound = 64;
-    static const double log16;
-
 public:
     __host__ GPU_LAReference(const LAReference& other);
     __host__ GPU_LAReference(const GPU_LAReference& other);

@@ -392,63 +392,122 @@ public:
         const HDRFloat &tempSum1,
         const HDRFloat &DeltaSubNYOrig,
         const HDRFloat &tempSum2,
-        const HDRFloat &DeltaSub0Y) {
+        const HDRFloat &DeltaSub0) {
 
         const T local_mantissa1 = DeltaSubNXOrig.mantissa * tempSum1.mantissa;
         const TExp local_exp1 = DeltaSubNXOrig.exp + tempSum1.exp;
 
         const T local_mantissa2 = DeltaSubNYOrig.mantissa * tempSum2.mantissa;
         const TExp local_exp2 = DeltaSubNYOrig.exp + tempSum2.exp;
+        const TExp maxexp = max(local_exp1, local_exp2);
+        const TExp expDiff1 = local_exp1 - local_exp2;
+        const T mul = getMultiplierNeg(-abs(expDiff1));
 
-        HDRFloat sum1;
+        T mantissaSum1;
+        TExp expDiff2;
+        TExp finalMaxexp;
         if constexpr (plus) {
-            const TExp expDiff1 = local_exp1 - local_exp2;
-            const T mul = getMultiplierNeg(-abs(expDiff1));
-            const TExp maxexp = max(local_exp1, local_exp2);
             if (local_exp1 >= local_exp2) {
                 // TODO constexpr double path
-                sum1 = HDRFloat(maxexp, __fmaf_rn(local_mantissa2, mul, local_mantissa1));
+                mantissaSum1 = __fmaf_rn(local_mantissa2, mul, local_mantissa1);
             }
             else {
-                sum1 = HDRFloat(maxexp, __fmaf_rn(local_mantissa1, mul, local_mantissa2));
+                mantissaSum1 = __fmaf_rn(local_mantissa1, mul, local_mantissa2);
             }
         }
         else {
-            const TExp expDiff1 = local_exp1 - local_exp2;
-            const T mul = getMultiplierNeg(-abs(expDiff1));
-            const TExp maxexp = max(local_exp1, local_exp2);
-
             if (local_exp1 >= local_exp2) {
-                sum1 = HDRFloat(maxexp, __fmaf_rn(-local_mantissa2, mul, local_mantissa1));
+                mantissaSum1 = __fmaf_rn(-local_mantissa2, mul, local_mantissa1);
             }
             else {
-                sum1 = HDRFloat(maxexp, __fmaf_rn(local_mantissa1, mul, -local_mantissa2));
+                mantissaSum1 = __fmaf_rn(local_mantissa1, mul, -local_mantissa2);
             }
         }
 
-        //const TExp expDiff2 = sum1.exp - DeltaSub0Y.exp;
-        //const T mul = getMultiplierNeg(-abs(expDiff2));
-        //const TExp maxexp = max(sum1.exp, DeltaSub0Y.exp);
-        //if (sum1.exp >= DeltaSub0Y.exp) {
-        //    return HdrReduce(HDRFloat(maxexp, __fmaf_rn(DeltaSub0Y.mantissa, mul, sum1.mantissa)));
-        //}
-        //else {
-        //    return HdrReduce(HDRFloat(maxexp, __fmaf_rn(sum1.mantissa, mul, DeltaSub0Y.mantissa)));
-        //}
+        expDiff2 = maxexp - DeltaSub0.exp;
+        finalMaxexp = max(maxexp, DeltaSub0.exp);
 
-        const TExp expDiff2 = sum1.exp - DeltaSub0Y.exp;
-        const T mul = getMultiplierNeg(-abs(expDiff2));
-        const TExp maxexp = max(sum1.exp, DeltaSub0Y.exp);
+        const T mul2 = getMultiplierNeg(-abs(expDiff2));
         HDRFloat sum2;
-        if (sum1.exp >= DeltaSub0Y.exp) {
-            sum2 = HDRFloat(maxexp, __fmaf_rn(DeltaSub0Y.mantissa, mul, sum1.mantissa));
+        if (expDiff2 >= 0) {
+            sum2 = HDRFloat(finalMaxexp, __fmaf_rn(DeltaSub0.mantissa, mul2, mantissaSum1));
         }
         else {
-            sum2 = HDRFloat(maxexp, __fmaf_rn(sum1.mantissa, mul, DeltaSub0Y.mantissa));
+            sum2 = HDRFloat(finalMaxexp, __fmaf_rn(mantissaSum1, mul2, DeltaSub0.mantissa));
         }
 
         HdrReduce(sum2);
         return sum2;
+    }
+
+    static CUDA_CRAP HDRFloat custom_perturb2(
+        HDRFloat& DeltaSubNX,
+        HDRFloat& DeltaSubNY,
+        const HDRFloat& DeltaSubNXOrig,
+        const HDRFloat& tempSum1,
+        const HDRFloat& DeltaSubNYOrig,
+        const HDRFloat& tempSum2,
+        const HDRFloat& DeltaSub0X,
+        const HDRFloat& DeltaSub0Y) {
+
+        const TExp local_exp1F = DeltaSubNXOrig.exp + tempSum1.exp;
+        const TExp local_exp2F = DeltaSubNYOrig.exp + tempSum2.exp;
+        const TExp maxexpF = max(local_exp1F, local_exp2F);
+        const TExp expDiff1F = local_exp1F - local_exp2F;
+        const T mulF = getMultiplierNeg(-abs(expDiff1F));
+
+        const T local_mantissa1F = DeltaSubNXOrig.mantissa * tempSum1.mantissa;
+        const T local_mantissa2F = DeltaSubNYOrig.mantissa * tempSum2.mantissa;
+        T mantissaSum1F;
+        if (expDiff1F >= 0) {
+            mantissaSum1F = __fmaf_rn(-local_mantissa2F, mulF, local_mantissa1F);
+        }
+        else {
+            mantissaSum1F = __fmaf_rn(local_mantissa1F, mulF, -local_mantissa2F);
+        }
+
+        const TExp expDiff2F = maxexpF - DeltaSub0X.exp;
+        const TExp finalMaxexpF = max(maxexpF, DeltaSub0X.exp);
+        const T mul2F = getMultiplierNeg(-abs(expDiff2F));
+
+        if (expDiff2F >= 0) {
+            DeltaSubNX = HDRFloat(finalMaxexpF, __fmaf_rn(DeltaSub0X.mantissa, mul2F, mantissaSum1F));
+        }
+        else {
+            DeltaSubNX = HDRFloat(finalMaxexpF, __fmaf_rn(mantissaSum1F, mul2F, DeltaSub0X.mantissa));
+        }
+
+        HdrReduce(DeltaSubNX);
+
+        const TExp local_exp1T = DeltaSubNXOrig.exp + tempSum2.exp;
+        const TExp local_exp2T = DeltaSubNYOrig.exp + tempSum1.exp;
+        const TExp maxexpT = max(local_exp1T, local_exp2T);
+        const TExp expDiff1T = local_exp1T - local_exp2T;
+        const T mulT = getMultiplierNeg(-abs(expDiff1T));
+
+        const T local_mantissa1T = DeltaSubNXOrig.mantissa * tempSum2.mantissa;
+        const T local_mantissa2T = DeltaSubNYOrig.mantissa * tempSum1.mantissa;
+        T mantissaSum1T;
+        if (expDiff1T >= 0) {
+            // TODO constexpr double path
+            mantissaSum1T = __fmaf_rn(local_mantissa2T, mulT, local_mantissa1T);
+        }
+        else {
+            mantissaSum1T = __fmaf_rn(local_mantissa1T, mulT, local_mantissa2T);
+        }
+
+        const TExp expDiff2T = maxexpT - DeltaSub0Y.exp;
+        const TExp finalMaxexpT = max(maxexpT, DeltaSub0Y.exp);
+        const T mul2T = getMultiplierNeg(-abs(expDiff2T));
+
+        if (expDiff2T >= 0) {
+            DeltaSubNY = HDRFloat(finalMaxexpT, __fmaf_rn(DeltaSub0Y.mantissa, mul2T, mantissaSum1T));
+        }
+        else {
+            DeltaSubNY = HDRFloat(finalMaxexpT, __fmaf_rn(mantissaSum1T, mul2T, DeltaSub0Y.mantissa));
+        }
+
+        HdrReduce(DeltaSubNY);
     }
 
     // friends defined inside class body are inline and are hidden from non-ADL lookup

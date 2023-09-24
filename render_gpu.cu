@@ -1263,18 +1263,29 @@ mandel_1xHDR_float_perturb_bla(uint32_t* iter_matrix,
         //    DeltaSubNYOrig * tempSum1 +
         //    DeltaSub0X;
         //HdrReduce(DeltaSubNX);
-        DeltaSubNX = HDRFloatType::custom_perturb1<false>(
-            DeltaSubNXOrig,
-            tempSum2,
-            DeltaSubNYOrig,
-            tempSum1,
-            DeltaSub0X);
 
-        DeltaSubNY = HDRFloatType::custom_perturb1<true>(
+        //DeltaSubNX = HDRFloatType::custom_perturb1<false>(
+        //    DeltaSubNXOrig,
+        //    tempSum2,
+        //    DeltaSubNYOrig,
+        //    tempSum1,
+        //    DeltaSub0X);
+
+        //DeltaSubNY = HDRFloatType::custom_perturb1<true>(
+        //    DeltaSubNXOrig,
+        //    tempSum1,
+        //    DeltaSubNYOrig,
+        //    tempSum2,
+        //    DeltaSub0Y);
+
+        HDRFloatType::custom_perturb2(
+            DeltaSubNX,
+            DeltaSubNY,
             DeltaSubNXOrig,
-            tempSum1,
-            DeltaSubNYOrig,
             tempSum2,
+            DeltaSubNYOrig,
+            tempSum1,
+            DeltaSub0X,
             DeltaSub0Y);
 
         //DeltaSubNY = DeltaSubNXOrig * tempSum1 +
@@ -1419,7 +1430,6 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
     const HDRFloatType DeltaSub0Y = DeltaImaginary;
     HDRFloatType DeltaSubNX = HDRFloatType(0);
     HDRFloatType DeltaSubNY = HDRFloatType(0);
-    HDRFloatType DeltaNormSquared = HDRFloatType(0);
     const HDRFloatType TwoFiftySix = HDRFloatType(256);
     const HDRFloatType Two = HDRFloatType(2);
 
@@ -1500,26 +1510,22 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
             const HDRFloatType DeltaSubNXOrig{ DeltaSubNX };
             const HDRFloatType DeltaSubNYOrig{ DeltaSubNY };
 
-            const auto tempMulX2 = Perturb.iters[RefIteration].x * Two;
-            const auto tempMulY2 = Perturb.iters[RefIteration].y * Two;
+            const auto tempMulX2 = Perturb.iters[RefIteration].x.multiply2();
+            const auto tempMulY2 = Perturb.iters[RefIteration].y.multiply2();
 
             ++RefIteration;
 
             const auto tempSum1 = (tempMulY2 + DeltaSubNYOrig);
             const auto tempSum2 = (tempMulX2 + DeltaSubNXOrig);
 
-            DeltaSubNX = HDRFloatType::custom_perturb1<false>(
+            HDRFloatType::custom_perturb2(
+                DeltaSubNX,
+                DeltaSubNY,
                 DeltaSubNXOrig,
                 tempSum2,
                 DeltaSubNYOrig,
                 tempSum1,
-                DeltaSub0X);
-
-            DeltaSubNY = HDRFloatType::custom_perturb1<true>(
-                DeltaSubNXOrig,
-                tempSum1,
-                DeltaSubNYOrig,
-                tempSum2,
+                DeltaSub0X,
                 DeltaSub0Y);
 
             const auto tempVal1X = Perturb.iters[RefIteration].x;
@@ -1527,16 +1533,15 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
 
             const HDRFloatType tempZX{ tempVal1X + DeltaSubNX };
             const HDRFloatType tempZY{ tempVal1Y + DeltaSubNY };
-            const HDRFloatType normSquared{ HdrReduce(tempZX * tempZX + tempZY * tempZY) };
+            const HDRFloatType normSquared{ HdrReduce(tempZX.square() + tempZY.square())};
 
             if (HdrCompareToBothPositiveReducedLT(normSquared, TwoFiftySix) && iter < maxIterations) {
-                DeltaNormSquared = HdrReduce(DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY);
+                const auto DeltaNormSquared = HdrReduce(DeltaSubNX.square() + DeltaSubNY.square());
 
                 if (HdrCompareToBothPositiveReducedLT(normSquared, DeltaNormSquared) ||
                     RefIteration >= Perturb.size - 1) {
                     DeltaSubNX = tempZX;
                     DeltaSubNY = tempZY;
-                    DeltaNormSquared = normSquared;
                     RefIteration = 0;
                 }
 

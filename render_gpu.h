@@ -272,8 +272,8 @@ public:
     static const char* ConvertErrorToString(uint32_t err);
 
     // Match in Fractal.cpp
-    static const int32_t NB_THREADS_W = 16;  // W=16, H=8 previously seemed OK
-    static const int32_t NB_THREADS_H = 8;
+    static constexpr int32_t NB_THREADS_W = 16;  // W=16, H=8 previously seemed OK
+    static constexpr int32_t NB_THREADS_H = 8;
 
 private:
     void ClearLocals();

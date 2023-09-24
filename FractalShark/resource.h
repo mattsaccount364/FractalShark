@@ -226,6 +226,7 @@
 #define IDM_PALETTE_5                   33017
 #define ID_BUILT_33018                  33018
 #define ID_BUILT_33019                  33019
+#define ID_BUILT_33020                  33020
 #define IDM_VIEW1                       33051
 #define IDM_VIEW2                       33052
 #define IDM_VIEW3                       33053
@@ -262,7 +263,7 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        131
-#define _APS_NEXT_COMMAND_VALUE         33020
+#define _APS_NEXT_COMMAND_VALUE         33021
 #define _APS_NEXT_CONTROL_VALUE         1000
 #define _APS_NEXT_SYMED_VALUE           110
 #endif

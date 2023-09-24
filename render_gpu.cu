@@ -491,13 +491,32 @@ GPU_LAReference::GPU_LAReference(const LAReference& other) :
 
     LAStages = tempLAStages;
 
-    for (size_t i = 0; i < other.LAs.size(); i++) {
-        LAs[i] = other.LAs[i];
+    //for (size_t i = 0; i < other.LAs.size(); i++) {
+    //    LAs[i] = other.LAs[i];
+    //}
+
+    static_assert(sizeof(GPU_LAInfoDeep<float>) == sizeof(LAInfoDeep<float>), "!");
+
+    m_Err = cudaMemcpy(LAs,
+        other.LAs.data(),
+        sizeof(GPU_LAInfoDeep<float>) * other.LAs.size(),
+        cudaMemcpyDefault);
+    if (m_Err != cudaSuccess) {
+        return;
     }
 
-    for (size_t i = 0; i < other.LAStages.size(); i++) {
-        LAStages[i] = other.LAStages[i];
+    //for (size_t i = 0; i < other.LAStages.size(); i++) {
+    //    LAStages[i] = other.LAStages[i];
+    //}
+
+    m_Err = cudaMemcpy(LAStages,
+        other.LAStages.data(),
+        sizeof(LAStageInfo) * other.LAStages.size(),
+        cudaMemcpyDefault);
+    if (m_Err != cudaSuccess) {
+        return;
     }
+
 }
 
 GPU_LAReference::~GPU_LAReference() {

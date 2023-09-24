@@ -33,6 +33,9 @@ public:
 
     LAInfoI LAi;
 
+    T MinMagMant;
+    int32_t MinMagExp;
+
     CUDA_CRAP GPU_LAInfoDeep<SubType> &operator=(const GPU_LAInfoDeep<SubType>& other);
     CUDA_CRAP GPU_LAInfoDeep<SubType>& operator=(const LAInfoDeep<SubType>& other);
 

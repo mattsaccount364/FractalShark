@@ -26,13 +26,6 @@ public:
     static constexpr T DefaultLAThresholdScale = 0x1.0p-24;
     static constexpr T DefaultLAThresholdCScale = 0x1.0p-24;
     
-    T Stage0PeriodDetectionThreshold = DefaultStage0PeriodDetectionThreshold;
-    T PeriodDetectionThreshold = DefaultPeriodDetectionThreshold;
-    T Stage0PeriodDetectionThreshold2 = DefaultStage0PeriodDetectionThreshold2;
-    T PeriodDetectionThreshold2 = DefaultPeriodDetectionThreshold2;
-    T LAThresholdScale = DefaultLAThresholdScale;
-    T LAThresholdCScale = DefaultLAThresholdCScale;
-
 public:
 
     T RefRe, RefIm;
@@ -142,11 +135,16 @@ CUDA_CRAP
 bool LAInfoDeep<SubType>::DetectPeriod(HDRFloatComplex z) {
     if constexpr (DEFAULT_DETECTION_METHOD == 1) {
         //return z.chebychevNorm().compareToBothPositive(HDRFloat(MinMagExp, MinMagMant).multiply(PeriodDetectionThreshold2)) < 0;
-        return z.chebychevNorm().compareToBothPositive(HDRFloat(MinMagExp, MinMagMant) * Stage0PeriodDetectionThreshold2);
+        return z.chebychevNorm().compareToBothPositive(HDRFloat(MinMagExp, MinMagMant) * DefaultPeriodDetectionThreshold2) < 0;
     }
     else {
         //return z.chebychevNorm().divide(HDRFloatComplex(ZCoeffExp, ZCoeffRe, ZCoeffIm).chebychevNorm()).multiply_mutable(LAThresholdScale).compareToBothPositive(HDRFloat(LAThresholdExp, LAThresholdMant).multiply(PeriodDetectionThreshold)) < 0;
-        return z.chebychevNorm() / HDRFloatComplex(ZCoeffExp, ZCoeffRe, ZCoeffIm).chebychevNorm() * LAThresholdScale < HDRFloat(LAThresholdExp, LAThresholdMant) * Stage0PeriodDetectionThreshold;
+        return (z.chebychevNorm() /
+            (HDRFloatComplex(ZCoeffExp, ZCoeffRe, ZCoeffIm)
+            .chebychevNorm())
+            * DefaultLAThresholdScale)
+            .compareToBothPositive(
+                HDRFloat(LAThresholdExp, LAThresholdMant) * DefaultPeriodDetectionThreshold) < 0;
     }
 }
 
@@ -185,10 +183,10 @@ bool LAInfoDeep<SubType>::Step(LAInfoDeep& out, HDRFloatComplex z) {
         out.MinMagMant = outMinMag.getMantissa();
     }
 
-    HDRFloat temp1 = ChebyMagz / ChebyMagZCoeff * LAThresholdScale;
+    HDRFloat temp1 = ChebyMagz / ChebyMagZCoeff * DefaultLAThresholdScale;
     temp1.Reduce();
 
-    HDRFloat temp2 = ChebyMagz / ChebyMagCCoeff * LAThresholdCScale;
+    HDRFloat temp2 = ChebyMagz / ChebyMagCCoeff * DefaultLAThresholdCScale;
     temp2.Reduce();
 
     HDRFloat outLAThreshold = HDRFloat::minBothPositiveReduced(HDRFloat(LAThresholdExp, LAThresholdMant), temp1);
@@ -219,11 +217,11 @@ bool LAInfoDeep<SubType>::Step(LAInfoDeep& out, HDRFloatComplex z) {
     out.RefExp = RefExp;
 
     if constexpr (DEFAULT_DETECTION_METHOD == 1) {
-        return HDRFloat(out.MinMagExp, out.MinMagMant).compareToBothPositive(HDRFloat(MinMagExp, MinMagMant) * (Stage0PeriodDetectionThreshold2)) < 0;
+        return HDRFloat(out.MinMagExp, out.MinMagMant).compareToBothPositive(HDRFloat(MinMagExp, MinMagMant) * (DefaultStage0PeriodDetectionThreshold2)) < 0;
         //return HDRFloat(out.MinMagExp, out.MinMagMant) < HDRFloat(MinMagExp, MinMagMant) * PeriodDetectionThreshold2;
     }
     else {
-        return HDRFloat(out.LAThresholdExp, out.LAThresholdMant).compareToBothPositive(HDRFloat(LAThresholdExp, LAThresholdMant) * (Stage0PeriodDetectionThreshold)) < 0;
+        return HDRFloat(out.LAThresholdExp, out.LAThresholdMant).compareToBothPositive(HDRFloat(LAThresholdExp, LAThresholdMant) * (DefaultStage0PeriodDetectionThreshold)) < 0;
         //return HDRFloat(LAThresholdExp, LAThresholdMant) < HDRFloat(out.LAThresholdExp, out.LAThresholdMant) * PeriodDetectionThreshold;
     }
 }
@@ -264,10 +262,10 @@ bool LAInfoDeep<SubType>::Composite(LAInfoDeep& out, LAInfoDeep LA) {
     HDRFloat ChebyMagZCoeff = ZCoeff.chebychevNorm();
     HDRFloat ChebyMagCCoeff = CCoeff.chebychevNorm();
 
-    HDRFloat temp1 = ChebyMagz / ChebyMagZCoeff * LAThresholdScale;
+    HDRFloat temp1 = ChebyMagz / ChebyMagZCoeff * DefaultLAThresholdScale;
     temp1.Reduce();
 
-    HDRFloat temp2 = ChebyMagz / ChebyMagCCoeff * LAThresholdCScale;
+    HDRFloat temp2 = ChebyMagz / ChebyMagCCoeff * DefaultLAThresholdCScale;
     temp2.Reduce();
 
     HDRFloat outLAThreshold = HDRFloat::minBothPositiveReduced(LAThreshold, temp1);
@@ -328,10 +326,10 @@ bool LAInfoDeep<SubType>::Composite(LAInfoDeep& out, LAInfoDeep LA) {
         out.MinMagExp = outMinMag.getExp();
         out.MinMagMant = outMinMag.getMantissa();
 
-        return temp.compareToBothPositive(MinMag * PeriodDetectionThreshold2) < 0;
+        return temp.compareToBothPositive(MinMag * DefaultPeriodDetectionThreshold2) < 0;
     }
     else {
-        return temp.compareToBothPositive(LAThreshold * PeriodDetectionThreshold) < 0;
+        return temp.compareToBothPositive(LAThreshold * DefaultPeriodDetectionThreshold) < 0;
     }
 }
 

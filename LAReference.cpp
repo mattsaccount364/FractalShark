@@ -17,7 +17,7 @@ bool LAReference::CreateLAFromOrbit(int32_t maxRefIteration) {
         isValid = false;
         LAStages.resize(MaxLAStages);
 
-        LAs.resize(maxRefIteration);
+        LAs.reserve(maxRefIteration);
 
         UseAT = false;
         LAStageCount = 0;
@@ -27,10 +27,7 @@ bool LAReference::CreateLAFromOrbit(int32_t maxRefIteration) {
 
     int32_t Period = 0;
 
-    LAInfoDeep<float> LA;
-
-
-    LA = LAInfoDeep<float>(HDRFloatComplex());
+    LAInfoDeep<float> LA{HDRFloatComplex()};
     LA = LA.Step(m_PerturbationResults.GetComplex<float>(1));
 
     LAInfoI LAI = LAInfoI();
@@ -39,8 +36,6 @@ bool LAReference::CreateLAFromOrbit(int32_t maxRefIteration) {
     if (LA.isZCoeffZero()) {
         return false;
     }
-
-    const auto numPerThread = maxRefIteration / std::thread::hardware_concurrency();
 
     int32_t i;
     for (i = 2; i < maxRefIteration; i++) {
@@ -118,6 +113,8 @@ bool LAReference::CreateLAFromOrbit(int32_t maxRefIteration) {
         PeriodBegin = 0;
         PeriodEnd = Period;
     }
+
+    const auto numPerThread = maxRefIteration / std::thread::hardware_concurrency();
 
     for (; i < maxRefIteration; i++) {
         LAInfoDeep<float> NewLA{};

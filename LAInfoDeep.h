@@ -169,13 +169,13 @@ LAInfoDeep<SubType>::HDRFloatComplex LAInfoDeep<SubType>::getCCoeff() {
 template<class SubType>
 CUDA_CRAP
 bool LAInfoDeep<SubType>::Step(LAInfoDeep& out, HDRFloatComplex z) {
-    HDRFloat ChebyMagz = z.chebychevNorm();
+    const HDRFloat ChebyMagz = z.chebychevNorm();
 
-    HDRFloatComplex ZCoeff = HDRFloatComplex(ZCoeffExp, ZCoeffRe, ZCoeffIm);
-    HDRFloatComplex CCoeff = HDRFloatComplex(CCoeffExp, CCoeffRe, CCoeffIm);
+    const HDRFloatComplex ZCoeff{ ZCoeffExp, ZCoeffRe, ZCoeffIm };
+    const HDRFloatComplex CCoeff{ CCoeffExp, CCoeffRe, CCoeffIm };
 
-    HDRFloat ChebyMagZCoeff = ZCoeff.chebychevNorm();
-    HDRFloat ChebyMagCCoeff = CCoeff.chebychevNorm();
+    const HDRFloat ChebyMagZCoeff{ ZCoeff.chebychevNorm() };
+    const HDRFloat ChebyMagCCoeff{ CCoeff.chebychevNorm() };
 
     if constexpr (DEFAULT_DETECTION_METHOD == 1) {
         HDRFloat outMinMag = HDRFloat::minBothPositiveReduced(ChebyMagz, HDRFloat(MinMagExp, MinMagMant));
@@ -189,8 +189,8 @@ bool LAInfoDeep<SubType>::Step(LAInfoDeep& out, HDRFloatComplex z) {
     HDRFloat temp2 = ChebyMagz / ChebyMagCCoeff * DefaultLAThresholdCScale;
     temp2.Reduce();
 
-    HDRFloat outLAThreshold = HDRFloat::minBothPositiveReduced(HDRFloat(LAThresholdExp, LAThresholdMant), temp1);
-    HDRFloat outLAThresholdC = HDRFloat::minBothPositiveReduced(HDRFloat(LAThresholdCExp, LAThresholdCMant), temp2);
+    const HDRFloat outLAThreshold{ HDRFloat::minBothPositiveReduced(HDRFloat(LAThresholdExp, LAThresholdMant), temp1) };
+    const HDRFloat outLAThresholdC{ HDRFloat::minBothPositiveReduced(HDRFloat(LAThresholdCExp, LAThresholdCMant), temp2) };
 
     out.LAThresholdExp = outLAThreshold.getExp();
     out.LAThresholdMant = outLAThreshold.getMantissa();
@@ -198,10 +198,10 @@ bool LAInfoDeep<SubType>::Step(LAInfoDeep& out, HDRFloatComplex z) {
     out.LAThresholdCExp = outLAThresholdC.getExp();
     out.LAThresholdCMant = outLAThresholdC.getMantissa();
 
-    HDRFloatComplex z2 = z * HDRFloat(2);
-    HDRFloatComplex outZCoeff = z2 * ZCoeff;
+    const HDRFloatComplex z2{ z * HDRFloat(2) };
+    HDRFloatComplex outZCoeff{ z2 * ZCoeff };
     outZCoeff.Reduce();
-    HDRFloatComplex outCCoeff = z2 * CCoeff + HDRFloat{ 1 };
+    HDRFloatComplex outCCoeff{ z2 * CCoeff + HDRFloat{ 1 } };
     outCCoeff.Reduce();
 
     out.ZCoeffExp = outZCoeff.getExp();

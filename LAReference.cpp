@@ -17,7 +17,7 @@ bool LAReference::CreateLAFromOrbit(int32_t maxRefIteration) {
         isValid = false;
         LAStages.resize(MaxLAStages);
 
-        LAs.reserve(DEFAULT_SIZE);
+        LAs.resize(maxRefIteration);
 
         UseAT = false;
         LAStageCount = 0;
@@ -40,6 +40,8 @@ bool LAReference::CreateLAFromOrbit(int32_t maxRefIteration) {
         return false;
     }
 
+    const auto numPerThread = maxRefIteration / std::thread::hardware_concurrency();
+
     int32_t i;
     for (i = 2; i < maxRefIteration; i++) {
 
@@ -49,26 +51,28 @@ bool LAReference::CreateLAFromOrbit(int32_t maxRefIteration) {
         NewLA = LAInfoDeep<float>();
         PeriodDetected = LA.Step(NewLA, m_PerturbationResults.GetComplex<float>(i));
 
-        if (PeriodDetected) {
-            Period = i;
-            LAI.StepLength = Period;
-
-            LA.SetLAi(LAI);
-            LAs.push_back(LA);
-
-            LAI.NextStageLAIndex = i;
-
-            if (i + 1 < maxRefIteration) {
-                LA = LAInfoDeep<float>(m_PerturbationResults.GetComplex<float>(i)).Step(m_PerturbationResults.GetComplex<float>(i + 1));
-                i += 2;
-            }
-            else {
-                LA = LAInfoDeep<float>(m_PerturbationResults.GetComplex<float>(i));
-                i += 1;
-            }
-            break;
+        if (!PeriodDetected) {
+            LA = NewLA;
+            continue;
         }
-        LA = NewLA;
+
+        Period = i;
+        LAI.StepLength = Period;
+
+        LA.SetLAi(LAI);
+        LAs.push_back(LA);
+
+        LAI.NextStageLAIndex = i;
+
+        if (i + 1 < maxRefIteration) {
+            LA = LAInfoDeep<float>(m_PerturbationResults.GetComplex<float>(i)).Step(m_PerturbationResults.GetComplex<float>(i + 1));
+            i += 2;
+        }
+        else {
+            LA = LAInfoDeep<float>(m_PerturbationResults.GetComplex<float>(i));
+            i += 1;
+        }
+        break;
     }
 
     LAStageCount = 1;
@@ -94,9 +98,7 @@ bool LAReference::CreateLAFromOrbit(int32_t maxRefIteration) {
             LA.SetLAi(LAI);
             LAs.push_back(LA);
 
-            auto LA2 = LAInfoDeep<float>(m_PerturbationResults.GetComplex<float>(maxRefIteration));
-            LA2.SetLAi({}); // mrenz This one is new
-            LAs.push_back(LA2);
+            LAs.push_back(LAInfoDeep<float>(m_PerturbationResults.GetComplex<float>(maxRefIteration)));
 
             LAStages[0].MacroItCount = 1;
 
@@ -118,39 +120,33 @@ bool LAReference::CreateLAFromOrbit(int32_t maxRefIteration) {
     }
 
     for (; i < maxRefIteration; i++) {
-        LAInfoDeep<float> NewLA;
-        bool PeriodDetected;
+        LAInfoDeep<float> NewLA{};
+        bool PeriodDetected{ LA.Step(NewLA, m_PerturbationResults.GetComplex<float>(i)) };
 
-        NewLA = LAInfoDeep<float>();
-        PeriodDetected = LA.Step(NewLA, m_PerturbationResults.GetComplex<float>(i));
+        if (!PeriodDetected && i < PeriodEnd) {
+            LA = NewLA;
+            continue;
+        }
 
-        if (PeriodDetected || i >= PeriodEnd) {
-            LAI.StepLength = i - PeriodBegin;
+        LAI.StepLength = i - PeriodBegin;
 
-            LA.SetLAi(LAI);
-            LAs.push_back(LA);
+        LA.SetLAi(LAI);
+        LAs.push_back(LA);
 
-            LAI.NextStageLAIndex = i;
-            PeriodBegin = i;
-            PeriodEnd = PeriodBegin + Period;
+        LAI.NextStageLAIndex = i;
+        PeriodBegin = i;
+        PeriodEnd = PeriodBegin + Period;
 
-            int32_t ip1 = i + 1;
+        int32_t ip1{ i + 1 };
+        bool detected{ NewLA.DetectPeriod(m_PerturbationResults.GetComplex<float>(ip1)) };
 
-            bool detected;
-
-            detected = NewLA.DetectPeriod(m_PerturbationResults.GetComplex<float>(ip1));
-
-            if (detected || ip1 >= maxRefIteration) {
-                LA = LAInfoDeep<float>(m_PerturbationResults.GetComplex<float>(i));
-            }
-            else {
-                LA = LAInfoDeep<float>(m_PerturbationResults.GetComplex<float>(i)).Step(
-                    m_PerturbationResults.GetComplex<float>(ip1));
-                i++;
-            }
+        if (detected || ip1 >= maxRefIteration) {
+            LA = LAInfoDeep<float>(m_PerturbationResults.GetComplex<float>(i));
         }
         else {
-            LA = NewLA;
+            LA = LAInfoDeep<float>(m_PerturbationResults.GetComplex<float>(i)).Step(
+                m_PerturbationResults.GetComplex<float>(ip1));
+            i++;
         }
     }
 

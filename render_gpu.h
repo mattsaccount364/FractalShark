@@ -71,10 +71,10 @@ using float2 = MattDblflt;
 #endif
 
 struct MattQFltflt {
-    float v1; // MSB
-    float v2;
-    float v3;
-    float v4; // LSB
+    float x; // MSB
+    float y;
+    float z;
+    float w; // LSB
 };
 
 struct MattDbldbl {
@@ -83,22 +83,25 @@ struct MattDbldbl {
 };
 
 struct MattQDbldbl {
-    double v1; // MSB
-    double v2;
-    double v3;
-    double v4; // LSB
+    double x; // MSB
+    double y;
+    double z;
+    double w; // LSB
 };
 
-// TODO template MattCoords
+// TODO template MattCoords<T>
+template<class T>
 struct MattCoords {
-    float floatOnly;
-    double doubleOnly;
-    MattDblflt flt;
-    MattDbldbl dbl;
-    MattQDbldbl qdbl;
-    MattQFltflt qflt;
-    HDRFloat<float> hdrflt;
-    HDRFloat<double> hdrdbl;
+    T val;
+
+    //float floatOnly;
+    //double doubleOnly;
+    //MattDblflt flt;
+    //MattDbldbl dbl;
+    //MattQDbldbl qdbl;
+    //MattQFltflt qflt;
+    //HDRFloat<float> hdrflt;
+    //HDRFloat<double> hdrdbl;
 };
 
 template<class T>
@@ -155,13 +158,14 @@ public:
 
     void ResetMemory();
 
+    template<class T>
     uint32_t Render(
         RenderAlgorithm algorithm,
         uint32_t* buffer,
-        MattCoords cx,
-        MattCoords cy,
-        MattCoords dx,
-        MattCoords dy,
+        MattCoords<T> cx,
+        MattCoords<T> cy,
+        MattCoords<T> dx,
+        MattCoords<T> dy,
         uint32_t n_iterations,
         int iteration_precision);
 
@@ -170,12 +174,12 @@ public:
         uint32_t* buffer,
         MattPerturbResults<float>* results,
         BLAS<float>* blas,
-        MattCoords cx,
-        MattCoords cy,
-        MattCoords dx,
-        MattCoords dy,
-        MattCoords centerX,
-        MattCoords centerY,
+        MattCoords<float> cx,
+        MattCoords<float> cy,
+        MattCoords<float> dx,
+        MattCoords<float> dy,
+        MattCoords<float> centerX,
+        MattCoords<float> centerY,
         uint32_t n_iterations,
         int iteration_precision);
 
@@ -184,12 +188,12 @@ public:
         uint32_t* buffer,
         MattPerturbResults<double>* results,
         BLAS<double> *blas,
-        MattCoords cx,
-        MattCoords cy,
-        MattCoords dx,
-        MattCoords dy,
-        MattCoords centerX,
-        MattCoords centerY,
+        MattCoords<double> cx,
+        MattCoords<double> cy,
+        MattCoords<double> dx,
+        MattCoords<double> dy,
+        MattCoords<double> centerX,
+        MattCoords<double> centerY,
         uint32_t n_iterations,
         int iteration_precision);
 
@@ -200,12 +204,12 @@ public:
         MattPerturbResults<T>* double_perturb,
         MattPerturbResults<float>* float_perturb,
         BLAS<T>* blas,
-        MattCoords cx,
-        MattCoords cy,
-        MattCoords dx,
-        MattCoords dy,
-        MattCoords centerX,
-        MattCoords centerY,
+        MattCoords<T> cx,
+        MattCoords<T> cy,
+        MattCoords<T> dx,
+        MattCoords<T> dy,
+        MattCoords<T> centerX,
+        MattCoords<T> centerY,
         uint32_t n_iterations,
         int iteration_precision);
 
@@ -214,12 +218,12 @@ public:
         uint32_t* buffer,
         MattPerturbResults<float2>* results,
         BLAS<float2>* blas,
-        MattCoords cx,
-        MattCoords cy,
-        MattCoords dx,
-        MattCoords dy,
-        MattCoords centerX,
-        MattCoords centerY,
+        MattCoords<float2> cx,
+        MattCoords<float2> cy,
+        MattCoords<float2> dx,
+        MattCoords<float2> dy,
+        MattCoords<float2> centerX,
+        MattCoords<float2> centerY,
         uint32_t n_iterations,
         int iteration_precision);
 
@@ -228,12 +232,12 @@ public:
         uint32_t* buffer,
         MattPerturbResults<HDRFloat<float>>* results,
         BLAS<HDRFloat<float>>* blas,
-        MattCoords cx,
-        MattCoords cy,
-        MattCoords dx,
-        MattCoords dy,
-        MattCoords centerX,
-        MattCoords centerY,
+        MattCoords<HDRFloat<float>> cx,
+        MattCoords<HDRFloat<float>> cy,
+        MattCoords<HDRFloat<float>> dx,
+        MattCoords<HDRFloat<float>> dy,
+        MattCoords<HDRFloat<float>> centerX,
+        MattCoords<HDRFloat<float>> centerY,
         uint32_t n_iterations,
         int iteration_precision);
 
@@ -242,12 +246,12 @@ public:
         uint32_t* buffer,
         MattPerturbResults<HDRFloat<float>>* float_perturb,
         const LAReference<float> &LaReference,
-        MattCoords cx,
-        MattCoords cy,
-        MattCoords dx,
-        MattCoords dy,
-        MattCoords centerX,
-        MattCoords centerY,
+        MattCoords<HDRFloat<float>> cx,
+        MattCoords<HDRFloat<float>> cy,
+        MattCoords<HDRFloat<float>> dx,
+        MattCoords<HDRFloat<float>> dy,
+        MattCoords<HDRFloat<float>> centerX,
+        MattCoords<HDRFloat<float>> centerY,
         uint32_t n_iterations);
 
     uint32_t RenderPerturbBLA(
@@ -255,12 +259,12 @@ public:
         uint32_t* buffer,
         MattPerturbResults<HDRFloat<double>>* results,
         BLAS<HDRFloat<double>>* blas,
-        MattCoords cx,
-        MattCoords cy,
-        MattCoords dx,
-        MattCoords dy,
-        MattCoords centerX,
-        MattCoords centerY,
+        MattCoords<HDRFloat<double>> cx,
+        MattCoords<HDRFloat<double>> cy,
+        MattCoords<HDRFloat<double>> dx,
+        MattCoords<HDRFloat<double>> dy,
+        MattCoords<HDRFloat<double>> centerX,
+        MattCoords<HDRFloat<double>> centerY,
         uint32_t n_iterations,
         int iteration_precision);
 
@@ -269,12 +273,12 @@ public:
         uint32_t* buffer,
         MattPerturbResults<HDRFloat<double>>* float_perturb,
         const LAReference<double>& LaReference,
-        MattCoords cx,
-        MattCoords cy,
-        MattCoords dx,
-        MattCoords dy,
-        MattCoords centerX,
-        MattCoords centerY,
+        MattCoords<HDRFloat<double>> cx,
+        MattCoords<HDRFloat<double>> cy,
+        MattCoords<HDRFloat<double>> dx,
+        MattCoords<HDRFloat<double>> dy,
+        MattCoords<HDRFloat<double>> centerX,
+        MattCoords<HDRFloat<double>> centerY,
         uint32_t n_iterations);
 
     // Side effect is this initializes CUDA the first time it's run

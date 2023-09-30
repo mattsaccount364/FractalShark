@@ -217,9 +217,21 @@ private:
         size_t iteration;
     };
 
-    static void FillCoord(HighPrecision& src, MattCoords& dest);
-    void FillGpuCoords(MattCoords& cx2, MattCoords& cy2, MattCoords& dx2, MattCoords& dy2);
+    void FillCoord(HighPrecision& src, MattCoords<MattQFltflt>& dest);
+    void FillCoord(HighPrecision& src, MattCoords<MattQDbldbl>& dest);
+    void FillCoord(HighPrecision& src, MattCoords<MattDbldbl>& dest);
+    void FillCoord(HighPrecision& src, MattCoords<double>& dest);
+    void FillCoord(HighPrecision& src, MattCoords<HDRFloat<float>>& dest);
+    void FillCoord(HighPrecision& src, MattCoords<HDRFloat<double>>& dest);
+    void FillCoord(HighPrecision& src, MattCoords<MattDblflt>& dest);
+    void FillCoord(HighPrecision& src, MattCoords<float>& dest);
+
+    template<class T>
+    void FillGpuCoords(MattCoords<T>& cx2, MattCoords<T>& cy2, MattCoords<T>& dx2, MattCoords<T>& dy2);
+
+    template<class T>
     void CalcGpuFractal(bool MemoryOnly);
+
     void CalcNetworkFractal(bool MemoryOnly);
     void CalcCpuPerturbationFractal(bool MemoryOnly);
 

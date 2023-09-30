@@ -9,8 +9,11 @@
 #include "BLA.h"
 #include "BLAS.h"
 #include "LAstep.h"
+
+template<class SubType>
 class LAReference;
 
+// TODO reorder these in some sane way that matches the menu etc
 enum class RenderAlgorithm {
     // CPU algorithms
     CpuHigh,
@@ -21,12 +24,14 @@ enum class RenderAlgorithm {
     Cpu32PerturbedBLAHDR,
     Cpu32PerturbedBLAV2HDR,
     Cpu64PerturbedBLAHDR,
+    Cpu64PerturbedBLAV2HDR,
 
     // GPU:
     Gpu1x64,
     Gpu1x64Perturbed,
     Gpu1x64PerturbedBLA,
     GpuHDRx64PerturbedBLA,
+    GpuHDRx64PerturbedLAv2,
     Gpu2x64,
     Gpu4x64,
     Gpu1x32,
@@ -84,6 +89,7 @@ struct MattQDbldbl {
     double v4; // LSB
 };
 
+// TODO template MattCoords
 struct MattCoords {
     float floatOnly;
     double doubleOnly;
@@ -135,10 +141,6 @@ struct MattPerturbResults {
                 iters[i].bad = 0;
             }
         }
-    }
-
-    T* GetComplex(size_t index) {
-        return HDRFloatComplex<T>(iters[index].x, iters[index].y);
     }
 
     ~MattPerturbResults() {
@@ -239,7 +241,7 @@ public:
         RenderAlgorithm algorithm,
         uint32_t* buffer,
         MattPerturbResults<HDRFloat<float>>* float_perturb,
-        const LAReference &LaReference,
+        const LAReference<float> &LaReference,
         MattCoords cx,
         MattCoords cy,
         MattCoords dx,
@@ -261,6 +263,19 @@ public:
         MattCoords centerY,
         uint32_t n_iterations,
         int iteration_precision);
+
+    uint32_t RenderPerturbLAv2(
+        RenderAlgorithm algorithm,
+        uint32_t* buffer,
+        MattPerturbResults<HDRFloat<double>>* float_perturb,
+        const LAReference<double>& LaReference,
+        MattCoords cx,
+        MattCoords cy,
+        MattCoords dx,
+        MattCoords dy,
+        MattCoords centerX,
+        MattCoords centerY,
+        uint32_t n_iterations);
 
     // Side effect is this initializes CUDA the first time it's run
     uint32_t InitializeMemory(

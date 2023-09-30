@@ -21,15 +21,19 @@ class RefOrbitCalc;
 template<class T>
 class PerturbationResults;
 
+template<class SubType>
+class GPU_LAReference;
+
+template<class SubType>
 class LAReference {
 private:
-    using HDRFloat = HDRFloat<float>;
-    using HDRFloatComplex = HDRFloatComplex<float>;
+    using HDRFloat = HDRFloat<SubType>;
+    using HDRFloatComplex = HDRFloatComplex<SubType>;
 
-    friend class GPU_LAReference;
+    friend class GPU_LAReference<SubType>;
 
     static const int lowBound = 64;
-    static const double log16;
+    static const SubType log16;
 
 public:
     LAReference(const PerturbationResults<HDRFloat> &PerturbationResults) :
@@ -42,7 +46,7 @@ public:
 
     bool UseAT;
 
-    ATInfo<HDRFloat> AT;
+    ATInfo<SubType> AT;
 
     int32_t LAStageCount;
 
@@ -51,12 +55,11 @@ public:
 private:
     static constexpr int MaxLAStages = 512;
     static constexpr int DEFAULT_SIZE = 10000;
-    std::vector<LAInfoDeep<float>> LAs;
+    std::vector<LAInfoDeep<SubType>> LAs;
     std::vector<LAStageInfo> LAStages;
 
     const PerturbationResults<HDRFloat>& m_PerturbationResults;
 
-    void addToLA(LAInfoDeep<float> la);
     int32_t LAsize();
     bool CreateLAFromOrbit(int32_t maxRefIteration);
     bool CreateNewLAStage(int32_t maxRefIteration);
@@ -70,6 +73,6 @@ public:
     int32_t getLAIndex(int32_t CurrentLAStage);
     int32_t getMacroItCount(int32_t CurrentLAStage);
 
-    LAstep<HDRFloatComplex>
+    LAstep<SubType>
     getLA(int32_t LAIndex, HDRFloatComplex dz, /*HDRFloatComplex dc, */int32_t j, int32_t iterations, int32_t max_iterations);
 };

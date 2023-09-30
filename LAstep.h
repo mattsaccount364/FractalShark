@@ -12,7 +12,7 @@ class LAInfoDeep;
 template<class T>
 class GPU_LAInfoDeep;
 
-template<class T>
+template<class SubType>
 class LAstep {
 public:
     CUDA_CRAP LAstep() :
@@ -28,8 +28,8 @@ public:
     size_t nextStageLAindex;
 
 public:
-    using HDRFloatComplex = T;
-    LAInfoDeep<float> *LAjdeep;
+    using HDRFloatComplex = HDRFloatComplex<SubType>;
+    LAInfoDeep<SubType> *LAjdeep;
     HDRFloatComplex Refp1Deep;
     HDRFloatComplex newDzDeep;
 
@@ -42,27 +42,27 @@ public:
     CUDA_CRAP HDRFloatComplex getZ(HDRFloatComplex DeltaSubN);
 };
 
-template<class T>
+template<class SubType>
 CUDA_CRAP
-LAstep<T>::HDRFloatComplex LAstep<T>::Evaluate(HDRFloatComplex DeltaSub0) {
+LAstep<SubType>::HDRFloatComplex LAstep<SubType>::Evaluate(HDRFloatComplex DeltaSub0) {
     return LAjdeep->Evaluate(newDzDeep, DeltaSub0);
 }
 
-template<class T>
+template<class SubType>
 CUDA_CRAP
-LAstep<T>::HDRFloatComplex LAstep<T>::EvaluateDzdcDeep(HDRFloatComplex z, HDRFloatComplex dzdc) {
+LAstep<SubType>::HDRFloatComplex LAstep<SubType>::EvaluateDzdcDeep(HDRFloatComplex z, HDRFloatComplex dzdc) {
     return LAjdeep->EvaluateDzdc(z, dzdc);
 }
 
-template<class T>
+template<class SubType>
 CUDA_CRAP
-LAstep<T>::HDRFloatComplex LAstep<T>::EvaluateDzdc2Deep(HDRFloatComplex z, HDRFloatComplex dzdc2, HDRFloatComplex dzdc) {
+LAstep<SubType>::HDRFloatComplex LAstep<SubType>::EvaluateDzdc2Deep(HDRFloatComplex z, HDRFloatComplex dzdc2, HDRFloatComplex dzdc) {
     return LAjdeep->EvaluateDzdc2(z, dzdc2, dzdc);
 }
 
-template<class T>
+template<class SubType>
 CUDA_CRAP
-LAstep<T>::HDRFloatComplex LAstep<T>::getZ(HDRFloatComplex DeltaSubN) {
+LAstep<SubType>::HDRFloatComplex LAstep<SubType>::getZ(HDRFloatComplex DeltaSubN) {
     return Refp1Deep + DeltaSubN;
 }
 
@@ -71,7 +71,7 @@ LAstep<T>::HDRFloatComplex LAstep<T>::getZ(HDRFloatComplex DeltaSubN) {
 ////////////////////////////////////////////////
 
 
-template<class T>
+template<class SubType>
 class GPU_LAstep {
 public:
     CUDA_CRAP GPU_LAstep() :
@@ -86,8 +86,8 @@ public:
     int32_t step;
     int32_t nextStageLAindex;
 
-    using HDRFloatComplex = T;
-    const GPU_LAInfoDeep<float>* LAjdeep;
+    using HDRFloatComplex = HDRFloatComplex<SubType>;
+    const GPU_LAInfoDeep<SubType>* LAjdeep;
     HDRFloatComplex Refp1Deep;
     HDRFloatComplex newDzDeep;
 
@@ -100,26 +100,26 @@ public:
     CUDA_CRAP HDRFloatComplex getZ(HDRFloatComplex DeltaSubN) const;
 };
 
-template<class T>
+template<class SubType>
 CUDA_CRAP
-GPU_LAstep<T>::HDRFloatComplex GPU_LAstep<T>::Evaluate(HDRFloatComplex DeltaSub0) const {
+GPU_LAstep<SubType>::HDRFloatComplex GPU_LAstep<SubType>::Evaluate(HDRFloatComplex DeltaSub0) const {
     return LAjdeep->Evaluate(newDzDeep, DeltaSub0);
 }
 
-template<class T>
+template<class SubType>
 CUDA_CRAP
-GPU_LAstep<T>::HDRFloatComplex GPU_LAstep<T>::EvaluateDzdcDeep(HDRFloatComplex z, HDRFloatComplex dzdc) const {
+GPU_LAstep<SubType>::HDRFloatComplex GPU_LAstep<SubType>::EvaluateDzdcDeep(HDRFloatComplex z, HDRFloatComplex dzdc) const {
     return LAjdeep->EvaluateDzdc(z, dzdc);
 }
 
-template<class T>
+template<class SubType>
 CUDA_CRAP
-GPU_LAstep<T>::HDRFloatComplex GPU_LAstep<T>::EvaluateDzdc2Deep(HDRFloatComplex z, HDRFloatComplex dzdc2, HDRFloatComplex dzdc) const {
+GPU_LAstep<SubType>::HDRFloatComplex GPU_LAstep<SubType>::EvaluateDzdc2Deep(HDRFloatComplex z, HDRFloatComplex dzdc2, HDRFloatComplex dzdc) const {
     return LAjdeep->EvaluateDzdc2(z, dzdc2, dzdc);
 }
 
-template<class T>
+template<class SubType>
 CUDA_CRAP
-GPU_LAstep<T>::HDRFloatComplex GPU_LAstep<T>::getZ(HDRFloatComplex DeltaSubN) const {
+GPU_LAstep<SubType>::HDRFloatComplex GPU_LAstep<SubType>::getZ(HDRFloatComplex DeltaSubN) const {
     return Refp1Deep + DeltaSubN;
 }

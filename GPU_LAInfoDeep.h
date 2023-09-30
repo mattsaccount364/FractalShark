@@ -14,32 +14,31 @@ class GPU_LAInfoDeep {
 public:
     using HDRFloat = HDRFloat<SubType>;
     using HDRFloatComplex = HDRFloatComplex<SubType>;
-    using T = SubType;
 
-    T RefRe, RefIm;
+    SubType RefRe, RefIm;
     int32_t RefExp;
 
-    T LAThresholdMant;
+    SubType LAThresholdMant;
     int32_t LAThresholdExp;
 
-    T ZCoeffRe, ZCoeffIm;
+    SubType ZCoeffRe, ZCoeffIm;
     int32_t ZCoeffExp;
 
-    T CCoeffRe, CCoeffIm;
+    SubType CCoeffRe, CCoeffIm;
     int32_t CCoeffExp;
 
-    T LAThresholdCMant;
+    SubType LAThresholdCMant;
     int32_t LAThresholdCExp;
 
     LAInfoI LAi;
 
-    T MinMagMant;
+    SubType MinMagMant;
     int32_t MinMagExp;
 
     CUDA_CRAP GPU_LAInfoDeep<SubType> &operator=(const GPU_LAInfoDeep<SubType>& other);
     CUDA_CRAP GPU_LAInfoDeep<SubType>& operator=(const LAInfoDeep<SubType>& other);
 
-    CUDA_CRAP GPU_LAstep<HDRFloatComplex> Prepare(HDRFloatComplex dz) const;
+    CUDA_CRAP GPU_LAstep<SubType> Prepare(HDRFloatComplex dz) const;
     CUDA_CRAP HDRFloatComplex getRef() const;
     CUDA_CRAP GPU_LAInfoDeep<SubType>::HDRFloat getLAThresholdC() const;
     CUDA_CRAP HDRFloatComplex Evaluate(HDRFloatComplex newdz, HDRFloatComplex dc) const;
@@ -100,12 +99,12 @@ GPU_LAInfoDeep<SubType>& GPU_LAInfoDeep<SubType>::operator=(const LAInfoDeep<Sub
 
 template<class SubType>
 CUDA_CRAP
-GPU_LAstep<HDRFloatComplex<SubType>> GPU_LAInfoDeep<SubType>::Prepare(HDRFloatComplex dz) const {
+GPU_LAstep<SubType> GPU_LAInfoDeep<SubType>::Prepare(HDRFloatComplex dz) const {
     //*2 is + 1
     HDRFloatComplex newdz = dz * (HDRFloatComplex(RefExp + 1, RefRe, RefIm) + dz);
     newdz.Reduce();
 
-    GPU_LAstep<HDRFloatComplex> temp;
+    GPU_LAstep<SubType> temp;
     temp.unusable = newdz.chebychevNorm().compareToBothPositiveReduced(HDRFloat(LAThresholdExp, LAThresholdMant)) >= 0;
     temp.newDzDeep = newdz;
     return temp;

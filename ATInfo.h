@@ -6,10 +6,10 @@
 #include "HDRFloatComplex.h"
 #include "ATResult.h"
 
-template<class T>
+template<class SubType>
 class ATInfo {
-    using HDRFloat = T;
-    using HDRFloatComplex = HDRFloatComplex<float>;
+    using HDRFloat = HDRFloat<SubType>;
+    using HDRFloatComplex = HDRFloatComplex<SubType>;
 
 
 public:
@@ -18,7 +18,7 @@ public:
 public:
     int32_t StepLength;
     HDRFloat ThresholdC;
-    float SqrEscapeRadius;
+    SubType SqrEscapeRadius;
     HDRFloatComplex RefC;
     HDRFloatComplex ZCoeff, CCoeff, InvZCoeff;
     HDRFloatComplex CCoeffSqrInvZCoeff;
@@ -37,13 +37,13 @@ public:
     CUDA_CRAP HDRFloatComplex getC(HDRFloatComplex dc);
     CUDA_CRAP HDRFloatComplex getDZ(HDRFloatComplex z);
 
-    CUDA_CRAP void PerformAT(int32_t max_iterations, HDRFloatComplex DeltaSub0, ATResult &result);
+    CUDA_CRAP void PerformAT(int32_t max_iterations, HDRFloatComplex DeltaSub0, ATResult<SubType> &result);
 };
 
 
-template<class T>
+template<class SubType>
 CUDA_CRAP
-ATInfo<T>::ATInfo() :
+ATInfo<SubType>::ATInfo() :
     StepLength{},
     ThresholdC{},
     SqrEscapeRadius{},
@@ -58,34 +58,34 @@ ATInfo<T>::ATInfo() :
     factor = HDRFloat(0x1.0p32);
 }
 
-template<class T>
+template<class SubType>
 CUDA_CRAP
-bool ATInfo<T>::isValid(HDRFloatComplex DeltaSub0) {
+bool ATInfo<SubType>::isValid(HDRFloatComplex DeltaSub0) {
     return DeltaSub0.chebychevNorm().compareToBothPositiveReduced(ThresholdC) <= 0;
 }
 
-template<class T>
+template<class SubType>
 CUDA_CRAP
-ATInfo<T>::HDRFloatComplex ATInfo<T>::getC(HDRFloatComplex dc) {
+ATInfo<SubType>::HDRFloatComplex ATInfo<SubType>::getC(HDRFloatComplex dc) {
     HDRFloatComplex temp = dc * CCoeff + RefC;
     temp.Reduce();
     return temp;
 }
 
-template<class T>
+template<class SubType>
 CUDA_CRAP
-ATInfo<T>::HDRFloatComplex ATInfo<T>::getDZ(HDRFloatComplex z) {
+ATInfo<SubType>::HDRFloatComplex ATInfo<SubType>::getDZ(HDRFloatComplex z) {
     HDRFloatComplex temp = z * InvZCoeff;
     temp.Reduce();
     return temp;
 }
 
-template<class T>
+template<class SubType>
 CUDA_CRAP
-void ATInfo<T>::PerformAT(
+void ATInfo<SubType>::PerformAT(
     int32_t max_iterations,
     HDRFloatComplex DeltaSub0,
-    ATResult& result) {
+    ATResult<SubType>& result) {
     //int ATMaxIt = (max_iterations - 1) / StepLength + 1;
     HDRFloat nsq;
     const int32_t ATMaxIt = max_iterations / StepLength;

@@ -31,6 +31,7 @@
 
 #include <deque>
 
+template<class SubType>
 class LAReference;
 
 //const int MAXITERS = 256 * 32; // 256 * 256 * 256 * 32
@@ -99,6 +100,19 @@ public: // Changing the view
 
     template<AutoZoomHeuristic h>
     void AutoZoom();
+
+    struct PointZoomBBConverter {
+        PointZoomBBConverter(
+            HighPrecision ptX,
+            HighPrecision ptY,
+            HighPrecision zoomFactor);
+
+        HighPrecision ptX, ptY;
+        HighPrecision zoomFactor;
+
+        HighPrecision minX, minY;
+        HighPrecision maxX, maxY;
+    };
 
     void View(size_t i);
     void SquareCurrentView(void);
@@ -221,6 +235,7 @@ private:
     //    size_t& BLA2SkippedIterations,
     //    size_t& BLA2SkippedSteps);
 
+    template<class SubType>
     void CalcCpuPerturbationFractalLAV2(bool MemoryOnly);
 
     template<class T, class SubType>

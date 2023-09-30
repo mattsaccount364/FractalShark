@@ -432,19 +432,6 @@ struct MattPerturbSingleResults {
         return err;
     }
 
-    __device__ HDRFloatComplex<float> GetComplex(size_t index) const {
-        
-        //auto temp = *(float4*)(&iters[index].x);
-        //const auto &re = *(HDRFloat<float>*)&temp.x;
-        //const auto &im = *(HDRFloat<float>*)&temp.z;
-        //static_assert(sizeof(iters[index].x) == 8, "Misaligned");
-        //static_assert(sizeof(iters[index].y) == 8, "Misaligned");
-        //static_assert(sizeof(HDRFloat<float>) == 8, "Misaligned");
-        //static_assert(sizeof(float4) == 16, "Misaligned float4");
-        //return HDRFloatComplex<float>(re, im);
-        return HDRFloatComplex<float>(iters[index].x, iters[index].y);
-    }
-
     MattPerturbSingleResults(MattPerturbSingleResults&& other) = delete;
     MattPerturbSingleResults &operator=(const MattPerturbSingleResults& other) = delete;
     MattPerturbSingleResults &operator=(MattPerturbSingleResults&& other) = delete;
@@ -457,92 +444,6 @@ struct MattPerturbSingleResults {
         }
     }
 };
-
-
-//////////////////////////////////////////////////////////////////////////////
-// GPU_LAReference
-//////////////////////////////////////////////////////////////////////////////
-
-__host__
-GPU_LAReference::GPU_LAReference(const LAReference& other) :
-    UseAT{other.UseAT},
-    AT{other.AT},
-    LAStageCount{other.LAStageCount},
-    isValid{other.isValid},
-    m_Err{},
-    m_Owned(true),
-    LAs{},
-    LAStages{} {
-
-    GPU_LAInfoDeep<float>* tempLAs;
-    LAStageInfo* tempLAStages;
-
-    m_Err = cudaMallocManaged(&tempLAs, other.LAs.size() * sizeof(GPU_LAInfoDeep<float>), cudaMemAttachGlobal);
-    if (m_Err != cudaSuccess) {
-        return;
-    }
-
-    LAs = tempLAs;
-
-    m_Err = cudaMallocManaged(&tempLAStages, other.LAStages.size() * sizeof(LAStageInfo), cudaMemAttachGlobal);
-    if (m_Err != cudaSuccess) {
-        return;
-    }
-
-    LAStages = tempLAStages;
-
-    //for (size_t i = 0; i < other.LAs.size(); i++) {
-    //    LAs[i] = other.LAs[i];
-    //}
-
-    static_assert(sizeof(GPU_LAInfoDeep<float>) == sizeof(LAInfoDeep<float>), "!");
-
-    m_Err = cudaMemcpy(LAs,
-        other.LAs.data(),
-        sizeof(GPU_LAInfoDeep<float>) * other.LAs.size(),
-        cudaMemcpyDefault);
-    if (m_Err != cudaSuccess) {
-        return;
-    }
-
-    //for (size_t i = 0; i < other.LAStages.size(); i++) {
-    //    LAStages[i] = other.LAStages[i];
-    //}
-
-    m_Err = cudaMemcpy(LAStages,
-        other.LAStages.data(),
-        sizeof(LAStageInfo) * other.LAStages.size(),
-        cudaMemcpyDefault);
-    if (m_Err != cudaSuccess) {
-        return;
-    }
-
-}
-
-GPU_LAReference::~GPU_LAReference() {
-    if (m_Owned) {
-        if (LAs != nullptr) {
-            cudaFree(LAs);
-            LAs = nullptr;
-        }
-
-        if (LAStages != nullptr) {
-            cudaFree(LAStages);
-            LAStages = nullptr;
-        }
-    }
-}
-
-__host__
-GPU_LAReference::GPU_LAReference(const GPU_LAReference& other) : m_Owned(false) {
-    this->UseAT = other.UseAT;
-    this->AT = other.AT;
-    this->LAStageCount = other.LAStageCount;
-    this->isValid = other.isValid;
-    this->m_Err = cudaSuccess;
-    this->LAs = other.LAs;
-    this->LAStages = other.LAStages;
-}
 
 
 //////////////////////////////////////////////////////////////////////////////
@@ -1411,23 +1312,25 @@ mandel_1xHDR_float_perturb_bla(uint32_t* iter_matrix,
     iter_matrix[idx] = (uint32_t)iter;
 }
 
-template<class HDRFloatType>
+template<class SubType>
 __global__
 void
 //__launch_bounds__(NB_THREADS_W * NB_THREADS_H, 2)
 mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
-    MattPerturbSingleResults<HDRFloat<float>> Perturb,
-    GPU_LAReference LaReference, // "copy"
+    MattPerturbSingleResults<HDRFloat<SubType>> Perturb,
+    GPU_LAReference<SubType> LaReference, // "copy"
     int width,
     int height,
-    const HDRFloatType cx,
-    const HDRFloatType cy,
-    const HDRFloatType dx,
-    const HDRFloatType dy,
-    const HDRFloatType centerX,
-    const HDRFloatType centerY,
+    const HDRFloat<SubType> cx,
+    const HDRFloat<SubType> cy,
+    const HDRFloat<SubType> dx,
+    const HDRFloat<SubType> dy,
+    const HDRFloat<SubType> centerX,
+    const HDRFloat<SubType> centerY,
     uint32_t n_iterations)
 {
+    using HDRFloatType = HDRFloat<SubType>;
+
     const int X = blockIdx.x * blockDim.x + threadIdx.x;
     const int Y = blockIdx.y * blockDim.y + threadIdx.y;
 
@@ -1449,8 +1352,7 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
     HDRFloatType DeltaSubNX = HDRFloatType(0);
     HDRFloatType DeltaSubNY = HDRFloatType(0);
 
-    using SubType = float;
-    using TComplex = HDRFloatComplex<float>;
+    using TComplex = HDRFloatComplex<SubType>;
 
     ////////////
     TComplex DeltaSub0;
@@ -1460,7 +1362,7 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
     DeltaSubN = { 0, 0 };
 
     if (LaReference.isValid && LaReference.UseAT && LaReference.AT.isValid(DeltaSub0)) {
-        ATResult res;
+        ATResult<SubType> res;
         LaReference.AT.PerformAT(n_iterations, DeltaSub0, res);
         iter = res.bla_iterations;
         DeltaSubN = res.dz;
@@ -1471,11 +1373,11 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
     int32_t CurrentLAStage{ LaReference.isValid ? LaReference.LAStageCount : 0 };
 
     if (iter != 0 && RefIteration < MaxRefIteration) {
-        complex0 = Perturb.GetComplex(RefIteration) + DeltaSubN;
+        complex0 = TComplex{ Perturb.iters[RefIteration].x, Perturb.iters[RefIteration].y } + DeltaSubN;
     }
     else if (iter != 0 && Perturb.PeriodMaybeZero != 0) {
         RefIteration = RefIteration % Perturb.PeriodMaybeZero;
-        complex0 = Perturb.GetComplex(RefIteration) + DeltaSubN;
+        complex0 = TComplex{ Perturb.iters[RefIteration].x, Perturb.iters[RefIteration].y } + DeltaSubN;
     }
 
     while (CurrentLAStage > 0) {
@@ -3231,7 +3133,7 @@ uint32_t GPURenderer::RenderPerturbLAv2(
     RenderAlgorithm algorithm,
     uint32_t* buffer,
     MattPerturbResults<HDRFloat<float>>* float_perturb,
-    const LAReference &LaReference,
+    const LAReference<float> &LaReference,
     MattCoords cx,
     MattCoords cy,
     MattCoords dx,
@@ -3268,7 +3170,7 @@ uint32_t GPURenderer::RenderPerturbLAv2(
     if (algorithm == RenderAlgorithm::GpuHDRx32PerturbedLAv2) {
         mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
 
-        mandel_1xHDR_float_perturb_lav2<HDRFloat<float>> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
+        mandel_1xHDR_float_perturb_lav2<float> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
             cudaResults, laReferenceCuda,
             local_width, local_height, cx.hdrflt, cy.hdrflt, dx.hdrflt, dy.hdrflt,
             centerX.hdrflt, centerY.hdrflt,
@@ -3384,6 +3286,59 @@ uint32_t GPURenderer::RenderPerturbBLA(
 
     //    result = ExtractIters(buffer);
     //}
+
+    return result;
+}
+
+uint32_t GPURenderer::RenderPerturbLAv2(
+    RenderAlgorithm algorithm,
+    uint32_t* buffer,
+    MattPerturbResults<HDRFloat<double>>* float_perturb,
+    const LAReference<double>& LaReference,
+    MattCoords cx,
+    MattCoords cy,
+    MattCoords dx,
+    MattCoords dy,
+    MattCoords centerX,
+    MattCoords centerY,
+    uint32_t n_iterations)
+{
+    uint32_t result = cudaSuccess;
+
+    if (iter_matrix_cu == nullptr) {
+        return result;
+    }
+
+    dim3 nb_blocks(w_block, h_block, 1);
+    dim3 threads_per_block(NB_THREADS_W, NB_THREADS_H, 1);
+
+    MattPerturbSingleResults<HDRFloat<double>> cudaResults(
+        float_perturb->size,
+        float_perturb->PeriodMaybeZero,
+        float_perturb->iters);
+
+    result = cudaResults.CheckValid();
+    if (result != 0) {
+        return result;
+    }
+
+    GPU_LAReference laReferenceCuda{ LaReference };
+    result = laReferenceCuda.CheckValid();
+    if (result != 0) {
+        return result;
+    }
+
+    if (algorithm == RenderAlgorithm::GpuHDRx64PerturbedLAv2) {
+        mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
+
+        mandel_1xHDR_float_perturb_lav2<double> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
+            cudaResults, laReferenceCuda,
+            local_width, local_height, cx.hdrdbl, cy.hdrdbl, dx.hdrdbl, dy.hdrdbl,
+            centerX.hdrdbl, centerY.hdrdbl,
+            n_iterations);
+
+        result = ExtractIters(buffer);
+    }
 
     return result;
 }

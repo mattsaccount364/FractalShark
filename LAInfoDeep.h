@@ -19,12 +19,12 @@ public:
     friend class GPU_LAInfoDeep<SubType>;
 
     static constexpr int DEFAULT_DETECTION_METHOD = 1;
-    static constexpr T DefaultStage0PeriodDetectionThreshold = 0x1.0p-10;
-    static constexpr T DefaultPeriodDetectionThreshold = 0x1.0p-10;
-    static constexpr T DefaultStage0PeriodDetectionThreshold2 = 0x1.0p-6;
-    static constexpr T DefaultPeriodDetectionThreshold2 = 0x1.0p-3;
-    static constexpr T DefaultLAThresholdScale = 0x1.0p-24;
-    static constexpr T DefaultLAThresholdCScale = 0x1.0p-24;
+    static constexpr T DefaultStage0PeriodDetectionThreshold = (T)0x1.0p-10;
+    static constexpr T DefaultPeriodDetectionThreshold = (T)0x1.0p-10;
+    static constexpr T DefaultStage0PeriodDetectionThreshold2 = (T)0x1.0p-6;
+    static constexpr T DefaultPeriodDetectionThreshold2 = (T)0x1.0p-3;
+    static constexpr T DefaultLAThresholdScale = (T)0x1.0p-24;
+    static constexpr T DefaultLAThresholdCScale = (T)0x1.0p-24;
     
 public:
 
@@ -62,11 +62,11 @@ public:
     CUDA_CRAP LAInfoDeep Step(HDRFloatComplex z);
     CUDA_CRAP bool Composite(LAInfoDeep &out, LAInfoDeep LA);
     CUDA_CRAP LAInfoDeep Composite(LAInfoDeep LA);
-    CUDA_CRAP LAstep<HDRFloatComplex> Prepare(HDRFloatComplex dz) const;
+    CUDA_CRAP LAstep<SubType> Prepare(HDRFloatComplex dz) const;
     CUDA_CRAP HDRFloatComplex Evaluate(HDRFloatComplex newdz, HDRFloatComplex dc);
     CUDA_CRAP HDRFloatComplex EvaluateDzdc(HDRFloatComplex z, HDRFloatComplex dzdc);
     CUDA_CRAP HDRFloatComplex EvaluateDzdc2(HDRFloatComplex z, HDRFloatComplex dzdc2, HDRFloatComplex dzdc);
-    CUDA_CRAP void CreateAT(ATInfo<HDRFloat> &Result, LAInfoDeep Next);
+    CUDA_CRAP void CreateAT(ATInfo<SubType> &Result, LAInfoDeep Next);
     CUDA_CRAP HDRFloat getLAThreshold();
     CUDA_CRAP HDRFloat getLAThresholdC();
     CUDA_CRAP void SetLAi(const LAInfoI &other);
@@ -344,12 +344,12 @@ LAInfoDeep<SubType> LAInfoDeep<SubType>::Composite(LAInfoDeep LA) {
 
 template<class SubType>
 CUDA_CRAP
-LAstep<HDRFloatComplex<SubType>> LAInfoDeep<SubType>::Prepare(HDRFloatComplex dz) const {
+LAstep<SubType> LAInfoDeep<SubType>::Prepare(HDRFloatComplex dz) const {
     //*2 is + 1
     HDRFloatComplex newdz = dz * (HDRFloatComplex(RefExp + 1, RefRe, RefIm) + dz);
     newdz.Reduce();
 
-    LAstep<HDRFloatComplex> temp = LAstep<HDRFloatComplex>();
+    LAstep<SubType> temp = LAstep<SubType>();
     temp.unusable = newdz.chebychevNorm().compareToBothPositiveReduced(HDRFloat(LAThresholdExp, LAThresholdMant)) >= 0;
     temp.newDzDeep = newdz;
     return temp;
@@ -375,7 +375,7 @@ LAInfoDeep<SubType>::HDRFloatComplex LAInfoDeep<SubType>::EvaluateDzdc2(HDRFloat
 
 template<class SubType>
 CUDA_CRAP
-void LAInfoDeep<SubType>::CreateAT(ATInfo<HDRFloat>& Result, LAInfoDeep Next) {
+void LAInfoDeep<SubType>::CreateAT(ATInfo<SubType>& Result, LAInfoDeep Next) {
     HDRFloatComplex ZCoeff = HDRFloatComplex(ZCoeffExp, ZCoeffRe, ZCoeffIm);
     HDRFloatComplex CCoeff = HDRFloatComplex(CCoeffExp, CCoeffRe, CCoeffIm);
     HDRFloat LAThreshold = HDRFloat(LAThresholdExp, LAThresholdMant);

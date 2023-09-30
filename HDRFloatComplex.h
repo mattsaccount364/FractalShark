@@ -14,31 +14,31 @@
 #error "Please provide a definition for MY_ALIGN macro for your host compiler!"
 #endif
 
-template<class T>
+template<class SubType>
 class HDRFloatComplex {
 
 private:
-    T mantissaReal;
-    T mantissaImag;
+    SubType mantissaReal;
+    SubType mantissaImag;
     int32_t exp;
 
-    using HDRFloat = HDRFloat<T>;
+    using HDRFloat = HDRFloat<SubType>;
     using TExp = int32_t;
 
 public:
     CUDA_CRAP constexpr HDRFloatComplex() {
-        mantissaReal = 0.0;
-        mantissaImag = 0.0;
+        mantissaReal = (SubType)0.0;
+        mantissaImag = (SubType)0.0;
         exp = HDRFloat::MIN_BIG_EXPONENT();
     }
 
-    CUDA_CRAP constexpr HDRFloatComplex(T mantissaReal, T mantissaImag, TExp exp) {
+    CUDA_CRAP constexpr HDRFloatComplex(SubType mantissaReal, SubType mantissaImag, TExp exp) {
         this->mantissaReal = mantissaReal;
         this->mantissaImag = mantissaImag;
         this->exp = exp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : exp;
     }
 
-    CUDA_CRAP constexpr HDRFloatComplex(TExp exp, T mantissaReal, T mantissaImag) {
+    CUDA_CRAP constexpr HDRFloatComplex(TExp exp, SubType mantissaReal, SubType mantissaImag) {
         this->mantissaReal = mantissaReal;
         this->mantissaImag = mantissaImag;
         this->exp = exp;
@@ -60,7 +60,7 @@ public:
         setMantexp(re, im);
     }
 
-    CUDA_CRAP constexpr HDRFloatComplex(T re, T im) {
+    CUDA_CRAP constexpr HDRFloatComplex(SubType re, SubType im) {
         setMantexp(HDRFloat(re), HDRFloat(im));
     }
 
@@ -101,7 +101,7 @@ private:
         if(expDiff >= HDRFloat::EXPONENT_DIFF_IGNORED) {
             return *this;
         } else if(expDiff >= 0) {
-            T mul = HDRFloat::getMultiplier(-expDiff);
+            SubType mul = HDRFloat::getMultiplier(-expDiff);
             mantissaReal = mantissaReal + value.mantissaReal * mul;
             mantissaImag = mantissaImag + value.mantissaImag * mul;
         }
@@ -110,7 +110,7 @@ private:
             mantissaImag = mantissaImag + value.mantissaImag;
         }*/
         else if(expDiff > HDRFloat::MINUS_EXPONENT_DIFF_IGNORED) {
-            T mul = HDRFloat::getMultiplier(expDiff);
+            SubType mul = HDRFloat::getMultiplier(expDiff);
             exp = value.exp;
             mantissaReal = mantissaReal * mul + value.mantissaReal;
             mantissaImag =  mantissaImag * mul + value.mantissaImag;
@@ -124,14 +124,14 @@ private:
     }
 
     HDRFloatComplex CUDA_CRAP times(HDRFloatComplex factor) const {
-        T tempMantissaReal = (mantissaReal * factor.mantissaReal) - (mantissaImag * factor.mantissaImag);
+        SubType tempMantissaReal = (mantissaReal * factor.mantissaReal) - (mantissaImag * factor.mantissaImag);
 
-        T tempMantissaImag = (mantissaReal * factor.mantissaImag) + (mantissaImag * factor.mantissaReal);
+        SubType tempMantissaImag = (mantissaReal * factor.mantissaImag) + (mantissaImag * factor.mantissaReal);
 
         return HDRFloatComplex(tempMantissaReal, tempMantissaImag, exp + factor.exp);
 
-        /*T absRe = Math.abs(tempMantissaReal);
-        T absIm = Math.abs(tempMantissaImag);
+        /*SubType absRe = Math.abs(tempMantissaReal);
+        SubType absIm = Math.abs(tempMantissaImag);
         if (absRe > 1e50 || absIm > 1e50 || absRe < 1e-50 || absIm < 1e-50) {
             p.Reduce();
         }*/
@@ -139,9 +139,9 @@ private:
     }
 
     HDRFloatComplex CUDA_CRAP times_mutable(HDRFloatComplex factor) {
-        T tempMantissaReal = (mantissaReal * factor.mantissaReal) - (mantissaImag * factor.mantissaImag);
+        SubType tempMantissaReal = (mantissaReal * factor.mantissaReal) - (mantissaImag * factor.mantissaImag);
 
-        T tempMantissaImag = (mantissaReal * factor.mantissaImag) + (mantissaImag * factor.mantissaReal);
+        SubType tempMantissaImag = (mantissaReal * factor.mantissaImag) + (mantissaImag * factor.mantissaReal);
 
         TExp localExp = this->exp + factor.exp;
 
@@ -176,26 +176,26 @@ public:
 
 private:
 
-    HDRFloatComplex CUDA_CRAP times(T factor) const {
+    HDRFloatComplex CUDA_CRAP times(SubType factor) const {
         return times(HDRFloat(factor));
     }
 
-    HDRFloatComplex CUDA_CRAP times_mutable(T factor) {
+    HDRFloatComplex CUDA_CRAP times_mutable(SubType factor) {
         return times_mutable(HDRFloat(factor));
     }
 
     HDRFloatComplex CUDA_CRAP times(HDRFloat factor) const {
-        T tempMantissaReal = mantissaReal * factor.mantissa;
+        SubType tempMantissaReal = mantissaReal * factor.mantissa;
 
-        T tempMantissaImag = mantissaImag * factor.mantissa;
+        SubType tempMantissaImag = mantissaImag * factor.mantissa;
 
         return HDRFloatComplex(tempMantissaReal, tempMantissaImag, exp + factor.exp);
     }
 
     HDRFloatComplex CUDA_CRAP times_mutable(HDRFloat factor) {
-        T tempMantissaReal = mantissaReal * factor.mantissa;
+        SubType tempMantissaReal = mantissaReal * factor.mantissa;
 
-        T tempMantissaImag = mantissaImag * factor.mantissa;
+        SubType tempMantissaImag = mantissaImag * factor.mantissa;
 
         TExp expLocal = this->exp + factor.exp;
 
@@ -206,7 +206,7 @@ private:
         return *this;
     }
 
-    HDRFloatComplex CUDA_CRAP plus_mutable(T real) {
+    HDRFloatComplex CUDA_CRAP plus_mutable(SubType real) {
         return plus_mutable(HDRFloat(real));
     }
 
@@ -217,14 +217,14 @@ private:
         if(expDiff >= HDRFloat::EXPONENT_DIFF_IGNORED) {
             return *this;
         } else if(expDiff >= 0) {
-            T mul = HDRFloat::getMultiplier(-expDiff);
+            SubType mul = HDRFloat::getMultiplier(-expDiff);
             mantissaReal = mantissaReal + real.mantissa * mul;
         }
         /*else if(expDiff == 0) {
             mantissaReal = mantissaReal + real.mantissa;
         }*/
         else if(expDiff > HDRFloat::MINUS_EXPONENT_DIFF_IGNORED) {
-            T mul = HDRFloat::getMultiplier(expDiff);
+            SubType mul = HDRFloat::getMultiplier(expDiff);
             exp = real.exp;
             mantissaReal = mantissaReal * mul + real.mantissa;
             mantissaImag =  mantissaImag * mul;
@@ -243,7 +243,7 @@ private:
         if(expDiff >= HDRFloat::EXPONENT_DIFF_IGNORED) {
             return *this;
         } else if(expDiff >= 0) {
-            T mul = HDRFloat::getMultiplier(-expDiff);
+            SubType mul = HDRFloat::getMultiplier(-expDiff);
             mantissaReal = mantissaReal - value.mantissaReal * mul;
             mantissaImag = mantissaImag - value.mantissaImag * mul;
         }
@@ -252,7 +252,7 @@ private:
             mantissaImag = mantissaImag - value.mantissaImag;
         }*/
         else if(expDiff > HDRFloat::MINUS_EXPONENT_DIFF_IGNORED) {
-            T mul = HDRFloat::getMultiplier(expDiff);
+            SubType mul = HDRFloat::getMultiplier(expDiff);
             exp = value.exp;
             mantissaReal = mantissaReal * mul - value.mantissaReal;
             mantissaImag =  mantissaImag * mul - value.mantissaImag;
@@ -272,14 +272,14 @@ private:
         if(expDiff >= HDRFloat::EXPONENT_DIFF_IGNORED) {
             return *this;
         } else if(expDiff >= 0) {
-            T mul = HDRFloat::getMultiplier(-expDiff);
+            SubType mul = HDRFloat::getMultiplier(-expDiff);
             mantissaReal = mantissaReal - real.mantissa * mul;
         }
         /*else if(expDiff == 0) {
             mantissaReal = mantissaReal - real.mantissa;
         }*/
         else if(expDiff > HDRFloat::MINUS_EXPONENT_DIFF_IGNORED) {
-            T mul = HDRFloat::getMultiplier(expDiff);
+            SubType mul = HDRFloat::getMultiplier(expDiff);
             exp = real.exp;
             mantissaReal = mantissaReal * mul - real.mantissa;
             mantissaImag =  mantissaImag * mul;
@@ -308,11 +308,11 @@ public:
 
 private:
 
-    HDRFloatComplex CUDA_CRAP sub(T real) const {
+    HDRFloatComplex CUDA_CRAP sub(SubType real) const {
         return sub(HDRFloat(real));
     }
 
-    HDRFloatComplex CUDA_CRAP sub_mutable(T real) {
+    HDRFloatComplex CUDA_CRAP sub_mutable(SubType real) {
         return sub_mutable(HDRFloat(real));
     }
 
@@ -323,15 +323,26 @@ public:
             return;
         }
 
-        uint32_t bitsReal = *reinterpret_cast<uint32_t*>(&mantissaReal);
-        TExp f_expReal = (TExp)((bitsReal & 0x7F80'0000UL) >> 23UL);
+        TExp f_expReal;
+        TExp f_expImag;
 
-        uint32_t bitsImag = *reinterpret_cast<uint32_t*>(&mantissaImag);
-        TExp f_expImag = (TExp)((bitsImag & 0x7F80'0000UL) >> 23UL);
+        if constexpr (std::is_same<SubType, double>::value) {
+            uint64_t bitsReal = *reinterpret_cast<uint64_t*>(&mantissaReal);
+            f_expReal = (TExp)((bitsReal & 0x7FF0'0000'0000'0000UL) >> 52UL);
+
+            uint64_t bitsImag = *reinterpret_cast<uint64_t*>(&mantissaImag);
+            f_expImag = (TExp)((bitsImag & 0x7FF0'0000'0000'0000UL) >> 52UL);
+        } else if constexpr (std::is_same<SubType, float>::value) {
+            uint32_t bitsReal = *reinterpret_cast<uint32_t*>(&mantissaReal);
+            f_expReal = (TExp)((bitsReal & 0x7F80'0000UL) >> 23UL);
+
+            uint32_t bitsImag = *reinterpret_cast<uint32_t*>(&mantissaImag);
+            f_expImag = (TExp)((bitsImag & 0x7F80'0000UL) >> 23UL);
+        }
 
         TExp expDiff = max(f_expReal, f_expImag) + HDRFloat::MIN_SMALL_EXPONENT();
         TExp expCombined = exp + expDiff;
-        T mul = HDRFloat::getMultiplier(-expDiff);
+        SubType mul = HDRFloat::getMultiplier(-expDiff);
 
         mantissaReal *= mul;
         mantissaImag *= mul;
@@ -341,7 +352,7 @@ public:
 private:
 
     HDRFloatComplex CUDA_CRAP square_mutable() {
-        T temp = mantissaReal * mantissaImag;
+        SubType temp = mantissaReal * mantissaImag;
 
         TExp exp = this->exp << 1;
         mantissaReal = (mantissaReal + mantissaImag) * (mantissaReal - mantissaImag);
@@ -362,12 +373,12 @@ public:
     }
 
     HDRFloatComplex CUDA_CRAP reciprocal() const {
-        T temp = 1.0f / (mantissaReal * mantissaReal + mantissaImag * mantissaImag);
+        SubType temp = 1.0f / (mantissaReal * mantissaReal + mantissaImag * mantissaImag);
         return HDRFloatComplex(mantissaReal * temp, -mantissaImag * temp, -exp);
     }
 
     HDRFloatComplex CUDA_CRAP reciprocal_mutable() {
-        T temp = 1.0f / (mantissaReal * mantissaReal + mantissaImag * mantissaImag);
+        SubType temp = 1.0f / (mantissaReal * mantissaReal + mantissaImag * mantissaImag);
         mantissaReal = mantissaReal * temp;
         mantissaImag = -mantissaImag * temp;
         exp = -exp;
@@ -377,11 +388,11 @@ public:
 private:
     HDRFloatComplex CUDA_CRAP divide_mutable(HDRFloatComplex factor) {
 
-        T temp = 1.0 / (factor.mantissaReal * factor.mantissaReal + factor.mantissaImag * factor.mantissaImag);
+        SubType temp = 1.0 / (factor.mantissaReal * factor.mantissaReal + factor.mantissaImag * factor.mantissaImag);
 
-        T tempMantissaReal = (mantissaReal * factor.mantissaReal + mantissaImag * factor.mantissaImag) * temp;
+        SubType tempMantissaReal = (mantissaReal * factor.mantissaReal + mantissaImag * factor.mantissaImag) * temp;
 
-        T tempMantissaImag = (mantissaImag * factor.mantissaReal - mantissaReal * factor.mantissaImag)  * temp;
+        SubType tempMantissaImag = (mantissaImag * factor.mantissaReal - mantissaReal * factor.mantissaImag)  * temp;
 
         TExp exp = this->exp - factor.exp;
         mantissaReal = tempMantissaReal;
@@ -394,7 +405,7 @@ private:
     HDRFloatComplex CUDA_CRAP divide_mutable(HDRFloat real) {
 
         TExp exp = this->exp - real.exp;
-        T temp = 1.0 / real.mantissa;
+        SubType temp = 1.0 / real.mantissa;
         mantissaReal = mantissaReal * temp;
         mantissaImag = mantissaImag * temp;
         this->exp = exp < HDRFloat::MIN_BIG_EXPONENT() ? HDRFloat::MIN_BIG_EXPONENT() : exp;
@@ -414,7 +425,7 @@ public:
 
     // friends defined inside class body are inline and are hidden from non-ADL lookup
     friend CUDA_CRAP constexpr HDRFloatComplex operator/(HDRFloatComplex lhs,        // passing lhs by value helps optimize chained a+b+c
-        const T& rhs) // otherwise, both parameters may be const references
+        const SubType& rhs) // otherwise, both parameters may be const references
     {
         lhs.divide_mutable(rhs); // reuse compound assignment
         return lhs; // return the result by value (uses move constructor)
@@ -426,7 +437,7 @@ public:
 
 private:
 
-    HDRFloatComplex CUDA_CRAP divide_mutable(T real) {
+    HDRFloatComplex CUDA_CRAP divide_mutable(SubType real) {
 
         return divide_mutable(HDRFloat(real));
 
@@ -442,11 +453,11 @@ public:
         return HDRFloat(exp, mantissaImag);
     }
 
-    T CUDA_CRAP getMantissaReal() const {
+    SubType CUDA_CRAP getMantissaReal() const {
         return mantissaReal;
     }
 
-    T CUDA_CRAP getMantissaImag() const {
+    SubType CUDA_CRAP getMantissaImag() const {
         return mantissaImag;
     }
 
@@ -468,7 +479,7 @@ private:
     }
 
 public:
-    void CUDA_CRAP toComplex(T &re, T &img) const {
+    void CUDA_CRAP toComplex(SubType &re, SubType &img) const {
         //return new Complex(mantissaReal * MantExp.toExp(exp), mantissaImag * MantExp.toExp(exp));
         auto d = HDRFloat::getMultiplier(exp);
         //return new Complex(MantExp.toDouble(mantissaReal, exp), MantExp.toDouble(mantissaImag, exp));

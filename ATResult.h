@@ -6,9 +6,10 @@
 //import fractalzoomer.core.GenericComplex;
 //import fractalzoomer.core.MantExpComplex;
 
+template<class SubType>
 class ATResult {
 public:
-    using HDRFloatComplex = HDRFloatComplex<float>;
+    using HDRFloatComplex = HDRFloatComplex<SubType>;
 
     CUDA_CRAP_BOTH ATResult() {
     }

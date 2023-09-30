@@ -144,6 +144,7 @@ void Fractal::Initialize(int width,
     //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedScaled);
     //SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedPeriodic);
     //SetRenderAlgorithm(RenderAlgorithm::Cpu32PerturbedBLAV2HDR);
+    //SetRenderAlgorithm(RenderAlgorithm::Cpu64PerturbedBLAV2HDR);
     SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedLAv2);
 
     SetIterationPrecision(1);
@@ -153,9 +154,9 @@ void Fractal::Initialize(int width,
     m_RefOrbit.ResetGuess();
 
     ResetDimensions(width, height, 1);
-    //View(0);
+    View(0);
     //View(5);
-    View(15);
+    //View(15);
 
     m_ChangedWindow = true;
     m_ChangedScrn = true;
@@ -1104,6 +1105,20 @@ void Fractal::AutoZoom() {
 template void Fractal::AutoZoom<Fractal::AutoZoomHeuristic::Default>();
 template void Fractal::AutoZoom<Fractal::AutoZoomHeuristic::Max>();
 
+Fractal::PointZoomBBConverter::PointZoomBBConverter(
+    HighPrecision ptX,
+    HighPrecision ptY,
+    HighPrecision zoomFactor)
+    : ptX(ptX),
+      ptY(ptY),
+      zoomFactor(zoomFactor) {
+    minX = ptX - (HighPrecision{ 3 } / zoomFactor);
+    minY = ptY - (HighPrecision{ 3 } / zoomFactor);
+    maxX = ptX + (HighPrecision{ 3 } / zoomFactor);
+    maxY = ptY + (HighPrecision{ 3 } / zoomFactor);
+}
+
+
 //////////////////////////////////////////////////////////////////////////////
 // Resets the fractal to the standard view.
 // Make sure the view is square on all monitors at all weird aspect ratios.
@@ -1130,7 +1145,20 @@ void Fractal::View(size_t view)
         break;
 
     case 2:
+    {
+        PointZoomBBConverter convert{
+            HighPrecision{ "-2.281792076991057188791220757070906154801563373848351036490006446241507468147564988356371628826904426023128505132018554501675433482727741549694771224847955228931798289163815438743631000392333635842525042153582202499655604449475066164586596459152105106064111624441822700788132655777068944695173876856445256369203065186631701760525784081736244e-1" },
+            HighPrecision{ "1.115156767115551104371509493405146139515685158158631166093965276070475149166424130419686602805948430925491857449965291251362671124105939610231137732602258574689237558180672414305416362841285284232472179206525520835146101831409246792045496633731870859449092417056425258013586398208085502164519751503113713282571658615520780020827777231498937" },
+            HighPrecision{ "1.4e301" }
+        };
+
+        minX = convert.minX;
+        minY = convert.minY;
+        maxX = convert.maxX;
+        maxY = convert.maxY;
+        SetNumIterations(10100100);
         break;
+    }
 
     case 3:
         // Limit of 1x32 + Perturbation with no scaling
@@ -1596,7 +1624,10 @@ void Fractal::CalcFractal(bool MemoryOnly)
         CalcCpuPerturbationFractalBLA<HDRFloat<float>, float>(MemoryOnly);
         break;
     case RenderAlgorithm::Cpu32PerturbedBLAV2HDR:
-        CalcCpuPerturbationFractalLAV2(MemoryOnly);
+        CalcCpuPerturbationFractalLAV2<float>(MemoryOnly);
+        break;
+    case RenderAlgorithm::Cpu64PerturbedBLAV2HDR:
+        CalcCpuPerturbationFractalLAV2<double>(MemoryOnly);
         break;
     case RenderAlgorithm::Cpu64:
         CalcCpuHDR<double, double>(MemoryOnly);
@@ -1647,6 +1678,9 @@ void Fractal::CalcFractal(bool MemoryOnly)
         break;
     case RenderAlgorithm::GpuHDRx32PerturbedLAv2:
         CalcGpuPerturbationFractalLAv2<HDRFloat<float>, float>(MemoryOnly);
+        break;
+    case RenderAlgorithm::GpuHDRx64PerturbedLAv2:
+        CalcGpuPerturbationFractalLAv2<HDRFloat<double>, double>(MemoryOnly);
         break;
     default:
         break;
@@ -2563,13 +2597,13 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
     DrawFractal(MemoryOnly);
 }
 
+template<class SubType>
 void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
-    using T = HDRFloat<float>;
-    using SubType = float;
-    using TComplex = HDRFloatComplex<float>;
+    using T = HDRFloat<SubType>;
+    using TComplex = HDRFloatComplex<SubType>;
     auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<T, SubType>();
 
-    LAReference LaReference{*results};
+    LAReference<SubType> LaReference{*results};
     LaReference.GenerateApproximationData(results->maxRadius, (int32_t)results->x.size() - 1);
 
     T dx = T((m_MaxX - m_MinX) / (m_ScrnWidth * GetGpuAntialiasing()));
@@ -2622,7 +2656,7 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
                 DeltaSubN = { 0, 0 };
 
                 if (LaReference.isValid && LaReference.UseAT && LaReference.AT.isValid(DeltaSub0)) {
-                    ATResult res;
+                    ATResult<SubType> res;
                     LaReference.AT.PerformAT((int32_t)m_NumIterations, DeltaSub0, res);
                     BLA2SkippedIterations = (int32_t)res.bla_iterations;
                     DeltaSubN = res.dz;
@@ -2658,7 +2692,7 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
                     auto j = RefIteration;
 
                     while (iterations < GetNumIterations()) {
-                        LAstep<HDRFloatComplex<float>> las = LaReference.getLA(
+                        LAstep<SubType> las = LaReference.getLA(
                             LAIndex,
                             DeltaSubN,
                             (int32_t)j,
@@ -2832,7 +2866,7 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
         results->bad.size(),
         results->PeriodMaybeZero };
 
-    LAReference LaReference{ *results };
+    LAReference<SubType> LaReference{ *results };
     LaReference.GenerateApproximationData(results->maxRadius, (int32_t)results->x.size() - 1);
 
     auto result = m_r.RenderPerturbLAv2(GetRenderAlgorithm(),

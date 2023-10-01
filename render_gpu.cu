@@ -1235,7 +1235,7 @@ mandel_1xHDR_float_perturb_bla(uint32_t* iter_matrix,
     iter_matrix[idx] = (uint32_t)iter;
 }
 
-template<class SubType>
+template<class SubType, LAv2Mode Mode>
 __global__
 void
 //__launch_bounds__(NB_THREADS_W * NB_THREADS_H, 2)
@@ -1284,117 +1284,120 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
     DeltaSub0 = { DeltaReal, DeltaImaginary };
     DeltaSubN = { 0, 0 };
 
-    if (LaReference.isValid && LaReference.UseAT && LaReference.AT.isValid(DeltaSub0)) {
-        ATResult<SubType> res;
-        LaReference.AT.PerformAT(n_iterations, DeltaSub0, res);
-        iter = res.bla_iterations;
-        DeltaSubN = res.dz;
-    }
-
-    int32_t MaxRefIteration = Perturb.size - 1;
-    TComplex complex0{ DeltaReal, DeltaImaginary };
-    int32_t CurrentLAStage{ LaReference.isValid ? LaReference.LAStageCount : 0 };
-
-    if (iter != 0 && RefIteration < MaxRefIteration) {
-        complex0 = TComplex{ Perturb.iters[RefIteration].x, Perturb.iters[RefIteration].y } + DeltaSubN;
-    }
-    else if (iter != 0 && Perturb.PeriodMaybeZero != 0) {
-        RefIteration = RefIteration % Perturb.PeriodMaybeZero;
-        complex0 = TComplex{ Perturb.iters[RefIteration].x, Perturb.iters[RefIteration].y } + DeltaSubN;
-    }
-
-    while (CurrentLAStage > 0) {
-        CurrentLAStage--;
-
-        const int32_t LAIndex{ LaReference.getLAIndex(CurrentLAStage) };
-
-        if (LaReference.isLAStageInvalid(LAIndex, DeltaSub0)) {
-            continue;
+    if constexpr (Mode == LAv2Mode::Full || Mode == LAv2Mode::LAO) {
+        if (LaReference.isValid && LaReference.UseAT && LaReference.AT.isValid(DeltaSub0)) {
+            ATResult<SubType> res;
+            LaReference.AT.PerformAT(n_iterations, DeltaSub0, res);
+            iter = res.bla_iterations;
+            DeltaSubN = res.dz;
         }
 
-        const int32_t MacroItCount{ LaReference.getMacroItCount(CurrentLAStage) };
-        int32_t j = RefIteration;
+        int32_t MaxRefIteration = Perturb.size - 1;
+        TComplex complex0{ DeltaReal, DeltaImaginary };
+        int32_t CurrentLAStage{ LaReference.isValid ? LaReference.LAStageCount : 0 };
 
-        while (iter < n_iterations) {
-            const GPU_LAstep las{ LaReference.getLA(LAIndex, DeltaSubN, j, iter, n_iterations) };
+        if (iter != 0 && RefIteration < MaxRefIteration) {
+            complex0 = TComplex{ Perturb.iters[RefIteration].x, Perturb.iters[RefIteration].y } + DeltaSubN;
+        }
+        else if (iter != 0 && Perturb.PeriodMaybeZero != 0) {
+            RefIteration = RefIteration % Perturb.PeriodMaybeZero;
+            complex0 = TComplex{ Perturb.iters[RefIteration].x, Perturb.iters[RefIteration].y } + DeltaSubN;
+        }
 
-            if (las.unusable) {
-                RefIteration = las.nextStageLAindex;
-                break;
+        while (CurrentLAStage > 0) {
+            CurrentLAStage--;
+
+            const int32_t LAIndex{ LaReference.getLAIndex(CurrentLAStage) };
+
+            if (LaReference.isLAStageInvalid(LAIndex, DeltaSub0)) {
+                continue;
             }
 
-            iter += las.step;
-            DeltaSubN = las.Evaluate(DeltaSub0);
-            complex0 = las.getZ(DeltaSubN);
-            j++;
+            const int32_t MacroItCount{ LaReference.getMacroItCount(CurrentLAStage) };
+            int32_t j = RefIteration;
 
-            const auto complex0Norm{ HdrReduce(complex0.chebychevNorm()) };
-            const auto DeltaSubNNorm{ HdrReduce(DeltaSubN.chebychevNorm()) };
-            if (HdrCompareToBothPositiveReducedLT(complex0Norm, DeltaSubNNorm) || j >= MacroItCount) {
-                DeltaSubN = complex0;
-                j = 0;
-            }
-        }
+            while (iter < n_iterations) {
+                const GPU_LAstep las{ LaReference.getLA(LAIndex, DeltaSubN, j, iter, n_iterations) };
 
-        if (iter >= n_iterations) {
-            break;
-        }
-    }
-
-    DeltaSubNX = DeltaSubN.getRe();
-    DeltaSubNY = DeltaSubN.getIm();
-
-    //////////////////////
-
-    auto perturbLoop = [&](uint32_t maxIterations) {
-        for (;;) {
-            const HDRFloatType DeltaSubNXOrig{ DeltaSubNX };
-            const HDRFloatType DeltaSubNYOrig{ DeltaSubNY };
-
-            const auto tempMulX2{ Perturb.iters[RefIteration].x.multiply2() };
-            const auto tempMulY2{ Perturb.iters[RefIteration].y.multiply2() };
-
-            ++RefIteration;
-
-            const auto tempSum1{ tempMulY2 + DeltaSubNYOrig };
-            const auto tempSum2{ tempMulX2 + DeltaSubNXOrig };
-
-            HDRFloatType::custom_perturb2(
-                DeltaSubNX,
-                DeltaSubNY,
-                DeltaSubNXOrig,
-                tempSum2,
-                DeltaSubNYOrig,
-                tempSum1,
-                DeltaSub0X,
-                DeltaSub0Y);
-
-            const auto tempVal1X{ Perturb.iters[RefIteration].x };
-            const auto tempVal1Y{ Perturb.iters[RefIteration].y };
-
-            const HDRFloatType tempZX{ tempVal1X + DeltaSubNX };
-            const HDRFloatType tempZY{ tempVal1Y + DeltaSubNY };
-            const HDRFloatType normSquared{ HdrReduce(tempZX.square() + tempZY.square())};
-
-            if (HdrCompareToBothPositiveReducedLT<HDRFloatType, 256>(normSquared) && iter < maxIterations) {
-                const auto DeltaNormSquared{ HdrReduce(DeltaSubNX.square() + DeltaSubNY.square()) };
-
-                if (HdrCompareToBothPositiveReducedLT(normSquared, DeltaNormSquared) ||
-                    RefIteration >= Perturb.size - 1) {
-                    DeltaSubNX = tempZX;
-                    DeltaSubNY = tempZY;
-                    RefIteration = 0;
+                if (las.unusable) {
+                    RefIteration = las.nextStageLAindex;
+                    break;
                 }
 
-                ++iter;
+                iter += las.step;
+                DeltaSubN = las.Evaluate(DeltaSub0);
+                complex0 = las.getZ(DeltaSubN);
+                j++;
+
+                const auto complex0Norm{ HdrReduce(complex0.chebychevNorm()) };
+                const auto DeltaSubNNorm{ HdrReduce(DeltaSubN.chebychevNorm()) };
+                if (HdrCompareToBothPositiveReducedLT(complex0Norm, DeltaSubNNorm) || j >= MacroItCount) {
+                    DeltaSubN = complex0;
+                    j = 0;
+                }
             }
-            else {
+
+            if (iter >= n_iterations) {
                 break;
             }
         }
-    };
+    }
 
-//    for (;;) {
+    if (Mode == LAv2Mode::Full || Mode == LAv2Mode::PO) {
+        DeltaSubNX = DeltaSubN.getRe();
+        DeltaSubNY = DeltaSubN.getIm();
+
+        //////////////////////
+
+        auto perturbLoop = [&](uint32_t maxIterations) {
+            for (;;) {
+                const HDRFloatType DeltaSubNXOrig{ DeltaSubNX };
+                const HDRFloatType DeltaSubNYOrig{ DeltaSubNY };
+
+                const auto tempMulX2{ Perturb.iters[RefIteration].x.multiply2() };
+                const auto tempMulY2{ Perturb.iters[RefIteration].y.multiply2() };
+
+                ++RefIteration;
+
+                const auto tempSum1{ tempMulY2 + DeltaSubNYOrig };
+                const auto tempSum2{ tempMulX2 + DeltaSubNXOrig };
+
+                HDRFloatType::custom_perturb2(
+                    DeltaSubNX,
+                    DeltaSubNY,
+                    DeltaSubNXOrig,
+                    tempSum2,
+                    DeltaSubNYOrig,
+                    tempSum1,
+                    DeltaSub0X,
+                    DeltaSub0Y);
+
+                const auto tempVal1X{ Perturb.iters[RefIteration].x };
+                const auto tempVal1Y{ Perturb.iters[RefIteration].y };
+
+                const HDRFloatType tempZX{ tempVal1X + DeltaSubNX };
+                const HDRFloatType tempZY{ tempVal1Y + DeltaSubNY };
+                const HDRFloatType normSquared{ HdrReduce(tempZX.square() + tempZY.square()) };
+
+                if (HdrCompareToBothPositiveReducedLT<HDRFloatType, 256>(normSquared) && iter < maxIterations) {
+                    const auto DeltaNormSquared{ HdrReduce(DeltaSubNX.square() + DeltaSubNY.square()) };
+
+                    if (HdrCompareToBothPositiveReducedLT(normSquared, DeltaNormSquared) ||
+                        RefIteration >= Perturb.size - 1) {
+                        DeltaSubNX = tempZX;
+                        DeltaSubNY = tempZY;
+                        RefIteration = 0;
+                    }
+
+                    ++iter;
+                }
+                else {
+                    break;
+                }
+            }
+        };
+
+        //    for (;;) {
         __syncthreads();
 
         //bool differences = false;
@@ -1425,11 +1428,14 @@ mandel_1xHDR_float_perturb_lav2(uint32_t* iter_matrix,
         if (RefIteration < maxRefIteration) {
             perturbLoop(maxRefIteration);
         }
-    //}
+        //}
+
+        __syncthreads();
+
+        perturbLoop(n_iterations);
+    }
 
     __syncthreads();
-
-    perturbLoop(n_iterations);
 
     iter_matrix[idx] = (uint32_t)iter;
 }
@@ -3226,7 +3232,7 @@ template uint32_t GPURenderer::RenderPerturb<HDRFloat<double>>(
     uint32_t n_iterations,
     int /*iteration_precision*/);
 
-template<class T, class SubType>
+template<class T, class SubType, LAv2Mode Mode>
 uint32_t GPURenderer::RenderPerturbLAv2(
     RenderAlgorithm algorithm,
     uint32_t* buffer,
@@ -3265,12 +3271,14 @@ uint32_t GPURenderer::RenderPerturbLAv2(
         return result;
     }
 
-    if (algorithm == RenderAlgorithm::GpuHDRx32PerturbedLAv2) {
+    if (algorithm == RenderAlgorithm::GpuHDRx32PerturbedLAv2 ||
+        algorithm == RenderAlgorithm::GpuHDRx32PerturbedLAv2PO ||
+        algorithm == RenderAlgorithm::GpuHDRx32PerturbedLAv2LAO) {
         if constexpr (std::is_same<HDRFloat<float>, T>::value) {
             mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
 
             // hdrflt
-            mandel_1xHDR_float_perturb_lav2<float> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
+            mandel_1xHDR_float_perturb_lav2<float, Mode> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
                 cudaResults, laReferenceCuda,
                 local_width, local_height, cx, cy, dx, dy,
                 centerX, centerY,
@@ -3278,12 +3286,14 @@ uint32_t GPURenderer::RenderPerturbLAv2(
 
             result = ExtractIters(buffer);
         }
-    } else if (algorithm == RenderAlgorithm::GpuHDRx64PerturbedLAv2) {
+    } else if (algorithm == RenderAlgorithm::GpuHDRx64PerturbedLAv2 ||
+               algorithm == RenderAlgorithm::GpuHDRx64PerturbedLAv2PO ||
+               algorithm == RenderAlgorithm::GpuHDRx64PerturbedLAv2LAO) {
         // hdrdbl
         if constexpr (std::is_same<HDRFloat<double>, T>::value) {
             mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
 
-            mandel_1xHDR_float_perturb_lav2<double> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
+            mandel_1xHDR_float_perturb_lav2<double, Mode> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
                 cudaResults, laReferenceCuda,
                 local_width, local_height, cx, cy, dx, dy,
                 centerX, centerY,
@@ -3297,7 +3307,7 @@ uint32_t GPURenderer::RenderPerturbLAv2(
 }
 
 template
-uint32_t GPURenderer::RenderPerturbLAv2<HDRFloat<float>, float>(
+uint32_t GPURenderer::RenderPerturbLAv2<HDRFloat<float>, float, LAv2Mode::Full>(
     RenderAlgorithm algorithm,
     uint32_t* buffer,
     MattPerturbResults<HDRFloat<float>>* float_perturb,
@@ -3311,7 +3321,63 @@ uint32_t GPURenderer::RenderPerturbLAv2<HDRFloat<float>, float>(
     uint32_t n_iterations);
 
 template
-uint32_t GPURenderer::RenderPerturbLAv2<HDRFloat<double>, double>(
+uint32_t GPURenderer::RenderPerturbLAv2<HDRFloat<float>, float, LAv2Mode::PO>(
+    RenderAlgorithm algorithm,
+    uint32_t* buffer,
+    MattPerturbResults<HDRFloat<float>>* float_perturb,
+    const LAReference<float>& LaReference,
+    HDRFloat<float> cx,
+    HDRFloat<float> cy,
+    HDRFloat<float> dx,
+    HDRFloat<float> dy,
+    HDRFloat<float> centerX,
+    HDRFloat<float> centerY,
+    uint32_t n_iterations);
+
+template
+uint32_t GPURenderer::RenderPerturbLAv2<HDRFloat<float>, float, LAv2Mode::LAO>(
+    RenderAlgorithm algorithm,
+    uint32_t* buffer,
+    MattPerturbResults<HDRFloat<float>>* float_perturb,
+    const LAReference<float>& LaReference,
+    HDRFloat<float> cx,
+    HDRFloat<float> cy,
+    HDRFloat<float> dx,
+    HDRFloat<float> dy,
+    HDRFloat<float> centerX,
+    HDRFloat<float> centerY,
+    uint32_t n_iterations);
+
+template
+uint32_t GPURenderer::RenderPerturbLAv2<HDRFloat<double>, double, LAv2Mode::Full>(
+    RenderAlgorithm algorithm,
+    uint32_t* buffer,
+    MattPerturbResults<HDRFloat<double>>* float_perturb,
+    const LAReference<double>& LaReference,
+    HDRFloat<double> cx,
+    HDRFloat<double> cy,
+    HDRFloat<double> dx,
+    HDRFloat<double> dy,
+    HDRFloat<double> centerX,
+    HDRFloat<double> centerY,
+    uint32_t n_iterations);
+
+template
+uint32_t GPURenderer::RenderPerturbLAv2<HDRFloat<double>, double, LAv2Mode::PO>(
+    RenderAlgorithm algorithm,
+    uint32_t* buffer,
+    MattPerturbResults<HDRFloat<double>>* float_perturb,
+    const LAReference<double>& LaReference,
+    HDRFloat<double> cx,
+    HDRFloat<double> cy,
+    HDRFloat<double> dx,
+    HDRFloat<double> dy,
+    HDRFloat<double> centerX,
+    HDRFloat<double> centerY,
+    uint32_t n_iterations);
+
+template
+uint32_t GPURenderer::RenderPerturbLAv2<HDRFloat<double>, double, LAv2Mode::LAO>(
     RenderAlgorithm algorithm,
     uint32_t* buffer,
     MattPerturbResults<HDRFloat<double>>* float_perturb,

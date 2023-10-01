@@ -13,6 +13,12 @@
 template<class SubType>
 class LAReference;
 
+enum class LAv2Mode {
+    Full,
+    PO,
+    LAO,
+};
+
 // TODO reorder these in some sane way that matches the menu etc
 enum class RenderAlgorithm {
     // CPU algorithms
@@ -31,14 +37,22 @@ enum class RenderAlgorithm {
     Gpu1x64Perturbed,
     Gpu1x64PerturbedBLA,
     GpuHDRx64PerturbedBLA,
+
     GpuHDRx64PerturbedLAv2,
+    GpuHDRx64PerturbedLAv2PO,
+    GpuHDRx64PerturbedLAv2LAO,
+
     Gpu2x64,
     Gpu4x64,
     Gpu1x32,
     Gpu1x32Perturbed,
     Gpu1x32PerturbedPeriodic,
     GpuHDRx32PerturbedBLA,
+    
     GpuHDRx32PerturbedLAv2,
+    GpuHDRx32PerturbedLAv2PO,
+    GpuHDRx32PerturbedLAv2LAO,
+
     GpuHDRx32PerturbedScaled,
     GpuHDRx32Perturbed,
     Gpu1x32PerturbedScaled,
@@ -242,7 +256,7 @@ public:
         uint32_t n_iterations,
         int iteration_precision);
 
-    template<class T, class SubType>
+    template<class T, class SubType, LAv2Mode Mode>
     uint32_t RenderPerturbLAv2(
         RenderAlgorithm algorithm,
         uint32_t* buffer,

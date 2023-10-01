@@ -253,7 +253,7 @@ private:
     template<class T, class SubType, bool BLA>
     void CalcGpuPerturbationFractalBLA(bool MemoryOnly);
 
-    template<class T, class SubType>
+    template<class T, class SubType, LAv2Mode Mode>
     void CalcGpuPerturbationFractalLAv2(bool MemoryOnly);
 
     template<class T, class SubType, class T2, class SubType2>

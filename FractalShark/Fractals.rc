@@ -155,7 +155,11 @@ BEGIN
             MENUITEM "HDRx32 GPU - Perturbation BLA", IDM_ALG_GPU_HDR_32_PERTURB_BLA
             MENUITEM "HDRx64 GPU - Perturbation BLA", IDM_ALG_GPU_HDR_64_PERTURB_BLA
             MENUITEM "HDRx32 GPU - Perturbation LAv2", IDM_ALG_GPU_HDR_32_PERTURB_LAV2
+            MENUITEM "HDRx32 GPU - Perturbation LAv2 - Perturb only", IDM_ALG_GPU_HDR_32_PERTURB_LAV2_PO
+            MENUITEM "HDRx32 GPU - Perturbation LAv2 - LA only", IDM_ALG_GPU_HDR_32_PERTURB_LAV2_LAO
             MENUITEM "HDRx64 GPU - Perturbation LAv2", IDM_ALG_GPU_HDR_64_PERTURB_LAV2
+            MENUITEM "HDRx64 GPU - Perturbation LAv2 - Perturb only", IDM_ALG_GPU_HDR_64_PERTURB_LAV2_PO
+            MENUITEM "HDRx64 GPU - Perturbation LAv2 - LA only", IDM_ALG_GPU_HDR_64_PERTURB_LAV2_LAO
         END
         POPUP "Iterations"
         BEGIN

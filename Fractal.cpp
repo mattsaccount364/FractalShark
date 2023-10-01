@@ -1692,11 +1692,25 @@ void Fractal::CalcFractal(bool MemoryOnly)
     case RenderAlgorithm::GpuHDRx64PerturbedBLA:
         CalcGpuPerturbationFractalBLA<HDRFloat<double>, double, true>(MemoryOnly);
         break;
+
     case RenderAlgorithm::GpuHDRx32PerturbedLAv2:
-        CalcGpuPerturbationFractalLAv2<HDRFloat<float>, float>(MemoryOnly);
+        CalcGpuPerturbationFractalLAv2<HDRFloat<float>, float, LAv2Mode::Full>(MemoryOnly);
         break;
+    case RenderAlgorithm::GpuHDRx32PerturbedLAv2PO:
+        CalcGpuPerturbationFractalLAv2<HDRFloat<float>, float, LAv2Mode::PO>(MemoryOnly);
+        break;
+    case RenderAlgorithm::GpuHDRx32PerturbedLAv2LAO:
+        CalcGpuPerturbationFractalLAv2<HDRFloat<float>, float, LAv2Mode::LAO>(MemoryOnly);
+        break;
+
     case RenderAlgorithm::GpuHDRx64PerturbedLAv2:
-        CalcGpuPerturbationFractalLAv2<HDRFloat<double>, double>(MemoryOnly);
+        CalcGpuPerturbationFractalLAv2<HDRFloat<double>, double, LAv2Mode::Full>(MemoryOnly);
+        break;
+    case RenderAlgorithm::GpuHDRx64PerturbedLAv2PO:
+        CalcGpuPerturbationFractalLAv2<HDRFloat<double>, double, LAv2Mode::PO>(MemoryOnly);
+        break;
+    case RenderAlgorithm::GpuHDRx64PerturbedLAv2LAO:
+        CalcGpuPerturbationFractalLAv2<HDRFloat<double>, double, LAv2Mode::LAO>(MemoryOnly);
         break;
     default:
         break;
@@ -2889,7 +2903,7 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
     }
 }
 
-template<class T, class SubType>
+template<class T, class SubType, LAv2Mode Mode>
 void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
     auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<T, SubType>();
 
@@ -2925,7 +2939,7 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
     LAReference<SubType> LaReference{ *results };
     LaReference.GenerateApproximationData(results->maxRadius, (int32_t)results->x.size() - 1);
 
-    auto result = m_r.RenderPerturbLAv2(GetRenderAlgorithm(),
+    auto result = m_r.RenderPerturbLAv2<T, SubType, Mode>(GetRenderAlgorithm(),
         (uint32_t*)m_CurIters.m_ItersMemory,
         &gpu_results,
         LaReference,

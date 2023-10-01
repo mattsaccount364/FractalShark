@@ -90,7 +90,6 @@ struct MattQDbldbl {
     double w; // LSB
 };
 
-// TODO template MattCoords<T>
 template<class T>
 struct MattCoords {
     T val;
@@ -163,10 +162,10 @@ public:
     uint32_t Render(
         RenderAlgorithm algorithm,
         uint32_t* buffer,
-        MattCoords<T> cx,
-        MattCoords<T> cy,
-        MattCoords<T> dx,
-        MattCoords<T> dy,
+        T cx,
+        T cy,
+        T dx,
+        T dy,
         uint32_t n_iterations,
         int iteration_precision);
 
@@ -175,12 +174,12 @@ public:
         RenderAlgorithm algorithm,
         uint32_t* buffer,
         MattPerturbResults<T>* results,
-        MattCoords<T> cx,
-        MattCoords<T> cy,
-        MattCoords<T> dx,
-        MattCoords<T> dy,
-        MattCoords<T> centerX,
-        MattCoords<T> centerY,
+        T cx,
+        T cy,
+        T dx,
+        T dy,
+        T centerX,
+        T centerY,
         uint32_t n_iterations,
         int iteration_precision);
 
@@ -189,12 +188,12 @@ public:
         uint32_t* buffer,
         MattPerturbResults<double>* results,
         BLAS<double> *blas,
-        MattCoords<double> cx,
-        MattCoords<double> cy,
-        MattCoords<double> dx,
-        MattCoords<double> dy,
-        MattCoords<double> centerX,
-        MattCoords<double> centerY,
+        double cx,
+        double cy,
+        double dx,
+        double dy,
+        double centerX,
+        double centerY,
         uint32_t n_iterations,
         int iteration_precision);
 
@@ -205,12 +204,12 @@ public:
         MattPerturbResults<T>* double_perturb,
         MattPerturbResults<float>* float_perturb,
         BLAS<T>* blas,
-        MattCoords<T> cx,
-        MattCoords<T> cy,
-        MattCoords<T> dx,
-        MattCoords<T> dy,
-        MattCoords<T> centerX,
-        MattCoords<T> centerY,
+        T cx,
+        T cy,
+        T dx,
+        T dy,
+        T centerX,
+        T centerY,
         uint32_t n_iterations,
         int iteration_precision);
 
@@ -219,12 +218,12 @@ public:
         uint32_t* buffer,
         MattPerturbResults<float2>* results,
         BLAS<float2>* blas,
-        MattCoords<float2> cx,
-        MattCoords<float2> cy,
-        MattCoords<float2> dx,
-        MattCoords<float2> dy,
-        MattCoords<float2> centerX,
-        MattCoords<float2> centerY,
+        float2 cx,
+        float2 cy,
+        float2 dx,
+        float2 dy,
+        float2 centerX,
+        float2 centerY,
         uint32_t n_iterations,
         int iteration_precision);
 
@@ -233,12 +232,12 @@ public:
         uint32_t* buffer,
         MattPerturbResults<HDRFloat<float>>* results,
         BLAS<HDRFloat<float>>* blas,
-        MattCoords<HDRFloat<float>> cx,
-        MattCoords<HDRFloat<float>> cy,
-        MattCoords<HDRFloat<float>> dx,
-        MattCoords<HDRFloat<float>> dy,
-        MattCoords<HDRFloat<float>> centerX,
-        MattCoords<HDRFloat<float>> centerY,
+        HDRFloat<float> cx,
+        HDRFloat<float> cy,
+        HDRFloat<float> dx,
+        HDRFloat<float> dy,
+        HDRFloat<float> centerX,
+        HDRFloat<float> centerY,
         uint32_t n_iterations,
         int iteration_precision);
 
@@ -247,12 +246,12 @@ public:
         uint32_t* buffer,
         MattPerturbResults<HDRFloat<float>>* float_perturb,
         const LAReference<float> &LaReference,
-        MattCoords<HDRFloat<float>> cx,
-        MattCoords<HDRFloat<float>> cy,
-        MattCoords<HDRFloat<float>> dx,
-        MattCoords<HDRFloat<float>> dy,
-        MattCoords<HDRFloat<float>> centerX,
-        MattCoords<HDRFloat<float>> centerY,
+        HDRFloat<float> cx,
+        HDRFloat<float> cy,
+        HDRFloat<float> dx,
+        HDRFloat<float> dy,
+        HDRFloat<float> centerX,
+        HDRFloat<float> centerY,
         uint32_t n_iterations);
 
     uint32_t RenderPerturbBLA(
@@ -260,12 +259,12 @@ public:
         uint32_t* buffer,
         MattPerturbResults<HDRFloat<double>>* results,
         BLAS<HDRFloat<double>>* blas,
-        MattCoords<HDRFloat<double>> cx,
-        MattCoords<HDRFloat<double>> cy,
-        MattCoords<HDRFloat<double>> dx,
-        MattCoords<HDRFloat<double>> dy,
-        MattCoords<HDRFloat<double>> centerX,
-        MattCoords<HDRFloat<double>> centerY,
+        HDRFloat<double> cx,
+        HDRFloat<double> cy,
+        HDRFloat<double> dx,
+        HDRFloat<double> dy,
+        HDRFloat<double> centerX,
+        HDRFloat<double> centerY,
         uint32_t n_iterations,
         int iteration_precision);
 
@@ -274,12 +273,12 @@ public:
         uint32_t* buffer,
         MattPerturbResults<HDRFloat<double>>* float_perturb,
         const LAReference<double>& LaReference,
-        MattCoords<HDRFloat<double>> cx,
-        MattCoords<HDRFloat<double>> cy,
-        MattCoords<HDRFloat<double>> dx,
-        MattCoords<HDRFloat<double>> dy,
-        MattCoords<HDRFloat<double>> centerX,
-        MattCoords<HDRFloat<double>> centerY,
+        HDRFloat<double> cx,
+        HDRFloat<double> cy,
+        HDRFloat<double> dx,
+        HDRFloat<double> dy,
+        HDRFloat<double> centerX,
+        HDRFloat<double> centerY,
         uint32_t n_iterations);
 
     // Side effect is this initializes CUDA the first time it's run

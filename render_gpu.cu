@@ -2860,10 +2860,10 @@ template<class T>
 uint32_t GPURenderer::Render(
     RenderAlgorithm algorithm,
     uint32_t* buffer,
-    MattCoords<T> cx,
-    MattCoords<T> cy,
-    MattCoords<T> dx,
-    MattCoords<T> dy,
+    T cx,
+    T cy,
+    T dx,
+    T dy,
     uint32_t n_iterations,
     int iteration_precision)
 {
@@ -2880,22 +2880,22 @@ uint32_t GPURenderer::Render(
             switch (iteration_precision) {
             case 1:
                 mandel_1x_double<1> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
-                    local_width, local_height, cx.val, cy.val, dx.val, dy.val,
+                    local_width, local_height, cx, cy, dx, dy,
                     n_iterations);
                 break;
             case 4:
                 mandel_1x_double<4> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
-                    local_width, local_height, cx.val, cy.val, dx.val, dy.val,
+                    local_width, local_height, cx, cy, dx, dy,
                     n_iterations);
                 break;
             case 8:
                 mandel_1x_double<8> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
-                    local_width, local_height, cx.val, cy.val, dx.val, dy.val,
+                    local_width, local_height, cx, cy, dx, dy,
                     n_iterations);
                 break;
             case 16:
                 mandel_1x_double<16> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
-                    local_width, local_height, cx.val, cy.val, dx.val, dy.val,
+                    local_width, local_height, cx, cy, dx, dy,
                     n_iterations);
                 break;
             default:
@@ -2905,10 +2905,10 @@ uint32_t GPURenderer::Render(
     }
     else if (algorithm == RenderAlgorithm::Gpu2x64) {
         if constexpr (std::is_same<T, dbldbl>::value) {
-            dbldbl cx2{ cx.val.head, cx.val.tail };
-            dbldbl cy2{ cy.val.head, cy.val.tail };
-            dbldbl dx2{ dx.val.head, dx.val.tail };
-            dbldbl dy2{ dy.val.head, dy.val.tail };
+            dbldbl cx2{ cx.head, cx.tail };
+            dbldbl cy2{ cy.head, cy.tail };
+            dbldbl dx2{ dx.head, dx.tail };
+            dbldbl dy2{ dy.head, dy.tail };
 
             mandel_2x_double << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
                 local_width, local_height, cx2, cy2, dx2, dy2,
@@ -2920,16 +2920,16 @@ uint32_t GPURenderer::Render(
         if constexpr (std::is_same<T, GQD::gqd_real>::value) {
             using namespace GQD;
             gqd_real cx2;
-            cx2 = make_qd(cx.val.x, cx.val.y, cx.val.z, cx.val.w);
+            cx2 = make_qd(cx.x, cx.y, cx.z, cx.w);
 
             gqd_real cy2;
-            cy2 = make_qd(cy.val.x, cy.val.y, cy.val.z, cy.val.w);
+            cy2 = make_qd(cy.x, cy.y, cy.z, cy.w);
 
             gqd_real dx2;
-            dx2 = make_qd(dx.val.x, dx.val.y, dx.val.z, dx.val.w);
+            dx2 = make_qd(dx.x, dx.y, dx.z, dx.w);
 
             gqd_real dy2;
-            dy2 = make_qd(dy.val.x, dy.val.y, dy.val.z, dy.val.w);
+            dy2 = make_qd(dy.x, dy.y, dy.z, dy.w);
 
             mandel_4x_double << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
                 local_width, local_height, cx2, cy2, dx2, dy2,
@@ -2942,22 +2942,22 @@ uint32_t GPURenderer::Render(
             switch (iteration_precision) {
             case 1:
                 mandel_1x_float<1> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
-                    local_width, local_height, cx.val, cy.val, dx.val, dy.val,
+                    local_width, local_height, cx, cy, dx, dy,
                     n_iterations);
                 break;
             case 4:
                 mandel_1x_float<4> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
-                    local_width, local_height, cx.val, cy.val, dx.val, dy.val,
+                    local_width, local_height, cx, cy, dx, dy,
                     n_iterations);
                 break;
             case 8:
                 mandel_1x_float<8> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
-                    local_width, local_height, cx.val, cy.val, dx.val, dy.val,
+                    local_width, local_height, cx, cy, dx, dy,
                     n_iterations);
                 break;
             case 16:
                 mandel_1x_float<16> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
-                    local_width, local_height, cx.val, cy.val, dx.val, dy.val,
+                    local_width, local_height, cx, cy, dx, dy,
                     n_iterations);
                 break;
             default:
@@ -2968,10 +2968,10 @@ uint32_t GPURenderer::Render(
     else if (algorithm == RenderAlgorithm::Gpu2x32) {
         // flt
         if constexpr (std::is_same<T, dblflt>::value) {
-            dblflt cx2{ cx.val.x, cx.val.y };
-            dblflt cy2{ cy.val.x, cy.val.y };
-            dblflt dx2{ dx.val.x, dx.val.y };
-            dblflt dy2{ dy.val.x, dy.val.y };
+            dblflt cx2{ cx.x, cx.y };
+            dblflt cy2{ cy.x, cy.y };
+            dblflt dx2{ dx.x, dx.y };
+            dblflt dy2{ dy.x, dy.y };
 
             switch (iteration_precision) {
             case 1:
@@ -3004,16 +3004,16 @@ uint32_t GPURenderer::Render(
         if constexpr (std::is_same<T, GQF::gqf_real>::value) {
             using namespace GQF;
             gqf_real cx2;
-            cx2 = make_qf(cx.val.x, cx.val.y, cx.val.z, cx.val.w);
+            cx2 = make_qf(cx.x, cx.y, cx.z, cx.w);
 
             gqf_real cy2;
-            cy2 = make_qf(cy.val.x, cy.val.y, cy.val.z, cy.val.w);
+            cy2 = make_qf(cy.x, cy.y, cy.z, cy.w);
 
             gqf_real dx2;
-            dx2 = make_qf(dx.val.x, dx.val.y, dx.val.z, dx.val.w);
+            dx2 = make_qf(dx.x, dx.y, dx.z, dx.w);
 
             gqf_real dy2;
-            dy2 = make_qf(dy.val.x, dy.val.y, dy.val.z, dy.val.w);
+            dy2 = make_qf(dy.x, dy.y, dy.z, dy.w);
 
             mandel_4x_float << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
                 local_width, local_height, cx2, cy2, dx2, dy2,
@@ -3030,60 +3030,60 @@ uint32_t GPURenderer::Render(
 template uint32_t GPURenderer::Render(
     RenderAlgorithm algorithm,
     uint32_t* buffer,
-    MattCoords<double> cx,
-    MattCoords<double> cy,
-    MattCoords<double> dx,
-    MattCoords<double> dy,
+    double cx,
+    double cy,
+    double dx,
+    double dy,
     uint32_t n_iterations,
     int iteration_precision);
 
 template uint32_t GPURenderer::Render(
     RenderAlgorithm algorithm,
     uint32_t* buffer,
-    MattCoords<float> cx,
-    MattCoords<float> cy,
-    MattCoords<float> dx,
-    MattCoords<float> dy,
+    float cx,
+    float cy,
+    float dx,
+    float dy,
     uint32_t n_iterations,
     int iteration_precision);
 
 template uint32_t GPURenderer::Render(
     RenderAlgorithm algorithm,
     uint32_t* buffer,
-    MattCoords<MattDbldbl> cx,
-    MattCoords<MattDbldbl> cy,
-    MattCoords<MattDbldbl> dx,
-    MattCoords<MattDbldbl> dy,
+    MattDbldbl cx,
+    MattDbldbl cy,
+    MattDbldbl dx,
+    MattDbldbl dy,
     uint32_t n_iterations,
     int iteration_precision);
 
 template uint32_t GPURenderer::Render(
     RenderAlgorithm algorithm,
     uint32_t* buffer,
-    MattCoords<MattQDbldbl> cx,
-    MattCoords<MattQDbldbl> cy,
-    MattCoords<MattQDbldbl> dx,
-    MattCoords<MattQDbldbl> dy,
+    MattQDbldbl cx,
+    MattQDbldbl cy,
+    MattQDbldbl dx,
+    MattQDbldbl dy,
     uint32_t n_iterations,
     int iteration_precision);
 
 template uint32_t GPURenderer::Render(
     RenderAlgorithm algorithm,
     uint32_t* buffer,
-    MattCoords<MattDblflt> cx,
-    MattCoords<MattDblflt> cy,
-    MattCoords<MattDblflt> dx,
-    MattCoords<MattDblflt> dy,
+    MattDblflt cx,
+    MattDblflt cy,
+    MattDblflt dx,
+    MattDblflt dy,
     uint32_t n_iterations,
     int iteration_precision);
 
 template uint32_t GPURenderer::Render(
     RenderAlgorithm algorithm,
     uint32_t* buffer,
-    MattCoords<MattQFltflt> cx,
-    MattCoords<MattQFltflt> cy,
-    MattCoords<MattQFltflt> dx,
-    MattCoords<MattQFltflt> dy,
+    MattQFltflt cx,
+    MattQFltflt cy,
+    MattQFltflt dx,
+    MattQFltflt dy,
     uint32_t n_iterations,
     int iteration_precision);
 
@@ -3092,12 +3092,12 @@ uint32_t GPURenderer::RenderPerturb(
     RenderAlgorithm algorithm,
     uint32_t* buffer,
     MattPerturbResults<T>* float_perturb,
-    MattCoords<T> cx,
-    MattCoords<T> cy,
-    MattCoords<T> dx,
-    MattCoords<T> dy,
-    MattCoords<T> centerX,
-    MattCoords<T> centerY,
+    T cx,
+    T cy,
+    T dx,
+    T dy,
+    T centerX,
+    T centerY,
     uint32_t n_iterations,
     int /*iteration_precision*/)
 {
@@ -3125,8 +3125,8 @@ uint32_t GPURenderer::RenderPerturb(
         if constexpr (std::is_same<T, float>::value) {
             mandel_1x_float_perturb<T, false> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
                 cudaResults,
-                local_width, local_height, cx.val, cy.val, dx.val, dy.val,
-                centerX.val, centerY.val,
+                local_width, local_height, cx, cy, dx, dy,
+                centerX, centerY,
                 n_iterations);
 
             result = ExtractIters(buffer);
@@ -3137,8 +3137,8 @@ uint32_t GPURenderer::RenderPerturb(
         if constexpr (std::is_same<T, double>::value) {
             mandel_1x_float_perturb<T, false> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
                 cudaResults,
-                local_width, local_height, cx.val, cy.val, dx.val, dy.val,
-                centerX.val, centerY.val,
+                local_width, local_height, cx, cy, dx, dy,
+                centerX, centerY,
                 n_iterations);
 
             result = ExtractIters(buffer);
@@ -3149,8 +3149,8 @@ uint32_t GPURenderer::RenderPerturb(
         if constexpr (std::is_same<T, float>::value) {
             mandel_1x_float_perturb<T, true> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
                 cudaResults,
-                local_width, local_height, cx.val, cy.val, dx.val, dy.val,
-                centerX.val, centerY.val,
+                local_width, local_height, cx, cy, dx, dy,
+                centerX, centerY,
                 n_iterations);
 
             result = ExtractIters(buffer);
@@ -3163,8 +3163,8 @@ uint32_t GPURenderer::RenderPerturb(
 
             mandel_1x_float_perturb<T, false> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
                 cudaResults,
-                local_width, local_height, cx.val, cy.val, dx.val, dy.val,
-                centerX.val, centerY.val,
+                local_width, local_height, cx, cy, dx, dy,
+                centerX, centerY,
                 n_iterations);
 
             result = ExtractIters(buffer);
@@ -3178,12 +3178,12 @@ template uint32_t GPURenderer::RenderPerturb<float>(
     RenderAlgorithm algorithm,
     uint32_t* buffer,
     MattPerturbResults<float>* float_perturb,
-    MattCoords<float> cx,
-    MattCoords<float> cy,
-    MattCoords<float> dx,
-    MattCoords<float> dy,
-    MattCoords<float> centerX,
-    MattCoords<float> centerY,
+    float cx,
+    float cy,
+    float dx,
+    float dy,
+    float centerX,
+    float centerY,
     uint32_t n_iterations,
     int /*iteration_precision*/);
 
@@ -3191,12 +3191,12 @@ template uint32_t GPURenderer::RenderPerturb<HDRFloat<float>>(
     RenderAlgorithm algorithm,
     uint32_t* buffer,
     MattPerturbResults<HDRFloat<float>>* float_perturb,
-    MattCoords<HDRFloat<float>> cx,
-    MattCoords<HDRFloat<float>> cy,
-    MattCoords<HDRFloat<float>> dx,
-    MattCoords<HDRFloat<float>> dy,
-    MattCoords<HDRFloat<float>> centerX,
-    MattCoords<HDRFloat<float>> centerY,
+    HDRFloat<float> cx,
+    HDRFloat<float> cy,
+    HDRFloat<float> dx,
+    HDRFloat<float> dy,
+    HDRFloat<float> centerX,
+    HDRFloat<float> centerY,
     uint32_t n_iterations,
     int /*iteration_precision*/);
 
@@ -3204,12 +3204,12 @@ template uint32_t GPURenderer::RenderPerturb<double>(
     RenderAlgorithm algorithm,
     uint32_t* buffer,
     MattPerturbResults<double>* float_perturb,
-    MattCoords<double> cx,
-    MattCoords<double> cy,
-    MattCoords<double> dx,
-    MattCoords<double> dy,
-    MattCoords<double> centerX,
-    MattCoords<double> centerY,
+    double cx,
+    double cy,
+    double dx,
+    double dy,
+    double centerX,
+    double centerY,
     uint32_t n_iterations,
     int /*iteration_precision*/);
 
@@ -3217,12 +3217,12 @@ template uint32_t GPURenderer::RenderPerturb<HDRFloat<double>>(
     RenderAlgorithm algorithm,
     uint32_t* buffer,
     MattPerturbResults<HDRFloat<double>>* float_perturb,
-    MattCoords<HDRFloat<double>> cx,
-    MattCoords<HDRFloat<double>> cy,
-    MattCoords<HDRFloat<double>> dx,
-    MattCoords<HDRFloat<double>> dy,
-    MattCoords<HDRFloat<double>> centerX,
-    MattCoords<HDRFloat<double>> centerY,
+    HDRFloat<double> cx,
+    HDRFloat<double> cy,
+    HDRFloat<double> dx,
+    HDRFloat<double> dy,
+    HDRFloat<double> centerX,
+    HDRFloat<double> centerY,
     uint32_t n_iterations,
     int /*iteration_precision*/);
 
@@ -3231,12 +3231,12 @@ uint32_t GPURenderer::RenderPerturbLAv2(
     uint32_t* buffer,
     MattPerturbResults<HDRFloat<float>>* float_perturb,
     const LAReference<float> &LaReference,
-    MattCoords<HDRFloat<float>> cx,
-    MattCoords<HDRFloat<float>> cy,
-    MattCoords<HDRFloat<float>> dx,
-    MattCoords<HDRFloat<float>> dy,
-    MattCoords<HDRFloat<float>> centerX,
-    MattCoords<HDRFloat<float>> centerY,
+    HDRFloat<float> cx,
+    HDRFloat<float> cy,
+    HDRFloat<float> dx,
+    HDRFloat<float> dy,
+    HDRFloat<float> centerX,
+    HDRFloat<float> centerY,
     uint32_t n_iterations)
 {
     uint32_t result = cudaSuccess;
@@ -3270,8 +3270,8 @@ uint32_t GPURenderer::RenderPerturbLAv2(
         // hdrflt
         mandel_1xHDR_float_perturb_lav2<float> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
             cudaResults, laReferenceCuda,
-            local_width, local_height, cx.val, cy.val, dx.val, dy.val,
-            centerX.val, centerY.val,
+            local_width, local_height, cx, cy, dx, dy,
+            centerX, centerY,
             n_iterations);
 
         result = ExtractIters(buffer);
@@ -3285,12 +3285,12 @@ uint32_t GPURenderer::RenderPerturbBLA(
     uint32_t* buffer,
     MattPerturbResults<double>* double_perturb,
     BLAS<double> *blas,
-    MattCoords<double> cx,
-    MattCoords<double> cy,
-    MattCoords<double> dx,
-    MattCoords<double> dy,
-    MattCoords<double> centerX,
-    MattCoords<double> centerY,
+    double cx,
+    double cy,
+    double dx,
+    double dy,
+    double centerX,
+    double centerY,
     uint32_t n_iterations,
     int /*iteration_precision*/)
 {
@@ -3327,8 +3327,8 @@ uint32_t GPURenderer::RenderPerturbBLA(
             mandel_1x_double_perturb_bla<LM2> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
                 cudaResults,
                 gpu_blas,
-                local_width, local_height, cx.val, cy.val, dx.val, dy.val,
-                centerX.val, centerY.val,
+                local_width, local_height, cx, cy, dx, dy,
+                centerX, centerY,
                 n_iterations);
 
             return ExtractIters(buffer);
@@ -3362,8 +3362,8 @@ uint32_t GPURenderer::RenderPerturbBLA(
 
     //    mandel_2x_float_perturb_scaled << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
     //        cudaResults, cudaResultsDouble,
-    //        local_width, local_height, cx.val, cy.val, dx.val, dy.val,
-    //        centerX.val, centerY.val,
+    //        local_width, local_height, cx, cy, dx, dy,
+    //        centerX, centerY,
     //        n_iterations);
 
     //    result = ExtractIters(buffer);
@@ -3377,12 +3377,12 @@ uint32_t GPURenderer::RenderPerturbLAv2(
     uint32_t* buffer,
     MattPerturbResults<HDRFloat<double>>* float_perturb,
     const LAReference<double>& LaReference,
-    MattCoords<HDRFloat<double>> cx,
-    MattCoords<HDRFloat<double>> cy,
-    MattCoords<HDRFloat<double>> dx,
-    MattCoords<HDRFloat<double>> dy,
-    MattCoords<HDRFloat<double>> centerX,
-    MattCoords<HDRFloat<double>> centerY,
+    HDRFloat<double> cx,
+    HDRFloat<double> cy,
+    HDRFloat<double> dx,
+    HDRFloat<double> dy,
+    HDRFloat<double> centerX,
+    HDRFloat<double> centerY,
     uint32_t n_iterations)
 {
     uint32_t result = cudaSuccess;
@@ -3416,8 +3416,8 @@ uint32_t GPURenderer::RenderPerturbLAv2(
 
         mandel_1xHDR_float_perturb_lav2<double> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
             cudaResults, laReferenceCuda,
-            local_width, local_height, cx.val, cy.val, dx.val, dy.val,
-            centerX.val, centerY.val,
+            local_width, local_height, cx, cy, dx, dy,
+            centerX, centerY,
             n_iterations);
 
         result = ExtractIters(buffer);
@@ -3433,12 +3433,12 @@ uint32_t GPURenderer::RenderPerturbBLA(
     MattPerturbResults<T>* double_perturb,
     MattPerturbResults<float>* float_perturb,
     BLAS<T>* blas,
-    MattCoords<T> cx,
-    MattCoords<T> cy,
-    MattCoords<T> dx,
-    MattCoords<T> dy,
-    MattCoords<T> centerX,
-    MattCoords<T> centerY,
+    T cx,
+    T cy,
+    T dx,
+    T dy,
+    T centerX,
+    T centerY,
     uint32_t n_iterations,
     int /*iteration_precision*/)
 {
@@ -3476,8 +3476,8 @@ uint32_t GPURenderer::RenderPerturbBLA(
             // doubleOnly
             mandel_1x_float_perturb_scaled<T> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
                 cudaResults, cudaResultsDouble,
-                local_width, local_height, cx.val, cy.val, dx.val, dy.val,
-                centerX.val, centerY.val,
+                local_width, local_height, cx, cy, dx, dy,
+                centerX, centerY,
                 n_iterations);
 
             result = ExtractIters(buffer);
@@ -3489,8 +3489,8 @@ uint32_t GPURenderer::RenderPerturbBLA(
 
             mandel_1x_float_perturb_scaled<T> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
                 cudaResults, cudaResultsDouble,
-                local_width, local_height, cx.val, cy.val, dx.val, dy.val,
-                centerX.val, centerY.val,
+                local_width, local_height, cx, cy, dx, dy,
+                centerX, centerY,
                 n_iterations);
 
             result = ExtractIters(buffer);
@@ -3510,8 +3510,8 @@ uint32_t GPURenderer::RenderPerturbBLA(
 
                 mandel_1x_float_perturb_scaled_bla<LM2> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
                     cudaResults, cudaResultsDouble, doubleGpuBlas,
-                    local_width, local_height, cx.val, cy.val, dx.val, dy.val,
-                    centerX.val, centerY.val,
+                    local_width, local_height, cx, cy, dx, dy,
+                    centerX, centerY,
                     n_iterations);
 
                 return ExtractIters(buffer);
@@ -3530,12 +3530,12 @@ template uint32_t GPURenderer::RenderPerturbBLA<double>(
     MattPerturbResults<double>* double_perturb,
     MattPerturbResults<float>* float_perturb,
     BLAS<double>* blas,
-    MattCoords<double> cx,
-    MattCoords<double> cy,
-    MattCoords<double> dx,
-    MattCoords<double> dy,
-    MattCoords<double> centerX,
-    MattCoords<double> centerY,
+    double cx,
+    double cy,
+    double dx,
+    double dy,
+    double centerX,
+    double centerY,
     uint32_t n_iterations,
     int /*iteration_precision*/
 );
@@ -3546,12 +3546,12 @@ template uint32_t GPURenderer::RenderPerturbBLA<HDRFloat<float>>(
     MattPerturbResults<HDRFloat<float>>* double_perturb,
     MattPerturbResults<float>* float_perturb,
     BLAS<HDRFloat<float>>* blas,
-    MattCoords<HDRFloat<float>> cx,
-    MattCoords<HDRFloat<float>> cy,
-    MattCoords<HDRFloat<float>> dx,
-    MattCoords<HDRFloat<float>> dy,
-    MattCoords<HDRFloat<float>> centerX,
-    MattCoords<HDRFloat<float>> centerY,
+    HDRFloat<float> cx,
+    HDRFloat<float> cy,
+    HDRFloat<float> dx,
+    HDRFloat<float> dy,
+    HDRFloat<float> centerX,
+    HDRFloat<float> centerY,
     uint32_t n_iterations,
     int /*iteration_precision*/
 );
@@ -3562,12 +3562,12 @@ uint32_t GPURenderer::RenderPerturbBLA(
     uint32_t* buffer,
     MattPerturbResults<float2>* dblflt_perturb,
     BLAS<float2>* /*blas*/,  // TODO
-    MattCoords<float2> cx,
-    MattCoords<float2> cy,
-    MattCoords<float2> dx,
-    MattCoords<float2> dy,
-    MattCoords<float2> centerX,
-    MattCoords<float2> centerY,
+    float2 cx,
+    float2 cy,
+    float2 dx,
+    float2 dy,
+    float2 centerX,
+    float2 centerY,
     uint32_t n_iterations,
     int /*iteration_precision*/)
 {
@@ -3592,12 +3592,12 @@ uint32_t GPURenderer::RenderPerturbBLA(
 
     if (algorithm == RenderAlgorithm::Gpu2x32Perturbed) {
         // flt
-        dblflt cx2{ cx.val.x, cx.val.y };
-        dblflt cy2{ cy.val.x, cy.val.y };
-        dblflt dx2{ dx.val.x, dx.val.y };
-        dblflt dy2{ dy.val.x, dy.val.y };
-        dblflt centerX2{ centerX.val.x, centerX.val.y };
-        dblflt centerY2{ centerY.val.x, centerY.val.y };
+        dblflt cx2{ cx.x, cx.y };
+        dblflt cy2{ cy.x, cy.y };
+        dblflt dx2{ dx.x, dx.y };
+        dblflt dy2{ dy.x, dy.y };
+        dblflt centerX2{ centerX.x, centerX.y };
+        dblflt centerY2{ centerY.x, centerY.y };
 
         mandel_2x_float_perturb_setup << <nb_blocks, threads_per_block >> > (cudaResults);
 
@@ -3618,12 +3618,12 @@ uint32_t GPURenderer::RenderPerturbBLA(
     uint32_t* buffer,
     MattPerturbResults<HDRFloat<float>>* perturb,
     BLAS<HDRFloat<float>>* blas,
-    MattCoords<HDRFloat<float>> cx,
-    MattCoords<HDRFloat<float>> cy,
-    MattCoords<HDRFloat<float>> dx,
-    MattCoords<HDRFloat<float>> dy,
-    MattCoords<HDRFloat<float>> centerX,
-    MattCoords<HDRFloat<float>> centerY,
+    HDRFloat<float> cx,
+    HDRFloat<float> cy,
+    HDRFloat<float> dx,
+    HDRFloat<float> dy,
+    HDRFloat<float> centerX,
+    HDRFloat<float> centerY,
     uint32_t n_iterations,
     int /*iteration_precision*/)
 {
@@ -3661,8 +3661,8 @@ uint32_t GPURenderer::RenderPerturbBLA(
                 iter_matrix_cu,
                 cudaResults,
                 gpu_blas,
-                local_width, local_height, cx.val, cy.val, dx.val, dy.val,
-                centerX.val, centerY.val,
+                local_width, local_height, cx, cy, dx, dy,
+                centerX, centerY,
                 n_iterations);
 
             return ExtractIters(buffer);
@@ -3679,12 +3679,12 @@ uint32_t GPURenderer::RenderPerturbBLA(
     uint32_t* buffer,
     MattPerturbResults<HDRFloat<double>>* perturb,
     BLAS<HDRFloat<double>>* blas,
-    MattCoords<HDRFloat<double>> cx,
-    MattCoords<HDRFloat<double>> cy,
-    MattCoords<HDRFloat<double>> dx,
-    MattCoords<HDRFloat<double>> dy,
-    MattCoords<HDRFloat<double>> centerX,
-    MattCoords<HDRFloat<double>> centerY,
+    HDRFloat<double> cx,
+    HDRFloat<double> cy,
+    HDRFloat<double> dx,
+    HDRFloat<double> dy,
+    HDRFloat<double> centerX,
+    HDRFloat<double> centerY,
     uint32_t n_iterations,
     int /*iteration_precision*/)
 {
@@ -3722,8 +3722,8 @@ uint32_t GPURenderer::RenderPerturbBLA(
                 iter_matrix_cu,
                 cudaResults,
                 gpu_blas,
-                local_width, local_height, cx.val, cy.val, dx.val, dy.val,
-                centerX.val, centerY.val,
+                local_width, local_height, cx, cy, dx, dy,
+                centerX, centerY,
                 n_iterations);
 
             return ExtractIters(buffer);

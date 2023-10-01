@@ -2031,58 +2031,58 @@ void Fractal::DrawFractalThread(size_t index, Fractal* fractal) {
     }
 }
 
-void Fractal::FillCoord(HighPrecision& src, MattCoords<MattQFltflt>& dest) {
+void Fractal::FillCoord(HighPrecision& src, MattQFltflt& dest) {
     // qflt
-    dest.val.x = Convert<HighPrecision, float>(src);
-    dest.val.y = Convert<HighPrecision, float>(src - HighPrecision{ dest.val.x });
-    dest.val.z = Convert<HighPrecision, float>(src - HighPrecision{ dest.val.x } - HighPrecision{ dest.val.y });
-    dest.val.w = Convert<HighPrecision, float>(src - HighPrecision{ dest.val.x } - HighPrecision{ dest.val.y } - HighPrecision{ dest.val.z });
+    dest.x = Convert<HighPrecision, float>(src);
+    dest.y = Convert<HighPrecision, float>(src - HighPrecision{ dest.x });
+    dest.z = Convert<HighPrecision, float>(src - HighPrecision{ dest.x } - HighPrecision{ dest.y });
+    dest.w = Convert<HighPrecision, float>(src - HighPrecision{ dest.x } - HighPrecision{ dest.y } - HighPrecision{ dest.z });
 }
 
-void Fractal::FillCoord(HighPrecision& src, MattCoords<MattQDbldbl>& dest) {
+void Fractal::FillCoord(HighPrecision& src, MattQDbldbl& dest) {
     // qdbl
-    dest.val.x = Convert<HighPrecision, double>(src);
-    dest.val.y = Convert<HighPrecision, double>(src - HighPrecision{ dest.val.x });
-    dest.val.z = Convert<HighPrecision, double>(src - HighPrecision{ dest.val.x } - HighPrecision{ dest.val.y });
-    dest.val.w = Convert<HighPrecision, double>(src - HighPrecision{ dest.val.x } - HighPrecision{ dest.val.y } - HighPrecision{ dest.val.z });
+    dest.x = Convert<HighPrecision, double>(src);
+    dest.y = Convert<HighPrecision, double>(src - HighPrecision{ dest.x });
+    dest.z = Convert<HighPrecision, double>(src - HighPrecision{ dest.x } - HighPrecision{ dest.y });
+    dest.w = Convert<HighPrecision, double>(src - HighPrecision{ dest.x } - HighPrecision{ dest.y } - HighPrecision{ dest.z });
 }
 
-void Fractal::FillCoord(HighPrecision& src, MattCoords<MattDbldbl>& dest) {
+void Fractal::FillCoord(HighPrecision& src, MattDbldbl& dest) {
     // dbl
-    dest.val.head = Convert<HighPrecision, double>(src);
-    dest.val.tail = Convert<HighPrecision, double>(src - HighPrecision{ dest.val.head });
+    dest.head = Convert<HighPrecision, double>(src);
+    dest.tail = Convert<HighPrecision, double>(src - HighPrecision{ dest.head });
 }
 
-void Fractal::FillCoord(HighPrecision& src, MattCoords<double>& dest) {
+void Fractal::FillCoord(HighPrecision& src, double& dest) {
     // doubleOnly
-    dest.val = Convert<HighPrecision, double>(src);
+    dest = Convert<HighPrecision, double>(src);
 }
 
-void Fractal::FillCoord(HighPrecision& src, MattCoords<HDRFloat<float>>& dest) {
+void Fractal::FillCoord(HighPrecision& src, HDRFloat<float>& dest) {
     // hdrflt
-    dest.val = (HDRFloat<float>)src;
-    HdrReduce(dest.val);
+    dest = (HDRFloat<float>)src;
+    HdrReduce(dest);
 }
 
-void Fractal::FillCoord(HighPrecision& src, MattCoords<HDRFloat<double>>& dest) {
+void Fractal::FillCoord(HighPrecision& src, HDRFloat<double>& dest) {
     //  hdrdbl
-    dest.val = (HDRFloat<double>)src;
-    HdrReduce(dest.val);
+    dest = (HDRFloat<double>)src;
+    HdrReduce(dest);
 }
 
-void Fractal::FillCoord(HighPrecision& src, MattCoords<MattDblflt>& dest) {
+void Fractal::FillCoord(HighPrecision& src, MattDblflt& dest) {
     // flt
-    dest.val.y = Convert<HighPrecision, float>(src);
-    dest.val.x = Convert<HighPrecision, float>(src - HighPrecision{ dest.val.y });
+    dest.y = Convert<HighPrecision, float>(src);
+    dest.x = Convert<HighPrecision, float>(src - HighPrecision{ dest.y });
 }
 
-void Fractal::FillCoord(HighPrecision& src, MattCoords<float>& dest) {
+void Fractal::FillCoord(HighPrecision& src, float& dest) {
     // floatOnly
-    dest.val = Convert<HighPrecision, float>(src);
+    dest = Convert<HighPrecision, float>(src);
 }
 
 template<class T>
-void Fractal::FillGpuCoords(MattCoords<T> &cx2, MattCoords<T> &cy2, MattCoords<T> &dx2, MattCoords<T> &dy2) {
+void Fractal::FillGpuCoords(T &cx2, T &cy2, T &dx2, T &dy2) {
     HighPrecision src_dy =
         (m_MaxY - m_MinY) /
         (HighPrecision)(m_ScrnHeight * GetGpuAntialiasing());
@@ -2102,7 +2102,7 @@ void Fractal::CalcGpuFractal(bool MemoryOnly)
 {
     OutputMessage(L"\r\n");
 
-    MattCoords<T> cx2{}, cy2{}, dx2{}, dy2{};
+    T cx2{}, cy2{}, dx2{}, dy2{};
     FillGpuCoords<T>(cx2, cy2, dx2, dy2);
 
     uint32_t err =
@@ -2831,8 +2831,8 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
 
     m_r.ClearMemory();
 
-    MattCoords<T> cx2{}, cy2{}, dx2{}, dy2{};
-    MattCoords<T> centerX2{}, centerY2{};
+    T cx2{}, cy2{}, dx2{}, dy2{};
+    T centerX2{}, centerY2{};
 
     FillGpuCoords<T>(cx2, cy2, dx2, dy2);
 
@@ -2903,8 +2903,8 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
 
     m_r.ClearMemory();
 
-    MattCoords<T> cx2{}, cy2{}, dx2{}, dy2{};
-    MattCoords<T> centerX2{}, centerY2{};
+    T cx2{}, cy2{}, dx2{}, dy2{};
+    T centerX2{}, centerY2{};
 
     FillGpuCoords<T>(cx2, cy2, dx2, dy2);
 
@@ -2962,8 +2962,8 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
 
     m_r.ClearMemory();
 
-    MattCoords<T> cx2{}, cy2{}, dx2{}, dy2{};
-    MattCoords<T> centerX2{}, centerY2{};
+    T cx2{}, cy2{}, dx2{}, dy2{};
+    T centerX2{}, centerY2{};
 
     FillGpuCoords<T>(cx2, cy2, dx2, dy2);
 

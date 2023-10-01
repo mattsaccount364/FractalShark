@@ -217,17 +217,17 @@ private:
         size_t iteration;
     };
 
-    void FillCoord(HighPrecision& src, MattCoords<MattQFltflt>& dest);
-    void FillCoord(HighPrecision& src, MattCoords<MattQDbldbl>& dest);
-    void FillCoord(HighPrecision& src, MattCoords<MattDbldbl>& dest);
-    void FillCoord(HighPrecision& src, MattCoords<double>& dest);
-    void FillCoord(HighPrecision& src, MattCoords<HDRFloat<float>>& dest);
-    void FillCoord(HighPrecision& src, MattCoords<HDRFloat<double>>& dest);
-    void FillCoord(HighPrecision& src, MattCoords<MattDblflt>& dest);
-    void FillCoord(HighPrecision& src, MattCoords<float>& dest);
+    void FillCoord(HighPrecision& src, MattQFltflt& dest);
+    void FillCoord(HighPrecision& src, MattQDbldbl& dest);
+    void FillCoord(HighPrecision& src, MattDbldbl& dest);
+    void FillCoord(HighPrecision& src, double& dest);
+    void FillCoord(HighPrecision& src, HDRFloat<float>& dest);
+    void FillCoord(HighPrecision& src, HDRFloat<double>& dest);
+    void FillCoord(HighPrecision& src, MattDblflt& dest);
+    void FillCoord(HighPrecision& src, float& dest);
 
     template<class T>
-    void FillGpuCoords(MattCoords<T>& cx2, MattCoords<T>& cy2, MattCoords<T>& dx2, MattCoords<T>& dy2);
+    void FillGpuCoords(T& cx2, T& cy2, T& dx2, T& dy2);
 
     template<class T>
     void CalcGpuFractal(bool MemoryOnly);

@@ -250,7 +250,7 @@ private:
     template<class SubType>
     void CalcCpuPerturbationFractalLAV2(bool MemoryOnly);
 
-    template<class T, class SubType>
+    template<class T, class SubType, bool BLA>
     void CalcGpuPerturbationFractalBLA(bool MemoryOnly);
 
     template<class T, class SubType>

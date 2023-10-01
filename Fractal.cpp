@@ -1661,7 +1661,11 @@ void Fractal::CalcFractal(bool MemoryOnly)
         break;
     case RenderAlgorithm::Gpu1x32Perturbed:
     case RenderAlgorithm::Gpu1x32PerturbedPeriodic:
-        CalcGpuPerturbationFractalBLA<float, float>(MemoryOnly);
+        CalcGpuPerturbationFractalBLA<float, float, false>(MemoryOnly);
+        break;
+    case RenderAlgorithm::GpuHDRx32Perturbed:
+    //case RenderAlgorithm::GpuHDRx32PerturbedPeriodic:
+        CalcGpuPerturbationFractalBLA<HDRFloat<float>, float, false>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu1x32PerturbedScaled:
     case RenderAlgorithm::Gpu1x32PerturbedScaledBLA:
@@ -1671,8 +1675,10 @@ void Fractal::CalcFractal(bool MemoryOnly)
         CalcGpuPerturbationFractalScaledBLA<HDRFloat<float>, float, float, float>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu1x64Perturbed:
+        CalcGpuPerturbationFractalBLA<double, double, false>(MemoryOnly);
+        break;
     case RenderAlgorithm::Gpu1x64PerturbedBLA:
-        CalcGpuPerturbationFractalBLA<double, double>(MemoryOnly);
+        CalcGpuPerturbationFractalBLA<double, double, true>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu2x32Perturbed:
         //CalcGpuPerturbationFractalBLA<dblflt, dblflt>(MemoryOnly);
@@ -1681,10 +1687,10 @@ void Fractal::CalcFractal(bool MemoryOnly)
         //CalcGpuPerturbationFractalBLA<double, double>(MemoryOnly);
         break;
     case RenderAlgorithm::GpuHDRx32PerturbedBLA:
-        CalcGpuPerturbationFractalBLA<HDRFloat<float>, float>(MemoryOnly);
+        CalcGpuPerturbationFractalBLA<HDRFloat<float>, float, true>(MemoryOnly);
         break;
     case RenderAlgorithm::GpuHDRx64PerturbedBLA:
-        CalcGpuPerturbationFractalBLA<HDRFloat<double>, double>(MemoryOnly);
+        CalcGpuPerturbationFractalBLA<HDRFloat<double>, double, true>(MemoryOnly);
         break;
     case RenderAlgorithm::GpuHDRx32PerturbedLAv2:
         CalcGpuPerturbationFractalLAv2<HDRFloat<float>, float>(MemoryOnly);
@@ -2811,12 +2817,9 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
     DrawFractal(MemoryOnly);
 }
 
-template<class T, class SubType>
+template<class T, class SubType, bool BLA>
 void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
     auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<T, SubType>();
-
-    BLAS<T> blas(*results);
-    blas.Init(results->x.size(), T(results->maxRadius));
 
     uint32_t err =
         m_r.InitializeMemory(m_CurIters.m_Width,
@@ -2847,18 +2850,37 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
         results->bad.size(),
         results->PeriodMaybeZero };
 
-    auto result = m_r.RenderPerturbBLA(GetRenderAlgorithm(),
-        (uint32_t*)m_CurIters.m_ItersMemory,
-        &gpu_results,
-        &blas,
-        cx2,
-        cy2,
-        dx2,
-        dy2,
-        centerX2,
-        centerY2,
-        (uint32_t)m_NumIterations,
-        m_IterationPrecision);
+    uint32_t result;
+    if constexpr (BLA) {
+        BLAS<T> blas(*results);
+        blas.Init(results->x.size(), T(results->maxRadius));
+
+        result = m_r.RenderPerturbBLA(GetRenderAlgorithm(),
+            (uint32_t*)m_CurIters.m_ItersMemory,
+            &gpu_results,
+            &blas,
+            cx2,
+            cy2,
+            dx2,
+            dy2,
+            centerX2,
+            centerY2,
+            (uint32_t)m_NumIterations,
+            m_IterationPrecision);
+    }
+    else {
+        result = m_r.RenderPerturb(GetRenderAlgorithm(),
+            (uint32_t*)m_CurIters.m_ItersMemory,
+            &gpu_results,
+            cx2,
+            cy2,
+            dx2,
+            dy2,
+            centerX2,
+            centerY2,
+            (uint32_t)m_NumIterations,
+            m_IterationPrecision);
+    }
 
     DrawFractal(MemoryOnly);
 

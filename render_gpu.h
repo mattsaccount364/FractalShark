@@ -227,58 +227,33 @@ public:
         uint32_t n_iterations,
         int iteration_precision);
 
+    template<class T>
     uint32_t RenderPerturbBLA(
         RenderAlgorithm algorithm,
         uint32_t* buffer,
-        MattPerturbResults<HDRFloat<float>>* results,
-        BLAS<HDRFloat<float>>* blas,
-        HDRFloat<float> cx,
-        HDRFloat<float> cy,
-        HDRFloat<float> dx,
-        HDRFloat<float> dy,
-        HDRFloat<float> centerX,
-        HDRFloat<float> centerY,
+        MattPerturbResults<T>* results,
+        BLAS<T>* blas,
+        T cx,
+        T cy,
+        T dx,
+        T dy,
+        T centerX,
+        T centerY,
         uint32_t n_iterations,
         int iteration_precision);
 
+    template<class T, class SubType>
     uint32_t RenderPerturbLAv2(
         RenderAlgorithm algorithm,
         uint32_t* buffer,
-        MattPerturbResults<HDRFloat<float>>* float_perturb,
-        const LAReference<float> &LaReference,
-        HDRFloat<float> cx,
-        HDRFloat<float> cy,
-        HDRFloat<float> dx,
-        HDRFloat<float> dy,
-        HDRFloat<float> centerX,
-        HDRFloat<float> centerY,
-        uint32_t n_iterations);
-
-    uint32_t RenderPerturbBLA(
-        RenderAlgorithm algorithm,
-        uint32_t* buffer,
-        MattPerturbResults<HDRFloat<double>>* results,
-        BLAS<HDRFloat<double>>* blas,
-        HDRFloat<double> cx,
-        HDRFloat<double> cy,
-        HDRFloat<double> dx,
-        HDRFloat<double> dy,
-        HDRFloat<double> centerX,
-        HDRFloat<double> centerY,
-        uint32_t n_iterations,
-        int iteration_precision);
-
-    uint32_t RenderPerturbLAv2(
-        RenderAlgorithm algorithm,
-        uint32_t* buffer,
-        MattPerturbResults<HDRFloat<double>>* float_perturb,
-        const LAReference<double>& LaReference,
-        HDRFloat<double> cx,
-        HDRFloat<double> cy,
-        HDRFloat<double> dx,
-        HDRFloat<double> dy,
-        HDRFloat<double> centerX,
-        HDRFloat<double> centerY,
+        MattPerturbResults<T>* float_perturb,
+        const LAReference<SubType> &LaReference,
+        T cx,
+        T cy,
+        T dx,
+        T dy,
+        T centerX,
+        T centerY,
         uint32_t n_iterations);
 
     // Side effect is this initializes CUDA the first time it's run

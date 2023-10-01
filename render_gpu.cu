@@ -3226,17 +3226,18 @@ template uint32_t GPURenderer::RenderPerturb<HDRFloat<double>>(
     uint32_t n_iterations,
     int /*iteration_precision*/);
 
+template<class T, class SubType>
 uint32_t GPURenderer::RenderPerturbLAv2(
     RenderAlgorithm algorithm,
     uint32_t* buffer,
-    MattPerturbResults<HDRFloat<float>>* float_perturb,
-    const LAReference<float> &LaReference,
-    HDRFloat<float> cx,
-    HDRFloat<float> cy,
-    HDRFloat<float> dx,
-    HDRFloat<float> dy,
-    HDRFloat<float> centerX,
-    HDRFloat<float> centerY,
+    MattPerturbResults<T>* float_perturb,
+    const LAReference<SubType> &LaReference,
+    T cx,
+    T cy,
+    T dx,
+    T dy,
+    T centerX,
+    T centerY,
     uint32_t n_iterations)
 {
     uint32_t result = cudaSuccess;
@@ -3248,7 +3249,7 @@ uint32_t GPURenderer::RenderPerturbLAv2(
     dim3 nb_blocks(w_block, h_block, 1);
     dim3 threads_per_block(NB_THREADS_W, NB_THREADS_H, 1);
 
-    MattPerturbSingleResults<HDRFloat<float>> cudaResults(
+    MattPerturbSingleResults<T> cudaResults(
         float_perturb->size,
         float_perturb->PeriodMaybeZero,
         float_perturb->iters);
@@ -3265,114 +3266,52 @@ uint32_t GPURenderer::RenderPerturbLAv2(
     }
 
     if (algorithm == RenderAlgorithm::GpuHDRx32PerturbedLAv2) {
-        mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
-
-        // hdrflt
-        mandel_1xHDR_float_perturb_lav2<float> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
-            cudaResults, laReferenceCuda,
-            local_width, local_height, cx, cy, dx, dy,
-            centerX, centerY,
-            n_iterations);
-
-        result = ExtractIters(buffer);
-    }
-
-    return result;
-}
-
-uint32_t GPURenderer::RenderPerturbBLA(
-    RenderAlgorithm algorithm,
-    uint32_t* buffer,
-    MattPerturbResults<double>* double_perturb,
-    BLAS<double> *blas,
-    double cx,
-    double cy,
-    double dx,
-    double dy,
-    double centerX,
-    double centerY,
-    uint32_t n_iterations,
-    int /*iteration_precision*/)
-{
-    uint32_t result = cudaSuccess;
-
-    if (iter_matrix_cu == nullptr) {
-        return result;
-    }
-
-    dim3 nb_blocks(w_block, h_block, 1);
-    dim3 threads_per_block(NB_THREADS_W, NB_THREADS_H, 1);
-
-    if (algorithm == RenderAlgorithm::Gpu1x64PerturbedBLA) {
-        MattPerturbSingleResults<double> cudaResults(
-            double_perturb->size,
-            double_perturb->PeriodMaybeZero,
-            double_perturb->iters);
-
-        result = cudaResults.CheckValid();
-        if (result != 0) {
-            return result;
-        }
-
-        auto Run = [&]<int32_t LM2>() -> uint32_t {
-            GPU_BLAS<double, BLA<double>, LM2> gpu_blas(blas->m_B);
-            result = gpu_blas.CheckValid();
-            if (result != 0) {
-                return result;
-            }
-
+        if constexpr (std::is_same<HDRFloat<float>, T>::value) {
             mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
 
-            // doubleOnly
-            mandel_1x_double_perturb_bla<LM2> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
-                cudaResults,
-                gpu_blas,
+            // hdrflt
+            mandel_1xHDR_float_perturb_lav2<float> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
+                cudaResults, laReferenceCuda,
                 local_width, local_height, cx, cy, dx, dy,
                 centerX, centerY,
                 n_iterations);
 
-            return ExtractIters(buffer);
-        };
+            result = ExtractIters(buffer);
+        }
+    } else if (algorithm == RenderAlgorithm::GpuHDRx64PerturbedLAv2) {
+        // hdrdbl
+        if constexpr (std::is_same<HDRFloat<double>, T>::value) {
+            mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
 
-        LargeSwitch
+            mandel_1xHDR_float_perturb_lav2<double> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
+                cudaResults, laReferenceCuda,
+                local_width, local_height, cx, cy, dx, dy,
+                centerX, centerY,
+                n_iterations);
+
+            result = ExtractIters(buffer);
+        }
     }
-    //else if (algorithm == RenderAlgorithm::Gpu2x32PerturbedScaled) {
-    //    MattPerturbSingleResults<dblflt> cudaResults(
-    //        Perturb->size,
-    //        Perturb->PeriodMaybeZero,
-    //        Perturb->iters);
-
-    //    result = cudaResults.CheckValid();
-    //    if (result != 0) {
-    //        return result;
-    //    }
-
-    //    MattPerturbSingleResults<double> cudaResultsDouble(
-    //        Perturb->size,
-    //        Perturb->PeriodMaybeZero,
-    //        Perturb->iters);
-
-    //    result = cudaResultsDouble.CheckValid();
-    //    if (result != 0) {
-    //        return result;
-    //    }
-
-    //    // doubleOnly
-    //    mandel_2x_float_perturb_setup << <nb_blocks, threads_per_block >> > (cudaResults);
-
-    //    mandel_2x_float_perturb_scaled << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
-    //        cudaResults, cudaResultsDouble,
-    //        local_width, local_height, cx, cy, dx, dy,
-    //        centerX, centerY,
-    //        n_iterations);
-
-    //    result = ExtractIters(buffer);
-    //}
 
     return result;
 }
 
-uint32_t GPURenderer::RenderPerturbLAv2(
+template
+uint32_t GPURenderer::RenderPerturbLAv2<HDRFloat<float>, float>(
+    RenderAlgorithm algorithm,
+    uint32_t* buffer,
+    MattPerturbResults<HDRFloat<float>>* float_perturb,
+    const LAReference<float>& LaReference,
+    HDRFloat<float> cx,
+    HDRFloat<float> cy,
+    HDRFloat<float> dx,
+    HDRFloat<float> dy,
+    HDRFloat<float> centerX,
+    HDRFloat<float> centerY,
+    uint32_t n_iterations);
+
+template
+uint32_t GPURenderer::RenderPerturbLAv2<HDRFloat<double>, double>(
     RenderAlgorithm algorithm,
     uint32_t* buffer,
     MattPerturbResults<HDRFloat<double>>* float_perturb,
@@ -3383,48 +3322,7 @@ uint32_t GPURenderer::RenderPerturbLAv2(
     HDRFloat<double> dy,
     HDRFloat<double> centerX,
     HDRFloat<double> centerY,
-    uint32_t n_iterations)
-{
-    uint32_t result = cudaSuccess;
-
-    if (iter_matrix_cu == nullptr) {
-        return result;
-    }
-
-    dim3 nb_blocks(w_block, h_block, 1);
-    dim3 threads_per_block(NB_THREADS_W, NB_THREADS_H, 1);
-
-    MattPerturbSingleResults<HDRFloat<double>> cudaResults(
-        float_perturb->size,
-        float_perturb->PeriodMaybeZero,
-        float_perturb->iters);
-
-    result = cudaResults.CheckValid();
-    if (result != 0) {
-        return result;
-    }
-
-    GPU_LAReference laReferenceCuda{ LaReference };
-    result = laReferenceCuda.CheckValid();
-    if (result != 0) {
-        return result;
-    }
-
-    if (algorithm == RenderAlgorithm::GpuHDRx64PerturbedLAv2) {
-        // hdrdbl
-        mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
-
-        mandel_1xHDR_float_perturb_lav2<double> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
-            cudaResults, laReferenceCuda,
-            local_width, local_height, cx, cy, dx, dy,
-            centerX, centerY,
-            n_iterations);
-
-        result = ExtractIters(buffer);
-    }
-
-    return result;
-}
+    uint32_t n_iterations);
 
 template<class T>
 uint32_t GPURenderer::RenderPerturbBLA(
@@ -3613,17 +3511,18 @@ uint32_t GPURenderer::RenderPerturbBLA(
     return result;
 }
 
+template<class T>
 uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
     uint32_t* buffer,
-    MattPerturbResults<HDRFloat<float>>* perturb,
-    BLAS<HDRFloat<float>>* blas,
-    HDRFloat<float> cx,
-    HDRFloat<float> cy,
-    HDRFloat<float> dx,
-    HDRFloat<float> dy,
-    HDRFloat<float> centerX,
-    HDRFloat<float> centerY,
+    MattPerturbResults<T>* perturb,
+    BLAS<T>* blas,
+    T cx,
+    T cy,
+    T dx,
+    T dy,
+    T centerX,
+    T centerY,
     uint32_t n_iterations,
     int /*iteration_precision*/)
 {
@@ -3637,43 +3536,165 @@ uint32_t GPURenderer::RenderPerturbBLA(
     dim3 threads_per_block(NB_THREADS_W, NB_THREADS_H, 1);
 
     if (algorithm == RenderAlgorithm::GpuHDRx32PerturbedBLA) {
-        MattPerturbSingleResults<HDRFloat<float>> cudaResults(
-            perturb->size,
-            perturb->PeriodMaybeZero,
-            perturb->iters);
+        if constexpr (std::is_same<T, HDRFloat<float>>::value) {
+            MattPerturbSingleResults<HDRFloat<float>> cudaResults(
+                perturb->size,
+                perturb->PeriodMaybeZero,
+                perturb->iters);
 
-        result = cudaResults.CheckValid();
-        if (result != 0) {
-            return result;
-        }
-
-        auto Run = [&]<int32_t LM2>() -> uint32_t {
-            GPU_BLAS<HDRFloat<float>, BLA<HDRFloat<float>>, LM2> gpu_blas(blas->m_B);
-            result = gpu_blas.CheckValid();
+            result = cudaResults.CheckValid();
             if (result != 0) {
                 return result;
             }
 
-            mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
+            auto Run = [&]<int32_t LM2>() -> uint32_t {
+                GPU_BLAS<HDRFloat<float>, BLA<HDRFloat<float>>, LM2> gpu_blas(blas->m_B);
+                result = gpu_blas.CheckValid();
+                if (result != 0) {
+                    return result;
+                }
 
-            // hdrflt
-            mandel_1xHDR_float_perturb_bla<HDRFloat<float>, LM2> << <nb_blocks, threads_per_block >> > (
-                iter_matrix_cu,
-                cudaResults,
-                gpu_blas,
-                local_width, local_height, cx, cy, dx, dy,
-                centerX, centerY,
-                n_iterations);
+                mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
 
-            return ExtractIters(buffer);
-        };
+                // hdrflt
+                mandel_1xHDR_float_perturb_bla<HDRFloat<float>, LM2> << <nb_blocks, threads_per_block >> > (
+                    iter_matrix_cu,
+                    cudaResults,
+                    gpu_blas,
+                    local_width, local_height, cx, cy, dx, dy,
+                    centerX, centerY,
+                    n_iterations);
 
-        LargeSwitch
+                return ExtractIters(buffer);
+            };
+
+            LargeSwitch
+        }
+    }
+    else if (algorithm == RenderAlgorithm::GpuHDRx64PerturbedBLA) {
+        if constexpr (std::is_same<T, HDRFloat<double>>::value) {
+            MattPerturbSingleResults<HDRFloat<double>> cudaResults(
+                perturb->size,
+                perturb->PeriodMaybeZero,
+                perturb->iters);
+
+            result = cudaResults.CheckValid();
+            if (result != 0) {
+                return result;
+            }
+
+            auto Run = [&]<int32_t LM2>() -> uint32_t {
+                GPU_BLAS<HDRFloat<double>, BLA<HDRFloat<double>>, LM2> gpu_blas(blas->m_B);
+                result = gpu_blas.CheckValid();
+                if (result != 0) {
+                    return result;
+                }
+
+                mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
+
+                // hdrflt -- that looks like a bug and probably should be hdrdbl
+                mandel_1xHDR_float_perturb_bla<HDRFloat<double>, LM2> << <nb_blocks, threads_per_block >> > (
+                    iter_matrix_cu,
+                    cudaResults,
+                    gpu_blas,
+                    local_width, local_height, cx, cy, dx, dy,
+                    centerX, centerY,
+                    n_iterations);
+
+                return ExtractIters(buffer);
+            };
+
+            LargeSwitch
+        }
+    } else if (algorithm == RenderAlgorithm::Gpu1x64PerturbedBLA) {
+        if constexpr (std::is_same<T, double>::value) {
+            MattPerturbSingleResults<double> cudaResults(
+                perturb->size,
+                perturb->PeriodMaybeZero,
+                perturb->iters);
+
+            result = cudaResults.CheckValid();
+            if (result != 0) {
+                return result;
+            }
+
+            auto Run = [&]<int32_t LM2>() -> uint32_t {
+                GPU_BLAS<double, BLA<double>, LM2> gpu_blas(blas->m_B);
+                result = gpu_blas.CheckValid();
+                if (result != 0) {
+                    return result;
+                }
+
+                mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
+
+                // doubleOnly
+                mandel_1x_double_perturb_bla<LM2> << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
+                    cudaResults,
+                    gpu_blas,
+                    local_width, local_height, cx, cy, dx, dy,
+                    centerX, centerY,
+                    n_iterations);
+
+                return ExtractIters(buffer);
+            };
+
+            LargeSwitch
+        }
+    }
+    else if (algorithm == RenderAlgorithm::Gpu2x32PerturbedScaled) {
+        if constexpr (std::is_same<T, dblflt>::value) {
+            //MattPerturbSingleResults<dblflt> cudaResults(
+            //    Perturb->size,
+            //    Perturb->PeriodMaybeZero,
+            //    Perturb->iters);
+
+            //result = cudaResults.CheckValid();
+            //if (result != 0) {
+            //    return result;
+            //}
+
+            //MattPerturbSingleResults<double> cudaResultsDouble(
+            //    Perturb->size,
+            //    Perturb->PeriodMaybeZero,
+            //    Perturb->iters);
+
+            //result = cudaResultsDouble.CheckValid();
+            //if (result != 0) {
+            //    return result;
+            //}
+
+            //// doubleOnly
+            //mandel_2x_float_perturb_setup << <nb_blocks, threads_per_block >> > (cudaResults);
+
+            //mandel_2x_float_perturb_scaled << <nb_blocks, threads_per_block >> > (iter_matrix_cu,
+            //    cudaResults, cudaResultsDouble,
+            //    local_width, local_height, cx, cy, dx, dy,
+            //    centerX, centerY,
+            //    n_iterations);
+
+            //result = ExtractIters(buffer);
+        }
     }
 
     return result;
 }
 
+template
+uint32_t GPURenderer::RenderPerturbBLA(
+    RenderAlgorithm algorithm,
+    uint32_t* buffer,
+    MattPerturbResults<HDRFloat<float>>* perturb,
+    BLAS<HDRFloat<float>>* blas,
+    HDRFloat<float> cx,
+    HDRFloat<float> cy,
+    HDRFloat<float> dx,
+    HDRFloat<float> dy,
+    HDRFloat<float> centerX,
+    HDRFloat<float> centerY,
+    uint32_t n_iterations,
+    int /*iteration_precision*/);
+
+template
 uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
     uint32_t* buffer,
@@ -3686,54 +3707,22 @@ uint32_t GPURenderer::RenderPerturbBLA(
     HDRFloat<double> centerX,
     HDRFloat<double> centerY,
     uint32_t n_iterations,
-    int /*iteration_precision*/)
-{
-    uint32_t result = cudaSuccess;
+    int /*iteration_precision*/);
 
-    if (iter_matrix_cu == nullptr) {
-        return result;
-    }
-
-    dim3 nb_blocks(w_block, h_block, 1);
-    dim3 threads_per_block(NB_THREADS_W, NB_THREADS_H, 1);
-
-    if (algorithm == RenderAlgorithm::GpuHDRx64PerturbedBLA) {
-        MattPerturbSingleResults<HDRFloat<double>> cudaResults(
-            perturb->size,
-            perturb->PeriodMaybeZero,
-            perturb->iters);
-
-        result = cudaResults.CheckValid();
-        if (result != 0) {
-            return result;
-        }
-
-        auto Run = [&]<int32_t LM2>() -> uint32_t {
-            GPU_BLAS<HDRFloat<double>, BLA<HDRFloat<double>>, LM2> gpu_blas(blas->m_B);
-            result = gpu_blas.CheckValid();
-            if (result != 0) {
-                return result;
-            }
-
-            mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
-
-            // hdrflt -- that looks like a bug and probably should be hdrdbl
-            mandel_1xHDR_float_perturb_bla<HDRFloat<double>, LM2> << <nb_blocks, threads_per_block >> > (
-                iter_matrix_cu,
-                cudaResults,
-                gpu_blas,
-                local_width, local_height, cx, cy, dx, dy,
-                centerX, centerY,
-                n_iterations);
-
-            return ExtractIters(buffer);
-        };
-
-        LargeSwitch
-    }
-
-    return result;
-}
+template
+uint32_t GPURenderer::RenderPerturbBLA(
+    RenderAlgorithm algorithm,
+    uint32_t* buffer,
+    MattPerturbResults<double>* perturb,
+    BLAS<double>* blas,
+    double cx,
+    double cy,
+    double dx,
+    double dy,
+    double centerX,
+    double centerY,
+    uint32_t n_iterations,
+    int /*iteration_precision*/);
 
 uint32_t GPURenderer::ExtractIters(uint32_t* buffer) {
     const size_t ERROR_COLOR = 255;

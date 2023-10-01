@@ -2855,7 +2855,7 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
         BLAS<T> blas(*results);
         blas.Init(results->x.size(), T(results->maxRadius));
 
-        result = m_r.RenderPerturbBLA(GetRenderAlgorithm(),
+        result = m_r.RenderPerturbBLA<T>(GetRenderAlgorithm(),
             (uint32_t*)m_CurIters.m_ItersMemory,
             &gpu_results,
             &blas,

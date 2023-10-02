@@ -2,9 +2,10 @@
 
 #include <vector>
 #include <stdint.h>
-#include "HighPrecision.h"
 
+#include "HighPrecision.h"
 #include "HDRFloatComplex.h"
+#include "RefOrbitCalc.h"
 
 template<class T>
 class PerturbationResults {
@@ -66,5 +67,69 @@ public:
     template<class U>
     HDRFloatComplex<U> GetComplex(size_t index) const {
         return { x[index], y[index] };
+    }
+
+    void InitReused() {
+        HighPrecision Zero = 0;
+
+        //assert(RequiresReuse());
+        Zero.precision(AuthoritativeReuseExtraPrecision);
+
+        ReuseX.push_back(Zero);
+        ReuseY.push_back(Zero);
+    }
+
+    template<class T, RefOrbitCalc::CalcBad Bad, RefOrbitCalc::ReuseMode Reuse>
+    void InitResults(
+        const HighPrecision& cx,
+        const HighPrecision& cy,
+        const HighPrecision& minX,
+        const HighPrecision& minY,
+        const HighPrecision& maxX,
+        const HighPrecision& maxY,
+        size_t NumIterations) {
+        radiusX = fabs(maxX - cx) + fabs(minX - cx);
+        radiusY = fabs(maxY - cy) + fabs(minY - cy);
+
+        hiX = cx;
+        hiY = cy;
+        maxRadius = (T)((radiusX > radiusY) ? radiusX : radiusY);
+        MaxIterations = NumIterations + 1; // +1 for push_back(0) below
+
+        x.reserve(NumIterations);
+        y.reserve(NumIterations);
+
+        if constexpr (Bad == RefOrbitCalc::CalcBad::Enable) {
+            bad.reserve(NumIterations);
+        }
+
+        x.push_back(T(0));
+        y.push_back(T(0));
+
+        if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
+            AuthoritativePrecision = cx.precision();
+            ReuseX.reserve(NumIterations);
+            ReuseY.reserve(NumIterations);
+
+            InitReused();
+        }
+        else if constexpr (Reuse == RefOrbitCalc::ReuseMode::DontSaveForReuse) {
+            AuthoritativePrecision = 0;
+        }
+    }
+
+    template<RefOrbitCalc::CalcBad Bad, RefOrbitCalc::ReuseMode Reuse>
+    void TrimResults() {
+        x.shrink_to_fit();
+        y.shrink_to_fit();
+
+        if constexpr (Bad == RefOrbitCalc::CalcBad::Enable) {
+            bad.shrink_to_fit();
+        }
+
+        if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
+            ReuseX.shrink_to_fit();
+            ReuseY.shrink_to_fit();
+        }
     }
 };

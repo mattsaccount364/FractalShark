@@ -1,10 +1,12 @@
 #pragma once
 
-#include "PerturbationResults.h"
 #include "HDRFloat.h"
 #include "HighPrecision.h"
 
 class Fractal;
+
+template<class T>
+class PerturbationResults;
 
 class RefOrbitCalc {
 public:

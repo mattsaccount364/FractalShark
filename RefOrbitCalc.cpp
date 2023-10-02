@@ -2,6 +2,7 @@
 
 #include "RefOrbitCalc.h"
 #include "Fractal.h"
+#include "PerturbationResults.h"
 
 #include <vector>
 #include <memory>
@@ -336,15 +337,16 @@ static void AddReused(T &results, const HighPrecision& zx, const HighPrecision& 
     results.ReuseY.push_back(ReducedZy);
 }
 
-template<class T>
-static void InitReused(T &results) {
-    HighPrecision Zero = 0;
-
-    //assert(RequiresReuse());
-    Zero.precision(AuthoritativeReuseExtraPrecision);
-
-    results.ReuseX.push_back(Zero);
-    results.ReuseY.push_back(Zero);
+template<class T, class PerturbationResultsType, RefOrbitCalc::CalcBad Bad, RefOrbitCalc::ReuseMode Reuse>
+void RefOrbitCalc::InitResults(PerturbationResultsType& results, const HighPrecision& initX, const HighPrecision& initY) {
+    results.InitResults<T, Bad, Reuse>(
+        initX,
+        initY,
+        m_Fractal.GetMinX(),
+        m_Fractal.GetMinY(),
+        m_Fractal.GetMaxX(),
+        m_Fractal.GetMaxY(),
+        m_Fractal.GetNumIterations());
 }
 
 template<class T, class SubType, bool Periodicity, RefOrbitCalc::BenchmarkMode BenchmarkState, RefOrbitCalc::CalcBad Bad, RefOrbitCalc::ReuseMode Reuse>
@@ -459,6 +461,8 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
         results->bad.push_back(false);
         assert(results->bad.size() == results->x.size());
     }
+
+    results->TrimResults<Bad, Reuse>();
 }
 
 template<class T, class SubType, bool Periodicity, RefOrbitCalc::BenchmarkMode BenchmarkState>
@@ -630,6 +634,8 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
         results->y.push_back(reducedZy);
     }
 
+    results->TrimResults<CalcBad::Disable, ReuseMode::DontSaveForReuse>();
+
     return true;
 }
 
@@ -669,7 +675,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     scoped_mpfr_precision_options precOptions(boost::multiprecision::variable_precision_options::assume_uniform_precision);
 
     InitResults<T, decltype(*results), CalcBad::Disable, ReuseMode::DontSaveForReuse>(*results, cx, cy);
-
+    
     HighPrecision zx, zy;
     unsigned int i;
 
@@ -968,6 +974,8 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
 
     _aligned_free(threadZxdata);
     _aligned_free(threadZydata);
+
+    results->TrimResults<CalcBad::Disable, ReuseMode::DontSaveForReuse>();
 
     return true;
 }
@@ -1279,6 +1287,8 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
     _aligned_free(threadZxdata);
     _aligned_free(threadZydata);
     _aligned_free(threadReuseddata);
+
+    results->TrimResults<Bad, Reuse>();
 }
 
 template<class T, class SubType, bool Periodicity, RefOrbitCalc::BenchmarkMode BenchmarkState, RefOrbitCalc::CalcBad Bad, RefOrbitCalc::ReuseMode Reuse>
@@ -1726,6 +1736,8 @@ void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecis
     _aligned_free(threadZydata);
     _aligned_free(thread1data);
     _aligned_free(thread2data);
+
+    results->TrimResults<Bad, Reuse>();
 }
 
 
@@ -1980,38 +1992,4 @@ void RefOrbitCalc::ClearPerturbationResults(PerturbationResultType type) {
 void RefOrbitCalc::ResetGuess(HighPrecision x, HighPrecision y) {
     m_PerturbationGuessCalcX = x;
     m_PerturbationGuessCalcY = y;
-}
-
-template<class T, class PerturbationResultsType, RefOrbitCalc::CalcBad Bad, RefOrbitCalc::ReuseMode Reuse>
-void RefOrbitCalc::InitResults(PerturbationResultsType& results, const HighPrecision& cx, const HighPrecision& cy) {
-    HighPrecision radiusX = fabs(m_Fractal.GetMaxX() - cx) + fabs(m_Fractal.GetMinX() - cx);
-    HighPrecision radiusY = fabs(m_Fractal.GetMaxY() - cy) + fabs(m_Fractal.GetMinY() - cy);
-
-    results.hiX = cx;
-    results.hiY = cy;
-    results.radiusX = radiusX;
-    results.radiusY = radiusY;
-    results.maxRadius = (decltype(results.maxRadius))((radiusX > radiusY) ? radiusX : radiusY);
-    results.MaxIterations = m_Fractal.GetNumIterations() + 1; // +1 for push_back(0) below
-
-    results.x.reserve(m_Fractal.GetNumIterations());
-    results.y.reserve(m_Fractal.GetNumIterations());
-
-    if constexpr (Bad == CalcBad::Enable) {
-        results.bad.reserve(m_Fractal.GetNumIterations());
-    }
-
-    results.x.push_back(T(0));
-    results.y.push_back(T(0));
-
-    if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
-        results.AuthoritativePrecision = cx.precision();
-        results.ReuseX.reserve(m_Fractal.GetNumIterations());
-        results.ReuseY.reserve(m_Fractal.GetNumIterations());
-
-        InitReused(results);
-    }
-    else if constexpr (Reuse == ReuseMode::DontSaveForReuse) {
-        results.AuthoritativePrecision = 0;
-    }
 }

@@ -236,6 +236,9 @@
 #define IDM_ALG_GPU_HDR_32_PERTURB_LAV2_LAO 33027
 #define IDM_ALG_GPU_HDR_64_PERTURB_LAV2_PO 33028
 #define IDM_ALG_GPU_HDR_64_PERTURB_LAV2_LAO 33029
+#define ID_BUILT_33030                  33030
+#define ID_BUILT_33031                  33031
+#define IDM_VIEW_2                      33032
 #define IDM_VIEW1                       33051
 #define IDM_VIEW2                       33052
 #define IDM_VIEW3                       33053
@@ -272,7 +275,7 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        131
-#define _APS_NEXT_COMMAND_VALUE         33030
+#define _APS_NEXT_COMMAND_VALUE         33033
 #define _APS_NEXT_CONTROL_VALUE         1000
 #define _APS_NEXT_SYMED_VALUE           110
 #endif

@@ -109,7 +109,9 @@ static inline void PrefetchHighPrec(const HighPrecision& target) {
 }
 
 RefOrbitCalc::RefOrbitCalc(Fractal& Fractal)
-: m_Fractal(Fractal) {
+    : m_PerturbationAlg{ PerturbationAlg::MTPeriodicity3 },
+      m_Fractal(Fractal),
+      m_GuessReserveSize() {
 }
 
 bool RefOrbitCalc::RequiresBadCalc() const {
@@ -346,7 +348,8 @@ void RefOrbitCalc::InitResults(PerturbationResultsType& results, const HighPreci
         m_Fractal.GetMinY(),
         m_Fractal.GetMaxX(),
         m_Fractal.GetMaxY(),
-        m_Fractal.GetNumIterations());
+        m_Fractal.GetNumIterations(),
+        m_GuessReserveSize);
 }
 
 template<class T, class SubType, bool Periodicity, RefOrbitCalc::BenchmarkMode BenchmarkState, RefOrbitCalc::CalcBad Bad, RefOrbitCalc::ReuseMode Reuse>
@@ -463,6 +466,7 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
     }
 
     results->TrimResults<Bad, Reuse>();
+    m_GuessReserveSize = results->x.size();
 }
 
 template<class T, class SubType, bool Periodicity, RefOrbitCalc::BenchmarkMode BenchmarkState>
@@ -635,6 +639,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
     }
 
     results->TrimResults<CalcBad::Disable, ReuseMode::DontSaveForReuse>();
+    m_GuessReserveSize = results->x.size();
 
     return true;
 }
@@ -976,6 +981,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     _aligned_free(threadZydata);
 
     results->TrimResults<CalcBad::Disable, ReuseMode::DontSaveForReuse>();
+    m_GuessReserveSize = results->x.size();
 
     return true;
 }
@@ -1289,6 +1295,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
     _aligned_free(threadReuseddata);
 
     results->TrimResults<Bad, Reuse>();
+    m_GuessReserveSize = results->x.size();
 }
 
 template<class T, class SubType, bool Periodicity, RefOrbitCalc::BenchmarkMode BenchmarkState, RefOrbitCalc::CalcBad Bad, RefOrbitCalc::ReuseMode Reuse>
@@ -1738,6 +1745,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecis
     _aligned_free(thread2data);
 
     results->TrimResults<Bad, Reuse>();
+    m_GuessReserveSize = results->x.size();
 }
 
 

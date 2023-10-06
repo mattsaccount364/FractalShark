@@ -87,7 +87,8 @@ public:
         const HighPrecision& minY,
         const HighPrecision& maxX,
         const HighPrecision& maxY,
-        size_t NumIterations) {
+        size_t NumIterations,
+        size_t GuessReserveSize) {
         radiusX = fabs(maxX - cx) + fabs(minX - cx);
         radiusY = fabs(maxY - cy) + fabs(minY - cy);
 
@@ -96,11 +97,13 @@ public:
         maxRadius = (T)((radiusX > radiusY) ? radiusX : radiusY);
         MaxIterations = NumIterations + 1; // +1 for push_back(0) below
 
-        x.reserve(NumIterations);
-        y.reserve(NumIterations);
+        size_t ReserveSize = (GuessReserveSize != 0) ? GuessReserveSize : NumIterations;
+
+        x.reserve(ReserveSize);
+        y.reserve(ReserveSize);
 
         if constexpr (Bad == RefOrbitCalc::CalcBad::Enable) {
-            bad.reserve(NumIterations);
+            bad.reserve(ReserveSize);
         }
 
         x.push_back(T(0));
@@ -108,8 +111,8 @@ public:
 
         if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
             AuthoritativePrecision = cx.precision();
-            ReuseX.reserve(NumIterations);
-            ReuseY.reserve(NumIterations);
+            ReuseX.reserve(ReserveSize);
+            ReuseY.reserve(ReserveSize);
 
             InitReused();
         }

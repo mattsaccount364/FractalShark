@@ -110,6 +110,8 @@ private:
     HighPrecision m_PerturbationGuessCalcX;
     HighPrecision m_PerturbationGuessCalcY;
 
+    size_t m_GuessReserveSize;
+
     std::vector<std::unique_ptr<PerturbationResults<double>>> m_PerturbationResultsDouble;
     std::vector<std::unique_ptr<PerturbationResults<float>>> m_PerturbationResultsFloat;
     std::vector<std::unique_ptr<PerturbationResults<HDRFloat<double>>>> m_PerturbationResultsHDRDouble;

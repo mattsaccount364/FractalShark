@@ -339,6 +339,12 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
         }
         break;
 
+    case 'd':
+    {
+        gFractal->UseNextPaletteDepth();
+        break;
+    }
+
     case '=':
         MenuMultiplyIterations(hWnd, 24.0);
         break;

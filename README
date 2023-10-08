@@ -9,11 +9,11 @@ Why do we need another Mandelbrot Set renderer?  Thousands of others already exi
 
 FractalShark includes a few innovations relative to most other renderers, most related to engineering rather than funamdentals.
 
-First, it includes numerous Nvidia CUDA implementations demonstrating distinct strategies for rendering the Mandelbrot.  These are cool in their own right, because I was not able to find existing implementations.  Thus, unlike most other implementations, FractalShark is optimized for use on high-end video cards.
+First, it includes numerous Nvidia CUDA implementations demonstrating distinct strategies for rendering the Mandelbrot.  These are cool in their own right, because I was not able to find existing of some of these approaches.  Thus, unlike most others, FractalShark is optimized for use on high-end video cards.
 
-Second, and more importantly, it includes a CUDA-based bilinear approximation implementation.  Bilinear approximation is a relatively new technique for getting high performance visualizations, and no existing CUDA implementations appear to exist.
+Second, and more importantly, it includes two different CUDA-based linear approximation implementations.  Linear approximation is a relatively new technique for getting high performance visualizations, and no existing CUDA implementations appear to exist.  These implementations are ported from FractalZoomer (https://github.com/hrkalona/Fractal-Zoomer), and themselves originated from Claude (https://mathr.co.uk/web/) and Zhuoran (https://github.com/5E-324/Imagina).
 
-Third, it includes a multi-threaded reference orbit calculation for a little better performance.  Using three threads total, with two for squaring and one for coordinating appears to offer superior performance, at least on an AMD-5950X.  Calculating the reference orbit is probably the single-largest bottleneck to high magnification renders, so it's important to spend some time on that.
+Third, it includes a multi-threaded reference orbit calculation for a little better performance.  Using three threads total, with two for squaring and one for coordinating appears to offer superior performance, at least on an AMD-5950X.  Calculating the reference orbit is probably the single-largest bottleneck to high magnification renders, so it's important to spend some time on that.  This implementation beats all other known examples in performance assuming you have a modern multi-core CPU capable of executing AVX-2 instructions.
 
 
 CUDA?  What are the system requirements?
@@ -53,7 +53,6 @@ What features will it never have?
 
 What it doesn't have but I'd like to add:
 
-- Periodicity detection with bilinear approximation in CUDA.  I don't understand the details here well enough yet.
 - Minibrot detection/location.  Imagina has this I know, not sure who else has it.
 - TBD - depends on motivation.
 
@@ -65,19 +64,21 @@ What bugs does it have?
 - Some of the palette stuff is messed up
 - Load location/save location have weird nuances - future work.  The "current position" will copy your location to the clipboard.
 - Some CUDA kernels are busted.
-- If it's slow and taking a long time, there's no way to abort it.  Use task manager and terminate it that way if you don't want to wait.
+- If it's slow and taking a long time, there's no way to abort it.  Use task manager and terminate it that way if you don't want to wait.  Try holding the CTRL key and maybe it'll work depending on what's being slow, but it probably won't.
 - Too many to list - don't expect much.
 
 
 Where are the most interesting parts of the implementation in the code?
 
-- All the CUDA kernels are in render_gpu.cu.  The most interesting is probably "mandel_1xHDR_float_perturb_bla" which is the one I've spent the most time on lately.  For better performance at low zoom levels, you could look at "mandel_1x_float_perturb" which leaves out linear approximation and just does straight perturbation up to ~10e30, which corresponds with the 32-bit float exponent range.
+- All the CUDA kernels are in render_gpu.cu.  The two most interesting are probably: "mandel_1xHDR_float_perturb_bla" and "mandel_1xHDR_float_perturb_lav2" which are the ones I've spent the most time on lately.  For better performance at low zoom levels, you could look at "mandel_1x_float_perturb" which leaves out linear approximation and just does straight perturbation up to ~10e30, which corresponds with the 32-bit float exponent range.
+
+- One fun thing you can try is running with LAv2 + "LA only".  This approach actually works pretty well once Linear Approximation kicks in at deeper zooms - it gives you an idea of what the actual image should look like but is very fast, since it does no perturbation.  The images it produces are not precise, and often leave out the fine detail - however, it's fun to play with when zooming in on a specific point.
 
 - The mandel_1x_float is the classic 32-bit float mandelbrot and is screaming fast on a GPU.  This one is optimized with fused multiply-add for fun even though it's kind of useless.
 
-- The most interesting reference orbit calculation is at AddPerturbationReferencePointMT3.  It includes a "bad" calculation which is used for the "scaled" CUDA kernels - I need to templatize that as an option rather than a requirement but haven't bothered.
+- The most interesting reference orbit calculation is at AddPerturbationReferencePointMT3.  It includes a "bad" calculation which is used for the "scaled" CUDA kernels.  The multithreaded approach handily beats the single-threaded implementation on my CPU in all scenarios.
 
-- There are CPU renderers but they were mostly to learn/debug more easily and aren't optimized as heavily.
+- There are CPU renderers, but they were mostly to learn/debug more easily, and aren't optimized heavily.  They're much easier to understand and reason about though.
 
 
 Credits?
@@ -94,21 +95,21 @@ https://mathr.co.uk/blog/2022-02-21_deep_zoom_theory_and_practice_again.html
 
 https://github.com/5E-324/Imagina
 
-- FractalZoomer code for Float/Exp and the bilinear approximation.
+- FractalZoomer code for Float/Exp and linear/bilinear approximation implementations.
 
 https://sourceforge.net/projects/fractalzoomer/
 
-- Libraries I can think of offhand: MPIR, Boost, WPngImage (https://github.com/WarpRules/WPngImage), and a CUDA QuadDouble and DblDbl implementation whose origins escape me but are fun to play with.
+- Libraries I can think of offhand: MPIR, Boost, WPngImage (https://github.com/WarpRules/WPngImage), and a CUDA QuadDouble and DblDbl implementation whose origins escape me, but are fun to play with.
 
 - This implementation would probably not have happened without the work of these folks so thank you!
 
-If you're bored and want to try yet another Mandelbrot set renderer, give it a go.  You can download the v.1 release from the github page I think.  I just threw it up there today.  YMMV, caveat emptor, don't bother running it unless you meet the system requirements because it'll probably just spew some opaque error and exit.  I'll put a proper readme together eventually.  In terms of time investment, I'll probably only spend a couple hours on weekends fussing with it so don't expect dramatic rewrites.
+If you're bored and want to try yet another Mandelbrot set renderer, give it a go.  You can download releases from the github page.  YMMV, caveat emptor, don't bother running it unless you meet the system requirements because it'll probably just spew some opaque error and exit.  In terms of time investment, I'll probably only spend a couple hours on weekends fussing with it so don't expect dramatic rewrites.
 
 
 Some history:
 - First version I did when I was a freshman in college in 2001.  I added a basic network/distributed strategy to speed it up.  It's split the work across machines.  This feature is now broken and won't be revived.
-- 2008 I did a distributed version that ran on the University of Wisconsin's "Condor" platform. That was pretty cool and allowed for fast creation of zoom movies
-- 2017 I resurrected it and added high precision but no perturbation or anything else
+- 2008 I did a distributed version that ran on the University of Wisconsin's "Condor" platform. That was pretty cool, and allowed for fast creation of zoom movies.
+- 2017 I resurrected it, and added high precision but no perturbation or anything else.
 - 2023 I bought this new video card and wanted to play with it, so ended up learning about CUDA and all these clever algorithmic approaches you all have found out to speed this up.  So here we are.
 
 

@@ -166,8 +166,10 @@ public: // Drawing functions
         Num
     };
 
-    int GetPaletteDepthFromIndex(size_t index);
+    int GetPaletteDepthFromIndex(size_t index) const;
+    int GetPaletteDepth() const; 
     void UsePalette(int depth);
+    void UseNextPaletteDepth();
     void UsePaletteType(Palette type);
     void ResetFractalPalette(void);
     void RotateFractalPalette(int delta);

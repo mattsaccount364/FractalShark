@@ -1759,15 +1759,16 @@ void Fractal::UsePaletteType(Palette type)
     m_WhichPalette = type;
 }
 
-int Fractal::GetPaletteDepthFromIndex(size_t index)
+int Fractal::GetPaletteDepthFromIndex(size_t index) const
 {
     switch (index) {
-    case 0: return 6;
-    case 1: return 8;
-    case 2: return 12;
-    case 3: return 16;
-    case 4: return 20;
-    default: return 6;
+    case 0: return 5;
+    case 1: return 6;
+    case 2: return 8;
+    case 3: return 12;
+    case 4: return 16;
+    case 5: return 20;
+    default: return 8;
     }
 }
 
@@ -1796,6 +1797,14 @@ void Fractal::UsePalette(int depth)
         m_PaletteDepthIndex = 0;
         break;
     }
+}
+
+void Fractal::UseNextPaletteDepth() {
+    m_PaletteDepthIndex = (m_PaletteDepthIndex + 1) % 6;
+}
+
+int Fractal::GetPaletteDepth() const {
+    return GetPaletteDepthFromIndex(m_PaletteDepthIndex);
 }
 
 void Fractal::ResetFractalPalette(void)

@@ -286,7 +286,7 @@ void CFractalTrayDlg::OnBnClickedButtonGenerate ()
   // Presumably 50k is enough
   // TODO vary dynamically as zoom deepens
   // TODO or just use float exp
-  Fractal::SetPrecision(PrecisionLimit, destMinX, destMinY, destMaxX, destMaxY);
+  HighPrecision::default_precision(PrecisionLimit);
 
   ConvertCStringToDest(m_SourceCoords, &srcWidth, &srcHeight, &curMinX, &curMinY, &curMaxX, &curMaxY, &sourceIters, &gpuAntialiasing, &iterationPrecision);
   ConvertCStringToDest(m_DestCoords, &destWidth, &destHeight, &destMinX, &destMinY, &destMaxX, &destMaxY, &targetIters, &gpuAntialiasing, &iterationPrecision);

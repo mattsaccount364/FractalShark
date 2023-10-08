@@ -44,11 +44,7 @@ bool LAReference<SubType>::CreateLAFromOrbit(int32_t maxRefIteration) {
     for (i = 2; i < maxRefIteration; i++) {
 
         LAInfoDeep<SubType> NewLA;
-        bool PeriodDetected;
-
-        NewLA = LAInfoDeep<SubType>();
-        PeriodDetected = LA.Step(NewLA, m_PerturbationResults.GetComplex<SubType>(i));
-
+        bool PeriodDetected = LA.Step(NewLA, m_PerturbationResults.GetComplex<SubType>(i));
         if (!PeriodDetected) {
             LA = NewLA;
             continue;
@@ -122,7 +118,7 @@ bool LAReference<SubType>::CreateLAFromOrbit(int32_t maxRefIteration) {
 
     for (; i < maxRefIteration; i++) {
         LAInfoDeep<SubType> NewLA{};
-        bool PeriodDetected{ LA.Step(NewLA, m_PerturbationResults.GetComplex<SubType>(i)) };
+        const bool PeriodDetected{ LA.Step(NewLA, m_PerturbationResults.GetComplex<SubType>(i)) };
 
         if (!PeriodDetected && i < PeriodEnd) {
             LA = NewLA;
@@ -138,8 +134,8 @@ bool LAReference<SubType>::CreateLAFromOrbit(int32_t maxRefIteration) {
         PeriodBegin = i;
         PeriodEnd = PeriodBegin + Period;
 
-        int32_t ip1{ i + 1 };
-        bool detected{ NewLA.DetectPeriod(m_PerturbationResults.GetComplex<SubType>(ip1)) };
+        const int32_t ip1{ i + 1 };
+        const bool detected{ NewLA.DetectPeriod(m_PerturbationResults.GetComplex<SubType>(ip1)) };
 
         if (detected || ip1 >= maxRefIteration) {
             LA = LAInfoDeep<SubType>(m_PerturbationResults.GetComplex<SubType>(i));
@@ -161,6 +157,282 @@ bool LAReference<SubType>::CreateLAFromOrbit(int32_t maxRefIteration) {
     auto LA2 = LAInfoDeep<SubType>(m_PerturbationResults.GetComplex<SubType>(maxRefIteration));
     LA2.SetLAi({});
     LAs.push_back(LA2);
+
+    return true;
+}
+
+template<class SubType>
+bool LAReference<SubType>::CreateLAFromOrbitMT(int32_t maxRefIteration) {
+
+    {
+        isValid = false;
+        LAStages.resize(MaxLAStages);
+
+        LAs.reserve(maxRefIteration);
+
+        UseAT = false;
+        LAStageCount = 0;
+
+        LAStages[0].LAIndex = 0;
+    }
+
+    int32_t Period = 0;
+
+    LAInfoDeep<SubType> LA{ HDRFloatComplex() };
+    LA = LA.Step(m_PerturbationResults.GetComplex<SubType>(1));
+
+    LAInfoI LAI = LAInfoI();
+    LAI.NextStageLAIndex = 0;
+
+    if (LA.isZCoeffZero()) {
+        return false;
+    }
+
+    int32_t i;
+    for (i = 2; i < maxRefIteration; i++) {
+
+        LAInfoDeep<SubType> NewLA;
+        bool PeriodDetected = LA.Step(NewLA, m_PerturbationResults.GetComplex<SubType>(i));
+        if (!PeriodDetected) {
+            LA = NewLA;
+            continue;
+        }
+
+        Period = i;
+        LAI.StepLength = Period;
+
+        LA.SetLAi(LAI);
+        LAs.push_back(LA);
+
+        LAI.NextStageLAIndex = i;
+
+        if (i + 1 < maxRefIteration) {
+            LA = LAInfoDeep<SubType>(m_PerturbationResults.GetComplex<SubType>(i)).Step(m_PerturbationResults.GetComplex<SubType>(i + 1));
+            i += 2;
+        }
+        else {
+            LA = LAInfoDeep<SubType>(m_PerturbationResults.GetComplex<SubType>(i));
+            i += 1;
+        }
+        break;
+    }
+
+    LAStageCount = 1;
+
+    int32_t PeriodBegin = Period;
+    int32_t PeriodEnd = PeriodBegin + Period;
+
+    if (Period == 0) {
+        if (maxRefIteration > lowBound) {
+            LA = LAInfoDeep<SubType>(m_PerturbationResults.GetComplex<SubType>(0)).Step(m_PerturbationResults.GetComplex<SubType>(1));
+            LAI.NextStageLAIndex = 0;
+            i = 2;
+
+            double NthRoot = std::round(std::log(maxRefIteration) / log16);
+            Period = (int32_t)std::round(std::pow(maxRefIteration, 1.0 / NthRoot));
+
+            PeriodBegin = 0;
+            PeriodEnd = Period;
+        }
+        else {
+            LAI.StepLength = maxRefIteration;
+
+            LA.SetLAi(LAI);
+            LAs.push_back(LA);
+
+            LAs.push_back(LAInfoDeep<SubType>(m_PerturbationResults.GetComplex<SubType>(maxRefIteration)));
+
+            LAStages[0].MacroItCount = 1;
+
+            return false;
+        }
+    }
+    else if (Period > lowBound) {
+        LAs.pop_back();
+
+        LA = LAInfoDeep<SubType>(m_PerturbationResults.GetComplex<SubType>(0)).Step(m_PerturbationResults.GetComplex<SubType>(1));
+        LAI.NextStageLAIndex = 0;
+        i = 2;
+
+        double NthRoot = std::round(std::log(Period) / log16);
+        Period = (int32_t)std::round(std::pow(Period, 1.0 / NthRoot));
+
+        PeriodBegin = 0;
+        PeriodEnd = Period;
+    }
+
+    // TODO can we multithread this
+    // const auto numPerThread = maxRefIteration / ;
+
+    const int32_t ThreadCount = (int32_t)std::thread::hardware_concurrency();
+    std::vector<int32_t> Start;
+    Start.resize(ThreadCount);
+
+    auto Starter = [&]() {
+        for (; i < maxRefIteration; i++) {
+            LAInfoDeep<SubType> NewLA{};
+            const bool PeriodDetected{ LA.Step(NewLA, m_PerturbationResults.GetComplex<SubType>(i)) };
+
+            if (!PeriodDetected && i < PeriodEnd) {
+                LA = NewLA;
+                continue;
+            }
+
+            LAI.StepLength = i - PeriodBegin;
+
+            LA.SetLAi(LAI);
+            LAs.push_back(LA);
+
+            LAI.NextStageLAIndex = i;
+            PeriodBegin = i;
+            PeriodEnd = PeriodBegin + Period;
+
+            const int32_t ip1{ i + 1 };
+            const bool detected{ NewLA.DetectPeriod(m_PerturbationResults.GetComplex<SubType>(ip1)) };
+
+            if (detected || ip1 >= maxRefIteration) {
+                LA = LAInfoDeep<SubType>(m_PerturbationResults.GetComplex<SubType>(i));
+            }
+            else {
+                LA = LAInfoDeep<SubType>(m_PerturbationResults.GetComplex<SubType>(i)).Step(
+                    m_PerturbationResults.GetComplex<SubType>(ip1));
+                i++;
+            }
+
+            if (i > maxRefIteration / ThreadCount) {
+                while (!Start[1]);
+
+                if (i == Start[1] - 1) {
+                    i++;
+                    break;
+                }
+                else if (i >= Start[1]) {
+                    ::MessageBox(NULL, L"Confused thread situation", L"", MB_OK);
+                }
+            }
+        }
+    };
+
+    std::vector<std::vector<LAInfoDeep<SubType>>> ThreadLAs;
+    ThreadLAs.resize(ThreadCount);
+    //for (size_t i = 1; i < ThreadCount; i++) {
+    //    ThreadLAs[i].reserve...
+    //}
+
+    volatile int32_t numbers1[128] = { 0 };
+    volatile int32_t numbers2[128] = { 0 };
+
+    auto Worker = [&numbers1, &numbers2, Period, &Start, &ThreadLAs, ThreadCount, maxRefIteration, this](int32_t ThreadID) {
+        int32_t j = maxRefIteration * ThreadID / ThreadCount;
+        int32_t End = maxRefIteration * (ThreadID + 1) / ThreadCount;
+        LAInfoDeep<SubType> LA_ = LAInfoDeep<SubType>(m_PerturbationResults.GetComplex<SubType>(j));
+        LA_ = LA_.Step(m_PerturbationResults.GetComplex<SubType>(j + 1));
+        LAInfoI LAI_;
+        LAI_.NextStageLAIndex = j;
+        j += 2;
+
+        int32_t PeriodBegin = 0;
+        int32_t PeriodEnd = 0;
+
+        numbers1[ThreadID] = j;
+        numbers2[ThreadID] = End;
+
+        for (; j < maxRefIteration; j++) {
+            LAInfoDeep<SubType> NewLA;
+            bool PeriodDetected = LA_.Step(NewLA, m_PerturbationResults.GetComplex<SubType>(j));
+
+            if (PeriodDetected) {
+                LAI_.NextStageLAIndex = j;
+                PeriodBegin = j;
+                PeriodEnd = PeriodBegin + Period;
+
+                if (j + 1 < maxRefIteration) {
+                    LA_ = LAInfoDeep<SubType>(m_PerturbationResults.GetComplex<SubType>(j)).Step(m_PerturbationResults.GetComplex<SubType>(j + 1));
+                    j += 2;
+                }
+                else {
+                    LA_ = LAInfoDeep<SubType>(m_PerturbationResults.GetComplex<SubType>(j));
+                    j += 1;
+                }
+                break;
+            }
+            LA_ = NewLA;
+        }
+
+        Start[ThreadID] = j;
+        for (; j < maxRefIteration; j++) {
+            LAInfoDeep<SubType> NewLA{};
+            const bool PeriodDetected{ LA_.Step(NewLA, m_PerturbationResults.GetComplex<SubType>(j)) };
+
+            if (!PeriodDetected && j < PeriodEnd) {
+                LA_ = NewLA;
+                continue;
+            }
+
+            LAI_.StepLength = j - PeriodBegin;
+
+            LA_.SetLAi(LAI_);
+            ThreadLAs[ThreadID].push_back(LA_);
+
+            LAI_.NextStageLAIndex = j;
+            PeriodBegin = j;
+            PeriodEnd = PeriodBegin + Period;
+
+            const int32_t ip1{ j + 1 };
+            const bool detected{ NewLA.DetectPeriod(m_PerturbationResults.GetComplex<SubType>(ip1)) };
+
+            if (detected || ip1 >= maxRefIteration) {
+                LA_ = LAInfoDeep<SubType>(m_PerturbationResults.GetComplex<SubType>(j));
+            }
+            else {
+                LA_ = LAInfoDeep<SubType>(m_PerturbationResults.GetComplex<SubType>(j)).Step(
+                    m_PerturbationResults.GetComplex<SubType>(ip1));
+                j++;
+            }
+
+            if (j > End) {
+                if (ThreadID == ThreadCount - 1) {
+                    DebugBreak();
+                    ::MessageBox(NULL, L"I have another bug here", L"", MB_OK);
+                }
+                while (!Start[ThreadID + 1]);
+                if (j == Start[ThreadID + 1] - 1) {
+                    j++;
+                    break;
+                }
+                else if (j >= Start[ThreadID + 1]) {
+                    DebugBreak();
+                    ::MessageBox(NULL, L"I have another bug here yay :(", L"", MB_OK);
+                    //break;
+                }
+            }
+        }
+
+        if (ThreadID == ThreadCount - 1) {
+            LAI_.StepLength = j - PeriodBegin;
+
+            LA_.SetLAi(LAI_);
+            LAs.push_back(LA_);
+
+            auto LA2 = LAInfoDeep<SubType>(m_PerturbationResults.GetComplex<SubType>(maxRefIteration));
+            LA2.SetLAi({});
+            LAs.push_back(LA2);
+        }
+    };
+
+    std::vector<std::unique_ptr<std::thread>> threads;
+    threads.push_back(std::make_unique<std::thread>(Starter));
+    for (int32_t t = 1; t < ThreadCount; t++) {
+        threads.push_back(std::make_unique<std::thread>(Worker, t));
+    }
+
+    for (int32_t t = 0; t < ThreadCount; t++) {
+        threads[t]->join();
+    }
+
+    // TODO concat
+
+    LAStages[0].MacroItCount = LAsize();
 
     return true;
 }
@@ -359,6 +631,7 @@ void LAReference<SubType>::GenerateApproximationData(HDRFloat radius, int32_t ma
         return;
     }
 
+    //bool PeriodDetected = CreateLAFromOrbitMT(maxRefIteration);
     bool PeriodDetected = CreateLAFromOrbit(maxRefIteration);
     if (!PeriodDetected) return;
 

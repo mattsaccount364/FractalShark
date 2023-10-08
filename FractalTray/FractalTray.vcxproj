@@ -141,6 +141,8 @@
     <ClCompile Include="..\FractalNetwork.cpp" />
     <ClCompile Include="..\FractalSetupData.cpp" />
     <ClCompile Include="..\HDRFloat.cpp" />
+    <ClCompile Include="..\LAReference.cpp" />
+    <ClCompile Include="..\RefOrbitCalc.cpp" />
     <ClCompile Include="..\WPngImage\lodepng.cpp" />
     <ClCompile Include="..\WPngImage\WPngImage.cc" />
     <ClCompile Include="FractalTray.cpp" />
@@ -161,6 +163,12 @@
     <ClInclude Include="..\FractalSetupData.h" />
     <ClInclude Include="..\GPUBLAS.h" />
     <ClInclude Include="..\HDRFloat.h" />
+    <ClInclude Include="..\HDRFloatComplex.h" />
+    <ClInclude Include="..\LAInfoDeep.h" />
+    <ClInclude Include="..\LAInfoI.h" />
+    <ClInclude Include="..\LAReference.h" />
+    <ClInclude Include="..\LAstep.h" />
+    <ClInclude Include="..\RefOrbitCalc.h" />
     <ClInclude Include="..\render_gpu.h" />
     <ClInclude Include="..\WPngImage\lodepng.h" />
     <ClInclude Include="..\WPngImage\WPngImage.hh" />

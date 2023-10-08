@@ -62,6 +62,7 @@ private:
 
     int32_t LAsize();
     bool CreateLAFromOrbit(int32_t maxRefIteration);
+    bool CreateLAFromOrbitMT(int32_t maxRefIteration);
     bool CreateNewLAStage(int32_t maxRefIteration);
 
 public:

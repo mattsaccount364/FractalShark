@@ -18,7 +18,7 @@ public:
 public:
     int32_t StepLength;
     HDRFloat ThresholdC;
-    SubType SqrEscapeRadius;
+    HDRFloat SqrEscapeRadius;
     HDRFloatComplex RefC;
     HDRFloatComplex ZCoeff, CCoeff, InvZCoeff;
     HDRFloatComplex CCoeffSqrInvZCoeff;
@@ -30,7 +30,13 @@ public:
 public:
     CUDA_CRAP bool Usable(HDRFloat SqrRadius) {
         auto result = CCoeffNormSqr * SqrRadius * factor;
-        return result.compareToBothPositive(RefCNormSqr) > 0 && SqrEscapeRadius > 4.0f;
+        HdrReduce(result);
+        auto Four = HDRFloat(4.0f);
+        HdrReduce(Four);
+
+        return
+            result.compareToBothPositiveReduced(RefCNormSqr) > 0 &&
+            SqrEscapeRadius.compareToBothPositiveReduced(Four) > 0;
     }
 
     CUDA_CRAP bool isValid(HDRFloatComplex DeltaSub0);
@@ -97,7 +103,7 @@ void ATInfo<SubType>::PerformAT(
 
         nsq = z.norm_squared();
         HdrReduce(nsq);
-        if (nsq.compareToBothPositiveReduced(HDRFloat(SqrEscapeRadius)) > 0) {
+        if (nsq.compareToBothPositiveReduced(SqrEscapeRadius) > 0) {
             break;
         }
 

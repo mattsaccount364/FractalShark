@@ -18,13 +18,15 @@ public:
 
     friend class GPU_LAInfoDeep<SubType>;
 
-    static constexpr int DEFAULT_DETECTION_METHOD = 2;
+    static constexpr int DEFAULT_DETECTION_METHOD = 1;
     static constexpr T DefaultStage0PeriodDetectionThreshold = (T)0x1.0p-10;
     static constexpr T DefaultPeriodDetectionThreshold = (T)0x1.0p-10;
     static constexpr T DefaultStage0PeriodDetectionThreshold2 = (T)0x1.0p-6;
     static constexpr T DefaultPeriodDetectionThreshold2 = (T)0x1.0p-3;
-    static constexpr T DefaultLAThresholdScale = (T)0x1.0p-24;
-    static constexpr T DefaultLAThresholdCScale = (T)0x1.0p-24;
+    static constexpr T DefaultLAThresholdScale =
+        std::is_same<T, float>::value ? (T)0x1.0p-14 : (T)0x1.0p-24;
+    static constexpr T DefaultLAThresholdCScale =
+        std::is_same<T, float>::value ? (T)0x1.0p-14 : (T)0x1.0p-24;
     
 public:
 
@@ -403,16 +405,17 @@ void LAInfoDeep<SubType>::CreateAT(ATInfo<SubType>& Result, LAInfoDeep Next) {
     Result.RefCNormSqr = Result.RefC.norm_squared();
     Result.RefCNormSqr.Reduce();
 
+    HDRFloat lim(32, 1);
     if constexpr (std::is_same<LAInfoDeep<SubType>::HDRFloat, ::HDRFloat<double>>::value) {
-        HDRFloat lim(0x1.0p256); // TODO should be constexpr
-        Result.SqrEscapeRadius = HDRFloat::minBothPositive(ZCoeff.norm_squared() * LAThreshold, lim).toDouble();
-        Result.ThresholdC = HDRFloat::minBothPositive(LAThresholdC, lim / Result.CCoeff.chebychevNorm());
+        lim.setExp(256);
     }
-    else {
-        HDRFloat lim(0x1.0p64);
-        Result.SqrEscapeRadius = HDRFloat::minBothPositive(ZCoeff.norm_squared() * LAThreshold, lim).toDouble();
-        Result.ThresholdC = HDRFloat::minBothPositive(LAThresholdC, lim / Result.CCoeff.chebychevNorm());
-    }
+
+    HdrReduce(lim);
+
+    Result.SqrEscapeRadius = HDRFloat::minBothPositive(ZCoeff.norm_squared() * LAThreshold, lim);
+    HdrReduce(Result.SqrEscapeRadius);
+
+    Result.ThresholdC = HDRFloat::minBothPositive(LAThresholdC, lim / Result.CCoeff.chebychevNorm());
 }
 
 template<class SubType>

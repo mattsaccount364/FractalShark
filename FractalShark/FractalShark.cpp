@@ -1389,6 +1389,18 @@ void MenuGetCurPos(HWND hWnd)
     s = setupSS(maxY);
     auto smaxY = std::string(s.begin(), s.end());
 
+    Fractal::PointZoomBBConverter pz{ minX, minY, maxX, maxY };
+    s = setupSS(pz.ptX);
+    auto ptXStr = std::string(s.begin(), s.end());
+
+    s = setupSS(pz.ptY);
+    auto ptYStr = std::string(s.begin(), s.end());
+
+    auto reducedPrecZF = pz.zoomFactor;
+    reducedPrecZF.precision(10);
+    s = setupSS(reducedPrecZF);
+    auto zoomFactorStr = std::string(s.begin(), s.end());
+
     snprintf(
         mem,
         numBytes,
@@ -1397,10 +1409,16 @@ void MenuGetCurPos(HWND hWnd)
         "minY = HighPrecision{ \"%s\" };\r\n"
         "maxX = HighPrecision{ \"%s\" };\r\n"
         "maxY = HighPrecision{ \"%s\" };\r\n"
+        "ptX = HighPrecision{ \"%s\" }; \r\n"
+        "ptY = HighPrecision{ \"%s\" }; \r\n"
+        "zoomFactor = HighPrecision{ \"%s\" }; \r\n"
         "SetNumIterations(%zu);\r\n",
         prec,
         sminX.c_str(), sminY.c_str(),
         smaxX.c_str(), smaxY.c_str(),
+        ptXStr.c_str(),
+        ptYStr.c_str(),
+        zoomFactorStr.c_str(),
         gFractal->GetNumIterations());
     ::MessageBoxA(hWnd, mem, "", MB_OK);
 

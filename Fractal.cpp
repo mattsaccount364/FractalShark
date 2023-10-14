@@ -1113,11 +1113,39 @@ Fractal::PointZoomBBConverter::PointZoomBBConverter(
       ptY(ptY),
       zoomFactor(zoomFactor) {
     minX = ptX - (HighPrecision{ 3 } / zoomFactor);
+    // minX + (HighPrecision{ 3 } / zoomFactor) = ptX;
+    // (HighPrecision{ 3 } / zoomFactor) = ptX - minX;
+    // HighPrecision{ 3 } = (ptX - minX) * zoomFactor;
+    // HighPrecision{ 3 } / (ptX - minX) = zoomFactor;
+
     minY = ptY - (HighPrecision{ 3 } / zoomFactor);
+
     maxX = ptX + (HighPrecision{ 3 } / zoomFactor);
+    // maxX - ptX = (HighPrecision{ 3 } / zoomFactor);
+    // zoomFactor * (maxX - ptX) = (HighPrecision{ 3 });
+    // zoomFactor = (HighPrecision{ 3 }) / (maxX - ptX);
+
     maxY = ptY + (HighPrecision{ 3 } / zoomFactor);
 }
 
+Fractal::PointZoomBBConverter::PointZoomBBConverter(
+    HighPrecision minX,
+    HighPrecision minY,
+    HighPrecision maxX,
+    HighPrecision maxY) :
+    minX(minX),
+    minY(minY),
+    maxX(maxX),
+    maxY(maxY) {
+    ptX = (minX + maxX) / HighPrecision(2);
+    ptY = (minY + maxY) / HighPrecision(2);
+
+    auto zf1 = HighPrecision{ 3 } / (ptX - minX);
+    auto zf2 = HighPrecision{ 3 } / (ptY - minY);
+    auto zf3 = HighPrecision{ 3 } / (maxX - ptX);
+    auto zf4 = HighPrecision{ 3 } / (maxY - ptY);
+    zoomFactor = min(min(zf1, zf2), min(zf3, zf4));
+}
 
 //////////////////////////////////////////////////////////////////////////////
 // Resets the fractal to the standard view.
@@ -1299,12 +1327,39 @@ void Fractal::View(size_t view)
     }
 
     case 17:
-        minX = HighPrecision{ "-0.53981292589741689586222079520869183723748231020748720752606480215358036492007474421624482153342779148198668998355315" };
-        minY = HighPrecision{ "0.661166702108399609899373031713660987565259747150024608002106211253051702406859810940094259904260229175338063077564181" };
-        maxX = HighPrecision{ "-0.539812925897416895862220795208691837237482310207487207526064802153580364920074744021455585555607578949138244032460025" };
-        maxY = HighPrecision{ "0.661166702108399609899373031713660987565259747150024608002106211253051702406859811021256441561685317730691582223852983" };
+        minX = HighPrecision{ "-0.539812925897416895862220795208691837237482310207487207526064802153580364920074745945503214288517608834423777345155755" };
+        minY = HighPrecision{ "0.66116670210839960989937303171366098756525974715002460800210621125305170240685980562572504049349703520845019259075699" };
+        maxX = HighPrecision{ "-0.539812925897416895862220795208691837237482310207487207526064802153580364920074745719107191125127561583883236084488469" };
+        maxY = HighPrecision{ "0.661166702108399609899373031713660987565259747150024608002106211253051702406859805720056716811576221562842084782701692" };
+        SetNumIterations(113246208);
+        break;
+
+    case 18:
+    {
+        // This one does not match #5 but is close - it'll differ by the screen aspect ratio.
+        PointZoomBBConverter convert{
+            HighPrecision{ "-0.5482057480704757084582125675467330293766992746228824538244448345949959996808953" },
+            HighPrecision{ "-0.5775708389036038428051089822018505586755517284582553171583789528957369098321554" },
+            HighPrecision{ "8.96762356323991034572e+44" }
+        };
+
+        minX = convert.minX;
+        minY = convert.minY;
+        maxX = convert.maxX;
+        maxY = convert.maxY;
         SetNumIterations(4718592);
         break;
+    }
+
+    case 19:
+    {
+        minX = HighPrecision{ "-0.48065550796374945612193350910587992881196972760301218859906076861832853774308262389069947355595792530735710085477971769115391712081609017535787686457114048952394910414276974524800303186844171743" };
+        minY = HighPrecision{ "0.63747559012497080520941191950561208097997900567996614369097324204248299914068987987862806005886435190126924708084397626352001791096751986215114695299109848932200215133076315301069004112043644706" };
+        maxX = HighPrecision{ "-0.48065550796374945612193350910587992881196972760301218859906076861832853774308262389069947355595792530735710085477971769115391712081609017535787686457114048948840611703973814164062372983621896847" };
+        maxY = HighPrecision{ "0.63747559012497080520941191950561208097997900567996614369097324204248299914068987987862806005886435190126924708084397626352001791096751986215114695299109848935754513843379475661806934315265919603" };
+        SetNumIterations(113246208);
+        break;
+    }
 
     case 0:
     default:

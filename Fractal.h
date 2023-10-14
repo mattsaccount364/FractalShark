@@ -107,6 +107,12 @@ public: // Changing the view
             HighPrecision ptY,
             HighPrecision zoomFactor);
 
+        PointZoomBBConverter(
+            HighPrecision minX,
+            HighPrecision minY,
+            HighPrecision maxX,
+            HighPrecision maxY);
+
         HighPrecision ptX, ptY;
         HighPrecision zoomFactor;
 

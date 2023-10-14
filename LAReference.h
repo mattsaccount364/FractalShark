@@ -36,7 +36,7 @@ private:
     static const SubType log16;
 
 public:
-    LAReference(const PerturbationResults<HDRFloat> &PerturbationResults) :
+    LAReference(const PerturbationResults<HDRFloat> *PerturbationResults) :
         m_PerturbationResults(PerturbationResults),
         UseAT{},
         AT{},
@@ -58,7 +58,7 @@ private:
     std::vector<LAInfoDeep<SubType>> LAs;
     std::vector<LAStageInfo> LAStages;
 
-    const PerturbationResults<HDRFloat>& m_PerturbationResults;
+    const PerturbationResults<HDRFloat> *m_PerturbationResults;
 
     int32_t LAsize();
     bool CreateLAFromOrbit(int32_t maxRefIteration);

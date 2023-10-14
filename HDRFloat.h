@@ -31,6 +31,8 @@ class HDRFloat {
 //class __align__(8) HDRFloat {
 //#endif
 public:
+    typedef T TemplateSubType;
+
     static CUDA_CRAP constexpr TExp MIN_SMALL_EXPONENT() {
         if constexpr (std::is_same<T, double>::value) {
             return -1023;

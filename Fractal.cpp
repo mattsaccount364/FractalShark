@@ -2282,7 +2282,7 @@ void Fractal::CalcNetworkFractal(bool MemoryOnly)
 }
 
 void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
-    auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<double, double>();
+    auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<double, double>(RefOrbitCalc::Extras::None);
 
     double dx = Convert<HighPrecision, double>((m_MaxX - m_MinX) / (m_ScrnWidth * GetGpuAntialiasing()));
     double dy = Convert<HighPrecision, double>((m_MaxY - m_MinY) / (m_ScrnHeight * GetGpuAntialiasing()));
@@ -2505,7 +2505,7 @@ void Fractal::CalcCpuHDR(bool MemoryOnly) {
 
 template<class T, class SubType>
 void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
-    auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<T, SubType>();
+    auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<T, SubType>(RefOrbitCalc::Extras::None);
 
     BLAS<T> blas(*results);
     blas.Init(results->x.size(), T{ results->maxRadius });
@@ -2738,10 +2738,14 @@ template<class SubType>
 void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
     using T = HDRFloat<SubType>;
     using TComplex = HDRFloatComplex<SubType>;
-    auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<T, SubType>();
+    auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<T, SubType>(RefOrbitCalc::Extras::IncludeLAv2);
 
-    LAReference<SubType> LaReference{*results};
-    LaReference.GenerateApproximationData(results->maxRadius, (int32_t)results->x.size() - 1);
+    if (results->LaReference.get() == nullptr) {
+        ::MessageBox(NULL, L"Oops - a null pointer deref", L"", MB_OK);
+        return;
+    }
+
+    auto &LaReference = *results->LaReference.get();
 
     T dx = T((m_MaxX - m_MinX) / (m_ScrnWidth * GetGpuAntialiasing()));
     HdrReduce(dx);
@@ -2916,7 +2920,7 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
 
 template<class T, class SubType, bool BLA>
 void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
-    auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<T, SubType>();
+    auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<T, SubType>(RefOrbitCalc::Extras::None);
 
     uint32_t err =
         m_r.InitializeMemory(m_CurIters.m_Width,
@@ -2988,7 +2992,7 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
 
 template<class T, class SubType, LAv2Mode Mode>
 void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
-    auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<T, SubType>();
+    auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<T, SubType>(RefOrbitCalc::Extras::IncludeLAv2);
 
     uint32_t err =
         m_r.InitializeMemory(m_CurIters.m_Width,
@@ -3019,8 +3023,12 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
         results->bad.size(),
         results->PeriodMaybeZero };
 
-    LAReference<SubType> LaReference{ *results };
-    LaReference.GenerateApproximationData(results->maxRadius, (int32_t)results->x.size() - 1);
+    if (results->LaReference.get() == nullptr) {
+        ::MessageBox(NULL, L"Oops - a null pointer deref", L"", MB_OK);
+        return;
+    }
+
+    auto &LaReference = *results->LaReference.get();
 
     auto result = m_r.RenderPerturbLAv2<T, SubType, Mode>(GetRenderAlgorithm(),
         (uint32_t*)m_CurIters.m_ItersMemory,
@@ -3043,7 +3051,7 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
 
 template<class T, class SubType, class T2, class SubType2>
 void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
-    auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<T, SubType>();
+    auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<T, SubType>(RefOrbitCalc::Extras::None);
     auto* results2 = m_RefOrbit.CopyUsefulPerturbationResults<T, T2>(*results);
 
     BLAS<T> blas(*results);

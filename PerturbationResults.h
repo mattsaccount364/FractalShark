@@ -2,14 +2,36 @@
 
 #include <vector>
 #include <stdint.h>
+#include <type_traits>
 
 #include "HighPrecision.h"
 #include "HDRFloatComplex.h"
 #include "RefOrbitCalc.h"
+#include "LAReference.h"
+
+// If true, choose type == float/double for primitives.
+// If false, choose type == T::TemplateSubType for HdrFloat subtypes.
+// This is kind of a headache.  std::conditional by itself is not adequate here.
+template<bool, typename T>
+class SubTypeChooser {
+public:
+    using type = typename T::TemplateSubType;
+};
+
+template<typename T>
+class SubTypeChooser<true, T> {
+public:
+    using type = T;
+};
 
 template<class T>
 class PerturbationResults {
 public:
+    // Example of how to pull the SubType out for HdrFloat, or keep the primitive float/double
+    using SubType = typename SubTypeChooser<
+        std::is_fundamental<T>::value,
+        T>::type;
+
     HighPrecision hiX, hiY, radiusX, radiusY;
     T maxRadius;
     size_t MaxIterations;
@@ -22,6 +44,8 @@ public:
     uint32_t AuthoritativePrecision;
     std::vector<HighPrecision> ReuseX;
     std::vector<HighPrecision> ReuseY;
+
+    std::unique_ptr<LAReference<SubType>> LaReference;
 
     void clear() {
         hiX = {};

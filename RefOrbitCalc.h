@@ -83,8 +83,13 @@ public:
 
     bool RequiresReferencePoints() const;
 
+    enum class Extras {
+        None,
+        IncludeLAv2
+    };
+
     template<class T, class SubType>
-    PerturbationResults<T>* GetAndCreateUsefulPerturbationResults();
+    PerturbationResults<T>* GetAndCreateUsefulPerturbationResults(Extras extras);
 
 private:
     template<class T>

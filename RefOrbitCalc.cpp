@@ -1838,7 +1838,7 @@ bool RefOrbitCalc::IsPerturbationResultUsefulHere(size_t i) const {
 }
 
 template<class T, class SubType>
-PerturbationResults<T>* RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
+PerturbationResults<T>* RefOrbitCalc::GetAndCreateUsefulPerturbationResults(Extras extras) {
     bool added = false;
     if (RequiresReuse()) {
         if (m_PerturbationGuessCalcX == 0 && m_PerturbationGuessCalcY == 0) {
@@ -1870,21 +1870,35 @@ PerturbationResults<T>* RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
         }
         std::vector<std::unique_ptr<PerturbationResults<T>>>* cur_array = GetPerturbationArray<T>();
         AddPerturbationReferencePoint<T, SubType, BenchmarkMode::Disable>();
+        added = true;
 
         results = (*cur_array)[cur_array->size() - 1].get();
+    }
+
+    if constexpr (std::is_same<T, HDRFloat<float>>::value ||
+                  std::is_same<T, HDRFloat<double>>::value) {
+        if (extras == Extras::IncludeLAv2) {
+            if (results->LaReference == nullptr) {
+                results->LaReference = std::make_unique<LAReference<SubType>>(results);
+                results->LaReference->GenerateApproximationData(results->maxRadius, (int32_t)results->x.size() - 1);
+            }
+        }
+        else {
+            results->LaReference = nullptr;
+        }
     }
 
     return results;
 }
 
 template PerturbationResults<double>*
-RefOrbitCalc::GetAndCreateUsefulPerturbationResults<double, double>();
+RefOrbitCalc::GetAndCreateUsefulPerturbationResults<double, double>(RefOrbitCalc::Extras);
 template PerturbationResults<float>*
-RefOrbitCalc::GetAndCreateUsefulPerturbationResults<float, float>();
+RefOrbitCalc::GetAndCreateUsefulPerturbationResults<float, float>(RefOrbitCalc::Extras);
 template PerturbationResults<HDRFloat<double>>*
-RefOrbitCalc::GetAndCreateUsefulPerturbationResults<HDRFloat<double>, double>();
+RefOrbitCalc::GetAndCreateUsefulPerturbationResults<HDRFloat<double>, double>(RefOrbitCalc::Extras);
 template PerturbationResults<HDRFloat<float>>*
-RefOrbitCalc::GetAndCreateUsefulPerturbationResults<HDRFloat<float>, float>();
+RefOrbitCalc::GetAndCreateUsefulPerturbationResults<HDRFloat<float>, float>(RefOrbitCalc::Extras);
 
 template<class T>
 std::vector<std::unique_ptr<PerturbationResults<T>>>* RefOrbitCalc::GetPerturbationArray() {

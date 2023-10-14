@@ -26,6 +26,8 @@ private:
     using TExp = int32_t;
 
 public:
+    using TemplateSubType = SubType;
+
     CUDA_CRAP constexpr HDRFloatComplex() {
         mantissaReal = (SubType)0.0;
         mantissaImag = (SubType)0.0;

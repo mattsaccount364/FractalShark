@@ -53,7 +53,7 @@ public:
     bool isValid;
 
 private:
-    static constexpr int MaxLAStages = 512;
+    static constexpr int MaxLAStages = 1024;
     static constexpr int DEFAULT_SIZE = 10000;
     std::vector<LAInfoDeep<SubType>> LAs;
     std::vector<LAStageInfo> LAStages;

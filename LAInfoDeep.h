@@ -18,7 +18,7 @@ public:
 
     friend class GPU_LAInfoDeep<SubType>;
 
-    static constexpr int DEFAULT_DETECTION_METHOD = 1;
+    static constexpr int DEFAULT_DETECTION_METHOD = 2;
     static constexpr T DefaultStage0PeriodDetectionThreshold = (T)0x1.0p-10;
     static constexpr T DefaultPeriodDetectionThreshold = (T)0x1.0p-10;
     static constexpr T DefaultStage0PeriodDetectionThreshold2 = (T)0x1.0p-6;

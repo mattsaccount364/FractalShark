@@ -38,7 +38,7 @@ public:
     }
 
 private:
-    static constexpr int MaxLAStages = 512;
+    static constexpr int MaxLAStages = 1024;
     static constexpr int DEFAULT_SIZE = 10000;
 
     GPU_LAInfoDeep<SubType> * __restrict__ LAs;

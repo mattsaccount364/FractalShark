@@ -164,6 +164,8 @@
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">MaxSpeed</Optimization>
     </ClCompile>
     <ClCompile Include="..\HDRFloat.cpp" />
+    <ClCompile Include="..\LAReference.cpp" />
+    <ClCompile Include="..\RefOrbitCalc.cpp" />
     <ClCompile Include="..\WPngImage\lodepng.cpp" />
     <ClCompile Include="..\WPngImage\WPngImage.cc" />
     <ClCompile Include="FractalSaver.cpp">
@@ -189,8 +191,17 @@
     <ClInclude Include="..\FractalNetwork.h" />
     <ClInclude Include="..\FractalSetupData.h" />
     <ClInclude Include="..\GPUBLAS.h" />
+    <ClInclude Include="..\GPU_BLAS.h" />
+    <ClInclude Include="..\GPU_LAInfoDeep.h" />
+    <ClInclude Include="..\GPU_LAReference.h" />
     <ClInclude Include="..\HDRFloat.h" />
-    <ClInclude Include="..\render_gpu.h" />
+    <ClInclude Include="..\GPU_Render.h" />
+    <ClInclude Include="..\HDRFloatComplex.h" />
+    <ClInclude Include="..\LAInfoDeep.h" />
+    <ClInclude Include="..\LAInfoI.h" />
+    <ClInclude Include="..\LAReference.h" />
+    <ClInclude Include="..\LAstep.h" />
+    <ClInclude Include="..\RefOrbitCalc.h" />
     <ClInclude Include="..\WPngImage\lodepng.h" />
     <ClInclude Include="..\WPngImage\WPngImage.hh" />
     <ClInclude Include="FractalSaver.h" />
@@ -205,7 +216,7 @@
     <Text Include="ReadMe.txt" />
   </ItemGroup>
   <ItemGroup>
-    <CudaCompile Include="..\render_gpu.cu" />
+    <CudaCompile Include="..\GPU_Render.cu" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

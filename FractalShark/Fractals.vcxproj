@@ -242,7 +242,7 @@
     <ClInclude Include="..\QuadFloat\gqf_basic.cuh" />
     <ClInclude Include="..\QuadFloat\inline.cuh" />
     <ClInclude Include="..\RefOrbitCalc.h" />
-    <ClInclude Include="..\render_gpu.h" />
+    <ClInclude Include="..\GPU_Render.h" />
     <ClInclude Include="..\WPngImage\lodepng.h" />
     <ClInclude Include="..\WPngImage\WPngImage.hh" />
     <ClInclude Include="Fractals.h" />
@@ -255,7 +255,7 @@
     <Image Include="small.ico" />
   </ItemGroup>
   <ItemGroup>
-    <CudaCompile Include="..\render_gpu.cu" />
+    <CudaCompile Include="..\GPU_Render.cu" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

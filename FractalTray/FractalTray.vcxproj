@@ -161,7 +161,7 @@
     <ClInclude Include="..\Fractal.h" />
     <ClInclude Include="..\FractalNetwork.h" />
     <ClInclude Include="..\FractalSetupData.h" />
-    <ClInclude Include="..\GPUBLAS.h" />
+    <ClInclude Include="..\GPU_BLAS.h" />
     <ClInclude Include="..\HDRFloat.h" />
     <ClInclude Include="..\HDRFloatComplex.h" />
     <ClInclude Include="..\LAInfoDeep.h" />
@@ -169,7 +169,7 @@
     <ClInclude Include="..\LAReference.h" />
     <ClInclude Include="..\LAstep.h" />
     <ClInclude Include="..\RefOrbitCalc.h" />
-    <ClInclude Include="..\render_gpu.h" />
+    <ClInclude Include="..\GPU_Render.h" />
     <ClInclude Include="..\WPngImage\lodepng.h" />
     <ClInclude Include="..\WPngImage\WPngImage.hh" />
     <ClInclude Include="FractalTray.h" />
@@ -186,7 +186,7 @@
     <ResourceCompile Include="FractalTray.rc" />
   </ItemGroup>
   <ItemGroup>
-    <CudaCompile Include="..\render_gpu.cu">
+    <CudaCompile Include="..\GPU_Render.cu">
       <FileType>Document</FileType>
     </CudaCompile>
     <None Include="res\FractalTray.rc2" />

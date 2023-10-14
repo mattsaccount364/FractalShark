@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include <iostream>
 
-#include "render_gpu.h"
+#include "GPU_Render.h"
 #include "dbldbl.cuh"
 #include "dblflt.cuh"
 #include "../QuadDouble/gqd_basic.cuh"

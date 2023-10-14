@@ -617,7 +617,8 @@ size_t Fractal::GetPrecision(
     const HighPrecision& minX,
     const HighPrecision& minY,
     const HighPrecision& maxX,
-    const HighPrecision& maxY) const
+    const HighPrecision& maxY,
+    bool RequiresReuse)
 {
     if constexpr (DigitPrecision != 0) {
         return DigitPrecision;
@@ -637,7 +638,7 @@ size_t Fractal::GetPrecision(
         double expY = temp_expY / log(10) * log(2);
         size_t larger = (size_t)max(abs(expX), abs(expY));
 
-        if (m_RefOrbit.RequiresReuse()) {
+        if (RequiresReuse) {
             larger += AuthoritativeReuseExtraPrecision;
         }
         else {
@@ -666,7 +667,7 @@ size_t Fractal::GetPrecision(void) const {
     }
     else {
 #ifndef CONSTANT_PRECISION
-        return GetPrecision(m_MinX, m_MinY, m_MaxX, m_MaxY);
+        return GetPrecision(m_MinX, m_MinY, m_MaxX, m_MaxY, m_RefOrbit.RequiresReuse());
 #endif
     }
 }
@@ -675,7 +676,7 @@ bool Fractal::RecenterViewCalc(HighPrecision MinX, HighPrecision MinY, HighPreci
 {
     SaveCurPos();
 
-    size_t prec = GetPrecision(MinX, MinY, MaxX, MaxY);
+    size_t prec = GetPrecision(MinX, MinY, MaxX, MaxY, m_RefOrbit.RequiresReuse());
     SetPrecision(prec, MinX, MinY, MaxX, MaxY);
 
     m_MinX = MinX;
@@ -2030,7 +2031,7 @@ void Fractal::DrawFractalThread(size_t index, Fractal* fractal) {
             basicFactor = 1;
         }
 
-        auto GetBasicColor = [&](
+        const auto GetBasicColor = [&](
             size_t numIters,
             size_t& acc_r,
             size_t& acc_g,
@@ -2049,6 +2050,7 @@ void Fractal::DrawFractalThread(size_t index, Fractal* fractal) {
             }
         };
 
+        const size_t maxIters = fractal->GetNumIterations();
         for (size_t output_y = 0; output_y < fractal->m_ScrnHeight; output_y++) {
             if (sync.m_DrawThreadAtomics[output_y] != 0) {
                 continue;
@@ -2074,7 +2076,7 @@ void Fractal::DrawFractalThread(size_t index, Fractal* fractal) {
                     const size_t input_y = output_y;
                     size_t numIters = fractal->m_CurIters.m_ItersArray[input_y][input_x];
 
-                    if (numIters < fractal->GetNumIterations())
+                    if (numIters < maxIters)
                     {
                         numIters += fractal->m_PaletteRotate;
                         if (numIters >= MAXITERS) {
@@ -2097,7 +2099,7 @@ void Fractal::DrawFractalThread(size_t index, Fractal* fractal) {
                             input_y++) {
 
                             size_t numIters = fractal->m_CurIters.m_ItersArray[input_y][input_x];
-                            if (numIters < fractal->GetNumIterations())
+                            if (numIters < maxIters)
                             {
                                 numIters += fractal->m_PaletteRotate;
                                 if (numIters >= MAXITERS) {

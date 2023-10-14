@@ -20,7 +20,7 @@
 
 #include "FractalSetupData.h"
 #include "FractalNetwork.h"
-#include "render_gpu.h"
+#include "GPU_Render.h"
 #include "PerturbationResults.h"
 
 #include "..\WPngImage\WPngImage.hh"
@@ -65,11 +65,12 @@ private:
 public:
     static unsigned long WINAPI CheckForAbortThread(void *fractal);
 
-    size_t GetPrecision(
+    static size_t GetPrecision(
         const HighPrecision& minX,
         const HighPrecision& minY,
         const HighPrecision& maxX,
-        const HighPrecision& maxY) const;
+        const HighPrecision& maxY,
+        bool RequiresReuse);
     size_t GetPrecision(void) const;
     static void SetPrecision(
         size_t prec,

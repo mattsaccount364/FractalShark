@@ -487,7 +487,8 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
         m_Fractal.GetMinX(),
         m_Fractal.GetMinY(),
         m_Fractal.GetMaxX(),
-        m_Fractal.GetMaxY());
+        m_Fractal.GetMaxY(),
+        RequiresReuse());
     uint32_t precNum = AuthoritativeReuseExtraPrecision;
 
     // This all generally works and only starts to suffer precision problems after
@@ -662,7 +663,8 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
         m_Fractal.GetMinX(),
         m_Fractal.GetMinY(),
         m_Fractal.GetMaxX(),
-        m_Fractal.GetMaxY());
+        m_Fractal.GetMaxY(),
+        RequiresReuse());
     uint32_t precNum = AuthoritativeReuseExtraPrecision;
 
     // This all generally works and only starts to suffer precision problems after

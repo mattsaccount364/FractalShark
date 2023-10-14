@@ -292,7 +292,7 @@ void CFractalTrayDlg::OnBnClickedButtonGenerate ()
   ConvertCStringToDest(m_DestCoords, &destWidth, &destHeight, &destMinX, &destMinY, &destMaxX, &destMaxY, &targetIters, &gpuAntialiasing, &iterationPrecision);
 
   // Reduce precision to something semi-sane
-  auto prec = Fractal::GetPrecision(destMinX, destMinY, destMaxX, destMaxY);
+  auto prec = Fractal::GetPrecision(destMinX, destMinY, destMaxX, destMaxY, false);
   Fractal::SetPrecision(prec, destMinX, destMinY, destMaxX, destMaxY);
 
   curIters = sourceIters;
@@ -478,7 +478,7 @@ DWORD WINAPI CalcProc (LPVOID lpParameter)
 
         filename = fileprefix + filename;
 
-        auto prec = Fractal::GetPrecision(minX, minY, maxX, maxY);
+        auto prec = Fractal::GetPrecision(minX, minY, maxX, maxY, false);
         Fractal::SetPrecision(prec, minX, minY, maxX, maxY);
 
         fractal->SetNumIterations (numIters);

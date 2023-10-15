@@ -161,6 +161,7 @@ private: // Keeps track of what has changed and what hasn't since the last draw
     inline bool ChangedItersOnly(void) const { return (m_ChangedIterations && !(m_ChangedScrn || m_ChangedWindow)); }
 
 public: // Drawing functions
+    bool RequiresUseLocalColor() const;
     void CalcFractal(bool MemoryOnly);
     void DrawFractal(bool MemoryOnly);
 
@@ -293,13 +294,24 @@ private:
         ItersMemoryContainer(ItersMemoryContainer&) = delete;
         ItersMemoryContainer& operator=(const ItersMemoryContainer&) = delete;
 
-        uint32_t* m_ItersMemory;
+        std::unique_ptr<uint32_t[]> m_ItersMemory;
         uint32_t** m_ItersArray;
 
         // These are a bit bigger than m_ScrnWidth / m_ScrnHeight!
+        // These include antialiasing, so 4x antialiasing implies each is ~2x screen dimension
         size_t m_Width;
         size_t m_Height;
         size_t m_Total;
+
+        // Also a bit bigger, but much closer to actual screen size.  These sizes
+        // are independent of antialiasing
+        size_t m_OutputColorWidth;
+        size_t m_OutputColorHeight;
+        size_t m_OutputColorTotal;
+        std::unique_ptr<Color16[]> m_OutputColorMemory;
+
+        // Antialiasing for reference: 1 (1x), 2 (4x), 3 (9x), 4 (16x)
+        size_t m_Antialiasing;
     };
 
     // 
@@ -477,6 +489,7 @@ private:
     int m_PaletteDepthIndex; // 0, 1, 2
     static constexpr int NumPalettes = 3;
 
+    uint32_t InitializeGPUMemory();
     void InitializeMemory();
     void GetIterMemory();
     void ReturnIterMemory(ItersMemoryContainer&& to_return);

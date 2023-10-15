@@ -35,25 +35,40 @@ Fractal::ItersMemoryContainer::ItersMemoryContainer(size_t width, size_t height,
       m_ItersArray(nullptr),
       m_Width(),
       m_Height(),
-      m_Total() {
+      m_Total(),
+      m_OutputColorWidth(),
+      m_OutputColorHeight(),
+      m_OutputColorTotal(),
+      m_Antialiasing(total_antialiasing) {
     size_t antialias_width = width * total_antialiasing;
     size_t antialias_height = height * total_antialiasing;
 
     size_t w_block = antialias_width / GPURenderer::NB_THREADS_W + (antialias_width % GPURenderer::NB_THREADS_W != 0);
     size_t h_block = antialias_height / GPURenderer::NB_THREADS_H + (antialias_height % GPURenderer::NB_THREADS_H != 0);
 
-    // This array must be identical in size to iter_matrix_cu in CUDA
+    // This array must be identical in size to OutputIterMatrix in CUDA
 
     m_Width = w_block * GPURenderer::NB_THREADS_W;
     m_Height = h_block * GPURenderer::NB_THREADS_H;
     m_Total = m_Width * m_Height;
-    m_ItersMemory = new uint32_t[m_Total];
-    memset(m_ItersMemory, 0, m_Total * sizeof(uint32_t));
+    m_ItersMemory = std::make_unique<uint32_t[]>(m_Total);
 
     m_ItersArray = new uint32_t*[m_Height];
     for (size_t i = 0; i < m_Height; i++) {
         m_ItersArray[i] = &m_ItersMemory[i * m_Width];
     }
+
+    assert(m_Width % total_antialiasing == 0);
+    assert(m_Height % total_antialiasing == 0);
+
+    size_t antialias_color_width = width;
+    size_t antialias_color_height = height;
+    size_t w_color_block = antialias_color_width / GPURenderer::NB_THREADS_W + (antialias_color_width % GPURenderer::NB_THREADS_W != 0);
+    size_t h_color_block = antialias_color_height / GPURenderer::NB_THREADS_H + (antialias_color_height % GPURenderer::NB_THREADS_H != 0);
+    m_OutputColorWidth = w_color_block * GPURenderer::NB_THREADS_W;
+    m_OutputColorHeight = h_color_block * GPURenderer::NB_THREADS_H;
+    m_OutputColorTotal = m_OutputColorWidth * m_OutputColorHeight;
+    m_OutputColorMemory = std::make_unique<Color16[]>(m_OutputColorTotal);
 };
 
 Fractal::ItersMemoryContainer::ItersMemoryContainer(Fractal::ItersMemoryContainer&& other) noexcept {
@@ -65,8 +80,7 @@ Fractal::ItersMemoryContainer &Fractal::ItersMemoryContainer::operator=(Fractal:
         return *this;
     }
 
-    m_ItersMemory = other.m_ItersMemory;
-    other.m_ItersMemory = nullptr;
+    m_ItersMemory = std::move(other.m_ItersMemory);
 
     m_ItersArray = other.m_ItersArray;
     other.m_ItersArray = nullptr;
@@ -75,14 +89,19 @@ Fractal::ItersMemoryContainer &Fractal::ItersMemoryContainer::operator=(Fractal:
     m_Height = other.m_Height;
     m_Total = other.m_Total;
 
+    m_OutputColorWidth = other.m_OutputColorWidth;
+    m_OutputColorHeight = other.m_OutputColorHeight;
+    m_OutputColorTotal = other.m_OutputColorTotal;
+    m_OutputColorMemory = std::move(other.m_OutputColorMemory);
+
+    m_Antialiasing = other.m_Antialiasing;
+
     return *this;
 }
 
 Fractal::ItersMemoryContainer::~ItersMemoryContainer() {
-    if (m_ItersMemory) {
-        delete[] m_ItersMemory;
-        m_ItersMemory = nullptr;
-    }
+    m_ItersMemory = nullptr;
+    m_OutputColorMemory = nullptr;
 
     if (m_ItersArray) {
         delete[] m_ItersArray;
@@ -153,7 +172,7 @@ void Fractal::Initialize(int width,
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MT);
     m_RefOrbit.ResetGuess();
 
-    ResetDimensions(width, height, 1);
+    ResetDimensions(width, height, 2);
     View(0);
     //View(5);
     //View(15);
@@ -163,8 +182,6 @@ void Fractal::Initialize(int width,
     m_ChangedIterations = true;
 
     srand((unsigned int) time(NULL));
-
-    UsePaletteType(Palette::Default);
 
     // Initialize the palette
     auto DefaultPaletteGen = [&](Palette WhichPalette, size_t PaletteIndex, size_t Depth) {
@@ -270,10 +287,6 @@ void Fractal::Initialize(int width,
         m_DrawThreads[i]->m_Thread = std::move(thread);
     }
 
-    UsePalette(8);
-    m_PaletteRotate = 0;
-    m_PaletteDepthIndex = 2;
-
     // Allocate the iterations array.
     int i;
     InitializeMemory();
@@ -282,6 +295,11 @@ void Fractal::Initialize(int width,
     for (auto& it : threads) {
         it->join();
     }
+
+    m_PaletteRotate = 0;
+    m_PaletteDepthIndex = 2;
+    UsePaletteType(Palette::Default);
+    UsePalette(8);
 
     // Initialize the networking
     for (i = 0; i < MAXSERVERS; i++)
@@ -382,6 +400,21 @@ void Fractal::InitializeMemory() {
 
     m_DrawThreadAtomics.resize(m_ScrnHeight);
     m_DrawOutBytes = std::make_unique<GLushort[]>(m_ScrnWidth * m_ScrnHeight * 4); // RGBA
+}
+
+uint32_t Fractal::InitializeGPUMemory() {
+    if (RequiresUseLocalColor()) {
+        return 0;
+    }
+
+    return m_r.InitializeMemory(
+        m_CurIters.m_Width,
+        m_CurIters.m_Height,
+        m_CurIters.m_Antialiasing,
+        m_PalR[m_WhichPalette][m_PaletteDepthIndex].data(),
+        m_PalG[m_WhichPalette][m_PaletteDepthIndex].data(),
+        m_PalB[m_WhichPalette][m_PaletteDepthIndex].data(),
+        m_PalIters[m_WhichPalette][m_PaletteDepthIndex]);
 }
 
 void Fractal::ReturnIterMemory(ItersMemoryContainer&& to_return) {
@@ -1369,6 +1402,7 @@ void Fractal::View(size_t view)
         maxX = HighPrecision{ "1.5" };
         maxY = HighPrecision{ "1.5" };
         ResetNumIterations();
+        ResetDimensions(MAXSIZE_T, MAXSIZE_T, 2);
         break;
     }
 
@@ -1661,6 +1695,47 @@ void Fractal::ResetNumIterations(void)
 ///////////////////////////////////////////////////////////////////////////////
 // Functions for drawing the fractal
 ///////////////////////////////////////////////////////////////////////////////
+bool Fractal::RequiresUseLocalColor() const {
+    switch (GetRenderAlgorithm()) {
+    case RenderAlgorithm::CpuHigh:
+    case RenderAlgorithm::CpuHDR32:
+    case RenderAlgorithm::Cpu32PerturbedBLAHDR:
+    case RenderAlgorithm::Cpu32PerturbedBLAV2HDR:
+    case RenderAlgorithm::Cpu64PerturbedBLAV2HDR:
+    case RenderAlgorithm::Cpu64:
+    case RenderAlgorithm::CpuHDR64:
+    case RenderAlgorithm::Cpu64PerturbedBLA:
+    case RenderAlgorithm::Cpu64PerturbedBLAHDR:
+        return true;
+    case RenderAlgorithm::Gpu1x64:
+    case RenderAlgorithm::Gpu2x64:
+    case RenderAlgorithm::Gpu4x64:
+    case RenderAlgorithm::Gpu1x32:
+    case RenderAlgorithm::Gpu2x32:
+    case RenderAlgorithm::Gpu4x32:
+    case RenderAlgorithm::Gpu1x32Perturbed:
+    case RenderAlgorithm::Gpu1x32PerturbedPeriodic:
+    case RenderAlgorithm::GpuHDRx32Perturbed:
+    case RenderAlgorithm::Gpu1x32PerturbedScaled:
+    case RenderAlgorithm::Gpu1x32PerturbedScaledBLA:
+    case RenderAlgorithm::GpuHDRx32PerturbedScaled:
+    case RenderAlgorithm::Gpu1x64Perturbed:
+    case RenderAlgorithm::Gpu1x64PerturbedBLA:
+    case RenderAlgorithm::Gpu2x32Perturbed:
+    case RenderAlgorithm::Gpu2x32PerturbedScaled:
+    case RenderAlgorithm::GpuHDRx32PerturbedBLA:
+    case RenderAlgorithm::GpuHDRx64PerturbedBLA:
+    case RenderAlgorithm::GpuHDRx32PerturbedLAv2:
+    case RenderAlgorithm::GpuHDRx32PerturbedLAv2PO:
+    case RenderAlgorithm::GpuHDRx32PerturbedLAv2LAO:
+    case RenderAlgorithm::GpuHDRx64PerturbedLAv2:
+    case RenderAlgorithm::GpuHDRx64PerturbedLAv2PO:
+    case RenderAlgorithm::GpuHDRx64PerturbedLAv2LAO:
+    default:
+        return false;
+    }
+}
+
 void Fractal::CalcFractal(bool MemoryOnly)
 {
     SetCursor(LoadCursor(NULL, IDC_WAIT));
@@ -1813,6 +1888,11 @@ void Fractal::CalcFractal(bool MemoryOnly)
 void Fractal::UsePaletteType(Palette type)
 {
     m_WhichPalette = type;
+    auto err = InitializeGPUMemory();
+    if (err) {
+        MessageBoxCudaError(err);
+        return;
+    }
 }
 
 int Fractal::GetPaletteDepthFromIndex(size_t index) const
@@ -1852,6 +1932,12 @@ void Fractal::UsePalette(int depth)
     default:
         m_PaletteDepthIndex = 0;
         break;
+    }
+
+    auto err = InitializeGPUMemory();
+    if (err) {
+        MessageBoxCudaError(err);
+        return;
     }
 }
 
@@ -1908,30 +1994,33 @@ void Fractal::CreateNewFractalPalette(void)
 //////////////////////////////////////////////////////////////////////////////
 void Fractal::DrawFractal(bool MemoryOnly)
 {
-
     if (MemoryOnly) {
         return;
     }
 
-    for (auto &it : m_DrawThreadAtomics) {
-        it.store(0);
-    }
+    const bool LocalColor = RequiresUseLocalColor();
 
-    for (auto &thread : m_DrawThreads) {
-        {
-            std::lock_guard lk(thread->m_DrawThreadMutex);
-            thread->m_DrawThreadProcessed = false;
-            thread->m_DrawThreadReady = true;
+    if (LocalColor) {
+        for (auto& it : m_DrawThreadAtomics) {
+            it.store(0);
         }
-        thread->m_DrawThreadCV.notify_one();
-    }
 
-    for (auto& thread : m_DrawThreads) {
-        std::unique_lock lk(thread->m_DrawThreadMutex);
-        thread->m_DrawThreadCV.wait(lk, [&] {
-            return thread->m_DrawThreadProcessed;
+        for (auto& thread : m_DrawThreads) {
+            {
+                std::lock_guard lk(thread->m_DrawThreadMutex);
+                thread->m_DrawThreadProcessed = false;
+                thread->m_DrawThreadReady = true;
             }
-        );
+            thread->m_DrawThreadCV.notify_one();
+        }
+
+        for (auto& thread : m_DrawThreads) {
+            std::unique_lock lk(thread->m_DrawThreadMutex);
+            thread->m_DrawThreadCV.wait(lk, [&] {
+                return thread->m_DrawThreadProcessed;
+                }
+            );
+        }
     }
 
     GLuint texid;
@@ -1944,9 +2033,16 @@ void Fractal::DrawFractal(bool MemoryOnly)
     //glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 0);
 
     // Change m_DrawOutBytes size if GL_RGBA is changed
-    glTexImage2D(
-        GL_TEXTURE_2D, 0, GL_RGBA16, (GLsizei)m_ScrnWidth, (GLsizei)m_ScrnHeight, 0,
-        GL_RGBA, GL_UNSIGNED_SHORT, m_DrawOutBytes.get());
+    if (LocalColor) {
+        glTexImage2D(
+            GL_TEXTURE_2D, 0, GL_RGBA16, (GLsizei)m_ScrnWidth, (GLsizei)m_ScrnHeight, 0,
+            GL_RGBA, GL_UNSIGNED_SHORT, m_DrawOutBytes.get());
+    }
+    else {
+        glTexImage2D(
+            GL_TEXTURE_2D, 0, GL_RGBA16, (GLsizei)m_CurIters.m_OutputColorWidth, (GLsizei)m_CurIters.m_OutputColorHeight, 0,
+            GL_RGBA, GL_UNSIGNED_SHORT, m_CurIters.m_OutputColorMemory.get());
+    }
 
     glBegin(GL_QUADS);
     glTexCoord2i(0, 0); glVertex2i(0, (GLint)m_ScrnHeight);
@@ -2204,16 +2300,15 @@ void Fractal::CalcGpuFractal(bool MemoryOnly)
     T cx2{}, cy2{}, dx2{}, dy2{};
     FillGpuCoords<T>(cx2, cy2, dx2, dy2);
 
-    uint32_t err =
-        m_r.InitializeMemory(m_CurIters.m_Width,
-                             m_CurIters.m_Height);
+    uint32_t err = InitializeGPUMemory();
     if (err) {
         MessageBoxCudaError(err);
         return;
     }
 
     err = m_r.Render<T>(GetRenderAlgorithm(),
-                        (uint32_t*)m_CurIters.m_ItersMemory,
+                        m_CurIters.m_ItersMemory.get(),
+                        m_CurIters.m_OutputColorMemory.get(),
                         cx2,
                         cy2,
                         dx2,
@@ -2924,9 +3019,7 @@ template<class T, class SubType, bool BLA>
 void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
     auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<T, SubType>(RefOrbitCalc::Extras::None);
 
-    uint32_t err =
-        m_r.InitializeMemory(m_CurIters.m_Width,
-                             m_CurIters.m_Height);
+    uint32_t err = InitializeGPUMemory();
     if (err) {
         MessageBoxCudaError(err);
         return;
@@ -2959,7 +3052,8 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
         blas.Init(results->x.size(), T(results->maxRadius));
 
         result = m_r.RenderPerturbBLA<T>(GetRenderAlgorithm(),
-            (uint32_t*)m_CurIters.m_ItersMemory,
+            m_CurIters.m_ItersMemory.get(),
+            m_CurIters.m_OutputColorMemory.get(),
             &gpu_results,
             &blas,
             cx2,
@@ -2973,7 +3067,8 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
     }
     else {
         result = m_r.RenderPerturb(GetRenderAlgorithm(),
-            (uint32_t*)m_CurIters.m_ItersMemory,
+            m_CurIters.m_ItersMemory.get(),
+            m_CurIters.m_OutputColorMemory.get(),
             &gpu_results,
             cx2,
             cy2,
@@ -2996,9 +3091,7 @@ template<class T, class SubType, LAv2Mode Mode>
 void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
     auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<T, SubType>(RefOrbitCalc::Extras::IncludeLAv2);
 
-    uint32_t err =
-        m_r.InitializeMemory(m_CurIters.m_Width,
-            m_CurIters.m_Height);
+    uint32_t err = InitializeGPUMemory();
     if (err) {
         MessageBoxCudaError(err);
         return;
@@ -3033,7 +3126,8 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
     auto &LaReference = *results->LaReference.get();
 
     auto result = m_r.RenderPerturbLAv2<T, SubType, Mode>(GetRenderAlgorithm(),
-        (uint32_t*)m_CurIters.m_ItersMemory,
+        m_CurIters.m_ItersMemory.get(),
+        m_CurIters.m_OutputColorMemory.get(),
         &gpu_results,
         LaReference,
         cx2,
@@ -3059,9 +3153,7 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
     BLAS<T> blas(*results);
     blas.Init(results->x.size(), T(results->maxRadius));
 
-    uint32_t err =
-        m_r.InitializeMemory(m_CurIters.m_Width,
-                             m_CurIters.m_Height);
+    uint32_t err = InitializeGPUMemory();
     if (err) {
         MessageBoxCudaError(err);
         return;
@@ -3104,7 +3196,8 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
     }
 
     auto result = m_r.RenderPerturbBLA<T>(GetRenderAlgorithm(),
-        (uint32_t*)m_CurIters.m_ItersMemory,
+        m_CurIters.m_ItersMemory.get(),
+        m_CurIters.m_OutputColorMemory.get(),
         &gpu_results,
         &gpu_results2,
         &blas,

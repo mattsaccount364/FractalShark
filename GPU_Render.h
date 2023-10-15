@@ -19,6 +19,30 @@ enum class LAv2Mode {
     LAO,
 };
 
+struct Color32 {
+    uint32_t r, g, b;
+};
+
+struct Color16 {
+    uint16_t r, g, b, a;
+};
+
+struct AntialiasedColors {
+    Color16* aa_colors;
+    Color32* acc_colors;
+};
+
+struct Palette {
+    uint16_t* local_palR;
+    uint16_t* local_palG;
+    uint16_t* local_palB;
+    uint32_t local_palIters;
+
+    const uint16_t* cached_hostPalR;
+    const uint16_t* cached_hostPalG;
+    const uint16_t* cached_hostPalB;
+};
+
 // TODO reorder these in some sane way that matches the menu etc
 enum class RenderAlgorithm {
     // CPU algorithms
@@ -170,12 +194,11 @@ public:
     GPURenderer();
     ~GPURenderer();
 
-    void ResetMemory();
-
     template<class T>
     uint32_t Render(
         RenderAlgorithm algorithm,
-        uint32_t* buffer,
+        uint32_t* iter_buffer,
+        Color16 *color_buffer,
         T cx,
         T cy,
         T dx,
@@ -186,7 +209,8 @@ public:
     template<class T>
     uint32_t RenderPerturb(
         RenderAlgorithm algorithm,
-        uint32_t* buffer,
+        uint32_t* iter_buffer,
+        Color16* color_buffer,
         MattPerturbResults<T>* results,
         T cx,
         T cy,
@@ -199,7 +223,8 @@ public:
 
     uint32_t RenderPerturbBLA(
         RenderAlgorithm algorithm,
-        uint32_t* buffer,
+        uint32_t* iter_buffer,
+        Color16* color_buffer,
         MattPerturbResults<double>* results,
         BLAS<double> *blas,
         double cx,
@@ -214,7 +239,8 @@ public:
     template<class T>
     uint32_t RenderPerturbBLA(
         RenderAlgorithm algorithm,
-        uint32_t* buffer,
+        uint32_t* iter_buffer,
+        Color16* color_buffer,
         MattPerturbResults<T>* double_perturb,
         MattPerturbResults<float>* float_perturb,
         BLAS<T>* blas,
@@ -229,7 +255,8 @@ public:
 
     uint32_t RenderPerturbBLA(
         RenderAlgorithm algorithm,
-        uint32_t* buffer,
+        uint32_t* iter_buffer,
+        Color16* color_buffer,
         MattPerturbResults<float2>* results,
         BLAS<float2>* blas,
         float2 cx,
@@ -244,7 +271,8 @@ public:
     template<class T>
     uint32_t RenderPerturbBLA(
         RenderAlgorithm algorithm,
-        uint32_t* buffer,
+        uint32_t* iter_buffer,
+        Color16* color_buffer,
         MattPerturbResults<T>* results,
         BLAS<T>* blas,
         T cx,
@@ -259,7 +287,8 @@ public:
     template<class T, class SubType, LAv2Mode Mode>
     uint32_t RenderPerturbLAv2(
         RenderAlgorithm algorithm,
-        uint32_t* buffer,
+        uint32_t* iter_buffer,
+        Color16* color_buffer,
         MattPerturbResults<T>* float_perturb,
         const LAReference<SubType> &LaReference,
         T cx,
@@ -273,7 +302,12 @@ public:
     // Side effect is this initializes CUDA the first time it's run
     uint32_t InitializeMemory(
         size_t w, // width
-        size_t h); // height
+        size_t h, // height
+        size_t antialiasing,
+        const uint16_t *palR,
+        const uint16_t *palG,
+        const uint16_t *palB,
+        uint32_t palIters);
 
     void ClearMemory();
 
@@ -284,19 +318,27 @@ public:
     static const int32_t NB_THREADS_H = 8;
 
 private:
+    bool MemoryInitialized() const;
+    void ResetMemory(bool FreeAndClear);
     void ClearLocals();
-    uint32_t ExtractIters(uint32_t* buffer);
+    uint32_t ExtractIters(uint32_t* iter_buffer, Color16* color_buffer);
 
-    uint32_t* iter_matrix_cu;
+    uint32_t* OutputIterMatrix;
+    AntialiasedColors OutputColorMatrix;
 
-    uint32_t width;
-    uint32_t height;
+    Palette Pals;
+
     uint32_t local_width;
     uint32_t local_height;
+    uint32_t local_color_width;
+    uint32_t local_color_height;
+    uint32_t local_antialiasing;
     uint32_t w_block;
     uint32_t h_block;
-    size_t array_width;
+    uint32_t w_color_block;
+    uint32_t h_color_block;
     size_t N_cu;
+    size_t N_color_cu;
 };
 
 

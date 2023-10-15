@@ -42,7 +42,11 @@ private:
     static constexpr int DEFAULT_SIZE = 10000;
 
     GPU_LAInfoDeep<SubType> * __restrict__ LAs;
+    size_t NumLAs;
+
     LAStageInfo * __restrict__ LAStages;
+    size_t NumLAStages;
+
 
 public:
     CUDA_CRAP bool isLAStageInvalid(int32_t LAIndex, HDRFloatComplex dc) const;
@@ -66,7 +70,9 @@ GPU_LAReference<SubType>::GPU_LAReference(const LAReference<SubType>& other) :
     m_Err{},
     m_Owned(true),
     LAs{},
-    LAStages{} {
+    NumLAs{},
+    LAStages{},
+    NumLAStages{} {
 
     GPU_LAInfoDeep<SubType>* tempLAs;
     LAStageInfo* tempLAStages;
@@ -77,6 +83,7 @@ GPU_LAReference<SubType>::GPU_LAReference(const LAReference<SubType>& other) :
     }
 
     LAs = tempLAs;
+    NumLAs = other.LAs.size();
 
     m_Err = cudaMallocManaged(&tempLAStages, other.LAStages.size() * sizeof(LAStageInfo), cudaMemAttachGlobal);
     if (m_Err != cudaSuccess) {
@@ -84,13 +91,14 @@ GPU_LAReference<SubType>::GPU_LAReference(const LAReference<SubType>& other) :
     }
 
     LAStages = tempLAStages;
+    NumLAStages = other.LAStages.size();
 
     //for (size_t i = 0; i < other.LAs.size(); i++) {
     //    LAs[i] = other.LAs[i];
     //}
 
     static_assert(sizeof(GPU_LAInfoDeep<SubType>) == sizeof(LAInfoDeep<SubType>), "!");
-
+    
     m_Err = cudaMemcpy(LAs,
         other.LAs.data(),
         sizeof(GPU_LAInfoDeep<SubType>) * other.LAs.size(),

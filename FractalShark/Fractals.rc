@@ -95,6 +95,9 @@ BEGIN
             MENUITEM "#17 -  Debug spot LAv2 discontinuity 2", IDM_VIEW17
             MENUITEM "#18 - #5 with point + magnification", IDM_VIEW18
             MENUITEM "#19 - Debug spot LAv2 has bugs 3", IDM_VIEW19
+            MENUITEM "#20 - Debug spot - very high period, 2b", IDM_VIEW20
+            MENUITEM "#21 - ~10^11000, 2b iterations", IDM_VIEW21
+            MENUITEM "#22 - high period",           IDM_VIEW22
         END
         MENUITEM "Recalculate, Reuse Reference", IDM_SQUAREVIEW
         MENUITEM "Center View Here",            IDM_CENTERVIEW

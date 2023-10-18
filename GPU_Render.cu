@@ -59,6 +59,13 @@ __device__ void InitStatics()
 #endif
 #endif
 
+__device__
+size_t ConvertLocToIndex(size_t X, size_t Y, size_t OriginalWidth) {
+    auto RoundedBlocks = OriginalWidth / GPURenderer::NB_THREADS_W + (OriginalWidth % GPURenderer::NB_THREADS_W != 0);
+    auto RoundedWidth = RoundedBlocks * GPURenderer::NB_THREADS_W;
+    return Y * RoundedWidth + X;
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////
 // Bilinear approximation
 ////////////////////////////////////////////////////////////////////////////////////////
@@ -1250,25 +1257,58 @@ mandel_1xHDR_float_perturb_bla(
 __global__
 void
 antialiasing_kernel (
+    const uint32_t* __restrict__ OutputIterMatrix,
+    size_t N_cu,
+    uint32_t w_block,
+    uint32_t h_block,
+    uint32_t Width,
+    uint32_t Height,
     AntialiasedColors OutputColorMatrix,
     Palette Pals,
     int local_color_width,
     int local_color_height,
-    int local_antialiasing) {
-    const int X = blockIdx.x * blockDim.x + threadIdx.x;
-    const int Y = blockIdx.y * blockDim.y + threadIdx.y;
+    int Antialiasing,
+    uint32_t n_iterations) {
+    const int output_x = blockIdx.x * blockDim.x + threadIdx.x;
+    const int output_y = blockIdx.y * blockDim.y + threadIdx.y;
 
-    if (X >= local_color_width || Y >= local_color_height)
+    if (output_x >= local_color_width || output_y >= local_color_height)
         return;
 
-    const int32_t color_idx = local_color_width * Y + X;
-    const uint16_t newR = OutputColorMatrix.acc_colors[color_idx].r / local_antialiasing / local_antialiasing;
-    const uint16_t newG = OutputColorMatrix.acc_colors[color_idx].g / local_antialiasing / local_antialiasing;
-    const uint16_t newB = OutputColorMatrix.acc_colors[color_idx].b / local_antialiasing / local_antialiasing;
+    const int32_t color_idx = local_color_width * output_y + output_x;
+    const auto totalAA = Antialiasing * Antialiasing;
 
-    OutputColorMatrix.aa_colors[color_idx].r = newR;
-    OutputColorMatrix.aa_colors[color_idx].g = newG;
-    OutputColorMatrix.aa_colors[color_idx].b = newB;
+    size_t acc_r = 0;
+    size_t acc_g = 0;
+    size_t acc_b = 0;
+
+    for (size_t input_x = output_x * Antialiasing;
+        input_x < (output_x + 1) * Antialiasing;
+        input_x++) {
+        for (size_t input_y = output_y * Antialiasing;
+            input_y < (output_y + 1) * Antialiasing;
+            input_y++) {
+
+            //size_t idx = input_y * Width + input_x;
+            size_t idx = ConvertLocToIndex(input_x, input_y, Width);
+            size_t numIters = OutputIterMatrix[idx];
+
+            if (numIters < n_iterations) {
+                const auto palIndex = numIters % Pals.local_palIters;
+                acc_r += Pals.local_pal[palIndex].r;
+                acc_g += Pals.local_pal[palIndex].g;
+                acc_b += Pals.local_pal[palIndex].b;
+            }
+        }
+    }
+
+    acc_r /= totalAA;
+    acc_g /= totalAA;
+    acc_b /= totalAA;
+
+    OutputColorMatrix.aa_colors[color_idx].r = acc_r;
+    OutputColorMatrix.aa_colors[color_idx].g = acc_g;
+    OutputColorMatrix.aa_colors[color_idx].b = acc_b;
     OutputColorMatrix.aa_colors[color_idx].a = 65535;
 }
 
@@ -1301,7 +1341,7 @@ mandel_1xHDR_float_perturb_lav2(
     if (X >= width || Y >= height)
         return;
 
-    int32_t idx = width * Y + X;
+    int32_t idx = ConvertLocToIndex(X, Y, width);
     //if (OutputIterMatrix[idx] != 0) {
     //    return;
     //}
@@ -1479,27 +1519,6 @@ mandel_1xHDR_float_perturb_lav2(
     __syncthreads();
 
     OutputIterMatrix[idx] = (uint32_t)iter;
-
-    auto palIndex = iter % Pals.local_palIters;
-    auto acc_r = Pals.local_palR[palIndex];
-    auto acc_g = Pals.local_palG[palIndex];
-    auto acc_b = Pals.local_palB[palIndex];
-
-    //if (antialiasing == 1) {
-    //    const int32_t color_idx = width * Y + X;
-    //    OutputColorMatrix.aa_colors[color_idx].r = acc_r;
-    //    OutputColorMatrix.aa_colors[color_idx].g = acc_g;
-    //    OutputColorMatrix.aa_colors[color_idx].b = acc_b;
-    //    OutputColorMatrix.aa_colors[color_idx].a = 65535;
-    //}
-    //else {
-        //const uint32_t incrementCountBit = (1 << 28);
-        //const uint32_t desiredCountBit = incrementCountBit * antialiasing * antialiasing;
-        const int32_t color_idx = (width * Y) / (antialiasing * antialiasing) + X / antialiasing;
-        atomicAdd(&OutputColorMatrix.acc_colors[color_idx].r, acc_r);
-        atomicAdd(&OutputColorMatrix.acc_colors[color_idx].g, acc_g);
-        atomicAdd(&OutputColorMatrix.acc_colors[color_idx].b, acc_b);
-    //}
 }
 
 template<int iteration_precision>
@@ -2881,24 +2900,9 @@ void GPURenderer::ResetMemory(bool FreeAndClear) {
         OutputColorMatrix.aa_colors = nullptr;
     }
 
-    if (OutputColorMatrix.acc_colors != nullptr) {
-        cudaFree(OutputColorMatrix.acc_colors);
-        OutputColorMatrix.acc_colors = nullptr;
-    }
-
-    if (Pals.local_palR != nullptr) {
-        cudaFree(Pals.local_palR);
-        Pals.local_palR = nullptr;
-    }
-
-    if (Pals.local_palG != nullptr) {
-        cudaFree(Pals.local_palG);
-        Pals.local_palG = nullptr;
-    }
-
-    if (Pals.local_palB != nullptr) {
-        cudaFree(Pals.local_palB);
-        Pals.local_palB = nullptr;
+    if (Pals.local_pal != nullptr) {
+        cudaFree(Pals.local_pal);
+        Pals.local_pal = nullptr;
     }
 
     if (FreeAndClear) {
@@ -2911,11 +2915,11 @@ void GPURenderer::ClearLocals() {
     OutputIterMatrix = nullptr;
     OutputColorMatrix = {};
 
-    local_width = 0;
-    local_height = 0;
+    m_Width = 0;
+    m_Height = 0;
     local_color_width = 0;
     local_color_height = 0;
-    local_antialiasing = 0;
+    m_Antialiasing = 0;
     w_block = 0;
     h_block = 0;
     w_color_block = 0;
@@ -2934,61 +2938,64 @@ void GPURenderer::ClearMemory() {
     if (OutputColorMatrix.aa_colors != nullptr) {
         cudaMemset(OutputColorMatrix.aa_colors, 0, N_color_cu * sizeof(Color16));
     }
-
-    if (OutputColorMatrix.acc_colors != nullptr) {
-        cudaMemset(OutputColorMatrix.acc_colors, 0, N_color_cu * sizeof(Color32));
-    }
 }
 
 uint32_t GPURenderer::InitializeMemory(
-    size_t w,
-    size_t h,
+    size_t antialias_width, // screen width
+    size_t antialias_height, // screen height
     size_t antialiasing,
     const uint16_t* palR,
     const uint16_t* palG,
     const uint16_t* palB,
     uint32_t palIters)
 {
-    if ((local_width == w) &&
-        (local_height == h) &&
-        (local_antialiasing == antialiasing) &&
+    if ((m_Width == antialias_width) &&
+        (m_Height == antialias_height) &&
+        (m_Antialiasing == antialiasing) &&
         (Pals.cached_hostPalR == palR) && 
         (Pals.cached_hostPalG == palG) &&
         (Pals.cached_hostPalB == palB)) {
         return 0;
     }
 
-    if (w % NB_THREADS_W != 0) {
-        return 10000;
-    }
+    //if (w % NB_THREADS_W != 0) {
+    //    return 10000;
+    //}
 
-    if (h % NB_THREADS_H != 0) {
-        return 10001;
-    }
+    //if (h % NB_THREADS_H != 0) {
+    //    return 10001;
+    //}
 
     if (antialiasing > 4 || antialiasing < 1) {
         return 10002;
     }
 
-    if (w % antialiasing != 0) {
+    if (antialias_width % antialiasing != 0) {
         return 10003;
     }
 
-    if (h % antialiasing != 0) {
+    if (antialias_height % antialiasing != 0) {
         return 10004;
     }
 
-    local_width = (uint32_t)w;
-    local_height = (uint32_t)h;
-    local_antialiasing = (uint32_t)antialiasing;
-    local_color_width = local_width / local_antialiasing;
-    local_color_height = local_height / local_antialiasing;
-    w_block = local_width / NB_THREADS_W;
-    h_block = local_height / NB_THREADS_H;
-    w_color_block = local_color_width / NB_THREADS_W;
-    h_color_block = local_color_height / NB_THREADS_H;
+    w_block = antialias_width / GPURenderer::NB_THREADS_W +
+        (antialias_width % GPURenderer::NB_THREADS_W != 0);
+    h_block = antialias_height / GPURenderer::NB_THREADS_H +
+        (antialias_height % GPURenderer::NB_THREADS_H != 0);
+    m_Width = (uint32_t)antialias_width;
+    m_Height = (uint32_t)antialias_height;
+    m_Antialiasing = (uint32_t)antialiasing;
     N_cu = w_block * NB_THREADS_W * h_block * NB_THREADS_H;
-    N_color_cu = w_color_block * NB_THREADS_W * h_color_block * NB_THREADS_H;
+
+    const auto no_antialias_width = antialias_width / antialiasing;
+    const auto no_antialias_height = antialias_height / antialiasing;
+    w_color_block = no_antialias_width / GPURenderer::NB_THREADS_W_AA +
+        (no_antialias_width % GPURenderer::NB_THREADS_W_AA != 0);
+    h_color_block = no_antialias_height / GPURenderer::NB_THREADS_H_AA +
+        (no_antialias_height % GPURenderer::NB_THREADS_H_AA != 0);
+    local_color_width = no_antialias_width;
+    local_color_height = no_antialias_height;
+    N_color_cu = w_color_block * NB_THREADS_W_AA * h_color_block * NB_THREADS_H_AA;
 
     Pals.local_palIters = palIters;
     Pals.cached_hostPalR = palR;
@@ -3015,37 +3022,10 @@ uint32_t GPURenderer::InitializeMemory(
         return err;
     }
 
-    err = cudaMallocManaged(
-        &OutputColorMatrix.acc_colors,
-        N_color_cu * sizeof(Color32),
-        cudaMemAttachGlobal);
-    if (err != cudaSuccess) {
-        ResetMemory(true);
-        return err;
-    }
-
     // Palettes:
     err = cudaMallocManaged(
-        &Pals.local_palR ,
-        Pals.local_palIters * sizeof(uint16_t),
-        cudaMemAttachGlobal);
-    if (err != cudaSuccess) {
-        ResetMemory(true);
-        return err;
-    }
-
-    err = cudaMallocManaged(
-        &Pals.local_palG,
-        Pals.local_palIters * sizeof(uint16_t),
-        cudaMemAttachGlobal);
-    if (err != cudaSuccess) {
-        ResetMemory(true);
-        return err;
-    }
-
-    err = cudaMallocManaged(
-        &Pals.local_palB,
-        Pals.local_palIters * sizeof(uint16_t),
+        &Pals.local_pal,
+        Pals.local_palIters * sizeof(Color16),
         cudaMemAttachGlobal);
     if (err != cudaSuccess) {
         ResetMemory(true);
@@ -3053,34 +3033,10 @@ uint32_t GPURenderer::InitializeMemory(
     }
 
     // Copy in palettes
-    err = cudaMemcpy(
-        Pals.local_palR,
-        palR,
-        sizeof(uint16_t) * Pals.local_palIters,
-        cudaMemcpyDefault);
-    if (err != cudaSuccess) {
-        ResetMemory(true);
-        return err;
-    }
-
-    err = cudaMemcpy(
-        Pals.local_palG,
-        palG,
-        sizeof(uint16_t) * Pals.local_palIters,
-        cudaMemcpyDefault);
-    if (err != cudaSuccess) {
-        ResetMemory(true);
-        return err;
-    }
-
-    err = cudaMemcpy(
-        Pals.local_palB,
-        palB,
-        sizeof(uint16_t) * Pals.local_palIters,
-        cudaMemcpyDefault);
-    if (err != cudaSuccess) {
-        ResetMemory(true);
-        return err;
+    for (size_t i = 0; i < Pals.local_palIters; i++) {
+        Pals.local_pal[i].r = palR[i];
+        Pals.local_pal[i].g = palG[i];
+        Pals.local_pal[i].b = palB[i];
     }
 
     ClearMemory();
@@ -3089,10 +3045,6 @@ uint32_t GPURenderer::InitializeMemory(
 
 bool GPURenderer::MemoryInitialized() const {
     if (OutputIterMatrix == nullptr) {
-        return false;
-    }
-
-    if (OutputColorMatrix.acc_colors == nullptr) {
         return false;
     }
 
@@ -3130,28 +3082,28 @@ uint32_t GPURenderer::Render(
                 mandel_1x_double<1> << <nb_blocks, threads_per_block >> > (
                     OutputIterMatrix,
                     OutputColorMatrix,
-                    local_width, local_height, cx, cy, dx, dy,
+                    m_Width, m_Height, cx, cy, dx, dy,
                     n_iterations);
                 break;
             case 4:
                 mandel_1x_double<4> << <nb_blocks, threads_per_block >> > (
                     OutputIterMatrix,
                     OutputColorMatrix,
-                    local_width, local_height, cx, cy, dx, dy,
+                    m_Width, m_Height, cx, cy, dx, dy,
                     n_iterations);
                 break;
             case 8:
                 mandel_1x_double<8> << <nb_blocks, threads_per_block >> > (
                     OutputIterMatrix,
                     OutputColorMatrix,
-                    local_width, local_height, cx, cy, dx, dy,
+                    m_Width, m_Height, cx, cy, dx, dy,
                     n_iterations);
                 break;
             case 16:
                 mandel_1x_double<16> << <nb_blocks, threads_per_block >> > (
                     OutputIterMatrix,
                     OutputColorMatrix,
-                    local_width, local_height, cx, cy, dx, dy,
+                    m_Width, m_Height, cx, cy, dx, dy,
                     n_iterations);
                 break;
             default:
@@ -3169,7 +3121,7 @@ uint32_t GPURenderer::Render(
             mandel_2x_double << <nb_blocks, threads_per_block >> > (
                 OutputIterMatrix,
                 OutputColorMatrix,
-                local_width, local_height, cx2, cy2, dx2, dy2,
+                m_Width, m_Height, cx2, cy2, dx2, dy2,
                 n_iterations);
         }
     }
@@ -3192,7 +3144,7 @@ uint32_t GPURenderer::Render(
             mandel_4x_double << <nb_blocks, threads_per_block >> > (
                 OutputIterMatrix,
                 OutputColorMatrix,
-                local_width, local_height, cx2, cy2, dx2, dy2,
+                m_Width, m_Height, cx2, cy2, dx2, dy2,
                 n_iterations);
         }
     }
@@ -3204,28 +3156,28 @@ uint32_t GPURenderer::Render(
                 mandel_1x_float<1> << <nb_blocks, threads_per_block >> > (
                     OutputIterMatrix,
                     OutputColorMatrix,
-                    local_width, local_height, cx, cy, dx, dy,
+                    m_Width, m_Height, cx, cy, dx, dy,
                     n_iterations);
                 break;
             case 4:
                 mandel_1x_float<4> << <nb_blocks, threads_per_block >> > (
                     OutputIterMatrix,
                     OutputColorMatrix,
-                    local_width, local_height, cx, cy, dx, dy,
+                    m_Width, m_Height, cx, cy, dx, dy,
                     n_iterations);
                 break;
             case 8:
                 mandel_1x_float<8> << <nb_blocks, threads_per_block >> > (
                     OutputIterMatrix,
                     OutputColorMatrix,
-                    local_width, local_height, cx, cy, dx, dy,
+                    m_Width, m_Height, cx, cy, dx, dy,
                     n_iterations);
                 break;
             case 16:
                 mandel_1x_float<16> << <nb_blocks, threads_per_block >> > (
                     OutputIterMatrix,
                     OutputColorMatrix,
-                    local_width, local_height, cx, cy, dx, dy,
+                    m_Width, m_Height, cx, cy, dx, dy,
                     n_iterations);
                 break;
             default:
@@ -3246,28 +3198,28 @@ uint32_t GPURenderer::Render(
                 mandel_2x_float<1> << <nb_blocks, threads_per_block >> > (
                     OutputIterMatrix,
                     OutputColorMatrix,
-                    local_width, local_height, cx2, cy2, dx2, dy2,
+                    m_Width, m_Height, cx2, cy2, dx2, dy2,
                     n_iterations);
                 break;
             case 4:
                 mandel_2x_float<4> << <nb_blocks, threads_per_block >> > (
                     OutputIterMatrix,
                     OutputColorMatrix,
-                    local_width, local_height, cx2, cy2, dx2, dy2,
+                    m_Width, m_Height, cx2, cy2, dx2, dy2,
                     n_iterations);
                 break;
             case 8:
                 mandel_2x_float<8> << <nb_blocks, threads_per_block >> > (
                     OutputIterMatrix,
                     OutputColorMatrix,
-                    local_width, local_height, cx2, cy2, dx2, dy2,
+                    m_Width, m_Height, cx2, cy2, dx2, dy2,
                     n_iterations);
                 break;
             case 16:
                 mandel_2x_float<16> << <nb_blocks, threads_per_block >> > (
                     OutputIterMatrix,
                     OutputColorMatrix,
-                    local_width, local_height, cx2, cy2, dx2, dy2,
+                    m_Width, m_Height, cx2, cy2, dx2, dy2,
                     n_iterations);
                 break;
             default:
@@ -3294,7 +3246,7 @@ uint32_t GPURenderer::Render(
             mandel_4x_float << <nb_blocks, threads_per_block >> > (
                 OutputIterMatrix,
                 OutputColorMatrix,
-                local_width, local_height, cx2, cy2, dx2, dy2,
+                m_Width, m_Height, cx2, cy2, dx2, dy2,
                 n_iterations);
         }
     }
@@ -3412,7 +3364,7 @@ uint32_t GPURenderer::RenderPerturb(
                 OutputIterMatrix,
                 OutputColorMatrix,
                 cudaResults,
-                local_width, local_height, cx, cy, dx, dy,
+                m_Width, m_Height, cx, cy, dx, dy,
                 centerX, centerY,
                 n_iterations);
 
@@ -3426,7 +3378,7 @@ uint32_t GPURenderer::RenderPerturb(
                 OutputIterMatrix,
                 OutputColorMatrix,
                 cudaResults,
-                local_width, local_height, cx, cy, dx, dy,
+                m_Width, m_Height, cx, cy, dx, dy,
                 centerX, centerY,
                 n_iterations);
 
@@ -3440,7 +3392,7 @@ uint32_t GPURenderer::RenderPerturb(
                 OutputIterMatrix,
                 OutputColorMatrix,
                 cudaResults,
-                local_width, local_height, cx, cy, dx, dy,
+                m_Width, m_Height, cx, cy, dx, dy,
                 centerX, centerY,
                 n_iterations);
 
@@ -3456,7 +3408,7 @@ uint32_t GPURenderer::RenderPerturb(
                 OutputIterMatrix,
                 OutputColorMatrix,
                 cudaResults,
-                local_width, local_height, cx, cy, dx, dy,
+                m_Width, m_Height, cx, cy, dx, dy,
                 centerX, centerY,
                 n_iterations);
 
@@ -3575,19 +3527,26 @@ uint32_t GPURenderer::RenderPerturbLAv2(
                 OutputColorMatrix,
                 Pals,
                 cudaResults, laReferenceCuda,
-                local_width, local_height, local_antialiasing, cx, cy, dx, dy,
+                m_Width, m_Height, m_Antialiasing, cx, cy, dx, dy,
                 centerX, centerY,
                 n_iterations);
 
-            //if (local_antialiasing != 1) {
+            //if (m_Antialiasing != 1) {
                 dim3 aa_blocks(w_color_block, h_color_block, 1);
-                dim3 aa_threads_per_block(NB_THREADS_W, NB_THREADS_H, 1);
+                dim3 aa_threads_per_block(NB_THREADS_W_AA, NB_THREADS_H_AA, 1);
                 antialiasing_kernel << <aa_blocks, aa_threads_per_block >> > (
+                    OutputIterMatrix,
+                    N_cu,
+                    w_block,
+                    h_block,
+                    m_Width,
+                    m_Height,
                     OutputColorMatrix,
                     Pals,
                     local_color_width,
                     local_color_height,
-                    local_antialiasing);
+                    m_Antialiasing,
+                    n_iterations);
             //}
 
             result = ExtractIters(iter_buffer, color_buffer);
@@ -3604,7 +3563,7 @@ uint32_t GPURenderer::RenderPerturbLAv2(
                 OutputColorMatrix,
                 Pals,
                 cudaResults, laReferenceCuda,
-                local_width, local_height, local_antialiasing, cx, cy, dx, dy,
+                m_Width, m_Height, m_Antialiasing, cx, cy, dx, dy,
                 centerX, centerY,
                 n_iterations);
 
@@ -3758,7 +3717,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
                 OutputIterMatrix,
                 OutputColorMatrix,
                 cudaResults, cudaResultsDouble,
-                local_width, local_height, cx, cy, dx, dy,
+                m_Width, m_Height, cx, cy, dx, dy,
                 centerX, centerY,
                 n_iterations);
 
@@ -3773,7 +3732,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
                 OutputIterMatrix,
                 OutputColorMatrix,
                 cudaResults, cudaResultsDouble,
-                local_width, local_height, cx, cy, dx, dy,
+                m_Width, m_Height, cx, cy, dx, dy,
                 centerX, centerY,
                 n_iterations);
 
@@ -3796,7 +3755,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
                     OutputIterMatrix,
                     OutputColorMatrix,
                     cudaResults, cudaResultsDouble, doubleGpuBlas,
-                    local_width, local_height, cx, cy, dx, dy,
+                    m_Width, m_Height, cx, cy, dx, dy,
                     centerX, centerY,
                     n_iterations);
 
@@ -3894,7 +3853,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
             OutputIterMatrix,
             OutputColorMatrix,
             cudaResults,
-            local_width, local_height, cx2, cy2, dx2, dy2,
+            m_Width, m_Height, cx2, cy2, dx2, dy2,
             centerX2, centerY2,
             n_iterations);
 
@@ -3956,7 +3915,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
                     OutputColorMatrix,
                     cudaResults,
                     gpu_blas,
-                    local_width, local_height, cx, cy, dx, dy,
+                    m_Width, m_Height, cx, cy, dx, dy,
                     centerX, centerY,
                     n_iterations);
 
@@ -3993,7 +3952,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
                     OutputColorMatrix,
                     cudaResults,
                     gpu_blas,
-                    local_width, local_height, cx, cy, dx, dy,
+                    m_Width, m_Height, cx, cy, dx, dy,
                     centerX, centerY,
                     n_iterations);
 
@@ -4029,7 +3988,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
                     OutputColorMatrix,
                     cudaResults,
                     gpu_blas,
-                    local_width, local_height, cx, cy, dx, dy,
+                    m_Width, m_Height, cx, cy, dx, dy,
                     centerX, centerY,
                     n_iterations);
 
@@ -4067,7 +4026,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
             //mandel_2x_float_perturb_scaled << <nb_blocks, threads_per_block >> > (OutputIterMatrix,
             //    OutputColorMatrix,
             //    cudaResults, cudaResultsDouble,
-            //    local_width, local_height, cx, cy, dx, dy,
+            //    m_Width, m_Height, cx, cy, dx, dy,
             //    centerX, centerY,
             //    n_iterations);
 
@@ -4130,7 +4089,7 @@ uint32_t GPURenderer::ExtractIters(uint32_t* iter_buffer, Color16 *color_buffer)
     const size_t ERROR_COLOR = 255;
     cudaError_t result = cudaDeviceSynchronize();
     if (result != cudaSuccess) {
-        cudaMemset(iter_buffer, ERROR_COLOR, sizeof(int) * local_width * local_height);
+        cudaMemset(iter_buffer, ERROR_COLOR, sizeof(int) * m_Width * m_Height);
         cudaMemset(color_buffer, ERROR_COLOR, sizeof(Color16) * local_color_width * local_color_height);
         return result;
     }

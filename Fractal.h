@@ -297,18 +297,28 @@ private:
         std::unique_ptr<uint32_t[]> m_ItersMemory;
         uint32_t** m_ItersArray;
 
-        // These are a bit bigger than m_ScrnWidth / m_ScrnHeight!
         // These include antialiasing, so 4x antialiasing implies each is ~2x screen dimension
         size_t m_Width;
         size_t m_Height;
         size_t m_Total;
 
+        // These are the originally-input desired dimensions
+        size_t m_OutputWidth;
+        size_t m_OutputHeight;
+        size_t m_OutputTotal;
+
+        // These are a bit bigger than m_ScrnWidth / m_ScrnHeight, and increased
+        // to account for AA.
+        size_t m_RoundedWidth;
+        size_t m_RoundedHeight;
+        size_t m_RoundedTotal;
+
         // Also a bit bigger, but much closer to actual screen size.  These sizes
-        // are independent of antialiasing
-        size_t m_OutputColorWidth;
-        size_t m_OutputColorHeight;
-        size_t m_OutputColorTotal;
-        std::unique_ptr<Color16[]> m_OutputColorMemory;
+        // are independent of antialiasing.
+        size_t m_RoundedOutputColorWidth;
+        size_t m_RoundedOutputColorHeight;
+        size_t m_RoundedOutputColorTotal;
+        std::unique_ptr<Color16[]> m_RoundedOutputColorMemory;
 
         // Antialiasing for reference: 1 (1x), 2 (4x), 3 (9x), 4 (16x)
         size_t m_Antialiasing;

@@ -28,14 +28,15 @@ struct Color16 {
 };
 
 struct AntialiasedColors {
+#ifdef __CUDACC__ 
+    Color16* __restrict__ aa_colors;
+#else
     Color16* aa_colors;
-    Color32* acc_colors;
+#endif
 };
 
 struct Palette {
-    uint16_t* local_palR;
-    uint16_t* local_palG;
-    uint16_t* local_palB;
+    Color16* local_pal;
     uint32_t local_palIters;
 
     const uint16_t* cached_hostPalR;
@@ -301,9 +302,9 @@ public:
 
     // Side effect is this initializes CUDA the first time it's run
     uint32_t InitializeMemory(
-        size_t w, // width
-        size_t h, // height
-        size_t antialiasing,
+        size_t w, // original width * antialiasing
+        size_t h, // original height * antialiasing
+        size_t antialiasing, // w and h are ech scaled up by this amt
         const uint16_t *palR,
         const uint16_t *palG,
         const uint16_t *palB,
@@ -317,6 +318,9 @@ public:
     static const int32_t NB_THREADS_W = 16;  // W=16, H=8 previously seemed OK
     static const int32_t NB_THREADS_H = 8;
 
+    static const int32_t NB_THREADS_W_AA = 16;  // W=16, H=8 previously seemed OK
+    static const int32_t NB_THREADS_H_AA = 8;
+
 private:
     bool MemoryInitialized() const;
     void ResetMemory(bool FreeAndClear);
@@ -328,11 +332,11 @@ private:
 
     Palette Pals;
 
-    uint32_t local_width;
-    uint32_t local_height;
+    uint32_t m_Width;
+    uint32_t m_Height;
     uint32_t local_color_width;
     uint32_t local_color_height;
-    uint32_t local_antialiasing;
+    uint32_t m_Antialiasing;
     uint32_t w_block;
     uint32_t h_block;
     uint32_t w_color_block;

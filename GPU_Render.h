@@ -302,15 +302,19 @@ public:
 
     // Side effect is this initializes CUDA the first time it's run
     uint32_t InitializeMemory(
-        size_t w, // original width * antialiasing
-        size_t h, // original height * antialiasing
-        size_t antialiasing, // w and h are ech scaled up by this amt
+        uint32_t w, // original width * antialiasing
+        uint32_t h, // original height * antialiasing
+        uint32_t antialiasing, // w and h are ech scaled up by this amt
         const uint16_t *palR,
         const uint16_t *palG,
         const uint16_t *palB,
         uint32_t palIters);
 
     void ClearMemory();
+
+    uint32_t OnlyAA(
+        Color16* color_buffer,
+        uint32_t n_iterations);
 
     static const char* ConvertErrorToString(uint32_t err);
 
@@ -323,9 +327,21 @@ public:
 
 private:
     bool MemoryInitialized() const;
-    void ResetMemory(bool FreeAndClear);
+    void ResetPalettesOnly();
+
+    enum class ResetLocals {
+        Yes,
+        No
+    };
+    enum class ResetPalettes {
+        Yes,
+        No
+    };
+
+    void ResetMemory(ResetLocals locals, ResetPalettes palettes);
     void ClearLocals();
-    uint32_t ExtractIters(uint32_t* iter_buffer, Color16* color_buffer);
+    uint32_t RunAntialiasing(uint32_t n_iterations);
+    uint32_t ExtractItersAndColors(uint32_t* iter_buffer, Color16* color_buffer);
 
     uint32_t* OutputIterMatrix;
     AntialiasedColors OutputColorMatrix;

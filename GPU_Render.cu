@@ -474,7 +474,8 @@ void mandel_4x_float(
     if (X >= width || Y >= height)
         return;
 
-    size_t idx = width * (height - Y - 1) + X;
+    // size_t idx = width * (height - Y - 1) + X;
+    size_t idx = ConvertLocToIndex(X, height - Y - 1, width);
 
     // Approach 2
     //// For reference
@@ -545,7 +546,8 @@ void mandel_4x_double(
     if (X >= width || Y >= height)
         return;
 
-    size_t idx = width * (height - Y - 1) + X;
+    //size_t idx = width * (height - Y - 1) + X;
+    size_t idx = ConvertLocToIndex(X, height - Y - 1, width);
 
     // Approach 2
     //// For reference
@@ -638,7 +640,8 @@ void mandel_2x_double(
     if (X >= width || Y >= height)
         return;
 
-    size_t idx = width * (height - Y - 1) + X;
+    //size_t idx = width * (height - Y - 1) + X;
+    size_t idx = ConvertLocToIndex(X, height - Y - 1, width);
 
     //// Approach 1
     // TODO need to take dbldbl as parameters to this
@@ -758,7 +761,8 @@ void mandel_1x_double(
     if (X >= width || Y >= height)
         return;
 
-    size_t idx = width * (height - Y - 1) + X;
+    //size_t idx = width * (height - Y - 1) + X;
+    size_t idx = ConvertLocToIndex(X, height - Y - 1, width);
 
     double x0 = cx + dx * X;
     double y0 = cy + dy * Y;
@@ -886,7 +890,8 @@ void mandel_1x_double_perturb_bla(
         return;
 
     //size_t idx = width * (height - Y - 1) + X;
-    size_t idx = width * Y + X;
+    //size_t idx = width * Y + X;
+    size_t idx = ConvertLocToIndex(X, Y, width);
 
     //if (OutputIterMatrix[idx] != 0) {
     //    return;
@@ -1043,7 +1048,8 @@ mandel_1xHDR_float_perturb_bla(
         return;
 
     //size_t idx = width * (height - Y - 1) + X;
-    size_t idx = width * Y + X;
+    //size_t idx = width * Y + X;
+    size_t idx = ConvertLocToIndex(X, Y, width);
 
     //if (OutputIterMatrix[idx] != 0) { 
     //    return;
@@ -1258,9 +1264,6 @@ __global__
 void
 antialiasing_kernel (
     const uint32_t* __restrict__ OutputIterMatrix,
-    size_t N_cu,
-    uint32_t w_block,
-    uint32_t h_block,
     uint32_t Width,
     uint32_t Height,
     AntialiasedColors OutputColorMatrix,
@@ -1275,7 +1278,7 @@ antialiasing_kernel (
     if (output_x >= local_color_width || output_y >= local_color_height)
         return;
 
-    const int32_t color_idx = local_color_width * output_y + output_x;
+    const int32_t color_idx = local_color_width * output_y + output_x; // do not use ConvertLocToIndex
     const auto totalAA = Antialiasing * Antialiasing;
 
     size_t acc_r = 0;
@@ -1424,7 +1427,7 @@ mandel_1xHDR_float_perturb_lav2(
         }
     }
 
-    if (Mode == LAv2Mode::Full || Mode == LAv2Mode::PO) {
+    if constexpr (Mode == LAv2Mode::Full || Mode == LAv2Mode::PO) {
         DeltaSubNX = DeltaSubN.getRe();
         DeltaSubNY = DeltaSubN.getIm();
 
@@ -1486,12 +1489,13 @@ mandel_1xHDR_float_perturb_lav2(
         const int XStart = blockIdx.x * blockDim.x;
         const int YStart = blockIdx.y * blockDim.y;
 
-        int32_t curidx = width * YStart + XStart;
+        int32_t curidx = ConvertLocToIndex(XStart, YStart, width);
         maxRefIteration = OutputIterMatrix[curidx];
 
         for (auto yiter = YStart; yiter < YStart + blockDim.y; yiter++) {
             for (auto xiter = XStart; xiter < XStart + blockDim.x; xiter++) {
-                curidx = width * yiter + xiter;
+                //curidx = width * yiter + xiter;
+                curidx = ConvertLocToIndex(xiter, yiter, width);
                 if (maxRefIteration < OutputIterMatrix[curidx]) {
                     //differences = true;
                     maxRefIteration = OutputIterMatrix[curidx];
@@ -1540,7 +1544,8 @@ void mandel_2x_float(
     if (X >= width || Y >= height)
         return;
 
-    size_t idx = width * (height - Y - 1) + X;
+    //size_t idx = width * (height - Y - 1) + X;
+    size_t idx = ConvertLocToIndex(X, height - Y - 1, width);
 
     ////// Approach 1
     //// TODO need to take dblflt as parameters to this
@@ -1733,6 +1738,7 @@ void mandel_2x_float_perturb(
 
     ////size_t idx = width * (height - Y - 1) + X;
     //size_t idx = width * Y + X;
+    //size_t idx = ConvertLocToIndex(X, Y, width);
 
     //if (OutputIterMatrix[idx] != 0) {
     //    return;
@@ -1791,7 +1797,8 @@ void mandel_2x_float_perturb(
         return;
 
     //size_t idx = width * (height - Y - 1) + X;
-    size_t idx = width * Y + X;
+    //size_t idx = width * Y + X;
+    size_t idx = ConvertLocToIndex(X, Y, width);
 
     //if (OutputIterMatrix[idx] != 0) {
     //    return;
@@ -1888,7 +1895,8 @@ void mandel_1x_float(
     if (X >= width || Y >= height)
         return;
 
-    size_t idx = width * (height - Y - 1) + X;
+    //size_t idx = width * (height - Y - 1) + X;
+    size_t idx = ConvertLocToIndex(X, height - Y - 1, width);
 
     float x0 = cx + dx * X;
     float y0 = cy + dy * Y;
@@ -2009,7 +2017,8 @@ void mandel_1x_float_perturb(
         return;
 
     //size_t idx = width * (height - Y - 1) + X;
-    size_t idx = width * Y + X;
+    //size_t idx = width * Y + X;
+    size_t idx = ConvertLocToIndex(X, Y, width);
 
     //if (OutputIterMatrix[idx] != 0) {
     //    return;
@@ -2141,7 +2150,8 @@ void mandel_1x_float_perturb_scaled(
     if (X >= width || Y >= height)
         return;
 
-    size_t idx = width * Y + X;
+    //size_t idx = width * Y + X;
+    size_t idx = ConvertLocToIndex(X, Y, width);
 
     //if (OutputIterMatrix[idx] != 0) {
     //    return;
@@ -2384,7 +2394,8 @@ void mandel_1x_float_perturb_scaled_bla(
     if (X >= width || Y >= height)
         return;
 
-    size_t idx = width * Y + X;
+    //size_t idx = width * Y + X;
+    size_t idx = ConvertLocToIndex(X, Y, width);
 
     //if (OutputIterMatrix[idx] != 0) {
     //    return;
@@ -2679,7 +2690,8 @@ void mandel_2x_float_perturb_scaled(
         return;
 
     //size_t idx = width * (height - Y - 1) + X;
-    size_t idx = width * Y + X;
+    //size_t idx = width * Y + X;
+    size_t idx = ConvertLocToIndex(X, Y, width);
 
     //if (OutputIterMatrix[idx] != 0) {
     //    return;
@@ -2886,10 +2898,17 @@ GPURenderer::GPURenderer() {
 }
 
 GPURenderer::~GPURenderer() {
-    ResetMemory(true);
+    ResetMemory(ResetLocals::Yes, ResetPalettes::Yes);
 }
 
-void GPURenderer::ResetMemory(bool FreeAndClear) {
+void GPURenderer::ResetPalettesOnly() {
+    if (Pals.local_pal != nullptr) {
+        cudaFree(Pals.local_pal);
+        Pals.local_pal = nullptr;
+    }
+}
+
+void GPURenderer::ResetMemory(ResetLocals locals, ResetPalettes palettes) {
     if (OutputIterMatrix != nullptr) {
         cudaFree(OutputIterMatrix);
         OutputIterMatrix = nullptr;
@@ -2900,12 +2919,11 @@ void GPURenderer::ResetMemory(bool FreeAndClear) {
         OutputColorMatrix.aa_colors = nullptr;
     }
 
-    if (Pals.local_pal != nullptr) {
-        cudaFree(Pals.local_pal);
-        Pals.local_pal = nullptr;
+    if (palettes == ResetPalettes::Yes) {
+        ResetPalettesOnly();
     }
 
-    if (FreeAndClear) {
+    if (locals == ResetLocals::Yes) {
         ClearLocals();
     }
 }
@@ -2941,20 +2959,48 @@ void GPURenderer::ClearMemory() {
 }
 
 uint32_t GPURenderer::InitializeMemory(
-    size_t antialias_width, // screen width
-    size_t antialias_height, // screen height
-    size_t antialiasing,
+    uint32_t antialias_width, // screen width
+    uint32_t antialias_height, // screen height
+    uint32_t antialiasing,
     const uint16_t* palR,
     const uint16_t* palG,
     const uint16_t* palB,
     uint32_t palIters)
 {
+    // Re-do palettes only.
+    if ((Pals.cached_hostPalR != palR) ||
+        (Pals.cached_hostPalG != palG) ||
+        (Pals.cached_hostPalB != palB)) {
+
+        ResetPalettesOnly();
+
+        Pals.local_palIters = palIters;
+        Pals.cached_hostPalR = palR;
+        Pals.cached_hostPalG = palG;
+        Pals.cached_hostPalB = palB;
+
+        // Palettes:
+        cudaError_t err = cudaMallocManaged(
+            &Pals.local_pal,
+            Pals.local_palIters * sizeof(Color16),
+            cudaMemAttachGlobal);
+        if (err != cudaSuccess) {
+            ResetMemory(ResetLocals::Yes, ResetPalettes::Yes);
+            return err;
+        }
+
+        // TODO the incoming data should be rearranged so we can memcpy
+        // Copy in palettes
+        for (size_t i = 0; i < Pals.local_palIters; i++) {
+            Pals.local_pal[i].r = palR[i];
+            Pals.local_pal[i].g = palG[i];
+            Pals.local_pal[i].b = palB[i];
+        }
+    }
+
     if ((m_Width == antialias_width) &&
         (m_Height == antialias_height) &&
-        (m_Antialiasing == antialiasing) &&
-        (Pals.cached_hostPalR == palR) && 
-        (Pals.cached_hostPalG == palG) &&
-        (Pals.cached_hostPalB == palB)) {
+        (m_Antialiasing == antialiasing)) {
         return 0;
     }
 
@@ -2978,38 +3024,37 @@ uint32_t GPURenderer::InitializeMemory(
         return 10004;
     }
 
-    w_block = antialias_width / GPURenderer::NB_THREADS_W +
+    w_block =
+        antialias_width / GPURenderer::NB_THREADS_W +
         (antialias_width % GPURenderer::NB_THREADS_W != 0);
-    h_block = antialias_height / GPURenderer::NB_THREADS_H +
+    h_block =
+        antialias_height / GPURenderer::NB_THREADS_H +
         (antialias_height % GPURenderer::NB_THREADS_H != 0);
-    m_Width = (uint32_t)antialias_width;
-    m_Height = (uint32_t)antialias_height;
-    m_Antialiasing = (uint32_t)antialiasing;
+    m_Width = antialias_width;
+    m_Height = antialias_height;
+    m_Antialiasing = antialiasing;
     N_cu = w_block * NB_THREADS_W * h_block * NB_THREADS_H;
 
     const auto no_antialias_width = antialias_width / antialiasing;
     const auto no_antialias_height = antialias_height / antialiasing;
-    w_color_block = no_antialias_width / GPURenderer::NB_THREADS_W_AA +
+    w_color_block =
+        no_antialias_width / GPURenderer::NB_THREADS_W_AA +
         (no_antialias_width % GPURenderer::NB_THREADS_W_AA != 0);
-    h_color_block = no_antialias_height / GPURenderer::NB_THREADS_H_AA +
+    h_color_block =
+        no_antialias_height / GPURenderer::NB_THREADS_H_AA +
         (no_antialias_height % GPURenderer::NB_THREADS_H_AA != 0);
     local_color_width = no_antialias_width;
     local_color_height = no_antialias_height;
     N_color_cu = w_color_block * NB_THREADS_W_AA * h_color_block * NB_THREADS_H_AA;
 
-    Pals.local_palIters = palIters;
-    Pals.cached_hostPalR = palR;
-    Pals.cached_hostPalG = palG;
-    Pals.cached_hostPalB = palB;
-
-    ResetMemory(false);
+    ResetMemory(ResetLocals::No, ResetPalettes::No);
 
     cudaError_t err = cudaMallocManaged(
         &OutputIterMatrix,
         N_cu * sizeof(int),
         cudaMemAttachGlobal);
     if (err != cudaSuccess) {
-        ResetMemory(true);
+        ResetMemory(ResetLocals::Yes, ResetPalettes::Yes);
         return err;
     }
 
@@ -3018,25 +3063,8 @@ uint32_t GPURenderer::InitializeMemory(
         N_color_cu * sizeof(Color16),
         cudaMemAttachGlobal);
     if (err != cudaSuccess) {
-        ResetMemory(true);
+        ResetMemory(ResetLocals::Yes, ResetPalettes::Yes);
         return err;
-    }
-
-    // Palettes:
-    err = cudaMallocManaged(
-        &Pals.local_pal,
-        Pals.local_palIters * sizeof(Color16),
-        cudaMemAttachGlobal);
-    if (err != cudaSuccess) {
-        ResetMemory(true);
-        return err;
-    }
-
-    // Copy in palettes
-    for (size_t i = 0; i < Pals.local_palIters; i++) {
-        Pals.local_pal[i].r = palR[i];
-        Pals.local_pal[i].g = palG[i];
-        Pals.local_pal[i].b = palB[i];
     }
 
     ClearMemory();
@@ -3254,7 +3282,12 @@ uint32_t GPURenderer::Render(
         return cudaSuccess;
     }
 
-    return ExtractIters(iter_buffer, color_buffer);
+    auto result = RunAntialiasing(n_iterations);
+    if (result) {
+        return result;
+    }
+
+    return ExtractItersAndColors(iter_buffer, color_buffer);
 }
 
 template uint32_t GPURenderer::Render(
@@ -3368,7 +3401,10 @@ uint32_t GPURenderer::RenderPerturb(
                 centerX, centerY,
                 n_iterations);
 
-            result = ExtractIters(iter_buffer, color_buffer);
+            result = RunAntialiasing(n_iterations);
+            if (!result) {
+                result = ExtractItersAndColors(iter_buffer, color_buffer);
+            }
         }
     }
     else if (algorithm == RenderAlgorithm::Gpu1x64Perturbed) {
@@ -3382,7 +3418,10 @@ uint32_t GPURenderer::RenderPerturb(
                 centerX, centerY,
                 n_iterations);
 
-            result = ExtractIters(iter_buffer, color_buffer);
+            result = RunAntialiasing(n_iterations);
+            if (!result) {
+                result = ExtractItersAndColors(iter_buffer, color_buffer);
+            }
         }
     }
     else if (algorithm == RenderAlgorithm::Gpu1x32PerturbedPeriodic) {
@@ -3396,7 +3435,10 @@ uint32_t GPURenderer::RenderPerturb(
                 centerX, centerY,
                 n_iterations);
 
-            result = ExtractIters(iter_buffer, color_buffer);
+            result = RunAntialiasing(n_iterations);
+            if (!result) {
+                result = ExtractItersAndColors(iter_buffer, color_buffer);
+            }
         }
     }
     else if (algorithm == RenderAlgorithm::GpuHDRx32Perturbed) {
@@ -3412,7 +3454,10 @@ uint32_t GPURenderer::RenderPerturb(
                 centerX, centerY,
                 n_iterations);
 
-            result = ExtractIters(iter_buffer, color_buffer);
+            result = RunAntialiasing(n_iterations);
+            if (!result) {
+                result = ExtractItersAndColors(iter_buffer, color_buffer);
+            }
         }
     }
 
@@ -3531,25 +3576,10 @@ uint32_t GPURenderer::RenderPerturbLAv2(
                 centerX, centerY,
                 n_iterations);
 
-            //if (m_Antialiasing != 1) {
-                dim3 aa_blocks(w_color_block, h_color_block, 1);
-                dim3 aa_threads_per_block(NB_THREADS_W_AA, NB_THREADS_H_AA, 1);
-                antialiasing_kernel << <aa_blocks, aa_threads_per_block >> > (
-                    OutputIterMatrix,
-                    N_cu,
-                    w_block,
-                    h_block,
-                    m_Width,
-                    m_Height,
-                    OutputColorMatrix,
-                    Pals,
-                    local_color_width,
-                    local_color_height,
-                    m_Antialiasing,
-                    n_iterations);
-            //}
-
-            result = ExtractIters(iter_buffer, color_buffer);
+            result = RunAntialiasing(n_iterations);
+            if (!result) {
+                result = ExtractItersAndColors(iter_buffer, color_buffer);
+            }
         }
     } else if (algorithm == RenderAlgorithm::GpuHDRx64PerturbedLAv2 ||
                algorithm == RenderAlgorithm::GpuHDRx64PerturbedLAv2PO ||
@@ -3567,7 +3597,10 @@ uint32_t GPURenderer::RenderPerturbLAv2(
                 centerX, centerY,
                 n_iterations);
 
-            result = ExtractIters(iter_buffer, color_buffer);
+            result = RunAntialiasing(n_iterations);
+            if (!result) {
+                result = ExtractItersAndColors(iter_buffer, color_buffer);
+            }
         }
     }
 
@@ -3721,7 +3754,10 @@ uint32_t GPURenderer::RenderPerturbBLA(
                 centerX, centerY,
                 n_iterations);
 
-            result = ExtractIters(iter_buffer, color_buffer);
+            result = RunAntialiasing(n_iterations);
+            if (!result) {
+                result = ExtractItersAndColors(iter_buffer, color_buffer);
+            }
         }
     } else if (algorithm == RenderAlgorithm::GpuHDRx32PerturbedScaled) {
         if constexpr (std::is_same<T, HDRFloat<float>>::value) {
@@ -3736,7 +3772,10 @@ uint32_t GPURenderer::RenderPerturbBLA(
                 centerX, centerY,
                 n_iterations);
 
-            result = ExtractIters(iter_buffer, color_buffer);
+            result = RunAntialiasing(n_iterations);
+            if (!result) {
+                result = ExtractItersAndColors(iter_buffer, color_buffer);
+            }
         }
     }
     else if (algorithm == RenderAlgorithm::Gpu1x32PerturbedScaledBLA) {
@@ -3759,7 +3798,11 @@ uint32_t GPURenderer::RenderPerturbBLA(
                     centerX, centerY,
                     n_iterations);
 
-                return ExtractIters(iter_buffer, color_buffer);
+                result = RunAntialiasing(n_iterations);
+                if (!result) {
+                    result = ExtractItersAndColors(iter_buffer, color_buffer);
+                }
+                return result;
             };
 
             LargeSwitch
@@ -3857,7 +3900,10 @@ uint32_t GPURenderer::RenderPerturbBLA(
             centerX2, centerY2,
             n_iterations);
 
-        result = ExtractIters(iter_buffer, color_buffer);
+        result = RunAntialiasing(n_iterations);
+        if (!result) {
+            result = ExtractItersAndColors(iter_buffer, color_buffer);
+        }
     }
 
     return result;
@@ -3919,7 +3965,11 @@ uint32_t GPURenderer::RenderPerturbBLA(
                     centerX, centerY,
                     n_iterations);
 
-                return ExtractIters(iter_buffer, color_buffer);
+                result = RunAntialiasing(n_iterations);
+                if (!result) {
+                    result = ExtractItersAndColors(iter_buffer, color_buffer);
+                }
+                return result;
             };
 
             LargeSwitch
@@ -3956,7 +4006,11 @@ uint32_t GPURenderer::RenderPerturbBLA(
                     centerX, centerY,
                     n_iterations);
 
-                return ExtractIters(iter_buffer, color_buffer);
+                result = RunAntialiasing(n_iterations);
+                if (!result) {
+                    result = ExtractItersAndColors(iter_buffer, color_buffer);
+                }
+                return result;
             };
 
             LargeSwitch
@@ -3992,7 +4046,11 @@ uint32_t GPURenderer::RenderPerturbBLA(
                     centerX, centerY,
                     n_iterations);
 
-                return ExtractIters(iter_buffer, color_buffer);
+                result = RunAntialiasing(n_iterations);
+                if (!result) {
+                    result = ExtractItersAndColors(iter_buffer, color_buffer);
+                }
+                return result;
             };
 
             LargeSwitch
@@ -4030,7 +4088,10 @@ uint32_t GPURenderer::RenderPerturbBLA(
             //    centerX, centerY,
             //    n_iterations);
 
-            //result = ExtractIters(iter_buffer, color_buffer);
+            //result = RunAntialiasing(n_iterations);
+            //if (!result) {
+            //    result = ExtractItersAndColors(iter_buffer, color_buffer);
+            //}
         }
     }
 
@@ -4085,31 +4146,77 @@ uint32_t GPURenderer::RenderPerturbBLA(
     uint32_t n_iterations,
     int /*iteration_precision*/);
 
-uint32_t GPURenderer::ExtractIters(uint32_t* iter_buffer, Color16 *color_buffer) {
+__host__
+uint32_t
+GPURenderer::OnlyAA(
+    Color16* color_buffer,
+    uint32_t n_iterations) {
+
+    auto result = RunAntialiasing(n_iterations);
+    if (result != cudaSuccess) {
+        return result;
+    }
+
+    result = ExtractItersAndColors(nullptr, color_buffer);
+    if (result != cudaSuccess) {
+        return result;
+    }
+
+    return cudaSuccess;
+}
+
+__host__
+uint32_t
+GPURenderer::RunAntialiasing(uint32_t n_iterations) {
+    dim3 aa_blocks(w_color_block, h_color_block, 1);
+    dim3 aa_threads_per_block(NB_THREADS_W_AA, NB_THREADS_H_AA, 1);
+    antialiasing_kernel << <aa_blocks, aa_threads_per_block >> > (
+        OutputIterMatrix,
+        m_Width,
+        m_Height,
+        OutputColorMatrix,
+        Pals,
+        local_color_width,
+        local_color_height,
+        m_Antialiasing,
+        n_iterations);
+    return cudaSuccess;
+}
+
+uint32_t GPURenderer::ExtractItersAndColors(uint32_t* iter_buffer, Color16 *color_buffer) {
     const size_t ERROR_COLOR = 255;
     cudaError_t result = cudaDeviceSynchronize();
     if (result != cudaSuccess) {
-        cudaMemset(iter_buffer, ERROR_COLOR, sizeof(int) * m_Width * m_Height);
-        cudaMemset(color_buffer, ERROR_COLOR, sizeof(Color16) * local_color_width * local_color_height);
+        if (iter_buffer) {
+            cudaMemset(iter_buffer, ERROR_COLOR, sizeof(int) * m_Width * m_Height);
+        }
+
+        if (color_buffer) {
+            cudaMemset(color_buffer, ERROR_COLOR, sizeof(Color16) * local_color_width * local_color_height);
+        }
         return result;
     }
 
-    result = cudaMemcpy(
-        iter_buffer,
-        OutputIterMatrix,
-        sizeof(int) * N_cu,
-        cudaMemcpyDefault);
-    if (result != cudaSuccess) {
-        return result;
+    if (iter_buffer) {
+        result = cudaMemcpy(
+            iter_buffer,
+            OutputIterMatrix,
+            sizeof(int) * N_cu,
+            cudaMemcpyDefault);
+        if (result != cudaSuccess) {
+            return result;
+        }
     }
 
-    result = cudaMemcpy(
-        color_buffer,
-        OutputColorMatrix.aa_colors,
-        sizeof(Color16) * N_color_cu,
-        cudaMemcpyDefault);
-    if (result != cudaSuccess) {
-        return result;
+    if (color_buffer) {
+        result = cudaMemcpy(
+            color_buffer,
+            OutputColorMatrix.aa_colors,
+            sizeof(Color16) * N_color_cu,
+            cudaMemcpyDefault);
+        if (result != cudaSuccess) {
+            return result;
+        }
     }
 
     return cudaSuccess;

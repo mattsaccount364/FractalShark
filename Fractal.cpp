@@ -426,9 +426,9 @@ uint32_t Fractal::InitializeGPUMemory() {
     }
 
     return m_r.InitializeMemory(
-        m_CurIters.m_Width,
-        m_CurIters.m_Height,
-        m_CurIters.m_Antialiasing,
+        (uint32_t)m_CurIters.m_Width,
+        (uint32_t)m_CurIters.m_Height,
+        (uint32_t)m_CurIters.m_Antialiasing,
         m_PalR[m_WhichPalette][m_PaletteDepthIndex].data(),
         m_PalG[m_WhichPalette][m_PaletteDepthIndex].data(),
         m_PalB[m_WhichPalette][m_PaletteDepthIndex].data(),
@@ -1996,6 +1996,11 @@ void Fractal::UsePalette(int depth)
 
 void Fractal::UseNextPaletteDepth() {
     m_PaletteDepthIndex = (m_PaletteDepthIndex + 1) % 6;
+    auto err = InitializeGPUMemory();
+    if (err) {
+        MessageBoxCudaError(err);
+        return;
+    }
 }
 
 int Fractal::GetPaletteDepth() const {
@@ -2073,6 +2078,16 @@ void Fractal::DrawFractal(bool MemoryOnly)
                 return thread->m_DrawThreadProcessed;
                 }
             );
+        }
+    }
+    else {
+        auto result = m_r.OnlyAA(
+            m_CurIters.m_RoundedOutputColorMemory.get(),
+            (uint32_t)m_NumIterations);
+
+        if (result) {
+            MessageBoxCudaError(result);
+            return;
         }
     }
 

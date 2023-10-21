@@ -342,6 +342,7 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
     case 'd':
     {
         gFractal->UseNextPaletteDepth();
+        gFractal->DrawFractal(false);
         break;
     }
 

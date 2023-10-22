@@ -37,7 +37,7 @@ struct AntialiasedColors {
 
 struct Palette {
     Color16* local_pal;
-    uint32_t local_palIters;
+    IterType local_palIters;
 
     const uint16_t* cached_hostPalR;
     const uint16_t* cached_hostPalG;
@@ -146,15 +146,15 @@ struct MattCoords {
 template<class T>
 struct MattPerturbResults {
     MattReferenceSingleIter<T> *iters;
-    size_t size;
-    size_t PeriodMaybeZero;
+    IterType size;
+    IterType PeriodMaybeZero;
 
-    MattPerturbResults(size_t in_size,
+    MattPerturbResults(IterType in_size,
                        T *in_x,
                        T *in_y,
                        uint8_t *in_bad,
-                       size_t in_bad_size,
-                       size_t PeriodMaybeZero) :
+                       IterType in_bad_size,
+                       IterType PeriodMaybeZero) :
         iters(new MattReferenceSingleIter<T>[in_size]),
         size(in_size),
         PeriodMaybeZero(PeriodMaybeZero) {
@@ -169,15 +169,20 @@ struct MattPerturbResults {
         //static_assert(sizeof(MattReferenceSingleIter<HDRFloat<float>>) == 12 * 4, "float2");
         static_assert(sizeof(float2) == 8, "float2 type");
 
+        // TODO - one thought;
+        // TODO this is really slow: rearrange data for memcpy.
+        // TODO use a template, remove "bad" completely when it's not used.
+        // TODO - better though, remove this class and copy from original results
+        // to MattPerturbSingleResults directly
         if (in_bad_size == in_size) {
-            for (size_t i = 0; i < size; i++) {
+            for (IterType i = 0; i < size; i++) {
                 iters[i].x = in_x[i];
                 iters[i].y = in_y[i];
                 iters[i].bad = in_bad[i];
             }
         }
         else {
-            for (size_t i = 0; i < size; i++) {
+            for (IterType i = 0; i < size; i++) {
                 iters[i].x = in_x[i];
                 iters[i].y = in_y[i];
                 iters[i].bad = 0;
@@ -198,19 +203,19 @@ public:
     template<class T>
     uint32_t Render(
         RenderAlgorithm algorithm,
-        uint32_t* iter_buffer,
+        IterType* iter_buffer,
         Color16 *color_buffer,
         T cx,
         T cy,
         T dx,
         T dy,
-        uint32_t n_iterations,
+        IterType n_iterations,
         int iteration_precision);
 
     template<class T>
     uint32_t RenderPerturb(
         RenderAlgorithm algorithm,
-        uint32_t* iter_buffer,
+        IterType* iter_buffer,
         Color16* color_buffer,
         MattPerturbResults<T>* results,
         T cx,
@@ -219,12 +224,12 @@ public:
         T dy,
         T centerX,
         T centerY,
-        uint32_t n_iterations,
+        IterType n_iterations,
         int iteration_precision);
 
     uint32_t RenderPerturbBLA(
         RenderAlgorithm algorithm,
-        uint32_t* iter_buffer,
+        IterType* iter_buffer,
         Color16* color_buffer,
         MattPerturbResults<double>* results,
         BLAS<double> *blas,
@@ -234,13 +239,13 @@ public:
         double dy,
         double centerX,
         double centerY,
-        uint32_t n_iterations,
+        IterType n_iterations,
         int iteration_precision);
 
     template<class T>
     uint32_t RenderPerturbBLA(
         RenderAlgorithm algorithm,
-        uint32_t* iter_buffer,
+        IterType* iter_buffer,
         Color16* color_buffer,
         MattPerturbResults<T>* double_perturb,
         MattPerturbResults<float>* float_perturb,
@@ -251,12 +256,12 @@ public:
         T dy,
         T centerX,
         T centerY,
-        uint32_t n_iterations,
+        IterType n_iterations,
         int iteration_precision);
 
     uint32_t RenderPerturbBLA(
         RenderAlgorithm algorithm,
-        uint32_t* iter_buffer,
+        IterType* iter_buffer,
         Color16* color_buffer,
         MattPerturbResults<float2>* results,
         BLAS<float2>* blas,
@@ -266,13 +271,13 @@ public:
         float2 dy,
         float2 centerX,
         float2 centerY,
-        uint32_t n_iterations,
+        IterType n_iterations,
         int iteration_precision);
 
     template<class T>
     uint32_t RenderPerturbBLA(
         RenderAlgorithm algorithm,
-        uint32_t* iter_buffer,
+        IterType* iter_buffer,
         Color16* color_buffer,
         MattPerturbResults<T>* results,
         BLAS<T>* blas,
@@ -282,13 +287,13 @@ public:
         T dy,
         T centerX,
         T centerY,
-        uint32_t n_iterations,
+        IterType n_iterations,
         int iteration_precision);
 
     template<class T, class SubType, LAv2Mode Mode>
     uint32_t RenderPerturbLAv2(
         RenderAlgorithm algorithm,
-        uint32_t* iter_buffer,
+        IterType* iter_buffer,
         Color16* color_buffer,
         MattPerturbResults<T>* float_perturb,
         const LAReference<SubType> &LaReference,
@@ -298,7 +303,7 @@ public:
         T dy,
         T centerX,
         T centerY,
-        uint32_t n_iterations);
+        IterType n_iterations);
 
     // Side effect is this initializes CUDA the first time it's run
     uint32_t InitializeMemory(
@@ -308,13 +313,13 @@ public:
         const uint16_t *palR,
         const uint16_t *palG,
         const uint16_t *palB,
-        uint32_t palIters);
+        IterType palIters);
 
     void ClearMemory();
 
     uint32_t OnlyAA(
         Color16* color_buffer,
-        uint32_t n_iterations);
+        IterType n_iterations);
 
     static const char* ConvertErrorToString(uint32_t err);
 
@@ -340,10 +345,10 @@ private:
 
     void ResetMemory(ResetLocals locals, ResetPalettes palettes);
     void ClearLocals();
-    uint32_t RunAntialiasing(uint32_t n_iterations);
-    uint32_t ExtractItersAndColors(uint32_t* iter_buffer, Color16* color_buffer);
+    uint32_t RunAntialiasing(IterType n_iterations);
+    uint32_t ExtractItersAndColors(IterType* iter_buffer, Color16* color_buffer);
 
-    uint32_t* OutputIterMatrix;
+    IterType* OutputIterMatrix;
     AntialiasedColors OutputColorMatrix;
 
     Palette Pals;

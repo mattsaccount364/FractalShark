@@ -1312,7 +1312,7 @@ void MenuMultiplyIterations(HWND hWnd, double factor)
 {
     size_t curIters = gFractal->GetNumIterations();
     curIters = (size_t)((double)curIters * (double)factor);
-    gFractal->SetNumIterations(curIters);
+    gFractal->SetNumIterations((IterType)curIters);
     PaintAsNecessary(hWnd);
 }
 

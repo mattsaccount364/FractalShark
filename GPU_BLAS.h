@@ -25,7 +25,7 @@ public:
         const GPUBLA_TYPE* __restrict__ *altB,
         /*T* curBR2,*/
         //const GPUBLA_TYPE * __restrict__ nullBla,
-        size_t m,
+        IterType m,
         T z2) const;
 #endif
 

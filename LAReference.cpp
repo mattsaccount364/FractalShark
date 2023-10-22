@@ -9,12 +9,12 @@ template<class SubType>
 const SubType LAReference<SubType>::log16 = (SubType)std::log(16);
 
 template<class SubType>
-int32_t LAReference<SubType>::LAsize() {
-    return (int32_t)LAs.size();
+IterType LAReference<SubType>::LAsize() {
+    return (IterType)LAs.size();
 }
 
 template<class SubType>
-bool LAReference<SubType>::CreateLAFromOrbit(int32_t maxRefIteration) {
+bool LAReference<SubType>::CreateLAFromOrbit(IterType maxRefIteration) {
 
     {
         isValid = false;
@@ -28,7 +28,7 @@ bool LAReference<SubType>::CreateLAFromOrbit(int32_t maxRefIteration) {
         LAStages[0].LAIndex = 0;
     }
 
-    int32_t Period = 0;
+    IterType Period = 0;
 
     LAInfoDeep<SubType> LA{HDRFloatComplex()};
     LA = LA.Step(m_PerturbationResults->GetComplex<SubType>(1));
@@ -40,7 +40,7 @@ bool LAReference<SubType>::CreateLAFromOrbit(int32_t maxRefIteration) {
         return false;
     }
 
-    int32_t i;
+    IterType i;
     for (i = 2; i < maxRefIteration; i++) {
 
         LAInfoDeep<SubType> NewLA;
@@ -71,8 +71,8 @@ bool LAReference<SubType>::CreateLAFromOrbit(int32_t maxRefIteration) {
 
     LAStageCount = 1;
 
-    int32_t PeriodBegin = Period;
-    int32_t PeriodEnd = PeriodBegin + Period;
+    IterType PeriodBegin = Period;
+    IterType PeriodEnd = PeriodBegin + Period;
 
     if (Period == 0) {
         if (maxRefIteration > lowBound) {
@@ -81,7 +81,7 @@ bool LAReference<SubType>::CreateLAFromOrbit(int32_t maxRefIteration) {
             i = 2;
 
             double NthRoot = std::round(std::log(maxRefIteration) / log16);
-            Period = (int32_t)std::round(std::pow(maxRefIteration, 1.0 / NthRoot));
+            Period = (IterType)std::round(std::pow(maxRefIteration, 1.0 / NthRoot));
 
             PeriodBegin = 0;
             PeriodEnd = Period;
@@ -107,7 +107,7 @@ bool LAReference<SubType>::CreateLAFromOrbit(int32_t maxRefIteration) {
         i = 2;
 
         double NthRoot = std::round(std::log(Period) / log16);
-        Period = (int32_t)std::round(std::pow(Period, 1.0 / NthRoot));
+        Period = (IterType)std::round(std::pow(Period, 1.0 / NthRoot));
 
         PeriodBegin = 0;
         PeriodEnd = Period;
@@ -134,7 +134,7 @@ bool LAReference<SubType>::CreateLAFromOrbit(int32_t maxRefIteration) {
         PeriodBegin = i;
         PeriodEnd = PeriodBegin + Period;
 
-        const int32_t ip1{ i + 1 };
+        const IterType ip1{ i + 1 };
         const bool detected{ NewLA.DetectPeriod(m_PerturbationResults->GetComplex<SubType>(ip1)) };
 
         if (detected || ip1 >= maxRefIteration) {
@@ -162,7 +162,7 @@ bool LAReference<SubType>::CreateLAFromOrbit(int32_t maxRefIteration) {
 }
 
 template<class SubType>
-bool LAReference<SubType>::CreateLAFromOrbitMT(int32_t maxRefIteration) {
+bool LAReference<SubType>::CreateLAFromOrbitMT(IterType maxRefIteration) {
 
     {
         isValid = false;
@@ -176,7 +176,7 @@ bool LAReference<SubType>::CreateLAFromOrbitMT(int32_t maxRefIteration) {
         LAStages[0].LAIndex = 0;
     }
 
-    int32_t Period = 0;
+    IterType Period = 0;
 
     LAInfoDeep<SubType> LA{ HDRFloatComplex() };
     LA = LA.Step(m_PerturbationResults->GetComplex<SubType>(1));
@@ -188,7 +188,7 @@ bool LAReference<SubType>::CreateLAFromOrbitMT(int32_t maxRefIteration) {
         return false;
     }
 
-    int32_t i;
+    IterType i;
     for (i = 2; i < maxRefIteration; i++) {
 
         LAInfoDeep<SubType> NewLA;
@@ -219,8 +219,8 @@ bool LAReference<SubType>::CreateLAFromOrbitMT(int32_t maxRefIteration) {
 
     LAStageCount = 1;
 
-    int32_t PeriodBegin = Period;
-    int32_t PeriodEnd = PeriodBegin + Period;
+    IterType PeriodBegin = Period;
+    IterType PeriodEnd = PeriodBegin + Period;
 
     if (Period == 0) {
         if (maxRefIteration > lowBound) {
@@ -229,7 +229,7 @@ bool LAReference<SubType>::CreateLAFromOrbitMT(int32_t maxRefIteration) {
             i = 2;
 
             double NthRoot = std::round(std::log(maxRefIteration) / log16);
-            Period = (int32_t)std::round(std::pow(maxRefIteration, 1.0 / NthRoot));
+            Period = (IterType)std::round(std::pow(maxRefIteration, 1.0 / NthRoot));
 
             PeriodBegin = 0;
             PeriodEnd = Period;
@@ -255,7 +255,7 @@ bool LAReference<SubType>::CreateLAFromOrbitMT(int32_t maxRefIteration) {
         i = 2;
 
         double NthRoot = std::round(std::log(Period) / log16);
-        Period = (int32_t)std::round(std::pow(Period, 1.0 / NthRoot));
+        Period = (IterType)std::round(std::pow(Period, 1.0 / NthRoot));
 
         PeriodBegin = 0;
         PeriodEnd = Period;
@@ -265,7 +265,7 @@ bool LAReference<SubType>::CreateLAFromOrbitMT(int32_t maxRefIteration) {
     // const auto numPerThread = maxRefIteration / ;
 
     const int32_t ThreadCount = (int32_t)std::thread::hardware_concurrency();
-    std::vector<int32_t> Start;
+    std::vector<IterType> Start;
     Start.resize(ThreadCount);
 
     auto Starter = [&]() {
@@ -287,7 +287,7 @@ bool LAReference<SubType>::CreateLAFromOrbitMT(int32_t maxRefIteration) {
             PeriodBegin = i;
             PeriodEnd = PeriodBegin + Period;
 
-            const int32_t ip1{ i + 1 };
+            const IterType ip1{ i + 1 };
             const bool detected{ NewLA.DetectPeriod(m_PerturbationResults->GetComplex<SubType>(ip1)) };
 
             if (detected || ip1 >= maxRefIteration) {
@@ -319,20 +319,20 @@ bool LAReference<SubType>::CreateLAFromOrbitMT(int32_t maxRefIteration) {
     //    ThreadLAs[i].reserve...
     //}
 
-    volatile int32_t numbers1[128] = { 0 };
-    volatile int32_t numbers2[128] = { 0 };
+    volatile IterType numbers1[128] = { 0 };
+    volatile IterType numbers2[128] = { 0 };
 
     auto Worker = [&numbers1, &numbers2, Period, &Start, &ThreadLAs, ThreadCount, maxRefIteration, this](int32_t ThreadID) {
-        int32_t j = maxRefIteration * ThreadID / ThreadCount;
-        int32_t End = maxRefIteration * (ThreadID + 1) / ThreadCount;
+        IterType j = maxRefIteration * ThreadID / ThreadCount;
+        IterType End = maxRefIteration * (ThreadID + 1) / ThreadCount;
         LAInfoDeep<SubType> LA_ = LAInfoDeep<SubType>(m_PerturbationResults->GetComplex<SubType>(j));
         LA_ = LA_.Step(m_PerturbationResults->GetComplex<SubType>(j + 1));
         LAInfoI LAI_;
         LAI_.NextStageLAIndex = j;
         j += 2;
 
-        int32_t PeriodBegin = 0;
-        int32_t PeriodEnd = 0;
+        IterType PeriodBegin = 0;
+        IterType PeriodEnd = 0;
 
         numbers1[ThreadID] = j;
         numbers2[ThreadID] = End;
@@ -378,7 +378,7 @@ bool LAReference<SubType>::CreateLAFromOrbitMT(int32_t maxRefIteration) {
             PeriodBegin = j;
             PeriodEnd = PeriodBegin + Period;
 
-            const int32_t ip1{ j + 1 };
+            const IterType ip1{ j + 1 };
             const bool detected{ NewLA.DetectPeriod(m_PerturbationResults->GetComplex<SubType>(ip1)) };
 
             if (detected || ip1 >= maxRefIteration) {
@@ -439,24 +439,24 @@ bool LAReference<SubType>::CreateLAFromOrbitMT(int32_t maxRefIteration) {
 
 //#pragma optimize( "", off )
 template<class SubType>
-bool LAReference<SubType>::CreateNewLAStage(int32_t maxRefIteration) {
+bool LAReference<SubType>::CreateNewLAStage(IterType maxRefIteration) {
     LAInfoDeep<SubType> LA;
     LAInfoI LAI = LAInfoI();
-    int32_t i;
-    int32_t PeriodBegin;
-    int32_t PeriodEnd;
+    IterType i;
+    IterType PeriodBegin;
+    IterType PeriodEnd;
 
-    int32_t PrevStage = LAStageCount - 1;
-    int32_t CurrentStage = LAStageCount;
-    int32_t PrevStageLAIndex = LAStages[PrevStage].LAIndex;
-    int32_t PrevStageMacroItCount = LAStages[PrevStage].MacroItCount;
+    IterType PrevStage = LAStageCount - 1;
+    IterType CurrentStage = LAStageCount;
+    IterType PrevStageLAIndex = LAStages[PrevStage].LAIndex;
+    IterType PrevStageMacroItCount = LAStages[PrevStage].MacroItCount;
     LAInfoDeep<SubType> PrevStageLA = LAs[PrevStageLAIndex];
     const LAInfoI &PrevStageLAI = LAs[PrevStageLAIndex].GetLAi();
 
     LAInfoDeep<SubType> PrevStageLAp1 = LAs[PrevStageLAIndex + 1];
     const LAInfoI PrevStageLAIp1 = LAs[PrevStageLAIndex + 1].GetLAi();
 
-    int32_t Period = 0;
+    IterType Period = 0;
 
     if (PrevStage > MaxLAStages) {
         ::MessageBox(NULL, L"Too many stages :(", L"", MB_OK);
@@ -471,14 +471,14 @@ bool LAReference<SubType>::CreateNewLAStage(int32_t maxRefIteration) {
     LA = PrevStageLA.Composite(PrevStageLAp1);
     LAI.NextStageLAIndex = 0;
     i = PrevStageLAI.StepLength + PrevStageLAIp1.StepLength;
-    int32_t j;
+    IterType j;
 
     for (j = 2; j < PrevStageMacroItCount; j++) {
         LAInfoDeep<SubType> NewLA;
 
         NewLA = LAInfoDeep<SubType>();
 
-        int32_t PrevStageLAIndexj = PrevStageLAIndex + j;
+        IterType PrevStageLAIndexj = PrevStageLAIndex + j;
         LAInfoDeep<SubType> PrevStageLAj = LAs[PrevStageLAIndexj];
         const LAInfoI *PrevStageLAIj = &PrevStageLAj.GetLAi();
         bool PeriodDetected = LA.Composite(NewLA, PrevStageLAj);
@@ -494,7 +494,7 @@ bool LAReference<SubType>::CreateNewLAStage(int32_t maxRefIteration) {
 
             LAI.NextStageLAIndex = j;
 
-            int32_t PrevStageLAIndexjp1 = PrevStageLAIndexj + 1;
+            IterType PrevStageLAIndexjp1 = PrevStageLAIndexj + 1;
             LAInfoDeep<SubType> PrevStageLAjp1 = LAs[PrevStageLAIndexjp1];
             const LAInfoI &PrevStageLAIjp1 = LAs[PrevStageLAIndexjp1].GetLAi();
 
@@ -532,7 +532,7 @@ bool LAReference<SubType>::CreateNewLAStage(int32_t maxRefIteration) {
 
             double Ratio = ((double)(maxRefIteration)) / PrevStageLAI.StepLength;
             double NthRoot = std::round(std::log(Ratio) / log16); // log16
-            Period = PrevStageLAI.StepLength * (int32_t)std::round(std::pow(Ratio, 1.0 / NthRoot));
+            Period = PrevStageLAI.StepLength * (IterType)std::round(std::pow(Ratio, 1.0 / NthRoot));
 
             PeriodBegin = 0;
             PeriodEnd = Period;
@@ -564,7 +564,7 @@ bool LAReference<SubType>::CreateNewLAStage(int32_t maxRefIteration) {
         double Ratio = ((double)(Period)) / PrevStageLAI.StepLength;
 
         double NthRoot = std::round(std::log(Ratio) / log16);
-        Period = PrevStageLAI.StepLength * ((int32_t)std::round(std::pow(Ratio, 1.0 / NthRoot)));
+        Period = PrevStageLAI.StepLength * ((IterType)std::round(std::pow(Ratio, 1.0 / NthRoot)));
 
         PeriodBegin = 0;
         PeriodEnd = Period;
@@ -574,7 +574,7 @@ bool LAReference<SubType>::CreateNewLAStage(int32_t maxRefIteration) {
         LAInfoDeep<SubType> NewLA;
 
         NewLA = LAInfoDeep<SubType>();
-        int32_t PrevStageLAIndexj = PrevStageLAIndex + j;
+        IterType PrevStageLAIndexj = PrevStageLAIndex + j;
 
         LAInfoDeep<SubType> PrevStageLAj = LAs[PrevStageLAIndexj];
         bool PeriodDetected = LA.Composite(NewLA, PrevStageLAj);
@@ -624,7 +624,7 @@ bool LAReference<SubType>::CreateNewLAStage(int32_t maxRefIteration) {
 //#pragma optimize( "", on )
 
 template<class SubType>
-void LAReference<SubType>::GenerateApproximationData(HDRFloat radius, int32_t maxRefIteration) {
+void LAReference<SubType>::GenerateApproximationData(HDRFloat radius, IterType maxRefIteration) {
 
     if (maxRefIteration == 0) {
         isValid = false;
@@ -652,7 +652,7 @@ void LAReference<SubType>::CreateATFromLA(HDRFloat radius) {
 
     for (auto Stage = LAStageCount; Stage > 0; ) {
         Stage--;
-        int32_t LAIndex = LAStages[Stage].LAIndex;
+        IterType LAIndex = LAStages[Stage].LAIndex;
         LAs[LAIndex].CreateAT(AT, LAs[LAIndex + 1]);
         AT.StepLength = LAs[LAIndex].GetLAi().StepLength;
         if (AT.StepLength > 0 && AT.Usable(SqrRadius)) {
@@ -664,38 +664,41 @@ void LAReference<SubType>::CreateATFromLA(HDRFloat radius) {
 }
 
 template<class SubType>
-bool LAReference<SubType>::isLAStageInvalid(int32_t LAIndex, HDRFloatComplex dc) {
+bool LAReference<SubType>::isLAStageInvalid(IterType LAIndex, HDRFloatComplex dc) {
     return (dc.chebychevNorm().compareToBothPositiveReduced((LAs[LAIndex]).getLAThresholdC()) >= 0);
 }
 
 template<class SubType>
-int32_t LAReference<SubType>::getLAIndex(int32_t CurrentLAStage) {
+IterType LAReference<SubType>::getLAIndex(IterType CurrentLAStage) {
     return LAStages[CurrentLAStage].LAIndex;
 }
 
 template<class SubType>
-int32_t LAReference<SubType>::getMacroItCount(int32_t CurrentLAStage) {
+IterType LAReference<SubType>::getMacroItCount(IterType CurrentLAStage) {
     return LAStages[CurrentLAStage].MacroItCount;
 }
 
 template<class SubType>
 LAstep<SubType>
 LAReference<SubType>::getLA(
-    int32_t LAIndex,
+    IterType LAIndex,
     HDRFloatComplex dz,
-    /*HDRFloatComplex dc, */ int32_t j,
-    int32_t iterations,
-    int32_t max_iterations) {
+    /*HDRFloatComplex dc, */ IterType j,
+    IterType iterations,
+    IterType max_iterations) {
 
-    int32_t LAIndexj = LAIndex + j;
+    IterType LAIndexj = LAIndex + j;
     const LAInfoI &LAIj = LAs[LAIndexj].GetLAi();
 
     LAstep<SubType> las;
 
-    int32_t l = LAIj.StepLength;
-    bool usuable = iterations + l <= max_iterations;
+    IterType l = LAIj.StepLength;
+    bool usable = false;
+    if (l < IterTypeMax) { // TODO - lame
+        usable = iterations + l <= max_iterations;
+    }
 
-    if (usuable) {
+    if (usable) {
         LAInfoDeep<SubType> &LAj = LAs[LAIndexj];
 
         las = LAj.Prepare(dz);

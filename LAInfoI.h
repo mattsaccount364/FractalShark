@@ -4,14 +4,14 @@
 
 class LAStageInfo {
 public:
-    int32_t LAIndex;
-    int32_t MacroItCount;
+    IterType LAIndex;
+    IterType MacroItCount;
 };
 
 class  LAInfoI {
 public:
-    int32_t StepLength;
-    int32_t NextStageLAIndex;
+    IterType StepLength;
+    IterType NextStageLAIndex;
 
     CUDA_CRAP LAInfoI() {
         StepLength = 0;

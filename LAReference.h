@@ -48,7 +48,7 @@ public:
 
     ATInfo<SubType> AT;
 
-    int32_t LAStageCount;
+    IterType LAStageCount;
 
     bool isValid;
 
@@ -60,20 +60,24 @@ private:
 
     const PerturbationResults<HDRFloat> *m_PerturbationResults;
 
-    int32_t LAsize();
-    bool CreateLAFromOrbit(int32_t maxRefIteration);
-    bool CreateLAFromOrbitMT(int32_t maxRefIteration);
-    bool CreateNewLAStage(int32_t maxRefIteration);
+    IterType LAsize();
+    bool CreateLAFromOrbit(IterType maxRefIteration);
+    bool CreateLAFromOrbitMT(IterType maxRefIteration);
+    bool CreateNewLAStage(IterType maxRefIteration);
 
 public:
-    void GenerateApproximationData(HDRFloat radius, int32_t maxRefIteration);
+    void GenerateApproximationData(HDRFloat radius, IterType maxRefIteration);
     void CreateATFromLA(HDRFloat radius);
 
 public:
-    bool isLAStageInvalid(int32_t LAIndex, HDRFloatComplex dc);
-    int32_t getLAIndex(int32_t CurrentLAStage);
-    int32_t getMacroItCount(int32_t CurrentLAStage);
+    bool isLAStageInvalid(IterType LAIndex, HDRFloatComplex dc);
+    IterType getLAIndex(IterType CurrentLAStage);
+    IterType getMacroItCount(IterType CurrentLAStage);
 
     LAstep<SubType>
-    getLA(int32_t LAIndex, HDRFloatComplex dz, /*HDRFloatComplex dc, */int32_t j, int32_t iterations, int32_t max_iterations);
+    getLA(IterType LAIndex,
+        HDRFloatComplex dz,
+        /*HDRFloatComplex dc, */IterType j,
+        IterType iterations,
+        IterType max_iterations);
 };

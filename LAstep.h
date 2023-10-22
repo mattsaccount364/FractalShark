@@ -24,8 +24,8 @@ public:
         unusable{true} {
     }
 
-    size_t step;
-    size_t nextStageLAindex;
+    IterType step;
+    IterType nextStageLAindex;
 
 public:
     using HDRFloatComplex = HDRFloatComplex<SubType>;
@@ -83,8 +83,8 @@ public:
         unusable{ true } {
     }
 
-    int32_t step;
-    int32_t nextStageLAindex;
+    IterType step;
+    IterType nextStageLAindex;
 
     using HDRFloatComplex = HDRFloatComplex<SubType>;
     const GPU_LAInfoDeep<SubType>* LAjdeep;

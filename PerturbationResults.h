@@ -34,8 +34,8 @@ public:
 
     HighPrecision hiX, hiY, radiusX, radiusY;
     T maxRadius;
-    size_t MaxIterations;
-    size_t PeriodMaybeZero;  // Zero if not worked out
+    IterType MaxIterations;
+    IterType PeriodMaybeZero;  // Zero if not worked out
 
     std::vector<T> x;
     std::vector<T> y;

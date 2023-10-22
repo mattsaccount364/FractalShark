@@ -64,9 +64,9 @@ Fractal::ItersMemoryContainer::ItersMemoryContainer(size_t width, size_t height,
     m_RoundedWidth = w_block * GPURenderer::NB_THREADS_W;
     m_RoundedHeight = h_block * GPURenderer::NB_THREADS_H;
     m_RoundedTotal = m_RoundedWidth * m_RoundedHeight;
-    m_ItersMemory = std::make_unique<uint32_t[]>(m_RoundedTotal);
+    m_ItersMemory = std::make_unique<IterType[]>(m_RoundedTotal);
 
-    m_ItersArray = new uint32_t*[m_RoundedHeight];
+    m_ItersArray = new IterType *[m_RoundedHeight];
     for (size_t i = 0; i < m_RoundedHeight; i++) {
         m_ItersArray[i] = &m_ItersMemory[i * m_RoundedWidth];
     }
@@ -214,7 +214,7 @@ void Fractal::Initialize(int width,
         PalTransition(WhichPalette, PaletteIndex, depth_total, max_val, 0, max_val);
         PalTransition(WhichPalette, PaletteIndex, depth_total, 0, 0, 0);
 
-        m_PalIters[WhichPalette][PaletteIndex] = (uint32_t) m_PalR[WhichPalette][PaletteIndex].size();
+        m_PalIters[WhichPalette][PaletteIndex] = (IterType) m_PalR[WhichPalette][PaletteIndex].size();
     };
 
     auto PatrioticPaletteGen = [&](Palette WhichPalette, size_t PaletteIndex, size_t Depth) {
@@ -244,7 +244,7 @@ void Fractal::Initialize(int width,
         PalTransition(WhichPalette, PaletteIndex, depth_total, BR, BG, BB);
         PalTransition(WhichPalette, PaletteIndex, depth_total, max_val, max_val, max_val);
 
-        m_PalIters[WhichPalette][PaletteIndex] = (uint32_t)m_PalR[WhichPalette][PaletteIndex].size();
+        m_PalIters[WhichPalette][PaletteIndex] = (IterType)m_PalR[WhichPalette][PaletteIndex].size();
     };
         
     auto SummerPaletteGen = [&](Palette WhichPalette, size_t PaletteIndex, size_t Depth) {
@@ -260,7 +260,7 @@ void Fractal::Initialize(int width,
         PalTransition(WhichPalette, PaletteIndex, depth_total, max_val, max_val * 2 / 3, 0);
         PalTransition(WhichPalette, PaletteIndex, depth_total, 0, 0, 0);
 
-        m_PalIters[WhichPalette][PaletteIndex] = (uint32_t)m_PalR[WhichPalette][PaletteIndex].size();
+        m_PalIters[WhichPalette][PaletteIndex] = (IterType)m_PalR[WhichPalette][PaletteIndex].size();
     };
 
     for (size_t i = 0; i < Palette::Num; i++) {
@@ -824,8 +824,9 @@ bool Fractal::RecenterViewScreen(RECT rect)
                     continue;
                 }
 
-                double sq = (m_CurIters.m_ItersArray[y][x]) * 
-                            (m_CurIters.m_ItersArray[y][x]);
+                double sq = (double)
+                    (m_CurIters.m_ItersArray[y][x]) * 
+                    (m_CurIters.m_ItersArray[y][x]);
                 geometricMeanSum += sq;
                 geometricMeanX += sq * x;
                 geometricMeanY += sq * y;
@@ -1427,7 +1428,7 @@ void Fractal::View(size_t view)
         //ptX = HighPrecision{ "-0.7086295598931993734622493611716274451479971071749675459916114087269836065131112" };
         //ptY = HighPrecision{ "0.2588437605781938517662916915477487152993485711486090411172668266513002198576885" };
         //zoomFactor = HighPrecision{ "1.12397843052783475581e+55" };
-        SetNumIterations(2147483646);
+        SetNumIterations(sizeof(IterType) == 4 ? 2147483646 : 50'000'000'000llu);
         break;
     }
 
@@ -1509,7 +1510,7 @@ void Fractal::ApproachTarget(void)
 
     SaveCurPos();
 
-    size_t baseIters = m_NumIterations;
+    IterType baseIters = m_NumIterations;
     HighPrecision incIters = (HighPrecision)((HighPrecision)targetIters - (HighPrecision)baseIters) / (HighPrecision)numFrames;
     for (int i = 0; i < numFrames; i++)
     {
@@ -1641,7 +1642,7 @@ void Fractal::FindInterestingLocation(RECT *rect)
     HighPrecision sizeXHigh = ((HighPrecision)sizeY * ratio);
     int sizeX = Convert<HighPrecision, int>(sizeXHigh);
 
-    unsigned int numberAtMax, numberAtMaxFinal = 0;
+    IterType numberAtMax, numberAtMaxFinal = 0;
     HighPrecision percentAtMax, percentAtMaxFinal = 10000000.0;
     HighPrecision desiredPercent = (rand() % 75) / 100.0 + .10;
 
@@ -1720,7 +1721,7 @@ void Fractal::SaveCurPos(void)
 ///////////////////////////////////////////////////////////////////////////////
 // Functions for dealing with the number of iterations
 ///////////////////////////////////////////////////////////////////////////////
-void Fractal::SetNumIterations(size_t num)
+void Fractal::SetNumIterations(IterType num)
 {
     if (num <= MAXITERS)
     {
@@ -1734,9 +1735,9 @@ void Fractal::SetNumIterations(size_t num)
     m_ChangedIterations = true;
 }
 
-size_t Fractal::GetNumIterations(void) const
+IterType Fractal::GetNumIterations(void) const
 {
-    return m_NumIterations;
+    return (IterType)m_NumIterations;
 }
 
 void Fractal::ResetNumIterations(void)
@@ -2083,7 +2084,7 @@ void Fractal::DrawFractal(bool MemoryOnly)
     else {
         auto result = m_r.OnlyAA(
             m_CurIters.m_RoundedOutputColorMemory.get(),
-            (uint32_t)m_NumIterations);
+            (IterType)m_NumIterations);
 
         if (result) {
             MessageBoxCudaError(result);
@@ -2194,7 +2195,7 @@ void Fractal::DrawFractalThread(size_t index, Fractal* fractal) {
         size_t outputIndex = 0;
 
         size_t totalAA = fractal->GetGpuAntialiasing() * fractal->GetGpuAntialiasing();
-        size_t palIters = fractal->m_PalIters[fractal->m_WhichPalette][fractal->m_PaletteDepthIndex];
+        IterType palIters = fractal->m_PalIters[fractal->m_WhichPalette][fractal->m_PaletteDepthIndex];
         const uint16_t* palR = fractal->m_PalR[fractal->m_WhichPalette][fractal->m_PaletteDepthIndex].data();
         const uint16_t* palG = fractal->m_PalG[fractal->m_WhichPalette][fractal->m_PaletteDepthIndex].data();
         const uint16_t* palB = fractal->m_PalB[fractal->m_WhichPalette][fractal->m_PaletteDepthIndex].data();
@@ -2389,7 +2390,7 @@ void Fractal::CalcGpuFractal(bool MemoryOnly)
                         cy2,
                         dx2,
                         dy2,
-                        (uint32_t)m_NumIterations,
+                        (IterType)m_NumIterations,
                         m_IterationPrecision);
     if (err) {
         MessageBoxCudaError(err);
@@ -2403,55 +2404,56 @@ void Fractal::CalcGpuFractal(bool MemoryOnly)
 // to the previous one, except it reads data in from the network instead
 // of calculating it locally.  The network can be much faster.
 //////////////////////////////////////////////////////////////////////////////
-void Fractal::CalcNetworkFractal(bool MemoryOnly)
+void Fractal::CalcNetworkFractal(bool /*MemoryOnly*/)
 {
-    size_t nx, ny;
-    uint32_t numItersL;
-    WORD numItersS;
-    uint32_t numIters = 0;
+    // TODO broken
+    //size_t nx, ny;
+    //IterType numItersL;
+    //WORD numItersS;
+    //IterType numIters = 0;
 
-    int i;
+    //int i;
 
-    for (i = 0; i < MAXSERVERS; i++)
-    {
-        if (m_SetupData.m_UseThisServer[i] == 'n')
-        {
-            continue;
-        }
+    //for (i = 0; i < MAXSERVERS; i++)
+    //{
+    //    if (m_SetupData.m_UseThisServer[i] == 'n')
+    //    {
+    //        continue;
+    //    }
 
-        m_ClientSubNetwork[i]->BufferedReadEmpty();
+    //    m_ClientSubNetwork[i]->BufferedReadEmpty();
 
-        for (ny = 0; ny < m_ScrnHeight; ny++)
-        {
-            if (m_ProcessPixelRow[ny] != i + 'b')
-            {
-                continue;
-            }
+    //    for (ny = 0; ny < m_ScrnHeight; ny++)
+    //    {
+    //        if (m_ProcessPixelRow[ny] != i + 'b')
+    //        {
+    //            continue;
+    //        }
 
-            for (nx = 0; nx < m_ScrnWidth; nx++)
-            {
-                if (m_NumIterations >= 65536)
-                {
-                    m_ClientSubNetwork[i]->BufferedReadLong(&numItersL);
-                    numIters = numItersL;
-                }
-                else
-                {
-                    m_ClientSubNetwork[i]->BufferedReadShort(&numItersS);
-                    numIters = numItersS;
-                }
+    //        for (nx = 0; nx < m_ScrnWidth; nx++)
+    //        {
+    //            if (m_NumIterations >= 65536)
+    //            {
+    //                m_ClientSubNetwork[i]->BufferedReadLong(&numItersL);
+    //                numIters = numItersL;
+    //            }
+    //            else
+    //            {
+    //                m_ClientSubNetwork[i]->BufferedReadShort(&numItersS);
+    //                numIters = numItersS;
+    //            }
 
-                m_CurIters.m_ItersArray[ny][nx] = numIters;
-            }
+    //            m_CurIters.m_ItersArray[ny][nx] = numIters;
+    //        }
 
-            if (MemoryOnly == false)
-            {
-                assert(false);
-                // TODO broken
-                //DrawFractalLine(ny);
-            }
-        }
-    }
+    //        if (MemoryOnly == false)
+    //        {
+    //            assert(false);
+    //            // TODO broken
+    //            //DrawFractalLine(ny);
+    //        }
+    //    }
+    //}
 }
 
 void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
@@ -2474,9 +2476,9 @@ void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
     //
 
     //complex Reference[]; // Reference orbit (MUST START WITH ZERO)
-    //int MaxRefIteration; // The last valid iteration of the reference (the iteration just before it escapes)
+    //IterType MaxRefIteration; // The last valid iteration of the reference (the iteration just before it escapes)
     //complex dz = 0, dc; // Delta z and Delta c
-    //int Iteration = 0, RefIteration = 0;
+    //IterType Iteration = 0, RefIteration = 0;
 
     //while (Iteration < MaxIteration) {
     //    dz = 2 * dz * Reference[RefIteration] + dz * dz + dc;
@@ -2504,8 +2506,8 @@ void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
 
             for (size_t x = 0; x < m_ScrnWidth * GetGpuAntialiasing(); x++)
             {
-                size_t iter = 0;
-                size_t RefIteration = 0;
+                IterType iter = 0;
+                IterType RefIteration = 0;
                 double deltaReal = dx * x - centerX;
                 double deltaImaginary = -dy * y - centerY;
 
@@ -2569,7 +2571,7 @@ void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
                     }
 
                     if (zn_size < normDeltaSubN ||
-                        RefIteration == results->x.size() - 1) {
+                        RefIteration == (IterType)results->x.size() - 1) {
                         DeltaSubNX = tempZX;
                         DeltaSubNY = tempZY;
                         RefIteration = 0;
@@ -2578,7 +2580,7 @@ void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
                     ++iter;
                 }
 
-                m_CurIters.m_ItersArray[y][x] = (uint32_t)iter;
+                m_CurIters.m_ItersArray[y][x] = (IterType)iter;
             }
         }
     };
@@ -2660,7 +2662,7 @@ void Fractal::CalcCpuHDR(bool MemoryOnly) {
                 cx += dx;
                 //HdrReduce(cx);
 
-                m_CurIters.m_ItersArray[y][x] = (uint32_t)i;
+                m_CurIters.m_ItersArray[y][x] = (IterType)i;
             }
         }
     };
@@ -2681,7 +2683,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
     auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<T, SubType>(RefOrbitCalc::Extras::None);
 
     BLAS<T> blas(*results);
-    blas.Init(results->x.size(), T{ results->maxRadius });
+    blas.Init((IterType)results->x.size(), T{ results->maxRadius });
 
     T dx = T((m_MaxX - m_MinX) / (m_ScrnWidth * GetGpuAntialiasing()));
     T dy = T((m_MaxY - m_MinY) / (m_ScrnHeight * GetGpuAntialiasing()));
@@ -2714,8 +2716,8 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
 
             for (size_t x = 0; x < m_ScrnWidth * GetGpuAntialiasing(); x++)
             {
-                size_t iter = 0;
-                size_t RefIteration = 0;
+                IterType iter = 0;
+                IterType RefIteration = 0;
                 T deltaReal = dx * (SubType)x;
                 HdrReduce(deltaReal);
                 deltaReal -= centerX;
@@ -2739,7 +2741,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                         int l = b->getL();
 
                         // TODO this first RefIteration + l check bugs me
-                        if (RefIteration + l >= results->x.size()) {
+                        if (RefIteration + l >= (IterType)results->x.size()) {
                             //::MessageBox(NULL, L"Out of bounds! :(", L"", MB_OK);
                             break;
                         }
@@ -2772,7 +2774,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                         }
 
                         if (HdrCompareToBothPositiveReducedLT(normSquared, DeltaNormSquared) ||
-                            RefIteration >= results->x.size() - 1) {
+                            RefIteration >= (IterType)results->x.size() - 1) {
                             DeltaSubNX = tempZX;
                             DeltaSubNY = tempZY;
                             DeltaNormSquared = normSquared;
@@ -2801,7 +2803,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                     HdrReduce(DeltaSubNY);
 
                     ++RefIteration;
-                    if (RefIteration >= results->x.size()) {
+                    if (RefIteration >= (IterType)results->x.size()) {
                         ::MessageBox(NULL, L"Out of bounds 2! :(", L"", MB_OK);
                         break;
                     }
@@ -2881,7 +2883,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                     }
 
                     if (HdrCompareToBothPositiveReducedLT(normSquared, DeltaNormSquared) ||
-                        RefIteration >= results->x.size() - 1) {
+                        RefIteration >= (IterType)results->x.size() - 1) {
                         DeltaSubNX = tempZX;
                         DeltaSubNY = tempZY;
                         DeltaNormSquared = normSquared;
@@ -2891,7 +2893,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                     ++iter;
                 }
 
-                m_CurIters.m_ItersArray[y][x] = (uint32_t)iter;
+                m_CurIters.m_ItersArray[y][x] = (IterType)iter;
             }
         }
     };
@@ -2948,7 +2950,7 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
             }
 
             for (size_t x = 0; x < m_ScrnWidth * GetGpuAntialiasing(); x++) {
-                int32_t BLA2SkippedIterations;
+                IterType BLA2SkippedIterations;
 
                 BLA2SkippedIterations = 0;
 
@@ -2971,14 +2973,14 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
 
                 if (LaReference.isValid && LaReference.UseAT && LaReference.AT.isValid(DeltaSub0)) {
                     ATResult<SubType> res;
-                    LaReference.AT.PerformAT((int32_t)m_NumIterations, DeltaSub0, res);
-                    BLA2SkippedIterations = (int32_t)res.bla_iterations;
+                    LaReference.AT.PerformAT((IterType)m_NumIterations, DeltaSub0, res);
+                    BLA2SkippedIterations = res.bla_iterations;
                     DeltaSubN = res.dz;
                 }
 
-                size_t iterations = 0;
-                size_t RefIteration = 0;
-                size_t MaxRefIteration = results->x.size() - 1;
+                IterType iterations = 0;
+                IterType RefIteration = 0;
+                IterType MaxRefIteration = (IterType)results->x.size() - 1;
 
                 iterations = BLA2SkippedIterations;
 
@@ -3009,9 +3011,9 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
                         LAstep<SubType> las = LaReference.getLA(
                             LAIndex,
                             DeltaSubN,
-                            (int32_t)j,
-                            (int32_t)iterations,
-                            (int32_t)GetNumIterations());
+                            (IterType)j,
+                            (IterType)iterations,
+                            (IterType)GetNumIterations());
 
                         if (las.unusable) {
                             RefIteration = las.nextStageLAindex;
@@ -3028,7 +3030,7 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
                         auto rhs = DeltaSubN.chebychevNorm();
                         HdrReduce(rhs);
 
-                        if (HdrCompareToBothPositiveReducedLT(lhs, rhs) || (int32_t)j >= MacroItCount) {
+                        if (HdrCompareToBothPositiveReducedLT(lhs, rhs) || j >= MacroItCount) {
                             DeltaSubN = complex0;
                             j = 0;
                         }
@@ -3075,7 +3077,7 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
                     }
                 }
 
-                m_CurIters.m_ItersArray[y][x] = (uint32_t)iterations;
+                m_CurIters.m_ItersArray[y][x] = iterations;
             }
         }
     };
@@ -3115,11 +3117,11 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
     FillCoord(centerY, centerY2);
 
     MattPerturbResults<T> gpu_results{
-        results->x.size(),
+        (IterType)results->x.size(),
         results->x.data(),
         results->y.data(),
         results->bad.data(),
-        results->bad.size(),
+        (IterType)results->bad.size(),
         results->PeriodMaybeZero };
 
     uint32_t result;
@@ -3138,7 +3140,7 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
             dy2,
             centerX2,
             centerY2,
-            (uint32_t)m_NumIterations,
+            (IterType)m_NumIterations,
             m_IterationPrecision);
     }
     else {
@@ -3152,7 +3154,7 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
             dy2,
             centerX2,
             centerY2,
-            (uint32_t)m_NumIterations,
+            (IterType)m_NumIterations,
             m_IterationPrecision);
     }
 
@@ -3187,11 +3189,11 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
     FillCoord(centerY, centerY2);
 
     MattPerturbResults<T> gpu_results{
-        results->x.size(),
+        (IterType)results->x.size(),
         results->x.data(),
         results->y.data(),
         results->bad.data(),
-        results->bad.size(),
+        (IterType)results->bad.size(),
         results->PeriodMaybeZero };
 
     if (results->LaReference.get() == nullptr) {
@@ -3212,7 +3214,7 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
         dy2,
         centerX2,
         centerY2,
-        (uint32_t)m_NumIterations);
+        (IterType)m_NumIterations);
 
     DrawFractal(MemoryOnly);
 
@@ -3249,19 +3251,19 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
     FillCoord(centerY, centerY2);
 
     MattPerturbResults<T> gpu_results{
-        results->x.size(),
+        (IterType)results->x.size(),
         results->x.data(),
         results->y.data(),
         results->bad.data(),
-        results->bad.size(),
+        (IterType)results->bad.size(),
         results->PeriodMaybeZero };
 
     MattPerturbResults<T2> gpu_results2{
-        results2->x.size(),
+        (IterType)results2->x.size(),
         results2->x.data(),
         results2->y.data(),
         results2->bad.data(),
-        results2->bad.size(),
+        (IterType)results2->bad.size(),
         results->PeriodMaybeZero };
 
     gpu_results2.size = results2->x.size();
@@ -3420,9 +3422,9 @@ bool Fractal::CalcPixelRow_C(unsigned int* rowBuffer, size_t row)
 // Find the maximum number of iterations used
 // in the fractal.
 //////////////////////////////////////////////////////////////////////////////
-size_t Fractal::FindMaxItersUsed(void) const
+IterType Fractal::FindMaxItersUsed(void) const
 {
-    size_t prevMaxIters = 0;
+    IterType prevMaxIters = 0;
     int x, y;
 
     for (y = 0; y < m_ScrnHeight; y++)
@@ -3600,9 +3602,16 @@ void Fractal::CurrentFractalSave::Run() {
 
         for (uint32_t output_y = 0; output_y < m_ScrnHeight * m_GpuAntialiasing; output_y++) {
             for (uint32_t output_x = 0; output_x < m_ScrnWidth * m_GpuAntialiasing; output_x++) {
-                uint32_t numiters = m_CurIters.m_ItersArray[output_y][output_x];;
+                IterType numiters = m_CurIters.m_ItersArray[output_y][output_x];;
                 memset(one_val, ' ', sizeof(one_val));
-                sprintf(one_val, "(%u,%u):%u ", output_x, output_y, numiters);
+
+                if constexpr (sizeof(IterType) == 4) {
+                    sprintf(one_val, "(%u,%u):%u ", output_x, output_y, (uint32_t)numiters);
+                }
+                else {
+                    static_assert(sizeof(IterType) == 8, "!");
+                    sprintf(one_val, "(%u,%u):%llu ", output_x, output_y, (uint64_t)numiters);
+                }
 
                 // Wow what a kludge
                 //size_t orig_len = strlen(one_val);
@@ -3709,7 +3718,7 @@ int Fractal::SaveItersAsText(const std::wstring filename_base) {
     return SaveFractalData<CurrentFractalSave::Type::ItersText>(filename_base);
 }
 
-HighPrecision Fractal::Benchmark(size_t numIters, size_t& milliseconds)
+HighPrecision Fractal::Benchmark(IterType numIters, size_t& milliseconds)
 {
     BenchmarkData bm(*this);
     bm.BenchmarkSetup(numIters);
@@ -3729,7 +3738,7 @@ HighPrecision Fractal::Benchmark(size_t numIters, size_t& milliseconds)
 }
 
 template<class T, class SubType>
-HighPrecision Fractal::BenchmarkReferencePoint(size_t numIters, size_t& milliseconds) {
+HighPrecision Fractal::BenchmarkReferencePoint(IterType numIters, size_t& milliseconds) {
     BenchmarkData bm(*this);
     bm.BenchmarkSetup(numIters);
 
@@ -3744,10 +3753,10 @@ HighPrecision Fractal::BenchmarkReferencePoint(size_t numIters, size_t& millisec
     return result;
 }
 
-template HighPrecision Fractal::BenchmarkReferencePoint<float, float>(size_t numIters, size_t& milliseconds);
-template HighPrecision Fractal::BenchmarkReferencePoint<double, double>(size_t numIters, size_t& milliseconds);
-template HighPrecision Fractal::BenchmarkReferencePoint<HDRFloat<double>, double>(size_t numIters, size_t& milliseconds);
-template HighPrecision Fractal::BenchmarkReferencePoint<HDRFloat<float>, float>(size_t numIters, size_t& milliseconds);
+template HighPrecision Fractal::BenchmarkReferencePoint<float, float>(IterType numIters, size_t& milliseconds);
+template HighPrecision Fractal::BenchmarkReferencePoint<double, double>(IterType numIters, size_t& milliseconds);
+template HighPrecision Fractal::BenchmarkReferencePoint<HDRFloat<double>, double>(IterType numIters, size_t& milliseconds);
+template HighPrecision Fractal::BenchmarkReferencePoint<HDRFloat<float>, float>(IterType numIters, size_t& milliseconds);
 
 HighPrecision Fractal::BenchmarkThis(size_t& milliseconds) {
     BenchmarkData bm(*this);
@@ -3765,7 +3774,7 @@ HighPrecision Fractal::BenchmarkThis(size_t& milliseconds) {
 Fractal::BenchmarkData::BenchmarkData(Fractal& fractal) :
     fractal(fractal) {}
 
-void Fractal::BenchmarkData::BenchmarkSetup(size_t numIters) {
+void Fractal::BenchmarkData::BenchmarkSetup(IterType numIters) {
     prevScrnWidth = fractal.m_ScrnWidth;
     prevScrnHeight = fractal.m_ScrnHeight;
 
@@ -4247,70 +4256,70 @@ void Fractal::ServerManageSubConnection(void)
 
 bool Fractal::ServerBeginCalc(void)
 {
-    OutputMessage(L"Awaiting instructions...\r\n");
-    char buffer[512];
-    m_ServerSubNetwork->ReadData(buffer, 512);
+    //OutputMessage(L"Awaiting instructions...\r\n");
+    //char buffer[512];
+    //m_ServerSubNetwork->ReadData(buffer, 512);
 
-    // TODO:
-    RenderAlgorithm RenderAlgorithm = RenderAlgorithm::Cpu64;
-    int ScreenWidth = 0, ScreenHeight = 0;
-    uint32_t NumIters = 0;
-    HighPrecision MinX = 0, MaxX = 0, MinY = 0, MaxY = 0;
+    //// TODO:
+    //RenderAlgorithm RenderAlgorithm = RenderAlgorithm::Cpu64;
+    //int ScreenWidth = 0, ScreenHeight = 0;
+    //IterType NumIters = 0;
+    //HighPrecision MinX = 0, MaxX = 0, MinY = 0, MaxY = 0;
 
-    OutputMessage(L"Data received:\r\n");
-    OutputMessage(L"%s\r\n", buffer);
+    //OutputMessage(L"Data received:\r\n");
+    //OutputMessage(L"%s\r\n", buffer);
 
-    // Secondary connection should quit.
-    if (strcmp(buffer, "exit") == 0)
-    {
-        return false;
-    }
+    //// Secondary connection should quit.
+    //if (strcmp(buffer, "exit") == 0)
+    //{
+    //    return false;
+    //}
 
-    // Anything else must be data for setting up a calculation.
-    // TODO support high precision
-    //sscanf(buffer, "%c %d %d %d %lf %lf %lf %lf",
-    //    &RenderAlgorithm, &NumIters, &ScreenWidth, &ScreenHeight,
-    //    &MinX, &MaxX, &MinY, &MaxY);
+    //// Anything else must be data for setting up a calculation.
+    //// TODO support high precision
+    ////sscanf(buffer, "%c %d %d %d %lf %lf %lf %lf",
+    ////    &RenderAlgorithm, &NumIters, &ScreenWidth, &ScreenHeight,
+    ////    &MinX, &MaxX, &MinY, &MaxY);
 
-    OutputMessage(L"Received instructions.\r\n");
-    OutputMessage(L"Interpretation:\r\n");
-    OutputMessage(L"Render Mode:  %d\r\n", RenderAlgorithm);
-    OutputMessage(L"NumIters:     %d\r\n", NumIters);
-    OutputMessage(L"ScreenWidth:  %d\r\n", ScreenWidth);
-    OutputMessage(L"ScreenHeight: %d\r\n", ScreenHeight);
-    OutputMessage(L"MinX:         %.15f\r\n", Convert<HighPrecision, double>(MinX));
-    OutputMessage(L"MaxX:         %.15f\r\n", Convert<HighPrecision, double>(MaxX));
-    OutputMessage(L"MinY:         %.15f\r\n", Convert<HighPrecision, double>(MinY));
-    OutputMessage(L"MaxY:         %.15f\r\n", Convert<HighPrecision, double>(MaxY));
+    //OutputMessage(L"Received instructions.\r\n");
+    //OutputMessage(L"Interpretation:\r\n");
+    //OutputMessage(L"Render Mode:  %d\r\n", RenderAlgorithm);
+    //OutputMessage(L"NumIters:     %d\r\n", NumIters);
+    //OutputMessage(L"ScreenWidth:  %d\r\n", ScreenWidth);
+    //OutputMessage(L"ScreenHeight: %d\r\n", ScreenHeight);
+    //OutputMessage(L"MinX:         %.15f\r\n", Convert<HighPrecision, double>(MinX));
+    //OutputMessage(L"MaxX:         %.15f\r\n", Convert<HighPrecision, double>(MaxX));
+    //OutputMessage(L"MinY:         %.15f\r\n", Convert<HighPrecision, double>(MinY));
+    //OutputMessage(L"MaxY:         %.15f\r\n", Convert<HighPrecision, double>(MaxY));
 
-    ResetDimensions(ScreenWidth, ScreenHeight);
-    RecenterViewCalc(MinX, MinY, MaxX, MaxY);
-    SetNumIterations(NumIters);
-    SetRenderAlgorithm(RenderAlgorithm);
-    CalcFractal(true);
+    //ResetDimensions(ScreenWidth, ScreenHeight);
+    //RecenterViewCalc(MinX, MinY, MaxX, MaxY);
+    //SetNumIterations(NumIters);
+    //SetRenderAlgorithm(RenderAlgorithm);
+    //CalcFractal(true);
 
-    int x, y;
-    for (y = 0; y < ScreenHeight; y++)
-    {
-        if (m_ProcessPixelRow[y] != m_NetworkRender)
-        {
-            continue;
-        }
+    //int x, y;
+    //for (y = 0; y < ScreenHeight; y++)
+    //{
+    //    if (m_ProcessPixelRow[y] != m_NetworkRender)
+    //    {
+    //        continue;
+    //    }
 
-        for (x = 0; x < ScreenWidth; x++)
-        {
-            if (NumIters >= 65536)
-            {
-                m_ServerSubNetwork->BufferedSendLong(m_CurIters.m_ItersArray[y][x]);
-            }
-            else
-            {
-                m_ServerSubNetwork->BufferedSendShort((unsigned short)m_CurIters.m_ItersArray[y][x]);
-            }
-        }
-    }
+    //    for (x = 0; x < ScreenWidth; x++)
+    //    {
+    //        if (NumIters >= 65536)
+    //        {
+    //            m_ServerSubNetwork->BufferedSendLong(m_CurIters.m_ItersArray[y][x]);
+    //        }
+    //        else
+    //        {
+    //            m_ServerSubNetwork->BufferedSendShort((unsigned short)m_CurIters.m_ItersArray[y][x]);
+    //        }
+    //    }
+    //}
 
-    m_ServerSubNetwork->BufferedSendFlush();
+    //m_ServerSubNetwork->BufferedSendFlush();
 
     return true;
 }

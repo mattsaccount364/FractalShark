@@ -34,13 +34,6 @@
 template<class SubType>
 class LAReference;
 
-//const int MAXITERS = 256 * 32; // 256 * 256 * 256 * 32
-
-// TODO: to increase past this, redo MattPerturbResults
-// Look at that class and see that it allocates way too much
-//const size_t MAXITERS = 256 * 256 * 256 * 32;
-const size_t MAXITERS = INT32_MAX - 1;
-
 class Fractal
 {
 public:
@@ -139,8 +132,8 @@ private: // For saving the current location
     void SaveCurPos(void);
 
 public: // Iterations
-    void SetNumIterations(size_t num);
-    size_t GetNumIterations(void) const;
+    void SetNumIterations(IterType num);
+    IterType GetNumIterations(void) const;
     void ResetNumIterations(void);
 
 public:
@@ -224,7 +217,7 @@ private:
     template<class T>
     struct Point {
         T x, y;
-        size_t iteration;
+        IterType iteration;
     };
 
     void FillCoord(HighPrecision& src, MattQFltflt& dest);
@@ -254,8 +247,8 @@ private:
     //HDRFloatComplex<float>* initializeFromBLA2(
     //    LAReference& laReference,
     //    HDRFloatComplex<float> dpixel,
-    //    size_t& BLA2SkippedIterations,
-    //    size_t& BLA2SkippedSteps);
+    //    IterType& BLA2SkippedIterations,
+    //    IterType& BLA2SkippedSteps);
 
     template<class SubType>
     void CalcCpuPerturbationFractalLAV2(bool MemoryOnly);
@@ -273,7 +266,7 @@ private:
     bool CalcPixelRow_Exp(unsigned int *rowBuffer, size_t row); // Experimental
     bool CalcPixelRow_C(unsigned int *rowBuffer, size_t row);
 
-    size_t FindMaxItersUsed(void) const;
+    IterType FindMaxItersUsed(void) const;
 
 public: // Saving images of the fractal
     int SaveCurrentFractal(const std::wstring filename_base);
@@ -294,8 +287,8 @@ private:
         ItersMemoryContainer(ItersMemoryContainer&) = delete;
         ItersMemoryContainer& operator=(const ItersMemoryContainer&) = delete;
 
-        std::unique_ptr<uint32_t[]> m_ItersMemory;
-        uint32_t** m_ItersArray;
+        std::unique_ptr<IterType[]> m_ItersMemory;
+        IterType** m_ItersArray;
 
         // These include antialiasing, so 4x antialiasing implies each is ~2x screen dimension
         size_t m_Width;
@@ -343,12 +336,12 @@ private:
         size_t m_ScrnWidth;
         size_t m_ScrnHeight;
         uint32_t m_GpuAntialiasing;
-        size_t m_NumIterations;
+        IterType m_NumIterations;
         int m_PaletteRotate; // Used to shift the palette
         int m_PaletteDepthIndex; // 0, 1, 2
         std::vector<uint16_t>* m_PalR[Fractal::Palette::Num], * m_PalG[Fractal::Palette::Num], * m_PalB[Fractal::Palette::Num];
         Fractal::Palette m_WhichPalette;
-        std::vector<uint32_t> m_PalIters[Fractal::Palette::Num];
+        std::vector<IterType> m_PalIters[Fractal::Palette::Num];
         ItersMemoryContainer m_CurIters;
         std::wstring m_FilenameBase;
         std::unique_ptr<std::thread> m_Thread;
@@ -362,10 +355,10 @@ private:
 
 public: // Benchmarking
  
-    HighPrecision Benchmark(size_t numIters, size_t &millseconds);
+    HighPrecision Benchmark(IterType numIters, size_t &millseconds);
 
     template<class T, class SubType>
-    HighPrecision BenchmarkReferencePoint(size_t numIters, size_t& millseconds);
+    HighPrecision BenchmarkReferencePoint(IterType numIters, size_t& millseconds);
     HighPrecision BenchmarkThis(size_t& millseconds);
 
 private:
@@ -380,7 +373,7 @@ private:
         size_t prevScrnWidth;
             size_t prevScrnHeight;
 
-        void BenchmarkSetup(size_t numIters);
+        void BenchmarkSetup(IterType numIters);
         bool StartTimer();
         HighPrecision StopTimer(size_t &milliseconds);
 
@@ -435,8 +428,8 @@ private:
     FractalSetupData m_SetupData;
 
     // Defaults
-    static constexpr size_t DefaultIterations = 256 * 32;
-    //static constexpr size_t DefaultIterations = 256;
+    static constexpr IterType DefaultIterations = 256 * 32;
+    //static constexpr IterType DefaultIterations = 256;
 
     // Handle to the thread which checks to see if we should quit or not
     HANDLE m_CheckForAbortThread;
@@ -465,7 +458,7 @@ private:
     // The maximum number of iterations to go through on a pixel
     // in an effort to determine whether the point is within the set
     // or not.
-    size_t m_NumIterations;
+    IterType m_NumIterations;
     bool m_ChangedIterations;
 
     // Antialiasing;
@@ -492,7 +485,7 @@ private:
     std::vector<uint16_t> m_PalR[Palette::Num][NumBitDepths];
     std::vector<uint16_t> m_PalG[Palette::Num][NumBitDepths];
     std::vector<uint16_t> m_PalB[Palette::Num][NumBitDepths];
-    std::vector<uint32_t> m_PalIters[Palette::Num];
+    std::vector<IterType> m_PalIters[Palette::Num];
     enum Palette m_WhichPalette;
 
     int m_PaletteRotate; // Used to shift the palette

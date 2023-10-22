@@ -91,11 +91,11 @@ BEGIN
             MENUITEM "#13 - ~10^4000, ~100m iterations, 16xAA", IDM_VIEW13
             MENUITEM "#14 - ~10^6000, ~2b iterations, 16xAA", IDM_VIEW14
             MENUITEM "#15 - ~10^140, high period",  IDM_VIEW15
-            MENUITEM "#16 -  Debug spot LAv2 discontinuity", IDM_VIEW16
-            MENUITEM "#17 -  Debug spot LAv2 discontinuity 2", IDM_VIEW17
+            MENUITEM "#16 -  LAv2 test spot 1 (quick)", IDM_VIEW16
+            MENUITEM "#17 - LAv2 test spot 2 (quick)", IDM_VIEW17
             MENUITEM "#18 - #5 with point + magnification", IDM_VIEW18
-            MENUITEM "#19 - Debug spot LAv2 has bugs 3", IDM_VIEW19
-            MENUITEM "#20 - Debug spot - very high period, 2b", IDM_VIEW20
+            MENUITEM "#19 - LAv2 test spot 3 (quick)", IDM_VIEW19
+            MENUITEM "#20 - Debug spot - LAv2 is busted here, 50x10^9 iters", IDM_VIEW20
             MENUITEM "#21 - ~10^11000, 2b iterations", IDM_VIEW21
             MENUITEM "#22 - high period",           IDM_VIEW22
         END

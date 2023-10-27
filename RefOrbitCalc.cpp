@@ -432,8 +432,7 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
             T n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
 
             T r0 = HdrMaxPositiveReduced(dzdcX1, dzdcY1);
-            T maxRadiusHdr{ results->maxRadius };
-            auto n3 = maxRadiusHdr * r0 * HighTwo;
+            auto n3 = results->maxRadius * r0 * HighTwo;
             HdrReduce(n3);
 
             if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
@@ -614,8 +613,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
             T n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
 
             T r0 = HdrMaxPositiveReduced(dzdcX1, dzdcY1);
-            T maxRadiusHdr{ results->maxRadius };
-            auto n3 = maxRadiusHdr * r0 * T(2.0);
+            auto n3 = results->maxRadius * r0 * T(2.0);
             HdrReduce(n3);
 
             if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
@@ -881,8 +879,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
             T n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
 
             T r0 = HdrMaxPositiveReduced(dzdcX1, dzdcY1);
-            T maxRadiusHdr{ results->maxRadius };
-            auto n3 = maxRadiusHdr * r0 * T(2.0);
+            auto n3 = results->maxRadius * r0 * T(2.0);
             HdrReduce(n3);
 
             if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
@@ -1181,8 +1178,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
             T n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
 
             T r0 = HdrMaxPositiveReduced(dzdcX1, dzdcY1);
-            T maxRadiusHdr{ results->maxRadius };
-            auto n3 = maxRadiusHdr * r0 * HighTwo;
+            auto n3 = results->maxRadius * r0 * HighTwo;
             HdrReduce(n3);
 
             if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
@@ -1642,8 +1638,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecis
             T n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
 
             T r0 = HdrMaxPositiveReduced(dzdcX1, dzdcY1);
-            T maxRadiusHdr{ results->maxRadius };
-            auto n3 = maxRadiusHdr * r0 * HighTwo;
+            auto n3 = results->maxRadius * r0 * HighTwo;
             HdrReduce(n3);
 
             if (HdrCompareToBothPositiveReducedLT(n2, n3)) {

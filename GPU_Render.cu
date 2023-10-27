@@ -1261,6 +1261,42 @@ mandel_1xHDR_float_perturb_bla(
     OutputIterMatrix[idx] = iter;
 }
 
+//template<uint32_t Antialiasing, bool ScaledColor>
+//__global__
+//void
+//max_kernel(
+//    const IterType* __restrict__ OutputIterMatrix,
+//    uint32_t Width,
+//    uint32_t Height,
+//    uint32_t w_color_block,
+//    uint32_t h_color_block,
+//    IterType *OutputReducedMatrix) {
+//    const int output_x = blockIdx.x * blockDim.x + threadIdx.x;
+//    const int output_y = blockIdx.y * blockDim.y + threadIdx.y;
+//
+//    if (output_x >= local_color_width || output_y >= local_color_height)
+//        return;
+//
+//    local_max = 0;
+//    for (size_t input_x = output_x * Antialiasing;
+//        input_x < (output_x + 1) * Antialiasing;
+//        input_x++) {
+//        for (size_t input_y = output_y * Antialiasing;
+//            input_y < (output_y + 1) * Antialiasing;
+//            input_y++) {
+//
+//            size_t idx = ConvertLocToIndex(input_x, input_y, Width);
+//            IterType numIters = OutputIterMatrix[idx];
+//
+//            local_max = max(local_max, numIters);
+//        }
+//    }
+//
+//    OutputReducedMatrix[output_y * w_color_block + output_x] = local_max;
+//}
+//
+
+template<uint32_t Antialiasing, bool ScaledColor>
 __global__
 void
 antialiasing_kernel (
@@ -1271,7 +1307,6 @@ antialiasing_kernel (
     Palette Pals,
     int local_color_width,
     int local_color_height,
-    int Antialiasing,
     IterType n_iterations) {
     const int output_x = blockIdx.x * blockDim.x + threadIdx.x;
     const int output_y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -1280,7 +1315,22 @@ antialiasing_kernel (
         return;
 
     const int32_t color_idx = local_color_width * output_y + output_x; // do not use ConvertLocToIndex
-    const auto totalAA = Antialiasing * Antialiasing;
+    constexpr auto totalAA = Antialiasing * Antialiasing;
+
+    // TODO reduction
+    //if constexpr (ScaledColor) {
+    //    IterType maxIters = 0, minIters;
+    //    for (size_t input_x = output_x * Antialiasing;
+    //        input_x < (output_x + 1) * Antialiasing;
+    //        input_x++) {
+    //        for (size_t input_y = output_y * Antialiasing;
+    //            input_y < (output_y + 1) * Antialiasing;
+    //            input_y++) {
+    //            size_t idx = ConvertLocToIndex(input_x, input_y, Width);
+    //            IterType numIters = OutputIterMatrix[idx];
+    //        }
+    //    }
+    //}
 
     size_t acc_r = 0;
     size_t acc_g = 0;
@@ -4182,16 +4232,54 @@ uint32_t
 GPURenderer::RunAntialiasing(IterType n_iterations) {
     dim3 aa_blocks(w_color_block, h_color_block, 1);
     dim3 aa_threads_per_block(NB_THREADS_W_AA, NB_THREADS_H_AA, 1);
-    antialiasing_kernel << <aa_blocks, aa_threads_per_block >> > (
-        OutputIterMatrix,
-        m_Width,
-        m_Height,
-        OutputColorMatrix,
-        Pals,
-        local_color_width,
-        local_color_height,
-        m_Antialiasing,
-        n_iterations);
+
+    switch (m_Antialiasing) {
+    case 1:
+        antialiasing_kernel<1, true> << <aa_blocks, aa_threads_per_block >> > (
+            OutputIterMatrix,
+            m_Width,
+            m_Height,
+            OutputColorMatrix,
+            Pals,
+            local_color_width,
+            local_color_height,
+            n_iterations);
+        break;
+    case 2:
+        antialiasing_kernel<2, true> << <aa_blocks, aa_threads_per_block >> > (
+            OutputIterMatrix,
+            m_Width,
+            m_Height,
+            OutputColorMatrix,
+            Pals,
+            local_color_width,
+            local_color_height,
+            n_iterations);
+        break;
+    case 3:
+        antialiasing_kernel<3, true> << <aa_blocks, aa_threads_per_block >> > (
+            OutputIterMatrix,
+            m_Width,
+            m_Height,
+            OutputColorMatrix,
+            Pals,
+            local_color_width,
+            local_color_height,
+            n_iterations);
+        break;
+    case 4:
+    default:
+        antialiasing_kernel<4, true> << <aa_blocks, aa_threads_per_block >> > (
+            OutputIterMatrix,
+            m_Width,
+            m_Height,
+            OutputColorMatrix,
+            Pals,
+            local_color_width,
+            local_color_height,
+            n_iterations);
+        break;
+    }
     return cudaSuccess;
 }
 

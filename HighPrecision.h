@@ -26,7 +26,7 @@ To Convert(From data) {
 
 
 // Amount of extra precision before forcing a full-precision recalculation
-constexpr size_t AuthoritativeMinExtraPrecision = 20;
+constexpr size_t AuthoritativeMinExtraPrecision = 50;
 
 // Amount of precision used for medium-precision reference orbit.
 constexpr size_t AuthoritativeReuseExtraPrecision = 100;

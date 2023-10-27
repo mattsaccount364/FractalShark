@@ -33,6 +33,7 @@ public:
         T>::type;
 
     HighPrecision hiX, hiY, radiusX, radiusY;
+    T radiusXHdr, radiusYHdr;
     T maxRadius;
     IterType MaxIterations;
     IterType PeriodMaybeZero;  // Zero if not worked out
@@ -52,6 +53,8 @@ public:
         hiY = {};
         radiusX = {};
         radiusY = {};
+        radiusXHdr = {};
+        radiusYHdr = {};
         maxRadius = {};
         MaxIterations = 0;
         PeriodMaybeZero = 0;
@@ -65,9 +68,19 @@ public:
         ReuseY.clear();
     }
 
+    // TODO WTF is this for again?
     template<class Other>
     void Copy(const PerturbationResults<Other>& other) {
         clear();
+
+        //hiX = other.hiX;
+        //hiY = other.hiY;
+
+        //radiusX = other.radiusX;
+        //radiusY = other.radiusY;
+        //radiusXHdr = other.radiusXHdr;
+        //radiusYHdr = other.radiusYHdr;
+        //maxRadius = other.maxRadius;
 
         x.reserve(other.x.size());
         y.reserve(other.y.size());
@@ -113,12 +126,20 @@ public:
         const HighPrecision& maxY,
         size_t NumIterations,
         size_t GuessReserveSize) {
-        radiusX = fabs(maxX - cx) + fabs(minX - cx);
-        radiusY = fabs(maxY - cy) + fabs(minY - cy);
+        //radiusX = fabs(maxX - cx) + fabs(minX - cx);
+        //radiusY = fabs(maxY - cy) + fabs(minY - cy);
+        radiusX = maxX - minX;
+        radiusY = maxY - minY;
+        radiusXHdr = (T)radiusX;
+        HdrReduce(radiusXHdr);
+        radiusYHdr = (T)radiusY;
+        HdrReduce(radiusYHdr);
 
         hiX = cx;
         hiY = cy;
-        maxRadius = (T)((radiusX > radiusY) ? radiusX : radiusY);
+        maxRadius = (T)(radiusX > radiusY ? radiusX : radiusY);
+        HdrReduce(maxRadius);
+
         MaxIterations = NumIterations + 1; // +1 for push_back(0) below
 
         size_t ReserveSize = (GuessReserveSize != 0) ? GuessReserveSize : NumIterations;

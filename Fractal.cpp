@@ -2683,7 +2683,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
     auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<T, SubType>(RefOrbitCalc::Extras::None);
 
     BLAS<T> blas(*results);
-    blas.Init((IterType)results->x.size(), T{ results->maxRadius });
+    blas.Init((IterType)results->x.size(), results->maxRadius);
 
     T dx = T((m_MaxX - m_MinX) / (m_ScrnWidth * GetGpuAntialiasing()));
     T dy = T((m_MaxY - m_MinY) / (m_ScrnHeight * GetGpuAntialiasing()));
@@ -3127,7 +3127,7 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
     uint32_t result;
     if constexpr (BLA) {
         BLAS<T> blas(*results);
-        blas.Init(results->x.size(), T(results->maxRadius));
+        blas.Init(results->x.size(), results->maxRadius);
 
         result = m_r.RenderPerturbBLA<T>(GetRenderAlgorithm(),
             m_CurIters.m_ItersMemory.get(),
@@ -3229,7 +3229,7 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
     auto* results2 = m_RefOrbit.CopyUsefulPerturbationResults<T, T2>(*results);
 
     BLAS<T> blas(*results);
-    blas.Init(results->x.size(), T(results->maxRadius));
+    blas.Init(results->x.size(), results->maxRadius);
 
     uint32_t err = InitializeGPUMemory();
     if (err) {

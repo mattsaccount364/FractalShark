@@ -369,7 +369,7 @@ void RefOrbitCalc::InitResults(PerturbationResultsType& results, const HighPreci
         m_Fractal.GetMinY(),
         m_Fractal.GetMaxX(),
         m_Fractal.GetMaxY(),
-        m_Fractal.GetNumIterations(),
+        m_Fractal.GetNumIterations<IterType>(),
         m_GuessReserveSize);
 }
 
@@ -464,7 +464,7 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
 
             if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
                 if constexpr (BenchmarkState == BenchmarkMode::Disable) {
-                    results->PeriodMaybeZero = (IterTypeFull)results->orb.size();
+                    results->PeriodMaybeZero = (IterType)results->orb.size();
                     break;
                 }
             }
@@ -645,7 +645,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
             if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
                 if constexpr (BenchmarkState == BenchmarkMode::Disable) {
                     // Break before adding the result.
-                    results->PeriodMaybeZero = (IterTypeFull)results->orb.size();
+                    results->PeriodMaybeZero = (IterType)results->orb.size();
                     break;
                 }
             }
@@ -909,7 +909,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
             if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
                 if constexpr (BenchmarkState == BenchmarkMode::Disable) {
                     // Break before adding the result.
-                    results->PeriodMaybeZero = (IterTypeFull)results->orb.size();
+                    results->PeriodMaybeZero = (IterType)results->orb.size();
                     break;
                 }
             }
@@ -1236,7 +1236,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
 
                 if constexpr (Periodicity) {
                     if (periodicity_should_break) {
-                        results->PeriodMaybeZero = (IterTypeFull)results->orb.size();
+                        results->PeriodMaybeZero = (IterType)results->orb.size();
                         quitting = true;
                     }
                 }
@@ -1709,7 +1709,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecis
 
         if constexpr (Periodicity) {
             if (periodicity_should_break) {
-                results->PeriodMaybeZero = (IterTypeFull)results->orb.size();
+                results->PeriodMaybeZero = (IterType)results->orb.size();
                 break;
             }
         }
@@ -1890,7 +1890,9 @@ PerturbationResults<T, Bad>* RefOrbitCalc::GetAndCreateUsefulPerturbationResults
             static_assert(Bad == CalcBad::Disable, "!");
             if (results->LaReference == nullptr) {
                 results->LaReference = std::make_unique<LAReference<IterType, SubType>>(results);
-                results->LaReference->GenerateApproximationData(results->maxRadius, (IterTypeFull)results->orb.size() - 1);
+
+                // TODO the presumption here is results size fits in the target IterType size
+                results->LaReference->GenerateApproximationData(results->maxRadius, (IterType)results->orb.size() - 1);
             }
         }
         else {

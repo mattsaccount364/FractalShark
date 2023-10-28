@@ -1423,7 +1423,7 @@ mandel_1xHDR_float_perturb_lav2(
 
     if constexpr (Mode == LAv2Mode::Full || Mode == LAv2Mode::LAO) {
         if (LaReference.isValid && LaReference.UseAT && LaReference.AT.isValid(DeltaSub0)) {
-            ATResult<SubType> res;
+            ATResult<IterType, SubType> res;
             LaReference.AT.PerformAT(n_iterations, DeltaSub0, res);
             iter = res.bla_iterations;
             DeltaSubN = res.dz;

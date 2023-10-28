@@ -6,7 +6,7 @@
 //import fractalzoomer.core.GenericComplex;
 //import fractalzoomer.core.MantExpComplex;
 
-template<class SubType>
+template<typename IterType, class SubType>
 class ATResult {
 public:
     using HDRFloatComplex = HDRFloatComplex<SubType>;

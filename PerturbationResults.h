@@ -122,7 +122,7 @@ public:
         const HighPrecision& minY,
         const HighPrecision& maxX,
         const HighPrecision& maxY,
-        size_t NumIterations,
+        IterType NumIterations,
         size_t GuessReserveSize) {
         //radiusX = fabs(maxX - cx) + fabs(minX - cx);
         //radiusY = fabs(maxY - cy) + fabs(minY - cy);

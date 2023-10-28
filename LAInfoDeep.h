@@ -68,7 +68,7 @@ public:
     CUDA_CRAP HDRFloatComplex Evaluate(HDRFloatComplex newdz, HDRFloatComplex dc);
     CUDA_CRAP HDRFloatComplex EvaluateDzdc(HDRFloatComplex z, HDRFloatComplex dzdc);
     CUDA_CRAP HDRFloatComplex EvaluateDzdc2(HDRFloatComplex z, HDRFloatComplex dzdc2, HDRFloatComplex dzdc);
-    CUDA_CRAP void CreateAT(ATInfo<SubType> &Result, LAInfoDeep Next);
+    CUDA_CRAP void CreateAT(ATInfo<IterType, SubType> &Result, LAInfoDeep Next);
     CUDA_CRAP HDRFloat getLAThreshold();
     CUDA_CRAP HDRFloat getLAThresholdC();
     CUDA_CRAP void SetLAi(const LAInfoI<IterType>&other);
@@ -377,7 +377,7 @@ LAInfoDeep<IterType, SubType>::HDRFloatComplex LAInfoDeep<IterType, SubType>::Ev
 
 template<typename IterType, class SubType>
 CUDA_CRAP
-void LAInfoDeep<IterType, SubType>::CreateAT(ATInfo<SubType>& Result, LAInfoDeep Next) {
+void LAInfoDeep<IterType, SubType>::CreateAT(ATInfo<IterType, SubType>& Result, LAInfoDeep Next) {
     HDRFloatComplex ZCoeff = HDRFloatComplex(ZCoeffExp, ZCoeffRe, ZCoeffIm);
     HDRFloatComplex CCoeff = HDRFloatComplex(CCoeffExp, CCoeffRe, CCoeffIm);
     HDRFloat LAThreshold = HDRFloat(LAThresholdExp, LAThresholdMant);

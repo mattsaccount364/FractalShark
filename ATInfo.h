@@ -6,7 +6,7 @@
 #include "HDRFloatComplex.h"
 #include "ATResult.h"
 
-template<class SubType>
+template<typename IterType, class SubType>
 class ATInfo {
     using HDRFloat = HDRFloat<SubType>;
     using HDRFloatComplex = HDRFloatComplex<SubType>;
@@ -43,13 +43,13 @@ public:
     CUDA_CRAP HDRFloatComplex getC(HDRFloatComplex dc);
     CUDA_CRAP HDRFloatComplex getDZ(HDRFloatComplex z);
 
-    CUDA_CRAP void PerformAT(IterType max_iterations, HDRFloatComplex DeltaSub0, ATResult<SubType> &result);
+    CUDA_CRAP void PerformAT(IterType max_iterations, HDRFloatComplex DeltaSub0, ATResult<IterType, SubType> &result);
 };
 
 
-template<class SubType>
+template<typename IterType, class SubType>
 CUDA_CRAP
-ATInfo<SubType>::ATInfo() :
+ATInfo<IterType, SubType>::ATInfo() :
     StepLength{},
     ThresholdC{},
     SqrEscapeRadius{},
@@ -64,34 +64,34 @@ ATInfo<SubType>::ATInfo() :
     factor = HDRFloat(0x1.0p32);
 }
 
-template<class SubType>
+template<typename IterType, class SubType>
 CUDA_CRAP
-bool ATInfo<SubType>::isValid(HDRFloatComplex DeltaSub0) {
+bool ATInfo<IterType, SubType>::isValid(HDRFloatComplex DeltaSub0) {
     return DeltaSub0.chebychevNorm().compareToBothPositiveReduced(ThresholdC) <= 0;
 }
 
-template<class SubType>
+template<typename IterType, class SubType>
 CUDA_CRAP
-ATInfo<SubType>::HDRFloatComplex ATInfo<SubType>::getC(HDRFloatComplex dc) {
+ATInfo<IterType, SubType>::HDRFloatComplex ATInfo<IterType, SubType>::getC(HDRFloatComplex dc) {
     HDRFloatComplex temp = dc * CCoeff + RefC;
     temp.Reduce();
     return temp;
 }
 
-template<class SubType>
+template<typename IterType, class SubType>
 CUDA_CRAP
-ATInfo<SubType>::HDRFloatComplex ATInfo<SubType>::getDZ(HDRFloatComplex z) {
+ATInfo<IterType, SubType>::HDRFloatComplex ATInfo<IterType, SubType>::getDZ(HDRFloatComplex z) {
     HDRFloatComplex temp = z * InvZCoeff;
     temp.Reduce();
     return temp;
 }
 
-template<class SubType>
+template<typename IterType, class SubType>
 CUDA_CRAP
-void ATInfo<SubType>::PerformAT(
+void ATInfo<IterType, SubType>::PerformAT(
     IterType max_iterations,
     HDRFloatComplex DeltaSub0,
-    ATResult<SubType>& result) {
+    ATResult<IterType, SubType>& result) {
     //int ATMaxIt = (max_iterations - 1) / StepLength + 1;
     HDRFloat nsq;
     const IterType ATMaxIt = max_iterations / StepLength;

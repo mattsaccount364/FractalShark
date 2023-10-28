@@ -12,7 +12,7 @@
 #include "LAInfoDeep.h"
 #include "LAInfoI.h"
 
-template<class T>
+template<typename IterType, class T>
 class ATInfo;
 
 template<typename IterType>
@@ -48,7 +48,7 @@ public:
 
     bool UseAT;
 
-    ATInfo<SubType> AT;
+    ATInfo<IterType, SubType> AT;
 
     IterType LAStageCount;
 

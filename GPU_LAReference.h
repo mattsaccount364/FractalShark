@@ -23,7 +23,7 @@ public:
 
     bool UseAT;
 
-    ATInfo<SubType> AT;
+    ATInfo<IterType, SubType> AT;
 
     IterType LAStageCount;
 

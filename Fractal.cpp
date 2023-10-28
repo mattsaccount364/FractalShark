@@ -1510,7 +1510,7 @@ void Fractal::ApproachTarget(void)
 
     SaveCurPos();
 
-    IterTypeFull baseIters = m_NumIterations;
+    IterTypeFull baseIters = GetNumIterations();
     HighPrecision incIters = (HighPrecision)((HighPrecision)targetIters - (HighPrecision)baseIters) / (HighPrecision)numFrames;
     for (int i = 0; i < numFrames; i++)
     {
@@ -1526,7 +1526,7 @@ void Fractal::ApproachTarget(void)
 
         {
             HighPrecision result = ((HighPrecision)incIters * (HighPrecision)i);
-            m_NumIterations = baseIters + Convert<HighPrecision, unsigned long>(result);
+            SetNumIterations(baseIters + Convert<HighPrecision, unsigned long>(result));
         }
 
         m_ChangedWindow = true;
@@ -1671,7 +1671,7 @@ void Fractal::FindInterestingLocation(RECT *rect)
             }
         }
 
-        percentAtMax = (HighPrecision)numberAtMax / ((HighPrecision)sizeX * (HighPrecision)sizeY * (HighPrecision)m_NumIterations);
+        percentAtMax = (HighPrecision)numberAtMax / ((HighPrecision)sizeX * (HighPrecision)sizeY * (HighPrecision)GetNumIterations());
 
         if (fabs(percentAtMax - desiredPercent) < fabs(percentAtMaxFinal - desiredPercent))
         {
@@ -1739,6 +1739,14 @@ void Fractal::SetNumIterations(IterTypeFull num)
 template<typename IterType>
 IterType Fractal::GetNumIterations(void) const
 {
+    if constexpr (std::is_same<IterType, uint32_t>::value) {
+        if (m_NumIterations > MAXITERS) {
+            ::MessageBox(NULL, L"Iteration limit exceeded somehow.", L"", MB_OK);
+        }
+    }
+    else {
+        static_assert(std::is_same<IterType, uint64_t>::value, "!");
+    }
     return (IterType)m_NumIterations;
 }
 
@@ -2089,7 +2097,7 @@ void Fractal::DrawFractal(bool MemoryOnly)
     else {
         auto result = m_r.OnlyAA(
             m_CurIters.m_RoundedOutputColorMemory.get(),
-            (IterType)m_NumIterations);
+            GetNumIterations());
 
         if (result) {
             MessageBoxCudaError(result);
@@ -2404,7 +2412,7 @@ void Fractal::CalcGpuFractal(bool MemoryOnly)
                         cy2,
                         dx2,
                         dy2,
-                        (IterType)m_NumIterations,
+                        GetNumIterations(),
                         m_IterationPrecision);
     if (err) {
         MessageBoxCudaError(err);
@@ -2534,7 +2542,7 @@ void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
                 double DeltaSubNX = 0;
                 double DeltaSubNY = 0;
 
-                while (iter < m_NumIterations) {
+                while (iter < GetNumIterations()) {
                     const double DeltaSubNXOrig = DeltaSubNX;
                     const double DeltaSubNYOrig = DeltaSubNY;
 
@@ -2660,7 +2668,7 @@ void Fractal::CalcCpuHDR(bool MemoryOnly) {
                 // (zx + zy)^3 = zx^3 + 3*zx^2*zy + 3*zx*zy^2 + zy
                 zx = cx;
                 zy = cy;
-                for (i = 0; i < m_NumIterations; i++)
+                for (i = 0; i < GetNumIterations(); i++)
                 { // x^2+2*I*x*y-y^2
                     zx2 = zx * zx;
                     zy2 = zy * zy;
@@ -2757,7 +2765,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                 T DeltaSubNY = T(0);
                 T DeltaNormSquared = T(0);
 
-                while (iter < m_NumIterations) {
+                while (iter < GetNumIterations()) {
                     BLA<T> *b = nullptr;
                     while ((b = blas.LookupBackwards(RefIteration, DeltaNormSquared)) != nullptr) {
                         int l = b->getL();
@@ -2768,7 +2776,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                             break;
                         }
 
-                        if (iter + l >= m_NumIterations) {
+                        if (iter + l >= GetNumIterations()) {
                             break;
                         }
                         
@@ -2804,7 +2812,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                         }
                     }
 
-                    if (iter >= m_NumIterations) {
+                    if (iter >= GetNumIterations()) {
                         break;
                     }
 
@@ -2998,8 +3006,8 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
                 DeltaSubN = { 0, 0 };
 
                 if (LaReference.isValid && LaReference.UseAT && LaReference.AT.isValid(DeltaSub0)) {
-                    ATResult<SubType> res;
-                    LaReference.AT.PerformAT((IterType)m_NumIterations, DeltaSub0, res);
+                    ATResult<IterType, SubType> res;
+                    LaReference.AT.PerformAT(GetNumIterations<IterType>(), DeltaSub0, res);
                     BLA2SkippedIterations = res.bla_iterations;
                     DeltaSubN = res.dz;
                 }
@@ -3167,7 +3175,7 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
             dy2,
             centerX2,
             centerY2,
-            (IterType)m_NumIterations,
+            GetNumIterations<IterType>(),
             m_IterationPrecision);
     }
     else {
@@ -3181,7 +3189,7 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
             dy2,
             centerX2,
             centerY2,
-            (IterType)m_NumIterations,
+            GetNumIterations<IterType>(),
             m_IterationPrecision);
     }
 
@@ -3242,7 +3250,7 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
         dy2,
         centerX2,
         centerY2,
-        (IterType)m_NumIterations);
+        GetNumIterations<IterType>());
 
     DrawFractal(MemoryOnly);
 
@@ -3296,8 +3304,6 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
         results2->orb.data(),
         results2->PeriodMaybeZero };
 
-    gpu_results2.size = results2->orb.size();
-
     if (gpu_results.size != gpu_results2.size) {
         ::MessageBox(NULL, L"Mismatch on size", L"", MB_OK);
         return;
@@ -3315,7 +3321,7 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
         dy2,
         centerX2,
         centerY2,
-        (uint32_t)m_NumIterations,
+        GetNumIterations<IterType>(),
         m_IterationPrecision);
 
     DrawFractal(MemoryOnly);
@@ -3340,7 +3346,7 @@ bool Fractal::CalcPixelRow_Exp(unsigned int *rowBuffer, size_t row)
     double cy = Convert<HighPrecision, double>(m_MaxY) - dy * ((double)row);
     double zx, zy;
     double term1, term2, term3, term4, term5;
-    unsigned int i;
+    IterType i;
 
     // (zx + zy)^2 = zx^2 + 2*zx*zy + zy^2
     // (zx + zy)^3 = zx^3 + 3*zx^2*zy + 3*zx*zy^2 + zy
@@ -3348,7 +3354,7 @@ bool Fractal::CalcPixelRow_Exp(unsigned int *rowBuffer, size_t row)
     { // Calc Pixel
         zx = cx;
         zy = cy;
-        for (i = 0; i < m_NumIterations; i++)
+        for (i = 0; i < GetNumIterations<IterType>(); i++)
         { // x^4+4*I*x^3*y-6*x^2*y^2-4*I*x*y^3+y^4
             term1 = zx * zx * zx * zx;
             term2 = 4 * zx * zx * zx * zy;
@@ -3362,7 +3368,7 @@ bool Fractal::CalcPixelRow_Exp(unsigned int *rowBuffer, size_t row)
             zy += cy;
         }
         cx += dx;
-        if (i == m_NumIterations)
+        if (i == GetNumIterations<IterType>())
         {
             *rowBuffer = 0;
         }
@@ -3387,7 +3393,7 @@ void Fractal::CalcPixelRow_Multi(unsigned int* rowBuffer, size_t row)
     HighPrecision cy = m_MaxY - dy * ((HighPrecision)row);
     HighPrecision zx, zy;
     HighPrecision zx2, zy2;
-    unsigned int i;
+    IterType i;
 
     // (zx + zy)^2 = zx^2 + 2*zx*zy + zy^2
     // (zx + zy)^3 = zx^3 + 3*zx^2*zy + 3*zx*zy^2 + zy
@@ -3395,7 +3401,7 @@ void Fractal::CalcPixelRow_Multi(unsigned int* rowBuffer, size_t row)
     { // Calc Pixel
         zx = cx;
         zy = cy;
-        for (i = 0; i < m_NumIterations; i++)
+        for (i = 0; i < GetNumIterations<IterType>(); i++)
         { // x^2+2*I*x*y-y^2
             zx2 = zx * zx;
             zy2 = zy * zy;
@@ -3422,7 +3428,7 @@ bool Fractal::CalcPixelRow_C(unsigned int* rowBuffer, size_t row)
     double cy = Convert<HighPrecision, double>(m_MaxY) - dy * ((double)row);
     double zx, zy;
     double zx2, zy2;
-    unsigned int i;
+    IterType i;
 
     // (zx + zy)^2 = zx^2 + 2*zx*zy + zy^2
     // (zx + zy)^3 = zx^3 + 3*zx^2*zy + 3*zx*zy^2 + zy
@@ -3430,7 +3436,7 @@ bool Fractal::CalcPixelRow_C(unsigned int* rowBuffer, size_t row)
     { // Calc Pixel
         zx = cx;
         zy = cy;
-        for (i = 0; i < m_NumIterations; i++)
+        for (i = 0; i < GetNumIterations<IterType>(); i++)
         { // x^2+2*I*x*y-y^2
             zx2 = zx * zx;
             zy2 = zy * zy;

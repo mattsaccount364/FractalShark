@@ -6,7 +6,7 @@
 template<class T, CalcBad Bad>
 class BLAS;
 
-template<class T, class GPUBLA_TYPE, int32_t LM2>
+template<typename IterType, class T, class GPUBLA_TYPE, int32_t LM2>
 class GPU_BLAS {
 public:
     GPU_BLAS(const std::vector<std::vector<GPUBLA_TYPE>>& B);

@@ -170,7 +170,7 @@ struct MattCoords {
     //HDRFloat<double> hdrdbl;
 };
 
-template<class T, CalcBad Bad = CalcBad::Disable>
+template<typename IterType, class T, CalcBad Bad = CalcBad::Disable>
 struct MattPerturbResults {
     MattReferenceSingleIter<T, Bad> *iters;
     IterType size;
@@ -233,7 +233,7 @@ public:
         RenderAlgorithm algorithm,
         IterType* iter_buffer,
         Color16* color_buffer,
-        MattPerturbResults<T>* results,
+        MattPerturbResults<IterType, T>* results,
         T cx,
         T cy,
         T dx,
@@ -264,8 +264,8 @@ public:
         RenderAlgorithm algorithm,
         IterType* iter_buffer,
         Color16* color_buffer,
-        MattPerturbResults<T, CalcBad::Enable>* double_perturb,
-        MattPerturbResults<float, CalcBad::Enable>* float_perturb,
+        MattPerturbResults<IterType, T, CalcBad::Enable>* double_perturb,
+        MattPerturbResults<IterType, float, CalcBad::Enable>* float_perturb,
         BLAS<T, CalcBad::Enable>* blas,
         T cx,
         T cy,
@@ -281,7 +281,7 @@ public:
         RenderAlgorithm algorithm,
         IterType* iter_buffer,
         Color16* color_buffer,
-        MattPerturbResults<float2>* results,
+        MattPerturbResults<IterType, float2>* results,
         BLAS<float2>* blas,
         float2 cx,
         float2 cy,
@@ -297,7 +297,7 @@ public:
         RenderAlgorithm algorithm,
         IterType* iter_buffer,
         Color16* color_buffer,
-        MattPerturbResults<T>* results,
+        MattPerturbResults<IterType, T>* results,
         BLAS<T>* blas,
         T cx,
         T cy,
@@ -313,7 +313,7 @@ public:
         RenderAlgorithm algorithm,
         IterType* iter_buffer,
         Color16* color_buffer,
-        MattPerturbResults<T>* float_perturb,
+        MattPerturbResults<IterType, T>* float_perturb,
         const LAReference<IterType, SubType> &LaReference,
         T cx,
         T cy,
@@ -334,6 +334,7 @@ public:
         const uint16_t *palB,
         IterType palIters);
 
+    template<typename IterType>
     void ClearMemory();
 
     template<typename IterType>

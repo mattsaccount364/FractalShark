@@ -175,6 +175,9 @@ BEGIN
             MENUITEM "+6x",                         IDM_INCREASEITERATIONS_6X
             MENUITEM "+24x",                        IDM_INCREASEITERATIONS_24X
             MENUITEM "&Decrease Iterations",        IDM_DECREASEITERATIONS
+            MENUITEM SEPARATOR
+            MENUITEM "32-Bit Iterations",           IDM_32BIT_ITERATIONS
+            MENUITEM "64-Bit Iterations (high memory req)", IDM_64BIT_ITERATIONS
         END
         POPUP "Perturbation"
         BEGIN

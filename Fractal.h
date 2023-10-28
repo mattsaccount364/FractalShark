@@ -138,6 +138,16 @@ public: // Iterations
     template<typename IterType = uint32_t>
     IterType GetNumIterations(void) const;
 
+    template<typename IterType>
+    constexpr IterType GetMaxIterations() const;
+
+    enum class IterTypeEnum {
+        Bits32,
+        Bits64
+    };
+
+    IterTypeFull GetMaxIterationsRT() const;
+
     void ResetNumIterations(void);
 
 public:
@@ -185,6 +195,9 @@ public: // Drawing functions
     void DrawAllPerturbationResults();
 
 private:
+    template<typename IterType>
+    void CalcFractalTypedIter(bool MemoryOnly);
+
     static void DrawFractalThread(size_t index, Fractal* fractal);
 
     RefOrbitCalc m_RefOrbit;
@@ -237,16 +250,18 @@ private:
     template<class T>
     void FillGpuCoords(T& cx2, T& cy2, T& dx2, T& dy2);
 
-    template<class T>
+    template<typename IterType, class T>
     void CalcGpuFractal(bool MemoryOnly);
 
     void CalcNetworkFractal(bool MemoryOnly);
+
+    template<typename IterType>
     void CalcCpuPerturbationFractal(bool MemoryOnly);
 
-    template<class T, class SubType>
+    template<typename IterType, class T, class SubType>
     void CalcCpuHDR(bool MemoryOnly);
 
-    template<class T, class SubType>
+    template<typename IterType, class T, class SubType>
     void CalcCpuPerturbationFractalBLA(bool MemoryOnly);
 
     //HDRFloatComplex<float>* initializeFromBLA2(
@@ -255,21 +270,17 @@ private:
     //    IterType& BLA2SkippedIterations,
     //    IterType& BLA2SkippedSteps);
 
-    template<class SubType>
+    template<typename IterType, class SubType>
     void CalcCpuPerturbationFractalLAV2(bool MemoryOnly);
 
-    template<class T, class SubType, bool BLA>
+    template<typename IterType, class T, class SubType, bool BLA>
     void CalcGpuPerturbationFractalBLA(bool MemoryOnly);
 
-    template<class T, class SubType, LAv2Mode Mode>
+    template<typename IterType, class T, class SubType, LAv2Mode Mode>
     void CalcGpuPerturbationFractalLAv2(bool MemoryOnly);
 
-    template<class T, class SubType, class T2, class SubType2>
+    template<typename IterType, class T, class SubType, class T2, class SubType2>
     void CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly);
-
-    void CalcPixelRow_Multi(unsigned int *rowBuffer, size_t row); // Multiprecision
-    bool CalcPixelRow_Exp(unsigned int *rowBuffer, size_t row); // Experimental
-    bool CalcPixelRow_C(unsigned int *rowBuffer, size_t row);
 
     IterType FindMaxItersUsed(void) const;
 
@@ -342,7 +353,7 @@ private:
         size_t m_ScrnHeight;
         uint32_t m_GpuAntialiasing;
         IterTypeFull m_NumIterations;
-        int m_PaletteRotate; // Used to shift the palette
+        IterTypeFull m_PaletteRotate; // Used to shift the palette
         int m_PaletteDepthIndex; // 0, 1, 2
         std::vector<uint16_t>* m_PalR[Fractal::Palette::Num], * m_PalG[Fractal::Palette::Num], * m_PalB[Fractal::Palette::Num];
         Fractal::Palette m_WhichPalette;
@@ -493,7 +504,7 @@ private:
     std::vector<IterType> m_PalIters[Palette::Num];
     enum Palette m_WhichPalette;
 
-    int m_PaletteRotate; // Used to shift the palette
+    IterTypeFull m_PaletteRotate; // Used to shift the palette
     int m_PaletteDepthIndex; // 0, 1, 2
     static constexpr int NumPalettes = 3;
 
@@ -501,6 +512,8 @@ private:
     void InitializeMemory();
     void GetIterMemory();
     void ReturnIterMemory(ItersMemoryContainer&& to_return);
+
+    IterTypeEnum m_IterType;
 
     ItersMemoryContainer m_CurIters;
     std::mutex m_ItersMemoryStorageLock;

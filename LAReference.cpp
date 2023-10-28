@@ -693,10 +693,10 @@ LAReference<IterType, SubType>::getLA(
     LAstep<IterType, SubType> las;
 
     IterType l = LAIj.StepLength;
-    bool usable = false;
-    if (l < IterTypeMax) { // TODO - lame
-        usable = iterations + l <= max_iterations;
-    }
+    bool usable = iterations + l <= max_iterations;
+    //if (l < IterTypeMax) { // TODO - lame
+    //    usable = iterations + l <= max_iterations;
+    //}
 
     if (usable) {
         LAInfoDeep<IterType, SubType> &LAj = LAs[LAIndexj];

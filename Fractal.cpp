@@ -1724,13 +1724,13 @@ void Fractal::SaveCurPos(void)
 template<typename IterType>
 void Fractal::SetNumIterations(IterTypeFull num)
 {
-    if (num <= MAXITERS)
+    if (num <= GetMaxIterations<IterType>())
     {
         m_NumIterations = num;
     }
     else
     {
-        m_NumIterations = MAXITERS;
+        m_NumIterations = GetMaxIterations<IterType>();
     }
 
     m_ChangedIterations = true;
@@ -1740,7 +1740,7 @@ template<typename IterType>
 IterType Fractal::GetNumIterations(void) const
 {
     if constexpr (std::is_same<IterType, uint32_t>::value) {
-        if (m_NumIterations > MAXITERS) {
+        if (m_NumIterations > GetMaxIterations<IterType>()) {
             ::MessageBox(NULL, L"Iteration limit exceeded somehow.", L"", MB_OK);
         }
     }
@@ -1752,6 +1752,21 @@ IterType Fractal::GetNumIterations(void) const
 
 template uint32_t Fractal::GetNumIterations<uint32_t>(void) const;
 template uint64_t Fractal::GetNumIterations<uint64_t>(void) const;
+
+
+template<typename IterType>
+IterType Fractal::GetMaxIterations(void) const {
+    return ((sizeof(IterType) == 4) ? (INT32_MAX - 1) : (INT64_MAX - 1));
+}
+
+IterTypeFull Fractal::GetMaxIterationsRT() const {
+    if (m_IterType == IterTypeEnum::Bits32) {
+        return GetMaxIterations<uint32_t>();
+    }
+    else {
+        return GetMaxIterations<uint64_t>();
+    }
+}
 
 void Fractal::ResetNumIterations(void)
 {
@@ -1805,6 +1820,16 @@ bool Fractal::RequiresUseLocalColor() const {
 
 void Fractal::CalcFractal(bool MemoryOnly)
 {
+    if (m_IterTypeEnum == IterTypeEnum::Bits32) {
+        CalcFractalTypedIter<uint32_t>(MemoryOnly);
+    }
+    else {
+        CalcFractalTypedIter<uint64_t>(MemoryOnly);
+    }
+}
+
+template<typename IterType>
+void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
     SetCursor(LoadCursor(NULL, IDC_WAIT));
 
     // Reset the flag should it be set.
@@ -1830,104 +1855,104 @@ void Fractal::CalcFractal(bool MemoryOnly)
     }
 
     // Draw the local fractal.
-    switch(GetRenderAlgorithm()) {
+    switch (GetRenderAlgorithm()) {
     case RenderAlgorithm::CpuHigh:
-        CalcCpuHDR<HighPrecision, double>(MemoryOnly);
+        CalcCpuHDR<IterType, HighPrecision, double>(MemoryOnly);
         break;
     case RenderAlgorithm::CpuHDR32:
-        CalcCpuHDR<HDRFloat<float>, float>(MemoryOnly);
+        CalcCpuHDR<IterType, HDRFloat<float>, float>(MemoryOnly);
         break;
     case RenderAlgorithm::Cpu32PerturbedBLAHDR:
-        CalcCpuPerturbationFractalBLA<HDRFloat<float>, float>(MemoryOnly);
+        CalcCpuPerturbationFractalBLA<IterType, HDRFloat<float>, float>(MemoryOnly);
         break;
     case RenderAlgorithm::Cpu32PerturbedBLAV2HDR:
-        CalcCpuPerturbationFractalLAV2<float>(MemoryOnly);
+        CalcCpuPerturbationFractalLAV2<IterType, float>(MemoryOnly);
         break;
     case RenderAlgorithm::Cpu64PerturbedBLAV2HDR:
-        CalcCpuPerturbationFractalLAV2<double>(MemoryOnly);
+        CalcCpuPerturbationFractalLAV2<IterType, double>(MemoryOnly);
         break;
     case RenderAlgorithm::Cpu64:
-        CalcCpuHDR<double, double>(MemoryOnly);
+        CalcCpuHDR<IterType, double, double>(MemoryOnly);
         break;
     case RenderAlgorithm::CpuHDR64:
-        CalcCpuHDR<HDRFloat<double>, double>(MemoryOnly);
+        CalcCpuHDR<IterType, HDRFloat<double>, double>(MemoryOnly);
         break;
     case RenderAlgorithm::Cpu64PerturbedBLA:
-        CalcCpuPerturbationFractalBLA<double, double>(MemoryOnly);
+        CalcCpuPerturbationFractalBLA<IterType, double, double>(MemoryOnly);
         break;
     case RenderAlgorithm::Cpu64PerturbedBLAHDR:
-        CalcCpuPerturbationFractalBLA<HDRFloat<double>, double>(MemoryOnly);
+        CalcCpuPerturbationFractalBLA<IterType, HDRFloat<double>, double>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu1x64:
-        CalcGpuFractal<double>(MemoryOnly);
+        CalcGpuFractal<IterType, double>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu2x64:
-        CalcGpuFractal<MattDbldbl>(MemoryOnly);
+        CalcGpuFractal<IterType, MattDbldbl>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu4x64:
-        CalcGpuFractal<MattQDbldbl>(MemoryOnly);
+        CalcGpuFractal<IterType, MattQDbldbl>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu1x32:
-        CalcGpuFractal<float>(MemoryOnly);
+        CalcGpuFractal<IterType, float>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu2x32:
-        CalcGpuFractal<MattDblflt>(MemoryOnly);
+        CalcGpuFractal<IterType, MattDblflt>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu4x32:
-        CalcGpuFractal<MattQFltflt>(MemoryOnly);
+        CalcGpuFractal<IterType, MattQFltflt>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu1x32Perturbed:
     case RenderAlgorithm::Gpu1x32PerturbedPeriodic:
-        CalcGpuPerturbationFractalBLA<float, float, false>(MemoryOnly);
+        CalcGpuPerturbationFractalBLA<IterType, float, float, false>(MemoryOnly);
         break;
     case RenderAlgorithm::GpuHDRx32Perturbed:
-    //case RenderAlgorithm::GpuHDRx32PerturbedPeriodic:
-        CalcGpuPerturbationFractalBLA<HDRFloat<float>, float, false>(MemoryOnly);
+        //case RenderAlgorithm::GpuHDRx32PerturbedPeriodic:
+        CalcGpuPerturbationFractalBLA<IterType, HDRFloat<float>, float, false>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu1x32PerturbedScaled:
     case RenderAlgorithm::Gpu1x32PerturbedScaledBLA:
-        CalcGpuPerturbationFractalScaledBLA<double, double, float, float>(MemoryOnly);
+        CalcGpuPerturbationFractalScaledBLA<IterType, double, double, float, float>(MemoryOnly);
         break;
     case RenderAlgorithm::GpuHDRx32PerturbedScaled:
-        CalcGpuPerturbationFractalScaledBLA<HDRFloat<float>, float, float, float>(MemoryOnly);
+        CalcGpuPerturbationFractalScaledBLA<IterType, HDRFloat<float>, float, float, float>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu1x64Perturbed:
-        CalcGpuPerturbationFractalBLA<double, double, false>(MemoryOnly);
+        CalcGpuPerturbationFractalBLA<IterType, double, double, false>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu1x64PerturbedBLA:
-        CalcGpuPerturbationFractalBLA<double, double, true>(MemoryOnly);
+        CalcGpuPerturbationFractalBLA<IterType, double, double, true>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu2x32Perturbed:
-        //CalcGpuPerturbationFractalBLA<dblflt, dblflt>(MemoryOnly);
+        //CalcGpuPerturbationFractalBLA<IterType, dblflt, dblflt>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu2x32PerturbedScaled:
-        //CalcGpuPerturbationFractalBLA<double, double>(MemoryOnly);
+        //CalcGpuPerturbationFractalBLA<IterType, double, double>(MemoryOnly);
         break;
     case RenderAlgorithm::GpuHDRx32PerturbedBLA:
-        CalcGpuPerturbationFractalBLA<HDRFloat<float>, float, true>(MemoryOnly);
+        CalcGpuPerturbationFractalBLA<IterType, HDRFloat<float>, float, true>(MemoryOnly);
         break;
     case RenderAlgorithm::GpuHDRx64PerturbedBLA:
-        CalcGpuPerturbationFractalBLA<HDRFloat<double>, double, true>(MemoryOnly);
+        CalcGpuPerturbationFractalBLA<IterType, HDRFloat<double>, double, true>(MemoryOnly);
         break;
 
     case RenderAlgorithm::GpuHDRx32PerturbedLAv2:
-        CalcGpuPerturbationFractalLAv2<HDRFloat<float>, float, LAv2Mode::Full>(MemoryOnly);
+        CalcGpuPerturbationFractalLAv2<IterType, HDRFloat<float>, float, LAv2Mode::Full>(MemoryOnly);
         break;
     case RenderAlgorithm::GpuHDRx32PerturbedLAv2PO:
-        CalcGpuPerturbationFractalLAv2<HDRFloat<float>, float, LAv2Mode::PO>(MemoryOnly);
+        CalcGpuPerturbationFractalLAv2<IterType, HDRFloat<float>, float, LAv2Mode::PO>(MemoryOnly);
         break;
     case RenderAlgorithm::GpuHDRx32PerturbedLAv2LAO:
-        CalcGpuPerturbationFractalLAv2<HDRFloat<float>, float, LAv2Mode::LAO>(MemoryOnly);
+        CalcGpuPerturbationFractalLAv2<IterType, HDRFloat<float>, float, LAv2Mode::LAO>(MemoryOnly);
         break;
 
     case RenderAlgorithm::GpuHDRx64PerturbedLAv2:
-        CalcGpuPerturbationFractalLAv2<HDRFloat<double>, double, LAv2Mode::Full>(MemoryOnly);
+        CalcGpuPerturbationFractalLAv2<IterType, HDRFloat<double>, double, LAv2Mode::Full>(MemoryOnly);
         break;
     case RenderAlgorithm::GpuHDRx64PerturbedLAv2PO:
-        CalcGpuPerturbationFractalLAv2<HDRFloat<double>, double, LAv2Mode::PO>(MemoryOnly);
+        CalcGpuPerturbationFractalLAv2<IterType, HDRFloat<double>, double, LAv2Mode::PO>(MemoryOnly);
         break;
     case RenderAlgorithm::GpuHDRx64PerturbedLAv2LAO:
-        CalcGpuPerturbationFractalLAv2<HDRFloat<double>, double, LAv2Mode::LAO>(MemoryOnly);
+        CalcGpuPerturbationFractalLAv2<IterType, HDRFloat<double>, double, LAv2Mode::LAO>(MemoryOnly);
         break;
     default:
         break;
@@ -2029,7 +2054,7 @@ void Fractal::ResetFractalPalette(void)
 void Fractal::RotateFractalPalette(int delta)
 {
     m_PaletteRotate += delta;
-    if (m_PaletteRotate >= MAXITERS)
+    if (m_PaletteRotate >= GetMaxIterationsRT())
     {
         m_PaletteRotate = 0;
     }
@@ -2041,12 +2066,12 @@ void Fractal::CreateNewFractalPalette(void)
 
     //srand((unsigned int)time(NULL));
     //index = 0;
-    //index = PalTransition(index, 256, MAXITERS, (rand() % 2) * 255, (rand() % 2) * 255, (rand() % 2) * 255);
+    //index = PalTransition(index, 256, GetMaxIterations<IterType>(), (rand() % 2) * 255, (rand() % 2) * 255, (rand() % 2) * 255);
     //if (index != -1)
     //{
     //    for (i = 0; i < 1000; i++)
     //    {
-    //        index = PalTransition(index, 256, MAXITERS, (rand() % 4) * 85, (rand() % 4) * 85, (rand() % 4) * 85);
+    //        index = PalTransition(index, 256, GetMaxIterations<IterType>(), (rand() % 4) * 85, (rand() % 4) * 85, (rand() % 4) * 85);
     //        if (index == -1)
     //        {
     //            break;
@@ -2197,6 +2222,7 @@ void Fractal::DrawFractalThread(size_t index, Fractal* fractal) {
     DrawThreadSync &sync = *fractal->m_DrawThreads[index].get();
 
     constexpr size_t BytesPerPixel = 4;
+    IterTypeFull maxPossibleIters;
 
     for (;;) {
         // Wait until main() sends data
@@ -2210,6 +2236,8 @@ void Fractal::DrawFractalThread(size_t index, Fractal* fractal) {
         if (sync.m_TimeToExit) {
             break;
         }
+
+        maxPossibleIters = fractal->GetMaxIterationsRT();
 
         sync.m_DrawThreadReady = false;
 
@@ -2274,8 +2302,8 @@ void Fractal::DrawFractalThread(size_t index, Fractal* fractal) {
                     if (numIters < maxIters)
                     {
                         numIters += fractal->m_PaletteRotate;
-                        if (numIters >= MAXITERS) {
-                            numIters = MAXITERS - 1;
+                        if (numIters >= maxPossibleIters) {
+                            numIters = maxPossibleIters - 1;
                         }
 
                         GetBasicColor(numIters, acc_r, acc_g, acc_b);
@@ -2297,8 +2325,8 @@ void Fractal::DrawFractalThread(size_t index, Fractal* fractal) {
                             if (numIters < maxIters)
                             {
                                 numIters += fractal->m_PaletteRotate;
-                                if (numIters >= MAXITERS) {
-                                    numIters = MAXITERS - 1;
+                                if (numIters >= maxPossibleIters)) {
+                                    numIters = maxPossibleIters - 1;
                                 }
 
                                 GetBasicColor(numIters, acc_r, acc_g, acc_b);
@@ -2391,7 +2419,7 @@ void Fractal::FillGpuCoords(T &cx2, T &cy2, T &dx2, T &dy2) {
     FillCoord(src_dy, dy2);
 }
 
-template<class T>
+template<typename IterType, class T>
 void Fractal::CalcGpuFractal(bool MemoryOnly)
 {
     OutputMessage(L"\r\n");
@@ -2478,6 +2506,7 @@ void Fractal::CalcNetworkFractal(bool /*MemoryOnly*/)
     //}
 }
 
+template<typename IterType>
 void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
     auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<
         double,
@@ -2630,7 +2659,7 @@ void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
 // If we are not using network rendering, this function calculates and draws the
 // entire fractal.
 //////////////////////////////////////////////////////////////////////////////
-template<class T, class SubType>
+template<typename IterType, class T, class SubType>
 void Fractal::CalcCpuHDR(bool MemoryOnly) {
     const T dx = T((m_MaxX - m_MinX) / (m_ScrnWidth * GetGpuAntialiasing()));
     const T dy = T((m_MaxY - m_MinY) / (m_ScrnHeight * GetGpuAntialiasing()));
@@ -2704,7 +2733,7 @@ void Fractal::CalcCpuHDR(bool MemoryOnly) {
     DrawFractal(MemoryOnly);
 }
 
-template<class T, class SubType>
+template<typename IterType, class T, class SubType>
 void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
     auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<
         T,
@@ -2939,7 +2968,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
     DrawFractal(MemoryOnly);
 }
 
-template<class SubType>
+template<typename IterType, class SubType>
 void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
     using T = HDRFloat<SubType>;
     using TComplex = HDRFloatComplex<SubType>;
@@ -3127,7 +3156,7 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
     DrawFractal(MemoryOnly);
 }
 
-template<class T, class SubType, bool BLA>
+template<typename IterType, class T, class SubType, bool BLA>
 void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
     auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<
         T,
@@ -3141,7 +3170,7 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
         return;
     }
 
-    m_r.ClearMemory();
+    m_r.ClearMemory<IterType>();
 
     T cx2{}, cy2{}, dx2{}, dy2{};
     T centerX2{}, centerY2{};
@@ -3154,7 +3183,7 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
     FillCoord(centerX, centerX2);
     FillCoord(centerY, centerY2);
 
-    MattPerturbResults<T> gpu_results{
+    MattPerturbResults<IterType, T> gpu_results{
         (IterType)results->orb.size(),
         results->orb.data(),
         results->PeriodMaybeZero };
@@ -3200,7 +3229,7 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
     }
 }
 
-template<class T, class SubType, LAv2Mode Mode>
+template<typename IterType, class T, class SubType, LAv2Mode Mode>
 void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
     auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<
         T,
@@ -3214,7 +3243,7 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
         return;
     }
 
-    m_r.ClearMemory();
+    m_r.ClearMemory<IterType>();
 
     T cx2{}, cy2{}, dx2{}, dy2{};
     T centerX2{}, centerY2{};
@@ -3227,7 +3256,7 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
     FillCoord(centerX, centerX2);
     FillCoord(centerY, centerY2);
 
-    MattPerturbResults<T> gpu_results{
+    MattPerturbResults<IterType, T> gpu_results{
         (IterType)results->orb.size(),
         results->orb.data(),
         results->PeriodMaybeZero };
@@ -3259,7 +3288,7 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
     }
 }
 
-template<class T, class SubType, class T2, class SubType2>
+template<typename IterType, class T, class SubType, class T2, class SubType2>
 void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
     auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<
         T,
@@ -3281,7 +3310,7 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
         return;
     }
 
-    m_r.ClearMemory();
+    m_r.ClearMemory<IterType>();
 
     T cx2{}, cy2{}, dx2{}, dy2{};
     T centerX2{}, centerY2{};
@@ -3294,12 +3323,12 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
     FillCoord(centerX, centerX2);
     FillCoord(centerY, centerY2);
 
-    MattPerturbResults<T, CalcBad::Enable> gpu_results{
+    MattPerturbResults<IterType, T, CalcBad::Enable> gpu_results{
         (IterType)results->orb.size(),
         results->orb.data(),
         results->PeriodMaybeZero };
 
-    MattPerturbResults<T2, CalcBad::Enable> gpu_results2{
+    MattPerturbResults<IterType, T2, CalcBad::Enable> gpu_results2{
         (IterType)results2->orb.size(),
         results2->orb.data(),
         results2->PeriodMaybeZero };
@@ -3335,123 +3364,6 @@ void Fractal::MessageBoxCudaError(uint32_t result) {
     char error[256];
     sprintf(error, "Error from cuda: %u.  Message: \"%s\"\n", result, GPURenderer::ConvertErrorToString(result));
     ::MessageBoxA(NULL, error, "", MB_OK);
-}
-
-bool Fractal::CalcPixelRow_Exp(unsigned int *rowBuffer, size_t row)
-{
-    double dy = (Convert<HighPrecision, double>(m_MaxY) - Convert<HighPrecision, double>(m_MinY)) / ((double)m_ScrnHeight);
-    double dx = (Convert<HighPrecision, double>(m_MaxX) - Convert<HighPrecision, double>(m_MinX)) / ((double)m_ScrnWidth);
-
-    double cx = Convert<HighPrecision, double>(m_MinX);
-    double cy = Convert<HighPrecision, double>(m_MaxY) - dy * ((double)row);
-    double zx, zy;
-    double term1, term2, term3, term4, term5;
-    IterType i;
-
-    // (zx + zy)^2 = zx^2 + 2*zx*zy + zy^2
-    // (zx + zy)^3 = zx^3 + 3*zx^2*zy + 3*zx*zy^2 + zy
-    for (size_t x = 0; x < m_ScrnWidth; x++)
-    { // Calc Pixel
-        zx = cx;
-        zy = cy;
-        for (i = 0; i < GetNumIterations<IterType>(); i++)
-        { // x^4+4*I*x^3*y-6*x^2*y^2-4*I*x*y^3+y^4
-            term1 = zx * zx * zx * zx;
-            term2 = 4 * zx * zx * zx * zy;
-            term3 = -6.0 * zx * zx * zy * zy;
-            term4 = -4.0 * zx * zy * zy * zy;
-            term5 = zy * zy * zy * zy;
-            if (term1 - term3 + term5 > 10) break;
-            zy = term2 + term4;
-            zx = term1 + term3 + term5;
-            zx += cx;
-            zy += cy;
-        }
-        cx += dx;
-        if (i == GetNumIterations<IterType>())
-        {
-            *rowBuffer = 0;
-        }
-        else
-        {
-            *rowBuffer = i;
-        }
-
-        rowBuffer++;
-    }
-
-    return true;
-}
-
-
-void Fractal::CalcPixelRow_Multi(unsigned int* rowBuffer, size_t row)
-{
-    HighPrecision dy = (m_MaxY - m_MinY) / ((HighPrecision)m_ScrnHeight);
-    HighPrecision dx = (m_MaxX - m_MinX) / ((HighPrecision)m_ScrnWidth);
-
-    HighPrecision cx = m_MinX;
-    HighPrecision cy = m_MaxY - dy * ((HighPrecision)row);
-    HighPrecision zx, zy;
-    HighPrecision zx2, zy2;
-    IterType i;
-
-    // (zx + zy)^2 = zx^2 + 2*zx*zy + zy^2
-    // (zx + zy)^3 = zx^3 + 3*zx^2*zy + 3*zx*zy^2 + zy
-    for (int x = 0; x < m_ScrnWidth; x++)
-    { // Calc Pixel
-        zx = cx;
-        zy = cy;
-        for (i = 0; i < GetNumIterations<IterType>(); i++)
-        { // x^2+2*I*x*y-y^2
-            zx2 = zx * zx;
-            zy2 = zy * zy;
-            if ((zx2 + zy2) > 4) break;
-            zy = 2 * zx * zy;
-            zx = zx2 - zy2;
-            zx += cx;
-            zy += cy;
-        }
-        cx += dx;
-        *rowBuffer = 0;
-        *rowBuffer = i;
-
-        rowBuffer++;
-    }
-}
-
-bool Fractal::CalcPixelRow_C(unsigned int* rowBuffer, size_t row)
-{
-    double dy = (Convert<HighPrecision, double>(m_MaxY) - Convert<HighPrecision, double>(m_MinY)) / ((double)m_ScrnHeight);
-    double dx = (Convert<HighPrecision, double>(m_MaxX) - Convert<HighPrecision, double>(m_MinX)) / ((double)m_ScrnWidth);
-
-    double cx = Convert<HighPrecision, double>(m_MinX);
-    double cy = Convert<HighPrecision, double>(m_MaxY) - dy * ((double)row);
-    double zx, zy;
-    double zx2, zy2;
-    IterType i;
-
-    // (zx + zy)^2 = zx^2 + 2*zx*zy + zy^2
-    // (zx + zy)^3 = zx^3 + 3*zx^2*zy + 3*zx*zy^2 + zy
-    for (size_t x = 0; x < m_ScrnWidth; x++)
-    { // Calc Pixel
-        zx = cx;
-        zy = cy;
-        for (i = 0; i < GetNumIterations<IterType>(); i++)
-        { // x^2+2*I*x*y-y^2
-            zx2 = zx * zx;
-            zy2 = zy * zy;
-            if ((zx2 + zy2) > 4) break;
-            zy = 2 * zx * zy;
-            zx = zx2 - zy2;
-            zx += cx;
-            zy += cy;
-        }
-        cx += dx;
-        *rowBuffer = i;
-        rowBuffer++;
-    }
-
-    return true;
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -3555,6 +3467,9 @@ void Fractal::CurrentFractalSave::Run() {
         } while (Fractal::FileExists(final_filename.c_str()));
     }
 
+    // TODO racy bug, changing iteration type while save in progress.
+    IterTypeFull maxPossibleIters = m_Fractal.GetMaxIterationsRT();
+
     //setup converter deprecated
     //using convert_type = std::codecvt_utf8<wchar_t>;
     //std::wstring_convert<convert_type, wchar_t> converter;
@@ -3593,8 +3508,8 @@ void Fractal::CurrentFractalSave::Run() {
                         if (numIters < m_NumIterations)
                         {
                             numIters += m_PaletteRotate;
-                            if (numIters >= MAXITERS) {
-                                numIters = MAXITERS - 1;
+                            if (numIters >= maxPossibleIterations) {
+                                numIters = maxPossibleIterations - 1;
                             }
 
                             auto palIndex = numIters % m_PalIters[m_WhichPalette][m_PaletteDepthIndex];
@@ -3610,8 +3525,8 @@ void Fractal::CurrentFractalSave::Run() {
                 acc_g /= m_GpuAntialiasing * m_GpuAntialiasing;
                 acc_b /= m_GpuAntialiasing * m_GpuAntialiasing;
 
-                //if (index > MAXITERS) {
-                //    index = MAXITERS - 1;
+                //if (index > GetMaxIterations<IterType>()) {
+                //    index = GetMaxIterations<IterType>() - 1;
                 //}
 
                 //data[i] = (unsigned char)acc_r;

@@ -91,6 +91,30 @@ enum class RenderAlgorithm {
 #pragma pack(push, 8)
 template<typename Type>
 struct alignas(8) MattReferenceSingleIter {
+    MattReferenceSingleIter()
+        : x{ Type(0) },
+        y{ Type(0) },
+        bad{},
+        padding{} {
+    }
+
+    MattReferenceSingleIter(Type x, Type y)
+        : x{ x },
+        y{ y },
+        bad{},
+        padding{} {
+    }
+
+    MattReferenceSingleIter(Type x, Type y, bool bad)
+        : x{ x },
+        y{ y },
+        bad{(uint32_t)bad},
+        padding{} {
+    }
+
+    MattReferenceSingleIter(const MattReferenceSingleIter& other) = default;
+    MattReferenceSingleIter &operator=(const MattReferenceSingleIter& other) = default;
+
     Type x;
     Type y;
     uint32_t bad;
@@ -150,12 +174,9 @@ struct MattPerturbResults {
     IterType PeriodMaybeZero;
 
     MattPerturbResults(IterType in_size,
-                       T *in_x,
-                       T *in_y,
-                       uint8_t *in_bad,
-                       IterType in_bad_size,
+                       MattReferenceSingleIter<T> *in_orb,
                        IterType PeriodMaybeZero) :
-        iters(new MattReferenceSingleIter<T>[in_size]),
+        iters(in_orb),
         size(in_size),
         PeriodMaybeZero(PeriodMaybeZero) {
 
@@ -169,29 +190,12 @@ struct MattPerturbResults {
         //static_assert(sizeof(MattReferenceSingleIter<HDRFloat<float>>) == 12 * 4, "float2");
         static_assert(sizeof(float2) == 8, "float2 type");
 
-        // TODO - one thought;
-        // TODO this is really slow: rearrange data for memcpy.
         // TODO use a template, remove "bad" completely when it's not used.
         // TODO - better though, remove this class and copy from original results
         // to MattPerturbSingleResults directly
-        if (in_bad_size == in_size) {
-            for (IterType i = 0; i < size; i++) {
-                iters[i].x = in_x[i];
-                iters[i].y = in_y[i];
-                iters[i].bad = in_bad[i];
-            }
-        }
-        else {
-            for (IterType i = 0; i < size; i++) {
-                iters[i].x = in_x[i];
-                iters[i].y = in_y[i];
-                iters[i].bad = 0;
-            }
-        }
     }
 
     ~MattPerturbResults() {
-        delete[] iters;
     }
 };
 

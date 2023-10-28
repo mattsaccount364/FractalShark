@@ -2552,17 +2552,17 @@ void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
                     //               2 * S * DeltaSubNWX * DeltaSubNWY +
                     //               dY
 
-                    DeltaSubNX = DeltaSubNXOrig * (results->x[RefIteration] * 2 + DeltaSubNXOrig) -
-                        DeltaSubNYOrig * (results->y[RefIteration] * 2 + DeltaSubNYOrig) +
+                    DeltaSubNX = DeltaSubNXOrig * (results->orb[RefIteration].x * 2 + DeltaSubNXOrig) -
+                        DeltaSubNYOrig * (results->orb[RefIteration].y * 2 + DeltaSubNYOrig) +
                         DeltaSub0X;
-                    DeltaSubNY = DeltaSubNXOrig * (results->y[RefIteration] * 2 + DeltaSubNYOrig) +
-                        DeltaSubNYOrig * (results->x[RefIteration] * 2 + DeltaSubNXOrig) +
+                    DeltaSubNY = DeltaSubNXOrig * (results->orb[RefIteration].y * 2 + DeltaSubNYOrig) +
+                        DeltaSubNYOrig * (results->orb[RefIteration].x * 2 + DeltaSubNXOrig) +
                         DeltaSub0Y;
 
                     ++RefIteration;
 
-                    const double tempZX = results->x[RefIteration] + DeltaSubNX;
-                    const double tempZY = results->y[RefIteration] + DeltaSubNY;
+                    const double tempZX = results->orb[RefIteration].x + DeltaSubNX;
+                    const double tempZY = results->orb[RefIteration].y + DeltaSubNY;
                     const double zn_size = tempZX * tempZX + tempZY * tempZY;
                     const double normDeltaSubN = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
 
@@ -2571,7 +2571,7 @@ void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
                     }
 
                     if (zn_size < normDeltaSubN ||
-                        RefIteration == (IterType)results->x.size() - 1) {
+                        RefIteration == (IterType)results->orb.size() - 1) {
                         DeltaSubNX = tempZX;
                         DeltaSubNY = tempZY;
                         RefIteration = 0;
@@ -2683,7 +2683,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
     auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<T, SubType>(RefOrbitCalc::Extras::None);
 
     BLAS<T> blas(*results);
-    blas.Init((IterType)results->x.size(), results->maxRadius);
+    blas.Init((IterType)results->orb.size(), results->maxRadius);
 
     T dx = T((m_MaxX - m_MinX) / (m_ScrnWidth * GetGpuAntialiasing()));
     T dy = T((m_MaxY - m_MinY) / (m_ScrnHeight * GetGpuAntialiasing()));
@@ -2741,7 +2741,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                         int l = b->getL();
 
                         // TODO this first RefIteration + l check bugs me
-                        if (RefIteration + l >= (IterType)results->x.size()) {
+                        if (RefIteration + l >= (IterType)results->orb.size()) {
                             //::MessageBox(NULL, L"Out of bounds! :(", L"", MB_OK);
                             break;
                         }
@@ -2762,8 +2762,8 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
 
                         RefIteration += l;
 
-                        T tempZX = results->x[RefIteration] + DeltaSubNX;
-                        T tempZY = results->y[RefIteration] + DeltaSubNY;
+                        T tempZX = results->orb[RefIteration].x + DeltaSubNX;
+                        T tempZY = results->orb[RefIteration].y + DeltaSubNY;
                         T normSquared = tempZX * tempZX + tempZY * tempZY;
                         DeltaNormSquared = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
                         HdrReduce(normSquared);
@@ -2774,7 +2774,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                         }
 
                         if (HdrCompareToBothPositiveReducedLT(normSquared, DeltaNormSquared) ||
-                            RefIteration >= (IterType)results->x.size() - 1) {
+                            RefIteration >= (IterType)results->orb.size() - 1) {
                             DeltaSubNX = tempZX;
                             DeltaSubNY = tempZY;
                             DeltaNormSquared = normSquared;
@@ -2789,21 +2789,21 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                     const T DeltaSubNXOrig = DeltaSubNX;
                     const T DeltaSubNYOrig = DeltaSubNY;
 
-                    T TermB1 = DeltaSubNXOrig * (results->x[RefIteration] * 2 + DeltaSubNXOrig);
-                    T TermB2 = DeltaSubNYOrig * (results->y[RefIteration] * 2 + DeltaSubNYOrig);
+                    T TermB1 = DeltaSubNXOrig * (results->orb[RefIteration].x * 2 + DeltaSubNXOrig);
+                    T TermB2 = DeltaSubNYOrig * (results->orb[RefIteration].y * 2 + DeltaSubNYOrig);
 
                     DeltaSubNX = TermB1 - TermB2;
                     DeltaSubNX += DeltaSub0X;
                     HdrReduce(DeltaSubNX);
 
-                    T Term3 = results->y[RefIteration] * 2 + DeltaSubNYOrig;
-                    T Term4 = results->x[RefIteration] * 2 + DeltaSubNXOrig;
+                    T Term3 = results->orb[RefIteration].y * 2 + DeltaSubNYOrig;
+                    T Term4 = results->orb[RefIteration].x * 2 + DeltaSubNXOrig;
                     DeltaSubNY = DeltaSubNXOrig * Term3 + DeltaSubNYOrig * Term4;
                     DeltaSubNY += DeltaSub0Y;
                     HdrReduce(DeltaSubNY);
 
                     ++RefIteration;
-                    if (RefIteration >= (IterType)results->x.size()) {
+                    if (RefIteration >= (IterType)results->orb.size()) {
                         ::MessageBox(NULL, L"Out of bounds 2! :(", L"", MB_OK);
                         break;
                     }
@@ -2868,8 +2868,8 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                         //}
                     }
 
-                    T tempZX = results->x[RefIteration] + DeltaSubNX;
-                    T tempZY = results->y[RefIteration] + DeltaSubNY;
+                    T tempZX = results->orb[RefIteration].x + DeltaSubNX;
+                    T tempZY = results->orb[RefIteration].y + DeltaSubNY;
                     T nT1 = tempZX * tempZX;
                     T nT2 = tempZY * tempZY;
                     T normSquared = nT1 + nT2;
@@ -2883,7 +2883,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                     }
 
                     if (HdrCompareToBothPositiveReducedLT(normSquared, DeltaNormSquared) ||
-                        RefIteration >= (IterType)results->x.size() - 1) {
+                        RefIteration >= (IterType)results->orb.size() - 1) {
                         DeltaSubNX = tempZX;
                         DeltaSubNY = tempZY;
                         DeltaNormSquared = normSquared;
@@ -2980,7 +2980,7 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
 
                 IterType iterations = 0;
                 IterType RefIteration = 0;
-                IterType MaxRefIteration = (IterType)results->x.size() - 1;
+                IterType MaxRefIteration = (IterType)results->orb.size() - 1;
 
                 iterations = BLA2SkippedIterations;
 
@@ -3117,17 +3117,14 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
     FillCoord(centerY, centerY2);
 
     MattPerturbResults<T> gpu_results{
-        (IterType)results->x.size(),
-        results->x.data(),
-        results->y.data(),
-        results->bad.data(),
-        (IterType)results->bad.size(),
+        results->orb.size(),
+        results->orb.data(),
         results->PeriodMaybeZero };
 
     uint32_t result;
     if constexpr (BLA) {
         BLAS<T> blas(*results);
-        blas.Init(results->x.size(), results->maxRadius);
+        blas.Init(results->orb.size(), results->maxRadius);
 
         result = m_r.RenderPerturbBLA<T>(GetRenderAlgorithm(),
             m_CurIters.m_ItersMemory.get(),
@@ -3189,11 +3186,8 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
     FillCoord(centerY, centerY2);
 
     MattPerturbResults<T> gpu_results{
-        (IterType)results->x.size(),
-        results->x.data(),
-        results->y.data(),
-        results->bad.data(),
-        (IterType)results->bad.size(),
+        results->orb.size(),
+        results->orb.data(),
         results->PeriodMaybeZero };
 
     if (results->LaReference.get() == nullptr) {
@@ -3229,7 +3223,7 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
     auto* results2 = m_RefOrbit.CopyUsefulPerturbationResults<T, T2>(*results);
 
     BLAS<T> blas(*results);
-    blas.Init(results->x.size(), results->maxRadius);
+    blas.Init(results->orb.size(), results->maxRadius);
 
     uint32_t err = InitializeGPUMemory();
     if (err) {
@@ -3251,22 +3245,16 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
     FillCoord(centerY, centerY2);
 
     MattPerturbResults<T> gpu_results{
-        (IterType)results->x.size(),
-        results->x.data(),
-        results->y.data(),
-        results->bad.data(),
-        (IterType)results->bad.size(),
+        results->orb.size(),
+        results->orb.data(),
         results->PeriodMaybeZero };
 
     MattPerturbResults<T2> gpu_results2{
-        (IterType)results2->x.size(),
-        results2->x.data(),
-        results2->y.data(),
-        results2->bad.data(),
-        (IterType)results2->bad.size(),
-        results->PeriodMaybeZero };
+        results2->orb.size(),
+        results2->orb.data(),
+        results2->PeriodMaybeZero };
 
-    gpu_results2.size = results2->x.size();
+    gpu_results2.size = results2->orb.size();
 
     if (gpu_results.size != gpu_results2.size) {
         ::MessageBox(NULL, L"Mismatch on size", L"", MB_OK);

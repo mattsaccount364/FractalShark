@@ -61,8 +61,8 @@ BLA<T> BLAS<T>::CreateLStep(size_t level, size_t m, T blaSize, T epsilon) {
 
 template<class T>
 BLA<T> BLAS<T>::CreateOneStep(size_t m, T epsilon) {
-    T RealA = static_cast<T>(m_PerturbationResults.x[m] * 2);
-    T ImagA = static_cast<T>(m_PerturbationResults.y[m] * 2);
+    T RealA = static_cast<T>(m_PerturbationResults.orb[m].x * 2);
+    T ImagA = static_cast<T>(m_PerturbationResults.orb[m].y * 2);
 
     T mA = HdrSqrt(RealA * RealA + ImagA * ImagA);
 

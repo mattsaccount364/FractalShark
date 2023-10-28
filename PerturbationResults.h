@@ -9,6 +9,8 @@
 #include "RefOrbitCalc.h"
 #include "LAReference.h"
 
+#include "GPU_Render.h"
+
 // If true, choose type == float/double for primitives.
 // If false, choose type == T::TemplateSubType for HdrFloat subtypes.
 // This is kind of a headache.  std::conditional by itself is not adequate here.
@@ -38,9 +40,7 @@ public:
     IterType MaxIterations;
     IterType PeriodMaybeZero;  // Zero if not worked out
 
-    std::vector<T> x;
-    std::vector<T> y;
-    std::vector<uint8_t> bad;
+    std::vector<MattReferenceSingleIter<T>> orb;
 
     uint32_t AuthoritativePrecision;
     std::vector<HighPrecision> ReuseX;
@@ -59,9 +59,7 @@ public:
         MaxIterations = 0;
         PeriodMaybeZero = 0;
 
-        x.clear();
-        y.clear();
-        bad.clear();
+        orb.clear();
 
         AuthoritativePrecision = false;
         ReuseX.clear();
@@ -82,28 +80,23 @@ public:
         //radiusYHdr = other.radiusYHdr;
         //maxRadius = other.maxRadius;
 
-        x.reserve(other.x.size());
-        y.reserve(other.y.size());
-        bad.reserve(other.bad.size());
+        orb.reserve(other.orb.size());
 
         ReuseX.reserve(other.ReuseX.size());
         ReuseY.reserve(other.ReuseY.size());
 
-        for (size_t i = 0; i < other.x.size(); i++) {
-            x.push_back((T)other.x[i]);
-            y.push_back((T)other.y[i]);
+        for (size_t i = 0; i < other.orb.size(); i++) {
+            orb.push_back({ (T)other.orb[i].x, (T)other.orb[i].y, other.orb[i].bad != 0 });
         }
 
         AuthoritativePrecision = other.AuthoritativePrecision;
         ReuseX = other.ReuseX;
         ReuseY = other.ReuseY;
-
-        bad = other.bad;
     }
 
     template<class U>
     HDRFloatComplex<U> GetComplex(size_t index) const {
-        return { x[index], y[index] };
+        return { orb[index].x, orb[index].y };
     }
 
     void InitReused() {
@@ -144,15 +137,9 @@ public:
 
         size_t ReserveSize = (GuessReserveSize != 0) ? GuessReserveSize : NumIterations;
 
-        x.reserve(ReserveSize);
-        y.reserve(ReserveSize);
+        orb.reserve(ReserveSize);
 
-        if constexpr (Bad == RefOrbitCalc::CalcBad::Enable) {
-            bad.reserve(ReserveSize);
-        }
-
-        x.push_back(T(0));
-        y.push_back(T(0));
+        orb.push_back({});
 
         if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
             AuthoritativePrecision = cx.precision();
@@ -168,12 +155,7 @@ public:
 
     template<RefOrbitCalc::CalcBad Bad, RefOrbitCalc::ReuseMode Reuse>
     void TrimResults() {
-        x.shrink_to_fit();
-        y.shrink_to_fit();
-
-        if constexpr (Bad == RefOrbitCalc::CalcBad::Enable) {
-            bad.shrink_to_fit();
-        }
+        orb.shrink_to_fit();
 
         if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
             ReuseX.shrink_to_fit();

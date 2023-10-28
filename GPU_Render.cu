@@ -456,6 +456,7 @@ struct MattPerturbSingleResults {
 
 //////////////////////////////////////////////////////////////////////////////
 
+template<typename IterType>
 __global__
 void mandel_4x_float(
     IterType *OutputIterMatrix,
@@ -528,6 +529,7 @@ void mandel_4x_float(
     OutputIterMatrix[idx] = iter;
 }
 
+template<typename IterType>
 __global__
 void mandel_4x_double(
     IterType *OutputIterMatrix,
@@ -623,6 +625,7 @@ x2 = 1.00000000010e-05 ax2**2+bx2+c = 0.00000000000e+00
 
 */
 
+template<typename IterType>
 __global__
 void mandel_2x_double(
     IterType *OutputIterMatrix,
@@ -743,7 +746,7 @@ void mandel_2x_double(
     //OutputIterMatrix[idx] = iter;
 }
 
-template<int iteration_precision>
+template<typename IterType, int iteration_precision>
 __global__
 void mandel_1x_double(
     IterType *OutputIterMatrix,
@@ -867,7 +870,7 @@ struct SharedMemStruct {
     //} PerThread[NB_THREADS_W][NB_THREADS_H];
 };
 
-template<int32_t LM2>
+template<typename IterType, int32_t LM2>
 __global__
 void mandel_1x_double_perturb_bla(
     IterType *OutputIterMatrix,
@@ -1023,7 +1026,7 @@ void mandel_1x_double_perturb_bla(
 //    asm("prefetch.global.L2 [%0];" : : PXL_GLOBAL_PTR(ptr));
 //}
 
-template<class HDRFloatType, int32_t LM2>
+template<typename IterType, class HDRFloatType, int32_t LM2>
 __global__
 void
 //__launch_bounds__(NB_THREADS_W * NB_THREADS_H, 2)
@@ -1261,7 +1264,7 @@ mandel_1xHDR_float_perturb_bla(
     OutputIterMatrix[idx] = iter;
 }
 
-//template<uint32_t Antialiasing, bool ScaledColor>
+//template<typename IterType, uint32_t Antialiasing, bool ScaledColor>
 //__global__
 //void
 //max_kernel(
@@ -1296,7 +1299,7 @@ mandel_1xHDR_float_perturb_bla(
 //}
 //
 
-template<uint32_t Antialiasing, bool ScaledColor>
+template<typename IterType, uint32_t Antialiasing, bool ScaledColor>
 __global__
 void
 antialiasing_kernel (
@@ -1366,7 +1369,7 @@ antialiasing_kernel (
     OutputColorMatrix.aa_colors[color_idx].a = 65535;
 }
 
-template<class SubType, LAv2Mode Mode>
+template<typename IterType, class SubType, LAv2Mode Mode>
 __global__
 void
 //__launch_bounds__(NB_THREADS_W * NB_THREADS_H, 2)
@@ -1375,7 +1378,7 @@ mandel_1xHDR_float_perturb_lav2(
     AntialiasedColors OutputColorMatrix,
     Palette Pals,
     MattPerturbSingleResults<HDRFloat<SubType>> Perturb,
-    GPU_LAReference<SubType> LaReference, // "copy"
+    GPU_LAReference<IterType, SubType> LaReference, // "copy"
     int width,
     int height,
     int antialiasing,
@@ -1576,7 +1579,7 @@ mandel_1xHDR_float_perturb_lav2(
     OutputIterMatrix[idx] = iter;
 }
 
-template<int iteration_precision>
+template<typename IterType, int iteration_precision>
 __global__
 void mandel_2x_float(
     IterType *OutputIterMatrix,
@@ -1765,6 +1768,7 @@ void mandel_2x_float_perturb_setup(MattPerturbSingleResults<dblflt> PerturbDblFl
     }
 }
 
+template<typename IterType>
 __global__
 void mandel_2x_float_perturb(
     IterType *OutputIterMatrix,
@@ -1927,7 +1931,7 @@ void mandel_2x_float_perturb(
     OutputIterMatrix[idx] = iter;
 }
 
-template<int iteration_precision>
+template<typename IterType, int iteration_precision>
 __global__
 void mandel_1x_float(
     IterType *OutputIterMatrix,
@@ -2045,7 +2049,7 @@ void mandel_1x_float(
     OutputIterMatrix[idx] = iter;
 }
 
-template<class T, bool Periodic>
+template<typename IterType, class T, bool Periodic>
 __global__
 void mandel_1x_float_perturb(
     IterType *OutputIterMatrix,
@@ -2177,7 +2181,7 @@ void mandel_1x_float_perturb(
     OutputIterMatrix[idx] = iter;
 }
 
-template<class T>
+template<typename IterType, class T>
 __global__
 void mandel_1x_float_perturb_scaled(
     IterType *OutputIterMatrix,
@@ -2420,7 +2424,7 @@ void mandel_1x_float_perturb_scaled(
     OutputIterMatrix[idx] = iter;
 }
 
-template<int32_t LM2>
+template<typename IterType, int32_t LM2>
 __global__
 void mandel_1x_float_perturb_scaled_bla(
     IterType *OutputIterMatrix,
@@ -2717,6 +2721,7 @@ void mandel_1x_float_perturb_scaled_bla(
     OutputIterMatrix[idx] = iter;
 }
 
+template<typename IterType>
 __global__
 void mandel_2x_float_perturb_scaled(
     IterType *OutputIterMatrix,
@@ -3009,6 +3014,7 @@ void GPURenderer::ClearMemory() {
     }
 }
 
+template<typename IterType>
 uint32_t GPURenderer::InitializeMemory(
     uint32_t antialias_width, // screen width
     uint32_t antialias_height, // screen height
@@ -3133,6 +3139,26 @@ uint32_t GPURenderer::InitializeMemory(
     return 0;
 }
 
+template
+uint32_t GPURenderer::InitializeMemory<uint32_t>(
+    uint32_t antialias_width, // screen width
+    uint32_t antialias_height, // screen height
+    uint32_t antialiasing,
+    const uint16_t* palR,
+    const uint16_t* palG,
+    const uint16_t* palB,
+    uint32_t palIters);
+
+template
+uint32_t GPURenderer::InitializeMemory<uint64_t>(
+    uint32_t antialias_width, // screen width
+    uint32_t antialias_height, // screen height
+    uint32_t antialiasing,
+    const uint16_t* palR,
+    const uint16_t* palG,
+    const uint16_t* palB,
+    uint64_t palIters);
+
 bool GPURenderer::MemoryInitialized() const {
     if (OutputIterMatrix == nullptr) {
         return false;
@@ -3145,7 +3171,7 @@ bool GPURenderer::MemoryInitialized() const {
     return true;
 }
 
-template<class T>
+template<typename IterType, class T>
 uint32_t GPURenderer::Render(
     RenderAlgorithm algorithm,
     IterType* iter_buffer,
@@ -3169,29 +3195,29 @@ uint32_t GPURenderer::Render(
         if constexpr (std::is_same<T, double>::value) {
             switch (iteration_precision) {
             case 1:
-                mandel_1x_double<1> << <nb_blocks, threads_per_block >> > (
-                    OutputIterMatrix,
+                mandel_1x_double<IterType, 1> << <nb_blocks, threads_per_block >> > (
+                    static_cast<IterType*>(OutputIterMatrix),
                     OutputColorMatrix,
                     m_Width, m_Height, cx, cy, dx, dy,
                     n_iterations);
                 break;
             case 4:
-                mandel_1x_double<4> << <nb_blocks, threads_per_block >> > (
-                    OutputIterMatrix,
+                mandel_1x_double<IterType, 4> << <nb_blocks, threads_per_block >> > (
+                    static_cast<IterType*>(OutputIterMatrix),
                     OutputColorMatrix,
                     m_Width, m_Height, cx, cy, dx, dy,
                     n_iterations);
                 break;
             case 8:
-                mandel_1x_double<8> << <nb_blocks, threads_per_block >> > (
-                    OutputIterMatrix,
+                mandel_1x_double<IterType, 8> << <nb_blocks, threads_per_block >> > (
+                    static_cast<IterType*>(OutputIterMatrix),
                     OutputColorMatrix,
                     m_Width, m_Height, cx, cy, dx, dy,
                     n_iterations);
                 break;
             case 16:
-                mandel_1x_double<16> << <nb_blocks, threads_per_block >> > (
-                    OutputIterMatrix,
+                mandel_1x_double<IterType, 16> << <nb_blocks, threads_per_block >> > (
+                    static_cast<IterType*>(OutputIterMatrix),
                     OutputColorMatrix,
                     m_Width, m_Height, cx, cy, dx, dy,
                     n_iterations);
@@ -3208,8 +3234,8 @@ uint32_t GPURenderer::Render(
             dbldbl dx2{ dx.head, dx.tail };
             dbldbl dy2{ dy.head, dy.tail };
 
-            mandel_2x_double << <nb_blocks, threads_per_block >> > (
-                OutputIterMatrix,
+            mandel_2x_double<IterType> << <nb_blocks, threads_per_block >> > (
+                static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
                 m_Width, m_Height, cx2, cy2, dx2, dy2,
                 n_iterations);
@@ -3231,8 +3257,8 @@ uint32_t GPURenderer::Render(
             gqd_real dy2;
             dy2 = make_qd(dy.x, dy.y, dy.z, dy.w);
 
-            mandel_4x_double << <nb_blocks, threads_per_block >> > (
-                OutputIterMatrix,
+            mandel_4x_double<IterType> << <nb_blocks, threads_per_block >> > (
+                static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
                 m_Width, m_Height, cx2, cy2, dx2, dy2,
                 n_iterations);
@@ -3243,29 +3269,29 @@ uint32_t GPURenderer::Render(
             // floatOnly
             switch (iteration_precision) {
             case 1:
-                mandel_1x_float<1> << <nb_blocks, threads_per_block >> > (
-                    OutputIterMatrix,
+                mandel_1x_float<IterType, 1> << <nb_blocks, threads_per_block >> > (
+                    static_cast<IterType*>(OutputIterMatrix),
                     OutputColorMatrix,
                     m_Width, m_Height, cx, cy, dx, dy,
                     n_iterations);
                 break;
             case 4:
-                mandel_1x_float<4> << <nb_blocks, threads_per_block >> > (
-                    OutputIterMatrix,
+                mandel_1x_float<IterType, 4> << <nb_blocks, threads_per_block >> > (
+                    static_cast<IterType*>(OutputIterMatrix),
                     OutputColorMatrix,
                     m_Width, m_Height, cx, cy, dx, dy,
                     n_iterations);
                 break;
             case 8:
-                mandel_1x_float<8> << <nb_blocks, threads_per_block >> > (
-                    OutputIterMatrix,
+                mandel_1x_float<IterType, 8> << <nb_blocks, threads_per_block >> > (
+                    static_cast<IterType*>(OutputIterMatrix),
                     OutputColorMatrix,
                     m_Width, m_Height, cx, cy, dx, dy,
                     n_iterations);
                 break;
             case 16:
-                mandel_1x_float<16> << <nb_blocks, threads_per_block >> > (
-                    OutputIterMatrix,
+                mandel_1x_float<IterType, 16> << <nb_blocks, threads_per_block >> > (
+                    static_cast<IterType*>(OutputIterMatrix),
                     OutputColorMatrix,
                     m_Width, m_Height, cx, cy, dx, dy,
                     n_iterations);
@@ -3285,29 +3311,29 @@ uint32_t GPURenderer::Render(
 
             switch (iteration_precision) {
             case 1:
-                mandel_2x_float<1> << <nb_blocks, threads_per_block >> > (
-                    OutputIterMatrix,
+                mandel_2x_float<IterType, 1> << <nb_blocks, threads_per_block >> > (
+                    static_cast<IterType*>(OutputIterMatrix),
                     OutputColorMatrix,
                     m_Width, m_Height, cx2, cy2, dx2, dy2,
                     n_iterations);
                 break;
             case 4:
-                mandel_2x_float<4> << <nb_blocks, threads_per_block >> > (
-                    OutputIterMatrix,
+                mandel_2x_float<IterType, 4> << <nb_blocks, threads_per_block >> > (
+                    static_cast<IterType*>(OutputIterMatrix),
                     OutputColorMatrix,
                     m_Width, m_Height, cx2, cy2, dx2, dy2,
                     n_iterations);
                 break;
             case 8:
-                mandel_2x_float<8> << <nb_blocks, threads_per_block >> > (
-                    OutputIterMatrix,
+                mandel_2x_float<IterType, 8> << <nb_blocks, threads_per_block >> > (
+                    static_cast<IterType*>(OutputIterMatrix),
                     OutputColorMatrix,
                     m_Width, m_Height, cx2, cy2, dx2, dy2,
                     n_iterations);
                 break;
             case 16:
-                mandel_2x_float<16> << <nb_blocks, threads_per_block >> > (
-                    OutputIterMatrix,
+                mandel_2x_float<IterType, 16> << <nb_blocks, threads_per_block >> > (
+                    static_cast<IterType*>(OutputIterMatrix),
                     OutputColorMatrix,
                     m_Width, m_Height, cx2, cy2, dx2, dy2,
                     n_iterations);
@@ -3333,8 +3359,8 @@ uint32_t GPURenderer::Render(
             gqf_real dy2;
             dy2 = make_qf(dy.x, dy.y, dy.z, dy.w);
 
-            mandel_4x_float << <nb_blocks, threads_per_block >> > (
-                OutputIterMatrix,
+            mandel_4x_float<IterType> << <nb_blocks, threads_per_block >> > (
+                static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
                 m_Width, m_Height, cx2, cy2, dx2, dy2,
                 n_iterations);
@@ -3352,59 +3378,126 @@ uint32_t GPURenderer::Render(
     return ExtractItersAndColors(iter_buffer, color_buffer);
 }
 
+//////////////////////////////////////////////////
 template uint32_t GPURenderer::Render(
     RenderAlgorithm algorithm,
-    IterType* iter_buffer,
+    uint32_t* iter_buffer,
     Color16* color_buffer,
     double cx,
     double cy,
     double dx,
     double dy,
-    IterType n_iterations,
+    uint32_t n_iterations,
     int iteration_precision);
 
 template uint32_t GPURenderer::Render(
     RenderAlgorithm algorithm,
-    IterType* iter_buffer,
+    uint32_t* iter_buffer,
     Color16* color_buffer,
     float cx,
     float cy,
     float dx,
     float dy,
-    IterType n_iterations,
+    uint32_t n_iterations,
     int iteration_precision);
 
 template uint32_t GPURenderer::Render(
     RenderAlgorithm algorithm,
-    IterType* iter_buffer,
+    uint32_t* iter_buffer,
     Color16* color_buffer,
     MattDbldbl cx,
     MattDbldbl cy,
     MattDbldbl dx,
     MattDbldbl dy,
-    IterType n_iterations,
+    uint32_t n_iterations,
     int iteration_precision);
 
 template uint32_t GPURenderer::Render(
     RenderAlgorithm algorithm,
-    IterType* iter_buffer,
+    uint32_t* iter_buffer,
     Color16* color_buffer,
     MattQDbldbl cx,
     MattQDbldbl cy,
     MattQDbldbl dx,
     MattQDbldbl dy,
-    IterType n_iterations,
+    uint32_t n_iterations,
     int iteration_precision);
 
 template uint32_t GPURenderer::Render(
     RenderAlgorithm algorithm,
-    IterType* iter_buffer,
+    uint32_t* iter_buffer,
     Color16* color_buffer,
     MattDblflt cx,
     MattDblflt cy,
     MattDblflt dx,
     MattDblflt dy,
-    IterType n_iterations,
+    uint32_t n_iterations,
+    int iteration_precision);
+
+template uint32_t GPURenderer::Render(
+    RenderAlgorithm algorithm,
+    uint32_t* iter_buffer,
+    Color16* color_buffer,
+    MattQFltflt cx,
+    MattQFltflt cy,
+    MattQFltflt dx,
+    MattQFltflt dy,
+    uint32_t n_iterations,
+    int iteration_precision);
+//////////////////////////////////////////////////
+template uint32_t GPURenderer::Render(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    double cx,
+    double cy,
+    double dx,
+    double dy,
+    uint64_t n_iterations,
+    int iteration_precision);
+
+template uint32_t GPURenderer::Render(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    float cx,
+    float cy,
+    float dx,
+    float dy,
+    uint64_t n_iterations,
+    int iteration_precision);
+
+template uint32_t GPURenderer::Render(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    MattDbldbl cx,
+    MattDbldbl cy,
+    MattDbldbl dx,
+    MattDbldbl dy,
+    uint64_t n_iterations,
+    int iteration_precision);
+
+template uint32_t GPURenderer::Render(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    MattQDbldbl cx,
+    MattQDbldbl cy,
+    MattQDbldbl dx,
+    MattQDbldbl dy,
+    uint64_t n_iterations,
+    int iteration_precision);
+
+template uint32_t GPURenderer::Render(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    MattDblflt cx,
+    MattDblflt cy,
+    MattDblflt dx,
+    MattDblflt dy,
+    uint64_t n_iterations,
     int iteration_precision);
 
 template uint32_t GPURenderer::Render(
@@ -3415,10 +3508,12 @@ template uint32_t GPURenderer::Render(
     MattQFltflt cy,
     MattQFltflt dx,
     MattQFltflt dy,
-    IterType n_iterations,
+    uint64_t n_iterations,
     int iteration_precision);
+/////////////////////////////////////////////////////////
 
-template<class T>
+
+template<typename IterType, class T>
 uint32_t GPURenderer::RenderPerturb(
     RenderAlgorithm algorithm,
     IterType* iter_buffer,
@@ -3455,8 +3550,8 @@ uint32_t GPURenderer::RenderPerturb(
     if (algorithm == RenderAlgorithm::Gpu1x32Perturbed) {
         // floatOnly
         if constexpr (std::is_same<T, float>::value) {
-            mandel_1x_float_perturb<T, false> << <nb_blocks, threads_per_block >> > (
-                OutputIterMatrix,
+            mandel_1x_float_perturb<IterType, T, false> << <nb_blocks, threads_per_block >> > (
+                static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
                 cudaResults,
                 m_Width, m_Height, cx, cy, dx, dy,
@@ -3472,8 +3567,8 @@ uint32_t GPURenderer::RenderPerturb(
     else if (algorithm == RenderAlgorithm::Gpu1x64Perturbed) {
         // doubleOnly
         if constexpr (std::is_same<T, double>::value) {
-            mandel_1x_float_perturb<T, false> << <nb_blocks, threads_per_block >> > (
-                OutputIterMatrix,
+            mandel_1x_float_perturb<IterType, T, false> << <nb_blocks, threads_per_block >> > (
+                static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
                 cudaResults,
                 m_Width, m_Height, cx, cy, dx, dy,
@@ -3489,8 +3584,8 @@ uint32_t GPURenderer::RenderPerturb(
     else if (algorithm == RenderAlgorithm::Gpu1x32PerturbedPeriodic) {
         // floatOnly
         if constexpr (std::is_same<T, float>::value) {
-            mandel_1x_float_perturb<T, true> << <nb_blocks, threads_per_block >> > (
-                OutputIterMatrix,
+            mandel_1x_float_perturb<IterType, T, true> << <nb_blocks, threads_per_block >> > (
+                static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
                 cudaResults,
                 m_Width, m_Height, cx, cy, dx, dy,
@@ -3508,8 +3603,8 @@ uint32_t GPURenderer::RenderPerturb(
             // hdrflt
             mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
 
-            mandel_1x_float_perturb<T, false> << <nb_blocks, threads_per_block >> > (
-                OutputIterMatrix,
+            mandel_1x_float_perturb<IterType, T, false> << <nb_blocks, threads_per_block >> > (
+                static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
                 cudaResults,
                 m_Width, m_Height, cx, cy, dx, dy,
@@ -3526,9 +3621,10 @@ uint32_t GPURenderer::RenderPerturb(
     return result;
 }
 
-template uint32_t GPURenderer::RenderPerturb<float>(
+///////////////////////////////////////////////////////////////
+template uint32_t GPURenderer::RenderPerturb<uint32_t, float>(
     RenderAlgorithm algorithm,
-    IterType* iter_buffer,
+    uint32_t* iter_buffer,
     Color16* color_buffer,
     MattPerturbResults<float>* float_perturb,
     float cx,
@@ -3537,12 +3633,12 @@ template uint32_t GPURenderer::RenderPerturb<float>(
     float dy,
     float centerX,
     float centerY,
-    IterType n_iterations,
+    uint32_t n_iterations,
     int /*iteration_precision*/);
 
-template uint32_t GPURenderer::RenderPerturb<HDRFloat<float>>(
+template uint32_t GPURenderer::RenderPerturb<uint32_t, HDRFloat<float>>(
     RenderAlgorithm algorithm,
-    IterType* iter_buffer,
+    uint32_t* iter_buffer,
     Color16* color_buffer,
     MattPerturbResults<HDRFloat<float>>* float_perturb,
     HDRFloat<float> cx,
@@ -3551,12 +3647,12 @@ template uint32_t GPURenderer::RenderPerturb<HDRFloat<float>>(
     HDRFloat<float> dy,
     HDRFloat<float> centerX,
     HDRFloat<float> centerY,
-    IterType n_iterations,
+    uint32_t n_iterations,
     int /*iteration_precision*/);
 
-template uint32_t GPURenderer::RenderPerturb<double>(
+template uint32_t GPURenderer::RenderPerturb<uint32_t, double>(
     RenderAlgorithm algorithm,
-    IterType* iter_buffer,
+    uint32_t* iter_buffer,
     Color16* color_buffer,
     MattPerturbResults<double>* float_perturb,
     double cx,
@@ -3565,12 +3661,12 @@ template uint32_t GPURenderer::RenderPerturb<double>(
     double dy,
     double centerX,
     double centerY,
-    IterType n_iterations,
+    uint32_t n_iterations,
     int /*iteration_precision*/);
 
-template uint32_t GPURenderer::RenderPerturb<HDRFloat<double>>(
+template uint32_t GPURenderer::RenderPerturb<uint32_t, HDRFloat<double>>(
     RenderAlgorithm algorithm,
-    IterType* iter_buffer,
+    uint32_t* iter_buffer,
     Color16* color_buffer,
     MattPerturbResults<HDRFloat<double>>* float_perturb,
     HDRFloat<double> cx,
@@ -3579,16 +3675,73 @@ template uint32_t GPURenderer::RenderPerturb<HDRFloat<double>>(
     HDRFloat<double> dy,
     HDRFloat<double> centerX,
     HDRFloat<double> centerY,
-    IterType n_iterations,
+    uint32_t n_iterations,
+    int /*iteration_precision*/);
+///////////////////////////////////////////////////////////////
+template uint32_t GPURenderer::RenderPerturb<uint64_t, float>(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    MattPerturbResults<float>* float_perturb,
+    float cx,
+    float cy,
+    float dx,
+    float dy,
+    float centerX,
+    float centerY,
+    uint64_t n_iterations,
     int /*iteration_precision*/);
 
-template<class T, class SubType, LAv2Mode Mode>
+template uint32_t GPURenderer::RenderPerturb<uint64_t, HDRFloat<float>>(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    MattPerturbResults<HDRFloat<float>>* float_perturb,
+    HDRFloat<float> cx,
+    HDRFloat<float> cy,
+    HDRFloat<float> dx,
+    HDRFloat<float> dy,
+    HDRFloat<float> centerX,
+    HDRFloat<float> centerY,
+    uint64_t n_iterations,
+    int /*iteration_precision*/);
+
+template uint32_t GPURenderer::RenderPerturb<uint64_t, double>(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    MattPerturbResults<double>* float_perturb,
+    double cx,
+    double cy,
+    double dx,
+    double dy,
+    double centerX,
+    double centerY,
+    uint64_t n_iterations,
+    int /*iteration_precision*/);
+
+template uint32_t GPURenderer::RenderPerturb<uint64_t, HDRFloat<double>>(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    MattPerturbResults<HDRFloat<double>>* float_perturb,
+    HDRFloat<double> cx,
+    HDRFloat<double> cy,
+    HDRFloat<double> dx,
+    HDRFloat<double> dy,
+    HDRFloat<double> centerX,
+    HDRFloat<double> centerY,
+    uint64_t n_iterations,
+    int /*iteration_precision*/);
+///////////////////////////////////////////////////////////////
+
+template<typename IterType, class T, class SubType, LAv2Mode Mode>
 uint32_t GPURenderer::RenderPerturbLAv2(
     RenderAlgorithm algorithm,
     IterType* iter_buffer,
     Color16* color_buffer,
     MattPerturbResults<T>* float_perturb,
-    const LAReference<SubType> &LaReference,
+    const LAReference<IterType, SubType> &LaReference,
     T cx,
     T cy,
     T dx,
@@ -3629,8 +3782,8 @@ uint32_t GPURenderer::RenderPerturbLAv2(
             mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
 
             // hdrflt
-            mandel_1xHDR_float_perturb_lav2<float, Mode> << <nb_blocks, threads_per_block >> > (
-                OutputIterMatrix,
+            mandel_1xHDR_float_perturb_lav2<IterType, float, Mode> << <nb_blocks, threads_per_block >> > (
+                static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
                 Pals,
                 cudaResults, laReferenceCuda,
@@ -3650,8 +3803,8 @@ uint32_t GPURenderer::RenderPerturbLAv2(
         if constexpr (std::is_same<HDRFloat<double>, T>::value) {
             mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
 
-            mandel_1xHDR_float_perturb_lav2<double, Mode> << <nb_blocks, threads_per_block >> > (
-                OutputIterMatrix,
+            mandel_1xHDR_float_perturb_lav2<IterType, double, Mode> << <nb_blocks, threads_per_block >> > (
+                static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
                 Pals,
                 cudaResults, laReferenceCuda,
@@ -3669,98 +3822,192 @@ uint32_t GPURenderer::RenderPerturbLAv2(
     return result;
 }
 
+////////////////////////////////////////////////////////
 template
-uint32_t GPURenderer::RenderPerturbLAv2<HDRFloat<float>, float, LAv2Mode::Full>(
+uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, HDRFloat<float>, float, LAv2Mode::Full>(
     RenderAlgorithm algorithm,
-    IterType* iter_buffer,
+    uint32_t* iter_buffer,
     Color16* color_buffer,
     MattPerturbResults<HDRFloat<float>>* float_perturb,
-    const LAReference<float>& LaReference,
+    const LAReference<uint32_t, float>& LaReference,
     HDRFloat<float> cx,
     HDRFloat<float> cy,
     HDRFloat<float> dx,
     HDRFloat<float> dy,
     HDRFloat<float> centerX,
     HDRFloat<float> centerY,
-    IterType n_iterations);
+    uint32_t n_iterations);
 
 template
-uint32_t GPURenderer::RenderPerturbLAv2<HDRFloat<float>, float, LAv2Mode::PO>(
+uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, HDRFloat<float>, float, LAv2Mode::PO>(
     RenderAlgorithm algorithm,
-    IterType* iter_buffer,
+    uint32_t* iter_buffer,
     Color16* color_buffer,
     MattPerturbResults<HDRFloat<float>>* float_perturb,
-    const LAReference<float>& LaReference,
+    const LAReference<uint32_t, float>& LaReference,
     HDRFloat<float> cx,
     HDRFloat<float> cy,
     HDRFloat<float> dx,
     HDRFloat<float> dy,
     HDRFloat<float> centerX,
     HDRFloat<float> centerY,
-    IterType n_iterations);
+    uint32_t n_iterations);
 
 template
-uint32_t GPURenderer::RenderPerturbLAv2<HDRFloat<float>, float, LAv2Mode::LAO>(
+uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, HDRFloat<float>, float, LAv2Mode::LAO>(
     RenderAlgorithm algorithm,
-    IterType* iter_buffer,
+    uint32_t* iter_buffer,
     Color16* color_buffer,
     MattPerturbResults<HDRFloat<float>>* float_perturb,
-    const LAReference<float>& LaReference,
+    const LAReference<uint32_t, float>& LaReference,
     HDRFloat<float> cx,
     HDRFloat<float> cy,
     HDRFloat<float> dx,
     HDRFloat<float> dy,
     HDRFloat<float> centerX,
     HDRFloat<float> centerY,
-    IterType n_iterations);
+    uint32_t n_iterations);
 
 template
-uint32_t GPURenderer::RenderPerturbLAv2<HDRFloat<double>, double, LAv2Mode::Full>(
+uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, HDRFloat<double>, double, LAv2Mode::Full>(
     RenderAlgorithm algorithm,
-    IterType* iter_buffer,
+    uint32_t* iter_buffer,
     Color16* color_buffer,
     MattPerturbResults<HDRFloat<double>>* float_perturb,
-    const LAReference<double>& LaReference,
+    const LAReference<uint32_t, double>& LaReference,
     HDRFloat<double> cx,
     HDRFloat<double> cy,
     HDRFloat<double> dx,
     HDRFloat<double> dy,
     HDRFloat<double> centerX,
     HDRFloat<double> centerY,
-    IterType n_iterations);
+    uint32_t n_iterations);
 
 template
-uint32_t GPURenderer::RenderPerturbLAv2<HDRFloat<double>, double, LAv2Mode::PO>(
+uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, HDRFloat<double>, double, LAv2Mode::PO>(
     RenderAlgorithm algorithm,
-    IterType* iter_buffer,
+    uint32_t* iter_buffer,
     Color16* color_buffer,
     MattPerturbResults<HDRFloat<double>>* float_perturb,
-    const LAReference<double>& LaReference,
+    const LAReference<uint32_t, double>& LaReference,
     HDRFloat<double> cx,
     HDRFloat<double> cy,
     HDRFloat<double> dx,
     HDRFloat<double> dy,
     HDRFloat<double> centerX,
     HDRFloat<double> centerY,
-    IterType n_iterations);
+    uint32_t n_iterations);
 
 template
-uint32_t GPURenderer::RenderPerturbLAv2<HDRFloat<double>, double, LAv2Mode::LAO>(
+uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, HDRFloat<double>, double, LAv2Mode::LAO>(
     RenderAlgorithm algorithm,
-    IterType* iter_buffer,
+    uint32_t* iter_buffer,
     Color16* color_buffer,
     MattPerturbResults<HDRFloat<double>>* float_perturb,
-    const LAReference<double>& LaReference,
+    const LAReference<uint32_t, double>& LaReference,
     HDRFloat<double> cx,
     HDRFloat<double> cy,
     HDRFloat<double> dx,
     HDRFloat<double> dy,
     HDRFloat<double> centerX,
     HDRFloat<double> centerY,
-    IterType n_iterations);
+    uint32_t n_iterations);
 
-template<class T>
-uint32_t GPURenderer::RenderPerturbBLA(
+////////////////////////////////////////////////////////
+template
+uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, HDRFloat<float>, float, LAv2Mode::Full>(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    MattPerturbResults<HDRFloat<float>>* float_perturb,
+    const LAReference<uint64_t, float>& LaReference,
+    HDRFloat<float> cx,
+    HDRFloat<float> cy,
+    HDRFloat<float> dx,
+    HDRFloat<float> dy,
+    HDRFloat<float> centerX,
+    HDRFloat<float> centerY,
+    uint64_t n_iterations);
+
+template
+uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, HDRFloat<float>, float, LAv2Mode::PO>(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    MattPerturbResults<HDRFloat<float>>* float_perturb,
+    const LAReference<uint64_t, float>& LaReference,
+    HDRFloat<float> cx,
+    HDRFloat<float> cy,
+    HDRFloat<float> dx,
+    HDRFloat<float> dy,
+    HDRFloat<float> centerX,
+    HDRFloat<float> centerY,
+    uint64_t n_iterations);
+
+template
+uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, HDRFloat<float>, float, LAv2Mode::LAO>(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    MattPerturbResults<HDRFloat<float>>* float_perturb,
+    const LAReference<uint64_t, float>& LaReference,
+    HDRFloat<float> cx,
+    HDRFloat<float> cy,
+    HDRFloat<float> dx,
+    HDRFloat<float> dy,
+    HDRFloat<float> centerX,
+    HDRFloat<float> centerY,
+    uint64_t n_iterations);
+
+template
+uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, HDRFloat<double>, double, LAv2Mode::Full>(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    MattPerturbResults<HDRFloat<double>>* float_perturb,
+    const LAReference<uint64_t, double>& LaReference,
+    HDRFloat<double> cx,
+    HDRFloat<double> cy,
+    HDRFloat<double> dx,
+    HDRFloat<double> dy,
+    HDRFloat<double> centerX,
+    HDRFloat<double> centerY,
+    uint64_t n_iterations);
+
+template
+uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, HDRFloat<double>, double, LAv2Mode::PO>(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    MattPerturbResults<HDRFloat<double>>* float_perturb,
+    const LAReference<uint64_t, double>& LaReference,
+    HDRFloat<double> cx,
+    HDRFloat<double> cy,
+    HDRFloat<double> dx,
+    HDRFloat<double> dy,
+    HDRFloat<double> centerX,
+    HDRFloat<double> centerY,
+    uint64_t n_iterations);
+
+template
+uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, HDRFloat<double>, double, LAv2Mode::LAO>(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    MattPerturbResults<HDRFloat<double>>* float_perturb,
+    const LAReference<uint64_t, double>& LaReference,
+    HDRFloat<double> cx,
+    HDRFloat<double> cy,
+    HDRFloat<double> dx,
+    HDRFloat<double> dy,
+    HDRFloat<double> centerX,
+    HDRFloat<double> centerY,
+    uint64_t n_iterations);
+
+////////////////////////////////////////////////////////
+
+template<typename IterType, class T>
+uint32_t GPURenderer::RenderPerturbBLAScaled(
     RenderAlgorithm algorithm,
     IterType* iter_buffer,
     Color16* color_buffer,
@@ -3808,8 +4055,8 @@ uint32_t GPURenderer::RenderPerturbBLA(
     if (algorithm == RenderAlgorithm::Gpu1x32PerturbedScaled) {
         if constexpr (std::is_same<T, double>::value) {
             // doubleOnly
-            mandel_1x_float_perturb_scaled<T> << <nb_blocks, threads_per_block >> > (
-                OutputIterMatrix,
+            mandel_1x_float_perturb_scaled<IterType, T> << <nb_blocks, threads_per_block >> > (
+                static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
                 cudaResults, cudaResultsDouble,
                 m_Width, m_Height, cx, cy, dx, dy,
@@ -3826,8 +4073,8 @@ uint32_t GPURenderer::RenderPerturbBLA(
             // hdrflt
             mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
 
-            mandel_1x_float_perturb_scaled<T> << <nb_blocks, threads_per_block >> > (
-                OutputIterMatrix,
+            mandel_1x_float_perturb_scaled<IterType, T> << <nb_blocks, threads_per_block >> > (
+                static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
                 cudaResults, cudaResultsDouble,
                 m_Width, m_Height, cx, cy, dx, dy,
@@ -3852,8 +4099,8 @@ uint32_t GPURenderer::RenderPerturbBLA(
 
                 mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
 
-                mandel_1x_float_perturb_scaled_bla<LM2> << <nb_blocks, threads_per_block >> > (
-                    OutputIterMatrix,
+                mandel_1x_float_perturb_scaled_bla<IterType, LM2> << <nb_blocks, threads_per_block >> > (
+                    static_cast<IterType*>(OutputIterMatrix),
                     OutputColorMatrix,
                     cudaResults, cudaResultsDouble, doubleGpuBlas,
                     m_Width, m_Height, cx, cy, dx, dy,
@@ -3874,9 +4121,11 @@ uint32_t GPURenderer::RenderPerturbBLA(
     return result;
 }
 
-template uint32_t GPURenderer::RenderPerturbBLA<double>(
+//////////////////////////////////////////////////////////////////
+
+template uint32_t GPURenderer::RenderPerturbBLAScaled<uint32_t, double>(
     RenderAlgorithm algorithm,
-    IterType* iter_buffer,
+    uint32_t* iter_buffer,
     Color16* color_buffer,
     MattPerturbResults<double, CalcBad::Enable>* double_perturb,
     MattPerturbResults<float, CalcBad::Enable>* float_perturb,
@@ -3887,13 +4136,13 @@ template uint32_t GPURenderer::RenderPerturbBLA<double>(
     double dy,
     double centerX,
     double centerY,
-    IterType n_iterations,
+    uint32_t n_iterations,
     int /*iteration_precision*/
 );
 
-template uint32_t GPURenderer::RenderPerturbBLA<HDRFloat<float>>(
+template uint32_t GPURenderer::RenderPerturbBLAScaled<uint32_t, HDRFloat<float>>(
     RenderAlgorithm algorithm,
-    IterType* iter_buffer,
+    uint32_t* iter_buffer,
     Color16* color_buffer,
     MattPerturbResults<HDRFloat<float>, CalcBad::Enable>* double_perturb,
     MattPerturbResults<float, CalcBad::Enable>* float_perturb,
@@ -3904,11 +4153,49 @@ template uint32_t GPURenderer::RenderPerturbBLA<HDRFloat<float>>(
     HDRFloat<float> dy,
     HDRFloat<float> centerX,
     HDRFloat<float> centerY,
-    IterType n_iterations,
+    uint32_t n_iterations,
     int /*iteration_precision*/
 );
 
+//////////////////////////////////////////////////////////////////
 
+template uint32_t GPURenderer::RenderPerturbBLAScaled<uint64_t, double>(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    MattPerturbResults<double, CalcBad::Enable>* double_perturb,
+    MattPerturbResults<float, CalcBad::Enable>* float_perturb,
+    BLAS<double, CalcBad::Enable>* blas,
+    double cx,
+    double cy,
+    double dx,
+    double dy,
+    double centerX,
+    double centerY,
+    uint64_t n_iterations,
+    int /*iteration_precision*/
+);
+
+template uint32_t GPURenderer::RenderPerturbBLAScaled<uint64_t, HDRFloat<float>>(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    MattPerturbResults<HDRFloat<float>, CalcBad::Enable>* double_perturb,
+    MattPerturbResults<float, CalcBad::Enable>* float_perturb,
+    BLAS<HDRFloat<float>, CalcBad::Enable>* blas,
+    HDRFloat<float> cx,
+    HDRFloat<float> cy,
+    HDRFloat<float> dx,
+    HDRFloat<float> dy,
+    HDRFloat<float> centerX,
+    HDRFloat<float> centerY,
+    uint64_t n_iterations,
+    int /*iteration_precision*/
+);
+
+//////////////////////////////////////////////////////////////////
+
+template<typename IterType>
 uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
     IterType* iter_buffer,
@@ -3955,7 +4242,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
         mandel_2x_float_perturb_setup << <nb_blocks, threads_per_block >> > (cudaResults);
 
         mandel_2x_float_perturb << <nb_blocks, threads_per_block >> > (
-            OutputIterMatrix,
+            static_cast<IterType*>(OutputIterMatrix),
             OutputColorMatrix,
             cudaResults,
             m_Width, m_Height, cx2, cy2, dx2, dy2,
@@ -3971,7 +4258,41 @@ uint32_t GPURenderer::RenderPerturbBLA(
     return result;
 }
 
-template<class T>
+///////////////////////////////////////////////
+template
+uint32_t GPURenderer::RenderPerturbBLA(
+    RenderAlgorithm algorithm,
+    uint32_t* iter_buffer,
+    Color16* color_buffer,
+    MattPerturbResults<float2>* dblflt_perturb,
+    BLAS<float2>* /*blas*/,  // TODO
+    float2 cx,
+    float2 cy,
+    float2 dx,
+    float2 dy,
+    float2 centerX,
+    float2 centerY,
+    uint32_t n_iterations,
+    int /*iteration_precision*/);
+
+template
+uint32_t GPURenderer::RenderPerturbBLA(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    MattPerturbResults<float2>* dblflt_perturb,
+    BLAS<float2>* /*blas*/,  // TODO
+    float2 cx,
+    float2 cy,
+    float2 dx,
+    float2 dy,
+    float2 centerX,
+    float2 centerY,
+    uint64_t n_iterations,
+    int /*iteration_precision*/);
+///////////////////////////////////////////////
+
+template<typename IterType, class T>
 uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
     IterType* iter_buffer,
@@ -4018,8 +4339,8 @@ uint32_t GPURenderer::RenderPerturbBLA(
                 mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
 
                 // hdrflt
-                mandel_1xHDR_float_perturb_bla<HDRFloat<float>, LM2> << <nb_blocks, threads_per_block >> > (
-                    OutputIterMatrix,
+                mandel_1xHDR_float_perturb_bla<IterType, HDRFloat<float>, LM2> << <nb_blocks, threads_per_block >> > (
+                    static_cast<IterType*>(OutputIterMatrix),
                     OutputColorMatrix,
                     cudaResults,
                     gpu_blas,
@@ -4059,8 +4380,8 @@ uint32_t GPURenderer::RenderPerturbBLA(
                 mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
 
                 // hdrflt -- that looks like a bug and probably should be hdrdbl
-                mandel_1xHDR_float_perturb_bla<HDRFloat<double>, LM2> << <nb_blocks, threads_per_block >> > (
-                    OutputIterMatrix,
+                mandel_1xHDR_float_perturb_bla<IterType, HDRFloat<double>, LM2> << <nb_blocks, threads_per_block >> > (
+                    static_cast<IterType*>(OutputIterMatrix),
                     OutputColorMatrix,
                     cudaResults,
                     gpu_blas,
@@ -4099,8 +4420,8 @@ uint32_t GPURenderer::RenderPerturbBLA(
                 mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
 
                 // doubleOnly
-                mandel_1x_double_perturb_bla<LM2> << <nb_blocks, threads_per_block >> > (
-                    OutputIterMatrix,
+                mandel_1x_double_perturb_bla<IterType, LM2> << <nb_blocks, threads_per_block >> > (
+                    static_cast<IterType*>(OutputIterMatrix),
                     OutputColorMatrix,
                     cudaResults,
                     gpu_blas,
@@ -4143,7 +4464,8 @@ uint32_t GPURenderer::RenderPerturbBLA(
             //// doubleOnly
             //mandel_2x_float_perturb_setup << <nb_blocks, threads_per_block >> > (cudaResults);
 
-            //mandel_2x_float_perturb_scaled << <nb_blocks, threads_per_block >> > (OutputIterMatrix,
+            //mandel_2x_float_perturb_scaled<IterType> << <nb_blocks, threads_per_block >> > (
+            //    static_cast<IterType*>(OutputIterMatrix),
             //    OutputColorMatrix,
             //    cudaResults, cudaResultsDouble,
             //    m_Width, m_Height, cx, cy, dx, dy,
@@ -4160,10 +4482,11 @@ uint32_t GPURenderer::RenderPerturbBLA(
     return result;
 }
 
+//////////////////////////////////////////////////////////
 template
 uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
-    IterType* iter_buffer,
+    uint32_t* iter_buffer,
     Color16* color_buffer,
     MattPerturbResults<HDRFloat<float>>* perturb,
     BLAS<HDRFloat<float>>* blas,
@@ -4173,13 +4496,13 @@ uint32_t GPURenderer::RenderPerturbBLA(
     HDRFloat<float> dy,
     HDRFloat<float> centerX,
     HDRFloat<float> centerY,
-    IterType n_iterations,
+    uint32_t n_iterations,
     int /*iteration_precision*/);
 
 template
 uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
-    IterType* iter_buffer,
+    uint32_t* iter_buffer,
     Color16* color_buffer,
     MattPerturbResults<HDRFloat<double>>* perturb,
     BLAS<HDRFloat<double>>* blas,
@@ -4189,13 +4512,13 @@ uint32_t GPURenderer::RenderPerturbBLA(
     HDRFloat<double> dy,
     HDRFloat<double> centerX,
     HDRFloat<double> centerY,
-    IterType n_iterations,
+    uint32_t n_iterations,
     int /*iteration_precision*/);
 
 template
 uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
-    IterType* iter_buffer,
+    uint32_t* iter_buffer,
     Color16* color_buffer,
     MattPerturbResults<double>* perturb,
     BLAS<double>* blas,
@@ -4205,9 +4528,59 @@ uint32_t GPURenderer::RenderPerturbBLA(
     double dy,
     double centerX,
     double centerY,
-    IterType n_iterations,
+    uint32_t n_iterations,
+    int /*iteration_precision*/);
+//////////////////////////////////////////////////////////
+template
+uint32_t GPURenderer::RenderPerturbBLA(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    MattPerturbResults<HDRFloat<float>>* perturb,
+    BLAS<HDRFloat<float>>* blas,
+    HDRFloat<float> cx,
+    HDRFloat<float> cy,
+    HDRFloat<float> dx,
+    HDRFloat<float> dy,
+    HDRFloat<float> centerX,
+    HDRFloat<float> centerY,
+    uint64_t n_iterations,
     int /*iteration_precision*/);
 
+template
+uint32_t GPURenderer::RenderPerturbBLA(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    MattPerturbResults<HDRFloat<double>>* perturb,
+    BLAS<HDRFloat<double>>* blas,
+    HDRFloat<double> cx,
+    HDRFloat<double> cy,
+    HDRFloat<double> dx,
+    HDRFloat<double> dy,
+    HDRFloat<double> centerX,
+    HDRFloat<double> centerY,
+    uint64_t n_iterations,
+    int /*iteration_precision*/);
+
+template
+uint32_t GPURenderer::RenderPerturbBLA(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    MattPerturbResults<double>* perturb,
+    BLAS<double>* blas,
+    double cx,
+    double cy,
+    double dx,
+    double dy,
+    double centerX,
+    double centerY,
+    uint64_t n_iterations,
+    int /*iteration_precision*/);
+//////////////////////////////////////////////////////////
+
+template<typename IterType>
 __host__
 uint32_t
 GPURenderer::OnlyAA(
@@ -4219,7 +4592,7 @@ GPURenderer::OnlyAA(
         return result;
     }
 
-    result = ExtractItersAndColors(nullptr, color_buffer);
+    result = ExtractItersAndColors<IterType>(nullptr, color_buffer);
     if (result != cudaSuccess) {
         return result;
     }
@@ -4227,6 +4600,21 @@ GPURenderer::OnlyAA(
     return cudaSuccess;
 }
 
+template
+__host__
+uint32_t
+GPURenderer::OnlyAA<uint32_t>(
+    Color16* color_buffer,
+    uint32_t n_iterations);
+
+template
+__host__
+uint32_t
+GPURenderer::OnlyAA(
+    Color16* color_buffer,
+    uint64_t n_iterations);
+
+template<typename IterType>
 __host__
 uint32_t
 GPURenderer::RunAntialiasing(IterType n_iterations) {
@@ -4235,8 +4623,8 @@ GPURenderer::RunAntialiasing(IterType n_iterations) {
 
     switch (m_Antialiasing) {
     case 1:
-        antialiasing_kernel<1, true> << <aa_blocks, aa_threads_per_block >> > (
-            OutputIterMatrix,
+        antialiasing_kernel<IterType, 1, true> << <aa_blocks, aa_threads_per_block >> > (
+            static_cast<IterType*>(OutputIterMatrix),
             m_Width,
             m_Height,
             OutputColorMatrix,
@@ -4246,8 +4634,8 @@ GPURenderer::RunAntialiasing(IterType n_iterations) {
             n_iterations);
         break;
     case 2:
-        antialiasing_kernel<2, true> << <aa_blocks, aa_threads_per_block >> > (
-            OutputIterMatrix,
+        antialiasing_kernel<IterType, 2, true> << <aa_blocks, aa_threads_per_block >> > (
+            static_cast<IterType*>(OutputIterMatrix),
             m_Width,
             m_Height,
             OutputColorMatrix,
@@ -4257,8 +4645,8 @@ GPURenderer::RunAntialiasing(IterType n_iterations) {
             n_iterations);
         break;
     case 3:
-        antialiasing_kernel<3, true> << <aa_blocks, aa_threads_per_block >> > (
-            OutputIterMatrix,
+        antialiasing_kernel<IterType, 3, true> << <aa_blocks, aa_threads_per_block >> > (
+            static_cast<IterType*>(OutputIterMatrix),
             m_Width,
             m_Height,
             OutputColorMatrix,
@@ -4269,8 +4657,8 @@ GPURenderer::RunAntialiasing(IterType n_iterations) {
         break;
     case 4:
     default:
-        antialiasing_kernel<4, true> << <aa_blocks, aa_threads_per_block >> > (
-            OutputIterMatrix,
+        antialiasing_kernel<IterType, 4, true> << <aa_blocks, aa_threads_per_block >> > (
+            static_cast<IterType*>(OutputIterMatrix),
             m_Width,
             m_Height,
             OutputColorMatrix,
@@ -4283,6 +4671,7 @@ GPURenderer::RunAntialiasing(IterType n_iterations) {
     return cudaSuccess;
 }
 
+template<typename IterType>
 uint32_t GPURenderer::ExtractItersAndColors(IterType* iter_buffer, Color16 *color_buffer) {
     const size_t ERROR_COLOR = 255;
     cudaError_t result = cudaDeviceSynchronize();
@@ -4300,7 +4689,7 @@ uint32_t GPURenderer::ExtractItersAndColors(IterType* iter_buffer, Color16 *colo
     if (iter_buffer) {
         result = cudaMemcpy(
             iter_buffer,
-            OutputIterMatrix,
+            static_cast<IterType*>(OutputIterMatrix),
             sizeof(IterType) * N_cu,
             cudaMemcpyDefault);
         if (result != cudaSuccess) {
@@ -4321,6 +4710,11 @@ uint32_t GPURenderer::ExtractItersAndColors(IterType* iter_buffer, Color16 *colo
 
     return cudaSuccess;
 }
+
+template
+uint32_t GPURenderer::ExtractItersAndColors(uint32_t* iter_buffer, Color16* color_buffer);
+template
+uint32_t GPURenderer::ExtractItersAndColors(uint64_t* iter_buffer, Color16* color_buffer);
 
 const char* GPURenderer::ConvertErrorToString(uint32_t err) {
     auto typeNotExposedOutSideHere = static_cast<cudaError_t>(err);

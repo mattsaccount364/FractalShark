@@ -10,7 +10,7 @@
 #include "BLAS.h"
 #include "LAstep.h"
 
-template<class SubType>
+template<typename IterType, class SubType>
 class LAReference;
 
 enum class LAv2Mode {
@@ -216,7 +216,7 @@ public:
     GPURenderer();
     ~GPURenderer();
 
-    template<class T>
+    template<typename IterType, class T>
     uint32_t Render(
         RenderAlgorithm algorithm,
         IterType* iter_buffer,
@@ -228,7 +228,7 @@ public:
         IterType n_iterations,
         int iteration_precision);
 
-    template<class T>
+    template<typename IterType, class T>
     uint32_t RenderPerturb(
         RenderAlgorithm algorithm,
         IterType* iter_buffer,
@@ -243,23 +243,24 @@ public:
         IterType n_iterations,
         int iteration_precision);
 
-    uint32_t RenderPerturbBLA(
-        RenderAlgorithm algorithm,
-        IterType* iter_buffer,
-        Color16* color_buffer,
-        MattPerturbResults<double>* results,
-        BLAS<double> *blas,
-        double cx,
-        double cy,
-        double dx,
-        double dy,
-        double centerX,
-        double centerY,
-        IterType n_iterations,
-        int iteration_precision);
+    //template<typename IterType>
+    //uint32_t RenderPerturbBLA(
+    //    RenderAlgorithm algorithm,
+    //    IterType* iter_buffer,
+    //    Color16* color_buffer,
+    //    MattPerturbResults<double>* results,
+    //    BLAS<double> *blas,
+    //    double cx,
+    //    double cy,
+    //    double dx,
+    //    double dy,
+    //    double centerX,
+    //    double centerY,
+    //    IterType n_iterations,
+    //    int iteration_precision);
 
-    template<class T>
-    uint32_t RenderPerturbBLA(
+    template<typename IterType, class T>
+    uint32_t RenderPerturbBLAScaled(
         RenderAlgorithm algorithm,
         IterType* iter_buffer,
         Color16* color_buffer,
@@ -275,6 +276,7 @@ public:
         IterType n_iterations,
         int iteration_precision);
 
+    template<typename IterType>
     uint32_t RenderPerturbBLA(
         RenderAlgorithm algorithm,
         IterType* iter_buffer,
@@ -290,7 +292,7 @@ public:
         IterType n_iterations,
         int iteration_precision);
 
-    template<class T>
+    template<typename IterType, class T>
     uint32_t RenderPerturbBLA(
         RenderAlgorithm algorithm,
         IterType* iter_buffer,
@@ -306,13 +308,13 @@ public:
         IterType n_iterations,
         int iteration_precision);
 
-    template<class T, class SubType, LAv2Mode Mode>
+    template<typename IterType, class T, class SubType, LAv2Mode Mode>
     uint32_t RenderPerturbLAv2(
         RenderAlgorithm algorithm,
         IterType* iter_buffer,
         Color16* color_buffer,
         MattPerturbResults<T>* float_perturb,
-        const LAReference<SubType> &LaReference,
+        const LAReference<IterType, SubType> &LaReference,
         T cx,
         T cy,
         T dx,
@@ -322,6 +324,7 @@ public:
         IterType n_iterations);
 
     // Side effect is this initializes CUDA the first time it's run
+    template<typename IterType>
     uint32_t InitializeMemory(
         uint32_t w, // original width * antialiasing
         uint32_t h, // original height * antialiasing
@@ -333,6 +336,7 @@ public:
 
     void ClearMemory();
 
+    template<typename IterType>
     uint32_t OnlyAA(
         Color16* color_buffer,
         IterType n_iterations);
@@ -361,10 +365,14 @@ private:
 
     void ResetMemory(ResetLocals locals, ResetPalettes palettes);
     void ClearLocals();
+
+    template<typename IterType>
     uint32_t RunAntialiasing(IterType n_iterations);
+
+    template<typename IterType>
     uint32_t ExtractItersAndColors(IterType* iter_buffer, Color16* color_buffer);
 
-    IterType* OutputIterMatrix;
+    void* OutputIterMatrix;
     AntialiasedColors OutputColorMatrix;
 
     Palette Pals;

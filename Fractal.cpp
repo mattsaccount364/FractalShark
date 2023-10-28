@@ -2392,7 +2392,7 @@ void Fractal::CalcGpuFractal(bool MemoryOnly)
         return;
     }
 
-    err = m_r.Render<T>(GetRenderAlgorithm(),
+    err = m_r.Render(GetRenderAlgorithm(),
                         m_CurIters.m_ItersMemory.get(),
                         m_CurIters.m_RoundedOutputColorMemory.get(),
                         cx2,
@@ -3029,7 +3029,7 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
                     auto j = RefIteration;
 
                     while (iterations < GetNumIterations()) {
-                        LAstep<SubType> las = LaReference.getLA(
+                        LAstep<IterType, SubType> las = LaReference.getLA(
                             LAIndex,
                             DeltaSubN,
                             (IterType)j,
@@ -3151,7 +3151,7 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
         BLAS<T> blas(*results);
         blas.Init(results->orb.size(), results->maxRadius);
 
-        result = m_r.RenderPerturbBLA<T>(GetRenderAlgorithm(),
+        result = m_r.RenderPerturbBLA<IterType, T>(GetRenderAlgorithm(),
             m_CurIters.m_ItersMemory.get(),
             m_CurIters.m_RoundedOutputColorMemory.get(),
             &gpu_results,
@@ -3226,7 +3226,7 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
 
     auto &LaReference = *results->LaReference.get();
 
-    auto result = m_r.RenderPerturbLAv2<T, SubType, Mode>(GetRenderAlgorithm(),
+    auto result = m_r.RenderPerturbLAv2<IterType, T, SubType, Mode>(GetRenderAlgorithm(),
         m_CurIters.m_ItersMemory.get(),
         m_CurIters.m_RoundedOutputColorMemory.get(),
         &gpu_results,
@@ -3298,7 +3298,7 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
         return;
     }
 
-    auto result = m_r.RenderPerturbBLA<T>(GetRenderAlgorithm(),
+    auto result = m_r.RenderPerturbBLAScaled<IterType, T>(GetRenderAlgorithm(),
         m_CurIters.m_ItersMemory.get(),
         m_CurIters.m_RoundedOutputColorMemory.get(),
         &gpu_results,

@@ -1,10 +1,10 @@
 #pragma once
 
+#ifndef __CUDACC__
+
 #include <boost/multiprecision/cpp_dec_float.hpp>
 #include <boost/multiprecision/gmp.hpp>
 #include <boost/multiprecision/number.hpp>
-
-#ifndef __CUDACC__
 
 // THIS IS SO STUPID BUT I DON'T KNOW HOW TO FIX IT
 // CAN WE REMOVE THIS IFDEF AND USE CONSTEXPR

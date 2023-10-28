@@ -46,7 +46,7 @@ public:
     std::vector<HighPrecision> ReuseX;
     std::vector<HighPrecision> ReuseY;
 
-    std::unique_ptr<LAReference<SubType>> LaReference;
+    std::unique_ptr<LAReference<IterType, SubType>> LaReference;
 
     void clear() {
         hiX = {};

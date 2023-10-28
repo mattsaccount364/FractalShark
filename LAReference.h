@@ -15,22 +15,24 @@
 template<class T>
 class ATInfo;
 
+template<typename IterType>
 class LAStageInfo;
+
 class RefOrbitCalc;
 
 template<class T, CalcBad Bad>
 class PerturbationResults;
 
-template<class SubType>
+template<typename IterType, class SubType>
 class GPU_LAReference;
 
-template<class SubType>
+template<typename IterType, class SubType>
 class LAReference {
 private:
     using HDRFloat = HDRFloat<SubType>;
     using HDRFloatComplex = HDRFloatComplex<SubType>;
 
-    friend class GPU_LAReference<SubType>;
+    friend class GPU_LAReference<IterType, SubType>;
 
     static const int lowBound = 64;
     static const SubType log16;
@@ -55,8 +57,8 @@ public:
 private:
     static constexpr int MaxLAStages = 1024;
     static constexpr int DEFAULT_SIZE = 10000;
-    std::vector<LAInfoDeep<SubType>> LAs;
-    std::vector<LAStageInfo> LAStages;
+    std::vector<LAInfoDeep<IterType, SubType>> LAs;
+    std::vector<LAStageInfo<IterType>> LAStages;
 
     const PerturbationResults<HDRFloat, CalcBad::Disable> *m_PerturbationResults;
 
@@ -74,7 +76,7 @@ public:
     IterType getLAIndex(IterType CurrentLAStage);
     IterType getMacroItCount(IterType CurrentLAStage);
 
-    LAstep<SubType>
+    LAstep<IterType, SubType>
     getLA(IterType LAIndex,
         HDRFloatComplex dz,
         /*HDRFloatComplex dc, */IterType j,

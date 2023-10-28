@@ -1510,7 +1510,7 @@ void Fractal::ApproachTarget(void)
 
     SaveCurPos();
 
-    IterType baseIters = m_NumIterations;
+    IterTypeFull baseIters = m_NumIterations;
     HighPrecision incIters = (HighPrecision)((HighPrecision)targetIters - (HighPrecision)baseIters) / (HighPrecision)numFrames;
     for (int i = 0; i < numFrames; i++)
     {
@@ -1721,7 +1721,8 @@ void Fractal::SaveCurPos(void)
 ///////////////////////////////////////////////////////////////////////////////
 // Functions for dealing with the number of iterations
 ///////////////////////////////////////////////////////////////////////////////
-void Fractal::SetNumIterations(IterType num)
+template<typename IterType>
+void Fractal::SetNumIterations(IterTypeFull num)
 {
     if (num <= MAXITERS)
     {
@@ -1735,10 +1736,14 @@ void Fractal::SetNumIterations(IterType num)
     m_ChangedIterations = true;
 }
 
+template<typename IterType>
 IterType Fractal::GetNumIterations(void) const
 {
     return (IterType)m_NumIterations;
 }
+
+template uint32_t Fractal::GetNumIterations<uint32_t>(void) const;
+template uint64_t Fractal::GetNumIterations<uint64_t>(void) const;
 
 void Fractal::ResetNumIterations(void)
 {
@@ -3142,7 +3147,7 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
     FillCoord(centerY, centerY2);
 
     MattPerturbResults<T> gpu_results{
-        results->orb.size(),
+        (IterType)results->orb.size(),
         results->orb.data(),
         results->PeriodMaybeZero };
 
@@ -3215,7 +3220,7 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
     FillCoord(centerY, centerY2);
 
     MattPerturbResults<T> gpu_results{
-        results->orb.size(),
+        (IterType)results->orb.size(),
         results->orb.data(),
         results->PeriodMaybeZero };
 
@@ -3282,12 +3287,12 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
     FillCoord(centerY, centerY2);
 
     MattPerturbResults<T, CalcBad::Enable> gpu_results{
-        results->orb.size(),
+        (IterType)results->orb.size(),
         results->orb.data(),
         results->PeriodMaybeZero };
 
     MattPerturbResults<T2, CalcBad::Enable> gpu_results2{
-        results2->orb.size(),
+        (IterType)results2->orb.size(),
         results2->orb.data(),
         results2->PeriodMaybeZero };
 
@@ -3631,11 +3636,12 @@ void Fractal::CurrentFractalSave::Run() {
                 memset(one_val, ' ', sizeof(one_val));
 
                 if constexpr (sizeof(IterType) == 4) {
-                    sprintf(one_val, "(%u,%u):%u ", output_x, output_y, (uint32_t)numiters);
+                    sprintf(one_val, "(%u,%u):%u ", output_x, output_y, numiters);
                 }
                 else {
-                    static_assert(sizeof(IterType) == 8, "!");
-                    sprintf(one_val, "(%u,%u):%llu ", output_x, output_y, (uint64_t)numiters);
+                    //static_assert(sizeof(IterType) == 8, "!");
+                    //char(*__kaboom1)[sizeof(IterType)] = 1;
+                    sprintf(one_val, "(%u,%u):%llu ", output_x, output_y, (IterTypeFull)numiters);
                 }
 
                 // Wow what a kludge

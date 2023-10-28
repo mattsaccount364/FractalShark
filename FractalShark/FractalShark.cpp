@@ -1417,7 +1417,7 @@ void MenuGetCurPos(HWND hWnd)
         ptXStr.c_str(),
         ptYStr.c_str(),
         zoomFactorStr.c_str(),
-        gFractal->GetNumIterations());
+        gFractal->GetNumIterations<IterTypeFull>());
     ::MessageBoxA(hWnd, mem, "", MB_OK);
 
     GlobalUnlock(hData);

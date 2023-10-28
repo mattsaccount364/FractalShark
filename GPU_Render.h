@@ -37,7 +37,7 @@ struct AntialiasedColors {
 
 struct Palette {
     Color16* local_pal;
-    IterType local_palIters;
+    IterTypeFull local_palIters;
 
     const uint16_t* cached_hostPalR;
     const uint16_t* cached_hostPalG;

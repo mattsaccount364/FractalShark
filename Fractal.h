@@ -132,8 +132,12 @@ private: // For saving the current location
     void SaveCurPos(void);
 
 public: // Iterations
-    void SetNumIterations(IterType num);
+    template<typename IterType = uint32_t>
+    void SetNumIterations(IterTypeFull num);
+
+    template<typename IterType = uint32_t>
     IterType GetNumIterations(void) const;
+
     void ResetNumIterations(void);
 
 public:
@@ -337,7 +341,7 @@ private:
         size_t m_ScrnWidth;
         size_t m_ScrnHeight;
         uint32_t m_GpuAntialiasing;
-        IterType m_NumIterations;
+        IterTypeFull m_NumIterations;
         int m_PaletteRotate; // Used to shift the palette
         int m_PaletteDepthIndex; // 0, 1, 2
         std::vector<uint16_t>* m_PalR[Fractal::Palette::Num], * m_PalG[Fractal::Palette::Num], * m_PalB[Fractal::Palette::Num];
@@ -459,7 +463,7 @@ private:
     // The maximum number of iterations to go through on a pixel
     // in an effort to determine whether the point is within the set
     // or not.
-    IterType m_NumIterations;
+    IterTypeFull m_NumIterations;
     bool m_ChangedIterations;
 
     // Antialiasing;

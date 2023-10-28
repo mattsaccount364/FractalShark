@@ -1376,7 +1376,6 @@ void
 mandel_1xHDR_float_perturb_lav2(
     IterType *OutputIterMatrix,
     AntialiasedColors OutputColorMatrix,
-    Palette Pals,
     MattPerturbSingleResults<HDRFloat<SubType>> Perturb,
     GPU_LAReference<IterType, SubType> LaReference, // "copy"
     int width,
@@ -3502,7 +3501,7 @@ template uint32_t GPURenderer::Render(
 
 template uint32_t GPURenderer::Render(
     RenderAlgorithm algorithm,
-    IterType* iter_buffer,
+    uint64_t* iter_buffer,
     Color16* color_buffer,
     MattQFltflt cx,
     MattQFltflt cy,
@@ -3785,7 +3784,6 @@ uint32_t GPURenderer::RenderPerturbLAv2(
             mandel_1xHDR_float_perturb_lav2<IterType, float, Mode> << <nb_blocks, threads_per_block >> > (
                 static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
-                Pals,
                 cudaResults, laReferenceCuda,
                 m_Width, m_Height, m_Antialiasing, cx, cy, dx, dy,
                 centerX, centerY,
@@ -3806,7 +3804,6 @@ uint32_t GPURenderer::RenderPerturbLAv2(
             mandel_1xHDR_float_perturb_lav2<IterType, double, Mode> << <nb_blocks, threads_per_block >> > (
                 static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
-                Pals,
                 cudaResults, laReferenceCuda,
                 m_Width, m_Height, m_Antialiasing, cx, cy, dx, dy,
                 centerX, centerY,

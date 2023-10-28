@@ -44,7 +44,7 @@ constexpr size_t AuthoritativeReuseExtraPrecision = 100;
 //}
 
 // TODO move to templates
-using IterType = uint64_t;
+using IterType = uint32_t;
 using IterTypeFull = uint64_t;
 static constexpr IterType IterTypeMax = ((sizeof(IterType) == 4) ? (0xFFFF'FFFF) : (0xFFFF'FFFF'FFFF'FFFF));
 

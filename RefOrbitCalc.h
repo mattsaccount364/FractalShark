@@ -5,7 +5,7 @@
 
 class Fractal;
 
-template<class T>
+template<class T, CalcBad Bad>
 class PerturbationResults;
 
 class RefOrbitCalc {
@@ -14,11 +14,6 @@ public:
         DontSaveForReuse,
         SaveForReuse,
         RunWithReuse
-    };
-
-    enum class CalcBad {
-        Disable,
-        Enable
     };
 
     enum class BenchmarkMode {
@@ -55,8 +50,8 @@ public:
     void SetPerturbationAlg(PerturbationAlg alg) { m_PerturbationAlg = alg; }
     PerturbationAlg GetPerturbationAlg() const { return m_PerturbationAlg; }
 
-    template<class T>
-    std::vector<std::unique_ptr<PerturbationResults<T>>>& GetPerturbationResults();
+    template<class T, CalcBad Bad>
+    std::vector<std::unique_ptr<PerturbationResults<T, Bad>>>& GetPerturbationResults();
 
     template<class T, class SubType, BenchmarkMode BenchmarkState>
     void AddPerturbationReferencePoint();
@@ -88,19 +83,19 @@ public:
         IncludeLAv2
     };
 
-    template<class T, class SubType>
-    PerturbationResults<T>* GetAndCreateUsefulPerturbationResults(Extras extras);
+    template<class T, class SubType, CalcBad Bad, RefOrbitCalc::Extras Ex>
+    PerturbationResults<T, Bad>* GetAndCreateUsefulPerturbationResults();
 
 private:
-    template<class T>
-    std::vector<std::unique_ptr<PerturbationResults<T>>>* GetPerturbationArray();
+    template<class T, CalcBad Bad>
+    std::vector<std::unique_ptr<PerturbationResults<T, Bad>>>* GetPerturbationArray();
 
-    template<class T, class SubType, bool Authoritative>
-    PerturbationResults<T>* GetUsefulPerturbationResults();
+    template<class T, class SubType, bool Authoritative, CalcBad Bad>
+    PerturbationResults<T, Bad>* GetUsefulPerturbationResults();
 
 public:
-    template<class SrcT, class DestT>
-    PerturbationResults<DestT>* CopyUsefulPerturbationResults(PerturbationResults<SrcT>& src_array);
+    template<class SrcT, CalcBad SrcEnableBad, class DestT, CalcBad DestEnableBad>
+    PerturbationResults<DestT, DestEnableBad>* CopyUsefulPerturbationResults(PerturbationResults<SrcT, SrcEnableBad>& src_array);
 
     void ClearPerturbationResults(PerturbationResultType type);
     void ResetGuess(HighPrecision x = HighPrecision(0), HighPrecision y = HighPrecision(0));
@@ -117,8 +112,13 @@ private:
 
     size_t m_GuessReserveSize;
 
-    std::vector<std::unique_ptr<PerturbationResults<double>>> m_PerturbationResultsDouble;
-    std::vector<std::unique_ptr<PerturbationResults<float>>> m_PerturbationResultsFloat;
-    std::vector<std::unique_ptr<PerturbationResults<HDRFloat<double>>>> m_PerturbationResultsHDRDouble;
-    std::vector<std::unique_ptr<PerturbationResults<HDRFloat<float>>>> m_PerturbationResultsHDRFloat;
+    std::vector<std::unique_ptr<PerturbationResults<double, CalcBad::Disable>>> m_PerturbationResultsDouble;
+    std::vector<std::unique_ptr<PerturbationResults<float, CalcBad::Disable>>> m_PerturbationResultsFloat;
+    std::vector<std::unique_ptr<PerturbationResults<HDRFloat<double>, CalcBad::Disable>>> m_PerturbationResultsHDRDouble;
+    std::vector<std::unique_ptr<PerturbationResults<HDRFloat<float>, CalcBad::Disable>>> m_PerturbationResultsHDRFloat;
+
+    std::vector<std::unique_ptr<PerturbationResults<double, CalcBad::Enable>>> m_PerturbationResultsDoubleB;
+    std::vector<std::unique_ptr<PerturbationResults<float, CalcBad::Enable>>> m_PerturbationResultsFloatB;
+    std::vector<std::unique_ptr<PerturbationResults<HDRFloat<double>, CalcBad::Enable>>> m_PerturbationResultsHDRDoubleB;
+    std::vector<std::unique_ptr<PerturbationResults<HDRFloat<float>, CalcBad::Enable>>> m_PerturbationResultsHDRFloatB;
 };

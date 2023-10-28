@@ -2131,10 +2131,7 @@ void Fractal::DrawFractal(bool MemoryOnly)
 
     glDeleteTextures(1, &texid);
 
-    DrawPerturbationResults<double>(true);
-    DrawPerturbationResults<float>(true);
-    DrawPerturbationResults<HDRFloat<double>>(true);
-    DrawPerturbationResults<HDRFloat<float>>(true);
+    DrawAllPerturbationResults();
 
     //while (GetMessage(&msg, NULL, 0, 0) > 0)
     //{
@@ -2143,7 +2140,19 @@ void Fractal::DrawFractal(bool MemoryOnly)
     //}
 }
 
-template<class T>
+void Fractal::DrawAllPerturbationResults() {
+    DrawPerturbationResults<double, CalcBad::Disable>(true);
+    DrawPerturbationResults<float, CalcBad::Disable>(true);
+    DrawPerturbationResults<HDRFloat<double>, CalcBad::Disable>(true);
+    DrawPerturbationResults<HDRFloat<float>, CalcBad::Disable>(true);
+
+    DrawPerturbationResults<double, CalcBad::Enable>(true);
+    DrawPerturbationResults<float, CalcBad::Enable>(true);
+    DrawPerturbationResults<HDRFloat<double>, CalcBad::Enable>(true);
+    DrawPerturbationResults<HDRFloat<float>, CalcBad::Enable>(true);
+}
+
+template<class T, CalcBad Bad>
 void Fractal::DrawPerturbationResults(bool LeaveScreen) {
     if (!LeaveScreen) {
         glClear(GL_COLOR_BUFFER_BIT);
@@ -2153,7 +2162,7 @@ void Fractal::DrawPerturbationResults(bool LeaveScreen) {
 
     // TODO can we just integrate all this with DrawFractal
 
-    auto& results = m_RefOrbit.GetPerturbationResults<T>();
+    auto& results = m_RefOrbit.GetPerturbationResults<T, Bad>();
     for (size_t i = 0; i < results.size(); i++)
     {
         if (m_RefOrbit.IsPerturbationResultUsefulHere<T, false>(i)) {
@@ -2457,7 +2466,11 @@ void Fractal::CalcNetworkFractal(bool /*MemoryOnly*/)
 }
 
 void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
-    auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<double, double>(RefOrbitCalc::Extras::None);
+    auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<
+        double,
+        double,
+        CalcBad::Disable,
+        RefOrbitCalc::Extras::None>();
 
     double dx = Convert<HighPrecision, double>((m_MaxX - m_MinX) / (m_ScrnWidth * GetGpuAntialiasing()));
     double dy = Convert<HighPrecision, double>((m_MaxY - m_MinY) / (m_ScrnHeight * GetGpuAntialiasing()));
@@ -2680,7 +2693,11 @@ void Fractal::CalcCpuHDR(bool MemoryOnly) {
 
 template<class T, class SubType>
 void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
-    auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<T, SubType>(RefOrbitCalc::Extras::None);
+    auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<
+        T,
+        SubType,
+        CalcBad::Disable,
+        RefOrbitCalc::Extras::None>();
 
     BLAS<T> blas(*results);
     blas.Init((IterType)results->orb.size(), results->maxRadius);
@@ -2913,7 +2930,11 @@ template<class SubType>
 void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
     using T = HDRFloat<SubType>;
     using TComplex = HDRFloatComplex<SubType>;
-    auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<T, SubType>(RefOrbitCalc::Extras::IncludeLAv2);
+    auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<
+        T,
+        SubType,
+        CalcBad::Disable,
+        RefOrbitCalc::Extras::IncludeLAv2>();
 
     if (results->LaReference.get() == nullptr) {
         ::MessageBox(NULL, L"Oops - a null pointer deref", L"", MB_OK);
@@ -3095,7 +3116,11 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
 
 template<class T, class SubType, bool BLA>
 void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
-    auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<T, SubType>(RefOrbitCalc::Extras::None);
+    auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<
+        T,
+        SubType,
+        CalcBad::Disable,
+        RefOrbitCalc::Extras::None>();
 
     uint32_t err = InitializeGPUMemory();
     if (err) {
@@ -3164,7 +3189,11 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
 
 template<class T, class SubType, LAv2Mode Mode>
 void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
-    auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<T, SubType>(RefOrbitCalc::Extras::IncludeLAv2);
+    auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<
+        T,
+        SubType,
+        CalcBad::Disable,
+        RefOrbitCalc::Extras::IncludeLAv2>();
 
     uint32_t err = InitializeGPUMemory();
     if (err) {
@@ -3219,10 +3248,18 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
 
 template<class T, class SubType, class T2, class SubType2>
 void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
-    auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<T, SubType>(RefOrbitCalc::Extras::None);
-    auto* results2 = m_RefOrbit.CopyUsefulPerturbationResults<T, T2>(*results);
+    auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<
+        T,
+        SubType,
+        CalcBad::Enable,
+        RefOrbitCalc::Extras::None>();
+    auto* results2 = m_RefOrbit.CopyUsefulPerturbationResults<
+        T,
+        CalcBad::Enable,
+        T2,
+        CalcBad::Enable>(*results);
 
-    BLAS<T> blas(*results);
+    BLAS<T, CalcBad::Enable> blas(*results);
     blas.Init(results->orb.size(), results->maxRadius);
 
     uint32_t err = InitializeGPUMemory();
@@ -3244,12 +3281,12 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
     FillCoord(centerX, centerX2);
     FillCoord(centerY, centerY2);
 
-    MattPerturbResults<T> gpu_results{
+    MattPerturbResults<T, CalcBad::Enable> gpu_results{
         results->orb.size(),
         results->orb.data(),
         results->PeriodMaybeZero };
 
-    MattPerturbResults<T2> gpu_results2{
+    MattPerturbResults<T2, CalcBad::Enable> gpu_results2{
         results2->orb.size(),
         results2->orb.data(),
         results2->PeriodMaybeZero };

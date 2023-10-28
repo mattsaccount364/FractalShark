@@ -3,10 +3,10 @@
 #include "BLA.h"
 #include <vector>
 
-template<class T>
+template<class T, CalcBad Bad>
 class PerturbationResults;
 
-template<class T>
+template<class T, CalcBad Bad = CalcBad::Disable>
 class BLAS {
 private:
     static constexpr size_t BLA_BITS = 23;
@@ -19,7 +19,7 @@ public:
     int32_t m_LM2;//Level -1 is not attainable due to Zero R
     static constexpr size_t m_FirstLevel = BLA_STARTING_LEVEL - 1;
 
-    BLAS(PerturbationResults<T>& results);
+    BLAS(PerturbationResults<T, Bad>& results);
 
 private:
     void InitLStep(size_t level, size_t m, T blaSize, T epsilon);
@@ -39,7 +39,5 @@ private:
 
     std::vector<size_t> m_ElementsPerLevel;
 
-    PerturbationResults<T>& m_PerturbationResults;
+    PerturbationResults<T, Bad>& m_PerturbationResults;
 };
-
-

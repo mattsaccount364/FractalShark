@@ -26,7 +26,7 @@ public:
     using type = T;
 };
 
-template<class T>
+template<class T, CalcBad Bad>
 class PerturbationResults {
 public:
     // Example of how to pull the SubType out for HdrFloat, or keep the primitive float/double
@@ -40,7 +40,7 @@ public:
     IterType MaxIterations;
     IterType PeriodMaybeZero;  // Zero if not worked out
 
-    std::vector<MattReferenceSingleIter<T>> orb;
+    std::vector<MattReferenceSingleIter<T, Bad>> orb;
 
     uint32_t AuthoritativePrecision;
     std::vector<HighPrecision> ReuseX;
@@ -67,8 +67,8 @@ public:
     }
 
     // TODO WTF is this for again?
-    template<class Other>
-    void Copy(const PerturbationResults<Other>& other) {
+    template<class Other, CalcBad Bad = CalcBad::Disable>
+    void Copy(const PerturbationResults<Other, Bad>& other) {
         clear();
 
         //hiX = other.hiX;
@@ -86,7 +86,12 @@ public:
         ReuseY.reserve(other.ReuseY.size());
 
         for (size_t i = 0; i < other.orb.size(); i++) {
-            orb.push_back({ (T)other.orb[i].x, (T)other.orb[i].y, other.orb[i].bad != 0 });
+            if constexpr (Bad == CalcBad::Enable) {
+                orb.push_back({ (T)other.orb[i].x, (T)other.orb[i].y, other.orb[i].bad != 0 });
+            }
+            else {
+                orb.push_back({ (T)other.orb[i].x, (T)other.orb[i].y });
+            }
         }
 
         AuthoritativePrecision = other.AuthoritativePrecision;
@@ -109,7 +114,7 @@ public:
         ReuseY.push_back(Zero);
     }
 
-    template<class T, RefOrbitCalc::CalcBad Bad, RefOrbitCalc::ReuseMode Reuse>
+    template<class T, CalcBad Bad, RefOrbitCalc::ReuseMode Reuse>
     void InitResults(
         const HighPrecision& cx,
         const HighPrecision& cy,
@@ -153,7 +158,7 @@ public:
         }
     }
 
-    template<RefOrbitCalc::CalcBad Bad, RefOrbitCalc::ReuseMode Reuse>
+    template<CalcBad Bad, RefOrbitCalc::ReuseMode Reuse>
     void TrimResults() {
         orb.shrink_to_fit();
 

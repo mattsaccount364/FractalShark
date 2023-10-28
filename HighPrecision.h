@@ -52,3 +52,8 @@ static constexpr IterType IterTypeMax = ((sizeof(IterType) == 4) ? (0xFFFF'FFFF)
 //const IterType MAXITERS = 256 * 256 * 256 * 32;
 //const int MAXITERS = 256 * 32; // 256 * 256 * 256 * 32
 static constexpr IterType MAXITERS = ((sizeof(IterType) == 4) ? (INT32_MAX - 1) : (INT64_MAX - 1));
+
+enum class CalcBad {
+    Disable,
+    Enable
+};

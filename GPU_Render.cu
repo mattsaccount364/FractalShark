@@ -376,17 +376,17 @@ CUDA_CRAP const GPUBLA_TYPE* GPU_BLAS<T, GPUBLA_TYPE, LM2>::LookupBackwards(
 // Perturbation results
 ////////////////////////////////////////////////////////////////////////////////////////
 
-static_assert(sizeof(MattReferenceSingleIter<float>) == 16, "Float");
-static_assert(sizeof(MattReferenceSingleIter<double>) == 24, "Double");
-static_assert(sizeof(MattReferenceSingleIter<dblflt>) == 24, "Dblflt");
+static_assert(sizeof(MattReferenceSingleIter<float>) <= 16, "Float");
+static_assert(sizeof(MattReferenceSingleIter<double>) <= 24, "Double");
+static_assert(sizeof(MattReferenceSingleIter<dblflt>) <= 24, "Dblflt");
 
 //char(*__kaboom1)[sizeof(MattReferenceSingleIter<float>)] = 1;
 //char(*__kaboom2)[sizeof(MattReferenceSingleIter<double>)] = 1;
 //char(*__kaboom3)[sizeof(MattReferenceSingleIter<dblflt>)] = 1;
 
-template<typename Type>
+template<typename Type, CalcBad Bad = CalcBad::Disable>
 struct MattPerturbSingleResults {
-    MattReferenceSingleIter<Type>* __restrict__ iters;
+    MattReferenceSingleIter<Type, Bad>* __restrict__ iters;
     IterType size;
     bool own;
     cudaError_t err;
@@ -395,7 +395,7 @@ struct MattPerturbSingleResults {
     MattPerturbSingleResults(
         IterType sz,
         IterType PeriodMaybeZero,
-        MattReferenceSingleIter<Type> *in_iters)
+        MattReferenceSingleIter<Type, Bad> *in_iters)
         : size(sz),
         PeriodMaybeZero(PeriodMaybeZero),
         iters(nullptr),
@@ -404,15 +404,15 @@ struct MattPerturbSingleResults {
 
         static_assert(sizeof(MattDblflt) == sizeof(dblflt), "No");
 
-        MattReferenceSingleIter<Type>* tempIters;
-        err = cudaMalloc(&tempIters, size * sizeof(MattReferenceSingleIter<Type>));
+        MattReferenceSingleIter<Type, Bad>* tempIters;
+        err = cudaMalloc(&tempIters, size * sizeof(MattReferenceSingleIter<Type, Bad>));
         if (err != cudaSuccess) {
             size = 0;
             return;
         }
 
         iters = tempIters;
-        cudaMemcpy(iters, in_iters, size * sizeof(MattReferenceSingleIter<Type>), cudaMemcpyDefault);
+        cudaMemcpy(iters, in_iters, size * sizeof(MattReferenceSingleIter<Type, Bad>), cudaMemcpyDefault);
 
         //err = cudaMemAdvise(iters,
         //    size * sizeof(MattReferenceSingleIter<Type>),
@@ -2182,8 +2182,8 @@ __global__
 void mandel_1x_float_perturb_scaled(
     IterType *OutputIterMatrix,
     AntialiasedColors OutputColorMatrix,
-    MattPerturbSingleResults<float> PerturbFloat,
-    MattPerturbSingleResults<T> PerturbDouble,
+    MattPerturbSingleResults<float, CalcBad::Enable> PerturbFloat,
+    MattPerturbSingleResults<T, CalcBad::Enable> PerturbDouble,
     int width,
     int height,
     T cx,
@@ -2246,8 +2246,8 @@ void mandel_1x_float_perturb_scaled(
     T TwoFiftySix = T(256.0);
 
     while (iter < n_iterations) {
-        const MattReferenceSingleIter<float> *curFloatIter = &PerturbFloat.iters[RefIteration];
-        const MattReferenceSingleIter<T> *curDoubleIter = &PerturbDouble.iters[RefIteration];
+        const MattReferenceSingleIter<float, CalcBad::Enable> *curFloatIter = &PerturbFloat.iters[RefIteration];
+        const MattReferenceSingleIter<T, CalcBad::Enable> *curDoubleIter = &PerturbDouble.iters[RefIteration];
 
         if (curFloatIter->bad == false) {
             const float DeltaSubNWXOrig = DeltaSubNWX;
@@ -2425,8 +2425,8 @@ __global__
 void mandel_1x_float_perturb_scaled_bla(
     IterType *OutputIterMatrix,
     AntialiasedColors OutputColorMatrix,
-    MattPerturbSingleResults<float> PerturbFloat,
-    MattPerturbSingleResults<double> PerturbDouble,
+    MattPerturbSingleResults<float, CalcBad::Enable> PerturbFloat,
+    MattPerturbSingleResults<double, CalcBad::Enable> PerturbDouble,
     GPU_BLAS<double, BLA<double>, LM2> doubleBlas,
     int width,
     int height,
@@ -2485,8 +2485,8 @@ void mandel_1x_float_perturb_scaled_bla(
     IterType MaxRefIteration = PerturbFloat.size - 1;
 
     while (iter < n_iterations) {
-        const MattReferenceSingleIter<float> *curFloatIter = &PerturbFloat.iters[RefIteration];
-        const MattReferenceSingleIter<double> *curDoubleIter = &PerturbDouble.iters[RefIteration];
+        const MattReferenceSingleIter<float, CalcBad::Enable> *curFloatIter = &PerturbFloat.iters[RefIteration];
+        const MattReferenceSingleIter<double, CalcBad::Enable> *curDoubleIter = &PerturbDouble.iters[RefIteration];
 
         double DeltaSubNX = DeltaSubNWX * S;
         double DeltaSubNY = DeltaSubNWY * S;
@@ -2721,8 +2721,8 @@ __global__
 void mandel_2x_float_perturb_scaled(
     IterType *OutputIterMatrix,
     AntialiasedColors OutputColorMatrix,
-    MattPerturbSingleResults<dblflt> PerturbDoubleFlt,
-    MattPerturbSingleResults<double> PerturbDouble,
+    MattPerturbSingleResults<dblflt, CalcBad::Enable> PerturbDoubleFlt,
+    MattPerturbSingleResults<double, CalcBad::Enable> PerturbDouble,
     int width,
     int height,
     double cx,
@@ -2780,8 +2780,8 @@ void mandel_2x_float_perturb_scaled(
     IterType MaxRefIteration = PerturbDoubleFlt.size - 1;
 
     while (iter < n_iterations) {
-        const MattReferenceSingleIter<dblflt>* curDblFloatIter = &PerturbDoubleFlt.iters[RefIteration];
-        const MattReferenceSingleIter<double>* curDoubleIter = &PerturbDouble.iters[RefIteration];
+        const MattReferenceSingleIter<dblflt, CalcBad::Enable>* curDblFloatIter = &PerturbDoubleFlt.iters[RefIteration];
+        const MattReferenceSingleIter<double, CalcBad::Enable>* curDoubleIter = &PerturbDouble.iters[RefIteration];
 
         if (curDblFloatIter->bad == false) {
             const dblflt DeltaSubNWXOrig = DeltaSubNWX;
@@ -3764,9 +3764,9 @@ uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
     IterType* iter_buffer,
     Color16* color_buffer,
-    MattPerturbResults<T>* double_perturb,
-    MattPerturbResults<float>* float_perturb,
-    BLAS<T>* blas,
+    MattPerturbResults<T, CalcBad::Enable>* double_perturb,
+    MattPerturbResults<float, CalcBad::Enable>* float_perturb,
+    BLAS<T, CalcBad::Enable>* blas,
     T cx,
     T cy,
     T dx,
@@ -3785,7 +3785,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
     dim3 nb_blocks(w_block, h_block, 1);
     dim3 threads_per_block(NB_THREADS_W, NB_THREADS_H, 1);
 
-    MattPerturbSingleResults<float> cudaResults(
+    MattPerturbSingleResults<float, CalcBad::Enable> cudaResults(
         float_perturb->size,
         float_perturb->PeriodMaybeZero,
         float_perturb->iters);
@@ -3795,7 +3795,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
         return result;
     }
 
-    MattPerturbSingleResults<T> cudaResultsDouble(
+    MattPerturbSingleResults<T, CalcBad::Enable> cudaResultsDouble(
         double_perturb->size,
         float_perturb->PeriodMaybeZero,
         double_perturb->iters);
@@ -3878,9 +3878,9 @@ template uint32_t GPURenderer::RenderPerturbBLA<double>(
     RenderAlgorithm algorithm,
     IterType* iter_buffer,
     Color16* color_buffer,
-    MattPerturbResults<double>* double_perturb,
-    MattPerturbResults<float>* float_perturb,
-    BLAS<double>* blas,
+    MattPerturbResults<double, CalcBad::Enable>* double_perturb,
+    MattPerturbResults<float, CalcBad::Enable>* float_perturb,
+    BLAS<double, CalcBad::Enable>* blas,
     double cx,
     double cy,
     double dx,
@@ -3895,9 +3895,9 @@ template uint32_t GPURenderer::RenderPerturbBLA<HDRFloat<float>>(
     RenderAlgorithm algorithm,
     IterType* iter_buffer,
     Color16* color_buffer,
-    MattPerturbResults<HDRFloat<float>>* double_perturb,
-    MattPerturbResults<float>* float_perturb,
-    BLAS<HDRFloat<float>>* blas,
+    MattPerturbResults<HDRFloat<float>, CalcBad::Enable>* double_perturb,
+    MattPerturbResults<float, CalcBad::Enable>* float_perturb,
+    BLAS<HDRFloat<float>, CalcBad::Enable>* blas,
     HDRFloat<float> cx,
     HDRFloat<float> cy,
     HDRFloat<float> dx,

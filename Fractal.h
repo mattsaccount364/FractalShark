@@ -176,8 +176,9 @@ public: // Drawing functions
     void RotateFractalPalette(int delta);
     void CreateNewFractalPalette(void);
 
-    template<class T>
+    template<class T, CalcBad Bad>
     void DrawPerturbationResults(bool MemoryOnly);
+    void DrawAllPerturbationResults();
 
 private:
     static void DrawFractalThread(size_t index, Fractal* fractal);

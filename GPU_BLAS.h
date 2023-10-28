@@ -3,7 +3,7 @@
 #include "BLA.h"
 #include <vector>
 
-template<class T>
+template<class T, CalcBad Bad>
 class BLAS;
 
 template<class T, class GPUBLA_TYPE, int32_t LM2>

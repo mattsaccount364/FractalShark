@@ -88,28 +88,30 @@ enum class RenderAlgorithm {
     Gpu4x32,
 };
 
+struct Empty {
+};
+
+struct BadField {
+    uint32_t bad;
+    uint32_t padding;
+};
+
 #pragma pack(push, 8)
-template<typename Type>
-struct alignas(8) MattReferenceSingleIter {
+template<typename Type, CalcBad Bad = CalcBad::Disable>
+struct alignas(8) MattReferenceSingleIter : public std::conditional_t<Bad == CalcBad::Enable, BadField, Empty> {
     MattReferenceSingleIter()
         : x{ Type(0) },
-        y{ Type(0) },
-        bad{},
-        padding{} {
+        y{ Type(0) } {
     }
 
     MattReferenceSingleIter(Type x, Type y)
         : x{ x },
-        y{ y },
-        bad{},
-        padding{} {
+        y{ y } {
     }
 
     MattReferenceSingleIter(Type x, Type y, bool bad)
         : x{ x },
-        y{ y },
-        bad{(uint32_t)bad},
-        padding{} {
+        y{ y } {
     }
 
     MattReferenceSingleIter(const MattReferenceSingleIter& other) = default;
@@ -117,8 +119,6 @@ struct alignas(8) MattReferenceSingleIter {
 
     Type x;
     Type y;
-    uint32_t bad;
-    uint32_t padding;
 };
 #pragma pack(pop)
 
@@ -167,14 +167,14 @@ struct MattCoords {
     //HDRFloat<double> hdrdbl;
 };
 
-template<class T>
+template<class T, CalcBad Bad = CalcBad::Disable>
 struct MattPerturbResults {
-    MattReferenceSingleIter<T> *iters;
+    MattReferenceSingleIter<T, Bad> *iters;
     IterType size;
     IterType PeriodMaybeZero;
 
     MattPerturbResults(IterType in_size,
-                       MattReferenceSingleIter<T> *in_orb,
+                       MattReferenceSingleIter<T, Bad> *in_orb,
                        IterType PeriodMaybeZero) :
         iters(in_orb),
         size(in_size),
@@ -184,11 +184,20 @@ struct MattPerturbResults {
         //char(*__kaboom2)[sizeof(MattReferenceSingleIter<double>)] = 1;
         //char(*__kaboom3)[sizeof(MattReferenceSingleIter<float2>)] = 1;
 
-        static_assert(sizeof(MattReferenceSingleIter<float>) == 16, "Float");
-        static_assert(sizeof(MattReferenceSingleIter<double>) == 24, "Double");
-        static_assert(sizeof(MattReferenceSingleIter<float2>) == 24, "float2");
+        if constexpr (Bad == CalcBad::Enable) {
+            static_assert(sizeof(MattReferenceSingleIter<float, Bad>) == 16, "Float");
+            static_assert(sizeof(MattReferenceSingleIter<double, Bad>) == 24, "Double");
+            static_assert(sizeof(MattReferenceSingleIter<float2, Bad>) == 24, "float2");
+        }
+        else {
+            static_assert(sizeof(MattReferenceSingleIter<float, Bad>) == 8, "Float");
+            static_assert(sizeof(MattReferenceSingleIter<double, Bad>) == 16, "Double");
+            static_assert(sizeof(MattReferenceSingleIter<float2, Bad>) == 16, "float2");
+        }
+
         //static_assert(sizeof(MattReferenceSingleIter<HDRFloat<float>>) == 12 * 4, "float2");
         static_assert(sizeof(float2) == 8, "float2 type");
+        
 
         // TODO use a template, remove "bad" completely when it's not used.
         // TODO - better though, remove this class and copy from original results
@@ -251,9 +260,9 @@ public:
         RenderAlgorithm algorithm,
         IterType* iter_buffer,
         Color16* color_buffer,
-        MattPerturbResults<T>* double_perturb,
-        MattPerturbResults<float>* float_perturb,
-        BLAS<T>* blas,
+        MattPerturbResults<T, CalcBad::Enable>* double_perturb,
+        MattPerturbResults<float, CalcBad::Enable>* float_perturb,
+        BLAS<T, CalcBad::Enable>* blas,
         T cx,
         T cy,
         T dx,

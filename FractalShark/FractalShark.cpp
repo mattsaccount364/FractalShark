@@ -791,10 +791,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             case IDM_PERTURB_RESULTS:
             {
-                gFractal->DrawPerturbationResults<float>(false);
-                gFractal->DrawPerturbationResults<double>(true);
-                gFractal->DrawPerturbationResults<HDRFloat<float>>(true);
-                gFractal->DrawPerturbationResults<HDRFloat<double>>(true);
+                gFractal->DrawAllPerturbationResults();
                 break;
             }
             case IDM_PERTURB_CLEAR_ALL:

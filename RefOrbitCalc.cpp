@@ -225,19 +225,40 @@ void RefOrbitCalc::OptimizeMemory() {
     }
 }
 
-template<class T>
-std::vector<std::unique_ptr<PerturbationResults<T>>>& RefOrbitCalc::GetPerturbationResults() {
+template<class T, CalcBad Bad>
+std::vector<std::unique_ptr<PerturbationResults<T, Bad>>> &
+RefOrbitCalc::GetPerturbationResults() {
     if constexpr (std::is_same<T, double>::value) {
-        return m_PerturbationResultsDouble;
+        if constexpr (Bad == CalcBad::Enable) {
+            return m_PerturbationResultsDoubleB;
+        }
+        else {
+            return m_PerturbationResultsDouble;
+        }
     }
     else if constexpr (std::is_same<T, float>::value) {
-        return m_PerturbationResultsFloat;
+        if constexpr (Bad == CalcBad::Enable) {
+            return m_PerturbationResultsFloatB;
+        }
+        else {
+            return m_PerturbationResultsFloat;
+        }
     }
     else if constexpr (std::is_same<T, HDRFloat<double>>::value) {
-        return m_PerturbationResultsHDRDouble;
+        if constexpr (Bad == CalcBad::Enable) {
+            return m_PerturbationResultsHDRDoubleB;
+        }
+        else {
+            return m_PerturbationResultsHDRDouble;
+        }
     }
     else if constexpr (std::is_same<T, HDRFloat<float>>::value) {
-        return m_PerturbationResultsHDRFloat;
+        if constexpr (Bad == CalcBad::Enable) {
+            return m_PerturbationResultsHDRFloatB;
+            }
+        else {
+            return m_PerturbationResultsHDRFloat;
+        }
     }
 }
 
@@ -339,7 +360,7 @@ static void AddReused(T &results, const HighPrecision& zx, const HighPrecision& 
     results.ReuseY.push_back(ReducedZy);
 }
 
-template<class T, class PerturbationResultsType, RefOrbitCalc::CalcBad Bad, RefOrbitCalc::ReuseMode Reuse>
+template<class T, class PerturbationResultsType, CalcBad Bad, RefOrbitCalc::ReuseMode Reuse>
 void RefOrbitCalc::InitResults(PerturbationResultsType& results, const HighPrecision& initX, const HighPrecision& initY) {
     results.InitResults<T, Bad, Reuse>(
         initX,
@@ -352,10 +373,17 @@ void RefOrbitCalc::InitResults(PerturbationResultsType& results, const HighPreci
         m_GuessReserveSize);
 }
 
-template<class T, class SubType, bool Periodicity, RefOrbitCalc::BenchmarkMode BenchmarkState, RefOrbitCalc::CalcBad Bad, RefOrbitCalc::ReuseMode Reuse>
+template<
+    class T,
+    class SubType,
+    bool Periodicity,
+    RefOrbitCalc::BenchmarkMode BenchmarkState,
+    CalcBad Bad,
+    RefOrbitCalc::ReuseMode Reuse>
 void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecision cy) {
-    auto& PerturbationResultsArray = GetPerturbationResults<T>();
-    PerturbationResultsArray.push_back(std::make_unique<PerturbationResults<T>>());
+    auto& PerturbationResultsArray = GetPerturbationResults<T, Bad>();
+
+    PerturbationResultsArray.push_back(std::make_unique<PerturbationResults<T, Bad>>());
     auto* results = PerturbationResultsArray[PerturbationResultsArray.size() - 1].get();
 
     InitResults<T, decltype(*results), Bad, Reuse>(*results, cx, cy);
@@ -468,10 +496,10 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
 
 template<class T, class SubType, bool Periodicity, RefOrbitCalc::BenchmarkMode BenchmarkState>
 bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPrecision cy) {
-    auto& PerturbationResultsArray = GetPerturbationResults<T>();
-    PerturbationResultsArray.push_back(std::make_unique<PerturbationResults<T>>());
+    auto& PerturbationResultsArray = GetPerturbationResults<T, CalcBad::Disable>();
+    PerturbationResultsArray.push_back(std::make_unique<PerturbationResults<T, CalcBad::Disable>>());
 
-    auto* existingResults = GetUsefulPerturbationResults<T, SubType, true>();
+    auto* existingResults = GetUsefulPerturbationResults<T, SubType, true, CalcBad::Disable>();
     if (existingResults == nullptr || existingResults->ReuseX.size() < 5) {
         // TODO Lame hack with < 5.
         PerturbationResultsArray.pop_back();
@@ -642,10 +670,10 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
 
 template<class T, class SubType, bool Periodicity, RefOrbitCalc::BenchmarkMode BenchmarkState>
 bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighPrecision cy) {
-    auto& PerturbationResultsArray = GetPerturbationResults<T>();
-    PerturbationResultsArray.push_back(std::make_unique<PerturbationResults<T>>());
+    auto& PerturbationResultsArray = GetPerturbationResults<T, CalcBad::Disable>();
+    PerturbationResultsArray.push_back(std::make_unique<PerturbationResults<T, CalcBad::Disable>>());
 
-    auto* existingResults = GetUsefulPerturbationResults<T, SubType, true>();
+    auto* existingResults = GetUsefulPerturbationResults<T, SubType, true, CalcBad::Disable>();
     if (existingResults == nullptr || existingResults->ReuseX.size() < 5) {
         // TODO Lame hack with < 5.
         PerturbationResultsArray.pop_back();
@@ -981,10 +1009,10 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     return true;
 }
 
-template<class T, class SubType, bool Periodicity, RefOrbitCalc::BenchmarkMode BenchmarkState, RefOrbitCalc::CalcBad Bad, RefOrbitCalc::ReuseMode Reuse>
+template<class T, class SubType, bool Periodicity, RefOrbitCalc::BenchmarkMode BenchmarkState, CalcBad Bad, RefOrbitCalc::ReuseMode Reuse>
 void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecision cy) {
-    auto& PerturbationResultsArray = GetPerturbationResults<T>();
-    PerturbationResultsArray.push_back(std::make_unique<PerturbationResults<T>>());
+    auto& PerturbationResultsArray = GetPerturbationResults<T, Bad>();
+    PerturbationResultsArray.push_back(std::make_unique<PerturbationResults<T, Bad>>());
     auto* results = PerturbationResultsArray[PerturbationResultsArray.size() - 1].get();
 
     HighPrecision zx, zy;
@@ -1290,10 +1318,10 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
     m_GuessReserveSize = results->orb.size();
 }
 
-template<class T, class SubType, bool Periodicity, RefOrbitCalc::BenchmarkMode BenchmarkState, RefOrbitCalc::CalcBad Bad, RefOrbitCalc::ReuseMode Reuse>
+template<class T, class SubType, bool Periodicity, RefOrbitCalc::BenchmarkMode BenchmarkState, CalcBad Bad, RefOrbitCalc::ReuseMode Reuse>
 void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecision cy) {
-    auto& PerturbationResultsArray = GetPerturbationResults<T>();
-    PerturbationResultsArray.push_back(std::make_unique<PerturbationResults<T>>());
+    auto& PerturbationResultsArray = GetPerturbationResults<T, Bad>();
+    PerturbationResultsArray.push_back(std::make_unique<PerturbationResults<T, Bad>>());
     auto* results = PerturbationResultsArray[PerturbationResultsArray.size() - 1].get();
 
     HighPrecision zx, zy;
@@ -1826,8 +1854,8 @@ bool RefOrbitCalc::IsPerturbationResultUsefulHere(size_t i) const {
     }
 }
 
-template<class T, class SubType>
-PerturbationResults<T>* RefOrbitCalc::GetAndCreateUsefulPerturbationResults(Extras extras) {
+template<class T, class SubType, CalcBad Bad, RefOrbitCalc::Extras Ex>
+PerturbationResults<T, Bad>* RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
     bool added = false;
     if (RequiresReuse()) {
         if (m_PerturbationGuessCalcX == 0 && m_PerturbationGuessCalcY == 0) {
@@ -1835,7 +1863,7 @@ PerturbationResults<T>* RefOrbitCalc::GetAndCreateUsefulPerturbationResults(Extr
             m_PerturbationGuessCalcY = (m_Fractal.GetMaxY() + m_Fractal.GetMinY()) / 2;
         }
 
-        PerturbationResults<T>* results = GetUsefulPerturbationResults<T, SubType, false>();
+        PerturbationResults<T, Bad>* results = GetUsefulPerturbationResults<T, SubType, false, Bad>();
         if (results == nullptr) {
             switch (GetPerturbationAlg()) {
             case PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed:
@@ -1852,12 +1880,12 @@ PerturbationResults<T>* RefOrbitCalc::GetAndCreateUsefulPerturbationResults(Extr
         }
     }
 
-    PerturbationResults<T>* results = GetUsefulPerturbationResults<T, SubType, false>();
+    PerturbationResults<T, Bad>* results = GetUsefulPerturbationResults<T, SubType, false, Bad>();
     if (results == nullptr) {
         if (added) {
             ::MessageBox(NULL, L"Why didn't this work! :(", L"", MB_OK);
         }
-        std::vector<std::unique_ptr<PerturbationResults<T>>>* cur_array = GetPerturbationArray<T>();
+        std::vector<std::unique_ptr<PerturbationResults<T, Bad>>>* cur_array = GetPerturbationArray<T, Bad>();
         AddPerturbationReferencePoint<T, SubType, BenchmarkMode::Disable>();
         added = true;
 
@@ -1866,7 +1894,8 @@ PerturbationResults<T>* RefOrbitCalc::GetAndCreateUsefulPerturbationResults(Extr
 
     if constexpr (std::is_same<T, HDRFloat<float>>::value ||
                   std::is_same<T, HDRFloat<double>>::value) {
-        if (extras == Extras::IncludeLAv2) {
+        if constexpr (Ex == Extras::IncludeLAv2) {
+            static_assert(Bad == CalcBad::Disable, "!");
             if (results->LaReference == nullptr) {
                 results->LaReference = std::make_unique<LAReference<SubType>>(results);
                 results->LaReference->GenerateApproximationData(results->maxRadius, (IterType)results->orb.size() - 1);
@@ -1880,39 +1909,116 @@ PerturbationResults<T>* RefOrbitCalc::GetAndCreateUsefulPerturbationResults(Extr
     return results;
 }
 
-template PerturbationResults<double>*
-RefOrbitCalc::GetAndCreateUsefulPerturbationResults<double, double>(RefOrbitCalc::Extras);
-template PerturbationResults<float>*
-RefOrbitCalc::GetAndCreateUsefulPerturbationResults<float, float>(RefOrbitCalc::Extras);
-template PerturbationResults<HDRFloat<double>>*
-RefOrbitCalc::GetAndCreateUsefulPerturbationResults<HDRFloat<double>, double>(RefOrbitCalc::Extras);
-template PerturbationResults<HDRFloat<float>>*
-RefOrbitCalc::GetAndCreateUsefulPerturbationResults<HDRFloat<float>, float>(RefOrbitCalc::Extras);
+template PerturbationResults<double, CalcBad::Enable>*
+RefOrbitCalc::GetAndCreateUsefulPerturbationResults<
+    double,
+    double,
+    CalcBad::Enable,
+    RefOrbitCalc::Extras::None>();
+template PerturbationResults<float, CalcBad::Enable>*
+RefOrbitCalc::GetAndCreateUsefulPerturbationResults<
+    float,
+    float,
+    CalcBad::Enable,
+    RefOrbitCalc::Extras::None>();
+template PerturbationResults<HDRFloat<double>, CalcBad::Enable>*
+RefOrbitCalc::GetAndCreateUsefulPerturbationResults<
+    HDRFloat<double>,
+    double,
+    CalcBad::Enable,
+    RefOrbitCalc::Extras::None>();
+template PerturbationResults<HDRFloat<float>, CalcBad::Enable>*
+RefOrbitCalc::GetAndCreateUsefulPerturbationResults<
+    HDRFloat<float>,
+    float,
+    CalcBad::Enable,
+    RefOrbitCalc::Extras::None>();
 
-template<class T>
-std::vector<std::unique_ptr<PerturbationResults<T>>>* RefOrbitCalc::GetPerturbationArray() {
-    std::vector<std::unique_ptr<PerturbationResults<T>>>* cur_array = nullptr;
+template PerturbationResults<double, CalcBad::Disable>*
+RefOrbitCalc::GetAndCreateUsefulPerturbationResults<
+    double,
+    double,
+    CalcBad::Disable,
+    RefOrbitCalc::Extras::None>();
+template PerturbationResults<float, CalcBad::Disable>*
+RefOrbitCalc::GetAndCreateUsefulPerturbationResults<
+    float,
+    float,
+    CalcBad::Disable,
+    RefOrbitCalc::Extras::None>();
+template PerturbationResults<HDRFloat<double>, CalcBad::Disable>*
+RefOrbitCalc::GetAndCreateUsefulPerturbationResults<
+    HDRFloat<double>,
+    double,
+    CalcBad::Disable,
+    RefOrbitCalc::Extras::None>();
+template PerturbationResults<HDRFloat<float>, CalcBad::Disable>*
+RefOrbitCalc::GetAndCreateUsefulPerturbationResults<
+    HDRFloat<float>,
+    float,
+    CalcBad::Disable,
+    RefOrbitCalc::Extras::None>();
+
+///////////
+
+template PerturbationResults<HDRFloat<double>, CalcBad::Disable>*
+RefOrbitCalc::GetAndCreateUsefulPerturbationResults<
+    HDRFloat<double>,
+    double,
+    CalcBad::Disable,
+    RefOrbitCalc::Extras::IncludeLAv2>();
+template PerturbationResults<HDRFloat<float>, CalcBad::Disable>*
+RefOrbitCalc::GetAndCreateUsefulPerturbationResults<
+    HDRFloat<float>,
+    float,
+    CalcBad::Disable,
+    RefOrbitCalc::Extras::IncludeLAv2>();
+
+
+template<class T, CalcBad Bad>
+std::vector<std::unique_ptr<PerturbationResults<T, Bad>>>* RefOrbitCalc::GetPerturbationArray() {
+    std::vector<std::unique_ptr<PerturbationResults<T, Bad>>>* cur_array = nullptr;
 
     if constexpr (std::is_same<T, double>::value) {
-        cur_array = &m_PerturbationResultsDouble;
+        if constexpr (Bad == CalcBad::Enable) {
+            cur_array = &m_PerturbationResultsDoubleB;
+        }
+        else {
+            cur_array = &m_PerturbationResultsDouble;
+        }
     }
     else if constexpr (std::is_same<T, float>::value) {
-        cur_array = &m_PerturbationResultsFloat;
+        if constexpr (Bad == CalcBad::Enable) {
+            cur_array = &m_PerturbationResultsFloatB;
+        }
+        else {
+            cur_array = &m_PerturbationResultsFloat;
+        }
     }
     else if constexpr (std::is_same<T, HDRFloat<double>>::value) {
-        cur_array = &m_PerturbationResultsHDRDouble;
+        if constexpr (Bad == CalcBad::Enable) {
+            cur_array = &m_PerturbationResultsHDRDoubleB;
+        }
+        else {
+            cur_array = &m_PerturbationResultsHDRDouble;
+        }
     }
     else if constexpr (std::is_same<T, HDRFloat<float>>::value) {
-        cur_array = &m_PerturbationResultsHDRFloat;
+        if constexpr (Bad == CalcBad::Enable) {
+            cur_array = &m_PerturbationResultsHDRFloatB;
+        }
+        else {
+            cur_array = &m_PerturbationResultsHDRFloat;
+        }
     }
 
     return cur_array;
 }
 
-template<class T, class SubType, bool Authoritative>
-PerturbationResults<T>* RefOrbitCalc::GetUsefulPerturbationResults() {
-    std::vector<PerturbationResults<T>*> useful_results;
-    std::vector<std::unique_ptr<PerturbationResults<T>>>* cur_array = GetPerturbationArray<T>();
+template<class T, class SubType, bool Authoritative, CalcBad Bad>
+PerturbationResults<T, Bad>* RefOrbitCalc::GetUsefulPerturbationResults() {
+    std::vector<PerturbationResults<T, Bad>*> useful_results;
+    std::vector<std::unique_ptr<PerturbationResults<T, Bad>>>* cur_array = GetPerturbationArray<T, Bad>();
 
     if (!cur_array->empty()) {
         if (cur_array->size() > 64) {
@@ -1926,7 +2032,7 @@ PerturbationResults<T>* RefOrbitCalc::GetUsefulPerturbationResults() {
         }
     }
 
-    PerturbationResults<T>* results = nullptr;
+    PerturbationResults<T, Bad>* results = nullptr;
 
     if (!useful_results.empty()) {
         results = useful_results[useful_results.size() - 1];
@@ -1935,42 +2041,127 @@ PerturbationResults<T>* RefOrbitCalc::GetUsefulPerturbationResults() {
     return results;
 }
 
-template<class SrcT, class DestT>
-PerturbationResults<DestT>* RefOrbitCalc::CopyUsefulPerturbationResults(
-    PerturbationResults<SrcT>& src_array)
+template<class SrcT, CalcBad SrcEnableBad, class DestT, CalcBad DestEnableBad>
+PerturbationResults<DestT, DestEnableBad>* RefOrbitCalc::CopyUsefulPerturbationResults(
+    PerturbationResults<SrcT, SrcEnableBad>& src_array)
 {
-    if constexpr (std::is_same<SrcT, double>::value) {
-        m_PerturbationResultsFloat.push_back(std::make_unique<PerturbationResults<float>>());
-        auto* dest = m_PerturbationResultsFloat[m_PerturbationResultsFloat.size() - 1].get();
-        dest->Copy(src_array);
-        return dest;
-    }
-    else if constexpr (std::is_same<SrcT, float>::value) {
+    if constexpr (DestEnableBad == CalcBad::Enable || SrcEnableBad == CalcBad::Enable) {
+        // TODO we could actually do this
         return nullptr;
     }
-    else if constexpr (std::is_same<SrcT, HDRFloat<double>>::value) {
-        m_PerturbationResultsHDRFloat.push_back(std::make_unique<PerturbationResults<HDRFloat<float>>>());
-        auto* dest = m_PerturbationResultsHDRFloat[m_PerturbationResultsHDRFloat.size() - 1].get();
-        dest->Copy(src_array);
-        return dest;
-    }
-    else if constexpr (std::is_same<SrcT, HDRFloat<float>>::value) {
-        m_PerturbationResultsFloat.push_back(std::make_unique<PerturbationResults<float>>());
-        auto* dest = m_PerturbationResultsFloat[m_PerturbationResultsFloat.size() - 1].get();
-        dest->Copy(src_array);
-        return dest;
+
+    if constexpr (DestEnableBad == CalcBad::Disable && SrcEnableBad == CalcBad::Disable) {
+        if constexpr (std::is_same<SrcT, double>::value) {
+            m_PerturbationResultsFloat.push_back(
+                std::make_unique<PerturbationResults<float, DestEnableBad>>());
+            auto* dest = m_PerturbationResultsFloat[m_PerturbationResultsFloat.size() - 1].get();
+            dest->Copy(src_array);
+            return dest;
+        }
+        else if constexpr (std::is_same<SrcT, float>::value) {
+            return nullptr;
+        }
+        else if constexpr (std::is_same<SrcT, HDRFloat<double>>::value) {
+            m_PerturbationResultsHDRFloat.push_back(
+                std::make_unique<PerturbationResults<HDRFloat<float>, DestEnableBad>>());
+            auto* dest = m_PerturbationResultsHDRFloat[m_PerturbationResultsHDRFloat.size() - 1].get();
+            dest->Copy(src_array);
+            return dest;
+        }
+        else if constexpr (std::is_same<SrcT, HDRFloat<float>>::value) {
+            m_PerturbationResultsFloat.push_back(
+                std::make_unique<PerturbationResults<float, DestEnableBad>>());
+            auto* dest = m_PerturbationResultsFloat[m_PerturbationResultsFloat.size() - 1].get();
+            dest->Copy(src_array);
+            return dest;
+        }
+        else {
+            return nullptr;
+        }
     }
     else {
         return nullptr;
     }
 }
 
-template PerturbationResults<float>*
-RefOrbitCalc::CopyUsefulPerturbationResults<double, float>(PerturbationResults<double>&);
-template PerturbationResults<HDRFloat<float>>*
-RefOrbitCalc::CopyUsefulPerturbationResults<HDRFloat<double>, HDRFloat<float>>(PerturbationResults<HDRFloat<double>>&);
-template PerturbationResults<float>*
-RefOrbitCalc::CopyUsefulPerturbationResults<HDRFloat<float>, float>(PerturbationResults<HDRFloat<float>>&);
+template PerturbationResults<float, CalcBad::Enable>*
+RefOrbitCalc::CopyUsefulPerturbationResults<
+    double,
+    CalcBad::Enable,
+    float,
+    CalcBad::Enable>(PerturbationResults<double, CalcBad::Enable>&);
+template PerturbationResults<HDRFloat<float>, CalcBad::Enable>*
+RefOrbitCalc::CopyUsefulPerturbationResults<
+    HDRFloat<double>,
+    CalcBad::Enable,
+    HDRFloat<float>,
+    CalcBad::Enable>(PerturbationResults<HDRFloat<double>, CalcBad::Enable>&);
+template PerturbationResults<float, CalcBad::Enable>*
+RefOrbitCalc::CopyUsefulPerturbationResults<
+    HDRFloat<float>,
+    CalcBad::Enable,
+    float,
+    CalcBad::Enable>(PerturbationResults<HDRFloat<float>, CalcBad::Enable>&);
+
+template PerturbationResults<float, CalcBad::Disable>*
+RefOrbitCalc::CopyUsefulPerturbationResults<
+    double,
+    CalcBad::Enable,
+    float,
+    CalcBad::Disable> (PerturbationResults<double, CalcBad::Enable>&);
+template PerturbationResults<HDRFloat<float>, CalcBad::Disable>*
+RefOrbitCalc::CopyUsefulPerturbationResults<
+    HDRFloat<double>,
+    CalcBad::Enable,
+    HDRFloat<float>,
+    CalcBad::Disable>(PerturbationResults<HDRFloat<double>, CalcBad::Enable>&);
+template PerturbationResults<float, CalcBad::Disable>*
+RefOrbitCalc::CopyUsefulPerturbationResults<
+    HDRFloat<float>,
+    CalcBad::Enable,
+    float,
+    CalcBad::Disable>(PerturbationResults<HDRFloat<float>, CalcBad::Enable>&);
+
+template PerturbationResults<float, CalcBad::Enable>*
+RefOrbitCalc::CopyUsefulPerturbationResults<
+    double,
+    CalcBad::Disable,
+    float,
+    CalcBad::Enable>(PerturbationResults<double, CalcBad::Disable>&);
+template PerturbationResults<HDRFloat<float>, CalcBad::Enable>*
+RefOrbitCalc::CopyUsefulPerturbationResults<
+    HDRFloat<double>,
+    CalcBad::Disable,
+    HDRFloat<float>,
+    CalcBad::Enable>(PerturbationResults<HDRFloat<double>, CalcBad::Disable>&);
+template PerturbationResults<float, CalcBad::Enable>*
+RefOrbitCalc::CopyUsefulPerturbationResults<
+    HDRFloat<float>,
+    CalcBad::Disable,
+    float,
+    CalcBad::Enable>(PerturbationResults<HDRFloat<float>, CalcBad::Disable>&);
+
+template PerturbationResults<float, CalcBad::Disable>*
+RefOrbitCalc::CopyUsefulPerturbationResults<
+    double,
+    CalcBad::Disable,
+    float,
+    CalcBad::Disable>(PerturbationResults<double, CalcBad::Disable>&);
+template PerturbationResults<HDRFloat<float>, CalcBad::Disable>*
+RefOrbitCalc::CopyUsefulPerturbationResults<
+    HDRFloat<double>,
+    CalcBad::Disable,
+    HDRFloat<float>,
+    CalcBad::Disable>(PerturbationResults<HDRFloat<double>, CalcBad::Disable>&);
+template PerturbationResults<float, CalcBad::Disable>*
+RefOrbitCalc::CopyUsefulPerturbationResults<
+    HDRFloat<float>,
+    CalcBad::Disable,
+    float,
+    CalcBad::Disable>(PerturbationResults<HDRFloat<float>, CalcBad::Disable>&);
+
+
+
 
 void RefOrbitCalc::ClearPerturbationResults(PerturbationResultType type) {
     auto IsMarkedToDelete = [&](const auto& o) -> bool {

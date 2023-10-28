@@ -3,18 +3,18 @@
 #include "BLAS.h"
 #include "HDRFloat.h"
 
-template<class T>
-BLAS<T>::BLAS(PerturbationResults<T>& results) :
+template<class T, CalcBad Bad>
+BLAS<T, Bad>::BLAS(PerturbationResults<T, Bad>& results) :
     m_PerturbationResults(results) {
 }
 
-template<class T>
-void BLAS<T>::InitLStep(size_t level, size_t m, T blaSize, T epsilon) {
+template<class T, CalcBad Bad>
+void BLAS<T, Bad>::InitLStep(size_t level, size_t m, T blaSize, T epsilon) {
     m_B[level][m - 1] = CreateLStep(level, m, blaSize, epsilon);
 }
 
-template<class T>
-BLA<T> BLAS<T>::MergeTwoBlas(BLA<T> x, BLA<T> y, T blaSize) {
+template<class T, CalcBad Bad>
+BLA<T> BLAS<T, Bad>::MergeTwoBlas(BLA<T> x, BLA<T> y, T blaSize) {
     uint32_t l = x.getL() + y.getL();
     // A = y.A * x.A
     T RealA, ImagA;
@@ -35,8 +35,8 @@ BLA<T> BLAS<T>::MergeTwoBlas(BLA<T> x, BLA<T> y, T blaSize) {
     return BLA<T>::getGenericStep(r2, RealA, ImagA, RealB, ImagB, l);
 }
 
-template<class T>
-BLA<T> BLAS<T>::CreateLStep(size_t level, size_t m, T blaSize, T epsilon) {
+template<class T, CalcBad Bad>
+BLA<T> BLAS<T, Bad>::CreateLStep(size_t level, size_t m, T blaSize, T epsilon) {
 
     if (level == 0) {
         return CreateOneStep(m, epsilon);
@@ -59,8 +59,8 @@ BLA<T> BLAS<T>::CreateLStep(size_t level, size_t m, T blaSize, T epsilon) {
     }
 }
 
-template<class T>
-BLA<T> BLAS<T>::CreateOneStep(size_t m, T epsilon) {
+template<class T, CalcBad Bad>
+BLA<T> BLAS<T, Bad>::CreateOneStep(size_t m, T epsilon) {
     T RealA = static_cast<T>(m_PerturbationResults.orb[m].x * 2);
     T ImagA = static_cast<T>(m_PerturbationResults.orb[m].y * 2);
 
@@ -78,8 +78,8 @@ BLA<T> BLAS<T>::CreateOneStep(size_t m, T epsilon) {
 
 constexpr size_t WorkThreshholdForThreads = 5000;
 
-template<class T>
-void BLAS<T>::InitInternal(T blaSize, T epsilon) {
+template<class T, CalcBad Bad>
+void BLAS<T, Bad>::InitInternal(T blaSize, T epsilon) {
 
     std::vector<std::unique_ptr<std::thread>> threads;
 
@@ -118,8 +118,8 @@ void BLAS<T>::InitInternal(T blaSize, T epsilon) {
     }
 }
 
-template<class T>
-void BLAS<T>::MergeOneStep(size_t m, size_t elementsSrc, size_t src, size_t dest, T blaSize) {
+template<class T, CalcBad Bad>
+void BLAS<T, Bad>::MergeOneStep(size_t m, size_t elementsSrc, size_t src, size_t dest, T blaSize) {
     size_t mx = m << 1;
     size_t my = mx + 1;
     if (my < elementsSrc) {
@@ -133,8 +133,8 @@ void BLAS<T>::MergeOneStep(size_t m, size_t elementsSrc, size_t src, size_t dest
     }
 }
 
-template<class T>
-void BLAS<T>::Merge(T blaSize) {
+template<class T, CalcBad Bad>
+void BLAS<T, Bad>::Merge(T blaSize) {
 
     size_t elementsDst = 0;
     size_t src = m_FirstLevel;
@@ -187,8 +187,8 @@ void BLAS<T>::Merge(T blaSize) {
     }
 }
 
-template<class T>
-void BLAS<T>::Init(size_t InM, T blaSize) {
+template<class T, CalcBad Bad>
+void BLAS<T, Bad>::Init(size_t InM, T blaSize) {
     T precision = T(1) / ((T)(1L << BLA_BITS));
 
     this->m_M = InM;
@@ -229,8 +229,8 @@ void BLAS<T>::Init(size_t InM, T blaSize) {
     Merge(blaSize);
 }
 
-template<class T>
-BLA<T>* BLAS<T>::LookupBackwards(size_t m, T z2) {
+template<class T, CalcBad Bad>
+BLA<T>* BLAS<T, Bad>::LookupBackwards(size_t m, T z2) {
 
     if (m == 0) {
         return nullptr;
@@ -282,7 +282,12 @@ BLA<T>* BLAS<T>::LookupBackwards(size_t m, T z2) {
     return nullptr;
 }
 
-template class BLAS<float>;
-template class BLAS<double>;
-template class BLAS<HDRFloat<double>>;
-template class BLAS<HDRFloat<float>>;
+template class BLAS<float, CalcBad::Disable>;
+template class BLAS<double, CalcBad::Disable>;
+template class BLAS<HDRFloat<double>, CalcBad::Disable>;
+template class BLAS<HDRFloat<float>, CalcBad::Disable>;
+
+template class BLAS<float, CalcBad::Enable>;
+template class BLAS<double, CalcBad::Enable>;
+template class BLAS<HDRFloat<double>, CalcBad::Enable>;
+template class BLAS<HDRFloat<float>, CalcBad::Enable>;

@@ -1790,67 +1790,59 @@ bool RefOrbitCalc::RequiresReferencePoints() const {
     return false;
 }
 
-template<class T, bool Authoritative>
+template<class T, bool Authoritative, CalcBad Bad>
 bool RefOrbitCalc::IsPerturbationResultUsefulHere(size_t i) const {
-    if constexpr (std::is_same<T, double>::value) {
+
+    auto lambda = [&]<typename T, bool Authoritative, CalcBad Bad>(
+        const PerturbationResults<T, Bad> &PerturbationResults
+        ) -> bool {
+
         if constexpr (Authoritative == true) {
-            return m_PerturbationResultsDouble[i]->AuthoritativePrecision != 0 &&
-                (m_PerturbationResultsDouble[i]->MaxIterations > m_PerturbationResultsDouble[i]->orb.size() ||
-                    m_PerturbationResultsDouble[i]->MaxIterations >= m_Fractal.GetNumIterations());
+            return PerturbationResults.AuthoritativePrecision != 0 &&
+                (PerturbationResults.MaxIterations > PerturbationResults.orb.size() ||
+                    PerturbationResults.MaxIterations >= m_Fractal.GetNumIterations());
         }
 
         return
-            m_PerturbationResultsDouble[i]->hiX >= m_Fractal.GetMinX() &&
-            m_PerturbationResultsDouble[i]->hiX <= m_Fractal.GetMaxX() &&
-            m_PerturbationResultsDouble[i]->hiY >= m_Fractal.GetMinY() &&
-            m_PerturbationResultsDouble[i]->hiY <= m_Fractal.GetMaxY() &&
-            (m_PerturbationResultsDouble[i]->MaxIterations > m_PerturbationResultsDouble[i]->orb.size() ||
-                m_PerturbationResultsDouble[i]->MaxIterations >= m_Fractal.GetNumIterations());
+            PerturbationResults.hiX >= m_Fractal.GetMinX() &&
+            PerturbationResults.hiX <= m_Fractal.GetMaxX() &&
+            PerturbationResults.hiY >= m_Fractal.GetMinY() &&
+            PerturbationResults.hiY <= m_Fractal.GetMaxY() &&
+            (PerturbationResults.MaxIterations > PerturbationResults.orb.size() ||
+                PerturbationResults.MaxIterations >= m_Fractal.GetNumIterations());
+    };
+
+    if constexpr (std::is_same<T, double>::value) {
+        if constexpr (Bad == CalcBad::Enable) {
+            return lambda.template operator() <T, Authoritative, Bad>(*m_PerturbationResultsDoubleB[i]);
+        }
+        else {
+            return lambda.template operator() <T, Authoritative, Bad>(*m_PerturbationResultsDouble[i]);
+        }
     }
     else if constexpr (std::is_same<T, float>::value) {
-        if constexpr (Authoritative == true) {
-            return m_PerturbationResultsFloat[i]->AuthoritativePrecision != 0 &&
-                (m_PerturbationResultsFloat[i]->MaxIterations > m_PerturbationResultsFloat[i]->orb.size() ||
-                    m_PerturbationResultsFloat[i]->MaxIterations >= m_Fractal.GetNumIterations());
+        if constexpr (Bad == CalcBad::Enable) {
+            return lambda.template operator() <T, Authoritative, Bad>(*m_PerturbationResultsFloatB[i]);
         }
-
-        return
-            m_PerturbationResultsFloat[i]->hiX >= m_Fractal.GetMinX() &&
-            m_PerturbationResultsFloat[i]->hiX <= m_Fractal.GetMaxX() &&
-            m_PerturbationResultsFloat[i]->hiY >= m_Fractal.GetMinY() &&
-            m_PerturbationResultsFloat[i]->hiY <= m_Fractal.GetMaxY() &&
-            (m_PerturbationResultsFloat[i]->MaxIterations > m_PerturbationResultsFloat[i]->orb.size() ||
-                m_PerturbationResultsFloat[i]->MaxIterations >= m_Fractal.GetNumIterations());
+        else {
+            return lambda.template operator() <T, Authoritative, Bad>(*m_PerturbationResultsFloat[i]);
+        }
     }
     else if constexpr (std::is_same<T, HDRFloat<double>>::value) {
-        if constexpr (Authoritative == true) {
-            return m_PerturbationResultsHDRDouble[i]->AuthoritativePrecision != 0 &&
-                (m_PerturbationResultsHDRDouble[i]->MaxIterations > m_PerturbationResultsHDRDouble[i]->orb.size() ||
-                    m_PerturbationResultsHDRDouble[i]->MaxIterations >= m_Fractal.GetNumIterations());
+        if constexpr (Bad == CalcBad::Enable) {
+            return lambda.template operator() <T, Authoritative, Bad>(*m_PerturbationResultsHDRDoubleB[i]);
         }
-
-        return
-            m_PerturbationResultsHDRDouble[i]->hiX >= m_Fractal.GetMinX() &&
-            m_PerturbationResultsHDRDouble[i]->hiX <= m_Fractal.GetMaxX() &&
-            m_PerturbationResultsHDRDouble[i]->hiY >= m_Fractal.GetMinY() &&
-            m_PerturbationResultsHDRDouble[i]->hiY <= m_Fractal.GetMaxY() &&
-            (m_PerturbationResultsHDRDouble[i]->MaxIterations > m_PerturbationResultsHDRDouble[i]->orb.size() ||
-                m_PerturbationResultsHDRDouble[i]->MaxIterations >= m_Fractal.GetNumIterations());
+        else {
+            return lambda.template operator() <T, Authoritative, Bad>(*m_PerturbationResultsHDRDouble[i]);
+        }
     }
     else if constexpr (std::is_same<T, HDRFloat<float>>::value) {
-        if constexpr (Authoritative == true) {
-            return m_PerturbationResultsHDRFloat[i]->AuthoritativePrecision != 0 &&
-                (m_PerturbationResultsHDRFloat[i]->MaxIterations > m_PerturbationResultsHDRFloat[i]->orb.size() ||
-                    m_PerturbationResultsHDRFloat[i]->MaxIterations >= m_Fractal.GetNumIterations());
+        if constexpr (Bad == CalcBad::Enable) {
+            return lambda.template operator() <T, Authoritative, Bad>(*m_PerturbationResultsHDRFloatB[i]);
         }
-
-        return
-            m_PerturbationResultsHDRFloat[i]->hiX >= m_Fractal.GetMinX() &&
-            m_PerturbationResultsHDRFloat[i]->hiX <= m_Fractal.GetMaxX() &&
-            m_PerturbationResultsHDRFloat[i]->hiY >= m_Fractal.GetMinY() &&
-            m_PerturbationResultsHDRFloat[i]->hiY <= m_Fractal.GetMaxY() &&
-            (m_PerturbationResultsHDRFloat[i]->MaxIterations > m_PerturbationResultsHDRFloat[i]->orb.size() ||
-                m_PerturbationResultsHDRFloat[i]->MaxIterations >= m_Fractal.GetNumIterations());
+        else {
+            return lambda.template operator() <T, Authoritative, Bad>(*m_PerturbationResultsHDRFloat[i]);
+        }
     }
 }
 
@@ -2026,7 +2018,7 @@ PerturbationResults<T, Bad>* RefOrbitCalc::GetUsefulPerturbationResults() {
         }
 
         for (size_t i = 0; i < cur_array->size(); i++) {
-            if (IsPerturbationResultUsefulHere<T, Authoritative>(i)) {
+            if (IsPerturbationResultUsefulHere<T, Authoritative, Bad>(i)) {
                 useful_results.push_back((*cur_array)[i].get());
             }
         }
@@ -2045,8 +2037,7 @@ template<class SrcT, CalcBad SrcEnableBad, class DestT, CalcBad DestEnableBad>
 PerturbationResults<DestT, DestEnableBad>* RefOrbitCalc::CopyUsefulPerturbationResults(
     PerturbationResults<SrcT, SrcEnableBad>& src_array)
 {
-    if constexpr (DestEnableBad == CalcBad::Enable || SrcEnableBad == CalcBad::Enable) {
-        // TODO we could actually do this
+    if constexpr (DestEnableBad != SrcEnableBad) {
         return nullptr;
     }
 
@@ -2072,6 +2063,35 @@ PerturbationResults<DestT, DestEnableBad>* RefOrbitCalc::CopyUsefulPerturbationR
             m_PerturbationResultsFloat.push_back(
                 std::make_unique<PerturbationResults<float, DestEnableBad>>());
             auto* dest = m_PerturbationResultsFloat[m_PerturbationResultsFloat.size() - 1].get();
+            dest->Copy(src_array);
+            return dest;
+        }
+        else {
+            return nullptr;
+        }
+    }
+    else if constexpr (DestEnableBad == CalcBad::Enable && SrcEnableBad == CalcBad::Enable) {
+        if constexpr (std::is_same<SrcT, double>::value) {
+            m_PerturbationResultsFloatB.push_back(
+                std::make_unique<PerturbationResults<float, DestEnableBad>>());
+            auto* dest = m_PerturbationResultsFloatB[m_PerturbationResultsFloatB.size() - 1].get();
+            dest->Copy(src_array);
+            return dest;
+        }
+        else if constexpr (std::is_same<SrcT, float>::value) {
+            return nullptr;
+        }
+        else if constexpr (std::is_same<SrcT, HDRFloat<double>>::value) {
+            m_PerturbationResultsHDRFloatB.push_back(
+                std::make_unique<PerturbationResults<HDRFloat<float>, DestEnableBad>>());
+            auto* dest = m_PerturbationResultsHDRFloatB[m_PerturbationResultsHDRFloatB.size() - 1].get();
+            dest->Copy(src_array);
+            return dest;
+        }
+        else if constexpr (std::is_same<SrcT, HDRFloat<float>>::value) {
+            m_PerturbationResultsFloatB.push_back(
+                std::make_unique<PerturbationResults<float, DestEnableBad>>());
+            auto* dest = m_PerturbationResultsFloatB[m_PerturbationResultsFloatB.size() - 1].get();
             dest->Copy(src_array);
             return dest;
         }

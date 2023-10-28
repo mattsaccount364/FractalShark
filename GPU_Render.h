@@ -112,6 +112,9 @@ struct alignas(8) MattReferenceSingleIter : public std::conditional_t<Bad == Cal
     MattReferenceSingleIter(Type x, Type y, bool bad)
         : x{ x },
         y{ y } {
+        if constexpr (Bad == CalcBad::Enable) {
+            this->bad = bad;
+        }
     }
 
     MattReferenceSingleIter(const MattReferenceSingleIter& other) = default;

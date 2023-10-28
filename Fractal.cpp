@@ -2165,7 +2165,7 @@ void Fractal::DrawPerturbationResults(bool LeaveScreen) {
     auto& results = m_RefOrbit.GetPerturbationResults<T, Bad>();
     for (size_t i = 0; i < results.size(); i++)
     {
-        if (m_RefOrbit.IsPerturbationResultUsefulHere<T, false>(i)) {
+        if (m_RefOrbit.IsPerturbationResultUsefulHere<T, false, Bad>(i)) {
             glColor3f((GLfloat)255, (GLfloat)255, (GLfloat)255);
 
             GLint scrnX = Convert<HighPrecision, GLint>(XFromCalcToScreen(results[i]->hiX));

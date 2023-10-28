@@ -73,7 +73,7 @@ private:
     void AddPerturbationReferencePointMT5(HighPrecision initX, HighPrecision initY);
 
 public:
-    template<class T, bool Authoritative>
+    template<class T, bool Authoritative, CalcBad Bad>
     bool IsPerturbationResultUsefulHere(size_t i) const;
 
     bool RequiresReferencePoints() const;

@@ -26,7 +26,7 @@ public:
     using type = T;
 };
 
-template<class T, CalcBad Bad>
+template<typename IterType, class T, CalcBad Bad>
 class PerturbationResults {
 public:
     // Example of how to pull the SubType out for HdrFloat, or keep the primitive float/double
@@ -68,7 +68,7 @@ public:
 
     // TODO WTF is this for again?
     template<class Other, CalcBad Bad = CalcBad::Disable>
-    void Copy(const PerturbationResults<Other, Bad>& other) {
+    void Copy(const PerturbationResults<IterType, Other, Bad>& other) {
         clear();
 
         //hiX = other.hiX;

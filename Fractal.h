@@ -132,10 +132,10 @@ private: // For saving the current location
     void SaveCurPos(void);
 
 public: // Iterations
-    template<typename IterType = uint32_t>
+    template<typename IterType>
     void SetNumIterations(IterTypeFull num);
 
-    template<typename IterType = uint32_t>
+    template<typename IterType>
     IterType GetNumIterations(void) const;
 
     template<typename IterType>
@@ -147,6 +147,9 @@ public: // Iterations
     };
 
     IterTypeFull GetMaxIterationsRT() const;
+
+    void SetIterType(IterTypeEnum type);
+    IterTypeEnum GetIterType() const;
 
     void ResetNumIterations(void);
 
@@ -190,7 +193,7 @@ public: // Drawing functions
     void RotateFractalPalette(int delta);
     void CreateNewFractalPalette(void);
 
-    template<class T, CalcBad Bad>
+    template<typename IterType, class T, CalcBad Bad>
     void DrawPerturbationResults(bool MemoryOnly);
     void DrawAllPerturbationResults();
 
@@ -231,12 +234,6 @@ private:
     };
 
     std::vector<std::unique_ptr<DrawThreadSync>> m_DrawThreads;
-
-    template<class T>
-    struct Point {
-        T x, y;
-        IterType iteration;
-    };
 
     void FillCoord(HighPrecision& src, MattQFltflt& dest);
     void FillCoord(HighPrecision& src, MattQDbldbl& dest);
@@ -282,8 +279,6 @@ private:
     template<typename IterType, class T, class SubType, class T2, class SubType2>
     void CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly);
 
-    IterType FindMaxItersUsed(void) const;
-
 public: // Saving images of the fractal
     int SaveCurrentFractal(const std::wstring filename_base);
     int SaveHiResFractal(const std::wstring filename_base);
@@ -295,7 +290,11 @@ private:
     // we were in or not in the fractal.  Has a number
     // for every point on the screen.
     struct ItersMemoryContainer {
-        ItersMemoryContainer(size_t width, size_t height, size_t total_antialiasing);
+        ItersMemoryContainer(
+            IterTypeEnum type,
+            size_t width,
+            size_t height,
+            size_t total_antialiasing);
         ItersMemoryContainer(ItersMemoryContainer&&) noexcept;
         ItersMemoryContainer& operator=(ItersMemoryContainer&&) noexcept;
         ~ItersMemoryContainer();
@@ -303,8 +302,43 @@ private:
         ItersMemoryContainer(ItersMemoryContainer&) = delete;
         ItersMemoryContainer& operator=(const ItersMemoryContainer&) = delete;
 
-        std::unique_ptr<IterType[]> m_ItersMemory;
-        IterType** m_ItersArray;
+        template<typename IterType>
+        IterType* GetIters() {
+            if constexpr (std::is_same<IterType, uint32_t>::value) {
+                return m_ItersMemory32.get();
+            }
+            else {
+                return m_ItersMemory64.get();
+            }
+        }
+
+        template<typename IterType>
+        IterType** GetItersArray() {
+            if constexpr (sizeof(IterType) == sizeof(uint32_t)) {
+                return m_ItersArray32;
+            }
+            else {
+                return m_ItersArray64;
+            }
+        }
+
+        IterTypeFull GetItersArrayValSlow(size_t x, size_t y) {
+            if (m_IterType == IterTypeEnum::Bits32) {
+                return m_ItersArray32[y][x];
+            }
+            else {
+                return m_ItersArray64[y][x];
+            }
+        }
+
+        void SetItersArrayValSlow(size_t x, size_t y, uint64_t val) {
+            if (m_IterType == IterTypeEnum::Bits32) {
+                m_ItersArray32[y][x] = (uint32_t)val;
+            }
+            else {
+                m_ItersArray64[y][x] = val;
+            }
+        }
 
         // These include antialiasing, so 4x antialiasing implies each is ~2x screen dimension
         size_t m_Width;
@@ -331,9 +365,18 @@ private:
 
         // Antialiasing for reference: 1 (1x), 2 (4x), 3 (9x), 4 (16x)
         size_t m_Antialiasing;
+
+    private:
+        IterTypeEnum m_IterType;
+
+        std::unique_ptr<uint32_t[]> m_ItersMemory32;
+        uint32_t** m_ItersArray32;
+
+        std::unique_ptr<uint64_t[]> m_ItersMemory64;
+        uint64_t** m_ItersArray64;
+
     };
 
-    // 
     struct CurrentFractalSave {
         enum class Type {
             ItersText,
@@ -357,7 +400,7 @@ private:
         int m_PaletteDepthIndex; // 0, 1, 2
         std::vector<uint16_t>* m_PalR[Fractal::Palette::Num], * m_PalG[Fractal::Palette::Num], * m_PalB[Fractal::Palette::Num];
         Fractal::Palette m_WhichPalette;
-        std::vector<IterType> m_PalIters[Fractal::Palette::Num];
+        std::vector<uint32_t> m_PalIters[Fractal::Palette::Num];
         ItersMemoryContainer m_CurIters;
         std::wstring m_FilenameBase;
         std::unique_ptr<std::thread> m_Thread;
@@ -371,10 +414,10 @@ private:
 
 public: // Benchmarking
  
-    HighPrecision Benchmark(IterType numIters, size_t &millseconds);
+    HighPrecision Benchmark(IterTypeFull numIters, size_t &millseconds);
 
     template<class T, class SubType>
-    HighPrecision BenchmarkReferencePoint(IterType numIters, size_t& millseconds);
+    HighPrecision BenchmarkReferencePoint(IterTypeFull numIters, size_t& millseconds);
     HighPrecision BenchmarkThis(size_t& millseconds);
 
 private:
@@ -389,7 +432,7 @@ private:
         size_t prevScrnWidth;
             size_t prevScrnHeight;
 
-        void BenchmarkSetup(IterType numIters);
+        void BenchmarkSetup(IterTypeFull numIters);
         bool StartTimer();
         HighPrecision StopTimer(size_t &milliseconds);
 
@@ -398,7 +441,7 @@ private:
         void BenchmarkFinish();
     };
 
-    __int64 FindTotalItersUsed(void);
+    uint64_t FindTotalItersUsed(void);
 
 private: // Unit conversion helpers
     template<bool IncludeGpuAntialiasing = false>
@@ -444,7 +487,7 @@ private:
     FractalSetupData m_SetupData;
 
     // Defaults
-    static constexpr IterType DefaultIterations = 256 * 32;
+    static constexpr IterTypeFull DefaultIterations = 256 * 32;
     //static constexpr IterType DefaultIterations = 256;
 
     // Handle to the thread which checks to see if we should quit or not
@@ -501,7 +544,7 @@ private:
     std::vector<uint16_t> m_PalR[Palette::Num][NumBitDepths];
     std::vector<uint16_t> m_PalG[Palette::Num][NumBitDepths];
     std::vector<uint16_t> m_PalB[Palette::Num][NumBitDepths];
-    std::vector<IterType> m_PalIters[Palette::Num];
+    std::vector<uint32_t> m_PalIters[Palette::Num];
     enum Palette m_WhichPalette;
 
     IterTypeFull m_PaletteRotate; // Used to shift the palette
@@ -511,6 +554,7 @@ private:
     uint32_t InitializeGPUMemory();
     void InitializeMemory();
     void GetIterMemory();
+
     void ReturnIterMemory(ItersMemoryContainer&& to_return);
 
     IterTypeEnum m_IterType;

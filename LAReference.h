@@ -20,7 +20,7 @@ class LAStageInfo;
 
 class RefOrbitCalc;
 
-template<class T, CalcBad Bad>
+template<typename IterType, class T, CalcBad Bad>
 class PerturbationResults;
 
 template<typename IterType, class SubType>
@@ -38,7 +38,7 @@ private:
     static const SubType log16;
 
 public:
-    LAReference(const PerturbationResults<HDRFloat, CalcBad::Disable> *PerturbationResults) :
+    LAReference(const PerturbationResults<IterType, HDRFloat, CalcBad::Disable> *PerturbationResults) :
         m_PerturbationResults(PerturbationResults),
         UseAT{},
         AT{},
@@ -60,7 +60,7 @@ private:
     std::vector<LAInfoDeep<IterType, SubType>> LAs;
     std::vector<LAStageInfo<IterType>> LAStages;
 
-    const PerturbationResults<HDRFloat, CalcBad::Disable> *m_PerturbationResults;
+    const PerturbationResults<IterType, HDRFloat, CalcBad::Disable> *m_PerturbationResults;
 
     IterType LAsize();
     bool CreateLAFromOrbit(IterType maxRefIteration);

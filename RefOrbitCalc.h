@@ -5,7 +5,7 @@
 
 class Fractal;
 
-template<class T, CalcBad Bad>
+template<typename IterType, class T, CalcBad Bad>
 class PerturbationResults;
 
 class RefOrbitCalc {
@@ -50,31 +50,34 @@ public:
     void SetPerturbationAlg(PerturbationAlg alg) { m_PerturbationAlg = alg; }
     PerturbationAlg GetPerturbationAlg() const { return m_PerturbationAlg; }
 
-    template<class T, CalcBad Bad>
-    std::vector<std::unique_ptr<PerturbationResults<T, Bad>>>& GetPerturbationResults();
+    template<typename IterType, class T, CalcBad Bad>
+    std::vector<std::unique_ptr<PerturbationResults<IterType, T, Bad>>>& GetPerturbationResults() ;
 
-    template<class T, class SubType, BenchmarkMode BenchmarkState>
+    template<typename IterType, class T, class SubType, BenchmarkMode BenchmarkState>
     void AddPerturbationReferencePoint();
 
 private:
-    template<class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState>
+    template<typename IterType, class T, CalcBad Bad>
+    PerturbationResults<IterType, T, Bad>& GetPerturbationResults(size_t index);
+
+    template<typename IterType, class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState>
     bool AddPerturbationReferencePointSTReuse(HighPrecision initX, HighPrecision initY);
 
-    template<class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState>
+    template<typename IterType, class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState>
     bool AddPerturbationReferencePointMT3Reuse(HighPrecision initX, HighPrecision initY);
 
-    template<class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, CalcBad Bad, ReuseMode Reuse>
+    template<typename IterType, class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, CalcBad Bad, ReuseMode Reuse>
     void AddPerturbationReferencePointST(HighPrecision initX, HighPrecision initY);
 
-    template<class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, CalcBad Bad, ReuseMode Reuse>
+    template<typename IterType, class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, CalcBad Bad, ReuseMode Reuse>
     void AddPerturbationReferencePointMT3(HighPrecision initX, HighPrecision initY);
 
-    template<class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, CalcBad Bad, ReuseMode Reuse>
+    template<typename IterType, class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, CalcBad Bad, ReuseMode Reuse>
     void AddPerturbationReferencePointMT5(HighPrecision initX, HighPrecision initY);
 
 public:
-    template<class T, bool Authoritative, CalcBad Bad>
-    bool IsPerturbationResultUsefulHere(size_t i) const;
+    template<typename IterType, class T, bool Authoritative, CalcBad Bad>
+    bool IsPerturbationResultUsefulHere(size_t i);
 
     bool RequiresReferencePoints() const;
 
@@ -83,25 +86,22 @@ public:
         IncludeLAv2
     };
 
-    template<class T, class SubType, CalcBad Bad, RefOrbitCalc::Extras Ex>
-    PerturbationResults<T, Bad>* GetAndCreateUsefulPerturbationResults();
+    template<typename IterType, class T, class SubType, CalcBad Bad, RefOrbitCalc::Extras Ex>
+    PerturbationResults<IterType, T, Bad>* GetAndCreateUsefulPerturbationResults();
 
 private:
-    template<class T, CalcBad Bad>
-    std::vector<std::unique_ptr<PerturbationResults<T, Bad>>>* GetPerturbationArray();
-
-    template<class T, class SubType, bool Authoritative, CalcBad Bad>
-    PerturbationResults<T, Bad>* GetUsefulPerturbationResults();
+    template<typename IterType, class T, class SubType, bool Authoritative, CalcBad Bad>
+    PerturbationResults<IterType, T, Bad>* GetUsefulPerturbationResults();
 
 public:
-    template<class SrcT, CalcBad SrcEnableBad, class DestT, CalcBad DestEnableBad>
-    PerturbationResults<DestT, DestEnableBad>* CopyUsefulPerturbationResults(PerturbationResults<SrcT, SrcEnableBad>& src_array);
+    template<typename IterType, class SrcT, CalcBad SrcEnableBad, class DestT, CalcBad DestEnableBad>
+    PerturbationResults<IterType, DestT, DestEnableBad>* CopyUsefulPerturbationResults(PerturbationResults<IterType, SrcT, SrcEnableBad>& src_array);
 
     void ClearPerturbationResults(PerturbationResultType type);
     void ResetGuess(HighPrecision x = HighPrecision(0), HighPrecision y = HighPrecision(0));
 
 private:
-    template<class T, class PerturbationResultsType, CalcBad Bad, ReuseMode Reuse>
+    template<typename IterType, class T, class PerturbationResultsType, CalcBad Bad, ReuseMode Reuse>
     void InitResults(PerturbationResultsType&results, const HighPrecision &initX, const HighPrecision &initY);
 
     PerturbationAlg m_PerturbationAlg;
@@ -112,13 +112,19 @@ private:
 
     size_t m_GuessReserveSize;
 
-    std::vector<std::unique_ptr<PerturbationResults<double, CalcBad::Disable>>> m_PerturbationResultsDouble;
-    std::vector<std::unique_ptr<PerturbationResults<float, CalcBad::Disable>>> m_PerturbationResultsFloat;
-    std::vector<std::unique_ptr<PerturbationResults<HDRFloat<double>, CalcBad::Disable>>> m_PerturbationResultsHDRDouble;
-    std::vector<std::unique_ptr<PerturbationResults<HDRFloat<float>, CalcBad::Disable>>> m_PerturbationResultsHDRFloat;
+    template<typename IterType, CalcBad Bad>
+    struct Container {
+        std::vector<std::unique_ptr<PerturbationResults<IterType, double, Bad>>> m_PerturbationResultsDouble;
+        std::vector<std::unique_ptr<PerturbationResults<IterType, float, Bad>>> m_PerturbationResultsFloat;
+        std::vector<std::unique_ptr<PerturbationResults<IterType, HDRFloat<double>, Bad>>> m_PerturbationResultsHDRDouble;
+        std::vector<std::unique_ptr<PerturbationResults<IterType, HDRFloat<float>, Bad>>> m_PerturbationResultsHDRFloat;
+    };
 
-    std::vector<std::unique_ptr<PerturbationResults<double, CalcBad::Enable>>> m_PerturbationResultsDoubleB;
-    std::vector<std::unique_ptr<PerturbationResults<float, CalcBad::Enable>>> m_PerturbationResultsFloatB;
-    std::vector<std::unique_ptr<PerturbationResults<HDRFloat<double>, CalcBad::Enable>>> m_PerturbationResultsHDRDoubleB;
-    std::vector<std::unique_ptr<PerturbationResults<HDRFloat<float>, CalcBad::Enable>>> m_PerturbationResultsHDRFloatB;
+    Container<uint32_t, CalcBad::Disable> c32d;
+    Container<uint32_t, CalcBad::Enable> c32e;
+    Container<uint64_t, CalcBad::Disable> c64d;
+    Container<uint64_t, CalcBad::Enable> c64e;
+
+    template<typename IterType, CalcBad Bad>
+    Container<IterType, Bad> &GetContainer();
 };

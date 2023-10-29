@@ -789,6 +789,16 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 break;
             }
 
+            case IDM_32BIT_ITERATIONS:
+            {
+                gFractal->SetIterType(Fractal::IterTypeEnum::Bits32);
+            }
+
+            case IDM_64BIT_ITERATIONS:
+            {
+                gFractal->SetIterType(Fractal::IterTypeEnum::Bits64);
+            }
+
             case IDM_PERTURB_RESULTS:
             {
                 gFractal->DrawAllPerturbationResults();
@@ -1307,9 +1317,17 @@ void MenuWindowed(HWND hWnd, bool square)
 
 void MenuMultiplyIterations(HWND hWnd, double factor)
 {
-    size_t curIters = gFractal->GetNumIterations();
-    curIters = (size_t)((double)curIters * (double)factor);
-    gFractal->SetNumIterations((IterType)curIters);
+    if (gFractal->GetIterType() == Fractal::IterTypeEnum::Bits32) {
+        uint64_t curIters = gFractal->GetNumIterations<uint32_t>();
+        curIters = (uint64_t)((double)curIters * (double)factor);
+        gFractal->SetNumIterations<uint32_t>(curIters);
+    }
+    else {
+        uint64_t curIters = gFractal->GetNumIterations<uint64_t>();
+        curIters = (uint64_t)((double)curIters * (double)factor);
+        gFractal->SetNumIterations<uint64_t>(curIters);
+    }
+
     PaintAsNecessary(hWnd);
 }
 
@@ -1518,7 +1536,7 @@ void MenuSaveCurrentLocation(HWND hWnd) {
     ss << gFractal->GetMinY() << " ";
     ss << gFractal->GetMaxX() << " ";
     ss << gFractal->GetMaxY() << " ";
-    ss << gFractal->GetNumIterations() << " ";
+    ss << gFractal->GetNumIterations<IterTypeFull>() << " ";
     ss << gFractal->GetGpuAntialiasing() << " ";
     ss << gFractal->GetIterationPrecision() << " ";
     ss << filename << std::endl;

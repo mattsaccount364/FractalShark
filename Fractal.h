@@ -188,6 +188,7 @@ public: // Drawing functions
     int GetPaletteDepth() const; 
     void UsePalette(int depth);
     void UseNextPaletteDepth();
+    void UseNextPaletteAuxDepth(int32_t inc);
     void UsePaletteType(Palette type);
     void ResetFractalPalette(void);
     void RotateFractalPalette(int delta);
@@ -398,6 +399,7 @@ private:
         IterTypeFull m_NumIterations;
         IterTypeFull m_PaletteRotate; // Used to shift the palette
         int m_PaletteDepthIndex; // 0, 1, 2
+        int m_PaletteAuxDepth;
         std::vector<uint16_t>* m_PalR[Fractal::Palette::Num], * m_PalG[Fractal::Palette::Num], * m_PalB[Fractal::Palette::Num];
         Fractal::Palette m_WhichPalette;
         std::vector<uint32_t> m_PalIters[Fractal::Palette::Num];
@@ -549,6 +551,7 @@ private:
 
     IterTypeFull m_PaletteRotate; // Used to shift the palette
     int m_PaletteDepthIndex; // 0, 1, 2
+    int m_PaletteAuxDepth; // 0..16
     static constexpr int NumPalettes = 3;
 
     uint32_t InitializeGPUMemory();

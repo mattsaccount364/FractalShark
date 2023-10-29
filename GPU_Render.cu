@@ -1351,7 +1351,7 @@ antialiasing_kernel (
             IterType numIters = OutputIterMatrix[idx];
 
             if (numIters < n_iterations) {
-                const auto palIndex = numIters % Pals.local_palIters;
+                const auto palIndex = (numIters >> Pals.palette_aux_depth) % Pals.local_palIters;
                 acc_r += Pals.local_pal[palIndex].r;
                 acc_g += Pals.local_pal[palIndex].g;
                 acc_b += Pals.local_pal[palIndex].b;
@@ -3029,8 +3029,13 @@ uint32_t GPURenderer::InitializeMemory(
     const uint16_t* palR,
     const uint16_t* palG,
     const uint16_t* palB,
-    uint32_t palIters)
+    uint32_t palIters,
+    uint32_t paletteAuxDepth)
 {
+    if (Pals.palette_aux_depth != paletteAuxDepth) {
+        Pals.palette_aux_depth = paletteAuxDepth;
+    }
+
     // Re-do palettes only.
     if ((Pals.cached_hostPalR != palR) ||
         (Pals.cached_hostPalG != palG) ||
@@ -3038,10 +3043,13 @@ uint32_t GPURenderer::InitializeMemory(
 
         ResetPalettesOnly();
 
-        Pals.local_palIters = palIters;
-        Pals.cached_hostPalR = palR;
-        Pals.cached_hostPalG = palG;
-        Pals.cached_hostPalB = palB;
+        Pals = Palette(
+            nullptr,
+            palIters,
+            paletteAuxDepth,
+            palR,
+            palG,
+            palB);
 
         // Palettes:
         cudaError_t err = cudaMallocManaged(
@@ -3156,7 +3164,8 @@ uint32_t GPURenderer::InitializeMemory<uint32_t>(
     const uint16_t* palR,
     const uint16_t* palG,
     const uint16_t* palB,
-    uint32_t palIters);
+    uint32_t palIters,
+    uint32_t paletteAuxDepth);
 
 template
 uint32_t GPURenderer::InitializeMemory<uint64_t>(
@@ -3166,7 +3175,8 @@ uint32_t GPURenderer::InitializeMemory<uint64_t>(
     const uint16_t* palR,
     const uint16_t* palG,
     const uint16_t* palB,
-    uint32_t palIters);
+    uint32_t palIters,
+    uint32_t paletteAuxDepth);
 
 bool GPURenderer::MemoryInitialized() const {
     if (OutputIterMatrix == nullptr) {

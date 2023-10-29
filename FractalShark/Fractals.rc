@@ -215,11 +215,10 @@ BEGIN
         POPUP "Save"
         BEGIN
             MENUITEM "Get Current Position",        IDM_CURPOS
+            MENUITEM SEPARATOR
             MENUITEM "Save Location...",            IDM_SAVELOCATION
-            POPUP "Save High Res Bitmap"
-            BEGIN
-                MENUITEM "Save Iterations as Text",     IDM_SAVE_ITERS_TEXT
-            END
+            MENUITEM "Save High Res Bitmap",        IDM_SAVEHIRESBMP
+            MENUITEM "Save Iterations as Text",     IDM_SAVE_ITERS_TEXT
             MENUITEM "Save Bitmap Ima&ge",          IDM_SAVEBMP
         END
         POPUP "Load"

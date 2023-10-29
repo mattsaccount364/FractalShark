@@ -11,21 +11,6 @@
 
 #include "GPU_Render.h"
 
-// If true, choose type == float/double for primitives.
-// If false, choose type == T::TemplateSubType for HdrFloat subtypes.
-// This is kind of a headache.  std::conditional by itself is not adequate here.
-template<bool, typename T>
-class SubTypeChooser {
-public:
-    using type = typename T::TemplateSubType;
-};
-
-template<typename T>
-class SubTypeChooser<true, T> {
-public:
-    using type = T;
-};
-
 template<typename IterType, class T, CalcBad Bad>
 class PerturbationResults {
 public:

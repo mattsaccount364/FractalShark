@@ -21,17 +21,39 @@ class HDRFloatComplex;
 
 CUDA_CRAP void InitStatics();
 
+template<class T, class TExp = int32_t>
+class LMembers {
+public:
+    LMembers() = default;
+    T mantissa;
+    TExp exp;
+};
+
+template<class T, class TExp = int32_t>
+class RMembers {
+public:
+    RMembers() = default;
+    TExp exp;
+    T mantissa;
+};
+
+enum class HDROrder {
+    Left,
+    Right
+};
+
 // TExp can work with float, int16_t or int64_t but all seem to offer worse perf
 // float is quite close though.
 //#ifndef __CUDA_ARCH__
-template<class T, class TExp = int32_t>
-class HDRFloat {
+template<class T, HDROrder Order = HDROrder::Left, class TExp = int32_t>
+class HDRFloat : public std::conditional<Order == HDROrder::Left, LMembers<T, TExp>, RMembers<T, TExp>>::type {
 //#else
 //template<class T, class TExp = int32_t>
 //class __align__(8) HDRFloat {
 //#endif
 public:
     typedef T TemplateSubType;
+    using Base = std::conditional<Order == HDROrder::Left, LMembers<T, TExp>, RMembers<T, TExp>>::type;
 
     static CUDA_CRAP constexpr TExp MIN_SMALL_EXPONENT() {
         if constexpr (std::is_same<T, double>::value) {
@@ -65,8 +87,6 @@ public:
 public:
     static constexpr TExp EXPONENT_DIFF_IGNORED = 120;
     static constexpr TExp MINUS_EXPONENT_DIFF_IGNORED = -EXPONENT_DIFF_IGNORED;
-    T mantissa;
-    TExp exp;
 
     static constexpr int MaxDoubleExponent = 1023;
     static constexpr int MinDoubleExponent = -1022;
@@ -75,47 +95,47 @@ public:
     static constexpr int MinFloatExponent = -126;
 
     CUDA_CRAP constexpr HDRFloat() {
-        mantissa = (T)0.0;
-        exp = MIN_BIG_EXPONENT();
+        Base::mantissa = (T)0.0;
+        Base::exp = MIN_BIG_EXPONENT();
     }
 
     CUDA_CRAP constexpr HDRFloat(const HDRFloat<T> &other) {
-        mantissa = other.mantissa;
-        exp = other.exp;
+        Base::mantissa = other.mantissa;
+        Base::exp = other.exp;
     }
 
     CUDA_CRAP constexpr HDRFloat(HDRFloat<T>&& other) {
-        mantissa = other.mantissa;
-        exp = other.exp;
+        Base::mantissa = other.mantissa;
+        Base::exp = other.exp;
     }
 
     CUDA_CRAP constexpr HDRFloat &operator=(const HDRFloat<T>& other) {
-        mantissa = other.mantissa;
-        exp = other.exp;
+        Base::mantissa = other.mantissa;
+        Base::exp = other.exp;
         return *this;
     }
 
     CUDA_CRAP constexpr HDRFloat& operator=(HDRFloat<T>&& other) {
-        mantissa = other.mantissa;
-        exp = other.exp;
+        Base::mantissa = other.mantissa;
+        Base::exp = other.exp;
         return *this;
     }
 
     template<class SrcT>
     CUDA_CRAP constexpr HDRFloat(const HDRFloat<SrcT>& other) {
-        mantissa = (T)other.mantissa;
-        exp = other.exp;
+        Base::mantissa = (T)other.mantissa;
+        Base::exp = other.exp;
     }
 
     template<class SrcT>
     CUDA_CRAP constexpr HDRFloat(HDRFloat<SrcT>&& other) {
-        mantissa = (T)other.mantissa;
-        exp = other.exp;
+        Base::mantissa = (T)other.mantissa;
+        Base::exp = other.exp;
     }
 
-    CUDA_CRAP constexpr HDRFloat(TExp exp, T mantissa) {
-        this->mantissa = mantissa;
-        this->exp = exp;
+    CUDA_CRAP constexpr HDRFloat(TExp ex, T mant) {
+        Base::mantissa = mant;
+        Base::exp = ex;
     }
 
     template <class To, class From, class Res = typename std::enable_if<
@@ -130,8 +150,8 @@ public:
 
     CUDA_CRAP explicit HDRFloat(const T number) { // TODO add constexpr once that compiles
         if (number == T(0)) {
-            mantissa = 0;
-            exp = MIN_BIG_EXPONENT();
+            Base::mantissa = 0;
+            Base::exp = MIN_BIG_EXPONENT();
             return;
         }
 
@@ -143,8 +163,8 @@ public:
             const uint64_t val = (bits & 0x800F'FFFF'FFFF'FFFFL) | 0x3FF0'0000'0000'0000L;
             const T f_val = bit_cast<T>(val);
 
-            mantissa = f_val;
-            exp = (TExp)f_exp;
+            Base::mantissa = f_val;
+            Base::exp = (TExp)f_exp;
         }
         else if constexpr (std::is_same<T, float>::value) {
             const uint32_t bits = bit_cast<uint32_t>(number);
@@ -152,8 +172,8 @@ public:
             const uint32_t val = (bits & 0x807F'FFFFL) | 0x3F80'0000L;
             const T f_val = bit_cast<T>(val);
 
-            mantissa = f_val;
-            exp = (TExp)f_exp;
+            Base::mantissa = f_val;
+            Base::exp = (TExp)f_exp;
         }
     }
 
@@ -161,62 +181,62 @@ public:
     HDRFloat(const HighPrecision &number) {
 
         if (number == 0) {
-            mantissa = (T)0.0;
-            exp = MIN_BIG_EXPONENT();
+            Base::mantissa = (T)0.0;
+            Base::exp = MIN_BIG_EXPONENT();
             return;
         }
 
         int temp_exp;
-        mantissa = boost::multiprecision::frexp(number, &temp_exp).template convert_to<T>();
-        exp = (TExp)temp_exp;
+        Base::mantissa = boost::multiprecision::frexp(number, &temp_exp).template convert_to<T>();
+        Base::exp = (TExp)temp_exp;
     }
 #endif
 
     CUDA_CRAP constexpr HDRFloat &Reduce() & {
-        //if (mantissa == 0) {
+        //if (Base::mantissa == 0) {
         //    return;
         //}
 
         if constexpr (std::is_same<T, double>::value) {
-            uint64_t bits = *reinterpret_cast<uint64_t*>(&mantissa);
+            uint64_t bits = *reinterpret_cast<uint64_t*>(&this->Base::mantissa);
             int32_t f_exp = (int32_t)((bits & 0x7FF0'0000'0000'0000UL) >> 52UL) + MIN_SMALL_EXPONENT_INT();
             uint64_t val = (bits & 0x800F'FFFF'FFFF'FFFFL) | 0x3FF0'0000'0000'0000L;
             T f_val = *reinterpret_cast<T*>(&val);
-            exp += f_exp;
-            mantissa = f_val;
+            Base::exp += f_exp;
+            Base::mantissa = f_val;
         }
         else if constexpr (std::is_same<T, float>::value) {
-            uint32_t bits = *reinterpret_cast<uint32_t*>(&mantissa);
+            uint32_t bits = *reinterpret_cast<uint32_t*>(&this->Base::mantissa);
             int32_t f_exp = (int32_t)((bits & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
             uint32_t val = (bits & 0x807F'FFFFL) | 0x3F80'0000L;
             T f_val = *reinterpret_cast<T*>(&val);
-            exp += f_exp;
-            mantissa = f_val;
+            Base::exp += f_exp;
+            Base::mantissa = f_val;
         }
 
         return *this;
     }
 
     CUDA_CRAP constexpr HDRFloat &&Reduce() && {
-        //if (mantissa == 0) {
+        //if (Base::mantissa == 0) {
         //    return;
         //}
 
         if constexpr (std::is_same<T, double>::value) {
-            uint64_t bits = *reinterpret_cast<uint64_t*>(&mantissa);
+            uint64_t bits = *reinterpret_cast<uint64_t*>(&Base::mantissa);
             int32_t f_exp = (int32_t)((bits & 0x7FF0'0000'0000'0000UL) >> 52UL) + MIN_SMALL_EXPONENT_INT();
             uint64_t val = (bits & 0x800F'FFFF'FFFF'FFFFL) | 0x3FF0'0000'0000'0000L;
             T f_val = *reinterpret_cast<T*>(&val);
-            exp += f_exp;
-            mantissa = f_val;
+            Base::exp += f_exp;
+            Base::mantissa = f_val;
         }
         else if constexpr (std::is_same<T, float>::value) {
-            uint32_t bits = *reinterpret_cast<uint32_t*>(&mantissa);
+            uint32_t bits = *reinterpret_cast<uint32_t*>(&Base::mantissa);
             int32_t f_exp = (int32_t)((bits & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
             uint32_t val = (bits & 0x807F'FFFFL) | 0x3F80'0000L;
             T f_val = *reinterpret_cast<T*>(&val);
-            exp += f_exp;
-            mantissa = f_val;
+            Base::exp += f_exp;
+            Base::mantissa = f_val;
         }
 
         return std::move(*this);
@@ -272,53 +292,53 @@ public:
 
     CUDA_CRAP constexpr T toDouble() const
     {
-        return mantissa * getMultiplier(exp);
+        return Base::mantissa * getMultiplier(Base::exp);
     }
 
     CUDA_CRAP constexpr T toDoubleSub(TExp exponent) const
     {
-        return mantissa * getMultiplier(exp - exponent);
+        return Base::mantissa * getMultiplier(Base::exp - exponent);
     }
 
     CUDA_CRAP explicit constexpr operator T() const { return toDouble(); }
 
     CUDA_CRAP bool operator==(const HDRFloat<T>& other) const {
-        if (this->exp == other.exp &&
-            this->mantissa == other.mantissa) {
+        if (Base::exp == other.exp &&
+            Base::mantissa == other.mantissa) {
             return true;
         }
 
         return false;
     }
 
-    CUDA_CRAP constexpr T getMantissa() const { return  mantissa; }
+    CUDA_CRAP constexpr T getMantissa() const { return  Base::mantissa; }
 
-    CUDA_CRAP constexpr TExp getExp() const { return exp; }
+    CUDA_CRAP constexpr TExp getExp() const { return Base::exp; }
 
     CUDA_CRAP constexpr void setExp(TExp localexp) {
-        this->exp = localexp;
+        Base::exp = localexp;
     }
 
     CUDA_CRAP constexpr HDRFloat reciprocal() const {
-        T local_mantissa = (T)1.0 / this->mantissa;
-        TExp local_exp = -this->exp;
+        T local_mantissa = (T)1.0 / Base::mantissa;
+        TExp local_exp = -Base::exp;
 
         return HDRFloat(local_mantissa, local_exp);
     }
 
     CUDA_CRAP constexpr HDRFloat &reciprocal_mutable() {
-        mantissa = (T)1.0 / mantissa;
-        exp = -exp;
+        Base::mantissa = (T)1.0 / Base::mantissa;
+        Base::exp = -Base::exp;
 
         return *this;
     }
 
     CUDA_CRAP constexpr HDRFloat &divide_mutable(HDRFloat factor) {
-        T local_mantissa = this->mantissa / factor.mantissa;
-        TExp local_exp = this->exp - factor.exp;
+        T local_mantissa = Base::mantissa / factor.mantissa;
+        TExp local_exp = Base::exp - factor.exp;
 
-        this->mantissa = local_mantissa;
-        this->exp = local_exp < MIN_BIG_EXPONENT() ? MIN_BIG_EXPONENT() : local_exp;
+        Base::mantissa = local_mantissa;
+        Base::exp = local_exp < MIN_BIG_EXPONENT() ? MIN_BIG_EXPONENT() : local_exp;
 
         return *this;
     }
@@ -349,11 +369,11 @@ public:
     }
 
     CUDA_CRAP constexpr HDRFloat &multiply_mutable(HDRFloat factor) {
-        T local_mantissa = this->mantissa * factor.mantissa;
-        TExp local_exp = this->exp + factor.exp;
+        T local_mantissa = Base::mantissa * factor.mantissa;
+        TExp local_exp = Base::exp + factor.exp;
 
-        this->mantissa = local_mantissa;
-        this->exp = local_exp < MIN_BIG_EXPONENT() ? MIN_BIG_EXPONENT() : local_exp;
+        Base::mantissa = local_mantissa;
+        Base::exp = local_exp < MIN_BIG_EXPONENT() ? MIN_BIG_EXPONENT() : local_exp;
         return *this;
     }
 
@@ -509,75 +529,75 @@ public:
     }
 
     CUDA_CRAP constexpr HDRFloat square() const {
-        T local_mantissa = this->mantissa * this->mantissa;
-        TExp local_exp = this->exp * 2;
+        T local_mantissa = Base::mantissa * Base::mantissa;
+        TExp local_exp = Base::exp * 2;
 
         return HDRFloat(local_exp, local_mantissa);
     }
 
     CUDA_CRAP constexpr HDRFloat &square_mutable() {
-        T local_mantissa = this->mantissa * this->mantissa;
-        TExp local_exp = this->exp * 2;
+        T local_mantissa = Base::mantissa * Base::mantissa;
+        TExp local_exp = Base::exp * 2;
 
-        this->mantissa = local_mantissa;
-        this->exp = local_exp < MIN_BIG_EXPONENT() ? MIN_BIG_EXPONENT() : local_exp;
+        Base::mantissa = local_mantissa;
+        Base::exp = local_exp < MIN_BIG_EXPONENT() ? MIN_BIG_EXPONENT() : local_exp;
         return *this;
     }
 
     CUDA_CRAP constexpr HDRFloat multiply2() const {
-        return HDRFloat(exp + 1, mantissa);
+        return HDRFloat(Base::exp + 1, Base::mantissa);
     }
 
     CUDA_CRAP constexpr HDRFloat &multiply2_mutable() {
-        exp++;
+        Base::exp++;
         return *this;
     }
 
     CUDA_CRAP constexpr HDRFloat multiply4() const {
-        return HDRFloat(exp + 2, mantissa);
+        return HDRFloat(Base::exp + 2, Base::mantissa);
     }
 
     CUDA_CRAP constexpr HDRFloat &multiply4_mutable() {
-        exp += 2;
+        Base::exp += 2;
         return *this;
     }
 
 
     CUDA_CRAP constexpr HDRFloat divide2() const {
-        return HDRFloat(mantissa, exp - 1);
+        return HDRFloat(Base::mantissa, Base::exp - 1);
     }
 
     CUDA_CRAP constexpr HDRFloat &divide2_mutable() {
-        exp--;
-        this->exp = exp < MIN_BIG_EXPONENT() ? MIN_BIG_EXPONENT() : exp;
+        Base::exp--;
+        Base::exp = Base::exp < MIN_BIG_EXPONENT() ? MIN_BIG_EXPONENT() : Base::exp;
         return *this;
     }
 
     CUDA_CRAP constexpr HDRFloat divide4() const {
-        return HDRFloat(mantissa, exp - 2);
+        return HDRFloat(Base::mantissa, Base::exp - 2);
     }
 
     CUDA_CRAP constexpr HDRFloat &divide4_mutable() {
-        exp -= 2;
-        exp--;
-        this->exp = exp < MIN_BIG_EXPONENT() ? MIN_BIG_EXPONENT() : exp;
+        Base::exp -= 2;
+        Base::exp--;
+        Base::exp = Base::exp < MIN_BIG_EXPONENT() ? MIN_BIG_EXPONENT() : Base::exp;
         return *this;
     }
 
     CUDA_CRAP constexpr HDRFloat add(HDRFloat value) const {
 
-        TExp expDiff = exp - value.exp;
+        TExp expDiff = Base::exp - value.exp;
 
         if (expDiff >= EXPONENT_DIFF_IGNORED) {
-            return HDRFloat(exp, mantissa, true);
+            return HDRFloat(Base::exp, Base::mantissa, true);
         }
         else if (expDiff >= 0) {
             T mul = getMultiplierNeg(-expDiff);
-            return HDRFloat(exp, mantissa + value.mantissa * mul, true);
+            return HDRFloat(Base::exp, Base::mantissa + value.mantissa * mul, true);
         }
         else if (expDiff > MINUS_EXPONENT_DIFF_IGNORED) {
             T mul = getMultiplierNeg(expDiff);
-            return HDRFloat(value.exp, mantissa * mul + value.mantissa, true);
+            return HDRFloat(value.exp, Base::mantissa * mul + value.mantissa, true);
         }
         else {
             return HDRFloat(value.exp, value.mantissa, true);
@@ -586,27 +606,27 @@ public:
 
     CUDA_CRAP constexpr HDRFloat &add_mutable(HDRFloat value) {
 
-        TExp expDiff = exp - value.exp;
+        TExp expDiff = Base::exp - value.exp;
 
         if (expDiff >= EXPONENT_DIFF_IGNORED) {
             return *this;
         }
         else if (expDiff >= 0) {
             T mul = getMultiplierNeg(-expDiff);
-            mantissa = mantissa + value.mantissa * mul;
+            Base::mantissa = Base::mantissa + value.mantissa * mul;
         }
         else if (expDiff > MINUS_EXPONENT_DIFF_IGNORED) {
             T mul = getMultiplierNeg(expDiff);
-            exp = value.exp;
-            mantissa = mantissa * mul + value.mantissa;
+            Base::exp = value.exp;
+            Base::mantissa = Base::mantissa * mul + value.mantissa;
         }
         else {
-            exp = value.exp;
-            mantissa = value.mantissa;
+            Base::exp = value.exp;
+            Base::mantissa = value.mantissa;
         }
 
-        if (mantissa == 0) {
-            exp = MIN_BIG_EXPONENT();
+        if (Base::mantissa == 0) {
+            Base::exp = MIN_BIG_EXPONENT();
         }
 
         return *this;
@@ -627,18 +647,18 @@ public:
 
     CUDA_CRAP constexpr HDRFloat subtract(HDRFloat value) const {
 
-        TExp expDiff = exp - value.exp;
+        TExp expDiff = Base::exp - value.exp;
 
         if (expDiff >= EXPONENT_DIFF_IGNORED) {
-            return HDRFloat(exp, mantissa, true);
+            return HDRFloat(Base::exp, Base::mantissa, true);
         }
         else if (expDiff >= 0) {
             T mul = getMultiplierNeg(-expDiff);
-            return HDRFloat(exp, mantissa - value.mantissa * mul, true);
+            return HDRFloat(Base::exp, Base::mantissa - value.mantissa * mul, true);
         }
         else if (expDiff > MINUS_EXPONENT_DIFF_IGNORED) {
             T mul = getMultiplierNeg(expDiff);
-            return HDRFloat(value.exp, mantissa * mul - value.mantissa, true);
+            return HDRFloat(value.exp, Base::mantissa * mul - value.mantissa, true);
         }
         else {
             return HDRFloat(value.exp, -value.mantissa, true);
@@ -647,27 +667,27 @@ public:
 
     CUDA_CRAP constexpr HDRFloat &subtract_mutable(HDRFloat value) {
 
-        TExp expDiff = exp - value.exp;
+        TExp expDiff = Base::exp - value.exp;
 
         if (expDiff >= EXPONENT_DIFF_IGNORED) {
             return *this;
         }
         else if (expDiff >= 0) {
             T mul = getMultiplierNeg(-expDiff);
-            mantissa = mantissa - value.mantissa * mul;
+            Base::mantissa = Base::mantissa - value.mantissa * mul;
         }
         else if (expDiff > MINUS_EXPONENT_DIFF_IGNORED) {
             T mul = getMultiplierNeg(expDiff);
-            exp = value.exp;
-            mantissa = mantissa * mul - value.mantissa;
+            Base::exp = value.exp;
+            Base::mantissa = Base::mantissa * mul - value.mantissa;
         }
         else {
-            exp = value.exp;
-            mantissa = -value.mantissa;
+            Base::exp = value.exp;
+            Base::mantissa = -value.mantissa;
         }
 
-        if (mantissa == 0) {
-            exp = MIN_BIG_EXPONENT();
+        if (Base::mantissa == 0) {
+            Base::exp = MIN_BIG_EXPONENT();
         }
 
         return *this;
@@ -720,11 +740,11 @@ public:
     }
 
     CUDA_CRAP constexpr HDRFloat negate() const {
-        return HDRFloat(exp, -mantissa);
+        return HDRFloat(Base::exp, -Base::mantissa);
     }
 
     CUDA_CRAP constexpr HDRFloat &negate_mutable() {
-        mantissa = -mantissa;
+        Base::mantissa = -Base::mantissa;
         return *this;
     }
 
@@ -734,17 +754,17 @@ public:
     }
 
     CUDA_CRAP constexpr int compareToBothPositiveReduced(HDRFloat compareTo) const {
-        if (exp > compareTo.exp) {
+        if (Base::exp > compareTo.exp) {
             return 1;
         }
-        else if (exp < compareTo.exp) {
+        else if (Base::exp < compareTo.exp) {
             return -1;
         }
         else {
-            if (mantissa > compareTo.mantissa) {
+            if (Base::mantissa > compareTo.mantissa) {
                 return 1;
             }
-            else if (mantissa < compareTo.mantissa) {
+            else if (Base::mantissa < compareTo.mantissa) {
                 return -1;
             }
             else {
@@ -755,14 +775,14 @@ public:
 
     template<int32_t SomeConstant = 256>
     CUDA_CRAP inline int compareToBothPositiveReducedTemplate() const {
-        if (exp > 1) {
+        if (Base::exp > 1) {
             return 1;
         }
-        else if (exp < 1) {
+        else if (Base::exp < 1) {
             return -1;
         }
         else {
-            if (mantissa >= SomeConstant) {
+            if (Base::mantissa >= SomeConstant) {
                 return 1;
             } else {
                 return -1;
@@ -772,17 +792,17 @@ public:
 
     // Matt: be sure both numbers are reduced
     CUDA_CRAP constexpr int compareToBothPositive(HDRFloat compareTo) const {
-        if (exp > compareTo.exp) {
+        if (Base::exp > compareTo.exp) {
             return 1;
         }
-        else if (exp < compareTo.exp) {
+        else if (Base::exp < compareTo.exp) {
             return -1;
         }
         else {
-            if (mantissa > compareTo.mantissa) {
+            if (Base::mantissa > compareTo.mantissa) {
                 return 1;
             }
-            else if (mantissa < compareTo.mantissa) {
+            else if (Base::mantissa < compareTo.mantissa) {
                 return -1;
             }
             else {
@@ -793,25 +813,25 @@ public:
 
     // Matt: be sure both numbers are reduced
     CUDA_CRAP constexpr int compareTo(HDRFloat compareTo) const {
-        if (mantissa == 0 && compareTo.mantissa == 0) {
+        if (Base::mantissa == 0 && compareTo.mantissa == 0) {
             return 0;
         }
 
-        if (mantissa > 0) {
+        if (Base::mantissa > 0) {
             if (compareTo.mantissa <= 0) {
                 return 1;
             }
-            else if (exp > compareTo.exp) {
+            else if (Base::exp > compareTo.exp) {
                 return 1;
             }
-            else if (exp < compareTo.exp) {
+            else if (Base::exp < compareTo.exp) {
                 return -1;
             }
             else {
-                if (mantissa > compareTo.mantissa) {
+                if (Base::mantissa > compareTo.mantissa) {
                     return 1;
                 }
-                else if (mantissa < compareTo.mantissa) {
+                else if (Base::mantissa < compareTo.mantissa) {
                     return -1;
                 }
                 else {
@@ -823,17 +843,17 @@ public:
             if (compareTo.mantissa > 0) {
                 return -1;
             }
-            else if (exp > compareTo.exp) {
+            else if (Base::exp > compareTo.exp) {
                 return -1;
             }
-            else if (exp < compareTo.exp) {
+            else if (Base::exp < compareTo.exp) {
                 return 1;
             }
             else {
-                if (mantissa > compareTo.mantissa) {
+                if (Base::mantissa > compareTo.mantissa) {
                     return 1;
                 }
-                else if (mantissa < compareTo.mantissa) {
+                else if (Base::mantissa < compareTo.mantissa) {
                     return -1;
                 }
                 else {
@@ -846,25 +866,25 @@ public:
     // Matt: be sure both numbers are reduced
     CUDA_CRAP constexpr int compareToReduced(HDRFloat compareToReduced) const {
 
-        if (mantissa == 0 && compareToReduced.mantissa == 0) {
+        if (Base::mantissa == 0 && compareToReduced.mantissa == 0) {
             return 0;
         }
 
-        if (mantissa > 0) {
+        if (Base::mantissa > 0) {
             if (compareToReduced.mantissa <= 0) {
                 return 1;
             }
-            else if (exp > compareToReduced.exp) {
+            else if (Base::exp > compareToReduced.exp) {
                 return 1;
             }
-            else if (exp < compareToReduced.exp) {
+            else if (Base::exp < compareToReduced.exp) {
                 return -1;
             }
             else {
-                if (mantissa > compareToReduced.mantissa) {
+                if (Base::mantissa > compareToReduced.mantissa) {
                     return 1;
                 }
-                else if (mantissa < compareToReduced.mantissa) {
+                else if (Base::mantissa < compareToReduced.mantissa) {
                     return -1;
                 }
                 else {
@@ -876,17 +896,17 @@ public:
             if (compareToReduced.mantissa > 0) {
                 return -1;
             }
-            else if (exp > compareToReduced.exp) {
+            else if (Base::exp > compareToReduced.exp) {
                 return -1;
             }
-            else if (exp < compareToReduced.exp) {
+            else if (Base::exp < compareToReduced.exp) {
                 return 1;
             }
             else {
-                if (mantissa > compareToReduced.mantissa) {
+                if (Base::mantissa > compareToReduced.mantissa) {
                     return 1;
                 }
-                else if (mantissa < compareToReduced.mantissa) {
+                else if (Base::mantissa < compareToReduced.mantissa) {
                     return -1;
                 }
                 else {
@@ -1038,8 +1058,8 @@ static CUDA_CRAP constexpr T &&HdrReduce(T&& incoming) {
     return std::move(incoming);
 }
 
-template<class T>
-static CUDA_CRAP constexpr T HdrMaxPositiveReduced(const T& one, const T& two) {
+template<class T, class U>
+static CUDA_CRAP constexpr T HdrMaxPositiveReduced(const T& one, const U& two) {
     static_assert(
         std::is_same<T, double>::value ||
         std::is_same<T, float>::value ||
@@ -1059,8 +1079,8 @@ static CUDA_CRAP constexpr T HdrMaxPositiveReduced(const T& one, const T& two) {
     }
 }
 
-template<class T>
-static CUDA_CRAP constexpr T HdrMinPositiveReduced(const T& one, const T& two) {
+template<class T, class U>
+static CUDA_CRAP constexpr T HdrMinPositiveReduced(const T& one, const U& two) {
     static_assert(
         std::is_same<T, double>::value ||
         std::is_same<T, float>::value ||
@@ -1080,8 +1100,8 @@ static CUDA_CRAP constexpr T HdrMinPositiveReduced(const T& one, const T& two) {
     }
 }
 
-template<class T>
-static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedLT(const T& one, const T& two) {
+template<class T, class U>
+static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedLT(const T& one, const U& two) {
     constexpr auto HighPrecPossible = // LOLZ I imagine there's a nicer way to do this here
 #ifndef __CUDACC__
         std::is_same<T, HighPrecision>::value;
@@ -1130,8 +1150,8 @@ static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedLT(const T& one) 
     }
 }
 
-template<class T>
-static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedLE(const T& one, const T& two) {
+template<class T, class U>
+static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedLE(const T& one, const U& two) {
     constexpr auto HighPrecPossible = // LOLZ I imagine there's a nicer way to do this here
 #ifndef __CUDACC__
         std::is_same<T, HighPrecision>::value;
@@ -1155,8 +1175,8 @@ static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedLE(const T& one, 
     }
 }
 
-template<class T>
-static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedGT(const T& one, const T& two) {
+template<class T, class U>
+static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedGT(const T& one, const U& two) {
     constexpr auto HighPrecPossible = // LOLZ I imagine there's a nicer way to do this here
 #ifndef __CUDACC__
         std::is_same<T, HighPrecision>::value;
@@ -1180,8 +1200,8 @@ static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedGT(const T& one, 
     }
 }
 
-template<class T>
-static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedGE(const T& one, const T& two) {
+template<class T, class U>
+static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedGE(const T& one, const U& two) {
     constexpr auto HighPrecPossible = // LOLZ I imagine there's a nicer way to do this here
 #ifndef __CUDACC__
         std::is_same<T, HighPrecision>::value;

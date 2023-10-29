@@ -36,8 +36,33 @@ struct AntialiasedColors {
 };
 
 struct Palette {
+    Palette() :
+        local_pal(nullptr),
+        local_palIters(0),
+        palette_aux_depth(0),
+        cached_hostPalR(nullptr),
+        cached_hostPalG(nullptr),
+        cached_hostPalB(nullptr) {
+    }
+
+    Palette(
+        Color16* local_pal,
+        uint32_t local_palIters,
+        uint32_t palette_aux_depth,
+        const uint16_t* cached_hostPalR,
+        const uint16_t* cached_hostPalG,
+        const uint16_t* cached_hostPalB) :
+        local_pal(local_pal),
+        local_palIters(local_palIters),
+        palette_aux_depth(palette_aux_depth),
+        cached_hostPalR(cached_hostPalR),
+        cached_hostPalG(cached_hostPalG),
+        cached_hostPalB(cached_hostPalB) {
+    }
+
     Color16* local_pal;
     uint32_t local_palIters;
+    uint32_t palette_aux_depth;
 
     const uint16_t* cached_hostPalR;
     const uint16_t* cached_hostPalG;
@@ -88,6 +113,37 @@ enum class RenderAlgorithm {
     Gpu4x32,
 };
 
+#pragma pack(push, 8)
+struct MattDblflt {
+    float x; // head
+    float y; // tail
+};
+#pragma pack(pop)
+
+
+#ifndef __CUDACC__ 
+using float2 = MattDblflt;
+#endif
+
+struct MattQFltflt {
+    float x; // MSB
+    float y;
+    float z;
+    float w; // LSB
+};
+
+struct MattDbldbl {
+    double head;
+    double tail;
+};
+
+struct MattQDbldbl {
+    double x; // MSB
+    double y;
+    double z;
+    double w; // LSB
+};
+
 struct Empty {
 };
 
@@ -120,41 +176,28 @@ struct alignas(8) MattReferenceSingleIter : public std::conditional_t<Bad == Cal
     MattReferenceSingleIter(const MattReferenceSingleIter& other) = default;
     MattReferenceSingleIter &operator=(const MattReferenceSingleIter& other) = default;
 
-    Type x;
-    Type y;
+    // Example of how to pull the SubType out for HdrFloat, or keep the primitive float/double
+    using SubType = typename SubTypeChooser<
+        std::is_fundamental<Type>::value || std::is_same<Type, float2>::value,
+        Type>::type;
+
+    // TODO: note this is not doing anything useful atm
+    std::conditional<
+        std::is_same<Type, HDRFloat<float, HDROrder::Left, int32_t>>::value ||
+        std::is_same<Type, HDRFloat<double, HDROrder::Left, int32_t>>::value,
+        Type,
+        Type>::type x;
+
+    // TODO: note this is not doing anything useful atm
+    // Idea is to handle hdrfloat doubles more efficiently in memory by packing them.
+    std::conditional<
+        std::is_same<Type, HDRFloat<float, HDROrder::Left, int32_t>>::value ||
+        std::is_same<Type, HDRFloat<double, HDROrder::Left, int32_t>>::value,
+        //HDRFloat<SubType, HDROrder::Right, int32_t>,
+        Type,
+        Type>::type y;
 };
 #pragma pack(pop)
-
-#pragma pack(push, 8)
-struct MattDblflt {
-    float x; // head
-    float y; // tail
-};
-#pragma pack(pop)
-
-
-#ifndef __CUDACC__ 
-using float2 = MattDblflt;
-#endif
-
-struct MattQFltflt {
-    float x; // MSB
-    float y;
-    float z;
-    float w; // LSB
-};
-
-struct MattDbldbl {
-    double head;
-    double tail;
-};
-
-struct MattQDbldbl {
-    double x; // MSB
-    double y;
-    double z;
-    double w; // LSB
-};
 
 template<class T>
 struct MattCoords {
@@ -332,7 +375,8 @@ public:
         const uint16_t *palR,
         const uint16_t *palG,
         const uint16_t *palB,
-        uint32_t palIters);
+        uint32_t palIters,
+        uint32_t paletteAuxDepth);
 
     template<typename IterType>
     void ClearMemory();

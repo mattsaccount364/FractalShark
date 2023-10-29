@@ -327,6 +327,17 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
         MenuSquareView(hWnd);
         break;
 
+    case 'T':
+    case 't':
+        if (shiftDown) {
+            gFractal->UseNextPaletteAuxDepth(-1);
+        }
+        else {
+            gFractal->UseNextPaletteAuxDepth(1);
+        }
+        gFractal->DrawFractal(false);
+        break;
+
     case 'Z':
     case 'z':
         // zoom out

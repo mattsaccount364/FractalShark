@@ -346,6 +346,7 @@ void Fractal::Initialize(int width,
 
     m_PaletteRotate = 0;
     m_PaletteDepthIndex = 2;
+    m_PaletteAuxDepth = 0;
     UsePaletteType(Palette::Default);
     UsePalette(8);
 
@@ -461,7 +462,8 @@ uint32_t Fractal::InitializeGPUMemory() {
             m_PalR[m_WhichPalette][m_PaletteDepthIndex].data(),
             m_PalG[m_WhichPalette][m_PaletteDepthIndex].data(),
             m_PalB[m_WhichPalette][m_PaletteDepthIndex].data(),
-            m_PalIters[m_WhichPalette][m_PaletteDepthIndex]);
+            m_PalIters[m_WhichPalette][m_PaletteDepthIndex],
+            m_PaletteAuxDepth);
     }
     else {
         return m_r.InitializeMemory<uint64_t>(
@@ -471,7 +473,8 @@ uint32_t Fractal::InitializeGPUMemory() {
             m_PalR[m_WhichPalette][m_PaletteDepthIndex].data(),
             m_PalG[m_WhichPalette][m_PaletteDepthIndex].data(),
             m_PalB[m_WhichPalette][m_PaletteDepthIndex].data(),
-            m_PalIters[m_WhichPalette][m_PaletteDepthIndex]);
+            m_PalIters[m_WhichPalette][m_PaletteDepthIndex],
+            m_PaletteAuxDepth);
     }
 }
 
@@ -1517,6 +1520,7 @@ void Fractal::View(size_t view)
         ResetDimensions(MAXSIZE_T, MAXSIZE_T, 4);
         break;
 
+
     case 0:
     default:
         minX = HighPrecision{ "-2.5" };
@@ -1812,6 +1816,7 @@ IterType Fractal::GetNumIterations(void) const
     if constexpr (std::is_same<IterType, uint32_t>::value) {
         if (m_NumIterations > GetMaxIterations<IterType>()) {
             ::MessageBox(NULL, L"Iteration limit exceeded somehow.", L"", MB_OK);
+            return GetMaxIterations<IterType>();
         }
     }
     else {
@@ -2116,6 +2121,35 @@ void Fractal::UsePalette(int depth)
 
 void Fractal::UseNextPaletteDepth() {
     m_PaletteDepthIndex = (m_PaletteDepthIndex + 1) % 6;
+    auto err = InitializeGPUMemory();
+    if (err) {
+        MessageBoxCudaError(err);
+        return;
+    }
+}
+
+void Fractal::UseNextPaletteAuxDepth(int32_t inc) {
+    if (inc < -5 || inc > 5 || inc == 0) {
+        return;
+    }
+
+    if (inc < 0) {
+        if (m_PaletteAuxDepth == 0) {
+            m_PaletteAuxDepth = 17 + inc;
+        }
+        else {
+            m_PaletteAuxDepth += inc;
+        }
+    }
+    else {
+        if (m_PaletteAuxDepth >= 16) {
+            m_PaletteAuxDepth = inc;
+        }
+        else {
+            m_PaletteAuxDepth += inc;
+        }
+    }
+
     auto err = InitializeGPUMemory();
     if (err) {
         MessageBoxCudaError(err);
@@ -2933,9 +2967,9 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
 
                         RefIteration += l;
 
-                        T tempZX = results->orb[RefIteration].x + DeltaSubNX;
-                        T tempZY = results->orb[RefIteration].y + DeltaSubNY;
-                        T normSquared = tempZX * tempZX + tempZY * tempZY;
+                        auto tempZX = results->orb[RefIteration].x + DeltaSubNX;
+                        auto tempZY = results->orb[RefIteration].y + DeltaSubNY;
+                        auto normSquared = tempZX * tempZX + tempZY * tempZY;
                         DeltaNormSquared = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
                         HdrReduce(normSquared);
                         HdrReduce(DeltaNormSquared);
@@ -3502,6 +3536,7 @@ Fractal::CurrentFractalSave::CurrentFractalSave(
     m_NumIterations(fractal.m_NumIterations),
     m_PaletteRotate(fractal.m_PaletteRotate),
     m_PaletteDepthIndex(fractal.m_PaletteDepthIndex),
+    m_PaletteAuxDepth(fractal.m_PaletteAuxDepth),
     m_WhichPalette(fractal.m_WhichPalette),
     m_CurIters(std::move(fractal.m_CurIters)) {
 

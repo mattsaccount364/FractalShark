@@ -212,12 +212,20 @@ BEGIN
         MENUITEM "Pa&lette Rotation",           IDM_PALETTEROTATE
         MENUITEM "&Create New Palette",         IDM_CREATENEWPALETTE
         MENUITEM SEPARATOR
-        MENUITEM "Current Position",            IDM_CURPOS
-        MENUITEM "Save Location...",            IDM_SAVELOCATION
-        MENUITEM "Load Location...",            IDM_LOADLOCATION
-        MENUITEM "Save Bitmap Ima&ge",          IDM_SAVEBMP
-        MENUITEM "Save High Res Bitmap",        IDM_SAVEHIRESBMP
-        MENUITEM "Save Iterations as Text",     IDM_SAVE_ITERS_TEXT
+        POPUP "Save"
+        BEGIN
+            MENUITEM "Get Current Position",        IDM_CURPOS
+            MENUITEM "Save Location...",            IDM_SAVELOCATION
+            POPUP "Save High Res Bitmap"
+            BEGIN
+                MENUITEM "Save Iterations as Text",     IDM_SAVE_ITERS_TEXT
+            END
+            MENUITEM "Save Bitmap Ima&ge",          IDM_SAVEBMP
+        END
+        POPUP "Load"
+        BEGIN
+            MENUITEM "Load Location...",            65535
+        END
         POPUP "Benchmark"
         BEGIN
             MENUITEM "Accurate",                    IDM_BENCHMARK_ACCURATE

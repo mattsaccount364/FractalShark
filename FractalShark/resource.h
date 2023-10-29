@@ -248,6 +248,9 @@
 #define IDM_32BIT_ITERATIONS            33039
 #define ID_ITERATIONS_64                33040
 #define IDM_64BIT_ITERATIONS            33041
+#define ID_POPUP_SAVE                   33042
+#define ID_SAVE_A                       33043
+#define ID_POPUP_LOAD                   33044
 #define IDM_VIEW1                       33051
 #define IDM_VIEW2                       33052
 #define IDM_VIEW3                       33053
@@ -284,7 +287,7 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        131
-#define _APS_NEXT_COMMAND_VALUE         33042
+#define _APS_NEXT_COMMAND_VALUE         33045
 #define _APS_NEXT_CONTROL_VALUE         1000
 #define _APS_NEXT_SYMED_VALUE           110
 #endif

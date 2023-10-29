@@ -219,7 +219,7 @@ void Fractal::Initialize(int width,
     m_RefOrbit.ResetGuess();
 
     ResetDimensions(width, height, 2);
-    SetIterType(IterTypeEnum::Bits64);
+    SetIterType(IterTypeEnum::Bits32);
 
     View(0);
     //View(5);

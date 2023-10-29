@@ -71,16 +71,16 @@ Fractal::ItersMemoryContainer::ItersMemoryContainer(
     m_RoundedWidth = w_block * GPURenderer::NB_THREADS_W;
     m_RoundedHeight = h_block * GPURenderer::NB_THREADS_H;
     m_RoundedTotal = m_RoundedWidth * m_RoundedHeight;
-    m_ItersMemory32 = std::make_unique<uint32_t[]>(m_RoundedTotal);
-    m_ItersMemory64 = std::make_unique<uint64_t[]>(m_RoundedTotal);
 
     if (m_IterType == IterTypeEnum::Bits32) {
+        m_ItersMemory32 = std::make_unique<uint32_t[]>(m_RoundedTotal);
         m_ItersArray32 = new uint32_t * [m_RoundedHeight];
         for (size_t i = 0; i < m_RoundedHeight; i++) {
             m_ItersArray32[i] = &m_ItersMemory32[i * m_RoundedWidth];
         }
     }
     else {
+        m_ItersMemory64 = std::make_unique<uint64_t[]>(m_RoundedTotal);
         m_ItersArray64 = new uint64_t * [m_RoundedHeight];
         for (size_t i = 0; i < m_RoundedHeight; i++) {
             m_ItersArray64[i] = &m_ItersMemory64[i * m_RoundedWidth];
@@ -105,6 +105,8 @@ Fractal::ItersMemoryContainer &Fractal::ItersMemoryContainer::operator=(Fractal:
     if (this == &other) {
         return *this;
     }
+
+    m_IterType = other.m_IterType;
 
     m_ItersMemory32 = std::move(other.m_ItersMemory32);
     m_ItersMemory64 = std::move(other.m_ItersMemory64);
@@ -217,6 +219,8 @@ void Fractal::Initialize(int width,
     m_RefOrbit.ResetGuess();
 
     ResetDimensions(width, height, 2);
+    SetIterType(IterTypeEnum::Bits64);
+
     View(0);
     //View(5);
     //View(15);
@@ -449,14 +453,26 @@ uint32_t Fractal::InitializeGPUMemory() {
         return 0;
     }
 
-    return m_r.InitializeMemory(
-        (uint32_t)m_CurIters.m_Width,
-        (uint32_t)m_CurIters.m_Height,
-        (uint32_t)m_CurIters.m_Antialiasing,
-        m_PalR[m_WhichPalette][m_PaletteDepthIndex].data(),
-        m_PalG[m_WhichPalette][m_PaletteDepthIndex].data(),
-        m_PalB[m_WhichPalette][m_PaletteDepthIndex].data(),
-        m_PalIters[m_WhichPalette][m_PaletteDepthIndex]);
+    if (GetIterType() == IterTypeEnum::Bits32) {
+        return m_r.InitializeMemory<uint32_t>(
+            (uint32_t)m_CurIters.m_Width,
+            (uint32_t)m_CurIters.m_Height,
+            (uint32_t)m_CurIters.m_Antialiasing,
+            m_PalR[m_WhichPalette][m_PaletteDepthIndex].data(),
+            m_PalG[m_WhichPalette][m_PaletteDepthIndex].data(),
+            m_PalB[m_WhichPalette][m_PaletteDepthIndex].data(),
+            m_PalIters[m_WhichPalette][m_PaletteDepthIndex]);
+    }
+    else {
+        return m_r.InitializeMemory<uint64_t>(
+            (uint32_t)m_CurIters.m_Width,
+            (uint32_t)m_CurIters.m_Height,
+            (uint32_t)m_CurIters.m_Antialiasing,
+            m_PalR[m_WhichPalette][m_PaletteDepthIndex].data(),
+            m_PalG[m_WhichPalette][m_PaletteDepthIndex].data(),
+            m_PalB[m_WhichPalette][m_PaletteDepthIndex].data(),
+            m_PalIters[m_WhichPalette][m_PaletteDepthIndex]);
+    }
 }
 
 void Fractal::ReturnIterMemory(ItersMemoryContainer&& to_return) {
@@ -1787,6 +1803,9 @@ void Fractal::SetNumIterations(IterTypeFull num)
     m_ChangedIterations = true;
 }
 
+template void Fractal::SetNumIterations<uint32_t>(IterTypeFull);
+template void Fractal::SetNumIterations<uint64_t>(IterTypeFull);
+
 template<typename IterType>
 IterType Fractal::GetNumIterations(void) const
 {
@@ -1822,6 +1841,7 @@ IterTypeFull Fractal::GetMaxIterationsRT() const {
 void Fractal::SetIterType(IterTypeEnum type) {
     m_IterType = type;
     m_RefOrbit.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+    InitializeMemory();
 }
 
 Fractal::IterTypeEnum Fractal::GetIterType() const {
@@ -2190,7 +2210,7 @@ void Fractal::DrawFractal(bool MemoryOnly)
         else {
             result = m_r.OnlyAA(
                 m_CurIters.m_RoundedOutputColorMemory.get(),
-                GetNumIterations<uint32_t>());
+                GetNumIterations<uint64_t>());
         }
 
         if (result) {

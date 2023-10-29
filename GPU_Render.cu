@@ -2994,6 +2994,7 @@ void GPURenderer::ClearLocals() {
     local_color_width = 0;
     local_color_height = 0;
     m_Antialiasing = 0;
+    m_IterTypeSize = 0;
     w_block = 0;
     h_block = 0;
     w_color_block = 0;
@@ -3028,7 +3029,7 @@ uint32_t GPURenderer::InitializeMemory(
     const uint16_t* palR,
     const uint16_t* palG,
     const uint16_t* palB,
-    IterType palIters)
+    uint32_t palIters)
 {
     // Re-do palettes only.
     if ((Pals.cached_hostPalR != palR) ||
@@ -3054,7 +3055,7 @@ uint32_t GPURenderer::InitializeMemory(
 
         // TODO the incoming data should be rearranged so we can memcpy
         // Copy in palettes
-        for (IterType i = 0; i < Pals.local_palIters; i++) {
+        for (uint32_t i = 0; i < Pals.local_palIters; i++) {
             Pals.local_pal[i].r = palR[i];
             Pals.local_pal[i].g = palG[i];
             Pals.local_pal[i].b = palB[i];
@@ -3063,7 +3064,8 @@ uint32_t GPURenderer::InitializeMemory(
 
     if ((m_Width == antialias_width) &&
         (m_Height == antialias_height) &&
-        (m_Antialiasing == antialiasing)) {
+        (m_Antialiasing == antialiasing) &&
+        (m_IterTypeSize == sizeof(IterType))) {
         return 0;
     }
 
@@ -3096,6 +3098,7 @@ uint32_t GPURenderer::InitializeMemory(
     m_Width = antialias_width;
     m_Height = antialias_height;
     m_Antialiasing = antialiasing;
+    m_IterTypeSize = sizeof(IterType);
     N_cu = w_block * NB_THREADS_W * h_block * NB_THREADS_H;
 
     const auto no_antialias_width = antialias_width / antialiasing;
@@ -3163,7 +3166,7 @@ uint32_t GPURenderer::InitializeMemory<uint64_t>(
     const uint16_t* palR,
     const uint16_t* palG,
     const uint16_t* palB,
-    uint64_t palIters);
+    uint32_t palIters);
 
 bool GPURenderer::MemoryInitialized() const {
     if (OutputIterMatrix == nullptr) {
@@ -4681,7 +4684,7 @@ uint32_t GPURenderer::ExtractItersAndColors(IterType* iter_buffer, Color16 *colo
     cudaError_t result = cudaDeviceSynchronize();
     if (result != cudaSuccess) {
         if (iter_buffer) {
-            cudaMemset(iter_buffer, ERROR_COLOR, sizeof(int) * m_Width * m_Height);
+            cudaMemset(iter_buffer, ERROR_COLOR, sizeof(IterType) * m_Width * m_Height);
         }
 
         if (color_buffer) {

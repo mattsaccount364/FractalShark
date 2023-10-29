@@ -37,7 +37,7 @@ struct AntialiasedColors {
 
 struct Palette {
     Color16* local_pal;
-    IterTypeFull local_palIters;
+    uint32_t local_palIters;
 
     const uint16_t* cached_hostPalR;
     const uint16_t* cached_hostPalG;
@@ -332,7 +332,7 @@ public:
         const uint16_t *palR,
         const uint16_t *palG,
         const uint16_t *palB,
-        IterType palIters);
+        uint32_t palIters);
 
     template<typename IterType>
     void ClearMemory();
@@ -383,6 +383,7 @@ private:
     uint32_t local_color_width;
     uint32_t local_color_height;
     uint32_t m_Antialiasing;
+    uint32_t m_IterTypeSize;
     uint32_t w_block;
     uint32_t h_block;
     uint32_t w_color_block;

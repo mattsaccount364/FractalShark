@@ -21,21 +21,29 @@ class HDRFloatComplex;
 
 CUDA_CRAP void InitStatics();
 
+#ifndef __CUDA_ARCH__
+#define MYALIGN __declspec(align(4))
+#else
+#define MYALIGN __align__(4)
+#endif
+
+#pragma pack(push, 4)
 template<class T, class TExp = int32_t>
 class LMembers {
 public:
     LMembers() = default;
-    T mantissa;
-    TExp exp;
+    MYALIGN T mantissa;
+    MYALIGN TExp exp;
 };
 
 template<class T, class TExp = int32_t>
 class RMembers {
 public:
     RMembers() = default;
-    TExp exp;
-    T mantissa;
+    MYALIGN TExp exp;
+    MYALIGN T mantissa;
 };
+#pragma pack(pop)
 
 enum class HDROrder {
     Left,
@@ -107,36 +115,40 @@ public:
         Base::exp = MIN_BIG_EXPONENT();
     }
 
-    CUDA_CRAP constexpr HDRFloat(const HDRFloat<T> &other) {
+    template<HDROrder OtherOrder>
+    CUDA_CRAP constexpr HDRFloat(const HDRFloat<T, OtherOrder> &other) {
         Base::mantissa = other.mantissa;
         Base::exp = other.exp;
     }
 
-    CUDA_CRAP constexpr HDRFloat(HDRFloat<T>&& other) {
+    template<HDROrder OtherOrder>
+    CUDA_CRAP constexpr HDRFloat(HDRFloat<T, OtherOrder>&& other) {
         Base::mantissa = other.mantissa;
         Base::exp = other.exp;
     }
 
-    CUDA_CRAP constexpr HDRFloat &operator=(const HDRFloat<T>& other) {
-        Base::mantissa = other.mantissa;
-        Base::exp = other.exp;
-        return *this;
-    }
-
-    CUDA_CRAP constexpr HDRFloat& operator=(HDRFloat<T>&& other) {
+    template<HDROrder OtherOrder>
+    CUDA_CRAP constexpr HDRFloat &operator=(const HDRFloat<T, OtherOrder>& other) {
         Base::mantissa = other.mantissa;
         Base::exp = other.exp;
         return *this;
     }
 
-    template<class SrcT>
-    CUDA_CRAP constexpr HDRFloat(const HDRFloat<SrcT>& other) {
+    template<HDROrder OtherOrder>
+    CUDA_CRAP constexpr HDRFloat& operator=(HDRFloat<T, OtherOrder>&& other) {
+        Base::mantissa = other.mantissa;
+        Base::exp = other.exp;
+        return *this;
+    }
+
+    template<class SrcT, HDROrder OtherOrder>
+    CUDA_CRAP constexpr HDRFloat(const HDRFloat<SrcT, OtherOrder>& other) {
         Base::mantissa = (T)other.mantissa;
         Base::exp = other.exp;
     }
 
-    template<class SrcT>
-    CUDA_CRAP constexpr HDRFloat(HDRFloat<SrcT>&& other) {
+    template<class SrcT, HDROrder OtherOrder>
+    CUDA_CRAP constexpr HDRFloat(HDRFloat<SrcT, OtherOrder>&& other) {
         Base::mantissa = (T)other.mantissa;
         Base::exp = other.exp;
     }
@@ -310,7 +322,8 @@ public:
 
     CUDA_CRAP explicit constexpr operator T() const { return toDouble(); }
 
-    CUDA_CRAP bool operator==(const HDRFloat<T>& other) const {
+    template<HDROrder OtherOrder>
+    CUDA_CRAP bool operator==(const HDRFloat<T, OtherOrder>& other) const {
         if (Base::exp == other.exp &&
             Base::mantissa == other.mantissa) {
             return true;
@@ -319,7 +332,7 @@ public:
         return false;
     }
 
-    CUDA_CRAP constexpr T getMantissa() const { return  Base::mantissa; }
+    CUDA_CRAP constexpr T getMantissa() const { return Base::mantissa; }
 
     CUDA_CRAP constexpr TExp getExp() const { return Base::exp; }
 
@@ -341,7 +354,8 @@ public:
         return *this;
     }
 
-    CUDA_CRAP constexpr HDRFloat &divide_mutable(HDRFloat factor) {
+    template<HDROrder OtherOrder>
+    CUDA_CRAP constexpr HDRFloat &divide_mutable(HDRFloat<T, OtherOrder> factor) {
         T local_mantissa = Base::mantissa / factor.mantissa;
         TExp local_exp = Base::exp - factor.exp;
 
@@ -352,8 +366,9 @@ public:
     }
 
     // friends defined inside class body are inline and are hidden from non-ADL lookup
+    template<HDROrder OtherOrder>
     friend CUDA_CRAP constexpr HDRFloat operator/(HDRFloat lhs,        // passing lhs by value helps optimize chained a+b+c
-        const HDRFloat& rhs) // otherwise, both parameters may be const references
+        const HDRFloat<T, OtherOrder>& rhs) // otherwise, both parameters may be const references
     {
         lhs.divide_mutable(rhs); // reuse compound assignment
         return lhs; // return the result by value (uses move constructor)
@@ -365,18 +380,21 @@ public:
     }
 
     // friends defined inside class body are inline and are hidden from non-ADL lookup
-    friend CUDA_CRAP constexpr HDRFloat operator/(HDRFloat lhs,        // passing lhs by value helps optimize chained a+b+c
+    template<HDROrder OtherOrder>
+    friend CUDA_CRAP constexpr HDRFloat operator/(HDRFloat<T, OtherOrder> lhs,        // passing lhs by value helps optimize chained a+b+c
         const T& rhs) // otherwise, both parameters may be const references
     {
         lhs.divide_mutable(rhs); // reuse compound assignment
         return lhs; // return the result by value (uses move constructor)
     }
 
-    CUDA_CRAP constexpr HDRFloat& operator/=(const HDRFloat& other) {
+    template<HDROrder OtherOrder>
+    CUDA_CRAP constexpr HDRFloat& operator/=(const HDRFloat<T, OtherOrder>& other) {
         return divide_mutable(other);
     }
 
-    CUDA_CRAP constexpr HDRFloat &multiply_mutable(HDRFloat factor) {
+    template<HDROrder OtherOrder>
+    CUDA_CRAP constexpr HDRFloat &multiply_mutable(HDRFloat<T, OtherOrder> factor) {
         T local_mantissa = Base::mantissa * factor.mantissa;
         TExp local_exp = Base::exp + factor.exp;
 
@@ -512,8 +530,9 @@ public:
     }
 
     // friends defined inside class body are inline and are hidden from non-ADL lookup
+    template<HDROrder OtherOrder>
     friend CUDA_CRAP constexpr HDRFloat operator*(HDRFloat lhs,        // passing lhs by value helps optimize chained a+b+c
-        const HDRFloat& rhs) // otherwise, both parameters may be const references
+        const HDRFloat<T, OtherOrder>& rhs) // otherwise, both parameters may be const references
     {
         lhs.multiply_mutable(rhs); // reuse compound assignment
         return lhs; // return the result by value (uses move constructor)
@@ -532,7 +551,8 @@ public:
         return lhs; // return the result by value (uses move constructor)
     }
 
-    CUDA_CRAP constexpr HDRFloat& operator*=(const HDRFloat& other) {
+    template<HDROrder OtherOrder>
+    CUDA_CRAP constexpr HDRFloat& operator*=(const HDRFloat<T, OtherOrder>& other) {
         return multiply_mutable(other);
     }
 
@@ -592,7 +612,8 @@ public:
         return *this;
     }
 
-    CUDA_CRAP constexpr HDRFloat add(HDRFloat value) const {
+    template<HDROrder OtherOrder>
+    CUDA_CRAP constexpr HDRFloat add(HDRFloat<T, OtherOrder> value) const {
 
         TExp expDiff = Base::exp - value.exp;
 
@@ -612,7 +633,8 @@ public:
         }
     }
 
-    CUDA_CRAP constexpr HDRFloat &add_mutable(HDRFloat value) {
+    template<HDROrder OtherOrder>
+    CUDA_CRAP constexpr HDRFloat &add_mutable(HDRFloat<T, OtherOrder> value) {
 
         TExp expDiff = Base::exp - value.exp;
 
@@ -642,18 +664,21 @@ public:
     }
 
     // friends defined inside class body are inline and are hidden from non-ADL lookup
+    template<HDROrder OtherOrder>
     friend CUDA_CRAP constexpr HDRFloat operator+(HDRFloat lhs,        // passing lhs by value helps optimize chained a+b+c
-        const HDRFloat& rhs) // otherwise, both parameters may be const references
+        const HDRFloat<T, OtherOrder>& rhs) // otherwise, both parameters may be const references
     {
         lhs.add_mutable(rhs); // reuse compound assignment
         return lhs; // return the result by value (uses move constructor)
     }
 
-    CUDA_CRAP constexpr HDRFloat& operator+=(const HDRFloat& other) {
+    template<HDROrder OtherOrder>
+    CUDA_CRAP constexpr HDRFloat& operator+=(const HDRFloat<T, OtherOrder>& other) {
         return add_mutable(other);
     }
 
-    CUDA_CRAP constexpr HDRFloat subtract(HDRFloat value) const {
+    template<HDROrder OtherOrder>
+    CUDA_CRAP constexpr HDRFloat subtract(HDRFloat<T, OtherOrder> value) const {
 
         TExp expDiff = Base::exp - value.exp;
 
@@ -673,7 +698,8 @@ public:
         }
     }
 
-    CUDA_CRAP constexpr HDRFloat &subtract_mutable(HDRFloat value) {
+    template<HDROrder OtherOrder>
+    CUDA_CRAP constexpr HDRFloat &subtract_mutable(HDRFloat<T, OtherOrder> value) {
 
         TExp expDiff = Base::exp - value.exp;
 
@@ -702,14 +728,16 @@ public:
     }
 
     // friends defined inside class body are inline and are hidden from non-ADL lookup
+    template<HDROrder OtherOrder>
     friend CUDA_CRAP constexpr HDRFloat operator-(HDRFloat lhs,        // passing lhs by value helps optimize chained a+b+c
-        const HDRFloat& rhs) // otherwise, both parameters may be const references
+        const HDRFloat<T, OtherOrder>& rhs) // otherwise, both parameters may be const references
     {
         lhs.subtract_mutable(rhs); // reuse compound assignment
         return lhs; // return the result by value (uses move constructor)
     }
 
-    CUDA_CRAP constexpr HDRFloat& operator-=(const HDRFloat& other) {
+    template<HDROrder OtherOrder>
+    CUDA_CRAP constexpr HDRFloat& operator-=(const HDRFloat<T, OtherOrder>& other) {
         return subtract_mutable(other);
     }
 
@@ -756,12 +784,14 @@ public:
         return *this;
     }
 
-    friend CUDA_CRAP constexpr HDRFloat operator-(HDRFloat lhs)
+    template<HDROrder OtherOrder>
+    friend CUDA_CRAP constexpr HDRFloat operator-(HDRFloat<T, OtherOrder> lhs)
     {
         return lhs.negate();
     }
 
-    CUDA_CRAP constexpr int compareToBothPositiveReduced(HDRFloat compareTo) const {
+    template<HDROrder OtherOrder>
+    CUDA_CRAP constexpr int compareToBothPositiveReduced(HDRFloat<T, OtherOrder> compareTo) const {
         if (Base::exp > compareTo.exp) {
             return 1;
         }
@@ -799,7 +829,8 @@ public:
     }
 
     // Matt: be sure both numbers are reduced
-    CUDA_CRAP constexpr int compareToBothPositive(HDRFloat compareTo) const {
+    template<HDROrder OtherOrder>
+    CUDA_CRAP constexpr int compareToBothPositive(HDRFloat<T, OtherOrder> compareTo) const {
         if (Base::exp > compareTo.exp) {
             return 1;
         }
@@ -820,7 +851,8 @@ public:
     }
 
     // Matt: be sure both numbers are reduced
-    CUDA_CRAP constexpr int compareTo(HDRFloat compareTo) const {
+    template<HDROrder OtherOrder>
+    CUDA_CRAP constexpr int compareTo(HDRFloat<T, OtherOrder> compareTo) const {
         if (Base::mantissa == 0 && compareTo.mantissa == 0) {
             return 0;
         }
@@ -872,7 +904,8 @@ public:
     }
 
     // Matt: be sure both numbers are reduced
-    CUDA_CRAP constexpr int compareToReduced(HDRFloat compareToReduced) const {
+    template<HDROrder OtherOrder>
+    CUDA_CRAP constexpr int compareToReduced(HDRFloat<T, OtherOrder> compareToReduced) const {
 
         if (Base::mantissa == 0 && compareToReduced.mantissa == 0) {
             return 0;
@@ -944,26 +977,33 @@ public:
     //    return l.compareTo(r) >= 0;
     //}
 
-    static CUDA_CRAP constexpr HDRFloat HDRMax(HDRFloat a, HDRFloat b) {
+    template<HDROrder OtherOrder>
+    static CUDA_CRAP constexpr HDRFloat HDRMax(HDRFloat a, HDRFloat<T, OtherOrder> b) {
         return a.compareTo(b) > 0 ? a : b;
     }
 
-    static CUDA_CRAP constexpr HDRFloat maxBothPositive(HDRFloat a, HDRFloat b) {
+    template<HDROrder OtherOrder>
+    static CUDA_CRAP constexpr HDRFloat maxBothPositive(HDRFloat a, HDRFloat<T, OtherOrder> b) {
         return a.compareToBothPositive(b) > 0 ? a : b;
     }
 
-    static CUDA_CRAP constexpr HDRFloat maxBothPositiveReduced(HDRFloat a, HDRFloat b) {
+    template<HDROrder OtherOrder>
+    static CUDA_CRAP constexpr HDRFloat maxBothPositiveReduced(HDRFloat a, HDRFloat<T, OtherOrder> b) {
         return a.compareToBothPositiveReduced(b) > 0 ? a : b;
     }
 
-    static CUDA_CRAP constexpr HDRFloat minBothPositive(HDRFloat a, HDRFloat b) {
+    template<HDROrder OtherOrder>
+    static CUDA_CRAP constexpr HDRFloat minBothPositive(HDRFloat a, HDRFloat<T, OtherOrder> b) {
         return a.compareToBothPositive(b) < 0 ? a : b;
     }
-    static CUDA_CRAP constexpr HDRFloat minBothPositiveReduced(HDRFloat a, HDRFloat b) {
+
+    template<HDROrder OtherOrder>
+    static CUDA_CRAP constexpr HDRFloat minBothPositiveReduced(HDRFloat a, HDRFloat<T, OtherOrder> b) {
         return a.compareToBothPositiveReduced(b) < 0 ? a : b;
     }
 
-    static CUDA_CRAP constexpr HDRFloat HDRMin(HDRFloat a, HDRFloat b) {
+    template<HDROrder OtherOrder>
+    static CUDA_CRAP constexpr HDRFloat HDRMin(HDRFloat a, HDRFloat<T, OtherOrder> b) {
         return a.compareTo(b) < 0 ? a : b;
     }
 };

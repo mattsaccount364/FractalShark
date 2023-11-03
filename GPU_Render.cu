@@ -376,13 +376,17 @@ CUDA_CRAP const GPUBLA_TYPE* GPU_BLAS<IterType, T, GPUBLA_TYPE, LM2>::LookupBack
 // Perturbation results
 ////////////////////////////////////////////////////////////////////////////////////////
 
-static_assert(sizeof(MattReferenceSingleIter<float>) <= 16, "Float");
-static_assert(sizeof(MattReferenceSingleIter<double>) <= 24, "Double");
-static_assert(sizeof(MattReferenceSingleIter<dblflt>) <= 24, "Dblflt");
+static_assert(sizeof(MattReferenceSingleIter<float>) == 8, "Float");
+static_assert(sizeof(MattReferenceSingleIter<double>) == 16, "Double");
+static_assert(sizeof(MattReferenceSingleIter<HDRFloat<float>>) == 16, "Float");
+static_assert(sizeof(MattReferenceSingleIter<HDRFloat<double>>) == 24, "Double");
+static_assert(sizeof(MattReferenceSingleIter<dblflt>) == 16, "Dblflt");
 
 //char(*__kaboom1)[sizeof(MattReferenceSingleIter<float>)] = 1;
 //char(*__kaboom2)[sizeof(MattReferenceSingleIter<double>)] = 1;
 //char(*__kaboom3)[sizeof(MattReferenceSingleIter<dblflt>)] = 1;
+//char(*__kaboom4)[sizeof(MattReferenceSingleIter<HDRFloat<float>>)] = 1;
+//char(*__kaboom5)[sizeof(MattReferenceSingleIter<HDRFloat<double>>)] = 1;
 
 template<typename IterType, typename Type, CalcBad Bad = CalcBad::Disable>
 struct MattPerturbSingleResults {

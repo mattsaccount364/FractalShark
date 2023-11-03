@@ -143,14 +143,17 @@ GPU_LAReference<IterType, SubType>::~GPU_LAReference() {
 
 template<typename IterType, class SubType>
 __host__
-GPU_LAReference<IterType, SubType>::GPU_LAReference(const GPU_LAReference& other) : m_Owned(false) {
-    this->UseAT = other.UseAT;
-    this->AT = other.AT;
-    this->LAStageCount = other.LAStageCount;
-    this->isValid = other.isValid;
-    this->m_Err = cudaSuccess;
-    this->LAs = other.LAs;
-    this->LAStages = other.LAStages;
+GPU_LAReference<IterType, SubType>::GPU_LAReference(const GPU_LAReference& other)
+    : UseAT{ other.UseAT },
+    AT{ other.AT },
+    LAStageCount{ other.LAStageCount },
+    isValid{ other.isValid },
+    m_Err{ cudaSuccess },
+    m_Owned{ false },
+    LAs{ other.LAs },
+    NumLAs{ other.NumLAs },
+    LAStages{ other.LAStages },
+    NumLAStages{ other.NumLAStages } {
 }
 
 template<typename IterType, class SubType>

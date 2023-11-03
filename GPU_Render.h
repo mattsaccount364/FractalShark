@@ -154,7 +154,7 @@ struct BadField {
 
 #pragma pack(push, 8)
 template<typename Type, CalcBad Bad = CalcBad::Disable>
-struct alignas(8) MattReferenceSingleIter : public std::conditional_t<Bad == CalcBad::Enable, BadField, Empty> {
+struct /*alignas(8)*/ MattReferenceSingleIter : public std::conditional_t<Bad == CalcBad::Enable, BadField, Empty>{
     MattReferenceSingleIter()
         : x{ Type(0) },
         y{ Type(0) } {
@@ -193,8 +193,8 @@ struct alignas(8) MattReferenceSingleIter : public std::conditional_t<Bad == Cal
     std::conditional<
         std::is_same<Type, HDRFloat<float, HDROrder::Left, int32_t>>::value ||
         std::is_same<Type, HDRFloat<double, HDROrder::Left, int32_t>>::value,
-        //HDRFloat<SubType, HDROrder::Right, int32_t>,
-        Type,
+        HDRFloat<SubType, HDROrder::Right, int32_t>,
+        //Type,
         Type>::type y;
 };
 #pragma pack(pop)

@@ -193,6 +193,9 @@ BEGIN
             MENUITEM "MT2 + Periodicity + Perturb ST", IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_STMED
             MENUITEM "MT2 + Periodicity + Perturb MT", IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_MTMED
             MENUITEM "MT5 + Periodicity",           IDM_PERTURBATION_MULTITHREAD5_PERIODICITY
+            MENUITEM SEPARATOR
+            MENUITEM "Save Current Orbit",          IDM_PERTURBATION_SAVE
+            MENUITEM "Load Orbit",                  IDM_PERTURBATION_LOAD
         END
         MENUITEM SEPARATOR
         POPUP "Palette Color Depth"

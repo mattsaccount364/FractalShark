@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <stdint.h>
+#include <fstream>
 #include <type_traits>
 
 #include "HighPrecision.h"
@@ -19,8 +20,7 @@ public:
         std::is_fundamental<T>::value,
         T>::type;
 
-    HighPrecision hiX, hiY, radiusX, radiusY;
-    T radiusXHdr, radiusYHdr;
+    HighPrecision hiX, hiY;
     T maxRadius;
     IterType MaxIterations;
     IterType PeriodMaybeZero;  // Zero if not worked out
@@ -33,13 +33,155 @@ public:
 
     std::unique_ptr<LAReference<IterType, SubType>> LaReference;
 
+    void Write(const std::wstring& filename) {
+        const auto orbfilename = filename + L".orb";
+
+        std::ofstream orbfile(orbfilename, std::ios::binary);
+        if (!orbfile.is_open()) {
+            ::MessageBox(NULL, L"Failed to open file for writing", L"", MB_OK);
+            return;
+        }
+
+        uint64_t size = orb.size();
+        orbfile.write((char*)orb.data(), sizeof(orb[0]) * size);
+
+
+        const auto metafilename = filename + L".met";
+
+        std::ofstream metafile(metafilename, std::ios::binary);
+        if (!metafile.is_open()) {
+            ::MessageBox(NULL, L"Failed to open file for writing", L"", MB_OK);
+            return;
+        }
+
+        metafile << orb.size() << std::endl;
+        metafile << hiX.precision() << std::endl;
+        metafile << HdrToString(hiX) << std::endl;
+        metafile << hiY.precision() << std::endl;
+        metafile << HdrToString(hiY) << std::endl;
+        metafile << HdrToString(maxRadius) << std::endl;
+        metafile << MaxIterations << std::endl;
+        metafile << PeriodMaybeZero << std::endl;
+    }
+
+    // This function uses CreateFileMapping and MapViewOfFile to map
+    // the file into memory.  Then it loads the meta file using ifstream
+    // to get the other data.
+    void Load(const std::wstring& filename) {
+        const auto metafilename = filename + L".met";
+        std::ifstream metafile(metafilename, std::ios::binary);
+        if (!metafile.is_open()) {
+            ::MessageBox(NULL, L"Failed to open file for writing", L"", MB_OK);
+            return;
+        }
+
+        size_t sz;
+        metafile >> sz;
+
+        {
+            uint32_t prec;
+            metafile >> prec;
+
+            scoped_mpfr_precision p{ prec };
+
+            std::string shiX;
+            metafile >> shiX;
+
+            hiX = HighPrecision{ shiX };
+        }
+
+        {
+            uint32_t prec;
+            metafile >> prec;
+
+            scoped_mpfr_precision p{prec};
+
+            std::string shiY;
+            metafile >> shiY;
+
+            hiY.precision(prec);
+            hiY = HighPrecision{ shiY };
+        }
+
+        {
+            std::string maxRadiusMantissaStr;
+            metafile >> maxRadiusMantissaStr;
+            metafile >> maxRadiusMantissaStr;
+            auto m = std::stod(maxRadiusMantissaStr);
+
+            std::string maxRadiusExpStr;
+            metafile >> maxRadiusExpStr;
+            metafile >> maxRadiusExpStr;
+            auto e = std::stoi(maxRadiusExpStr);
+
+            if constexpr (
+                std::is_same<T, HDRFloat<float>>::value ||
+                std::is_same<T, HDRFloat<double>>::value) {
+                maxRadius = T{ e, (SubType)m };
+            }
+            else if constexpr (
+                std::is_same<T, float>::value ||
+                std::is_same<T, double>::value) {
+                maxRadius = m;
+            }
+            else {
+                ::MessageBox(NULL, L"Unexpected type in Load", L"", MB_OK);
+                return;
+            }
+        }
+
+        {
+            std::string maxIterationsStr;
+            metafile >> maxIterationsStr;
+            MaxIterations = (IterType)std::stoll(maxIterationsStr);
+        }
+
+        {
+            std::string periodMaybeZeroStr;
+            metafile >> periodMaybeZeroStr;
+            PeriodMaybeZero = (IterType)std::stoll(periodMaybeZeroStr);
+        }
+
+        const auto orbfilename = filename + L".orb";
+
+        HANDLE hFile = CreateFile(orbfilename.c_str(),
+            GENERIC_READ,
+            FILE_SHARE_READ,
+            NULL,
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            NULL);
+        if (hFile == INVALID_HANDLE_VALUE) {
+            ::MessageBox(NULL, L"Failed to open file for reading", L"", MB_OK);
+            return;
+        }
+
+        HANDLE hMapFile = CreateFileMapping(hFile, NULL, PAGE_READONLY, 0, 0, NULL);
+        if (hMapFile == NULL) {
+            ::MessageBox(NULL, L"Failed to create file mapping", L"", MB_OK);
+            return;
+        }
+
+        orb.clear();
+        orb.resize(sz);
+
+        void* pBuf = MapViewOfFile(hMapFile, FILE_MAP_READ, 0, 0, 0);
+        if (pBuf == NULL) {
+            ::MessageBox(NULL, L"Failed to map view of file", L"", MB_OK);
+            return;
+        }
+
+        memcpy(orb.data(), pBuf, sz * sizeof(MattReferenceSingleIter<T, Bad>));
+
+        // TODO just use the mapped data directly, might be neat.
+        UnmapViewOfFile(pBuf);
+        CloseHandle(hMapFile);
+        CloseHandle(hFile);
+    }
+
     void clear() {
         hiX = {};
         hiY = {};
-        radiusX = {};
-        radiusY = {};
-        radiusXHdr = {};
-        radiusYHdr = {};
         maxRadius = {};
         MaxIterations = 0;
         PeriodMaybeZero = 0;
@@ -59,10 +201,6 @@ public:
         //hiX = other.hiX;
         //hiY = other.hiY;
 
-        //radiusX = other.radiusX;
-        //radiusY = other.radiusY;
-        //radiusXHdr = other.radiusXHdr;
-        //radiusYHdr = other.radiusYHdr;
         //maxRadius = other.maxRadius;
 
         orb.reserve(other.orb.size());
@@ -109,14 +247,8 @@ public:
         const HighPrecision& maxY,
         IterType NumIterations,
         size_t GuessReserveSize) {
-        //radiusX = fabs(maxX - cx) + fabs(minX - cx);
-        //radiusY = fabs(maxY - cy) + fabs(minY - cy);
-        radiusX = maxX - minX;
-        radiusY = maxY - minY;
-        radiusXHdr = (T)radiusX;
-        HdrReduce(radiusXHdr);
-        radiusYHdr = (T)radiusY;
-        HdrReduce(radiusYHdr);
+        auto radiusX = maxX - minX;
+        auto radiusY = maxY - minY;
 
         hiX = cx;
         hiY = cy;

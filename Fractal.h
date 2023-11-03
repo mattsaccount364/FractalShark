@@ -163,6 +163,8 @@ public:
 
     void SetPerturbationAlg(RefOrbitCalc::PerturbationAlg alg) { m_RefOrbit.SetPerturbationAlg(alg); }
     void ClearPerturbationResults(RefOrbitCalc::PerturbationResultType type) { m_RefOrbit.ClearPerturbationResults(type); }
+    void SavePerturbationOrbit();
+    void LoadPerturbationOrbit();
 
 private: // Keeps track of what has changed and what hasn't since the last draw
     inline void ChangedMakeClean(void) { m_ChangedWindow = m_ChangedScrn = m_ChangedIterations = false; }
@@ -556,7 +558,7 @@ private:
 
     uint32_t InitializeGPUMemory();
     void InitializeMemory();
-    void GetIterMemory();
+    void SetCurItersMemory();
 
     void ReturnIterMemory(ItersMemoryContainer&& to_return);
 

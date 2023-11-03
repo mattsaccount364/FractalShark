@@ -7,48 +7,9 @@
 #include <vector>
 #include <memory>
 #include <math.h>
+#include <fstream>
 
 #include <psapi.h>
-
-struct scoped_mpfr_precision
-{
-    unsigned saved_digits10;
-    scoped_mpfr_precision(unsigned digits10) : saved_digits10(HighPrecision::thread_default_precision())
-    {
-        HighPrecision::default_precision(digits10);
-    }
-    ~scoped_mpfr_precision()
-    {
-        HighPrecision::default_precision(saved_digits10);
-    }
-    void reset(unsigned digits10)
-    {
-        HighPrecision::default_precision(digits10);
-    }
-    void reset()
-    {
-        HighPrecision::default_precision(saved_digits10);
-    }
-};
-
-struct scoped_mpfr_precision_options
-{
-    boost::multiprecision::variable_precision_options saved_options;
-    scoped_mpfr_precision_options(boost::multiprecision::variable_precision_options opts) : saved_options(HighPrecision::thread_default_variable_precision_options())
-    {
-        HighPrecision::thread_default_variable_precision_options(opts);
-    }
-    ~scoped_mpfr_precision_options()
-    {
-        HighPrecision::thread_default_variable_precision_options(saved_options);
-    }
-    void reset(boost::multiprecision::variable_precision_options opts)
-    {
-        HighPrecision::thread_default_variable_precision_options(opts);
-    }
-};
-
-
 
 template<class Type>
 struct ThreadPtrs {
@@ -286,6 +247,59 @@ RefOrbitCalc::GetPerturbationResults() {
         }
     }
 }
+
+template<typename IterType, class T, CalcBad Bad>
+void RefOrbitCalc::AddPerturbationResults(std::unique_ptr<PerturbationResults<IterType, T, Bad>> results) {
+    auto lambda = [&]<typename U>(U & container) -> void {
+        if constexpr (std::is_same<T, double>::value) {
+            container.m_PerturbationResultsDouble.push_back(std::move(results));
+        }
+        else if constexpr (std::is_same<T, float>::value) {
+            container.m_PerturbationResultsFloat.push_back(std::move(results));
+        }
+        else if constexpr (std::is_same<T, HDRFloat<double>>::value) {
+            container.m_PerturbationResultsHDRDouble.push_back(std::move(results));
+        }
+        else if constexpr (std::is_same<T, HDRFloat<float>>::value) {
+            container.m_PerturbationResultsHDRFloat.push_back(std::move(results));
+        }
+    };
+
+    if constexpr (std::is_same<IterType, uint32_t>::value) {
+        if constexpr (Bad == CalcBad::Disable) {
+            lambda(c32d);
+        }
+        else {
+            lambda(c32e);
+        }
+    }
+    else if constexpr (std::is_same<IterType, uint64_t>::value) {
+        if constexpr (Bad == CalcBad::Disable) {
+            lambda(c64d);
+        }
+        else {
+            lambda(c64e);
+        }
+    }
+}
+
+template void RefOrbitCalc::AddPerturbationResults<uint32_t, float, CalcBad::Disable>(
+    std::unique_ptr<PerturbationResults<uint32_t, float, CalcBad::Disable>> results);
+template void RefOrbitCalc::AddPerturbationResults<uint32_t, double, CalcBad::Disable>(
+    std::unique_ptr<PerturbationResults<uint32_t, double, CalcBad::Disable>> results);
+template void RefOrbitCalc::AddPerturbationResults<uint32_t, HDRFloat<float>, CalcBad::Disable>(
+    std::unique_ptr<PerturbationResults<uint32_t, HDRFloat<float>, CalcBad::Disable>> results);
+template void RefOrbitCalc::AddPerturbationResults<uint32_t, HDRFloat<double>, CalcBad::Disable>(
+    std::unique_ptr<PerturbationResults<uint32_t, HDRFloat<double>, CalcBad::Disable>> results);
+
+template void RefOrbitCalc::AddPerturbationResults<uint64_t, float, CalcBad::Disable>(
+    std::unique_ptr<PerturbationResults<uint64_t, float, CalcBad::Disable>> results);
+template void RefOrbitCalc::AddPerturbationResults<uint64_t, double, CalcBad::Disable>(
+    std::unique_ptr<PerturbationResults<uint64_t, double, CalcBad::Disable>> results);
+template void RefOrbitCalc::AddPerturbationResults<uint64_t, HDRFloat<float>, CalcBad::Disable>(
+    std::unique_ptr<PerturbationResults<uint64_t, HDRFloat<float>, CalcBad::Disable>> results);
+template void RefOrbitCalc::AddPerturbationResults<uint64_t, HDRFloat<double>, CalcBad::Disable>(
+    std::unique_ptr<PerturbationResults<uint64_t, HDRFloat<double>, CalcBad::Disable>> results);
 
 template<
     typename IterType,
@@ -2445,7 +2459,12 @@ void RefOrbitCalc::ResetGuess(HighPrecision x, HighPrecision y) {
 }
 
 template<typename IterType, CalcBad Bad>
-RefOrbitCalc::Container<IterType, Bad> &RefOrbitCalc::GetContainer() {
+RefOrbitCalc::Container<IterType, Bad>& RefOrbitCalc::GetContainer() {
+    return const_cast<RefOrbitCalc::Container<IterType, Bad>&>(std::as_const(*this).GetContainer<IterType, Bad>());
+}
+
+template<typename IterType, CalcBad Bad>
+const RefOrbitCalc::Container<IterType, Bad> &RefOrbitCalc::GetContainer() const {
     if constexpr (std::is_same<IterType, uint32_t>::value && Bad == CalcBad::Disable) {
         return c32d;
     }

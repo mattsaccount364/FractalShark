@@ -438,7 +438,7 @@ void Fractal::InitializeMemory() {
     m_ItersMemoryStorage.clear();
     for (size_t i = 0; i < 3; i++) {
         const size_t total_aa = GetGpuAntialiasing();
-        ItersMemoryContainer container(m_IterType, m_ScrnWidth, m_ScrnHeight, total_aa);
+        ItersMemoryContainer container(GetIterType(), m_ScrnWidth, m_ScrnHeight, total_aa);
         m_ItersMemoryStorage.push_back(std::move(container));
     }
 
@@ -483,7 +483,7 @@ void Fractal::ReturnIterMemory(ItersMemoryContainer&& to_return) {
     m_ItersMemoryStorage.push_back(std::move(to_return));
 }
 
-void Fractal::GetIterMemory() {
+void Fractal::SetCurItersMemory() {
     std::unique_lock<std::mutex> lock(m_ItersMemoryStorageLock);
     if (!m_ItersMemoryStorage.empty()) {
         m_CurIters = std::move(m_ItersMemoryStorage.back());
@@ -909,7 +909,7 @@ bool Fractal::RecenterViewScreen(RECT rect)
             }
         };
 
-        if (m_IterType == IterTypeEnum::Bits32) {
+        if (GetIterType() == IterTypeEnum::Bits32) {
             lambda(m_CurIters.GetItersArray<uint32_t>());
         }
         else {
@@ -1173,7 +1173,7 @@ void Fractal::AutoZoom() {
             }
         };
 
-        if (m_IterType == IterTypeEnum::Bits32) {
+        if (GetIterType() == IterTypeEnum::Bits32) {
             lambda(m_CurIters.GetItersArray<uint32_t>(), GetNumIterations<uint32_t>());
         }
         else {
@@ -1835,7 +1835,7 @@ constexpr IterType Fractal::GetMaxIterations(void) const {
 }
 
 IterTypeFull Fractal::GetMaxIterationsRT() const {
-    if (m_IterType == IterTypeEnum::Bits32) {
+    if (GetIterType() == IterTypeEnum::Bits32) {
         return GetMaxIterations<uint32_t>();
     }
     else {
@@ -1847,6 +1847,45 @@ void Fractal::SetIterType(IterTypeEnum type) {
     m_IterType = type;
     m_RefOrbit.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
     InitializeMemory();
+}
+
+void Fractal::SavePerturbationOrbit() {
+    const auto filebase = L"perturbation";
+
+    if (GetIterType() == IterTypeEnum::Bits32) {
+
+        auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<
+            uint32_t,
+            HDRFloat<float>,
+            float,
+            CalcBad::Disable,
+            RefOrbitCalc::Extras::None>();
+        results->Write(filebase);
+    }
+    else {
+        auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<
+            uint64_t,
+            HDRFloat<float>,
+            float,
+            CalcBad::Disable,
+            RefOrbitCalc::Extras::None>();
+        results->Write(filebase);
+    }
+}
+
+void Fractal::LoadPerturbationOrbit() {
+    const auto filebase = L"perturbation";
+
+    if (GetIterType() == IterTypeEnum::Bits32) {
+        auto results = std::make_unique<PerturbationResults<uint32_t, HDRFloat<float>, CalcBad::Disable>>();
+        results->Load(filebase);
+        m_RefOrbit.AddPerturbationResults(std::move(results));
+    }
+    else {
+        auto results = std::make_unique<PerturbationResults<uint64_t, HDRFloat<float>, CalcBad::Disable>>();
+        results->Load(filebase);
+        m_RefOrbit.AddPerturbationResults(std::move(results));
+    }
 }
 
 Fractal::IterTypeEnum Fractal::GetIterType() const {
@@ -1906,7 +1945,7 @@ bool Fractal::RequiresUseLocalColor() const {
 
 void Fractal::CalcFractal(bool MemoryOnly)
 {
-    if (m_IterType == IterTypeEnum::Bits32) {
+    if (GetIterType() == IterTypeEnum::Bits32) {
         CalcFractalTypedIter<uint32_t>(MemoryOnly);
     }
     else {
@@ -2009,9 +2048,11 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
         CalcGpuPerturbationFractalBLA<IterType, double, double, true>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu2x32Perturbed:
+        // TODO
         //CalcGpuPerturbationFractalBLA<IterType, dblflt, dblflt>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu2x32PerturbedScaled:
+        // TODO
         //CalcGpuPerturbationFractalBLA<IterType, double, double>(MemoryOnly);
         break;
     case RenderAlgorithm::GpuHDRx32PerturbedBLA:
@@ -2236,7 +2277,7 @@ void Fractal::DrawFractal(bool MemoryOnly)
     }
     else {
         uint32_t result;
-        if (m_IterType == IterTypeEnum::Bits32) {
+        if (GetIterType() == IterTypeEnum::Bits32) {
             result = m_r.OnlyAA(
                 m_CurIters.m_RoundedOutputColorMemory.get(),
                 GetNumIterations<uint32_t>());
@@ -2379,7 +2420,7 @@ void Fractal::DrawFractalThread(size_t index, Fractal* fractal) {
             size_t acc_r, acc_g, acc_b;
             size_t outputIndex = 0;
 
-            size_t totalAA = fractal->GetGpuAntialiasing() * fractal->GetGpuAntialiasing();
+            const size_t totalAA = fractal->GetGpuAntialiasing() * fractal->GetGpuAntialiasing();
             uint32_t palIters = fractal->m_PalIters[fractal->m_WhichPalette][fractal->m_PaletteDepthIndex];
             const uint16_t* palR = fractal->m_PalR[fractal->m_WhichPalette][fractal->m_PaletteDepthIndex].data();
             const uint16_t* palG = fractal->m_PalG[fractal->m_WhichPalette][fractal->m_PaletteDepthIndex].data();
@@ -2396,15 +2437,15 @@ void Fractal::DrawFractalThread(size_t index, Fractal* fractal) {
                 size_t& acc_b) {
 
                 if (fractal->m_WhichPalette != Palette::Basic) {
-                    auto palIndex = numIters % palIters;
+                    auto palIndex = (numIters >> fractal->m_PaletteAuxDepth) % palIters;
                     acc_r += palR[palIndex];
                     acc_g += palG[palIndex];
                     acc_b += palB[palIndex];
                 }
                 else {
-                    acc_r += (numIters * basicFactor) & ((1llu << 16) - 1);
-                    acc_g += (numIters * basicFactor) & ((1llu << 16) - 1);
-                    acc_b += (numIters * basicFactor) & ((1llu << 16) - 1);
+                    acc_r += ((numIters >> fractal->m_PaletteAuxDepth) * basicFactor) & ((1llu << 16) - 1);
+                    acc_g += ((numIters >> fractal->m_PaletteAuxDepth) * basicFactor) & ((1llu << 16) - 1);
+                    acc_b += ((numIters >> fractal->m_PaletteAuxDepth) * basicFactor) & ((1llu << 16) - 1);
                 }
             };
 
@@ -2484,7 +2525,7 @@ void Fractal::DrawFractalThread(size_t index, Fractal* fractal) {
         };
 
 
-        if (fractal->m_IterType == IterTypeEnum::Bits32) {
+        if (fractal->GetIterType() == IterTypeEnum::Bits32) {
             lambda(fractal->m_CurIters.GetItersArray<uint32_t>(), fractal->GetNumIterations<uint32_t>());
         }
         else {
@@ -3540,7 +3581,13 @@ Fractal::CurrentFractalSave::CurrentFractalSave(
     m_WhichPalette(fractal.m_WhichPalette),
     m_CurIters(std::move(fractal.m_CurIters)) {
 
-    fractal.GetIterMemory();
+    //
+    // TODO Note we pass off ownership of m_CurIters.
+    // Implication is that if you save multiple copies of the same bit map, it's not
+    // going to work sensibly.  This is a bug.
+    //
+
+    fractal.SetCurItersMemory();
 
     for (size_t i = 0; i < Fractal::Palette::Num; i++) {
         m_PalR[i] = fractal.m_PalR[i];
@@ -3703,6 +3750,8 @@ void Fractal::CurrentFractalSave::Run() {
         std::ofstream out(filename_c);
         out << out_str;
         out.close();
+
+        m_Fractal.ReturnIterMemory(std::move(m_CurIters));
     }
 
     m_Destructable = true;

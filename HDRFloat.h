@@ -94,6 +94,14 @@ public:
     static constexpr int MaxFloatExponent = 127;
     static constexpr int MinFloatExponent = -126;
 
+#ifndef __CUDACC__ 
+    CUDA_CRAP std::string ToString() const {
+        std::stringstream ss;
+        ss << "mantissa: " << Base::mantissa << " exp: " << Base::exp;
+        return ss.str();
+    }
+#endif
+
     CUDA_CRAP constexpr HDRFloat() {
         Base::mantissa = (T)0.0;
         Base::exp = MIN_BIG_EXPONENT();
@@ -1224,3 +1232,44 @@ static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedGE(const T& one, 
         return one >= two;
     }
 }
+
+#ifndef __CUDACC__
+template<class T>
+static CUDA_CRAP std::string HdrToString(const T& dat) {
+    constexpr auto HighPrecPossible = std::is_same<T, HighPrecision>::value;
+    static_assert(
+        std::is_same<T, double>::value ||
+        std::is_same<T, float>::value ||
+        std::is_same<T, HDRFloat<double>>::value ||
+        std::is_same<T, HDRFloat<float>>::value ||
+        HighPrecPossible, "No");
+
+    if constexpr (
+        std::is_same<T, HDRFloat<double>>::value ||
+        std::is_same<T, HDRFloat<float>>::value) {
+
+        return dat.ToString();
+    }
+    else if constexpr (
+        std::is_same<T, double>::value ||
+        std::is_same<T, float>::value) {
+
+        std::stringstream ss;
+        ss << "mantissa: " << dat << " exp: 0";
+        return ss.str();
+    }
+    else {
+        auto setupSS = [&](const HighPrecision& num) -> std::string {
+            std::stringstream ss;
+            ss.str("");
+            ss.clear();
+            ss << std::setprecision(std::numeric_limits<HighPrecision>::max_digits10);
+            ss << num;
+            return ss.str();
+        };
+
+        auto s = setupSS(dat);
+        return s;
+    }
+}
+#endif

@@ -53,6 +53,9 @@ public:
     template<typename IterType, class T, CalcBad Bad>
     std::vector<std::unique_ptr<PerturbationResults<IterType, T, Bad>>>& GetPerturbationResults() ;
 
+    template<typename IterType, class T, CalcBad Bad>
+    void AddPerturbationResults(std::unique_ptr<PerturbationResults<IterType, T, Bad>> results);
+
     template<typename IterType, class T, class SubType, BenchmarkMode BenchmarkState>
     void AddPerturbationReferencePoint();
 
@@ -127,4 +130,7 @@ private:
 
     template<typename IterType, CalcBad Bad>
     Container<IterType, Bad> &GetContainer();
+
+    template<typename IterType, CalcBad Bad>
+    const Container<IterType, Bad>& GetContainer() const;
 };

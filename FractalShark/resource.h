@@ -252,6 +252,10 @@
 #define ID_SAVE_A                       33043
 #define ID_POPUP_LOAD                   33044
 #define ID_SAVE_SAVEHIGHRESBITMAP       33045
+#define ID_PERTURBATION_SAVECURRENTORBIT 33046
+#define IDM_PERTURBATION_SAVE           33047
+#define ID_PERTURBATION_LOADORBIT       33048
+#define IDM_PERTURBATION_LOAD           33049
 #define IDM_VIEW1                       33051
 #define IDM_VIEW2                       33052
 #define IDM_VIEW3                       33053
@@ -288,7 +292,7 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        131
-#define _APS_NEXT_COMMAND_VALUE         33046
+#define _APS_NEXT_COMMAND_VALUE         33050
 #define _APS_NEXT_CONTROL_VALUE         1000
 #define _APS_NEXT_SYMED_VALUE           110
 #endif

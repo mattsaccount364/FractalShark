@@ -15,6 +15,22 @@ class ATInfo {
 public:
     CUDA_CRAP ATInfo();
 
+    template<class SubType2>
+    CUDA_CRAP ATInfo(const ATInfo<IterType, SubType2>& other)
+        : StepLength(other.StepLength),
+          ThresholdC(other.ThresholdC),
+          SqrEscapeRadius(other.SqrEscapeRadius),
+          RefC(other.RefC),
+          ZCoeff(other.ZCoeff),
+          CCoeff(other.CCoeff),
+          InvZCoeff(other.InvZCoeff),
+          CCoeffSqrInvZCoeff(other.CCoeffSqrInvZCoeff),
+          CCoeffInvZCoeff(other.CCoeffInvZCoeff),
+          CCoeffNormSqr(other.CCoeffNormSqr),
+          RefCNormSqr(other.RefCNormSqr),
+          factor(other.factor) {
+    }
+
 public:
     IterType StepLength;
     HDRFloat ThresholdC;

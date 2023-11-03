@@ -28,6 +28,9 @@ private:
 public:
     using TemplateSubType = SubType;
 
+    friend class HDRFloatComplex<float>;
+    friend class HDRFloatComplex<double>;
+
     CUDA_CRAP constexpr HDRFloatComplex() {
         mantissaReal = (SubType)0.0;
         mantissaImag = (SubType)0.0;
@@ -46,9 +49,10 @@ public:
         this->exp = exp;
     }
 
-    CUDA_CRAP constexpr HDRFloatComplex(const HDRFloatComplex &other) {
-        this->mantissaReal = other.mantissaReal;
-        this->mantissaImag = other.mantissaImag;
+    template<class SubType2>
+    CUDA_CRAP constexpr explicit HDRFloatComplex(const HDRFloatComplex<SubType2> &other) {
+        this->mantissaReal = (SubType)other.mantissaReal;
+        this->mantissaImag = (SubType)other.mantissaImag;
         this->exp = other.exp;
     }
 

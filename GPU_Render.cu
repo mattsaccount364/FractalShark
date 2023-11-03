@@ -3788,7 +3788,7 @@ uint32_t GPURenderer::RenderPerturbLAv2(
         return result;
     }
 
-    GPU_LAReference laReferenceCuda{LaReference};
+    GPU_LAReference<IterType, SubType> laReferenceCuda{LaReference};
     result = laReferenceCuda.CheckValid();
     if (result != 0) {
         return result;
@@ -3843,8 +3843,8 @@ uint32_t GPURenderer::RenderPerturbLAv2(
 template
 uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, HDRFloat<float>, float, LAv2Mode::Full>(
     RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
+    uint32_t * iter_buffer,
+    Color16 * color_buffer,
     MattPerturbResults<uint32_t, HDRFloat<float>>* float_perturb,
     const LAReference<uint32_t, float>& LaReference,
     HDRFloat<float> cx,
@@ -3858,8 +3858,8 @@ uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, HDRFloat<float>, float, LAv2Mo
 template
 uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, HDRFloat<float>, float, LAv2Mode::PO>(
     RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
+    uint32_t * iter_buffer,
+    Color16 * color_buffer,
     MattPerturbResults<uint32_t, HDRFloat<float>>* float_perturb,
     const LAReference<uint32_t, float>& LaReference,
     HDRFloat<float> cx,
@@ -3873,8 +3873,8 @@ uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, HDRFloat<float>, float, LAv2Mo
 template
 uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, HDRFloat<float>, float, LAv2Mode::LAO>(
     RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
+    uint32_t * iter_buffer,
+    Color16 * color_buffer,
     MattPerturbResults<uint32_t, HDRFloat<float>>* float_perturb,
     const LAReference<uint32_t, float>& LaReference,
     HDRFloat<float> cx,

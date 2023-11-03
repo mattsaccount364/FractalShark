@@ -32,14 +32,14 @@ private:
     using HDRFloat = HDRFloat<SubType>;
     using HDRFloatComplex = HDRFloatComplex<SubType>;
 
-    friend class GPU_LAReference<IterType, SubType>;
+    friend class GPU_LAReference<IterType, float>;
+    friend class GPU_LAReference<IterType, double>;
 
     static const int lowBound = 64;
     static const SubType log16;
 
 public:
-    LAReference(const PerturbationResults<IterType, HDRFloat, CalcBad::Disable> *PerturbationResults) :
-        m_PerturbationResults(PerturbationResults),
+    LAReference() :
         UseAT{},
         AT{},
         LAStageCount{},
@@ -60,15 +60,26 @@ private:
     std::vector<LAInfoDeep<IterType, SubType>> LAs;
     std::vector<LAStageInfo<IterType>> LAStages;
 
-    const PerturbationResults<IterType, HDRFloat, CalcBad::Disable> *m_PerturbationResults;
-
     IterType LAsize();
-    bool CreateLAFromOrbit(IterType maxRefIteration);
-    bool CreateLAFromOrbitMT(IterType maxRefIteration);
-    bool CreateNewLAStage(IterType maxRefIteration);
+    template<typename PerturbType>
+    bool CreateLAFromOrbit(
+        const PerturbationResults<IterType, PerturbType, CalcBad::Disable>& PerturbationResults,
+        IterType maxRefIteration);
+    template<typename PerturbType>
+    bool CreateLAFromOrbitMT(
+        const PerturbationResults<IterType, PerturbType, CalcBad::Disable>& PerturbationResults,
+        IterType maxRefIteration);
+    template<typename PerturbType>
+    bool CreateNewLAStage(
+        const PerturbationResults<IterType, PerturbType, CalcBad::Disable>& PerturbationResults,
+        IterType maxRefIteration);
 
 public:
-    void GenerateApproximationData(HDRFloat radius, IterType maxRefIteration);
+    template<typename PerturbType>
+    void GenerateApproximationData(
+        const PerturbationResults<IterType, PerturbType, CalcBad::Disable>& PerturbationResults,
+        HDRFloat radius,
+        IterType maxRefIteration);
     void CreateATFromLA(HDRFloat radius);
 
 public:

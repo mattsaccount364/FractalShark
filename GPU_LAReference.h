@@ -13,7 +13,8 @@ private:
     using HDRFloatComplex = HDRFloatComplex<SubType>;
 
 public:
-    __host__ GPU_LAReference(const LAReference<IterType, SubType>& other);
+    template<class SubType2>
+    __host__ GPU_LAReference(const LAReference<IterType, SubType2>& other);
     __host__ GPU_LAReference(const GPU_LAReference& other);
     ~GPU_LAReference();
 
@@ -61,8 +62,9 @@ public:
 };
 
 template<typename IterType, class SubType>
+template<class SubType2>
 __host__
-GPU_LAReference<IterType, SubType>::GPU_LAReference(const LAReference<IterType, SubType>& other) :
+GPU_LAReference<IterType, SubType>::GPU_LAReference<SubType2>(const LAReference<IterType, SubType2>& other) :
     UseAT{ other.UseAT },
     AT{ other.AT },
     LAStageCount{ other.LAStageCount },
@@ -93,18 +95,21 @@ GPU_LAReference<IterType, SubType>::GPU_LAReference(const LAReference<IterType, 
     LAStages = tempLAStages;
     NumLAStages = other.LAStages.size();
 
-    //for (size_t i = 0; i < other.LAs.size(); i++) {
-    //    LAs[i] = other.LAs[i];
-    //}
+    if constexpr (std::is_same<SubType, SubType2>::value) {
+        static_assert(sizeof(GPU_LAInfoDeep<IterType, SubType>) == sizeof(LAInfoDeep<IterType, SubType>), "!");
 
-    static_assert(sizeof(GPU_LAInfoDeep<IterType, SubType>) == sizeof(LAInfoDeep<IterType, SubType>), "!");
-    
-    m_Err = cudaMemcpy(LAs,
-        other.LAs.data(),
-        sizeof(GPU_LAInfoDeep<IterType, SubType>) * other.LAs.size(),
-        cudaMemcpyDefault);
-    if (m_Err != cudaSuccess) {
-        return;
+        m_Err = cudaMemcpy(LAs,
+            other.LAs.data(),
+            sizeof(GPU_LAInfoDeep<IterType, SubType>) * other.LAs.size(),
+            cudaMemcpyDefault);
+        if (m_Err != cudaSuccess) {
+            return;
+        }
+    }
+    else {
+        for (size_t i = 0; i < other.LAs.size(); i++) {
+            LAs[i] = other.LAs[i];
+        }
     }
 
     //for (size_t i = 0; i < other.LAStages.size(); i++) {

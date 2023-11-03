@@ -1988,10 +1988,13 @@ PerturbationResults<IterType, T, Bad>* RefOrbitCalc::GetAndCreateUsefulPerturbat
         if constexpr (Ex == Extras::IncludeLAv2) {
             static_assert(Bad == CalcBad::Disable, "!");
             if (results->LaReference == nullptr) {
-                results->LaReference = std::make_unique<LAReference<IterType, SubType>>(results);
+                results->LaReference = std::make_unique<LAReference<IterType, SubType>>();
 
                 // TODO the presumption here is results size fits in the target IterType size
-                results->LaReference->GenerateApproximationData(results->maxRadius, (IterType)results->orb.size() - 1);
+                results->LaReference->GenerateApproximationData(
+                    *results,
+                    results->maxRadius,
+                    (IterType)results->orb.size() - 1);
             }
         }
         else {

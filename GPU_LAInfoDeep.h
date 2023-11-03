@@ -35,8 +35,11 @@ public:
     SubType MinMagMant;
     int32_t MinMagExp;
 
-    CUDA_CRAP GPU_LAInfoDeep<IterType, SubType> &operator=(const GPU_LAInfoDeep<IterType, SubType>& other);
-    CUDA_CRAP GPU_LAInfoDeep<IterType, SubType>& operator=(const LAInfoDeep<IterType, SubType>& other);
+    template<class SubType2>
+    CUDA_CRAP GPU_LAInfoDeep<IterType, SubType>& operator=(const GPU_LAInfoDeep<IterType, SubType2>& other);
+
+    template<class SubType2>
+    CUDA_CRAP GPU_LAInfoDeep<IterType, SubType>& operator=(const LAInfoDeep<IterType, SubType2>& other);
 
     CUDA_CRAP GPU_LAstep<IterType, SubType> Prepare(HDRFloatComplex dz) const;
     CUDA_CRAP HDRFloatComplex getRef() const;
@@ -46,27 +49,28 @@ public:
 };
 
 template<typename IterType, class SubType>
+template<class SubType2>
 CUDA_CRAP
-GPU_LAInfoDeep<IterType, SubType> &GPU_LAInfoDeep<IterType, SubType>::operator=(const GPU_LAInfoDeep<IterType, SubType>& other) {
+GPU_LAInfoDeep<IterType, SubType> &GPU_LAInfoDeep<IterType, SubType>::operator=(const GPU_LAInfoDeep<IterType, SubType2>& other) {
     if (this == &other) {
         return *this;
     }
 
-    this->RefRe = other.RefRe;
-    this->RefIm = other.RefIm;
+    this->RefRe = (SubType)other.RefRe;
+    this->RefIm = (SubType)other.RefIm;
     this->RefExp = other.RefExp;
-    this->LAThresholdMant = other.LAThresholdMant;
+    this->LAThresholdMant = (SubType)other.LAThresholdMant;
     this->LAThresholdExp = other.LAThresholdExp;
     
-    this->ZCoeffRe = other.ZCoeffRe;
-    this->ZCoeffIm = other.ZCoeffIm;
+    this->ZCoeffRe = (SubType)other.ZCoeffRe;
+    this->ZCoeffIm = (SubType)other.ZCoeffIm;
     this->ZCoeffExp = other.ZCoeffExp;
     
-    this->CCoeffRe = other.CCoeffRe;
-    this->CCoeffIm = other.CCoeffIm;
+    this->CCoeffRe = (SubType)other.CCoeffRe;
+    this->CCoeffIm = (SubType)other.CCoeffIm;
     this->CCoeffExp = other.CCoeffExp;
 
-    this->LAThresholdCMant = other.LAThresholdCMant;
+    this->LAThresholdCMant = (SubType)other.LAThresholdCMant;
     this->LAThresholdCExp = other.LAThresholdCExp;
     
     this->LAi = other.LAi;
@@ -74,23 +78,24 @@ GPU_LAInfoDeep<IterType, SubType> &GPU_LAInfoDeep<IterType, SubType>::operator=(
 }
 
 template<typename IterType, class SubType>
+template<class SubType2>
 CUDA_CRAP
-GPU_LAInfoDeep<IterType, SubType>& GPU_LAInfoDeep<IterType, SubType>::operator=(const LAInfoDeep<IterType, SubType>& other) {
-    this->RefRe = other.RefRe;
-    this->RefIm = other.RefIm;
+GPU_LAInfoDeep<IterType, SubType>& GPU_LAInfoDeep<IterType, SubType>::operator=(const LAInfoDeep<IterType, SubType2>& other) {
+    this->RefRe = (SubType)other.RefRe;
+    this->RefIm = (SubType)other.RefIm;
     this->RefExp = other.RefExp;
-    this->LAThresholdMant = other.LAThresholdMant;
+    this->LAThresholdMant = (SubType)other.LAThresholdMant;
     this->LAThresholdExp = other.LAThresholdExp;
 
-    this->ZCoeffRe = other.ZCoeffRe;
-    this->ZCoeffIm = other.ZCoeffIm;
+    this->ZCoeffRe = (SubType)other.ZCoeffRe;
+    this->ZCoeffIm = (SubType)other.ZCoeffIm;
     this->ZCoeffExp = other.ZCoeffExp;
 
-    this->CCoeffRe = other.CCoeffRe;
-    this->CCoeffIm = other.CCoeffIm;
+    this->CCoeffRe = (SubType)other.CCoeffRe;
+    this->CCoeffIm = (SubType)other.CCoeffIm;
     this->CCoeffExp = other.CCoeffExp;
 
-    this->LAThresholdCMant = other.LAThresholdCMant;
+    this->LAThresholdCMant = (SubType)other.LAThresholdCMant;
     this->LAThresholdCExp = other.LAThresholdCExp;
 
     this->LAi = other.LAi;

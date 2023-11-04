@@ -103,6 +103,9 @@ public:
     void ClearPerturbationResults(PerturbationResultType type);
     void ResetGuess(HighPrecision x = HighPrecision(0), HighPrecision y = HighPrecision(0));
 
+    void SaveAllOrbits();
+    void LoadAllOrbits();
+
 private:
     template<typename IterType, class T, class PerturbationResultsType, CalcBad Bad, ReuseMode Reuse>
     void InitResults(PerturbationResultsType&results, const HighPrecision &initX, const HighPrecision &initY);

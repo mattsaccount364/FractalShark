@@ -1850,42 +1850,11 @@ void Fractal::SetIterType(IterTypeEnum type) {
 }
 
 void Fractal::SavePerturbationOrbit() {
-    const auto filebase = L"perturbation";
-
-    if (GetIterType() == IterTypeEnum::Bits32) {
-
-        auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<
-            uint32_t,
-            HDRFloat<float>,
-            float,
-            CalcBad::Disable,
-            RefOrbitCalc::Extras::None>();
-        results->Write(filebase);
-    }
-    else {
-        auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<
-            uint64_t,
-            HDRFloat<float>,
-            float,
-            CalcBad::Disable,
-            RefOrbitCalc::Extras::None>();
-        results->Write(filebase);
-    }
+    m_RefOrbit.SaveAllOrbits();
 }
 
 void Fractal::LoadPerturbationOrbit() {
-    const auto filebase = L"perturbation";
-
-    if (GetIterType() == IterTypeEnum::Bits32) {
-        auto results = std::make_unique<PerturbationResults<uint32_t, HDRFloat<float>, CalcBad::Disable>>();
-        results->Load(filebase);
-        m_RefOrbit.AddPerturbationResults(std::move(results));
-    }
-    else {
-        auto results = std::make_unique<PerturbationResults<uint64_t, HDRFloat<float>, CalcBad::Disable>>();
-        results->Load(filebase);
-        m_RefOrbit.AddPerturbationResults(std::move(results));
-    }
+    m_RefOrbit.LoadAllOrbits();
 }
 
 Fractal::IterTypeEnum Fractal::GetIterType() const {
@@ -2529,7 +2498,7 @@ void Fractal::DrawFractalThread(size_t index, Fractal* fractal) {
             lambda(fractal->m_CurIters.GetItersArray<uint32_t>(), fractal->GetNumIterations<uint32_t>());
         }
         else {
-            lambda(fractal->m_CurIters.GetItersArray<uint64_t>(), fractal->GetNumIterations<uint32_t>());
+            lambda(fractal->m_CurIters.GetItersArray<uint64_t>(), fractal->GetNumIterations<uint64_t>());
         }
 
         sync.m_DrawThreadProcessed = true;

@@ -11,6 +11,10 @@
 
 #include <psapi.h>
 
+#include <string>
+#include <iostream>
+#include <filesystem>
+
 template<class Type>
 struct ThreadPtrs {
     std::atomic<Type*> In;
@@ -2459,6 +2463,136 @@ void RefOrbitCalc::ClearPerturbationResults(PerturbationResultType type) {
 void RefOrbitCalc::ResetGuess(HighPrecision x, HighPrecision y) {
     m_PerturbationGuessCalcX = x;
     m_PerturbationGuessCalcY = y;
+}
+
+void RefOrbitCalc::SaveAllOrbits() {
+    // Returns the current time as a string
+    auto gettime = []() -> std::wstring
+    {
+        using namespace std::chrono;
+
+        // get current time
+        auto now = system_clock::now();
+
+        // get number of milliseconds for the current second
+        // (remainder after division into seconds)
+        auto ms = duration_cast<milliseconds>(now.time_since_epoch()) % 1000;
+
+        // convert to std::time_t in order to convert to std::tm (broken time)
+        auto timer = system_clock::to_time_t(now);
+
+        // convert to broken time
+        std::tm bt = *std::localtime(&timer);
+
+        std::ostringstream oss;
+
+        oss << std::put_time(&bt, "%H-%M-%S"); // HH:MM:SS
+        oss << '.' << std::setfill('0') << std::setw(3) << ms.count();
+        auto res = oss.str();
+
+        std::wstring wide;
+        std::transform(res.begin(), res.end(), std::back_inserter(wide), [](char c) {
+            return (wchar_t)c;
+            });
+
+        return wide;
+    };
+
+    // Saves all the results to disk
+    auto lambda = [&](auto& Container) {
+        for (const auto &it : Container.m_PerturbationResultsDouble) {
+            auto filebase = gettime();
+            it->Write(filebase);
+        }
+
+        for (const auto &it : Container.m_PerturbationResultsFloat) {
+            auto filebase = gettime();
+            it->Write(filebase);
+        }
+
+        for (const auto &it : Container.m_PerturbationResultsHDRDouble) {
+            auto filebase = gettime();
+            it->Write(filebase);
+        }
+    
+        for (const auto &it : Container.m_PerturbationResultsHDRFloat) {
+            auto filebase = gettime();
+            it->Write(filebase);
+        }
+    };
+
+    lambda(c32d);
+    lambda(c32e);
+    lambda(c64d);
+    lambda(c64e);
+}
+
+void RefOrbitCalc::LoadAllOrbits() {
+    // Matches the extension of a filename
+    auto extmatch = [](std::string fn) -> bool {
+        if (fn.substr(fn.find_last_of(".") + 1) == "met") {
+            return true;
+        }
+        return false;
+    };
+
+    // Removes the extension from a filename
+    auto stripext = [](std::string fn) -> std::string {
+        size_t lastindex = fn.find_last_of(".");
+        std::string n = fn.substr(0, lastindex);
+        return n;
+    };
+
+    // Convert narrow string to wide string
+    auto narrowtowide = [](std::string narrow) -> std::wstring {
+        std::wstring wide;
+        std::transform(narrow.begin(), narrow.end(), std::back_inserter(wide), [](char c) {
+            return (wchar_t)c;
+            });
+        return wide;
+    };
+
+    // This is such a stupid implementation of this but whatever
+    // TODO: make this not stupid
+    // The idea is to load all the relevant files in the current directory.
+    auto lambda = [&]<typename IterType, CalcBad Bad>(auto& Container) {
+        std::string path = ".";
+        for (const auto& entry : std::filesystem::directory_iterator(path)) {
+            auto file = entry.path().string();
+            if (extmatch(file)) {
+                auto stripfn = stripext(file);
+                auto widefn = narrowtowide(stripfn);
+                auto results1 = std::make_unique<PerturbationResults<IterType, double, Bad>>();
+                if (results1->Load(widefn)) {
+                    Container.m_PerturbationResultsDouble.push_back(std::move(results1));
+                    continue;
+                }
+
+                auto results2 = std::make_unique<PerturbationResults<IterType, float, Bad>>();
+                if (results2->Load(widefn)) {
+                    Container.m_PerturbationResultsFloat.push_back(std::move(results2));
+                    continue;
+                }
+
+                auto results3 = std::make_unique<PerturbationResults<IterType, HDRFloat<double>, Bad>>();
+                if (results3->Load(widefn)) {
+                    Container.m_PerturbationResultsHDRDouble.push_back(std::move(results3));
+                    continue;
+                }
+
+                auto results4 = std::make_unique<PerturbationResults<IterType, HDRFloat<float>, Bad>>();
+                if (results4->Load(widefn)) {
+                    Container.m_PerturbationResultsHDRFloat.push_back(std::move(results4));
+                    continue;
+                }
+            }
+        }
+    };
+
+    lambda.template operator()<uint32_t, CalcBad::Disable>(c32d);
+    lambda.template operator()<uint32_t, CalcBad::Enable>(c32e);
+    lambda.template operator()<uint64_t, CalcBad::Disable>(c64d);
+    lambda.template operator()<uint64_t, CalcBad::Enable >(c64e);
 }
 
 template<typename IterType, CalcBad Bad>

@@ -55,6 +55,38 @@ public:
         }
 
         metafile << orb.size() << std::endl;
+
+        if constexpr (std::is_same<IterType, uint32_t>::value) {
+            metafile << "uint32_t" << std::endl;
+        } else if constexpr (std::is_same<IterType, uint64_t>::value) {
+            metafile << "uint64_t" << std::endl;
+        } else {
+            ::MessageBox(NULL, L"Invalid size.", L"", MB_OK);
+            return;
+        }
+
+        if constexpr (std::is_same<T, float>::value) {
+            metafile << "float" << std::endl;
+        } else if constexpr (std::is_same<T, double>::value) {
+            metafile << "double" << std::endl;
+        } else if constexpr (std::is_same<T, HDRFloat<float>>::value) {
+            metafile << "HDRFloat<float>" << std::endl;
+        } else if constexpr (std::is_same<T, HDRFloat<double>>::value) {
+            metafile << "HDRFloat<double>" << std::endl;
+        } else {
+            ::MessageBox(NULL, L"Invalid type.", L"", MB_OK);
+            return;
+        }
+
+        if constexpr (Bad == CalcBad::Enable) {
+            metafile << "CalcBad::Enable" << std::endl;
+        } else if constexpr (Bad == CalcBad::Disable) {
+            metafile << "CalcBad::Disable" << std::endl;
+        } else {
+            ::MessageBox(NULL, L"Invalid bad.", L"", MB_OK);
+            return;
+        }
+
         metafile << hiX.precision() << std::endl;
         metafile << HdrToString(hiX) << std::endl;
         metafile << hiY.precision() << std::endl;
@@ -67,16 +99,87 @@ public:
     // This function uses CreateFileMapping and MapViewOfFile to map
     // the file into memory.  Then it loads the meta file using ifstream
     // to get the other data.
-    void Load(const std::wstring& filename) {
+    bool Load(const std::wstring& filename) {
         const auto metafilename = filename + L".met";
         std::ifstream metafile(metafilename, std::ios::binary);
         if (!metafile.is_open()) {
             ::MessageBox(NULL, L"Failed to open file for writing", L"", MB_OK);
-            return;
+            return false;
         }
 
         size_t sz;
         metafile >> sz;
+
+        bool typematch1 = false;
+        bool typematch2 = false;
+        bool typematch3 = false;
+        {
+            std::string typestr;
+            metafile >> typestr;
+
+            if (typestr == "uint32_t") {
+                if constexpr (std::is_same<IterType, uint32_t>::value) {
+                    typematch1 = true;
+                }
+            } else if (typestr == "uint64_t") {
+                if constexpr (std::is_same<IterType, uint64_t>::value) {
+                    typematch1 = true;
+                }
+            } else {
+                ::MessageBox(NULL, L"Invalid size.", L"", MB_OK);
+                return false;
+            }
+        }
+
+        {
+            std::string tstr;
+            metafile >> tstr;
+
+            if (tstr == "float") {
+                if constexpr (std::is_same<T, float>::value) {
+                    typematch2 = true;
+                }
+            }
+            else if (tstr == "double") {
+                if constexpr (std::is_same<T, double>::value) {
+                    typematch2 = true;
+                }
+            } else if (tstr == "HDRFloat<float>") {
+                if constexpr (std::is_same<T, HDRFloat<float>>::value) {
+                    typematch2 = true;
+                }
+            } else if (tstr == "HDRFloat<double>") {
+                if constexpr (std::is_same<T, HDRFloat<double>>::value) {
+                    typematch2 = true;
+                }
+            } else {
+                ::MessageBox(NULL, L"Invalid type.", L"", MB_OK);
+                return false;
+            }
+        }
+
+        {
+            std::string badstr;
+            metafile >> badstr;
+
+            if (badstr == "CalcBad::Enable") {
+                if constexpr (Bad == CalcBad::Enable) {
+                    typematch3 = true;
+                }
+            }
+            else if (badstr == "CalcBad::Disable") {
+                if constexpr (Bad == CalcBad::Disable) {
+                    typematch3 = true;
+                }
+            } else {
+                ::MessageBox(NULL, L"Invalid bad.", L"", MB_OK);
+                return false;
+            }
+        }
+
+        if (!typematch1 || !typematch2 || !typematch3) {
+            return false;
+        }
 
         {
             uint32_t prec;
@@ -122,11 +225,11 @@ public:
             else if constexpr (
                 std::is_same<T, float>::value ||
                 std::is_same<T, double>::value) {
-                maxRadius = m;
+                maxRadius = static_cast<T>(m);
             }
             else {
                 ::MessageBox(NULL, L"Unexpected type in Load", L"", MB_OK);
-                return;
+                return false;
             }
         }
 
@@ -153,13 +256,13 @@ public:
             NULL);
         if (hFile == INVALID_HANDLE_VALUE) {
             ::MessageBox(NULL, L"Failed to open file for reading", L"", MB_OK);
-            return;
+            return false;
         }
 
         HANDLE hMapFile = CreateFileMapping(hFile, NULL, PAGE_READONLY, 0, 0, NULL);
         if (hMapFile == NULL) {
             ::MessageBox(NULL, L"Failed to create file mapping", L"", MB_OK);
-            return;
+            return false;
         }
 
         orb.clear();
@@ -168,7 +271,7 @@ public:
         void* pBuf = MapViewOfFile(hMapFile, FILE_MAP_READ, 0, 0, 0);
         if (pBuf == NULL) {
             ::MessageBox(NULL, L"Failed to map view of file", L"", MB_OK);
-            return;
+            return false;
         }
 
         memcpy(orb.data(), pBuf, sz * sizeof(MattReferenceSingleIter<T, Bad>));
@@ -177,6 +280,8 @@ public:
         UnmapViewOfFile(pBuf);
         CloseHandle(hMapFile);
         CloseHandle(hFile);
+
+        return true;
     }
 
     void clear() {

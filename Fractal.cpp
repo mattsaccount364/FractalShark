@@ -1559,7 +1559,6 @@ void Fractal::SquareCurrentView(void)
     m_ChangedWindow = true;
 
     CleanupThreads(false);
-    m_RefOrbit.OptimizeMemory();
 }
 
 // Used to gradually approach a given target.

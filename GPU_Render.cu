@@ -198,7 +198,7 @@ GPU_BLAS<IterType, T, GPUBLA_TYPE, LM2>::GPU_BLAS(const std::vector<std::vector<
         total += sizeof(GPUBLA_TYPE) * B[i].size();
     }
 
-    m_Err = cudaMalloc(&m_BMem, total);
+    m_Err = cudaMallocManaged(&m_BMem, total);
     if (m_Err != cudaSuccess) {
         return;
     }
@@ -409,7 +409,7 @@ struct MattPerturbSingleResults {
         static_assert(sizeof(MattDblflt) == sizeof(dblflt), "No");
 
         MattReferenceSingleIter<Type, Bad>* tempIters;
-        err = cudaMalloc(&tempIters, size * sizeof(MattReferenceSingleIter<Type, Bad>));
+        err = cudaMallocManaged(&tempIters, size * sizeof(MattReferenceSingleIter<Type, Bad>));
         if (err != cudaSuccess) {
             size = 0;
             return;

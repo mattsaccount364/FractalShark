@@ -458,6 +458,9 @@ static void AddReused(T &results, const HighPrecision& zx, const HighPrecision& 
 
 template<typename IterType, class T, class PerturbationResultsType, CalcBad Bad, RefOrbitCalc::ReuseMode Reuse>
 void RefOrbitCalc::InitResults(PerturbationResultsType& results, const HighPrecision& initX, const HighPrecision& initY) {
+    // We're going to add new results, so clear out the old ones.
+    OptimizeMemory();
+
     results.InitResults<T, Bad, Reuse>(
         initX,
         initY,
@@ -479,7 +482,6 @@ template<
     RefOrbitCalc::ReuseMode Reuse>
 void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecision cy) {
     auto& PerturbationResultsArray = GetPerturbationResults<IterType, T, Bad>();
-
     PerturbationResultsArray.push_back(std::make_unique<PerturbationResults<IterType, T, Bad>>());
     auto* results = PerturbationResultsArray[PerturbationResultsArray.size() - 1].get();
 
@@ -1315,7 +1317,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
             T n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
 
             T r0 = HdrMaxPositiveReduced(dzdcX1, dzdcY1);
-            auto n3 = results->maxRadius * r0 * HighTwo;
+            auto n3 = results->maxRadius * r0 * HighTwo; // TODO optimize HDRFloat *2.
             HdrReduce(n3);
 
             if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
@@ -2486,7 +2488,7 @@ void RefOrbitCalc::SaveAllOrbits() {
 
         std::ostringstream oss;
 
-        oss << std::put_time(&bt, "%H-%M-%S"); // HH:MM:SS
+        oss << std::put_time(&bt, "%Y-%m-%d-%H-%M-%S"); // HH:MM:SS
         oss << '.' << std::setfill('0') << std::setw(3) << ms.count();
         auto res = oss.str();
 

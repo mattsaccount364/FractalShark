@@ -357,7 +357,18 @@ public:
 
         hiX = cx;
         hiY = cy;
-        maxRadius = (T)(radiusX > radiusY ? radiusX : radiusY);
+
+        // TODO I don't get it.  Why is this here?
+        // Periodicity checking results in different detected periods depending on the type,
+        // e.g. HDRFloat<float> vs HDRFloat<double>.  This 2.0 here seems to compensat, but
+        // makes no sense.  So what bug are we covering up here?
+        if constexpr (std::is_same<T, HDRFloat<double>>::value) {
+            maxRadius = (T)((radiusX > radiusY ? radiusX : radiusY) * 2.0);
+        }
+        else {
+            maxRadius = (T)(radiusX > radiusY ? radiusX : radiusY);
+        }
+
         HdrReduce(maxRadius);
 
         MaxIterations = NumIterations + 1; // +1 for push_back(0) below

@@ -9,6 +9,8 @@
 #include "../QuadDouble/gqd_basic.cuh"
 #include "../QuadFloat/gqf_basic.cuh"
 
+#include "CudaDblflt.h"
+
 #include "GPU_BLAS.h"
 
 #include "HDRFloatComplex.h"
@@ -1413,8 +1415,8 @@ mandel_1xHDR_float_perturb_lav2(
 
     const HDRFloatType DeltaSub0X = DeltaReal;
     const HDRFloatType DeltaSub0Y = DeltaImaginary;
-    HDRFloatType DeltaSubNX = HDRFloatType(0);
-    HDRFloatType DeltaSubNY = HDRFloatType(0);
+    HDRFloatType DeltaSubNX = HDRFloatType(0.0f);
+    HDRFloatType DeltaSubNY = HDRFloatType(0.0f);
 
     using TComplex = HDRFloatComplex<SubType>;
 
@@ -1707,6 +1709,126 @@ void mandel_2x_float(
     };
 
     while (zrsqr.y + zisqr.y < 4.0f && iter < n_iterations)
+    {
+        if (iteration_precision == 1) {
+            MANDEL_2X_FLOAT();
+            iter++;
+        }
+        else if (iteration_precision == 2) {
+            MANDEL_2X_FLOAT();
+            MANDEL_2X_FLOAT();
+            iter += 2;
+        }
+        else if (iteration_precision == 4) {
+            MANDEL_2X_FLOAT();
+            MANDEL_2X_FLOAT();
+            MANDEL_2X_FLOAT();
+            MANDEL_2X_FLOAT();
+            iter += 4;
+        }
+        else if (iteration_precision == 8) {
+            MANDEL_2X_FLOAT();
+            MANDEL_2X_FLOAT();
+            MANDEL_2X_FLOAT();
+            MANDEL_2X_FLOAT();
+            MANDEL_2X_FLOAT();
+            MANDEL_2X_FLOAT();
+            MANDEL_2X_FLOAT();
+            MANDEL_2X_FLOAT();
+            iter += 8;
+        }
+        else if (iteration_precision == 16) {
+            MANDEL_2X_FLOAT();
+            MANDEL_2X_FLOAT();
+            MANDEL_2X_FLOAT();
+            MANDEL_2X_FLOAT();
+            MANDEL_2X_FLOAT();
+            MANDEL_2X_FLOAT();
+            MANDEL_2X_FLOAT();
+            MANDEL_2X_FLOAT();
+            MANDEL_2X_FLOAT();
+            MANDEL_2X_FLOAT();
+            MANDEL_2X_FLOAT();
+            MANDEL_2X_FLOAT();
+            MANDEL_2X_FLOAT();
+            MANDEL_2X_FLOAT();
+            MANDEL_2X_FLOAT();
+            MANDEL_2X_FLOAT();
+            iter += 16;
+        }
+    }
+
+    OutputIterMatrix[idx] = iter;
+}
+
+template<typename IterType, int iteration_precision>
+__global__
+void mandel_hdr_float(
+    IterType* OutputIterMatrix,
+    AntialiasedColors OutputColorMatrix,
+    int width,
+    int height,
+    HDRFloat<CudaDblflt<dblflt>> cx,
+    HDRFloat<CudaDblflt<dblflt>> cy,
+    HDRFloat<CudaDblflt<dblflt>> dx,
+    HDRFloat<CudaDblflt<dblflt>> dy,
+    IterType n_iterations)
+{
+    int X = blockIdx.x * blockDim.x + threadIdx.x;
+    int Y = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (X >= width || Y >= height)
+        return;
+
+    //size_t idx = width * (height - Y - 1) + X;
+    size_t idx = ConvertLocToIndex(X, height - Y - 1, width);
+
+    HDRFloat<CudaDblflt<dblflt>> X2{ (float)X };
+    HDRFloat<CudaDblflt<dblflt>> Y2{ (float)Y };
+
+    HDRFloat<CudaDblflt<dblflt>> x0{ cx + dx * X2 };
+    HDRFloat<CudaDblflt<dblflt>> y0{ cy + dy * Y2 };
+
+    HDRFloat<CudaDblflt<dblflt>> x{};
+    HDRFloat<CudaDblflt<dblflt>> y{};
+
+    IterType iter = 0;
+    HDRFloat<CudaDblflt<dblflt>> zrsqr{};
+    HDRFloat<CudaDblflt<dblflt>> zisqr{};
+
+    const HDRFloat<CudaDblflt<dblflt>> Two{ 2.0f };
+    const HDRFloat<CudaDblflt<dblflt>> Four{ 4.0f };
+
+//    //xtemp = x * x - y * y + x0;
+////y = 2.0f * x * y + y0;
+////x = xtemp;
+//
+    auto MANDEL_2X_FLOAT = [&]() {
+        y.Reduce();
+        x.Reduce();
+        auto xtemp = x * x - y * y + x0;
+        y = x * y * Two + y0;
+        x = xtemp;
+        zrsqr = x * x;
+        zisqr = y * y;
+        zrsqr.Reduce();
+        zisqr.Reduce();
+    };
+
+    //auto MANDEL_2X_FLOAT = [&]() {
+    //    y.Reduce();
+    //    x.Reduce();
+    //    y = x * y * Two;
+    //    y = y + y0;
+    //    x = zrsqr - zisqr;
+    //    x = x + x0;
+    //    zrsqr = x * x;
+    //    zisqr = y * y;
+    //    //zrsqr.Reduce();
+    //    //zisqr.Reduce();
+    //};
+
+    while ((zrsqr + zisqr).compareToBothPositive(Four) < 0 && iter < n_iterations)
     {
         if (iteration_precision == 1) {
             MANDEL_2X_FLOAT();
@@ -2090,15 +2212,15 @@ void mandel_1x_float_perturb(
 
     T DeltaSub0X = DeltaReal;
     T DeltaSub0Y = DeltaImaginary;
-    T DeltaSubNX = T(0.0);
-    T DeltaSubNY = T(0.0);
+    T DeltaSubNX = T(0.0f);
+    T DeltaSubNY = T(0.0f);
     IterType MaxRefIteration = PerturbFloat.size - 1;
 
     //T dzdcX = max(max(x.dzdc), 1.0f);
     T scalingFactor = T(1.0f) / (HdrMaxPositiveReduced(HdrMaxPositiveReduced(HdrAbs(dx), HdrAbs(dy)), T(1.0f)));
     //T scalingFactor = 1.0f;
     T dzdcX = scalingFactor;
-    T dzdcY = T(0.0);
+    T dzdcY = T(0.0f);
 
     T maxRadius = HdrMaxPositiveReduced(HdrAbs(dx), HdrAbs(dy));
     T maxRadiusSq = maxRadius * maxRadius;
@@ -3251,7 +3373,7 @@ uint32_t GPURenderer::Render(
         }
     }
     else if (algorithm == RenderAlgorithm::Gpu2x64) {
-        if constexpr (std::is_same<T, dbldbl>::value) {
+        if constexpr (std::is_same<T, MattDbldbl>::value) {
             dbldbl cx2{ cx.head, cx.tail };
             dbldbl cy2{ cy.head, cy.tail };
             dbldbl dx2{ dx.head, dx.tail };
@@ -3266,7 +3388,7 @@ uint32_t GPURenderer::Render(
     }
     else if (algorithm == RenderAlgorithm::Gpu4x64) {
         // qdbl
-        if constexpr (std::is_same<T, GQD::gqd_real>::value) {
+        if constexpr (std::is_same<T, MattQDbldbl>::value) {
             using namespace GQD;
             gqd_real cx2;
             cx2 = make_qd(cx.x, cx.y, cx.z, cx.w);
@@ -3326,7 +3448,7 @@ uint32_t GPURenderer::Render(
     }
     else if (algorithm == RenderAlgorithm::Gpu2x32) {
         // flt
-        if constexpr (std::is_same<T, dblflt>::value) {
+        if constexpr (std::is_same<T, MattDblflt>::value) {
             dblflt cx2{ cx.x, cx.y };
             dblflt cy2{ cy.x, cy.y };
             dblflt dx2{ dx.x, dx.y };
@@ -3368,7 +3490,7 @@ uint32_t GPURenderer::Render(
     }
     else if (algorithm == RenderAlgorithm::Gpu4x32) {
         // qflt
-        if constexpr (std::is_same<T, GQF::gqf_real>::value) {
+        if constexpr (std::is_same<T, MattQFltflt>::value) {
             using namespace GQF;
             gqf_real cx2;
             cx2 = make_qf(cx.x, cx.y, cx.z, cx.w);
@@ -3387,6 +3509,49 @@ uint32_t GPURenderer::Render(
                 OutputColorMatrix,
                 m_Width, m_Height, cx2, cy2, dx2, dy2,
                 n_iterations);
+        }
+    }
+    else if (algorithm == RenderAlgorithm::GpuHDRx32) {
+        if constexpr (std::is_same<T, HDRFloat<double>>::value) {
+            HDRFloat<CudaDblflt<dblflt>> cx2{ cx };
+            HDRFloat<CudaDblflt<dblflt>> cy2{ cy };
+            HDRFloat<CudaDblflt<dblflt>> dx2{ dx };
+            HDRFloat<CudaDblflt<dblflt>> dy2{ dy };
+
+            mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
+
+            switch(iteration_precision) {
+                case 1:
+                    mandel_hdr_float<IterType, 1> << <nb_blocks, threads_per_block >> > (
+                        static_cast<IterType*>(OutputIterMatrix),
+                        OutputColorMatrix,
+                        m_Width, m_Height, cx2, cy2, dx2, dy2,
+                        n_iterations);
+                    break;
+                case 4:
+                    mandel_hdr_float<IterType, 4> << <nb_blocks, threads_per_block >> > (
+                        static_cast<IterType*>(OutputIterMatrix),
+                        OutputColorMatrix,
+                        m_Width, m_Height, cx2, cy2, dx2, dy2,
+                        n_iterations);
+                    break;
+                case 8:
+                    mandel_hdr_float<IterType, 8> << <nb_blocks, threads_per_block >> > (
+                        static_cast<IterType*>(OutputIterMatrix),
+                        OutputColorMatrix,
+                        m_Width, m_Height, cx2, cy2, dx2, dy2,
+                        n_iterations);
+                    break;
+                case 16:
+                    mandel_hdr_float<IterType, 16> << <nb_blocks, threads_per_block >> > (
+                        static_cast<IterType*>(OutputIterMatrix),
+                        OutputColorMatrix,
+                        m_Width, m_Height, cx2, cy2, dx2, dy2,
+                        n_iterations);
+                    break;
+                default:
+                    break;
+            }
         }
     }
     else {
@@ -3467,6 +3632,28 @@ template uint32_t GPURenderer::Render(
     MattQFltflt dy,
     uint32_t n_iterations,
     int iteration_precision);
+
+template uint32_t GPURenderer::Render(
+    RenderAlgorithm algorithm,
+    uint32_t* iter_buffer,
+    Color16* color_buffer,
+    CudaDblflt<MattDblflt> cx,
+    CudaDblflt<MattDblflt> cy,
+    CudaDblflt<MattDblflt> dx,
+    CudaDblflt<MattDblflt> dy,
+    uint32_t n_iterations,
+    int iteration_precision);
+
+template uint32_t GPURenderer::Render(
+    RenderAlgorithm algorithm,
+    uint32_t* iter_buffer,
+    Color16* color_buffer,
+    HDRFloat<double> cx,
+    HDRFloat<double> cy,
+    HDRFloat<double> dx,
+    HDRFloat<double> dy,
+    uint32_t n_iterations,
+    int iteration_precision);
 //////////////////////////////////////////////////
 template uint32_t GPURenderer::Render(
     RenderAlgorithm algorithm,
@@ -3531,6 +3718,28 @@ template uint32_t GPURenderer::Render(
     MattQFltflt cy,
     MattQFltflt dx,
     MattQFltflt dy,
+    uint64_t n_iterations,
+    int iteration_precision);
+
+template uint32_t GPURenderer::Render(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    CudaDblflt<MattDblflt> cx,
+    CudaDblflt<MattDblflt> cy,
+    CudaDblflt<MattDblflt> dx,
+    CudaDblflt<MattDblflt> dy,
+    uint64_t n_iterations,
+    int iteration_precision);
+
+template uint32_t GPURenderer::Render(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    HDRFloat<double> cx,
+    HDRFloat<double> cy,
+    HDRFloat<double> dx,
+    HDRFloat<double> dy,
     uint64_t n_iterations,
     int iteration_precision);
 /////////////////////////////////////////////////////////

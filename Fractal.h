@@ -26,6 +26,7 @@
 #include "..\WPngImage\WPngImage.hh"
 #include "HighPrecision.h"
 #include "HDRFloat.h"
+#include "CudaDblflt.h"
 
 #include "RefOrbitCalc.h"
 
@@ -246,6 +247,7 @@ private:
     void FillCoord(HighPrecision& src, HDRFloat<double>& dest);
     void FillCoord(HighPrecision& src, MattDblflt& dest);
     void FillCoord(HighPrecision& src, float& dest);
+    void FillCoord(HighPrecision& src, CudaDblflt<MattDblflt>& dest);
 
     template<class T>
     void FillGpuCoords(T& cx2, T& cy2, T& dx2, T& dy2);
@@ -521,7 +523,7 @@ private:
     // The maximum number of iterations to go through on a pixel
     // in an effort to determine whether the point is within the set
     // or not.
-    IterTypeFull m_NumIterations;
+    mutable IterTypeFull m_NumIterations;
     bool m_ChangedIterations;
 
     // Antialiasing;

@@ -196,7 +196,9 @@
       <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">EnableFastChecks</BasicRuntimeChecks>
     </ClCompile>
     <ClCompile Include="..\HDRFloat.cpp" />
+    <ClInclude Include="..\CudaDblflt.h" />
     <ClInclude Include="..\GPU_LAInfoDeep.h" />
+    <ClInclude Include="..\GPU_Types.h" />
     <ClInclude Include="..\LAInfoDeep.h" />
     <ClInclude Include="..\LAInfoI.h" />
     <ClInclude Include="..\LAReference.h" />

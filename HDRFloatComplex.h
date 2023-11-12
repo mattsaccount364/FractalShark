@@ -494,6 +494,6 @@ public:
     }
 
     HDRFloat CUDA_CRAP chebychevNorm() const {
-        return HDRFloat::maxBothPositive(HdrAbs(getRe()), HdrAbs(getIm()));
+        return HDRFloat::maxBothPositiveReduced(HdrAbs(getRe()), HdrAbs(getIm()));
     }
 };

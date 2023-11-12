@@ -3,18 +3,7 @@
 #include <stdint.h>
 #include <math.h>
 #include "HighPrecision.h"
-
-#ifdef __CUDA_ARCH__
-#define CUDA_CRAP __device__
-#define CUDA_CRAP_BOTH __host__ __device__
-static __device__ double* __restrict__ twoPowExpDbl;
-static __device__ float* __restrict__ twoPowExpFlt;
-#else
-#define CUDA_CRAP
-#define CUDA_CRAP_BOTH
-extern double* twoPowExpDbl;
-extern float* twoPowExpFlt;
-#endif
+#include "CudaDblflt.h"
 
 template<class T>
 class HDRFloatComplex;
@@ -67,6 +56,9 @@ public:
         if constexpr (std::is_same<T, double>::value) {
             return -1023;
         }
+        if constexpr (std::is_same<T, CudaDblflt<dblflt>>::value) {
+            return -127;
+        }
         else {
             return -127;
         }
@@ -75,6 +67,9 @@ public:
     static CUDA_CRAP constexpr int32_t MIN_SMALL_EXPONENT_INT() {
         if constexpr (std::is_same<T, double>::value) {
             return -1023;
+        }
+        if constexpr (std::is_same<T, CudaDblflt<dblflt>>::value) {
+            return -127;
         }
         else {
             return -127;
@@ -168,36 +163,57 @@ public:
         return *reinterpret_cast<const To*>(&src);
     }
 
-    CUDA_CRAP explicit HDRFloat(const T number) { // TODO add constexpr once that compiles
-        if (number == T(0)) {
-            Base::mantissa = 0;
+    template<class U, typename =
+        std::enable_if_t<
+            std::is_same<U, float>::value ||
+            std::is_same<U, double>::value ||
+            std::is_same<U, int>::value >>
+    CUDA_CRAP explicit HDRFloat(const U number) { // TODO add constexpr once that compiles
+        if (number == U{ 0 }) {
+            Base::mantissa = T{ 0 };
             Base::exp = MIN_BIG_EXPONENT();
             return;
         }
 
+        static_assert(std::is_same<U, CudaDblflt<dblflt>>::value == false, "!");
+
         if constexpr (std::is_same<T, double>::value) {
             // TODO use std::bit_cast once that works in CUDA
-            const uint64_t bits = bit_cast<uint64_t>(number);
+            const uint64_t bits = bit_cast<uint64_t>((T)number);
             //constexpr uint64_t bits = __builtin_bit_cast(std::uint64_t, &number);
             const int32_t f_exp = (int32_t)((bits & 0x7FF0'0000'0000'0000UL) >> 52UL) + MIN_SMALL_EXPONENT_INT();
             const uint64_t val = (bits & 0x800F'FFFF'FFFF'FFFFL) | 0x3FF0'0000'0000'0000L;
             const T f_val = bit_cast<T>(val);
 
-            Base::mantissa = f_val;
+            Base::mantissa = (T)f_val;
             Base::exp = (TExp)f_exp;
         }
         else if constexpr (std::is_same<T, float>::value) {
-            const uint32_t bits = bit_cast<uint32_t>(number);
+            const uint32_t bits = bit_cast<uint32_t>((T)number);
             const int32_t f_exp = (int32_t)((bits & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
             const uint32_t val = (bits & 0x807F'FFFFL) | 0x3F80'0000L;
             const T f_val = bit_cast<T>(val);
 
-            Base::mantissa = f_val;
+            Base::mantissa = (T)f_val;
             Base::exp = (TExp)f_exp;
+        }
+        else if constexpr (std::is_same<T, CudaDblflt<dblflt>>::value) {
+            const uint32_t bits = bit_cast<uint32_t>((float)number);
+            const int32_t f_exp = (int32_t)((bits & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
+            const uint32_t val = (bits & 0x807F'FFFFL) | 0x3F80'0000L;
+            const float f_val = bit_cast<float>(val);
+
+            Base::mantissa.d.y = f_val;
+            Base::mantissa.d.x = 0;
+            Base::exp = (TExp)f_exp;
+        }
+        else {
+            Base::mantissa = (T)number;
+            Base::exp = 1;
         }
     }
 
-#ifndef __CUDACC__ 
+#ifndef __CUDACC__
     HDRFloat(const HighPrecision &number) {
 
         if (number == 0) {
@@ -218,20 +234,32 @@ public:
         //}
 
         if constexpr (std::is_same<T, double>::value) {
-            uint64_t bits = *reinterpret_cast<uint64_t*>(&this->Base::mantissa);
-            int32_t f_exp = (int32_t)((bits & 0x7FF0'0000'0000'0000UL) >> 52UL) + MIN_SMALL_EXPONENT_INT();
-            uint64_t val = (bits & 0x800F'FFFF'FFFF'FFFFL) | 0x3FF0'0000'0000'0000L;
-            T f_val = *reinterpret_cast<T*>(&val);
+            const uint64_t bits = *reinterpret_cast<uint64_t*>(&this->Base::mantissa);
+            const int32_t f_exp = (int32_t)((bits & 0x7FF0'0000'0000'0000UL) >> 52UL) + MIN_SMALL_EXPONENT_INT();
+            const uint64_t val = (bits & 0x800F'FFFF'FFFF'FFFFL) | 0x3FF0'0000'0000'0000L;
+            const auto f_val = *reinterpret_cast<const T*>(&val);
             Base::exp += f_exp;
             Base::mantissa = f_val;
         }
         else if constexpr (std::is_same<T, float>::value) {
-            uint32_t bits = *reinterpret_cast<uint32_t*>(&this->Base::mantissa);
-            int32_t f_exp = (int32_t)((bits & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
-            uint32_t val = (bits & 0x807F'FFFFL) | 0x3F80'0000L;
-            T f_val = *reinterpret_cast<T*>(&val);
+            const uint32_t bits = *reinterpret_cast<uint32_t*>(&this->Base::mantissa);
+            const int32_t f_exp = (int32_t)((bits & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
+            const uint32_t val = (bits & 0x807F'FFFFL) | 0x3F80'0000L;
+            const auto f_val = *reinterpret_cast<const T*>(&val);
             Base::exp += f_exp;
             Base::mantissa = f_val;
+        }
+        else if constexpr (std::is_same<T, CudaDblflt<dblflt>>::value) {
+            const uint32_t bits_y = *reinterpret_cast<uint32_t*>(&this->Base::mantissa.d.y);
+            const uint32_t bits_x = *reinterpret_cast<uint32_t*>(&this->Base::mantissa.d.x);
+            const int32_t f_exp = (int32_t)((bits_y & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
+            const uint32_t val_y = (bits_y & 0x807F'FFFFL) | 0x3F80'0000L;
+            const uint32_t val_x = (bits_x & 0x807F'FFFFL) | 0x3F80'0000L;
+            const auto f_val_y = *reinterpret_cast<const float*>(&val_y);
+            const auto f_val_x = *reinterpret_cast<const float*>(&val_x);
+            Base::exp += f_exp;
+            Base::mantissa.d.y = f_val_y;
+            Base::mantissa.d.x = f_val_x;
         }
 
         return *this;
@@ -243,20 +271,32 @@ public:
         //}
 
         if constexpr (std::is_same<T, double>::value) {
-            uint64_t bits = *reinterpret_cast<uint64_t*>(&Base::mantissa);
-            int32_t f_exp = (int32_t)((bits & 0x7FF0'0000'0000'0000UL) >> 52UL) + MIN_SMALL_EXPONENT_INT();
-            uint64_t val = (bits & 0x800F'FFFF'FFFF'FFFFL) | 0x3FF0'0000'0000'0000L;
-            T f_val = *reinterpret_cast<T*>(&val);
+            const uint64_t bits = *reinterpret_cast<uint64_t*>(&Base::mantissa);
+            const int32_t f_exp = (int32_t)((bits & 0x7FF0'0000'0000'0000UL) >> 52UL) + MIN_SMALL_EXPONENT_INT();
+            const uint64_t val = (bits & 0x800F'FFFF'FFFF'FFFFL) | 0x3FF0'0000'0000'0000L;
+            const auto f_val = *reinterpret_cast<const T*>(&val);
             Base::exp += f_exp;
             Base::mantissa = f_val;
         }
         else if constexpr (std::is_same<T, float>::value) {
-            uint32_t bits = *reinterpret_cast<uint32_t*>(&Base::mantissa);
-            int32_t f_exp = (int32_t)((bits & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
-            uint32_t val = (bits & 0x807F'FFFFL) | 0x3F80'0000L;
-            T f_val = *reinterpret_cast<T*>(&val);
+            const uint32_t bits = *reinterpret_cast<uint32_t*>(&Base::mantissa);
+            const int32_t f_exp = (int32_t)((bits & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
+            const uint32_t val = (bits & 0x807F'FFFFL) | 0x3F80'0000L;
+            const auto f_val = *reinterpret_cast<const T*>(&val);
             Base::exp += f_exp;
             Base::mantissa = f_val;
+        }
+        else if constexpr (std::is_same<T, CudaDblflt<dblflt>>::value) {
+            const uint32_t bits_y = *reinterpret_cast<uint32_t*>(&this->Base::mantissa.d.y);
+            const uint32_t bits_x = *reinterpret_cast<uint32_t*>(&this->Base::mantissa.d.x);
+            const int32_t f_exp = (int32_t)((bits_y & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
+            const uint32_t val_y = (bits_y & 0x807F'FFFFL) | 0x3F80'0000L;
+            const uint32_t val_x = (bits_x & 0x807F'FFFFL) | 0x3F80'0000L;
+            const auto f_val_y = *reinterpret_cast<const float*>(&val_y);
+            const auto f_val_x = *reinterpret_cast<const float*>(&val_x);
+            Base::exp += f_exp;
+            Base::mantissa.d.y = f_val_y;
+            Base::mantissa.d.x = f_val_x;
         }
 
         return std::move(*this);
@@ -266,15 +306,22 @@ public:
         if (scaleFactor <= MIN_SMALL_EXPONENT()) {
             return (T)0.0;
         }
-        else if (scaleFactor >= 1024) {
-            return (T)INFINITY;
+        
+        if constexpr (std::is_same<T, float>::value || std::is_same<T, CudaDblflt<dblflt>>::value) {
+            if (scaleFactor >= 128) {
+                return (T)INFINITY;
+            }
+        }
+        else if constexpr (std::is_same<T, double>::value) {
+            if (scaleFactor >= 1024) {
+                return (T)INFINITY;
+            }
         }
 
         if constexpr (std::is_same<T, double>::value) {
             return (T)twoPowExpDbl[(int)scaleFactor - MinDoubleExponent];
         }
         else {
-            //return scalbnf(1.0, scaleFactor);
             return (T)twoPowExpFlt[(int)scaleFactor - MinFloatExponent];
         }
     }
@@ -292,7 +339,7 @@ public:
         if constexpr (std::is_same<T, double>::value) {
             if constexpr (IncludeCheck) {
                 if (scaleFactor <= MIN_SMALL_EXPONENT()) {
-                    return 0.0;
+                    return T{ 0.0 };
                 }
             }
 
@@ -301,12 +348,12 @@ public:
         else {
             if constexpr (IncludeCheck) {
                 if (scaleFactor <= MIN_SMALL_EXPONENT()) {
-                    return 0.0f;
+                    return T{ 0.0f };
                 }
             }
 
             //return scalbnf(1.0, scaleFactor);
-            return twoPowExpFlt[(int)scaleFactor - MinFloatExponent];
+            return T{ twoPowExpFlt[(int)scaleFactor - MinFloatExponent] };
         }
     }
 
@@ -1015,6 +1062,8 @@ static CUDA_CRAP T HdrSqrt(const T &incoming) {
         std::is_same<T, HDRFloat<double>>::value ||
         std::is_same<T, HDRFloat<float>>::value, "No");
 
+    static_assert(!std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value, "!");
+
     if constexpr (std::is_same<T, double>::value ||
                   std::is_same<T, float>::value) {
         return sqrt((T)incoming);
@@ -1048,6 +1097,8 @@ static CUDA_CRAP constexpr T HdrAbs(const T& incoming) {
                          std::is_same<T, HDRFloat<double>>::value) {
         return T(incoming.exp, fabs(incoming.mantissa));
     }
+    
+    static_assert(!std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value, "!");
 }
 
 template<class T>
@@ -1064,6 +1115,7 @@ static CUDA_CRAP constexpr void HdrReduce(T& incoming) {
         std::is_same<T, float>::value ||
         std::is_same<T, HDRFloat<double>>::value ||
         std::is_same<T, HDRFloat<float>>::value ||
+        std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value ||
         std::is_same<T, HDRFloatComplex<double>>::value ||
         std::is_same<T, HDRFloatComplex<float>>::value ||
         HighPrecPossible, "No");
@@ -1071,6 +1123,7 @@ static CUDA_CRAP constexpr void HdrReduce(T& incoming) {
     if constexpr (
         std::is_same<T, HDRFloat<double>>::value ||
         std::is_same<T, HDRFloat<float>>::value ||
+        std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value ||
         std::is_same<T, HDRFloatComplex<double>>::value ||
         std::is_same<T, HDRFloatComplex<float>>::value) {
         incoming.Reduce();
@@ -1092,12 +1145,14 @@ static CUDA_CRAP constexpr T &&HdrReduce(T&& incoming) {
         std::is_same<no_const, float>::value ||
         std::is_same<no_const, HDRFloat<double>>::value ||
         std::is_same<no_const, HDRFloat<float>>::value ||
+        std::is_same<no_const, HDRFloat<CudaDblflt<dblflt>>>::value ||
         std::is_same<no_const, HDRFloatComplex<double>>::value ||
         std::is_same<no_const, HDRFloatComplex<float>>::value ||
         HighPrecPossible, "No");
 
     if constexpr (std::is_same<no_const, HDRFloat<double>>::value ||
                   std::is_same<no_const, HDRFloat<float>>::value ||
+                  std::is_same<no_const, HDRFloat<CudaDblflt<dblflt>>>::value ||
                   std::is_same<no_const, HDRFloatComplex<double>>::value ||
                   std::is_same<no_const, HDRFloatComplex<float>>::value) {
         return std::move(incoming.Reduce());
@@ -1113,7 +1168,7 @@ static CUDA_CRAP constexpr T HdrMaxPositiveReduced(const T& one, const U& two) {
         std::is_same<T, float>::value ||
         std::is_same<T, HDRFloat<double>>::value ||
         std::is_same<T, HDRFloat<float>>::value, "No");
-
+    static_assert(!std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value, "!");
     if constexpr (std::is_same<T, HDRFloat<double>>::value ||
                   std::is_same<T, HDRFloat<float>>::value) {
         if (one.compareToBothPositiveReduced(two) > 0) {
@@ -1134,7 +1189,7 @@ static CUDA_CRAP constexpr T HdrMinPositiveReduced(const T& one, const U& two) {
         std::is_same<T, float>::value ||
         std::is_same<T, HDRFloat<double>>::value ||
         std::is_same<T, HDRFloat<float>>::value, "No");
-
+    static_assert(!std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value, "!");
     if constexpr (std::is_same<T, HDRFloat<double>>::value ||
                   std::is_same<T, HDRFloat<float>>::value) {
         if (one.compareToBothPositiveReduced(two) < 0) {
@@ -1156,7 +1211,7 @@ static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedLT(const T& one, 
 #else
         false;
 #endif
-
+    static_assert(!std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value, "!");
     static_assert(
         std::is_same<T, double>::value ||
         std::is_same<T, float>::value ||
@@ -1181,7 +1236,7 @@ static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedLT(const T& one) 
 #else
         false;
 #endif
-
+    static_assert(!std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value, "!");
     static_assert(
         std::is_same<T, double>::value ||
         std::is_same<T, float>::value ||
@@ -1206,7 +1261,7 @@ static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedLE(const T& one, 
 #else
         false;
 #endif
-
+    static_assert(!std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value, "!");
     static_assert(
         std::is_same<T, double>::value ||
         std::is_same<T, float>::value ||
@@ -1231,7 +1286,7 @@ static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedGT(const T& one, 
 #else
         false;
 #endif
-
+    static_assert(!std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value, "!");
     static_assert(
         std::is_same<T, double>::value ||
         std::is_same<T, float>::value ||
@@ -1256,7 +1311,7 @@ static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedGE(const T& one, 
 #else
         false;
 #endif
-
+    static_assert(!std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value, "!");
     static_assert(
         std::is_same<T, double>::value ||
         std::is_same<T, float>::value ||
@@ -1283,7 +1338,7 @@ static CUDA_CRAP std::string HdrToString(const T& dat) {
         std::is_same<T, HDRFloat<double>>::value ||
         std::is_same<T, HDRFloat<float>>::value ||
         HighPrecPossible, "No");
-
+    static_assert(!std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value, "!");
     if constexpr (
         std::is_same<T, HDRFloat<double>>::value ||
         std::is_same<T, HDRFloat<float>>::value) {

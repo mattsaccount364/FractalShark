@@ -78,6 +78,12 @@ What bugs does FractalShark have?
 - If it's slow and taking a long time, there's no way to abort it.  Use task manager and terminate it that way if you don't want to wait.  Try holding the CTRL key and maybe it'll work depending on what's being slow, but it probably won't.
 - Too many to list - don't expect much.
 
+What if it just exits suddenly with no indication of what went wrong?  What if I hit some other random bug and it's annoying me enough to complain about it?
+
+If FractalShark suddenly exits, that implies it crashed.  It's buggy and kludgy.  With some luck, there should be a "core.dmp" file created in the same directory as the executable.  If you're motivated, feel free to create a new "issue" on Github and upload the file as an attachment, and with some luck I (the author) can sort out what I screwed up.
+
+If you hit any other bug/wrong behavior, you can also create an "issue" and describe the problem.  The URL to create the "issue" and notify me about it is: https://github.com/mattsaccount364/FractalShark/issues
+
 Where are the most interesting parts of the implementation in the code?
 
 - All the CUDA kernels are in render_gpu.cu.  The two most interesting are probably: "mandel_1xHDR_float_perturb_bla" and "mandel_1xHDR_float_perturb_lav2" which are the ones I've spent the most time on lately.  For better performance at low zoom levels, you could look at "mandel_1x_float_perturb" which leaves out linear approximation and just does straight perturbation up to ~10e30, which corresponds with the 32-bit float exponent range.

@@ -98,6 +98,7 @@ BEGIN
             MENUITEM "#20 - Debug spot - LAv2 is busted here, 50x10^9 iters", IDM_VIEW20
             MENUITEM "#21 - ~10^11000, 2b iterations", IDM_VIEW21
             MENUITEM "#22 - high period",           IDM_VIEW22
+            MENUITEM "#23",                         IDM_VIEW23
         END
         MENUITEM "Recalculate, Reuse Reference", IDM_SQUAREVIEW
         MENUITEM "Center View Here",            IDM_CENTERVIEW
@@ -129,24 +130,31 @@ BEGIN
         END
         POPUP "Choose &Render Algorithm"
         BEGIN
-            MENUITEM "Very High Precision CPU",     IDM_ALG_CPU_HIGH
-            MENUITEM SEPARATOR
-            MENUITEM "1x64 CPU",                    IDM_ALG_CPU_1_64
-            MENUITEM "HDRx32 CPU",                  IDM_ALG_CPU_1_32_HDR
-            MENUITEM "HDRx64 CPU",                  IDM_ALG_CPU_1_64_HDR
-            MENUITEM SEPARATOR
-            MENUITEM "1x64 CPU - Perturbation BLA", IDM_ALG_CPU_1_64_PERTURB_BLA
-            MENUITEM "HDRx32 CPU - Perturbation BLA", IDM_ALG_CPU_1_32_PERTURB_BLA_HDR
-            MENUITEM "HDRx64 CPU - Perturbation BLA", IDM_ALG_CPU_1_64_PERTURB_BLA_HDR
-            MENUITEM "HDRx32 CPU - Perturbation LAv2", IDM_ALG_CPU_1_32_PERTURB_BLAV2_HDR
-            MENUITEM "HDRx64 CPU - Perturbation LAv2", IDM_ALG_CPU_1_64_PERTURB_BLAV2_HDR
-            MENUITEM SEPARATOR
-            MENUITEM "1x32 GPU",                    IDM_ALG_GPU_1_32
-            MENUITEM "2x32 GPU",                    IDM_ALG_GPU_2_32
-            MENUITEM "1x64 GPU",                    IDM_ALG_GPU_1_64
-            MENUITEM "4x32 GPU",                    IDM_ALG_GPU_4_32
-            MENUITEM "2x64 GPU",                    IDM_ALG_GPU_2_64
-            MENUITEM "4x64 GPU",                    IDM_ALG_GPU_4_64
+            POPUP "CPU-Only"
+            BEGIN
+                MENUITEM "Very High Precision CPU",     IDM_ALG_CPU_HIGH
+                MENUITEM SEPARATOR
+                MENUITEM "1x64 CPU",                    IDM_ALG_CPU_1_64
+                MENUITEM "HDRx32 CPU",                  IDM_ALG_CPU_1_32_HDR
+                MENUITEM "HDRx64 CPU",                  IDM_ALG_CPU_1_64_HDR
+                MENUITEM SEPARATOR
+                MENUITEM "1x64 CPU - Perturbation BLA", IDM_ALG_CPU_1_64_PERTURB_BLA
+                MENUITEM "HDRx32 CPU - Perturbation BLA", IDM_ALG_CPU_1_32_PERTURB_BLA_HDR
+                MENUITEM "HDRx64 CPU - Perturbation BLA", IDM_ALG_CPU_1_64_PERTURB_BLA_HDR
+                MENUITEM SEPARATOR
+                MENUITEM "HDRx32 CPU - Perturbation LAv2", IDM_ALG_CPU_1_32_PERTURB_BLAV2_HDR
+                MENUITEM "HDRx64 CPU - Perturbation LAv2", IDM_ALG_CPU_1_64_PERTURB_BLAV2_HDR
+            END
+            POPUP "Low-Zoom Depth"
+            BEGIN
+                MENUITEM "1x32 GPU",                    IDM_ALG_GPU_1_32
+                MENUITEM "2x32 GPU",                    IDM_ALG_GPU_2_32
+                MENUITEM "4x32 GPU",                    IDM_ALG_GPU_4_32
+                MENUITEM "1x64 GPU",                    IDM_ALG_GPU_1_64
+                MENUITEM "2x64 GPU",                    IDM_ALG_GPU_2_64
+                MENUITEM "4x64 GPU",                    IDM_ALG_GPU_4_64
+                MENUITEM "HDRx32 GPU",                  IDM_ALG_GPU_2X32_HDR
+            END
             MENUITEM SEPARATOR
             MENUITEM "1x32 GPU - Perturbation",     IDM_ALG_GPU_1_32_PERTURB
             MENUITEM "1x32 GPU - Perturbation, Periodic (broken)", IDM_ALG_GPU_1_32_PERTURB_PERIODIC
@@ -226,7 +234,7 @@ BEGIN
         END
         POPUP "Load"
         BEGIN
-            MENUITEM "Load Location...",            65535
+            MENUITEM "Load Location...",            0
         END
         POPUP "Benchmark"
         BEGIN

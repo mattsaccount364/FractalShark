@@ -4,6 +4,8 @@
 #include <GL/gl.h>			/* OpenGL header file */
 #include <GL/glu.h>			/* OpenGL utilities header file */
 
+#include <Dbghelp.h>
+
 // Global Variables:
 HINSTANCE hInst;                // current instance
 LPCWSTR szWindowClass = L"FractalWindow";
@@ -22,6 +24,8 @@ ATOM              MyRegisterClass(HINSTANCE hInstance);
 HWND              InitInstance(HINSTANCE, int);
 LRESULT CALLBACK  WndProc(HWND, UINT, WPARAM, LPARAM);
 void              UnInit(void);
+
+LONG WINAPI unhandled_handler(struct _EXCEPTION_POINTERS* apExceptionInfo);
 
 // Controlling functions
 void MenuGoBack(HWND hWnd);
@@ -64,6 +68,9 @@ int APIENTRY WinMain(HINSTANCE hInstance,
     {
         MessageBox(NULL, L"Cannot initialize WinSock!", L"WSAStartup", MB_OK);
     }
+
+    // Create a dump file whenever the gateway crashes only on windows
+    SetUnhandledExceptionFilter(unhandled_handler);
 
     // SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
 
@@ -133,7 +140,7 @@ HWND InitInstance(HINSTANCE hInstance, int nCmdShow)
 { // Store instance handle in our global variable
     hInst = hInstance;
 
-    constexpr bool startWindowed = false;
+    constexpr bool startWindowed = true;
 
     const auto scrnWidth = GetSystemMetrics(SM_CXSCREEN);
     const auto scrnHeight = GetSystemMetrics(SM_CYSCREEN);
@@ -662,6 +669,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             case IDM_ALG_GPU_4_64:
             {
                 gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu4x64);
+                break;
+            }
+            case IDM_ALG_GPU_2X32_HDR:
+            {
+                gFractal->SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32);
                 break;
             }
             case IDM_ALG_GPU_1_32:
@@ -1681,4 +1693,31 @@ void glResetViewDim(int width, int height)
     glLoadIdentity();
     gluOrtho2D(0.0, width, 0.0, height);
     glMatrixMode(GL_MODELVIEW);
+}
+
+
+// These functions are used to create a minidump when the program crashes.
+typedef BOOL(WINAPI* MINIDUMPWRITEDUMP)(HANDLE hProcess, DWORD dwPid, HANDLE hFile, MINIDUMP_TYPE DumpType, CONST PMINIDUMP_EXCEPTION_INFORMATION ExceptionParam, CONST PMINIDUMP_USER_STREAM_INFORMATION UserStreamParam, CONST PMINIDUMP_CALLBACK_INFORMATION CallbackParam);
+
+void create_minidump(struct _EXCEPTION_POINTERS* apExceptionInfo)
+{
+    HMODULE mhLib = ::LoadLibrary(_T("dbghelp.dll"));
+    MINIDUMPWRITEDUMP pDump = (MINIDUMPWRITEDUMP)::GetProcAddress(mhLib, "MiniDumpWriteDump");
+
+    HANDLE  hFile = ::CreateFile(_T("core.dmp"), GENERIC_WRITE, FILE_SHARE_WRITE, NULL, CREATE_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL, NULL);
+
+    _MINIDUMP_EXCEPTION_INFORMATION ExInfo;
+    ExInfo.ThreadId = ::GetCurrentThreadId();
+    ExInfo.ExceptionPointers = apExceptionInfo;
+    ExInfo.ClientPointers = FALSE;
+
+    pDump(GetCurrentProcess(), GetCurrentProcessId(), hFile, MiniDumpNormal, &ExInfo, NULL, NULL);
+    ::CloseHandle(hFile);
+}
+
+LONG WINAPI unhandled_handler(struct _EXCEPTION_POINTERS* apExceptionInfo)
+{
+    create_minidump(apExceptionInfo);
+    return EXCEPTION_CONTINUE_SEARCH;
 }

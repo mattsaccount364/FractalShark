@@ -28,6 +28,8 @@
 #include "LAInfoDeep.h"
 #include "LAReference.h"
 
+#include "CudaDblflt.h"
+
 void DefaultOutputMessage(const wchar_t *, ...);
 
 Fractal::ItersMemoryContainer::ItersMemoryContainer(
@@ -210,7 +212,8 @@ void Fractal::Initialize(int width,
     //SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedPeriodic);
     //SetRenderAlgorithm(RenderAlgorithm::Cpu32PerturbedBLAV2HDR);
     //SetRenderAlgorithm(RenderAlgorithm::Cpu64PerturbedBLAV2HDR);
-    SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedLAv2);
+    //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedLAv2);
+    SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32);
 
     SetIterationPrecision(1);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed);
@@ -1498,6 +1501,7 @@ void Fractal::View(size_t view)
         //ptX = HighPrecision{ "-0.7086295598931993734622493611716274451479971071749675459916114087269836065131112" };
         //ptY = HighPrecision{ "0.2588437605781938517662916915477487152993485711486090411172668266513002198576885" };
         //zoomFactor = HighPrecision{ "1.12397843052783475581e+55" };
+        SetIterType(IterTypeEnum::Bits64);
         SetNumIterations<IterTypeFull>(50'000'000'000llu);
         break;
     }
@@ -1520,6 +1524,14 @@ void Fractal::View(size_t view)
         ResetDimensions(MAXSIZE_T, MAXSIZE_T, 4);
         break;
 
+    case 23:
+        minX = HighPrecision{ "-0.74854022336364298733173771780874971621677632881659318116648007147146915304640714984571574330253031" };
+        minY = HighPrecision{ "0.064687493307404945848262842037929928847080557679638135501670005239098231744262964560868111971917423" };
+        maxX = HighPrecision{ "-0.74854022336364298733173771780874971503929930401196726764350216120120400755946688800146880673948663" };
+        maxY = HighPrecision{ "0.064687493307404945848262842037929930024557582484264049024647915509363377231203226405115048534961104" };
+        SetIterType(IterTypeEnum::Bits64);
+        SetNumIterations<IterTypeFull>(51'539'607'504llu);
+        break;
 
     case 0:
     default:
@@ -1815,6 +1827,7 @@ IterType Fractal::GetNumIterations(void) const
     if constexpr (std::is_same<IterType, uint32_t>::value) {
         if (m_NumIterations > GetMaxIterations<IterType>()) {
             ::MessageBox(NULL, L"Iteration limit exceeded somehow.", L"", MB_OK);
+            m_NumIterations = GetMaxIterations<IterType>();
             return GetMaxIterations<IterType>();
         }
     }
@@ -1843,9 +1856,11 @@ IterTypeFull Fractal::GetMaxIterationsRT() const {
 }
 
 void Fractal::SetIterType(IterTypeEnum type) {
-    m_IterType = type;
-    m_RefOrbit.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-    InitializeMemory();
+    if (m_IterType != type) {
+        m_IterType = type;
+        m_RefOrbit.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+        InitializeMemory();
+    }
 }
 
 void Fractal::SavePerturbationOrbit() {
@@ -1925,6 +1940,12 @@ template<typename IterType>
 void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
     SetCursor(LoadCursor(NULL, IDC_WAIT));
 
+    // Test crash dump
+    //{volatile int x = 5;
+    //volatile int z = 0;
+    //volatile int y = x / z;
+    //}
+
     // Reset the flag should it be set.
     m_StopCalculating = false;
 
@@ -1993,6 +2014,9 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
         break;
     case RenderAlgorithm::Gpu4x32:
         CalcGpuFractal<IterType, MattQFltflt>(MemoryOnly);
+        break;
+    case RenderAlgorithm::GpuHDRx32:
+        CalcGpuFractal<IterType, HDRFloat<double>>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu1x32Perturbed:
     case RenderAlgorithm::Gpu1x32PerturbedPeriodic:
@@ -2556,6 +2580,11 @@ void Fractal::FillCoord(HighPrecision& src, float& dest) {
     dest = Convert<HighPrecision, float>(src);
 }
 
+void Fractal::FillCoord(HighPrecision& src, CudaDblflt<MattDblflt>& dest) {
+    double destDbl = Convert<HighPrecision, double>(src);
+    dest = CudaDblflt(destDbl);
+}
+
 template<class T>
 void Fractal::FillGpuCoords(T &cx2, T &cy2, T &dx2, T &dy2) {
     HighPrecision src_dy =
@@ -2587,14 +2616,14 @@ void Fractal::CalcGpuFractal(bool MemoryOnly)
     }
 
     err = m_r.Render(GetRenderAlgorithm(),
-                        m_CurIters.GetIters<IterType>(),
-                        m_CurIters.m_RoundedOutputColorMemory.get(),
-                        cx2,
-                        cy2,
-                        dx2,
-                        dy2,
-                        GetNumIterations<IterType>(),
-                        m_IterationPrecision);
+                     m_CurIters.GetIters<IterType>(),
+                     m_CurIters.m_RoundedOutputColorMemory.get(),
+                     cx2,
+                     cy2,
+                     dx2,
+                     dy2,
+                     GetNumIterations<IterType>(),
+                     m_IterationPrecision);
     if (err) {
         MessageBoxCudaError(err);
     }

@@ -260,6 +260,12 @@
 #define IDM_ALG_GPU_2X32_HDR            33051
 #define ID_CHOOSERENDERALGORITHM_LOW    33053
 #define ID_CHOOSERENDERALGORITHM_CPU    33054
+#define ID_PALETTECOLORDEPTH_RANDOM     33055
+#define IDM_PALETTE_TYPE_4              33056
+#define ID_POPUP_SHOWHOTKEYS            33057
+#define IDM_SHOWHOTKEYS                 33058
+#define ID_ZOOM_ZOOMIN                  33059
+#define IDM_ZOOMIN                      33060
 #define IDM_VIEW1                       33081
 #define IDM_VIEW2                       33082
 #define IDM_VIEW3                       33083
@@ -296,7 +302,7 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        131
-#define _APS_NEXT_COMMAND_VALUE         33055
+#define _APS_NEXT_COMMAND_VALUE         33061
 #define _APS_NEXT_CONTROL_VALUE         1000
 #define _APS_NEXT_SYMED_VALUE           110
 #endif

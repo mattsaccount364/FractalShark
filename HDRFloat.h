@@ -167,15 +167,14 @@ public:
         std::enable_if_t<
             std::is_same<U, float>::value ||
             std::is_same<U, double>::value ||
-            std::is_same<U, int>::value >>
+            std::is_same<U, int>::value ||
+            std::is_same<U, CudaDblflt<dblflt>>::value>>
     CUDA_CRAP explicit HDRFloat(const U number) { // TODO add constexpr once that compiles
         if (number == U{ 0 }) {
             Base::mantissa = T{ 0 };
             Base::exp = MIN_BIG_EXPONENT();
             return;
         }
-
-        static_assert(std::is_same<U, CudaDblflt<dblflt>>::value == false, "!");
 
         if constexpr (std::is_same<T, double>::value) {
             // TODO use std::bit_cast once that works in CUDA
@@ -198,14 +197,28 @@ public:
             Base::exp = (TExp)f_exp;
         }
         else if constexpr (std::is_same<T, CudaDblflt<dblflt>>::value) {
-            const uint32_t bits = bit_cast<uint32_t>((float)number);
-            const int32_t f_exp = (int32_t)((bits & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
-            const uint32_t val = (bits & 0x807F'FFFFL) | 0x3F80'0000L;
-            const float f_val = bit_cast<float>(val);
+            if constexpr (std::is_same<U, CudaDblflt<dblflt>>::value) {
+                const auto bits_y = *reinterpret_cast<const uint32_t*>(&number.d.y);
+                const auto bits_x = *reinterpret_cast<const uint32_t*>(&number.d.x);
+                const int32_t f_exp = (int32_t)((bits_y & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
+                const uint32_t val_y = (bits_y & 0x807F'FFFFL) | 0x3F80'0000L;
+                const uint32_t val_x = (bits_x & 0x807F'FFFFL) | 0x3F80'0000L;
+                const auto f_val_y = *reinterpret_cast<const float*>(&val_y);
+                const auto f_val_x = *reinterpret_cast<const float*>(&val_x);
+                Base::exp = f_exp;
+                Base::mantissa.d.y = f_val_y;
+                Base::mantissa.d.x = f_val_x;
+            }
+            else {
+                const uint32_t bits = bit_cast<uint32_t>((float)number);
+                const int32_t f_exp = (int32_t)((bits & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
+                const uint32_t val = (bits & 0x807F'FFFFL) | 0x3F80'0000L;
+                const float f_val = bit_cast<float>(val);
 
-            Base::mantissa.d.y = f_val;
-            Base::mantissa.d.x = 0;
-            Base::exp = (TExp)f_exp;
+                Base::mantissa.d.y = f_val;
+                Base::mantissa.d.x = 0;
+                Base::exp = (TExp)f_exp;
+            }
         }
         else {
             Base::mantissa = (T)number;

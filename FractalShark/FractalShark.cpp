@@ -32,7 +32,8 @@ void MenuGoBack(HWND hWnd);
 void MenuStandardView(HWND hWnd, size_t i);
 void MenuSquareView(HWND hWnd);
 void MenuCenterView(HWND hWnd, int x, int y);
-void MenuZoomOut(HWND hWnd);
+void MenuZoomIn(HWND hWnd, POINT mousePt);
+void MenuZoomOut(HWND hWnd, POINT mousePt);
 void MenuRepainting(HWND hWnd);
 void MenuWindowed(HWND hWnd, bool square);
 void MenuMultiplyIterations(HWND hWnd, double factor);
@@ -50,6 +51,7 @@ void MenuBenchmark(HWND hWnd, bool fastbenchmark);
 void MenuBenchmarkRefPtDouble(HWND hWnd);
 void MenuBenchmarkRefPtHDRFloat(HWND hWnd);
 void MenuBenchmarkThis(HWND hWnd);
+void MenuShowHotkeys(HWND hWnd);
 void PaintAsNecessary(HWND hWnd);
 void glResetView(HWND hWnd);
 void glResetViewDim(int width, int height);
@@ -140,7 +142,7 @@ HWND InitInstance(HINSTANCE hInstance, int nCmdShow)
 { // Store instance handle in our global variable
     hInst = hInstance;
 
-    constexpr bool startWindowed = true;
+    constexpr bool startWindowed = false;
 
     const auto scrnWidth = GetSystemMetrics(SM_CXSCREEN);
     const auto scrnHeight = GetSystemMetrics(SM_CYSCREEN);
@@ -347,19 +349,24 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
 
     case 'Z':
     case 'z':
-        // zoom out
         if (shiftDown) {
-            gFractal->Zoom(mousePt.x, mousePt.y, 1);
+            MenuZoomOut(hWnd, mousePt);
         }
         else {
-            // zoom in
-            gFractal->Zoom(mousePt.x, mousePt.y, -.45);
+            MenuZoomIn(hWnd, mousePt);
         }
         break;
 
+    case 'D':
     case 'd':
     {
-        gFractal->UseNextPaletteDepth();
+        if (shiftDown) {
+            gFractal->CreateNewFractalPalette();
+            gFractal->UsePaletteType(Fractal::Palette::Random);
+        }
+        else {
+            gFractal->UseNextPaletteDepth();
+        }
         gFractal->DrawFractal(false);
         break;
     }
@@ -497,9 +504,15 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 break;
             }
 
+            case IDM_ZOOMIN:
+            {
+                MenuZoomIn(hWnd, { menuX, menuY });
+                break;
+            }
+
             case IDM_ZOOMOUT:
             {
-                MenuZoomOut(hWnd);
+                MenuZoomOut(hWnd, {menuX, menuY});
                 break;
             }
 
@@ -936,6 +949,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 break;
             }
 
+            case IDM_PALETTE_TYPE_4:
+            {
+                MenuPaletteType(Fractal::Palette::Random);
+                break;
+            }
+
             case IDM_PALETTE_5:
             {
                 MenuPaletteDepth(5);
@@ -1028,6 +1047,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             case IDM_BENCHMARK_THIS:
             {
                 MenuBenchmarkThis(hWnd);
+                break;
+            }
+            case IDM_SHOWHOTKEYS:
+            {
+                MenuShowHotkeys(hWnd);
                 break;
             }
             // Exit the program
@@ -1257,9 +1281,15 @@ void MenuCenterView(HWND hWnd, int x, int y)
     PaintAsNecessary(hWnd);
 }
 
-void MenuZoomOut(HWND hWnd)
+void MenuZoomIn(HWND hWnd, POINT mousePt)
 {
-    gFractal->Zoom(-.45);
+    gFractal->Zoom(mousePt.x, mousePt.y, -.45);
+    PaintAsNecessary(hWnd);
+}
+
+void MenuZoomOut(HWND hWnd, POINT mousePt)
+{
+    gFractal->Zoom(mousePt.x, mousePt.y, 1);
     PaintAsNecessary(hWnd);
 }
 
@@ -1457,15 +1487,23 @@ void MenuGetCurPos(HWND hWnd)
     snprintf(
         mem,
         numBytes,
-        "auto precision = %zu;\r\n"
+        "Using \"%s\"\r\n"
+        "Antialiasing: %u\r\n"
+        "Palette depth: %u\r\n"
+        "Coordinate precision = %zu;\r\n"
+        "Center X: \"%s\"\r\n"
+        "Center Y: \"%s\"\r\n"
+        "zoomFactor \"%s\"\r\n"
+        "\r\n"
+        "Bounding box:\r\n"
         "minX = HighPrecision{ \"%s\" };\r\n"
         "minY = HighPrecision{ \"%s\" };\r\n"
         "maxX = HighPrecision{ \"%s\" };\r\n"
         "maxY = HighPrecision{ \"%s\" };\r\n"
-        "ptX = HighPrecision{ \"%s\" }; \r\n"
-        "ptY = HighPrecision{ \"%s\" }; \r\n"
-        "zoomFactor = HighPrecision{ \"%s\" }; \r\n"
         "SetNumIterations(%zu);\r\n",
+        gFractal->GetRenderAlgorithmName().c_str(),
+        gFractal->GetGpuAntialiasing(),
+        gFractal->GetPaletteDepth(),
         prec,
         sminX.c_str(), sminY.c_str(),
         smaxX.c_str(), smaxY.c_str(),
@@ -1526,6 +1564,7 @@ void MenuPaletteDepth(int depth) {
 
 void MenuCreateNewPalette(HWND) {
     gFractal->CreateNewFractalPalette();
+    gFractal->UsePaletteType(Fractal::Palette::Random);
     gFractal->DrawFractal(false);
 }
 
@@ -1638,6 +1677,49 @@ void MenuBenchmarkThis(HWND hWnd) {
     HighPrecision megaIters = gFractal->BenchmarkThis(milliseconds);
     BenchmarkMessage(hWnd, megaIters, milliseconds);
     gFractal->DrawFractal(false);
+}
+
+void MenuShowHotkeys(HWND hWnd) {
+    // Shows the hotkeys as defined in HandleKeyDown
+    ::MessageBox(
+        NULL,
+        L"Hotkeys\r\n"
+        L"\r\n"
+        L"Navigation\r\n"
+        L"a - Autozoom using averaging heuristic\r\n"
+        L"A - Autozoom by zooming in on the highest iteration count point\r\n"
+        L"b - Go back to the previous view\r\n"
+        L"c - Center the view at the current mouse position\r\n"
+        L"Z - Zoom out\r\n"
+        L"z - Zoom in\r\n"
+        L"\r\n"
+        L"Recaluating and Benchmarking\r\n"
+        L"I - Clear medium-res perturbation results, recalculate, and benchmark\r\n"
+        L"i - Recalculate and benchmark current display, reusing perturbation results\r\n"
+        L"O - Clear high-res perturbation results, recalculate, and benchmark\r\n"
+        L"o - Recalculate and benchmark current display, reusing perturbation results\r\n"
+        L"P - Clear all perturbation results and recalculate\r\n"
+        L"p - Recalculate current display, reusing perturbation results\r\n"
+        L"R - Clear all perturbation results and recalculate\r\n"
+        L"r - Recalculate current display, reusing perturbation results\r\n"
+        L"\r\n"
+        L"Palettes\r\n"
+        L"T - Use prior auxiliary palette depth (mul/div iteration count by 2)\r\n"
+        L"t - Use next auxiliary palette depth (mul/div iteration count by 2)\r\n"
+        L"D - Create and use new random palette\r\n"
+        L"d - Use next palette lookup table depth\r\n"
+        L"\r\n"
+        L"Iterations\r\n"
+        L"= - Multiply max iterations by 24\r\n"
+        L"- - Multiply max iterations by 2/3\r\n"
+        L"\r\n"
+        L"Misc\r\n"
+        L"CTRL - Press and hold to abort autozoom\r\n"
+        L"ALT - Press, click/drag to move window when in windowed mode\r\n"
+        L"Left click/drag - zoom in\r\n"
+        L"Right click - popup menu\r\n"
+        , L"",
+        MB_OK);
 }
 
 void PaintAsNecessary(HWND hWnd)

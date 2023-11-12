@@ -212,8 +212,8 @@ void Fractal::Initialize(int width,
     //SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedPeriodic);
     //SetRenderAlgorithm(RenderAlgorithm::Cpu32PerturbedBLAV2HDR);
     //SetRenderAlgorithm(RenderAlgorithm::Cpu64PerturbedBLAV2HDR);
-    //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedLAv2);
-    SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32);
+    SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedLAv2);
+    //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32);
 
     SetIterationPrecision(1);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed);
@@ -341,6 +341,9 @@ void Fractal::Initialize(int width,
     // Allocate the iterations array.
     int i;
     InitializeMemory();
+
+    // Set up random palette.
+    CreateNewFractalPalette();
 
     // Wait for all this shit to get done
     for (auto& it : threads) {
@@ -1882,6 +1885,10 @@ void Fractal::ResetNumIterations(void)
     m_ChangedIterations = true;
 }
 
+std::string Fractal::GetRenderAlgorithmName() const {
+    return RenderAlgorithmStr[static_cast<size_t>(GetRenderAlgorithm())];
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Functions for drawing the fractal
 ///////////////////////////////////////////////////////////////////////////////
@@ -2210,25 +2217,54 @@ void Fractal::RotateFractalPalette(int delta)
 
 void Fractal::CreateNewFractalPalette(void)
 {
-    //int index, i;
+    size_t rtime = __rdtsc();
 
-    //srand((unsigned int)time(NULL));
-    //index = 0;
-    //index = PalTransition(index, 256, GetMaxIterations<IterType>(), (rand() % 2) * 255, (rand() % 2) * 255, (rand() % 2) * 255);
-    //if (index != -1)
-    //{
-    //    for (i = 0; i < 1000; i++)
-    //    {
-    //        index = PalTransition(index, 256, GetMaxIterations<IterType>(), (rand() % 4) * 85, (rand() % 4) * 85, (rand() % 4) * 85);
-    //        if (index == -1)
-    //        {
-    //            break;
-    //        }
-    //    }
-    //}
+    auto genNextColor = [](size_t m) {
+        const auto max_val = 65535 / (m - 1);
+        auto val = (rand() % m) * max_val;
+        return val;
+    };
 
-    //DrawFractal(false);
-    ::MessageBox(NULL, L"TODO CreateNewFractalPalette", L"", MB_OK);
+    auto RandomPaletteGen = [&](size_t PaletteIndex, size_t Depth) {
+        int depth_total = (int)(1 << Depth);
+
+        srand(rtime);
+
+        // Force a reallocation of the vectors to trigger re-initialization in the GPU
+        std::vector<uint16_t>{}.swap(m_PalR[Palette::Random][PaletteIndex]);
+        std::vector<uint16_t>{}.swap(m_PalG[Palette::Random][PaletteIndex]);
+        std::vector<uint16_t>{}.swap(m_PalB[Palette::Random][PaletteIndex]);
+
+        const auto m = 5;
+        auto firstR = genNextColor(m);
+        auto firstG = genNextColor(m);
+        auto firstB = genNextColor(m);
+        PalTransition(Palette::Random, PaletteIndex, depth_total, firstR, firstG, firstB);
+        PalTransition(Palette::Random, PaletteIndex, depth_total, genNextColor(m), genNextColor(m), genNextColor(m));
+        PalTransition(Palette::Random, PaletteIndex, depth_total, genNextColor(m), genNextColor(m), genNextColor(m));
+        PalTransition(Palette::Random, PaletteIndex, depth_total, genNextColor(m), genNextColor(m), genNextColor(m));
+        PalTransition(Palette::Random, PaletteIndex, depth_total, genNextColor(m), genNextColor(m), genNextColor(m));
+        PalTransition(Palette::Random, PaletteIndex, depth_total, genNextColor(m), genNextColor(m), genNextColor(m));
+        PalTransition(Palette::Random, PaletteIndex, depth_total, genNextColor(m), genNextColor(m), genNextColor(m));
+        PalTransition(Palette::Random, PaletteIndex, depth_total, genNextColor(m), genNextColor(m), genNextColor(m));
+        PalTransition(Palette::Random, PaletteIndex, depth_total, genNextColor(m), genNextColor(m), genNextColor(m));
+        PalTransition(Palette::Random, PaletteIndex, depth_total, genNextColor(m), genNextColor(m), genNextColor(m));
+        PalTransition(Palette::Random, PaletteIndex, depth_total, 0, 0, 0);
+
+        m_PalIters[Palette::Random][PaletteIndex] = (uint32_t)m_PalR[Palette::Random][PaletteIndex].size();
+    };
+
+    std::vector<std::unique_ptr<std::thread>> threads;
+    threads.push_back(std::make_unique<std::thread>(RandomPaletteGen, 0, 5));
+    threads.push_back(std::make_unique<std::thread>(RandomPaletteGen, 1, 6));
+    threads.push_back(std::make_unique<std::thread>(RandomPaletteGen, 2, 8));
+    threads.push_back(std::make_unique<std::thread>(RandomPaletteGen, 3, 12));
+    threads.push_back(std::make_unique<std::thread>(RandomPaletteGen, 4, 16));
+    threads.push_back(std::make_unique<std::thread>(RandomPaletteGen, 5, 20));
+
+    for (auto& it : threads) {
+        it->join();
+    }
 }
 
 //////////////////////////////////////////////////////////////////////////////

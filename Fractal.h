@@ -30,6 +30,7 @@
 
 #include "RefOrbitCalc.h"
 
+#include <string>
 #include <deque>
 
 template<typename IterType, class SubType>
@@ -157,6 +158,7 @@ public: // Iterations
 public:
     inline RenderAlgorithm GetRenderAlgorithm(void) const { return m_RenderAlgorithm; }
     inline void SetRenderAlgorithm(RenderAlgorithm alg) { m_RenderAlgorithm = alg; }
+    std::string GetRenderAlgorithmName() const;
 
     inline uint32_t GetGpuAntialiasing(void) const { return m_GpuAntialiasing; }
     inline uint32_t GetIterationPrecision(void) const { return m_IterationPrecision; }
@@ -184,6 +186,7 @@ public: // Drawing functions
         Default,
         Patriotic,
         Summer,
+        Random,
         Num
     };
 

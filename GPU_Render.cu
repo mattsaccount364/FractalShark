@@ -1796,6 +1796,9 @@ void mandel_hdr_float(
     HDRFloat<CudaDblflt<dblflt>> zrsqr{};
     HDRFloat<CudaDblflt<dblflt>> zisqr{};
 
+    double zrsq2{};
+    double zisq2{};
+
     const HDRFloat<CudaDblflt<dblflt>> Two{ 2.0f };
     const HDRFloat<CudaDblflt<dblflt>> Four{ 4.0f };
 
@@ -1803,16 +1806,20 @@ void mandel_hdr_float(
 ////y = 2.0f * x * y + y0;
 ////x = xtemp;
 //
+    double xdbl{}, ydbl{};
     auto MANDEL_2X_FLOAT = [&]() {
         y.Reduce();
         x.Reduce();
-        auto xtemp = x * x - y * y + x0;
-        y = x * y * Two + y0;
-        x = xtemp;
-        zrsqr = x * x;
-        zisqr = y * y;
-        zrsqr.Reduce();
-        zisqr.Reduce();
+        auto xtempc = x * x - y * y + x0;
+        auto ytempc = x * y * Two + y0;
+        auto xtemp = xdbl * xdbl - ydbl * ydbl + (double)x0.toDouble();
+        auto ytemp = xdbl * ydbl * 2.0 + (double)y0.toDouble();
+        x = xtempc;
+        y = ytempc;
+        xdbl = xtemp;
+        ydbl = ytemp;
+        zrsq2 = xtemp * xtemp;
+        zisq2 = ytemp * ytemp;
     };
 
     //auto MANDEL_2X_FLOAT = [&]() {
@@ -1828,7 +1835,7 @@ void mandel_hdr_float(
     //    //zisqr.Reduce();
     //};
 
-    while ((zrsqr + zisqr).compareToBothPositive(Four) < 0 && iter < n_iterations)
+    while ((zrsq2 + zisq2) < 4 && iter < n_iterations)
     {
         if (iteration_precision == 1) {
             MANDEL_2X_FLOAT();

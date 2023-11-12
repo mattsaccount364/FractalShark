@@ -29,7 +29,7 @@ LANGUAGE LANG_ENGLISH, SUBLANG_ENGLISH_US
 
 // Icon with lowest ID value placed first to ensure application icon
 // remains consistent on all systems.
-IDI_FRACTALS            ICON                    "Fractals.ICO"
+IDI_FRACTALS            ICON                    "FractalShark.ICO"
 
 IDI_SMALL               ICON                    "SMALL.ICO"
 
@@ -72,7 +72,19 @@ IDR_MENU_POPUP MENU
 BEGIN
     POPUP "POPUP"
     BEGIN
-        MENUITEM "Back",                        IDM_BACK
+        MENUITEM "Show Help",                   IDM_SHOWHOTKEYS
+        MENUITEM SEPARATOR
+        POPUP "Navigate"
+        BEGIN
+            MENUITEM "Back",                        IDM_BACK
+            MENUITEM SEPARATOR
+            MENUITEM "Center View Here",            IDM_CENTERVIEW
+            MENUITEM "Zoom In Here",                IDM_ZOOMIN
+            MENUITEM "Zoom Out",                    IDM_ZOOMOUT
+            MENUITEM SEPARATOR
+            MENUITEM "Autozoom Default",            IDM_AUTOZOOM_DEFAULT
+            MENUITEM "Autozoom Max",                IDM_AUTOZOOM_MAX
+        END
         POPUP "Built-In Views"
         BEGIN
             MENUITEM "&Standard View",              IDM_STANDARDVIEW
@@ -101,13 +113,6 @@ BEGIN
             MENUITEM "#23",                         IDM_VIEW23
         END
         MENUITEM "Recalculate, Reuse Reference", IDM_SQUAREVIEW
-        MENUITEM "Center View Here",            IDM_CENTERVIEW
-        MENUITEM "Zoom out",                    IDM_ZOOMOUT
-        POPUP "AutoZoom"
-        BEGIN
-            MENUITEM "Default",                     IDM_AUTOZOOM_DEFAULT
-            MENUITEM "Max",                         IDM_AUTOZOOM_MAX
-        END
         MENUITEM SEPARATOR
         MENUITEM "Toggle Repainting",           IDM_REPAINTING
         MENUITEM "Toggle Window Size",          IDM_WINDOWED
@@ -121,14 +126,7 @@ BEGIN
             MENUITEM "9x",                          IDM_GPUANTIALIASING_9X
             MENUITEM "16x (better quality)",        IDM_GPUANTIALIASING_16X
         END
-        POPUP "Iteration Precision"
-        BEGIN
-            MENUITEM "4x (fast)",                   IDM_ITERATIONPRECISION_4X
-            MENUITEM "3x",                          IDM_ITERATIONPRECISION_3X
-            MENUITEM "2x",                          IDM_ITERATIONPRECISION_2X
-            MENUITEM "1x (better quality)",         IDM_ITERATIONPRECISION_1X
-        END
-        POPUP "Choose &Render Algorithm"
+        POPUP "Choose Render Algorithm"
         BEGIN
             POPUP "CPU-Only"
             BEGIN
@@ -147,6 +145,14 @@ BEGIN
             END
             POPUP "Low-Zoom Depth"
             BEGIN
+                POPUP "Iteration Precision"
+                BEGIN
+                    MENUITEM "4x (fast)",                   IDM_ITERATIONPRECISION_4X
+                    MENUITEM "3x",                          IDM_ITERATIONPRECISION_3X
+                    MENUITEM "2x",                          IDM_ITERATIONPRECISION_2X
+                    MENUITEM "1x (better quality)",         IDM_ITERATIONPRECISION_1X
+                END
+                MENUITEM SEPARATOR
                 MENUITEM "1x32 GPU",                    IDM_ALG_GPU_1_32
                 MENUITEM "2x32 GPU",                    IDM_ALG_GPU_2_32
                 MENUITEM "4x32 GPU",                    IDM_ALG_GPU_4_32
@@ -208,10 +214,13 @@ BEGIN
         MENUITEM SEPARATOR
         POPUP "Palette Color Depth"
         BEGIN
-            MENUITEM "Basic",                       IDM_PALETTE_TYPE_0
+            MENUITEM "Basic",                       IDM_PALETTE_TYPE_0, INACTIVE
             MENUITEM "Default",                     IDM_PALETTE_TYPE_1
             MENUITEM "Patriotic",                   IDM_PALETTE_TYPE_2
             MENUITEM "Summer",                      IDM_PALETTE_TYPE_3
+            MENUITEM "Random",                      IDM_PALETTE_TYPE_4
+            MENUITEM SEPARATOR
+            MENUITEM "&Create Random Palette",      IDM_CREATENEWPALETTE
             MENUITEM SEPARATOR
             MENUITEM "5-bit",                       IDM_PALETTE_5
             MENUITEM "6-bit",                       IDM_PALETTE_6
@@ -219,14 +228,13 @@ BEGIN
             MENUITEM "12-bit",                      IDM_PALETTE_12
             MENUITEM "16-bit",                      IDM_PALETTE_16
             MENUITEM "20-bit",                      IDM_PALETTE_20
+            MENUITEM SEPARATOR
+            MENUITEM "Pa&lette Rotation",           IDM_PALETTEROTATE, INACTIVE
         END
-        MENUITEM "Pa&lette Rotation",           IDM_PALETTEROTATE
-        MENUITEM "&Create New Palette",         IDM_CREATENEWPALETTE
         MENUITEM SEPARATOR
+        MENUITEM "Show Rendering Details",      IDM_CURPOS
         POPUP "Save"
         BEGIN
-            MENUITEM "Get Current Position",        IDM_CURPOS
-            MENUITEM SEPARATOR
             MENUITEM "Save Location...",            IDM_SAVELOCATION
             MENUITEM "Save High Res Bitmap",        IDM_SAVEHIRESBMP
             MENUITEM "Save Iterations as Text",     IDM_SAVE_ITERS_TEXT

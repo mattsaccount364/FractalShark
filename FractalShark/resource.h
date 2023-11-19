@@ -1,6 +1,6 @@
 //{{NO_DEPENDENCIES}}
 // Microsoft Visual C++ generated include file.
-// Used by Fractals.rc
+// Used by FractalShark.rc
 //
 #define IDC_MYICON                      2
 #define IDD_FRACTALS_DIALOG             102
@@ -266,6 +266,12 @@
 #define IDM_SHOWHOTKEYS                 33058
 #define ID_ZOOM_ZOOMIN                  33059
 #define IDM_ZOOMIN                      33060
+#define ID_CHOOSERENDERALGORITHM_HDRX2X32GPU 33061
+#define IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2 33062
+#define ID_CHOOSERENDERALGORITHM_HDRX2X32GPU33063 33063
+#define ID_CHOOSERENDERALGORITHM_HDRX2X32GPU33064 33064
+#define IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2_PO 33065
+#define IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2_LAO 33066
 #define IDM_VIEW1                       33081
 #define IDM_VIEW2                       33082
 #define IDM_VIEW3                       33083
@@ -302,7 +308,7 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        131
-#define _APS_NEXT_COMMAND_VALUE         33061
+#define _APS_NEXT_COMMAND_VALUE         33067
 #define _APS_NEXT_CONTROL_VALUE         1000
 #define _APS_NEXT_SYMED_VALUE           110
 #endif

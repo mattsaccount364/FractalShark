@@ -251,6 +251,7 @@ private:
     void FillCoord(HighPrecision& src, MattDblflt& dest);
     void FillCoord(HighPrecision& src, float& dest);
     void FillCoord(HighPrecision& src, CudaDblflt<MattDblflt>& dest);
+    void FillCoord(HighPrecision& src, HDRFloat<CudaDblflt<MattDblflt>>& dest);
 
     template<class T>
     void FillGpuCoords(T& cx2, T& cy2, T& dx2, T& dy2);

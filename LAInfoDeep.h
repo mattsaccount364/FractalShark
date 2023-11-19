@@ -18,15 +18,19 @@ public:
 
     friend class GPU_LAInfoDeep<IterType, SubType>;
 
+    // TODO this is overly broad -- many types don't need these friends
+    friend class LAInfoDeep<IterType, double>;
+    friend class LAInfoDeep<IterType, CudaDblflt<MattDblflt>>;
+
     static constexpr int DEFAULT_DETECTION_METHOD = 2;
-    static constexpr T DefaultStage0PeriodDetectionThreshold = (T)0x1.0p-10;
-    static constexpr T DefaultPeriodDetectionThreshold = (T)0x1.0p-10;
-    static constexpr T DefaultStage0PeriodDetectionThreshold2 = (T)0x1.0p-6;
-    static constexpr T DefaultPeriodDetectionThreshold2 = (T)0x1.0p-3;
-    static constexpr T DefaultLAThresholdScale =
-        std::is_same<T, float>::value ? (T)0x1.0p-12 : (T)0x1.0p-24;
-    static constexpr T DefaultLAThresholdCScale =
-        std::is_same<T, float>::value ? (T)0x1.0p-12 : (T)0x1.0p-24;
+    static constexpr float DefaultStage0PeriodDetectionThreshold = 0x1.0p-10;
+    static constexpr float DefaultPeriodDetectionThreshold = 0x1.0p-10;
+    static constexpr float DefaultStage0PeriodDetectionThreshold2 = 0x1.0p-6;
+    static constexpr float DefaultPeriodDetectionThreshold2 = 0x1.0p-3;
+    static constexpr float DefaultLAThresholdScale =
+        std::is_same<T, float>::value ? 0x1.0p-12 : 0x1.0p-24;
+    static constexpr float DefaultLAThresholdCScale =
+        std::is_same<T, float>::value ? 0x1.0p-12 : 0x1.0p-24;
     //static constexpr T DefaultLAThresholdScale = (T)0x1.0p-12;
     //static constexpr T DefaultLAThresholdCScale = (T)0x1.0p-12;
     
@@ -55,6 +59,9 @@ public:
 
 public:
     CUDA_CRAP LAInfoDeep();
+
+    template<class Other>
+    CUDA_CRAP LAInfoDeep(const LAInfoDeep<IterType, Other> &other);
     CUDA_CRAP LAInfoDeep(HDRFloatComplex z);
     CUDA_CRAP bool DetectPeriod(HDRFloatComplex z);
     CUDA_CRAP HDRFloatComplex getRef();
@@ -96,6 +103,33 @@ LAInfoDeep<IterType, SubType>::LAInfoDeep() :
     MinMagMant{},
     MinMagExp{},
     LAi{} {
+}
+
+template<typename IterType, class SubType>
+template<class Other>
+CUDA_CRAP LAInfoDeep<IterType, SubType>::LAInfoDeep(const LAInfoDeep<IterType, Other>& other) {
+    RefRe = static_cast<SubType>(other.RefRe);
+    RefIm = static_cast<SubType>(other.RefIm);
+    RefExp = other.RefExp;
+
+    ZCoeffRe = static_cast<SubType>(other.ZCoeffRe);
+    ZCoeffIm = static_cast<SubType>(other.ZCoeffIm);
+    ZCoeffExp = other.ZCoeffExp;
+
+    CCoeffRe = static_cast<SubType>(other.CCoeffRe);
+    CCoeffIm = static_cast<SubType>(other.CCoeffIm);
+    CCoeffExp = other.CCoeffExp;
+
+    LAThresholdMant = static_cast<SubType>(other.LAThresholdMant);
+    LAThresholdExp = other.LAThresholdExp;
+
+    LAThresholdCMant = static_cast<SubType>(other.LAThresholdCMant);
+    LAThresholdCExp = other.LAThresholdCExp;
+
+    MinMagMant = static_cast<SubType>(other.MinMagMant);
+    MinMagExp = other.MinMagExp;
+
+    LAi = other.LAi;
 }
 
 template<typename IterType, class SubType>

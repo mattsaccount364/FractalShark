@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 #include <math.h>
+#include <type_traits>
 #include "HighPrecision.h"
 #include "CudaDblflt.h"
 
@@ -32,7 +33,6 @@ public:
     MYALIGN TExp exp;
     MYALIGN T mantissa;
 };
-#pragma pack(pop)
 
 enum class HDROrder {
     Left,
@@ -56,10 +56,10 @@ public:
         if constexpr (std::is_same<T, double>::value) {
             return -1023;
         }
-        if constexpr (std::is_same<T, CudaDblflt<dblflt>>::value) {
-            return -127;
-        }
         else {
+            static_assert(
+                std::is_same<CudaDblflt<dblflt>, T>::value ||
+                std::is_same<float, T>::value, "!");
             return -127;
         }
     }
@@ -68,10 +68,10 @@ public:
         if constexpr (std::is_same<T, double>::value) {
             return -1023;
         }
-        if constexpr (std::is_same<T, CudaDblflt<dblflt>>::value) {
-            return -127;
-        }
         else {
+            static_assert(
+                std::is_same<CudaDblflt<dblflt>, T>::value ||
+                std::is_same<float, T>::value, "!");
             return -127;
         }
     }
@@ -100,7 +100,7 @@ public:
 #ifndef __CUDACC__ 
     CUDA_CRAP std::string ToString() const {
         std::stringstream ss;
-        ss << "mantissa: " << Base::mantissa << " exp: " << Base::exp;
+        ss << "mantissa: " << (double)Base::mantissa << " exp: " << Base::exp;
         return ss.str();
     }
 #endif
@@ -198,16 +198,8 @@ public:
         }
         else if constexpr (std::is_same<T, CudaDblflt<dblflt>>::value) {
             if constexpr (std::is_same<U, CudaDblflt<dblflt>>::value) {
-                const auto bits_y = *reinterpret_cast<const uint32_t*>(&number.d.y);
-                const auto bits_x = *reinterpret_cast<const uint32_t*>(&number.d.x);
-                const int32_t f_exp = (int32_t)((bits_y & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
-                const uint32_t val_y = (bits_y & 0x807F'FFFFL) | 0x3F80'0000L;
-                const uint32_t val_x = (bits_x & 0x807F'FFFFL) | 0x3F80'0000L;
-                const auto f_val_y = *reinterpret_cast<const float*>(&val_y);
-                const auto f_val_x = *reinterpret_cast<const float*>(&val_x);
-                Base::exp = f_exp;
-                Base::mantissa.d.y = f_val_y;
-                Base::mantissa.d.x = f_val_x;
+                Base::exp = number.exp;
+                Base::mantissa = number.mantissa;
             }
             else {
                 const uint32_t bits = bit_cast<uint32_t>((float)number);
@@ -230,18 +222,28 @@ public:
     HDRFloat(const HighPrecision &number) {
 
         if (number == 0) {
-            Base::mantissa = (T)0.0;
+            Base::mantissa = T{ 0.0 };
             Base::exp = MIN_BIG_EXPONENT();
             return;
         }
 
-        int temp_exp;
-        Base::mantissa = boost::multiprecision::frexp(number, &temp_exp).template convert_to<T>();
-        Base::exp = (TExp)temp_exp;
+        if constexpr (std::is_same<T, CudaDblflt<dblflt>>::value) {
+            int temp_exp;
+            double tempMantissa = boost::multiprecision::frexp(number, &temp_exp).template convert_to<double>();
+            Base::mantissa.d.y = (float)tempMantissa;
+            Base::mantissa.d.x = (float)((double)tempMantissa - (double)Base::mantissa.d.y);
+            Base::exp = (TExp)temp_exp;
+        }
+        else {
+            int temp_exp;
+            Base::mantissa = boost::multiprecision::frexp(number, &temp_exp).template convert_to<T>();
+            Base::exp = (TExp)temp_exp;
+        }
     }
 #endif
 
-    CUDA_CRAP constexpr HDRFloat &Reduce() & {
+    template<bool GetExpAmt = false>
+    CUDA_CRAP constexpr HDRFloat &Reduce(TExp *DestExp = nullptr) & {
         //if (Base::mantissa == 0) {
         //    return;
         //}
@@ -253,6 +255,10 @@ public:
             const auto f_val = *reinterpret_cast<const T*>(&val);
             Base::exp += f_exp;
             Base::mantissa = f_val;
+
+            if constexpr (GetExpAmt) {
+                *DestExp = f_exp;
+            }
         }
         else if constexpr (std::is_same<T, float>::value) {
             const uint32_t bits = *reinterpret_cast<uint32_t*>(&this->Base::mantissa);
@@ -261,19 +267,27 @@ public:
             const auto f_val = *reinterpret_cast<const T*>(&val);
             Base::exp += f_exp;
             Base::mantissa = f_val;
+
+            if constexpr (GetExpAmt) {
+                *DestExp = f_exp;
+            }
         }
         else if constexpr (std::is_same<T, CudaDblflt<dblflt>>::value) {
             const uint32_t bits_y = *reinterpret_cast<uint32_t*>(&this->Base::mantissa.d.y);
             const uint32_t bits_x = *reinterpret_cast<uint32_t*>(&this->Base::mantissa.d.x);
             const int32_t f_exp_y = (int32_t)((bits_y & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
-            const int32_t f_exp_x = (int32_t)((bits_x & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
+            const int32_t f_exp_x = (int32_t)((bits_x & 0x7F80'0000UL) >> 23UL);
             const uint32_t val_y = (bits_y & 0x807F'FFFFL) | 0x3F80'0000L;
-            const uint32_t val_x = (bits_x & 0x807F'FFFFL) | (f_exp_x << 23UL);
+            const uint32_t val_x = (bits_x & 0x807F'FFFFL) | ((f_exp_x + f_exp_y) << 23UL);
             const auto f_val_y = *reinterpret_cast<const float*>(&val_y);
             const auto f_val_x = *reinterpret_cast<const float*>(&val_x);
             Base::exp += f_exp_y;
             Base::mantissa.d.y = f_val_y;
             Base::mantissa.d.x = f_val_x;
+
+            if constexpr (GetExpAmt) {
+                *DestExp = f_exp_y;
+            }
         }
 
         return *this;
@@ -304,9 +318,9 @@ public:
             const uint32_t bits_y = *reinterpret_cast<uint32_t*>(&this->Base::mantissa.d.y);
             const uint32_t bits_x = *reinterpret_cast<uint32_t*>(&this->Base::mantissa.d.x);
             const int32_t f_exp_y = (int32_t)((bits_y & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
-            const int32_t f_exp_x = (int32_t)((bits_x & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
+            const int32_t f_exp_x = (int32_t)((bits_x & 0x7F80'0000UL) >> 23UL);
             const uint32_t val_y = (bits_y & 0x807F'FFFFL) | 0x3F80'0000L;
-            const uint32_t val_x = (bits_x & 0x807F'FFFFL) | (f_exp_x << 23UL);
+            const uint32_t val_x = (bits_x & 0x807F'FFFFL) | ((f_exp_x + f_exp_y) << 23UL);
             const auto f_val_y = *reinterpret_cast<const float*>(&val_y);
             const auto f_val_x = *reinterpret_cast<const float*>(&val_x);
             Base::exp += f_exp_y;
@@ -589,6 +603,37 @@ public:
         }
 
         HdrReduce(DeltaSubNY);
+    }
+
+    static CUDA_CRAP HDRFloat custom_perturb3(
+        HDRFloat& DeltaSubNX,
+        HDRFloat& DeltaSubNY,
+        const HDRFloat& DeltaSubNXOrig,
+        const HDRFloat& tempSum1,
+        const HDRFloat& DeltaSubNYOrig,
+        const HDRFloat& tempSum2,
+        const HDRFloat& DeltaSub0X,
+        const HDRFloat& DeltaSub0Y) {
+        DeltaSubNX =
+            DeltaSubNXOrig * tempSum1 -
+            DeltaSubNYOrig * tempSum2 +
+            DeltaSub0X;
+        HdrReduce(DeltaSubNX);
+
+        DeltaSubNY =
+            DeltaSubNXOrig * tempSum2 +
+            DeltaSubNYOrig * tempSum1 +
+            DeltaSub0Y;
+        HdrReduce(DeltaSubNY);
+
+        const HDRFloat tempZX = tempSum1 + DeltaSubNX;
+        const HDRFloat tempZY = tempSum2 + DeltaSubNY;
+
+        HDRFloat zn_size = tempZX * tempZX + tempZY * tempZY;
+        HdrReduce(zn_size);
+
+        HDRFloat normDeltaSubN = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
+        HdrReduce(normDeltaSubN);
     }
 
     // friends defined inside class body are inline and are hidden from non-ADL lookup
@@ -1069,6 +1114,8 @@ public:
         return a.compareTo(b) < 0 ? a : b;
     }
 };
+#pragma pack(pop)
+
 
 template<class T>
 static CUDA_CRAP T HdrSqrt(const T &incoming) {
@@ -1103,7 +1150,8 @@ static CUDA_CRAP constexpr T HdrAbs(const T& incoming) {
         std::is_same<T, double>::value ||
         std::is_same<T, float>::value ||
         std::is_same<T, HDRFloat<double>>::value ||
-        std::is_same<T, HDRFloat<float>>::value, "No");
+        std::is_same<T, HDRFloat<float>>::value ||
+        std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value, "No");
 
     if constexpr (std::is_same<T, double>::value ||
                   std::is_same<T, float>::value) {
@@ -1112,8 +1160,10 @@ static CUDA_CRAP constexpr T HdrAbs(const T& incoming) {
                          std::is_same<T, HDRFloat<double>>::value) {
         return T(incoming.exp, fabs(incoming.mantissa));
     }
-    
-    static_assert(!std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value, "!");
+    else {
+        static_assert(std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value, "!");
+        return T(incoming.exp, incoming.mantissa.abs());
+    }
 }
 
 template<class T>
@@ -1172,8 +1222,9 @@ static CUDA_CRAP constexpr T &&HdrReduce(T&& incoming) {
                   std::is_same<no_const, HDRFloatComplex<float>>::value) {
         return std::move(incoming.Reduce());
     }
-
-    return std::move(incoming);
+    else {
+        return std::move(incoming);
+    }
 }
 
 template<class T, class U>
@@ -1226,16 +1277,17 @@ static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedLT(const T& one, 
 #else
         false;
 #endif
-    static_assert(!std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value, "!");
     static_assert(
         std::is_same<T, double>::value ||
         std::is_same<T, float>::value ||
         std::is_same<T, HDRFloat<double>>::value ||
         std::is_same<T, HDRFloat<float>>::value ||
+        std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value ||
         HighPrecPossible, "No");
 
     if constexpr (std::is_same<T, HDRFloat<double>>::value ||
-                  std::is_same<T, HDRFloat<float>>::value) {
+                  std::is_same<T, HDRFloat<float>>::value ||
+                  std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value) {
         return one.compareToBothPositiveReduced(two) < 0;
     }
     else {
@@ -1251,16 +1303,17 @@ static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedLT(const T& one) 
 #else
         false;
 #endif
-    static_assert(!std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value, "!");
     static_assert(
         std::is_same<T, double>::value ||
         std::is_same<T, float>::value ||
         std::is_same<T, HDRFloat<double>>::value ||
         std::is_same<T, HDRFloat<float>>::value ||
+        std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value ||
         HighPrecPossible, "No");
 
     if constexpr (std::is_same<T, HDRFloat<double>>::value ||
-        std::is_same<T, HDRFloat<float>>::value) {
+                  std::is_same<T, HDRFloat<float>>::value ||
+                  std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value) {
         return one.compareToBothPositiveReducedTemplate() < 0;
     }
     else {
@@ -1352,11 +1405,12 @@ static CUDA_CRAP std::string HdrToString(const T& dat) {
         std::is_same<T, float>::value ||
         std::is_same<T, HDRFloat<double>>::value ||
         std::is_same<T, HDRFloat<float>>::value ||
+        std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value ||
         HighPrecPossible, "No");
-    static_assert(!std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value, "!");
     if constexpr (
         std::is_same<T, HDRFloat<double>>::value ||
-        std::is_same<T, HDRFloat<float>>::value) {
+        std::is_same<T, HDRFloat<float>>::value ||
+        std::is_same<T, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
 
         return dat.ToString();
     }
@@ -1382,4 +1436,28 @@ static CUDA_CRAP std::string HdrToString(const T& dat) {
         return s;
     }
 }
+
+// If you pass in T == HDRFloat<CudaDblflt<MattDblflt>> then ConditionalT will be HDRFloat<double>
+// If you pass in SubType == CudaDblflt<MattDblflt> then ConditionalSubType will be double
+// But:
+// If you pass in T = anything else, then ConditionalT will be T
+// If you pass in SubType = anything else, then ConditionalSubType will be SubType
+template<typename T, typename SubType>
+class DoubleTo2x32Converter {
+public:
+
+    DoubleTo2x32Converter() = delete;
+    DoubleTo2x32Converter(const DoubleTo2x32Converter&) = delete;
+    DoubleTo2x32Converter& operator=(const DoubleTo2x32Converter&) = delete;
+    ~DoubleTo2x32Converter() = delete;
+
+    // T is probably something else, like HDRFloat<float> or HDRFloat<double>
+    // But if it's HDRFloat<CudaDblflt<MattDblflt>>, then we need to use HDRFloat<double> instead
+    static constexpr bool ConditionalResult = std::is_same<T, HDRFloat<CudaDblflt<MattDblflt>>>::value;
+
+    // SubType is probably float or double
+    using ConditionalT = typename std::conditional<ConditionalResult, HDRFloat<double>, T>::type;
+    using ConditionalSubType = typename std::conditional<ConditionalResult, double, SubType>::type;
+};
 #endif
+

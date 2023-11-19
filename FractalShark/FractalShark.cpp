@@ -142,7 +142,7 @@ HWND InitInstance(HINSTANCE hInstance, int nCmdShow)
 { // Store instance handle in our global variable
     hInst = hInstance;
 
-    constexpr bool startWindowed = false;
+    constexpr bool startWindowed = true;
 
     const auto scrnWidth = GetSystemMetrics(SM_CXSCREEN);
     const auto scrnHeight = GetSystemMetrics(SM_CYSCREEN);
@@ -772,6 +772,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             case IDM_ALG_GPU_HDR_32_PERTURB_LAV2_LAO:
             {
                 gFractal->SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedLAv2LAO);
+                break;
+            }
+
+            case IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2:
+            {
+                gFractal->SetRenderAlgorithm(RenderAlgorithm::GpuHDRx2x32PerturbedLAv2);
+                break;
+            }
+
+            case IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2_PO:
+            {
+                gFractal->SetRenderAlgorithm(RenderAlgorithm::GpuHDRx2x32PerturbedLAv2PO);
+                break;
+            }
+
+            case IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2_LAO:
+            {
+                gFractal->SetRenderAlgorithm(RenderAlgorithm::GpuHDRx2x32PerturbedLAv2LAO);
                 break;
             }
 
@@ -1679,7 +1697,7 @@ void MenuBenchmarkThis(HWND hWnd) {
     gFractal->DrawFractal(false);
 }
 
-void MenuShowHotkeys(HWND hWnd) {
+void MenuShowHotkeys(HWND /*hWnd*/) {
     // Shows the hotkeys as defined in HandleKeyDown
     ::MessageBox(
         NULL,

@@ -29,11 +29,19 @@ class GPU_LAReference;
 template<typename IterType, class SubType>
 class LAReference {
 private:
-    using HDRFloat = HDRFloat<SubType>;
-    using HDRFloatComplex = HDRFloatComplex<SubType>;
+    using HDRFloat = ::HDRFloat<SubType>;
+    using HDRFloatComplex = ::HDRFloatComplex<SubType>;
 
     friend class GPU_LAReference<IterType, float>;
     friend class GPU_LAReference<IterType, double>;
+    friend class GPU_LAReference<IterType, CudaDblflt<dblflt>>;
+    friend class GPU_LAReference<IterType, CudaDblflt<MattDblflt>>;
+
+    // TODO this is overly broad -- many types don't need these friends
+    friend class LAReference<IterType, float>;
+    friend class LAReference<IterType, double>;
+    friend class LAReference<IterType, CudaDblflt<MattDblflt>>;
+    friend class LAReference<IterType, CudaDblflt<dblflt>>;
 
     static const int lowBound = 64;
     static const SubType log16;
@@ -42,8 +50,24 @@ public:
     LAReference() :
         UseAT{},
         AT{},
-        LAStageCount{},
+        LAStageCount{}, 
         isValid{} {
+    }
+
+    template<class Other>
+    LAReference(const LAReference<IterType, Other>& other) {
+        UseAT = other.UseAT;
+        AT = other.AT;
+        LAStageCount = other.LAStageCount;
+        isValid = other.isValid;
+        LAs.resize(other.LAs.size());
+        for (int i = 0; i < other.LAs.size(); i++) {
+            LAs[i] = other.LAs[i];
+        }
+        LAStages.resize(other.LAStages.size());
+        for (int i = 0; i < other.LAStages.size(); i++) {
+            LAStages[i] = other.LAStages[i];
+        }
     }
 
     bool UseAT;

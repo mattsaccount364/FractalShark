@@ -46,11 +46,8 @@
 #if !defined(dblflt_H_)
 #define dblflt_H_
 
-#if defined(__cplusplus)
-extern "C" {
-#endif /* __cplusplus */
-
 #include <math.h>       /* import sqrt() */
+#include "dblflt.h"
 
     /* The head of a double-float number is stored in the most significant part
        of a double2 (the y-component). The tail is stored in the least significant
@@ -58,7 +55,10 @@ extern "C" {
        normalized on both input to and return from all basic operations, i.e. the
        magnitude of the tail shall be <= 0.5 ulp of the head.
     */
-    typedef float2 dblflt;
+    // TODO evaluate alignment issues with HDRFloat packing
+    // If we move to single-exponent complex, we may be able to 
+    // use float2 for dblflt?
+    //typedef float2 dblflt;
 
     /* Create a double-float from two doubles. No normalization is performed,
        so the head and tail components passed in must satisfy the normalization
@@ -332,9 +332,5 @@ extern "C" {
         res.x = (float)(a - (double)res.y);
         return res;
     }
-
-#if defined(__cplusplus)
-}
-#endif /* __cplusplus */
 
 #endif /* dblflt_H_ */

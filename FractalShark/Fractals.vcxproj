@@ -197,6 +197,7 @@
     </ClCompile>
     <ClCompile Include="..\HDRFloat.cpp" />
     <ClInclude Include="..\CudaDblflt.h" />
+    <ClInclude Include="..\dblflt.h" />
     <ClInclude Include="..\GPU_LAInfoDeep.h" />
     <ClInclude Include="..\GPU_Types.h" />
     <ClInclude Include="..\LAInfoDeep.h" />
@@ -204,6 +205,7 @@
     <ClInclude Include="..\LAReference.h" />
     <ClInclude Include="..\GPU_LAReference.h" />
     <ClInclude Include="..\LAstep.h" />
+    <ClCompile Include="..\LAInfoDeep.cpp" />
     <ClCompile Include="..\LAReference.cpp" />
     <ClCompile Include="..\RefOrbitCalc.cpp" />
     <ClCompile Include="..\WPngImage\lodepng.cpp" />

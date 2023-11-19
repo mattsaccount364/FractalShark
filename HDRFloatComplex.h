@@ -30,6 +30,8 @@ public:
 
     friend class HDRFloatComplex<float>;
     friend class HDRFloatComplex<double>;
+    friend class HDRFloatComplex<CudaDblflt<MattDblflt>>;
+    friend class HDRFloatComplex<CudaDblflt<dblflt>>;
 
     CUDA_CRAP constexpr HDRFloatComplex() {
         mantissaReal = (SubType)0.0;
@@ -332,27 +334,44 @@ public:
         TExp f_expReal;
         TExp f_expImag;
 
+        auto helper = [&]() {
+            TExp expDiff = max(f_expReal, f_expImag) + HDRFloat::MIN_SMALL_EXPONENT();
+            TExp expCombined = exp + expDiff;
+            SubType mul = HDRFloat::getMultiplier(-expDiff);
+
+            mantissaReal *= mul;
+            mantissaImag *= mul;
+            exp = expCombined;
+        };
+
+        static_assert(
+            std::is_same<SubType, double>::value ||
+            std::is_same<SubType, float>::value ||
+            std::is_same<SubType, CudaDblflt<dblflt>>::value, "!");
+
         if constexpr (std::is_same<SubType, double>::value) {
             uint64_t bitsReal = *reinterpret_cast<uint64_t*>(&mantissaReal);
             f_expReal = (TExp)((bitsReal & 0x7FF0'0000'0000'0000UL) >> 52UL);
 
             uint64_t bitsImag = *reinterpret_cast<uint64_t*>(&mantissaImag);
             f_expImag = (TExp)((bitsImag & 0x7FF0'0000'0000'0000UL) >> 52UL);
+            helper();
         } else if constexpr (std::is_same<SubType, float>::value) {
             uint32_t bitsReal = *reinterpret_cast<uint32_t*>(&mantissaReal);
             f_expReal = (TExp)((bitsReal & 0x7F80'0000UL) >> 23UL);
 
             uint32_t bitsImag = *reinterpret_cast<uint32_t*>(&mantissaImag);
             f_expImag = (TExp)((bitsImag & 0x7F80'0000UL) >> 23UL);
+            helper();
+        } else if constexpr (std::is_same<SubType, CudaDblflt<dblflt>>::value) {
+            TExp f_expReal, f_expImag;
+            mantissaReal.Reduce(f_expReal);
+            mantissaImag.Reduce(f_expImag);
+
+            TExp expDiff = max(f_expReal, f_expImag) + HDRFloat::MIN_SMALL_EXPONENT();
+            TExp expCombined = exp + expDiff;
+            exp = expCombined;
         }
-
-        TExp expDiff = max(f_expReal, f_expImag) + HDRFloat::MIN_SMALL_EXPONENT();
-        TExp expCombined = exp + expDiff;
-        SubType mul = HDRFloat::getMultiplier(-expDiff);
-
-        mantissaReal *= mul;
-        mantissaImag *= mul;
-        exp = expCombined;
     }
         
 private:

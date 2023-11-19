@@ -18,6 +18,7 @@ public:
     __host__ GPU_LAReference(const GPU_LAReference& other);
     ~GPU_LAReference();
 
+    GPU_LAReference() = delete;
     GPU_LAReference(GPU_LAReference&& other) = delete;
     GPU_LAReference& operator=(const GPU_LAReference& other) = delete;
     GPU_LAReference& operator=(GPU_LAReference&& other) = delete;

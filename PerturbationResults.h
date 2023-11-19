@@ -33,6 +33,36 @@ public:
 
     std::unique_ptr<LAReference<IterType, SubType>> LaReference;
 
+    template<class Other, CalcBad Bad = CalcBad::Disable>
+    void Copy(const PerturbationResults<IterType, Other, Bad>& other) {
+        clear();
+
+        //hiX = other.hiX;
+        //hiY = other.hiY;
+
+        //maxRadius = other.maxRadius;
+
+        orb.reserve(other.orb.size());
+
+        ReuseX.reserve(other.ReuseX.size());
+        ReuseY.reserve(other.ReuseY.size());
+
+        for (size_t i = 0; i < other.orb.size(); i++) {
+            if constexpr (Bad == CalcBad::Enable) {
+                orb.push_back({ (T)other.orb[i].x, (T)other.orb[i].y, other.orb[i].bad != 0 });
+            }
+            else {
+                orb.push_back({ (T)other.orb[i].x, (T)other.orb[i].y });
+            }
+        }
+
+        AuthoritativePrecision = other.AuthoritativePrecision;
+        ReuseX = other.ReuseX;
+        ReuseY = other.ReuseY;
+
+        LaReference = std::make_unique<LAReference<IterType, SubType>>(*other.LaReference);
+    }
+
     void Write(const std::wstring& filename) {
         const auto orbfilename = filename + L".orb";
 
@@ -296,35 +326,6 @@ public:
         AuthoritativePrecision = false;
         ReuseX.clear();
         ReuseY.clear();
-    }
-
-    // TODO WTF is this for again?
-    template<class Other, CalcBad Bad = CalcBad::Disable>
-    void Copy(const PerturbationResults<IterType, Other, Bad>& other) {
-        clear();
-
-        //hiX = other.hiX;
-        //hiY = other.hiY;
-
-        //maxRadius = other.maxRadius;
-
-        orb.reserve(other.orb.size());
-
-        ReuseX.reserve(other.ReuseX.size());
-        ReuseY.reserve(other.ReuseY.size());
-
-        for (size_t i = 0; i < other.orb.size(); i++) {
-            if constexpr (Bad == CalcBad::Enable) {
-                orb.push_back({ (T)other.orb[i].x, (T)other.orb[i].y, other.orb[i].bad != 0 });
-            }
-            else {
-                orb.push_back({ (T)other.orb[i].x, (T)other.orb[i].y });
-            }
-        }
-
-        AuthoritativePrecision = other.AuthoritativePrecision;
-        ReuseX = other.ReuseX;
-        ReuseY = other.ReuseY;
     }
 
     template<class U>

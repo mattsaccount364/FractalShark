@@ -378,17 +378,10 @@ CUDA_CRAP const GPUBLA_TYPE* GPU_BLAS<IterType, T, GPUBLA_TYPE, LM2>::LookupBack
 // Perturbation results
 ////////////////////////////////////////////////////////////////////////////////////////
 
-static_assert(sizeof(MattReferenceSingleIter<float>) == 8, "Float");
-static_assert(sizeof(MattReferenceSingleIter<double>) == 16, "Double");
-static_assert(sizeof(MattReferenceSingleIter<HDRFloat<float>>) == 16, "Float");
-static_assert(sizeof(MattReferenceSingleIter<HDRFloat<double>>) == 24, "Double");
-static_assert(sizeof(MattReferenceSingleIter<dblflt>) == 16, "Dblflt");
-
-//char(*__kaboom1)[sizeof(MattReferenceSingleIter<float>)] = 1;
-//char(*__kaboom2)[sizeof(MattReferenceSingleIter<double>)] = 1;
-//char(*__kaboom3)[sizeof(MattReferenceSingleIter<dblflt>)] = 1;
-//char(*__kaboom4)[sizeof(MattReferenceSingleIter<HDRFloat<float>>)] = 1;
-//char(*__kaboom5)[sizeof(MattReferenceSingleIter<HDRFloat<double>>)] = 1;
+template <typename ToCheck, std::size_t ExpectedSize, std::size_t RealSize = sizeof(ToCheck)>
+void check_size() {
+    static_assert(ExpectedSize == RealSize, "Size is off!");
+}
 
 template<typename IterType, typename Type, CalcBad Bad = CalcBad::Disable>
 struct MattPerturbSingleResults {
@@ -398,17 +391,34 @@ struct MattPerturbSingleResults {
     cudaError_t err;
     IterType PeriodMaybeZero;
 
+    MattPerturbSingleResults() = delete;
+
+    template<typename Other>
     MattPerturbSingleResults(
         IterType sz,
         IterType PeriodMaybeZero,
-        MattReferenceSingleIter<Type, Bad> *in_iters)
+        MattReferenceSingleIter<Other, Bad> *in_iters)
         : size(sz),
         PeriodMaybeZero(PeriodMaybeZero),
         iters(nullptr),
         own(true),
         err(cudaSuccess) {
 
-        static_assert(sizeof(MattDblflt) == sizeof(dblflt), "No");
+        check_size<dblflt, sizeof(double)>();
+        check_size<MattDblflt, sizeof(double)>();
+        check_size<MattDblflt, sizeof(dblflt)>();
+        check_size<CudaDblflt<MattDblflt>, sizeof(double)>();
+        check_size<CudaDblflt<MattDblflt>, sizeof(CudaDblflt<dblflt>)>();
+        check_size<HDRFloat<CudaDblflt<MattDblflt>>, sizeof(HDRFloat<CudaDblflt<dblflt>>)>(); // TODO this will result in crashes until fixed
+        check_size<Type, sizeof(Other)>();
+
+        check_size<MattReferenceSingleIter<float>, 8>();
+        check_size<MattReferenceSingleIter<double>, 16>();
+        check_size<MattReferenceSingleIter<HDRFloat<float>>, 16>();
+        check_size<MattReferenceSingleIter<HDRFloat<double>>, 24>();
+        check_size<MattReferenceSingleIter<HDRFloat<CudaDblflt<MattDblflt>>>, 24>();
+        check_size<MattReferenceSingleIter<HDRFloat<CudaDblflt<dblflt>>>, 24>(); // TODO
+        check_size<MattReferenceSingleIter<dblflt>, 16>();
 
         MattReferenceSingleIter<Type, Bad>* tempIters;
         err = cudaMallocManaged(&tempIters, size * sizeof(MattReferenceSingleIter<Type, Bad>));
@@ -430,13 +440,17 @@ struct MattPerturbSingleResults {
         //}
     }
 
-    // funny semantics, copy doesn't own the pointers.
     MattPerturbSingleResults(const MattPerturbSingleResults& other) {
-        if (this == &other) {
-            return;
-        }
+        iters = reinterpret_cast<MattReferenceSingleIter<Type, Bad>*>(other.iters);
+        size = other.size;
+        PeriodMaybeZero = other.PeriodMaybeZero;
+        own = false;
+    }
 
-        iters = other.iters;
+    // funny semantics, copy doesn't own the pointers.
+    template<class Other>
+    MattPerturbSingleResults(const MattPerturbSingleResults<IterType, Other, Bad>& other) {
+        iters = reinterpret_cast<MattReferenceSingleIter<Type, Bad>* >(other.iters);
         size = other.size;
         PeriodMaybeZero = other.PeriodMaybeZero;
         own = false;
@@ -1410,8 +1424,8 @@ mandel_1xHDR_float_perturb_lav2(
 
     IterType iter = 0;
     IterType RefIteration = 0;
-    const HDRFloatType DeltaReal = dx * X - centerX;
-    const HDRFloatType DeltaImaginary = -dy * Y - centerY;
+    const HDRFloatType DeltaReal = dx * HDRFloatType(X) - centerX;
+    const HDRFloatType DeltaImaginary = -dy * HDRFloatType(Y) - centerY;
 
     const HDRFloatType DeltaSub0X = DeltaReal;
     const HDRFloatType DeltaSub0Y = DeltaImaginary;
@@ -1425,7 +1439,7 @@ mandel_1xHDR_float_perturb_lav2(
     TComplex DeltaSubN;
 
     DeltaSub0 = { DeltaReal, DeltaImaginary };
-    DeltaSubN = { 0, 0 };
+    DeltaSubN = { HDRFloatType(0), HDRFloatType(0) };
 
     if constexpr (Mode == LAv2Mode::Full || Mode == LAv2Mode::LAO) {
         if (LaReference.isValid && LaReference.UseAT && LaReference.AT.isValid(DeltaSub0)) {
@@ -1505,15 +1519,29 @@ mandel_1xHDR_float_perturb_lav2(
                 const auto tempSum1{ tempMulY2 + DeltaSubNYOrig };
                 const auto tempSum2{ tempMulX2 + DeltaSubNXOrig };
 
-                HDRFloatType::custom_perturb2(
-                    DeltaSubNX,
-                    DeltaSubNY,
-                    DeltaSubNXOrig,
-                    tempSum2,
-                    DeltaSubNYOrig,
-                    tempSum1,
-                    DeltaSub0X,
-                    DeltaSub0Y);
+                if constexpr (std::is_same<HDRFloatType, HDRFloat<CudaDblflt<dblflt>>>::value) {
+                    HDRFloatType::custom_perturb3(
+                        DeltaSubNX,
+                        DeltaSubNY,
+                        DeltaSubNXOrig,
+                        tempSum2,
+                        DeltaSubNYOrig,
+                        tempSum1,
+                        DeltaSub0X,
+                        DeltaSub0Y);
+                }
+                else {
+                    HDRFloatType::custom_perturb2(
+                        DeltaSubNX,
+                        DeltaSubNY,
+                        DeltaSubNXOrig,
+                        tempSum2,
+                        DeltaSubNYOrig,
+                        tempSum1,
+                        DeltaSub0X,
+                        DeltaSub0Y);
+
+                }
 
                 const auto tempVal1X{ Perturb.iters[RefIteration].x };
                 const auto tempVal1Y{ Perturb.iters[RefIteration].y };
@@ -1796,8 +1824,9 @@ void mandel_hdr_float(
     HDRFloat<CudaDblflt<dblflt>> zrsqr{};
     HDRFloat<CudaDblflt<dblflt>> zisqr{};
 
-    double zrsq2{};
-    double zisq2{};
+    HDRFloat<CudaDblflt<dblflt>> zrsq2{};
+    HDRFloat<CudaDblflt<dblflt>> zisq2{};
+    HDRFloat<CudaDblflt<dblflt>> zsq_sum{};
 
     const HDRFloat<CudaDblflt<dblflt>> Two{ 2.0f };
     const HDRFloat<CudaDblflt<dblflt>> Four{ 4.0f };
@@ -1806,20 +1835,22 @@ void mandel_hdr_float(
 ////y = 2.0f * x * y + y0;
 ////x = xtemp;
 //
-    double xdbl{}, ydbl{};
+    HDRFloat<CudaDblflt<dblflt>> xdbl{}, ydbl{};
     auto MANDEL_2X_FLOAT = [&]() {
         y.Reduce();
         x.Reduce();
         auto xtempc = x * x - y * y + x0;
         auto ytempc = x * y * Two + y0;
-        auto xtemp = xdbl * xdbl - ydbl * ydbl + (double)x0.toDouble();
-        auto ytemp = xdbl * ydbl * 2.0 + (double)y0.toDouble();
+        auto xtemp = xdbl * xdbl - ydbl * ydbl + x0;
+        auto ytemp = xdbl * ydbl * Two + y0;
         x = xtempc;
         y = ytempc;
         xdbl = xtemp;
         ydbl = ytemp;
         zrsq2 = xtemp * xtemp;
         zisq2 = ytemp * ytemp;
+        zsq_sum = zrsq2 + zisq2;
+        zsq_sum.Reduce();
     };
 
     //auto MANDEL_2X_FLOAT = [&]() {
@@ -1835,7 +1866,7 @@ void mandel_hdr_float(
     //    //zisqr.Reduce();
     //};
 
-    while ((zrsq2 + zisq2) < 4 && iter < n_iterations)
+    while ((zrsq2 + zisq2).compareToBothPositiveReduced(Four) < 0 && iter < n_iterations)
     {
         if (iteration_precision == 1) {
             MANDEL_2X_FLOAT();
@@ -3998,7 +4029,11 @@ uint32_t GPURenderer::RenderPerturbLAv2(
     dim3 nb_blocks(w_block, h_block, 1);
     dim3 threads_per_block(NB_THREADS_W, NB_THREADS_H, 1);
 
-    MattPerturbSingleResults<IterType, T> cudaResults(
+    static constexpr bool ConditionalResult = std::is_same<T, HDRFloat<CudaDblflt<MattDblflt>>>::value;
+    using ConditionalT = typename std::conditional<ConditionalResult, HDRFloat<CudaDblflt<dblflt>>, T>::type;
+    using ConditionalSubType = typename std::conditional<ConditionalResult, CudaDblflt<dblflt>, SubType>::type;
+
+    MattPerturbSingleResults<IterType, ConditionalT> cudaResults(
         float_perturb->size,
         float_perturb->PeriodMaybeZero,
         float_perturb->iters);
@@ -4008,7 +4043,7 @@ uint32_t GPURenderer::RenderPerturbLAv2(
         return result;
     }
 
-    GPU_LAReference<IterType, SubType> laReferenceCuda{LaReference};
+    GPU_LAReference<IterType, ConditionalSubType> laReferenceCuda{LaReference};
     result = laReferenceCuda.CheckValid();
     if (result != 0) {
         return result;
@@ -4047,6 +4082,34 @@ uint32_t GPURenderer::RenderPerturbLAv2(
                 cudaResults, laReferenceCuda,
                 m_Width, m_Height, m_Antialiasing, cx, cy, dx, dy,
                 centerX, centerY,
+                n_iterations);
+
+            result = RunAntialiasing(n_iterations);
+            if (!result) {
+                result = ExtractItersAndColors(iter_buffer, color_buffer);
+            }
+        }
+    } else if (algorithm == RenderAlgorithm::GpuHDRx2x32PerturbedLAv2 ||
+               algorithm == RenderAlgorithm::GpuHDRx2x32PerturbedLAv2PO ||
+               algorithm == RenderAlgorithm::GpuHDRx2x32PerturbedLAv2LAO) {
+        if constexpr (std::is_same<HDRFloat<CudaDblflt<MattDblflt>>, T>::value) {
+            HDRFloat<CudaDblflt<dblflt>> cx2{ cx };
+            HDRFloat<CudaDblflt<dblflt>> cy2{ cy };
+            HDRFloat<CudaDblflt<dblflt>> dx2{ dx };
+            HDRFloat<CudaDblflt<dblflt>> dy2{ dy };
+
+            HDRFloat<CudaDblflt<dblflt>> centerX2{ centerX };
+            HDRFloat<CudaDblflt<dblflt>> centerY2{ centerY };
+
+            mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
+
+            // hdrflt
+            mandel_1xHDR_float_perturb_lav2<IterType, CudaDblflt<dblflt>, Mode> << <nb_blocks, threads_per_block >> > (
+                static_cast<IterType*>(OutputIterMatrix),
+                OutputColorMatrix,
+                cudaResults, laReferenceCuda,
+                m_Width, m_Height, m_Antialiasing, cx2, cy2, dx2, dy2,
+                centerX2, centerY2,
                 n_iterations);
 
             result = RunAntialiasing(n_iterations);
@@ -4103,6 +4166,51 @@ uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, HDRFloat<float>, float, LAv2Mo
     HDRFloat<float> dy,
     HDRFloat<float> centerX,
     HDRFloat<float> centerY,
+    uint32_t n_iterations);
+
+template
+uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::Full>(
+    RenderAlgorithm algorithm,
+    uint32_t* iter_buffer,
+    Color16* color_buffer,
+    MattPerturbResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>>* float_perturb,
+    const LAReference<uint32_t, CudaDblflt<MattDblflt>>& LaReference,
+    HDRFloat<CudaDblflt<MattDblflt>> cx,
+    HDRFloat<CudaDblflt<MattDblflt>> cy,
+    HDRFloat<CudaDblflt<MattDblflt>> dx,
+    HDRFloat<CudaDblflt<MattDblflt>> dy,
+    HDRFloat<CudaDblflt<MattDblflt>> centerX,
+    HDRFloat<CudaDblflt<MattDblflt>> centerY,
+    uint32_t n_iterations);
+
+template
+uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::PO>(
+    RenderAlgorithm algorithm,
+    uint32_t* iter_buffer,
+    Color16* color_buffer,
+    MattPerturbResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>>* float_perturb,
+    const LAReference<uint32_t, CudaDblflt<MattDblflt>>& LaReference,
+    HDRFloat<CudaDblflt<MattDblflt>> cx,
+    HDRFloat<CudaDblflt<MattDblflt>> cy,
+    HDRFloat<CudaDblflt<MattDblflt>> dx,
+    HDRFloat<CudaDblflt<MattDblflt>> dy,
+    HDRFloat<CudaDblflt<MattDblflt>> centerX,
+    HDRFloat<CudaDblflt<MattDblflt>> centerY,
+    uint32_t n_iterations);
+
+template
+uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::LAO>(
+    RenderAlgorithm algorithm,
+    uint32_t* iter_buffer,
+    Color16* color_buffer,
+    MattPerturbResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>>* float_perturb,
+    const LAReference<uint32_t, CudaDblflt<MattDblflt>>& LaReference,
+    HDRFloat<CudaDblflt<MattDblflt>> cx,
+    HDRFloat<CudaDblflt<MattDblflt>> cy,
+    HDRFloat<CudaDblflt<MattDblflt>> dx,
+    HDRFloat<CudaDblflt<MattDblflt>> dy,
+    HDRFloat<CudaDblflt<MattDblflt>> centerX,
+    HDRFloat<CudaDblflt<MattDblflt>> centerY,
     uint32_t n_iterations);
 
 template
@@ -4194,6 +4302,51 @@ uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, HDRFloat<float>, float, LAv2Mo
     HDRFloat<float> dy,
     HDRFloat<float> centerX,
     HDRFloat<float> centerY,
+    uint64_t n_iterations);
+
+template
+uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::Full>(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    MattPerturbResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>>* float_perturb,
+    const LAReference<uint64_t, CudaDblflt<MattDblflt>>& LaReference,
+    HDRFloat<CudaDblflt<MattDblflt>> cx,
+    HDRFloat<CudaDblflt<MattDblflt>> cy,
+    HDRFloat<CudaDblflt<MattDblflt>> dx,
+    HDRFloat<CudaDblflt<MattDblflt>> dy,
+    HDRFloat<CudaDblflt<MattDblflt>> centerX,
+    HDRFloat<CudaDblflt<MattDblflt>> centerY,
+    uint64_t n_iterations);
+
+template
+uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::PO>(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    MattPerturbResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>>* float_perturb,
+    const LAReference<uint64_t, CudaDblflt<MattDblflt>>& LaReference,
+    HDRFloat<CudaDblflt<MattDblflt>> cx,
+    HDRFloat<CudaDblflt<MattDblflt>> cy,
+    HDRFloat<CudaDblflt<MattDblflt>> dx,
+    HDRFloat<CudaDblflt<MattDblflt>> dy,
+    HDRFloat<CudaDblflt<MattDblflt>> centerX,
+    HDRFloat<CudaDblflt<MattDblflt>> centerY,
+    uint64_t n_iterations);
+
+template
+uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::LAO>(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    MattPerturbResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>>* float_perturb,
+    const LAReference<uint64_t, CudaDblflt<MattDblflt>>& LaReference,
+    HDRFloat<CudaDblflt<MattDblflt>> cx,
+    HDRFloat<CudaDblflt<MattDblflt>> cy,
+    HDRFloat<CudaDblflt<MattDblflt>> dx,
+    HDRFloat<CudaDblflt<MattDblflt>> dy,
+    HDRFloat<CudaDblflt<MattDblflt>> centerX,
+    HDRFloat<CudaDblflt<MattDblflt>> centerY,
     uint64_t n_iterations);
 
 template
@@ -4437,14 +4590,14 @@ uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
     IterType* iter_buffer,
     Color16* color_buffer,
-    MattPerturbResults<IterType, float2>* dblflt_perturb,
-    BLAS<IterType, float2>* /*blas*/,  // TODO
-    float2 cx,
-    float2 cy,
-    float2 dx,
-    float2 dy,
-    float2 centerX,
-    float2 centerY,
+    MattPerturbResults<IterType, MattDblflt>* dblflt_perturb,
+    BLAS<IterType, MattDblflt>* /*blas*/,  // TODO
+    MattDblflt cx,
+    MattDblflt cy,
+    MattDblflt dx,
+    MattDblflt dy,
+    MattDblflt centerX,
+    MattDblflt centerY,
     IterType n_iterations,
     int /*iteration_precision*/)
 {
@@ -4501,14 +4654,14 @@ uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
     uint32_t* iter_buffer,
     Color16* color_buffer,
-    MattPerturbResults<uint32_t, float2>* dblflt_perturb,
-    BLAS<uint32_t, float2>* /*blas*/,  // TODO
-    float2 cx,
-    float2 cy,
-    float2 dx,
-    float2 dy,
-    float2 centerX,
-    float2 centerY,
+    MattPerturbResults<uint32_t, MattDblflt>* dblflt_perturb,
+    BLAS<uint32_t, MattDblflt>* /*blas*/,  // TODO
+    MattDblflt cx,
+    MattDblflt cy,
+    MattDblflt dx,
+    MattDblflt dy,
+    MattDblflt centerX,
+    MattDblflt centerY,
     uint32_t n_iterations,
     int /*iteration_precision*/);
 
@@ -4517,14 +4670,14 @@ uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
     uint64_t* iter_buffer,
     Color16* color_buffer,
-    MattPerturbResults<uint64_t, float2>* dblflt_perturb,
-    BLAS<uint64_t, float2>* /*blas*/,  // TODO
-    float2 cx,
-    float2 cy,
-    float2 dx,
-    float2 dy,
-    float2 centerX,
-    float2 centerY,
+    MattPerturbResults<uint64_t, MattDblflt>* dblflt_perturb,
+    BLAS<uint64_t, MattDblflt>* /*blas*/,  // TODO
+    MattDblflt cx,
+    MattDblflt cy,
+    MattDblflt dx,
+    MattDblflt dy,
+    MattDblflt centerX,
+    MattDblflt centerY,
     uint64_t n_iterations,
     int /*iteration_precision*/);
 ///////////////////////////////////////////////

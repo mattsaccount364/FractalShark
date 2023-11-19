@@ -212,8 +212,8 @@ void Fractal::Initialize(int width,
     //SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedPeriodic);
     //SetRenderAlgorithm(RenderAlgorithm::Cpu32PerturbedBLAV2HDR);
     //SetRenderAlgorithm(RenderAlgorithm::Cpu64PerturbedBLAV2HDR);
-    SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedLAv2);
-    //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32);
+    //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx2x32PerturbedLAv2);
+    SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32);
 
     SetIterationPrecision(1);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed);
@@ -1896,38 +1896,14 @@ bool Fractal::RequiresUseLocalColor() const {
     switch (GetRenderAlgorithm()) {
     case RenderAlgorithm::CpuHigh:
     case RenderAlgorithm::CpuHDR32:
+    case RenderAlgorithm::CpuHDR64:
+    case RenderAlgorithm::Cpu64:
+    case RenderAlgorithm::Cpu64PerturbedBLA:
     case RenderAlgorithm::Cpu32PerturbedBLAHDR:
     case RenderAlgorithm::Cpu32PerturbedBLAV2HDR:
-    case RenderAlgorithm::Cpu64PerturbedBLAV2HDR:
-    case RenderAlgorithm::Cpu64:
-    case RenderAlgorithm::CpuHDR64:
-    case RenderAlgorithm::Cpu64PerturbedBLA:
     case RenderAlgorithm::Cpu64PerturbedBLAHDR:
+    case RenderAlgorithm::Cpu64PerturbedBLAV2HDR:
         return true;
-    case RenderAlgorithm::Gpu1x64:
-    case RenderAlgorithm::Gpu2x64:
-    case RenderAlgorithm::Gpu4x64:
-    case RenderAlgorithm::Gpu1x32:
-    case RenderAlgorithm::Gpu2x32:
-    case RenderAlgorithm::Gpu4x32:
-    case RenderAlgorithm::Gpu1x32Perturbed:
-    case RenderAlgorithm::Gpu1x32PerturbedPeriodic:
-    case RenderAlgorithm::GpuHDRx32Perturbed:
-    case RenderAlgorithm::Gpu1x32PerturbedScaled:
-    case RenderAlgorithm::Gpu1x32PerturbedScaledBLA:
-    case RenderAlgorithm::GpuHDRx32PerturbedScaled:
-    case RenderAlgorithm::Gpu1x64Perturbed:
-    case RenderAlgorithm::Gpu1x64PerturbedBLA:
-    case RenderAlgorithm::Gpu2x32Perturbed:
-    case RenderAlgorithm::Gpu2x32PerturbedScaled:
-    case RenderAlgorithm::GpuHDRx32PerturbedBLA:
-    case RenderAlgorithm::GpuHDRx64PerturbedBLA:
-    case RenderAlgorithm::GpuHDRx32PerturbedLAv2:
-    case RenderAlgorithm::GpuHDRx32PerturbedLAv2PO:
-    case RenderAlgorithm::GpuHDRx32PerturbedLAv2LAO:
-    case RenderAlgorithm::GpuHDRx64PerturbedLAv2:
-    case RenderAlgorithm::GpuHDRx64PerturbedLAv2PO:
-    case RenderAlgorithm::GpuHDRx64PerturbedLAv2LAO:
     default:
         return false;
     }
@@ -2069,6 +2045,16 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
         break;
     case RenderAlgorithm::GpuHDRx32PerturbedLAv2LAO:
         CalcGpuPerturbationFractalLAv2<IterType, HDRFloat<float>, float, LAv2Mode::LAO>(MemoryOnly);
+        break;
+
+    case RenderAlgorithm::GpuHDRx2x32PerturbedLAv2:
+        CalcGpuPerturbationFractalLAv2<IterType, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::Full>(MemoryOnly);
+        break;
+    case RenderAlgorithm::GpuHDRx2x32PerturbedLAv2PO:
+        CalcGpuPerturbationFractalLAv2<IterType, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::PO>(MemoryOnly);
+        break;
+    case RenderAlgorithm::GpuHDRx2x32PerturbedLAv2LAO:
+        CalcGpuPerturbationFractalLAv2<IterType, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::LAO>(MemoryOnly);
         break;
 
     case RenderAlgorithm::GpuHDRx64PerturbedLAv2:
@@ -2219,8 +2205,8 @@ void Fractal::CreateNewFractalPalette(void)
 {
     size_t rtime = __rdtsc();
 
-    auto genNextColor = [](size_t m) {
-        const auto max_val = 65535 / (m - 1);
+    auto genNextColor = [](int m) -> int {
+        const int max_val = 65535 / (m - 1);
         auto val = (rand() % m) * max_val;
         return val;
     };
@@ -2228,14 +2214,14 @@ void Fractal::CreateNewFractalPalette(void)
     auto RandomPaletteGen = [&](size_t PaletteIndex, size_t Depth) {
         int depth_total = (int)(1 << Depth);
 
-        srand(rtime);
+        srand((unsigned int)rtime);
 
         // Force a reallocation of the vectors to trigger re-initialization in the GPU
         std::vector<uint16_t>{}.swap(m_PalR[Palette::Random][PaletteIndex]);
         std::vector<uint16_t>{}.swap(m_PalG[Palette::Random][PaletteIndex]);
         std::vector<uint16_t>{}.swap(m_PalB[Palette::Random][PaletteIndex]);
 
-        const auto m = 5;
+        const int m = 5;
         auto firstR = genNextColor(m);
         auto firstG = genNextColor(m);
         auto firstB = genNextColor(m);
@@ -2620,6 +2606,12 @@ void Fractal::FillCoord(HighPrecision& src, CudaDblflt<MattDblflt>& dest) {
     double destDbl = Convert<HighPrecision, double>(src);
     dest = CudaDblflt(destDbl);
 }
+
+void Fractal::FillCoord(HighPrecision& src, HDRFloat<CudaDblflt<MattDblflt>>& dest) {
+    HDRFloat<CudaDblflt<MattDblflt>> destDbl(src);
+    dest = destDbl;
+}
+
 
 template<class T>
 void Fractal::FillGpuCoords(T &cx2, T &cy2, T &dx2, T &dy2) {
@@ -3453,13 +3445,18 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
 
 template<typename IterType, class T, class SubType, LAv2Mode Mode>
 void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
+    using ConditionalT = typename DoubleTo2x32Converter<T, SubType>::ConditionalT;
+    using ConditionalSubType = typename DoubleTo2x32Converter<T, SubType>::ConditionalSubType;
+
     auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<
         IterType,
-        T,
-        SubType,
+        ConditionalT,
+        ConditionalSubType,
         CalcBad::Disable,
-        RefOrbitCalc::Extras::IncludeLAv2>();
+        RefOrbitCalc::Extras::IncludeLAv2,
+        T>();
 
+    // TODO pass perturb results via InitializeGPUMemory
     uint32_t err = InitializeGPUMemory();
     if (err) {
         MessageBoxCudaError(err);

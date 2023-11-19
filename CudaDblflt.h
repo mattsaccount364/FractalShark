@@ -8,10 +8,8 @@
 struct MattDblflt;
 
 #ifndef __CUDACC__
-using float2 = MattDblflt;
+using dblflt = MattDblflt;
 #endif
-
-typedef float2 dblflt;
 
 // This class implements a wrapper around the CUDA dbldbl type defined
 // in dblflt.h.  It implements all the basic arithmetic operators.
@@ -24,49 +22,70 @@ public:
 
     // Constructs a CudaDblflt that zeros out the head and tail
     CUDA_CRAP
+    constexpr
     CudaDblflt() : d{ 0.0f, 0.0f } {
     }
 
     CUDA_CRAP
+    constexpr
     CudaDblflt(const CudaDblflt &other) :
         d{ other.d.x, other.d.y } {
     }
 
     // Constructs a CudaDblflt from a double
     CUDA_CRAP
-    explicit CudaDblflt(double d)
-        : d{ (float)(d - (double)(float)d), (float)d } {
+    constexpr
+    CudaDblflt &operator=(double other) {
+        d = T{ other };
+        return *this;
+    }
+
+    CUDA_CRAP
+    constexpr
+    explicit CudaDblflt(double ind)
+        : d{ ind } {
     }
 
     template<class T>
     CUDA_CRAP
+    constexpr
         explicit CudaDblflt(T d)
         : d{ 0.0f, (float)d } {
     }
 
     template<class U>
     CUDA_CRAP
+    constexpr
         explicit CudaDblflt(CudaDblflt<U> other)
         : d{ other.d.x, other.d.y } {
     }
 
     // Constructs a CudaDblflt from a pair of floats
     CUDA_CRAP
+    constexpr
         explicit CudaDblflt(float head, float tail) :
         d{ tail, head } {
     }
 
     // Returns the head of the double-float
     CUDA_CRAP
+    constexpr
     float head() const {
         return d.y;
     }
 
     // Returns the tail of the double-float
     CUDA_CRAP
+    constexpr
     float tail() const {
         return d.x;
     }
+
+#ifndef __CUDACC__
+    operator double() const {
+        return (double)d.y + (double)d.x;
+    }
+#endif
 
 #ifdef __CUDACC__
     //template<typename std::enable_if<std::is_same<T, dbldbl>::value, dbldbl>::type * = 0>
@@ -92,19 +111,24 @@ public:
     }
 
     // Implements unary operator- for CudaDblflt
+    friend
     __device__
-        CudaDblflt operator-() {
-        CudaDblflt tmp(*this);
-        tmp.d = neg_dblflt(d);
-        return tmp;
+    CudaDblflt operator-(CudaDblflt other) {
+        return CudaDblflt{ -other.d.y, -other.d.x };
     }
 
     // Implements operator* for CudaDblflt
     friend
-        __device__
+    __device__
     CudaDblflt operator*(CudaDblflt a, const CudaDblflt& b) {
         a.d = mul_dblflt(a.d, b.d);
         return a;
+    }
+
+    __device__
+    CudaDblflt& operator*=(const CudaDblflt& b) {
+        this->d = mul_dblflt(this->d, b.d);
+        return *this;
     }
 
     // Implements square() for CudaDblflt
@@ -157,6 +181,33 @@ public:
     __device__
     friend bool operator!=(const CudaDblflt& a, const CudaDblflt& b) {
         return !(a == b);
+    }
+
+    __device__
+    CudaDblflt abs() const {
+        if (d.y < 0.0f) {
+            return CudaDblflt{ -d.y, -d.x };
+        }
+
+        return *this;
+    }
+
+    static __device__ constexpr int32_t MIN_SMALL_EXPONENT_INT() {
+        return -127;
+    }
+
+    __device__
+    void Reduce(int32_t &out_exp) {
+        const uint32_t bits_y = *reinterpret_cast<uint32_t*>(&this->d.y);
+        const uint32_t bits_x = *reinterpret_cast<uint32_t*>(&this->d.x);
+        const int32_t f_exp_y = (int32_t)((bits_y & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
+        out_exp = (int32_t)((bits_x & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
+        const uint32_t val_y = (bits_y & 0x807F'FFFFL) | 0x3F80'0000L;
+        const uint32_t val_x = (bits_x & 0x807F'FFFFL) | (out_exp << 23UL);
+        const auto f_val_y = *reinterpret_cast<const float*>(&val_y);
+        const auto f_val_x = *reinterpret_cast<const float*>(&val_x);
+        d.y = f_val_y;
+        d.x = f_val_x;
     }
 #endif
 };

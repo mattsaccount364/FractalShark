@@ -54,7 +54,8 @@ public:
     std::vector<std::unique_ptr<PerturbationResults<IterType, T, Bad>>>& GetPerturbationResults() ;
 
     template<typename IterType, class T, CalcBad Bad>
-    void AddPerturbationResults(std::unique_ptr<PerturbationResults<IterType, T, Bad>> results);
+    PerturbationResults<IterType, T, Bad> *AddPerturbationResults(
+        std::unique_ptr<PerturbationResults<IterType, T, Bad>> results);
 
     template<typename IterType, class T, class SubType, BenchmarkMode BenchmarkState>
     void AddPerturbationReferencePoint();
@@ -89,8 +90,14 @@ public:
         IncludeLAv2
     };
 
-    template<typename IterType, class T, class SubType, CalcBad Bad, RefOrbitCalc::Extras Ex>
-    PerturbationResults<IterType, T, Bad>* GetAndCreateUsefulPerturbationResults();
+    template<
+        typename IterType,
+        class T,
+        class SubType,
+        CalcBad Bad,
+        RefOrbitCalc::Extras Ex,
+        class ConvertTType = T>
+    PerturbationResults<IterType, ConvertTType, Bad>* GetAndCreateUsefulPerturbationResults();
 
 private:
     template<typename IterType, class T, class SubType, bool Authoritative, CalcBad Bad>
@@ -124,6 +131,7 @@ private:
         std::vector<std::unique_ptr<PerturbationResults<IterType, float, Bad>>> m_PerturbationResultsFloat;
         std::vector<std::unique_ptr<PerturbationResults<IterType, HDRFloat<double>, Bad>>> m_PerturbationResultsHDRDouble;
         std::vector<std::unique_ptr<PerturbationResults<IterType, HDRFloat<float>, Bad>>> m_PerturbationResultsHDRFloat;
+        std::vector<std::unique_ptr<PerturbationResults<IterType, HDRFloat<CudaDblflt<MattDblflt>>, Bad>>> m_PerturbationResultsHDR2xFloat;
     };
 
     Container<uint32_t, CalcBad::Disable> c32d;

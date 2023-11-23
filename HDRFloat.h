@@ -110,6 +110,11 @@ public:
         Base::exp = MIN_BIG_EXPONENT();
     }
 
+    // Copy constructor
+    CUDA_CRAP constexpr HDRFloat(const HDRFloat &other) :
+        Base(other) {
+    }
+
     template<HDROrder OtherOrder>
     CUDA_CRAP constexpr HDRFloat(const HDRFloat<T, OtherOrder> &other) {
         Base::mantissa = other.mantissa;
@@ -278,7 +283,7 @@ public:
             const int32_t f_exp_y = (int32_t)((bits_y & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
             const int32_t f_exp_x = (int32_t)((bits_x & 0x7F80'0000UL) >> 23UL);
             const uint32_t val_y = (bits_y & 0x807F'FFFFL) | 0x3F80'0000L;
-            const uint32_t val_x = (bits_x & 0x807F'FFFFL) | ((f_exp_x + f_exp_y) << 23UL);
+            const uint32_t val_x = (bits_x & 0x807F'FFFFL) | ((f_exp_x - f_exp_y) << 23UL);
             const auto f_val_y = *reinterpret_cast<const float*>(&val_y);
             const auto f_val_x = *reinterpret_cast<const float*>(&val_x);
             Base::exp += f_exp_y;
@@ -320,7 +325,7 @@ public:
             const int32_t f_exp_y = (int32_t)((bits_y & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
             const int32_t f_exp_x = (int32_t)((bits_x & 0x7F80'0000UL) >> 23UL);
             const uint32_t val_y = (bits_y & 0x807F'FFFFL) | 0x3F80'0000L;
-            const uint32_t val_x = (bits_x & 0x807F'FFFFL) | ((f_exp_x + f_exp_y) << 23UL);
+            const uint32_t val_x = (bits_x & 0x807F'FFFFL) | ((f_exp_x - f_exp_y) << 23UL);
             const auto f_val_y = *reinterpret_cast<const float*>(&val_y);
             const auto f_val_x = *reinterpret_cast<const float*>(&val_x);
             Base::exp += f_exp_y;

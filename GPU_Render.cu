@@ -26,6 +26,40 @@
 //#include <cuda/pipeline>
 //#include <cuda_pipeline.h>
 
+constexpr static bool Default = false;
+
+constexpr static bool EnableGpu1x32 = Default;
+constexpr static bool EnableGpu2x32 = Default;
+constexpr static bool EnableGpu4x32 = Default;
+constexpr static bool EnableGpu1x64 = Default;
+constexpr static bool EnableGpu2x64 = Default;
+constexpr static bool EnableGpu4x64 = Default;
+constexpr static bool EnableGpuHDRx32 = true;
+
+constexpr static bool EnableGpu1x32Perturbed = Default;
+constexpr static bool EnableGpu1x32PerturbedPeriodic = Default;
+constexpr static bool EnableGpu1x32PerturbedScaled = Default;
+constexpr static bool EnableGpu2x32Perturbed = Default;
+constexpr static bool EnableGpu2x32PerturbedScaled = Default;
+constexpr static bool EnableGpu1x64Perturbed = Default;
+constexpr static bool EnableGpuHDRx32Perturbed = Default;
+constexpr static bool EnableGpuHDRx32PerturbedScaled = Default;
+
+constexpr static bool EnableGpu1x32PerturbedScaledBLA = Default;
+constexpr static bool EnableGpu1x64PerturbedBLA = Default;
+constexpr static bool EnableGpuHDRx32PerturbedBLA = Default;
+constexpr static bool EnableGpuHDRx64PerturbedBLA = Default;
+
+constexpr static bool EnableGpuHDRx32PerturbedLAv2 = Default;
+constexpr static bool EnableGpuHDRx32PerturbedLAv2PO = Default;
+constexpr static bool EnableGpuHDRx32PerturbedLAv2LAO = Default;
+constexpr static bool EnableGpuHDRx2x32PerturbedLAv2 = Default;
+constexpr static bool EnableGpuHDRx2x32PerturbedLAv2PO = Default;
+constexpr static bool EnableGpuHDRx2x32PerturbedLAv2LAO = Default;
+constexpr static bool EnableGpuHDRx64PerturbedLAv2 = Default;
+constexpr static bool EnableGpuHDRx64PerturbedLAv2PO = Default;
+constexpr static bool EnableGpuHDRx64PerturbedLAv2LAO = Default;
+
 #ifdef __CUDACC__
 __device__ __constant__ double twoPowExpDataDbl[2048];
 __device__ __constant__ float twoPowExpDataFlt[256];
@@ -1824,49 +1858,29 @@ void mandel_hdr_float(
     HDRFloat<CudaDblflt<dblflt>> zrsqr{};
     HDRFloat<CudaDblflt<dblflt>> zisqr{};
 
-    HDRFloat<CudaDblflt<dblflt>> zrsq2{};
-    HDRFloat<CudaDblflt<dblflt>> zisq2{};
+    //HDRFloat<CudaDblflt<dblflt>> zrsq2{};
+    //HDRFloat<CudaDblflt<dblflt>> zisq2{};
     HDRFloat<CudaDblflt<dblflt>> zsq_sum{};
 
     const HDRFloat<CudaDblflt<dblflt>> Two{ 2.0f };
     const HDRFloat<CudaDblflt<dblflt>> Four{ 4.0f };
 
-//    //xtemp = x * x - y * y + x0;
-////y = 2.0f * x * y + y0;
-////x = xtemp;
-//
-    HDRFloat<CudaDblflt<dblflt>> xdbl{}, ydbl{};
     auto MANDEL_2X_FLOAT = [&]() {
         y.Reduce();
         x.Reduce();
-        auto xtempc = x * x - y * y + x0;
-        auto ytempc = x * y * Two + y0;
-        auto xtemp = xdbl * xdbl - ydbl * ydbl + x0;
-        auto ytemp = xdbl * ydbl * Two + y0;
-        x = xtempc;
-        y = ytempc;
-        xdbl = xtemp;
-        ydbl = ytemp;
-        zrsq2 = xtemp * xtemp;
-        zisq2 = ytemp * ytemp;
-        zsq_sum = zrsq2 + zisq2;
+        y = x * y * Two;
+        y = y + y0;
+        x = zrsqr - zisqr;
+        x = x + x0;
+        zrsqr = x * x;
+        zrsqr.Reduce();
+        zisqr = y * y;
+        zisqr.Reduce();
+        zsq_sum = zrsqr + zisqr;
         zsq_sum.Reduce();
     };
 
-    //auto MANDEL_2X_FLOAT = [&]() {
-    //    y.Reduce();
-    //    x.Reduce();
-    //    y = x * y * Two;
-    //    y = y + y0;
-    //    x = zrsqr - zisqr;
-    //    x = x + x0;
-    //    zrsqr = x * x;
-    //    zisqr = y * y;
-    //    //zrsqr.Reduce();
-    //    //zisqr.Reduce();
-    //};
-
-    while ((zrsq2 + zisq2).compareToBothPositiveReduced(Four) < 0 && iter < n_iterations)
+    while (zsq_sum.compareToBothPositiveReduced(Four) < 0 && iter < n_iterations)
     {
         if (iteration_precision == 1) {
             MANDEL_2X_FLOAT();
@@ -3375,7 +3389,7 @@ uint32_t GPURenderer::Render(
 
     if (algorithm == RenderAlgorithm::Gpu1x64) {
         // all are doubleOnly
-        if constexpr (std::is_same<T, double>::value) {
+        if constexpr (EnableGpu1x64 && std::is_same<T, double>::value) {
             switch (iteration_precision) {
             case 1:
                 mandel_1x_double<IterType, 1> << <nb_blocks, threads_per_block >> > (
@@ -3411,7 +3425,7 @@ uint32_t GPURenderer::Render(
         }
     }
     else if (algorithm == RenderAlgorithm::Gpu2x64) {
-        if constexpr (std::is_same<T, MattDbldbl>::value) {
+        if constexpr (EnableGpu2x64 && std::is_same<T, MattDbldbl>::value) {
             dbldbl cx2{ cx.head, cx.tail };
             dbldbl cy2{ cy.head, cy.tail };
             dbldbl dx2{ dx.head, dx.tail };
@@ -3426,7 +3440,7 @@ uint32_t GPURenderer::Render(
     }
     else if (algorithm == RenderAlgorithm::Gpu4x64) {
         // qdbl
-        if constexpr (std::is_same<T, MattQDbldbl>::value) {
+        if constexpr (EnableGpu4x64 && std::is_same<T, MattQDbldbl>::value) {
             using namespace GQD;
             gqd_real cx2;
             cx2 = make_qd(cx.x, cx.y, cx.z, cx.w);
@@ -3448,7 +3462,7 @@ uint32_t GPURenderer::Render(
         }
     }
     else if (algorithm == RenderAlgorithm::Gpu1x32) {
-        if constexpr (std::is_same<T, float>::value) {
+        if constexpr (EnableGpu1x32 && std::is_same<T, float>::value) {
             // floatOnly
             switch (iteration_precision) {
             case 1:
@@ -3486,7 +3500,7 @@ uint32_t GPURenderer::Render(
     }
     else if (algorithm == RenderAlgorithm::Gpu2x32) {
         // flt
-        if constexpr (std::is_same<T, MattDblflt>::value) {
+        if constexpr (EnableGpu2x32 && std::is_same<T, MattDblflt>::value) {
             dblflt cx2{ cx.x, cx.y };
             dblflt cy2{ cy.x, cy.y };
             dblflt dx2{ dx.x, dx.y };
@@ -3528,7 +3542,7 @@ uint32_t GPURenderer::Render(
     }
     else if (algorithm == RenderAlgorithm::Gpu4x32) {
         // qflt
-        if constexpr (std::is_same<T, MattQFltflt>::value) {
+        if constexpr (EnableGpu4x32 && std::is_same<T, MattQFltflt>::value) {
             using namespace GQF;
             gqf_real cx2;
             cx2 = make_qf(cx.x, cx.y, cx.z, cx.w);
@@ -3550,7 +3564,7 @@ uint32_t GPURenderer::Render(
         }
     }
     else if (algorithm == RenderAlgorithm::GpuHDRx32) {
-        if constexpr (std::is_same<T, HDRFloat<double>>::value) {
+        if constexpr (EnableGpuHDRx32 && std::is_same<T, HDRFloat<double>>::value) {
             HDRFloat<CudaDblflt<dblflt>> cx2{ cx };
             HDRFloat<CudaDblflt<dblflt>> cy2{ cy };
             HDRFloat<CudaDblflt<dblflt>> dx2{ dx };
@@ -3819,7 +3833,7 @@ uint32_t GPURenderer::RenderPerturb(
 
     if (algorithm == RenderAlgorithm::Gpu1x32Perturbed) {
         // floatOnly
-        if constexpr (std::is_same<T, float>::value) {
+        if constexpr (EnableGpu1x32Perturbed && std::is_same<T, float>::value) {
             mandel_1x_float_perturb<IterType, T, false> << <nb_blocks, threads_per_block >> > (
                 static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
@@ -3836,7 +3850,7 @@ uint32_t GPURenderer::RenderPerturb(
     }
     else if (algorithm == RenderAlgorithm::Gpu1x64Perturbed) {
         // doubleOnly
-        if constexpr (std::is_same<T, double>::value) {
+        if constexpr (EnableGpu1x64Perturbed && std::is_same<T, double>::value) {
             mandel_1x_float_perturb<IterType, T, false> << <nb_blocks, threads_per_block >> > (
                 static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
@@ -3853,7 +3867,7 @@ uint32_t GPURenderer::RenderPerturb(
     }
     else if (algorithm == RenderAlgorithm::Gpu1x32PerturbedPeriodic) {
         // floatOnly
-        if constexpr (std::is_same<T, float>::value) {
+        if constexpr (EnableGpu1x32PerturbedPeriodic && std::is_same<T, float>::value) {
             mandel_1x_float_perturb<IterType, T, true> << <nb_blocks, threads_per_block >> > (
                 static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
@@ -3869,7 +3883,7 @@ uint32_t GPURenderer::RenderPerturb(
         }
     }
     else if (algorithm == RenderAlgorithm::GpuHDRx32Perturbed) {
-        if constexpr (std::is_same<T, HDRFloat<float>>::value) {
+        if constexpr (EnableGpuHDRx32Perturbed && std::is_same<T, HDRFloat<float>>::value) {
             // hdrflt
             mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
 
@@ -4049,10 +4063,12 @@ uint32_t GPURenderer::RenderPerturbLAv2(
         return result;
     }
 
-    if (algorithm == RenderAlgorithm::GpuHDRx32PerturbedLAv2 ||
-        algorithm == RenderAlgorithm::GpuHDRx32PerturbedLAv2PO ||
-        algorithm == RenderAlgorithm::GpuHDRx32PerturbedLAv2LAO) {
-        if constexpr (std::is_same<HDRFloat<float>, T>::value) {
+    if ((algorithm == RenderAlgorithm::GpuHDRx32PerturbedLAv2) ||
+        (algorithm == RenderAlgorithm::GpuHDRx32PerturbedLAv2PO) ||
+        (algorithm == RenderAlgorithm::GpuHDRx32PerturbedLAv2LAO)) {
+        if constexpr (
+            (EnableGpuHDRx32PerturbedLAv2 || EnableGpuHDRx32PerturbedLAv2PO || EnableGpuHDRx32PerturbedLAv2LAO)
+            && std::is_same<HDRFloat<float>, T>::value) {
             mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
 
             // hdrflt
@@ -4069,11 +4085,13 @@ uint32_t GPURenderer::RenderPerturbLAv2(
                 result = ExtractItersAndColors(iter_buffer, color_buffer);
             }
         }
-    } else if (algorithm == RenderAlgorithm::GpuHDRx64PerturbedLAv2 ||
-               algorithm == RenderAlgorithm::GpuHDRx64PerturbedLAv2PO ||
-               algorithm == RenderAlgorithm::GpuHDRx64PerturbedLAv2LAO) {
+    } else if ((algorithm == RenderAlgorithm::GpuHDRx64PerturbedLAv2) ||
+               (algorithm == RenderAlgorithm::GpuHDRx64PerturbedLAv2PO) ||
+               (algorithm == RenderAlgorithm::GpuHDRx64PerturbedLAv2LAO)) {
         // hdrdbl
-        if constexpr (std::is_same<HDRFloat<double>, T>::value) {
+        if constexpr (
+            (EnableGpuHDRx64PerturbedLAv2 || EnableGpuHDRx64PerturbedLAv2PO || EnableGpuHDRx64PerturbedLAv2LAO)
+            && std::is_same<HDRFloat<double>, T>::value) {
             mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
 
             mandel_1xHDR_float_perturb_lav2<IterType, double, Mode> << <nb_blocks, threads_per_block >> > (
@@ -4089,10 +4107,12 @@ uint32_t GPURenderer::RenderPerturbLAv2(
                 result = ExtractItersAndColors(iter_buffer, color_buffer);
             }
         }
-    } else if (algorithm == RenderAlgorithm::GpuHDRx2x32PerturbedLAv2 ||
-               algorithm == RenderAlgorithm::GpuHDRx2x32PerturbedLAv2PO ||
-               algorithm == RenderAlgorithm::GpuHDRx2x32PerturbedLAv2LAO) {
-        if constexpr (std::is_same<HDRFloat<CudaDblflt<MattDblflt>>, T>::value) {
+    } else if ((algorithm == RenderAlgorithm::GpuHDRx2x32PerturbedLAv2) ||
+               (algorithm == RenderAlgorithm::GpuHDRx2x32PerturbedLAv2PO) ||
+               (algorithm == RenderAlgorithm::GpuHDRx2x32PerturbedLAv2LAO)) {
+        if constexpr (
+            (EnableGpuHDRx2x32PerturbedLAv2 || EnableGpuHDRx2x32PerturbedLAv2PO || EnableGpuHDRx2x32PerturbedLAv2LAO) &&
+            std::is_same<HDRFloat<CudaDblflt<MattDblflt>>, T>::value) {
             HDRFloat<CudaDblflt<dblflt>> cx2{ cx };
             HDRFloat<CudaDblflt<dblflt>> cy2{ cy };
             HDRFloat<CudaDblflt<dblflt>> dx2{ dx };
@@ -4443,7 +4463,7 @@ uint32_t GPURenderer::RenderPerturbBLAScaled(
     }
 
     if (algorithm == RenderAlgorithm::Gpu1x32PerturbedScaled) {
-        if constexpr (std::is_same<T, double>::value) {
+        if constexpr (EnableGpu1x32PerturbedScaled && std::is_same<T, double>::value) {
             // doubleOnly
             mandel_1x_float_perturb_scaled<IterType, T> << <nb_blocks, threads_per_block >> > (
                 static_cast<IterType*>(OutputIterMatrix),
@@ -4459,7 +4479,7 @@ uint32_t GPURenderer::RenderPerturbBLAScaled(
             }
         }
     } else if (algorithm == RenderAlgorithm::GpuHDRx32PerturbedScaled) {
-        if constexpr (std::is_same<T, HDRFloat<float>>::value) {
+        if constexpr (EnableGpuHDRx32PerturbedScaled && std::is_same<T, HDRFloat<float>>::value) {
             // hdrflt
             mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
 
@@ -4478,7 +4498,7 @@ uint32_t GPURenderer::RenderPerturbBLAScaled(
         }
     }
     else if (algorithm == RenderAlgorithm::Gpu1x32PerturbedScaledBLA) {
-        if constexpr (std::is_same<T, double>::value) {
+        if constexpr (EnableGpu1x32PerturbedScaledBLA && std::is_same<T, double>::value) {
             // doubleOnly
             auto Run = [&]<int32_t LM2>() -> uint32_t {
                 GPU_BLAS<IterType, double, BLA<double>, LM2> doubleGpuBlas(blas->m_B);
@@ -4621,27 +4641,29 @@ uint32_t GPURenderer::RenderPerturbBLA(
     }
 
     if (algorithm == RenderAlgorithm::Gpu2x32Perturbed) {
-        // flt
-        dblflt cx2{ cx.x, cx.y };
-        dblflt cy2{ cy.x, cy.y };
-        dblflt dx2{ dx.x, dx.y };
-        dblflt dy2{ dy.x, dy.y };
-        dblflt centerX2{ centerX.x, centerX.y };
-        dblflt centerY2{ centerY.x, centerY.y };
+        if constexpr (EnableGpu2x32Perturbed) {
+            // flt
+            dblflt cx2{ cx.x, cx.y };
+            dblflt cy2{ cy.x, cy.y };
+            dblflt dx2{ dx.x, dx.y };
+            dblflt dy2{ dy.x, dy.y };
+            dblflt centerX2{ centerX.x, centerX.y };
+            dblflt centerY2{ centerY.x, centerY.y };
 
-        mandel_2x_float_perturb_setup << <nb_blocks, threads_per_block >> > (cudaResults);
+            mandel_2x_float_perturb_setup << <nb_blocks, threads_per_block >> > (cudaResults);
 
-        mandel_2x_float_perturb << <nb_blocks, threads_per_block >> > (
-            static_cast<IterType*>(OutputIterMatrix),
-            OutputColorMatrix,
-            cudaResults,
-            m_Width, m_Height, cx2, cy2, dx2, dy2,
-            centerX2, centerY2,
-            n_iterations);
+            mandel_2x_float_perturb << <nb_blocks, threads_per_block >> > (
+                static_cast<IterType*>(OutputIterMatrix),
+                OutputColorMatrix,
+                cudaResults,
+                m_Width, m_Height, cx2, cy2, dx2, dy2,
+                centerX2, centerY2,
+                n_iterations);
 
-        result = RunAntialiasing(n_iterations);
-        if (!result) {
-            result = ExtractItersAndColors(iter_buffer, color_buffer);
+            result = RunAntialiasing(n_iterations);
+            if (!result) {
+                result = ExtractItersAndColors(iter_buffer, color_buffer);
+            }
         }
     }
 
@@ -4708,7 +4730,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
     dim3 threads_per_block(NB_THREADS_W, NB_THREADS_H, 1);
 
     if (algorithm == RenderAlgorithm::GpuHDRx32PerturbedBLA) {
-        if constexpr (std::is_same<T, HDRFloat<float>>::value) {
+        if constexpr (EnableGpuHDRx32PerturbedBLA && std::is_same<T, HDRFloat<float>>::value) {
             MattPerturbSingleResults<IterType, HDRFloat<float>> cudaResults(
                 perturb->size,
                 perturb->PeriodMaybeZero,
@@ -4749,7 +4771,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
         }
     }
     else if (algorithm == RenderAlgorithm::GpuHDRx64PerturbedBLA) {
-        if constexpr (std::is_same<T, HDRFloat<double>>::value) {
+        if constexpr (EnableGpuHDRx64PerturbedBLA && std::is_same<T, HDRFloat<double>>::value) {
             MattPerturbSingleResults<IterType, HDRFloat<double>> cudaResults(
                 perturb->size,
                 perturb->PeriodMaybeZero,
@@ -4789,7 +4811,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
             LargeSwitch
         }
     } else if (algorithm == RenderAlgorithm::Gpu1x64PerturbedBLA) {
-        if constexpr (std::is_same<T, double>::value) {
+        if constexpr (EnableGpu1x64PerturbedBLA && std::is_same<T, double>::value) {
             MattPerturbSingleResults<IterType, double> cudaResults(
                 perturb->size,
                 perturb->PeriodMaybeZero,
@@ -4830,7 +4852,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
         }
     }
     else if (algorithm == RenderAlgorithm::Gpu2x32PerturbedScaled) {
-        if constexpr (std::is_same<T, dblflt>::value) {
+        if constexpr (EnableGpu2x32PerturbedScaled && std::is_same<T, dblflt>::value) {
             //MattPerturbSingleResults<IterType, dblflt> cudaResults(
             //    Perturb->size,
             //    Perturb->PeriodMaybeZero,

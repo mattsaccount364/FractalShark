@@ -32,3 +32,16 @@ Thumbs.db
 .vs/
 UpgradeLog*
 *.png
+*.jpg
+
+Benchmarks.xlsx
+
+# Other projects
+mpir/
+kalles-fraktaler-2/
+docs/
+Imagina/
+GPU-mandelbrot/
+FractalShades/
+FractalShark/GPUCache/*
+Fractal-Zoomer/

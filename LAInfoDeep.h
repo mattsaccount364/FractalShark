@@ -27,12 +27,12 @@ public:
     static constexpr float DefaultPeriodDetectionThreshold = 0x1.0p-10;
     static constexpr float DefaultStage0PeriodDetectionThreshold2 = 0x1.0p-6;
     static constexpr float DefaultPeriodDetectionThreshold2 = 0x1.0p-3;
-    static constexpr float DefaultLAThresholdScale =
-        std::is_same<T, float>::value ? 0x1.0p-12 : 0x1.0p-24;
-    static constexpr float DefaultLAThresholdCScale =
-        std::is_same<T, float>::value ? 0x1.0p-12 : 0x1.0p-24;
-    //static constexpr T DefaultLAThresholdScale = (T)0x1.0p-12;
-    //static constexpr T DefaultLAThresholdCScale = (T)0x1.0p-12;
+    //static constexpr float DefaultLAThresholdScale =
+    //    std::is_same<T, double>::value ? 0x1.0p-24 : 0x1.0p-12;
+    //static constexpr float DefaultLAThresholdCScale =
+    //    std::is_same<T, double>::value ? 0x1.0p-24 : 0x1.0p-12;
+    static constexpr float DefaultLAThresholdScale = 0x1.0p-12;
+    static constexpr float DefaultLAThresholdCScale = 0x1.0p-12;
     
 public:
 

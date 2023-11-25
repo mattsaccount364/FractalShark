@@ -34,8 +34,8 @@ public:
     friend class HDRFloatComplex<CudaDblflt<dblflt>>;
 
     CUDA_CRAP constexpr HDRFloatComplex() {
-        mantissaReal = (SubType)0.0;
-        mantissaImag = (SubType)0.0;
+        mantissaReal = SubType{};
+        mantissaImag = SubType{};
         exp = HDRFloat::MIN_BIG_EXPONENT();
     }
 
@@ -239,7 +239,7 @@ private:
         } else {
             exp = real.exp;
             mantissaReal = real.mantissa;
-            mantissaImag = 0.0;
+            mantissaImag = SubType{};
         }
         return *this;
     }
@@ -327,7 +327,7 @@ private:
 public:
 
     void CUDA_CRAP Reduce() {
-        if(mantissaReal == 0 && mantissaImag == 0) {
+        if (mantissaReal == SubType{} && mantissaImag == SubType{}) {
             return;
         }
 
@@ -364,13 +364,21 @@ public:
             f_expImag = (TExp)((bitsImag & 0x7F80'0000UL) >> 23UL);
             helper(HDRFloat::MIN_SMALL_EXPONENT_FLOAT());
         } else if constexpr (std::is_same<SubType, CudaDblflt<dblflt>>::value) {
-            TExp f_expReal, f_expImag;
-            mantissaReal.Reduce(f_expReal);
-            mantissaImag.Reduce(f_expImag);
+            HDRFloat tempReal(mantissaReal);
+            HDRFloat tempImag(mantissaImag);
+            tempReal.Reduce();
+            tempImag.Reduce();
+            TExp tempExp = this->exp;
+            setMantexp(tempReal, tempImag);
+            this->exp += tempExp;
 
-            TExp expDiff = max(f_expReal, f_expImag) + HDRFloat::MIN_SMALL_EXPONENT_FLOAT();
-            TExp expCombined = exp + expDiff;
-            exp = expCombined;
+            //TExp f_expReal, f_expImag;
+            //mantissaReal.Reduce(f_expReal);
+            //mantissaImag.Reduce(f_expImag);
+
+            //TExp expDiff = max(f_expReal, f_expImag) + HDRFloat::MIN_SMALL_EXPONENT_FLOAT();
+            //TExp expCombined = exp + expDiff;
+            //exp = expCombined;
         }
     }
         

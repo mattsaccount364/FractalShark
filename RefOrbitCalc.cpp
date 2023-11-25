@@ -536,8 +536,8 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
     // Note: results->bad is not here.  See end of this function.
     SubType glitch = (SubType)0.0000001;
 
-    T dzdcX = T(1.0);
-    T dzdcY = T(0.0);
+    T dzdcX = T{ 1 };
+    T dzdcY = T{ 0 };
 
     static const T HighOne = T{ 1.0 };
     static const T HighTwo = T{ 2.0 };
@@ -704,8 +704,8 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
     IterTypeFull RefIteration = 0;
     IterTypeFull MaxRefIteration = existingResults->orb.size() - 1;
 
-    T dzdcX = T(1.0);
-    T dzdcY = T(0.0);
+    T dzdcX = T{ 1 };
+    T dzdcY = T{ 0 };
 
     T zxCopy;
     T zyCopy;
@@ -1174,8 +1174,8 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
 
     HighPrecision zx, zy;
 
-    T dzdcX = T(1.0);
-    T dzdcY = T(0.0);
+    T dzdcX = T{ 1.0 };
+    T dzdcY = T{ 0.0 };
 
     InitResults<IterType, T, decltype(*results), Bad, Reuse>(*results, cx, cy);
 
@@ -2046,7 +2046,6 @@ PerturbationResults<IterType, ConvertTType, Bad>* RefOrbitCalc::GetAndCreateUsef
     }
 
     if constexpr (std::is_same<ConvertTType, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
-        // TODO move inside above call
         auto results2 (std::make_unique<PerturbationResults<IterType, ConvertTType, CalcBad::Disable>>());
         results2->Copy(*results);
 

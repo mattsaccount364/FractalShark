@@ -51,15 +51,15 @@ constexpr static bool EnableGpu1x64PerturbedBLA = Default;
 constexpr static bool EnableGpuHDRx32PerturbedBLA = Default;
 constexpr static bool EnableGpuHDRx64PerturbedBLA = Default;
 
-constexpr static bool EnableGpuHDRx32PerturbedLAv2 = Default;
-constexpr static bool EnableGpuHDRx32PerturbedLAv2PO = Default;
-constexpr static bool EnableGpuHDRx32PerturbedLAv2LAO = Default;
+constexpr static bool EnableGpuHDRx32PerturbedLAv2 = ForceEnable;
+constexpr static bool EnableGpuHDRx32PerturbedLAv2PO = ForceEnable;
+constexpr static bool EnableGpuHDRx32PerturbedLAv2LAO = ForceEnable;
 constexpr static bool EnableGpuHDRx2x32PerturbedLAv2 = ForceEnable;
 constexpr static bool EnableGpuHDRx2x32PerturbedLAv2PO = ForceEnable;
 constexpr static bool EnableGpuHDRx2x32PerturbedLAv2LAO = ForceEnable;
-constexpr static bool EnableGpuHDRx64PerturbedLAv2 = Default;
-constexpr static bool EnableGpuHDRx64PerturbedLAv2PO = Default;
-constexpr static bool EnableGpuHDRx64PerturbedLAv2LAO = Default;
+constexpr static bool EnableGpuHDRx64PerturbedLAv2 = ForceEnable;
+constexpr static bool EnableGpuHDRx64PerturbedLAv2PO = ForceEnable;
+constexpr static bool EnableGpuHDRx64PerturbedLAv2LAO = ForceEnable;
 
 #ifdef __CUDACC__
 __device__ __constant__ double twoPowExpDataDbl[2048];
@@ -1888,12 +1888,12 @@ void mandel_hdr_float(
     auto MANDEL_2X_FLOAT = [&]() {
         y.Reduce();
         x.Reduce();
-        double tempProd = x.toDouble() * y.toDouble() * 2.0 + y0.toDouble();
-        //y = x * y * Two + y0;
-        y = HDRFloat<CudaDblflt<dblflt>>(tempProd);
-        //x = zrsqr - zisqr + x0;
-        double tempProd2 = zrsqr.toDouble() - zisqr.toDouble() + x0.toDouble();
-        x = HDRFloat<CudaDblflt<dblflt>>(tempProd2);
+        //double tempProd = x.toDouble() * y.toDouble() * 2.0 + y0.toDouble();
+        y = x * y * Two + y0;
+        //y = HDRFloat<CudaDblflt<dblflt>>(tempProd);
+        x = zrsqr - zisqr + x0;
+        //double tempProd2 = zrsqr.toDouble() - zisqr.toDouble() + x0.toDouble();
+        //x = HDRFloat<CudaDblflt<dblflt>>(tempProd2);
         zrsqr = x * x;
         zrsqr.Reduce(); // TODO these are the problem
         zisqr = y * y;
@@ -2156,8 +2156,8 @@ void mandel_1x_float(
     float x0 = cx + dx * X;
     float y0 = cy + dy * Y;
 
-    float x = 0.0;
-    float y = 0.0;
+    float x = 0.0f;
+    float y = 0.0f;
 
     n_iterations -= iteration_precision - 1;
 

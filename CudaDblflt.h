@@ -100,7 +100,7 @@ public:
 #ifdef __CUDACC__
     //template<typename std::enable_if<std::is_same<T, dbldbl>::value, dbldbl>::type * = 0>
     __device__
-    operator double() const {
+    explicit operator double() const {
         return dblflt_to_double(d);
     }
 
@@ -416,7 +416,7 @@ __device__ __forceinline__ dblflt sqrt_dblflt(dblflt a)
     dblflt t, z;
     double e, y, s, r;
     r = rsqrt(a.y);
-    if (a.y == 0.0) r = 0.0;
+    if (a.y == 0.0f) r = 0.0;
     y = __fmul_rn(a.y, r);
     s = __fmaf_rn(y, -y, a.y);
     r = __fmul_rn(0.5, r);

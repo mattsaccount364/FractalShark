@@ -98,7 +98,7 @@ public:
 #endif
 
     CUDA_CRAP constexpr HDRFloat() {
-        Base::mantissa = (T)0.0;
+        Base::mantissa = T{};
         Base::exp = MIN_BIG_EXPONENT();
     }
 
@@ -195,8 +195,8 @@ public:
         }
         else if constexpr (std::is_same<T, CudaDblflt<dblflt>>::value) {
             if constexpr (std::is_same<U, CudaDblflt<dblflt>>::value) {
-                Base::exp = number.exp;
-                Base::mantissa = number.mantissa;
+                Base::exp = 0;
+                Base::mantissa = number;
             }
             else if constexpr (std::is_same<U, float>::value) {
                 const auto bits = bit_cast<uint32_t>(number);
@@ -235,7 +235,7 @@ public:
     HDRFloat(const HighPrecision &number) {
 
         if (number == 0) {
-            Base::mantissa = T{ 0.0 };
+            Base::mantissa = T{};
             Base::exp = MIN_BIG_EXPONENT();
             return;
         }
@@ -316,7 +316,7 @@ public:
     static CUDA_CRAP constexpr T getMultiplier(TExp scaleFactor) {
         if constexpr (std::is_same<T, float>::value || std::is_same<T, CudaDblflt<dblflt>>::value) {
             if (scaleFactor <= MIN_SMALL_EXPONENT_FLOAT()) {
-                return (T)0.0;
+                return T{};
             }
 
             if (scaleFactor >= 128) {
@@ -327,7 +327,7 @@ public:
         }
         else if constexpr (std::is_same<T, double>::value) {
             if (scaleFactor <= MIN_SMALL_EXPONENT_DOUBLE()) {
-                return (T)0.0;
+                return T{};
             }
 
             if (scaleFactor >= 1024) {
@@ -351,7 +351,7 @@ public:
         if constexpr (std::is_same<T, double>::value) {
             if constexpr (IncludeCheck) {
                 if (scaleFactor <= MIN_SMALL_EXPONENT_DOUBLE()) {
-                    return T{ 0.0 };
+                    return T{};
                 }
             }
 
@@ -360,7 +360,7 @@ public:
         else {
             if constexpr (IncludeCheck) {
                 if (scaleFactor <= MIN_SMALL_EXPONENT_FLOAT()) {
-                    return T{ 0.0f };
+                    return T{};
                 }
             }
 
@@ -608,15 +608,6 @@ public:
             DeltaSubNYOrig * tempSum1 +
             DeltaSub0Y;
         HdrReduce(DeltaSubNY);
-
-        //const HDRFloat tempZX = tempSum1 + DeltaSubNX;
-        //const HDRFloat tempZY = tempSum2 + DeltaSubNY;
-
-        //HDRFloat zn_size = tempZX * tempZX + tempZY * tempZY;
-        //HdrReduce(zn_size);
-
-        //HDRFloat normDeltaSubN = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
-        //HdrReduce(normDeltaSubN);
     }
 
     // friends defined inside class body are inline and are hidden from non-ADL lookup
@@ -745,7 +736,7 @@ public:
             Base::mantissa = value.mantissa;
         }
 
-        if (Base::mantissa == 0) {
+        if (Base::mantissa == T{}) {
             Base::exp = MIN_BIG_EXPONENT();
         }
 
@@ -810,7 +801,7 @@ public:
             Base::mantissa = -value.mantissa;
         }
 
-        if (Base::mantissa == 0) {
+        if (Base::mantissa == T{}) {
             Base::exp = MIN_BIG_EXPONENT();
         }
 
@@ -910,7 +901,7 @@ public:
             return -1;
         }
         else {
-            if (Base::mantissa >= SomeConstant) {
+            if (Base::mantissa >= T{ SomeConstant }) {
                 return 1;
             } else {
                 return -1;

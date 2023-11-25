@@ -205,7 +205,6 @@
     <ClInclude Include="..\LAReference.h" />
     <ClInclude Include="..\GPU_LAReference.h" />
     <ClInclude Include="..\LAstep.h" />
-    <ClCompile Include="..\LAInfoDeep.cpp" />
     <ClCompile Include="..\LAReference.cpp" />
     <ClCompile Include="..\RefOrbitCalc.cpp" />
     <ClCompile Include="..\WPngImage\lodepng.cpp" />

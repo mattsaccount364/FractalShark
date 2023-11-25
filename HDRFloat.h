@@ -52,28 +52,20 @@ public:
     typedef T TemplateSubType;
     using Base = std::conditional<Order == HDROrder::Left, LMembers<T, TExp>, RMembers<T, TExp>>::type;
 
-    static CUDA_CRAP constexpr TExp MIN_SMALL_EXPONENT() {
-        if constexpr (std::is_same<T, double>::value) {
-            return -1023;
-        }
-        else {
-            static_assert(
-                std::is_same<CudaDblflt<dblflt>, T>::value ||
-                std::is_same<float, T>::value, "!");
-            return -127;
-        }
+    static CUDA_CRAP constexpr TExp MIN_SMALL_EXPONENT_FLOAT() {
+        return -127;
     }
 
-    static CUDA_CRAP constexpr int32_t MIN_SMALL_EXPONENT_INT() {
-        if constexpr (std::is_same<T, double>::value) {
-            return -1023;
-        }
-        else {
-            static_assert(
-                std::is_same<CudaDblflt<dblflt>, T>::value ||
-                std::is_same<float, T>::value, "!");
-            return -127;
-        }
+    static CUDA_CRAP constexpr TExp MIN_SMALL_EXPONENT_DOUBLE() {
+        return -1023;
+    }
+
+    static CUDA_CRAP constexpr int32_t MIN_SMALL_EXPONENT_INT_FLOAT() {
+        return -127;
+    }
+
+    static CUDA_CRAP constexpr int32_t MIN_SMALL_EXPONENT_INT_DOUBLE() {
+        return -1023;
     }
 
     static CUDA_CRAP constexpr TExp MIN_BIG_EXPONENT() {
@@ -183,19 +175,19 @@ public:
 
         if constexpr (std::is_same<T, double>::value) {
             // TODO use std::bit_cast once that works in CUDA
-            const uint64_t bits = bit_cast<uint64_t>((T)number);
+            const auto bits = bit_cast<uint64_t>((T)number);
             //constexpr uint64_t bits = __builtin_bit_cast(std::uint64_t, &number);
-            const int32_t f_exp = (int32_t)((bits & 0x7FF0'0000'0000'0000UL) >> 52UL) + MIN_SMALL_EXPONENT_INT();
-            const uint64_t val = (bits & 0x800F'FFFF'FFFF'FFFFL) | 0x3FF0'0000'0000'0000L;
+            const auto f_exp = (int32_t)((bits & 0x7FF0'0000'0000'0000UL) >> 52UL) + MIN_SMALL_EXPONENT_INT_DOUBLE();
+            const auto val = (bits & 0x800F'FFFF'FFFF'FFFFL) | 0x3FF0'0000'0000'0000L;
             const T f_val = bit_cast<T>(val);
 
             Base::mantissa = (T)f_val;
             Base::exp = (TExp)f_exp;
         }
         else if constexpr (std::is_same<T, float>::value) {
-            const uint32_t bits = bit_cast<uint32_t>((T)number);
-            const int32_t f_exp = (int32_t)((bits & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
-            const uint32_t val = (bits & 0x807F'FFFFL) | 0x3F80'0000L;
+            const auto bits = bit_cast<uint32_t>((T)number);
+            const auto f_exp = (int32_t)((bits & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT_FLOAT();
+            const auto val = (bits & 0x807F'FFFF) | 0x3F80'0000;
             const T f_val = bit_cast<T>(val);
 
             Base::mantissa = (T)f_val;
@@ -206,20 +198,36 @@ public:
                 Base::exp = number.exp;
                 Base::mantissa = number.mantissa;
             }
-            else {
-                const uint32_t bits = bit_cast<uint32_t>((float)number);
-                const int32_t f_exp = (int32_t)((bits & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
-                const uint32_t val = (bits & 0x807F'FFFFL) | 0x3F80'0000L;
+            else if constexpr (std::is_same<U, float>::value) {
+                const auto bits = bit_cast<uint32_t>(number);
+                const auto f_exp = (int32_t)((bits & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT_FLOAT();
+                const auto val = (bits & 0x807F'FFFFL) | 0x3F80'0000L;
                 const float f_val = bit_cast<float>(val);
 
                 Base::mantissa.d.y = f_val;
                 Base::mantissa.d.x = 0;
                 Base::exp = (TExp)f_exp;
             }
-        }
-        else {
-            Base::mantissa = (T)number;
-            Base::exp = 1;
+            else if constexpr (std::is_same<U, double>::value) {
+                const auto bits = bit_cast<uint64_t>(number);
+                const auto f_exp = (int64_t)((bits & 0x7FF0'0000'0000'0000UL) >> 52UL) + MIN_SMALL_EXPONENT_INT_DOUBLE();
+                const auto val = (bits & 0x800F'FFFF'FFFF'FFFFL) | 0x3FF0'0000'0000'0000L;
+                const auto f_val = bit_cast<double>(val);
+
+                Base::mantissa = CudaDblflt(f_val);
+                Base::exp = (TExp)f_exp;
+            }
+            else if constexpr (std::is_same<U, int>::value) {
+                const auto floatVal = (float)number;
+                const auto bits = bit_cast<uint32_t>(floatVal);
+                const auto f_exp = (int32_t)((bits & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT_FLOAT();
+                const auto val = (bits & 0x807F'FFFFL) | 0x3F80'0000L;
+                const float f_val = bit_cast<float>(val);
+
+                Base::mantissa.d.y = f_val;
+                Base::mantissa.d.x = 0;
+                Base::exp = (TExp)f_exp;
+            }
         }
     }
 
@@ -254,10 +262,10 @@ public:
         //}
 
         if constexpr (std::is_same<T, double>::value) {
-            const uint64_t bits = *reinterpret_cast<uint64_t*>(&this->Base::mantissa);
-            const int32_t f_exp = (int32_t)((bits & 0x7FF0'0000'0000'0000UL) >> 52UL) + MIN_SMALL_EXPONENT_INT();
-            const uint64_t val = (bits & 0x800F'FFFF'FFFF'FFFFL) | 0x3FF0'0000'0000'0000L;
-            const auto f_val = *reinterpret_cast<const T*>(&val);
+            const auto bits = bit_cast<uint64_t>(this->Base::mantissa);
+            const auto f_exp = (int32_t)((bits & 0x7FF0'0000'0000'0000UL) >> 52UL) + MIN_SMALL_EXPONENT_INT_DOUBLE();
+            const auto val = (bits & 0x800F'FFFF'FFFF'FFFFL) | 0x3FF0'0000'0000'0000L;
+            const auto f_val = bit_cast<const T>(val);
             Base::exp += f_exp;
             Base::mantissa = f_val;
 
@@ -266,10 +274,10 @@ public:
             }
         }
         else if constexpr (std::is_same<T, float>::value) {
-            const uint32_t bits = *reinterpret_cast<uint32_t*>(&this->Base::mantissa);
-            const int32_t f_exp = (int32_t)((bits & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
-            const uint32_t val = (bits & 0x807F'FFFFL) | 0x3F80'0000L;
-            const auto f_val = *reinterpret_cast<const T*>(&val);
+            const auto bits = bit_cast<uint32_t>(this->Base::mantissa);
+            const auto f_exp = (int32_t)((bits & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT_FLOAT();
+            const auto val = (bits & 0x807F'FFFFL) | 0x3F80'0000L;
+            const auto f_val = bit_cast<T>(val);
             Base::exp += f_exp;
             Base::mantissa = f_val;
 
@@ -278,14 +286,16 @@ public:
             }
         }
         else if constexpr (std::is_same<T, CudaDblflt<dblflt>>::value) {
-            const uint32_t bits_y = *reinterpret_cast<uint32_t*>(&this->Base::mantissa.d.y);
-            const uint32_t bits_x = *reinterpret_cast<uint32_t*>(&this->Base::mantissa.d.x);
-            const int32_t f_exp_y = (int32_t)((bits_y & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
-            const int32_t f_exp_x = (int32_t)((bits_x & 0x7F80'0000UL) >> 23UL);
-            const uint32_t val_y = (bits_y & 0x807F'FFFFL) | 0x3F80'0000L;
-            const uint32_t val_x = (bits_x & 0x807F'FFFFL) | ((f_exp_x - f_exp_y) << 23UL);
-            const auto f_val_y = *reinterpret_cast<const float*>(&val_y);
-            const auto f_val_x = *reinterpret_cast<const float*>(&val_x);
+            const auto bits_y = bit_cast<uint32_t>(this->Base::mantissa.d.y);
+            const auto bits_x = bit_cast<uint32_t>(this->Base::mantissa.d.x);
+            const auto f_exp_y = (int32_t)((bits_y & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT_FLOAT();
+            const auto f_exp_x = (int32_t)((bits_x & 0x7F80'0000UL) >> 23UL);
+            const auto val_y = (bits_y & 0x807F'FFFFU) | 0x3F80'0000U;
+            const auto newexp = f_exp_x - f_exp_y;
+            const auto satexp = newexp <= 0 ? 0 : newexp;
+            const auto val_x = (bits_x & 0x807F'FFFFU) | (satexp << 23U);
+            const auto f_val_y = bit_cast<float>(val_y);
+            const auto f_val_x = bit_cast<float>(val_x);
             Base::exp += f_exp_y;
             Base::mantissa.d.y = f_val_y;
             Base::mantissa.d.x = f_val_x;
@@ -299,64 +309,32 @@ public:
     }
 
     CUDA_CRAP constexpr HDRFloat &&Reduce() && {
-        //if (Base::mantissa == 0) {
-        //    return;
-        //}
-
-        if constexpr (std::is_same<T, double>::value) {
-            const uint64_t bits = *reinterpret_cast<uint64_t*>(&Base::mantissa);
-            const int32_t f_exp = (int32_t)((bits & 0x7FF0'0000'0000'0000UL) >> 52UL) + MIN_SMALL_EXPONENT_INT();
-            const uint64_t val = (bits & 0x800F'FFFF'FFFF'FFFFL) | 0x3FF0'0000'0000'0000L;
-            const auto f_val = *reinterpret_cast<const T*>(&val);
-            Base::exp += f_exp;
-            Base::mantissa = f_val;
-        }
-        else if constexpr (std::is_same<T, float>::value) {
-            const uint32_t bits = *reinterpret_cast<uint32_t*>(&Base::mantissa);
-            const int32_t f_exp = (int32_t)((bits & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
-            const uint32_t val = (bits & 0x807F'FFFFL) | 0x3F80'0000L;
-            const auto f_val = *reinterpret_cast<const T*>(&val);
-            Base::exp += f_exp;
-            Base::mantissa = f_val;
-        }
-        else if constexpr (std::is_same<T, CudaDblflt<dblflt>>::value) {
-            const uint32_t bits_y = *reinterpret_cast<uint32_t*>(&this->Base::mantissa.d.y);
-            const uint32_t bits_x = *reinterpret_cast<uint32_t*>(&this->Base::mantissa.d.x);
-            const int32_t f_exp_y = (int32_t)((bits_y & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
-            const int32_t f_exp_x = (int32_t)((bits_x & 0x7F80'0000UL) >> 23UL);
-            const uint32_t val_y = (bits_y & 0x807F'FFFFL) | 0x3F80'0000L;
-            const uint32_t val_x = (bits_x & 0x807F'FFFFL) | ((f_exp_x - f_exp_y) << 23UL);
-            const auto f_val_y = *reinterpret_cast<const float*>(&val_y);
-            const auto f_val_x = *reinterpret_cast<const float*>(&val_x);
-            Base::exp += f_exp_y;
-            Base::mantissa.d.y = f_val_y;
-            Base::mantissa.d.x = f_val_x;
-        }
-
+        Reduce();
         return std::move(*this);
     }
 
     static CUDA_CRAP constexpr T getMultiplier(TExp scaleFactor) {
-        if (scaleFactor <= MIN_SMALL_EXPONENT()) {
-            return (T)0.0;
-        }
-        
         if constexpr (std::is_same<T, float>::value || std::is_same<T, CudaDblflt<dblflt>>::value) {
+            if (scaleFactor <= MIN_SMALL_EXPONENT_FLOAT()) {
+                return (T)0.0;
+            }
+
             if (scaleFactor >= 128) {
                 return (T)INFINITY;
             }
+
+            return (T)twoPowExpFlt[(int)scaleFactor - MinFloatExponent];
         }
         else if constexpr (std::is_same<T, double>::value) {
+            if (scaleFactor <= MIN_SMALL_EXPONENT_DOUBLE()) {
+                return (T)0.0;
+            }
+
             if (scaleFactor >= 1024) {
                 return (T)INFINITY;
             }
-        }
 
-        if constexpr (std::is_same<T, double>::value) {
             return (T)twoPowExpDbl[(int)scaleFactor - MinDoubleExponent];
-        }
-        else {
-            return (T)twoPowExpFlt[(int)scaleFactor - MinFloatExponent];
         }
     }
 
@@ -372,7 +350,7 @@ public:
 
         if constexpr (std::is_same<T, double>::value) {
             if constexpr (IncludeCheck) {
-                if (scaleFactor <= MIN_SMALL_EXPONENT()) {
+                if (scaleFactor <= MIN_SMALL_EXPONENT_DOUBLE()) {
                     return T{ 0.0 };
                 }
             }
@@ -381,7 +359,7 @@ public:
         }
         else {
             if constexpr (IncludeCheck) {
-                if (scaleFactor <= MIN_SMALL_EXPONENT()) {
+                if (scaleFactor <= MIN_SMALL_EXPONENT_FLOAT()) {
                     return T{ 0.0f };
                 }
             }
@@ -631,14 +609,14 @@ public:
             DeltaSub0Y;
         HdrReduce(DeltaSubNY);
 
-        const HDRFloat tempZX = tempSum1 + DeltaSubNX;
-        const HDRFloat tempZY = tempSum2 + DeltaSubNY;
+        //const HDRFloat tempZX = tempSum1 + DeltaSubNX;
+        //const HDRFloat tempZY = tempSum2 + DeltaSubNY;
 
-        HDRFloat zn_size = tempZX * tempZX + tempZY * tempZY;
-        HdrReduce(zn_size);
+        //HDRFloat zn_size = tempZX * tempZX + tempZY * tempZY;
+        //HdrReduce(zn_size);
 
-        HDRFloat normDeltaSubN = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
-        HdrReduce(normDeltaSubN);
+        //HDRFloat normDeltaSubN = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
+        //HdrReduce(normDeltaSubN);
     }
 
     // friends defined inside class body are inline and are hidden from non-ADL lookup

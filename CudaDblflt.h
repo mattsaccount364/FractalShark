@@ -20,6 +20,16 @@ class CudaDblflt {
 public:
     T d;
 
+    template <class To, class From, class Res = typename std::enable_if<
+        (sizeof(To) == sizeof(From)) &&
+        (alignof(To) == alignof(From)) &&
+        std::is_trivially_copyable<From>::value&&
+        std::is_trivially_copyable<To>::value,
+        To>::type>
+    CUDA_CRAP const Res& bit_cast(const From& src) noexcept {
+        return *reinterpret_cast<const To*>(&src);
+    }
+
     // Constructs a CudaDblflt that zeros out the head and tail
     CUDA_CRAP
     constexpr
@@ -198,16 +208,19 @@ public:
 
     __device__
     void Reduce(int32_t &out_exp) {
-        const uint32_t bits_y = *reinterpret_cast<uint32_t*>(&this->d.y);
-        const uint32_t bits_x = *reinterpret_cast<uint32_t*>(&this->d.x);
-        const int32_t f_exp_y = (int32_t)((bits_y & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
-        out_exp = (int32_t)((bits_x & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
-        const uint32_t val_y = (bits_y & 0x807F'FFFFL) | 0x3F80'0000L;
-        const uint32_t val_x = (bits_x & 0x807F'FFFFL) | (out_exp << 23UL);
-        const auto f_val_y = *reinterpret_cast<const float*>(&val_y);
-        const auto f_val_x = *reinterpret_cast<const float*>(&val_x);
+        const auto bits_y = bit_cast<uint32_t>(this->d.y);
+        const auto bits_x = bit_cast<uint32_t>(this->d.x);
+        const auto f_exp_y = (int32_t)((bits_y & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
+        const auto f_exp_x = (int32_t)((bits_x & 0x7F80'0000UL) >> 23UL);
+        const auto val_y = (bits_y & 0x807F'FFFF) | 0x3F80'0000;
+        const auto newexp = f_exp_x - f_exp_y;
+        const auto satexp = newexp <= 0 ? 0 : newexp;
+        const auto val_x = (bits_x & 0x807F'FFFF) | (satexp << 23U);
+        const auto f_val_y = bit_cast<const float>(val_y);
+        const auto f_val_x = bit_cast<const float>(val_x);
         d.y = f_val_y;
         d.x = f_val_x;
+        out_exp = f_exp_y - MIN_SMALL_EXPONENT_INT();
     }
 #endif
 };

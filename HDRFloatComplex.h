@@ -334,8 +334,8 @@ public:
         TExp f_expReal;
         TExp f_expImag;
 
-        auto helper = [&]() {
-            TExp expDiff = max(f_expReal, f_expImag) + HDRFloat::MIN_SMALL_EXPONENT();
+        auto helper = [&](int32_t min_small) {
+            TExp expDiff = max(f_expReal, f_expImag) + min_small;
             TExp expCombined = exp + expDiff;
             SubType mul = HDRFloat::getMultiplier(-expDiff);
 
@@ -355,20 +355,20 @@ public:
 
             uint64_t bitsImag = *reinterpret_cast<uint64_t*>(&mantissaImag);
             f_expImag = (TExp)((bitsImag & 0x7FF0'0000'0000'0000UL) >> 52UL);
-            helper();
+            helper(HDRFloat::MIN_SMALL_EXPONENT_DOUBLE());
         } else if constexpr (std::is_same<SubType, float>::value) {
             uint32_t bitsReal = *reinterpret_cast<uint32_t*>(&mantissaReal);
             f_expReal = (TExp)((bitsReal & 0x7F80'0000UL) >> 23UL);
 
             uint32_t bitsImag = *reinterpret_cast<uint32_t*>(&mantissaImag);
             f_expImag = (TExp)((bitsImag & 0x7F80'0000UL) >> 23UL);
-            helper();
+            helper(HDRFloat::MIN_SMALL_EXPONENT_FLOAT());
         } else if constexpr (std::is_same<SubType, CudaDblflt<dblflt>>::value) {
             TExp f_expReal, f_expImag;
             mantissaReal.Reduce(f_expReal);
             mantissaImag.Reduce(f_expImag);
 
-            TExp expDiff = max(f_expReal, f_expImag) + HDRFloat::MIN_SMALL_EXPONENT();
+            TExp expDiff = max(f_expReal, f_expImag) + HDRFloat::MIN_SMALL_EXPONENT_FLOAT();
             TExp expCombined = exp + expDiff;
             exp = expCombined;
         }

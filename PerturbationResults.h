@@ -37,10 +37,10 @@ public:
     void Copy(const PerturbationResults<IterType, Other, Bad>& other) {
         clear();
 
-        //hiX = other.hiX;
-        //hiY = other.hiY;
+        hiX = other.hiX;
+        hiY = other.hiY;
 
-        //maxRadius = other.maxRadius;
+        maxRadius = (T)other.maxRadius;
 
         orb.reserve(other.orb.size());
 
@@ -60,7 +60,9 @@ public:
         ReuseX = other.ReuseX;
         ReuseY = other.ReuseY;
 
-        LaReference = std::make_unique<LAReference<IterType, SubType>>(*other.LaReference);
+        if (other.LaReference) {
+            LaReference = std::make_unique<LAReference<IterType, SubType>>(*other.LaReference);
+        }
     }
 
     void Write(const std::wstring& filename) {

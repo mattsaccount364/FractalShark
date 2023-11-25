@@ -21,13 +21,13 @@ struct MattDblflt {
     }
 
     CUDA_CRAP
-    MattDblflt(double other) :
+    explicit MattDblflt(double other) :
         x{ (float)(other - (double)(float)other) },
         y{ (float)other } {
     }
 
     CUDA_CRAP
-    MattDblflt(float other) :
+    explicit MattDblflt(float other) :
         x{ 0 },
         y{ other } {
     }

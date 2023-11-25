@@ -27,6 +27,7 @@
 //#include <cuda_pipeline.h>
 
 constexpr static bool Default = false;
+constexpr static bool ForceEnable = true;
 
 constexpr static bool EnableGpu1x32 = Default;
 constexpr static bool EnableGpu2x32 = Default;
@@ -34,7 +35,7 @@ constexpr static bool EnableGpu4x32 = Default;
 constexpr static bool EnableGpu1x64 = Default;
 constexpr static bool EnableGpu2x64 = Default;
 constexpr static bool EnableGpu4x64 = Default;
-constexpr static bool EnableGpuHDRx32 = true;
+constexpr static bool EnableGpuHDRx32 = Default;
 
 constexpr static bool EnableGpu1x32Perturbed = Default;
 constexpr static bool EnableGpu1x32PerturbedPeriodic = Default;
@@ -53,9 +54,9 @@ constexpr static bool EnableGpuHDRx64PerturbedBLA = Default;
 constexpr static bool EnableGpuHDRx32PerturbedLAv2 = Default;
 constexpr static bool EnableGpuHDRx32PerturbedLAv2PO = Default;
 constexpr static bool EnableGpuHDRx32PerturbedLAv2LAO = Default;
-constexpr static bool EnableGpuHDRx2x32PerturbedLAv2 = Default;
-constexpr static bool EnableGpuHDRx2x32PerturbedLAv2PO = Default;
-constexpr static bool EnableGpuHDRx2x32PerturbedLAv2LAO = Default;
+constexpr static bool EnableGpuHDRx2x32PerturbedLAv2 = ForceEnable;
+constexpr static bool EnableGpuHDRx2x32PerturbedLAv2PO = ForceEnable;
+constexpr static bool EnableGpuHDRx2x32PerturbedLAv2LAO = ForceEnable;
 constexpr static bool EnableGpuHDRx64PerturbedLAv2 = Default;
 constexpr static bool EnableGpuHDRx64PerturbedLAv2PO = Default;
 constexpr static bool EnableGpuHDRx64PerturbedLAv2LAO = Default;
@@ -1848,8 +1849,14 @@ void mandel_hdr_float(
     HDRFloat<CudaDblflt<dblflt>> X2{ (float)X };
     HDRFloat<CudaDblflt<dblflt>> Y2{ (float)Y };
 
+    X2.Reduce();
+    Y2.Reduce();
+
     HDRFloat<CudaDblflt<dblflt>> x0{ cx + dx * X2 };
     HDRFloat<CudaDblflt<dblflt>> y0{ cy + dy * Y2 };
+
+    x0.Reduce();
+    y0.Reduce();
 
     HDRFloat<CudaDblflt<dblflt>> x{};
     HDRFloat<CudaDblflt<dblflt>> y{};
@@ -1862,20 +1869,35 @@ void mandel_hdr_float(
     //HDRFloat<CudaDblflt<dblflt>> zisq2{};
     HDRFloat<CudaDblflt<dblflt>> zsq_sum{};
 
-    const HDRFloat<CudaDblflt<dblflt>> Two{ 2.0f };
-    const HDRFloat<CudaDblflt<dblflt>> Four{ 4.0f };
+    HDRFloat<CudaDblflt<dblflt>> Two{ 2.0f };
+    HDRFloat<CudaDblflt<dblflt>> Four{ 4.0f };
+
+    //auto MANDEL_2X_FLOAT = [&]() {
+    //    y.Reduce();
+    //    x.Reduce();
+    //    y = x * y * Two + y0;
+    //    x = zrsqr - zisqr + x0;
+    //    zrsqr = x.square();
+    //    zrsqr.Reduce();
+    //    zisqr = y.square();
+    //    zisqr.Reduce();
+    //    zsq_sum = zrsqr + zisqr;
+    //    zsq_sum.Reduce();
+    //};
 
     auto MANDEL_2X_FLOAT = [&]() {
         y.Reduce();
         x.Reduce();
-        y = x * y * Two;
-        y = y + y0;
-        x = zrsqr - zisqr;
-        x = x + x0;
+        double tempProd = x.toDouble() * y.toDouble() * 2.0 + y0.toDouble();
+        //y = x * y * Two + y0;
+        y = HDRFloat<CudaDblflt<dblflt>>(tempProd);
+        //x = zrsqr - zisqr + x0;
+        double tempProd2 = zrsqr.toDouble() - zisqr.toDouble() + x0.toDouble();
+        x = HDRFloat<CudaDblflt<dblflt>>(tempProd2);
         zrsqr = x * x;
-        zrsqr.Reduce();
+        zrsqr.Reduce(); // TODO these are the problem
         zisqr = y * y;
-        zisqr.Reduce();
+        zisqr.Reduce(); // TODO these are the problem
         zsq_sum = zrsqr + zisqr;
         zsq_sum.Reduce();
     };
@@ -2283,8 +2305,8 @@ void mandel_1x_float_perturb(
         const T DeltaSubNXOrig = DeltaSubNX;
         const T DeltaSubNYOrig = DeltaSubNY;
 
-        const T tempSubX = curIter->x * T(2) + DeltaSubNXOrig;
-        const T tempSubY = curIter->y * T(2) + DeltaSubNYOrig;
+        const T tempSubX = curIter->x * T(2.0f) + DeltaSubNXOrig;
+        const T tempSubY = curIter->y * T(2.0f) + DeltaSubNYOrig;
 
         ++RefIteration;
         curIter = &PerturbFloat.iters[RefIteration];
@@ -2310,7 +2332,7 @@ void mandel_1x_float_perturb(
         T normDeltaSubN = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
         HdrReduce(normDeltaSubN);
 
-        if (HdrCompareToBothPositiveReducedGE(zn_size, T(256))) {
+        if (HdrCompareToBothPositiveReducedGE(zn_size, T(256.0f))) {
             break;
         }
 

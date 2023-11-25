@@ -39,11 +39,13 @@ public:
 
         hiX = other.hiX;
         hiY = other.hiY;
-
         maxRadius = (T)other.maxRadius;
+        MaxIterations = other.MaxIterations;
+        PeriodMaybeZero = other.PeriodMaybeZero;
 
         orb.reserve(other.orb.size());
 
+        AuthoritativePrecision = other.AuthoritativePrecision;
         ReuseX.reserve(other.ReuseX.size());
         ReuseY.reserve(other.ReuseY.size());
 

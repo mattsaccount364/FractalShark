@@ -115,51 +115,53 @@ enum class RenderAlgorithm {
 
 // A list of all the algorithms that are supported by the GPU in string form.
 // The algorithms are listed above in the same order as they are listed here.
-static const char* RenderAlgorithmStr[(size_t)RenderAlgorithm::MAX] =
+static const char* RenderAlgorithmStr[(size_t)RenderAlgorithm::MAX + 1] =
 {
     "CpuHigh",
+    "Cpu64",
     "CpuHDR32",
     "CpuHDR64",
-    "Cpu64",
+
     "Cpu64PerturbedBLA",
     "Cpu32PerturbedBLAHDR",
-    "Cpu32PerturbedBLAV2HDR",
     "Cpu64PerturbedBLAHDR",
+
+    "Cpu32PerturbedBLAV2HDR",
     "Cpu64PerturbedBLAV2HDR",
 
+    "Gpu1x32",
+    "Gpu2x32",
+    "Gpu4x32",
     "Gpu1x64",
-    "Gpu1x64Perturbed",
-    "Gpu1x64PerturbedBLA",
-    "GpuHDRx64PerturbedBLA",
-
-    "GpuHDRx64PerturbedLAv2",
-    "GpuHDRx64PerturbedLAv2PO",
-    "GpuHDRx64PerturbedLAv2LAO",
-
     "Gpu2x64",
     "Gpu4x64",
-    "Gpu1x32",
     "GpuHDRx32",
+
     "Gpu1x32Perturbed",
     "Gpu1x32PerturbedPeriodic",
+    "Gpu1x32PerturbedScaled",
+    "Gpu2x32Perturbed",
+    "Gpu2x32PerturbedScaled",
+    "Gpu1x64Perturbed",
+    "GpuHDRx32Perturbed",
+    "GpuHDRx32PerturbedScaled",
+
+    "Gpu1x32PerturbedScaledBLA",
+    "Gpu1x64PerturbedBLA",
     "GpuHDRx32PerturbedBLA",
+    "GpuHDRx64PerturbedBLA",
 
     "GpuHDRx32PerturbedLAv2",
     "GpuHDRx32PerturbedLAv2PO",
     "GpuHDRx32PerturbedLAv2LAO",
-
     "GpuHDRx2x32PerturbedLAv2",
     "GpuHDRx2x32PerturbedLAv2PO",
     "GpuHDRx2x32PerturbedLAv2LAO",
+    "GpuHDRx64PerturbedLAv2",
+    "GpuHDRx64PerturbedLAv2PO",
+    "GpuHDRx64PerturbedLAv2LAO",
 
-    "GpuHDRx32PerturbedScaled",
-    "GpuHDRx32Perturbed",
-    "Gpu1x32PerturbedScaled",
-    "Gpu1x32PerturbedScaledBLA",
-    "Gpu2x32",
-    "Gpu2x32Perturbed",
-    "Gpu2x32PerturbedScaled",
-    "Gpu4x32",
+    "MAX"
 };
 
 struct Empty {

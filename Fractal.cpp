@@ -205,15 +205,8 @@ void Fractal::Initialize(int width,
     InitStatics();
 
     // Setup member variables with initial values:
-    //SetRenderAlgorithm(RenderAlgorithm::Cpu64PerturbedBLAHDR);
-    //SetRenderAlgorithm(RenderAlgorithm::Cpu64PerturbedBLA);
-    //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedBLA);
-    //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedScaled);
-    //SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedPeriodic);
-    //SetRenderAlgorithm(RenderAlgorithm::Cpu32PerturbedBLAV2HDR);
-    //SetRenderAlgorithm(RenderAlgorithm::Cpu64PerturbedBLAV2HDR);
-    SetRenderAlgorithm(RenderAlgorithm::GpuHDRx2x32PerturbedLAv2);
-    //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32);
+    SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedLAv2);
+    //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx2x32PerturbedLAv2);
 
     SetIterationPrecision(1);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed);
@@ -224,8 +217,8 @@ void Fractal::Initialize(int width,
     ResetDimensions(width, height, 2);
     SetIterType(IterTypeEnum::Bits32);
 
-    //View(0);
-    View(5);
+    View(0);
+    //View(5);
     //View(15);
 
     m_ChangedWindow = true;
@@ -684,8 +677,10 @@ void Fractal::ResetDimensions(size_t width,
 
         m_ChangedScrn = true;
 
-        SquareCurrentView();
-        InitializeMemory();
+        if (m_ScrnWidth != 0 && m_ScrnHeight != 0) {
+            SquareCurrentView();
+            InitializeMemory();
+        }
     }
 }
 
@@ -1340,7 +1335,7 @@ void Fractal::View(size_t view)
         maxX = HighPrecision{ "-0.54820574807047570845821256754673302937669927060844097486102930067962289200412659019319306589187062772276993544341295" };
         maxY = HighPrecision{ "-0.577570838903603842805108982201850558675551726802772104952059640378694274662197291893029522164691495936927144187595881" };
         SetNumIterations<IterTypeFull>(4718592);
-        ResetDimensions(MAXSIZE_T, MAXSIZE_T, 1);
+        ResetDimensions(MAXSIZE_T, MAXSIZE_T, 2);
         break;
 
     case 6:

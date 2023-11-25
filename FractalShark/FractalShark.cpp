@@ -142,7 +142,7 @@ HWND InitInstance(HINSTANCE hInstance, int nCmdShow)
 { // Store instance handle in our global variable
     hInst = hInstance;
 
-    constexpr bool startWindowed = true;
+    constexpr bool startWindowed = false;
 
     const auto scrnWidth = GetSystemMetrics(SM_CXSCREEN);
     const auto scrnHeight = GetSystemMetrics(SM_CYSCREEN);
@@ -1523,11 +1523,11 @@ void MenuGetCurPos(HWND hWnd)
         gFractal->GetGpuAntialiasing(),
         gFractal->GetPaletteDepth(),
         prec,
-        sminX.c_str(), sminY.c_str(),
-        smaxX.c_str(), smaxY.c_str(),
         ptXStr.c_str(),
         ptYStr.c_str(),
         zoomFactorStr.c_str(),
+        sminX.c_str(), sminY.c_str(),
+        smaxX.c_str(), smaxY.c_str(),
         gFractal->GetNumIterations<IterTypeFull>());
     ::MessageBoxA(hWnd, mem, "", MB_OK);
 
@@ -1744,6 +1744,10 @@ void PaintAsNecessary(HWND hWnd)
 {
     RECT rt;
     GetClientRect(hWnd, &rt);
+
+    if (rt.left == 0 && rt.right == 0 && rt.top == 0 && rt.bottom == 0) {
+        return;
+    }
 
     if (gRepainting == false)
     {

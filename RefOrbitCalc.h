@@ -100,7 +100,7 @@ public:
     PerturbationResults<IterType, ConvertTType, Bad>* GetAndCreateUsefulPerturbationResults();
 
 private:
-    template<typename IterType, class T, class SubType, bool Authoritative, CalcBad Bad>
+    template<typename IterType, class T, bool Authoritative, CalcBad Bad>
     PerturbationResults<IterType, T, Bad>* GetUsefulPerturbationResults();
 
 public:

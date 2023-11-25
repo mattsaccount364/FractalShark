@@ -26,7 +26,7 @@
 //#include <cuda/pipeline>
 //#include <cuda_pipeline.h>
 
-constexpr static bool Default = false;
+constexpr static bool Default = true;
 constexpr static bool ForceEnable = true;
 
 constexpr static bool EnableGpu1x32 = Default;

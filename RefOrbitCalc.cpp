@@ -644,7 +644,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
     auto& PerturbationResultsArray = GetPerturbationResults<IterType, T, CalcBad::Disable>();
     PerturbationResultsArray.push_back(std::make_unique<PerturbationResults<IterType, T, CalcBad::Disable>>());
 
-    auto* existingResults = GetUsefulPerturbationResults<IterType, T, SubType, true, CalcBad::Disable>();
+    auto* existingResults = GetUsefulPerturbationResults<IterType, T, true, CalcBad::Disable>();
     if (existingResults == nullptr || existingResults->ReuseX.size() < 5) {
         // TODO Lame hack with < 5.
         PerturbationResultsArray.pop_back();
@@ -823,7 +823,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     auto& PerturbationResultsArray = GetPerturbationResults<IterType, T, CalcBad::Disable>();
     PerturbationResultsArray.push_back(std::make_unique<PerturbationResults<IterType, T, CalcBad::Disable>>());
 
-    auto* existingResults = GetUsefulPerturbationResults<IterType, T, SubType, true, CalcBad::Disable>();
+    auto* existingResults = GetUsefulPerturbationResults<IterType, T, true, CalcBad::Disable>();
     if (existingResults == nullptr || existingResults->ReuseX.size() < 5) {
         // TODO Lame hack with < 5.
         PerturbationResultsArray.pop_back();
@@ -1994,7 +1994,7 @@ PerturbationResults<IterType, ConvertTType, Bad>* RefOrbitCalc::GetAndCreateUsef
             m_PerturbationGuessCalcY = (m_Fractal.GetMaxY() + m_Fractal.GetMinY()) / 2;
         }
 
-        PerturbationResults<IterType, T, Bad>* results = GetUsefulPerturbationResults<IterType, T, SubType, false, Bad>();
+        PerturbationResults<IterType, T, Bad>* results = GetUsefulPerturbationResults<IterType, T, false, Bad>();
         if (results == nullptr) {
             switch (GetPerturbationAlg()) {
             case PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed:
@@ -2013,7 +2013,7 @@ PerturbationResults<IterType, ConvertTType, Bad>* RefOrbitCalc::GetAndCreateUsef
         }
     }
 
-    PerturbationResults<IterType, T, Bad>* results = GetUsefulPerturbationResults<IterType, T, SubType, false, Bad>();
+    PerturbationResults<IterType, T, Bad>* results = GetUsefulPerturbationResults<IterType, T, false, Bad>();
     if (results == nullptr) {
         if (added) {
             ::MessageBox(NULL, L"Why didn't this work! :(", L"", MB_OK);
@@ -2046,10 +2046,16 @@ PerturbationResults<IterType, ConvertTType, Bad>* RefOrbitCalc::GetAndCreateUsef
     }
 
     if constexpr (std::is_same<ConvertTType, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
-        auto results2 (std::make_unique<PerturbationResults<IterType, ConvertTType, CalcBad::Disable>>());
-        results2->Copy(*results);
+        auto* resultsExisting = GetUsefulPerturbationResults<IterType, ConvertTType, false, Bad>();
+        if (resultsExisting == nullptr) {
+            auto results2(std::make_unique<PerturbationResults<IterType, ConvertTType, CalcBad::Disable>>());
+            results2->Copy(*results);
 
-        return AddPerturbationResults(std::move(results2));
+            return AddPerturbationResults(std::move(results2));
+        }
+        else {
+            return resultsExisting;
+        }
     }
     else {
         return results;
@@ -2227,7 +2233,6 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults<
 template<
     typename IterType,
     class T,
-    class SubType,
     bool Authoritative,
     CalcBad Bad>
 PerturbationResults<IterType, T, Bad>* RefOrbitCalc::GetUsefulPerturbationResults() {

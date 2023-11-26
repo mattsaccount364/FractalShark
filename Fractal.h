@@ -563,6 +563,7 @@ private:
     static constexpr int NumPalettes = 3;
 
     uint32_t InitializeGPUMemory();
+
     void InitializeMemory();
     void SetCurItersMemory();
 

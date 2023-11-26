@@ -23,7 +23,7 @@ bool LAReference<IterType, SubType>::CreateLAFromOrbit(
         isValid = false;
         LAStages.resize(MaxLAStages);
 
-        LAs.reserve(maxRefIteration);
+        //LAs.reserve(maxRefIteration);
 
         UseAT = false;
         LAStageCount = 0;

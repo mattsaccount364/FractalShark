@@ -114,8 +114,6 @@ public:
         RenderAlgorithm algorithm,
         IterType* iter_buffer,
         Color16* color_buffer,
-        MattPerturbResults<IterType, T>* float_perturb,
-        const LAReference<IterType, SubType> &LaReference,
         T cx,
         T cy,
         T dx,
@@ -135,6 +133,14 @@ public:
         const uint16_t *palB,
         uint32_t palIters,
         uint32_t paletteAuxDepth);
+
+    template<typename IterType, class T1, class SubType, CalcBad Bad, class T2>
+    uint32_t InitializePerturb(
+        const void *OrigResults1,
+        MattPerturbResults<IterType, T1, Bad>* Perturb1,
+        const void* OrigResults2,
+        MattPerturbResults<IterType, T2, Bad>* Perturb2,
+        const LAReference<IterType, SubType>* LaReferenceHost);
 
     template<typename IterType>
     void ClearMemory();
@@ -166,7 +172,15 @@ private:
         No
     };
 
-    void ResetMemory(ResetLocals locals, ResetPalettes palettes);
+    enum class ResetPerturb {
+        Yes,
+        No
+    };
+
+    void ResetMemory(
+        ResetLocals locals,
+        ResetPalettes palettes,
+        ResetPerturb perturb);
     void ClearLocals();
 
     template<typename IterType>
@@ -192,6 +206,8 @@ private:
     uint32_t h_color_block;
     size_t N_cu;
     size_t N_color_cu;
+
+    PerturbResultsCollection m_PerturbResults;
 };
 
 

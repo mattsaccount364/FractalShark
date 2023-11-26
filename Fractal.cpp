@@ -3458,6 +3458,27 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
         return;
     }
 
+    MattPerturbResults<IterType, T> gpu_results{
+        (IterType)results->orb.size(),
+        results->orb.data(),
+        results->PeriodMaybeZero };
+
+    if (results->LaReference.get() == nullptr) {
+        ::MessageBox(NULL, L"Oops - a null pointer deref", L"", MB_OK);
+        return;
+    }
+
+    m_r.InitializePerturb<IterType, T, SubType, CalcBad::Disable, T>(
+        results,
+        &gpu_results,
+        nullptr,
+        nullptr,
+        results->LaReference.get());
+    if (err) {
+        MessageBoxCudaError(err);
+        return;
+    }
+
     m_r.ClearMemory<IterType>();
 
     T cx2{}, cy2{}, dx2{}, dy2{};
@@ -3471,23 +3492,9 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
     FillCoord(centerX, centerX2);
     FillCoord(centerY, centerY2);
 
-    MattPerturbResults<IterType, T> gpu_results{
-        (IterType)results->orb.size(),
-        results->orb.data(),
-        results->PeriodMaybeZero };
-
-    if (results->LaReference.get() == nullptr) {
-        ::MessageBox(NULL, L"Oops - a null pointer deref", L"", MB_OK);
-        return;
-    }
-
-    auto &LaReference = *results->LaReference.get();
-
     auto result = m_r.RenderPerturbLAv2<IterType, T, SubType, Mode>(GetRenderAlgorithm(),
         m_CurIters.GetIters<IterType>(),
         m_CurIters.m_RoundedOutputColorMemory.get(),
-        &gpu_results,
-        LaReference,
         cx2,
         cy2,
         dx2,

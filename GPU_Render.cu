@@ -1938,7 +1938,7 @@ mandel_1xHDR_float_perturb_lav2(
     T DeltaSubNY = T(0.0f);
 
     static constexpr bool ConditionalResult = std::is_same<T, float>::value || std::is_same<T, double>::value;
-    using TComplex = typename std::conditional<ConditionalResult, std::complex<SubType>, HDRFloatComplex<SubType>>::type;
+    using TComplex = typename std::conditional<ConditionalResult, FloatComplex<SubType>, HDRFloatComplex<SubType>>::type;
 
     ////////////
     TComplex DeltaSub0;

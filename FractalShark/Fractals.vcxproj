@@ -198,6 +198,7 @@
     <ClCompile Include="..\HDRFloat.cpp" />
     <ClInclude Include="..\CudaDblflt.h" />
     <ClInclude Include="..\dblflt.h" />
+    <ClInclude Include="..\FloatComplex.h" />
     <ClInclude Include="..\GPU_LAInfoDeep.h" />
     <ClInclude Include="..\GPU_Types.h" />
     <ClInclude Include="..\LAInfoDeep.h" />

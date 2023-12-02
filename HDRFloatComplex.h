@@ -524,3 +524,5 @@ public:
         return HDRFloat::maxBothPositiveReduced(HdrAbs(getRe()), HdrAbs(getIm()));
     }
 };
+
+#include "FloatComplex.h"

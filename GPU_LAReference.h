@@ -6,15 +6,14 @@
 #include "ATInfo.h"
 #include "GPU_LAInfoDeep.h"
 
-template<typename IterType, class SubType>
+template<typename IterType, class T, class SubType>
 class GPU_LAReference {
 private:
-    using HDRFloat = HDRFloat<SubType>;
-    using HDRFloatComplex = HDRFloatComplex<SubType>;
+    using HDRFloatComplex = T;
 
 public:
-    template<class SubType2>
-    __host__ GPU_LAReference(const LAReference<IterType, SubType2>& other);
+    template<class T2, class SubType2>
+    __host__ GPU_LAReference(const LAReference<IterType, T2, SubType2>& other);
     __host__ GPU_LAReference(const GPU_LAReference& other);
     ~GPU_LAReference();
 
@@ -62,10 +61,11 @@ public:
         IterType max_iterations) const;
 };
 
-template<typename IterType, class SubType>
-template<class SubType2>
+template<typename IterType, class T, class SubType>
+template<class T2, class SubType2>
 __host__
-GPU_LAReference<IterType, SubType>::GPU_LAReference<SubType2>(const LAReference<IterType, SubType2>& other) :
+GPU_LAReference<IterType, T, SubType>::GPU_LAReference<T2, SubType2>(
+    const LAReference<IterType, T2, SubType2>& other) :
     UseAT{ other.UseAT },
     AT{ other.AT },
     LAStageCount{ other.LAStageCount },
@@ -127,8 +127,8 @@ GPU_LAReference<IterType, SubType>::GPU_LAReference<SubType2>(const LAReference<
 
 }
 
-template<typename IterType, class SubType>
-GPU_LAReference<IterType, SubType>::~GPU_LAReference() {
+template<typename IterType, class T, class SubType>
+GPU_LAReference<IterType, T, SubType>::~GPU_LAReference() {
     if (m_Owned) {
         if (LAs != nullptr) {
             cudaFree(LAs);
@@ -142,9 +142,9 @@ GPU_LAReference<IterType, SubType>::~GPU_LAReference() {
     }
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class T, class SubType>
 __host__
-GPU_LAReference<IterType, SubType>::GPU_LAReference(const GPU_LAReference& other)
+GPU_LAReference<IterType, T, SubType>::GPU_LAReference(const GPU_LAReference& other)
     : UseAT{ other.UseAT },
     AT{ other.AT },
     LAStageCount{ other.LAStageCount },
@@ -157,9 +157,9 @@ GPU_LAReference<IterType, SubType>::GPU_LAReference(const GPU_LAReference& other
     NumLAStages{ other.NumLAStages } {
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class T, class SubType>
 CUDA_CRAP
-bool GPU_LAReference<IterType, SubType>::isLAStageInvalid(IterType LAIndex, HDRFloatComplex dc) const {
+bool GPU_LAReference<IterType, T, SubType>::isLAStageInvalid(IterType LAIndex, HDRFloatComplex dc) const {
     //return (dc.chebychevNorm().compareToBothPositiveReduced((LAs[LAIndex]).getLAThresholdC()) >= 0);
     const auto temp1 = LAs[LAIndex];
     const auto temp2 = temp1.getLAThresholdC();
@@ -169,22 +169,22 @@ bool GPU_LAReference<IterType, SubType>::isLAStageInvalid(IterType LAIndex, HDRF
     return finalres;
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class T, class SubType>
 CUDA_CRAP
-IterType GPU_LAReference<IterType, SubType>::getLAIndex(IterType CurrentLAStage) const {
+IterType GPU_LAReference<IterType, T, SubType>::getLAIndex(IterType CurrentLAStage) const {
     return LAStages[CurrentLAStage].LAIndex;
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class T, class SubType>
 CUDA_CRAP
-IterType GPU_LAReference<IterType, SubType>::getMacroItCount(IterType CurrentLAStage) const {
+IterType GPU_LAReference<IterType, T, SubType>::getMacroItCount(IterType CurrentLAStage) const {
     return LAStages[CurrentLAStage].MacroItCount;
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class T, class SubType>
 CUDA_CRAP
 GPU_LAstep<IterType, SubType>
-GPU_LAReference<IterType, SubType>::getLA(IterType LAIndex, HDRFloatComplex dz, /*HDRFloatComplex dc, */ IterType j, IterType iterations, IterType max_iterations) const {
+GPU_LAReference<IterType, T, SubType>::getLA(IterType LAIndex, HDRFloatComplex dz, /*HDRFloatComplex dc, */ IterType j, IterType iterations, IterType max_iterations) const {
 
     const IterType LAIndexj = LAIndex + j;
     const LAInfoI<IterType> &LAIj = LAs[LAIndexj].GetLAi();

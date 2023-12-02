@@ -23,25 +23,27 @@ class RefOrbitCalc;
 template<typename IterType, class T, CalcBad Bad>
 class PerturbationResults;
 
-template<typename IterType, class SubType>
+template<typename IterType, class T, class SubType>
 class GPU_LAReference;
 
-template<typename IterType, class SubType>
+template<typename IterType, class T, class SubType>
 class LAReference {
 private:
     using HDRFloat = ::HDRFloat<SubType>;
     using HDRFloatComplex = ::HDRFloatComplex<SubType>;
 
-    friend class GPU_LAReference<IterType, float>;
-    friend class GPU_LAReference<IterType, double>;
-    friend class GPU_LAReference<IterType, CudaDblflt<dblflt>>;
-    friend class GPU_LAReference<IterType, CudaDblflt<MattDblflt>>;
+    friend class GPU_LAReference<IterType, HDRFloatComplex, float>;
+    friend class GPU_LAReference<IterType, HDRFloatComplex, double>;
+    friend class GPU_LAReference<IterType, HDRFloatComplex, CudaDblflt<dblflt>>;
+    friend class GPU_LAReference<IterType, HDRFloatComplex, CudaDblflt<MattDblflt>>;
 
     // TODO this is overly broad -- many types don't need these friends
-    friend class LAReference<IterType, float>;
-    friend class LAReference<IterType, double>;
-    friend class LAReference<IterType, CudaDblflt<MattDblflt>>;
-    friend class LAReference<IterType, CudaDblflt<dblflt>>;
+    friend class LAReference<IterType, float, float>;
+    friend class LAReference<IterType, double, double>;
+    friend class LAReference<IterType, ::HDRFloat<float>, float>;
+    friend class LAReference<IterType, ::HDRFloat<double>, double>;
+    friend class LAReference<IterType, ::HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>>;
+    friend class LAReference<IterType, ::HDRFloat<CudaDblflt<dblflt>>, CudaDblflt<dblflt>>;
 
     static const int lowBound = 64;
     static const SubType log16;
@@ -54,8 +56,8 @@ public:
         isValid{} {
     }
 
-    template<class Other>
-    LAReference(const LAReference<IterType, Other>& other) {
+    template<class OtherT, class Other>
+    LAReference(const LAReference<IterType, OtherT, Other>& other) {
         UseAT = other.UseAT;
         AT = other.AT;
         LAStageCount = other.LAStageCount;

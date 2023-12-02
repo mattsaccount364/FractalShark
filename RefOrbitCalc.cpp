@@ -1980,7 +1980,7 @@ bool RefOrbitCalc::IsPerturbationResultUsefulHere(size_t i) {
 }
 
 template<
-    typename IterType, 
+    typename IterType,
     class T,
     class SubType,
     CalcBad Bad,
@@ -2018,7 +2018,7 @@ PerturbationResults<IterType, ConvertTType, Bad>* RefOrbitCalc::GetAndCreateUsef
         if (added) {
             ::MessageBox(NULL, L"Why didn't this work! :(", L"", MB_OK);
         }
-        std::vector<std::unique_ptr<PerturbationResults<IterType, T, Bad>>> &cur_array =
+        std::vector<std::unique_ptr<PerturbationResults<IterType, T, Bad>>>& cur_array =
             GetPerturbationResults<IterType, T, Bad>();
         AddPerturbationReferencePoint<IterType, T, SubType, BenchmarkMode::Disable>();
         added = true;
@@ -2027,11 +2027,11 @@ PerturbationResults<IterType, ConvertTType, Bad>* RefOrbitCalc::GetAndCreateUsef
     }
 
     if constexpr (std::is_same<T, HDRFloat<float>>::value ||
-                  std::is_same<T, HDRFloat<double>>::value) {
+        std::is_same<T, HDRFloat<double>>::value) {
         if constexpr (Ex == Extras::IncludeLAv2) {
             static_assert(Bad == CalcBad::Disable, "!");
             if (results->LaReference == nullptr) {
-                results->LaReference = std::make_unique<LAReference<IterType, SubType>>();
+                results->LaReference = std::make_unique<LAReference<IterType, T, SubType>>();
 
                 // TODO the presumption here is results size fits in the target IterType size
                 results->LaReference->GenerateApproximationData(
@@ -2123,6 +2123,20 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults<
 
 ///////////
 
+template PerturbationResults<uint32_t, double, CalcBad::Disable>*
+RefOrbitCalc::GetAndCreateUsefulPerturbationResults<
+    uint32_t,
+    double,
+    double,
+    CalcBad::Disable,
+    RefOrbitCalc::Extras::IncludeLAv2>();
+template PerturbationResults<uint32_t, float, CalcBad::Disable>*
+RefOrbitCalc::GetAndCreateUsefulPerturbationResults<
+    uint32_t,
+    float,
+    float,
+    CalcBad::Disable,
+    RefOrbitCalc::Extras::IncludeLAv2>();
 template PerturbationResults<uint32_t, HDRFloat<double>, CalcBad::Disable>*
 RefOrbitCalc::GetAndCreateUsefulPerturbationResults<
     uint32_t,
@@ -2206,6 +2220,20 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults<
 
 ///////////
 
+template PerturbationResults<uint64_t, double, CalcBad::Disable>*
+RefOrbitCalc::GetAndCreateUsefulPerturbationResults<
+    uint64_t,
+    double,
+    double,
+    CalcBad::Disable,
+    RefOrbitCalc::Extras::IncludeLAv2>();
+template PerturbationResults<uint64_t, float, CalcBad::Disable>*
+RefOrbitCalc::GetAndCreateUsefulPerturbationResults<
+    uint64_t,
+    float,
+    float,
+    CalcBad::Disable,
+    RefOrbitCalc::Extras::IncludeLAv2>();
 template PerturbationResults<uint64_t, HDRFloat<double>, CalcBad::Disable>*
 RefOrbitCalc::GetAndCreateUsefulPerturbationResults<
     uint64_t,

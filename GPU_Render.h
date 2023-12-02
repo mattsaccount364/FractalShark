@@ -140,7 +140,7 @@ public:
         MattPerturbResults<IterType, T1, Bad>* Perturb1,
         const void* OrigResults2,
         MattPerturbResults<IterType, T2, Bad>* Perturb2,
-        const LAReference<IterType, SubType>* LaReferenceHost);
+        const LAReference<IterType, T1, SubType>* LaReferenceHost);
 
     template<typename IterType>
     void ClearMemory();

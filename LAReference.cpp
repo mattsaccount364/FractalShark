@@ -5,17 +5,17 @@
 
 //#include <Windows.h>
 
-template<typename IterType, class SubType>
-const SubType LAReference<IterType, SubType>::log16 = (SubType)std::log(16);
+template<typename IterType, class T, class SubType>
+const SubType LAReference<IterType, T, SubType>::log16 = (SubType)std::log(16);
 
-template<typename IterType, class SubType>
-IterType LAReference<IterType, SubType>::LAsize() {
+template<typename IterType, class T, class SubType>
+IterType LAReference<IterType, T, SubType>::LAsize() {
     return (IterType)LAs.size();
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class T, class SubType>
 template<typename PerturbType>
-bool LAReference<IterType, SubType>::CreateLAFromOrbit(
+bool LAReference<IterType, T, SubType>::CreateLAFromOrbit(
     const PerturbationResults<IterType, PerturbType, CalcBad::Disable>& PerturbationResults,
     IterType maxRefIteration) {
 
@@ -164,9 +164,9 @@ bool LAReference<IterType, SubType>::CreateLAFromOrbit(
     return true;
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class T, class SubType>
 template<typename PerturbType>
-bool LAReference<IterType, SubType>::CreateLAFromOrbitMT(
+bool LAReference<IterType, T, SubType>::CreateLAFromOrbitMT(
     const PerturbationResults<IterType, PerturbType, CalcBad::Disable>& PerturbationResults,
     IterType maxRefIteration) {
 
@@ -444,9 +444,9 @@ bool LAReference<IterType, SubType>::CreateLAFromOrbitMT(
 }
 
 //#pragma optimize( "", off )
-template<typename IterType, class SubType>
+template<typename IterType, class T, class SubType>
 template<typename PerturbType>
-bool LAReference<IterType, SubType>::CreateNewLAStage(
+bool LAReference<IterType, T, SubType>::CreateNewLAStage(
     const PerturbationResults<IterType, PerturbType, CalcBad::Disable>& PerturbationResults,
     IterType maxRefIteration) {
 
@@ -633,9 +633,9 @@ bool LAReference<IterType, SubType>::CreateNewLAStage(
 }
 //#pragma optimize( "", on )
 
-template<typename IterType, class SubType>
+template<typename IterType, class T, class SubType>
 template<typename PerturbType>
-void LAReference<IterType, SubType>::GenerateApproximationData(
+void LAReference<IterType, T, SubType>::GenerateApproximationData(
     const PerturbationResults<IterType, PerturbType, CalcBad::Disable>& PerturbationResults,
     HDRFloat radius,
     IterType maxRefIteration) {
@@ -658,44 +658,44 @@ void LAReference<IterType, SubType>::GenerateApproximationData(
     isValid = true;
 }
 
-template void LAReference<uint32_t, float>::GenerateApproximationData<HDRFloat<float>>(
+template void LAReference<uint32_t, ::HDRFloat<float>, float>::GenerateApproximationData<HDRFloat<float>>(
     const PerturbationResults<uint32_t, ::HDRFloat<float>, CalcBad::Disable>& PerturbationResults,
     HDRFloat radius,
     uint32_t maxRefIteration);
-template void LAReference<uint32_t, float>::GenerateApproximationData<HDRFloat<double>>(
+template void LAReference<uint32_t, ::HDRFloat<float>, float>::GenerateApproximationData<HDRFloat<double>>(
     const PerturbationResults<uint32_t, ::HDRFloat<double>, CalcBad::Disable>& PerturbationResults,
     HDRFloat radius,
     uint32_t maxRefIteration);
 
-template void LAReference<uint64_t, float>::GenerateApproximationData<HDRFloat<float>>(
+template void LAReference<uint64_t, ::HDRFloat<float>, float>::GenerateApproximationData<HDRFloat<float>>(
     const PerturbationResults<uint64_t, ::HDRFloat<float>, CalcBad::Disable>& PerturbationResults,
     HDRFloat radius,
     uint64_t maxRefIteration);
-template void LAReference<uint64_t, float>::GenerateApproximationData<HDRFloat<double>>(
+template void LAReference<uint64_t, ::HDRFloat<float>, float>::GenerateApproximationData<HDRFloat<double>>(
     const PerturbationResults<uint64_t, ::HDRFloat<double>, CalcBad::Disable>& PerturbationResults,
     HDRFloat radius,
     uint64_t maxRefIteration);
 
-template void LAReference<uint32_t, double>::GenerateApproximationData<HDRFloat<float>>(
+template void LAReference<uint32_t, ::HDRFloat<double>, double>::GenerateApproximationData<HDRFloat<float>>(
     const PerturbationResults<uint32_t, ::HDRFloat<float>, CalcBad::Disable>& PerturbationResults,
     HDRFloat radius,
     uint32_t maxRefIteration);
-template void LAReference<uint32_t, double>::GenerateApproximationData<HDRFloat<double>>(
+template void LAReference<uint32_t, ::HDRFloat<double>, double>::GenerateApproximationData<HDRFloat<double>>(
     const PerturbationResults<uint32_t, ::HDRFloat<double>, CalcBad::Disable>& PerturbationResults,
     HDRFloat radius,
     uint32_t maxRefIteration);
 
-template void LAReference<uint64_t, double>::GenerateApproximationData<HDRFloat<float>>(
+template void LAReference<uint64_t, ::HDRFloat<double>, double>::GenerateApproximationData<HDRFloat<float>>(
     const PerturbationResults<uint64_t, ::HDRFloat<float>, CalcBad::Disable>& PerturbationResults,
     HDRFloat radius,
     uint64_t maxRefIteration);
-template void LAReference<uint64_t, double>::GenerateApproximationData<HDRFloat<double>>(
+template void LAReference<uint64_t, ::HDRFloat<double>, double>::GenerateApproximationData<HDRFloat<double>>(
     const PerturbationResults<uint64_t, ::HDRFloat<double>, CalcBad::Disable>& PerturbationResults,
     HDRFloat radius,
     uint64_t maxRefIteration);
 
-template<typename IterType, class SubType>
-void LAReference<IterType, SubType>::CreateATFromLA(HDRFloat radius) {
+template<typename IterType, class T, class SubType>
+void LAReference<IterType, T, SubType>::CreateATFromLA(HDRFloat radius) {
 
     HDRFloat SqrRadius = radius.square();
     SqrRadius.Reduce();
@@ -713,24 +713,24 @@ void LAReference<IterType, SubType>::CreateATFromLA(HDRFloat radius) {
     UseAT = false;
 }
 
-template<typename IterType, class SubType>
-bool LAReference<IterType, SubType>::isLAStageInvalid(IterType LAIndex, HDRFloatComplex dc) {
+template<typename IterType, class T, class SubType>
+bool LAReference<IterType, T, SubType>::isLAStageInvalid(IterType LAIndex, HDRFloatComplex dc) {
     return (dc.chebychevNorm().compareToBothPositiveReduced((LAs[LAIndex]).getLAThresholdC()) >= 0);
 }
 
-template<typename IterType, class SubType>
-IterType LAReference<IterType, SubType>::getLAIndex(IterType CurrentLAStage) {
+template<typename IterType, class T, class SubType>
+IterType LAReference<IterType, T, SubType>::getLAIndex(IterType CurrentLAStage) {
     return LAStages[CurrentLAStage].LAIndex;
 }
 
-template<typename IterType, class SubType>
-IterType LAReference<IterType, SubType>::getMacroItCount(IterType CurrentLAStage) {
+template<typename IterType, class T, class SubType>
+IterType LAReference<IterType, T, SubType>::getMacroItCount(IterType CurrentLAStage) {
     return LAStages[CurrentLAStage].MacroItCount;
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class T, class SubType>
 LAstep<IterType, SubType>
-LAReference<IterType, SubType>::getLA(
+LAReference<IterType, T, SubType>::getLA(
     IterType LAIndex,
     HDRFloatComplex dz,
     /*HDRFloatComplex dc, */ IterType j,
@@ -770,7 +770,7 @@ LAReference<IterType, SubType>::getLA(
 
 }
 
-template class LAReference<uint32_t, float>;
-template class LAReference<uint64_t, float>;
-template class LAReference<uint32_t, double>;
-template class LAReference<uint64_t, double>;
+template class LAReference<uint32_t, HDRFloat<float>, float>;
+template class LAReference<uint64_t, HDRFloat<float>, float>;
+template class LAReference<uint32_t, HDRFloat<double>, double>;
+template class LAReference<uint64_t, HDRFloat<double>, double>;

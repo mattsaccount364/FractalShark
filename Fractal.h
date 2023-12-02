@@ -33,7 +33,7 @@
 #include <string>
 #include <deque>
 
-template<typename IterType, class SubType>
+template<typename IterType, class T, class SubType>
 class LAReference;
 
 class Fractal

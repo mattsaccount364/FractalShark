@@ -31,7 +31,7 @@ public:
     std::vector<HighPrecision> ReuseX;
     std::vector<HighPrecision> ReuseY;
 
-    std::unique_ptr<LAReference<IterType, SubType>> LaReference;
+    std::unique_ptr<LAReference<IterType, T, SubType>> LaReference;
 
     template<class Other, CalcBad Bad = CalcBad::Disable>
     void Copy(const PerturbationResults<IterType, Other, Bad>& other) {
@@ -63,7 +63,7 @@ public:
         ReuseY = other.ReuseY;
 
         if (other.LaReference) {
-            LaReference = std::make_unique<LAReference<IterType, SubType>>(*other.LaReference);
+            LaReference = std::make_unique<LAReference<IterType, T, SubType>>(*other.LaReference);
         }
     }
 

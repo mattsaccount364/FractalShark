@@ -38,7 +38,7 @@ enum FractalSharkError : int32_t {
     Error9,
 };
 
-constexpr static bool Default = true;
+constexpr static bool Default = false;
 constexpr static bool ForceEnable = true;
 
 constexpr static bool EnableGpu1x32 = Default;
@@ -63,6 +63,12 @@ constexpr static bool EnableGpu1x64PerturbedBLA = Default;
 constexpr static bool EnableGpuHDRx32PerturbedBLA = Default;
 constexpr static bool EnableGpuHDRx64PerturbedBLA = Default;
 
+constexpr static bool EnableGpu1x32PerturbedLAv2 = ForceEnable;
+constexpr static bool EnableGpu1x32PerturbedLAv2PO = ForceEnable;
+constexpr static bool EnableGpu1x32PerturbedLAv2LAO = ForceEnable;
+constexpr static bool EnableGpu1x64PerturbedLAv2 = ForceEnable;
+constexpr static bool EnableGpu1x64PerturbedLAv2PO = ForceEnable;
+constexpr static bool EnableGpu1x64PerturbedLAv2LAO = ForceEnable;
 constexpr static bool EnableGpuHDRx32PerturbedLAv2 = ForceEnable;
 constexpr static bool EnableGpuHDRx32PerturbedLAv2PO = ForceEnable;
 constexpr static bool EnableGpuHDRx32PerturbedLAv2LAO = ForceEnable;
@@ -541,6 +547,11 @@ PerturbResultsCollection::PerturbResultsCollection() {
     m_Results2.Init();
 }
 
+PerturbResultsCollection::~PerturbResultsCollection() {
+    DeleteAllInternal(m_Results1);
+    DeleteAllInternal(m_Results2);
+}
+
 template<typename Type, CalcBad Bad>
 void PerturbResultsCollection::SetPtr32(const void* HostPtr, InternalResults& Results, MattPerturbSingleResults<uint32_t, Type, Bad>* ptr) {
     if (HostPtr == Results.m_CachedResults) {
@@ -642,7 +653,10 @@ void PerturbResultsCollection::SetPtr2(const void* HostPtr, MattPerturbSingleRes
 }
 
 template<typename Type>
-void PerturbResultsCollection::SetLaReferenceInternal32(const void* HostPtr, InternalResults& Results, GPU_LAReference<uint32_t, Type>* LaReference) {
+void PerturbResultsCollection::SetLaReferenceInternal32(
+    const void* HostPtr,
+    InternalResults& Results,
+    GPU_LAReference<uint32_t, HDRFloatComplex<Type>, Type>* LaReference) {
     if (HostPtr == Results.m_CachedLaReference) {
         return;
     }
@@ -664,7 +678,10 @@ void PerturbResultsCollection::SetLaReferenceInternal32(const void* HostPtr, Int
 }
 
 template<typename Type>
-void PerturbResultsCollection::SetLaReferenceInternal64(const void* HostPtr, InternalResults& Results, GPU_LAReference<uint64_t, Type>* LaReference) {
+void PerturbResultsCollection::SetLaReferenceInternal64(
+    const void* HostPtr,
+    InternalResults& Results,
+    GPU_LAReference<uint64_t, HDRFloatComplex<Type>, Type>* LaReference) {
     if (HostPtr == Results.m_CachedLaReference) {
         return;
     }
@@ -686,7 +703,10 @@ void PerturbResultsCollection::SetLaReferenceInternal64(const void* HostPtr, Int
 }
 
 template<typename IterType, typename Type>
-void PerturbResultsCollection::SetLaReferenceInternal(const void* HostPtr, InternalResults& Results, GPU_LAReference<IterType, Type>* LaReference) {
+void PerturbResultsCollection::SetLaReferenceInternal(
+    const void* HostPtr,
+    InternalResults& Results,
+    GPU_LAReference<IterType, HDRFloatComplex<Type>, Type>* LaReference) {
     if constexpr (std::is_same<IterType, uint32_t>::value) {
         SetLaReferenceInternal32<Type>(HostPtr, Results, LaReference);
     }
@@ -696,13 +716,30 @@ void PerturbResultsCollection::SetLaReferenceInternal(const void* HostPtr, Inter
 }
 
 template<typename IterType, typename Type>
-void PerturbResultsCollection::SetLaReference1(const void* HostPtr, GPU_LAReference<IterType, Type>* LaReference) {
+void PerturbResultsCollection::SetLaReference1(
+    const void* HostPtr,
+    GPU_LAReference<IterType, HDRFloatComplex<Type>, Type>* LaReference) {
     SetLaReferenceInternal(HostPtr, m_Results1, LaReference);
 }
 
 template<typename Type, CalcBad Bad>
 MattPerturbSingleResults<uint32_t, Type, Bad>* PerturbResultsCollection::GetPtrInternal32(InternalResults& Results) {
-    if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
+    if constexpr (std::is_same<Type, float>::value) {
+        if constexpr (Bad == CalcBad::Disable) {
+            return Results.m_Results32FloatDisable;
+        }
+        else {
+            return Results.m_Results32FloatEnable;
+        }
+    }
+    else if constexpr (std::is_same<Type, double>::value) {
+        if constexpr (Bad == CalcBad::Disable) {
+            return Results.m_Results32DoubleDisable;
+        }
+        else {
+            return Results.m_Results32DoubleEnable;
+        }
+    } else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
         if constexpr (Bad == CalcBad::Disable) {
             return Results.m_Results32HdrFloatDisable;
         }
@@ -730,7 +767,22 @@ MattPerturbSingleResults<uint32_t, Type, Bad>* PerturbResultsCollection::GetPtrI
 
 template<typename Type, CalcBad Bad>
 MattPerturbSingleResults<uint64_t, Type, Bad>* PerturbResultsCollection::GetPtrInternal64(InternalResults& Results) {
-    if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
+    if constexpr (std::is_same<Type, float>::value) {
+        if constexpr (Bad == CalcBad::Disable) {
+            return Results.m_Results64FloatDisable;
+        }
+        else {
+            return Results.m_Results64FloatEnable;
+        }
+    }
+    else if constexpr (std::is_same<Type, double>::value) {
+        if constexpr (Bad == CalcBad::Disable) {
+            return Results.m_Results64DoubleDisable;
+        }
+        else {
+            return Results.m_Results64DoubleEnable;
+        }
+    } else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
         if constexpr (Bad == CalcBad::Disable) {
             return Results.m_Results64HdrFloatDisable;
         }
@@ -767,7 +819,7 @@ MattPerturbSingleResults<IterType, Type, Bad>* PerturbResultsCollection::GetPtrI
 }
 
 template<typename Type>
-GPU_LAReference<uint32_t, Type>* PerturbResultsCollection::GetLaReferenceInternal32(InternalResults& Results) {
+GPU_LAReference<uint32_t, HDRFloatComplex<Type>, Type>* PerturbResultsCollection::GetLaReferenceInternal32(InternalResults& Results) {
     if constexpr (std::is_same<Type, float>::value) {
         return Results.m_LaReference32HdrFloat;
     }
@@ -780,7 +832,7 @@ GPU_LAReference<uint32_t, Type>* PerturbResultsCollection::GetLaReferenceInterna
 }
 
 template<typename Type>
-GPU_LAReference<uint64_t, Type>* PerturbResultsCollection::GetLaReferenceInternal64(InternalResults& Results) {
+GPU_LAReference<uint64_t, HDRFloatComplex<Type>, Type>* PerturbResultsCollection::GetLaReferenceInternal64(InternalResults& Results) {
     if constexpr (std::is_same<Type, float>::value) {
         return Results.m_LaReference64HdrFloat;
     }
@@ -793,7 +845,7 @@ GPU_LAReference<uint64_t, Type>* PerturbResultsCollection::GetLaReferenceInterna
 }
 
 template<typename IterType, typename Type>
-GPU_LAReference<IterType, Type>* PerturbResultsCollection::GetLaReferenceInternal(InternalResults& Results) {
+GPU_LAReference<IterType, HDRFloatComplex<Type>, Type>* PerturbResultsCollection::GetLaReferenceInternal(InternalResults& Results) {
     if constexpr (std::is_same<IterType, uint32_t>::value) {
         return GetLaReferenceInternal32<Type>(Results);
     }
@@ -829,12 +881,12 @@ const void* PerturbResultsCollection::GetHostLaPtr2() const {
 }
 
 template<typename IterType, typename Type>
-GPU_LAReference<IterType, Type>* PerturbResultsCollection::GetLaReference1() {
+GPU_LAReference<IterType, HDRFloatComplex<Type>, Type>* PerturbResultsCollection::GetLaReference1() {
     return GetLaReferenceInternal<IterType, Type>(m_Results1);
 }
 
 template<typename IterType, typename Type>
-GPU_LAReference<IterType, Type>* PerturbResultsCollection::GetLaReference2() {
+GPU_LAReference<IterType, HDRFloatComplex<Type>, Type>* PerturbResultsCollection::GetLaReference2() {
     return GetLaReferenceInternal<IterType, Type>(m_Results2);
 }
 
@@ -1844,7 +1896,7 @@ antialiasing_kernel (
     OutputColorMatrix.aa_colors[color_idx].a = 65535;
 }
 
-template<typename IterType, class SubType, LAv2Mode Mode>
+template<typename IterType, class T, class SubType, LAv2Mode Mode>
 __global__
 void
 //__launch_bounds__(NB_THREADS_W * NB_THREADS_H, 2)
@@ -1852,20 +1904,18 @@ mandel_1xHDR_float_perturb_lav2(
     IterType *OutputIterMatrix,
     AntialiasedColors OutputColorMatrix,
     MattPerturbSingleResults<IterType, HDRFloat<SubType>> Perturb,
-    GPU_LAReference<IterType, SubType> LaReference, // "copy"
+    GPU_LAReference<IterType, HDRFloatComplex<SubType>, SubType> LaReference, // "copy"
     int width,
     int height,
     int antialiasing,
-    const HDRFloat<SubType> cx,
-    const HDRFloat<SubType> cy,
-    const HDRFloat<SubType> dx,
-    const HDRFloat<SubType> dy,
-    const HDRFloat<SubType> centerX,
-    const HDRFloat<SubType> centerY,
+    const T cx,
+    const T cy,
+    const T dx,
+    const T dy,
+    const T centerX,
+    const T centerY,
     IterType n_iterations)
 {
-    using HDRFloatType = HDRFloat<SubType>;
-
     const int X = blockIdx.x * blockDim.x + threadIdx.x;
     const int Y = blockIdx.y * blockDim.y + threadIdx.y;
 
@@ -1879,22 +1929,23 @@ mandel_1xHDR_float_perturb_lav2(
 
     IterType iter = 0;
     IterType RefIteration = 0;
-    const HDRFloatType DeltaReal = dx * HDRFloatType(X) - centerX;
-    const HDRFloatType DeltaImaginary = -dy * HDRFloatType(Y) - centerY;
+    const T DeltaReal = dx * T(X) - centerX;
+    const T DeltaImaginary = -dy * T(Y) - centerY;
 
-    const HDRFloatType DeltaSub0X = DeltaReal;
-    const HDRFloatType DeltaSub0Y = DeltaImaginary;
-    HDRFloatType DeltaSubNX = HDRFloatType(0.0f);
-    HDRFloatType DeltaSubNY = HDRFloatType(0.0f);
+    const T DeltaSub0X = DeltaReal;
+    const T DeltaSub0Y = DeltaImaginary;
+    T DeltaSubNX = T(0.0f);
+    T DeltaSubNY = T(0.0f);
 
-    using TComplex = HDRFloatComplex<SubType>;
+    static constexpr bool ConditionalResult = std::is_same<T, float>::value || std::is_same<T, double>::value;
+    using TComplex = typename std::conditional<ConditionalResult, std::complex<SubType>, HDRFloatComplex<SubType>>::type;
 
     ////////////
     TComplex DeltaSub0;
     TComplex DeltaSubN;
 
     DeltaSub0 = { DeltaReal, DeltaImaginary };
-    DeltaSubN = { HDRFloatType(0), HDRFloatType(0) };
+    DeltaSubN = { T(0), T(0) };
 
     if constexpr (Mode == LAv2Mode::Full || Mode == LAv2Mode::LAO) {
         if (LaReference.isValid && LaReference.UseAT && LaReference.AT.isValid(DeltaSub0)) {
@@ -1963,8 +2014,8 @@ mandel_1xHDR_float_perturb_lav2(
 
         auto perturbLoop = [&](IterType maxIterations) {
             for (;;) {
-                const HDRFloatType DeltaSubNXOrig{ DeltaSubNX };
-                const HDRFloatType DeltaSubNYOrig{ DeltaSubNY };
+                const T DeltaSubNXOrig{ DeltaSubNX };
+                const T DeltaSubNYOrig{ DeltaSubNY };
 
                 const auto tempMulX2{ Perturb.iters[RefIteration].x.multiply2() };
                 const auto tempMulY2{ Perturb.iters[RefIteration].y.multiply2() };
@@ -1974,8 +2025,8 @@ mandel_1xHDR_float_perturb_lav2(
                 const auto tempSum1{ tempMulY2 + DeltaSubNYOrig };
                 const auto tempSum2{ tempMulX2 + DeltaSubNXOrig };
 
-                if constexpr (std::is_same<HDRFloatType, HDRFloat<CudaDblflt<dblflt>>>::value) {
-                    HDRFloatType::custom_perturb3(
+                if constexpr (std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value) {
+                    T::custom_perturb3(
                         DeltaSubNX,
                         DeltaSubNY,
                         DeltaSubNXOrig,
@@ -1986,7 +2037,7 @@ mandel_1xHDR_float_perturb_lav2(
                         DeltaSub0Y);
                 }
                 else {
-                    HDRFloatType::custom_perturb2(
+                    T::custom_perturb2(
                         DeltaSubNX,
                         DeltaSubNY,
                         DeltaSubNXOrig,
@@ -2001,11 +2052,11 @@ mandel_1xHDR_float_perturb_lav2(
                 const auto tempVal1X{ Perturb.iters[RefIteration].x };
                 const auto tempVal1Y{ Perturb.iters[RefIteration].y };
 
-                const HDRFloatType tempZX{ tempVal1X + DeltaSubNX };
-                const HDRFloatType tempZY{ tempVal1Y + DeltaSubNY };
-                const HDRFloatType normSquared{ HdrReduce(tempZX.square() + tempZY.square()) };
+                const T tempZX{ tempVal1X + DeltaSubNX };
+                const T tempZY{ tempVal1Y + DeltaSubNY };
+                const T normSquared{ HdrReduce(tempZX.square() + tempZY.square()) };
 
-                if (HdrCompareToBothPositiveReducedLT<HDRFloatType, 256>(normSquared) && iter < maxIterations) {
+                if (HdrCompareToBothPositiveReducedLT<T, 256>(normSquared) && iter < maxIterations) {
                     const auto DeltaNormSquared{ HdrReduce(DeltaSubNX.square() + DeltaSubNY.square()) };
 
                     if (HdrCompareToBothPositiveReducedLT(normSquared, DeltaNormSquared) ||
@@ -3814,7 +3865,7 @@ uint32_t GPURenderer::InitializePerturb(
     MattPerturbResults<IterType, T1, Bad>* Perturb1,
     const void* OrigResults2,
     MattPerturbResults<IterType, T2, Bad>* Perturb2,
-    const LAReference<IterType, SubType>* LaReferenceHost)
+    const LAReference<IterType, T1, SubType>* LaReferenceHost)
 {
     if (OrigResults1 != m_PerturbResults.GetHostPtr1() ||
         OrigResults2 != m_PerturbResults.GetHostPtr2() ||
@@ -3855,7 +3906,7 @@ uint32_t GPURenderer::InitializePerturb(
     }
 
     if (LaReferenceHost != m_PerturbResults.GetHostLaPtr1()) {
-        auto* LaReferenceCuda = new GPU_LAReference<IterType, SubType>{ *LaReferenceHost };
+        auto* LaReferenceCuda = new GPU_LAReference<IterType, HDRFloatComplex<SubType>, SubType>{ *LaReferenceHost };
         auto result = LaReferenceCuda->CheckValid();
         if (result != 0) {
             ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes);
@@ -3869,48 +3920,76 @@ uint32_t GPURenderer::InitializePerturb(
 }
 
 template
+uint32_t GPURenderer::InitializePerturb<uint32_t, float, float, CalcBad::Disable, float>(
+    const void* OrigResults1,
+    MattPerturbResults<uint32_t, float, CalcBad::Disable>* Perturb1,
+    const void* OrigResults2,
+    MattPerturbResults<uint32_t, float, CalcBad::Disable>* Perturb2,
+    const LAReference<uint32_t, float, float>* LaReferenceHost);
+template
+uint32_t GPURenderer::InitializePerturb<uint32_t, double, double, CalcBad::Disable, double>(
+    const void* OrigResults1,
+    MattPerturbResults<uint32_t, double, CalcBad::Disable>* Perturb1,
+    const void* OrigResults2,
+    MattPerturbResults<uint32_t, double, CalcBad::Disable>* Perturb2,
+    const LAReference<uint32_t, double, double>* LaReferenceHost);
+template
 uint32_t GPURenderer::InitializePerturb<uint32_t, class HDRFloat<float>, float, CalcBad::Disable, HDRFloat<float>>(
     const void* OrigResults1,
     MattPerturbResults<uint32_t, HDRFloat<float>, CalcBad::Disable>* Perturb1,
     const void* OrigResults2,
     MattPerturbResults<uint32_t, HDRFloat<float>, CalcBad::Disable>* Perturb2,
-    const LAReference<uint32_t, float>* LaReferenceHost);
+    const LAReference<uint32_t, HDRFloat<float>, float>* LaReferenceHost);
 template
 uint32_t GPURenderer::InitializePerturb<uint32_t, class HDRFloat<double>, double, CalcBad::Disable, HDRFloat<double>>(
     const void* OrigResults1,
     MattPerturbResults<uint32_t, HDRFloat<double>, CalcBad::Disable>* Perturb1,
     const void* OrigResults2,
     MattPerturbResults<uint32_t, HDRFloat<double>, CalcBad::Disable>* Perturb2,
-    const LAReference<uint32_t, double>* LaReferenceHost);
+    const LAReference<uint32_t, HDRFloat<double>, double>* LaReferenceHost);
 template
 uint32_t GPURenderer::InitializePerturb<uint32_t, class HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, CalcBad::Disable, HDRFloat<CudaDblflt<MattDblflt>>>(
     const void* OrigResults1,
     MattPerturbResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CalcBad::Disable>* Perturb1,
     const void* OrigResults2,
     MattPerturbResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CalcBad::Disable>* Perturb2,
-    const LAReference<uint32_t, CudaDblflt<MattDblflt>>* LaReferenceHost);
+    const LAReference<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>>* LaReferenceHost);
 
+template
+uint32_t GPURenderer::InitializePerturb<uint64_t, float, float, CalcBad::Disable, float>(
+    const void* OrigResults1,
+    MattPerturbResults<uint64_t, float, CalcBad::Disable>* Perturb1,
+    const void* OrigResults2,
+    MattPerturbResults<uint64_t, float, CalcBad::Disable>* Perturb2,
+    const LAReference<uint64_t, float, float>* LaReferenceHost);
+template
+uint32_t GPURenderer::InitializePerturb<uint64_t, double, double, CalcBad::Disable, double>(
+    const void* OrigResults1,
+    MattPerturbResults<uint64_t, double, CalcBad::Disable>* Perturb1,
+    const void* OrigResults2,
+    MattPerturbResults<uint64_t, double, CalcBad::Disable>* Perturb2,
+    const LAReference<uint64_t, double, double>* LaReferenceHost);
 template
 uint32_t GPURenderer::InitializePerturb<uint64_t, class HDRFloat<float>, float, CalcBad::Disable, HDRFloat<float>>(
     const void* OrigResults1,
     MattPerturbResults<uint64_t, HDRFloat<float>, CalcBad::Disable>* Perturb1,
     const void* OrigResults2,
     MattPerturbResults<uint64_t, HDRFloat<float>, CalcBad::Disable>* Perturb2,
-    const LAReference<uint64_t, float>* LaReferenceHost);
+    const LAReference<uint64_t, HDRFloat<float>, float>* LaReferenceHost);
 template
 uint32_t GPURenderer::InitializePerturb<uint64_t, class HDRFloat<double>, double, CalcBad::Disable, HDRFloat<double>>(
     const void* OrigResults1,
     MattPerturbResults<uint64_t, HDRFloat<double>, CalcBad::Disable>* Perturb1,
     const void* OrigResults2,
     MattPerturbResults<uint64_t, HDRFloat<double>, CalcBad::Disable>* Perturb2,
-    const LAReference<uint64_t, double>* LaReferenceHost);
+    const LAReference<uint64_t, HDRFloat<double>, double>* LaReferenceHost);
 template
 uint32_t GPURenderer::InitializePerturb<uint64_t, class HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, CalcBad::Disable, HDRFloat<CudaDblflt<MattDblflt>>>(
     const void* OrigResults1,
     MattPerturbResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CalcBad::Disable>* Perturb1,
     const void* OrigResults2,
     MattPerturbResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CalcBad::Disable>* Perturb2,
-    const LAReference<uint64_t, CudaDblflt<MattDblflt>>* LaReferenceHost);
+    const LAReference<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>>* LaReferenceHost);
 
 bool GPURenderer::MemoryInitialized() const {
     if (OutputIterMatrix == nullptr) {
@@ -4611,7 +4690,48 @@ uint32_t GPURenderer::RenderPerturbLAv2(
         return FractalSharkError::Error7;
     }
 
-    if ((algorithm == RenderAlgorithm::GpuHDRx32PerturbedLAv2) ||
+    if ((algorithm == RenderAlgorithm::Gpu1x32PerturbedLAv2) ||
+        (algorithm == RenderAlgorithm::Gpu1x32PerturbedLAv2PO) ||
+        (algorithm == RenderAlgorithm::Gpu1x32PerturbedLAv2LAO)) {
+        //if constexpr (
+        //    (EnableGpu1x32PerturbedLAv2 || EnableGpu1x32PerturbedLAv2PO || EnableGpu1x32PerturbedLAv2LAO)
+        //    && std::is_same<float, T>::value) {
+        //    // hdrflt
+        //    mandel_1xHDR_float_perturb_lav2<IterType, float, float, Mode> << <nb_blocks, threads_per_block >> > (
+        //        static_cast<IterType*>(OutputIterMatrix),
+        //        OutputColorMatrix,
+        //        *cudaResults, *laReferenceCuda,
+        //        m_Width, m_Height, m_Antialiasing, cx, cy, dx, dy,
+        //        centerX, centerY,
+        //        n_iterations);
+
+        //    result = RunAntialiasing(n_iterations);
+        //    if (!result) {
+        //        result = ExtractItersAndColors(iter_buffer, color_buffer);
+        //    }
+        //}
+    } else if ((algorithm == RenderAlgorithm::Gpu1x64PerturbedLAv2) ||
+        (algorithm == RenderAlgorithm::Gpu1x64PerturbedLAv2PO) ||
+        (algorithm == RenderAlgorithm::Gpu1x64PerturbedLAv2LAO)) {
+        //if constexpr (
+        //    (EnableGpu1x64PerturbedLAv2 || EnableGpu1x64PerturbedLAv2PO || EnableGpu1x64PerturbedLAv2LAO)
+        //    && std::is_same<double, T>::value) {
+        //    // hdrflt
+        //    mandel_1xHDR_float_perturb_lav2<IterType, double, Mode> << <nb_blocks, threads_per_block >> > (
+        //        static_cast<IterType*>(OutputIterMatrix),
+        //        OutputColorMatrix,
+        //        *cudaResults, *laReferenceCuda,
+        //        m_Width, m_Height, m_Antialiasing, cx, cy, dx, dy,
+        //        centerX, centerY,
+        //        n_iterations);
+
+        //    result = RunAntialiasing(n_iterations);
+        //    if (!result) {
+        //        result = ExtractItersAndColors(iter_buffer, color_buffer);
+        //    }
+        //}
+    }
+    else if ((algorithm == RenderAlgorithm::GpuHDRx32PerturbedLAv2) ||
         (algorithm == RenderAlgorithm::GpuHDRx32PerturbedLAv2PO) ||
         (algorithm == RenderAlgorithm::GpuHDRx32PerturbedLAv2LAO)) {
         if constexpr (
@@ -4620,7 +4740,7 @@ uint32_t GPURenderer::RenderPerturbLAv2(
             mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
 
             // hdrflt
-            mandel_1xHDR_float_perturb_lav2<IterType, float, Mode> << <nb_blocks, threads_per_block >> > (
+            mandel_1xHDR_float_perturb_lav2<IterType, HDRFloat<float>, float, Mode> << <nb_blocks, threads_per_block >> > (
                 static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
                 *cudaResults, *laReferenceCuda,
@@ -4642,7 +4762,7 @@ uint32_t GPURenderer::RenderPerturbLAv2(
             && std::is_same<HDRFloat<double>, T>::value) {
             mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
 
-            mandel_1xHDR_float_perturb_lav2<IterType, double, Mode> << <nb_blocks, threads_per_block >> > (
+            mandel_1xHDR_float_perturb_lav2<IterType, HDRFloat<double>, double, Mode> << <nb_blocks, threads_per_block >> > (
                 static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
                 *cudaResults, *laReferenceCuda,
@@ -4672,7 +4792,7 @@ uint32_t GPURenderer::RenderPerturbLAv2(
             mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
 
             // hdrflt
-            mandel_1xHDR_float_perturb_lav2<IterType, CudaDblflt<dblflt>, Mode> << <nb_blocks, threads_per_block >> > (
+            mandel_1xHDR_float_perturb_lav2<IterType, HDRFloat<CudaDblflt<dblflt>>, CudaDblflt<dblflt>, Mode> << <nb_blocks, threads_per_block >> > (
                 static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
                 *cudaResults, *laReferenceCuda,
@@ -4691,6 +4811,85 @@ uint32_t GPURenderer::RenderPerturbLAv2(
 }
 
 ////////////////////////////////////////////////////////
+
+template
+uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, float, float, LAv2Mode::Full>(
+    RenderAlgorithm algorithm,
+    uint32_t* iter_buffer,
+    Color16* color_buffer,
+    float cx,
+    float cy,
+    float dx,
+    float dy,
+    float centerX,
+    float centerY,
+    uint32_t n_iterations);
+
+template
+uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, float, float, LAv2Mode::PO>(
+    RenderAlgorithm algorithm,
+    uint32_t* iter_buffer,
+    Color16* color_buffer,
+    float cx,
+    float cy,
+    float dx,
+    float dy,
+    float centerX,
+    float centerY,
+    uint32_t n_iterations);
+
+template
+uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, float, float, LAv2Mode::LAO>(
+    RenderAlgorithm algorithm,
+    uint32_t* iter_buffer,
+    Color16* color_buffer,
+    float cx,
+    float cy,
+    float dx,
+    float dy,
+    float centerX,
+    float centerY,
+    uint32_t n_iterations);
+
+template
+uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, double, double, LAv2Mode::Full>(
+    RenderAlgorithm algorithm,
+    uint32_t* iter_buffer,
+    Color16* color_buffer,
+    double cx,
+    double cy,
+    double dx,
+    double dy,
+    double centerX,
+    double centerY,
+    uint32_t n_iterations);
+
+template
+uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, double, double, LAv2Mode::PO>(
+    RenderAlgorithm algorithm,
+    uint32_t* iter_buffer,
+    Color16* color_buffer,
+    double cx,
+    double cy,
+    double dx,
+    double dy,
+    double centerX,
+    double centerY,
+    uint32_t n_iterations);
+
+template
+uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, double, double, LAv2Mode::LAO>(
+    RenderAlgorithm algorithm,
+    uint32_t* iter_buffer,
+    Color16* color_buffer,
+    double cx,
+    double cy,
+    double dx,
+    double dy,
+    double centerX,
+    double centerY,
+    uint32_t n_iterations);
+
 template
 uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, HDRFloat<float>, float, LAv2Mode::Full>(
     RenderAlgorithm algorithm,
@@ -4809,6 +5008,85 @@ uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, HDRFloat<double>, double, LAv2
     uint32_t n_iterations);
 
 ////////////////////////////////////////////////////////
+
+template
+uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, float, float, LAv2Mode::Full>(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    float cx,
+    float cy,
+    float dx,
+    float dy,
+    float centerX,
+    float centerY,
+    uint64_t n_iterations);
+
+template
+uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, float, float, LAv2Mode::PO>(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    float cx,
+    float cy,
+    float dx,
+    float dy,
+    float centerX,
+    float centerY,
+    uint64_t n_iterations);
+
+template
+uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, float, float, LAv2Mode::LAO>(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    float cx,
+    float cy,
+    float dx,
+    float dy,
+    float centerX,
+    float centerY,
+    uint64_t n_iterations);
+
+template
+uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, double, double, LAv2Mode::Full>(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    double cx,
+    double cy,
+    double dx,
+    double dy,
+    double centerX,
+    double centerY,
+    uint64_t n_iterations);
+
+template
+uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, double, double, LAv2Mode::PO>(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    double cx,
+    double cy,
+    double dx,
+    double dy,
+    double centerX,
+    double centerY,
+    uint64_t n_iterations);
+
+template
+uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, double, double, LAv2Mode::LAO>(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    double cx,
+    double cy,
+    double dx,
+    double dy,
+    double centerX,
+    double centerY,
+    uint64_t n_iterations);
+
 template
 uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, HDRFloat<float>, float, LAv2Mode::Full>(
     RenderAlgorithm algorithm,

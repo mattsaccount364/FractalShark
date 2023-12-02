@@ -6,17 +6,24 @@
 //import fractalzoomer.core.GenericComplex;
 //import fractalzoomer.core.MantExpComplex;
 
-template<typename IterType, class SubType>
+template<typename IterType, class T, class SubType>
 class ATResult {
 public:
-    using HDRFloatComplex = HDRFloatComplex<SubType>;
+    using FloatComplexT =
+        std::conditional<
+            std::is_same<T, ::HDRFloat<float>>::value ||
+            std::is_same<T, ::HDRFloat<double>>::value ||
+            std::is_same<T, ::HDRFloat<CudaDblflt<MattDblflt>>>::value ||
+            std::is_same<T, ::HDRFloat<CudaDblflt<dblflt>>>::value,
+        ::HDRFloatComplex<SubType>,
+        ::FloatComplex<SubType>>::type;
 
     CUDA_CRAP_BOTH ATResult() {
     }
 
-    HDRFloatComplex dz;
-    HDRFloatComplex dzdc;
-    HDRFloatComplex dzdc2;
+    FloatComplexT dz;
+    FloatComplexT dzdc;
+    FloatComplexT dzdc2;
     IterType bla_iterations;
     IterType bla_steps;
 };

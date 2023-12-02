@@ -3286,7 +3286,7 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
                 DeltaSubN = { 0, 0 };
 
                 if (LaReference.isValid && LaReference.UseAT && LaReference.AT.isValid(DeltaSub0)) {
-                    ATResult<IterType, SubType> res;
+                    ATResult<IterType, T, SubType> res;
                     LaReference.AT.PerformAT(GetNumIterations<IterType>(), DeltaSub0, res);
                     BLA2SkippedIterations = res.bla_iterations;
                     DeltaSubN = res.dz;
@@ -3322,7 +3322,7 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
                     auto j = RefIteration;
 
                     while (iterations < GetNumIterations<IterType>()) {
-                        LAstep<IterType, SubType> las = LaReference.getLA(
+                        auto las = LaReference.getLA(
                             LAIndex,
                             DeltaSubN,
                             (IterType)j,

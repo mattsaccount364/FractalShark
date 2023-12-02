@@ -12,7 +12,7 @@
 #include "LAInfoDeep.h"
 #include "LAInfoI.h"
 
-template<typename IterType, class T>
+template<typename IterType, class HDRFloat, class SubType>
 class ATInfo;
 
 template<typename IterType>
@@ -26,16 +26,23 @@ class PerturbationResults;
 template<typename IterType, class T, class SubType>
 class GPU_LAReference;
 
-template<typename IterType, class T, class SubType>
+template<typename IterType, class Float, class SubType>
 class LAReference {
 private:
-    using HDRFloat = ::HDRFloat<SubType>;
-    using HDRFloatComplex = ::HDRFloatComplex<SubType>;
+    static constexpr bool IsHDR =
+        std::is_same<Float, HDRFloat<float>>::value ||
+        std::is_same<Float, HDRFloat<double>>::value ||
+        std::is_same<Float, HDRFloat<CudaDblflt<MattDblflt>>>::value;
+    using FloatComplexT =
+        std::conditional<
+        IsHDR,
+        ::HDRFloatComplex<SubType>,
+        ::FloatComplex<SubType>>::type;
 
-    friend class GPU_LAReference<IterType, HDRFloatComplex, float>;
-    friend class GPU_LAReference<IterType, HDRFloatComplex, double>;
-    friend class GPU_LAReference<IterType, HDRFloatComplex, CudaDblflt<dblflt>>;
-    friend class GPU_LAReference<IterType, HDRFloatComplex, CudaDblflt<MattDblflt>>;
+    friend class GPU_LAReference<IterType, Float, float>;
+    friend class GPU_LAReference<IterType, Float, double>;
+    friend class GPU_LAReference<IterType, Float, CudaDblflt<dblflt>>;
+    friend class GPU_LAReference<IterType, Float, CudaDblflt<MattDblflt>>;
 
     // TODO this is overly broad -- many types don't need these friends
     friend class LAReference<IterType, float, float>;
@@ -74,7 +81,7 @@ public:
 
     bool UseAT;
 
-    ATInfo<IterType, SubType> AT;
+    ATInfo<IterType, Float, SubType> AT;
 
     IterType LAStageCount;
 
@@ -83,7 +90,7 @@ public:
 private:
     static constexpr int MaxLAStages = 1024;
     static constexpr int DEFAULT_SIZE = 10000;
-    std::vector<LAInfoDeep<IterType, SubType>> LAs;
+    std::vector<LAInfoDeep<IterType, Float, SubType>> LAs;
     std::vector<LAStageInfo<IterType>> LAStages;
 
     IterType LAsize();
@@ -104,19 +111,19 @@ public:
     template<typename PerturbType>
     void GenerateApproximationData(
         const PerturbationResults<IterType, PerturbType, CalcBad::Disable>& PerturbationResults,
-        HDRFloat radius,
+        Float radius,
         IterType maxRefIteration);
-    void CreateATFromLA(HDRFloat radius);
+    void CreateATFromLA(Float radius);
 
 public:
-    bool isLAStageInvalid(IterType LAIndex, HDRFloatComplex dc);
+    bool isLAStageInvalid(IterType LAIndex, FloatComplexT dc);
     IterType getLAIndex(IterType CurrentLAStage);
     IterType getMacroItCount(IterType CurrentLAStage);
 
-    LAstep<IterType, SubType>
+    LAstep<IterType, Float, SubType>
     getLA(IterType LAIndex,
-        HDRFloatComplex dz,
-        /*HDRFloatComplex dc, */IterType j,
+        FloatComplexT dz,
+        /*FloatComplexT dc, */IterType j,
         IterType iterations,
         IterType max_iterations);
 };

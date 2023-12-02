@@ -20,6 +20,15 @@ public:
         std::is_fundamental<T>::value,
         T>::type;
 
+    template<class LocalSubType>
+    using HDRFloatComplex =
+        std::conditional<
+            std::is_same<T, ::HDRFloat<float>>::value ||
+            std::is_same<T, ::HDRFloat<double>>::value ||
+            std::is_same<T, ::HDRFloat<CudaDblflt<MattDblflt>>>::value,
+        ::HDRFloatComplex<LocalSubType>,
+        ::FloatComplex<LocalSubType>>::type;
+
     HighPrecision hiX, hiY;
     T maxRadius;
     IterType MaxIterations;
@@ -33,7 +42,7 @@ public:
 
     std::unique_ptr<LAReference<IterType, T, SubType>> LaReference;
 
-    template<class Other, CalcBad Bad = CalcBad::Disable>
+    template<bool IncludeLA, class Other, CalcBad Bad = CalcBad::Disable>
     void Copy(const PerturbationResults<IterType, Other, Bad>& other) {
         clear();
 
@@ -62,8 +71,10 @@ public:
         ReuseX = other.ReuseX;
         ReuseY = other.ReuseY;
 
-        if (other.LaReference) {
-            LaReference = std::make_unique<LAReference<IterType, T, SubType>>(*other.LaReference);
+        if constexpr (IncludeLA) {
+            if (other.LaReference) {
+                LaReference = std::make_unique<LAReference<IterType, T, SubType>>(*other.LaReference);
+            }
         }
     }
 

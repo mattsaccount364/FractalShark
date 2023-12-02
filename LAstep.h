@@ -6,13 +6,13 @@
 
 #include "HDRFloatComplex.h"
 
-template<typename IterType, class T>
+template<typename IterType, class Float, class SubType>
 class LAInfoDeep;
 
-template<typename IterType, class T>
+template<typename IterType, class Float, class SubType>
 class GPU_LAInfoDeep;
 
-template<typename IterType, class SubType>
+template<typename IterType, class Float, class SubType>
 class LAstep {
 public:
     CUDA_CRAP LAstep() :
@@ -28,8 +28,15 @@ public:
     IterType nextStageLAindex;
 
 public:
-    using HDRFloatComplex = HDRFloatComplex<SubType>;
-    LAInfoDeep<IterType, SubType> *LAjdeep;
+    using HDRFloatComplex =
+        std::conditional<
+            std::is_same<Float, HDRFloat<float>>::value ||
+            std::is_same<Float, HDRFloat<double>>::value ||
+            std::is_same<Float, HDRFloat<MattDblflt>>::value,
+        ::HDRFloatComplex<SubType>,
+        ::FloatComplex<SubType>>::type;
+
+    LAInfoDeep<IterType, Float, SubType> *LAjdeep;
     HDRFloatComplex Refp1Deep;
     HDRFloatComplex newDzDeep;
 
@@ -42,27 +49,27 @@ public:
     CUDA_CRAP HDRFloatComplex getZ(HDRFloatComplex DeltaSubN);
 };
 
-template<typename IterType, class SubType>
+template<typename IterType, class Float, class SubType>
 CUDA_CRAP
-LAstep<IterType, SubType>::HDRFloatComplex LAstep<IterType, SubType>::Evaluate(HDRFloatComplex DeltaSub0) {
+LAstep<IterType, Float, SubType>::HDRFloatComplex LAstep<IterType, Float, SubType>::Evaluate(HDRFloatComplex DeltaSub0) {
     return LAjdeep->Evaluate(newDzDeep, DeltaSub0);
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class Float, class SubType>
 CUDA_CRAP
-LAstep<IterType, SubType>::HDRFloatComplex LAstep<IterType, SubType>::EvaluateDzdcDeep(HDRFloatComplex z, HDRFloatComplex dzdc) {
+LAstep<IterType, Float, SubType>::HDRFloatComplex LAstep<IterType, Float, SubType>::EvaluateDzdcDeep(HDRFloatComplex z, HDRFloatComplex dzdc) {
     return LAjdeep->EvaluateDzdc(z, dzdc);
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class Float, class SubType>
 CUDA_CRAP
-LAstep<IterType, SubType>::HDRFloatComplex LAstep<IterType, SubType>::EvaluateDzdc2Deep(HDRFloatComplex z, HDRFloatComplex dzdc2, HDRFloatComplex dzdc) {
+LAstep<IterType, Float, SubType>::HDRFloatComplex LAstep<IterType, Float, SubType>::EvaluateDzdc2Deep(HDRFloatComplex z, HDRFloatComplex dzdc2, HDRFloatComplex dzdc) {
     return LAjdeep->EvaluateDzdc2(z, dzdc2, dzdc);
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class Float, class SubType>
 CUDA_CRAP
-LAstep<IterType, SubType>::HDRFloatComplex LAstep<IterType, SubType>::getZ(HDRFloatComplex DeltaSubN) {
+LAstep<IterType, Float, SubType>::HDRFloatComplex LAstep<IterType, Float, SubType>::getZ(HDRFloatComplex DeltaSubN) {
     return Refp1Deep + DeltaSubN;
 }
 
@@ -71,7 +78,7 @@ LAstep<IterType, SubType>::HDRFloatComplex LAstep<IterType, SubType>::getZ(HDRFl
 ////////////////////////////////////////////////
 
 
-template<typename IterType, class SubType>
+template<typename IterType, class Float, class SubType>
 class GPU_LAstep {
 public:
     CUDA_CRAP GPU_LAstep() :
@@ -86,8 +93,15 @@ public:
     IterType step;
     IterType nextStageLAindex;
 
-    using HDRFloatComplex = HDRFloatComplex<SubType>;
-    const GPU_LAInfoDeep<IterType, SubType>* LAjdeep;
+    using HDRFloatComplex =
+        std::conditional<
+            std::is_same<Float, HDRFloat<float>>::value ||
+            std::is_same<Float, HDRFloat<double>>::value ||
+            std::is_same<Float, HDRFloat<CudaDblflt<MattDblflt>>>::value,
+        ::HDRFloatComplex<SubType>,
+        ::FloatComplex<SubType>>::type;
+
+    const GPU_LAInfoDeep<IterType, Float, SubType>* LAjdeep;
     HDRFloatComplex Refp1Deep;
     HDRFloatComplex newDzDeep;
 
@@ -100,26 +114,26 @@ public:
     CUDA_CRAP HDRFloatComplex getZ(HDRFloatComplex DeltaSubN) const;
 };
 
-template<typename IterType, class SubType>
+template<typename IterType, class Float, class SubType>
 CUDA_CRAP
-GPU_LAstep<IterType, SubType>::HDRFloatComplex GPU_LAstep<IterType, SubType>::Evaluate(HDRFloatComplex DeltaSub0) const {
+GPU_LAstep<IterType, Float, SubType>::HDRFloatComplex GPU_LAstep<IterType, Float, SubType>::Evaluate(HDRFloatComplex DeltaSub0) const {
     return LAjdeep->Evaluate(newDzDeep, DeltaSub0);
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class Float, class SubType>
 CUDA_CRAP
-GPU_LAstep<IterType, SubType>::HDRFloatComplex GPU_LAstep<IterType, SubType>::EvaluateDzdcDeep(HDRFloatComplex z, HDRFloatComplex dzdc) const {
+GPU_LAstep<IterType, Float, SubType>::HDRFloatComplex GPU_LAstep<IterType, Float, SubType>::EvaluateDzdcDeep(HDRFloatComplex z, HDRFloatComplex dzdc) const {
     return LAjdeep->EvaluateDzdc(z, dzdc);
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class Float, class SubType>
 CUDA_CRAP
-GPU_LAstep<IterType, SubType>::HDRFloatComplex GPU_LAstep<IterType, SubType>::EvaluateDzdc2Deep(HDRFloatComplex z, HDRFloatComplex dzdc2, HDRFloatComplex dzdc) const {
+GPU_LAstep<IterType, Float, SubType>::HDRFloatComplex GPU_LAstep<IterType, Float, SubType>::EvaluateDzdc2Deep(HDRFloatComplex z, HDRFloatComplex dzdc2, HDRFloatComplex dzdc) const {
     return LAjdeep->EvaluateDzdc2(z, dzdc2, dzdc);
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class Float, class SubType>
 CUDA_CRAP
-GPU_LAstep<IterType, SubType>::HDRFloatComplex GPU_LAstep<IterType, SubType>::getZ(HDRFloatComplex DeltaSubN) const {
+GPU_LAstep<IterType, Float, SubType>::HDRFloatComplex GPU_LAstep<IterType, Float, SubType>::getZ(HDRFloatComplex DeltaSubN) const {
     return Refp1Deep + DeltaSubN;
 }

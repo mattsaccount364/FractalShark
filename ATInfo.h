@@ -6,17 +6,24 @@
 #include "HDRFloatComplex.h"
 #include "ATResult.h"
 
-template<typename IterType, class SubType>
+template<typename IterType, class HDRFloat, class SubType>
 class ATInfo {
-    using HDRFloat = HDRFloat<SubType>;
-    using HDRFloatComplex = HDRFloatComplex<SubType>;
-
+    static constexpr bool IsHDR =
+        std::is_same<HDRFloat, ::HDRFloat<float>>::value ||
+        std::is_same<HDRFloat, ::HDRFloat<double>>::value ||
+        std::is_same<HDRFloat, ::HDRFloat<CudaDblflt<MattDblflt>>>::value ||
+        std::is_same<HDRFloat, ::HDRFloat<CudaDblflt<dblflt>>>::value;
+    using HDRFloatComplex =
+        std::conditional<
+        IsHDR,
+        ::HDRFloatComplex<SubType>,
+        ::FloatComplex<SubType>>::type;
 
 public:
     CUDA_CRAP ATInfo();
 
-    template<class SubType2>
-    CUDA_CRAP ATInfo(const ATInfo<IterType, SubType2>& other)
+    template<class T2, class SubType2>
+    CUDA_CRAP ATInfo(const ATInfo<IterType, T2, SubType2>& other)
         : StepLength(other.StepLength),
           ThresholdC(other.ThresholdC),
           SqrEscapeRadius(other.SqrEscapeRadius),
@@ -50,22 +57,31 @@ public:
         auto Four = HDRFloat(4.0f);
         HdrReduce(Four);
 
-        return
-            result.compareToBothPositiveReduced(RefCNormSqr) > 0 &&
-            SqrEscapeRadius.compareToBothPositiveReduced(Four) > 0;
+        if constexpr (IsHDR) {
+            return
+                result.compareToBothPositiveReduced(RefCNormSqr) > 0 &&
+                SqrEscapeRadius.compareToBothPositiveReduced(Four) > 0;
+        }
+        else {
+            return
+                result > RefCNormSqr && SqrEscapeRadius > 4;
+        }
     }
 
     CUDA_CRAP bool isValid(HDRFloatComplex DeltaSub0);
     CUDA_CRAP HDRFloatComplex getC(HDRFloatComplex dc);
     CUDA_CRAP HDRFloatComplex getDZ(HDRFloatComplex z);
 
-    CUDA_CRAP void PerformAT(IterType max_iterations, HDRFloatComplex DeltaSub0, ATResult<IterType, SubType> &result);
+    CUDA_CRAP void PerformAT(
+        IterType max_iterations,
+        HDRFloatComplex DeltaSub0,
+        ATResult<IterType, HDRFloat, SubType> &result);
 };
 
 
-template<typename IterType, class SubType>
+template<typename IterType, class HDRFloat, class SubType>
 CUDA_CRAP
-ATInfo<IterType, SubType>::ATInfo() :
+ATInfo<IterType, HDRFloat, SubType>::ATInfo() :
     StepLength{},
     ThresholdC{},
     SqrEscapeRadius{},
@@ -80,34 +96,34 @@ ATInfo<IterType, SubType>::ATInfo() :
     factor = HDRFloat(0x1.0p32);
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class HDRFloat, class SubType>
 CUDA_CRAP
-bool ATInfo<IterType, SubType>::isValid(HDRFloatComplex DeltaSub0) {
+bool ATInfo<IterType, HDRFloat, SubType>::isValid(HDRFloatComplex DeltaSub0) {
     return DeltaSub0.chebychevNorm().compareToBothPositiveReduced(ThresholdC) <= 0;
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class HDRFloat, class SubType>
 CUDA_CRAP
-ATInfo<IterType, SubType>::HDRFloatComplex ATInfo<IterType, SubType>::getC(HDRFloatComplex dc) {
+ATInfo<IterType, HDRFloat, SubType>::HDRFloatComplex ATInfo<IterType, HDRFloat, SubType>::getC(HDRFloatComplex dc) {
     HDRFloatComplex temp = dc * CCoeff + RefC;
     temp.Reduce();
     return temp;
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class HDRFloat, class SubType>
 CUDA_CRAP
-ATInfo<IterType, SubType>::HDRFloatComplex ATInfo<IterType, SubType>::getDZ(HDRFloatComplex z) {
+ATInfo<IterType, HDRFloat, SubType>::HDRFloatComplex ATInfo<IterType, HDRFloat, SubType>::getDZ(HDRFloatComplex z) {
     HDRFloatComplex temp = z * InvZCoeff;
     temp.Reduce();
     return temp;
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class HDRFloat, class SubType>
 CUDA_CRAP
-void ATInfo<IterType, SubType>::PerformAT(
+void ATInfo<IterType, HDRFloat, SubType>::PerformAT(
     IterType max_iterations,
     HDRFloatComplex DeltaSub0,
-    ATResult<IterType, SubType>& result) {
+    ATResult<IterType, HDRFloat, SubType>& result) {
     //int ATMaxIt = (max_iterations - 1) / StepLength + 1;
     HDRFloat nsq;
     const IterType ATMaxIt = max_iterations / StepLength;

@@ -652,11 +652,11 @@ void PerturbResultsCollection::SetPtr2(const void* HostPtr, MattPerturbSingleRes
     }
 }
 
-template<typename Type>
+template<typename Type, typename SubType>
 void PerturbResultsCollection::SetLaReferenceInternal32(
     const void* HostPtr,
     InternalResults& Results,
-    GPU_LAReference<uint32_t, HDRFloatComplex<Type>, Type>* LaReference) {
+    GPU_LAReference<uint32_t, Type, SubType>* LaReference) {
     if (HostPtr == Results.m_CachedLaReference) {
         return;
     }
@@ -664,24 +664,35 @@ void PerturbResultsCollection::SetLaReferenceInternal32(
     Results.m_CachedLaReference = HostPtr;
 
     if constexpr (std::is_same<Type, float>::value) {
+        delete Results.m_LaReference32Float;
+        Results.m_LaReference32Float = LaReference;
+    }
+    else if constexpr (std::is_same<Type, double>::value) {
+        delete Results.m_LaReference32Double;
+        Results.m_LaReference32Double = LaReference;
+    }
+    else if constexpr (std::is_same<Type, CudaDblflt<MattDblflt>>::value) {
+
+    }
+    else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
         delete Results.m_LaReference32HdrFloat;
         Results.m_LaReference32HdrFloat = LaReference;
     }
-    else if constexpr (std::is_same<Type, double>::value) {
+    else if constexpr (std::is_same<Type, HDRFloat<double>>::value) {
         delete Results.m_LaReference32HdrDouble;
         Results.m_LaReference32HdrDouble = LaReference;
     }
-    else if constexpr (std::is_same<Type, CudaDblflt<MattDblflt>>::value) {
+    else if constexpr (std::is_same<Type, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
         delete Results.m_LaReference32HdrCudaMattDblflt;
         Results.m_LaReference32HdrCudaMattDblflt = LaReference;
     }
 }
 
-template<typename Type>
+template<typename Type, typename SubType>
 void PerturbResultsCollection::SetLaReferenceInternal64(
     const void* HostPtr,
     InternalResults& Results,
-    GPU_LAReference<uint64_t, HDRFloatComplex<Type>, Type>* LaReference) {
+    GPU_LAReference<uint64_t, Type, SubType>* LaReference) {
     if (HostPtr == Results.m_CachedLaReference) {
         return;
     }
@@ -689,36 +700,47 @@ void PerturbResultsCollection::SetLaReferenceInternal64(
     Results.m_CachedLaReference = HostPtr;
 
     if constexpr (std::is_same<Type, float>::value) {
+        delete Results.m_LaReference64Float;
+        Results.m_LaReference64Float = LaReference;
+    }
+    else if constexpr (std::is_same<Type, double>::value) {
+        delete Results.m_LaReference64Double;
+        Results.m_LaReference64Double = LaReference;
+    }
+    else if constexpr (std::is_same<Type, CudaDblflt<MattDblflt>>::value) {
+
+    }
+    else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
         delete Results.m_LaReference64HdrFloat;
         Results.m_LaReference64HdrFloat = LaReference;
     }
-    else if constexpr (std::is_same<Type, double>::value) {
+    else if constexpr (std::is_same<Type, HDRFloat<double>>::value) {
         delete Results.m_LaReference64HdrDouble;
         Results.m_LaReference64HdrDouble = LaReference;
     }
-    else if constexpr (std::is_same<Type, CudaDblflt<MattDblflt>>::value) {
+    else if constexpr (std::is_same<Type, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
         delete Results.m_LaReference64HdrCudaMattDblflt;
         Results.m_LaReference64HdrCudaMattDblflt = LaReference;
     }
 }
 
-template<typename IterType, typename Type>
+template<typename IterType, typename Type, typename SubType>
 void PerturbResultsCollection::SetLaReferenceInternal(
     const void* HostPtr,
     InternalResults& Results,
-    GPU_LAReference<IterType, HDRFloatComplex<Type>, Type>* LaReference) {
+    GPU_LAReference<IterType, Type, SubType>* LaReference) {
     if constexpr (std::is_same<IterType, uint32_t>::value) {
-        SetLaReferenceInternal32<Type>(HostPtr, Results, LaReference);
+        SetLaReferenceInternal32<Type, SubType>(HostPtr, Results, LaReference);
     }
     else if constexpr (std::is_same<IterType, uint64_t>::value) {
-        SetLaReferenceInternal64<Type>(HostPtr, Results, LaReference);
+        SetLaReferenceInternal64<Type, SubType>(HostPtr, Results, LaReference);
     }
 }
 
-template<typename IterType, typename Type>
+template<typename IterType, typename Type, typename SubType>
 void PerturbResultsCollection::SetLaReference1(
     const void* HostPtr,
-    GPU_LAReference<IterType, HDRFloatComplex<Type>, Type>* LaReference) {
+    GPU_LAReference<IterType, Type, SubType>* LaReference) {
     SetLaReferenceInternal(HostPtr, m_Results1, LaReference);
 }
 
@@ -818,39 +840,60 @@ MattPerturbSingleResults<IterType, Type, Bad>* PerturbResultsCollection::GetPtrI
     }
 }
 
-template<typename Type>
-GPU_LAReference<uint32_t, HDRFloatComplex<Type>, Type>* PerturbResultsCollection::GetLaReferenceInternal32(InternalResults& Results) {
+template<typename Type, typename SubType>
+GPU_LAReference<uint32_t, Type, SubType>* PerturbResultsCollection::GetLaReferenceInternal32(
+    InternalResults& Results) {
     if constexpr (std::is_same<Type, float>::value) {
-        return Results.m_LaReference32HdrFloat;
+        return Results.m_LaReference32Float;
     }
     else if constexpr (std::is_same<Type, double>::value) {
-        return Results.m_LaReference32HdrDouble;
+        return Results.m_LaReference32Double;
     }
     else if constexpr (std::is_same<Type, CudaDblflt<MattDblflt>>::value) {
+
+    }
+    else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
+        return Results.m_LaReference32HdrFloat;
+    }
+    else if constexpr (std::is_same<Type, HDRFloat<double>>::value) {
+        return Results.m_LaReference32HdrDouble;
+    }
+    else if constexpr (std::is_same<Type, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
         return Results.m_LaReference32HdrCudaMattDblflt;
     }
 }
 
-template<typename Type>
-GPU_LAReference<uint64_t, HDRFloatComplex<Type>, Type>* PerturbResultsCollection::GetLaReferenceInternal64(InternalResults& Results) {
+template<typename Type, typename SubType>
+GPU_LAReference<uint64_t, Type, SubType>* PerturbResultsCollection::GetLaReferenceInternal64(
+    InternalResults& Results) {
     if constexpr (std::is_same<Type, float>::value) {
-        return Results.m_LaReference64HdrFloat;
+        return Results.m_LaReference64Float;
     }
     else if constexpr (std::is_same<Type, double>::value) {
-        return Results.m_LaReference64HdrDouble;
+        return Results.m_LaReference64Double;
     }
     else if constexpr (std::is_same<Type, CudaDblflt<MattDblflt>>::value) {
+
+    }
+    else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
+        return Results.m_LaReference64HdrFloat;
+    }
+    else if constexpr (std::is_same<Type, HDRFloat<double>>::value) {
+        return Results.m_LaReference64HdrDouble;
+    }
+    else if constexpr (std::is_same<Type, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
         return Results.m_LaReference64HdrCudaMattDblflt;
     }
 }
 
-template<typename IterType, typename Type>
-GPU_LAReference<IterType, HDRFloatComplex<Type>, Type>* PerturbResultsCollection::GetLaReferenceInternal(InternalResults& Results) {
+template<typename IterType, typename Type, typename SubType>
+GPU_LAReference<IterType, Type, SubType>* PerturbResultsCollection::GetLaReferenceInternal(
+    InternalResults& Results) {
     if constexpr (std::is_same<IterType, uint32_t>::value) {
-        return GetLaReferenceInternal32<Type>(Results);
+        return GetLaReferenceInternal32<Type, SubType>(Results);
     }
     else if constexpr (std::is_same<IterType, uint64_t>::value) {
-        return GetLaReferenceInternal64<Type>(Results);
+        return GetLaReferenceInternal64<Type, SubType>(Results);
     }
 }
 
@@ -880,14 +923,14 @@ const void* PerturbResultsCollection::GetHostLaPtr2() const {
     return m_Results2.m_CachedLaReference;
 }
 
-template<typename IterType, typename Type>
-GPU_LAReference<IterType, HDRFloatComplex<Type>, Type>* PerturbResultsCollection::GetLaReference1() {
-    return GetLaReferenceInternal<IterType, Type>(m_Results1);
+template<typename IterType, typename Type, typename SubType>
+GPU_LAReference<IterType, Type, SubType>* PerturbResultsCollection::GetLaReference1() {
+    return GetLaReferenceInternal<IterType, Type, SubType>(m_Results1);
 }
 
-template<typename IterType, typename Type>
-GPU_LAReference<IterType, HDRFloatComplex<Type>, Type>* PerturbResultsCollection::GetLaReference2() {
-    return GetLaReferenceInternal<IterType, Type>(m_Results2);
+template<typename IterType, typename Type, typename SubType>
+GPU_LAReference<IterType, Type, SubType>* PerturbResultsCollection::GetLaReference2() {
+    return GetLaReferenceInternal<IterType, Type, SubType>(m_Results2);
 }
 
 void PerturbResultsCollection::DeleteAllInternal(InternalResults &Results) {
@@ -1903,8 +1946,8 @@ void
 mandel_1xHDR_float_perturb_lav2(
     IterType *OutputIterMatrix,
     AntialiasedColors OutputColorMatrix,
-    MattPerturbSingleResults<IterType, HDRFloat<SubType>> Perturb,
-    GPU_LAReference<IterType, HDRFloatComplex<SubType>, SubType> LaReference, // "copy"
+    MattPerturbSingleResults<IterType, T> Perturb,
+    GPU_LAReference<IterType, T, SubType> LaReference, // "copy"
     int width,
     int height,
     int antialiasing,
@@ -1937,8 +1980,13 @@ mandel_1xHDR_float_perturb_lav2(
     T DeltaSubNX = T(0.0f);
     T DeltaSubNY = T(0.0f);
 
-    static constexpr bool ConditionalResult = std::is_same<T, float>::value || std::is_same<T, double>::value;
-    using TComplex = typename std::conditional<ConditionalResult, FloatComplex<SubType>, HDRFloatComplex<SubType>>::type;
+    static constexpr bool ConditionalResult =
+        std::is_same<T, float>::value ||
+        std::is_same<T, double>::value;
+    using TComplex = typename std::conditional<
+        ConditionalResult,
+        FloatComplex<SubType>,
+        HDRFloatComplex<SubType>>::type;
 
     ////////////
     TComplex DeltaSub0;
@@ -1949,7 +1997,7 @@ mandel_1xHDR_float_perturb_lav2(
 
     if constexpr (Mode == LAv2Mode::Full || Mode == LAv2Mode::LAO) {
         if (LaReference.isValid && LaReference.UseAT && LaReference.AT.isValid(DeltaSub0)) {
-            ATResult<IterType, SubType> res;
+            ATResult<IterType, T, SubType> res;
             LaReference.AT.PerformAT(n_iterations, DeltaSub0, res);
             iter = res.bla_iterations;
             DeltaSubN = res.dz;
@@ -3906,7 +3954,7 @@ uint32_t GPURenderer::InitializePerturb(
     }
 
     if (LaReferenceHost != m_PerturbResults.GetHostLaPtr1()) {
-        auto* LaReferenceCuda = new GPU_LAReference<IterType, HDRFloatComplex<SubType>, SubType>{ *LaReferenceHost };
+        auto* LaReferenceCuda = new GPU_LAReference<IterType, T1, SubType>{ *LaReferenceHost };
         auto result = LaReferenceCuda->CheckValid();
         if (result != 0) {
             ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes);
@@ -4685,7 +4733,7 @@ uint32_t GPURenderer::RenderPerturbLAv2(
         return FractalSharkError::Error6;
     }
 
-    auto* laReferenceCuda = m_PerturbResults.GetLaReference1< IterType, ConditionalSubType>();
+    auto* laReferenceCuda = m_PerturbResults.GetLaReference1<IterType, ConditionalT, ConditionalSubType>();
     if (!cudaResults) {
         return FractalSharkError::Error7;
     }

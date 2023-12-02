@@ -6,21 +6,27 @@
 #include "ATInfo.h"
 #include  "LAInfoI.h"
 
-template<typename IterType, class SubType>
+template<typename IterType, class Float, class SubType>
 class GPU_LAInfoDeep;
 
-template<typename IterType, class SubType>
+template<typename IterType, class Float, class SubType>
 class LAInfoDeep {
 public:
-    using HDRFloat = HDRFloat<SubType>;
-    using HDRFloatComplex = HDRFloatComplex<SubType>;
+    using HDRFloat = Float;
+    using HDRFloatComplex =
+        std::conditional<
+            std::is_same<Float, ::HDRFloat<float>>::value ||
+            std::is_same<Float, ::HDRFloat<double>>::value ||
+            std::is_same<Float, ::HDRFloat<MattDblflt>>::value,
+        ::HDRFloatComplex<SubType>,
+        ::FloatComplex<SubType>>::type;
     using T = SubType;
 
-    friend class GPU_LAInfoDeep<IterType, SubType>;
+    friend class GPU_LAInfoDeep<IterType, Float, SubType>;
 
     // TODO this is overly broad -- many types don't need these friends
-    friend class LAInfoDeep<IterType, double>;
-    friend class LAInfoDeep<IterType, CudaDblflt<MattDblflt>>;
+    friend class LAInfoDeep<IterType, Float, double>;
+    friend class LAInfoDeep<IterType, Float, CudaDblflt<MattDblflt>>;
 
     static constexpr int DEFAULT_DETECTION_METHOD = 2;
     static constexpr float DefaultStage0PeriodDetectionThreshold = 0x1.0p-10;
@@ -60,8 +66,8 @@ public:
 public:
     CUDA_CRAP LAInfoDeep();
 
-    template<class Other>
-    CUDA_CRAP LAInfoDeep(const LAInfoDeep<IterType, Other> &other);
+    template<class Float2, class SubType2>
+    CUDA_CRAP LAInfoDeep(const LAInfoDeep<IterType, Float2, SubType2> &other);
     CUDA_CRAP LAInfoDeep(HDRFloatComplex z);
     CUDA_CRAP bool DetectPeriod(HDRFloatComplex z);
     CUDA_CRAP HDRFloatComplex getRef();
@@ -73,20 +79,20 @@ public:
     CUDA_CRAP LAInfoDeep Step(HDRFloatComplex z);
     CUDA_CRAP bool Composite(LAInfoDeep &out, LAInfoDeep LA);
     CUDA_CRAP LAInfoDeep Composite(LAInfoDeep LA);
-    CUDA_CRAP LAstep<IterType, SubType> Prepare(HDRFloatComplex dz) const;
+    CUDA_CRAP LAstep<IterType, Float, SubType> Prepare(HDRFloatComplex dz) const;
     CUDA_CRAP HDRFloatComplex Evaluate(HDRFloatComplex newdz, HDRFloatComplex dc);
     CUDA_CRAP HDRFloatComplex EvaluateDzdc(HDRFloatComplex z, HDRFloatComplex dzdc);
     CUDA_CRAP HDRFloatComplex EvaluateDzdc2(HDRFloatComplex z, HDRFloatComplex dzdc2, HDRFloatComplex dzdc);
-    CUDA_CRAP void CreateAT(ATInfo<IterType, SubType> &Result, LAInfoDeep Next);
+    CUDA_CRAP void CreateAT(ATInfo<IterType, Float, SubType> &Result, LAInfoDeep Next);
     CUDA_CRAP HDRFloat getLAThreshold();
     CUDA_CRAP HDRFloat getLAThresholdC();
     CUDA_CRAP void SetLAi(const LAInfoI<IterType>&other);
     CUDA_CRAP const LAInfoI<IterType>&GetLAi() const;
 };
 
-template<typename IterType, class SubType>
+template<typename IterType, class Float, class SubType>
 CUDA_CRAP
-LAInfoDeep<IterType, SubType>::LAInfoDeep() :
+LAInfoDeep<IterType, Float, SubType>::LAInfoDeep() :
     RefRe{},
     RefIm{},
     RefExp{},
@@ -105,9 +111,9 @@ LAInfoDeep<IterType, SubType>::LAInfoDeep() :
     LAi{} {
 }
 
-template<typename IterType, class SubType>
-template<class Other>
-CUDA_CRAP LAInfoDeep<IterType, SubType>::LAInfoDeep(const LAInfoDeep<IterType, Other>& other) {
+template<typename IterType, class Float, class SubType>
+template<class Float2, class SubType2>
+CUDA_CRAP LAInfoDeep<IterType, Float, SubType>::LAInfoDeep(const LAInfoDeep<IterType, Float2, SubType2>& other) {
     RefRe = static_cast<SubType>(other.RefRe);
     RefIm = static_cast<SubType>(other.RefIm);
     RefExp = other.RefExp;
@@ -132,9 +138,9 @@ CUDA_CRAP LAInfoDeep<IterType, SubType>::LAInfoDeep(const LAInfoDeep<IterType, O
     LAi = other.LAi;
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class Float, class SubType>
 CUDA_CRAP
-LAInfoDeep<IterType, SubType>::LAInfoDeep(HDRFloatComplex z) {
+LAInfoDeep<IterType, Float, SubType>::LAInfoDeep(HDRFloatComplex z) {
     RefRe = z.getMantissaReal();
     RefIm = z.getMantissaImag();
     RefExp = z.getExp();
@@ -168,9 +174,9 @@ LAInfoDeep<IterType, SubType>::LAInfoDeep(HDRFloatComplex z) {
     LAi = {};
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class Float, class SubType>
 CUDA_CRAP
-bool LAInfoDeep<IterType, SubType>::DetectPeriod(HDRFloatComplex z) {
+bool LAInfoDeep<IterType, Float, SubType>::DetectPeriod(HDRFloatComplex z) {
     if constexpr (DEFAULT_DETECTION_METHOD == 1) {
         //return z.chebychevNorm().compareToBothPositive(HDRFloat(MinMagExp, MinMagMant).multiply(PeriodDetectionThreshold2)) < 0;
         return z.chebychevNorm().compareToBothPositive(HDRFloat(MinMagExp, MinMagMant) * DefaultPeriodDetectionThreshold2) < 0;
@@ -186,27 +192,27 @@ bool LAInfoDeep<IterType, SubType>::DetectPeriod(HDRFloatComplex z) {
     }
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class Float, class SubType>
 CUDA_CRAP
-LAInfoDeep<IterType, SubType>::HDRFloatComplex LAInfoDeep<IterType, SubType>::getRef() {
+LAInfoDeep<IterType, Float, SubType>::HDRFloatComplex LAInfoDeep<IterType, Float, SubType>::getRef() {
     return HDRFloatComplex(RefExp, RefRe, RefIm);
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class Float, class SubType>
 CUDA_CRAP
-LAInfoDeep<IterType, SubType>::HDRFloatComplex LAInfoDeep<IterType, SubType>::getZCoeff() {
+LAInfoDeep<IterType, Float, SubType>::HDRFloatComplex LAInfoDeep<IterType, Float, SubType>::getZCoeff() {
     return HDRFloatComplex(ZCoeffExp, ZCoeffRe, ZCoeffIm);
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class Float, class SubType>
 CUDA_CRAP
-LAInfoDeep<IterType, SubType>::HDRFloatComplex LAInfoDeep<IterType, SubType>::getCCoeff() {
+LAInfoDeep<IterType, Float, SubType>::HDRFloatComplex LAInfoDeep<IterType, Float, SubType>::getCCoeff() {
     return HDRFloatComplex(CCoeffExp, CCoeffRe, CCoeffIm);
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class Float, class SubType>
 CUDA_CRAP
-bool LAInfoDeep<IterType, SubType>::Step(LAInfoDeep& out, HDRFloatComplex z) {
+bool LAInfoDeep<IterType, Float, SubType>::Step(LAInfoDeep& out, HDRFloatComplex z) {
     const HDRFloat ChebyMagz = z.chebychevNorm();
 
     const HDRFloatComplex ZCoeff{ ZCoeffExp, ZCoeffRe, ZCoeffIm };
@@ -264,31 +270,31 @@ bool LAInfoDeep<IterType, SubType>::Step(LAInfoDeep& out, HDRFloatComplex z) {
     }
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class Float, class SubType>
 CUDA_CRAP
-bool LAInfoDeep<IterType, SubType>::isLAThresholdZero() {
+bool LAInfoDeep<IterType, Float, SubType>::isLAThresholdZero() {
     return HDRFloat(LAThresholdExp, LAThresholdMant).compareTo(HDRFloat{ 0 }) == 0;
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class Float, class SubType>
 CUDA_CRAP
-bool LAInfoDeep<IterType, SubType>::isZCoeffZero() {
+bool LAInfoDeep<IterType, Float, SubType>::isZCoeffZero() {
     HDRFloatComplex ZCoeff = HDRFloatComplex(ZCoeffExp, ZCoeffRe, ZCoeffIm);
     return ZCoeff.getRe().compareTo(HDRFloat{ 0 }) == 0 && ZCoeff.getIm().compareTo(HDRFloat{ 0 }) == 0;
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class Float, class SubType>
 CUDA_CRAP
-LAInfoDeep<IterType, SubType> LAInfoDeep<IterType, SubType>::Step(HDRFloatComplex z) {
+LAInfoDeep<IterType, Float, SubType> LAInfoDeep<IterType, Float, SubType>::Step(HDRFloatComplex z) {
     LAInfoDeep Result = LAInfoDeep();
 
     Step(Result, z);
     return Result;
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class Float, class SubType>
 CUDA_CRAP
-bool LAInfoDeep<IterType, SubType>::Composite(LAInfoDeep& out, LAInfoDeep LA) {
+bool LAInfoDeep<IterType, Float, SubType>::Composite(LAInfoDeep& out, LAInfoDeep LA) {
     HDRFloatComplex z = HDRFloatComplex(LA.RefExp, LA.RefRe, LA.RefIm);
     HDRFloat ChebyMagz = z.chebychevNorm();
 
@@ -371,49 +377,49 @@ bool LAInfoDeep<IterType, SubType>::Composite(LAInfoDeep& out, LAInfoDeep LA) {
     }
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class Float, class SubType>
 CUDA_CRAP
-LAInfoDeep<IterType, SubType> LAInfoDeep<IterType, SubType>::Composite(LAInfoDeep LA) {
+LAInfoDeep<IterType, Float, SubType> LAInfoDeep<IterType, Float, SubType>::Composite(LAInfoDeep LA) {
     LAInfoDeep Result = LAInfoDeep();
 
     Composite(Result, LA);
     return Result;
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class Float, class SubType>
 CUDA_CRAP
-LAstep<IterType, SubType> LAInfoDeep<IterType, SubType>::Prepare(HDRFloatComplex dz) const {
+LAstep<IterType, Float, SubType> LAInfoDeep<IterType, Float, SubType>::Prepare(HDRFloatComplex dz) const {
     //*2 is + 1
     HDRFloatComplex newdz = dz * (HDRFloatComplex(RefExp + 1, RefRe, RefIm) + dz);
     newdz.Reduce();
 
-    LAstep<IterType, SubType> temp = {};
+    LAstep<IterType, Float, SubType> temp = {};
     temp.unusable = newdz.chebychevNorm().compareToBothPositiveReduced(HDRFloat(LAThresholdExp, LAThresholdMant)) >= 0;
     temp.newDzDeep = newdz;
     return temp;
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class Float, class SubType>
 CUDA_CRAP
-LAInfoDeep<IterType, SubType>::HDRFloatComplex LAInfoDeep<IterType, SubType>::Evaluate(HDRFloatComplex newdz, HDRFloatComplex dc) {
+LAInfoDeep<IterType, Float, SubType>::HDRFloatComplex LAInfoDeep<IterType, Float, SubType>::Evaluate(HDRFloatComplex newdz, HDRFloatComplex dc) {
     return newdz * HDRFloatComplex(ZCoeffExp, ZCoeffRe, ZCoeffIm) + dc * HDRFloatComplex(CCoeffExp, CCoeffRe, CCoeffIm);
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class Float, class SubType>
 CUDA_CRAP
-LAInfoDeep<IterType, SubType>::HDRFloatComplex LAInfoDeep<IterType, SubType>::EvaluateDzdc(HDRFloatComplex z, HDRFloatComplex dzdc) {
+LAInfoDeep<IterType, Float, SubType>::HDRFloatComplex LAInfoDeep<IterType, Float, SubType>::EvaluateDzdc(HDRFloatComplex z, HDRFloatComplex dzdc) {
     return  dzdc * HDRFloat(2) * z * HDRFloatComplex(ZCoeffExp, ZCoeffRe, ZCoeffIm) + HDRFloatComplex(CCoeffExp, CCoeffRe, CCoeffIm);
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class Float, class SubType>
 CUDA_CRAP
-LAInfoDeep<IterType, SubType>::HDRFloatComplex LAInfoDeep<IterType, SubType>::EvaluateDzdc2(HDRFloatComplex z, HDRFloatComplex dzdc2, HDRFloatComplex dzdc) {
+LAInfoDeep<IterType, Float, SubType>::HDRFloatComplex LAInfoDeep<IterType, Float, SubType>::EvaluateDzdc2(HDRFloatComplex z, HDRFloatComplex dzdc2, HDRFloatComplex dzdc) {
     return (dzdc2 * z + dzdc.square()) * HDRFloat(2) * HDRFloatComplex(ZCoeffExp, ZCoeffRe, ZCoeffIm);
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class Float, class SubType>
 CUDA_CRAP
-void LAInfoDeep<IterType, SubType>::CreateAT(ATInfo<IterType, SubType>& Result, LAInfoDeep Next) {
+void LAInfoDeep<IterType, Float, SubType>::CreateAT(ATInfo<IterType, Float, SubType>& Result, LAInfoDeep Next) {
     HDRFloatComplex ZCoeff = HDRFloatComplex(ZCoeffExp, ZCoeffRe, ZCoeffIm);
     HDRFloatComplex CCoeff = HDRFloatComplex(CCoeffExp, CCoeffRe, CCoeffIm);
     HDRFloat LAThreshold = HDRFloat(LAThresholdExp, LAThresholdMant);
@@ -442,7 +448,7 @@ void LAInfoDeep<IterType, SubType>::CreateAT(ATInfo<IterType, SubType>& Result, 
     Result.RefCNormSqr.Reduce();
 
     HDRFloat lim(32, 1);
-    if constexpr (std::is_same<LAInfoDeep<IterType, SubType>::HDRFloat, ::HDRFloat<double>>::value) {
+    if constexpr (std::is_same<LAInfoDeep<IterType, Float, SubType>::HDRFloat, ::HDRFloat<double>>::value) {
         lim.setExp(256);
     }
 
@@ -454,24 +460,24 @@ void LAInfoDeep<IterType, SubType>::CreateAT(ATInfo<IterType, SubType>& Result, 
     Result.ThresholdC = HDRFloat::minBothPositive(LAThresholdC, lim / Result.CCoeff.chebychevNorm());
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class Float, class SubType>
 CUDA_CRAP
-LAInfoDeep<IterType, SubType>::HDRFloat LAInfoDeep<IterType, SubType>::getLAThreshold() {
+LAInfoDeep<IterType, Float, SubType>::HDRFloat LAInfoDeep<IterType, Float, SubType>::getLAThreshold() {
     return HDRFloat(LAThresholdExp, LAThresholdMant);
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class Float, class SubType>
 CUDA_CRAP
-LAInfoDeep<IterType, SubType>::HDRFloat LAInfoDeep<IterType, SubType>::getLAThresholdC() {
+LAInfoDeep<IterType, Float, SubType>::HDRFloat LAInfoDeep<IterType, Float, SubType>::getLAThresholdC() {
     return HDRFloat(LAThresholdCExp, LAThresholdCMant);
 }
 
-template<typename IterType, class SubType>
-CUDA_CRAP void LAInfoDeep<IterType, SubType>::SetLAi(const LAInfoI<IterType>& other) {
+template<typename IterType, class Float, class SubType>
+CUDA_CRAP void LAInfoDeep<IterType, Float, SubType>::SetLAi(const LAInfoI<IterType>& other) {
     this->LAi = other;
 }
 
-template<typename IterType, class SubType>
-CUDA_CRAP const LAInfoI<IterType>& LAInfoDeep<IterType, SubType>::GetLAi() const {
+template<typename IterType, class Float, class SubType>
+CUDA_CRAP const LAInfoI<IterType>& LAInfoDeep<IterType, Float, SubType>::GetLAi() const {
     return this->LAi;
 }

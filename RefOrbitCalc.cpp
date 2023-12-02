@@ -2027,8 +2027,8 @@ PerturbationResults<IterType, ConvertTType, Bad>* RefOrbitCalc::GetAndCreateUsef
     }
 
     if constexpr (
-        std::is_same<T, float>::value ||
-        std::is_same<T, double>::value ||
+        //std::is_same<T, float>::value ||
+        //std::is_same<T, double>::value ||
         std::is_same<T, HDRFloat<float>>::value ||
         std::is_same<T, HDRFloat<double>>::value) {
         if constexpr (Ex == Extras::IncludeLAv2) {

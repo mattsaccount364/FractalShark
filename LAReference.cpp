@@ -658,41 +658,41 @@ void LAReference<IterType, Float, SubType>::GenerateApproximationData(
     isValid = true;
 }
 
-template void LAReference<uint32_t, float, float>::GenerateApproximationData<float>(
-    const PerturbationResults<uint32_t, float, CalcBad::Disable>& PerturbationResults,
-    float radius,
-    uint32_t maxRefIteration);
-template void LAReference<uint32_t, float, float>::GenerateApproximationData<double>(
-    const PerturbationResults<uint32_t, double, CalcBad::Disable>& PerturbationResults,
-    float radius,
-    uint32_t maxRefIteration);
-
-template void LAReference<uint64_t, float, float>::GenerateApproximationData<float>(
-    const PerturbationResults<uint64_t, float, CalcBad::Disable>& PerturbationResults,
-    float radius,
-    uint64_t maxRefIteration);
-template void LAReference<uint64_t, float, float>::GenerateApproximationData<double>(
-    const PerturbationResults<uint64_t, double, CalcBad::Disable>& PerturbationResults,
-    float radius,
-    uint64_t maxRefIteration);
-
-template void LAReference<uint32_t, double, double>::GenerateApproximationData<float>(
-    const PerturbationResults<uint32_t, float, CalcBad::Disable>& PerturbationResults,
-    double radius,
-    uint32_t maxRefIteration);
-template void LAReference<uint32_t, double, double>::GenerateApproximationData<double>(
-    const PerturbationResults<uint32_t, double, CalcBad::Disable>& PerturbationResults,
-    double radius,
-    uint32_t maxRefIteration);
-
-template void LAReference<uint64_t, double, double>::GenerateApproximationData<float>(
-    const PerturbationResults<uint64_t, float, CalcBad::Disable>& PerturbationResults,
-    double radius,
-    uint64_t maxRefIteration);
-template void LAReference<uint64_t, double, double>::GenerateApproximationData<double>(
-    const PerturbationResults<uint64_t, double, CalcBad::Disable>& PerturbationResults,
-    double radius,
-    uint64_t maxRefIteration);
+//template void LAReference<uint32_t, float, float>::GenerateApproximationData<float>(
+//    const PerturbationResults<uint32_t, float, CalcBad::Disable>& PerturbationResults,
+//    float radius,
+//    uint32_t maxRefIteration);
+//template void LAReference<uint32_t, float, float>::GenerateApproximationData<double>(
+//    const PerturbationResults<uint32_t, double, CalcBad::Disable>& PerturbationResults,
+//    float radius,
+//    uint32_t maxRefIteration);
+//
+//template void LAReference<uint64_t, float, float>::GenerateApproximationData<float>(
+//    const PerturbationResults<uint64_t, float, CalcBad::Disable>& PerturbationResults,
+//    float radius,
+//    uint64_t maxRefIteration);
+//template void LAReference<uint64_t, float, float>::GenerateApproximationData<double>(
+//    const PerturbationResults<uint64_t, double, CalcBad::Disable>& PerturbationResults,
+//    float radius,
+//    uint64_t maxRefIteration);
+//
+//template void LAReference<uint32_t, double, double>::GenerateApproximationData<float>(
+//    const PerturbationResults<uint32_t, float, CalcBad::Disable>& PerturbationResults,
+//    double radius,
+//    uint32_t maxRefIteration);
+//template void LAReference<uint32_t, double, double>::GenerateApproximationData<double>(
+//    const PerturbationResults<uint32_t, double, CalcBad::Disable>& PerturbationResults,
+//    double radius,
+//    uint32_t maxRefIteration);
+//
+//template void LAReference<uint64_t, double, double>::GenerateApproximationData<float>(
+//    const PerturbationResults<uint64_t, float, CalcBad::Disable>& PerturbationResults,
+//    double radius,
+//    uint64_t maxRefIteration);
+//template void LAReference<uint64_t, double, double>::GenerateApproximationData<double>(
+//    const PerturbationResults<uint64_t, double, CalcBad::Disable>& PerturbationResults,
+//    double radius,
+//    uint64_t maxRefIteration);
 
 ///
 

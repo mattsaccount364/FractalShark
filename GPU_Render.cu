@@ -38,7 +38,7 @@ enum FractalSharkError : int32_t {
     Error9,
 };
 
-constexpr static bool Default = false;
+constexpr static bool Default = true;
 constexpr static bool ForceEnable = true;
 
 constexpr static bool EnableGpu1x32 = Default;

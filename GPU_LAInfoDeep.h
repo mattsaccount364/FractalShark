@@ -86,7 +86,7 @@ template<typename IterType, class Float, class SubType>
 CUDA_CRAP
 GPU_LAstep<IterType, Float, SubType> GPU_LAInfoDeep<IterType, Float, SubType>::Prepare(HDRFloatComplex dz) const {
     //*2 is + 1
-    HDRFloatComplex newdz = dz * (Ref * HDRFloat(2)) + dz;
+    HDRFloatComplex newdz = dz * (Ref * HDRFloat(2) + dz);
     newdz.Reduce();
 
     GPU_LAstep<IterType, Float, SubType> temp;

@@ -217,8 +217,8 @@ void Fractal::Initialize(int width,
     ResetDimensions(width, height, 2);
     SetIterType(IterTypeEnum::Bits32);
 
-    View(0);
-    //View(5);
+    //View(0);
+    View(5);
     //View(15);
 
     m_ChangedWindow = true;
@@ -1357,7 +1357,7 @@ void Fractal::View(size_t view)
         maxX = HighPrecision{ "-0.54820574807047570845821256754673302937669927060844097486102930067962289200412659019319306589187062772276993544341295" };
         maxY = HighPrecision{ "-0.577570838903603842805108982201850558675551726802772104952059640378694274662197291893029522164691495936927144187595881" };
         SetNumIterations<IterTypeFull>(4718592);
-        ResetDimensions(MAXSIZE_T, MAXSIZE_T, 2);
+        ResetDimensions(MAXSIZE_T, MAXSIZE_T, 1); // TODO
         break;
 
     case 6:

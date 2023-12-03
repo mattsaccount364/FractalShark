@@ -28,7 +28,7 @@ public:
     friend class LAInfoDeep<IterType, Float, double>;
     friend class LAInfoDeep<IterType, Float, CudaDblflt<MattDblflt>>;
 
-    static constexpr int DEFAULT_DETECTION_METHOD = 1;
+    static constexpr int DEFAULT_DETECTION_METHOD = 2;
     static constexpr float DefaultStage0PeriodDetectionThreshold = 0x1.0p-10;
     static constexpr float DefaultPeriodDetectionThreshold = 0x1.0p-10;
     static constexpr float DefaultStage0PeriodDetectionThreshold2 = 0x1.0p-6;
@@ -302,7 +302,7 @@ template<typename IterType, class Float, class SubType>
 CUDA_CRAP
 LAstep<IterType, Float, SubType> LAInfoDeep<IterType, Float, SubType>::Prepare(HDRFloatComplex dz) const {
     //*2 is + 1
-    HDRFloatComplex newdz = dz * (Ref * HDRFloat(2)) + dz;
+    HDRFloatComplex newdz = dz * (Ref * HDRFloat(2) + dz);
     newdz.Reduce();
 
     LAstep<IterType, Float, SubType> temp = {};

@@ -24,6 +24,23 @@ To Convert(From data) {
 }
 #endif
 
+template <
+    typename ToCheck,
+    typename ToCheck2,
+    std::size_t LHS = sizeof(ToCheck),
+    std::size_t RHS = sizeof(ToCheck2)>
+void check_size() {
+    static_assert(LHS == RHS, "Size is off!");
+}
+
+template <
+    typename ToCheck,
+    std::size_t RHS,
+    std::size_t LHS = sizeof(ToCheck)>
+void check_size() {
+    static_assert(LHS == RHS, "Size is off!");
+}
+
 
 // Amount of extra precision before forcing a full-precision recalculation
 constexpr size_t AuthoritativeMinExtraPrecision = 50;

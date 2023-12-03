@@ -86,7 +86,8 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference<T2, SubType2>(
     GPU_LAInfoDeep<IterType, Float, SubType>* tempLAs;
     LAStageInfo<IterType>* tempLAStages;
 
-    m_Err = cudaMallocManaged(&tempLAs, other.LAs.size() * sizeof(GPU_LAInfoDeep<IterType, Float, SubType>), cudaMemAttachGlobal);
+    const auto LAMemToAllocate = other.LAs.size() * sizeof(GPU_LAInfoDeep<IterType, Float, SubType>);
+    m_Err = cudaMallocManaged(&tempLAs, LAMemToAllocate, cudaMemAttachGlobal);
     if (m_Err != cudaSuccess) {
         return;
     }
@@ -94,7 +95,8 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference<T2, SubType2>(
     LAs = tempLAs;
     NumLAs = other.LAs.size();
 
-    m_Err = cudaMallocManaged(&tempLAStages, other.LAStages.size() * sizeof(LAStageInfo<IterType>), cudaMemAttachGlobal);
+    const auto LAStageMemoryToAllocate = other.LAStages.size() * sizeof(LAStageInfo<IterType>);
+    m_Err = cudaMallocManaged(&tempLAStages, LAStageMemoryToAllocate, cudaMemAttachGlobal);
     if (m_Err != cudaSuccess) {
         return;
     }
@@ -102,9 +104,26 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference<T2, SubType2>(
     LAStages = tempLAStages;
     NumLAStages = other.LAStages.size();
 
-    if constexpr (std::is_same<SubType, SubType2>::value) {
-        static_assert(sizeof(GPU_LAInfoDeep<IterType, Float, SubType>) ==
-                      sizeof(LAInfoDeep<IterType, Float, SubType>), "!");
+    if constexpr (
+        std::is_same<Float, T2>::value &&
+        std::is_same<SubType, SubType2>::value) {
+
+        check_size<Float, T2>();
+        check_size<SubType, SubType2>();
+        check_size<
+            GPU_LAInfoDeep<IterType, Float, SubType>::HDRFloatComplex,
+            LAInfoDeep<IterType, Float, SubType>::HDRFloatComplex>();
+        check_size<
+            GPU_LAInfoDeep<IterType, Float, SubType>::HDRFloat,
+            LAInfoDeep<IterType, Float, SubType>::HDRFloat>();
+
+        static_assert(
+            &static_cast<GPU_LAInfoDeep<IterType, Float, SubType> *>(0)->CCoeff ==
+            &static_cast<LAInfoDeep<IterType, Float, SubType> *>(0)->CCoeff, "!");
+
+        check_size<
+            GPU_LAInfoDeep<IterType, Float, SubType>,
+            LAInfoDeep<IterType, Float, SubType>>();
 
         m_Err = cudaMemcpy(LAs,
             other.LAs.data(),

@@ -431,11 +431,6 @@ CUDA_CRAP const GPUBLA_TYPE* GPU_BLAS<IterType, T, GPUBLA_TYPE, LM2>::LookupBack
 // Perturbation results
 ////////////////////////////////////////////////////////////////////////////////////////
 
-template <typename ToCheck, std::size_t ExpectedSize, std::size_t RealSize = sizeof(ToCheck)>
-void check_size() {
-    static_assert(ExpectedSize == RealSize, "Size is off!");
-}
-
 template<typename IterType, typename Type, CalcBad Bad>
 struct MattPerturbSingleResults {
     MattReferenceSingleIter<Type, Bad>* __restrict__ iters;
@@ -459,13 +454,13 @@ struct MattPerturbSingleResults {
         own(true),
         AllocHost(false) {
 
-        check_size<dblflt, sizeof(double)>();
-        check_size<MattDblflt, sizeof(double)>();
-        check_size<MattDblflt, sizeof(dblflt)>();
-        check_size<CudaDblflt<MattDblflt>, sizeof(double)>();
-        check_size<CudaDblflt<MattDblflt>, sizeof(CudaDblflt<dblflt>)>();
-        check_size<HDRFloat<CudaDblflt<MattDblflt>>, sizeof(HDRFloat<CudaDblflt<dblflt>>)>();
-        check_size<Type, sizeof(Other)>();
+        check_size<dblflt, double>();
+        check_size<MattDblflt, double>();
+        check_size<MattDblflt, dblflt>();
+        check_size<CudaDblflt<MattDblflt>, double>();
+        check_size<CudaDblflt<MattDblflt>, CudaDblflt<dblflt>>();
+        check_size<HDRFloat<CudaDblflt<MattDblflt>>, HDRFloat<CudaDblflt<dblflt>>>();
+        check_size<Type, Other>();
 
         check_size<MattReferenceSingleIter<float>, 8>();
         check_size<MattReferenceSingleIter<double>, 16>();

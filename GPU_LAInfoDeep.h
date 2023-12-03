@@ -21,25 +21,13 @@ public:
         ::HDRFloatComplex<SubType>,
         ::FloatComplex<SubType>>::type;
 
-    SubType RefRe, RefIm;
-    int32_t RefExp;
-
-    SubType LAThresholdMant;
-    int32_t LAThresholdExp;
-
-    SubType ZCoeffRe, ZCoeffIm;
-    int32_t ZCoeffExp;
-
-    SubType CCoeffRe, CCoeffIm;
-    int32_t CCoeffExp;
-
-    SubType LAThresholdCMant;
-    int32_t LAThresholdCExp;
-
+    HDRFloatComplex Ref;
+    HDRFloatComplex ZCoeff;
+    HDRFloatComplex CCoeff;
+    HDRFloat LAThreshold;
+    HDRFloat LAThresholdC;
+    HDRFloat MinMag;
     LAInfoI<IterType> LAi;
-
-    SubType MinMagMant;
-    int32_t MinMagExp;
 
     template<class Float2, class SubType2>
     CUDA_CRAP GPU_LAInfoDeep<IterType, Float, SubType>& operator=(
@@ -65,24 +53,16 @@ GPU_LAInfoDeep<IterType, Float, SubType> &GPU_LAInfoDeep<IterType, Float, SubTyp
         return *this;
     }
 
-    this->RefRe = (SubType)other.RefRe;
-    this->RefIm = (SubType)other.RefIm;
-    this->RefExp = other.RefExp;
-    this->LAThresholdMant = (SubType)other.LAThresholdMant;
-    this->LAThresholdExp = other.LAThresholdExp;
-    
-    this->ZCoeffRe = (SubType)other.ZCoeffRe;
-    this->ZCoeffIm = (SubType)other.ZCoeffIm;
-    this->ZCoeffExp = other.ZCoeffExp;
-    
-    this->CCoeffRe = (SubType)other.CCoeffRe;
-    this->CCoeffIm = (SubType)other.CCoeffIm;
-    this->CCoeffExp = other.CCoeffExp;
-
-    this->LAThresholdCMant = (SubType)other.LAThresholdCMant;
-    this->LAThresholdCExp = other.LAThresholdCExp;
-    
+    this->Ref = static_cast<HDRFloatComplex>(other.Ref);
+    this->LAThreshold = static_cast<HDRFloat>(other.LAThreshold);
+    this->ZCoeff = static_cast<HDRFloatComplex>(other.ZCoeff);
+    this->CCoeff = static_cast<HDRFloatComplex>(other.CCoeff);
+    this->LAThresholdC = static_cast<HDRFloat>(other.LAThresholdC);
     this->LAi = other.LAi;
+
+    // Note: not copying MinMag
+    // Its not needed for GPU_LAInfoDeep but included for padding purposes
+
     return *this;
 }
 
@@ -91,24 +71,14 @@ template<class Float2, class SubType2>
 CUDA_CRAP
 GPU_LAInfoDeep<IterType, Float, SubType>& GPU_LAInfoDeep<IterType, Float, SubType>::operator=(
     const LAInfoDeep<IterType, Float2, SubType2>& other) {
-    this->RefRe = (SubType)other.RefRe;
-    this->RefIm = (SubType)other.RefIm;
-    this->RefExp = other.RefExp;
-    this->LAThresholdMant = (SubType)other.LAThresholdMant;
-    this->LAThresholdExp = other.LAThresholdExp;
 
-    this->ZCoeffRe = (SubType)other.ZCoeffRe;
-    this->ZCoeffIm = (SubType)other.ZCoeffIm;
-    this->ZCoeffExp = other.ZCoeffExp;
-
-    this->CCoeffRe = (SubType)other.CCoeffRe;
-    this->CCoeffIm = (SubType)other.CCoeffIm;
-    this->CCoeffExp = other.CCoeffExp;
-
-    this->LAThresholdCMant = (SubType)other.LAThresholdCMant;
-    this->LAThresholdCExp = other.LAThresholdCExp;
-
+    this->Ref = static_cast<HDRFloatComplex>(other.Ref);
+    this->LAThreshold = static_cast<HDRFloat>(other.LAThreshold);
+    this->ZCoeff = static_cast<HDRFloatComplex>(other.ZCoeff);
+    this->CCoeff = static_cast<HDRFloatComplex>(other.CCoeff);
+    this->LAThresholdC = static_cast<HDRFloat>(other.LAThresholdC);
     this->LAi = other.LAi;
+
     return *this;
 }
 
@@ -116,11 +86,11 @@ template<typename IterType, class Float, class SubType>
 CUDA_CRAP
 GPU_LAstep<IterType, Float, SubType> GPU_LAInfoDeep<IterType, Float, SubType>::Prepare(HDRFloatComplex dz) const {
     //*2 is + 1
-    HDRFloatComplex newdz = dz * (HDRFloatComplex(RefExp + 1, RefRe, RefIm) + dz);
+    HDRFloatComplex newdz = dz * (Ref * HDRFloat(2)) + dz;
     newdz.Reduce();
 
     GPU_LAstep<IterType, Float, SubType> temp;
-    temp.unusable = newdz.chebychevNorm().compareToBothPositiveReduced(HDRFloat(LAThresholdExp, LAThresholdMant)) >= 0;
+    temp.unusable = newdz.chebychevNorm().compareToBothPositiveReduced(LAThreshold) >= 0;
     temp.newDzDeep = newdz;
     return temp;
 }
@@ -128,19 +98,19 @@ GPU_LAstep<IterType, Float, SubType> GPU_LAInfoDeep<IterType, Float, SubType>::P
 template<typename IterType, class Float, class SubType>
 CUDA_CRAP
 GPU_LAInfoDeep<IterType, Float, SubType>::HDRFloatComplex GPU_LAInfoDeep<IterType, Float, SubType>::getRef() const {
-    return HDRFloatComplex(RefExp, RefRe, RefIm);
+    return Ref;
 }
 
 template<typename IterType, class Float, class SubType>
 CUDA_CRAP
 GPU_LAInfoDeep<IterType, Float, SubType>::HDRFloat GPU_LAInfoDeep<IterType, Float, SubType>::getLAThresholdC() const {
-    return HDRFloat(LAThresholdCExp, LAThresholdCMant);
+    return LAThresholdC;
 }
 
 template<typename IterType, class Float, class SubType>
 CUDA_CRAP
 GPU_LAInfoDeep<IterType, Float, SubType>::HDRFloatComplex GPU_LAInfoDeep<IterType, Float, SubType>::Evaluate(HDRFloatComplex newdz, HDRFloatComplex dc) const {
-    return newdz * HDRFloatComplex(ZCoeffExp, ZCoeffRe, ZCoeffIm) + dc * HDRFloatComplex(CCoeffExp, CCoeffRe, CCoeffIm);
+    return newdz * ZCoeff + dc * CCoeff;
 }
 
 template<typename IterType, class Float, class SubType>

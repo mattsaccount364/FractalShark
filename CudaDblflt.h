@@ -15,6 +15,7 @@ using dblflt = MattDblflt;
 // in dblflt.h.  It implements all the basic arithmetic operators.
 // It also implements a few other functions that are useful for
 // arithmetic.
+#pragma pack(push, 4)
 template<typename T = MattDblflt>
 class CudaDblflt {
 public:
@@ -224,6 +225,8 @@ public:
     }
 #endif
 };
+
+#pragma pack(pop)
 
 #if 0
 

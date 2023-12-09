@@ -26,13 +26,14 @@ class FloatComplex;
 
 CUDA_CRAP void InitStatics();
 
-#ifndef __CUDA_ARCH__
-#define MYALIGN __declspec(align(4))
-#else
-#define MYALIGN __align__(4)
-#endif
+//#ifndef __CUDA_ARCH__
+//#define MYALIGN __declspec(align(4))
+//#else
+//#define MYALIGN __align__(4)
+//#endif
 
-#pragma pack(push, 4)
+#define MYALIGN
+
 template<class T, class TExp = int32_t>
 class LMembers {
 public:
@@ -1103,8 +1104,6 @@ public:
         return a.compareTo(b) < 0 ? a : b;
     }
 };
-#pragma pack(pop)
-
 
 template<class T>
 static CUDA_CRAP T HdrSqrt(const T &incoming) {
@@ -1217,6 +1216,7 @@ static CUDA_CRAP constexpr T &&HdrReduce(T&& incoming) {
         return std::move(incoming);
     }
 }
+
 
 template<class T, class U>
 static CUDA_CRAP constexpr T HdrMaxPositiveReduced(const T& one, const U& two) {

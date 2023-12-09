@@ -2073,7 +2073,9 @@ PerturbationResults<IterType, ConvertTType, Bad>* RefOrbitCalc::GetAndCreateUsef
         auto* resultsExisting = GetUsefulPerturbationResults<IterType, ConvertTType, false, Bad>();
         if (resultsExisting == nullptr) {
             auto results2(std::make_unique<PerturbationResults<IterType, ConvertTType, CalcBad::Disable>>());
-            results2->Copy<true>(*results);
+            results2->Copy<true>(*results,
+                GetNextGenerationNumber(),
+                GetNextLaGenerationNumber());
 
             return AddPerturbationResults(std::move(results2));
         }
@@ -2335,7 +2337,10 @@ PerturbationResults<IterType, DestT, DestEnableBad>* RefOrbitCalc::CopyUsefulPer
             container.m_PerturbationResultsFloat.push_back(
                 std::make_unique<PerturbationResults<IterType, float, DestEnableBad>>());
             auto* dest = container.m_PerturbationResultsFloat[container.m_PerturbationResultsFloat.size() - 1].get();
-            dest->Copy<false>(src_array);
+            dest->Copy<false>(
+                src_array,
+                GetNextGenerationNumber(),
+                GetNextLaGenerationNumber());
             return dest;
         }
         else if constexpr (std::is_same<SrcT, float>::value) {
@@ -2345,14 +2350,20 @@ PerturbationResults<IterType, DestT, DestEnableBad>* RefOrbitCalc::CopyUsefulPer
             container.m_PerturbationResultsHDRFloat.push_back(
                 std::make_unique<PerturbationResults<IterType, HDRFloat<float>, DestEnableBad>>());
             auto* dest = container.m_PerturbationResultsHDRFloat[container.m_PerturbationResultsHDRFloat.size() - 1].get();
-            dest->Copy<false>(src_array);
+            dest->Copy<false>(
+                src_array,
+                GetNextGenerationNumber(),
+                GetNextLaGenerationNumber());
             return dest;
         }
         else if constexpr (std::is_same<SrcT, HDRFloat<float>>::value) {
             container.m_PerturbationResultsFloat.push_back(
                 std::make_unique<PerturbationResults<IterType, float, DestEnableBad>>());
             auto* dest = container.m_PerturbationResultsFloat[container.m_PerturbationResultsFloat.size() - 1].get();
-            dest->Copy<false>(src_array);
+            dest->Copy<false>(
+                src_array,
+                GetNextGenerationNumber(),
+                GetNextLaGenerationNumber());
             return dest;
         }
         else {

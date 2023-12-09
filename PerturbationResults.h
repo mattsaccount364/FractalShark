@@ -78,7 +78,10 @@ public:
     std::vector<HighPrecision> ReuseY;
     
     template<bool IncludeLA, class Other, CalcBad Bad = CalcBad::Disable>
-    void Copy(const PerturbationResults<IterType, Other, Bad>& other) {
+    void Copy(
+        const PerturbationResults<IterType, Other, Bad>& other,
+        size_t NewGenerationNumber,
+        size_t NewLaGenerationNumber) {
         clear();
 
         hiX = other.hiX;
@@ -88,7 +91,7 @@ public:
         PeriodMaybeZero = other.PeriodMaybeZero;
 
         orb.reserve(other.orb.size());
-        GenerationNumber = other.GetGenerationNumber();
+        GenerationNumber = NewGenerationNumber;
 
         AuthoritativePrecision = other.AuthoritativePrecision;
         ReuseX.reserve(other.ReuseX.size());
@@ -110,7 +113,7 @@ public:
         if constexpr (IncludeLA) {
             if (other.GetLaReference() != nullptr) {
                 LaReference = std::make_unique<LAReference<IterType, T, SubType>>(*other.GetLaReference());
-                LaGenerationNumber = other.GetLaGenerationNumber();
+                LaGenerationNumber = NewLaGenerationNumber;
             }
         }
     }

@@ -454,6 +454,8 @@ struct MattPerturbSingleResults {
         own(true),
         AllocHost(false) {
 
+        check_size<HDRFloat<float>, 8>();
+        check_size<HDRFloat<double>, 16>();
         check_size<dblflt, double>();
         check_size<MattDblflt, double>();
         check_size<MattDblflt, dblflt>();
@@ -465,7 +467,7 @@ struct MattPerturbSingleResults {
         check_size<MattReferenceSingleIter<float>, 8>();
         check_size<MattReferenceSingleIter<double>, 16>();
         check_size<MattReferenceSingleIter<HDRFloat<float>>, 16>();
-        check_size<MattReferenceSingleIter<HDRFloat<double>>, 24>();
+        check_size<MattReferenceSingleIter<HDRFloat<double>>, 32>();
         check_size<MattReferenceSingleIter<HDRFloat<CudaDblflt<MattDblflt>>>, 24>();
         check_size<MattReferenceSingleIter<HDRFloat<CudaDblflt<dblflt>>>, 24>();
         check_size<MattReferenceSingleIter<dblflt>, 16>();

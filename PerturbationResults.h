@@ -15,6 +15,11 @@
 template<typename IterType, class T, CalcBad Bad>
 class PerturbationResults {
 public:
+    PerturbationResults(size_t Generation = 0, size_t LaGeneration = 0) :
+        GenerationNumber(Generation),
+        LaGenerationNumber(LaGeneration) {
+    }
+
     // Example of how to pull the SubType out for HdrFloat, or keep the primitive float/double
     using SubType = typename SubTypeChooser<
         std::is_fundamental<T>::value,
@@ -38,13 +43,40 @@ public:
     IterType PeriodMaybeZero;  // Zero if not worked out
 
     std::vector<MattReferenceSingleIter<T, Bad>> orb;
+private:
+    size_t GenerationNumber;
+
+    std::unique_ptr<LAReference<IterType, T, SubType>> LaReference;
+    size_t LaGenerationNumber;
+
+public:
+    size_t GetGenerationNumber() const {
+        return GenerationNumber;
+    }
+    size_t GetLaGenerationNumber() const {
+        return GenerationNumber;
+    }
+
+    void ClearLaReference() {
+        LaReference = nullptr;
+        LaGenerationNumber = 0;
+    }
+
+    void SetLaReference(
+        std::unique_ptr<LAReference<IterType, T, SubType>> laReference,
+        size_t NewLaGenerationNumber) {
+        LaReference = std::move(laReference);
+        LaGenerationNumber = NewLaGenerationNumber;
+    }
+
+    LAReference<IterType, T, SubType>* GetLaReference() const {
+        return LaReference.get();
+    }
 
     uint32_t AuthoritativePrecision;
     std::vector<HighPrecision> ReuseX;
     std::vector<HighPrecision> ReuseY;
-
-    std::unique_ptr<LAReference<IterType, T, SubType>> LaReference;
-
+    
     template<bool IncludeLA, class Other, CalcBad Bad = CalcBad::Disable>
     void Copy(const PerturbationResults<IterType, Other, Bad>& other) {
         clear();
@@ -56,6 +88,7 @@ public:
         PeriodMaybeZero = other.PeriodMaybeZero;
 
         orb.reserve(other.orb.size());
+        GenerationNumber = other.GetGenerationNumber();
 
         AuthoritativePrecision = other.AuthoritativePrecision;
         ReuseX.reserve(other.ReuseX.size());
@@ -75,8 +108,9 @@ public:
         ReuseY = other.ReuseY;
 
         if constexpr (IncludeLA) {
-            if (other.LaReference) {
-                LaReference = std::make_unique<LAReference<IterType, T, SubType>>(*other.LaReference);
+            if (other.GetLaReference() != nullptr) {
+                LaReference = std::make_unique<LAReference<IterType, T, SubType>>(*other.GetLaReference());
+                LaGenerationNumber = other.GetLaGenerationNumber();
             }
         }
     }
@@ -340,10 +374,14 @@ public:
         PeriodMaybeZero = 0;
 
         orb.clear();
+        GenerationNumber = 0;
 
         AuthoritativePrecision = false;
         ReuseX.clear();
         ReuseY.clear();
+
+        LaReference = nullptr;
+        LaGenerationNumber = 0;
     }
 
     // TODO this is fucked up at the moment.  Look in lareference.cpp to uncomment the template instantiations.
@@ -378,7 +416,8 @@ public:
         const HighPrecision& maxX,
         const HighPrecision& maxY,
         IterType NumIterations,
-        size_t GuessReserveSize) {
+        size_t GuessReserveSize,
+        size_t Generation) {
         auto radiusX = maxX - minX;
         auto radiusY = maxY - minY;
 
@@ -402,6 +441,7 @@ public:
 
         size_t ReserveSize = (GuessReserveSize != 0) ? GuessReserveSize : NumIterations;
 
+        GenerationNumber = Generation;
         orb.reserve(ReserveSize);
 
         orb.push_back({});
@@ -416,6 +456,9 @@ public:
         else if constexpr (Reuse == RefOrbitCalc::ReuseMode::DontSaveForReuse) {
             AuthoritativePrecision = 0;
         }
+
+        LaReference = nullptr;
+        LaGenerationNumber = 0;
     }
 
     template<CalcBad Bad, RefOrbitCalc::ReuseMode Reuse>

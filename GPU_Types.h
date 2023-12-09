@@ -314,7 +314,7 @@ private:
             m_Results64HdrCudaMattDblfltDisable = nullptr;
             m_Results64HdrCudaMattDblfltEnable = nullptr;
 
-            m_CachedResults = nullptr;
+            m_GenerationNumber = 0;
 
             m_LaReference32Float = nullptr;
             m_LaReference32Double = nullptr;
@@ -328,7 +328,7 @@ private:
             m_LaReference64HdrDouble = nullptr;
             m_LaReference64HdrCudaMattDblflt = nullptr;
 
-            m_CachedLaReference = nullptr;
+            m_LaGenerationNumber = 0;
         }
 
         MattPerturbSingleResults<uint32_t, float, CalcBad::Disable>* m_Results32FloatDisable;
@@ -353,7 +353,7 @@ private:
         MattPerturbSingleResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CalcBad::Disable>* m_Results64HdrCudaMattDblfltDisable;
         MattPerturbSingleResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CalcBad::Enable>* m_Results64HdrCudaMattDblfltEnable;
 
-        const void* m_CachedResults;
+        size_t m_GenerationNumber;
 
         GPU_LAReference<uint32_t, float, float> *m_LaReference32Float;
         GPU_LAReference<uint32_t, double, double>* m_LaReference32Double;
@@ -367,7 +367,7 @@ private:
         GPU_LAReference<uint64_t, HDRFloat<double>, double>* m_LaReference64HdrDouble;
         GPU_LAReference<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>>* m_LaReference64HdrCudaMattDblflt;
 
-        const void* m_CachedLaReference;
+        size_t m_LaGenerationNumber;
     };
 
 public:
@@ -376,20 +376,26 @@ public:
 
 private:
     template<typename Type, CalcBad Bad = CalcBad::Disable>
-    void SetPtr32(const void* HostPtr, InternalResults& Results, MattPerturbSingleResults<uint32_t, Type, Bad>* ptr);
+    void SetPtr32(
+        size_t GenerationNumber,
+        InternalResults& Results,
+        MattPerturbSingleResults<uint32_t, Type, Bad>* ptr);
 
     template<typename Type, CalcBad Bad = CalcBad::Disable>
-    void SetPtr64(const void* HostPtr, InternalResults& Results, MattPerturbSingleResults<uint64_t, Type, Bad>* ptr);
+    void SetPtr64(
+        size_t GenerationNumber,
+        InternalResults& Results,
+        MattPerturbSingleResults<uint64_t, Type, Bad>* ptr);
 
     template<typename Type, typename SubType>
     void SetLaReferenceInternal32(
-        const void* HostPtr,
+        size_t LaGenerationNumber,
         InternalResults& Results,
         GPU_LAReference<uint32_t, Type, SubType>* LaReference);
 
     template<typename Type, typename SubType>
     void SetLaReferenceInternal64(
-        const void* HostPtr,
+        size_t LaGenerationNumber,
         InternalResults& Results,
         GPU_LAReference<uint64_t, Type, SubType>* LaReference);
 
@@ -416,7 +422,7 @@ private:
 
     template<typename IterType, typename Type, typename SubType>
     void SetLaReferenceInternal(
-        const void* HostPtr,
+        size_t LaGenerationNumber,
         InternalResults& Results,
         GPU_LAReference<IterType, Type, SubType>* LaReference);
 
@@ -424,14 +430,14 @@ private:
 
 public:
     template<typename IterType, typename Type, CalcBad Bad = CalcBad::Disable>
-    void SetPtr1(const void *HostPtr, MattPerturbSingleResults<IterType, Type, Bad>* ptr);
+    void SetPtr1(size_t GenerationNumber, MattPerturbSingleResults<IterType, Type, Bad>* ptr);
 
     template<typename IterType, typename Type, CalcBad Bad = CalcBad::Disable>
-    void SetPtr2(const void* HostPtr, MattPerturbSingleResults<IterType, Type, Bad>* ptr);
+    void SetPtr2(size_t GenerationNumber, MattPerturbSingleResults<IterType, Type, Bad>* ptr);
 
     template<typename IterType, typename Type, typename SubType>
     void SetLaReference1(
-        const void* HostPtr,
+        size_t LaGenerationNumber,
         GPU_LAReference<IterType, Type, SubType>* LaReference);
 
     template<typename IterType, typename Type, CalcBad Bad = CalcBad::Disable>
@@ -440,10 +446,10 @@ public:
     template<typename IterType, typename Type, CalcBad Bad = CalcBad::Disable>
     MattPerturbSingleResults<IterType, Type, Bad>* GetPtr2();
 
-    const void *GetHostPtr1() const;
-    const void* GetHostPtr2() const;
-    const void* GetHostLaPtr1() const;
-    const void* GetHostLaPtr2() const;
+    size_t GetHostGenerationNumber1() const;
+    size_t GetHostGenerationNumber2() const;
+    size_t GetHostLaGenerationNumber1() const;
+    size_t GetHostLaGenerationNumber2() const;
 
     template<typename IterType, typename Type, typename SubType>
     GPU_LAReference<IterType, Type, SubType>* GetLaReference1();

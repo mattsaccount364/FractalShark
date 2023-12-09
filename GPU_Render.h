@@ -136,11 +136,12 @@ public:
 
     template<typename IterType, class T1, class SubType, CalcBad Bad, class T2>
     uint32_t InitializePerturb(
-        const void *OrigResults1,
+        size_t GenerationNumber1,
         MattPerturbResults<IterType, T1, Bad>* Perturb1,
-        const void* OrigResults2,
+        size_t GenerationNumber2,
         MattPerturbResults<IterType, T2, Bad>* Perturb2,
-        const LAReference<IterType, T1, SubType>* LaReferenceHost);
+        const LAReference<IterType, T1, SubType>* LaReferenceHost,
+        size_t LaGenerationNumber1);
 
     template<typename IterType>
     void ClearMemory();

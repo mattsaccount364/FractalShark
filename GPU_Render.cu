@@ -548,12 +548,15 @@ PerturbResultsCollection::~PerturbResultsCollection() {
 }
 
 template<typename Type, CalcBad Bad>
-void PerturbResultsCollection::SetPtr32(const void* HostPtr, InternalResults& Results, MattPerturbSingleResults<uint32_t, Type, Bad>* ptr) {
-    if (HostPtr == Results.m_CachedResults) {
+void PerturbResultsCollection::SetPtr32(
+    size_t GenerationNumber,
+    InternalResults& Results, MattPerturbSingleResults<uint32_t, Type, Bad>* ptr) {
+
+    if (Results.m_GenerationNumber == GenerationNumber) {
         return;
     }
 
-    Results.m_CachedResults = HostPtr;
+    Results.m_GenerationNumber = GenerationNumber;
 
     if constexpr (std::is_same<Type, float>::value) {
         if constexpr (Bad == CalcBad::Disable) {
@@ -608,15 +611,19 @@ void PerturbResultsCollection::SetPtr32(const void* HostPtr, InternalResults& Re
 }
 
 template<typename Type, CalcBad Bad>
-void PerturbResultsCollection::SetPtr64(const void* HostPtr, InternalResults& Results, MattPerturbSingleResults<uint64_t, Type, Bad>* ptr) {
-    if (HostPtr == Results.m_CachedResults) {
+void PerturbResultsCollection::SetPtr64(
+    size_t GenerationNumber,
+    InternalResults& Results,
+    MattPerturbSingleResults<uint64_t, Type, Bad>* ptr) {
+
+    if (Results.m_GenerationNumber == GenerationNumber) {
         return;
     }
 
-    Results.m_CachedResults = HostPtr;
+    Results.m_GenerationNumber = GenerationNumber;
 
     if constexpr (std::is_same<Type, float>::value) {
-if constexpr (Bad == CalcBad::Disable) {
+        if constexpr (Bad == CalcBad::Disable) {
             delete Results.m_Results64FloatDisable;
             Results.m_Results64FloatDisable = ptr;
         }
@@ -668,35 +675,36 @@ if constexpr (Bad == CalcBad::Disable) {
 }
 
 template<typename IterType, typename Type, CalcBad Bad>
-void PerturbResultsCollection::SetPtr1(const void* HostPtr, MattPerturbSingleResults<IterType, Type, Bad>* ptr) {
+void PerturbResultsCollection::SetPtr1(size_t GenerationNumber1, MattPerturbSingleResults<IterType, Type, Bad>* ptr) {
     if constexpr (std::is_same<IterType, uint32_t>::value) {
-        SetPtr32<Type, Bad>(HostPtr, m_Results1, ptr);
+        SetPtr32<Type, Bad>(GenerationNumber1, m_Results1, ptr);
     }
     else if constexpr (std::is_same<IterType, uint64_t>::value) {
-        SetPtr64<Type, Bad>(HostPtr, m_Results1, ptr);
+        SetPtr64<Type, Bad>(GenerationNumber1, m_Results1, ptr);
     }
 }
 
 template<typename IterType, typename Type, CalcBad Bad>
-void PerturbResultsCollection::SetPtr2(const void* HostPtr, MattPerturbSingleResults<IterType, Type, Bad>* ptr) {
+void PerturbResultsCollection::SetPtr2(size_t GenerationNumber2, MattPerturbSingleResults<IterType, Type, Bad>* ptr) {
     if constexpr (std::is_same<IterType, uint32_t>::value) {
-        SetPtr32<Type, Bad>(HostPtr, m_Results2, ptr);
+        SetPtr32<Type, Bad>(GenerationNumber2, m_Results2, ptr);
     }
     else if constexpr (std::is_same<IterType, uint64_t>::value) {
-        SetPtr64<Type, Bad>(HostPtr, m_Results2, ptr);
+        SetPtr64<Type, Bad>(GenerationNumber2, m_Results2, ptr);
     }
 }
 
 template<typename Type, typename SubType>
 void PerturbResultsCollection::SetLaReferenceInternal32(
-    const void* HostPtr,
+    size_t LaGenerationNumber,
     InternalResults& Results,
     GPU_LAReference<uint32_t, Type, SubType>* LaReference) {
-    if (HostPtr == Results.m_CachedLaReference) {
+
+    if (LaGenerationNumber == Results.m_LaGenerationNumber) {
         return;
     }
 
-    Results.m_CachedLaReference = HostPtr;
+    Results.m_LaGenerationNumber = LaGenerationNumber;
 
     if constexpr (std::is_same<Type, float>::value) {
         delete Results.m_LaReference32Float;
@@ -725,14 +733,15 @@ void PerturbResultsCollection::SetLaReferenceInternal32(
 
 template<typename Type, typename SubType>
 void PerturbResultsCollection::SetLaReferenceInternal64(
-    const void* HostPtr,
+    size_t LaGenerationNumber,
     InternalResults& Results,
     GPU_LAReference<uint64_t, Type, SubType>* LaReference) {
-    if (HostPtr == Results.m_CachedLaReference) {
+
+    if (LaGenerationNumber == Results.m_LaGenerationNumber) {
         return;
     }
 
-    Results.m_CachedLaReference = HostPtr;
+    Results.m_LaGenerationNumber = LaGenerationNumber;
 
     if constexpr (std::is_same<Type, float>::value) {
         delete Results.m_LaReference64Float;
@@ -761,22 +770,22 @@ void PerturbResultsCollection::SetLaReferenceInternal64(
 
 template<typename IterType, typename Type, typename SubType>
 void PerturbResultsCollection::SetLaReferenceInternal(
-    const void* HostPtr,
+    size_t LaGenerationNumber,
     InternalResults& Results,
     GPU_LAReference<IterType, Type, SubType>* LaReference) {
     if constexpr (std::is_same<IterType, uint32_t>::value) {
-        SetLaReferenceInternal32<Type, SubType>(HostPtr, Results, LaReference);
+        SetLaReferenceInternal32<Type, SubType>(LaGenerationNumber, Results, LaReference);
     }
     else if constexpr (std::is_same<IterType, uint64_t>::value) {
-        SetLaReferenceInternal64<Type, SubType>(HostPtr, Results, LaReference);
+        SetLaReferenceInternal64<Type, SubType>(LaGenerationNumber, Results, LaReference);
     }
 }
 
 template<typename IterType, typename Type, typename SubType>
 void PerturbResultsCollection::SetLaReference1(
-    const void* HostPtr,
+    size_t LaGenerationNumber,
     GPU_LAReference<IterType, Type, SubType>* LaReference) {
-    SetLaReferenceInternal(HostPtr, m_Results1, LaReference);
+    SetLaReferenceInternal(LaGenerationNumber, m_Results1, LaReference);
 }
 
 template<typename Type, CalcBad Bad>
@@ -942,20 +951,20 @@ MattPerturbSingleResults<IterType, Type, Bad>* PerturbResultsCollection::GetPtr2
     return GetPtrInternal<IterType, Type, Bad>(m_Results2);
 }
 
-const void* PerturbResultsCollection::GetHostPtr1() const {
-    return m_Results1.m_CachedResults;
+size_t PerturbResultsCollection::GetHostGenerationNumber1() const {
+    return m_Results1.m_GenerationNumber;
 }
 
-const void* PerturbResultsCollection::GetHostPtr2() const {
-    return m_Results2.m_CachedResults;
+size_t PerturbResultsCollection::GetHostGenerationNumber2() const {
+    return m_Results2.m_GenerationNumber;
 }
 
-const void* PerturbResultsCollection::GetHostLaPtr1() const {
-    return m_Results1.m_CachedLaReference;
+size_t PerturbResultsCollection::GetHostLaGenerationNumber1() const {
+    return m_Results1.m_LaGenerationNumber;
 }
 
-const void* PerturbResultsCollection::GetHostLaPtr2() const {
-    return m_Results2.m_CachedLaReference;
+size_t PerturbResultsCollection::GetHostLaGenerationNumber2() const {
+    return m_Results2.m_LaGenerationNumber;
 }
 
 template<typename IterType, typename Type, typename SubType>
@@ -969,8 +978,25 @@ GPU_LAReference<IterType, Type, SubType>* PerturbResultsCollection::GetLaReferen
 }
 
 void PerturbResultsCollection::DeleteAllInternal(InternalResults &Results) {
-    Results.m_CachedResults = nullptr;
-    Results.m_CachedLaReference = nullptr;
+    Results.m_GenerationNumber = 0;
+    Results.m_LaGenerationNumber = 0;
+
+    if (Results.m_Results32FloatDisable) {
+        delete Results.m_Results32FloatDisable;
+        Results.m_Results32FloatDisable = nullptr;
+    }
+    if (Results.m_Results32FloatEnable) {
+        delete Results.m_Results32FloatEnable;
+        Results.m_Results32FloatEnable = nullptr;
+    }
+    if (Results.m_Results32DoubleDisable) {
+        delete Results.m_Results32DoubleDisable;
+        Results.m_Results32DoubleDisable = nullptr;
+    }
+    if (Results.m_Results32DoubleEnable) {
+        delete Results.m_Results32DoubleEnable;
+        Results.m_Results32DoubleEnable = nullptr;
+    }
 
     if (Results.m_Results32HdrFloatDisable) {
         delete Results.m_Results32HdrFloatDisable;
@@ -999,6 +1025,22 @@ void PerturbResultsCollection::DeleteAllInternal(InternalResults &Results) {
 
     /////////
 
+    if (Results.m_Results64FloatDisable) {
+        delete Results.m_Results64FloatDisable;
+        Results.m_Results64FloatDisable = nullptr;
+    }
+    if (Results.m_Results64FloatEnable) {
+        delete Results.m_Results64FloatEnable;
+        Results.m_Results64FloatEnable = nullptr;
+    }
+    if (Results.m_Results64DoubleDisable) {
+        delete Results.m_Results64DoubleDisable;
+        Results.m_Results64DoubleDisable = nullptr;
+    }
+    if (Results.m_Results64DoubleEnable) {
+        delete Results.m_Results64DoubleEnable;
+        Results.m_Results64DoubleEnable = nullptr;
+    }
     if (Results.m_Results64HdrFloatDisable) {
         delete Results.m_Results64HdrFloatDisable;
         Results.m_Results64HdrFloatDisable = nullptr;
@@ -4012,19 +4054,20 @@ uint32_t GPURenderer::InitializeMemory<uint64_t>(
 
 template<typename IterType, class T1, class SubType, CalcBad Bad, class T2>
 uint32_t GPURenderer::InitializePerturb(
-    const void* OrigResults1,
+    size_t GenerationNumber1,
     MattPerturbResults<IterType, T1, Bad>* Perturb1,
-    const void* OrigResults2,
+    size_t GenerationNumber2,
     MattPerturbResults<IterType, T2, Bad>* Perturb2,
-    const LAReference<IterType, T1, SubType>* LaReferenceHost)
+    const LAReference<IterType, T1, SubType>* LaReferenceHost,
+    size_t LaGenerationNumber)
 {
-    if (OrigResults1 != m_PerturbResults.GetHostPtr1() ||
-        OrigResults2 != m_PerturbResults.GetHostPtr2() ||
-        LaReferenceHost != m_PerturbResults.GetHostLaPtr1()) {
+    if (GenerationNumber1 != m_PerturbResults.GetHostGenerationNumber1() ||
+        GenerationNumber2 != m_PerturbResults.GetHostGenerationNumber2() ||
+        LaGenerationNumber != m_PerturbResults.GetHostLaGenerationNumber1()) {
         m_PerturbResults.DeleteAll();
     }
 
-    if (OrigResults1 != m_PerturbResults.GetHostPtr1()) {
+    if (GenerationNumber1 != m_PerturbResults.GetHostGenerationNumber1()) {
         auto *CudaResults1 = new MattPerturbSingleResults<IterType, T1, Bad>{
             Perturb1->size,
             Perturb1->PeriodMaybeZero,
@@ -4037,10 +4080,10 @@ uint32_t GPURenderer::InitializePerturb(
             return result;
         }
 
-        m_PerturbResults.SetPtr1(OrigResults1, CudaResults1);
+        m_PerturbResults.SetPtr1(GenerationNumber1, CudaResults1);
     }
 
-    if (OrigResults2 != m_PerturbResults.GetHostPtr2()) {
+    if (GenerationNumber2 != m_PerturbResults.GetHostGenerationNumber2()) {
         auto* CudaResults2 = new MattPerturbSingleResults<IterType, T2, Bad>{
             Perturb2->size,
             Perturb2->PeriodMaybeZero,
@@ -4053,10 +4096,10 @@ uint32_t GPURenderer::InitializePerturb(
             return result;
         }
 
-        m_PerturbResults.SetPtr2(OrigResults2, CudaResults2);
+        m_PerturbResults.SetPtr2(GenerationNumber2, CudaResults2);
     }
 
-    if (LaReferenceHost != m_PerturbResults.GetHostLaPtr1()) {
+    if (LaGenerationNumber != m_PerturbResults.GetHostLaGenerationNumber1()) {
         auto* LaReferenceCuda = new GPU_LAReference<IterType, T1, SubType>{ *LaReferenceHost };
         auto result = LaReferenceCuda->CheckValid();
         if (result != 0) {
@@ -4064,7 +4107,7 @@ uint32_t GPURenderer::InitializePerturb(
             return result;
         }
 
-        m_PerturbResults.SetLaReference1(LaReferenceHost, LaReferenceCuda);
+        m_PerturbResults.SetLaReference1(LaGenerationNumber, LaReferenceCuda);
     }
 
     return cudaSuccess;
@@ -4072,75 +4115,85 @@ uint32_t GPURenderer::InitializePerturb(
 
 template
 uint32_t GPURenderer::InitializePerturb<uint32_t, float, float, CalcBad::Disable, float>(
-    const void* OrigResults1,
+    size_t GenerationNumber1,
     MattPerturbResults<uint32_t, float, CalcBad::Disable>* Perturb1,
-    const void* OrigResults2,
+    size_t GenerationNumber2,
     MattPerturbResults<uint32_t, float, CalcBad::Disable>* Perturb2,
-    const LAReference<uint32_t, float, float>* LaReferenceHost);
+    const LAReference<uint32_t, float, float>* LaReferenceHost,
+    size_t LaGenerationNumber1);
 template
 uint32_t GPURenderer::InitializePerturb<uint32_t, double, double, CalcBad::Disable, double>(
-    const void* OrigResults1,
+    size_t GenerationNumber1,
     MattPerturbResults<uint32_t, double, CalcBad::Disable>* Perturb1,
-    const void* OrigResults2,
+    size_t GenerationNumber2,
     MattPerturbResults<uint32_t, double, CalcBad::Disable>* Perturb2,
-    const LAReference<uint32_t, double, double>* LaReferenceHost);
+    const LAReference<uint32_t, double, double>* LaReferenceHost,
+    size_t LaGenerationNumber1);
 template
 uint32_t GPURenderer::InitializePerturb<uint32_t, class HDRFloat<float>, float, CalcBad::Disable, HDRFloat<float>>(
-    const void* OrigResults1,
+    size_t GenerationNumber1,
     MattPerturbResults<uint32_t, HDRFloat<float>, CalcBad::Disable>* Perturb1,
-    const void* OrigResults2,
+    size_t GenerationNumber2,
     MattPerturbResults<uint32_t, HDRFloat<float>, CalcBad::Disable>* Perturb2,
-    const LAReference<uint32_t, HDRFloat<float>, float>* LaReferenceHost);
+    const LAReference<uint32_t, HDRFloat<float>, float>* LaReferenceHost,
+    size_t LaGenerationNumber1);
 template
 uint32_t GPURenderer::InitializePerturb<uint32_t, class HDRFloat<double>, double, CalcBad::Disable, HDRFloat<double>>(
-    const void* OrigResults1,
+    size_t GenerationNumber1,
     MattPerturbResults<uint32_t, HDRFloat<double>, CalcBad::Disable>* Perturb1,
-    const void* OrigResults2,
+    size_t GenerationNumber2,
     MattPerturbResults<uint32_t, HDRFloat<double>, CalcBad::Disable>* Perturb2,
-    const LAReference<uint32_t, HDRFloat<double>, double>* LaReferenceHost);
+    const LAReference<uint32_t, HDRFloat<double>, double>* LaReferenceHost,
+    size_t LaGenerationNumber1);
 template
 uint32_t GPURenderer::InitializePerturb<uint32_t, class HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, CalcBad::Disable, HDRFloat<CudaDblflt<MattDblflt>>>(
-    const void* OrigResults1,
+    size_t GenerationNumber1,
     MattPerturbResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CalcBad::Disable>* Perturb1,
-    const void* OrigResults2,
+    size_t GenerationNumber2,
     MattPerturbResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CalcBad::Disable>* Perturb2,
-    const LAReference<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>>* LaReferenceHost);
+    const LAReference<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>>* LaReferenceHost,
+    size_t LaGenerationNumber1);
 
 template
 uint32_t GPURenderer::InitializePerturb<uint64_t, float, float, CalcBad::Disable, float>(
-    const void* OrigResults1,
+    size_t GenerationNumber1,
     MattPerturbResults<uint64_t, float, CalcBad::Disable>* Perturb1,
-    const void* OrigResults2,
+    size_t GenerationNumber2,
     MattPerturbResults<uint64_t, float, CalcBad::Disable>* Perturb2,
-    const LAReference<uint64_t, float, float>* LaReferenceHost);
+    const LAReference<uint64_t, float, float>* LaReferenceHost,
+    size_t LaGenerationNumber1);
 template
 uint32_t GPURenderer::InitializePerturb<uint64_t, double, double, CalcBad::Disable, double>(
-    const void* OrigResults1,
+    size_t GenerationNumber1,
     MattPerturbResults<uint64_t, double, CalcBad::Disable>* Perturb1,
-    const void* OrigResults2,
+    size_t GenerationNumber2,
     MattPerturbResults<uint64_t, double, CalcBad::Disable>* Perturb2,
-    const LAReference<uint64_t, double, double>* LaReferenceHost);
+    const LAReference<uint64_t, double, double>* LaReferenceHost,
+    size_t LaGenerationNumber1);
 template
 uint32_t GPURenderer::InitializePerturb<uint64_t, class HDRFloat<float>, float, CalcBad::Disable, HDRFloat<float>>(
-    const void* OrigResults1,
+    size_t GenerationNumber1,
     MattPerturbResults<uint64_t, HDRFloat<float>, CalcBad::Disable>* Perturb1,
-    const void* OrigResults2,
+    size_t GenerationNumber2,
     MattPerturbResults<uint64_t, HDRFloat<float>, CalcBad::Disable>* Perturb2,
-    const LAReference<uint64_t, HDRFloat<float>, float>* LaReferenceHost);
+    const LAReference<uint64_t, HDRFloat<float>, float>* LaReferenceHost,
+    size_t LaGenerationNumber1);
 template
 uint32_t GPURenderer::InitializePerturb<uint64_t, class HDRFloat<double>, double, CalcBad::Disable, HDRFloat<double>>(
-    const void* OrigResults1,
+    size_t GenerationNumber1,
     MattPerturbResults<uint64_t, HDRFloat<double>, CalcBad::Disable>* Perturb1,
-    const void* OrigResults2,
+    size_t GenerationNumber2,
     MattPerturbResults<uint64_t, HDRFloat<double>, CalcBad::Disable>* Perturb2,
-    const LAReference<uint64_t, HDRFloat<double>, double>* LaReferenceHost);
+    const LAReference<uint64_t, HDRFloat<double>, double>* LaReferenceHost,
+    size_t LaGenerationNumber1);
 template
 uint32_t GPURenderer::InitializePerturb<uint64_t, class HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, CalcBad::Disable, HDRFloat<CudaDblflt<MattDblflt>>>(
-    const void* OrigResults1,
+    size_t GenerationNumber1,
     MattPerturbResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CalcBad::Disable>* Perturb1,
-    const void* OrigResults2,
+    size_t GenerationNumber2,
     MattPerturbResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CalcBad::Disable>* Perturb2,
-    const LAReference<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>>* LaReferenceHost);
+    const LAReference<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>>* LaReferenceHost,
+    size_t LaGenerationNumber1);
 
 bool GPURenderer::MemoryInitialized() const {
     if (OutputIterMatrix == nullptr) {

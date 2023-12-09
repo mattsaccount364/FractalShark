@@ -3286,12 +3286,12 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
         CalcBad::Disable,
         RefOrbitCalc::Extras::IncludeLAv2>();
 
-    if (results->LaReference.get() == nullptr) {
+    if (results->GetLaReference() == nullptr) {
         ::MessageBox(NULL, L"Oops - a null pointer deref", L"", MB_OK);
         return;
     }
 
-    auto &LaReference = *results->LaReference.get();
+    auto &LaReference = *results->GetLaReference();
 
     T dx = T((m_MaxX - m_MinX) / (m_ScrnWidth * GetGpuAntialiasing()));
     HdrReduce(dx);
@@ -3563,17 +3563,18 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
         results->orb.data(),
         results->PeriodMaybeZero };
 
-    if (results->LaReference.get() == nullptr) {
+    if (results->GetLaReference() == nullptr) {
         ::MessageBox(NULL, L"Oops - a null pointer deref", L"", MB_OK);
         return;
     }
 
     m_r.InitializePerturb<IterType, T, SubType, CalcBad::Disable, T>(
-        results,
+        results->GetGenerationNumber(),
         &gpu_results,
+        0,
         nullptr,
-        nullptr,
-        results->LaReference.get());
+        results->GetLaReference(),
+        results->GetLaGenerationNumber());
     if (err) {
         MessageBoxCudaError(err);
         return;

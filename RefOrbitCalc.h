@@ -125,6 +125,11 @@ private:
 
     size_t m_GuessReserveSize;
 
+    size_t GetNextGenerationNumber();
+    size_t GetNextLaGenerationNumber();
+    size_t m_GenerationNumber;
+    size_t m_LaGenerationNumber;
+
     template<typename IterType, CalcBad Bad>
     struct Container {
         std::vector<std::unique_ptr<PerturbationResults<IterType, double, Bad>>> m_PerturbationResultsDouble;

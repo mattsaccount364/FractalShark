@@ -76,7 +76,9 @@ static inline void PrefetchHighPrec(const HighPrecision& target) {
 RefOrbitCalc::RefOrbitCalc(Fractal& Fractal)
     : m_PerturbationAlg{ PerturbationAlg::MTPeriodicity3 },
       m_Fractal(Fractal),
-      m_GuessReserveSize() {
+      m_GuessReserveSize(),
+      m_GenerationNumber(),
+      m_LaGenerationNumber() {
 }
 
 bool RefOrbitCalc::RequiresBadCalc() const {
@@ -497,8 +499,21 @@ static void AddReused(T &results, const HighPrecision& zx, const HighPrecision& 
     results.ReuseY.push_back(ReducedZy);
 }
 
+size_t RefOrbitCalc::GetNextGenerationNumber() {
+    ++m_GenerationNumber;
+    return m_GenerationNumber;
+}
+
+size_t RefOrbitCalc::GetNextLaGenerationNumber() {
+    ++m_LaGenerationNumber;
+    return m_LaGenerationNumber;
+}
+
 template<typename IterType, class T, class PerturbationResultsType, CalcBad Bad, RefOrbitCalc::ReuseMode Reuse>
-void RefOrbitCalc::InitResults(PerturbationResultsType& results, const HighPrecision& initX, const HighPrecision& initY) {
+void RefOrbitCalc::InitResults(
+    PerturbationResultsType& results,
+    const HighPrecision& initX,
+    const HighPrecision& initY) {
     // We're going to add new results, so clear out the old ones.
     OptimizeMemory();
 
@@ -510,7 +525,8 @@ void RefOrbitCalc::InitResults(PerturbationResultsType& results, const HighPreci
         m_Fractal.GetMaxX(),
         m_Fractal.GetMaxY(),
         m_Fractal.GetNumIterations<IterType>(),
-        m_GuessReserveSize);
+        m_GuessReserveSize,
+        GetNextGenerationNumber());
 }
 
 template<
@@ -2035,19 +2051,21 @@ PerturbationResults<IterType, ConvertTType, Bad>* RefOrbitCalc::GetAndCreateUsef
         std::is_same<T, HDRFloat<double>>::value) {
         if constexpr (Ex == Extras::IncludeLAv2) {
             static_assert(Bad == CalcBad::Disable, "!");
-            if (results->LaReference == nullptr) {
-                results->LaReference = std::make_unique<LAReference<IterType, T, SubType>>();
+            if (results->GetLaReference() == nullptr) {
+                auto temp = std::make_unique<LAReference<IterType, T, SubType>>();
 
                 // TODO the presumption here is results size fits in the target IterType size
-                results->LaReference->GenerateApproximationData(
+                temp->GenerateApproximationData(
                     *results,
                     results->maxRadius,
                     (IterType)results->orb.size() - 1,
                     UseSmallExponents);
+
+                results->SetLaReference(std::move(temp), GetNextLaGenerationNumber());
             }
         }
         else {
-            results->LaReference = nullptr;
+            results->ClearLaReference();
         }
     }
 
@@ -2668,33 +2686,45 @@ void RefOrbitCalc::LoadAllOrbits() {
         for (const auto& entry : std::filesystem::directory_iterator(path)) {
             auto file = entry.path().string();
             if (extmatch(file)) {
+                auto NextGen = GetNextGenerationNumber();
+                auto NextLaGen = GetNextLaGenerationNumber();
                 auto stripfn = stripext(file);
                 auto widefn = narrowtowide(stripfn);
-                auto results1 = std::make_unique<PerturbationResults<IterType, double, Bad>>();
+                auto results1 = std::make_unique<PerturbationResults<IterType, double, Bad>>(
+                    NextGen,
+                    NextLaGen);
                 if (results1->Load(widefn)) {
                     Container.m_PerturbationResultsDouble.push_back(std::move(results1));
                     continue;
                 }
 
-                auto results2 = std::make_unique<PerturbationResults<IterType, float, Bad>>();
+                auto results2 = std::make_unique<PerturbationResults<IterType, float, Bad>>(
+                    NextGen,
+                    NextLaGen);
                 if (results2->Load(widefn)) {
                     Container.m_PerturbationResultsFloat.push_back(std::move(results2));
                     continue;
                 }
 
-                auto results3 = std::make_unique<PerturbationResults<IterType, HDRFloat<double>, Bad>>();
+                auto results3 = std::make_unique<PerturbationResults<IterType, HDRFloat<double>, Bad>>(
+                    NextGen,
+                    NextLaGen);
                 if (results3->Load(widefn)) {
                     Container.m_PerturbationResultsHDRDouble.push_back(std::move(results3));
                     continue;
                 }
 
-                auto results4 = std::make_unique<PerturbationResults<IterType, HDRFloat<float>, Bad>>();
+                auto results4 = std::make_unique<PerturbationResults<IterType, HDRFloat<float>, Bad>>(
+                    NextGen,
+                    NextLaGen);
                 if (results4->Load(widefn)) {
                     Container.m_PerturbationResultsHDRFloat.push_back(std::move(results4));
                     continue;
                 }
 
-                auto results5 = std::make_unique<PerturbationResults<IterType, HDRFloat<CudaDblflt<MattDblflt>>, Bad>>();
+                auto results5 = std::make_unique<PerturbationResults<IterType, HDRFloat<CudaDblflt<MattDblflt>>, Bad>>(
+                    NextGen,
+                    NextLaGen);
                 if (results5->Load(widefn)) {
                     Container.m_PerturbationResultsHDR2xFloat.push_back(std::move(results5));
                     continue;

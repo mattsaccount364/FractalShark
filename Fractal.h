@@ -98,6 +98,8 @@ public: // Changing the view
     void AutoZoom();
 
     struct PointZoomBBConverter {
+        static constexpr auto factor = 2;
+
         PointZoomBBConverter(
             HighPrecision ptX,
             HighPrecision ptY,

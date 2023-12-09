@@ -285,36 +285,38 @@
 #define IDM_ALG_GPU_1_64_PERTURB_LAV2_PO 33077
 #define IDM_ALG_GPU_1_64_PERTURB_LAV2_LAO 33078
 #define ID_CHOOSERENDERALGORITHM_AUTO   33079
-#define IDM_ALG_AUTO                    33080
-#define IDM_VIEW1                       33081
-#define IDM_VIEW2                       33082
-#define IDM_VIEW3                       33083
-#define IDM_VIEW4                       33084
-#define IDM_VIEW5                       33085
-#define IDM_VIEW6                       33086
-#define IDM_VIEW7                       33087
-#define IDM_VIEW8                       33088
-#define IDM_VIEW9                       33089
-#define IDM_VIEW10                      33090
-#define IDM_VIEW11                      33091
-#define IDM_VIEW12                      33092
-#define IDM_VIEW13                      33093
-#define IDM_VIEW14                      33094
-#define IDM_VIEW15                      33095
-#define IDM_VIEW16                      33096
-#define IDM_VIEW17                      33097
-#define IDM_VIEW18                      33098
-#define IDM_VIEW19                      33099
-#define IDM_VIEW20                      33100
-#define IDM_VIEW21                      33101
-#define IDM_VIEW22                      33102
-#define IDM_VIEW23                      33103
-#define IDM_VIEW24                      33104
-#define IDM_VIEW25                      33105
-#define IDM_VIEW26                      33106
-#define IDM_VIEW27                      33107
-#define IDM_VIEW28                      33108
-#define IDM_VIEW29                      33109
+#define IDM_VIEWS_HELP                  33089
+#define IDM_HELP_ALG                    33090
+#define IDM_ALG_AUTO                    33091
+#define IDM_VIEW1                       33181
+#define IDM_VIEW2                       33182
+#define IDM_VIEW3                       33183
+#define IDM_VIEW4                       33184
+#define IDM_VIEW5                       33185
+#define IDM_VIEW6                       33186
+#define IDM_VIEW7                       33187
+#define IDM_VIEW8                       33188
+#define IDM_VIEW9                       33189
+#define IDM_VIEW10                      33190
+#define IDM_VIEW11                      33191
+#define IDM_VIEW12                      33192
+#define IDM_VIEW13                      33193
+#define IDM_VIEW14                      33194
+#define IDM_VIEW15                      33195
+#define IDM_VIEW16                      33196
+#define IDM_VIEW17                      33197
+#define IDM_VIEW18                      33198
+#define IDM_VIEW19                      33199
+#define IDM_VIEW20                      33200
+#define IDM_VIEW21                      33201
+#define IDM_VIEW22                      33202
+#define IDM_VIEW23                      33203
+#define IDM_VIEW24                      33204
+#define IDM_VIEW25                      33205
+#define IDM_VIEW26                      33206
+#define IDM_VIEW27                      33207
+#define IDM_VIEW28                      33208
+#define IDM_VIEW29                      33209
 #define IDC_STATIC                      -1
 
 // Next default values for new objects
@@ -322,7 +324,7 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        131
-#define _APS_NEXT_COMMAND_VALUE         33081
+#define _APS_NEXT_COMMAND_VALUE         33094
 #define _APS_NEXT_CONTROL_VALUE         1000
 #define _APS_NEXT_SYMED_VALUE           110
 #endif

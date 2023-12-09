@@ -51,6 +51,8 @@ void MenuBenchmark(HWND hWnd, bool fastbenchmark);
 void MenuBenchmarkRefPtDouble(HWND hWnd);
 void MenuBenchmarkRefPtHDRFloat(HWND hWnd);
 void MenuBenchmarkThis(HWND hWnd);
+void MenuAlgHelp(HWND hWnd);
+void MenuViewsHelp(HWND hWnd);
 void MenuShowHotkeys(HWND hWnd);
 void PaintAsNecessary(HWND hWnd);
 void glResetView(HWND hWnd);
@@ -425,6 +427,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 break;
             }
 
+            case IDM_VIEWS_HELP:
+            {
+                MenuViewsHelp(hWnd);
+                break;
+            }
+
             case IDM_VIEW1:
             case IDM_VIEW2:
             case IDM_VIEW3:
@@ -602,6 +610,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             }
     
             // Change rendering algorithm
+            case IDM_HELP_ALG:
+            {
+                MenuAlgHelp(hWnd);
+                break;
+            }
+
             case IDM_ALG_AUTO:
             {
                 gFractal->SetRenderAlgorithm(RenderAlgorithm::AUTO);
@@ -1739,8 +1753,30 @@ void MenuBenchmarkThis(HWND hWnd) {
     gFractal->DrawFractal(false);
 }
 
+void MenuAlgHelp(HWND /*hWnd*/) {
+    // This message box shows some help related to the algorithms.
+    ::MessageBox(
+        NULL,
+        L"Algorithms\r\n"
+        L"TODO\r\n"
+        , L"Algorithms",
+        MB_OK
+    );
+}
+
+void MenuViewsHelp(HWND /*hWnd*/) {
+    ::MessageBox(
+        NULL,
+        L"Views\r\n"
+        L"\r\n"
+        L"The purpose of these is simply to make it easy to navigate to\r\n"
+        L"some interesting locations.\r\n"
+        , L"Views",
+        MB_OK);
+}
+
 void MenuShowHotkeys(HWND /*hWnd*/) {
-    // Shows the hotkeys as defined in HandleKeyDown
+    // Shows some basic help + hotkeys as defined in HandleKeyDown
     ::MessageBox(
         NULL,
         L"Hotkeys\r\n"

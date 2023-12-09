@@ -87,6 +87,8 @@ BEGIN
         END
         POPUP "Built-In Views"
         BEGIN
+            MENUITEM "Help",                        IDM_VIEWS_HELP
+            MENUITEM SEPARATOR
             MENUITEM "&Standard View",              IDM_STANDARDVIEW
             MENUITEM "#1 - 4x64 GPU Limit",         IDM_VIEW1
             MENUITEM "#2 - 4x32 GPU Limit",         IDM_VIEW2
@@ -110,7 +112,13 @@ BEGIN
             MENUITEM "#20 - Debug spot - LAv2 is busted here, 50x10^9 iters", IDM_VIEW20
             MENUITEM "#21 - ~10^11000, 2b iterations", IDM_VIEW21
             MENUITEM "#22 - high period",           IDM_VIEW22
-            MENUITEM "#23",                         IDM_VIEW23
+            MENUITEM "#23 - high period, 50b iterations", IDM_VIEW23
+            MENUITEM "#24",                         IDM_VIEW24
+            MENUITEM "#25 - Claude - low zoom/period, 32-bit, hard spot", IDM_VIEW25
+            MENUITEM "#26 - Debug LAv2: 1x32, 2x32 busted, not 1x64", IDM_VIEW26
+            MENUITEM "#27",                         IDM_VIEW27, INACTIVE
+            MENUITEM "#28",                         IDM_VIEW28, INACTIVE
+            MENUITEM "#29",                         IDM_VIEW29, INACTIVE
         END
         MENUITEM "Recalculate, Reuse Reference", IDM_SQUAREVIEW
         MENUITEM SEPARATOR
@@ -128,6 +136,8 @@ BEGIN
         END
         POPUP "Choose Render Algorithm"
         BEGIN
+            MENUITEM "Help",                        IDM_HELP_ALG
+            MENUITEM SEPARATOR
             MENUITEM "Auto (Default)",              IDM_ALG_AUTO
             MENUITEM SEPARATOR
             POPUP "CPU-Only"
@@ -299,7 +309,7 @@ BEGIN
             VALUE "FileDescription", "FractalShark"
             VALUE "FileVersion", "1.0.0.1"
             VALUE "InternalName", "FractalShark.exe"
-            VALUE "LegalCopyright", "Copyright (C) 2023"
+            VALUE "LegalCopyright", "Copyright (C) 2023 by Matthew Renzelmann"
             VALUE "OriginalFilename", "FractalShark.exe"
             VALUE "ProductName", "FractalShark"
             VALUE "ProductVersion", "1.0.0.1"

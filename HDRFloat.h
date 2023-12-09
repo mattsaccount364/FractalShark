@@ -624,6 +624,22 @@ public:
             DeltaSubNYOrig * tempSum1 +
             DeltaSub0Y;
         HdrReduce(DeltaSubNY);
+
+        // This kind of thing can have a minor positive effect but 
+        // as a practical matter it's not worth the extra cost.
+        //auto temp1 = DeltaSubNXOrig * tempSum1;
+        //HdrReduce(temp1);
+        //auto temp2 = DeltaSubNYOrig * tempSum2;
+        //HdrReduce(temp2);
+        //DeltaSubNX = temp1 - temp2 + DeltaSub0X;
+        //HdrReduce(DeltaSubNX);
+
+        //auto temp3 = DeltaSubNXOrig * tempSum2;
+        //HdrReduce(temp3);
+        //auto temp4 = DeltaSubNYOrig * tempSum1;
+        //HdrReduce(temp4);
+        //DeltaSubNY = temp3 + temp4 + DeltaSub0Y;
+        //HdrReduce(DeltaSubNY);
     }
 
     // friends defined inside class body are inline and are hidden from non-ADL lookup

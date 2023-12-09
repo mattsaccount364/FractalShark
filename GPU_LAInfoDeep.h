@@ -12,6 +12,11 @@
 template<typename IterType, class Float, class SubType>
 class GPU_LAInfoDeep {
 public:
+    static constexpr bool IsHDR =
+        std::is_same<Float, ::HDRFloat<float>>::value ||
+        std::is_same<Float, ::HDRFloat<double>>::value ||
+        std::is_same<Float, ::HDRFloat<CudaDblflt<MattDblflt>>>::value ||
+        std::is_same<Float, ::HDRFloat<CudaDblflt<dblflt>>>::value;
     using HDRFloat = Float;
     using HDRFloatComplex =
         std::conditional<
@@ -90,7 +95,13 @@ GPU_LAstep<IterType, Float, SubType> GPU_LAInfoDeep<IterType, Float, SubType>::P
     newdz.Reduce();
 
     GPU_LAstep<IterType, Float, SubType> temp;
-    temp.unusable = newdz.chebychevNorm().compareToBothPositiveReduced(LAThreshold) >= 0;
+    if constexpr (IsHDR) {
+        temp.unusable = newdz.chebychevNorm().compareToBothPositiveReduced(LAThreshold) >= 0;
+    }
+    else {
+        temp.unusable = newdz.chebychevNorm() >= LAThreshold;
+    }
+
     temp.newDzDeep = newdz;
     return temp;
 }

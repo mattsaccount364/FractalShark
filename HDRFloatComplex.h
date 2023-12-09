@@ -4,16 +4,6 @@
 #include <algorithm>
 #include <math.h>
 
-#if defined(__CUDACC__) // NVCC
-#define MY_ALIGN(n) __align__(n)
-#elif defined(__GNUC__) // GCC
-#define MY_ALIGN(n) __attribute__((aligned(n)))
-#elif defined(_MSC_VER) // MSVC
-#define MY_ALIGN(n) __declspec(align(n))
-#else
-#error "Please provide a definition for MY_ALIGN macro for your host compiler!"
-#endif
-
 template<class SubType>
 class HDRFloatComplex {
 
@@ -75,7 +65,7 @@ public:
 private:
     void CUDA_CRAP setMantexp(const HDRFloat &realIn, const HDRFloat &imagIn) {
 
-        exp = max(realIn.exp, imagIn.exp);
+        exp = CudaHostMax(realIn.exp, imagIn.exp);
         mantissaReal = realIn.mantissa * HDRFloat::getMultiplier(realIn.exp-exp);
         mantissaImag = imagIn.mantissa * HDRFloat::getMultiplier(imagIn.exp-exp);
     }
@@ -335,7 +325,7 @@ public:
         TExp f_expImag;
 
         auto helper = [&](int32_t min_small) {
-            TExp expDiff = max(f_expReal, f_expImag) + min_small;
+            TExp expDiff = CudaHostMax(f_expReal, f_expImag) + min_small;
             TExp expCombined = exp + expDiff;
             SubType mul = HDRFloat::getMultiplier(-expDiff);
 
@@ -376,7 +366,7 @@ public:
             //mantissaReal.Reduce(f_expReal);
             //mantissaImag.Reduce(f_expImag);
 
-            //TExp expDiff = max(f_expReal, f_expImag) + HDRFloat::MIN_SMALL_EXPONENT_FLOAT();
+            //TExp expDiff = std::CudaHostMax(f_expReal, f_expImag) + HDRFloat::MIN_SMALL_EXPONENT_FLOAT();
             //TExp expCombined = exp + expDiff;
             //exp = expCombined;
         }

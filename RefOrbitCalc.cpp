@@ -1784,7 +1784,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecis
             //% M-power mpow set
             //% doCont = 0 normally
             //
-            //r0 = min(abs(dx),abs(dy));
+            //r0 = std::min(abs(dx),abs(dy));
             //z = c0*0;
             //r = (r0);
             //p = [];
@@ -2027,8 +2027,8 @@ PerturbationResults<IterType, ConvertTType, Bad>* RefOrbitCalc::GetAndCreateUsef
     }
 
     if constexpr (
-        //std::is_same<T, float>::value ||
-        //std::is_same<T, double>::value ||
+        std::is_same<T, float>::value || // TODO: these are new.  Maybe OK to keep here.
+        std::is_same<T, double>::value ||
         std::is_same<T, HDRFloat<float>>::value ||
         std::is_same<T, HDRFloat<double>>::value) {
         if constexpr (Ex == Extras::IncludeLAv2) {

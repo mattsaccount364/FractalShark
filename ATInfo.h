@@ -99,7 +99,11 @@ ATInfo<IterType, HDRFloat, SubType>::ATInfo() :
 template<typename IterType, class HDRFloat, class SubType>
 CUDA_CRAP
 bool ATInfo<IterType, HDRFloat, SubType>::isValid(HDRFloatComplex DeltaSub0) {
-    return DeltaSub0.chebychevNorm().compareToBothPositiveReduced(ThresholdC) <= 0;
+    if constexpr (IsHDR) {
+        return DeltaSub0.chebychevNorm().compareToBothPositiveReduced(ThresholdC) <= 0;
+    } else {
+        return DeltaSub0.chebychevNorm() <= ThresholdC;
+    }
 }
 
 template<typename IterType, class HDRFloat, class SubType>
@@ -135,8 +139,15 @@ void ATInfo<IterType, HDRFloat, SubType>::PerformAT(
 
         nsq = z.norm_squared();
         HdrReduce(nsq);
-        if (nsq.compareToBothPositiveReduced(SqrEscapeRadius) > 0) {
-            break;
+        if constexpr (IsHDR) {
+            if (nsq.compareToBothPositiveReduced(SqrEscapeRadius) > 0) {
+                break;
+            }
+        }
+        else {
+            if (nsq > SqrEscapeRadius) {
+                break;
+            }
         }
 
         z = z * z + c;

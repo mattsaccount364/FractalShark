@@ -314,10 +314,14 @@ private:
 
             m_CachedResults = nullptr;
 
+            m_LaReference32Float = nullptr;
+            m_LaReference32Double = nullptr;
             m_LaReference32HdrFloat = nullptr;
             m_LaReference32HdrDouble = nullptr;
             m_LaReference32HdrCudaMattDblflt = nullptr;
 
+            m_LaReference64Float = nullptr;
+            m_LaReference64Double = nullptr;
             m_LaReference64HdrFloat = nullptr;
             m_LaReference64HdrDouble = nullptr;
             m_LaReference64HdrCudaMattDblflt = nullptr;

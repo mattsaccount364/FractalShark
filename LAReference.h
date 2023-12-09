@@ -30,9 +30,10 @@ template<typename IterType, class Float, class SubType>
 class LAReference {
 private:
     static constexpr bool IsHDR =
-        std::is_same<Float, HDRFloat<float>>::value ||
-        std::is_same<Float, HDRFloat<double>>::value ||
-        std::is_same<Float, HDRFloat<CudaDblflt<MattDblflt>>>::value;
+        std::is_same<Float, ::HDRFloat<float>>::value ||
+        std::is_same<Float, ::HDRFloat<double>>::value ||
+        std::is_same<Float, ::HDRFloat<CudaDblflt<MattDblflt>>>::value ||
+        std::is_same<Float, ::HDRFloat<CudaDblflt<dblflt>>>::value;
     using FloatComplexT =
         std::conditional<
         IsHDR,

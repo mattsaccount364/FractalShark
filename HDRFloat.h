@@ -6,8 +6,23 @@
 #include "HighPrecision.h"
 #include "CudaDblflt.h"
 
+#if defined(__CUDACC__) // NVCC
+#define MY_ALIGN(n) __align__(n)
+#define CudaHostMax max
+#define CudaHostMin min
+#elif defined(_MSC_VER) // MSVC
+#define MY_ALIGN(n) __declspec(align(n))
+#define CudaHostMax std::max
+#define CudaHostMin std::min
+#else
+#error "Please provide a definition for MY_ALIGN macro for your host compiler!"
+#endif
+
 template<class T>
 class HDRFloatComplex;
+
+template<class T>
+class FloatComplex;
 
 CUDA_CRAP void InitStatics();
 
@@ -475,7 +490,7 @@ public:
 
         const T local_mantissa2 = DeltaSubNYOrig.mantissa * tempSum2.mantissa;
         const TExp local_exp2 = DeltaSubNYOrig.exp + tempSum2.exp;
-        const TExp maxexp = max(local_exp1, local_exp2);
+        const TExp maxexp = CudaHostMax(local_exp1, local_exp2);
         const TExp expDiff1 = local_exp1 - local_exp2;
         const T mul = getMultiplierNeg(-abs(expDiff1));
 
@@ -501,7 +516,7 @@ public:
         }
 
         expDiff2 = maxexp - DeltaSub0.exp;
-        finalMaxexp = max(maxexp, DeltaSub0.exp);
+        finalMaxexp = CudaHostMax(maxexp, DeltaSub0.exp);
 
         const T mul2 = getMultiplierNeg(-abs(expDiff2));
         HDRFloat sum2;
@@ -528,7 +543,7 @@ public:
 
         const TExp local_exp1F = DeltaSubNXOrig.exp + tempSum1.exp;
         const TExp local_exp2F = DeltaSubNYOrig.exp + tempSum2.exp;
-        const TExp maxexpF = max(local_exp1F, local_exp2F);
+        const TExp maxexpF = CudaHostMax(local_exp1F, local_exp2F);
         const TExp expDiff1F = local_exp1F - local_exp2F;
         const T mulF = getMultiplierNeg(-abs(expDiff1F));
 
@@ -543,7 +558,7 @@ public:
         }
 
         const TExp expDiff2F = maxexpF - DeltaSub0X.exp;
-        const TExp finalMaxexpF = max(maxexpF, DeltaSub0X.exp);
+        const TExp finalMaxexpF = CudaHostMax(maxexpF, DeltaSub0X.exp);
         const T mul2F = getMultiplierNeg(-abs(expDiff2F));
         //const int ZeroOrOne = (int)(expDiff2F >= 0);
         //DeltaSubNX = HDRFloat(ZeroOrOne * finalMaxexpF, ZeroOrOne * __fmaf_rn(DeltaSub0X.mantissa, mul2F, mantissaSum1F)) +
@@ -559,7 +574,7 @@ public:
 
         const TExp local_exp1T = DeltaSubNXOrig.exp + tempSum2.exp;
         const TExp local_exp2T = DeltaSubNYOrig.exp + tempSum1.exp;
-        const TExp maxexpT = max(local_exp1T, local_exp2T);
+        const TExp maxexpT = CudaHostMax(local_exp1T, local_exp2T);
         const TExp expDiff1T = local_exp1T - local_exp2T;
         const T mulT = getMultiplierNeg(-abs(expDiff1T));
 
@@ -575,7 +590,7 @@ public:
         }
 
         const TExp expDiff2T = maxexpT - DeltaSub0Y.exp;
-        const TExp finalMaxexpT = max(maxexpT, DeltaSub0Y.exp);
+        const TExp finalMaxexpT = CudaHostMax(maxexpT, DeltaSub0Y.exp);
         const T mul2T = getMultiplierNeg(-abs(expDiff2T));
 
         if (expDiff2T >= 0) {
@@ -1157,6 +1172,8 @@ static CUDA_CRAP constexpr void HdrReduce(T& incoming) {
         std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value ||
         std::is_same<T, HDRFloatComplex<double>>::value ||
         std::is_same<T, HDRFloatComplex<float>>::value ||
+        std::is_same<T, FloatComplex<double>>::value ||
+        std::is_same<T, FloatComplex<float>>::value ||
         HighPrecPossible, "No");
 
     if constexpr (

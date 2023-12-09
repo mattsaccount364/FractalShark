@@ -21,6 +21,11 @@ public:
         ::HDRFloatComplex<SubType>,
         ::FloatComplex<SubType>>::type;
     using T = SubType;
+    static constexpr bool IsHDR =
+        std::is_same<HDRFloat, ::HDRFloat<float>>::value ||
+        std::is_same<HDRFloat, ::HDRFloat<double>>::value ||
+        std::is_same<HDRFloat, ::HDRFloat<CudaDblflt<MattDblflt>>>::value ||
+        std::is_same<HDRFloat, ::HDRFloat<CudaDblflt<dblflt>>>::value;
 
     friend class GPU_LAInfoDeep<IterType, Float, SubType>;
 
@@ -128,14 +133,25 @@ template<typename IterType, class Float, class SubType>
 CUDA_CRAP
 bool LAInfoDeep<IterType, Float, SubType>::DetectPeriod(HDRFloatComplex z) {
     if constexpr (DEFAULT_DETECTION_METHOD == 1) {
-        //return z.chebychevNorm().compareToBothPositive(HDRFloat(MinMagExp, MinMagMant).multiply(PeriodDetectionThreshold2)) < 0;
-        return z.chebychevNorm().compareToBothPositive(MinMag * DefaultPeriodDetectionThreshold2) < 0;
+        if constexpr (IsHDR) {
+            //return z.chebychevNorm().compareToBothPositive(HDRFloat(MinMagExp, MinMagMant).multiply(PeriodDetectionThreshold2)) < 0;
+            return z.chebychevNorm().compareToBothPositive(MinMag * DefaultPeriodDetectionThreshold2) < 0;
+        }
+        else {
+            return z.chebychevNorm() < (MinMag * DefaultPeriodDetectionThreshold2);
+        }
     }
     else {
         //return z.chebychevNorm().divide(HDRFloatComplex(ZCoeffExp, ZCoeffRe, ZCoeffIm).chebychevNorm()).multiply_mutable(LAThresholdScale).compareToBothPositive(HDRFloat(LAThresholdExp, LAThresholdMant).multiply(PeriodDetectionThreshold)) < 0;
-        return (z.chebychevNorm() /
-            ZCoeff.chebychevNorm() * DefaultLAThresholdScale)
-            .compareToBothPositive(LAThreshold * DefaultPeriodDetectionThreshold) < 0;
+        if constexpr (IsHDR) {
+            return (z.chebychevNorm() /
+                ZCoeff.chebychevNorm() * DefaultLAThresholdScale)
+                .compareToBothPositive(LAThreshold * DefaultPeriodDetectionThreshold) < 0;
+        }
+        else {
+            return (z.chebychevNorm() /
+                ZCoeff.chebychevNorm() * DefaultLAThresholdScale) < (LAThreshold * DefaultPeriodDetectionThreshold);
+        }
     }
 }
 
@@ -166,27 +182,41 @@ bool LAInfoDeep<IterType, Float, SubType>::Step(LAInfoDeep& out, HDRFloatComplex
     const HDRFloat ChebyMagCCoeff{ CCoeff.chebychevNorm() };
 
     if constexpr (DEFAULT_DETECTION_METHOD == 1) {
-        HDRFloat outMin = HDRFloat::minBothPositiveReduced(ChebyMagz, MinMag);
-        out.MinMag = outMin;
+        if constexpr (IsHDR) {
+            HDRFloat outMin = HDRFloat::minBothPositiveReduced(ChebyMagz, MinMag);
+            out.MinMag = outMin;
+        }
+        else {
+            HDRFloat outMin = std::min(ChebyMagz, MinMag);
+            out.MinMag = outMin;
+        }
     }
 
     HDRFloat temp1 = ChebyMagz / ChebyMagZCoeff * DefaultLAThresholdScale;
-    temp1.Reduce();
+    HdrReduce(temp1);
 
     HDRFloat temp2 = ChebyMagz / ChebyMagCCoeff * DefaultLAThresholdCScale;
-    temp2.Reduce();
+    HdrReduce(temp2);
 
-    const HDRFloat outLAThreshold{ HDRFloat::minBothPositiveReduced(LAThreshold, temp1) };
-    const HDRFloat outLAThresholdC{ HDRFloat::minBothPositiveReduced(LAThresholdC, temp2) };
+    HDRFloat outLAThreshold;
+    HDRFloat outLAThresholdC;
+    if constexpr (IsHDR) {
+        outLAThreshold  = HDRFloat::minBothPositiveReduced(LAThreshold, temp1);
+        outLAThresholdC = HDRFloat::minBothPositiveReduced(LAThresholdC, temp2);
+    }
+    else {
+        outLAThreshold = std::min(LAThreshold, temp1);
+        outLAThresholdC = std::min(LAThresholdC, temp2);
+    }
 
     out.LAThreshold = outLAThreshold;
     out.LAThresholdC = outLAThresholdC;
 
     const HDRFloatComplex z2{ z * HDRFloat(2) };
     HDRFloatComplex outZCoeff{ z2 * ZCoeff };
-    outZCoeff.Reduce();
+    HdrReduce(outZCoeff);
     HDRFloatComplex outCCoeff{ z2 * CCoeff + HDRFloat{ 1 } };
-    outCCoeff.Reduce();
+    HdrReduce(outCCoeff);
 
     out.ZCoeff = outZCoeff;
     out.CCoeff = outCCoeff;
@@ -194,11 +224,24 @@ bool LAInfoDeep<IterType, Float, SubType>::Step(LAInfoDeep& out, HDRFloatComplex
     out.Ref = Ref;
 
     if constexpr (DEFAULT_DETECTION_METHOD == 1) {
-        return out.MinMag.compareToBothPositive(MinMag * (DefaultStage0PeriodDetectionThreshold2)) < 0;
+        // TODO: Double check the right thresholds here.  Look at the name of the variables and 
+        // look at the default detection method number.  Obviously 1 != 2
+        if constexpr (IsHDR) {
+            return out.MinMag.compareToBothPositive(MinMag * (DefaultStage0PeriodDetectionThreshold2)) < 0;
+        }
+        else {
+            return out.MinMag < (MinMag * DefaultStage0PeriodDetectionThreshold2);
+        }
         //return HDRFloat(out.MinMagExp, out.MinMagMant) < HDRFloat(MinMagExp, MinMagMant) * PeriodDetectionThreshold2;
     }
     else {
-        return out.LAThreshold.compareToBothPositive(LAThreshold * (DefaultStage0PeriodDetectionThreshold)) < 0;
+        if constexpr (IsHDR) {
+            return out.LAThreshold.compareToBothPositive(LAThreshold * (DefaultStage0PeriodDetectionThreshold)) < 0;
+        }
+        else {
+            return out.LAThreshold < (LAThreshold * DefaultStage0PeriodDetectionThreshold);
+        }
+
         //return HDRFloat(LAThresholdExp, LAThresholdMant) < HDRFloat(out.LAThresholdExp, out.LAThresholdMant) * PeriodDetectionThreshold;
     }
 }
@@ -206,13 +249,23 @@ bool LAInfoDeep<IterType, Float, SubType>::Step(LAInfoDeep& out, HDRFloatComplex
 template<typename IterType, class Float, class SubType>
 CUDA_CRAP
 bool LAInfoDeep<IterType, Float, SubType>::isLAThresholdZero() {
-    return LAThreshold.compareTo(HDRFloat{ 0 }) == 0;
+    if constexpr (IsHDR) {
+        return LAThreshold.compareTo(HDRFloat{ 0 }) == 0;
+    }
+    else {
+        return LAThreshold == 0;
+    }
 }
 
 template<typename IterType, class Float, class SubType>
 CUDA_CRAP
 bool LAInfoDeep<IterType, Float, SubType>::isZCoeffZero() {
-    return ZCoeff.getRe().compareTo(HDRFloat{ 0 }) == 0 && ZCoeff.getIm().compareTo(HDRFloat{ 0 }) == 0;
+    if constexpr (IsHDR) {
+        return ZCoeff.getRe().compareTo(HDRFloat{ 0 }) == 0 && ZCoeff.getIm().compareTo(HDRFloat{ 0 }) == 0;
+    }
+    else {
+        return ZCoeff.getRe() == 0 && ZCoeff.getIm() == 0;
+    }
 }
 
 template<typename IterType, class Float, class SubType>
@@ -234,20 +287,28 @@ bool LAInfoDeep<IterType, Float, SubType>::Composite(LAInfoDeep& out, LAInfoDeep
     HDRFloat ChebyMagCCoeff = CCoeff.chebychevNorm();
 
     HDRFloat temp1 = ChebyMagz / ChebyMagZCoeff * DefaultLAThresholdScale;
-    temp1.Reduce();
+    HdrReduce(temp1);
 
     HDRFloat temp2 = ChebyMagz / ChebyMagCCoeff * DefaultLAThresholdCScale;
-    temp2.Reduce();
+    HdrReduce(temp2);
 
-    HDRFloat outLAThreshold = HDRFloat::minBothPositiveReduced(LAThreshold, temp1);
-    HDRFloat outLAThresholdC = HDRFloat::minBothPositiveReduced(LAThresholdC, temp2);
+    HDRFloat outLAThreshold;
+    HDRFloat outLAThresholdC;
+    if constexpr (IsHDR) {
+        outLAThreshold = HDRFloat::minBothPositiveReduced(LAThreshold, temp1);
+        outLAThresholdC = HDRFloat::minBothPositiveReduced(LAThresholdC, temp2);
+    }
+    else {
+        outLAThreshold = std::min(LAThreshold, temp1);
+        outLAThresholdC = std::min(LAThresholdC, temp2);
+    }
 
     HDRFloatComplex z2 = z * HDRFloat(2);
     HDRFloatComplex outZCoeff = z2 * ZCoeff;
-    outZCoeff.Reduce();
+    HdrReduce(outZCoeff);
     //double RescaleFactor = out.LAThreshold / LAThreshold;
     HDRFloatComplex outCCoeff = z2 * CCoeff;
-    outCCoeff.Reduce();
+    HdrReduce(outCCoeff);
 
     ChebyMagZCoeff = outZCoeff.chebychevNorm();
     ChebyMagCCoeff = outCCoeff.chebychevNorm();
@@ -258,18 +319,24 @@ bool LAInfoDeep<IterType, Float, SubType>::Composite(LAInfoDeep& out, LAInfoDeep
     HDRFloatComplex LACCoeff = LA.CCoeff;
 
     temp1 = LA_LAThreshold / ChebyMagZCoeff;
-    temp1.Reduce();
+    HdrReduce(temp1);
 
     temp2 = LA_LAThreshold / ChebyMagCCoeff;
-    temp2.Reduce();
+    HdrReduce(temp2);
 
-    outLAThreshold = HDRFloat::minBothPositiveReduced(outLAThreshold, temp1);
-    outLAThresholdC = HDRFloat::minBothPositiveReduced(outLAThresholdC, temp2);
+    if constexpr (IsHDR) {
+        outLAThreshold = HDRFloat::minBothPositiveReduced(outLAThreshold, temp1);
+        outLAThresholdC = HDRFloat::minBothPositiveReduced(outLAThresholdC, temp2);
+    }
+    else {
+        outLAThreshold = std::min(outLAThreshold, temp1);
+        outLAThresholdC = std::min(outLAThresholdC, temp2);
+    }     
     outZCoeff = outZCoeff * LAZCoeff;
-    outZCoeff.Reduce();
+    HdrReduce(outZCoeff);
     //RescaleFactor = out.LAThreshold / temp;
     outCCoeff = outCCoeff * LAZCoeff + LACCoeff;
-    outCCoeff.Reduce();
+    HdrReduce(outCCoeff);
 
     out.LAThreshold = outLAThreshold;
     out.LAThresholdC = outLAThresholdC;
@@ -278,14 +345,24 @@ bool LAInfoDeep<IterType, Float, SubType>::Composite(LAInfoDeep& out, LAInfoDeep
     out.Ref = Ref;
 
     if constexpr (DEFAULT_DETECTION_METHOD == 1) {
-        temp = HDRFloat::minBothPositiveReduced(ChebyMagz, MinMag);
-        HDRFloat outMinMag = HDRFloat::minBothPositiveReduced(temp, LA.MinMag);
-        out.MinMag = outMinMag;
-
-        return temp.compareToBothPositive(MinMag * DefaultPeriodDetectionThreshold2) < 0;
+        if constexpr (IsHDR) {
+            temp = HDRFloat::minBothPositiveReduced(ChebyMagz, MinMag);
+            out.MinMag = HDRFloat::minBothPositiveReduced(temp, LA.MinMag);
+            return temp.compareToBothPositive(MinMag * DefaultPeriodDetectionThreshold2) < 0;
+        }
+        else {
+            temp = std::min(ChebyMagz, MinMag);
+            out.MinMag = std::min(temp, LA.MinMag);
+            return temp < (MinMag * DefaultPeriodDetectionThreshold2);
+        }
     }
     else {
-        return temp.compareToBothPositive(LAThreshold * DefaultPeriodDetectionThreshold) < 0;
+        if constexpr (IsHDR) {
+            return temp.compareToBothPositive(LAThreshold * DefaultPeriodDetectionThreshold) < 0;
+        }
+        else {
+            return temp < (LAThreshold * DefaultPeriodDetectionThreshold);
+        }
     }
 }
 
@@ -303,10 +380,16 @@ CUDA_CRAP
 LAstep<IterType, Float, SubType> LAInfoDeep<IterType, Float, SubType>::Prepare(HDRFloatComplex dz) const {
     //*2 is + 1
     HDRFloatComplex newdz = dz * (Ref * HDRFloat(2) + dz);
-    newdz.Reduce();
+    HdrReduce(newdz);
 
-    LAstep<IterType, Float, SubType> temp = {};
-    temp.unusable = newdz.chebychevNorm().compareToBothPositiveReduced(LAThreshold) >= 0;
+    LAstep<IterType, Float, SubType> temp{};
+
+    if constexpr (IsHDR) {
+        temp.unusable = newdz.chebychevNorm().compareToBothPositiveReduced(LAThreshold) >= 0;
+    }
+    else {
+        temp.unusable = newdz.chebychevNorm() >= LAThreshold;
+    }
     temp.newDzDeep = newdz;
     return temp;
 }
@@ -334,37 +417,43 @@ CUDA_CRAP
 void LAInfoDeep<IterType, Float, SubType>::CreateAT(ATInfo<IterType, Float, SubType>& Result, LAInfoDeep Next) {
     Result.ZCoeff = ZCoeff;
     Result.CCoeff = ZCoeff * CCoeff;
-    Result.CCoeff.Reduce();
+    HdrReduce(Result.CCoeff);
 
     Result.InvZCoeff = ZCoeff.reciprocal();
-    Result.InvZCoeff.Reduce();
+    HdrReduce(Result.InvZCoeff);
 
     Result.CCoeffSqrInvZCoeff = Result.CCoeff * Result.CCoeff * Result.InvZCoeff;
-    Result.CCoeffSqrInvZCoeff.Reduce();
+    HdrReduce(Result.CCoeffSqrInvZCoeff);
 
     Result.CCoeffInvZCoeff = Result.CCoeff * Result.InvZCoeff;
-    Result.CCoeffInvZCoeff.Reduce();
+    HdrReduce(Result.CCoeffInvZCoeff);
 
     Result.RefC = Next.getRef() * ZCoeff;
-    Result.RefC.Reduce();
+    HdrReduce(Result.RefC);
 
     Result.CCoeffNormSqr = Result.CCoeff.norm_squared();
-    Result.CCoeffNormSqr.Reduce();
+    HdrReduce(Result.CCoeffNormSqr);
 
     Result.RefCNormSqr = Result.RefC.norm_squared();
-    Result.RefCNormSqr.Reduce();
+    HdrReduce(Result.RefCNormSqr);
 
-    HDRFloat lim(32, 1);
-    if constexpr (std::is_same<LAInfoDeep<IterType, Float, SubType>::HDRFloat, ::HDRFloat<double>>::value) {
-        lim.setExp(256);
+    HDRFloat lim;
+    if constexpr (IsHDR) {
+        lim = HDRFloat(32, 1);
+        if constexpr (std::is_same<HDRFloat, ::HDRFloat<double>>::value) {
+            lim.setExp(256);
+        }
+        HdrReduce(lim);
+        Result.SqrEscapeRadius = HDRFloat::minBothPositive(ZCoeff.norm_squared() * LAThreshold, lim);
+        HdrReduce(Result.SqrEscapeRadius);
+
+        Result.ThresholdC = HDRFloat::minBothPositive(LAThresholdC, lim / Result.CCoeff.chebychevNorm());
     }
-
-    HdrReduce(lim);
-
-    Result.SqrEscapeRadius = HDRFloat::minBothPositive(ZCoeff.norm_squared() * LAThreshold, lim);
-    HdrReduce(Result.SqrEscapeRadius);
-
-    Result.ThresholdC = HDRFloat::minBothPositive(LAThresholdC, lim / Result.CCoeff.chebychevNorm());
+    else {
+        lim = 4294967296.0f;
+        Result.SqrEscapeRadius = std::min(ZCoeff.norm_squared() * LAThreshold, lim);
+        Result.ThresholdC = std::min(LAThresholdC, lim / Result.CCoeff.chebychevNorm());
+    }
 }
 
 template<typename IterType, class Float, class SubType>

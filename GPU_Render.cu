@@ -555,7 +555,27 @@ void PerturbResultsCollection::SetPtr32(const void* HostPtr, InternalResults& Re
 
     Results.m_CachedResults = HostPtr;
 
-    if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
+    if constexpr (std::is_same<Type, float>::value) {
+        if constexpr (Bad == CalcBad::Disable) {
+            delete Results.m_Results32FloatDisable;
+            Results.m_Results32FloatDisable = ptr;
+        }
+        else {
+            delete Results.m_Results32FloatEnable;
+            Results.m_Results32FloatEnable = ptr;
+        }
+    }
+    else if constexpr (std::is_same<Type, double>::value) {
+        if constexpr (Bad == CalcBad::Disable) {
+            delete Results.m_Results32DoubleDisable;
+            Results.m_Results32DoubleDisable = ptr;
+        }
+        else {
+            delete Results.m_Results32DoubleEnable;
+            Results.m_Results32DoubleEnable = ptr;
+        }
+    }
+    else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
         if constexpr (Bad == CalcBad::Disable) {
             delete Results.m_Results32HdrFloatDisable;
             Results.m_Results32HdrFloatDisable = ptr;
@@ -595,7 +615,27 @@ void PerturbResultsCollection::SetPtr64(const void* HostPtr, InternalResults& Re
 
     Results.m_CachedResults = HostPtr;
 
-    if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
+    if constexpr (std::is_same<Type, float>::value) {
+if constexpr (Bad == CalcBad::Disable) {
+            delete Results.m_Results64FloatDisable;
+            Results.m_Results64FloatDisable = ptr;
+        }
+        else {
+            delete Results.m_Results64FloatEnable;
+            Results.m_Results64FloatEnable = ptr;
+        }
+    }
+    else if constexpr (std::is_same<Type, double>::value) {
+        if constexpr (Bad == CalcBad::Disable) {
+            delete Results.m_Results64DoubleDisable;
+            Results.m_Results64DoubleDisable = ptr;
+        }
+        else {
+            delete Results.m_Results64DoubleEnable;
+            Results.m_Results64DoubleEnable = ptr;
+        }
+    }
+    else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
         if constexpr (Bad == CalcBad::Disable) {
             delete Results.m_Results64HdrFloatDisable;
             Results.m_Results64HdrFloatDisable = ptr;
@@ -929,6 +969,9 @@ GPU_LAReference<IterType, Type, SubType>* PerturbResultsCollection::GetLaReferen
 }
 
 void PerturbResultsCollection::DeleteAllInternal(InternalResults &Results) {
+    Results.m_CachedResults = nullptr;
+    Results.m_CachedLaReference = nullptr;
+
     if (Results.m_Results32HdrFloatDisable) {
         delete Results.m_Results32HdrFloatDisable;
         Results.m_Results32HdrFloatDisable = nullptr;
@@ -983,6 +1026,16 @@ void PerturbResultsCollection::DeleteAllInternal(InternalResults &Results) {
 
     ////////
 
+    if (Results.m_LaReference32Float) {
+        delete Results.m_LaReference32Float;
+        Results.m_LaReference32Float = nullptr;
+    }
+
+    if (Results.m_LaReference32Double) {
+        delete Results.m_LaReference32Double;
+        Results.m_LaReference32Double = nullptr;
+    }
+
     if (Results.m_LaReference32HdrFloat) {
         delete Results.m_LaReference32HdrFloat;
         Results.m_LaReference32HdrFloat = nullptr;
@@ -996,6 +1049,18 @@ void PerturbResultsCollection::DeleteAllInternal(InternalResults &Results) {
     if (Results.m_LaReference32HdrCudaMattDblflt) {
         delete Results.m_LaReference32HdrCudaMattDblflt;
         Results.m_LaReference32HdrCudaMattDblflt = nullptr;
+    }
+
+    ////////
+
+    if (Results.m_LaReference64Float) {
+        delete Results.m_LaReference64Float;
+        Results.m_LaReference64Float = nullptr;
+    }
+
+    if (Results.m_LaReference64Double) {
+        delete Results.m_LaReference64Double;
+        Results.m_LaReference64Double = nullptr;
     }
 
     if (Results.m_LaReference64HdrFloat) {
@@ -1856,7 +1921,7 @@ mandel_1xHDR_float_perturb_bla(
 //            size_t idx = ConvertLocToIndex(input_x, input_y, Width);
 //            IterType numIters = OutputIterMatrix[idx];
 //
-//            local_max = max(local_max, numIters);
+//            local_max = std::max(local_max, numIters);
 //        }
 //    }
 //
@@ -1954,6 +2019,12 @@ mandel_1xHDR_float_perturb_lav2(
     const T centerY,
     IterType n_iterations)
 {
+    static constexpr bool IsHDR =
+        std::is_same<T, ::HDRFloat<float>>::value ||
+        std::is_same<T, ::HDRFloat<double>>::value ||
+        std::is_same<T, ::HDRFloat<CudaDblflt<MattDblflt>>>::value ||
+        std::is_same<T, ::HDRFloat<CudaDblflt<dblflt>>>::value;
+
     const int X = blockIdx.x * blockDim.x + threadIdx.x;
     const int Y = blockIdx.y * blockDim.y + threadIdx.y;
 
@@ -2060,8 +2131,8 @@ mandel_1xHDR_float_perturb_lav2(
                 const T DeltaSubNXOrig{ DeltaSubNX };
                 const T DeltaSubNYOrig{ DeltaSubNY };
 
-                const auto tempMulX2{ Perturb.iters[RefIteration].x.multiply2() };
-                const auto tempMulY2{ Perturb.iters[RefIteration].y.multiply2() };
+                const auto tempMulX2{ Perturb.iters[RefIteration].x * T(2) };
+                const auto tempMulY2{ Perturb.iters[RefIteration].y * T(2) };
 
                 ++RefIteration;
 
@@ -2079,7 +2150,33 @@ mandel_1xHDR_float_perturb_lav2(
                         DeltaSub0X,
                         DeltaSub0Y);
                 }
+                else if constexpr (
+                    std::is_same<T, float>::value ||
+                    std::is_same<T, double>::value) {
+                    DeltaSubNX =
+                        DeltaSubNXOrig * tempSum2 -
+                        DeltaSubNYOrig * tempSum1 +
+                        DeltaSub0X;
+                    HdrReduce(DeltaSubNX);
+
+                    DeltaSubNY =
+                        DeltaSubNXOrig * tempSum1 +
+                        DeltaSubNYOrig * tempSum2 +
+                        DeltaSub0Y;
+                    HdrReduce(DeltaSubNY);
+                }
                 else {
+                    //DeltaSubNX =
+                    //    DeltaSubNXOrig * tempSum2 -
+                    //    DeltaSubNYOrig * tempSum1 +
+                    //    DeltaSub0X;
+                    //HdrReduce(DeltaSubNX);
+
+                    //DeltaSubNY =
+                    //    DeltaSubNXOrig * tempSum1 +
+                    //    DeltaSubNYOrig * tempSum2 +
+                    //    DeltaSub0Y;
+                    //HdrReduce(DeltaSubNY);
                     T::custom_perturb2(
                         DeltaSubNX,
                         DeltaSubNY,
@@ -2089,7 +2186,6 @@ mandel_1xHDR_float_perturb_lav2(
                         tempSum1,
                         DeltaSub0X,
                         DeltaSub0Y);
-
                 }
 
                 const auto tempVal1X{ Perturb.iters[RefIteration].x };
@@ -2097,11 +2193,23 @@ mandel_1xHDR_float_perturb_lav2(
 
                 const T tempZX{ tempVal1X + DeltaSubNX };
                 const T tempZY{ tempVal1Y + DeltaSubNY };
-                const T normSquared{ HdrReduce(tempZX.square() + tempZY.square()) };
+                T normSquared;
+                if constexpr (IsHDR) {
+                    normSquared = { HdrReduce(tempZX.square() + tempZY.square()) };
+                }
+                else {
+                    normSquared = { tempZX * tempZX + tempZY * tempZY };
+                }
 
                 if (HdrCompareToBothPositiveReducedLT<T, 256>(normSquared) && iter < maxIterations) {
-                    const auto DeltaNormSquared{ HdrReduce(DeltaSubNX.square() + DeltaSubNY.square()) };
-
+                    T DeltaNormSquared;
+                    if constexpr (IsHDR) {
+                        DeltaNormSquared = { HdrReduce(DeltaSubNX.square() + DeltaSubNY.square()) };
+                    }
+                    else {
+                        DeltaNormSquared = { DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY };
+                    }
+ 
                     if (HdrCompareToBothPositiveReducedLT(normSquared, DeltaNormSquared) ||
                         RefIteration >= Perturb.size - 1) {
                         DeltaSubNX = tempZX;
@@ -2804,7 +2912,7 @@ void mandel_1x_float_perturb(
     T DeltaSubNY = T(0.0f);
     IterType MaxRefIteration = PerturbFloat.size - 1;
 
-    //T dzdcX = max(max(x.dzdc), 1.0f);
+    //T dzdcX = std::max(std::max(x.dzdc), 1.0f);
     T scalingFactor = T(1.0f) / (HdrMaxPositiveReduced(HdrMaxPositiveReduced(HdrAbs(dx), HdrAbs(dy)), T(1.0f)));
     //T scalingFactor = 1.0f;
     T dzdcX = scalingFactor;
@@ -4736,43 +4844,43 @@ uint32_t GPURenderer::RenderPerturbLAv2(
     if ((algorithm == RenderAlgorithm::Gpu1x32PerturbedLAv2) ||
         (algorithm == RenderAlgorithm::Gpu1x32PerturbedLAv2PO) ||
         (algorithm == RenderAlgorithm::Gpu1x32PerturbedLAv2LAO)) {
-        //if constexpr (
-        //    (EnableGpu1x32PerturbedLAv2 || EnableGpu1x32PerturbedLAv2PO || EnableGpu1x32PerturbedLAv2LAO)
-        //    && std::is_same<float, T>::value) {
-        //    // hdrflt
-        //    mandel_1xHDR_float_perturb_lav2<IterType, float, float, Mode> << <nb_blocks, threads_per_block >> > (
-        //        static_cast<IterType*>(OutputIterMatrix),
-        //        OutputColorMatrix,
-        //        *cudaResults, *laReferenceCuda,
-        //        m_Width, m_Height, m_Antialiasing, cx, cy, dx, dy,
-        //        centerX, centerY,
-        //        n_iterations);
+        if constexpr (
+            (EnableGpu1x32PerturbedLAv2 || EnableGpu1x32PerturbedLAv2PO || EnableGpu1x32PerturbedLAv2LAO)
+            && std::is_same<float, T>::value) {
+            // hdrflt
+            mandel_1xHDR_float_perturb_lav2<IterType, float, float, Mode> << <nb_blocks, threads_per_block >> > (
+                static_cast<IterType*>(OutputIterMatrix),
+                OutputColorMatrix,
+                *cudaResults, *laReferenceCuda,
+                m_Width, m_Height, m_Antialiasing, cx, cy, dx, dy,
+                centerX, centerY,
+                n_iterations);
 
-        //    result = RunAntialiasing(n_iterations);
-        //    if (!result) {
-        //        result = ExtractItersAndColors(iter_buffer, color_buffer);
-        //    }
-        //}
+            result = RunAntialiasing(n_iterations);
+            if (!result) {
+                result = ExtractItersAndColors(iter_buffer, color_buffer);
+            }
+        }
     } else if ((algorithm == RenderAlgorithm::Gpu1x64PerturbedLAv2) ||
         (algorithm == RenderAlgorithm::Gpu1x64PerturbedLAv2PO) ||
         (algorithm == RenderAlgorithm::Gpu1x64PerturbedLAv2LAO)) {
-        //if constexpr (
-        //    (EnableGpu1x64PerturbedLAv2 || EnableGpu1x64PerturbedLAv2PO || EnableGpu1x64PerturbedLAv2LAO)
-        //    && std::is_same<double, T>::value) {
-        //    // hdrflt
-        //    mandel_1xHDR_float_perturb_lav2<IterType, double, Mode> << <nb_blocks, threads_per_block >> > (
-        //        static_cast<IterType*>(OutputIterMatrix),
-        //        OutputColorMatrix,
-        //        *cudaResults, *laReferenceCuda,
-        //        m_Width, m_Height, m_Antialiasing, cx, cy, dx, dy,
-        //        centerX, centerY,
-        //        n_iterations);
+        if constexpr (
+            (EnableGpu1x64PerturbedLAv2 || EnableGpu1x64PerturbedLAv2PO || EnableGpu1x64PerturbedLAv2LAO)
+            && std::is_same<double, T>::value) {
+            // hdrflt
+            mandel_1xHDR_float_perturb_lav2<IterType, double, double, Mode> << <nb_blocks, threads_per_block >> > (
+                static_cast<IterType*>(OutputIterMatrix),
+                OutputColorMatrix,
+                *cudaResults, *laReferenceCuda,
+                m_Width, m_Height, m_Antialiasing, cx, cy, dx, dy,
+                centerX, centerY,
+                n_iterations);
 
-        //    result = RunAntialiasing(n_iterations);
-        //    if (!result) {
-        //        result = ExtractItersAndColors(iter_buffer, color_buffer);
-        //    }
-        //}
+            result = RunAntialiasing(n_iterations);
+            if (!result) {
+                result = ExtractItersAndColors(iter_buffer, color_buffer);
+            }
+        }
     }
     else if ((algorithm == RenderAlgorithm::GpuHDRx32PerturbedLAv2) ||
         (algorithm == RenderAlgorithm::GpuHDRx32PerturbedLAv2PO) ||

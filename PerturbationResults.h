@@ -20,12 +20,15 @@ public:
         std::is_fundamental<T>::value,
         T>::type;
 
+    static constexpr bool IsHDR =
+        std::is_same<T, ::HDRFloat<float>>::value ||
+        std::is_same<T, ::HDRFloat<double>>::value ||
+        std::is_same<T, ::HDRFloat<CudaDblflt<MattDblflt>>>::value ||
+        std::is_same<T, ::HDRFloat<CudaDblflt<dblflt>>>::value;
+
     template<class LocalSubType>
     using HDRFloatComplex =
-        std::conditional<
-            std::is_same<T, ::HDRFloat<float>>::value ||
-            std::is_same<T, ::HDRFloat<double>>::value ||
-            std::is_same<T, ::HDRFloat<CudaDblflt<MattDblflt>>>::value,
+        std::conditional<IsHDR,
         ::HDRFloatComplex<LocalSubType>,
         ::FloatComplex<LocalSubType>>::type;
 
@@ -343,10 +346,18 @@ public:
         ReuseY.clear();
     }
 
+    // TODO this is fucked up at the moment.  Look in lareference.cpp to uncomment the template instantiations.
+    // It's not clear that this is right.
     template<class U>
     HDRFloatComplex<U> GetComplex(size_t index) const {
         return { orb[index].x, orb[index].y };
     }
+
+    //template<class U,
+    //    typename std::enable_if_t<!IsHDR, bool>::type = true>
+    //FloatComplex<U> GetComplex(size_t index) const {
+    //    return FloatComplex<U>{ static_cast<U>(orb[index].x), static_cast<U>(orb[index].y) };
+    //}
 
     void InitReused() {
         HighPrecision Zero = 0;

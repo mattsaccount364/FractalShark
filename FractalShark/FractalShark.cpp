@@ -151,7 +151,7 @@ HWND InitInstance(HINSTANCE hInstance, int nCmdShow)
     DWORD width, height;
 
     if constexpr (startWindowed) {
-        width = min(scrnWidth / 2, scrnHeight / 2);
+        width = std::min(scrnWidth / 2, scrnHeight / 2);
         height = width;
         startX = scrnWidth / 2 - width / 2;
         startY = scrnHeight / 2 - width / 2;
@@ -1375,7 +1375,7 @@ void MenuWindowed(HWND hWnd, bool square)
         GetWindowRect(hWnd, &rect);
 
         if (square) {
-            auto width = min(
+            auto width = std::min(
                 (rect.right + rect.left) / 2,
                 (rect.bottom + rect.top) / 2);
             //width /= 2;

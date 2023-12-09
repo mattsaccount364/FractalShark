@@ -9,6 +9,10 @@
 template<typename IterType, class Float, class SubType>
 class GPU_LAReference {
 private:
+    static constexpr bool IsHDR =
+        std::is_same<Float, HDRFloat<float>>::value ||
+        std::is_same<Float, HDRFloat<double>>::value ||
+        std::is_same<Float, HDRFloat<CudaDblflt<MattDblflt>>>::value;
     using HDRFloatComplex =
         std::conditional<
             std::is_same<Float, ::HDRFloat<float>>::value ||
@@ -190,9 +194,13 @@ bool GPU_LAReference<IterType, Float, SubType>::isLAStageInvalid(IterType LAInde
     const auto temp1 = LAs[LAIndex];
     const auto temp2 = temp1.getLAThresholdC();
     const auto temp3 = dc.chebychevNorm();
-    const auto temp4 = temp3.compareToBothPositiveReduced(temp2);
-    const auto finalres = (temp4 >= 0);
-    return finalres;
+
+    if constexpr (IsHDR) {
+        return temp3.compareToBothPositiveReduced(temp2) >= 0;
+    }
+    else {
+        return temp3 >= temp2;
+    }
 }
 
 template<typename IterType, class Float, class SubType>

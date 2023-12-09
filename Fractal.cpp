@@ -205,8 +205,10 @@ void Fractal::Initialize(int width,
     InitStatics();
 
     // Setup member variables with initial values:
-    SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedLAv2);
-    //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx2x32PerturbedLAv2);
+    //SetRenderAlgorithm(RenderAlgorithm::Cpu32PerturbedBLAV2HDR);
+    //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedLAv2);
+    SetRenderAlgorithm(RenderAlgorithm::GpuHDRx2x32PerturbedLAv2);
+    //SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedLAv2);
 
     SetIterationPrecision(1);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed);
@@ -217,8 +219,8 @@ void Fractal::Initialize(int width,
     ResetDimensions(width, height, 2);
     SetIterType(IterTypeEnum::Bits32);
 
-    //View(0);
-    View(5);
+    View(11);
+    //View(5);
     //View(15);
 
     m_ChangedWindow = true;
@@ -736,7 +738,7 @@ size_t Fractal::GetPrecision(
 
         double expX = temp_expX / log(10) * log(2);
         double expY = temp_expY / log(10) * log(2);
-        size_t larger = (size_t)max(abs(expX), abs(expY));
+        size_t larger = (size_t)std::max(abs(expX), abs(expY));
 
         if (RequiresReuse) {
             larger += AuthoritativeReuseExtraPrecision;
@@ -1273,7 +1275,7 @@ Fractal::PointZoomBBConverter::PointZoomBBConverter(
     auto zf2 = HighPrecision{ 3 } / (ptY - minY);
     auto zf3 = HighPrecision{ 3 } / (maxX - ptX);
     auto zf4 = HighPrecision{ 3 } / (maxY - ptY);
-    zoomFactor = min(min(zf1, zf2), min(zf3, zf4));
+    zoomFactor = std::min(std::min(zf1, zf2), std::min(zf3, zf4));
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -1301,12 +1303,11 @@ void Fractal::View(size_t view)
         //SetNumIterations<IterTypeFull>(196608);
 
         // TODO Temp - remove me
-        minX = HighPrecision{ "-0.8748975244391600225938236264901344369978530482789803447278428326823428184567448" };
-        minY = HighPrecision{ "0.2320898915584239860338423641681960855650417837296235364044350603092614598749414" };
-        maxX = HighPrecision{ "-0.8748975244391600225937902498818090191263694565943127342303967003392238200910657" };
-        maxY = HighPrecision{ "0.2320898915584239860338562710883316763448266135982350407783709487855610425273077" };
-        SetNumIterations<IterTypeFull>(4718592);
-
+        minX = HighPrecision{ "-0.37656235351675001355449781905149492799682880545941078435228171582820374005540296873316709319956486" };
+        minY = HighPrecision{ "0.67158947867625786414258056245749919392606048757435786795647808633338740646688656232915470730827391" };
+        maxX = HighPrecision{ "-0.37656235351675001355449781905149153207098115802132341950557930099971431732574605202825177873455922" };
+        maxY = HighPrecision{ "0.67158947867625786414258056245750258985190813501244523280318050116187682919654347903407002177327955" };
+        SetNumIterations<IterTypeFull>(51539607504);
         break;
 
     case 2:
@@ -1336,11 +1337,20 @@ void Fractal::View(size_t view)
 
     case 3:
         // Limit of 1x32 + Perturbation with scaling
-        minX = HighPrecision{ "-1.44656726997022737062295806977817803829443061688656117623800256312303751202920456713778693247098684334495241572095045" };
-        minY = HighPrecision{ "7.64163245263840450044318279619820153508302789530826527979427966642829357717061175013838301474813332434725222956221212e-18" };
-        maxX = HighPrecision{ "-1.44656726997022737062295806977817803829442603529959040638812674667522697557115287788808403561611427018141845213679032" };
-        maxY = HighPrecision{ "7.641632452638404500443184705192772689187142818828186336651801203615669784193475322289855499574866715163283993737498e-18" };
-        SetNumIterations<IterTypeFull>(196608);
+        //minX = HighPrecision{ "-1.44656726997022737062295806977817803829443061688656117623800256312303751202920456713778693247098684334495241572095045" };
+        //minY = HighPrecision{ "7.64163245263840450044318279619820153508302789530826527979427966642829357717061175013838301474813332434725222956221212e-18" };
+        //maxX = HighPrecision{ "-1.44656726997022737062295806977817803829442603529959040638812674667522697557115287788808403561611427018141845213679032" };
+        //maxY = HighPrecision{ "7.641632452638404500443184705192772689187142818828186336651801203615669784193475322289855499574866715163283993737498e-18" };
+        //SetNumIterations<IterTypeFull>(196608);
+
+        // TODO move to new
+        //This one seems to manifest a bug on 2x32 HDR!!
+        minX = HighPrecision{ "-0.98920120090628233577599750273385850565341742036978168316129396062103167668707088391313367844480818481153615321957517646878359816365686174337400931119704468157132639611016094458377355608505170605" };
+        minY = HighPrecision{ "0.31112710985617494340830165796753515965443071567838872151406617598528895362789326577834521663205616017726624844274760619932989592689179114974596690023693132357171967331101469276316441107153432922" };
+        maxX = HighPrecision{ "-0.98920120090628233577599750273385850565341742036978168316129396062103167668707088391313367844480818481153615321957517646878359816365352407676471583744799303582635030927053412102721312818470619197" };
+        maxY = HighPrecision{ "0.3111271098561749434083016579675351596544307156783887215140661759852889536278932657783452166320561601772662484427476061993298959268951288163552603739859829693166957601506415163197248389718798433" };
+        SetNumIterations<IterTypeFull>(4718592);
+
         break;
 
     case 4:
@@ -3160,9 +3170,9 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                         //HdrReduce(zyCopy);
                         //auto zyCopy1 = HdrAbs(zyCopy);
 
-                        //T n2 = max(zxCopy1, zyCopy1);
+                        //T n2 = std::max(zxCopy1, zyCopy1);
 
-                        //T r0 = max(dzdcX1, dzdcY1);
+                        //T r0 = std::max(dzdcX1, dzdcY1);
                         //T maxRadiusHdr{ 3840 };
                         //auto n3 = maxRadiusHdr * r0 * HighTwo;
                         //HdrReduce(n3);

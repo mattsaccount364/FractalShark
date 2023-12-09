@@ -73,24 +73,14 @@ private:
 
     }
 
-    FloatComplex CUDA_CRAP times(FloatComplex factor) const {
+    FloatComplex CUDA_CRAP times_mutable(FloatComplex factor) {
         SubType tempMantissaReal = (mantissaReal * factor.mantissaReal) - (mantissaImag * factor.mantissaImag);
 
         SubType tempMantissaImag = (mantissaReal * factor.mantissaImag) + (mantissaImag * factor.mantissaReal);
 
-        return FloatComplex(tempMantissaReal, tempMantissaImag, exp + factor.exp);
+        mantissaReal = tempMantissaReal;
+        mantissaImag = tempMantissaImag;
 
-        /*SubType absRe = Math.abs(tempMantissaReal);
-        SubType absIm = Math.abs(tempMantissaImag);
-        if (absRe > 1e50 || absIm > 1e50 || absRe < 1e-50 || absIm < 1e-50) {
-            p.Reduce();
-        }*/
-
-    }
-
-    FloatComplex CUDA_CRAP times_mutable(FloatComplex factor) {
-        mantissaReal *= factor.mantissaReal;
-        mantissaImag *= factor.mantissaImag;
         return *this;
     }
 
@@ -119,7 +109,9 @@ public:
 private:
 
     FloatComplex CUDA_CRAP times_mutable(SubType factor) {
-        return times_mutable(SubType(factor));
+        mantissaReal *= factor;
+        mantissaImag *= factor;
+        return *this;
     }
 
     FloatComplex CUDA_CRAP times(SubType factor) const {
@@ -193,7 +185,7 @@ public:
 
     FloatComplex CUDA_CRAP reciprocal() const {
         SubType temp = SubType{ 1 } / (mantissaReal * mantissaReal + mantissaImag * mantissaImag);
-        return FloatComplex(mantissaReal * temp, mantissaImag * temp);
+        return FloatComplex(mantissaReal * temp, -mantissaImag * temp);
     }
 
     FloatComplex CUDA_CRAP reciprocal_mutable() {
@@ -242,11 +234,11 @@ private:
 public:
 
     SubType CUDA_CRAP getRe() const {
-        return SubType(exp, mantissaReal);
+        return mantissaReal;
     }
 
     SubType CUDA_CRAP getIm() const {
-        return SubType(exp, mantissaImag);
+        return mantissaImag;
     }
 
     SubType CUDA_CRAP getMantissaReal() const {
@@ -267,6 +259,8 @@ public:
     }
 
     SubType CUDA_CRAP chebychevNorm() const {
-        return SubType::maxBothPositiveReduced(HdrAbs(getRe()), HdrAbs(getIm()));
+        auto absReal = HdrAbs(getRe());
+        auto absImag = HdrAbs(getIm());
+        return absReal > absImag ? absReal : absImag;
     }
 };

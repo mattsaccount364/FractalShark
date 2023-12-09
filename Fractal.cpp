@@ -208,7 +208,7 @@ void Fractal::Initialize(int width,
     //SetRenderAlgorithm(RenderAlgorithm::Cpu32PerturbedBLAV2HDR);
     //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedLAv2);
     //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx2x32PerturbedLAv2);
-    SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedLAv2);
+    SetRenderAlgorithm(RenderAlgorithm::AUTO);
 
     SetIterationPrecision(1);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed);
@@ -1902,17 +1902,58 @@ void Fractal::LoadPerturbationOrbit() {
 }
 
 Fractal::IterTypeEnum Fractal::GetIterType() const {
+    //
+    // Returns the current iteration type
+    //
+
     return m_IterType;
 }
 
-
 void Fractal::ResetNumIterations(void)
 {
+    //
+    // Resets the number of iterations to the default value.
+    //
+
     m_NumIterations = DefaultIterations;
     m_ChangedIterations = true;
 }
 
+RenderAlgorithm Fractal::GetRenderAlgorithm() const {
+    //
+    // Returns the render algorithm to use
+    //
+
+    if (m_RenderAlgorithm == RenderAlgorithm::AUTO) {
+        PointZoomBBConverter converter{ m_MinX, m_MinY, m_MaxX, m_MaxY };
+        if (converter.zoomFactor < HighPrecision{ 1e4 }) {
+            // A bit borderline at 3840x1600 x16 AA
+            return RenderAlgorithm::Gpu1x32;
+        }
+        else if (converter.zoomFactor < HighPrecision{ 1e9 }) {
+            // Safe, maybe even full LA is a little better but barely
+            return RenderAlgorithm::Gpu1x32PerturbedLAv2PO;
+        }
+        else if (converter.zoomFactor < HighPrecision{ 1e34 }) {
+            // This seems to work at x16 AA 3840x1600
+            return RenderAlgorithm::Gpu1x32PerturbedLAv2;
+        }
+        else {
+            // Falls apart at high iteration counts with a lot of LA
+            return RenderAlgorithm::GpuHDRx32PerturbedLAv2;
+        }
+    }
+    else {
+        // User-selected forced algorithm selection
+        return m_RenderAlgorithm;
+    }
+}
+
 std::string Fractal::GetRenderAlgorithmName() const {
+    //
+    // Returns the name of the render algorithm in use
+    //
+
     return RenderAlgorithmStr[static_cast<size_t>(GetRenderAlgorithm())];
 }
 
@@ -1920,6 +1961,11 @@ std::string Fractal::GetRenderAlgorithmName() const {
 // Functions for drawing the fractal
 ///////////////////////////////////////////////////////////////////////////////
 bool Fractal::RequiresUseLocalColor() const {
+    //
+    // Returns true if the current render algorithm requires the use of
+    // CPU-based color implementation
+    //
+
     switch (GetRenderAlgorithm()) {
     case RenderAlgorithm::CpuHigh:
     case RenderAlgorithm::CpuHDR32:
@@ -1979,6 +2025,7 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
     }
 
     // Draw the local fractal.
+    // Note: This accounts for "Auto" being selected via the GetRenderAlgorithm call.
     switch (GetRenderAlgorithm()) {
     case RenderAlgorithm::CpuHigh:
         CalcCpuHDR<IterType, HighPrecision, double>(MemoryOnly);

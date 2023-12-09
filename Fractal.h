@@ -156,7 +156,7 @@ public: // Iterations
     void ResetNumIterations(void);
 
 public:
-    inline RenderAlgorithm GetRenderAlgorithm(void) const { return m_RenderAlgorithm; }
+    RenderAlgorithm GetRenderAlgorithm(void) const;
     inline void SetRenderAlgorithm(RenderAlgorithm alg) { m_RenderAlgorithm = alg; }
     std::string GetRenderAlgorithmName() const;
 
@@ -255,6 +255,9 @@ private:
 
     template<class T>
     void FillGpuCoords(T& cx2, T& cy2, T& dx2, T& dy2);
+
+    template<typename IterType>
+    void CalcAutoFractal();
 
     template<typename IterType, class T>
     void CalcGpuFractal(bool MemoryOnly);

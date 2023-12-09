@@ -116,6 +116,7 @@ enum class RenderAlgorithm {
     GpuHDRx64PerturbedLAv2PO,
     GpuHDRx64PerturbedLAv2LAO,
 
+    AUTO,
     MAX
 };
 
@@ -173,6 +174,7 @@ static const char* RenderAlgorithmStr[(size_t)RenderAlgorithm::MAX + 1] =
     "GpuHDRx64PerturbedLAv2PO",
     "GpuHDRx64PerturbedLAv2LAO",
 
+    "AutoSelect",
     "MAX"
 };
 

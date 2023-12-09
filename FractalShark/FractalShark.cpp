@@ -602,6 +602,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             }
     
             // Change rendering algorithm
+            case IDM_ALG_AUTO:
+            {
+                gFractal->SetRenderAlgorithm(RenderAlgorithm::AUTO);
+                break;
+            }
+
             case IDM_ALG_CPU_HIGH:
             {
                 gFractal->SetRenderAlgorithm(RenderAlgorithm::CpuHigh);

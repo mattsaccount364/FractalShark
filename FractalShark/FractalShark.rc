@@ -128,6 +128,8 @@ BEGIN
         END
         POPUP "Choose Render Algorithm"
         BEGIN
+            MENUITEM "Auto (Default)",              IDM_ALG_AUTO
+            MENUITEM SEPARATOR
             POPUP "CPU-Only"
             BEGIN
                 MENUITEM "Very High Precision CPU",     IDM_ALG_CPU_HIGH
@@ -161,17 +163,20 @@ BEGIN
                 MENUITEM "4x64 GPU",                    IDM_ALG_GPU_4_64
                 MENUITEM "HDRx32 GPU",                  IDM_ALG_GPU_2X32_HDR
             END
+            POPUP "Scaled"
+            BEGIN
+                MENUITEM "1x32 GPU - Perturbation Scaled", IDM_ALG_GPU_1_32_PERTURB_SCALED
+                MENUITEM "2x32 GPU - Perturbation Scaled (broken)", IDM_ALG_GPU_2_32_PERTURB_SCALED
+                MENUITEM "HDRx32 GPU - Perturbation Scaled", IDM_ALG_GPU_HDR_32_PERTURB_SCALED
+                MENUITEM "1x32 GPU - Perturbation Scaled BLA", IDM_ALG_GPU_1_32_PERTURB_SCALED_BLA
+            END
             MENUITEM SEPARATOR
             MENUITEM "1x32 GPU - Perturbation",     IDM_ALG_GPU_1_32_PERTURB
             MENUITEM "1x32 GPU - Perturbation, Periodic (broken)", IDM_ALG_GPU_1_32_PERTURB_PERIODIC
-            MENUITEM "1x32 GPU - Perturbation Scaled", IDM_ALG_GPU_1_32_PERTURB_SCALED
             MENUITEM "2x32 GPU - Perturbation (broken)", IDM_ALG_GPU_2_32_PERTURB
-            MENUITEM "2x32 GPU - Perturbation Scaled (broken)", IDM_ALG_GPU_2_32_PERTURB_SCALED
             MENUITEM "1x64 GPU - Perturbation",     IDM_ALG_GPU_1_64_PERTURB
             MENUITEM "HDRx32 GPU - Perturbation",   IDM_ALG_GPU_HDR_32_PERTURB
-            MENUITEM "HDRx32 GPU - Perturbation Scaled", IDM_ALG_GPU_HDR_32_PERTURB_SCALED
             MENUITEM SEPARATOR
-            MENUITEM "1x32 GPU - Perturbation Scaled BLA", IDM_ALG_GPU_1_32_PERTURB_SCALED_BLA
             MENUITEM "1x64 GPU - Perturbation BLA", IDM_ALG_GPU_1_64_PERTURB_BLA
             MENUITEM "HDRx32 GPU - Perturbation BLA", IDM_ALG_GPU_HDR_32_PERTURB_BLA
             MENUITEM "HDRx64 GPU - Perturbation BLA", IDM_ALG_GPU_HDR_64_PERTURB_BLA

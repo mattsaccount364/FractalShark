@@ -76,7 +76,7 @@ public:
     CUDA_CRAP HDRFloatComplex Evaluate(HDRFloatComplex newdz, HDRFloatComplex dc);
     CUDA_CRAP HDRFloatComplex EvaluateDzdc(HDRFloatComplex z, HDRFloatComplex dzdc);
     CUDA_CRAP HDRFloatComplex EvaluateDzdc2(HDRFloatComplex z, HDRFloatComplex dzdc2, HDRFloatComplex dzdc);
-    CUDA_CRAP void CreateAT(ATInfo<IterType, Float, SubType> &Result, LAInfoDeep Next);
+    CUDA_CRAP void CreateAT(ATInfo<IterType, Float, SubType> &Result, LAInfoDeep Next, bool UseSmallExponents);
     CUDA_CRAP HDRFloat getLAThreshold();
     CUDA_CRAP HDRFloat getLAThresholdC();
     CUDA_CRAP void SetLAi(const LAInfoI<IterType>&other);
@@ -414,7 +414,10 @@ LAInfoDeep<IterType, Float, SubType>::HDRFloatComplex LAInfoDeep<IterType, Float
 
 template<typename IterType, class Float, class SubType>
 CUDA_CRAP
-void LAInfoDeep<IterType, Float, SubType>::CreateAT(ATInfo<IterType, Float, SubType>& Result, LAInfoDeep Next) {
+void LAInfoDeep<IterType, Float, SubType>::CreateAT(
+    ATInfo<IterType, Float, SubType>& Result,
+    LAInfoDeep Next,
+    bool UseSmallExponents) {
     Result.ZCoeff = ZCoeff;
     Result.CCoeff = ZCoeff * CCoeff;
     HdrReduce(Result.CCoeff);
@@ -441,7 +444,9 @@ void LAInfoDeep<IterType, Float, SubType>::CreateAT(ATInfo<IterType, Float, SubT
     if constexpr (IsHDR) {
         lim = HDRFloat(32, 1);
         if constexpr (std::is_same<HDRFloat, ::HDRFloat<double>>::value) {
-            lim.setExp(256);
+            if (!UseSmallExponents) {
+                lim.setExp(256);
+            }
         }
         HdrReduce(lim);
         Result.SqrEscapeRadius = HDRFloat::minBothPositive(ZCoeff.norm_squared() * LAThreshold, lim);

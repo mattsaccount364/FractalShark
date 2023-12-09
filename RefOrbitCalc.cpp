@@ -2026,6 +2026,8 @@ PerturbationResults<IterType, ConvertTType, Bad>* RefOrbitCalc::GetAndCreateUsef
         results = cur_array[cur_array.size() - 1].get();
     }
 
+    constexpr bool UseSmallExponents = std::is_same<ConvertTType, HDRFloat<CudaDblflt<MattDblflt>>>::value;
+
     if constexpr (
         std::is_same<T, float>::value || // TODO: these are new.  Maybe OK to keep here.
         std::is_same<T, double>::value ||
@@ -2040,7 +2042,8 @@ PerturbationResults<IterType, ConvertTType, Bad>* RefOrbitCalc::GetAndCreateUsef
                 results->LaReference->GenerateApproximationData(
                     *results,
                     results->maxRadius,
-                    (IterType)results->orb.size() - 1);
+                    (IterType)results->orb.size() - 1,
+                    UseSmallExponents);
             }
         }
         else {
@@ -2048,7 +2051,7 @@ PerturbationResults<IterType, ConvertTType, Bad>* RefOrbitCalc::GetAndCreateUsef
         }
     }
 
-    if constexpr (std::is_same<ConvertTType, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
+    if constexpr (UseSmallExponents) {
         auto* resultsExisting = GetUsefulPerturbationResults<IterType, ConvertTType, false, Bad>();
         if (resultsExisting == nullptr) {
             auto results2(std::make_unique<PerturbationResults<IterType, ConvertTType, CalcBad::Disable>>());

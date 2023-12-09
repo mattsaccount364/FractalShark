@@ -207,8 +207,8 @@ void Fractal::Initialize(int width,
     // Setup member variables with initial values:
     //SetRenderAlgorithm(RenderAlgorithm::Cpu32PerturbedBLAV2HDR);
     //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedLAv2);
-    SetRenderAlgorithm(RenderAlgorithm::GpuHDRx2x32PerturbedLAv2);
-    //SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedLAv2);
+    //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx2x32PerturbedLAv2);
+    SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedLAv2);
 
     SetIterationPrecision(1);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed);
@@ -219,7 +219,7 @@ void Fractal::Initialize(int width,
     ResetDimensions(width, height, 2);
     SetIterType(IterTypeEnum::Bits32);
 
-    View(11);
+    View(0);
     //View(5);
     //View(15);
 

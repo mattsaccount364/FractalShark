@@ -113,8 +113,9 @@ public:
     void GenerateApproximationData(
         const PerturbationResults<IterType, PerturbType, CalcBad::Disable>& PerturbationResults,
         Float radius,
-        IterType maxRefIteration);
-    void CreateATFromLA(Float radius);
+        IterType maxRefIteration,
+        bool UseSmallExponents);
+    void CreateATFromLA(Float radius, bool UseSmallExponents);
 
 public:
     bool isLAStageInvalid(IterType LAIndex, FloatComplexT dc);

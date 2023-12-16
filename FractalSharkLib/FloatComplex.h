@@ -62,7 +62,8 @@ public:
     }
 
     CUDA_CRAP constexpr FloatComplex& operator+=(const FloatComplex& other) {
-        return plus_mutable(other);
+        plus_mutable(other);
+        return *this;
     }
 
 private:
@@ -103,7 +104,8 @@ public:
     }
 
     CUDA_CRAP constexpr FloatComplex& operator*=(const FloatComplex& other) {
-        return times_mutable(other);
+        times_mutable(other);
+        return *this;
     }
 
 private:
@@ -147,12 +149,13 @@ public:
     friend CUDA_CRAP constexpr FloatComplex operator-(FloatComplex lhs,        // passing lhs by value helps optimize chained a+b+c
         const FloatComplex& rhs) // otherwise, both parameters may be const references
     {
-        lhs.subtract_mutable(rhs); // reuse compound assignment
+        lhs.sub_mutable(rhs); // reuse compound assignment
         return lhs; // return the result by value (uses move constructor)
     }
 
     CUDA_CRAP constexpr FloatComplex& operator-=(const FloatComplex& other) {
-        return subtract_mutable(other);
+        sub_mutable(other);
+        return *this;
     }
 
 private:
@@ -220,7 +223,8 @@ public:
     }
 
     CUDA_CRAP constexpr FloatComplex& operator/=(const FloatComplex& other) {
-        return divide_mutable(other);
+        divide_mutable(other);
+        return *this;
     }
 
 private:

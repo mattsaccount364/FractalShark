@@ -1221,7 +1221,7 @@ static CUDA_CRAP constexpr T &&HdrReduce(T&& incoming) {
     static_assert(
         std::is_same<no_const, double>::value ||
         std::is_same<no_const, float>::value ||
-        std::is_same<T, CudaDblflt<dblflt>>::value ||
+        std::is_same<no_const, CudaDblflt<dblflt>>::value ||
         std::is_same<no_const, HDRFloat<double>>::value ||
         std::is_same<no_const, HDRFloat<float>>::value ||
         std::is_same<no_const, HDRFloat<CudaDblflt<dblflt>>>::value ||
@@ -1461,6 +1461,9 @@ static CUDA_CRAP std::string HdrToString(const T& dat) {
     }
 }
 
+#endif
+
+
 // If you pass in T == HDRFloat<CudaDblflt<MattDblflt>> then ConditionalT will be HDRFloat<double>
 // If you pass in SubType == CudaDblflt<MattDblflt> then ConditionalSubType will be double
 // But:
@@ -1500,5 +1503,3 @@ public:
             SubType>::type
     >::type;
 };
-#endif
-

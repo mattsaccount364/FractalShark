@@ -88,7 +88,8 @@ public:
     }
 
     CUDA_CRAP constexpr HDRFloatComplex& operator+=(const HDRFloatComplex& other) {
-        return plus_mutable(other);
+        plus_mutable(other);
+        return *this;
     }
 
 private:
@@ -169,7 +170,8 @@ public:
     }
 
     CUDA_CRAP constexpr HDRFloatComplex& operator*=(const HDRFloatComplex& other) {
-        return times_mutable(other);
+        times_mutable(other);
+        return *this;
     }
 
 private:
@@ -296,12 +298,13 @@ public:
     friend CUDA_CRAP constexpr HDRFloatComplex operator-(HDRFloatComplex lhs,        // passing lhs by value helps optimize chained a+b+c
         const HDRFloatComplex& rhs) // otherwise, both parameters may be const references
     {
-        lhs.subtract_mutable(rhs); // reuse compound assignment
+        lhs.sub_mutable(rhs); // reuse compound assignment
         return lhs; // return the result by value (uses move constructor)
     }
 
     CUDA_CRAP constexpr HDRFloatComplex& operator-=(const HDRFloatComplex& other) {
-        return subtract_mutable(other);
+        sub_mutable(other);
+        return *this;
     }
 
 private:
@@ -455,7 +458,8 @@ public:
     }
 
     CUDA_CRAP constexpr HDRFloatComplex& operator/=(const HDRFloatComplex& other) {
-        return divide_mutable(other);
+        divide_mutable(other);
+        return *this;
     }
 
 private:

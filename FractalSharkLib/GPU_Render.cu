@@ -4748,16 +4748,12 @@ uint32_t GPURenderer::RenderPerturbLAv2(
     dim3 nb_blocks(w_block, h_block, 1);
     dim3 threads_per_block(NB_THREADS_W, NB_THREADS_H, 1);
 
-    static constexpr bool ConditionalResult = std::is_same<T, HDRFloat<CudaDblflt<MattDblflt>>>::value;
-    using ConditionalT = typename std::conditional<ConditionalResult, HDRFloat<CudaDblflt<dblflt>>, T>::type;
-    using ConditionalSubType = typename std::conditional<ConditionalResult, CudaDblflt<dblflt>, SubType>::type;
-
-    auto* cudaResults = m_PerturbResults.GetPtr1<IterType, ConditionalT>();
+    auto* cudaResults = m_PerturbResults.GetPtr1<IterType, T>();
     if (!cudaResults) {
         return FractalSharkError::Error6;
     }
 
-    auto* laReferenceCuda = m_PerturbResults.GetLaReference1<IterType, ConditionalT, ConditionalSubType>();
+    auto* laReferenceCuda = m_PerturbResults.GetLaReference1<IterType, T, SubType>();
     if (!cudaResults) {
         return FractalSharkError::Error7;
     }

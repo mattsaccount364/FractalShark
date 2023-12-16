@@ -15,38 +15,41 @@ struct MattDblflt {
     }
 
     CUDA_CRAP
-    MattDblflt(float head, float tail) :
-        head{ head },
-        tail{ tail } {
+    MattDblflt(float a, float b) {
+        float t1, t2;
+        head = a + b;
+        t1 = head - a;
+        t2 = head - t1;
+        t1 = b - t1;
+        t2 = a - t2;
+        tail = t1 + t2;
     }
 
 #if !defined(__CUDA_ARCH__)
-    CUDA_CRAP
-    explicit MattDblflt(double other) :
-        head{ (float)other },
-        tail{ (float)(other - (double)(float)other) } {
-    }
-#endif
-
     //CUDA_CRAP
-    //explicit MattDblflt(double other) {
-
-    //    auto a = (float)(other - (double)(float)other);
-    //    auto b = (float)other;
-
-    //    float t1, t2;
-    //    tail = a + b;
-    //    t1 = tail - a;
-    //    t2 = tail - t1;
-    //    t1 = b - t1;
-    //    t2 = a - t2;
-    //    head = t1 + t2;
+    //explicit MattDblflt(double other) :
+    //    head{ (float)other },
+    //    tail{ (float)(other - (double)(float)other) } {
     //}
 
     CUDA_CRAP
-    explicit MattDblflt(float other) :
-        head{ other },
-        tail{ 0 } {
+    explicit MattDblflt(double other) {
+
+        float a = (float)other;
+        float b = (float)(other - (double)a);
+
+        float t1, t2;
+        head = a + b;
+        t1 = head - a;
+        t2 = head - t1;
+        t1 = b - t1;
+        t2 = a - t2;
+        tail = t1 + t2;
+    }
+#endif
+
+    CUDA_CRAP
+        explicit MattDblflt(float other) : MattDblflt{ other, 0.0f } {
     }
 
     float head; // head / most significant bits

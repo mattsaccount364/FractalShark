@@ -58,11 +58,11 @@ GPU_LAInfoDeep<IterType, Float, SubType> &GPU_LAInfoDeep<IterType, Float, SubTyp
         return *this;
     }
 
-    this->Ref = static_cast<HDRFloatComplex>(other.Ref);
-    this->LAThreshold = static_cast<HDRFloat>(other.LAThreshold);
-    this->ZCoeff = static_cast<HDRFloatComplex>(other.ZCoeff);
-    this->CCoeff = static_cast<HDRFloatComplex>(other.CCoeff);
-    this->LAThresholdC = static_cast<HDRFloat>(other.LAThresholdC);
+    this->Ref = HDRFloatComplex(other.Ref);
+    this->LAThreshold = HDRFloat(other.LAThreshold);
+    this->ZCoeff = HDRFloatComplex(other.ZCoeff);
+    this->CCoeff = HDRFloatComplex(other.CCoeff);
+    this->LAThresholdC = HDRFloat(other.LAThresholdC);
     this->LAi = other.LAi;
 
     // Note: not copying MinMag
@@ -77,11 +77,11 @@ CUDA_CRAP
 GPU_LAInfoDeep<IterType, Float, SubType>& GPU_LAInfoDeep<IterType, Float, SubType>::operator=(
     const LAInfoDeep<IterType, Float2, SubType2>& other) {
 
-    this->Ref = static_cast<HDRFloatComplex>(other.Ref);
-    this->LAThreshold = static_cast<HDRFloat>(other.LAThreshold);
-    this->ZCoeff = static_cast<HDRFloatComplex>(other.ZCoeff);
-    this->CCoeff = static_cast<HDRFloatComplex>(other.CCoeff);
-    this->LAThresholdC = static_cast<HDRFloat>(other.LAThresholdC);
+    this->Ref = HDRFloatComplex(other.Ref);
+    this->LAThreshold = HDRFloat(other.LAThreshold);
+    this->ZCoeff = HDRFloatComplex(other.ZCoeff);
+    this->CCoeff = HDRFloatComplex(other.CCoeff);
+    this->LAThresholdC = HDRFloat(other.LAThresholdC);
     this->LAi = other.LAi;
 
     return *this;

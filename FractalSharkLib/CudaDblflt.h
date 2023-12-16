@@ -66,13 +66,6 @@ public:
         : d{ d } {
     }
 
-    template<class U>
-    CUDA_CRAP
-    constexpr
-        explicit CudaDblflt(CudaDblflt<U> other)
-        : d{ other.d.head, other.d.tail } {
-    }
-
     // Constructs a CudaDblflt from a pair of floats
     CUDA_CRAP
     constexpr
@@ -179,7 +172,7 @@ public:
     // Implements operator> for CudaDblflt
     __device__
     friend bool operator>(const CudaDblflt& a, const CudaDblflt& b) {
-        return !(b < a) && !(b == a);
+        return !(a < b) && !(b == a);
     }
 
     // Implements operator<= for CudaDblflt
@@ -208,8 +201,8 @@ public:
 
     __device__
     CudaDblflt abs() const {
-        if (d.head < 0.0f) {
-            return CudaDblflt{ -d.head, -d.tail };
+        if (*this < CudaDblflt(0.0f)) {
+            return -(*this);
         }
 
         return *this;

@@ -235,7 +235,7 @@ GPU_LAReference<IterType, Float, SubType>::getLA(IterType LAIndex, HDRFloatCompl
 
         if (!las.unusable) {
             las.LAjdeep = &LAj;
-            las.Refp1Deep = (HDRFloatComplex)LAs[LAIndexj + 1].getRef();
+            las.Refp1Deep = LAs[LAIndexj + 1].getRef();
             las.step = LAIj.StepLength;
         }
     }

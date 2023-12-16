@@ -86,12 +86,8 @@ BEGIN
     LTEXT           "Fourth, enter the horizontal and vertical resolution to render at:",IDC_STATIC,7,73,237,8
     EDITTEXT        IDC_EDIT_RESX,7,81,84,14,ES_AUTOHSCROLL
     EDITTEXT        IDC_EDIT_RESY,160,81,84,14,ES_AUTOHSCROLL
-    LTEXT           "Fifth, enter the algorithm to use for the calculations:",IDC_STATIC,7,95,237,8
-    CONTROL         "C",IDC_RADIO_ALG_C,"Button",BS_AUTORADIOBUTTON | WS_GROUP,7,103,31,10
-    CONTROL         "Multiprecision",IDC_RADIO_ALG_HIGHRES,"Button",BS_AUTORADIOBUTTON,96,103,56,10
-    CONTROL         "GPU",IDC_RADIO_ALG_GPU,"Button",BS_AUTORADIOBUTTON,211,103,33,10
-    LTEXT           "Finally, click the button below to generate the ""location file"":",IDC_STATIC,7,117,237,8
-    PUSHBUTTON      "Generate",IDC_BUTTON_GENERATE,7,125,237,13
+    LTEXT           "Finally, click the button below to generate the ""location file"":",IDC_STATIC,7,103,237,8
+    PUSHBUTTON      "Generate",IDC_BUTTON_GENERATE,7,117,237,13
     LTEXT           "Messages from the fractal renderer:",IDC_STATIC,7,138,237,8
     EDITTEXT        IDC_EDIT_MESSAGES,7,145,237,39,ES_AUTOHSCROLL | ES_READONLY
     LTEXT           "If the location file already exists when you start FractalTray, FractalTray will resume where it left off.  It will start as an icon in the system tray and will not prompt you for any information.  The tray icon turns green when it is finished processing.",IDC_STATIC,7,187,237,41

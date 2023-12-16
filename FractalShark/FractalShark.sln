@@ -8,9 +8,7 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalServer2", "..\Fracta
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalSetup", "..\FractalSetup\FractalSetup.vcxproj", "{4306BDAB-C271-42C9-ABAF-BBC8DFAEB7E5}"
 EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Fractals", "Fractals.vcxproj", "{EACBDA33-1E2A-465B-B436-8D96DD70EFC4}"
-EndProject
-Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalMovie", "..\FractalMovie\FractalMovie.vcxproj", "{73FCD639-2B0B-4B70-B634-5764E3C7095A}"
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalShark", "Fractals.vcxproj", "{EACBDA33-1E2A-465B-B436-8D96DD70EFC4}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalTray", "..\FractalTray\FractalTray.vcxproj", "{B7468E51-1CF3-4959-B1C8-394EA78CE79C}"
 EndProject
@@ -54,14 +52,6 @@ Global
 		{EACBDA33-1E2A-465B-B436-8D96DD70EFC4}.Release|x64.Build.0 = Release|x64
 		{EACBDA33-1E2A-465B-B436-8D96DD70EFC4}.Release|x86.ActiveCfg = Release|x64
 		{EACBDA33-1E2A-465B-B436-8D96DD70EFC4}.Release|x86.Build.0 = Release|x64
-		{73FCD639-2B0B-4B70-B634-5764E3C7095A}.Debug|x64.ActiveCfg = Debug|x64
-		{73FCD639-2B0B-4B70-B634-5764E3C7095A}.Debug|x64.Build.0 = Debug|x64
-		{73FCD639-2B0B-4B70-B634-5764E3C7095A}.Debug|x86.ActiveCfg = Debug|x64
-		{73FCD639-2B0B-4B70-B634-5764E3C7095A}.Debug|x86.Build.0 = Debug|x64
-		{73FCD639-2B0B-4B70-B634-5764E3C7095A}.Release|x64.ActiveCfg = Release|x64
-		{73FCD639-2B0B-4B70-B634-5764E3C7095A}.Release|x64.Build.0 = Release|x64
-		{73FCD639-2B0B-4B70-B634-5764E3C7095A}.Release|x86.ActiveCfg = Release|x64
-		{73FCD639-2B0B-4B70-B634-5764E3C7095A}.Release|x86.Build.0 = Release|x64
 		{B7468E51-1CF3-4959-B1C8-394EA78CE79C}.Debug|x64.ActiveCfg = Debug|x64
 		{B7468E51-1CF3-4959-B1C8-394EA78CE79C}.Debug|x64.Build.0 = Debug|x64
 		{B7468E51-1CF3-4959-B1C8-394EA78CE79C}.Debug|x86.ActiveCfg = Debug|x64

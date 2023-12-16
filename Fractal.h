@@ -1,5 +1,4 @@
-#ifndef FRACTAL_H
-#define FRACTAL_H
+#pragma once
 
 //
 // Comments for Matthew:
@@ -210,8 +209,8 @@ public: // Drawing functions
     void CreateNewFractalPalette(void);
 
     template<typename IterType, class T, CalcBad Bad>
-    void DrawPerturbationResults(bool MemoryOnly);
-    void DrawAllPerturbationResults();
+    void DrawPerturbationResults();
+    void DrawAllPerturbationResults(bool LeaveScreen);
 
 private:
     template<typename IterType>
@@ -620,5 +619,3 @@ private:
     static void DrawAsyncGpuFractalThreadStatic(Fractal *fractal);
     void MessageBoxCudaError(uint32_t err);
 };
-
-#endif

@@ -17,7 +17,6 @@
 #define IDC_EDIT_RESX                   1006
 #define IDC_EDIT_RESY                   1007
 #define IDC_EDIT_MESSAGES               1008
-#define IDC_RADIO_ALG_C                 1009
 #define IDC_RADIO_ALG_ASSEMBLY          1010
 #define IDC_RADIO_ALG_HIGHRES           1010
 #define IDC_RADIO3                      1011

@@ -47,10 +47,6 @@ public:
   int m_L1Iterations;
   int m_L1NumFrames;
 
-  // The algorithm desired
-  int m_AlgHighRes;
-  int m_AlgLowRes;
-
 private:
   void ReadString(wchar_t *fromDisk, const wchar_t *defValue, int length);
   void WriteString(wchar_t *toDisk, int length);

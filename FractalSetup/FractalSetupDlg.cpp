@@ -16,8 +16,6 @@ static char THIS_FILE[] = __FILE__;
 
 CFractalSetupDlg::CFractalSetupDlg(CWnd* pParent /*=NULL*/)
   : CDialog(CFractalSetupDlg::IDD, pParent)
-  , m_AlgHighRes(0)
-  , m_AlgLowRes(0)
 {
   //{{AFX_DATA_INIT(CFractalSetupDlg)
 	m_WorkClient = 20;
@@ -82,8 +80,6 @@ void CFractalSetupDlg::DoDataExchange(CDataExchange* pDX)
 	DDX_Check(pDX, IDC_CHECK_USE3, m_UseThisServer3);
 	DDX_Check(pDX, IDC_CHECK_USE4, m_UseThisServer4);
 	//}}AFX_DATA_MAP
-	DDX_Radio(pDX, IDC_RADIO1, m_AlgHighRes);
-	DDX_Radio(pDX, IDC_RADIO5, m_AlgLowRes);
 }
 
 BEGIN_MESSAGE_MAP(CFractalSetupDlg, CDialog)
@@ -139,9 +135,6 @@ BOOL CFractalSetupDlg::OnInitDialog()
   m_SaveDir = m_Data.m_SaveDir;
   m_SSAutoZoom = (m_Data.m_SSAutoZoom == 'y') ? TRUE : FALSE;
   m_AZSaveReducedSize = (m_Data.m_AZSaveReducedSize == 'y') ? TRUE : FALSE;
-  
-  m_AlgHighRes = m_Data.m_AlgHighRes;
-  m_AlgLowRes = m_Data.m_AlgLowRes;
 
   UpdateData (FALSE);
   return TRUE;  // return TRUE  unless you set the focus to a control
@@ -219,9 +212,6 @@ void CFractalSetupDlg::OnOK ()
   m_Data.m_SSAutoZoom = (m_SSAutoZoom == TRUE) ? 'y' : 'n';
   m_Data.m_AZSaveReducedSize = (m_AZSaveReducedSize == TRUE) ? 'y' : 'n';
   
-  m_Data.m_AlgHighRes = m_AlgHighRes;
-  m_Data.m_AlgLowRes = m_AlgLowRes;
-
   m_Data.Save ();
 
   CDialog::OnOK();

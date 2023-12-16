@@ -263,7 +263,7 @@ unsigned long WINAPI DrawingThread (void *)
     gFractal->SquareCurrentView ();
   
     // Increase iterations to ensure a high quality image
-    gFractal->SetNumIterations (3 * gFractal->GetNumIterations () / 2);
+    gFractal->SetNumIterations<uint32_t> (3 * gFractal->GetNumIterations<uint32_t> () / 2);
   
     // If we are in too far, reset to standard.
     if (gFractal->IsValidLocation () == false)

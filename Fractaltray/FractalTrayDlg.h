@@ -66,5 +66,4 @@ public:
   HANDLE m_Thread;
   CThreadParam m_ThreadParam;
   CTrayIcon m_TrayIcon;
-  int m_Algorithm;
 };

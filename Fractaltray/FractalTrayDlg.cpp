@@ -16,7 +16,7 @@ constexpr double DefaultScaleFactor = 75;
 constexpr int DefaultWidth = 3840;
 constexpr int DefaultHeight = 1600;
 //constexpr auto *fileprefix = L"\\\\192.168.4.1\\Archive\\Fractal Saves\\2023_10e4000\\";
-constexpr auto* fileprefix = L"\\\\192.168.4.1\\Archive\\Fractal Saves\\10e700\\";
+constexpr auto* fileprefix = L"\\\\192.168.4.1\\Archive\\Fractal Saves\\lav2\\";
 //constexpr auto* fileprefix = L"";
 constexpr int startAt = 0;
 
@@ -48,7 +48,6 @@ CFractalTrayDlg::CFractalTrayDlg (CWnd* pParent /*=NULL*/)
   , m_SourceCoords (_T ("16384 6826 -4.118537200504413619167717528373266078184110970996216897856242118537200504413619167717528373266078184110970996216756329721 -1.5 3.118537200504413619167717528373266078184110970996216897856242118537200504413619167717528373266078184110970996216756329721 1.5 8192 2 1"))
   , m_LocationFilename ("locations.txt")
   , m_Messages (_T (""))
-  , m_Algorithm (2)
 {
   m_hIcon1 = AfxGetApp ()->LoadIcon (IDR_FRACTALTRAY1);
   m_hIcon2 = AfxGetApp ()->LoadIcon (IDR_FRACTALTRAY2);
@@ -61,7 +60,6 @@ void CFractalTrayDlg::DoDataExchange (CDataExchange* pDX)
   DDX_Text (pDX, IDC_EDIT_RESX, m_ResX);
   DDX_Text (pDX, IDC_EDIT_RESY, m_ResY);
   DDX_Text (pDX, IDC_EDIT_MESSAGES, m_Messages);
-  DDX_Radio (pDX, IDC_RADIO_ALG_C, m_Algorithm);
   CDialog::DoDataExchange (pDX);
 }
 
@@ -94,7 +92,6 @@ BOOL CFractalTrayDlg::OnInitDialog ()
   if (FileExists (m_LocationFilename.operator LPCWSTR()) == true)
   { m_ThreadParam.LocationFilename = &m_LocationFilename;
     m_ThreadParam.stop = false;
-    m_ThreadParam.Algorithm = m_Algorithm + 1;
     m_ThreadParam.hWnd = m_hWnd;
 
     m_Thread = CreateThread (NULL, 0, CalcProc, &m_ThreadParam, NULL, NULL);
@@ -421,8 +418,6 @@ DWORD WINAPI CalcProc (LPVOID lpParameter)
 
     FractalSetupData setup;
     setup.Load (true);
-    setup.m_AlgHighRes = param->Algorithm;
-    setup.m_AlgLowRes = 0;
     GetCurrentDirectory (128, setup.m_SaveDir);
 
     // default width/height:
@@ -481,7 +476,7 @@ DWORD WINAPI CalcProc (LPVOID lpParameter)
         auto prec = Fractal::GetPrecision(minX, minY, maxX, maxY, false);
         Fractal::SetPrecision(prec, minX, minY, maxX, maxY);
 
-        fractal->SetNumIterations (numIters);
+        fractal->SetNumIterations<uint32_t> (numIters);
         fractal->SetIterationPrecision(iterationPrecision);
         fractal->ResetDimensions(resX, resY, 2);
         fractal->RecenterViewCalc(minX, minY, maxX, maxY);

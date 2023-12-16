@@ -2505,10 +2505,10 @@ void Fractal::DrawGlFractal(bool LocalColor) {
     glTexCoord2i(1, 0); glVertex2i((GLint)m_ScrnWidth, (GLint)m_ScrnHeight);
     glEnd();
     glFlush();
-
     glDeleteTextures(1, &texid);
 
-    DrawAllPerturbationResults();
+
+    DrawAllPerturbationResults(true);
 
     //while (GetMessage(&msg, NULL, 0, 0) > 0)
     //{
@@ -2529,35 +2529,39 @@ void Fractal::ToggleRepainting() {
     m_glContext->ToggleRepaint();
 }
 
-void Fractal::DrawAllPerturbationResults() {
-    DrawPerturbationResults<uint32_t, double, CalcBad::Disable>(true);
-    DrawPerturbationResults<uint32_t, float, CalcBad::Disable>(true);
-    DrawPerturbationResults<uint32_t, HDRFloat<double>, CalcBad::Disable>(true);
-    DrawPerturbationResults<uint32_t, HDRFloat<float>, CalcBad::Disable>(true);
-
-    DrawPerturbationResults<uint32_t, double, CalcBad::Enable>(true);
-    DrawPerturbationResults<uint32_t, float, CalcBad::Enable>(true);
-    DrawPerturbationResults<uint32_t, HDRFloat<double>, CalcBad::Enable>(true);
-    DrawPerturbationResults<uint32_t, HDRFloat<float>, CalcBad::Enable>(true);
-
-    DrawPerturbationResults<uint64_t, double, CalcBad::Disable>(true);
-    DrawPerturbationResults<uint64_t, float, CalcBad::Disable>(true);
-    DrawPerturbationResults<uint64_t, HDRFloat<double>, CalcBad::Disable>(true);
-    DrawPerturbationResults<uint64_t, HDRFloat<float>, CalcBad::Disable>(true);
-
-    DrawPerturbationResults<uint64_t, double, CalcBad::Enable>(true);
-    DrawPerturbationResults<uint64_t, float, CalcBad::Enable>(true);
-    DrawPerturbationResults<uint64_t, HDRFloat<double>, CalcBad::Enable>(true);
-    DrawPerturbationResults<uint64_t, HDRFloat<float>, CalcBad::Enable>(true);
-}
-
-template<typename IterType, class T, CalcBad Bad>
-void Fractal::DrawPerturbationResults(bool LeaveScreen) {
+void Fractal::DrawAllPerturbationResults(bool LeaveScreen) {
     if (!LeaveScreen) {
         glClear(GL_COLOR_BUFFER_BIT);
     }
 
     glBegin(GL_POINTS);
+
+    DrawPerturbationResults<uint32_t, double, CalcBad::Disable>();
+    DrawPerturbationResults<uint32_t, float, CalcBad::Disable>();
+    DrawPerturbationResults<uint32_t, HDRFloat<double>, CalcBad::Disable>();
+    DrawPerturbationResults<uint32_t, HDRFloat<float>, CalcBad::Disable>();
+
+    DrawPerturbationResults<uint32_t, double, CalcBad::Enable>();
+    DrawPerturbationResults<uint32_t, float, CalcBad::Enable>();
+    DrawPerturbationResults<uint32_t, HDRFloat<double>, CalcBad::Enable>();
+    DrawPerturbationResults<uint32_t, HDRFloat<float>, CalcBad::Enable>();
+
+    DrawPerturbationResults<uint64_t, double, CalcBad::Disable>();
+    DrawPerturbationResults<uint64_t, float, CalcBad::Disable>();
+    DrawPerturbationResults<uint64_t, HDRFloat<double>, CalcBad::Disable>();
+    DrawPerturbationResults<uint64_t, HDRFloat<float>, CalcBad::Disable>();
+
+    DrawPerturbationResults<uint64_t, double, CalcBad::Enable>();
+    DrawPerturbationResults<uint64_t, float, CalcBad::Enable>();
+    DrawPerturbationResults<uint64_t, HDRFloat<double>, CalcBad::Enable>();
+    DrawPerturbationResults<uint64_t, HDRFloat<float>, CalcBad::Enable>();
+
+    glEnd();
+    glFlush();
+}
+
+template<typename IterType, class T, CalcBad Bad>
+void Fractal::DrawPerturbationResults() {
 
     // TODO can we just integrate all this with DrawFractal
 
@@ -2574,9 +2578,6 @@ void Fractal::DrawPerturbationResults(bool LeaveScreen) {
             glVertex2i(scrnX, scrnY);
         }
     }
-
-    glEnd();
-    glFlush();
 }
 
 void Fractal::DrawFractalThread(size_t index, Fractal* fractal) {

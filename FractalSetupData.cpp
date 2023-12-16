@@ -45,9 +45,6 @@ void FractalSetupData::CopyFromThisTo (FractalSetupData *here)
   here->m_L1MaxY = m_L1MaxY;
   here->m_L1Iterations = m_L1Iterations;
   here->m_L1NumFrames = m_L1NumFrames;
-  
-  here->m_AlgHighRes = m_AlgHighRes;
-  here->m_AlgLowRes = m_AlgLowRes;
 }
 
 void FractalSetupData::Load (bool defaultsOnly)
@@ -106,9 +103,6 @@ void FractalSetupData::Load (bool defaultsOnly)
   ReadInt (&m_L1Iterations, 256);
   ReadInt (&m_L1NumFrames, 1500);
   
-  ReadInt (&m_AlgHighRes, 0);
-  ReadInt (&m_AlgLowRes, 0);
-
   if (m_File != NULL)
   { fclose (m_File); }
 }
@@ -156,9 +150,6 @@ void FractalSetupData::Save (void)
   WriteDouble (m_L1MaxY);
   WriteInt (m_L1Iterations);
   WriteInt (m_L1NumFrames);
-  
-  WriteInt (m_AlgHighRes);
-  WriteInt (m_AlgLowRes);
 
   fclose (m_File);
 }

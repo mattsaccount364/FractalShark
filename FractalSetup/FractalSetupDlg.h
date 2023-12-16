@@ -66,9 +66,6 @@ protected:
 	virtual void OnOK();
 	//}}AFX_MSG
 	DECLARE_MESSAGE_MAP()
-public:
-	int m_AlgHighRes;
-	int m_AlgLowRes;
 };
 
 //{{AFX_INSERT_LOCATION}}

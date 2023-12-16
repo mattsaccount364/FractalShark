@@ -816,7 +816,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             case IDM_PERTURB_RESULTS:
             {
-                gFractal->DrawAllPerturbationResults();
+                //gFractal->DrawAllPerturbationResults(false);
+                ::MessageBox(hWnd,
+                    L"TODO.  By default these are shown as white pixels overlayed on the image. "
+                    L"It'd be nice to have an option that shows them as white pixels against a "
+                    L"black screen so they're location is obvious.", L"TODO", MB_OK);
                 break;
             }
             case IDM_PERTURB_CLEAR_ALL:

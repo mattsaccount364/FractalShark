@@ -147,6 +147,14 @@ bool RefOrbitCalc::IsThisPerturbationArrayUsed(void* check) const {
             check == &c32e.m_PerturbationResultsFloat ||
             check == &c64d.m_PerturbationResultsFloat ||
             check == &c64e.m_PerturbationResultsFloat;
+    case RenderAlgorithm::Gpu2x32PerturbedLAv2:
+    case RenderAlgorithm::Gpu2x32PerturbedLAv2PO:
+    case RenderAlgorithm::Gpu2x32PerturbedLAv2LAO:
+        return
+            check == &c32d.m_PerturbationResults2xFloat ||
+            check == &c32e.m_PerturbationResults2xFloat ||
+            check == &c64d.m_PerturbationResults2xFloat ||
+            check == &c64e.m_PerturbationResults2xFloat;
     case RenderAlgorithm::Cpu64PerturbedBLA:
     case RenderAlgorithm::Gpu1x32PerturbedScaled:
     case RenderAlgorithm::Gpu1x32PerturbedScaledBLA:
@@ -191,6 +199,10 @@ void RefOrbitCalc::OptimizeMemory() {
 
             if (!IsThisPerturbationArrayUsed(&container.m_PerturbationResultsFloat)) {
                 container.m_PerturbationResultsFloat.clear();
+            }
+
+            if (!IsThisPerturbationArrayUsed(&container.m_PerturbationResults2xFloat)) {
+                container.m_PerturbationResults2xFloat.clear();
             }
 
             if (!IsThisPerturbationArrayUsed(&container.m_PerturbationResultsHDRDouble)) {
@@ -242,6 +254,9 @@ RefOrbitCalc::GetPerturbationResults() {
         else if constexpr (std::is_same<T, float>::value) {
             return container.m_PerturbationResultsFloat;
         }
+        else if constexpr (std::is_same<T, CudaDblflt<MattDblflt>>::value) {
+            return container.m_PerturbationResults2xFloat;
+        }
         else if constexpr (std::is_same<T, HDRFloat<double>>::value) {
             return container.m_PerturbationResultsHDRDouble;
         }
@@ -282,6 +297,10 @@ RefOrbitCalc::AddPerturbationResults(std::unique_ptr<PerturbationResults<IterTyp
         else if constexpr (std::is_same<T, float>::value) {
             container.m_PerturbationResultsFloat.push_back(std::move(results));
             return container.m_PerturbationResultsFloat[container.m_PerturbationResultsFloat.size() - 1].get();
+        }
+        else if constexpr (std::is_same<T, CudaDblflt<MattDblflt>>::value) {
+            container.m_PerturbationResults2xFloat.push_back(std::move(results));
+            return container.m_PerturbationResults2xFloat[container.m_PerturbationResults2xFloat.size() - 1].get();
         }
         else if constexpr (std::is_same<T, HDRFloat<double>>::value) {
             container.m_PerturbationResultsHDRDouble.push_back(std::move(results));
@@ -354,6 +373,9 @@ RefOrbitCalc::GetPerturbationResults(size_t index) {
         }
         else if constexpr (std::is_same<T, float>::value) {
             return *container.m_PerturbationResultsFloat[index];
+        }
+        else if constexpr (std::is_same<T, CudaDblflt<MattDblflt>>::value) {
+            return *container.m_PerturbationResults2xFloat[index];
         }
         else if constexpr (std::is_same<T, HDRFloat<double>>::value) {
             return *container.m_PerturbationResultsHDRDouble[index];
@@ -2040,7 +2062,9 @@ PerturbationResults<IterType, ConvertTType, Bad>* RefOrbitCalc::GetAndCreateUsef
         results = cur_array[cur_array.size() - 1].get();
     }
 
-    constexpr bool UseSmallExponents = std::is_same<ConvertTType, HDRFloat<CudaDblflt<MattDblflt>>>::value;
+    constexpr bool IsHdrDblflt = std::is_same<ConvertTType, HDRFloat<CudaDblflt<MattDblflt>>>::value;
+    constexpr bool IsDblflt = std::is_same<ConvertTType, CudaDblflt<MattDblflt>>::value;
+    constexpr bool UseSmallExponents = IsHdrDblflt || IsDblflt;
 
     if constexpr (
         std::is_same<T, float>::value || // TODO: these are new.  Maybe OK to keep here.
@@ -2161,6 +2185,14 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults<
     float,
     CalcBad::Disable,
     RefOrbitCalc::Extras::IncludeLAv2>();
+template PerturbationResults<uint32_t, CudaDblflt<MattDblflt>, CalcBad::Disable>*
+RefOrbitCalc::GetAndCreateUsefulPerturbationResults<
+    uint32_t,
+    double,
+    double,
+    CalcBad::Disable,
+    RefOrbitCalc::Extras::IncludeLAv2,
+    CudaDblflt<MattDblflt>>();
 template PerturbationResults<uint32_t, HDRFloat<double>, CalcBad::Disable>*
 RefOrbitCalc::GetAndCreateUsefulPerturbationResults<
     uint32_t,
@@ -2258,6 +2290,14 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults<
     float,
     CalcBad::Disable,
     RefOrbitCalc::Extras::IncludeLAv2>();
+template PerturbationResults<uint64_t, CudaDblflt<MattDblflt>, CalcBad::Disable>*
+RefOrbitCalc::GetAndCreateUsefulPerturbationResults<
+    uint64_t,
+    double,
+    double,
+    CalcBad::Disable,
+    RefOrbitCalc::Extras::IncludeLAv2,
+    CudaDblflt<MattDblflt>>();
 template PerturbationResults<uint64_t, HDRFloat<double>, CalcBad::Disable>*
 RefOrbitCalc::GetAndCreateUsefulPerturbationResults<
     uint64_t,
@@ -2484,6 +2524,7 @@ void RefOrbitCalc::ClearPerturbationResults(PerturbationResultType type) {
     auto ClearContainer = [&](auto& container) {
         ClearOne(container.m_PerturbationResultsDouble);
         ClearOne(container.m_PerturbationResultsFloat);
+        ClearOne(container.m_PerturbationResults2xFloat);
         ClearOne(container.m_PerturbationResultsHDRDouble);
         ClearOne(container.m_PerturbationResultsHDRFloat);
         ClearOne(container.m_PerturbationResultsHDR2xFloat);
@@ -2544,6 +2585,11 @@ void RefOrbitCalc::SaveAllOrbits() {
         }
 
         for (const auto &it : Container.m_PerturbationResultsFloat) {
+            auto filebase = gettime();
+            it->Write(filebase);
+        }
+
+        for (const auto& it : Container.m_PerturbationResults2xFloat) {
             auto filebase = gettime();
             it->Write(filebase);
         }
@@ -2623,27 +2669,35 @@ void RefOrbitCalc::LoadAllOrbits() {
                     continue;
                 }
 
-                auto results3 = std::make_unique<PerturbationResults<IterType, HDRFloat<double>, Bad>>(
+                auto results3 = std::make_unique<PerturbationResults<IterType, CudaDblflt<MattDblflt>, Bad>>(
                     NextGen,
                     NextLaGen);
                 if (results3->Load(widefn)) {
-                    Container.m_PerturbationResultsHDRDouble.push_back(std::move(results3));
+                    Container.m_PerturbationResults2xFloat.push_back(std::move(results3));
                     continue;
                 }
 
-                auto results4 = std::make_unique<PerturbationResults<IterType, HDRFloat<float>, Bad>>(
+                auto results4 = std::make_unique<PerturbationResults<IterType, HDRFloat<double>, Bad>>(
                     NextGen,
                     NextLaGen);
                 if (results4->Load(widefn)) {
-                    Container.m_PerturbationResultsHDRFloat.push_back(std::move(results4));
+                    Container.m_PerturbationResultsHDRDouble.push_back(std::move(results4));
                     continue;
                 }
 
-                auto results5 = std::make_unique<PerturbationResults<IterType, HDRFloat<CudaDblflt<MattDblflt>>, Bad>>(
+                auto results5 = std::make_unique<PerturbationResults<IterType, HDRFloat<float>, Bad>>(
                     NextGen,
                     NextLaGen);
                 if (results5->Load(widefn)) {
-                    Container.m_PerturbationResultsHDR2xFloat.push_back(std::move(results5));
+                    Container.m_PerturbationResultsHDRFloat.push_back(std::move(results5));
+                    continue;
+                }
+
+                auto results6 = std::make_unique<PerturbationResults<IterType, HDRFloat<CudaDblflt<MattDblflt>>, Bad>>(
+                    NextGen,
+                    NextLaGen);
+                if (results6->Load(widefn)) {
+                    Container.m_PerturbationResultsHDR2xFloat.push_back(std::move(results6));
                     continue;
                 }
             }

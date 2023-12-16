@@ -48,6 +48,7 @@ private:
     // TODO this is overly broad -- many types don't need these friends
     friend class LAReference<IterType, float, float>;
     friend class LAReference<IterType, double, double>;
+    friend class LAReference<IterType, CudaDblflt<dblflt>, CudaDblflt<dblflt>>;
     friend class LAReference<IterType, ::HDRFloat<float>, float>;
     friend class LAReference<IterType, ::HDRFloat<double>, double>;
     friend class LAReference<IterType, ::HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>>;

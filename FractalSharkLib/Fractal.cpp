@@ -85,8 +85,8 @@ void Fractal::Initialize(int width,
     //SetRenderAlgorithm(RenderAlgorithm::Cpu64);
     //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedLAv2);
     //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx2x32PerturbedLAv2);
-    //SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedLAv2);
-    SetRenderAlgorithm(RenderAlgorithm::AUTO);
+    SetRenderAlgorithm(RenderAlgorithm::Gpu2x32PerturbedLAv2);
+    //SetRenderAlgorithm(RenderAlgorithm::AUTO);
 
     SetIterationPrecision(1);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed);
@@ -863,6 +863,7 @@ void Fractal::BasicTest() {
     for (size_t i = 0; i < (size_t)RenderAlgorithm::AUTO; i++) {
         auto CurAlg = static_cast<RenderAlgorithm>(i);
         if (CurAlg != RenderAlgorithm::Gpu1x32PerturbedLAv2LAO &&
+            CurAlg != RenderAlgorithm::Gpu2x32PerturbedLAv2LAO &&
             CurAlg != RenderAlgorithm::Gpu1x64PerturbedLAv2LAO &&
             CurAlg != RenderAlgorithm::GpuHDRx32PerturbedLAv2LAO &&
             CurAlg != RenderAlgorithm::GpuHDRx2x32PerturbedLAv2LAO &&
@@ -2078,6 +2079,16 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
         CalcGpuPerturbationFractalLAv2<IterType, float, float, LAv2Mode::LAO>(MemoryOnly);
         break;
 
+    case RenderAlgorithm::Gpu2x32PerturbedLAv2:
+        CalcGpuPerturbationFractalLAv2<IterType, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::Full>(MemoryOnly);
+        break;
+    case RenderAlgorithm::Gpu2x32PerturbedLAv2PO:
+        CalcGpuPerturbationFractalLAv2<IterType, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::PO>(MemoryOnly);
+        break;
+    case RenderAlgorithm::Gpu2x32PerturbedLAv2LAO:
+        CalcGpuPerturbationFractalLAv2<IterType, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::LAO>(MemoryOnly);
+        break;
+
     case RenderAlgorithm::Gpu1x64PerturbedLAv2:
         CalcGpuPerturbationFractalLAv2<IterType, double, double, LAv2Mode::Full>(MemoryOnly);
         break;
@@ -2728,8 +2739,10 @@ void Fractal::DrawAsyncGpuFractalThread() {
         m_AsyncRenderThreadCV.notify_one();
 
         for (size_t i = 0;; i++) {
+            // Setting the timeout lower works fine but puts more load on the GPU
+            static constexpr auto set_time = std::chrono::milliseconds(1000);
+
             std::unique_lock lk(m_AsyncRenderThreadMutex);
-            static constexpr auto set_time = std::chrono::milliseconds(300);
             auto doneearly = m_AsyncRenderThreadCV.wait_for(lk, set_time, [&] {
                 return m_AsyncRenderThreadState == AsyncRenderThreadState::SyncDone;
                 }
@@ -3652,13 +3665,14 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
     using ConditionalT = typename DoubleTo2x32Converter<T, SubType>::ConditionalT;
     using ConditionalSubType = typename DoubleTo2x32Converter<T, SubType>::ConditionalSubType;
 
-    auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<
-        IterType,
-        ConditionalT,
-        ConditionalSubType,
-        CalcBad::Disable,
-        RefOrbitCalc::Extras::IncludeLAv2,
-        T>();
+    PerturbationResults<IterType, T, CalcBad::Disable>* results =
+        m_RefOrbit.GetAndCreateUsefulPerturbationResults<
+            IterType,
+            ConditionalT,
+            ConditionalSubType,
+            CalcBad::Disable,
+            RefOrbitCalc::Extras::IncludeLAv2,
+            T>();
 
     // TODO pass perturb results via InitializeGPUMemory
     uint32_t err = InitializeGPUMemory();

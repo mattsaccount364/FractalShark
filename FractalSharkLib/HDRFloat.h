@@ -1129,6 +1129,7 @@ static CUDA_CRAP T HdrSqrt(const T &incoming) {
         std::is_same<T, HDRFloat<float>>::value, "No");
 
     static_assert(!std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value, "!");
+    static_assert(!std::is_same<T, CudaDblflt<dblflt>>::value, "!");
 
     if constexpr (std::is_same<T, double>::value ||
                   std::is_same<T, float>::value) {
@@ -1153,6 +1154,7 @@ static CUDA_CRAP constexpr T HdrAbs(const T& incoming) {
     static_assert(
         std::is_same<T, double>::value ||
         std::is_same<T, float>::value ||
+        std::is_same<T, CudaDblflt<dblflt>>::value ||
         std::is_same<T, HDRFloat<double>>::value ||
         std::is_same<T, HDRFloat<float>>::value ||
         std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value, "No");
@@ -1160,7 +1162,11 @@ static CUDA_CRAP constexpr T HdrAbs(const T& incoming) {
     if constexpr (std::is_same<T, double>::value ||
                   std::is_same<T, float>::value) {
         return fabs((T)incoming);
-    } else if constexpr (std::is_same<T, HDRFloat<float>>::value ||
+    }
+    else if constexpr (std::is_same<T, CudaDblflt<dblflt>>::value) {
+        return incoming.abs();
+    }
+    else if constexpr (std::is_same<T, HDRFloat<float>>::value ||
                          std::is_same<T, HDRFloat<double>>::value) {
         return T(incoming.exp, fabs(incoming.mantissa));
     }
@@ -1182,6 +1188,7 @@ static CUDA_CRAP constexpr void HdrReduce(T& incoming) {
     static_assert(
         std::is_same<T, double>::value ||
         std::is_same<T, float>::value ||
+        std::is_same<T, CudaDblflt<dblflt>>::value ||
         std::is_same<T, HDRFloat<double>>::value ||
         std::is_same<T, HDRFloat<float>>::value ||
         std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value ||
@@ -1214,6 +1221,7 @@ static CUDA_CRAP constexpr T &&HdrReduce(T&& incoming) {
     static_assert(
         std::is_same<no_const, double>::value ||
         std::is_same<no_const, float>::value ||
+        std::is_same<T, CudaDblflt<dblflt>>::value ||
         std::is_same<no_const, HDRFloat<double>>::value ||
         std::is_same<no_const, HDRFloat<float>>::value ||
         std::is_same<no_const, HDRFloat<CudaDblflt<dblflt>>>::value ||
@@ -1242,6 +1250,7 @@ static CUDA_CRAP constexpr T HdrMaxPositiveReduced(const T& one, const U& two) {
         std::is_same<T, HDRFloat<double>>::value ||
         std::is_same<T, HDRFloat<float>>::value, "No");
     static_assert(!std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value, "!");
+    static_assert(!std::is_same<T, CudaDblflt<dblflt>>::value, "!");
     if constexpr (std::is_same<T, HDRFloat<double>>::value ||
                   std::is_same<T, HDRFloat<float>>::value) {
         if (one.compareToBothPositiveReduced(two) > 0) {
@@ -1263,6 +1272,7 @@ static CUDA_CRAP constexpr T HdrMinPositiveReduced(const T& one, const U& two) {
         std::is_same<T, HDRFloat<double>>::value ||
         std::is_same<T, HDRFloat<float>>::value, "No");
     static_assert(!std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value, "!");
+    static_assert(!std::is_same<T, CudaDblflt<dblflt>>::value, "!");
     if constexpr (std::is_same<T, HDRFloat<double>>::value ||
                   std::is_same<T, HDRFloat<float>>::value) {
         if (one.compareToBothPositiveReduced(two) < 0) {
@@ -1287,6 +1297,7 @@ static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedLT(const T& one, 
     static_assert(
         std::is_same<T, double>::value ||
         std::is_same<T, float>::value ||
+        std::is_same<T, CudaDblflt<dblflt>>::value ||
         std::is_same<T, HDRFloat<double>>::value ||
         std::is_same<T, HDRFloat<float>>::value ||
         std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value ||
@@ -1313,6 +1324,7 @@ static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedLT(const T& one) 
     static_assert(
         std::is_same<T, double>::value ||
         std::is_same<T, float>::value ||
+        std::is_same<T, CudaDblflt<dblflt>>::value ||
         std::is_same<T, HDRFloat<double>>::value ||
         std::is_same<T, HDRFloat<float>>::value ||
         std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value ||
@@ -1324,7 +1336,7 @@ static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedLT(const T& one) 
         return one.compareToBothPositiveReducedTemplate() < 0;
     }
     else {
-        return one < CompareAgainst;
+        return one < T(CompareAgainst);
     }
 }
 
@@ -1337,6 +1349,7 @@ static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedLE(const T& one, 
         false;
 #endif
     static_assert(!std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value, "!");
+    static_assert(!std::is_same<T, CudaDblflt<dblflt>>::value, "!");
     static_assert(
         std::is_same<T, double>::value ||
         std::is_same<T, float>::value ||
@@ -1362,6 +1375,7 @@ static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedGT(const T& one, 
         false;
 #endif
     static_assert(!std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value, "!");
+    static_assert(!std::is_same<T, CudaDblflt<dblflt>>::value, "!");
     static_assert(
         std::is_same<T, double>::value ||
         std::is_same<T, float>::value ||
@@ -1387,6 +1401,7 @@ static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedGE(const T& one, 
         false;
 #endif
     static_assert(!std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value, "!");
+    static_assert(!std::is_same<T, CudaDblflt<dblflt>>::value, "!");
     static_assert(
         std::is_same<T, double>::value ||
         std::is_same<T, float>::value ||
@@ -1410,6 +1425,7 @@ static CUDA_CRAP std::string HdrToString(const T& dat) {
     static_assert(
         std::is_same<T, double>::value ||
         std::is_same<T, float>::value ||
+        std::is_same<T, CudaDblflt<dblflt>>::value ||
         std::is_same<T, HDRFloat<double>>::value ||
         std::is_same<T, HDRFloat<float>>::value ||
         std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value ||
@@ -1417,7 +1433,8 @@ static CUDA_CRAP std::string HdrToString(const T& dat) {
     if constexpr (
         std::is_same<T, HDRFloat<double>>::value ||
         std::is_same<T, HDRFloat<float>>::value ||
-        std::is_same<T, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
+        std::is_same<T, HDRFloat<CudaDblflt<MattDblflt>>>::value ||
+        std::is_same<T, CudaDblflt<dblflt>>::value) {
 
         return dat.ToString();
     }
@@ -1460,11 +1477,28 @@ public:
 
     // T is probably something else, like HDRFloat<float> or HDRFloat<double>
     // But if it's HDRFloat<CudaDblflt<MattDblflt>>, then we need to use HDRFloat<double> instead
-    static constexpr bool ConditionalResult = std::is_same<T, HDRFloat<CudaDblflt<MattDblflt>>>::value;
+    static constexpr bool ConditionalResult1 = std::is_same<T, HDRFloat<CudaDblflt<MattDblflt>>>::value;
+    static constexpr bool ConditionalResult2 = std::is_same<T, CudaDblflt<MattDblflt>>::value;
+    static constexpr bool ConditionalResult = ConditionalResult1 || ConditionalResult2;
 
     // SubType is probably float or double
-    using ConditionalT = typename std::conditional<ConditionalResult, HDRFloat<double>, T>::type;
-    using ConditionalSubType = typename std::conditional<ConditionalResult, double, SubType>::type;
+    using ConditionalT = typename std::conditional<
+        ConditionalResult1,
+        HDRFloat<double>,
+        typename std::conditional<
+            ConditionalResult2,
+            double,
+            T>::type
+    >::type;
+
+    using ConditionalSubType = typename std::conditional<
+        ConditionalResult1,
+        double,
+        typename std::conditional<
+            ConditionalResult2,
+            double,
+            SubType>::type
+    >::type;
 };
 #endif
 

@@ -188,6 +188,9 @@ BEGIN
             MENUITEM "1x32 GPU - Perturbation LAv2", IDM_ALG_GPU_1_32_PERTURB_LAV2
             MENUITEM "1x32 GPU - Perturbation LAv2 - Perturb only", IDM_ALG_GPU_1_32_PERTURB_LAV2_PO
             MENUITEM "1x32 GPU - Perturbation LAv2 - LA only", IDM_ALG_GPU_1_32_PERTURB_LAV2_LAO
+            MENUITEM "2x32 GPU - Perturbation LAv2", IDM_ALG_GPU_2_32_PERTURB_LAV2
+            MENUITEM "2x32 GPU - Perturbation LAv2 - Perturb only", IDM_ALG_GPU_2_32_PERTURB_LAV2_PO
+            MENUITEM "2x32 GPU - Perturbation LAv2 -  LA only", IDM_ALG_GPU_2_32_PERTURB_LAV2_LAO
             MENUITEM "1x64 GPU - Perturbation LAv2", IDM_ALG_GPU_1_64_PERTURB_LAV2
             MENUITEM "1x64 GPU - Perturbation LAv2 - Perturb only", IDM_ALG_GPU_1_64_PERTURB_LAV2_PO
             MENUITEM "1x64 GPU - Perturbation LAv2 - LA only", IDM_ALG_GPU_1_64_PERTURB_LAV2_LAO

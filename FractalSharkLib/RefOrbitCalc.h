@@ -134,6 +134,7 @@ private:
     struct Container {
         std::vector<std::unique_ptr<PerturbationResults<IterType, double, Bad>>> m_PerturbationResultsDouble;
         std::vector<std::unique_ptr<PerturbationResults<IterType, float, Bad>>> m_PerturbationResultsFloat;
+        std::vector<std::unique_ptr<PerturbationResults<IterType, CudaDblflt<MattDblflt>, Bad>>> m_PerturbationResults2xFloat;
         std::vector<std::unique_ptr<PerturbationResults<IterType, HDRFloat<double>, Bad>>> m_PerturbationResultsHDRDouble;
         std::vector<std::unique_ptr<PerturbationResults<IterType, HDRFloat<float>, Bad>>> m_PerturbationResultsHDRFloat;
         std::vector<std::unique_ptr<PerturbationResults<IterType, HDRFloat<CudaDblflt<MattDblflt>>, Bad>>> m_PerturbationResultsHDR2xFloat;

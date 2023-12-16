@@ -698,6 +698,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 break;
             }
 
+            case IDM_ALG_GPU_2_32_PERTURB_LAV2:
+            {
+                gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu2x32PerturbedLAv2);
+                break;
+            }
+
+            case IDM_ALG_GPU_2_32_PERTURB_LAV2_PO:
+            {
+                gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu2x32PerturbedLAv2PO);
+                break;
+            }
+
+            case IDM_ALG_GPU_2_32_PERTURB_LAV2_LAO:
+            {
+                gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu2x32PerturbedLAv2LAO);
+                break;
+            }
+
             case IDM_ALG_GPU_1_64_PERTURB_LAV2:
             {
                 gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu1x64PerturbedLAv2);

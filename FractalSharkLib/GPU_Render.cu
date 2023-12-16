@@ -61,6 +61,9 @@ constexpr static bool EnableGpuHDRx64PerturbedBLA = Default;
 constexpr static bool EnableGpu1x32PerturbedLAv2 = ForceEnable;
 constexpr static bool EnableGpu1x32PerturbedLAv2PO = ForceEnable;
 constexpr static bool EnableGpu1x32PerturbedLAv2LAO = ForceEnable;
+constexpr static bool EnableGpu2x32PerturbedLAv2 = ForceEnable;
+constexpr static bool EnableGpu2x32PerturbedLAv2PO = ForceEnable;
+constexpr static bool EnableGpu2x32PerturbedLAv2LAO = ForceEnable;
 constexpr static bool EnableGpu1x64PerturbedLAv2 = ForceEnable;
 constexpr static bool EnableGpu1x64PerturbedLAv2PO = ForceEnable;
 constexpr static bool EnableGpu1x64PerturbedLAv2LAO = ForceEnable;
@@ -578,6 +581,16 @@ void PerturbResultsCollection::SetPtr32(
             Results.m_Results32DoubleEnable = ptr;
         }
     }
+    else if constexpr (std::is_same<Type, CudaDblflt<dblflt>>::value) {
+        if constexpr (Bad == CalcBad::Disable) {
+            delete Results.m_Results32CudaDblfltDisable;
+            Results.m_Results32CudaDblfltDisable = ptr;
+        }
+        else {
+            delete Results.m_Results32CudaDblfltEnable;
+            Results.m_Results32CudaDblfltEnable = ptr;
+        }
+    }
     else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
         if constexpr (Bad == CalcBad::Disable) {
             delete Results.m_Results32HdrFloatDisable;
@@ -640,6 +653,16 @@ void PerturbResultsCollection::SetPtr64(
         else {
             delete Results.m_Results64DoubleEnable;
             Results.m_Results64DoubleEnable = ptr;
+        }
+    }
+    else if constexpr (std::is_same<Type, CudaDblflt<dblflt>>::value) {
+        if constexpr (Bad == CalcBad::Disable) {
+            delete Results.m_Results64CudaDblfltDisable;
+            Results.m_Results64CudaDblfltDisable = ptr;
+        }
+        else {
+            delete Results.m_Results64CudaDblfltEnable;
+            Results.m_Results64CudaDblfltEnable = ptr;
         }
     }
     else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
@@ -715,7 +738,8 @@ void PerturbResultsCollection::SetLaReferenceInternal32(
         Results.m_LaReference32Double = LaReference;
     }
     else if constexpr (std::is_same<Type, CudaDblflt<MattDblflt>>::value) {
-
+        delete Results.m_LaReference32CudaDblflt;
+        Results.m_LaReference32CudaDblflt = LaReference;
     }
     else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
         delete Results.m_LaReference32HdrFloat;
@@ -752,7 +776,8 @@ void PerturbResultsCollection::SetLaReferenceInternal64(
         Results.m_LaReference64Double = LaReference;
     }
     else if constexpr (std::is_same<Type, CudaDblflt<MattDblflt>>::value) {
-
+        delete Results.m_LaReference64CudaDblflt;
+        Results.m_LaReference64CudaDblflt = LaReference;
     }
     else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
         delete Results.m_LaReference64HdrFloat;
@@ -805,7 +830,16 @@ MattPerturbSingleResults<uint32_t, Type, Bad>* PerturbResultsCollection::GetPtrI
         else {
             return Results.m_Results32DoubleEnable;
         }
-    } else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
+    }
+    else if constexpr (std::is_same<Type, CudaDblflt<MattDblflt>>::value) {
+        if constexpr (Bad == CalcBad::Disable) {
+            return Results.m_Results32CudaDblfltDisable;
+        }
+        else {
+            return Results.m_Results32CudaDblfltEnable;
+        }
+    }
+    else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
         if constexpr (Bad == CalcBad::Disable) {
             return Results.m_Results32HdrFloatDisable;
         }
@@ -848,7 +882,16 @@ MattPerturbSingleResults<uint64_t, Type, Bad>* PerturbResultsCollection::GetPtrI
         else {
             return Results.m_Results64DoubleEnable;
         }
-    } else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
+    }
+    else if constexpr (std::is_same<Type, CudaDblflt<MattDblflt>>::value) {
+        if constexpr (Bad == CalcBad::Disable) {
+            return Results.m_Results64CudaDblfltDisable;
+        }
+        else {
+            return Results.m_Results64CudaDblfltEnable;
+        }
+    }
+    else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
         if constexpr (Bad == CalcBad::Disable) {
             return Results.m_Results64HdrFloatDisable;
         }
@@ -894,7 +937,7 @@ GPU_LAReference<uint32_t, Type, SubType>* PerturbResultsCollection::GetLaReferen
         return Results.m_LaReference32Double;
     }
     else if constexpr (std::is_same<Type, CudaDblflt<MattDblflt>>::value) {
-
+        return Results.m_LaReference32CudaDblflt;
     }
     else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
         return Results.m_LaReference32HdrFloat;
@@ -917,7 +960,7 @@ GPU_LAReference<uint64_t, Type, SubType>* PerturbResultsCollection::GetLaReferen
         return Results.m_LaReference64Double;
     }
     else if constexpr (std::is_same<Type, CudaDblflt<MattDblflt>>::value) {
-
+        return Results.m_LaReference64CudaDblflt;
     }
     else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
         return Results.m_LaReference64HdrFloat;
@@ -997,6 +1040,14 @@ void PerturbResultsCollection::DeleteAllInternal(InternalResults &Results) {
         delete Results.m_Results32DoubleEnable;
         Results.m_Results32DoubleEnable = nullptr;
     }
+    if (Results.m_Results32CudaDblfltDisable) {
+        delete Results.m_Results32CudaDblfltDisable;
+        Results.m_Results32CudaDblfltDisable = nullptr;
+    }
+    if (Results.m_Results32CudaDblfltEnable) {
+        delete Results.m_Results32CudaDblfltEnable;
+        Results.m_Results32CudaDblfltEnable = nullptr;
+    }
 
     if (Results.m_Results32HdrFloatDisable) {
         delete Results.m_Results32HdrFloatDisable;
@@ -1041,6 +1092,15 @@ void PerturbResultsCollection::DeleteAllInternal(InternalResults &Results) {
         delete Results.m_Results64DoubleEnable;
         Results.m_Results64DoubleEnable = nullptr;
     }
+    if (Results.m_Results64CudaDblfltDisable) {
+        delete Results.m_Results64CudaDblfltDisable;
+        Results.m_Results64CudaDblfltDisable = nullptr;
+    }
+    if (Results.m_Results64CudaDblfltEnable) {
+        delete Results.m_Results64CudaDblfltEnable;
+        Results.m_Results64CudaDblfltEnable = nullptr;
+    }
+
     if (Results.m_Results64HdrFloatDisable) {
         delete Results.m_Results64HdrFloatDisable;
         Results.m_Results64HdrFloatDisable = nullptr;
@@ -1078,6 +1138,11 @@ void PerturbResultsCollection::DeleteAllInternal(InternalResults &Results) {
         Results.m_LaReference32Double = nullptr;
     }
 
+    if (Results.m_LaReference32CudaDblflt) {
+        delete Results.m_LaReference32CudaDblflt;
+        Results.m_LaReference32CudaDblflt = nullptr;
+    }
+
     if (Results.m_LaReference32HdrFloat) {
         delete Results.m_LaReference32HdrFloat;
         Results.m_LaReference32HdrFloat = nullptr;
@@ -1103,6 +1168,11 @@ void PerturbResultsCollection::DeleteAllInternal(InternalResults &Results) {
     if (Results.m_LaReference64Double) {
         delete Results.m_LaReference64Double;
         Results.m_LaReference64Double = nullptr;
+    }
+
+    if (Results.m_LaReference64CudaDblflt) {
+        delete Results.m_LaReference64CudaDblflt;
+        Results.m_LaReference64CudaDblflt = nullptr;
     }
 
     if (Results.m_LaReference64HdrFloat) {
@@ -2090,7 +2160,8 @@ mandel_1xHDR_float_perturb_lav2(
 
     static constexpr bool ConditionalResult =
         std::is_same<T, float>::value ||
-        std::is_same<T, double>::value;
+        std::is_same<T, double>::value ||
+        std::is_same<T, CudaDblflt<dblflt>>::value;
     using TComplex = typename std::conditional<
         ConditionalResult,
         FloatComplex<SubType>,
@@ -2194,7 +2265,8 @@ mandel_1xHDR_float_perturb_lav2(
                 }
                 else if constexpr (
                     std::is_same<T, float>::value ||
-                    std::is_same<T, double>::value) {
+                    std::is_same<T, double>::value ||
+                    std::is_same<T, CudaDblflt<dblflt>>::value) {
                     DeltaSubNX =
                         DeltaSubNXOrig * tempSum2 -
                         DeltaSubNYOrig * tempSum1 +
@@ -4060,6 +4132,14 @@ uint32_t GPURenderer::InitializePerturb<uint32_t, double, double, CalcBad::Disab
     const LAReference<uint32_t, double, double>* LaReferenceHost,
     size_t LaGenerationNumber1);
 template
+uint32_t GPURenderer::InitializePerturb<uint32_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, CalcBad::Disable, CudaDblflt<MattDblflt>>(
+    size_t GenerationNumber1,
+    MattPerturbResults<uint32_t, CudaDblflt<MattDblflt>, CalcBad::Disable>* Perturb1,
+    size_t GenerationNumber2,
+    MattPerturbResults<uint32_t, CudaDblflt<MattDblflt>, CalcBad::Disable>* Perturb2,
+    const LAReference<uint32_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>>* LaReferenceHost,
+    size_t LaGenerationNumber1);
+template
 uint32_t GPURenderer::InitializePerturb<uint32_t, class HDRFloat<float>, float, CalcBad::Disable, HDRFloat<float>>(
     size_t GenerationNumber1,
     MattPerturbResults<uint32_t, HDRFloat<float>, CalcBad::Disable>* Perturb1,
@@ -4099,6 +4179,14 @@ uint32_t GPURenderer::InitializePerturb<uint64_t, double, double, CalcBad::Disab
     size_t GenerationNumber2,
     MattPerturbResults<uint64_t, double, CalcBad::Disable>* Perturb2,
     const LAReference<uint64_t, double, double>* LaReferenceHost,
+    size_t LaGenerationNumber1);
+template
+uint32_t GPURenderer::InitializePerturb<uint64_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, CalcBad::Disable, CudaDblflt<MattDblflt>>(
+    size_t GenerationNumber1,
+    MattPerturbResults<uint64_t, CudaDblflt<MattDblflt>, CalcBad::Disable>* Perturb1,
+    size_t GenerationNumber2,
+    MattPerturbResults<uint64_t, CudaDblflt<MattDblflt>, CalcBad::Disable>* Perturb2,
+    const LAReference<uint64_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>>* LaReferenceHost,
     size_t LaGenerationNumber1);
 template
 uint32_t GPURenderer::InitializePerturb<uint64_t, class HDRFloat<float>, float, CalcBad::Disable, HDRFloat<float>>(
@@ -4691,6 +4779,32 @@ uint32_t GPURenderer::RenderPerturbLAv2(
 
             RenderAsNeeded(result, n_iterations, iter_buffer, color_buffer);
         }
+    } else if ((algorithm == RenderAlgorithm::Gpu2x32PerturbedLAv2) ||
+        (algorithm == RenderAlgorithm::Gpu2x32PerturbedLAv2PO) ||
+        (algorithm == RenderAlgorithm::Gpu2x32PerturbedLAv2LAO)) {
+        if constexpr (
+            (EnableGpu2x32PerturbedLAv2 || EnableGpu2x32PerturbedLAv2PO || EnableGpu2x32PerturbedLAv2LAO)
+            && std::is_same<CudaDblflt<MattDblflt>, T>::value) {
+            // hdrflt
+
+            CudaDblflt<dblflt> cx2{ cx };
+            CudaDblflt<dblflt> cy2{ cy };
+            CudaDblflt<dblflt> dx2{ dx };
+            CudaDblflt<dblflt> dy2{ dy };
+
+            CudaDblflt<dblflt> centerX2{ centerX };
+            CudaDblflt<dblflt> centerY2{ centerY };
+
+            mandel_1xHDR_float_perturb_lav2<IterType, CudaDblflt<dblflt>, CudaDblflt<dblflt>, Mode> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
+                static_cast<IterType*>(OutputIterMatrix),
+                OutputColorMatrix,
+                *cudaResults, *laReferenceCuda,
+                m_Width, m_Height, m_Antialiasing, cx2, cy2, dx2, dy2,
+                centerX2, centerY2,
+                n_iterations);
+
+            RenderAsNeeded(result, n_iterations, iter_buffer, color_buffer);
+        }
     } else if ((algorithm == RenderAlgorithm::Gpu1x64PerturbedLAv2) ||
         (algorithm == RenderAlgorithm::Gpu1x64PerturbedLAv2PO) ||
         (algorithm == RenderAlgorithm::Gpu1x64PerturbedLAv2LAO)) {
@@ -4860,6 +4974,45 @@ uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, double, double, LAv2Mode::LAO>
     uint32_t n_iterations);
 
 template
+uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::Full>(
+    RenderAlgorithm algorithm,
+    uint32_t* iter_buffer,
+    Color16* color_buffer,
+    HDRFloat<CudaDblflt<MattDblflt>> cx,
+    HDRFloat<CudaDblflt<MattDblflt>> cy,
+    HDRFloat<CudaDblflt<MattDblflt>> dx,
+    HDRFloat<CudaDblflt<MattDblflt>> dy,
+    HDRFloat<CudaDblflt<MattDblflt>> centerX,
+    HDRFloat<CudaDblflt<MattDblflt>> centerY,
+    uint32_t n_iterations);
+
+template
+uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::PO>(
+    RenderAlgorithm algorithm,
+    uint32_t* iter_buffer,
+    Color16* color_buffer,
+    HDRFloat<CudaDblflt<MattDblflt>> cx,
+    HDRFloat<CudaDblflt<MattDblflt>> cy,
+    HDRFloat<CudaDblflt<MattDblflt>> dx,
+    HDRFloat<CudaDblflt<MattDblflt>> dy,
+    HDRFloat<CudaDblflt<MattDblflt>> centerX,
+    HDRFloat<CudaDblflt<MattDblflt>> centerY,
+    uint32_t n_iterations);
+
+template
+uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::LAO>(
+    RenderAlgorithm algorithm,
+    uint32_t* iter_buffer,
+    Color16* color_buffer,
+    HDRFloat<CudaDblflt<MattDblflt>> cx,
+    HDRFloat<CudaDblflt<MattDblflt>> cy,
+    HDRFloat<CudaDblflt<MattDblflt>> dx,
+    HDRFloat<CudaDblflt<MattDblflt>> dy,
+    HDRFloat<CudaDblflt<MattDblflt>> centerX,
+    HDRFloat<CudaDblflt<MattDblflt>> centerY,
+    uint32_t n_iterations);
+
+template
 uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, HDRFloat<float>, float, LAv2Mode::Full>(
     RenderAlgorithm algorithm,
     uint32_t * iter_buffer,
@@ -4899,42 +5052,42 @@ uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, HDRFloat<float>, float, LAv2Mo
     uint32_t n_iterations);
 
 template
-uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::Full>(
+uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::Full>(
     RenderAlgorithm algorithm,
     uint32_t* iter_buffer,
     Color16* color_buffer,
-    HDRFloat<CudaDblflt<MattDblflt>> cx,
-    HDRFloat<CudaDblflt<MattDblflt>> cy,
-    HDRFloat<CudaDblflt<MattDblflt>> dx,
-    HDRFloat<CudaDblflt<MattDblflt>> dy,
-    HDRFloat<CudaDblflt<MattDblflt>> centerX,
-    HDRFloat<CudaDblflt<MattDblflt>> centerY,
+    CudaDblflt<MattDblflt> cx,
+    CudaDblflt<MattDblflt> cy,
+    CudaDblflt<MattDblflt> dx,
+    CudaDblflt<MattDblflt> dy,
+    CudaDblflt<MattDblflt> centerX,
+    CudaDblflt<MattDblflt> centerY,
     uint32_t n_iterations);
 
 template
-uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::PO>(
+uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::PO>(
     RenderAlgorithm algorithm,
     uint32_t* iter_buffer,
     Color16* color_buffer,
-    HDRFloat<CudaDblflt<MattDblflt>> cx,
-    HDRFloat<CudaDblflt<MattDblflt>> cy,
-    HDRFloat<CudaDblflt<MattDblflt>> dx,
-    HDRFloat<CudaDblflt<MattDblflt>> dy,
-    HDRFloat<CudaDblflt<MattDblflt>> centerX,
-    HDRFloat<CudaDblflt<MattDblflt>> centerY,
+    CudaDblflt<MattDblflt> cx,
+    CudaDblflt<MattDblflt> cy,
+    CudaDblflt<MattDblflt> dx,
+    CudaDblflt<MattDblflt> dy,
+    CudaDblflt<MattDblflt> centerX,
+    CudaDblflt<MattDblflt> centerY,
     uint32_t n_iterations);
 
 template
-uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::LAO>(
+uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::LAO>(
     RenderAlgorithm algorithm,
     uint32_t* iter_buffer,
     Color16* color_buffer,
-    HDRFloat<CudaDblflt<MattDblflt>> cx,
-    HDRFloat<CudaDblflt<MattDblflt>> cy,
-    HDRFloat<CudaDblflt<MattDblflt>> dx,
-    HDRFloat<CudaDblflt<MattDblflt>> dy,
-    HDRFloat<CudaDblflt<MattDblflt>> centerX,
-    HDRFloat<CudaDblflt<MattDblflt>> centerY,
+    CudaDblflt<MattDblflt> cx,
+    CudaDblflt<MattDblflt> cy,
+    CudaDblflt<MattDblflt> dx,
+    CudaDblflt<MattDblflt> dy,
+    CudaDblflt<MattDblflt> centerX,
+    CudaDblflt<MattDblflt> centerY,
     uint32_t n_iterations);
 
 template
@@ -5054,6 +5207,45 @@ uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, double, double, LAv2Mode::LAO>
     double dy,
     double centerX,
     double centerY,
+    uint64_t n_iterations);
+
+template
+uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::Full>(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    CudaDblflt<MattDblflt> cx,
+    CudaDblflt<MattDblflt> cy,
+    CudaDblflt<MattDblflt> dx,
+    CudaDblflt<MattDblflt> dy,
+    CudaDblflt<MattDblflt> centerX,
+    CudaDblflt<MattDblflt> centerY,
+    uint64_t n_iterations);
+
+template
+uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::PO>(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    CudaDblflt<MattDblflt> cx,
+    CudaDblflt<MattDblflt> cy,
+    CudaDblflt<MattDblflt> dx,
+    CudaDblflt<MattDblflt> dy,
+    CudaDblflt<MattDblflt> centerX,
+    CudaDblflt<MattDblflt> centerY,
+    uint64_t n_iterations);
+
+template
+uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::LAO>(
+    RenderAlgorithm algorithm,
+    uint64_t* iter_buffer,
+    Color16* color_buffer,
+    CudaDblflt<MattDblflt> cx,
+    CudaDblflt<MattDblflt> cy,
+    CudaDblflt<MattDblflt> dx,
+    CudaDblflt<MattDblflt> dy,
+    CudaDblflt<MattDblflt> centerX,
+    CudaDblflt<MattDblflt> centerY,
     uint64_t n_iterations);
 
 template

@@ -102,6 +102,9 @@ enum class RenderAlgorithm {
     Gpu1x32PerturbedLAv2,
     Gpu1x32PerturbedLAv2PO,
     Gpu1x32PerturbedLAv2LAO,
+    Gpu2x32PerturbedLAv2,
+    Gpu2x32PerturbedLAv2PO,
+    Gpu2x32PerturbedLAv2LAO,
     Gpu1x64PerturbedLAv2,
     Gpu1x64PerturbedLAv2PO,
     Gpu1x64PerturbedLAv2LAO,
@@ -155,6 +158,9 @@ static const char* RenderAlgorithmStr[(size_t)RenderAlgorithm::MAX + 1] =
     "Gpu1x32PerturbedLAv2",
     "Gpu1x32PerturbedLAv2PO",
     "Gpu1x32PerturbedLAv2LAO",
+    "Gpu2x32PerturbedLAv2",
+    "Gpu2x32PerturbedLAv2PO",
+    "Gpu2x32PerturbedLAv2LAO",
     "Gpu1x64PerturbedLAv2",
     "Gpu1x64PerturbedLAv2PO",
     "Gpu1x64PerturbedLAv2LAO",
@@ -290,6 +296,8 @@ private:
             m_Results32FloatEnable = nullptr;
             m_Results32DoubleDisable = nullptr;
             m_Results32DoubleEnable = nullptr;
+            m_Results32CudaDblfltDisable = nullptr;
+            m_Results32CudaDblfltEnable = nullptr;
             m_Results32HdrFloatDisable = nullptr;
             m_Results32HdrFloatEnable = nullptr;
             m_Results32HdrDoubleDisable = nullptr;
@@ -301,6 +309,8 @@ private:
             m_Results64FloatEnable = nullptr;
             m_Results64DoubleDisable = nullptr;
             m_Results64DoubleEnable = nullptr;
+            m_Results64CudaDblfltDisable = nullptr;
+            m_Results64CudaDblfltEnable = nullptr;
             m_Results64HdrFloatDisable = nullptr;
             m_Results64HdrFloatEnable = nullptr;
             m_Results64HdrDoubleDisable = nullptr;
@@ -312,12 +322,14 @@ private:
 
             m_LaReference32Float = nullptr;
             m_LaReference32Double = nullptr;
+            m_LaReference32CudaDblflt = nullptr;
             m_LaReference32HdrFloat = nullptr;
             m_LaReference32HdrDouble = nullptr;
             m_LaReference32HdrCudaMattDblflt = nullptr;
 
             m_LaReference64Float = nullptr;
             m_LaReference64Double = nullptr;
+            m_LaReference64CudaDblflt = nullptr;
             m_LaReference64HdrFloat = nullptr;
             m_LaReference64HdrDouble = nullptr;
             m_LaReference64HdrCudaMattDblflt = nullptr;
@@ -329,6 +341,8 @@ private:
         MattPerturbSingleResults<uint32_t, float, CalcBad::Enable>* m_Results32FloatEnable;
         MattPerturbSingleResults<uint32_t, double, CalcBad::Disable>* m_Results32DoubleDisable;
         MattPerturbSingleResults<uint32_t, double, CalcBad::Enable>* m_Results32DoubleEnable;
+        MattPerturbSingleResults<uint32_t, CudaDblflt<dblflt>, CalcBad::Disable>* m_Results32CudaDblfltDisable;
+        MattPerturbSingleResults<uint32_t, CudaDblflt<dblflt>, CalcBad::Enable>* m_Results32CudaDblfltEnable;
         MattPerturbSingleResults<uint32_t, HDRFloat<float>, CalcBad::Disable>* m_Results32HdrFloatDisable;
         MattPerturbSingleResults<uint32_t, HDRFloat<float>, CalcBad::Enable>* m_Results32HdrFloatEnable;
         MattPerturbSingleResults<uint32_t, HDRFloat<double>, CalcBad::Disable>* m_Results32HdrDoubleDisable;
@@ -340,6 +354,8 @@ private:
         MattPerturbSingleResults<uint64_t, float, CalcBad::Enable>* m_Results64FloatEnable;
         MattPerturbSingleResults<uint64_t, double, CalcBad::Disable>* m_Results64DoubleDisable;
         MattPerturbSingleResults<uint64_t, double, CalcBad::Enable>* m_Results64DoubleEnable;
+        MattPerturbSingleResults<uint64_t, CudaDblflt<dblflt>, CalcBad::Disable>* m_Results64CudaDblfltDisable;
+        MattPerturbSingleResults<uint64_t, CudaDblflt<dblflt>, CalcBad::Enable>* m_Results64CudaDblfltEnable;
         MattPerturbSingleResults<uint64_t, HDRFloat<float>, CalcBad::Disable>* m_Results64HdrFloatDisable;
         MattPerturbSingleResults<uint64_t, HDRFloat<float>, CalcBad::Enable>* m_Results64HdrFloatEnable;
         MattPerturbSingleResults<uint64_t, HDRFloat<double>, CalcBad::Disable>* m_Results64HdrDoubleDisable;
@@ -351,12 +367,14 @@ private:
 
         GPU_LAReference<uint32_t, float, float> *m_LaReference32Float;
         GPU_LAReference<uint32_t, double, double>* m_LaReference32Double;
+        GPU_LAReference<uint32_t, CudaDblflt<dblflt>, CudaDblflt<dblflt>>* m_LaReference32CudaDblflt;
         GPU_LAReference<uint32_t, HDRFloat<float>, float>* m_LaReference32HdrFloat;
         GPU_LAReference<uint32_t, HDRFloat<double>, double>* m_LaReference32HdrDouble;
         GPU_LAReference<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>>* m_LaReference32HdrCudaMattDblflt;
 
         GPU_LAReference<uint64_t, float, float>* m_LaReference64Float;
         GPU_LAReference<uint64_t, double, double>* m_LaReference64Double;
+        GPU_LAReference<uint64_t, CudaDblflt<dblflt>, CudaDblflt<dblflt>>* m_LaReference64CudaDblflt;
         GPU_LAReference<uint64_t, HDRFloat<float>, float>* m_LaReference64HdrFloat;
         GPU_LAReference<uint64_t, HDRFloat<double>, double>* m_LaReference64HdrDouble;
         GPU_LAReference<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>>* m_LaReference64HdrCudaMattDblflt;

@@ -116,7 +116,7 @@ BEGIN
             MENUITEM "#24",                         IDM_VIEW24
             MENUITEM "#25 - Claude - low zoom/period, 32-bit, hard spot", IDM_VIEW25
             MENUITEM "#26 - Debug LAv2: 1x32, 2x32 busted, not 1x64", IDM_VIEW26
-            MENUITEM "#27",                         IDM_VIEW27, INACTIVE
+            MENUITEM "#27",                         IDM_VIEW27
             MENUITEM "#28",                         IDM_VIEW28, INACTIVE
             MENUITEM "#29",                         IDM_VIEW29, INACTIVE
         END

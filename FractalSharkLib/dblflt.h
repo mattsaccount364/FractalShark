@@ -9,31 +9,48 @@ struct MattDblflt {
 
     CUDA_CRAP
     MattDblflt(const MattDblflt &other) :
-        x{ other.x },
-        y{ other.y } {
+        head{ other.head },
+        tail{ other.tail } {
         static_assert(sizeof(*this) == 8, "!");
     }
 
     CUDA_CRAP
-    MattDblflt(float x, float y) :
-        x{ x },
-        y{ y } {
+    MattDblflt(float head, float tail) :
+        head{ head },
+        tail{ tail } {
     }
 
+#if !defined(__CUDA_ARCH__)
     CUDA_CRAP
     explicit MattDblflt(double other) :
-        x{ (float)(other - (double)(float)other) },
-        y{ (float)other } {
+        head{ (float)other },
+        tail{ (float)(other - (double)(float)other) } {
     }
+#endif
+
+    //CUDA_CRAP
+    //explicit MattDblflt(double other) {
+
+    //    auto a = (float)(other - (double)(float)other);
+    //    auto b = (float)other;
+
+    //    float t1, t2;
+    //    tail = a + b;
+    //    t1 = tail - a;
+    //    t2 = tail - t1;
+    //    t1 = b - t1;
+    //    t2 = a - t2;
+    //    head = t1 + t2;
+    //}
 
     CUDA_CRAP
     explicit MattDblflt(float other) :
-        x{ 0 },
-        y{ other } {
+        head{ other },
+        tail{ 0 } {
     }
 
-    float x; // head
-    float y; // tail
+    float head; // head / most significant bits
+    float tail; // tail / least significant bits
 };
 
 using dblflt = MattDblflt;

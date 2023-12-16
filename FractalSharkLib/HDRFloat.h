@@ -184,7 +184,7 @@ public:
             std::is_same<U, CudaDblflt<dblflt>>::value>>
     CUDA_CRAP explicit HDRFloat(const U number) { // TODO add constexpr once that compiles
         if (number == U{ 0 }) {
-            Base::mantissa = T{ 0 };
+            Base::mantissa = T{ 0.0f };
             Base::exp = MIN_BIG_EXPONENT();
             return;
         }
@@ -220,8 +220,8 @@ public:
                 const auto val = (bits & 0x807F'FFFFL) | 0x3F80'0000L;
                 const float f_val = bit_cast<float>(val);
 
-                Base::mantissa.d.y = f_val;
-                Base::mantissa.d.x = 0;
+                Base::mantissa.d.head = f_val;
+                Base::mantissa.d.tail = 0;
                 Base::exp = (TExp)f_exp;
             }
             else if constexpr (std::is_same<U, double>::value) {
@@ -240,8 +240,8 @@ public:
                 const auto val = (bits & 0x807F'FFFFL) | 0x3F80'0000L;
                 const float f_val = bit_cast<float>(val);
 
-                Base::mantissa.d.y = f_val;
-                Base::mantissa.d.x = 0;
+                Base::mantissa.d.head = f_val;
+                Base::mantissa.d.tail = 0;
                 Base::exp = (TExp)f_exp;
             }
         }
@@ -259,8 +259,8 @@ public:
         if constexpr (std::is_same<T, CudaDblflt<dblflt>>::value) {
             int temp_exp;
             double tempMantissa = boost::multiprecision::frexp(number, &temp_exp).template convert_to<double>();
-            Base::mantissa.d.y = (float)tempMantissa;
-            Base::mantissa.d.x = (float)((double)tempMantissa - (double)Base::mantissa.d.y);
+            Base::mantissa.d.head = (float)tempMantissa;
+            Base::mantissa.d.tail = (float)((double)tempMantissa - (double)Base::mantissa.d.head);
             Base::exp = (TExp)temp_exp;
         }
         else {
@@ -302,8 +302,8 @@ public:
             }
         }
         else if constexpr (std::is_same<T, CudaDblflt<dblflt>>::value) {
-            const auto bits_y = bit_cast<uint32_t>(this->Base::mantissa.d.y);
-            const auto bits_x = bit_cast<uint32_t>(this->Base::mantissa.d.x);
+            const auto bits_y = bit_cast<uint32_t>(this->Base::mantissa.d.head);
+            const auto bits_x = bit_cast<uint32_t>(this->Base::mantissa.d.tail);
             const auto f_exp_y = (int32_t)((bits_y & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT_FLOAT();
             const auto f_exp_x = (int32_t)((bits_x & 0x7F80'0000UL) >> 23UL);
             const auto val_y = (bits_y & 0x807F'FFFFU) | 0x3F80'0000U;
@@ -313,8 +313,8 @@ public:
             const auto f_val_y = bit_cast<float>(val_y);
             const auto f_val_x = bit_cast<float>(val_x);
             Base::exp += f_exp_y;
-            Base::mantissa.d.y = f_val_y;
-            Base::mantissa.d.x = f_val_x;
+            Base::mantissa.d.head = f_val_y;
+            Base::mantissa.d.tail = f_val_x;
 
             if constexpr (GetExpAmt) {
                 *DestExp = f_exp_y;

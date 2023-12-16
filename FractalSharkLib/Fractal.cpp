@@ -97,7 +97,7 @@ void Fractal::Initialize(int width,
     ResetDimensions(width, height, 2);
     SetIterType(IterTypeEnum::Bits32);
 
-    View(0);
+    View(27);
     //View(5);
     //View(15);
 
@@ -1526,6 +1526,13 @@ void Fractal::View(size_t view)
         break;
 
     case 27:
+        minX = HighPrecision{ "-0.73606157203926519558042356083047629861225105518538562468268" };
+        minY = HighPrecision{ "0.1834850388109070760053101513423105775720361823641647083294" };
+        maxX = HighPrecision{ "-0.73605272399844388799176190019033649288193334088847817422331" };
+        maxY = HighPrecision{ "0.1834887254945826208339191766090354966263352299878761460208" };
+        SetNumIterations<IterTypeFull>(196608);
+        break;
+
     case 28:
     case 29:
 
@@ -1978,7 +1985,7 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
     m_StopCalculating = false;
 
     // Do nothing if nothing has changed
-    if (ChangedIsDirty() == false || m_glContext->GetRepaint() == false)
+    if (ChangedIsDirty() == false || (m_glContext && m_glContext->GetRepaint() == false))
     {
         DrawFractal(MemoryOnly);
         return;
@@ -2825,8 +2832,8 @@ void Fractal::FillCoord(HighPrecision& src, HDRFloat<double>& dest) {
 
 void Fractal::FillCoord(HighPrecision& src, MattDblflt& dest) {
     // flt
-    dest.y = Convert<HighPrecision, float>(src);
-    dest.x = Convert<HighPrecision, float>(src - HighPrecision{ dest.y });
+    dest.head = Convert<HighPrecision, float>(src);
+    dest.tail = Convert<HighPrecision, float>(src - HighPrecision{ dest.head });
 }
 
 void Fractal::FillCoord(HighPrecision& src, float& dest) {

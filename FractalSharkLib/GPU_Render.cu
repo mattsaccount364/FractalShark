@@ -2512,11 +2512,11 @@ void mandel_2x_float(
     //    }
     //}
 
-    dblflt cx2 = add_float_to_dblflt(cx.y, cx.x);
-    dblflt cy2 = add_float_to_dblflt(cy.y, cy.x);
+    dblflt cx2 = add_float_to_dblflt(cx.head, cx.tail);
+    dblflt cy2 = add_float_to_dblflt(cy.head, cy.tail);
 
-    dblflt dx2 = add_float_to_dblflt(dx.y, dx.x);
-    dblflt dy2 = add_float_to_dblflt(dy.y, dy.x);
+    dblflt dx2 = add_float_to_dblflt(dx.head, dx.tail);
+    dblflt dy2 = add_float_to_dblflt(dy.head, dy.tail);
 
     dblflt X2 = add_float_to_dblflt(X, 0);
     dblflt Y2 = add_float_to_dblflt(Y, 0);
@@ -2543,7 +2543,7 @@ void mandel_2x_float(
         zisqr = sqr_dblflt(y);
     };
 
-    while (zrsqr.y + zisqr.y < 4.0f && iter < n_iterations)
+    while (zrsqr.head + zisqr.head < 4.0f && iter < n_iterations)
     {
         if (iteration_precision == 1) {
             MANDEL_2X_FLOAT();
@@ -3669,11 +3669,11 @@ void mandel_2x_float_perturb_scaled(
             double DoubleTempZX;
             double DoubleTempZY;
 
-            const bool zn_size_OK = (zn_size.y < 256.0f);
-            const bool test1a = (zn_size.y < normDeltaSubN.y);
+            const bool zn_size_OK = (zn_size.head < 256.0f);
+            const bool test1a = (zn_size.head < normDeltaSubN.head);
             const bool test1b = (RefIteration == MaxRefIteration);
             const bool test1ab = test1a || (test1b && zn_size_OK);
-            const bool testw2 = (w2.y >= w2threshold.y) && zn_size_OK;
+            const bool testw2 = (w2.head >= w2threshold.head) && zn_size_OK;
             const bool none = !test1ab && !testw2 && zn_size_OK;
 
             if (none) {
@@ -4435,10 +4435,10 @@ uint32_t GPURenderer::Render(
     else if (algorithm == RenderAlgorithm::Gpu2x32) {
         // flt
         if constexpr (EnableGpu2x32 && std::is_same<T, MattDblflt>::value) {
-            dblflt cx2{ cx.x, cx.y };
-            dblflt cy2{ cy.x, cy.y };
-            dblflt dx2{ dx.x, dx.y };
-            dblflt dy2{ dy.x, dy.y };
+            dblflt cx2{ cx.head, cx.tail };
+            dblflt cy2{ cy.head, cy.tail };
+            dblflt dx2{ dx.head, dx.tail };
+            dblflt dy2{ dy.head, dy.tail };
 
             switch (iteration_precision) {
             case 1:

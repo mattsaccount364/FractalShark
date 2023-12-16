@@ -41,9 +41,10 @@ public:
     CUDA_CRAP
     constexpr
     CudaDblflt(const CudaDblflt &other) :
-        d{ other.d.x, other.d.y } {
+        d{ other.d.head, other.d.tail } {
     }
 
+#if !defined(__CUDA_ARCH__)
     // Constructs a CudaDblflt from a double
     CUDA_CRAP
     constexpr
@@ -57,40 +58,40 @@ public:
     explicit CudaDblflt(double ind)
         : d{ ind } {
     }
+#endif
 
-    template<class T>
     CUDA_CRAP
     constexpr
-        explicit CudaDblflt(T d)
-        : d{ 0.0f, (float)d } {
+    explicit CudaDblflt(float d)
+        : d{ d } {
     }
 
     template<class U>
     CUDA_CRAP
     constexpr
         explicit CudaDblflt(CudaDblflt<U> other)
-        : d{ other.d.x, other.d.y } {
+        : d{ other.d.head, other.d.tail } {
     }
 
     // Constructs a CudaDblflt from a pair of floats
     CUDA_CRAP
     constexpr
         explicit CudaDblflt(float head, float tail) :
-        d{ tail, head } {
+        d{ head, tail } {
     }
 
     // Returns the head of the double-float
     CUDA_CRAP
     constexpr
     float head() const {
-        return d.y;
+        return d.head;
     }
 
     // Returns the tail of the double-float
     CUDA_CRAP
     constexpr
     float tail() const {
-        return d.x;
+        return d.tail;
     }
 
 #ifndef __CUDACC__ 
@@ -105,7 +106,7 @@ public:
 
 #ifndef __CUDACC__
     operator double() const {
-        return (double)d.y + (double)d.x;
+        return (double)d.head + (double)d.tail;
     }
 #endif
 
@@ -136,7 +137,7 @@ public:
     friend
     __device__
     CudaDblflt operator-(CudaDblflt other) {
-        return CudaDblflt{ -other.d.y, -other.d.x };
+        return CudaDblflt{ -other.d.head, -other.d.tail };
     }
 
     // Implements operator* for CudaDblflt
@@ -172,7 +173,7 @@ public:
     // Implements operator< for CudaDblflt
     __device__
     friend bool operator<(const CudaDblflt& a, const CudaDblflt& b) {
-        return a.d.y < b.d.y || (a.d.y == b.d.y && a.d.x < b.d.x);
+        return a.d.head < b.d.head || (a.d.head == b.d.head && a.d.tail < b.d.tail);
     }
 
     // Implements operator> for CudaDblflt
@@ -196,7 +197,7 @@ public:
     // Implements operator== for CudaDblflt
     __device__
     friend bool operator==(const CudaDblflt& a, const CudaDblflt& b) {
-        return a.d.y == b.d.y && a.d.x == b.d.x;
+        return a.d.head == b.d.head && a.d.tail == b.d.tail;
     }
 
     // Implements operator!= for CudaDblflt
@@ -207,8 +208,8 @@ public:
 
     __device__
     CudaDblflt abs() const {
-        if (d.y < 0.0f) {
-            return CudaDblflt{ -d.y, -d.x };
+        if (d.head < 0.0f) {
+            return CudaDblflt{ -d.head, -d.tail };
         }
 
         return *this;
@@ -220,8 +221,8 @@ public:
 
     __device__
     void Reduce(int32_t &out_exp) {
-        const auto bits_y = bit_cast<uint32_t>(this->d.y);
-        const auto bits_x = bit_cast<uint32_t>(this->d.x);
+        const auto bits_y = bit_cast<uint32_t>(this->d.head);
+        const auto bits_x = bit_cast<uint32_t>(this->d.tail);
         const auto f_exp_y = (int32_t)((bits_y & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();
         const auto f_exp_x = (int32_t)((bits_x & 0x7F80'0000UL) >> 23UL);
         const auto val_y = (bits_y & 0x807F'FFFF) | 0x3F80'0000;
@@ -230,8 +231,8 @@ public:
         const auto val_x = (bits_x & 0x807F'FFFF) | (satexp << 23U);
         const auto f_val_y = bit_cast<const float>(val_y);
         const auto f_val_x = bit_cast<const float>(val_x);
-        d.y = f_val_y;
-        d.x = f_val_x;
+        d.head = f_val_y;
+        d.tail = f_val_x;
         out_exp = f_exp_y - MIN_SMALL_EXPONENT_INT();
     }
 #endif

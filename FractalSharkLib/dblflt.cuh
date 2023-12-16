@@ -68,21 +68,21 @@
     __device__ __forceinline__ dblflt make_dblflt(float head, float tail)
     {
         dblflt z;
-        z.x = tail;
-        z.y = head;
+        z.tail = tail;
+        z.head = head;
         return z;
     }
 
     /* Return the head of a double-float number */
     __device__ __forceinline__ float get_dblflt_head(dblflt a)
     {
-        return a.y;
+        return a.head;
     }
 
     /* Return the tail of a double-float number */
     __device__ __forceinline__ float get_dblflt_tail(dblflt a)
     {
-        return a.x;
+        return a.tail;
     }
 
     /* Compute error-free sum of two unordered doubles. See Knuth, TAOCP vol. 2 */
@@ -90,12 +90,12 @@
     {
         float t1, t2;
         dblflt z;
-        z.y = __fadd_rn(a, b);
-        t1 = __fadd_rn(z.y, -a);
-        t2 = __fadd_rn(z.y, -t1);
+        z.head = __fadd_rn(a, b);
+        t1 = __fadd_rn(z.head, -a);
+        t2 = __fadd_rn(z.head, -t1);
         t1 = __fadd_rn(b, -t1);
         t2 = __fadd_rn(a, -t2);
-        z.x = __fadd_rn(t1, t2);
+        z.tail = __fadd_rn(t1, t2);
         return z;
     }
 
@@ -103,8 +103,8 @@
     __device__ __forceinline__ dblflt mul_double_to_dblflt(float a, float b)
     {
         dblflt z;
-        z.y = __fmul_rn(a, b);
-        z.x = __fmaf_rn(a, b, -z.y);
+        z.head = __fmul_rn(a, b);
+        z.tail = __fmaf_rn(a, b, -z.head);
         return z;
     }
 
@@ -112,8 +112,8 @@
     __device__ __forceinline__ dblflt neg_dblflt(dblflt a)
     {
         dblflt z;
-        z.y = -a.y;
-        z.x = -a.x;
+        z.head = -a.head;
+        z.tail = -a.tail;
         return z;
     }
 
@@ -128,18 +128,18 @@
     {
         dblflt z;
         float t1, t2, t3, t4, t5, e;
-        t1 = __fadd_rn(a.y, b.y);
-        t2 = __fadd_rn(t1, -a.y);
-        t3 = __fadd_rn(__fadd_rn(a.y, t2 - t1), __fadd_rn(b.y, -t2));
-        t4 = __fadd_rn(a.x, b.x);
-        t2 = __fadd_rn(t4, -a.x);
-        t5 = __fadd_rn(__fadd_rn(a.x, t2 - t4), __fadd_rn(b.x, -t2));
+        t1 = __fadd_rn(a.head, b.head);
+        t2 = __fadd_rn(t1, -a.head);
+        t3 = __fadd_rn(__fadd_rn(a.head, t2 - t1), __fadd_rn(b.head, -t2));
+        t4 = __fadd_rn(a.tail, b.tail);
+        t2 = __fadd_rn(t4, -a.tail);
+        t5 = __fadd_rn(__fadd_rn(a.tail, t2 - t4), __fadd_rn(b.tail, -t2));
         t3 = __fadd_rn(t3, t4);
         t4 = __fadd_rn(t1, t3);
         t3 = __fadd_rn(t1 - t4, t3);
         t3 = __fadd_rn(t3, t5);
-        z.y = e = __fadd_rn(t4, t3);
-        z.x = __fadd_rn(t4 - e, t3);
+        z.head = e = __fadd_rn(t4, t3);
+        z.tail = __fadd_rn(t4 - e, t3);
         return z;
     }
 
@@ -154,18 +154,18 @@
     {
         dblflt z;
         float t1, t2, t3, t4, t5, e;
-        t1 = __fadd_rn(a.y, -b.y);
-        t2 = __fadd_rn(t1, -a.y);
-        t3 = __fadd_rn(__fadd_rn(a.y, t2 - t1), -__fadd_rn(b.y, t2));
-        t4 = __fadd_rn(a.x, -b.x);
-        t2 = __fadd_rn(t4, -a.x);
-        t5 = __fadd_rn(__fadd_rn(a.x, t2 - t4), -__fadd_rn(b.x, t2));
+        t1 = __fadd_rn(a.head, -b.head);
+        t2 = __fadd_rn(t1, -a.head);
+        t3 = __fadd_rn(__fadd_rn(a.head, t2 - t1), -__fadd_rn(b.head, t2));
+        t4 = __fadd_rn(a.tail, -b.tail);
+        t2 = __fadd_rn(t4, -a.tail);
+        t5 = __fadd_rn(__fadd_rn(a.tail, t2 - t4), -__fadd_rn(b.tail, t2));
         t3 = __fadd_rn(t3, t4);
         t4 = __fadd_rn(t1, t3);
         t3 = __fadd_rn(t1 - t4, t3);
         t3 = __fadd_rn(t3, t5);
-        z.y = e = __fadd_rn(t4, t3);
-        z.x = __fadd_rn(t4 - e, t3);
+        z.head = e = __fadd_rn(t4, t3);
+        z.tail = __fadd_rn(t4 - e, t3);
         return z;
     }
 
@@ -178,13 +178,13 @@
     {
         dblflt t, z;
         float e;
-        t.y = __fmul_rn(a.y, b.y);
-        t.x = __fmaf_rn(a.y, b.y, -t.y);
-        t.x = __fmaf_rn(a.x, b.x, t.x);
-        t.x = __fmaf_rn(a.y, b.x, t.x);
-        t.x = __fmaf_rn(a.x, b.y, t.x);
-        z.y = e = __fadd_rn(t.y, t.x);
-        z.x = __fadd_rn(t.y - e, t.x);
+        t.head = __fmul_rn(a.head, b.head);
+        t.tail = __fmaf_rn(a.head, b.head, -t.head);
+        t.tail = __fmaf_rn(a.tail, b.tail, t.tail);
+        t.tail = __fmaf_rn(a.head, b.tail, t.tail);
+        t.tail = __fmaf_rn(a.tail, b.head, t.tail);
+        z.head = e = __fadd_rn(t.head, t.tail);
+        z.tail = __fadd_rn(t.head - e, t.tail);
         return z;
     }
 
@@ -192,15 +192,15 @@
     {
         dblflt t, z;
         float e;
-        t.y = __fmul_rn(a.y, b.y);
-        t.x = __fmaf_rn(a.y, b.y, -t.y);
-        t.x = __fmaf_rn(a.x, b.x, t.x);
-        t.x = __fmaf_rn(a.y, b.x, t.x);
-        t.x = __fmaf_rn(a.x, b.y, t.x);
-        z.y = e = __fadd_rn(t.y, t.x);
-        z.x = __fadd_rn(t.y - e, t.x);
-        z.x = __fmul_rn(z.x, 2.0f);
-        z.y = __fmul_rn(z.y, 2.0f);
+        t.head = __fmul_rn(a.head, b.head);
+        t.tail = __fmaf_rn(a.head, b.head, -t.head);
+        t.tail = __fmaf_rn(a.tail, b.tail, t.tail);
+        t.tail = __fmaf_rn(a.head, b.tail, t.tail);
+        t.tail = __fmaf_rn(a.tail, b.head, t.tail);
+        z.head = e = __fadd_rn(t.head, t.tail);
+        z.tail = __fadd_rn(t.head - e, t.tail);
+        z.tail = __fmul_rn(z.tail, 2.0f);
+        z.head = __fmul_rn(z.head, 2.0f);
         return z;
     }
 
@@ -208,21 +208,21 @@
     {
         dblflt t, z;
         float e;
-        //t.y = __fmul_rn(a.y, a.y);
-        //t.x = __fmaf_rn(a.y, a.y, -t.y);
-        //t.x = __fmaf_rn(a.x, a.x, t.x);
-        //t.x = __fmaf_rn(a.y, a.x, t.x);
-        //t.x = __fmaf_rn(a.x, a.y, t.x);
-        //z.y = e = __fadd_rn(t.y, t.x);
-        //z.x = __fadd_rn(t.y - e, t.x);
+        //t.head = __fmul_rn(a.head, a.head);
+        //t.tail = __fmaf_rn(a.head, a.head, -t.head);
+        //t.tail = __fmaf_rn(a.tail, a.tail, t.tail);
+        //t.tail = __fmaf_rn(a.head, a.tail, t.tail);
+        //t.tail = __fmaf_rn(a.tail, a.head, t.tail);
+        //z.head = e = __fadd_rn(t.head, t.tail);
+        //z.tail = __fadd_rn(t.head - e, t.tail);
 
-        t.y = __fmul_rn(a.y, a.y);
-        t.x = __fmaf_rn(a.y, a.y, -t.y);
-        t.x = __fmaf_rn(a.x, a.x, t.x);
-        e = __fmul_rn(a.y, a.x);
-        t.x = __fmaf_rn(2.0f, e, t.x);
-        z.y = e = __fadd_rn(t.y, t.x);
-        z.x = __fadd_rn(t.y - e, t.x);
+        t.head = __fmul_rn(a.head, a.head);
+        t.tail = __fmaf_rn(a.head, a.head, -t.head);
+        t.tail = __fmaf_rn(a.tail, a.tail, t.tail);
+        e = __fmul_rn(a.head, a.tail);
+        t.tail = __fmaf_rn(2.0f, e, t.tail);
+        z.head = e = __fadd_rn(t.head, t.tail);
+        z.tail = __fadd_rn(t.head - e, t.tail);
 
         return z;
     }
@@ -230,8 +230,8 @@
     __device__ __forceinline__ dblflt shiftleft_dblflt(dblflt a)
     {
         dblflt z;
-        z.x = __fmul_rn(a.x, 2.0f);
-        z.y = __fmul_rn(a.y, 2.0f);
+        z.tail = __fmul_rn(a.tail, 2.0f);
+        z.head = __fmul_rn(a.head, 2.0f);
         return z;
     }
 
@@ -247,18 +247,18 @@
     {
         dblflt t, z;
         float e, r;
-        r = 1.0 / b.y;
-        t.y = __fmul_rn(a.y, r);
-        e = __fmaf_rn(b.y, -t.y, a.y);
-        t.y = __fmaf_rn(r, e, t.y);
-        t.x = __fmaf_rn(b.y, -t.y, a.y);
-        t.x = __fadd_rn(a.x, t.x);
-        t.x = __fmaf_rn(b.x, -t.y, t.x);
-        e = __fmul_rn(r, t.x);
-        t.x = __fmaf_rn(b.y, -e, t.x);
-        t.x = __fmaf_rn(r, t.x, e);
-        z.y = e = __fadd_rn(t.y, t.x);
-        z.x = __fadd_rn(t.y - e, t.x);
+        r = 1.0 / b.head;
+        t.head = __fmul_rn(a.head, r);
+        e = __fmaf_rn(b.head, -t.head, a.head);
+        t.head = __fmaf_rn(r, e, t.head);
+        t.tail = __fmaf_rn(b.head, -t.head, a.head);
+        t.tail = __fadd_rn(a.tail, t.tail);
+        t.tail = __fmaf_rn(b.tail, -t.head, t.tail);
+        e = __fmul_rn(r, t.tail);
+        t.tail = __fmaf_rn(b.head, -e, t.tail);
+        t.tail = __fmaf_rn(r, t.tail, e);
+        z.head = e = __fadd_rn(t.head, t.tail);
+        z.tail = __fadd_rn(t.head - e, t.tail);
         return z;
     }
 
@@ -273,21 +273,21 @@
     {
         dblflt t, z;
         double e, y, s, r;
-        r = rsqrt(a.y);
-        if (a.y == 0.0f) r = 0.0;
-        y = __fmul_rn(a.y, r);
-        s = __fmaf_rn(y, -y, a.y);
+        r = rsqrt(a.head);
+        if (a.head == 0.0f) r = 0.0;
+        y = __fmul_rn(a.head, r);
+        s = __fmaf_rn(y, -y, a.head);
         r = __fmul_rn(0.5, r);
-        z.y = e = __fadd_rn(s, a.x);
-        z.x = __fadd_rn(s - e, a.x);
-        t.y = __fmul_rn(r, z.y);
-        t.x = __fmaf_rn(r, z.y, -t.y);
-        t.x = __fmaf_rn(r, z.x, t.x);
-        r = __fadd_rn(y, t.y);
-        s = __fadd_rn(y - r, t.y);
-        s = __fadd_rn(s, t.x);
-        z.y = e = __fadd_rn(r, s);
-        z.x = __fadd_rn(r - e, s);
+        z.head = e = __fadd_rn(s, a.tail);
+        z.tail = __fadd_rn(s - e, a.tail);
+        t.head = __fmul_rn(r, z.head);
+        t.tail = __fmaf_rn(r, z.head, -t.head);
+        t.tail = __fmaf_rn(r, z.tail, t.tail);
+        r = __fadd_rn(y, t.head);
+        s = __fadd_rn(y - r, t.head);
+        s = __fadd_rn(s, t.tail);
+        z.head = e = __fadd_rn(r, s);
+        z.tail = __fadd_rn(r - e, s);
         return z;
     }
 
@@ -300,36 +300,36 @@
     {
         dblflt z;
         double r, s, e;
-        r = rsqrt(a.y);
-        e = __fmul_rn(a.y, r);
+        r = rsqrt(a.head);
+        e = __fmul_rn(a.head, r);
         s = __fmaf_rn(e, -r, 1.0);
-        e = __fmaf_rn(a.y, r, -e);
+        e = __fmaf_rn(a.head, r, -e);
         s = __fmaf_rn(e, -r, s);
-        e = __fmul_rn(a.x, r);
+        e = __fmul_rn(a.tail, r);
         s = __fmaf_rn(e, -r, s);
         e = 0.5 * r;
-        z.y = __fmul_rn(e, s);
-        z.x = __fmaf_rn(e, s, -z.y);
-        s = __fadd_rn(r, z.y);
+        z.head = __fmul_rn(e, s);
+        z.tail = __fmaf_rn(e, s, -z.head);
+        s = __fadd_rn(r, z.head);
         r = __fadd_rn(r, -s);
-        r = __fadd_rn(r, z.y);
-        r = __fadd_rn(r, z.x);
-        z.y = e = __fadd_rn(s, r);
-        z.x = __fadd_rn(s - e, r);
+        r = __fadd_rn(r, z.head);
+        r = __fadd_rn(r, z.tail);
+        z.head = e = __fadd_rn(s, r);
+        z.tail = __fadd_rn(s - e, r);
         return z;
     }
 
     __device__ __forceinline__ double dblflt_to_double(dblflt a)
     {
-        return (double)a.y + (double)a.x;
+        return (double)a.head + (double)a.tail;
     }
 
     __device__ __forceinline__ dblflt double_to_dblflt(double a)
     {
         // ?? 2^23 = 8388608.0
         dblflt res;
-        res.y = (float)a;
-        res.x = (float)(a - (double)res.y);
+        res.head = (float)a;
+        res.tail = (float)(a - (double)res.head);
         return res;
     }
 

@@ -6,8 +6,8 @@
 #include "GPU_Render.h"
 #include "dbldbl.cuh"
 #include "dblflt.cuh"
-#include "../QuadDouble/gqd_basic.cuh"
-#include "../QuadFloat/gqf_basic.cuh"
+#include "QuadDouble/gqd_basic.cuh"
+#include "QuadFloat/gqf_basic.cuh"
 
 #include "CudaDblflt.h"
 

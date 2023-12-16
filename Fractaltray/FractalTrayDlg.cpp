@@ -8,7 +8,7 @@
 
 #include <math.h>
 #include <io.h>
-#include "..\Fractal.h"
+#include "Fractal.h"
 //#include "..\cximage599a_full\CxImage\xImage.h"
 
 constexpr size_t PrecisionLimit = 50000;

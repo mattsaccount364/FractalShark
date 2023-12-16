@@ -6,8 +6,8 @@
 #include "resource.h"
 #include "time.h"
 
-#include "..\Fractal.h"
-#include "..\FractalSetupData.h"
+#include "Fractal.h"
+#include "FractalSetupData.h"
 
 #include <GL/gl.h>			/* OpenGL header file */
 #include <GL/glu.h>			/* OpenGL utilities header file */

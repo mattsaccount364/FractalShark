@@ -4,7 +4,7 @@
    For full documentation, consult the WPngImage.html file.
 */
 
-#include "stdafx.h"
+#include "../stdafx.h"
 
 #pragma warning(push)
 #pragma warning(disable: 4334)

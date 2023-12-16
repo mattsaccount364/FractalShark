@@ -77,7 +77,7 @@
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SDLCheck>false</SDLCheck>
-      <AdditionalIncludeDirectories>..\mpir\lib\x64\Debug;..\boost_1_81_0</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\FractalSharkLib;..\mpir\lib\x64\Debug;..\boost_1_81_0</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
@@ -122,7 +122,7 @@
       <WarningLevel>Level4</WarningLevel>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <SDLCheck>false</SDLCheck>
-      <AdditionalIncludeDirectories>..\mpir\lib\x64\Release;..\boost_1_81_0</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\FractalSharkLib;..\mpir\lib\x64\Release;..\boost_1_81_0</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
@@ -143,11 +143,6 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="..\FractalSetupData.cpp">
-      <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Disabled</Optimization>
-      <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">EnableFastChecks</BasicRuntimeChecks>
-      <Optimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">MaxSpeed</Optimization>
-    </ClCompile>
     <ClCompile Include="FractalSetup.cpp">
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Disabled</Optimization>
       <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">EnableFastChecks</BasicRuntimeChecks>
@@ -170,7 +165,6 @@
     <ResourceCompile Include="FractalSetup.rc" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\FractalSetupData.h" />
     <ClInclude Include="FractalSetup.h" />
     <ClInclude Include="FractalSetupDlg.h" />
     <ClInclude Include="Resource.h" />
@@ -184,6 +178,11 @@
   </ItemGroup>
   <ItemGroup>
     <Text Include="ReadMe.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\FractalSharkLib\FractalSharkLib.vcxproj">
+      <Project>{26552d9e-6051-465a-9405-056be0a65a56}</Project>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

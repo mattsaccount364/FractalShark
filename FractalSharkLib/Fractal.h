@@ -22,7 +22,7 @@
 #include "GPU_Render.h"
 #include "PerturbationResults.h"
 
-#include "..\WPngImage\WPngImage.hh"
+#include "WPngImage\WPngImage.hh"
 #include "ItersMemoryContainer.h"
 #include "HighPrecision.h"
 #include "HDRFloat.h"

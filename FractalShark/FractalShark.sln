@@ -12,6 +12,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalShark", "Fractals.vc
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalTray", "..\FractalTray\FractalTray.vcxproj", "{B7468E51-1CF3-4959-B1C8-394EA78CE79C}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalSharkLib", "..\FractalSharkLib\FractalSharkLib.vcxproj", "{26552D9E-6051-465A-9405-056BE0A65A56}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -60,6 +62,14 @@ Global
 		{B7468E51-1CF3-4959-B1C8-394EA78CE79C}.Release|x64.Build.0 = Release|x64
 		{B7468E51-1CF3-4959-B1C8-394EA78CE79C}.Release|x86.ActiveCfg = Release|x64
 		{B7468E51-1CF3-4959-B1C8-394EA78CE79C}.Release|x86.Build.0 = Release|x64
+		{26552D9E-6051-465A-9405-056BE0A65A56}.Debug|x64.ActiveCfg = Debug|x64
+		{26552D9E-6051-465A-9405-056BE0A65A56}.Debug|x64.Build.0 = Debug|x64
+		{26552D9E-6051-465A-9405-056BE0A65A56}.Debug|x86.ActiveCfg = Debug|x64
+		{26552D9E-6051-465A-9405-056BE0A65A56}.Debug|x86.Build.0 = Debug|x64
+		{26552D9E-6051-465A-9405-056BE0A65A56}.Release|x64.ActiveCfg = Release|x64
+		{26552D9E-6051-465A-9405-056BE0A65A56}.Release|x64.Build.0 = Release|x64
+		{26552D9E-6051-465A-9405-056BE0A65A56}.Release|x86.ActiveCfg = Release|x64
+		{26552D9E-6051-465A-9405-056BE0A65A56}.Release|x86.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

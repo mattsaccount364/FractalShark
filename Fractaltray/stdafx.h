@@ -43,4 +43,4 @@
 #endif // _AFX_NO_AFXCMN_SUPPORT
 
 // Local Header Files
-#include "../OpenGLContext.h"
+#include "OpenGLContext.h"

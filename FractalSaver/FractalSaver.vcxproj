@@ -78,7 +78,7 @@
       <WarningLevel>Level4</WarningLevel>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <SDLCheck>false</SDLCheck>
-      <AdditionalIncludeDirectories>..\mpir\lib\x64\Release;..\boost_1_81_0</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\FractalSharkLib;..\mpir\lib\x64\Release;..\boost_1_81_0</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
@@ -125,7 +125,7 @@
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SDLCheck>false</SDLCheck>
-      <AdditionalIncludeDirectories>..\mpir\lib\x64\Debug;..\boost_1_81_0</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\FractalSharkLib;..\mpir\lib\x64\Debug;..\boost_1_81_0</AdditionalIncludeDirectories>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
@@ -149,30 +149,6 @@
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="..\BLAS.cpp" />
-    <ClCompile Include="..\Fractal.cpp">
-      <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Disabled</Optimization>
-      <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">EnableFastChecks</BasicRuntimeChecks>
-      <Optimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">MaxSpeed</Optimization>
-    </ClCompile>
-    <ClCompile Include="..\FractalNetwork.cpp">
-      <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Disabled</Optimization>
-      <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">EnableFastChecks</BasicRuntimeChecks>
-      <Optimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">MaxSpeed</Optimization>
-    </ClCompile>
-    <ClCompile Include="..\FractalSetupData.cpp">
-      <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Disabled</Optimization>
-      <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">EnableFastChecks</BasicRuntimeChecks>
-      <Optimization Condition="'$(Configuration)|$(Platform)'=='Release|x64'">MaxSpeed</Optimization>
-    </ClCompile>
-    <ClCompile Include="..\HDRFloat.cpp" />
-    <ClCompile Include="..\heat_lut.cpp" />
-    <ClCompile Include="..\ItersMemoryContainer.cpp" />
-    <ClCompile Include="..\LAReference.cpp" />
-    <ClCompile Include="..\PointZoomBBConverter.cpp" />
-    <ClCompile Include="..\RefOrbitCalc.cpp" />
-    <ClCompile Include="..\WPngImage\lodepng.cpp" />
-    <ClCompile Include="..\WPngImage\WPngImage.cc" />
     <ClCompile Include="FractalSaver.cpp">
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Disabled</Optimization>
       <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">EnableFastChecks</BasicRuntimeChecks>
@@ -190,37 +166,6 @@
     <ResourceCompile Include="FractalSaver.rc" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="..\ATInfo.h" />
-    <ClInclude Include="..\ATResult.h" />
-    <ClInclude Include="..\BLA.h" />
-    <ClInclude Include="..\BLAS.h" />
-    <ClInclude Include="..\CudaDblflt.h" />
-    <ClInclude Include="..\dblflt.h" />
-    <ClInclude Include="..\DrawThreadSync.h" />
-    <ClInclude Include="..\FloatComplex.h" />
-    <ClInclude Include="..\Fractal.h" />
-    <ClInclude Include="..\FractalNetwork.h" />
-    <ClInclude Include="..\FractalSetupData.h" />
-    <ClInclude Include="..\GPUBLAS.h" />
-    <ClInclude Include="..\GPU_BLAS.h" />
-    <ClInclude Include="..\GPU_LAInfoDeep.h" />
-    <ClInclude Include="..\GPU_LAReference.h" />
-    <ClInclude Include="..\GPU_Types.h" />
-    <ClInclude Include="..\HDRFloat.h" />
-    <ClInclude Include="..\GPU_Render.h" />
-    <ClInclude Include="..\HDRFloatComplex.h" />
-    <ClInclude Include="..\heat_lut.h" />
-    <ClInclude Include="..\HighPrecision.h" />
-    <ClInclude Include="..\ItersMemoryContainer.h" />
-    <ClInclude Include="..\LAInfoDeep.h" />
-    <ClInclude Include="..\LAInfoI.h" />
-    <ClInclude Include="..\LAReference.h" />
-    <ClInclude Include="..\LAstep.h" />
-    <ClInclude Include="..\OpenGLContext.h" />
-    <ClInclude Include="..\PerturbationResults.h" />
-    <ClInclude Include="..\RefOrbitCalc.h" />
-    <ClInclude Include="..\WPngImage\lodepng.h" />
-    <ClInclude Include="..\WPngImage\WPngImage.hh" />
     <ClInclude Include="FractalSaver.h" />
     <ClInclude Include="resource.h" />
     <ClInclude Include="StdAfx.h" />
@@ -233,7 +178,9 @@
     <Text Include="ReadMe.txt" />
   </ItemGroup>
   <ItemGroup>
-    <CudaCompile Include="..\GPU_Render.cu" />
+    <ProjectReference Include="..\FractalSharkLib\FractalSharkLib.vcxproj">
+      <Project>{26552d9e-6051-465a-9405-056be0a65a56}</Project>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -10,9 +10,9 @@
 #include <stdio.h>
 #include <conio.h>
 
-#include "..\Fractal.h"
-#include "..\FractalNetwork.h"
-#include "..\FractalSetupData.h"
+#include "Fractal.h"
+#include "FractalNetwork.h"
+#include "FractalSetupData.h"
 
 FractalNetwork *gExitNetwork;
 

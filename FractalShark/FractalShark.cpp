@@ -1,6 +1,6 @@
 #include "stdafx.h"
 #include "resource.h"
-#include "..\Fractal.h"
+#include "Fractal.h"
 
 #include <Dbghelp.h>
 

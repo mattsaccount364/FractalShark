@@ -16,10 +16,21 @@ template<typename IterType, class T, CalcBad Bad>
 class PerturbationResults {
 public:
     PerturbationResults(size_t Generation = 0, size_t LaGeneration = 0) :
-        GenerationNumber(Generation),
-        LaGenerationNumber(LaGeneration) {
-    }
+        hiX{},
+        hiY{},
+        maxRadius{},
+        MaxIterations{},
+        PeriodMaybeZero{},
+        orb{},
+        GenerationNumber{ Generation },
+        LaReference{},
+        LaGenerationNumber{ LaGeneration },
+        AuthoritativePrecision{},
+        ReuseX{},
+        ReuseY{} {
 
+    }
+        
     // Example of how to pull the SubType out for HdrFloat, or keep the primitive float/double
     using SubType = typename SubTypeChooser<
         std::is_fundamental<T>::value,

@@ -842,6 +842,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     auto* existingResults = GetUsefulPerturbationResults<IterType, T, true, CalcBad::Disable>();
     if (existingResults == nullptr || existingResults->ReuseX.size() < 5) {
         // TODO Lame hack with < 5.
+        ::MessageBox(NULL, L"Authoritative not found", L"", MB_OK);
         PerturbationResultsArray.pop_back();
         return false;
     }

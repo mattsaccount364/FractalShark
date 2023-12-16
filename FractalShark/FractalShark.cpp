@@ -770,6 +770,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 break;
             }
 
+            case IDM_BASICTEST:
+            {
+                gFractal->BasicTest();
+                break;
+            }
+
             // Increase the number of iterations we are using.
             // This will slow down rendering, but image quality
             // will be improved.
@@ -804,13 +810,13 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             case IDM_32BIT_ITERATIONS:
             {
-                gFractal->SetIterType(Fractal::IterTypeEnum::Bits32);
+                gFractal->SetIterType(IterTypeEnum::Bits32);
                 break;
             }
 
             case IDM_64BIT_ITERATIONS:
             {
-                gFractal->SetIterType(Fractal::IterTypeEnum::Bits64);
+                gFractal->SetIterType(IterTypeEnum::Bits64);
                 break;
             }
 
@@ -1360,7 +1366,7 @@ void MenuWindowed(HWND hWnd, bool square)
 
 void MenuMultiplyIterations(HWND hWnd, double factor)
 {
-    if (gFractal->GetIterType() == Fractal::IterTypeEnum::Bits32) {
+    if (gFractal->GetIterType() == IterTypeEnum::Bits32) {
         uint64_t curIters = gFractal->GetNumIterations<uint32_t>();
         curIters = (uint64_t)((double)curIters * (double)factor);
         gFractal->SetNumIterations<uint32_t>(curIters);

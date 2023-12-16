@@ -34,131 +34,6 @@
 
 void DefaultOutputMessage(const wchar_t *, ...);
 
-Fractal::ItersMemoryContainer::ItersMemoryContainer(
-    IterTypeEnum type,
-    size_t width,
-    size_t height,
-    size_t total_antialiasing)
-    : m_IterType(type),
-      m_ItersMemory32(nullptr),
-      m_ItersArray32(nullptr),
-      m_ItersMemory64(nullptr),
-      m_ItersArray64(nullptr),
-      m_Width(),
-      m_Height(),
-      m_Total(),
-      m_OutputWidth(),
-      m_OutputHeight(),
-      m_OutputTotal(),
-      m_RoundedWidth(),
-      m_RoundedHeight(),
-      m_RoundedTotal(),
-      m_RoundedOutputColorWidth(),
-      m_RoundedOutputColorHeight(),
-      m_RoundedOutputColorTotal(),
-      m_Antialiasing(total_antialiasing) {
-
-    // This array must be identical in size to OutputIterMatrix in CUDA
-    m_Width = width * total_antialiasing;
-    m_Height = height * total_antialiasing;
-    m_Total = m_Width * m_Height;
-
-    m_OutputWidth = width;
-    m_OutputHeight = height;
-    m_OutputTotal = m_OutputWidth * m_OutputHeight;
-
-    const size_t w_block = m_Width / GPURenderer::NB_THREADS_W +
-        (m_Width % GPURenderer::NB_THREADS_W != 0);
-    const size_t h_block = m_Height / GPURenderer::NB_THREADS_H +
-        (m_Height % GPURenderer::NB_THREADS_H != 0);
-
-    m_RoundedWidth = w_block * GPURenderer::NB_THREADS_W;
-    m_RoundedHeight = h_block * GPURenderer::NB_THREADS_H;
-    m_RoundedTotal = m_RoundedWidth * m_RoundedHeight;
-
-    if (m_IterType == IterTypeEnum::Bits32) {
-        m_ItersMemory32 = std::make_unique<uint32_t[]>(m_RoundedTotal);
-        m_ItersArray32 = new uint32_t * [m_RoundedHeight];
-        for (size_t i = 0; i < m_RoundedHeight; i++) {
-            m_ItersArray32[i] = &m_ItersMemory32[i * m_RoundedWidth];
-        }
-    }
-    else {
-        m_ItersMemory64 = std::make_unique<uint64_t[]>(m_RoundedTotal);
-        m_ItersArray64 = new uint64_t * [m_RoundedHeight];
-        for (size_t i = 0; i < m_RoundedHeight; i++) {
-            m_ItersArray64[i] = &m_ItersMemory64[i * m_RoundedWidth];
-        }
-    }
-
-    const size_t w_color_block = m_OutputWidth / GPURenderer::NB_THREADS_W_AA +
-        (m_OutputWidth % GPURenderer::NB_THREADS_W_AA != 0);
-    const size_t h_color_block = m_OutputHeight / GPURenderer::NB_THREADS_H_AA +
-        (m_OutputHeight % GPURenderer::NB_THREADS_H_AA != 0);
-    m_RoundedOutputColorWidth = w_color_block * GPURenderer::NB_THREADS_W_AA;
-    m_RoundedOutputColorHeight = h_color_block * GPURenderer::NB_THREADS_H_AA;
-    m_RoundedOutputColorTotal = m_RoundedOutputColorWidth * m_RoundedOutputColorHeight;
-    m_RoundedOutputColorMemory = std::make_unique<Color16[]>(m_RoundedOutputColorTotal);
-};
-
-Fractal::ItersMemoryContainer::ItersMemoryContainer(Fractal::ItersMemoryContainer&& other) noexcept {
-    *this = std::move(other);
-}
-
-Fractal::ItersMemoryContainer &Fractal::ItersMemoryContainer::operator=(Fractal::ItersMemoryContainer&& other) noexcept {
-    if (this == &other) {
-        return *this;
-    }
-
-    m_IterType = other.m_IterType;
-
-    m_ItersMemory32 = std::move(other.m_ItersMemory32);
-    m_ItersMemory64 = std::move(other.m_ItersMemory64);
-
-    m_ItersArray32 = other.m_ItersArray32;
-    other.m_ItersArray32 = nullptr;
-
-    m_ItersArray64 = other.m_ItersArray64;
-    other.m_ItersArray64 = nullptr;
-
-    m_Width = other.m_Width;
-    m_Height = other.m_Height;
-    m_Total = other.m_Total;
-    
-    m_OutputWidth = other.m_OutputWidth;
-    m_OutputHeight = other.m_OutputHeight;
-    m_OutputTotal = other.m_OutputTotal;
-
-    m_RoundedWidth = other.m_RoundedWidth;
-    m_RoundedHeight = other.m_RoundedHeight;
-    m_RoundedTotal = other.m_RoundedTotal;
-
-    m_RoundedOutputColorWidth = other.m_RoundedOutputColorWidth;
-    m_RoundedOutputColorHeight = other.m_RoundedOutputColorHeight;
-    m_RoundedOutputColorTotal = other.m_RoundedOutputColorTotal;
-    m_RoundedOutputColorMemory = std::move(other.m_RoundedOutputColorMemory);
-
-    m_Antialiasing = other.m_Antialiasing;
-
-    return *this;
-}
-
-Fractal::ItersMemoryContainer::~ItersMemoryContainer() {
-    m_ItersMemory32 = nullptr;
-    m_ItersMemory64 = nullptr;
-    m_RoundedOutputColorMemory = nullptr;
-
-    if (m_ItersArray32) {
-        delete[] m_ItersArray32;
-        m_ItersArray32 = nullptr;
-    }
-
-    if (m_ItersArray64) {
-        delete[] m_ItersArray64;
-        m_ItersArray64 = nullptr;
-    }
-}
-
 Fractal::Fractal(FractalSetupData* setupData,
     int width,
     int height,
@@ -973,6 +848,114 @@ void Fractal::Zoom(double factor) {
 void Fractal::Zoom(size_t scrnX, size_t scrnY, double factor) {
     CenterAtPoint(scrnX, scrnY);
     Zoom(factor);
+}
+
+void Fractal::BasicTest() {
+    // First, iterate over all the supported RenderAlgorithm entries and render the default view:
+    // Skip AUTO plus all LAO-only algorithms.  They produce a black screen for the default view.
+    const wchar_t *DirName = L"BasicTest";
+    auto ret = CreateDirectory(DirName, NULL);
+    if (ret == 0 && GetLastError() != ERROR_ALREADY_EXISTS) {
+        ::MessageBox(nullptr, L"Error creating directory!", L"", MB_OK);
+        return;
+    }
+
+    for (size_t i = 0; i < (size_t)RenderAlgorithm::AUTO; i++) {
+        auto CurAlg = static_cast<RenderAlgorithm>(i);
+        if (CurAlg != RenderAlgorithm::Gpu1x32PerturbedLAv2LAO &&
+            CurAlg != RenderAlgorithm::Gpu1x64PerturbedLAv2LAO &&
+            CurAlg != RenderAlgorithm::GpuHDRx32PerturbedLAv2LAO &&
+            CurAlg != RenderAlgorithm::GpuHDRx2x32PerturbedLAv2LAO &&
+            CurAlg != RenderAlgorithm::GpuHDRx64PerturbedLAv2LAO) {
+            BasicOneTest(0, DirName, L"View0", CurAlg);
+        }
+    }
+
+    // Now, iterate over all the RenderAlgorithm entries that should work with View #5.
+    RenderAlgorithm View5Algs[] = {
+        RenderAlgorithm::Gpu1x32PerturbedScaled,
+        RenderAlgorithm::Gpu2x32PerturbedScaled,
+        RenderAlgorithm::GpuHDRx32PerturbedScaled,
+
+        RenderAlgorithm::Gpu1x32PerturbedScaledBLA,
+        RenderAlgorithm::Gpu1x64PerturbedBLA,
+        RenderAlgorithm::GpuHDRx32PerturbedBLA,
+        RenderAlgorithm::GpuHDRx64PerturbedBLA,
+
+        RenderAlgorithm::Gpu1x64PerturbedLAv2,
+        RenderAlgorithm::Gpu1x64PerturbedLAv2PO,
+        RenderAlgorithm::Gpu1x64PerturbedLAv2LAO,
+        RenderAlgorithm::GpuHDRx32PerturbedLAv2,
+        RenderAlgorithm::GpuHDRx32PerturbedLAv2PO,
+        RenderAlgorithm::GpuHDRx32PerturbedLAv2LAO,
+        RenderAlgorithm::GpuHDRx2x32PerturbedLAv2,
+        RenderAlgorithm::GpuHDRx2x32PerturbedLAv2PO,
+        RenderAlgorithm::GpuHDRx2x32PerturbedLAv2LAO,
+        RenderAlgorithm::GpuHDRx64PerturbedLAv2,
+        RenderAlgorithm::GpuHDRx64PerturbedLAv2PO,
+        RenderAlgorithm::GpuHDRx64PerturbedLAv2LAO,
+    };
+
+    for (auto CurAlg : View5Algs) {
+        BasicOneTest(5, DirName, L"View5", CurAlg);
+    }
+
+    // Finally, iterate over all the RenderAlgorithm entries that should work with View #11.
+    RenderAlgorithm View11Algs[] = {
+        RenderAlgorithm::GpuHDRx32PerturbedScaled,
+
+        RenderAlgorithm::GpuHDRx32PerturbedBLA,
+        RenderAlgorithm::GpuHDRx64PerturbedBLA,
+
+        RenderAlgorithm::GpuHDRx32PerturbedLAv2,
+        RenderAlgorithm::GpuHDRx32PerturbedLAv2PO,
+        RenderAlgorithm::GpuHDRx32PerturbedLAv2LAO,
+        RenderAlgorithm::GpuHDRx2x32PerturbedLAv2,
+        RenderAlgorithm::GpuHDRx2x32PerturbedLAv2PO,
+        RenderAlgorithm::GpuHDRx2x32PerturbedLAv2LAO,
+        RenderAlgorithm::GpuHDRx64PerturbedLAv2,
+        RenderAlgorithm::GpuHDRx64PerturbedLAv2PO,
+        RenderAlgorithm::GpuHDRx64PerturbedLAv2LAO,
+    };
+
+    for (auto CurAlg : View11Algs) {
+        BasicOneTest(11, DirName, L"View11", CurAlg);
+    }
+
+    // Reset to default.
+    SetRenderAlgorithm(RenderAlgorithm::AUTO);
+    View(0);
+    ChangedMakeDirty();
+    CalcFractal(false);
+}
+
+void Fractal::BasicOneTest(
+    size_t ViewIndex,
+    const wchar_t *DirName,
+    const wchar_t *TestPrefix,
+    RenderAlgorithm AlgToTest) {
+
+    size_t AlgToTestInt = static_cast<size_t>(AlgToTest);
+    SetRenderAlgorithm(AlgToTest);
+    View(ViewIndex);
+    ChangedMakeDirty();
+    CalcFractal(false);
+
+    auto name = GetRenderAlgorithmName();
+    auto name_with_int_prefix = std::to_string(AlgToTestInt) + " - " + name;
+
+    std::wstring filename_w;
+    std::transform(
+        name_with_int_prefix.begin(),
+        name_with_int_prefix.end(),
+        std::back_inserter(filename_w), [](char c) {
+            return (wchar_t)c;
+        });
+
+    filename_w = std::wstring(DirName) + L"\\" + std::wstring(TestPrefix) + L" - " + filename_w;
+
+    SaveCurrentFractal(filename_w);
+    //SaveItersAsText(filename_w);
 }
 
 template<Fractal::AutoZoomHeuristic h>
@@ -1925,7 +1908,7 @@ void Fractal::LoadPerturbationOrbit() {
     m_RefOrbit.LoadAllOrbits();
 }
 
-Fractal::IterTypeEnum Fractal::GetIterType() const {
+IterTypeEnum Fractal::GetIterType() const {
     //
     // Returns the current iteration type
     //
@@ -2036,7 +2019,7 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
     m_StopCalculating = false;
 
     // Do nothing if nothing has changed
-    if (ChangedIsDirty() == false)
+    if (ChangedIsDirty() == false || m_glContext->GetRepaint() == false)
     {
         DrawFractal(MemoryOnly);
         return;
@@ -2427,7 +2410,8 @@ void Fractal::DrawFractal(bool MemoryOnly)
     }
 }
 
-void Fractal::DrawGlFractal(bool LocalColor) {
+template<typename IterType>
+void Fractal::DrawGlFractal(bool LocalColor, bool lastIter) {
     if (LocalColor) {
         for (auto& it : m_DrawThreadAtomics) {
             it.store(0);
@@ -2451,6 +2435,27 @@ void Fractal::DrawGlFractal(bool LocalColor) {
         }
     }
     else {
+        IterType* iter = nullptr;
+        if (lastIter) {
+            iter = m_CurIters.GetIters<IterType>();
+        }
+
+        auto result = m_r.RenderCurrent<IterType>(
+            GetNumIterations<IterType>(),
+            iter,
+            m_CurIters.m_RoundedOutputColorMemory.get());
+
+        if (result) {
+            MessageBoxCudaError(result);
+            return;
+        }
+
+        result = m_r.SyncStream(true);
+        if (result) {
+            MessageBoxCudaError(result);
+            return;
+        }
+
         //    uint32_t result;
         //    if (GetIterType() == IterTypeEnum::Bits32) {
         //        result = m_r.OnlyAA(
@@ -2739,32 +2744,8 @@ void Fractal::DrawAsyncGpuFractalThread() {
             return false;
         }
 
-        IterType* iter = nullptr;
-        if (lastIter) {
-            iter = m_CurIters.GetIters<IterType>();
-        }
-
         const bool LocalColor = RequiresUseLocalColor();
-
-        if (!LocalColor) {
-            auto result = m_r.RenderCurrent<IterType>(
-                GetNumIterations<IterType>(),
-                iter,
-                m_CurIters.m_RoundedOutputColorMemory.get());
-
-            if (result) {
-                MessageBoxCudaError(result);
-                return true;
-            }
-
-            result = m_r.SyncStream(true);
-            if (result) {
-                MessageBoxCudaError(result);
-                return true;
-            }
-        }
-
-        DrawGlFractal(LocalColor);
+        DrawGlFractal<IterType>(LocalColor, lastIter);
         return false;
     };
 

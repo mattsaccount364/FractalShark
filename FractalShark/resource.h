@@ -288,6 +288,8 @@
 #define IDM_VIEWS_HELP                  33089
 #define IDM_HELP_ALG                    33090
 #define IDM_ALG_AUTO                    33091
+#define ID_CHOOSERENDERALGORITHM_RUNBASICTEST 33094
+#define IDM_BASICTEST                   33095
 #define IDM_VIEW1                       33181
 #define IDM_VIEW2                       33182
 #define IDM_VIEW3                       33183
@@ -324,7 +326,7 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        131
-#define _APS_NEXT_COMMAND_VALUE         33094
+#define _APS_NEXT_COMMAND_VALUE         33096
 #define _APS_NEXT_CONTROL_VALUE         1000
 #define _APS_NEXT_SYMED_VALUE           110
 #endif

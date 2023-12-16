@@ -200,6 +200,8 @@ BEGIN
             MENUITEM "HDRx64 GPU - Perturbation LAv2", IDM_ALG_GPU_HDR_64_PERTURB_LAV2
             MENUITEM "HDRx64 GPU - Perturbation LAv2 - Perturb only", IDM_ALG_GPU_HDR_64_PERTURB_LAV2_PO
             MENUITEM "HDRx64 GPU - Perturbation LAv2 - LA only", IDM_ALG_GPU_HDR_64_PERTURB_LAV2_LAO
+            MENUITEM SEPARATOR
+            MENUITEM "Run Basic Test (saves files in local dir)", IDM_BASICTEST
         END
         POPUP "Iterations"
         BEGIN

@@ -209,6 +209,7 @@
     <ClInclude Include="..\LAstep.h" />
     <ClCompile Include="..\ItersMemoryContainer.cpp" />
     <ClCompile Include="..\LAReference.cpp" />
+    <ClCompile Include="..\PointZoomBBConverter.cpp" />
     <ClCompile Include="..\RefOrbitCalc.cpp" />
     <ClCompile Include="..\WPngImage\lodepng.cpp" />
     <ClCompile Include="..\WPngImage\WPngImage.cc" />
@@ -241,6 +242,7 @@
     <ClInclude Include="..\HighPrecision.h" />
     <ClInclude Include="..\OpenGLContext.h" />
     <ClInclude Include="..\PerturbationResults.h" />
+    <ClInclude Include="..\PointZoomBBConverter.h" />
     <ClInclude Include="..\QuadDouble\common.cuh" />
     <ClInclude Include="..\QuadDouble\cuda_header.cuh" />
     <ClInclude Include="..\QuadDouble\gqd_basic.cuh" />

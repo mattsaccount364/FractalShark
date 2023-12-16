@@ -30,6 +30,8 @@
 #include "OpenGLContext.h"
 #include "RefOrbitCalc.h"
 
+#include "PointZoomBBConverter.h"
+
 #include <string>
 #include <deque>
 
@@ -47,17 +49,6 @@ public:
         bool UseSensoCursor);
     ~Fractal();
 
-private:
-    void Initialize(int width,
-        int height,
-        void(*OutputMessage) (const wchar_t *, ...),
-        HWND hWnd,
-        bool UseSensoCursor);
-    void Uninitialize(void);
-    void PalIncrease(std::vector<uint16_t>& pal, int length, int val1, int val2);
-    void PalTransition(size_t WhichPalette, size_t paletteIndex, int length, int r, int g, int b);
-
-public:
     static unsigned long WINAPI CheckForAbortThread(void *fractal);
 
     static size_t GetPrecision(
@@ -75,11 +66,6 @@ public:
         HighPrecision& maxY);
     void SetPrecision();
 
-private:
-    bool IsDownControl(void);
-    void CheckForAbort(void);
-
-public: // Changing the view
     void ResetDimensions(size_t width = MAXSIZE_T,
                          size_t height = MAXSIZE_T,
                          uint32_t gpu_antialiasing = UINT32_MAX);
@@ -104,45 +90,14 @@ public: // Changing the view
     template<AutoZoomHeuristic h>
     void AutoZoom();
 
-    struct PointZoomBBConverter {
-        static constexpr auto factor = 2;
-
-        PointZoomBBConverter(
-            HighPrecision ptX,
-            HighPrecision ptY,
-            HighPrecision zoomFactor);
-
-        PointZoomBBConverter(
-            HighPrecision minX,
-            HighPrecision minY,
-            HighPrecision maxX,
-            HighPrecision maxY);
-
-        HighPrecision ptX, ptY;
-        HighPrecision zoomFactor;
-
-        HighPrecision minX, minY;
-        HighPrecision maxX, maxY;
-    };
-
     void View(size_t i);
     void SquareCurrentView(void);
     void ApproachTarget(void);
-
-private:
-    static bool FileExists(const wchar_t *filename);  // Used only by ApproachTarget
-
-public:
     bool Back(void);
 
-public: // For screen saver specifically
     void FindInterestingLocation(RECT *rect);
     bool IsValidLocation(void);
 
-private: // For saving the current location
-    void SaveCurPos(void);
-
-public: // Iterations
     template<typename IterType>
     void SetNumIterations(IterTypeFull num);
 
@@ -159,7 +114,6 @@ public: // Iterations
 
     void ResetNumIterations(void);
 
-public:
     RenderAlgorithm GetRenderAlgorithm(void) const;
     inline void SetRenderAlgorithm(RenderAlgorithm alg) { m_RenderAlgorithm = alg; }
     std::string GetRenderAlgorithmName() const;
@@ -173,13 +127,7 @@ public:
     void SavePerturbationOrbit();
     void LoadPerturbationOrbit();
 
-private: // Keeps track of what has changed and what hasn't since the last draw
-    inline void ChangedMakeClean(void) { m_ChangedWindow = m_ChangedScrn = m_ChangedIterations = false; }
-    inline void ChangedMakeDirty(void) { m_ChangedWindow = m_ChangedScrn = m_ChangedIterations = true; }
-    inline bool ChangedIsDirty(void) const { return (m_ChangedWindow || m_ChangedScrn || m_ChangedIterations); }
-    inline bool ChangedItersOnly(void) const { return (m_ChangedIterations && !(m_ChangedScrn || m_ChangedWindow)); }
-
-public: // Drawing functions
+    // Drawing functions
     bool RequiresUseLocalColor() const;
     void CalcFractal(bool MemoryOnly);
     void DrawFractal(bool MemoryOnly);
@@ -201,6 +149,7 @@ public: // Drawing functions
         Num
     };
 
+    // Palette functions
     int GetPaletteDepthFromIndex(size_t index) const;
     int GetPaletteDepth() const; 
     void UsePalette(int depth);
@@ -216,15 +165,56 @@ public: // Drawing functions
     void DrawPerturbationResults();
     void DrawAllPerturbationResults(bool LeaveScreen);
 
+    // Saving images of the fractal
+    int SaveCurrentFractal(const std::wstring filename_base);
+    int SaveHiResFractal(const std::wstring filename_base);
+    int SaveItersAsText(const std::wstring filename_base);
+    void CleanupThreads(bool all);
+
+    // Benchmarking
+    HighPrecision Benchmark(IterTypeFull numIters, size_t& millseconds);
+
+    template<class T, class SubType>
+    HighPrecision BenchmarkReferencePoint(IterTypeFull numIters, size_t& millseconds);
+    HighPrecision BenchmarkThis(size_t& millseconds);
+
+    // Used for retrieving our current location
+    inline const HighPrecision& GetMinX(void) const { return m_MinX; }
+    inline const HighPrecision& GetMaxX(void) const { return m_MaxX; }
+    inline const HighPrecision& GetMinY(void) const { return m_MinY; }
+    inline const HighPrecision& GetMaxY(void) const { return m_MaxY; }
+    inline size_t GetRenderWidth(void) const { return m_ScrnWidth; }
+    inline size_t GetRenderHeight(void) const { return m_ScrnHeight; }
+
+    static DWORD WINAPI ServerManageMainConnectionThread(void*);
+    static DWORD WINAPI ServerManageSubConnectionThread(void*);
+
 private:
+    void Initialize(int width,
+        int height,
+        void(*OutputMessage) (const wchar_t*, ...),
+        HWND hWnd,
+        bool UseSensoCursor);
+    void Uninitialize(void);
+    void PalIncrease(std::vector<uint16_t>& pal, int length, int val1, int val2);
+    void PalTransition(size_t WhichPalette, size_t paletteIndex, int length, int r, int g, int b);
+    bool IsDownControl(void);
+    void CheckForAbort(void);
+
+    static bool FileExists(const wchar_t* filename);  // Used only by ApproachTarget
+    void SaveCurPos(void);
+
+    // Keeps track of what has changed and what hasn't since the last draw
+    inline void ChangedMakeClean(void) { m_ChangedWindow = m_ChangedScrn = m_ChangedIterations = false; }
+    inline void ChangedMakeDirty(void) { m_ChangedWindow = m_ChangedScrn = m_ChangedIterations = true; }
+    inline bool ChangedIsDirty(void) const { return (m_ChangedWindow || m_ChangedScrn || m_ChangedIterations); }
+    inline bool ChangedItersOnly(void) const { return (m_ChangedIterations && !(m_ChangedScrn || m_ChangedWindow)); }
+
     template<typename IterType>
     void CalcFractalTypedIter(bool MemoryOnly);
 
     static void DrawFractalThread(size_t index, Fractal* fractal);
 
-    RefOrbitCalc m_RefOrbit;
-    std::unique_ptr<uint16_t[]> m_DrawOutBytes;
-    std::deque<std::atomic_uint64_t> m_DrawThreadAtomics;
     struct DrawThreadSync {
         //DrawThreadSync& operator=(const DrawThreadSync&) = delete;
         //DrawThreadSync(const DrawThreadSync&) = delete;
@@ -246,13 +236,11 @@ private:
         std::mutex m_DrawThreadMutex;
         std::condition_variable m_DrawThreadCV;
         std::unique_ptr<std::thread> m_Thread;
-        std::deque<std::atomic_uint64_t> &m_DrawThreadAtomics;
+        std::deque<std::atomic_uint64_t>& m_DrawThreadAtomics;
         bool m_DrawThreadReady;
         bool m_DrawThreadProcessed;
         bool m_TimeToExit;
     };
-
-    std::vector<std::unique_ptr<DrawThreadSync>> m_DrawThreads;
 
     void FillCoord(HighPrecision& src, MattQFltflt& dest);
     void FillCoord(HighPrecision& src, MattQDbldbl& dest);
@@ -303,13 +291,6 @@ private:
     template<typename IterType, class T, class SubType, class T2, class SubType2>
     void CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly);
 
-public: // Saving images of the fractal
-    int SaveCurrentFractal(const std::wstring filename_base);
-    int SaveHiResFractal(const std::wstring filename_base);
-    int SaveItersAsText(const std::wstring filename_base);
-    void CleanupThreads(bool all);
-
-private:
     struct CurrentFractalSave {
         enum class Type {
             ItersText,
@@ -341,20 +322,9 @@ private:
         bool m_Destructable;
     };
 
-    std::vector<std::unique_ptr<CurrentFractalSave>> m_FractalSavesInProgress;
-
     template<CurrentFractalSave::Type Typ>
     int SaveFractalData(const std::wstring filename_base);
 
-public: // Benchmarking
- 
-    HighPrecision Benchmark(IterTypeFull numIters, size_t &millseconds);
-
-    template<class T, class SubType>
-    HighPrecision BenchmarkReferencePoint(IterTypeFull numIters, size_t& millseconds);
-    HighPrecision BenchmarkThis(size_t& millseconds);
-
-private:
     struct BenchmarkData {
         BenchmarkData(Fractal& fractal);
         Fractal& fractal;
@@ -377,7 +347,7 @@ private:
 
     uint64_t FindTotalItersUsed(void);
 
-private: // Unit conversion helpers
+    // Unit conversion helpers
     template<bool IncludeGpuAntialiasing = false>
     HighPrecision XFromScreenToCalc(HighPrecision x);
 
@@ -387,16 +357,7 @@ private: // Unit conversion helpers
     HighPrecision XFromCalcToScreen(HighPrecision x);
     HighPrecision YFromCalcToScreen(HighPrecision y);
 
-public: // Used for retrieving our current location
-    inline const HighPrecision  &GetMinX(void) const { return m_MinX; }
-    inline const HighPrecision  &GetMaxX(void) const { return m_MaxX; }
-    inline const HighPrecision  &GetMinY(void) const { return m_MinY; }
-    inline const HighPrecision  &GetMaxY(void) const { return m_MaxY; }
-    inline size_t GetRenderWidth(void) const { return m_ScrnWidth; }
-    inline size_t GetRenderHeight(void) const { return m_ScrnHeight; }
-
     // Networking functions.
-private:
     void NetworkCreateWorkload(void);
     void ClientInitializeServers(void);
     void ClientCreateSubConnections(void);
@@ -411,12 +372,16 @@ private:
     void ServerManageSubConnection(void);
     bool ServerBeginCalc(void);
 
-public:
-    static DWORD WINAPI ServerManageMainConnectionThread(void *);
-    static DWORD WINAPI ServerManageSubConnectionThread(void *);
-
     // Member Variables
-private:
+
+    RefOrbitCalc m_RefOrbit;
+    std::unique_ptr<uint16_t[]> m_DrawOutBytes;
+    std::deque<std::atomic_uint64_t> m_DrawThreadAtomics;
+
+    std::vector<std::unique_ptr<DrawThreadSync>> m_DrawThreads;
+
+    std::vector<std::unique_ptr<CurrentFractalSave>> m_FractalSavesInProgress;
+
     // Holds some customizations the user can make.  Saves/Loads from disk
     FractalSetupData m_SetupData;
 

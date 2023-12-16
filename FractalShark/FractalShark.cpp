@@ -1454,7 +1454,7 @@ void MenuGetCurPos(HWND hWnd)
     s = setupSS(maxY);
     auto smaxY = std::string(s.begin(), s.end());
 
-    Fractal::PointZoomBBConverter pz{ minX, minY, maxX, maxY };
+    PointZoomBBConverter pz{ minX, minY, maxX, maxY };
     s = setupSS(pz.ptX);
     auto ptXStr = std::string(s.begin(), s.end());
 

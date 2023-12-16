@@ -49,13 +49,8 @@ constexpr static bool EnableGpu2x64 = Default;
 constexpr static bool EnableGpu4x64 = Default;
 constexpr static bool EnableGpuHDRx32 = Default;
 
-constexpr static bool EnableGpu1x32Perturbed = Default;
-constexpr static bool EnableGpu1x32PerturbedPeriodic = Default;
 constexpr static bool EnableGpu1x32PerturbedScaled = Default;
-constexpr static bool EnableGpu2x32Perturbed = Default;
 constexpr static bool EnableGpu2x32PerturbedScaled = Default;
-constexpr static bool EnableGpu1x64Perturbed = Default;
-constexpr static bool EnableGpuHDRx32Perturbed = Default;
 constexpr static bool EnableGpuHDRx32PerturbedScaled = Default;
 
 constexpr static bool EnableGpu1x32PerturbedScaledBLA = Default;
@@ -2308,6 +2303,42 @@ mandel_1xHDR_float_perturb_lav2(
         perturbLoop(n_iterations);
     }
 
+    // TODO
+    // This code is moved from an old 1x32 float perturb-only implementation.
+    // It'd be fun to hook this up again
+    // 
+    //// Just finds the interesting Misiurewicz points.  Breaks so they're colored differently
+    //if constexpr (Periodic) {
+    //    auto n3 = maxRadiusSq * (dzdcX * dzdcX + dzdcY * dzdcY);
+    //    HdrReduce(n3);
+
+    //    if (HdrCompareToBothPositiveReducedGE(zn_size, n3)) {
+    //        // dzdc = dzdc * 2.0 * z + ScalingFactor;
+    //        // dzdc = dzdc * 2.0 * tempZ + ScalingFactor;
+    //        // dzdc = (dzdcX + dzdcY * i) * 2.0 * (tempZX + tempZY * i) + ScalingFactor;
+    //        // dzdc = (dzdcX * 2.0 + dzdcY * i * 2.0) * (tempZX + tempZY * i) + ScalingFactor;
+    //        // dzdc = (dzdcX * 2.0) * tempZX +
+    //        //        (dzdcX * 2.0) * (tempZY * i) +
+    //        //        (dzdcY * i * 2.0) * tempZX +
+    //        //        (dzdcY * i * 2.0) * tempZY * i
+    //        //
+    //        // dzdcX = (dzdcX * 2.0) * tempZX -
+    //        //         (dzdcY * 2.0) * tempZY
+    //        // dzdcY = (dzdcX * 2.0) * (tempZY) +
+    //        //         (dzdcY * 2.0) * tempZX
+    //        auto dzdcXOrig = dzdcX;
+    //        dzdcX = T(2.0f) * tempZX * dzdcX - T(2.0f) * tempZY * dzdcY + scalingFactor;
+    //        HdrReduce(dzdcX);
+
+    //        dzdcY = T(2.0f) * tempZY * dzdcXOrig + T(2.0f) * tempZX * dzdcY;
+    //        HdrReduce(dzdcY);
+    //    }
+    //    else {
+    //        //iter = n_iterations;
+    //        break;
+    //    }
+    //}
+
     __syncthreads();
 
     OutputIterMatrix[idx] = iter;
@@ -2621,6 +2652,8 @@ void mandel_hdr_float(
     OutputIterMatrix[idx] = iter;
 }
 
+#if 0
+// TODO Do we need this kind of conversion for the 2x32 LAv2 case:
 template<typename IterType>
 __global__
 void mandel_2x_float_perturb_setup(MattPerturbSingleResults<IterType, dblflt> PerturbDblFlt)
@@ -2796,6 +2829,7 @@ void mandel_2x_float_perturb(
 
     OutputIterMatrix[idx] = iter;
 }
+#endif
 
 template<typename IterType, int iteration_precision>
 __global__
@@ -2914,139 +2948,6 @@ void mandel_1x_float(
 
     OutputIterMatrix[idx] = iter;
 }
-
-template<typename IterType, class T, bool Periodic>
-__global__
-void mandel_1x_float_perturb(
-    IterType *OutputIterMatrix,
-    AntialiasedColors OutputColorMatrix,
-    MattPerturbSingleResults<IterType, T> PerturbFloat,
-    int width,
-    int height,
-    T cx,
-    T cy,
-    T dx,
-    T dy,
-    T centerX,
-    T centerY,
-    IterType n_iterations)
-{
-    int X = blockIdx.x * blockDim.x + threadIdx.x;
-    int Y = blockIdx.y * blockDim.y + threadIdx.y;
-
-    if (X >= width || Y >= height)
-        return;
-
-    //size_t idx = width * (height - Y - 1) + X;
-    //size_t idx = width * Y + X;
-    size_t idx = ConvertLocToIndex(X, Y, width);
-
-    //if (OutputIterMatrix[idx] != 0) {
-    //    return;
-    //}
-
-    IterType iter = 0;
-    IterType RefIteration = 0;
-    T DeltaReal = dx * X - centerX;
-    T DeltaImaginary = -dy * Y - centerY;
-
-    T DeltaSub0X = DeltaReal;
-    T DeltaSub0Y = DeltaImaginary;
-    T DeltaSubNX = T(0.0f);
-    T DeltaSubNY = T(0.0f);
-    IterType MaxRefIteration = PerturbFloat.size - 1;
-
-    //T dzdcX = std::max(std::max(x.dzdc), 1.0f);
-    T scalingFactor = T(1.0f) / (HdrMaxPositiveReduced(HdrMaxPositiveReduced(HdrAbs(dx), HdrAbs(dy)), T(1.0f)));
-    //T scalingFactor = 1.0f;
-    T dzdcX = scalingFactor;
-    T dzdcY = T(0.0f);
-
-    T maxRadius = HdrMaxPositiveReduced(HdrAbs(dx), HdrAbs(dy));
-    T maxRadiusSq = maxRadius * maxRadius;
-
-    while (iter < n_iterations) {
-        const MattReferenceSingleIter<T> *curIter = &PerturbFloat.iters[RefIteration];
-
-        const T DeltaSubNXOrig = DeltaSubNX;
-        const T DeltaSubNYOrig = DeltaSubNY;
-
-        const T tempSubX = curIter->x * T(2.0f) + DeltaSubNXOrig;
-        const T tempSubY = curIter->y * T(2.0f) + DeltaSubNYOrig;
-
-        ++RefIteration;
-        curIter = &PerturbFloat.iters[RefIteration];
-
-        DeltaSubNX =
-            DeltaSubNXOrig * tempSubX -
-            DeltaSubNYOrig * tempSubY +
-            DeltaSub0X;
-        HdrReduce(DeltaSubNX);
-
-        DeltaSubNY =
-            DeltaSubNXOrig * tempSubY +
-            DeltaSubNYOrig * tempSubX +
-            DeltaSub0Y;
-        HdrReduce(DeltaSubNY);
-
-        const T tempZX = curIter->x + DeltaSubNX;
-        const T tempZY = curIter->y + DeltaSubNY;
-        
-        T zn_size = tempZX * tempZX + tempZY * tempZY;
-        HdrReduce(zn_size);
-
-        T normDeltaSubN = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
-        HdrReduce(normDeltaSubN);
-
-        if (HdrCompareToBothPositiveReducedGE(zn_size, T(256.0f))) {
-            break;
-        }
-
-        // Just finds the interesting Misiurewicz points.  Breaks so they're colored differently
-        if constexpr (Periodic) {
-            auto n3 = maxRadiusSq * (dzdcX * dzdcX + dzdcY * dzdcY);
-            HdrReduce(n3);
-
-            if (HdrCompareToBothPositiveReducedGE(zn_size, n3)) {
-                // dzdc = dzdc * 2.0 * z + ScalingFactor;
-                // dzdc = dzdc * 2.0 * tempZ + ScalingFactor;
-                // dzdc = (dzdcX + dzdcY * i) * 2.0 * (tempZX + tempZY * i) + ScalingFactor;
-                // dzdc = (dzdcX * 2.0 + dzdcY * i * 2.0) * (tempZX + tempZY * i) + ScalingFactor;
-                // dzdc = (dzdcX * 2.0) * tempZX +
-                //        (dzdcX * 2.0) * (tempZY * i) +
-                //        (dzdcY * i * 2.0) * tempZX +
-                //        (dzdcY * i * 2.0) * tempZY * i
-                //
-                // dzdcX = (dzdcX * 2.0) * tempZX -
-                //         (dzdcY * 2.0) * tempZY
-                // dzdcY = (dzdcX * 2.0) * (tempZY) +
-                //         (dzdcY * 2.0) * tempZX
-                auto dzdcXOrig = dzdcX;
-                dzdcX = T(2.0f) * tempZX * dzdcX - T(2.0f) * tempZY * dzdcY + scalingFactor;
-                HdrReduce(dzdcX);
-
-                dzdcY = T(2.0f) * tempZY * dzdcXOrig + T(2.0f) * tempZX * dzdcY;
-                HdrReduce(dzdcY);
-            }
-            else {
-                //iter = n_iterations;
-                break;
-            }
-        }
-
-        if (HdrCompareToBothPositiveReducedLE(zn_size, normDeltaSubN) ||
-            RefIteration == MaxRefIteration) {
-            DeltaSubNX = tempZX;
-            DeltaSubNY = tempZY;
-            RefIteration = 0;
-        }
-
-        ++iter;
-    }
-
-    OutputIterMatrix[idx] = iter;
-}
-
 template<typename IterType, class T>
 __global__
 void mandel_1x_float_perturb_scaled(
@@ -4638,228 +4539,6 @@ template uint32_t GPURenderer::Render(
 /////////////////////////////////////////////////////////
 
 
-template<typename IterType, class T>
-uint32_t GPURenderer::RenderPerturb(
-    RenderAlgorithm algorithm,
-    IterType* iter_buffer,
-    Color16* color_buffer,
-    MattPerturbResults<IterType, T>* float_perturb,
-    T cx,
-    T cy,
-    T dx,
-    T dy,
-    T centerX,
-    T centerY,
-    IterType n_iterations,
-    int /*iteration_precision*/)
-{
-    uint32_t result = cudaSuccess;
-
-    if (!MemoryInitialized()) {
-        return cudaSuccess;
-    }
-
-    dim3 nb_blocks(w_block, h_block, 1);
-    dim3 threads_per_block(NB_THREADS_W, NB_THREADS_H, 1);
-
-    MattPerturbSingleResults<IterType, T> cudaResults(
-        float_perturb->size,
-        float_perturb->PeriodMaybeZero,
-        float_perturb->iters);
-
-    result = cudaResults.CheckValid();
-    if (result != 0) {
-        return result;
-    }
-
-    if (algorithm == RenderAlgorithm::Gpu1x32Perturbed) {
-        // floatOnly
-        if constexpr (EnableGpu1x32Perturbed && std::is_same<T, float>::value) {
-            mandel_1x_float_perturb<IterType, T, false> << <nb_blocks, threads_per_block >> > (
-                static_cast<IterType*>(OutputIterMatrix),
-                OutputColorMatrix,
-                cudaResults,
-                m_Width, m_Height, cx, cy, dx, dy,
-                centerX, centerY,
-                n_iterations);
-
-            result = RunAntialiasing(n_iterations);
-            if (!result) {
-                result = ExtractItersAndColors(iter_buffer, color_buffer);
-            }
-        }
-    }
-    else if (algorithm == RenderAlgorithm::Gpu1x64Perturbed) {
-        // doubleOnly
-        if constexpr (EnableGpu1x64Perturbed && std::is_same<T, double>::value) {
-            mandel_1x_float_perturb<IterType, T, false> << <nb_blocks, threads_per_block >> > (
-                static_cast<IterType*>(OutputIterMatrix),
-                OutputColorMatrix,
-                cudaResults,
-                m_Width, m_Height, cx, cy, dx, dy,
-                centerX, centerY,
-                n_iterations);
-
-            result = RunAntialiasing(n_iterations);
-            if (!result) {
-                result = ExtractItersAndColors(iter_buffer, color_buffer);
-            }
-        }
-    }
-    else if (algorithm == RenderAlgorithm::Gpu1x32PerturbedPeriodic) {
-        // floatOnly
-        if constexpr (EnableGpu1x32PerturbedPeriodic && std::is_same<T, float>::value) {
-            mandel_1x_float_perturb<IterType, T, true> << <nb_blocks, threads_per_block >> > (
-                static_cast<IterType*>(OutputIterMatrix),
-                OutputColorMatrix,
-                cudaResults,
-                m_Width, m_Height, cx, cy, dx, dy,
-                centerX, centerY,
-                n_iterations);
-
-            result = RunAntialiasing(n_iterations);
-            if (!result) {
-                result = ExtractItersAndColors(iter_buffer, color_buffer);
-            }
-        }
-    }
-    else if (algorithm == RenderAlgorithm::GpuHDRx32Perturbed) {
-        if constexpr (EnableGpuHDRx32Perturbed && std::is_same<T, HDRFloat<float>>::value) {
-            // hdrflt
-            mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
-
-            mandel_1x_float_perturb<IterType, T, false> << <nb_blocks, threads_per_block >> > (
-                static_cast<IterType*>(OutputIterMatrix),
-                OutputColorMatrix,
-                cudaResults,
-                m_Width, m_Height, cx, cy, dx, dy,
-                centerX, centerY,
-                n_iterations);
-
-            result = RunAntialiasing(n_iterations);
-            if (!result) {
-                result = ExtractItersAndColors(iter_buffer, color_buffer);
-            }
-        }
-    }
-
-    return result;
-}
-
-///////////////////////////////////////////////////////////////
-template uint32_t GPURenderer::RenderPerturb<uint32_t, float>(
-    RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
-    MattPerturbResults<uint32_t, float>* float_perturb,
-    float cx,
-    float cy,
-    float dx,
-    float dy,
-    float centerX,
-    float centerY,
-    uint32_t n_iterations,
-    int /*iteration_precision*/);
-
-template uint32_t GPURenderer::RenderPerturb<uint32_t, HDRFloat<float>>(
-    RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
-    MattPerturbResults<uint32_t, HDRFloat<float>>* float_perturb,
-    HDRFloat<float> cx,
-    HDRFloat<float> cy,
-    HDRFloat<float> dx,
-    HDRFloat<float> dy,
-    HDRFloat<float> centerX,
-    HDRFloat<float> centerY,
-    uint32_t n_iterations,
-    int /*iteration_precision*/);
-
-template uint32_t GPURenderer::RenderPerturb<uint32_t, double>(
-    RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
-    MattPerturbResults<uint32_t, double>* float_perturb,
-    double cx,
-    double cy,
-    double dx,
-    double dy,
-    double centerX,
-    double centerY,
-    uint32_t n_iterations,
-    int /*iteration_precision*/);
-
-template uint32_t GPURenderer::RenderPerturb<uint32_t, HDRFloat<double>>(
-    RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
-    MattPerturbResults<uint32_t, HDRFloat<double>>* float_perturb,
-    HDRFloat<double> cx,
-    HDRFloat<double> cy,
-    HDRFloat<double> dx,
-    HDRFloat<double> dy,
-    HDRFloat<double> centerX,
-    HDRFloat<double> centerY,
-    uint32_t n_iterations,
-    int /*iteration_precision*/);
-///////////////////////////////////////////////////////////////
-template uint32_t GPURenderer::RenderPerturb<uint64_t, float>(
-    RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
-    MattPerturbResults<uint64_t, float>* float_perturb,
-    float cx,
-    float cy,
-    float dx,
-    float dy,
-    float centerX,
-    float centerY,
-    uint64_t n_iterations,
-    int /*iteration_precision*/);
-
-template uint32_t GPURenderer::RenderPerturb<uint64_t, HDRFloat<float>>(
-    RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
-    MattPerturbResults<uint64_t, HDRFloat<float>>* float_perturb,
-    HDRFloat<float> cx,
-    HDRFloat<float> cy,
-    HDRFloat<float> dx,
-    HDRFloat<float> dy,
-    HDRFloat<float> centerX,
-    HDRFloat<float> centerY,
-    uint64_t n_iterations,
-    int /*iteration_precision*/);
-
-template uint32_t GPURenderer::RenderPerturb<uint64_t, double>(
-    RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
-    MattPerturbResults<uint64_t, double>* float_perturb,
-    double cx,
-    double cy,
-    double dx,
-    double dy,
-    double centerX,
-    double centerY,
-    uint64_t n_iterations,
-    int /*iteration_precision*/);
-
-template uint32_t GPURenderer::RenderPerturb<uint64_t, HDRFloat<double>>(
-    RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
-    MattPerturbResults<uint64_t, HDRFloat<double>>* float_perturb,
-    HDRFloat<double> cx,
-    HDRFloat<double> cy,
-    HDRFloat<double> dx,
-    HDRFloat<double> dy,
-    HDRFloat<double> centerX,
-    HDRFloat<double> centerY,
-    uint64_t n_iterations,
-    int /*iteration_precision*/);
-///////////////////////////////////////////////////////////////
-
 template<typename IterType, class T, class SubType, LAv2Mode Mode>
 uint32_t GPURenderer::RenderPerturbLAv2(
     RenderAlgorithm algorithm,
@@ -5600,105 +5279,6 @@ template uint32_t GPURenderer::RenderPerturbBLAScaled<uint64_t, HDRFloat<float>>
 );
 
 //////////////////////////////////////////////////////////////////
-
-template<typename IterType>
-uint32_t GPURenderer::RenderPerturbBLA(
-    RenderAlgorithm algorithm,
-    IterType* iter_buffer,
-    Color16* color_buffer,
-    MattPerturbResults<IterType, MattDblflt>* dblflt_perturb,
-    BLAS<IterType, MattDblflt>* /*blas*/,  // TODO
-    MattDblflt cx,
-    MattDblflt cy,
-    MattDblflt dx,
-    MattDblflt dy,
-    MattDblflt centerX,
-    MattDblflt centerY,
-    IterType n_iterations,
-    int /*iteration_precision*/)
-{
-    uint32_t result = cudaSuccess;
-
-    if (!MemoryInitialized()) {
-        return cudaSuccess;
-    }
-
-    dim3 nb_blocks(w_block, h_block, 1);
-    dim3 threads_per_block(NB_THREADS_W, NB_THREADS_H, 1);
-
-    MattPerturbSingleResults<IterType, dblflt> cudaResults(
-        dblflt_perturb->size,
-        dblflt_perturb->PeriodMaybeZero,
-        dblflt_perturb->iters);
-
-    result = cudaResults.CheckValid();
-    if (result != 0) {
-        return result;
-    }
-
-    if (algorithm == RenderAlgorithm::Gpu2x32Perturbed) {
-        if constexpr (EnableGpu2x32Perturbed) {
-            // flt
-            dblflt cx2{ cx.x, cx.y };
-            dblflt cy2{ cy.x, cy.y };
-            dblflt dx2{ dx.x, dx.y };
-            dblflt dy2{ dy.x, dy.y };
-            dblflt centerX2{ centerX.x, centerX.y };
-            dblflt centerY2{ centerY.x, centerY.y };
-
-            mandel_2x_float_perturb_setup << <nb_blocks, threads_per_block >> > (cudaResults);
-
-            mandel_2x_float_perturb << <nb_blocks, threads_per_block >> > (
-                static_cast<IterType*>(OutputIterMatrix),
-                OutputColorMatrix,
-                cudaResults,
-                m_Width, m_Height, cx2, cy2, dx2, dy2,
-                centerX2, centerY2,
-                n_iterations);
-
-            result = RunAntialiasing(n_iterations);
-            if (!result) {
-                result = ExtractItersAndColors(iter_buffer, color_buffer);
-            }
-        }
-    }
-
-    return result;
-}
-
-///////////////////////////////////////////////
-template
-uint32_t GPURenderer::RenderPerturbBLA(
-    RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
-    MattPerturbResults<uint32_t, MattDblflt>* dblflt_perturb,
-    BLAS<uint32_t, MattDblflt>* /*blas*/,  // TODO
-    MattDblflt cx,
-    MattDblflt cy,
-    MattDblflt dx,
-    MattDblflt dy,
-    MattDblflt centerX,
-    MattDblflt centerY,
-    uint32_t n_iterations,
-    int /*iteration_precision*/);
-
-template
-uint32_t GPURenderer::RenderPerturbBLA(
-    RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
-    MattPerturbResults<uint64_t, MattDblflt>* dblflt_perturb,
-    BLAS<uint64_t, MattDblflt>* /*blas*/,  // TODO
-    MattDblflt cx,
-    MattDblflt cy,
-    MattDblflt dx,
-    MattDblflt dy,
-    MattDblflt centerX,
-    MattDblflt centerY,
-    uint64_t n_iterations,
-    int /*iteration_precision*/);
-///////////////////////////////////////////////
 
 template<typename IterType, class T>
 uint32_t GPURenderer::RenderPerturbBLA(

@@ -284,7 +284,7 @@ private:
     template<typename IterType, class SubType>
     void CalcCpuPerturbationFractalLAV2(bool MemoryOnly);
 
-    template<typename IterType, class T, class SubType, bool BLA>
+    template<typename IterType, class T, class SubType>
     void CalcGpuPerturbationFractalBLA(bool MemoryOnly);
 
     template<typename IterType, class T, class SubType, LAv2Mode Mode>

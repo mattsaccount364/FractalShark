@@ -181,12 +181,6 @@ BEGIN
                 MENUITEM "1x32 GPU - Perturbation Scaled BLA", IDM_ALG_GPU_1_32_PERTURB_SCALED_BLA
             END
             MENUITEM SEPARATOR
-            MENUITEM "1x32 GPU - Perturbation",     IDM_ALG_GPU_1_32_PERTURB
-            MENUITEM "1x32 GPU - Perturbation, Periodic (broken)", IDM_ALG_GPU_1_32_PERTURB_PERIODIC
-            MENUITEM "2x32 GPU - Perturbation (broken)", IDM_ALG_GPU_2_32_PERTURB
-            MENUITEM "1x64 GPU - Perturbation",     IDM_ALG_GPU_1_64_PERTURB
-            MENUITEM "HDRx32 GPU - Perturbation",   IDM_ALG_GPU_HDR_32_PERTURB
-            MENUITEM SEPARATOR
             MENUITEM "1x64 GPU - Perturbation BLA", IDM_ALG_GPU_1_64_PERTURB_BLA
             MENUITEM "HDRx32 GPU - Perturbation BLA", IDM_ALG_GPU_HDR_32_PERTURB_BLA
             MENUITEM "HDRx64 GPU - Perturbation BLA", IDM_ALG_GPU_HDR_64_PERTURB_BLA

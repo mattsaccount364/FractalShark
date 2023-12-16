@@ -30,37 +30,6 @@ public:
         int iteration_precision);
 
     template<typename IterType, class T>
-    uint32_t RenderPerturb(
-        RenderAlgorithm algorithm,
-        IterType* iter_buffer,
-        Color16* color_buffer,
-        MattPerturbResults<IterType, T>* results,
-        T cx,
-        T cy,
-        T dx,
-        T dy,
-        T centerX,
-        T centerY,
-        IterType n_iterations,
-        int iteration_precision);
-
-    //template<typename IterType>
-    //uint32_t RenderPerturbBLA(
-    //    RenderAlgorithm algorithm,
-    //    IterType* iter_buffer,
-    //    Color16* color_buffer,
-    //    MattPerturbResults<double>* results,
-    //    BLAS<IterType, double> *blas,
-    //    double cx,
-    //    double cy,
-    //    double dx,
-    //    double dy,
-    //    double centerX,
-    //    double centerY,
-    //    IterType n_iterations,
-    //    int iteration_precision);
-
-    template<typename IterType, class T>
     uint32_t RenderPerturbBLAScaled(
         RenderAlgorithm algorithm,
         IterType* iter_buffer,

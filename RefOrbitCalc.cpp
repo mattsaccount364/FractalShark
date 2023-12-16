@@ -118,7 +118,6 @@ bool RefOrbitCalc::IsThisPerturbationArrayUsed(void* check) const {
         return false;
     case RenderAlgorithm::Cpu32PerturbedBLAHDR:
     case RenderAlgorithm::Cpu32PerturbedBLAV2HDR:
-    case RenderAlgorithm::GpuHDRx32Perturbed:
     case RenderAlgorithm::GpuHDRx32PerturbedBLA:
     case RenderAlgorithm::GpuHDRx32PerturbedScaled:
     case RenderAlgorithm::GpuHDRx32PerturbedLAv2:
@@ -140,8 +139,9 @@ bool RefOrbitCalc::IsThisPerturbationArrayUsed(void* check) const {
             check == &c32e.m_PerturbationResultsHDRDouble ||
             check == &c64d.m_PerturbationResultsHDRDouble ||
             check == &c64e.m_PerturbationResultsHDRDouble;
-    case RenderAlgorithm::Gpu1x32Perturbed:
-    case RenderAlgorithm::Gpu1x32PerturbedPeriodic:
+    case RenderAlgorithm::Gpu1x32PerturbedLAv2:
+    case RenderAlgorithm::Gpu1x32PerturbedLAv2PO:
+    case RenderAlgorithm::Gpu1x32PerturbedLAv2LAO:
         return
             check == &c32d.m_PerturbationResultsFloat ||
             check == &c32e.m_PerturbationResultsFloat ||
@@ -150,8 +150,10 @@ bool RefOrbitCalc::IsThisPerturbationArrayUsed(void* check) const {
     case RenderAlgorithm::Cpu64PerturbedBLA:
     case RenderAlgorithm::Gpu1x32PerturbedScaled:
     case RenderAlgorithm::Gpu1x32PerturbedScaledBLA:
-    case RenderAlgorithm::Gpu1x64Perturbed:
     case RenderAlgorithm::Gpu1x64PerturbedBLA:
+    case RenderAlgorithm::Gpu1x64PerturbedLAv2:
+    case RenderAlgorithm::Gpu1x64PerturbedLAv2PO:
+    case RenderAlgorithm::Gpu1x64PerturbedLAv2LAO:
         return
             check == &c32d.m_PerturbationResultsDouble ||
             check == &c32e.m_PerturbationResultsDouble ||
@@ -165,11 +167,6 @@ bool RefOrbitCalc::IsThisPerturbationArrayUsed(void* check) const {
             check == &c32e.m_PerturbationResultsHDR2xFloat ||
             check == &c64d.m_PerturbationResultsHDR2xFloat ||
             check == &c64e.m_PerturbationResultsHDR2xFloat;
-    case RenderAlgorithm::Gpu2x32Perturbed:
-        // TODO
-        //CalcGpuPerturbationFractalBLA<dblflt, dblflt>(MemoryOnly);
-        assert(false);
-        return false;
     case RenderAlgorithm::Gpu2x32PerturbedScaled:
         // TODO
         //CalcGpuPerturbationFractalBLA<double, double>(MemoryOnly);
@@ -842,7 +839,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     auto* existingResults = GetUsefulPerturbationResults<IterType, T, true, CalcBad::Disable>();
     if (existingResults == nullptr || existingResults->ReuseX.size() < 5) {
         // TODO Lame hack with < 5.
-        ::MessageBox(NULL, L"Authoritative not found", L"", MB_OK);
+        //::MessageBox(NULL, L"Authoritative not found", L"", MB_OK);
         PerturbationResultsArray.pop_back();
         return false;
     }

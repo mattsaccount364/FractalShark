@@ -2085,14 +2085,6 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
     case RenderAlgorithm::GpuHDRx32:
         CalcGpuFractal<IterType, HDRFloat<double>>(MemoryOnly);
         break;
-    case RenderAlgorithm::Gpu1x32Perturbed:
-    case RenderAlgorithm::Gpu1x32PerturbedPeriodic:
-        CalcGpuPerturbationFractalBLA<IterType, float, float, false>(MemoryOnly);
-        break;
-    case RenderAlgorithm::GpuHDRx32Perturbed:
-        //case RenderAlgorithm::GpuHDRx32PerturbedPeriodic:
-        CalcGpuPerturbationFractalBLA<IterType, HDRFloat<float>, float, false>(MemoryOnly);
-        break;
     case RenderAlgorithm::Gpu1x32PerturbedScaled:
     case RenderAlgorithm::Gpu1x32PerturbedScaledBLA:
         CalcGpuPerturbationFractalScaledBLA<IterType, double, double, float, float>(MemoryOnly);
@@ -2100,25 +2092,18 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
     case RenderAlgorithm::GpuHDRx32PerturbedScaled:
         CalcGpuPerturbationFractalScaledBLA<IterType, HDRFloat<float>, float, float, float>(MemoryOnly);
         break;
-    case RenderAlgorithm::Gpu1x64Perturbed:
-        CalcGpuPerturbationFractalBLA<IterType, double, double, false>(MemoryOnly);
-        break;
     case RenderAlgorithm::Gpu1x64PerturbedBLA:
-        CalcGpuPerturbationFractalBLA<IterType, double, double, true>(MemoryOnly);
-        break;
-    case RenderAlgorithm::Gpu2x32Perturbed:
-        // TODO
-        //CalcGpuPerturbationFractalBLA<IterType, dblflt, dblflt>(MemoryOnly);
+        CalcGpuPerturbationFractalBLA<IterType, double, double>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu2x32PerturbedScaled:
         // TODO
         //CalcGpuPerturbationFractalBLA<IterType, double, double>(MemoryOnly);
         break;
     case RenderAlgorithm::GpuHDRx32PerturbedBLA:
-        CalcGpuPerturbationFractalBLA<IterType, HDRFloat<float>, float, true>(MemoryOnly);
+        CalcGpuPerturbationFractalBLA<IterType, HDRFloat<float>, float>(MemoryOnly);
         break;
     case RenderAlgorithm::GpuHDRx64PerturbedBLA:
-        CalcGpuPerturbationFractalBLA<IterType, HDRFloat<double>, double, true>(MemoryOnly);
+        CalcGpuPerturbationFractalBLA<IterType, HDRFloat<double>, double>(MemoryOnly);
         break;
 
 
@@ -3474,7 +3459,7 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
     DrawFractal(MemoryOnly);
 }
 
-template<typename IterType, class T, class SubType, bool BLA>
+template<typename IterType, class T, class SubType>
 void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
     auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<
         IterType,
@@ -3508,38 +3493,23 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
         results->PeriodMaybeZero };
 
     uint32_t result;
-    if constexpr (BLA) {
-        BLAS<IterType, T> blas(*results);
-        blas.Init(results->orb.size(), results->maxRadius);
 
-        result = m_r.RenderPerturbBLA<IterType, T>(GetRenderAlgorithm(),
-            m_CurIters.GetIters<IterType>(),
-            m_CurIters.m_RoundedOutputColorMemory.get(),
-            &gpu_results,
-            &blas,
-            cx2,
-            cy2,
-            dx2,
-            dy2,
-            centerX2,
-            centerY2,
-            GetNumIterations<IterType>(),
-            m_IterationPrecision);
-    }
-    else {
-        result = m_r.RenderPerturb(GetRenderAlgorithm(),
-            m_CurIters.GetIters<IterType>(),
-            m_CurIters.m_RoundedOutputColorMemory.get(),
-            &gpu_results,
-            cx2,
-            cy2,
-            dx2,
-            dy2,
-            centerX2,
-            centerY2,
-            GetNumIterations<IterType>(),
-            m_IterationPrecision);
-    }
+    BLAS<IterType, T> blas(*results);
+    blas.Init(results->orb.size(), results->maxRadius);
+
+    result = m_r.RenderPerturbBLA<IterType, T>(GetRenderAlgorithm(),
+        m_CurIters.GetIters<IterType>(),
+        m_CurIters.m_RoundedOutputColorMemory.get(),
+        &gpu_results,
+        &blas,
+        cx2,
+        cy2,
+        dx2,
+        dy2,
+        centerX2,
+        centerY2,
+        GetNumIterations<IterType>(),
+        m_IterationPrecision);
 
     DrawFractal(MemoryOnly);
 

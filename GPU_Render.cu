@@ -3783,7 +3783,6 @@ void GPURenderer::ClearLocals() {
     h_color_block = 0;
     N_cu = 0;
     N_color_cu = 0;
-    m_EnableAsyncRendering = true;
     
     m_Stream1Initialized = false;
 
@@ -3817,8 +3816,7 @@ uint32_t GPURenderer::InitializeMemory(
     const uint16_t* palG,
     const uint16_t* palB,
     uint32_t palIters,
-    uint32_t paletteAuxDepth,
-    bool enableAsyncRendering)
+    uint32_t paletteAuxDepth)
 {
     if (Pals.palette_aux_depth != paletteAuxDepth) {
         Pals.palette_aux_depth = paletteAuxDepth;
@@ -3909,8 +3907,6 @@ uint32_t GPURenderer::InitializeMemory(
     local_color_height = no_antialias_height;
     N_color_cu = w_color_block * NB_THREADS_W_AA * h_color_block * NB_THREADS_H_AA;
 
-    m_EnableAsyncRendering = enableAsyncRendering;
-
     ResetMemory(ResetLocals::No, ResetPalettes::No, ResetPerturb::No);
 
     {
@@ -3973,8 +3969,7 @@ uint32_t GPURenderer::InitializeMemory<uint32_t>(
     const uint16_t* palG,
     const uint16_t* palB,
     uint32_t palIters,
-    uint32_t paletteAuxDepth,
-    bool enableAsyncRendering);
+    uint32_t paletteAuxDepth);
 
 template
 uint32_t GPURenderer::InitializeMemory<uint64_t>(
@@ -3985,8 +3980,7 @@ uint32_t GPURenderer::InitializeMemory<uint64_t>(
     const uint16_t* palG,
     const uint16_t* palB,
     uint32_t palIters,
-    uint32_t paletteAuxDepth,
-    bool enableAsyncRendering);
+    uint32_t paletteAuxDepth);
 
 template<typename IterType, class T1, class SubType, CalcBad Bad, class T2>
 uint32_t GPURenderer::InitializePerturb(
@@ -4152,12 +4146,11 @@ uint32_t GPURenderer::RenderAsNeeded(
 
     uint32_t result = cudaSuccess;
 
-    if (!m_EnableAsyncRendering) {
-        result = RunAntialiasing(n_iterations, cudaStreamDefault);
-        if (!result) {
-            result = ExtractItersAndColors<IterType, false>(iter_buffer, color_buffer);
-        }
-    }
+    // TODO
+    //result = RunAntialiasing(n_iterations, cudaStreamDefault);
+    //if (!result) {
+    //    result = ExtractItersAndColors<IterType, false>(iter_buffer, color_buffer);
+    //}
 
     return result;
 }
@@ -4184,21 +4177,19 @@ uint32_t GPURenderer::RenderCurrent(
 
     uint32_t result = cudaSuccess;
 
-    if (m_EnableAsyncRendering) {
-        if (iter_buffer == nullptr) {
-            result = RunAntialiasing(n_iterations, &m_Stream1);
+    if (iter_buffer == nullptr) {
+        result = RunAntialiasing(n_iterations, &m_Stream1);
 
-            if (!result) {
-                result = ExtractItersAndColors<IterType, true>(iter_buffer, color_buffer);
-            }
+        if (!result) {
+            result = ExtractItersAndColors<IterType, true>(iter_buffer, color_buffer);
         }
-        else {
-            cudaStream_t stream = 0;
-            result = RunAntialiasing(n_iterations, &stream);
+    }
+    else {
+        cudaStream_t stream = 0;
+        result = RunAntialiasing(n_iterations, &stream);
 
-            if (!result) {
-                result = ExtractItersAndColors<IterType, false>(iter_buffer, color_buffer);
-            }
+        if (!result) {
+            result = ExtractItersAndColors<IterType, false>(iter_buffer, color_buffer);
         }
     }
 

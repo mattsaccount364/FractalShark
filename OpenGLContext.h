@@ -8,20 +8,17 @@ struct OpenGlContext {
     HGLRC m_hRC;
     HDC m_hDC;
     bool m_Valid;
+    bool m_Repainting;
 
-    void glResetViewDim(int width, int height) {
-        glViewport(0, 0, width, height);
-        glMatrixMode(GL_PROJECTION);
-        glLoadIdentity();
-        gluOrtho2D(0.0, width, 0.0, height);
-        glMatrixMode(GL_MODELVIEW);
-    }
+    RECT m_CachedRect;
 
     OpenGlContext(HWND hWnd)
         : m_hWnd(hWnd)
         , m_hRC(nullptr)
         , m_hDC(nullptr)
         , m_Valid(false)
+        , m_Repainting(true)
+        , m_CachedRect{}
     {
         m_hDC = GetDC(m_hWnd);
         PIXELFORMATDESCRIPTOR pfd;
@@ -76,13 +73,66 @@ struct OpenGlContext {
         m_Valid = true;
     }
 
-    bool IsValid() const {
-        return m_Valid;
-    }
-
     ~OpenGlContext() {
         wglMakeCurrent(NULL, NULL);
         ReleaseDC(m_hWnd, m_hDC);
         wglDeleteContext(m_hRC);
+    }
+
+    void glResetView()
+    {
+        RECT rt;
+        GetClientRect(m_hWnd, &rt);
+
+        if (rt.right != m_CachedRect.right ||
+            rt.bottom != m_CachedRect.bottom ||
+            rt.left != m_CachedRect.left ||
+            rt.top != m_CachedRect.top) {
+            glResetViewDim(rt.right, rt.bottom);
+            m_CachedRect = rt;
+        }
+    }
+
+    void glResetViewDim(size_t width, size_t height) {
+        glViewport(0, 0, static_cast<GLsizei>(width), static_cast<GLsizei>(height));
+        glMatrixMode(GL_PROJECTION);
+        glLoadIdentity();
+        gluOrtho2D(0.0, static_cast<GLsizei>(width), 0.0, static_cast<GLsizei>(height));
+        glMatrixMode(GL_MODELVIEW);
+    }
+
+    bool IsValid() const {
+        return m_Valid;
+    }
+
+    void DrawGlBox() {
+        RECT rt;
+        GetClientRect(m_hWnd, &rt);
+
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        glBegin(GL_LINES);
+
+        glColor3f(1.0, 1.0, 1.0);
+        glVertex2i(0, 0);
+        glVertex2i(rt.right, rt.bottom);
+
+        glVertex2i(rt.right, 0);
+        glVertex2i(0, rt.bottom);
+
+        glEnd();
+        glFlush();
+    }
+
+    void SetRepaint(bool repaint) {
+        m_Repainting = repaint;
+    }
+
+    bool GetRepaint() const {
+        return m_Repainting;
+    }
+
+    void ToggleRepaint() {
+        m_Repainting = !m_Repainting;
     }
 };

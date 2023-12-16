@@ -182,6 +182,11 @@ public: // Drawing functions
     bool RequiresUseLocalColor() const;
     void CalcFractal(bool MemoryOnly);
     void DrawFractal(bool MemoryOnly);
+    void DrawGlFractal(bool LocalColor);
+
+    void SetRepaint(bool repaint);
+    bool GetRepaint() const;
+    void ToggleRepainting();
 
     // The palette!
     enum Palette : size_t {
@@ -197,6 +202,7 @@ public: // Drawing functions
     int GetPaletteDepth() const; 
     void UsePalette(int depth);
     void UseNextPaletteDepth();
+    void SetPaletteAuxDepth(int32_t aux_depth);
     void UseNextPaletteAuxDepth(int32_t inc);
     void UsePaletteType(Palette type);
     void ResetFractalPalette(void);
@@ -595,15 +601,21 @@ private:
     // GPU rendering
     GPURenderer m_r;
     std::unique_ptr<OpenGlContext> m_glContext;
-    bool m_EnableAsyncRendering;
 
     std::mutex m_AsyncRenderThreadMutex;
     std::condition_variable m_AsyncRenderThreadCV;
-    bool m_AsyncRenderThreadReady;
-    bool m_AsyncRenderThreadExit;
 
+    enum class AsyncRenderThreadState {
+        Idle,
+        Start,
+        SyncDone,
+        Finish
+    };
+    AsyncRenderThreadState m_AsyncRenderThreadState;
+    bool m_AsyncRenderThreadFinish;
+    
     std::unique_ptr<std::thread> m_AsyncRenderThread;
-    std::atomic<uint32_t> m_AsyncGpuRenderIsDone;
+    std::atomic<uint32_t> m_AsyncGpuRenderIsAtomic;
     void DrawAsyncGpuFractalThread();
     static void DrawAsyncGpuFractalThreadStatic(Fractal *fractal);
     void MessageBoxCudaError(uint32_t err);

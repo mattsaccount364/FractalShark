@@ -69,7 +69,6 @@ protected:
 public:
 	int m_AlgHighRes;
 	int m_AlgLowRes;
-        BOOL m_AltDraw;
 };
 
 //{{AFX_INSERT_LOCATION}}

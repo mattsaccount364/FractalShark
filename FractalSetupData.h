@@ -17,9 +17,6 @@ public:
   // File format version
   char m_Version;
   
-  // Use alternate drawing algorithm in client?
-  char m_AltDraw;
-
   // IP addresses
   char m_LocalIP[128];
   char m_ServerIPs[MAXSERVERS][128];

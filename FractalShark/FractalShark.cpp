@@ -1,8 +1,6 @@
 #include "stdafx.h"
 #include "resource.h"
 #include "..\Fractal.h"
-#include <GL/gl.h>			/* OpenGL header file */
-#include <GL/glu.h>			/* OpenGL utilities header file */
 
 #include <Dbghelp.h>
 
@@ -11,13 +9,10 @@ HINSTANCE hInst;                // current instance
 LPCWSTR szWindowClass = L"FractalWindow";
 HMENU gPopupMenu;
 bool gWindowed; // Says whether we are in windowed mode or not.
-bool gRepainting;
-bool gAltDraw;
 HDC gHDC;
 
 // Fractal:
 Fractal *gFractal = NULL;
-HGLRC hRC = NULL;
 
 // Foward declarations of functions included in this code module:
 ATOM              MyRegisterClass(HINSTANCE hInstance);
@@ -55,8 +50,6 @@ void MenuAlgHelp(HWND hWnd);
 void MenuViewsHelp(HWND hWnd);
 void MenuShowHotkeys(HWND hWnd);
 void PaintAsNecessary(HWND hWnd);
-void glResetView(HWND hWnd);
-void glResetViewDim(int width, int height);
 
 bool IsDownControl() { return (GetAsyncKeyState(VK_CONTROL) & 0x8000) == 0x8000; };
 bool IsDownShift() { return (GetAsyncKeyState(VK_SHIFT) & 0x8000) == 0x8000; };
@@ -95,11 +88,6 @@ int APIENTRY WinMain(HINSTANCE hInstance,
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }
-
-    // OpenGL de-initialization
-    wglMakeCurrent(NULL, NULL);
-    ReleaseDC(hWnd, gHDC);
-    wglDeleteContext(hRC);
 
     // Cleanup
     UnInit();
@@ -144,7 +132,7 @@ HWND InitInstance(HINSTANCE hInstance, int nCmdShow)
 { // Store instance handle in our global variable
     hInst = hInstance;
 
-    constexpr bool startWindowed = true;
+    constexpr bool startWindowed = false;
 
     const auto scrnWidth = GetSystemMetrics(SM_CXSCREEN);
     const auto scrnHeight = GetSystemMetrics(SM_CYSCREEN);
@@ -182,50 +170,11 @@ HWND InitInstance(HINSTANCE hInstance, int nCmdShow)
         return NULL;
     }
 
-    /////////////////////////////
-    // opengl initialization
-    /////////////////////////////
-    HDC hDC = GetDC(hWnd);
-    PIXELFORMATDESCRIPTOR pfd;
-    int pf;
-
-    /* there is no guarantee that the contents of the stack that become
-       the pfd are zeroed, therefore _make sure_ to clear these bits. */
-    memset(&pfd, 0, sizeof(pfd));
-    pfd.nSize = sizeof(pfd);
-    pfd.nVersion = 1;
-    pfd.dwFlags = PFD_DRAW_TO_WINDOW | PFD_SUPPORT_OPENGL; // | PFD_DOUBLEBUFFER;
-    pfd.iPixelType = PFD_TYPE_RGBA;
-    pfd.cColorBits = 32;
-
-    pf = ChoosePixelFormat(hDC, &pfd);
-    if (pf == 0)
-    {
-        MessageBox(NULL, L"ChoosePixelFormat() failed: Cannot find a suitable pixel format.", L"Error", MB_OK);
-        return NULL;
-    }
-
-    if (SetPixelFormat(hDC, pf, &pfd) == FALSE)
-    {
-        MessageBox(NULL, L"SetPixelFormat() failed:  Cannot set format specified.", L"Error", MB_OK);
-        return NULL;
-    }
-
-    DescribePixelFormat(hDC, pf, sizeof(PIXELFORMATDESCRIPTOR), &pfd);
-
-    ReleaseDC(hWnd, hDC);
-    ////////////////////////////
-    // end opengl initialization
-    ////////////////////////////
-
     // Put us on top
     //SetWindowPos (hWnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
 
     // Create the menu
     gPopupMenu = LoadMenu(hInst, MAKEINTRESOURCE(IDR_MENU_POPUP));
-
-    // Initialize some global variables
-    gRepainting = true;
 
     // Create the fractal
     RECT rt;
@@ -235,28 +184,8 @@ HWND InitInstance(HINSTANCE hInstance, int nCmdShow)
     setupData.Load();
     gFractal = new Fractal(&setupData, rt.right, rt.bottom, NULL, hWnd, false);
 
-    if (setupData.m_AltDraw == 'y')
-    {
-        gAltDraw = true;
-    }
-    else
-    {
-        gAltDraw = false;
-    }
-
-    // More opengl initialization
-    gHDC = GetDC(hWnd); // Grab on and don't let go until the program is done.
-    hRC = wglCreateContext(gHDC);
-    wglMakeCurrent(gHDC, hRC);
-
-    glClearColor(0.0, 0.0, 0.0, 0.0);
-    glShadeModel(GL_FLAT);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-
     // Display!
     ShowWindow(hWnd, nCmdShow);
-
-    glResetView(hWnd);
 
     if constexpr (startWindowed == false) {
         SendMessage(hWnd, WM_SYSCOMMAND, SC_MAXIMIZE, 0);
@@ -1121,7 +1050,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     {
         if (gFractal != NULL)
         {
-            glResetViewDim(LOWORD(lParam), HIWORD(lParam));
             gFractal->ResetDimensions(LOWORD(lParam), HIWORD(lParam));
             PaintAsNecessary(hWnd);
         }
@@ -1343,7 +1271,7 @@ void MenuZoomOut(HWND hWnd, POINT mousePt)
 
 void MenuRepainting(HWND hWnd)
 {
-    gRepainting = !gRepainting;
+    gFractal->ToggleRepainting();
     PaintAsNecessary(hWnd);
 }
 
@@ -1352,9 +1280,9 @@ void MenuWindowed(HWND hWnd, bool square)
     if (gWindowed == false)
     {
         bool temporaryChange = false;
-        if (gRepainting == true)
+        if (gFractal->GetRepaint() == true)
         {
-            gRepainting = false;
+            gFractal->SetRepaint(false);
             temporaryChange = true;
         }
 
@@ -1362,7 +1290,7 @@ void MenuWindowed(HWND hWnd, bool square)
 
         if (temporaryChange == true)
         {
-            gRepainting = true;
+            gFractal->SetRepaint(true);
         }
 
         RECT rect;
@@ -1395,8 +1323,6 @@ void MenuWindowed(HWND hWnd, bool square)
             GetClientRect(hWnd, &rt);
             gFractal->ResetDimensions(rt.right, rt.bottom);
         }
-
-        glResetView(hWnd);
     }
     else
     {
@@ -1404,9 +1330,9 @@ void MenuWindowed(HWND hWnd, bool square)
         int height = GetSystemMetrics(SM_CYSCREEN);
 
         bool temporaryChange = false;
-        if (gRepainting == true)
+        if (gFractal->GetRepaint() == true)
         {
-            gRepainting = false;
+            gFractal->SetRepaint(false);
             temporaryChange = true;
         }
 
@@ -1415,7 +1341,7 @@ void MenuWindowed(HWND hWnd, bool square)
 
         if (temporaryChange == true)
         {
-            gRepainting = true;
+            gFractal->SetRepaint(true);
         }
 
         gWindowed = false;
@@ -1425,8 +1351,6 @@ void MenuWindowed(HWND hWnd, bool square)
             GetClientRect(hWnd, &rt);
             gFractal->ResetDimensions(rt.right, rt.bottom);
         }
-
-        glResetView(hWnd);
     }
 }
 
@@ -1602,6 +1526,10 @@ void MenuPaletteRotation(HWND)
 
 void MenuPaletteType(Fractal::Palette type) {
     gFractal->UsePaletteType(type);
+    if (type == Fractal::Palette::Default) {
+        gFractal->UsePalette(8);
+        gFractal->SetPaletteAuxDepth(0);
+    }
     gFractal->DrawFractal(false);
 }
 
@@ -1801,56 +1729,11 @@ void PaintAsNecessary(HWND hWnd)
         return;
     }
 
-    if (gRepainting == false)
-    {
-        glClear(GL_COLOR_BUFFER_BIT);
-
-        glBegin(GL_LINES);
-
-        glColor3f(1.0, 1.0, 1.0);
-        glVertex2i(0, 0);
-        glVertex2i(rt.right, rt.bottom);
-
-        glVertex2i(rt.right, 0);
-        glVertex2i(0, rt.bottom);
-
-        glEnd();
-        glFlush();
-        return;
-    }
-
     if (gFractal != NULL)
     {
-        if (gAltDraw == true)
-        {
-            gFractal->CalcFractal(true);
-            gFractal->DrawFractal(false);
-        }
-        else
-        {
-            gFractal->CalcFractal(false);
-        }
-        //SwapBuffers (gHDC);
+        gFractal->CalcFractal(false);
     }
 }
-
-void glResetView(HWND hWnd)
-{
-    RECT rt;
-    GetClientRect(hWnd, &rt);
-
-    glResetViewDim(rt.right, rt.bottom);
-}
-
-void glResetViewDim(int width, int height)
-{
-    glViewport(0, 0, width, height);
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    gluOrtho2D(0.0, width, 0.0, height);
-    glMatrixMode(GL_MODELVIEW);
-}
-
 
 // These functions are used to create a minidump when the program crashes.
 typedef BOOL(WINAPI* MINIDUMPWRITEDUMP)(HANDLE hProcess, DWORD dwPid, HANDLE hFile, MINIDUMP_TYPE DumpType, CONST PMINIDUMP_EXCEPTION_INFORMATION ExceptionParam, CONST PMINIDUMP_USER_STREAM_INFORMATION UserStreamParam, CONST PMINIDUMP_CALLBACK_INFORMATION CallbackParam);

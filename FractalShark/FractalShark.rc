@@ -235,6 +235,7 @@ BEGIN
         BEGIN
             MENUITEM "Basic",                       IDM_PALETTE_TYPE_0, INACTIVE
             MENUITEM "Default",                     IDM_PALETTE_TYPE_1
+            MENUITEM SEPARATOR
             MENUITEM "Patriotic",                   IDM_PALETTE_TYPE_2
             MENUITEM "Summer",                      IDM_PALETTE_TYPE_3
             MENUITEM "Random",                      IDM_PALETTE_TYPE_4

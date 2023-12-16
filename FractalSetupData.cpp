@@ -19,8 +19,6 @@ void FractalSetupData::CopyFromThisTo (FractalSetupData *here)
 { int i;
   here->m_Version = m_Version;
   
-  here->m_AltDraw = here->m_AltDraw;
-
   strcpy (here->m_LocalIP, m_LocalIP);
   for (i = 0; i < MAXSERVERS; i++)
   { strcpy (here->m_ServerIPs[i], m_ServerIPs[i]); }
@@ -81,8 +79,6 @@ void FractalSetupData::Load (bool defaultsOnly)
 
   int i;
   
-  ReadChar (&m_AltDraw, 'n');
-
   ReadString (m_LocalIP, "192.168.0.2", 128);
   for (i = 0; i < MAXSERVERS; i++)
   { ReadString (m_ServerIPs[i], "192.168.0.1", 128); }
@@ -134,8 +130,6 @@ void FractalSetupData::Save (void)
 
   WriteChar ((char) VERSION);
   
-  WriteChar (m_AltDraw);
-
   WriteString (m_LocalIP, 128);
   for (i = 0; i < MAXSERVERS; i++)
   { WriteString (m_ServerIPs[i], 128); }

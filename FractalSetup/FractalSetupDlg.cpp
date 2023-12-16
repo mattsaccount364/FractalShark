@@ -18,7 +18,6 @@ CFractalSetupDlg::CFractalSetupDlg(CWnd* pParent /*=NULL*/)
   : CDialog(CFractalSetupDlg::IDD, pParent)
   , m_AlgHighRes(0)
   , m_AlgLowRes(0)
-  , m_AltDraw(FALSE)
 {
   //{{AFX_DATA_INIT(CFractalSetupDlg)
 	m_WorkClient = 20;
@@ -85,7 +84,6 @@ void CFractalSetupDlg::DoDataExchange(CDataExchange* pDX)
 	//}}AFX_DATA_MAP
 	DDX_Radio(pDX, IDC_RADIO1, m_AlgHighRes);
 	DDX_Radio(pDX, IDC_RADIO5, m_AlgLowRes);
-        DDX_Check(pDX, IDC_CHECK_ALTDRAW, m_AltDraw);
 }
 
 BEGIN_MESSAGE_MAP(CFractalSetupDlg, CDialog)
@@ -111,7 +109,6 @@ BOOL CFractalSetupDlg::OnInitDialog()
   m_Data.Load ();
 
   ASSERT (MAXSERVERS == 4);
-  m_AltDraw = (m_Data.m_AltDraw == 'y') ? TRUE : FALSE;
   m_LocalIP = m_Data.m_LocalIP;
   m_ServerIP1 = m_Data.m_ServerIPs[0];
   m_ServerIP2 = m_Data.m_ServerIPs[1];
@@ -189,7 +186,6 @@ HCURSOR CFractalSetupDlg::OnQueryDragIcon()
 void CFractalSetupDlg::OnOK ()
 { UpdateData (TRUE);
 
-  m_Data.m_AltDraw = (m_AltDraw == TRUE) ? 'y' : 'n';
   strcpy (m_Data.m_LocalIP, CStringA(m_LocalIP).operator LPCSTR ());
   strcpy(m_Data.m_ServerIPs[0], CStringA(m_ServerIP1).operator LPCSTR ());
   strcpy(m_Data.m_ServerIPs[1], CStringA(m_ServerIP2).operator LPCSTR ());

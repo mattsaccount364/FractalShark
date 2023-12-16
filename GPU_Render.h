@@ -101,8 +101,7 @@ public:
         const uint16_t *palG,
         const uint16_t *palB,
         uint32_t palIters,
-        uint32_t paletteAuxDepth,
-        bool enableAsyncRendering);
+        uint32_t paletteAuxDepth);
 
     template<typename IterType, class T1, class SubType, CalcBad Bad, class T2>
     uint32_t InitializePerturb(
@@ -199,8 +198,6 @@ private:
     uint32_t h_color_block;
     size_t N_cu;
     size_t N_color_cu;
-
-    bool m_EnableAsyncRendering;
 
     bool m_Stream1Initialized;
     cudaStream_t m_Stream1;

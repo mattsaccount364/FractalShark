@@ -169,6 +169,7 @@
     <ClCompile Include="..\heat_lut.cpp" />
     <ClCompile Include="..\ItersMemoryContainer.cpp" />
     <ClCompile Include="..\LAReference.cpp" />
+    <ClCompile Include="..\PointZoomBBConverter.cpp" />
     <ClCompile Include="..\RefOrbitCalc.cpp" />
     <ClCompile Include="..\WPngImage\lodepng.cpp" />
     <ClCompile Include="..\WPngImage\WPngImage.cc" />
@@ -195,6 +196,7 @@
     <ClInclude Include="..\BLAS.h" />
     <ClInclude Include="..\CudaDblflt.h" />
     <ClInclude Include="..\dblflt.h" />
+    <ClInclude Include="..\DrawThreadSync.h" />
     <ClInclude Include="..\FloatComplex.h" />
     <ClInclude Include="..\Fractal.h" />
     <ClInclude Include="..\FractalNetwork.h" />

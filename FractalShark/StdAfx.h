@@ -28,6 +28,7 @@
 #include <stdio.h>
 
 // Local Header Files
+#include "../OpenGLContext.h"
 
 // TODO: reference additional headers your program requires here
 

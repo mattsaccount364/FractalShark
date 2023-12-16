@@ -219,13 +219,18 @@ void Fractal::Initialize(int width,
     ResetDimensions(width, height, 2);
     SetIterType(IterTypeEnum::Bits32);
 
-    View(0);
-    //View(5);
+    //View(0);
+    View(5);
     //View(15);
 
     m_ChangedWindow = true;
     m_ChangedScrn = true;
     m_ChangedIterations = true;
+    m_EnableAsyncRendering = true;
+
+    m_AsyncRenderThreadReady = false;
+    m_AsyncRenderThreadExit = false;
+    m_AsyncRenderThread = std::make_unique<std::thread>(DrawAsyncGpuFractalThreadStatic, this);
 
     srand((unsigned int) time(NULL));
 
@@ -464,7 +469,8 @@ uint32_t Fractal::InitializeGPUMemory() {
             m_PalG[m_WhichPalette][m_PaletteDepthIndex].data(),
             m_PalB[m_WhichPalette][m_PaletteDepthIndex].data(),
             m_PalIters[m_WhichPalette][m_PaletteDepthIndex],
-            m_PaletteAuxDepth);
+            m_PaletteAuxDepth,
+            m_EnableAsyncRendering);
     }
     else {
         return m_r.InitializeMemory<uint64_t>(
@@ -475,7 +481,8 @@ uint32_t Fractal::InitializeGPUMemory() {
             m_PalG[m_WhichPalette][m_PaletteDepthIndex].data(),
             m_PalB[m_WhichPalette][m_PaletteDepthIndex].data(),
             m_PalIters[m_WhichPalette][m_PaletteDepthIndex],
-            m_PaletteAuxDepth);
+            m_PaletteAuxDepth,
+            m_EnableAsyncRendering);
     }
 }
 
@@ -506,6 +513,16 @@ void Fractal::SetCurItersMemory() {
 
 void Fractal::Uninitialize(void)
 {
+
+    {
+        std::lock_guard lk(m_AsyncRenderThreadMutex);
+        m_AsyncRenderThreadExit = true;
+        m_AsyncRenderThreadReady = true;
+        m_AsyncGpuRenderIsDone = true;
+    }
+    m_AsyncRenderThreadCV.notify_one();
+    m_AsyncRenderThread->join();
+
     CleanupThreads(true);
 
     // Get rid of the abort thread, but only if we actually used it.
@@ -2380,21 +2397,23 @@ void Fractal::DrawFractal(bool MemoryOnly)
         }
     }
     else {
-        uint32_t result;
-        if (GetIterType() == IterTypeEnum::Bits32) {
-            result = m_r.OnlyAA(
-                m_CurIters.m_RoundedOutputColorMemory.get(),
-                GetNumIterations<uint32_t>());
-        }
-        else {
-            result = m_r.OnlyAA(
-                m_CurIters.m_RoundedOutputColorMemory.get(),
-                GetNumIterations<uint64_t>());
-        }
+        if (!m_EnableAsyncRendering) {
+            uint32_t result;
+            if (GetIterType() == IterTypeEnum::Bits32) {
+                result = m_r.OnlyAA(
+                    m_CurIters.m_RoundedOutputColorMemory.get(),
+                    GetNumIterations<uint32_t>());
+            }
+            else {
+                result = m_r.OnlyAA(
+                    m_CurIters.m_RoundedOutputColorMemory.get(),
+                    GetNumIterations<uint64_t>());
+            }
 
-        if (result) {
-            MessageBoxCudaError(result);
-            return;
+            if (result) {
+                MessageBoxCudaError(result);
+                return;
+            }
         }
     }
 
@@ -2466,7 +2485,6 @@ void Fractal::DrawAllPerturbationResults() {
     DrawPerturbationResults<uint64_t, float, CalcBad::Enable>(true);
     DrawPerturbationResults<uint64_t, HDRFloat<double>, CalcBad::Enable>(true);
     DrawPerturbationResults<uint64_t, HDRFloat<float>, CalcBad::Enable>(true);
-
 }
 
 template<typename IterType, class T, CalcBad Bad>
@@ -2640,6 +2658,90 @@ void Fractal::DrawFractalThread(size_t index, Fractal* fractal) {
         lk.unlock();
         sync.m_DrawThreadCV.notify_one();
     }
+}
+
+void Fractal::DrawAsyncGpuFractalThread() {
+    m_glContext = std::make_unique<OpenGlContext>(m_hWnd);
+    if (!m_glContext->IsValid()) {
+        return;
+    }
+
+    for (;;) {
+        std::unique_lock lk(m_AsyncRenderThreadMutex);
+
+        m_AsyncRenderThreadCV.wait(lk, [&] {
+            return m_AsyncRenderThreadReady;
+            }
+        );
+
+        if (m_AsyncRenderThreadExit) {
+            break;
+        }
+
+        m_AsyncGpuRenderIsDone.store(0);
+        m_AsyncRenderThreadReady = false;
+
+        m_glContext->glResetViewDim(m_ScrnWidth, m_ScrnHeight);
+
+        lk.unlock();
+
+        bool lastIter = false;
+        for (;;) {
+            uint32_t result;
+
+            if (GetIterType() == IterTypeEnum::Bits32) {
+                uint32_t* iter = nullptr;
+                if (lastIter) {
+                    iter = m_CurIters.GetIters<uint32_t>();
+                }
+                result = m_r.RenderCurrent<uint32_t>(
+                    GetNumIterations<uint32_t>(),
+                    iter,
+                    m_CurIters.m_RoundedOutputColorMemory.get());
+            }
+            else {
+                uint64_t* iter = nullptr;
+                if (lastIter) {
+                    iter = m_CurIters.GetIters<uint64_t>();
+                }
+                result = m_r.RenderCurrent<uint64_t>(
+                    GetNumIterations<uint64_t>(),
+                    iter,
+                    m_CurIters.m_RoundedOutputColorMemory.get());
+            }
+
+            if (result) {
+                MessageBoxCudaError(result);
+                break;
+            }
+
+            result = m_r.SyncStream(true);
+            if (result) {
+                MessageBoxCudaError(result);
+                break;
+            }
+
+            DrawFractal(false);
+
+            if (lastIter) {
+                break;
+            }
+
+            Sleep(100);
+
+            if (m_AsyncGpuRenderIsDone.load(std::memory_order_acquire)) {
+                lastIter = true;
+            }
+        }
+
+        lastIter = false;
+    }
+
+    m_glContext = nullptr;
+}
+
+void Fractal::DrawAsyncGpuFractalThreadStatic(Fractal *fractal) {
+    fractal->DrawAsyncGpuFractalThread();
 }
 
 void Fractal::FillCoord(HighPrecision& src, MattQFltflt& dest) {
@@ -3584,11 +3686,21 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
         centerY2,
         GetNumIterations<IterType>());
 
-    DrawFractal(MemoryOnly);
+    {
+        std::lock_guard lk(m_AsyncRenderThreadMutex);
+        m_AsyncRenderThreadReady = true;
+    }
 
+    m_AsyncRenderThreadCV.notify_one();
+
+    result = m_r.SyncStream(false);
     if (result) {
         MessageBoxCudaError(result);
     }
+
+    m_AsyncGpuRenderIsDone.store(1, std::memory_order_release);
+
+    //DrawFractal(MemoryOnly);
 }
 
 template<typename IterType, class T, class SubType, class T2, class SubType2>

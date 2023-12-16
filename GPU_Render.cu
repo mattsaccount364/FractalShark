@@ -74,6 +74,9 @@ constexpr static bool EnableGpuHDRx64PerturbedLAv2 = ForceEnable;
 constexpr static bool EnableGpuHDRx64PerturbedLAv2PO = ForceEnable;
 constexpr static bool EnableGpuHDRx64PerturbedLAv2LAO = ForceEnable;
 
+//#define DEFAULT_KERNEL_LAUNCH_PARAMS nb_blocks, threads_per_block, 0, cudaStreamPerThread
+#define DEFAULT_KERNEL_LAUNCH_PARAMS nb_blocks, threads_per_block
+
 #ifdef __CUDACC__
 __device__ __constant__ double twoPowExpDataDbl[2048];
 __device__ __constant__ float twoPowExpDataFlt[256];
@@ -3722,6 +3725,10 @@ GPURenderer::GPURenderer() {
 
 GPURenderer::~GPURenderer() {
     ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes);
+
+    if (m_Stream1Initialized) {
+        cudaStreamDestroy(m_Stream1);
+    }
 }
 
 void GPURenderer::ResetPalettesOnly() {
@@ -3776,6 +3783,9 @@ void GPURenderer::ClearLocals() {
     h_color_block = 0;
     N_cu = 0;
     N_color_cu = 0;
+    m_EnableAsyncRendering = true;
+    
+    m_Stream1Initialized = false;
 
     Pals = {};
 
@@ -3807,7 +3817,8 @@ uint32_t GPURenderer::InitializeMemory(
     const uint16_t* palG,
     const uint16_t* palB,
     uint32_t palIters,
-    uint32_t paletteAuxDepth)
+    uint32_t paletteAuxDepth,
+    bool enableAsyncRendering)
 {
     if (Pals.palette_aux_depth != paletteAuxDepth) {
         Pals.palette_aux_depth = paletteAuxDepth;
@@ -3898,6 +3909,8 @@ uint32_t GPURenderer::InitializeMemory(
     local_color_height = no_antialias_height;
     N_color_cu = w_color_block * NB_THREADS_W_AA * h_color_block * NB_THREADS_H_AA;
 
+    m_EnableAsyncRendering = enableAsyncRendering;
+
     ResetMemory(ResetLocals::No, ResetPalettes::No, ResetPerturb::No);
 
     {
@@ -3930,6 +3943,24 @@ uint32_t GPURenderer::InitializeMemory(
     }
 
     ClearMemory<IterType>();
+
+    if (m_Stream1Initialized == false) {
+        cudaError_t err = cudaDeviceGetStreamPriorityRange(&m_StreamPriorityLow, &m_StreamPriorityHigh);
+        if (err != cudaSuccess) {
+            ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes);
+            return err;
+        }
+
+        // cudaStreamNonBlocking
+        err = cudaStreamCreateWithPriority(&m_Stream1, cudaStreamNonBlocking, m_StreamPriorityHigh);
+        if (err != cudaSuccess) {
+            ResetMemory(ResetLocals::Yes, ResetPalettes::Yes, ResetPerturb::Yes);
+            return err;
+        }
+
+        m_Stream1Initialized = true;
+    }
+
     return 0;
 }
 
@@ -3942,7 +3973,8 @@ uint32_t GPURenderer::InitializeMemory<uint32_t>(
     const uint16_t* palG,
     const uint16_t* palB,
     uint32_t palIters,
-    uint32_t paletteAuxDepth);
+    uint32_t paletteAuxDepth,
+    bool enableAsyncRendering);
 
 template
 uint32_t GPURenderer::InitializeMemory<uint64_t>(
@@ -3953,7 +3985,8 @@ uint32_t GPURenderer::InitializeMemory<uint64_t>(
     const uint16_t* palG,
     const uint16_t* palB,
     uint32_t palIters,
-    uint32_t paletteAuxDepth);
+    uint32_t paletteAuxDepth,
+    bool enableAsyncRendering);
 
 template<typename IterType, class T1, class SubType, CalcBad Bad, class T2>
 uint32_t GPURenderer::InitializePerturb(
@@ -4110,6 +4143,86 @@ bool GPURenderer::MemoryInitialized() const {
     return true;
 }
 
+// Not the same as OnlyAA
+template<typename IterType>
+uint32_t GPURenderer::RenderAsNeeded(
+    IterType n_iterations,
+    IterType* iter_buffer,
+    Color16* color_buffer) {
+
+    uint32_t result = cudaSuccess;
+
+    if (!m_EnableAsyncRendering) {
+        result = RunAntialiasing(n_iterations, cudaStreamDefault);
+        if (!result) {
+            result = ExtractItersAndColors<IterType, false>(iter_buffer, color_buffer);
+        }
+    }
+
+    return result;
+}
+
+template<typename IterType>
+void GPURenderer::RenderAsNeeded(
+    uint32_t &result,
+    IterType n_iterations,
+    IterType* iter_buffer,
+    Color16* color_buffer) {
+
+    result = RenderAsNeeded(n_iterations, iter_buffer, color_buffer);
+}
+
+template<typename IterType>
+uint32_t GPURenderer::RenderCurrent(
+    IterType n_iterations,
+    IterType* iter_buffer,
+    Color16* color_buffer) {
+
+    if (!MemoryInitialized()) {
+        return cudaSuccess;
+    }
+
+    uint32_t result = cudaSuccess;
+
+    if (m_EnableAsyncRendering) {
+        if (iter_buffer == nullptr) {
+            result = RunAntialiasing(n_iterations, &m_Stream1);
+
+            if (!result) {
+                result = ExtractItersAndColors<IterType, true>(iter_buffer, color_buffer);
+            }
+        }
+        else {
+            cudaStream_t stream = 0;
+            result = RunAntialiasing(n_iterations, &stream);
+
+            if (!result) {
+                result = ExtractItersAndColors<IterType, false>(iter_buffer, color_buffer);
+            }
+        }
+    }
+
+    return result;
+}
+
+template uint32_t GPURenderer::RenderCurrent(
+    uint32_t n_iterations,
+    uint32_t* iter_buffer,
+    Color16* color_buffer);
+template uint32_t GPURenderer::RenderCurrent(
+    uint64_t n_iterations,
+    uint64_t* iter_buffer,
+    Color16* color_buffer);
+
+uint32_t GPURenderer::SyncStream(bool altStream) {
+    if (altStream) {
+        return cudaStreamSynchronize(m_Stream1);
+    }
+    else {
+        return cudaStreamSynchronize(cudaStreamDefault);
+    }
+}
+
 template<typename IterType, class T>
 uint32_t GPURenderer::Render(
     RenderAlgorithm algorithm,
@@ -4134,28 +4247,28 @@ uint32_t GPURenderer::Render(
         if constexpr (EnableGpu1x64 && std::is_same<T, double>::value) {
             switch (iteration_precision) {
             case 1:
-                mandel_1x_double<IterType, 1> << <nb_blocks, threads_per_block >> > (
+                mandel_1x_double<IterType, 1> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                     static_cast<IterType*>(OutputIterMatrix),
                     OutputColorMatrix,
                     m_Width, m_Height, cx, cy, dx, dy,
                     n_iterations);
                 break;
             case 4:
-                mandel_1x_double<IterType, 4> << <nb_blocks, threads_per_block >> > (
+                mandel_1x_double<IterType, 4> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                     static_cast<IterType*>(OutputIterMatrix),
                     OutputColorMatrix,
                     m_Width, m_Height, cx, cy, dx, dy,
                     n_iterations);
                 break;
             case 8:
-                mandel_1x_double<IterType, 8> << <nb_blocks, threads_per_block >> > (
+                mandel_1x_double<IterType, 8> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                     static_cast<IterType*>(OutputIterMatrix),
                     OutputColorMatrix,
                     m_Width, m_Height, cx, cy, dx, dy,
                     n_iterations);
                 break;
             case 16:
-                mandel_1x_double<IterType, 16> << <nb_blocks, threads_per_block >> > (
+                mandel_1x_double<IterType, 16> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                     static_cast<IterType*>(OutputIterMatrix),
                     OutputColorMatrix,
                     m_Width, m_Height, cx, cy, dx, dy,
@@ -4173,7 +4286,7 @@ uint32_t GPURenderer::Render(
             dbldbl dx2{ dx.head, dx.tail };
             dbldbl dy2{ dy.head, dy.tail };
 
-            mandel_2x_double<IterType> << <nb_blocks, threads_per_block >> > (
+            mandel_2x_double<IterType> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                 static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
                 m_Width, m_Height, cx2, cy2, dx2, dy2,
@@ -4196,7 +4309,7 @@ uint32_t GPURenderer::Render(
             gqd_real dy2;
             dy2 = make_qd(dy.x, dy.y, dy.z, dy.w);
 
-            mandel_4x_double<IterType> << <nb_blocks, threads_per_block >> > (
+            mandel_4x_double<IterType> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                 static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
                 m_Width, m_Height, cx2, cy2, dx2, dy2,
@@ -4208,28 +4321,28 @@ uint32_t GPURenderer::Render(
             // floatOnly
             switch (iteration_precision) {
             case 1:
-                mandel_1x_float<IterType, 1> << <nb_blocks, threads_per_block >> > (
+                mandel_1x_float<IterType, 1> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                     static_cast<IterType*>(OutputIterMatrix),
                     OutputColorMatrix,
                     m_Width, m_Height, cx, cy, dx, dy,
                     n_iterations);
                 break;
             case 4:
-                mandel_1x_float<IterType, 4> << <nb_blocks, threads_per_block >> > (
+                mandel_1x_float<IterType, 4> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                     static_cast<IterType*>(OutputIterMatrix),
                     OutputColorMatrix,
                     m_Width, m_Height, cx, cy, dx, dy,
                     n_iterations);
                 break;
             case 8:
-                mandel_1x_float<IterType, 8> << <nb_blocks, threads_per_block >> > (
+                mandel_1x_float<IterType, 8> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                     static_cast<IterType*>(OutputIterMatrix),
                     OutputColorMatrix,
                     m_Width, m_Height, cx, cy, dx, dy,
                     n_iterations);
                 break;
             case 16:
-                mandel_1x_float<IterType, 16> << <nb_blocks, threads_per_block >> > (
+                mandel_1x_float<IterType, 16> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                     static_cast<IterType*>(OutputIterMatrix),
                     OutputColorMatrix,
                     m_Width, m_Height, cx, cy, dx, dy,
@@ -4250,28 +4363,28 @@ uint32_t GPURenderer::Render(
 
             switch (iteration_precision) {
             case 1:
-                mandel_2x_float<IterType, 1> << <nb_blocks, threads_per_block >> > (
+                mandel_2x_float<IterType, 1> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                     static_cast<IterType*>(OutputIterMatrix),
                     OutputColorMatrix,
                     m_Width, m_Height, cx2, cy2, dx2, dy2,
                     n_iterations);
                 break;
             case 4:
-                mandel_2x_float<IterType, 4> << <nb_blocks, threads_per_block >> > (
+                mandel_2x_float<IterType, 4> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                     static_cast<IterType*>(OutputIterMatrix),
                     OutputColorMatrix,
                     m_Width, m_Height, cx2, cy2, dx2, dy2,
                     n_iterations);
                 break;
             case 8:
-                mandel_2x_float<IterType, 8> << <nb_blocks, threads_per_block >> > (
+                mandel_2x_float<IterType, 8> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                     static_cast<IterType*>(OutputIterMatrix),
                     OutputColorMatrix,
                     m_Width, m_Height, cx2, cy2, dx2, dy2,
                     n_iterations);
                 break;
             case 16:
-                mandel_2x_float<IterType, 16> << <nb_blocks, threads_per_block >> > (
+                mandel_2x_float<IterType, 16> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                     static_cast<IterType*>(OutputIterMatrix),
                     OutputColorMatrix,
                     m_Width, m_Height, cx2, cy2, dx2, dy2,
@@ -4298,7 +4411,7 @@ uint32_t GPURenderer::Render(
             gqf_real dy2;
             dy2 = make_qf(dy.x, dy.y, dy.z, dy.w);
 
-            mandel_4x_float<IterType> << <nb_blocks, threads_per_block >> > (
+            mandel_4x_float<IterType> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                 static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
                 m_Width, m_Height, cx2, cy2, dx2, dy2,
@@ -4312,32 +4425,32 @@ uint32_t GPURenderer::Render(
             HDRFloat<CudaDblflt<dblflt>> dx2{ dx };
             HDRFloat<CudaDblflt<dblflt>> dy2{ dy };
 
-            mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
+            mandel_1xHDR_InitStatics << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > ();
 
             switch(iteration_precision) {
                 case 1:
-                    mandel_hdr_float<IterType, 1> << <nb_blocks, threads_per_block >> > (
+                    mandel_hdr_float<IterType, 1> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                         static_cast<IterType*>(OutputIterMatrix),
                         OutputColorMatrix,
                         m_Width, m_Height, cx2, cy2, dx2, dy2,
                         n_iterations);
                     break;
                 case 4:
-                    mandel_hdr_float<IterType, 4> << <nb_blocks, threads_per_block >> > (
+                    mandel_hdr_float<IterType, 4> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                         static_cast<IterType*>(OutputIterMatrix),
                         OutputColorMatrix,
                         m_Width, m_Height, cx2, cy2, dx2, dy2,
                         n_iterations);
                     break;
                 case 8:
-                    mandel_hdr_float<IterType, 8> << <nb_blocks, threads_per_block >> > (
+                    mandel_hdr_float<IterType, 8> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                         static_cast<IterType*>(OutputIterMatrix),
                         OutputColorMatrix,
                         m_Width, m_Height, cx2, cy2, dx2, dy2,
                         n_iterations);
                     break;
                 case 16:
-                    mandel_hdr_float<IterType, 16> << <nb_blocks, threads_per_block >> > (
+                    mandel_hdr_float<IterType, 16> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                         static_cast<IterType*>(OutputIterMatrix),
                         OutputColorMatrix,
                         m_Width, m_Height, cx2, cy2, dx2, dy2,
@@ -4352,12 +4465,7 @@ uint32_t GPURenderer::Render(
         return cudaSuccess;
     }
 
-    auto result = RunAntialiasing(n_iterations);
-    if (result) {
-        return result;
-    }
-
-    return ExtractItersAndColors(iter_buffer, color_buffer);
+    return RenderAsNeeded(n_iterations, iter_buffer, color_buffer);
 }
 
 //////////////////////////////////////////////////
@@ -4582,7 +4690,7 @@ uint32_t GPURenderer::RenderPerturbLAv2(
             (EnableGpu1x32PerturbedLAv2 || EnableGpu1x32PerturbedLAv2PO || EnableGpu1x32PerturbedLAv2LAO)
             && std::is_same<float, T>::value) {
             // hdrflt
-            mandel_1xHDR_float_perturb_lav2<IterType, float, float, Mode> << <nb_blocks, threads_per_block >> > (
+            mandel_1xHDR_float_perturb_lav2<IterType, float, float, Mode> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                 static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
                 *cudaResults, *laReferenceCuda,
@@ -4590,10 +4698,7 @@ uint32_t GPURenderer::RenderPerturbLAv2(
                 centerX, centerY,
                 n_iterations);
 
-            result = RunAntialiasing(n_iterations);
-            if (!result) {
-                result = ExtractItersAndColors(iter_buffer, color_buffer);
-            }
+            RenderAsNeeded(result, n_iterations, iter_buffer, color_buffer);
         }
     } else if ((algorithm == RenderAlgorithm::Gpu1x64PerturbedLAv2) ||
         (algorithm == RenderAlgorithm::Gpu1x64PerturbedLAv2PO) ||
@@ -4602,7 +4707,7 @@ uint32_t GPURenderer::RenderPerturbLAv2(
             (EnableGpu1x64PerturbedLAv2 || EnableGpu1x64PerturbedLAv2PO || EnableGpu1x64PerturbedLAv2LAO)
             && std::is_same<double, T>::value) {
             // hdrflt
-            mandel_1xHDR_float_perturb_lav2<IterType, double, double, Mode> << <nb_blocks, threads_per_block >> > (
+            mandel_1xHDR_float_perturb_lav2<IterType, double, double, Mode> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                 static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
                 *cudaResults, *laReferenceCuda,
@@ -4610,10 +4715,7 @@ uint32_t GPURenderer::RenderPerturbLAv2(
                 centerX, centerY,
                 n_iterations);
 
-            result = RunAntialiasing(n_iterations);
-            if (!result) {
-                result = ExtractItersAndColors(iter_buffer, color_buffer);
-            }
+            RenderAsNeeded(result, n_iterations, iter_buffer, color_buffer);
         }
     }
     else if ((algorithm == RenderAlgorithm::GpuHDRx32PerturbedLAv2) ||
@@ -4622,10 +4724,10 @@ uint32_t GPURenderer::RenderPerturbLAv2(
         if constexpr (
             (EnableGpuHDRx32PerturbedLAv2 || EnableGpuHDRx32PerturbedLAv2PO || EnableGpuHDRx32PerturbedLAv2LAO)
             && std::is_same<HDRFloat<float>, T>::value) {
-            mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
+            mandel_1xHDR_InitStatics << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > ();
 
             // hdrflt
-            mandel_1xHDR_float_perturb_lav2<IterType, HDRFloat<float>, float, Mode> << <nb_blocks, threads_per_block >> > (
+            mandel_1xHDR_float_perturb_lav2<IterType, HDRFloat<float>, float, Mode> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                 static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
                 *cudaResults, *laReferenceCuda,
@@ -4633,10 +4735,7 @@ uint32_t GPURenderer::RenderPerturbLAv2(
                 centerX, centerY,
                 n_iterations);
 
-            result = RunAntialiasing(n_iterations);
-            if (!result) {
-                result = ExtractItersAndColors(iter_buffer, color_buffer);
-            }
+            RenderAsNeeded(result, n_iterations, iter_buffer, color_buffer);
         }
     } else if ((algorithm == RenderAlgorithm::GpuHDRx64PerturbedLAv2) ||
                (algorithm == RenderAlgorithm::GpuHDRx64PerturbedLAv2PO) ||
@@ -4645,9 +4744,9 @@ uint32_t GPURenderer::RenderPerturbLAv2(
         if constexpr (
             (EnableGpuHDRx64PerturbedLAv2 || EnableGpuHDRx64PerturbedLAv2PO || EnableGpuHDRx64PerturbedLAv2LAO)
             && std::is_same<HDRFloat<double>, T>::value) {
-            mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
+            mandel_1xHDR_InitStatics << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > ();
 
-            mandel_1xHDR_float_perturb_lav2<IterType, HDRFloat<double>, double, Mode> << <nb_blocks, threads_per_block >> > (
+            mandel_1xHDR_float_perturb_lav2<IterType, HDRFloat<double>, double, Mode> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                 static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
                 *cudaResults, *laReferenceCuda,
@@ -4655,10 +4754,7 @@ uint32_t GPURenderer::RenderPerturbLAv2(
                 centerX, centerY,
                 n_iterations);
 
-            result = RunAntialiasing(n_iterations);
-            if (!result) {
-                result = ExtractItersAndColors(iter_buffer, color_buffer);
-            }
+            RenderAsNeeded(result, n_iterations, iter_buffer, color_buffer);
         }
     } else if ((algorithm == RenderAlgorithm::GpuHDRx2x32PerturbedLAv2) ||
                (algorithm == RenderAlgorithm::GpuHDRx2x32PerturbedLAv2PO) ||
@@ -4674,10 +4770,10 @@ uint32_t GPURenderer::RenderPerturbLAv2(
             HDRFloat<CudaDblflt<dblflt>> centerX2{ centerX };
             HDRFloat<CudaDblflt<dblflt>> centerY2{ centerY };
 
-            mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
+            mandel_1xHDR_InitStatics << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > ();
 
             // hdrflt
-            mandel_1xHDR_float_perturb_lav2<IterType, HDRFloat<CudaDblflt<dblflt>>, CudaDblflt<dblflt>, Mode> << <nb_blocks, threads_per_block >> > (
+            mandel_1xHDR_float_perturb_lav2<IterType, HDRFloat<CudaDblflt<dblflt>>, CudaDblflt<dblflt>, Mode> << < DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                 static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
                 *cudaResults, *laReferenceCuda,
@@ -4685,10 +4781,7 @@ uint32_t GPURenderer::RenderPerturbLAv2(
                 centerX2, centerY2,
                 n_iterations);
 
-            result = RunAntialiasing(n_iterations);
-            if (!result) {
-                result = ExtractItersAndColors(iter_buffer, color_buffer);
-            }
+            RenderAsNeeded(result, n_iterations, iter_buffer, color_buffer);
         }
     }
 
@@ -5140,7 +5233,7 @@ uint32_t GPURenderer::RenderPerturbBLAScaled(
     if (algorithm == RenderAlgorithm::Gpu1x32PerturbedScaled) {
         if constexpr (EnableGpu1x32PerturbedScaled && std::is_same<T, double>::value) {
             // doubleOnly
-            mandel_1x_float_perturb_scaled<IterType, T> << <nb_blocks, threads_per_block >> > (
+            mandel_1x_float_perturb_scaled<IterType, T> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                 static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
                 cudaResults, cudaResultsDouble,
@@ -5148,17 +5241,14 @@ uint32_t GPURenderer::RenderPerturbBLAScaled(
                 centerX, centerY,
                 n_iterations);
 
-            result = RunAntialiasing(n_iterations);
-            if (!result) {
-                result = ExtractItersAndColors(iter_buffer, color_buffer);
-            }
+            RenderAsNeeded(result, n_iterations, iter_buffer, color_buffer);
         }
     } else if (algorithm == RenderAlgorithm::GpuHDRx32PerturbedScaled) {
         if constexpr (EnableGpuHDRx32PerturbedScaled && std::is_same<T, HDRFloat<float>>::value) {
             // hdrflt
-            mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
+            mandel_1xHDR_InitStatics << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > ();
 
-            mandel_1x_float_perturb_scaled<IterType, T> << <nb_blocks, threads_per_block >> > (
+            mandel_1x_float_perturb_scaled<IterType, T> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                 static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
                 cudaResults, cudaResultsDouble,
@@ -5166,10 +5256,7 @@ uint32_t GPURenderer::RenderPerturbBLAScaled(
                 centerX, centerY,
                 n_iterations);
 
-            result = RunAntialiasing(n_iterations);
-            if (!result) {
-                result = ExtractItersAndColors(iter_buffer, color_buffer);
-            }
+            RenderAsNeeded(result, n_iterations, iter_buffer, color_buffer);
         }
     }
     else if (algorithm == RenderAlgorithm::Gpu1x32PerturbedScaledBLA) {
@@ -5182,9 +5269,9 @@ uint32_t GPURenderer::RenderPerturbBLAScaled(
                     return result;
                 }
 
-                mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
+                mandel_1xHDR_InitStatics << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > ();
 
-                mandel_1x_float_perturb_scaled_bla<IterType, LM2> << <nb_blocks, threads_per_block >> > (
+                mandel_1x_float_perturb_scaled_bla<IterType, LM2> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                     static_cast<IterType*>(OutputIterMatrix),
                     OutputColorMatrix,
                     cudaResults, cudaResultsDouble, doubleGpuBlas,
@@ -5192,10 +5279,7 @@ uint32_t GPURenderer::RenderPerturbBLAScaled(
                     centerX, centerY,
                     n_iterations);
 
-                result = RunAntialiasing(n_iterations);
-                if (!result) {
-                    result = ExtractItersAndColors(iter_buffer, color_buffer);
-                }
+                RenderAsNeeded(result, n_iterations, iter_buffer, color_buffer);
                 return result;
             };
 
@@ -5324,10 +5408,10 @@ uint32_t GPURenderer::RenderPerturbBLA(
                     return result;
                 }
 
-                mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
+                mandel_1xHDR_InitStatics << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > ();
 
                 // hdrflt
-                mandel_1xHDR_float_perturb_bla<IterType, HDRFloat<float>, LM2> << <nb_blocks, threads_per_block >> > (
+                mandel_1xHDR_float_perturb_bla<IterType, HDRFloat<float>, LM2> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                     static_cast<IterType*>(OutputIterMatrix),
                     OutputColorMatrix,
                     cudaResults,
@@ -5336,10 +5420,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
                     centerX, centerY,
                     n_iterations);
 
-                result = RunAntialiasing(n_iterations);
-                if (!result) {
-                    result = ExtractItersAndColors(iter_buffer, color_buffer);
-                }
+                RenderAsNeeded(result, n_iterations, iter_buffer, color_buffer);
                 return result;
             };
 
@@ -5365,10 +5446,10 @@ uint32_t GPURenderer::RenderPerturbBLA(
                     return result;
                 }
 
-                mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
+                mandel_1xHDR_InitStatics << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > ();
 
                 // hdrflt -- that looks like a bug and probably should be hdrdbl
-                mandel_1xHDR_float_perturb_bla<IterType, HDRFloat<double>, LM2> << <nb_blocks, threads_per_block >> > (
+                mandel_1xHDR_float_perturb_bla<IterType, HDRFloat<double>, LM2> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                     static_cast<IterType*>(OutputIterMatrix),
                     OutputColorMatrix,
                     cudaResults,
@@ -5377,10 +5458,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
                     centerX, centerY,
                     n_iterations);
 
-                result = RunAntialiasing(n_iterations);
-                if (!result) {
-                    result = ExtractItersAndColors(iter_buffer, color_buffer);
-                }
+                RenderAsNeeded(result, n_iterations, iter_buffer, color_buffer);
                 return result;
             };
 
@@ -5405,10 +5483,10 @@ uint32_t GPURenderer::RenderPerturbBLA(
                     return result;
                 }
 
-                mandel_1xHDR_InitStatics << <nb_blocks, threads_per_block >> > ();
+                mandel_1xHDR_InitStatics << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > ();
 
                 // doubleOnly
-                mandel_1x_double_perturb_bla<IterType, LM2> << <nb_blocks, threads_per_block >> > (
+                mandel_1x_double_perturb_bla<IterType, LM2> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                     static_cast<IterType*>(OutputIterMatrix),
                     OutputColorMatrix,
                     cudaResults,
@@ -5417,10 +5495,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
                     centerX, centerY,
                     n_iterations);
 
-                result = RunAntialiasing(n_iterations);
-                if (!result) {
-                    result = ExtractItersAndColors(iter_buffer, color_buffer);
-                }
+                RenderAsNeeded(result, n_iterations, iter_buffer, color_buffer);
                 return result;
             };
 
@@ -5450,9 +5525,9 @@ uint32_t GPURenderer::RenderPerturbBLA(
             //}
 
             //// doubleOnly
-            //mandel_2x_float_perturb_setup << <nb_blocks, threads_per_block >> > (cudaResults);
+            //mandel_2x_float_perturb_setup << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (cudaResults);
 
-            //mandel_2x_float_perturb_scaled<IterType> << <nb_blocks, threads_per_block >> > (
+            //mandel_2x_float_perturb_scaled<IterType> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
             //    static_cast<IterType*>(OutputIterMatrix),
             //    OutputColorMatrix,
             //    cudaResults, cudaResultsDouble,
@@ -5460,10 +5535,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
             //    centerX, centerY,
             //    n_iterations);
 
-            //result = RunAntialiasing(n_iterations);
-            //if (!result) {
-            //    result = ExtractItersAndColors(iter_buffer, color_buffer);
-            //}
+            // RenderAsNeeded(result, n_iterations, iter_buffer, color_buffer);
         }
     }
 
@@ -5568,6 +5640,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
     int /*iteration_precision*/);
 //////////////////////////////////////////////////////////
 
+// Not the same as RenderAsNeeded
 template<typename IterType>
 __host__
 uint32_t
@@ -5575,12 +5648,12 @@ GPURenderer::OnlyAA(
     Color16* color_buffer,
     IterType n_iterations) {
 
-    auto result = RunAntialiasing(n_iterations);
+    auto result = RunAntialiasing(n_iterations, cudaStreamDefault);
     if (result != cudaSuccess) {
         return result;
     }
 
-    result = ExtractItersAndColors<IterType>(nullptr, color_buffer);
+    result = ExtractItersAndColors<IterType, false>(nullptr, color_buffer);
     if (result != cudaSuccess) {
         return result;
     }
@@ -5605,13 +5678,13 @@ GPURenderer::OnlyAA(
 template<typename IterType>
 __host__
 uint32_t
-GPURenderer::RunAntialiasing(IterType n_iterations) {
+GPURenderer::RunAntialiasing(IterType n_iterations, cudaStream_t *stream) {
     dim3 aa_blocks(w_color_block, h_color_block, 1);
     dim3 aa_threads_per_block(NB_THREADS_W_AA, NB_THREADS_H_AA, 1);
-
+    
     switch (m_Antialiasing) {
     case 1:
-        antialiasing_kernel<IterType, 1, true> << <aa_blocks, aa_threads_per_block >> > (
+        antialiasing_kernel<IterType, 1, true> << <aa_blocks, aa_threads_per_block, 0, *stream >> > (
             static_cast<IterType*>(OutputIterMatrix),
             m_Width,
             m_Height,
@@ -5622,7 +5695,7 @@ GPURenderer::RunAntialiasing(IterType n_iterations) {
             n_iterations);
         break;
     case 2:
-        antialiasing_kernel<IterType, 2, true> << <aa_blocks, aa_threads_per_block >> > (
+        antialiasing_kernel<IterType, 2, true> << <aa_blocks, aa_threads_per_block, 0, *stream >> > (
             static_cast<IterType*>(OutputIterMatrix),
             m_Width,
             m_Height,
@@ -5633,7 +5706,7 @@ GPURenderer::RunAntialiasing(IterType n_iterations) {
             n_iterations);
         break;
     case 3:
-        antialiasing_kernel<IterType, 3, true> << <aa_blocks, aa_threads_per_block >> > (
+        antialiasing_kernel<IterType, 3, true> << <aa_blocks, aa_threads_per_block, 0, *stream >> > (
             static_cast<IterType*>(OutputIterMatrix),
             m_Width,
             m_Height,
@@ -5645,7 +5718,7 @@ GPURenderer::RunAntialiasing(IterType n_iterations) {
         break;
     case 4:
     default:
-        antialiasing_kernel<IterType, 4, true> << <aa_blocks, aa_threads_per_block >> > (
+        antialiasing_kernel<IterType, 4, true> << <aa_blocks, aa_threads_per_block, 0, *stream >> > (
             static_cast<IterType*>(OutputIterMatrix),
             m_Width,
             m_Height,
@@ -5659,40 +5732,67 @@ GPURenderer::RunAntialiasing(IterType n_iterations) {
     return cudaSuccess;
 }
 
-template<typename IterType>
+template<typename IterType, bool Async>
 uint32_t GPURenderer::ExtractItersAndColors(IterType* iter_buffer, Color16 *color_buffer) {
     const size_t ERROR_COLOR = 255;
-    cudaError_t result = cudaDeviceSynchronize();
-    if (result != cudaSuccess) {
-        if (iter_buffer) {
-            cudaMemset(iter_buffer, ERROR_COLOR, sizeof(IterType) * m_Width * m_Height);
-        }
+    cudaError_t result;
+    if (!Async) {
+        result = cudaStreamSynchronize(cudaStreamDefault);
+        if (result != cudaSuccess) {
+            if (iter_buffer) {
+                cudaMemset(iter_buffer, ERROR_COLOR, sizeof(IterType) * m_Width * m_Height);
+            }
 
-        if (color_buffer) {
-            cudaMemset(color_buffer, ERROR_COLOR, sizeof(Color16) * local_color_width * local_color_height);
+            if (color_buffer) {
+                cudaMemset(color_buffer, ERROR_COLOR, sizeof(Color16) * local_color_width * local_color_height);
+            }
+            return result;
         }
-        return result;
     }
 
     if (iter_buffer) {
-        result = cudaMemcpy(
-            iter_buffer,
-            static_cast<IterType*>(OutputIterMatrix),
-            sizeof(IterType) * N_cu,
-            cudaMemcpyDefault);
-        if (result != cudaSuccess) {
-            return result;
+        if constexpr (Async) {
+            result = cudaMemcpyAsync(
+                iter_buffer,
+                static_cast<IterType*>(OutputIterMatrix),
+                sizeof(IterType) * N_cu,
+                cudaMemcpyDefault,
+                m_Stream1);
+            if (result != cudaSuccess) {
+                return result;
+            }
+        } else {
+            result = cudaMemcpy(
+                iter_buffer,
+                static_cast<IterType*>(OutputIterMatrix),
+                sizeof(IterType) * N_cu,
+                cudaMemcpyDefault);
+            if (result != cudaSuccess) {
+                return result;
+            }
         }
     }
 
     if (color_buffer) {
-        result = cudaMemcpy(
-            color_buffer,
-            OutputColorMatrix.aa_colors,
-            sizeof(Color16) * N_color_cu,
-            cudaMemcpyDefault);
-        if (result != cudaSuccess) {
-            return result;
+        if constexpr (Async) {
+            result = cudaMemcpyAsync(
+                color_buffer,
+                OutputColorMatrix.aa_colors,
+                sizeof(Color16) * N_color_cu,
+                cudaMemcpyDefault,
+                m_Stream1);
+            if (result != cudaSuccess) {
+                return result;
+            }
+        } else {
+            result = cudaMemcpy(
+                color_buffer,
+                OutputColorMatrix.aa_colors,
+                sizeof(Color16) * N_color_cu,
+                cudaMemcpyDefault);
+            if (result != cudaSuccess) {
+                return result;
+            }
         }
     }
 
@@ -5700,9 +5800,14 @@ uint32_t GPURenderer::ExtractItersAndColors(IterType* iter_buffer, Color16 *colo
 }
 
 template
-uint32_t GPURenderer::ExtractItersAndColors(uint32_t* iter_buffer, Color16* color_buffer);
+uint32_t GPURenderer::ExtractItersAndColors<uint32_t, false>(uint32_t* iter_buffer, Color16* color_buffer);
 template
-uint32_t GPURenderer::ExtractItersAndColors(uint64_t* iter_buffer, Color16* color_buffer);
+uint32_t GPURenderer::ExtractItersAndColors<uint64_t, false>(uint64_t* iter_buffer, Color16* color_buffer);
+
+template
+uint32_t GPURenderer::ExtractItersAndColors<uint32_t, true>(uint32_t* iter_buffer, Color16* color_buffer);
+template
+uint32_t GPURenderer::ExtractItersAndColors<uint64_t, true>(uint64_t* iter_buffer, Color16* color_buffer);
 
 const char* GPURenderer::ConvertErrorToString(uint32_t err) {
     auto typeNotExposedOutSideHere = static_cast<cudaError_t>(err);

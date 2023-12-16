@@ -27,6 +27,7 @@
 #include "HighPrecision.h"
 #include "HDRFloat.h"
 #include "CudaDblflt.h"
+#include "OpenGLContext.h"
 
 #include "RefOrbitCalc.h"
 
@@ -593,6 +594,18 @@ private:
 
     // GPU rendering
     GPURenderer m_r;
+    std::unique_ptr<OpenGlContext> m_glContext;
+    bool m_EnableAsyncRendering;
+
+    std::mutex m_AsyncRenderThreadMutex;
+    std::condition_variable m_AsyncRenderThreadCV;
+    bool m_AsyncRenderThreadReady;
+    bool m_AsyncRenderThreadExit;
+
+    std::unique_ptr<std::thread> m_AsyncRenderThread;
+    std::atomic<uint32_t> m_AsyncGpuRenderIsDone;
+    void DrawAsyncGpuFractalThread();
+    static void DrawAsyncGpuFractalThreadStatic(Fractal *fractal);
     void MessageBoxCudaError(uint32_t err);
 };
 

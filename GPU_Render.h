@@ -101,7 +101,8 @@ public:
         const uint16_t *palG,
         const uint16_t *palB,
         uint32_t palIters,
-        uint32_t paletteAuxDepth);
+        uint32_t paletteAuxDepth,
+        bool enableAsyncRendering);
 
     template<typename IterType, class T1, class SubType, CalcBad Bad, class T2>
     uint32_t InitializePerturb(
@@ -130,6 +131,28 @@ public:
     static const int32_t NB_THREADS_H_AA = 8;
 
 private:
+    template<typename IterType>
+    uint32_t RenderAsNeeded(
+        IterType n_iterations,
+        IterType* iter_buffer,
+        Color16* color_buffer);
+    template<typename IterType>
+    void RenderAsNeeded(
+        uint32_t& result,
+        IterType n_iterations,
+        IterType* iter_buffer,
+        Color16* color_buffer);
+
+public:
+    template<typename IterType>
+    uint32_t RenderCurrent(
+        IterType n_iterations,
+        IterType* iter_buffer,
+        Color16* color_buffer);
+
+    uint32_t SyncStream(bool altStream);
+
+private:
     bool MemoryInitialized() const;
     void ResetPalettesOnly();
 
@@ -154,9 +177,9 @@ private:
     void ClearLocals();
 
     template<typename IterType>
-    uint32_t RunAntialiasing(IterType n_iterations);
+    uint32_t RunAntialiasing(IterType n_iterations, cudaStream_t *stream);
 
-    template<typename IterType>
+    template<typename IterType, bool Async>
     uint32_t ExtractItersAndColors(IterType* iter_buffer, Color16* color_buffer);
 
     void* OutputIterMatrix;
@@ -176,6 +199,13 @@ private:
     uint32_t h_color_block;
     size_t N_cu;
     size_t N_color_cu;
+
+    bool m_EnableAsyncRendering;
+
+    bool m_Stream1Initialized;
+    cudaStream_t m_Stream1;
+    int m_StreamPriorityLow;
+    int m_StreamPriorityHigh;
 
     PerturbResultsCollection m_PerturbResults;
 };

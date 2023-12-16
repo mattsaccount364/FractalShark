@@ -27,6 +27,10 @@ struct AntialiasedColors {
 #endif
 };
 
+#ifndef __CUDACC__
+using cudaStream_t = void*;
+#endif
+
 struct Palette {
     Palette() :
         local_pal(nullptr),

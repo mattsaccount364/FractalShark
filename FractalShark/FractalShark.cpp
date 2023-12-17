@@ -1491,7 +1491,7 @@ void MenuGetCurPos(HWND hWnd)
     snprintf(
         mem,
         numBytes,
-        "Using \"%s\"\r\n"
+        "This text is copied to clipboard.  Using \"%s\"\r\n"
         "Antialiasing: %u\r\n"
         "Palette depth: %u\r\n"
         "Coordinate precision = %zu;\r\n"
@@ -1504,7 +1504,7 @@ void MenuGetCurPos(HWND hWnd)
         "minY = HighPrecision{ \"%s\" };\r\n"
         "maxX = HighPrecision{ \"%s\" };\r\n"
         "maxY = HighPrecision{ \"%s\" };\r\n"
-        "SetNumIterations(%zu);\r\n",
+        "SetNumIterations<IterTypeFull>(%zu);\r\n",
         gFractal->GetRenderAlgorithmName().c_str(),
         gFractal->GetGpuAntialiasing(),
         gFractal->GetPaletteDepth(),
@@ -1515,7 +1515,7 @@ void MenuGetCurPos(HWND hWnd)
         sminX.c_str(), sminY.c_str(),
         smaxX.c_str(), smaxY.c_str(),
         gFractal->GetNumIterations<IterTypeFull>());
-    ::MessageBoxA(hWnd, mem, "", MB_OK);
+    std::string stringCopy = mem;
 
     GlobalUnlock(hData);
 
@@ -1532,6 +1532,8 @@ void MenuGetCurPos(HWND hWnd)
     }
 
     CloseClipboard();
+
+    ::MessageBoxA(hWnd, stringCopy.c_str(), "", MB_OK);
 }
 
 void MenuPaletteRotation(HWND)

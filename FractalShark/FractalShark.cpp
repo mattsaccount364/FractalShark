@@ -133,6 +133,8 @@ HWND InitInstance(HINSTANCE hInstance, int nCmdShow)
     hInst = hInstance;
 
     constexpr bool startWindowed = false;
+    constexpr DWORD forceStartWidth = 0;
+    constexpr DWORD forceStartHeight = 0;
 
     const auto scrnWidth = GetSystemMetrics(SM_CXSCREEN);
     const auto scrnHeight = GetSystemMetrics(SM_CYSCREEN);
@@ -157,6 +159,14 @@ HWND InitInstance(HINSTANCE hInstance, int nCmdShow)
         height = scrnHeight;
 
         gWindowed = false;
+    }
+
+    if constexpr (forceStartWidth) {
+        width = forceStartWidth;
+    }
+
+    if constexpr (forceStartHeight) {
+        height = forceStartHeight;
     }
 
     // Create the window

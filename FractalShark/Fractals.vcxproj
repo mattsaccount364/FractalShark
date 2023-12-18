@@ -110,6 +110,7 @@
     <CudaLink>
       <AdditionalDependencies>
       </AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(CudaToolkitBinDir)/crt</AdditionalLibraryDirectories>
     </CudaLink>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -172,12 +173,14 @@
       </AdditionalCompilerOptions>
       <GenerateLineInfo>true</GenerateLineInfo>
       <FastMath>true</FastMath>
+      <ExtensibleWholeProgramCompilation>true</ExtensibleWholeProgramCompilation>
     </CudaCompile>
     <CudaLink />
     <CudaLink>
       <PerformDeviceLinkTimeOptimization>true</PerformDeviceLinkTimeOptimization>
       <AdditionalDependencies>
       </AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(CudaToolkitBinDir)/crt</AdditionalLibraryDirectories>
     </CudaLink>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -209,6 +212,9 @@
     <None Include="..\README" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\FractalSharkGpuLib\FractalSharkGpuLib.vcxproj">
+      <Project>{9dfe26ef-c168-49ef-a26f-dc9fd82c8d4c}</Project>
+    </ProjectReference>
     <ProjectReference Include="..\FractalSharkLib\FractalSharkLib.vcxproj">
       <Project>{26552d9e-6051-465a-9405-056be0a65a56}</Project>
     </ProjectReference>

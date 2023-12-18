@@ -31,6 +31,18 @@ struct AntialiasedColors {
 using cudaStream_t = void*;
 #endif
 
+struct ReductionResults {
+    ReductionResults() :
+        Max{},
+        Min{},
+        Sum{} {
+    }
+
+    uint64_t Min;
+    uint64_t Max;
+    uint64_t Sum;
+};
+
 struct Palette {
     Palette() :
         local_pal(nullptr),

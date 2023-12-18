@@ -12,6 +12,7 @@
 
 #include "GPU_Types.h"
 
+// This is the main class that does the rendering on the GPU
 class GPURenderer {
 public:
     GPURenderer();
@@ -115,10 +116,10 @@ public:
     template<typename IterType>
     void ClearMemory();
 
-    template<typename IterType>
-    uint32_t OnlyAA(
-        Color16* color_buffer,
-        IterType n_iterations);
+    //template<typename IterType>
+    //uint32_t OnlyAA(
+    //    Color16* color_buffer,
+    //    IterType n_iterations);
 
     static const char* ConvertErrorToString(uint32_t err);
 
@@ -147,7 +148,8 @@ public:
     uint32_t RenderCurrent(
         IterType n_iterations,
         IterType* iter_buffer,
-        Color16* color_buffer);
+        Color16* color_buffer,
+        ReductionResults *reduction_results);
 
     uint32_t SyncStream(bool altStream);
 
@@ -179,9 +181,13 @@ private:
     uint32_t RunAntialiasing(IterType n_iterations, cudaStream_t *stream);
 
     template<typename IterType, bool Async>
-    uint32_t ExtractItersAndColors(IterType* iter_buffer, Color16* color_buffer);
+    uint32_t ExtractItersAndColors(
+        IterType* iter_buffer,
+        Color16* color_buffer,
+        ReductionResults *reduction_results);
 
     void* OutputIterMatrix;
+    ReductionResults *OutputReductionResults;
     AntialiasedColors OutputColorMatrix;
 
     Palette Pals;

@@ -5,14 +5,25 @@ MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalSaver", "..\FractalSaver\FractalSaver.vcxproj", "{BED28EC7-7C85-4AA7-A4BE-EBC09C166F58}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalServer2", "..\FractalServer2\FractalServer2.vcxproj", "{B7397A4C-EABB-4DAF-94A2-0B93914458DD}"
+	ProjectSection(ProjectDependencies) = postProject
+		{9DFE26EF-C168-49EF-A26F-DC9FD82C8D4C} = {9DFE26EF-C168-49EF-A26F-DC9FD82C8D4C}
+	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalSetup", "..\FractalSetup\FractalSetup.vcxproj", "{4306BDAB-C271-42C9-ABAF-BBC8DFAEB7E5}"
+	ProjectSection(ProjectDependencies) = postProject
+		{9DFE26EF-C168-49EF-A26F-DC9FD82C8D4C} = {9DFE26EF-C168-49EF-A26F-DC9FD82C8D4C}
+	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalShark", "Fractals.vcxproj", "{EACBDA33-1E2A-465B-B436-8D96DD70EFC4}"
+	ProjectSection(ProjectDependencies) = postProject
+		{9DFE26EF-C168-49EF-A26F-DC9FD82C8D4C} = {9DFE26EF-C168-49EF-A26F-DC9FD82C8D4C}
+	EndProjectSection
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalTray", "..\FractalTray\FractalTray.vcxproj", "{B7468E51-1CF3-4959-B1C8-394EA78CE79C}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalSharkLib", "..\FractalSharkLib\FractalSharkLib.vcxproj", "{26552D9E-6051-465A-9405-056BE0A65A56}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalSharkGpuLib", "..\FractalSharkGpuLib\FractalSharkGpuLib.vcxproj", "{9DFE26EF-C168-49EF-A26F-DC9FD82C8D4C}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -70,6 +81,14 @@ Global
 		{26552D9E-6051-465A-9405-056BE0A65A56}.Release|x64.Build.0 = Release|x64
 		{26552D9E-6051-465A-9405-056BE0A65A56}.Release|x86.ActiveCfg = Release|x64
 		{26552D9E-6051-465A-9405-056BE0A65A56}.Release|x86.Build.0 = Release|x64
+		{9DFE26EF-C168-49EF-A26F-DC9FD82C8D4C}.Debug|x64.ActiveCfg = Debug|x64
+		{9DFE26EF-C168-49EF-A26F-DC9FD82C8D4C}.Debug|x64.Build.0 = Debug|x64
+		{9DFE26EF-C168-49EF-A26F-DC9FD82C8D4C}.Debug|x86.ActiveCfg = Debug|x64
+		{9DFE26EF-C168-49EF-A26F-DC9FD82C8D4C}.Debug|x86.Build.0 = Debug|x64
+		{9DFE26EF-C168-49EF-A26F-DC9FD82C8D4C}.Release|x64.ActiveCfg = Release|x64
+		{9DFE26EF-C168-49EF-A26F-DC9FD82C8D4C}.Release|x64.Build.0 = Release|x64
+		{9DFE26EF-C168-49EF-A26F-DC9FD82C8D4C}.Release|x86.ActiveCfg = Release|x64
+		{9DFE26EF-C168-49EF-A26F-DC9FD82C8D4C}.Release|x86.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

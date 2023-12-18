@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "ItersMemoryContainer.h"
+#include <algorithm>
 
 ItersMemoryContainer::ItersMemoryContainer(
     IterTypeEnum type,
@@ -123,5 +124,49 @@ ItersMemoryContainer::~ItersMemoryContainer() {
     if (m_ItersArray64) {
         delete[] m_ItersArray64;
         m_ItersArray64 = nullptr;
+    }
+}
+
+IterTypeFull ItersMemoryContainer::GetItersArrayValSlow(size_t x, size_t y) const {
+    if (m_IterType == IterTypeEnum::Bits32) {
+        return m_ItersArray32[y][x];
+    }
+    else {
+        return m_ItersArray64[y][x];
+    }
+}
+
+void ItersMemoryContainer::SetItersArrayValSlow(size_t x, size_t y, uint64_t val) {
+    if (m_IterType == IterTypeEnum::Bits32) {
+        m_ItersArray32[y][x] = (uint32_t)val;
+    }
+    else {
+        m_ItersArray64[y][x] = val;
+    }
+}
+
+void ItersMemoryContainer::GetReductionResults(ReductionResults &results) const {
+    results = {};
+    results.Min = std::numeric_limits<IterTypeFull>::max();
+    results.Max = 0;
+    results.Sum = 0;
+
+    if (m_IterType == IterTypeEnum::Bits32) {
+        for (size_t i = 0; i < m_Height; i++) {
+            for (size_t j = 0; j < m_Width; j++) {
+                results.Max = std::max(results.Max, static_cast<uint64_t>(m_ItersArray32[i][j]));
+                results.Min = std::min(results.Min, static_cast<uint64_t>(m_ItersArray32[i][j]));
+                results.Sum += m_ItersArray32[i][j];
+            }
+        }
+    }
+    else {
+        for (size_t i = 0; i < m_Height; i++) {
+            for (size_t j = 0; j < m_Width; j++) {
+                results.Max = std::max(results.Max, m_ItersArray64[i][j]);
+                results.Min = std::min(results.Min, m_ItersArray64[i][j]);
+                results.Sum += m_ItersArray64[i][j];
+            }
+        }
     }
 }

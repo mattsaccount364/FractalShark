@@ -44,23 +44,10 @@ struct ItersMemoryContainer {
         }
     }
 
-    IterTypeFull GetItersArrayValSlow(size_t x, size_t y) {
-        if (m_IterType == IterTypeEnum::Bits32) {
-            return m_ItersArray32[y][x];
-        }
-        else {
-            return m_ItersArray64[y][x];
-        }
-    }
+    IterTypeFull GetItersArrayValSlow(size_t x, size_t y) const;
+    void SetItersArrayValSlow(size_t x, size_t y, uint64_t val);
 
-    void SetItersArrayValSlow(size_t x, size_t y, uint64_t val) {
-        if (m_IterType == IterTypeEnum::Bits32) {
-            m_ItersArray32[y][x] = (uint32_t)val;
-        }
-        else {
-            m_ItersArray64[y][x] = val;
-        }
-    }
+    void GetReductionResults(ReductionResults& results) const;
 
     // These include antialiasing, so 4x antialiasing implies each is ~2x screen dimension
     size_t m_Width;

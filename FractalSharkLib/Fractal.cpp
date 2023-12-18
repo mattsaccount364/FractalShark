@@ -1966,6 +1966,11 @@ void Fractal::CalcFractal(bool MemoryOnly)
     //    return;
     //}
 
+    // Bypass this function if the screen is too small.
+    if (m_ScrnHeight == 0 || m_ScrnWidth == 0) {
+        return;
+    }
+
     if (GetIterType() == IterTypeEnum::Bits32) {
         CalcFractalTypedIter<uint32_t>(MemoryOnly);
     }
@@ -2391,6 +2396,9 @@ void Fractal::DrawFractal(bool MemoryOnly)
 
 template<typename IterType>
 void Fractal::DrawGlFractal(bool LocalColor, bool lastIter) {
+    ReductionResults gpuReductionResults;
+    //ReductionResults localReductionResults;
+
     if (LocalColor) {
         for (auto& it : m_DrawThreadAtomics) {
             it.store(0);
@@ -2412,6 +2420,9 @@ void Fractal::DrawGlFractal(bool LocalColor, bool lastIter) {
                 }
             );
         }
+
+        // In case we need this we have it.
+        // m_CurIters.GetReductionResults(localReductionResults);
     }
     else {
         IterType* iter = nullptr;
@@ -2422,7 +2433,8 @@ void Fractal::DrawGlFractal(bool LocalColor, bool lastIter) {
         auto result = m_r.RenderCurrent<IterType>(
             GetNumIterations<IterType>(),
             iter,
-            m_CurIters.m_RoundedOutputColorMemory.get());
+            m_CurIters.m_RoundedOutputColorMemory.get(),
+            &gpuReductionResults);
 
         if (result) {
             MessageBoxCudaError(result);
@@ -2452,6 +2464,14 @@ void Fractal::DrawGlFractal(bool LocalColor, bool lastIter) {
         //        return;
         //    }
     }
+
+    // Debugging test.
+    //if (localReductionResults.Max != gpuReductionResults.Max ||
+    //    localReductionResults.Min != gpuReductionResults.Min ||
+    //    localReductionResults.Sum != gpuReductionResults.Sum) {
+    //    DebugBreak();
+    //    ::MessageBox(nullptr, L"Local != GPU", L"", MB_OK);
+    //}
 
     GLuint texid;
     glEnable(GL_TEXTURE_2D);

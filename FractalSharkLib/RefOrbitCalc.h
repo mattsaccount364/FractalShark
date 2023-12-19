@@ -41,11 +41,6 @@ public:
 
     bool RequiresReuse() const;
 
-private:
-    bool RequiresBadCalc() const;
-    bool IsThisPerturbationArrayUsed(void* check) const;
-
-public:
     void OptimizeMemory();
     void SetPerturbationAlg(PerturbationAlg alg) { m_PerturbationAlg = alg; }
     PerturbationAlg GetPerturbationAlg() const { return m_PerturbationAlg; }
@@ -60,26 +55,6 @@ public:
     template<typename IterType, class T, class SubType, BenchmarkMode BenchmarkState>
     void AddPerturbationReferencePoint();
 
-private:
-    template<typename IterType, class T, CalcBad Bad>
-    PerturbationResults<IterType, T, Bad>& GetPerturbationResults(size_t index);
-
-    template<typename IterType, class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState>
-    bool AddPerturbationReferencePointSTReuse(HighPrecision initX, HighPrecision initY);
-
-    template<typename IterType, class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState>
-    bool AddPerturbationReferencePointMT3Reuse(HighPrecision initX, HighPrecision initY);
-
-    template<typename IterType, class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, CalcBad Bad, ReuseMode Reuse>
-    void AddPerturbationReferencePointST(HighPrecision initX, HighPrecision initY);
-
-    template<typename IterType, class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, CalcBad Bad, ReuseMode Reuse>
-    void AddPerturbationReferencePointMT3(HighPrecision initX, HighPrecision initY);
-
-    template<typename IterType, class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, CalcBad Bad, ReuseMode Reuse>
-    void AddPerturbationReferencePointMT5(HighPrecision initX, HighPrecision initY);
-
-public:
     template<typename IterType, class T, bool Authoritative, CalcBad Bad>
     bool IsPerturbationResultUsefulHere(size_t i);
 
@@ -99,11 +74,6 @@ public:
         class ConvertTType = T>
     PerturbationResults<IterType, ConvertTType, Bad>* GetAndCreateUsefulPerturbationResults();
 
-private:
-    template<typename IterType, class T, bool Authoritative, CalcBad Bad>
-    PerturbationResults<IterType, T, Bad>* GetUsefulPerturbationResults();
-
-public:
     template<typename IterType, class SrcT, CalcBad SrcEnableBad, class DestT, CalcBad DestEnableBad>
     PerturbationResults<IterType, DestT, DestEnableBad>* CopyUsefulPerturbationResults(PerturbationResults<IterType, SrcT, SrcEnableBad>& src_array);
 
@@ -114,6 +84,31 @@ public:
     void LoadAllOrbits();
 
 private:
+private:
+    bool RequiresBadCalc() const;
+    bool IsThisPerturbationArrayUsed(void* check) const;
+
+    template<typename IterType, class T, CalcBad Bad>
+    PerturbationResults<IterType, T, Bad>& GetPerturbationResults(size_t index);
+
+    template<typename IterType, class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState>
+    bool AddPerturbationReferencePointSTReuse(HighPrecision initX, HighPrecision initY);
+
+    template<typename IterType, class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState>
+    bool AddPerturbationReferencePointMT3Reuse(HighPrecision initX, HighPrecision initY);
+
+    template<typename IterType, class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, CalcBad Bad, ReuseMode Reuse>
+    void AddPerturbationReferencePointST(HighPrecision initX, HighPrecision initY);
+
+    template<typename IterType, class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, CalcBad Bad, ReuseMode Reuse>
+    void AddPerturbationReferencePointMT3(HighPrecision initX, HighPrecision initY);
+
+    template<typename IterType, class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, CalcBad Bad, ReuseMode Reuse>
+    void AddPerturbationReferencePointMT5(HighPrecision initX, HighPrecision initY);
+
+    template<typename IterType, class T, bool Authoritative, CalcBad Bad>
+    PerturbationResults<IterType, T, Bad>* GetUsefulPerturbationResults();
+
     template<typename IterType, class T, class PerturbationResultsType, CalcBad Bad, ReuseMode Reuse>
     void InitResults(PerturbationResultsType&results, const HighPrecision &initX, const HighPrecision &initY);
 

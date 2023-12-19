@@ -1634,8 +1634,8 @@ void MenuSaveCurrentLocation(HWND hWnd) {
     ss << gFractal->GetMaxY() << " ";
     ss << gFractal->GetNumIterations<IterTypeFull>() << " ";
     ss << gFractal->GetGpuAntialiasing() << " ";
-    ss << gFractal->GetIterationPrecision() << " ";
-    ss << filename << std::endl;
+    //ss << gFractal->GetIterationPrecision() << " ";
+    ss << "FractalTrayDestination" << std::endl;
     std::string s = ss.str();
     const std::wstring ws(s.begin(), s.end());
 

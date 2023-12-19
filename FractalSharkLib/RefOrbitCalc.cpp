@@ -514,8 +514,7 @@ static void AddReused(T &results, const HighPrecision& zx, const HighPrecision& 
     ReducedZx.precision(AuthoritativeReuseExtraPrecision);
     ReducedZy.precision(AuthoritativeReuseExtraPrecision);
 
-    results.ReuseX.push_back(ReducedZx);
-    results.ReuseY.push_back(ReducedZy);
+    results.AddReusedEntry(std::move(ReducedZx), std::move(ReducedZy));
 }
 
 size_t RefOrbitCalc::GetNextGenerationNumber() {
@@ -588,7 +587,7 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
         T double_zx = (T)zx;
         T double_zy = (T)zy;
 
-        results->orb.push_back({ double_zx, double_zy });
+        results->AddIterationToOrbit({ double_zx, double_zy });
 
         if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
             AddReused(*results, zx, zy);
@@ -605,7 +604,7 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
                 (HdrCompareToBothPositiveReducedLE(zx_reduced, small_float) ||
                  HdrCompareToBothPositiveReducedLE(zy_reduced, small_float) ||
                  HdrCompareToBothPositiveReducedLE(norm, small_float));
-            results->orb[results->orb.size() - 1].bad = underflow;
+            results->SetBad(underflow);
         }
 
         if constexpr (Periodicity) {
@@ -634,12 +633,12 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
             T n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
 
             T r0 = HdrMaxPositiveReduced(dzdcX1, dzdcY1);
-            auto n3 = results->maxRadius * r0 * HighTwo;
+            auto n3 = results->GetMaxRadius() * r0 * HighTwo;
             HdrReduce(n3);
 
             if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
                 if constexpr (BenchmarkState == BenchmarkMode::Disable) {
-                    results->PeriodMaybeZero = (IterType)results->orb.size();
+                    results->SetPeriodMaybeZero((IterType)results->GetCountOrbitEntries());
                     break;
                 }
             }
@@ -662,11 +661,11 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
     }
 
     if constexpr (Bad == CalcBad::Enable) {
-        results->orb[results->orb.size() - 1].bad = false;
+        results->SetBad(false);
     }
 
     results->TrimResults<Bad, Reuse>();
-    m_GuessReserveSize = results->orb.size();
+    m_GuessReserveSize = results->GetCountOrbitEntries();
 }
 
 template<
@@ -680,7 +679,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
     PerturbationResultsArray.push_back(std::make_unique<PerturbationResults<IterType, T, CalcBad::Disable>>());
 
     auto* existingResults = GetUsefulPerturbationResults<IterType, T, true, CalcBad::Disable>();
-    if (existingResults == nullptr || existingResults->ReuseX.size() < 5) {
+    if (existingResults == nullptr || existingResults->GetReuseSize() < 5) {
         // TODO Lame hack with < 5.
         PerturbationResultsArray.pop_back();
         return false;
@@ -699,7 +698,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
     // This all generally works and only starts to suffer precision problems after
     // about 10^AuthoritativeReuseExtraPrecision. The problem naturally is the original
     // reference orbit is calculated only to so many digits.
-    if (NewPrec - existingResults->AuthoritativePrecision >= AuthoritativeReuseExtraPrecision - AuthoritativeMinExtraPrecision) {
+    if (NewPrec - existingResults->GetAuthoritativePrecision() >= AuthoritativeReuseExtraPrecision - AuthoritativeMinExtraPrecision) {
         //::MessageBox(NULL, L"Regenerating authoritative orbit is required", L"", MB_OK);
         PerturbationResultsArray.pop_back();
         return false;
@@ -717,8 +716,8 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
     HighPrecision HighOne = 1.0;
     HighPrecision HighTwo = 2.0;
     static const T TwoFiftySix = T(256.0);
-    HighPrecision DeltaReal = cx - existingResults->hiX;
-    HighPrecision DeltaImaginary = cy - existingResults->hiY;
+    HighPrecision DeltaReal = cx - existingResults->GetHiX();
+    HighPrecision DeltaImaginary = cy - existingResults->GetHiY();
     HighPrecision DeltaSub0X = DeltaReal;
     HighPrecision DeltaSub0Y = DeltaImaginary;
     HighPrecision DeltaSubNX = 0;
@@ -737,7 +736,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
     DeltaSubNY.precision(precNum);
 
     IterTypeFull RefIteration = 0;
-    IterTypeFull MaxRefIteration = existingResults->orb.size() - 1;
+    IterTypeFull MaxRefIteration = existingResults->GetCountOrbitEntries() - 1;
 
     T dzdcX = T{ 1 };
     T dzdcY = T{ 0 };
@@ -757,8 +756,6 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
     zx = cx;
     zy = cy;
 
-    const std::vector<HighPrecision> &existingReuseX = existingResults->ReuseX;
-    const std::vector<HighPrecision> &existingReuseY = existingResults->ReuseY;
     for (i = 0; i < m_Fractal.GetNumIterations<IterType>(); i++) {
         if constexpr (Periodicity) {
             zxCopy = T(zx);
@@ -769,14 +766,14 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
         const HighPrecision DeltaSubNYOrig = DeltaSubNY;
 
         DeltaSubNX =
-            DeltaSubNXOrig * (existingReuseX[RefIteration] * HighTwo + DeltaSubNXOrig) -
-            DeltaSubNYOrig * (existingReuseY[RefIteration] * HighTwo + DeltaSubNYOrig) +
+            DeltaSubNXOrig * (existingResults->GetReuseXEntry(RefIteration) * HighTwo + DeltaSubNXOrig) -
+            DeltaSubNYOrig * (existingResults->GetReuseYEntry(RefIteration) * HighTwo + DeltaSubNYOrig) +
             DeltaSub0X;
         tempDeltaSubNXLow = (T)DeltaSubNX;
 
         DeltaSubNY =
-            DeltaSubNXOrig * (existingReuseY[RefIteration] * HighTwo + DeltaSubNYOrig) +
-            DeltaSubNYOrig * (existingReuseX[RefIteration] * HighTwo + DeltaSubNXOrig) +
+            DeltaSubNXOrig * (existingResults->GetReuseYEntry(RefIteration) * HighTwo + DeltaSubNYOrig) +
+            DeltaSubNYOrig * (existingResults->GetReuseXEntry(RefIteration) * HighTwo + DeltaSubNXOrig) +
             DeltaSub0Y;
         tempDeltaSubNYLow = (T)DeltaSubNY;
 
@@ -785,8 +782,8 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
         tempZXLow = (T)zx;
         tempZYLow = (T)zy;
 
-        zx = existingReuseX[RefIteration] + DeltaSubNX;
-        zy = existingReuseY[RefIteration] + DeltaSubNY;
+        zx = existingResults->GetReuseXEntry(RefIteration) + DeltaSubNX;
+        zy = existingResults->GetReuseYEntry(RefIteration) + DeltaSubNY;
         zn_size = tempZXLow * tempZXLow + tempZYLow * tempZYLow;
         HdrReduce(zn_size);
         normDeltaSubN = tempDeltaSubNXLow * tempDeltaSubNXLow + tempDeltaSubNYLow * tempDeltaSubNYLow;
@@ -819,13 +816,13 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
             T n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
 
             T r0 = HdrMaxPositiveReduced(dzdcX1, dzdcY1);
-            auto n3 = results->maxRadius * r0 * T(2.0);
+            auto n3 = results->GetMaxRadius() * r0 * T(2.0);
             HdrReduce(n3);
 
             if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
                 if constexpr (BenchmarkState == BenchmarkMode::Disable) {
                     // Break before adding the result.
-                    results->PeriodMaybeZero = (IterType)results->orb.size();
+                    results->SetPeriodMaybeZero((IterType)results->GetCountOrbitEntries());
                     break;
                 }
             }
@@ -839,11 +836,11 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
         T reducedZx = (T)zx;
         T reducedZy = (T)zy;
 
-        results->orb.push_back({ reducedZx, reducedZy });
+        results->AddIterationToOrbit({ reducedZx, reducedZy });
     }
 
     results->TrimResults<CalcBad::Disable, ReuseMode::DontSaveForReuse>();
-    m_GuessReserveSize = results->orb.size();
+    m_GuessReserveSize = results->GetCountOrbitEntries();
 
     return true;
 }
@@ -859,7 +856,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     PerturbationResultsArray.push_back(std::make_unique<PerturbationResults<IterType, T, CalcBad::Disable>>());
 
     auto* existingResults = GetUsefulPerturbationResults<IterType, T, true, CalcBad::Disable>();
-    if (existingResults == nullptr || existingResults->ReuseX.size() < 5) {
+    if (existingResults == nullptr || existingResults->GetReuseSize() < 5) {
         // TODO Lame hack with < 5.
         //::MessageBox(NULL, L"Authoritative not found", L"", MB_OK);
         PerturbationResultsArray.pop_back();
@@ -879,7 +876,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     // This all generally works and only starts to suffer precision problems after
     // about 10^AuthoritativeReuseExtraPrecision. The problem naturally is the original
     // reference orbit is calculated only to so many digits.
-    if (NewPrec - existingResults->AuthoritativePrecision >= AuthoritativeReuseExtraPrecision - AuthoritativeMinExtraPrecision) {
+    if (NewPrec - existingResults->GetAuthoritativePrecision() >= AuthoritativeReuseExtraPrecision - AuthoritativeMinExtraPrecision) {
         //::MessageBox(NULL, L"Regenerating authoritative orbit is required", L"", MB_OK);
         PerturbationResultsArray.pop_back();
         return false;
@@ -898,8 +895,8 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     HighPrecision HighOne = 1.0;
     HighPrecision HighTwo = 2.0;
     static const T TwoFiftySix = T(256.0);
-    HighPrecision DeltaReal = cx - existingResults->hiX;
-    HighPrecision DeltaImaginary = cy - existingResults->hiY;
+    HighPrecision DeltaReal = cx - existingResults->GetHiX();
+    HighPrecision DeltaImaginary = cy - existingResults->GetHiY();
     HighPrecision DeltaSub0X = DeltaReal;
     HighPrecision DeltaSub0Y = DeltaImaginary;
     HighPrecision DeltaSubNX = 0;
@@ -918,7 +915,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     DeltaSubNY.precision(precNum);
 
     IterTypeFull RefIteration = 0;
-    IterTypeFull MaxRefIteration = existingResults->orb.size() - 1;
+    IterTypeFull MaxRefIteration = existingResults->GetCountOrbitEntries() - 1;
 
     T dzdcX = T(1.0);
     T dzdcY = T(0.0);
@@ -966,9 +963,6 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
         _aligned_malloc(sizeof(ThreadPtrs<ThreadZyData>), 64);
     memset(ThreadZyMemory, 0, sizeof(*ThreadZyMemory));
 
-    const std::vector<HighPrecision>& existingReuseX = existingResults->ReuseX;
-    const std::vector<HighPrecision>& existingReuseY = existingResults->ReuseY;
-
     auto ThreadSqZx = [&](ThreadPtrs<ThreadZxData>* ThreadMemory) {
         scoped_mpfr_precision_options precOptions(boost::multiprecision::variable_precision_options::assume_uniform_precision);
         for (;;) {
@@ -983,8 +977,8 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
             //PrefetchHighPrec(existingReuseY[ok->ReferenceIteration]);
 
             ok->DeltaSubNX =
-                (*ok->DeltaSubNXOrig) * (existingReuseX[ok->ReferenceIteration] * HighTwo + (*ok->DeltaSubNXOrig)) -
-                (*ok->DeltaSubNYOrig) * (existingReuseY[ok->ReferenceIteration] * HighTwo + (*ok->DeltaSubNYOrig)) +
+                (*ok->DeltaSubNXOrig) * (existingResults->GetReuseXEntry(ok->ReferenceIteration) * HighTwo + (*ok->DeltaSubNXOrig)) -
+                (*ok->DeltaSubNYOrig) * (existingResults->GetReuseYEntry(ok->ReferenceIteration) * HighTwo + (*ok->DeltaSubNYOrig)) +
                 (*ok->DeltaSub0X);
 
             // Give result back.
@@ -1006,8 +1000,8 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
             //PrefetchHighPrec(existingReuseY[ok->ReferenceIteration]);
 
             ok->DeltaSubNY =
-                (*ok->DeltaSubNXOrig) * (existingReuseY[ok->ReferenceIteration] * HighTwo + (*ok->DeltaSubNYOrig)) +
-                (*ok->DeltaSubNYOrig) * (existingReuseX[ok->ReferenceIteration] * HighTwo + (*ok->DeltaSubNXOrig)) +
+                (*ok->DeltaSubNXOrig) * (existingResults->GetReuseYEntry(ok->ReferenceIteration) * HighTwo + (*ok->DeltaSubNYOrig)) +
+                (*ok->DeltaSubNYOrig) * (existingResults->GetReuseXEntry(ok->ReferenceIteration) * HighTwo + (*ok->DeltaSubNXOrig)) +
                 (*ok->DeltaSub0Y);
 
             // Give result back.
@@ -1067,7 +1061,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
         // Lame conditional.
         // Could erase first elt but that's O(n) in size of vector
         if (RanOnce) {
-            results->orb.push_back({ tempZXLow, tempZYLow });
+            results->AddIterationToOrbit({ tempZXLow, tempZYLow });
         }
 
         if constexpr (Periodicity) {
@@ -1089,13 +1083,13 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
             T n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
 
             T r0 = HdrMaxPositiveReduced(dzdcX1, dzdcY1);
-            auto n3 = results->maxRadius * r0 * T(2.0);
+            auto n3 = results->GetMaxRadius() * r0 * T(2.0);
             HdrReduce(n3);
 
             if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
                 if constexpr (BenchmarkState == BenchmarkMode::Disable) {
                     // Break before adding the result.
-                    results->PeriodMaybeZero = (IterType)results->orb.size();
+                    results->SetPeriodMaybeZero((IterType)results->GetCountOrbitEntries());
                     break;
                 }
             }
@@ -1119,7 +1113,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
                     std::memory_order_release)) {
                 done2 = true;
                 tempDeltaSubNYLow = T(threadZydata->DeltaSubNY);
-                zy = existingReuseY[RefIteration] + threadZydata->DeltaSubNY;
+                zy = existingResults->GetReuseYEntry(RefIteration) + threadZydata->DeltaSubNY;
                 tempZYLow = T(zy);
             }
 
@@ -1132,7 +1126,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
                     std::memory_order_release)) {
                 done1 = true;
                 tempDeltaSubNXLow = T(threadZxdata->DeltaSubNX);
-                zx = existingReuseX[RefIteration] + threadZxdata->DeltaSubNX;
+                zx = existingResults->GetReuseXEntry(RefIteration) + threadZxdata->DeltaSubNX;
                 tempZXLow = T(zx);
             }
 
@@ -1190,7 +1184,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     _aligned_free(threadZydata);
 
     results->TrimResults<CalcBad::Disable, ReuseMode::DontSaveForReuse>();
-    m_GuessReserveSize = results->orb.size();
+    m_GuessReserveSize = results->GetCountOrbitEntries();
 
     return true;
 }
@@ -1355,7 +1349,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
         T double_zx = (T)zx;
         T double_zy = (T)zy;
 
-        results->orb.push_back({double_zx, double_zy });
+        results->AddIterationToOrbit({double_zx, double_zy });
 
         if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
             AddReused(*results, zx, zy);  // TODO
@@ -1370,7 +1364,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
                 (HdrCompareToBothPositiveReducedLE(zx_reduced, small_float) ||
                  HdrCompareToBothPositiveReducedLE(zy_reduced, small_float) ||
                  HdrCompareToBothPositiveReducedLE(norm, small_float));
-            results->orb[results->orb.size() - 1].bad = underflow;
+            results->SetBad(underflow);
         }
 
         // Note: not T.
@@ -1394,7 +1388,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
             T n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
 
             T r0 = HdrMaxPositiveReduced(dzdcX1, dzdcY1);
-            auto n3 = results->maxRadius * r0 * HighTwo; // TODO optimize HDRFloat *2.
+            auto n3 = results->GetMaxRadius() * r0 * HighTwo; // TODO optimize HDRFloat *2.
             HdrReduce(n3);
 
             if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
@@ -1429,7 +1423,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
 
                 if constexpr (Periodicity) {
                     if (periodicity_should_break) {
-                        results->PeriodMaybeZero = (IterType)results->orb.size();
+                        results->SetPeriodMaybeZero((IterType)results->GetCountOrbitEntries());
                         quitting = true;
                     }
                 }
@@ -1477,7 +1471,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
     }
 
     if constexpr (Bad == CalcBad::Enable) {
-        results->orb[results->orb.size() - 1].bad = false;
+        results->SetBad(false);
     }
 
     bool res1 = false, res2 = false;
@@ -1508,7 +1502,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
     _aligned_free(threadReuseddata);
 
     results->TrimResults<Bad, Reuse>();
-    m_GuessReserveSize = results->orb.size();
+    m_GuessReserveSize = results->GetCountOrbitEntries();
 }
 
 template<
@@ -1788,7 +1782,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecis
             thread1data,
             std::memory_order_release);
 
-        results->orb.push_back({ double_zx, double_zy });
+        results->AddIterationToOrbit({ double_zx, double_zy });
 
         if constexpr (Bad == CalcBad::Enable) {
             //T norm = (double_zx * double_zx + double_zy * double_zy) * glitch;
@@ -1805,7 +1799,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecis
                  HdrCompareToBothPositiveReducedLE(zy_reduced, small_float) ||
                  HdrCompareToBothPositiveReducedLE(norm, small_float));
 
-            results->orb[results->orb.size() - 1].bad = underflow;
+            results->SetBad(underflow);
         }
 
         // Note: not T.
@@ -1859,7 +1853,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecis
             T n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
 
             T r0 = HdrMaxPositiveReduced(dzdcX1, dzdcY1);
-            auto n3 = results->maxRadius * r0 * HighTwo;
+            auto n3 = results->GetMaxRadius() * r0 * HighTwo;
             HdrReduce(n3);
 
             if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
@@ -1909,14 +1903,14 @@ void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecis
 
         if constexpr (Periodicity) {
             if (periodicity_should_break) {
-                results->PeriodMaybeZero = (IterType)results->orb.size();
+                results->SetPeriodMaybeZero((IterType)results->GetCountOrbitEntries());
                 break;
             }
         }
     }
 
     if constexpr (Bad == CalcBad::Enable) {
-        results->orb[results->orb.size() - 1].bad = false;
+        results->SetBad(false);
     }
 
     bool resZx = false, resZy = false;
@@ -1962,7 +1956,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecis
     _aligned_free(thread2data);
 
     results->TrimResults<Bad, Reuse>();
-    m_GuessReserveSize = results->orb.size();
+    m_GuessReserveSize = results->GetCountOrbitEntries();
 }
 
 
@@ -1997,18 +1991,18 @@ bool RefOrbitCalc::IsPerturbationResultUsefulHere(size_t i) {
         ) -> bool {
 
         if constexpr (Authoritative == true) {
-            return PerturbationResults.AuthoritativePrecision != 0 &&
-                (PerturbationResults.MaxIterations > PerturbationResults.orb.size() ||
-                    PerturbationResults.MaxIterations >= m_Fractal.GetNumIterations<IterType>());
+            return PerturbationResults.GetAuthoritativePrecision() != 0 &&
+                (PerturbationResults.GetMaxIterations() > PerturbationResults.GetCountOrbitEntries() ||
+                    PerturbationResults.GetMaxIterations() >= m_Fractal.GetNumIterations<IterType>());
         }
 
         return
-            PerturbationResults.hiX >= m_Fractal.GetMinX() &&
-            PerturbationResults.hiX <= m_Fractal.GetMaxX() &&
-            PerturbationResults.hiY >= m_Fractal.GetMinY() &&
-            PerturbationResults.hiY <= m_Fractal.GetMaxY() &&
-            (PerturbationResults.MaxIterations > PerturbationResults.orb.size() ||
-                PerturbationResults.MaxIterations >= m_Fractal.GetNumIterations<IterType>());
+            PerturbationResults.GetHiX() >= m_Fractal.GetMinX() &&
+            PerturbationResults.GetHiX() <= m_Fractal.GetMaxX() &&
+            PerturbationResults.GetHiY() >= m_Fractal.GetMinY() &&
+            PerturbationResults.GetHiY() <= m_Fractal.GetMaxY() &&
+            (PerturbationResults.GetMaxIterations() > PerturbationResults.GetCountOrbitEntries() ||
+                PerturbationResults.GetMaxIterations() >= m_Fractal.GetNumIterations<IterType>());
     };
 
     const auto& results = GetPerturbationResults<IterType, T, Bad>(i);
@@ -2079,8 +2073,8 @@ PerturbationResults<IterType, ConvertTType, Bad>* RefOrbitCalc::GetAndCreateUsef
                 // TODO the presumption here is results size fits in the target IterType size
                 temp->GenerateApproximationData(
                     *results,
-                    results->maxRadius,
-                    (IterType)results->orb.size() - 1,
+                    results->GetMaxRadius(),
+                    (IterType)results->GetCountOrbitEntries() - 1,
                     UseSmallExponents);
 
                 results->SetLaReference(std::move(temp), GetNextLaGenerationNumber());
@@ -2506,9 +2500,9 @@ void RefOrbitCalc::ClearPerturbationResults(PerturbationResultType type) {
     auto IsMarkedToDelete = [&](const auto& o) -> bool {
         if (type == PerturbationResultType::All ||
             (type == PerturbationResultType::MediumRes &&
-                o->AuthoritativePrecision == 0) ||
+                o->GetAuthoritativePrecision() == 0) ||
             (type == PerturbationResultType::HighRes &&
-                o->AuthoritativePrecision != 0)) {
+                o->GetAuthoritativePrecision() != 0)) {
             return true;
         }
 

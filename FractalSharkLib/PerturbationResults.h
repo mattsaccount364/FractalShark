@@ -15,6 +15,8 @@
 template<typename IterType, class T, CalcBad Bad>
 class PerturbationResults {
 public:
+    template<typename IterType, class T, CalcBad Bad> friend class PerturbationResults;
+
     PerturbationResults(size_t Generation = 0, size_t LaGeneration = 0) :
         hiX{},
         hiY{},
@@ -48,19 +50,6 @@ public:
         ::HDRFloatComplex<LocalSubType>,
         ::FloatComplex<LocalSubType>>::type;
 
-    HighPrecision hiX, hiY;
-    T maxRadius;
-    IterType MaxIterations;
-    IterType PeriodMaybeZero;  // Zero if not worked out
-
-    std::vector<MattReferenceSingleIter<T, Bad>> orb;
-private:
-    size_t GenerationNumber;
-
-    std::unique_ptr<LAReference<IterType, T, SubType>> LaReference;
-    size_t LaGenerationNumber;
-
-public:
     size_t GetGenerationNumber() const {
         return GenerationNumber;
     }
@@ -84,10 +73,6 @@ public:
         return LaReference.get();
     }
 
-    uint32_t AuthoritativePrecision;
-    std::vector<HighPrecision> ReuseX;
-    std::vector<HighPrecision> ReuseY;
-    
     template<bool IncludeLA, class Other, CalcBad Bad = CalcBad::Disable>
     void Copy(
         const PerturbationResults<IterType, Other, Bad>& other,
@@ -95,11 +80,11 @@ public:
         size_t NewLaGenerationNumber) {
         clear();
 
-        hiX = other.hiX;
-        hiY = other.hiY;
-        maxRadius = (T)other.maxRadius;
-        MaxIterations = other.MaxIterations;
-        PeriodMaybeZero = other.PeriodMaybeZero;
+        hiX = other.GetHiX();
+        hiY = other.GetHiY();
+        maxRadius = (T)other.GetMaxRadius();
+        MaxIterations = other.GetMaxIterations();
+        PeriodMaybeZero = other.GetPeriodMaybeZero();
 
         orb.reserve(other.orb.size());
         GenerationNumber = NewGenerationNumber;
@@ -484,4 +469,91 @@ public:
             ReuseY.shrink_to_fit();
         }
     }
+
+    const MattReferenceSingleIter<T, Bad>& GetOrbitEntry(size_t index) const {
+        return orb[index];
+    }
+
+    size_t GetCountOrbitEntries() const {
+        return orb.size();
+    }
+
+    void AddIterationToOrbit(MattReferenceSingleIter<T, Bad> result) {
+        orb.push_back(result);
+    }
+
+    const MattReferenceSingleIter<T, Bad>* GetOrbitData() const {
+        return orb.data();
+    }
+
+    // Location of orbit
+    const HighPrecision &GetHiX() const {
+        return hiX;
+    }
+
+    // Location of orbit
+    const HighPrecision &GetHiY() const {
+        return hiY;
+    }
+
+    // Radius used for periodicity checking
+    T GetMaxRadius() const {
+        return maxRadius;
+    }
+
+    // Used only with scaled kernels
+    void SetBad(bool bad) {
+        orb.back().bad = bad;
+    }
+
+    uint32_t GetAuthoritativePrecision() const {
+        return AuthoritativePrecision;
+    }
+
+    IterType GetPeriodMaybeZero() const {
+        return PeriodMaybeZero;
+    }
+
+    void SetPeriodMaybeZero(IterType period) {
+        PeriodMaybeZero = period;
+    }
+
+    size_t GetReuseSize() const {
+        assert(ReuseX.size() == ReuseY.size());
+        return ReuseX.size();
+    }
+
+    void AddReusedEntry(HighPrecision x, HighPrecision y) {
+        ReuseX.push_back(std::move(x));
+        ReuseY.push_back(std::move(y));
+    }
+
+    const HighPrecision& GetReuseXEntry(size_t index) const {
+        return ReuseX[index];
+    }
+
+    const HighPrecision& GetReuseYEntry(size_t index) const {
+        return ReuseY[index];
+    }
+
+    IterType GetMaxIterations() const {
+        return MaxIterations;
+    }
+
+private:
+    HighPrecision hiX, hiY;
+    T maxRadius;
+    IterType MaxIterations;
+    IterType PeriodMaybeZero;  // Zero if not worked out
+
+    std::vector<MattReferenceSingleIter<T, Bad>> orb;
+
+    size_t GenerationNumber;
+
+    std::unique_ptr<LAReference<IterType, T, SubType>> LaReference;
+    size_t LaGenerationNumber;
+
+    uint32_t AuthoritativePrecision;
+    std::vector<HighPrecision> ReuseX;
+    std::vector<HighPrecision> ReuseY;
 };

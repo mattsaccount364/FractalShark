@@ -391,9 +391,9 @@ uint32_t GPURenderer::InitializeMemory<uint64_t>(
 template<typename IterType, class T1, class SubType, CalcBad Bad, class T2>
 uint32_t GPURenderer::InitializePerturb(
     size_t GenerationNumber1,
-    MattPerturbResults<IterType, T1, Bad>* Perturb1,
+    const MattPerturbResults<IterType, T1, Bad>* Perturb1,
     size_t GenerationNumber2,
-    MattPerturbResults<IterType, T2, Bad>* Perturb2,
+    const MattPerturbResults<IterType, T2, Bad>* Perturb2,
     const LAReference<IterType, T1, SubType>* LaReferenceHost,
     size_t LaGenerationNumber)
 {
@@ -452,98 +452,98 @@ uint32_t GPURenderer::InitializePerturb(
 template
 uint32_t GPURenderer::InitializePerturb<uint32_t, float, float, CalcBad::Disable, float>(
     size_t GenerationNumber1,
-    MattPerturbResults<uint32_t, float, CalcBad::Disable>* Perturb1,
+    const MattPerturbResults<uint32_t, float, CalcBad::Disable>* Perturb1,
     size_t GenerationNumber2,
-    MattPerturbResults<uint32_t, float, CalcBad::Disable>* Perturb2,
+    const MattPerturbResults<uint32_t, float, CalcBad::Disable>* Perturb2,
     const LAReference<uint32_t, float, float>* LaReferenceHost,
     size_t LaGenerationNumber1);
 template
 uint32_t GPURenderer::InitializePerturb<uint32_t, double, double, CalcBad::Disable, double>(
     size_t GenerationNumber1,
-    MattPerturbResults<uint32_t, double, CalcBad::Disable>* Perturb1,
+    const MattPerturbResults<uint32_t, double, CalcBad::Disable>* Perturb1,
     size_t GenerationNumber2,
-    MattPerturbResults<uint32_t, double, CalcBad::Disable>* Perturb2,
+    const MattPerturbResults<uint32_t, double, CalcBad::Disable>* Perturb2,
     const LAReference<uint32_t, double, double>* LaReferenceHost,
     size_t LaGenerationNumber1);
 template
 uint32_t GPURenderer::InitializePerturb<uint32_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, CalcBad::Disable, CudaDblflt<MattDblflt>>(
     size_t GenerationNumber1,
-    MattPerturbResults<uint32_t, CudaDblflt<MattDblflt>, CalcBad::Disable>* Perturb1,
+    const MattPerturbResults<uint32_t, CudaDblflt<MattDblflt>, CalcBad::Disable>* Perturb1,
     size_t GenerationNumber2,
-    MattPerturbResults<uint32_t, CudaDblflt<MattDblflt>, CalcBad::Disable>* Perturb2,
+    const MattPerturbResults<uint32_t, CudaDblflt<MattDblflt>, CalcBad::Disable>* Perturb2,
     const LAReference<uint32_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>>* LaReferenceHost,
     size_t LaGenerationNumber1);
 template
 uint32_t GPURenderer::InitializePerturb<uint32_t, class HDRFloat<float>, float, CalcBad::Disable, HDRFloat<float>>(
     size_t GenerationNumber1,
-    MattPerturbResults<uint32_t, HDRFloat<float>, CalcBad::Disable>* Perturb1,
+    const MattPerturbResults<uint32_t, HDRFloat<float>, CalcBad::Disable>* Perturb1,
     size_t GenerationNumber2,
-    MattPerturbResults<uint32_t, HDRFloat<float>, CalcBad::Disable>* Perturb2,
+    const MattPerturbResults<uint32_t, HDRFloat<float>, CalcBad::Disable>* Perturb2,
     const LAReference<uint32_t, HDRFloat<float>, float>* LaReferenceHost,
     size_t LaGenerationNumber1);
 template
 uint32_t GPURenderer::InitializePerturb<uint32_t, class HDRFloat<double>, double, CalcBad::Disable, HDRFloat<double>>(
     size_t GenerationNumber1,
-    MattPerturbResults<uint32_t, HDRFloat<double>, CalcBad::Disable>* Perturb1,
+    const MattPerturbResults<uint32_t, HDRFloat<double>, CalcBad::Disable>* Perturb1,
     size_t GenerationNumber2,
-    MattPerturbResults<uint32_t, HDRFloat<double>, CalcBad::Disable>* Perturb2,
+    const MattPerturbResults<uint32_t, HDRFloat<double>, CalcBad::Disable>* Perturb2,
     const LAReference<uint32_t, HDRFloat<double>, double>* LaReferenceHost,
     size_t LaGenerationNumber1);
 template
 uint32_t GPURenderer::InitializePerturb<uint32_t, class HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, CalcBad::Disable, HDRFloat<CudaDblflt<MattDblflt>>>(
     size_t GenerationNumber1,
-    MattPerturbResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CalcBad::Disable>* Perturb1,
+    const MattPerturbResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CalcBad::Disable>* Perturb1,
     size_t GenerationNumber2,
-    MattPerturbResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CalcBad::Disable>* Perturb2,
+    const MattPerturbResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CalcBad::Disable>* Perturb2,
     const LAReference<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>>* LaReferenceHost,
     size_t LaGenerationNumber1);
 
 template
 uint32_t GPURenderer::InitializePerturb<uint64_t, float, float, CalcBad::Disable, float>(
     size_t GenerationNumber1,
-    MattPerturbResults<uint64_t, float, CalcBad::Disable>* Perturb1,
+    const MattPerturbResults<uint64_t, float, CalcBad::Disable>* Perturb1,
     size_t GenerationNumber2,
-    MattPerturbResults<uint64_t, float, CalcBad::Disable>* Perturb2,
+    const MattPerturbResults<uint64_t, float, CalcBad::Disable>* Perturb2,
     const LAReference<uint64_t, float, float>* LaReferenceHost,
     size_t LaGenerationNumber1);
 template
 uint32_t GPURenderer::InitializePerturb<uint64_t, double, double, CalcBad::Disable, double>(
     size_t GenerationNumber1,
-    MattPerturbResults<uint64_t, double, CalcBad::Disable>* Perturb1,
+    const MattPerturbResults<uint64_t, double, CalcBad::Disable>* Perturb1,
     size_t GenerationNumber2,
-    MattPerturbResults<uint64_t, double, CalcBad::Disable>* Perturb2,
+    const MattPerturbResults<uint64_t, double, CalcBad::Disable>* Perturb2,
     const LAReference<uint64_t, double, double>* LaReferenceHost,
     size_t LaGenerationNumber1);
 template
 uint32_t GPURenderer::InitializePerturb<uint64_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, CalcBad::Disable, CudaDblflt<MattDblflt>>(
     size_t GenerationNumber1,
-    MattPerturbResults<uint64_t, CudaDblflt<MattDblflt>, CalcBad::Disable>* Perturb1,
+    const MattPerturbResults<uint64_t, CudaDblflt<MattDblflt>, CalcBad::Disable>* Perturb1,
     size_t GenerationNumber2,
-    MattPerturbResults<uint64_t, CudaDblflt<MattDblflt>, CalcBad::Disable>* Perturb2,
+    const MattPerturbResults<uint64_t, CudaDblflt<MattDblflt>, CalcBad::Disable>* Perturb2,
     const LAReference<uint64_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>>* LaReferenceHost,
     size_t LaGenerationNumber1);
 template
 uint32_t GPURenderer::InitializePerturb<uint64_t, class HDRFloat<float>, float, CalcBad::Disable, HDRFloat<float>>(
     size_t GenerationNumber1,
-    MattPerturbResults<uint64_t, HDRFloat<float>, CalcBad::Disable>* Perturb1,
+    const MattPerturbResults<uint64_t, HDRFloat<float>, CalcBad::Disable>* Perturb1,
     size_t GenerationNumber2,
-    MattPerturbResults<uint64_t, HDRFloat<float>, CalcBad::Disable>* Perturb2,
+    const MattPerturbResults<uint64_t, HDRFloat<float>, CalcBad::Disable>* Perturb2,
     const LAReference<uint64_t, HDRFloat<float>, float>* LaReferenceHost,
     size_t LaGenerationNumber1);
 template
 uint32_t GPURenderer::InitializePerturb<uint64_t, class HDRFloat<double>, double, CalcBad::Disable, HDRFloat<double>>(
     size_t GenerationNumber1,
-    MattPerturbResults<uint64_t, HDRFloat<double>, CalcBad::Disable>* Perturb1,
+    const MattPerturbResults<uint64_t, HDRFloat<double>, CalcBad::Disable>* Perturb1,
     size_t GenerationNumber2,
-    MattPerturbResults<uint64_t, HDRFloat<double>, CalcBad::Disable>* Perturb2,
+    const MattPerturbResults<uint64_t, HDRFloat<double>, CalcBad::Disable>* Perturb2,
     const LAReference<uint64_t, HDRFloat<double>, double>* LaReferenceHost,
     size_t LaGenerationNumber1);
 template
 uint32_t GPURenderer::InitializePerturb<uint64_t, class HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, CalcBad::Disable, HDRFloat<CudaDblflt<MattDblflt>>>(
     size_t GenerationNumber1,
-    MattPerturbResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CalcBad::Disable>* Perturb1,
+    const MattPerturbResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CalcBad::Disable>* Perturb1,
     size_t GenerationNumber2,
-    MattPerturbResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CalcBad::Disable>* Perturb2,
+    const MattPerturbResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CalcBad::Disable>* Perturb2,
     const LAReference<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>>* LaReferenceHost,
     size_t LaGenerationNumber1);
 
@@ -1715,8 +1715,8 @@ uint32_t GPURenderer::RenderPerturbBLAScaled(
     RenderAlgorithm algorithm,
     IterType* iter_buffer,
     Color16* color_buffer,
-    MattPerturbResults<IterType, T, CalcBad::Enable>* double_perturb,
-    MattPerturbResults<IterType, float, CalcBad::Enable>* float_perturb,
+    const MattPerturbResults<IterType, T, CalcBad::Enable>* double_perturb,
+    const MattPerturbResults<IterType, float, CalcBad::Enable>* float_perturb,
     BLAS<IterType, T, CalcBad::Enable>* blas,
     T cx,
     T cy,
@@ -1822,8 +1822,8 @@ template uint32_t GPURenderer::RenderPerturbBLAScaled<uint32_t, double>(
     RenderAlgorithm algorithm,
     uint32_t* iter_buffer,
     Color16* color_buffer,
-    MattPerturbResults<uint32_t, double, CalcBad::Enable>* double_perturb,
-    MattPerturbResults<uint32_t, float, CalcBad::Enable>* float_perturb,
+    const MattPerturbResults<uint32_t, double, CalcBad::Enable>* double_perturb,
+    const MattPerturbResults<uint32_t, float, CalcBad::Enable>* float_perturb,
     BLAS<uint32_t, double, CalcBad::Enable>* blas,
     double cx,
     double cy,
@@ -1839,8 +1839,8 @@ template uint32_t GPURenderer::RenderPerturbBLAScaled<uint32_t, HDRFloat<float>>
     RenderAlgorithm algorithm,
     uint32_t* iter_buffer,
     Color16* color_buffer,
-    MattPerturbResults<uint32_t, HDRFloat<float>, CalcBad::Enable>* double_perturb,
-    MattPerturbResults<uint32_t, float, CalcBad::Enable>* float_perturb,
+    const MattPerturbResults<uint32_t, HDRFloat<float>, CalcBad::Enable>* double_perturb,
+    const MattPerturbResults<uint32_t, float, CalcBad::Enable>* float_perturb,
     BLAS<uint32_t, HDRFloat<float>, CalcBad::Enable>* blas,
     HDRFloat<float> cx,
     HDRFloat<float> cy,
@@ -1858,8 +1858,8 @@ template uint32_t GPURenderer::RenderPerturbBLAScaled<uint64_t, double>(
     RenderAlgorithm algorithm,
     uint64_t* iter_buffer,
     Color16* color_buffer,
-    MattPerturbResults<uint64_t, double, CalcBad::Enable>* double_perturb,
-    MattPerturbResults<uint64_t, float, CalcBad::Enable>* float_perturb,
+    const MattPerturbResults<uint64_t, double, CalcBad::Enable>* double_perturb,
+    const MattPerturbResults<uint64_t, float, CalcBad::Enable>* float_perturb,
     BLAS<uint64_t, double, CalcBad::Enable>* blas,
     double cx,
     double cy,
@@ -1875,8 +1875,8 @@ template uint32_t GPURenderer::RenderPerturbBLAScaled<uint64_t, HDRFloat<float>>
     RenderAlgorithm algorithm,
     uint64_t* iter_buffer,
     Color16* color_buffer,
-    MattPerturbResults<uint64_t, HDRFloat<float>, CalcBad::Enable>* double_perturb,
-    MattPerturbResults<uint64_t, float, CalcBad::Enable>* float_perturb,
+    const MattPerturbResults<uint64_t, HDRFloat<float>, CalcBad::Enable>* double_perturb,
+    const MattPerturbResults<uint64_t, float, CalcBad::Enable>* float_perturb,
     BLAS<uint64_t, HDRFloat<float>, CalcBad::Enable>* blas,
     HDRFloat<float> cx,
     HDRFloat<float> cy,
@@ -1895,7 +1895,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
     IterType* iter_buffer,
     Color16* color_buffer,
-    MattPerturbResults<IterType, T>* perturb,
+    const MattPerturbResults<IterType, T>* perturb,
     BLAS<IterType, T>* blas,
     T cx,
     T cy,
@@ -2074,7 +2074,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
     uint32_t* iter_buffer,
     Color16* color_buffer,
-    MattPerturbResults<uint32_t, HDRFloat<float>>* perturb,
+    const MattPerturbResults<uint32_t, HDRFloat<float>>* perturb,
     BLAS<uint32_t, HDRFloat<float>>* blas,
     HDRFloat<float> cx,
     HDRFloat<float> cy,
@@ -2090,7 +2090,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
     uint32_t* iter_buffer,
     Color16* color_buffer,
-    MattPerturbResults<uint32_t, HDRFloat<double>>* perturb,
+    const MattPerturbResults<uint32_t, HDRFloat<double>>* perturb,
     BLAS<uint32_t, HDRFloat<double>>* blas,
     HDRFloat<double> cx,
     HDRFloat<double> cy,
@@ -2106,7 +2106,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
     uint32_t* iter_buffer,
     Color16* color_buffer,
-    MattPerturbResults<uint32_t, double>* perturb,
+    const MattPerturbResults<uint32_t, double>* perturb,
     BLAS<uint32_t, double>* blas,
     double cx,
     double cy,
@@ -2122,7 +2122,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
     uint64_t* iter_buffer,
     Color16* color_buffer,
-    MattPerturbResults<uint64_t, HDRFloat<float>>* perturb,
+    const MattPerturbResults<uint64_t, HDRFloat<float>>* perturb,
     BLAS<uint64_t, HDRFloat<float>>* blas,
     HDRFloat<float> cx,
     HDRFloat<float> cy,
@@ -2138,7 +2138,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
     uint64_t* iter_buffer,
     Color16* color_buffer,
-    MattPerturbResults<uint64_t, HDRFloat<double>>* perturb,
+    const MattPerturbResults<uint64_t, HDRFloat<double>>* perturb,
     BLAS<uint64_t, HDRFloat<double>>* blas,
     HDRFloat<double> cx,
     HDRFloat<double> cy,
@@ -2154,7 +2154,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
     uint64_t* iter_buffer,
     Color16* color_buffer,
-    MattPerturbResults<uint64_t, double>* perturb,
+    const MattPerturbResults<uint64_t, double>* perturb,
     BLAS<uint64_t, double>* blas,
     double cx,
     double cy,

@@ -4,7 +4,7 @@
 
 template<typename IterType, typename Type, CalcBad Bad>
 struct MattPerturbSingleResults {
-    MattReferenceSingleIter<Type, Bad>* __restrict__ iters;
+    const MattReferenceSingleIter<Type, Bad>* __restrict__ iters;
     IterType size;
     cudaError_t err;
     IterType PeriodMaybeZero;
@@ -17,7 +17,7 @@ struct MattPerturbSingleResults {
     MattPerturbSingleResults(
         IterType sz,
         IterType PeriodMaybeZero,
-        MattReferenceSingleIter<Other, Bad>* in_iters)
+        const MattReferenceSingleIter<Other, Bad>* in_iters)
         : iters(nullptr),
         size(sz),
         err(cudaSuccess),
@@ -56,7 +56,9 @@ struct MattPerturbSingleResults {
         }
 
         iters = tempIters;
-        cudaMemcpy(iters, in_iters, size * sizeof(MattReferenceSingleIter<Type, Bad>), cudaMemcpyDefault);
+
+        // Cast to void -- it's logically const
+        cudaMemcpy((void*)iters, in_iters, size * sizeof(MattReferenceSingleIter<Type, Bad>), cudaMemcpyDefault);
 
         //err = cudaMemAdvise(iters,
         //    size * sizeof(MattReferenceSingleIter<Type>),
@@ -69,7 +71,7 @@ struct MattPerturbSingleResults {
     }
 
     MattPerturbSingleResults(const MattPerturbSingleResults& other) {
-        iters = reinterpret_cast<MattReferenceSingleIter<Type, Bad>*>(other.iters);
+        iters = reinterpret_cast<const MattReferenceSingleIter<Type, Bad>*>(other.iters);
         size = other.size;
         PeriodMaybeZero = other.PeriodMaybeZero;
         own = false;
@@ -79,7 +81,7 @@ struct MattPerturbSingleResults {
     // funny semantics, copy doesn't own the pointers.
     template<class Other>
     MattPerturbSingleResults(const MattPerturbSingleResults<IterType, Other, Bad>& other) {
-        iters = reinterpret_cast<MattReferenceSingleIter<Type, Bad>*>(other.iters);
+        iters = reinterpret_cast<const MattReferenceSingleIter<Type, Bad>*>(other.iters);
         size = other.size;
         PeriodMaybeZero = other.PeriodMaybeZero;
         own = false;
@@ -98,10 +100,10 @@ struct MattPerturbSingleResults {
         if (own) {
             if (iters != nullptr) {
                 if (!AllocHost) {
-                    cudaFree(iters);
+                    cudaFree((void*)iters);
                 }
                 else {
-                    cudaFreeHost(iters);
+                    cudaFreeHost((void*)iters);
                 }
             }
         }

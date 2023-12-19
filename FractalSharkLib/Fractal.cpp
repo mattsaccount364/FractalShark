@@ -1529,13 +1529,6 @@ void Fractal::View(size_t view)
         break;
 
     case 27:
-        minX = HighPrecision{ "-0.73606157203926519558042356083047629861225105518538562468268" };
-        minY = HighPrecision{ "0.1834850388109070760053101513423105775720361823641647083294" };
-        maxX = HighPrecision{ "-0.73605272399844388799176190019033649288193334088847817422331" };
-        maxY = HighPrecision{ "0.1834887254945826208339191766090354966263352299878761460208" };
-        SetNumIterations<IterTypeFull>(196608);
-        break;
-
     case 28:
     case 29:
 
@@ -2575,8 +2568,8 @@ void Fractal::DrawPerturbationResults() {
         if (m_RefOrbit.IsPerturbationResultUsefulHere<IterType, T, false, Bad>(i)) {
             glColor3f((GLfloat)255, (GLfloat)255, (GLfloat)255);
 
-            GLint scrnX = Convert<HighPrecision, GLint>(XFromCalcToScreen(results[i]->hiX));
-            GLint scrnY = static_cast<GLint>(m_ScrnHeight) - Convert<HighPrecision, GLint>(YFromCalcToScreen(results[i]->hiY));
+            GLint scrnX = Convert<HighPrecision, GLint>(XFromCalcToScreen(results[i]->GetHiX()));
+            GLint scrnY = static_cast<GLint>(m_ScrnHeight) - Convert<HighPrecision, GLint>(YFromCalcToScreen(results[i]->GetHiY()));
 
             // Coordinates are weird in OGL mode.
             glVertex2i(scrnX, scrnY);
@@ -2990,8 +2983,8 @@ void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
     double dx = Convert<HighPrecision, double>((m_MaxX - m_MinX) / (m_ScrnWidth * GetGpuAntialiasing()));
     double dy = Convert<HighPrecision, double>((m_MaxY - m_MinY) / (m_ScrnHeight * GetGpuAntialiasing()));
 
-    double centerX = (double)(results->hiX - m_MinX);
-    double centerY = (double)(results->hiY - m_MaxY);
+    double centerX = (double)(results->GetHiX() - m_MinX);
+    double centerY = (double)(results->GetHiY() - m_MaxY);
 
     static constexpr size_t num_threads = 32;
     std::deque<std::atomic_uint64_t> atomics;
@@ -3080,17 +3073,17 @@ void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
                     //               2 * S * DeltaSubNWX * DeltaSubNWY +
                     //               dY
 
-                    DeltaSubNX = DeltaSubNXOrig * (results->orb[RefIteration].x * 2 + DeltaSubNXOrig) -
-                        DeltaSubNYOrig * (results->orb[RefIteration].y * 2 + DeltaSubNYOrig) +
+                    DeltaSubNX = DeltaSubNXOrig * (results->GetOrbitEntry(RefIteration).x * 2 + DeltaSubNXOrig) -
+                        DeltaSubNYOrig * (results->GetOrbitEntry(RefIteration).y * 2 + DeltaSubNYOrig) +
                         DeltaSub0X;
-                    DeltaSubNY = DeltaSubNXOrig * (results->orb[RefIteration].y * 2 + DeltaSubNYOrig) +
-                        DeltaSubNYOrig * (results->orb[RefIteration].x * 2 + DeltaSubNXOrig) +
+                    DeltaSubNY = DeltaSubNXOrig * (results->GetOrbitEntry(RefIteration).y * 2 + DeltaSubNYOrig) +
+                        DeltaSubNYOrig * (results->GetOrbitEntry(RefIteration).x * 2 + DeltaSubNXOrig) +
                         DeltaSub0Y;
 
                     ++RefIteration;
 
-                    const double tempZX = results->orb[RefIteration].x + DeltaSubNX;
-                    const double tempZY = results->orb[RefIteration].y + DeltaSubNY;
+                    const double tempZX = results->GetOrbitEntry(RefIteration).x + DeltaSubNX;
+                    const double tempZY = results->GetOrbitEntry(RefIteration).y + DeltaSubNY;
                     const double zn_size = tempZX * tempZX + tempZY * tempZY;
                     const double normDeltaSubN = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
 
@@ -3099,7 +3092,7 @@ void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
                     }
 
                     if (zn_size < normDeltaSubN ||
-                        RefIteration == (IterType)results->orb.size() - 1) {
+                        RefIteration == (IterType)results->GetCountOrbitEntries() - 1) {
                         DeltaSubNX = tempZX;
                         DeltaSubNY = tempZY;
                         RefIteration = 0;
@@ -3216,14 +3209,14 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
         RefOrbitCalc::Extras::None>();
 
     BLAS<IterType, T> blas(*results);
-    blas.Init((IterType)results->orb.size(), results->maxRadius);
+    blas.Init((IterType)results->GetCountOrbitEntries(), results->GetMaxRadius());
 
     T dx = T((m_MaxX - m_MinX) / (m_ScrnWidth * GetGpuAntialiasing()));
     T dy = T((m_MaxY - m_MinY) / (m_ScrnHeight * GetGpuAntialiasing()));
 
-    T centerX = (T)(results->hiX - m_MinX);
+    T centerX = (T)(results->GetHiX() - m_MinX);
     HdrReduce(centerX);
-    T centerY = (T)(results->hiY - m_MaxY);
+    T centerY = (T)(results->GetHiY() - m_MaxY);
     HdrReduce(centerY);
 
     static constexpr size_t num_threads = 32;
@@ -3274,7 +3267,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                         int l = b->getL();
 
                         // TODO this first RefIteration + l check bugs me
-                        if (RefIteration + l >= (IterType)results->orb.size()) {
+                        if (RefIteration + l >= (IterType)results->GetCountOrbitEntries()) {
                             //::MessageBox(nullptr, L"Out of bounds! :(", L"", MB_OK);
                             break;
                         }
@@ -3295,8 +3288,8 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
 
                         RefIteration += l;
 
-                        auto tempZX = results->orb[RefIteration].x + DeltaSubNX;
-                        auto tempZY = results->orb[RefIteration].y + DeltaSubNY;
+                        auto tempZX = results->GetOrbitEntry(RefIteration).x + DeltaSubNX;
+                        auto tempZY = results->GetOrbitEntry(RefIteration).y + DeltaSubNY;
                         auto normSquared = tempZX * tempZX + tempZY * tempZY;
                         DeltaNormSquared = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
                         HdrReduce(normSquared);
@@ -3307,7 +3300,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                         }
 
                         if (HdrCompareToBothPositiveReducedLT(normSquared, DeltaNormSquared) ||
-                            RefIteration >= (IterType)results->orb.size() - 1) {
+                            RefIteration >= (IterType)results->GetCountOrbitEntries() - 1) {
                             DeltaSubNX = tempZX;
                             DeltaSubNY = tempZY;
                             DeltaNormSquared = normSquared;
@@ -3322,21 +3315,21 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                     const T DeltaSubNXOrig = DeltaSubNX;
                     const T DeltaSubNYOrig = DeltaSubNY;
 
-                    T TermB1 = DeltaSubNXOrig * (results->orb[RefIteration].x * 2 + DeltaSubNXOrig);
-                    T TermB2 = DeltaSubNYOrig * (results->orb[RefIteration].y * 2 + DeltaSubNYOrig);
+                    T TermB1 = DeltaSubNXOrig * (results->GetOrbitEntry(RefIteration).x * 2 + DeltaSubNXOrig);
+                    T TermB2 = DeltaSubNYOrig * (results->GetOrbitEntry(RefIteration).y * 2 + DeltaSubNYOrig);
 
                     DeltaSubNX = TermB1 - TermB2;
                     DeltaSubNX += DeltaSub0X;
                     HdrReduce(DeltaSubNX);
 
-                    T Term3 = results->orb[RefIteration].y * 2 + DeltaSubNYOrig;
-                    T Term4 = results->orb[RefIteration].x * 2 + DeltaSubNXOrig;
+                    T Term3 = results->GetOrbitEntry(RefIteration).y * 2 + DeltaSubNYOrig;
+                    T Term4 = results->GetOrbitEntry(RefIteration).x * 2 + DeltaSubNXOrig;
                     DeltaSubNY = DeltaSubNXOrig * Term3 + DeltaSubNYOrig * Term4;
                     DeltaSubNY += DeltaSub0Y;
                     HdrReduce(DeltaSubNY);
 
                     ++RefIteration;
-                    if (RefIteration >= (IterType)results->orb.size()) {
+                    if (RefIteration >= (IterType)results->GetCountOrbitEntries()) {
                         ::MessageBox(nullptr, L"Out of bounds 2! :(", L"", MB_OK);
                         break;
                     }
@@ -3401,8 +3394,8 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                         //}
                     }
 
-                    T tempZX = results->orb[RefIteration].x + DeltaSubNX;
-                    T tempZY = results->orb[RefIteration].y + DeltaSubNY;
+                    T tempZX = results->GetOrbitEntry(RefIteration).x + DeltaSubNX;
+                    T tempZY = results->GetOrbitEntry(RefIteration).y + DeltaSubNY;
                     T nT1 = tempZX * tempZX;
                     T nT2 = tempZY * tempZY;
                     T normSquared = nT1 + nT2;
@@ -3416,7 +3409,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                     }
 
                     if (HdrCompareToBothPositiveReducedLT(normSquared, DeltaNormSquared) ||
-                        RefIteration >= (IterType)results->orb.size() - 1) {
+                        RefIteration >= (IterType)results->GetCountOrbitEntries() - 1) {
                         DeltaSubNX = tempZX;
                         DeltaSubNY = tempZY;
                         DeltaNormSquared = normSquared;
@@ -3465,9 +3458,9 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
     T dy = T((m_MaxY - m_MinY) / (m_ScrnHeight * GetGpuAntialiasing()));
     HdrReduce(dy);
 
-    T centerX = (T)(results->hiX - m_MinX);
+    T centerX = (T)(results->GetHiX() - m_MinX);
     HdrReduce(centerX);
-    T centerY = (T)(results->hiY - m_MaxY);
+    T centerY = (T)(results->GetHiY() - m_MaxY);
     HdrReduce(centerY);
 
     static constexpr size_t num_threads = 32;
@@ -3518,7 +3511,7 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
 
                 IterType iterations = 0;
                 IterType RefIteration = 0;
-                IterType MaxRefIteration = (IterType)results->orb.size() - 1;
+                IterType MaxRefIteration = (IterType)results->GetCountOrbitEntries() - 1;
 
                 iterations = BLA2SkippedIterations;
 
@@ -3526,8 +3519,8 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
 
                 if (iterations != 0 && RefIteration < MaxRefIteration) {
                     complex0 = results->GetComplex<SubType>(RefIteration) + DeltaSubN;
-                } else if (iterations != 0 && results->PeriodMaybeZero != 0) {
-                    RefIteration = RefIteration % results->PeriodMaybeZero;
+                } else if (iterations != 0 && results->GetPeriodMaybeZero() != 0) {
+                    RefIteration = RefIteration % results->GetPeriodMaybeZero();
                     complex0 = results->GetComplex<SubType>(RefIteration) + DeltaSubN;
                 }
 
@@ -3653,21 +3646,21 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
 
     FillGpuCoords<T>(cx2, cy2, dx2, dy2);
 
-    HighPrecision centerX = results->hiX - m_MinX;
-    HighPrecision centerY = results->hiY - m_MaxY;
+    HighPrecision centerX = results->GetHiX() - m_MinX;
+    HighPrecision centerY = results->GetHiY() - m_MaxY;
 
     FillCoord(centerX, centerX2);
     FillCoord(centerY, centerY2);
 
     MattPerturbResults<IterType, T> gpu_results{
-        (IterType)results->orb.size(),
-        results->orb.data(),
-        results->PeriodMaybeZero };
+        (IterType)results->GetCountOrbitEntries(),
+        results->GetOrbitData(),
+        results->GetPeriodMaybeZero() };
 
     uint32_t result;
 
     BLAS<IterType, T> blas(*results);
-    blas.Init(results->orb.size(), results->maxRadius);
+    blas.Init(results->GetCountOrbitEntries(), results->GetMaxRadius());
 
     result = m_r.RenderPerturbBLA<IterType, T>(GetRenderAlgorithm(),
         m_CurIters.GetIters<IterType>(),
@@ -3712,9 +3705,9 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
     }
 
     MattPerturbResults<IterType, T> gpu_results{
-        (IterType)results->orb.size(),
-        results->orb.data(),
-        results->PeriodMaybeZero };
+        (IterType)results->GetCountOrbitEntries(),
+        results->GetOrbitData(),
+        results->GetPeriodMaybeZero() };
 
     if (results->GetLaReference() == nullptr) {
         ::MessageBox(nullptr, L"Oops - a null pointer deref", L"", MB_OK);
@@ -3740,8 +3733,8 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
 
     FillGpuCoords<T>(cx2, cy2, dx2, dy2);
 
-    HighPrecision centerX = results->hiX - m_MinX;
-    HighPrecision centerY = results->hiY - m_MaxY;
+    HighPrecision centerX = results->GetHiX() - m_MinX;
+    HighPrecision centerY = results->GetHiY() - m_MaxY;
 
     FillCoord(centerX, centerX2);
     FillCoord(centerY, centerY2);
@@ -3781,7 +3774,7 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
         CalcBad::Enable>(*results);
 
     BLAS<IterType, T, CalcBad::Enable> blas(*results);
-    blas.Init(results->orb.size(), results->maxRadius);
+    blas.Init(results->GetCountOrbitEntries(), results->GetMaxRadius());
 
     uint32_t err = InitializeGPUMemory();
     if (err) {
@@ -3796,21 +3789,21 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
 
     FillGpuCoords<T>(cx2, cy2, dx2, dy2);
 
-    HighPrecision centerX = results->hiX - m_MinX;
-    HighPrecision centerY = results->hiY - m_MaxY;
+    HighPrecision centerX = results->GetHiX() - m_MinX;
+    HighPrecision centerY = results->GetHiY() - m_MaxY;
 
     FillCoord(centerX, centerX2);
     FillCoord(centerY, centerY2);
 
     MattPerturbResults<IterType, T, CalcBad::Enable> gpu_results{
-        (IterType)results->orb.size(),
-        results->orb.data(),
-        results->PeriodMaybeZero };
+        (IterType)results->GetCountOrbitEntries(),
+        results->GetOrbitData(),
+        results->GetPeriodMaybeZero() };
 
     MattPerturbResults<IterType, T2, CalcBad::Enable> gpu_results2{
-        (IterType)results2->orb.size(),
-        results2->orb.data(),
-        results2->PeriodMaybeZero };
+        (IterType)results2->GetCountOrbitEntries(),
+        results2->GetOrbitData(),
+        results2->GetPeriodMaybeZero() };
 
     if (gpu_results.size != gpu_results2.size) {
         ::MessageBox(nullptr, L"Mismatch on size", L"", MB_OK);

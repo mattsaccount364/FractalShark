@@ -254,12 +254,12 @@ struct MattCoords {
 
 template<typename IterType, class T, CalcBad Bad = CalcBad::Disable>
 struct MattPerturbResults {
-    MattReferenceSingleIter<T, Bad>* iters;
+    const MattReferenceSingleIter<T, Bad>* iters;
     IterType size;
     IterType PeriodMaybeZero;
 
     MattPerturbResults(IterType in_size,
-        MattReferenceSingleIter<T, Bad>* in_orb,
+        const MattReferenceSingleIter<T, Bad>* in_orb,
         IterType PeriodMaybeZero) :
         iters(in_orb),
         size(in_size),

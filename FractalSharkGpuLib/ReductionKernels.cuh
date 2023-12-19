@@ -120,7 +120,6 @@ max_kernel(
     }
 
     __syncthreads();
-    auto gid = (blockDim.x * blockIdx.x) + tid;
     for (auto s = blockDim.x * blockDim.y / 2; s > 0; s >>= 1) {
         if (tid < s/* && gid < WidthWithAA * HeightWithAA*/) {
             MaxShared[tid] = max(MaxShared[tid], MaxShared[tid + s]);

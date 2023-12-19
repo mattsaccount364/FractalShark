@@ -35,8 +35,8 @@ public:
         RenderAlgorithm algorithm,
         IterType* iter_buffer,
         Color16* color_buffer,
-        MattPerturbResults<IterType, T, CalcBad::Enable>* double_perturb,
-        MattPerturbResults<IterType, float, CalcBad::Enable>* float_perturb,
+        const MattPerturbResults<IterType, T, CalcBad::Enable>* double_perturb,
+        const MattPerturbResults<IterType, float, CalcBad::Enable>* float_perturb,
         BLAS<IterType, T, CalcBad::Enable>* blas,
         T cx,
         T cy,
@@ -52,7 +52,7 @@ public:
         RenderAlgorithm algorithm,
         IterType* iter_buffer,
         Color16* color_buffer,
-        MattPerturbResults<IterType, MattDblflt>* results,
+        const MattPerturbResults<IterType, MattDblflt>* results,
         BLAS<IterType, MattDblflt>* blas,
         MattDblflt cx,
         MattDblflt cy,
@@ -68,7 +68,7 @@ public:
         RenderAlgorithm algorithm,
         IterType* iter_buffer,
         Color16* color_buffer,
-        MattPerturbResults<IterType, T>* results,
+        const MattPerturbResults<IterType, T>* results,
         BLAS<IterType, T>* blas,
         T cx,
         T cy,
@@ -107,9 +107,9 @@ public:
     template<typename IterType, class T1, class SubType, CalcBad Bad, class T2>
     uint32_t InitializePerturb(
         size_t GenerationNumber1,
-        MattPerturbResults<IterType, T1, Bad>* Perturb1,
+        const MattPerturbResults<IterType, T1, Bad>* Perturb1,
         size_t GenerationNumber2,
-        MattPerturbResults<IterType, T2, Bad>* Perturb2,
+        const MattPerturbResults<IterType, T2, Bad>* Perturb2,
         const LAReference<IterType, T1, SubType>* LaReferenceHost,
         size_t LaGenerationNumber1);
 

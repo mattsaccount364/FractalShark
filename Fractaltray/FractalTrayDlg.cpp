@@ -534,6 +534,12 @@ DWORD WINAPI CalcProc(LPVOID lpParameter)
         auto prec = Fractal::GetPrecision(minX, minY, maxX, maxY, false);
         Fractal::SetPrecision(prec, minX, minY, maxX, maxY);
 
+        // lame hack
+        //numIters /= 200;
+        //if (numIters < 10000) {
+        //    numIters = 10000;
+        //}
+
         fractal->SetNumIterations<uint32_t>(numIters);
         fractal->ResetDimensions(resX, resY, gpuAntialiasing);
         fractal->RecenterViewCalc(minX, minY, maxX, maxY);

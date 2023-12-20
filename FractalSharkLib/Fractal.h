@@ -170,7 +170,7 @@ public:
     int SaveCurrentFractal(const std::wstring filename_base);
     int SaveHiResFractal(const std::wstring filename_base);
     int SaveItersAsText(const std::wstring filename_base);
-    void CleanupThreads(bool all);
+    bool CleanupThreads(bool all);
 
     // Benchmarking
     HighPrecision Benchmark(IterTypeFull numIters, size_t& millseconds);

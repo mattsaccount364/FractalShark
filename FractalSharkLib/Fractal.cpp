@@ -2986,7 +2986,7 @@ void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
     double centerX = (double)(results->GetHiX() - m_MinX);
     double centerY = (double)(results->GetHiY() - m_MaxY);
 
-    static constexpr size_t num_threads = 32;
+    static constexpr size_t num_threads = std::thread::hardware_concurrency();
     std::deque<std::atomic_uint64_t> atomics;
     std::vector<std::unique_ptr<std::thread>> threads;
     atomics.resize(m_ScrnHeight * GetGpuAntialiasing());
@@ -3130,7 +3130,7 @@ void Fractal::CalcCpuHDR(bool MemoryOnly) {
     const T dx = T((m_MaxX - m_MinX) / (m_ScrnWidth * GetGpuAntialiasing()));
     const T dy = T((m_MaxY - m_MinY) / (m_ScrnHeight * GetGpuAntialiasing()));
 
-    static constexpr size_t num_threads = 32;
+    const size_t num_threads = std::thread::hardware_concurrency();
     std::deque<std::atomic_uint64_t> atomics;
     std::vector<std::unique_ptr<std::thread>> threads;
     atomics.resize(m_ScrnHeight * GetGpuAntialiasing());
@@ -3219,7 +3219,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
     T centerY = (T)(results->GetHiY() - m_MaxY);
     HdrReduce(centerY);
 
-    static constexpr size_t num_threads = 32;
+    const size_t num_threads = std::thread::hardware_concurrency();;
     std::deque<std::atomic_uint64_t> atomics;
     std::vector<std::unique_ptr<std::thread>> threads;
     atomics.resize(m_ScrnHeight * GetGpuAntialiasing());
@@ -3463,7 +3463,7 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
     T centerY = (T)(results->GetHiY() - m_MaxY);
     HdrReduce(centerY);
 
-    static constexpr size_t num_threads = 32;
+    const size_t num_threads = std::thread::hardware_concurrency();;
     std::deque<std::atomic_uint64_t> atomics;
     std::vector<std::unique_ptr<std::thread>> threads;
     atomics.resize(m_ScrnHeight * GetGpuAntialiasing());
@@ -4051,9 +4051,10 @@ int Fractal::SaveFractalData(const std::wstring filename_base)
             statex.dwLength = sizeof(statex);
             GlobalMemoryStatusEx(&statex);
 
-            if (savesInProgress.size() > 32 || statex.dwMemoryLoad > 90) {
-                CleanupThreads(false);
-                Sleep(100);
+            if (savesInProgress.size() > std::thread::hardware_concurrency() || statex.dwMemoryLoad > 90) {
+                if (!CleanupThreads(false)) {
+                    Sleep(100);
+                }
             }
             else {
                 auto newPtr = std::make_unique<CurrentFractalSave>(Typ, filename_base, *this);
@@ -4069,7 +4070,8 @@ int Fractal::SaveFractalData(const std::wstring filename_base)
     return 0;
 }
 
-void Fractal::CleanupThreads(bool all) {
+bool Fractal::CleanupThreads(bool all) {
+    bool ret = false;
     auto lambda = [&]<typename T>(T & savesInProgress) {
         bool continueCriteria = true;
 
@@ -4078,6 +4080,7 @@ void Fractal::CleanupThreads(bool all) {
                 auto& it = savesInProgress[i];
                 if (it->m_Destructable) {
                     savesInProgress.erase(savesInProgress.begin() + i);
+                    ret = true;
                     break;
                 }
             }
@@ -4092,6 +4095,7 @@ void Fractal::CleanupThreads(bool all) {
     };
 
     lambda(m_FractalSavesInProgress);
+    return ret;
 }
 
 //////////////////////////////////////////////////////////////////////////////

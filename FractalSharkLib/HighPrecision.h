@@ -66,7 +66,8 @@ using IterTypeFull = uint64_t;
 
 enum class CalcBad {
     Disable,
-    Enable
+    Enable,
+    EnableCompression
 };
 
 // If true, choose type == float/double for primitives.

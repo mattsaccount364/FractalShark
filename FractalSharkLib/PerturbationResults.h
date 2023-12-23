@@ -18,12 +18,15 @@ public:
     template<typename IterType, class T, CalcBad Bad> friend class PerturbationResults;
 
     PerturbationResults(size_t Generation = 0, size_t LaGeneration = 0) :
-        hiX{},
-        hiY{},
-        maxRadius{},
+        OrbitX{},
+        OrbitY{},
+        OrbitXLow{},
+        OrbitYLow{},
+        MaxRadius{},
         MaxIterations{},
         PeriodMaybeZero{},
-        orb{},
+        FullOrbit{},
+        UncompressedItersInOrbit{},
         GenerationNumber{ Generation },
         LaReference{},
         LaGenerationNumber{ LaGeneration },
@@ -80,27 +83,41 @@ public:
         size_t NewLaGenerationNumber) {
         clear();
 
-        hiX = other.GetHiX();
-        hiY = other.GetHiY();
-        maxRadius = (T)other.GetMaxRadius();
+        OrbitX = other.GetHiX();
+        OrbitY = other.GetHiY();
+        if constexpr (std::is_same<T, Other>::value) {
+            OrbitXLow = other.GetOrbitXLow();
+            OrbitYLow = other.GetOrbitYLow();
+        } else {
+            // TODO
+            // We're copying from a different type, and we're not currently
+            // going to support that.  We could just static_cast but that's
+            // not really the right thing to do.
+            OrbitXLow = {};
+            OrbitYLow = {};
+        }
+        MaxRadius = (T)other.GetMaxRadius();
         MaxIterations = other.GetMaxIterations();
         PeriodMaybeZero = other.GetPeriodMaybeZero();
 
-        orb.reserve(other.orb.size());
+        FullOrbit.reserve(other.FullOrbit.size());
+        UncompressedItersInOrbit = other.GetUncompressedItersInOrbit();
         GenerationNumber = NewGenerationNumber;
 
         AuthoritativePrecision = other.AuthoritativePrecision;
         ReuseX.reserve(other.ReuseX.size());
         ReuseY.reserve(other.ReuseY.size());
 
-        for (size_t i = 0; i < other.orb.size(); i++) {
+        for (size_t i = 0; i < other.FullOrbit.size(); i++) {
             if constexpr (Bad == CalcBad::Enable) {
-                orb.push_back({ (T)other.orb[i].x, (T)other.orb[i].y, other.orb[i].bad != 0 });
+                FullOrbit.push_back({ (T)other.FullOrbit[i].x, (T)other.FullOrbit[i].y, other.FullOrbit[i].bad != 0 });
             }
             else {
-                orb.push_back({ (T)other.orb[i].x, (T)other.orb[i].y });
+                FullOrbit.push_back({ (T)other.FullOrbit[i].x, (T)other.FullOrbit[i].y });
             }
         }
+
+        assert(UncompressedItersInOrbit == FullOrbit.size());
 
         AuthoritativePrecision = other.AuthoritativePrecision;
         ReuseX = other.ReuseX;
@@ -114,8 +131,33 @@ public:
         }
     }
 
+    template<CalcBad OtherBad>
+    void CopySettingsWithoutOrbit(const PerturbationResults<IterType, T, OtherBad>& other) {
+        OrbitX = other.GetHiX();
+        OrbitY = other.GetHiY();
+        OrbitXLow = other.GetOrbitXLow();
+        OrbitYLow = other.GetOrbitYLow();
+
+        MaxRadius = other.GetMaxRadius();
+        MaxIterations = other.GetMaxIterations();
+        PeriodMaybeZero = other.GetPeriodMaybeZero();
+
+        FullOrbit = {};
+        UncompressedItersInOrbit = other.GetUncompressedItersInOrbit();
+        GenerationNumber = other.GetGenerationNumber();
+
+        AuthoritativePrecision = other.AuthoritativePrecision;
+        ReuseX = other.ReuseX;
+        ReuseY = other.ReuseY;
+
+        if (other.GetLaReference() != nullptr) {
+            LaReference = std::make_unique<LAReference<IterType, T, SubType>>(*other.GetLaReference());
+            LaGenerationNumber = other.GetLaGenerationNumber();
+        }
+    }
+
     void Write(const std::wstring& filename) {
-        const auto orbfilename = filename + L".orb";
+        const auto orbfilename = filename + L".FullOrbit";
 
         std::ofstream orbfile(orbfilename, std::ios::binary);
         if (!orbfile.is_open()) {
@@ -123,8 +165,8 @@ public:
             return;
         }
 
-        uint64_t size = orb.size();
-        orbfile.write((char*)orb.data(), sizeof(orb[0]) * size);
+        uint64_t size = FullOrbit.size();
+        orbfile.write((char*)FullOrbit.data(), sizeof(FullOrbit[0]) * size);
 
 
         const auto metafilename = filename + L".met";
@@ -135,7 +177,7 @@ public:
             return;
         }
 
-        metafile << orb.size() << std::endl;
+        metafile << FullOrbit.size() << std::endl;
 
         if constexpr (std::is_same<IterType, uint32_t>::value) {
             metafile << "uint32_t" << std::endl;
@@ -161,6 +203,8 @@ public:
 
         if constexpr (Bad == CalcBad::Enable) {
             metafile << "CalcBad::Enable" << std::endl;
+        } else if constexpr (Bad == CalcBad::EnableCompression) {
+            metafile << "CalcBad::EnableCompression" << std::endl;
         } else if constexpr (Bad == CalcBad::Disable) {
             metafile << "CalcBad::Disable" << std::endl;
         } else {
@@ -168,11 +212,11 @@ public:
             return;
         }
 
-        metafile << hiX.precision() << std::endl;
-        metafile << HdrToString(hiX) << std::endl;
-        metafile << hiY.precision() << std::endl;
-        metafile << HdrToString(hiY) << std::endl;
-        metafile << HdrToString(maxRadius) << std::endl;
+        metafile << OrbitX.precision() << std::endl;
+        metafile << HdrToString(OrbitX) << std::endl;
+        metafile << OrbitY.precision() << std::endl;
+        metafile << HdrToString(OrbitY) << std::endl;
+        metafile << HdrToString(MaxRadius) << std::endl;
         metafile << MaxIterations << std::endl;
         metafile << PeriodMaybeZero << std::endl;
     }
@@ -248,6 +292,11 @@ public:
                     typematch3 = true;
                 }
             }
+            else if (badstr == "CalcBad::EnableCompression") {
+                if constexpr (Bad == CalcBad::EnableCompression) {
+                    typematch3 = true;
+                }
+            }
             else if (badstr == "CalcBad::Disable") {
                 if constexpr (Bad == CalcBad::Disable) {
                     typematch3 = true;
@@ -271,7 +320,7 @@ public:
             std::string shiX;
             metafile >> shiX;
 
-            hiX = HighPrecision{ shiX };
+            OrbitX = HighPrecision{ shiX };
         }
 
         {
@@ -283,8 +332,8 @@ public:
             std::string shiY;
             metafile >> shiY;
 
-            hiY.precision(prec);
-            hiY = HighPrecision{ shiY };
+            OrbitY.precision(prec);
+            OrbitY = HighPrecision{ shiY };
         }
 
         {
@@ -301,12 +350,12 @@ public:
             if constexpr (
                 std::is_same<T, HDRFloat<float>>::value ||
                 std::is_same<T, HDRFloat<double>>::value) {
-                maxRadius = T{ e, (SubType)m };
+                MaxRadius = T{ e, (SubType)m };
             }
             else if constexpr (
                 std::is_same<T, float>::value ||
                 std::is_same<T, double>::value) {
-                maxRadius = static_cast<T>(m);
+                MaxRadius = static_cast<T>(m);
             }
             else {
                 ::MessageBox(NULL, L"Unexpected type in Load", L"", MB_OK);
@@ -326,7 +375,7 @@ public:
             PeriodMaybeZero = (IterType)std::stoll(periodMaybeZeroStr);
         }
 
-        const auto orbfilename = filename + L".orb";
+        const auto orbfilename = filename + L".FullOrbit";
 
         HANDLE hFile = CreateFile(orbfilename.c_str(),
             GENERIC_READ,
@@ -346,8 +395,8 @@ public:
             return false;
         }
 
-        orb.clear();
-        orb.resize(sz);
+        FullOrbit.clear();
+        FullOrbit.resize(sz);
 
         void* pBuf = MapViewOfFile(hMapFile, FILE_MAP_READ, 0, 0, 0);
         if (pBuf == NULL) {
@@ -355,7 +404,7 @@ public:
             return false;
         }
 
-        memcpy(orb.data(), pBuf, sz * sizeof(MattReferenceSingleIter<T, Bad>));
+        memcpy(FullOrbit.data(), pBuf, sz * sizeof(MattReferenceSingleIter<T, Bad>));
 
         // TODO just use the mapped data directly, might be neat.
         UnmapViewOfFile(pBuf);
@@ -366,13 +415,16 @@ public:
     }
 
     void clear() {
-        hiX = {};
-        hiY = {};
-        maxRadius = {};
+        OrbitX = {};
+        OrbitY = {};
+        OrbitXLow = {};
+        OrbitYLow = {};
+        MaxRadius = {};
         MaxIterations = 0;
         PeriodMaybeZero = 0;
 
-        orb.clear();
+        FullOrbit.clear();
+        UncompressedItersInOrbit = 0;
         GenerationNumber = 0;
 
         AuthoritativePrecision = false;
@@ -387,13 +439,13 @@ public:
     // It's not clear that this is right.
     template<class U>
     HDRFloatComplex<U> GetComplex(size_t index) const {
-        return { orb[index].x, orb[index].y };
+        return { FullOrbit[index].x, FullOrbit[index].y };
     }
 
     //template<class U,
     //    typename std::enable_if_t<!IsHDR, bool>::type = true>
     //FloatComplex<U> GetComplex(size_t index) const {
-    //    return FloatComplex<U>{ static_cast<U>(orb[index].x), static_cast<U>(orb[index].y) };
+    //    return FloatComplex<U>{ static_cast<U>(FullOrbit[index].x), static_cast<U>(FullOrbit[index].y) };
     //}
 
     void InitReused() {
@@ -420,30 +472,34 @@ public:
         auto radiusX = maxX - minX;
         auto radiusY = maxY - minY;
 
-        hiX = cx;
-        hiY = cy;
+        OrbitX = cx;
+        OrbitY = cy;
+        OrbitXLow = T{ cx };
+        OrbitYLow = T{ cy };
 
         // TODO I don't get it.  Why is this here?
         // Periodicity checking results in different detected periods depending on the type,
         // e.g. HDRFloat<float> vs HDRFloat<double>.  This 2.0 here seems to compensat, but
         // makes no sense.  So what bug are we covering up here?
         if constexpr (std::is_same<T, HDRFloat<double>>::value) {
-            maxRadius = (T)((radiusX > radiusY ? radiusX : radiusY) * 2.0);
+            MaxRadius = (T)((radiusX > radiusY ? radiusX : radiusY) * 2.0);
         }
         else {
-            maxRadius = (T)(radiusX > radiusY ? radiusX : radiusY);
+            MaxRadius = (T)(radiusX > radiusY ? radiusX : radiusY);
         }
 
-        HdrReduce(maxRadius);
+        HdrReduce(MaxRadius);
 
         MaxIterations = NumIterations + 1; // +1 for push_back(0) below
 
         size_t ReserveSize = (GuessReserveSize != 0) ? GuessReserveSize : NumIterations;
 
         GenerationNumber = Generation;
-        orb.reserve(ReserveSize);
+        FullOrbit.reserve(ReserveSize);
 
-        orb.push_back({});
+        // Add an empty entry at the start
+        FullOrbit.push_back({});
+        UncompressedItersInOrbit = 1;
 
         if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
             AuthoritativePrecision = cx.precision();
@@ -462,7 +518,7 @@ public:
 
     template<CalcBad Bad, RefOrbitCalc::ReuseMode Reuse>
     void TrimResults() {
-        orb.shrink_to_fit();
+        FullOrbit.shrink_to_fit();
 
         if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
             ReuseX.shrink_to_fit();
@@ -471,39 +527,48 @@ public:
     }
 
     const MattReferenceSingleIter<T, Bad>& GetOrbitEntry(size_t index) const {
-        return orb[index];
+        return FullOrbit[index];
     }
 
     size_t GetCountOrbitEntries() const {
-        return orb.size();
+        return FullOrbit.size();
     }
 
     void AddIterationToOrbit(MattReferenceSingleIter<T, Bad> result) {
-        orb.push_back(result);
+        FullOrbit.push_back(result);
+        UncompressedItersInOrbit++;
     }
 
     const MattReferenceSingleIter<T, Bad>* GetOrbitData() const {
-        return orb.data();
+        return FullOrbit.data();
     }
 
     // Location of orbit
     const HighPrecision &GetHiX() const {
-        return hiX;
+        return OrbitX;
     }
 
     // Location of orbit
     const HighPrecision &GetHiY() const {
-        return hiY;
+        return OrbitY;
+    }
+
+    T GetOrbitXLow() const {
+        return OrbitXLow;
+    }
+
+    T GetOrbitYLow() const {
+        return OrbitYLow;
     }
 
     // Radius used for periodicity checking
     T GetMaxRadius() const {
-        return maxRadius;
+        return MaxRadius;
     }
 
     // Used only with scaled kernels
     void SetBad(bool bad) {
-        orb.back().bad = bad;
+        FullOrbit.back().bad = bad;
     }
 
     uint32_t GetAuthoritativePrecision() const {
@@ -516,6 +581,10 @@ public:
 
     void SetPeriodMaybeZero(IterType period) {
         PeriodMaybeZero = period;
+    }
+
+    size_t GetUncompressedItersInOrbit() const {
+        return UncompressedItersInOrbit;
     }
 
     size_t GetReuseSize() const {
@@ -540,13 +609,96 @@ public:
         return MaxIterations;
     }
 
+    // For reference:
+    // Used:
+    //   https://code.mathr.co.uk/fractal-bits/tree/HEAD:/mandelbrot-reference-compression
+    //   https://fractalforums.org/fractal-mathematics-and-new-theories/28/reference-compression/5142
+    // as a reference for the compression algorithm.
+    std::unique_ptr<PerturbationResults<IterType, T, CalcBad::EnableCompression>>
+    Compress() {
+
+        auto compressed =
+            std::make_unique<PerturbationResults<IterType, T, CalcBad::EnableCompression>>(
+                GenerationNumber, LaGenerationNumber);
+        compressed->CopySettingsWithoutOrbit(*this);
+
+        assert (FullOrbit.size() > 1);
+
+        T zx{};
+        T zy{};
+        OrbitXLow = FullOrbit[1].x;
+        OrbitYLow = FullOrbit[1].y;
+
+        for (size_t i = 0; i < FullOrbit.size(); i++) {
+            auto errX = zx - FullOrbit[i].x;
+            auto errY = zy - FullOrbit[i].y;
+
+            auto norm_z = FullOrbit[i].x * FullOrbit[i].x + FullOrbit[i].y * FullOrbit[i].y;
+            HdrReduce(norm_z);
+
+            auto err = (errX * errX + errY * errY) * T{ 1e12f };
+            HdrReduce(err);
+
+            if (HdrCompareToBothPositiveReducedGE(err, norm_z)) {
+                zx = FullOrbit[i].x;
+                zy = FullOrbit[i].y;
+
+                compressed->FullOrbit.push_back({ FullOrbit[i].x, FullOrbit[i].y, i });
+            }
+
+            auto zx_old = zx;
+            zx = zx * zx - zy * zy + OrbitXLow;
+            HdrReduce(zx);
+            zy = T{ 2 } * zx_old * zy + OrbitYLow;
+            HdrReduce(zy);
+        }
+
+        return compressed;
+    }
+
+    std::unique_ptr<PerturbationResults<IterType, T, CalcBad::Disable>> 
+    Decompress() {
+
+        auto compressed_orb = std::move(FullOrbit);
+        auto decompressed = std::make_unique<PerturbationResults<IterType, T, CalcBad::Disable>>(
+            GenerationNumber, LaGenerationNumber);
+        decompressed->CopySettingsWithoutOrbit(*this);
+
+        T zx{};
+        T zy{};
+
+        size_t compressed_index = 0;
+
+        for (size_t i = 0; i < UncompressedItersInOrbit; i++) {
+            if (compressed_index < compressed_orb.size() &&
+                compressed_orb[compressed_index].CompressionIndex == i) {
+                zx = compressed_orb[compressed_index].x;
+                zy = compressed_orb[compressed_index].y;
+                compressed_index++;
+            }
+            else {
+                auto zx_old = zx;
+                zx = zx * zx - zy * zy + OrbitXLow;
+                HdrReduce(zx);
+                zy = T{ 2 } *zx_old * zy + OrbitYLow;
+                HdrReduce(zy);
+            }
+
+            decompressed->AddIterationToOrbit({ zx, zy });
+        }
+
+        return decompressed;
+    }
+
 private:
-    HighPrecision hiX, hiY;
-    T maxRadius;
+    HighPrecision OrbitX, OrbitY;
+    T OrbitXLow, OrbitYLow;
+    T MaxRadius;
     IterType MaxIterations;
     IterType PeriodMaybeZero;  // Zero if not worked out
 
-    std::vector<MattReferenceSingleIter<T, Bad>> orb;
+    std::vector<MattReferenceSingleIter<T, Bad>> FullOrbit;
+    size_t UncompressedItersInOrbit;
 
     size_t GenerationNumber;
 

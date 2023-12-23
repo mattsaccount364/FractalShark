@@ -48,10 +48,6 @@ public:
     template<typename IterType, class T, CalcBad Bad>
     std::vector<std::unique_ptr<PerturbationResults<IterType, T, Bad>>>& GetPerturbationResults() ;
 
-    template<typename IterType, class T, CalcBad Bad>
-    PerturbationResults<IterType, T, Bad> *AddPerturbationResults(
-        std::unique_ptr<PerturbationResults<IterType, T, Bad>> results);
-
     template<typename IterType, class T, class SubType, BenchmarkMode BenchmarkState>
     void AddPerturbationReferencePoint();
 
@@ -84,9 +80,12 @@ public:
     void LoadAllOrbits();
 
 private:
-private:
     bool RequiresBadCalc() const;
     bool IsThisPerturbationArrayUsed(void* check) const;
+
+    template<typename IterType, class T, CalcBad Bad>
+    PerturbationResults<IterType, T, Bad>* AddPerturbationResults(
+        std::unique_ptr<PerturbationResults<IterType, T, Bad>> results);
 
     template<typename IterType, class T, CalcBad Bad>
     PerturbationResults<IterType, T, Bad>& GetPerturbationResults(size_t index);

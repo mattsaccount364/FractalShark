@@ -39,10 +39,10 @@ enum FractalSharkError : int32_t {
     Error9,
 };
 
-constexpr static bool Default = true;
+constexpr static bool Default = false;
 constexpr static bool ForceEnable = true;
 
-constexpr static bool EnableGpu1x32 = Default;
+constexpr static bool EnableGpu1x32 = ForceEnable;
 constexpr static bool EnableGpu2x32 = Default;
 constexpr static bool EnableGpu4x32 = Default;
 constexpr static bool EnableGpu1x64 = Default;
@@ -62,21 +62,21 @@ constexpr static bool EnableGpuHDRx64PerturbedBLA = Default;
 constexpr static bool EnableGpu1x32PerturbedLAv2 = ForceEnable;
 constexpr static bool EnableGpu1x32PerturbedLAv2PO = ForceEnable;
 constexpr static bool EnableGpu1x32PerturbedLAv2LAO = ForceEnable;
-constexpr static bool EnableGpu2x32PerturbedLAv2 = ForceEnable;
-constexpr static bool EnableGpu2x32PerturbedLAv2PO = ForceEnable;
-constexpr static bool EnableGpu2x32PerturbedLAv2LAO = ForceEnable;
-constexpr static bool EnableGpu1x64PerturbedLAv2 = ForceEnable;
-constexpr static bool EnableGpu1x64PerturbedLAv2PO = ForceEnable;
-constexpr static bool EnableGpu1x64PerturbedLAv2LAO = ForceEnable;
+constexpr static bool EnableGpu2x32PerturbedLAv2 = Default;
+constexpr static bool EnableGpu2x32PerturbedLAv2PO = Default;
+constexpr static bool EnableGpu2x32PerturbedLAv2LAO = Default;
+constexpr static bool EnableGpu1x64PerturbedLAv2 = Default;
+constexpr static bool EnableGpu1x64PerturbedLAv2PO = Default;
+constexpr static bool EnableGpu1x64PerturbedLAv2LAO = Default;
 constexpr static bool EnableGpuHDRx32PerturbedLAv2 = ForceEnable;
 constexpr static bool EnableGpuHDRx32PerturbedLAv2PO = ForceEnable;
 constexpr static bool EnableGpuHDRx32PerturbedLAv2LAO = ForceEnable;
-constexpr static bool EnableGpuHDRx2x32PerturbedLAv2 = ForceEnable;
-constexpr static bool EnableGpuHDRx2x32PerturbedLAv2PO = ForceEnable;
-constexpr static bool EnableGpuHDRx2x32PerturbedLAv2LAO = ForceEnable;
-constexpr static bool EnableGpuHDRx64PerturbedLAv2 = ForceEnable;
-constexpr static bool EnableGpuHDRx64PerturbedLAv2PO = ForceEnable;
-constexpr static bool EnableGpuHDRx64PerturbedLAv2LAO = ForceEnable;
+constexpr static bool EnableGpuHDRx2x32PerturbedLAv2 = Default;
+constexpr static bool EnableGpuHDRx2x32PerturbedLAv2PO = Default;
+constexpr static bool EnableGpuHDRx2x32PerturbedLAv2LAO = Default;
+constexpr static bool EnableGpuHDRx64PerturbedLAv2 = Default;
+constexpr static bool EnableGpuHDRx64PerturbedLAv2PO = Default;
+constexpr static bool EnableGpuHDRx64PerturbedLAv2LAO = Default;
 
 //#define DEFAULT_KERNEL_LAUNCH_PARAMS nb_blocks, threads_per_block, 0, cudaStreamPerThread
 #define DEFAULT_KERNEL_LAUNCH_PARAMS nb_blocks, threads_per_block

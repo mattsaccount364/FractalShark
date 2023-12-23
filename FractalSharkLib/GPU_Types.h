@@ -198,18 +198,46 @@ struct BadField {
     uint32_t padding;
 };
 
+struct CompressionIndex {
+    uint64_t CompressionIndex;
+};
+
 #pragma pack(push, 8)
 template<typename Type, CalcBad Bad = CalcBad::Disable>
 struct /*alignas(8)*/ MattReferenceSingleIter :
-    public std::conditional_t<Bad == CalcBad::Enable, BadField, Empty> {
+    public std::conditional_t<
+    Bad == CalcBad::Enable,
+    BadField,
+    std::conditional_t<Bad == CalcBad::EnableCompression,
+        CompressionIndex,
+        Empty>> {
+
+    static constexpr uint64_t BadCompressionIndex = 0xFFFF'FFFF'FFFF'FFFFull;
+
     MattReferenceSingleIter()
         : x{ Type(0.0f) },
         y{ Type(0.0f) } {
+
+        //if constexpr(Bad == CalcBad::Enable) {
+        //    bad = false;
+        //}
+
+        //if constexpr (Bad == CalcBad::EnableCompression) {
+        //    CompressionIndex = BadCompressionIndex;
+        //}
     }
 
     MattReferenceSingleIter(Type x, Type y)
         : x{ x },
         y{ y } {
+
+        //if constexpr (Bad == CalcBad::Enable) {
+        //    bad = false;
+        //}
+
+        //if constexpr (Bad == CalcBad::EnableCompression) {
+        //    CompressionIndex = BadCompressionIndex;
+        //}
     }
 
     MattReferenceSingleIter(Type x, Type y, bool bad)
@@ -218,6 +246,17 @@ struct /*alignas(8)*/ MattReferenceSingleIter :
         if constexpr (Bad == CalcBad::Enable) {
             this->bad = bad;
         }
+
+        //if constexpr (Bad == CalcBad::EnableCompression) {
+        //    CompressionIndex = BadCompressionIndex;
+        //}
+    }
+
+    MattReferenceSingleIter(Type x, Type y, uint64_t CompressionIndex)
+        : x{ x },
+        y{ y } {
+            static_assert (Bad == CalcBad::EnableCompression, "Compression not enabled");
+            this->CompressionIndex = CompressionIndex;
     }
 
     MattReferenceSingleIter(const MattReferenceSingleIter& other) = default;

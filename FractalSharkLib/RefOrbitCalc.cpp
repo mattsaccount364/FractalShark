@@ -334,33 +334,6 @@ RefOrbitCalc::AddPerturbationResults(std::unique_ptr<PerturbationResults<IterTyp
     }
 }
 
-template
-PerturbationResults<uint32_t, float, CalcBad::Disable> *
-RefOrbitCalc::AddPerturbationResults<uint32_t, float, CalcBad::Disable>(
-    std::unique_ptr<PerturbationResults<uint32_t, float, CalcBad::Disable>> results);
-template PerturbationResults<uint32_t, double, CalcBad::Disable> *
-RefOrbitCalc::AddPerturbationResults<uint32_t, double, CalcBad::Disable>(
-    std::unique_ptr<PerturbationResults<uint32_t, double, CalcBad::Disable>> results);
-template PerturbationResults<uint32_t, HDRFloat<float>, CalcBad::Disable> *
-RefOrbitCalc::AddPerturbationResults<uint32_t, HDRFloat<float>, CalcBad::Disable>(
-    std::unique_ptr<PerturbationResults<uint32_t, HDRFloat<float>, CalcBad::Disable>> results);
-template PerturbationResults<uint32_t, HDRFloat<double>, CalcBad::Disable> *
-RefOrbitCalc::AddPerturbationResults<uint32_t, HDRFloat<double>, CalcBad::Disable>(
-    std::unique_ptr<PerturbationResults<uint32_t, HDRFloat<double>, CalcBad::Disable>> results);
-
-template PerturbationResults<uint64_t, float, CalcBad::Disable> *
-RefOrbitCalc::AddPerturbationResults<uint64_t, float, CalcBad::Disable>(
-    std::unique_ptr<PerturbationResults<uint64_t, float, CalcBad::Disable>> results);
-template PerturbationResults<uint64_t, double, CalcBad::Disable> *
-RefOrbitCalc::AddPerturbationResults<uint64_t, double, CalcBad::Disable>(
-    std::unique_ptr<PerturbationResults<uint64_t, double, CalcBad::Disable>> results);
-template PerturbationResults<uint64_t, HDRFloat<float>, CalcBad::Disable> *
-RefOrbitCalc::AddPerturbationResults<uint64_t, HDRFloat<float>, CalcBad::Disable>(
-    std::unique_ptr<PerturbationResults<uint64_t, HDRFloat<float>, CalcBad::Disable>> results);
-template PerturbationResults<uint64_t, HDRFloat<double>, CalcBad::Disable> *
-RefOrbitCalc::AddPerturbationResults<uint64_t, HDRFloat<double>, CalcBad::Disable>(
-    std::unique_ptr<PerturbationResults<uint64_t, HDRFloat<double>, CalcBad::Disable>> results);
-
 template<
     typename IterType,
     class T,
@@ -2054,6 +2027,13 @@ PerturbationResults<IterType, ConvertTType, Bad>* RefOrbitCalc::GetAndCreateUsef
         added = true;
 
         results = cur_array[cur_array.size() - 1].get();
+
+        // TODO: this is a hack.  We need to fix this.
+        if constexpr (Bad == CalcBad::Disable) {
+            auto compressedResults = results->Compress();
+            auto decompressedResults = compressedResults->Decompress();
+            results = AddPerturbationResults(std::move(decompressedResults));
+        }
     }
 
     constexpr bool IsHdrDblflt = std::is_same<ConvertTType, HDRFloat<CudaDblflt<MattDblflt>>>::value;

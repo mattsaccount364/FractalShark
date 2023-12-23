@@ -35,9 +35,9 @@ public:
         RenderAlgorithm algorithm,
         IterType* iter_buffer,
         Color16* color_buffer,
-        const MattPerturbResults<IterType, T, CalcBad::Enable>* double_perturb,
-        const MattPerturbResults<IterType, float, CalcBad::Enable>* float_perturb,
-        BLAS<IterType, T, CalcBad::Enable>* blas,
+        const MattPerturbResults<IterType, T, PerturbExtras::Bad>* double_perturb,
+        const MattPerturbResults<IterType, float, PerturbExtras::Bad>* float_perturb,
+        BLAS<IterType, T, PerturbExtras::Bad>* blas,
         T cx,
         T cy,
         T dx,
@@ -104,12 +104,12 @@ public:
         uint32_t palIters,
         uint32_t paletteAuxDepth);
 
-    template<typename IterType, class T1, class SubType, CalcBad Bad, class T2>
+    template<typename IterType, class T1, class SubType, PerturbExtras PExtras, class T2>
     uint32_t InitializePerturb(
         size_t GenerationNumber1,
-        const MattPerturbResults<IterType, T1, Bad>* Perturb1,
+        const MattPerturbResults<IterType, T1, PExtras>* Perturb1,
         size_t GenerationNumber2,
-        const MattPerturbResults<IterType, T2, Bad>* Perturb2,
+        const MattPerturbResults<IterType, T2, PExtras>* Perturb2,
         const LAReference<IterType, T1, SubType>* LaReferenceHost,
         size_t LaGenerationNumber1);
 

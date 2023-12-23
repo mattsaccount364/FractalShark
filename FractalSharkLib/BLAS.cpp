@@ -3,18 +3,18 @@
 #include "BLAS.h"
 #include "HDRFloat.h"
 
-template<typename IterType, class T, CalcBad Bad>
-BLAS<IterType, T, Bad>::BLAS(PerturbationResults<IterType, T, Bad>& results) :
+template<typename IterType, class T, PerturbExtras PExtras>
+BLAS<IterType, T, PExtras>::BLAS(PerturbationResults<IterType, T, PExtras>& results) :
     m_PerturbationResults(results) {
 }
 
-template<typename IterType, class T, CalcBad Bad>
-void BLAS<IterType, T, Bad>::InitLStep(size_t level, size_t m, T blaSize, T epsilon) {
+template<typename IterType, class T, PerturbExtras PExtras>
+void BLAS<IterType, T, PExtras>::InitLStep(size_t level, size_t m, T blaSize, T epsilon) {
     m_B[level][m - 1] = CreateLStep(level, m, blaSize, epsilon);
 }
 
-template<typename IterType, class T, CalcBad Bad>
-BLA<T> BLAS<IterType, T, Bad>::MergeTwoBlas(BLA<T> x, BLA<T> y, T blaSize) {
+template<typename IterType, class T, PerturbExtras PExtras>
+BLA<T> BLAS<IterType, T, PExtras>::MergeTwoBlas(BLA<T> x, BLA<T> y, T blaSize) {
     uint32_t l = x.getL() + y.getL();
     // A = y.A * x.A
     T RealA, ImagA;
@@ -35,8 +35,8 @@ BLA<T> BLAS<IterType, T, Bad>::MergeTwoBlas(BLA<T> x, BLA<T> y, T blaSize) {
     return BLA<T>::getGenericStep(r2, RealA, ImagA, RealB, ImagB, l);
 }
 
-template<typename IterType, class T, CalcBad Bad>
-BLA<T> BLAS<IterType, T, Bad>::CreateLStep(size_t level, size_t m, T blaSize, T epsilon) {
+template<typename IterType, class T, PerturbExtras PExtras>
+BLA<T> BLAS<IterType, T, PExtras>::CreateLStep(size_t level, size_t m, T blaSize, T epsilon) {
 
     if (level == 0) {
         return CreateOneStep(m, epsilon);
@@ -59,8 +59,8 @@ BLA<T> BLAS<IterType, T, Bad>::CreateLStep(size_t level, size_t m, T blaSize, T 
     }
 }
 
-template<typename IterType, class T, CalcBad Bad>
-BLA<T> BLAS<IterType, T, Bad>::CreateOneStep(size_t m, T epsilon) {
+template<typename IterType, class T, PerturbExtras PExtras>
+BLA<T> BLAS<IterType, T, PExtras>::CreateOneStep(size_t m, T epsilon) {
     T RealA = static_cast<T>(m_PerturbationResults.GetOrbitEntry(m).x * 2);
     T ImagA = static_cast<T>(m_PerturbationResults.GetOrbitEntry(m).y * 2);
 
@@ -78,8 +78,8 @@ BLA<T> BLAS<IterType, T, Bad>::CreateOneStep(size_t m, T epsilon) {
 
 constexpr size_t WorkThreshholdForThreads = 5000;
 
-template<typename IterType, class T, CalcBad Bad>
-void BLAS<IterType, T, Bad>::InitInternal(T blaSize, T epsilon) {
+template<typename IterType, class T, PerturbExtras PExtras>
+void BLAS<IterType, T, PExtras>::InitInternal(T blaSize, T epsilon) {
 
     std::vector<std::unique_ptr<std::thread>> threads;
 
@@ -118,8 +118,8 @@ void BLAS<IterType, T, Bad>::InitInternal(T blaSize, T epsilon) {
     }
 }
 
-template<typename IterType, class T, CalcBad Bad>
-void BLAS<IterType, T, Bad>::MergeOneStep(size_t m, size_t elementsSrc, size_t src, size_t dest, T blaSize) {
+template<typename IterType, class T, PerturbExtras PExtras>
+void BLAS<IterType, T, PExtras>::MergeOneStep(size_t m, size_t elementsSrc, size_t src, size_t dest, T blaSize) {
     size_t mx = m << 1;
     size_t my = mx + 1;
     if (my < elementsSrc) {
@@ -133,8 +133,8 @@ void BLAS<IterType, T, Bad>::MergeOneStep(size_t m, size_t elementsSrc, size_t s
     }
 }
 
-template<typename IterType, class T, CalcBad Bad>
-void BLAS<IterType, T, Bad>::Merge(T blaSize) {
+template<typename IterType, class T, PerturbExtras PExtras>
+void BLAS<IterType, T, PExtras>::Merge(T blaSize) {
 
     size_t elementsDst = 0;
     size_t src = m_FirstLevel;
@@ -187,8 +187,8 @@ void BLAS<IterType, T, Bad>::Merge(T blaSize) {
     }
 }
 
-template<typename IterType, class T, CalcBad Bad>
-void BLAS<IterType, T, Bad>::Init(size_t InM, T blaSize) {
+template<typename IterType, class T, PerturbExtras PExtras>
+void BLAS<IterType, T, PExtras>::Init(size_t InM, T blaSize) {
     T precision = T(1) / ((T)(1L << BLA_BITS));
 
     this->m_M = InM;
@@ -229,8 +229,8 @@ void BLAS<IterType, T, Bad>::Init(size_t InM, T blaSize) {
     Merge(blaSize);
 }
 
-template<typename IterType, class T, CalcBad Bad>
-BLA<T>* BLAS<IterType, T, Bad>::LookupBackwards(size_t m, T z2) {
+template<typename IterType, class T, PerturbExtras PExtras>
+BLA<T>* BLAS<IterType, T, PExtras>::LookupBackwards(size_t m, T z2) {
 
     if (m == 0) {
         return nullptr;
@@ -282,22 +282,22 @@ BLA<T>* BLAS<IterType, T, Bad>::LookupBackwards(size_t m, T z2) {
     return nullptr;
 }
 
-template class BLAS<uint32_t, float, CalcBad::Disable>;
-template class BLAS<uint32_t, double, CalcBad::Disable>;
-template class BLAS<uint32_t, HDRFloat<double>, CalcBad::Disable>;
-template class BLAS<uint32_t, HDRFloat<float>, CalcBad::Disable>;
+template class BLAS<uint32_t, float, PerturbExtras::Disable>;
+template class BLAS<uint32_t, double, PerturbExtras::Disable>;
+template class BLAS<uint32_t, HDRFloat<double>, PerturbExtras::Disable>;
+template class BLAS<uint32_t, HDRFloat<float>, PerturbExtras::Disable>;
 
-template class BLAS<uint32_t, float, CalcBad::Enable>;
-template class BLAS<uint32_t, double, CalcBad::Enable>;
-template class BLAS<uint32_t, HDRFloat<double>, CalcBad::Enable>;
-template class BLAS<uint32_t, HDRFloat<float>, CalcBad::Enable>;
+template class BLAS<uint32_t, float, PerturbExtras::Bad>;
+template class BLAS<uint32_t, double, PerturbExtras::Bad>;
+template class BLAS<uint32_t, HDRFloat<double>, PerturbExtras::Bad>;
+template class BLAS<uint32_t, HDRFloat<float>, PerturbExtras::Bad>;
 
-template class BLAS<uint64_t, float, CalcBad::Disable>;
-template class BLAS<uint64_t, double, CalcBad::Disable>;
-template class BLAS<uint64_t, HDRFloat<double>, CalcBad::Disable>;
-template class BLAS<uint64_t, HDRFloat<float>, CalcBad::Disable>;
+template class BLAS<uint64_t, float, PerturbExtras::Disable>;
+template class BLAS<uint64_t, double, PerturbExtras::Disable>;
+template class BLAS<uint64_t, HDRFloat<double>, PerturbExtras::Disable>;
+template class BLAS<uint64_t, HDRFloat<float>, PerturbExtras::Disable>;
 
-template class BLAS<uint64_t, float, CalcBad::Enable>;
-template class BLAS<uint64_t, double, CalcBad::Enable>;
-template class BLAS<uint64_t, HDRFloat<double>, CalcBad::Enable>;
-template class BLAS<uint64_t, HDRFloat<float>, CalcBad::Enable>;
+template class BLAS<uint64_t, float, PerturbExtras::Bad>;
+template class BLAS<uint64_t, double, PerturbExtras::Bad>;
+template class BLAS<uint64_t, HDRFloat<double>, PerturbExtras::Bad>;
+template class BLAS<uint64_t, HDRFloat<float>, PerturbExtras::Bad>;

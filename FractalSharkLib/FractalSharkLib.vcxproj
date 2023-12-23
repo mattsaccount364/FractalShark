@@ -50,6 +50,7 @@
     <ClInclude Include="QuadFloat\gqf_basic.cuh" />
     <ClInclude Include="QuadFloat\inline.cuh" />
     <ClInclude Include="RefOrbitCalc.h" />
+    <ClInclude Include="RefOrbitCalcTemplates.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="WPngImage\lodepng.h" />
     <ClInclude Include="WPngImage\WPngImage.hh" />

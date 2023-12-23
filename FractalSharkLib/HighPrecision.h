@@ -64,9 +64,9 @@ constexpr size_t AuthoritativeReuseExtraPrecision = 100;
 //using IterType = uint32_t;
 using IterTypeFull = uint64_t;
 
-enum class CalcBad {
+enum class PerturbExtras {
     Disable,
-    Enable,
+    Bad,
     EnableCompression
 };
 

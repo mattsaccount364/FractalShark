@@ -20,7 +20,7 @@ class LAStageInfo;
 
 class RefOrbitCalc;
 
-template<typename IterType, class T, CalcBad Bad>
+template<typename IterType, class T, PerturbExtras PExtras>
 class PerturbationResults;
 
 template<typename IterType, class T, class SubType>
@@ -98,21 +98,21 @@ private:
     IterType LAsize();
     template<typename PerturbType>
     bool CreateLAFromOrbit(
-        const PerturbationResults<IterType, PerturbType, CalcBad::Disable>& PerturbationResults,
+        const PerturbationResults<IterType, PerturbType, PerturbExtras::Disable>& PerturbationResults,
         IterType maxRefIteration);
     template<typename PerturbType>
     bool CreateLAFromOrbitMT(
-        const PerturbationResults<IterType, PerturbType, CalcBad::Disable>& PerturbationResults,
+        const PerturbationResults<IterType, PerturbType, PerturbExtras::Disable>& PerturbationResults,
         IterType maxRefIteration);
     template<typename PerturbType>
     bool CreateNewLAStage(
-        const PerturbationResults<IterType, PerturbType, CalcBad::Disable>& PerturbationResults,
+        const PerturbationResults<IterType, PerturbType, PerturbExtras::Disable>& PerturbationResults,
         IterType maxRefIteration);
 
 public:
     template<typename PerturbType>
     void GenerateApproximationData(
-        const PerturbationResults<IterType, PerturbType, CalcBad::Disable>& PerturbationResults,
+        const PerturbationResults<IterType, PerturbType, PerturbExtras::Disable>& PerturbationResults,
         Float radius,
         IterType maxRefIteration,
         bool UseSmallExponents);

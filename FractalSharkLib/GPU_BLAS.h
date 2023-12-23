@@ -3,7 +3,7 @@
 #include "BLA.h"
 #include <vector>
 
-template<typename IterType, class T, CalcBad Bad>
+template<typename IterType, class T, PerturbExtras PExtras>
 class BLAS;
 
 template<typename IterType, class T, class GPUBLA_TYPE, int32_t LM2>

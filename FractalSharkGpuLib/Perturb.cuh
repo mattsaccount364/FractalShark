@@ -2,9 +2,9 @@
 // Perturbation results
 ////////////////////////////////////////////////////////////////////////////////////////
 
-template<typename IterType, typename Type, CalcBad Bad>
+template<typename IterType, typename Type, PerturbExtras PExtras>
 struct MattPerturbSingleResults {
-    const MattReferenceSingleIter<Type, Bad>* __restrict__ iters;
+    const MattReferenceSingleIter<Type, PExtras>* __restrict__ iters;
     IterType size;
     cudaError_t err;
     IterType PeriodMaybeZero;
@@ -17,7 +17,7 @@ struct MattPerturbSingleResults {
     MattPerturbSingleResults(
         IterType sz,
         IterType PeriodMaybeZero,
-        const MattReferenceSingleIter<Other, Bad>* in_iters)
+        const MattReferenceSingleIter<Other, PExtras>* in_iters)
         : iters(nullptr),
         size(sz),
         err(cudaSuccess),
@@ -43,12 +43,12 @@ struct MattPerturbSingleResults {
         check_size<MattReferenceSingleIter<HDRFloat<CudaDblflt<dblflt>>>, 24>();
         check_size<MattReferenceSingleIter<dblflt>, 16>();
 
-        MattReferenceSingleIter<Type, Bad>* tempIters;
+        MattReferenceSingleIter<Type, PExtras>* tempIters;
         AllocHost = false;
-        err = cudaMallocManaged(&tempIters, size * sizeof(MattReferenceSingleIter<Type, Bad>));
+        err = cudaMallocManaged(&tempIters, size * sizeof(MattReferenceSingleIter<Type, PExtras>));
         if (err != cudaSuccess) {
             AllocHost = true;
-            err = cudaMallocHost(&tempIters, size * sizeof(MattReferenceSingleIter<Type, Bad>));
+            err = cudaMallocHost(&tempIters, size * sizeof(MattReferenceSingleIter<Type, PExtras>));
             if (err != cudaSuccess) {
                 size = 0;
                 return;
@@ -58,7 +58,7 @@ struct MattPerturbSingleResults {
         iters = tempIters;
 
         // Cast to void -- it's logically const
-        cudaMemcpy((void*)iters, in_iters, size * sizeof(MattReferenceSingleIter<Type, Bad>), cudaMemcpyDefault);
+        cudaMemcpy((void*)iters, in_iters, size * sizeof(MattReferenceSingleIter<Type, PExtras>), cudaMemcpyDefault);
 
         //err = cudaMemAdvise(iters,
         //    size * sizeof(MattReferenceSingleIter<Type>),
@@ -71,7 +71,7 @@ struct MattPerturbSingleResults {
     }
 
     MattPerturbSingleResults(const MattPerturbSingleResults& other) {
-        iters = reinterpret_cast<const MattReferenceSingleIter<Type, Bad>*>(other.iters);
+        iters = reinterpret_cast<const MattReferenceSingleIter<Type, PExtras>*>(other.iters);
         size = other.size;
         PeriodMaybeZero = other.PeriodMaybeZero;
         own = false;
@@ -80,8 +80,8 @@ struct MattPerturbSingleResults {
 
     // funny semantics, copy doesn't own the pointers.
     template<class Other>
-    MattPerturbSingleResults(const MattPerturbSingleResults<IterType, Other, Bad>& other) {
-        iters = reinterpret_cast<const MattReferenceSingleIter<Type, Bad>*>(other.iters);
+    MattPerturbSingleResults(const MattPerturbSingleResults<IterType, Other, PExtras>& other) {
+        iters = reinterpret_cast<const MattReferenceSingleIter<Type, PExtras>*>(other.iters);
         size = other.size;
         PeriodMaybeZero = other.PeriodMaybeZero;
         own = false;

@@ -3,10 +3,10 @@
 #include "BLA.h"
 #include <vector>
 
-template<typename IterType, class T, CalcBad Bad>
+template<typename IterType, class T, PerturbExtras PExtras>
 class PerturbationResults;
 
-template<typename IterType, class T, CalcBad Bad = CalcBad::Disable>
+template<typename IterType, class T, PerturbExtras PExtras = PerturbExtras::Disable>
 class BLAS {
 private:
     static constexpr size_t BLA_BITS = 23;
@@ -19,7 +19,7 @@ public:
     int32_t m_LM2;//Level -1 is not attainable due to Zero R
     static constexpr size_t m_FirstLevel = BLA_STARTING_LEVEL - 1;
 
-    BLAS(PerturbationResults<IterType, T, Bad>& results);
+    BLAS(PerturbationResults<IterType, T, PExtras>& results);
 
 private:
     void InitLStep(size_t level, size_t m, T blaSize, T epsilon);
@@ -39,5 +39,5 @@ private:
 
     std::vector<size_t> m_ElementsPerLevel;
 
-    PerturbationResults<IterType, T, Bad>& m_PerturbationResults;
+    PerturbationResults<IterType, T, PExtras>& m_PerturbationResults;
 };

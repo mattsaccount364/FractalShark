@@ -10,10 +10,10 @@ PerturbResultsCollection::~PerturbResultsCollection() {
     DeleteAllInternal(m_Results2);
 }
 
-template<typename Type, CalcBad Bad>
+template<typename Type, PerturbExtras PExtras>
 void PerturbResultsCollection::SetPtr32(
     size_t GenerationNumber,
-    InternalResults& Results, MattPerturbSingleResults<uint32_t, Type, Bad>* ptr) {
+    InternalResults& Results, MattPerturbSingleResults<uint32_t, Type, PExtras>* ptr) {
 
     if (Results.m_GenerationNumber == GenerationNumber) {
         return;
@@ -22,7 +22,7 @@ void PerturbResultsCollection::SetPtr32(
     Results.m_GenerationNumber = GenerationNumber;
 
     if constexpr (std::is_same<Type, float>::value) {
-        if constexpr (Bad == CalcBad::Disable) {
+        if constexpr (PExtras == PerturbExtras::Disable) {
             delete Results.m_Results32FloatDisable;
             Results.m_Results32FloatDisable = ptr;
         }
@@ -32,7 +32,7 @@ void PerturbResultsCollection::SetPtr32(
         }
     }
     else if constexpr (std::is_same<Type, double>::value) {
-        if constexpr (Bad == CalcBad::Disable) {
+        if constexpr (PExtras == PerturbExtras::Disable) {
             delete Results.m_Results32DoubleDisable;
             Results.m_Results32DoubleDisable = ptr;
         }
@@ -42,7 +42,7 @@ void PerturbResultsCollection::SetPtr32(
         }
     }
     else if constexpr (std::is_same<Type, CudaDblflt<dblflt>>::value) {
-        if constexpr (Bad == CalcBad::Disable) {
+        if constexpr (PExtras == PerturbExtras::Disable) {
             delete Results.m_Results32CudaDblfltDisable;
             Results.m_Results32CudaDblfltDisable = ptr;
         }
@@ -52,7 +52,7 @@ void PerturbResultsCollection::SetPtr32(
         }
     }
     else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
-        if constexpr (Bad == CalcBad::Disable) {
+        if constexpr (PExtras == PerturbExtras::Disable) {
             delete Results.m_Results32HdrFloatDisable;
             Results.m_Results32HdrFloatDisable = ptr;
         }
@@ -62,7 +62,7 @@ void PerturbResultsCollection::SetPtr32(
         }
     }
     else if constexpr (std::is_same<Type, HDRFloat<double>>::value) {
-        if constexpr (Bad == CalcBad::Disable) {
+        if constexpr (PExtras == PerturbExtras::Disable) {
             delete Results.m_Results32HdrDoubleDisable;
             Results.m_Results32HdrDoubleDisable = ptr;
         }
@@ -72,7 +72,7 @@ void PerturbResultsCollection::SetPtr32(
         }
     }
     else if constexpr (std::is_same<Type, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
-        if constexpr (Bad == CalcBad::Disable) {
+        if constexpr (PExtras == PerturbExtras::Disable) {
             delete Results.m_Results32HdrCudaMattDblfltDisable;
             Results.m_Results32HdrCudaMattDblfltDisable = ptr;
         }
@@ -83,11 +83,11 @@ void PerturbResultsCollection::SetPtr32(
     }
 }
 
-template<typename Type, CalcBad Bad>
+template<typename Type, PerturbExtras PExtras>
 void PerturbResultsCollection::SetPtr64(
     size_t GenerationNumber,
     InternalResults& Results,
-    MattPerturbSingleResults<uint64_t, Type, Bad>* ptr) {
+    MattPerturbSingleResults<uint64_t, Type, PExtras>* ptr) {
 
     if (Results.m_GenerationNumber == GenerationNumber) {
         return;
@@ -96,7 +96,7 @@ void PerturbResultsCollection::SetPtr64(
     Results.m_GenerationNumber = GenerationNumber;
 
     if constexpr (std::is_same<Type, float>::value) {
-        if constexpr (Bad == CalcBad::Disable) {
+        if constexpr (PExtras == PerturbExtras::Disable) {
             delete Results.m_Results64FloatDisable;
             Results.m_Results64FloatDisable = ptr;
         }
@@ -106,7 +106,7 @@ void PerturbResultsCollection::SetPtr64(
         }
     }
     else if constexpr (std::is_same<Type, double>::value) {
-        if constexpr (Bad == CalcBad::Disable) {
+        if constexpr (PExtras == PerturbExtras::Disable) {
             delete Results.m_Results64DoubleDisable;
             Results.m_Results64DoubleDisable = ptr;
         }
@@ -116,7 +116,7 @@ void PerturbResultsCollection::SetPtr64(
         }
     }
     else if constexpr (std::is_same<Type, CudaDblflt<dblflt>>::value) {
-        if constexpr (Bad == CalcBad::Disable) {
+        if constexpr (PExtras == PerturbExtras::Disable) {
             delete Results.m_Results64CudaDblfltDisable;
             Results.m_Results64CudaDblfltDisable = ptr;
         }
@@ -126,7 +126,7 @@ void PerturbResultsCollection::SetPtr64(
         }
     }
     else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
-        if constexpr (Bad == CalcBad::Disable) {
+        if constexpr (PExtras == PerturbExtras::Disable) {
             delete Results.m_Results64HdrFloatDisable;
             Results.m_Results64HdrFloatDisable = ptr;
         }
@@ -136,7 +136,7 @@ void PerturbResultsCollection::SetPtr64(
         }
     }
     else if constexpr (std::is_same<Type, HDRFloat<double>>::value) {
-        if constexpr (Bad == CalcBad::Disable) {
+        if constexpr (PExtras == PerturbExtras::Disable) {
             delete Results.m_Results64HdrDoubleDisable;
             Results.m_Results64HdrDoubleDisable = ptr;
         }
@@ -146,7 +146,7 @@ void PerturbResultsCollection::SetPtr64(
         }
     }
     else if constexpr (std::is_same<Type, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
-        if constexpr (Bad == CalcBad::Disable) {
+        if constexpr (PExtras == PerturbExtras::Disable) {
             delete Results.m_Results64HdrCudaMattDblfltDisable;
             Results.m_Results64HdrCudaMattDblfltDisable = ptr;
         }
@@ -157,23 +157,23 @@ void PerturbResultsCollection::SetPtr64(
     }
 }
 
-template<typename IterType, typename Type, CalcBad Bad>
-void PerturbResultsCollection::SetPtr1(size_t GenerationNumber1, MattPerturbSingleResults<IterType, Type, Bad>* ptr) {
+template<typename IterType, typename Type, PerturbExtras PExtras>
+void PerturbResultsCollection::SetPtr1(size_t GenerationNumber1, MattPerturbSingleResults<IterType, Type, PExtras>* ptr) {
     if constexpr (std::is_same<IterType, uint32_t>::value) {
-        SetPtr32<Type, Bad>(GenerationNumber1, m_Results1, ptr);
+        SetPtr32<Type, PExtras>(GenerationNumber1, m_Results1, ptr);
     }
     else if constexpr (std::is_same<IterType, uint64_t>::value) {
-        SetPtr64<Type, Bad>(GenerationNumber1, m_Results1, ptr);
+        SetPtr64<Type, PExtras>(GenerationNumber1, m_Results1, ptr);
     }
 }
 
-template<typename IterType, typename Type, CalcBad Bad>
-void PerturbResultsCollection::SetPtr2(size_t GenerationNumber2, MattPerturbSingleResults<IterType, Type, Bad>* ptr) {
+template<typename IterType, typename Type, PerturbExtras PExtras>
+void PerturbResultsCollection::SetPtr2(size_t GenerationNumber2, MattPerturbSingleResults<IterType, Type, PExtras>* ptr) {
     if constexpr (std::is_same<IterType, uint32_t>::value) {
-        SetPtr32<Type, Bad>(GenerationNumber2, m_Results2, ptr);
+        SetPtr32<Type, PExtras>(GenerationNumber2, m_Results2, ptr);
     }
     else if constexpr (std::is_same<IterType, uint64_t>::value) {
-        SetPtr64<Type, Bad>(GenerationNumber2, m_Results2, ptr);
+        SetPtr64<Type, PExtras>(GenerationNumber2, m_Results2, ptr);
     }
 }
 
@@ -273,10 +273,10 @@ void PerturbResultsCollection::SetLaReference1(
     SetLaReferenceInternal(LaGenerationNumber, m_Results1, LaReference);
 }
 
-template<typename Type, CalcBad Bad>
-MattPerturbSingleResults<uint32_t, Type, Bad>* PerturbResultsCollection::GetPtrInternal32(InternalResults& Results) {
+template<typename Type, PerturbExtras PExtras>
+MattPerturbSingleResults<uint32_t, Type, PExtras>* PerturbResultsCollection::GetPtrInternal32(InternalResults& Results) {
     if constexpr (std::is_same<Type, float>::value) {
-        if constexpr (Bad == CalcBad::Disable) {
+        if constexpr (PExtras == PerturbExtras::Disable) {
             return Results.m_Results32FloatDisable;
         }
         else {
@@ -284,7 +284,7 @@ MattPerturbSingleResults<uint32_t, Type, Bad>* PerturbResultsCollection::GetPtrI
         }
     }
     else if constexpr (std::is_same<Type, double>::value) {
-        if constexpr (Bad == CalcBad::Disable) {
+        if constexpr (PExtras == PerturbExtras::Disable) {
             return Results.m_Results32DoubleDisable;
         }
         else {
@@ -292,7 +292,7 @@ MattPerturbSingleResults<uint32_t, Type, Bad>* PerturbResultsCollection::GetPtrI
         }
     }
     else if constexpr (std::is_same<Type, CudaDblflt<MattDblflt>>::value) {
-        if constexpr (Bad == CalcBad::Disable) {
+        if constexpr (PExtras == PerturbExtras::Disable) {
             return Results.m_Results32CudaDblfltDisable;
         }
         else {
@@ -300,7 +300,7 @@ MattPerturbSingleResults<uint32_t, Type, Bad>* PerturbResultsCollection::GetPtrI
         }
     }
     else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
-        if constexpr (Bad == CalcBad::Disable) {
+        if constexpr (PExtras == PerturbExtras::Disable) {
             return Results.m_Results32HdrFloatDisable;
         }
         else {
@@ -308,7 +308,7 @@ MattPerturbSingleResults<uint32_t, Type, Bad>* PerturbResultsCollection::GetPtrI
         }
     }
     else if constexpr (std::is_same<Type, HDRFloat<double>>::value) {
-        if constexpr (Bad == CalcBad::Disable) {
+        if constexpr (PExtras == PerturbExtras::Disable) {
             return Results.m_Results32HdrDoubleDisable;
         }
         else {
@@ -316,7 +316,7 @@ MattPerturbSingleResults<uint32_t, Type, Bad>* PerturbResultsCollection::GetPtrI
         }
     }
     else if constexpr (std::is_same<Type, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
-        if constexpr (Bad == CalcBad::Disable) {
+        if constexpr (PExtras == PerturbExtras::Disable) {
             return Results.m_Results32HdrCudaMattDblfltDisable;
         }
         else {
@@ -325,10 +325,10 @@ MattPerturbSingleResults<uint32_t, Type, Bad>* PerturbResultsCollection::GetPtrI
     }
 }
 
-template<typename Type, CalcBad Bad>
-MattPerturbSingleResults<uint64_t, Type, Bad>* PerturbResultsCollection::GetPtrInternal64(InternalResults& Results) {
+template<typename Type, PerturbExtras PExtras>
+MattPerturbSingleResults<uint64_t, Type, PExtras>* PerturbResultsCollection::GetPtrInternal64(InternalResults& Results) {
     if constexpr (std::is_same<Type, float>::value) {
-        if constexpr (Bad == CalcBad::Disable) {
+        if constexpr (PExtras == PerturbExtras::Disable) {
             return Results.m_Results64FloatDisable;
         }
         else {
@@ -336,7 +336,7 @@ MattPerturbSingleResults<uint64_t, Type, Bad>* PerturbResultsCollection::GetPtrI
         }
     }
     else if constexpr (std::is_same<Type, double>::value) {
-        if constexpr (Bad == CalcBad::Disable) {
+        if constexpr (PExtras == PerturbExtras::Disable) {
             return Results.m_Results64DoubleDisable;
         }
         else {
@@ -344,7 +344,7 @@ MattPerturbSingleResults<uint64_t, Type, Bad>* PerturbResultsCollection::GetPtrI
         }
     }
     else if constexpr (std::is_same<Type, CudaDblflt<MattDblflt>>::value) {
-        if constexpr (Bad == CalcBad::Disable) {
+        if constexpr (PExtras == PerturbExtras::Disable) {
             return Results.m_Results64CudaDblfltDisable;
         }
         else {
@@ -352,7 +352,7 @@ MattPerturbSingleResults<uint64_t, Type, Bad>* PerturbResultsCollection::GetPtrI
         }
     }
     else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
-        if constexpr (Bad == CalcBad::Disable) {
+        if constexpr (PExtras == PerturbExtras::Disable) {
             return Results.m_Results64HdrFloatDisable;
         }
         else {
@@ -360,7 +360,7 @@ MattPerturbSingleResults<uint64_t, Type, Bad>* PerturbResultsCollection::GetPtrI
         }
     }
     else if constexpr (std::is_same<Type, HDRFloat<double>>::value) {
-        if constexpr (Bad == CalcBad::Disable) {
+        if constexpr (PExtras == PerturbExtras::Disable) {
             return Results.m_Results64HdrDoubleDisable;
         }
         else {
@@ -368,7 +368,7 @@ MattPerturbSingleResults<uint64_t, Type, Bad>* PerturbResultsCollection::GetPtrI
         }
     }
     else if constexpr (std::is_same<Type, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
-        if constexpr (Bad == CalcBad::Disable) {
+        if constexpr (PExtras == PerturbExtras::Disable) {
             return Results.m_Results64HdrCudaMattDblfltDisable;
         }
         else {
@@ -377,13 +377,13 @@ MattPerturbSingleResults<uint64_t, Type, Bad>* PerturbResultsCollection::GetPtrI
     }
 }
 
-template<typename IterType, typename Type, CalcBad Bad>
-MattPerturbSingleResults<IterType, Type, Bad>* PerturbResultsCollection::GetPtrInternal(InternalResults& Results) {
+template<typename IterType, typename Type, PerturbExtras PExtras>
+MattPerturbSingleResults<IterType, Type, PExtras>* PerturbResultsCollection::GetPtrInternal(InternalResults& Results) {
     if constexpr (std::is_same<IterType, uint32_t>::value) {
-        return GetPtrInternal32<Type, Bad>(Results);
+        return GetPtrInternal32<Type, PExtras>(Results);
     }
     else if constexpr (std::is_same<IterType, uint64_t>::value) {
-        return GetPtrInternal64<Type, Bad>(Results);
+        return GetPtrInternal64<Type, PExtras>(Results);
     }
 }
 
@@ -444,14 +444,14 @@ GPU_LAReference<IterType, Type, SubType>* PerturbResultsCollection::GetLaReferen
     }
 }
 
-template<typename IterType, typename Type, CalcBad Bad>
-MattPerturbSingleResults<IterType, Type, Bad>* PerturbResultsCollection::GetPtr1() {
-    return GetPtrInternal<IterType, Type, Bad>(m_Results1);
+template<typename IterType, typename Type, PerturbExtras PExtras>
+MattPerturbSingleResults<IterType, Type, PExtras>* PerturbResultsCollection::GetPtr1() {
+    return GetPtrInternal<IterType, Type, PExtras>(m_Results1);
 }
 
-template<typename IterType, typename Type, CalcBad Bad>
-MattPerturbSingleResults<IterType, Type, Bad>* PerturbResultsCollection::GetPtr2() {
-    return GetPtrInternal<IterType, Type, Bad>(m_Results2);
+template<typename IterType, typename Type, PerturbExtras PExtras>
+MattPerturbSingleResults<IterType, Type, PExtras>* PerturbResultsCollection::GetPtr2() {
+    return GetPtrInternal<IterType, Type, PExtras>(m_Results2);
 }
 
 size_t PerturbResultsCollection::GetHostGenerationNumber1() const {

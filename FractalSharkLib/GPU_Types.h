@@ -91,6 +91,8 @@ enum class RenderAlgorithm {
 
     Cpu32PerturbedBLAV2HDR,
     Cpu64PerturbedBLAV2HDR,
+    Cpu32PerturbedRCBLAV2HDR,
+    Cpu64PerturbedRCBLAV2HDR,
 
     // GPU - low zoom depth:
     Gpu1x32,
@@ -114,6 +116,7 @@ enum class RenderAlgorithm {
     Gpu1x32PerturbedLAv2,
     Gpu1x32PerturbedLAv2PO,
     Gpu1x32PerturbedLAv2LAO,
+    Gpu1x32PerturbedRCLAv2, // TODO Not hooked up yet
     Gpu2x32PerturbedLAv2,
     Gpu2x32PerturbedLAv2PO,
     Gpu2x32PerturbedLAv2LAO,
@@ -149,6 +152,8 @@ static const char* RenderAlgorithmStr[(size_t)RenderAlgorithm::MAX + 1] =
 
     "Cpu32PerturbedBLAV2HDR",
     "Cpu64PerturbedBLAV2HDR",
+    "Cpu32PerturbedRCBLAV2HDR",
+    "Cpu64PerturbedRCBLAV2HDR",
 
     "Gpu1x32",
     "Gpu2x32",
@@ -170,6 +175,7 @@ static const char* RenderAlgorithmStr[(size_t)RenderAlgorithm::MAX + 1] =
     "Gpu1x32PerturbedLAv2",
     "Gpu1x32PerturbedLAv2PO",
     "Gpu1x32PerturbedLAv2LAO",
+    "Gpu1x32PerturbedRCLAv2",
     "Gpu2x32PerturbedLAv2",
     "Gpu2x32PerturbedLAv2PO",
     "Gpu2x32PerturbedLAv2LAO",
@@ -203,12 +209,12 @@ struct CompressionIndex {
 };
 
 #pragma pack(push, 8)
-template<typename Type, CalcBad Bad = CalcBad::Disable>
+template<typename Type, PerturbExtras PExtras = PerturbExtras::Disable>
 struct /*alignas(8)*/ MattReferenceSingleIter :
     public std::conditional_t<
-    Bad == CalcBad::Enable,
+    PExtras == PerturbExtras::Bad,
     BadField,
-    std::conditional_t<Bad == CalcBad::EnableCompression,
+    std::conditional_t<PExtras == PerturbExtras::EnableCompression,
         CompressionIndex,
         Empty>> {
 
@@ -218,11 +224,11 @@ struct /*alignas(8)*/ MattReferenceSingleIter :
         : x{ Type(0.0f) },
         y{ Type(0.0f) } {
 
-        //if constexpr(Bad == CalcBad::Enable) {
+        //if constexpr(PExtras == PerturbExtras::Bad) {
         //    bad = false;
         //}
 
-        //if constexpr (Bad == CalcBad::EnableCompression) {
+        //if constexpr (PExtras == PerturbExtras::EnableCompression) {
         //    CompressionIndex = BadCompressionIndex;
         //}
     }
@@ -231,11 +237,11 @@ struct /*alignas(8)*/ MattReferenceSingleIter :
         : x{ x },
         y{ y } {
 
-        //if constexpr (Bad == CalcBad::Enable) {
+        //if constexpr (PExtras == PerturbExtras::Bad) {
         //    bad = false;
         //}
 
-        //if constexpr (Bad == CalcBad::EnableCompression) {
+        //if constexpr (PExtras == PerturbExtras::EnableCompression) {
         //    CompressionIndex = BadCompressionIndex;
         //}
     }
@@ -243,11 +249,11 @@ struct /*alignas(8)*/ MattReferenceSingleIter :
     MattReferenceSingleIter(Type x, Type y, bool bad)
         : x{ x },
         y{ y } {
-        if constexpr (Bad == CalcBad::Enable) {
+        if constexpr (PExtras == PerturbExtras::Bad) {
             this->bad = bad;
         }
 
-        //if constexpr (Bad == CalcBad::EnableCompression) {
+        //if constexpr (PExtras == PerturbExtras::EnableCompression) {
         //    CompressionIndex = BadCompressionIndex;
         //}
     }
@@ -255,7 +261,7 @@ struct /*alignas(8)*/ MattReferenceSingleIter :
     MattReferenceSingleIter(Type x, Type y, uint64_t CompressionIndex)
         : x{ x },
         y{ y } {
-            static_assert (Bad == CalcBad::EnableCompression, "Compression not enabled");
+            static_assert (PExtras == PerturbExtras::EnableCompression, "Compression not enabled");
             this->CompressionIndex = CompressionIndex;
     }
 
@@ -291,14 +297,14 @@ struct MattCoords {
     //HDRFloat<double> hdrdbl;
 };
 
-template<typename IterType, class T, CalcBad Bad = CalcBad::Disable>
+template<typename IterType, class T, PerturbExtras PExtras = PerturbExtras::Disable>
 struct MattPerturbResults {
-    const MattReferenceSingleIter<T, Bad>* iters;
+    const MattReferenceSingleIter<T, PExtras>* iters;
     IterType size;
     IterType PeriodMaybeZero;
 
     MattPerturbResults(IterType in_size,
-        const MattReferenceSingleIter<T, Bad>* in_orb,
+        const MattReferenceSingleIter<T, PExtras>* in_orb,
         IterType PeriodMaybeZero) :
         iters(in_orb),
         size(in_size),
@@ -308,15 +314,15 @@ struct MattPerturbResults {
         //char(*__kaboom2)[sizeof(MattReferenceSingleIter<double>)] = 1;
         //char(*__kaboom3)[sizeof(MattReferenceSingleIter<MattDblflt>)] = 1;
 
-        if constexpr (Bad == CalcBad::Enable) {
-            static_assert(sizeof(MattReferenceSingleIter<float, Bad>) == 16, "Float");
-            static_assert(sizeof(MattReferenceSingleIter<double, Bad>) == 24, "Double");
-            static_assert(sizeof(MattReferenceSingleIter<MattDblflt, Bad>) == 24, "MattDblflt");
+        if constexpr (PExtras == PerturbExtras::Bad) {
+            static_assert(sizeof(MattReferenceSingleIter<float, PExtras>) == 16, "Float");
+            static_assert(sizeof(MattReferenceSingleIter<double, PExtras>) == 24, "Double");
+            static_assert(sizeof(MattReferenceSingleIter<MattDblflt, PExtras>) == 24, "MattDblflt");
         }
         else {
-            static_assert(sizeof(MattReferenceSingleIter<float, Bad>) == 8, "Float");
-            static_assert(sizeof(MattReferenceSingleIter<double, Bad>) == 16, "Double");
-            static_assert(sizeof(MattReferenceSingleIter<MattDblflt, Bad>) == 16, "MattDblflt");
+            static_assert(sizeof(MattReferenceSingleIter<float, PExtras>) == 8, "Float");
+            static_assert(sizeof(MattReferenceSingleIter<double, PExtras>) == 16, "Double");
+            static_assert(sizeof(MattReferenceSingleIter<MattDblflt, PExtras>) == 16, "MattDblflt");
         }
 
         //static_assert(sizeof(MattReferenceSingleIter<HDRFloat<MattDblflt>>) == 12 * 4, "MattDblflt");
@@ -332,7 +338,7 @@ struct MattPerturbResults {
     }
 };
 
-template<typename IterType, typename Type, CalcBad Bad = CalcBad::Disable>
+template<typename IterType, typename Type, PerturbExtras PExtras = PerturbExtras::Disable>
 struct MattPerturbSingleResults;
 
 
@@ -388,31 +394,31 @@ private:
             m_LaGenerationNumber = 0;
         }
 
-        MattPerturbSingleResults<uint32_t, float, CalcBad::Disable>* m_Results32FloatDisable;
-        MattPerturbSingleResults<uint32_t, float, CalcBad::Enable>* m_Results32FloatEnable;
-        MattPerturbSingleResults<uint32_t, double, CalcBad::Disable>* m_Results32DoubleDisable;
-        MattPerturbSingleResults<uint32_t, double, CalcBad::Enable>* m_Results32DoubleEnable;
-        MattPerturbSingleResults<uint32_t, CudaDblflt<dblflt>, CalcBad::Disable>* m_Results32CudaDblfltDisable;
-        MattPerturbSingleResults<uint32_t, CudaDblflt<dblflt>, CalcBad::Enable>* m_Results32CudaDblfltEnable;
-        MattPerturbSingleResults<uint32_t, HDRFloat<float>, CalcBad::Disable>* m_Results32HdrFloatDisable;
-        MattPerturbSingleResults<uint32_t, HDRFloat<float>, CalcBad::Enable>* m_Results32HdrFloatEnable;
-        MattPerturbSingleResults<uint32_t, HDRFloat<double>, CalcBad::Disable>* m_Results32HdrDoubleDisable;
-        MattPerturbSingleResults<uint32_t, HDRFloat<double>, CalcBad::Enable>* m_Results32HdrDoubleEnable;
-        MattPerturbSingleResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CalcBad::Disable>* m_Results32HdrCudaMattDblfltDisable;
-        MattPerturbSingleResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CalcBad::Enable>* m_Results32HdrCudaMattDblfltEnable;
+        MattPerturbSingleResults<uint32_t, float, PerturbExtras::Disable>* m_Results32FloatDisable;
+        MattPerturbSingleResults<uint32_t, float, PerturbExtras::Bad>* m_Results32FloatEnable;
+        MattPerturbSingleResults<uint32_t, double, PerturbExtras::Disable>* m_Results32DoubleDisable;
+        MattPerturbSingleResults<uint32_t, double, PerturbExtras::Bad>* m_Results32DoubleEnable;
+        MattPerturbSingleResults<uint32_t, CudaDblflt<dblflt>, PerturbExtras::Disable>* m_Results32CudaDblfltDisable;
+        MattPerturbSingleResults<uint32_t, CudaDblflt<dblflt>, PerturbExtras::Bad>* m_Results32CudaDblfltEnable;
+        MattPerturbSingleResults<uint32_t, HDRFloat<float>, PerturbExtras::Disable>* m_Results32HdrFloatDisable;
+        MattPerturbSingleResults<uint32_t, HDRFloat<float>, PerturbExtras::Bad>* m_Results32HdrFloatEnable;
+        MattPerturbSingleResults<uint32_t, HDRFloat<double>, PerturbExtras::Disable>* m_Results32HdrDoubleDisable;
+        MattPerturbSingleResults<uint32_t, HDRFloat<double>, PerturbExtras::Bad>* m_Results32HdrDoubleEnable;
+        MattPerturbSingleResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable>* m_Results32HdrCudaMattDblfltDisable;
+        MattPerturbSingleResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad>* m_Results32HdrCudaMattDblfltEnable;
 
-        MattPerturbSingleResults<uint64_t, float, CalcBad::Disable>* m_Results64FloatDisable;
-        MattPerturbSingleResults<uint64_t, float, CalcBad::Enable>* m_Results64FloatEnable;
-        MattPerturbSingleResults<uint64_t, double, CalcBad::Disable>* m_Results64DoubleDisable;
-        MattPerturbSingleResults<uint64_t, double, CalcBad::Enable>* m_Results64DoubleEnable;
-        MattPerturbSingleResults<uint64_t, CudaDblflt<dblflt>, CalcBad::Disable>* m_Results64CudaDblfltDisable;
-        MattPerturbSingleResults<uint64_t, CudaDblflt<dblflt>, CalcBad::Enable>* m_Results64CudaDblfltEnable;
-        MattPerturbSingleResults<uint64_t, HDRFloat<float>, CalcBad::Disable>* m_Results64HdrFloatDisable;
-        MattPerturbSingleResults<uint64_t, HDRFloat<float>, CalcBad::Enable>* m_Results64HdrFloatEnable;
-        MattPerturbSingleResults<uint64_t, HDRFloat<double>, CalcBad::Disable>* m_Results64HdrDoubleDisable;
-        MattPerturbSingleResults<uint64_t, HDRFloat<double>, CalcBad::Enable>* m_Results64HdrDoubleEnable;
-        MattPerturbSingleResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CalcBad::Disable>* m_Results64HdrCudaMattDblfltDisable;
-        MattPerturbSingleResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CalcBad::Enable>* m_Results64HdrCudaMattDblfltEnable;
+        MattPerturbSingleResults<uint64_t, float, PerturbExtras::Disable>* m_Results64FloatDisable;
+        MattPerturbSingleResults<uint64_t, float, PerturbExtras::Bad>* m_Results64FloatEnable;
+        MattPerturbSingleResults<uint64_t, double, PerturbExtras::Disable>* m_Results64DoubleDisable;
+        MattPerturbSingleResults<uint64_t, double, PerturbExtras::Bad>* m_Results64DoubleEnable;
+        MattPerturbSingleResults<uint64_t, CudaDblflt<dblflt>, PerturbExtras::Disable>* m_Results64CudaDblfltDisable;
+        MattPerturbSingleResults<uint64_t, CudaDblflt<dblflt>, PerturbExtras::Bad>* m_Results64CudaDblfltEnable;
+        MattPerturbSingleResults<uint64_t, HDRFloat<float>, PerturbExtras::Disable>* m_Results64HdrFloatDisable;
+        MattPerturbSingleResults<uint64_t, HDRFloat<float>, PerturbExtras::Bad>* m_Results64HdrFloatEnable;
+        MattPerturbSingleResults<uint64_t, HDRFloat<double>, PerturbExtras::Disable>* m_Results64HdrDoubleDisable;
+        MattPerturbSingleResults<uint64_t, HDRFloat<double>, PerturbExtras::Bad>* m_Results64HdrDoubleEnable;
+        MattPerturbSingleResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable>* m_Results64HdrCudaMattDblfltDisable;
+        MattPerturbSingleResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad>* m_Results64HdrCudaMattDblfltEnable;
 
         size_t m_GenerationNumber;
 
@@ -438,17 +444,17 @@ public:
     ~PerturbResultsCollection();
 
 private:
-    template<typename Type, CalcBad Bad = CalcBad::Disable>
+    template<typename Type, PerturbExtras PExtras = PerturbExtras::Disable>
     void SetPtr32(
         size_t GenerationNumber,
         InternalResults& Results,
-        MattPerturbSingleResults<uint32_t, Type, Bad>* ptr);
+        MattPerturbSingleResults<uint32_t, Type, PExtras>* ptr);
 
-    template<typename Type, CalcBad Bad = CalcBad::Disable>
+    template<typename Type, PerturbExtras PExtras = PerturbExtras::Disable>
     void SetPtr64(
         size_t GenerationNumber,
         InternalResults& Results,
-        MattPerturbSingleResults<uint64_t, Type, Bad>* ptr);
+        MattPerturbSingleResults<uint64_t, Type, PExtras>* ptr);
 
     template<typename Type, typename SubType>
     void SetLaReferenceInternal32(
@@ -462,14 +468,14 @@ private:
         InternalResults& Results,
         GPU_LAReference<uint64_t, Type, SubType>* LaReference);
 
-    template<typename Type, CalcBad Bad = CalcBad::Disable>
-    MattPerturbSingleResults<uint32_t, Type, Bad>* GetPtrInternal32(InternalResults& Results);
+    template<typename Type, PerturbExtras PExtras = PerturbExtras::Disable>
+    MattPerturbSingleResults<uint32_t, Type, PExtras>* GetPtrInternal32(InternalResults& Results);
 
-    template<typename Type, CalcBad Bad = CalcBad::Disable>
-    MattPerturbSingleResults<uint64_t, Type, Bad>* GetPtrInternal64(InternalResults& Results);
+    template<typename Type, PerturbExtras PExtras = PerturbExtras::Disable>
+    MattPerturbSingleResults<uint64_t, Type, PExtras>* GetPtrInternal64(InternalResults& Results);
 
-    template<typename IterType, typename Type, CalcBad Bad = CalcBad::Disable>
-    MattPerturbSingleResults<IterType, Type, Bad>* GetPtrInternal(InternalResults& Results);
+    template<typename IterType, typename Type, PerturbExtras PExtras = PerturbExtras::Disable>
+    MattPerturbSingleResults<IterType, Type, PExtras>* GetPtrInternal(InternalResults& Results);
 
     template<typename Type, typename SubType>
     GPU_LAReference<uint32_t, Type, SubType>*
@@ -492,22 +498,22 @@ private:
     void DeleteAllInternal(InternalResults& Results);
 
 public:
-    template<typename IterType, typename Type, CalcBad Bad = CalcBad::Disable>
-    void SetPtr1(size_t GenerationNumber, MattPerturbSingleResults<IterType, Type, Bad>* ptr);
+    template<typename IterType, typename Type, PerturbExtras PExtras = PerturbExtras::Disable>
+    void SetPtr1(size_t GenerationNumber, MattPerturbSingleResults<IterType, Type, PExtras>* ptr);
 
-    template<typename IterType, typename Type, CalcBad Bad = CalcBad::Disable>
-    void SetPtr2(size_t GenerationNumber, MattPerturbSingleResults<IterType, Type, Bad>* ptr);
+    template<typename IterType, typename Type, PerturbExtras PExtras = PerturbExtras::Disable>
+    void SetPtr2(size_t GenerationNumber, MattPerturbSingleResults<IterType, Type, PExtras>* ptr);
 
     template<typename IterType, typename Type, typename SubType>
     void SetLaReference1(
         size_t LaGenerationNumber,
         GPU_LAReference<IterType, Type, SubType>* LaReference);
 
-    template<typename IterType, typename Type, CalcBad Bad = CalcBad::Disable>
-    MattPerturbSingleResults<IterType, Type, Bad>* GetPtr1();
+    template<typename IterType, typename Type, PerturbExtras PExtras = PerturbExtras::Disable>
+    MattPerturbSingleResults<IterType, Type, PExtras>* GetPtr1();
 
-    template<typename IterType, typename Type, CalcBad Bad = CalcBad::Disable>
-    MattPerturbSingleResults<IterType, Type, Bad>* GetPtr2();
+    template<typename IterType, typename Type, PerturbExtras PExtras = PerturbExtras::Disable>
+    MattPerturbSingleResults<IterType, Type, PExtras>* GetPtr2();
 
     size_t GetHostGenerationNumber1() const;
     size_t GetHostGenerationNumber2() const;

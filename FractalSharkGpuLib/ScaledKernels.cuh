@@ -3,8 +3,8 @@ __global__
 void mandel_1x_float_perturb_scaled(
     IterType* OutputIterMatrix,
     AntialiasedColors OutputColorMatrix,
-    MattPerturbSingleResults<IterType, float, CalcBad::Enable> PerturbFloat,
-    MattPerturbSingleResults<IterType, T, CalcBad::Enable> PerturbDouble,
+    MattPerturbSingleResults<IterType, float, PerturbExtras::Bad> PerturbFloat,
+    MattPerturbSingleResults<IterType, T, PerturbExtras::Bad> PerturbDouble,
     int width,
     int height,
     T cx,
@@ -67,8 +67,8 @@ void mandel_1x_float_perturb_scaled(
     T TwoFiftySix = T(256.0);
 
     while (iter < n_iterations) {
-        const MattReferenceSingleIter<float, CalcBad::Enable>* curFloatIter = &PerturbFloat.iters[RefIteration];
-        const MattReferenceSingleIter<T, CalcBad::Enable>* curDoubleIter = &PerturbDouble.iters[RefIteration];
+        const MattReferenceSingleIter<float, PerturbExtras::Bad>* curFloatIter = &PerturbFloat.iters[RefIteration];
+        const MattReferenceSingleIter<T, PerturbExtras::Bad>* curDoubleIter = &PerturbDouble.iters[RefIteration];
 
         if (curFloatIter->bad == false) {
             const float DeltaSubNWXOrig = DeltaSubNWX;
@@ -248,8 +248,8 @@ __global__
 void mandel_1x_float_perturb_scaled_bla(
     IterType* OutputIterMatrix,
     AntialiasedColors OutputColorMatrix,
-    MattPerturbSingleResults<IterType, float, CalcBad::Enable> PerturbFloat,
-    MattPerturbSingleResults<IterType, double, CalcBad::Enable> PerturbDouble,
+    MattPerturbSingleResults<IterType, float, PerturbExtras::Bad> PerturbFloat,
+    MattPerturbSingleResults<IterType, double, PerturbExtras::Bad> PerturbDouble,
     GPU_BLAS<IterType, double, BLA<double>, LM2> doubleBlas,
     int width,
     int height,
@@ -308,8 +308,8 @@ void mandel_1x_float_perturb_scaled_bla(
     IterType MaxRefIteration = PerturbFloat.size - 1;
 
     while (iter < n_iterations) {
-        const MattReferenceSingleIter<float, CalcBad::Enable>* curFloatIter = &PerturbFloat.iters[RefIteration];
-        const MattReferenceSingleIter<double, CalcBad::Enable>* curDoubleIter = &PerturbDouble.iters[RefIteration];
+        const MattReferenceSingleIter<float, PerturbExtras::Bad>* curFloatIter = &PerturbFloat.iters[RefIteration];
+        const MattReferenceSingleIter<double, PerturbExtras::Bad>* curDoubleIter = &PerturbDouble.iters[RefIteration];
 
         double DeltaSubNX = DeltaSubNWX * S;
         double DeltaSubNY = DeltaSubNWY * S;
@@ -547,8 +547,8 @@ __global__
 void mandel_2x_float_perturb_scaled(
     IterType* OutputIterMatrix,
     AntialiasedColors OutputColorMatrix,
-    MattPerturbSingleResults<IterType, dblflt, CalcBad::Enable> PerturbDoubleFlt,
-    MattPerturbSingleResults<IterType, double, CalcBad::Enable> PerturbDouble,
+    MattPerturbSingleResults<IterType, dblflt, PerturbExtras::Bad> PerturbDoubleFlt,
+    MattPerturbSingleResults<IterType, double, PerturbExtras::Bad> PerturbDouble,
     int width,
     int height,
     double cx,
@@ -606,8 +606,8 @@ void mandel_2x_float_perturb_scaled(
     IterType MaxRefIteration = PerturbDoubleFlt.size - 1;
 
     while (iter < n_iterations) {
-        const MattReferenceSingleIter<dblflt, CalcBad::Enable>* curDblFloatIter = &PerturbDoubleFlt.iters[RefIteration];
-        const MattReferenceSingleIter<double, CalcBad::Enable>* curDoubleIter = &PerturbDouble.iters[RefIteration];
+        const MattReferenceSingleIter<dblflt, PerturbExtras::Bad>* curDblFloatIter = &PerturbDoubleFlt.iters[RefIteration];
+        const MattReferenceSingleIter<double, PerturbExtras::Bad>* curDoubleIter = &PerturbDouble.iters[RefIteration];
 
         if (curDblFloatIter->bad == false) {
             const dblflt DeltaSubNWXOrig = DeltaSubNWX;

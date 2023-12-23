@@ -1936,15 +1936,19 @@ bool Fractal::RequiresUseLocalColor() const {
     //
 
     switch (GetRenderAlgorithm()) {
-    case RenderAlgorithm::CpuHigh:
-    case RenderAlgorithm::CpuHDR32:
-    case RenderAlgorithm::CpuHDR64:
-    case RenderAlgorithm::Cpu64:
-    case RenderAlgorithm::Cpu64PerturbedBLA:
-    case RenderAlgorithm::Cpu32PerturbedBLAHDR:
-    case RenderAlgorithm::Cpu32PerturbedBLAV2HDR:
-    case RenderAlgorithm::Cpu64PerturbedBLAHDR:
-    case RenderAlgorithm::Cpu64PerturbedBLAV2HDR:
+        case RenderAlgorithm::CpuHigh:
+        case RenderAlgorithm::Cpu64:
+        case RenderAlgorithm::CpuHDR32:
+        case RenderAlgorithm::CpuHDR64:
+
+        case RenderAlgorithm::Cpu64PerturbedBLA:
+        case RenderAlgorithm::Cpu32PerturbedBLAHDR:
+        case RenderAlgorithm::Cpu64PerturbedBLAHDR:
+
+        case RenderAlgorithm::Cpu32PerturbedBLAV2HDR:
+        case RenderAlgorithm::Cpu64PerturbedBLAV2HDR:
+        case RenderAlgorithm::Cpu32PerturbedRCBLAV2HDR:
+        case RenderAlgorithm::Cpu64PerturbedRCBLAV2HDR:
         return true;
     default:
         return false;
@@ -2017,10 +2021,16 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
         CalcCpuPerturbationFractalBLA<IterType, HDRFloat<float>, float>(MemoryOnly);
         break;
     case RenderAlgorithm::Cpu32PerturbedBLAV2HDR:
-        CalcCpuPerturbationFractalLAV2<IterType, float>(MemoryOnly);
+        CalcCpuPerturbationFractalLAV2<IterType, float, PerturbExtras::Disable>(MemoryOnly);
+        break;
+    case RenderAlgorithm::Cpu32PerturbedRCBLAV2HDR:
+        CalcCpuPerturbationFractalLAV2<IterType, float, PerturbExtras::EnableCompression>(MemoryOnly);
         break;
     case RenderAlgorithm::Cpu64PerturbedBLAV2HDR:
-        CalcCpuPerturbationFractalLAV2<IterType, double>(MemoryOnly);
+        CalcCpuPerturbationFractalLAV2<IterType, double, PerturbExtras::Disable>(MemoryOnly);
+        break;
+    case RenderAlgorithm::Cpu64PerturbedRCBLAV2HDR:
+        CalcCpuPerturbationFractalLAV2<IterType, double, PerturbExtras::Disable>(MemoryOnly);
         break;
     case RenderAlgorithm::Cpu64:
         CalcCpuHDR<IterType, double, double>(MemoryOnly);
@@ -2533,39 +2543,39 @@ void Fractal::DrawAllPerturbationResults(bool LeaveScreen) {
 
     glBegin(GL_POINTS);
 
-    DrawPerturbationResults<uint32_t, double, CalcBad::Disable>();
-    DrawPerturbationResults<uint32_t, float, CalcBad::Disable>();
-    DrawPerturbationResults<uint32_t, HDRFloat<double>, CalcBad::Disable>();
-    DrawPerturbationResults<uint32_t, HDRFloat<float>, CalcBad::Disable>();
+    DrawPerturbationResults<uint32_t, double, PerturbExtras::Disable>();
+    DrawPerturbationResults<uint32_t, float, PerturbExtras::Disable>();
+    DrawPerturbationResults<uint32_t, HDRFloat<double>, PerturbExtras::Disable>();
+    DrawPerturbationResults<uint32_t, HDRFloat<float>, PerturbExtras::Disable>();
 
-    DrawPerturbationResults<uint32_t, double, CalcBad::Enable>();
-    DrawPerturbationResults<uint32_t, float, CalcBad::Enable>();
-    DrawPerturbationResults<uint32_t, HDRFloat<double>, CalcBad::Enable>();
-    DrawPerturbationResults<uint32_t, HDRFloat<float>, CalcBad::Enable>();
+    DrawPerturbationResults<uint32_t, double, PerturbExtras::Bad>();
+    DrawPerturbationResults<uint32_t, float, PerturbExtras::Bad>();
+    DrawPerturbationResults<uint32_t, HDRFloat<double>, PerturbExtras::Bad>();
+    DrawPerturbationResults<uint32_t, HDRFloat<float>, PerturbExtras::Bad>();
 
-    DrawPerturbationResults<uint64_t, double, CalcBad::Disable>();
-    DrawPerturbationResults<uint64_t, float, CalcBad::Disable>();
-    DrawPerturbationResults<uint64_t, HDRFloat<double>, CalcBad::Disable>();
-    DrawPerturbationResults<uint64_t, HDRFloat<float>, CalcBad::Disable>();
+    DrawPerturbationResults<uint64_t, double, PerturbExtras::Disable>();
+    DrawPerturbationResults<uint64_t, float, PerturbExtras::Disable>();
+    DrawPerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::Disable>();
+    DrawPerturbationResults<uint64_t, HDRFloat<float>, PerturbExtras::Disable>();
 
-    DrawPerturbationResults<uint64_t, double, CalcBad::Enable>();
-    DrawPerturbationResults<uint64_t, float, CalcBad::Enable>();
-    DrawPerturbationResults<uint64_t, HDRFloat<double>, CalcBad::Enable>();
-    DrawPerturbationResults<uint64_t, HDRFloat<float>, CalcBad::Enable>();
+    DrawPerturbationResults<uint64_t, double, PerturbExtras::Bad>();
+    DrawPerturbationResults<uint64_t, float, PerturbExtras::Bad>();
+    DrawPerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::Bad>();
+    DrawPerturbationResults<uint64_t, HDRFloat<float>, PerturbExtras::Bad>();
 
     glEnd();
     glFlush();
 }
 
-template<typename IterType, class T, CalcBad Bad>
+template<typename IterType, class T, PerturbExtras PExtras>
 void Fractal::DrawPerturbationResults() {
 
     // TODO can we just integrate all this with DrawFractal
 
-    auto& results = m_RefOrbit.GetPerturbationResults<IterType, T, Bad>();
+    auto& results = m_RefOrbit.GetPerturbationResults<IterType, T, PExtras>();
     for (size_t i = 0; i < results.size(); i++)
     {
-        if (m_RefOrbit.IsPerturbationResultUsefulHere<IterType, T, false, Bad>(i)) {
+        if (m_RefOrbit.IsPerturbationResultUsefulHere<IterType, T, false, PExtras>(i)) {
             glColor3f((GLfloat)255, (GLfloat)255, (GLfloat)255);
 
             GLint scrnX = Convert<HighPrecision, GLint>(XFromCalcToScreen(results[i]->GetHiX()));
@@ -2977,7 +2987,7 @@ void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
         IterType,
         double,
         double,
-        CalcBad::Disable,
+        PerturbExtras::Disable,
         RefOrbitCalc::Extras::None>();
 
     double dx = Convert<HighPrecision, double>((m_MaxX - m_MinX) / (m_ScrnWidth * GetGpuAntialiasing()));
@@ -3205,7 +3215,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
         IterType,
         T,
         SubType,
-        CalcBad::Disable,
+        PerturbExtras::Disable,
         RefOrbitCalc::Extras::None>();
 
     BLAS<IterType, T> blas(*results);
@@ -3435,7 +3445,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
     DrawFractal(MemoryOnly);
 }
 
-template<typename IterType, class SubType>
+template<typename IterType, class SubType, PerturbExtras PExtras>
 void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
     using T = HDRFloat<SubType>;
     using TComplex = HDRFloatComplex<SubType>;
@@ -3443,7 +3453,7 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
         IterType,
         T,
         SubType,
-        CalcBad::Disable,
+        PerturbExtras::Disable,
         RefOrbitCalc::Extras::IncludeLAv2>();
 
     if (results->GetLaReference() == nullptr) {
@@ -3630,7 +3640,7 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
         IterType,
         T,
         SubType,
-        CalcBad::Disable,
+        PerturbExtras::Disable,
         RefOrbitCalc::Extras::None>();
 
     uint32_t err = InitializeGPUMemory();
@@ -3688,12 +3698,12 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
     using ConditionalT = typename DoubleTo2x32Converter<T, SubType>::ConditionalT;
     using ConditionalSubType = typename DoubleTo2x32Converter<T, SubType>::ConditionalSubType;
 
-    PerturbationResults<IterType, T, CalcBad::Disable>* results =
+    PerturbationResults<IterType, T, PerturbExtras::Disable>* results =
         m_RefOrbit.GetAndCreateUsefulPerturbationResults<
             IterType,
             ConditionalT,
             ConditionalSubType,
-            CalcBad::Disable,
+            PerturbExtras::Disable,
             RefOrbitCalc::Extras::IncludeLAv2,
             T>();
 
@@ -3714,7 +3724,7 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
         return;
     }
 
-    m_r.InitializePerturb<IterType, T, SubType, CalcBad::Disable, T>(
+    m_r.InitializePerturb<IterType, T, SubType, PerturbExtras::Disable, T>(
         results->GetGenerationNumber(),
         &gpu_results,
         0,
@@ -3764,16 +3774,16 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
         IterType,
         T,
         SubType,
-        CalcBad::Enable,
+        PerturbExtras::Bad,
         RefOrbitCalc::Extras::None>();
     auto* results2 = m_RefOrbit.CopyUsefulPerturbationResults<
         IterType,
         T,
-        CalcBad::Enable,
+        PerturbExtras::Bad,
         T2,
-        CalcBad::Enable>(*results);
+        PerturbExtras::Bad>(*results);
 
-    BLAS<IterType, T, CalcBad::Enable> blas(*results);
+    BLAS<IterType, T, PerturbExtras::Bad> blas(*results);
     blas.Init(results->GetCountOrbitEntries(), results->GetMaxRadius());
 
     uint32_t err = InitializeGPUMemory();
@@ -3795,12 +3805,12 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
     FillCoord(centerX, centerX2);
     FillCoord(centerY, centerY2);
 
-    MattPerturbResults<IterType, T, CalcBad::Enable> gpu_results{
+    MattPerturbResults<IterType, T, PerturbExtras::Bad> gpu_results{
         (IterType)results->GetCountOrbitEntries(),
         results->GetOrbitData(),
         results->GetPeriodMaybeZero() };
 
-    MattPerturbResults<IterType, T2, CalcBad::Enable> gpu_results2{
+    MattPerturbResults<IterType, T2, PerturbExtras::Bad> gpu_results2{
         (IterType)results2->GetCountOrbitEntries(),
         results2->GetOrbitData(),
         results2->GetPeriodMaybeZero() };

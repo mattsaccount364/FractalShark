@@ -12,10 +12,10 @@
 
 #include "GPU_Render.h"
 
-template<typename IterType, class T, CalcBad Bad>
+template<typename IterType, class T, PerturbExtras PExtras>
 class PerturbationResults {
 public:
-    template<typename IterType, class T, CalcBad Bad> friend class PerturbationResults;
+    template<typename IterType, class T, PerturbExtras PExtras> friend class PerturbationResults;
 
     PerturbationResults(size_t Generation = 0, size_t LaGeneration = 0) :
         OrbitX{},
@@ -76,9 +76,9 @@ public:
         return LaReference.get();
     }
 
-    template<bool IncludeLA, class Other, CalcBad Bad = CalcBad::Disable>
+    template<bool IncludeLA, class Other, PerturbExtras PExtras = PerturbExtras::Disable>
     void Copy(
-        const PerturbationResults<IterType, Other, Bad>& other,
+        const PerturbationResults<IterType, Other, PExtras>& other,
         size_t NewGenerationNumber,
         size_t NewLaGenerationNumber) {
         clear();
@@ -109,7 +109,7 @@ public:
         ReuseY.reserve(other.ReuseY.size());
 
         for (size_t i = 0; i < other.FullOrbit.size(); i++) {
-            if constexpr (Bad == CalcBad::Enable) {
+            if constexpr (PExtras == PerturbExtras::Bad) {
                 FullOrbit.push_back({ (T)other.FullOrbit[i].x, (T)other.FullOrbit[i].y, other.FullOrbit[i].bad != 0 });
             }
             else {
@@ -131,7 +131,7 @@ public:
         }
     }
 
-    template<CalcBad OtherBad>
+    template<PerturbExtras OtherBad>
     void CopySettingsWithoutOrbit(const PerturbationResults<IterType, T, OtherBad>& other) {
         OrbitX = other.GetHiX();
         OrbitY = other.GetHiY();
@@ -201,12 +201,12 @@ public:
             return;
         }
 
-        if constexpr (Bad == CalcBad::Enable) {
-            metafile << "CalcBad::Enable" << std::endl;
-        } else if constexpr (Bad == CalcBad::EnableCompression) {
-            metafile << "CalcBad::EnableCompression" << std::endl;
-        } else if constexpr (Bad == CalcBad::Disable) {
-            metafile << "CalcBad::Disable" << std::endl;
+        if constexpr (PExtras == PerturbExtras::Bad) {
+            metafile << "PerturbExtras::Bad" << std::endl;
+        } else if constexpr (PExtras == PerturbExtras::EnableCompression) {
+            metafile << "PerturbExtras::EnableCompression" << std::endl;
+        } else if constexpr (PExtras == PerturbExtras::Disable) {
+            metafile << "PerturbExtras::Disable" << std::endl;
         } else {
             ::MessageBox(NULL, L"Invalid bad.", L"", MB_OK);
             return;
@@ -287,18 +287,18 @@ public:
             std::string badstr;
             metafile >> badstr;
 
-            if (badstr == "CalcBad::Enable") {
-                if constexpr (Bad == CalcBad::Enable) {
+            if (badstr == "PerturbExtras::Bad") {
+                if constexpr (PExtras == PerturbExtras::Bad) {
                     typematch3 = true;
                 }
             }
-            else if (badstr == "CalcBad::EnableCompression") {
-                if constexpr (Bad == CalcBad::EnableCompression) {
+            else if (badstr == "PerturbExtras::EnableCompression") {
+                if constexpr (PExtras == PerturbExtras::EnableCompression) {
                     typematch3 = true;
                 }
             }
-            else if (badstr == "CalcBad::Disable") {
-                if constexpr (Bad == CalcBad::Disable) {
+            else if (badstr == "PerturbExtras::Disable") {
+                if constexpr (PExtras == PerturbExtras::Disable) {
                     typematch3 = true;
                 }
             } else {
@@ -404,7 +404,7 @@ public:
             return false;
         }
 
-        memcpy(FullOrbit.data(), pBuf, sz * sizeof(MattReferenceSingleIter<T, Bad>));
+        memcpy(FullOrbit.data(), pBuf, sz * sizeof(MattReferenceSingleIter<T, PExtras>));
 
         // TODO just use the mapped data directly, might be neat.
         UnmapViewOfFile(pBuf);
@@ -458,7 +458,7 @@ public:
         ReuseY.push_back(Zero);
     }
 
-    template<class T, CalcBad Bad, RefOrbitCalc::ReuseMode Reuse>
+    template<class T, PerturbExtras PExtras, RefOrbitCalc::ReuseMode Reuse>
     void InitResults(
         const HighPrecision& cx,
         const HighPrecision& cy,
@@ -516,7 +516,7 @@ public:
         LaGenerationNumber = 0;
     }
 
-    template<CalcBad Bad, RefOrbitCalc::ReuseMode Reuse>
+    template<PerturbExtras PExtras, RefOrbitCalc::ReuseMode Reuse>
     void TrimResults() {
         FullOrbit.shrink_to_fit();
 
@@ -526,7 +526,7 @@ public:
         }
     }
 
-    const MattReferenceSingleIter<T, Bad>& GetOrbitEntry(size_t index) const {
+    const MattReferenceSingleIter<T, PExtras>& GetOrbitEntry(size_t index) const {
         return FullOrbit[index];
     }
 
@@ -534,12 +534,12 @@ public:
         return FullOrbit.size();
     }
 
-    void AddIterationToOrbit(MattReferenceSingleIter<T, Bad> result) {
+    void AddIterationToOrbit(MattReferenceSingleIter<T, PExtras> result) {
         FullOrbit.push_back(result);
         UncompressedItersInOrbit++;
     }
 
-    const MattReferenceSingleIter<T, Bad>* GetOrbitData() const {
+    const MattReferenceSingleIter<T, PExtras>* GetOrbitData() const {
         return FullOrbit.data();
     }
 
@@ -614,11 +614,11 @@ public:
     //   https://code.mathr.co.uk/fractal-bits/tree/HEAD:/mandelbrot-reference-compression
     //   https://fractalforums.org/fractal-mathematics-and-new-theories/28/reference-compression/5142
     // as a reference for the compression algorithm.
-    std::unique_ptr<PerturbationResults<IterType, T, CalcBad::EnableCompression>>
+    std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::EnableCompression>>
     Compress() {
 
         auto compressed =
-            std::make_unique<PerturbationResults<IterType, T, CalcBad::EnableCompression>>(
+            std::make_unique<PerturbationResults<IterType, T, PerturbExtras::EnableCompression>>(
                 GenerationNumber, LaGenerationNumber);
         compressed->CopySettingsWithoutOrbit(*this);
 
@@ -656,11 +656,11 @@ public:
         return compressed;
     }
 
-    std::unique_ptr<PerturbationResults<IterType, T, CalcBad::Disable>> 
+    std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::Disable>> 
     Decompress() {
 
         auto compressed_orb = std::move(FullOrbit);
-        auto decompressed = std::make_unique<PerturbationResults<IterType, T, CalcBad::Disable>>(
+        auto decompressed = std::make_unique<PerturbationResults<IterType, T, PerturbExtras::Disable>>(
             GenerationNumber, LaGenerationNumber);
         decompressed->CopySettingsWithoutOrbit(*this);
 
@@ -697,7 +697,7 @@ private:
     IterType MaxIterations;
     IterType PeriodMaybeZero;  // Zero if not worked out
 
-    std::vector<MattReferenceSingleIter<T, Bad>> FullOrbit;
+    std::vector<MattReferenceSingleIter<T, PExtras>> FullOrbit;
     size_t UncompressedItersInOrbit;
 
     size_t GenerationNumber;

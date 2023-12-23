@@ -162,7 +162,7 @@ public:
     void RotateFractalPalette(int delta);
     void CreateNewFractalPalette(void);
 
-    template<typename IterType, class T, CalcBad Bad>
+    template<typename IterType, class T, PerturbExtras PExtras>
     void DrawPerturbationResults();
     void DrawAllPerturbationResults(bool LeaveScreen);
 
@@ -253,7 +253,7 @@ private:
     //    IterType& BLA2SkippedIterations,
     //    IterType& BLA2SkippedSteps);
 
-    template<typename IterType, class SubType>
+    template<typename IterType, class SubType, PerturbExtras PExtras>
     void CalcCpuPerturbationFractalLAV2(bool MemoryOnly);
 
     template<typename IterType, class T, class SubType>

@@ -153,6 +153,8 @@ BEGIN
                 MENUITEM SEPARATOR
                 MENUITEM "HDRx32 CPU - Perturbation LAv2", IDM_ALG_CPU_1_32_PERTURB_BLAV2_HDR
                 MENUITEM "HDRx64 CPU - Perturbation LAv2", IDM_ALG_CPU_1_64_PERTURB_BLAV2_HDR
+                MENUITEM "HDRx32 RC CPU - Perturbation LAv2", IDM_ALG_CPU_1_32_PERTURB_RC_BLAV2_HDR
+                MENUITEM "HDRx64 RC CPU - Perturbation LAv2", IDM_ALG_CPU_1_64_PERTURB_RC_BLAV2_HDR
             END
             POPUP "Low-Zoom Depth"
             BEGIN
@@ -187,29 +189,34 @@ BEGIN
             END
             POPUP "LA Only (for testing)"
             BEGIN
-                MENUITEM "1x32 GPU - Perturbation LAv2 - LA only", IDM_ALG_GPU_1_32_PERTURB_LAV2_LAO
-                MENUITEM "2x32 GPU - Perturbation LAv2 -  LA only", IDM_ALG_GPU_2_32_PERTURB_LAV2_LAO
-                MENUITEM "1x64 GPU - Perturbation LAv2 - LA only", IDM_ALG_GPU_1_64_PERTURB_LAV2_LAO
-                MENUITEM "HDRx32 GPU - Perturbation LAv2 - LA only", IDM_ALG_GPU_HDR_32_PERTURB_LAV2_LAO
-                MENUITEM "HDRx2x32 GPU - Perturbation LAv2 - LA only", IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2_LAO
-                MENUITEM "HDRx64 GPU - Perturbation LAv2 - LA only", IDM_ALG_GPU_HDR_64_PERTURB_LAV2_LAO
+                MENUITEM "1x32 GPU - LAv2 - LA only",   IDM_ALG_GPU_1_32_PERTURB_LAV2_LAO
+                MENUITEM "2x32 GPU - LAv2 -  LA only",  IDM_ALG_GPU_2_32_PERTURB_LAV2_LAO
+                MENUITEM "1x64 GPU - LAv2 - LA only",   IDM_ALG_GPU_1_64_PERTURB_LAV2_LAO
+                MENUITEM "HDRx32 GPU - LAv2 - LA only", IDM_ALG_GPU_HDR_32_PERTURB_LAV2_LAO
+                MENUITEM "HDRx2x32 GPU - LAv2 - LA only", IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2_LAO
+                MENUITEM "HDRx64 GPU - LAv2 - LA only", IDM_ALG_GPU_HDR_64_PERTURB_LAV2_LAO
             END
             POPUP "Perturbation Only"
             BEGIN
-                MENUITEM "1x32 GPU - Perturbation LAv2 - Perturb only", IDM_ALG_GPU_1_32_PERTURB_LAV2_PO
-                MENUITEM "2x32 GPU - Perturbation LAv2 - Perturb only", IDM_ALG_GPU_2_32_PERTURB_LAV2_PO
-                MENUITEM "1x64 GPU - Perturbation LAv2 - Perturb only", IDM_ALG_GPU_1_64_PERTURB_LAV2_PO
-                MENUITEM "HDRx32 GPU - Perturbation LAv2 - Perturb only", IDM_ALG_GPU_HDR_32_PERTURB_LAV2_PO
-                MENUITEM "HDRx2x32 GPU - Perturbation LAv2 - Perturb only", IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2_PO
-                MENUITEM "HDRx64 GPU - Perturbation LAv2 - Perturb only", IDM_ALG_GPU_HDR_64_PERTURB_LAV2_PO
+                MENUITEM "1x32 GPU - LAv2 - Perturb only", IDM_ALG_GPU_1_32_PERTURB_LAV2_PO
+                MENUITEM "2x32 GPU - LAv2 - Perturb only", IDM_ALG_GPU_2_32_PERTURB_LAV2_PO
+                MENUITEM "1x64 GPU - LAv2 - Perturb only", IDM_ALG_GPU_1_64_PERTURB_LAV2_PO
+                MENUITEM "HDRx32 GPU - LAv2 - Perturb only", IDM_ALG_GPU_HDR_32_PERTURB_LAV2_PO
+                MENUITEM "HDRx2x32 GPU - LAv2 - Perturb only", IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2_PO
+                MENUITEM "HDRx64 GPU - LAv2 - Perturb only", IDM_ALG_GPU_HDR_64_PERTURB_LAV2_PO
+            END
+            POPUP "Reference Compression"
+            BEGIN
+                MENUITEM "1x32 GPU - RC LAv2",          IDM_ALG_GPU_1_32_PERTURB_RC_LAV2
+                MENUITEM "1x32 GPU - RC LAv2 - Perturb only", IDM_ALG_GPU_1_32_PERTURB_RC_LAV2_PO
             END
             MENUITEM SEPARATOR
-            MENUITEM "1x32 GPU - Perturbation LAv2", IDM_ALG_GPU_1_32_PERTURB_LAV2
-            MENUITEM "2x32 GPU - Perturbation LAv2", IDM_ALG_GPU_2_32_PERTURB_LAV2
-            MENUITEM "1x64 GPU - Perturbation LAv2", IDM_ALG_GPU_1_64_PERTURB_LAV2
-            MENUITEM "HDRx32 GPU - Perturbation LAv2", IDM_ALG_GPU_HDR_32_PERTURB_LAV2
-            MENUITEM "HDRx2x32 GPU - Perturbation LAv2", IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2
-            MENUITEM "HDRx64 GPU - Perturbation LAv2", IDM_ALG_GPU_HDR_64_PERTURB_LAV2
+            MENUITEM "1x32 GPU - LAv2",             IDM_ALG_GPU_1_32_PERTURB_LAV2
+            MENUITEM "2x32 GPU - LAv2",             IDM_ALG_GPU_2_32_PERTURB_LAV2
+            MENUITEM "1x64 GPU - LAv2",             IDM_ALG_GPU_1_64_PERTURB_LAV2
+            MENUITEM "HDRx32 GPU - LAv2",           IDM_ALG_GPU_HDR_32_PERTURB_LAV2
+            MENUITEM "HDRx2x32 GPU - LAv2",         IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2
+            MENUITEM "HDRx64 GPU - LAv2",           IDM_ALG_GPU_HDR_64_PERTURB_LAV2
             MENUITEM SEPARATOR
             MENUITEM "Run Basic Test (saves files in local dir)", IDM_BASICTEST
         END

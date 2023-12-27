@@ -66,13 +66,13 @@ public:
     }
 
     void SetLaReference(
-        std::unique_ptr<LAReference<IterType, T, SubType>> laReference,
+        std::unique_ptr<LAReference<IterType, T, SubType, PExtras>> laReference,
         size_t NewLaGenerationNumber) {
         LaReference = std::move(laReference);
         LaGenerationNumber = NewLaGenerationNumber;
     }
 
-    LAReference<IterType, T, SubType>* GetLaReference() const {
+    LAReference<IterType, T, SubType, PExtras>* GetLaReference() const {
         return LaReference.get();
     }
 
@@ -125,7 +125,7 @@ public:
 
         if constexpr (IncludeLA) {
             if (other.GetLaReference() != nullptr) {
-                LaReference = std::make_unique<LAReference<IterType, T, SubType>>(*other.GetLaReference());
+                LaReference = std::make_unique<LAReference<IterType, T, SubType, PExtras>>(*other.GetLaReference());
                 LaGenerationNumber = NewLaGenerationNumber;
             }
         }
@@ -150,10 +150,11 @@ public:
         ReuseX = other.ReuseX;
         ReuseY = other.ReuseY;
 
-        if (other.GetLaReference() != nullptr) {
-            LaReference = std::make_unique<LAReference<IterType, T, SubType>>(*other.GetLaReference());
-            LaGenerationNumber = other.GetLaGenerationNumber();
-        }
+        // compression - don't copy.  Regenerate if needed.
+        //if (other.GetLaReference() != nullptr) {
+        //    LaReference = std::make_unique<LAReference<IterType, T, SubType, PExtras>>(*other.GetLaReference());
+        //    LaGenerationNumber = other.GetLaGenerationNumber();
+        //}
     }
 
     void Write(const std::wstring& filename) {
@@ -702,7 +703,7 @@ private:
 
     size_t GenerationNumber;
 
-    std::unique_ptr<LAReference<IterType, T, SubType>> LaReference;
+    std::unique_ptr<LAReference<IterType, T, SubType, PExtras>> LaReference;
     size_t LaGenerationNumber;
 
     uint32_t AuthoritativePrecision;

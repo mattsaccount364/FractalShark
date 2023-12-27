@@ -26,7 +26,7 @@ class PerturbationResults;
 template<typename IterType, class T, class SubType>
 class GPU_LAReference;
 
-template<typename IterType, class Float, class SubType>
+template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
 class LAReference {
 private:
     static constexpr bool IsHDR =
@@ -46,13 +46,13 @@ private:
     friend class GPU_LAReference<IterType, Float, CudaDblflt<MattDblflt>>;
 
     // TODO this is overly broad -- many types don't need these friends
-    friend class LAReference<IterType, float, float>;
-    friend class LAReference<IterType, double, double>;
-    friend class LAReference<IterType, CudaDblflt<dblflt>, CudaDblflt<dblflt>>;
-    friend class LAReference<IterType, ::HDRFloat<float>, float>;
-    friend class LAReference<IterType, ::HDRFloat<double>, double>;
-    friend class LAReference<IterType, ::HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>>;
-    friend class LAReference<IterType, ::HDRFloat<CudaDblflt<dblflt>>, CudaDblflt<dblflt>>;
+    friend class LAReference<IterType, float, float, PExtras>;
+    friend class LAReference<IterType, double, double, PExtras>;
+    friend class LAReference<IterType, CudaDblflt<dblflt>, CudaDblflt<dblflt>, PExtras>;
+    friend class LAReference<IterType, ::HDRFloat<float>, float, PExtras>;
+    friend class LAReference<IterType, ::HDRFloat<double>, double, PExtras>;
+    friend class LAReference<IterType, ::HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, PExtras>;
+    friend class LAReference<IterType, ::HDRFloat<CudaDblflt<dblflt>>, CudaDblflt<dblflt>, PExtras>;
 
     static const int lowBound = 64;
     static const SubType log16;
@@ -66,7 +66,7 @@ public:
     }
 
     template<class OtherT, class Other>
-    LAReference(const LAReference<IterType, OtherT, Other>& other) {
+    LAReference(const LAReference<IterType, OtherT, Other, PExtras>& other) {
         UseAT = other.UseAT;
         AT = other.AT;
         LAStageCount = other.LAStageCount;
@@ -98,21 +98,21 @@ private:
     IterType LAsize();
     template<typename PerturbType>
     bool CreateLAFromOrbit(
-        const PerturbationResults<IterType, PerturbType, PerturbExtras::Disable>& PerturbationResults,
+        const PerturbationResults<IterType, PerturbType, PExtras>& PerturbationResults,
         IterType maxRefIteration);
     template<typename PerturbType>
     bool CreateLAFromOrbitMT(
-        const PerturbationResults<IterType, PerturbType, PerturbExtras::Disable>& PerturbationResults,
+        const PerturbationResults<IterType, PerturbType, PExtras>& PerturbationResults,
         IterType maxRefIteration);
     template<typename PerturbType>
     bool CreateNewLAStage(
-        const PerturbationResults<IterType, PerturbType, PerturbExtras::Disable>& PerturbationResults,
+        const PerturbationResults<IterType, PerturbType, PExtras>& PerturbationResults,
         IterType maxRefIteration);
 
 public:
     template<typename PerturbType>
     void GenerateApproximationData(
-        const PerturbationResults<IterType, PerturbType, PerturbExtras::Disable>& PerturbationResults,
+        const PerturbationResults<IterType, PerturbType, PExtras>& PerturbationResults,
         Float radius,
         IterType maxRefIteration,
         bool UseSmallExponents);

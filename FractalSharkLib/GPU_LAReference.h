@@ -23,7 +23,7 @@ private:
 
 public:
     template<class T2, class SubType2>
-    __host__ GPU_LAReference(const LAReference<IterType, T2, SubType2>& other);
+    __host__ GPU_LAReference(const LAReference<IterType, T2, SubType2, PerturbExtras::Disable>& other);
     __host__ GPU_LAReference(const GPU_LAReference& other);
     ~GPU_LAReference();
 
@@ -75,7 +75,7 @@ template<typename IterType, class Float, class SubType>
 template<class T2, class SubType2>
 __host__
 GPU_LAReference<IterType, Float, SubType>::GPU_LAReference<T2, SubType2>(
-    const LAReference<IterType, T2, SubType2>& other) :
+    const LAReference<IterType, T2, SubType2, PerturbExtras::Disable>& other) :
     UseAT{ other.UseAT },
     AT{ other.AT },
     LAStageCount{ other.LAStageCount },

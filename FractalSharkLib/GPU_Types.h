@@ -2,7 +2,7 @@
 
 #include "dblflt.h"
 
-template<typename IterType, class T, class SubType>
+template<typename IterType, class T, class SubType, PerturbExtras PExtras>
 class LAReference;
 
 enum class LAv2Mode {

@@ -136,8 +136,10 @@ private:
 
     Container<uint32_t, PerturbExtras::Disable> c32d;
     Container<uint32_t, PerturbExtras::Bad> c32e;
+    Container<uint32_t, PerturbExtras::EnableCompression> c32c;
     Container<uint64_t, PerturbExtras::Disable> c64d;
     Container<uint64_t, PerturbExtras::Bad> c64e;
+    Container<uint64_t, PerturbExtras::EnableCompression> c64c;
 
     template<typename IterType, PerturbExtras PExtras>
     Container<IterType, PExtras> &GetContainer();

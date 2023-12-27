@@ -5,18 +5,18 @@
 
 //#include <Windows.h>
 
-template<typename IterType, class Float, class SubType>
-const SubType LAReference<IterType, Float, SubType>::log16 = (SubType)std::log(16);
+template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
+const SubType LAReference<IterType, Float, SubType, PExtras>::log16 = (SubType)std::log(16);
 
-template<typename IterType, class Float, class SubType>
-IterType LAReference<IterType, Float, SubType>::LAsize() {
+template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
+IterType LAReference<IterType, Float, SubType, PExtras>::LAsize() {
     return (IterType)LAs.size();
 }
 
-template<typename IterType, class Float, class SubType>
+template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
 template<typename PerturbType>
-bool LAReference<IterType, Float, SubType>::CreateLAFromOrbit(
-    const PerturbationResults<IterType, PerturbType, PerturbExtras::Disable>& PerturbationResults,
+bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbit(
+    const PerturbationResults<IterType, PerturbType, PExtras>& PerturbationResults,
     IterType maxRefIteration) {
 
     {
@@ -164,10 +164,10 @@ bool LAReference<IterType, Float, SubType>::CreateLAFromOrbit(
     return true;
 }
 
-template<typename IterType, class Float, class SubType>
+template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
 template<typename PerturbType>
-bool LAReference<IterType, Float, SubType>::CreateLAFromOrbitMT(
-    const PerturbationResults<IterType, PerturbType, PerturbExtras::Disable>& PerturbationResults,
+bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
+    const PerturbationResults<IterType, PerturbType, PExtras>& PerturbationResults,
     IterType maxRefIteration) {
 
     {
@@ -444,10 +444,10 @@ bool LAReference<IterType, Float, SubType>::CreateLAFromOrbitMT(
 }
 
 //#pragma optimize( "", off )
-template<typename IterType, class Float, class SubType>
+template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
 template<typename PerturbType>
-bool LAReference<IterType, Float, SubType>::CreateNewLAStage(
-    const PerturbationResults<IterType, PerturbType, PerturbExtras::Disable>& PerturbationResults,
+bool LAReference<IterType, Float, SubType, PExtras>::CreateNewLAStage(
+    const PerturbationResults<IterType, PerturbType, PExtras>& PerturbationResults,
     IterType maxRefIteration) {
 
     LAInfoDeep<IterType, Float, SubType> LA;
@@ -633,10 +633,10 @@ bool LAReference<IterType, Float, SubType>::CreateNewLAStage(
 }
 //#pragma optimize( "", on )
 
-template<typename IterType, class Float, class SubType>
+template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
 template<typename PerturbType>
-void LAReference<IterType, Float, SubType>::GenerateApproximationData(
-    const PerturbationResults<IterType, PerturbType, PerturbExtras::Disable>& PerturbationResults,
+void LAReference<IterType, Float, SubType, PExtras>::GenerateApproximationData(
+    const PerturbationResults<IterType, PerturbType, PExtras>& PerturbationResults,
     Float radius,
     IterType maxRefIteration,
     bool UseSmallExponents) {
@@ -660,98 +660,33 @@ void LAReference<IterType, Float, SubType>::GenerateApproximationData(
 }
 
 // TODO - this is a mess
-template void LAReference<uint32_t, float, float>::GenerateApproximationData<float>(
-    const PerturbationResults<uint32_t, float, PerturbExtras::Disable>& PerturbationResults,
-    float radius,
-    uint32_t maxRefIteration,
-    bool UseSmallExponents);
-//template void LAReference<uint32_t, float, float>::GenerateApproximationData<double>(
-//    const PerturbationResults<uint32_t, double, PerturbExtras::Disable>& PerturbationResults,
-//    float radius,
-//    uint32_t maxRefIteration,
-//    bool UseSmallExponents);
-//
-template void LAReference<uint64_t, float, float>::GenerateApproximationData<float>(
-    const PerturbationResults<uint64_t, float, PerturbExtras::Disable>& PerturbationResults,
-    float radius,
-    uint64_t maxRefIteration,
-    bool UseSmallExponents);
-//template void LAReference<uint64_t, float, float>::GenerateApproximationData<double>(
-//    const PerturbationResults<uint64_t, double, PerturbExtras::Disable>& PerturbationResults,
-//    float radius,
-//    uint64_t maxRefIteration,
-//    bool UseSmallExponents);
-//
-//template void LAReference<uint32_t, double, double>::GenerateApproximationData<float>(
-//    const PerturbationResults<uint32_t, float, PerturbExtras::Disable>& PerturbationResults,
-//    double radius,
-//    uint32_t maxRefIteration,
-//    bool UseSmallExponents);
-template void LAReference<uint32_t, double, double>::GenerateApproximationData<double>(
-    const PerturbationResults<uint32_t, double, PerturbExtras::Disable>& PerturbationResults,
-    double radius,
-    uint32_t maxRefIteration,
-    bool UseSmallExponents);
-//
-//template void LAReference<uint64_t, double, double>::GenerateApproximationData<float>(
-//    const PerturbationResults<uint64_t, float, PerturbExtras::Disable>& PerturbationResults,
-//    double radius,
-//    uint64_t maxRefIteration,
-//    bool UseSmallExponents);
-template void LAReference<uint64_t, double, double>::GenerateApproximationData<double>(
-    const PerturbationResults<uint64_t, double, PerturbExtras::Disable>& PerturbationResults,
-    double radius,
-    uint64_t maxRefIteration,
+#define InitializeApproximationData(IterType, T, SubType, PExtras) \
+template void LAReference<IterType, T, SubType, PExtras>::GenerateApproximationData<T>( \
+    const PerturbationResults<IterType, T, PExtras>& PerturbationResults, \
+    T radius, \
+    IterType maxRefIteration, \
     bool UseSmallExponents);
 
-///
+InitializeApproximationData(uint32_t, float, float, PerturbExtras::Disable);
+InitializeApproximationData(uint64_t, float, float, PerturbExtras::Disable);
+InitializeApproximationData(uint32_t, double, double, PerturbExtras::Disable);
+InitializeApproximationData(uint64_t, double, double, PerturbExtras::Disable);
+InitializeApproximationData(uint32_t, ::HDRFloat<float>, float, PerturbExtras::Disable);
+InitializeApproximationData(uint64_t, ::HDRFloat<float>, float, PerturbExtras::Disable);
+InitializeApproximationData(uint32_t, ::HDRFloat<double>, double, PerturbExtras::Disable);
+InitializeApproximationData(uint64_t, ::HDRFloat<double>, double, PerturbExtras::Disable);
 
-template void LAReference<uint32_t, ::HDRFloat<float>, float>::GenerateApproximationData<HDRFloat<float>>(
-    const PerturbationResults<uint32_t, ::HDRFloat<float>, PerturbExtras::Disable>& PerturbationResults,
-    ::HDRFloat<float> radius,
-    uint32_t maxRefIteration,
-    bool UseSmallExponents);
-//template void LAReference<uint32_t, ::HDRFloat<float>, float>::GenerateApproximationData<HDRFloat<double>>(
-//    const PerturbationResults<uint32_t, ::HDRFloat<double>, PerturbExtras::Disable>& PerturbationResults,
-//    ::HDRFloat<float> radius,
-//    uint32_t maxRefIteration,
-//    bool UseSmallExponents);
+InitializeApproximationData(uint32_t, float, float, PerturbExtras::EnableCompression);
+InitializeApproximationData(uint64_t, float, float, PerturbExtras::EnableCompression);
+InitializeApproximationData(uint32_t, double, double, PerturbExtras::EnableCompression);
+InitializeApproximationData(uint64_t, double, double, PerturbExtras::EnableCompression);
+InitializeApproximationData(uint32_t, ::HDRFloat<float>, float, PerturbExtras::EnableCompression);
+InitializeApproximationData(uint64_t, ::HDRFloat<float>, float, PerturbExtras::EnableCompression);
+InitializeApproximationData(uint32_t, ::HDRFloat<double>, double, PerturbExtras::EnableCompression);
+InitializeApproximationData(uint64_t, ::HDRFloat<double>, double, PerturbExtras::EnableCompression);
 
-template void LAReference<uint64_t, ::HDRFloat<float>, float>::GenerateApproximationData<HDRFloat<float>>(
-    const PerturbationResults<uint64_t, ::HDRFloat<float>, PerturbExtras::Disable>& PerturbationResults,
-    ::HDRFloat<float> radius,
-    uint64_t maxRefIteration,
-    bool UseSmallExponents);
-//template void LAReference<uint64_t, ::HDRFloat<float>, float>::GenerateApproximationData<HDRFloat<double>>(
-//    const PerturbationResults<uint64_t, ::HDRFloat<double>, PerturbExtras::Disable>& PerturbationResults,
-//    ::HDRFloat<float> radius,
-//    uint64_t maxRefIteration,
-//    bool UseSmallExponents);
-
-//template void LAReference<uint32_t, ::HDRFloat<double>, double>::GenerateApproximationData<HDRFloat<float>>(
-//    const PerturbationResults<uint32_t, ::HDRFloat<float>, PerturbExtras::Disable>& PerturbationResults,
-//    ::HDRFloat<double> radius,
-//    uint32_t maxRefIteration,
-//    bool UseSmallExponents);
-template void LAReference<uint32_t, ::HDRFloat<double>, double>::GenerateApproximationData<HDRFloat<double>>(
-    const PerturbationResults<uint32_t, ::HDRFloat<double>, PerturbExtras::Disable>& PerturbationResults,
-    ::HDRFloat<double> radius,
-    uint32_t maxRefIteration,
-    bool UseSmallExponents);
-
-//template void LAReference<uint64_t, ::HDRFloat<double>, double>::GenerateApproximationData<HDRFloat<float>>(
-//    const PerturbationResults<uint64_t, ::HDRFloat<float>, PerturbExtras::Disable>& PerturbationResults,
-//    ::HDRFloat<double> radius,
-//    uint64_t maxRefIteration,
-//    bool UseSmallExponents);
-template void LAReference<uint64_t, ::HDRFloat<double>, double>::GenerateApproximationData<HDRFloat<double>>(
-    const PerturbationResults<uint64_t, ::HDRFloat<double>, PerturbExtras::Disable>& PerturbationResults,
-    ::HDRFloat<double> radius,
-    uint64_t maxRefIteration,
-    bool UseSmallExponents);
-
-template<typename IterType, class Float, class SubType>
-void LAReference<IterType, Float, SubType>::CreateATFromLA(Float radius, bool UseSmallExponents) {
+template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
+void LAReference<IterType, Float, SubType, PExtras>::CreateATFromLA(Float radius, bool UseSmallExponents) {
     Float SqrRadius;
 
     if constexpr (IsHDR) {
@@ -775,24 +710,24 @@ void LAReference<IterType, Float, SubType>::CreateATFromLA(Float radius, bool Us
     UseAT = false;
 }
 
-template<typename IterType, class Float, class SubType>
-bool LAReference<IterType, Float, SubType>::isLAStageInvalid(IterType LAIndex, FloatComplexT dc) {
+template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
+bool LAReference<IterType, Float, SubType, PExtras>::isLAStageInvalid(IterType LAIndex, FloatComplexT dc) {
     return (dc.chebychevNorm().compareToBothPositiveReduced((LAs[LAIndex]).getLAThresholdC()) >= 0);
 }
 
-template<typename IterType, class Float, class SubType>
-IterType LAReference<IterType, Float, SubType>::getLAIndex(IterType CurrentLAStage) {
+template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
+IterType LAReference<IterType, Float, SubType, PExtras>::getLAIndex(IterType CurrentLAStage) {
     return LAStages[CurrentLAStage].LAIndex;
 }
 
-template<typename IterType, class Float, class SubType>
-IterType LAReference<IterType, Float, SubType>::getMacroItCount(IterType CurrentLAStage) {
+template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
+IterType LAReference<IterType, Float, SubType, PExtras>::getMacroItCount(IterType CurrentLAStage) {
     return LAStages[CurrentLAStage].MacroItCount;
 }
 
-template<typename IterType, class Float, class SubType>
+template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
 LAstep<IterType, Float, SubType>
-LAReference<IterType, Float, SubType>::getLA(
+LAReference<IterType, Float, SubType, PExtras>::getLA(
     IterType LAIndex,
     FloatComplexT dz,
     /*FloatComplexT dc, */ IterType j,
@@ -832,7 +767,15 @@ LAReference<IterType, Float, SubType>::getLA(
 
 }
 
-template class LAReference<uint32_t, HDRFloat<float>, float>;
-template class LAReference<uint64_t, HDRFloat<float>, float>;
-template class LAReference<uint32_t, HDRFloat<double>, double>;
-template class LAReference<uint64_t, HDRFloat<double>, double>;
+#define InitializeLAReference(IterType, T, SubType, PExtras) \
+template class LAReference<IterType, T, SubType, PExtras>;
+
+InitializeLAReference(uint32_t, HDRFloat<float>, float, PerturbExtras::Disable);
+InitializeLAReference(uint64_t, HDRFloat<float>, float, PerturbExtras::Disable);
+InitializeLAReference(uint32_t, HDRFloat<double>, double, PerturbExtras::Disable);
+InitializeLAReference(uint64_t, HDRFloat<double>, double, PerturbExtras::Disable);
+
+InitializeLAReference(uint32_t, HDRFloat<float>, float, PerturbExtras::EnableCompression);
+InitializeLAReference(uint64_t, HDRFloat<float>, float, PerturbExtras::EnableCompression);
+InitializeLAReference(uint32_t, HDRFloat<double>, double, PerturbExtras::EnableCompression);
+InitializeLAReference(uint64_t, HDRFloat<double>, double, PerturbExtras::EnableCompression);

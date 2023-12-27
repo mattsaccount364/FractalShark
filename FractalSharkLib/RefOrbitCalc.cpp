@@ -15,6 +15,8 @@
 #include <iostream>
 #include <filesystem>
 
+// TODO we really should be using std::variant all over.  Oh well!
+
 template<class Type>
 struct ThreadPtrs {
     std::atomic<Type*> In;
@@ -118,6 +120,7 @@ bool RefOrbitCalc::IsThisPerturbationArrayUsed(void* check) const {
         return false;
     case RenderAlgorithm::Cpu32PerturbedBLAHDR:
     case RenderAlgorithm::Cpu32PerturbedBLAV2HDR:
+    case RenderAlgorithm::Cpu32PerturbedRCBLAV2HDR:
     case RenderAlgorithm::GpuHDRx32PerturbedBLA:
     case RenderAlgorithm::GpuHDRx32PerturbedScaled:
     case RenderAlgorithm::GpuHDRx32PerturbedLAv2:
@@ -126,10 +129,13 @@ bool RefOrbitCalc::IsThisPerturbationArrayUsed(void* check) const {
         return
             check == &c32d.m_PerturbationResultsHDRFloat ||
             check == &c32e.m_PerturbationResultsHDRFloat ||
+            check == &c32c.m_PerturbationResultsHDRFloat ||
             check == &c64d.m_PerturbationResultsHDRFloat ||
-            check == &c64e.m_PerturbationResultsHDRFloat;
+            check == &c64e.m_PerturbationResultsHDRFloat ||
+            check == &c64c.m_PerturbationResultsHDRFloat;
     case RenderAlgorithm::Cpu64PerturbedBLAHDR:
     case RenderAlgorithm::Cpu64PerturbedBLAV2HDR:
+    case RenderAlgorithm::Cpu64PerturbedRCBLAV2HDR:
     case RenderAlgorithm::GpuHDRx64PerturbedBLA:
     case RenderAlgorithm::GpuHDRx64PerturbedLAv2:
     case RenderAlgorithm::GpuHDRx64PerturbedLAv2PO:
@@ -137,24 +143,30 @@ bool RefOrbitCalc::IsThisPerturbationArrayUsed(void* check) const {
         return
             check == &c32d.m_PerturbationResultsHDRDouble ||
             check == &c32e.m_PerturbationResultsHDRDouble ||
+            check == &c32c.m_PerturbationResultsHDRDouble ||
             check == &c64d.m_PerturbationResultsHDRDouble ||
-            check == &c64e.m_PerturbationResultsHDRDouble;
+            check == &c64e.m_PerturbationResultsHDRDouble ||
+            check == &c64c.m_PerturbationResultsHDRDouble;
     case RenderAlgorithm::Gpu1x32PerturbedLAv2:
     case RenderAlgorithm::Gpu1x32PerturbedLAv2PO:
     case RenderAlgorithm::Gpu1x32PerturbedLAv2LAO:
         return
             check == &c32d.m_PerturbationResultsFloat ||
             check == &c32e.m_PerturbationResultsFloat ||
+            check == &c32c.m_PerturbationResultsFloat ||
             check == &c64d.m_PerturbationResultsFloat ||
-            check == &c64e.m_PerturbationResultsFloat;
+            check == &c64e.m_PerturbationResultsFloat ||
+            check == &c64c.m_PerturbationResultsFloat;
     case RenderAlgorithm::Gpu2x32PerturbedLAv2:
     case RenderAlgorithm::Gpu2x32PerturbedLAv2PO:
     case RenderAlgorithm::Gpu2x32PerturbedLAv2LAO:
         return
             check == &c32d.m_PerturbationResults2xFloat ||
             check == &c32e.m_PerturbationResults2xFloat ||
+            check == &c32c.m_PerturbationResults2xFloat ||
             check == &c64d.m_PerturbationResults2xFloat ||
-            check == &c64e.m_PerturbationResults2xFloat;
+            check == &c64e.m_PerturbationResults2xFloat ||
+            check == &c64c.m_PerturbationResults2xFloat;
     case RenderAlgorithm::Cpu64PerturbedBLA:
     case RenderAlgorithm::Gpu1x32PerturbedScaled:
     case RenderAlgorithm::Gpu1x32PerturbedScaledBLA:
@@ -165,16 +177,20 @@ bool RefOrbitCalc::IsThisPerturbationArrayUsed(void* check) const {
         return
             check == &c32d.m_PerturbationResultsDouble ||
             check == &c32e.m_PerturbationResultsDouble ||
+            check == &c32c.m_PerturbationResultsDouble ||
             check == &c64d.m_PerturbationResultsDouble ||
-            check == &c64e.m_PerturbationResultsDouble;
+            check == &c64e.m_PerturbationResultsDouble ||
+            check == &c64c.m_PerturbationResultsDouble;
     case RenderAlgorithm::GpuHDRx2x32PerturbedLAv2:
     case RenderAlgorithm::GpuHDRx2x32PerturbedLAv2PO:
     case RenderAlgorithm::GpuHDRx2x32PerturbedLAv2LAO:
         return
             check == &c32d.m_PerturbationResultsHDR2xFloat ||
             check == &c32e.m_PerturbationResultsHDR2xFloat ||
+            check == &c32c.m_PerturbationResultsHDR2xFloat ||
             check == &c64d.m_PerturbationResultsHDR2xFloat ||
-            check == &c64e.m_PerturbationResultsHDR2xFloat;
+            check == &c64e.m_PerturbationResultsHDR2xFloat ||
+            check == &c64c.m_PerturbationResultsHDR2xFloat;
     case RenderAlgorithm::Gpu2x32PerturbedScaled:
         // TODO
         //CalcGpuPerturbationFractalBLA<double, double>(MemoryOnly);
@@ -221,8 +237,10 @@ void RefOrbitCalc::OptimizeMemory() {
 
     lambda(c32d);
     lambda(c32e);
+    lambda(c32c);
     lambda(c64d);
     lambda(c64e);
+    lambda(c64c);
 
     GetProcessMemoryInfo(GetCurrentProcess(), (PPROCESS_MEMORY_COUNTERS)&checkHappy, sizeof(checkHappy));
     if (checkHappy.PagefileUsage > OMGAlotOfMemory) {
@@ -272,16 +290,22 @@ RefOrbitCalc::GetPerturbationResults() {
         if constexpr (PExtras == PerturbExtras::Disable) {
             return lambda(c32d);
         }
-        else {
+        else if constexpr (PExtras == PerturbExtras::Bad) {
             return lambda(c32e);
+        }
+        else if constexpr (PExtras == PerturbExtras::EnableCompression) {
+            return lambda(c32c);
         }
     }
     else if constexpr (std::is_same<IterType, uint64_t>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
             return lambda(c64d);
         }
-        else {
+        else if constexpr (PExtras == PerturbExtras::Bad) {
             return lambda(c64e);
+        }
+        else if constexpr (PExtras == PerturbExtras::EnableCompression) {
+            return lambda(c64c);
         }
     }
 }
@@ -320,16 +344,22 @@ RefOrbitCalc::AddPerturbationResults(std::unique_ptr<PerturbationResults<IterTyp
         if constexpr (PExtras == PerturbExtras::Disable) {
             return lambda(c32d);
         }
-        else {
+        else if constexpr (PExtras == PerturbExtras::Bad) {
             return lambda(c32e);
+        }
+        else if constexpr (PExtras == PerturbExtras::EnableCompression) {
+            return lambda(c32c);
         }
     }
     else if constexpr (std::is_same<IterType, uint64_t>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
             return lambda(c64d);
         }
-        else {
+        else if constexpr (PExtras == PerturbExtras::Bad) {
             return lambda(c64e);
+        }
+        else if constexpr (PExtras == PerturbExtras::EnableCompression) {
+            return lambda(c64c);
         }
     }
 }
@@ -365,16 +395,22 @@ RefOrbitCalc::GetPerturbationResults(size_t index) {
         if constexpr (PExtras == PerturbExtras::Disable) {
             return lambda(c32d);
         }
-        else {
+        else if constexpr (PExtras == PerturbExtras::Bad) {
             return lambda(c32e);
+        }
+        else if constexpr (PExtras == PerturbExtras::EnableCompression) {
+            return lambda(c32c);
         }
     }
     else if constexpr (std::is_same<IterType, uint64_t>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
             return lambda(c64d);
         }
-        else {
+        else if constexpr (PExtras == PerturbExtras::Bad) {
             return lambda(c64e);
+        }
+        else if constexpr (PExtras == PerturbExtras::EnableCompression) {
+            return lambda(c64c);
         }
     }
 }
@@ -1970,14 +2006,19 @@ template<
     RefOrbitCalc::Extras Ex,
     class ConvertTType>
 PerturbationResults<IterType, ConvertTType, PExtras>* RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
+
     bool added = false;
+    constexpr auto PExtrasHackYay =
+        (PExtras == PerturbExtras::EnableCompression) ? PerturbExtras::Disable : PExtras;
+
     if (RequiresReuse()) {
         if (m_PerturbationGuessCalcX == 0 && m_PerturbationGuessCalcY == 0) {
             m_PerturbationGuessCalcX = (m_Fractal.GetMaxX() + m_Fractal.GetMinX()) / 2;
             m_PerturbationGuessCalcY = (m_Fractal.GetMaxY() + m_Fractal.GetMinY()) / 2;
         }
 
-        PerturbationResults<IterType, T, PExtras>* results = GetUsefulPerturbationResults<IterType, T, false, PExtras>();
+        PerturbationResults<IterType, T, PExtrasHackYay>* results =
+            GetUsefulPerturbationResults<IterType, T, false, PExtrasHackYay>();
         if (results == nullptr) {
             switch (GetPerturbationAlg()) {
             case PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed:
@@ -1996,23 +2037,25 @@ PerturbationResults<IterType, ConvertTType, PExtras>* RefOrbitCalc::GetAndCreate
         }
     }
 
-    PerturbationResults<IterType, T, PExtras>* results = GetUsefulPerturbationResults<IterType, T, false, PExtras>();
+    PerturbationResults<IterType, T, PExtras>* results =
+        GetUsefulPerturbationResults<IterType, T, false, PExtras>();
     if (results == nullptr) {
         if (added) {
             ::MessageBox(NULL, L"Why didn't this work! :(", L"", MB_OK);
         }
-        std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtras>>>& cur_array =
-            GetPerturbationResults<IterType, T, PExtras>();
+        std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtrasHackYay>>>& cur_array =
+            GetPerturbationResults<IterType, T, PExtrasHackYay>();
         AddPerturbationReferencePoint<IterType, T, SubType, BenchmarkMode::Disable>();
         added = true;
 
-        results = cur_array[cur_array.size() - 1].get();
-
         // TODO: this is a hack.  We need to fix this.
-        if constexpr (PExtras == PerturbExtras::Disable) {
-            auto compressedResults = results->Compress();
-            auto decompressedResults = compressedResults->Decompress();
-            results = AddPerturbationResults(std::move(decompressedResults));
+        if constexpr (PExtras == PerturbExtras::EnableCompression) {
+            auto resultsIntermediate = cur_array[cur_array.size() - 1].get();
+            auto compressedResults = resultsIntermediate->Compress();
+            results = AddPerturbationResults(std::move(compressedResults));
+        }
+        else {
+            results = cur_array[cur_array.size() - 1].get();
         }
     }
 
@@ -2026,9 +2069,9 @@ PerturbationResults<IterType, ConvertTType, PExtras>* RefOrbitCalc::GetAndCreate
         std::is_same<T, HDRFloat<float>>::value ||
         std::is_same<T, HDRFloat<double>>::value) {
         if constexpr (Ex == Extras::IncludeLAv2) {
-            static_assert(PExtras == PerturbExtras::Disable, "!");
+            static_assert(PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::EnableCompression, "!");
             if (results->GetLaReference() == nullptr) {
-                auto temp = std::make_unique<LAReference<IterType, T, SubType>>();
+                auto temp = std::make_unique<LAReference<IterType, T, SubType, PExtras>>();
 
                 // TODO the presumption here is results size fits in the target IterType size
                 temp->GenerateApproximationData(
@@ -2048,7 +2091,7 @@ PerturbationResults<IterType, ConvertTType, PExtras>* RefOrbitCalc::GetAndCreate
     if constexpr (UseSmallExponents) {
         auto* resultsExisting = GetUsefulPerturbationResults<IterType, ConvertTType, false, PExtras>();
         if (resultsExisting == nullptr) {
-            auto results2(std::make_unique<PerturbationResults<IterType, ConvertTType, PerturbExtras::Disable>>());
+            auto results2(std::make_unique<PerturbationResults<IterType, ConvertTType, PExtras>>());
             results2->Copy<true>(*results,
                 GetNextGenerationNumber(),
                 GetNextLaGenerationNumber());
@@ -2181,8 +2224,10 @@ void RefOrbitCalc::ClearPerturbationResults(PerturbationResultType type) {
 
     ClearContainer(c32d);
     ClearContainer(c32e);
+    ClearContainer(c32c);
     ClearContainer(c64d);
     ClearContainer(c64e);
+    ClearContainer(c64c);
 
     m_PerturbationGuessCalcX = 0;
     m_PerturbationGuessCalcY = 0;
@@ -2261,8 +2306,10 @@ void RefOrbitCalc::SaveAllOrbits() {
 
     lambda(c32d);
     lambda(c32e);
+    lambda(c32c);
     lambda(c64d);
     lambda(c64e);
+    lambda(c64c);
 }
 
 void RefOrbitCalc::LoadAllOrbits() {
@@ -2355,13 +2402,16 @@ void RefOrbitCalc::LoadAllOrbits() {
 
     lambda.template operator()<uint32_t, PerturbExtras::Disable>(c32d);
     lambda.template operator()<uint32_t, PerturbExtras::Bad>(c32e);
+    lambda.template operator()<uint32_t, PerturbExtras::EnableCompression>(c32c);
     lambda.template operator()<uint64_t, PerturbExtras::Disable>(c64d);
     lambda.template operator()<uint64_t, PerturbExtras::Bad >(c64e);
+    lambda.template operator()<uint64_t, PerturbExtras::EnableCompression>(c64c);
 }
 
 template<typename IterType, PerturbExtras PExtras>
 RefOrbitCalc::Container<IterType, PExtras>& RefOrbitCalc::GetContainer() {
-    return const_cast<RefOrbitCalc::Container<IterType, PExtras>&>(std::as_const(*this).GetContainer<IterType, PExtras>());
+    return const_cast<RefOrbitCalc::Container<IterType, PExtras>&>(
+        std::as_const(*this).GetContainer<IterType, PExtras>());
 }
 
 template<typename IterType, PerturbExtras PExtras>
@@ -2372,11 +2422,21 @@ const RefOrbitCalc::Container<IterType, PExtras> &RefOrbitCalc::GetContainer() c
     else if constexpr (std::is_same<IterType, uint32_t>::value && PExtras == PerturbExtras::Bad) {
         return c32e;
     } 
+    else if constexpr (std::is_same<IterType, uint32_t>::value && PExtras == PerturbExtras::EnableCompression) {
+        return c32c;
+    }
     else if constexpr (std::is_same<IterType, uint64_t>::value && PExtras == PerturbExtras::Disable) {
         return c64d;
     }
     else if constexpr (std::is_same<IterType, uint64_t>::value && PExtras == PerturbExtras::Bad) {
         return c64e;
+    }
+    else if constexpr (std::is_same<IterType, uint64_t>::value && PExtras == PerturbExtras::EnableCompression) {
+        return c64c;
+    }
+    else {
+        assert(false);
+        return c32d;
     }
 }
 

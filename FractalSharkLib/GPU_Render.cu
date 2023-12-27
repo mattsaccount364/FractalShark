@@ -394,7 +394,7 @@ uint32_t GPURenderer::InitializePerturb(
     const MattPerturbResults<IterType, T1, PExtras>* Perturb1,
     size_t GenerationNumber2,
     const MattPerturbResults<IterType, T2, PExtras>* Perturb2,
-    const LAReference<IterType, T1, SubType>* LaReferenceHost,
+    const LAReference<IterType, T1, SubType, PExtras>* LaReferenceHost,
     size_t LaGenerationNumber)
 {
     if (GenerationNumber1 != m_PerturbResults.GetHostGenerationNumber1() ||
@@ -449,103 +449,30 @@ uint32_t GPURenderer::InitializePerturb(
     return cudaSuccess;
 }
 
-template
-uint32_t GPURenderer::InitializePerturb<uint32_t, float, float, PerturbExtras::Disable, float>(
-    size_t GenerationNumber1,
-    const MattPerturbResults<uint32_t, float, PerturbExtras::Disable>* Perturb1,
-    size_t GenerationNumber2,
-    const MattPerturbResults<uint32_t, float, PerturbExtras::Disable>* Perturb2,
-    const LAReference<uint32_t, float, float>* LaReferenceHost,
-    size_t LaGenerationNumber1);
-template
-uint32_t GPURenderer::InitializePerturb<uint32_t, double, double, PerturbExtras::Disable, double>(
-    size_t GenerationNumber1,
-    const MattPerturbResults<uint32_t, double, PerturbExtras::Disable>* Perturb1,
-    size_t GenerationNumber2,
-    const MattPerturbResults<uint32_t, double, PerturbExtras::Disable>* Perturb2,
-    const LAReference<uint32_t, double, double>* LaReferenceHost,
-    size_t LaGenerationNumber1);
-template
-uint32_t GPURenderer::InitializePerturb<uint32_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, PerturbExtras::Disable, CudaDblflt<MattDblflt>>(
-    size_t GenerationNumber1,
-    const MattPerturbResults<uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::Disable>* Perturb1,
-    size_t GenerationNumber2,
-    const MattPerturbResults<uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::Disable>* Perturb2,
-    const LAReference<uint32_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>>* LaReferenceHost,
-    size_t LaGenerationNumber1);
-template
-uint32_t GPURenderer::InitializePerturb<uint32_t, class HDRFloat<float>, float, PerturbExtras::Disable, HDRFloat<float>>(
-    size_t GenerationNumber1,
-    const MattPerturbResults<uint32_t, HDRFloat<float>, PerturbExtras::Disable>* Perturb1,
-    size_t GenerationNumber2,
-    const MattPerturbResults<uint32_t, HDRFloat<float>, PerturbExtras::Disable>* Perturb2,
-    const LAReference<uint32_t, HDRFloat<float>, float>* LaReferenceHost,
-    size_t LaGenerationNumber1);
-template
-uint32_t GPURenderer::InitializePerturb<uint32_t, class HDRFloat<double>, double, PerturbExtras::Disable, HDRFloat<double>>(
-    size_t GenerationNumber1,
-    const MattPerturbResults<uint32_t, HDRFloat<double>, PerturbExtras::Disable>* Perturb1,
-    size_t GenerationNumber2,
-    const MattPerturbResults<uint32_t, HDRFloat<double>, PerturbExtras::Disable>* Perturb2,
-    const LAReference<uint32_t, HDRFloat<double>, double>* LaReferenceHost,
-    size_t LaGenerationNumber1);
-template
-uint32_t GPURenderer::InitializePerturb<uint32_t, class HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, PerturbExtras::Disable, HDRFloat<CudaDblflt<MattDblflt>>>(
-    size_t GenerationNumber1,
-    const MattPerturbResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable>* Perturb1,
-    size_t GenerationNumber2,
-    const MattPerturbResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable>* Perturb2,
-    const LAReference<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>>* LaReferenceHost,
-    size_t LaGenerationNumber1);
+#define DefineInitializePerturb(IterType, T1, SubType, PExtras, T2) \
+    template uint32_t GPURenderer::InitializePerturb<IterType, T1, SubType, PExtras, T2>( \
+        size_t GenerationNumber1, \
+        const MattPerturbResults<IterType, T1, PExtras>* Perturb1, \
+        size_t GenerationNumber2, \
+        const MattPerturbResults<IterType, T2, PExtras>* Perturb2, \
+        const LAReference<IterType, T1, SubType, PExtras>* LaReferenceHost, \
+        size_t LaGenerationNumber);
 
-template
-uint32_t GPURenderer::InitializePerturb<uint64_t, float, float, PerturbExtras::Disable, float>(
-    size_t GenerationNumber1,
-    const MattPerturbResults<uint64_t, float, PerturbExtras::Disable>* Perturb1,
-    size_t GenerationNumber2,
-    const MattPerturbResults<uint64_t, float, PerturbExtras::Disable>* Perturb2,
-    const LAReference<uint64_t, float, float>* LaReferenceHost,
-    size_t LaGenerationNumber1);
-template
-uint32_t GPURenderer::InitializePerturb<uint64_t, double, double, PerturbExtras::Disable, double>(
-    size_t GenerationNumber1,
-    const MattPerturbResults<uint64_t, double, PerturbExtras::Disable>* Perturb1,
-    size_t GenerationNumber2,
-    const MattPerturbResults<uint64_t, double, PerturbExtras::Disable>* Perturb2,
-    const LAReference<uint64_t, double, double>* LaReferenceHost,
-    size_t LaGenerationNumber1);
-template
-uint32_t GPURenderer::InitializePerturb<uint64_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, PerturbExtras::Disable, CudaDblflt<MattDblflt>>(
-    size_t GenerationNumber1,
-    const MattPerturbResults<uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::Disable>* Perturb1,
-    size_t GenerationNumber2,
-    const MattPerturbResults<uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::Disable>* Perturb2,
-    const LAReference<uint64_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>>* LaReferenceHost,
-    size_t LaGenerationNumber1);
-template
-uint32_t GPURenderer::InitializePerturb<uint64_t, class HDRFloat<float>, float, PerturbExtras::Disable, HDRFloat<float>>(
-    size_t GenerationNumber1,
-    const MattPerturbResults<uint64_t, HDRFloat<float>, PerturbExtras::Disable>* Perturb1,
-    size_t GenerationNumber2,
-    const MattPerturbResults<uint64_t, HDRFloat<float>, PerturbExtras::Disable>* Perturb2,
-    const LAReference<uint64_t, HDRFloat<float>, float>* LaReferenceHost,
-    size_t LaGenerationNumber1);
-template
-uint32_t GPURenderer::InitializePerturb<uint64_t, class HDRFloat<double>, double, PerturbExtras::Disable, HDRFloat<double>>(
-    size_t GenerationNumber1,
-    const MattPerturbResults<uint64_t, HDRFloat<double>, PerturbExtras::Disable>* Perturb1,
-    size_t GenerationNumber2,
-    const MattPerturbResults<uint64_t, HDRFloat<double>, PerturbExtras::Disable>* Perturb2,
-    const LAReference<uint64_t, HDRFloat<double>, double>* LaReferenceHost,
-    size_t LaGenerationNumber1);
-template
-uint32_t GPURenderer::InitializePerturb<uint64_t, class HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, PerturbExtras::Disable, HDRFloat<CudaDblflt<MattDblflt>>>(
-    size_t GenerationNumber1,
-    const MattPerturbResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable>* Perturb1,
-    size_t GenerationNumber2,
-    const MattPerturbResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable>* Perturb2,
-    const LAReference<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>>* LaReferenceHost,
-    size_t LaGenerationNumber1);
+DefineInitializePerturb(uint32_t, float, float, PerturbExtras::Disable, float);
+DefineInitializePerturb(uint32_t, double, double, PerturbExtras::Disable, double);
+DefineInitializePerturb(uint32_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, PerturbExtras::Disable, CudaDblflt<MattDblflt>);
+DefineInitializePerturb(uint32_t, class HDRFloat<float>, float, PerturbExtras::Disable, HDRFloat<float>);
+DefineInitializePerturb(uint32_t, class HDRFloat<double>, double, PerturbExtras::Disable, HDRFloat<double>);
+DefineInitializePerturb(uint32_t, class HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, PerturbExtras::Disable, HDRFloat<CudaDblflt<MattDblflt>>);
+
+DefineInitializePerturb(uint64_t, float, float, PerturbExtras::Disable, float);
+DefineInitializePerturb(uint64_t, double, double, PerturbExtras::Disable, double);
+DefineInitializePerturb(uint64_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, PerturbExtras::Disable, CudaDblflt<MattDblflt>);
+DefineInitializePerturb(uint64_t, class HDRFloat<float>, float, PerturbExtras::Disable, HDRFloat<float>);
+DefineInitializePerturb(uint64_t, class HDRFloat<double>, double, PerturbExtras::Disable, HDRFloat<double>);
+DefineInitializePerturb(uint64_t, class HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, PerturbExtras::Disable, HDRFloat<CudaDblflt<MattDblflt>>);
+
+
 
 bool GPURenderer::MemoryInitialized() const {
     if (OutputIterMatrix == nullptr) {

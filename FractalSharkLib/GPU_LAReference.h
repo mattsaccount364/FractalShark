@@ -22,8 +22,8 @@ private:
         ::FloatComplex<SubType>>::type;
 
 public:
-    template<class T2, class SubType2>
-    __host__ GPU_LAReference(const LAReference<IterType, T2, SubType2, PerturbExtras::Disable>& other);
+    template<class T2, class SubType2, PerturbExtras OtherPExtras>
+    __host__ GPU_LAReference(const LAReference<IterType, T2, SubType2, OtherPExtras>& other);
     __host__ GPU_LAReference(const GPU_LAReference& other);
     ~GPU_LAReference();
 
@@ -72,10 +72,10 @@ public:
 };
 
 template<typename IterType, class Float, class SubType>
-template<class T2, class SubType2>
+template<class T2, class SubType2, PerturbExtras OtherPExtras>
 __host__
-GPU_LAReference<IterType, Float, SubType>::GPU_LAReference<T2, SubType2>(
-    const LAReference<IterType, T2, SubType2, PerturbExtras::Disable>& other) :
+GPU_LAReference<IterType, Float, SubType>::GPU_LAReference<T2, SubType2, OtherPExtras>(
+    const LAReference<IterType, T2, SubType2, OtherPExtras>& other) :
     UseAT{ other.UseAT },
     AT{ other.AT },
     LAStageCount{ other.LAStageCount },

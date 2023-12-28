@@ -3,21 +3,21 @@
 ////////////////////////////////////////////////////////////////////////////////////////
 
 template<typename IterType, typename Type, PerturbExtras PExtras>
-struct MattPerturbSingleResults {
-    const MattReferenceSingleIter<Type, PExtras>* __restrict__ iters;
+struct GPUPerturbSingleResults {
+    const GPUReferenceIter<Type, PExtras>* __restrict__ iters;
     IterType size;
     cudaError_t err;
     IterType PeriodMaybeZero;
     bool own;
     bool AllocHost;
 
-    MattPerturbSingleResults() = delete;
+    GPUPerturbSingleResults() = delete;
 
     template<typename Other>
-    MattPerturbSingleResults(
+    GPUPerturbSingleResults(
         IterType sz,
         IterType PeriodMaybeZero,
-        const MattReferenceSingleIter<Other, PExtras>* in_iters)
+        const GPUReferenceIter<Other, PExtras>* in_iters)
         : iters(nullptr),
         size(sz),
         err(cudaSuccess),
@@ -35,20 +35,20 @@ struct MattPerturbSingleResults {
         check_size<HDRFloat<CudaDblflt<MattDblflt>>, HDRFloat<CudaDblflt<dblflt>>>();
         check_size<Type, Other>();
 
-        check_size<MattReferenceSingleIter<float>, 8>();
-        check_size<MattReferenceSingleIter<double>, 16>();
-        check_size<MattReferenceSingleIter<HDRFloat<float>>, 16>();
-        check_size<MattReferenceSingleIter<HDRFloat<double>>, 32>();
-        check_size<MattReferenceSingleIter<HDRFloat<CudaDblflt<MattDblflt>>>, 24>();
-        check_size<MattReferenceSingleIter<HDRFloat<CudaDblflt<dblflt>>>, 24>();
-        check_size<MattReferenceSingleIter<dblflt>, 16>();
+        check_size<GPUReferenceIter<float>, 8>();
+        check_size<GPUReferenceIter<double>, 16>();
+        check_size<GPUReferenceIter<HDRFloat<float>>, 16>();
+        check_size<GPUReferenceIter<HDRFloat<double>>, 32>();
+        check_size<GPUReferenceIter<HDRFloat<CudaDblflt<MattDblflt>>>, 24>();
+        check_size<GPUReferenceIter<HDRFloat<CudaDblflt<dblflt>>>, 24>();
+        check_size<GPUReferenceIter<dblflt>, 16>();
 
-        MattReferenceSingleIter<Type, PExtras>* tempIters;
+        GPUReferenceIter<Type, PExtras>* tempIters;
         AllocHost = false;
-        err = cudaMallocManaged(&tempIters, size * sizeof(MattReferenceSingleIter<Type, PExtras>));
+        err = cudaMallocManaged(&tempIters, size * sizeof(GPUReferenceIter<Type, PExtras>));
         if (err != cudaSuccess) {
             AllocHost = true;
-            err = cudaMallocHost(&tempIters, size * sizeof(MattReferenceSingleIter<Type, PExtras>));
+            err = cudaMallocHost(&tempIters, size * sizeof(GPUReferenceIter<Type, PExtras>));
             if (err != cudaSuccess) {
                 size = 0;
                 return;
@@ -58,10 +58,10 @@ struct MattPerturbSingleResults {
         iters = tempIters;
 
         // Cast to void -- it's logically const
-        cudaMemcpy((void*)iters, in_iters, size * sizeof(MattReferenceSingleIter<Type, PExtras>), cudaMemcpyDefault);
+        cudaMemcpy((void*)iters, in_iters, size * sizeof(GPUReferenceIter<Type, PExtras>), cudaMemcpyDefault);
 
         //err = cudaMemAdvise(iters,
-        //    size * sizeof(MattReferenceSingleIter<Type>),
+        //    size * sizeof(GPUReferenceIter<Type>),
         //    cudaMemAdviseSetReadMostly,
         //    0);
         //if (err != cudaSuccess) {
@@ -70,8 +70,8 @@ struct MattPerturbSingleResults {
         //}
     }
 
-    MattPerturbSingleResults(const MattPerturbSingleResults& other) {
-        iters = reinterpret_cast<const MattReferenceSingleIter<Type, PExtras>*>(other.iters);
+    GPUPerturbSingleResults(const GPUPerturbSingleResults& other) {
+        iters = reinterpret_cast<const GPUReferenceIter<Type, PExtras>*>(other.iters);
         size = other.size;
         PeriodMaybeZero = other.PeriodMaybeZero;
         own = false;
@@ -80,8 +80,8 @@ struct MattPerturbSingleResults {
 
     // funny semantics, copy doesn't own the pointers.
     template<class Other>
-    MattPerturbSingleResults(const MattPerturbSingleResults<IterType, Other, PExtras>& other) {
-        iters = reinterpret_cast<const MattReferenceSingleIter<Type, PExtras>*>(other.iters);
+    GPUPerturbSingleResults(const GPUPerturbSingleResults<IterType, Other, PExtras>& other) {
+        iters = reinterpret_cast<const GPUReferenceIter<Type, PExtras>*>(other.iters);
         size = other.size;
         PeriodMaybeZero = other.PeriodMaybeZero;
         own = false;
@@ -92,11 +92,11 @@ struct MattPerturbSingleResults {
         return err;
     }
 
-    MattPerturbSingleResults(MattPerturbSingleResults&& other) = delete;
-    MattPerturbSingleResults& operator=(const MattPerturbSingleResults& other) = delete;
-    MattPerturbSingleResults& operator=(MattPerturbSingleResults&& other) = delete;
+    GPUPerturbSingleResults(GPUPerturbSingleResults&& other) = delete;
+    GPUPerturbSingleResults& operator=(const GPUPerturbSingleResults& other) = delete;
+    GPUPerturbSingleResults& operator=(GPUPerturbSingleResults&& other) = delete;
 
-    ~MattPerturbSingleResults() {
+    ~GPUPerturbSingleResults() {
         if (own) {
             if (iters != nullptr) {
                 if (!AllocHost) {

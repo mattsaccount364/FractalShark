@@ -391,9 +391,9 @@ uint32_t GPURenderer::InitializeMemory<uint64_t>(
 template<typename IterType, class T1, class SubType, PerturbExtras PExtras, class T2>
 uint32_t GPURenderer::InitializePerturb(
     size_t GenerationNumber1,
-    const MattPerturbResults<IterType, T1, PExtras>* Perturb1,
+    const GPUPerturbResults<IterType, T1, PExtras>* Perturb1,
     size_t GenerationNumber2,
-    const MattPerturbResults<IterType, T2, PExtras>* Perturb2,
+    const GPUPerturbResults<IterType, T2, PExtras>* Perturb2,
     const LAReference<IterType, T1, SubType, PExtras>* LaReferenceHost,
     size_t LaGenerationNumber)
 {
@@ -404,10 +404,10 @@ uint32_t GPURenderer::InitializePerturb(
     }
 
     if (GenerationNumber1 != m_PerturbResults.GetHostGenerationNumber1()) {
-        auto *CudaResults1 = new MattPerturbSingleResults<IterType, T1, PExtras>{
-            Perturb1->size,
-            Perturb1->PeriodMaybeZero,
-            Perturb1->iters
+        auto *CudaResults1 = new GPUPerturbSingleResults<IterType, T1, PExtras>{
+            Perturb1->GetNumIters(),
+            Perturb1->GetPeriodMaybeZero(),
+            Perturb1->GetFullOrbit()
         };
 
         auto result = CudaResults1->CheckValid();
@@ -420,10 +420,10 @@ uint32_t GPURenderer::InitializePerturb(
     }
 
     if (GenerationNumber2 != m_PerturbResults.GetHostGenerationNumber2()) {
-        auto* CudaResults2 = new MattPerturbSingleResults<IterType, T2, PExtras>{
-            Perturb2->size,
-            Perturb2->PeriodMaybeZero,
-            Perturb2->iters
+        auto* CudaResults2 = new GPUPerturbSingleResults<IterType, T2, PExtras>{
+            Perturb2->GetNumIters(),
+            Perturb2->GetPeriodMaybeZero(),
+            Perturb2->GetFullOrbit()
         };
 
         auto result = CudaResults2->CheckValid();
@@ -452,9 +452,9 @@ uint32_t GPURenderer::InitializePerturb(
 #define DefineInitializePerturb(IterType, T1, SubType, PExtras, T2) \
     template uint32_t GPURenderer::InitializePerturb<IterType, T1, SubType, PExtras, T2>( \
         size_t GenerationNumber1, \
-        const MattPerturbResults<IterType, T1, PExtras>* Perturb1, \
+        const GPUPerturbResults<IterType, T1, PExtras>* Perturb1, \
         size_t GenerationNumber2, \
-        const MattPerturbResults<IterType, T2, PExtras>* Perturb2, \
+        const GPUPerturbResults<IterType, T2, PExtras>* Perturb2, \
         const LAReference<IterType, T1, SubType, PExtras>* LaReferenceHost, \
         size_t LaGenerationNumber);
 
@@ -465,6 +465,8 @@ DefineInitializePerturb(uint32_t, class HDRFloat<float>, float, PerturbExtras::D
 DefineInitializePerturb(uint32_t, class HDRFloat<double>, double, PerturbExtras::Disable, HDRFloat<double>);
 DefineInitializePerturb(uint32_t, class HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, PerturbExtras::Disable, HDRFloat<CudaDblflt<MattDblflt>>);
 
+DefineInitializePerturb(uint32_t, float, float, PerturbExtras::EnableCompression, float);
+
 DefineInitializePerturb(uint64_t, float, float, PerturbExtras::Disable, float);
 DefineInitializePerturb(uint64_t, double, double, PerturbExtras::Disable, double);
 DefineInitializePerturb(uint64_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, PerturbExtras::Disable, CudaDblflt<MattDblflt>);
@@ -472,6 +474,7 @@ DefineInitializePerturb(uint64_t, class HDRFloat<float>, float, PerturbExtras::D
 DefineInitializePerturb(uint64_t, class HDRFloat<double>, double, PerturbExtras::Disable, HDRFloat<double>);
 DefineInitializePerturb(uint64_t, class HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, PerturbExtras::Disable, HDRFloat<CudaDblflt<MattDblflt>>);
 
+DefineInitializePerturb(uint64_t, float, float, PerturbExtras::EnableCompression, float);
 
 
 bool GPURenderer::MemoryInitialized() const {
@@ -1000,7 +1003,7 @@ template uint32_t GPURenderer::Render(
 /////////////////////////////////////////////////////////
 
 
-template<typename IterType, class T, class SubType, LAv2Mode Mode>
+template<typename IterType, class T, class SubType, LAv2Mode Mode, PerturbExtras PExtras>
 uint32_t GPURenderer::RenderPerturbLAv2(
     RenderAlgorithm algorithm,
     IterType* iter_buffer,
@@ -1022,7 +1025,7 @@ uint32_t GPURenderer::RenderPerturbLAv2(
     dim3 nb_blocks(w_block, h_block, 1);
     dim3 threads_per_block(NB_THREADS_W, NB_THREADS_H, 1);
 
-    auto* cudaResults = m_PerturbResults.GetPtr1<IterType, T>();
+    auto* cudaResults = m_PerturbResults.GetPtr1<IterType, T, PExtras>();
     if (!cudaResults) {
         return FractalSharkError::Error6;
     }
@@ -1034,7 +1037,8 @@ uint32_t GPURenderer::RenderPerturbLAv2(
 
     if ((algorithm == RenderAlgorithm::Gpu1x32PerturbedLAv2) ||
         (algorithm == RenderAlgorithm::Gpu1x32PerturbedLAv2PO) ||
-        (algorithm == RenderAlgorithm::Gpu1x32PerturbedLAv2LAO)) {
+        (algorithm == RenderAlgorithm::Gpu1x32PerturbedLAv2LAO) ||
+        (algorithm == RenderAlgorithm::Gpu1x32PerturbedRCLAv2)) {
         if constexpr (
             (EnableGpu1x32PerturbedLAv2 || EnableGpu1x32PerturbedLAv2PO || EnableGpu1x32PerturbedLAv2LAO)
             && std::is_same<float, T>::value) {
@@ -1065,7 +1069,13 @@ uint32_t GPURenderer::RenderPerturbLAv2(
             CudaDblflt<dblflt> centerX2{ centerX };
             CudaDblflt<dblflt> centerY2{ centerY };
 
-            mandel_1xHDR_float_perturb_lav2<IterType, CudaDblflt<dblflt>, CudaDblflt<dblflt>, Mode> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
+            mandel_1xHDR_float_perturb_lav2<
+                IterType,
+                CudaDblflt<dblflt>,
+                CudaDblflt<dblflt>,
+                Mode,
+                PExtras> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
+
                 static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
                 *cudaResults, *laReferenceCuda,
@@ -1082,7 +1092,13 @@ uint32_t GPURenderer::RenderPerturbLAv2(
             (EnableGpu1x64PerturbedLAv2 || EnableGpu1x64PerturbedLAv2PO || EnableGpu1x64PerturbedLAv2LAO)
             && std::is_same<double, T>::value) {
             // hdrflt
-            mandel_1xHDR_float_perturb_lav2<IterType, double, double, Mode> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
+            mandel_1xHDR_float_perturb_lav2<
+                IterType,
+                double,
+                double,
+                Mode,
+                PExtras> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
+
                 static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
                 *cudaResults, *laReferenceCuda,
@@ -1102,7 +1118,13 @@ uint32_t GPURenderer::RenderPerturbLAv2(
             mandel_1xHDR_InitStatics << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > ();
 
             // hdrflt
-            mandel_1xHDR_float_perturb_lav2<IterType, HDRFloat<float>, float, Mode> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
+            mandel_1xHDR_float_perturb_lav2<
+                IterType,
+                HDRFloat<float>,
+                float,
+                Mode,
+                PExtras> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
+
                 static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
                 *cudaResults, *laReferenceCuda,
@@ -1121,7 +1143,13 @@ uint32_t GPURenderer::RenderPerturbLAv2(
             && std::is_same<HDRFloat<double>, T>::value) {
             mandel_1xHDR_InitStatics << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > ();
 
-            mandel_1xHDR_float_perturb_lav2<IterType, HDRFloat<double>, double, Mode> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
+            mandel_1xHDR_float_perturb_lav2<
+                IterType,
+                HDRFloat<double>,
+                double,
+                Mode,
+                PExtras> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
+
                 static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
                 *cudaResults, *laReferenceCuda,
@@ -1148,7 +1176,13 @@ uint32_t GPURenderer::RenderPerturbLAv2(
             mandel_1xHDR_InitStatics << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > ();
 
             // hdrflt
-            mandel_1xHDR_float_perturb_lav2<IterType, HDRFloat<CudaDblflt<dblflt>>, CudaDblflt<dblflt>, Mode> << < DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
+            mandel_1xHDR_float_perturb_lav2<
+                IterType,
+                HDRFloat<CudaDblflt<dblflt>>,
+                CudaDblflt<dblflt>,
+                Mode,
+                PExtras> << < DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
+
                 static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
                 *cudaResults, *laReferenceCuda,
@@ -1165,485 +1199,77 @@ uint32_t GPURenderer::RenderPerturbLAv2(
 
 ////////////////////////////////////////////////////////
 
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, float, float, LAv2Mode::Full>(
-    RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
-    float cx,
-    float cy,
-    float dx,
-    float dy,
-    float centerX,
-    float centerY,
-    uint32_t n_iterations);
+#define InitializeRenderPerturbLAv2(IterType, T, SubType, Mode, PExtras) \
+    template \
+    uint32_t GPURenderer::RenderPerturbLAv2<IterType, T, SubType, Mode, PExtras>( \
+        RenderAlgorithm algorithm, \
+        IterType* iter_buffer, \
+        Color16* color_buffer, \
+        T cx, \
+        T cy, \
+        T dx, \
+        T dy, \
+        T centerX, \
+        T centerY, \
+        IterType n_iterations);
 
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, float, float, LAv2Mode::PO>(
-    RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
-    float cx,
-    float cy,
-    float dx,
-    float dy,
-    float centerX,
-    float centerY,
-    uint32_t n_iterations);
+InitializeRenderPerturbLAv2(uint32_t, float, float, LAv2Mode::Full, PerturbExtras::Disable);
+InitializeRenderPerturbLAv2(uint32_t, float, float, LAv2Mode::PO, PerturbExtras::Disable);
+InitializeRenderPerturbLAv2(uint32_t, float, float, LAv2Mode::LAO, PerturbExtras::Disable);
+InitializeRenderPerturbLAv2(uint32_t, float, float, LAv2Mode::Full, PerturbExtras::EnableCompression);
 
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, float, float, LAv2Mode::LAO>(
-    RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
-    float cx,
-    float cy,
-    float dx,
-    float dy,
-    float centerX,
-    float centerY,
-    uint32_t n_iterations);
+InitializeRenderPerturbLAv2(uint32_t, double, double, LAv2Mode::Full, PerturbExtras::Disable);
+InitializeRenderPerturbLAv2(uint32_t, double, double, LAv2Mode::PO, PerturbExtras::Disable);
+InitializeRenderPerturbLAv2(uint32_t, double, double, LAv2Mode::LAO, PerturbExtras::Disable);
 
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, double, double, LAv2Mode::Full>(
-    RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
-    double cx,
-    double cy,
-    double dx,
-    double dy,
-    double centerX,
-    double centerY,
-    uint32_t n_iterations);
+InitializeRenderPerturbLAv2(uint32_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::Full, PerturbExtras::Disable);
+InitializeRenderPerturbLAv2(uint32_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::PO, PerturbExtras::Disable);
+InitializeRenderPerturbLAv2(uint32_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::LAO, PerturbExtras::Disable);
 
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, double, double, LAv2Mode::PO>(
-    RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
-    double cx,
-    double cy,
-    double dx,
-    double dy,
-    double centerX,
-    double centerY,
-    uint32_t n_iterations);
+InitializeRenderPerturbLAv2(uint32_t, HDRFloat<float>, float, LAv2Mode::Full, PerturbExtras::Disable);
+InitializeRenderPerturbLAv2(uint32_t, HDRFloat<float>, float, LAv2Mode::PO, PerturbExtras::Disable);
+InitializeRenderPerturbLAv2(uint32_t, HDRFloat<float>, float, LAv2Mode::LAO, PerturbExtras::Disable);
 
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, double, double, LAv2Mode::LAO>(
-    RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
-    double cx,
-    double cy,
-    double dx,
-    double dy,
-    double centerX,
-    double centerY,
-    uint32_t n_iterations);
+InitializeRenderPerturbLAv2(uint32_t, HDRFloat<double>, double, LAv2Mode::Full, PerturbExtras::Disable);
+InitializeRenderPerturbLAv2(uint32_t, HDRFloat<double>, double, LAv2Mode::PO, PerturbExtras::Disable);
+InitializeRenderPerturbLAv2(uint32_t, HDRFloat<double>, double, LAv2Mode::LAO, PerturbExtras::Disable);
 
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::Full>(
-    RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
-    HDRFloat<CudaDblflt<MattDblflt>> cx,
-    HDRFloat<CudaDblflt<MattDblflt>> cy,
-    HDRFloat<CudaDblflt<MattDblflt>> dx,
-    HDRFloat<CudaDblflt<MattDblflt>> dy,
-    HDRFloat<CudaDblflt<MattDblflt>> centerX,
-    HDRFloat<CudaDblflt<MattDblflt>> centerY,
-    uint32_t n_iterations);
+InitializeRenderPerturbLAv2(uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::Full, PerturbExtras::Disable);
+InitializeRenderPerturbLAv2(uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::PO, PerturbExtras::Disable);
+InitializeRenderPerturbLAv2(uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::LAO, PerturbExtras::Disable);
 
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::PO>(
-    RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
-    HDRFloat<CudaDblflt<MattDblflt>> cx,
-    HDRFloat<CudaDblflt<MattDblflt>> cy,
-    HDRFloat<CudaDblflt<MattDblflt>> dx,
-    HDRFloat<CudaDblflt<MattDblflt>> dy,
-    HDRFloat<CudaDblflt<MattDblflt>> centerX,
-    HDRFloat<CudaDblflt<MattDblflt>> centerY,
-    uint32_t n_iterations);
+InitializeRenderPerturbLAv2(uint64_t, float, float, LAv2Mode::Full, PerturbExtras::Disable);
+InitializeRenderPerturbLAv2(uint64_t, float, float, LAv2Mode::PO, PerturbExtras::Disable);
+InitializeRenderPerturbLAv2(uint64_t, float, float, LAv2Mode::LAO, PerturbExtras::Disable);
+InitializeRenderPerturbLAv2(uint64_t, float, float, LAv2Mode::Full, PerturbExtras::EnableCompression);
 
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::LAO>(
-    RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
-    HDRFloat<CudaDblflt<MattDblflt>> cx,
-    HDRFloat<CudaDblflt<MattDblflt>> cy,
-    HDRFloat<CudaDblflt<MattDblflt>> dx,
-    HDRFloat<CudaDblflt<MattDblflt>> dy,
-    HDRFloat<CudaDblflt<MattDblflt>> centerX,
-    HDRFloat<CudaDblflt<MattDblflt>> centerY,
-    uint32_t n_iterations);
+InitializeRenderPerturbLAv2(uint64_t, double, double, LAv2Mode::Full, PerturbExtras::Disable);
+InitializeRenderPerturbLAv2(uint64_t, double, double, LAv2Mode::PO, PerturbExtras::Disable);
+InitializeRenderPerturbLAv2(uint64_t, double, double, LAv2Mode::LAO, PerturbExtras::Disable);
 
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, HDRFloat<float>, float, LAv2Mode::Full>(
-    RenderAlgorithm algorithm,
-    uint32_t * iter_buffer,
-    Color16 * color_buffer,
-    HDRFloat<float> cx,
-    HDRFloat<float> cy,
-    HDRFloat<float> dx,
-    HDRFloat<float> dy,
-    HDRFloat<float> centerX,
-    HDRFloat<float> centerY,
-    uint32_t n_iterations);
+InitializeRenderPerturbLAv2(uint64_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::Full, PerturbExtras::Disable);
+InitializeRenderPerturbLAv2(uint64_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::PO, PerturbExtras::Disable);
+InitializeRenderPerturbLAv2(uint64_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::LAO, PerturbExtras::Disable);
 
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, HDRFloat<float>, float, LAv2Mode::PO>(
-    RenderAlgorithm algorithm,
-    uint32_t * iter_buffer,
-    Color16 * color_buffer,
-    HDRFloat<float> cx,
-    HDRFloat<float> cy,
-    HDRFloat<float> dx,
-    HDRFloat<float> dy,
-    HDRFloat<float> centerX,
-    HDRFloat<float> centerY,
-    uint32_t n_iterations);
+InitializeRenderPerturbLAv2(uint64_t, HDRFloat<float>, float, LAv2Mode::Full, PerturbExtras::Disable);
+InitializeRenderPerturbLAv2(uint64_t, HDRFloat<float>, float, LAv2Mode::PO, PerturbExtras::Disable);
+InitializeRenderPerturbLAv2(uint64_t, HDRFloat<float>, float, LAv2Mode::LAO, PerturbExtras::Disable);
 
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, HDRFloat<float>, float, LAv2Mode::LAO>(
-    RenderAlgorithm algorithm,
-    uint32_t * iter_buffer,
-    Color16 * color_buffer,
-    HDRFloat<float> cx,
-    HDRFloat<float> cy,
-    HDRFloat<float> dx,
-    HDRFloat<float> dy,
-    HDRFloat<float> centerX,
-    HDRFloat<float> centerY,
-    uint32_t n_iterations);
+InitializeRenderPerturbLAv2(uint64_t, HDRFloat<double>, double, LAv2Mode::Full, PerturbExtras::Disable);
+InitializeRenderPerturbLAv2(uint64_t, HDRFloat<double>, double, LAv2Mode::PO, PerturbExtras::Disable);
+InitializeRenderPerturbLAv2(uint64_t, HDRFloat<double>, double, LAv2Mode::LAO, PerturbExtras::Disable);
 
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::Full>(
-    RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
-    CudaDblflt<MattDblflt> cx,
-    CudaDblflt<MattDblflt> cy,
-    CudaDblflt<MattDblflt> dx,
-    CudaDblflt<MattDblflt> dy,
-    CudaDblflt<MattDblflt> centerX,
-    CudaDblflt<MattDblflt> centerY,
-    uint32_t n_iterations);
-
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::PO>(
-    RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
-    CudaDblflt<MattDblflt> cx,
-    CudaDblflt<MattDblflt> cy,
-    CudaDblflt<MattDblflt> dx,
-    CudaDblflt<MattDblflt> dy,
-    CudaDblflt<MattDblflt> centerX,
-    CudaDblflt<MattDblflt> centerY,
-    uint32_t n_iterations);
-
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::LAO>(
-    RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
-    CudaDblflt<MattDblflt> cx,
-    CudaDblflt<MattDblflt> cy,
-    CudaDblflt<MattDblflt> dx,
-    CudaDblflt<MattDblflt> dy,
-    CudaDblflt<MattDblflt> centerX,
-    CudaDblflt<MattDblflt> centerY,
-    uint32_t n_iterations);
-
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, HDRFloat<double>, double, LAv2Mode::Full>(
-    RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
-    HDRFloat<double> cx,
-    HDRFloat<double> cy,
-    HDRFloat<double> dx,
-    HDRFloat<double> dy,
-    HDRFloat<double> centerX,
-    HDRFloat<double> centerY,
-    uint32_t n_iterations);
-
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, HDRFloat<double>, double, LAv2Mode::PO>(
-    RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
-    HDRFloat<double> cx,
-    HDRFloat<double> cy,
-    HDRFloat<double> dx,
-    HDRFloat<double> dy,
-    HDRFloat<double> centerX,
-    HDRFloat<double> centerY,
-    uint32_t n_iterations);
-
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint32_t, HDRFloat<double>, double, LAv2Mode::LAO>(
-    RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
-    HDRFloat<double> cx,
-    HDRFloat<double> cy,
-    HDRFloat<double> dx,
-    HDRFloat<double> dy,
-    HDRFloat<double> centerX,
-    HDRFloat<double> centerY,
-    uint32_t n_iterations);
-
-////////////////////////////////////////////////////////
-
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, float, float, LAv2Mode::Full>(
-    RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
-    float cx,
-    float cy,
-    float dx,
-    float dy,
-    float centerX,
-    float centerY,
-    uint64_t n_iterations);
-
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, float, float, LAv2Mode::PO>(
-    RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
-    float cx,
-    float cy,
-    float dx,
-    float dy,
-    float centerX,
-    float centerY,
-    uint64_t n_iterations);
-
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, float, float, LAv2Mode::LAO>(
-    RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
-    float cx,
-    float cy,
-    float dx,
-    float dy,
-    float centerX,
-    float centerY,
-    uint64_t n_iterations);
-
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, double, double, LAv2Mode::Full>(
-    RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
-    double cx,
-    double cy,
-    double dx,
-    double dy,
-    double centerX,
-    double centerY,
-    uint64_t n_iterations);
-
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, double, double, LAv2Mode::PO>(
-    RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
-    double cx,
-    double cy,
-    double dx,
-    double dy,
-    double centerX,
-    double centerY,
-    uint64_t n_iterations);
-
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, double, double, LAv2Mode::LAO>(
-    RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
-    double cx,
-    double cy,
-    double dx,
-    double dy,
-    double centerX,
-    double centerY,
-    uint64_t n_iterations);
-
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::Full>(
-    RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
-    CudaDblflt<MattDblflt> cx,
-    CudaDblflt<MattDblflt> cy,
-    CudaDblflt<MattDblflt> dx,
-    CudaDblflt<MattDblflt> dy,
-    CudaDblflt<MattDblflt> centerX,
-    CudaDblflt<MattDblflt> centerY,
-    uint64_t n_iterations);
-
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::PO>(
-    RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
-    CudaDblflt<MattDblflt> cx,
-    CudaDblflt<MattDblflt> cy,
-    CudaDblflt<MattDblflt> dx,
-    CudaDblflt<MattDblflt> dy,
-    CudaDblflt<MattDblflt> centerX,
-    CudaDblflt<MattDblflt> centerY,
-    uint64_t n_iterations);
-
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::LAO>(
-    RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
-    CudaDblflt<MattDblflt> cx,
-    CudaDblflt<MattDblflt> cy,
-    CudaDblflt<MattDblflt> dx,
-    CudaDblflt<MattDblflt> dy,
-    CudaDblflt<MattDblflt> centerX,
-    CudaDblflt<MattDblflt> centerY,
-    uint64_t n_iterations);
-
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, HDRFloat<float>, float, LAv2Mode::Full>(
-    RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
-    HDRFloat<float> cx,
-    HDRFloat<float> cy,
-    HDRFloat<float> dx,
-    HDRFloat<float> dy,
-    HDRFloat<float> centerX,
-    HDRFloat<float> centerY,
-    uint64_t n_iterations);
-
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, HDRFloat<float>, float, LAv2Mode::PO>(
-    RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
-    HDRFloat<float> cx,
-    HDRFloat<float> cy,
-    HDRFloat<float> dx,
-    HDRFloat<float> dy,
-    HDRFloat<float> centerX,
-    HDRFloat<float> centerY,
-    uint64_t n_iterations);
-
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, HDRFloat<float>, float, LAv2Mode::LAO>(
-    RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
-    HDRFloat<float> cx,
-    HDRFloat<float> cy,
-    HDRFloat<float> dx,
-    HDRFloat<float> dy,
-    HDRFloat<float> centerX,
-    HDRFloat<float> centerY,
-    uint64_t n_iterations);
-
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::Full>(
-    RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
-    HDRFloat<CudaDblflt<MattDblflt>> cx,
-    HDRFloat<CudaDblflt<MattDblflt>> cy,
-    HDRFloat<CudaDblflt<MattDblflt>> dx,
-    HDRFloat<CudaDblflt<MattDblflt>> dy,
-    HDRFloat<CudaDblflt<MattDblflt>> centerX,
-    HDRFloat<CudaDblflt<MattDblflt>> centerY,
-    uint64_t n_iterations);
-
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::PO>(
-    RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
-    HDRFloat<CudaDblflt<MattDblflt>> cx,
-    HDRFloat<CudaDblflt<MattDblflt>> cy,
-    HDRFloat<CudaDblflt<MattDblflt>> dx,
-    HDRFloat<CudaDblflt<MattDblflt>> dy,
-    HDRFloat<CudaDblflt<MattDblflt>> centerX,
-    HDRFloat<CudaDblflt<MattDblflt>> centerY,
-    uint64_t n_iterations);
-
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::LAO>(
-    RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
-    HDRFloat<CudaDblflt<MattDblflt>> cx,
-    HDRFloat<CudaDblflt<MattDblflt>> cy,
-    HDRFloat<CudaDblflt<MattDblflt>> dx,
-    HDRFloat<CudaDblflt<MattDblflt>> dy,
-    HDRFloat<CudaDblflt<MattDblflt>> centerX,
-    HDRFloat<CudaDblflt<MattDblflt>> centerY,
-    uint64_t n_iterations);
-
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, HDRFloat<double>, double, LAv2Mode::Full>(
-    RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
-    HDRFloat<double> cx,
-    HDRFloat<double> cy,
-    HDRFloat<double> dx,
-    HDRFloat<double> dy,
-    HDRFloat<double> centerX,
-    HDRFloat<double> centerY,
-    uint64_t n_iterations);
-
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, HDRFloat<double>, double, LAv2Mode::PO>(
-    RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
-    HDRFloat<double> cx,
-    HDRFloat<double> cy,
-    HDRFloat<double> dx,
-    HDRFloat<double> dy,
-    HDRFloat<double> centerX,
-    HDRFloat<double> centerY,
-    uint64_t n_iterations);
-
-template
-uint32_t GPURenderer::RenderPerturbLAv2<uint64_t, HDRFloat<double>, double, LAv2Mode::LAO>(
-    RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
-    HDRFloat<double> cx,
-    HDRFloat<double> cy,
-    HDRFloat<double> dx,
-    HDRFloat<double> dy,
-    HDRFloat<double> centerX,
-    HDRFloat<double> centerY,
-    uint64_t n_iterations);
-
-////////////////////////////////////////////////////////
+InitializeRenderPerturbLAv2(uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::Full, PerturbExtras::Disable);
+InitializeRenderPerturbLAv2(uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::PO, PerturbExtras::Disable);
+InitializeRenderPerturbLAv2(uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::LAO, PerturbExtras::Disable);
 
 template<typename IterType, class T>
 uint32_t GPURenderer::RenderPerturbBLAScaled(
     RenderAlgorithm algorithm,
     IterType* iter_buffer,
     Color16* color_buffer,
-    const MattPerturbResults<IterType, T, PerturbExtras::Bad>* double_perturb,
-    const MattPerturbResults<IterType, float, PerturbExtras::Bad>* float_perturb,
+    const GPUPerturbResults<IterType, T, PerturbExtras::Bad>* double_perturb,
+    const GPUPerturbResults<IterType, float, PerturbExtras::Bad>* float_perturb,
     BLAS<IterType, T, PerturbExtras::Bad>* blas,
     T cx,
     T cy,
@@ -1663,20 +1289,20 @@ uint32_t GPURenderer::RenderPerturbBLAScaled(
     dim3 nb_blocks(w_block, h_block, 1);
     dim3 threads_per_block(NB_THREADS_W, NB_THREADS_H, 1);
 
-    MattPerturbSingleResults<IterType, float, PerturbExtras::Bad> cudaResults(
-        float_perturb->size,
-        float_perturb->PeriodMaybeZero,
-        float_perturb->iters);
+    GPUPerturbSingleResults<IterType, float, PerturbExtras::Bad> cudaResults(
+        float_perturb->GetNumIters(),
+        float_perturb->GetPeriodMaybeZero(),
+        float_perturb->GetFullOrbit());
 
     result = cudaResults.CheckValid();
     if (result != 0) {
         return result;
     }
 
-    MattPerturbSingleResults<IterType, T, PerturbExtras::Bad> cudaResultsDouble(
-        double_perturb->size,
-        float_perturb->PeriodMaybeZero,
-        double_perturb->iters);
+    GPUPerturbSingleResults<IterType, T, PerturbExtras::Bad> cudaResultsDouble(
+        double_perturb->GetNumIters(),
+        float_perturb->GetPeriodMaybeZero(),
+        double_perturb->GetFullOrbit());
 
     result = cudaResultsDouble.CheckValid();
     if (result != 0) {
@@ -1749,8 +1375,8 @@ template uint32_t GPURenderer::RenderPerturbBLAScaled<uint32_t, double>(
     RenderAlgorithm algorithm,
     uint32_t* iter_buffer,
     Color16* color_buffer,
-    const MattPerturbResults<uint32_t, double, PerturbExtras::Bad>* double_perturb,
-    const MattPerturbResults<uint32_t, float, PerturbExtras::Bad>* float_perturb,
+    const GPUPerturbResults<uint32_t, double, PerturbExtras::Bad>* double_perturb,
+    const GPUPerturbResults<uint32_t, float, PerturbExtras::Bad>* float_perturb,
     BLAS<uint32_t, double, PerturbExtras::Bad>* blas,
     double cx,
     double cy,
@@ -1766,8 +1392,8 @@ template uint32_t GPURenderer::RenderPerturbBLAScaled<uint32_t, HDRFloat<float>>
     RenderAlgorithm algorithm,
     uint32_t* iter_buffer,
     Color16* color_buffer,
-    const MattPerturbResults<uint32_t, HDRFloat<float>, PerturbExtras::Bad>* double_perturb,
-    const MattPerturbResults<uint32_t, float, PerturbExtras::Bad>* float_perturb,
+    const GPUPerturbResults<uint32_t, HDRFloat<float>, PerturbExtras::Bad>* double_perturb,
+    const GPUPerturbResults<uint32_t, float, PerturbExtras::Bad>* float_perturb,
     BLAS<uint32_t, HDRFloat<float>, PerturbExtras::Bad>* blas,
     HDRFloat<float> cx,
     HDRFloat<float> cy,
@@ -1785,8 +1411,8 @@ template uint32_t GPURenderer::RenderPerturbBLAScaled<uint64_t, double>(
     RenderAlgorithm algorithm,
     uint64_t* iter_buffer,
     Color16* color_buffer,
-    const MattPerturbResults<uint64_t, double, PerturbExtras::Bad>* double_perturb,
-    const MattPerturbResults<uint64_t, float, PerturbExtras::Bad>* float_perturb,
+    const GPUPerturbResults<uint64_t, double, PerturbExtras::Bad>* double_perturb,
+    const GPUPerturbResults<uint64_t, float, PerturbExtras::Bad>* float_perturb,
     BLAS<uint64_t, double, PerturbExtras::Bad>* blas,
     double cx,
     double cy,
@@ -1802,8 +1428,8 @@ template uint32_t GPURenderer::RenderPerturbBLAScaled<uint64_t, HDRFloat<float>>
     RenderAlgorithm algorithm,
     uint64_t* iter_buffer,
     Color16* color_buffer,
-    const MattPerturbResults<uint64_t, HDRFloat<float>, PerturbExtras::Bad>* double_perturb,
-    const MattPerturbResults<uint64_t, float, PerturbExtras::Bad>* float_perturb,
+    const GPUPerturbResults<uint64_t, HDRFloat<float>, PerturbExtras::Bad>* double_perturb,
+    const GPUPerturbResults<uint64_t, float, PerturbExtras::Bad>* float_perturb,
     BLAS<uint64_t, HDRFloat<float>, PerturbExtras::Bad>* blas,
     HDRFloat<float> cx,
     HDRFloat<float> cy,
@@ -1822,7 +1448,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
     IterType* iter_buffer,
     Color16* color_buffer,
-    const MattPerturbResults<IterType, T>* perturb,
+    const GPUPerturbResults<IterType, T, PerturbExtras::Disable>* perturb,
     BLAS<IterType, T>* blas,
     T cx,
     T cy,
@@ -1844,10 +1470,10 @@ uint32_t GPURenderer::RenderPerturbBLA(
 
     if (algorithm == RenderAlgorithm::GpuHDRx32PerturbedBLA) {
         if constexpr (EnableGpuHDRx32PerturbedBLA && std::is_same<T, HDRFloat<float>>::value) {
-            MattPerturbSingleResults<IterType, HDRFloat<float>> cudaResults(
-                perturb->size,
-                perturb->PeriodMaybeZero,
-                perturb->iters);
+            GPUPerturbSingleResults<IterType, HDRFloat<float>> cudaResults(
+                perturb->GetNumIters(),
+                perturb->GetPeriodMaybeZero(),
+                perturb->GetFullOrbit());
 
             result = cudaResults.CheckValid();
             if (result != 0) {
@@ -1882,10 +1508,10 @@ uint32_t GPURenderer::RenderPerturbBLA(
     }
     else if (algorithm == RenderAlgorithm::GpuHDRx64PerturbedBLA) {
         if constexpr (EnableGpuHDRx64PerturbedBLA && std::is_same<T, HDRFloat<double>>::value) {
-            MattPerturbSingleResults<IterType, HDRFloat<double>> cudaResults(
-                perturb->size,
-                perturb->PeriodMaybeZero,
-                perturb->iters);
+            GPUPerturbSingleResults<IterType, HDRFloat<double>> cudaResults(
+                perturb->GetNumIters(),
+                perturb->GetPeriodMaybeZero(),
+                perturb->GetFullOrbit());
 
             result = cudaResults.CheckValid();
             if (result != 0) {
@@ -1919,10 +1545,10 @@ uint32_t GPURenderer::RenderPerturbBLA(
         }
     } else if (algorithm == RenderAlgorithm::Gpu1x64PerturbedBLA) {
         if constexpr (EnableGpu1x64PerturbedBLA && std::is_same<T, double>::value) {
-            MattPerturbSingleResults<IterType, double> cudaResults(
-                perturb->size,
-                perturb->PeriodMaybeZero,
-                perturb->iters);
+            GPUPerturbSingleResults<IterType, double> cudaResults(
+                perturb->GetNumIters(),
+                perturb->GetPeriodMaybeZero(),
+                perturb->GetFullOrbit());
 
             result = cudaResults.CheckValid();
             if (result != 0) {
@@ -1957,20 +1583,20 @@ uint32_t GPURenderer::RenderPerturbBLA(
     }
     else if (algorithm == RenderAlgorithm::Gpu2x32PerturbedScaled) {
         if constexpr (EnableGpu2x32PerturbedScaled && std::is_same<T, dblflt>::value) {
-            //MattPerturbSingleResults<IterType, dblflt> cudaResults(
-            //    Perturb->size,
-            //    Perturb->PeriodMaybeZero,
-            //    Perturb->iters);
+            //GPUPerturbSingleResults<IterType, dblflt> cudaResults(
+            //    Perturb->GetNumIters(),
+            //    Perturb->GetPeriodMaybeZero(),
+            //    Perturb->GetFullOrbit());
 
             //result = cudaResults.CheckValid();
             //if (result != 0) {
             //    return result;
             //}
 
-            //MattPerturbSingleResults<IterType, double> cudaResultsDouble(
-            //    Perturb->size,
-            //    Perturb->PeriodMaybeZero,
-            //    Perturb->iters);
+            //GPUPerturbSingleResults<IterType, double> cudaResultsDouble(
+            //    Perturb->GetNumIters(),
+            //    Perturb->GetPeriodMaybeZero(),
+            //    Perturb->GetFullOrbit());
 
             //result = cudaResultsDouble.CheckValid();
             //if (result != 0) {
@@ -2001,7 +1627,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
     uint32_t* iter_buffer,
     Color16* color_buffer,
-    const MattPerturbResults<uint32_t, HDRFloat<float>>* perturb,
+    const GPUPerturbResults<uint32_t, HDRFloat<float>, PerturbExtras::Disable>* perturb,
     BLAS<uint32_t, HDRFloat<float>>* blas,
     HDRFloat<float> cx,
     HDRFloat<float> cy,
@@ -2017,7 +1643,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
     uint32_t* iter_buffer,
     Color16* color_buffer,
-    const MattPerturbResults<uint32_t, HDRFloat<double>>* perturb,
+    const GPUPerturbResults<uint32_t, HDRFloat<double>, PerturbExtras::Disable>* perturb,
     BLAS<uint32_t, HDRFloat<double>>* blas,
     HDRFloat<double> cx,
     HDRFloat<double> cy,
@@ -2033,7 +1659,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
     uint32_t* iter_buffer,
     Color16* color_buffer,
-    const MattPerturbResults<uint32_t, double>* perturb,
+    const GPUPerturbResults<uint32_t, double, PerturbExtras::Disable>* perturb,
     BLAS<uint32_t, double>* blas,
     double cx,
     double cy,
@@ -2049,7 +1675,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
     uint64_t* iter_buffer,
     Color16* color_buffer,
-    const MattPerturbResults<uint64_t, HDRFloat<float>>* perturb,
+    const GPUPerturbResults<uint64_t, HDRFloat<float>, PerturbExtras::Disable>* perturb,
     BLAS<uint64_t, HDRFloat<float>>* blas,
     HDRFloat<float> cx,
     HDRFloat<float> cy,
@@ -2065,7 +1691,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
     uint64_t* iter_buffer,
     Color16* color_buffer,
-    const MattPerturbResults<uint64_t, HDRFloat<double>>* perturb,
+    const GPUPerturbResults<uint64_t, HDRFloat<double>, PerturbExtras::Disable>* perturb,
     BLAS<uint64_t, HDRFloat<double>>* blas,
     HDRFloat<double> cx,
     HDRFloat<double> cy,
@@ -2081,7 +1707,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
     uint64_t* iter_buffer,
     Color16* color_buffer,
-    const MattPerturbResults<uint64_t, double>* perturb,
+    const GPUPerturbResults<uint64_t, double, PerturbExtras::Disable>* perturb,
     BLAS<uint64_t, double>* blas,
     double cx,
     double cy,

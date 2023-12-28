@@ -35,8 +35,8 @@ public:
         RenderAlgorithm algorithm,
         IterType* iter_buffer,
         Color16* color_buffer,
-        const MattPerturbResults<IterType, T, PerturbExtras::Bad>* double_perturb,
-        const MattPerturbResults<IterType, float, PerturbExtras::Bad>* float_perturb,
+        const GPUPerturbResults<IterType, T, PerturbExtras::Bad>* double_perturb,
+        const GPUPerturbResults<IterType, float, PerturbExtras::Bad>* float_perturb,
         BLAS<IterType, T, PerturbExtras::Bad>* blas,
         T cx,
         T cy,
@@ -52,7 +52,7 @@ public:
         RenderAlgorithm algorithm,
         IterType* iter_buffer,
         Color16* color_buffer,
-        const MattPerturbResults<IterType, MattDblflt>* results,
+        const GPUPerturbResults<IterType, MattDblflt, PerturbExtras::Disable>* results,
         BLAS<IterType, MattDblflt>* blas,
         MattDblflt cx,
         MattDblflt cy,
@@ -68,7 +68,7 @@ public:
         RenderAlgorithm algorithm,
         IterType* iter_buffer,
         Color16* color_buffer,
-        const MattPerturbResults<IterType, T>* results,
+        const GPUPerturbResults<IterType, T, PerturbExtras::Disable>* results,
         BLAS<IterType, T>* blas,
         T cx,
         T cy,
@@ -79,7 +79,7 @@ public:
         IterType n_iterations,
         int iteration_precision);
 
-    template<typename IterType, class T, class SubType, LAv2Mode Mode>
+    template<typename IterType, class T, class SubType, LAv2Mode Mode, PerturbExtras PExtras>
     uint32_t RenderPerturbLAv2(
         RenderAlgorithm algorithm,
         IterType* iter_buffer,
@@ -107,9 +107,9 @@ public:
     template<typename IterType, class T1, class SubType, PerturbExtras PExtras, class T2>
     uint32_t InitializePerturb(
         size_t GenerationNumber1,
-        const MattPerturbResults<IterType, T1, PExtras>* Perturb1,
+        const GPUPerturbResults<IterType, T1, PExtras>* Perturb1,
         size_t GenerationNumber2,
-        const MattPerturbResults<IterType, T2, PExtras>* Perturb2,
+        const GPUPerturbResults<IterType, T2, PExtras>* Perturb2,
         const LAReference<IterType, T1, SubType, PExtras>* LaReferenceHost,
         size_t LaGenerationNumber1);
 

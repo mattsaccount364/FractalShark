@@ -39,6 +39,7 @@
     <ClInclude Include="LAstep.h" />
     <ClInclude Include="OpenGLContext.h" />
     <ClInclude Include="PerturbationResults.h" />
+    <ClInclude Include="PerturbationResultsHelpers.h" />
     <ClInclude Include="PointZoomBBConverter.h" />
     <ClInclude Include="QuadDouble\common.cuh" />
     <ClInclude Include="QuadDouble\cuda_header.cuh" />

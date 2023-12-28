@@ -6,7 +6,7 @@ struct SharedMemStruct {
     //GPUBLA_TYPE nullBla;
     //struct {
     //    //HDRFloatType curBR2[16];
-    //    //MattReferenceSingleIter<HDRFloatType> CurResult;
+    //    //GPUReferenceIter<HDRFloatType> CurResult;
     //    //HDRFloatType NextX1;
     //    //HDRFloatType NextY1;
     //} PerThread[NB_THREADS_W][NB_THREADS_H];
@@ -17,7 +17,7 @@ __global__
 void mandel_1x_double_perturb_bla(
     IterType* OutputIterMatrix,
     AntialiasedColors OutputColorMatrix,
-    MattPerturbSingleResults<IterType, double> PerturbDouble,
+    GPUPerturbSingleResults<IterType, double> PerturbDouble,
     GPU_BLAS<IterType, double, BLA<double>, LM2> doubleBlas,
     int width,
     int height,
@@ -175,7 +175,7 @@ void
 mandel_1xHDR_float_perturb_bla(
     IterType* OutputIterMatrix,
     AntialiasedColors OutputColorMatrix,
-    MattPerturbSingleResults<IterType, HDRFloatType> Perturb,
+    GPUPerturbSingleResults<IterType, HDRFloatType> Perturb,
     GPU_BLAS<IterType, HDRFloatType, BLA<HDRFloatType>, LM2> blas,
     int width,
     int height,

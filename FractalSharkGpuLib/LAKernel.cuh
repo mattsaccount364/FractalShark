@@ -1,11 +1,11 @@
-template<typename IterType, class T, class SubType, LAv2Mode Mode>
+template<typename IterType, class T, class SubType, LAv2Mode Mode, PerturbExtras PExtras>
 __global__
 void
 //__launch_bounds__(NB_THREADS_W * NB_THREADS_H, 2)
 mandel_1xHDR_float_perturb_lav2(
     IterType* OutputIterMatrix,
     AntialiasedColors OutputColorMatrix,
-    MattPerturbSingleResults<IterType, T> Perturb,
+    GPUPerturbSingleResults<IterType, T, PExtras> Perturb,
     GPU_LAReference<IterType, T, SubType> LaReference, // "copy"
     int width,
     int height,

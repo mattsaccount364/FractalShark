@@ -706,6 +706,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 break;
             }
 
+            /////////////////////////// LAV2 ///////////////////////////
+
             case IDM_ALG_GPU_1_32_PERTURB_LAV2:
             {
                 gFractal->SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedLAv2);
@@ -819,6 +821,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 gFractal->SetRenderAlgorithm(RenderAlgorithm::GpuHDRx64PerturbedLAv2LAO);
                 break;
             }
+
+            /////////////////////////// End LAV2 ///////////////////////////
 
             case IDM_BASICTEST:
             {
@@ -1100,6 +1104,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             // Catch-all
             default:
             {
+                ::MessageBox(hWnd, L"Unknown menu item", L"Error", MB_OK);
                 return DefWindowProc(hWnd, message, wParam, lParam); }
             }
 

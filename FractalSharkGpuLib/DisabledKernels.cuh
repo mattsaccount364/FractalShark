@@ -3,7 +3,7 @@
 // TODO Do we need this kind of conversion for the 2x32 LAv2 case:
 template<typename IterType>
 __global__
-void mandel_2x_float_perturb_setup(MattPerturbSingleResults<IterType, dblflt> PerturbDblFlt)
+void mandel_2x_float_perturb_setup(GPUPerturbSingleResults<IterType, dblflt> PerturbDblFlt)
 {
     if (blockIdx.x != 0 || blockIdx.y != 0 || threadIdx.x != 0 || threadIdx.y != 0)
         return;
@@ -19,7 +19,7 @@ __global__
 void mandel_2x_float_perturb(
     IterType* OutputIterMatrix,
     AntialiasedColors OutputColorMatrix,
-    MattPerturbSingleResults<IterType, dblflt> PerturbDblFlt,
+    GPUPerturbSingleResults<IterType, dblflt> PerturbDblFlt,
     int width,
     int height,
     dblflt cx,
@@ -127,7 +127,7 @@ void mandel_2x_float_perturb(
     DeltaSubNY = add_float_to_dblflt(0, 0);
 
     while (iter < n_iterations) {
-        MattReferenceSingleIter<dblflt>* CurIter = &PerturbDblFlt.iters[RefIteration];
+        GPUReferenceIter<dblflt>* CurIter = &PerturbDblFlt.iters[RefIteration];
 
         const dblflt DeltaSubNXOrig = DeltaSubNX;
         const dblflt DeltaSubNYOrig = DeltaSubNY;

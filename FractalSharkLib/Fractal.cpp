@@ -82,7 +82,7 @@ void Fractal::Initialize(int width,
     InitStatics();
 
     // Setup member variables with initial values:
-    SetRenderAlgorithm(RenderAlgorithm::Cpu32PerturbedRCBLAV2HDR);
+    SetRenderAlgorithm(RenderAlgorithm::Gpu1x32PerturbedRCLAv2);
     //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedLAv2);
     //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx2x32PerturbedLAv2);
     //SetRenderAlgorithm(RenderAlgorithm::Gpu2x32PerturbedLAv2);
@@ -2096,63 +2096,161 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
 
 
     case RenderAlgorithm::Gpu1x32PerturbedLAv2:
-        CalcGpuPerturbationFractalLAv2<IterType, float, float, LAv2Mode::Full>(MemoryOnly);
+        CalcGpuPerturbationFractalLAv2<
+            IterType,
+            float,
+            float,
+            LAv2Mode::Full,
+            PerturbExtras::Disable>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu1x32PerturbedLAv2PO:
-        CalcGpuPerturbationFractalLAv2<IterType, float, float, LAv2Mode::PO>(MemoryOnly);
+        CalcGpuPerturbationFractalLAv2<
+            IterType,
+            float,
+            float,
+            LAv2Mode::PO,
+            PerturbExtras::Disable>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu1x32PerturbedLAv2LAO:
-        CalcGpuPerturbationFractalLAv2<IterType, float, float, LAv2Mode::LAO>(MemoryOnly);
+        CalcGpuPerturbationFractalLAv2<
+            IterType,
+            float,
+            float,
+            LAv2Mode::LAO,
+            PerturbExtras::Disable>(MemoryOnly);
+        break;
+    case RenderAlgorithm::Gpu1x32PerturbedRCLAv2:
+        CalcGpuPerturbationFractalLAv2<
+            IterType,
+            float,
+            float,
+            LAv2Mode::Full,
+            PerturbExtras::EnableCompression>(MemoryOnly);
         break;
 
     case RenderAlgorithm::Gpu2x32PerturbedLAv2:
-        CalcGpuPerturbationFractalLAv2<IterType, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::Full>(MemoryOnly);
+        CalcGpuPerturbationFractalLAv2<
+            IterType,
+            CudaDblflt<MattDblflt>,
+            CudaDblflt<MattDblflt>,
+            LAv2Mode::Full,
+            PerturbExtras::Disable>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu2x32PerturbedLAv2PO:
-        CalcGpuPerturbationFractalLAv2<IterType, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::PO>(MemoryOnly);
+        CalcGpuPerturbationFractalLAv2<
+            IterType,
+            CudaDblflt<MattDblflt>,
+            CudaDblflt<MattDblflt>,
+            LAv2Mode::PO,
+            PerturbExtras::Disable>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu2x32PerturbedLAv2LAO:
-        CalcGpuPerturbationFractalLAv2<IterType, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::LAO>(MemoryOnly);
+        CalcGpuPerturbationFractalLAv2<
+            IterType,
+            CudaDblflt<MattDblflt>,
+            CudaDblflt<MattDblflt>,
+            LAv2Mode::LAO,
+            PerturbExtras::Disable>(MemoryOnly);
         break;
 
     case RenderAlgorithm::Gpu1x64PerturbedLAv2:
-        CalcGpuPerturbationFractalLAv2<IterType, double, double, LAv2Mode::Full>(MemoryOnly);
+        CalcGpuPerturbationFractalLAv2<
+            IterType,
+            double,
+            double,
+            LAv2Mode::Full,
+            PerturbExtras::Disable>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu1x64PerturbedLAv2PO:
-        CalcGpuPerturbationFractalLAv2<IterType, double, double, LAv2Mode::PO>(MemoryOnly);
+        CalcGpuPerturbationFractalLAv2<
+            IterType,
+            double,
+            double,
+            LAv2Mode::PO,
+            PerturbExtras::Disable>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu1x64PerturbedLAv2LAO:
-        CalcGpuPerturbationFractalLAv2<IterType, double, double, LAv2Mode::LAO>(MemoryOnly);
+        CalcGpuPerturbationFractalLAv2<
+            IterType,
+            double,
+            double,
+            LAv2Mode::LAO,
+            PerturbExtras::Disable>(MemoryOnly);
         break;
 
     case RenderAlgorithm::GpuHDRx32PerturbedLAv2:
-        CalcGpuPerturbationFractalLAv2<IterType, HDRFloat<float>, float, LAv2Mode::Full>(MemoryOnly);
+        CalcGpuPerturbationFractalLAv2<
+            IterType,
+            HDRFloat<float>,
+            float,
+            LAv2Mode::Full,
+            PerturbExtras::Disable>(MemoryOnly);
         break;
     case RenderAlgorithm::GpuHDRx32PerturbedLAv2PO:
-        CalcGpuPerturbationFractalLAv2<IterType, HDRFloat<float>, float, LAv2Mode::PO>(MemoryOnly);
+        CalcGpuPerturbationFractalLAv2<
+            IterType,
+            HDRFloat<float>,
+            float,
+            LAv2Mode::PO,
+            PerturbExtras::Disable>(MemoryOnly);
         break;
     case RenderAlgorithm::GpuHDRx32PerturbedLAv2LAO:
-        CalcGpuPerturbationFractalLAv2<IterType, HDRFloat<float>, float, LAv2Mode::LAO>(MemoryOnly);
+        CalcGpuPerturbationFractalLAv2<
+            IterType,
+            HDRFloat<float>,
+            float,
+            LAv2Mode::LAO,
+            PerturbExtras::Disable>(MemoryOnly);
         break;
 
     case RenderAlgorithm::GpuHDRx2x32PerturbedLAv2:
-        CalcGpuPerturbationFractalLAv2<IterType, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::Full>(MemoryOnly);
+        CalcGpuPerturbationFractalLAv2<
+            IterType,
+            HDRFloat<CudaDblflt<MattDblflt>>,
+            CudaDblflt<MattDblflt>,
+            LAv2Mode::Full,
+            PerturbExtras::Disable>(MemoryOnly);
         break;
     case RenderAlgorithm::GpuHDRx2x32PerturbedLAv2PO:
-        CalcGpuPerturbationFractalLAv2<IterType, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::PO>(MemoryOnly);
+        CalcGpuPerturbationFractalLAv2<
+            IterType,
+            HDRFloat<CudaDblflt<MattDblflt>>,
+            CudaDblflt<MattDblflt>,
+            LAv2Mode::PO,
+            PerturbExtras::Disable>(MemoryOnly);
         break;
     case RenderAlgorithm::GpuHDRx2x32PerturbedLAv2LAO:
-        CalcGpuPerturbationFractalLAv2<IterType, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::LAO>(MemoryOnly);
+        CalcGpuPerturbationFractalLAv2<
+            IterType,
+            HDRFloat<CudaDblflt<MattDblflt>>,
+            CudaDblflt<MattDblflt>,
+            LAv2Mode::LAO,
+            PerturbExtras::Disable>(MemoryOnly);
         break;
 
     case RenderAlgorithm::GpuHDRx64PerturbedLAv2:
-        CalcGpuPerturbationFractalLAv2<IterType, HDRFloat<double>, double, LAv2Mode::Full>(MemoryOnly);
+        CalcGpuPerturbationFractalLAv2<
+            IterType,
+            HDRFloat<double>,
+            double,
+            LAv2Mode::Full,
+            PerturbExtras::Disable>(MemoryOnly);
         break;
     case RenderAlgorithm::GpuHDRx64PerturbedLAv2PO:
-        CalcGpuPerturbationFractalLAv2<IterType, HDRFloat<double>, double, LAv2Mode::PO>(MemoryOnly);
+        CalcGpuPerturbationFractalLAv2<
+            IterType,
+            HDRFloat<double>,
+            double,
+            LAv2Mode::PO,
+            PerturbExtras::Disable>(MemoryOnly);
         break;
     case RenderAlgorithm::GpuHDRx64PerturbedLAv2LAO:
-        CalcGpuPerturbationFractalLAv2<IterType, HDRFloat<double>, double, LAv2Mode::LAO>(MemoryOnly);
+        CalcGpuPerturbationFractalLAv2<
+            IterType,
+            HDRFloat<double>,
+            double,
+            LAv2Mode::LAO,
+            PerturbExtras::Disable>(MemoryOnly);
         break;
     default:
         break;
@@ -3675,7 +3773,7 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
     FillCoord(centerX, centerX2);
     FillCoord(centerY, centerY2);
 
-    MattPerturbResults<IterType, T> gpu_results{
+    GPUPerturbResults<IterType, T, PerturbExtras::Disable> gpu_results{
         (IterType)results->GetCountOrbitEntries(),
         results->GetOrbitData(),
         results->GetPeriodMaybeZero() };
@@ -3706,17 +3804,17 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
     }
 }
 
-template<typename IterType, class T, class SubType, LAv2Mode Mode>
+template<typename IterType, class T, class SubType, LAv2Mode Mode, PerturbExtras PExtras>
 void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
     using ConditionalT = typename DoubleTo2x32Converter<T, SubType>::ConditionalT;
     using ConditionalSubType = typename DoubleTo2x32Converter<T, SubType>::ConditionalSubType;
 
-    PerturbationResults<IterType, T, PerturbExtras::Disable>* results =
+    PerturbationResults<IterType, T, PExtras>* results =
         m_RefOrbit.GetAndCreateUsefulPerturbationResults<
             IterType,
             ConditionalT,
             ConditionalSubType,
-            PerturbExtras::Disable,
+            PExtras,
             RefOrbitCalc::Extras::IncludeLAv2,
             T>();
 
@@ -3727,7 +3825,7 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
         return;
     }
 
-    MattPerturbResults<IterType, T> gpu_results{
+    GPUPerturbResults<IterType, T, PExtras> gpu_results{
         (IterType)results->GetCountOrbitEntries(),
         results->GetOrbitData(),
         results->GetPeriodMaybeZero() };
@@ -3737,7 +3835,7 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
         return;
     }
 
-    m_r.InitializePerturb<IterType, T, SubType, PerturbExtras::Disable, T>(
+    m_r.InitializePerturb<IterType, T, SubType, PExtras, T>(
         results->GetGenerationNumber(),
         &gpu_results,
         0,
@@ -3762,7 +3860,7 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
     FillCoord(centerX, centerX2);
     FillCoord(centerY, centerY2);
 
-    auto result = m_r.RenderPerturbLAv2<IterType, T, SubType, Mode>(GetRenderAlgorithm(),
+    auto result = m_r.RenderPerturbLAv2<IterType, T, SubType, Mode, PExtras>(GetRenderAlgorithm(),
         m_CurIters.GetIters<IterType>(),
         m_CurIters.m_RoundedOutputColorMemory.get(),
         cx2,
@@ -3774,7 +3872,7 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
         GetNumIterations<IterType>());
 
     if (result) {
-        MessageBoxCudaError(err);
+        MessageBoxCudaError(result);
         return;
     }
 
@@ -3818,17 +3916,17 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
     FillCoord(centerX, centerX2);
     FillCoord(centerY, centerY2);
 
-    MattPerturbResults<IterType, T, PerturbExtras::Bad> gpu_results{
+    GPUPerturbResults<IterType, T, PerturbExtras::Bad> gpu_results{
         (IterType)results->GetCountOrbitEntries(),
         results->GetOrbitData(),
         results->GetPeriodMaybeZero() };
 
-    MattPerturbResults<IterType, T2, PerturbExtras::Bad> gpu_results2{
+    GPUPerturbResults<IterType, T2, PerturbExtras::Bad> gpu_results2{
         (IterType)results2->GetCountOrbitEntries(),
         results2->GetOrbitData(),
         results2->GetPeriodMaybeZero() };
 
-    if (gpu_results.size != gpu_results2.size) {
+    if (gpu_results.GetNumIters() != gpu_results2.GetNumIters()) {
         ::MessageBox(nullptr, L"Mismatch on size", L"", MB_OK);
         return;
     }

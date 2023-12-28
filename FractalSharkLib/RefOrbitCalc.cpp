@@ -576,7 +576,7 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
         T double_zx = (T)zx;
         T double_zy = (T)zy;
 
-        results->AddIterationToOrbit({ double_zx, double_zy });
+        results->AddUncompressedIteration({ double_zx, double_zy });
 
         if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
             AddReused(*results, zx, zy);
@@ -825,7 +825,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
         T reducedZx = (T)zx;
         T reducedZy = (T)zy;
 
-        results->AddIterationToOrbit({ reducedZx, reducedZy });
+        results->AddUncompressedIteration({ reducedZx, reducedZy });
     }
 
     results->TrimResults<PerturbExtras::Disable, ReuseMode::DontSaveForReuse>();
@@ -1050,7 +1050,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
         // Lame conditional.
         // Could erase first elt but that's O(n) in size of vector
         if (RanOnce) {
-            results->AddIterationToOrbit({ tempZXLow, tempZYLow });
+            results->AddUncompressedIteration({ tempZXLow, tempZYLow });
         }
 
         if constexpr (Periodicity) {
@@ -1338,7 +1338,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
         T double_zx = (T)zx;
         T double_zy = (T)zy;
 
-        results->AddIterationToOrbit({double_zx, double_zy });
+        results->AddUncompressedIteration({double_zx, double_zy });
 
         if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
             AddReused(*results, zx, zy);  // TODO
@@ -1771,7 +1771,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecis
             thread1data,
             std::memory_order_release);
 
-        results->AddIterationToOrbit({ double_zx, double_zy });
+        results->AddUncompressedIteration({ double_zx, double_zy });
 
         if constexpr (PExtras == PerturbExtras::Bad) {
             //T norm = (double_zx * double_zx + double_zy * double_zy) * glitch;

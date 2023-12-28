@@ -82,12 +82,12 @@ void Fractal::Initialize(int width,
     InitStatics();
 
     // Setup member variables with initial values:
-    //SetRenderAlgorithm(RenderAlgorithm::Cpu64);
+    SetRenderAlgorithm(RenderAlgorithm::Cpu32PerturbedRCBLAV2HDR);
     //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedLAv2);
     //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx2x32PerturbedLAv2);
     //SetRenderAlgorithm(RenderAlgorithm::Gpu2x32PerturbedLAv2);
     //SetRenderAlgorithm(RenderAlgorithm::Gpu2x32PerturbedLAv2LAO);
-    SetRenderAlgorithm(RenderAlgorithm::AUTO);
+    //SetRenderAlgorithm(RenderAlgorithm::AUTO);
 
     SetIterationPrecision(1);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed);
@@ -1260,7 +1260,7 @@ void Fractal::View(size_t view)
         minY = HighPrecision{ "0.29972344654813270605603829058366483568073874531964832362018" };
         maxX = HighPrecision{ "-0.99305376756265520130178146953447109518864025857411258806278" };
         maxY = HighPrecision{ "0.29972363356903011539038643387261878894415408653664346617868" };
-        SetNumIterations<IterTypeFull>(8192);
+        SetNumIterations<IterTypeFull>(1024);
 
         // Limits of 4x64 GPU
         //minX = HighPrecision{ "-1.763399177066752695854220120818493394874764715075525070697085376173644156624573649873526729559691534754284706803085481158" };

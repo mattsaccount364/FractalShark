@@ -112,6 +112,9 @@ public:
             if constexpr (PExtras == PerturbExtras::Bad) {
                 FullOrbit.push_back({ (T)other.FullOrbit[i].x, (T)other.FullOrbit[i].y, other.FullOrbit[i].bad != 0 });
             }
+            else if constexpr (PExtras == PerturbExtras::EnableCompression) {
+                FullOrbit.push_back({ (T)other.FullOrbit[i].x, (T)other.FullOrbit[i].y, other.FullOrbit[i].CompressionIndex });
+            }
             else {
                 FullOrbit.push_back({ (T)other.FullOrbit[i].x, (T)other.FullOrbit[i].y });
             }
@@ -436,18 +439,14 @@ public:
         LaGenerationNumber = 0;
     }
 
-    // TODO this is fucked up at the moment.  Look in lareference.cpp to uncomment the template instantiations.
-    // It's not clear that this is right.
     template<class U>
-    HDRFloatComplex<U> GetComplex(size_t index) const {
-        return { FullOrbit[index].x, FullOrbit[index].y };
+    HDRFloatComplex<U> GetComplex(size_t uncompressed_index) const {
+        return { FullOrbit[uncompressed_index].x, FullOrbit[uncompressed_index].y };
     }
 
-    //template<class U,
-    //    typename std::enable_if_t<!IsHDR, bool>::type = true>
-    //FloatComplex<U> GetComplex(size_t index) const {
-    //    return FloatComplex<U>{ static_cast<U>(FullOrbit[index].x), static_cast<U>(FullOrbit[index].y) };
-    //}
+    const MattReferenceSingleIter<T, PExtras>& GetOrbitEntry(size_t uncompressed_index) const {
+        return FullOrbit[uncompressed_index];
+    }
 
     void InitReused() {
         HighPrecision Zero = 0;
@@ -527,15 +526,28 @@ public:
         }
     }
 
-    const MattReferenceSingleIter<T, PExtras>& GetOrbitEntry(size_t index) const {
-        return FullOrbit[index];
-    }
+    template<typename = typename std::enable_if<PExtras == PerturbExtras::EnableCompression>>
+    size_t GetCompressedOrbitSize() const {
+        if constexpr (PExtras == PerturbExtras::EnableCompression) {
+            assert(FullOrbit.size() <= UncompressedItersInOrbit);
+        }
 
-    size_t GetCountOrbitEntries() const {
         return FullOrbit.size();
     }
 
-    void AddIterationToOrbit(MattReferenceSingleIter<T, PExtras> result) {
+    size_t GetCountOrbitEntries() const {
+        if constexpr (PExtras == PerturbExtras::EnableCompression) {
+            assert(FullOrbit.size() <= UncompressedItersInOrbit);
+        } else {
+            assert(FullOrbit.size() == UncompressedItersInOrbit);
+        }
+
+        return UncompressedItersInOrbit;
+    }
+
+    void AddUncompressedIteration(MattReferenceSingleIter<T, PExtras> result) {
+        assert(PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::Bad);
+
         FullOrbit.push_back(result);
         UncompressedItersInOrbit++;
     }
@@ -598,12 +610,12 @@ public:
         ReuseY.push_back(std::move(y));
     }
 
-    const HighPrecision& GetReuseXEntry(size_t index) const {
-        return ReuseX[index];
+    const HighPrecision& GetReuseXEntry(size_t uncompressed_index) const {
+        return ReuseX[uncompressed_index];
     }
 
-    const HighPrecision& GetReuseYEntry(size_t index) const {
-        return ReuseY[index];
+    const HighPrecision& GetReuseYEntry(size_t uncompressed_index) const {
+        return ReuseY[uncompressed_index];
     }
 
     IterType GetMaxIterations() const {
@@ -685,15 +697,17 @@ public:
                 HdrReduce(zy);
             }
 
-            decompressed->AddIterationToOrbit({ zx, zy });
+            decompressed->AddUncompressedIteration({ zx, zy });
         }
 
         return decompressed;
     }
 
 private:
-    HighPrecision OrbitX, OrbitY;
-    T OrbitXLow, OrbitYLow;
+    HighPrecision OrbitX;
+    HighPrecision OrbitY;
+    T OrbitXLow;
+    T OrbitYLow;
     T MaxRadius;
     IterType MaxIterations;
     IterType PeriodMaybeZero;  // Zero if not worked out

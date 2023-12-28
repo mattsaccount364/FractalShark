@@ -3091,17 +3091,19 @@ void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
                     //               2 * S * DeltaSubNWX * DeltaSubNWY +
                     //               dY
 
-                    DeltaSubNX = DeltaSubNXOrig * (results->GetOrbitEntry(RefIteration).x * 2 + DeltaSubNXOrig) -
-                        DeltaSubNYOrig * (results->GetOrbitEntry(RefIteration).y * 2 + DeltaSubNYOrig) +
+                    const auto tempZComplex = results->GetComplex(RefIteration);
+                    DeltaSubNX = DeltaSubNXOrig * (tempZComplex.getRe() * 2 + DeltaSubNXOrig) -
+                        DeltaSubNYOrig * (tempZComplex.getIm() * 2 + DeltaSubNYOrig) +
                         DeltaSub0X;
-                    DeltaSubNY = DeltaSubNXOrig * (results->GetOrbitEntry(RefIteration).y * 2 + DeltaSubNYOrig) +
-                        DeltaSubNYOrig * (results->GetOrbitEntry(RefIteration).x * 2 + DeltaSubNXOrig) +
+                    DeltaSubNY = DeltaSubNXOrig * (tempZComplex.getIm() * 2 + DeltaSubNYOrig) +
+                        DeltaSubNYOrig * (tempZComplex.getRe() * 2 + DeltaSubNXOrig) +
                         DeltaSub0Y;
 
                     ++RefIteration;
 
-                    const double tempZX = results->GetOrbitEntry(RefIteration).x + DeltaSubNX;
-                    const double tempZY = results->GetOrbitEntry(RefIteration).y + DeltaSubNY;
+                    const auto tempZComplex = results->GetComplex(RefIteration);
+                    const double tempZX = tempZComplex.getRe() + DeltaSubNX;
+                    const double tempZY = tempZComplex.getIm() + DeltaSubNY;
                     const double zn_size = tempZX * tempZX + tempZY * tempZY;
                     const double normDeltaSubN = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
 
@@ -3306,8 +3308,9 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
 
                         RefIteration += l;
 
-                        auto tempZX = results->GetOrbitEntry(RefIteration).x + DeltaSubNX;
-                        auto tempZY = results->GetOrbitEntry(RefIteration).y + DeltaSubNY;
+                        const auto tempZComplex = results->GetComplex(RefIteration);
+                        auto tempZX = tempZComplex.getRe() + DeltaSubNX;
+                        auto tempZY = tempZComplex.getIm() + DeltaSubNY;
                         auto normSquared = tempZX * tempZX + tempZY * tempZY;
                         DeltaNormSquared = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
                         HdrReduce(normSquared);
@@ -3333,15 +3336,16 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                     const T DeltaSubNXOrig = DeltaSubNX;
                     const T DeltaSubNYOrig = DeltaSubNY;
 
-                    T TermB1 = DeltaSubNXOrig * (results->GetOrbitEntry(RefIteration).x * 2 + DeltaSubNXOrig);
-                    T TermB2 = DeltaSubNYOrig * (results->GetOrbitEntry(RefIteration).y * 2 + DeltaSubNYOrig);
+                    const auto tempZComplex = results->GetComplex(RefIteration);
+                    T TermB1 = DeltaSubNXOrig * (tempZComplex.getRe() * 2 + DeltaSubNXOrig);
+                    T TermB2 = DeltaSubNYOrig * (tempZComplex.getIm() * 2 + DeltaSubNYOrig);
 
                     DeltaSubNX = TermB1 - TermB2;
                     DeltaSubNX += DeltaSub0X;
                     HdrReduce(DeltaSubNX);
 
-                    T Term3 = results->GetOrbitEntry(RefIteration).y * 2 + DeltaSubNYOrig;
-                    T Term4 = results->GetOrbitEntry(RefIteration).x * 2 + DeltaSubNXOrig;
+                    T Term3 = tempZComplex.getIm() * 2 + DeltaSubNYOrig;
+                    T Term4 = tempZComplex.getRe() * 2 + DeltaSubNXOrig;
                     DeltaSubNY = DeltaSubNXOrig * Term3 + DeltaSubNYOrig * Term4;
                     DeltaSubNY += DeltaSub0Y;
                     HdrReduce(DeltaSubNY);
@@ -3412,8 +3416,9 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                         //}
                     }
 
-                    T tempZX = results->GetOrbitEntry(RefIteration).x + DeltaSubNX;
-                    T tempZY = results->GetOrbitEntry(RefIteration).y + DeltaSubNY;
+                    const auto tempZComplex2 = results->GetComplex(RefIteration);
+                    T tempZX = tempZComplex2.getRe() + DeltaSubNX;
+                    T tempZY = tempZComplex2.getIm() + DeltaSubNY;
                     T nT1 = tempZX * tempZX;
                     T nT2 = tempZY * tempZY;
                     T normSquared = nT1 + nT2;

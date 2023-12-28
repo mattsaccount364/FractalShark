@@ -13,29 +13,9 @@
 #include "GPU_Render.h"
 
 template<typename IterType, class T, PerturbExtras PExtras>
-class PerturbationResults {
-public:
-    template<typename IterType, class T, PerturbExtras PExtras> friend class PerturbationResults;
+class TemplateHelpers {
 
-    PerturbationResults(size_t Generation = 0, size_t LaGeneration = 0) :
-        OrbitX{},
-        OrbitY{},
-        OrbitXLow{},
-        OrbitYLow{},
-        MaxRadius{},
-        MaxIterations{},
-        PeriodMaybeZero{},
-        FullOrbit{},
-        UncompressedItersInOrbit{},
-        GenerationNumber{ Generation },
-        LaReference{},
-        LaGenerationNumber{ LaGeneration },
-        AuthoritativePrecision{},
-        ReuseX{},
-        ReuseY{} {
-
-    }
-        
+protected:
     // Example of how to pull the SubType out for HdrFloat, or keep the primitive float/double
     using SubType = typename SubTypeChooser<
         std::is_fundamental<T>::value,
@@ -52,7 +32,118 @@ public:
         std::conditional<IsHDR,
         ::HDRFloatComplex<LocalSubType>,
         ::FloatComplex<LocalSubType>>::type;
+};
 
+template<typename IterType, class T, PerturbExtras PExtras>
+class CompressionHelper : public TemplateHelpers<IterType, T, PExtras> {
+public:
+    using TemplateHelpers = TemplateHelpers<IterType, T, PExtras>;
+    using SubType = TemplateHelpers::SubType;
+
+    template<class LocalSubType>
+    using HDRFloatComplex = TemplateHelpers::template HDRFloatComplex<LocalSubType>;
+
+    const PerturbationResults<IterType, T, PExtras>& results;
+
+    CompressionHelper(const PerturbationResults<IterType, T, PExtras> &results) :
+        results(results) {
+    }
+
+    CompressionHelper(const CompressionHelper& other) = default;
+
+    template<class U>
+    HDRFloatComplex<U> GetCompressedComplex(size_t uncompressed_index) const {
+
+        // Do a binary search.  Given the uncompressed index, search the compressed
+        // FullOrbit array for the nearest UncompressedIndex that's less than or equal
+        // to the provided uncompressed index.  Return the compressed index for that
+        // uncompressed index.
+        auto BinarySearch = [&](size_t uncompressed_index) {
+            size_t low = 0;
+            size_t high = results.FullOrbit.size() - 1;
+
+            while (low <= high) {
+                size_t mid = (low + high) / 2;
+
+                if (results.FullOrbit[mid].CompressionIndex < uncompressed_index) {
+                    low = mid + 1;
+                }
+                else if (results.FullOrbit[mid].CompressionIndex > uncompressed_index) {
+                    high = mid - 1;
+                }
+                else {
+                    return mid;
+                }
+            }
+
+            return high;
+        };
+
+
+        auto BestCompressedIndexGuess = BinarySearch(uncompressed_index);
+
+        T zx = results.FullOrbit[BestCompressedIndexGuess].x;
+        T zy = results.FullOrbit[BestCompressedIndexGuess].y;
+
+        for (size_t cur_uncompressed_index = results.FullOrbit[BestCompressedIndexGuess].CompressionIndex;
+             cur_uncompressed_index < results.UncompressedItersInOrbit;
+             cur_uncompressed_index++) {
+
+            assert(BestCompressedIndexGuess < results.FullOrbit.size());
+            if (BestCompressedIndexGuess < results.FullOrbit.size() - 1) {
+                assert(cur_uncompressed_index < results.FullOrbit[BestCompressedIndexGuess + 1].CompressionIndex);
+            }
+
+            if (cur_uncompressed_index == uncompressed_index) {
+                return { zx, zy };
+            }
+
+            auto zx_old = zx;
+            zx = zx * zx - zy * zy + results.OrbitXLow;
+            HdrReduce(zx);
+            zy = T{ 2 } *zx_old * zy + results.OrbitYLow;
+            HdrReduce(zy);
+        }
+
+        assert(false);
+        return {};
+    }
+};
+
+template<typename IterType, class T, PerturbExtras PExtras>
+class PerturbationResults : public TemplateHelpers<IterType, T, PExtras> {
+
+public:
+    template<typename IterType, class T, PerturbExtras PExtras> friend class PerturbationResults;
+
+    using TemplateHelpers = TemplateHelpers<IterType, T, PExtras>;
+    using SubType = TemplateHelpers::SubType;
+
+    template<class LocalSubType>
+    using HDRFloatComplex = TemplateHelpers::template HDRFloatComplex<LocalSubType>;
+
+    friend class CompressionHelper<IterType, T, PExtras>;
+
+    PerturbationResults(size_t Generation = 0, size_t LaGeneration = 0) :
+        OrbitX{},
+        OrbitY{},
+        OrbitXLow{},
+        OrbitYLow{},
+        MaxRadius{},
+        MaxIterations{},
+        PeriodMaybeZero{},
+        CompressionHelper{*this},
+        FullOrbit{},
+        UncompressedItersInOrbit{},
+        GenerationNumber{ Generation },
+        LaReference{},
+        LaGenerationNumber{ LaGeneration },
+        AuthoritativePrecision{},
+        ReuseX{},
+        ReuseY{} {
+
+    }
+        
     size_t GetGenerationNumber() const {
         return GenerationNumber;
     }
@@ -99,6 +190,7 @@ public:
         MaxRadius = (T)other.GetMaxRadius();
         MaxIterations = other.GetMaxIterations();
         PeriodMaybeZero = other.GetPeriodMaybeZero();
+        // CompressionHelper = {*this}; // Nothing to do here
 
         FullOrbit.reserve(other.FullOrbit.size());
         UncompressedItersInOrbit = other.GetUncompressedItersInOrbit();
@@ -144,6 +236,7 @@ public:
         MaxRadius = other.GetMaxRadius();
         MaxIterations = other.GetMaxIterations();
         PeriodMaybeZero = other.GetPeriodMaybeZero();
+        // CompressionHelper = {}; // Nothing to do here
 
         FullOrbit = {};
         UncompressedItersInOrbit = other.GetUncompressedItersInOrbit();
@@ -426,6 +519,7 @@ public:
         MaxRadius = {};
         MaxIterations = 0;
         PeriodMaybeZero = 0;
+        // CompressionHelper = {}; // Nothing to do here
 
         FullOrbit.clear();
         UncompressedItersInOrbit = 0;
@@ -439,13 +533,13 @@ public:
         LaGenerationNumber = 0;
     }
 
-    template<class U>
-    HDRFloatComplex<U> GetComplex(size_t uncompressed_index) const {
-        return { FullOrbit[uncompressed_index].x, FullOrbit[uncompressed_index].y };
-    }
-
-    const MattReferenceSingleIter<T, PExtras>& GetOrbitEntry(size_t uncompressed_index) const {
-        return FullOrbit[uncompressed_index];
+    template<class U = SubType>
+    typename HDRFloatComplex<U> GetComplex(size_t uncompressed_index) const {
+        if constexpr (PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::Bad) {
+            return { FullOrbit[uncompressed_index].x, FullOrbit[uncompressed_index].y };
+        } else {
+            return CompressionHelper.GetCompressedComplex<U>(uncompressed_index);
+        }
     }
 
     void InitReused() {
@@ -712,6 +806,7 @@ private:
     IterType MaxIterations;
     IterType PeriodMaybeZero;  // Zero if not worked out
 
+    CompressionHelper<IterType, T, PExtras> CompressionHelper;
     std::vector<MattReferenceSingleIter<T, PExtras>> FullOrbit;
     size_t UncompressedItersInOrbit;
 

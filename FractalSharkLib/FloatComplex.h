@@ -245,14 +245,6 @@ public:
         return mantissaImag;
     }
 
-    SubType CUDA_CRAP getMantissaReal() const {
-        return mantissaReal;
-    }
-
-    SubType CUDA_CRAP getMantissaImag() const {
-        return mantissaImag;
-    }
-
 public:
     void CUDA_CRAP toComplex(SubType& re, SubType& img) const {
         //return new Complex(mantissaReal * MantExp.toExp(exp), mantissaImag * MantExp.toExp(exp));

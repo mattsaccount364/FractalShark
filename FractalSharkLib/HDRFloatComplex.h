@@ -480,14 +480,6 @@ public:
         return HDRFloat(exp, mantissaImag);
     }
 
-    SubType CUDA_CRAP getMantissaReal() const {
-        return mantissaReal;
-    }
-
-    SubType CUDA_CRAP getMantissaImag() const {
-        return mantissaImag;
-    }
-
     TExp CUDA_CRAP getExp() const {
         return exp;
     }

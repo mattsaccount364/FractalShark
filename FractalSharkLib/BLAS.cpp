@@ -61,8 +61,9 @@ BLA<T> BLAS<IterType, T, PExtras>::CreateLStep(size_t level, size_t m, T blaSize
 
 template<typename IterType, class T, PerturbExtras PExtras>
 BLA<T> BLAS<IterType, T, PExtras>::CreateOneStep(size_t m, T epsilon) {
-    T RealA = static_cast<T>(m_PerturbationResults.GetOrbitEntry(m).x * 2);
-    T ImagA = static_cast<T>(m_PerturbationResults.GetOrbitEntry(m).y * 2);
+    const auto Complex = m_PerturbationResults.GetComplex(m);
+    T RealA = static_cast<T>(Complex.getRe() * 2);
+    T ImagA = static_cast<T>(Complex.getIm() * 2);
 
     T mA = HdrSqrt(RealA * RealA + ImagA * ImagA);
 

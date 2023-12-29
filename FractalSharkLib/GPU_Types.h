@@ -117,22 +117,44 @@ enum class RenderAlgorithm {
     Gpu1x32PerturbedLAv2,
     Gpu1x32PerturbedLAv2PO,
     Gpu1x32PerturbedLAv2LAO,
-    Gpu1x32PerturbedRCLAv2, // TODO Not hooked up yet
+    Gpu1x32PerturbedRCLAv2,
+    Gpu1x32PerturbedRCLAv2PO,
+    Gpu1x32PerturbedRCLAv2LAO,
+
     Gpu2x32PerturbedLAv2,
     Gpu2x32PerturbedLAv2PO,
     Gpu2x32PerturbedLAv2LAO,
+    Gpu2x32PerturbedRCLAv2,
+    Gpu2x32PerturbedRCLAv2PO,
+    Gpu2x32PerturbedRCLAv2LAO,
+
     Gpu1x64PerturbedLAv2,
     Gpu1x64PerturbedLAv2PO,
     Gpu1x64PerturbedLAv2LAO,
+    Gpu1x64PerturbedRCLAv2,
+    Gpu1x64PerturbedRCLAv2PO,
+    Gpu1x64PerturbedRCLAv2LAO,
+
     GpuHDRx32PerturbedLAv2,
     GpuHDRx32PerturbedLAv2PO,
     GpuHDRx32PerturbedLAv2LAO,
+    GpuHDRx32PerturbedRCLAv2,
+    GpuHDRx32PerturbedRCLAv2PO,
+    GpuHDRx32PerturbedRCLAv2LAO,
+
     GpuHDRx2x32PerturbedLAv2,
     GpuHDRx2x32PerturbedLAv2PO,
     GpuHDRx2x32PerturbedLAv2LAO,
+    GpuHDRx2x32PerturbedRCLAv2,
+    GpuHDRx2x32PerturbedRCLAv2PO,
+    GpuHDRx2x32PerturbedRCLAv2LAO,
+
     GpuHDRx64PerturbedLAv2,
     GpuHDRx64PerturbedLAv2PO,
     GpuHDRx64PerturbedLAv2LAO,
+    GpuHDRx64PerturbedRCLAv2,
+    GpuHDRx64PerturbedRCLAv2PO,
+    GpuHDRx64PerturbedRCLAv2LAO,
 
     AUTO,
     MAX
@@ -177,21 +199,43 @@ static const char* RenderAlgorithmStr[(size_t)RenderAlgorithm::MAX + 1] =
     "Gpu1x32PerturbedLAv2PO",
     "Gpu1x32PerturbedLAv2LAO",
     "Gpu1x32PerturbedRCLAv2",
+    "Gpu1x32PerturbedRCLAv2PO",
+    "Gpu1x32PerturbedRCLAv2LAO",
+
     "Gpu2x32PerturbedLAv2",
     "Gpu2x32PerturbedLAv2PO",
     "Gpu2x32PerturbedLAv2LAO",
+    "Gpu2x32PerturbedRCLAv2",
+    "Gpu2x32PerturbedRCLAv2PO",
+    "Gpu2x32PerturbedRCLAv2LAO",
+
     "Gpu1x64PerturbedLAv2",
     "Gpu1x64PerturbedLAv2PO",
     "Gpu1x64PerturbedLAv2LAO",
+    "Gpu1x64PerturbedRCLAv2",
+    "Gpu1x64PerturbedRCLAv2PO",
+    "Gpu1x64PerturbedRCLAv2LAO",
+
     "GpuHDRx32PerturbedLAv2",
     "GpuHDRx32PerturbedLAv2PO",
     "GpuHDRx32PerturbedLAv2LAO",
+    "GpuHDRx32PerturbedRCLAv2",
+    "GpuHDRx32PerturbedRCLAv2PO",
+    "GpuHDRx32PerturbedRCLAv2LAO",
+
     "GpuHDRx2x32PerturbedLAv2",
     "GpuHDRx2x32PerturbedLAv2PO",
     "GpuHDRx2x32PerturbedLAv2LAO",
+    "GpuHDRx2x32PerturbedRCLAv2",
+    "GpuHDRx2x32PerturbedRCLAv2PO",
+    "GpuHDRx2x32PerturbedRCLAv2LAO",
+
     "GpuHDRx64PerturbedLAv2",
     "GpuHDRx64PerturbedLAv2PO",
     "GpuHDRx64PerturbedLAv2LAO",
+    "GpuHDRx64PerturbedRCLAv2",
+    "GpuHDRx64PerturbedRCLAv2PO",
+    "GpuHDRx64PerturbedRCLAv2LAO",
 
     "AutoSelect",
     "MAX"
@@ -205,6 +249,8 @@ struct BadField {
     uint32_t padding;
 };
 
+// TODO if we template this on IterType, update CompressionHelper
+// (GPU + CPU versions) to avoid static_cast all over
 struct CompressionIndex {
     uint64_t CompressionIndex;
 };
@@ -301,12 +347,19 @@ struct MattCoords {
 template<typename IterType, class T, PerturbExtras PExtras>
 class GPUPerturbResults {
 public:
-    GPUPerturbResults(IterType in_size,
+    GPUPerturbResults(
+        IterType compressed_size,
+        IterType uncompressed_size,
+        T OrbitXLow,
+        T OrbitYLow,
         const GPUReferenceIter<T, PExtras>* in_orb,
         IterType PeriodMaybeZero) :
         FullOrbit(in_orb),
-        OrbitSize(in_size),
-        PeriodMaybeZero(PeriodMaybeZero) {
+        OrbitSize(compressed_size),
+        UncompressedSize(uncompressed_size),
+        PeriodMaybeZero(PeriodMaybeZero),
+        OrbitXLow(OrbitXLow),
+        OrbitYLow(OrbitYLow) {
 
         //char(*__kaboom1)[sizeof(GPUReferenceIter<float>)] = 1;
         //char(*__kaboom2)[sizeof(GPUReferenceIter<double>)] = 1;
@@ -342,12 +395,24 @@ public:
         return FullOrbit;
     }
 
-    IterType GetNumIters() const {
+    IterType GetCompressedSize() const {
         return OrbitSize;
+    }
+
+    IterType GetUncompressedSize() const {
+        return UncompressedSize;
     }
 
     IterType GetPeriodMaybeZero() const {
         return PeriodMaybeZero;
+    }
+
+    T GetOrbitXLow() const {
+        return OrbitXLow;
+    }
+
+    T GetOrbitYLow() const {
+        return OrbitYLow;
     }
 
 private:
@@ -357,8 +422,13 @@ private:
     // May be either compressed or uncompressed count
     IterType OrbitSize;
 
+    IterType UncompressedSize;
+
     // Actual period
     IterType PeriodMaybeZero;
+
+    T OrbitXLow;
+    T OrbitYLow;
 };
 
 template<typename IterType, typename Type, PerturbExtras PExtras = PerturbExtras::Disable>

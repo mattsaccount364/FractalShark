@@ -75,7 +75,7 @@ void mandel_1x_double_perturb_bla(
             int l = b->getL();
 
             // TODO this first RefIteration + l check bugs me
-            if (RefIteration + l >= PerturbDouble.size) {
+            if (RefIteration + l >= PerturbDouble.GetNumIters()) {
                 break;
             }
 
@@ -88,8 +88,12 @@ void mandel_1x_double_perturb_bla(
 
             b->getValue(DeltaSubNX, DeltaSubNY, DeltaSub0X, DeltaSub0Y);
 
-            const double tempZX = PerturbDouble.iters[RefIteration].x + DeltaSubNX;
-            const double tempZY = PerturbDouble.iters[RefIteration].y + DeltaSubNY;
+            double tempZX;
+            double tempZY;
+            PerturbDouble.GetIter(RefIteration, tempZX, tempZY);
+            tempZX = tempZX + DeltaSubNX;
+            tempZY = tempZY + DeltaSubNY;
+
             const double normSquared = tempZX * tempZX + tempZY * tempZY;
             DeltaNormSquared = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
 
@@ -98,7 +102,7 @@ void mandel_1x_double_perturb_bla(
             }
 
             if (normSquared < DeltaNormSquared ||
-                RefIteration >= PerturbDouble.size - 1) {
+                RefIteration >= PerturbDouble.GetNumIters() - 1) {
                 DeltaSubNX = tempZX;
                 DeltaSubNY = tempZY;
                 DeltaNormSquared = normSquared;
@@ -113,17 +117,23 @@ void mandel_1x_double_perturb_bla(
         const double DeltaSubNXOrig = DeltaSubNX;
         const double DeltaSubNYOrig = DeltaSubNY;
 
-        DeltaSubNX = DeltaSubNXOrig * (PerturbDouble.iters[RefIteration].x * 2 + DeltaSubNXOrig) -
-            DeltaSubNYOrig * (PerturbDouble.iters[RefIteration].y * 2 + DeltaSubNYOrig) +
+        double tempZX;
+        double tempZY;
+        PerturbDouble.GetIter(RefIteration, tempZX, tempZY);
+
+        DeltaSubNX = DeltaSubNXOrig * (tempZX * 2 + DeltaSubNXOrig) -
+            DeltaSubNYOrig * (tempZY * 2 + DeltaSubNYOrig) +
             DeltaSub0X;
-        DeltaSubNY = DeltaSubNXOrig * (PerturbDouble.iters[RefIteration].y * 2 + DeltaSubNYOrig) +
-            DeltaSubNYOrig * (PerturbDouble.iters[RefIteration].x * 2 + DeltaSubNXOrig) +
+        DeltaSubNY = DeltaSubNXOrig * (tempZY * 2 + DeltaSubNYOrig) +
+            DeltaSubNYOrig * (tempZX * 2 + DeltaSubNXOrig) +
             DeltaSub0Y;
 
         ++RefIteration;
 
-        const double tempZX = PerturbDouble.iters[RefIteration].x + DeltaSubNX;
-        const double tempZY = PerturbDouble.iters[RefIteration].y + DeltaSubNY;
+        PerturbDouble.GetIter(RefIteration, tempZX, tempZY);
+        tempZX = tempZX + DeltaSubNX;
+        tempZY = tempZY + DeltaSubNY;
+
         const double normSquared = tempZX * tempZX + tempZY * tempZY;
         DeltaNormSquared = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
 
@@ -132,7 +142,7 @@ void mandel_1x_double_perturb_bla(
         }
 
         if (normSquared < DeltaNormSquared ||
-            RefIteration >= PerturbDouble.size - 1) {
+            RefIteration >= PerturbDouble.GetNumIters() - 1) {
             DeltaSubNX = tempZX;
             DeltaSubNY = tempZY;
             DeltaNormSquared = normSquared;
@@ -258,12 +268,13 @@ mandel_1xHDR_float_perturb_bla(
         //__prefetch_global_l2(&Perturb.iters[RefIteration + 1].x);
         //__prefetch_global_l2(&Perturb.iters[RefIteration + 1].y);
 
-        const auto tempMulX2 = Perturb.iters[RefIteration].x * Two;
-        const auto tempMulY2 = Perturb.iters[RefIteration].y * Two;
+        HDRFloatType tempMulX2;
+        HDRFloatType tempMulY2;
+        Perturb.GetIterX2(RefIteration, tempMulX2, tempMulY2);
 
         ++RefIteration;
 
-        //if (RefIteration >= Perturb.size) {
+        //if (RefIteration >= Perturb.GetNumIters()) {
         //    // TODO this first RefIteration + l check bugs me
         //    iter = 255;
         //    break;
@@ -308,8 +319,9 @@ mandel_1xHDR_float_perturb_bla(
 
         //__pipeline_wait_prior(0);
 
-        const auto tempVal1X = Perturb.iters[RefIteration].x;
-        const auto tempVal1Y = Perturb.iters[RefIteration].y;
+        HDRFloatType tempVal1X;
+        HDRFloatType tempVal1Y;
+        Perturb.GetIter(RefIteration, tempVal1X, tempVal1Y);
 
         const HDRFloatType tempZX = tempVal1X + DeltaSubNX;
         const HDRFloatType tempZY = tempVal1Y + DeltaSubNY;
@@ -321,7 +333,7 @@ mandel_1xHDR_float_perturb_bla(
             HdrReduce(DeltaNormSquared);
 
             if (HdrCompareToBothPositiveReducedLT(normSquared, DeltaNormSquared) ||
-                RefIteration >= Perturb.size - 1) {
+                RefIteration >= Perturb.GetNumIters() - 1) {
                 DeltaSubNX = tempZX;
                 DeltaSubNY = tempZY;
                 DeltaNormSquared = normSquared;
@@ -350,9 +362,9 @@ mandel_1xHDR_float_perturb_bla(
             const int l = b->getL();
 
             // TODO this first RefIteration + l check bugs me
-            const bool res1 = (RefIteration + l >= Perturb.size);
+            const bool res1 = (RefIteration + l >= Perturb.GetNumIters());
             const bool res2 = (iter + l >= n_iterations);
-            const bool res3 = (RefIteration + l < Perturb.size - 1);
+            const bool res3 = (RefIteration + l < Perturb.GetNumIters() - 1);
             //const bool res4 = l == 0; // nullBla
             const bool res12 = (/*res4 || */res1 || res2) == false;
             if (res12 && res3) {
@@ -386,11 +398,12 @@ mandel_1xHDR_float_perturb_bla(
 
                 //HDRFloatType tempZX = shared->PerThread[threadIdx.x][threadIdx.y].CurResult.x + DeltaSubNX;
                 //HDRFloatType tempZY = shared->PerThread[threadIdx.x][threadIdx.y].CurResult.y + DeltaSubNY;
-                HDRFloatType tempZX = Perturb.iters[RefIteration].x + DeltaSubNX;
-                HDRFloatType tempZY = Perturb.iters[RefIteration].y + DeltaSubNY;
+                HDRFloatType tempZX;
+                HDRFloatType tempZY;
+                Perturb.GetIter(RefIteration, tempZX, tempZY);
 
-                DeltaSubNX = tempZX;
-                DeltaSubNY = tempZY;
+                DeltaSubNX = tempZX + DeltaSubNX;
+                DeltaSubNY = tempZY + DeltaSubNY;
 
                 DeltaNormSquared = tempZX.square_mutable() + tempZY.square_mutable();
                 HdrReduce(DeltaNormSquared);

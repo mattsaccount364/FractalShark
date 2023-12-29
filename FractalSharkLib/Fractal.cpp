@@ -2127,6 +2127,22 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
             LAv2Mode::Full,
             PerturbExtras::EnableCompression>(MemoryOnly);
         break;
+    case RenderAlgorithm::Gpu1x32PerturbedRCLAv2PO:
+        CalcGpuPerturbationFractalLAv2<
+            IterType,
+            float,
+            float,
+            LAv2Mode::PO,
+            PerturbExtras::EnableCompression>(MemoryOnly);
+        break;
+    case RenderAlgorithm::Gpu1x32PerturbedRCLAv2LAO:
+        CalcGpuPerturbationFractalLAv2<
+            IterType,
+            float,
+            float,
+            LAv2Mode::LAO,
+            PerturbExtras::EnableCompression>(MemoryOnly);
+        break;
 
     case RenderAlgorithm::Gpu2x32PerturbedLAv2:
         CalcGpuPerturbationFractalLAv2<
@@ -3774,7 +3790,10 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
     FillCoord(centerY, centerY2);
 
     GPUPerturbResults<IterType, T, PerturbExtras::Disable> gpu_results{
-        (IterType)results->GetCountOrbitEntries(),
+        (IterType)results->GetCompressedOrbitSize(),
+        results->GetCountOrbitEntries(),
+        results->GetOrbitXLow(),
+        results->GetOrbitYLow(),
         results->GetOrbitData(),
         results->GetPeriodMaybeZero() };
 
@@ -3826,7 +3845,10 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
     }
 
     GPUPerturbResults<IterType, T, PExtras> gpu_results{
-        (IterType)results->GetCountOrbitEntries(),
+        (IterType)results->GetCompressedOrbitSize(),
+        results->GetCountOrbitEntries(),
+        results->GetOrbitXLow(),
+        results->GetOrbitYLow(),
         results->GetOrbitData(),
         results->GetPeriodMaybeZero() };
 
@@ -3917,16 +3939,22 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
     FillCoord(centerY, centerY2);
 
     GPUPerturbResults<IterType, T, PerturbExtras::Bad> gpu_results{
-        (IterType)results->GetCountOrbitEntries(),
+        (IterType)results->GetCompressedOrbitSize(),
+        results->GetCountOrbitEntries(),
+        results->GetOrbitXLow(),
+        results->GetOrbitYLow(),
         results->GetOrbitData(),
         results->GetPeriodMaybeZero() };
 
     GPUPerturbResults<IterType, T2, PerturbExtras::Bad> gpu_results2{
-        (IterType)results2->GetCountOrbitEntries(),
+        (IterType)results2->GetCompressedOrbitSize(),
+        results2->GetCountOrbitEntries(),
+        results2->GetOrbitXLow(),
+        results2->GetOrbitYLow(),
         results2->GetOrbitData(),
         results2->GetPeriodMaybeZero() };
 
-    if (gpu_results.GetNumIters() != gpu_results2.GetNumIters()) {
+    if (gpu_results.GetCompressedSize() != gpu_results2.GetCompressedSize()) {
         ::MessageBox(nullptr, L"Mismatch on size", L"", MB_OK);
         return;
     }

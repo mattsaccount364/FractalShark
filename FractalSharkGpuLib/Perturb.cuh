@@ -3,25 +3,33 @@
 ////////////////////////////////////////////////////////////////////////////////////////
 
 template<typename IterType, typename Type, PerturbExtras PExtras>
-struct GPUPerturbSingleResults {
-    const GPUReferenceIter<Type, PExtras>* __restrict__ iters;
-    IterType size;
-    cudaError_t err;
-    IterType PeriodMaybeZero;
-    bool own;
-    bool AllocHost;
+class GPUPerturbSingleResults : public TemplateHelpers<IterType, Type, PExtras> {
+public:
+    template<typename IterType, class Type, PerturbExtras PExtras> friend class PerturbationResults;
+
+    using TemplateHelpers = TemplateHelpers<IterType, Type, PExtras>;
+    using SubType = TemplateHelpers::SubType;
+
+    template<class LocalSubType>
+    using HDRFloatComplex = TemplateHelpers::template HDRFloatComplex<LocalSubType>;
 
     GPUPerturbSingleResults() = delete;
 
     template<typename Other>
     GPUPerturbSingleResults(
-        IterType sz,
+        IterType CompressedOrbitSize,
+        IterType UncompressedOrbitSize,
         IterType PeriodMaybeZero,
+        Type OrbitXLow,
+        Type OrbitYLow,
         const GPUReferenceIter<Other, PExtras>* in_iters)
-        : iters(nullptr),
-        size(sz),
-        err(cudaSuccess),
+        : FullOrbit{},
+        OrbitSize(CompressedOrbitSize),
+        UncompressedItersInOrbit(UncompressedOrbitSize),
         PeriodMaybeZero(PeriodMaybeZero),
+        OrbitXLow(OrbitXLow),
+        OrbitYLow(OrbitYLow),
+        err(cudaSuccess),
         own(true),
         AllocHost(false) {
 
@@ -45,22 +53,22 @@ struct GPUPerturbSingleResults {
 
         GPUReferenceIter<Type, PExtras>* tempIters;
         AllocHost = false;
-        err = cudaMallocManaged(&tempIters, size * sizeof(GPUReferenceIter<Type, PExtras>));
+        err = cudaMallocManaged(&tempIters, OrbitSize * sizeof(GPUReferenceIter<Type, PExtras>));
         if (err != cudaSuccess) {
             AllocHost = true;
-            err = cudaMallocHost(&tempIters, size * sizeof(GPUReferenceIter<Type, PExtras>));
+            err = cudaMallocHost(&tempIters, OrbitSize * sizeof(GPUReferenceIter<Type, PExtras>));
             if (err != cudaSuccess) {
-                size = 0;
+                OrbitSize = 0;
                 return;
             }
         }
 
-        iters = tempIters;
+        FullOrbit = tempIters;
 
         // Cast to void -- it's logically const
-        cudaMemcpy((void*)iters, in_iters, size * sizeof(GPUReferenceIter<Type, PExtras>), cudaMemcpyDefault);
+        cudaMemcpy((void*)FullOrbit, in_iters, OrbitSize * sizeof(GPUReferenceIter<Type, PExtras>), cudaMemcpyDefault);
 
-        //err = cudaMemAdvise(iters,
+        //err = cudaMemAdvise(FullOrbit,
         //    size * sizeof(GPUReferenceIter<Type>),
         //    cudaMemAdviseSetReadMostly,
         //    0);
@@ -70,20 +78,27 @@ struct GPUPerturbSingleResults {
         //}
     }
 
-    GPUPerturbSingleResults(const GPUPerturbSingleResults& other) {
-        iters = reinterpret_cast<const GPUReferenceIter<Type, PExtras>*>(other.iters);
-        size = other.size;
-        PeriodMaybeZero = other.PeriodMaybeZero;
-        own = false;
-        AllocHost = other.AllocHost;
+    GPUPerturbSingleResults(const GPUPerturbSingleResults& other)
+        :
+        FullOrbit{ reinterpret_cast<const GPUReferenceIter<Type, PExtras>*>(other.FullOrbit) },
+        OrbitSize{ other.OrbitSize },
+        UncompressedItersInOrbit{ other.UncompressedItersInOrbit },
+        PeriodMaybeZero{ other.PeriodMaybeZero },
+        OrbitXLow{ other.OrbitXLow },
+        OrbitYLow{ other.OrbitYLow },
+        own{},
+        AllocHost{ other.AllocHost } {
     }
 
     // funny semantics, copy doesn't own the pointers.
     template<class Other>
     GPUPerturbSingleResults(const GPUPerturbSingleResults<IterType, Other, PExtras>& other) {
-        iters = reinterpret_cast<const GPUReferenceIter<Type, PExtras>*>(other.iters);
-        size = other.size;
+        FullOrbit = reinterpret_cast<const GPUReferenceIter<Type, PExtras>*>(other.FullOrbit);
+        OrbitSize = other.OrbitSize;
+        UncompressedItersInOrbit = other.UncompressedItersInOrbit;
         PeriodMaybeZero = other.PeriodMaybeZero;
+        OrbitXLow = other.OrbitXLow;
+        OrbitYLow = other.OrbitYLow;        
         own = false;
         AllocHost = other.AllocHost;
     }
@@ -98,15 +113,121 @@ struct GPUPerturbSingleResults {
 
     ~GPUPerturbSingleResults() {
         if (own) {
-            if (iters != nullptr) {
+            if (FullOrbit != nullptr) {
                 if (!AllocHost) {
-                    cudaFree((void*)iters);
+                    cudaFree((void*)FullOrbit);
                 }
                 else {
-                    cudaFreeHost((void*)iters);
+                    cudaFreeHost((void*)FullOrbit);
                 }
             }
         }
     }
+
+    //const GPUReferenceIter<T, PExtras>* GetFullOrbit() const {
+    //    return FullOrbit;
+    //}
+
+    CUDA_CRAP
+    IterType GetNumIters() const {
+        return OrbitSize;
+    }
+
+    CUDA_CRAP
+    IterType GetPeriodMaybeZero() const {
+        return PeriodMaybeZero;
+    }
+
+    CUDA_CRAP
+    void GetIter(IterType uncompressed_index, Type &x, Type &y) const {
+        if constexpr (PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::Bad) {
+            x = FullOrbit[uncompressed_index].x;
+            y = FullOrbit[uncompressed_index].y;
+        }
+        else {
+            auto ret = GetCompressedComplex(uncompressed_index);
+            x = ret.getRe();
+            y = ret.getIm();
+        }
+    }
+
+    // Returns the value multiplied by two
+    CUDA_CRAP
+    void GetIterX2(IterType index, Type &x, Type &y) const {
+        GetIter(index, x, y);
+        x = x * Type{ 2 };
+        y = y * Type{ 2 };
+    }
+
+    CUDA_CRAP
+    HDRFloatComplex<SubType> GetCompressedComplex(IterType uncompressed_index) const {
+
+        // Do a binary search.  Given the uncompressed index, search the compressed
+        // FullOrbit array for the nearest UncompressedIndex that's less than or equal
+        // to the provided uncompressed index.  Return the compressed index for that
+        // uncompressed index.
+        auto BinarySearch = [&](IterType uncompressed_index) {
+            IterType low = 0;
+            IterType high = OrbitSize - 1;
+
+            while (low <= high) {
+                IterType mid = (low + high) / 2;
+
+                if (FullOrbit[mid].CompressionIndex < uncompressed_index) {
+                    low = mid + 1;
+                }
+                else if (FullOrbit[mid].CompressionIndex > uncompressed_index) {
+                    high = mid - 1;
+                }
+                else {
+                    return mid;
+                }
+            }
+
+            return high;
+            };
+
+
+        auto BestCompressedIndexGuess = BinarySearch(uncompressed_index);
+
+        Type zx = FullOrbit[BestCompressedIndexGuess].x;
+        Type zy = FullOrbit[BestCompressedIndexGuess].y;
+
+        for (IterType cur_uncompressed_index = FullOrbit[BestCompressedIndexGuess].CompressionIndex;
+            cur_uncompressed_index < UncompressedItersInOrbit;
+            cur_uncompressed_index++) {
+
+            assert(BestCompressedIndexGuess < OrbitSize);
+            if (BestCompressedIndexGuess < OrbitSize - 1) {
+                assert(cur_uncompressed_index < FullOrbit[BestCompressedIndexGuess + 1].CompressionIndex);
+            }
+
+            if (cur_uncompressed_index == uncompressed_index) {
+                return { zx, zy };
+            }
+
+            auto zx_old = zx;
+            zx = zx * zx - zy * zy + OrbitXLow;
+            HdrReduce(zx);
+            zy = Type{ 2 } *zx_old * zy + OrbitYLow;
+            HdrReduce(zy);
+        }
+
+        // TODO This is an error
+        return {};
+    }
+
+private:
+    const GPUReferenceIter<Type, PExtras>* __restrict__ FullOrbit;
+
+    IterType OrbitSize;
+    IterType UncompressedItersInOrbit;
+    IterType PeriodMaybeZero;
+    Type OrbitXLow;
+    Type OrbitYLow;
+
+    cudaError_t err;
+    bool own;
+    bool AllocHost;
 };
 

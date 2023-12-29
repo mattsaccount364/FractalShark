@@ -1979,8 +1979,20 @@ bool RefOrbitCalc::IsPerturbationResultUsefulHere(size_t i) {
         const PerturbationResults<IterType, T, PExtras> &PerturbationResults
         ) -> bool {
 
+        //if constexpr (PExtras == PerturbExtras::EnableCompression) {
+        //    if constexpr (!PerturbationResults.IsCompressed()) {
+        //        return false;
+        //    }
+        //}
+        //else {
+        //    if constexpr (PerturbationResults.IsCompressed()) {
+        //        return false;
+        //    }
+        //}
+
         if constexpr (Authoritative == true) {
-            return PerturbationResults.GetAuthoritativePrecision() != 0 &&
+            return
+                PerturbationResults.GetAuthoritativePrecision() != 0 &&
                 (PerturbationResults.GetMaxIterations() > PerturbationResults.GetCountOrbitEntries() ||
                     PerturbationResults.GetMaxIterations() >= m_Fractal.GetNumIterations<IterType>());
         }
@@ -2051,7 +2063,9 @@ PerturbationResults<IterType, ConvertTType, PExtras>* RefOrbitCalc::GetAndCreate
         // TODO: this is a hack.  We need to fix this.
         if constexpr (PExtras == PerturbExtras::EnableCompression) {
             auto resultsIntermediate = cur_array[cur_array.size() - 1].get();
-            auto compressedResults = resultsIntermediate->Compress();
+            auto compressedResults = resultsIntermediate->Compress(
+                GetNextGenerationNumber(),
+                GetNextLaGenerationNumber());
             results = AddPerturbationResults(std::move(compressedResults));
         }
         else {

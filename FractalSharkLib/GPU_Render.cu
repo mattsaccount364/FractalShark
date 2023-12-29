@@ -50,33 +50,21 @@ constexpr static bool EnableGpu2x64 = Default;
 constexpr static bool EnableGpu4x64 = Default;
 constexpr static bool EnableGpuHDRx32 = Default;
 
-constexpr static bool EnableGpu1x32PerturbedScaled = Default;
-constexpr static bool EnableGpu2x32PerturbedScaled = Default;
-constexpr static bool EnableGpuHDRx32PerturbedScaled = Default;
+constexpr static bool EnableGpu1x32PerturbedScaled = false;
+constexpr static bool EnableGpu2x32PerturbedScaled = false;
+constexpr static bool EnableGpuHDRx32PerturbedScaled = false;
 
-constexpr static bool EnableGpu1x32PerturbedScaledBLA = Default;
+constexpr static bool EnableGpu1x32PerturbedScaledBLA = false;
 constexpr static bool EnableGpu1x64PerturbedBLA = Default;
 constexpr static bool EnableGpuHDRx32PerturbedBLA = Default;
 constexpr static bool EnableGpuHDRx64PerturbedBLA = Default;
 
 constexpr static bool EnableGpu1x32PerturbedLAv2 = ForceEnable;
-constexpr static bool EnableGpu1x32PerturbedLAv2PO = ForceEnable;
-constexpr static bool EnableGpu1x32PerturbedLAv2LAO = ForceEnable;
 constexpr static bool EnableGpu2x32PerturbedLAv2 = Default;
-constexpr static bool EnableGpu2x32PerturbedLAv2PO = Default;
-constexpr static bool EnableGpu2x32PerturbedLAv2LAO = Default;
 constexpr static bool EnableGpu1x64PerturbedLAv2 = Default;
-constexpr static bool EnableGpu1x64PerturbedLAv2PO = Default;
-constexpr static bool EnableGpu1x64PerturbedLAv2LAO = Default;
 constexpr static bool EnableGpuHDRx32PerturbedLAv2 = ForceEnable;
-constexpr static bool EnableGpuHDRx32PerturbedLAv2PO = ForceEnable;
-constexpr static bool EnableGpuHDRx32PerturbedLAv2LAO = ForceEnable;
 constexpr static bool EnableGpuHDRx2x32PerturbedLAv2 = Default;
-constexpr static bool EnableGpuHDRx2x32PerturbedLAv2PO = Default;
-constexpr static bool EnableGpuHDRx2x32PerturbedLAv2LAO = Default;
 constexpr static bool EnableGpuHDRx64PerturbedLAv2 = Default;
-constexpr static bool EnableGpuHDRx64PerturbedLAv2PO = Default;
-constexpr static bool EnableGpuHDRx64PerturbedLAv2LAO = Default;
 
 //#define DEFAULT_KERNEL_LAUNCH_PARAMS nb_blocks, threads_per_block, 0, cudaStreamPerThread
 #define DEFAULT_KERNEL_LAUNCH_PARAMS nb_blocks, threads_per_block
@@ -405,8 +393,11 @@ uint32_t GPURenderer::InitializePerturb(
 
     if (GenerationNumber1 != m_PerturbResults.GetHostGenerationNumber1()) {
         auto *CudaResults1 = new GPUPerturbSingleResults<IterType, T1, PExtras>{
-            Perturb1->GetNumIters(),
+            Perturb1->GetCompressedSize(),
+            Perturb1->GetUncompressedSize(),
             Perturb1->GetPeriodMaybeZero(),
+            Perturb1->GetOrbitXLow(),
+            Perturb1->GetOrbitYLow(),
             Perturb1->GetFullOrbit()
         };
 
@@ -421,8 +412,11 @@ uint32_t GPURenderer::InitializePerturb(
 
     if (GenerationNumber2 != m_PerturbResults.GetHostGenerationNumber2()) {
         auto* CudaResults2 = new GPUPerturbSingleResults<IterType, T2, PExtras>{
-            Perturb2->GetNumIters(),
+            Perturb2->GetCompressedSize(),
+            Perturb2->GetUncompressedSize(),
             Perturb2->GetPeriodMaybeZero(),
+            Perturb2->GetOrbitXLow(),
+            Perturb2->GetOrbitYLow(),
             Perturb2->GetFullOrbit()
         };
 
@@ -1040,9 +1034,8 @@ uint32_t GPURenderer::RenderPerturbLAv2(
         (algorithm == RenderAlgorithm::Gpu1x32PerturbedLAv2LAO) ||
         (algorithm == RenderAlgorithm::Gpu1x32PerturbedRCLAv2)) {
         if constexpr (
-            (EnableGpu1x32PerturbedLAv2 || EnableGpu1x32PerturbedLAv2PO || EnableGpu1x32PerturbedLAv2LAO)
-            && std::is_same<float, T>::value) {
-            // hdrflt
+            EnableGpu1x32PerturbedLAv2 && std::is_same<float, T>::value) {
+
             mandel_1xHDR_float_perturb_lav2<IterType, float, float, Mode> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                 static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
@@ -1057,9 +1050,7 @@ uint32_t GPURenderer::RenderPerturbLAv2(
         (algorithm == RenderAlgorithm::Gpu2x32PerturbedLAv2PO) ||
         (algorithm == RenderAlgorithm::Gpu2x32PerturbedLAv2LAO)) {
         if constexpr (
-            (EnableGpu2x32PerturbedLAv2 || EnableGpu2x32PerturbedLAv2PO || EnableGpu2x32PerturbedLAv2LAO)
-            && std::is_same<CudaDblflt<MattDblflt>, T>::value) {
-            // hdrflt
+            EnableGpu2x32PerturbedLAv2 && std::is_same<CudaDblflt<MattDblflt>, T>::value) {
 
             CudaDblflt<dblflt> cx2{ cx };
             CudaDblflt<dblflt> cy2{ cy };
@@ -1089,9 +1080,8 @@ uint32_t GPURenderer::RenderPerturbLAv2(
         (algorithm == RenderAlgorithm::Gpu1x64PerturbedLAv2PO) ||
         (algorithm == RenderAlgorithm::Gpu1x64PerturbedLAv2LAO)) {
         if constexpr (
-            (EnableGpu1x64PerturbedLAv2 || EnableGpu1x64PerturbedLAv2PO || EnableGpu1x64PerturbedLAv2LAO)
-            && std::is_same<double, T>::value) {
-            // hdrflt
+            EnableGpu1x64PerturbedLAv2 && std::is_same<double, T>::value) {
+
             mandel_1xHDR_float_perturb_lav2<
                 IterType,
                 double,
@@ -1113,11 +1103,10 @@ uint32_t GPURenderer::RenderPerturbLAv2(
         (algorithm == RenderAlgorithm::GpuHDRx32PerturbedLAv2PO) ||
         (algorithm == RenderAlgorithm::GpuHDRx32PerturbedLAv2LAO)) {
         if constexpr (
-            (EnableGpuHDRx32PerturbedLAv2 || EnableGpuHDRx32PerturbedLAv2PO || EnableGpuHDRx32PerturbedLAv2LAO)
-            && std::is_same<HDRFloat<float>, T>::value) {
+            EnableGpuHDRx32PerturbedLAv2 && std::is_same<HDRFloat<float>, T>::value) {
+
             mandel_1xHDR_InitStatics << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > ();
 
-            // hdrflt
             mandel_1xHDR_float_perturb_lav2<
                 IterType,
                 HDRFloat<float>,
@@ -1137,10 +1126,9 @@ uint32_t GPURenderer::RenderPerturbLAv2(
     } else if ((algorithm == RenderAlgorithm::GpuHDRx64PerturbedLAv2) ||
                (algorithm == RenderAlgorithm::GpuHDRx64PerturbedLAv2PO) ||
                (algorithm == RenderAlgorithm::GpuHDRx64PerturbedLAv2LAO)) {
-        // hdrdbl
         if constexpr (
-            (EnableGpuHDRx64PerturbedLAv2 || EnableGpuHDRx64PerturbedLAv2PO || EnableGpuHDRx64PerturbedLAv2LAO)
-            && std::is_same<HDRFloat<double>, T>::value) {
+            EnableGpuHDRx64PerturbedLAv2 && std::is_same<HDRFloat<double>, T>::value) {
+
             mandel_1xHDR_InitStatics << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > ();
 
             mandel_1xHDR_float_perturb_lav2<
@@ -1163,8 +1151,8 @@ uint32_t GPURenderer::RenderPerturbLAv2(
                (algorithm == RenderAlgorithm::GpuHDRx2x32PerturbedLAv2PO) ||
                (algorithm == RenderAlgorithm::GpuHDRx2x32PerturbedLAv2LAO)) {
         if constexpr (
-            (EnableGpuHDRx2x32PerturbedLAv2 || EnableGpuHDRx2x32PerturbedLAv2PO || EnableGpuHDRx2x32PerturbedLAv2LAO) &&
-            std::is_same<HDRFloat<CudaDblflt<MattDblflt>>, T>::value) {
+            EnableGpuHDRx2x32PerturbedLAv2 && std::is_same<HDRFloat<CudaDblflt<MattDblflt>>, T>::value) {
+
             HDRFloat<CudaDblflt<dblflt>> cx2{ cx };
             HDRFloat<CudaDblflt<dblflt>> cy2{ cy };
             HDRFloat<CudaDblflt<dblflt>> dx2{ dx };
@@ -1175,7 +1163,6 @@ uint32_t GPURenderer::RenderPerturbLAv2(
 
             mandel_1xHDR_InitStatics << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > ();
 
-            // hdrflt
             mandel_1xHDR_float_perturb_lav2<
                 IterType,
                 HDRFloat<CudaDblflt<dblflt>>,
@@ -1216,7 +1203,6 @@ uint32_t GPURenderer::RenderPerturbLAv2(
 InitializeRenderPerturbLAv2(uint32_t, float, float, LAv2Mode::Full, PerturbExtras::Disable);
 InitializeRenderPerturbLAv2(uint32_t, float, float, LAv2Mode::PO, PerturbExtras::Disable);
 InitializeRenderPerturbLAv2(uint32_t, float, float, LAv2Mode::LAO, PerturbExtras::Disable);
-InitializeRenderPerturbLAv2(uint32_t, float, float, LAv2Mode::Full, PerturbExtras::EnableCompression);
 
 InitializeRenderPerturbLAv2(uint32_t, double, double, LAv2Mode::Full, PerturbExtras::Disable);
 InitializeRenderPerturbLAv2(uint32_t, double, double, LAv2Mode::PO, PerturbExtras::Disable);
@@ -1241,7 +1227,6 @@ InitializeRenderPerturbLAv2(uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblf
 InitializeRenderPerturbLAv2(uint64_t, float, float, LAv2Mode::Full, PerturbExtras::Disable);
 InitializeRenderPerturbLAv2(uint64_t, float, float, LAv2Mode::PO, PerturbExtras::Disable);
 InitializeRenderPerturbLAv2(uint64_t, float, float, LAv2Mode::LAO, PerturbExtras::Disable);
-InitializeRenderPerturbLAv2(uint64_t, float, float, LAv2Mode::Full, PerturbExtras::EnableCompression);
 
 InitializeRenderPerturbLAv2(uint64_t, double, double, LAv2Mode::Full, PerturbExtras::Disable);
 InitializeRenderPerturbLAv2(uint64_t, double, double, LAv2Mode::PO, PerturbExtras::Disable);
@@ -1262,6 +1247,56 @@ InitializeRenderPerturbLAv2(uint64_t, HDRFloat<double>, double, LAv2Mode::LAO, P
 InitializeRenderPerturbLAv2(uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::Full, PerturbExtras::Disable);
 InitializeRenderPerturbLAv2(uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::PO, PerturbExtras::Disable);
 InitializeRenderPerturbLAv2(uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::LAO, PerturbExtras::Disable);
+
+
+
+InitializeRenderPerturbLAv2(uint32_t, float, float, LAv2Mode::Full, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint32_t, float, float, LAv2Mode::PO, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint32_t, float, float, LAv2Mode::LAO, PerturbExtras::EnableCompression);
+
+InitializeRenderPerturbLAv2(uint32_t, double, double, LAv2Mode::Full, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint32_t, double, double, LAv2Mode::PO, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint32_t, double, double, LAv2Mode::LAO, PerturbExtras::EnableCompression);
+
+InitializeRenderPerturbLAv2(uint32_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::Full, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint32_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::PO, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint32_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::LAO, PerturbExtras::EnableCompression);
+
+InitializeRenderPerturbLAv2(uint32_t, HDRFloat<float>, float, LAv2Mode::Full, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint32_t, HDRFloat<float>, float, LAv2Mode::PO, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint32_t, HDRFloat<float>, float, LAv2Mode::LAO, PerturbExtras::EnableCompression);
+
+InitializeRenderPerturbLAv2(uint32_t, HDRFloat<double>, double, LAv2Mode::Full, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint32_t, HDRFloat<double>, double, LAv2Mode::PO, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint32_t, HDRFloat<double>, double, LAv2Mode::LAO, PerturbExtras::EnableCompression);
+
+InitializeRenderPerturbLAv2(uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::Full, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::PO, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::LAO, PerturbExtras::EnableCompression);
+
+InitializeRenderPerturbLAv2(uint64_t, float, float, LAv2Mode::Full, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint64_t, float, float, LAv2Mode::PO, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint64_t, float, float, LAv2Mode::LAO, PerturbExtras::EnableCompression);
+
+InitializeRenderPerturbLAv2(uint64_t, double, double, LAv2Mode::Full, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint64_t, double, double, LAv2Mode::PO, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint64_t, double, double, LAv2Mode::LAO, PerturbExtras::EnableCompression);
+
+InitializeRenderPerturbLAv2(uint64_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::Full, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint64_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::PO, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint64_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::LAO, PerturbExtras::EnableCompression);
+
+InitializeRenderPerturbLAv2(uint64_t, HDRFloat<float>, float, LAv2Mode::Full, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint64_t, HDRFloat<float>, float, LAv2Mode::PO, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint64_t, HDRFloat<float>, float, LAv2Mode::LAO, PerturbExtras::EnableCompression);
+
+InitializeRenderPerturbLAv2(uint64_t, HDRFloat<double>, double, LAv2Mode::Full, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint64_t, HDRFloat<double>, double, LAv2Mode::PO, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint64_t, HDRFloat<double>, double, LAv2Mode::LAO, PerturbExtras::EnableCompression);
+
+InitializeRenderPerturbLAv2(uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::Full, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::PO, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::LAO, PerturbExtras::EnableCompression);
 
 template<typename IterType, class T>
 uint32_t GPURenderer::RenderPerturbBLAScaled(
@@ -1290,8 +1325,11 @@ uint32_t GPURenderer::RenderPerturbBLAScaled(
     dim3 threads_per_block(NB_THREADS_W, NB_THREADS_H, 1);
 
     GPUPerturbSingleResults<IterType, float, PerturbExtras::Bad> cudaResults(
-        float_perturb->GetNumIters(),
+        float_perturb->GetCompressedSize(),
+        float_perturb->GetUncompressedSize(),
         float_perturb->GetPeriodMaybeZero(),
+        float_perturb->GetOrbitXLow(),
+        float_perturb->GetOrbitYLow(),
         float_perturb->GetFullOrbit());
 
     result = cudaResults.CheckValid();
@@ -1300,8 +1338,11 @@ uint32_t GPURenderer::RenderPerturbBLAScaled(
     }
 
     GPUPerturbSingleResults<IterType, T, PerturbExtras::Bad> cudaResultsDouble(
-        double_perturb->GetNumIters(),
+        double_perturb->GetCompressedSize(),
+        double_perturb->GetUncompressedSize(),
         float_perturb->GetPeriodMaybeZero(),
+        double_perturb->GetOrbitXLow(),
+        double_perturb->GetOrbitYLow(),
         double_perturb->GetFullOrbit());
 
     result = cudaResultsDouble.CheckValid();
@@ -1324,7 +1365,6 @@ uint32_t GPURenderer::RenderPerturbBLAScaled(
         }
     } else if (algorithm == RenderAlgorithm::GpuHDRx32PerturbedScaled) {
         if constexpr (EnableGpuHDRx32PerturbedScaled && std::is_same<T, HDRFloat<float>>::value) {
-            // hdrflt
             mandel_1xHDR_InitStatics << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > ();
 
             mandel_1x_float_perturb_scaled<IterType, T> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
@@ -1471,8 +1511,11 @@ uint32_t GPURenderer::RenderPerturbBLA(
     if (algorithm == RenderAlgorithm::GpuHDRx32PerturbedBLA) {
         if constexpr (EnableGpuHDRx32PerturbedBLA && std::is_same<T, HDRFloat<float>>::value) {
             GPUPerturbSingleResults<IterType, HDRFloat<float>> cudaResults(
-                perturb->GetNumIters(),
+                perturb->GetCompressedSize(),
+                perturb->GetUncompressedSize(),
                 perturb->GetPeriodMaybeZero(),
+                perturb->GetOrbitXLow(),
+                perturb->GetOrbitYLow(),
                 perturb->GetFullOrbit());
 
             result = cudaResults.CheckValid();
@@ -1489,7 +1532,6 @@ uint32_t GPURenderer::RenderPerturbBLA(
 
                 mandel_1xHDR_InitStatics << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > ();
 
-                // hdrflt
                 mandel_1xHDR_float_perturb_bla<IterType, HDRFloat<float>, LM2> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                     static_cast<IterType*>(OutputIterMatrix),
                     OutputColorMatrix,
@@ -1509,8 +1551,11 @@ uint32_t GPURenderer::RenderPerturbBLA(
     else if (algorithm == RenderAlgorithm::GpuHDRx64PerturbedBLA) {
         if constexpr (EnableGpuHDRx64PerturbedBLA && std::is_same<T, HDRFloat<double>>::value) {
             GPUPerturbSingleResults<IterType, HDRFloat<double>> cudaResults(
-                perturb->GetNumIters(),
+                perturb->GetCompressedSize(),
+                perturb->GetUncompressedSize(),
                 perturb->GetPeriodMaybeZero(),
+                perturb->GetOrbitXLow(),
+                perturb->GetOrbitYLow(),
                 perturb->GetFullOrbit());
 
             result = cudaResults.CheckValid();
@@ -1527,7 +1572,6 @@ uint32_t GPURenderer::RenderPerturbBLA(
 
                 mandel_1xHDR_InitStatics << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > ();
 
-                // hdrflt -- that looks like a bug and probably should be hdrdbl
                 mandel_1xHDR_float_perturb_bla<IterType, HDRFloat<double>, LM2> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                     static_cast<IterType*>(OutputIterMatrix),
                     OutputColorMatrix,
@@ -1546,8 +1590,11 @@ uint32_t GPURenderer::RenderPerturbBLA(
     } else if (algorithm == RenderAlgorithm::Gpu1x64PerturbedBLA) {
         if constexpr (EnableGpu1x64PerturbedBLA && std::is_same<T, double>::value) {
             GPUPerturbSingleResults<IterType, double> cudaResults(
-                perturb->GetNumIters(),
+                perturb->GetCompressedSize(),
+                perturb->GetUncompressedSize(),
                 perturb->GetPeriodMaybeZero(),
+                perturb->GetOrbitXLow(),
+                perturb->GetOrbitYLow(),
                 perturb->GetFullOrbit());
 
             result = cudaResults.CheckValid();

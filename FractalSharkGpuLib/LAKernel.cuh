@@ -69,16 +69,23 @@ mandel_1xHDR_float_perturb_lav2(
             DeltaSubN = res.dz;
         }
 
-        IterType MaxRefIteration = Perturb.size - 1;
+        IterType MaxRefIteration = Perturb.GetNumIters() - 1;
         TComplex complex0{ DeltaReal, DeltaImaginary };
         IterType CurrentLAStage{ LaReference.isValid ? LaReference.LAStageCount : 0 };
 
         if (iter != 0 && RefIteration < MaxRefIteration) {
-            complex0 = TComplex{ Perturb.iters[RefIteration].x, Perturb.iters[RefIteration].y } + DeltaSubN;
+            T tempX;
+            T tempY;            
+            Perturb.GetIter(RefIteration, tempX, tempY);
+            complex0 = TComplex{ tempX, tempY } + DeltaSubN;
         }
-        else if (iter != 0 && Perturb.PeriodMaybeZero != 0) {
-            RefIteration = RefIteration % Perturb.PeriodMaybeZero;
-            complex0 = TComplex{ Perturb.iters[RefIteration].x, Perturb.iters[RefIteration].y } + DeltaSubN;
+        else if (iter != 0 && Perturb.GetPeriodMaybeZero() != 0) {
+            RefIteration = RefIteration % Perturb.GetPeriodMaybeZero();
+
+            T tempX;
+            T tempY;
+            Perturb.GetIter(RefIteration, tempX, tempY);
+            complex0 = TComplex{ tempX, tempY } + DeltaSubN;
         }
 
         while (CurrentLAStage > 0) {
@@ -131,8 +138,9 @@ mandel_1xHDR_float_perturb_lav2(
                 const T DeltaSubNXOrig{ DeltaSubNX };
                 const T DeltaSubNYOrig{ DeltaSubNY };
 
-                const auto tempMulX2{ Perturb.iters[RefIteration].x * T(2) };
-                const auto tempMulY2{ Perturb.iters[RefIteration].y * T(2) };
+                T tempMulX2;
+                T tempMulY2;
+                Perturb.GetIterX2(RefIteration, tempMulX2, tempMulY2);
 
                 ++RefIteration;
 
@@ -189,8 +197,9 @@ mandel_1xHDR_float_perturb_lav2(
                         DeltaSub0Y);
                 }
 
-                const auto tempVal1X{ Perturb.iters[RefIteration].x };
-                const auto tempVal1Y{ Perturb.iters[RefIteration].y };
+                T tempVal1X;
+                T tempVal1Y;
+                Perturb.GetIter(RefIteration, tempVal1X, tempVal1Y);
 
                 const T tempZX{ tempVal1X + DeltaSubNX };
                 const T tempZY{ tempVal1Y + DeltaSubNY };
@@ -212,7 +221,7 @@ mandel_1xHDR_float_perturb_lav2(
                     }
 
                     if (HdrCompareToBothPositiveReducedLT(normSquared, DeltaNormSquared) ||
-                        RefIteration >= Perturb.size - 1) {
+                        RefIteration >= Perturb.GetNumIters() - 1) {
                         DeltaSubNX = tempZX;
                         DeltaSubNY = tempZY;
                         RefIteration = 0;

@@ -97,7 +97,7 @@ public:
         // CompressionHelper = {*this}; // Nothing to do here
 
         FullOrbit.reserve(other.FullOrbit.size());
-        UncompressedItersInOrbit = other.GetUncompressedItersInOrbit();
+        UncompressedItersInOrbit = other.UncompressedItersInOrbit;
         GenerationNumber = NewGenerationNumber;
 
         AuthoritativePrecision = other.AuthoritativePrecision;
@@ -143,8 +143,8 @@ public:
         // CompressionHelper = {}; // Nothing to do here
 
         FullOrbit = {};
-        UncompressedItersInOrbit = other.GetUncompressedItersInOrbit();
-        GenerationNumber = other.GetGenerationNumber();
+        UncompressedItersInOrbit = other.UncompressedItersInOrbit;
+        // GenerationNumber = other.GetGenerationNumber(); // Don't copy unless some other stuff changes
 
         AuthoritativePrecision = other.AuthoritativePrecision;
         ReuseX = other.ReuseX;
@@ -533,7 +533,7 @@ public:
         return FullOrbit.size();
     }
 
-    size_t GetCountOrbitEntries() const {
+    IterType GetCountOrbitEntries() const {
         if constexpr (PExtras == PerturbExtras::EnableCompression) {
             assert(FullOrbit.size() <= UncompressedItersInOrbit);
         } else {
@@ -594,10 +594,6 @@ public:
         PeriodMaybeZero = period;
     }
 
-    size_t GetUncompressedItersInOrbit() const {
-        return UncompressedItersInOrbit;
-    }
-
     size_t GetReuseSize() const {
         assert(ReuseX.size() == ReuseY.size());
         return ReuseX.size();
@@ -626,11 +622,11 @@ public:
     //   https://fractalforums.org/fractal-mathematics-and-new-theories/28/reference-compression/5142
     // as a reference for the compression algorithm.
     std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::EnableCompression>>
-    Compress() {
+    Compress(size_t NewGenerationNumber, size_t NewLaGenerationNumber) {
 
         auto compressed =
             std::make_unique<PerturbationResults<IterType, T, PerturbExtras::EnableCompression>>(
-                GenerationNumber, LaGenerationNumber);
+                NewGenerationNumber, NewLaGenerationNumber);
         compressed->CopySettingsWithoutOrbit(*this);
 
         assert (FullOrbit.size() > 1);
@@ -712,7 +708,7 @@ private:
 
     CompressionHelper<IterType, T, PExtras> CompressionHelper;
     std::vector<GPUReferenceIter<T, PExtras>> FullOrbit;
-    size_t UncompressedItersInOrbit;
+    IterType UncompressedItersInOrbit;
 
     size_t GenerationNumber;
 

@@ -62,7 +62,7 @@ void mandel_1x_float_perturb_scaled(
     float s = (float)S;
     float twos = 2 * s;
     const float w2threshold = exp(log(LARGE_MANTISSA) / 2);
-    IterType MaxRefIteration = PerturbFloat.size - 1;
+    IterType MaxRefIteration = PerturbFloat.GetNumIters() - 1;
 
     T TwoFiftySix = T(256.0);
 
@@ -305,7 +305,7 @@ void mandel_1x_float_perturb_scaled_bla(
     float s = (float)S;
     float twos = 2 * s;
     const float w2threshold = exp(log(LARGE_MANTISSA) / 2);
-    IterType MaxRefIteration = PerturbFloat.size - 1;
+    IterType MaxRefIteration = PerturbFloat.GetNumIters() - 1;
 
     while (iter < n_iterations) {
         const GPUReferenceIter<float, PerturbExtras::Bad>* curFloatIter = &PerturbFloat.iters[RefIteration];
@@ -322,7 +322,7 @@ void mandel_1x_float_perturb_scaled_bla(
                 int l = b->getL();
 
                 // TODO this first RefIteration + l check bugs me
-                if (RefIteration + l >= PerturbDouble.size) {
+                if (RefIteration + l >= PerturbDouble.GetNumIters()) {
                     break;
                 }
 
@@ -346,7 +346,7 @@ void mandel_1x_float_perturb_scaled_bla(
                 }
 
                 if (normSquared < DeltaNormSquared ||
-                    RefIteration >= PerturbFloat.size - 1) {
+                    RefIteration >= PerturbFloat.GetNumIters() - 1) {
                     DeltaSubNX = tempZX;
                     DeltaSubNY = tempZY;
                     DeltaNormSquared = normSquared;
@@ -603,7 +603,7 @@ void mandel_2x_float_perturb_scaled(
     dblflt s = double_to_dblflt(S);
     dblflt twos = add_dblflt(s, s);
     const dblflt w2threshold = double_to_dblflt(exp(log(LARGE_MANTISSA) / 2));
-    IterType MaxRefIteration = PerturbDoubleFlt.size - 1;
+    IterType MaxRefIteration = PerturbDoubleFlt.GetNumIters() - 1;
 
     while (iter < n_iterations) {
         const GPUReferenceIter<dblflt, PerturbExtras::Bad>* curDblFloatIter = &PerturbDoubleFlt.iters[RefIteration];

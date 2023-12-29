@@ -129,8 +129,8 @@ public:
     //}
 
     CUDA_CRAP
-    IterType GetNumIters() const {
-        return OrbitSize;
+    IterType GetCountOrbitEntries() const {
+        return UncompressedItersInOrbit;
     }
 
     CUDA_CRAP
@@ -196,11 +196,6 @@ public:
         for (IterType cur_uncompressed_index = FullOrbit[BestCompressedIndexGuess].CompressionIndex;
             cur_uncompressed_index < UncompressedItersInOrbit;
             cur_uncompressed_index++) {
-
-            assert(BestCompressedIndexGuess < OrbitSize);
-            if (BestCompressedIndexGuess < OrbitSize - 1) {
-                assert(cur_uncompressed_index < FullOrbit[BestCompressedIndexGuess + 1].CompressionIndex);
-            }
 
             if (cur_uncompressed_index == uncompressed_index) {
                 return { zx, zy };

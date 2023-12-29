@@ -8,7 +8,7 @@ void mandel_2x_float_perturb_setup(GPUPerturbSingleResults<IterType, dblflt> Per
     if (blockIdx.x != 0 || blockIdx.y != 0 || threadIdx.x != 0 || threadIdx.y != 0)
         return;
 
-    for (IterType i = 0; i < PerturbDblFlt.GetNumIters(); i++) {
+    for (IterType i = 0; i < PerturbDblFlt.GetCountOrbitEntries(); i++) {
         PerturbDblFlt.iters[i].x = add_float_to_dblflt(PerturbDblFlt.iters[i].x.y, PerturbDblFlt.iters[i].x.x);
         PerturbDblFlt.iters[i].y = add_float_to_dblflt(PerturbDblFlt.iters[i].y.y, PerturbDblFlt.iters[i].y.x);
     }
@@ -121,7 +121,7 @@ void mandel_2x_float_perturb(
     dblflt DeltaSub0Y = DeltaImaginary;
     dblflt DeltaSubNX, DeltaSubNY;
 
-    IterType MaxRefIteration = PerturbDblFlt.GetNumIters() - 1;
+    IterType MaxRefIteration = PerturbDblFlt.GetCountOrbitEntries() - 1;
 
     DeltaSubNX = add_float_to_dblflt(0, 0);
     DeltaSubNY = add_float_to_dblflt(0, 0);

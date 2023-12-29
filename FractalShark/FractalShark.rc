@@ -225,7 +225,7 @@ BEGIN
                 POPUP "LA Only"
                 BEGIN
                     MENUITEM "1x32 GPU - RC LAv2",          IDM_ALG_GPU_1_32_PERTURB_RC_LAV2_LAO
-                    MENUITEM "1x32 GPU - RC LAv2",          IDM_ALG_GPU_1_32_PERTURB_RC_LAV2_LAO
+                    MENUITEM "2x32 GPU - RC LAv2",          IDM_ALG_GPU_2_32_PERTURB_RC_LAV2_LAO
                     MENUITEM "1x64 GPU - RC LAv2",          IDM_ALG_GPU_1_64_PERTURB_RC_LAV2_LAO
                     MENUITEM "HDRx32 GPU - RC LAv2",        IDM_ALG_GPU_HDR_32_PERTURB_RC_LAV2_LAO
                     MENUITEM "HDRx2x32 GPU - RC LAv2",      IDM_ALG_GPU_HDR_2X32_PERTURB_RC_LAV2_LAO

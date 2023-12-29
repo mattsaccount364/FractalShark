@@ -75,7 +75,7 @@ void mandel_1x_double_perturb_bla(
             int l = b->getL();
 
             // TODO this first RefIteration + l check bugs me
-            if (RefIteration + l >= PerturbDouble.GetNumIters()) {
+            if (RefIteration + l >= PerturbDouble.GetCountOrbitEntries()) {
                 break;
             }
 
@@ -102,7 +102,7 @@ void mandel_1x_double_perturb_bla(
             }
 
             if (normSquared < DeltaNormSquared ||
-                RefIteration >= PerturbDouble.GetNumIters() - 1) {
+                RefIteration >= PerturbDouble.GetCountOrbitEntries() - 1) {
                 DeltaSubNX = tempZX;
                 DeltaSubNY = tempZY;
                 DeltaNormSquared = normSquared;
@@ -142,7 +142,7 @@ void mandel_1x_double_perturb_bla(
         }
 
         if (normSquared < DeltaNormSquared ||
-            RefIteration >= PerturbDouble.GetNumIters() - 1) {
+            RefIteration >= PerturbDouble.GetCountOrbitEntries() - 1) {
             DeltaSubNX = tempZX;
             DeltaSubNY = tempZY;
             DeltaNormSquared = normSquared;
@@ -274,7 +274,7 @@ mandel_1xHDR_float_perturb_bla(
 
         ++RefIteration;
 
-        //if (RefIteration >= Perturb.GetNumIters()) {
+        //if (RefIteration >= Perturb.GetCountOrbitEntries()) {
         //    // TODO this first RefIteration + l check bugs me
         //    iter = 255;
         //    break;
@@ -333,7 +333,7 @@ mandel_1xHDR_float_perturb_bla(
             HdrReduce(DeltaNormSquared);
 
             if (HdrCompareToBothPositiveReducedLT(normSquared, DeltaNormSquared) ||
-                RefIteration >= Perturb.GetNumIters() - 1) {
+                RefIteration >= Perturb.GetCountOrbitEntries() - 1) {
                 DeltaSubNX = tempZX;
                 DeltaSubNY = tempZY;
                 DeltaNormSquared = normSquared;
@@ -362,9 +362,9 @@ mandel_1xHDR_float_perturb_bla(
             const int l = b->getL();
 
             // TODO this first RefIteration + l check bugs me
-            const bool res1 = (RefIteration + l >= Perturb.GetNumIters());
+            const bool res1 = (RefIteration + l >= Perturb.GetCountOrbitEntries());
             const bool res2 = (iter + l >= n_iterations);
-            const bool res3 = (RefIteration + l < Perturb.GetNumIters() - 1);
+            const bool res3 = (RefIteration + l < Perturb.GetCountOrbitEntries() - 1);
             //const bool res4 = l == 0; // nullBla
             const bool res12 = (/*res4 || */res1 || res2) == false;
             if (res12 && res3) {

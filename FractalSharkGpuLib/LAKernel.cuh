@@ -69,7 +69,7 @@ mandel_1xHDR_float_perturb_lav2(
             DeltaSubN = res.dz;
         }
 
-        IterType MaxRefIteration = Perturb.GetNumIters() - 1;
+        IterType MaxRefIteration = Perturb.GetCountOrbitEntries() - 1;
         TComplex complex0{ DeltaReal, DeltaImaginary };
         IterType CurrentLAStage{ LaReference.isValid ? LaReference.LAStageCount : 0 };
 
@@ -221,7 +221,7 @@ mandel_1xHDR_float_perturb_lav2(
                     }
 
                     if (HdrCompareToBothPositiveReducedLT(normSquared, DeltaNormSquared) ||
-                        RefIteration >= Perturb.GetNumIters() - 1) {
+                        RefIteration >= Perturb.GetCountOrbitEntries() - 1) {
                         DeltaSubNX = tempZX;
                         DeltaSubNY = tempZY;
                         RefIteration = 0;

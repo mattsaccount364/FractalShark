@@ -80,17 +80,8 @@ public:
 
         OrbitX = other.GetHiX();
         OrbitY = other.GetHiY();
-        if constexpr (std::is_same<T, Other>::value) {
-            OrbitXLow = other.GetOrbitXLow();
-            OrbitYLow = other.GetOrbitYLow();
-        } else {
-            // TODO
-            // We're copying from a different type, and we're not currently
-            // going to support that.  We could just static_cast but that's
-            // not really the right thing to do.
-            OrbitXLow = {};
-            OrbitYLow = {};
-        }
+        OrbitXLow = static_cast<T>(other.GetOrbitXLow());
+        OrbitYLow = static_cast<T>(other.GetOrbitYLow());
         MaxRadius = (T)other.GetMaxRadius();
         MaxIterations = other.GetMaxIterations();
         PeriodMaybeZero = other.GetPeriodMaybeZero();
@@ -217,9 +208,12 @@ public:
         metafile << HdrToString(OrbitX) << std::endl;
         metafile << OrbitY.precision() << std::endl;
         metafile << HdrToString(OrbitY) << std::endl;
+        metafile << HdrToString(OrbitXLow) << std::endl;
+        metafile << HdrToString(OrbitYLow) << std::endl;
         metafile << HdrToString(MaxRadius) << std::endl;
         metafile << MaxIterations << std::endl;
         metafile << PeriodMaybeZero << std::endl;
+        metafile << UncompressedItersInOrbit << std::endl;
     }
 
     // This function uses CreateFileMapping and MapViewOfFile to map
@@ -337,32 +331,39 @@ public:
             OrbitY = HighPrecision{ shiY };
         }
 
-        {
+        auto ss_to_hdr = [&](T &output) {
+            double mantissa;
+            int32_t exponent;
+
             std::string maxRadiusMantissaStr;
             metafile >> maxRadiusMantissaStr;
             metafile >> maxRadiusMantissaStr;
-            auto m = std::stod(maxRadiusMantissaStr);
+            mantissa = std::stod(maxRadiusMantissaStr);
 
             std::string maxRadiusExpStr;
             metafile >> maxRadiusExpStr;
             metafile >> maxRadiusExpStr;
-            auto e = std::stoi(maxRadiusExpStr);
+            exponent = std::stoi(maxRadiusExpStr);
 
             if constexpr (
                 std::is_same<T, HDRFloat<float>>::value ||
                 std::is_same<T, HDRFloat<double>>::value) {
-                MaxRadius = T{ e, (SubType)m };
+                output = T{ exponent, (SubType)mantissa };
             }
             else if constexpr (
                 std::is_same<T, float>::value ||
                 std::is_same<T, double>::value) {
-                MaxRadius = static_cast<T>(m);
+                output = static_cast<T>(mantissa);
             }
             else {
                 ::MessageBox(NULL, L"Unexpected type in Load", L"", MB_OK);
                 return false;
             }
-        }
+        };
+
+        ss_to_hdr(OrbitXLow);
+        ss_to_hdr(OrbitYLow);
+        ss_to_hdr(MaxRadius);
 
         {
             std::string maxIterationsStr;
@@ -374,6 +375,12 @@ public:
             std::string periodMaybeZeroStr;
             metafile >> periodMaybeZeroStr;
             PeriodMaybeZero = (IterType)std::stoll(periodMaybeZeroStr);
+        }
+
+        {
+            std::string uncompressedItersInOrbitStr;
+            metafile >> uncompressedItersInOrbitStr;
+            UncompressedItersInOrbit = (IterType)std::stoll(uncompressedItersInOrbitStr);
         }
 
         const auto orbfilename = filename + L".FullOrbit";
@@ -411,7 +418,6 @@ public:
         UnmapViewOfFile(pBuf);
         CloseHandle(hMapFile);
         CloseHandle(hFile);
-
         return true;
     }
 
@@ -624,6 +630,8 @@ public:
     std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::EnableCompression>>
     Compress(size_t NewGenerationNumber, size_t NewLaGenerationNumber) {
 
+        constexpr bool disable_compression = false;
+
         auto compressed =
             std::make_unique<PerturbationResults<IterType, T, PerturbExtras::EnableCompression>>(
                 NewGenerationNumber, NewLaGenerationNumber);
@@ -631,33 +639,42 @@ public:
 
         assert (FullOrbit.size() > 1);
 
-        T zx{};
-        T zy{};
-        OrbitXLow = FullOrbit[1].x;
-        OrbitYLow = FullOrbit[1].y;
-
-        for (size_t i = 0; i < FullOrbit.size(); i++) {
-            auto errX = zx - FullOrbit[i].x;
-            auto errY = zy - FullOrbit[i].y;
-
-            auto norm_z = FullOrbit[i].x * FullOrbit[i].x + FullOrbit[i].y * FullOrbit[i].y;
-            HdrReduce(norm_z);
-
-            auto err = (errX * errX + errY * errY) * T{ 1e16f };
-            HdrReduce(err);
-
-            if (HdrCompareToBothPositiveReducedGE(err, norm_z)) {
-                zx = FullOrbit[i].x;
-                zy = FullOrbit[i].y;
-
+        if constexpr (disable_compression) {
+            for (size_t i = 0; i < FullOrbit.size(); i++) {
                 compressed->FullOrbit.push_back({ FullOrbit[i].x, FullOrbit[i].y, i });
             }
 
-            auto zx_old = zx;
-            zx = zx * zx - zy * zy + OrbitXLow;
-            HdrReduce(zx);
-            zy = T{ 2 } * zx_old * zy + OrbitYLow;
-            HdrReduce(zy);
+            return compressed;
+        }
+        else {
+            T zx{};
+            T zy{};
+            OrbitXLow = FullOrbit[1].x;
+            OrbitYLow = FullOrbit[1].y;
+
+            for (size_t i = 0; i < FullOrbit.size(); i++) {
+                auto errX = zx - FullOrbit[i].x;
+                auto errY = zy - FullOrbit[i].y;
+
+                auto norm_z = FullOrbit[i].x * FullOrbit[i].x + FullOrbit[i].y * FullOrbit[i].y;
+                HdrReduce(norm_z);
+
+                auto err = (errX * errX + errY * errY) * T{ 1e17f };
+                HdrReduce(err);
+
+                if (HdrCompareToBothPositiveReducedGE(err, norm_z)) {
+                    zx = FullOrbit[i].x;
+                    zy = FullOrbit[i].y;
+
+                    compressed->FullOrbit.push_back({ FullOrbit[i].x, FullOrbit[i].y, i });
+                }
+
+                auto zx_old = zx;
+                zx = zx * zx - zy * zy + OrbitXLow;
+                HdrReduce(zx);
+                zy = T{ 2 } *zx_old * zy + OrbitYLow;
+                HdrReduce(zy);
+            }
         }
 
         return compressed;

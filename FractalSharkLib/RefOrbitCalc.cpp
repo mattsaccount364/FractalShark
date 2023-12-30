@@ -126,6 +126,9 @@ bool RefOrbitCalc::IsThisPerturbationArrayUsed(void* check) const {
     case RenderAlgorithm::GpuHDRx32PerturbedLAv2:
     case RenderAlgorithm::GpuHDRx32PerturbedLAv2PO:
     case RenderAlgorithm::GpuHDRx32PerturbedLAv2LAO:
+    case RenderAlgorithm::GpuHDRx32PerturbedRCLAv2:
+    case RenderAlgorithm::GpuHDRx32PerturbedRCLAv2PO:
+    case RenderAlgorithm::GpuHDRx32PerturbedRCLAv2LAO:
         return
             check == &c32d.m_PerturbationResultsHDRFloat ||
             check == &c32e.m_PerturbationResultsHDRFloat ||
@@ -140,6 +143,9 @@ bool RefOrbitCalc::IsThisPerturbationArrayUsed(void* check) const {
     case RenderAlgorithm::GpuHDRx64PerturbedLAv2:
     case RenderAlgorithm::GpuHDRx64PerturbedLAv2PO:
     case RenderAlgorithm::GpuHDRx64PerturbedLAv2LAO:
+    case RenderAlgorithm::GpuHDRx64PerturbedRCLAv2:
+    case RenderAlgorithm::GpuHDRx64PerturbedRCLAv2PO:
+    case RenderAlgorithm::GpuHDRx64PerturbedRCLAv2LAO:
         return
             check == &c32d.m_PerturbationResultsHDRDouble ||
             check == &c32e.m_PerturbationResultsHDRDouble ||
@@ -150,6 +156,9 @@ bool RefOrbitCalc::IsThisPerturbationArrayUsed(void* check) const {
     case RenderAlgorithm::Gpu1x32PerturbedLAv2:
     case RenderAlgorithm::Gpu1x32PerturbedLAv2PO:
     case RenderAlgorithm::Gpu1x32PerturbedLAv2LAO:
+    case RenderAlgorithm::Gpu1x32PerturbedRCLAv2:
+    case RenderAlgorithm::Gpu1x32PerturbedRCLAv2PO:
+    case RenderAlgorithm::Gpu1x32PerturbedRCLAv2LAO:
         return
             check == &c32d.m_PerturbationResultsFloat ||
             check == &c32e.m_PerturbationResultsFloat ||
@@ -160,6 +169,9 @@ bool RefOrbitCalc::IsThisPerturbationArrayUsed(void* check) const {
     case RenderAlgorithm::Gpu2x32PerturbedLAv2:
     case RenderAlgorithm::Gpu2x32PerturbedLAv2PO:
     case RenderAlgorithm::Gpu2x32PerturbedLAv2LAO:
+    case RenderAlgorithm::Gpu2x32PerturbedRCLAv2:
+    case RenderAlgorithm::Gpu2x32PerturbedRCLAv2PO:
+    case RenderAlgorithm::Gpu2x32PerturbedRCLAv2LAO:
         return
             check == &c32d.m_PerturbationResults2xFloat ||
             check == &c32e.m_PerturbationResults2xFloat ||
@@ -174,6 +186,9 @@ bool RefOrbitCalc::IsThisPerturbationArrayUsed(void* check) const {
     case RenderAlgorithm::Gpu1x64PerturbedLAv2:
     case RenderAlgorithm::Gpu1x64PerturbedLAv2PO:
     case RenderAlgorithm::Gpu1x64PerturbedLAv2LAO:
+    case RenderAlgorithm::Gpu1x64PerturbedRCLAv2:
+    case RenderAlgorithm::Gpu1x64PerturbedRCLAv2PO:
+    case RenderAlgorithm::Gpu1x64PerturbedRCLAv2LAO:
         return
             check == &c32d.m_PerturbationResultsDouble ||
             check == &c32e.m_PerturbationResultsDouble ||
@@ -184,6 +199,9 @@ bool RefOrbitCalc::IsThisPerturbationArrayUsed(void* check) const {
     case RenderAlgorithm::GpuHDRx2x32PerturbedLAv2:
     case RenderAlgorithm::GpuHDRx2x32PerturbedLAv2PO:
     case RenderAlgorithm::GpuHDRx2x32PerturbedLAv2LAO:
+    case RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2:
+    case RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2PO:
+    case RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2LAO:
         return
             check == &c32d.m_PerturbationResultsHDR2xFloat ||
             check == &c32e.m_PerturbationResultsHDR2xFloat ||
@@ -2069,6 +2087,9 @@ PerturbationResults<IterType, ConvertTType, PExtras>* RefOrbitCalc::GetAndCreate
                 GetNextGenerationNumber(),
                 GetNextLaGenerationNumber());
             results = AddPerturbationResults(std::move(compressedResults));
+
+            // Here we just delete the full orbit.
+            cur_array.pop_back();
         }
         else {
             results = cur_array[cur_array.size() - 1].get();

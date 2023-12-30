@@ -1926,7 +1926,7 @@ RenderAlgorithm Fractal::GetRenderAlgorithm() const {
     }
 }
 
-std::string Fractal::GetRenderAlgorithmName() const {
+const char *Fractal::GetRenderAlgorithmName() const {
     //
     // Returns the name of the render algorithm in use
     //
@@ -2431,7 +2431,7 @@ void Fractal::UsePaletteType(Palette type)
     }
 }
 
-int Fractal::GetPaletteDepthFromIndex(size_t index) const
+uint32_t Fractal::GetPaletteDepthFromIndex(size_t index) const
 {
     switch (index) {
     case 0: return 5;
@@ -2528,7 +2528,7 @@ void Fractal::UseNextPaletteAuxDepth(int32_t inc) {
     }
 }
 
-int Fractal::GetPaletteDepth() const {
+uint32_t Fractal::GetPaletteDepth() const {
     return GetPaletteDepthFromIndex(m_PaletteDepthIndex);
 }
 

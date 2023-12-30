@@ -1333,30 +1333,43 @@ void MenuGetCurPos(HWND hWnd)
     s = setupSS(reducedPrecZF);
     auto zoomFactorStr = std::string(s.begin(), s.end());
 
+    uint64_t PeriodMaybeZero;
+    uint64_t CompressedIters;
+    uint64_t UncompressedIters;
+    gFractal->GetSomeDetails(PeriodMaybeZero, CompressedIters, UncompressedIters);
+    auto additionalDetailsStr =
+        std::string("PeriodMaybeZero = ") + std::to_string(PeriodMaybeZero) + "\r\n" +
+        std::string("CompressedIters = ") + std::to_string(CompressedIters) + "\r\n" +
+        std::string("UncompressedIters = ") + std::to_string(UncompressedIters) + "\r\n" +
+        std::string("Compression ratio = ") + std::to_string((double)UncompressedIters / (double)CompressedIters) + "\r\n";
+
     snprintf(
         mem,
         numBytes,
         "This text is copied to clipboard.  Using \"%s\"\r\n"
         "Antialiasing: %u\r\n"
         "Palette depth: %u\r\n"
-        "Coordinate precision = %zu;\r\n"
+        "Coordinate precision = %u;\r\n"
         "Center X: \"%s\"\r\n"
         "Center Y: \"%s\"\r\n"
         "zoomFactor \"%s\"\r\n"
         "\r\n"
+        "Additional details:\r\n"
+        "%s\r\n"
         "Bounding box:\r\n"
         "minX = HighPrecision{ \"%s\" };\r\n"
         "minY = HighPrecision{ \"%s\" };\r\n"
         "maxX = HighPrecision{ \"%s\" };\r\n"
         "maxY = HighPrecision{ \"%s\" };\r\n"
         "SetNumIterations<IterTypeFull>(%zu);\r\n",
-        gFractal->GetRenderAlgorithmName().c_str(),
+        gFractal->GetRenderAlgorithmName(),
         gFractal->GetGpuAntialiasing(),
         gFractal->GetPaletteDepth(),
         prec,
         ptXStr.c_str(),
         ptYStr.c_str(),
         zoomFactorStr.c_str(),
+        additionalDetailsStr.c_str(),
         sminX.c_str(), sminY.c_str(),
         smaxX.c_str(), smaxY.c_str(),
         gFractal->GetNumIterations<IterTypeFull>());

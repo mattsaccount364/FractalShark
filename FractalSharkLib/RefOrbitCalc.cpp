@@ -200,6 +200,8 @@ bool RefOrbitCalc::IsThisPerturbationArrayUsed(void* check) const {
         assert(false);
         return false;
     }
+
+    static_assert(static_cast<int>(RenderAlgorithm::MAX) == 62, "Fix me");
 }
 
 void RefOrbitCalc::OptimizeMemory() {
@@ -2110,13 +2112,17 @@ PerturbationResults<IterType, ConvertTType, PExtras>* RefOrbitCalc::GetAndCreate
                 GetNextGenerationNumber(),
                 GetNextLaGenerationNumber());
 
-            return AddPerturbationResults(std::move(results2));
+            auto ret = AddPerturbationResults(std::move(results2));
+            m_LastUsedRefOrbit = ret;
+            return ret;
         }
         else {
+            m_LastUsedRefOrbit = resultsExisting;
             return resultsExisting;
         }
     }
     else {
+        m_LastUsedRefOrbit = results;
         return results;
     }
 }
@@ -2452,6 +2458,24 @@ const RefOrbitCalc::Container<IterType, PExtras> &RefOrbitCalc::GetContainer() c
         assert(false);
         return c32d;
     }
+}
+
+void RefOrbitCalc::GetSomeDetails(
+    uint64_t& PeriodMaybeZero,
+    uint64_t& CompressedIters,
+    uint64_t& UncompressedIters) {
+
+    auto lambda = [&](auto &&arg) {
+        if (arg != nullptr) {
+            PeriodMaybeZero = arg->GetPeriodMaybeZero();
+            CompressedIters = arg->GetCompressedOrbitSize();
+            UncompressedIters = arg->GetCountOrbitEntries();
+        }
+    };
+
+    std::visit(lambda, m_LastUsedRefOrbit);
+
+    static_assert(static_cast<int>(RenderAlgorithm::MAX) == 62, "Fix me");
 }
 
 #include "RefOrbitCalcTemplates.h"

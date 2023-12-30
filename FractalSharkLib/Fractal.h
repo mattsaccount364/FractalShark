@@ -117,7 +117,7 @@ public:
 
     RenderAlgorithm GetRenderAlgorithm(void) const;
     inline void SetRenderAlgorithm(RenderAlgorithm alg) { m_RenderAlgorithm = alg; }
-    std::string GetRenderAlgorithmName() const;
+    const char *GetRenderAlgorithmName() const;
 
     inline uint32_t GetGpuAntialiasing(void) const { return m_GpuAntialiasing; }
     inline uint32_t GetIterationPrecision(void) const { return m_IterationPrecision; }
@@ -151,8 +151,8 @@ public:
     };
 
     // Palette functions
-    int GetPaletteDepthFromIndex(size_t index) const;
-    int GetPaletteDepth() const; 
+    uint32_t GetPaletteDepthFromIndex(size_t index) const;
+    uint32_t GetPaletteDepth() const;
     void UsePalette(int depth);
     void UseNextPaletteDepth();
     void SetPaletteAuxDepth(int32_t aux_depth);
@@ -186,6 +186,13 @@ public:
     inline const HighPrecision& GetMaxY(void) const { return m_MaxY; }
     inline size_t GetRenderWidth(void) const { return m_ScrnWidth; }
     inline size_t GetRenderHeight(void) const { return m_ScrnHeight; }
+
+    void GetSomeDetails(
+        uint64_t& PeriodMaybeZero,
+        uint64_t& CompressedIters,
+        uint64_t& UncompressedIters) {
+        m_RefOrbit.GetSomeDetails(PeriodMaybeZero, CompressedIters, UncompressedIters);
+    }
 
     static DWORD WINAPI ServerManageMainConnectionThread(void*);
     static DWORD WINAPI ServerManageSubConnectionThread(void*);

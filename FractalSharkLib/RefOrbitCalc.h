@@ -2,6 +2,7 @@
 
 #include "HDRFloat.h"
 #include "HighPrecision.h"
+#include <variant>
 
 class Fractal;
 
@@ -79,6 +80,11 @@ public:
     void SaveAllOrbits();
     void LoadAllOrbits();
 
+    void GetSomeDetails(
+        uint64_t &PeriodMaybeZero,
+        uint64_t &CompressedIters,
+        uint64_t &UncompressedIters);
+
 private:
     bool RequiresBadCalc() const;
     bool IsThisPerturbationArrayUsed(void* check) const;
@@ -146,4 +152,48 @@ private:
 
     template<typename IterType, PerturbExtras PExtras>
     const Container<IterType, PExtras>& GetContainer() const;
+
+    std::variant<
+        PerturbationResults<uint32_t, double, PerturbExtras::Disable>*,
+        PerturbationResults<uint32_t, float, PerturbExtras::Disable>*,
+        PerturbationResults<uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::Disable>*,
+        PerturbationResults<uint32_t, HDRFloat<double>, PerturbExtras::Disable>*,
+        PerturbationResults<uint32_t, HDRFloat<float>, PerturbExtras::Disable>*,
+        PerturbationResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable>*,
+
+        PerturbationResults<uint32_t, double, PerturbExtras::Bad>*,
+        PerturbationResults<uint32_t, float, PerturbExtras::Bad>*,
+        PerturbationResults<uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::Bad>*,
+        PerturbationResults<uint32_t, HDRFloat<double>, PerturbExtras::Bad>*,
+        PerturbationResults<uint32_t, HDRFloat<float>, PerturbExtras::Bad>*,
+        PerturbationResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad>*,
+
+        PerturbationResults<uint32_t, double, PerturbExtras::EnableCompression>*,
+        PerturbationResults<uint32_t, float, PerturbExtras::EnableCompression>*,
+        PerturbationResults<uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::EnableCompression>*,
+        PerturbationResults<uint32_t, HDRFloat<double>, PerturbExtras::EnableCompression>*,
+        PerturbationResults<uint32_t, HDRFloat<float>, PerturbExtras::EnableCompression>*,
+        PerturbationResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::EnableCompression>*,
+
+        PerturbationResults<uint64_t, double, PerturbExtras::Disable>*,
+        PerturbationResults<uint64_t, float, PerturbExtras::Disable>*,
+        PerturbationResults<uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::Disable>*,
+        PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::Disable>*,
+        PerturbationResults<uint64_t, HDRFloat<float>, PerturbExtras::Disable>*,
+        PerturbationResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable>*,
+
+        PerturbationResults<uint64_t, double, PerturbExtras::Bad>*,
+        PerturbationResults<uint64_t, float, PerturbExtras::Bad>*,
+        PerturbationResults<uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::Bad>*,
+        PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::Bad>*,
+        PerturbationResults<uint64_t, HDRFloat<float>, PerturbExtras::Bad>*,
+        PerturbationResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad>*,
+
+        PerturbationResults<uint64_t, double, PerturbExtras::EnableCompression>*,
+        PerturbationResults<uint64_t, float, PerturbExtras::EnableCompression>*,
+        PerturbationResults<uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::EnableCompression>*,
+        PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::EnableCompression>*,
+        PerturbationResults<uint64_t, HDRFloat<float>, PerturbExtras::EnableCompression>*,
+        PerturbationResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::EnableCompression>*
+    > m_LastUsedRefOrbit;
 };

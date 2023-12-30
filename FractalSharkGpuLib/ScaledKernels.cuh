@@ -67,8 +67,8 @@ void mandel_1x_float_perturb_scaled(
     T TwoFiftySix = T(256.0);
 
     while (iter < n_iterations) {
-        const GPUReferenceIter<float, PerturbExtras::Bad>* curFloatIter = &PerturbFloat.iters[RefIteration];
-        const GPUReferenceIter<T, PerturbExtras::Bad>* curDoubleIter = &PerturbDouble.iters[RefIteration];
+        const GPUReferenceIter<float, PerturbExtras::Bad>* curFloatIter = PerturbFloat.ScaledOnlyGetIter(RefIteration);
+        const GPUReferenceIter<T, PerturbExtras::Bad>* curDoubleIter = PerturbDouble.ScaledOnlyGetIter(RefIteration);
 
         if (curFloatIter->bad == false) {
             const float DeltaSubNWXOrig = DeltaSubNWX;
@@ -86,8 +86,8 @@ void mandel_1x_float_perturb_scaled(
                 DeltaSub0DY;
 
             ++RefIteration;
-            curFloatIter = &PerturbFloat.iters[RefIteration];
-            curDoubleIter = &PerturbDouble.iters[RefIteration];
+            curFloatIter = PerturbFloat.ScaledOnlyGetIter(RefIteration);
+            curDoubleIter = PerturbDouble.ScaledOnlyGetIter(RefIteration);
 
             const float tempZX =
                 curFloatIter->x + DeltaSubNWX * s; // Xxrd
@@ -186,8 +186,8 @@ void mandel_1x_float_perturb_scaled(
             HdrReduce(DoubleTempDeltaSubNWY);
 
             ++RefIteration;
-            curFloatIter = &PerturbFloat.iters[RefIteration];
-            curDoubleIter = &PerturbDouble.iters[RefIteration];
+            curFloatIter = PerturbFloat.ScaledOnlyGetIter(RefIteration);
+            curDoubleIter = PerturbDouble.ScaledOnlyGetIter(RefIteration);
 
             const T tempZX =
                 curDoubleIter->x +
@@ -308,8 +308,8 @@ void mandel_1x_float_perturb_scaled_bla(
     IterType MaxRefIteration = PerturbFloat.GetCountOrbitEntries() - 1;
 
     while (iter < n_iterations) {
-        const GPUReferenceIter<float, PerturbExtras::Bad>* curFloatIter = &PerturbFloat.iters[RefIteration];
-        const GPUReferenceIter<double, PerturbExtras::Bad>* curDoubleIter = &PerturbDouble.iters[RefIteration];
+        const GPUReferenceIter<float, PerturbExtras::Bad>* curFloatIter = PerturbFloat.ScaledOnlyGetIter(RefIteration);
+        const GPUReferenceIter<double, PerturbExtras::Bad>* curDoubleIter = PerturbDouble.ScaledOnlyGetIter(RefIteration);
 
         double DeltaSubNX = DeltaSubNWX * S;
         double DeltaSubNY = DeltaSubNWY * S;
@@ -335,7 +335,7 @@ void mandel_1x_float_perturb_scaled_bla(
 
                 b->getValue(DeltaSubNX, DeltaSubNY, DeltaReal, DeltaImaginary);
 
-                curDoubleIter = &PerturbDouble.iters[RefIteration];
+                curDoubleIter = PerturbDouble.ScaledOnlyGetIter(RefIteration);
                 const double tempZX = curDoubleIter->x + DeltaSubNX;
                 const double tempZY = curDoubleIter->y + DeltaSubNY;
                 const double normSquared = tempZX * tempZX + tempZY * tempZY;
@@ -376,8 +376,8 @@ void mandel_1x_float_perturb_scaled_bla(
             break;
         }
 
-        curFloatIter = &PerturbFloat.iters[RefIteration];
-        curDoubleIter = &PerturbDouble.iters[RefIteration];
+        curFloatIter = PerturbFloat.ScaledOnlyGetIter(RefIteration);
+        curDoubleIter = PerturbDouble.ScaledOnlyGetIter(RefIteration);
 
         if (curFloatIter->bad == false) {
             const float DeltaSubNWXOrig = DeltaSubNWX;
@@ -395,8 +395,8 @@ void mandel_1x_float_perturb_scaled_bla(
                 DeltaSub0DY;
 
             ++RefIteration;
-            curFloatIter = &PerturbFloat.iters[RefIteration];
-            curDoubleIter = &PerturbDouble.iters[RefIteration];
+            curFloatIter = PerturbFloat.ScaledOnlyGetIter(RefIteration);
+            curDoubleIter = PerturbDouble.ScaledOnlyGetIter(RefIteration);
 
             const float tempZX =
                 curFloatIter->x + DeltaSubNWX * s; // Xxrd
@@ -486,8 +486,8 @@ void mandel_1x_float_perturb_scaled_bla(
                 DeltaImaginary / S;
 
             ++RefIteration;
-            curFloatIter = &PerturbFloat.iters[RefIteration];
-            curDoubleIter = &PerturbDouble.iters[RefIteration];
+            curFloatIter = PerturbFloat.ScaledOnlyGetIter(RefIteration);
+            curDoubleIter = PerturbDouble.ScaledOnlyGetIter(RefIteration);
 
             const double tempZX =
                 curDoubleIter->x +
@@ -606,8 +606,8 @@ void mandel_2x_float_perturb_scaled(
     IterType MaxRefIteration = PerturbDoubleFlt.GetCountOrbitEntries() - 1;
 
     while (iter < n_iterations) {
-        const GPUReferenceIter<dblflt, PerturbExtras::Bad>* curDblFloatIter = &PerturbDoubleFlt.iters[RefIteration];
-        const GPUReferenceIter<double, PerturbExtras::Bad>* curDoubleIter = &PerturbDouble.iters[RefIteration];
+        const GPUReferenceIter<dblflt, PerturbExtras::Bad>* curDblFloatIter = PerturbDoubleFlt.ScaledOnlyGetIter(RefIteration);
+        const GPUReferenceIter<double, PerturbExtras::Bad>* curDoubleIter = PerturbDouble.ScaledOnlyGetIter(RefIteration);
 
         if (curDblFloatIter->bad == false) {
             const dblflt DeltaSubNWXOrig = DeltaSubNWX;
@@ -628,8 +628,8 @@ void mandel_2x_float_perturb_scaled(
             DeltaSubNWY = add_dblflt(DeltaSubNWY, DeltaSub0DY);
 
             ++RefIteration;
-            curDblFloatIter = &PerturbDoubleFlt.iters[RefIteration];
-            curDoubleIter = &PerturbDouble.iters[RefIteration];
+            curDblFloatIter = PerturbDoubleFlt.ScaledOnlyGetIter(RefIteration);
+            curDoubleIter = PerturbDouble.ScaledOnlyGetIter(RefIteration);
 
             const dblflt tempZX =
                 add_dblflt(curDblFloatIter->x, mul_dblflt(DeltaSubNWX, s)); // Xxrd
@@ -716,8 +716,8 @@ void mandel_2x_float_perturb_scaled(
                 DeltaImaginary / S;
 
             ++RefIteration;
-            curDblFloatIter = &PerturbDoubleFlt.iters[RefIteration];
-            curDoubleIter = &PerturbDouble.iters[RefIteration];
+            curDblFloatIter = PerturbDoubleFlt.ScaledOnlyGetIter(RefIteration);
+            curDoubleIter = PerturbDouble.ScaledOnlyGetIter(RefIteration);
 
             const double tempZX =
                 curDoubleIter->x +

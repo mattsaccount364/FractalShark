@@ -215,6 +215,11 @@ public:
         }
     }
 
+    CUDA_CRAP
+    const GPUReferenceIter<Type, PExtras> *ScaledOnlyGetIter(IterType index) const {
+        return &FullOrbit[index];
+    }
+
 private:
     // Do a binary search.  Given the uncompressed index, search the compressed
     // FullOrbit array for the nearest UncompressedIndex that's less than or equal

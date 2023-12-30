@@ -9,8 +9,8 @@ void mandel_2x_float_perturb_setup(GPUPerturbSingleResults<IterType, dblflt> Per
         return;
 
     for (IterType i = 0; i < PerturbDblFlt.GetCountOrbitEntries(); i++) {
-        PerturbDblFlt.iters[i].x = add_float_to_dblflt(PerturbDblFlt.iters[i].x.y, PerturbDblFlt.iters[i].x.x);
-        PerturbDblFlt.iters[i].y = add_float_to_dblflt(PerturbDblFlt.iters[i].y.y, PerturbDblFlt.iters[i].y.x);
+        PerturbDblFlt.ScaledOnlyGetIter(i).x = add_float_to_dblflt(PerturbDblFlt.ScaledOnlyGetIter(i).x.y, PerturbDblFlt.ScaledOnlyGetIter(i).x.x);
+        PerturbDblFlt.ScaledOnlyGetIter(i).y = add_float_to_dblflt(PerturbDblFlt.ScaledOnlyGetIter(i).y.y, PerturbDblFlt.ScaledOnlyGetIter(i).y.x);
     }
 }
 
@@ -127,7 +127,7 @@ void mandel_2x_float_perturb(
     DeltaSubNY = add_float_to_dblflt(0, 0);
 
     while (iter < n_iterations) {
-        GPUReferenceIter<dblflt>* CurIter = &PerturbDblFlt.iters[RefIteration];
+        const GPUReferenceIter<dblflt>* CurIter = &PerturbDblFlt.ScaledOnlyGetIter(RefIteration);
 
         const dblflt DeltaSubNXOrig = DeltaSubNX;
         const dblflt DeltaSubNYOrig = DeltaSubNY;
@@ -153,7 +153,7 @@ void mandel_2x_float_perturb(
         DeltaSubNY = add_dblflt(DeltaSubNY, DeltaSub0Y);
 
         ++RefIteration;
-        CurIter = &PerturbDblFlt.iters[RefIteration];
+        CurIter = &PerturbDblFlt.ScaledOnlyGetIter(RefIteration);
 
         const dblflt tempZX = add_dblflt(CurIter->x, DeltaSubNX);
         const dblflt tempZY = add_dblflt(CurIter->y, DeltaSubNY);

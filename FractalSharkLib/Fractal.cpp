@@ -871,7 +871,13 @@ void Fractal::BasicTest() {
             CurAlg != RenderAlgorithm::Gpu1x64PerturbedLAv2LAO &&
             CurAlg != RenderAlgorithm::GpuHDRx32PerturbedLAv2LAO &&
             CurAlg != RenderAlgorithm::GpuHDRx2x32PerturbedLAv2LAO &&
-            CurAlg != RenderAlgorithm::GpuHDRx64PerturbedLAv2LAO) {
+            CurAlg != RenderAlgorithm::GpuHDRx64PerturbedLAv2LAO &&
+            CurAlg != RenderAlgorithm::Gpu1x32PerturbedRCLAv2LAO &&
+            CurAlg != RenderAlgorithm::Gpu2x32PerturbedRCLAv2LAO &&
+            CurAlg != RenderAlgorithm::Gpu1x64PerturbedRCLAv2LAO &&
+            CurAlg != RenderAlgorithm::GpuHDRx32PerturbedRCLAv2LAO &&
+            CurAlg != RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2LAO &&
+            CurAlg != RenderAlgorithm::GpuHDRx64PerturbedRCLAv2LAO) {
             BasicOneTest(0, DirName, L"View0", CurAlg);
         }
     }
@@ -890,20 +896,59 @@ void Fractal::BasicTest() {
         RenderAlgorithm::Gpu1x64PerturbedLAv2,
         RenderAlgorithm::Gpu1x64PerturbedLAv2PO,
         RenderAlgorithm::Gpu1x64PerturbedLAv2LAO,
+        RenderAlgorithm::Gpu1x64PerturbedRCLAv2,
+        RenderAlgorithm::Gpu1x64PerturbedRCLAv2PO,
+        RenderAlgorithm::Gpu1x64PerturbedRCLAv2LAO,
         RenderAlgorithm::GpuHDRx32PerturbedLAv2,
         RenderAlgorithm::GpuHDRx32PerturbedLAv2PO,
         RenderAlgorithm::GpuHDRx32PerturbedLAv2LAO,
+        RenderAlgorithm::GpuHDRx32PerturbedRCLAv2,
+        RenderAlgorithm::GpuHDRx32PerturbedRCLAv2PO,
+        RenderAlgorithm::GpuHDRx32PerturbedRCLAv2LAO,
         RenderAlgorithm::GpuHDRx2x32PerturbedLAv2,
         RenderAlgorithm::GpuHDRx2x32PerturbedLAv2PO,
         RenderAlgorithm::GpuHDRx2x32PerturbedLAv2LAO,
+        RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2,
+        RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2PO,
+        RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2LAO,
         RenderAlgorithm::GpuHDRx64PerturbedLAv2,
         RenderAlgorithm::GpuHDRx64PerturbedLAv2PO,
         RenderAlgorithm::GpuHDRx64PerturbedLAv2LAO,
+        RenderAlgorithm::GpuHDRx64PerturbedRCLAv2,
+        RenderAlgorithm::GpuHDRx64PerturbedRCLAv2PO,
+        RenderAlgorithm::GpuHDRx64PerturbedRCLAv2LAO,
     };
 
     for (auto CurAlg : View5Algs) {
         BasicOneTest(5, DirName, L"View5", CurAlg);
     }
+
+    // This one is quite slow.  Be advised.
+    RenderAlgorithm View10Algs[] = {
+        RenderAlgorithm::GpuHDRx32PerturbedLAv2,
+        RenderAlgorithm::GpuHDRx32PerturbedLAv2PO,
+        RenderAlgorithm::GpuHDRx32PerturbedLAv2LAO,
+        RenderAlgorithm::GpuHDRx32PerturbedRCLAv2,
+        RenderAlgorithm::GpuHDRx32PerturbedRCLAv2PO,
+        RenderAlgorithm::GpuHDRx32PerturbedRCLAv2LAO,
+        RenderAlgorithm::GpuHDRx2x32PerturbedLAv2,
+        RenderAlgorithm::GpuHDRx2x32PerturbedLAv2PO,
+        RenderAlgorithm::GpuHDRx2x32PerturbedLAv2LAO,
+        RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2,
+        RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2PO,
+        RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2LAO,
+        RenderAlgorithm::GpuHDRx64PerturbedLAv2,
+        RenderAlgorithm::GpuHDRx64PerturbedLAv2PO,
+        RenderAlgorithm::GpuHDRx64PerturbedLAv2LAO,
+        RenderAlgorithm::GpuHDRx64PerturbedRCLAv2,
+        RenderAlgorithm::GpuHDRx64PerturbedRCLAv2PO,
+        RenderAlgorithm::GpuHDRx64PerturbedRCLAv2LAO,
+    };
+
+    for (auto CurAlg : View10Algs) {
+        BasicOneTest(10, DirName, L"View10", CurAlg);
+    }
+
 
     // Finally, iterate over all the RenderAlgorithm entries that should work with View #11.
     RenderAlgorithm View11Algs[] = {
@@ -915,12 +960,21 @@ void Fractal::BasicTest() {
         RenderAlgorithm::GpuHDRx32PerturbedLAv2,
         RenderAlgorithm::GpuHDRx32PerturbedLAv2PO,
         RenderAlgorithm::GpuHDRx32PerturbedLAv2LAO,
+        RenderAlgorithm::GpuHDRx32PerturbedRCLAv2,
+        RenderAlgorithm::GpuHDRx32PerturbedRCLAv2PO,
+        RenderAlgorithm::GpuHDRx32PerturbedRCLAv2LAO,
         RenderAlgorithm::GpuHDRx2x32PerturbedLAv2,
         RenderAlgorithm::GpuHDRx2x32PerturbedLAv2PO,
         RenderAlgorithm::GpuHDRx2x32PerturbedLAv2LAO,
+        RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2,
+        RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2PO,
+        RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2LAO,
         RenderAlgorithm::GpuHDRx64PerturbedLAv2,
         RenderAlgorithm::GpuHDRx64PerturbedLAv2PO,
         RenderAlgorithm::GpuHDRx64PerturbedLAv2LAO,
+        RenderAlgorithm::GpuHDRx64PerturbedRCLAv2,
+        RenderAlgorithm::GpuHDRx64PerturbedRCLAv2PO,
+        RenderAlgorithm::GpuHDRx64PerturbedRCLAv2LAO,
     };
 
     for (auto CurAlg : View11Algs) {

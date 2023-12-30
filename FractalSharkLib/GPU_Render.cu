@@ -50,11 +50,11 @@ constexpr static bool EnableGpu2x64 = Default;
 constexpr static bool EnableGpu4x64 = Default;
 constexpr static bool EnableGpuHDRx32 = Default;
 
-constexpr static bool EnableGpu1x32PerturbedScaled = false;
-constexpr static bool EnableGpu2x32PerturbedScaled = false;
-constexpr static bool EnableGpuHDRx32PerturbedScaled = false;
+constexpr static bool EnableGpu1x32PerturbedScaled = Default;
+constexpr static bool EnableGpu2x32PerturbedScaled = Default;
+constexpr static bool EnableGpuHDRx32PerturbedScaled = Default;
 
-constexpr static bool EnableGpu1x32PerturbedScaledBLA = false;
+constexpr static bool EnableGpu1x32PerturbedScaledBLA = Default;
 constexpr static bool EnableGpu1x64PerturbedBLA = Default;
 constexpr static bool EnableGpuHDRx32PerturbedBLA = Default;
 constexpr static bool EnableGpuHDRx64PerturbedBLA = Default;

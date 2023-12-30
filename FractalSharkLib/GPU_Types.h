@@ -256,14 +256,16 @@ struct CompressionIndex {
 };
 
 #pragma pack(push, 8)
-template<typename Type, PerturbExtras PExtras = PerturbExtras::Disable>
-struct /*alignas(8)*/ GPUReferenceIter :
+template<typename Type, PerturbExtras PExtras>
+class /*alignas(8)*/ GPUReferenceIter :
     public std::conditional_t<
     PExtras == PerturbExtras::Bad,
     BadField,
     std::conditional_t<PExtras == PerturbExtras::EnableCompression,
         CompressionIndex,
         Empty>> {
+
+public:
 
     static constexpr uint64_t BadCompressionIndex = 0xFFFF'FFFF'FFFF'FFFFull;
 
@@ -431,8 +433,8 @@ private:
     T OrbitYLow;
 };
 
-template<typename IterType, typename Type, PerturbExtras PExtras = PerturbExtras::Disable>
-struct GPUPerturbSingleResults;
+template<typename IterType, typename Type, PerturbExtras PExtras>
+class GPUPerturbSingleResults;
 
 
 template<typename IterType, class T, class SubType>

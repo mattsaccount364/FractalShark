@@ -43,13 +43,13 @@ public:
         check_size<HDRFloat<CudaDblflt<MattDblflt>>, HDRFloat<CudaDblflt<dblflt>>>();
         check_size<Type, Other>();
 
-        check_size<GPUReferenceIter<float>, 8>();
-        check_size<GPUReferenceIter<double>, 16>();
-        check_size<GPUReferenceIter<HDRFloat<float>>, 16>();
-        check_size<GPUReferenceIter<HDRFloat<double>>, 32>();
-        check_size<GPUReferenceIter<HDRFloat<CudaDblflt<MattDblflt>>>, 24>();
-        check_size<GPUReferenceIter<HDRFloat<CudaDblflt<dblflt>>>, 24>();
-        check_size<GPUReferenceIter<dblflt>, 16>();
+        check_size<GPUReferenceIter<float, PerturbExtras::Disable>, 8>();
+        check_size<GPUReferenceIter<double, PerturbExtras::Disable>, 16>();
+        check_size<GPUReferenceIter<HDRFloat<float>, PerturbExtras::Disable>, 16>();
+        check_size<GPUReferenceIter<HDRFloat<double>, PerturbExtras::Disable>, 32>();
+        check_size<GPUReferenceIter<HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable>, 24>();
+        check_size<GPUReferenceIter<HDRFloat<CudaDblflt<dblflt>>, PerturbExtras::Disable>, 24>();
+        check_size<GPUReferenceIter<dblflt, PerturbExtras::Disable>, 16>();
 
         GPUReferenceIter<Type, PExtras>* tempIters;
         AllocHost = false;
@@ -139,7 +139,7 @@ public:
     }
 
     CUDA_CRAP
-    void GetIter(IterType uncompressed_index, Type &x, Type &y) const {
+    void GetIterRandom(IterType uncompressed_index, Type &x, Type &y) const {
         if constexpr (PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::Bad) {
             x = FullOrbit[uncompressed_index].x;
             y = FullOrbit[uncompressed_index].y;
@@ -151,22 +151,81 @@ public:
         }
     }
 
+    struct SeqWorkspace {
+        CUDA_CRAP
+        SeqWorkspace(GPUPerturbSingleResults &results, IterType startUncompressedIndex) {
+
+            if constexpr (PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::Bad) {
+                uncompressed_index = startUncompressedIndex;
+                compressed_index = startUncompressedIndex + 1;
+                zx = results.FullOrbit[startUncompressedIndex].x;
+                zy = results.FullOrbit[startUncompressedIndex].y;
+                return;
+            }
+            else {
+                compressed_index = results.BinarySearch(startUncompressedIndex);
+                uncompressed_index = results.FullOrbit[compressed_index].CompressionIndex;
+                zx = results.FullOrbit[compressed_index].x;
+                zy = results.FullOrbit[compressed_index].y;
+
+                compressed_index++;
+
+                for (; uncompressed_index < results.UncompressedItersInOrbit;
+                    uncompressed_index++) {
+
+                    if (uncompressed_index == startUncompressedIndex) {
+                        return;
+                    }
+
+                    auto zx_old = zx;
+                    zx = zx * zx - zy * zy + results.OrbitXLow;
+                    HdrReduce(zx);
+                    zy = Type{ 2 } *zx_old * zy + results.OrbitYLow;
+                    HdrReduce(zy);
+                }
+
+                *this = {};
+            }
+        }
+
+        CUDA_CRAP SeqWorkspace() : compressed_index{}, uncompressed_index{}, zx{}, zy{} {}
+
+        IterType compressed_index;
+        IterType uncompressed_index;
+        Type zx;
+        Type zy;
+    };
+
     // Returns the value multiplied by two
     CUDA_CRAP
-    void GetIterX2(IterType index, Type &x, Type &y) const {
-        GetIter(index, x, y);
+    void GetIterRandomX2(IterType index, Type &x, Type &y) const {
+        GetIterRandom(index, x, y);
         x = x * Type{ 2 };
         y = y * Type{ 2 };
     }
 
     CUDA_CRAP
-    HDRFloatComplex<SubType> GetCompressedComplex(IterType uncompressed_index) const {
+    void GetIterSeq(SeqWorkspace &workspace) const {
+        if constexpr (PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::Bad) {
+            workspace.uncompressed_index++;
+            workspace.zx = FullOrbit[workspace.uncompressed_index].x;
+            workspace.zy = FullOrbit[workspace.uncompressed_index].y;
+        } else if constexpr (PExtras == PerturbExtras::EnableCompression) {
+            GetCompressedComplexSeq(workspace);           
+        }
+    }
 
-        // Do a binary search.  Given the uncompressed index, search the compressed
-        // FullOrbit array for the nearest UncompressedIndex that's less than or equal
-        // to the provided uncompressed index.  Return the compressed index for that
-        // uncompressed index.
-        auto BinarySearch = [&](IterType uncompressed_index) {
+private:
+    // Do a binary search.  Given the uncompressed index, search the compressed
+    // FullOrbit array for the nearest UncompressedIndex that's less than or equal
+    // to the provided uncompressed index.  Return the compressed index for that
+    // uncompressed index.
+    CUDA_CRAP
+    IterType BinarySearch(IterType uncompressed_index) const {
+        if constexpr (PExtras == PerturbExtras::Disable) {
+            return uncompressed_index;
+        }
+        else {
             IterType low = 0;
             IterType high = OrbitSize - 1;
 
@@ -185,9 +244,11 @@ public:
             }
 
             return high;
-            };
+        }
+    }
 
-
+    CUDA_CRAP
+    HDRFloatComplex<SubType> GetCompressedComplex(IterType uncompressed_index) const {
         auto BestCompressedIndexGuess = BinarySearch(uncompressed_index);
 
         Type zx = FullOrbit[BestCompressedIndexGuess].x;
@@ -208,13 +269,33 @@ public:
             HdrReduce(zy);
         }
 
-        // TODO This is an error
+        // TODO This is an error condition, but we don't have a good way to report it
         return {};
     }
 
-private:
-    const GPUReferenceIter<Type, PExtras>* __restrict__ FullOrbit;
+    CUDA_CRAP
+    void GetCompressedComplexSeq(SeqWorkspace &workspace) const {
+        workspace.uncompressed_index++;
+        // compressed already points to the next one
 
+        // TODO do we ever walk off the end here
+
+        auto nextIndex = FullOrbit[workspace.compressed_index].CompressionIndex;
+        if (nextIndex == workspace.uncompressed_index) {
+            workspace.zx = FullOrbit[workspace.compressed_index].x;
+            workspace.zy = FullOrbit[workspace.compressed_index].y;
+            workspace.compressed_index++;
+        }
+        else {
+            auto zx_old = workspace.zx;
+            workspace.zx = workspace.zx * workspace.zx - workspace.zy * workspace.zy + OrbitXLow;
+            HdrReduce(workspace.zx);
+            workspace.zy = Type{ 2 } *zx_old * workspace.zy + OrbitYLow;
+            HdrReduce(workspace.zy);
+        }
+    }
+
+    const GPUReferenceIter<Type, PExtras>* __restrict__ FullOrbit;
     IterType OrbitSize;
     IterType UncompressedItersInOrbit;
     IterType PeriodMaybeZero;

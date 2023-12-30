@@ -1349,7 +1349,7 @@ void MenuGetCurPos(HWND hWnd)
         "This text is copied to clipboard.  Using \"%s\"\r\n"
         "Antialiasing: %u\r\n"
         "Palette depth: %u\r\n"
-        "Coordinate precision = %u;\r\n"
+        "Coordinate precision = %zu;\r\n"
         "Center X: \"%s\"\r\n"
         "Center Y: \"%s\"\r\n"
         "zoomFactor \"%s\"\r\n"

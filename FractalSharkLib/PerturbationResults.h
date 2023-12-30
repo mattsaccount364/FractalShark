@@ -643,7 +643,7 @@ public:
             auto norm_z = FullOrbit[i].x * FullOrbit[i].x + FullOrbit[i].y * FullOrbit[i].y;
             HdrReduce(norm_z);
 
-            auto err = (errX * errX + errY * errY) * T{ 1e12f };
+            auto err = (errX * errX + errY * errY) * T{ 1e16f };
             HdrReduce(err);
 
             if (HdrCompareToBothPositiveReducedGE(err, norm_z)) {

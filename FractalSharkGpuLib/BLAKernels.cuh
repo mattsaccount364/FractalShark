@@ -17,7 +17,7 @@ __global__
 void mandel_1x_double_perturb_bla(
     IterType* OutputIterMatrix,
     AntialiasedColors OutputColorMatrix,
-    GPUPerturbSingleResults<IterType, double> PerturbDouble,
+    GPUPerturbSingleResults<IterType, double, PerturbExtras::Disable> PerturbDouble,
     GPU_BLAS<IterType, double, BLA<double>, LM2> doubleBlas,
     int width,
     int height,
@@ -90,7 +90,7 @@ void mandel_1x_double_perturb_bla(
 
             double tempZX;
             double tempZY;
-            PerturbDouble.GetIter(RefIteration, tempZX, tempZY);
+            PerturbDouble.GetIterRandom(RefIteration, tempZX, tempZY);
             tempZX = tempZX + DeltaSubNX;
             tempZY = tempZY + DeltaSubNY;
 
@@ -119,7 +119,7 @@ void mandel_1x_double_perturb_bla(
 
         double tempZX;
         double tempZY;
-        PerturbDouble.GetIter(RefIteration, tempZX, tempZY);
+        PerturbDouble.GetIterRandom(RefIteration, tempZX, tempZY);
 
         DeltaSubNX = DeltaSubNXOrig * (tempZX * 2 + DeltaSubNXOrig) -
             DeltaSubNYOrig * (tempZY * 2 + DeltaSubNYOrig) +
@@ -130,7 +130,7 @@ void mandel_1x_double_perturb_bla(
 
         ++RefIteration;
 
-        PerturbDouble.GetIter(RefIteration, tempZX, tempZY);
+        PerturbDouble.GetIterRandom(RefIteration, tempZX, tempZY);
         tempZX = tempZX + DeltaSubNX;
         tempZY = tempZY + DeltaSubNY;
 
@@ -185,7 +185,7 @@ void
 mandel_1xHDR_float_perturb_bla(
     IterType* OutputIterMatrix,
     AntialiasedColors OutputColorMatrix,
-    GPUPerturbSingleResults<IterType, HDRFloatType> Perturb,
+    GPUPerturbSingleResults<IterType, HDRFloatType, PerturbExtras::Disable> Perturb,
     GPU_BLAS<IterType, HDRFloatType, BLA<HDRFloatType>, LM2> blas,
     int width,
     int height,
@@ -270,7 +270,7 @@ mandel_1xHDR_float_perturb_bla(
 
         HDRFloatType tempMulX2;
         HDRFloatType tempMulY2;
-        Perturb.GetIterX2(RefIteration, tempMulX2, tempMulY2);
+        Perturb.GetIterRandomX2(RefIteration, tempMulX2, tempMulY2);
 
         ++RefIteration;
 
@@ -321,7 +321,7 @@ mandel_1xHDR_float_perturb_bla(
 
         HDRFloatType tempVal1X;
         HDRFloatType tempVal1Y;
-        Perturb.GetIter(RefIteration, tempVal1X, tempVal1Y);
+        Perturb.GetIterRandom(RefIteration, tempVal1X, tempVal1Y);
 
         const HDRFloatType tempZX = tempVal1X + DeltaSubNX;
         const HDRFloatType tempZY = tempVal1Y + DeltaSubNY;
@@ -400,7 +400,7 @@ mandel_1xHDR_float_perturb_bla(
                 //HDRFloatType tempZY = shared->PerThread[threadIdx.x][threadIdx.y].CurResult.y + DeltaSubNY;
                 HDRFloatType tempZX;
                 HDRFloatType tempZY;
-                Perturb.GetIter(RefIteration, tempZX, tempZY);
+                Perturb.GetIterRandom(RefIteration, tempZX, tempZY);
 
                 DeltaSubNX = tempZX + DeltaSubNX;
                 DeltaSubNY = tempZY + DeltaSubNY;

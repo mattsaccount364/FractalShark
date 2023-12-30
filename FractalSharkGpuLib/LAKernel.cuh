@@ -76,7 +76,7 @@ mandel_1xHDR_float_perturb_lav2(
         if (iter != 0 && RefIteration < MaxRefIteration) {
             T tempX;
             T tempY;            
-            Perturb.GetIter(RefIteration, tempX, tempY);
+            Perturb.GetIterRandom(RefIteration, tempX, tempY);
             complex0 = TComplex{ tempX, tempY } + DeltaSubN;
         }
         else if (iter != 0 && Perturb.GetPeriodMaybeZero() != 0) {
@@ -84,7 +84,7 @@ mandel_1xHDR_float_perturb_lav2(
 
             T tempX;
             T tempY;
-            Perturb.GetIter(RefIteration, tempX, tempY);
+            Perturb.GetIterRandom(RefIteration, tempX, tempY);
             complex0 = TComplex{ tempX, tempY } + DeltaSubN;
         }
 
@@ -134,13 +134,15 @@ mandel_1xHDR_float_perturb_lav2(
         //////////////////////
 
         auto perturbLoop = [&](IterType maxIterations) {
+            typename GPUPerturbSingleResults<IterType, T, PExtras>::SeqWorkspace
+                workspace{ Perturb, RefIteration };
+
             for (;;) {
                 const T DeltaSubNXOrig{ DeltaSubNX };
                 const T DeltaSubNYOrig{ DeltaSubNY };
 
-                T tempMulX2;
-                T tempMulY2;
-                Perturb.GetIterX2(RefIteration, tempMulX2, tempMulY2);
+                T tempMulX2 = workspace.zx * T{ 2 };
+                T tempMulY2 = workspace.zy * T{ 2 };
 
                 ++RefIteration;
 
@@ -197,9 +199,9 @@ mandel_1xHDR_float_perturb_lav2(
                         DeltaSub0Y);
                 }
 
-                T tempVal1X;
-                T tempVal1Y;
-                Perturb.GetIter(RefIteration, tempVal1X, tempVal1Y);
+                Perturb.GetIterSeq(workspace);
+                T tempVal1X = workspace.zx;
+                T tempVal1Y = workspace.zy;
 
                 const T tempZX{ tempVal1X + DeltaSubNX };
                 const T tempZY{ tempVal1Y + DeltaSubNY };
@@ -225,6 +227,8 @@ mandel_1xHDR_float_perturb_lav2(
                         DeltaSubNX = tempZX;
                         DeltaSubNY = tempZY;
                         RefIteration = 0;
+
+                        workspace = { Perturb, RefIteration };
                     }
 
                     ++iter;
@@ -233,7 +237,7 @@ mandel_1xHDR_float_perturb_lav2(
                     break;
                 }
             }
-            };
+        };
 
         //    for (;;) {
         __syncthreads();

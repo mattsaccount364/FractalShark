@@ -1548,7 +1548,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
 
     if (algorithm == RenderAlgorithm::GpuHDRx32PerturbedBLA) {
         if constexpr (EnableGpuHDRx32PerturbedBLA && std::is_same<T, HDRFloat<float>>::value) {
-            GPUPerturbSingleResults<IterType, HDRFloat<float>> cudaResults(
+            GPUPerturbSingleResults<IterType, HDRFloat<float>, PerturbExtras::Disable> cudaResults(
                 perturb->GetCompressedSize(),
                 perturb->GetUncompressedSize(),
                 perturb->GetPeriodMaybeZero(),
@@ -1588,7 +1588,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
     }
     else if (algorithm == RenderAlgorithm::GpuHDRx64PerturbedBLA) {
         if constexpr (EnableGpuHDRx64PerturbedBLA && std::is_same<T, HDRFloat<double>>::value) {
-            GPUPerturbSingleResults<IterType, HDRFloat<double>> cudaResults(
+            GPUPerturbSingleResults<IterType, HDRFloat<double>, PerturbExtras::Disable> cudaResults(
                 perturb->GetCompressedSize(),
                 perturb->GetUncompressedSize(),
                 perturb->GetPeriodMaybeZero(),
@@ -1627,7 +1627,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
         }
     } else if (algorithm == RenderAlgorithm::Gpu1x64PerturbedBLA) {
         if constexpr (EnableGpu1x64PerturbedBLA && std::is_same<T, double>::value) {
-            GPUPerturbSingleResults<IterType, double> cudaResults(
+            GPUPerturbSingleResults<IterType, double, PerturbExtras::Disable> cudaResults(
                 perturb->GetCompressedSize(),
                 perturb->GetUncompressedSize(),
                 perturb->GetPeriodMaybeZero(),

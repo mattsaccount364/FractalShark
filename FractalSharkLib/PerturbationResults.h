@@ -182,10 +182,14 @@ public:
 
         if constexpr (std::is_same<T, float>::value) {
             metafile << "float" << std::endl;
+        } else if constexpr (std::is_same<T, CudaDblflt<MattDblflt>>::value) {
+            metafile << "CudaDblflt<MattDblflt>" << std::endl;
         } else if constexpr (std::is_same<T, double>::value) {
             metafile << "double" << std::endl;
         } else if constexpr (std::is_same<T, HDRFloat<float>>::value) {
             metafile << "HDRFloat<float>" << std::endl;
+        } else if constexpr (std::is_same<T, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
+            metafile << "HDRFloat<CudaDblflt<MattDblflt>>" << std::endl;
         } else if constexpr (std::is_same<T, HDRFloat<double>>::value) {
             metafile << "HDRFloat<double>" << std::endl;
         } else {
@@ -259,13 +263,20 @@ public:
                 if constexpr (std::is_same<T, float>::value) {
                     typematch2 = true;
                 }
-            }
-            else if (tstr == "double") {
+            } else if (tstr == "CudaDblflt<MattDblflt>") {
+                if constexpr (std::is_same<T, CudaDblflt<MattDblflt>>::value) {
+                    typematch2 = true;
+                }
+            } else if (tstr == "double") {
                 if constexpr (std::is_same<T, double>::value) {
                     typematch2 = true;
                 }
             } else if (tstr == "HDRFloat<float>") {
                 if constexpr (std::is_same<T, HDRFloat<float>>::value) {
+                    typematch2 = true;
+                }
+            } else if (tstr == "HDRFloat<CudaDblflt<MattDblflt>>") {
+                if constexpr (std::is_same<T, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
                     typematch2 = true;
                 }
             } else if (tstr == "HDRFloat<double>") {

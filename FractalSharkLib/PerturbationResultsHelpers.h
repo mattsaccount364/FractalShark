@@ -34,16 +34,65 @@ public:
     template<class LocalSubType>
     using HDRFloatComplex = TemplateHelpers::template HDRFloatComplex<LocalSubType>;
 
-    const PerturbationResults<IterType, T, PExtras>& results;
-
     CompressionHelper(const PerturbationResults<IterType, T, PExtras>& results) :
-        results(results) {
+        results(results),
+        CachedIter1{},
+        CachedIter2{}
+    {
     }
 
     CompressionHelper(const CompressionHelper& other) = default;
 
     template<class U>
     HDRFloatComplex<U> GetCompressedComplex(size_t uncompressed_index) const {
+
+        auto runOneIter = [&](auto &zx, auto &zy) {
+            auto zx_old = zx;
+            zx = zx * zx - zy * zy + results.OrbitXLow;
+            HdrReduce(zx);
+            zy = T{ 2 } *zx_old * zy + results.OrbitYLow;
+            HdrReduce(zy);
+        };
+
+        if (CachedIter1.UncompressedIter == uncompressed_index) {
+            return { CachedIter1.zx, CachedIter1.zy };
+        }
+
+        if (CachedIter2.UncompressedIter == uncompressed_index) {
+            return { CachedIter2.zx, CachedIter2.zy };
+        }
+
+        auto LinearScan = [&](CachedIter<T>& iter, CachedIter<T>& other) -> bool {
+            if (iter.UncompressedIter + 1 == uncompressed_index) {
+                if (iter.UncompressedIter + 1 <
+                    results.FullOrbit[iter.CompressedIter + 1].CompressionIndex) {
+                    other = iter;
+                    runOneIter(iter.zx, iter.zy);
+                    iter.UncompressedIter = uncompressed_index;
+                }
+                else {
+                    other = iter;
+                    iter.CompressedIter++;
+                    iter.zx = results.FullOrbit[iter.CompressedIter].x;
+                    iter.zy = results.FullOrbit[iter.CompressedIter].y;
+                    iter.UncompressedIter = results.FullOrbit[iter.CompressedIter].CompressionIndex;
+                }
+
+                return true;
+            }
+
+            return false;
+        };
+
+        bool ret = LinearScan(CachedIter1, CachedIter2);
+        if (ret) {
+            return { CachedIter1.zx, CachedIter1.zy };
+        }
+
+        ret = LinearScan(CachedIter2, CachedIter1);
+        if (ret) {
+            return { CachedIter2.zx, CachedIter2.zy };
+        }
 
         // Do a binary search.  Given the uncompressed index, search the compressed
         // FullOrbit array for the nearest UncompressedIndex that's less than or equal
@@ -68,7 +117,7 @@ public:
             }
 
             return high;
-            };
+        };
 
 
         auto BestCompressedIndexGuess = BinarySearch(uncompressed_index);
@@ -81,16 +130,44 @@ public:
             cur_uncompressed_index++) {
 
             if (cur_uncompressed_index == uncompressed_index) {
+                CachedIter2 = CachedIter1;
+                CachedIter1 = CachedIter<T>(zx, zy, cur_uncompressed_index, BestCompressedIndexGuess);
                 return { zx, zy };
             }
 
-            auto zx_old = zx;
-            zx = zx * zx - zy * zy + results.OrbitXLow;
-            HdrReduce(zx);
-            zy = T{ 2 } *zx_old * zy + results.OrbitYLow;
-            HdrReduce(zy);
+            runOneIter(zx, zy);
         }
 
         return {};
     }
+
+private:
+    template<typename T>
+    struct CachedIter {
+        CachedIter() :
+            zx{},
+            zy{},
+            UncompressedIter{ UINT64_MAX - 1 },
+            CompressedIter{ UINT64_MAX - 1 } {
+        }
+
+        CachedIter(T zx, T zy, size_t uncompressed_iter, size_t compressed_iter) :
+            zx(zx),
+            zy(zy),
+            UncompressedIter(uncompressed_iter),
+            CompressedIter(compressed_iter) {
+        }
+
+        CachedIter &operator=(const CachedIter &other) = default;
+        CachedIter(const CachedIter &other) = default;
+
+        T zx;
+        T zy;
+        IterTypeFull UncompressedIter;
+        IterTypeFull CompressedIter;
+    };
+
+    const PerturbationResults<IterType, T, PExtras>& results;
+    mutable CachedIter<T> CachedIter1;
+    mutable CachedIter<T> CachedIter2;
 };

@@ -108,7 +108,8 @@ public:
 #ifndef __CUDACC__ 
     CUDA_CRAP std::string ToString() const {
         std::stringstream ss;
-        ss << "mantissa: " << (double)Base::mantissa << " exp: " << Base::exp;
+        ss << std::setprecision(std::numeric_limits<double>::max_digits10);
+        ss << "mantissa: " << static_cast<double>(Base::mantissa) << " exp: " << Base::exp;
         return ss.str();
     }
 #endif
@@ -1443,7 +1444,8 @@ static CUDA_CRAP std::string HdrToString(const T& dat) {
         std::is_same<T, float>::value) {
 
         std::stringstream ss;
-        ss << "mantissa: " << dat << " exp: 0";
+        ss << std::setprecision(std::numeric_limits<double>::max_digits10);
+        ss << "mantissa: " << static_cast<double>(dat) << " exp: 0";
         return ss.str();
     }
     else {

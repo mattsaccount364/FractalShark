@@ -273,6 +273,13 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
         MenuSquareView(hWnd);
         break;
 
+    case 'q':
+    case 'Q':
+        if (shiftDown) {
+            gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+        }
+        break;
+
     case 'R':
     case 'r':
         if (shiftDown) {

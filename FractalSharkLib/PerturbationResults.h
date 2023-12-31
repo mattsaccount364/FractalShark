@@ -649,8 +649,6 @@ public:
         else {
             T zx{};
             T zy{};
-            OrbitXLow = FullOrbit[1].x;
-            OrbitYLow = FullOrbit[1].y;
 
             for (size_t i = 0; i < FullOrbit.size(); i++) {
                 auto errX = zx - FullOrbit[i].x;

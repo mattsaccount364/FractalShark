@@ -22,7 +22,9 @@ Second, and more importantly, FractalShark includes two different CUDA-based lin
 
 Third, FractalShark includes a multi-threaded reference orbit calculation for a little better performance.  Using three threads total, with two for squaring and one for coordinating appears to offer superior performance, at least on an AMD-5950X.  Calculating the reference orbit is the single-largest bottleneck to high magnification renders, so it's important to spend some time on that.  This implementation beats all other known examples in performance assuming you have a modern multi-core CPU capable of executing AVX-2 instructions.  More optimizations are possible here that are as-yet unexplored.
 
-Finally, FractalShark now offers an implementation of a "2x32" type combined with optional linear approximation and "float+exp."  This implementation is the first known supporting a pair of 32 bit floating point numbers + an exponent, to provide a combined ~48 bit mantissa without using the native 64-bit type.  Why not use the native 64-bit support?  The benefit is significant performance improvements on consumer video cards, with nearly the same precision.  This implementation is CUDA-only.  On a CPU, you might as well you use the native 64-bit type.
+Another neat FractalShark-specific feature is that an implementation of a "2x32" type combined with optional linear approximation and "float+exp."  This implementation Mandelbrot renderer supporting a pair of 32 bit floating point numbers + an exponent, to provide a combined ~48 bit mantissa without using the native 64-bit type.  Why not use native 64-bit support?  The benefit is significant performance improvements on consumer video cards, with nearly the same precision.  This implementation is CUDA-only.  On a CPU, you might as well you use the native 64-bit type.
+
+Finally, most recently, FractalShark supports reference orbit compression.  This feature remains a work in progress, but it promises to reduce end-to-end memory (RAM) requirements, especially on high-period locations.  Imagina first implemented reference compression for saving/loading reference orbits.  FractalShark extends Zhuoran's idea to runtime/per-pixel rendering, by decompressing the reference orbit on the fly as needed.  An example period-600,000,000 spot can see a memory reduction of multiple gigabytes, which can make the difference between being able to render it and not being able to render it.
 
 CUDA?  What are the system requirements?
 
@@ -64,7 +66,7 @@ What features will FractalShark never have?
 
 - Support for non-Mandelbrot fractals.  Too much dinking around.
 - Support for AMD cards unless I buy one
-- High-quality CPU support.  Zhuoran's Imagina easily has that covered - he did a great job.  FractalShark does have two CPU-based linear approximation implementations, but it's not very well optimized, and is intended primarily for testing/debugging.
+- High-quality CPU support.  Zhuoran's Imagina easily has that covered - he did a great job.  FractalShark does have two CPU-based linear approximation implementations, but it's not very well optimized, and is intended primarily for testing/debugging.  Runtime reference compression also is supported in CPU-only mode.
 
 What future work is there?
 
@@ -118,6 +120,8 @@ https://sourceforge.net/projects/fractalzoomer/
 
 - FractalShark uses several third-party libraries: MPIR, Boost, and WPngImage (https://github.com/WarpRules/WPngImage).  I also found a CUDA QuadDouble and DblDbl implementations somewhere and have example kernels demonstrating their use.
 
+- FractalShark's reference orbit compression is novel code, but based on the approach Zhuoran described here: https://fractalforums.org/fractal-mathematics-and-new-theories/28/reference-compression/5142.  Claude posted a simple easy-to-understand sample here, which FractalShark's implementation is loosely based on: https://code.mathr.co.uk/fractal-bits/tree/HEAD:/mandelbrot-reference-compression
+
 - This implementation would probably not have happened without the work of these folks so thank you!
 
 Closing
@@ -132,7 +136,7 @@ History
 
 2017: I resurrected it, and added high precision, but no perturbation or anything else.  At that point, it was theoretically capable of rendering very deep images, but it was so slow as to be largely useless.
 
-2023: I bought this new video card, and wanted to play with it, so ended up learning about CUDA and all these clever algorithmic approaches you all have found out to speed this up.  So here we are.
+2023-2024: I bought this new video card, and wanted to play with it, so ended up learning about CUDA and all these clever algorithmic approaches you all have found out to speed this up.  So here we are.
 
 Build instructions
 

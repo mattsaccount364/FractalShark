@@ -439,8 +439,10 @@ template<
     typename IterType,
     class T,
     class SubType,
+    PerturbExtras PExtras,
     RefOrbitCalc::BenchmarkMode BenchmarkState>
 void RefOrbitCalc::AddPerturbationReferencePoint() {
+    // TODO Hookup PExtras, move RequiresBadCalc out
     if (m_PerturbationGuessCalcX == 0 && m_PerturbationGuessCalcY == 0) {
         m_PerturbationGuessCalcX = (m_Fractal.GetMaxX() + m_Fractal.GetMinX()) / HighPrecision(2);
         m_PerturbationGuessCalcY = (m_Fractal.GetMaxY() + m_Fractal.GetMinY()) / HighPrecision(2);
@@ -2037,7 +2039,8 @@ template<
     PerturbExtras PExtras,
     RefOrbitCalc::Extras Ex,
     class ConvertTType>
-PerturbationResults<IterType, ConvertTType, PExtras>* RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
+PerturbationResults<IterType, ConvertTType, PExtras>*
+RefOrbitCalc::GetAndCreateUsefulPerturbationResults(float CompressionError) {
 
     bool added = false;
     constexpr auto PExtrasHackYay =
@@ -2075,15 +2078,25 @@ PerturbationResults<IterType, ConvertTType, PExtras>* RefOrbitCalc::GetAndCreate
         if (added) {
             ::MessageBox(NULL, L"Why didn't this work! :(", L"", MB_OK);
         }
+
+        if (!std::is_same<ConvertTType, T>::value) {
+            PerturbationResults<IterType, ConvertTType, PExtras>* results =
+                GetUsefulPerturbationResults<IterType, ConvertTType, false, PExtras>();
+            if (results) {
+                return results;
+            }
+        }
+
         std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtrasHackYay>>>& cur_array =
             GetPerturbationResults<IterType, T, PExtrasHackYay>();
-        AddPerturbationReferencePoint<IterType, T, SubType, BenchmarkMode::Disable>();
+        AddPerturbationReferencePoint<IterType, T, SubType, PerturbExtras::Disable, BenchmarkMode::Disable>();
         added = true;
 
         // TODO: this is a hack.  We need to fix this.
         if constexpr (PExtras == PerturbExtras::EnableCompression) {
             auto resultsIntermediate = cur_array[cur_array.size() - 1].get();
             auto compressedResults = resultsIntermediate->Compress(
+                m_Fractal.GetCompressionErrorExp(),
                 GetNextGenerationNumber(),
                 GetNextLaGenerationNumber());
             results = AddPerturbationResults(std::move(compressedResults));
@@ -2484,13 +2497,21 @@ const RefOrbitCalc::Container<IterType, PExtras> &RefOrbitCalc::GetContainer() c
 void RefOrbitCalc::GetSomeDetails(
     uint64_t& PeriodMaybeZero,
     uint64_t& CompressedIters,
-    uint64_t& UncompressedIters) {
+    uint64_t& UncompressedIters,
+    int32_t &CompressionErrorExp) {
+
+
+    PeriodMaybeZero = 0;
+    CompressedIters = 0;
+    UncompressedIters = 0;
+    CompressionErrorExp = 0;
 
     auto lambda = [&](auto &&arg) {
         if (arg != nullptr) {
             PeriodMaybeZero = arg->GetPeriodMaybeZero();
             CompressedIters = arg->GetCompressedOrbitSize();
             UncompressedIters = arg->GetCountOrbitEntries();
+            CompressionErrorExp = arg->GetCompressionErrorExp();
         }
     };
 

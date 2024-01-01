@@ -107,17 +107,22 @@ public:
 
     template<typename IterType>
     constexpr IterType GetMaxIterations() const;
-
     IterTypeFull GetMaxIterationsRT() const;
 
     void SetIterType(IterTypeEnum type);
     IterTypeEnum GetIterType() const;
-
     void ResetNumIterations(void);
 
     RenderAlgorithm GetRenderAlgorithm(void) const;
     inline void SetRenderAlgorithm(RenderAlgorithm alg) { m_RenderAlgorithm = alg; }
     const char *GetRenderAlgorithmName() const;
+
+    static constexpr int32_t DefaultCompressionExp = 18;
+    float GetCompressionError() const;
+    int32_t GetCompressionErrorExp() const;
+    void IncCompressionError();
+    void DecCompressionError();
+    void SetCompressionErrorExp(int32_t CompressionExp = DefaultCompressionExp);
 
     inline uint32_t GetGpuAntialiasing(void) const { return m_GpuAntialiasing; }
     inline uint32_t GetIterationPrecision(void) const { return m_IterationPrecision; }
@@ -190,8 +195,9 @@ public:
     void GetSomeDetails(
         uint64_t& PeriodMaybeZero,
         uint64_t& CompressedIters,
-        uint64_t& UncompressedIters) {
-        m_RefOrbit.GetSomeDetails(PeriodMaybeZero, CompressedIters, UncompressedIters);
+        uint64_t& UncompressedIters,
+        int32_t & CompressionErrorExp) {
+        m_RefOrbit.GetSomeDetails(PeriodMaybeZero, CompressedIters, UncompressedIters, CompressionErrorExp);
     }
 
     static DWORD WINAPI ServerManageMainConnectionThread(void*);
@@ -356,9 +362,9 @@ private:
     // Member Variables
 
     RefOrbitCalc m_RefOrbit;
+
     std::unique_ptr<uint16_t[]> m_DrawOutBytes;
     std::deque<std::atomic_uint64_t> m_DrawThreadAtomics;
-
     std::vector<std::unique_ptr<DrawThreadSync>> m_DrawThreads;
 
     std::vector<std::unique_ptr<CurrentFractalSave>> m_FractalSavesInProgress;
@@ -455,6 +461,10 @@ private:
     HANDLE m_ServerMainThread;
     HANDLE m_ServerSubThread;
     void(*OutputMessage) (const wchar_t *, ...);
+    
+    // Reference compression
+    int32_t m_CompressionExp;
+    float m_CompressionError;
 
     // GPU rendering
     GPURenderer m_r;

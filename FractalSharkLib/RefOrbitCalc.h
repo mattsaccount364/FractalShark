@@ -49,7 +49,12 @@ public:
     template<typename IterType, class T, PerturbExtras PExtras>
     std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtras>>>& GetPerturbationResults() ;
 
-    template<typename IterType, class T, class SubType, BenchmarkMode BenchmarkState>
+    template<
+        typename IterType,
+        class T,
+        class SubType,
+        PerturbExtras PExtras,
+        BenchmarkMode BenchmarkState>
     void AddPerturbationReferencePoint();
 
     template<typename IterType, class T, bool Authoritative, PerturbExtras PExtras>
@@ -69,7 +74,8 @@ public:
         PerturbExtras PExtras,
         RefOrbitCalc::Extras Ex,
         class ConvertTType = T>
-    PerturbationResults<IterType, ConvertTType, PExtras>* GetAndCreateUsefulPerturbationResults();
+    PerturbationResults<IterType, ConvertTType, PExtras>*
+        GetAndCreateUsefulPerturbationResults(float CompressionError = 0);
 
     template<typename IterType, class SrcT, PerturbExtras SrcEnableBad, class DestT, PerturbExtras DestEnableBad>
     PerturbationResults<IterType, DestT, DestEnableBad>* CopyUsefulPerturbationResults(PerturbationResults<IterType, SrcT, SrcEnableBad>& src_array);
@@ -83,7 +89,8 @@ public:
     void GetSomeDetails(
         uint64_t &PeriodMaybeZero,
         uint64_t &CompressedIters,
-        uint64_t &UncompressedIters);
+        uint64_t &UncompressedIters,
+        int32_t &CompressionErrorExp);
 
 private:
     bool RequiresBadCalc() const;

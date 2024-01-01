@@ -36,6 +36,7 @@ public:
         MaxRadius{},
         MaxIterations{},
         PeriodMaybeZero{},
+        CompressionErrorExp{},
         CompressionHelper{*this},
         FullOrbit{},
         UncompressedItersInOrbit{},
@@ -85,6 +86,7 @@ public:
         MaxRadius = (T)other.GetMaxRadius();
         MaxIterations = other.GetMaxIterations();
         PeriodMaybeZero = other.GetPeriodMaybeZero();
+        CompressionErrorExp = other.GetCompressionErrorExp();
         // CompressionHelper = {*this}; // Nothing to do here
 
         FullOrbit.reserve(other.FullOrbit.size());
@@ -131,6 +133,7 @@ public:
         MaxRadius = other.GetMaxRadius();
         MaxIterations = other.GetMaxIterations();
         PeriodMaybeZero = other.GetPeriodMaybeZero();
+        CompressionErrorExp = other.GetCompressionErrorExp();
         // CompressionHelper = {}; // Nothing to do here
 
         FullOrbit = {};
@@ -217,6 +220,7 @@ public:
         metafile << HdrToString(MaxRadius) << std::endl;
         metafile << MaxIterations << std::endl;
         metafile << PeriodMaybeZero << std::endl;
+        metafile << CompressionErrorExp << std::endl;
         metafile << UncompressedItersInOrbit << std::endl;
     }
 
@@ -358,12 +362,14 @@ public:
 
             if constexpr (
                 std::is_same<T, HDRFloat<float>>::value ||
-                std::is_same<T, HDRFloat<double>>::value) {
+                std::is_same<T, HDRFloat<double>>::value ||
+                std::is_same<T, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
                 output = T{ exponent, (SubType)mantissa };
             }
             else if constexpr (
                 std::is_same<T, float>::value ||
-                std::is_same<T, double>::value) {
+                std::is_same<T, double>::value ||
+                std::is_same<T, CudaDblflt<MattDblflt>>::value) {
                 output = static_cast<T>(mantissa);
             }
             else {
@@ -386,6 +392,12 @@ public:
             std::string periodMaybeZeroStr;
             metafile >> periodMaybeZeroStr;
             PeriodMaybeZero = (IterType)std::stoll(periodMaybeZeroStr);
+        }
+
+        {
+            std::string compressionErrorStr;
+            metafile >> compressionErrorStr;
+            CompressionErrorExp = static_cast<int32_t>(std::stoll(compressionErrorStr));
         }
 
         {
@@ -440,6 +452,7 @@ public:
         MaxRadius = {};
         MaxIterations = 0;
         PeriodMaybeZero = 0;
+        CompressionErrorExp = 0;
         // CompressionHelper = {}; // Nothing to do here
 
         FullOrbit.clear();
@@ -611,6 +624,10 @@ public:
         PeriodMaybeZero = period;
     }
 
+    int32_t GetCompressionErrorExp() const {
+        return CompressionErrorExp;
+    }
+
     size_t GetReuseSize() const {
         assert(ReuseX.size() == ReuseY.size());
         return ReuseX.size();
@@ -639,9 +656,17 @@ public:
     //   https://fractalforums.org/fractal-mathematics-and-new-theories/28/reference-compression/5142
     // as a reference for the compression algorithm.
     std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::EnableCompression>>
-    Compress(size_t NewGenerationNumber, size_t NewLaGenerationNumber) {
+    Compress(
+        int32_t CompressionErrorExpParam,
+        size_t NewGenerationNumber,
+        size_t NewLaGenerationNumber) {
 
         constexpr bool disable_compression = false;
+        const auto Two = T{ 2 };
+
+        CompressionErrorExp = CompressionErrorExpParam;
+        auto err = std::pow(10, CompressionErrorExp);
+        const auto CompressionError = static_cast<T>(err);
 
         auto compressed =
             std::make_unique<PerturbationResults<IterType, T, PerturbExtras::EnableCompression>>(
@@ -668,8 +693,7 @@ public:
                 auto norm_z = FullOrbit[i].x * FullOrbit[i].x + FullOrbit[i].y * FullOrbit[i].y;
                 HdrReduce(norm_z);
 
-                // auto err = (errX * errX + errY * errY) * T{ 1e17f }; // view 10
-                auto err = (errX * errX + errY * errY) * T{ 1e18f };
+                auto err = (errX * errX + errY * errY) * CompressionError;
                 HdrReduce(err);
 
                 if (HdrCompareToBothPositiveReducedGE(err, norm_z)) {
@@ -682,7 +706,7 @@ public:
                 auto zx_old = zx;
                 zx = zx * zx - zy * zy + OrbitXLow;
                 HdrReduce(zx);
-                zy = T{ 2 } *zx_old * zy + OrbitYLow;
+                zy = Two *zx_old * zy + OrbitYLow;
                 HdrReduce(zy);
             }
         }
@@ -732,6 +756,7 @@ private:
     T MaxRadius;
     IterType MaxIterations;
     IterType PeriodMaybeZero;  // Zero if not worked out
+    int32_t CompressionErrorExp;
 
     CompressionHelper<IterType, T, PExtras> CompressionHelper;
     std::vector<GPUReferenceIter<T, PExtras>> FullOrbit;

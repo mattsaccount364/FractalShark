@@ -82,18 +82,20 @@ void Fractal::Initialize(int width,
     InitStatics();
 
     // Setup member variables with initial values:
-    SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedRCLAv2);
+    //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedRCLAv2);
     //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedLAv2);
     //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx2x32PerturbedLAv2);
     //SetRenderAlgorithm(RenderAlgorithm::Gpu2x32PerturbedLAv2);
     //SetRenderAlgorithm(RenderAlgorithm::Gpu2x32PerturbedLAv2LAO);
-    //SetRenderAlgorithm(RenderAlgorithm::AUTO);
+    SetRenderAlgorithm(RenderAlgorithm::AUTO);
 
     SetIterationPrecision(1);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed);
     m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MT);
     m_RefOrbit.ResetGuess();
+
+    SetCompressionErrorExp();
 
     ResetDimensions(width, height, 2);
     SetIterType(IterTypeEnum::Bits32);
@@ -857,6 +859,7 @@ void Fractal::Zoom(size_t scrnX, size_t scrnY, double factor) {
 void Fractal::BasicTest() {
     // First, iterate over all the supported RenderAlgorithm entries and render the default view:
     // Skip AUTO plus all LAO-only algorithms.  They produce a black screen for the default view.
+    constexpr bool IncludeSlow = false;
     const wchar_t *DirName = L"BasicTest";
     auto ret = CreateDirectory(DirName, NULL);
     if (ret == 0 && GetLastError() != ERROR_ALREADY_EXISTS) {
@@ -923,32 +926,33 @@ void Fractal::BasicTest() {
         BasicOneTest(5, DirName, L"View5", CurAlg);
     }
 
-    // This one is quite slow.  Be advised.
-    RenderAlgorithm View10Algs[] = {
-        RenderAlgorithm::GpuHDRx32PerturbedLAv2,
-        RenderAlgorithm::GpuHDRx32PerturbedLAv2PO,
-        RenderAlgorithm::GpuHDRx32PerturbedLAv2LAO,
-        RenderAlgorithm::GpuHDRx32PerturbedRCLAv2,
-        RenderAlgorithm::GpuHDRx32PerturbedRCLAv2PO,
-        RenderAlgorithm::GpuHDRx32PerturbedRCLAv2LAO,
-        RenderAlgorithm::GpuHDRx2x32PerturbedLAv2,
-        RenderAlgorithm::GpuHDRx2x32PerturbedLAv2PO,
-        RenderAlgorithm::GpuHDRx2x32PerturbedLAv2LAO,
-        RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2,
-        RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2PO,
-        RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2LAO,
-        RenderAlgorithm::GpuHDRx64PerturbedLAv2,
-        RenderAlgorithm::GpuHDRx64PerturbedLAv2PO,
-        RenderAlgorithm::GpuHDRx64PerturbedLAv2LAO,
-        RenderAlgorithm::GpuHDRx64PerturbedRCLAv2,
-        RenderAlgorithm::GpuHDRx64PerturbedRCLAv2PO,
-        RenderAlgorithm::GpuHDRx64PerturbedRCLAv2LAO,
-    };
+    if constexpr (IncludeSlow) {
+        // This one is quite slow.  Be advised.
+        RenderAlgorithm View10Algs[] = {
+            RenderAlgorithm::GpuHDRx32PerturbedLAv2,
+            RenderAlgorithm::GpuHDRx32PerturbedLAv2PO,
+            RenderAlgorithm::GpuHDRx32PerturbedLAv2LAO,
+            RenderAlgorithm::GpuHDRx32PerturbedRCLAv2,
+            RenderAlgorithm::GpuHDRx32PerturbedRCLAv2PO,
+            RenderAlgorithm::GpuHDRx32PerturbedRCLAv2LAO,
+            RenderAlgorithm::GpuHDRx2x32PerturbedLAv2,
+            RenderAlgorithm::GpuHDRx2x32PerturbedLAv2PO,
+            RenderAlgorithm::GpuHDRx2x32PerturbedLAv2LAO,
+            RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2,
+            RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2PO,
+            RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2LAO,
+            RenderAlgorithm::GpuHDRx64PerturbedLAv2,
+            RenderAlgorithm::GpuHDRx64PerturbedLAv2PO,
+            RenderAlgorithm::GpuHDRx64PerturbedLAv2LAO,
+            RenderAlgorithm::GpuHDRx64PerturbedRCLAv2,
+            RenderAlgorithm::GpuHDRx64PerturbedRCLAv2PO,
+            RenderAlgorithm::GpuHDRx64PerturbedRCLAv2LAO,
+        };
 
-    for (auto CurAlg : View10Algs) {
-        BasicOneTest(10, DirName, L"View10", CurAlg);
+        for (auto CurAlg : View10Algs) {
+            BasicOneTest(10, DirName, L"View10", CurAlg);
+        }
     }
-
 
     // Finally, iterate over all the RenderAlgorithm entries that should work with View #11.
     RenderAlgorithm View11Algs[] = {
@@ -1306,6 +1310,9 @@ void Fractal::View(size_t view)
     // Kludgy.  Resets at end of function.
     SetPrecision(50000, minX, minY, maxX, maxY);
     ResetDimensions(MAXSIZE_T, MAXSIZE_T, 1);
+
+    // Reset to default reference compression if applicable
+    SetCompressionErrorExp();
 
     switch (view) {
     case 1:
@@ -1986,6 +1993,40 @@ const char *Fractal::GetRenderAlgorithmName() const {
     //
 
     return RenderAlgorithmStr[static_cast<size_t>(GetRenderAlgorithm())];
+}
+
+float Fractal::GetCompressionError() const {
+    return m_CompressionError;
+}
+
+int32_t Fractal::GetCompressionErrorExp() const {
+    return m_CompressionExp;
+}
+
+void Fractal::IncCompressionError() {
+    m_CompressionExp++;
+    m_CompressionError = static_cast<float>(std::pow(10.0, m_CompressionExp));
+    ChangedMakeDirty();
+}
+
+void Fractal::DecCompressionError() {
+    if (m_CompressionExp <= 1) {
+        return;
+    }
+
+    m_CompressionExp--;
+    m_CompressionError = static_cast<float>(std::pow(10.0, m_CompressionExp));
+    ChangedMakeDirty();
+}
+
+void Fractal::SetCompressionErrorExp(int32_t CompressionExp) {
+    if (m_CompressionExp >= 35) { // Roughly float exponent range
+        return;
+    }
+
+    m_CompressionExp = CompressionExp;
+    m_CompressionError = static_cast<float>(std::pow(10.0, m_CompressionExp));
+    ChangedMakeDirty();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -4475,7 +4516,12 @@ HighPrecision Fractal::Benchmark(IterTypeFull numIters, size_t& milliseconds)
     bm.BenchmarkSetup(numIters);
 
     if (m_RefOrbit.RequiresReferencePoints()) {
-        m_RefOrbit.AddPerturbationReferencePoint<uint32_t, double, double, RefOrbitCalc::BenchmarkMode::Disable>();
+        m_RefOrbit.AddPerturbationReferencePoint<
+            uint32_t,
+            double,
+            double,
+            PerturbExtras::Disable,
+            RefOrbitCalc::BenchmarkMode::Disable>();
     }
 
     if (!bm.StartTimer()) {
@@ -4497,7 +4543,12 @@ HighPrecision Fractal::BenchmarkReferencePoint(IterTypeFull numIters, size_t& mi
         return {};
     }
 
-    m_RefOrbit.AddPerturbationReferencePoint<uint32_t, T, SubType, RefOrbitCalc::BenchmarkMode::Enable>();
+    m_RefOrbit.AddPerturbationReferencePoint<
+        uint32_t,
+        T,
+        SubType,
+        PerturbExtras::Disable,
+        RefOrbitCalc::BenchmarkMode::Enable>();
 
     auto result = bm.StopTimerNoIters<T>(milliseconds);
     bm.BenchmarkFinish();

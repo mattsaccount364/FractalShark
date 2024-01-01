@@ -1,24 +1,24 @@
 #pragma once
 
-template void RefOrbitCalc::AddPerturbationReferencePoint<uint32_t, float, float, RefOrbitCalc::BenchmarkMode::Disable>();
-template void RefOrbitCalc::AddPerturbationReferencePoint<uint32_t, double, double, RefOrbitCalc::BenchmarkMode::Disable>();
-template void RefOrbitCalc::AddPerturbationReferencePoint<uint32_t, HDRFloat<double>, double, RefOrbitCalc::BenchmarkMode::Disable>();
-template void RefOrbitCalc::AddPerturbationReferencePoint<uint32_t, HDRFloat<float>, float, RefOrbitCalc::BenchmarkMode::Disable>();
+template void RefOrbitCalc::AddPerturbationReferencePoint<uint32_t, float, float, PerturbExtras::Disable, RefOrbitCalc::BenchmarkMode::Disable>();
+template void RefOrbitCalc::AddPerturbationReferencePoint<uint32_t, double, double, PerturbExtras::Disable, RefOrbitCalc::BenchmarkMode::Disable>();
+template void RefOrbitCalc::AddPerturbationReferencePoint<uint32_t, HDRFloat<double>, double, PerturbExtras::Disable, RefOrbitCalc::BenchmarkMode::Disable>();
+template void RefOrbitCalc::AddPerturbationReferencePoint<uint32_t, HDRFloat<float>, float, PerturbExtras::Disable, RefOrbitCalc::BenchmarkMode::Disable>();
 
-template void RefOrbitCalc::AddPerturbationReferencePoint<uint32_t, float, float, RefOrbitCalc::BenchmarkMode::Enable>();
-template void RefOrbitCalc::AddPerturbationReferencePoint<uint32_t, double, double, RefOrbitCalc::BenchmarkMode::Enable>();
-template void RefOrbitCalc::AddPerturbationReferencePoint<uint32_t, HDRFloat<double>, double, RefOrbitCalc::BenchmarkMode::Enable>();
-template void RefOrbitCalc::AddPerturbationReferencePoint<uint32_t, HDRFloat<float>, float, RefOrbitCalc::BenchmarkMode::Enable>();
+template void RefOrbitCalc::AddPerturbationReferencePoint<uint32_t, float, float, PerturbExtras::Disable, RefOrbitCalc::BenchmarkMode::Enable>();
+template void RefOrbitCalc::AddPerturbationReferencePoint<uint32_t, double, double, PerturbExtras::Disable, RefOrbitCalc::BenchmarkMode::Enable>();
+template void RefOrbitCalc::AddPerturbationReferencePoint<uint32_t, HDRFloat<double>, double, PerturbExtras::Disable, RefOrbitCalc::BenchmarkMode::Enable>();
+template void RefOrbitCalc::AddPerturbationReferencePoint<uint32_t, HDRFloat<float>, float, PerturbExtras::Disable, RefOrbitCalc::BenchmarkMode::Enable>();
 
-template void RefOrbitCalc::AddPerturbationReferencePoint<uint64_t, float, float, RefOrbitCalc::BenchmarkMode::Disable>();
-template void RefOrbitCalc::AddPerturbationReferencePoint<uint64_t, double, double, RefOrbitCalc::BenchmarkMode::Disable>();
-template void RefOrbitCalc::AddPerturbationReferencePoint<uint64_t, HDRFloat<double>, double, RefOrbitCalc::BenchmarkMode::Disable>();
-template void RefOrbitCalc::AddPerturbationReferencePoint<uint64_t, HDRFloat<float>, float, RefOrbitCalc::BenchmarkMode::Disable>();
+template void RefOrbitCalc::AddPerturbationReferencePoint<uint64_t, float, float, PerturbExtras::Disable, RefOrbitCalc::BenchmarkMode::Disable>();
+template void RefOrbitCalc::AddPerturbationReferencePoint<uint64_t, double, double, PerturbExtras::Disable, RefOrbitCalc::BenchmarkMode::Disable>();
+template void RefOrbitCalc::AddPerturbationReferencePoint<uint64_t, HDRFloat<double>, double, PerturbExtras::Disable, RefOrbitCalc::BenchmarkMode::Disable>();
+template void RefOrbitCalc::AddPerturbationReferencePoint<uint64_t, HDRFloat<float>, float, PerturbExtras::Disable, RefOrbitCalc::BenchmarkMode::Disable>();
 
-template void RefOrbitCalc::AddPerturbationReferencePoint<uint64_t, float, float, RefOrbitCalc::BenchmarkMode::Enable>();
-template void RefOrbitCalc::AddPerturbationReferencePoint<uint64_t, double, double, RefOrbitCalc::BenchmarkMode::Enable>();
-template void RefOrbitCalc::AddPerturbationReferencePoint<uint64_t, HDRFloat<double>, double, RefOrbitCalc::BenchmarkMode::Enable>();
-template void RefOrbitCalc::AddPerturbationReferencePoint<uint64_t, HDRFloat<float>, float, RefOrbitCalc::BenchmarkMode::Enable>();
+template void RefOrbitCalc::AddPerturbationReferencePoint<uint64_t, float, float, PerturbExtras::Disable, RefOrbitCalc::BenchmarkMode::Enable>();
+template void RefOrbitCalc::AddPerturbationReferencePoint<uint64_t, double, double, PerturbExtras::Disable, RefOrbitCalc::BenchmarkMode::Enable>();
+template void RefOrbitCalc::AddPerturbationReferencePoint<uint64_t, HDRFloat<double>, double, PerturbExtras::Disable, RefOrbitCalc::BenchmarkMode::Enable>();
+template void RefOrbitCalc::AddPerturbationReferencePoint<uint64_t, HDRFloat<float>, float, PerturbExtras::Disable, RefOrbitCalc::BenchmarkMode::Enable>();
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -33,11 +33,11 @@ template void RefOrbitCalc::AddPerturbationReferencePoint<uint64_t, HDRFloat<flo
 
 #define InstantiateGetAndCreateUsefulPerturbationResults2(IterTypeT, T, SubType, PExtras, Ex, ConvertTType) \
     template PerturbationResults<IterTypeT, ConvertTType, PExtras>* \
-    RefOrbitCalc::GetAndCreateUsefulPerturbationResults<IterTypeT, T, SubType, PExtras, Ex, ConvertTType>();
+    RefOrbitCalc::GetAndCreateUsefulPerturbationResults<IterTypeT, T, SubType, PExtras, Ex, ConvertTType>(float CompressionError);
 
 #define InstantiateGetAndCreateUsefulPerturbationResults1(IterTypeT, T, SubType, PExtras, Ex) \
     template PerturbationResults<IterTypeT, T, PExtras>* \
-    RefOrbitCalc::GetAndCreateUsefulPerturbationResults<IterTypeT, T, SubType, PExtras, Ex>();
+    RefOrbitCalc::GetAndCreateUsefulPerturbationResults<IterTypeT, T, SubType, PExtras, Ex>(float CompressionError);
 
 
 InstantiateGetAndCreateUsefulPerturbationResults1(uint32_t, double, double, PerturbExtras::Bad, RefOrbitCalc::Extras::None);

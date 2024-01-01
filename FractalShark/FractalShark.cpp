@@ -132,7 +132,7 @@ HWND InitInstance(HINSTANCE hInstance, int nCmdShow)
 { // Store instance handle in our global variable
     hInst = hInstance;
 
-    constexpr bool startWindowed = true;
+    constexpr bool startWindowed = false;
     constexpr DWORD forceStartWidth = 0;
     constexpr DWORD forceStartHeight = 0;
 
@@ -249,6 +249,13 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
         MenuCenterView(hWnd, mousePt.x, mousePt.y);
         break;
 
+    case 'E':
+    case 'e':
+        gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+        gFractal->SetCompressionErrorExp();
+        PaintAsNecessary(hWnd);
+        break;
+
     case 'I':
     case 'i':
         if (shiftDown) {
@@ -275,9 +282,7 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
 
     case 'q':
     case 'Q':
-        if (shiftDown) {
-            gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-        }
+        gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
         break;
 
     case 'R':
@@ -297,6 +302,18 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
             gFractal->UseNextPaletteAuxDepth(1);
         }
         gFractal->DrawFractal(false);
+        break;
+
+    case 'W':
+    case 'w':
+        gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+        if (shiftDown) {
+            gFractal->DecCompressionError();
+        }
+        else {
+            gFractal->IncCompressionError();
+        }
+        PaintAsNecessary(hWnd);
         break;
 
     case 'Z':
@@ -1343,12 +1360,14 @@ void MenuGetCurPos(HWND hWnd)
     uint64_t PeriodMaybeZero;
     uint64_t CompressedIters;
     uint64_t UncompressedIters;
-    gFractal->GetSomeDetails(PeriodMaybeZero, CompressedIters, UncompressedIters);
+    int32_t CompressionErrorExp;
+    gFractal->GetSomeDetails(PeriodMaybeZero, CompressedIters, UncompressedIters, CompressionErrorExp);
     auto additionalDetailsStr =
         std::string("PeriodMaybeZero = ") + std::to_string(PeriodMaybeZero) + "\r\n" +
         std::string("CompressedIters = ") + std::to_string(CompressedIters) + "\r\n" +
         std::string("UncompressedIters = ") + std::to_string(UncompressedIters) + "\r\n" +
-        std::string("Compression ratio = ") + std::to_string((double)UncompressedIters / (double)CompressedIters) + "\r\n";
+        std::string("Compression ratio = ") + std::to_string((double)UncompressedIters / (double)CompressedIters) + "\r\n" +
+        std::string("Compression error exp = ") + std::to_string(CompressionErrorExp) + "\r\n";
 
     snprintf(
         mem,
@@ -1615,8 +1634,14 @@ void MenuShowHotkeys(HWND /*hWnd*/) {
         L"o - Recalculate and benchmark current display, reusing perturbation results\r\n"
         L"P - Clear all perturbation results and recalculate\r\n"
         L"p - Recalculate current display, reusing perturbation results\r\n"
+        L"q/Q - Clear all perturbation results and do nothing else\r\n"
         L"R - Clear all perturbation results and recalculate\r\n"
         L"r - Recalculate current display, reusing perturbation results\r\n"
+        L"\r\n"
+        L"Reference Compression\r\n"
+        L"e - Clear all perturbation results, reset error exponent to 19 (default).  Recalculate.\r\n"
+        L"w - Reduce reference compression: less error, more memory. Recalculate.\r\n"
+        L"W - Increase reference compression: more error, less memory. Recalculate.\r\n"
         L"\r\n"
         L"Palettes\r\n"
         L"T - Use prior auxiliary palette depth (mul/div iteration count by 2)\r\n"

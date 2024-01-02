@@ -42,8 +42,8 @@ public:
     //    std::is_same<T, double>::value ? 0x1.0p-24 : 0x1.0p-12;
     //static constexpr float DefaultLAThresholdCScale =
     //    std::is_same<T, double>::value ? 0x1.0p-24 : 0x1.0p-12;
-    static constexpr float DefaultLAThresholdScale = 0x1.0p-12;
-    static constexpr float DefaultLAThresholdCScale = 0x1.0p-12;
+    static constexpr float DefaultLAThresholdScale = 0x1.0p-24;
+    static constexpr float DefaultLAThresholdCScale = 0x1.0p-24;
     
 public:
 

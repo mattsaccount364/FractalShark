@@ -791,6 +791,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 break;
             }
 
+            case IDM_PERTURB_AUTOSAVE_ON:
+            {
+                gFractal->SetPerturbAutosave(true);
+                break;
+            }
+
+            case IDM_PERTURB_AUTOSAVE_OFF:
+            {
+                gFractal->SetPerturbAutosave(false);
+                break;
+            }
+
             case IDM_PALETTEROTATE:
             {
                 MenuPaletteRotation(hWnd);

@@ -49,6 +49,13 @@ public:
     template<typename IterType, class T, PerturbExtras PExtras>
     std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtras>>>& GetPerturbationResults() ;
 
+    enum class AddPointOptions {
+        DontSave,
+        SaveToFile
+    };
+
+    void SetRefOrbitOptions(AddPointOptions options) { m_RefOrbitOptions = options; }
+
     template<
         typename IterType,
         class T,
@@ -75,7 +82,7 @@ public:
         RefOrbitCalc::Extras Ex,
         class ConvertTType = T>
     PerturbationResults<IterType, ConvertTType, PExtras>*
-        GetAndCreateUsefulPerturbationResults(float CompressionError = 0);
+        GetAndCreateUsefulPerturbationResults();
 
     template<typename IterType, class SrcT, PerturbExtras SrcEnableBad, class DestT, PerturbExtras DestEnableBad>
     PerturbationResults<IterType, DestT, DestEnableBad>* CopyUsefulPerturbationResults(PerturbationResults<IterType, SrcT, SrcEnableBad>& src_array);
@@ -95,6 +102,8 @@ public:
     void DrawPerturbationResults();
 
 private:
+    std::wstring GetTimeAsString() const;
+
     bool RequiresCompression() const;
     bool RequiresBadCalc() const;
     bool IsThisPerturbationArrayUsed(void* check) const;
@@ -135,6 +144,8 @@ private:
 
     HighPrecision m_PerturbationGuessCalcX;
     HighPrecision m_PerturbationGuessCalcY;
+
+    AddPointOptions m_RefOrbitOptions;
 
     size_t m_GuessReserveSize;
 

@@ -198,6 +198,8 @@ public:
         m_RefOrbit.GetSomeDetails(PeriodMaybeZero, CompressedIters, UncompressedIters, CompressionErrorExp);
     }
 
+    void SetPerturbAutosave(bool Enable);
+
     // Unit conversion helpers
     template<bool IncludeGpuAntialiasing = false>
     HighPrecision XFromScreenToCalc(HighPrecision x);

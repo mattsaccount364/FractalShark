@@ -4497,6 +4497,15 @@ int Fractal::SaveItersAsText(const std::wstring filename_base) {
     return SaveFractalData<CurrentFractalSave::Type::ItersText>(filename_base);
 }
 
+void Fractal::SetPerturbAutosave(bool Enable) {
+    if (Enable) {
+        m_RefOrbit.SetRefOrbitOptions(RefOrbitCalc::AddPointOptions::SaveToFile);
+    }
+    else {
+        m_RefOrbit.SetRefOrbitOptions(RefOrbitCalc::AddPointOptions::DontSave);
+    }
+}
+
 HighPrecision Fractal::Benchmark(IterTypeFull numIters, size_t& milliseconds)
 {
     BenchmarkData bm(*this);

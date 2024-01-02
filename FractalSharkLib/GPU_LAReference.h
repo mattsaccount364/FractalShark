@@ -129,18 +129,18 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference<T2, SubType2, OtherPE
         check_size<SubType, SubType2>();
         check_size<
             GPU_LAInfoDeep<IterType, Float, SubType>::HDRFloatComplex,
-            LAInfoDeep<IterType, Float, SubType>::HDRFloatComplex>();
+            LAInfoDeep<IterType, Float, SubType, OtherPExtras>::HDRFloatComplex>();
         check_size<
             GPU_LAInfoDeep<IterType, Float, SubType>::HDRFloat,
-            LAInfoDeep<IterType, Float, SubType>::HDRFloat>();
+            LAInfoDeep<IterType, Float, SubType, OtherPExtras>::HDRFloat>();
 
         static_assert(
             &static_cast<GPU_LAInfoDeep<IterType, Float, SubType> *>(0)->CCoeff ==
-            &static_cast<LAInfoDeep<IterType, Float, SubType> *>(0)->CCoeff, "!");
+            &static_cast<LAInfoDeep<IterType, Float, SubType, OtherPExtras> *>(0)->CCoeff, "!");
 
         check_size<
             GPU_LAInfoDeep<IterType, Float, SubType>,
-            LAInfoDeep<IterType, Float, SubType>>();
+            LAInfoDeep<IterType, Float, SubType, OtherPExtras>>();
 
         m_Err = cudaMemcpy(LAs,
             other.LAs.data(),

@@ -92,7 +92,7 @@ public:
 private:
     static constexpr int MaxLAStages = 1024;
     static constexpr int DEFAULT_SIZE = 10000;
-    std::vector<LAInfoDeep<IterType, Float, SubType>> LAs;
+    std::vector<LAInfoDeep<IterType, Float, SubType, PExtras>> LAs;
     std::vector<LAStageInfo<IterType>> LAStages;
 
     IterType LAsize();
@@ -123,7 +123,7 @@ public:
     IterType getLAIndex(IterType CurrentLAStage);
     IterType getMacroItCount(IterType CurrentLAStage);
 
-    LAstep<IterType, Float, SubType>
+    LAstep<IterType, Float, SubType, PExtras>
     getLA(IterType LAIndex,
         FloatComplexT dz,
         /*FloatComplexT dc, */IterType j,

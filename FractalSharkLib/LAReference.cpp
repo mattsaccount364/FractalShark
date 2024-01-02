@@ -33,7 +33,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbit(
 
     IterType Period = 0;
 
-    LAInfoDeep<IterType, Float, SubType> LA{ FloatComplexT()};
+    LAInfoDeep<IterType, Float, SubType, PExtras> LA{ FloatComplexT()};
     LA = LA.Step(PerturbationResults.GetComplex<SubType>(1));
 
     LAInfoI<IterType> LAI{};
@@ -46,7 +46,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbit(
     IterType i;
     for (i = 2; i < maxRefIteration; i++) {
 
-        LAInfoDeep<IterType, Float, SubType> NewLA;
+        LAInfoDeep<IterType, Float, SubType, PExtras> NewLA;
         bool PeriodDetected = LA.Step(NewLA, PerturbationResults.GetComplex<SubType>(i));
         if (!PeriodDetected) {
             LA = NewLA;
@@ -62,11 +62,11 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbit(
         LAI.NextStageLAIndex = i;
 
         if (i + 1 < maxRefIteration) {
-            LA = LAInfoDeep<IterType, Float, SubType>(PerturbationResults.GetComplex<SubType>(i)).Step(PerturbationResults.GetComplex<SubType>(i + 1));
+            LA = LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(i)).Step(PerturbationResults.GetComplex<SubType>(i + 1));
             i += 2;
         }
         else {
-            LA = LAInfoDeep<IterType, Float, SubType>(PerturbationResults.GetComplex<SubType>(i));
+            LA = LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(i));
             i += 1;
         }
         break;
@@ -79,7 +79,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbit(
 
     if (Period == 0) {
         if (maxRefIteration > lowBound) {
-            LA = LAInfoDeep<IterType, Float, SubType>(PerturbationResults.GetComplex<SubType>(0)).Step(PerturbationResults.GetComplex<SubType>(1));
+            LA = LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(0)).Step(PerturbationResults.GetComplex<SubType>(1));
             LAI.NextStageLAIndex = 0;
             i = 2;
 
@@ -95,7 +95,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbit(
             LA.SetLAi(LAI);
             LAs.push_back(LA);
 
-            LAs.push_back(LAInfoDeep<IterType, Float, SubType>(PerturbationResults.GetComplex<SubType>(maxRefIteration)));
+            LAs.push_back(LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(maxRefIteration)));
 
             LAStages[0].MacroItCount = 1;
 
@@ -105,7 +105,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbit(
     else if (Period > lowBound) {
         LAs.pop_back();
 
-        LA = LAInfoDeep<IterType, Float, SubType>(PerturbationResults.GetComplex<SubType>(0)).Step(PerturbationResults.GetComplex<SubType>(1));
+        LA = LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(0)).Step(PerturbationResults.GetComplex<SubType>(1));
         LAI.NextStageLAIndex = 0;
         i = 2;
 
@@ -120,7 +120,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbit(
     // const auto numPerThread = maxRefIteration / std::thread::hardware_concurrency();
 
     for (; i < maxRefIteration; i++) {
-        LAInfoDeep<IterType, Float, SubType> NewLA{};
+        LAInfoDeep<IterType, Float, SubType, PExtras> NewLA{};
         const bool PeriodDetected{ LA.Step(NewLA, PerturbationResults.GetComplex<SubType>(i)) };
 
         if (!PeriodDetected && i < PeriodEnd) {
@@ -141,10 +141,10 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbit(
         const bool detected{ NewLA.DetectPeriod(PerturbationResults.GetComplex<SubType>(ip1)) };
 
         if (detected || ip1 >= maxRefIteration) {
-            LA = LAInfoDeep<IterType, Float, SubType>(PerturbationResults.GetComplex<SubType>(i));
+            LA = LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(i));
         }
         else {
-            LA = LAInfoDeep<IterType, Float, SubType>(PerturbationResults.GetComplex<SubType>(i)).Step(
+            LA = LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(i)).Step(
                 PerturbationResults.GetComplex<SubType>(ip1));
             i++;
         }
@@ -157,7 +157,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbit(
 
     LAStages[0].MacroItCount = LAsize();
 
-    auto LA2 = LAInfoDeep<IterType, Float, SubType>(PerturbationResults.GetComplex<SubType>(maxRefIteration));
+    auto LA2 = LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(maxRefIteration));
     LA2.SetLAi({});
     LAs.push_back(LA2);
 
@@ -184,7 +184,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
 
     IterType Period = 0;
 
-    LAInfoDeep<IterType, Float, SubType> LA{ FloatComplexT() };
+    LAInfoDeep<IterType, Float, SubType, PExtras> LA{ FloatComplexT() };
     LA = LA.Step(PerturbationResults.GetComplex<SubType>(1));
 
     LAInfoI<IterType> LAI{};
@@ -197,7 +197,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
     IterType i;
     for (i = 2; i < maxRefIteration; i++) {
 
-        LAInfoDeep<IterType, Float, SubType> NewLA;
+        LAInfoDeep<IterType, Float, SubType, PExtras> NewLA;
         bool PeriodDetected = LA.Step(NewLA, PerturbationResults.GetComplex<SubType>(i));
         if (!PeriodDetected) {
             LA = NewLA;
@@ -213,11 +213,11 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
         LAI.NextStageLAIndex = i;
 
         if (i + 1 < maxRefIteration) {
-            LA = LAInfoDeep<IterType, Float, SubType>(PerturbationResults.GetComplex<SubType>(i)).Step(PerturbationResults.GetComplex<SubType>(i + 1));
+            LA = LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(i)).Step(PerturbationResults.GetComplex<SubType>(i + 1));
             i += 2;
         }
         else {
-            LA = LAInfoDeep<IterType, Float, SubType>(PerturbationResults.GetComplex<SubType>(i));
+            LA = LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(i));
             i += 1;
         }
         break;
@@ -230,7 +230,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
 
     if (Period == 0) {
         if (maxRefIteration > lowBound) {
-            LA = LAInfoDeep<IterType, Float, SubType>(PerturbationResults.GetComplex<SubType>(0)).Step(PerturbationResults.GetComplex<SubType>(1));
+            LA = LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(0)).Step(PerturbationResults.GetComplex<SubType>(1));
             LAI.NextStageLAIndex = 0;
             i = 2;
 
@@ -246,7 +246,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
             LA.SetLAi(LAI);
             LAs.push_back(LA);
 
-            LAs.push_back(LAInfoDeep<IterType, Float, SubType>(PerturbationResults.GetComplex<SubType>(maxRefIteration)));
+            LAs.push_back(LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(maxRefIteration)));
 
             LAStages[0].MacroItCount = 1;
 
@@ -256,7 +256,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
     else if (Period > lowBound) {
         LAs.pop_back();
 
-        LA = LAInfoDeep<IterType, Float, SubType>(PerturbationResults.GetComplex<SubType>(0)).Step(PerturbationResults.GetComplex<SubType>(1));
+        LA = LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(0)).Step(PerturbationResults.GetComplex<SubType>(1));
         LAI.NextStageLAIndex = 0;
         i = 2;
 
@@ -276,7 +276,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
 
     auto Starter = [&]() {
         for (; i < maxRefIteration; i++) {
-            LAInfoDeep<IterType, Float, SubType> NewLA{};
+            LAInfoDeep<IterType, Float, SubType, PExtras> NewLA{};
             const bool PeriodDetected{ LA.Step(NewLA, PerturbationResults.GetComplex<SubType>(i)) };
 
             if (!PeriodDetected && i < PeriodEnd) {
@@ -297,10 +297,10 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
             const bool detected{ NewLA.DetectPeriod(PerturbationResults.GetComplex<SubType>(ip1)) };
 
             if (detected || ip1 >= maxRefIteration) {
-                LA = LAInfoDeep<IterType, Float, SubType>(PerturbationResults.GetComplex<SubType>(i));
+                LA = LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(i));
             }
             else {
-                LA = LAInfoDeep<IterType, Float, SubType>(PerturbationResults.GetComplex<SubType>(i)).Step(
+                LA = LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(i)).Step(
                     PerturbationResults.GetComplex<SubType>(ip1));
                 i++;
             }
@@ -319,7 +319,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
         }
     };
 
-    std::vector<std::vector<LAInfoDeep<IterType, Float, SubType>>> ThreadLAs;
+    std::vector<std::vector<LAInfoDeep<IterType, Float, SubType, PExtras>>> ThreadLAs;
     ThreadLAs.resize(ThreadCount);
     //for (size_t i = 1; i < ThreadCount; i++) {
     //    ThreadLAs[i].reserve...
@@ -331,7 +331,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
     auto Worker = [&numbers1, &numbers2, Period, &Start, &ThreadLAs, ThreadCount, maxRefIteration, this](int32_t ThreadID) {
         IterType j = maxRefIteration * ThreadID / ThreadCount;
         IterType End = maxRefIteration * (ThreadID + 1) / ThreadCount;
-        LAInfoDeep<IterType, Float, SubType> LA_ = LAInfoDeep<IterType, Float, SubType>(PerturbationResults.GetComplex<SubType>(j));
+        LAInfoDeep<IterType, Float, SubType, PExtras> LA_ = LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(j));
         LA_ = LA_.Step(PerturbationResults.GetComplex<SubType>(j + 1));
         LAInfoI<IterType> LAI_;
         LAI_.NextStageLAIndex = j;
@@ -344,7 +344,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
         numbers2[ThreadID] = End;
 
         for (; j < maxRefIteration; j++) {
-            LAInfoDeep<IterType, Float, SubType> NewLA;
+            LAInfoDeep<IterType, Float, SubType, PExtras> NewLA;
             bool PeriodDetected = LA_.Step(NewLA, PerturbationResults.GetComplex<SubType>(j));
 
             if (PeriodDetected) {
@@ -353,11 +353,11 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
                 PeriodEnd = PeriodBegin + Period;
 
                 if (j + 1 < maxRefIteration) {
-                    LA_ = LAInfoDeep<IterType, Float, SubType>(PerturbationResults.GetComplex<SubType>(j)).Step(PerturbationResults.GetComplex<SubType>(j + 1));
+                    LA_ = LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(j)).Step(PerturbationResults.GetComplex<SubType>(j + 1));
                     j += 2;
                 }
                 else {
-                    LA_ = LAInfoDeep<IterType, Float, SubType>(PerturbationResults.GetComplex<SubType>(j));
+                    LA_ = LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(j));
                     j += 1;
                 }
                 break;
@@ -367,7 +367,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
 
         Start[ThreadID] = j;
         for (; j < maxRefIteration; j++) {
-            LAInfoDeep<IterType, Float, SubType> NewLA{};
+            LAInfoDeep<IterType, Float, SubType, PExtras> NewLA{};
             const bool PeriodDetected{ LA_.Step(NewLA, PerturbationResults.GetComplex<SubType>(j)) };
 
             if (!PeriodDetected && j < PeriodEnd) {
@@ -388,10 +388,10 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
             const bool detected{ NewLA.DetectPeriod(PerturbationResults.GetComplex<SubType>(ip1)) };
 
             if (detected || ip1 >= maxRefIteration) {
-                LA_ = LAInfoDeep<IterType, Float, SubType>(PerturbationResults.GetComplex<SubType>(j));
+                LA_ = LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(j));
             }
             else {
-                LA_ = LAInfoDeep<IterType, Float, SubType>(PerturbationResults.GetComplex<SubType>(j)).Step(
+                LA_ = LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(j)).Step(
                     PerturbationResults.GetComplex<SubType>(ip1));
                 j++;
             }
@@ -420,7 +420,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
             LA_.SetLAi(LAI_);
             LAs.push_back(LA_);
 
-            auto LA2 = LAInfoDeep<IterType, Float, SubType>(PerturbationResults.GetComplex<SubType>(maxRefIteration));
+            auto LA2 = LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(maxRefIteration));
             LA2.SetLAi({});
             LAs.push_back(LA2);
         }
@@ -450,7 +450,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateNewLAStage(
     const PerturbationResults<IterType, PerturbType, PExtras>& PerturbationResults,
     IterType maxRefIteration) {
 
-    LAInfoDeep<IterType, Float, SubType> LA;
+    LAInfoDeep<IterType, Float, SubType, PExtras> LA;
     LAInfoI<IterType> LAI{};
     IterType i;
     IterType PeriodBegin;
@@ -460,10 +460,10 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateNewLAStage(
     IterType CurrentStage = LAStageCount;
     IterType PrevStageLAIndex = LAStages[PrevStage].LAIndex;
     IterType PrevStageMacroItCount = LAStages[PrevStage].MacroItCount;
-    LAInfoDeep<IterType, Float, SubType> PrevStageLA = LAs[PrevStageLAIndex];
+    LAInfoDeep<IterType, Float, SubType, PExtras> PrevStageLA = LAs[PrevStageLAIndex];
     const LAInfoI<IterType> &PrevStageLAI = LAs[PrevStageLAIndex].GetLAi();
 
-    LAInfoDeep<IterType, Float, SubType> PrevStageLAp1 = LAs[PrevStageLAIndex + 1];
+    LAInfoDeep<IterType, Float, SubType, PExtras> PrevStageLAp1 = LAs[PrevStageLAIndex + 1];
     const LAInfoI<IterType> PrevStageLAIp1 = LAs[PrevStageLAIndex + 1].GetLAi();
 
     IterType Period = 0;
@@ -484,12 +484,12 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateNewLAStage(
     IterType j;
 
     for (j = 2; j < PrevStageMacroItCount; j++) {
-        LAInfoDeep<IterType, Float, SubType> NewLA;
+        LAInfoDeep<IterType, Float, SubType, PExtras> NewLA;
 
-        NewLA = LAInfoDeep<IterType, Float, SubType>();
+        NewLA = LAInfoDeep<IterType, Float, SubType, PExtras>();
 
         IterType PrevStageLAIndexj = PrevStageLAIndex + j;
-        LAInfoDeep<IterType, Float, SubType> PrevStageLAj = LAs[PrevStageLAIndexj];
+        LAInfoDeep<IterType, Float, SubType, PExtras> PrevStageLAj = LAs[PrevStageLAIndexj];
         const LAInfoI<IterType> *PrevStageLAIj = &PrevStageLAj.GetLAi();
         bool PeriodDetected = LA.Composite(NewLA, PrevStageLAj);
 
@@ -505,7 +505,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateNewLAStage(
             LAI.NextStageLAIndex = j;
 
             IterType PrevStageLAIndexjp1 = PrevStageLAIndexj + 1;
-            LAInfoDeep<IterType, Float, SubType> PrevStageLAjp1 = LAs[PrevStageLAIndexjp1];
+            LAInfoDeep<IterType, Float, SubType, PExtras> PrevStageLAjp1 = LAs[PrevStageLAIndexjp1];
             const LAInfoI<IterType> &PrevStageLAIjp1 = LAs[PrevStageLAIndexjp1].GetLAi();
 
             if (NewLA.DetectPeriod(PrevStageLAjp1.getRef()) || j + 1 >= PrevStageMacroItCount) {
@@ -553,7 +553,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateNewLAStage(
             LA.SetLAi(LAI);
             LAs.push_back(LA);
 
-            LAInfoDeep<IterType, Float, SubType> LA2(PerturbationResults.GetComplex<SubType>(maxRefIteration));
+            LAInfoDeep<IterType, Float, SubType, PExtras> LA2(PerturbationResults.GetComplex<SubType>(maxRefIteration));
             LA2.SetLAi({}); // mrenz This one is new
             LAs.push_back(LA2);
 
@@ -581,12 +581,12 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateNewLAStage(
     }
 
     for (; j < PrevStageMacroItCount; j++) {
-        LAInfoDeep<IterType, Float, SubType> NewLA;
+        LAInfoDeep<IterType, Float, SubType, PExtras> NewLA;
 
-        NewLA = LAInfoDeep<IterType, Float, SubType>();
+        NewLA = LAInfoDeep<IterType, Float, SubType, PExtras>();
         IterType PrevStageLAIndexj = PrevStageLAIndex + j;
 
-        LAInfoDeep<IterType, Float, SubType> PrevStageLAj = LAs[PrevStageLAIndexj];
+        LAInfoDeep<IterType, Float, SubType, PExtras> PrevStageLAj = LAs[PrevStageLAIndexj];
         bool PeriodDetected = LA.Composite(NewLA, PrevStageLAj);
 
         if (PeriodDetected || i >= PeriodEnd) {
@@ -599,7 +599,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateNewLAStage(
             PeriodBegin = i;
             PeriodEnd = PeriodBegin + Period;
 
-            LAInfoDeep<IterType, Float, SubType> PrevStageLAjp1 = LAs[PrevStageLAIndexj + 1];
+            LAInfoDeep<IterType, Float, SubType, PExtras> PrevStageLAjp1 = LAs[PrevStageLAIndexj + 1];
 
             if (NewLA.DetectPeriod(PrevStageLAjp1.getRef()) || j + 1 >= PrevStageMacroItCount) {
                 LA = PrevStageLAj;
@@ -626,7 +626,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateNewLAStage(
 
     LAStages[CurrentStage].MacroItCount = LAsize() - LAStages[CurrentStage].LAIndex;
 
-    LA = LAInfoDeep<IterType, Float, SubType>(PerturbationResults.GetComplex<SubType>(maxRefIteration));
+    LA = LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(maxRefIteration));
     LA.SetLAi({});
     LAs.push_back(LA);
     return true;
@@ -726,7 +726,7 @@ IterType LAReference<IterType, Float, SubType, PExtras>::getMacroItCount(IterTyp
 }
 
 template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
-LAstep<IterType, Float, SubType>
+LAstep<IterType, Float, SubType, PExtras>
 LAReference<IterType, Float, SubType, PExtras>::getLA(
     IterType LAIndex,
     FloatComplexT dz,
@@ -737,7 +737,7 @@ LAReference<IterType, Float, SubType, PExtras>::getLA(
     IterType LAIndexj = LAIndex + j;
     const LAInfoI<IterType> &LAIj = LAs[LAIndexj].GetLAi();
 
-    LAstep<IterType, Float, SubType> las;
+    LAstep<IterType, Float, SubType, PExtras> las;
 
     IterType l = LAIj.StepLength;
     bool usable = iterations + l <= max_iterations;
@@ -746,7 +746,7 @@ LAReference<IterType, Float, SubType, PExtras>::getLA(
     //}
 
     if (usable) {
-        LAInfoDeep<IterType, Float, SubType> &LAj = LAs[LAIndexj];
+        LAInfoDeep<IterType, Float, SubType, PExtras> &LAj = LAs[LAIndexj];
 
         las = LAj.Prepare(dz);
 
@@ -757,7 +757,7 @@ LAReference<IterType, Float, SubType, PExtras>::getLA(
         }
     }
     else {
-        las = LAstep<IterType, Float, SubType>();
+        las = LAstep<IterType, Float, SubType, PExtras>();
         las.unusable = true;
     }
 

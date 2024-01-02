@@ -38,9 +38,9 @@ public:
     CUDA_CRAP GPU_LAInfoDeep<IterType, Float, SubType>& operator=(
         const GPU_LAInfoDeep<IterType, Float2, SubType2>& other);
 
-    template<class Float2, class SubType2>
+    template<class Float2, class SubType2, PerturbExtras PExtras2>
     CUDA_CRAP GPU_LAInfoDeep<IterType, Float, SubType>& operator=(
-        const LAInfoDeep<IterType, Float2, SubType2>& other);
+        const LAInfoDeep<IterType, Float2, SubType2, PExtras2>& other);
 
     CUDA_CRAP GPU_LAstep<IterType, Float, SubType> Prepare(HDRFloatComplex dz) const;
     CUDA_CRAP HDRFloatComplex getRef() const;
@@ -72,10 +72,10 @@ GPU_LAInfoDeep<IterType, Float, SubType> &GPU_LAInfoDeep<IterType, Float, SubTyp
 }
 
 template<typename IterType, class Float, class SubType>
-template<class Float2, class SubType2>
+template<class Float2, class SubType2, PerturbExtras PExtras2>
 CUDA_CRAP
 GPU_LAInfoDeep<IterType, Float, SubType>& GPU_LAInfoDeep<IterType, Float, SubType>::operator=(
-    const LAInfoDeep<IterType, Float2, SubType2>& other) {
+    const LAInfoDeep<IterType, Float2, SubType2, PExtras2>& other) {
 
     this->Ref = HDRFloatComplex(other.Ref);
     this->LAThreshold = HDRFloat(other.LAThreshold);

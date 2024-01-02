@@ -82,12 +82,12 @@ void Fractal::Initialize(int width,
     InitStatics();
 
     // Setup member variables with initial values:
-    //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedRCLAv2);
+    SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedRCLAv2);
     //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedLAv2);
     //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx2x32PerturbedLAv2);
     //SetRenderAlgorithm(RenderAlgorithm::Gpu2x32PerturbedLAv2);
     //SetRenderAlgorithm(RenderAlgorithm::Gpu2x32PerturbedLAv2LAO);
-    SetRenderAlgorithm(RenderAlgorithm::AUTO);
+    //SetRenderAlgorithm(RenderAlgorithm::AUTO);
 
     SetIterationPrecision(1);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed);
@@ -100,7 +100,7 @@ void Fractal::Initialize(int width,
     ResetDimensions(width, height, 2);
     SetIterType(IterTypeEnum::Bits32);
 
-    View(0);
+    View(1);
     //View(10);
     //View(26); // hard
     //View(27); // easy
@@ -1317,11 +1317,12 @@ void Fractal::View(size_t view)
     switch (view) {
     case 1:
         // TODO for testing ref compress
-        minX = HighPrecision{ "-0.99305395458355261063612961282342504845205559979110773062128" };
-        minY = HighPrecision{ "0.29972344654813270605603829058366483568073874531964832362018" };
-        maxX = HighPrecision{ "-0.99305376756265520130178146953447109518864025857411258806278" };
-        maxY = HighPrecision{ "0.29972363356903011539038643387261878894415408653664346617868" };
-        SetNumIterations<IterTypeFull>(1024);
+        minX = HighPrecision{ "-0.55926812879847992498107324966788974191217640857301963930688457656415534100789287125591761137216846" };
+        minY = HighPrecision{ "-0.6439064218930142062692601760509721456266843404122779777422745620705604129398047637703711513455272" };
+        maxX = HighPrecision{ "-0.5592681287984799249810732496678897419075334717181359377724576592436834905850971422432097307803473" };
+        maxY = HighPrecision{ "-0.64390642189301420626926017605097214562204140355739427620784764475008856251700903475766327075370604" };
+        SetNumIterations<IterTypeFull>(4718592);
+        break;
 
         // Limits of 4x64 GPU
         //minX = HighPrecision{ "-1.763399177066752695854220120818493394874764715075525070697085376173644156624573649873526729559691534754284706803085481158" };

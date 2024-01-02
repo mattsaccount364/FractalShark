@@ -283,7 +283,13 @@ private:
         workspace.uncompressed_index++;
         // compressed already points to the next one
 
-        // TODO do we ever walk off the end here
+        TODO do we ever walk off the end here
+                    //some notes
+            //    it looks GPU specific 
+            //    64-bit specific
+            //    non-deterministic
+            //    maybe copying compressed orbit to gpu wrong / uninitialized memory somewhere?
+
 
         auto nextIndex = FullOrbit[workspace.compressed_index].CompressionIndex;
         if (nextIndex == workspace.uncompressed_index) {

@@ -64,8 +64,13 @@ public:
 
         auto LinearScan = [&](CachedIter<T>& iter, CachedIter<T>& other) -> bool {
             if (iter.UncompressedIter + 1 == uncompressed_index) {
-                if (iter.UncompressedIter + 1 <
-                    results.FullOrbit[iter.CompressedIter + 1].CompressionIndex) {
+                bool condition =
+                    (iter.CompressedIter + 1 < results.FullOrbit.size() &&
+                    (iter.UncompressedIter + 1 <
+                        results.FullOrbit[iter.CompressedIter + 1].CompressionIndex)) ||
+                    iter.CompressedIter + 1 == results.FullOrbit.size();
+
+                if (condition) {
                     other = iter;
                     runOneIter(iter.zx, iter.zy);
                     iter.UncompressedIter = uncompressed_index;

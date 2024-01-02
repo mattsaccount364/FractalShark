@@ -167,8 +167,6 @@ public:
     void RotateFractalPalette(int delta);
     void CreateNewFractalPalette(void);
 
-    template<typename IterType, class T, PerturbExtras PExtras>
-    void DrawPerturbationResults();
     void DrawAllPerturbationResults(bool LeaveScreen);
 
     // Saving images of the fractal
@@ -199,6 +197,16 @@ public:
         int32_t & CompressionErrorExp) {
         m_RefOrbit.GetSomeDetails(PeriodMaybeZero, CompressedIters, UncompressedIters, CompressionErrorExp);
     }
+
+    // Unit conversion helpers
+    template<bool IncludeGpuAntialiasing = false>
+    HighPrecision XFromScreenToCalc(HighPrecision x);
+
+    template<bool IncludeGpuAntialiasing = false>
+    HighPrecision YFromScreenToCalc(HighPrecision y);
+
+    HighPrecision XFromCalcToScreen(HighPrecision x) const;
+    HighPrecision YFromCalcToScreen(HighPrecision y) const;
 
     static DWORD WINAPI ServerManageMainConnectionThread(void*);
     static DWORD WINAPI ServerManageSubConnectionThread(void*);
@@ -333,16 +341,6 @@ private:
     };
 
     uint64_t FindTotalItersUsed(void);
-
-    // Unit conversion helpers
-    template<bool IncludeGpuAntialiasing = false>
-    HighPrecision XFromScreenToCalc(HighPrecision x);
-
-    template<bool IncludeGpuAntialiasing = false>
-    HighPrecision YFromScreenToCalc(HighPrecision y);
-
-    HighPrecision XFromCalcToScreen(HighPrecision x);
-    HighPrecision YFromCalcToScreen(HighPrecision y);
 
     // Networking functions.
     void NetworkCreateWorkload(void);

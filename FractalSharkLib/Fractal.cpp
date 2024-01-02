@@ -2890,48 +2890,10 @@ void Fractal::DrawAllPerturbationResults(bool LeaveScreen) {
 
     glBegin(GL_POINTS);
 
-    DrawPerturbationResults<uint32_t, double, PerturbExtras::Disable>();
-    DrawPerturbationResults<uint32_t, float, PerturbExtras::Disable>();
-    DrawPerturbationResults<uint32_t, HDRFloat<double>, PerturbExtras::Disable>();
-    DrawPerturbationResults<uint32_t, HDRFloat<float>, PerturbExtras::Disable>();
-
-    DrawPerturbationResults<uint32_t, double, PerturbExtras::Bad>();
-    DrawPerturbationResults<uint32_t, float, PerturbExtras::Bad>();
-    DrawPerturbationResults<uint32_t, HDRFloat<double>, PerturbExtras::Bad>();
-    DrawPerturbationResults<uint32_t, HDRFloat<float>, PerturbExtras::Bad>();
-
-    DrawPerturbationResults<uint64_t, double, PerturbExtras::Disable>();
-    DrawPerturbationResults<uint64_t, float, PerturbExtras::Disable>();
-    DrawPerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::Disable>();
-    DrawPerturbationResults<uint64_t, HDRFloat<float>, PerturbExtras::Disable>();
-
-    DrawPerturbationResults<uint64_t, double, PerturbExtras::Bad>();
-    DrawPerturbationResults<uint64_t, float, PerturbExtras::Bad>();
-    DrawPerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::Bad>();
-    DrawPerturbationResults<uint64_t, HDRFloat<float>, PerturbExtras::Bad>();
+    m_RefOrbit.DrawPerturbationResults();
 
     glEnd();
     glFlush();
-}
-
-template<typename IterType, class T, PerturbExtras PExtras>
-void Fractal::DrawPerturbationResults() {
-
-    // TODO can we just integrate all this with DrawFractal
-
-    auto& results = m_RefOrbit.GetPerturbationResults<IterType, T, PExtras>();
-    for (size_t i = 0; i < results.size(); i++)
-    {
-        if (m_RefOrbit.IsPerturbationResultUsefulHere<IterType, T, false, PExtras>(i)) {
-            glColor3f((GLfloat)255, (GLfloat)255, (GLfloat)255);
-
-            GLint scrnX = Convert<HighPrecision, GLint>(XFromCalcToScreen(results[i]->GetHiX()));
-            GLint scrnY = static_cast<GLint>(m_ScrnHeight) - Convert<HighPrecision, GLint>(YFromCalcToScreen(results[i]->GetHiY()));
-
-            // Coordinates are weird in OGL mode.
-            glVertex2i(scrnX, scrnY);
-        }
-    }
 }
 
 void Fractal::DrawFractalThread(size_t index, Fractal* fractal) {
@@ -4676,12 +4638,12 @@ HighPrecision Fractal::YFromScreenToCalc(HighPrecision y)
     return -(y - OriginY) * (m_MaxY - m_MinY) / (m_ScrnHeight * aa);
 }
 
-HighPrecision Fractal::XFromCalcToScreen(HighPrecision x)
+HighPrecision Fractal::XFromCalcToScreen(HighPrecision x) const
 {
     return (x - m_MinX) * ((HighPrecision)m_ScrnWidth / (m_MaxX - m_MinX));
 }
 
-HighPrecision Fractal::YFromCalcToScreen(HighPrecision y)
+HighPrecision Fractal::YFromCalcToScreen(HighPrecision y) const
 {
     return (HighPrecision)m_ScrnHeight - (y - m_MinY) * ((HighPrecision)m_ScrnHeight / (m_MaxY - m_MinY));
 }

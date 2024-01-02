@@ -92,7 +92,10 @@ public:
         uint64_t &UncompressedIters,
         int32_t &CompressionErrorExp);
 
+    void DrawPerturbationResults();
+
 private:
+    bool RequiresCompression() const;
     bool RequiresBadCalc() const;
     bool IsThisPerturbationArrayUsed(void* check) const;
 
@@ -123,6 +126,9 @@ private:
 
     template<typename IterType, class T, class PerturbationResultsType, PerturbExtras PExtras, ReuseMode Reuse>
     void InitResults(PerturbationResultsType&results, const HighPrecision &initX, const HighPrecision &initY);
+
+    template<typename IterType, class T, PerturbExtras PExtras>
+    void DrawPerturbationResultsHelper();
 
     PerturbationAlg m_PerturbationAlg;
     Fractal& m_Fractal;

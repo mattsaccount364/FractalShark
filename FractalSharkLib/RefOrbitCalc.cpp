@@ -83,6 +83,38 @@ RefOrbitCalc::RefOrbitCalc(Fractal& Fractal)
       m_LaGenerationNumber() {
 }
 
+bool RefOrbitCalc::RequiresCompression() const {
+    switch (m_Fractal.GetRenderAlgorithm()) {
+        case RenderAlgorithm::Gpu1x32PerturbedRCLAv2:
+        case RenderAlgorithm::Gpu1x32PerturbedRCLAv2PO:
+        case RenderAlgorithm::Gpu1x32PerturbedRCLAv2LAO:
+
+        case RenderAlgorithm::Gpu2x32PerturbedRCLAv2:
+        case RenderAlgorithm::Gpu2x32PerturbedRCLAv2PO:
+        case RenderAlgorithm::Gpu2x32PerturbedRCLAv2LAO:
+
+        case RenderAlgorithm::Gpu1x64PerturbedRCLAv2:
+        case RenderAlgorithm::Gpu1x64PerturbedRCLAv2PO:
+        case RenderAlgorithm::Gpu1x64PerturbedRCLAv2LAO:
+
+        case RenderAlgorithm::GpuHDRx32PerturbedRCLAv2:
+        case RenderAlgorithm::GpuHDRx32PerturbedRCLAv2PO:
+        case RenderAlgorithm::GpuHDRx32PerturbedRCLAv2LAO:
+
+        case RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2:
+        case RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2PO:
+        case RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2LAO:
+
+        case RenderAlgorithm::GpuHDRx64PerturbedRCLAv2:
+        case RenderAlgorithm::GpuHDRx64PerturbedRCLAv2PO:
+        case RenderAlgorithm::GpuHDRx64PerturbedRCLAv2LAO:
+            return true;
+
+        default:
+            return false;
+    }
+}
+
 bool RefOrbitCalc::RequiresBadCalc() const {
     switch (m_Fractal.GetRenderAlgorithm()) {
     case RenderAlgorithm::GpuHDRx32PerturbedScaled:
@@ -448,69 +480,69 @@ void RefOrbitCalc::AddPerturbationReferencePoint() {
         m_PerturbationGuessCalcY = (m_Fractal.GetMaxY() + m_Fractal.GetMinY()) / HighPrecision(2);
     }
 
-    if (RequiresBadCalc()) {
+    //if (RequiresBadCalc()) {
+    //    if (m_PerturbationAlg == PerturbationAlg::ST) {
+    //        AddPerturbationReferencePointST<IterType, T, SubType, false, BenchmarkState, PerturbExtras::Bad, ReuseMode::DontSaveForReuse>(
+    //            m_PerturbationGuessCalcX,
+    //            m_PerturbationGuessCalcY);
+    //    }
+    //    else if (m_PerturbationAlg == PerturbationAlg::MT) {
+    //        AddPerturbationReferencePointMT3<IterType, T, SubType, false, BenchmarkState, PerturbExtras::Bad, ReuseMode::DontSaveForReuse>(
+    //            m_PerturbationGuessCalcX,
+    //            m_PerturbationGuessCalcY);
+    //    }
+    //    else if (m_PerturbationAlg == PerturbationAlg::STPeriodicity) {
+    //        AddPerturbationReferencePointST<IterType, T, SubType, true, BenchmarkState, PerturbExtras::Bad, ReuseMode::DontSaveForReuse>(
+    //            m_PerturbationGuessCalcX,
+    //            m_PerturbationGuessCalcY);
+    //    }
+    //    else if (m_PerturbationAlg == PerturbationAlg::MTPeriodicity3 ||
+    //             m_PerturbationAlg == PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed ||
+    //             m_PerturbationAlg == PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed) {
+    //        // Note: this path we don't bother saving/reusing.  Useless for low zoom depths.
+    //        AddPerturbationReferencePointMT3<IterType, T, SubType, true, BenchmarkState, PerturbExtras::Bad, ReuseMode::DontSaveForReuse>(
+    //            m_PerturbationGuessCalcX,
+    //            m_PerturbationGuessCalcY);
+    //    }
+    //    else if (m_PerturbationAlg == PerturbationAlg::MTPeriodicity5) {
+    //        AddPerturbationReferencePointMT5<IterType, T, SubType, true, BenchmarkState, PerturbExtras::Bad, ReuseMode::DontSaveForReuse>(
+    //            m_PerturbationGuessCalcX,
+    //            m_PerturbationGuessCalcY);
+    //    }
+    //}
+    //else {
         if (m_PerturbationAlg == PerturbationAlg::ST) {
-            AddPerturbationReferencePointST<IterType, T, SubType, false, BenchmarkState, PerturbExtras::Bad, ReuseMode::DontSaveForReuse>(
+            AddPerturbationReferencePointST<IterType, T, SubType, false, BenchmarkState, PExtras, ReuseMode::DontSaveForReuse>(
                 m_PerturbationGuessCalcX,
                 m_PerturbationGuessCalcY);
         }
         else if (m_PerturbationAlg == PerturbationAlg::MT) {
-            AddPerturbationReferencePointMT3<IterType, T, SubType, false, BenchmarkState, PerturbExtras::Bad, ReuseMode::DontSaveForReuse>(
+            AddPerturbationReferencePointMT3<IterType, T, SubType, false, BenchmarkState, PExtras, ReuseMode::DontSaveForReuse>(
                 m_PerturbationGuessCalcX,
                 m_PerturbationGuessCalcY);
         }
         else if (m_PerturbationAlg == PerturbationAlg::STPeriodicity) {
-            AddPerturbationReferencePointST<IterType, T, SubType, true, BenchmarkState, PerturbExtras::Bad, ReuseMode::DontSaveForReuse>(
-                m_PerturbationGuessCalcX,
-                m_PerturbationGuessCalcY);
-        }
-        else if (m_PerturbationAlg == PerturbationAlg::MTPeriodicity3 ||
-                 m_PerturbationAlg == PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed ||
-                 m_PerturbationAlg == PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed) {
-            // Note: this path we don't bother saving/reusing.  Useless for low zoom depths.
-            AddPerturbationReferencePointMT3<IterType, T, SubType, true, BenchmarkState, PerturbExtras::Bad, ReuseMode::DontSaveForReuse>(
-                m_PerturbationGuessCalcX,
-                m_PerturbationGuessCalcY);
-        }
-        else if (m_PerturbationAlg == PerturbationAlg::MTPeriodicity5) {
-            AddPerturbationReferencePointMT5<IterType, T, SubType, true, BenchmarkState, PerturbExtras::Bad, ReuseMode::DontSaveForReuse>(
-                m_PerturbationGuessCalcX,
-                m_PerturbationGuessCalcY);
-        }
-    }
-    else {
-        if (m_PerturbationAlg == PerturbationAlg::ST) {
-            AddPerturbationReferencePointST<IterType, T, SubType, false, BenchmarkState, PerturbExtras::Disable, ReuseMode::DontSaveForReuse>(
-                m_PerturbationGuessCalcX,
-                m_PerturbationGuessCalcY);
-        }
-        else if (m_PerturbationAlg == PerturbationAlg::MT) {
-            AddPerturbationReferencePointMT3<IterType, T, SubType, false, BenchmarkState, PerturbExtras::Disable, ReuseMode::DontSaveForReuse>(
-                m_PerturbationGuessCalcX,
-                m_PerturbationGuessCalcY);
-        }
-        else if (m_PerturbationAlg == PerturbationAlg::STPeriodicity) {
-            AddPerturbationReferencePointST<IterType, T, SubType, true, BenchmarkState, PerturbExtras::Disable, ReuseMode::DontSaveForReuse>(
+            AddPerturbationReferencePointST<IterType, T, SubType, true, BenchmarkState, PExtras, ReuseMode::DontSaveForReuse>(
                 m_PerturbationGuessCalcX,
                 m_PerturbationGuessCalcY);
         }
         else if (m_PerturbationAlg == PerturbationAlg::MTPeriodicity3) {
-            AddPerturbationReferencePointMT3<IterType, T, SubType, true, BenchmarkState, PerturbExtras::Disable, ReuseMode::DontSaveForReuse>(
+            AddPerturbationReferencePointMT3<IterType, T, SubType, true, BenchmarkState, PExtras, ReuseMode::DontSaveForReuse>(
                 m_PerturbationGuessCalcX,
                 m_PerturbationGuessCalcY);
         }
         else if (m_PerturbationAlg == PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed ||
                  m_PerturbationAlg == PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed) {
-            AddPerturbationReferencePointMT3<IterType, T, SubType, true, BenchmarkState, PerturbExtras::Disable, ReuseMode::SaveForReuse>(
+            AddPerturbationReferencePointMT3<IterType, T, SubType, true, BenchmarkState, PExtras, ReuseMode::SaveForReuse>(
                 m_PerturbationGuessCalcX,
                 m_PerturbationGuessCalcY);
         }
         else if (m_PerturbationAlg == PerturbationAlg::MTPeriodicity5) {
-            AddPerturbationReferencePointMT5<IterType, T, SubType, true, BenchmarkState, PerturbExtras::Disable, ReuseMode::DontSaveForReuse>(
+            AddPerturbationReferencePointMT5<IterType, T, SubType, true, BenchmarkState, PExtras, ReuseMode::DontSaveForReuse>(
                 m_PerturbationGuessCalcX,
                 m_PerturbationGuessCalcY);
         }
-    }
+    //}
 }
 
 template<class T>
@@ -588,6 +620,10 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
     static const T HighTwo = T{ 2.0 };
     static const T TwoFiftySix = T(256);
 
+    RefOrbitCompressor<IterType, T, PExtras> compressor{
+        *results,
+        m_Fractal.GetCompressionErrorExp() };
+
     zx = cx;
     zy = cy;
     for (i = 0; i < m_Fractal.GetNumIterations<IterType>(); i++)
@@ -598,7 +634,14 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
         T double_zx = (T)zx;
         T double_zy = (T)zy;
 
-        results->AddUncompressedIteration({ double_zx, double_zy });
+        if constexpr (PExtras == PerturbExtras::Disable) {
+            results->AddUncompressedIteration({ double_zx, double_zy });
+        } else if constexpr (PExtras == PerturbExtras::EnableCompression) {
+            compressor.MaybeAddCompressedIteration({ double_zx, double_zy, i + 1 });
+        }
+        else if constexpr (PExtras == PerturbExtras::Bad) {
+            results->AddUncompressedIteration({ double_zx, double_zy, false });
+        }
 
         if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
             AddReused(*results, zx, zy);
@@ -1335,6 +1378,10 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
 
     bool zyStarted = false;
 
+    RefOrbitCompressor<IterType, T, PExtras> compressor{
+        *results,
+        m_Fractal.GetCompressionErrorExp() };
+
     for (IterTypeFull i = 0; i < m_Fractal.GetNumIterations<IterType>(); i++)
     {
         // Start Zx squaring thread
@@ -1360,7 +1407,15 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
         T double_zx = (T)zx;
         T double_zy = (T)zy;
 
-        results->AddUncompressedIteration({double_zx, double_zy });
+        if constexpr (PExtras == PerturbExtras::Disable) {
+            results->AddUncompressedIteration({ double_zx, double_zy });
+        }
+        else if constexpr (PExtras == PerturbExtras::EnableCompression) {
+            compressor.MaybeAddCompressedIteration({ double_zx, double_zy, i + 1 });
+        }
+        else if constexpr (PExtras == PerturbExtras::Bad) {
+            results->AddUncompressedIteration({ double_zx, double_zy, false });
+        }
 
         if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
             AddReused(*results, zx, zy);  // TODO
@@ -1525,449 +1580,8 @@ template<
     PerturbExtras PExtras,
     RefOrbitCalc::ReuseMode Reuse>
 void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecision cy) {
-    auto& PerturbationResultsArray = GetPerturbationResults<IterType, T, PExtras>();
-    PerturbationResultsArray.push_back(std::make_unique<PerturbationResults<IterType, T, PExtras>>());
-    auto* results = PerturbationResultsArray[PerturbationResultsArray.size() - 1].get();
-
-    HighPrecision zx, zy;
-    HighPrecision zx2, zy2;
-    HighPrecision zx_sq, zy_sq;
-
-    T dzdcX = T(1.0);
-    T dzdcY = T(0.0);
-
-    InitResults<IterType, T, decltype(*results), PExtras, Reuse>(*results, cx, cy);
-
-    const T small_float = T((SubType)1.1754944e-38);
-    // Note: results->bad is not here.  See end of this function.
-    SubType glitch = (SubType)0.0000001;
-
-    struct ThreadZxData {
-        HighPrecision zx;
-        HighPrecision* zx_sq;
-    };
-
-    struct ThreadZyData {
-        HighPrecision zy;
-        HighPrecision* zy_sq;
-    };
-
-    struct Thread1Data {
-        HighPrecision* zx_sq;
-        HighPrecision* zy_sq;
-        HighPrecision* zx2;
-        HighPrecision* zy2;
-        HighPrecision* zx;
-        HighPrecision zy;
-        HighPrecision* cx;
-    };
-
-    struct Thread2Data {
-        HighPrecision zx2;
-        HighPrecision* zy2;
-        HighPrecision zy;
-        HighPrecision* cy;
-    };
-
-    auto* ThreadZxMemory = (ThreadPtrs<ThreadZxData> *)
-        _aligned_malloc(sizeof(ThreadPtrs<ThreadZxData>), 64);
-    memset(ThreadZxMemory, 0, sizeof(*ThreadZxMemory));
-
-    auto* ThreadZyMemory = (ThreadPtrs<ThreadZyData> *)
-        _aligned_malloc(sizeof(ThreadPtrs<ThreadZyData>), 64);
-    memset(ThreadZyMemory, 0, sizeof(*ThreadZyMemory));
-
-    auto* Thread1Memory = (ThreadPtrs<Thread1Data> *)
-        _aligned_malloc(sizeof(ThreadPtrs<Thread1Data>), 64);
-    memset(Thread1Memory, 0, sizeof(*Thread1Memory));
-
-    auto* Thread2Memory = (ThreadPtrs<Thread2Data>*)
-        _aligned_malloc(sizeof(ThreadPtrs<Thread2Data>), 64);
-    memset(Thread2Memory, 0, sizeof(*Thread2Memory));
-
-    auto ThreadSqZx = [](ThreadPtrs<ThreadZxData>* ThreadMemory) {
-        for (;;) {
-            ThreadZxData* expected = ThreadMemory->In.load();
-            ThreadZxData* ok = nullptr;
-
-            CheckStartCriteria;
-            PrefetchHighPrec(ok->zx);
-
-            *ok->zx_sq = ok->zx * ok->zx;
-
-            // Give result back.
-            CheckFinishCriteria;
-        }
-    };
-
-    auto ThreadSqZy = [](ThreadPtrs<ThreadZyData>* ThreadMemory) {
-        for (;;) {
-            ThreadZyData* expected = ThreadMemory->In.load();
-            ThreadZyData* ok = nullptr;
-
-            CheckStartCriteria;
-            PrefetchHighPrec(ok->zy);
-
-            *ok->zy_sq = ok->zy * ok->zy;
-
-            // Give result back.
-            CheckFinishCriteria;
-        }
-    };
-
-    auto Thread1 = [](ThreadPtrs<Thread1Data>* ThreadMemory,
-        ThreadZxData* threadZxdata,
-        ThreadZyData* threadZydata,
-        ThreadPtrs<ThreadZxData>* ThreadZxMemory,
-        ThreadPtrs<ThreadZyData>* ThreadZyMemory) {
-            HighPrecision temp3;
-
-            ThreadZxData* expectedZx = nullptr;
-            ThreadZyData* expectedZy = nullptr;
-
-            for (;;) {
-                Thread1Data* expected = ThreadMemory->In.load();
-                Thread1Data* ok = nullptr;
-
-                CheckStartCriteria;
-
-                PrefetchHighPrec(*ok->cx);
-                PrefetchHighPrec(*ok->zx);
-
-                // Wait for squaring
-                bool zxOk = false;
-                bool zyOk = false;
-                for (;;) {
-                    expectedZx = threadZxdata;
-
-                    if (!zxOk && ThreadZxMemory->Out.compare_exchange_weak(expectedZx, nullptr, std::memory_order_relaxed)) {
-                        zxOk = true;
-
-                        std::atomic_thread_fence(std::memory_order_release);
-                        PrefetchHighPrec(*ok->zx_sq);
-                    }
-
-                    expectedZy = threadZydata;
-
-                    if (!zyOk && ThreadZyMemory->Out.compare_exchange_weak(expectedZy, nullptr, std::memory_order_relaxed)) {
-                        zyOk = true;
-                        std::atomic_thread_fence(std::memory_order_release);
-                        PrefetchHighPrec(*ok->zy_sq);
-                    }
-
-                    if (zxOk && zyOk) {
-                        break;
-                    }
-                }
-
-                temp3 = *ok->zx_sq - *ok->zy_sq;
-                *ok->zx = temp3 + *ok->cx;
-                *ok->zx2 = *ok->zx * 2;
-
-                // Give result back.
-                CheckFinishCriteria;
-            }
-    };
-
-    auto Thread2 = [](ThreadPtrs<Thread2Data>* ThreadMemory) {
-        HighPrecision temp1;
-        for (;;) {
-            Thread2Data* expected = ThreadMemory->In.load();
-            Thread2Data* ok = nullptr;
-
-            CheckStartCriteria;
-
-            // _mm_prefetch((const char*)ok->zx_sq, _MM_HINT_T0);
-            // _mm_prefetch((const char*)&ok->zx_sq->backend().data(), _MM_HINT_T0);
-            PrefetchHighPrec(*ok->cy);
-            PrefetchHighPrec(ok->zx2);
-            PrefetchHighPrec(ok->zy);
-
-            temp1 = ok->zx2 * ok->zy;
-            ok->zy = temp1 + *ok->cy;
-            *ok->zy2 = ok->zy * 2;
-
-            // Give result back.
-            CheckFinishCriteria;
-        }
-    };
-
-    auto* threadZxdata = (ThreadZxData*)_aligned_malloc(sizeof(ThreadZxData), 64);
-    auto* threadZydata = (ThreadZyData*)_aligned_malloc(sizeof(ThreadZyData), 64);
-    auto* thread1data = (Thread1Data*)_aligned_malloc(sizeof(Thread1Data), 64);
-    auto* thread2data = (Thread2Data*)_aligned_malloc(sizeof(Thread2Data), 64);
-
-    new (threadZxdata) (ThreadZxData){};
-    new (threadZydata) (ThreadZyData){};
-    new (thread1data) (Thread1Data){};
-    new (thread2data) (Thread2Data){};
-
-    threadZxdata->zx_sq = &zx_sq;
-
-    threadZydata->zy_sq = &zy_sq;
-
-    thread1data->zx2 = &zx2;
-    thread1data->zy2 = &zy2;
-    thread1data->zx_sq = &zx_sq;
-    thread1data->zy_sq = &zy_sq;
-    thread1data->zx = &zx;
-    thread1data->cx = &cx;
-
-    thread2data->zy2 = &zy2;
-    thread2data->cy = &cy;
-
-    // Five threads + use rest for HDRFloat
-    std::unique_ptr<std::thread> tZx(new std::thread(ThreadSqZx, ThreadZxMemory));
-    std::unique_ptr<std::thread> tZy(new std::thread(ThreadSqZy, ThreadZyMemory));
-    std::unique_ptr<std::thread> t1(new std::thread(Thread1, Thread1Memory, threadZxdata, threadZydata, ThreadZxMemory, ThreadZyMemory));
-    std::unique_ptr<std::thread> t2(new std::thread(Thread2, Thread2Memory));
-
-    SetThreadAffinityMask(GetCurrentThread(), 0x1 << 3);
-    SetThreadAffinityMask(tZx->native_handle(), 0x1 << 5);
-    SetThreadAffinityMask(tZy->native_handle(), 0x1 << 7);
-    SetThreadAffinityMask(t1->native_handle(), 0x1 << 9);
-    SetThreadAffinityMask(t2->native_handle(), 0x1 << 11);
-
-    ThreadZxData* expectedZx = nullptr;
-    ThreadZyData* expectedZy = nullptr;
-    Thread1Data* expected1 = nullptr;
-    Thread2Data* expected2 = nullptr;
-
-    bool done1 = false;
-    bool done2 = false;
-
-    zx = cx;
-    zy = cy;
-    zx2 = zx * 2;
-    zy2 = zy * 2;
-
-    thread2data->zy = zy;
-
-    T zxCopy;
-    T zyCopy;
-    bool periodicity_should_break = false;
-
-    static const T HighOne = T{ 1.0 };
-    static const T HighTwo = T{ 2.0 };
-    static const T TwoFiftySix = T(256);
-
-    for (IterTypeFull i = 0; i < m_Fractal.GetNumIterations<IterType>(); i++)
-    {
-        if constexpr (Periodicity) {
-            zxCopy = T{ zx };
-            zyCopy = T{ zy };
-        }
-
-        // Start Thread 2: zy = 2 * zx * zy + cy;
-        thread2data->zx2 = zx2;
-
-        Thread2Memory->In.store(
-            thread2data,
-            std::memory_order_release);
-
-        // Start Zx squaring thread
-        threadZxdata->zx = zx;
-
-        ThreadZxMemory->In.store(
-            threadZxdata,
-            std::memory_order_release);
-
-        // Start Zy squaring thread
-        threadZydata->zy = zy;
-
-        ThreadZyMemory->In.store(
-            threadZydata,
-            std::memory_order_release);
-
-        T double_zx = (T)zx;
-        T double_zy = (T)zy;
-
-        if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
-            AddReused(*results, zx, zy);
-        }
-
-        // Start Thread 1: zx = zx * zx - zy * zy + cx;
-        thread1data->zy = zy;
-
-        Thread1Memory->In.store(
-            thread1data,
-            std::memory_order_release);
-
-        results->AddUncompressedIteration({ double_zx, double_zy });
-
-        if constexpr (PExtras == PerturbExtras::Bad) {
-            //T norm = (double_zx * double_zx + double_zy * double_zy) * glitch;
-            //bool underflow = (HdrAbs(double_zx) <= small_float ||
-            //    HdrAbs(double_zy) <= small_float ||
-            //    norm <= small_float);
-
-            const T norm = HdrReduce((double_zx * double_zx + double_zy * double_zy) * glitch);
-            const auto zx_reduced = HdrReduce(HdrAbs((T)double_zx));
-            const auto zy_reduced = HdrReduce(HdrAbs((T)double_zy));
-
-            const bool underflow =
-                (HdrCompareToBothPositiveReducedLE(zx_reduced, small_float) ||
-                 HdrCompareToBothPositiveReducedLE(zy_reduced, small_float) ||
-                 HdrCompareToBothPositiveReducedLE(norm, small_float));
-
-            results->SetBad(underflow);
-        }
-
-        // Note: not T.
-        const SubType tempZX = (SubType)double_zx + (SubType)cx;
-        const SubType tempZY = (SubType)double_zy + (SubType)cy;
-        const SubType zn_size = tempZX * tempZX + tempZY * tempZY;
-
-        if constexpr (Periodicity) {
-            //function p  = findPeriodM3(c0,dx,dy,n,doCont,mpow)
-            //% in ball centered on c0 find period (up to n) of nucleus
-            //% use 1nd order Taylor ball
-            //% M-power mpow set
-            //% doCont = 0 normally
-            //
-            //r0 = std::min(abs(dx),abs(dy));
-            //z = c0*0;
-            //r = (r0);
-            //p = [];
-            //maxR = 1e5;
-            //az = abs(z);
-            //
-            //for k=1:n
-            //    r = (az+r).^mpow - az.^mpow + r0;
-            //    z = z.^mpow + c0;
-            //    az = abs(z);
-            //    if(r>az)
-            //        p = [p k];
-            //        fprintf('findPeriodBallM3: N-period found: %d\n',k);
-            //        if(~doCont)
-            //            break;
-            //        end
-            //    end
-            //    if(az>maxR | r>maxR)
-            //        fprintf('Ball: escaping\n',k);
-            //        break;
-            //    end
-            //end
-
-            HdrReduce(dzdcX);
-            auto dzdcX1 = HdrAbs(dzdcX);
-
-            HdrReduce(dzdcY);
-            auto dzdcY1 = HdrAbs(dzdcY);
-
-            HdrReduce(zxCopy);
-            auto zxCopy1 = HdrAbs(zxCopy);
-
-            HdrReduce(zyCopy);
-            auto zyCopy1 = HdrAbs(zyCopy);
-
-            T n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
-
-            T r0 = HdrMaxPositiveReduced(dzdcX1, dzdcY1);
-            auto n3 = results->GetMaxRadius() * r0 * HighTwo;
-            HdrReduce(n3);
-
-            if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
-                if constexpr (BenchmarkState == BenchmarkMode::Disable) {
-                    periodicity_should_break = true;
-                }
-            }
-            else {
-                auto dzdcXOrig = dzdcX;
-                dzdcX = HighTwo * (zxCopy * dzdcX - zyCopy * dzdcY) + HighOne;
-                dzdcY = HighTwo * (zxCopy * dzdcY + zyCopy * dzdcXOrig);
-            }
-        }
-
-        done1 = false;
-        done2 = false;
-
-        for (;;) {
-            expected1 = thread1data;
-
-            if (!done1 &&
-                Thread1Memory->Out.compare_exchange_weak(expected1,
-                    nullptr,
-                    std::memory_order_release)) {
-                done1 = true;
-            }
-
-            expected2 = thread2data;
-
-            if (!done2 &&
-                Thread2Memory->Out.compare_exchange_weak(expected2,
-                    nullptr,
-                    std::memory_order_release)) {
-                done2 = true;
-            }
-
-            if (done1 && done2) {
-                break;
-            }
-        }
-
-        zy = thread2data->zy;
-
-        if (zn_size > 256) {
-            break;
-        }
-
-        if constexpr (Periodicity) {
-            if (periodicity_should_break) {
-                results->SetPeriodMaybeZero((IterType)results->GetCountOrbitEntries());
-                break;
-            }
-        }
-    }
-
-    if constexpr (PExtras == PerturbExtras::Bad) {
-        results->SetBad(false);
-    }
-
-    bool resZx = false, resZy = false;
-    bool res1 = false, res2 = false;
-    while (!resZx) {
-        expectedZx = nullptr;
-        resZx = ThreadZxMemory->In.compare_exchange_strong(expectedZx, (ThreadZxData*)0x1, std::memory_order_release);
-    }
-
-    while (!resZy) {
-        expectedZy = nullptr;
-        resZy = ThreadZyMemory->In.compare_exchange_strong(expectedZy, (ThreadZyData*)0x1, std::memory_order_release);
-    }
-
-    while (!res1) {
-        expected1 = nullptr;
-        res1 = Thread1Memory->In.compare_exchange_strong(expected1, (Thread1Data*)0x1, std::memory_order_release);
-    }
-
-    while (!res2) {
-        expected2 = nullptr;
-        res2 = Thread2Memory->In.compare_exchange_strong(expected2, (Thread2Data*)0x1, std::memory_order_release);
-    }
-
-    tZx->join();
-    tZy->join();
-    t1->join();
-    t2->join();
-
-    _aligned_free(ThreadZxMemory);
-    _aligned_free(ThreadZyMemory);
-    _aligned_free(Thread1Memory);
-    _aligned_free(Thread2Memory);
-
-    threadZxdata->~ThreadZxData();
-    threadZydata->~ThreadZyData();
-    thread1data->~Thread1Data();
-    thread2data->~Thread2Data();
-
-    _aligned_free(threadZxdata);
-    _aligned_free(threadZydata);
-    _aligned_free(thread1data);
-    _aligned_free(thread2data);
-
-    results->TrimResults<PExtras, Reuse>();
-    m_GuessReserveSize = results->GetCountOrbitEntries();
+    ::MessageBox(NULL, L"AddPerturbationReferencePointMT5 disabled", L"", MB_OK);
+    AddPerturbationReferencePointMT3<IterType, T, SubType, Periodicity, BenchmarkState, PExtras, Reuse>(cx, cy);
 }
 
 
@@ -2079,34 +1693,33 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults(float CompressionError) {
             ::MessageBox(NULL, L"Why didn't this work! :(", L"", MB_OK);
         }
 
-        if (!std::is_same<ConvertTType, T>::value) {
-            PerturbationResults<IterType, ConvertTType, PExtras>* results =
-                GetUsefulPerturbationResults<IterType, ConvertTType, false, PExtras>();
-            if (results) {
-                return results;
-            }
-        }
+        //std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtrasHackYay>>>& cur_array =
+        //    GetPerturbationResults<IterType, T, PExtrasHackYay>();
+        //AddPerturbationReferencePoint<IterType, T, SubType, PerturbExtras::Disable, BenchmarkMode::Disable>();
+        //added = true;
 
-        std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtrasHackYay>>>& cur_array =
-            GetPerturbationResults<IterType, T, PExtrasHackYay>();
-        AddPerturbationReferencePoint<IterType, T, SubType, PerturbExtras::Disable, BenchmarkMode::Disable>();
+        //// TODO: this is a hack.  We need to fix this.
+        //if constexpr (PExtras == PerturbExtras::EnableCompression) {
+        //    auto resultsIntermediate = cur_array[cur_array.size() - 1].get();
+        //    auto compressedResults = resultsIntermediate->Compress(
+        //        m_Fractal.GetCompressionErrorExp(),
+        //        GetNextGenerationNumber(),
+        //        GetNextLaGenerationNumber());
+        //    results = AddPerturbationResults(std::move(compressedResults));
+
+        //    // Here we just delete the full orbit.
+        //    cur_array.pop_back();
+        //}
+        //else {
+        //    results = cur_array[cur_array.size() - 1].get();
+        //}
+
+        std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtras>>>& cur_array =
+            GetPerturbationResults<IterType, T, PExtras>();
+        AddPerturbationReferencePoint<IterType, T, SubType, PExtras, BenchmarkMode::Disable>();
         added = true;
 
-        // TODO: this is a hack.  We need to fix this.
-        if constexpr (PExtras == PerturbExtras::EnableCompression) {
-            auto resultsIntermediate = cur_array[cur_array.size() - 1].get();
-            auto compressedResults = resultsIntermediate->Compress(
-                m_Fractal.GetCompressionErrorExp(),
-                GetNextGenerationNumber(),
-                GetNextLaGenerationNumber());
-            results = AddPerturbationResults(std::move(compressedResults));
-
-            // Here we just delete the full orbit.
-            cur_array.pop_back();
-        }
-        else {
-            results = cur_array[cur_array.size() - 1].get();
-        }
+        results = cur_array[cur_array.size() - 1].get();
     }
 
     constexpr bool IsHdrDblflt = std::is_same<ConvertTType, HDRFloat<CudaDblflt<MattDblflt>>>::value;
@@ -2518,6 +2131,57 @@ void RefOrbitCalc::GetSomeDetails(
     std::visit(lambda, m_LastUsedRefOrbit);
 
     static_assert(static_cast<int>(RenderAlgorithm::MAX) == 62, "Fix me");
+}
+
+template<typename IterType, class T, PerturbExtras PExtras>
+void RefOrbitCalc::DrawPerturbationResultsHelper() {
+    // TODO can we just integrate all this with DrawFractal
+
+    const auto& results = GetPerturbationResults<IterType, T, PExtras>();
+    for (size_t i = 0; i < results.size(); i++)
+    {
+        if (IsPerturbationResultUsefulHere<IterType, T, false, PExtras>(i)) {
+            glColor3f((GLfloat)255, (GLfloat)255, (GLfloat)255);
+
+            const GLint scrnX =
+                Convert<HighPrecision, GLint>(m_Fractal.XFromCalcToScreen(results[i]->GetHiX()));
+            const GLint scrnY =
+                static_cast<GLint>(m_Fractal.GetRenderHeight()) -
+                Convert<HighPrecision, GLint>(m_Fractal.YFromCalcToScreen(results[i]->GetHiY()));
+
+            // Coordinates are weird in OGL mode.
+            glVertex2i(scrnX, scrnY);
+        }
+    }
+}
+
+void RefOrbitCalc::DrawPerturbationResults() {
+
+    auto drawbatch = [&]<typename IterType>() {
+        DrawPerturbationResultsHelper<IterType, double, PerturbExtras::Disable>();
+        DrawPerturbationResultsHelper<IterType, float, PerturbExtras::Disable>();
+        DrawPerturbationResultsHelper<IterType, CudaDblflt<MattDblflt>, PerturbExtras::Disable>();
+        DrawPerturbationResultsHelper<IterType, HDRFloat<double>, PerturbExtras::Disable>();
+        DrawPerturbationResultsHelper<IterType, HDRFloat<float>, PerturbExtras::Disable>();
+        DrawPerturbationResultsHelper<IterType, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable>();
+
+        DrawPerturbationResultsHelper<IterType, double, PerturbExtras::Bad>();
+        DrawPerturbationResultsHelper<IterType, float, PerturbExtras::Bad>();
+        DrawPerturbationResultsHelper<IterType, CudaDblflt<MattDblflt>, PerturbExtras::Bad>();
+        DrawPerturbationResultsHelper<IterType, HDRFloat<double>, PerturbExtras::Bad>();
+        DrawPerturbationResultsHelper<IterType, HDRFloat<float>, PerturbExtras::Bad>();
+        DrawPerturbationResultsHelper<IterType, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad>();
+
+        DrawPerturbationResultsHelper<IterType, double, PerturbExtras::EnableCompression>();
+        DrawPerturbationResultsHelper<IterType, float, PerturbExtras::EnableCompression>();
+        DrawPerturbationResultsHelper<IterType, CudaDblflt<MattDblflt>, PerturbExtras::EnableCompression>();
+        DrawPerturbationResultsHelper<IterType, HDRFloat<double>, PerturbExtras::EnableCompression>();
+        DrawPerturbationResultsHelper<IterType, HDRFloat<float>, PerturbExtras::EnableCompression>();
+        DrawPerturbationResultsHelper<IterType, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::EnableCompression>();
+    };
+
+    drawbatch.template operator() < uint32_t > ();
+    drawbatch.template operator() < uint64_t > ();
 }
 
 #include "RefOrbitCalcTemplates.h"

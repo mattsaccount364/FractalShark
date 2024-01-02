@@ -245,14 +245,32 @@ struct Empty {
 };
 
 struct BadField {
-    uint32_t bad;
-    uint32_t padding;
+    BadField() : bad{ false }, padding{} {
+    }
+
+    BadField(bool bad) : bad{ bad }, padding{} {
+    }
+
+    [[msvc::no_unique_address]] uint32_t bad;
+    [[msvc::no_unique_address]] uint32_t padding;
 };
 
 // TODO if we template this on IterType, update CompressionHelper
 // (GPU + CPU versions) to avoid static_cast all over
-struct CompressionIndex {
-    uint64_t CompressionIndex;
+struct CompressionIndexField {
+    CompressionIndexField() : CompressionIndex{ } {
+    }
+
+    CompressionIndexField(IterTypeFull initIndex) : CompressionIndex{ initIndex } {
+    }
+
+    [[msvc::no_unique_address]] IterTypeFull CompressionIndex;
+};
+
+template<PerturbExtras PExtras>
+class PerturbExtrasHack {
+public:
+    static constexpr PerturbExtras Val = PExtras;
 };
 
 #pragma pack(push, 8)
@@ -262,56 +280,47 @@ class /*alignas(8)*/ GPUReferenceIter :
     PExtras == PerturbExtras::Bad,
     BadField,
     std::conditional_t<PExtras == PerturbExtras::EnableCompression,
-        CompressionIndex,
+        CompressionIndexField,
         Empty>> {
 
 public:
 
-    static constexpr uint64_t BadCompressionIndex = 0xFFFF'FFFF'FFFF'FFFFull;
+    using BaseClass = std::conditional_t<
+        PExtras == PerturbExtras::Bad,
+            BadField,
+            std::conditional_t<PExtras == PerturbExtras::EnableCompression,
+                CompressionIndexField,
+                Empty>>;
 
-    GPUReferenceIter()
-        : x{ Type(0.0f) },
-        y{ Type(0.0f) } {
+    static constexpr IterTypeFull BadCompressionIndex = 0xFFFF'FFFF'FFFF'FFFFull;
 
-        //if constexpr(PExtras == PerturbExtras::Bad) {
-        //    bad = false;
-        //}
+    struct Enabler {};
 
-        //if constexpr (PExtras == PerturbExtras::EnableCompression) {
-        //    CompressionIndex = BadCompressionIndex;
-        //}
+    GPUReferenceIter() : BaseClass{}, x{}, y{} {
     }
 
-    GPUReferenceIter(Type x, Type y)
-        : x{ x },
-        y{ y } {
-
-        //if constexpr (PExtras == PerturbExtras::Bad) {
-        //    bad = false;
-        //}
-
-        //if constexpr (PExtras == PerturbExtras::EnableCompression) {
-        //    CompressionIndex = BadCompressionIndex;
-        //}
+    template<
+        typename U = PerturbExtrasHack<PExtras>,
+        std::enable_if_t<U::Val == PerturbExtras::Disable, int> = 0>
+    GPUReferenceIter(Type init_x, Type init_y) : x{ init_x }, y{ init_y } {
     }
 
-    GPUReferenceIter(Type x, Type y, bool bad)
-        : x{ x },
-        y{ y } {
-        if constexpr (PExtras == PerturbExtras::Bad) {
-            this->bad = bad;
-        }
-
-        //if constexpr (PExtras == PerturbExtras::EnableCompression) {
-        //    CompressionIndex = BadCompressionIndex;
-        //}
+    template<
+        typename U = PerturbExtrasHack<PExtras>,
+        std::enable_if_t<U::Val == PerturbExtras::EnableCompression, int> = 0>
+    GPUReferenceIter(Type init_x, Type init_y, IterTypeFull init_compression_index)
+        : CompressionIndexField(init_compression_index),
+        x{ init_x },
+        y{ init_y } {
     }
 
-    GPUReferenceIter(Type x, Type y, uint64_t CompressionIndex)
-        : x{ x },
-        y{ y } {
-            static_assert (PExtras == PerturbExtras::EnableCompression, "Compression not enabled");
-            this->CompressionIndex = CompressionIndex;
+    template<
+        typename U = PerturbExtrasHack<PExtras>,
+        std::enable_if_t<U::Val == PerturbExtras::Bad, int> = 0>
+    GPUReferenceIter(Type init_x, Type init_y, bool init_bad)
+        : BadField(init_bad),
+        x{ init_x },
+        y{ init_y } {
     }
 
     GPUReferenceIter(const GPUReferenceIter& other) = default;

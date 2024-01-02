@@ -1,5 +1,35 @@
 #pragma once
 
+#define InstantiateIsPerturbationResultUsefulHere(T, PExtras) \
+template bool RefOrbitCalc::IsPerturbationResultUsefulHere<uint32_t, T, false, PExtras>(size_t i); \
+template bool RefOrbitCalc::IsPerturbationResultUsefulHere<uint64_t, T, false, PExtras>(size_t i); \
+
+
+InstantiateIsPerturbationResultUsefulHere(double, PerturbExtras::Disable);
+InstantiateIsPerturbationResultUsefulHere(float, PerturbExtras::Disable);
+InstantiateIsPerturbationResultUsefulHere(CudaDblflt<MattDblflt>, PerturbExtras::Disable);
+InstantiateIsPerturbationResultUsefulHere(HDRFloat<double>, PerturbExtras::Disable);
+InstantiateIsPerturbationResultUsefulHere(HDRFloat<float>, PerturbExtras::Disable);
+InstantiateIsPerturbationResultUsefulHere(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable);
+
+InstantiateIsPerturbationResultUsefulHere(double, PerturbExtras::Bad);
+InstantiateIsPerturbationResultUsefulHere(float, PerturbExtras::Bad);
+InstantiateIsPerturbationResultUsefulHere(CudaDblflt<MattDblflt>, PerturbExtras::Bad);
+InstantiateIsPerturbationResultUsefulHere(HDRFloat<double>, PerturbExtras::Bad);
+InstantiateIsPerturbationResultUsefulHere(HDRFloat<float>, PerturbExtras::Bad);
+InstantiateIsPerturbationResultUsefulHere(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad);
+
+InstantiateIsPerturbationResultUsefulHere(double, PerturbExtras::EnableCompression);
+InstantiateIsPerturbationResultUsefulHere(float, PerturbExtras::EnableCompression);
+InstantiateIsPerturbationResultUsefulHere(CudaDblflt<MattDblflt>, PerturbExtras::EnableCompression);
+InstantiateIsPerturbationResultUsefulHere(HDRFloat<double>, PerturbExtras::EnableCompression);
+InstantiateIsPerturbationResultUsefulHere(HDRFloat<float>, PerturbExtras::EnableCompression);
+InstantiateIsPerturbationResultUsefulHere(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::EnableCompression);
+
+
+
+//////////////////////////////////////////////
+
 template void RefOrbitCalc::AddPerturbationReferencePoint<uint32_t, float, float, PerturbExtras::Disable, RefOrbitCalc::BenchmarkMode::Disable>();
 template void RefOrbitCalc::AddPerturbationReferencePoint<uint32_t, double, double, PerturbExtras::Disable, RefOrbitCalc::BenchmarkMode::Disable>();
 template void RefOrbitCalc::AddPerturbationReferencePoint<uint32_t, HDRFloat<double>, double, PerturbExtras::Disable, RefOrbitCalc::BenchmarkMode::Disable>();

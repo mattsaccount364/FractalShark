@@ -15,6 +15,9 @@
 #include "PerturbationResultsHelpers.h"
 
 template<typename IterType, class T, PerturbExtras PExtras>
+class RefOrbitCompressor;
+
+template<typename IterType, class T, PerturbExtras PExtras>
 class PerturbationResults : public TemplateHelpers<IterType, T, PExtras> {
 
 public:
@@ -27,6 +30,7 @@ public:
     using HDRFloatComplex = TemplateHelpers::template HDRFloatComplex<LocalSubType>;
 
     friend class CompressionHelper<IterType, T, PExtras>;
+    friend class RefOrbitCompressor<IterType, T, PExtras>;
 
     PerturbationResults(size_t Generation = 0, size_t LaGeneration = 0) :
         OrbitX{},
@@ -227,6 +231,11 @@ public:
     // This function uses CreateFileMapping and MapViewOfFile to map
     // the file into memory.  Then it loads the meta file using ifstream
     // to get the other data.
+    //
+    // TODO Loading a 2x32 (with or without HDR) does not work with LA enabled.
+    // The code below works, but 
+    // The LA table generation doesn't currently work with 2x32 and only supports 1x64
+    // (which it then converts to 2x32).  This is a bug.
     bool Load(const std::wstring& filename) {
         const auto metafilename = filename + L".met";
         std::ifstream metafile(metafilename, std::ios::binary);
@@ -520,7 +529,7 @@ public:
 
         MaxIterations = NumIterations + 1; // +1 for push_back(0) below
 
-        size_t ReserveSize = (GuessReserveSize != 0) ? GuessReserveSize : NumIterations;
+        const size_t ReserveSize = (GuessReserveSize != 0) ? GuessReserveSize : 1'000'000;
 
         GenerationNumber = Generation;
         FullOrbit.reserve(ReserveSize);
@@ -574,7 +583,7 @@ public:
     }
 
     void AddUncompressedIteration(GPUReferenceIter<T, PExtras> result) {
-        assert(PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::Bad);
+        static_assert(PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::Bad, "!");
 
         FullOrbit.push_back(result);
         UncompressedItersInOrbit++;
@@ -770,4 +779,72 @@ private:
     uint32_t AuthoritativePrecision;
     std::vector<HighPrecision> ReuseX;
     std::vector<HighPrecision> ReuseY;
+};
+
+template<typename IterType, class T, PerturbExtras PExtras>
+class RefOrbitCompressor : public TemplateHelpers<IterType, T, PExtras> {
+    template<typename IterType, class T, PerturbExtras PExtras> friend class PerturbationResults;
+
+    using TemplateHelpers = TemplateHelpers<IterType, T, PExtras>;
+    using SubType = TemplateHelpers::SubType;
+
+    template<class LocalSubType>
+    using HDRFloatComplex = TemplateHelpers::template HDRFloatComplex<LocalSubType>;
+
+    friend class CompressionHelper<IterType, T, PExtras>;
+
+    PerturbationResults<IterType, T, PExtras> &results;
+    T zx;
+    T zy;
+    T Two;
+    T CompressionError;
+    int32_t CompressionErrorExp;
+    IterTypeFull CurCompressedIndex;
+
+public:
+    RefOrbitCompressor(
+        PerturbationResults<IterType, T, PExtras>& results,
+        int32_t CompressionErrorExp) :
+        results{ results },
+        zx{results.OrbitXLow},
+        zy{results.OrbitYLow},
+        Two(2),
+        CompressionError(static_cast<T>(std::pow(10, CompressionErrorExp))),
+        CurCompressedIndex{} {
+        // This code can run even if compression is disabled, but it doesn't matter.
+        results.CompressionErrorExp = CompressionErrorExp;
+    }
+
+    void MaybeAddCompressedIteration(GPUReferenceIter<T, PExtras> iter) {
+        // This should only run if compression is enabled.
+        static_assert(PExtras == PerturbExtras::EnableCompression, "!");
+
+        auto errX = zx - iter.x;
+        auto errY = zy - iter.y;
+
+        auto norm_z = iter.x * iter.x + iter.y * iter.y;
+        HdrReduce(norm_z);
+
+        auto err = (errX * errX + errY * errY) * CompressionError;
+        HdrReduce(err);
+
+        if (HdrCompareToBothPositiveReducedGE(err, norm_z)) {
+            results.FullOrbit.push_back(iter);
+
+            zx = iter.x;
+            zy = iter.y;
+
+            // Corresponds to the entry just added
+            CurCompressedIndex++;
+            assert(CurCompressedIndex == results.FullOrbit.size() - 1);
+        }
+
+        auto zx_old = zx;
+        zx = zx * zx - zy * zy + results.OrbitXLow;
+        HdrReduce(zx);
+        zy = Two * zx_old * zy + results.OrbitYLow;
+        HdrReduce(zy);
+
+        results.UncompressedItersInOrbit++;
+    }
 };

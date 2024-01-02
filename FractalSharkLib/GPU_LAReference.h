@@ -58,6 +58,9 @@ private:
     LAStageInfo<IterType> * __restrict__ LAStages;
     size_t NumLAStages;
 
+    bool AllocHostLA;
+    bool AllocHostLAStages;
+
 
 public:
     CUDA_CRAP bool isLAStageInvalid(IterType LAIndex, HDRFloatComplex dc) const;
@@ -85,7 +88,9 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference<T2, SubType2, OtherPE
     LAs{},
     NumLAs{},
     LAStages{},
-    NumLAStages{} {
+    NumLAStages{},
+    AllocHostLA{},
+    AllocHostLAStages{} {
 
     GPU_LAInfoDeep<IterType, Float, SubType>* tempLAs;
     LAStageInfo<IterType>* tempLAStages;
@@ -93,7 +98,11 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference<T2, SubType2, OtherPE
     const auto LAMemToAllocate = other.LAs.size() * sizeof(GPU_LAInfoDeep<IterType, Float, SubType>);
     m_Err = cudaMallocManaged(&tempLAs, LAMemToAllocate, cudaMemAttachGlobal);
     if (m_Err != cudaSuccess) {
-        return;
+        AllocHostLA = true;
+        m_Err = cudaMallocHost(&tempLAs, LAMemToAllocate);
+        if (m_Err != cudaSuccess) {
+            return;
+        }
     }
 
     LAs = tempLAs;
@@ -102,7 +111,11 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference<T2, SubType2, OtherPE
     const auto LAStageMemoryToAllocate = other.LAStages.size() * sizeof(LAStageInfo<IterType>);
     m_Err = cudaMallocManaged(&tempLAStages, LAStageMemoryToAllocate, cudaMemAttachGlobal);
     if (m_Err != cudaSuccess) {
-        return;
+        AllocHostLAStages = true;
+        m_Err = cudaMallocHost(&tempLAStages, LAStageMemoryToAllocate);
+        if (m_Err != cudaSuccess) {
+            return;
+        }
     }
 
     LAStages = tempLAStages;
@@ -161,12 +174,24 @@ template<typename IterType, class Float, class SubType>
 GPU_LAReference<IterType, Float, SubType>::~GPU_LAReference() {
     if (m_Owned) {
         if (LAs != nullptr) {
-            cudaFree(LAs);
+            if (AllocHostLA) {
+                cudaFreeHost(LAs);
+            }
+            else {
+                cudaFree(LAs);
+            }
+
             LAs = nullptr;
         }
 
         if (LAStages != nullptr) {
-            cudaFree(LAStages);
+            if (AllocHostLAStages) {
+                cudaFreeHost(LAStages);
+            }
+            else {
+                cudaFree(LAStages);
+            }
+
             LAStages = nullptr;
         }
     }

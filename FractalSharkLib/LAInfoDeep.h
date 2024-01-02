@@ -33,7 +33,7 @@ public:
     friend class LAInfoDeep<IterType, Float, double>;
     friend class LAInfoDeep<IterType, Float, CudaDblflt<MattDblflt>>;
 
-    static constexpr int DEFAULT_DETECTION_METHOD = 2;
+    static constexpr int DEFAULT_DETECTION_METHOD = 1;
     static constexpr float DefaultStage0PeriodDetectionThreshold = 0x1.0p-10;
     static constexpr float DefaultPeriodDetectionThreshold = 0x1.0p-10;
     static constexpr float DefaultStage0PeriodDetectionThreshold2 = 0x1.0p-6;

@@ -55,7 +55,7 @@ private:
     friend class LAReference<IterType, ::HDRFloat<CudaDblflt<dblflt>>, CudaDblflt<dblflt>, PExtras>;
 
     static const int lowBound = 64;
-    static const SubType log16;
+    static const int periodDivisor;
 
 public:
     LAReference() :

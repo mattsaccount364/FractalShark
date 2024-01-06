@@ -85,8 +85,8 @@ public:
 
         OrbitX = other.GetHiX();
         OrbitY = other.GetHiY();
-        OrbitXLow = static_cast<T>(other.GetOrbitXLow());
-        OrbitYLow = static_cast<T>(other.GetOrbitYLow());
+        OrbitXLow = static_cast<T>(Convert<HighPrecision, double>(OrbitX));
+        OrbitYLow = static_cast<T>(Convert<HighPrecision, double>(OrbitY));
         MaxRadius = (T)other.GetMaxRadius();
         MaxIterations = other.GetMaxIterations();
         PeriodMaybeZero = other.GetPeriodMaybeZero();

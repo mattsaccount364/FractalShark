@@ -6,7 +6,8 @@
 //#include <Windows.h>
 
 template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
-const SubType LAReference<IterType, Float, SubType, PExtras>::log16 = (SubType)std::log(16);
+const int LAReference<IterType, Float, SubType, PExtras>::periodDivisor =
+    PExtras == PerturbExtras::EnableCompression ? 8 : 2;
 
 template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
 IterType LAReference<IterType, Float, SubType, PExtras>::LAsize() {
@@ -83,8 +84,8 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbit(
             LAI.NextStageLAIndex = 0;
             i = 2;
 
-            double NthRoot = std::round(std::log(maxRefIteration) / log16);
-            Period = (IterType)std::round(std::pow(maxRefIteration, 1.0 / NthRoot));
+            double NthRoot = std::round(std::log2(static_cast<double>(maxRefIteration)) / periodDivisor);
+            Period = (IterType)std::round(std::pow(static_cast<double>(maxRefIteration), 1.0 / NthRoot));
 
             PeriodBegin = 0;
             PeriodEnd = Period;
@@ -109,8 +110,8 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbit(
         LAI.NextStageLAIndex = 0;
         i = 2;
 
-        double NthRoot = std::round(std::log(Period) / log16);
-        Period = (IterType)std::round(std::pow(Period, 1.0 / NthRoot));
+        double NthRoot = std::round(std::log2(static_cast<double>(maxRefIteration)) / periodDivisor);
+        Period = (IterType)std::round(std::pow(static_cast<double>(maxRefIteration), 1.0 / NthRoot));
 
         PeriodBegin = 0;
         PeriodEnd = Period;
@@ -234,8 +235,8 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
             LAI.NextStageLAIndex = 0;
             i = 2;
 
-            double NthRoot = std::round(std::log(maxRefIteration) / log16);
-            Period = (IterType)std::round(std::pow(maxRefIteration, 1.0 / NthRoot));
+            double NthRoot = std::round(std::log2(static_cast<double>(maxRefIteration)) / periodDivisor);
+            Period = (IterType)std::round(std::pow(static_cast<double>(maxRefIteration), 1.0 / NthRoot));
 
             PeriodBegin = 0;
             PeriodEnd = Period;
@@ -260,8 +261,8 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
         LAI.NextStageLAIndex = 0;
         i = 2;
 
-        double NthRoot = std::round(std::log(Period) / log16);
-        Period = (IterType)std::round(std::pow(Period, 1.0 / NthRoot));
+        double NthRoot = std::round(std::log2(static_cast<double>(maxRefIteration)) / periodDivisor);
+        Period = (IterType)std::round(std::pow(static_cast<double>(maxRefIteration), 1.0 / NthRoot));
 
         PeriodBegin = 0;
         PeriodEnd = Period;
@@ -541,7 +542,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateNewLAStage(
             j = 2;
 
             double Ratio = ((double)(maxRefIteration)) / PrevStageLAI.StepLength;
-            double NthRoot = std::round(std::log(Ratio) / log16); // log16
+            double NthRoot = std::round(std::log2(static_cast<double>(maxRefIteration)) / periodDivisor);
             Period = PrevStageLAI.StepLength * (IterType)std::round(std::pow(Ratio, 1.0 / NthRoot));
 
             PeriodBegin = 0;
@@ -573,7 +574,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateNewLAStage(
 
         double Ratio = ((double)(Period)) / PrevStageLAI.StepLength;
 
-        double NthRoot = std::round(std::log(Ratio) / log16);
+        double NthRoot = std::round(std::log2(static_cast<double>(maxRefIteration)) / periodDivisor);
         Period = PrevStageLAI.StepLength * ((IterType)std::round(std::pow(Ratio, 1.0 / NthRoot)));
 
         PeriodBegin = 0;

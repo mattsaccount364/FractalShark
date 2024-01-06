@@ -283,7 +283,7 @@ private:
         workspace.uncompressed_index++;
         // compressed already points to the next one
 
-        TODO do we ever walk off the end here
+        //TODO do we ever walk off the end here
                     //some notes
             //    it looks GPU specific 
             //    64-bit specific

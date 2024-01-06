@@ -36,13 +36,15 @@ public:
     static constexpr int DEFAULT_DETECTION_METHOD = 1;
     static constexpr float DefaultStage0PeriodDetectionThreshold = 0x1.0p-10;
     static constexpr float DefaultPeriodDetectionThreshold = 0x1.0p-10;
-    static constexpr float DefaultStage0PeriodDetectionThreshold2 = 0x1.0p-6;
-    static constexpr float DefaultPeriodDetectionThreshold2 = 0x1.0p-3;
+    static constexpr float DefaultStage0PeriodDetectionThreshold2 =
+        PExtras == PerturbExtras::EnableCompression ? 0x1.0p-6 : 0x1.0p-6; // Imagina: 0x1.0p-6
+    static constexpr float DefaultPeriodDetectionThreshold2 =
+        PExtras == PerturbExtras::EnableCompression ? 0x1.0p-3 : 0x1.0p-3; // Imagina: 0x1.0p-3
     static constexpr float DefaultLAThresholdScale =
-        PExtras == PerturbExtras::EnableCompression ? 0x1.0p-24 : 0x1.0p-12;
+        PExtras == PerturbExtras::EnableCompression ? 0x1.0p-24 : 0x1.0p-12; // Imagina: 0x1.0p-24
     static constexpr float DefaultLAThresholdCScale =
-        PExtras == PerturbExtras::EnableCompression ? 0x1.0p-24 : 0x1.0p-12;
-    
+        PExtras == PerturbExtras::EnableCompression ? 0x1.0p-24 : 0x1.0p-12; // Imagina: 0x1.0p-24
+
 public:
 
     HDRFloatComplex Ref;

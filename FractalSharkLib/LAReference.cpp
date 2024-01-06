@@ -5,6 +5,11 @@
 
 //#include <Windows.h>
 
+// Imagina uses 4 for this periodDivisor number instead.
+// Smaller = generally better perf, but more memory usage.
+// Larger = generally worse perf, but less memory usage.  The idea is that if compression
+// is enabled, then the priority is to reduce memory usage, so we want to use a larger
+// number here.
 template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
 const int LAReference<IterType, Float, SubType, PExtras>::periodDivisor =
     PExtras == PerturbExtras::EnableCompression ? 8 : 2;

@@ -156,17 +156,19 @@ public:
     }
 
     void Write(const std::wstring& filename) {
-        const auto orbfilename = filename + L".FullOrbit";
+        {
+            const auto orbfilename = filename + L".FullOrbit";
 
-        std::ofstream orbfile(orbfilename, std::ios::binary);
-        if (!orbfile.is_open()) {
-            ::MessageBox(NULL, L"Failed to open file for writing", L"", MB_OK);
-            return;
+            std::ofstream orbfile(orbfilename, std::ios::binary);
+            if (!orbfile.is_open()) {
+                ::MessageBox(NULL, L"Failed to open file for writing", L"", MB_OK);
+                return;
+            }
+
+            uint64_t size = FullOrbit.size();
+            orbfile.write((char*)FullOrbit.data(), sizeof(FullOrbit[0]) * size);
+            orbfile.close();
         }
-
-        uint64_t size = FullOrbit.size();
-        orbfile.write((char*)FullOrbit.data(), sizeof(FullOrbit[0]) * size);
-
 
         const auto metafilename = filename + L".met";
 
@@ -215,17 +217,17 @@ public:
             return;
         }
 
-        metafile << OrbitX.precision() << std::endl;
-        metafile << HdrToString(OrbitX) << std::endl;
-        metafile << OrbitY.precision() << std::endl;
-        metafile << HdrToString(OrbitY) << std::endl;
-        metafile << HdrToString(OrbitXLow) << std::endl;
-        metafile << HdrToString(OrbitYLow) << std::endl;
-        metafile << HdrToString(MaxRadius) << std::endl;
-        metafile << MaxIterations << std::endl;
-        metafile << PeriodMaybeZero << std::endl;
-        metafile << CompressionErrorExp << std::endl;
-        metafile << UncompressedItersInOrbit << std::endl;
+        metafile << "Precision: " << OrbitX.precision() << std::endl;
+        metafile << "HighPrecisionReal: " << HdrToString(OrbitX) << std::endl;
+        metafile << "Precision: " << OrbitY.precision() << std::endl;
+        metafile << "HighPrecisionImaginary: " << HdrToString(OrbitY) << std::endl;
+        metafile << "LowPrecisionReal: " << HdrToString(OrbitXLow) << std::endl;
+        metafile << "LowPrecisionImaginary: " << HdrToString(OrbitYLow) << std::endl;
+        metafile << "MaxRadius: " << HdrToString(MaxRadius) << std::endl;
+        metafile << "MaxIterationsPerPixel: " << MaxIterations << std::endl;
+        metafile << "Period: " << PeriodMaybeZero << std::endl;
+        metafile << "CompressionErrorExponent: " << CompressionErrorExp << std::endl;
+        metafile << "UncompressedIterationsInOrbit: " << UncompressedItersInOrbit << std::endl;
     }
 
     // This function uses CreateFileMapping and MapViewOfFile to map
@@ -330,13 +332,17 @@ public:
             return false;
         }
 
+        std::string descriptor_string_junk;
+
         {
             uint32_t prec;
+            metafile >> descriptor_string_junk;
             metafile >> prec;
 
             scoped_mpfr_precision p{ prec };
 
             std::string shiX;
+            metafile >> descriptor_string_junk;
             metafile >> shiX;
 
             OrbitX = HighPrecision{ shiX };
@@ -344,11 +350,13 @@ public:
 
         {
             uint32_t prec;
+            metafile >> descriptor_string_junk;
             metafile >> prec;
 
             scoped_mpfr_precision p{prec};
 
             std::string shiY;
+            metafile >> descriptor_string_junk;
             metafile >> shiY;
 
             OrbitY.precision(prec);
@@ -358,6 +366,8 @@ public:
         auto ss_to_hdr = [&](T &output) {
             double mantissa;
             int32_t exponent;
+
+            metafile >> descriptor_string_junk;
 
             std::string maxRadiusMantissaStr;
             metafile >> maxRadiusMantissaStr;
@@ -393,24 +403,28 @@ public:
 
         {
             std::string maxIterationsStr;
+            metafile >> descriptor_string_junk;
             metafile >> maxIterationsStr;
             MaxIterations = (IterType)std::stoll(maxIterationsStr);
         }
 
         {
             std::string periodMaybeZeroStr;
+            metafile >> descriptor_string_junk;
             metafile >> periodMaybeZeroStr;
             PeriodMaybeZero = (IterType)std::stoll(periodMaybeZeroStr);
         }
 
         {
             std::string compressionErrorStr;
+            metafile >> descriptor_string_junk;
             metafile >> compressionErrorStr;
             CompressionErrorExp = static_cast<int32_t>(std::stoll(compressionErrorStr));
         }
 
         {
             std::string uncompressedItersInOrbitStr;
+            metafile >> descriptor_string_junk;
             metafile >> uncompressedItersInOrbitStr;
             UncompressedItersInOrbit = (IterType)std::stoll(uncompressedItersInOrbitStr);
         }

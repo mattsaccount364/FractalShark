@@ -1958,10 +1958,11 @@ void RefOrbitCalc::SaveAllOrbits() {
             it->Write(filebase);
         }
 
-        for (const auto& it : Container.m_PerturbationResults2xFloat) {
-            auto filebase = GetTimeAsString();
-            it->Write(filebase);
-        }
+        // TODO - does not currently make sense to save these.
+        //for (const auto& it : Container.m_PerturbationResults2xFloat) {
+        //    auto filebase = GetTimeAsString();
+        //    it->Write(filebase);
+        //}
 
         for (const auto &it : Container.m_PerturbationResultsHDRDouble) {
             auto filebase = GetTimeAsString();
@@ -1972,6 +1973,12 @@ void RefOrbitCalc::SaveAllOrbits() {
             auto filebase = GetTimeAsString();
             it->Write(filebase);
         }
+
+        // TODO - does not currently make sense to save these.
+        //for (const auto& it : Container.m_PerturbationResults2xFloat) {
+        //    auto filebase = GetTimeAsString();
+        //    it->Write(filebase);
+        //}
 
         for (const auto &it : Container.m_PerturbationResultsHDR2xFloat) {
             auto filebase = GetTimeAsString();

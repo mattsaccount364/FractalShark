@@ -14,6 +14,119 @@
 
 #include "PerturbationResultsHelpers.h"
 
+// The purpose of this class is to manage a memory-mapped file, using win32 APIs
+// such as MapViewOfFile.  This is used to load and save the orbit data.
+template<class T, PerturbExtras PExtras>
+class MemoryMappedFile {
+private:
+    HANDLE hFile;
+    HANDLE hMapFile;
+    size_t OrbitSize;
+    const GPUReferenceIter<T, PExtras>* ImmutableFullOrbit;
+
+public:
+    const GPUReferenceIter<T, PExtras>* GetImmutableFullOrbit() const {
+        return ImmutableFullOrbit;
+    }
+
+    size_t GetOrbitSize() const {
+        return OrbitSize;
+    }
+
+    bool ValidFile() const {
+        return ImmutableFullOrbit != nullptr;
+    }
+
+    MemoryMappedFile() :
+        hFile{},
+        hMapFile{},
+        OrbitSize{},
+        ImmutableFullOrbit{} {
+    }
+
+    MemoryMappedFile(const MemoryMappedFile& other) = delete;
+    MemoryMappedFile& operator=(const MemoryMappedFile& other) = delete;
+    MemoryMappedFile(MemoryMappedFile&& other) :
+        hFile{ other.hFile },
+        hMapFile{ other.hMapFile },
+        OrbitSize{ other.OrbitSize },
+        ImmutableFullOrbit{ other.ImmutableFullOrbit } {
+
+        other.hFile = nullptr;
+        other.hMapFile = nullptr;
+        other.OrbitSize = 0;
+        other.ImmutableFullOrbit = nullptr;
+    }
+
+    MemoryMappedFile& operator=(MemoryMappedFile&& other) {
+        hFile = other.hFile;
+        hMapFile = other.hMapFile;
+        OrbitSize = other.OrbitSize;
+        ImmutableFullOrbit = other.ImmutableFullOrbit;
+
+        other.hFile = nullptr;
+        other.hMapFile = nullptr;
+        other.OrbitSize = 0;
+        other.ImmutableFullOrbit = nullptr;
+
+        return *this;
+    }
+
+    MemoryMappedFile(
+        const std::wstring orbfilename,
+        size_t orbit_size) {
+
+        ImmutableFullOrbit = nullptr;
+
+        hFile = CreateFile(orbfilename.c_str(),
+            GENERIC_READ,
+            FILE_SHARE_READ,
+            NULL,
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            NULL);
+        if (hFile == INVALID_HANDLE_VALUE) {
+            ::MessageBox(NULL, L"Failed to open file for reading", L"", MB_OK);
+            return;
+        }
+
+        hMapFile = CreateFileMapping(hFile, nullptr, PAGE_READONLY, 0, 0, NULL);
+        if (hMapFile == nullptr) {
+            ::MessageBox(NULL, L"Failed to create file mapping", L"", MB_OK);
+            return;
+        }
+
+        ImmutableFullOrbit = static_cast<const GPUReferenceIter<T, PExtras>*>(
+            MapViewOfFile(hMapFile, FILE_MAP_READ, 0, 0, 0));
+
+        if (ImmutableFullOrbit == nullptr) {
+            ::MessageBox(NULL, L"Failed to map view of file", L"", MB_OK);
+            return;
+        }
+
+        OrbitSize = orbit_size;
+    }
+
+    ~MemoryMappedFile() {
+        if (ImmutableFullOrbit != nullptr) {
+            UnmapViewOfFile(ImmutableFullOrbit);
+            ImmutableFullOrbit = nullptr;
+        }
+        
+        if (hMapFile != nullptr) {
+            CloseHandle(hMapFile);
+            hMapFile = nullptr;
+        }
+
+        if (hFile != nullptr) {
+            CloseHandle(hFile);
+            hFile = nullptr;
+        }
+
+        OrbitSize = 0;
+    }
+};
+
 template<typename IterType, class T, PerturbExtras PExtras>
 class RefOrbitCompressor;
 
@@ -93,7 +206,7 @@ public:
         CompressionErrorExp = other.GetCompressionErrorExp();
         // CompressionHelper = {*this}; // Nothing to do here
 
-        FullOrbit.reserve(other.FullOrbit.size());
+        FullOrbit.MutableReserve(other.FullOrbit.GetOrbitSize());
         UncompressedItersInOrbit = other.UncompressedItersInOrbit;
         GenerationNumber = NewGenerationNumber;
 
@@ -101,19 +214,19 @@ public:
         ReuseX.reserve(other.ReuseX.size());
         ReuseY.reserve(other.ReuseY.size());
 
-        for (size_t i = 0; i < other.FullOrbit.size(); i++) {
+        for (size_t i = 0; i < other.FullOrbit.GetOrbitSize(); i++) {
             if constexpr (PExtras == PerturbExtras::Bad) {
-                FullOrbit.push_back({ (T)other.FullOrbit[i].x, (T)other.FullOrbit[i].y, other.FullOrbit[i].bad != 0 });
+                FullOrbit.PushBack({ (T)other.FullOrbit[i].x, (T)other.FullOrbit[i].y, other.FullOrbit[i].bad != 0 });
             }
             else if constexpr (PExtras == PerturbExtras::EnableCompression) {
-                FullOrbit.push_back({ (T)other.FullOrbit[i].x, (T)other.FullOrbit[i].y, other.FullOrbit[i].CompressionIndex });
+                FullOrbit.PushBack({ (T)other.FullOrbit[i].x, (T)other.FullOrbit[i].y, other.FullOrbit[i].CompressionIndex });
             }
             else {
-                FullOrbit.push_back({ (T)other.FullOrbit[i].x, (T)other.FullOrbit[i].y });
+                FullOrbit.PushBack({ (T)other.FullOrbit[i].x, (T)other.FullOrbit[i].y });
             }
         }
 
-        assert(UncompressedItersInOrbit == FullOrbit.size());
+        assert(UncompressedItersInOrbit == FullOrbit.GetOrbitSize());
 
         AuthoritativePrecision = other.AuthoritativePrecision;
         ReuseX = other.ReuseX;
@@ -165,8 +278,8 @@ public:
                 return;
             }
 
-            uint64_t size = FullOrbit.size();
-            orbfile.write((char*)FullOrbit.data(), sizeof(FullOrbit[0]) * size);
+            uint64_t size = FullOrbit.GetOrbitSize();
+            orbfile.write((char*)FullOrbit.GetOrbitData(), sizeof(FullOrbit[0]) * size);
             orbfile.close();
         }
 
@@ -178,7 +291,7 @@ public:
             return;
         }
 
-        metafile << FullOrbit.size() << std::endl;
+        metafile << FullOrbit.GetOrbitSize() << std::endl;
 
         if constexpr (std::is_same<IterType, uint32_t>::value) {
             metafile << "uint32_t" << std::endl;
@@ -430,40 +543,11 @@ public:
         }
 
         const auto orbfilename = filename + L".FullOrbit";
-
-        HANDLE hFile = CreateFile(orbfilename.c_str(),
-            GENERIC_READ,
-            FILE_SHARE_READ,
-            NULL,
-            OPEN_EXISTING,
-            FILE_ATTRIBUTE_NORMAL,
-            NULL);
-        if (hFile == INVALID_HANDLE_VALUE) {
-            ::MessageBox(NULL, L"Failed to open file for reading", L"", MB_OK);
+        FullOrbit = std::move(OrbitWrapper(orbfilename, sz));
+        if (FullOrbit.GetOrbitData() == nullptr) {
             return false;
         }
 
-        HANDLE hMapFile = CreateFileMapping(hFile, NULL, PAGE_READONLY, 0, 0, NULL);
-        if (hMapFile == NULL) {
-            ::MessageBox(NULL, L"Failed to create file mapping", L"", MB_OK);
-            return false;
-        }
-
-        FullOrbit.clear();
-        FullOrbit.resize(sz);
-
-        void* pBuf = MapViewOfFile(hMapFile, FILE_MAP_READ, 0, 0, 0);
-        if (pBuf == NULL) {
-            ::MessageBox(NULL, L"Failed to map view of file", L"", MB_OK);
-            return false;
-        }
-
-        memcpy(FullOrbit.data(), pBuf, sz * sizeof(GPUReferenceIter<T, PExtras>));
-
-        // TODO just use the mapped data directly, might be neat.
-        UnmapViewOfFile(pBuf);
-        CloseHandle(hMapFile);
-        CloseHandle(hFile);
         return true;
     }
 
@@ -478,7 +562,7 @@ public:
         CompressionErrorExp = 0;
         // CompressionHelper = {}; // Nothing to do here
 
-        FullOrbit.clear();
+        FullOrbit = {};
         UncompressedItersInOrbit = 0;
         GenerationNumber = 0;
 
@@ -493,7 +577,9 @@ public:
     template<class U = SubType>
     typename HDRFloatComplex<U> GetComplex(size_t uncompressed_index) const {
         if constexpr (PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::Bad) {
-            return { FullOrbit[uncompressed_index].x, FullOrbit[uncompressed_index].y };
+            return {
+                FullOrbit[uncompressed_index].x,
+                FullOrbit[uncompressed_index].y };
         } else {
             return CompressionHelper.GetCompressedComplex<U>(uncompressed_index);
         }
@@ -546,10 +632,10 @@ public:
         const size_t ReserveSize = (GuessReserveSize != 0) ? GuessReserveSize : 1'000'000;
 
         GenerationNumber = Generation;
-        FullOrbit.reserve(ReserveSize);
+        FullOrbit.MutableReserve(ReserveSize);
 
         // Add an empty entry at the start
-        FullOrbit.push_back({});
+        FullOrbit.PushBack({});
         UncompressedItersInOrbit = 1;
 
         if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
@@ -569,7 +655,7 @@ public:
 
     template<PerturbExtras PExtras, RefOrbitCalc::ReuseMode Reuse>
     void TrimResults() {
-        FullOrbit.shrink_to_fit();
+        FullOrbit.Trim();
 
         if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
             ReuseX.shrink_to_fit();
@@ -580,17 +666,17 @@ public:
     template<typename = typename std::enable_if<PExtras == PerturbExtras::EnableCompression>>
     size_t GetCompressedOrbitSize() const {
         if constexpr (PExtras == PerturbExtras::EnableCompression) {
-            assert(FullOrbit.size() <= UncompressedItersInOrbit);
+            assert(FullOrbit.GetOrbitSize() <= UncompressedItersInOrbit);
         }
 
-        return FullOrbit.size();
+        return FullOrbit.GetOrbitSize();
     }
 
     IterType GetCountOrbitEntries() const {
         if constexpr (PExtras == PerturbExtras::EnableCompression) {
-            assert(FullOrbit.size() <= UncompressedItersInOrbit);
+            assert(FullOrbit.GetOrbitSize() <= UncompressedItersInOrbit);
         } else {
-            assert(FullOrbit.size() == UncompressedItersInOrbit);
+            assert(FullOrbit.GetOrbitSize() == UncompressedItersInOrbit);
         }
 
         return UncompressedItersInOrbit;
@@ -599,12 +685,12 @@ public:
     void AddUncompressedIteration(GPUReferenceIter<T, PExtras> result) {
         static_assert(PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::Bad, "!");
 
-        FullOrbit.push_back(result);
+        FullOrbit.PushBack(result);
         UncompressedItersInOrbit++;
     }
 
     const GPUReferenceIter<T, PExtras>* GetOrbitData() const {
-        return FullOrbit.data();
+        return FullOrbit.GetOrbitData();
     }
 
     // Location of orbit
@@ -632,7 +718,7 @@ public:
 
     // Used only with scaled kernels
     void SetBad(bool bad) {
-        FullOrbit.back().bad = bad;
+        FullOrbit.SetBad(bad);
     }
 
     uint32_t GetAuthoritativePrecision() const {
@@ -696,11 +782,11 @@ public:
                 NewGenerationNumber, NewLaGenerationNumber);
         compressed->CopySettingsWithoutOrbit(*this);
 
-        assert (FullOrbit.size() > 1);
+        assert (FullOrbit.GetOrbitSize() > 1);
 
         if constexpr (disable_compression) {
-            for (size_t i = 0; i < FullOrbit.size(); i++) {
-                compressed->FullOrbit.push_back({ FullOrbit[i].x, FullOrbit[i].y, i });
+            for (size_t i = 0; i < FullOrbit.GetOrbitSize(); i++) {
+                compressed->FullOrbit.PushBack({ FullOrbit[i].x, FullOrbit[i].y, i });
             }
 
             return compressed;
@@ -709,7 +795,7 @@ public:
             T zx{};
             T zy{};
 
-            for (size_t i = 0; i < FullOrbit.size(); i++) {
+            for (size_t i = 0; i < FullOrbit.GetOrbitSize(); i++) {
                 auto errX = zx - FullOrbit[i].x;
                 auto errY = zy - FullOrbit[i].y;
 
@@ -723,7 +809,7 @@ public:
                     zx = FullOrbit[i].x;
                     zy = FullOrbit[i].y;
 
-                    compressed->FullOrbit.push_back({ FullOrbit[i].x, FullOrbit[i].y, i });
+                    compressed->FullOrbit.PushBack({ FullOrbit[i].x, FullOrbit[i].y, i });
                 }
 
                 auto zx_old = zx;
@@ -772,6 +858,73 @@ public:
     }
 
 private:
+    class OrbitWrapper {
+    private:
+        std::vector<GPUReferenceIter<T, PExtras>> MutableOrbit;
+        MemoryMappedFile<T, PExtras> MappedFileIfAny;
+        bool Mutable;
+
+    public:
+        OrbitWrapper() :
+            MutableOrbit{},
+            MappedFileIfAny{},
+            Mutable{true} {
+        }
+
+        OrbitWrapper(const std::wstring& filename, size_t orbit_entries) :
+            MutableOrbit{},
+            MappedFileIfAny{ filename, orbit_entries },
+            Mutable{ false } {
+        }
+
+        const GPUReferenceIter<T, PExtras>* GetOrbitData() const {
+            if (MappedFileIfAny.ValidFile()) {
+                return MappedFileIfAny.GetImmutableFullOrbit();
+            }
+            else {
+                return MutableOrbit.data();
+            }
+        }
+
+        size_t GetOrbitSize() const {
+            if (MappedFileIfAny.ValidFile()) {
+                return MappedFileIfAny.GetOrbitSize();
+            }
+            else {
+                return MutableOrbit.size();
+            }
+        }
+
+        void MutableReserve(size_t size) {
+            assert(Mutable);
+            assert(!MappedFileIfAny.ValidFile());
+            MutableOrbit.reserve(size);
+        }
+
+        void PushBack(GPUReferenceIter<T, PExtras> iter) {
+            assert(Mutable);
+            assert(!MappedFileIfAny.ValidFile());
+            MutableOrbit.push_back(iter);
+        }
+
+        const GPUReferenceIter<T, PExtras>& operator[](size_t index) const {
+            assert(index < GetOrbitSize());
+            return GetOrbitData()[index];
+        }
+
+        void Trim() {
+            assert(Mutable);
+            assert(!MappedFileIfAny.ValidFile());
+            MutableOrbit.shrink_to_fit();
+        }
+
+        void SetBad(bool bad) {
+            assert(Mutable);
+            assert(!MappedFileIfAny.ValidFile());
+            MutableOrbit.back().bad = bad;
+        }
+    };
+
     HighPrecision OrbitX;
     HighPrecision OrbitY;
     T OrbitXLow;
@@ -782,7 +935,7 @@ private:
     int32_t CompressionErrorExp;
 
     CompressionHelper<IterType, T, PExtras> CompressionHelper;
-    std::vector<GPUReferenceIter<T, PExtras>> FullOrbit;
+    OrbitWrapper FullOrbit;
     IterType UncompressedItersInOrbit;
 
     size_t GenerationNumber;
@@ -843,14 +996,14 @@ public:
         HdrReduce(err);
 
         if (HdrCompareToBothPositiveReducedGE(err, norm_z)) {
-            results.FullOrbit.push_back(iter);
+            results.FullOrbit.PushBack(iter);
 
             zx = iter.x;
             zy = iter.y;
 
             // Corresponds to the entry just added
             CurCompressedIndex++;
-            assert(CurCompressedIndex == results.FullOrbit.size() - 1);
+            assert(CurCompressedIndex == results.FullOrbit.GetOrbitSize() - 1);
         }
 
         auto zx_old = zx;

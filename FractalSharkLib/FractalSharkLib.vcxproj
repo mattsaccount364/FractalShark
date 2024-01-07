@@ -53,6 +53,7 @@
     <ClInclude Include="RefOrbitCalc.h" />
     <ClInclude Include="RefOrbitCalcTemplates.h" />
     <ClInclude Include="stdafx.h" />
+    <ClInclude Include="Vectors.h" />
     <ClInclude Include="WPngImage\lodepng.h" />
     <ClInclude Include="WPngImage\WPngImage.hh" />
   </ItemGroup>

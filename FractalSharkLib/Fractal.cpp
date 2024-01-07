@@ -2890,6 +2890,22 @@ void Fractal::DrawGlFractal(bool LocalColor, bool lastIter) {
 
     DrawAllPerturbationResults(true);
 
+    // TODO it'd be nice to do something like these but the message loop is now
+    // on the other (main) thread.   Hmm  maybe a mistake after all to have this
+    // separate thread
+    //{
+    //    MSG msg;
+    //    PeekMessage(&msg, NULL, 0, 0, PM_NOREMOVE);
+    //}
+
+    //// Throw away any messages
+    //{
+    //    MSG msg;
+    //    while (PeekMessage(&msg, NULL, 0, 0, PM_NOREMOVE)) {
+    //        GetMessage(&msg, NULL, 0, 0);
+    //    }
+    //}
+
     //while (GetMessage(&msg, NULL, 0, 0) > 0)
     //{
     //    TranslateMessage(&msg);

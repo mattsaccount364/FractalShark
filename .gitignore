@@ -36,13 +36,9 @@ UpgradeLog*
 
 Benchmarks.xlsx
 
+# Cuda crap
+FractalShark/GPUCache
+
 # Other projects
+Others/
 mpir/
-kalles-fraktaler-2/
-docs/
-Imagina/
-GPU-mandelbrot/
-FractalShades/
-FractalShark/GPUCache/*
-Fractal-Zoomer/
-fractal-bits/

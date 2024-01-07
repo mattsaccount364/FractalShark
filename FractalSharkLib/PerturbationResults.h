@@ -13,119 +13,7 @@
 #include "GPU_Render.h"
 
 #include "PerturbationResultsHelpers.h"
-
-// The purpose of this class is to manage a memory-mapped file, using win32 APIs
-// such as MapViewOfFile.  This is used to load and save the orbit data.
-template<class T, PerturbExtras PExtras>
-class MemoryMappedFile {
-private:
-    HANDLE hFile;
-    HANDLE hMapFile;
-    size_t OrbitSize;
-    const GPUReferenceIter<T, PExtras>* ImmutableFullOrbit;
-
-public:
-    const GPUReferenceIter<T, PExtras>* GetImmutableFullOrbit() const {
-        return ImmutableFullOrbit;
-    }
-
-    size_t GetOrbitSize() const {
-        return OrbitSize;
-    }
-
-    bool ValidFile() const {
-        return ImmutableFullOrbit != nullptr;
-    }
-
-    MemoryMappedFile() :
-        hFile{},
-        hMapFile{},
-        OrbitSize{},
-        ImmutableFullOrbit{} {
-    }
-
-    MemoryMappedFile(const MemoryMappedFile& other) = delete;
-    MemoryMappedFile& operator=(const MemoryMappedFile& other) = delete;
-    MemoryMappedFile(MemoryMappedFile&& other) :
-        hFile{ other.hFile },
-        hMapFile{ other.hMapFile },
-        OrbitSize{ other.OrbitSize },
-        ImmutableFullOrbit{ other.ImmutableFullOrbit } {
-
-        other.hFile = nullptr;
-        other.hMapFile = nullptr;
-        other.OrbitSize = 0;
-        other.ImmutableFullOrbit = nullptr;
-    }
-
-    MemoryMappedFile& operator=(MemoryMappedFile&& other) {
-        hFile = other.hFile;
-        hMapFile = other.hMapFile;
-        OrbitSize = other.OrbitSize;
-        ImmutableFullOrbit = other.ImmutableFullOrbit;
-
-        other.hFile = nullptr;
-        other.hMapFile = nullptr;
-        other.OrbitSize = 0;
-        other.ImmutableFullOrbit = nullptr;
-
-        return *this;
-    }
-
-    MemoryMappedFile(
-        const std::wstring orbfilename,
-        size_t orbit_size) {
-
-        ImmutableFullOrbit = nullptr;
-
-        hFile = CreateFile(orbfilename.c_str(),
-            GENERIC_READ,
-            FILE_SHARE_READ,
-            NULL,
-            OPEN_EXISTING,
-            FILE_ATTRIBUTE_NORMAL,
-            NULL);
-        if (hFile == INVALID_HANDLE_VALUE) {
-            ::MessageBox(NULL, L"Failed to open file for reading", L"", MB_OK);
-            return;
-        }
-
-        hMapFile = CreateFileMapping(hFile, nullptr, PAGE_READONLY, 0, 0, NULL);
-        if (hMapFile == nullptr) {
-            ::MessageBox(NULL, L"Failed to create file mapping", L"", MB_OK);
-            return;
-        }
-
-        ImmutableFullOrbit = static_cast<const GPUReferenceIter<T, PExtras>*>(
-            MapViewOfFile(hMapFile, FILE_MAP_READ, 0, 0, 0));
-
-        if (ImmutableFullOrbit == nullptr) {
-            ::MessageBox(NULL, L"Failed to map view of file", L"", MB_OK);
-            return;
-        }
-
-        OrbitSize = orbit_size;
-    }
-
-    ~MemoryMappedFile() {
-        if (ImmutableFullOrbit != nullptr) {
-            UnmapViewOfFile(ImmutableFullOrbit);
-            ImmutableFullOrbit = nullptr;
-        }
-        
-        if (hMapFile != nullptr) {
-            CloseHandle(hMapFile);
-            hMapFile = nullptr;
-        }
-
-        if (hFile != nullptr) {
-            CloseHandle(hFile);
-            hFile = nullptr;
-        }
-
-        OrbitSize = 0;
-    }
-};
+#include "Vectors.h"
 
 template<typename IterType, class T, PerturbExtras PExtras>
 class RefOrbitCompressor;
@@ -860,51 +748,51 @@ public:
 private:
     class OrbitWrapper {
     private:
-        std::vector<GPUReferenceIter<T, PExtras>> MutableOrbit;
-        MemoryMappedFile<T, PExtras> MappedFileIfAny;
+        GrowableVector<GPUReferenceIter<T, PExtras>> MutableOrbit;
+        ImmutableMemoryMappedFile<T, PExtras> ImmutableMappedFile;
         bool Mutable;
 
     public:
         OrbitWrapper() :
             MutableOrbit{},
-            MappedFileIfAny{},
+            ImmutableMappedFile{},
             Mutable{true} {
         }
 
         OrbitWrapper(const std::wstring& filename, size_t orbit_entries) :
             MutableOrbit{},
-            MappedFileIfAny{ filename, orbit_entries },
+            ImmutableMappedFile{ filename, orbit_entries },
             Mutable{ false } {
         }
 
         const GPUReferenceIter<T, PExtras>* GetOrbitData() const {
-            if (MappedFileIfAny.ValidFile()) {
-                return MappedFileIfAny.GetImmutableFullOrbit();
+            if (ImmutableMappedFile.ValidFile()) {
+                return ImmutableMappedFile.GetImmutableFullOrbit();
             }
             else {
-                return MutableOrbit.data();
+                return MutableOrbit.GetData();
             }
         }
 
         size_t GetOrbitSize() const {
-            if (MappedFileIfAny.ValidFile()) {
-                return MappedFileIfAny.GetOrbitSize();
+            if (ImmutableMappedFile.ValidFile()) {
+                return ImmutableMappedFile.GetOrbitSize();
             }
             else {
-                return MutableOrbit.size();
+                return MutableOrbit.GetSize();
             }
         }
 
-        void MutableReserve(size_t size) {
+        void MutableReserve(size_t /*size*/) {
             assert(Mutable);
-            assert(!MappedFileIfAny.ValidFile());
-            MutableOrbit.reserve(size);
+            assert(!ImmutableMappedFile.ValidFile());
+            // MutableOrbit.Reserve(size); // No-op currently
         }
 
         void PushBack(GPUReferenceIter<T, PExtras> iter) {
             assert(Mutable);
-            assert(!MappedFileIfAny.ValidFile());
-            MutableOrbit.push_back(iter);
+            assert(!ImmutableMappedFile.ValidFile());
+            MutableOrbit.PushBack(iter);
         }
 
         const GPUReferenceIter<T, PExtras>& operator[](size_t index) const {
@@ -914,14 +802,14 @@ private:
 
         void Trim() {
             assert(Mutable);
-            assert(!MappedFileIfAny.ValidFile());
-            MutableOrbit.shrink_to_fit();
+            assert(!ImmutableMappedFile.ValidFile());
+            // MutableOrbit.shrink_to_fit(); // No-op currently
         }
 
         void SetBad(bool bad) {
             assert(Mutable);
-            assert(!MappedFileIfAny.ValidFile());
-            MutableOrbit.back().bad = bad;
+            assert(!ImmutableMappedFile.ValidFile());
+            MutableOrbit.Back().bad = bad;
         }
     };
 

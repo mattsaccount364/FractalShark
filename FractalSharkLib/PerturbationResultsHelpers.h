@@ -65,10 +65,10 @@ public:
         auto LinearScan = [&](CachedIter<T>& iter, CachedIter<T>& other) -> bool {
             if (iter.UncompressedIter + 1 == uncompressed_index) {
                 bool condition =
-                    (iter.CompressedIter + 1 < results.FullOrbit.GetOrbitSize() &&
+                    (iter.CompressedIter + 1 < results.FullOrbit.GetSize() &&
                     (iter.UncompressedIter + 1 <
                         results.FullOrbit[iter.CompressedIter + 1].CompressionIndex)) ||
-                    iter.CompressedIter + 1 == results.FullOrbit.GetOrbitSize();
+                    iter.CompressedIter + 1 == results.FullOrbit.GetSize();
 
                 if (condition) {
                     other = iter;
@@ -105,7 +105,7 @@ public:
         // uncompressed index.
         auto BinarySearch = [&](size_t uncompressed_index) {
             size_t low = 0;
-            size_t high = results.FullOrbit.GetOrbitSize() - 1;
+            size_t high = results.FullOrbit.GetSize() - 1;
 
             while (low <= high) {
                 size_t mid = (low + high) / 2;

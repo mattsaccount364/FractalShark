@@ -71,7 +71,7 @@ void Initialize (void)
   // Initialize Winsock
   WSADATA info;
   if (WSAStartup (MAKEWORD (1, 1), &info) != 0)
-  { MessageBox (NULL, L"Cannot initialize WinSock!", L"WSAStartup", MB_OK);
+  { MessageBox (NULL, L"Cannot initialize WinSock!", L"WSAStartup", MB_OK | MB_APPLMODAL);
     return;
   }
 

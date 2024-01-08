@@ -78,10 +78,21 @@ static inline void PrefetchHighPrec(const HighPrecision& target) {
 RefOrbitCalc::RefOrbitCalc(Fractal& Fractal)
     : m_PerturbationAlg{ PerturbationAlg::MTPeriodicity3 },
       m_Fractal(Fractal),
+      m_PerturbationGuessCalcX(0),
+      m_PerturbationGuessCalcY(0),
       m_RefOrbitOptions{ AddPointOptions::DontSave },
       m_GuessReserveSize(),
       m_GenerationNumber(),
       m_LaGenerationNumber() {
+}
+
+std::wstring RefOrbitCalc::UseFileBackedOrbits() const {
+    if (m_RefOrbitOptions == AddPointOptions::SaveToFile) {
+        return L".FullOrbit";
+    }
+    else {
+        return L"";
+    }
 }
 
 bool RefOrbitCalc::RequiresCompression() const {
@@ -307,7 +318,7 @@ void RefOrbitCalc::OptimizeMemory() {
 
     GetProcessMemoryInfo(GetCurrentProcess(), (PPROCESS_MEMORY_COUNTERS)&checkHappy, sizeof(checkHappy));
     if (checkHappy.PagefileUsage > OMGAlotOfMemory) {
-        ::MessageBox(NULL, L"Watch the memory use... this is just a warning", L"", MB_OK);
+        ::MessageBox(NULL, L"Watch the memory use... this is just a warning", L"", MB_OK | MB_APPLMODAL);
         assert(false);
     }
 }
@@ -601,7 +612,8 @@ template<
     RefOrbitCalc::ReuseMode Reuse>
 void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecision cy) {
     auto& PerturbationResultsArray = GetPerturbationResults<IterType, T, PExtras>();
-    PerturbationResultsArray.push_back(std::make_unique<PerturbationResults<IterType, T, PExtras>>());
+    auto newArray = std::make_unique<PerturbationResults<IterType, T, PExtras>>(UseFileBackedOrbits());
+    PerturbationResultsArray.push_back(std::move(newArray));
     auto* results = PerturbationResultsArray[PerturbationResultsArray.size() - 1].get();
 
     InitResults<IterType, T, decltype(*results), PExtras, Reuse>(*results, cx, cy);
@@ -723,7 +735,7 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
     m_GuessReserveSize = results->GetCountOrbitEntries();
 
     if (m_RefOrbitOptions == AddPointOptions::SaveToFile) {
-        results->Write(GetTimeAsString());
+        results->Write(false);
     }
 }
 
@@ -735,7 +747,8 @@ template<
     RefOrbitCalc::BenchmarkMode BenchmarkState>
 bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPrecision cy) {
     auto& PerturbationResultsArray = GetPerturbationResults<IterType, T, PerturbExtras::Disable>();
-    PerturbationResultsArray.push_back(std::make_unique<PerturbationResults<IterType, T, PerturbExtras::Disable>>());
+    auto newArray = std::make_unique<PerturbationResults<IterType, T, PerturbExtras::Disable>>(UseFileBackedOrbits());
+    PerturbationResultsArray.push_back(std::move(newArray));
 
     auto* existingResults = GetUsefulPerturbationResults<IterType, T, true, PerturbExtras::Disable>();
     if (existingResults == nullptr || existingResults->GetReuseSize() < 5) {
@@ -758,7 +771,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
     // about 10^AuthoritativeReuseExtraPrecision. The problem naturally is the original
     // reference orbit is calculated only to so many digits.
     if (NewPrec - existingResults->GetAuthoritativePrecision() >= AuthoritativeReuseExtraPrecision - AuthoritativeMinExtraPrecision) {
-        //::MessageBox(NULL, L"Regenerating authoritative orbit is required", L"", MB_OK);
+        //::MessageBox(NULL, L"Regenerating authoritative orbit is required", L"", MB_OK | MB_APPLMODAL);
         PerturbationResultsArray.pop_back();
         return false;
     }
@@ -912,12 +925,13 @@ template<
     RefOrbitCalc::BenchmarkMode BenchmarkState>
 bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighPrecision cy) {
     auto& PerturbationResultsArray = GetPerturbationResults<IterType, T, PerturbExtras::Disable>();
-    PerturbationResultsArray.push_back(std::make_unique<PerturbationResults<IterType, T, PerturbExtras::Disable>>());
+    auto newArray = std::make_unique<PerturbationResults<IterType, T, PerturbExtras::Disable>>(UseFileBackedOrbits());
+    PerturbationResultsArray.push_back(std::move(newArray));
 
     auto* existingResults = GetUsefulPerturbationResults<IterType, T, true, PerturbExtras::Disable>();
     if (existingResults == nullptr || existingResults->GetReuseSize() < 5) {
         // TODO Lame hack with < 5.
-        //::MessageBox(NULL, L"Authoritative not found", L"", MB_OK);
+        //::MessageBox(NULL, L"Authoritative not found", L"", MB_OK | MB_APPLMODAL);
         PerturbationResultsArray.pop_back();
         return false;
     }
@@ -936,7 +950,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     // about 10^AuthoritativeReuseExtraPrecision. The problem naturally is the original
     // reference orbit is calculated only to so many digits.
     if (NewPrec - existingResults->GetAuthoritativePrecision() >= AuthoritativeReuseExtraPrecision - AuthoritativeMinExtraPrecision) {
-        //::MessageBox(NULL, L"Regenerating authoritative orbit is required", L"", MB_OK);
+        //::MessageBox(NULL, L"Regenerating authoritative orbit is required", L"", MB_OK | MB_APPLMODAL);
         PerturbationResultsArray.pop_back();
         return false;
     }
@@ -1258,7 +1272,8 @@ template<
     RefOrbitCalc::ReuseMode Reuse>
 void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecision cy) {
     auto& PerturbationResultsArray = GetPerturbationResults<IterType, T, PExtras>();
-    PerturbationResultsArray.push_back(std::make_unique<PerturbationResults<IterType, T, PExtras>>());
+    auto newArray = std::make_unique<PerturbationResults<IterType, T, PExtras>>(UseFileBackedOrbits());
+    PerturbationResultsArray.push_back(std::move(newArray));
     auto* results = PerturbationResultsArray[PerturbationResultsArray.size() - 1].get();
 
     HighPrecision zx, zy;
@@ -1576,7 +1591,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
     m_GuessReserveSize = results->GetCountOrbitEntries();
 
     if (m_RefOrbitOptions == AddPointOptions::SaveToFile) {
-        results->Write(GetTimeAsString());
+        results->Write(false);
     }
 }
 
@@ -1589,7 +1604,7 @@ template<
     PerturbExtras PExtras,
     RefOrbitCalc::ReuseMode Reuse>
 void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecision cy) {
-    ::MessageBox(NULL, L"AddPerturbationReferencePointMT5 disabled", L"", MB_OK);
+    ::MessageBox(NULL, L"AddPerturbationReferencePointMT5 disabled", L"", MB_OK | MB_APPLMODAL);
     AddPerturbationReferencePointMT3<IterType, T, SubType, Periodicity, BenchmarkState, PExtras, Reuse>(cx, cy);
 }
 
@@ -1688,7 +1703,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
                     (m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
                 break;
             default:
-                ::MessageBox(NULL, L"Some stupid bug #2343 :(", L"", MB_OK);
+                ::MessageBox(NULL, L"Some stupid bug #2343 :(", L"", MB_OK | MB_APPLMODAL);
                 assert(false);
                 break;
             }
@@ -1699,7 +1714,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
         GetUsefulPerturbationResults<IterType, T, false, PExtras>();
     if (results == nullptr) {
         if (added) {
-            ::MessageBox(NULL, L"Why didn't this work! :(", L"", MB_OK);
+            ::MessageBox(NULL, L"Why didn't this work! :(", L"", MB_OK | MB_APPLMODAL);
         }
 
         //std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtrasHackYay>>>& cur_array =
@@ -1763,7 +1778,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
     if constexpr (UseSmallExponents) {
         auto* resultsExisting = GetUsefulPerturbationResults<IterType, ConvertTType, false, PExtras>();
         if (resultsExisting == nullptr) {
-            auto results2(std::make_unique<PerturbationResults<IterType, ConvertTType, PExtras>>());
+            auto results2(std::make_unique<PerturbationResults<IterType, ConvertTType, PExtras>>(UseFileBackedOrbits()));
             results2->Copy<true>(*results,
                 GetNextGenerationNumber(),
                 GetNextLaGenerationNumber());
@@ -1833,8 +1848,8 @@ PerturbationResults<IterType, DestT, DestEnableBad>* RefOrbitCalc::CopyUsefulPer
     auto& container = GetContainer<IterType, DestEnableBad>();
 
     if constexpr (std::is_same<SrcT, double>::value) {
-        container.m_PerturbationResultsFloat.push_back(
-            std::make_unique<PerturbationResults<IterType, float, DestEnableBad>>());
+        auto newarray = std::make_unique<PerturbationResults<IterType, float, DestEnableBad>>(UseFileBackedOrbits());
+        container.m_PerturbationResultsFloat.push_back(std::move(newarray));
         auto* dest = container.m_PerturbationResultsFloat[container.m_PerturbationResultsFloat.size() - 1].get();
         dest->Copy<false>(
             src_array,
@@ -1846,8 +1861,8 @@ PerturbationResults<IterType, DestT, DestEnableBad>* RefOrbitCalc::CopyUsefulPer
         return nullptr;
     }
     else if constexpr (std::is_same<SrcT, HDRFloat<double>>::value) {
-        container.m_PerturbationResultsHDRFloat.push_back(
-            std::make_unique<PerturbationResults<IterType, HDRFloat<float>, DestEnableBad>>());
+        auto newarray = std::make_unique<PerturbationResults<IterType, HDRFloat<float>, DestEnableBad>>(UseFileBackedOrbits());
+        container.m_PerturbationResultsHDRFloat.push_back(std::move(newarray));
         auto* dest = container.m_PerturbationResultsHDRFloat[container.m_PerturbationResultsHDRFloat.size() - 1].get();
         dest->Copy<false>(
             src_array,
@@ -1856,8 +1871,8 @@ PerturbationResults<IterType, DestT, DestEnableBad>* RefOrbitCalc::CopyUsefulPer
         return dest;
     }
     else if constexpr (std::is_same<SrcT, HDRFloat<float>>::value) {
-        container.m_PerturbationResultsFloat.push_back(
-            std::make_unique<PerturbationResults<IterType, float, DestEnableBad>>());
+        auto newarray = std::make_unique<PerturbationResults<IterType, float, DestEnableBad>>(UseFileBackedOrbits());
+        container.m_PerturbationResultsFloat.push_back(std::move(newarray));
         auto* dest = container.m_PerturbationResultsFloat[container.m_PerturbationResultsFloat.size() - 1].get();
         dest->Copy<false>(
             src_array,
@@ -1914,75 +1929,44 @@ void RefOrbitCalc::ResetGuess(HighPrecision x, HighPrecision y) {
     m_PerturbationGuessCalcY = y;
 }
 
-// Returns the current time as a string
-std::wstring RefOrbitCalc::GetTimeAsString () const {
-    using namespace std::chrono;
-
-    // get current time
-    auto now = system_clock::now();
-
-    // get number of milliseconds for the current second
-    // (remainder after division into seconds)
-    auto ms = duration_cast<milliseconds>(now.time_since_epoch()) % 1000;
-
-    // convert to std::time_t in order to convert to std::tm (broken time)
-    auto timer = system_clock::to_time_t(now);
-
-    // convert to broken time
-    std::tm bt = *std::localtime(&timer);
-
-    std::ostringstream oss;
-
-    oss << std::put_time(&bt, "%Y-%m-%d-%H-%M-%S"); // HH:MM:SS
-    oss << '.' << std::setfill('0') << std::setw(3) << ms.count();
-    auto res = oss.str();
-
-    std::wstring wide;
-    std::transform(res.begin(), res.end(), std::back_inserter(wide), [](char c) {
-        return (wchar_t)c;
-        });
-
-    return wide;
-}
-
 void RefOrbitCalc::SaveAllOrbits() {
     // Saves all the results to disk
     auto lambda = [&](auto& Container) {
         for (const auto &it : Container.m_PerturbationResultsDouble) {
             auto filebase = GetTimeAsString();
-            it->Write(filebase);
+            it->Write(true, filebase);
         }
 
         for (const auto &it : Container.m_PerturbationResultsFloat) {
             auto filebase = GetTimeAsString();
-            it->Write(filebase);
+            it->Write(true, filebase);
         }
 
         // TODO - does not currently make sense to save these.
         //for (const auto& it : Container.m_PerturbationResults2xFloat) {
         //    auto filebase = GetTimeAsString();
-        //    it->Write(filebase);
+        //    it->Write(true, filebase);
         //}
 
         for (const auto &it : Container.m_PerturbationResultsHDRDouble) {
             auto filebase = GetTimeAsString();
-            it->Write(filebase);
+            it->Write(true, filebase);
         }
     
         for (const auto &it : Container.m_PerturbationResultsHDRFloat) {
             auto filebase = GetTimeAsString();
-            it->Write(filebase);
+            it->Write(true, filebase);
         }
 
         // TODO - does not currently make sense to save these.
         //for (const auto& it : Container.m_PerturbationResults2xFloat) {
         //    auto filebase = GetTimeAsString();
-        //    it->Write(filebase);
+        //    it->Write(true, filebase);
         //}
 
         for (const auto &it : Container.m_PerturbationResultsHDR2xFloat) {
             auto filebase = GetTimeAsString();
-            it->Write(filebase);
+            it->Write(true, filebase);
         }
     };
 
@@ -2032,6 +2016,7 @@ void RefOrbitCalc::LoadAllOrbits() {
                 auto stripfn = stripext(file);
                 auto widefn = narrowtowide(stripfn);
                 auto results1 = std::make_unique<PerturbationResults<IterType, double, PExtras>>(
+                    UseFileBackedOrbits(),
                     NextGen,
                     NextLaGen);
                 if (results1->Load(widefn)) {
@@ -2040,6 +2025,7 @@ void RefOrbitCalc::LoadAllOrbits() {
                 }
 
                 auto results2 = std::make_unique<PerturbationResults<IterType, float, PExtras>>(
+                    UseFileBackedOrbits(),
                     NextGen,
                     NextLaGen);
                 if (results2->Load(widefn)) {
@@ -2048,6 +2034,7 @@ void RefOrbitCalc::LoadAllOrbits() {
                 }
 
                 auto results3 = std::make_unique<PerturbationResults<IterType, CudaDblflt<MattDblflt>, PExtras>>(
+                    UseFileBackedOrbits(),
                     NextGen,
                     NextLaGen);
                 if (results3->Load(widefn)) {
@@ -2056,6 +2043,7 @@ void RefOrbitCalc::LoadAllOrbits() {
                 }
 
                 auto results4 = std::make_unique<PerturbationResults<IterType, HDRFloat<double>, PExtras>>(
+                    UseFileBackedOrbits(),
                     NextGen,
                     NextLaGen);
                 if (results4->Load(widefn)) {
@@ -2064,6 +2052,7 @@ void RefOrbitCalc::LoadAllOrbits() {
                 }
 
                 auto results5 = std::make_unique<PerturbationResults<IterType, HDRFloat<float>, PExtras>>(
+                    UseFileBackedOrbits(),
                     NextGen,
                     NextLaGen);
                 if (results5->Load(widefn)) {
@@ -2072,6 +2061,7 @@ void RefOrbitCalc::LoadAllOrbits() {
                 }
 
                 auto results6 = std::make_unique<PerturbationResults<IterType, HDRFloat<CudaDblflt<MattDblflt>>, PExtras>>(
+                    UseFileBackedOrbits(),
                     NextGen,
                     NextLaGen);
                 if (results6->Load(widefn)) {

@@ -63,7 +63,7 @@ int APIENTRY WinMain(HINSTANCE hInstance,
     WSADATA info;
     if (WSAStartup(MAKEWORD(1, 1), &info) != 0)
     {
-        MessageBox(NULL, L"Cannot initialize WinSock!", L"WSAStartup", MB_OK);
+        MessageBox(NULL, L"Cannot initialize WinSock!", L"WSAStartup", MB_OK | MB_APPLMODAL);
     }
 
     // Create a dump file whenever the gateway crashes only on windows
@@ -716,7 +716,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 ::MessageBox(hWnd,
                     L"TODO.  By default these are shown as white pixels overlayed on the image. "
                     L"It'd be nice to have an option that shows them as white pixels against a "
-                    L"black screen so they're location is obvious.", L"TODO", MB_OK);
+                    L"black screen so they're location is obvious.", L"TODO", MB_OK | MB_APPLMODAL);
                 break;
             }
             case IDM_PERTURB_CLEAR_ALL:
@@ -952,7 +952,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             // Catch-all
             default:
             {
-                ::MessageBox(hWnd, L"Unknown menu item", L"Error", MB_OK);
+                ::MessageBox(hWnd, L"Unknown menu item", L"Error", MB_OK | MB_APPLMODAL);
                 return DefWindowProc(hWnd, message, wParam, lParam); }
             }
 
@@ -1296,14 +1296,14 @@ void MenuGetCurPos(HWND hWnd)
     BOOL ret = OpenClipboard(hWnd);
     if (ret == 0)
     {
-        MessageBox(hWnd, L"Opening the clipboard failed.  Another program must be using it.", L"", MB_OK);
+        MessageBox(hWnd, L"Opening the clipboard failed.  Another program must be using it.", L"", MB_OK | MB_APPLMODAL);
         return;
     }
 
     ret = EmptyClipboard();
     if (ret == 0)
     {
-        MessageBox(hWnd, L"Emptying the clipboard of its current contents failed.  Make sure no other programs are using it.", L"", MB_OK);
+        MessageBox(hWnd, L"Emptying the clipboard of its current contents failed.  Make sure no other programs are using it.", L"", MB_OK | MB_APPLMODAL);
         CloseClipboard();
         return;
     }
@@ -1311,7 +1311,7 @@ void MenuGetCurPos(HWND hWnd)
     HGLOBAL hData = GlobalAlloc(GMEM_MOVEABLE, numBytes);
     if (hData == NULL)
     {
-        MessageBox(hWnd, L"Insufficient memory.", L"", MB_OK);
+        MessageBox(hWnd, L"Insufficient memory.", L"", MB_OK | MB_APPLMODAL);
         CloseClipboard();
         return;
     }
@@ -1319,7 +1319,7 @@ void MenuGetCurPos(HWND hWnd)
     char* mem = (char*)GlobalLock(hData);
     if (mem == NULL)
     {
-        MessageBox(hWnd, L"Insufficient memory.", L"", MB_OK);
+        MessageBox(hWnd, L"Insufficient memory.", L"", MB_OK | MB_APPLMODAL);
         CloseClipboard();
         return;
     }
@@ -1422,14 +1422,14 @@ void MenuGetCurPos(HWND hWnd)
     HANDLE clpData = SetClipboardData(CF_TEXT, hData);
     if (clpData == NULL)
     {
-        MessageBox(hWnd, L"Adding the data to the clipboard failed.  You are probably very low on memory.  Try closing other programs or restarting your computer.", L"", MB_OK);
+        MessageBox(hWnd, L"Adding the data to the clipboard failed.  You are probably very low on memory.  Try closing other programs or restarting your computer.", L"", MB_OK | MB_APPLMODAL);
         CloseClipboard();
         return;
     }
 
     CloseClipboard();
 
-    ::MessageBoxA(hWnd, stringCopy.c_str(), "", MB_OK);
+    ::MessageBoxA(hWnd, stringCopy.c_str(), "", MB_OK | MB_APPLMODAL);
 }
 
 void MenuPaletteRotation(HWND)
@@ -1525,7 +1525,7 @@ void MenuSaveCurrentLocation(HWND hWnd) {
     std::string s = ss.str();
     const std::wstring ws(s.begin(), s.end());
 
-    MessageBox(NULL, ws.c_str(), L"location", MB_OK);
+    MessageBox(NULL, ws.c_str(), L"location", MB_OK | MB_APPLMODAL);
 
     FILE *file = fopen("locations.txt", "at+");
     fprintf(file, "%s\r\n", s.c_str());
@@ -1550,7 +1550,7 @@ void BenchmarkMessage(HWND hWnd, HighPrecision megaIters, size_t milliseconds) {
     ss << megaIters << " million iterations per second, took " << milliseconds << "ms.";
     std::string s = ss.str();
     const std::wstring ws(s.begin(), s.end());
-    MessageBox(hWnd, ws.c_str(), L"", MB_OK);
+    MessageBox(hWnd, ws.c_str(), L"", MB_OK | MB_APPLMODAL);
 
 }
 

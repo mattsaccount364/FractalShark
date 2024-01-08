@@ -65,6 +65,7 @@
     <ClCompile Include="HDRFloat.cpp" />
     <ClCompile Include="ItersMemoryContainer.cpp" />
     <ClCompile Include="LAReference.cpp" />
+    <ClCompile Include="PerturbationResults.cpp" />
     <ClCompile Include="PointZoomBBConverter.cpp" />
     <ClCompile Include="RefOrbitCalc.cpp" />
     <ClCompile Include="WPngImage\lodepng.cpp" />

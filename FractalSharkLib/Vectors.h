@@ -22,6 +22,10 @@ public:
         return Mutable;
     }
 
+    std::wstring GetFilename() const {
+        return Filename;
+    }
+
     size_t GetCapacity() const {
         return CapacityInElts;
     }
@@ -34,7 +38,7 @@ public:
         return Mutable != nullptr;
     }
 
-    GrowableVector() :GrowableVector{ L"" } {
+    GrowableVector() : GrowableVector{ L"" } {
     }
 
     GrowableVector(const GrowableVector& other) = delete;
@@ -82,24 +86,37 @@ public:
         Mutable{},
         Filename{ filename }
     {
+        size_t CapacityInKB;
+        auto ret = GetPhysicallyInstalledSystemMemory(&CapacityInKB);
+        if (ret == FALSE) {
+            ::MessageBox(NULL, L"Failed to get system memory", L"", MB_OK | MB_APPLMODAL);
+            return;
+        }
+
         // If the Filename is empty, use virtual memory to back the region.
         // Otherwise, use the provided file.
         if (UsingAnonymous()) {
-            // 1 trillion of reserved address space, times sizeof(T) bytes per element.
-            // So yeah, that's a lot of address space.
-            size_t CapacityInBytes;
-            auto ret = GetPhysicallyInstalledSystemMemory(&CapacityInBytes);
-            if (ret == FALSE) {
-                ::MessageBox(NULL, L"Failed to get system memory", L"", MB_OK);
-                return;
-            }
-
-            MutableReserve(CapacityInBytes);
+            // Returned value is in KB so convert to bytes.
+            MutableReserve(CapacityInKB * 1024);
+        }
+        else {
+            // 32 MB.  We're not allocating some function of RAM on disk.
+            // It should be doing a sparse allocation but who knows.
+            MutableFileCommit(1024);
         }
     }
 
+    // This one takes a filename and size and uses the file specified
+    // to back the vector.
+    GrowableVector(const std::wstring filename, size_t initial_size)
+        : GrowableVector{ filename }
+    {
+        UsedSizeInElts = initial_size;
+        CapacityInElts = initial_size;
+    }
+
     ~GrowableVector() {
-        CloseMapping();
+        CloseMapping(true);
     }
 
     T& operator[](size_t index) {
@@ -139,7 +156,7 @@ public:
         UsedSizeInElts = 0;
     }
 
-    void CloseMapping() {
+    void CloseMapping(bool /*destruct*/) {
         if (!UsingAnonymous()) {
             if (Mutable != nullptr) {
                 UnmapViewOfFile(Mutable);
@@ -167,48 +184,101 @@ public:
         CapacityInElts = 0;
     }
 
-private:
-    bool MutableFileReserve(size_t new_elt_count) {
-        if (new_elt_count > CapacityInElts) {
-            CloseMapping();
+    bool MutableCommit(size_t new_elt_count) {
+        if (!UsingAnonymous()) {
+            return MutableFileCommit(new_elt_count);
+        }
+        else {
+            return MutableAnonymousCommit(new_elt_count);
+        }
+    }
 
-            hFile = CreateFile(Filename.c_str(),
-                GENERIC_READ | GENERIC_WRITE,
-                FILE_SHARE_READ,
-                NULL,
-                OPEN_ALWAYS,
-                FILE_ATTRIBUTE_NORMAL,
-                NULL);
-            if (hFile == INVALID_HANDLE_VALUE) {
-                ::MessageBox(NULL, L"Failed to open file for reading", L"", MB_OK);
-                return false;
+    void Trim() {
+        // TODO No-op for now.
+    }
+
+    bool FileBacked() const {
+        return !UsingAnonymous();
+    }
+
+private:
+    bool UsingAnonymous() const {
+        return Filename == L"";
+    }
+
+    bool MutableFileCommit(size_t new_elt_count) {
+        if (new_elt_count <= CapacityInElts) {
+            return true;
+        }
+
+        CloseMapping(false);
+
+        hFile = CreateFile(Filename.c_str(),
+            GENERIC_READ | GENERIC_WRITE,
+            FILE_SHARE_READ,
+            NULL,
+            OPEN_ALWAYS,
+            FILE_ATTRIBUTE_NORMAL,
+            NULL);
+        if (hFile == INVALID_HANDLE_VALUE) {
+            ::MessageBox(NULL, L"Failed to open file for reading", L"", MB_OK | MB_APPLMODAL);
+            return false;
+        }
+
+        auto last_error = GetLastError();
+
+        if (last_error == 0 || last_error == ERROR_ALREADY_EXISTS) {
+            LARGE_INTEGER existing_file_size{};
+            if (last_error == ERROR_ALREADY_EXISTS) {
+                BOOL ret = GetFileSizeEx(hFile, &existing_file_size);
+                if (ret == FALSE) {
+                    ::MessageBox(NULL, L"Failed to get file size", L"", MB_OK | MB_APPLMODAL);
+                    return false;
+                }
             }
 
-            // open file mapping object //
+            // In this case, the file was created.
             static_assert(sizeof(size_t) == sizeof(uint64_t), "!");
             static_assert(sizeof(DWORD) == sizeof(uint32_t), "!");
             uint64_t total_new_size = new_elt_count * sizeof(T);
             DWORD high = total_new_size >> 32;
             DWORD low = total_new_size & 0xFFFFFFFF;
+
+            if (existing_file_size.QuadPart != 0) {
+                high = existing_file_size.HighPart;
+                low = existing_file_size.LowPart;
+                UsedSizeInElts = existing_file_size.QuadPart / sizeof(T);
+                CapacityInElts = UsedSizeInElts;
+            }
+            else {
+                UsedSizeInElts = 0;
+                CapacityInElts = new_elt_count;
+            }
+
             hMapFile = CreateFileMapping(
                 hFile,
                 NULL,
-                PAGE_EXECUTE_READWRITE | SEC_IMAGE_NO_EXECUTE,
+                PAGE_READWRITE,
                 high,
                 low,
                 NULL);
             if (hMapFile == nullptr) {
-                ::MessageBox(NULL, L"Failed to create file mapping", L"", MB_OK);
+                ::MessageBox(NULL, L"Failed to create file mapping", L"", MB_OK | MB_APPLMODAL);
                 return false;
             }
 
             Mutable = static_cast<T*>(MapViewOfFile(hMapFile, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, 0));
             if (Mutable == nullptr) {
-                ::MessageBox(NULL, L"Failed to map view of file", L"", MB_OK);
+                ::MessageBox(NULL, L"Failed to map view of file", L"", MB_OK | MB_APPLMODAL);
                 return false;
             }
-
-            CapacityInElts = new_elt_count;
+        }
+        else {
+            auto ret = GetLastError();
+            std::wstring err = L"Failed to open file: ";
+            err += std::to_wstring(ret);
+            ::MessageBox(NULL, err.c_str(), L"", MB_OK | MB_APPLMODAL);
+            return false;
         }
 
         return true;
@@ -232,11 +302,18 @@ private:
                 auto code = GetLastError();
                 err += std::to_wstring(code);
 
-                ::MessageBox(NULL, err.c_str(), L"", MB_OK);
+                ::MessageBox(NULL, err.c_str(), L"", MB_OK | MB_APPLMODAL);
                 return false;
             }
             else if (Mutable != res) {
-                ::MessageBox(NULL, L"VirtualAlloc returned a different pointer :(", L"", MB_OK);
+                std::wstring err = L"VirtualAlloc returned a different pointer :(";
+                err += std::to_wstring(reinterpret_cast<uint64_t>(Mutable));
+                err += L" vs ";
+                err += std::to_wstring(reinterpret_cast<uint64_t>(res));
+                err += L" :(.  Code: ";
+                auto code = GetLastError();
+                err += std::to_wstring(code);
+                ::MessageBox(NULL, err.c_str(), L"", MB_OK | MB_APPLMODAL);
                 return false;
             }
 
@@ -245,15 +322,6 @@ private:
         }
 
         return true;
-    }
-
-    bool MutableCommit(size_t new_elt_count) {
-        if (!UsingAnonymous()) {
-            return MutableFileReserve(new_elt_count);
-        }
-        else {
-            return MutableAnonymousCommit(new_elt_count);
-        }
     }
 
     void MutableReserve(size_t new_reserved_bytes)
@@ -272,18 +340,15 @@ private:
             auto code = GetLastError();
             err += std::to_wstring(code);
 
-            ::MessageBox(NULL, err.c_str(), L"", MB_OK);
+            ::MessageBox(NULL, err.c_str(), L"", MB_OK | MB_APPLMODAL);
             return;
         }
 
         Mutable = static_cast<T*>(res);
     }
-
-    bool UsingAnonymous() const {
-        return Filename == L"";
-    }
 };
 
+#if 0
 // The purpose of this class is to manage a memory-mapped file, using win32 APIs
 // such as MapViewOfFile.  This is used to load and save the orbit data.
 template<class T, PerturbExtras PExtras>
@@ -356,13 +421,13 @@ public:
             FILE_ATTRIBUTE_NORMAL,
             NULL);
         if (hFile == INVALID_HANDLE_VALUE) {
-            ::MessageBox(NULL, L"Failed to open file for reading", L"", MB_OK);
+            ::MessageBox(NULL, L"Failed to open file for reading", L"", MB_OK | MB_APPLMODAL);
             return;
         }
 
         hMapFile = CreateFileMapping(hFile, nullptr, PAGE_READONLY, 0, 0, NULL);
         if (hMapFile == nullptr) {
-            ::MessageBox(NULL, L"Failed to create file mapping", L"", MB_OK);
+            ::MessageBox(NULL, L"Failed to create file mapping", L"", MB_OK | MB_APPLMODAL);
             return;
         }
 
@@ -370,7 +435,7 @@ public:
             MapViewOfFile(hMapFile, FILE_MAP_READ, 0, 0, 0));
 
         if (ImmutableFullOrbit == nullptr) {
-            ::MessageBox(NULL, L"Failed to map view of file", L"", MB_OK);
+            ::MessageBox(NULL, L"Failed to map view of file", L"", MB_OK | MB_APPLMODAL);
             return;
         }
 
@@ -396,3 +461,5 @@ public:
         OrbitSize = 0;
     }
 };
+
+#endif

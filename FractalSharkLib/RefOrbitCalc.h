@@ -102,8 +102,7 @@ public:
     void DrawPerturbationResults();
 
 private:
-    std::wstring GetTimeAsString() const;
-
+    std::wstring UseFileBackedOrbits() const;
     bool RequiresCompression() const;
     bool RequiresBadCalc() const;
     bool IsThisPerturbationArrayUsed(void* check) const;

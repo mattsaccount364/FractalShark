@@ -411,7 +411,7 @@ void Fractal::Uninitialize(void)
         m_AbortThreadQuitFlag = true;
         if (WaitForSingleObject(m_CheckForAbortThread, INFINITE) != WAIT_OBJECT_0)
         {
-            ::MessageBox(nullptr, L"Error waiting for abort thread!", L"", MB_OK);
+            ::MessageBox(nullptr, L"Error waiting for abort thread!", L"", MB_OK | MB_APPLMODAL);
         }
     }
 
@@ -463,12 +463,12 @@ void Fractal::Uninitialize(void)
     //    }
     //    else
     //    {
-    //        ::MessageBox(nullptr, L"Error connecting to server thread #1!", L"", MB_OK);
+    //        ::MessageBox(nullptr, L"Error connecting to server thread #1!", L"", MB_OK | MB_APPLMODAL);
     //    }
 
     //    if (WaitForSingleObject(m_ServerSubThread, INFINITE) != WAIT_OBJECT_0)
     //    {
-    //        ::MessageBox(nullptr, L"Error waiting for server thread #1!", L"", MB_OK);
+    //        ::MessageBox(nullptr, L"Error waiting for server thread #1!", L"", MB_OK | MB_APPLMODAL);
     //    }
     //    CloseHandle(m_ServerSubThread);
 
@@ -480,12 +480,12 @@ void Fractal::Uninitialize(void)
     //    }
     //    else
     //    {
-    //        ::MessageBox(nullptr, L"Error connecting to server thread #2!", L"", MB_OK);
+    //        ::MessageBox(nullptr, L"Error connecting to server thread #2!", L"", MB_OK | MB_APPLMODAL);
     //    }
 
     //    if (WaitForSingleObject(m_ServerMainThread, INFINITE) != WAIT_OBJECT_0)
     //    {
-    //        ::MessageBox(nullptr, L"Error waiting for server thread #2!", L"", MB_OK);
+    //        ::MessageBox(nullptr, L"Error waiting for server thread #2!", L"", MB_OK | MB_APPLMODAL);
     //    }
     //    CloseHandle(m_ServerMainThread);
 
@@ -562,7 +562,7 @@ void Fractal::ResetDimensions(size_t width,
     }
 
     if (gpu_antialiasing > 4) {
-        ::MessageBox(nullptr, L"You're doing it wrong.  4x is max == 16 samples per pixel", L"", MB_OK);
+        ::MessageBox(nullptr, L"You're doing it wrong.  4x is max == 16 samples per pixel", L"", MB_OK | MB_APPLMODAL);
         gpu_antialiasing = 4;
     }
 
@@ -863,7 +863,7 @@ void Fractal::BasicTest() {
     const wchar_t *DirName = L"BasicTest";
     auto ret = CreateDirectory(DirName, NULL);
     if (ret == 0 && GetLastError() != ERROR_ALREADY_EXISTS) {
-        ::MessageBox(nullptr, L"Error creating directory!", L"", MB_OK);
+        ::MessageBox(nullptr, L"Error creating directory!", L"", MB_OK | MB_APPLMODAL);
         return;
     }
 
@@ -1180,7 +1180,7 @@ void Fractal::AutoZoom() {
 
                     //wchar_t temps[256];
                     //swprintf(temps, 256, L"Coords: %f %f", meanX, meanY);
-                    //::MessageBox(nullptr, temps, L"", MB_OK);
+                    //::MessageBox(nullptr, temps, L"", MB_OK | MB_APPLMODAL);
                 }
                 else {
                     shouldBreak = true;
@@ -1188,7 +1188,7 @@ void Fractal::AutoZoom() {
                 }
 
                 if (numAtLimit == antiRectWidthInt * antiRectHeightInt) {
-                    ::MessageBox(nullptr, L"Flat screen! :(", L"", MB_OK);
+                    ::MessageBox(nullptr, L"Flat screen! :(", L"", MB_OK | MB_APPLMODAL);
                     shouldBreak = true;
                     return;
                 }
@@ -1229,7 +1229,7 @@ void Fractal::AutoZoom() {
                 guessY = YFromScreenToCalc<true>(targetY);
 
                 if (numAtLimit == m_ScrnWidth * m_ScrnHeight * GetGpuAntialiasing() * GetGpuAntialiasing()) {
-                    ::MessageBox(nullptr, L"Flat screen! :(", L"", MB_OK);
+                    ::MessageBox(nullptr, L"Flat screen! :(", L"", MB_OK | MB_APPLMODAL);
                     shouldBreak = true;
                     return;
                 }
@@ -1591,7 +1591,7 @@ void Fractal::View(size_t view)
         break;
 
     case 27:
-        ::MessageBox(NULL, L"Warning: This is a very large image.  It will take a long time to render.", L"Warning", MB_OK | MB_ICONWARNING);
+        ::MessageBox(NULL, L"Warning: This is a very large image.  It will take a long time to render.", L"Warning", MB_OK | MB_APPLMODAL | MB_ICONWARNING);
         //This text is copied to clipboard.Using "GpuHDRx2x32PerturbedRCLAv2"
         //    Antialiasing : 1
         //    Palette depth : 8
@@ -1920,7 +1920,7 @@ IterType Fractal::GetNumIterations(void) const
 {
     if constexpr (std::is_same<IterType, uint32_t>::value) {
         if (m_NumIterations > GetMaxIterations<IterType>()) {
-            ::MessageBox(nullptr, L"Iteration limit exceeded somehow.", L"", MB_OK);
+            ::MessageBox(nullptr, L"Iteration limit exceeded somehow.", L"", MB_OK | MB_APPLMODAL);
             m_NumIterations = GetMaxIterations<IterType>();
             return GetMaxIterations<IterType>();
         }
@@ -2846,7 +2846,7 @@ void Fractal::DrawGlFractal(bool LocalColor, bool lastIter) {
     //    localReductionResults.Min != gpuReductionResults.Min ||
     //    localReductionResults.Sum != gpuReductionResults.Sum) {
     //    DebugBreak();
-    //    ::MessageBox(nullptr, L"Local != GPU", L"", MB_OK);
+    //    ::MessageBox(nullptr, L"Local != GPU", L"", MB_OK | MB_APPLMODAL);
     //}
 
     GLuint texid;
@@ -3144,7 +3144,7 @@ void Fractal::DrawAsyncGpuFractalThread() {
             }
 
             if (err) {
-                ::MessageBox(nullptr, L"Unexpected error in DrawAsyncGpuFractalThread 1", L"Error", MB_OK);
+                ::MessageBox(nullptr, L"Unexpected error in DrawAsyncGpuFractalThread 1", L"Error", MB_OK | MB_APPLMODAL);
                 break;
             }
 
@@ -3631,7 +3631,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
 
                         // TODO this first RefIteration + l check bugs me
                         if (RefIteration + l >= (IterType)results->GetCountOrbitEntries()) {
-                            //::MessageBox(nullptr, L"Out of bounds! :(", L"", MB_OK);
+                            //::MessageBox(nullptr, L"Out of bounds! :(", L"", MB_OK | MB_APPLMODAL);
                             break;
                         }
 
@@ -3695,7 +3695,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
 
                     ++RefIteration;
                     if (RefIteration >= (IterType)results->GetCountOrbitEntries()) {
-                        ::MessageBox(nullptr, L"Out of bounds 2! :(", L"", MB_OK);
+                        ::MessageBox(nullptr, L"Out of bounds 2! :(", L"", MB_OK | MB_APPLMODAL);
                         break;
                     }
 
@@ -3813,7 +3813,7 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
         RefOrbitCalc::Extras::IncludeLAv2>();
 
     if (results->GetLaReference() == nullptr) {
-        ::MessageBox(nullptr, L"Oops - a null pointer deref", L"", MB_OK);
+        ::MessageBox(nullptr, L"Oops - a null pointer deref", L"", MB_OK | MB_APPLMODAL);
         return;
     }
 
@@ -4082,7 +4082,7 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
         results->GetPeriodMaybeZero() };
 
     if (results->GetLaReference() == nullptr) {
-        ::MessageBox(nullptr, L"Oops - a null pointer deref", L"", MB_OK);
+        ::MessageBox(nullptr, L"Oops - a null pointer deref", L"", MB_OK | MB_APPLMODAL);
         return;
     }
 
@@ -4184,7 +4184,7 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
         results2->GetPeriodMaybeZero() };
 
     if (gpu_results.GetCompressedSize() != gpu_results2.GetCompressedSize()) {
-        ::MessageBox(nullptr, L"Mismatch on size", L"", MB_OK);
+        ::MessageBox(nullptr, L"Mismatch on size", L"", MB_OK | MB_APPLMODAL);
         return;
     }
 
@@ -4213,7 +4213,7 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
 void Fractal::MessageBoxCudaError(uint32_t result) {
     char error[256];
     sprintf(error, "Error from cuda: %u.  Message: \"%s\"\n", result, GPURenderer::ConvertErrorToString(result));
-    ::MessageBoxA(NULL, error, "", MB_OK);
+    ::MessageBoxA(NULL, error, "", MB_OK | MB_APPLMODAL);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -4287,7 +4287,7 @@ void Fractal::CurrentFractalSave::Run() {
         wsprintf(temp, L"%s", m_FilenameBase.c_str());
         final_filename = std::wstring(temp) + ext;
         if (Fractal::FileExists(final_filename.c_str())) {
-            ::MessageBox(nullptr, L"Not saving, file exists", L"", MB_OK);
+            ::MessageBox(nullptr, L"Not saving, file exists", L"", MB_OK | MB_APPLMODAL);
             return;
         }
     }
@@ -4821,7 +4821,7 @@ void Fractal::NetworkCreateWorkload(void)
         //    for (i = 0; i < 100; i++)
         //    { temp[i] = m_ProcessPixelRow[i]; }
         //    temp[100] = 0;
-        //    ::MessageBox (NULL, temp, "", MB_OK);
+        //    ::MessageBox (NULL, temp, "", MB_OK | MB_APPLMODAL);
     }
     else if (m_NetworkRender == 'S')
     {
@@ -4852,7 +4852,7 @@ void Fractal::ClientCreateSubConnections(void)
 
         if (m_ClientSubNetwork[i]->CreateConnection(m_SetupData.m_ServerIPs[i], PORTNUM) == false)
         {
-            ::MessageBox(nullptr, L"Failure establishing connection.", L"", MB_OK);
+            ::MessageBox(nullptr, L"Failure establishing connection.", L"", MB_OK | MB_APPLMODAL);
             m_NetworkRender = '0'; // Fall back to local only
             m_ClientSubNetwork[i]->ShutdownConnection();
             return;
@@ -4868,7 +4868,7 @@ void Fractal::ClientCreateSubConnections(void)
 
         if (m_ClientSubNetwork[i]->SendData(data, 512) == -1)
         {
-            ::MessageBox(nullptr, L"Failure sending initial data.", L"", MB_OK);
+            ::MessageBox(nullptr, L"Failure sending initial data.", L"", MB_OK | MB_APPLMODAL);
             m_NetworkRender = '0'; // Fall back to local only
             m_ClientSubNetwork[i]->ShutdownConnection();
             return;

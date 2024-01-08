@@ -319,7 +319,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
                     break;
                 }
                 else if (i >= Start[1]) {
-                    ::MessageBox(NULL, L"Confused thread situation", L"", MB_OK);
+                    ::MessageBox(NULL, L"Confused thread situation", L"", MB_OK | MB_APPLMODAL);
                 }
             }
         }
@@ -405,7 +405,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
             if (j > End) {
                 if (ThreadID == ThreadCount - 1) {
                     DebugBreak();
-                    ::MessageBox(NULL, L"I have another bug here", L"", MB_OK);
+                    ::MessageBox(NULL, L"I have another bug here", L"", MB_OK | MB_APPLMODAL);
                 }
                 while (!Start[ThreadID + 1]);
                 if (j == Start[ThreadID + 1] - 1) {
@@ -414,7 +414,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
                 }
                 else if (j >= Start[ThreadID + 1]) {
                     DebugBreak();
-                    ::MessageBox(NULL, L"I have another bug here yay :(", L"", MB_OK);
+                    ::MessageBox(NULL, L"I have another bug here yay :(", L"", MB_OK | MB_APPLMODAL);
                     //break;
                 }
             }
@@ -475,11 +475,11 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateNewLAStage(
     IterType Period = 0;
 
     if (PrevStage > MaxLAStages) {
-        ::MessageBox(NULL, L"Too many stages :(", L"", MB_OK);
+        ::MessageBox(NULL, L"Too many stages :(", L"", MB_OK | MB_APPLMODAL);
     }
 
     if (CurrentStage >= MaxLAStages) {
-        ::MessageBox(NULL, L"Too many stages :(", L"", MB_OK);
+        ::MessageBox(NULL, L"Too many stages :(", L"", MB_OK | MB_APPLMODAL);
     }
 
     LAStages[CurrentStage].LAIndex = LAsize();
@@ -532,7 +532,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateNewLAStage(
     }
     LAStageCount++;
     if (LAStageCount > MaxLAStages) {
-        ::MessageBox(NULL, L"Too many stages (2) :(", L"", MB_OK);
+        ::MessageBox(NULL, L"Too many stages (2) :(", L"", MB_OK | MB_APPLMODAL);
     }
 
     PeriodBegin = Period;

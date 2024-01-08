@@ -47,7 +47,7 @@ int APIENTRY WinMain (HINSTANCE hInstance,
   // Winsock
   WSADATA info;
   if (WSAStartup (MAKEWORD (1, 1), &info) != 0)
-  { MessageBox (NULL, L"Cannot initialize WinSock!", L"WSAStartup", MB_OK); }
+  { MessageBox (NULL, L"Cannot initialize WinSock!", L"WSAStartup", MB_OK | MB_APPLMODAL); }
 
   // Initialize global strings
   MyRegisterClass (hInstance);
@@ -199,12 +199,12 @@ unsigned long WINAPI DrawingThread (void *)
 
   pf = ChoosePixelFormat (hDC, &pfd);
   if (pf == 0)
-  { MessageBox (NULL, L"ChoosePixelFormat() failed: Cannot find a suitable pixel format.", L"Error", MB_OK); 
+  { MessageBox (NULL, L"ChoosePixelFormat() failed: Cannot find a suitable pixel format.", L"Error", MB_OK | MB_APPLMODAL); 
 	  return FALSE;
   } 
  
   if (SetPixelFormat (hDC, pf, &pfd) == FALSE)
-  { MessageBox(NULL, L"SetPixelFormat() failed:  Cannot set format specified.", L"Error", MB_OK);
+  { MessageBox(NULL, L"SetPixelFormat() failed:  Cannot set format specified.", L"Error", MB_OK | MB_APPLMODAL);
 	  return FALSE;
   } 
 

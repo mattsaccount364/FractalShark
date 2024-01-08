@@ -56,7 +56,7 @@ int main (int, char *[])
   // Start listening for connections on the interface specified.
   WSADATA info;
   if (WSAStartup (MAKEWORD (1, 1), &info) != 0)
-  { printf ("Cannot initialize WinSock!", "WSAStartup", MB_OK);
+  { printf ("Cannot initialize WinSock!", "WSAStartup", MB_OK | MB_APPLMODAL);
     return 0;
   }
 

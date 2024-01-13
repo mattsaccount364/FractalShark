@@ -100,7 +100,8 @@ void Fractal::Initialize(int width,
     ResetDimensions(width, height, 2);
     SetIterType(IterTypeEnum::Bits32);
 
-    View(0);
+    SetPerturbAutosave(RefOrbitCalc::AddPointOptions::EnableWithoutSave);
+    View(5);
     //View(10);
     //View(26); // hard
     //View(27); // easy
@@ -4514,9 +4515,12 @@ int Fractal::SaveItersAsText(const std::wstring filename_base) {
     return SaveFractalData<CurrentFractalSave::Type::ItersText>(filename_base);
 }
 
-void Fractal::SetPerturbAutosave(bool Enable) {
-    if (Enable) {
-        m_RefOrbit.SetRefOrbitOptions(RefOrbitCalc::AddPointOptions::SaveToFile);
+void Fractal::SetPerturbAutosave(RefOrbitCalc::AddPointOptions Enable) {
+    if (Enable == RefOrbitCalc::AddPointOptions::EnableWithSave) {
+        m_RefOrbit.SetRefOrbitOptions(RefOrbitCalc::AddPointOptions::EnableWithSave);
+    }
+    else if (Enable == RefOrbitCalc::AddPointOptions::EnableWithoutSave) {
+        m_RefOrbit.SetRefOrbitOptions(RefOrbitCalc::AddPointOptions::EnableWithoutSave);
     }
     else {
         m_RefOrbit.SetRefOrbitOptions(RefOrbitCalc::AddPointOptions::DontSave);

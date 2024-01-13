@@ -86,15 +86,6 @@ RefOrbitCalc::RefOrbitCalc(Fractal& Fractal)
       m_LaGenerationNumber() {
 }
 
-std::wstring RefOrbitCalc::UseFileBackedOrbits() const {
-    if (m_RefOrbitOptions == AddPointOptions::SaveToFile) {
-        return L".FullOrbit";
-    }
-    else {
-        return L"";
-    }
-}
-
 bool RefOrbitCalc::RequiresCompression() const {
     switch (m_Fractal.GetRenderAlgorithm()) {
         case RenderAlgorithm::Gpu1x32PerturbedRCLAv2:
@@ -612,7 +603,7 @@ template<
     RefOrbitCalc::ReuseMode Reuse>
 void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecision cy) {
     auto& PerturbationResultsArray = GetPerturbationResults<IterType, T, PExtras>();
-    auto newArray = std::make_unique<PerturbationResults<IterType, T, PExtras>>(UseFileBackedOrbits());
+    auto newArray = std::make_unique<PerturbationResults<IterType, T, PExtras>>(m_RefOrbitOptions);
     PerturbationResultsArray.push_back(std::move(newArray));
     auto* results = PerturbationResultsArray[PerturbationResultsArray.size() - 1].get();
 
@@ -733,10 +724,6 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
 
     results->TrimResults<PExtras, Reuse>();
     m_GuessReserveSize = results->GetCountOrbitEntries();
-
-    if (m_RefOrbitOptions == AddPointOptions::SaveToFile) {
-        results->Write(false);
-    }
 }
 
 template<
@@ -747,7 +734,7 @@ template<
     RefOrbitCalc::BenchmarkMode BenchmarkState>
 bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPrecision cy) {
     auto& PerturbationResultsArray = GetPerturbationResults<IterType, T, PerturbExtras::Disable>();
-    auto newArray = std::make_unique<PerturbationResults<IterType, T, PerturbExtras::Disable>>(UseFileBackedOrbits());
+    auto newArray = std::make_unique<PerturbationResults<IterType, T, PerturbExtras::Disable>>(m_RefOrbitOptions);
     PerturbationResultsArray.push_back(std::move(newArray));
 
     auto* existingResults = GetUsefulPerturbationResults<IterType, T, true, PerturbExtras::Disable>();
@@ -925,7 +912,7 @@ template<
     RefOrbitCalc::BenchmarkMode BenchmarkState>
 bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighPrecision cy) {
     auto& PerturbationResultsArray = GetPerturbationResults<IterType, T, PerturbExtras::Disable>();
-    auto newArray = std::make_unique<PerturbationResults<IterType, T, PerturbExtras::Disable>>(UseFileBackedOrbits());
+    auto newArray = std::make_unique<PerturbationResults<IterType, T, PerturbExtras::Disable>>(m_RefOrbitOptions);
     PerturbationResultsArray.push_back(std::move(newArray));
 
     auto* existingResults = GetUsefulPerturbationResults<IterType, T, true, PerturbExtras::Disable>();
@@ -1272,7 +1259,7 @@ template<
     RefOrbitCalc::ReuseMode Reuse>
 void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecision cy) {
     auto& PerturbationResultsArray = GetPerturbationResults<IterType, T, PExtras>();
-    auto newArray = std::make_unique<PerturbationResults<IterType, T, PExtras>>(UseFileBackedOrbits());
+    auto newArray = std::make_unique<PerturbationResults<IterType, T, PExtras>>(m_RefOrbitOptions);
     PerturbationResultsArray.push_back(std::move(newArray));
     auto* results = PerturbationResultsArray[PerturbationResultsArray.size() - 1].get();
 
@@ -1589,10 +1576,6 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
 
     results->TrimResults<PExtras, Reuse>();
     m_GuessReserveSize = results->GetCountOrbitEntries();
-
-    if (m_RefOrbitOptions == AddPointOptions::SaveToFile) {
-        results->Write(false);
-    }
 }
 
 template<
@@ -1775,25 +1758,36 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
         }
     }
 
+    auto OptionalSave = [&](const auto *results) {
+        if (m_RefOrbitOptions == AddPointOptions::EnableWithSave ||
+            m_RefOrbitOptions == AddPointOptions::EnableWithoutSave) {
+            results->Write(false);
+        }
+    };
+
     if constexpr (UseSmallExponents) {
         auto* resultsExisting = GetUsefulPerturbationResults<IterType, ConvertTType, false, PExtras>();
         if (resultsExisting == nullptr) {
-            auto results2(std::make_unique<PerturbationResults<IterType, ConvertTType, PExtras>>(UseFileBackedOrbits()));
+            auto results2(std::make_unique<PerturbationResults<IterType, ConvertTType, PExtras>>(m_RefOrbitOptions));
             results2->Copy<true>(*results,
                 GetNextGenerationNumber(),
                 GetNextLaGenerationNumber());
 
             auto ret = AddPerturbationResults(std::move(results2));
             m_LastUsedRefOrbit = ret;
+
+            OptionalSave(ret);
             return ret;
         }
         else {
             m_LastUsedRefOrbit = resultsExisting;
+            OptionalSave(resultsExisting);
             return resultsExisting;
         }
     }
     else {
         m_LastUsedRefOrbit = results;
+        OptionalSave(results);
         return results;
     }
 }
@@ -1848,7 +1842,7 @@ PerturbationResults<IterType, DestT, DestEnableBad>* RefOrbitCalc::CopyUsefulPer
     auto& container = GetContainer<IterType, DestEnableBad>();
 
     if constexpr (std::is_same<SrcT, double>::value) {
-        auto newarray = std::make_unique<PerturbationResults<IterType, float, DestEnableBad>>(UseFileBackedOrbits());
+        auto newarray = std::make_unique<PerturbationResults<IterType, float, DestEnableBad>>(m_RefOrbitOptions);
         container.m_PerturbationResultsFloat.push_back(std::move(newarray));
         auto* dest = container.m_PerturbationResultsFloat[container.m_PerturbationResultsFloat.size() - 1].get();
         dest->Copy<false>(
@@ -1861,7 +1855,7 @@ PerturbationResults<IterType, DestT, DestEnableBad>* RefOrbitCalc::CopyUsefulPer
         return nullptr;
     }
     else if constexpr (std::is_same<SrcT, HDRFloat<double>>::value) {
-        auto newarray = std::make_unique<PerturbationResults<IterType, HDRFloat<float>, DestEnableBad>>(UseFileBackedOrbits());
+        auto newarray = std::make_unique<PerturbationResults<IterType, HDRFloat<float>, DestEnableBad>>(m_RefOrbitOptions);
         container.m_PerturbationResultsHDRFloat.push_back(std::move(newarray));
         auto* dest = container.m_PerturbationResultsHDRFloat[container.m_PerturbationResultsHDRFloat.size() - 1].get();
         dest->Copy<false>(
@@ -1871,7 +1865,7 @@ PerturbationResults<IterType, DestT, DestEnableBad>* RefOrbitCalc::CopyUsefulPer
         return dest;
     }
     else if constexpr (std::is_same<SrcT, HDRFloat<float>>::value) {
-        auto newarray = std::make_unique<PerturbationResults<IterType, float, DestEnableBad>>(UseFileBackedOrbits());
+        auto newarray = std::make_unique<PerturbationResults<IterType, float, DestEnableBad>>(m_RefOrbitOptions);
         container.m_PerturbationResultsFloat.push_back(std::move(newarray));
         auto* dest = container.m_PerturbationResultsFloat[container.m_PerturbationResultsFloat.size() - 1].get();
         dest->Copy<false>(
@@ -2016,7 +2010,7 @@ void RefOrbitCalc::LoadAllOrbits() {
                 auto stripfn = stripext(file);
                 auto widefn = narrowtowide(stripfn);
                 auto results1 = std::make_unique<PerturbationResults<IterType, double, PExtras>>(
-                    UseFileBackedOrbits(),
+                    m_RefOrbitOptions,
                     NextGen,
                     NextLaGen);
                 if (results1->Load(widefn)) {
@@ -2025,7 +2019,7 @@ void RefOrbitCalc::LoadAllOrbits() {
                 }
 
                 auto results2 = std::make_unique<PerturbationResults<IterType, float, PExtras>>(
-                    UseFileBackedOrbits(),
+                    m_RefOrbitOptions,
                     NextGen,
                     NextLaGen);
                 if (results2->Load(widefn)) {
@@ -2034,7 +2028,7 @@ void RefOrbitCalc::LoadAllOrbits() {
                 }
 
                 auto results3 = std::make_unique<PerturbationResults<IterType, CudaDblflt<MattDblflt>, PExtras>>(
-                    UseFileBackedOrbits(),
+                    m_RefOrbitOptions,
                     NextGen,
                     NextLaGen);
                 if (results3->Load(widefn)) {
@@ -2043,7 +2037,7 @@ void RefOrbitCalc::LoadAllOrbits() {
                 }
 
                 auto results4 = std::make_unique<PerturbationResults<IterType, HDRFloat<double>, PExtras>>(
-                    UseFileBackedOrbits(),
+                    m_RefOrbitOptions,
                     NextGen,
                     NextLaGen);
                 if (results4->Load(widefn)) {
@@ -2052,7 +2046,7 @@ void RefOrbitCalc::LoadAllOrbits() {
                 }
 
                 auto results5 = std::make_unique<PerturbationResults<IterType, HDRFloat<float>, PExtras>>(
-                    UseFileBackedOrbits(),
+                    m_RefOrbitOptions,
                     NextGen,
                     NextLaGen);
                 if (results5->Load(widefn)) {
@@ -2061,7 +2055,7 @@ void RefOrbitCalc::LoadAllOrbits() {
                 }
 
                 auto results6 = std::make_unique<PerturbationResults<IterType, HDRFloat<CudaDblflt<MattDblflt>>, PExtras>>(
-                    UseFileBackedOrbits(),
+                    m_RefOrbitOptions,
                     NextGen,
                     NextLaGen);
                 if (results6->Load(widefn)) {

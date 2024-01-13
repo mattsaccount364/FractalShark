@@ -36,7 +36,7 @@ public:
     friend class RefOrbitCompressor<IterType, T, PExtras>;
 
     PerturbationResults(
-        std::wstring FileExtension,
+        RefOrbitCalc::AddPointOptions MemoryOpt,
         size_t Generation = 0,
         size_t LaGeneration = 0) :
       
@@ -49,7 +49,7 @@ public:
         PeriodMaybeZero{},
         CompressionErrorExp{},
         CompressionHelper{ *this },
-        FullOrbit{ FileExtension != L"" ? (GetTimeAsString() + FileExtension) : L""},
+        FullOrbit{ MemoryOpt == RefOrbitCalc::AddPointOptions::DontSave ? L"" : GetTimeAsString() + L".FullOrbit" },
         UncompressedItersInOrbit{},
         GenerationNumber{ Generation },
         LaReference{},
@@ -98,7 +98,7 @@ public:
         CompressionErrorExp = other.GetCompressionErrorExp();
         // CompressionHelper = {*this}; // Nothing to do here
 
-        FullOrbit.MutableCommit(other.FullOrbit.GetSize());
+        //FullOrbit.MutableCommit(other.FullOrbit.GetSize());
         UncompressedItersInOrbit = other.UncompressedItersInOrbit;
         GenerationNumber = NewGenerationNumber;
 
@@ -160,7 +160,7 @@ public:
         //}
     }
 
-    void Write(bool include_orbit) {
+    void Write(bool include_orbit) const {
         std::wstring filename;
         filename = FullOrbit.GetFilename();
         if (filename == L"") {
@@ -170,7 +170,7 @@ public:
         Write(include_orbit, filename);
     }
 
-    void Write(bool include_orbit, std::wstring filename) {
+    void Write(bool include_orbit, std::wstring filename) const {
 
         if (include_orbit) {
             const auto orbfilename = filename + L".FullOrbit";
@@ -535,10 +535,9 @@ public:
         const size_t ReserveSize = (GuessReserveSize != 0) ? GuessReserveSize : 1'000'000;
 
         GenerationNumber = Generation;
-        FullOrbit.MutableCommit(ReserveSize);
 
-        This is bugged
-            Start program, load view #5, enable auto-save, then shift-C.  The next pushback fails.
+        // Do not resize prematurely -- file-backed vectors only resize when needed.
+        // FullOrbit.MutableCommit(ReserveSize);
 
         // Add an empty entry at the start
         FullOrbit.PushBack({});

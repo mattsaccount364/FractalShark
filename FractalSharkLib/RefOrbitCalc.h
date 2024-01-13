@@ -51,7 +51,8 @@ public:
 
     enum class AddPointOptions {
         DontSave,
-        SaveToFile
+        EnableWithSave,
+        EnableWithoutSave
     };
 
     void SetRefOrbitOptions(AddPointOptions options) { m_RefOrbitOptions = options; }
@@ -102,7 +103,6 @@ public:
     void DrawPerturbationResults();
 
 private:
-    std::wstring UseFileBackedOrbits() const;
     bool RequiresCompression() const;
     bool RequiresBadCalc() const;
     bool IsThisPerturbationArrayUsed(void* check) const;

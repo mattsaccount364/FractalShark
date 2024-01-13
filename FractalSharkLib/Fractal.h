@@ -198,7 +198,7 @@ public:
         m_RefOrbit.GetSomeDetails(PeriodMaybeZero, CompressedIters, UncompressedIters, CompressionErrorExp);
     }
 
-    void SetPerturbAutosave(bool Enable);
+    void SetPerturbAutosave(RefOrbitCalc::AddPointOptions Enable);
 
     // Unit conversion helpers
     template<bool IncludeGpuAntialiasing = false>

@@ -271,6 +271,7 @@ BEGIN
             MENUITEM "Save Current Orbit",          IDM_PERTURBATION_SAVE
             MENUITEM "Load Orbit",                  IDM_PERTURBATION_LOAD
             MENUITEM "Enable Auto-Save Orbit (file per point)", IDM_PERTURB_AUTOSAVE_ON
+            MENUITEM "Enable Auto-Save Orbit (delete when done)", IDM_PERTURB_AUTOSAVE_ON_DELETE
             MENUITEM "Disable Auto-Save Orbit",     IDM_PERTURB_AUTOSAVE_OFF
         END
         MENUITEM SEPARATOR

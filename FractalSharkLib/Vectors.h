@@ -117,6 +117,9 @@ public:
 
     ~GrowableVector() {
         CloseMapping(true);
+
+        // TODO Delete the file if it's not anonymous.
+        //DeleteFile(Filename.c_str());
     }
 
     T& operator[](size_t index) {
@@ -184,15 +187,6 @@ public:
         CapacityInElts = 0;
     }
 
-    bool MutableCommit(size_t new_elt_count) {
-        if (!UsingAnonymous()) {
-            return MutableFileCommit(new_elt_count);
-        }
-        else {
-            return MutableAnonymousCommit(new_elt_count);
-        }
-    }
-
     void Trim() {
         // TODO No-op for now.
     }
@@ -202,6 +196,15 @@ public:
     }
 
 private:
+    bool MutableCommit(size_t new_elt_count) {
+        if (!UsingAnonymous()) {
+            return MutableFileCommit(new_elt_count);
+        }
+        else {
+            return MutableAnonymousCommit(new_elt_count);
+        }
+    }
+
     bool UsingAnonymous() const {
         return Filename == L"";
     }
@@ -228,6 +231,12 @@ private:
         auto last_error = GetLastError();
 
         if (last_error == 0 || last_error == ERROR_ALREADY_EXISTS) {
+            static_assert(sizeof(size_t) == sizeof(uint64_t), "!");
+            static_assert(sizeof(DWORD) == sizeof(uint32_t), "!");
+            uint64_t total_new_size = new_elt_count * sizeof(T);
+            DWORD high = total_new_size >> 32;
+            DWORD low = total_new_size & 0xFFFFFFFF;
+
             LARGE_INTEGER existing_file_size{};
             if (last_error == ERROR_ALREADY_EXISTS) {
                 BOOL ret = GetFileSizeEx(hFile, &existing_file_size);
@@ -235,25 +244,20 @@ private:
                     ::MessageBox(NULL, L"Failed to get file size", L"", MB_OK | MB_APPLMODAL);
                     return false;
                 }
-            }
 
-            // In this case, the file was created.
-            static_assert(sizeof(size_t) == sizeof(uint64_t), "!");
-            static_assert(sizeof(DWORD) == sizeof(uint32_t), "!");
-            uint64_t total_new_size = new_elt_count * sizeof(T);
-            DWORD high = total_new_size >> 32;
-            DWORD low = total_new_size & 0xFFFFFFFF;
+                //high = existing_file_size.HighPart;
+                //low = existing_file_size.LowPart;
 
-            if (existing_file_size.QuadPart != 0) {
-                high = existing_file_size.HighPart;
-                low = existing_file_size.LowPart;
+                // Note: by using the file size to find the used size, the implication
+                // is that resizing the vector only takes place once the vector is full.
+                // This is not the case for anonymous memory.
+                // So, MutableCommit is kept private and internal, and used only to grow.
                 UsedSizeInElts = existing_file_size.QuadPart / sizeof(T);
-                CapacityInElts = UsedSizeInElts;
-            }
-            else {
+            } else {
                 UsedSizeInElts = 0;
-                CapacityInElts = new_elt_count;
             }
+
+            CapacityInElts = new_elt_count;
 
             hMapFile = CreateFileMapping(
                 hFile,

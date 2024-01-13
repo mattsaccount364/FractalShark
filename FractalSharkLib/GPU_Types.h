@@ -255,7 +255,7 @@ struct BadField {
     [[msvc::no_unique_address]] uint32_t padding;
 };
 
-// TODO if we template this on IterType, update CompressionHelper
+// TODO if we template this on IterType, update m_CompressionHelper
 // (GPU + CPU versions) to avoid static_cast all over
 struct CompressionIndexField {
     CompressionIndexField() : CompressionIndex{ } {

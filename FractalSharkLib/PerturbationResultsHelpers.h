@@ -48,9 +48,9 @@ public:
 
         auto runOneIter = [&](auto &zx, auto &zy) {
             auto zx_old = zx;
-            zx = zx * zx - zy * zy + results.OrbitXLow;
+            zx = zx * zx - zy * zy + results.m_OrbitXLow;
             HdrReduce(zx);
-            zy = T{ 2 } *zx_old * zy + results.OrbitYLow;
+            zy = T{ 2 } *zx_old * zy + results.m_OrbitYLow;
             HdrReduce(zy);
         };
 
@@ -65,10 +65,10 @@ public:
         auto LinearScan = [&](CachedIter<T>& iter, CachedIter<T>& other) -> bool {
             if (iter.UncompressedIter + 1 == uncompressed_index) {
                 bool condition =
-                    (iter.CompressedIter + 1 < results.FullOrbit.GetSize() &&
+                    (iter.CompressedIter + 1 < results.m_FullOrbit.GetSize() &&
                     (iter.UncompressedIter + 1 <
-                        results.FullOrbit[iter.CompressedIter + 1].CompressionIndex)) ||
-                    iter.CompressedIter + 1 == results.FullOrbit.GetSize();
+                        results.m_FullOrbit[iter.CompressedIter + 1].CompressionIndex)) ||
+                    iter.CompressedIter + 1 == results.m_FullOrbit.GetSize();
 
                 if (condition) {
                     other = iter;
@@ -78,9 +78,9 @@ public:
                 else {
                     other = iter;
                     iter.CompressedIter++;
-                    iter.zx = results.FullOrbit[iter.CompressedIter].x;
-                    iter.zy = results.FullOrbit[iter.CompressedIter].y;
-                    iter.UncompressedIter = results.FullOrbit[iter.CompressedIter].CompressionIndex;
+                    iter.zx = results.m_FullOrbit[iter.CompressedIter].x;
+                    iter.zy = results.m_FullOrbit[iter.CompressedIter].y;
+                    iter.UncompressedIter = results.m_FullOrbit[iter.CompressedIter].CompressionIndex;
                 }
 
                 return true;
@@ -100,20 +100,20 @@ public:
         }
 
         // Do a binary search.  Given the uncompressed index, search the compressed
-        // FullOrbit array for the nearest UncompressedIndex that's less than or equal
+        // m_FullOrbit array for the nearest UncompressedIndex that's less than or equal
         // to the provided uncompressed index.  Return the compressed index for that
         // uncompressed index.
         auto BinarySearch = [&](size_t uncompressed_index) {
             size_t low = 0;
-            size_t high = results.FullOrbit.GetSize() - 1;
+            size_t high = results.m_FullOrbit.GetSize() - 1;
 
             while (low <= high) {
                 size_t mid = (low + high) / 2;
 
-                if (results.FullOrbit[mid].CompressionIndex < uncompressed_index) {
+                if (results.m_FullOrbit[mid].CompressionIndex < uncompressed_index) {
                     low = mid + 1;
                 }
-                else if (results.FullOrbit[mid].CompressionIndex > uncompressed_index) {
+                else if (results.m_FullOrbit[mid].CompressionIndex > uncompressed_index) {
                     high = mid - 1;
                 }
                 else {
@@ -127,11 +127,11 @@ public:
 
         auto BestCompressedIndexGuess = BinarySearch(uncompressed_index);
 
-        T zx = results.FullOrbit[BestCompressedIndexGuess].x;
-        T zy = results.FullOrbit[BestCompressedIndexGuess].y;
+        T zx = results.m_FullOrbit[BestCompressedIndexGuess].x;
+        T zy = results.m_FullOrbit[BestCompressedIndexGuess].y;
 
-        for (size_t cur_uncompressed_index = results.FullOrbit[BestCompressedIndexGuess].CompressionIndex;
-            cur_uncompressed_index < results.UncompressedItersInOrbit;
+        for (size_t cur_uncompressed_index = results.m_FullOrbit[BestCompressedIndexGuess].CompressionIndex;
+            cur_uncompressed_index < results.m_UncompressedItersInOrbit;
             cur_uncompressed_index++) {
 
             if (cur_uncompressed_index == uncompressed_index) {

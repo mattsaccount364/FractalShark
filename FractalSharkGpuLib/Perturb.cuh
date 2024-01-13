@@ -68,7 +68,7 @@ public:
         // Cast to void -- it's logically const
         cudaMemcpy((void*)FullOrbit, in_iters, OrbitSize * sizeof(GPUReferenceIter<Type, PExtras>), cudaMemcpyDefault);
 
-        //err = cudaMemAdvise(FullOrbit,
+        //err = cudaMemAdvise(m_FullOrbit,
         //    size * sizeof(GPUReferenceIter<Type>),
         //    cudaMemAdviseSetReadMostly,
         //    0);
@@ -125,7 +125,7 @@ public:
     }
 
     //const GPUReferenceIter<T, PExtras>* GetFullOrbit() const {
-    //    return FullOrbit;
+    //    return m_FullOrbit;
     //}
 
     CUDA_CRAP
@@ -222,7 +222,7 @@ public:
 
 private:
     // Do a binary search.  Given the uncompressed index, search the compressed
-    // FullOrbit array for the nearest UncompressedIndex that's less than or equal
+    // m_FullOrbit array for the nearest UncompressedIndex that's less than or equal
     // to the provided uncompressed index.  Return the compressed index for that
     // uncompressed index.
     CUDA_CRAP

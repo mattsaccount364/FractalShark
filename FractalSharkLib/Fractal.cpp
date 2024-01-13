@@ -1602,7 +1602,7 @@ void Fractal::View(size_t view)
         //    zoomFactor "7.90516141241318534606e+57"
 
         //    Additional details :
-        //PeriodMaybeZero = 23387951809
+        //m_PeriodMaybeZero = 23387951809
         //    CompressedIters = 299845537
         //    UncompressedIters = 23387951809
         //    Compression ratio = 78.000000

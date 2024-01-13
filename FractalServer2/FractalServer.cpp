@@ -61,8 +61,8 @@ int main (int, char *[])
   }
 
   DWORD threadID;
-  gHandleMainThread = (HANDLE) CreateThread (NULL, 0, MainConnectionThread, NULL, 0, &threadID);
-  gHandleSubThread = (HANDLE) CreateThread (NULL, 0, SubConnectionThread, NULL, 0, &threadID);
+  gHandleMainThread = (HANDLE) CreateThread (nullptr, 0, MainConnectionThread, nullptr, 0, &threadID);
+  gHandleSubThread = (HANDLE) CreateThread (nullptr, 0, SubConnectionThread, nullptr, 0, &threadID);
 
   for (;;)
   { if (_kbhit () != 0)

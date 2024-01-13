@@ -37,14 +37,14 @@ struct OpenGlContext {
             pf = ChoosePixelFormat(m_hDC, &pfd);
             if (pf == 0)
             {
-                MessageBox(NULL, L"ChoosePixelFormat() failed: Cannot find a suitable pixel format.", L"Error", MB_OK | MB_APPLMODAL);
+                MessageBox(nullptr, L"ChoosePixelFormat() failed: Cannot find a suitable pixel format.", L"Error", MB_OK | MB_APPLMODAL);
                 m_Valid = false;
                 return;
             }
 
             if (SetPixelFormat(m_hDC, pf, &pfd) == FALSE)
             {
-                MessageBox(NULL, L"SetPixelFormat() failed:  Cannot set format specified.", L"Error", MB_OK | MB_APPLMODAL);
+                MessageBox(nullptr, L"SetPixelFormat() failed:  Cannot set format specified.", L"Error", MB_OK | MB_APPLMODAL);
                 m_Valid = false;
                 return;
             }
@@ -78,7 +78,7 @@ struct OpenGlContext {
 
     ~OpenGlContext() {
         if (m_hWnd) {
-            wglMakeCurrent(NULL, NULL);
+            wglMakeCurrent(nullptr, nullptr);
             ReleaseDC(m_hWnd, m_hDC);
             wglDeleteContext(m_hRC);
         }

@@ -12,7 +12,7 @@ bool gWindowed; // Says whether we are in windowed mode or not.
 HDC gHDC;
 
 // Fractal:
-Fractal *gFractal = NULL;
+Fractal *gFractal = nullptr;
 
 // Foward declarations of functions included in this code module:
 ATOM              MyRegisterClass(HINSTANCE hInstance);
@@ -63,7 +63,7 @@ int APIENTRY WinMain(HINSTANCE hInstance,
     WSADATA info;
     if (WSAStartup(MAKEWORD(1, 1), &info) != 0)
     {
-        MessageBox(NULL, L"Cannot initialize WinSock!", L"WSAStartup", MB_OK | MB_APPLMODAL);
+        MessageBox(nullptr, L"Cannot initialize WinSock!", L"WSAStartup", MB_OK | MB_APPLMODAL);
     }
 
     // Create a dump file whenever the gateway crashes only on windows
@@ -76,14 +76,14 @@ int APIENTRY WinMain(HINSTANCE hInstance,
 
     // Perform application initialization:
     HWND hWnd = InitInstance(hInstance, nCmdShow);
-    if (hWnd == NULL)
+    if (hWnd == nullptr)
     {
         return 1;
     }
 
     // Main message loop:
     MSG msg;
-    while (GetMessage(&msg, NULL, 0, 0) > 0)
+    while (GetMessage(&msg, nullptr, 0, 0) > 0)
     {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
@@ -111,9 +111,9 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
     wcex.cbWndExtra = 0;
     wcex.hInstance = hInstance;
     wcex.hIcon = LoadIcon(hInstance, (LPCTSTR)IDI_FRACTALS);
-    wcex.hCursor = LoadCursor(NULL, IDC_ARROW);
-    wcex.hbrBackground = NULL;
-    wcex.lpszMenuName = NULL;
+    wcex.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    wcex.hbrBackground = nullptr;
+    wcex.lpszMenuName = nullptr;
     wcex.lpszClassName = szWindowClass;
     wcex.hIconSm = LoadIcon(wcex.hInstance, (LPCTSTR)IDI_SMALL);
 
@@ -173,11 +173,11 @@ HWND InitInstance(HINSTANCE hInstance, int nCmdShow)
     HWND hWnd;
     hWnd = CreateWindow(szWindowClass, L"", WS_POPUP | WS_THICKFRAME,
         startX, startY, width, height,
-        NULL, NULL, hInstance, NULL);
+        nullptr, nullptr, hInstance, nullptr);
 
     if (!hWnd)
     {
-        return NULL;
+        return nullptr;
     }
 
     // Put us on top
@@ -192,7 +192,7 @@ HWND InitInstance(HINSTANCE hInstance, int nCmdShow)
 
     FractalSetupData setupData;
     setupData.Load();
-    gFractal = new Fractal(&setupData, rt.right, rt.bottom, NULL, hWnd, false);
+    gFractal = new Fractal(&setupData, rt.right, rt.bottom, nullptr, hWnd, false);
 
     // Display!
     ShowWindow(hWnd, nCmdShow);
@@ -967,7 +967,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
     case WM_SIZE:
     {
-        if (gFractal != NULL)
+        if (gFractal != nullptr)
         {
             gFractal->ResetDimensions(LOWORD(lParam), HIWORD(lParam));
             PaintAsNecessary(hWnd);
@@ -980,7 +980,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         menuX = GET_X_LPARAM(lParam);
         menuY = GET_Y_LPARAM(lParam);
 
-        TrackPopupMenu(GetSubMenu(gPopupMenu, 0), 0, menuX, menuY, 0, hWnd, NULL);
+        TrackPopupMenu(GetSubMenu(gPopupMenu, 0), 0, menuX, menuY, 0, hWnd, nullptr);
 
         // Store the menu location as client coordinates
         // not screen coordinates.
@@ -1315,7 +1315,7 @@ void MenuGetCurPos(HWND hWnd)
     }
 
     HGLOBAL hData = GlobalAlloc(GMEM_MOVEABLE, numBytes);
-    if (hData == NULL)
+    if (hData == nullptr)
     {
         MessageBox(hWnd, L"Insufficient memory.", L"", MB_OK | MB_APPLMODAL);
         CloseClipboard();
@@ -1323,7 +1323,7 @@ void MenuGetCurPos(HWND hWnd)
     }
 
     char* mem = (char*)GlobalLock(hData);
-    if (mem == NULL)
+    if (mem == nullptr)
     {
         MessageBox(hWnd, L"Insufficient memory.", L"", MB_OK | MB_APPLMODAL);
         CloseClipboard();
@@ -1426,7 +1426,7 @@ void MenuGetCurPos(HWND hWnd)
     //
 
     HANDLE clpData = SetClipboardData(CF_TEXT, hData);
-    if (clpData == NULL)
+    if (clpData == nullptr)
     {
         MessageBox(hWnd, L"Adding the data to the clipboard failed.  You are probably very low on memory.  Try closing other programs or restarting your computer.", L"", MB_OK | MB_APPLMODAL);
         CloseClipboard();
@@ -1531,7 +1531,7 @@ void MenuSaveCurrentLocation(HWND hWnd) {
     std::string s = ss.str();
     const std::wstring ws(s.begin(), s.end());
 
-    MessageBox(NULL, ws.c_str(), L"location", MB_OK | MB_APPLMODAL);
+    MessageBox(nullptr, ws.c_str(), L"location", MB_OK | MB_APPLMODAL);
 
     FILE *file = fopen("locations.txt", "at+");
     fprintf(file, "%s\r\n", s.c_str());
@@ -1594,7 +1594,7 @@ void MenuBenchmarkThis(HWND hWnd) {
 void MenuAlgHelp(HWND /*hWnd*/) {
     // This message box shows some help related to the algorithms.
     ::MessageBox(
-        NULL,
+        nullptr,
         L"Algorithms\r\n"
         L"\r\n"
         L"- As a general recommendation, choose AUTO.  Auto will render the fractal using "
@@ -1620,7 +1620,7 @@ void MenuAlgHelp(HWND /*hWnd*/) {
 
 void MenuViewsHelp(HWND /*hWnd*/) {
     ::MessageBox(
-        NULL,
+        nullptr,
         L"Views\r\n"
         L"\r\n"
         L"The purpose of these is simply to make it easy to navigate to\r\n"
@@ -1632,7 +1632,7 @@ void MenuViewsHelp(HWND /*hWnd*/) {
 void MenuShowHotkeys(HWND /*hWnd*/) {
     // Shows some basic help + hotkeys as defined in HandleKeyDown
     ::MessageBox(
-        NULL,
+        nullptr,
         L"Hotkeys\r\n"
         L"\r\n"
         L"Navigation\r\n"
@@ -1689,7 +1689,7 @@ void PaintAsNecessary(HWND hWnd)
         return;
     }
 
-    if (gFractal != NULL)
+    if (gFractal != nullptr)
     {
         gFractal->CalcFractal(false);
     }
@@ -1703,15 +1703,15 @@ void create_minidump(struct _EXCEPTION_POINTERS* apExceptionInfo)
     HMODULE mhLib = ::LoadLibrary(_T("dbghelp.dll"));
     MINIDUMPWRITEDUMP pDump = (MINIDUMPWRITEDUMP)::GetProcAddress(mhLib, "MiniDumpWriteDump");
 
-    HANDLE  hFile = ::CreateFile(_T("core.dmp"), GENERIC_WRITE, FILE_SHARE_WRITE, NULL, CREATE_ALWAYS,
-        FILE_ATTRIBUTE_NORMAL, NULL);
+    HANDLE  hFile = ::CreateFile(_T("core.dmp"), GENERIC_WRITE, FILE_SHARE_WRITE, nullptr, CREATE_ALWAYS,
+        FILE_ATTRIBUTE_NORMAL, nullptr);
 
     _MINIDUMP_EXCEPTION_INFORMATION ExInfo;
     ExInfo.ThreadId = ::GetCurrentThreadId();
     ExInfo.ExceptionPointers = apExceptionInfo;
     ExInfo.ClientPointers = FALSE;
 
-    pDump(GetCurrentProcess(), GetCurrentProcessId(), hFile, MiniDumpNormal, &ExInfo, NULL, NULL);
+    pDump(GetCurrentProcess(), GetCurrentProcessId(), hFile, MiniDumpNormal, &ExInfo, nullptr, nullptr);
     ::CloseHandle(hFile);
 }
 

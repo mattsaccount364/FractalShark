@@ -180,9 +180,9 @@ float device_basic_template(T* h_in1, T* h_in2, T* h_out, const unsigned int num
                         const unsigned int numBlock = 128, 
                         const unsigned int numThread = 128) {
 
-        T* d_in1 = NULL;
-	T* d_in2 = NULL;
-        T* d_out = NULL;
+        T* d_in1 = nullptr;
+	T* d_in2 = nullptr;
+        T* d_out = nullptr;
         GPUMALLOC((void**)&d_in1, sizeof(T)*numElement);
 	GPUMALLOC((void**)&d_in2, sizeof(T)*numElement);
         GPUMALLOC((void**)&d_out, sizeof(T)*numElement);
@@ -244,8 +244,8 @@ template<class T>
 float device_math_template(T* h_in, const unsigned int numElement, T* h_out,
 		   MATH math, const unsigned int numBlock, const unsigned int numThread) {
 
-        T* d_in = NULL;
-        T* d_out = NULL;
+        T* d_in = nullptr;
+        T* d_out = nullptr;
         GPUMALLOC((void**)&d_in, sizeof(T)*numElement);
         GPUMALLOC((void**)&d_out, sizeof(T)*numElement);
         TOGPU(d_in, h_in, sizeof(T)*numElement);
@@ -345,8 +345,8 @@ template<class T>
 float device_defined_template(T* h_in, const unsigned int numElement, T* h_out,
                    	      const unsigned int numBlock, const unsigned int numThread) {
 
-        T* d_in = NULL;
-        T* d_out = NULL;
+        T* d_in = nullptr;
+        T* d_out = nullptr;
         GPUMALLOC((void**)&d_in, sizeof(T)*numElement);
         GPUMALLOC((void**)&d_out, sizeof(T)*numElement);
         TOGPU(d_in, h_in, sizeof(T)*numElement);
@@ -402,10 +402,10 @@ void device_qrsmap(const unsigned int N, const int numBlock, const int numThread
 	h_x.z = 0.0; 
 	h_x.w = 0.0;
 	
-	gqd_real* d_x = NULL;
+	gqd_real* d_x = nullptr;
 	GPUMALLOC((void**)&d_x, sizeof(gqd_real));
 	TOGPU( d_x, &h_x, sizeof(gqd_real) );
-	gqd_real* d_c = NULL;
+	gqd_real* d_c = nullptr;
 	GPUMALLOC((void**)&d_c, sizeof(gqd_real)*N);
 	unsigned int timer = 0;
 

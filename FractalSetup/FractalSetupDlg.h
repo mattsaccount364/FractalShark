@@ -17,7 +17,7 @@ class CFractalSetupDlg : public CDialog
 {
 // Construction
 public:
-	CFractalSetupDlg(CWnd* pParent = NULL);	// standard constructor
+	CFractalSetupDlg(CWnd* pParent = nullptr);	// standard constructor
   FractalSetupData m_Data;
 
 // Dialog Data

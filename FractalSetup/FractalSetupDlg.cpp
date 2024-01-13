@@ -14,7 +14,7 @@ static char THIS_FILE[] = __FILE__;
 /////////////////////////////////////////////////////////////////////////////
 // CFractalSetupDlg dialog
 
-CFractalSetupDlg::CFractalSetupDlg(CWnd* pParent /*=NULL*/)
+CFractalSetupDlg::CFractalSetupDlg(CWnd* pParent /*=nullptr*/)
   : CDialog(CFractalSetupDlg::IDD, pParent)
 {
   //{{AFX_DATA_INIT(CFractalSetupDlg)

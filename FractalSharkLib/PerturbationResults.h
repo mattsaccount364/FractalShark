@@ -178,7 +178,7 @@ public:
 
             std::ofstream orbfile(orbfilename, std::ios::binary);
             if (!orbfile.is_open()) {
-                ::MessageBox(NULL, L"Failed to open file for writing", L"", MB_OK | MB_APPLMODAL);
+                ::MessageBox(nullptr, L"Failed to open file for writing", L"", MB_OK | MB_APPLMODAL);
                 return;
             }
 
@@ -191,7 +191,7 @@ public:
 
         std::ofstream metafile(metafilename, std::ios::binary);
         if (!metafile.is_open()) {
-            ::MessageBox(NULL, L"Failed to open file for writing", L"", MB_OK | MB_APPLMODAL);
+            ::MessageBox(nullptr, L"Failed to open file for writing", L"", MB_OK | MB_APPLMODAL);
             return;
         }
 
@@ -202,7 +202,7 @@ public:
         } else if constexpr (std::is_same<IterType, uint64_t>::value) {
             metafile << "uint64_t" << std::endl;
         } else {
-            ::MessageBox(NULL, L"Invalid size.", L"", MB_OK | MB_APPLMODAL);
+            ::MessageBox(nullptr, L"Invalid size.", L"", MB_OK | MB_APPLMODAL);
             return;
         }
 
@@ -219,7 +219,7 @@ public:
         } else if constexpr (std::is_same<T, HDRFloat<double>>::value) {
             metafile << "HDRFloat<double>" << std::endl;
         } else {
-            ::MessageBox(NULL, L"Invalid type.", L"", MB_OK | MB_APPLMODAL);
+            ::MessageBox(nullptr, L"Invalid type.", L"", MB_OK | MB_APPLMODAL);
             return;
         }
 
@@ -230,7 +230,7 @@ public:
         } else if constexpr (PExtras == PerturbExtras::Disable) {
             metafile << "PerturbExtras::Disable" << std::endl;
         } else {
-            ::MessageBox(NULL, L"Invalid bad.", L"", MB_OK | MB_APPLMODAL);
+            ::MessageBox(nullptr, L"Invalid bad.", L"", MB_OK | MB_APPLMODAL);
             return;
         }
 
@@ -259,7 +259,7 @@ public:
         const auto metafilename = filename + L".met";
         std::ifstream metafile(metafilename, std::ios::binary);
         if (!metafile.is_open()) {
-            ::MessageBox(NULL, L"Failed to open file for writing", L"", MB_OK | MB_APPLMODAL);
+            ::MessageBox(nullptr, L"Failed to open file for writing", L"", MB_OK | MB_APPLMODAL);
             return false;
         }
 
@@ -282,7 +282,7 @@ public:
                     typematch1 = true;
                 }
             } else {
-                ::MessageBox(NULL, L"Invalid size.", L"", MB_OK | MB_APPLMODAL);
+                ::MessageBox(nullptr, L"Invalid size.", L"", MB_OK | MB_APPLMODAL);
                 return false;
             }
         }
@@ -316,7 +316,7 @@ public:
                     typematch2 = true;
                 }
             } else {
-                ::MessageBox(NULL, L"Invalid type.", L"", MB_OK | MB_APPLMODAL);
+                ::MessageBox(nullptr, L"Invalid type.", L"", MB_OK | MB_APPLMODAL);
                 return false;
             }
         }
@@ -340,7 +340,7 @@ public:
                     typematch3 = true;
                 }
             } else {
-                ::MessageBox(NULL, L"Invalid bad.", L"", MB_OK | MB_APPLMODAL);
+                ::MessageBox(nullptr, L"Invalid bad.", L"", MB_OK | MB_APPLMODAL);
                 return false;
             }
         }
@@ -409,7 +409,7 @@ public:
                 output = static_cast<T>(mantissa);
             }
             else {
-                ::MessageBox(NULL, L"Unexpected type in Load", L"", MB_OK | MB_APPLMODAL);
+                ::MessageBox(nullptr, L"Unexpected type in Load", L"", MB_OK | MB_APPLMODAL);
                 return false;
             }
         };

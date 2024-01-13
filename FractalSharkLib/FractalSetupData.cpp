@@ -63,13 +63,13 @@ void FractalSetupData::Load (bool defaultsOnly)
     m_File = _wfopen (FileName, L"rb+");
   }
   else
-  { m_File = NULL; }
+  { m_File = nullptr; }
 
   ReadChar (&m_Version, 0);
   if (m_Version != VERSION)
-  { if (m_File != NULL)
+  { if (m_File != nullptr)
     { fclose (m_File);
-      m_File = NULL;
+      m_File = nullptr;
       _wunlink (FileName);
     }
   }
@@ -103,7 +103,7 @@ void FractalSetupData::Load (bool defaultsOnly)
   ReadInt (&m_L1Iterations, 256);
   ReadInt (&m_L1NumFrames, 1500);
   
-  if (m_File != NULL)
+  if (m_File != nullptr)
   { fclose (m_File); }
 }
 
@@ -157,7 +157,7 @@ void FractalSetupData::Save (void)
 void FractalSetupData::ReadString(wchar_t *fromDisk, const wchar_t *defValue, int length)
 {
     int i;
-    if (m_File == NULL)
+    if (m_File == nullptr)
     {
         for (i = 0; i < length; i++)
         {
@@ -176,7 +176,7 @@ void FractalSetupData::ReadString(wchar_t *fromDisk, const wchar_t *defValue, in
 
 void FractalSetupData::ReadString (char *fromDisk, const char *defValue, int length)
 { int i;
-  if (m_File == NULL)
+  if (m_File == nullptr)
   { for (i = 0; i < length; i++)
     { fromDisk[i] = defValue[i]; }
   }
@@ -202,7 +202,7 @@ void FractalSetupData::WriteString(wchar_t *toDisk, int length)
 }
 
 void FractalSetupData::ReadChar (char *fromDisk, const char defValue)
-{ if (m_File == NULL)
+{ if (m_File == nullptr)
   { *fromDisk = defValue; }
   else
   { fread (fromDisk, sizeof (char), 1, m_File); }
@@ -211,7 +211,7 @@ void FractalSetupData::ReadChar (char *fromDisk, const char defValue)
 void FractalSetupData::ReadChar(wchar_t *fromDisk, const wchar_t defValue)
 {
     char temp;
-    if (m_File == NULL)
+    if (m_File == nullptr)
     {
         *fromDisk = defValue;
     }
@@ -224,13 +224,13 @@ void FractalSetupData::ReadChar(wchar_t *fromDisk, const wchar_t defValue)
 
 
 void FractalSetupData::WriteChar (char toDisk)
-{ if (m_File != NULL)
+{ if (m_File != nullptr)
   { fwrite (&toDisk, sizeof (char), 1, m_File); }
 }
 
 void FractalSetupData::WriteChar(wchar_t toDisk)
 {
-    if (m_File != NULL)
+    if (m_File != nullptr)
     {
         char temp = (char)toDisk;
         fwrite(&temp, sizeof(char), 1, m_File);
@@ -238,25 +238,25 @@ void FractalSetupData::WriteChar(wchar_t toDisk)
 }
 
 void FractalSetupData::ReadInt (int *fromDisk, const int defValue)
-{ if (m_File == NULL)
+{ if (m_File == nullptr)
   { *fromDisk = defValue; }
   else
   { fread (fromDisk, sizeof (int), 1, m_File); }
 }
 
 void FractalSetupData::WriteInt (int toDisk)
-{ if (m_File != NULL)
+{ if (m_File != nullptr)
   { fwrite (&toDisk, sizeof (int), 1, m_File); }
 }
 
 void FractalSetupData::ReadDouble (double *fromDisk, const double defValue)
-{ if (m_File == NULL)
+{ if (m_File == nullptr)
   { *fromDisk = defValue; }
   else
   { fread (fromDisk, sizeof (double), 1, m_File); }
 }
 
 void FractalSetupData::WriteDouble (double toDisk)
-{ if (m_File != NULL)
+{ if (m_File != nullptr)
   { fwrite (&toDisk, sizeof (double), 1, m_File); }
 }

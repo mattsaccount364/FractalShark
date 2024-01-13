@@ -38,7 +38,7 @@ void ConvertCStringToDest(const CString& str,
 void OutputMessage(const wchar_t* szFormat, ...);
 CFractalTrayDlg* theActiveOne;
 
-CFractalTrayDlg::CFractalTrayDlg(CWnd* pParent /*=NULL*/)
+CFractalTrayDlg::CFractalTrayDlg(CWnd* pParent /*=nullptr*/)
     : CDialog(CFractalTrayDlg::IDD, pParent)
     , m_DestCoords(_T(""))
     , m_ScaleFactor(DefaultScaleFactor)
@@ -142,7 +142,7 @@ BOOL CFractalTrayDlg::OnInitDialog()
         m_ThreadParam.stop = false;
         m_ThreadParam.hWnd = m_hWnd;
 
-        m_Thread = CreateThread(NULL, 0, CalcProc, &m_ThreadParam, NULL, NULL);
+        m_Thread = CreateThread(nullptr, 0, CalcProc, &m_ThreadParam, nullptr, nullptr);
         PostMessage(WM_SYSCOMMAND, SC_MINIMIZE, 0);
 
         SetIcon(m_hIcon1, TRUE);      // Set big icon
@@ -151,7 +151,7 @@ BOOL CFractalTrayDlg::OnInitDialog()
     }
     else
     {
-        m_Thread = NULL;
+        m_Thread = nullptr;
         SetIcon(m_hIcon2, TRUE);      // Set big icon
         SetIcon(m_hIcon2, FALSE);    // Set small icon
         m_TrayIcon.SetIcon(m_hIcon2);
@@ -159,7 +159,7 @@ BOOL CFractalTrayDlg::OnInitDialog()
 
     m_TrayIcon.ShowIcon();
 
-    //SetWindowPos (NULL, 0, 0, 0, 0, SWP_HIDEWINDOW | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER);
+    //SetWindowPos (nullptr, 0, 0, 0, 0, SWP_HIDEWINDOW | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER);
 
     return TRUE;  // return TRUE  unless you set the focus to a control
 }
@@ -184,7 +184,7 @@ LRESULT CFractalTrayDlg::OnSysCommand(WPARAM nID, LPARAM lParam)
 
 LRESULT CFractalTrayDlg::OnDestroy(WPARAM, LPARAM)
 {
-    if (m_Thread != NULL)
+    if (m_Thread != nullptr)
     {
         m_ThreadParam.stop = true;
         WaitForSingleObject(m_Thread, INFINITE);
@@ -308,7 +308,7 @@ void ConvertCStringToDest(const CString& str,
 
 void CFractalTrayDlg::OnBnClickedButtonGenerate()
 {
-    if (m_Thread != NULL)
+    if (m_Thread != nullptr)
     {
         MessageBox(L"Can't generate a new location file while the current one is being processed.  Exit the program, delete the location.txt file, and restart.");
         return;
@@ -452,7 +452,7 @@ LRESULT CFractalTrayDlg::OnFinishedCalculating(WPARAM, LPARAM)
     m_TrayIcon.SetIcon(m_hIcon2);
     SetIcon(m_hIcon2, TRUE);      // Set big icon
     SetIcon(m_hIcon2, FALSE);    // Set small icon
-    m_Thread = NULL;
+    m_Thread = nullptr;
     return 0;
 }
 
@@ -481,7 +481,7 @@ DWORD WINAPI CalcProc(LPVOID lpParameter)
     GetCurrentDirectory(128, setup.m_SaveDir);
 
     // default width/height:
-    Fractal* fractal = new Fractal(&setup, DefaultWidth, DefaultHeight, OutputMessage, NULL, false);
+    Fractal* fractal = new Fractal(&setup, DefaultWidth, DefaultHeight, OutputMessage, nullptr, false);
 
     for (int i = 0;; i++) {
         if (param->stop == true) {

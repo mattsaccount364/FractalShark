@@ -17,7 +17,7 @@
 FractalNetwork *gExitNetwork;
 
 wchar_t gOutputMessage[512];
-Fractal *gFractal = NULL;
+Fractal *gFractal = nullptr;
 
 void Initialize (void);
 void Uninitialize (void);
@@ -54,7 +54,7 @@ int APIENTRY WinMain (HINSTANCE hInstance,
   Initialize ();
 
   // Main message loop:
-  while (GetMessage (&msg, NULL, 0, 0))
+  while (GetMessage (&msg, nullptr, 0, 0))
   { TranslateMessage (&msg);
     DispatchMessage (&msg);
   }
@@ -71,7 +71,7 @@ void Initialize (void)
   // Initialize Winsock
   WSADATA info;
   if (WSAStartup (MAKEWORD (1, 1), &info) != 0)
-  { MessageBox (NULL, L"Cannot initialize WinSock!", L"WSAStartup", MB_OK | MB_APPLMODAL);
+  { MessageBox (nullptr, L"Cannot initialize WinSock!", L"WSAStartup", MB_OK | MB_APPLMODAL);
     return;
   }
 
@@ -80,11 +80,11 @@ void Initialize (void)
   setupData.Load ();
   setupData.m_BeNetworkServer = 'y'; // We ARE the network server.
   setupData.m_BeNetworkClient = 'n';
-  gFractal = new Fractal (&setupData, 5, 5, OutputMessage, NULL, false);
+  gFractal = new Fractal (&setupData, 5, 5, OutputMessage, nullptr, false);
 }
 
 void Uninitialize (void)
-{ if (gFractal != NULL)
+{ if (gFractal != nullptr)
   { delete gFractal; }
 
   WSACleanup ();
@@ -114,7 +114,7 @@ ATOM MyRegisterClass (HINSTANCE hInstance)
   wcex.cbWndExtra    = 0;
   wcex.hInstance    = hInstance;
   wcex.hIcon      = LoadIcon (hInstance, (LPCTSTR) IDI_FRACTALSERVER2);
-  wcex.hCursor    = LoadCursor (NULL, IDC_ARROW);
+  wcex.hCursor    = LoadCursor (nullptr, IDC_ARROW);
   wcex.hbrBackground  = (HBRUSH) GetStockObject (WHITE_BRUSH);
   wcex.lpszMenuName  = (LPCWSTR) IDC_FRACTALSERVER2;
   wcex.lpszClassName  = szWindowClass;
@@ -139,7 +139,7 @@ BOOL InitInstance (HINSTANCE hInstance, int nCmdShow)
   hInst = hInstance; // Store instance handle in our global variable
 
   hWnd = CreateWindow (szWindowClass, L"Fractal Server", WS_OVERLAPPEDWINDOW,
-     CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, NULL, NULL, hInstance, NULL);
+     CW_USEDEFAULT, 0, CW_USEDEFAULT, 0, nullptr, nullptr, hInstance, nullptr);
 
   if (!hWnd)
   { return FALSE; }
@@ -233,7 +233,7 @@ void OutputMessage (const wchar_t *szFormat, ...)
 
   va_end (argList);
 
-  RedrawWindow (gHWnd, NULL, NULL, RDW_INVALIDATE);
+  RedrawWindow (gHWnd, nullptr, nullptr, RDW_INVALIDATE);
 
   int end = wcslen (gOutputMessage) - backUp;
   if (end >= 0)

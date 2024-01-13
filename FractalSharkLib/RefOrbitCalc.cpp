@@ -309,7 +309,7 @@ void RefOrbitCalc::OptimizeMemory() {
 
     GetProcessMemoryInfo(GetCurrentProcess(), (PPROCESS_MEMORY_COUNTERS)&checkHappy, sizeof(checkHappy));
     if (checkHappy.PagefileUsage > OMGAlotOfMemory) {
-        ::MessageBox(NULL, L"Watch the memory use... this is just a warning", L"", MB_OK | MB_APPLMODAL);
+        ::MessageBox(nullptr, L"Watch the memory use... this is just a warning", L"", MB_OK | MB_APPLMODAL);
         assert(false);
     }
 }
@@ -758,7 +758,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
     // about 10^AuthoritativeReuseExtraPrecision. The problem naturally is the original
     // reference orbit is calculated only to so many digits.
     if (NewPrec - existingResults->GetAuthoritativePrecision() >= AuthoritativeReuseExtraPrecision - AuthoritativeMinExtraPrecision) {
-        //::MessageBox(NULL, L"Regenerating authoritative orbit is required", L"", MB_OK | MB_APPLMODAL);
+        //::MessageBox(nullptr, L"Regenerating authoritative orbit is required", L"", MB_OK | MB_APPLMODAL);
         PerturbationResultsArray.pop_back();
         return false;
     }
@@ -918,7 +918,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     auto* existingResults = GetUsefulPerturbationResults<IterType, T, true, PerturbExtras::Disable>();
     if (existingResults == nullptr || existingResults->GetReuseSize() < 5) {
         // TODO Lame hack with < 5.
-        //::MessageBox(NULL, L"Authoritative not found", L"", MB_OK | MB_APPLMODAL);
+        //::MessageBox(nullptr, L"Authoritative not found", L"", MB_OK | MB_APPLMODAL);
         PerturbationResultsArray.pop_back();
         return false;
     }
@@ -937,7 +937,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     // about 10^AuthoritativeReuseExtraPrecision. The problem naturally is the original
     // reference orbit is calculated only to so many digits.
     if (NewPrec - existingResults->GetAuthoritativePrecision() >= AuthoritativeReuseExtraPrecision - AuthoritativeMinExtraPrecision) {
-        //::MessageBox(NULL, L"Regenerating authoritative orbit is required", L"", MB_OK | MB_APPLMODAL);
+        //::MessageBox(nullptr, L"Regenerating authoritative orbit is required", L"", MB_OK | MB_APPLMODAL);
         PerturbationResultsArray.pop_back();
         return false;
     }
@@ -1587,7 +1587,7 @@ template<
     PerturbExtras PExtras,
     RefOrbitCalc::ReuseMode Reuse>
 void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecision cy) {
-    ::MessageBox(NULL, L"AddPerturbationReferencePointMT5 disabled", L"", MB_OK | MB_APPLMODAL);
+    ::MessageBox(nullptr, L"AddPerturbationReferencePointMT5 disabled", L"", MB_OK | MB_APPLMODAL);
     AddPerturbationReferencePointMT3<IterType, T, SubType, Periodicity, BenchmarkState, PExtras, Reuse>(cx, cy);
 }
 
@@ -1686,7 +1686,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
                     (m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
                 break;
             default:
-                ::MessageBox(NULL, L"Some stupid bug #2343 :(", L"", MB_OK | MB_APPLMODAL);
+                ::MessageBox(nullptr, L"Some stupid bug #2343 :(", L"", MB_OK | MB_APPLMODAL);
                 assert(false);
                 break;
             }
@@ -1697,7 +1697,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
         GetUsefulPerturbationResults<IterType, T, false, PExtras>();
     if (results == nullptr) {
         if (added) {
-            ::MessageBox(NULL, L"Why didn't this work! :(", L"", MB_OK | MB_APPLMODAL);
+            ::MessageBox(nullptr, L"Why didn't this work! :(", L"", MB_OK | MB_APPLMODAL);
         }
 
         //std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtrasHackYay>>>& cur_array =

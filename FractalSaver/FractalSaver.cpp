@@ -39,7 +39,7 @@ int APIENTRY WinMain (HINSTANCE hInstance,
   { return 0; }
 
   // Initialize the random number generator.
-  srand ((unsigned int) time (NULL));
+  srand ((unsigned int) time (nullptr));
 
   // Hide the cursor
   ShowCursor (FALSE);
@@ -47,7 +47,7 @@ int APIENTRY WinMain (HINSTANCE hInstance,
   // Winsock
   WSADATA info;
   if (WSAStartup (MAKEWORD (1, 1), &info) != 0)
-  { MessageBox (NULL, L"Cannot initialize WinSock!", L"WSAStartup", MB_OK | MB_APPLMODAL); }
+  { MessageBox (nullptr, L"Cannot initialize WinSock!", L"WSAStartup", MB_OK | MB_APPLMODAL); }
 
   // Initialize global strings
   MyRegisterClass (hInstance);
@@ -60,7 +60,7 @@ int APIENTRY WinMain (HINSTANCE hInstance,
   gTimeToExit = false;
 
   DWORD threadID;
-  gDrawingThreadHandle = (HANDLE) CreateThread (NULL, 0, DrawingThread, NULL, 0, &threadID);
+  gDrawingThreadHandle = (HANDLE) CreateThread (nullptr, 0, DrawingThread, nullptr, 0, &threadID);
 
   // Display!
   ShowWindow (gHWnd, nCmdShow);
@@ -68,7 +68,7 @@ int APIENTRY WinMain (HINSTANCE hInstance,
 
   // Main message loop:
   MSG msg;
-  while (GetMessage (&msg, NULL, 0, 0))
+  while (GetMessage (&msg, nullptr, 0, 0))
   { TranslateMessage (&msg);
     DispatchMessage (&msg);
   }
@@ -102,9 +102,9 @@ ATOM MyRegisterClass (HINSTANCE hInstance)
   wcex.cbWndExtra    = 0;
   wcex.hInstance    = hInstance;
   wcex.hIcon      = LoadIcon (hInstance, (LPCTSTR) IDI_FRACTALSAVER);
-  wcex.hCursor    = LoadCursor (NULL, IDC_ARROW);
-  wcex.hbrBackground  = NULL;
-  wcex.lpszMenuName  = NULL;
+  wcex.hCursor    = LoadCursor (nullptr, IDC_ARROW);
+  wcex.hbrBackground  = nullptr;
+  wcex.lpszMenuName  = nullptr;
   wcex.lpszClassName  = szWindowClass;
   wcex.hIconSm    = LoadIcon (wcex.hInstance, (LPCTSTR) IDI_SMALL);
 
@@ -132,7 +132,7 @@ BOOL InitInstance (HINSTANCE hInstance)
   // Create the window
   gHWnd = CreateWindow (szWindowClass, L"", WS_POPUP | WS_THICKFRAME,
       0, 0, GetSystemMetrics (SM_CXSCREEN), GetSystemMetrics (SM_CYSCREEN),
-      NULL, NULL, hInstance, NULL);
+      nullptr, nullptr, hInstance, nullptr);
 
   if (!gHWnd)
   { return FALSE; }
@@ -199,12 +199,12 @@ unsigned long WINAPI DrawingThread (void *)
 
   pf = ChoosePixelFormat (hDC, &pfd);
   if (pf == 0)
-  { MessageBox (NULL, L"ChoosePixelFormat() failed: Cannot find a suitable pixel format.", L"Error", MB_OK | MB_APPLMODAL); 
+  { MessageBox (nullptr, L"ChoosePixelFormat() failed: Cannot find a suitable pixel format.", L"Error", MB_OK | MB_APPLMODAL); 
 	  return FALSE;
   } 
  
   if (SetPixelFormat (hDC, pf, &pfd) == FALSE)
-  { MessageBox(NULL, L"SetPixelFormat() failed:  Cannot set format specified.", L"Error", MB_OK | MB_APPLMODAL);
+  { MessageBox(nullptr, L"SetPixelFormat() failed:  Cannot set format specified.", L"Error", MB_OK | MB_APPLMODAL);
 	  return FALSE;
   } 
 
@@ -229,8 +229,8 @@ unsigned long WINAPI DrawingThread (void *)
   FractalSetupData gSetupData;
   gSetupData.Load ();
 
-  Fractal *gFractal = NULL;
-  gFractal = new Fractal (&gSetupData, rt.right, rt.bottom, NULL, gHWnd, true);
+  Fractal *gFractal = nullptr;
+  gFractal = new Fractal (&gSetupData, rt.right, rt.bottom, nullptr, gHWnd, true);
 
   // Autozoom
   bool gAutoZoomDone;
@@ -277,7 +277,7 @@ unsigned long WINAPI DrawingThread (void *)
   delete gFractal;
 
   // OpenGL de-initialization.
-  wglMakeCurrent (NULL, NULL);
+  wglMakeCurrent (nullptr, nullptr);
   ReleaseDC (gHWnd, hDC);
   wglDeleteContext (hRC);
 

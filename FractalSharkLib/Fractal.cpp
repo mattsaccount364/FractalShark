@@ -58,15 +58,15 @@ void Fractal::Initialize(int width,
     HWND hWnd,
     bool UseSensoCursor)
 { // Create the control-key-down/mouse-movement-monitoring thread.
-    if (hWnd != NULL)
+    if (hWnd != nullptr)
     {
         m_AbortThreadQuitFlag = false;
         m_UseSensoCursor = UseSensoCursor;
         m_hWnd = hWnd;
 
         DWORD threadID;
-        m_CheckForAbortThread = (HANDLE)CreateThread(NULL, 0, CheckForAbortThread, this, 0, &threadID);
-        if (m_CheckForAbortThread == NULL)
+        m_CheckForAbortThread = (HANDLE)CreateThread(nullptr, 0, CheckForAbortThread, this, 0, &threadID);
+        if (m_CheckForAbortThread == nullptr)
         {
         }
     }
@@ -74,9 +74,9 @@ void Fractal::Initialize(int width,
     {
         m_AbortThreadQuitFlag = false;
         m_UseSensoCursor = false;
-        m_hWnd = NULL;
+        m_hWnd = nullptr;
 
-        m_CheckForAbortThread = NULL;
+        m_CheckForAbortThread = nullptr;
     }
 
     InitStatics();
@@ -116,7 +116,7 @@ void Fractal::Initialize(int width,
     m_AsyncRenderThreadFinish = false;
     m_AsyncRenderThread = std::make_unique<std::thread>(DrawAsyncGpuFractalThreadStatic, this);
 
-    srand((unsigned int) time(NULL));
+    srand((unsigned int) time(nullptr));
 
     // Initialize the palette
     auto DefaultPaletteGen = [&](Palette WhichPalette, size_t PaletteIndex, size_t Depth) {
@@ -243,12 +243,12 @@ void Fractal::Initialize(int width,
     // Initialize the networking
     for (i = 0; i < MAXSERVERS; i++)
     {
-        m_ClientMainNetwork[i] = NULL;
-        m_ClientSubNetwork[i] = NULL;
+        m_ClientMainNetwork[i] = nullptr;
+        m_ClientSubNetwork[i] = nullptr;
     }
 
-    m_ServerMainNetwork = NULL;
-    m_ServerSubNetwork = NULL;
+    m_ServerMainNetwork = nullptr;
+    m_ServerSubNetwork = nullptr;
 
     // Allocate networking memory
     if (m_SetupData.m_BeNetworkClient == 'y' && m_SetupData.m_BeNetworkServer == 'y')
@@ -287,7 +287,7 @@ void Fractal::Initialize(int width,
     // Create the workload for all the servers and clients.
     // This function delegates all work to the local machine if
     // we're not using networking
-    if (pOutputMessage != NULL)
+    if (pOutputMessage != nullptr)
     {
         OutputMessage = pOutputMessage;
     }
@@ -304,8 +304,8 @@ void Fractal::Initialize(int width,
     else if (m_NetworkRender == 'S')
     {
         DWORD threadID;
-        m_ServerMainThread = (HANDLE)CreateThread(NULL, 0, ServerManageMainConnectionThread, this, 0, &threadID);
-        m_ServerSubThread = (HANDLE)CreateThread(NULL, 0, ServerManageSubConnectionThread, this, 0, &threadID);
+        m_ServerMainThread = (HANDLE)CreateThread(nullptr, 0, ServerManageMainConnectionThread, this, 0, &threadID);
+        m_ServerSubThread = (HANDLE)CreateThread(nullptr, 0, ServerManageSubConnectionThread, this, 0, &threadID);
     }
 
     // Recreate the workload
@@ -407,7 +407,7 @@ void Fractal::Uninitialize(void)
     CleanupThreads(true);
 
     // Get rid of the abort thread, but only if we actually used it.
-    if (m_CheckForAbortThread != NULL)
+    if (m_CheckForAbortThread != nullptr)
     {
         m_AbortThreadQuitFlag = true;
         if (WaitForSingleObject(m_CheckForAbortThread, INFINITE) != WAIT_OBJECT_0)
@@ -862,7 +862,7 @@ void Fractal::BasicTest() {
     // Skip AUTO plus all LAO-only algorithms.  They produce a black screen for the default view.
     constexpr bool IncludeSlow = false;
     const wchar_t *DirName = L"BasicTest";
-    auto ret = CreateDirectory(DirName, NULL);
+    auto ret = CreateDirectory(DirName, nullptr);
     if (ret == 0 && GetLastError() != ERROR_ALREADY_EXISTS) {
         ::MessageBox(nullptr, L"Error creating directory!", L"", MB_OK | MB_APPLMODAL);
         return;
@@ -1056,7 +1056,7 @@ void Fractal::AutoZoom() {
         //SaveCurPos();
         {
             MSG msg;
-            PeekMessage(&msg, NULL, 0, 0, PM_NOREMOVE);
+            PeekMessage(&msg, nullptr, 0, 0, PM_NOREMOVE);
         }
 
         double geometricMeanX = 0;
@@ -1592,7 +1592,7 @@ void Fractal::View(size_t view)
         break;
 
     case 27:
-        ::MessageBox(NULL, L"Warning: This is a very large image.  It will take a long time to render.", L"Warning", MB_OK | MB_APPLMODAL | MB_ICONWARNING);
+        ::MessageBox(nullptr, L"Warning: This is a very large image.  It will take a long time to render.", L"Warning", MB_OK | MB_APPLMODAL | MB_ICONWARNING);
         //This text is copied to clipboard.Using "GpuHDRx2x32PerturbedRCLAv2"
         //    Antialiasing : 1
         //    Palette depth : 8
@@ -1718,7 +1718,7 @@ void Fractal::ApproachTarget(void)
         if (FileExists(temp2) == false)
         { // Create a placeholder file
             FILE *file = _wfopen(temp2, L"w+");
-            if (file == NULL) // Fail silently.
+            if (file == nullptr) // Fail silently.
             {
                 break;
             }
@@ -2108,7 +2108,7 @@ void Fractal::CalcFractal(bool MemoryOnly)
 
 template<typename IterType>
 void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
-    SetCursor(LoadCursor(NULL, IDC_WAIT));
+    SetCursor(LoadCursor(nullptr, IDC_WAIT));
 
     // Test crash dump
     //{volatile int x = 5;
@@ -2540,7 +2540,7 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
     ChangedMakeClean();
 
     // Reset the cursor
-    SetCursor(LoadCursor(NULL, IDC_ARROW));
+    SetCursor(LoadCursor(nullptr, IDC_ARROW));
 }
 
 void Fractal::UsePaletteType(Palette type)
@@ -2896,18 +2896,18 @@ void Fractal::DrawGlFractal(bool LocalColor, bool lastIter) {
     // separate thread
     //{
     //    MSG msg;
-    //    PeekMessage(&msg, NULL, 0, 0, PM_NOREMOVE);
+    //    PeekMessage(&msg, nullptr, 0, 0, PM_NOREMOVE);
     //}
 
     //// Throw away any messages
     //{
     //    MSG msg;
-    //    while (PeekMessage(&msg, NULL, 0, 0, PM_NOREMOVE)) {
-    //        GetMessage(&msg, NULL, 0, 0);
+    //    while (PeekMessage(&msg, nullptr, 0, 0, PM_NOREMOVE)) {
+    //        GetMessage(&msg, nullptr, 0, 0);
     //    }
     //}
 
-    //while (GetMessage(&msg, NULL, 0, 0) > 0)
+    //while (GetMessage(&msg, nullptr, 0, 0) > 0)
     //{
     //    TranslateMessage(&msg);
     //    DispatchMessage(&msg);
@@ -4214,7 +4214,7 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
 void Fractal::MessageBoxCudaError(uint32_t result) {
     char error[256];
     sprintf(error, "Error from cuda: %u.  Message: \"%s\"\n", result, GPURenderer::ConvertErrorToString(result));
-    ::MessageBoxA(NULL, error, "", MB_OK | MB_APPLMODAL);
+    ::MessageBoxA(nullptr, error, "", MB_OK | MB_APPLMODAL);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -4825,7 +4825,7 @@ void Fractal::NetworkCreateWorkload(void)
         //    for (i = 0; i < 100; i++)
         //    { temp[i] = m_ProcessPixelRow[i]; }
         //    temp[100] = 0;
-        //    ::MessageBox (NULL, temp, "", MB_OK | MB_APPLMODAL);
+        //    ::MessageBox (nullptr, temp, "", MB_OK | MB_APPLMODAL);
     }
     else if (m_NetworkRender == 'S')
     {
@@ -5167,8 +5167,8 @@ bool Fractal::IsDownControl(void)
 {
     return ((GetAsyncKeyState(VK_CONTROL) & 0x8000) == 0x8000);
     //return ((GetAsyncKeyState(VK_CONTROL) & 0x8000) == 0x8000) &&
-    //    ((m_hWnd != NULL && GetForegroundWindow() == m_hWnd) ||
-    //    (m_hWnd == NULL));
+    //    ((m_hWnd != nullptr && GetForegroundWindow() == m_hWnd) ||
+    //    (m_hWnd == nullptr));
 };
 
 void Fractal::CheckForAbort(void)

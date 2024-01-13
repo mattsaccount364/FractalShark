@@ -25,7 +25,7 @@ class CFractalTrayDlg : public CDialog
 {
     // Construction
 public:
-    CFractalTrayDlg(CWnd* pParent = NULL);  // standard constructor
+    CFractalTrayDlg(CWnd* pParent = nullptr);  // standard constructor
 
     // Dialog Data
     enum { IDD = IDD_FRACTALTRAY_DIALOG };

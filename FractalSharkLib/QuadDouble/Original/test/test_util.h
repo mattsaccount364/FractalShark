@@ -33,8 +33,8 @@ inline double getSec( struct timeval tvStart, struct timeval tvEnd ) {
 }
 
 #define INIT_TIMER struct timeval start, end;
-#define START_TIMER gettimeofday(&start, NULL);
-#define END_TIMER   gettimeofday(&end, NULL);
+#define START_TIMER gettimeofday(&start, nullptr);
+#define END_TIMER   gettimeofday(&end, nullptr);
 #define PRINT_TIMER_SEC(msg) printf("*** %s: %.3f sec ***\n", msg, getSec(start, end));
 
 #endif /* __GQD_TEST_UTIL_H__ */

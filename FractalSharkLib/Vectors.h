@@ -90,7 +90,7 @@ public:
         size_t CapacityInKB;
         auto ret = GetPhysicallyInstalledSystemMemory(&CapacityInKB);
         if (ret == FALSE) {
-            ::MessageBox(NULL, L"Failed to get system memory", L"", MB_OK | MB_APPLMODAL);
+            ::MessageBox(nullptr, L"Failed to get system memory", L"", MB_OK | MB_APPLMODAL);
             return;
         }
 
@@ -126,7 +126,7 @@ public:
                 auto err = GetLastError();
                 std::wstring msg = L"Failed to delete file: ";
                 msg += std::to_wstring(err);
-                ::MessageBox(NULL, msg.c_str(), L"", MB_OK | MB_APPLMODAL);
+                ::MessageBox(nullptr, msg.c_str(), L"", MB_OK | MB_APPLMODAL);
             }
         }
     }
@@ -228,12 +228,12 @@ private:
         m_FileHandle = CreateFile(Filename.c_str(),
             GENERIC_READ | GENERIC_WRITE,
             FILE_SHARE_READ,
-            NULL,
+            nullptr,
             OPEN_ALWAYS,
             FILE_ATTRIBUTE_NORMAL,
-            NULL);
+            nullptr);
         if (m_FileHandle == INVALID_HANDLE_VALUE) {
-            ::MessageBox(NULL, L"Failed to open file for reading", L"", MB_OK | MB_APPLMODAL);
+            ::MessageBox(nullptr, L"Failed to open file for reading", L"", MB_OK | MB_APPLMODAL);
             return false;
         }
 
@@ -250,7 +250,7 @@ private:
             if (last_error == ERROR_ALREADY_EXISTS) {
                 BOOL ret = GetFileSizeEx(m_FileHandle, &existing_file_size);
                 if (ret == FALSE) {
-                    ::MessageBox(NULL, L"Failed to get file size", L"", MB_OK | MB_APPLMODAL);
+                    ::MessageBox(nullptr, L"Failed to get file size", L"", MB_OK | MB_APPLMODAL);
                     return false;
                 }
 
@@ -270,19 +270,19 @@ private:
 
             m_MappedFile = CreateFileMapping(
                 m_FileHandle,
-                NULL,
+                nullptr,
                 PAGE_READWRITE,
                 high,
                 low,
-                NULL);
+                nullptr);
             if (m_MappedFile == nullptr) {
-                ::MessageBox(NULL, L"Failed to create file mapping", L"", MB_OK | MB_APPLMODAL);
+                ::MessageBox(nullptr, L"Failed to create file mapping", L"", MB_OK | MB_APPLMODAL);
                 return false;
             }
 
             m_Data = static_cast<T*>(MapViewOfFile(m_MappedFile, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, 0));
             if (m_Data == nullptr) {
-                ::MessageBox(NULL, L"Failed to map view of file", L"", MB_OK | MB_APPLMODAL);
+                ::MessageBox(nullptr, L"Failed to map view of file", L"", MB_OK | MB_APPLMODAL);
                 return false;
             }
         }
@@ -290,7 +290,7 @@ private:
             auto ret = GetLastError();
             std::wstring err = L"Failed to open file: ";
             err += std::to_wstring(ret);
-            ::MessageBox(NULL, err.c_str(), L"", MB_OK | MB_APPLMODAL);
+            ::MessageBox(nullptr, err.c_str(), L"", MB_OK | MB_APPLMODAL);
             return false;
         }
 
@@ -315,7 +315,7 @@ private:
                 auto code = GetLastError();
                 err += std::to_wstring(code);
 
-                ::MessageBox(NULL, err.c_str(), L"", MB_OK | MB_APPLMODAL);
+                ::MessageBox(nullptr, err.c_str(), L"", MB_OK | MB_APPLMODAL);
                 return false;
             }
             else if (m_Data != res) {
@@ -326,7 +326,7 @@ private:
                 err += L" :(.  Code: ";
                 auto code = GetLastError();
                 err += std::to_wstring(code);
-                ::MessageBox(NULL, err.c_str(), L"", MB_OK | MB_APPLMODAL);
+                ::MessageBox(nullptr, err.c_str(), L"", MB_OK | MB_APPLMODAL);
                 return false;
             }
 
@@ -353,7 +353,7 @@ private:
             auto code = GetLastError();
             err += std::to_wstring(code);
 
-            ::MessageBox(NULL, err.c_str(), L"", MB_OK | MB_APPLMODAL);
+            ::MessageBox(nullptr, err.c_str(), L"", MB_OK | MB_APPLMODAL);
             return;
         }
 
@@ -429,18 +429,18 @@ public:
         hFile = CreateFile(orbfilename.c_str(),
             GENERIC_READ,
             FILE_SHARE_READ,
-            NULL,
+            nullptr,
             OPEN_EXISTING,
             FILE_ATTRIBUTE_NORMAL,
-            NULL);
+            nullptr);
         if (hFile == INVALID_HANDLE_VALUE) {
-            ::MessageBox(NULL, L"Failed to open file for reading", L"", MB_OK | MB_APPLMODAL);
+            ::MessageBox(nullptr, L"Failed to open file for reading", L"", MB_OK | MB_APPLMODAL);
             return;
         }
 
-        hMapFile = CreateFileMapping(hFile, nullptr, PAGE_READONLY, 0, 0, NULL);
+        hMapFile = CreateFileMapping(hFile, nullptr, PAGE_READONLY, 0, 0, nullptr);
         if (hMapFile == nullptr) {
-            ::MessageBox(NULL, L"Failed to create file mapping", L"", MB_OK | MB_APPLMODAL);
+            ::MessageBox(nullptr, L"Failed to create file mapping", L"", MB_OK | MB_APPLMODAL);
             return;
         }
 
@@ -448,7 +448,7 @@ public:
             MapViewOfFile(hMapFile, FILE_MAP_READ, 0, 0, 0));
 
         if (ImmutableFullOrbit == nullptr) {
-            ::MessageBox(NULL, L"Failed to map view of file", L"", MB_OK | MB_APPLMODAL);
+            ::MessageBox(nullptr, L"Failed to map view of file", L"", MB_OK | MB_APPLMODAL);
             return;
         }
 

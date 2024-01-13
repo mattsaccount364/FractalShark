@@ -170,17 +170,17 @@ BOOL CTrayIcon::SetIcon (UINT nIDResource)
 }
 
 BOOL CTrayIcon::SetStandardIcon (LPCTSTR lpIconName)
-{ HICON hIcon = LoadIcon (NULL, lpIconName);
+{ HICON hIcon = LoadIcon (nullptr, lpIconName);
   return SetIcon (hIcon);
 }
 
 BOOL CTrayIcon::SetStandardIcon (UINT nIDResource)
-{ HICON hIcon = LoadIcon (NULL, MAKEINTRESOURCE (nIDResource));
+{ HICON hIcon = LoadIcon (nullptr, MAKEINTRESOURCE (nIDResource));
   return SetIcon (hIcon);
 }
 
 HICON CTrayIcon::GetIcon () const
-{ HICON hIcon = NULL;
+{ HICON hIcon = nullptr;
   if (m_bEnabled)
   { hIcon = m_tnd.hIcon; }
 
@@ -259,7 +259,7 @@ LRESULT CTrayIcon::OnTrayNotification (WPARAM wParam, LPARAM lParam)
     GetCursorPos (&pos);
 
     ::SetForegroundWindow (m_tnd.hWnd);
-    ::TrackPopupMenu (pSubMenu->m_hMenu, 0, pos.x, pos.y, 0, m_tnd.hWnd, NULL);
+    ::TrackPopupMenu (pSubMenu->m_hMenu, 0, pos.x, pos.y, 0, m_tnd.hWnd, nullptr);
 
     // BUGFIX: See "PRB: Menus for Notification Icons Don't Work Correctly"
     ::PostMessage (m_tnd.hWnd, WM_USER, 0, 0);

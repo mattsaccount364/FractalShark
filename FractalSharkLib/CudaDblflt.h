@@ -90,9 +90,8 @@ public:
 #ifndef __CUDACC__ 
     CUDA_CRAP std::string ToString() const {
         std::stringstream ss;
-        //ss << "mantissa: " << (double)Base::mantissa << " exp: " << Base::exp;
-        // TODO
-        ss << "mantissa: TODO";
+        ss << std::setprecision(std::numeric_limits<double>::max_digits10);
+        ss << "TODO";
         return ss.str();
     }
 #endif

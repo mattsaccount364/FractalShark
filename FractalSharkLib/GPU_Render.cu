@@ -382,12 +382,12 @@ uint32_t GPURenderer::InitializePerturb(
     const GPUPerturbResults<IterType, T1, PExtras>* Perturb1,
     size_t GenerationNumber2,
     const GPUPerturbResults<IterType, T2, PExtras>* Perturb2,
-    const LAReference<IterType, T1, SubType, PExtras>* LaReferenceHost,
-    size_t LaGenerationNumber)
+    const LAReference<IterType, T1, SubType, PExtras>* LaReferenceHost)
 {
+    bool InstallLA = false;
+
     if (GenerationNumber1 != m_PerturbResults.GetHostGenerationNumber1() ||
-        GenerationNumber2 != m_PerturbResults.GetHostGenerationNumber2() ||
-        LaGenerationNumber != m_PerturbResults.GetHostLaGenerationNumber1()) {
+        GenerationNumber2 != m_PerturbResults.GetHostGenerationNumber2()) {
         m_PerturbResults.DeleteAll();
     }
 
@@ -408,6 +408,8 @@ uint32_t GPURenderer::InitializePerturb(
         }
 
         m_PerturbResults.SetPtr1(GenerationNumber1, CudaResults1);
+
+        InstallLA = true;
     }
 
     if (GenerationNumber2 != m_PerturbResults.GetHostGenerationNumber2()) {
@@ -427,9 +429,11 @@ uint32_t GPURenderer::InitializePerturb(
         }
 
         m_PerturbResults.SetPtr2(GenerationNumber2, CudaResults2);
+
+        InstallLA = true;
     }
 
-    if (LaGenerationNumber != m_PerturbResults.GetHostLaGenerationNumber1()) {
+    if (InstallLA) {
         auto* LaReferenceCuda = new GPU_LAReference<IterType, T1, SubType>{ *LaReferenceHost };
         auto result = LaReferenceCuda->CheckValid();
         if (result != 0) {
@@ -437,7 +441,7 @@ uint32_t GPURenderer::InitializePerturb(
             return result;
         }
 
-        m_PerturbResults.SetLaReference1(LaGenerationNumber, LaReferenceCuda);
+        m_PerturbResults.SetLaReference1(GenerationNumber1, LaReferenceCuda);
     }
 
     return cudaSuccess;
@@ -449,8 +453,7 @@ uint32_t GPURenderer::InitializePerturb(
         const GPUPerturbResults<IterType, T1, PExtras>* Perturb1, \
         size_t GenerationNumber2, \
         const GPUPerturbResults<IterType, T2, PExtras>* Perturb2, \
-        const LAReference<IterType, T1, SubType, PExtras>* LaReferenceHost, \
-        size_t LaGenerationNumber);
+        const LAReference<IterType, T1, SubType, PExtras>* LaReferenceHost);
 
 DefineInitializePerturb(uint32_t, float, float, PerturbExtras::Disable, float);
 DefineInitializePerturb(uint32_t, double, double, PerturbExtras::Disable, double);

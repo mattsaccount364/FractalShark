@@ -268,11 +268,11 @@ BEGIN
             MENUITEM "MT2 + Periodicity + Perturb MT", IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_MTMED
             MENUITEM "MT5 + Periodicity",           IDM_PERTURBATION_MULTITHREAD5_PERIODICITY
             MENUITEM SEPARATOR
-            MENUITEM "Save Current Orbit",          IDM_PERTURBATION_SAVE
-            MENUITEM "Load Orbit",                  IDM_PERTURBATION_LOAD
             MENUITEM "Enable Auto-Save Orbit (file per point)", IDM_PERTURB_AUTOSAVE_ON
             MENUITEM "Enable Auto-Save Orbit (delete when done)", IDM_PERTURB_AUTOSAVE_ON_DELETE
             MENUITEM "Disable Auto-Save Orbit",     IDM_PERTURB_AUTOSAVE_OFF
+            MENUITEM SEPARATOR
+            MENUITEM "Clear and Reload Orbits",     IDM_PERTURBATION_LOAD
         END
         MENUITEM SEPARATOR
         POPUP "Palette Color Depth"

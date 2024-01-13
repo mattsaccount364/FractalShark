@@ -59,28 +59,89 @@ private:
     static const int periodDivisor;
 
 public:
-    LAReference(AddPointOptions add_point_options, std::wstring base_filename) :
+    LAReference() = delete;
+    LAReference(const LAReference& other) = delete;
+    LAReference& operator=(const LAReference& other) = delete;
+    LAReference& operator=(LAReference&& other) = delete;
+    LAReference(LAReference&& other) = delete;
+
+    LAReference(
+        AddPointOptions add_point_options,
+        std::wstring las_filename,
+        std::wstring la_stages_filename) :
         m_AddPointOptions(add_point_options),
-        m_BaseFilename(base_filename),
         m_UseAT{},
         m_AT{},
         m_LAStageCount{}, 
         m_IsValid{},
-        m_LAs(add_point_options, base_filename + L"LAs"),
-        m_LAStages(add_point_options, base_filename + L"LAStages") {
+        m_LAs(add_point_options, las_filename),
+        m_LAStages(add_point_options, la_stages_filename) {
+    }
+
+    bool WriteMetadata(std::ofstream& metafile) const {
+        metafile << "LAReference:" << std::endl;
+        metafile << "AddPointOptions: " << static_cast<uint64_t>(m_AddPointOptions) << std::endl;
+        metafile << "UseAT: " << static_cast<uint64_t>(m_UseAT) << std::endl;
+        metafile << "LAStageCount: " << static_cast<uint64_t>(m_LAStageCount) << std::endl;
+        metafile << "IsValid: " << static_cast<uint64_t>(m_IsValid) << std::endl;
+
+        return m_AT.WriteMetadata(metafile);
+    }
+
+    bool ReadMetadata(std::ifstream& metafile) {
+        std::string descriptor_string_junk;
+
+        // "LAReference:"
+        metafile >> descriptor_string_junk;
+
+        auto convert = []<typename T>(const std::string &str) {
+            return static_cast<T>(std::stoll(str));
+        };
+
+        {
+            std::string add_point_options;
+            metafile >> descriptor_string_junk;
+            metafile >> add_point_options;
+            m_AddPointOptions = convert.template operator()<AddPointOptions>(add_point_options);
+        }
+
+        {
+            std::string use_at;
+            metafile >> descriptor_string_junk;
+            metafile >> use_at;
+            m_UseAT = convert.template operator()<bool>(use_at);
+        }
+
+        {
+            std::string la_stage_count;
+            metafile >> descriptor_string_junk;
+            metafile >> la_stage_count;
+            m_LAStageCount = convert.template operator()<IterType>(la_stage_count);
+        }
+
+        {
+            std::string is_valid;
+            metafile >> descriptor_string_junk;
+            metafile >> is_valid;
+            m_IsValid = convert.template operator()<bool>(is_valid);
+        }
+
+        return m_AT.ReadMetadata(metafile);
     }
 
     template<class OtherT, class Other>
-    LAReference(const LAReference<IterType, OtherT, Other, PExtras>& other) {
+    void CopyLAReference(const LAReference<IterType, OtherT, Other, PExtras>& other) {
+        assert(m_AddPointOptions == other.m_AddPointOptions);
         m_UseAT = other.m_UseAT;
         m_AT = other.m_AT;
         m_LAStageCount = other.m_LAStageCount;
         m_IsValid = other.m_IsValid;
-        m_LAs.MutableCommit(other.m_LAs.GetSize());
+
+        m_LAs.MutableResize(other.m_LAs.GetSize());
         for (int i = 0; i < other.m_LAs.GetSize(); i++) {
             m_LAs[i] = other.m_LAs[i];
         }
-        m_LAStages.MutableCommit(other.m_LAStages.GetSize());
+        m_LAStages.MutableResize(other.m_LAStages.GetSize());
         for (int i = 0; i < other.m_LAStages.GetSize(); i++) {
             m_LAStages[i] = other.m_LAStages[i];
         }
@@ -120,7 +181,6 @@ public:
 
 private:
     AddPointOptions m_AddPointOptions;
-    std::wstring m_BaseFilename;
     bool m_UseAT;
     ATInfo<IterType, Float, SubType> m_AT;
     IterType m_LAStageCount;

@@ -3,6 +3,8 @@
 #include <stdint.h>
 #include <math.h>
 #include <type_traits>
+#include <fstream>
+
 #include "HighPrecision.h"
 #include "CudaDblflt.h"
 
@@ -1422,24 +1424,7 @@ static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedGE(const T& one, 
 #ifndef __CUDACC__
 template<class T>
 static CUDA_CRAP std::string HdrToString(const T& dat) {
-    constexpr auto HighPrecPossible = std::is_same<T, HighPrecision>::value;
-    static_assert(
-        std::is_same<T, double>::value ||
-        std::is_same<T, float>::value ||
-        std::is_same<T, CudaDblflt<dblflt>>::value ||
-        std::is_same<T, HDRFloat<double>>::value ||
-        std::is_same<T, HDRFloat<float>>::value ||
-        std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value ||
-        HighPrecPossible, "No");
     if constexpr (
-        std::is_same<T, HDRFloat<double>>::value ||
-        std::is_same<T, HDRFloat<float>>::value ||
-        std::is_same<T, HDRFloat<CudaDblflt<MattDblflt>>>::value ||
-        std::is_same<T, CudaDblflt<dblflt>>::value) {
-
-        return dat.ToString();
-    }
-    else if constexpr (
         std::is_same<T, double>::value ||
         std::is_same<T, float>::value) {
 
@@ -1448,7 +1433,7 @@ static CUDA_CRAP std::string HdrToString(const T& dat) {
         ss << "mantissa: " << static_cast<double>(dat) << " exp: 0";
         return ss.str();
     }
-    else {
+    else if constexpr (std::is_same<T, HighPrecision>::value) {
         auto setupSS = [&](const HighPrecision& num) -> std::string {
             std::stringstream ss;
             ss.str("");
@@ -1460,6 +1445,72 @@ static CUDA_CRAP std::string HdrToString(const T& dat) {
 
         auto s = setupSS(dat);
         return s;
+    }
+    else {
+        return dat.ToString();
+    }
+}
+
+template<class T, typename SubType>
+static CUDA_CRAP void HdrFromIfStream(T &out, std::ifstream& metafile) {
+    std::string descriptor_string_junk;
+    double mantissa;
+    double mantissa2;
+    int32_t exponent;
+
+    metafile >> descriptor_string_junk;
+
+    std::string mantissaStr;
+    metafile >> mantissaStr;
+    metafile >> mantissaStr;
+    mantissa = std::stod(mantissaStr);
+
+    if constexpr (
+        std::is_same<T, double>::value ||
+        std::is_same<T, float>::value) {
+
+        metafile >> mantissaStr;
+        metafile >> mantissaStr;
+    }
+    else {
+        if constexpr (std::is_same<T, HDRFloatComplex<float>>::value ||
+            std::is_same<T, HDRFloatComplex<double>>::value ||
+            std::is_same<T, FloatComplex<float>>::value ||
+            std::is_same<T, FloatComplex<double>>::value) {
+
+            std::string mantissaImagStr;
+            metafile >> mantissaImagStr;
+            metafile >> mantissaImagStr;
+            mantissa2 = std::stod(mantissaImagStr);
+        }
+
+        std::string exponentStr;
+        metafile >> exponentStr;
+        metafile >> exponentStr;
+        exponent = std::stoi(exponentStr);
+
+        if constexpr (
+            std::is_same<T, HDRFloat<float>>::value ||
+            std::is_same<T, HDRFloat<double>>::value ||
+            std::is_same<T, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
+            out = T{ exponent, static_cast<SubType>(mantissa) };
+        }
+        else if constexpr (
+            std::is_same<T, float>::value ||
+            std::is_same<T, double>::value ||
+            std::is_same<T, CudaDblflt<MattDblflt>>::value) {
+            out = static_cast<T>(mantissa);
+        }
+        else if constexpr (
+            std::is_same<T, HDRFloatComplex<float>>::value ||
+            std::is_same<T, HDRFloatComplex<double>>::value) {
+            out = T{ exponent, static_cast<SubType>(mantissa), static_cast<SubType>(mantissa2) };
+        }
+        else if constexpr (
+            std::is_same<T, FloatComplex<float>>::value ||
+            std::is_same<T, FloatComplex<double>>::value) {
+            out = T{ static_cast<SubType>(mantissa), static_cast<SubType>(mantissa2) };
+        }
     }
 }
 

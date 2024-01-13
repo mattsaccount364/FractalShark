@@ -27,7 +27,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbit(
 
     {
         m_IsValid = false;
-        m_LAStages.MutableCommit(MaxLAStages);
+        m_LAStages.MutableResize(MaxLAStages);
 
         //m_LAs.reserve(maxRefIteration);
 

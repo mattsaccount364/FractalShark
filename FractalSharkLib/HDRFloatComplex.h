@@ -23,6 +23,17 @@ public:
     friend class HDRFloatComplex<CudaDblflt<MattDblflt>>;
     friend class HDRFloatComplex<CudaDblflt<dblflt>>;
 
+#ifndef __CUDACC__ 
+    CUDA_CRAP std::string ToString() const {
+        std::stringstream ss;
+        ss << std::setprecision(std::numeric_limits<double>::max_digits10);
+        ss << "mantissaReal: " << static_cast<double>(this->mantissaReal)
+            << " mantissaImag: " << static_cast<double>(this->mantissaImag)
+            << " exp: " << this->exp;
+        return ss.str();
+    }
+#endif
+
     CUDA_CRAP constexpr HDRFloatComplex() {
         mantissaReal = SubType{};
         mantissaImag = SubType{};

@@ -5,6 +5,22 @@
 #include "HDRFloat.h"
 #include "LAInfoDeep.h"
 
+std::wstring GetFileExtension(GrowableVectorTypes Type) {
+    switch (Type) {
+    case GrowableVectorTypes::Metadata:
+        return L".met";
+    case GrowableVectorTypes::GPUReferenceIter:
+        return L".FullOrbit";
+    case GrowableVectorTypes::LAStageInfo:
+        return L".LAStages";
+    case GrowableVectorTypes::LAInfoDeep:
+        return L".LAs";
+    default:
+        assert(false);
+        return L".error";
+    }
+}
+
 template<class EltT>
 EltT* GrowableVector<EltT>::GetData() const {
     return m_Data;
@@ -12,7 +28,7 @@ EltT* GrowableVector<EltT>::GetData() const {
 
 template<class EltT>
 std::wstring GrowableVector<EltT>::GetFilename() const {
-    return Filename;
+    return m_Filename;
 }
 
 template<class EltT>
@@ -31,10 +47,6 @@ bool GrowableVector<EltT>::ValidFile() const {
 }
 
 template<class EltT>
-GrowableVector<EltT>::GrowableVector() : GrowableVector{ AddPointOptions::DontSave, L"" } {
-}
-
-template<class EltT>
 GrowableVector<EltT>::GrowableVector(GrowableVector<EltT>&& other) :
     m_FileHandle{ other.m_FileHandle },
     m_MappedFile{ other.m_MappedFile },
@@ -42,7 +54,7 @@ GrowableVector<EltT>::GrowableVector(GrowableVector<EltT>&& other) :
     m_CapacityInElts{ other.m_CapacityInElts },
     m_Data{ other.m_Data },
     m_AddPointOptions{ other.m_AddPointOptions },
-    Filename{ other.Filename } {
+    m_Filename{ other.m_Filename } {
 
     other.m_FileHandle = nullptr;
     other.m_MappedFile = nullptr;
@@ -60,7 +72,7 @@ GrowableVector<EltT>& GrowableVector<EltT>::operator=(GrowableVector<EltT>&& oth
     m_CapacityInElts = other.m_CapacityInElts;
     m_Data = other.m_Data;
     m_AddPointOptions = other.m_AddPointOptions;
-    Filename = other.Filename;
+    m_Filename = other.m_Filename;
 
     other.m_FileHandle = nullptr;
     other.m_MappedFile = nullptr;
@@ -68,37 +80,36 @@ GrowableVector<EltT>& GrowableVector<EltT>::operator=(GrowableVector<EltT>&& oth
     other.m_CapacityInElts = 0;
     other.m_Data = nullptr;
     other.m_AddPointOptions = AddPointOptions::DontSave;
-    other.Filename = {};
+    other.m_Filename = {};
 
     return *this;
+}
+
+template<class EltT>
+GrowableVector<EltT>::GrowableVector()
+    : GrowableVector(AddPointOptions::DontSave, L"") {
+    // Default to anonymous memory.
 }
 
 // The constructor takes the file to open or create
 // It maps enough memory to accomodate the provided orbit size.
 template<class EltT>
-GrowableVector<EltT>::GrowableVector(AddPointOptions add_point_options, const std::wstring filename)
+GrowableVector<EltT>::GrowableVector(AddPointOptions add_point_options, std::wstring filename)
     : m_FileHandle{},
     m_MappedFile{},
     m_UsedSizeInElts{},
     m_CapacityInElts{},
     m_Data{},
     m_AddPointOptions{ add_point_options },
-    Filename{ filename }
+    m_Filename{ filename }
 {
-    size_t CapacityInKB;
-    auto ret = GetPhysicallyInstalledSystemMemory(&CapacityInKB);
+    auto ret = GetPhysicallyInstalledSystemMemory(&m_PhysicalMemoryCapacityKB);
     if (ret == FALSE) {
         ::MessageBox(nullptr, L"Failed to get system memory", L"", MB_OK | MB_APPLMODAL);
         return;
     }
 
-    // If the Filename is empty, use virtual memory to back the region.
-    // Otherwise, use the provided file.
-    if (UsingAnonymous()) {
-        // Returned value is in KB so convert to bytes.
-        MutableReserve(CapacityInKB * 1024);
-    }
-    else {
+    if (m_AddPointOptions == AddPointOptions::OpenExistingWithSave) {
         // 32 MB.  We're not allocating some function of RAM on disk.
         // It should be doing a sparse allocation but who knows.
         MutableFileCommit(1024);
@@ -110,7 +121,7 @@ GrowableVector<EltT>::GrowableVector(AddPointOptions add_point_options, const st
 template<class EltT>
 GrowableVector<EltT>::GrowableVector(
     AddPointOptions add_point_options,
-    const std::wstring filename,
+    std::wstring filename,
     size_t initial_size)
     : GrowableVector{ add_point_options, filename }
 {
@@ -120,18 +131,8 @@ GrowableVector<EltT>::GrowableVector(
 
 template<class EltT>
 GrowableVector<EltT>::~GrowableVector() {
+    // File is also deleted via FILE_FLAG_DELETE_ON_CLOSE if needed
     CloseMapping(true);
-
-    // TODO Delete the file if it's not anonymous.
-    if (m_AddPointOptions == AddPointOptions::EnableWithoutSave) {
-        auto result = DeleteFile(Filename.c_str());
-        if (result == FALSE) {
-            auto err = GetLastError();
-            std::wstring msg = L"Failed to delete file: ";
-            msg += std::to_wstring(err);
-            ::MessageBox(nullptr, msg.c_str(), L"", MB_OK | MB_APPLMODAL);
-        }
-    }
 }
 
 template<class EltT>
@@ -149,7 +150,7 @@ void GrowableVector<EltT>::PushBack(const EltT& val) {
     const auto grow_by_elts = 128 * 1024;
 
     if (m_UsedSizeInElts == m_CapacityInElts) {
-        MutableCommit(m_CapacityInElts + grow_by_elts);
+        MutableReserveKeepFileSize(m_CapacityInElts + grow_by_elts);
     }
 
     m_Data[m_UsedSizeInElts] = val;
@@ -179,7 +180,7 @@ void GrowableVector<EltT>::Clear() {
 }
 
 template<class EltT>
-void GrowableVector<EltT>::CloseMapping(bool /*destruct*/) {
+void GrowableVector<EltT>::CloseMapping(bool CloseFileToo) {
     if (!UsingAnonymous()) {
         if (m_Data != nullptr) {
             UnmapViewOfFile(m_Data);
@@ -198,9 +199,11 @@ void GrowableVector<EltT>::CloseMapping(bool /*destruct*/) {
         m_MappedFile = nullptr;
     }
 
-    if (m_FileHandle != nullptr) {
-        CloseHandle(m_FileHandle);
-        m_FileHandle = nullptr;
+    if (CloseFileToo) {
+        if (m_FileHandle != nullptr) {
+            CloseHandle(m_FileHandle);
+            m_FileHandle = nullptr;
+        }
     }
 
     // m_UsedSizeInElts is unchanged.
@@ -213,51 +216,103 @@ void GrowableVector<EltT>::Trim() {
 }
 
 template<class EltT>
-bool GrowableVector<EltT>::FileBacked() const {
-    return !UsingAnonymous();
+AddPointOptions GrowableVector<EltT>::GetAddPointOptions() const {
+    return m_AddPointOptions;
 }
 
 template<class EltT>
-bool GrowableVector<EltT>::MutableCommit(size_t new_elt_count) {
+bool GrowableVector<EltT>::MutableReserveKeepFileSize(size_t capacity) {
     if (!UsingAnonymous()) {
-        return MutableFileCommit(new_elt_count);
+        return MutableFileCommit(capacity);
     }
     else {
-        return MutableAnonymousCommit(new_elt_count);
+        return MutableAnonymousCommit(capacity);
     }
+}
+
+template<class EltT>
+bool GrowableVector<EltT>::MutableResize(size_t capacity, size_t size) {
+    bool ret = MutableReserveKeepFileSize(capacity);
+    if (ret) {
+        m_UsedSizeInElts = size;
+    }
+
+    return ret;
+}
+
+
+template<class EltT>
+bool GrowableVector<EltT>::MutableResize(size_t size) {
+    return MutableResize(size, size);
 }
 
 template<class EltT>
 bool GrowableVector<EltT>::UsingAnonymous() const {
-    return Filename == L"";
+    return m_AddPointOptions == AddPointOptions::DontSave;
 }
 
 template<class EltT>
-bool GrowableVector<EltT>::MutableFileCommit(size_t new_elt_count) {
-    if (new_elt_count <= m_CapacityInElts) {
+bool GrowableVector<EltT>::MutableFileCommit(size_t capacity) {
+    if (capacity <= m_CapacityInElts) {
         return true;
     }
 
     CloseMapping(false);
 
-    m_FileHandle = CreateFile(Filename.c_str(),
-        GENERIC_READ | GENERIC_WRITE,
-        FILE_SHARE_READ,
-        nullptr,
-        OPEN_ALWAYS,
-        FILE_ATTRIBUTE_NORMAL,
-        nullptr);
-    if (m_FileHandle == INVALID_HANDLE_VALUE) {
-        ::MessageBox(nullptr, L"Failed to open file for reading", L"", MB_OK | MB_APPLMODAL);
-        return false;
+    DWORD last_error = 0;
+
+    if (m_FileHandle == nullptr) {
+        auto attributes = FILE_ATTRIBUTE_NORMAL;
+        if (m_AddPointOptions == AddPointOptions::EnableWithoutSave) {
+            attributes |= FILE_FLAG_DELETE_ON_CLOSE;
+        }
+
+        DWORD desired_access = GENERIC_READ | GENERIC_WRITE;
+        if (m_AddPointOptions == AddPointOptions::OpenExistingWithSave) {
+            desired_access = GENERIC_READ;
+        }
+
+        DWORD open_mode = OPEN_ALWAYS;
+        if (m_AddPointOptions == AddPointOptions::OpenExistingWithSave) {
+            open_mode = OPEN_EXISTING;
+        }
+
+        m_FileHandle = CreateFile(m_Filename.c_str(),
+            desired_access,
+            FILE_SHARE_READ,
+            nullptr,
+            open_mode,
+            attributes,
+            nullptr);
+        if (m_FileHandle == INVALID_HANDLE_VALUE) {
+            m_FileHandle = nullptr;
+            auto err = GetLastError();
+            std::wstring err_str = L"Failed to open file for reading 2: ";
+            err_str += std::to_wstring(err);
+            ::MessageBox(nullptr, err_str.c_str(), L"", MB_OK | MB_APPLMODAL);
+            return false;
+        }
+
+        if (m_AddPointOptions == AddPointOptions::OpenExistingWithSave) {
+            last_error = ERROR_ALREADY_EXISTS;
+        }
+        else {
+            // This should be either 0 or ERROR_ALREADY_EXISTS given that
+            // the CreateFile call was evidently successful
+            last_error = GetLastError();
+        }
+    }
+    else {
+        // The file must be there because it's open
+        last_error = ERROR_ALREADY_EXISTS;
+        assert(m_FileHandle != nullptr);
     }
 
-    auto last_error = GetLastError();
 
     if (last_error == 0 || last_error == ERROR_ALREADY_EXISTS) {
         static_assert(sizeof(size_t) == sizeof(uint64_t), "!");
         static_assert(sizeof(DWORD) == sizeof(uint32_t), "!");
-        uint64_t total_new_size = new_elt_count * sizeof(EltT);
+        uint64_t total_new_size = capacity * sizeof(EltT);
         DWORD high = total_new_size >> 32;
         DWORD low = total_new_size & 0xFFFFFFFF;
 
@@ -269,34 +324,52 @@ bool GrowableVector<EltT>::MutableFileCommit(size_t new_elt_count) {
                 return false;
             }
 
-            //high = existing_file_size.HighPart;
-            //low = existing_file_size.LowPart;
-
             // Note: by using the file size to find the used size, the implication
             // is that resizing the vector only takes place once the vector is full.
             // This is not the case for anonymous memory.
-            // So, MutableCommit is kept private and internal, and used only to grow.
+            // The capacity/used size distinction is important as always.
             m_UsedSizeInElts = existing_file_size.QuadPart / sizeof(EltT);
+
+            if (m_AddPointOptions == AddPointOptions::OpenExistingWithSave) {
+                high = existing_file_size.HighPart;
+                low = existing_file_size.LowPart;
+                m_CapacityInElts = m_UsedSizeInElts;
+            }
+            else {
+                m_CapacityInElts = capacity;
+            }
         }
         else {
             m_UsedSizeInElts = 0;
+            m_CapacityInElts = capacity;
         }
 
-        m_CapacityInElts = new_elt_count;
+        DWORD protect = PAGE_READWRITE;
+        if (m_AddPointOptions == AddPointOptions::OpenExistingWithSave) {
+            protect = PAGE_READONLY;
+        }
 
         m_MappedFile = CreateFileMapping(
             m_FileHandle,
             nullptr,
-            PAGE_READWRITE,
+            protect,
             high,
             low,
             nullptr);
         if (m_MappedFile == nullptr) {
-            ::MessageBox(nullptr, L"Failed to create file mapping", L"", MB_OK | MB_APPLMODAL);
+            auto err = GetLastError();
+            std::wstring err_str = L"Failed to create file mapping: ";
+            err_str += std::to_wstring(err);
+            ::MessageBox(nullptr, err_str.c_str(), L"", MB_OK | MB_APPLMODAL);
             return false;
         }
 
-        m_Data = static_cast<EltT*>(MapViewOfFile(m_MappedFile, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, 0));
+        DWORD desired_access = FILE_MAP_READ | FILE_MAP_WRITE;
+        if (m_AddPointOptions == AddPointOptions::OpenExistingWithSave) {
+            desired_access = FILE_MAP_READ;
+        }
+
+        m_Data = static_cast<EltT*>(MapViewOfFile(m_MappedFile, desired_access, 0, 0, 0));
         if (m_Data == nullptr) {
             ::MessageBox(nullptr, L"Failed to map view of file", L"", MB_OK | MB_APPLMODAL);
             return false;
@@ -314,15 +387,22 @@ bool GrowableVector<EltT>::MutableFileCommit(size_t new_elt_count) {
 }
 
 template<class EltT>
-bool GrowableVector<EltT>::MutableAnonymousCommit(size_t new_elt_count) {
-    if (new_elt_count > m_CapacityInElts) {
+bool GrowableVector<EltT>::MutableAnonymousCommit(size_t capacity) {
+    // Returned value is in KB so convert to bytes.
+    if (m_Data == nullptr) {
+        if (UsingAnonymous()) {
+            MutableReserve(m_PhysicalMemoryCapacityKB * 1024);
+        }
+    }
+
+    if (capacity > m_CapacityInElts) {
         // If we're using anonymous memory, we need to commit the memory.
         // Use VirtualAlloc to allocate additional space for the vector.
         // The returned pointer should be the same as the original pointer.
 
         auto res = VirtualAlloc(
             m_Data,
-            new_elt_count * sizeof(EltT),
+            capacity * sizeof(EltT),
             MEM_COMMIT,
             PAGE_READWRITE
         );
@@ -348,7 +428,7 @@ bool GrowableVector<EltT>::MutableAnonymousCommit(size_t new_elt_count) {
         }
 
         m_Data = static_cast<EltT*>(res);
-        m_CapacityInElts = new_elt_count;
+        m_CapacityInElts = capacity;
     }
 
     return true;

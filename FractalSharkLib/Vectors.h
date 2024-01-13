@@ -8,6 +8,15 @@ class LAInfoDeep;
 template<typename IterType>
 class LAStageInfo;
 
+enum class GrowableVectorTypes {
+    Metadata,
+    GPUReferenceIter,
+    LAInfoDeep,
+    LAStageInfo
+};
+
+std::wstring GetFileExtension(GrowableVectorTypes Type);
+
 // The purpose of this class is to manage a memory-mapped file, using win32 APIs
 // such as MapViewOfFile, or to provide non-file-backed storage that's virtually contiguous.
 // This is used to load and save the orbit data, when using a file.
@@ -26,7 +35,8 @@ private:
     EltT* m_Data;
     AddPointOptions m_AddPointOptions;
 
-    std::wstring Filename;
+    std::wstring m_Filename;
+    size_t m_PhysicalMemoryCapacityKB;
 
 public:
     EltT* GetData() const;
@@ -39,23 +49,24 @@ public:
 
     bool ValidFile() const;
 
-    GrowableVector();
-
     GrowableVector(const GrowableVector& other) = delete;
     GrowableVector& operator=(const GrowableVector& other) = delete;
     GrowableVector(GrowableVector&& other);
 
     GrowableVector& operator=(GrowableVector&& other);
 
+    // The default constructor creates an empty vector.
+    GrowableVector();
+
     // The constructor takes the file to open or create
     // It maps enough memory to accomodate the provided orbit size.
-    GrowableVector(AddPointOptions add_point_options, const std::wstring filename);
+    GrowableVector(AddPointOptions add_point_options, std::wstring filename);
 
     // This one takes a filename and size and uses the file specified
     // to back the vector.
     GrowableVector(
         AddPointOptions add_point_options,
-        const std::wstring filename,
+        std::wstring filename,
         size_t initial_size);
 
     ~GrowableVector();
@@ -74,13 +85,15 @@ public:
 
     void Clear();
 
-    void CloseMapping(bool /*destruct*/);
+    void CloseMapping(bool CloseFileToo);
 
     void Trim();
 
-    bool FileBacked() const;
+    AddPointOptions GetAddPointOptions() const;
 
-    bool MutableCommit(size_t new_elt_count);
+    bool MutableReserveKeepFileSize(size_t capacity);
+    bool MutableResize(size_t capacity, size_t size);
+    bool MutableResize(size_t size);
 
 private:
     bool UsingAnonymous() const;

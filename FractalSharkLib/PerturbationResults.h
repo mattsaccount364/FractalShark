@@ -15,7 +15,7 @@
 #include "PerturbationResultsHelpers.h"
 #include "Vectors.h"
 
-std::wstring GetTimeAsString();
+std::wstring GetTimeAsString(size_t generation_number);
 
 template<typename IterType, class T, PerturbExtras PExtras>
 class RefOrbitCompressor;
@@ -35,13 +35,45 @@ public:
     friend class CompressionHelper<IterType, T, PExtras>;
     friend class RefOrbitCompressor<IterType, T, PExtras>;
 
-    PerturbationResults(
+    // Generates a filename "base" for all the orbit files.
+    std::wstring GenBaseFilename(size_t generation_number) const {
+        return GenBaseFilename(GetRefOrbitOptions(), generation_number);
+    }
+
+    std::wstring GenBaseFilename(
         AddPointOptions add_point_options,
-        size_t Generation = 0,
-        size_t LaGeneration = 0) :
+        size_t generation_number) const {
+        if (add_point_options == AddPointOptions::DontSave) {
+            return L"";
+        }
+
+        return GetTimeAsString(generation_number);
+    }
+
+    // Note: This function relies on m_BaseFilename, so order
+    // of initialization is important.
+    std::wstring GenFilename(GrowableVectorTypes Type, std::wstring optional_suffix = L"") const {
+        if (GetRefOrbitOptions() == AddPointOptions::DontSave) {
+            return L"";
+        }
+
+        return m_BaseFilename + optional_suffix + GetFileExtension(Type);
+    }
+
+    // Parameters:
+    //  add_point_options - whether to save the orbit or not
+    //  Generation - the generation number of the orbit
+    //  base_filename - the base filename of the orbit, used
+    //    when opening existing
+    PerturbationResults(
+        std::wstring base_filename,
+        AddPointOptions add_point_options,
+        size_t Generation) :
       
         m_OrbitX{},
         m_OrbitY{},
+        m_OrbitXStr{},
+        m_OrbitYStr{},
         m_OrbitXLow{},
         m_OrbitYLow{},
         m_MaxRadius{},
@@ -50,15 +82,47 @@ public:
         m_CompressionErrorExp{},
         m_CompressionHelper{ *this },
         m_RefOrbitOptions{ add_point_options },
-        m_BaseFilename{ add_point_options == AddPointOptions::DontSave ? L"" : GetTimeAsString() },
-        m_FullOrbit{ add_point_options, m_BaseFilename },
+        m_BaseFilename{ base_filename },
+        m_MetaFileHandle{ INVALID_HANDLE_VALUE },
+        m_FullOrbit{ },
         m_UncompressedItersInOrbit{},
         m_GenerationNumber{ Generation },
         m_LaReference{},
-        m_LaGenerationNumber{ LaGeneration },
         m_AuthoritativePrecision{},
         m_ReuseX{},
-        m_ReuseY{}{}
+        m_ReuseY{} {
+    
+        if (add_point_options == AddPointOptions::OpenExistingWithSave) {
+            return;
+        }
+
+        MapExistingFiles();
+    }
+
+    PerturbationResults(
+        AddPointOptions add_point_options,
+        size_t Generation)
+        : PerturbationResults{
+            GenBaseFilename(add_point_options, Generation),
+            add_point_options,
+            Generation } {
+    }
+
+    ~PerturbationResults() {
+        if (m_MetaFileHandle != INVALID_HANDLE_VALUE) {
+            CloseHandle(m_MetaFileHandle);
+            m_MetaFileHandle = INVALID_HANDLE_VALUE;
+        }
+    }
+
+    PerturbationResults(PerturbationResults&& other) {
+        *this = std::move(other);
+
+        other.m_MetaFileHandle = INVALID_HANDLE_VALUE;
+    }
+
+    PerturbationResults(const PerturbationResults& other) = delete;
+    PerturbationResults& operator=(const PerturbationResults& other) = delete;
 
     std::wstring GetBaseFilename() const {
         return m_BaseFilename;
@@ -67,20 +131,14 @@ public:
     size_t GetGenerationNumber() const {
         return m_GenerationNumber;
     }
-    size_t GetLaGenerationNumber() const {
-        return m_GenerationNumber;
-    }
 
     void ClearLaReference() {
         m_LaReference = nullptr;
-        m_LaGenerationNumber = 0;
     }
 
     void SetLaReference(
-        std::unique_ptr<LAReference<IterType, T, SubType, PExtras>> laReference,
-        size_t NewLaGenerationNumber) {
+        std::unique_ptr<LAReference<IterType, T, SubType, PExtras>> laReference) {
         m_LaReference = std::move(laReference);
-        m_LaGenerationNumber = NewLaGenerationNumber;
     }
 
     LAReference<IterType, T, SubType, PExtras>* GetLaReference() const {
@@ -88,25 +146,29 @@ public:
     }
 
     template<bool IncludeLA, class Other, PerturbExtras PExtras = PerturbExtras::Disable>
-    void Copy(
-        const PerturbationResults<IterType, Other, PExtras>& other,
-        size_t NewGenerationNumber,
-        size_t NewLaGenerationNumber) {
-        clear();
+    void CopyPerturbationResults(
+        const PerturbationResults<IterType, Other, PExtras>& other) {
 
         m_OrbitX = other.GetHiX();
         m_OrbitY = other.GetHiY();
+        m_OrbitXStr = other.GetHiXStr();
+        m_OrbitYStr = other.GetHiYStr();
         m_OrbitXLow = static_cast<T>(Convert<HighPrecision, double>(m_OrbitX));
         m_OrbitYLow = static_cast<T>(Convert<HighPrecision, double>(m_OrbitY));
         m_MaxRadius = (T)other.GetMaxRadius();
         m_MaxIterations = other.GetMaxIterations();
         m_PeriodMaybeZero = other.GetPeriodMaybeZero();
         m_CompressionErrorExp = other.GetCompressionErrorExp();
-        // m_CompressionHelper = {*this}; // Nothing to do here
 
-        //m_FullOrbit.MutableCommit(other.m_FullOrbit.GetSize());
+        // m_RefOrbitOptions // Unchanged
+        m_BaseFilename = GenBaseFilename(m_GenerationNumber);
+        m_MetaFileHandle = INVALID_HANDLE_VALUE;
+
+        // Nothing for m_CompressionHelper -- it only contains a reference to this object
+        // m_CompressionHelper = {*this};
+        m_FullOrbit = { GetRefOrbitOptions(), m_BaseFilename };
+        m_FullOrbit.MutableResize(other.m_FullOrbit.GetSize(), 0);
         m_UncompressedItersInOrbit = other.m_UncompressedItersInOrbit;
-        m_GenerationNumber = NewGenerationNumber;
 
         m_AuthoritativePrecision = other.m_AuthoritativePrecision;
         m_ReuseX.reserve(other.m_ReuseX.size());
@@ -132,8 +194,11 @@ public:
 
         if constexpr (IncludeLA) {
             if (other.GetLaReference() != nullptr) {
-                m_LaReference = std::make_unique<LAReference<IterType, T, SubType, PExtras>>(*other.GetLaReference());
-                m_LaGenerationNumber = NewLaGenerationNumber;
+                m_LaReference = std::make_unique<LAReference<IterType, T, SubType, PExtras>>(
+                    GetRefOrbitOptions(),
+                    GenFilename(GrowableVectorTypes::LAInfoDeep, L"-copy"),
+                    GenFilename(GrowableVectorTypes::LAStageInfo, L"-copy"));
+                m_LaReference->CopyLAReference(*other.GetLaReference());
             }
         }
     }
@@ -142,61 +207,33 @@ public:
     void CopySettingsWithoutOrbit(const PerturbationResults<IterType, T, OtherBad>& other) {
         m_OrbitX = other.GetHiX();
         m_OrbitY = other.GetHiY();
+        m_OrbitXStr = other.GetHiXStr();
+        m_OrbitYStr = other.GetHiYStr();
         m_OrbitXLow = other.GetOrbitXLow();
         m_OrbitYLow = other.GetOrbitYLow();
-
         m_MaxRadius = other.GetMaxRadius();
         m_MaxIterations = other.GetMaxIterations();
         m_PeriodMaybeZero = other.GetPeriodMaybeZero();
-        m_CompressionErrorExp = other.GetCompressionErrorExp();
-        // m_CompressionHelper = {}; // Nothing to do here
+        m_CompressionErrorExp = other.GetCompressionErrorExp();        
+        m_RefOrbitOptions = other.GetRefOrbitOptions();
+        m_BaseFilename = GenBaseFilename(m_GenerationNumber);
+        m_MetaFileHandle = INVALID_HANDLE_VALUE;
 
+        // m_CompressionHelper = {}; // Nothing to do here
         m_FullOrbit = {};
         m_UncompressedItersInOrbit = other.m_UncompressedItersInOrbit;
-        // m_GenerationNumber = other.GetGenerationNumber(); // Don't copy unless some other stuff changes
 
         m_AuthoritativePrecision = other.m_AuthoritativePrecision;
         m_ReuseX = other.m_ReuseX;
         m_ReuseY = other.m_ReuseY;
 
-        // compression - don't copy.  Regenerate if needed.
-        //if (other.GetLaReference() != nullptr) {
-        //    m_LaReference = std::make_unique<LAReference<IterType, T, SubType, PExtras>>(*other.GetLaReference());
-        //    m_LaGenerationNumber = other.GetLaGenerationNumber();
-        //}
+        // compression - don't copy LA data.  Regenerate if needed.
     }
 
-    void Write(bool include_orbit) const {
-        std::wstring filename;
-        filename = m_FullOrbit.GetFilename();
-        if (filename == L"") {
-            filename = GetTimeAsString();
-        }
-
-        Write(include_orbit, filename);
-    }
-
-    void Write(bool include_orbit, std::wstring filename) const {
-
-        if (include_orbit) {
-            const auto orbfilename = filename + L".FullOrbit";
-
-            std::ofstream orbfile(orbfilename, std::ios::binary);
-            if (!orbfile.is_open()) {
-                ::MessageBox(nullptr, L"Failed to open file for writing", L"", MB_OK | MB_APPLMODAL);
-                return;
-            }
-
-            uint64_t size = m_FullOrbit.GetSize();
-            orbfile.write((char*)m_FullOrbit.GetData(), sizeof(m_FullOrbit[0]) * size);
-            orbfile.close();
-        }
-
-        const auto metafilename = filename + L".met";
-
-        std::ofstream metafile(metafilename, std::ios::binary);
+    void WriteMetadata() const {
+        std::ofstream metafile(GenFilename(GrowableVectorTypes::Metadata), std::ios::binary);
         if (!metafile.is_open()) {
-            ::MessageBox(nullptr, L"Failed to open file for writing", L"", MB_OK | MB_APPLMODAL);
+            ::MessageBox(nullptr, L"Failed to open file for writing 2", L"", MB_OK | MB_APPLMODAL);
             return;
         }
 
@@ -250,6 +287,33 @@ public:
         metafile << "Period: " << m_PeriodMaybeZero << std::endl;
         metafile << "CompressionErrorExponent: " << m_CompressionErrorExp << std::endl;
         metafile << "UncompressedIterationsInOrbit: " << m_UncompressedItersInOrbit << std::endl;
+
+        bool ret = m_LaReference->WriteMetadata(metafile);
+        if (!ret) {
+            ::MessageBox(nullptr, L"Failed to write LA metadata.", L"", MB_OK | MB_APPLMODAL);
+            return;
+        }
+
+        metafile.close();
+
+        MaybeOpenMetaFileForDelete();
+    }
+
+    void MaybeOpenMetaFileForDelete() const {
+        // This call can fail but that should be OK
+        if (GetRefOrbitOptions() == AddPointOptions::EnableWithoutSave &&
+            m_MetaFileHandle == INVALID_HANDLE_VALUE) {
+
+            const auto attributes = FILE_ATTRIBUTE_NORMAL | FILE_FLAG_DELETE_ON_CLOSE;
+            m_MetaFileHandle = CreateFile(
+                GenFilename(GrowableVectorTypes::Metadata).c_str(),
+                0, // no read or write
+                FILE_SHARE_DELETE,
+                nullptr,
+                OPEN_EXISTING,
+                attributes,
+                nullptr);
+        }
     }
 
     // This function uses CreateFileMapping and MapViewOfFile to map
@@ -260,11 +324,10 @@ public:
     // The code below works, but 
     // The LA table generation doesn't currently work with 2x32 and only supports 1x64
     // (which it then converts to 2x32).  This is a bug.
-    bool Load(const std::wstring& filename) {
-        const auto metafilename = filename + L".met";
-        std::ifstream metafile(metafilename, std::ios::binary);
+    bool ReadMetadata() {
+        std::ifstream metafile(GenFilename(GrowableVectorTypes::Metadata), std::ios::binary);
         if (!metafile.is_open()) {
-            ::MessageBox(nullptr, L"Failed to open file for writing", L"", MB_OK | MB_APPLMODAL);
+            ::MessageBox(nullptr, L"Failed to open file for reading 1", L"", MB_OK | MB_APPLMODAL);
             return false;
         }
 
@@ -367,7 +430,9 @@ public:
             metafile >> descriptor_string_junk;
             metafile >> shiX;
 
+            m_OrbitX.precision(prec);
             m_OrbitX = HighPrecision{ shiX };
+            m_OrbitXStr = shiX;
         }
 
         {
@@ -383,45 +448,12 @@ public:
 
             m_OrbitY.precision(prec);
             m_OrbitY = HighPrecision{ shiY };
+            m_OrbitYStr = shiY;
         }
 
-        auto ss_to_hdr = [&](T &output) {
-            double mantissa;
-            int32_t exponent;
-
-            metafile >> descriptor_string_junk;
-
-            std::string maxRadiusMantissaStr;
-            metafile >> maxRadiusMantissaStr;
-            metafile >> maxRadiusMantissaStr;
-            mantissa = std::stod(maxRadiusMantissaStr);
-
-            std::string maxRadiusExpStr;
-            metafile >> maxRadiusExpStr;
-            metafile >> maxRadiusExpStr;
-            exponent = std::stoi(maxRadiusExpStr);
-
-            if constexpr (
-                std::is_same<T, HDRFloat<float>>::value ||
-                std::is_same<T, HDRFloat<double>>::value ||
-                std::is_same<T, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
-                output = T{ exponent, (SubType)mantissa };
-            }
-            else if constexpr (
-                std::is_same<T, float>::value ||
-                std::is_same<T, double>::value ||
-                std::is_same<T, CudaDblflt<MattDblflt>>::value) {
-                output = static_cast<T>(mantissa);
-            }
-            else {
-                ::MessageBox(nullptr, L"Unexpected type in Load", L"", MB_OK | MB_APPLMODAL);
-                return false;
-            }
-        };
-
-        ss_to_hdr(m_OrbitXLow);
-        ss_to_hdr(m_OrbitYLow);
-        ss_to_hdr(m_MaxRadius);
+        HdrFromIfStream<T, SubType>(m_OrbitXLow, metafile);
+        HdrFromIfStream<T, SubType>(m_OrbitYLow, metafile);
+        HdrFromIfStream<T, SubType>(m_MaxRadius, metafile);
 
         {
             std::string maxIterationsStr;
@@ -451,36 +483,17 @@ public:
             m_UncompressedItersInOrbit = (IterType)std::stoll(uncompressedItersInOrbitStr);
         }
 
-        const auto orbfilename = filename + L".FullOrbit";
-        m_FullOrbit = GrowableVector<GPUReferenceIter<T, PExtras>>(m_RefOrbitOptions, orbfilename, sz);
-        if (m_FullOrbit.GetData() == nullptr) {
-            return false;
+        MapExistingFiles();
+
+        if (m_LaReference != nullptr) {
+            m_LaReference->ReadMetadata(metafile);
         }
 
+        // Sometimes the mapped file is a bit bigger.  Just set it to the right
+        // number of elements.
+        m_FullOrbit.MutableResize(sz, sz);
+
         return true;
-    }
-
-    void clear() {
-        m_OrbitX = {};
-        m_OrbitY = {};
-        m_OrbitXLow = {};
-        m_OrbitYLow = {};
-        m_MaxRadius = {};
-        m_MaxIterations = 0;
-        m_PeriodMaybeZero = 0;
-        m_CompressionErrorExp = 0;
-        // m_CompressionHelper = {}; // Nothing to do here
-
-        m_FullOrbit = {};
-        m_UncompressedItersInOrbit = 0;
-        m_GenerationNumber = 0;
-
-        m_AuthoritativePrecision = false;
-        m_ReuseX.clear();
-        m_ReuseY.clear();
-
-        m_LaReference = nullptr;
-        m_LaGenerationNumber = 0;
     }
 
     template<class U = SubType>
@@ -513,13 +526,14 @@ public:
         const HighPrecision& maxX,
         const HighPrecision& maxY,
         IterType NumIterations,
-        size_t GuessReserveSize,
-        size_t Generation) {
+        size_t GuessReserveSize) {
         auto radiusX = maxX - minX;
         auto radiusY = maxY - minY;
 
         m_OrbitX = cx;
         m_OrbitY = cy;
+        m_OrbitXStr = HdrToString(cx);  
+        m_OrbitYStr = HdrToString(cy);
         m_OrbitXLow = T{ cx };
         m_OrbitYLow = T{ cy };
 
@@ -540,10 +554,8 @@ public:
 
         const size_t ReserveSize = (GuessReserveSize != 0) ? GuessReserveSize : 1'000'000;
 
-        m_GenerationNumber = Generation;
-
         // Do not resize prematurely -- file-backed vectors only resize when needed.
-        // m_FullOrbit.MutableCommit(ReserveSize);
+        m_FullOrbit.MutableResize(ReserveSize, 0);
 
         // Add an empty entry at the start
         m_FullOrbit.PushBack({});
@@ -561,7 +573,6 @@ public:
         }
 
         m_LaReference = nullptr;
-        m_LaGenerationNumber = 0;
     }
 
     template<PerturbExtras PExtras, RefOrbitCalc::ReuseMode Reuse>
@@ -614,6 +625,14 @@ public:
         return m_OrbitY;
     }
 
+    const std::string &GetHiXStr() const {
+        return m_OrbitXStr;
+    }
+
+    const std::string &GetHiYStr() const {
+        return m_OrbitYStr;
+    }
+
     T GetOrbitXLow() const {
         return m_OrbitXLow;
     }
@@ -648,6 +667,10 @@ public:
         return m_CompressionErrorExp;
     }
 
+    AddPointOptions GetRefOrbitOptions() const {
+        return m_RefOrbitOptions;
+    }
+
     size_t GetReuseSize() const {
         assert(m_ReuseX.size() == m_ReuseY.size());
         return m_ReuseX.size();
@@ -678,8 +701,7 @@ public:
     std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::EnableCompression>>
     Compress(
         int32_t CompressionErrorExpParam,
-        size_t NewGenerationNumber,
-        size_t NewLaGenerationNumber) {
+        size_t NewGenerationNumber) {
 
         constexpr bool disable_compression = false;
         const auto Two = T{ 2 };
@@ -690,7 +712,7 @@ public:
 
         auto compressed =
             std::make_unique<PerturbationResults<IterType, T, PerturbExtras::EnableCompression>>(
-                m_FullOrbit.FileBacked(), NewGenerationNumber, NewLaGenerationNumber);
+                m_FullOrbit.GetAddPointOptions(), NewGenerationNumber);
         compressed->CopySettingsWithoutOrbit(*this);
 
         assert (m_FullOrbit.GetSize() > 1);
@@ -735,11 +757,11 @@ public:
     }
 
     std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::Disable>> 
-    Decompress() {
+    Decompress(size_t NewGenerationNumber) {
 
         auto compressed_orb = std::move(m_FullOrbit);
         auto decompressed = std::make_unique<PerturbationResults<IterType, T, PerturbExtras::Disable>>(
-            m_FullOrbit.FileBacked(), m_GenerationNumber, m_LaGenerationNumber);
+            m_FullOrbit.GetAddPointOptions(), NewGenerationNumber);
         decompressed->CopySettingsWithoutOrbit(*this);
 
         T zx{};
@@ -769,25 +791,43 @@ public:
     }
 
 private:
+    void MapExistingFiles() {
+        assert(m_LaReference == nullptr);
+        assert(m_FullOrbit.GetCapacity() == 0);
+
+        m_FullOrbit = { GetRefOrbitOptions(), GenFilename(GrowableVectorTypes::GPUReferenceIter) };
+
+        m_LaReference = std::make_unique<LAReference<IterType, T, SubType, PExtras>>(
+            GetRefOrbitOptions(),
+            GenFilename(GrowableVectorTypes::LAInfoDeep),
+            GenFilename(GrowableVectorTypes::LAStageInfo));
+
+        if (!m_LaReference->IsValid()) {
+            m_LaReference = nullptr;
+        }
+    }
+
     HighPrecision m_OrbitX;
     HighPrecision m_OrbitY;
+    std::string m_OrbitXStr;
+    std::string m_OrbitYStr;
     T m_OrbitXLow;
     T m_OrbitYLow;
     T m_MaxRadius;
     IterType m_MaxIterations;
     IterType m_PeriodMaybeZero;  // Zero if not worked out
     int32_t m_CompressionErrorExp;
+
     AddPointOptions m_RefOrbitOptions;
     std::wstring m_BaseFilename;
+    mutable HANDLE m_MetaFileHandle;
 
     CompressionHelper<IterType, T, PExtras> m_CompressionHelper;
     GrowableVector<GPUReferenceIter<T, PExtras>> m_FullOrbit;
     IterType m_UncompressedItersInOrbit;
-
-    size_t m_GenerationNumber;
+    const size_t m_GenerationNumber;
 
     std::unique_ptr<LAReference<IterType, T, SubType, PExtras>> m_LaReference;
-    size_t m_LaGenerationNumber;
 
     uint32_t m_AuthoritativePrecision;
     std::vector<HighPrecision> m_ReuseX;

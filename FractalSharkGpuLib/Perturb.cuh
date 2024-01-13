@@ -53,7 +53,7 @@ public:
 
         GPUReferenceIter<Type, PExtras>* tempIters;
         AllocHost = false;
-        err = cudaMallocManaged(&tempIters, OrbitSize * sizeof(GPUReferenceIter<Type, PExtras>));
+        err = cudaMalloc(&tempIters, OrbitSize * sizeof(GPUReferenceIter<Type, PExtras>));
         if (err != cudaSuccess) {
             AllocHost = true;
             err = cudaMallocHost(&tempIters, OrbitSize * sizeof(GPUReferenceIter<Type, PExtras>));

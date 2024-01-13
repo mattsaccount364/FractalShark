@@ -16,6 +16,17 @@ public:
     friend class FloatComplex<CudaDblflt<MattDblflt>>;
     friend class FloatComplex<CudaDblflt<dblflt>>;
 
+#ifndef __CUDACC__ 
+    CUDA_CRAP std::string ToString() const {
+        std::stringstream ss;
+        ss << std::setprecision(std::numeric_limits<double>::max_digits10);
+        ss << "mantissaReal: " << static_cast<double>(this->mantissaReal)
+            << " mantissaImag: " << static_cast<double>(this->mantissaImag)
+            << " exp: 0";
+        return ss.str();
+    }
+#endif
+
     CUDA_CRAP constexpr FloatComplex() {
         mantissaReal = SubType{};
         mantissaImag = SubType{};

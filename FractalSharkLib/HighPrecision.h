@@ -142,5 +142,6 @@ extern float* twoPowExpFlt;
 enum class AddPointOptions {
     DontSave,
     EnableWithSave,
-    EnableWithoutSave
+    EnableWithoutSave,
+    OpenExistingWithSave,
 };

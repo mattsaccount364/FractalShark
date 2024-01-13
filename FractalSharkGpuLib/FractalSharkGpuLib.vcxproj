@@ -99,6 +99,8 @@
       <Optimization>O3</Optimization>
       <GenerateLineInfo>true</GenerateLineInfo>
       <ExtensibleWholeProgramCompilation>true</ExtensibleWholeProgramCompilation>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <HostDebugInfo>true</HostDebugInfo>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemGroup>

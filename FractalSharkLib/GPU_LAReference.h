@@ -96,7 +96,7 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference<T2, SubType2, OtherPE
     LAStageInfo<IterType>* tempLAStages;
 
     const auto LAMemToAllocate = other.GetLAs().GetSize() * sizeof(GPU_LAInfoDeep<IterType, Float, SubType>);
-    m_Err = cudaMallocManaged(&tempLAs, LAMemToAllocate, cudaMemAttachGlobal);
+    m_Err = cudaMalloc(&tempLAs, LAMemToAllocate);
     if (m_Err != cudaSuccess) {
         AllocHostLA = true;
         m_Err = cudaMallocHost(&tempLAs, LAMemToAllocate);
@@ -109,7 +109,7 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference<T2, SubType2, OtherPE
     NumLAs = other.GetLAs().GetSize();
 
     const auto LAStageMemoryToAllocate = other.GetLAStages().GetSize() * sizeof(LAStageInfo<IterType>);
-    m_Err = cudaMallocManaged(&tempLAStages, LAStageMemoryToAllocate, cudaMemAttachGlobal);
+    m_Err = cudaMalloc(&tempLAStages, LAStageMemoryToAllocate);
     if (m_Err != cudaSuccess) {
         AllocHostLAStages = true;
         m_Err = cudaMallocHost(&tempLAStages, LAStageMemoryToAllocate);

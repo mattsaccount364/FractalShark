@@ -130,8 +130,7 @@ public:
 
     void SetPerturbationAlg(RefOrbitCalc::PerturbationAlg alg) { m_RefOrbit.SetPerturbationAlg(alg); }
     void ClearPerturbationResults(RefOrbitCalc::PerturbationResultType type) { m_RefOrbit.ClearPerturbationResults(type); }
-    void SavePerturbationOrbit();
-    void LoadPerturbationOrbit();
+    void LoadPerturbationOrbits();
 
     // Drawing functions
     bool RequiresUseLocalColor() const;
@@ -170,9 +169,9 @@ public:
     void DrawAllPerturbationResults(bool LeaveScreen);
 
     // Saving images of the fractal
-    int SaveCurrentFractal(const std::wstring filename_base);
-    int SaveHiResFractal(const std::wstring filename_base);
-    int SaveItersAsText(const std::wstring filename_base);
+    int SaveCurrentFractal(std::wstring filename_base);
+    int SaveHiResFractal(std::wstring filename_base);
+    int SaveItersAsText(std::wstring filename_base);
     bool CleanupThreads(bool all);
 
     // Benchmarking
@@ -224,6 +223,12 @@ private:
     void PalTransition(size_t WhichPalette, size_t paletteIndex, int length, int r, int g, int b);
     bool IsDownControl(void);
     void CheckForAbort(void);
+
+    void SetPosition(
+        HighPrecision MinX,
+        HighPrecision MinY,
+        HighPrecision MaxX,
+        HighPrecision MaxY);
 
     static bool FileExists(const wchar_t* filename);  // Used only by ApproachTarget
     void SaveCurPos(void);
@@ -394,6 +399,8 @@ private:
     // we are currently looking at.
     HighPrecision m_MinX, m_MaxX;
     HighPrecision m_MinY, m_MaxY;
+    std::string m_MinXStr, m_MaxXStr;
+    std::string m_MinYStr, m_MaxYStr;
     bool m_ChangedWindow;
 
     // Holds the dimensions of the window onto which we are drawing.

@@ -86,7 +86,6 @@ public:
     void ClearPerturbationResults(PerturbationResultType type);
     void ResetGuess(HighPrecision x = HighPrecision(0), HighPrecision y = HighPrecision(0));
 
-    void SaveAllOrbits();
     void LoadAllOrbits();
 
     void GetSomeDetails(
@@ -144,9 +143,7 @@ private:
     size_t m_GuessReserveSize;
 
     size_t GetNextGenerationNumber();
-    size_t GetNextLaGenerationNumber();
     size_t m_GenerationNumber;
-    size_t m_LaGenerationNumber;
 
     template<typename IterType, PerturbExtras PExtras>
     struct Container {

@@ -1,10 +1,12 @@
 #pragma once
 
 #include <complex>
+#include <fstream>
 
 #include "HDRFloat.h"
 #include "HDRFloatComplex.h"
 #include "ATResult.h"
+
 
 template<typename IterType, class HDRFloat, class SubType>
 class ATInfo {
@@ -39,6 +41,46 @@ public:
     }
 
 public:
+    bool WriteMetadata(std::ofstream& metafile) const {
+        metafile << "StepLength: " << StepLength << std::endl;
+        metafile << "ThresholdC: " << HdrToString(ThresholdC) << std::endl;
+        metafile << "SqrEscapeRadius: " << HdrToString(SqrEscapeRadius) << std::endl;
+        metafile << "RefC: " << HdrToString(RefC) << std::endl;
+        metafile << "ZCoeff: " << HdrToString(ZCoeff) << std::endl;
+        metafile << "CCoeff: " << HdrToString(CCoeff) << std::endl;
+        metafile << "InvZCoeff: " << HdrToString(InvZCoeff) << std::endl;
+        metafile << "CCoeffSqrInvZCoeff: " << HdrToString(CCoeffSqrInvZCoeff) << std::endl;
+        metafile << "CCoeffInvZCoeff: " << HdrToString(CCoeffInvZCoeff) << std::endl;
+        metafile << "CCoeffNormSqr: " << HdrToString(CCoeffNormSqr) << std::endl;
+        metafile << "RefCNormSqr: " << HdrToString(RefCNormSqr) << std::endl;
+        metafile << "factor: " << HdrToString(factor) << std::endl;
+        return true;
+    }
+
+    bool ReadMetadata(std::ifstream& metafile) {
+        std::string descriptor_string_junk;
+
+        {
+            std::string step_length;
+            metafile >> descriptor_string_junk;
+            metafile >> step_length;
+            StepLength = (IterType)std::stoll(step_length);
+        }
+
+        HdrFromIfStream<HDRFloat, SubType>(ThresholdC, metafile);
+        HdrFromIfStream<HDRFloat, SubType>(SqrEscapeRadius, metafile);
+        HdrFromIfStream<HDRFloatComplex, SubType>(RefC, metafile);
+        HdrFromIfStream<HDRFloatComplex, SubType>(ZCoeff, metafile);
+        HdrFromIfStream<HDRFloatComplex, SubType>(CCoeff, metafile);
+        HdrFromIfStream<HDRFloatComplex, SubType>(InvZCoeff, metafile);
+        HdrFromIfStream<HDRFloatComplex, SubType>(CCoeffSqrInvZCoeff, metafile);
+        HdrFromIfStream<HDRFloatComplex, SubType>(CCoeffInvZCoeff, metafile);
+        HdrFromIfStream<HDRFloat, SubType>(CCoeffNormSqr, metafile);
+        HdrFromIfStream<HDRFloat, SubType>(RefCNormSqr, metafile);
+        HdrFromIfStream<HDRFloat, SubType>(factor, metafile);
+        return true;
+    }
+
     IterType StepLength;
     HDRFloat ThresholdC;
     HDRFloat SqrEscapeRadius;

@@ -101,6 +101,8 @@ void Fractal::Initialize(int width,
     SetIterType(IterTypeEnum::Bits32);
 
     SetPerturbAutosave(AddPointOptions::EnableWithoutSave);
+    LoadPerturbationOrbits();
+    
     View(5);
     //View(10);
     //View(26); // hard
@@ -678,11 +680,7 @@ bool Fractal::RecenterViewCalc(HighPrecision MinX, HighPrecision MinY, HighPreci
 
     size_t prec = GetPrecision(MinX, MinY, MaxX, MaxY, m_RefOrbit.RequiresReuse());
     SetPrecision(prec, MinX, MinY, MaxX, MaxY);
-
-    m_MinX = MinX;
-    m_MaxX = MaxX;
-    m_MinY = MinY;
-    m_MaxY = MaxY;
+    SetPosition(MinX, MinY, MaxX, MaxY);
 
     m_RefOrbit.ResetGuess();
 
@@ -690,6 +688,23 @@ bool Fractal::RecenterViewCalc(HighPrecision MinX, HighPrecision MinY, HighPreci
 
     m_ChangedWindow = true;
     return true;
+}
+
+void Fractal::SetPosition(
+    HighPrecision MinX,
+    HighPrecision MinY,
+    HighPrecision MaxX,
+    HighPrecision MaxY)
+{
+    m_MinX = MinX;
+    m_MaxX = MaxX;
+    m_MinY = MinY;
+    m_MaxY = MaxY;
+
+    m_MinXStr = HdrToString(m_MinX);
+    m_MaxXStr = HdrToString(m_MaxX);
+    m_MinYStr = HdrToString(m_MinY);
+    m_MaxYStr = HdrToString(m_MaxY);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -818,10 +833,7 @@ bool Fractal::RecenterViewScreen(RECT rect)
 
     // Set m_PerturbationGuessCalc<X|Y> = ... above.
 
-    m_MinX = newMinX;
-    m_MaxX = newMaxX;
-    m_MinY = newMinY;
-    m_MaxY = newMaxY;
+    SetPosition(newMinX, newMinY, newMaxX, newMaxY);
 
     SetPrecision();
     SquareCurrentView();
@@ -1359,7 +1371,7 @@ void Fractal::View(size_t view)
         maxX = HighPrecision{ "-0.54820574807047570845821256754673302937669927060844097486102930067962289200412659019319306589187062772276993544341295" };
         maxY = HighPrecision{ "-0.577570838903603842805108982201850558675551726802772104952059640378694274662197291893029522164691495936927144187595881" };
         SetNumIterations<IterTypeFull>(4718592);
-        ResetDimensions(MAXSIZE_T, MAXSIZE_T, 2);
+        ResetDimensions(MAXSIZE_T, MAXSIZE_T, 1);
         break;
 
     case 6:
@@ -1783,11 +1795,11 @@ bool Fractal::Back(void)
 {
     if (!m_PrevMinX.empty())
     {
-        m_MinX = m_PrevMinX.back();
-        m_MinY = m_PrevMinY.back();
-        m_MaxX = m_PrevMaxX.back();
-        m_MaxY = m_PrevMaxY.back();
-
+        SetPosition(
+            m_PrevMinX.back(),
+            m_PrevMinY.back(),
+            m_PrevMaxX.back(),
+            m_PrevMaxY.back());
         SetPrecision();
 
         m_RefOrbit.ResetGuess();
@@ -1953,16 +1965,11 @@ IterTypeFull Fractal::GetMaxIterationsRT() const {
 void Fractal::SetIterType(IterTypeEnum type) {
     if (m_IterType != type) {
         m_IterType = type;
-        m_RefOrbit.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
         InitializeMemory();
     }
 }
 
-void Fractal::SavePerturbationOrbit() {
-    m_RefOrbit.SaveAllOrbits();
-}
-
-void Fractal::LoadPerturbationOrbit() {
+void Fractal::LoadPerturbationOrbits() {
     m_RefOrbit.LoadAllOrbits();
 }
 
@@ -3813,7 +3820,8 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
         PExtras,
         RefOrbitCalc::Extras::IncludeLAv2>();
 
-    if (results->GetLaReference() == nullptr) {
+    if (results->GetLaReference() == nullptr ||
+        results->GetOrbitData() == nullptr) {
         ::MessageBox(nullptr, L"Oops - a null pointer deref", L"", MB_OK | MB_APPLMODAL);
         return;
     }
@@ -4067,6 +4075,12 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
             RefOrbitCalc::Extras::IncludeLAv2,
             T>();
 
+    if (results->GetLaReference() == nullptr ||
+        results->GetOrbitData() == nullptr) {
+        ::MessageBox(nullptr, L"Oops - a null pointer deref", L"", MB_OK | MB_APPLMODAL);
+        return;
+    }
+
     // TODO pass perturb results via InitializeGPUMemory
     uint32_t err = InitializeGPUMemory();
     if (err) {
@@ -4082,18 +4096,12 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
         results->GetOrbitData(),
         results->GetPeriodMaybeZero() };
 
-    if (results->GetLaReference() == nullptr) {
-        ::MessageBox(nullptr, L"Oops - a null pointer deref", L"", MB_OK | MB_APPLMODAL);
-        return;
-    }
-
     m_r.InitializePerturb<IterType, T, SubType, PExtras, T>(
         results->GetGenerationNumber(),
         &gpu_results,
         0,
         nullptr,
-        results->GetLaReference(),
-        results->GetLaGenerationNumber());
+        results->GetLaReference());
     if (err) {
         MessageBoxCudaError(err);
         return;
@@ -4417,12 +4425,12 @@ void Fractal::CurrentFractalSave::Run() {
     return;
 }
 
-int Fractal::SaveCurrentFractal(const std::wstring filename_base) {
+int Fractal::SaveCurrentFractal(std::wstring filename_base) {
     return SaveFractalData<CurrentFractalSave::Type::PngImg>(filename_base);
 }
 
 template<Fractal::CurrentFractalSave::Type Typ>
-int Fractal::SaveFractalData(const std::wstring filename_base)
+int Fractal::SaveFractalData(std::wstring filename_base)
 {
     auto lambda = [&]<typename T>(T &savesInProgress) {
         for (;;) {
@@ -4487,7 +4495,7 @@ bool Fractal::CleanupThreads(bool all) {
 // option.  This way, there is no distortion, since scaling from a smaller square
 // view to a larger one doesn't screw anything up.
 //////////////////////////////////////////////////////////////////////////////
-int Fractal::SaveHiResFractal(const std::wstring filename)
+int Fractal::SaveHiResFractal(std::wstring filename)
 {
     //CBitmapWriter bmpWriter;
 
@@ -4511,7 +4519,7 @@ int Fractal::SaveHiResFractal(const std::wstring filename)
     return ret;
 }
 
-int Fractal::SaveItersAsText(const std::wstring filename_base) {
+int Fractal::SaveItersAsText(std::wstring filename_base) {
     return SaveFractalData<CurrentFractalSave::Type::ItersText>(filename_base);
 }
 

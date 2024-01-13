@@ -110,8 +110,7 @@ public:
         const GPUPerturbResults<IterType, T1, PExtras>* Perturb1,
         size_t GenerationNumber2,
         const GPUPerturbResults<IterType, T2, PExtras>* Perturb2,
-        const LAReference<IterType, T1, SubType, PExtras>* LaReferenceHost,
-        size_t LaGenerationNumber1);
+        const LAReference<IterType, T1, SubType, PExtras>* LaReferenceHost);
 
     template<typename IterType>
     void ClearMemory();

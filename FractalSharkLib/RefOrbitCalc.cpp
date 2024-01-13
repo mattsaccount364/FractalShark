@@ -82,8 +82,7 @@ RefOrbitCalc::RefOrbitCalc(Fractal& Fractal)
       m_PerturbationGuessCalcY(0),
       m_RefOrbitOptions{ AddPointOptions::DontSave },
       m_GuessReserveSize(),
-      m_GenerationNumber(),
-      m_LaGenerationNumber() {
+      m_GenerationNumber() {
 }
 
 bool RefOrbitCalc::RequiresCompression() const {
@@ -568,11 +567,6 @@ size_t RefOrbitCalc::GetNextGenerationNumber() {
     return m_GenerationNumber;
 }
 
-size_t RefOrbitCalc::GetNextLaGenerationNumber() {
-    ++m_LaGenerationNumber;
-    return m_LaGenerationNumber;
-}
-
 template<typename IterType, class T, class PerturbationResultsType, PerturbExtras PExtras, RefOrbitCalc::ReuseMode Reuse>
 void RefOrbitCalc::InitResults(
     PerturbationResultsType& results,
@@ -589,8 +583,7 @@ void RefOrbitCalc::InitResults(
         m_Fractal.GetMaxX(),
         m_Fractal.GetMaxY(),
         m_Fractal.GetNumIterations<IterType>(),
-        m_GuessReserveSize,
-        GetNextGenerationNumber());
+        m_GuessReserveSize);
 }
 
 template<
@@ -603,7 +596,8 @@ template<
     RefOrbitCalc::ReuseMode Reuse>
 void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecision cy) {
     auto& PerturbationResultsArray = GetPerturbationResults<IterType, T, PExtras>();
-    auto newArray = std::make_unique<PerturbationResults<IterType, T, PExtras>>(m_RefOrbitOptions);
+    auto newArray = std::make_unique<PerturbationResults<IterType, T, PExtras>>(
+        m_RefOrbitOptions, GetNextGenerationNumber());
     PerturbationResultsArray.push_back(std::move(newArray));
     auto* results = PerturbationResultsArray[PerturbationResultsArray.size() - 1].get();
 
@@ -734,7 +728,8 @@ template<
     RefOrbitCalc::BenchmarkMode BenchmarkState>
 bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPrecision cy) {
     auto& PerturbationResultsArray = GetPerturbationResults<IterType, T, PerturbExtras::Disable>();
-    auto newArray = std::make_unique<PerturbationResults<IterType, T, PerturbExtras::Disable>>(m_RefOrbitOptions);
+    auto newArray = std::make_unique<PerturbationResults<IterType, T, PerturbExtras::Disable>>(
+        m_RefOrbitOptions, GetNextGenerationNumber());
     PerturbationResultsArray.push_back(std::move(newArray));
 
     auto* existingResults = GetUsefulPerturbationResults<IterType, T, true, PerturbExtras::Disable>();
@@ -912,7 +907,8 @@ template<
     RefOrbitCalc::BenchmarkMode BenchmarkState>
 bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighPrecision cy) {
     auto& PerturbationResultsArray = GetPerturbationResults<IterType, T, PerturbExtras::Disable>();
-    auto newArray = std::make_unique<PerturbationResults<IterType, T, PerturbExtras::Disable>>(m_RefOrbitOptions);
+    auto newArray = std::make_unique<PerturbationResults<IterType, T, PerturbExtras::Disable>>(
+        m_RefOrbitOptions, GetNextGenerationNumber());
     PerturbationResultsArray.push_back(std::move(newArray));
 
     auto* existingResults = GetUsefulPerturbationResults<IterType, T, true, PerturbExtras::Disable>();
@@ -1259,7 +1255,8 @@ template<
     RefOrbitCalc::ReuseMode Reuse>
 void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecision cy) {
     auto& PerturbationResultsArray = GetPerturbationResults<IterType, T, PExtras>();
-    auto newArray = std::make_unique<PerturbationResults<IterType, T, PExtras>>(m_RefOrbitOptions);
+    auto newArray = std::make_unique<PerturbationResults<IterType, T, PExtras>>(
+        m_RefOrbitOptions, GetNextGenerationNumber());
     PerturbationResultsArray.push_back(std::move(newArray));
     auto* results = PerturbationResultsArray[PerturbationResultsArray.size() - 1].get();
 
@@ -1640,11 +1637,12 @@ bool RefOrbitCalc::IsPerturbationResultUsefulHere(size_t i) {
                     PerturbationResults.GetMaxIterations() >= m_Fractal.GetNumIterations<IterType>());
         }
 
+        const auto term1 = PerturbationResults.GetHiX() >= m_Fractal.GetMinX();
+        const auto term2 = PerturbationResults.GetHiX() <= m_Fractal.GetMaxX();
+        const auto term3 = PerturbationResults.GetHiY() >= m_Fractal.GetMinY();
+        const auto term4 = PerturbationResults.GetHiY() <= m_Fractal.GetMaxY();
         return
-            PerturbationResults.GetHiX() >= m_Fractal.GetMinX() &&
-            PerturbationResults.GetHiX() <= m_Fractal.GetMaxX() &&
-            PerturbationResults.GetHiY() >= m_Fractal.GetMinY() &&
-            PerturbationResults.GetHiY() <= m_Fractal.GetMaxY() &&
+            term1 && term2 && term3 && term4 &&
             (PerturbationResults.GetMaxIterations() > PerturbationResults.GetCountOrbitEntries() ||
                 PerturbationResults.GetMaxIterations() >= m_Fractal.GetNumIterations<IterType>());
     };
@@ -1710,8 +1708,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
         //    auto resultsIntermediate = cur_array[cur_array.size() - 1].get();
         //    auto compressedResults = resultsIntermediate->Compress(
         //        m_Fractal.GetCompressionErrorExp(),
-        //        GetNextGenerationNumber(),
-        //        GetNextLaGenerationNumber());
+        //        GetNextGenerationNumber());
         //    results = AddPerturbationResults(std::move(compressedResults));
 
         //    // Here we just delete the full orbit.
@@ -1742,7 +1739,9 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
             static_assert(PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::EnableCompression, "!");
             if (results->GetLaReference() == nullptr) {
                 auto temp = std::make_unique<LAReference<IterType, T, SubType, PExtras>>(
-                    m_RefOrbitOptions, results->GetBaseFilename());
+                    m_RefOrbitOptions,
+                    results->GenFilename(GrowableVectorTypes::LAInfoDeep),
+                    results->GenFilename(GrowableVectorTypes::LAStageInfo));
 
                 // TODO the presumption here is results size fits in the target IterType size
                 temp->GenerateApproximationData(
@@ -1751,7 +1750,9 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
                     (IterType)results->GetCountOrbitEntries() - 1,
                     UseSmallExponents);
 
-                results->SetLaReference(std::move(temp), GetNextLaGenerationNumber());
+                added = true;
+
+                results->SetLaReference(std::move(temp));
             }
         }
         else {
@@ -1760,19 +1761,19 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
     }
 
     auto OptionalSave = [&](const auto *results) {
-        if (m_RefOrbitOptions == AddPointOptions::EnableWithSave ||
-            m_RefOrbitOptions == AddPointOptions::EnableWithoutSave) {
-            results->Write(false);
+        if ((m_RefOrbitOptions == AddPointOptions::EnableWithSave ||
+             m_RefOrbitOptions == AddPointOptions::EnableWithoutSave) &&
+            added) {
+            results->WriteMetadata();
         }
     };
 
     if constexpr (UseSmallExponents) {
         auto* resultsExisting = GetUsefulPerturbationResults<IterType, ConvertTType, false, PExtras>();
         if (resultsExisting == nullptr) {
-            auto results2(std::make_unique<PerturbationResults<IterType, ConvertTType, PExtras>>(m_RefOrbitOptions));
-            results2->Copy<true>(*results,
-                GetNextGenerationNumber(),
-                GetNextLaGenerationNumber());
+            auto results2(std::make_unique<PerturbationResults<IterType, ConvertTType, PExtras>>(
+                m_RefOrbitOptions, GetNextGenerationNumber()));
+            results2->CopyPerturbationResults<true>(*results);
 
             auto ret = AddPerturbationResults(std::move(results2));
             m_LastUsedRefOrbit = ret;
@@ -1843,36 +1844,30 @@ PerturbationResults<IterType, DestT, DestEnableBad>* RefOrbitCalc::CopyUsefulPer
     auto& container = GetContainer<IterType, DestEnableBad>();
 
     if constexpr (std::is_same<SrcT, double>::value) {
-        auto newarray = std::make_unique<PerturbationResults<IterType, float, DestEnableBad>>(m_RefOrbitOptions);
+        auto newarray = std::make_unique<PerturbationResults<IterType, float, DestEnableBad>>(
+            m_RefOrbitOptions, GetNextGenerationNumber());
         container.m_PerturbationResultsFloat.push_back(std::move(newarray));
         auto* dest = container.m_PerturbationResultsFloat[container.m_PerturbationResultsFloat.size() - 1].get();
-        dest->Copy<false>(
-            src_array,
-            GetNextGenerationNumber(),
-            GetNextLaGenerationNumber());
+        dest->CopyPerturbationResults<false>(src_array);
         return dest;
     }
     else if constexpr (std::is_same<SrcT, float>::value) {
         return nullptr;
     }
     else if constexpr (std::is_same<SrcT, HDRFloat<double>>::value) {
-        auto newarray = std::make_unique<PerturbationResults<IterType, HDRFloat<float>, DestEnableBad>>(m_RefOrbitOptions);
+        auto newarray = std::make_unique<PerturbationResults<IterType, HDRFloat<float>, DestEnableBad>>(
+            m_RefOrbitOptions, GetNextGenerationNumber());
         container.m_PerturbationResultsHDRFloat.push_back(std::move(newarray));
         auto* dest = container.m_PerturbationResultsHDRFloat[container.m_PerturbationResultsHDRFloat.size() - 1].get();
-        dest->Copy<false>(
-            src_array,
-            GetNextGenerationNumber(),
-            GetNextLaGenerationNumber());
+        dest->CopyPerturbationResults<false>(src_array);
         return dest;
     }
     else if constexpr (std::is_same<SrcT, HDRFloat<float>>::value) {
-        auto newarray = std::make_unique<PerturbationResults<IterType, float, DestEnableBad>>(m_RefOrbitOptions);
+        auto newarray = std::make_unique<PerturbationResults<IterType, float, DestEnableBad>>(
+            m_RefOrbitOptions, GetNextGenerationNumber());
         container.m_PerturbationResultsFloat.push_back(std::move(newarray));
         auto* dest = container.m_PerturbationResultsFloat[container.m_PerturbationResultsFloat.size() - 1].get();
-        dest->Copy<false>(
-            src_array,
-            GetNextGenerationNumber(),
-            GetNextLaGenerationNumber());
+        dest->CopyPerturbationResults<false>(src_array);
         return dest;
     }
     else {
@@ -1887,6 +1882,7 @@ void RefOrbitCalc::ClearPerturbationResults(PerturbationResultType type) {
                 o->GetAuthoritativePrecision() == 0) ||
             (type == PerturbationResultType::HighRes &&
                 o->GetAuthoritativePrecision() != 0)) {
+
             return true;
         }
 
@@ -1924,55 +1920,6 @@ void RefOrbitCalc::ResetGuess(HighPrecision x, HighPrecision y) {
     m_PerturbationGuessCalcY = y;
 }
 
-void RefOrbitCalc::SaveAllOrbits() {
-    // Saves all the results to disk
-    auto lambda = [&](auto& Container) {
-        for (const auto &it : Container.m_PerturbationResultsDouble) {
-            auto filebase = GetTimeAsString();
-            it->Write(true, filebase);
-        }
-
-        for (const auto &it : Container.m_PerturbationResultsFloat) {
-            auto filebase = GetTimeAsString();
-            it->Write(true, filebase);
-        }
-
-        // TODO - does not currently make sense to save these.
-        //for (const auto& it : Container.m_PerturbationResults2xFloat) {
-        //    auto filebase = GetTimeAsString();
-        //    it->Write(true, filebase);
-        //}
-
-        for (const auto &it : Container.m_PerturbationResultsHDRDouble) {
-            auto filebase = GetTimeAsString();
-            it->Write(true, filebase);
-        }
-    
-        for (const auto &it : Container.m_PerturbationResultsHDRFloat) {
-            auto filebase = GetTimeAsString();
-            it->Write(true, filebase);
-        }
-
-        // TODO - does not currently make sense to save these.
-        //for (const auto& it : Container.m_PerturbationResults2xFloat) {
-        //    auto filebase = GetTimeAsString();
-        //    it->Write(true, filebase);
-        //}
-
-        for (const auto &it : Container.m_PerturbationResultsHDR2xFloat) {
-            auto filebase = GetTimeAsString();
-            it->Write(true, filebase);
-        }
-    };
-
-    lambda(c32d);
-    lambda(c32e);
-    lambda(c32c);
-    lambda(c64d);
-    lambda(c64e);
-    lambda(c64c);
-}
-
 void RefOrbitCalc::LoadAllOrbits() {
     // Matches the extension of a filename
     auto extmatch = [](std::string fn) -> bool {
@@ -2007,62 +1954,67 @@ void RefOrbitCalc::LoadAllOrbits() {
             auto file = entry.path().string();
             if (extmatch(file)) {
                 auto NextGen = GetNextGenerationNumber();
-                auto NextLaGen = GetNextLaGenerationNumber();
                 auto stripfn = stripext(file);
                 auto widefn = narrowtowide(stripfn);
                 auto results1 = std::make_unique<PerturbationResults<IterType, double, PExtras>>(
-                    m_RefOrbitOptions,
-                    NextGen,
-                    NextLaGen);
-                if (results1->Load(widefn)) {
+                    widefn,
+                    AddPointOptions::OpenExistingWithSave,
+                    NextGen);
+                if (results1->ReadMetadata()) {
                     Container.m_PerturbationResultsDouble.push_back(std::move(results1));
                     continue;
                 }
+                results1 = nullptr;
 
                 auto results2 = std::make_unique<PerturbationResults<IterType, float, PExtras>>(
-                    m_RefOrbitOptions,
-                    NextGen,
-                    NextLaGen);
-                if (results2->Load(widefn)) {
+                    widefn,
+                    AddPointOptions::OpenExistingWithSave,
+                    NextGen);
+                if (results2->ReadMetadata()) {
                     Container.m_PerturbationResultsFloat.push_back(std::move(results2));
                     continue;
                 }
+                results2 = nullptr;
 
                 auto results3 = std::make_unique<PerturbationResults<IterType, CudaDblflt<MattDblflt>, PExtras>>(
-                    m_RefOrbitOptions,
-                    NextGen,
-                    NextLaGen);
-                if (results3->Load(widefn)) {
+                    widefn,
+                    AddPointOptions::OpenExistingWithSave,
+                    NextGen);
+                if (results3->ReadMetadata()) {
                     Container.m_PerturbationResults2xFloat.push_back(std::move(results3));
                     continue;
                 }
+                results3 = nullptr;
 
                 auto results4 = std::make_unique<PerturbationResults<IterType, HDRFloat<double>, PExtras>>(
-                    m_RefOrbitOptions,
-                    NextGen,
-                    NextLaGen);
-                if (results4->Load(widefn)) {
+                    widefn,
+                    AddPointOptions::OpenExistingWithSave,
+                    NextGen);
+                if (results4->ReadMetadata()) {
                     Container.m_PerturbationResultsHDRDouble.push_back(std::move(results4));
                     continue;
                 }
+                results4 = nullptr;
 
                 auto results5 = std::make_unique<PerturbationResults<IterType, HDRFloat<float>, PExtras>>(
-                    m_RefOrbitOptions,
-                    NextGen,
-                    NextLaGen);
-                if (results5->Load(widefn)) {
+                    widefn,
+                    AddPointOptions::OpenExistingWithSave,
+                    NextGen);
+                if (results5->ReadMetadata()) {
                     Container.m_PerturbationResultsHDRFloat.push_back(std::move(results5));
                     continue;
                 }
+                results5 = nullptr;
 
                 auto results6 = std::make_unique<PerturbationResults<IterType, HDRFloat<CudaDblflt<MattDblflt>>, PExtras>>(
-                    m_RefOrbitOptions,
-                    NextGen,
-                    NextLaGen);
-                if (results6->Load(widefn)) {
+                    widefn,
+                    AddPointOptions::OpenExistingWithSave,
+                    NextGen);
+                if (results6->ReadMetadata()) {
                     Container.m_PerturbationResultsHDR2xFloat.push_back(std::move(results6));
                     continue;
                 }
+                results6 = nullptr;
             }
         }
     };

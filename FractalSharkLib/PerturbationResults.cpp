@@ -2,7 +2,7 @@
 #include "PerturbationResults.h"
 
 // Returns the current time as a string
-std::wstring GetTimeAsString() {
+std::wstring GetTimeAsString(size_t generation_number) {
     using namespace std::chrono;
 
     // get current time
@@ -28,6 +28,8 @@ std::wstring GetTimeAsString() {
     std::transform(res.begin(), res.end(), std::back_inserter(wide), [](char c) {
         return (wchar_t)c;
         });
+
+    wide += L"-" + std::to_wstring(generation_number);
 
     return wide;
 }

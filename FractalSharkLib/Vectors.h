@@ -39,7 +39,7 @@ public:
         return m_Data != nullptr;
     }
 
-    GrowableVector() : GrowableVector{ L"" } {
+    GrowableVector() : GrowableVector{ RefOrbitCalc::AddPointOptions::DontSave, L"" } {
     }
 
     GrowableVector(const GrowableVector& other) = delete;
@@ -50,12 +50,14 @@ public:
         m_UsedSizeInElts{ other.m_UsedSizeInElts },
         m_CapacityInElts{ other.m_CapacityInElts },
         m_Data{ other.m_Data },
+        m_AddPointOptions{ other.m_AddPointOptions },
         Filename{ other.Filename } {
 
         other.m_FileHandle = nullptr;
         other.m_MappedFile = nullptr;
         other.m_UsedSizeInElts = 0;
         other.m_CapacityInElts = 0;
+        other.m_AddPointOptions = RefOrbitCalc::AddPointOptions::DontSave;
         other.m_Data = nullptr;
     }
 
@@ -65,6 +67,7 @@ public:
         m_UsedSizeInElts = other.m_UsedSizeInElts;
         m_CapacityInElts = other.m_CapacityInElts;
         m_Data = other.m_Data;
+        m_AddPointOptions = other.m_AddPointOptions;
         Filename = other.Filename;
 
         other.m_FileHandle = nullptr;
@@ -72,6 +75,7 @@ public:
         other.m_UsedSizeInElts = 0;
         other.m_CapacityInElts = 0;
         other.m_Data = nullptr;
+        other.m_AddPointOptions = RefOrbitCalc::AddPointOptions::DontSave;
         other.Filename = {};
 
         return *this;
@@ -79,12 +83,13 @@ public:
 
     // The constructor takes the file to open or create
     // It maps enough memory to accomodate the provided orbit size.
-    GrowableVector(const std::wstring filename)
+    GrowableVector(RefOrbitCalc::AddPointOptions add_point_options, const std::wstring filename)
         : m_FileHandle{},
         m_MappedFile{},
         m_UsedSizeInElts{},
         m_CapacityInElts{},
         m_Data{},
+        m_AddPointOptions{ add_point_options },
         Filename{ filename }
     {
         size_t CapacityInKB;
@@ -109,8 +114,11 @@ public:
 
     // This one takes a filename and size and uses the file specified
     // to back the vector.
-    GrowableVector(const std::wstring filename, size_t initial_size)
-        : GrowableVector{ filename }
+    GrowableVector(
+        RefOrbitCalc::AddPointOptions add_point_options,
+        const std::wstring filename,
+        size_t initial_size)
+        : GrowableVector{ add_point_options, filename }
     {
         m_UsedSizeInElts = initial_size;
         m_CapacityInElts = initial_size;

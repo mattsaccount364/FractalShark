@@ -36,7 +36,7 @@ public:
     friend class RefOrbitCompressor<IterType, T, PExtras>;
 
     PerturbationResults(
-        RefOrbitCalc::AddPointOptions MemoryOpt,
+        RefOrbitCalc::AddPointOptions add_point_options,
         size_t Generation = 0,
         size_t LaGeneration = 0) :
       
@@ -49,8 +49,10 @@ public:
         m_PeriodMaybeZero{},
         m_CompressionErrorExp{},
         m_CompressionHelper{ *this },
-        m_RefOrbitOptions{ MemoryOpt },
-        m_FullOrbit{ MemoryOpt == RefOrbitCalc::AddPointOptions::DontSave ? L"" : GetTimeAsString() + L".FullOrbit" },
+        m_RefOrbitOptions{ add_point_options },
+        m_FullOrbit{
+            add_point_options,
+            add_point_options == RefOrbitCalc::AddPointOptions::DontSave ? L"" : GetTimeAsString() + L".FullOrbit" },
         m_UncompressedItersInOrbit{},
         m_GenerationNumber{ Generation },
         m_LaReference{},
@@ -447,7 +449,7 @@ public:
         }
 
         const auto orbfilename = filename + L".FullOrbit";
-        m_FullOrbit = GrowableVector<GPUReferenceIter<T, PExtras>>(orbfilename, sz);
+        m_FullOrbit = GrowableVector<GPUReferenceIter<T, PExtras>>(m_RefOrbitOptions, orbfilename, sz);
         if (m_FullOrbit.GetData() == nullptr) {
             return false;
         }

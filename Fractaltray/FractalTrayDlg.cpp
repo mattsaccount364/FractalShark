@@ -142,7 +142,7 @@ BOOL CFractalTrayDlg::OnInitDialog()
         m_ThreadParam.stop = false;
         m_ThreadParam.hWnd = m_hWnd;
 
-        m_Thread = CreateThread(nullptr, 0, CalcProc, &m_ThreadParam, nullptr, nullptr);
+        m_Thread = CreateThread(nullptr, 0, CalcProc, &m_ThreadParam, 0, nullptr);
         PostMessage(WM_SYSCOMMAND, SC_MINIMIZE, 0);
 
         SetIcon(m_hIcon1, TRUE);      // Set big icon

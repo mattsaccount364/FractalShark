@@ -9,17 +9,18 @@
 template<class T>
 class GrowableVector {
 private:
-    HANDLE hFile;
-    HANDLE hMapFile;
-    size_t UsedSizeInElts;
-    size_t CapacityInElts;
-    T* Mutable;
+    HANDLE m_FileHandle;
+    HANDLE m_MappedFile;
+    size_t m_UsedSizeInElts;
+    size_t m_CapacityInElts;
+    T* m_Data;
+    RefOrbitCalc::AddPointOptions m_AddPointOptions;
 
     std::wstring Filename;
 
 public:
     T* GetData() const {
-        return Mutable;
+        return m_Data;
     }
 
     std::wstring GetFilename() const {
@@ -27,15 +28,15 @@ public:
     }
 
     size_t GetCapacity() const {
-        return CapacityInElts;
+        return m_CapacityInElts;
     }
 
     size_t GetSize() const {
-        return UsedSizeInElts;
+        return m_UsedSizeInElts;
     }
 
     bool ValidFile() const {
-        return Mutable != nullptr;
+        return m_Data != nullptr;
     }
 
     GrowableVector() : GrowableVector{ L"" } {
@@ -44,33 +45,33 @@ public:
     GrowableVector(const GrowableVector& other) = delete;
     GrowableVector& operator=(const GrowableVector& other) = delete;
     GrowableVector(GrowableVector&& other) :
-        hFile{ other.hFile },
-        hMapFile{ other.hMapFile },
-        UsedSizeInElts{ other.UsedSizeInElts },
-        CapacityInElts{ other.CapacityInElts },
-        Mutable{ other.Mutable },
+        m_FileHandle{ other.m_FileHandle },
+        m_MappedFile{ other.m_MappedFile },
+        m_UsedSizeInElts{ other.m_UsedSizeInElts },
+        m_CapacityInElts{ other.m_CapacityInElts },
+        m_Data{ other.m_Data },
         Filename{ other.Filename } {
 
-        other.hFile = nullptr;
-        other.hMapFile = nullptr;
-        other.UsedSizeInElts = 0;
-        other.CapacityInElts = 0;
-        other.Mutable = nullptr;
+        other.m_FileHandle = nullptr;
+        other.m_MappedFile = nullptr;
+        other.m_UsedSizeInElts = 0;
+        other.m_CapacityInElts = 0;
+        other.m_Data = nullptr;
     }
 
     GrowableVector& operator=(GrowableVector&& other) {
-        hFile = other.hFile;
-        hMapFile = other.hMapFile;
-        UsedSizeInElts = other.UsedSizeInElts;
-        CapacityInElts = other.CapacityInElts;
-        Mutable = other.Mutable;
+        m_FileHandle = other.m_FileHandle;
+        m_MappedFile = other.m_MappedFile;
+        m_UsedSizeInElts = other.m_UsedSizeInElts;
+        m_CapacityInElts = other.m_CapacityInElts;
+        m_Data = other.m_Data;
         Filename = other.Filename;
 
-        other.hFile = nullptr;
-        other.hMapFile = nullptr;
-        other.UsedSizeInElts = 0;
-        other.CapacityInElts = 0;
-        other.Mutable = nullptr;
+        other.m_FileHandle = nullptr;
+        other.m_MappedFile = nullptr;
+        other.m_UsedSizeInElts = 0;
+        other.m_CapacityInElts = 0;
+        other.m_Data = nullptr;
         other.Filename = {};
 
         return *this;
@@ -79,11 +80,11 @@ public:
     // The constructor takes the file to open or create
     // It maps enough memory to accomodate the provided orbit size.
     GrowableVector(const std::wstring filename)
-        : hFile{},
-        hMapFile{},
-        UsedSizeInElts{},
-        CapacityInElts{},
-        Mutable{},
+        : m_FileHandle{},
+        m_MappedFile{},
+        m_UsedSizeInElts{},
+        m_CapacityInElts{},
+        m_Data{},
         Filename{ filename }
     {
         size_t CapacityInKB;
@@ -111,80 +112,88 @@ public:
     GrowableVector(const std::wstring filename, size_t initial_size)
         : GrowableVector{ filename }
     {
-        UsedSizeInElts = initial_size;
-        CapacityInElts = initial_size;
+        m_UsedSizeInElts = initial_size;
+        m_CapacityInElts = initial_size;
     }
 
     ~GrowableVector() {
         CloseMapping(true);
 
         // TODO Delete the file if it's not anonymous.
-        //DeleteFile(Filename.c_str());
+        if (m_AddPointOptions == RefOrbitCalc::AddPointOptions::EnableWithoutSave) {
+            auto result = DeleteFile(Filename.c_str());
+            if (result == FALSE) {
+                auto err = GetLastError();
+                std::wstring msg = L"Failed to delete file: ";
+                msg += std::to_wstring(err);
+                ::MessageBox(NULL, msg.c_str(), L"", MB_OK | MB_APPLMODAL);
+            }
+        }
     }
 
     T& operator[](size_t index) {
-        return Mutable[index];
+        return m_Data[index];
     }
 
     const T& operator[](size_t index) const {
-        return Mutable[index];
+        return m_Data[index];
     }
 
     void PushBack(const T& val) {
         const auto grow_by_elts = 128 * 1024;
 
-        if (UsedSizeInElts == CapacityInElts) {
-            MutableCommit(CapacityInElts + grow_by_elts);
+        if (m_UsedSizeInElts == m_CapacityInElts) {
+            MutableCommit(m_CapacityInElts + grow_by_elts);
         }
 
-        Mutable[UsedSizeInElts] = val;
-        UsedSizeInElts++;
+        m_Data[m_UsedSizeInElts] = val;
+        m_UsedSizeInElts++;
     }
 
     void PopBack() {
-        if (UsedSizeInElts > 0) {
-            UsedSizeInElts--;
+        if (m_UsedSizeInElts > 0) {
+            m_UsedSizeInElts--;
         }
     }
 
     T& Back() {
-        return Mutable[UsedSizeInElts - 1];
+        return m_Data[m_UsedSizeInElts - 1];
     }
 
     const T& Back() const {
-        return Mutable[UsedSizeInElts - 1];
+        return m_Data[m_UsedSizeInElts - 1];
     }
 
     void Clear() {
-        UsedSizeInElts = 0;
+        m_UsedSizeInElts = 0;
     }
 
     void CloseMapping(bool /*destruct*/) {
         if (!UsingAnonymous()) {
-            if (Mutable != nullptr) {
-                UnmapViewOfFile(Mutable);
-                Mutable = nullptr;
+            if (m_Data != nullptr) {
+                UnmapViewOfFile(m_Data);
+                m_Data = nullptr;
             }
         }
         else {
-            if (Mutable != nullptr) {
-                VirtualFree(Mutable, 0, MEM_RELEASE);
-                Mutable = nullptr;
+            if (m_Data != nullptr) {
+                VirtualFree(m_Data, 0, MEM_RELEASE);
+                m_Data = nullptr;
             }
         }
 
-        if (hMapFile != nullptr) {
-            CloseHandle(hMapFile);
-            hMapFile = nullptr;
+        if (m_MappedFile != nullptr) {
+            CloseHandle(m_MappedFile);
+            m_MappedFile = nullptr;
         }
 
-        if (hFile != nullptr) {
-            CloseHandle(hFile);
-            hFile = nullptr;
+        if (m_FileHandle != nullptr) {
+            CloseHandle(m_FileHandle);
+            m_FileHandle = nullptr;
         }
 
-        // UsedSizeInElts is unchanged.
-        CapacityInElts = 0;
+        // m_UsedSizeInElts is unchanged.
+        m_CapacityInElts = 0;
     }
 
     void Trim() {
@@ -210,20 +219,20 @@ private:
     }
 
     bool MutableFileCommit(size_t new_elt_count) {
-        if (new_elt_count <= CapacityInElts) {
+        if (new_elt_count <= m_CapacityInElts) {
             return true;
         }
 
         CloseMapping(false);
 
-        hFile = CreateFile(Filename.c_str(),
+        m_FileHandle = CreateFile(Filename.c_str(),
             GENERIC_READ | GENERIC_WRITE,
             FILE_SHARE_READ,
             NULL,
             OPEN_ALWAYS,
             FILE_ATTRIBUTE_NORMAL,
             NULL);
-        if (hFile == INVALID_HANDLE_VALUE) {
+        if (m_FileHandle == INVALID_HANDLE_VALUE) {
             ::MessageBox(NULL, L"Failed to open file for reading", L"", MB_OK | MB_APPLMODAL);
             return false;
         }
@@ -239,7 +248,7 @@ private:
 
             LARGE_INTEGER existing_file_size{};
             if (last_error == ERROR_ALREADY_EXISTS) {
-                BOOL ret = GetFileSizeEx(hFile, &existing_file_size);
+                BOOL ret = GetFileSizeEx(m_FileHandle, &existing_file_size);
                 if (ret == FALSE) {
                     ::MessageBox(NULL, L"Failed to get file size", L"", MB_OK | MB_APPLMODAL);
                     return false;
@@ -252,27 +261,27 @@ private:
                 // is that resizing the vector only takes place once the vector is full.
                 // This is not the case for anonymous memory.
                 // So, MutableCommit is kept private and internal, and used only to grow.
-                UsedSizeInElts = existing_file_size.QuadPart / sizeof(T);
+                m_UsedSizeInElts = existing_file_size.QuadPart / sizeof(T);
             } else {
-                UsedSizeInElts = 0;
+                m_UsedSizeInElts = 0;
             }
 
-            CapacityInElts = new_elt_count;
+            m_CapacityInElts = new_elt_count;
 
-            hMapFile = CreateFileMapping(
-                hFile,
+            m_MappedFile = CreateFileMapping(
+                m_FileHandle,
                 NULL,
                 PAGE_READWRITE,
                 high,
                 low,
                 NULL);
-            if (hMapFile == nullptr) {
+            if (m_MappedFile == nullptr) {
                 ::MessageBox(NULL, L"Failed to create file mapping", L"", MB_OK | MB_APPLMODAL);
                 return false;
             }
 
-            Mutable = static_cast<T*>(MapViewOfFile(hMapFile, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, 0));
-            if (Mutable == nullptr) {
+            m_Data = static_cast<T*>(MapViewOfFile(m_MappedFile, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, 0));
+            if (m_Data == nullptr) {
                 ::MessageBox(NULL, L"Failed to map view of file", L"", MB_OK | MB_APPLMODAL);
                 return false;
             }
@@ -289,19 +298,19 @@ private:
     }
 
     bool MutableAnonymousCommit(size_t new_elt_count) {
-        if (new_elt_count > CapacityInElts) {
+        if (new_elt_count > m_CapacityInElts) {
             // If we're using anonymous memory, we need to commit the memory.
             // Use VirtualAlloc to allocate additional space for the vector.
             // The returned pointer should be the same as the original pointer.
 
             auto res = VirtualAlloc(
-                Mutable,
+                m_Data,
                 new_elt_count * sizeof(T),
                 MEM_COMMIT,
                 PAGE_READWRITE
             );
 
-            if (Mutable == nullptr) {
+            if (m_Data == nullptr) {
                 std::wstring err = L"Failed to allocate memory: ";
                 auto code = GetLastError();
                 err += std::to_wstring(code);
@@ -309,9 +318,9 @@ private:
                 ::MessageBox(NULL, err.c_str(), L"", MB_OK | MB_APPLMODAL);
                 return false;
             }
-            else if (Mutable != res) {
+            else if (m_Data != res) {
                 std::wstring err = L"VirtualAlloc returned a different pointer :(";
-                err += std::to_wstring(reinterpret_cast<uint64_t>(Mutable));
+                err += std::to_wstring(reinterpret_cast<uint64_t>(m_Data));
                 err += L" vs ";
                 err += std::to_wstring(reinterpret_cast<uint64_t>(res));
                 err += L" :(.  Code: ";
@@ -321,8 +330,8 @@ private:
                 return false;
             }
 
-            Mutable = static_cast<T*>(res);
-            CapacityInElts = new_elt_count;
+            m_Data = static_cast<T*>(res);
+            m_CapacityInElts = new_elt_count;
         }
 
         return true;
@@ -333,7 +342,7 @@ private:
         assert(UsingAnonymous());  // This function is only for anonymous memory.
 
         auto res = VirtualAlloc(
-            Mutable,
+            m_Data,
             new_reserved_bytes,
             MEM_RESERVE,
             PAGE_READWRITE
@@ -348,7 +357,7 @@ private:
             return;
         }
 
-        Mutable = static_cast<T*>(res);
+        m_Data = static_cast<T*>(res);
     }
 };
 

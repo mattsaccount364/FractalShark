@@ -1741,7 +1741,8 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
         if constexpr (Ex == Extras::IncludeLAv2) {
             static_assert(PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::EnableCompression, "!");
             if (results->GetLaReference() == nullptr) {
-                auto temp = std::make_unique<LAReference<IterType, T, SubType, PExtras>>();
+                auto temp = std::make_unique<LAReference<IterType, T, SubType, PExtras>>(
+                    m_RefOrbitOptions, results->GetBaseFilename());
 
                 // TODO the presumption here is results size fits in the target IterType size
                 temp->GenerateApproximationData(

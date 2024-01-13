@@ -68,6 +68,7 @@
     <ClCompile Include="PerturbationResults.cpp" />
     <ClCompile Include="PointZoomBBConverter.cpp" />
     <ClCompile Include="RefOrbitCalc.cpp" />
+    <ClCompile Include="Vectors.cpp" />
     <ClCompile Include="WPngImage\lodepng.cpp" />
     <ClCompile Include="WPngImage\WPngImage.cc" />
   </ItemGroup>

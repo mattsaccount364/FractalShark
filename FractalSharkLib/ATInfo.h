@@ -68,14 +68,14 @@ public:
         }
     }
 
-    CUDA_CRAP bool isValid(HDRFloatComplex DeltaSub0);
-    CUDA_CRAP HDRFloatComplex getC(HDRFloatComplex dc);
-    CUDA_CRAP HDRFloatComplex getDZ(HDRFloatComplex z);
+    CUDA_CRAP bool isValid(HDRFloatComplex DeltaSub0) const;
+    CUDA_CRAP HDRFloatComplex getC(HDRFloatComplex dc) const;
+    CUDA_CRAP HDRFloatComplex getDZ(HDRFloatComplex z) const;
 
     CUDA_CRAP void PerformAT(
         IterType max_iterations,
         HDRFloatComplex DeltaSub0,
-        ATResult<IterType, HDRFloat, SubType> &result);
+        ATResult<IterType, HDRFloat, SubType> &result) const;
 };
 
 
@@ -98,7 +98,7 @@ ATInfo<IterType, HDRFloat, SubType>::ATInfo() :
 
 template<typename IterType, class HDRFloat, class SubType>
 CUDA_CRAP
-bool ATInfo<IterType, HDRFloat, SubType>::isValid(HDRFloatComplex DeltaSub0) {
+bool ATInfo<IterType, HDRFloat, SubType>::isValid(HDRFloatComplex DeltaSub0) const {
     if constexpr (IsHDR) {
         return DeltaSub0.chebychevNorm().compareToBothPositiveReduced(ThresholdC) <= 0;
     } else {
@@ -108,7 +108,7 @@ bool ATInfo<IterType, HDRFloat, SubType>::isValid(HDRFloatComplex DeltaSub0) {
 
 template<typename IterType, class HDRFloat, class SubType>
 CUDA_CRAP
-ATInfo<IterType, HDRFloat, SubType>::HDRFloatComplex ATInfo<IterType, HDRFloat, SubType>::getC(HDRFloatComplex dc) {
+ATInfo<IterType, HDRFloat, SubType>::HDRFloatComplex ATInfo<IterType, HDRFloat, SubType>::getC(HDRFloatComplex dc) const {
     HDRFloatComplex temp = dc * CCoeff + RefC;
     temp.Reduce();
     return temp;
@@ -116,7 +116,7 @@ ATInfo<IterType, HDRFloat, SubType>::HDRFloatComplex ATInfo<IterType, HDRFloat, 
 
 template<typename IterType, class HDRFloat, class SubType>
 CUDA_CRAP
-ATInfo<IterType, HDRFloat, SubType>::HDRFloatComplex ATInfo<IterType, HDRFloat, SubType>::getDZ(HDRFloatComplex z) {
+ATInfo<IterType, HDRFloat, SubType>::HDRFloatComplex ATInfo<IterType, HDRFloat, SubType>::getDZ(HDRFloatComplex z) const {
     HDRFloatComplex temp = z * InvZCoeff;
     temp.Reduce();
     return temp;
@@ -127,7 +127,7 @@ CUDA_CRAP
 void ATInfo<IterType, HDRFloat, SubType>::PerformAT(
     IterType max_iterations,
     HDRFloatComplex DeltaSub0,
-    ATResult<IterType, HDRFloat, SubType>& result) {
+    ATResult<IterType, HDRFloat, SubType>& result) const {
     //int ATMaxIt = (max_iterations - 1) / StepLength + 1;
     HDRFloat nsq;
     const IterType ATMaxIt = max_iterations / StepLength;

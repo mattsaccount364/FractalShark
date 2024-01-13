@@ -100,7 +100,7 @@ void Fractal::Initialize(int width,
     ResetDimensions(width, height, 2);
     SetIterType(IterTypeEnum::Bits32);
 
-    SetPerturbAutosave(RefOrbitCalc::AddPointOptions::EnableWithoutSave);
+    SetPerturbAutosave(AddPointOptions::EnableWithoutSave);
     View(5);
     //View(10);
     //View(26); // hard
@@ -3869,9 +3869,9 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
                 DeltaSub0 = { deltaReal, deltaImaginary };
                 DeltaSubN = { 0, 0 };
 
-                if (LaReference.isValid && LaReference.UseAT && LaReference.AT.isValid(DeltaSub0)) {
+                if (LaReference.IsValid() && LaReference.UseAT() && LaReference.GetAT().isValid(DeltaSub0)) {
                     ATResult<IterType, T, SubType> res;
-                    LaReference.AT.PerformAT(GetNumIterations<IterType>(), DeltaSub0, res);
+                    LaReference.GetAT().PerformAT(GetNumIterations<IterType>(), DeltaSub0, res);
                     BLA2SkippedIterations = res.bla_iterations;
                     DeltaSubN = res.dz;
                 }
@@ -3891,7 +3891,7 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
                     complex0 = results->GetComplex<SubType>(RefIteration) + DeltaSubN;
                 }
 
-                auto CurrentLAStage = LaReference.isValid ? LaReference.LAStageCount : 0;
+                auto CurrentLAStage = LaReference.IsValid() ? LaReference.GetLAStageCount() : 0;
 
                 while (CurrentLAStage > 0) {
                     CurrentLAStage--;
@@ -4515,15 +4515,15 @@ int Fractal::SaveItersAsText(const std::wstring filename_base) {
     return SaveFractalData<CurrentFractalSave::Type::ItersText>(filename_base);
 }
 
-void Fractal::SetPerturbAutosave(RefOrbitCalc::AddPointOptions Enable) {
-    if (Enable == RefOrbitCalc::AddPointOptions::EnableWithSave) {
-        m_RefOrbit.SetRefOrbitOptions(RefOrbitCalc::AddPointOptions::EnableWithSave);
+void Fractal::SetPerturbAutosave(AddPointOptions Enable) {
+    if (Enable == AddPointOptions::EnableWithSave) {
+        m_RefOrbit.SetRefOrbitOptions(AddPointOptions::EnableWithSave);
     }
-    else if (Enable == RefOrbitCalc::AddPointOptions::EnableWithoutSave) {
-        m_RefOrbit.SetRefOrbitOptions(RefOrbitCalc::AddPointOptions::EnableWithoutSave);
+    else if (Enable == AddPointOptions::EnableWithoutSave) {
+        m_RefOrbit.SetRefOrbitOptions(AddPointOptions::EnableWithoutSave);
     }
     else {
-        m_RefOrbit.SetRefOrbitOptions(RefOrbitCalc::AddPointOptions::DontSave);
+        m_RefOrbit.SetRefOrbitOptions(AddPointOptions::DontSave);
     }
 }
 

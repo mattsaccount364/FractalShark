@@ -137,3 +137,10 @@ static __device__ float* __restrict__ twoPowExpFlt;
 extern double* twoPowExpDbl;
 extern float* twoPowExpFlt;
 #endif
+
+
+enum class AddPointOptions {
+    DontSave,
+    EnableWithSave,
+    EnableWithoutSave
+};

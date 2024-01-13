@@ -793,19 +793,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             case IDM_PERTURB_AUTOSAVE_ON:
             {
-                gFractal->SetPerturbAutosave(RefOrbitCalc::AddPointOptions::EnableWithSave);
+                gFractal->SetPerturbAutosave(AddPointOptions::EnableWithSave);
                 break;
             }
 
             case IDM_PERTURB_AUTOSAVE_ON_DELETE:
             {
-                gFractal->SetPerturbAutosave(RefOrbitCalc::AddPointOptions::EnableWithoutSave);
+                gFractal->SetPerturbAutosave(AddPointOptions::EnableWithoutSave);
                 break;
             }
 
             case IDM_PERTURB_AUTOSAVE_OFF:
             {
-                gFractal->SetPerturbAutosave(RefOrbitCalc::AddPointOptions::DontSave);
+                gFractal->SetPerturbAutosave(AddPointOptions::DontSave);
                 break;
             }
 

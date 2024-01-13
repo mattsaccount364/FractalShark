@@ -2,6 +2,7 @@
 
 #include "HDRFloat.h"
 #include "HighPrecision.h"
+#include "Vectors.h"
 #include <variant>
 
 class Fractal;
@@ -48,12 +49,6 @@ public:
 
     template<typename IterType, class T, PerturbExtras PExtras>
     std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtras>>>& GetPerturbationResults() ;
-
-    enum class AddPointOptions {
-        DontSave,
-        EnableWithSave,
-        EnableWithoutSave
-    };
 
     void SetRefOrbitOptions(AddPointOptions options) { m_RefOrbitOptions = options; }
 

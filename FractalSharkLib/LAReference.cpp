@@ -16,7 +16,7 @@ const int LAReference<IterType, Float, SubType, PExtras>::periodDivisor =
 
 template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
 IterType LAReference<IterType, Float, SubType, PExtras>::LAsize() {
-    return (IterType)LAs.size();
+    return (IterType)m_LAs.GetSize();
 }
 
 template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
@@ -26,15 +26,15 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbit(
     IterType maxRefIteration) {
 
     {
-        isValid = false;
-        LAStages.resize(MaxLAStages);
+        m_IsValid = false;
+        m_LAStages.MutableCommit(MaxLAStages);
 
-        //LAs.reserve(maxRefIteration);
+        //m_LAs.reserve(maxRefIteration);
 
-        UseAT = false;
-        LAStageCount = 0;
+        m_UseAT = false;
+        m_LAStageCount = 0;
 
-        LAStages[0].LAIndex = 0;
+        m_LAStages[0].LAIndex = 0;
     }
 
     IterType Period = 0;
@@ -63,7 +63,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbit(
         LAI.StepLength = Period;
 
         LA.SetLAi(LAI);
-        LAs.push_back(LA);
+        m_LAs.PushBack(LA);
 
         LAI.NextStageLAIndex = i;
 
@@ -78,7 +78,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbit(
         break;
     }
 
-    LAStageCount = 1;
+    m_LAStageCount = 1;
 
     IterType PeriodBegin = Period;
     IterType PeriodEnd = PeriodBegin + Period;
@@ -99,17 +99,17 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbit(
             LAI.StepLength = maxRefIteration;
 
             LA.SetLAi(LAI);
-            LAs.push_back(LA);
+            m_LAs.PushBack(LA);
 
-            LAs.push_back(LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(maxRefIteration)));
+            m_LAs.PushBack(LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(maxRefIteration)));
 
-            LAStages[0].MacroItCount = 1;
+            m_LAStages[0].MacroItCount = 1;
 
             return false;
         }
     }
     else if (Period > lowBound) {
-        LAs.pop_back();
+        m_LAs.PopBack();
 
         LA = LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(0)).Step(PerturbationResults.GetComplex<SubType>(1));
         LAI.NextStageLAIndex = 0;
@@ -137,7 +137,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbit(
         LAI.StepLength = i - PeriodBegin;
 
         LA.SetLAi(LAI);
-        LAs.push_back(LA);
+        m_LAs.PushBack(LA);
 
         LAI.NextStageLAIndex = i;
         PeriodBegin = i;
@@ -159,13 +159,13 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbit(
     LAI.StepLength = i - PeriodBegin;
 
     LA.SetLAi(LAI);
-    LAs.push_back(LA);
+    m_LAs.PushBack(LA);
 
-    LAStages[0].MacroItCount = LAsize();
+    m_LAStages[0].MacroItCount = LAsize();
 
     auto LA2 = LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(maxRefIteration));
     LA2.SetLAi({});
-    LAs.push_back(LA2);
+    m_LAs.PushBack(LA2);
 
     return true;
 }
@@ -177,15 +177,15 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
     IterType maxRefIteration) {
 
     {
-        isValid = false;
-        LAStages.resize(MaxLAStages);
+        m_IsValid = false;
+        m_LAStages.resize(MaxLAStages);
 
-        LAs.reserve(maxRefIteration);
+        m_LAs.reserve(maxRefIteration);
 
-        UseAT = false;
-        LAStageCount = 0;
+        m_UseAT = false;
+        m_LAStageCount = 0;
 
-        LAStages[0].LAIndex = 0;
+        m_LAStages[0].LAIndex = 0;
     }
 
     IterType Period = 0;
@@ -214,7 +214,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
         LAI.StepLength = Period;
 
         LA.SetLAi(LAI);
-        LAs.push_back(LA);
+        m_LAs.PushBack(LA);
 
         LAI.NextStageLAIndex = i;
 
@@ -229,7 +229,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
         break;
     }
 
-    LAStageCount = 1;
+    m_LAStageCount = 1;
 
     IterType PeriodBegin = Period;
     IterType PeriodEnd = PeriodBegin + Period;
@@ -250,17 +250,17 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
             LAI.StepLength = maxRefIteration;
 
             LA.SetLAi(LAI);
-            LAs.push_back(LA);
+            m_LAs.PushBack(LA);
 
-            LAs.push_back(LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(maxRefIteration)));
+            m_LAs.PushBack(LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(maxRefIteration)));
 
-            LAStages[0].MacroItCount = 1;
+            m_LAStages[0].MacroItCount = 1;
 
             return false;
         }
     }
     else if (Period > lowBound) {
-        LAs.pop_back();
+        m_LAs.PopBack();
 
         LA = LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(0)).Step(PerturbationResults.GetComplex<SubType>(1));
         LAI.NextStageLAIndex = 0;
@@ -293,7 +293,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
             LAI.StepLength = i - PeriodBegin;
 
             LA.SetLAi(LAI);
-            LAs.push_back(LA);
+            m_LAs.PushBack(LA);
 
             LAI.NextStageLAIndex = i;
             PeriodBegin = i;
@@ -424,11 +424,11 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
             LAI_.StepLength = j - PeriodBegin;
 
             LA_.SetLAi(LAI_);
-            LAs.push_back(LA_);
+            m_LAs.PushBack(LA_);
 
             auto LA2 = LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(maxRefIteration));
             LA2.SetLAi({});
-            LAs.push_back(LA2);
+            m_LAs.PushBack(LA2);
         }
     };
 
@@ -444,7 +444,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
 
     // TODO concat
 
-    LAStages[0].MacroItCount = LAsize();
+    m_LAStages[0].MacroItCount = LAsize();
 
     return true;
 }
@@ -462,15 +462,15 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateNewLAStage(
     IterType PeriodBegin;
     IterType PeriodEnd;
 
-    IterType PrevStage = LAStageCount - 1;
-    IterType CurrentStage = LAStageCount;
-    IterType PrevStageLAIndex = LAStages[PrevStage].LAIndex;
-    IterType PrevStageMacroItCount = LAStages[PrevStage].MacroItCount;
-    LAInfoDeep<IterType, Float, SubType, PExtras> PrevStageLA = LAs[PrevStageLAIndex];
-    const LAInfoI<IterType> &PrevStageLAI = LAs[PrevStageLAIndex].GetLAi();
+    IterType PrevStage = m_LAStageCount - 1;
+    IterType CurrentStage = m_LAStageCount;
+    IterType PrevStageLAIndex = m_LAStages[PrevStage].LAIndex;
+    IterType PrevStageMacroItCount = m_LAStages[PrevStage].MacroItCount;
+    LAInfoDeep<IterType, Float, SubType, PExtras> PrevStageLA = m_LAs[PrevStageLAIndex];
+    const LAInfoI<IterType> &PrevStageLAI = m_LAs[PrevStageLAIndex].GetLAi();
 
-    LAInfoDeep<IterType, Float, SubType, PExtras> PrevStageLAp1 = LAs[PrevStageLAIndex + 1];
-    const LAInfoI<IterType> PrevStageLAIp1 = LAs[PrevStageLAIndex + 1].GetLAi();
+    LAInfoDeep<IterType, Float, SubType, PExtras> PrevStageLAp1 = m_LAs[PrevStageLAIndex + 1];
+    const LAInfoI<IterType> PrevStageLAIp1 = m_LAs[PrevStageLAIndex + 1].GetLAi();
 
     IterType Period = 0;
 
@@ -482,7 +482,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateNewLAStage(
         ::MessageBox(nullptr, L"Too many stages :(", L"", MB_OK | MB_APPLMODAL);
     }
 
-    LAStages[CurrentStage].LAIndex = LAsize();
+    m_LAStages[CurrentStage].LAIndex = LAsize();
 
     LA = PrevStageLA.Composite(PrevStageLAp1);
     LAI.NextStageLAIndex = 0;
@@ -495,7 +495,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateNewLAStage(
         NewLA = LAInfoDeep<IterType, Float, SubType, PExtras>();
 
         IterType PrevStageLAIndexj = PrevStageLAIndex + j;
-        LAInfoDeep<IterType, Float, SubType, PExtras> PrevStageLAj = LAs[PrevStageLAIndexj];
+        LAInfoDeep<IterType, Float, SubType, PExtras> PrevStageLAj = m_LAs[PrevStageLAIndexj];
         const LAInfoI<IterType> *PrevStageLAIj = &PrevStageLAj.GetLAi();
         bool PeriodDetected = LA.Composite(NewLA, PrevStageLAj);
 
@@ -506,13 +506,13 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateNewLAStage(
             LAI.StepLength = Period;
 
             LA.SetLAi(LAI);
-            LAs.push_back(LA);
+            m_LAs.PushBack(LA);
 
             LAI.NextStageLAIndex = j;
 
             IterType PrevStageLAIndexjp1 = PrevStageLAIndexj + 1;
-            LAInfoDeep<IterType, Float, SubType, PExtras> PrevStageLAjp1 = LAs[PrevStageLAIndexjp1];
-            const LAInfoI<IterType> &PrevStageLAIjp1 = LAs[PrevStageLAIndexjp1].GetLAi();
+            LAInfoDeep<IterType, Float, SubType, PExtras> PrevStageLAjp1 = m_LAs[PrevStageLAIndexjp1];
+            const LAInfoI<IterType> &PrevStageLAIjp1 = m_LAs[PrevStageLAIndexjp1].GetLAi();
 
             if (NewLA.DetectPeriod(PrevStageLAjp1.getRef()) || j + 1 >= PrevStageMacroItCount) {
                 LA = PrevStageLAj;
@@ -527,11 +527,11 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateNewLAStage(
             break;
         }
         LA = NewLA;
-        PrevStageLAIj = &LAs[PrevStageLAIndex + j].GetLAi();
+        PrevStageLAIj = &m_LAs[PrevStageLAIndex + j].GetLAi();
         i += PrevStageLAIj->StepLength;
     }
-    LAStageCount++;
-    if (LAStageCount > MaxLAStages) {
+    m_LAStageCount++;
+    if (m_LAStageCount > MaxLAStages) {
         ::MessageBox(nullptr, L"Too many stages (2) :(", L"", MB_OK | MB_APPLMODAL);
     }
 
@@ -557,19 +557,19 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateNewLAStage(
             LAI.StepLength = maxRefIteration;
 
             LA.SetLAi(LAI);
-            LAs.push_back(LA);
+            m_LAs.PushBack(LA);
 
             LAInfoDeep<IterType, Float, SubType, PExtras> LA2(PerturbationResults.GetComplex<SubType>(maxRefIteration));
             LA2.SetLAi({}); // mrenz This one is new
-            LAs.push_back(LA2);
+            m_LAs.PushBack(LA2);
 
-            LAStages[CurrentStage].MacroItCount = 1;
+            m_LAStages[CurrentStage].MacroItCount = 1;
 
             return false;
         }
     }
     else if (Period > PrevStageLAI.StepLength * lowBound) {
-        LAs.pop_back();
+        m_LAs.PopBack();
 
         LA = PrevStageLA.Composite(PrevStageLAp1);
         i = PrevStageLAI.StepLength + PrevStageLAIp1.StepLength;
@@ -592,20 +592,20 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateNewLAStage(
         NewLA = LAInfoDeep<IterType, Float, SubType, PExtras>();
         IterType PrevStageLAIndexj = PrevStageLAIndex + j;
 
-        LAInfoDeep<IterType, Float, SubType, PExtras> PrevStageLAj = LAs[PrevStageLAIndexj];
+        LAInfoDeep<IterType, Float, SubType, PExtras> PrevStageLAj = m_LAs[PrevStageLAIndexj];
         bool PeriodDetected = LA.Composite(NewLA, PrevStageLAj);
 
         if (PeriodDetected || i >= PeriodEnd) {
             LAI.StepLength = i - PeriodBegin;
 
             LA.SetLAi(LAI);
-            LAs.push_back(LA);
+            m_LAs.PushBack(LA);
 
             LAI.NextStageLAIndex = j;
             PeriodBegin = i;
             PeriodEnd = PeriodBegin + Period;
 
-            LAInfoDeep<IterType, Float, SubType, PExtras> PrevStageLAjp1 = LAs[PrevStageLAIndexj + 1];
+            LAInfoDeep<IterType, Float, SubType, PExtras> PrevStageLAjp1 = m_LAs[PrevStageLAIndexj + 1];
 
             if (NewLA.DetectPeriod(PrevStageLAjp1.getRef()) || j + 1 >= PrevStageMacroItCount) {
                 LA = PrevStageLAj;
@@ -613,7 +613,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateNewLAStage(
             else {
                 LA = PrevStageLAj.Composite(PrevStageLAjp1);
 
-                const LAInfoI<IterType> &PrevStageLAIj = LAs[PrevStageLAIndexj].GetLAi();
+                const LAInfoI<IterType> &PrevStageLAIj = m_LAs[PrevStageLAIndexj].GetLAi();
                 i += PrevStageLAIj.StepLength;
                 j++;
             }
@@ -621,20 +621,20 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateNewLAStage(
         else {
             LA = NewLA;
         }
-        const LAInfoI<IterType> &PrevStageLAIj = LAs[PrevStageLAIndex + j].GetLAi();
+        const LAInfoI<IterType> &PrevStageLAIj = m_LAs[PrevStageLAIndex + j].GetLAi();
         i += PrevStageLAIj.StepLength;
     }
 
     LAI.StepLength = i - PeriodBegin;
 
     LA.SetLAi(LAI);
-    LAs.push_back(LA);
+    m_LAs.PushBack(LA);
 
-    LAStages[CurrentStage].MacroItCount = LAsize() - LAStages[CurrentStage].LAIndex;
+    m_LAStages[CurrentStage].MacroItCount = LAsize() - m_LAStages[CurrentStage].LAIndex;
 
     LA = LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(maxRefIteration));
     LA.SetLAi({});
-    LAs.push_back(LA);
+    m_LAs.PushBack(LA);
     return true;
 }
 //#pragma optimize( "", on )
@@ -648,7 +648,7 @@ void LAReference<IterType, Float, SubType, PExtras>::GenerateApproximationData(
     bool UseSmallExponents) {
 
     if (maxRefIteration == 0) {
-        isValid = false;
+        m_IsValid = false;
         return;
     }
 
@@ -662,7 +662,7 @@ void LAReference<IterType, Float, SubType, PExtras>::GenerateApproximationData(
     }
 
     CreateATFromLA(radius, UseSmallExponents);
-    isValid = true;
+    m_IsValid = true;
 }
 
 // TODO - this is a mess
@@ -703,32 +703,32 @@ void LAReference<IterType, Float, SubType, PExtras>::CreateATFromLA(Float radius
         SqrRadius = radius * radius;
     }
 
-    for (auto Stage = LAStageCount; Stage > 0; ) {
+    for (auto Stage = m_LAStageCount; Stage > 0; ) {
         Stage--;
-        IterType LAIndex = LAStages[Stage].LAIndex;
-        LAs[LAIndex].CreateAT(AT, LAs[LAIndex + 1], UseSmallExponents);
-        AT.StepLength = LAs[LAIndex].GetLAi().StepLength;
-        if (AT.StepLength > 0 && AT.Usable(SqrRadius)) {
-            UseAT = true;
+        IterType LAIndex = m_LAStages[Stage].LAIndex;
+        m_LAs[LAIndex].CreateAT(m_AT, m_LAs[LAIndex + 1], UseSmallExponents);
+        m_AT.StepLength = m_LAs[LAIndex].GetLAi().StepLength;
+        if (m_AT.StepLength > 0 && m_AT.Usable(SqrRadius)) {
+            m_UseAT = true;
             return;
         }
     }
-    UseAT = false;
+    m_UseAT = false;
 }
 
 template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
 bool LAReference<IterType, Float, SubType, PExtras>::isLAStageInvalid(IterType LAIndex, FloatComplexT dc) {
-    return (dc.chebychevNorm().compareToBothPositiveReduced((LAs[LAIndex]).getLAThresholdC()) >= 0);
+    return (dc.chebychevNorm().compareToBothPositiveReduced((m_LAs[LAIndex]).getLAThresholdC()) >= 0);
 }
 
 template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
 IterType LAReference<IterType, Float, SubType, PExtras>::getLAIndex(IterType CurrentLAStage) {
-    return LAStages[CurrentLAStage].LAIndex;
+    return m_LAStages[CurrentLAStage].LAIndex;
 }
 
 template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
 IterType LAReference<IterType, Float, SubType, PExtras>::getMacroItCount(IterType CurrentLAStage) {
-    return LAStages[CurrentLAStage].MacroItCount;
+    return m_LAStages[CurrentLAStage].MacroItCount;
 }
 
 template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
@@ -741,7 +741,7 @@ LAReference<IterType, Float, SubType, PExtras>::getLA(
     IterType max_iterations) {
 
     IterType LAIndexj = LAIndex + j;
-    const LAInfoI<IterType> &LAIj = LAs[LAIndexj].GetLAi();
+    const LAInfoI<IterType> &LAIj = m_LAs[LAIndexj].GetLAi();
 
     LAstep<IterType, Float, SubType, PExtras> las;
 
@@ -752,13 +752,13 @@ LAReference<IterType, Float, SubType, PExtras>::getLA(
     //}
 
     if (usable) {
-        LAInfoDeep<IterType, Float, SubType, PExtras> &LAj = LAs[LAIndexj];
+        LAInfoDeep<IterType, Float, SubType, PExtras> &LAj = m_LAs[LAIndexj];
 
         las = LAj.Prepare(dz);
 
         if (!las.unusable) {
             las.LAjdeep = &LAj;
-            las.Refp1Deep = (FloatComplexT)LAs[LAIndexj + 1].getRef();
+            las.Refp1Deep = (FloatComplexT)m_LAs[LAIndexj + 1].getRef();
             las.step = LAIj.StepLength;
         }
     }

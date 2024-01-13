@@ -79,10 +79,10 @@ template<class T2, class SubType2, PerturbExtras OtherPExtras>
 __host__
 GPU_LAReference<IterType, Float, SubType>::GPU_LAReference<T2, SubType2, OtherPExtras>(
     const LAReference<IterType, T2, SubType2, OtherPExtras>& other) :
-    UseAT{ other.UseAT },
-    AT{ other.AT },
-    LAStageCount{ other.LAStageCount },
-    isValid{ other.isValid },
+    UseAT{ other.UseAT() },
+    AT{ other.GetAT() },
+    LAStageCount{ other.GetLAStageCount() },
+    isValid{ other.IsValid() },
     m_Err{},
     m_Owned(true),
     LAs{},
@@ -95,7 +95,7 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference<T2, SubType2, OtherPE
     GPU_LAInfoDeep<IterType, Float, SubType>* tempLAs;
     LAStageInfo<IterType>* tempLAStages;
 
-    const auto LAMemToAllocate = other.LAs.size() * sizeof(GPU_LAInfoDeep<IterType, Float, SubType>);
+    const auto LAMemToAllocate = other.GetLAs().GetSize() * sizeof(GPU_LAInfoDeep<IterType, Float, SubType>);
     m_Err = cudaMallocManaged(&tempLAs, LAMemToAllocate, cudaMemAttachGlobal);
     if (m_Err != cudaSuccess) {
         AllocHostLA = true;
@@ -106,9 +106,9 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference<T2, SubType2, OtherPE
     }
 
     LAs = tempLAs;
-    NumLAs = other.LAs.size();
+    NumLAs = other.GetLAs().GetSize();
 
-    const auto LAStageMemoryToAllocate = other.LAStages.size() * sizeof(LAStageInfo<IterType>);
+    const auto LAStageMemoryToAllocate = other.GetLAStages().GetSize() * sizeof(LAStageInfo<IterType>);
     m_Err = cudaMallocManaged(&tempLAStages, LAStageMemoryToAllocate, cudaMemAttachGlobal);
     if (m_Err != cudaSuccess) {
         AllocHostLAStages = true;
@@ -119,7 +119,7 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference<T2, SubType2, OtherPE
     }
 
     LAStages = tempLAStages;
-    NumLAStages = other.LAStages.size();
+    NumLAStages = other.GetLAStages().GetSize();
 
     if constexpr (
         std::is_same<Float, T2>::value &&
@@ -143,26 +143,26 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference<T2, SubType2, OtherPE
             LAInfoDeep<IterType, Float, SubType, OtherPExtras>>();
 
         m_Err = cudaMemcpy(LAs,
-            other.LAs.data(),
-            sizeof(GPU_LAInfoDeep<IterType, Float, SubType>) * other.LAs.size(),
+            other.GetLAs().GetData(),
+            sizeof(GPU_LAInfoDeep<IterType, Float, SubType>) * other.GetLAs().GetSize(),
             cudaMemcpyDefault);
         if (m_Err != cudaSuccess) {
             return;
         }
     }
     else {
-        for (size_t i = 0; i < other.LAs.size(); i++) {
-            LAs[i] = other.LAs[i];
+        for (size_t i = 0; i < other.GetLAs().GetSize(); i++) {
+            LAs[i] = other.GetLAs()[i];
         }
     }
 
-    //for (size_t i = 0; i < other.LAStages.size(); i++) {
-    //    LAStages[i] = other.LAStages[i];
+    //for (size_t i = 0; i < other.m_LAStages.GetSize(); i++) {
+    //    m_LAStages[i] = other.m_LAStages[i];
     //}
 
     m_Err = cudaMemcpy(LAStages,
-        other.LAStages.data(),
-        sizeof(LAStageInfo<IterType>) * other.LAStages.size(),
+        other.GetLAStages().GetData(),
+        sizeof(LAStageInfo<IterType>) * other.GetLAStages().GetSize(),
         cudaMemcpyDefault);
     if (m_Err != cudaSuccess) {
         return;
@@ -215,7 +215,7 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference(const GPU_LAReference
 template<typename IterType, class Float, class SubType>
 CUDA_CRAP
 bool GPU_LAReference<IterType, Float, SubType>::isLAStageInvalid(IterType LAIndex, HDRFloatComplex dc) const {
-    //return (dc.chebychevNorm().compareToBothPositiveReduced((LAs[LAIndex]).getLAThresholdC()) >= 0);
+    //return (dc.chebychevNorm().compareToBothPositiveReduced((m_LAs[LAIndex]).getLAThresholdC()) >= 0);
     const auto temp1 = LAs[LAIndex];
     const auto temp2 = temp1.getLAThresholdC();
     const auto temp3 = dc.chebychevNorm();

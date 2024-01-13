@@ -36,7 +36,7 @@ public:
     friend class RefOrbitCompressor<IterType, T, PExtras>;
 
     PerturbationResults(
-        RefOrbitCalc::AddPointOptions add_point_options,
+        AddPointOptions add_point_options,
         size_t Generation = 0,
         size_t LaGeneration = 0) :
       
@@ -50,9 +50,8 @@ public:
         m_CompressionErrorExp{},
         m_CompressionHelper{ *this },
         m_RefOrbitOptions{ add_point_options },
-        m_FullOrbit{
-            add_point_options,
-            add_point_options == RefOrbitCalc::AddPointOptions::DontSave ? L"" : GetTimeAsString() + L".FullOrbit" },
+        m_BaseFilename{ add_point_options == AddPointOptions::DontSave ? L"" : GetTimeAsString() },
+        m_FullOrbit{ add_point_options, m_BaseFilename },
         m_UncompressedItersInOrbit{},
         m_GenerationNumber{ Generation },
         m_LaReference{},
@@ -60,6 +59,10 @@ public:
         m_AuthoritativePrecision{},
         m_ReuseX{},
         m_ReuseY{}{}
+
+    std::wstring GetBaseFilename() const {
+        return m_BaseFilename;
+    }
 
     size_t GetGenerationNumber() const {
         return m_GenerationNumber;
@@ -774,7 +777,8 @@ private:
     IterType m_MaxIterations;
     IterType m_PeriodMaybeZero;  // Zero if not worked out
     int32_t m_CompressionErrorExp;
-    RefOrbitCalc::AddPointOptions m_RefOrbitOptions;
+    AddPointOptions m_RefOrbitOptions;
+    std::wstring m_BaseFilename;
 
     CompressionHelper<IterType, T, PExtras> m_CompressionHelper;
     GrowableVector<GPUReferenceIter<T, PExtras>> m_FullOrbit;

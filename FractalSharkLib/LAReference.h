@@ -11,6 +11,7 @@
 #include "LAstep.h"
 #include "LAInfoDeep.h"
 #include "LAInfoI.h"
+#include "Vectors.h"
 
 template<typename IterType, class HDRFloat, class SubType>
 class ATInfo;
@@ -58,42 +59,77 @@ private:
     static const int periodDivisor;
 
 public:
-    LAReference() :
-        UseAT{},
-        AT{},
-        LAStageCount{}, 
-        isValid{} {
+    LAReference(AddPointOptions add_point_options, std::wstring base_filename) :
+        m_AddPointOptions(add_point_options),
+        m_BaseFilename(base_filename),
+        m_UseAT{},
+        m_AT{},
+        m_LAStageCount{}, 
+        m_IsValid{},
+        m_LAs(add_point_options, base_filename + L"LAs"),
+        m_LAStages(add_point_options, base_filename + L"LAStages") {
     }
 
     template<class OtherT, class Other>
     LAReference(const LAReference<IterType, OtherT, Other, PExtras>& other) {
-        UseAT = other.UseAT;
-        AT = other.AT;
-        LAStageCount = other.LAStageCount;
-        isValid = other.isValid;
-        LAs.resize(other.LAs.size());
-        for (int i = 0; i < other.LAs.size(); i++) {
-            LAs[i] = other.LAs[i];
+        m_UseAT = other.m_UseAT;
+        m_AT = other.m_AT;
+        m_LAStageCount = other.m_LAStageCount;
+        m_IsValid = other.m_IsValid;
+        m_LAs.MutableCommit(other.m_LAs.GetSize());
+        for (int i = 0; i < other.m_LAs.GetSize(); i++) {
+            m_LAs[i] = other.m_LAs[i];
         }
-        LAStages.resize(other.LAStages.size());
-        for (int i = 0; i < other.LAStages.size(); i++) {
-            LAStages[i] = other.LAStages[i];
+        m_LAStages.MutableCommit(other.m_LAStages.GetSize());
+        for (int i = 0; i < other.m_LAStages.GetSize(); i++) {
+            m_LAStages[i] = other.m_LAStages[i];
         }
     }
 
-    bool UseAT;
+    bool IsValid() const {
+        return m_IsValid;
+    }
 
-    ATInfo<IterType, Float, SubType> AT;
+    bool UseAT() const {
+        return m_UseAT;
+    }
 
-    IterType LAStageCount;
+    const ATInfo<IterType, Float, SubType> &GetAT() const {
+        return m_AT;
+    }
 
-    bool isValid;
+    IterType GetLAStageCount() const {
+        return m_LAStageCount;
+    }
+
+    GrowableVector<LAInfoDeep<IterType, Float, SubType, PExtras>>& GetLAs() {
+        return m_LAs;
+    }
+
+    const GrowableVector<LAInfoDeep<IterType, Float, SubType, PExtras>>& GetLAs() const {
+        return m_LAs;
+    }
+
+    GrowableVector<LAStageInfo<IterType>>& GetLAStages() {
+        return m_LAStages;
+    }
+
+    const GrowableVector<LAStageInfo<IterType>>& GetLAStages() const {
+        return m_LAStages;
+    }
 
 private:
+    AddPointOptions m_AddPointOptions;
+    std::wstring m_BaseFilename;
+    bool m_UseAT;
+    ATInfo<IterType, Float, SubType> m_AT;
+    IterType m_LAStageCount;
+    bool m_IsValid;
+
     static constexpr int MaxLAStages = 1024;
     static constexpr int DEFAULT_SIZE = 10000;
-    std::vector<LAInfoDeep<IterType, Float, SubType, PExtras>> LAs;
-    std::vector<LAStageInfo<IterType>> LAStages;
+    GrowableVector<LAInfoDeep<IterType, Float, SubType, PExtras>> m_LAs;
+    GrowableVector<LAStageInfo<IterType>> m_LAStages;
 
     IterType LAsize();
     template<typename PerturbType>

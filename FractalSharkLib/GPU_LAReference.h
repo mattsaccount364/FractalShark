@@ -25,10 +25,11 @@ public:
     template<class T2, class SubType2, PerturbExtras OtherPExtras>
     __host__ GPU_LAReference(const LAReference<IterType, T2, SubType2, OtherPExtras>& other);
     __host__ GPU_LAReference(const GPU_LAReference& other);
+    __host__ GPU_LAReference(GPU_LAReference&& other);
+    __host__ GPU_LAReference();
     ~GPU_LAReference();
 
-    GPU_LAReference() = delete;
-    GPU_LAReference(GPU_LAReference&& other) = delete;
+    
     GPU_LAReference& operator=(const GPU_LAReference& other) = delete;
     GPU_LAReference& operator=(GPU_LAReference&& other) = delete;
 
@@ -42,7 +43,7 @@ public:
 
     cudaError_t m_Err;
 
-    const bool m_Owned;
+    bool m_Owned;
 
     uint32_t CheckValid() const {
         return m_Err;
@@ -199,6 +200,52 @@ GPU_LAReference<IterType, Float, SubType>::~GPU_LAReference() {
 
 template<typename IterType, class Float, class SubType>
 __host__
+GPU_LAReference<IterType, Float, SubType>::GPU_LAReference()
+    : UseAT{ false },
+    AT{},
+    LAStageCount{},
+    isValid{ false },
+    m_Err{ cudaSuccess },
+    m_Owned{ true },
+    LAs{},
+    NumLAs{},
+    LAStages{},
+    NumLAStages{},
+    AllocHostLA{},
+    AllocHostLAStages{} {}
+
+template<typename IterType, class Float, class SubType>
+__host__
+GPU_LAReference<IterType, Float, SubType>::GPU_LAReference(GPU_LAReference&& other) {
+    UseAT = other.UseAT;
+    AT = other.AT;
+    LAStageCount = other.LAStageCount;
+    isValid = other.isValid;
+    m_Err = other.m_Err;
+    m_Owned = other.m_Owned;
+    LAs = other.LAs;
+    NumLAs = other.NumLAs;
+    LAStages = other.LAStages;
+    NumLAStages = other.NumLAStages;
+    AllocHostLA = other.AllocHostLA;
+    AllocHostLAStages = other.AllocHostLAStages;
+
+    other.UseAT = false;
+    other.AT = ATInfo<IterType, Float, SubType>{};
+    other.LAStageCount = 0;
+    other.isValid = false;
+    other.m_Err = cudaSuccess;
+    other.m_Owned = false;
+    other.LAs = nullptr;
+    other.NumLAs = 0;
+    other.LAStages = nullptr;
+    other.NumLAStages = 0;
+    other.AllocHostLA = false;
+    other.AllocHostLAStages = false;
+}
+
+template<typename IterType, class Float, class SubType>
+__host__
 GPU_LAReference<IterType, Float, SubType>::GPU_LAReference(const GPU_LAReference& other)
     : UseAT{ other.UseAT },
     AT{ other.AT },
@@ -209,7 +256,9 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference(const GPU_LAReference
     LAs{ other.LAs },
     NumLAs{ other.NumLAs },
     LAStages{ other.LAStages },
-    NumLAStages{ other.NumLAStages } {
+    NumLAStages{ other.NumLAStages },
+    AllocHostLA{ other.AllocHostLA },
+    AllocHostLAStages{ other.AllocHostLAStages } {
 }
 
 template<typename IterType, class Float, class SubType>

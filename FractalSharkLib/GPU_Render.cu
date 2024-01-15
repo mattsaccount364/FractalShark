@@ -433,7 +433,7 @@ uint32_t GPURenderer::InitializePerturb(
         InstallLA = true;
     }
 
-    if (InstallLA) {
+    if (InstallLA && LaReferenceHost != nullptr) {
         auto* LaReferenceCuda = new GPU_LAReference<IterType, T1, SubType>{ *LaReferenceHost };
         auto result = LaReferenceCuda->CheckValid();
         if (result != 0) {
@@ -1042,6 +1042,8 @@ uint32_t GPURenderer::RenderPerturbLAv2(
         return FractalSharkError::Error7;
     }
 
+    GPU_LAReference<IterType, T, SubType> local_la_copy{ laReferenceCuda != nullptr ? *laReferenceCuda : GPU_LAReference<IterType, T, SubType>{} };
+
     if ((algorithm == RenderAlgorithm::Gpu1x32PerturbedLAv2) ||
         (algorithm == RenderAlgorithm::Gpu1x32PerturbedLAv2PO) ||
         (algorithm == RenderAlgorithm::Gpu1x32PerturbedLAv2LAO) ||
@@ -1055,7 +1057,7 @@ uint32_t GPURenderer::RenderPerturbLAv2(
             mandel_1xHDR_float_perturb_lav2<IterType, float, float, Mode> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                 static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
-                *cudaResults, *laReferenceCuda,
+                *cudaResults, local_la_copy,
                 m_Width, m_Height, m_Antialiasing, cx, cy, dx, dy,
                 centerX, centerY,
                 n_iterations);
@@ -1090,7 +1092,7 @@ uint32_t GPURenderer::RenderPerturbLAv2(
 
                 static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
-                *cudaResults, *laReferenceCuda,
+                *cudaResults, local_la_copy,
                 m_Width, m_Height, m_Antialiasing, cx2, cy2, dx2, dy2,
                 centerX2, centerY2,
                 n_iterations);
@@ -1117,7 +1119,7 @@ uint32_t GPURenderer::RenderPerturbLAv2(
 
                 static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
-                *cudaResults, *laReferenceCuda,
+                *cudaResults, local_la_copy,
                 m_Width, m_Height, m_Antialiasing, cx, cy, dx, dy,
                 centerX, centerY,
                 n_iterations);
@@ -1147,7 +1149,7 @@ uint32_t GPURenderer::RenderPerturbLAv2(
 
                 static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
-                *cudaResults, *laReferenceCuda,
+                *cudaResults, local_la_copy,
                 m_Width, m_Height, m_Antialiasing, cx, cy, dx, dy,
                 centerX, centerY,
                 n_iterations);
@@ -1176,7 +1178,7 @@ uint32_t GPURenderer::RenderPerturbLAv2(
 
                 static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
-                *cudaResults, *laReferenceCuda,
+                *cudaResults, local_la_copy,
                 m_Width, m_Height, m_Antialiasing, cx, cy, dx, dy,
                 centerX, centerY,
                 n_iterations);
@@ -1213,7 +1215,7 @@ uint32_t GPURenderer::RenderPerturbLAv2(
 
                 static_cast<IterType*>(OutputIterMatrix),
                 OutputColorMatrix,
-                *cudaResults, *laReferenceCuda,
+                *cudaResults, local_la_copy,
                 m_Width, m_Height, m_Antialiasing, cx2, cy2, dx2, dy2,
                 centerX2, centerY2,
                 n_iterations);

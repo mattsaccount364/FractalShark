@@ -837,16 +837,14 @@ void Fractal::Zoom(size_t scrnX, size_t scrnY, double factor) {
     Zoom(factor);
 }
 
-void Fractal::BasicTestInternal() {
-    constexpr bool IncludeSlow = true;
+void Fractal::BasicTestInternal(size_t &test_index) {
+    constexpr bool IncludeSlow = false;
     const wchar_t* DirName = L"BasicTest";
     auto ret = CreateDirectory(DirName, nullptr);
     if (ret == 0 && GetLastError() != ERROR_ALREADY_EXISTS) {
         ::MessageBox(nullptr, L"Error creating directory!", L"", MB_OK | MB_APPLMODAL);
         return;
     }
-
-    size_t TestIndex = 0;
 
     // First, iterate over all the supported RenderAlgorithm entries and render the default view:
     // Skip AUTO plus all LAO-only algorithms.  They produce a black screen for the default view.
@@ -865,8 +863,8 @@ void Fractal::BasicTestInternal() {
             CurAlg != RenderAlgorithm::GpuHDRx32PerturbedRCLAv2LAO &&
             CurAlg != RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2LAO &&
             CurAlg != RenderAlgorithm::GpuHDRx64PerturbedRCLAv2LAO) {
-            BasicOneTest(0, TestIndex, DirName, L"View0", CurAlg);
-            ++TestIndex;
+            BasicOneTest(0, test_index, DirName, L"View0", CurAlg);
+            ++test_index;
         }
     }
 
@@ -909,8 +907,8 @@ void Fractal::BasicTestInternal() {
     };
 
     for (auto CurAlg : View5Algs) {
-        BasicOneTest(5, TestIndex, DirName, L"View5", CurAlg);
-        ++TestIndex;
+        BasicOneTest(5, test_index, DirName, L"View5", CurAlg);
+        ++test_index;
     }
 
     if constexpr (IncludeSlow) {
@@ -932,8 +930,8 @@ void Fractal::BasicTestInternal() {
         };
 
         for (auto CurAlg : View10Algs) {
-            BasicOneTest(10, TestIndex, DirName, L"View10", CurAlg);
-            ++TestIndex;
+            BasicOneTest(10, test_index, DirName, L"View10", CurAlg);
+            ++test_index;
         }
     }
 
@@ -966,20 +964,22 @@ void Fractal::BasicTestInternal() {
     };
 
     for (auto CurAlg : View11Algs) {
-        BasicOneTest(11, TestIndex, DirName, L"View11", CurAlg);
-        ++TestIndex;
+        BasicOneTest(11, test_index, DirName, L"View11", CurAlg);
+        ++test_index;
     }
 }
 
 void Fractal::BasicTest() {
     ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
 
+    size_t test_index = 0;
+
     auto lambda = [&]() {
         SetIterType(IterTypeEnum::Bits32);
-        BasicTestInternal();
+        BasicTestInternal(test_index);
 
         SetIterType(IterTypeEnum::Bits64);
-        BasicTestInternal();
+        BasicTestInternal(test_index);
     };
 
     SetPerturbAutosave(AddPointOptions::DontSave);
@@ -989,6 +989,7 @@ void Fractal::BasicTest() {
     lambda();
 
     InitialDefaultViewAndSettings();
+    CalcFractal(false);
 }
 
 void Fractal::InitialDefaultViewAndSettings(int width, int height) {

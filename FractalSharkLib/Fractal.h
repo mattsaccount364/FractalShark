@@ -220,7 +220,7 @@ private:
     bool IsDownControl(void);
     void CheckForAbort(void);
 
-    void BasicTestInternal();
+    void BasicTestInternal(size_t &test_index);
     void BasicOneTest(
         size_t view_index,
         size_t test_index,

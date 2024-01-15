@@ -1739,6 +1739,18 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
         results = cur_array[cur_array.size() - 1].get();
     }
 
+    AddPointOptions options_to_use = m_RefOrbitOptions;
+
+    // This is a weird case.  Suppose you generate a Perturbation-only set of results
+    // with things set to DontSave.  Then you generate a an LA-enabled orbit with
+    // things set to EnableWithSave.  The LA-enabled orbit will not be saved.
+    if (results->GetRefOrbitOptions() == AddPointOptions::DontSave &&
+        (m_RefOrbitOptions == AddPointOptions::EnableWithSave ||
+         m_RefOrbitOptions == AddPointOptions::EnableWithoutSave)) {
+
+        options_to_use = AddPointOptions::DontSave;
+    }
+
     if constexpr (
         std::is_same<T, float>::value || // TODO: these are new.  Maybe OK to keep here.
         std::is_same<T, double>::value ||
@@ -1748,7 +1760,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
             static_assert(PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::EnableCompression, "!");
             if (results->GetLaReference() == nullptr) {
                 auto temp = std::make_unique<LAReference<IterType, T, SubType, PExtras>>(
-                    m_RefOrbitOptions,
+                    options_to_use,
                     results->GenFilename(GrowableVectorTypes::LAInfoDeep),
                     results->GenFilename(GrowableVectorTypes::LAStageInfo));
 
@@ -1770,8 +1782,8 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
     }
 
     auto OptionalSave = [&](const auto *results) {
-        if ((m_RefOrbitOptions == AddPointOptions::EnableWithSave ||
-             m_RefOrbitOptions == AddPointOptions::EnableWithoutSave) &&
+        if ((options_to_use == AddPointOptions::EnableWithSave ||
+            options_to_use == AddPointOptions::EnableWithoutSave) &&
             added) {
             results->WriteMetadata();
         }
@@ -1785,7 +1797,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
 
             // Now generate the 2x32 results:
             auto results2(std::make_unique<PerturbationResults<IterType, ConvertTType, PExtras>>(
-                m_RefOrbitOptions, GetNextGenerationNumber()));
+                options_to_use, GetNextGenerationNumber()));
             results2->CopyPerturbationResults<true>(*results);
 
             auto ret = AddPerturbationResults(std::move(results2));

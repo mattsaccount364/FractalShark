@@ -82,9 +82,9 @@ void Fractal::Initialize(int width,
     InitStatics();
 
     // Setup member variables with initial values:
-    SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedRCLAv2);
+    //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedRCLAv2);
     //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedLAv2);
-    //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx2x32PerturbedLAv2);
+    SetRenderAlgorithm(RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2);
     //SetRenderAlgorithm(RenderAlgorithm::Gpu2x32PerturbedLAv2);
     //SetRenderAlgorithm(RenderAlgorithm::Gpu2x32PerturbedLAv2LAO);
     //SetRenderAlgorithm(RenderAlgorithm::AUTO);
@@ -98,12 +98,12 @@ void Fractal::Initialize(int width,
     SetCompressionErrorExp();
 
     ResetDimensions(width, height, 2);
-    SetIterType(IterTypeEnum::Bits32);
+    SetIterType(IterTypeEnum::Bits64);
 
     SetPerturbAutosave(AddPointOptions::EnableWithoutSave);
     LoadPerturbationOrbits();
     
-    View(5);
+    View(27);
     //View(10);
     //View(26); // hard
     //View(27); // easy
@@ -1604,7 +1604,8 @@ void Fractal::View(size_t view)
         break;
 
     case 27:
-        ::MessageBox(nullptr, L"Warning: This is a very large image.  It will take a long time to render.", L"Warning", MB_OK | MB_APPLMODAL | MB_ICONWARNING);
+        //::MessageBox(nullptr, L"Warning: This is a very large image.  It will take a long time to render.", L"Warning", MB_OK | MB_APPLMODAL | MB_ICONWARNING);
+
         //This text is copied to clipboard.Using "GpuHDRx2x32PerturbedRCLAv2"
         //    Antialiasing : 1
         //    Palette depth : 8
@@ -1634,7 +1635,7 @@ void Fractal::View(size_t view)
         maxY = HighPrecision{ "0.258843760578193851766291691547748715299348571148609040920340427370810926544385191871426814029226476053584030974625928" };
         SetCompressionErrorExp(20);
         SetIterType(IterTypeEnum::Bits64);
-        SetNumIterations<IterTypeFull>(50'000'000'000'000);
+        SetNumIterations<IterTypeFull>(1'000'000'000'000'000);
         break;
 
     case 28:
@@ -4438,7 +4439,8 @@ int Fractal::SaveFractalData(std::wstring filename_base)
             statex.dwLength = sizeof(statex);
             GlobalMemoryStatusEx(&statex);
 
-            if (savesInProgress.size() > std::thread::hardware_concurrency() || statex.dwMemoryLoad > 90) {
+            if (savesInProgress.size() > std::thread::hardware_concurrency() ||
+                (statex.dwMemoryLoad > 90 && !savesInProgress.empty())) {
                 if (!CleanupThreads(false)) {
                     Sleep(100);
                 }

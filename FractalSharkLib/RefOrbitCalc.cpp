@@ -1691,11 +1691,24 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
         }
     }
 
+    constexpr bool IsHdrDblflt = std::is_same<ConvertTType, HDRFloat<CudaDblflt<MattDblflt>>>::value;
+    constexpr bool IsDblflt = std::is_same<ConvertTType, CudaDblflt<MattDblflt>>::value;
+    constexpr bool UsingDblflt = IsHdrDblflt || IsDblflt;
+
     PerturbationResults<IterType, T, PExtras>* results =
         GetUsefulPerturbationResults<IterType, T, false, PExtras>();
     if (results == nullptr) {
         if (added) {
             ::MessageBox(nullptr, L"Why didn't this work! :(", L"", MB_OK | MB_APPLMODAL);
+        }
+
+        if constexpr (UsingDblflt) {
+            PerturbationResults<IterType, ConvertTType, PExtras>* results_converted =
+                GetUsefulPerturbationResults<IterType, ConvertTType, false, PExtras>();
+
+            if (results_converted != nullptr) {
+                return results_converted;
+            }
         }
 
         //std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtrasHackYay>>>& cur_array =
@@ -1726,10 +1739,6 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
         results = cur_array[cur_array.size() - 1].get();
     }
 
-    constexpr bool IsHdrDblflt = std::is_same<ConvertTType, HDRFloat<CudaDblflt<MattDblflt>>>::value;
-    constexpr bool IsDblflt = std::is_same<ConvertTType, CudaDblflt<MattDblflt>>::value;
-    constexpr bool UseSmallExponents = IsHdrDblflt || IsDblflt;
-
     if constexpr (
         std::is_same<T, float>::value || // TODO: these are new.  Maybe OK to keep here.
         std::is_same<T, double>::value ||
@@ -1748,7 +1757,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
                     *results,
                     results->GetMaxRadius(),
                     (IterType)results->GetCountOrbitEntries() - 1,
-                    UseSmallExponents);
+                    UsingDblflt);
 
                 added = true;
 
@@ -1768,9 +1777,13 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
         }
     };
 
-    if constexpr (UseSmallExponents) {
+    if constexpr (UsingDblflt) {
         auto* resultsExisting = GetUsefulPerturbationResults<IterType, ConvertTType, false, PExtras>();
         if (resultsExisting == nullptr) {
+            // This save is for the 64-bit calculations.
+            OptionalSave(results);
+
+            // Now generate the 2x32 results:
             auto results2(std::make_unique<PerturbationResults<IterType, ConvertTType, PExtras>>(
                 m_RefOrbitOptions, GetNextGenerationNumber()));
             results2->CopyPerturbationResults<true>(*results);
@@ -1778,6 +1791,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
             auto ret = AddPerturbationResults(std::move(results2));
             m_LastUsedRefOrbit = ret;
 
+            // Save those.
             OptionalSave(ret);
             return ret;
         }

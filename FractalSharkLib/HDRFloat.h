@@ -1473,8 +1473,11 @@ static CUDA_CRAP void HdrFromIfStream(T &out, std::ifstream& metafile) {
         metafile >> mantissaStr;
     }
     else {
-        if constexpr (std::is_same<T, HDRFloatComplex<float>>::value ||
+        if constexpr (
+            std::is_same<T, HDRFloatComplex<CudaDblflt<MattDblflt>>>::value ||
+            std::is_same<T, HDRFloatComplex<float>>::value ||
             std::is_same<T, HDRFloatComplex<double>>::value ||
+            std::is_same<T, FloatComplex<CudaDblflt<MattDblflt>>>::value ||
             std::is_same<T, FloatComplex<float>>::value ||
             std::is_same<T, FloatComplex<double>>::value) {
 
@@ -1503,11 +1506,13 @@ static CUDA_CRAP void HdrFromIfStream(T &out, std::ifstream& metafile) {
         }
         else if constexpr (
             std::is_same<T, HDRFloatComplex<float>>::value ||
+            std::is_same<T, HDRFloatComplex<CudaDblflt<MattDblflt>>>::value ||
             std::is_same<T, HDRFloatComplex<double>>::value) {
             out = T{ exponent, static_cast<SubType>(mantissa), static_cast<SubType>(mantissa2) };
         }
         else if constexpr (
             std::is_same<T, FloatComplex<float>>::value ||
+            std::is_same<T, FloatComplex<CudaDblflt<MattDblflt>>>::value ||
             std::is_same<T, FloatComplex<double>>::value) {
             out = T{ static_cast<SubType>(mantissa), static_cast<SubType>(mantissa2) };
         }

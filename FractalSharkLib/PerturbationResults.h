@@ -166,7 +166,7 @@ public:
 
         // Nothing for m_CompressionHelper -- it only contains a reference to this object
         // m_CompressionHelper = {*this};
-        m_FullOrbit = { GetRefOrbitOptions(), m_BaseFilename };
+        m_FullOrbit = { GetRefOrbitOptions(), GenFilename(GrowableVectorTypes::GPUReferenceIter) };
         m_FullOrbit.MutableResize(other.m_FullOrbit.GetSize(), 0);
         m_UncompressedItersInOrbit = other.m_UncompressedItersInOrbit;
 
@@ -196,8 +196,8 @@ public:
             if (other.GetLaReference() != nullptr) {
                 m_LaReference = std::make_unique<LAReference<IterType, T, SubType, PExtras>>(
                     GetRefOrbitOptions(),
-                    GenFilename(GrowableVectorTypes::LAInfoDeep, L"-copy"),
-                    GenFilename(GrowableVectorTypes::LAStageInfo, L"-copy"));
+                    GenFilename(GrowableVectorTypes::LAInfoDeep),
+                    GenFilename(GrowableVectorTypes::LAStageInfo));
                 m_LaReference->CopyLAReference(*other.GetLaReference());
             }
         }
@@ -487,6 +487,10 @@ public:
 
         if (m_LaReference != nullptr) {
             m_LaReference->ReadMetadata(metafile);
+        }
+
+        if (!m_LaReference->IsValid()) {
+            m_LaReference = nullptr;
         }
 
         // Sometimes the mapped file is a bit bigger.  Just set it to the right
@@ -801,10 +805,6 @@ private:
             GetRefOrbitOptions(),
             GenFilename(GrowableVectorTypes::LAInfoDeep),
             GenFilename(GrowableVectorTypes::LAStageInfo));
-
-        if (!m_LaReference->IsValid()) {
-            m_LaReference = nullptr;
-        }
     }
 
     HighPrecision m_OrbitX;

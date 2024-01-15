@@ -272,7 +272,8 @@ BEGIN
             MENUITEM "Enable Auto-Save Orbit (delete when done)", IDM_PERTURB_AUTOSAVE_ON_DELETE
             MENUITEM "Disable Auto-Save Orbit",     IDM_PERTURB_AUTOSAVE_OFF
             MENUITEM SEPARATOR
-            MENUITEM "Clear and Reload Orbits",     IDM_PERTURBATION_LOAD
+            MENUITEM "Clear and Reload Reference Orbits", IDM_PERTURBATION_LOAD
+            MENUITEM "Save Reference Orbits",       IDM_PERTURBATION_SAVE
         END
         MENUITEM SEPARATOR
         POPUP "Palette Color Depth"

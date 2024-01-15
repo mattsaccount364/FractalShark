@@ -779,11 +779,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 break;
             }
 
-            //case IDM_PERTURBATION_SAVE:
-            //{
-            //    gFractal->SavePerturbationOrbit();
-            //    break;
-            // }
+            case IDM_PERTURBATION_SAVE:
+            {
+                gFractal->SavePerturbationOrbits();
+                break;
+             }
                 
             case IDM_PERTURBATION_LOAD:
             {

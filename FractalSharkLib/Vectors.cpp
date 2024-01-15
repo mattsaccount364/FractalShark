@@ -265,6 +265,7 @@ bool GrowableVector<EltT>::MutableFileCommit(size_t capacity) {
         auto attributes = FILE_ATTRIBUTE_NORMAL;
         if (m_AddPointOptions == AddPointOptions::EnableWithoutSave) {
             attributes |= FILE_FLAG_DELETE_ON_CLOSE;
+            attributes |= FILE_ATTRIBUTE_TEMPORARY;
         }
 
         DWORD desired_access = GENERIC_READ | GENERIC_WRITE;

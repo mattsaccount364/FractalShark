@@ -340,6 +340,8 @@
 #define ID_PERTURBATION_CLEARANDRELOADORBITS 33145
 #define ID_Menu33146                    33146
 #define IDM_PERTURBATION_LOAD           33147
+#define ID_PERTURBATION_SAVEREFERENCEORBITS 33148
+#define IDM_PERTURBATION_SAVE           33149
 #define IDM_VIEW1                       33181
 #define IDM_VIEW2                       33182
 #define IDM_VIEW3                       33183
@@ -376,7 +378,7 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        131
-#define _APS_NEXT_COMMAND_VALUE         33148
+#define _APS_NEXT_COMMAND_VALUE         33150
 #define _APS_NEXT_CONTROL_VALUE         1000
 #define _APS_NEXT_SYMED_VALUE           110
 #endif

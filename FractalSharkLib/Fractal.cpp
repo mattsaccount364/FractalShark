@@ -103,7 +103,7 @@ void Fractal::Initialize(int width,
     SetPerturbAutosave(AddPointOptions::EnableWithoutSave);
     LoadPerturbationOrbits();
     
-    View(27);
+    View(5);
     //View(10);
     //View(26); // hard
     //View(27); // easy
@@ -1968,6 +1968,10 @@ void Fractal::SetIterType(IterTypeEnum type) {
         m_IterType = type;
         InitializeMemory();
     }
+}
+
+void Fractal::SavePerturbationOrbits() {
+    m_RefOrbit.SaveAllOrbits();
 }
 
 void Fractal::LoadPerturbationOrbits() {
@@ -4067,16 +4071,23 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
     using ConditionalT = typename DoubleTo2x32Converter<T, SubType>::ConditionalT;
     using ConditionalSubType = typename DoubleTo2x32Converter<T, SubType>::ConditionalSubType;
 
+    constexpr auto RefOrbitMode =
+        (Mode == LAv2Mode::Full || Mode == LAv2Mode::LAO) ?
+        RefOrbitCalc::Extras::IncludeLAv2 :
+        RefOrbitCalc::Extras::None;
+
     PerturbationResults<IterType, T, PExtras>* results =
         m_RefOrbit.GetAndCreateUsefulPerturbationResults<
             IterType,
             ConditionalT,
             ConditionalSubType,
             PExtras,
-            RefOrbitCalc::Extras::IncludeLAv2,
+            RefOrbitMode,
             T>();
 
-    if (results->GetLaReference() == nullptr ||
+    // Reference orbit is always required for LAv2
+    // The LaReference is not required when running perturbation only
+    if ((RefOrbitMode == RefOrbitCalc::Extras::IncludeLAv2 && results->GetLaReference() == nullptr) ||
         results->GetOrbitData() == nullptr) {
         ::MessageBox(nullptr, L"Oops - a null pointer deref", L"", MB_OK | MB_APPLMODAL);
         return;

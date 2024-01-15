@@ -130,6 +130,7 @@ public:
 
     void SetPerturbationAlg(RefOrbitCalc::PerturbationAlg alg) { m_RefOrbit.SetPerturbationAlg(alg); }
     void ClearPerturbationResults(RefOrbitCalc::PerturbationResultType type) { m_RefOrbit.ClearPerturbationResults(type); }
+    void SavePerturbationOrbits();
     void LoadPerturbationOrbits();
 
     // Drawing functions

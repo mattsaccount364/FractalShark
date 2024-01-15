@@ -86,6 +86,7 @@ public:
     void ClearPerturbationResults(PerturbationResultType type);
     void ResetGuess(HighPrecision x = HighPrecision(0), HighPrecision y = HighPrecision(0));
 
+    void SaveAllOrbits();
     void LoadAllOrbits();
 
     void GetSomeDetails(

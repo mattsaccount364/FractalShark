@@ -1934,6 +1934,67 @@ void RefOrbitCalc::ResetGuess(HighPrecision x, HighPrecision y) {
     m_PerturbationGuessCalcY = y;
 }
 
+void RefOrbitCalc::SaveAllOrbits() {
+    // Saves all the results to disk
+    auto lambda = [&](auto& Container) {
+        for (const auto& it : Container.m_PerturbationResultsDouble) {
+            auto resultsCopy = it->CopyPerturbationResults(
+                AddPointOptions::EnableWithSave,
+                GetNextGenerationNumber());
+            resultsCopy->WriteMetadata();
+        }
+
+        for (const auto& it : Container.m_PerturbationResultsFloat) {
+            auto resultsCopy = it->CopyPerturbationResults(
+                AddPointOptions::EnableWithSave,
+                GetNextGenerationNumber());
+            resultsCopy->WriteMetadata();
+        }
+
+        for (const auto& it : Container.m_PerturbationResults2xFloat) {
+            auto resultsCopy = it->CopyPerturbationResults(
+                AddPointOptions::EnableWithSave,
+                GetNextGenerationNumber());
+            resultsCopy->WriteMetadata();
+        }
+
+        for (const auto& it : Container.m_PerturbationResultsHDRDouble) {
+            auto resultsCopy = it->CopyPerturbationResults(
+                AddPointOptions::EnableWithSave,
+                GetNextGenerationNumber());
+            resultsCopy->WriteMetadata();
+        }
+
+        for (const auto& it : Container.m_PerturbationResultsHDRFloat) {
+            auto resultsCopy = it->CopyPerturbationResults(
+                AddPointOptions::EnableWithSave,
+                GetNextGenerationNumber());
+            resultsCopy->WriteMetadata();
+        }
+
+        for (const auto& it : Container.m_PerturbationResults2xFloat) {
+            auto resultsCopy = it->CopyPerturbationResults(
+                AddPointOptions::EnableWithSave,
+                GetNextGenerationNumber());
+            resultsCopy->WriteMetadata();
+        }
+
+        for (const auto& it : Container.m_PerturbationResultsHDR2xFloat) {
+            auto resultsCopy = it->CopyPerturbationResults(
+                AddPointOptions::EnableWithSave,
+                GetNextGenerationNumber());
+            resultsCopy->WriteMetadata();
+        }
+    };
+
+    lambda(c32d);
+    lambda(c32e);
+    lambda(c32c);
+    lambda(c64d);
+    lambda(c64e);
+    lambda(c64c);
+}
+
 void RefOrbitCalc::LoadAllOrbits() {
     // Matches the extension of a filename
     auto extmatch = [](std::string fn) -> bool {

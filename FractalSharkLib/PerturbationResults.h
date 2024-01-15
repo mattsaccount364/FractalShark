@@ -145,6 +145,17 @@ public:
         return m_LaReference.get();
     }
 
+    std::unique_ptr<PerturbationResults<IterType, T, PExtras>>
+    CopyPerturbationResults(AddPointOptions add_point_options,
+        size_t new_generation_number) {
+
+        auto new_ptr = std::make_unique<PerturbationResults<IterType, T, PExtras>>(
+            add_point_options,
+            new_generation_number);
+        new_ptr->CopyPerturbationResults<true, T, PExtras>(*this);
+        return new_ptr;
+    }
+
     template<bool IncludeLA, class Other, PerturbExtras PExtras = PerturbExtras::Disable>
     void CopyPerturbationResults(
         const PerturbationResults<IterType, Other, PExtras>& other) {
@@ -288,10 +299,13 @@ public:
         metafile << "CompressionErrorExponent: " << m_CompressionErrorExp << std::endl;
         metafile << "UncompressedIterationsInOrbit: " << m_UncompressedItersInOrbit << std::endl;
 
-        bool ret = m_LaReference->WriteMetadata(metafile);
-        if (!ret) {
-            ::MessageBox(nullptr, L"Failed to write LA metadata.", L"", MB_OK | MB_APPLMODAL);
-            return;
+        if (m_LaReference != nullptr &&
+            m_LaReference->IsValid()) {
+            bool ret = m_LaReference->WriteMetadata(metafile);
+            if (!ret) {
+                ::MessageBox(nullptr, L"Failed to write LA metadata.", L"", MB_OK | MB_APPLMODAL);
+                return;
+            }
         }
 
         metafile.close();
@@ -704,19 +718,19 @@ public:
     // as a reference for the compression algorithm.
     std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::EnableCompression>>
     Compress(
-        int32_t CompressionErrorExpParam,
-        size_t NewGenerationNumber) {
+        int32_t compression_error_exp_param,
+        size_t new_generation_number) {
 
         constexpr bool disable_compression = false;
         const auto Two = T{ 2 };
 
-        m_CompressionErrorExp = CompressionErrorExpParam;
+        m_CompressionErrorExp = compression_error_exp_param;
         auto err = std::pow(10, m_CompressionErrorExp);
         const auto CompressionError = static_cast<T>(err);
 
         auto compressed =
             std::make_unique<PerturbationResults<IterType, T, PerturbExtras::EnableCompression>>(
-                m_FullOrbit.GetAddPointOptions(), NewGenerationNumber);
+                m_FullOrbit.GetAddPointOptions(), new_generation_number);
         compressed->CopySettingsWithoutOrbit(*this);
 
         assert (m_FullOrbit.GetSize() > 1);

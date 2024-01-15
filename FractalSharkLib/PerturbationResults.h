@@ -109,10 +109,7 @@ public:
     }
 
     ~PerturbationResults() {
-        if (m_MetaFileHandle != INVALID_HANDLE_VALUE) {
-            CloseHandle(m_MetaFileHandle);
-            m_MetaFileHandle = INVALID_HANDLE_VALUE;
-        }
+        CloseMetaFileIfOpen();
     }
 
     PerturbationResults(PerturbationResults&& other) {
@@ -242,6 +239,10 @@ public:
     }
 
     void WriteMetadata() const {
+        // In this case, we want to close and delete the file if it's open.
+        // The code after this function will open the new file for delete.
+        CloseMetaFileIfOpen();
+
         std::ofstream metafile(GenFilename(GrowableVectorTypes::Metadata), std::ios::binary);
         if (!metafile.is_open()) {
             ::MessageBox(nullptr, L"Failed to open file for writing 2", L"", MB_OK | MB_APPLMODAL);
@@ -809,6 +810,13 @@ public:
     }
 
 private:
+    void CloseMetaFileIfOpen() const {
+        if (m_MetaFileHandle != INVALID_HANDLE_VALUE) {
+            CloseHandle(m_MetaFileHandle);
+            m_MetaFileHandle = INVALID_HANDLE_VALUE;
+        }
+    }
+
     void MapExistingFiles() {
         assert(m_LaReference == nullptr);
         assert(m_FullOrbit.GetCapacity() == 0);

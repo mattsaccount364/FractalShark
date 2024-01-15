@@ -79,6 +79,7 @@ public:
     void BasicTest();
     void BasicOneTest(
         size_t ViewIndex,
+        size_t TestIndex,
         const wchar_t *DirName,
         const wchar_t* TestPrefix,
         RenderAlgorithm AlgToTest);

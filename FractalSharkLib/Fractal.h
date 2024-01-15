@@ -77,12 +77,6 @@ public:
     void Zoom(size_t scrnX, size_t scrnY, double factor);
 
     void BasicTest();
-    void BasicOneTest(
-        size_t ViewIndex,
-        size_t TestIndex,
-        const wchar_t *DirName,
-        const wchar_t* TestPrefix,
-        RenderAlgorithm AlgToTest);
 
     enum class AutoZoomHeuristic {
         Default,
@@ -225,6 +219,15 @@ private:
     void PalTransition(size_t WhichPalette, size_t paletteIndex, int length, int r, int g, int b);
     bool IsDownControl(void);
     void CheckForAbort(void);
+
+    void BasicTestInternal();
+    void BasicOneTest(
+        size_t view_index,
+        size_t test_index,
+        const wchar_t* dir_name,
+        const wchar_t* test_prefix ,
+        RenderAlgorithm alg_to_test);
+    void InitialDefaultViewAndSettings(int width = 0, int height = 0);
 
     void SetPosition(
         HighPrecision MinX,

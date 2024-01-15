@@ -80,39 +80,7 @@ void Fractal::Initialize(int width,
     }
 
     InitStatics();
-
-    // Setup member variables with initial values:
-    //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedRCLAv2);
-    //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedLAv2);
-    SetRenderAlgorithm(RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2);
-    //SetRenderAlgorithm(RenderAlgorithm::Gpu2x32PerturbedLAv2);
-    //SetRenderAlgorithm(RenderAlgorithm::Gpu2x32PerturbedLAv2LAO);
-    //SetRenderAlgorithm(RenderAlgorithm::AUTO);
-
-    SetIterationPrecision(1);
-    //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed);
-    m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3);
-    //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MT);
-    m_RefOrbit.ResetGuess();
-
-    SetCompressionErrorExp();
-
-    ResetDimensions(width, height, 2);
-    SetIterType(IterTypeEnum::Bits64);
-
-    SetPerturbAutosave(AddPointOptions::EnableWithoutSave);
-    LoadPerturbationOrbits();
-    
-    View(5);
-    //View(10);
-    //View(26); // hard
-    //View(27); // easy
-    //View(5);
-    //View(15);
-
-    m_ChangedWindow = true;
-    m_ChangedScrn = true;
-    m_ChangedIterations = true;
+    InitialDefaultViewAndSettings(width, height);
 
     m_AsyncRenderThreadState = AsyncRenderThreadState::Idle;
     m_AsyncRenderThreadFinish = false;
@@ -869,11 +837,9 @@ void Fractal::Zoom(size_t scrnX, size_t scrnY, double factor) {
     Zoom(factor);
 }
 
-void Fractal::BasicTest() {
-    // First, iterate over all the supported RenderAlgorithm entries and render the default view:
-    // Skip AUTO plus all LAO-only algorithms.  They produce a black screen for the default view.
+void Fractal::BasicTestInternal() {
     constexpr bool IncludeSlow = true;
-    const wchar_t *DirName = L"BasicTest";
+    const wchar_t* DirName = L"BasicTest";
     auto ret = CreateDirectory(DirName, nullptr);
     if (ret == 0 && GetLastError() != ERROR_ALREADY_EXISTS) {
         ::MessageBox(nullptr, L"Error creating directory!", L"", MB_OK | MB_APPLMODAL);
@@ -882,6 +848,8 @@ void Fractal::BasicTest() {
 
     size_t TestIndex = 0;
 
+    // First, iterate over all the supported RenderAlgorithm entries and render the default view:
+    // Skip AUTO plus all LAO-only algorithms.  They produce a black screen for the default view.
     for (size_t i = 0; i < (size_t)RenderAlgorithm::AUTO; i++) {
         auto CurAlg = static_cast<RenderAlgorithm>(i);
         if (CurAlg != RenderAlgorithm::Gpu1x32PerturbedLAv2LAO &&
@@ -1001,28 +969,82 @@ void Fractal::BasicTest() {
         BasicOneTest(11, TestIndex, DirName, L"View11", CurAlg);
         ++TestIndex;
     }
+}
 
-    // Reset to default.
+void Fractal::BasicTest() {
+    ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+
+    auto lambda = [&]() {
+        SetIterType(IterTypeEnum::Bits32);
+        BasicTestInternal();
+
+        SetIterType(IterTypeEnum::Bits64);
+        BasicTestInternal();
+    };
+
+    SetPerturbAutosave(AddPointOptions::DontSave);
+    lambda();
+
+    SetPerturbAutosave(AddPointOptions::EnableWithoutSave);
+    lambda();
+
+    InitialDefaultViewAndSettings();
+}
+
+void Fractal::InitialDefaultViewAndSettings(int width, int height) {
+    //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedRCLAv2);
+    //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx32PerturbedLAv2);
+    //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2);
+    //SetRenderAlgorithm(RenderAlgorithm::Gpu2x32PerturbedLAv2);
+    //SetRenderAlgorithm(RenderAlgorithm::Gpu2x32PerturbedLAv2LAO);
     SetRenderAlgorithm(RenderAlgorithm::AUTO);
+
+    SetIterationPrecision(1);
+    //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed);
+    m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3);
+    //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MT);
+    m_RefOrbit.ResetGuess();
+
+    SetCompressionErrorExp();
+    if (width != 0 && height != 0) {
+        ResetDimensions(width, height, 1);
+    }
+    else {
+        ResetDimensions(MAXSIZE_T, MAXSIZE_T, 1);
+    }
+    SetIterType(IterTypeEnum::Bits32);
+
+    SetPerturbAutosave(AddPointOptions::EnableWithoutSave);
+    LoadPerturbationOrbits();
+
     View(0);
+    //View(5);
+    //View(10);
+    //View(27); // extremely hard
     ChangedMakeDirty();
-    CalcFractal(false);
+
+    // Doesn't do anything with the palette.
 }
 
 void Fractal::BasicOneTest(
-    size_t ViewIndex,
-    size_t TestIndex,
-    const wchar_t *DirName,
-    const wchar_t *TestPrefix,
-    RenderAlgorithm AlgToTest) {
+    size_t view_index,
+    size_t test_index,
+    const wchar_t *dir_name,
+    const wchar_t *test_prefix,
+    RenderAlgorithm alg_to_test) {
 
-    size_t AlgToTestInt = static_cast<size_t>(AlgToTest);
-    SetRenderAlgorithm(AlgToTest);
-    View(ViewIndex);
+    size_t alg_to_test_int = static_cast<size_t>(alg_to_test);
+    SetRenderAlgorithm(alg_to_test);
+    View(view_index);
     ChangedMakeDirty();
 
+    auto iter_type_str = IterTypeEnum::Bits32 == GetIterType() ? "32" : "64";
     auto name = GetRenderAlgorithmName();
-    auto name_with_int_prefix = std::to_string(TestIndex) + " - Alg#" + std::to_string(AlgToTestInt) + " - " + name;
+    auto name_with_int_prefix =
+        std::to_string(test_index) +
+        " - Alg#" + std::to_string(alg_to_test_int) +
+        " - Bits# " + iter_type_str +
+        " - " + name;
 
     CalcFractal(false);
 
@@ -1034,7 +1056,7 @@ void Fractal::BasicOneTest(
             return (wchar_t)c;
         });
 
-    filename_w = std::wstring(DirName) + L"\\" + std::wstring(TestPrefix) + L" - " + filename_w;
+    filename_w = std::wstring(dir_name) + L"\\" + std::wstring(test_prefix) + L" - " + filename_w;
 
     SaveCurrentFractal(filename_w);
     //SaveItersAsText(filename_w);

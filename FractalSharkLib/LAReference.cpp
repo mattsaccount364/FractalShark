@@ -3,6 +3,8 @@
 #include "RefOrbitCalc.h"
 #include "PerturbationResults.h"
 
+#include <deque>
+
 //#include <Windows.h>
 
 // Imagina uses 4 for this periodDivisor number instead.
@@ -178,9 +180,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
 
     {
         m_IsValid = false;
-        m_LAStages.resize(MaxLAStages);
-
-        m_LAs.reserve(maxRefIteration);
+        m_LAStages.MutableResize(MaxLAStages);
 
         m_UseAT = false;
         m_LAStageCount = 0;
@@ -277,10 +277,40 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
     // const auto numPerThread = maxRefIteration / ;
 
     const int32_t ThreadCount = (int32_t)std::thread::hardware_concurrency();
-    std::vector<IterType> Start;
+    //const int32_t ThreadCount = (int32_t)3;
+    std::deque<std::atomic_uint64_t> Start;
     Start.resize(ThreadCount);
 
-    auto Starter = [&]() {
+    std::vector<std::vector<LAInfoDeep<IterType, Float, SubType, PExtras>>> ThreadLAs;
+    ThreadLAs.resize(ThreadCount);
+    //for (size_t i = 1; i < ThreadCount; i++) {
+    //    ThreadLAs[i].reserve...
+    //}
+
+    volatile IterType numbers1[128] = { 0 };
+    volatile IterType numbers2[128] = { 0 };
+
+    auto Starter = [ // MOAR VARIABLES
+            &i,
+            &LA,
+            &LAI,
+            &PeriodBegin,
+            &PeriodEnd,
+            &PerturbationResults,
+            &numbers1,
+            &numbers2,
+            Period,
+            &Start,
+            &ThreadLAs,
+            ThreadCount,
+            maxRefIteration,
+            this
+        ]() {
+
+        const auto ThreadID = 0;
+        const auto NextThread = 1;
+        const auto LastThread = ThreadCount - 1;
+
         for (; i < maxRefIteration; i++) {
             LAInfoDeep<IterType, Float, SubType, PExtras> NewLA{};
             const bool PeriodDetected{ LA.Step(NewLA, PerturbationResults.GetComplex<SubType>(i)) };
@@ -293,7 +323,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
             LAI.StepLength = i - PeriodBegin;
 
             LA.SetLAi(LAI);
-            m_LAs.PushBack(LA);
+            ThreadLAs[ThreadID].push_back(LA);
 
             LAI.NextStageLAIndex = i;
             PeriodBegin = i;
@@ -312,32 +342,49 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
             }
 
             if (i > maxRefIteration / ThreadCount) {
-                while (!Start[1]);
+                while (Start[NextThread].load(std::memory_order_release) == 0);
 
-                if (i == Start[1] - 1) {
+                auto result = Start[NextThread].load(std::memory_order_release);
+                if (i == result - 1) {
                     i++;
                     break;
                 }
-                else if (i >= Start[1]) {
+                else if (i >= result) {
                     ::MessageBox(nullptr, L"Confused thread situation", L"", MB_OK | MB_APPLMODAL);
                 }
             }
         }
+
+        if (ThreadID == LastThread) {
+            LAI.StepLength = i - PeriodBegin;
+
+            LA.SetLAi(LAI);
+            ThreadLAs[ThreadID].push_back(LA);
+        }
     };
 
-    std::vector<std::vector<LAInfoDeep<IterType, Float, SubType, PExtras>>> ThreadLAs;
-    ThreadLAs.resize(ThreadCount);
-    //for (size_t i = 1; i < ThreadCount; i++) {
-    //    ThreadLAs[i].reserve...
-    //}
+    auto Worker = [
+            &PerturbationResults,
+            &numbers1,
+            &numbers2,
+            Period,
+            &Start,
+            &ThreadLAs,
+            ThreadCount,
+            maxRefIteration,
+            this
+        ](int32_t ThreadID) {
 
-    volatile IterType numbers1[128] = { 0 };
-    volatile IterType numbers2[128] = { 0 };
+        const auto NextThread = ThreadID + 1;
+        const auto LastThread = ThreadCount - 1;
 
-    auto Worker = [&numbers1, &numbers2, Period, &Start, &ThreadLAs, ThreadCount, maxRefIteration, this](int32_t ThreadID) {
-        IterType j = maxRefIteration * ThreadID / ThreadCount;
-        IterType End = maxRefIteration * (ThreadID + 1) / ThreadCount;
-        LAInfoDeep<IterType, Float, SubType, PExtras> LA_ = LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(j));
+        IterTypeFull intermediate_j = static_cast<IterTypeFull>(maxRefIteration) * ThreadID / ThreadCount;
+        IterType j = static_cast<IterType>(intermediate_j);
+
+        IterTypeFull intermediate_end = static_cast<IterTypeFull>(maxRefIteration) * NextThread / ThreadCount;
+        IterType End = static_cast<IterType>(intermediate_end);
+
+        LAInfoDeep<IterType, Float, SubType, PExtras> LA_(PerturbationResults.GetComplex<SubType>(j));
         LA_ = LA_.Step(PerturbationResults.GetComplex<SubType>(j + 1));
         LAInfoI<IterType> LAI_;
         LAI_.NextStageLAIndex = j;
@@ -350,28 +397,41 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
         numbers2[ThreadID] = End;
 
         for (; j < maxRefIteration; j++) {
-            LAInfoDeep<IterType, Float, SubType, PExtras> NewLA;
+            LAInfoDeep<IterType, Float, SubType, PExtras> NewLA{};
             bool PeriodDetected = LA_.Step(NewLA, PerturbationResults.GetComplex<SubType>(j));
 
-            if (PeriodDetected) {
-                LAI_.NextStageLAIndex = j;
-                PeriodBegin = j;
-                PeriodEnd = PeriodBegin + Period;
-
-                if (j + 1 < maxRefIteration) {
-                    LA_ = LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(j)).Step(PerturbationResults.GetComplex<SubType>(j + 1));
-                    j += 2;
-                }
-                else {
-                    LA_ = LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(j));
-                    j += 1;
-                }
-                break;
+            if (!PeriodDetected) {
+                LA_ = NewLA;
+                continue;
             }
-            LA_ = NewLA;
+
+            LAI_.NextStageLAIndex = j;
+            PeriodBegin = j;
+            PeriodEnd = PeriodBegin + Period;
+
+            if (j + 1 < maxRefIteration) {
+                LA_ = LAInfoDeep<IterType, Float, SubType, PExtras>(
+                    PerturbationResults.GetComplex<SubType>(j)).Step(
+                        PerturbationResults.GetComplex<SubType>(j + 1));
+                j += 2;
+            }
+            else {
+                LA_ = LAInfoDeep<IterType, Float, SubType, PExtras>(
+                    PerturbationResults.GetComplex<SubType>(j));
+                j += 1;
+            }
+            break;
         }
 
-        Start[ThreadID] = j;
+        //if (j < End) {
+        uint64_t expected = 0;
+        bool res = Start[ThreadID].compare_exchange_strong(expected, j);
+        if (!res) {
+            DebugBreak();
+            ::MessageBox(nullptr, L"Confused thread situation", L"", MB_OK | MB_APPLMODAL);
+        }
+
+        //Sleep(10000000);
         for (; j < maxRefIteration; j++) {
             LAInfoDeep<IterType, Float, SubType, PExtras> NewLA{};
             const bool PeriodDetected{ LA_.Step(NewLA, PerturbationResults.GetComplex<SubType>(j)) };
@@ -390,29 +450,32 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
             PeriodBegin = j;
             PeriodEnd = PeriodBegin + Period;
 
-            const IterType ip1{ j + 1 };
-            const bool detected{ NewLA.DetectPeriod(PerturbationResults.GetComplex<SubType>(ip1)) };
+            const IterType jp1{ j + 1 };
+            const bool detected{ NewLA.DetectPeriod(PerturbationResults.GetComplex<SubType>(jp1)) };
 
-            if (detected || ip1 >= maxRefIteration) {
-                LA_ = LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(j));
+            if (detected || jp1 >= maxRefIteration) {
+                LA_ = LAInfoDeep<IterType, Float, SubType, PExtras>(
+                    PerturbationResults.GetComplex<SubType>(j));
             }
             else {
-                LA_ = LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(j)).Step(
-                    PerturbationResults.GetComplex<SubType>(ip1));
+                LA_ = LAInfoDeep<IterType, Float, SubType, PExtras>(
+                    PerturbationResults.GetComplex<SubType>(j)).Step(
+                        PerturbationResults.GetComplex<SubType>(jp1));
                 j++;
             }
 
             if (j > End) {
-                if (ThreadID == ThreadCount - 1) {
+                if (ThreadID == LastThread) {
                     DebugBreak();
                     ::MessageBox(nullptr, L"I have another bug here", L"", MB_OK | MB_APPLMODAL);
                 }
-                while (!Start[ThreadID + 1]);
-                if (j == Start[ThreadID + 1] - 1) {
+                while (Start[NextThread].load(std::memory_order_acquire) == 0);
+                auto result = Start[NextThread].load(std::memory_order_acquire);
+                if (j == result - 1) {
                     j++;
                     break;
                 }
-                else if (j >= Start[ThreadID + 1]) {
+                else if (j >= result) {
                     DebugBreak();
                     ::MessageBox(nullptr, L"I have another bug here yay :(", L"", MB_OK | MB_APPLMODAL);
                     //break;
@@ -420,16 +483,30 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
             }
         }
 
-        if (ThreadID == ThreadCount - 1) {
+        if (ThreadID == LastThread) {
             LAI_.StepLength = j - PeriodBegin;
 
             LA_.SetLAi(LAI_);
-            m_LAs.PushBack(LA_);
-
-            auto LA2 = LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(maxRefIteration));
-            LA2.SetLAi({});
-            m_LAs.PushBack(LA2);
+            ThreadLAs[ThreadID].push_back(LA_);
         }
+        //}
+        //else {
+        //    uint64_t expected = 0;
+        //    bool res = Start[ThreadID].compare_exchange_strong(expected, j);
+        //    if (!res) {
+        //        DebugBreak();
+        //        ::MessageBox(nullptr, L"Confused thread situation", L"", MB_OK | MB_APPLMODAL);
+        //    }
+
+        //    ThreadLAs[ThreadID].clear();
+
+        //    if (ThreadID == LastThread) {
+        //        LAI_.StepLength = j - PeriodBegin;
+
+        //        LA_.SetLAi(LAI_);
+        //        ThreadLAs[ThreadID].push_back(LA_);
+        //    }
+        //}
     };
 
     std::vector<std::unique_ptr<std::thread>> threads;
@@ -442,9 +519,15 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
         threads[t]->join();
     }
 
-    // TODO concat
+    for (auto t = 0; t < ThreadLAs.size(); t++) {
+        for (auto k = 0; k < ThreadLAs[t].size(); k++) {
+            m_LAs.PushBack(ThreadLAs[t][k]);
+        }
+    }
 
     m_LAStages[0].MacroItCount = LAsize();
+
+    m_LAs.PushBack(LAInfoDeep<IterType, Float, SubType, PExtras>(PerturbationResults.GetComplex<SubType>(maxRefIteration)));
 
     return true;
 }
@@ -652,8 +735,8 @@ void LAReference<IterType, Float, SubType, PExtras>::GenerateApproximationData(
         return;
     }
 
-    //bool PeriodDetected = CreateLAFromOrbitMT(maxRefIteration);
-    bool PeriodDetected = CreateLAFromOrbit(PerturbationResults, maxRefIteration);
+    bool PeriodDetected = CreateLAFromOrbitMT(PerturbationResults, maxRefIteration);
+    //bool PeriodDetected = CreateLAFromOrbit(PerturbationResults, maxRefIteration);
     if (!PeriodDetected) return;
 
     while (true) {

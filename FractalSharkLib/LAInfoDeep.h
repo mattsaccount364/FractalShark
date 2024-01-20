@@ -66,7 +66,7 @@ public:
     CUDA_CRAP HDRFloatComplex getRef();
     CUDA_CRAP HDRFloatComplex getZCoeff();
     CUDA_CRAP HDRFloatComplex getCCoeff();
-    CUDA_CRAP bool Step(LAInfoDeep &out, HDRFloatComplex z);
+    CUDA_CRAP bool Step(LAInfoDeep &out, HDRFloatComplex z) const;
     CUDA_CRAP bool isLAThresholdZero();
     CUDA_CRAP bool isZCoeffZero();
     CUDA_CRAP LAInfoDeep Step(HDRFloatComplex z);
@@ -177,7 +177,7 @@ LAInfoDeep<IterType, Float, SubType, PExtras>::HDRFloatComplex LAInfoDeep<IterTy
 
 template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
 CUDA_CRAP
-bool LAInfoDeep<IterType, Float, SubType, PExtras>::Step(LAInfoDeep& out, HDRFloatComplex z) {
+bool LAInfoDeep<IterType, Float, SubType, PExtras>::Step(LAInfoDeep& out, HDRFloatComplex z) const {
     const HDRFloat ChebyMagz = z.chebychevNorm();
 
     const HDRFloat ChebyMagZCoeff{ ZCoeff.chebychevNorm() };

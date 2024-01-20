@@ -1015,11 +1015,12 @@ void Fractal::InitialDefaultViewAndSettings(int width, int height) {
     }
     SetIterType(IterTypeEnum::Bits32);
 
-    SetPerturbAutosave(AddPointOptions::EnableWithoutSave);
+    //SetPerturbAutosave(AddPointOptions::EnableWithoutSave);
+    SetPerturbAutosave(AddPointOptions::DontSave);
     LoadPerturbationOrbits();
 
-    View(0);
-    //View(5);
+    //View(0);
+    View(5);
     //View(10);
     //View(27); // extremely hard
     ChangedMakeDirty();

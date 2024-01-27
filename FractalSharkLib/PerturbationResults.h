@@ -602,22 +602,20 @@ public:
         m_LaReference = nullptr;
     }
 
-    void StopTimer() {
-        m_BenchmarkOrbit.StopTimer();
-    }
-
     uint64_t GetBenchmarkOrbit() const {
         return m_BenchmarkOrbit.GetDeltaInMs();
     }
 
     template<PerturbExtras PExtras, RefOrbitCalc::ReuseMode Reuse>
-    void TrimResults() {
+    void CompleteResults() {
         m_FullOrbit.Trim();
 
         if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
             m_ReuseX.shrink_to_fit();
             m_ReuseY.shrink_to_fit();
         }
+
+        m_BenchmarkOrbit.StopTimer();
     }
 
     template<typename = typename std::enable_if<PExtras == PerturbExtras::EnableCompression>>

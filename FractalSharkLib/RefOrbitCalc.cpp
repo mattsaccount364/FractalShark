@@ -716,10 +716,8 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
         results->SetBad(false);
     }
 
-    results->TrimResults<PExtras, Reuse>();
+    results->CompleteResults<PExtras, Reuse>();
     m_GuessReserveSize = results->GetCountOrbitEntries();
-
-    results->StopTimer();
 }
 
 template<
@@ -895,10 +893,8 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
         results->AddUncompressedIteration({ reducedZx, reducedZy });
     }
 
-    results->TrimResults<PerturbExtras::Disable, ReuseMode::DontSaveForReuse>();
+    results->CompleteResults<PerturbExtras::Disable, ReuseMode::DontSaveForReuse>();
     m_GuessReserveSize = results->GetCountOrbitEntries();
-
-    results->StopTimer();
 
     return true;
 }
@@ -1243,10 +1239,8 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     _aligned_free(threadZxdata);
     _aligned_free(threadZydata);
 
-    results->TrimResults<PerturbExtras::Disable, ReuseMode::DontSaveForReuse>();
+    results->CompleteResults<PerturbExtras::Disable, ReuseMode::DontSaveForReuse>();
     m_GuessReserveSize = results->GetCountOrbitEntries();
-
-    results->StopTimer();
 
     return true;
 }
@@ -1577,10 +1571,8 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
     _aligned_free(threadZydata);
     _aligned_free(threadReuseddata);
 
-    results->TrimResults<PExtras, Reuse>();
+    results->CompleteResults<PExtras, Reuse>();
     m_GuessReserveSize = results->GetCountOrbitEntries();
-
-    results->StopTimer();
 }
 
 template<

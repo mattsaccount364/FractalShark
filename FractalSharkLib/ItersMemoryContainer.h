@@ -12,6 +12,7 @@ enum class IterTypeEnum {
 // we were in or not in the fractal.  Has a number
 // for every point on the screen.
 struct ItersMemoryContainer {
+    ItersMemoryContainer();
     ItersMemoryContainer(
         IterTypeEnum type,
         size_t width,
@@ -22,7 +23,7 @@ struct ItersMemoryContainer {
     ~ItersMemoryContainer();
 
     ItersMemoryContainer(ItersMemoryContainer&) = delete;
-    ItersMemoryContainer& operator=(const ItersMemoryContainer&) = delete;
+    ItersMemoryContainer& operator=(const ItersMemoryContainer&);
 
     template<typename IterType>
     IterType* GetIters() {

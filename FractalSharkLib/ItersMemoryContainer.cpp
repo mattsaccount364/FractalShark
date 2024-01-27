@@ -2,6 +2,27 @@
 #include "ItersMemoryContainer.h"
 #include <algorithm>
 
+ItersMemoryContainer::ItersMemoryContainer() :
+    m_IterType(IterTypeEnum::Bits32),
+    m_ItersMemory32(nullptr),
+    m_ItersArray32(nullptr),
+    m_ItersMemory64(nullptr),
+    m_ItersArray64(nullptr),
+    m_Width(),
+    m_Height(),
+    m_Total(),
+    m_OutputWidth(),
+    m_OutputHeight(),
+    m_OutputTotal(),
+    m_RoundedWidth(),
+    m_RoundedHeight(),
+    m_RoundedTotal(),
+    m_RoundedOutputColorWidth(),
+    m_RoundedOutputColorHeight(),
+    m_RoundedOutputColorTotal(),
+    m_Antialiasing(1) {
+}
+
 ItersMemoryContainer::ItersMemoryContainer(
     IterTypeEnum type,
     size_t width,
@@ -71,6 +92,67 @@ ItersMemoryContainer::ItersMemoryContainer(
 
 ItersMemoryContainer::ItersMemoryContainer(ItersMemoryContainer&& other) noexcept {
     *this = std::move(other);
+}
+
+ItersMemoryContainer &ItersMemoryContainer::operator=(const ItersMemoryContainer& other) {
+    if (this == &other) {
+        return *this;
+    }
+
+    m_IterType = other.m_IterType;
+
+    //m_ItersMemory32 = std::move(other.m_ItersMemory32);
+    //m_ItersMemory64 = std::move(other.m_ItersMemory64);
+
+    //m_ItersArray32 = other.m_ItersArray32;
+    //other.m_ItersArray32 = nullptr;
+
+    //m_ItersArray64 = other.m_ItersArray64;
+    //other.m_ItersArray64 = nullptr;
+
+    m_Width = other.m_Width;
+    m_Height = other.m_Height;
+    m_Total = other.m_Total;
+
+    m_OutputWidth = other.m_OutputWidth;
+    m_OutputHeight = other.m_OutputHeight;
+    m_OutputTotal = other.m_OutputTotal;
+
+    m_RoundedWidth = other.m_RoundedWidth;
+    m_RoundedHeight = other.m_RoundedHeight;
+    m_RoundedTotal = other.m_RoundedTotal;
+
+    m_RoundedOutputColorWidth = other.m_RoundedOutputColorWidth;
+    m_RoundedOutputColorHeight = other.m_RoundedOutputColorHeight;
+    m_RoundedOutputColorTotal = other.m_RoundedOutputColorTotal;
+    m_RoundedOutputColorMemory = std::make_unique<Color16[]>(m_RoundedOutputColorTotal);
+    memcpy(
+        m_RoundedOutputColorMemory.get(),
+        other.m_RoundedOutputColorMemory.get(),
+        m_RoundedOutputColorTotal * sizeof(Color16));
+
+    m_Antialiasing = other.m_Antialiasing;
+
+    if (m_IterType == IterTypeEnum::Bits32) {
+        m_ItersMemory32 = std::make_unique<uint32_t[]>(other.m_RoundedTotal);
+        m_ItersArray32 = new uint32_t * [other.m_RoundedHeight];
+        for (size_t i = 0; i < other.m_RoundedHeight; i++) {
+            m_ItersArray32[i] = &m_ItersMemory32[i * other.m_RoundedWidth];
+        }
+
+        memcpy (m_ItersMemory32.get(), other.m_ItersMemory32.get(), other.m_RoundedTotal * sizeof(uint32_t));
+    }
+    else {
+        m_ItersMemory64 = std::make_unique<uint64_t[]>(other.m_RoundedTotal);
+        m_ItersArray64 = new uint64_t * [other.m_RoundedHeight];
+        for (size_t i = 0; i < other.m_RoundedHeight; i++) {
+            m_ItersArray64[i] = &m_ItersMemory64[i * other.m_RoundedWidth];
+        }
+
+        memcpy(m_ItersMemory64.get(), other.m_ItersMemory64.get(), other.m_RoundedTotal * sizeof(uint64_t));
+    }
+
+    return *this;
 }
 
 ItersMemoryContainer& ItersMemoryContainer::operator=(ItersMemoryContainer&& other) noexcept {

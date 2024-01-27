@@ -545,7 +545,7 @@ DWORD WINAPI CalcProc(LPVOID lpParameter)
         fractal->RecenterViewCalc(minX, minY, maxX, maxY);
         fractal->UsePalette(8);
         fractal->CalcFractal(true);
-        fractal->SaveCurrentFractal(filename);
+        fractal->SaveCurrentFractal(filename, false);
         //fractal->CalcDiskFractal (filename_bmp);
     }
 

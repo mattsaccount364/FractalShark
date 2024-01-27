@@ -1540,7 +1540,7 @@ void MenuSaveCurrentLocation(HWND hWnd) {
 }
 
 void MenuSaveBMP(HWND) {
-    gFractal->SaveCurrentFractal(L"");
+    gFractal->SaveCurrentFractal(L"", true);
 }
 
 void MenuSaveHiResBMP(HWND) {

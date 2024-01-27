@@ -165,7 +165,7 @@ public:
     void DrawAllPerturbationResults(bool LeaveScreen);
 
     // Saving images of the fractal
-    int SaveCurrentFractal(std::wstring filename_base);
+    int SaveCurrentFractal(std::wstring filename_base, bool copy_the_iters);
     int SaveHiResFractal(std::wstring filename_base);
     int SaveItersAsText(std::wstring filename_base);
     bool CleanupThreads(bool all);
@@ -304,7 +304,11 @@ private:
             PngImg
         };
 
-        CurrentFractalSave(enum Type typ, std::wstring filename_base, Fractal& fractal);
+        CurrentFractalSave(
+            enum Type typ,
+            std::wstring filename_base,
+            bool copy_the_iters,
+            Fractal& fractal);
         ~CurrentFractalSave();
         void Run();
         void StartThread();
@@ -324,13 +328,14 @@ private:
         Fractal::Palette m_WhichPalette;
         std::vector<uint32_t> m_PalIters[Fractal::Palette::Num];
         ItersMemoryContainer m_CurIters;
+        bool m_CopyTheIters;
         std::wstring m_FilenameBase;
         std::unique_ptr<std::thread> m_Thread;
         bool m_Destructable;
     };
 
     template<CurrentFractalSave::Type Typ>
-    int SaveFractalData(const std::wstring filename_base);
+    int SaveFractalData(const std::wstring filename_base, bool copy_the_iters);
 
     struct BenchmarkData {
         BenchmarkData(Fractal& fractal);

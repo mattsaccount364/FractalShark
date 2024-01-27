@@ -1060,7 +1060,7 @@ void Fractal::BasicOneTest(
 
     filename_w = std::wstring(dir_name) + L"\\" + std::wstring(test_prefix) + L" - " + filename_w;
 
-    SaveCurrentFractal(filename_w);
+    SaveCurrentFractal(filename_w, false);
     //SaveItersAsText(filename_w);
 }
 
@@ -1810,7 +1810,7 @@ void Fractal::ApproachTarget(void)
             if (m_SetupData.m_AZSaveImages == 'y')
             {
                 int ret = 0;
-                ret = SaveCurrentFractal(temp2);
+                ret = SaveCurrentFractal(temp2, false);
                 if (ret == 0)
                 {
                     break;
@@ -4293,6 +4293,7 @@ void Fractal::MessageBoxCudaError(uint32_t result) {
 Fractal::CurrentFractalSave::CurrentFractalSave(
     enum Type typ,
     std::wstring filename_base,
+    bool copy_the_iters,
     Fractal& fractal)
     : m_Type(typ),
     m_FilenameBase(filename_base),
@@ -4305,7 +4306,8 @@ Fractal::CurrentFractalSave::CurrentFractalSave(
     m_PaletteDepthIndex(fractal.m_PaletteDepthIndex),
     m_PaletteAuxDepth(fractal.m_PaletteAuxDepth),
     m_WhichPalette(fractal.m_WhichPalette),
-    m_CurIters(std::move(fractal.m_CurIters)) {
+    m_CurIters{},
+    m_CopyTheIters(copy_the_iters) {
 
     //
     // TODO Note we pass off ownership of m_CurIters.
@@ -4313,7 +4315,9 @@ Fractal::CurrentFractalSave::CurrentFractalSave(
     // going to work sensibly.  This is a bug.
     //
 
-    fractal.SetCurItersMemory();
+    if (m_CopyTheIters == false) {
+        fractal.SetCurItersMemory();
+    }
 
     for (size_t i = 0; i < Fractal::Palette::Num; i++) {
         m_PalR[i] = fractal.m_PalR[i];
@@ -4325,6 +4329,13 @@ Fractal::CurrentFractalSave::CurrentFractalSave(
 
     m_Thread = nullptr;
     m_Destructable = false;
+
+    if (m_CopyTheIters) {
+        m_CurIters = fractal.m_CurIters;
+    }
+    else {
+        m_CurIters = std::move(fractal.m_CurIters);
+    }
 }
 
 Fractal::CurrentFractalSave::~CurrentFractalSave() {
@@ -4445,7 +4456,9 @@ void Fractal::CurrentFractalSave::Run() {
             }
         }
 
-        m_Fractal.ReturnIterMemory(std::move(m_CurIters));
+        if (m_CopyTheIters == false) {
+            m_Fractal.ReturnIterMemory(std::move(m_CurIters));
+        }
 
         ret = image.saveImage(filename_c, WPngImage::PngFileFormat::kPngFileFormat_RGBA16);
     }
@@ -4478,19 +4491,21 @@ void Fractal::CurrentFractalSave::Run() {
         out << out_str;
         out.close();
 
-        m_Fractal.ReturnIterMemory(std::move(m_CurIters));
+        if (m_CopyTheIters == false) {
+            m_Fractal.ReturnIterMemory(std::move(m_CurIters));
+        }
     }
 
     m_Destructable = true;
     return;
 }
 
-int Fractal::SaveCurrentFractal(std::wstring filename_base) {
-    return SaveFractalData<CurrentFractalSave::Type::PngImg>(filename_base);
+int Fractal::SaveCurrentFractal(std::wstring filename_base, bool copy_the_iters) {
+    return SaveFractalData<CurrentFractalSave::Type::PngImg>(filename_base, copy_the_iters);
 }
 
 template<Fractal::CurrentFractalSave::Type Typ>
-int Fractal::SaveFractalData(std::wstring filename_base)
+int Fractal::SaveFractalData(std::wstring filename_base, bool copy_the_iters)
 {
     auto lambda = [&]<typename T>(T &savesInProgress) {
         for (;;) {
@@ -4505,7 +4520,7 @@ int Fractal::SaveFractalData(std::wstring filename_base)
                 }
             }
             else {
-                auto newPtr = std::make_unique<CurrentFractalSave>(Typ, filename_base, *this);
+                auto newPtr = std::make_unique<CurrentFractalSave>(Typ, filename_base, copy_the_iters, *this);
                 savesInProgress.push_back(std::move(newPtr));
                 savesInProgress.back()->StartThread();
                 break;
@@ -4572,7 +4587,7 @@ int Fractal::SaveHiResFractal(std::wstring filename)
     CalcFractal(true);
 
     // Save the bitmap.
-    int ret = SaveCurrentFractal(filename);
+    int ret = SaveCurrentFractal(filename, true);
 
     // Back to the previous res.
     ResetDimensions(OldScrnWidth, OldScrnHeight);
@@ -4581,7 +4596,7 @@ int Fractal::SaveHiResFractal(std::wstring filename)
 }
 
 int Fractal::SaveItersAsText(std::wstring filename_base) {
-    return SaveFractalData<CurrentFractalSave::Type::ItersText>(filename_base);
+    return SaveFractalData<CurrentFractalSave::Type::ItersText>(filename_base, true);
 }
 
 void Fractal::SetPerturbAutosave(AddPointOptions Enable) {

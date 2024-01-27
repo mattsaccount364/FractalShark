@@ -546,6 +546,9 @@ public:
         const HighPrecision& maxY,
         IterType NumIterations,
         size_t GuessReserveSize) {
+
+        m_Benchmark.StartTimer();
+
         auto radiusX = maxX - minX;
         auto radiusY = maxY - minY;
 
@@ -592,6 +595,14 @@ public:
         }
 
         m_LaReference = nullptr;
+    }
+
+    void StopTimer() {
+        m_Benchmark.StopTimer();
+    }
+
+    uint64_t GetBenchmarkOrbit() const {
+        return m_Benchmark.GetDeltaInMs();
     }
 
     template<PerturbExtras PExtras, RefOrbitCalc::ReuseMode Reuse>
@@ -854,6 +865,8 @@ private:
     uint32_t m_AuthoritativePrecision;
     std::vector<HighPrecision> m_ReuseX;
     std::vector<HighPrecision> m_ReuseY;
+
+    BenchmarkData m_Benchmark;
 };
 
 template<typename IterType, class T, PerturbExtras PExtras>

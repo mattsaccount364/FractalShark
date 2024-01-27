@@ -3,6 +3,7 @@
 #include "HDRFloat.h"
 #include "HighPrecision.h"
 #include "Vectors.h"
+#include "BenchmarkData.h"
 #include <variant>
 
 class Fractal;
@@ -93,7 +94,8 @@ public:
         uint64_t &PeriodMaybeZero,
         uint64_t &CompressedIters,
         uint64_t &UncompressedIters,
-        int32_t &CompressionErrorExp);
+        int32_t &CompressionErrorExp,
+        uint64_t &Milliseconds);
 
     void DrawPerturbationResults();
 

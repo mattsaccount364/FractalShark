@@ -13,6 +13,7 @@
   <ItemGroup>
     <ClInclude Include="ATInfo.h" />
     <ClInclude Include="ATResult.h" />
+    <ClInclude Include="BenchmarkData.h" />
     <ClInclude Include="BLA.h" />
     <ClInclude Include="BLAS.h" />
     <ClInclude Include="CudaDblflt.h" />
@@ -40,6 +41,7 @@
     <ClInclude Include="OpenGLContext.h" />
     <ClInclude Include="PerturbationResults.h" />
     <ClInclude Include="PerturbationResultsHelpers.h" />
+    <ClInclude Include="PngParallelSave.h" />
     <ClInclude Include="PointZoomBBConverter.h" />
     <ClInclude Include="QuadDouble\common.cuh" />
     <ClInclude Include="QuadDouble\cuda_header.cuh" />
@@ -53,11 +55,13 @@
     <ClInclude Include="RefOrbitCalc.h" />
     <ClInclude Include="RefOrbitCalcTemplates.h" />
     <ClInclude Include="stdafx.h" />
+    <ClInclude Include="Utilities.h" />
     <ClInclude Include="Vectors.h" />
     <ClInclude Include="WPngImage\lodepng.h" />
     <ClInclude Include="WPngImage\WPngImage.hh" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="BenchmarkData.cpp" />
     <ClCompile Include="BLAS.cpp" />
     <ClCompile Include="Fractal.cpp" />
     <ClCompile Include="FractalNetwork.cpp" />
@@ -66,8 +70,10 @@
     <ClCompile Include="ItersMemoryContainer.cpp" />
     <ClCompile Include="LAReference.cpp" />
     <ClCompile Include="PerturbationResults.cpp" />
+    <ClCompile Include="PngParallelSave.cpp" />
     <ClCompile Include="PointZoomBBConverter.cpp" />
     <ClCompile Include="RefOrbitCalc.cpp" />
+    <ClCompile Include="Utilities.cpp" />
     <ClCompile Include="Vectors.cpp" />
     <ClCompile Include="WPngImage\lodepng.cpp" />
     <ClCompile Include="WPngImage\WPngImage.cc" />

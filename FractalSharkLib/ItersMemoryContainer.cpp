@@ -101,15 +101,6 @@ ItersMemoryContainer &ItersMemoryContainer::operator=(const ItersMemoryContainer
 
     m_IterType = other.m_IterType;
 
-    //m_ItersMemory32 = std::move(other.m_ItersMemory32);
-    //m_ItersMemory64 = std::move(other.m_ItersMemory64);
-
-    //m_ItersArray32 = other.m_ItersArray32;
-    //other.m_ItersArray32 = nullptr;
-
-    //m_ItersArray64 = other.m_ItersArray64;
-    //other.m_ItersArray64 = nullptr;
-
     m_Width = other.m_Width;
     m_Height = other.m_Height;
     m_Total = other.m_Total;

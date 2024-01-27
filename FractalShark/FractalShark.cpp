@@ -33,7 +33,7 @@ void MenuRepainting(HWND hWnd);
 void MenuWindowed(HWND hWnd, bool square);
 void MenuMultiplyIterations(HWND hWnd, double factor);
 void MenuResetIterations(HWND hWnd);
-void MenuPaletteType(Fractal::Palette type);
+void MenuPaletteType(FractalPalette type);
 void MenuPaletteDepth(int depth);
 void MenuPaletteRotation(HWND hWnd);
 void MenuCreateNewPalette(HWND hWnd);
@@ -42,10 +42,6 @@ void MenuSaveCurrentLocation(HWND hWnd);
 void MenuSaveBMP(HWND hWnd);
 void MenuSaveHiResBMP(HWND hWnd);
 void MenuSaveItersAsText();
-void MenuBenchmark(HWND hWnd, bool fastbenchmark);
-void MenuBenchmarkRefPtDouble(HWND hWnd);
-void MenuBenchmarkRefPtHDRFloat(HWND hWnd);
-void MenuBenchmarkThis(HWND hWnd);
 void MenuAlgHelp(HWND hWnd);
 void MenuViewsHelp(HWND hWnd);
 void MenuShowHotkeys(HWND hWnd);
@@ -261,7 +257,9 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
         if (shiftDown) {
             gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::MediumRes);
         }
-        MenuBenchmarkThis(hWnd);
+        gFractal->ForceRecalc();
+        PaintAsNecessary(hWnd);
+        MenuGetCurPos(hWnd);
         break;
 
     case 'O':
@@ -269,7 +267,9 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
         if (shiftDown) {
             gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
         }
-        MenuBenchmarkThis(hWnd);
+        gFractal->ForceRecalc();
+        PaintAsNecessary(hWnd);
+        MenuGetCurPos(hWnd);
         break;
 
     case 'P':
@@ -331,7 +331,7 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
     {
         if (shiftDown) {
             gFractal->CreateNewFractalPalette();
-            gFractal->UsePaletteType(Fractal::Palette::Random);
+            gFractal->UsePaletteType(FractalPalette::Random);
         }
         else {
             gFractal->UseNextPaletteDepth();
@@ -823,31 +823,31 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             case IDM_PALETTE_TYPE_0:
             {
-                MenuPaletteType(Fractal::Palette::Basic);
+                MenuPaletteType(FractalPalette::Basic);
                 break;
             }
 
             case IDM_PALETTE_TYPE_1:
             {
-                MenuPaletteType(Fractal::Palette::Default);
+                MenuPaletteType(FractalPalette::Default);
                 break;
             }
 
             case IDM_PALETTE_TYPE_2:
             {
-                MenuPaletteType(Fractal::Palette::Patriotic);
+                MenuPaletteType(FractalPalette::Patriotic);
                 break;
             }
 
             case IDM_PALETTE_TYPE_3:
             {
-                MenuPaletteType(Fractal::Palette::Summer);
+                MenuPaletteType(FractalPalette::Summer);
                 break;
             }
 
             case IDM_PALETTE_TYPE_4:
             {
-                MenuPaletteType(Fractal::Palette::Random);
+                MenuPaletteType(FractalPalette::Random);
                 break;
             }
 
@@ -918,31 +918,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             case IDM_SAVE_ITERS_TEXT:
             {
                 MenuSaveItersAsText();
-                break;
-            }
-            case IDM_BENCHMARK_ACCURATE:
-            {
-                MenuBenchmark(hWnd, false);
-                break;
-            }
-            case IDM_BENCHMARK_QUICK:
-            {
-                MenuBenchmark(hWnd, true);
-                break;
-            }
-            case IDM_BENCHMARK_ACCURATE_REFPT_DOUBLE:
-            {
-                MenuBenchmarkRefPtDouble(hWnd);
-                break;
-            }
-            case IDM_BENCHMARK_ACCURATE_REFPT_HDRFLOAT:
-            {
-                MenuBenchmarkRefPtHDRFloat(hWnd);
-                break;
-            }
-            case IDM_BENCHMARK_THIS:
-            {
-                MenuBenchmarkThis(hWnd);
                 break;
             }
             case IDM_SHOWHOTKEYS:
@@ -1380,18 +1355,27 @@ void MenuGetCurPos(HWND hWnd)
     uint64_t CompressedIters;
     uint64_t UncompressedIters;
     int32_t CompressionErrorExp;
-    gFractal->GetSomeDetails(PeriodMaybeZero, CompressedIters, UncompressedIters, CompressionErrorExp);
+    uint64_t Milliseconds;
+    gFractal->GetSomeDetails(
+        PeriodMaybeZero,
+        CompressedIters,
+        UncompressedIters,
+        CompressionErrorExp,
+        Milliseconds);
+
     auto additionalDetailsStr =
         std::string("PeriodMaybeZero = ") + std::to_string(PeriodMaybeZero) + "\r\n" +
         std::string("CompressedIters = ") + std::to_string(CompressedIters) + "\r\n" +
         std::string("UncompressedIters = ") + std::to_string(UncompressedIters) + "\r\n" +
         std::string("Compression ratio = ") + std::to_string((double)UncompressedIters / (double)CompressedIters) + "\r\n" +
-        std::string("Compression error exp = ") + std::to_string(CompressionErrorExp) + "\r\n";
+        std::string("Compression error exp = ") + std::to_string(CompressionErrorExp) + "\r\n" +
+        std::string("RefOrbit time in ms = ") + std::to_string(Milliseconds) + "\r\n";
 
     snprintf(
         mem,
         numBytes,
         "This text is copied to clipboard.  Using \"%s\"\r\n"
+        "Per-pixel time in ms: %llu\r\n"
         "Antialiasing: %u\r\n"
         "Palette depth: %u\r\n"
         "Coordinate precision = %zu;\r\n"
@@ -1408,6 +1392,7 @@ void MenuGetCurPos(HWND hWnd)
         "maxY = HighPrecision{ \"%s\" };\r\n"
         "SetNumIterations<IterTypeFull>(%zu);\r\n",
         gFractal->GetRenderAlgorithmName(),
+        gFractal->GetBenchmarkPerPixel().GetDeltaInMs(),
         gFractal->GetGpuAntialiasing(),
         gFractal->GetPaletteDepth(),
         prec,
@@ -1461,9 +1446,9 @@ void MenuPaletteRotation(HWND)
     gFractal->DrawFractal(false);
 }
 
-void MenuPaletteType(Fractal::Palette type) {
+void MenuPaletteType(FractalPalette type) {
     gFractal->UsePaletteType(type);
-    if (type == Fractal::Palette::Default) {
+    if (type == FractalPalette::Default) {
         gFractal->UsePalette(8);
         gFractal->SetPaletteAuxDepth(0);
     }
@@ -1477,7 +1462,7 @@ void MenuPaletteDepth(int depth) {
 
 void MenuCreateNewPalette(HWND) {
     gFractal->CreateNewFractalPalette();
-    gFractal->UsePaletteType(Fractal::Palette::Random);
+    gFractal->UsePaletteType(FractalPalette::Random);
     gFractal->DrawFractal(false);
 }
 
@@ -1551,45 +1536,13 @@ void MenuSaveItersAsText() {
     gFractal->SaveItersAsText(L"");
 }
 
-void BenchmarkMessage(HWND hWnd, HighPrecision megaIters, size_t milliseconds) {
+void BenchmarkMessage(HWND hWnd, size_t milliseconds) {
     std::stringstream ss;
-    ss << std::string("Your computer calculated ");
-    ss << megaIters << " million iterations per second, took " << milliseconds << "ms.";
+    ss << std::string("Time taken in ms: ") << milliseconds << ".";
     std::string s = ss.str();
     const std::wstring ws(s.begin(), s.end());
     MessageBox(hWnd, ws.c_str(), L"", MB_OK | MB_APPLMODAL);
 
-}
-
-void MenuBenchmark(HWND hWnd, bool fastbenchmark)
-{
-    size_t milliseconds;
-    HighPrecision megaIters = gFractal->Benchmark(fastbenchmark ? 5000 : 5000000, milliseconds);
-    BenchmarkMessage(hWnd, megaIters, milliseconds);
-    gFractal->DrawFractal(false);
-}
-
-void MenuBenchmarkRefPtDouble(HWND hWnd)
-{
-    size_t milliseconds;
-    HighPrecision megaIters = gFractal->BenchmarkReferencePoint<double, double>(5000000, milliseconds);
-    BenchmarkMessage(hWnd, megaIters, milliseconds);
-    gFractal->DrawFractal(false);
-}
-
-void MenuBenchmarkRefPtHDRFloat(HWND hWnd)
-{
-    size_t milliseconds;
-    HighPrecision megaIters = gFractal->BenchmarkReferencePoint<HDRFloat<double>, double>(5000000, milliseconds);
-    BenchmarkMessage(hWnd, megaIters, milliseconds);
-    gFractal->DrawFractal(false);
-}
-
-void MenuBenchmarkThis(HWND hWnd) {
-    size_t milliseconds;
-    HighPrecision megaIters = gFractal->BenchmarkThis(milliseconds);
-    BenchmarkMessage(hWnd, megaIters, milliseconds);
-    gFractal->DrawFractal(false);
 }
 
 void MenuAlgHelp(HWND /*hWnd*/) {

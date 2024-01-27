@@ -718,6 +718,8 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
 
     results->TrimResults<PExtras, Reuse>();
     m_GuessReserveSize = results->GetCountOrbitEntries();
+
+    results->StopTimer();
 }
 
 template<
@@ -895,6 +897,8 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
 
     results->TrimResults<PerturbExtras::Disable, ReuseMode::DontSaveForReuse>();
     m_GuessReserveSize = results->GetCountOrbitEntries();
+
+    results->StopTimer();
 
     return true;
 }
@@ -1242,6 +1246,8 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     results->TrimResults<PerturbExtras::Disable, ReuseMode::DontSaveForReuse>();
     m_GuessReserveSize = results->GetCountOrbitEntries();
 
+    results->StopTimer();
+
     return true;
 }
 
@@ -1573,6 +1579,8 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
 
     results->TrimResults<PExtras, Reuse>();
     m_GuessReserveSize = results->GetCountOrbitEntries();
+
+    results->StopTimer();
 }
 
 template<
@@ -2150,13 +2158,15 @@ void RefOrbitCalc::GetSomeDetails(
     uint64_t& PeriodMaybeZero,
     uint64_t& CompressedIters,
     uint64_t& UncompressedIters,
-    int32_t &CompressionErrorExp) {
+    int32_t &CompressionErrorExp,
+    uint64_t &Milliseconds) {
 
 
     PeriodMaybeZero = 0;
     CompressedIters = 0;
     UncompressedIters = 0;
     CompressionErrorExp = 0;
+    Milliseconds = 0;
 
     auto lambda = [&](auto &&arg) {
         if (arg != nullptr) {
@@ -2164,6 +2174,7 @@ void RefOrbitCalc::GetSomeDetails(
             CompressedIters = arg->GetCompressedOrbitSize();
             UncompressedIters = arg->GetCountOrbitEntries();
             CompressionErrorExp = arg->GetCompressionErrorExp();
+            Milliseconds = arg->GetBenchmarkOrbit();
         }
     };
 

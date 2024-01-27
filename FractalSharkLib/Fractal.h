@@ -33,6 +33,10 @@
 #include "PointZoomBBConverter.h"
 #include "DrawThreadSync.h"
 
+#include "PngParallelSave.h"
+#include "Utilities.h"
+#include "BenchmarkData.h"
+
 #include <string>
 #include <deque>
 
@@ -42,6 +46,10 @@ class LAReference;
 class Fractal
 {
 public:
+    // TODO get rid of this junk:
+    friend class PngParallelSave;
+    friend class BenchmarkData;
+
     Fractal(FractalSetupData *setupData,
         int width,
         int height,
@@ -140,16 +148,6 @@ public:
     bool GetRepaint() const;
     void ToggleRepainting();
 
-    // The palette!
-    enum Palette : size_t {
-        Basic = 0,
-        Default,
-        Patriotic,
-        Summer,
-        Random,
-        Num
-    };
-
     // Palette functions
     uint32_t GetPaletteDepthFromIndex(size_t index) const;
     uint32_t GetPaletteDepth() const;
@@ -157,7 +155,7 @@ public:
     void UseNextPaletteDepth();
     void SetPaletteAuxDepth(int32_t aux_depth);
     void UseNextPaletteAuxDepth(int32_t inc);
-    void UsePaletteType(Palette type);
+    void UsePaletteType(FractalPalette type);
     void ResetFractalPalette(void);
     void RotateFractalPalette(int delta);
     void CreateNewFractalPalette(void);
@@ -170,12 +168,8 @@ public:
     int SaveItersAsText(std::wstring filename_base);
     bool CleanupThreads(bool all);
 
-    // Benchmarking
-    HighPrecision Benchmark(IterTypeFull numIters, size_t& millseconds);
-
-    template<class T, class SubType>
-    HighPrecision BenchmarkReferencePoint(IterTypeFull numIters, size_t& millseconds);
-    HighPrecision BenchmarkThis(size_t& millseconds);
+    // Benchmark results
+    const BenchmarkData &GetBenchmarkPerPixel() const;
 
     // Used for retrieving our current location
     inline const HighPrecision& GetMinX(void) const { return m_MinX; }
@@ -189,8 +183,14 @@ public:
         uint64_t& PeriodMaybeZero,
         uint64_t& CompressedIters,
         uint64_t& UncompressedIters,
-        int32_t & CompressionErrorExp) {
-        m_RefOrbit.GetSomeDetails(PeriodMaybeZero, CompressedIters, UncompressedIters, CompressionErrorExp);
+        int32_t& CompressionErrorExp,
+        uint64_t& Milliseconds) {
+        m_RefOrbit.GetSomeDetails(
+            PeriodMaybeZero,
+            CompressedIters,
+            UncompressedIters,
+            CompressionErrorExp,
+            Milliseconds);
     }
 
     void SetPerturbAutosave(AddPointOptions Enable);
@@ -207,6 +207,8 @@ public:
 
     static DWORD WINAPI ServerManageMainConnectionThread(void*);
     static DWORD WINAPI ServerManageSubConnectionThread(void*);
+
+    void ForceRecalc() { ChangedMakeDirty(); }
 
 private:
     void Initialize(int width,
@@ -235,7 +237,6 @@ private:
         HighPrecision MaxX,
         HighPrecision MaxY);
 
-    static bool FileExists(const wchar_t* filename);  // Used only by ApproachTarget
     void SaveCurPos(void);
 
     // Keeps track of what has changed and what hasn't since the last draw
@@ -298,64 +299,8 @@ private:
     template<typename IterType, class T, class SubType, class T2, class SubType2>
     void CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly);
 
-    struct CurrentFractalSave {
-        enum class Type {
-            ItersText,
-            PngImg
-        };
-
-        CurrentFractalSave(
-            enum Type typ,
-            std::wstring filename_base,
-            bool copy_the_iters,
-            Fractal& fractal);
-        ~CurrentFractalSave();
-        void Run();
-        void StartThread();
-
-        CurrentFractalSave(CurrentFractalSave&&) = default;
-
-        Type m_Type;
-        Fractal& m_Fractal;
-        size_t m_ScrnWidth;
-        size_t m_ScrnHeight;
-        uint32_t m_GpuAntialiasing;
-        IterTypeFull m_NumIterations;
-        IterTypeFull m_PaletteRotate; // Used to shift the palette
-        int m_PaletteDepthIndex; // 0, 1, 2
-        int m_PaletteAuxDepth;
-        std::vector<uint16_t>* m_PalR[Fractal::Palette::Num], * m_PalG[Fractal::Palette::Num], * m_PalB[Fractal::Palette::Num];
-        Fractal::Palette m_WhichPalette;
-        std::vector<uint32_t> m_PalIters[Fractal::Palette::Num];
-        ItersMemoryContainer m_CurIters;
-        bool m_CopyTheIters;
-        std::wstring m_FilenameBase;
-        std::unique_ptr<std::thread> m_Thread;
-        bool m_Destructable;
-    };
-
-    template<CurrentFractalSave::Type Typ>
+    template<PngParallelSave::Type Typ>
     int SaveFractalData(const std::wstring filename_base, bool copy_the_iters);
-
-    struct BenchmarkData {
-        BenchmarkData(Fractal& fractal);
-        Fractal& fractal;
-
-        LARGE_INTEGER freq;
-        LARGE_INTEGER startTime;
-        LARGE_INTEGER endTime;
-
-        size_t prevScrnWidth;
-            size_t prevScrnHeight;
-
-        void BenchmarkSetup(IterTypeFull numIters);
-        bool StartTimer();
-        HighPrecision StopTimer(size_t &milliseconds);
-
-        template<class T>
-        HighPrecision StopTimerNoIters(size_t &milliseconds);
-        void BenchmarkFinish();
-    };
 
     uint64_t FindTotalItersUsed(void);
 
@@ -382,7 +327,7 @@ private:
     std::deque<std::atomic_uint64_t> m_DrawThreadAtomics;
     std::vector<std::unique_ptr<DrawThreadSync>> m_DrawThreads;
 
-    std::vector<std::unique_ptr<CurrentFractalSave>> m_FractalSavesInProgress;
+    std::vector<std::unique_ptr<PngParallelSave>> m_FractalSavesInProgress;
 
     // Holds some customizations the user can make.  Saves/Loads from disk
     FractalSetupData m_SetupData;
@@ -444,11 +389,11 @@ private:
 
     static constexpr const size_t NumBitDepths = 6;
 
-    std::vector<uint16_t> m_PalR[Palette::Num][NumBitDepths];
-    std::vector<uint16_t> m_PalG[Palette::Num][NumBitDepths];
-    std::vector<uint16_t> m_PalB[Palette::Num][NumBitDepths];
-    std::vector<uint32_t> m_PalIters[Palette::Num];
-    enum Palette m_WhichPalette;
+    std::vector<uint16_t> m_PalR[FractalPalette::Num][NumBitDepths];
+    std::vector<uint16_t> m_PalG[FractalPalette::Num][NumBitDepths];
+    std::vector<uint16_t> m_PalB[FractalPalette::Num][NumBitDepths];
+    std::vector<uint32_t> m_PalIters[FractalPalette::Num];
+    FractalPalette m_WhichPalette;
 
     IterTypeFull m_PaletteRotate; // Used to shift the palette
     int m_PaletteDepthIndex; // 0, 1, 2
@@ -498,6 +443,9 @@ private:
     };
     AsyncRenderThreadState m_AsyncRenderThreadState;
     bool m_AsyncRenderThreadFinish;
+
+    // Benchmarking
+    BenchmarkData m_BenchmarkDataPerPixel;
     
     std::unique_ptr<std::thread> m_AsyncRenderThread;
     std::atomic<uint32_t> m_AsyncGpuRenderIsAtomic;

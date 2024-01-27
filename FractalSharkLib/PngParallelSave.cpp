@@ -1,6 +1,5 @@
 #include "stdafx.h"
-#include "FractalSave.h"
-
+#include "PngParallelSave.h"
 #include "Fractal.h"
 
 //////////////////////////////////////////////////////////////////////////////
@@ -12,6 +11,7 @@
 PngParallelSave::PngParallelSave(
     enum Type typ,
     std::wstring filename_base,
+    bool copy_the_iters,
     Fractal& fractal)
     : m_Type(typ),
     m_FilenameBase(filename_base),
@@ -24,7 +24,8 @@ PngParallelSave::PngParallelSave(
     m_PaletteDepthIndex(fractal.m_PaletteDepthIndex),
     m_PaletteAuxDepth(fractal.m_PaletteAuxDepth),
     m_WhichPalette(fractal.m_WhichPalette),
-    m_CurIters(std::move(fractal.m_CurIters)) {
+    m_CurIters{},
+    m_CopyTheIters(copy_the_iters) {
 
     //
     // TODO Note we pass off ownership of m_CurIters.
@@ -32,9 +33,11 @@ PngParallelSave::PngParallelSave(
     // going to work sensibly.  This is a bug.
     //
 
-    fractal.SetCurItersMemory();
+    if (m_CopyTheIters == false) {
+        fractal.SetCurItersMemory();
+    }
 
-    for (size_t i = 0; i < PaletteStyle::Num; i++) {
+    for (size_t i = 0; i < FractalPalette::Num; i++) {
         m_PalR[i] = fractal.m_PalR[i];
         m_PalG[i] = fractal.m_PalG[i];
         m_PalB[i] = fractal.m_PalB[i];
@@ -44,6 +47,13 @@ PngParallelSave::PngParallelSave(
 
     m_Thread = nullptr;
     m_Destructable = false;
+
+    if (m_CopyTheIters) {
+        m_CurIters = fractal.m_CurIters;
+    }
+    else {
+        m_CurIters = std::move(fractal.m_CurIters);
+    }
 }
 
 PngParallelSave::~PngParallelSave() {
@@ -133,7 +143,8 @@ void PngParallelSave::Run() {
                                 numIters = maxPossibleIters - 1;
                             }
 
-                            auto palIndex = (numIters >> m_Fractal.m_PaletteAuxDepth) % m_PalIters[m_WhichPalette][m_PaletteDepthIndex];
+                            auto shiftedIters = (numIters >> m_PaletteAuxDepth);
+                            auto palIndex = shiftedIters % m_PalIters[m_WhichPalette][m_PaletteDepthIndex];
 
                             acc_r += m_PalR[m_WhichPalette][m_PaletteDepthIndex][palIndex];
                             acc_g += m_PalG[m_WhichPalette][m_PaletteDepthIndex][palIndex];
@@ -163,7 +174,9 @@ void PngParallelSave::Run() {
             }
         }
 
-        m_Fractal.ReturnIterMemory(std::move(m_CurIters));
+        if (m_CopyTheIters == false) {
+            m_Fractal.ReturnIterMemory(std::move(m_CurIters));
+        }
 
         ret = image.saveImage(filename_c, WPngImage::PngFileFormat::kPngFileFormat_RGBA16);
     }
@@ -196,7 +209,9 @@ void PngParallelSave::Run() {
         out << out_str;
         out.close();
 
-        m_Fractal.ReturnIterMemory(std::move(m_CurIters));
+        if (m_CopyTheIters == false) {
+            m_Fractal.ReturnIterMemory(std::move(m_CurIters));
+        }
     }
 
     m_Destructable = true;

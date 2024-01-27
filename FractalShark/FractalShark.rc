@@ -118,7 +118,7 @@ BEGIN
             MENUITEM "#26 - low period, 1x32 busted, 1x64 OK, hard GPU", IDM_VIEW26
             MENUITEM "#27",                         IDM_VIEW27
             MENUITEM "#28",                         IDM_VIEW28
-            MENUITEM "#29",                         IDM_VIEW29, INACTIVE
+            MENUITEM "#29 - Fast HDRx32 broke, HDRx64 works", IDM_VIEW29
         END
         MENUITEM "Recalculate, Reuse Reference", IDM_SQUAREVIEW
         MENUITEM SEPARATOR
@@ -308,14 +308,6 @@ BEGIN
         POPUP "Load"
         BEGIN
             MENUITEM "Load Location...",            0
-        END
-        POPUP "Benchmark"
-        BEGIN
-            MENUITEM "Accurate",                    IDM_BENCHMARK_ACCURATE
-            MENUITEM "Quick",                       IDM_BENCHMARK_QUICK
-            MENUITEM "Accurate - Reference Point (Double)", IDM_BENCHMARK_ACCURATE_REFPT_DOUBLE
-            MENUITEM "Accurate - Reference Point (HDRFloat)", IDM_BENCHMARK_ACCURATE_REFPT_HDRFLOAT
-            MENUITEM "This Screen",                 IDM_BENCHMARK_THIS
         END
         MENUITEM SEPARATOR
         MENUITEM "E&xit",                       IDM_EXIT

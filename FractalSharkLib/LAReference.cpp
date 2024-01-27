@@ -880,6 +880,8 @@ void LAReference<IterType, Float, SubType, PExtras>::GenerateApproximationData(
         return;
     }
 
+    m_BenchmarkDataLA.StartTimer();
+
     //bool PeriodDetected = CreateLAFromOrbitMT(PerturbationResults, maxRefIteration);
     bool PeriodDetected = CreateLAFromOrbit(PerturbationResults, maxRefIteration);
     if (!PeriodDetected) return;
@@ -891,6 +893,8 @@ void LAReference<IterType, Float, SubType, PExtras>::GenerateApproximationData(
 
     CreateATFromLA(radius, UseSmallExponents);
     m_IsValid = true;
+
+    m_BenchmarkDataLA.StopTimer();
 }
 
 // TODO - this is a mess

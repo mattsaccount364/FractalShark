@@ -9,24 +9,30 @@ BenchmarkData::BenchmarkData() :
     m_endTime{},
     m_DeltaTime{} {
 
-    QueryPerformanceFrequency(reinterpret_cast<LARGE_INTEGER*>(&m_freq));
+    LARGE_INTEGER freq;
+
+    QueryPerformanceFrequency(&freq);
+    m_freq = freq.QuadPart;
 }
 
 void BenchmarkData::StartTimer() {
     m_startTime = 0;
     m_endTime = 1;
 
-    QueryPerformanceCounter(reinterpret_cast<LARGE_INTEGER*>(&m_startTime));
-    return;
+    LARGE_INTEGER startTime;
+    QueryPerformanceCounter(&startTime);
+    m_startTime = startTime.QuadPart;
 }
 
 void BenchmarkData::StopTimer() {
-    QueryPerformanceCounter(reinterpret_cast<LARGE_INTEGER*>(&m_endTime));
+    LARGE_INTEGER endTime;
+    QueryPerformanceCounter(&endTime);
+    m_endTime = endTime.QuadPart;
 
     m_DeltaTime = m_endTime - m_startTime;
 }
 
 uint64_t BenchmarkData::GetDeltaInMs() const {
-    double timeTaken = (double)m_DeltaTime / (double)m_freq;
-    return (uint64_t)(timeTaken * 1000.0);
+    double timeTakenMs = (double)m_DeltaTime * 1000.0 / (double)m_freq;
+    return (uint64_t)timeTakenMs;
 }

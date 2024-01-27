@@ -2159,14 +2159,16 @@ void RefOrbitCalc::GetSomeDetails(
     uint64_t& CompressedIters,
     uint64_t& UncompressedIters,
     int32_t &CompressionErrorExp,
-    uint64_t &Milliseconds) {
+    uint64_t &OrbitMilliseconds,
+    uint64_t &LAMilliseconds) {
 
 
     PeriodMaybeZero = 0;
     CompressedIters = 0;
     UncompressedIters = 0;
     CompressionErrorExp = 0;
-    Milliseconds = 0;
+    OrbitMilliseconds = 0;
+    LAMilliseconds = 0;
 
     auto lambda = [&](auto &&arg) {
         if (arg != nullptr) {
@@ -2174,7 +2176,11 @@ void RefOrbitCalc::GetSomeDetails(
             CompressedIters = arg->GetCompressedOrbitSize();
             UncompressedIters = arg->GetCountOrbitEntries();
             CompressionErrorExp = arg->GetCompressionErrorExp();
-            Milliseconds = arg->GetBenchmarkOrbit();
+            OrbitMilliseconds = arg->GetBenchmarkOrbit();
+
+            if (arg->GetLaReference() != nullptr) {
+                LAMilliseconds = arg->GetLaReference()->GetBenchmarkLA().GetDeltaInMs();
+            }
         }
     };
 

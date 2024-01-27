@@ -90,7 +90,8 @@ public:
         m_LaReference{},
         m_AuthoritativePrecision{},
         m_ReuseX{},
-        m_ReuseY{} {
+        m_ReuseY{},
+        m_BenchmarkOrbit{} {
     
         if (add_point_options == AddPointOptions::OpenExistingWithSave) {
             return;
@@ -200,6 +201,8 @@ public:
         m_ReuseX = other.m_ReuseX;
         m_ReuseY = other.m_ReuseY;
 
+        m_BenchmarkOrbit = other.m_BenchmarkOrbit;
+
         if constexpr (IncludeLA) {
             if (other.GetLaReference() != nullptr) {
                 m_LaReference = std::make_unique<LAReference<IterType, T, SubType, PExtras>>(
@@ -234,6 +237,8 @@ public:
         m_AuthoritativePrecision = other.m_AuthoritativePrecision;
         m_ReuseX = other.m_ReuseX;
         m_ReuseY = other.m_ReuseY;
+
+        m_BenchmarkOrbit = other.m_BenchmarkOrbit;
 
         // compression - don't copy LA data.  Regenerate if needed.
     }
@@ -547,7 +552,7 @@ public:
         IterType NumIterations,
         size_t GuessReserveSize) {
 
-        m_Benchmark.StartTimer();
+        m_BenchmarkOrbit.StartTimer();
 
         auto radiusX = maxX - minX;
         auto radiusY = maxY - minY;
@@ -598,11 +603,11 @@ public:
     }
 
     void StopTimer() {
-        m_Benchmark.StopTimer();
+        m_BenchmarkOrbit.StopTimer();
     }
 
     uint64_t GetBenchmarkOrbit() const {
-        return m_Benchmark.GetDeltaInMs();
+        return m_BenchmarkOrbit.GetDeltaInMs();
     }
 
     template<PerturbExtras PExtras, RefOrbitCalc::ReuseMode Reuse>
@@ -866,7 +871,7 @@ private:
     std::vector<HighPrecision> m_ReuseX;
     std::vector<HighPrecision> m_ReuseY;
 
-    BenchmarkData m_Benchmark;
+    BenchmarkData m_BenchmarkOrbit;
 };
 
 template<typename IterType, class T, PerturbExtras PExtras>

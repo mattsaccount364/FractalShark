@@ -12,6 +12,7 @@
 #include "LAInfoDeep.h"
 #include "LAInfoI.h"
 #include "Vectors.h"
+#include "BenchmarkData.h"
 
 template<typename IterType, class HDRFloat, class SubType>
 class ATInfo;
@@ -75,7 +76,8 @@ public:
         m_LAStageCount{}, 
         m_IsValid{},
         m_LAs(add_point_options, las_filename),
-        m_LAStages(add_point_options, la_stages_filename) {
+        m_LAStages(add_point_options, la_stages_filename),
+        m_BenchmarkDataLA{} {
     }
 
     bool WriteMetadata(std::ofstream& metafile) const {
@@ -145,6 +147,8 @@ public:
         for (int i = 0; i < other.m_LAStages.GetSize(); i++) {
             m_LAStages[i] = other.m_LAStages[i];
         }
+
+        m_BenchmarkDataLA = other.m_BenchmarkDataLA;
     }
 
     bool IsValid() const {
@@ -191,6 +195,8 @@ private:
     GrowableVector<LAInfoDeep<IterType, Float, SubType, PExtras>> m_LAs;
     GrowableVector<LAStageInfo<IterType>> m_LAStages;
 
+    BenchmarkData m_BenchmarkDataLA;
+
     IterType LAsize();
     template<typename PerturbType>
     bool CreateLAFromOrbit(
@@ -212,6 +218,12 @@ public:
         Float radius,
         IterType maxRefIteration,
         bool UseSmallExponents);
+
+    const BenchmarkData& GetBenchmarkLA() const {
+        return m_BenchmarkDataLA;
+    }
+
+private:
     void CreateATFromLA(Float radius, bool UseSmallExponents);
 
 public:

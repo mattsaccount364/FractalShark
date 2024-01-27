@@ -95,7 +95,8 @@ public:
         uint64_t &CompressedIters,
         uint64_t &UncompressedIters,
         int32_t &CompressionErrorExp,
-        uint64_t &Milliseconds);
+        uint64_t &OrbitMilliseconds,
+        uint64_t &LAMilliseconds);
 
     void DrawPerturbationResults();
 

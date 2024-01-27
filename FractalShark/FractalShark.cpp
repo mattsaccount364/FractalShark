@@ -1355,13 +1355,15 @@ void MenuGetCurPos(HWND hWnd)
     uint64_t CompressedIters;
     uint64_t UncompressedIters;
     int32_t CompressionErrorExp;
-    uint64_t Milliseconds;
+    uint64_t OrbitMilliseconds;
+    uint64_t LAMilliseconds;
     gFractal->GetSomeDetails(
         PeriodMaybeZero,
         CompressedIters,
         UncompressedIters,
         CompressionErrorExp,
-        Milliseconds);
+        OrbitMilliseconds,
+        LAMilliseconds);
 
     auto additionalDetailsStr =
         std::string("PeriodMaybeZero = ") + std::to_string(PeriodMaybeZero) + "\r\n" +
@@ -1369,7 +1371,8 @@ void MenuGetCurPos(HWND hWnd)
         std::string("UncompressedIters = ") + std::to_string(UncompressedIters) + "\r\n" +
         std::string("Compression ratio = ") + std::to_string((double)UncompressedIters / (double)CompressedIters) + "\r\n" +
         std::string("Compression error exp = ") + std::to_string(CompressionErrorExp) + "\r\n" +
-        std::string("RefOrbit time in ms = ") + std::to_string(Milliseconds) + "\r\n";
+        std::string("RefOrbit time in ms = ") + std::to_string(OrbitMilliseconds) + "\r\n" +
+        std::string("LA generation time in ms = ") + std::to_string(LAMilliseconds) + "\r\n";
 
     snprintf(
         mem,

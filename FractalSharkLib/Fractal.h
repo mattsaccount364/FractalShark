@@ -184,13 +184,15 @@ public:
         uint64_t& CompressedIters,
         uint64_t& UncompressedIters,
         int32_t& CompressionErrorExp,
-        uint64_t& Milliseconds) {
+        uint64_t& OrbitMilliseconds,
+        uint64_t& LAMilliseconds) {
         m_RefOrbit.GetSomeDetails(
             PeriodMaybeZero,
             CompressedIters,
             UncompressedIters,
             CompressionErrorExp,
-            Milliseconds);
+            OrbitMilliseconds,
+            LAMilliseconds);
     }
 
     void SetPerturbAutosave(AddPointOptions Enable);

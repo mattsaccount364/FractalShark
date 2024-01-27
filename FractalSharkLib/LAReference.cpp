@@ -278,8 +278,9 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
 
     const int32_t ThreadCount = (int32_t)std::thread::hardware_concurrency();
     //const int32_t ThreadCount = (int32_t)3;
-    std::deque<std::atomic_uint64_t> Start;
+    std::deque<std::atomic_uint64_t> Start, Release;
     Start.resize(ThreadCount);
+    Release.resize(ThreadCount);
 
     std::vector<std::vector<LAInfoDeep<IterType, Float, SubType, PExtras>>> ThreadLAs;
     ThreadLAs.resize(ThreadCount);
@@ -300,6 +301,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
             &numbers1,
             &numbers2,
             Period,
+            &Release,
             &Start,
             &ThreadLAs,
             ThreadCount,
@@ -341,26 +343,52 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
                 i++;
             }
 
-            if (i > maxRefIteration / ThreadCount) {
-                while (Start[NextThread].load(std::memory_order_release) == 0);
+            for (size_t next_thread_eat = NextThread; next_thread_eat < ThreadCount; next_thread_eat++) {
+                auto cur_end = static_cast<IterType>(
+                    static_cast<IterTypeFull>(maxRefIteration) * next_thread_eat / ThreadCount);
 
-                auto result = Start[NextThread].load(std::memory_order_release);
-                if (i == result - 1) {
-                    i++;
+                auto next_thread_upperbound = static_cast<IterType>(
+                    static_cast<IterTypeFull>(maxRefIteration) * (next_thread_eat + 1) / ThreadCount);
+
+                if (i <= cur_end) {
+                    break;
+                } else if (i > cur_end && i < next_thread_upperbound) {
+                    // Wait for the next thread to finish the first bit.
+                    while (Start[next_thread_eat].load(std::memory_order_acquire) == 0);
+                    auto result = Start[next_thread_eat].load(std::memory_order_acquire);
+
+                    if (i == result - 1) {
+
+                        // Let the next thread go.
+                        Release[next_thread_eat].store(1, std::memory_order_release);
+
+                        i++;
+
+                        if (ThreadID == LastThread) {
+                            LAI.StepLength = i - PeriodBegin;
+
+                            LA.SetLAi(LAI);
+                            ThreadLAs[ThreadID].push_back(LA);
+                        }
+
+                        return;
+                    } else if (i >= result) {
+                        DebugBreak();
+                        ::MessageBox(nullptr, L"I have another bug here yay :(", L"", MB_OK | MB_APPLMODAL);
+                        //break;
+                    }
+
                     break;
                 }
-                else if (i >= result) {
-                    ::MessageBox(nullptr, L"Confused thread situation", L"", MB_OK | MB_APPLMODAL);
+                else {
+                    // Lock out the next thread.
+                    Release[next_thread_eat].store(2, std::memory_order_release);
                 }
             }
         }
 
-        if (ThreadID == LastThread) {
-            LAI.StepLength = i - PeriodBegin;
-
-            LA.SetLAi(LAI);
-            ThreadLAs[ThreadID].push_back(LA);
-        }
+        ::MessageBox(nullptr, L"Thread 0 finished unexpected", L"", MB_OK | MB_APPLMODAL);
+        DebugBreak();
     };
 
     auto Worker = [
@@ -368,6 +396,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
             &numbers1,
             &numbers2,
             Period,
+            &Release,
             &Start,
             &ThreadLAs,
             ThreadCount,
@@ -375,11 +404,28 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
             this
         ](int32_t ThreadID) {
 
+        //const auto PrevThread = ThreadID - 1;
         const auto NextThread = ThreadID + 1;
         const auto LastThread = ThreadCount - 1;
 
         IterTypeFull intermediate_j = static_cast<IterTypeFull>(maxRefIteration) * ThreadID / ThreadCount;
         IterType j = static_cast<IterType>(intermediate_j);
+
+        //if (PrevThread > 0) {
+        //    while (Start[PrevThread].load(std::memory_order_acquire) == 0);
+        //    auto result = Start[PrevThread].load(std::memory_order_acquire);
+
+        //    if (result > j && result != UINT64_MAX) {
+        //        uint64_t expected = 0;
+        //        bool res = Start[ThreadID].compare_exchange_strong(expected, UINT64_MAX);
+        //        if (!res) {
+        //            DebugBreak();
+        //            ::MessageBox(nullptr, L"Confused thread situation", L"", MB_OK | MB_APPLMODAL);
+        //        }
+
+        //        return;
+        //    }
+        //}
 
         IterTypeFull intermediate_end = static_cast<IterTypeFull>(maxRefIteration) * NextThread / ThreadCount;
         IterType End = static_cast<IterType>(intermediate_end);
@@ -395,6 +441,8 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
 
         numbers1[ThreadID] = j;
         numbers2[ThreadID] = End;
+
+        //auto result = Start[NextThread].load(std::memory_order_acquire);
 
         for (; j < maxRefIteration; j++) {
             LAInfoDeep<IterType, Float, SubType, PExtras> NewLA{};
@@ -423,12 +471,57 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
             break;
         }
 
-        //if (j < End) {
         uint64_t expected = 0;
         bool res = Start[ThreadID].compare_exchange_strong(expected, j);
         if (!res) {
             DebugBreak();
             ::MessageBox(nullptr, L"Confused thread situation", L"", MB_OK | MB_APPLMODAL);
+        }
+
+        {
+            for (;;) {
+                auto result = Release[ThreadID].load(std::memory_order_acquire);
+                if (result == 2) { // 2 = don't use this thread, the prior one went overboard
+                    return;
+                }
+                else if (result == 1) { // 1 == go
+                    break;
+                }
+                else { // 0 = keep waiting.
+                    continue;
+                }
+            }
+        }
+
+        //auto next_thread_eat = NextThread;
+        //while (j > End) {
+        //    End = static_cast<IterType>(
+        //        static_cast<IterTypeFull>(maxRefIteration) * next_thread_eat / ThreadCount);
+        //    if (j > test) {
+        //        uint64_t expected = 0;
+        //        bool res = Start[next_thread_eat].compare_exchange_strong(expected, UINT64_MAX);
+        //        if (!res) {
+        //            DebugBreak();
+        //            ::MessageBox(nullptr, L"Confused thread situation", L"", MB_OK | MB_APPLMODAL);
+        //        }
+
+        //        next_thread_eat++;
+        //    }
+        //}
+
+        for (size_t next_thread_eat = NextThread; next_thread_eat < ThreadCount; next_thread_eat++) {
+            auto cur_end = static_cast<IterType>(
+                static_cast<IterTypeFull>(maxRefIteration) * next_thread_eat / ThreadCount);
+
+            if (j < cur_end) {
+                // Let the next thread go.
+                Release[next_thread_eat].store(1, std::memory_order_release);
+                break;
+            }
+            else {
+                // Lock out the next thread.
+                Release[next_thread_eat].store(2, std::memory_order_release);
+            }
         }
 
         //Sleep(10000000);
@@ -464,31 +557,83 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
                 j++;
             }
 
-            if (j > End) {
-                if (ThreadID == LastThread) {
-                    DebugBreak();
-                    ::MessageBox(nullptr, L"I have another bug here", L"", MB_OK | MB_APPLMODAL);
-                }
-                while (Start[NextThread].load(std::memory_order_acquire) == 0);
-                auto result = Start[NextThread].load(std::memory_order_acquire);
-                if (j == result - 1) {
-                    j++;
+            //if (j > End) {
+            //    if (ThreadID == LastThread) {
+            //        DebugBreak();
+            //        ::MessageBox(nullptr, L"I have another bug here", L"", MB_OK | MB_APPLMODAL);
+            //    }
+            //    while (Start[NextThread].load(std::memory_order_acquire) == 0);
+            //    auto result = Start[NextThread].load(std::memory_order_acquire);
+            //    if (j == result - 1) {
+            //        j++;
+            //        break;
+            //    }
+            //    else if (j >= result) {
+            //        DebugBreak();
+            //        ::MessageBox(nullptr, L"I have another bug here yay :(", L"", MB_OK | MB_APPLMODAL);
+            //        //break;
+            //    }
+            //}
+
+            if (ThreadID >= LastThread) {
+                DebugBreak();
+                ::MessageBox(nullptr, L"I have another bug here", L"", MB_OK | MB_APPLMODAL);
+            }
+
+            for (size_t next_thread_eat = NextThread; next_thread_eat < ThreadCount; next_thread_eat++) {
+
+                auto cur_end = static_cast<IterType>(
+                    static_cast<IterTypeFull>(maxRefIteration) * next_thread_eat / ThreadCount);
+
+                auto next_thread_eat_end = static_cast<IterType>(
+                    static_cast<IterTypeFull>(maxRefIteration) * (next_thread_eat + 1) / ThreadCount);
+
+                if (j <= cur_end) {
                     break;
+                } else if (j > cur_end && j < next_thread_eat_end) {
+
+                    // Let the next thread go.
+                    Release[next_thread_eat].store(1, std::memory_order_release);
+
+                    // Wait for the next thread to finish the first bit.
+                    while (Start[next_thread_eat].load(std::memory_order_acquire) == 0);
+
+                    auto result = Start[next_thread_eat].load(std::memory_order_acquire);
+                    if (j == result - 1) {
+                        j++;
+
+                        if (ThreadID == LastThread) {
+                            LAI_.StepLength = j - PeriodBegin;
+
+                            LA_.SetLAi(LAI_);
+                            ThreadLAs[ThreadID].push_back(LA_);
+                        }
+
+                        return;
+                    }
+                    else if (j >= result) {
+                        // So for next time, this fails.  Fuck if I know what I'm doing
+                        DebugBreak();
+                        ::MessageBox(nullptr, L"I have another bug here yay :(", L"", MB_OK | MB_APPLMODAL);
+                        //break;
+                    }
                 }
-                else if (j >= result) {
-                    DebugBreak();
-                    ::MessageBox(nullptr, L"I have another bug here yay :(", L"", MB_OK | MB_APPLMODAL);
-                    //break;
+                else {
+                    // Lock out the next thread.
+                    Release[next_thread_eat].store(2, std::memory_order_release);
                 }
             }
         }
 
-        if (ThreadID == LastThread) {
-            LAI_.StepLength = j - PeriodBegin;
+        //if (ThreadID == LastThread) {
+        //    LAI_.StepLength = j - PeriodBegin;
 
-            LA_.SetLAi(LAI_);
-            ThreadLAs[ThreadID].push_back(LA_);
-        }
+        //    LA_.SetLAi(LAI_);
+        //    ThreadLAs[ThreadID].push_back(LA_);
+        //}
+
+
+
         //}
         //else {
         //    uint64_t expected = 0;
@@ -735,8 +880,8 @@ void LAReference<IterType, Float, SubType, PExtras>::GenerateApproximationData(
         return;
     }
 
-    bool PeriodDetected = CreateLAFromOrbitMT(PerturbationResults, maxRefIteration);
-    //bool PeriodDetected = CreateLAFromOrbit(PerturbationResults, maxRefIteration);
+    //bool PeriodDetected = CreateLAFromOrbitMT(PerturbationResults, maxRefIteration);
+    bool PeriodDetected = CreateLAFromOrbit(PerturbationResults, maxRefIteration);
     if (!PeriodDetected) return;
 
     while (true) {

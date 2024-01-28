@@ -102,7 +102,6 @@ public:
 
 private:
     bool RequiresCompression() const;
-    bool RequiresBadCalc() const;
     bool IsThisPerturbationArrayUsed(void* check) const;
 
     template<typename IterType, class T, PerturbExtras PExtras>

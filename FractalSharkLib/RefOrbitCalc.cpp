@@ -117,18 +117,6 @@ bool RefOrbitCalc::RequiresCompression() const {
     }
 }
 
-bool RefOrbitCalc::RequiresBadCalc() const {
-    switch (m_Fractal.GetRenderAlgorithm()) {
-    case RenderAlgorithm::GpuHDRx32PerturbedScaled:
-    case RenderAlgorithm::Gpu1x32PerturbedScaled:
-    case RenderAlgorithm::Gpu1x32PerturbedScaledBLA:
-    case RenderAlgorithm::Gpu2x32PerturbedScaled:
-        return true;
-    default:
-        return false;
-    }
-}
-
 bool RefOrbitCalc::RequiresReuse() const {
     switch (m_PerturbationAlg) {
     case PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed:
@@ -476,75 +464,42 @@ template<
     PerturbExtras PExtras,
     RefOrbitCalc::BenchmarkMode BenchmarkState>
 void RefOrbitCalc::AddPerturbationReferencePoint() {
-    // TODO Hookup PExtras, move RequiresBadCalc out
     if (m_PerturbationGuessCalcX == 0 && m_PerturbationGuessCalcY == 0) {
         m_PerturbationGuessCalcX = (m_Fractal.GetMaxX() + m_Fractal.GetMinX()) / HighPrecision(2);
         m_PerturbationGuessCalcY = (m_Fractal.GetMaxY() + m_Fractal.GetMinY()) / HighPrecision(2);
     }
-
-    //if (RequiresBadCalc()) {
-    //    if (m_PerturbationAlg == PerturbationAlg::ST) {
-    //        AddPerturbationReferencePointST<IterType, T, SubType, false, BenchmarkState, PerturbExtras::Bad, ReuseMode::DontSaveForReuse>(
-    //            m_PerturbationGuessCalcX,
-    //            m_PerturbationGuessCalcY);
-    //    }
-    //    else if (m_PerturbationAlg == PerturbationAlg::MT) {
-    //        AddPerturbationReferencePointMT3<IterType, T, SubType, false, BenchmarkState, PerturbExtras::Bad, ReuseMode::DontSaveForReuse>(
-    //            m_PerturbationGuessCalcX,
-    //            m_PerturbationGuessCalcY);
-    //    }
-    //    else if (m_PerturbationAlg == PerturbationAlg::STPeriodicity) {
-    //        AddPerturbationReferencePointST<IterType, T, SubType, true, BenchmarkState, PerturbExtras::Bad, ReuseMode::DontSaveForReuse>(
-    //            m_PerturbationGuessCalcX,
-    //            m_PerturbationGuessCalcY);
-    //    }
-    //    else if (m_PerturbationAlg == PerturbationAlg::MTPeriodicity3 ||
-    //             m_PerturbationAlg == PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed ||
-    //             m_PerturbationAlg == PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed) {
-    //        // Note: this path we don't bother saving/reusing.  Useless for low zoom depths.
-    //        AddPerturbationReferencePointMT3<IterType, T, SubType, true, BenchmarkState, PerturbExtras::Bad, ReuseMode::DontSaveForReuse>(
-    //            m_PerturbationGuessCalcX,
-    //            m_PerturbationGuessCalcY);
-    //    }
-    //    else if (m_PerturbationAlg == PerturbationAlg::MTPeriodicity5) {
-    //        AddPerturbationReferencePointMT5<IterType, T, SubType, true, BenchmarkState, PerturbExtras::Bad, ReuseMode::DontSaveForReuse>(
-    //            m_PerturbationGuessCalcX,
-    //            m_PerturbationGuessCalcY);
-    //    }
-    //}
-    //else {
-        if (m_PerturbationAlg == PerturbationAlg::ST) {
-            AddPerturbationReferencePointST<IterType, T, SubType, false, BenchmarkState, PExtras, ReuseMode::DontSaveForReuse>(
-                m_PerturbationGuessCalcX,
-                m_PerturbationGuessCalcY);
-        }
-        else if (m_PerturbationAlg == PerturbationAlg::MT) {
-            AddPerturbationReferencePointMT3<IterType, T, SubType, false, BenchmarkState, PExtras, ReuseMode::DontSaveForReuse>(
-                m_PerturbationGuessCalcX,
-                m_PerturbationGuessCalcY);
-        }
-        else if (m_PerturbationAlg == PerturbationAlg::STPeriodicity) {
-            AddPerturbationReferencePointST<IterType, T, SubType, true, BenchmarkState, PExtras, ReuseMode::DontSaveForReuse>(
-                m_PerturbationGuessCalcX,
-                m_PerturbationGuessCalcY);
-        }
-        else if (m_PerturbationAlg == PerturbationAlg::MTPeriodicity3) {
-            AddPerturbationReferencePointMT3<IterType, T, SubType, true, BenchmarkState, PExtras, ReuseMode::DontSaveForReuse>(
-                m_PerturbationGuessCalcX,
-                m_PerturbationGuessCalcY);
-        }
-        else if (m_PerturbationAlg == PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed ||
-                 m_PerturbationAlg == PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed) {
-            AddPerturbationReferencePointMT3<IterType, T, SubType, true, BenchmarkState, PExtras, ReuseMode::SaveForReuse>(
-                m_PerturbationGuessCalcX,
-                m_PerturbationGuessCalcY);
-        }
-        else if (m_PerturbationAlg == PerturbationAlg::MTPeriodicity5) {
-            AddPerturbationReferencePointMT5<IterType, T, SubType, true, BenchmarkState, PExtras, ReuseMode::DontSaveForReuse>(
-                m_PerturbationGuessCalcX,
-                m_PerturbationGuessCalcY);
-        }
-    //}
+    
+    if (m_PerturbationAlg == PerturbationAlg::ST) {
+        AddPerturbationReferencePointST<IterType, T, SubType, false, BenchmarkState, PExtras, ReuseMode::DontSaveForReuse>(
+            m_PerturbationGuessCalcX,
+            m_PerturbationGuessCalcY);
+    }
+    else if (m_PerturbationAlg == PerturbationAlg::MT) {
+        AddPerturbationReferencePointMT3<IterType, T, SubType, false, BenchmarkState, PExtras, ReuseMode::DontSaveForReuse>(
+            m_PerturbationGuessCalcX,
+            m_PerturbationGuessCalcY);
+    }
+    else if (m_PerturbationAlg == PerturbationAlg::STPeriodicity) {
+        AddPerturbationReferencePointST<IterType, T, SubType, true, BenchmarkState, PExtras, ReuseMode::DontSaveForReuse>(
+            m_PerturbationGuessCalcX,
+            m_PerturbationGuessCalcY);
+    }
+    else if (m_PerturbationAlg == PerturbationAlg::MTPeriodicity3) {
+        AddPerturbationReferencePointMT3<IterType, T, SubType, true, BenchmarkState, PExtras, ReuseMode::DontSaveForReuse>(
+            m_PerturbationGuessCalcX,
+            m_PerturbationGuessCalcY);
+    }
+    else if (m_PerturbationAlg == PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed ||
+                m_PerturbationAlg == PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed) {
+        AddPerturbationReferencePointMT3<IterType, T, SubType, true, BenchmarkState, PExtras, ReuseMode::SaveForReuse>(
+            m_PerturbationGuessCalcX,
+            m_PerturbationGuessCalcY);
+    }
+    else if (m_PerturbationAlg == PerturbationAlg::MTPeriodicity5) {
+        AddPerturbationReferencePointMT5<IterType, T, SubType, true, BenchmarkState, PExtras, ReuseMode::DontSaveForReuse>(
+            m_PerturbationGuessCalcX,
+            m_PerturbationGuessCalcY);
+    }
 }
 
 template<class T>

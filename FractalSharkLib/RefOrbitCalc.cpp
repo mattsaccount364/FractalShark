@@ -203,7 +203,6 @@ bool RefOrbitCalc::IsThisPerturbationArrayUsed(void* check) const {
             check == &c64c.m_PerturbationResults2xFloat;
     case RenderAlgorithm::Cpu64PerturbedBLA:
     case RenderAlgorithm::Gpu1x32PerturbedScaled:
-    case RenderAlgorithm::Gpu1x32PerturbedScaledBLA:
     case RenderAlgorithm::Gpu1x64PerturbedBLA:
     case RenderAlgorithm::Gpu1x64PerturbedLAv2:
     case RenderAlgorithm::Gpu1x64PerturbedLAv2PO:
@@ -241,7 +240,7 @@ bool RefOrbitCalc::IsThisPerturbationArrayUsed(void* check) const {
         return false;
     }
 
-    static_assert(static_cast<int>(RenderAlgorithm::MAX) == 62, "Fix me");
+    static_assert(static_cast<int>(RenderAlgorithm::MAX) == 61, "Fix me");
 }
 
 void RefOrbitCalc::OptimizeMemory() {
@@ -2133,7 +2132,7 @@ void RefOrbitCalc::GetSomeDetails(
 
     std::visit(lambda, m_LastUsedRefOrbit);
 
-    static_assert(static_cast<int>(RenderAlgorithm::MAX) == 62, "Fix me");
+    static_assert(static_cast<int>(RenderAlgorithm::MAX) == 61, "Fix me");
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>

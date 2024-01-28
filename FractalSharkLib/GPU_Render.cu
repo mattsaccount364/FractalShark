@@ -54,7 +54,6 @@ constexpr static bool EnableGpu1x32PerturbedScaled = Default;
 constexpr static bool EnableGpu2x32PerturbedScaled = Default;
 constexpr static bool EnableGpuHDRx32PerturbedScaled = Default;
 
-constexpr static bool EnableGpu1x32PerturbedScaledBLA = Default;
 constexpr static bool EnableGpu1x64PerturbedBLA = Default;
 constexpr static bool EnableGpuHDRx32PerturbedBLA = Default;
 constexpr static bool EnableGpuHDRx64PerturbedBLA = Default;
@@ -1419,33 +1418,6 @@ uint32_t GPURenderer::RenderPerturbBLAScaled(
                 n_iterations);
 
             RenderAsNeeded(result, n_iterations, iter_buffer, color_buffer);
-        }
-    }
-    else if (algorithm == RenderAlgorithm::Gpu1x32PerturbedScaledBLA) {
-        if constexpr (EnableGpu1x32PerturbedScaledBLA && std::is_same<T, double>::value) {
-            // doubleOnly
-            auto Run = [&]<int32_t LM2>() -> uint32_t {
-                GPU_BLAS<IterType, double, BLA<double>, LM2> doubleGpuBlas(blas->m_B);
-                result = doubleGpuBlas.CheckValid();
-                if (result != 0) {
-                    return result;
-                }
-
-                mandel_1xHDR_InitStatics << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > ();
-
-                mandel_1x_float_perturb_scaled_bla<IterType, LM2> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
-                    static_cast<IterType*>(OutputIterMatrix),
-                    OutputColorMatrix,
-                    cudaResults, cudaResultsDouble, doubleGpuBlas,
-                    m_Width, m_Height, cx, cy, dx, dy,
-                    centerX, centerY,
-                    n_iterations);
-
-                RenderAsNeeded(result, n_iterations, iter_buffer, color_buffer);
-                return result;
-            };
-
-            LargeSwitch
         }
     }
 

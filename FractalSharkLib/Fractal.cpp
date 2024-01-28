@@ -875,7 +875,6 @@ void Fractal::BasicTestInternal(size_t &test_index) {
         RenderAlgorithm::Gpu2x32PerturbedScaled,
         RenderAlgorithm::GpuHDRx32PerturbedScaled,
 
-        RenderAlgorithm::Gpu1x32PerturbedScaledBLA,
         RenderAlgorithm::Gpu1x64PerturbedBLA,
         RenderAlgorithm::GpuHDRx32PerturbedBLA,
         RenderAlgorithm::GpuHDRx64PerturbedBLA,
@@ -2249,7 +2248,6 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
         CalcGpuFractal<IterType, HDRFloat<double>>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu1x32PerturbedScaled:
-    case RenderAlgorithm::Gpu1x32PerturbedScaledBLA:
         CalcGpuPerturbationFractalScaledBLA<IterType, double, double, float, float>(MemoryOnly);
         break;
     case RenderAlgorithm::GpuHDRx32PerturbedScaled:

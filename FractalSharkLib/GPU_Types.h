@@ -109,7 +109,6 @@ enum class RenderAlgorithm {
     Gpu2x32PerturbedScaled,
     GpuHDRx32PerturbedScaled,
 
-    Gpu1x32PerturbedScaledBLA,
     Gpu1x64PerturbedBLA,
     GpuHDRx32PerturbedBLA,
     GpuHDRx64PerturbedBLA,
@@ -190,7 +189,6 @@ static const char* RenderAlgorithmStr[(size_t)RenderAlgorithm::MAX + 1] =
     "Gpu2x32PerturbedScaled",
     "GpuHDRx32PerturbedScaled",
 
-    "Gpu1x32PerturbedScaledBLA",
     "Gpu1x64PerturbedBLA",
     "GpuHDRx32PerturbedBLA",
     "GpuHDRx64PerturbedBLA",

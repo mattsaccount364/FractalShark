@@ -22,6 +22,34 @@ void              UnInit(void);
 
 LONG WINAPI unhandled_handler(struct _EXCEPTION_POINTERS* apExceptionInfo);
 
+struct SavedLocation {
+    SavedLocation(std::ifstream& infile) {
+        // Read minX, minY, maxX, maxY, num_iterations, antialiasing from infile
+        // To read minX, read a string and convert to HighPrecision
+
+        infile >> width;
+        infile >> height;
+
+        infile >> minX;
+        infile >> minY;
+        infile >> maxX;
+        infile >> maxY;
+
+        infile >> num_iterations;
+        infile >> antialiasing;
+
+        std::getline(infile, description);
+    }
+
+    HighPrecision minX, maxX, minY, maxY;
+    size_t width, height;
+    IterTypeFull num_iterations;
+    uint32_t antialiasing;
+    std::string description;
+};
+
+std::vector<SavedLocation> gSavedLocations;
+
 // Controlling functions
 void MenuGoBack(HWND hWnd);
 void MenuStandardView(HWND hWnd, size_t i);
@@ -39,6 +67,7 @@ void MenuPaletteRotation(HWND hWnd);
 void MenuCreateNewPalette(HWND hWnd);
 void MenuGetCurPos(HWND hWnd);
 void MenuSaveCurrentLocation(HWND hWnd);
+void MenuLoadCurrentLocation(HWND hWnd);
 void MenuSaveBMP(HWND hWnd);
 void MenuSaveHiResBMP(HWND hWnd);
 void MenuSaveItersAsText();
@@ -610,7 +639,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             MapMenuItemToAlg(IDM_ALG_GPU_1_32, RenderAlgorithm::Gpu1x32);
             MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_SCALED, RenderAlgorithm::Gpu1x32PerturbedScaled);
             MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_SCALED, RenderAlgorithm::GpuHDRx32PerturbedScaled);
-            MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_SCALED_BLA, RenderAlgorithm::Gpu1x32PerturbedScaledBLA);
             MapMenuItemToAlg(IDM_ALG_GPU_2_32, RenderAlgorithm::Gpu2x32);
             MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_SCALED, RenderAlgorithm::Gpu2x32PerturbedScaled);
             MapMenuItemToAlg(IDM_ALG_GPU_4_32, RenderAlgorithm::Gpu4x32);
@@ -902,9 +930,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 MenuSaveCurrentLocation(hWnd);
                 break;
             }
-            //case (IDM_LOADLOCATION):
-            //{
-            //}
+            case (IDM_LOADLOCATION):
+            {
+                MenuLoadCurrentLocation(hWnd);
+                break;
+            }
             case IDM_SAVEBMP:
             {
                 MenuSaveBMP(hWnd);
@@ -931,6 +961,53 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 DestroyWindow(hWnd);
                 break;
             }
+
+            case IDM_VIEW_DYNAMIC + 0:
+            case IDM_VIEW_DYNAMIC + 1:
+            case IDM_VIEW_DYNAMIC + 2:
+            case IDM_VIEW_DYNAMIC + 3:
+            case IDM_VIEW_DYNAMIC + 4:
+            case IDM_VIEW_DYNAMIC + 5:
+            case IDM_VIEW_DYNAMIC + 6:
+            case IDM_VIEW_DYNAMIC + 7:
+            case IDM_VIEW_DYNAMIC + 8:
+            case IDM_VIEW_DYNAMIC + 9:
+            case IDM_VIEW_DYNAMIC + 10:
+            case IDM_VIEW_DYNAMIC + 11:
+            case IDM_VIEW_DYNAMIC + 12:
+            case IDM_VIEW_DYNAMIC + 13:
+            case IDM_VIEW_DYNAMIC + 14:
+            case IDM_VIEW_DYNAMIC + 15:
+            case IDM_VIEW_DYNAMIC + 16:
+            case IDM_VIEW_DYNAMIC + 17:
+            case IDM_VIEW_DYNAMIC + 18:
+            case IDM_VIEW_DYNAMIC + 19:
+            case IDM_VIEW_DYNAMIC + 20:
+            case IDM_VIEW_DYNAMIC + 21:
+            case IDM_VIEW_DYNAMIC + 22:
+            case IDM_VIEW_DYNAMIC + 23:
+            case IDM_VIEW_DYNAMIC + 24:
+            case IDM_VIEW_DYNAMIC + 25:
+            case IDM_VIEW_DYNAMIC + 26:
+            case IDM_VIEW_DYNAMIC + 27:
+            case IDM_VIEW_DYNAMIC + 28:
+            case IDM_VIEW_DYNAMIC + 29:
+            {
+                auto index = wmId - IDM_VIEW_DYNAMIC;
+                auto minX = gSavedLocations[index].minX;
+                auto minY = gSavedLocations[index].minY;
+                auto maxX = gSavedLocations[index].maxX;
+                auto maxY = gSavedLocations[index].maxY;
+                auto num_iterations = gSavedLocations[index].num_iterations;
+                auto antialiasing = gSavedLocations[index].antialiasing;
+
+                gFractal->RecenterViewCalc(minX, minY, maxX, maxY);
+                gFractal->SetNumIterations<IterTypeFull>(num_iterations);
+                gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, antialiasing);
+                PaintAsNecessary(hWnd);
+                break;
+            }
+
             // Catch-all
             default:
             {
@@ -1516,7 +1593,7 @@ void MenuSaveCurrentLocation(HWND hWnd) {
     ss << gFractal->GetNumIterations<IterTypeFull>() << " ";
     ss << gFractal->GetGpuAntialiasing() << " ";
     //ss << gFractal->GetIterationPrecision() << " ";
-    ss << "FractalTrayDestination" << std::endl;
+    ss << "FractalTrayDestination";
     std::string s = ss.str();
     const std::wstring ws(s.begin(), s.end());
 
@@ -1525,6 +1602,39 @@ void MenuSaveCurrentLocation(HWND hWnd) {
     FILE *file = fopen("locations.txt", "at+");
     fprintf(file, "%s\r\n", s.c_str());
     fclose(file);
+}
+
+void MenuLoadCurrentLocation(HWND hWnd) {
+    std::ifstream infile("locations.txt");
+    HMENU hSubMenu = CreatePopupMenu();
+
+    size_t index = 0;
+
+    gSavedLocations.clear();
+
+    for (;;) {
+        SavedLocation loc(infile);
+        if (infile.rdstate() != std::ios_base::goodbit) {
+            break;
+        }
+
+        // Convert loc.description to a wstring:
+        std::string s = loc.description;
+        const std::wstring ws(s.begin(), s.end());
+
+        gSavedLocations.push_back(loc);
+        AppendMenu(hSubMenu, MF_STRING, IDM_VIEW_DYNAMIC + index, ws.c_str());
+        index++;
+
+        // Limit the number of locations we show.
+        if (index > 30) {
+            break;
+        }
+    }
+
+    POINT point;
+    GetCursorPos(&point);
+    TrackPopupMenu(hSubMenu, 0, point.x, point.y, 0, hWnd, nullptr);
 }
 
 void MenuSaveBMP(HWND) {

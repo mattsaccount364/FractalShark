@@ -41,9 +41,9 @@ public:
     static constexpr float DefaultPeriodDetectionThreshold2 =
         PExtras == PerturbExtras::EnableCompression ? 0x1.0p-3 : 0x1.0p-3; // Imagina: 0x1.0p-3
     static constexpr float DefaultLAThresholdScale =
-        PExtras == PerturbExtras::EnableCompression ? 0x1.0p-24 : 0x1.0p-12; // Imagina: 0x1.0p-24
+        PExtras == PerturbExtras::EnableCompression ? 0x1.0p-24 : 0x1.0p-24; // Imagina: 0x1.0p-24
     static constexpr float DefaultLAThresholdCScale =
-        PExtras == PerturbExtras::EnableCompression ? 0x1.0p-24 : 0x1.0p-12; // Imagina: 0x1.0p-24
+        PExtras == PerturbExtras::EnableCompression ? 0x1.0p-24 : 0x1.0p-24; // Imagina: 0x1.0p-24
 
 public:
 

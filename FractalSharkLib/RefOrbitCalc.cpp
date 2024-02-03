@@ -1714,13 +1714,13 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
             static_assert(PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::EnableCompression, "!");
             if (results->GetLaReference() == nullptr) {
                 auto temp = std::make_unique<LAReference<IterType, T, SubType, PExtras>>(
+                    m_Fractal.GetLAParameters(),
                     options_to_use,
                     results->GenFilename(GrowableVectorTypes::LAInfoDeep),
                     results->GenFilename(GrowableVectorTypes::LAStageInfo));
 
                 // TODO the presumption here is results size fits in the target IterType size
                 temp->GenerateApproximationData(
-                    m_Fractal.GetLAParameters(),
                     *results,
                     results->GetMaxRadius(),
                     (IterType)results->GetCountOrbitEntries() - 1,

@@ -281,6 +281,36 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
         PaintAsNecessary(hWnd);
         break;
 
+    case 'H':
+    case 'h':
+        if (shiftDown) {
+            gFractal->GetLAParameters().AdjustLAThresholdScaleExponent(-1);
+            gFractal->GetLAParameters().AdjustLAThresholdCScaleExponent(-1);
+        }
+        else {
+            gFractal->GetLAParameters().AdjustLAThresholdScaleExponent(1);
+            gFractal->GetLAParameters().AdjustLAThresholdCScaleExponent(1);
+        }
+        gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+        gFractal->ForceRecalc();
+        PaintAsNecessary(hWnd);
+        break;
+
+    case 'J':
+    case 'j':
+        if (shiftDown) {
+            gFractal->GetLAParameters().AdjustPeriodDetectionThreshold2Exponent(-1);
+            gFractal->GetLAParameters().AdjustStage0PeriodDetectionThreshold2Exponent(-1);
+        }
+        else {
+            gFractal->GetLAParameters().AdjustPeriodDetectionThreshold2Exponent(1);
+            gFractal->GetLAParameters().AdjustStage0PeriodDetectionThreshold2Exponent(1);
+        }
+        gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+        gFractal->ForceRecalc();
+        PaintAsNecessary(hWnd);
+        break;
+
     case 'I':
     case 'i':
         if (shiftDown) {
@@ -1728,6 +1758,11 @@ void MenuShowHotkeys(HWND /*hWnd*/) {
         L"w - Reduce reference compression: less error, more memory. Recalculate.\r\n"
         L"W - Increase reference compression: more error, less memory. Recalculate.\r\n"
         L"\r\n"
+        L"Linear Approximation parameters, adjustments by powers of two\r\n"
+        L"H - Decrease LA Threshold Scale exponents.  Less accurate/faster per-pixel\r\n"
+        L"h - Increase LA Threshold Scale exponents.  More accurate/slower per-pixel\r\n"
+        L"J - Decrease LA period detection exponents.  Less memory/slower per-pixel\r\n"
+        L"j - Increase LA period detection exponents.  More memory/faster per-pixel\r\n"
         L"Palettes\r\n"
         L"T - Use prior auxiliary palette depth (mul/div iteration count by 2)\r\n"
         L"t - Use next auxiliary palette depth (mul/div iteration count by 2)\r\n"

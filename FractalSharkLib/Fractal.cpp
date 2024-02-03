@@ -4446,6 +4446,10 @@ HighPrecision Fractal::YFromCalcToScreen(HighPrecision y) const
     return (HighPrecision)m_ScrnHeight - (y - m_MinY) * ((HighPrecision)m_ScrnHeight / (m_MaxY - m_MinY));
 }
 
+LAParameters &Fractal::GetLAParameters() {
+    return m_LAParameters;
+}
+
 void Fractal::ClientInitializeServers(void)
 { // Send the array to the servers
     int i, j;

@@ -67,6 +67,7 @@ public:
     LAReference(LAReference&& other) = delete;
 
     LAReference(
+        LAParameters la_parameters,
         AddPointOptions add_point_options,
         std::wstring las_filename,
         std::wstring la_stages_filename) :
@@ -74,6 +75,22 @@ public:
         m_UseAT{},
         m_AT{},
         m_LAStageCount{}, 
+        m_LAParameters{ la_parameters },
+        m_IsValid{},
+        m_LAs(add_point_options, las_filename),
+        m_LAStages(add_point_options, la_stages_filename),
+        m_BenchmarkDataLA{} {
+    }
+
+    LAReference(
+        AddPointOptions add_point_options,
+        std::wstring las_filename,
+        std::wstring la_stages_filename) :
+        m_AddPointOptions(add_point_options),
+        m_UseAT{},
+        m_AT{},
+        m_LAStageCount{},
+        m_LAParameters{ },
         m_IsValid{},
         m_LAs(add_point_options, las_filename),
         m_LAStages(add_point_options, la_stages_filename),
@@ -86,6 +103,11 @@ public:
         metafile << "UseAT: " << static_cast<uint64_t>(m_UseAT) << std::endl;
         metafile << "LAStageCount: " << static_cast<uint64_t>(m_LAStageCount) << std::endl;
         metafile << "IsValid: " << static_cast<uint64_t>(m_IsValid) << std::endl;
+
+        bool res = m_LAParameters.WriteMetadata(metafile);
+        if (!res) {
+            return false;
+        }
 
         return m_AT.WriteMetadata(metafile);
     }
@@ -126,6 +148,11 @@ public:
             metafile >> descriptor_string_junk;
             metafile >> is_valid;
             m_IsValid = convert.template operator()<bool>(is_valid);
+        }
+
+        bool res = m_LAParameters.ReadMetadata(metafile);
+        if (!res) {
+            return false;
         }
 
         return m_AT.ReadMetadata(metafile);
@@ -188,6 +215,7 @@ private:
     bool m_UseAT;
     ATInfo<IterType, Float, SubType> m_AT;
     IterType m_LAStageCount;
+    LAParameters m_LAParameters;
     bool m_IsValid;
 
     static constexpr int MaxLAStages = 1024;
@@ -217,7 +245,6 @@ private:
 public:
     template<typename PerturbType>
     void GenerateApproximationData(
-        const LAParameters& la_parameters,
         const PerturbationResults<IterType, PerturbType, PExtras>& PerturbationResults,
         Float radius,
         IterType maxRefIteration,

@@ -214,9 +214,7 @@ public:
 
     void ForceRecalc() { ChangedMakeDirty(); }
 
-    const LAParameters& GetLAParameters() const {
-        return m_LAParameters;
-    }
+    LAParameters& GetLAParameters();
 
 private:
     void Initialize(int width,

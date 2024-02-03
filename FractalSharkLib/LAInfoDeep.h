@@ -126,7 +126,7 @@ LAInfoDeep<IterType, Float, SubType, PExtras>::LAInfoDeep(
     this->LAThreshold = LAThresholdLocal;
     this->LAThresholdC = LAThresholdCLocal;
 
-    if (la_parameters.GetDefaultDetectionMethod() == 1) {
+    if (la_parameters.GetDetectionMethod() == 1) {
         this->MinMag = HDRFloat{ 4 };
     }
 
@@ -136,25 +136,25 @@ LAInfoDeep<IterType, Float, SubType, PExtras>::LAInfoDeep(
 template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
 CUDA_CRAP
 bool LAInfoDeep<IterType, Float, SubType, PExtras>::DetectPeriod(const LAParameters &la_parameters, HDRFloatComplex z) {
-    if (la_parameters.GetDefaultDetectionMethod() == 1) {
+    if (la_parameters.GetDetectionMethod() == 1) {
         if constexpr (IsHDR) {
             //return z.chebychevNorm().compareToBothPositive(HDRFloat(MinMagExp, MinMagMant).multiply(PeriodDetectionThreshold2)) < 0;
-            return z.chebychevNorm().compareToBothPositive(MinMag * la_parameters.GetDefaultPeriodDetectionThreshold2()) < 0;
+            return z.chebychevNorm().compareToBothPositive(MinMag * la_parameters.GetPeriodDetectionThreshold2()) < 0;
         }
         else {
-            return z.chebychevNorm() < (MinMag * la_parameters.GetDefaultPeriodDetectionThreshold2());
+            return z.chebychevNorm() < (MinMag * la_parameters.GetPeriodDetectionThreshold2());
         }
     }
     else {
         //return z.chebychevNorm().divide(HDRFloatComplex(ZCoeffExp, ZCoeffRe, ZCoeffIm).chebychevNorm()).multiply_mutable(LAThresholdScale).compareToBothPositive(HDRFloat(LAThresholdExp, LAThresholdMant).multiply(PeriodDetectionThreshold)) < 0;
         if constexpr (IsHDR) {
             return (z.chebychevNorm() /
-                ZCoeff.chebychevNorm() * la_parameters.GetDefaultLAThresholdScale())
-                .compareToBothPositive(LAThreshold * la_parameters.GetDefaultPeriodDetectionThreshold()) < 0;
+                ZCoeff.chebychevNorm() * la_parameters.GetLAThresholdScale())
+                .compareToBothPositive(LAThreshold * la_parameters.GetPeriodDetectionThreshold()) < 0;
         }
         else {
             return (z.chebychevNorm() /
-                ZCoeff.chebychevNorm() * la_parameters.GetDefaultLAThresholdScale()) < (LAThreshold * la_parameters.GetDefaultPeriodDetectionThreshold());
+                ZCoeff.chebychevNorm() * la_parameters.GetLAThresholdScale()) < (LAThreshold * la_parameters.GetPeriodDetectionThreshold());
         }
     }
 }
@@ -189,7 +189,7 @@ bool LAInfoDeep<IterType, Float, SubType, PExtras>::Step(
     const HDRFloat ChebyMagZCoeff{ ZCoeff.chebychevNorm() };
     const HDRFloat ChebyMagCCoeff{ CCoeff.chebychevNorm() };
 
-    if (la_parameters.GetDefaultDetectionMethod() == 1) {
+    if (la_parameters.GetDetectionMethod() == 1) {
         if constexpr (IsHDR) {
             HDRFloat outMin = HDRFloat::minBothPositiveReduced(ChebyMagz, MinMag);
             out.MinMag = outMin;
@@ -200,10 +200,10 @@ bool LAInfoDeep<IterType, Float, SubType, PExtras>::Step(
         }
     }
 
-    HDRFloat temp1 = ChebyMagz / ChebyMagZCoeff * la_parameters.GetDefaultLAThresholdScale();
+    HDRFloat temp1 = ChebyMagz / ChebyMagZCoeff * la_parameters.GetLAThresholdScale();
     HdrReduce(temp1);
 
-    HDRFloat temp2 = ChebyMagz / ChebyMagCCoeff * la_parameters.GetDefaultLAThresholdCScale();
+    HDRFloat temp2 = ChebyMagz / ChebyMagCCoeff * la_parameters.GetLAThresholdCScale();
     HdrReduce(temp2);
 
     HDRFloat outLAThreshold;
@@ -231,23 +231,23 @@ bool LAInfoDeep<IterType, Float, SubType, PExtras>::Step(
 
     out.Ref = Ref;
 
-    if (la_parameters.GetDefaultDetectionMethod() == 1) {
+    if (la_parameters.GetDetectionMethod() == 1) {
         // TODO: Double check the right thresholds here.  Look at the name of the variables and 
         // look at the default detection method number.  Obviously 1 != 2
         if constexpr (IsHDR) {
-            return out.MinMag.compareToBothPositive(MinMag * (la_parameters.GetDefaultStage0PeriodDetectionThreshold2())) < 0;
+            return out.MinMag.compareToBothPositive(MinMag * (la_parameters.GetStage0PeriodDetectionThreshold2())) < 0;
         }
         else {
-            return out.MinMag < (MinMag * la_parameters.GetDefaultStage0PeriodDetectionThreshold2());
+            return out.MinMag < (MinMag * la_parameters.GetStage0PeriodDetectionThreshold2());
         }
         //return HDRFloat(out.MinMagExp, out.MinMagMant) < HDRFloat(MinMagExp, MinMagMant) * PeriodDetectionThreshold2;
     }
     else {
         if constexpr (IsHDR) {
-            return out.LAThreshold.compareToBothPositive(LAThreshold * (la_parameters.GetDefaultStage0PeriodDetectionThreshold())) < 0;
+            return out.LAThreshold.compareToBothPositive(LAThreshold * (la_parameters.GetStage0PeriodDetectionThreshold())) < 0;
         }
         else {
-            return out.LAThreshold < (LAThreshold * (la_parameters.GetDefaultStage0PeriodDetectionThreshold()));
+            return out.LAThreshold < (LAThreshold * (la_parameters.GetStage0PeriodDetectionThreshold()));
         }
 
         //return HDRFloat(LAThresholdExp, LAThresholdMant) < HDRFloat(out.LAThresholdExp, out.LAThresholdMant) * PeriodDetectionThreshold;
@@ -301,10 +301,10 @@ bool LAInfoDeep<IterType, Float, SubType, PExtras>::Composite(
     HDRFloat ChebyMagZCoeff = ZCoeff.chebychevNorm();
     HDRFloat ChebyMagCCoeff = CCoeff.chebychevNorm();
 
-    HDRFloat temp1 = ChebyMagz / ChebyMagZCoeff * la_parameters.GetDefaultLAThresholdScale();
+    HDRFloat temp1 = ChebyMagz / ChebyMagZCoeff * la_parameters.GetLAThresholdScale();
     HdrReduce(temp1);
 
-    HDRFloat temp2 = ChebyMagz / ChebyMagCCoeff * la_parameters.GetDefaultLAThresholdCScale();
+    HDRFloat temp2 = ChebyMagz / ChebyMagCCoeff * la_parameters.GetLAThresholdCScale();
     HdrReduce(temp2);
 
     HDRFloat outLAThreshold;
@@ -359,24 +359,24 @@ bool LAInfoDeep<IterType, Float, SubType, PExtras>::Composite(
     out.CCoeff = outCCoeff;
     out.Ref = Ref;
 
-    if (la_parameters.GetDefaultDetectionMethod() == 1) {
+    if (la_parameters.GetDetectionMethod() == 1) {
         if constexpr (IsHDR) {
             temp = HDRFloat::minBothPositiveReduced(ChebyMagz, MinMag);
             out.MinMag = HDRFloat::minBothPositiveReduced(temp, LA.MinMag);
-            return temp.compareToBothPositive(MinMag * la_parameters.GetDefaultPeriodDetectionThreshold2()) < 0;
+            return temp.compareToBothPositive(MinMag * la_parameters.GetPeriodDetectionThreshold2()) < 0;
         }
         else {
             temp = std::min(ChebyMagz, MinMag);
             out.MinMag = std::min(temp, LA.MinMag);
-            return temp < (MinMag * la_parameters.GetDefaultPeriodDetectionThreshold2());
+            return temp < (MinMag * la_parameters.GetPeriodDetectionThreshold2());
         }
     }
     else {
         if constexpr (IsHDR) {
-            return temp.compareToBothPositive(LAThreshold * la_parameters.GetDefaultPeriodDetectionThreshold()) < 0;
+            return temp.compareToBothPositive(LAThreshold * la_parameters.GetPeriodDetectionThreshold()) < 0;
         }
         else {
-            return temp < (LAThreshold * la_parameters.GetDefaultPeriodDetectionThreshold());
+            return temp < (LAThreshold * la_parameters.GetPeriodDetectionThreshold());
         }
     }
 }

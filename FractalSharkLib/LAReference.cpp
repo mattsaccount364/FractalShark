@@ -921,7 +921,6 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateNewLAStage(
 template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
 template<typename PerturbType>
 void LAReference<IterType, Float, SubType, PExtras>::GenerateApproximationData(
-    const LAParameters& la_parameters,
     const PerturbationResults<IterType, PerturbType, PExtras>& PerturbationResults,
     Float radius,
     IterType maxRefIteration,
@@ -935,11 +934,11 @@ void LAReference<IterType, Float, SubType, PExtras>::GenerateApproximationData(
     m_BenchmarkDataLA.StartTimer();
 
     //bool PeriodDetected = CreateLAFromOrbitMT(PerturbationResults, maxRefIteration);
-    bool PeriodDetected = CreateLAFromOrbit(la_parameters, PerturbationResults, maxRefIteration);
+    bool PeriodDetected = CreateLAFromOrbit(m_LAParameters, PerturbationResults, maxRefIteration);
     if (!PeriodDetected) return;
 
     while (true) {
-        PeriodDetected = CreateNewLAStage(la_parameters, PerturbationResults, maxRefIteration);
+        PeriodDetected = CreateNewLAStage(m_LAParameters, PerturbationResults, maxRefIteration);
         if (!PeriodDetected) break;
     }
 
@@ -952,7 +951,6 @@ void LAReference<IterType, Float, SubType, PExtras>::GenerateApproximationData(
 // TODO - this is a mess
 #define InitializeApproximationData(IterType, T, SubType, PExtras) \
 template void LAReference<IterType, T, SubType, PExtras>::GenerateApproximationData<T>( \
-    const LAParameters &la_parameters, \
     const PerturbationResults<IterType, T, PExtras>& PerturbationResults, \
     T radius, \
     IterType maxRefIteration, \

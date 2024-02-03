@@ -1,4 +1,6 @@
 #include "stdafx.h"
+
+#include "Fractal.h"
 #include "PerturbationResults.h"
 #include "BLAS.h"
 #include "HDRFloat.h"

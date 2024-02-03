@@ -200,20 +200,24 @@ private:
     IterType LAsize();
     template<typename PerturbType>
     bool CreateLAFromOrbit(
+        const LAParameters& la_parameters,
         const PerturbationResults<IterType, PerturbType, PExtras>& PerturbationResults,
         IterType maxRefIteration);
     template<typename PerturbType>
     bool CreateLAFromOrbitMT(
+        const LAParameters& la_parameters,
         const PerturbationResults<IterType, PerturbType, PExtras>& PerturbationResults,
         IterType maxRefIteration);
     template<typename PerturbType>
     bool CreateNewLAStage(
+        const LAParameters& la_parameters,
         const PerturbationResults<IterType, PerturbType, PExtras>& PerturbationResults,
         IterType maxRefIteration);
 
 public:
     template<typename PerturbType>
     void GenerateApproximationData(
+        const LAParameters& la_parameters,
         const PerturbationResults<IterType, PerturbType, PExtras>& PerturbationResults,
         Float radius,
         IterType maxRefIteration,

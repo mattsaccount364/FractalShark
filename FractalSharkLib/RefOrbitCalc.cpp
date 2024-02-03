@@ -1720,6 +1720,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
 
                 // TODO the presumption here is results size fits in the target IterType size
                 temp->GenerateApproximationData(
+                    m_Fractal.GetLAParameters(),
                     *results,
                     results->GetMaxRadius(),
                     (IterType)results->GetCountOrbitEntries() - 1,

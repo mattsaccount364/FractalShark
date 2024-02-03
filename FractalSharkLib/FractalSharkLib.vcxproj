@@ -36,6 +36,7 @@
     <ClInclude Include="ItersMemoryContainer.h" />
     <ClInclude Include="LAInfoDeep.h" />
     <ClInclude Include="LAInfoI.h" />
+    <ClInclude Include="LAParameters.h" />
     <ClInclude Include="LAReference.h" />
     <ClInclude Include="LAstep.h" />
     <ClInclude Include="OpenGLContext.h" />
@@ -68,6 +69,7 @@
     <ClCompile Include="FractalSetupData.cpp" />
     <ClCompile Include="HDRFloat.cpp" />
     <ClCompile Include="ItersMemoryContainer.cpp" />
+    <ClCompile Include="LAParameters.cpp" />
     <ClCompile Include="LAReference.cpp" />
     <ClCompile Include="PerturbationResults.cpp" />
     <ClCompile Include="PngParallelSave.cpp" />

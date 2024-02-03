@@ -1,5 +1,8 @@
 #include "stdafx.h"
+
+#include "Fractal.h"
 #include "PerturbationResults.h"
+
 
 // Returns the current time as a string
 std::wstring GetTimeAsString(size_t generation_number) {

@@ -1,9 +1,11 @@
 #include "stdafx.h"
 #include "Vectors.h"
 
+#include "Fractal.h"
 #include "GPU_Render.h"
 #include "HDRFloat.h"
 #include "LAInfoDeep.h"
+
 
 std::wstring GetFileExtension(GrowableVectorTypes Type) {
     switch (Type) {

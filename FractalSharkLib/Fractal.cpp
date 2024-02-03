@@ -31,6 +31,8 @@
 #include "CudaDblflt.h"
 #include "BenchmarkData.h"
 
+#include "PerturbationResults.h"
+
 #include <chrono>
 
 void DefaultOutputMessage(const wchar_t *, ...);

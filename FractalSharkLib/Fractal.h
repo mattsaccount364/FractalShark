@@ -20,7 +20,7 @@
 #include "FractalSetupData.h"
 #include "FractalNetwork.h"
 #include "GPU_Render.h"
-#include "PerturbationResults.h"
+//#include "PerturbationResults.h"
 
 #include "WPngImage\WPngImage.hh"
 #include "ItersMemoryContainer.h"
@@ -36,6 +36,8 @@
 #include "PngParallelSave.h"
 #include "Utilities.h"
 #include "BenchmarkData.h"
+
+#include "LAParameters.h"
 
 #include <string>
 #include <deque>
@@ -211,6 +213,10 @@ public:
     static DWORD WINAPI ServerManageSubConnectionThread(void*);
 
     void ForceRecalc() { ChangedMakeDirty(); }
+
+    const LAParameters& GetLAParameters() const {
+        return m_LAParameters;
+    }
 
 private:
     void Initialize(int width,
@@ -454,4 +460,6 @@ private:
     void DrawAsyncGpuFractalThread();
     static void DrawAsyncGpuFractalThreadStatic(Fractal *fractal);
     void MessageBoxCudaError(uint32_t err);
+
+    LAParameters m_LAParameters;
 };

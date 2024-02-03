@@ -5,6 +5,7 @@
 #include "LAStep.h"
 #include "ATInfo.h"
 #include  "LAInfoI.h"
+#include "LAParameters.h"
 
 template<typename IterType, class Float, class SubType>
 class GPU_LAInfoDeep;
@@ -33,18 +34,6 @@ public:
     friend class LAInfoDeep<IterType, Float, double, PExtras>;
     friend class LAInfoDeep<IterType, Float, CudaDblflt<MattDblflt>, PExtras>;
 
-    static constexpr int DEFAULT_DETECTION_METHOD = 1;
-    static constexpr float DefaultStage0PeriodDetectionThreshold = 0x1.0p-10;
-    static constexpr float DefaultPeriodDetectionThreshold = 0x1.0p-10;
-    static constexpr float DefaultStage0PeriodDetectionThreshold2 =
-        PExtras == PerturbExtras::EnableCompression ? 0x1.0p-6 : 0x1.0p-6; // Imagina: 0x1.0p-6
-    static constexpr float DefaultPeriodDetectionThreshold2 =
-        PExtras == PerturbExtras::EnableCompression ? 0x1.0p-3 : 0x1.0p-3; // Imagina: 0x1.0p-3
-    static constexpr float DefaultLAThresholdScale =
-        PExtras == PerturbExtras::EnableCompression ? 0x1.0p-24 : 0x1.0p-24; // Imagina: 0x1.0p-24
-    static constexpr float DefaultLAThresholdCScale =
-        PExtras == PerturbExtras::EnableCompression ? 0x1.0p-24 : 0x1.0p-24; // Imagina: 0x1.0p-24
-
 public:
 
     HDRFloatComplex Ref;
@@ -61,17 +50,27 @@ public:
 
     template<class Float2, class SubType2, PerturbExtras PExtras2>
     CUDA_CRAP LAInfoDeep(const LAInfoDeep<IterType, Float2, SubType2, PExtras2> &other);
-    CUDA_CRAP LAInfoDeep(HDRFloatComplex z);
-    CUDA_CRAP bool DetectPeriod(HDRFloatComplex z);
+    CUDA_CRAP LAInfoDeep(const LAParameters& la_parameters, HDRFloatComplex z);
+    CUDA_CRAP bool DetectPeriod(const LAParameters& la_parameters, HDRFloatComplex z);
     CUDA_CRAP HDRFloatComplex getRef();
     CUDA_CRAP HDRFloatComplex getZCoeff();
     CUDA_CRAP HDRFloatComplex getCCoeff();
-    CUDA_CRAP bool Step(LAInfoDeep &out, HDRFloatComplex z) const;
+    CUDA_CRAP bool Step(
+        const LAParameters& la_parameters,
+        LAInfoDeep &out,
+        HDRFloatComplex z) const;
+
     CUDA_CRAP bool isLAThresholdZero();
     CUDA_CRAP bool isZCoeffZero();
-    CUDA_CRAP LAInfoDeep Step(HDRFloatComplex z);
-    CUDA_CRAP bool Composite(LAInfoDeep &out, LAInfoDeep LA);
-    CUDA_CRAP LAInfoDeep Composite(LAInfoDeep LA);
+    CUDA_CRAP LAInfoDeep Step(
+        const LAParameters& la_parameters,
+        HDRFloatComplex z);
+
+    CUDA_CRAP bool Composite(
+        const LAParameters& la_parameters,
+        LAInfoDeep &out,
+        LAInfoDeep LA);
+    CUDA_CRAP LAInfoDeep Composite(const LAParameters& la_parameters, LAInfoDeep LA);
     CUDA_CRAP LAstep<IterType, Float, SubType, PExtras> Prepare(HDRFloatComplex dz) const;
     CUDA_CRAP HDRFloatComplex Evaluate(HDRFloatComplex newdz, HDRFloatComplex dc);
     CUDA_CRAP HDRFloatComplex EvaluateDzdc(HDRFloatComplex z, HDRFloatComplex dzdc);
@@ -92,7 +91,7 @@ LAInfoDeep<IterType, Float, SubType, PExtras>::LAInfoDeep() :
     CCoeff{},
     LAThresholdC{},
     LAi{},
-    MinMag{} {
+    MinMag{}  {
 }
 
 template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
@@ -111,7 +110,10 @@ CUDA_CRAP LAInfoDeep<IterType, Float, SubType, PExtras>::LAInfoDeep(
 
 template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
 CUDA_CRAP
-LAInfoDeep<IterType, Float, SubType, PExtras>::LAInfoDeep(HDRFloatComplex z) {
+LAInfoDeep<IterType, Float, SubType, PExtras>::LAInfoDeep(
+    const LAParameters& la_parameters,
+    HDRFloatComplex z) {
+
     Ref = z;
 
     HDRFloatComplex ZCoeffLocal = HDRFloatComplex(1.0, 0);
@@ -124,7 +126,7 @@ LAInfoDeep<IterType, Float, SubType, PExtras>::LAInfoDeep(HDRFloatComplex z) {
     this->LAThreshold = LAThresholdLocal;
     this->LAThresholdC = LAThresholdCLocal;
 
-    if constexpr (DEFAULT_DETECTION_METHOD == 1) {
+    if (la_parameters.GetDefaultDetectionMethod() == 1) {
         this->MinMag = HDRFloat{ 4 };
     }
 
@@ -133,26 +135,26 @@ LAInfoDeep<IterType, Float, SubType, PExtras>::LAInfoDeep(HDRFloatComplex z) {
 
 template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
 CUDA_CRAP
-bool LAInfoDeep<IterType, Float, SubType, PExtras>::DetectPeriod(HDRFloatComplex z) {
-    if constexpr (DEFAULT_DETECTION_METHOD == 1) {
+bool LAInfoDeep<IterType, Float, SubType, PExtras>::DetectPeriod(const LAParameters &la_parameters, HDRFloatComplex z) {
+    if (la_parameters.GetDefaultDetectionMethod() == 1) {
         if constexpr (IsHDR) {
             //return z.chebychevNorm().compareToBothPositive(HDRFloat(MinMagExp, MinMagMant).multiply(PeriodDetectionThreshold2)) < 0;
-            return z.chebychevNorm().compareToBothPositive(MinMag * DefaultPeriodDetectionThreshold2) < 0;
+            return z.chebychevNorm().compareToBothPositive(MinMag * la_parameters.GetDefaultPeriodDetectionThreshold2()) < 0;
         }
         else {
-            return z.chebychevNorm() < (MinMag * DefaultPeriodDetectionThreshold2);
+            return z.chebychevNorm() < (MinMag * la_parameters.GetDefaultPeriodDetectionThreshold2());
         }
     }
     else {
         //return z.chebychevNorm().divide(HDRFloatComplex(ZCoeffExp, ZCoeffRe, ZCoeffIm).chebychevNorm()).multiply_mutable(LAThresholdScale).compareToBothPositive(HDRFloat(LAThresholdExp, LAThresholdMant).multiply(PeriodDetectionThreshold)) < 0;
         if constexpr (IsHDR) {
             return (z.chebychevNorm() /
-                ZCoeff.chebychevNorm() * DefaultLAThresholdScale)
-                .compareToBothPositive(LAThreshold * DefaultPeriodDetectionThreshold) < 0;
+                ZCoeff.chebychevNorm() * la_parameters.GetDefaultLAThresholdScale())
+                .compareToBothPositive(LAThreshold * la_parameters.GetDefaultPeriodDetectionThreshold()) < 0;
         }
         else {
             return (z.chebychevNorm() /
-                ZCoeff.chebychevNorm() * DefaultLAThresholdScale) < (LAThreshold * DefaultPeriodDetectionThreshold);
+                ZCoeff.chebychevNorm() * la_parameters.GetDefaultLAThresholdScale()) < (LAThreshold * la_parameters.GetDefaultPeriodDetectionThreshold());
         }
     }
 }
@@ -177,13 +179,17 @@ LAInfoDeep<IterType, Float, SubType, PExtras>::HDRFloatComplex LAInfoDeep<IterTy
 
 template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
 CUDA_CRAP
-bool LAInfoDeep<IterType, Float, SubType, PExtras>::Step(LAInfoDeep& out, HDRFloatComplex z) const {
+bool LAInfoDeep<IterType, Float, SubType, PExtras>::Step(
+    const LAParameters& la_parameters,
+    LAInfoDeep& out,
+    HDRFloatComplex z) const {
+
     const HDRFloat ChebyMagz = z.chebychevNorm();
 
     const HDRFloat ChebyMagZCoeff{ ZCoeff.chebychevNorm() };
     const HDRFloat ChebyMagCCoeff{ CCoeff.chebychevNorm() };
 
-    if constexpr (DEFAULT_DETECTION_METHOD == 1) {
+    if (la_parameters.GetDefaultDetectionMethod() == 1) {
         if constexpr (IsHDR) {
             HDRFloat outMin = HDRFloat::minBothPositiveReduced(ChebyMagz, MinMag);
             out.MinMag = outMin;
@@ -194,10 +200,10 @@ bool LAInfoDeep<IterType, Float, SubType, PExtras>::Step(LAInfoDeep& out, HDRFlo
         }
     }
 
-    HDRFloat temp1 = ChebyMagz / ChebyMagZCoeff * DefaultLAThresholdScale;
+    HDRFloat temp1 = ChebyMagz / ChebyMagZCoeff * la_parameters.GetDefaultLAThresholdScale();
     HdrReduce(temp1);
 
-    HDRFloat temp2 = ChebyMagz / ChebyMagCCoeff * DefaultLAThresholdCScale;
+    HDRFloat temp2 = ChebyMagz / ChebyMagCCoeff * la_parameters.GetDefaultLAThresholdCScale();
     HdrReduce(temp2);
 
     HDRFloat outLAThreshold;
@@ -225,23 +231,23 @@ bool LAInfoDeep<IterType, Float, SubType, PExtras>::Step(LAInfoDeep& out, HDRFlo
 
     out.Ref = Ref;
 
-    if constexpr (DEFAULT_DETECTION_METHOD == 1) {
+    if (la_parameters.GetDefaultDetectionMethod() == 1) {
         // TODO: Double check the right thresholds here.  Look at the name of the variables and 
         // look at the default detection method number.  Obviously 1 != 2
         if constexpr (IsHDR) {
-            return out.MinMag.compareToBothPositive(MinMag * (DefaultStage0PeriodDetectionThreshold2)) < 0;
+            return out.MinMag.compareToBothPositive(MinMag * (la_parameters.GetDefaultStage0PeriodDetectionThreshold2())) < 0;
         }
         else {
-            return out.MinMag < (MinMag * DefaultStage0PeriodDetectionThreshold2);
+            return out.MinMag < (MinMag * la_parameters.GetDefaultStage0PeriodDetectionThreshold2());
         }
         //return HDRFloat(out.MinMagExp, out.MinMagMant) < HDRFloat(MinMagExp, MinMagMant) * PeriodDetectionThreshold2;
     }
     else {
         if constexpr (IsHDR) {
-            return out.LAThreshold.compareToBothPositive(LAThreshold * (DefaultStage0PeriodDetectionThreshold)) < 0;
+            return out.LAThreshold.compareToBothPositive(LAThreshold * (la_parameters.GetDefaultStage0PeriodDetectionThreshold())) < 0;
         }
         else {
-            return out.LAThreshold < (LAThreshold * DefaultStage0PeriodDetectionThreshold);
+            return out.LAThreshold < (LAThreshold * (la_parameters.GetDefaultStage0PeriodDetectionThreshold()));
         }
 
         //return HDRFloat(LAThresholdExp, LAThresholdMant) < HDRFloat(out.LAThresholdExp, out.LAThresholdMant) * PeriodDetectionThreshold;
@@ -272,26 +278,33 @@ bool LAInfoDeep<IterType, Float, SubType, PExtras>::isZCoeffZero() {
 
 template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
 CUDA_CRAP
-LAInfoDeep<IterType, Float, SubType, PExtras> LAInfoDeep<IterType, Float, SubType, PExtras>::Step(HDRFloatComplex z) {
+LAInfoDeep<IterType, Float, SubType, PExtras> LAInfoDeep<IterType, Float, SubType, PExtras>::Step(
+    const LAParameters& la_parameters,
+    HDRFloatComplex z) {
+
     LAInfoDeep Result = LAInfoDeep();
 
-    Step(Result, z);
+    Step(la_parameters, Result, z);
     return Result;
 }
 
 template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
 CUDA_CRAP
-bool LAInfoDeep<IterType, Float, SubType, PExtras>::Composite(LAInfoDeep& out, LAInfoDeep LA) {
+bool LAInfoDeep<IterType, Float, SubType, PExtras>::Composite(
+    const LAParameters& la_parameters,
+    LAInfoDeep& out,
+    LAInfoDeep LA) {
+
     HDRFloatComplex z = LA.Ref;
     HDRFloat ChebyMagz = z.chebychevNorm();
 
     HDRFloat ChebyMagZCoeff = ZCoeff.chebychevNorm();
     HDRFloat ChebyMagCCoeff = CCoeff.chebychevNorm();
 
-    HDRFloat temp1 = ChebyMagz / ChebyMagZCoeff * DefaultLAThresholdScale;
+    HDRFloat temp1 = ChebyMagz / ChebyMagZCoeff * la_parameters.GetDefaultLAThresholdScale();
     HdrReduce(temp1);
 
-    HDRFloat temp2 = ChebyMagz / ChebyMagCCoeff * DefaultLAThresholdCScale;
+    HDRFloat temp2 = ChebyMagz / ChebyMagCCoeff * la_parameters.GetDefaultLAThresholdCScale();
     HdrReduce(temp2);
 
     HDRFloat outLAThreshold;
@@ -346,34 +359,37 @@ bool LAInfoDeep<IterType, Float, SubType, PExtras>::Composite(LAInfoDeep& out, L
     out.CCoeff = outCCoeff;
     out.Ref = Ref;
 
-    if constexpr (DEFAULT_DETECTION_METHOD == 1) {
+    if (la_parameters.GetDefaultDetectionMethod() == 1) {
         if constexpr (IsHDR) {
             temp = HDRFloat::minBothPositiveReduced(ChebyMagz, MinMag);
             out.MinMag = HDRFloat::minBothPositiveReduced(temp, LA.MinMag);
-            return temp.compareToBothPositive(MinMag * DefaultPeriodDetectionThreshold2) < 0;
+            return temp.compareToBothPositive(MinMag * la_parameters.GetDefaultPeriodDetectionThreshold2()) < 0;
         }
         else {
             temp = std::min(ChebyMagz, MinMag);
             out.MinMag = std::min(temp, LA.MinMag);
-            return temp < (MinMag * DefaultPeriodDetectionThreshold2);
+            return temp < (MinMag * la_parameters.GetDefaultPeriodDetectionThreshold2());
         }
     }
     else {
         if constexpr (IsHDR) {
-            return temp.compareToBothPositive(LAThreshold * DefaultPeriodDetectionThreshold) < 0;
+            return temp.compareToBothPositive(LAThreshold * la_parameters.GetDefaultPeriodDetectionThreshold()) < 0;
         }
         else {
-            return temp < (LAThreshold * DefaultPeriodDetectionThreshold);
+            return temp < (LAThreshold * la_parameters.GetDefaultPeriodDetectionThreshold());
         }
     }
 }
 
 template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
 CUDA_CRAP
-LAInfoDeep<IterType, Float, SubType, PExtras> LAInfoDeep<IterType, Float, SubType, PExtras>::Composite(LAInfoDeep LA) {
+LAInfoDeep<IterType, Float, SubType, PExtras> LAInfoDeep<IterType, Float, SubType, PExtras>::Composite(
+    const LAParameters& la_parameters,
+    LAInfoDeep LA) {
+
     LAInfoDeep Result = LAInfoDeep();
 
-    Composite(Result, LA);
+    Composite(la_parameters, Result, LA);
     return Result;
 }
 

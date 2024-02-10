@@ -21,8 +21,6 @@ public:
     template<typename IterType, class T>
     uint32_t Render(
         RenderAlgorithm algorithm,
-        IterType* iter_buffer,
-        Color16 *color_buffer,
         T cx,
         T cy,
         T dx,
@@ -33,11 +31,8 @@ public:
     template<typename IterType, class T>
     uint32_t RenderPerturbBLAScaled(
         RenderAlgorithm algorithm,
-        IterType* iter_buffer,
-        Color16* color_buffer,
         const GPUPerturbResults<IterType, T, PerturbExtras::Bad>* double_perturb,
         const GPUPerturbResults<IterType, float, PerturbExtras::Bad>* float_perturb,
-        BLAS<IterType, T, PerturbExtras::Bad>* blas,
         T cx,
         T cy,
         T dx,
@@ -50,8 +45,6 @@ public:
     template<typename IterType>
     uint32_t RenderPerturbBLA(
         RenderAlgorithm algorithm,
-        IterType* iter_buffer,
-        Color16* color_buffer,
         const GPUPerturbResults<IterType, MattDblflt, PerturbExtras::Disable>* results,
         BLAS<IterType, MattDblflt>* blas,
         MattDblflt cx,
@@ -66,8 +59,6 @@ public:
     template<typename IterType, class T>
     uint32_t RenderPerturbBLA(
         RenderAlgorithm algorithm,
-        IterType* iter_buffer,
-        Color16* color_buffer,
         const GPUPerturbResults<IterType, T, PerturbExtras::Disable>* results,
         BLAS<IterType, T>* blas,
         T cx,
@@ -82,8 +73,6 @@ public:
     template<typename IterType, class T, class SubType, LAv2Mode Mode, PerturbExtras PExtras>
     uint32_t RenderPerturbLAv2(
         RenderAlgorithm algorithm,
-        IterType* iter_buffer,
-        Color16* color_buffer,
         T cx,
         T cy,
         T dx,

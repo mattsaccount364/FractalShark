@@ -560,8 +560,6 @@ uint32_t GPURenderer::SyncStream(bool altStream) {
 template<typename IterType, class T>
 uint32_t GPURenderer::Render(
     RenderAlgorithm algorithm,
-    IterType* iter_buffer,
-    Color16* color_buffer,
     T cx,
     T cy,
     T dx,
@@ -802,8 +800,6 @@ uint32_t GPURenderer::Render(
 //////////////////////////////////////////////////
 template uint32_t GPURenderer::Render(
     RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
     double cx,
     double cy,
     double dx,
@@ -813,8 +809,6 @@ template uint32_t GPURenderer::Render(
 
 template uint32_t GPURenderer::Render(
     RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
     float cx,
     float cy,
     float dx,
@@ -824,8 +818,6 @@ template uint32_t GPURenderer::Render(
 
 template uint32_t GPURenderer::Render(
     RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
     MattDbldbl cx,
     MattDbldbl cy,
     MattDbldbl dx,
@@ -835,8 +827,6 @@ template uint32_t GPURenderer::Render(
 
 template uint32_t GPURenderer::Render(
     RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
     MattQDbldbl cx,
     MattQDbldbl cy,
     MattQDbldbl dx,
@@ -846,8 +836,6 @@ template uint32_t GPURenderer::Render(
 
 template uint32_t GPURenderer::Render(
     RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
     MattDblflt cx,
     MattDblflt cy,
     MattDblflt dx,
@@ -857,8 +845,6 @@ template uint32_t GPURenderer::Render(
 
 template uint32_t GPURenderer::Render(
     RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
     MattQFltflt cx,
     MattQFltflt cy,
     MattQFltflt dx,
@@ -868,8 +854,6 @@ template uint32_t GPURenderer::Render(
 
 template uint32_t GPURenderer::Render(
     RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
     CudaDblflt<MattDblflt> cx,
     CudaDblflt<MattDblflt> cy,
     CudaDblflt<MattDblflt> dx,
@@ -879,8 +863,6 @@ template uint32_t GPURenderer::Render(
 
 template uint32_t GPURenderer::Render(
     RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
     HDRFloat<double> cx,
     HDRFloat<double> cy,
     HDRFloat<double> dx,
@@ -890,8 +872,6 @@ template uint32_t GPURenderer::Render(
 //////////////////////////////////////////////////
 template uint32_t GPURenderer::Render(
     RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
     double cx,
     double cy,
     double dx,
@@ -901,8 +881,6 @@ template uint32_t GPURenderer::Render(
 
 template uint32_t GPURenderer::Render(
     RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
     float cx,
     float cy,
     float dx,
@@ -912,8 +890,6 @@ template uint32_t GPURenderer::Render(
 
 template uint32_t GPURenderer::Render(
     RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
     MattDbldbl cx,
     MattDbldbl cy,
     MattDbldbl dx,
@@ -923,8 +899,6 @@ template uint32_t GPURenderer::Render(
 
 template uint32_t GPURenderer::Render(
     RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
     MattQDbldbl cx,
     MattQDbldbl cy,
     MattQDbldbl dx,
@@ -934,8 +908,6 @@ template uint32_t GPURenderer::Render(
 
 template uint32_t GPURenderer::Render(
     RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
     MattDblflt cx,
     MattDblflt cy,
     MattDblflt dx,
@@ -945,8 +917,6 @@ template uint32_t GPURenderer::Render(
 
 template uint32_t GPURenderer::Render(
     RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
     MattQFltflt cx,
     MattQFltflt cy,
     MattQFltflt dx,
@@ -956,8 +926,6 @@ template uint32_t GPURenderer::Render(
 
 template uint32_t GPURenderer::Render(
     RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
     CudaDblflt<MattDblflt> cx,
     CudaDblflt<MattDblflt> cy,
     CudaDblflt<MattDblflt> dx,
@@ -967,8 +935,6 @@ template uint32_t GPURenderer::Render(
 
 template uint32_t GPURenderer::Render(
     RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
     HDRFloat<double> cx,
     HDRFloat<double> cy,
     HDRFloat<double> dx,
@@ -981,8 +947,6 @@ template uint32_t GPURenderer::Render(
 template<typename IterType, class T, class SubType, LAv2Mode Mode, PerturbExtras PExtras>
 uint32_t GPURenderer::RenderPerturbLAv2(
     RenderAlgorithm algorithm,
-    IterType* iter_buffer,
-    Color16* color_buffer,
     T cx,
     T cy,
     T dx,
@@ -1189,8 +1153,6 @@ uint32_t GPURenderer::RenderPerturbLAv2(
     template \
     uint32_t GPURenderer::RenderPerturbLAv2<IterType, T, SubType, Mode, PExtras>( \
         RenderAlgorithm algorithm, \
-        IterType* iter_buffer, \
-        Color16* color_buffer, \
         T cx, \
         T cy, \
         T dx, \
@@ -1300,11 +1262,8 @@ InitializeRenderPerturbLAv2(uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblf
 template<typename IterType, class T>
 uint32_t GPURenderer::RenderPerturbBLAScaled(
     RenderAlgorithm algorithm,
-    IterType* iter_buffer,
-    Color16* color_buffer,
     const GPUPerturbResults<IterType, T, PerturbExtras::Bad>* double_perturb,
     const GPUPerturbResults<IterType, float, PerturbExtras::Bad>* float_perturb,
-    BLAS<IterType, T, PerturbExtras::Bad>* blas,
     T cx,
     T cy,
     T dx,
@@ -1381,11 +1340,8 @@ uint32_t GPURenderer::RenderPerturbBLAScaled(
 
 template uint32_t GPURenderer::RenderPerturbBLAScaled<uint32_t, double>(
     RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
     const GPUPerturbResults<uint32_t, double, PerturbExtras::Bad>* double_perturb,
     const GPUPerturbResults<uint32_t, float, PerturbExtras::Bad>* float_perturb,
-    BLAS<uint32_t, double, PerturbExtras::Bad>* blas,
     double cx,
     double cy,
     double dx,
@@ -1398,11 +1354,8 @@ template uint32_t GPURenderer::RenderPerturbBLAScaled<uint32_t, double>(
 
 template uint32_t GPURenderer::RenderPerturbBLAScaled<uint32_t, HDRFloat<float>>(
     RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
     const GPUPerturbResults<uint32_t, HDRFloat<float>, PerturbExtras::Bad>* double_perturb,
     const GPUPerturbResults<uint32_t, float, PerturbExtras::Bad>* float_perturb,
-    BLAS<uint32_t, HDRFloat<float>, PerturbExtras::Bad>* blas,
     HDRFloat<float> cx,
     HDRFloat<float> cy,
     HDRFloat<float> dx,
@@ -1417,11 +1370,8 @@ template uint32_t GPURenderer::RenderPerturbBLAScaled<uint32_t, HDRFloat<float>>
 
 template uint32_t GPURenderer::RenderPerturbBLAScaled<uint64_t, double>(
     RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
     const GPUPerturbResults<uint64_t, double, PerturbExtras::Bad>* double_perturb,
     const GPUPerturbResults<uint64_t, float, PerturbExtras::Bad>* float_perturb,
-    BLAS<uint64_t, double, PerturbExtras::Bad>* blas,
     double cx,
     double cy,
     double dx,
@@ -1434,11 +1384,8 @@ template uint32_t GPURenderer::RenderPerturbBLAScaled<uint64_t, double>(
 
 template uint32_t GPURenderer::RenderPerturbBLAScaled<uint64_t, HDRFloat<float>>(
     RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
     const GPUPerturbResults<uint64_t, HDRFloat<float>, PerturbExtras::Bad>* double_perturb,
     const GPUPerturbResults<uint64_t, float, PerturbExtras::Bad>* float_perturb,
-    BLAS<uint64_t, HDRFloat<float>, PerturbExtras::Bad>* blas,
     HDRFloat<float> cx,
     HDRFloat<float> cy,
     HDRFloat<float> dx,
@@ -1454,8 +1401,6 @@ template uint32_t GPURenderer::RenderPerturbBLAScaled<uint64_t, HDRFloat<float>>
 template<typename IterType, class T>
 uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
-    IterType* iter_buffer,
-    Color16* color_buffer,
     const GPUPerturbResults<IterType, T, PerturbExtras::Disable>* perturb,
     BLAS<IterType, T>* blas,
     T cx,
@@ -1632,8 +1577,6 @@ uint32_t GPURenderer::RenderPerturbBLA(
 template
 uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
     const GPUPerturbResults<uint32_t, HDRFloat<float>, PerturbExtras::Disable>* perturb,
     BLAS<uint32_t, HDRFloat<float>>* blas,
     HDRFloat<float> cx,
@@ -1648,8 +1591,6 @@ uint32_t GPURenderer::RenderPerturbBLA(
 template
 uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
     const GPUPerturbResults<uint32_t, HDRFloat<double>, PerturbExtras::Disable>* perturb,
     BLAS<uint32_t, HDRFloat<double>>* blas,
     HDRFloat<double> cx,
@@ -1664,8 +1605,6 @@ uint32_t GPURenderer::RenderPerturbBLA(
 template
 uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
-    uint32_t* iter_buffer,
-    Color16* color_buffer,
     const GPUPerturbResults<uint32_t, double, PerturbExtras::Disable>* perturb,
     BLAS<uint32_t, double>* blas,
     double cx,
@@ -1680,8 +1619,6 @@ uint32_t GPURenderer::RenderPerturbBLA(
 template
 uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
     const GPUPerturbResults<uint64_t, HDRFloat<float>, PerturbExtras::Disable>* perturb,
     BLAS<uint64_t, HDRFloat<float>>* blas,
     HDRFloat<float> cx,
@@ -1696,8 +1633,6 @@ uint32_t GPURenderer::RenderPerturbBLA(
 template
 uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
     const GPUPerturbResults<uint64_t, HDRFloat<double>, PerturbExtras::Disable>* perturb,
     BLAS<uint64_t, HDRFloat<double>>* blas,
     HDRFloat<double> cx,
@@ -1712,8 +1647,6 @@ uint32_t GPURenderer::RenderPerturbBLA(
 template
 uint32_t GPURenderer::RenderPerturbBLA(
     RenderAlgorithm algorithm,
-    uint64_t* iter_buffer,
-    Color16* color_buffer,
     const GPUPerturbResults<uint64_t, double, PerturbExtras::Disable>* perturb,
     BLAS<uint64_t, double>* blas,
     double cx,

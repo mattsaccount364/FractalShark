@@ -3143,8 +3143,6 @@ void Fractal::CalcGpuFractal(bool MemoryOnly)
 
     m_BenchmarkDataPerPixel.StartTimer();
     err = m_r.Render(GetRenderAlgorithm(),
-                     m_CurIters.GetIters<IterType>(),
-                     m_CurIters.m_RoundedOutputColorMemory.get(),
                      cx2,
                      cy2,
                      dx2,
@@ -3919,8 +3917,6 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
 
     m_BenchmarkDataPerPixel.StartTimer();
     result = m_r.RenderPerturbBLA<IterType, T>(GetRenderAlgorithm(),
-        m_CurIters.GetIters<IterType>(),
-        m_CurIters.m_RoundedOutputColorMemory.get(),
         &gpu_results,
         &blas,
         cx2,
@@ -4009,8 +4005,6 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
 
     m_BenchmarkDataPerPixel.StartTimer();
     auto result = m_r.RenderPerturbLAv2<IterType, T, SubType, Mode, PExtras>(GetRenderAlgorithm(),
-        m_CurIters.GetIters<IterType>(),
-        m_CurIters.m_RoundedOutputColorMemory.get(),
         cx2,
         cy2,
         dx2,
@@ -4042,9 +4036,6 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
         PerturbExtras::Bad,
         T2,
         PerturbExtras::Bad>(*results);
-
-    BLAS<IterType, T, PerturbExtras::Bad> blas(*results);
-    blas.Init(results->GetCountOrbitEntries(), results->GetMaxRadius());
 
     uint32_t err = InitializeGPUMemory();
     if (err) {
@@ -4088,11 +4079,8 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
 
     m_BenchmarkDataPerPixel.StartTimer();
     auto result = m_r.RenderPerturbBLAScaled<IterType, T>(GetRenderAlgorithm(),
-        m_CurIters.GetIters<IterType>(),
-        m_CurIters.m_RoundedOutputColorMemory.get(),
         &gpu_results,
         &gpu_results2,
-        &blas,
         cx2,
         cy2,
         dx2,

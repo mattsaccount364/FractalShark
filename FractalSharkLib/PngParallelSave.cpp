@@ -27,16 +27,6 @@ PngParallelSave::PngParallelSave(
     m_CurIters{},
     m_CopyTheIters(copy_the_iters) {
 
-    //
-    // TODO Note we pass off ownership of m_CurIters.
-    // Implication is that if you save multiple copies of the same bit map, it's not
-    // going to work sensibly.  This is a bug.
-    //
-
-    if (m_CopyTheIters == false) {
-        fractal.SetCurItersMemory();
-    }
-
     for (size_t i = 0; i < FractalPalette::Num; i++) {
         m_PalR[i] = fractal.m_PalR[i];
         m_PalG[i] = fractal.m_PalG[i];
@@ -53,6 +43,7 @@ PngParallelSave::PngParallelSave(
     }
     else {
         m_CurIters = std::move(fractal.m_CurIters);
+        fractal.SetCurItersMemory();
     }
 }
 

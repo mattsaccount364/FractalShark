@@ -40,14 +40,13 @@ void DefaultOutputMessage(const wchar_t *, ...);
 Fractal::Fractal(FractalSetupData* setupData,
     int width,
     int height,
-    void(*pOutputMessage) (const wchar_t*, ...),
     HWND hWnd,
     bool UseSensoCursor) :
     m_CurIters(IterTypeEnum::Bits32, width, height, 1),
     m_RefOrbit(*this)
 {
     setupData->CopyFromThisTo(&m_SetupData);
-    Initialize(width, height, pOutputMessage, hWnd, UseSensoCursor);
+    Initialize(width, height, hWnd, UseSensoCursor);
 }
 
 Fractal::~Fractal()
@@ -57,7 +56,6 @@ Fractal::~Fractal()
 
 void Fractal::Initialize(int width,
     int height,
-    void(*pOutputMessage) (const wchar_t*, ...),
     HWND hWnd,
     bool UseSensoCursor)
 { // Create the control-key-down/mouse-movement-monitoring thread.
@@ -223,71 +221,6 @@ void Fractal::Initialize(int width,
     m_ServerMainNetwork = nullptr;
     m_ServerSubNetwork = nullptr;
 
-    // Allocate networking memory
-    if (m_SetupData.m_BeNetworkClient == 'y' && m_SetupData.m_BeNetworkServer == 'y')
-    {
-        m_NetworkRender = '0';
-    }
-    else
-    {
-        if (m_SetupData.m_BeNetworkClient == 'y')
-        {
-            m_NetworkRender = 'a';
-
-            for (i = 0; i < MAXSERVERS; i++)
-            {
-                if (m_SetupData.m_UseThisServer[i] == 'n')
-                {
-                    continue;
-                }
-
-                m_ClientMainNetwork[i] = new FractalNetwork();
-                m_ClientSubNetwork[i] = new FractalNetwork();
-            }
-        }
-        else if (m_SetupData.m_BeNetworkServer == 'y')
-        {
-            m_NetworkRender = 'S'; // 'S' is a placeholder until the server
-            m_ServerMainNetwork = new FractalNetwork();
-            m_ServerSubNetwork = new FractalNetwork();
-        }
-        else                     // gets its real ID from the client
-        {
-            m_NetworkRender = '0';
-        }
-    }
-
-    // Create the workload for all the servers and clients.
-    // This function delegates all work to the local machine if
-    // we're not using networking
-    if (pOutputMessage != nullptr)
-    {
-        OutputMessage = pOutputMessage;
-    }
-    else
-    {
-        OutputMessage = DefaultOutputMessage;
-    }
-
-    NetworkCreateWorkload();
-    if (m_NetworkRender == 'a')
-    {
-        ClientInitializeServers();
-    }
-    else if (m_NetworkRender == 'S')
-    {
-        DWORD threadID;
-        m_ServerMainThread = (HANDLE)CreateThread(nullptr, 0, ServerManageMainConnectionThread, this, 0, &threadID);
-        m_ServerSubThread = (HANDLE)CreateThread(nullptr, 0, ServerManageSubConnectionThread, this, 0, &threadID);
-    }
-
-    // Recreate the workload
-    // This will be important if one of the servers doesn't respond.
-    if (m_NetworkRender == '0')
-    {
-        NetworkCreateWorkload();
-    }
-
     // Make sure the screen is completely redrawn the first time.
     ChangedMakeDirty();
 }
@@ -402,70 +335,6 @@ void Fractal::Uninitialize(void)
     for (auto& thread : m_DrawThreads) {
         thread->m_Thread->join();
     }
-
-    // Disconnect from the remote server if necessary
-    //if (m_NetworkRender == 'a')
-    //{
-    //    char data[512];
-    //    strcpy(data, "done");
-
-    //    for (int i = 0; i < MAXSERVERS; i++)
-    //    {
-    //        if (m_SetupData.m_UseThisServer[i] == 'n')
-    //        {
-    //            continue;
-    //        }
-
-    //        m_ClientMainNetwork[i]->SendData(data, 512);
-    //        m_ClientMainNetwork[i]->ShutdownConnection();
-    //        delete m_ClientMainNetwork[i];
-    //        delete m_ClientSubNetwork[i];
-    //    }
-    //} // Shutdown the various server threads if necessary.
-    //else if (m_NetworkRender >= 'b' || m_NetworkRender == 'S')
-    //{
-    //    FractalNetwork exitNetwork;
-
-    //    char quittime[512];
-    //    strcpy(quittime, "exit");
-
-    //    // First, shutdown secondary thread.
-    //    if (exitNetwork.CreateConnection(m_SetupData.m_LocalIP, PORTNUM) == true)
-    //    {
-    //        exitNetwork.SendData(quittime, 512);
-    //        exitNetwork.ShutdownConnection();
-    //    }
-    //    else
-    //    {
-    //        ::MessageBox(nullptr, L"Error connecting to server thread #1!", L"", MB_OK | MB_APPLMODAL);
-    //    }
-
-    //    if (WaitForSingleObject(m_ServerSubThread, INFINITE) != WAIT_OBJECT_0)
-    //    {
-    //        ::MessageBox(nullptr, L"Error waiting for server thread #1!", L"", MB_OK | MB_APPLMODAL);
-    //    }
-    //    CloseHandle(m_ServerSubThread);
-
-    //    // Then shutdown primary thread.
-    //    if (exitNetwork.CreateConnection(m_SetupData.m_LocalIP, PERM_PORTNUM) == true)
-    //    {
-    //        exitNetwork.SendData(quittime, 512);
-    //        exitNetwork.ShutdownConnection();
-    //    }
-    //    else
-    //    {
-    //        ::MessageBox(nullptr, L"Error connecting to server thread #2!", L"", MB_OK | MB_APPLMODAL);
-    //    }
-
-    //    if (WaitForSingleObject(m_ServerMainThread, INFINITE) != WAIT_OBJECT_0)
-    //    {
-    //        ::MessageBox(nullptr, L"Error waiting for server thread #2!", L"", MB_OK | MB_APPLMODAL);
-    //    }
-    //    CloseHandle(m_ServerMainThread);
-
-    //    delete m_ServerMainNetwork;
-    //    delete m_ServerSubNetwork;
-    //}
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -2190,12 +2059,6 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
     //    glClear(GL_COLOR_BUFFER_BIT);
     //}
 
-    // Create a network connection as necessary.
-    if (m_NetworkRender == 'a')
-    {
-        ClientCreateSubConnections();
-    }
-
     // Draw the local fractal.
     // Note: This accounts for "Auto" being selected via the GetRenderAlgorithm call.
     switch (GetRenderAlgorithm()) {
@@ -2581,18 +2444,6 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
         break;
     }
 
-    // Read in data from the network and draw it.
-    if (m_NetworkRender == 'a')
-    {
-        CalcNetworkFractal(MemoryOnly);
-    }
-
-    // Shutdown the network connection
-    if (m_NetworkRender == 'a')
-    {
-        ClientShutdownSubConnections();
-    }
-
     // We are all updated now.
     ChangedMakeClean();
 
@@ -2878,23 +2729,6 @@ void Fractal::DrawGlFractal(bool LocalColor, bool lastIter) {
             MessageBoxCudaError(result);
             return;
         }
-
-        //    uint32_t result;
-        //    if (GetIterType() == IterTypeEnum::Bits32) {
-        //        result = m_r.OnlyAA(
-        //            m_CurIters.m_RoundedOutputColorMemory.get(),
-        //            GetNumIterations<uint32_t>());
-        //    }
-        //    else {
-        //        result = m_r.OnlyAA(
-        //            m_CurIters.m_RoundedOutputColorMemory.get(),
-        //            GetNumIterations<uint64_t>());
-        //    }
-
-        //    if (result) {
-        //        MessageBoxCudaError(result);
-        //        return;
-        //    }
     }
 
     GLuint texid;
@@ -3298,8 +3132,6 @@ void Fractal::FillGpuCoords(T &cx2, T &cy2, T &dx2, T &dy2) {
 template<typename IterType, class T>
 void Fractal::CalcGpuFractal(bool MemoryOnly)
 {
-    OutputMessage(L"\r\n");
-
     T cx2{}, cy2{}, dx2{}, dy2{};
     FillGpuCoords<T>(cx2, cy2, dx2, dy2);
 
@@ -4460,466 +4292,6 @@ void Fractal::ForceRecalc() {
 
 LAParameters &Fractal::GetLAParameters() {
     return m_LAParameters;
-}
-
-void Fractal::ClientInitializeServers(void)
-{ // Send the array to the servers
-    int i, j;
-    for (i = 0; i < MAXSERVERS; i++)
-    {
-        if (m_SetupData.m_UseThisServer[i] == 'n')
-        {
-            continue;
-        }
-
-        if (m_ClientMainNetwork[i]->CreateConnection(m_SetupData.m_ServerIPs[i], PERM_PORTNUM) == true)
-        { // Send preliminary handshake string
-            char temp[512];
-            strcpy(temp, "Initialize 1.2 step 1");
-            m_ClientMainNetwork[i]->SendData(temp, 512);
-
-            // Read reply.
-            char ack[512];
-            m_ClientMainNetwork[i]->ReadData(ack, 512);
-
-            // Check if reply is correct.
-            if (strcmp(ack, "Fractal Server 1.2") == 0)
-            {
-                strcpy(temp, "Initialize 1.2 step 2");
-                m_ClientMainNetwork[i]->SendData(temp, 512);
-
-                // Tell the server who is processing what
-                for (j = 0; j < BrokenMaxFractalSize; j++)
-                {
-                    m_ClientMainNetwork[i]->BufferedSendByte(m_ProcessPixelRow[j]);
-                }
-                m_ClientMainNetwork[i]->BufferedSendFlush();
-
-                // Tell the server which parts of the fractal it is supposed to process
-                sprintf(temp, "%c", 'b' + i);
-                m_ClientMainNetwork[i]->SendData(temp, 512);
-            }
-            else // Reply was unknown
-            {
-                m_NetworkRender = '0';
-                m_ClientMainNetwork[i]->ShutdownConnection();
-            }
-        }
-        else // The connection failed.
-        {
-            m_NetworkRender = '0';
-            m_ClientMainNetwork[i]->ShutdownConnection();
-        }
-    }
-}
-
-//////////////////////////////////////////////////////////////////////////////
-// Fills the ProcessPixel array with a workload to send to all the connected
-// computers.  '0' = local (no network), 'a' = client, 'b' = server1, c = server2
-// and so forth.  If we are acting as a server ourselves, we assign 'S' as a
-// placeholder until we download the actual workload from the client.
-//////////////////////////////////////////////////////////////////////////////
-void Fractal::NetworkCreateWorkload(void)
-{
-    if (m_NetworkRender == '0') // Do everything locally
-    {
-        int i;
-        for (i = 0; i < BrokenMaxFractalSize; i++)
-        {
-            m_ProcessPixelRow[i] = '0';
-        }
-    }
-    else if (m_NetworkRender == 'a')
-    {
-        int i;
-
-        // Make it so the server does some of the work.
-        int total = m_SetupData.m_WorkClient;
-        for (i = 0; i < MAXSERVERS; i++)
-        {
-            if (m_SetupData.m_UseThisServer[i] == 'n')
-            {
-                continue;
-            }
-
-            total += m_SetupData.m_WorkServers[i];
-        }
-
-        for (i = 0; i < BrokenMaxFractalSize; i++) // Default to having the client do everything
-        {
-            m_ProcessPixelRow[i] = 'a';
-        }
-
-        // Make sure the numbers jibe
-        if (total == 100)
-        {
-            for (i = 0; i < MAXSERVERS; i++)
-            {
-                if (m_SetupData.m_UseThisServer[i] == 'n')
-                {
-                    continue;
-                }
-
-                double counter;
-                for (counter = 0; counter < BrokenMaxFractalSize; counter += 100.0 / m_SetupData.m_WorkServers[i])
-                { // If this row is already assigned, move on to the next one.
-                    while (m_ProcessPixelRow[(int)counter] != 'a')
-                    {
-                        counter++;
-                    }
-
-                    // Don't overwrite other memory!
-                    if (counter >= BrokenMaxFractalSize)
-                    {
-                        break;
-                    }
-
-                    // Assign this row to this server.
-                    m_ProcessPixelRow[(int)counter] = (char)(i + 'b');
-                }
-            }
-        }
-
-        //    char temp[101];
-        //    for (i = 0; i < 100; i++)
-        //    { temp[i] = m_ProcessPixelRow[i]; }
-        //    temp[100] = 0;
-        //    ::MessageBox (nullptr, temp, "", MB_OK | MB_APPLMODAL);
-    }
-    else if (m_NetworkRender == 'S')
-    {
-        int i;
-        for (i = 0; i < BrokenMaxFractalSize; i++)      // Placeholder until the server
-        {
-            m_ProcessPixelRow[i] = 'S';
-        } // gets its actual workload from the client
-    }
-}
-
-//////////////////////////////////////////////////////////////////////////////
-// Client specific functions.
-//////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////
-// Connects to the specified fractal server, and sends it the data
-// necessary for it to begin calculating.
-//////////////////////////////////////////////////////////////////////////////
-void Fractal::ClientCreateSubConnections(void)
-{
-    int i;
-    for (i = 0; i < MAXSERVERS; i++)
-    {
-        if (m_SetupData.m_UseThisServer[i] == 'n')
-        {
-            continue;
-        }
-
-        if (m_ClientSubNetwork[i]->CreateConnection(m_SetupData.m_ServerIPs[i], PORTNUM) == false)
-        {
-            ::MessageBox(nullptr, L"Failure establishing connection.", L"", MB_OK | MB_APPLMODAL);
-            m_NetworkRender = '0'; // Fall back to local only
-            m_ClientSubNetwork[i]->ShutdownConnection();
-            return;
-        }
-
-        // Send the remote server a chunk of data describing
-        // the work that needs to be done.
-        char data[512];
-        // TODO: support high precision
-        //sprintf(data, "%c %d %d %d %.30lf %.30lf %.30lf %.30lf",
-        //    m_RenderAlgorithm, m_NumIterations, m_ScrnWidth, m_ScrnHeight,
-        //    m_MinX, m_MaxX, m_MinY, m_MaxY);
-
-        if (m_ClientSubNetwork[i]->SendData(data, 512) == -1)
-        {
-            ::MessageBox(nullptr, L"Failure sending initial data.", L"", MB_OK | MB_APPLMODAL);
-            m_NetworkRender = '0'; // Fall back to local only
-            m_ClientSubNetwork[i]->ShutdownConnection();
-            return;
-        }
-    }
-
-    return;
-}
-
-void Fractal::ClientShutdownSubConnections(void)
-{
-    int i;
-    for (i = 0; i < MAXSERVERS; i++)
-    {
-        if (m_SetupData.m_UseThisServer[i] == 'n')
-        {
-            continue;
-        }
-
-        m_ClientSubNetwork[i]->ShutdownConnection();
-    }
-}
-
-void Fractal::ClientSendQuitMessages(void)
-{
-    char temp[512];
-    strcpy(temp, "Stop Calculating");
-
-    int i;
-    for (i = 0; i < MAXSERVERS; i++)
-    {
-        if (m_SetupData.m_UseThisServer[i] == 'n')
-        {
-            continue;
-        }
-
-        m_ClientMainNetwork[i]->SendData(temp, 512);
-    }
-}
-
-//////////////////////////////////////////////////////////////////////////////
-// Server specific functions.
-//////////////////////////////////////////////////////////////////////////////
-bool Fractal::ServerRespondToInitialization(void)
-{
-    char ack[512];
-    strcpy(ack, "Fractal Server 1.2");
-
-    int ret = m_ServerMainNetwork->SendData(ack, 512);
-    if (ret == -1)
-    {
-        OutputMessage(L"Failure sending acknowledgement %d", ret);
-        return false;
-    }
-
-    OutputMessage(L"Acknowledgement sent.  Awaiting initialization data...\r\n");
-
-    return true;
-}
-
-// Read the array specifying which computers process what pixels.
-void Fractal::ServerReadProcessPixelRow(void)
-{
-    int i;
-
-    m_ServerMainNetwork->BufferedReadEmpty();
-
-    for (i = 0; i < BrokenMaxFractalSize; i++)
-    {
-        m_ServerMainNetwork->BufferedReadByte(&m_ProcessPixelRow[i]);
-    }
-
-    OutputMessage(L"Process Pixel row: %c%c%c%c\r\n", m_ProcessPixelRow[0], m_ProcessPixelRow[1], m_ProcessPixelRow[2], m_ProcessPixelRow[3]);
-}
-
-// Read the ID of this server, assigned by the client.
-void Fractal::ServerReadID(void)
-{
-    char temp[512];
-    m_ServerMainNetwork->ReadData(temp, 512);
-    m_NetworkRender = temp[0];
-
-    OutputMessage(L"Network Render: %c\r\n", m_NetworkRender);
-}
-
-// Main server loop
-void Fractal::ServerManageMainConnection(void)
-{
-    if (m_ServerMainNetwork->SetUpListener(m_SetupData.m_LocalIP, PERM_PORTNUM) == false)
-    {
-        OutputMessage(L"MainConnectionThread - SetUpListener failed on address %s:%d\r\n", m_SetupData.m_LocalIP, PERM_PORTNUM);
-        return;
-    }
-
-    int ret;
-    sockaddr_in sinRemote;
-    for (;;)
-    {
-        OutputMessage(L"Awaiting primary connection...\r\n");
-
-        if (m_ServerMainNetwork->AcceptConnection(sinRemote) == false)
-        {
-            OutputMessage(L"Error waiting for new connection!\r\n");
-            break;
-        }
-
-        OutputMessage(L"Accepted!\r\n");
-
-        do
-        {
-            ret = ServerManageMainState();
-        } while (ret == 1);
-
-        m_ServerMainNetwork->ShutdownConnection();
-
-        if (ret == -1)
-        {
-            break;
-        }
-    }
-}
-
-// -1 = time to exit this program
-// 0 = that client is done, we can wait for a new client now
-// 1 = that client is not done, so we will keep running and await
-//     more work to do.
-int Fractal::ServerManageMainState(void)
-{
-    char buffer[512];
-    m_ServerMainNetwork->ReadData(buffer, 512);
-
-    OutputMessage(L"ManageMainState - Data received:\r\n");
-    OutputMessage(L"%s\r\n", buffer);
-
-    if (strcmp(buffer, "exit") == 0)
-    {
-        return -1;
-    }      // Time to exit this program
-    else if (strcmp(buffer, "done") == 0)
-    {
-        return 0;
-    }       // The client is done, we can wait for a new client
-    else if (strcmp(buffer, "Initialize 1.2 step 1") == 0)
-    {
-        bool ret = ServerRespondToInitialization();
-        if (ret == false)
-        {
-            return 0;
-        }
-        return 1;
-    }
-    else if (strcmp(buffer, "Initialize 1.2 step 2") == 0)
-    {
-        ServerReadProcessPixelRow();
-        ServerReadID();
-        return 1;
-    }
-    else if (strcmp(buffer, "Stop Calculating") == 0)
-    {
-        m_StopCalculating = true;
-        return 1;
-    }
-    else
-    {
-        OutputMessage(L"Unexpected data received on main connection!");
-        return -1;
-    }
-}
-
-void Fractal::ServerManageSubConnection(void)
-{
-    if (m_ServerSubNetwork->SetUpListener(m_SetupData.m_LocalIP, PORTNUM) == false)
-    {
-        OutputMessage(L"SubConnectionThread - SetUpListener failed on address %s:%d\r\n", m_SetupData.m_LocalIP, PORTNUM);
-        return;
-    }
-
-    // Wait for connections forever, until the client tells the server to shutdown
-    sockaddr_in sinRemote;
-    for (;;)
-    {
-        OutputMessage(L"Awaiting secondary connection...\r\n");
-
-        if (m_ServerSubNetwork->AcceptConnection(sinRemote) == false)
-        {
-            OutputMessage(L"Error waiting for new connection!\r\n");
-            break;
-        }
-
-        OutputMessage(L"Accepted!\r\n");
-        bool ret = ServerBeginCalc();
-        m_ServerSubNetwork->ShutdownConnection();
-
-        if (ret == false)
-        {
-            break;
-        }
-    }
-}
-
-bool Fractal::ServerBeginCalc(void)
-{
-    //OutputMessage(L"Awaiting instructions...\r\n");
-    //char buffer[512];
-    //m_ServerSubNetwork->ReadData(buffer, 512);
-
-    //// TODO:
-    //RenderAlgorithm RenderAlgorithm = RenderAlgorithm::Cpu64;
-    //int ScreenWidth = 0, ScreenHeight = 0;
-    //IterType NumIters = 0;
-    //HighPrecision MinX = 0, MaxX = 0, MinY = 0, MaxY = 0;
-
-    //OutputMessage(L"Data received:\r\n");
-    //OutputMessage(L"%s\r\n", buffer);
-
-    //// Secondary connection should quit.
-    //if (strcmp(buffer, "exit") == 0)
-    //{
-    //    return false;
-    //}
-
-    //// Anything else must be data for setting up a calculation.
-    //// TODO support high precision
-    ////sscanf(buffer, "%c %d %d %d %lf %lf %lf %lf",
-    ////    &RenderAlgorithm, &NumIters, &ScreenWidth, &ScreenHeight,
-    ////    &MinX, &MaxX, &MinY, &MaxY);
-
-    //OutputMessage(L"Received instructions.\r\n");
-    //OutputMessage(L"Interpretation:\r\n");
-    //OutputMessage(L"Render Mode:  %d\r\n", RenderAlgorithm);
-    //OutputMessage(L"NumIters:     %d\r\n", NumIters);
-    //OutputMessage(L"ScreenWidth:  %d\r\n", ScreenWidth);
-    //OutputMessage(L"ScreenHeight: %d\r\n", ScreenHeight);
-    //OutputMessage(L"MinX:         %.15f\r\n", Convert<HighPrecision, double>(MinX));
-    //OutputMessage(L"MaxX:         %.15f\r\n", Convert<HighPrecision, double>(MaxX));
-    //OutputMessage(L"MinY:         %.15f\r\n", Convert<HighPrecision, double>(MinY));
-    //OutputMessage(L"MaxY:         %.15f\r\n", Convert<HighPrecision, double>(MaxY));
-
-    //ResetDimensions(ScreenWidth, ScreenHeight);
-    //RecenterViewCalc(MinX, MinY, MaxX, MaxY);
-    //SetNumIterations(NumIters);
-    //SetRenderAlgorithm(RenderAlgorithm);
-    //CalcFractal(true);
-
-    //int x, y;
-    //for (y = 0; y < ScreenHeight; y++)
-    //{
-    //    if (m_ProcessPixelRow[y] != m_NetworkRender)
-    //    {
-    //        continue;
-    //    }
-
-    //    for (x = 0; x < ScreenWidth; x++)
-    //    {
-    //        if (NumIters >= 65536)
-    //        {
-    //            m_ServerSubNetwork->BufferedSendLong(m_CurIters.m_ItersArray[y][x]);
-    //        }
-    //        else
-    //        {
-    //            m_ServerSubNetwork->BufferedSendShort((unsigned short)m_CurIters.m_ItersArray[y][x]);
-    //        }
-    //    }
-    //}
-
-    //m_ServerSubNetwork->BufferedSendFlush();
-
-    return true;
-}
-
-//////////////////////////////////////////////////////////////////////////////
-// Server threads
-//////////////////////////////////////////////////////////////////////////////
-DWORD WINAPI Fractal::ServerManageMainConnectionThread(void *fractal)
-{
-    ((Fractal *)fractal)->ServerManageMainConnection();
-    return 0;
-}
-
-DWORD WINAPI Fractal::ServerManageSubConnectionThread(void *fractal)
-{ // Lower our priority a bit--this isn't mission critical :)
-    SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_LOWEST);
-    ((Fractal *)fractal)->ServerManageSubConnection();
-    return 0;
-}
-
-void DefaultOutputMessage(const wchar_t *, ...)
-{
 }
 
 bool Fractal::IsDownControl(void)

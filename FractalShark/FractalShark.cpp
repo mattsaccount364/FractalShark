@@ -85,12 +85,6 @@ int APIENTRY WinMain(HINSTANCE hInstance,
     LPSTR     /*lpCmdLine*/,
     int       nCmdShow)
 {
-    WSADATA info;
-    if (WSAStartup(MAKEWORD(1, 1), &info) != 0)
-    {
-        MessageBox(nullptr, L"Cannot initialize WinSock!", L"WSAStartup", MB_OK | MB_APPLMODAL);
-    }
-
     // Create a dump file whenever the gateway crashes only on windows
     SetUnhandledExceptionFilter(unhandled_handler);
 
@@ -217,7 +211,7 @@ HWND InitInstance(HINSTANCE hInstance, int nCmdShow)
 
     FractalSetupData setupData;
     setupData.Load();
-    gFractal = new Fractal(&setupData, rt.right, rt.bottom, nullptr, hWnd, false);
+    gFractal = new Fractal(&setupData, rt.right, rt.bottom, hWnd, false);
 
     // Display!
     ShowWindow(hWnd, nCmdShow);

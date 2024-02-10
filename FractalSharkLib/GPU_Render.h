@@ -115,11 +115,6 @@ public:
     template<typename IterType>
     void ClearMemory();
 
-    //template<typename IterType>
-    //uint32_t OnlyAA(
-    //    Color16* color_buffer,
-    //    IterType n_iterations);
-
     static const char* ConvertErrorToString(uint32_t err);
 
     // Match in Fractal.cpp
@@ -128,19 +123,6 @@ public:
 
     static const int32_t NB_THREADS_W_AA = 16;  // W=16, H=8 previously seemed OK
     static const int32_t NB_THREADS_H_AA = 8;
-
-private:
-    template<typename IterType>
-    uint32_t RenderAsNeeded(
-        IterType n_iterations,
-        IterType* iter_buffer,
-        Color16* color_buffer);
-    template<typename IterType>
-    void RenderAsNeeded(
-        uint32_t& result,
-        IterType n_iterations,
-        IterType* iter_buffer,
-        Color16* color_buffer);
 
 public:
     template<typename IterType>

@@ -499,34 +499,6 @@ bool GPURenderer::MemoryInitialized() const {
     return true;
 }
 
-// Not the same as OnlyAA
-template<typename IterType>
-uint32_t GPURenderer::RenderAsNeeded(
-    IterType n_iterations,
-    IterType* iter_buffer,
-    Color16* color_buffer) {
-
-    uint32_t result = cudaSuccess;
-
-    // TODO
-    //result = RunAntialiasing(n_iterations, cudaStreamDefault);
-    //if (!result) {
-    //    result = ExtractItersAndColors<IterType, false>(iter_buffer, color_buffer);
-    //}
-
-    return result;
-}
-
-template<typename IterType>
-void GPURenderer::RenderAsNeeded(
-    uint32_t &result,
-    IterType n_iterations,
-    IterType* iter_buffer,
-    Color16* color_buffer) {
-
-    result = RenderAsNeeded(n_iterations, iter_buffer, color_buffer);
-}
-
 template<typename IterType>
 uint32_t GPURenderer::RenderCurrent(
     IterType n_iterations,
@@ -823,11 +795,8 @@ uint32_t GPURenderer::Render(
             }
         }
     }
-    else {
-        return cudaSuccess;
-    }
 
-    return RenderAsNeeded(n_iterations, iter_buffer, color_buffer);
+    return cudaSuccess;
 }
 
 //////////////////////////////////////////////////
@@ -1060,8 +1029,6 @@ uint32_t GPURenderer::RenderPerturbLAv2(
                 m_Width, m_Height, m_Antialiasing, cx, cy, dx, dy,
                 centerX, centerY,
                 n_iterations);
-
-            RenderAsNeeded(result, n_iterations, iter_buffer, color_buffer);
         }
     } else if (
         (algorithm == RenderAlgorithm::Gpu2x32PerturbedLAv2) ||
@@ -1095,8 +1062,6 @@ uint32_t GPURenderer::RenderPerturbLAv2(
                 m_Width, m_Height, m_Antialiasing, cx2, cy2, dx2, dy2,
                 centerX2, centerY2,
                 n_iterations);
-
-            RenderAsNeeded(result, n_iterations, iter_buffer, color_buffer);
         }
     } else if (
         (algorithm == RenderAlgorithm::Gpu1x64PerturbedLAv2) ||
@@ -1122,8 +1087,6 @@ uint32_t GPURenderer::RenderPerturbLAv2(
                 m_Width, m_Height, m_Antialiasing, cx, cy, dx, dy,
                 centerX, centerY,
                 n_iterations);
-
-            RenderAsNeeded(result, n_iterations, iter_buffer, color_buffer);
         }
     }
     else if (
@@ -1152,8 +1115,6 @@ uint32_t GPURenderer::RenderPerturbLAv2(
                 m_Width, m_Height, m_Antialiasing, cx, cy, dx, dy,
                 centerX, centerY,
                 n_iterations);
-
-            RenderAsNeeded(result, n_iterations, iter_buffer, color_buffer);
         }
     } else if (
         (algorithm == RenderAlgorithm::GpuHDRx64PerturbedLAv2) ||
@@ -1181,8 +1142,6 @@ uint32_t GPURenderer::RenderPerturbLAv2(
                 m_Width, m_Height, m_Antialiasing, cx, cy, dx, dy,
                 centerX, centerY,
                 n_iterations);
-
-            RenderAsNeeded(result, n_iterations, iter_buffer, color_buffer);
         }
     } else if (
         (algorithm == RenderAlgorithm::GpuHDRx2x32PerturbedLAv2) ||
@@ -1218,8 +1177,6 @@ uint32_t GPURenderer::RenderPerturbLAv2(
                 m_Width, m_Height, m_Antialiasing, cx2, cy2, dx2, dy2,
                 centerX2, centerY2,
                 n_iterations);
-
-            RenderAsNeeded(result, n_iterations, iter_buffer, color_buffer);
         }
     }
 
@@ -1402,8 +1359,6 @@ uint32_t GPURenderer::RenderPerturbBLAScaled(
                 m_Width, m_Height, cx, cy, dx, dy,
                 centerX, centerY,
                 n_iterations);
-
-            RenderAsNeeded(result, n_iterations, iter_buffer, color_buffer);
         }
     } else if (algorithm == RenderAlgorithm::GpuHDRx32PerturbedScaled) {
         if constexpr (EnableGpuHDRx32PerturbedScaled && std::is_same<T, HDRFloat<float>>::value) {
@@ -1416,8 +1371,6 @@ uint32_t GPURenderer::RenderPerturbBLAScaled(
                 m_Width, m_Height, cx, cy, dx, dy,
                 centerX, centerY,
                 n_iterations);
-
-            RenderAsNeeded(result, n_iterations, iter_buffer, color_buffer);
         }
     }
 
@@ -1555,8 +1508,6 @@ uint32_t GPURenderer::RenderPerturbBLA(
                     m_Width, m_Height, cx, cy, dx, dy,
                     centerX, centerY,
                     n_iterations);
-
-                RenderAsNeeded(result, n_iterations, iter_buffer, color_buffer);
                 return result;
             };
 
@@ -1595,8 +1546,6 @@ uint32_t GPURenderer::RenderPerturbBLA(
                     m_Width, m_Height, cx, cy, dx, dy,
                     centerX, centerY,
                     n_iterations);
-
-                RenderAsNeeded(result, n_iterations, iter_buffer, color_buffer);
                 return result;
             };
 
@@ -1635,8 +1584,6 @@ uint32_t GPURenderer::RenderPerturbBLA(
                     m_Width, m_Height, cx, cy, dx, dy,
                     centerX, centerY,
                     n_iterations);
-
-                RenderAsNeeded(result, n_iterations, iter_buffer, color_buffer);
                 return result;
             };
 
@@ -1675,8 +1622,6 @@ uint32_t GPURenderer::RenderPerturbBLA(
             //    m_Width, m_Height, cx, cy, dx, dy,
             //    centerX, centerY,
             //    n_iterations);
-
-            // RenderAsNeeded(result, n_iterations, iter_buffer, color_buffer);
         }
     }
 
@@ -1780,41 +1725,6 @@ uint32_t GPURenderer::RenderPerturbBLA(
     uint64_t n_iterations,
     int /*iteration_precision*/);
 //////////////////////////////////////////////////////////
-
-//// Not the same as RenderAsNeeded
-//template<typename IterType>
-//__host__
-//uint32_t
-//GPURenderer::OnlyAA(
-//    Color16* color_buffer,
-//    IterType n_iterations) {
-//
-//    auto result = RunAntialiasing(n_iterations, cudaStreamDefault);
-//    if (result != cudaSuccess) {
-//        return result;
-//    }
-//
-//    result = ExtractItersAndColors<IterType, false>(nullptr, color_buffer);
-//    if (result != cudaSuccess) {
-//        return result;
-//    }
-//
-//    return cudaSuccess;
-//}
-
-//template
-//__host__
-//uint32_t
-//GPURenderer::OnlyAA<uint32_t>(
-//    Color16* color_buffer,
-//    uint32_t n_iterations);
-//
-//template
-//__host__
-//uint32_t
-//GPURenderer::OnlyAA(
-//    Color16* color_buffer,
-//    uint64_t n_iterations);
 
 template<typename IterType>
 __host__

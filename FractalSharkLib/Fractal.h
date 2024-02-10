@@ -55,7 +55,6 @@ public:
     Fractal(FractalSetupData *setupData,
         int width,
         int height,
-        void(*pOutputMessage) (const wchar_t *, ...),
         HWND hWnd,
         bool UseSensoCursor);
     ~Fractal();
@@ -220,7 +219,6 @@ public:
 private:
     void Initialize(int width,
         int height,
-        void(*OutputMessage) (const wchar_t*, ...),
         HWND hWnd,
         bool UseSensoCursor);
     void Uninitialize(void);
@@ -311,23 +309,7 @@ private:
 
     uint64_t FindTotalItersUsed(void);
 
-    // Networking functions.
-    void NetworkCreateWorkload(void);
-    void ClientInitializeServers(void);
-    void ClientCreateSubConnections(void);
-    void ClientShutdownSubConnections(void);
-    void ClientSendQuitMessages(void);
-
-    bool ServerRespondToInitialization(void);
-    void ServerReadProcessPixelRow(void);
-    void ServerReadID(void);
-    void ServerManageMainConnection(void);
-    int ServerManageMainState(void);
-    void ServerManageSubConnection(void);
-    bool ServerBeginCalc(void);
-
     // Member Variables
-
     RefOrbitCalc m_RefOrbit;
 
     std::unique_ptr<uint16_t[]> m_DrawOutBytes;
@@ -429,7 +411,6 @@ private:
     char m_NetworkRender;
     HANDLE m_ServerMainThread;
     HANDLE m_ServerSubThread;
-    void(*OutputMessage) (const wchar_t *, ...);
     
     // Reference compression
     int32_t m_CompressionExp;

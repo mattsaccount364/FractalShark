@@ -35,7 +35,6 @@ void ConvertCStringToDest(const CString& str,
     uint32_t* gpuAntialiasing = nullptr,
     std::wstring* filename = nullptr);
 
-void OutputMessage(const wchar_t* szFormat, ...);
 CFractalTrayDlg* theActiveOne;
 
 CFractalTrayDlg::CFractalTrayDlg(CWnd* pParent /*=nullptr*/)
@@ -481,7 +480,7 @@ DWORD WINAPI CalcProc(LPVOID lpParameter)
     GetCurrentDirectory(128, setup.m_SaveDir);
 
     // default width/height:
-    Fractal* fractal = new Fractal(&setup, DefaultWidth, DefaultHeight, OutputMessage, nullptr, false);
+    Fractal* fractal = new Fractal(&setup, DefaultWidth, DefaultHeight, nullptr, false);
 
     for (int i = 0;; i++) {
         if (param->stop == true) {
@@ -569,23 +568,4 @@ bool FileExists(const std::wstring& filename)
 
     return (dwAttrib != INVALID_FILE_ATTRIBUTES &&
         !(dwAttrib & FILE_ATTRIBUTE_DIRECTORY));
-}
-
-void OutputMessage(const wchar_t* szFormat, ...)
-{
-    if (theActiveOne->m_ThreadParam.stop == true)
-    {
-        return;
-    }
-
-    va_list argList;
-    va_start(argList, szFormat);
-
-    wchar_t newMessage[32768];
-    vswprintf(newMessage, 32768, szFormat, argList);
-
-    theActiveOne->m_Messages = newMessage;
-    //theActiveOne->UpdateData (FALSE);
-
-    va_end(argList);
 }

@@ -230,7 +230,7 @@ unsigned long WINAPI DrawingThread (void *)
   gSetupData.Load ();
 
   Fractal *gFractal = nullptr;
-  gFractal = new Fractal (&gSetupData, rt.right, rt.bottom, nullptr, gHWnd, true);
+  gFractal = new Fractal (&gSetupData, rt.right, rt.bottom, gHWnd, true);
 
   // Autozoom
   bool gAutoZoomDone;

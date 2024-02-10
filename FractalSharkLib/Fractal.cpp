@@ -2147,6 +2147,8 @@ void Fractal::CalcFractal(bool MemoryOnly)
     //    return;
     //}
 
+    m_BenchmarkOverall.StartTimer();
+
     // Bypass this function if the screen is too small.
     if (m_ScrnHeight == 0 || m_ScrnWidth == 0) {
         return;
@@ -2158,6 +2160,8 @@ void Fractal::CalcFractal(bool MemoryOnly)
     else {
         CalcFractalTypedIter<uint64_t>(MemoryOnly);
     }
+
+    m_BenchmarkOverall.StopTimer();
 }
 
 template<typename IterType>
@@ -4345,6 +4349,10 @@ const BenchmarkData& Fractal::GetBenchmarkPerPixel() const {
     return m_BenchmarkDataPerPixel;
 }
 
+const BenchmarkData& Fractal::GetBenchmarkOverall() const {
+    return m_BenchmarkOverall;
+}
+
 //////////////////////////////////////////////////////////////////////////////
 // The resolution is 4096x4096.
 // Re-renders the current fractal at very high resolution,
@@ -4444,6 +4452,10 @@ HighPrecision Fractal::XFromCalcToScreen(HighPrecision x) const
 HighPrecision Fractal::YFromCalcToScreen(HighPrecision y) const
 {
     return (HighPrecision)m_ScrnHeight - (y - m_MinY) * ((HighPrecision)m_ScrnHeight / (m_MaxY - m_MinY));
+}
+
+void Fractal::ForceRecalc() {
+    ChangedMakeDirty();
 }
 
 LAParameters &Fractal::GetLAParameters() {

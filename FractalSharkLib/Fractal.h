@@ -172,6 +172,7 @@ public:
 
     // Benchmark results
     const BenchmarkData &GetBenchmarkPerPixel() const;
+    const BenchmarkData &GetBenchmarkOverall() const;
 
     // Used for retrieving our current location
     inline const HighPrecision& GetMinX(void) const { return m_MinX; }
@@ -212,7 +213,7 @@ public:
     static DWORD WINAPI ServerManageMainConnectionThread(void*);
     static DWORD WINAPI ServerManageSubConnectionThread(void*);
 
-    void ForceRecalc() { ChangedMakeDirty(); }
+    void ForceRecalc();
 
     LAParameters& GetLAParameters();
 
@@ -452,7 +453,8 @@ private:
 
     // Benchmarking
     BenchmarkData m_BenchmarkDataPerPixel;
-    
+    BenchmarkData m_BenchmarkOverall;
+
     std::unique_ptr<std::thread> m_AsyncRenderThread;
     std::atomic<uint32_t> m_AsyncGpuRenderIsAtomic;
     void DrawAsyncGpuFractalThread();

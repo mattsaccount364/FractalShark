@@ -97,6 +97,30 @@ float LAParameters::GetPeriodDetectionThreshold() const {
     return m_PeriodDetectionThreshold;
 }
 
+int32_t LAParameters::GetLAThresholdScaleExp() const {
+    return m_LAThresholdScaleExponent;
+}
+
+int32_t LAParameters::GetLAThresholdCScaleExp() const {
+    return m_LAThresholdCScaleExponent;
+}
+
+int32_t LAParameters::GetStage0PeriodDetectionThreshold2Exp() const {
+    return m_Stage0PeriodDetectionThreshold2Exponent;
+}
+
+int32_t LAParameters::GetPeriodDetectionThreshold2Exp() const {
+    return m_PeriodDetectionThreshold2Exponent;
+}
+
+int32_t LAParameters::GetStage0PeriodDetectionThresholdExp() const {
+    return m_Stage0PeriodDetectionThresholdExponent;
+}
+
+int32_t LAParameters::GetPeriodDetectionThresholdExp() const {
+    return m_PeriodDetectionThresholdExponent;
+}
+
 void LAParameters::AdjustLAThresholdScaleExponent(int32_t delta_exponent) {
     m_LAThresholdScaleExponent += delta_exponent;
     PopulateFloatsFromExponents();

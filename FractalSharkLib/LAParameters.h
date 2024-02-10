@@ -14,6 +14,13 @@ public:
     CUDA_CRAP float GetStage0PeriodDetectionThreshold() const;
     CUDA_CRAP float GetPeriodDetectionThreshold() const;
 
+    CUDA_CRAP int32_t GetLAThresholdScaleExp() const;
+    CUDA_CRAP int32_t GetLAThresholdCScaleExp() const;
+    CUDA_CRAP int32_t GetStage0PeriodDetectionThreshold2Exp() const;
+    CUDA_CRAP int32_t GetPeriodDetectionThreshold2Exp() const;
+    CUDA_CRAP int32_t GetStage0PeriodDetectionThresholdExp() const;
+    CUDA_CRAP int32_t GetPeriodDetectionThresholdExp() const;
+
     CUDA_CRAP void AdjustLAThresholdScaleExponent(int32_t delta_exponent);
     CUDA_CRAP void AdjustLAThresholdCScaleExponent(int32_t delta_exponent);
     CUDA_CRAP void AdjustStage0PeriodDetectionThreshold2Exponent(int32_t delta_exponent);

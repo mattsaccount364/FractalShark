@@ -1472,26 +1472,50 @@ void MenuGetCurPos(HWND hWnd)
         OrbitMilliseconds,
         LAMilliseconds);
 
-    auto additionalDetailsStr =
+    const auto additionalDetailsStr =
         std::string("PeriodMaybeZero = ") + std::to_string(PeriodMaybeZero) + "\r\n" +
         std::string("CompressedIters = ") + std::to_string(CompressedIters) + "\r\n" +
         std::string("UncompressedIters = ") + std::to_string(UncompressedIters) + "\r\n" +
         std::string("Compression ratio = ") + std::to_string((double)UncompressedIters / (double)CompressedIters) + "\r\n" +
-        std::string("Compression error exp = ") + std::to_string(CompressionErrorExp) + "\r\n" +
-        std::string("RefOrbit time in ms = ") + std::to_string(OrbitMilliseconds) + "\r\n" +
-        std::string("LA generation time in ms = ") + std::to_string(LAMilliseconds) + "\r\n";
+        std::string("Compression error exp = ") + std::to_string(CompressionErrorExp) + "\r\n";
+
+    const auto laParametersStr =
+        std::string("Detection method = ")
+            + std::to_string(gFractal->GetLAParameters().GetDetectionMethod()) + "\r\n" +
+        std::string("Threshold scale = ")
+            + std::to_string(gFractal->GetLAParameters().GetLAThresholdScaleExp()) + "\r\n" +
+        std::string("Threshold C scale = ")
+            + std::to_string(gFractal->GetLAParameters().GetLAThresholdCScaleExp()) + "\r\n" +
+        std::string("Stage 0 period detection threshold 2 = ")
+            + std::to_string(gFractal->GetLAParameters().GetStage0PeriodDetectionThreshold2Exp()) + "\r\n" +
+        std::string("Period detection threshold 2 = ")
+            + std::to_string(gFractal->GetLAParameters().GetPeriodDetectionThreshold2Exp()) + "\r\n" +
+        std::string("Stage 0 period detection threshold = ")
+            + std::to_string(gFractal->GetLAParameters().GetStage0PeriodDetectionThresholdExp()) + "\r\n" +
+        std::string("Period detection threshold = ")
+            + std::to_string(gFractal->GetLAParameters().GetPeriodDetectionThresholdExp()) + "\r\n";
+
+    const auto benchmarkData =
+        std::string("Overall time (ms) = ") + std::to_string(gFractal->GetBenchmarkOverall().GetDeltaInMs()) + "\r\n" +
+        std::string("Per pixel (ms) = ") + std::to_string(gFractal->GetBenchmarkPerPixel().GetDeltaInMs()) + "\r\n" +
+        std::string("RefOrbit time (ms) = ") + std::to_string(OrbitMilliseconds) + "\r\n" +
+        std::string("LA generation time (ms) = ") + std::to_string(LAMilliseconds) + "\r\n";
 
     snprintf(
         mem,
         numBytes,
         "This text is copied to clipboard.  Using \"%s\"\r\n"
-        "Per-pixel time in ms: %llu\r\n"
         "Antialiasing: %u\r\n"
         "Palette depth: %u\r\n"
         "Coordinate precision = %zu;\r\n"
         "Center X: \"%s\"\r\n"
         "Center Y: \"%s\"\r\n"
         "zoomFactor \"%s\"\r\n"
+        "\r\n"
+        "LA parameters:\r\n"
+        "%s\r\n"
+        "Benchmark data:\r\n"
+        "%s\r\n"
         "\r\n"
         "Additional details:\r\n"
         "%s\r\n"
@@ -1502,13 +1526,14 @@ void MenuGetCurPos(HWND hWnd)
         "maxY = HighPrecision{ \"%s\" };\r\n"
         "SetNumIterations<IterTypeFull>(%zu);\r\n",
         gFractal->GetRenderAlgorithmName(),
-        gFractal->GetBenchmarkPerPixel().GetDeltaInMs(),
         gFractal->GetGpuAntialiasing(),
         gFractal->GetPaletteDepth(),
         prec,
         ptXStr.c_str(),
         ptYStr.c_str(),
         zoomFactorStr.c_str(),
+        laParametersStr.c_str(),
+        benchmarkData.c_str(),
         additionalDetailsStr.c_str(),
         sminX.c_str(), sminY.c_str(),
         smaxX.c_str(), smaxY.c_str(),
@@ -1759,8 +1784,8 @@ void MenuShowHotkeys(HWND /*hWnd*/) {
         L"W - Increase reference compression: more error, less memory. Recalculate.\r\n"
         L"\r\n"
         L"Linear Approximation parameters, adjustments by powers of two\r\n"
-        L"H - Decrease LA Threshold Scale exponents.  Less accurate/faster per-pixel\r\n"
-        L"h - Increase LA Threshold Scale exponents.  More accurate/slower per-pixel\r\n"
+        L"H - Decrease LA Threshold Scale exponents.  More accurate/slower per-pixel\r\n"
+        L"h - Increase LA Threshold Scale exponents.  Less accurate/faster per-pixel\r\n"
         L"J - Decrease LA period detection exponents.  Less memory/slower per-pixel\r\n"
         L"j - Increase LA period detection exponents.  More memory/faster per-pixel\r\n"
         L"Palettes\r\n"

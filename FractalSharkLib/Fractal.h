@@ -132,8 +132,8 @@ public:
     inline uint32_t GetIterationPrecision(void) const { return m_IterationPrecision; }
     inline void SetIterationPrecision(uint32_t iteration_precision) { m_IterationPrecision = iteration_precision;  }
 
-    void SetPerturbationAlg(RefOrbitCalc::PerturbationAlg alg) { m_RefOrbit.SetPerturbationAlg(alg); }
-    void ClearPerturbationResults(RefOrbitCalc::PerturbationResultType type) { m_RefOrbit.ClearPerturbationResults(type); }
+    void SetPerturbationAlg(RefOrbitCalc::PerturbationAlg alg);
+    void ClearPerturbationResults(RefOrbitCalc::PerturbationResultType type);
     void SavePerturbationOrbits();
     void LoadPerturbationOrbits();
 

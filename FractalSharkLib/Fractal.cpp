@@ -1887,6 +1887,14 @@ void Fractal::SetIterType(IterTypeEnum type) {
     }
 }
 
+void Fractal::SetPerturbationAlg(RefOrbitCalc::PerturbationAlg alg) {
+    m_RefOrbit.SetPerturbationAlg(alg);
+}
+
+void Fractal::ClearPerturbationResults(RefOrbitCalc::PerturbationResultType type) {
+    m_RefOrbit.ClearPerturbationResults(type);
+}
+
 void Fractal::SavePerturbationOrbits() {
     m_RefOrbit.SaveAllOrbits();
 }

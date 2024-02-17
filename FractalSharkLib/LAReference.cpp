@@ -199,7 +199,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbit(
     return true;
 }
 
-// Based on bab9ddb0ded2e1cb4c30819cad8b97e56e027266 from fractal-zoomer, LAReference.java
+// Based on e704d5b40895f453156e09d9542a589545cc6144 from fractal-zoomer, LAReference.java
 template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
 template<typename PerturbType>
 bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
@@ -207,6 +207,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
     const PerturbationResults<IterType, PerturbType, PExtras>& PerturbationResults,
     IterType maxRefIteration) {
 
+    // TODO 20 is too low but nice for testing
     const auto ThreadCount = std::thread::hardware_concurrency();
     if (maxRefIteration / ThreadCount < 20) {
         return CreateLAFromOrbit(la_parameters, PerturbationResults, maxRefIteration);
@@ -323,15 +324,14 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
         PeriodEnd = Period;
     }
 
-    std::deque<std::shared_future<uint64_t>> StartIndexFuture(ThreadCount);
-    std::deque<std::promise<uint64_t>> StartIndexPromise(ThreadCount);
+    std::deque<std::shared_future<int64_t>> StartIndexFuture(ThreadCount);
+    std::deque<std::promise<int64_t>> StartIndexPromise(ThreadCount);
     std::vector<std::vector<LAInfoDeep<IterType, Float, SubType, PExtras>>> LAsPerThread(ThreadCount);
     std::vector<LAInfoDeep<IterType, Float, SubType, PExtras>> LastLAPerThread(ThreadCount);
-    std::vector<size_t> LAcurrentIndexPerThread(ThreadCount);
-    std::deque<std::atomic_uint64_t> FinishIndex(ThreadCount);
+    std::deque<std::atomic_int64_t> FinishIndex(ThreadCount);
 
-    for (i = 0; i < StartIndexPromise.size(); i++) {
-        StartIndexFuture[i] = StartIndexPromise[i].get_future();
+    for (auto threadIndex = 0; threadIndex < StartIndexPromise.size(); threadIndex++) {
+        StartIndexFuture[threadIndex] = StartIndexPromise[threadIndex].get_future();
     }
 
     volatile IterType numbers1[128] = { 0 };
@@ -350,7 +350,6 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
             &StartIndexFuture,
             &StartIndexPromise,
             &FinishIndex,
-            &LAsPerThread,
             &LastLAPerThread,
             ThreadCount,
             maxRefIteration,
@@ -361,11 +360,14 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
 
         const auto ThreadID = 0;
         auto NextThread = 1;
-        // const auto LastThread = ThreadCount - 1;
 
+        // l:487
         for (; i < maxRefIteration; i++) {
             LAInfoDeep<IterType, Float, SubType, PExtras> NewLA{};
-            const bool PeriodDetected{ LA.Step(la_parameters, NewLA, PerturbationResults.GetComplex<SubType>(i)) };
+            const bool PeriodDetected{ LA.Step(
+                la_parameters,
+                NewLA,
+                PerturbationResults.GetComplex<SubType>(i)) };
 
             if (!PeriodDetected && i < PeriodEnd) {
                 LA = NewLA;
@@ -381,19 +383,27 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
             PeriodBegin = i;
             PeriodEnd = PeriodBegin + Period;
 
+            // l:504
             const IterType ip1{ i + 1 };
-            const bool detected{ NewLA.DetectPeriod(la_parameters, PerturbationResults.GetComplex<SubType>(ip1)) };
+            const bool detected{ NewLA.DetectPeriod(
+                la_parameters,
+                PerturbationResults.GetComplex<SubType>(ip1)) };
 
             if (detected || ip1 >= maxRefIteration) {
-                LA = LAInfoDeep<IterType, Float, SubType, PExtras>(la_parameters, PerturbationResults.GetComplex<SubType>(i));
+                LA = LAInfoDeep<IterType, Float, SubType, PExtras>(
+                    la_parameters,
+                    PerturbationResults.GetComplex<SubType>(i));
             }
             else {
-                LA = LAInfoDeep<IterType, Float, SubType, PExtras>(la_parameters, PerturbationResults.GetComplex<SubType>(i)).Step(
+                LA = LAInfoDeep<IterType, Float, SubType, PExtras>(
                     la_parameters,
-                    PerturbationResults.GetComplex<SubType>(ip1));
+                    PerturbationResults.GetComplex<SubType>(i)).Step(
+                        la_parameters,
+                        PerturbationResults.GetComplex<SubType>(ip1));
                 i++;
             }
 
+            // l:520
             if (i > threadBoundary) {
 
                 if (i >= maxRefIteration) {
@@ -407,18 +417,18 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
                         return;
                     }
 
-                    if (i == nextStart - 1) {
+                    if (static_cast<int64_t>(i) == nextStart - 1) {
                         i++;
                         break;
                     }
-                    else if (i >= nextStart) {
+                    else if (static_cast<int64_t>(i) >= nextStart) {
                         NextThread++;
                     }
                 }
             }
         }
 
-        FinishIndex[ThreadID] = i;
+        FinishIndex[ThreadID] = static_cast<int64_t>(i);
         LAI.StepLength = i - PeriodBegin;
 
         // TODO I don't get this bit
@@ -437,13 +447,11 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
             &FinishIndex,
             &LAsPerThread,
             &LastLAPerThread,
-            &LAcurrentIndexPerThread,
             ThreadCount,
             maxRefIteration,
             this
         ](uint32_t ThreadID) {
 
-        //const auto PrevThread = ThreadID - 1;
         auto NextThread = ThreadID + 1;
         const auto LastThread = ThreadCount - 1;
 
@@ -478,26 +486,29 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
         // l:603
         for (; j2 < maxRefIteration || j1 < maxRefIteration; j1++, j2++) {
             LAInfoDeep<IterType, Float, SubType, PExtras> NewLA{};
-            PeriodDetected = LA_.Step(la_parameters, NewLA, PerturbationResults.GetComplex<SubType>(j1));
+            PeriodDetected = LA_.Step(
+                la_parameters,
+                NewLA,
+                PerturbationResults.GetComplex<SubType>(j1));
 
             if (PeriodDetected) {
-                LAI_.NextStageLAIndex = j;
-                PeriodBegin = j;
+                LAI_.NextStageLAIndex = j1;
+                PeriodBegin = j1;
                 PeriodEnd = PeriodBegin + Period;
 
-                if (j + 1 < maxRefIteration) {
+                if (j1 + 1 >= maxRefIteration) {
                     LA_ = LAInfoDeep<IterType, Float, SubType, PExtras>(
                         la_parameters,
-                        PerturbationResults.GetComplex<SubType>(j)).Step(
-                            la_parameters,
-                            PerturbationResults.GetComplex<SubType>(j + 1));
-                    j += 2;
+                        PerturbationResults.GetComplex<SubType>(j1));
+                    j1 += 1;
                 }
                 else {
                     LA_ = LAInfoDeep<IterType, Float, SubType, PExtras>(
                         la_parameters,
-                        PerturbationResults.GetComplex<SubType>(j));
-                    j += 1;
+                        PerturbationResults.GetComplex<SubType>(j1)).Step(
+                            la_parameters,
+                            PerturbationResults.GetComplex<SubType>(j1 + 1));
+                    j1 += 2;
                 }
                 break;
             }
@@ -563,7 +574,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
 
             //Abort the current thread and leave its task to the previous
             StartIndexPromise[ThreadID].set_value(nextStart);
-            FinishIndex[ThreadID].store(UINT64_MAX, std::memory_order_release);
+            FinishIndex[ThreadID].store(-1, std::memory_order_release);
             return;
         }
 
@@ -581,14 +592,15 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
 
             LA_.SetLAi(LAI_);
             LAsPerThread[ThreadID].push_back(LA_);
-            LAcurrentIndexPerThread[ThreadID] = LAsPerThread[ThreadID].size();
 
             LAI_.NextStageLAIndex = j;
             PeriodBegin = j;
             PeriodEnd = PeriodBegin + Period;
 
             const IterType jp1{ j + 1 };
-            const bool detected{ NewLA.DetectPeriod(la_parameters, PerturbationResults.GetComplex<SubType>(jp1)) };
+            const bool detected{ NewLA.DetectPeriod(
+                la_parameters,
+                PerturbationResults.GetComplex<SubType>(jp1)) };
 
             if (detected || jp1 >= maxRefIteration) {
                 LA_ = LAInfoDeep<IterType, Float, SubType, PExtras>(
@@ -621,18 +633,18 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
                         return;
                     }
 
-                    if (j == nextStart - 1) {
+                    if (static_cast<int64_t>(j) == nextStart - 1) {
                         j++;
                         break;
                     }
-                    else if (j >= nextStart) {
+                    else if (static_cast<int64_t>(j) >= nextStart) {
                         NextThread++;
                     }
                 }
             }
         }
 
-        FinishIndex[ThreadID].store(j, std::memory_order_release);
+        FinishIndex[ThreadID].store(static_cast<int64_t>(j), std::memory_order_release);
 
         LAI_.StepLength = j - PeriodBegin;
         LA_.SetLAi(LAI_);
@@ -649,26 +661,20 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
         threads[t]->join();
     }
 
-    //for (auto t = 0; t < LAsPerThread.size(); t++) {
-    //    for (auto k = 0; k < LAsPerThread[t].size(); k++) {
-    //        m_LAs.PushBack(LAsPerThread[t][k]);
-    //    }
-    //}
-
     {
         auto lastThreadToAdd = 0;
 
         auto index = 0;
         auto j = index;
-        while (index < threads.size() - 1 && FinishIndex[j] > StartIndexFuture[index + 1].get()) {
+        while ((index < threads.size() - 1) &&
+               (FinishIndex[j] > StartIndexFuture[index + 1].get())) {
             index++; //Skip, if there is a missalignment
         }
         index++;
 
         for (; index < threads.size(); index++) {
-            const auto length = LAcurrentIndexPerThread[index];
-            const auto &threadData = LAsPerThread[index];
-            for (int k = 0; k < length; k++) {
+            const auto& threadData = LAsPerThread[index];
+            for (int k = 0; k < threadData.size(); k++) {
                 m_LAs.PushBack(threadData[k]);
             }
 
@@ -678,7 +684,8 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
             }
 
             j = index;
-            while (index < threads.size() - 1 && FinishIndex[j] > StartIndexFuture[index + 1].get()) {
+            while ((index < threads.size() - 1) &&
+                (FinishIndex[j] > StartIndexFuture[index + 1].get())) {
                 index++; //Skip, if there is a missalignment
             }
         }
@@ -905,8 +912,14 @@ void LAReference<IterType, Float, SubType, PExtras>::GenerateApproximationData(
 
     m_BenchmarkDataLA.StartTimer();
 
-    bool PeriodDetected = CreateLAFromOrbitMT(m_LAParameters, PerturbationResults, maxRefIteration);
-    //bool PeriodDetected = CreateLAFromOrbit(m_LAParameters, PerturbationResults, maxRefIteration);
+    bool PeriodDetected;
+    if (m_LAParameters.GetThreading() == LAParameters::LAThreadingAlgorithm::MultiThreaded) {
+        PeriodDetected = CreateLAFromOrbitMT(m_LAParameters, PerturbationResults, maxRefIteration);
+    }
+    else {
+        PeriodDetected = CreateLAFromOrbit(m_LAParameters, PerturbationResults, maxRefIteration);
+    }
+
     if (!PeriodDetected) return;
 
     while (true) {

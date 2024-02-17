@@ -9,7 +9,8 @@ LAParameters::LAParameters() :
     m_Stage0PeriodDetectionThreshold2Exponent{ DefaultStage0PeriodDetectionThreshold2Exponent },
     m_PeriodDetectionThreshold2Exponent{ DefaultPeriodDetectionThreshold2Exponent },
     m_Stage0PeriodDetectionThresholdExponent{ DefaultStage0PeriodDetectionThresholdExponent },
-    m_PeriodDetectionThresholdExponent{ DefaultPeriodDetectionThresholdExponent }
+    m_PeriodDetectionThresholdExponent{ DefaultPeriodDetectionThresholdExponent },
+    m_ThreadingAlgorithm{ DefaultThreadingAlgorithm }
 {
     PopulateFloatsFromExponents();
 }
@@ -149,4 +150,12 @@ void LAParameters::AdjustStage0PeriodDetectionThresholdExponent(int32_t delta_ex
 void LAParameters::AdjustPeriodDetectionThresholdExponent(int32_t delta_exponent) {
     m_PeriodDetectionThresholdExponent += delta_exponent;
     PopulateFloatsFromExponents();
+}
+
+void LAParameters::SetThreading(LAThreadingAlgorithm threading) {
+    m_ThreadingAlgorithm = threading;
+}
+
+LAParameters::LAThreadingAlgorithm LAParameters::GetThreading() const {
+    return m_ThreadingAlgorithm;
 }

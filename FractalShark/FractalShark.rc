@@ -231,6 +231,11 @@ BEGIN
                     MENUITEM "HDRx64 GPU - RC LAv2",        IDM_ALG_GPU_HDR_64_PERTURB_RC_LAV2_LAO
                 END
             END
+            POPUP "LA Parameters"
+            BEGIN
+                MENUITEM "Multithreaded",               IDM_LA_MULTITHREADED
+                MENUITEM "Single Threaded",             IDM_LA_SINGLETHREADED
+            END
             MENUITEM SEPARATOR
             MENUITEM "1x32 GPU - LAv2",             IDM_ALG_GPU_1_32_PERTURB_LAV2
             MENUITEM "2x32 GPU - LAv2",             IDM_ALG_GPU_2_32_PERTURB_LAV2

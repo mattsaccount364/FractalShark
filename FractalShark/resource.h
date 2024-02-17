@@ -342,6 +342,11 @@
 #define ID_PERTURBATION_SAVEREFERENCEORBITS 33148
 #define IDM_PERTURBATION_SAVE           33149
 #define ID_LOAD_LOADLOCATION            33150
+#define ID_POPUP_LAPARAMETERS           33151
+#define ID_LAPARAMETERS_MULTITHREADED   33152
+#define ID_LAPARAMETERS_SINGLETHREADED  33153
+#define IDM_LA_MULTITHREADED            33154
+#define IDM_LA_SINGLETHREADED           33155
 #define IDM_VIEW1                       34001
 #define IDM_VIEW2                       34002
 #define IDM_VIEW3                       34003
@@ -379,7 +384,7 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        131
-#define _APS_NEXT_COMMAND_VALUE         33151
+#define _APS_NEXT_COMMAND_VALUE         33156
 #define _APS_NEXT_CONTROL_VALUE         1000
 #define _APS_NEXT_SYMED_VALUE           110
 #endif

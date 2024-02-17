@@ -6,6 +6,11 @@ class LAParameters {
 public:
     LAParameters();
 
+    enum class LAThreadingAlgorithm {
+        SingleThreaded,
+        MultiThreaded
+    };
+
     CUDA_CRAP int GetDetectionMethod() const;
     CUDA_CRAP float GetLAThresholdScale() const;
     CUDA_CRAP float GetLAThresholdCScale() const;
@@ -27,6 +32,9 @@ public:
     CUDA_CRAP void AdjustPeriodDetectionThreshold2Exponent(int32_t delta_exponent);
     CUDA_CRAP void AdjustStage0PeriodDetectionThresholdExponent(int32_t delta_exponent);
     CUDA_CRAP void AdjustPeriodDetectionThresholdExponent(int32_t delta_exponent);
+
+    CUDA_CRAP void SetThreading(LAThreadingAlgorithm algorithm);
+    CUDA_CRAP LAThreadingAlgorithm GetThreading() const;
 
     bool ReadMetadata(std::ifstream& metafile);
     bool WriteMetadata(std::ofstream& metafile) const;
@@ -51,6 +59,8 @@ private:
     int32_t m_Stage0PeriodDetectionThresholdExponent;
     int32_t m_PeriodDetectionThresholdExponent;
 
+    LAThreadingAlgorithm m_ThreadingAlgorithm;
+
     static constexpr int32_t DefaultDetectionMethod = 1;
     static constexpr int32_t DefaultLAThresholdScaleExponent = -24;
     static constexpr int32_t DefaultLAThresholdCScaleExponent = -24;
@@ -58,5 +68,7 @@ private:
     static constexpr int32_t DefaultPeriodDetectionThreshold2Exponent = -3;
     static constexpr int32_t DefaultStage0PeriodDetectionThresholdExponent = -10;
     static constexpr int32_t DefaultPeriodDetectionThresholdExponent = -10;
+
+    static constexpr LAThreadingAlgorithm DefaultThreadingAlgorithm = LAThreadingAlgorithm::MultiThreaded;
  };
 

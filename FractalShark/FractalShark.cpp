@@ -712,6 +712,24 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_RC_LAV2_PO, RenderAlgorithm::GpuHDRx64PerturbedRCLAv2PO);
             MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_RC_LAV2_LAO, RenderAlgorithm::GpuHDRx64PerturbedRCLAv2LAO);
 
+            case IDM_LA_SINGLETHREADED:
+            {
+                gFractal->GetLAParameters().SetThreading(LAParameters::LAThreadingAlgorithm::SingleThreaded);
+                gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+                gFractal->ForceRecalc();
+                PaintAsNecessary(hWnd);
+                break;
+            }
+
+            case IDM_LA_MULTITHREADED:
+            {
+                gFractal->GetLAParameters().SetThreading(LAParameters::LAThreadingAlgorithm::MultiThreaded);
+                gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+                gFractal->ForceRecalc();
+                PaintAsNecessary(hWnd);
+                break;
+            }
+
             case IDM_BASICTEST:
             {
                 gFractal->BasicTest();
@@ -1473,6 +1491,18 @@ void MenuGetCurPos(HWND hWnd)
         std::string("Compression ratio = ") + std::to_string((double)UncompressedIters / (double)CompressedIters) + "\r\n" +
         std::string("Compression error exp = ") + std::to_string(CompressionErrorExp) + "\r\n";
 
+    const auto threadingVal = gFractal->GetLAParameters().GetThreading();
+    std::string threadingStr;
+    if (threadingVal == LAParameters::LAThreadingAlgorithm::SingleThreaded) {
+        threadingStr = "Single threaded";
+    }
+    else if (threadingVal == LAParameters::LAThreadingAlgorithm::MultiThreaded) {
+        threadingStr = "Multi threaded";
+    }
+    else {
+        threadingStr = "Unknown";
+    }
+
     const auto laParametersStr =
         std::string("Detection method = ")
             + std::to_string(gFractal->GetLAParameters().GetDetectionMethod()) + "\r\n" +
@@ -1487,7 +1517,9 @@ void MenuGetCurPos(HWND hWnd)
         std::string("Stage 0 period detection threshold = ")
             + std::to_string(gFractal->GetLAParameters().GetStage0PeriodDetectionThresholdExp()) + "\r\n" +
         std::string("Period detection threshold = ")
-            + std::to_string(gFractal->GetLAParameters().GetPeriodDetectionThresholdExp()) + "\r\n";
+            + std::to_string(gFractal->GetLAParameters().GetPeriodDetectionThresholdExp()) + "\r\n" +
+        std::string("Threading: ")
+            + threadingStr + "\r\n";
 
     const auto benchmarkData =
         std::string("Overall time (ms) = ") + std::to_string(gFractal->GetBenchmarkOverall().GetDeltaInMs()) + "\r\n" +

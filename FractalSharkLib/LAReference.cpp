@@ -5,6 +5,7 @@
 #include "PerturbationResults.h"
 
 #include <deque>
+#include <future>
 
 
 //#include <Windows.h>
@@ -322,11 +323,16 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
         PeriodEnd = Period;
     }
 
-    std::deque<std::atomic_uint64_t> StartIndex(ThreadCount);
+    std::deque<std::shared_future<uint64_t>> StartIndexFuture(ThreadCount);
+    std::deque<std::promise<uint64_t>> StartIndexPromise(ThreadCount);
     std::vector<std::vector<LAInfoDeep<IterType, Float, SubType, PExtras>>> LAsPerThread(ThreadCount);
     std::vector<LAInfoDeep<IterType, Float, SubType, PExtras>> LastLAPerThread(ThreadCount);
     std::vector<size_t> LAcurrentIndexPerThread(ThreadCount);
     std::deque<std::atomic_uint64_t> FinishIndex(ThreadCount);
+
+    for (i = 0; i < StartIndexPromise.size(); i++) {
+        StartIndexFuture[i] = StartIndexPromise[i].get_future();
+    }
 
     volatile IterType numbers1[128] = { 0 };
     volatile IterType numbers2[128] = { 0 };
@@ -341,7 +347,8 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
             &PeriodEnd,
             &PerturbationResults,
             Period,
-            &StartIndex,
+            &StartIndexFuture,
+            &StartIndexPromise,
             &FinishIndex,
             &LAsPerThread,
             &LastLAPerThread,
@@ -368,7 +375,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
             LAI.StepLength = i - PeriodBegin;
 
             LA.SetLAi(LAI);
-            LAsPerThread[ThreadID].push_back(LA);
+            m_LAs.PushBack(LA);
 
             LAI.NextStageLAIndex = i;
             PeriodBegin = i;
@@ -393,8 +400,8 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
                     break;
                 }
 
-                if (NextThread < StartIndex.size()) {
-                    auto nextStart = StartIndex[NextThread].load(std::memory_order_acquire);
+                if (NextThread < StartIndexFuture.size()) {
+                    auto nextStart = StartIndexFuture[NextThread].get();
 
                     if (nextStart < 0) {
                         return;
@@ -425,7 +432,8 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
             &numbers1,
             &numbers2,
             Period,
-            &StartIndex,
+            &StartIndexFuture,
+            &StartIndexPromise,
             &FinishIndex,
             &LAsPerThread,
             &LastLAPerThread,
@@ -544,17 +552,17 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
         // l:663
         //Just for protection
         if (ThreadID == LastThread || (j >= Begin && j < End)) {
-            StartIndex[ThreadID].store(j, std::memory_order_release);
+            StartIndexPromise[ThreadID].set_value(j);
         }
         else {
-            auto nextStart = StartIndex[NextThread].load(std::memory_order_acquire);
+            auto nextStart = StartIndexFuture[NextThread].get();
 
             if (nextStart < 0) {
                 return;
             }
 
             //Abort the current thread and leave its task to the previous
-            StartIndex[ThreadID].store(nextStart, std::memory_order_release);
+            StartIndexPromise[ThreadID].set_value(nextStart);
             FinishIndex[ThreadID].store(UINT64_MAX, std::memory_order_release);
             return;
         }
@@ -606,8 +614,8 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
                     break;
                 }
 
-                if (NextThread < StartIndex.size()) {
-                    auto nextStart = StartIndex[NextThread].load(std::memory_order_acquire);
+                if (NextThread < StartIndexFuture.size()) {
+                    auto nextStart = StartIndexFuture[NextThread].get();
 
                     if (nextStart < 0) { //The next tread had an exception
                         return;
@@ -641,36 +649,36 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
         threads[t]->join();
     }
 
-    for (auto t = 0; t < LAsPerThread.size(); t++) {
-        for (auto k = 0; k < LAsPerThread[t].size(); k++) {
-            m_LAs.PushBack(LAsPerThread[t][k]);
-        }
-    }
+    //for (auto t = 0; t < LAsPerThread.size(); t++) {
+    //    for (auto k = 0; k < LAsPerThread[t].size(); k++) {
+    //        m_LAs.PushBack(LAsPerThread[t][k]);
+    //    }
+    //}
 
     {
         auto lastThreadToAdd = 0;
 
         auto index = 0;
         auto j = index;
-        while (index < threads.size() - 1 && FinishIndex[j] > StartIndex[index + 1].load(std::memory_order_acquire)) {
+        while (index < threads.size() - 1 && FinishIndex[j] > StartIndexFuture[index + 1].get()) {
             index++; //Skip, if there is a missalignment
         }
         index++;
 
         for (; index < threads.size(); index++) {
-            auto length = LAcurrentIndexPerThread[index];
-            auto &threadData = LAsPerThread[index];
+            const auto length = LAcurrentIndexPerThread[index];
+            const auto &threadData = LAsPerThread[index];
             for (int k = 0; k < length; k++) {
                 m_LAs.PushBack(threadData[k]);
             }
 
             //If this thread managed to search
-            if (FinishIndex[index] > StartIndex[index].load(std::memory_order_acquire)) {
+            if (FinishIndex[index] > StartIndexFuture[index].get()) {
                 lastThreadToAdd = index;
             }
 
             j = index;
-            while (index < threads.size() - 1 && FinishIndex[j] > StartIndex[index + 1].load(std::memory_order_acquire)) {
+            while (index < threads.size() - 1 && FinishIndex[j] > StartIndexFuture[index + 1].get()) {
                 index++; //Skip, if there is a missalignment
             }
         }

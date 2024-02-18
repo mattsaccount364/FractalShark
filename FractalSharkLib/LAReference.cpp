@@ -207,6 +207,12 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
     const PerturbationResults<IterType, PerturbType, PExtras>& PerturbationResults,
     IterType maxRefIteration) {
 
+    if (m_AddPointOptions == AddPointOptions::OpenExistingWithSave) {
+        assert(false);
+        ::MessageBox(nullptr, L"AddPointOptions::OpenExistingWithSave is not supported", L"", MB_OK | MB_APPLMODAL);
+        return false;
+    }
+
     // TODO 20 is too low but nice for testing
     const auto ThreadCount = std::thread::hardware_concurrency();
     if (maxRefIteration / ThreadCount < 20) {
@@ -326,9 +332,20 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
 
     std::deque<std::shared_future<int64_t>> StartIndexFuture(ThreadCount);
     std::deque<std::promise<int64_t>> StartIndexPromise(ThreadCount);
-    std::vector<std::vector<LAInfoDeep<IterType, Float, SubType, PExtras>>> LAsPerThread(ThreadCount);
+    std::vector<GrowableVector<LAInfoDeep<IterType, Float, SubType, PExtras>>> LAsPerThread;
     std::vector<LAInfoDeep<IterType, Float, SubType, PExtras>> LastLAPerThread(ThreadCount);
     std::deque<std::atomic_int64_t> FinishIndex(ThreadCount);
+
+    // We don't ever save these files.  But we give the option of memory-only.
+    AddPointOptions OptionsToUse = m_AddPointOptions;
+    if (OptionsToUse == AddPointOptions::EnableWithSave) {
+        OptionsToUse = AddPointOptions::EnableWithoutSave;
+    }
+
+    for (size_t i = 0; i < ThreadCount; i++) {
+        std::wstring filename = L"LAsPerThread" + std::to_wstring(i) + L".dat";
+        LAsPerThread.emplace_back(OptionsToUse, filename);
+    }
 
     for (auto threadIndex = 0; threadIndex < StartIndexPromise.size(); threadIndex++) {
         StartIndexFuture[threadIndex] = StartIndexPromise[threadIndex].get_future();
@@ -591,7 +608,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
             LAI_.StepLength = j - PeriodBegin;
 
             LA_.SetLAi(LAI_);
-            LAsPerThread[ThreadID].push_back(LA_);
+            LAsPerThread[ThreadID].PushBack(LA_);
 
             LAI_.NextStageLAIndex = j;
             PeriodBegin = j;
@@ -674,7 +691,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
 
         for (; index < threads.size(); index++) {
             const auto& threadData = LAsPerThread[index];
-            for (int k = 0; k < threadData.size(); k++) {
+            for (int k = 0; k < threadData.GetSize(); k++) {
                 m_LAs.PushBack(threadData[k]);
             }
 

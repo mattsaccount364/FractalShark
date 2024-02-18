@@ -56,7 +56,8 @@ GrowableVector<EltT>::GrowableVector(GrowableVector<EltT>&& other) :
     m_CapacityInElts{ other.m_CapacityInElts },
     m_Data{ other.m_Data },
     m_AddPointOptions{ other.m_AddPointOptions },
-    m_Filename{ other.m_Filename } {
+    m_Filename{ other.m_Filename },
+    m_PhysicalMemoryCapacityKB{ other.m_PhysicalMemoryCapacityKB } {
 
     other.m_FileHandle = nullptr;
     other.m_MappedFile = nullptr;
@@ -75,6 +76,7 @@ GrowableVector<EltT>& GrowableVector<EltT>::operator=(GrowableVector<EltT>&& oth
     m_Data = other.m_Data;
     m_AddPointOptions = other.m_AddPointOptions;
     m_Filename = other.m_Filename;
+    m_PhysicalMemoryCapacityKB = other.m_PhysicalMemoryCapacityKB;
 
     other.m_FileHandle = nullptr;
     other.m_MappedFile = nullptr;
@@ -83,6 +85,7 @@ GrowableVector<EltT>& GrowableVector<EltT>::operator=(GrowableVector<EltT>&& oth
     other.m_Data = nullptr;
     other.m_AddPointOptions = AddPointOptions::DontSave;
     other.m_Filename = {};
+    other.m_PhysicalMemoryCapacityKB = 0;
 
     return *this;
 }
@@ -96,14 +99,17 @@ GrowableVector<EltT>::GrowableVector()
 // The constructor takes the file to open or create
 // It maps enough memory to accomodate the provided orbit size.
 template<class EltT>
-GrowableVector<EltT>::GrowableVector(AddPointOptions add_point_options, std::wstring filename)
+GrowableVector<EltT>::GrowableVector(
+    AddPointOptions add_point_options,
+    std::wstring filename)
     : m_FileHandle{},
     m_MappedFile{},
     m_UsedSizeInElts{},
     m_CapacityInElts{},
     m_Data{},
     m_AddPointOptions{ add_point_options },
-    m_Filename{ filename }
+    m_Filename{ filename },
+    m_PhysicalMemoryCapacityKB{}
 {
     auto ret = GetPhysicallyInstalledSystemMemory(&m_PhysicalMemoryCapacityKB);
     if (ret == FALSE) {

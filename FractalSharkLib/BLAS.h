@@ -1,7 +1,9 @@
 #pragma once
 
 #include "BLA.h"
+#include "PerturbationResultsHelpers.h"
 #include <vector>
+#include <memory>
 
 template<typename IterType, class T, PerturbExtras PExtras>
 class PerturbationResults;
@@ -40,4 +42,5 @@ private:
     std::vector<size_t> m_ElementsPerLevel;
 
     PerturbationResults<IterType, T, PExtras>& m_PerturbationResults;
+    std::unique_ptr<CompressionHelper<IterType, T, PExtras>> m_CompressionHelper;
 };

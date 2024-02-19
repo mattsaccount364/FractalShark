@@ -84,7 +84,6 @@ public:
         m_MaxIterations{},
         m_PeriodMaybeZero{},
         m_CompressionErrorExp{},
-        m_CompressionHelper{ *this },
         m_RefOrbitOptions{ add_point_options },
         m_BaseFilename{ base_filename },
         m_MetaFileHandle{ INVALID_HANDLE_VALUE },
@@ -177,8 +176,6 @@ public:
         m_BaseFilename = GenBaseFilename(m_GenerationNumber);
         m_MetaFileHandle = INVALID_HANDLE_VALUE;
 
-        // Nothing for m_CompressionHelper -- it only contains a reference to this object
-        // m_CompressionHelper = {*this};
         m_FullOrbit = { GetRefOrbitOptions(), GenFilename(GrowableVectorTypes::GPUReferenceIter) };
         m_FullOrbit.MutableResize(other.m_FullOrbit.GetSize(), 0);
         m_UncompressedItersInOrbit = other.m_UncompressedItersInOrbit;
@@ -234,7 +231,6 @@ public:
         m_BaseFilename = GenBaseFilename(m_GenerationNumber);
         m_MetaFileHandle = INVALID_HANDLE_VALUE;
 
-        // m_CompressionHelper = {}; // Nothing to do here
         m_FullOrbit = {};
         m_UncompressedItersInOrbit = other.m_UncompressedItersInOrbit;
 
@@ -525,13 +521,16 @@ public:
     }
 
     template<class U = SubType>
-    typename HDRFloatComplex<U> GetComplex(size_t uncompressed_index) const {
+    typename HDRFloatComplex<U> GetComplex(
+        CompressionHelper<IterType, T, PExtras> &PerThreadCompressionHelper,
+        size_t uncompressed_index) const {
+
         if constexpr (PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::Bad) {
             return {
                 m_FullOrbit[uncompressed_index].x,
                 m_FullOrbit[uncompressed_index].y };
         } else {
-            return m_CompressionHelper.GetCompressedComplex<U>(uncompressed_index);
+            return PerThreadCompressionHelper.GetCompressedComplex<U>(uncompressed_index);
         }
     }
 
@@ -862,7 +861,6 @@ private:
     std::wstring m_BaseFilename;
     mutable HANDLE m_MetaFileHandle;
 
-    CompressionHelper<IterType, T, PExtras> m_CompressionHelper;
     GrowableVector<GPUReferenceIter<T, PExtras>> m_FullOrbit;
     IterType m_UncompressedItersInOrbit;
     const size_t m_GenerationNumber;

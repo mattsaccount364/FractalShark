@@ -7,7 +7,8 @@
 
 template<typename IterType, class T, PerturbExtras PExtras>
 BLAS<IterType, T, PExtras>::BLAS(PerturbationResults<IterType, T, PExtras>& results) :
-    m_PerturbationResults(results) {
+    m_PerturbationResults{ results },
+    m_CompressionHelper{ std::make_unique<CompressionHelper<IterType, T, PExtras>>(results) } {
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>
@@ -63,7 +64,7 @@ BLA<T> BLAS<IterType, T, PExtras>::CreateLStep(size_t level, size_t m, T blaSize
 
 template<typename IterType, class T, PerturbExtras PExtras>
 BLA<T> BLAS<IterType, T, PExtras>::CreateOneStep(size_t m, T epsilon) {
-    const auto Complex = m_PerturbationResults.GetComplex(m);
+    const auto Complex = m_PerturbationResults.GetComplex(*m_CompressionHelper, m);
     T RealA = static_cast<T>(Complex.getRe() * 2);
     T ImagA = static_cast<T>(Complex.getIm() * 2);
 

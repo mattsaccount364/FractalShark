@@ -1,6 +1,9 @@
 #pragma once
 
 template<typename IterType, class T, PerturbExtras PExtras>
+class PerturbationResults;
+
+template<typename IterType, class T, PerturbExtras PExtras>
 class TemplateHelpers {
 
 protected:

@@ -3273,6 +3273,9 @@ void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
     //}
 
     auto one_thread = [&]() {
+        auto compressionHelper{
+            std::make_unique<CompressionHelper<IterType, double, PerturbExtras::Disable>>(PerturbationResults) };
+
         for (size_t y = 0; y < m_ScrnHeight * GetGpuAntialiasing(); y++) {
             if (atomics[y] != 0) {
                 continue;
@@ -3331,7 +3334,7 @@ void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
                     //               2 * S * DeltaSubNWX * DeltaSubNWY +
                     //               dY
 
-                    const auto tempZComplex = results->GetComplex(RefIteration);
+                    const auto tempZComplex = results->GetComplex(*compressionHelper, RefIteration);
                     DeltaSubNX = DeltaSubNXOrig * (tempZComplex.getRe() * 2 + DeltaSubNXOrig) -
                         DeltaSubNYOrig * (tempZComplex.getIm() * 2 + DeltaSubNYOrig) +
                         DeltaSub0X;
@@ -3341,7 +3344,7 @@ void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
 
                     ++RefIteration;
 
-                    const auto tempZComplex = results->GetComplex(RefIteration);
+                    const auto tempZComplex = results->GetComplex(*compressionHelper, RefIteration);
                     const double tempZX = tempZComplex.getRe() + DeltaSubNX;
                     const double tempZY = tempZComplex.getIm() + DeltaSubNY;
                     const double zn_size = tempZX * tempZX + tempZY * tempZY;
@@ -3490,6 +3493,9 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
         //T dzdcY = T(0);
         //bool periodicity_should_break = false;
 
+        auto compressionHelper{
+            std::make_unique<CompressionHelper<IterType, T, PerturbExtras::Disable>>(*results) };
+
         for (size_t y = 0; y < m_ScrnHeight * GetGpuAntialiasing(); y++) {
             if (atomics[y] != 0) {
                 continue;
@@ -3548,7 +3554,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
 
                         RefIteration += l;
 
-                        const auto tempZComplex = results->GetComplex(RefIteration);
+                        const auto tempZComplex = results->GetComplex(*compressionHelper, RefIteration);
                         auto tempZX = tempZComplex.getRe() + DeltaSubNX;
                         auto tempZY = tempZComplex.getIm() + DeltaSubNY;
                         auto normSquared = tempZX * tempZX + tempZY * tempZY;
@@ -3576,7 +3582,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                     const T DeltaSubNXOrig = DeltaSubNX;
                     const T DeltaSubNYOrig = DeltaSubNY;
 
-                    const auto tempZComplex = results->GetComplex(RefIteration);
+                    const auto tempZComplex = results->GetComplex(*compressionHelper, RefIteration);
                     T TermB1 = DeltaSubNXOrig * (tempZComplex.getRe() * 2 + DeltaSubNXOrig);
                     T TermB2 = DeltaSubNYOrig * (tempZComplex.getIm() * 2 + DeltaSubNYOrig);
 
@@ -3656,7 +3662,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                         //}
                     }
 
-                    const auto tempZComplex2 = results->GetComplex(RefIteration);
+                    const auto tempZComplex2 = results->GetComplex(*compressionHelper, RefIteration);
                     T tempZX = tempZComplex2.getRe() + DeltaSubNX;
                     T tempZY = tempZComplex2.getIm() + DeltaSubNY;
                     T nT1 = tempZX * tempZX;
@@ -3734,6 +3740,9 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
     threads.reserve(num_threads);
 
     auto one_thread = [&]() {
+        auto compressionHelper{
+            std::make_unique<CompressionHelper<IterType, T, PExtras>>(*results)};
+
         for (size_t y = 0; y < m_ScrnHeight * GetGpuAntialiasing(); y++) {
             if (atomics[y] != 0) {
                 continue;
@@ -3782,10 +3791,10 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
                 TComplex complex0{ deltaReal, deltaImaginary };
 
                 if (iterations != 0 && RefIteration < MaxRefIteration) {
-                    complex0 = results->GetComplex<SubType>(RefIteration) + DeltaSubN;
+                    complex0 = results->GetComplex<SubType>(*compressionHelper, RefIteration) + DeltaSubN;
                 } else if (iterations != 0 && results->GetPeriodMaybeZero() != 0) {
                     RefIteration = RefIteration % results->GetPeriodMaybeZero();
-                    complex0 = results->GetComplex<SubType>(RefIteration) + DeltaSubN;
+                    complex0 = results->GetComplex<SubType>(*compressionHelper, RefIteration) + DeltaSubN;
                 }
 
                 auto CurrentLAStage = LaReference.IsValid() ? LaReference.GetLAStageCount() : 0;
@@ -3843,7 +3852,7 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
                 }
 
                 for (; iterations < GetNumIterations<IterType>(); iterations++) {
-                    auto curIter = results->GetComplex<SubType>(RefIteration);
+                    auto curIter = results->GetComplex<SubType>(*compressionHelper, RefIteration);
                     curIter = curIter * T(2);
                     curIter = curIter + DeltaSubN;
                     DeltaSubN = DeltaSubN * curIter;
@@ -3852,7 +3861,7 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
 
                     RefIteration++;
 
-                    complex0 = results->GetComplex<SubType>(RefIteration) + DeltaSubN;
+                    complex0 = results->GetComplex<SubType>(*compressionHelper, RefIteration) + DeltaSubN;
                     HdrReduce(complex0);
 
                     normSquared = complex0.norm_squared();

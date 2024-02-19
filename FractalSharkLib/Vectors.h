@@ -98,18 +98,18 @@ public:
 
     AddPointOptions GetAddPointOptions() const;
 
-    bool MutableReserveKeepFileSize(size_t capacity);
-    bool MutableResize(size_t capacity, size_t size);
-    bool MutableResize(size_t size);
+    void MutableReserveKeepFileSize(size_t capacity);
+    void MutableResize(size_t capacity, size_t size);
+    void MutableResize(size_t size);
 
 private:
     static constexpr auto GrowByElts = 512 * 1024;
 
     bool UsingAnonymous() const;
 
-    bool MutableFileCommit(size_t new_elt_count);
+    void MutableFileCommit(size_t new_elt_count);
 
-    bool MutableAnonymousCommit(size_t new_elt_count);
+    void MutableAnonymousCommit(size_t new_elt_count);
 
     void MutableReserve(size_t new_reserved_bytes);
 };

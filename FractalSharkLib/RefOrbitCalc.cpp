@@ -1626,8 +1626,8 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
             auto temp = std::make_unique<LAReference<IterType, T, SubType, PExtras>>(
                 m_Fractal.GetLAParameters(),
                 options_to_use,
-                results->GenFilename(GrowableVectorTypes::LAInfoDeep),
-                results->GenFilename(GrowableVectorTypes::LAStageInfo));
+                results->GenFilename(GrowableVectorTypes::LAInfoDeep, L"", true),
+                results->GenFilename(GrowableVectorTypes::LAStageInfo, L"", true));
 
             // TODO the presumption here is results size fits in the target IterType size
             temp->GenerateApproximationData(
@@ -1991,13 +1991,13 @@ void RefOrbitCalc::LoadAllOrbits() {
         for (const auto& entry : std::filesystem::directory_iterator(path)) {
             auto file = entry.path().string();
             if (extmatch(file)) {
-                auto NextGen = GetNextGenerationNumber();
+                auto next_gen = GetNextGenerationNumber();
                 auto stripfn = stripext(file);
                 auto widefn = narrowtowide(stripfn);
                 auto results1 = std::make_unique<PerturbationResults<IterType, double, PExtras>>(
                     widefn,
                     AddPointOptions::OpenExistingWithSave,
-                    NextGen);
+                    next_gen);
                 if (results1->ReadMetadata()) {
                     Container.m_PerturbationResultsDouble.push_back(std::move(results1));
                     continue;
@@ -2007,7 +2007,7 @@ void RefOrbitCalc::LoadAllOrbits() {
                 auto results2 = std::make_unique<PerturbationResults<IterType, float, PExtras>>(
                     widefn,
                     AddPointOptions::OpenExistingWithSave,
-                    NextGen);
+                    next_gen);
                 if (results2->ReadMetadata()) {
                     Container.m_PerturbationResultsFloat.push_back(std::move(results2));
                     continue;
@@ -2017,7 +2017,7 @@ void RefOrbitCalc::LoadAllOrbits() {
                 auto results3 = std::make_unique<PerturbationResults<IterType, CudaDblflt<MattDblflt>, PExtras>>(
                     widefn,
                     AddPointOptions::OpenExistingWithSave,
-                    NextGen);
+                    next_gen);
                 if (results3->ReadMetadata()) {
                     Container.m_PerturbationResults2xFloat.push_back(std::move(results3));
                     continue;
@@ -2027,7 +2027,7 @@ void RefOrbitCalc::LoadAllOrbits() {
                 auto results4 = std::make_unique<PerturbationResults<IterType, HDRFloat<double>, PExtras>>(
                     widefn,
                     AddPointOptions::OpenExistingWithSave,
-                    NextGen);
+                    next_gen);
                 if (results4->ReadMetadata()) {
                     Container.m_PerturbationResultsHDRDouble.push_back(std::move(results4));
                     continue;
@@ -2037,7 +2037,7 @@ void RefOrbitCalc::LoadAllOrbits() {
                 auto results5 = std::make_unique<PerturbationResults<IterType, HDRFloat<float>, PExtras>>(
                     widefn,
                     AddPointOptions::OpenExistingWithSave,
-                    NextGen);
+                    next_gen);
                 if (results5->ReadMetadata()) {
                     Container.m_PerturbationResultsHDRFloat.push_back(std::move(results5));
                     continue;
@@ -2047,7 +2047,7 @@ void RefOrbitCalc::LoadAllOrbits() {
                 auto results6 = std::make_unique<PerturbationResults<IterType, HDRFloat<CudaDblflt<MattDblflt>>, PExtras>>(
                     widefn,
                     AddPointOptions::OpenExistingWithSave,
-                    NextGen);
+                    next_gen);
                 if (results6->ReadMetadata()) {
                     Container.m_PerturbationResultsHDR2xFloat.push_back(std::move(results6));
                     continue;

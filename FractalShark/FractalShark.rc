@@ -137,14 +137,14 @@ BEGIN
         POPUP "Choose Render Algorithm"
         BEGIN
             MENUITEM "Help",                        IDM_HELP_ALG
-            MENUITEM "Auto (Default/Recommended)",  IDM_ALG_AUTO
+            MENUITEM "Auto (Default)",              IDM_ALG_AUTO
             POPUP "LA Parameters"
             BEGIN
-                MENUITEM "Multithreaded",               IDM_LA_MULTITHREADED
+                MENUITEM "Multithreaded (Default)",     IDM_LA_MULTITHREADED
                 MENUITEM "Single Threaded",             IDM_LA_SINGLETHREADED
                 MENUITEM SEPARATOR
-                MENUITEM "Max Accuracy",                IDM_LA_SETTINGS_1
-                MENUITEM "Max Performance (Accuracy Loss, Default)", IDM_LA_SETTINGS_2
+                MENUITEM "Max Accuracy (Default)",      IDM_LA_SETTINGS_1
+                MENUITEM "Max Performance (Accuracy Loss)", IDM_LA_SETTINGS_2
                 MENUITEM "Min Memory",                  IDM_LA_SETTINGS_3
             END
             MENUITEM SEPARATOR

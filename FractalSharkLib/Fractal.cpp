@@ -890,7 +890,7 @@ void Fractal::InitialDefaultViewAndSettings(int width, int height) {
     //SetPerturbAutosave(AddPointOptions::DontSave);
     LoadPerturbationOrbits();
 
-    View(0);
+    View(5);
     //View(1);
     //View(10);
     //View(27); // extremely hard

@@ -14,6 +14,7 @@
 
 #include "PerturbationResultsHelpers.h"
 #include "Vectors.h"
+#include "Utilities.h"
 
 std::wstring GetTimeAsString(size_t generation_number);
 
@@ -56,12 +57,33 @@ public:
 
     // Note: This function relies on m_BaseFilename, so order
     // of initialization is important.
-    std::wstring GenFilename(GrowableVectorTypes Type, std::wstring optional_suffix = L"") const {
+    // If add_additional_suffix is true, add a number to the end
+    // to ensure the filename is unique.
+    std::wstring GenFilename(
+        GrowableVectorTypes Type,
+        std::wstring optional_suffix = L"",
+        bool add_additional_suffix = false) const {
+
         if (GetRefOrbitOptions() == AddPointOptions::DontSave) {
             return L"";
         }
 
-        return m_BaseFilename + optional_suffix + GetFileExtension(Type);
+        size_t counter = 1;
+        std::wstring result;
+        do {
+            if (add_additional_suffix) {
+                optional_suffix += L" - " + std::to_wstring(counter);
+            }
+
+            result = m_BaseFilename + optional_suffix + GetFileExtension(Type);
+            if (!Utilities::FileExists(result.c_str())) {
+                break;
+            }
+
+            counter++;
+        } while (add_additional_suffix);
+
+        return result;
     }
 
     // Parameters:
@@ -124,10 +146,6 @@ public:
 
     PerturbationResults(const PerturbationResults& other) = delete;
     PerturbationResults& operator=(const PerturbationResults& other) = delete;
-
-    std::wstring GetBaseFilename() const {
-        return m_BaseFilename;
-    }
 
     size_t GetGenerationNumber() const {
         return m_GenerationNumber;
@@ -507,10 +525,10 @@ public:
 
         if (m_LaReference != nullptr) {
             m_LaReference->ReadMetadata(metafile);
-        }
 
-        if (!m_LaReference->IsValid()) {
-            m_LaReference = nullptr;
+            if (!m_LaReference->IsValid()) {
+                m_LaReference = nullptr;
+            }
         }
 
         // Sometimes the mapped file is a bit bigger.  Just set it to the right
@@ -840,10 +858,15 @@ private:
 
         m_FullOrbit = { GetRefOrbitOptions(), GenFilename(GrowableVectorTypes::GPUReferenceIter) };
 
-        m_LaReference = std::make_unique<LAReference<IterType, T, SubType, PExtras>>(
-            GetRefOrbitOptions(),
-            GenFilename(GrowableVectorTypes::LAInfoDeep),
-            GenFilename(GrowableVectorTypes::LAStageInfo));
+        try {
+            m_LaReference = std::make_unique<LAReference<IterType, T, SubType, PExtras>>(
+                GetRefOrbitOptions(),
+                GenFilename(GrowableVectorTypes::LAInfoDeep),
+                GenFilename(GrowableVectorTypes::LAStageInfo));
+        }
+        catch (const std::exception&) {
+            m_LaReference = nullptr;
+        }
     }
 
     HighPrecision m_OrbitX;

@@ -6,6 +6,7 @@
 #include "HDRFloat.h"
 #include "LAInfoDeep.h"
 
+#include "Exceptions.h"
 
 std::wstring GetFileExtension(GrowableVectorTypes Type) {
     switch (Type) {
@@ -227,29 +228,25 @@ AddPointOptions GrowableVector<EltT>::GetAddPointOptions() const {
 }
 
 template<class EltT>
-bool GrowableVector<EltT>::MutableReserveKeepFileSize(size_t capacity) {
+void GrowableVector<EltT>::MutableReserveKeepFileSize(size_t capacity) {
     if (!UsingAnonymous()) {
-        return MutableFileCommit(capacity);
+        MutableFileCommit(capacity);
     }
     else {
-        return MutableAnonymousCommit(capacity);
+        MutableAnonymousCommit(capacity);
     }
 }
 
 template<class EltT>
-bool GrowableVector<EltT>::MutableResize(size_t capacity, size_t size) {
-    bool ret = MutableReserveKeepFileSize(capacity);
-    if (ret) {
-        m_UsedSizeInElts = size;
-    }
-
-    return ret;
+void GrowableVector<EltT>::MutableResize(size_t capacity, size_t size) {
+    MutableReserveKeepFileSize(capacity);
+    m_UsedSizeInElts = size;
 }
 
 
 template<class EltT>
-bool GrowableVector<EltT>::MutableResize(size_t size) {
-    return MutableResize(size, size);
+void GrowableVector<EltT>::MutableResize(size_t size) {
+    MutableResize(size, size);
 }
 
 template<class EltT>
@@ -258,9 +255,9 @@ bool GrowableVector<EltT>::UsingAnonymous() const {
 }
 
 template<class EltT>
-bool GrowableVector<EltT>::MutableFileCommit(size_t capacity) {
+void GrowableVector<EltT>::MutableFileCommit(size_t capacity) {
     if (capacity <= m_CapacityInElts) {
-        return true;
+        return;
     }
 
     CloseMapping(false);
@@ -294,10 +291,9 @@ bool GrowableVector<EltT>::MutableFileCommit(size_t capacity) {
         if (m_FileHandle == INVALID_HANDLE_VALUE) {
             m_FileHandle = nullptr;
             auto err = GetLastError();
-            std::wstring err_str = L"Failed to open file for reading 2: ";
-            err_str += std::to_wstring(err);
-            ::MessageBox(nullptr, err_str.c_str(), L"", MB_OK | MB_APPLMODAL);
-            return false;
+            std::string err_str = "Failed to open file for reading 2: ";
+            err_str += std::to_string(err);
+            throw FractalSharkSeriousException(err_str);
         }
 
         if (m_AddPointOptions == AddPointOptions::OpenExistingWithSave) {
@@ -327,8 +323,8 @@ bool GrowableVector<EltT>::MutableFileCommit(size_t capacity) {
         if (last_error == ERROR_ALREADY_EXISTS) {
             BOOL ret = GetFileSizeEx(m_FileHandle, &existing_file_size);
             if (ret == FALSE) {
-                ::MessageBox(nullptr, L"Failed to get file size", L"", MB_OK | MB_APPLMODAL);
-                return false;
+                std::string err_str = "Failed to get file size";
+                throw FractalSharkSeriousException(err_str);
             }
 
             // Note: by using the file size to find the used size, the implication
@@ -365,10 +361,9 @@ bool GrowableVector<EltT>::MutableFileCommit(size_t capacity) {
             nullptr);
         if (m_MappedFile == nullptr) {
             auto err = GetLastError();
-            std::wstring err_str = L"Failed to create file mapping: ";
-            err_str += std::to_wstring(err);
-            ::MessageBox(nullptr, err_str.c_str(), L"", MB_OK | MB_APPLMODAL);
-            return false;
+            std::string err_str = "Failed to create file mapping: ";
+            err_str += std::to_string(err);
+            throw FractalSharkSeriousException(err_str);
         }
 
         DWORD desired_access = FILE_MAP_READ | FILE_MAP_WRITE;
@@ -378,23 +373,19 @@ bool GrowableVector<EltT>::MutableFileCommit(size_t capacity) {
 
         m_Data = static_cast<EltT*>(MapViewOfFile(m_MappedFile, desired_access, 0, 0, 0));
         if (m_Data == nullptr) {
-            ::MessageBox(nullptr, L"Failed to map view of file", L"", MB_OK | MB_APPLMODAL);
-            return false;
+            auto err_str = "Failed to map view of file";
+            throw FractalSharkSeriousException(err_str);
         }
     }
     else {
         auto ret = GetLastError();
-        std::wstring err = L"Failed to open file: ";
-        err += std::to_wstring(ret);
-        ::MessageBox(nullptr, err.c_str(), L"", MB_OK | MB_APPLMODAL);
-        return false;
+        std::string err_str = "Failed to open file: ";
+        throw FractalSharkSeriousException(err_str);
     }
-
-    return true;
 }
 
 template<class EltT>
-bool GrowableVector<EltT>::MutableAnonymousCommit(size_t capacity) {
+void GrowableVector<EltT>::MutableAnonymousCommit(size_t capacity) {
     // Returned value is in KB so convert to bytes.
     if (m_Data == nullptr) {
         if (UsingAnonymous()) {
@@ -415,30 +406,25 @@ bool GrowableVector<EltT>::MutableAnonymousCommit(size_t capacity) {
         );
 
         if (m_Data == nullptr) {
-            std::wstring err = L"Failed to allocate memory: ";
+            std::string err_str = "Failed to allocate memory: ";
             auto code = GetLastError();
-            err += std::to_wstring(code);
-
-            ::MessageBox(nullptr, err.c_str(), L"", MB_OK | MB_APPLMODAL);
-            return false;
+            err_str += std::to_string(code);
+            throw FractalSharkSeriousException(err_str);
         }
         else if (m_Data != res) {
-            std::wstring err = L"VirtualAlloc returned a different pointer :(";
-            err += std::to_wstring(reinterpret_cast<uint64_t>(m_Data));
-            err += L" vs ";
-            err += std::to_wstring(reinterpret_cast<uint64_t>(res));
-            err += L" :(.  Code: ";
+            std::string err = "VirtualAlloc returned a different pointer :(";
+            err += std::to_string(reinterpret_cast<uint64_t>(m_Data));
+            err += " vs ";
+            err += std::to_string(reinterpret_cast<uint64_t>(res));
+            err += " :(.  Code: ";
             auto code = GetLastError();
-            err += std::to_wstring(code);
-            ::MessageBox(nullptr, err.c_str(), L"", MB_OK | MB_APPLMODAL);
-            return false;
+            err += std::to_string(code);
+            throw FractalSharkSeriousException(err);
         }
 
         m_Data = static_cast<EltT*>(res);
         m_CapacityInElts = capacity;
     }
-
-    return true;
 }
 
 template<class EltT>

@@ -285,7 +285,7 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
             gFractal->GetLAParameters().AdjustLAThresholdScaleExponent(1);
             gFractal->GetLAParameters().AdjustLAThresholdCScaleExponent(1);
         }
-        gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+        gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
         gFractal->ForceRecalc();
         PaintAsNecessary(hWnd);
         break;
@@ -300,7 +300,7 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
             gFractal->GetLAParameters().AdjustPeriodDetectionThreshold2Exponent(1);
             gFractal->GetLAParameters().AdjustStage0PeriodDetectionThreshold2Exponent(1);
         }
-        gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+        gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
         gFractal->ForceRecalc();
         PaintAsNecessary(hWnd);
         break;
@@ -716,30 +716,36 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             case IDM_LA_SINGLETHREADED:
             {
-                gFractal->GetLAParameters().SetThreading(LAParameters::LAThreadingAlgorithm::SingleThreaded);
-                gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-                gFractal->ForceRecalc();
-                PaintAsNecessary(hWnd);
+                auto &parameters = gFractal->GetLAParameters();
+                parameters.SetThreading(LAParameters::LAThreadingAlgorithm::SingleThreaded);
                 break;
             }
 
             case IDM_LA_MULTITHREADED:
             {
-                gFractal->GetLAParameters().SetThreading(LAParameters::LAThreadingAlgorithm::MultiThreaded);
-                gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-                gFractal->ForceRecalc();
-                PaintAsNecessary(hWnd);
+                auto &parameters = gFractal->GetLAParameters();
+                parameters.SetThreading(LAParameters::LAThreadingAlgorithm::MultiThreaded);
                 break;
             }
 
             case IDM_LA_SETTINGS_1:
             {
-                auto parameters = gFractal->GetLAParameters();
-                parameters.
+                auto &parameters = gFractal->GetLAParameters();
+                parameters.SetDefaults(LAParameters::LADefaults::MaxAccuracy);
+                break;
+            }
 
-                gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-                gFractal->ForceRecalc();
-                PaintAsNecessary(hWnd);
+            case IDM_LA_SETTINGS_2:
+            {
+                auto &parameters = gFractal->GetLAParameters();
+                parameters.SetDefaults(LAParameters::LADefaults::MaxPerf);
+                break;
+            }
+
+            case IDM_LA_SETTINGS_3:
+            {
+                auto &parameters = gFractal->GetLAParameters();
+                parameters.SetDefaults(LAParameters::LADefaults::MinMemory);
                 break;
             }
 

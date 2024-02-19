@@ -186,13 +186,15 @@ void LAParameters::SetDefaults(LADefaults defaults) {
             m_DetectionMethod = DefaultDetectionMethod;
             m_LAThresholdScaleExponent = DefaultLAThresholdScaleExponent;
             m_LAThresholdCScaleExponent = DefaultLAThresholdCScaleExponent;
-            m_Stage0PeriodDetectionThreshold2Exponent = DefaultStage0PeriodDetectionThreshold2Exponent;
-            m_PeriodDetectionThreshold2Exponent = DefaultPeriodDetectionThreshold2Exponent + 6;
-            m_Stage0PeriodDetectionThresholdExponent = DefaultStage0PeriodDetectionThresholdExponent + 6;
+            m_Stage0PeriodDetectionThreshold2Exponent = DefaultStage0PeriodDetectionThreshold2Exponent + 3;
+            m_PeriodDetectionThreshold2Exponent = DefaultPeriodDetectionThreshold2Exponent + 3;
+            m_Stage0PeriodDetectionThresholdExponent = DefaultStage0PeriodDetectionThresholdExponent;
             m_PeriodDetectionThresholdExponent = DefaultPeriodDetectionThresholdExponent;
             break;
 
         default:
             break;
     }
+
+    PopulateFloatsFromExponents();
 }

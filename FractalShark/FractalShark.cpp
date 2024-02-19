@@ -732,6 +732,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 break;
             }
 
+            case IDM_LA_SETTINGS_1:
+            {
+                auto parameters = gFractal->GetLAParameters();
+                parameters.
+
+                gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+                gFractal->ForceRecalc();
+                PaintAsNecessary(hWnd);
+                break;
+            }
+
             case IDM_BASICTEST:
             {
                 gFractal->BasicTest();

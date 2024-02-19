@@ -11,6 +11,12 @@ public:
         MultiThreaded
     };
 
+    enum class LADefaults {
+        MaxAccuracy,
+        MaxPerf,
+        MinMemory
+    };
+
     CUDA_CRAP int GetDetectionMethod() const;
     CUDA_CRAP float GetLAThresholdScale() const;
     CUDA_CRAP float GetLAThresholdCScale() const;
@@ -35,6 +41,8 @@ public:
 
     CUDA_CRAP void SetThreading(LAThreadingAlgorithm algorithm);
     CUDA_CRAP LAThreadingAlgorithm GetThreading() const;
+
+    CUDA_CRAP void SetDefaults(LADefaults defaults);
 
     bool ReadMetadata(std::ifstream& metafile);
     bool WriteMetadata(std::ofstream& metafile) const;

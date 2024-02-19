@@ -159,3 +159,40 @@ void LAParameters::SetThreading(LAThreadingAlgorithm threading) {
 LAParameters::LAThreadingAlgorithm LAParameters::GetThreading() const {
     return m_ThreadingAlgorithm;
 }
+
+void LAParameters::SetDefaults(LADefaults defaults) {
+    switch (defaults) {
+        case LADefaults::MaxAccuracy:
+            m_DetectionMethod = DefaultDetectionMethod;
+            m_LAThresholdScaleExponent = DefaultLAThresholdScaleExponent;
+            m_LAThresholdCScaleExponent = DefaultLAThresholdCScaleExponent;
+            m_Stage0PeriodDetectionThreshold2Exponent = DefaultStage0PeriodDetectionThreshold2Exponent;
+            m_PeriodDetectionThreshold2Exponent = DefaultPeriodDetectionThreshold2Exponent;
+            m_Stage0PeriodDetectionThresholdExponent = DefaultStage0PeriodDetectionThresholdExponent;
+            m_PeriodDetectionThresholdExponent = DefaultPeriodDetectionThresholdExponent;
+            break;
+
+        case LADefaults::MaxPerf:
+            m_DetectionMethod = DefaultDetectionMethod;
+            m_LAThresholdScaleExponent = DefaultLAThresholdScaleExponent + 12;
+            m_LAThresholdCScaleExponent = DefaultLAThresholdCScaleExponent  + 12;
+            m_Stage0PeriodDetectionThreshold2Exponent = DefaultStage0PeriodDetectionThreshold2Exponent;
+            m_PeriodDetectionThreshold2Exponent = DefaultPeriodDetectionThreshold2Exponent;
+            m_Stage0PeriodDetectionThresholdExponent = DefaultStage0PeriodDetectionThresholdExponent;
+            m_PeriodDetectionThresholdExponent = DefaultPeriodDetectionThresholdExponent;
+            break;
+
+        case LADefaults::MinMemory:
+            m_DetectionMethod = DefaultDetectionMethod;
+            m_LAThresholdScaleExponent = DefaultLAThresholdScaleExponent;
+            m_LAThresholdCScaleExponent = DefaultLAThresholdCScaleExponent;
+            m_Stage0PeriodDetectionThreshold2Exponent = DefaultStage0PeriodDetectionThreshold2Exponent;
+            m_PeriodDetectionThreshold2Exponent = DefaultPeriodDetectionThreshold2Exponent + 6;
+            m_Stage0PeriodDetectionThresholdExponent = DefaultStage0PeriodDetectionThresholdExponent + 6;
+            m_PeriodDetectionThresholdExponent = DefaultPeriodDetectionThresholdExponent;
+            break;
+
+        default:
+            break;
+    }
+}

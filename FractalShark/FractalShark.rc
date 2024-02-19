@@ -138,6 +138,15 @@ BEGIN
         BEGIN
             MENUITEM "Help",                        IDM_HELP_ALG
             MENUITEM "Auto (Default/Recommended)",  IDM_ALG_AUTO
+            POPUP "LA Parameters"
+            BEGIN
+                MENUITEM "Multithreaded",               IDM_LA_MULTITHREADED
+                MENUITEM "Single Threaded",             IDM_LA_SINGLETHREADED
+                MENUITEM SEPARATOR
+                MENUITEM "Max Accuracy",                IDM_LA_SETTINGS_1
+                MENUITEM "Max Performance (Accuracy Loss, Default)", IDM_LA_SETTINGS_2
+                MENUITEM "Min Memory",                  IDM_LA_SETTINGS_3
+            END
             MENUITEM SEPARATOR
             POPUP "CPU-Only"
             BEGIN
@@ -231,11 +240,6 @@ BEGIN
                     MENUITEM "HDRx64 GPU - RC LAv2",        IDM_ALG_GPU_HDR_64_PERTURB_RC_LAV2_LAO
                 END
             END
-            POPUP "LA Parameters"
-            BEGIN
-                MENUITEM "Multithreaded",               IDM_LA_MULTITHREADED
-                MENUITEM "Single Threaded",             IDM_LA_SINGLETHREADED
-            END
             MENUITEM SEPARATOR
             MENUITEM "1x32 GPU - LAv2",             IDM_ALG_GPU_1_32_PERTURB_LAV2
             MENUITEM "2x32 GPU - LAv2",             IDM_ALG_GPU_2_32_PERTURB_LAV2
@@ -255,7 +259,7 @@ BEGIN
             MENUITEM "&Decrease Iterations",        IDM_DECREASEITERATIONS
             MENUITEM SEPARATOR
             MENUITEM "32-Bit Iterations",           IDM_32BIT_ITERATIONS
-            MENUITEM "64-Bit Iterations (high memory req)", IDM_64BIT_ITERATIONS
+            MENUITEM "64-Bit Iterations",           IDM_64BIT_ITERATIONS
         END
         POPUP "Perturbation"
         BEGIN

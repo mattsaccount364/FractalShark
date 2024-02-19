@@ -328,9 +328,11 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
     case 'P':
     case 'p':
         if (shiftDown) {
-            gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+            gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
         }
-        MenuSquareView(hWnd);
+        gFractal->ForceRecalc();
+        PaintAsNecessary(hWnd);
+        MenuGetCurPos(hWnd);
         break;
 
     case 'q':

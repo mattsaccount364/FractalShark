@@ -155,10 +155,8 @@ const EltT& GrowableVector<EltT>::operator[](size_t index) const {
 
 template<class EltT>
 void GrowableVector<EltT>::PushBack(const EltT& val) {
-    const auto grow_by_elts = 128 * 1024;
-
     if (m_UsedSizeInElts == m_CapacityInElts) {
-        MutableReserveKeepFileSize(m_CapacityInElts + grow_by_elts);
+        MutableReserveKeepFileSize(m_CapacityInElts + GrowByElts);
     }
 
     m_Data[m_UsedSizeInElts] = val;

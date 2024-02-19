@@ -2,6 +2,13 @@
 
 #include "HighPrecision.h"
 
+enum class AddPointOptions {
+    DontSave,
+    EnableWithSave,
+    EnableWithoutSave,
+    OpenExistingWithSave,
+};
+
 template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
 class LAInfoDeep;
 
@@ -96,6 +103,8 @@ public:
     bool MutableResize(size_t size);
 
 private:
+    static constexpr auto GrowByElts = 512 * 1024;
+
     bool UsingAnonymous() const;
 
     bool MutableFileCommit(size_t new_elt_count);

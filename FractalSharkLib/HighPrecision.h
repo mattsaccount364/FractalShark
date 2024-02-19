@@ -138,10 +138,3 @@ extern double* twoPowExpDbl;
 extern float* twoPowExpFlt;
 #endif
 
-
-enum class AddPointOptions {
-    DontSave,
-    EnableWithSave,
-    EnableWithoutSave,
-    OpenExistingWithSave,
-};

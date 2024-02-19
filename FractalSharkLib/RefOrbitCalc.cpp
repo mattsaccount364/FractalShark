@@ -1614,10 +1614,33 @@ template<
     class ConvertTType>
 PerturbationResults<IterType, ConvertTType, PExtras>*
 RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
-
-    bool added = false;
+    constexpr bool IsHdrDblflt = std::is_same<ConvertTType, HDRFloat<CudaDblflt<MattDblflt>>>::value;
+    constexpr bool IsDblflt = std::is_same<ConvertTType, CudaDblflt<MattDblflt>>::value;
+    constexpr bool UsingDblflt = IsHdrDblflt || IsDblflt;
     constexpr auto PExtrasHackYay =
         (PExtras == PerturbExtras::EnableCompression) ? PerturbExtras::Disable : PExtras;
+    bool added = false;
+
+    auto GenLAResults = [&](auto& results, AddPointOptions options_to_use) {
+        if (results->GetLaReference() == nullptr) {
+            auto temp = std::make_unique<LAReference<IterType, T, SubType, PExtras>>(
+                m_Fractal.GetLAParameters(),
+                options_to_use,
+                results->GenFilename(GrowableVectorTypes::LAInfoDeep),
+                results->GenFilename(GrowableVectorTypes::LAStageInfo));
+
+            // TODO the presumption here is results size fits in the target IterType size
+            temp->GenerateApproximationData(
+                *results,
+                results->GetMaxRadius(),
+                (IterType)results->GetCountOrbitEntries() - 1,
+                UsingDblflt);
+
+            added = true;
+
+            results->SetLaReference(std::move(temp));
+        }
+    };
 
     if (RequiresReuse()) {
         if (m_PerturbationGuessCalcX == 0 && m_PerturbationGuessCalcY == 0) {
@@ -1645,10 +1668,6 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
         }
     }
 
-    constexpr bool IsHdrDblflt = std::is_same<ConvertTType, HDRFloat<CudaDblflt<MattDblflt>>>::value;
-    constexpr bool IsDblflt = std::is_same<ConvertTType, CudaDblflt<MattDblflt>>::value;
-    constexpr bool UsingDblflt = IsHdrDblflt || IsDblflt;
-
     PerturbationResults<IterType, T, PExtras>* results =
         GetUsefulPerturbationResults<IterType, T, false, PExtras>();
     if (results == nullptr) {
@@ -1665,26 +1684,6 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
             }
         }
 
-        //std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtrasHackYay>>>& cur_array =
-        //    GetPerturbationResults<IterType, T, PExtrasHackYay>();
-        //AddPerturbationReferencePoint<IterType, T, SubType, PerturbExtras::Disable, BenchmarkMode::Disable>();
-        //added = true;
-
-        //// TODO: this is a hack.  We need to fix this.
-        //if constexpr (PExtras == PerturbExtras::EnableCompression) {
-        //    auto resultsIntermediate = cur_array[cur_array.size() - 1].get();
-        //    auto compressedResults = resultsIntermediate->Compress(
-        //        m_Fractal.GetCompressionErrorExp(),
-        //        GetNextGenerationNumber());
-        //    results = AddPerturbationResults(std::move(compressedResults));
-
-        //    // Here we just delete the full orbit.
-        //    cur_array.pop_back();
-        //}
-        //else {
-        //    results = cur_array[cur_array.size() - 1].get();
-        //}
-
         std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtras>>>& cur_array =
             GetPerturbationResults<IterType, T, PExtras>();
         AddPerturbationReferencePoint<IterType, T, SubType, PExtras, BenchmarkMode::Disable>();
@@ -1693,11 +1692,11 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
         results = cur_array[cur_array.size() - 1].get();
     }
 
-    AddPointOptions options_to_use = m_RefOrbitOptions;
-
     // This is a weird case.  Suppose you generate a Perturbation-only set of results
     // with things set to DontSave.  Then you generate a an LA-enabled orbit with
     // things set to EnableWithSave.  The LA-enabled orbit will not be saved.
+    AddPointOptions options_to_use = m_RefOrbitOptions;
+
     if (results->GetRefOrbitOptions() == AddPointOptions::DontSave &&
         (m_RefOrbitOptions == AddPointOptions::EnableWithSave ||
          m_RefOrbitOptions == AddPointOptions::EnableWithoutSave)) {
@@ -1712,24 +1711,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
         std::is_same<T, HDRFloat<double>>::value) {
         if constexpr (Ex == Extras::IncludeLAv2) {
             static_assert(PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::EnableCompression, "!");
-            if (results->GetLaReference() == nullptr) {
-                auto temp = std::make_unique<LAReference<IterType, T, SubType, PExtras>>(
-                    m_Fractal.GetLAParameters(),
-                    options_to_use,
-                    results->GenFilename(GrowableVectorTypes::LAInfoDeep),
-                    results->GenFilename(GrowableVectorTypes::LAStageInfo));
-
-                // TODO the presumption here is results size fits in the target IterType size
-                temp->GenerateApproximationData(
-                    *results,
-                    results->GetMaxRadius(),
-                    (IterType)results->GetCountOrbitEntries() - 1,
-                    UsingDblflt);
-
-                added = true;
-
-                results->SetLaReference(std::move(temp));
-            }
+            GenLAResults(results, options_to_use);
         }
         else {
             results->ClearLaReference();
@@ -1858,22 +1840,36 @@ PerturbationResults<IterType, DestT, DestEnableBad>* RefOrbitCalc::CopyUsefulPer
 
 void RefOrbitCalc::ClearPerturbationResults(PerturbationResultType type) {
     auto IsMarkedToDelete = [&](const auto& o) -> bool {
+        // Erase results as needed.
+        // Note: erase full results in dbl-float case -- we'll reconvert
+        // the whole thing if needed from double/Hdrfloat<double> etc.
         if (type == PerturbationResultType::All ||
             (type == PerturbationResultType::MediumRes &&
                 o->GetAuthoritativePrecision() == 0) ||
             (type == PerturbationResultType::HighRes &&
-                o->GetAuthoritativePrecision() != 0)) {
-
+                o->GetAuthoritativePrecision() != 0) ||
+            (type == PerturbationResultType::LAOnly &&
+                o->Is2X32)) {
             return true;
         }
 
         return false;
     };
 
+    auto ClearLAIfNeeded = [&](const auto& o) {
+        if (type == PerturbationResultType::LAOnly) {
+            o->ClearLaReference();
+        }
+    };
+
     auto ClearOne = [&](auto &arr) {
+        // First, erase some results completely as needed
         arr.erase(
             std::remove_if(arr.begin(), arr.end(), IsMarkedToDelete),
             arr.end());
+
+        // Now just erase LA results of what's left, if needed
+        std::for_each(arr.begin(), arr.end(), ClearLAIfNeeded);
     };
 
     auto ClearContainer = [&](auto& container) {

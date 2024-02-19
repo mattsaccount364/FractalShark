@@ -35,6 +35,8 @@ public:
     };
 
     enum class PerturbationResultType {
+        None,
+        LAOnly,
         MediumRes,
         HighRes,
         All

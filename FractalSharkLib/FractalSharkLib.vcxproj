@@ -21,6 +21,7 @@
     <ClInclude Include="dblflt.cuh" />
     <ClInclude Include="dblflt.h" />
     <ClInclude Include="DrawThreadSync.h" />
+    <ClInclude Include="Exceptions.h" />
     <ClInclude Include="FloatComplex.h" />
     <ClInclude Include="Fractal.h" />
     <ClInclude Include="FractalNetwork.h" />

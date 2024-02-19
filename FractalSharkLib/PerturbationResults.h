@@ -35,6 +35,10 @@ public:
     friend class CompressionHelper<IterType, T, PExtras>;
     friend class RefOrbitCompressor<IterType, T, PExtras>;
 
+    static constexpr bool Is2X32 = (
+        std::is_same<T, HDRFloat<CudaDblflt<MattDblflt>>>::value ||
+        std::is_same<T, CudaDblflt<MattDblflt>>::value);
+
     // Generates a filename "base" for all the orbit files.
     std::wstring GenBaseFilename(size_t generation_number) const {
         return GenBaseFilename(GetRefOrbitOptions(), generation_number);

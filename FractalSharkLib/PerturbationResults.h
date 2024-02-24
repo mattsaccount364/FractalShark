@@ -71,13 +71,13 @@ public:
         size_t counter = 1;
         std::wstring result;
         do {
-            if (add_additional_suffix) {
-                optional_suffix += L" - " + std::to_wstring(counter);
-            }
-
             result = m_BaseFilename + optional_suffix + GetFileExtension(Type);
             if (!Utilities::FileExists(result.c_str())) {
                 break;
+            }
+
+            if (add_additional_suffix) {
+                optional_suffix += L" - " + std::to_wstring(counter);
             }
 
             counter++;

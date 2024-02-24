@@ -1,5 +1,8 @@
 #pragma once
 
+#include "HDRFloat.h"
+#include "HDRFloatComplex.h"
+
 template<typename IterType, class T, PerturbExtras PExtras>
 class PerturbationResults;
 

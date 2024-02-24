@@ -26,6 +26,7 @@
     <ClInclude Include="Fractal.h" />
     <ClInclude Include="FractalNetwork.h" />
     <ClInclude Include="FractalSetupData.h" />
+    <ClInclude Include="FractalTest.h" />
     <ClInclude Include="GPU_BLAS.h" />
     <ClInclude Include="GPU_LAInfoDeep.h" />
     <ClInclude Include="GPU_LAReference.h" />
@@ -68,6 +69,7 @@
     <ClCompile Include="Fractal.cpp" />
     <ClCompile Include="FractalNetwork.cpp" />
     <ClCompile Include="FractalSetupData.cpp" />
+    <ClCompile Include="FractalTest.cpp" />
     <ClCompile Include="HDRFloat.cpp" />
     <ClCompile Include="ItersMemoryContainer.cpp" />
     <ClCompile Include="LAParameters.cpp" />

@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "resource.h"
 #include "Fractal.h"
+#include "FractalTest.h"
 
 #include <Dbghelp.h>
 
@@ -751,7 +752,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             case IDM_BASICTEST:
             {
-                gFractal->BasicTest();
+                FractalTest test{ *gFractal };
+                test.BasicTest();
                 break;
             }
 
@@ -883,19 +885,19 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             case IDM_PERTURB_AUTOSAVE_ON:
             {
-                gFractal->SetPerturbAutosave(AddPointOptions::EnableWithSave);
+                gFractal->SetResultsAutosave(AddPointOptions::EnableWithSave);
                 break;
             }
 
             case IDM_PERTURB_AUTOSAVE_ON_DELETE:
             {
-                gFractal->SetPerturbAutosave(AddPointOptions::EnableWithoutSave);
+                gFractal->SetResultsAutosave(AddPointOptions::EnableWithoutSave);
                 break;
             }
 
             case IDM_PERTURB_AUTOSAVE_OFF:
             {
-                gFractal->SetPerturbAutosave(AddPointOptions::DontSave);
+                gFractal->SetResultsAutosave(AddPointOptions::DontSave);
                 break;
             }
 

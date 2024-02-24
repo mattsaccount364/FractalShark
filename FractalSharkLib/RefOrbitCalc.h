@@ -53,7 +53,7 @@ public:
     template<typename IterType, class T, PerturbExtras PExtras>
     std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtras>>>& GetPerturbationResults() ;
 
-    void SetRefOrbitOptions(AddPointOptions options) { m_RefOrbitOptions = options; }
+    void SetOptions(AddPointOptions options) { m_RefOrbitOptions = options; }
 
     template<
         typename IterType,

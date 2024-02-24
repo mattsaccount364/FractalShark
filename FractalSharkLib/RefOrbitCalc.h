@@ -51,9 +51,9 @@ public:
     PerturbationAlg GetPerturbationAlg() const { return m_PerturbationAlg; }
 
     template<typename IterType, class T, PerturbExtras PExtras>
-    std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtras>>>& GetPerturbationResults() ;
+    std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtras>>>& GetPerturbationResults();
 
-    void SetOptions(AddPointOptions options) { m_RefOrbitOptions = options; }
+    void SetOptions(AddPointOptions options);
 
     template<
         typename IterType,
@@ -72,6 +72,16 @@ public:
         None,
         IncludeLAv2
     };
+
+    template<
+        typename IterType,
+        class T,
+        class SubType,
+        PerturbExtras PExtras,
+        RefOrbitCalc::Extras Ex,
+        class ConvertTType = T>
+    PerturbationResults<IterType, ConvertTType, PExtras>*
+        GetUsefulPerturbationResults();
 
     template<
         typename IterType,

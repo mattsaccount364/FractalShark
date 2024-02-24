@@ -245,7 +245,7 @@ void Fractal::InitializeMemory() {
     m_DrawOutBytes = std::make_unique<GLushort[]>(m_ScrnWidth * m_ScrnHeight * 4); // RGBA
 }
 
-uint32_t Fractal::InitializeGPUMemory() {
+uint32_t Fractal::InitializeGPUMemory(bool expectedReuse) {
     if (RequiresUseLocalColor()) {
         return 0;
     }
@@ -259,7 +259,8 @@ uint32_t Fractal::InitializeGPUMemory() {
             m_PalG[m_WhichPalette][m_PaletteDepthIndex].data(),
             m_PalB[m_WhichPalette][m_PaletteDepthIndex].data(),
             m_PalIters[m_WhichPalette][m_PaletteDepthIndex],
-            m_PaletteAuxDepth);
+            m_PaletteAuxDepth,
+            expectedReuse);
     }
     else {
         return m_r.InitializeMemory<uint64_t>(
@@ -270,7 +271,8 @@ uint32_t Fractal::InitializeGPUMemory() {
             m_PalG[m_WhichPalette][m_PaletteDepthIndex].data(),
             m_PalB[m_WhichPalette][m_PaletteDepthIndex].data(),
             m_PalIters[m_WhichPalette][m_PaletteDepthIndex],
-            m_PaletteAuxDepth);
+            m_PaletteAuxDepth,
+            expectedReuse);
     }
 }
 
@@ -3775,26 +3777,36 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
         RefOrbitCalc::Extras::None;
 
     PerturbationResults<IterType, T, PExtras>* results =
-        m_RefOrbit.GetAndCreateUsefulPerturbationResults<
-            IterType,
-            ConditionalT,
-            ConditionalSubType,
-            PExtras,
-            RefOrbitMode,
-            T>();
+        m_RefOrbit.GetUsefulPerturbationResults<
+        IterType,
+        ConditionalT,
+        ConditionalSubType,
+        PExtras,
+        RefOrbitMode,
+        T>();
+
+    // TODO pass perturb results via InitializeGPUMemory
+    // Currently: keep this up here so it frees existing memory
+    // before generating the new orbit.
+    auto err = InitializeGPUMemory(results != nullptr);
+    if (err) {
+        MessageBoxCudaError(err);
+        return;
+    }
+
+    results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<
+        IterType,
+        ConditionalT,
+        ConditionalSubType,
+        PExtras,
+        RefOrbitMode,
+        T>();
 
     // Reference orbit is always required for LAv2
     // The LaReference is not required when running perturbation only
     if ((RefOrbitMode == RefOrbitCalc::Extras::IncludeLAv2 && results->GetLaReference() == nullptr) ||
         results->GetOrbitData() == nullptr) {
         ::MessageBox(nullptr, L"Oops - a null pointer deref", L"", MB_OK | MB_APPLMODAL);
-        return;
-    }
-
-    // TODO pass perturb results via InitializeGPUMemory
-    uint32_t err = InitializeGPUMemory();
-    if (err) {
-        MessageBoxCudaError(err);
         return;
     }
 
@@ -3806,7 +3818,7 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
         results->GetOrbitData(),
         results->GetPeriodMaybeZero() };
 
-    m_r.InitializePerturb<IterType, T, SubType, PExtras, T>(
+    err = m_r.InitializePerturb<IterType, T, SubType, PExtras, T>(
         results->GetGenerationNumber(),
         &gpu_results,
         0,

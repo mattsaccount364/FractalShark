@@ -91,7 +91,8 @@ public:
         const uint16_t *palG,
         const uint16_t *palB,
         uint32_t palIters,
-        uint32_t paletteAuxDepth);
+        uint32_t paletteAuxDepth,
+        bool expectedReuse);
 
     template<typename IterType, class T1, class SubType, PerturbExtras PExtras, class T2>
     uint32_t InitializePerturb(

@@ -66,11 +66,15 @@ InstantiateAddPerturbationReferencePoint(uint64_t, HDRFloat<float>, float, Pertu
 
 #define InstantiateGetAndCreateUsefulPerturbationResults2(IterTypeT, T, SubType, PExtras, Ex, ConvertTType) \
     template PerturbationResults<IterTypeT, ConvertTType, PExtras>* \
-    RefOrbitCalc::GetAndCreateUsefulPerturbationResults<IterTypeT, T, SubType, PExtras, Ex, ConvertTType>();
+    RefOrbitCalc::GetAndCreateUsefulPerturbationResults<IterTypeT, T, SubType, PExtras, Ex, ConvertTType>(); \
+    template PerturbationResults<IterTypeT, ConvertTType, PExtras>* \
+    RefOrbitCalc::GetUsefulPerturbationResults<IterTypeT, T, SubType, PExtras, Ex, ConvertTType>();
 
 #define InstantiateGetAndCreateUsefulPerturbationResults1(IterTypeT, T, SubType, PExtras, Ex) \
     template PerturbationResults<IterTypeT, T, PExtras>* \
-    RefOrbitCalc::GetAndCreateUsefulPerturbationResults<IterTypeT, T, SubType, PExtras, Ex>();
+    RefOrbitCalc::GetAndCreateUsefulPerturbationResults<IterTypeT, T, SubType, PExtras, Ex>(); \
+    template PerturbationResults<IterTypeT, T, PExtras>* \
+    RefOrbitCalc::GetUsefulPerturbationResults<IterTypeT, T, SubType, PExtras, Ex>();
 
 
 InstantiateGetAndCreateUsefulPerturbationResults1(uint32_t, double, double, PerturbExtras::Bad, RefOrbitCalc::Extras::None);

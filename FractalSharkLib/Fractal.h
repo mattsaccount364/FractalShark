@@ -382,7 +382,7 @@ private:
     int m_PaletteAuxDepth; // 0..16
     static constexpr int NumPalettes = 3;
 
-    uint32_t InitializeGPUMemory();
+    uint32_t InitializeGPUMemory(bool expectedReuse = true);
 
     void InitializeMemory();
     void SetCurItersMemory();

@@ -58,14 +58,18 @@ GrowableVector<EltT>::GrowableVector(GrowableVector<EltT>&& other) :
     m_Data{ other.m_Data },
     m_AddPointOptions{ other.m_AddPointOptions },
     m_Filename{ other.m_Filename },
-    m_PhysicalMemoryCapacityKB{ other.m_PhysicalMemoryCapacityKB } {
+    m_PhysicalMemoryCapacityKB{ other.m_PhysicalMemoryCapacityKB },
+    m_GrowByElts{ InitialGrowByElts } {
 
     other.m_FileHandle = nullptr;
     other.m_MappedFile = nullptr;
     other.m_UsedSizeInElts = 0;
     other.m_CapacityInElts = 0;
-    other.m_AddPointOptions = AddPointOptions::DontSave;
     other.m_Data = nullptr;
+    other.m_AddPointOptions = AddPointOptions::DontSave;
+    other.m_Filename = {};
+    other.m_PhysicalMemoryCapacityKB = 0;
+    other.m_GrowByElts = 0;
 }
 
 template<class EltT>
@@ -78,6 +82,7 @@ GrowableVector<EltT>& GrowableVector<EltT>::operator=(GrowableVector<EltT>&& oth
     m_AddPointOptions = other.m_AddPointOptions;
     m_Filename = other.m_Filename;
     m_PhysicalMemoryCapacityKB = other.m_PhysicalMemoryCapacityKB;
+    m_GrowByElts = other.m_GrowByElts;
 
     other.m_FileHandle = nullptr;
     other.m_MappedFile = nullptr;
@@ -87,6 +92,7 @@ GrowableVector<EltT>& GrowableVector<EltT>::operator=(GrowableVector<EltT>&& oth
     other.m_AddPointOptions = AddPointOptions::DontSave;
     other.m_Filename = {};
     other.m_PhysicalMemoryCapacityKB = 0;
+    other.m_GrowByElts = 0;
 
     return *this;
 }
@@ -110,7 +116,8 @@ GrowableVector<EltT>::GrowableVector(
     m_Data{},
     m_AddPointOptions{ add_point_options },
     m_Filename{ filename },
-    m_PhysicalMemoryCapacityKB{}
+    m_PhysicalMemoryCapacityKB{},
+    m_GrowByElts{ InitialGrowByElts }
 {
     auto ret = GetPhysicallyInstalledSystemMemory(&m_PhysicalMemoryCapacityKB);
     if (ret == FALSE) {
@@ -157,7 +164,9 @@ const EltT& GrowableVector<EltT>::operator[](size_t index) const {
 template<class EltT>
 void GrowableVector<EltT>::PushBack(const EltT& val) {
     if (m_UsedSizeInElts == m_CapacityInElts) {
-        MutableReserveKeepFileSize(m_CapacityInElts + GrowByElts);
+        MutableReserveKeepFileSize(m_CapacityInElts + m_GrowByElts);
+
+        m_GrowByElts = m_GrowByElts * 2;
     }
 
     m_Data[m_UsedSizeInElts] = val;
@@ -207,6 +216,19 @@ void GrowableVector<EltT>::CloseMapping(bool CloseFileToo) {
     }
 
     if (CloseFileToo) {
+        if (m_AddPointOptions == AddPointOptions::EnableWithSave) {
+            // Set the location in the file to match the used size
+            // Use 64-bit file size functions because the file could be large.
+            // Only do it when we're actually keeping the result.
+
+            LARGE_INTEGER distanceToMove{};
+            distanceToMove.QuadPart = m_UsedSizeInElts * sizeof(EltT);
+            auto result = SetFilePointerEx(m_FileHandle, distanceToMove, nullptr, FILE_BEGIN);
+            if (result) {
+                SetEndOfFile(m_FileHandle);
+            }
+        }
+
         if (m_FileHandle != nullptr) {
             CloseHandle(m_FileHandle);
             m_FileHandle = nullptr;

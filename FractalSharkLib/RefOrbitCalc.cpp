@@ -351,6 +351,10 @@ RefOrbitCalc::GetPerturbationResults() {
     }
 }
 
+void RefOrbitCalc::SetOptions(AddPointOptions options) {
+    m_RefOrbitOptions = options;
+}
+
 template<typename IterType, class T, PerturbExtras PExtras>
 PerturbationResults<IterType, T, PExtras> *
 RefOrbitCalc::AddPerturbationResults(std::unique_ptr<PerturbationResults<IterType, T, PExtras>> results) {
@@ -1592,6 +1596,30 @@ bool RefOrbitCalc::IsPerturbationResultUsefulHere(size_t i) {
 
     const auto& results = GetPerturbationResults<IterType, T, PExtras>(i);
     return lambda.template operator()<T, Authoritative, PExtras>(results);
+}
+
+template<
+    typename IterType,
+    class T,
+    class SubType,
+    PerturbExtras PExtras,
+    RefOrbitCalc::Extras Ex,
+    class ConvertTType>
+PerturbationResults<IterType, ConvertTType, PExtras>*
+RefOrbitCalc::GetUsefulPerturbationResults() {
+    auto* resultsExisting = GetUsefulPerturbationResults<IterType, ConvertTType, false, PExtras>();
+
+    if (resultsExisting != nullptr) {
+        if constexpr (Ex == RefOrbitCalc::Extras::IncludeLAv2) {
+            if (resultsExisting->GetLaReference() == nullptr) {
+                resultsExisting = nullptr;
+            }
+        }
+
+        m_LastUsedRefOrbit = resultsExisting;
+    }
+
+    return resultsExisting;
 }
 
 template<

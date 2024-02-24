@@ -195,7 +195,8 @@ uint32_t GPURenderer::InitializeMemory(
     const uint16_t* palG,
     const uint16_t* palB,
     uint32_t palIters,
-    uint32_t paletteAuxDepth)
+    uint32_t paletteAuxDepth,
+    bool expectedReuse)
 {
     if (Pals.palette_aux_depth != paletteAuxDepth) {
         Pals.palette_aux_depth = paletteAuxDepth;
@@ -238,7 +239,8 @@ uint32_t GPURenderer::InitializeMemory(
     if ((m_Width == antialias_width) &&
         (m_Height == antialias_height) &&
         (m_Antialiasing == antialiasing) &&
-        (m_IterTypeSize == sizeof(IterType))) {
+        (m_IterTypeSize == sizeof(IterType)) &&
+        expectedReuse) {
         return 0;
     }
 
@@ -286,7 +288,7 @@ uint32_t GPURenderer::InitializeMemory(
     local_color_height = no_antialias_height;
     N_color_cu = w_color_block * NB_THREADS_W_AA * h_color_block * NB_THREADS_H_AA;
 
-    ResetMemory(ResetLocals::No, ResetPalettes::No, ResetPerturb::No);
+    ResetMemory(ResetLocals::No, ResetPalettes::No, ResetPerturb::Yes);
 
     {
         IterType* tempiter = nullptr;
@@ -362,7 +364,8 @@ uint32_t GPURenderer::InitializeMemory<uint32_t>(
     const uint16_t* palG,
     const uint16_t* palB,
     uint32_t palIters,
-    uint32_t paletteAuxDepth);
+    uint32_t paletteAuxDepth,
+    bool expectedReuse);
 
 template
 uint32_t GPURenderer::InitializeMemory<uint64_t>(
@@ -373,7 +376,8 @@ uint32_t GPURenderer::InitializeMemory<uint64_t>(
     const uint16_t* palG,
     const uint16_t* palB,
     uint32_t palIters,
-    uint32_t paletteAuxDepth);
+    uint32_t paletteAuxDepth,
+    bool expectedReuse);
 
 template<typename IterType, class T1, class SubType, PerturbExtras PExtras, class T2>
 uint32_t GPURenderer::InitializePerturb(

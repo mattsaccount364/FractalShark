@@ -44,6 +44,7 @@ private:
 
     std::wstring m_Filename;
     size_t m_PhysicalMemoryCapacityKB;
+    size_t m_GrowByElts;
 
 public:
     EltT* GetData() const;
@@ -103,7 +104,7 @@ public:
     void MutableResize(size_t size);
 
 private:
-    static constexpr auto GrowByElts = 512 * 1024;
+    static constexpr size_t InitialGrowByElts = 512 * 1024;
 
     bool UsingAnonymous() const;
 

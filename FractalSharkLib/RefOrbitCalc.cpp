@@ -1573,17 +1573,6 @@ bool RefOrbitCalc::IsPerturbationResultUsefulHere(size_t i) {
         const PerturbationResults<IterType, T, PExtras> &PerturbationResults
         ) -> bool {
 
-        //if constexpr (PExtras == PerturbExtras::EnableCompression) {
-        //    if constexpr (!PerturbationResults.IsCompressed()) {
-        //        return false;
-        //    }
-        //}
-        //else {
-        //    if constexpr (PerturbationResults.IsCompressed()) {
-        //        return false;
-        //    }
-        //}
-
         if constexpr (Authoritative == true) {
             return
                 PerturbationResults.GetAuthoritativePrecision() != 0 &&
@@ -1633,7 +1622,6 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
             temp->GenerateApproximationData(
                 *results,
                 results->GetMaxRadius(),
-                (IterType)results->GetCountOrbitEntries() - 1,
                 UsingDblflt);
 
             added = true;
@@ -1728,7 +1716,16 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
 
     if constexpr (UsingDblflt) {
         auto* resultsExisting = GetUsefulPerturbationResults<IterType, ConvertTType, false, PExtras>();
-        if (resultsExisting == nullptr) {
+
+
+        // The second part of this accounts for the case where the
+        // malicious user deleted the LA reference.  We want to
+        // recompute it if it's not present as a file.
+        if ((resultsExisting == nullptr) ||
+            (resultsExisting != nullptr &&
+                resultsExisting->GetLaReference() == nullptr &&
+                Ex == Extras::IncludeLAv2)) {
+
             // This save is for the 64-bit calculations.
             OptionalSave(results);
 

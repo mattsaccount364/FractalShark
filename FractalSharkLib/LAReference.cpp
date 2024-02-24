@@ -215,7 +215,12 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbit(
     return true;
 }
 
+//
 // Based on e704d5b40895f453156e09d9542a589545cc6144 from fractal-zoomer, LAReference.java
+// The function below has some comments in the style // l:<number>.
+// These are references to the line numbers in the original Java code.
+//
+
 template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
 template<typename PerturbType>
 bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
@@ -225,15 +230,32 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
 
     auto compressionHelper{ std::make_unique<CompressionHelper<IterType, Float, PExtras>> (PerturbationResults) };
 
+    // This is not supported.
     if (m_AddPointOptions == AddPointOptions::OpenExistingWithSave) {
         assert(false);
         ::MessageBox(nullptr, L"AddPointOptions::OpenExistingWithSave is not supported", L"", MB_OK | MB_APPLMODAL);
         return false;
     }
 
-    // TODO 20 is too low but nice for testing
-    const auto ThreadCount = std::thread::hardware_concurrency();
-    if (maxRefIteration / ThreadCount < 20) {
+    // The idea here is to scale the number of threads according to the
+    // expected work.  If the work is small, we don't want to use a lot
+    // of threads.  If the work is large, we want to use a lot of threads.
+    // The work is expected to be large if the number of iterations is large.
+    constexpr size_t WorkThreshholdForThreads = 10000;
+    const auto MaxThreadCount = std::thread::hardware_concurrency();
+
+    size_t ThreadCount = maxRefIteration / WorkThreshholdForThreads;
+    if (ThreadCount > std::thread::hardware_concurrency()) {
+        ThreadCount = std::thread::hardware_concurrency();
+    }
+    else if (ThreadCount == 0) {
+        ThreadCount = 1;
+    }
+
+    if (ThreadCount == 1) {
+        // If we only have one thread, then we don't need to do any
+        // special handling.  We can just call the single-threaded
+        // version of this function.
         return CreateLAFromOrbit(la_parameters, PerturbationResults, maxRefIteration);
     }
 
@@ -972,8 +994,9 @@ template<typename PerturbType>
 void LAReference<IterType, Float, SubType, PExtras>::GenerateApproximationData(
     const PerturbationResults<IterType, PerturbType, PExtras>& PerturbationResults,
     Float radius,
-    IterType maxRefIteration,
     bool UseSmallExponents) {
+
+    const IterType maxRefIteration = (IterType)PerturbationResults.GetCountOrbitEntries() - 1;
 
     if (maxRefIteration == 0) {
         m_IsValid = false;
@@ -1008,7 +1031,6 @@ void LAReference<IterType, Float, SubType, PExtras>::GenerateApproximationData(
 template void LAReference<IterType, T, SubType, PExtras>::GenerateApproximationData<T>( \
     const PerturbationResults<IterType, T, PExtras>& PerturbationResults, \
     T radius, \
-    IterType maxRefIteration, \
     bool UseSmallExponents);
 
 InitializeApproximationData(uint32_t, float, float, PerturbExtras::Disable);

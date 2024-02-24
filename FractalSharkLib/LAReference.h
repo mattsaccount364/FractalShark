@@ -247,7 +247,6 @@ public:
     void GenerateApproximationData(
         const PerturbationResults<IterType, PerturbType, PExtras>& PerturbationResults,
         Float radius,
-        IterType maxRefIteration,
         bool UseSmallExponents);
 
     const BenchmarkData& GetBenchmarkLA() const {

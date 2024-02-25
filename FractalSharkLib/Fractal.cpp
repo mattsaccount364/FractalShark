@@ -1790,13 +1790,14 @@ void Fractal::DecCompressionError() {
 }
 
 void Fractal::SetCompressionErrorExp(int32_t CompressionExp) {
-    if (m_CompressionExp >= 35) { // Roughly float exponent range
-        return;
-    }
-
     m_CompressionExp = CompressionExp;
     m_CompressionError = static_cast<float>(std::pow(10.0, m_CompressionExp));
     ChangedMakeDirty();
+
+    if (m_CompressionExp >= 35) { // Roughly float exponent range
+        m_CompressionExp = 35;
+        return;
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////

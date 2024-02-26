@@ -85,47 +85,6 @@ public:
     using type = T;
 };
 
-#ifndef __CUDACC__
-struct scoped_mpfr_precision
-{
-    unsigned saved_digits10;
-    scoped_mpfr_precision(unsigned digits10) : saved_digits10(HighPrecision::thread_default_precision())
-    {
-        HighPrecision::default_precision(digits10);
-    }
-    ~scoped_mpfr_precision()
-    {
-        HighPrecision::default_precision(saved_digits10);
-    }
-    void reset(unsigned digits10)
-    {
-        HighPrecision::default_precision(digits10);
-    }
-    void reset()
-    {
-        HighPrecision::default_precision(saved_digits10);
-    }
-};
-
-struct scoped_mpfr_precision_options
-{
-    boost::multiprecision::variable_precision_options saved_options;
-    scoped_mpfr_precision_options(boost::multiprecision::variable_precision_options opts) : saved_options(HighPrecision::thread_default_variable_precision_options())
-    {
-        HighPrecision::thread_default_variable_precision_options(opts);
-    }
-    ~scoped_mpfr_precision_options()
-    {
-        HighPrecision::thread_default_variable_precision_options(saved_options);
-    }
-    void reset(boost::multiprecision::variable_precision_options opts)
-    {
-        HighPrecision::thread_default_variable_precision_options(opts);
-    }
-};
-#endif
-
-
 #ifdef __CUDA_ARCH__
 #define CUDA_CRAP __device__
 #define CUDA_CRAP_BOTH __host__ __device__

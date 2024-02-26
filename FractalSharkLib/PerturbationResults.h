@@ -16,6 +16,8 @@
 #include "Vectors.h"
 #include "Utilities.h"
 
+#include "ScopedMpfr.h"
+
 std::wstring GetTimeAsString(size_t generation_number);
 
 template<typename IterType, class T, PerturbExtras PExtras>

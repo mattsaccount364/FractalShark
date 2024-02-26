@@ -721,7 +721,7 @@ void Fractal::InitialDefaultViewAndSettings(int width, int height) {
 
     SetIterationPrecision(1);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed);
-    m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3);
+    m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity5);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MT);
     m_RefOrbit.ResetGuess();
 

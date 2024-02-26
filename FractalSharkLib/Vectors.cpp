@@ -216,18 +216,7 @@ void GrowableVector<EltT>::CloseMapping(bool CloseFileToo) {
     }
 
     if (CloseFileToo) {
-        if (m_AddPointOptions == AddPointOptions::EnableWithSave) {
-            // Set the location in the file to match the used size
-            // Use 64-bit file size functions because the file could be large.
-            // Only do it when we're actually keeping the result.
-
-            LARGE_INTEGER distanceToMove{};
-            distanceToMove.QuadPart = m_UsedSizeInElts * sizeof(EltT);
-            auto result = SetFilePointerEx(m_FileHandle, distanceToMove, nullptr, FILE_BEGIN);
-            if (result) {
-                SetEndOfFile(m_FileHandle);
-            }
-        }
+        Trim();
 
         if (m_FileHandle != nullptr) {
             CloseHandle(m_FileHandle);
@@ -241,7 +230,18 @@ void GrowableVector<EltT>::CloseMapping(bool CloseFileToo) {
 
 template<class EltT>
 void GrowableVector<EltT>::Trim() {
-    // TODO No-op for now.
+    if (m_AddPointOptions == AddPointOptions::EnableWithSave) {
+        // Set the location in the file to match the used size
+        // Use 64-bit file size functions because the file could be large.
+        // Only do it when we're actually keeping the result.
+
+        LARGE_INTEGER distanceToMove{};
+        distanceToMove.QuadPart = m_UsedSizeInElts * sizeof(EltT);
+        auto result = SetFilePointerEx(m_FileHandle, distanceToMove, nullptr, FILE_BEGIN);
+        if (result) {
+            SetEndOfFile(m_FileHandle);
+        }
+    }
 }
 
 template<class EltT>

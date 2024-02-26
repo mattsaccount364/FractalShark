@@ -57,6 +57,7 @@
     <ClInclude Include="QuadFloat\inline.cuh" />
     <ClInclude Include="RefOrbitCalc.h" />
     <ClInclude Include="RefOrbitCalcTemplates.h" />
+    <ClInclude Include="ScopedMpfr.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="Utilities.h" />
     <ClInclude Include="Vectors.h" />
@@ -78,6 +79,7 @@
     <ClCompile Include="PngParallelSave.cpp" />
     <ClCompile Include="PointZoomBBConverter.cpp" />
     <ClCompile Include="RefOrbitCalc.cpp" />
+    <ClCompile Include="ScopedMpfr.cpp" />
     <ClCompile Include="Utilities.cpp" />
     <ClCompile Include="Vectors.cpp" />
     <ClCompile Include="WPngImage\lodepng.cpp" />

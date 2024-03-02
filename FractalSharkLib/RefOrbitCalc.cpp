@@ -1583,11 +1583,13 @@ void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecis
     struct ThreadZxData {
         HighPrecision zx;
         HighPrecision zx_sq;
+        T zx_low;
     };
 
     struct ThreadZyData {
         HighPrecision zy;
         HighPrecision zy_sq;
+        T zy_low;
     };
 
     struct ThreadReusedData {
@@ -1615,8 +1617,9 @@ void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecis
             ThreadZxData* ok = nullptr;
 
             CheckStartCriteria;
-            PrefetchHighPrec(ok->zx);
+            //PrefetchHighPrec(ok->zx);
 
+            ok->zx_low = (T)ok->zx;
             ok->zx_sq = ok->zx * ok->zx;
 
             // Give result back.
@@ -1634,8 +1637,9 @@ void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecis
             ThreadZyData* ok = nullptr;
 
             CheckStartCriteria;
-            PrefetchHighPrec(ok->zy);
+            //PrefetchHighPrec(ok->zy);
 
+            ok->zy_low = (T)ok->zy;
             ok->zy_sq = ok->zy * ok->zy;
 
             // Give result back.
@@ -1699,6 +1703,9 @@ void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecis
 
     bool zyStarted = false;
 
+    T double_zx_last = T{ 0.0 };
+    T double_zy_last = T{ 0.0 };
+
     RefOrbitCompressor<IterType, T, PExtras> compressor{
         *results,
         m_Fractal.GetCompressionErrorExp() };
@@ -1725,69 +1732,76 @@ void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecis
             zyStarted = true;
         }
 
-        T double_zx = (T)zx;
-        T double_zy = (T)zy;
+        T double_zx = double_zx_last;
+        T double_zy = double_zy_last;
 
-        if constexpr (PExtras == PerturbExtras::Disable) {
-            results->AddUncompressedIteration({ double_zx, double_zy });
-        }
-        else if constexpr (PExtras == PerturbExtras::EnableCompression) {
-            compressor.MaybeAddCompressedIteration({ double_zx, double_zy, i + 1 });
-        }
-        else if constexpr (PExtras == PerturbExtras::Bad) {
-            results->AddUncompressedIteration({ double_zx, double_zy, false });
-        }
+        SubType zn_size;
 
-        if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
-            AddReused(*results, zx, zy);  // TODO
-        }
+        if (i > 0) {
+            if constexpr (PExtras == PerturbExtras::Disable) {
+                results->AddUncompressedIteration({ double_zx, double_zy });
+            }
+            else if constexpr (PExtras == PerturbExtras::EnableCompression) {
+                compressor.MaybeAddCompressedIteration({ double_zx, double_zy, i });
+            }
+            else if constexpr (PExtras == PerturbExtras::Bad) {
+                results->AddUncompressedIteration({ double_zx, double_zy, false });
+            }
 
-        if constexpr (PExtras == PerturbExtras::Bad) {
-            const T norm = HdrReduce((double_zx * double_zx + double_zy * double_zy) * glitch);
-            const auto zx_reduced = HdrReduce(HdrAbs((T)double_zx));
-            const auto zy_reduced = HdrReduce(HdrAbs((T)double_zy));
+            if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
+                AddReused(*results, zx, zy);  // TODO
+            }
 
-            const bool underflow =
-                (HdrCompareToBothPositiveReducedLE(zx_reduced, small_float) ||
-                    HdrCompareToBothPositiveReducedLE(zy_reduced, small_float) ||
-                    HdrCompareToBothPositiveReducedLE(norm, small_float));
-            results->SetBad(underflow);
-        }
+            if constexpr (PExtras == PerturbExtras::Bad) {
+                const T norm = HdrReduce((double_zx * double_zx + double_zy * double_zy) * glitch);
+                const auto zx_reduced = HdrReduce(HdrAbs((T)double_zx));
+                const auto zy_reduced = HdrReduce(HdrAbs((T)double_zy));
 
-        // Note: not T.
-        const SubType tempZX = (SubType)double_zx + (SubType)cx;
-        const SubType tempZY = (SubType)double_zy + (SubType)cy;
-        const SubType zn_size = tempZX * tempZX + tempZY * tempZY;
+                const bool underflow =
+                    (HdrCompareToBothPositiveReducedLE(zx_reduced, small_float) ||
+                        HdrCompareToBothPositiveReducedLE(zy_reduced, small_float) ||
+                        HdrCompareToBothPositiveReducedLE(norm, small_float));
+                results->SetBad(underflow);
+            }
 
-        if constexpr (Periodicity) {
-            HdrReduce(dzdcX);
-            auto dzdcX1 = HdrAbs(dzdcX);
+            // Note: not T.
+            const SubType tempZX = (SubType)double_zx + (SubType)cx;
+            const SubType tempZY = (SubType)double_zy + (SubType)cy;
+            zn_size = tempZX * tempZX + tempZY * tempZY;
 
-            HdrReduce(dzdcY);
-            auto dzdcY1 = HdrAbs(dzdcY);
+            if constexpr (Periodicity) {
+                HdrReduce(dzdcX);
+                auto dzdcX1 = HdrAbs(dzdcX);
 
-            HdrReduce(double_zx);
-            auto zxCopy1 = HdrAbs(double_zx);
+                HdrReduce(dzdcY);
+                auto dzdcY1 = HdrAbs(dzdcY);
 
-            HdrReduce(double_zy);
-            auto zyCopy1 = HdrAbs(double_zy);
+                HdrReduce(double_zx);
+                auto zxCopy1 = HdrAbs(double_zx);
 
-            T n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
+                HdrReduce(double_zy);
+                auto zyCopy1 = HdrAbs(double_zy);
 
-            T r0 = HdrMaxPositiveReduced(dzdcX1, dzdcY1);
-            auto n3 = results->GetMaxRadius() * r0 * HighTwo; // TODO optimize HDRFloat *2.
-            HdrReduce(n3);
+                T n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
 
-            if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
-                if constexpr (BenchmarkState == BenchmarkMode::Disable) {
-                    periodicity_should_break = true;
+                T r0 = HdrMaxPositiveReduced(dzdcX1, dzdcY1);
+                auto n3 = results->GetMaxRadius() * r0 * HighTwo; // TODO optimize HDRFloat *2.
+                HdrReduce(n3);
+
+                if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
+                    if constexpr (BenchmarkState == BenchmarkMode::Disable) {
+                        periodicity_should_break = true;
+                    }
+                }
+                else {
+                    auto dzdcXOrig = dzdcX;
+                    dzdcX = HighTwo * (double_zx * dzdcX - double_zy * dzdcY) + HighOne;
+                    dzdcY = HighTwo * (double_zx * dzdcY + double_zy * dzdcXOrig);
                 }
             }
-            else {
-                auto dzdcXOrig = dzdcX;
-                dzdcX = HighTwo * (double_zx * dzdcX - double_zy * dzdcY) + HighOne;
-                dzdcY = HighTwo * (double_zx * dzdcY + double_zy * dzdcXOrig);
-            }
+        }
+        else {
+            zn_size = 0;
         }
 
         zy = zx * 2 * zy + cy;
@@ -1821,6 +1835,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecis
 
                 if (!quitting) {
                     zy_sq_orig = threadZydata->zy_sq;
+                    double_zy_last = threadZydata->zy_low;
 
                     // Restart right away!
                     threadZydata->zy = zy;
@@ -1840,6 +1855,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecis
                     std::memory_order_release)) {
                 done1 = true;
 
+                double_zx_last = threadZxdata->zx_low;
                 PrefetchHighPrec(threadZxdata->zx_sq);
             }
 

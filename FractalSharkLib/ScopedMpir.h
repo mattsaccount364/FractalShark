@@ -12,8 +12,13 @@ struct ScopedMPIRAllocators {
     ScopedMPIRAllocators();
     ~ScopedMPIRAllocators();
 
+    void InitScopedAllocators();
+
+    static void InitTls();
+    static void ShutdownTls();
+
     static constexpr size_t NumBlocks = 4;
-    static constexpr size_t BytesPerBlock = 1024 * 1024;
+    static constexpr size_t BytesPerBlock = 1 * 1024 * 1024;
 
     thread_local static uint8_t Allocated[NumBlocks][BytesPerBlock];
     thread_local static size_t AllocatedSize[NumBlocks];

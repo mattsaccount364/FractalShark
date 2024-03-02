@@ -26,5 +26,15 @@
 #include <tchar.h>
 #include <stdio.h>
 
+#include <math.h>
+#include <io.h>
+#include <time.h>
+
+#include <locale>
+#include <codecvt>
+
+#include <GL/gl.h>      /* OpenGL header file */
+#include <GL/glu.h>     /* OpenGL utilities header file */
+
 // Local Header Files
 #include "OpenGLContext.h"

@@ -1,15 +1,4 @@
 #include "stdafx.h"
-#include <windows.h>
-#include <stdio.h>
-#include <math.h>
-#include <io.h>
-#include <time.h>
-
-#include <locale>
-#include <codecvt>
-
-#include <GL/gl.h>      /* OpenGL header file */
-#include <GL/glu.h>     /* OpenGL utilities header file */
 
 #include "Fractal.h"
 #include "FractalNetwork.h"

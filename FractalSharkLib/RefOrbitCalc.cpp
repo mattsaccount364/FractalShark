@@ -564,6 +564,12 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
     InitResults<IterType, T, decltype(*results), PExtras, Reuse>(*results, cx, cy);
     ScopedMPIRAllocators allocators{};
 
+    if constexpr (Reuse != RefOrbitCalc::ReuseMode::SaveForReuse) {
+        allocators.InitScopedAllocators();
+        allocators.InitTls();
+    }
+
+    {
     HighPrecision zx, zy;
     HighPrecision zx2, zy2;
     IterTypeFull i;
@@ -679,6 +685,11 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
 
     results->CompleteResults<PExtras, Reuse>();
     m_GuessReserveSize = results->GetCountOrbitEntries();
+    }
+
+    if constexpr (Reuse != RefOrbitCalc::ReuseMode::SaveForReuse) {
+        allocators.ShutdownTls();
+    }
 }
 
 template<
@@ -1554,6 +1565,12 @@ void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecis
     InitResults<IterType, T, decltype(*results), PExtras, Reuse>(*results, cx, cy);
     ScopedMPIRAllocators allocators{};
 
+    if constexpr (Reuse != RefOrbitCalc::ReuseMode::SaveForReuse) {
+        allocators.InitScopedAllocators();
+        allocators.InitTls();
+    }
+
+    {
     HighPrecision zx, zy;
 
     T dzdcX = T{ 1.0 };
@@ -1591,6 +1608,8 @@ void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecis
     memset(ThreadReusedMemory, 0, sizeof(*ThreadReusedMemory));
 
     auto ThreadSqZx = [](ThreadPtrs<ThreadZxData>* ThreadMemory) {
+        ScopedMPIRAllocators::InitTls();
+
         for (;;) {
             ThreadZxData* expected = ThreadMemory->In.load();
             ThreadZxData* ok = nullptr;
@@ -1603,9 +1622,13 @@ void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecis
             // Give result back.
             CheckFinishCriteria;
         }
-        };
+
+        ScopedMPIRAllocators::ShutdownTls();
+    };
 
     auto ThreadSqZy = [](ThreadPtrs<ThreadZyData>* ThreadMemory) {
+        ScopedMPIRAllocators::InitTls();
+
         for (;;) {
             ThreadZyData* expected = ThreadMemory->In.load();
             ThreadZyData* ok = nullptr;
@@ -1618,7 +1641,9 @@ void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecis
             // Give result back.
             CheckFinishCriteria;
         }
-        };
+
+        ScopedMPIRAllocators::ShutdownTls();
+    };
 
     auto ThreadReused = [&](ThreadPtrs<ThreadReusedData>* ThreadMemory) {
         for (;;) {
@@ -1632,7 +1657,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecis
             // Give result back.
             CheckFinishCriteria;
         }
-        };
+    };
 
     auto* threadZxdata = (ThreadZxData*)_aligned_malloc(sizeof(ThreadZxData), 64);
     auto* threadZydata = (ThreadZyData*)_aligned_malloc(sizeof(ThreadZyData), 64);
@@ -1865,6 +1890,11 @@ void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecis
 
     results->CompleteResults<PExtras, Reuse>();
     m_GuessReserveSize = results->GetCountOrbitEntries();
+    }
+
+    if constexpr (Reuse != RefOrbitCalc::ReuseMode::SaveForReuse) {
+        allocators.ShutdownTls();
+    }
 }
 
 

@@ -1,3 +1,5 @@
+#include "stdafx.h"
+
 #include "ScopedMpir.h"
 #include "HighPrecision.h"
 
@@ -5,6 +7,51 @@ thread_local uint8_t ScopedMPIRAllocators::Allocated[NumBlocks][BytesPerBlock];
 thread_local size_t ScopedMPIRAllocators::AllocatedSize[NumBlocks];
 thread_local size_t ScopedMPIRAllocators::AllocatedIndex = 0;
 thread_local size_t ScopedMPIRAllocators::AllocationsAndFrees[NumBlocks];
+
+ScopedMPIRAllocators::ScopedMPIRAllocators() :
+    ExistingMalloc{},
+    ExistingRealloc{},
+    ExistingFree{} {
+}
+
+ScopedMPIRAllocators::~ScopedMPIRAllocators() {
+    if (ExistingMalloc == nullptr) {
+        return;
+    }
+
+    mp_set_memory_functions(
+        ExistingMalloc,
+        ExistingRealloc,
+        ExistingFree);
+}
+
+void ScopedMPIRAllocators::InitScopedAllocators() {
+    mp_get_memory_functions(
+        &ExistingMalloc,
+        &ExistingRealloc,
+        &ExistingFree);
+
+    mp_set_memory_functions(
+        NewMalloc,
+        NewRealloc,
+        NewFree);
+}
+
+void ScopedMPIRAllocators::InitTls() {
+    memset(Allocated, 0, sizeof(Allocated));
+    memset(AllocatedSize, 0, sizeof(AllocatedSize));
+    AllocatedIndex = 0;
+    memset(AllocationsAndFrees, 0, sizeof(AllocationsAndFrees));
+}
+
+void ScopedMPIRAllocators::ShutdownTls() {
+    // If there are any allocations left, we have a memory leak.
+    for (size_t i = 0; i < NumBlocks; i++) {
+        if (AllocationsAndFrees[i] != 0) {
+            DebugBreak();
+        }
+    }
+}
 
 void* ScopedMPIRAllocators::NewMalloc(size_t size) {
     const auto alignedSize = (size + 63) & ~63;
@@ -52,31 +99,6 @@ void ScopedMPIRAllocators::NewFree(void* ptr, size_t size) {
     const size_t index = offset / BytesPerBlock;
 
     AllocationsAndFrees[index]--;
-}
-
-ScopedMPIRAllocators::ScopedMPIRAllocators() {
-    memset(Allocated, 0, sizeof(Allocated));
-    memset(AllocatedSize, 0, sizeof(AllocatedSize));
-    AllocatedIndex = 0;
-    memset(AllocationsAndFrees, 0, sizeof(AllocationsAndFrees));
-
-
-    mp_get_memory_functions(
-        &ExistingMalloc,
-        &ExistingRealloc,
-        &ExistingFree);
-
-    mp_set_memory_functions(
-        NewMalloc,
-        NewRealloc,
-        NewFree);
-}
-
-ScopedMPIRAllocators::~ScopedMPIRAllocators() {
-    mp_set_memory_functions(
-        ExistingMalloc,
-        ExistingRealloc,
-        ExistingFree);
 }
 
 ScopedMPIRPrecision::ScopedMPIRPrecision(unsigned digits10) : saved_digits10(HighPrecision::thread_default_precision())

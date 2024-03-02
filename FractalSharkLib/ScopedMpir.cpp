@@ -1,21 +1,28 @@
-#include "ScopedMpfr.h"
+#include "ScopedMpir.h"
 #include "HighPrecision.h"
 
-thread_local uint8_t scoped_mpfr_allocators::Allocated[NumBlocks][BytesPerBlock];
-thread_local size_t scoped_mpfr_allocators::AllocatedSize[NumBlocks];
-thread_local size_t scoped_mpfr_allocators::AllocatedIndex = 0;
-thread_local size_t scoped_mpfr_allocators::AllocationsAndFrees[NumBlocks];
+thread_local uint8_t ScopedMPIRAllocators::Allocated[NumBlocks][BytesPerBlock];
+thread_local size_t ScopedMPIRAllocators::AllocatedSize[NumBlocks];
+thread_local size_t ScopedMPIRAllocators::AllocatedIndex = 0;
+thread_local size_t ScopedMPIRAllocators::AllocationsAndFrees[NumBlocks];
 
-void* scoped_mpfr_allocators::NewMalloc(size_t size) {
+void* ScopedMPIRAllocators::NewMalloc(size_t size) {
     const auto alignedSize = (size + 63) & ~63;
+    size_t indexToAllocateAt = AllocatedSize[AllocatedIndex];
+
     if (AllocatedSize[AllocatedIndex] + alignedSize >= BytesPerBlock) {
         // Find the next block with no allocations:
         for (;;) {
             AllocatedIndex = (AllocatedIndex + 1) % NumBlocks;
             if (AllocationsAndFrees[AllocatedIndex] == 0) {
+                AllocatedSize[AllocatedIndex] = 0;
+                indexToAllocateAt = 0;
                 break;
             }
         }
+    }
+    else {
+        indexToAllocateAt = AllocatedSize[AllocatedIndex];
     }
 
     auto ret = &Allocated[AllocatedIndex][AllocatedSize[AllocatedIndex]];
@@ -27,14 +34,15 @@ void* scoped_mpfr_allocators::NewMalloc(size_t size) {
     return ret;
 }
 
-void* scoped_mpfr_allocators::NewRealloc(void* ptr, size_t old_size, size_t new_size) {
+void* ScopedMPIRAllocators::NewRealloc(void* ptr, size_t old_size, size_t new_size) {
     // This one is like new_malloc, but copy in the prior data.
     auto ret = NewMalloc(new_size);
-    memcpy(ret, ptr, old_size);
+    auto minimum_size = std::min(old_size, new_size);
+    memcpy(ret, ptr, minimum_size);
     return ret;
 }
 
-void scoped_mpfr_allocators::NewFree(void* ptr, size_t size) {
+void ScopedMPIRAllocators::NewFree(void* ptr, size_t size) {
     const auto alignedSize = (size + 63) & ~63;
 
     // Find offset relative to base of Allocated:
@@ -44,10 +52,15 @@ void scoped_mpfr_allocators::NewFree(void* ptr, size_t size) {
     const size_t index = offset / BytesPerBlock;
 
     AllocationsAndFrees[index]--;
-    AllocatedSize[index] -= alignedSize;
 }
 
-scoped_mpfr_allocators::scoped_mpfr_allocators() {
+ScopedMPIRAllocators::ScopedMPIRAllocators() {
+    memset(Allocated, 0, sizeof(Allocated));
+    memset(AllocatedSize, 0, sizeof(AllocatedSize));
+    AllocatedIndex = 0;
+    memset(AllocationsAndFrees, 0, sizeof(AllocationsAndFrees));
+
+
     mp_get_memory_functions(
         &ExistingMalloc,
         &ExistingRealloc,
@@ -59,39 +72,39 @@ scoped_mpfr_allocators::scoped_mpfr_allocators() {
         NewFree);
 }
 
-scoped_mpfr_allocators::~scoped_mpfr_allocators() {
+ScopedMPIRAllocators::~ScopedMPIRAllocators() {
     mp_set_memory_functions(
         ExistingMalloc,
         ExistingRealloc,
         ExistingFree);
 }
 
-scoped_mpfr_precision::scoped_mpfr_precision(unsigned digits10) : saved_digits10(HighPrecision::thread_default_precision())
+ScopedMPIRPrecision::ScopedMPIRPrecision(unsigned digits10) : saved_digits10(HighPrecision::thread_default_precision())
 {
     HighPrecision::default_precision(digits10);
 }
-scoped_mpfr_precision::~scoped_mpfr_precision()
+ScopedMPIRPrecision::~ScopedMPIRPrecision()
 {
     HighPrecision::default_precision(saved_digits10);
 }
-void scoped_mpfr_precision::reset(unsigned digits10)
+void ScopedMPIRPrecision::reset(unsigned digits10)
 {
     HighPrecision::default_precision(digits10);
 }
-void scoped_mpfr_precision::reset()
+void ScopedMPIRPrecision::reset()
 {
     HighPrecision::default_precision(saved_digits10);
 }
 
-scoped_mpfr_precision_options::scoped_mpfr_precision_options(boost::multiprecision::variable_precision_options opts) : saved_options(HighPrecision::thread_default_variable_precision_options())
+ScopedMPIRPrecisionOptions::ScopedMPIRPrecisionOptions(boost::multiprecision::variable_precision_options opts) : saved_options(HighPrecision::thread_default_variable_precision_options())
 {
     HighPrecision::thread_default_variable_precision_options(opts);
 }
-scoped_mpfr_precision_options::~scoped_mpfr_precision_options()
+ScopedMPIRPrecisionOptions::~ScopedMPIRPrecisionOptions()
 {
     HighPrecision::thread_default_variable_precision_options(saved_options);
 }
-void scoped_mpfr_precision_options::reset(boost::multiprecision::variable_precision_options opts)
+void ScopedMPIRPrecisionOptions::reset(boost::multiprecision::variable_precision_options opts)
 {
     HighPrecision::thread_default_variable_precision_options(opts);
 }

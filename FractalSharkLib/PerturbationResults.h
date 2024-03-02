@@ -16,7 +16,7 @@
 #include "Vectors.h"
 #include "Utilities.h"
 
-#include "ScopedMpfr.h"
+#include "ScopedMpir.h"
 
 std::wstring GetTimeAsString(size_t generation_number);
 
@@ -464,7 +464,7 @@ public:
             metafile >> descriptor_string_junk;
             metafile >> prec;
 
-            scoped_mpfr_precision p{ prec };
+            ScopedMPIRPrecision p{ prec };
 
             std::string shiX;
             metafile >> descriptor_string_junk;
@@ -480,7 +480,7 @@ public:
             metafile >> descriptor_string_junk;
             metafile >> prec;
 
-            scoped_mpfr_precision p{prec};
+            ScopedMPIRPrecision p{prec};
 
             std::string shiY;
             metafile >> descriptor_string_junk;

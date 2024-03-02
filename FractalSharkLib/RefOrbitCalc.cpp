@@ -4,7 +4,7 @@
 #include "Fractal.h"
 #include "PerturbationResults.h"
 
-#include "ScopedMpfr.h"
+#include "ScopedMpir.h"
 
 #include <vector>
 #include <memory>
@@ -562,6 +562,7 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
     auto* results = PerturbationResultsArray[PerturbationResultsArray.size() - 1].get();
 
     InitResults<IterType, T, decltype(*results), PExtras, Reuse>(*results, cx, cy);
+    ScopedMPIRAllocators allocators{};
 
     HighPrecision zx, zy;
     HighPrecision zx2, zy2;
@@ -720,7 +721,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
 
     // TODO seems like we should be able to avoid all these annoying .precision calls below
     // via this mechanism.  Read the awful boost docs more...
-    scoped_mpfr_precision prec(AuthoritativeReuseExtraPrecision);
+    ScopedMPIRPrecision prec(AuthoritativeReuseExtraPrecision);
 
     InitResults<IterType, T, decltype(*results), PerturbExtras::Disable, ReuseMode::DontSaveForReuse>(*results, cx, cy);
 
@@ -900,8 +901,8 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
 
     // TODO seems like we should be able to avoid all these annoying .precision calls below
     // via this mechanism.  Read the awful boost docs more...
-    scoped_mpfr_precision prec(AuthoritativeReuseExtraPrecision);
-    scoped_mpfr_precision_options precOptions(boost::multiprecision::variable_precision_options::assume_uniform_precision);
+    ScopedMPIRPrecision prec(AuthoritativeReuseExtraPrecision);
+    ScopedMPIRPrecisionOptions precOptions(boost::multiprecision::variable_precision_options::assume_uniform_precision);
 
     InitResults<IterType, T, decltype(*results), PerturbExtras::Disable, ReuseMode::DontSaveForReuse>(*results, cx, cy);
     
@@ -980,7 +981,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     memset(ThreadZyMemory, 0, sizeof(*ThreadZyMemory));
 
     auto ThreadSqZx = [&](ThreadPtrs<ThreadZxData>* ThreadMemory) {
-        scoped_mpfr_precision_options precOptions(boost::multiprecision::variable_precision_options::assume_uniform_precision);
+        ScopedMPIRPrecisionOptions precOptions(boost::multiprecision::variable_precision_options::assume_uniform_precision);
         for (;;) {
             ThreadZxData* expected = ThreadMemory->In.load();
             ThreadZxData* ok = nullptr;
@@ -1003,7 +1004,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     };
 
     auto ThreadSqZy = [&](ThreadPtrs<ThreadZyData>* ThreadMemory) {
-        scoped_mpfr_precision_options precOptions(boost::multiprecision::variable_precision_options::assume_uniform_precision);
+        ScopedMPIRPrecisionOptions precOptions(boost::multiprecision::variable_precision_options::assume_uniform_precision);
         for (;;) {
             ThreadZyData* expected = ThreadMemory->In.load();
             ThreadZyData* ok = nullptr;
@@ -1550,13 +1551,13 @@ void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecis
     PerturbationResultsArray.push_back(std::move(newArray));
     auto* results = PerturbationResultsArray[PerturbationResultsArray.size() - 1].get();
 
-    scoped_mpfr_allocators allocators{};
+    InitResults<IterType, T, decltype(*results), PExtras, Reuse>(*results, cx, cy);
+    ScopedMPIRAllocators allocators{};
+
     HighPrecision zx, zy;
 
     T dzdcX = T{ 1.0 };
     T dzdcY = T{ 0.0 };
-
-    InitResults<IterType, T, decltype(*results), PExtras, Reuse>(*results, cx, cy);
 
     const T small_float = T((SubType)1.1754944e-38);
     // Note: results->bad is not here.  See end of this function.

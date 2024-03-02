@@ -4,15 +4,15 @@
 #include <boost/multiprecision/gmp.hpp>
 #include <boost/multiprecision/number.hpp>
 
-struct scoped_mpfr_allocators {
+struct ScopedMPIRAllocators {
     void* (*ExistingMalloc) (size_t);
     void* (*ExistingRealloc) (void*, size_t, size_t);
     void (*ExistingFree) (void*, size_t);
 
-    scoped_mpfr_allocators();
-    ~scoped_mpfr_allocators();
+    ScopedMPIRAllocators();
+    ~ScopedMPIRAllocators();
 
-    static constexpr size_t NumBlocks = 8;
+    static constexpr size_t NumBlocks = 4;
     static constexpr size_t BytesPerBlock = 1024 * 1024;
 
     thread_local static uint8_t Allocated[NumBlocks][BytesPerBlock];
@@ -26,19 +26,19 @@ private:
     static void NewFree(void* ptr, size_t size);
 };
 
-struct scoped_mpfr_precision
+struct ScopedMPIRPrecision
 {
     unsigned saved_digits10;
-    scoped_mpfr_precision(unsigned digits10);
-    ~scoped_mpfr_precision();
+    ScopedMPIRPrecision(unsigned digits10);
+    ~ScopedMPIRPrecision();
     void reset(unsigned digits10);
     void reset();
 };
 
-struct scoped_mpfr_precision_options
+struct ScopedMPIRPrecisionOptions
 {
     boost::multiprecision::variable_precision_options saved_options;
-    scoped_mpfr_precision_options(boost::multiprecision::variable_precision_options opts);
-    ~scoped_mpfr_precision_options();
+    ScopedMPIRPrecisionOptions(boost::multiprecision::variable_precision_options opts);
+    ~ScopedMPIRPrecisionOptions();
     void reset(boost::multiprecision::variable_precision_options opts);
 };

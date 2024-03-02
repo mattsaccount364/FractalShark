@@ -242,7 +242,6 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
     // of threads.  If the work is large, we want to use a lot of threads.
     // The work is expected to be large if the number of iterations is large.
     constexpr size_t WorkThreshholdForThreads = 50000;
-    const auto MaxThreadCount = std::thread::hardware_concurrency();
 
     size_t ThreadCount = maxRefIteration / WorkThreshholdForThreads;
     if (ThreadCount > std::thread::hardware_concurrency()) {

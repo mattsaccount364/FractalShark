@@ -306,6 +306,7 @@ BEGIN
         END
         MENUITEM SEPARATOR
         MENUITEM "Show Rendering Details",      IDM_CURPOS
+        MENUITEM "Benchmark (5x, fiull recalc)", IDM_BENCHMARK
         POPUP "Save"
         BEGIN
             MENUITEM "Save Location...",            IDM_SAVELOCATION

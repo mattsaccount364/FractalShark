@@ -987,6 +987,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 MenuGetCurPos(hWnd);
                 break;
             }
+            case IDM_BENCHMARK:
+            {
+                FractalTest test{ *gFractal };
+                test.Benchmark();
+                break;
+            }
             // Save/load current location
             case (IDM_SAVELOCATION):
             {

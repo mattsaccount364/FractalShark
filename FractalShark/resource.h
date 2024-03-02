@@ -353,6 +353,7 @@
 #define IDM_LA_SETTINGS_1               33159
 #define IDM_LA_SETTINGS_2               33160
 #define IDM_LA_SETTINGS_3               33161
+#define ID_POPUP_BENCHMARK              33162
 #define IDM_VIEW1                       34001
 #define IDM_VIEW2                       34002
 #define IDM_VIEW3                       34003
@@ -390,7 +391,7 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        131
-#define _APS_NEXT_COMMAND_VALUE         33162
+#define _APS_NEXT_COMMAND_VALUE         33163
 #define _APS_NEXT_CONTROL_VALUE         1000
 #define _APS_NEXT_SYMED_VALUE           110
 #endif

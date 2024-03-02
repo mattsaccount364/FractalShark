@@ -195,3 +195,59 @@ void FractalTest::BasicTest() {
     m_Fractal.CalcFractal(false);
 }
 
+void FractalTest::Benchmark() {
+    static constexpr size_t NumIterations = 5;
+
+    if (m_Fractal.GetRepaint() == false) {
+        m_Fractal.ToggleRepainting();
+    }
+
+    std::vector<size_t> overallTimes;
+    std::vector<size_t> perPixelTimes;
+    std::vector<size_t> refOrbitTimes;
+    std::vector<size_t> LAGenerationTimes;
+
+    for (size_t i = 0; i < NumIterations; i++) {
+        m_Fractal.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+        m_Fractal.ForceRecalc();
+        m_Fractal.CalcFractal(false);
+
+        uint64_t PeriodMaybeZero;
+        uint64_t CompressedIters;
+        uint64_t UncompressedIters;
+        int32_t CompressionErrorExp;
+        uint64_t OrbitMilliseconds;
+        uint64_t LAMilliseconds;
+        m_Fractal.GetSomeDetails(
+            PeriodMaybeZero,
+            CompressedIters,
+            UncompressedIters,
+            CompressionErrorExp,
+            OrbitMilliseconds,
+            LAMilliseconds);
+
+        overallTimes.push_back(m_Fractal.GetBenchmarkOverall().GetDeltaInMs());
+        perPixelTimes.push_back(m_Fractal.GetBenchmarkPerPixel().GetDeltaInMs());
+        refOrbitTimes.push_back(OrbitMilliseconds);
+        LAGenerationTimes.push_back(LAMilliseconds);
+    }
+
+    // Write benchmarkData to the file BenchmarkResults.txt.  Truncate
+    // the file if it already exists.
+    std::ofstream file("BenchmarkResults.txt", std::ios::binary | std::ios::trunc);
+
+    auto printVectorWithDescription = [&](const std::string& description, const std::vector<size_t>& vec) {
+        file << description << "\r\n";
+        for (size_t i = 0; i < NumIterations; i++) {
+            file << vec[i] << "\r\n";
+        }
+        file << "\r\n";
+    };
+
+    printVectorWithDescription("Overall times (ms)", overallTimes);
+    printVectorWithDescription("Per pixel times (ms)", perPixelTimes);
+    printVectorWithDescription("RefOrbit times (ms)", refOrbitTimes);
+    printVectorWithDescription("LA generation times (ms)", LAGenerationTimes);
+
+    file.close();
+}

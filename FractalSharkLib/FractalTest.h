@@ -9,6 +9,10 @@ class FractalTest {
 public:
     FractalTest(Fractal &fractal);
     
+    void BasicTest();
+    void Benchmark();
+
+private:
     void BasicTestInternal(size_t& test_index);
     void BasicOneTest(
         size_t view_index,
@@ -16,8 +20,6 @@ public:
         const wchar_t* dir_name,
         const wchar_t* test_prefix,
         RenderAlgorithm alg_to_test);
-    void BasicTest();
 
-private:
     Fractal &m_Fractal;
 };

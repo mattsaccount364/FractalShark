@@ -147,6 +147,24 @@ private:
     template<typename IterType, class T, PerturbExtras PExtras>
     void DrawPerturbationResultsHelper();
 
+    class ScopedAffinity {
+    public:
+        ScopedAffinity(
+            RefOrbitCalc& refOrbitCalc,
+            HANDLE thread1,
+            HANDLE thread2,
+            HANDLE thread3);
+        ~ScopedAffinity();
+
+        void SetCpuAffinityAsNeeded();
+
+    private:
+        RefOrbitCalc& m_RefOrbitCalc;
+        HANDLE m_Thread1;
+        HANDLE m_Thread2;
+        HANDLE m_Thread3;
+    };
+
     PerturbationAlg m_PerturbationAlg;
     Fractal& m_Fractal;
 
@@ -159,6 +177,9 @@ private:
 
     size_t GetNextGenerationNumber();
     size_t m_GenerationNumber;
+
+    size_t m_NumCpuCores;
+    bool m_HyperthreadingEnabled;
 
     template<typename IterType, PerturbExtras PExtras>
     struct Container {

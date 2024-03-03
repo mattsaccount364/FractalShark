@@ -271,10 +271,10 @@ BEGIN
             MENUITEM "Single Thread (ST)",          IDM_PERTURBATION_SINGLETHREAD
             MENUITEM "Multi Thread (MT)",           IDM_PERTURBATION_MULTITHREAD
             MENUITEM "ST + Periodicity",            IDM_PERTURBATION_SINGLETHREAD_PERIODICITY
-            MENUITEM "MT3 + Periodicity",           IDM_PERTURBATION_MULTITHREAD2_PERIODICITY
+            MENUITEM "MT2 + Periodicity",           IDM_PERTURBATION_MULTITHREAD2_PERIODICITY
             MENUITEM "MT2 + Periodicity + Perturb ST", IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_STMED
             MENUITEM "MT2 + Periodicity + Perturb MT", IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_MTMED
-            MENUITEM "MT5 + Periodicity",           IDM_PERTURBATION_MULTITHREAD5_PERIODICITY
+            MENUITEM "MT5 + Periodicity",           IDM_PERTURBATION_MULTITHREAD5_PERIODICITY, INACTIVE
             MENUITEM SEPARATOR
             MENUITEM "Enable Auto-Save Orbit (file per point)", IDM_PERTURB_AUTOSAVE_ON
             MENUITEM "Enable Auto-Save Orbit (delete when done)", IDM_PERTURB_AUTOSAVE_ON_DELETE
@@ -306,7 +306,7 @@ BEGIN
         END
         MENUITEM SEPARATOR
         MENUITEM "Show Rendering Details",      IDM_CURPOS
-        MENUITEM "Benchmark (5x, fiull recalc)", IDM_BENCHMARK
+        MENUITEM "Benchmark (5x, full recalc)", IDM_BENCHMARK
         POPUP "Save"
         BEGIN
             MENUITEM "Save Location...",            IDM_SAVELOCATION

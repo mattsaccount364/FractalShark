@@ -43,7 +43,7 @@ void check_size() {
 
 
 // Amount of extra precision before forcing a full-precision recalculation
-constexpr size_t AuthoritativeMinExtraPrecision = 50;
+constexpr size_t AuthoritativeMinExtraPrecision = 25;
 
 // Amount of precision used for medium-precision reference orbit.
 constexpr size_t AuthoritativeReuseExtraPrecision = 100;

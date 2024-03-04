@@ -24,8 +24,6 @@
     <ClInclude Include="Exceptions.h" />
     <ClInclude Include="FloatComplex.h" />
     <ClInclude Include="Fractal.h" />
-    <ClInclude Include="FractalNetwork.h" />
-    <ClInclude Include="FractalSetupData.h" />
     <ClInclude Include="FractalTest.h" />
     <ClInclude Include="GPU_BLAS.h" />
     <ClInclude Include="GPU_LAInfoDeep.h" />
@@ -61,15 +59,12 @@
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="Utilities.h" />
     <ClInclude Include="Vectors.h" />
-    <ClInclude Include="WPngImage\lodepng.h" />
     <ClInclude Include="WPngImage\WPngImage.hh" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="BenchmarkData.cpp" />
     <ClCompile Include="BLAS.cpp" />
     <ClCompile Include="Fractal.cpp" />
-    <ClCompile Include="FractalNetwork.cpp" />
-    <ClCompile Include="FractalSetupData.cpp" />
     <ClCompile Include="FractalTest.cpp" />
     <ClCompile Include="HDRFloat.cpp" />
     <ClCompile Include="ItersMemoryContainer.cpp" />
@@ -82,7 +77,6 @@
     <ClCompile Include="ScopedMpir.cpp" />
     <ClCompile Include="Utilities.cpp" />
     <ClCompile Include="Vectors.cpp" />
-    <ClCompile Include="WPngImage\lodepng.cpp" />
     <ClCompile Include="WPngImage\WPngImage.cc" />
   </ItemGroup>
   <PropertyGroup Label="Globals">

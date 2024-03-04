@@ -80,7 +80,7 @@ void PngParallelSave::Run() {
         }
     }
     else {
-        size_t i = 0;
+        int i = 0;
         do {
             wchar_t temp[512];
             wsprintf(temp, L"output%05d", i);

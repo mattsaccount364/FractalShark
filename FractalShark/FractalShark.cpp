@@ -210,9 +210,7 @@ HWND InitInstance(HINSTANCE hInstance, int nCmdShow)
     RECT rt;
     GetClientRect(hWnd, &rt);
 
-    FractalSetupData setupData;
-    setupData.Load();
-    gFractal = new Fractal(&setupData, rt.right, rt.bottom, hWnd, false);
+    gFractal = new Fractal(rt.right, rt.bottom, hWnd, false);
 
     // Display!
     ShowWindow(hWnd, nCmdShow);
@@ -231,7 +229,6 @@ void UnInit(void)
 {
     DestroyMenu(gPopupMenu);
     delete gFractal;
-    WSACleanup();
 }
 
 void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/) {

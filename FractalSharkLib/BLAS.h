@@ -12,14 +12,14 @@ template<typename IterType, class T, PerturbExtras PExtras = PerturbExtras::Disa
 class BLAS {
 private:
     static constexpr size_t BLA_BITS = 23;
-    static constexpr size_t BLA_STARTING_LEVEL = 3;
+    static constexpr int32_t BLA_STARTING_LEVEL = 3;
 
 public:
     size_t m_M;
     size_t m_L;
     std::vector<std::vector<BLA<T>>> m_B;
     int32_t m_LM2;//Level -1 is not attainable due to Zero R
-    static constexpr size_t m_FirstLevel = BLA_STARTING_LEVEL - 1;
+    static constexpr int32_t m_FirstLevel = BLA_STARTING_LEVEL - 1;
 
     BLAS(PerturbationResults<IterType, T, PExtras>& results);
 

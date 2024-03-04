@@ -59,9 +59,9 @@ public:
 
     GrowableVector(const GrowableVector& other) = delete;
     GrowableVector& operator=(const GrowableVector& other) = delete;
-    GrowableVector(GrowableVector&& other);
+    GrowableVector(GrowableVector&& other) noexcept;
 
-    GrowableVector& operator=(GrowableVector&& other);
+    GrowableVector& operator=(GrowableVector&& other) noexcept;
 
     // The default constructor creates an empty vector.
     GrowableVector();

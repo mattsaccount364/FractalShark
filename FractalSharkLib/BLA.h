@@ -20,7 +20,7 @@ protected:
 
 public:
 
-    BLA() = default;
+    BLA();
 
     CUDA_CRAP constexpr BLA(T r2,
                             T RealA,

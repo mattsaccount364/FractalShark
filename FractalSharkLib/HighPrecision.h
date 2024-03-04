@@ -2,9 +2,13 @@
 
 #ifndef __CUDACC__
 
+#include <codeanalysis\warnings.h>
+#pragma warning( push )
+#pragma warning ( disable : ALL_CODE_ANALYSIS_WARNINGS )
 #include <boost/multiprecision/cpp_dec_float.hpp>
 #include <boost/multiprecision/gmp.hpp>
 #include <boost/multiprecision/number.hpp>
+#pragma warning( pop )
 
 // THIS IS SO STUPID BUT I DON'T KNOW HOW TO FIX IT
 // CAN WE REMOVE THIS IFDEF AND USE CONSTEXPR

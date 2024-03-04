@@ -39,7 +39,6 @@ CUDA_CRAP void InitStatics();
 template<class T, class TExp = int32_t>
 class LMembers {
 public:
-    LMembers() = default;
     MYALIGN T mantissa;
     MYALIGN TExp exp;
 };
@@ -47,7 +46,6 @@ public:
 template<class T, class TExp = int32_t>
 class RMembers {
 public:
-    RMembers() = default;
     MYALIGN TExp exp;
     MYALIGN T mantissa;
 };

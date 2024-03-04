@@ -1,8 +1,12 @@
 #pragma once
 
+#include <codeanalysis\warnings.h>
+#pragma warning( push )
+#pragma warning ( disable : ALL_CODE_ANALYSIS_WARNINGS )
 #include <boost/multiprecision/cpp_dec_float.hpp>
 #include <boost/multiprecision/gmp.hpp>
 #include <boost/multiprecision/number.hpp>
+#pragma warning( pop )
 
 // Bump allocator that bumps downwards
 struct ScopedMPIRAllocators {

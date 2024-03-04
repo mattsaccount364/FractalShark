@@ -8,7 +8,14 @@
 template<typename IterType, class T, PerturbExtras PExtras>
 BLAS<IterType, T, PExtras>::BLAS(PerturbationResults<IterType, T, PExtras>& results) :
     m_PerturbationResults{ results },
-    m_CompressionHelper{ std::make_unique<CompressionHelper<IterType, T, PExtras>>(results) } {
+    m_CompressionHelper{ std::make_unique<CompressionHelper<IterType, T, PExtras>>(results) },
+    m_OldChunk{},
+    m_M{},
+    m_L{},
+    m_B{},
+    m_LM2{},
+    m_ElementsPerLevel{}
+{
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>

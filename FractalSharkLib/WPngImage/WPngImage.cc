@@ -3082,7 +3082,13 @@ bool WPngImage::IOStatus::printErrorMsg(std::ostream& os) const
 // lodepng calls
 //============================================================================
 #if !WPNGIMAGE_USE_LIBPNG
+
+#include <codeanalysis\warnings.h>
+#pragma warning( push )
+#pragma warning ( disable : ALL_CODE_ANALYSIS_WARNINGS )
 #include "lodepng.h"
+#pragma warning( pop )
+
 #include <cstdio>
 #include <cerrno>
 #include <cassert>

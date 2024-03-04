@@ -18,9 +18,6 @@ public:
         ::HDRFloatComplex<SubType>,
         ::FloatComplex<SubType>>::type;
 
-    CUDA_CRAP_BOTH ATResult() {
-    }
-
     FloatComplexT dz;
     FloatComplexT dzdc;
     FloatComplexT dzdc2;

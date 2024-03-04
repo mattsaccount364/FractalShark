@@ -17,8 +17,6 @@
 //      can see the progress, be notified when it is done, whatever.
 
 
-#include "FractalSetupData.h"
-#include "FractalNetwork.h"
 #include "GPU_Render.h"
 //#include "PerturbationResults.h"
 
@@ -52,7 +50,7 @@ public:
     friend class PngParallelSave;
     friend class BenchmarkData;
 
-    Fractal(FractalSetupData *setupData,
+    Fractal(
         int width,
         int height,
         HWND hWnd,
@@ -268,8 +266,6 @@ private:
     template<typename IterType, class T>
     void CalcGpuFractal(bool MemoryOnly);
 
-    void CalcNetworkFractal(bool MemoryOnly);
-
     template<typename IterType>
     void CalcCpuPerturbationFractal(bool MemoryOnly);
 
@@ -310,9 +306,6 @@ private:
     std::vector<std::unique_ptr<DrawThreadSync>> m_DrawThreads;
 
     std::vector<std::unique_ptr<PngParallelSave>> m_FractalSavesInProgress;
-
-    // Holds some customizations the user can make.  Saves/Loads from disk
-    FractalSetupData m_SetupData;
 
     // Defaults
     static constexpr IterTypeFull DefaultIterations = 256 * 32;
@@ -398,13 +391,6 @@ private:
     static constexpr size_t BrokenMaxFractalSize = 1; // TODO
     BYTE m_ProcessPixelRow[BrokenMaxFractalSize];
 
-    // Network member variables
-    FractalNetwork *m_ClientMainNetwork[MAXSERVERS], *m_ClientSubNetwork[MAXSERVERS];
-    FractalNetwork *m_ServerMainNetwork, *m_ServerSubNetwork;
-    char m_NetworkRender;
-    HANDLE m_ServerMainThread;
-    HANDLE m_ServerSubThread;
-    
     // Reference compression
     int32_t m_CompressionExp;
     float m_CompressionError;

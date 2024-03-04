@@ -3,6 +3,10 @@
 ////////////////////////////////////////////////////////////////////////////////////////
 
 template<class T>
+BLA<T>::BLA() : r2(0), Ax(0), Ay(0), Bx(0), By(0), l(0) {
+}
+
+template<class T>
 CUDA_CRAP constexpr BLA<T>::BLA(T r2, T RealA, T ImagA, T RealB, T ImagB, int l)
     : Ax(RealA),
     Ay(ImagA),

@@ -50,7 +50,7 @@ bool GrowableVector<EltT>::ValidFile() const {
 }
 
 template<class EltT>
-GrowableVector<EltT>::GrowableVector(GrowableVector<EltT>&& other) :
+GrowableVector<EltT>::GrowableVector(GrowableVector<EltT>&& other) noexcept :
     m_FileHandle{ other.m_FileHandle },
     m_MappedFile{ other.m_MappedFile },
     m_UsedSizeInElts{ other.m_UsedSizeInElts },
@@ -73,7 +73,7 @@ GrowableVector<EltT>::GrowableVector(GrowableVector<EltT>&& other) :
 }
 
 template<class EltT>
-GrowableVector<EltT>& GrowableVector<EltT>::operator=(GrowableVector<EltT>&& other) {
+GrowableVector<EltT>& GrowableVector<EltT>::operator=(GrowableVector<EltT>&& other) noexcept {
     m_FileHandle = other.m_FileHandle;
     m_MappedFile = other.m_MappedFile;
     m_UsedSizeInElts = other.m_UsedSizeInElts;

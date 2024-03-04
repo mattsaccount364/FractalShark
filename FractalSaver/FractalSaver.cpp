@@ -7,7 +7,6 @@
 #include "time.h"
 
 #include "Fractal.h"
-#include "FractalSetupData.h"
 
 #include <GL/gl.h>			/* OpenGL header file */
 #include <GL/glu.h>			/* OpenGL utilities header file */
@@ -44,11 +43,6 @@ int APIENTRY WinMain (HINSTANCE hInstance,
   // Hide the cursor
   ShowCursor (FALSE);
 
-  // Winsock
-  WSADATA info;
-  if (WSAStartup (MAKEWORD (1, 1), &info) != 0)
-  { MessageBox (nullptr, L"Cannot initialize WinSock!", L"WSAStartup", MB_OK | MB_APPLMODAL); }
-
   // Initialize global strings
   MyRegisterClass (hInstance);
 
@@ -75,9 +69,6 @@ int APIENTRY WinMain (HINSTANCE hInstance,
 
   // Show the cursor
   ShowCursor (TRUE);
-
-  // Cleanup Winsock
-  WSACleanup ();
 
   // Cleanup the secondary drawing thread.
   gTimeToExit = true;
@@ -226,18 +217,11 @@ unsigned long WINAPI DrawingThread (void *)
 
   glResetViewDim (rt.right, rt.bottom);
 
-  FractalSetupData gSetupData;
-  gSetupData.Load ();
-
   Fractal *gFractal = nullptr;
-  gFractal = new Fractal (&gSetupData, rt.right, rt.bottom, gHWnd, true);
+  gFractal = new Fractal (rt.right, rt.bottom, gHWnd, true);
 
   // Autozoom
-  bool gAutoZoomDone;
-  if (gSetupData.m_SSAutoZoom == 'y')
-  { gAutoZoomDone = false; }
-  else
-  { gAutoZoomDone = true; }
+  bool gAutoZoomDone = false;
 
   RECT nextView;
   nextView.top = -1;
@@ -246,7 +230,7 @@ unsigned long WINAPI DrawingThread (void *)
   nextView.right = -1;
  
   for (;;)
-  { if (gSetupData.m_SSAutoZoom == 'y' && gAutoZoomDone == false)
+  { if (gAutoZoomDone == false)
     { gFractal->ApproachTarget ();
       gAutoZoomDone = true;
     }

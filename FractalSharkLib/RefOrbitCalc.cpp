@@ -980,8 +980,13 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     zy = cy;
 
     struct ThreadZxData {
-        ThreadZxData(uint32_t precNum) {
-            ReferenceIteration = 0;
+        ThreadZxData(uint32_t precNum) :
+            DeltaSubNX{},
+            ReferenceIteration{},
+            DeltaSubNXOrig{},
+            DeltaSubNYOrig{},
+            DeltaSub0X{} {
+
             DeltaSubNX.precision(precNum);
         }
 
@@ -993,8 +998,13 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     };
 
     struct ThreadZyData {
-        ThreadZyData(uint32_t precNum) {
-            ReferenceIteration = 0;
+        ThreadZyData(uint32_t precNum) :
+            DeltaSubNY{},
+            ReferenceIteration{},
+            DeltaSubNXOrig{},
+            DeltaSubNYOrig{},
+            DeltaSub0Y{} {
+        
             DeltaSubNY.precision(precNum);
         }
 
@@ -1007,10 +1017,18 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
 
     auto* ThreadZxMemory = (ThreadPtrs<ThreadZxData> *)
         _aligned_malloc(sizeof(ThreadPtrs<ThreadZxData>), 64);
+    if (ThreadZxMemory == nullptr) {
+        throw std::bad_alloc();
+    }
+
     memset(ThreadZxMemory, 0, sizeof(*ThreadZxMemory));
 
     auto* ThreadZyMemory = (ThreadPtrs<ThreadZyData> *)
         _aligned_malloc(sizeof(ThreadPtrs<ThreadZyData>), 64);
+    if (ThreadZyMemory == nullptr) {
+        throw std::bad_alloc();
+    }
+        
     memset(ThreadZyMemory, 0, sizeof(*ThreadZyMemory));
 
     auto ThreadSqZx = [&](ThreadPtrs<ThreadZxData>* ThreadMemory) {
@@ -1290,14 +1308,26 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
 
         auto* ThreadZxMemory = (ThreadPtrs<ThreadZxData> *)
             _aligned_malloc(sizeof(ThreadPtrs<ThreadZxData>), 64);
+        if (ThreadZxMemory == nullptr) {
+            throw std::bad_alloc();
+        }
+
         memset(ThreadZxMemory, 0, sizeof(*ThreadZxMemory));
 
         auto* ThreadZyMemory = (ThreadPtrs<ThreadZyData> *)
             _aligned_malloc(sizeof(ThreadPtrs<ThreadZyData>), 64);
+        if (ThreadZyMemory == nullptr) {
+            throw std::bad_alloc();
+        }
+
         memset(ThreadZyMemory, 0, sizeof(*ThreadZyMemory));
 
         auto* ThreadReusedMemory = (ThreadPtrs<ThreadReusedData> *)
             _aligned_malloc(sizeof(ThreadPtrs<ThreadReusedData>), 64);
+        if (ThreadReusedMemory == nullptr) {
+            throw std::bad_alloc();
+        }
+
         memset(ThreadReusedMemory, 0, sizeof(*ThreadReusedMemory));
 
         auto ThreadSqZx = [](ThreadPtrs<ThreadZxData>* ThreadMemory) {
@@ -1936,17 +1966,17 @@ PerturbationResults<IterType, DestT, DestEnableBad>* RefOrbitCalc::CopyUsefulPer
 }
 
 void RefOrbitCalc::ClearPerturbationResults(PerturbationResultType type) {
-    auto IsMarkedToDelete = [&](const auto& o) -> bool {
+    auto IsMarkedToDelete = [&](const auto& val) -> bool {
         // Erase results as needed.
         // Note: erase full results in dbl-float case -- we'll reconvert
         // the whole thing if needed from double/Hdrfloat<double> etc.
         if (type == PerturbationResultType::All ||
             (type == PerturbationResultType::MediumRes &&
-                o->GetAuthoritativePrecision() == 0) ||
+                val->GetAuthoritativePrecision() == 0) ||
             (type == PerturbationResultType::HighRes &&
-                o->GetAuthoritativePrecision() != 0) ||
+                val->GetAuthoritativePrecision() != 0) ||
             (type == PerturbationResultType::LAOnly &&
-                o->Is2X32)) {
+                val->Is2X32)) {
             return true;
         }
 

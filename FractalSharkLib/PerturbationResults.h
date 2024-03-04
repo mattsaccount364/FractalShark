@@ -928,7 +928,9 @@ public:
         zy{results.m_OrbitYLow},
         Two(2),
         CompressionError(static_cast<T>(std::pow(10, CompressionErrorExp))),
+        CompressionErrorExp{CompressionErrorExp},
         CurCompressedIndex{} {
+
         // This code can run even if compression is disabled, but it doesn't matter.
         results.m_CompressionErrorExp = CompressionErrorExp;
     }

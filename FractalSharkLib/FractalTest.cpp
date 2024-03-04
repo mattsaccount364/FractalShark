@@ -1,3 +1,4 @@
+#include "stdafx.h"
 #include "FractalTest.h"
 
 #include "Fractal.h"

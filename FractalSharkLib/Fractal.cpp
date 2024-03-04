@@ -1,8 +1,6 @@
 #include "stdafx.h"
 
 #include "Fractal.h"
-#include "FractalNetwork.h"
-#include "FractalSetupData.h"
 //#include "CBitmapWriter.h"
 
 #include "BLAS.h"
@@ -26,7 +24,7 @@
 
 void DefaultOutputMessage(const wchar_t *, ...);
 
-Fractal::Fractal(FractalSetupData* setupData,
+Fractal::Fractal(
     int width,
     int height,
     HWND hWnd,
@@ -34,7 +32,6 @@ Fractal::Fractal(FractalSetupData* setupData,
     m_CurIters(IterTypeEnum::Bits32, width, height, 1),
     m_RefOrbit(*this)
 {
-    setupData->CopyFromThisTo(&m_SetupData);
     Initialize(width, height, hWnd, UseSensoCursor);
 }
 
@@ -183,7 +180,6 @@ void Fractal::Initialize(int width,
     }
 
     // Allocate the iterations array.
-    int i;
     InitializeMemory();
 
     // Set up random palette.
@@ -199,16 +195,6 @@ void Fractal::Initialize(int width,
     m_PaletteAuxDepth = 0;
     UsePaletteType(FractalPalette::Default);
     UsePalette(8);
-
-    // Initialize the networking
-    for (i = 0; i < MAXSERVERS; i++)
-    {
-        m_ClientMainNetwork[i] = nullptr;
-        m_ClientSubNetwork[i] = nullptr;
-    }
-
-    m_ServerMainNetwork = nullptr;
-    m_ServerSubNetwork = nullptr;
 
     // Make sure the screen is completely redrawn the first time.
     ChangedMakeDirty();
@@ -1412,12 +1398,8 @@ void Fractal::SquareCurrentView(void)
 // The images can then be made into a movie!
 void Fractal::ApproachTarget(void)
 {
-    HighPrecision MinX = m_SetupData.m_L1MinX;
-    HighPrecision MinY = m_SetupData.m_L1MinY;
-    HighPrecision MaxX = m_SetupData.m_L1MaxX;
-    HighPrecision MaxY = m_SetupData.m_L1MaxY;
-    HighPrecision targetIters = m_SetupData.m_L1Iterations;
-    int numFrames = m_SetupData.m_L1NumFrames;
+    HighPrecision targetIters = 100000;
+    int numFrames = 1000;
 
     HighPrecision deltaXMin;
     HighPrecision deltaYMin;
@@ -1430,6 +1412,11 @@ void Fractal::ApproachTarget(void)
     HighPrecision incIters = (HighPrecision)((HighPrecision)targetIters - (HighPrecision)baseIters) / (HighPrecision)numFrames;
     for (int i = 0; i < numFrames; i++)
     {
+        auto MinX = GetMinX();
+        auto MinY = GetMinY();
+        auto MaxX = GetMaxX();
+        auto MaxY = GetMaxY();
+
         deltaXMin = (MinX - m_MinX) / 75.0;
         deltaYMin = (MinY - m_MinY) / 75.0;
         deltaXMax = (MaxX - m_MaxX) / 75.0;
@@ -1450,8 +1437,6 @@ void Fractal::ApproachTarget(void)
 
         wchar_t temp[256], temp2[256];
         wsprintf(temp, L"output%04d", i);
-        wcscpy(temp2, m_SetupData.m_SaveDir);
-        wcscpy(temp2, L"\\");
         wcscpy(temp2, temp);
 
         if (Utilities::FileExists(temp2) == false)
@@ -1467,14 +1452,7 @@ void Fractal::ApproachTarget(void)
 
             // Render the fractal.
             // Draw the progress on the screen as necessary
-            if (m_SetupData.m_AZDrawProgress == 'y')
-            {
-                CalcFractal(false);
-            }
-            else
-            {
-                CalcFractal(true);
-            }
+            CalcFractal(false);
 
             // Stop _before_ saving the image, otherwise we will get a
             // corrupt render mixed in with good ones.
@@ -1488,14 +1466,11 @@ void Fractal::ApproachTarget(void)
             // Save images as necessary.  This will usually be the case,
             // as simply watching it render one frame after another is not
             // particularly exciting.
-            if (m_SetupData.m_AZSaveImages == 'y')
+            int ret = 0;
+            ret = SaveCurrentFractal(temp2, false);
+            if (ret == 0)
             {
-                int ret = 0;
-                ret = SaveCurrentFractal(temp2, false);
-                if (ret == 0)
-                {
-                    break;
-                }
+                break;
             }
         }
     }
@@ -2966,63 +2941,6 @@ void Fractal::CalcGpuFractal(bool MemoryOnly)
 
     DrawFractal(MemoryOnly);
     m_BenchmarkDataPerPixel.StopTimer();
-}
-
-//////////////////////////////////////////////////////////////////////////////
-// Draw the network part of the fractal.  This function is very similar
-// to the previous one, except it reads data in from the network instead
-// of calculating it locally.  The network can be much faster.
-//////////////////////////////////////////////////////////////////////////////
-void Fractal::CalcNetworkFractal(bool /*MemoryOnly*/)
-{
-    // TODO broken
-    //size_t nx, ny;
-    //IterType numItersL;
-    //WORD numItersS;
-    //IterType numIters = 0;
-
-    //int i;
-
-    //for (i = 0; i < MAXSERVERS; i++)
-    //{
-    //    if (m_SetupData.m_UseThisServer[i] == 'n')
-    //    {
-    //        continue;
-    //    }
-
-    //    m_ClientSubNetwork[i]->BufferedReadEmpty();
-
-    //    for (ny = 0; ny < m_ScrnHeight; ny++)
-    //    {
-    //        if (m_ProcessPixelRow[ny] != i + 'b')
-    //        {
-    //            continue;
-    //        }
-
-    //        for (nx = 0; nx < m_ScrnWidth; nx++)
-    //        {
-    //            if (m_NumIterations >= 65536)
-    //            {
-    //                m_ClientSubNetwork[i]->BufferedReadLong(&numItersL);
-    //                numIters = numItersL;
-    //            }
-    //            else
-    //            {
-    //                m_ClientSubNetwork[i]->BufferedReadShort(&numItersS);
-    //                numIters = numItersS;
-    //            }
-
-    //            m_CurIters.m_ItersArray[ny][nx] = numIters;
-    //        }
-
-    //        if (MemoryOnly == false)
-    //        {
-    //            assert(false);
-    //            // TODO broken
-    //            //DrawFractalLine(ny);
-    //        }
-    //    }
-    //}
 }
 
 template<typename IterType>

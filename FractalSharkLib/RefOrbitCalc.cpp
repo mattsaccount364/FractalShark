@@ -586,7 +586,6 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
     InitResults<IterType, T, decltype(*results), PExtras, Reuse>(*results, cx, cy);
     ScopedMPIRAllocators allocators{};
 
-
     // convert digits of precision to bits of precision and round up
     // using integer arithmetic
     {
@@ -601,7 +600,6 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
     }
 
     {
-
     mpf_t cx_mpf;
     mpf_init(cx_mpf);
     mpf_set(cx_mpf, cx.backend().data());
@@ -635,6 +633,7 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
     T dzdcX = T{ 1 };
     T dzdcY = T{ 0 };
 
+    // TODO mpz_get_d_2exp
     T cx_cast = (T)mpf_get_d(cx_mpf);
     T cy_cast = (T)mpf_get_d(cy_mpf);
 
@@ -654,6 +653,7 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
         mpf_mul_2exp(zx2, zx, 1); // Multiply by 2
         mpf_mul_2exp(zy2, zy, 1);
 
+        // TODO mpz_get_d_2exp
         T double_zx = (T)mpf_get_d(zx);
         T double_zy = (T)mpf_get_d(zy);
 
@@ -1319,13 +1319,46 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
     InitResults<IterType, T, decltype(*results), PExtras, Reuse>(*results, cx, cy);
     ScopedMPIRAllocators allocators{};
 
+    // convert digits of precision to bits of precision and round up
+    // using integer arithmetic
+    {
+        auto defaultPrecision = cx.precision();
+        auto bits = (defaultPrecision * 30103 + 10000) / 10001;
+        mpf_set_default_prec(bits);
+    }
+
     if constexpr (Reuse != RefOrbitCalc::ReuseMode::SaveForReuse) {
         allocators.InitScopedAllocators();
         allocators.InitTls();
     }
 
     {
-        HighPrecision zx, zy;
+        mpf_t cx_mpf;
+        mpf_init(cx_mpf);
+        mpf_set(cx_mpf, cx.backend().data());
+
+        mpf_t cy_mpf;
+        mpf_init(cy_mpf);
+        mpf_set(cy_mpf, cy.backend().data());
+
+        mpf_t zx;
+        mpf_init(zx);
+
+        mpf_t zy;
+        mpf_init(zy);
+
+        mpf_t zx2, zy2;
+        mpf_init(zx2);
+        mpf_init(zy2);
+
+        mpf_t temp_mpf;
+        mpf_init(temp_mpf);
+
+        mpf_t temp2_mpf;
+        mpf_init(temp2_mpf);
+
+        T cx_cast = (T)mpf_get_d(cx_mpf);
+        T cy_cast = (T)mpf_get_d(cy_mpf);
 
         T dzdcX = T{ 1.0 };
         T dzdcY = T{ 0.0 };
@@ -1335,14 +1368,26 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
         SubType glitch = (SubType)0.0000001;
 
         struct ThreadZxData {
-            HighPrecision zx;
-            HighPrecision zx_sq;
+            ThreadZxData() {
+                mpf_init(zx);
+                mpf_init(zx_sq);
+                zx_low = T{ 0.0 };
+            }
+
+            mpf_t zx;
+            mpf_t zx_sq;
             T zx_low;
         };
 
         struct ThreadZyData {
-            HighPrecision zy;
-            HighPrecision zy_sq;
+            ThreadZyData() {
+                mpf_init(zy);
+                mpf_init(zy_sq);
+                zy_low = T{ 0.0 };
+            }
+
+            mpf_t zy;
+            mpf_t zy_sq;
             T zy_low;
         };
 
@@ -1385,8 +1430,9 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
                 CheckStartCriteria;
                 //PrefetchHighPrec(ok->zx);
 
-                ok->zx_low = (T)ok->zx;
-                ok->zx_sq = ok->zx * ok->zx;
+                // TODO mpz_get_d_2exp
+                ok->zx_low = (T)mpf_get_d(ok->zx);
+                mpf_mul(ok->zx_sq, ok->zx, ok->zx);
 
                 // Give result back.
                 CheckFinishCriteria;
@@ -1405,8 +1451,9 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
                 CheckStartCriteria;
                 //PrefetchHighPrec(ok->zy);
 
-                ok->zy_low = (T)ok->zy;
-                ok->zy_sq = ok->zy * ok->zy;
+                // TODO mpz_get_d_2exp
+                ok->zy_low = (T)mpf_get_d(ok->zy);
+                mpf_mul(ok->zy_sq, ok->zy, ok->zy);
 
                 // Give result back.
                 CheckFinishCriteria;
@@ -1457,10 +1504,11 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
         bool done1 = false;
         bool done2 = false;
 
-        HighPrecision zy_sq_orig;
+        mpf_t zy_sq_orig;
+        mpf_init(zy_sq_orig);
 
-        zx = cx;
-        zy = cy;
+        mpf_set(zx, cx_mpf);
+        mpf_set(zy, cy_mpf);
 
         bool periodicity_should_break = false;
 
@@ -1480,10 +1528,10 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
         for (IterTypeFull i = 0; i < m_Fractal.GetNumIterations<IterType>(); i++)
         {
             // Start Zx squaring thread
-            threadZxdata->zx = zx;
+            mpf_set(threadZxdata->zx, zx);
 
             if (!zyStarted) {
-                threadZydata->zy = zy;
+                mpf_set(threadZydata->zy, zy);
             }
 
             ThreadZxMemory->In.store(
@@ -1532,8 +1580,8 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
                 }
 
                 // Note: not T.
-                const SubType tempZX = (SubType)double_zx + (SubType)cx;
-                const SubType tempZY = (SubType)double_zy + (SubType)cy;
+                const SubType tempZX = (SubType)double_zx + (SubType)cx_cast;
+                const SubType tempZY = (SubType)double_zy + (SubType)cy_cast;
                 zn_size = tempZX * tempZX + tempZY * tempZY;
 
                 if constexpr (Periodicity) {
@@ -1571,7 +1619,12 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
                 zn_size = 0;
             }
 
-            zy = zx * 2 * zy + cy;
+            // zy = zx * 2 * zy + cy;
+
+            // Store in temp
+            mpf_mul(temp_mpf, zx, zy);
+            mpf_mul_ui(temp_mpf, temp_mpf, 2);
+            mpf_add(zy, temp_mpf, cy_mpf);
 
             done1 = false;
             done2 = false;
@@ -1601,11 +1654,11 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
                     }
 
                     if (!quitting) {
-                        zy_sq_orig = threadZydata->zy_sq;
+                        mpf_set(zy_sq_orig, threadZydata->zy_sq);
                         double_zy_last = threadZydata->zy_low;
 
                         // Restart right away!
-                        threadZydata->zy = zy;
+                        mpf_set(threadZydata->zy, zy);
 
                         ThreadZyMemory->In.store(
                             threadZydata,
@@ -1631,7 +1684,9 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
                 }
             }
 
-            zx = threadZxdata->zx_sq - zy_sq_orig + cx;
+            // zx = threadZxdata->zx_sq - zy_sq_orig + cx;
+            mpf_sub(temp_mpf, threadZxdata->zx_sq, zy_sq_orig);
+            mpf_add(zx, temp_mpf, cx_mpf);
 
             if (!quitting) {
                 continue;

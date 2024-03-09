@@ -1113,7 +1113,7 @@ void Fractal::View(size_t view)
         SetNumIterations<IterTypeFull>(2147483646);
 
         // Period detected:
-        SetNumIterations<IterTypeFull>(16125357);
+        //SetNumIterations<IterTypeFull>(16125357);
         break;
 
     case 11:

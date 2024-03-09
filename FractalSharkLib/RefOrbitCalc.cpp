@@ -586,14 +586,46 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
     InitResults<IterType, T, decltype(*results), PExtras, Reuse>(*results, cx, cy);
     ScopedMPIRAllocators allocators{};
 
+
+    // convert digits of precision to bits of precision and round up
+    // using integer arithmetic
+    {
+        auto defaultPrecision = cx.precision();
+        auto bits = (defaultPrecision * 30103 + 10000) / 10001;
+        mpf_set_default_prec(bits);
+    }
+
     if constexpr (Reuse != RefOrbitCalc::ReuseMode::SaveForReuse) {
         allocators.InitScopedAllocators();
         allocators.InitTls();
     }
 
     {
-    HighPrecision zx, zy;
-    HighPrecision zx2, zy2;
+
+    mpf_t cx_mpf;
+    mpf_init(cx_mpf);
+    mpf_set(cx_mpf, cx.backend().data());
+
+    mpf_t cy_mpf;
+    mpf_init(cy_mpf);
+    mpf_set(cy_mpf, cy.backend().data());
+
+    mpf_t zx;
+    mpf_init(zx);
+
+    mpf_t zy;
+    mpf_init(zy);
+
+    mpf_t zx2, zy2;
+    mpf_init(zx2);
+    mpf_init(zy2);
+
+    mpf_t temp_mpf;
+    mpf_init(temp_mpf);
+
+    mpf_t temp2_mpf;
+    mpf_init(temp2_mpf);
+
     IterTypeFull i;
 
     const T small_float = T((SubType)1.1754944e-38);
@@ -603,6 +635,9 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
     T dzdcX = T{ 1 };
     T dzdcY = T{ 0 };
 
+    T cx_cast = (T)mpf_get_d(cx_mpf);
+    T cy_cast = (T)mpf_get_d(cy_mpf);
+
     static const T HighOne = T{ 1.0 };
     static const T HighTwo = T{ 2.0 };
     static const T TwoFiftySix = T(256);
@@ -611,15 +646,16 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
         *results,
         m_Fractal.GetCompressionErrorExp() };
 
-    zx = cx;
-    zy = cy;
+    mpf_set(zx, cx_mpf);
+    mpf_set(zy, cy_mpf);
+    
     for (i = 0; i < m_Fractal.GetNumIterations<IterType>(); i++)
     {
-        zx2 = zx * 2;
-        zy2 = zy * 2;
+        mpf_mul_2exp(zx2, zx, 1); // Multiply by 2
+        mpf_mul_2exp(zy2, zy, 1);
 
-        T double_zx = (T)zx;
-        T double_zy = (T)zy;
+        T double_zx = (T)mpf_get_d(zx);
+        T double_zy = (T)mpf_get_d(zy);
 
         if constexpr (PExtras == PerturbExtras::Disable) {
             results->AddUncompressedIteration({ double_zx, double_zy });
@@ -639,8 +675,9 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
             const T sq_y = double_zy * double_zy;
             const T norm = HdrReduce((sq_x + sq_y) * glitch);
 
-            const auto zx_reduced = HdrReduce(HdrAbs((T)zx));
-            const auto zy_reduced = HdrReduce(HdrAbs((T)zy));
+            // TODO This is stupid - we can fix this by using double_zx/double_zy:
+            const auto zx_reduced = HdrReduce(HdrAbs((T)mpf_get_d(zx)));
+            const auto zy_reduced = HdrReduce(HdrAbs((T)mpf_get_d(zy)));
             const bool underflow =
                 (HdrCompareToBothPositiveReducedLE(zx_reduced, small_float) ||
                  HdrCompareToBothPositiveReducedLE(zy_reduced, small_float) ||
@@ -690,11 +727,19 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
             }
         }
 
-        zx = zx * zx - zy * zy + cx;
-        zy = zx2 * zy + cy;
+        //zx = zx * zx - zy * zy + cx;
+        mpf_mul(temp_mpf, zx, zx);
+        mpf_mul(temp2_mpf, zy, zy);
+        mpf_sub(zx, temp_mpf, temp2_mpf);
+        mpf_add(zx, zx, cx_mpf);
 
-        T tempZX = double_zx + (T)cx;
-        T tempZY = double_zy + (T)cy;
+        //zy = zx2 * zy + cy;
+        mpf_mul(zy, zx2, zy);
+        mpf_add(zy, zy, cy_mpf);
+
+        // !!!!!!!!!!!!!!!!!!!!!!!!!
+        T tempZX = double_zx + cx_cast;
+        T tempZY = double_zy + cy_cast;
         T zn_size = tempZX * tempZX + tempZY * tempZY;
         if (HdrCompareToBothPositiveReducedGT(zn_size, TwoFiftySix)) {
             break;

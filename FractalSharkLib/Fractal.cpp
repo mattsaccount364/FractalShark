@@ -697,7 +697,7 @@ void Fractal::InitialDefaultViewAndSettings(int width, int height) {
     SetIterationPrecision(1);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed);
     m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3);
-    //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MT);
+    //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::STPeriodicity);
     m_RefOrbit.ResetGuess();
 
     SetCompressionErrorExp();
@@ -1110,10 +1110,10 @@ void Fractal::View(size_t view)
         minY = HighPrecision{ "-0.06744780927701335119415722995059170914204410549488939856276708324527235898639356887734291279309469373068729038486837338182723971219233698" };
         maxX = HighPrecision{ "-0.7483637942536300149503483214787034876591588411716933148186744630883569643446693595154771110299201854417711330238558567565796397623653681" };
         maxY = HighPrecision{ "-0.06744780927701335119415722995059170914204410549488939856276708324527235898639356887734291279309469373068697845700777769514407116615856846" };
-        SetNumIterations<IterTypeFull>(2147483646);
+        //SetNumIterations<IterTypeFull>(2147483646);
 
         // Period detected:
-        //SetNumIterations<IterTypeFull>(16125357);
+        SetNumIterations<IterTypeFull>(16125357);
         break;
 
     case 11:

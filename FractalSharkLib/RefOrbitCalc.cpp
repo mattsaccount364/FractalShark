@@ -587,10 +587,12 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
     ScopedMPIRAllocators allocators{};
 
     // convert digits of precision to bits of precision and round up
-    // using integer arithmetic
+    auto originalPrecision = mpf_get_default_prec();
+    auto boostPrecisionInDecimal = HighPrecision::default_precision();
+    
     {
-        auto defaultPrecision = cx.precision();
-        auto bits = (defaultPrecision * 30103 + 10000) / 10001;
+        double bitsOfPrecision = boostPrecisionInDecimal * 3.3219280948873626;
+        int bits = static_cast<int>(bitsOfPrecision);
         mpf_set_default_prec(bits);
     }
 
@@ -633,9 +635,25 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
     T dzdcX = T{ 1 };
     T dzdcY = T{ 0 };
 
-    // TODO mpz_get_d_2exp
-    T cx_cast = (T)mpf_get_d(cx_mpf);
-    T cy_cast = (T)mpf_get_d(cy_mpf);
+    constexpr bool floatOrDouble =
+        std::is_same<T, double>::value ||
+        std::is_same<T, float>::value;
+    T cx_cast;
+    T cy_cast;
+    if constexpr (floatOrDouble) {
+        cx_cast = (T)mpf_get_d(cx_mpf);
+        cy_cast = (T)mpf_get_d(cy_mpf);
+    }
+    else {
+        int32_t cx_exponent, cy_exponent;
+        double cx_mantissa, cy_mantissa;
+
+        cx_exponent = static_cast<int32_t>(mpf_get_2exp_d(&cx_mantissa, cx_mpf));
+        cy_exponent = static_cast<int32_t>(mpf_get_2exp_d(&cy_mantissa, cy_mpf));
+
+        cx_cast = T{ cx_exponent, static_cast<SubType>(cx_mantissa) };
+        cy_cast = T{ cy_exponent, static_cast<SubType>(cy_mantissa) };
+    }
 
     static const T HighOne = T{ 1.0 };
     static const T HighTwo = T{ 2.0 };
@@ -654,8 +672,25 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
         mpf_mul_2exp(zy2, zy, 1);
 
         // TODO mpz_get_d_2exp
-        T double_zx = (T)mpf_get_d(zx);
-        T double_zy = (T)mpf_get_d(zy);
+        T double_zx;
+        T double_zy;
+
+        //  = (T)mpf_get_d(zx);
+        // = (T)mpf_get_d(zy);
+        if constexpr (floatOrDouble) {
+            double_zx = (T)mpf_get_d(zx);
+            double_zy = (T)mpf_get_d(zy);
+        }
+        else {
+            int32_t zx_exponent, zy_exponent;
+            double zx_mantissa, zy_mantissa;
+
+            zx_exponent = static_cast<int32_t>(mpf_get_2exp_d(&zx_mantissa, zx));
+            zy_exponent = static_cast<int32_t>(mpf_get_2exp_d(&zy_mantissa, zy));
+
+            double_zx = T{ zx_exponent, static_cast<SubType>(zx_mantissa) };
+            double_zy = T{ zy_exponent, static_cast<SubType>(zy_mantissa) };
+        }
 
         if constexpr (PExtras == PerturbExtras::Disable) {
             results->AddUncompressedIteration({ double_zx, double_zy });
@@ -753,6 +788,8 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
     results->CompleteResults<PExtras, Reuse>();
     m_GuessReserveSize = results->GetCountOrbitEntries();
     }
+
+    mpf_set_default_prec(originalPrecision);
 
     if constexpr (Reuse != RefOrbitCalc::ReuseMode::SaveForReuse) {
         allocators.ShutdownTls();
@@ -1320,10 +1357,12 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
     ScopedMPIRAllocators allocators{};
 
     // convert digits of precision to bits of precision and round up
-    // using integer arithmetic
+    auto originalPrecision = mpf_get_default_prec();
+    auto boostPrecisionInDecimal = HighPrecision::default_precision();
+
     {
-        auto defaultPrecision = cx.precision();
-        auto bits = (defaultPrecision * 30103 + 10000) / 10001;
+        double bitsOfPrecision = boostPrecisionInDecimal * 3.3219280948873626;
+        int bits = static_cast<int>(bitsOfPrecision) + 64;
         mpf_set_default_prec(bits);
     }
 
@@ -1357,8 +1396,25 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
         mpf_t temp2_mpf;
         mpf_init(temp2_mpf);
 
-        T cx_cast = (T)mpf_get_d(cx_mpf);
-        T cy_cast = (T)mpf_get_d(cy_mpf);
+        constexpr bool floatOrDouble =
+            std::is_same<T, double>::value ||
+            std::is_same<T, float>::value;
+        T cx_cast;
+        T cy_cast;
+        if constexpr (floatOrDouble) {
+            cx_cast = (T)mpf_get_d(cx_mpf);
+            cy_cast = (T)mpf_get_d(cy_mpf);
+        }
+        else {
+            int32_t cx_exponent, cy_exponent;
+            double cx_mantissa, cy_mantissa;
+
+            cx_exponent = static_cast<int32_t>(mpf_get_2exp_d(&cx_mantissa, cx_mpf));
+            cy_exponent = static_cast<int32_t>(mpf_get_2exp_d(&cy_mantissa, cy_mpf));
+
+            cx_cast = T{ cx_exponent, static_cast<SubType>(cx_mantissa) };
+            cy_cast = T{ cy_exponent, static_cast<SubType>(cy_mantissa) };
+        }
 
         T dzdcX = T{ 1.0 };
         T dzdcY = T{ 0.0 };
@@ -1430,8 +1486,17 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
                 CheckStartCriteria;
                 //PrefetchHighPrec(ok->zx);
 
-                // TODO mpz_get_d_2exp
-                ok->zx_low = (T)mpf_get_d(ok->zx);
+                // ok->zx_low = (T)mpf_get_d(ok->zx);
+                if constexpr (floatOrDouble) {
+                    ok->zx_low = (T)mpf_get_d(ok->zx);
+                }
+                else {
+                    int32_t zx_exponent;
+                    double zx_mantissa;
+                    zx_exponent = static_cast<int32_t>(mpf_get_2exp_d(&zx_mantissa, ok->zx));
+                    ok->zx_low = T{ zx_exponent, static_cast<SubType>(zx_mantissa) };
+                }
+
                 mpf_mul(ok->zx_sq, ok->zx, ok->zx);
 
                 // Give result back.
@@ -1439,7 +1504,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
             }
 
             ScopedMPIRAllocators::ShutdownTls();
-            };
+        };
 
         auto ThreadSqZy = [](ThreadPtrs<ThreadZyData>* ThreadMemory) {
             ScopedMPIRAllocators::InitTls();
@@ -1451,8 +1516,17 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
                 CheckStartCriteria;
                 //PrefetchHighPrec(ok->zy);
 
-                // TODO mpz_get_d_2exp
-                ok->zy_low = (T)mpf_get_d(ok->zy);
+                //ok->zy_low = (T)mpf_get_d(ok->zy);
+                if constexpr (floatOrDouble) {
+                    ok->zy_low = (T)mpf_get_d(ok->zy);
+                }
+                else {
+                    int32_t zy_exponent;
+                    double zy_mantissa;
+                    zy_exponent = static_cast<int32_t>(mpf_get_2exp_d(&zy_mantissa, ok->zy));
+                    ok->zy_low = T{ zy_exponent, static_cast<SubType>(zy_mantissa) };
+                }
+
                 mpf_mul(ok->zy_sq, ok->zy, ok->zy);
 
                 // Give result back.
@@ -1460,7 +1534,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
             }
 
             ScopedMPIRAllocators::ShutdownTls();
-            };
+        };
 
         auto ThreadReused = [&](ThreadPtrs<ThreadReusedData>* ThreadMemory) {
             for (;;) {

@@ -393,9 +393,6 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
         StartIndexFuture[threadIndex] = StartIndexPromise[threadIndex].get_future();
     }
 
-    volatile IterType numbers1[128] = { 0 };
-    volatile IterType numbers2[128] = { 0 };
-
     // l:477
     auto Starter = [ // MOAR VARIABLES
             &la_parameters,
@@ -500,8 +497,6 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
     auto Worker = [
             &la_parameters,
             &PerturbationResults,
-            &numbers1,
-            &numbers2,
             Period,
             &StartIndexFuture,
             &StartIndexPromise,
@@ -558,9 +553,6 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
         IterType PeriodEnd = 0;
         bool PeriodDetected = false;
         bool PeriodDetected2 = false;
-
-        numbers1[ThreadID] = Begin;
-        numbers2[ThreadID] = End;
 
         // l:603
         for (; j2 < maxRefIteration || j1 < maxRefIteration; j1++, j2++) {

@@ -1509,7 +1509,8 @@ void MenuGetCurPos(HWND hWnd)
         LAMilliseconds);
 
     const auto additionalDetailsStr =
-        std::string("PeriodMaybeZero = ") + std::to_string(PeriodMaybeZero) + "\r\n" +
+        std::string("InternalPeriodIfAny = ") + std::to_string(PeriodMaybeZero) + "\r\n" +
+        std::string("ActualPeriodIfAny = ") + std::to_string(PeriodMaybeZero - 1) + "\r\n" +
         std::string("CompressedIters = ") + std::to_string(CompressedIters) + "\r\n" +
         std::string("UncompressedIters = ") + std::to_string(UncompressedIters) + "\r\n" +
         std::string("Compression ratio = ") + std::to_string((double)UncompressedIters / (double)CompressedIters) + "\r\n" +

@@ -3,6 +3,7 @@
 #include "HighPrecision.h"
 #include "ItersMemoryContainer.h"
 #include <stdint.h>
+#include <thread>
 
 class Fractal;
 

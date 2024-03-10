@@ -1,12 +1,6 @@
 #pragma once
 
-#include <codeanalysis\warnings.h>
-#pragma warning( push )
-#pragma warning ( disable : ALL_CODE_ANALYSIS_WARNINGS )
-#include <boost/multiprecision/cpp_dec_float.hpp>
-#include <boost/multiprecision/gmp.hpp>
-#include <boost/multiprecision/number.hpp>
-#pragma warning( pop )
+#include <mpir.h>
 
 // Bump allocator that bumps downwards
 struct ScopedMPIRAllocators {
@@ -43,17 +37,9 @@ private:
 
 struct ScopedMPIRPrecision
 {
-    unsigned saved_digits10;
-    ScopedMPIRPrecision(unsigned digits10);
+    size_t m_SavedBits;
+    ScopedMPIRPrecision(size_t bits);
     ~ScopedMPIRPrecision();
-    void reset(unsigned digits10);
+    void reset(size_t bits);
     void reset();
-};
-
-struct ScopedMPIRPrecisionOptions
-{
-    boost::multiprecision::variable_precision_options saved_options;
-    ScopedMPIRPrecisionOptions(boost::multiprecision::variable_precision_options opts);
-    ~ScopedMPIRPrecisionOptions();
-    void reset(boost::multiprecision::variable_precision_options opts);
 };

@@ -5,6 +5,7 @@
 #include "Vectors.h"
 #include "BenchmarkData.h"
 #include <variant>
+#include <vector>
 
 class Fractal;
 
@@ -47,8 +48,9 @@ public:
     bool RequiresReuse() const;
 
     void OptimizeMemory();
-    void SetPerturbationAlg(PerturbationAlg alg) { m_PerturbationAlg = alg; }
-    PerturbationAlg GetPerturbationAlg() const { return m_PerturbationAlg; }
+    void SetPerturbationAlg(PerturbationAlg alg);
+    PerturbationAlg GetPerturbationAlg() const;
+    std::string GetPerturbationAlgStr() const;
 
     template<typename IterType, class T, PerturbExtras PExtras>
     std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtras>>>& GetPerturbationResults();
@@ -108,7 +110,8 @@ public:
         uint64_t &UncompressedIters,
         int32_t &CompressionErrorExp,
         uint64_t &OrbitMilliseconds,
-        uint64_t &LAMilliseconds);
+        uint64_t &LAMilliseconds,
+        std::string &PerturbationAlg);
 
     void DrawPerturbationResults();
 

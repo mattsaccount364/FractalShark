@@ -249,10 +249,6 @@ unsigned long WINAPI DrawingThread (void *)
     // Increase iterations to ensure a high quality image
     gFractal->SetNumIterations<uint32_t> (3 * gFractal->GetNumIterations<uint32_t> () / 2);
   
-    // If we are in too far, reset to standard.
-    if (gFractal->IsValidLocation () == false)
-    { gFractal->View(0); }
-
     if (gTimeToExit == true)
     { break; }
   }

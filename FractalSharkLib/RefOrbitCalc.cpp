@@ -70,12 +70,21 @@ static inline void prefetch_range(void* addr, std::size_t len) {
 }
 
 static inline void PrefetchHighPrec(const HighPrecision& target) {
-    ENABLE_PREFETCH((const char*)&target.backend().data(), _MM_HINT_T0);
-    size_t lastindex = abs(target.backend().data()->_mp_size);
+    ENABLE_PREFETCH((const char*)target.backend(), _MM_HINT_T0);
+    size_t lastindex = abs(target.backend()->_mp_size);
     size_t size_elt = sizeof(mp_limb_t);
     size_t total = size_elt * lastindex;
-    prefetch_range(target.backend().data()->_mp_d, total);
+    prefetch_range(target.backend()->_mp_d, total);
 }
+
+static inline void PrefetchHighPrec(const mpf_t& target) {
+    ENABLE_PREFETCH((const char*)&target[0], _MM_HINT_T0);
+    size_t lastindex = abs(target[0]._mp_size);
+    size_t size_elt = sizeof(mp_limb_t);
+    size_t total = size_elt * lastindex;
+    prefetch_range(target[0]._mp_d, total);
+}
+
 
 RefOrbitCalc::RefOrbitCalc(Fractal& Fractal)
     : m_PerturbationAlg{ PerturbationAlg::MTPeriodicity3 },
@@ -491,7 +500,7 @@ template<
     PerturbExtras PExtras,
     RefOrbitCalc::BenchmarkMode BenchmarkState>
 void RefOrbitCalc::AddPerturbationReferencePoint() {
-    if (m_PerturbationGuessCalcX == 0 && m_PerturbationGuessCalcY == 0) {
+    if (m_PerturbationGuessCalcX == HighPrecision{} && m_PerturbationGuessCalcY == HighPrecision{}) {
         m_PerturbationGuessCalcX = (m_Fractal.GetMaxX() + m_Fractal.GetMinX()) / HighPrecision(2);
         m_PerturbationGuessCalcY = (m_Fractal.GetMaxY() + m_Fractal.GetMinY()) / HighPrecision(2);
     }
@@ -538,8 +547,8 @@ static void AddReused(T &results, const HighPrecision& zx, const HighPrecision& 
     ReducedZy = zy;
 
     //assert(RequiresReuse());
-    ReducedZx.precision(AuthoritativeReuseExtraPrecision);
-    ReducedZy.precision(AuthoritativeReuseExtraPrecision);
+    ReducedZx.precisionInBits(AuthoritativeReuseExtraPrecisionInBits);
+    ReducedZy.precisionInBits(AuthoritativeReuseExtraPrecisionInBits);
 
     results.AddReusedEntry(std::move(ReducedZx), std::move(ReducedZy));
 }
@@ -588,7 +597,7 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
 
     // convert digits of precision to bits of precision and round up
     auto originalPrecision = mpf_get_default_prec();
-    auto boostPrecisionInDecimal = HighPrecision::default_precision();
+    auto boostPrecisionInDecimal = HighPrecision::defaultPrecisionInBits();
     
     {
         double bitsOfPrecision = boostPrecisionInDecimal * 3.3219280948873626;
@@ -604,11 +613,11 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
     {
     mpf_t cx_mpf;
     mpf_init(cx_mpf);
-    mpf_set(cx_mpf, cx.backend().data());
+    mpf_set(cx_mpf, cx.backend());
 
     mpf_t cy_mpf;
     mpf_init(cy_mpf);
-    mpf_set(cy_mpf, cy.backend().data());
+    mpf_set(cy_mpf, cy.backend());
 
     mpf_t zx;
     mpf_init(zx);
@@ -823,20 +832,20 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
         m_Fractal.GetMaxX(),
         m_Fractal.GetMaxY(),
         RequiresReuse());
-    uint32_t precNum = AuthoritativeReuseExtraPrecision;
+    uint32_t precNum = AuthoritativeReuseExtraPrecisionInBits;
 
     // This all generally works and only starts to suffer precision problems after
-    // about 10^AuthoritativeReuseExtraPrecision. The problem naturally is the original
+    // about 10^AuthoritativeReuseExtraPrecisionInBits. The problem naturally is the original
     // reference orbit is calculated only to so many digits.
-    if (NewPrec - existingResults->GetAuthoritativePrecision() >= AuthoritativeReuseExtraPrecision - AuthoritativeMinExtraPrecision) {
+    if (NewPrec - existingResults->GetAuthoritativePrecisionInBits() >= AuthoritativeReuseExtraPrecisionInBits - AuthoritativeMinExtraPrecisionInBits) {
         //::MessageBox(nullptr, L"Regenerating authoritative orbit is required", L"", MB_OK | MB_APPLMODAL);
         PerturbationResultsArray.pop_back();
         return false;
     }
 
-    // TODO seems like we should be able to avoid all these annoying .precision calls below
+    // TODO seems like we should be able to avoid all these annoying .precisionInBits calls below
     // via this mechanism.  Read the awful boost docs more...
-    ScopedMPIRPrecision prec(AuthoritativeReuseExtraPrecision);
+    ScopedMPIRPrecision prec(AuthoritativeReuseExtraPrecisionInBits);
 
     InitResults<IterType, T, decltype(*results), PerturbExtras::Disable, ReuseMode::DontSaveForReuse>(*results, cx, cy);
 
@@ -854,16 +863,16 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
     HighPrecision DeltaSubNY = 0;
 
     // Must come after subtraction above
-    cx.precision(precNum);
-    cy.precision(precNum);
-    HighOne.precision(precNum);
-    HighTwo.precision(precNum);
-    DeltaReal.precision(precNum);
-    DeltaImaginary.precision(precNum);
-    DeltaSub0X.precision(precNum);
-    DeltaSub0Y.precision(precNum);
-    DeltaSubNX.precision(precNum);
-    DeltaSubNY.precision(precNum);
+    cx.precisionInBits(precNum);
+    cy.precisionInBits(precNum);
+    HighOne.precisionInBits(precNum);
+    HighTwo.precisionInBits(precNum);
+    DeltaReal.precisionInBits(precNum);
+    DeltaImaginary.precisionInBits(precNum);
+    DeltaSub0X.precisionInBits(precNum);
+    DeltaSub0Y.precisionInBits(precNum);
+    DeltaSubNX.precisionInBits(precNum);
+    DeltaSubNY.precisionInBits(precNum);
 
     IterTypeFull RefIteration = 0;
     IterTypeFull MaxRefIteration = existingResults->GetCountOrbitEntries() - 1;
@@ -1003,21 +1012,21 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
         m_Fractal.GetMaxX(),
         m_Fractal.GetMaxY(),
         RequiresReuse());
-    uint32_t precNum = AuthoritativeReuseExtraPrecision;
+    uint32_t precNum = AuthoritativeReuseExtraPrecisionInBits;
 
     // This all generally works and only starts to suffer precision problems after
-    // about 10^AuthoritativeReuseExtraPrecision. The problem naturally is the original
+    // about 10^AuthoritativeReuseExtraPrecisionInBits. The problem naturally is the original
     // reference orbit is calculated only to so many digits.
-    if (NewPrec - existingResults->GetAuthoritativePrecision() >= AuthoritativeReuseExtraPrecision - AuthoritativeMinExtraPrecision) {
+    if (NewPrec - existingResults->GetAuthoritativePrecisionInBits() >= AuthoritativeReuseExtraPrecisionInBits - AuthoritativeMinExtraPrecisionInBits) {
         //::MessageBox(nullptr, L"Regenerating authoritative orbit is required", L"", MB_OK | MB_APPLMODAL);
         PerturbationResultsArray.pop_back();
         return false;
     }
 
-    // TODO seems like we should be able to avoid all these annoying .precision calls below
+    // TODO seems like we should be able to avoid all these annoying .precisionInBits calls below
     // via this mechanism.  Read the awful boost docs more...
-    ScopedMPIRPrecision prec(AuthoritativeReuseExtraPrecision);
-    ScopedMPIRPrecisionOptions precOptions(boost::multiprecision::variable_precision_options::assume_uniform_precision);
+    ScopedMPIRPrecision prec(AuthoritativeReuseExtraPrecisionInBits);
+    //ScopedMPIRPrecisionOptions precOptions(boost::multiprecision::variable_precision_options::assume_uniform_precision);
 
     InitResults<IterType, T, decltype(*results), PerturbExtras::Disable, ReuseMode::DontSaveForReuse>(*results, cx, cy);
     
@@ -1035,16 +1044,16 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     HighPrecision DeltaSubNY = 0;
 
     // Must come after subtraction above
-    cx.precision(precNum);
-    cy.precision(precNum);
-    HighOne.precision(precNum);
-    HighTwo.precision(precNum);
-    DeltaReal.precision(precNum);
-    DeltaImaginary.precision(precNum);
-    DeltaSub0X.precision(precNum);
-    DeltaSub0Y.precision(precNum);
-    DeltaSubNX.precision(precNum);
-    DeltaSubNY.precision(precNum);
+    cx.precisionInBits(precNum);
+    cy.precisionInBits(precNum);
+    HighOne.precisionInBits(precNum);
+    HighTwo.precisionInBits(precNum);
+    DeltaReal.precisionInBits(precNum);
+    DeltaImaginary.precisionInBits(precNum);
+    DeltaSub0X.precisionInBits(precNum);
+    DeltaSub0Y.precisionInBits(precNum);
+    DeltaSubNX.precisionInBits(precNum);
+    DeltaSubNY.precisionInBits(precNum); todo the mt reuse is busted
 
     IterTypeFull RefIteration = 0;
     IterTypeFull MaxRefIteration = existingResults->GetCountOrbitEntries() - 1;
@@ -1069,7 +1078,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
             DeltaSubNYOrig{},
             DeltaSub0X{} {
 
-            DeltaSubNX.precision(precNum);
+            DeltaSubNX.precisionInBits(precNum);
         }
 
         IterTypeFull ReferenceIteration;
@@ -1087,7 +1096,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
             DeltaSubNYOrig{},
             DeltaSub0Y{} {
         
-            DeltaSubNY.precision(precNum);
+            DeltaSubNY.precisionInBits(precNum);
         }
 
         IterTypeFull ReferenceIteration;
@@ -1114,7 +1123,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     memset(ThreadZyMemory, 0, sizeof(*ThreadZyMemory));
 
     auto ThreadSqZx = [&](ThreadPtrs<ThreadZxData>* ThreadMemory) {
-        ScopedMPIRPrecisionOptions precOptions(boost::multiprecision::variable_precision_options::assume_uniform_precision);
+        // ScopedMPIRPrecisionOptions precOptions(boost::multiprecision::variable_precision_options::assume_uniform_precision);
         for (;;) {
             ThreadZxData* expected = ThreadMemory->In.load();
             ThreadZxData* ok = nullptr;
@@ -1137,7 +1146,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     };
 
     auto ThreadSqZy = [&](ThreadPtrs<ThreadZyData>* ThreadMemory) {
-        ScopedMPIRPrecisionOptions precOptions(boost::multiprecision::variable_precision_options::assume_uniform_precision);
+        //ScopedMPIRPrecisionOptions precOptions(boost::multiprecision::variable_precision_options::assume_uniform_precision);
         for (;;) {
             ThreadZyData* expected = ThreadMemory->In.load();
             ThreadZyData* ok = nullptr;
@@ -1356,16 +1365,6 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
     InitResults<IterType, T, decltype(*results), PExtras, Reuse>(*results, cx, cy);
     ScopedMPIRAllocators allocators{};
 
-    // convert digits of precision to bits of precision and round up
-    auto originalPrecision = mpf_get_default_prec();
-    auto boostPrecisionInDecimal = HighPrecision::default_precision();
-
-    {
-        double bitsOfPrecision = boostPrecisionInDecimal * 3.3219280948873626;
-        int bits = static_cast<int>(bitsOfPrecision) + 64;
-        mpf_set_default_prec(bits);
-    }
-
     if constexpr (Reuse != RefOrbitCalc::ReuseMode::SaveForReuse) {
         allocators.InitScopedAllocators();
         allocators.InitTls();
@@ -1374,11 +1373,11 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
     {
         mpf_t cx_mpf;
         mpf_init(cx_mpf);
-        mpf_set(cx_mpf, cx.backend().data());
+        mpf_set(cx_mpf, cx.backend());
 
         mpf_t cy_mpf;
         mpf_init(cy_mpf);
-        mpf_set(cy_mpf, cy.backend().data());
+        mpf_set(cy_mpf, cy.backend());
 
         mpf_t zx;
         mpf_init(zx);
@@ -1855,7 +1854,7 @@ bool RefOrbitCalc::IsPerturbationResultUsefulHere(size_t i) {
 
         if constexpr (Authoritative == true) {
             return
-                PerturbationResults.GetAuthoritativePrecision() != 0 &&
+                PerturbationResults.GetAuthoritativePrecisionInBits() != 0 &&
                 (PerturbationResults.GetMaxIterations() > PerturbationResults.GetCountOrbitEntries() ||
                     PerturbationResults.GetMaxIterations() >= m_Fractal.GetNumIterations<IterType>());
         }
@@ -1935,9 +1934,9 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
     };
 
     if (RequiresReuse()) {
-        if (m_PerturbationGuessCalcX == 0 && m_PerturbationGuessCalcY == 0) {
-            m_PerturbationGuessCalcX = (m_Fractal.GetMaxX() + m_Fractal.GetMinX()) / 2;
-            m_PerturbationGuessCalcY = (m_Fractal.GetMaxY() + m_Fractal.GetMinY()) / 2;
+        if (m_PerturbationGuessCalcX == HighPrecision{} && m_PerturbationGuessCalcY == HighPrecision{}) {
+            m_PerturbationGuessCalcX = (m_Fractal.GetMaxX() + m_Fractal.GetMinX()) / HighPrecision{ 2 };
+            m_PerturbationGuessCalcY = (m_Fractal.GetMaxY() + m_Fractal.GetMinY()) / HighPrecision{ 2 };
         }
 
         PerturbationResults<IterType, T, PExtrasHackYay>* results =
@@ -2146,9 +2145,9 @@ void RefOrbitCalc::ClearPerturbationResults(PerturbationResultType type) {
         // the whole thing if needed from double/Hdrfloat<double> etc.
         if (type == PerturbationResultType::All ||
             (type == PerturbationResultType::MediumRes &&
-                val->GetAuthoritativePrecision() == 0) ||
+                val->GetAuthoritativePrecisionInBits() == 0) ||
             (type == PerturbationResultType::HighRes &&
-                val->GetAuthoritativePrecision() != 0) ||
+                val->GetAuthoritativePrecisionInBits() != 0) ||
             (type == PerturbationResultType::LAOnly &&
                 val->Is2X32)) {
             return true;
@@ -2398,14 +2397,56 @@ const RefOrbitCalc::Container<IterType, PExtras> &RefOrbitCalc::GetContainer() c
     }
 }
 
+void RefOrbitCalc::SetPerturbationAlg(PerturbationAlg alg) {
+    m_PerturbationAlg = alg;
+}
+
+RefOrbitCalc::PerturbationAlg RefOrbitCalc::GetPerturbationAlg() const {
+    return m_PerturbationAlg;
+}
+
+std::string RefOrbitCalc::GetPerturbationAlgStr() const {
+    // Return a string representation of the current perturbation algorithm:
+    /*
+        enum class PerturbationAlg {
+        ST,
+        MT,
+        STPeriodicity,
+        MTPeriodicity3,
+        MTPeriodicity3PerturbMTHighSTMed,
+        MTPeriodicity3PerturbMTHighMTMed,
+        MTPeriodicity5
+    };
+    */
+
+    switch (m_PerturbationAlg) {
+    case PerturbationAlg::ST:
+        return "ST";
+    case PerturbationAlg::MT:
+        return "MT";
+    case PerturbationAlg::STPeriodicity:
+        return "STPeriodicity";
+    case PerturbationAlg::MTPeriodicity3:
+        return "MTPeriodicity3";
+    case PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed:
+        return "MTPeriodicity3PerturbMTHighSTMed";
+    case PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed:
+        return "MTPeriodicity3PerturbMTHighMTMed";
+    case PerturbationAlg::MTPeriodicity5:
+        return "MTPeriodicity5";
+    default:
+        return "Unknown";
+    }
+}
+
 void RefOrbitCalc::GetSomeDetails(
     uint64_t& PeriodMaybeZero,
     uint64_t& CompressedIters,
     uint64_t& UncompressedIters,
     int32_t &CompressionErrorExp,
     uint64_t &OrbitMilliseconds,
-    uint64_t &LAMilliseconds) {
-
+    uint64_t &LAMilliseconds,
+    std::string& PerturbationAlg) {
 
     PeriodMaybeZero = 0;
     CompressedIters = 0;
@@ -2429,6 +2470,8 @@ void RefOrbitCalc::GetSomeDetails(
     };
 
     std::visit(lambda, m_LastUsedRefOrbit);
+
+    PerturbationAlg = GetPerturbationAlgStr();
 
     static_assert(static_cast<int>(RenderAlgorithm::MAX) == 61, "Fix me");
 }

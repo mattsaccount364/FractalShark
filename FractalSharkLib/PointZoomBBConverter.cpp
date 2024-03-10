@@ -29,12 +29,12 @@ PointZoomBBConverter::PointZoomBBConverter(
     HighPrecision minY,
     HighPrecision maxX,
     HighPrecision maxY) :
-    minX(minX),
-    minY(minY),
-    maxX(maxX),
-    maxY(maxY) {
-    ptX = (minX + maxX) / HighPrecision(2);
-    ptY = (minY + maxY) / HighPrecision(2);
+    minX{ minX },
+    minY{ minY },
+    maxX{ maxX },
+    maxY{ maxY },
+    ptX{ (minX + maxX) / HighPrecision(2) },
+    ptY{ (minY + maxY) / HighPrecision(2) } {
 
     auto zf1 = HighPrecision{ factor } / (ptX - minX);
     auto zf2 = HighPrecision{ factor } / (ptY - minY);

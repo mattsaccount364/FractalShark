@@ -248,25 +248,33 @@ public:
         }
     }
 
+    HDRFloat(int64_t number) {
+        Base::mantissa = (T)number;
+        Base::exp = 0;
+    }
+
 #ifndef __CUDACC__
     HDRFloat(const HighPrecision &number) {
 
-        if (number == 0) {
+        if (number == HighPrecision{}) {
             Base::mantissa = T{};
             Base::exp = MIN_BIG_EXPONENT();
             return;
         }
 
         if constexpr (std::is_same<T, CudaDblflt<dblflt>>::value) {
-            int temp_exp;
-            double tempMantissa = boost::multiprecision::frexp(number, &temp_exp).template convert_to<double>();
+            long temp_exp;
+            double tempMantissa;
+            number.frexp(tempMantissa, temp_exp);
             Base::mantissa.d.head = (float)tempMantissa;
             Base::mantissa.d.tail = (float)((double)tempMantissa - (double)Base::mantissa.d.head);
             Base::exp = (TExp)temp_exp;
         }
         else {
-            int temp_exp;
-            Base::mantissa = boost::multiprecision::frexp(number, &temp_exp).template convert_to<T>();
+            long temp_exp;
+            double tempMantissa;
+            number.frexp(tempMantissa, temp_exp);
+            Base::mantissa = (T)tempMantissa;
             Base::exp = (TExp)temp_exp;
         }
     }

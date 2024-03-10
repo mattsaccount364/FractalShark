@@ -4,6 +4,10 @@
 #include "dblflt.cuh"
 #endif
 #include <type_traits>
+#include <iomanip>
+#include <limits>
+#include <string>
+#include <sstream>
 
 struct MattDblflt;
 

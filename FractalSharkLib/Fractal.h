@@ -101,7 +101,6 @@ public:
     bool Back(void);
 
     void FindInterestingLocation(RECT *rect);
-    bool IsValidLocation(void);
 
     template<typename IterType>
     void SetNumIterations(IterTypeFull num);
@@ -187,14 +186,16 @@ public:
         uint64_t& UncompressedIters,
         int32_t& CompressionErrorExp,
         uint64_t& OrbitMilliseconds,
-        uint64_t& LAMilliseconds) {
+        uint64_t& LAMilliseconds,
+        std::string &PerturbationAlg) {
         m_RefOrbit.GetSomeDetails(
             PeriodMaybeZero,
             CompressedIters,
             UncompressedIters,
             CompressionErrorExp,
             OrbitMilliseconds,
-            LAMilliseconds);
+            LAMilliseconds,
+            PerturbationAlg);
     }
 
     void SetResultsAutosave(AddPointOptions Enable);

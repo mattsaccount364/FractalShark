@@ -408,28 +408,19 @@ void Fractal::ResetDimensions(size_t width,
 // are "calculator coordinates," not screen coordinates.
 //////////////////////////////////////////////////////////////////////////////
 void Fractal::SetPrecision(
-    size_t prec,
+    size_t precInBits,
     HighPrecision& minX,
     HighPrecision& minY,
     HighPrecision& maxX,
     HighPrecision& maxY)
 {
-    if constexpr (DigitPrecision != 0) {
-        return;
-    }
-    else {
-#ifndef CONSTANT_PRECISION
-        auto prec2 = static_cast<uint32_t>(prec);
-        HighPrecision::default_precision(prec2);
-        //HighPrecision::default_variable_precision_options(
-        //    boost::multiprecision::variable_precision_options::preserve_target_precision);
+    auto prec2 = static_cast<uint32_t>(precInBits);
+    HighPrecision::defaultPrecisionInBits(prec2);
 
-        minX.precision(prec2);
-        maxX.precision(prec2);
-        minY.precision(prec2);
-        maxY.precision(prec2);
-#endif
-    }
+    minX.precisionInBits(prec2);
+    maxX.precisionInBits(prec2);
+    minY.precisionInBits(prec2);
+    maxY.precisionInBits(prec2);
 }
 
 size_t Fractal::GetPrecision(
@@ -439,56 +430,34 @@ size_t Fractal::GetPrecision(
     const HighPrecision& maxY,
     bool RequiresReuse)
 {
-    if constexpr (DigitPrecision != 0) {
-        return DigitPrecision;
+    auto deltaX = abs(maxX - minX);
+    auto deltaY = abs(maxY - minY);
+
+    long temp_expX;
+    double tempMantissaX;
+    deltaX.frexp(tempMantissaX, temp_expX);
+    long temp_expY;
+    double tempMantissaY;
+    deltaY.frexp(tempMantissaY, temp_expY);
+
+    size_t larger = (size_t)std::max(abs(temp_expX), abs(temp_expY));
+
+    if (RequiresReuse) {
+        larger += AuthoritativeReuseExtraPrecisionInBits;
     }
     else {
-#ifndef CONSTANT_PRECISION
-        static_assert(DigitPrecision == 0, "!");
-        auto deltaX = abs(maxX - minX);
-        auto deltaY = abs(maxY - minY);
-
-        int temp_expX;
-        boost::multiprecision::frexp(deltaX, &temp_expX);
-        int temp_expY;
-        boost::multiprecision::frexp(deltaY, &temp_expY);
-
-        double expX = temp_expX / log(10) * log(2);
-        double expY = temp_expY / log(10) * log(2);
-        size_t larger = (size_t)std::max(abs(expX), abs(expY));
-
-        if (RequiresReuse) {
-            larger += AuthoritativeReuseExtraPrecision;
-        }
-        else {
-            larger += AuthoritativeMinExtraPrecision;
-        }
-        return larger;
-#endif
+        larger += AuthoritativeMinExtraPrecisionInBits;
     }
+    return larger;
 }
 
 void Fractal::SetPrecision() {
-    if constexpr (DigitPrecision != 0) {
-        return;
-    }
-    else {
-#ifndef CONSTANT_PRECISION
-        uint32_t prec = static_cast<uint32_t>(GetPrecision());
-        SetPrecision(prec, m_MinX, m_MinY, m_MaxX, m_MaxY);
-#endif
-    }
+    uint32_t precInBits = static_cast<uint32_t>(GetPrecision());
+    SetPrecision(precInBits, m_MinX, m_MinY, m_MaxX, m_MaxY);
 }
 
 size_t Fractal::GetPrecision(void) const {
-    if constexpr (DigitPrecision != 0) {
-        return DigitPrecision;
-    }
-    else {
-#ifndef CONSTANT_PRECISION
-        return GetPrecision(m_MinX, m_MinY, m_MaxX, m_MaxY, m_RefOrbit.RequiresReuse());
-#endif
-    }
+    return GetPrecision(m_MinX, m_MinY, m_MaxX, m_MaxY, m_RefOrbit.RequiresReuse());
 }
 
 bool Fractal::RecenterViewCalc(HighPrecision MinX, HighPrecision MinY, HighPrecision MaxX, HighPrecision MaxY)
@@ -534,10 +503,10 @@ bool Fractal::RecenterViewScreen(RECT rect)
 {
     SaveCurPos();
 
-    HighPrecision newMinX = XFromScreenToCalc(rect.left);
-    HighPrecision newMaxX = XFromScreenToCalc(rect.right);
-    HighPrecision newMinY = YFromScreenToCalc(rect.top);
-    HighPrecision newMaxY = YFromScreenToCalc(rect.bottom);
+    HighPrecision newMinX = XFromScreenToCalc(HighPrecision{ rect.left });
+    HighPrecision newMaxX = XFromScreenToCalc(HighPrecision{ rect.right });
+    HighPrecision newMinY = YFromScreenToCalc(HighPrecision{ rect.top });
+    HighPrecision newMaxY = YFromScreenToCalc(HighPrecision{ rect.bottom });
 
     if (newMaxX < newMinX) {
         HighPrecision temp = newMinX;
@@ -616,8 +585,8 @@ bool Fractal::RecenterViewScreen(RECT rect)
                 //m_PerturbationGuessCalcX = meanX * (double)m_ScrnWidth / (double)(rect.right - rect.left);
                 //m_PerturbationGuessCalcY = meanY * (double)m_ScrnHeight / (double)(rect.bottom - rect.top);
 
-                HighPrecision tempMeanX = meanX;
-                HighPrecision tempMeanY = meanY;
+                auto tempMeanX = HighPrecision{ meanX };
+                auto tempMeanY = HighPrecision{ meanY };
 
                 tempMeanX = XFromScreenToCalc(tempMeanX);
                 tempMeanY = YFromScreenToCalc(tempMeanY);
@@ -666,13 +635,17 @@ bool Fractal::RecenterViewScreen(RECT rect)
 //////////////////////////////////////////////////////////////////////////////
 bool Fractal::CenterAtPoint(size_t x, size_t y)
 {
-    HighPrecision newCenterX = XFromScreenToCalc((HighPrecision)x);
-    HighPrecision newCenterY = YFromScreenToCalc((HighPrecision)y);
-    HighPrecision width = m_MaxX - m_MinX;
-    HighPrecision height = m_MaxY - m_MinY;
+    const HighPrecision newCenterX = XFromScreenToCalc((HighPrecision)x);
+    const HighPrecision newCenterY = YFromScreenToCalc((HighPrecision)y);
+    const HighPrecision width = m_MaxX - m_MinX;
+    const HighPrecision height = m_MaxY - m_MinY;
+    const auto two = HighPrecision{ 2 };
 
-    return RecenterViewCalc(newCenterX - width / 2, newCenterY - height / 2,
-        newCenterX + width / 2, newCenterY + height / 2);
+    return RecenterViewCalc(
+        newCenterX - width / two,
+        newCenterY - height / two,
+        newCenterX + width / two,
+        newCenterY + height / two);
 }
 
 void Fractal::Zoom(double factor) {
@@ -724,7 +697,7 @@ void Fractal::InitialDefaultViewAndSettings(int width, int height) {
 
 template<Fractal::AutoZoomHeuristic h>
 void Fractal::AutoZoom() {
-    const HighPrecision Two = 2;
+    const HighPrecision Two = HighPrecision{ 2 };
 
     HighPrecision width = m_MaxX - m_MinX;
     HighPrecision height = m_MaxY - m_MinY;
@@ -734,10 +707,6 @@ void Fractal::AutoZoom() {
 
     double newExp = 0;
     HighPrecision p10_9;
-    if constexpr (DigitPrecision != 0) {
-        newExp = -(double)DigitPrecision + 10;
-        p10_9 = boost::multiprecision::pow(HighPrecision{ 10 }, newExp);
-    }
 
     size_t retries = 0;
 
@@ -767,10 +736,6 @@ void Fractal::AutoZoom() {
             width = m_MaxX - m_MinX;
             height = m_MaxY - m_MinY;
             retries = 0;
-        }
-
-        if (DigitPrecision != 0 && width < p10_9 || height < p10_9) {
-            break;
         }
 
         size_t numAtMax = 0;
@@ -876,8 +841,8 @@ void Fractal::AutoZoom() {
                     double meanX = geometricMeanX / geometricMeanSum;
                     double meanY = geometricMeanY / geometricMeanSum;
 
-                    guessX = XFromScreenToCalc<true>(meanX);
-                    guessY = YFromScreenToCalc<true>(meanY);
+                    guessX = XFromScreenToCalc<true>(HighPrecision{ meanX });
+                    guessY = YFromScreenToCalc<true>(HighPrecision{ meanY });
 
                     //wchar_t temps[256];
                     //swprintf(temps, 256, L"Coords: %f %f", meanX, meanY);
@@ -926,8 +891,8 @@ void Fractal::AutoZoom() {
                     }
                 }
 
-                guessX = XFromScreenToCalc<true>(targetX);
-                guessY = YFromScreenToCalc<true>(targetY);
+                guessX = XFromScreenToCalc<true>(HighPrecision{ targetX });
+                guessY = YFromScreenToCalc<true>(HighPrecision{ targetY });
 
                 if (numAtLimit == m_ScrnWidth * m_ScrnHeight * GetGpuAntialiasing() * GetGpuAntialiasing()) {
                     ::MessageBox(nullptr, L"Flat screen! :(", L"", MB_OK | MB_APPLMODAL);
@@ -961,8 +926,8 @@ void Fractal::AutoZoom() {
         HighPrecision defaultMaxX = centerX + width / Divisor;
         HighPrecision defaultMaxY = centerY + height / Divisor;
 
-        const HighPrecision defaultWeight = 0;
-        const HighPrecision newWeight = 1;
+        const HighPrecision defaultWeight{ 0 };
+        const HighPrecision newWeight{ 1 };
         HighPrecision weightedNewMinX = (newWeight * newMinX + defaultWeight * defaultMinX) / (newWeight + defaultWeight);
         HighPrecision weightedNewMinY = (newWeight * newMinY + defaultWeight * defaultMinY) / (newWeight + defaultWeight);
         HighPrecision weightedNewMaxX = (newWeight * newMaxX + defaultWeight * defaultMaxX) / (newWeight + defaultWeight);
@@ -1009,7 +974,7 @@ void Fractal::View(size_t view)
     HighPrecision maxY;
 
     // Kludgy.  Resets at end of function.
-    SetPrecision(50000, minX, minY, maxX, maxY);
+    SetPrecision(50000*8, minX, minY, maxX, maxY);
     ResetDimensions(MAXSIZE_T, MAXSIZE_T, 1);
 
     // Reset to default reference compression if applicable
@@ -1335,7 +1300,7 @@ void Fractal::View(size_t view)
         PointZoomBBConverter convert{
             HighPrecision{ "-0.78357258131693201848402248673763510929247505272831266057704586113704552672654543882044270858092456381987994546549852876692859909561755391265355199497404492041228861076801749623764143399390888488208572260704851239247869416227467961231659444025891772199560981432768447950466282690283991042834518718171553022169609262823634995943146552535870329823356291325770036728678611063334077481034388497068730995269392258576696350667809200776492979615472816119929158335691642297378825492380926877880487051007245937478823028971874456505367495351180203035405028810217970544185374436303178841531462477017634850795735626731254181950394516662361927037219074126356532227522654398374246031276814484469022812212349877184991821899537274813724188230500055376322113946943548594993071273295473261945406662889998574845294799902162275824755258664410564760244716384684763383812925460421453366963471628591106533219446442058114954849520480879950501383884595320608202525552406745338828936722536142172419248767595540795607753440438925998682087112956744136995760615254370441241197496086732467857392296516823363667055304008076386706560545996534967608517639513584192764696868592510269244562741122504718287217337214083323131246255092588528858164698661338066865143707757904605373639637291817505285031603623424325984406569786617258296215269227464735292839109288888468719884851237301213551893098381056811998178973781737891683934287267756358289285966363988879659930492897072648686846378475818313118335272764516839858219382222937930619135256652133012300078524386532732330301190527830956418713300029188011366397990691291389072294262560488732214928879680007774470397756177040937826258588089061300608980577332289177236000830020331429835695001695217441742219835518040890926184677072855313373476012042253994203984955908073282132792077357383134154475213164393689348439130324054100376067212154981801158944492951022545480622896284399378343453068007107662398569610564594447063545128554978530089511011341769951843473818189371594410594312477768089349275457419851881405010730975582534374626451542794354249545347101471787476466638604038695956658040091509581821185265672836188768186761326653412185604269801843840407252673817968223578798076704623448487830568001949857047346424395825734745526605761818826187464437663075685708788549588855043130838201916189489275597337364007632668716622195086633913448835281066732974585842548049169181072000124840340553192391942619217843528857250103501320952487522453844657822312827388201623723267742157971405817378011006568331167398805481163741193232994728104375573140372521285321149200483318933390410902703978210177709694335578591104851162688511447462960332304912242272678524371361575018826050270311909756998673473741813906702902294751460213290607943881491393681713931898527576517295182475747971903060065280027261535058632534841405987177156185135492266341512692752134833853725585318796919396225123726842118797682182549637644584617557061798865048122282597184371759046055619318763065529248487796369531932196785243400150011223504641565545512681698453040738076250439068398583960345899567892815087977308822415484944086025031863" },
             HighPrecision{ "0.14097147591894465668176058460180912385145765782544137436984900196282336001321062012167222916481464983193055458426090729289972230272521929010955105536981973217176372620742139158110174776396054443938706485051489910999484560857342123376100488827011203696528832707914769931125969808425241886050391534879059172618795462265837942373314854005803565236985742496443284490406602423445356513447835931903810966701794756256189939334839129972272262431925492731771353132823657666609771401456148297138689392609824594260461385338127331791549578883876447084693478006331992613111062370553806825052522763848728103727010222551592464375346818284906235463732262643897270414097935465680637904564162117508026180798392883081897136677438944897288602185090874391903323838075981758073442521535678672417138093318113049476327534253952371642398367248964670848675992848938943786728265066782826414562668640540029965706780139555360402219873486150630354368381441538648010351346011675232920070836256254539814245704389650106041045403539199341583535397012638093342591600688042066207225120446545321508409166329515982421311243242899951453319779502071837897567375513618907712343707048007604605938076626190910292124811528445511718409095056227725320333485524592487271927566910026792964800878308259293654356421407806848050085360620009572043228699852276611292441461864608542911244826049678761377654474908064396504452693428171057887316386234954116266505230125436456478307587312661503308428562417535234081858921285912962410202089505936740893491162449151667259124948215336195409049212517894962105384362437291777072348019825104381880217480541701924230261300845454188030215994140489649742653609182731116578035105526537495326720084792809260592819354919989193972929515243243079359686670951326077590911960654330042961485216645325834476787748779214077550298491686593128483556722442092447965182186189178413200562251283789927054944965875216747547958912055486724266445796090511401778399850412451406652985185158254892055233978178573145496365201011820682022371114681795586713390299849429122045428295931791653758300590655337090084419160950673256412260233009859856451791424656917323118229107662258436965505627847473661002670731334831632621815383705711483445729233946270395524816170481415689155220624862626508448723159605764911289761746707542709093250174383789312001755557345224150376675823876511059743250628186365946335567492547807978847432391791199157587020085364004139775968256093442569232497066439204755440293411189273288571737269005184282601923291649581572690037984022424351779141079999781622550290594322766993380050227038049983152721128982046618948366581350215056570910940560850060974476174310085576629629453224203786074560281275942252933131198966519206616783135381489188616614585282089359354793604536229950029350049837810816066812715298060548372777589664454808097662838999774161517161136200239758243750680766972867495440832710162511275987726397625085179278419574036492482875965981200285059287588217136720204456849938887075758112279495707715688198022228342539285641994256390293626704096006142686191615927829997121552009564979821977515676624039388572675029" },
-            HighPrecision{"1"} / HighPrecision{ "1.9e-3068" }
+            HighPrecision{ "1" } / HighPrecision{ "1.9e-3068" }
         };
 
         minX = convert.minX;
@@ -1382,13 +1347,13 @@ void Fractal::SquareCurrentView(void)
 
     if (height > mwidth)
     {
-        m_MinX -= ratio * (height - mwidth) / 2.0;
-        m_MaxX += ratio * (height - mwidth) / 2.0;
+        m_MinX -= ratio * (height - mwidth) / HighPrecision{ 2.0 };
+        m_MaxX += ratio * (height - mwidth) / HighPrecision{ 2.0 };
     }
     else if (height < mwidth)
     {
-        m_MinY -= (mwidth - height) / 2.0;
-        m_MaxY += (mwidth - height) / 2.0;
+        m_MinY -= (mwidth - height) / HighPrecision{ 2.0 };
+        m_MaxY += (mwidth - height) / HighPrecision{ 2.0 };
     }
 
     m_ChangedWindow = true;
@@ -1401,7 +1366,7 @@ void Fractal::SquareCurrentView(void)
 // The images can then be made into a movie!
 void Fractal::ApproachTarget(void)
 {
-    HighPrecision targetIters = 100000;
+    HighPrecision targetIters{ 100000 };
     int numFrames = 1000;
 
     HighPrecision deltaXMin;
@@ -1420,10 +1385,10 @@ void Fractal::ApproachTarget(void)
         auto MaxX = GetMaxX();
         auto MaxY = GetMaxY();
 
-        deltaXMin = (MinX - m_MinX) / 75.0;
-        deltaYMin = (MinY - m_MinY) / 75.0;
-        deltaXMax = (MaxX - m_MaxX) / 75.0;
-        deltaYMax = (MaxY - m_MaxY) / 75.0;
+        deltaXMin = (MinX - m_MinX) / HighPrecision{ 75.0 };
+        deltaYMin = (MinY - m_MinY) / HighPrecision{ 75.0 };
+        deltaXMax = (MaxX - m_MaxX) / HighPrecision{ 75.0 };
+        deltaYMax = (MaxY - m_MaxY) / HighPrecision{ 75.0 };
 
         m_MinX += deltaXMin;
         m_MinY += deltaYMin;
@@ -1523,8 +1488,8 @@ void Fractal::FindInterestingLocation(RECT *rect)
     int sizeX = Convert<HighPrecision, int>(sizeXHigh);
 
     uint64_t numberAtMax, numberAtMaxFinal = 0;
-    HighPrecision percentAtMax, percentAtMaxFinal = 10000000.0;
-    HighPrecision desiredPercent = (rand() % 75) / 100.0 + .10;
+    HighPrecision percentAtMax, percentAtMaxFinal{ 10000000.0 };
+    HighPrecision desiredPercent{ (rand() % 75) / 100.0 + .10 };
 
     int i;
     for (i = 0; i < 1000; i++)
@@ -1553,7 +1518,7 @@ void Fractal::FindInterestingLocation(RECT *rect)
 
         percentAtMax = (HighPrecision)numberAtMax / ((HighPrecision)sizeX * (HighPrecision)sizeY * (HighPrecision)GetNumIterations<IterTypeFull>());
 
-        if (fabs(percentAtMax - desiredPercent) < fabs(percentAtMaxFinal - desiredPercent))
+        if (abs(percentAtMax - desiredPercent) < abs(percentAtMaxFinal - desiredPercent))
         {
             numberAtMaxFinal = numberAtMax;
             percentAtMaxFinal = percentAtMax;
@@ -1573,13 +1538,6 @@ void Fractal::FindInterestingLocation(RECT *rect)
     rect->top = yMinFinal;
     rect->right = xMaxFinal;
     rect->bottom = yMaxFinal;
-}
-
-// Let's us know if we've zoomed in too far.
-bool Fractal::IsValidLocation(void)
-{
-    return ((m_MaxX - m_MinX) / m_ScrnWidth > pow((HighPrecision)10, (HighPrecision)-16)) &&
-        ((m_MaxY - m_MinY) / m_ScrnHeight > pow((HighPrecision)10, (HighPrecision)-16));
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -2422,7 +2380,7 @@ void Fractal::CreateNewFractalPalette(void)
 // get the image oriented right side up. In particular, the line which reads:
 //       glVertex2i (px, m_ScrnHeight - py);
 //////////////////////////////////////////////////////////////////////////////
-void Fractal::DrawFractal(bool MemoryOnly)
+void Fractal::DrawFractal(bool /*MemoryOnly*/)
 {
     {
         std::unique_lock lk(m_AsyncRenderThreadMutex);
@@ -2955,8 +2913,10 @@ void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
         PerturbExtras::Disable,
         RefOrbitCalc::Extras::None>();
 
-    double dx = Convert<HighPrecision, double>((m_MaxX - m_MinX) / (m_ScrnWidth * GetGpuAntialiasing()));
-    double dy = Convert<HighPrecision, double>((m_MaxY - m_MinY) / (m_ScrnHeight * GetGpuAntialiasing()));
+    HighPrecision hiDx{ (m_MaxX - m_MinX) / HighPrecision{ m_ScrnWidth *  GetGpuAntialiasing() } };
+    HighPrecision hiDy{ (m_MaxY - m_MinY) / HighPrecision{ m_ScrnHeight * GetGpuAntialiasing() } };
+    double dx = Convert<HighPrecision, double>(hiDx);
+    double dy = Convert<HighPrecision, double>(hiDy);
 
     double centerX = (double)(results->GetHiX() - m_MinX);
     double centerY = (double)(results->GetHiY() - m_MaxY);
@@ -3107,8 +3067,8 @@ void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
 //////////////////////////////////////////////////////////////////////////////
 template<typename IterType, class T, class SubType>
 void Fractal::CalcCpuHDR(bool MemoryOnly) {
-    const T dx = T((m_MaxX - m_MinX) / (m_ScrnWidth * GetGpuAntialiasing()));
-    const T dy = T((m_MaxY - m_MinY) / (m_ScrnHeight * GetGpuAntialiasing()));
+    const T dx = T((m_MaxX - m_MinX) / HighPrecision{ m_ScrnWidth * GetGpuAntialiasing() });
+    const T dy = T((m_MaxY - m_MinY) / HighPrecision{ m_ScrnHeight * GetGpuAntialiasing() });
 
     const size_t num_threads = std::thread::hardware_concurrency();
     std::deque<std::atomic_uint64_t> atomics;
@@ -3131,7 +3091,7 @@ void Fractal::CalcCpuHDR(bool MemoryOnly) {
             }
 
             T cx = T{ m_MinX };
-            T cy = T{ m_MaxY - dy * (SubType)y };
+            T cy = T{ T{m_MaxY} - dy * (SubType)y };
             T zx, zy;
             T zx2, zy2;
             T sum;
@@ -3191,8 +3151,8 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
     BLAS<IterType, T> blas(*results);
     blas.Init((IterType)results->GetCountOrbitEntries(), results->GetMaxRadius());
 
-    T dx = T((m_MaxX - m_MinX) / (m_ScrnWidth * GetGpuAntialiasing()));
-    T dy = T((m_MaxY - m_MinY) / (m_ScrnHeight * GetGpuAntialiasing()));
+    T dx = T((m_MaxX - m_MinX) / HighPrecision{ m_ScrnWidth * GetGpuAntialiasing() });
+    T dy = T((m_MaxY - m_MinY) / HighPrecision{ m_ScrnHeight * GetGpuAntialiasing() });
 
     T centerX = (T)(results->GetHiX() - m_MinX);
     HdrReduce(centerX);
@@ -3440,9 +3400,9 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
 
     auto &LaReference = *results->GetLaReference();
 
-    T dx = T((m_MaxX - m_MinX) / (m_ScrnWidth * GetGpuAntialiasing()));
+    T dx = T((m_MaxX - m_MinX) / HighPrecision(m_ScrnWidth * GetGpuAntialiasing()));
     HdrReduce(dx);
-    T dy = T((m_MaxY - m_MinY) / (m_ScrnHeight * GetGpuAntialiasing()));
+    T dy = T((m_MaxY - m_MinY) / HighPrecision(m_ScrnHeight * GetGpuAntialiasing()));
     HdrReduce(dy);
 
     T centerX = (T)(results->GetHiX() - m_MinX);
@@ -4001,27 +3961,35 @@ uint64_t Fractal::FindTotalItersUsed(void)
 template<bool IncludeGpuAntialiasing>
 HighPrecision Fractal::XFromScreenToCalc(HighPrecision x)
 {
-    size_t aa = (IncludeGpuAntialiasing ? GetGpuAntialiasing() : 1);
-    HighPrecision OriginX = (HighPrecision)(m_ScrnWidth * aa) / (m_MaxX - m_MinX) * -m_MinX;
-    return (x - OriginX) * (m_MaxX - m_MinX) / (m_ScrnWidth * aa);
+    HighPrecision aa(IncludeGpuAntialiasing ? GetGpuAntialiasing() : 1);
+    HighPrecision highHeight(m_ScrnHeight);
+    HighPrecision highWidth(m_ScrnWidth);
+    HighPrecision OriginX{ highWidth * aa / (m_MaxX - m_MinX) * -m_MinX };
+    return HighPrecision{ (x - OriginX) * (m_MaxX - m_MinX) / (highWidth * aa) };
 }
 
 template<bool IncludeGpuAntialiasing>
 HighPrecision Fractal::YFromScreenToCalc(HighPrecision y)
 {
-    size_t aa = (IncludeGpuAntialiasing ? GetGpuAntialiasing() : 1);
-    HighPrecision OriginY = (HighPrecision)(m_ScrnHeight * aa) / (m_MaxY - m_MinY) * m_MaxY;
-    return -(y - OriginY) * (m_MaxY - m_MinY) / (m_ScrnHeight * aa);
+    HighPrecision aa(IncludeGpuAntialiasing ? GetGpuAntialiasing() : 1);
+    HighPrecision highHeight(m_ScrnHeight);
+    HighPrecision highWidth(m_ScrnWidth);
+    HighPrecision OriginY = (HighPrecision)(highHeight * aa) / (m_MaxY - m_MinY) * m_MaxY;
+    return HighPrecision{ -(y - OriginY) * (m_MaxY - m_MinY) / (highHeight * aa) };
 }
 
 HighPrecision Fractal::XFromCalcToScreen(HighPrecision x) const
 {
-    return (x - m_MinX) * ((HighPrecision)m_ScrnWidth / (m_MaxX - m_MinX));
+    HighPrecision highHeight(m_ScrnHeight);
+    HighPrecision highWidth(m_ScrnWidth);
+    return HighPrecision{ (x - m_MinX) * (highWidth / (m_MaxX - m_MinX)) };
 }
 
 HighPrecision Fractal::YFromCalcToScreen(HighPrecision y) const
 {
-    return (HighPrecision)m_ScrnHeight - (y - m_MinY) * ((HighPrecision)m_ScrnHeight / (m_MaxY - m_MinY));
+    HighPrecision highHeight(m_ScrnHeight);
+    HighPrecision highWidth(m_ScrnWidth);
+    return HighPrecision{ highHeight - (y - m_MinY) * highHeight / (m_MaxY - m_MinY) };
 }
 
 void Fractal::ForceRecalc() {

@@ -16,9 +16,8 @@ struct PointZoomBBConverter {
         HighPrecision maxX,
         HighPrecision maxY);
 
-    HighPrecision ptX, ptY;
-    HighPrecision zoomFactor;
-
     HighPrecision minX, minY;
     HighPrecision maxX, maxY;
+    HighPrecision ptX, ptY;
+    HighPrecision zoomFactor;
 };

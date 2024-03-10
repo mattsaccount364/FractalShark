@@ -384,8 +384,8 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
         OptionsToUse = AddPointOptions::EnableWithoutSave;
     }
 
-    for (size_t i = 0; i < ThreadCount; i++) {
-        std::wstring filename = L"LAsPerThread" + std::to_wstring(i) + L".dat";
+    for (size_t k = 0; k < ThreadCount; k++) {
+        std::wstring filename = L"LAsPerThread" + std::to_wstring(k) + L".dat";
         LAsPerThread.emplace_back(OptionsToUse, filename);
     }
 

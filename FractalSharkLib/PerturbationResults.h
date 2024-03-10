@@ -115,7 +115,7 @@ public:
         m_UncompressedItersInOrbit{},
         m_GenerationNumber{ Generation },
         m_LaReference{},
-        m_AuthoritativePrecision{},
+        m_AuthoritativePrecisionInBits{},
         m_ReuseX{},
         m_ReuseY{},
         m_BenchmarkOrbit{} {
@@ -200,7 +200,7 @@ public:
         m_FullOrbit.MutableResize(other.m_FullOrbit.GetSize(), 0);
         m_UncompressedItersInOrbit = other.m_UncompressedItersInOrbit;
 
-        m_AuthoritativePrecision = other.m_AuthoritativePrecision;
+        m_AuthoritativePrecisionInBits = other.m_AuthoritativePrecisionInBits;
         m_ReuseX.reserve(other.m_ReuseX.size());
         m_ReuseY.reserve(other.m_ReuseY.size());
 
@@ -218,7 +218,7 @@ public:
 
         assert(m_UncompressedItersInOrbit == m_FullOrbit.GetSize());
 
-        m_AuthoritativePrecision = other.m_AuthoritativePrecision;
+        m_AuthoritativePrecisionInBits = other.m_AuthoritativePrecisionInBits;
         m_ReuseX = other.m_ReuseX;
         m_ReuseY = other.m_ReuseY;
 
@@ -254,7 +254,7 @@ public:
         m_FullOrbit = {};
         m_UncompressedItersInOrbit = other.m_UncompressedItersInOrbit;
 
-        m_AuthoritativePrecision = other.m_AuthoritativePrecision;
+        m_AuthoritativePrecisionInBits = other.m_AuthoritativePrecisionInBits;
         m_ReuseX = other.m_ReuseX;
         m_ReuseY = other.m_ReuseY;
 
@@ -313,9 +313,9 @@ public:
             return;
         }
 
-        metafile << "Precision: " << m_OrbitX.precision() << std::endl;
+        metafile << "PrecisionInBits: " << m_OrbitX.precisionInBits() << std::endl;
         metafile << "HighPrecisionReal: " << HdrToString(m_OrbitX) << std::endl;
-        metafile << "Precision: " << m_OrbitY.precision() << std::endl;
+        metafile << "PrecisionInBits: " << m_OrbitY.precisionInBits() << std::endl;
         metafile << "HighPrecisionImaginary: " << HdrToString(m_OrbitY) << std::endl;
         metafile << "LowPrecisionReal: " << HdrToString(m_OrbitXLow) << std::endl;
         metafile << "LowPrecisionImaginary: " << HdrToString(m_OrbitYLow) << std::endl;
@@ -470,7 +470,7 @@ public:
             metafile >> descriptor_string_junk;
             metafile >> shiX;
 
-            m_OrbitX.precision(prec);
+            m_OrbitX.precisionInBits(prec);
             m_OrbitX = HighPrecision{ shiX };
             m_OrbitXStr = shiX;
         }
@@ -486,7 +486,7 @@ public:
             metafile >> descriptor_string_junk;
             metafile >> shiY;
 
-            m_OrbitY.precision(prec);
+            m_OrbitY.precisionInBits(prec);
             m_OrbitY = HighPrecision{ shiY };
             m_OrbitYStr = shiY;
         }
@@ -558,7 +558,7 @@ public:
         HighPrecision Zero = 0;
 
         //assert(RequiresReuse());
-        Zero.precision(AuthoritativeReuseExtraPrecision);
+        Zero.defaultPrecisionInBits(AuthoritativeReuseExtraPrecisionInBits);
 
         m_ReuseX.push_back(Zero);
         m_ReuseY.push_back(Zero);
@@ -592,10 +592,10 @@ public:
         // e.g. HDRFloat<float> vs HDRFloat<double>.  This 2.0 here seems to compensat, but
         // makes no sense.  So what bug are we covering up here?
         if constexpr (std::is_same<T, HDRFloat<double>>::value) {
-            m_MaxRadius = (T)((radiusX > radiusY ? radiusX : radiusY) * 2.0);
+            m_MaxRadius = T((radiusX > radiusY ? radiusX : radiusY) * HighPrecision { 2.0 });
         }
         else {
-            m_MaxRadius = (T)(radiusX > radiusY ? radiusX : radiusY);
+            m_MaxRadius = T(radiusX > radiusY ? radiusX : radiusY);
         }
 
         HdrReduce(m_MaxRadius);
@@ -612,14 +612,14 @@ public:
         m_UncompressedItersInOrbit = 1;
 
         if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
-            m_AuthoritativePrecision = cx.precision();
+            m_AuthoritativePrecisionInBits = cx.precisionInBits();
             m_ReuseX.reserve(ReserveSize);
             m_ReuseY.reserve(ReserveSize);
 
             InitReused();
         }
         else if constexpr (Reuse == RefOrbitCalc::ReuseMode::DontSaveForReuse) {
-            m_AuthoritativePrecision = 0;
+            m_AuthoritativePrecisionInBits = 0;
         }
 
         m_LaReference = nullptr;
@@ -707,8 +707,8 @@ public:
         m_FullOrbit.Back().bad = bad;
     }
 
-    uint32_t GetAuthoritativePrecision() const {
-        return m_AuthoritativePrecision;
+    uint64_t GetAuthoritativePrecisionInBits() const {
+        return m_AuthoritativePrecisionInBits;
     }
 
     IterType GetPeriodMaybeZero() const {
@@ -892,7 +892,7 @@ private:
 
     std::unique_ptr<LAReference<IterType, T, SubType, PExtras>> m_LaReference;
 
-    uint32_t m_AuthoritativePrecision;
+    uint64_t m_AuthoritativePrecisionInBits;
     std::vector<HighPrecision> m_ReuseX;
     std::vector<HighPrecision> m_ReuseY;
 

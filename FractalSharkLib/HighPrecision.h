@@ -1,30 +1,259 @@
 #pragma once
 
+
 #ifndef __CUDACC__
 
-#include <codeanalysis\warnings.h>
-#pragma warning( push )
-#pragma warning ( disable : ALL_CODE_ANALYSIS_WARNINGS )
-#include <boost/multiprecision/cpp_dec_float.hpp>
-#include <boost/multiprecision/gmp.hpp>
-#include <boost/multiprecision/number.hpp>
-#pragma warning( pop )
+// Include MPIR header
+#include <mpir.h>
+#include <string>
+#include <assert.h>
+#include <iostream>
 
-// THIS IS SO STUPID BUT I DON'T KNOW HOW TO FIX IT
-// CAN WE REMOVE THIS IFDEF AND USE CONSTEXPR
-// #define CONSTANT_PRECISION
+class HighPrecision {
+public:
+    HighPrecision() {
+        mpf_init(m_Data);
+    }
 
-// 1) Toggle the above pre-processor definition if necessary.
-// 2) Set to non-zero to force specific precision
-// 3) Set to zero for dynamic.
-constexpr const size_t DigitPrecision = 0;
+    HighPrecision(const HighPrecision& other) {
+        mpf_init2(m_Data, other.precisionInBits());
+        mpf_set(m_Data, other.m_Data);
+    }
 
-using HighPrecision = boost::multiprecision::number<
-    boost::multiprecision::gmp_float<DigitPrecision>,
-    boost::multiprecision::et_on>;
+    HighPrecision(const mpf_t& data) {
+        mpf_init2(m_Data, mpf_get_prec(data));
+        mpf_set(m_Data, data);
+    }
+
+    HighPrecision(HighPrecision&& other) {
+        m_Data[0] = other.m_Data[0];
+        other.m_Data[0] = {};
+    }
+
+    ~HighPrecision() {
+        mpf_clear(m_Data);
+    }
+
+    HighPrecision& operator=(const HighPrecision& other) {
+        mpf_set_prec(m_Data, other.precisionInBits());
+        mpf_set(m_Data, other.m_Data);
+        return *this;
+    }
+
+    HighPrecision& operator=(HighPrecision&& other) {
+        m_Data[0] = other.m_Data[0];
+        other.m_Data[0] = {};
+        return *this;
+    }
+
+    HighPrecision(double data) {
+        mpf_init(m_Data);
+        mpf_set_d(m_Data, data);
+    }
+
+    HighPrecision(uint64_t data) {
+        mpf_init(m_Data);
+        mpf_set_ui(m_Data, data);
+    }
+
+    HighPrecision(uint32_t data) {
+        mpf_init(m_Data);
+        mpf_set_ui(m_Data, data);
+    }
+
+    HighPrecision(int64_t data) {
+        mpf_init(m_Data);
+        mpf_set_si(m_Data, data);
+    }
+
+    HighPrecision(int data) {
+        mpf_init(m_Data);
+        mpf_set_si(m_Data, data);
+    }
+
+    HighPrecision(long data) {
+        mpf_init(m_Data);
+        mpf_set_si(m_Data, data);
+    }
+
+    HighPrecision(std::string data) {
+        mpf_init(m_Data);
+        mpf_set_str(m_Data, data.c_str(), 10);
+    }
+
+    void precisionInBits(uint64_t prec) {
+        mpf_set_prec(m_Data, prec);
+    }
+
+    uint64_t precisionInBits() const {
+        return (uint32_t)mpf_get_prec(m_Data);
+    }
+
+    template<typename T>
+    HighPrecision& operator=(const T &data) {
+        mpf_set_d(m_Data, data);
+        return *this;
+    }
+
+    HighPrecision& operator=(const char* data) {
+        mpf_set_str(m_Data, data, 10);
+        return *this;
+    }
+
+    HighPrecision& operator=(const std::string& data) {
+        mpf_set_str(m_Data, data.c_str(), 10);
+        return *this;
+    }
+
+    HighPrecision& operator+=(const HighPrecision& data) {
+        mpf_add(m_Data, m_Data, data.m_Data);
+        return *this;
+    }
+
+    HighPrecision& operator-=(const HighPrecision& data) {
+        mpf_sub(m_Data, m_Data, data.m_Data);
+        return *this;
+    }
+
+    HighPrecision& operator*=(const HighPrecision& data) {
+        mpf_mul(m_Data, m_Data, data.m_Data);
+        return *this;
+    }
+
+    HighPrecision& operator/=(const HighPrecision& data) {
+        mpf_div(m_Data, m_Data, data.m_Data);
+        return *this;
+    }
+
+    friend HighPrecision operator+(const HighPrecision& lhs, const HighPrecision& rhs) {
+        HighPrecision result;
+        mpf_add(result.m_Data, lhs.m_Data, rhs.m_Data);
+        return result;
+    }
+
+    friend HighPrecision operator-(const HighPrecision& lhs, const HighPrecision& rhs) {
+        HighPrecision result;
+        mpf_sub(result.m_Data, lhs.m_Data, rhs.m_Data);
+        return result;
+    }
+
+    HighPrecision operator-() const {
+        HighPrecision result;
+        mpf_neg(result.m_Data, m_Data);
+        return result;
+    }
+
+    friend HighPrecision operator*(const HighPrecision& lhs, const HighPrecision& rhs) {
+        HighPrecision result;
+        mpf_mul(result.m_Data, lhs.m_Data, rhs.m_Data);
+        return result;
+    }
+
+    friend HighPrecision operator/(const HighPrecision& lhs, const HighPrecision& rhs) {
+        HighPrecision result;
+        mpf_div(result.m_Data, lhs.m_Data, rhs.m_Data);
+        return result;
+    }
+
+    friend bool operator==(const HighPrecision& lhs, const HighPrecision& rhs) {
+        return mpf_cmp(lhs.m_Data, rhs.m_Data) == 0;
+    }
+
+    friend bool operator!=(const HighPrecision& lhs, const HighPrecision& rhs) {
+        return mpf_cmp(lhs.m_Data, rhs.m_Data) != 0;
+    }
+
+    friend bool operator<(const HighPrecision& lhs, const HighPrecision& rhs) {
+        return mpf_cmp(lhs.m_Data, rhs.m_Data) < 0;
+    }
+
+    
+    friend bool operator>(const HighPrecision& lhs, const HighPrecision& rhs) {
+        return mpf_cmp(lhs.m_Data, rhs.m_Data) > 0;
+    }
+
+    friend bool operator<=(const HighPrecision& lhs, const HighPrecision& rhs) {
+        return mpf_cmp(lhs.m_Data, rhs.m_Data) <= 0;
+    }
+
+    friend bool operator>=(const HighPrecision& lhs, const HighPrecision& rhs) {
+        return mpf_cmp(lhs.m_Data, rhs.m_Data) >= 0;
+    }
+
+    std::string str() const {
+        mp_exp_t exponent;
+        char* str = mpf_get_str(NULL, &exponent, 10, 0, m_Data);
+        std::string result(str);
+        free(str);
+        return result;
+    }
+
+    // Provide operator<< that returns a string representation of m_Data:
+    friend std::ostream& operator<<(std::ostream& os, const HighPrecision& data) {
+        os << data.str();
+        return os;
+    }
+
+    friend std::istream& operator>>(std::istream& is, HighPrecision& data) {
+        std::string str;
+        is >> str;
+        data = str;
+        return is;
+    }
+
+    static void defaultPrecisionInBits(uint64_t prec) {
+        mpf_set_default_prec(prec);
+    }
+
+    static uint64_t defaultPrecisionInBits() {
+        return mpf_get_default_prec();
+    }
+
+    // Return mantissa and exponent of m_Data in two out parameters.
+    // Use double for mantissa:
+    void frexp(double& mantissa, long& exponent) const {
+        exponent = static_cast<int32_t>(mpf_get_2exp_d(&mantissa, m_Data));
+    }
+
+    friend HighPrecision abs(const HighPrecision& data) {
+        HighPrecision result;
+        mpf_abs(result.m_Data, data.m_Data);
+        return result;
+    }
+
+    const __mpf_struct *backend() const {
+        return &m_Data[0];
+    }
+
+    const mpf_t *backendRaw() const {
+        return &m_Data;
+    }
+
+    explicit operator double() const {
+        return mpf_get_d(m_Data);
+    }
+
+    explicit operator float() const {
+        return static_cast<float>(mpf_get_d(m_Data));
+    }
+
+private:
+    mpf_t m_Data;
+};
+
+
 template<class From, class To>
 To Convert(From data) {
-    return data.convert_to<To>();
+    if constexpr (std::is_same<To, double>::value || std::is_same<To, float>::value) {
+        return static_cast<To>(mpf_get_d(*data.backendRaw()));
+    }
+    else if constexpr(std::is_same<To, int>::value || std::is_same<To, long>::value || std::is_same<To, long long>::value) {
+        return static_cast<To>(mpf_get_si(*data.backendRaw()));
+    }
+    else {
+        assert(false);
+        return 0;
+    }
 }
 #endif
 
@@ -47,22 +276,10 @@ void check_size() {
 
 
 // Amount of extra precision before forcing a full-precision recalculation
-constexpr size_t AuthoritativeMinExtraPrecision = 25;
+constexpr size_t AuthoritativeMinExtraPrecisionInBits = 25 * 8;
 
 // Amount of precision used for medium-precision reference orbit.
-constexpr size_t AuthoritativeReuseExtraPrecision = 100;
-
-//using HighPrecision = boost::multiprecision::cpp_dec_float_100;
-//template<class From, class To>
-//To Convert(From data) {
-//    return data.convert_to<To>();
-//}
-
-//using HighPrecision = double;
-//template<class From, class To>
-//To Convert(From data) {
-//    return static_cast<To>(data);
-//}
+constexpr size_t AuthoritativeReuseExtraPrecisionInBits = 100 * 8;
 
 // TODO move to templates
 //using IterType = uint32_t;

@@ -200,7 +200,7 @@ void BLAS<IterType, T, PExtras>::Merge(T blaSize) {
 
 template<typename IterType, class T, PerturbExtras PExtras>
 void BLAS<IterType, T, PExtras>::Init(size_t InM, T blaSize) {
-    T precision = T(1) / ((T)(1L << BLA_BITS));
+    T precision = T(1) / T{ 1L << BLA_BITS };
 
     this->m_M = InM;
 

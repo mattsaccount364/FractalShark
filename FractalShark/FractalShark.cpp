@@ -1490,7 +1490,7 @@ void MenuGetCurPos(HWND hWnd)
     auto ptYStr = std::string(s.begin(), s.end());
 
     auto reducedPrecZF = pz.zoomFactor;
-    reducedPrecZF.precision(10);
+    reducedPrecZF.precisionInBits(10 * 8);
     s = setupSS(reducedPrecZF);
     auto zoomFactorStr = std::string(s.begin(), s.end());
 
@@ -1500,17 +1500,23 @@ void MenuGetCurPos(HWND hWnd)
     int32_t CompressionErrorExp;
     uint64_t OrbitMilliseconds;
     uint64_t LAMilliseconds;
+    std::string PerturbationAlg;
+
     gFractal->GetSomeDetails(
         PeriodMaybeZero,
         CompressedIters,
         UncompressedIters,
         CompressionErrorExp,
         OrbitMilliseconds,
-        LAMilliseconds);
+        LAMilliseconds,
+        PerturbationAlg);
+
+    auto ActualPeriodIfAny = (PeriodMaybeZero > 0) ? (PeriodMaybeZero - 1) : 0;
 
     const auto additionalDetailsStr =
+        std::string("PerturbationAlg = ") + PerturbationAlg + "\r\n" +
         std::string("InternalPeriodIfAny = ") + std::to_string(PeriodMaybeZero) + "\r\n" +
-        std::string("ActualPeriodIfAny = ") + std::to_string(PeriodMaybeZero - 1) + "\r\n" +
+        std::string("ActualPeriodIfAny = ") + std::to_string(ActualPeriodIfAny) + "\r\n" +
         std::string("CompressedIters = ") + std::to_string(CompressedIters) + "\r\n" +
         std::string("UncompressedIters = ") + std::to_string(UncompressedIters) + "\r\n" +
         std::string("Compression ratio = ") + std::to_string((double)UncompressedIters / (double)CompressedIters) + "\r\n" +

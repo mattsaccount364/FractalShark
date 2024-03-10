@@ -401,7 +401,7 @@ void GrowableVector<EltT>::MutableFileCommit(size_t capacity) {
     }
     else {
         auto ret = GetLastError();
-        std::string err_str = "Failed to open file: ";
+        std::string err_str = "Failed to open file: " + std::to_string(ret);
         throw FractalSharkSeriousException(err_str);
     }
 }

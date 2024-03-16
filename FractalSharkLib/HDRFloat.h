@@ -1440,17 +1440,7 @@ static CUDA_CRAP std::string HdrToString(const T& dat) {
         return ss.str();
     }
     else if constexpr (std::is_same<T, HighPrecision>::value) {
-        auto setupSS = [&](const HighPrecision& num) -> std::string {
-            std::stringstream ss;
-            ss.str("");
-            ss.clear();
-            ss << std::setprecision(std::numeric_limits<HighPrecision>::max_digits10);
-            ss << num;
-            return ss.str();
-        };
-
-        auto s = setupSS(dat);
-        return s;
+        return dat.str();
     }
     else {
         return dat.ToString();

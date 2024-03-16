@@ -3921,6 +3921,10 @@ int Fractal::SaveItersAsText(std::wstring filename_base) {
     return SaveFractalData<PngParallelSave::Type::ItersText>(filename_base, true);
 }
 
+void Fractal::SaveRefOrbitAsText() {
+    m_RefOrbit.SaveOrbitAsText();
+}
+
 void Fractal::SetResultsAutosave(AddPointOptions Enable) {
     if (Enable == AddPointOptions::EnableWithSave) {
         m_RefOrbit.SetOptions(AddPointOptions::EnableWithSave);

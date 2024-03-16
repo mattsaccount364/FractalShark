@@ -166,6 +166,7 @@ public:
     int SaveCurrentFractal(std::wstring filename_base, bool copy_the_iters);
     int SaveHiResFractal(std::wstring filename_base);
     int SaveItersAsText(std::wstring filename_base);
+    void SaveRefOrbitAsText();
     bool CleanupThreads(bool all);
 
     // Benchmark results
@@ -181,7 +182,7 @@ public:
     inline size_t GetRenderHeight(void) const { return m_ScrnHeight; }
 
     void GetSomeDetails(
-        uint64_t& PeriodMaybeZero,
+        uint64_t& InternalPeriodMaybeZero,
         uint64_t& CompressedIters,
         uint64_t& UncompressedIters,
         int32_t& CompressionErrorExp,
@@ -189,7 +190,7 @@ public:
         uint64_t& LAMilliseconds,
         std::string &PerturbationAlg) {
         m_RefOrbit.GetSomeDetails(
-            PeriodMaybeZero,
+            InternalPeriodMaybeZero,
             CompressedIters,
             UncompressedIters,
             CompressionErrorExp,

@@ -105,13 +105,14 @@ public:
     void LoadAllOrbits();
 
     void GetSomeDetails(
-        uint64_t &PeriodMaybeZero,
+        uint64_t &InternalPeriodMaybeZero,
         uint64_t &CompressedIters,
         uint64_t &UncompressedIters,
         int32_t &CompressionErrorExp,
         uint64_t &OrbitMilliseconds,
         uint64_t &LAMilliseconds,
         std::string &PerturbationAlg);
+    void SaveOrbitAsText() const;
 
     void DrawPerturbationResults();
 

@@ -558,7 +558,7 @@ public:
         HighPrecision Zero = 0;
 
         //assert(RequiresReuse());
-        Zero.defaultPrecisionInBits(AuthoritativeReuseExtraPrecisionInBits);
+        Zero.precisionInBits(AuthoritativeReuseExtraPrecisionInBits);
 
         m_ReuseX.push_back(Zero);
         m_ReuseY.push_back(Zero);
@@ -844,6 +844,49 @@ public:
         }
 
         return decompressed;
+    }
+
+    void SaveOrbitAsText() const {
+        auto outFile = GenFilename(GrowableVectorTypes::DebugOutput);
+
+        std::ofstream out(outFile);
+        if (!out.is_open()) {
+            ::MessageBox(nullptr, L"Failed to open file for writing 3", L"", MB_OK | MB_APPLMODAL);
+            return;
+        }
+
+        out << "m_OrbitX: " << HdrToString(m_OrbitX) << std::endl;
+        out << "m_OrbitY: " << HdrToString(m_OrbitY) << std::endl;
+        out << "m_OrbitXStr: " << m_OrbitXStr << std::endl;
+        out << "m_OrbitYStr: " << m_OrbitYStr << std::endl;
+        out << "m_OrbitXLow: " << HdrToString(m_OrbitXLow) << std::endl;
+        out << "m_OrbitYLow: " << HdrToString(m_OrbitYLow) << std::endl;
+        out << "m_MaxRadius: " << HdrToString(m_MaxRadius) << std::endl;
+        out << "m_MaxIterations: " << m_MaxIterations << std::endl;
+        out << "m_PeriodMaybeZero: " << m_PeriodMaybeZero << std::endl;
+        out << "m_CompressionErrorExp: " << m_CompressionErrorExp << std::endl;
+        out << "m_RefOrbitOptions: " << static_cast<int>(m_RefOrbitOptions) << std::endl;
+        out << "m_FullOrbit: " << m_FullOrbit.GetSize() << std::endl;
+        out << "m_UncompressedItersInOrbit: " << m_UncompressedItersInOrbit << std::endl;
+        out << "m_AuthoritativePrecisionInBits: " << m_AuthoritativePrecisionInBits << std::endl;
+
+        // Write out all values in m_FullOrbit:
+        for (size_t i = 0; i < m_FullOrbit.GetSize(); i++) {
+            out << "m_FullOrbit[" << i << "].x: " << HdrToString(m_FullOrbit[i].x) << std::endl;
+            out << "m_FullOrbit[" << i << "].y: " << HdrToString(m_FullOrbit[i].y) << std::endl;
+        }
+
+        out << "m_ReuseX: " << m_ReuseX.size() << std::endl;
+        for (size_t i = 0; i < m_ReuseX.size(); i++) {
+            out << "m_ReuseX[" << i << "]: " << HdrToString(m_ReuseX[i]) << std::endl;
+        }
+
+        out << "m_ReuseY: " << m_ReuseY.size() << std::endl;
+        for (size_t i = 0; i < m_ReuseY.size(); i++) {
+            out << "m_ReuseY[" << i << "]: " << HdrToString(m_ReuseY[i]) << std::endl;
+        }
+
+        out.close();
     }
 
 private:

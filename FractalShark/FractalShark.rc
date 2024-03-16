@@ -313,6 +313,7 @@ BEGIN
             MENUITEM "Save High Res Bitmap",        IDM_SAVEHIRESBMP
             MENUITEM "Save Iterations as Text",     IDM_SAVE_ITERS_TEXT
             MENUITEM "Save Bitmap Ima&ge",          IDM_SAVEBMP
+            MENUITEM "Save Reference Orbit as Text", IDM_SAVE_REFORBIT_TEXT
         END
         MENUITEM "Load Location...",            IDM_LOADLOCATION
         MENUITEM SEPARATOR

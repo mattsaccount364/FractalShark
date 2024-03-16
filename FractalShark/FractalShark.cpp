@@ -72,6 +72,7 @@ void MenuLoadCurrentLocation(HWND hWnd);
 void MenuSaveBMP(HWND hWnd);
 void MenuSaveHiResBMP(HWND hWnd);
 void MenuSaveItersAsText();
+void MenuSaveRefOrbitAsText();
 void MenuAlgHelp(HWND hWnd);
 void MenuViewsHelp(HWND hWnd);
 void MenuShowHotkeys(HWND hWnd);
@@ -1016,6 +1017,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 MenuSaveItersAsText();
                 break;
             }
+            case IDM_SAVE_REFORBIT_TEXT:
+            {
+                MenuSaveRefOrbitAsText();
+                break;
+            }
             case IDM_SHOWHOTKEYS:
             {
                 MenuShowHotkeys(hWnd);
@@ -1494,7 +1500,7 @@ void MenuGetCurPos(HWND hWnd)
     s = setupSS(reducedPrecZF);
     auto zoomFactorStr = std::string(s.begin(), s.end());
 
-    uint64_t PeriodMaybeZero;
+    uint64_t InternalPeriodMaybeZero;
     uint64_t CompressedIters;
     uint64_t UncompressedIters;
     int32_t CompressionErrorExp;
@@ -1503,7 +1509,7 @@ void MenuGetCurPos(HWND hWnd)
     std::string PerturbationAlg;
 
     gFractal->GetSomeDetails(
-        PeriodMaybeZero,
+        InternalPeriodMaybeZero,
         CompressedIters,
         UncompressedIters,
         CompressionErrorExp,
@@ -1511,11 +1517,11 @@ void MenuGetCurPos(HWND hWnd)
         LAMilliseconds,
         PerturbationAlg);
 
-    auto ActualPeriodIfAny = (PeriodMaybeZero > 0) ? (PeriodMaybeZero - 1) : 0;
+    auto ActualPeriodIfAny = (InternalPeriodMaybeZero > 0) ? (InternalPeriodMaybeZero - 1) : 0;
 
     const auto additionalDetailsStr =
         std::string("PerturbationAlg = ") + PerturbationAlg + "\r\n" +
-        std::string("InternalPeriodIfAny = ") + std::to_string(PeriodMaybeZero) + "\r\n" +
+        std::string("InternalPeriodIfAny = ") + std::to_string(InternalPeriodMaybeZero) + "\r\n" +
         std::string("ActualPeriodIfAny = ") + std::to_string(ActualPeriodIfAny) + "\r\n" +
         std::string("CompressedIters = ") + std::to_string(CompressedIters) + "\r\n" +
         std::string("UncompressedIters = ") + std::to_string(UncompressedIters) + "\r\n" +
@@ -1759,6 +1765,10 @@ void MenuSaveHiResBMP(HWND) {
 
 void MenuSaveItersAsText() {
     gFractal->SaveItersAsText(L"");
+}
+
+void MenuSaveRefOrbitAsText() {
+    gFractal->SaveRefOrbitAsText();
 }
 
 void BenchmarkMessage(HWND hWnd, size_t milliseconds) {

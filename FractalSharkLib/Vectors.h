@@ -19,7 +19,8 @@ enum class GrowableVectorTypes {
     Metadata,
     GPUReferenceIter,
     LAInfoDeep,
-    LAStageInfo
+    LAStageInfo,
+    DebugOutput
 };
 
 std::wstring GetFileExtension(GrowableVectorTypes Type);

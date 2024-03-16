@@ -184,6 +184,7 @@ public:
         mp_exp_t exponent;
         char* str = mpf_get_str(NULL, &exponent, 10, 0, m_Data);
         std::string result(str);
+        result += "e" + std::to_string(exponent);
         free(str);
         return result;
     }

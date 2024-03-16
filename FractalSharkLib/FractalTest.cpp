@@ -213,7 +213,7 @@ void FractalTest::Benchmark() {
         m_Fractal.ForceRecalc();
         m_Fractal.CalcFractal(false);
 
-        uint64_t PeriodMaybeZero;
+        uint64_t InternalPeriodMaybeZero;
         uint64_t CompressedIters;
         uint64_t UncompressedIters;
         int32_t CompressionErrorExp;
@@ -221,7 +221,7 @@ void FractalTest::Benchmark() {
         uint64_t LAMilliseconds;
         std::string PerturbationAlg;
         m_Fractal.GetSomeDetails(
-            PeriodMaybeZero,
+            InternalPeriodMaybeZero,
             CompressedIters,
             UncompressedIters,
             CompressionErrorExp,

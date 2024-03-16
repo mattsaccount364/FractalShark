@@ -837,7 +837,9 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
     // This all generally works and only starts to suffer precision problems after
     // about 10^AuthoritativeReuseExtraPrecisionInBits. The problem naturally is the original
     // reference orbit is calculated only to so many digits.
-    if (NewPrec - existingResults->GetAuthoritativePrecisionInBits() >= AuthoritativeReuseExtraPrecisionInBits - AuthoritativeMinExtraPrecisionInBits) {
+    if (NewPrec - existingResults->GetAuthoritativePrecisionInBits() >=
+        AuthoritativeReuseExtraPrecisionInBits - AuthoritativeMinExtraPrecisionInBits) {
+
         //::MessageBox(nullptr, L"Regenerating authoritative orbit is required", L"", MB_OK | MB_APPLMODAL);
         PerturbationResultsArray.pop_back();
         return false;
@@ -921,16 +923,14 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
         tempZXLow = (T)zx;
         tempZYLow = (T)zy;
 
+        results->AddUncompressedIteration({ tempZXLow, tempZYLow });
+
         zx = existingResults->GetReuseXEntry(RefIteration) + DeltaSubNX;
         zy = existingResults->GetReuseYEntry(RefIteration) + DeltaSubNY;
         zn_size = tempZXLow * tempZXLow + tempZYLow * tempZYLow;
         HdrReduce(zn_size);
         normDeltaSubN = tempDeltaSubNXLow * tempDeltaSubNXLow + tempDeltaSubNYLow * tempDeltaSubNYLow;
         HdrReduce(normDeltaSubN);
-
-        if (HdrCompareToBothPositiveReducedGT(zn_size, TwoFiftySix)) {
-            break;
-        }
 
         if (HdrCompareToBothPositiveReducedLT(zn_size, normDeltaSubN) ||
             RefIteration == MaxRefIteration) {
@@ -960,7 +960,6 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
 
             if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
                 if constexpr (BenchmarkState == BenchmarkMode::Disable) {
-                    // Break before adding the result.
                     results->SetPeriodMaybeZero((IterType)results->GetCountOrbitEntries());
                     break;
                 }
@@ -972,10 +971,9 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
             }
         }
 
-        T reducedZx = (T)zx;
-        T reducedZy = (T)zy;
-
-        results->AddUncompressedIteration({ reducedZx, reducedZy });
+        if (HdrCompareToBothPositiveReducedGT(zn_size, TwoFiftySix)) {
+            break;
+        }
     }
 
     results->CompleteResults<PerturbExtras::Disable, ReuseMode::DontSaveForReuse>();
@@ -999,7 +997,6 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     auto* existingResults = GetUsefulPerturbationResults<IterType, T, true, PerturbExtras::Disable>();
     if (existingResults == nullptr || existingResults->GetReuseSize() < 5) {
         // TODO Lame hack with < 5.
-        //::MessageBox(nullptr, L"Authoritative not found", L"", MB_OK | MB_APPLMODAL);
         PerturbationResultsArray.pop_back();
         return false;
     }
@@ -1017,7 +1014,9 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     // This all generally works and only starts to suffer precision problems after
     // about 10^AuthoritativeReuseExtraPrecisionInBits. The problem naturally is the original
     // reference orbit is calculated only to so many digits.
-    if (NewPrec - existingResults->GetAuthoritativePrecisionInBits() >= AuthoritativeReuseExtraPrecisionInBits - AuthoritativeMinExtraPrecisionInBits) {
+    if (NewPrec - existingResults->GetAuthoritativePrecisionInBits() >=
+        AuthoritativeReuseExtraPrecisionInBits - AuthoritativeMinExtraPrecisionInBits) {
+
         //::MessageBox(nullptr, L"Regenerating authoritative orbit is required", L"", MB_OK | MB_APPLMODAL);
         PerturbationResultsArray.pop_back();
         return false;
@@ -1026,7 +1025,6 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     // TODO seems like we should be able to avoid all these annoying .precisionInBits calls below
     // via this mechanism.  Read the awful boost docs more...
     ScopedMPIRPrecision prec(AuthoritativeReuseExtraPrecisionInBits);
-    //ScopedMPIRPrecisionOptions precOptions(boost::multiprecision::variable_precision_options::assume_uniform_precision);
 
     InitResults<IterType, T, decltype(*results), PerturbExtras::Disable, ReuseMode::DontSaveForReuse>(*results, cx, cy);
     
@@ -1053,7 +1051,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     DeltaSub0X.precisionInBits(precNum);
     DeltaSub0Y.precisionInBits(precNum);
     DeltaSubNX.precisionInBits(precNum);
-    DeltaSubNY.precisionInBits(precNum); todo the mt reuse is busted
+    DeltaSubNY.precisionInBits(precNum);
 
     IterTypeFull RefIteration = 0;
     IterTypeFull MaxRefIteration = existingResults->GetCountOrbitEntries() - 1;
@@ -1547,7 +1545,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
                 // Give result back.
                 CheckFinishCriteria;
             }
-            };
+        };
 
         auto* threadZxdata = (ThreadZxData*)_aligned_malloc(sizeof(ThreadZxData), 64);
         auto* threadZydata = (ThreadZyData*)_aligned_malloc(sizeof(ThreadZyData), 64);
@@ -2440,7 +2438,7 @@ std::string RefOrbitCalc::GetPerturbationAlgStr() const {
 }
 
 void RefOrbitCalc::GetSomeDetails(
-    uint64_t& PeriodMaybeZero,
+    uint64_t& InternalPeriodMaybeZero,
     uint64_t& CompressedIters,
     uint64_t& UncompressedIters,
     int32_t &CompressionErrorExp,
@@ -2448,7 +2446,7 @@ void RefOrbitCalc::GetSomeDetails(
     uint64_t &LAMilliseconds,
     std::string& PerturbationAlg) {
 
-    PeriodMaybeZero = 0;
+    InternalPeriodMaybeZero = 0;
     CompressedIters = 0;
     UncompressedIters = 0;
     CompressionErrorExp = 0;
@@ -2457,7 +2455,7 @@ void RefOrbitCalc::GetSomeDetails(
 
     auto lambda = [&](auto &&arg) {
         if (arg != nullptr) {
-            PeriodMaybeZero = arg->GetPeriodMaybeZero();
+            InternalPeriodMaybeZero = arg->GetPeriodMaybeZero();
             CompressedIters = arg->GetCompressedOrbitSize();
             UncompressedIters = arg->GetCountOrbitEntries();
             CompressionErrorExp = arg->GetCompressionErrorExp();
@@ -2474,6 +2472,16 @@ void RefOrbitCalc::GetSomeDetails(
     PerturbationAlg = GetPerturbationAlgStr();
 
     static_assert(static_cast<int>(RenderAlgorithm::MAX) == 61, "Fix me");
+}
+
+void RefOrbitCalc::SaveOrbitAsText() const {
+    auto lambda = [&](auto&& arg) {
+        if (arg != nullptr) {
+            arg->SaveOrbitAsText();
+        }
+    };
+
+    std::visit(lambda, m_LastUsedRefOrbit);
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>

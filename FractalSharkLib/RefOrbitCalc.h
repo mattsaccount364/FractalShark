@@ -117,6 +117,8 @@ public:
     void DrawPerturbationResults();
 
 private:
+    static constexpr size_t MaxStoredOrbits = 64;
+
     bool RequiresCompression() const;
     bool IsThisPerturbationArrayUsed(void* check) const;
 

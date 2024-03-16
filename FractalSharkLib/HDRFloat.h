@@ -177,6 +177,15 @@ public:
         return *reinterpret_cast<const To*>(&src);
     }
 
+#ifndef __CUDACC__
+    constexpr explicit HDRFloat(const mpf_t &other) {
+        double mantissa;
+
+        Base::exp = static_cast<TExp>(mpf_get_2exp_d(&mantissa, other));
+        Base::mantissa = static_cast<T>(mantissa);
+    }
+#endif
+
     template<class U, typename =
         std::enable_if_t<
             std::is_same<U, float>::value ||

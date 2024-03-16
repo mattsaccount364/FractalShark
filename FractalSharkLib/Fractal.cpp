@@ -668,8 +668,8 @@ void Fractal::InitialDefaultViewAndSettings(int width, int height) {
     SetRenderAlgorithm(RenderAlgorithm::AUTO);
 
     SetIterationPrecision(1);
-    //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed);
-    m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3);
+    m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed);
+    //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::STPeriodicity);
     m_RefOrbit.ResetGuess();
 
@@ -686,9 +686,9 @@ void Fractal::InitialDefaultViewAndSettings(int width, int height) {
     //SetResultsAutosave(AddPointOptions::DontSave);
     LoadPerturbationOrbits();
 
-    View(0);
+    //View(0);
     //View(1);
-    //View(10);
+    View(11);
     //View(27); // extremely hard
     ChangedMakeDirty();
 

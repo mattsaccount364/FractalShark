@@ -530,6 +530,9 @@ void RefOrbitCalc::AddPerturbationReferencePoint() {
         AddPerturbationReferencePointMT3<IterType, T, SubType, true, BenchmarkState, PExtras, ReuseMode::SaveForReuse>(
             m_PerturbationGuessCalcX,
             m_PerturbationGuessCalcY);
+        //AddPerturbationReferencePointST<IterType, T, SubType, true, BenchmarkState, PExtras, ReuseMode::SaveForReuse>(
+        //    m_PerturbationGuessCalcX,
+        //    m_PerturbationGuessCalcY);
     }
     else if (m_PerturbationAlg == PerturbationAlg::MTPeriodicity5) {
         AddPerturbationReferencePointMT5<IterType, T, SubType, true, BenchmarkState, PExtras, ReuseMode::DontSaveForReuse>(
@@ -691,14 +694,17 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
             double_zy = (T)mpf_get_d(zy);
         }
         else {
-            int32_t zx_exponent, zy_exponent;
-            double zx_mantissa, zy_mantissa;
+            //int32_t zx_exponent, zy_exponent;
+            //double zx_mantissa, zy_mantissa;
 
-            zx_exponent = static_cast<int32_t>(mpf_get_2exp_d(&zx_mantissa, zx));
-            zy_exponent = static_cast<int32_t>(mpf_get_2exp_d(&zy_mantissa, zy));
+            //zx_exponent = static_cast<int32_t>(mpf_get_2exp_d(&zx_mantissa, zx));
+            //zy_exponent = static_cast<int32_t>(mpf_get_2exp_d(&zy_mantissa, zy));
 
-            double_zx = T{ zx_exponent, static_cast<SubType>(zx_mantissa) };
-            double_zy = T{ zy_exponent, static_cast<SubType>(zy_mantissa) };
+            //double_zx = T{ zx_exponent, static_cast<SubType>(zx_mantissa) };
+            //double_zy = T{ zy_exponent, static_cast<SubType>(zy_mantissa) };
+
+            double_zx = T{ zx };
+            double_zy = T{ zy };
         }
 
         if constexpr (PExtras == PerturbExtras::Disable) {
@@ -826,20 +832,21 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
 
     auto* results = PerturbationResultsArray[PerturbationResultsArray.size() - 1].get();
 
-    auto NewPrec = m_Fractal.GetPrecision(
+    const int64_t NewPrec = m_Fractal.GetPrecision(
         m_Fractal.GetMinX(),
         m_Fractal.GetMinY(),
         m_Fractal.GetMaxX(),
         m_Fractal.GetMaxY(),
         RequiresReuse());
+    const int64_t existingPrecision = existingResults->GetAuthoritativePrecisionInBits();
+    const int64_t deltaPrecision = NewPrec - existingPrecision;
+    const int64_t extraPrecision = static_cast<int64_t>(AuthoritativeReuseExtraPrecisionInBits - AuthoritativeMinExtraPrecisionInBits);
     uint32_t precNum = AuthoritativeReuseExtraPrecisionInBits;
 
     // This all generally works and only starts to suffer precision problems after
     // about 10^AuthoritativeReuseExtraPrecisionInBits. The problem naturally is the original
     // reference orbit is calculated only to so many digits.
-    if (NewPrec - existingResults->GetAuthoritativePrecisionInBits() >=
-        AuthoritativeReuseExtraPrecisionInBits - AuthoritativeMinExtraPrecisionInBits) {
-
+    if(deltaPrecision >= extraPrecision) {
         //::MessageBox(nullptr, L"Regenerating authoritative orbit is required", L"", MB_OK | MB_APPLMODAL);
         PerturbationResultsArray.pop_back();
         return false;
@@ -848,33 +855,49 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
     // TODO seems like we should be able to avoid all these annoying .precisionInBits calls below
     // via this mechanism.  Read the awful boost docs more...
     ScopedMPIRPrecision prec(AuthoritativeReuseExtraPrecisionInBits);
+    //ScopedMPIRPrecision prec(existingResults->GetAuthoritativePrecisionInBits());
 
     InitResults<IterType, T, decltype(*results), PerturbExtras::Disable, ReuseMode::DontSaveForReuse>(*results, cx, cy);
 
-    HighPrecision zx, zy;
+    mpf_t zx, zy;
+    mpf_init(zx);
+    mpf_init(zy);
+
     IterTypeFull i;
 
-    HighPrecision HighOne = 1.0;
-    HighPrecision HighTwo = 2.0;
-    static const T TwoFiftySix = T(256.0);
-    HighPrecision DeltaReal = cx - existingResults->GetHiX();
-    HighPrecision DeltaImaginary = cy - existingResults->GetHiY();
-    HighPrecision DeltaSub0X = DeltaReal;
-    HighPrecision DeltaSub0Y = DeltaImaginary;
-    HighPrecision DeltaSubNX = 0;
-    HighPrecision DeltaSubNY = 0;
+    mpf_t HighOne;
+    mpf_init(HighOne);
+    mpf_set_d(HighOne, 1.0);
+    
+    mpf_t HighTwo;
+    mpf_init(HighTwo);
+    mpf_set_d(HighTwo, 2.0);
 
-    // Must come after subtraction above
-    cx.precisionInBits(precNum);
-    cy.precisionInBits(precNum);
-    HighOne.precisionInBits(precNum);
-    HighTwo.precisionInBits(precNum);
-    DeltaReal.precisionInBits(precNum);
-    DeltaImaginary.precisionInBits(precNum);
-    DeltaSub0X.precisionInBits(precNum);
-    DeltaSub0Y.precisionInBits(precNum);
-    DeltaSubNX.precisionInBits(precNum);
-    DeltaSubNY.precisionInBits(precNum);
+    static const T TwoFiftySix = T(256.0);
+    
+    mpf_t DeltaReal;
+    mpf_init2(DeltaReal, existingResults->GetAuthoritativePrecisionInBits());
+    mpf_sub(DeltaReal, cx.backend(), existingResults->GetHiX().backend());
+    mpf_set_prec(DeltaReal, AuthoritativeReuseExtraPrecisionInBits);
+    
+    mpf_t DeltaImaginary;
+    mpf_init2(DeltaImaginary, existingResults->GetAuthoritativePrecisionInBits());
+    mpf_sub(DeltaImaginary, cy.backend(), existingResults->GetHiY().backend());
+    mpf_set_prec(DeltaImaginary, AuthoritativeReuseExtraPrecisionInBits);
+
+    mpf_t DeltaSub0X;
+    mpf_init(DeltaSub0X);
+    mpf_set(DeltaSub0X, DeltaReal);
+
+    mpf_t DeltaSub0Y;
+    mpf_init(DeltaSub0Y);
+    mpf_set(DeltaSub0Y, DeltaImaginary);
+
+    mpf_t DeltaSubNX;
+    mpf_init(DeltaSubNX);
+
+    mpf_t DeltaSubNY;
+    mpf_init(DeltaSubNY);
 
     IterTypeFull RefIteration = 0;
     IterTypeFull MaxRefIteration = existingResults->GetCountOrbitEntries() - 1;
@@ -894,39 +917,91 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
     T tempDeltaSubNXLow;
     T tempDeltaSubNYLow;
 
-    zx = cx;
-    zy = cy;
+    mpf_set(zx, cx.backend());
+    mpf_set(zy, cy.backend());
+
+    mpf_t DeltaSubNXOrig;
+    mpf_init(DeltaSubNXOrig);
+
+    mpf_t DeltaSubNYOrig;
+    mpf_init(DeltaSubNYOrig);
+
+    mpf_t temp_mpf;
+    mpf_init(temp_mpf);
+
+    mpf_t temp2_mpf;
+    mpf_init(temp2_mpf);
+
+    constexpr bool floatOrDouble =
+        std::is_same<T, double>::value ||
+        std::is_same<T, float>::value;
 
     for (i = 0; i < m_Fractal.GetNumIterations<IterType>(); i++) {
         if constexpr (Periodicity) {
-            zxCopy = T(zx);
-            zyCopy = T(zy);
+            if constexpr (floatOrDouble) {
+                zxCopy = (T)mpf_get_d(zx);
+                zyCopy = (T)mpf_get_d(zy);
+            }
+            else {
+                zxCopy = T{ zx };
+                zyCopy = T{ zy };
+            }
         }
 
-        const HighPrecision DeltaSubNXOrig = DeltaSubNX;
-        const HighPrecision DeltaSubNYOrig = DeltaSubNY;
+        mpf_set(DeltaSubNXOrig, DeltaSubNX);
+        mpf_set(DeltaSubNYOrig, DeltaSubNY);
 
-        DeltaSubNX =
-            DeltaSubNXOrig * (existingResults->GetReuseXEntry(RefIteration) * HighTwo + DeltaSubNXOrig) -
-            DeltaSubNYOrig * (existingResults->GetReuseYEntry(RefIteration) * HighTwo + DeltaSubNYOrig) +
-            DeltaSub0X;
-        tempDeltaSubNXLow = (T)DeltaSubNX;
+        //DeltaSubNX =
+        //    DeltaSubNXOrig * (existingResults->GetReuseXEntry(RefIteration) * HighTwo + DeltaSubNXOrig) -
+        //    DeltaSubNYOrig * (existingResults->GetReuseYEntry(RefIteration) * HighTwo + DeltaSubNYOrig) +
+        //    DeltaSub0X;
+        mpf_mul(temp_mpf, existingResults->GetReuseXEntry(RefIteration).backend(), HighTwo);
+        mpf_add(temp_mpf, temp_mpf, DeltaSubNXOrig);
+        mpf_mul(temp2_mpf, existingResults->GetReuseYEntry(RefIteration).backend(), HighTwo);
+        mpf_add(temp2_mpf, temp2_mpf, DeltaSubNYOrig);
+        mpf_mul(DeltaSubNX, DeltaSubNXOrig, temp_mpf);
+        mpf_mul(temp_mpf, DeltaSubNYOrig, temp2_mpf);
+        mpf_sub(DeltaSubNX, DeltaSubNX, temp_mpf);
+        mpf_add(DeltaSubNX, DeltaSubNX, DeltaSub0X);
 
-        DeltaSubNY =
-            DeltaSubNXOrig * (existingResults->GetReuseYEntry(RefIteration) * HighTwo + DeltaSubNYOrig) +
-            DeltaSubNYOrig * (existingResults->GetReuseXEntry(RefIteration) * HighTwo + DeltaSubNXOrig) +
-            DeltaSub0Y;
-        tempDeltaSubNYLow = (T)DeltaSubNY;
+        //DeltaSubNY =
+        //    DeltaSubNXOrig * (existingResults->GetReuseYEntry(RefIteration) * HighTwo + DeltaSubNYOrig) +
+        //    DeltaSubNYOrig * (existingResults->GetReuseXEntry(RefIteration) * HighTwo + DeltaSubNXOrig) +
+        //    DeltaSub0Y;
+        mpf_mul(temp_mpf, existingResults->GetReuseYEntry(RefIteration).backend(), HighTwo);
+        mpf_add(temp_mpf, temp_mpf, DeltaSubNYOrig);
+        mpf_mul(temp2_mpf, existingResults->GetReuseXEntry(RefIteration).backend(), HighTwo);
+        mpf_add(temp2_mpf, temp2_mpf, DeltaSubNXOrig);
+        mpf_mul(DeltaSubNY, DeltaSubNXOrig, temp_mpf);
+        mpf_mul(temp_mpf, DeltaSubNYOrig, temp2_mpf);
+        mpf_add(DeltaSubNY, DeltaSubNY, temp_mpf);
+        mpf_add(DeltaSubNY, DeltaSubNY, DeltaSub0Y);
+
+        // tempDeltaSubNXLow = (T)DeltaSubNX;
+        // tempDeltaSubNYLow = (T)DeltaSubNY;
+        if constexpr (floatOrDouble) {
+            tempDeltaSubNXLow = (T)mpf_get_d(DeltaSubNX);
+            tempDeltaSubNYLow = (T)mpf_get_d(DeltaSubNY);
+            tempZXLow = (T)mpf_get_d(zx);
+            tempZYLow = (T)mpf_get_d(zy);
+        }
+        else {
+            tempDeltaSubNXLow = T{ DeltaSubNX };
+            tempDeltaSubNYLow = T{ DeltaSubNY };
+            tempZXLow = T{ zx };
+            tempZYLow = T{ zy };
+        }
 
         ++RefIteration;
 
-        tempZXLow = (T)zx;
-        tempZYLow = (T)zy;
+        // results->AddUncompressedIteration({ tempZXLow, tempZYLow });
 
-        results->AddUncompressedIteration({ tempZXLow, tempZYLow });
+        //zx = existingResults->GetReuseXEntry(RefIteration) + DeltaSubNX;
+        mpf_add(zx, existingResults->GetReuseXEntry(RefIteration).backend(), DeltaSubNX);
 
-        zx = existingResults->GetReuseXEntry(RefIteration) + DeltaSubNX;
-        zy = existingResults->GetReuseYEntry(RefIteration) + DeltaSubNY;
+        //zy = existingResults->GetReuseYEntry(RefIteration) + DeltaSubNY;
+        mpf_add(zy, existingResults->GetReuseYEntry(RefIteration).backend(), DeltaSubNY);
+
         zn_size = tempZXLow * tempZXLow + tempZYLow * tempZYLow;
         HdrReduce(zn_size);
         normDeltaSubN = tempDeltaSubNXLow * tempDeltaSubNXLow + tempDeltaSubNYLow * tempDeltaSubNYLow;
@@ -934,8 +1009,12 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
 
         if (HdrCompareToBothPositiveReducedLT(zn_size, normDeltaSubN) ||
             RefIteration == MaxRefIteration) {
-            DeltaSubNX = zx;
-            DeltaSubNY = zy;
+            //DeltaSubNX = zx;
+            mpf_set(DeltaSubNX, zx);
+
+            //DeltaSubNY = zy;
+            mpf_set(DeltaSubNY, zy);
+
             RefIteration = 0;
         }
 
@@ -974,7 +1053,35 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
         if (HdrCompareToBothPositiveReducedGT(zn_size, TwoFiftySix)) {
             break;
         }
+
+        if constexpr (floatOrDouble) {
+            T reducedZx = (T)mpf_get_d(zx);
+            T reducedZy = (T)mpf_get_d(zy);
+
+            results->AddUncompressedIteration({ reducedZx, reducedZy });
+        }
+        else {
+            T reducedZx = T{ zx };
+            T reducedZy = T{ zy };
+
+            results->AddUncompressedIteration({ reducedZx, reducedZy });
+        }
     }
+
+    mpf_clear(zx);
+    mpf_clear(zy);
+    mpf_clear(HighOne);
+    mpf_clear(HighTwo);
+    mpf_clear(DeltaReal);
+    mpf_clear(DeltaImaginary);
+    mpf_clear(DeltaSub0X);
+    mpf_clear(DeltaSub0Y);
+    mpf_clear(DeltaSubNX);
+    mpf_clear(DeltaSubNY);
+    mpf_clear(DeltaSubNXOrig);
+    mpf_clear(DeltaSubNYOrig);
+    mpf_clear(temp_mpf);
+    mpf_clear(temp2_mpf);
 
     results->CompleteResults<PerturbExtras::Disable, ReuseMode::DontSaveForReuse>();
     m_GuessReserveSize = results->GetCountOrbitEntries();
@@ -1634,10 +1741,6 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
                     results->AddUncompressedIteration({ double_zx, double_zy, false });
                 }
 
-                if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
-                    AddReused(*results, zx, zy);  // TODO
-                }
-
                 if constexpr (PExtras == PerturbExtras::Bad) {
                     const T norm = HdrReduce((double_zx * double_zx + double_zy * double_zy) * glitch);
                     const auto zx_reduced = HdrReduce(HdrAbs((T)double_zx));
@@ -1688,6 +1791,10 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
             }
             else {
                 zn_size = 0;
+            }
+
+            if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
+                AddReused(*results, zx, zy);  // TODO
             }
 
             // zy = zx * 2 * zy + cy;

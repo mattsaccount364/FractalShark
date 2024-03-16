@@ -877,12 +877,15 @@ public:
         }
 
         out << "m_ReuseX: " << m_ReuseX.size() << std::endl;
-        for (size_t i = 0; i < m_ReuseX.size(); i++) {
-            out << "m_ReuseX[" << i << "]: " << HdrToString(m_ReuseX[i]) << std::endl;
+        out << "m_ReuseY: " << m_ReuseY.size() << std::endl;
+        if (m_ReuseX.size() != m_ReuseY.size()) {
+            ::MessageBox(nullptr, L"m_ReuseX and m_ReuseY are different sizes.", L"", MB_OK | MB_APPLMODAL);
+            out.close();
+            return;
         }
 
-        out << "m_ReuseY: " << m_ReuseY.size() << std::endl;
-        for (size_t i = 0; i < m_ReuseY.size(); i++) {
+        for (size_t i = 0; i < m_ReuseX.size(); i++) {
+            out << "m_ReuseX[" << i << "]: " << HdrToString(m_ReuseX[i]) << std::endl;
             out << "m_ReuseY[" << i << "]: " << HdrToString(m_ReuseY[i]) << std::endl;
         }
 

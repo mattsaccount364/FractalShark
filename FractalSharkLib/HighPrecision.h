@@ -9,75 +9,118 @@
 #include <assert.h>
 #include <iostream>
 
+#include "ScopedMpir.h"
+
 class HighPrecision {
 public:
-    HighPrecision() {
+    void InitDestructor() {
+        m_RunDestructor = !MPIRBumpAllocator::IsBumpAllocatorInstalled();
+    }
+
+    void InitMpf() {
         mpf_init(m_Data);
+        InitDestructor();
+    }
+
+    void InitMpf2(uint64_t precisionInBits) {
+        mpf_init2(m_Data, precisionInBits);
+        InitDestructor();
+    }
+
+    HighPrecision() {
+        InitMpf();
     }
 
     HighPrecision(const HighPrecision& other) {
-        mpf_init2(m_Data, other.precisionInBits());
+        InitMpf2(other.precisionInBits());
         mpf_set(m_Data, other.m_Data);
     }
 
-    HighPrecision(const mpf_t& data) {
-        mpf_init2(m_Data, mpf_get_prec(data));
+    HighPrecision(const mpf_t& data)
+    {
+        InitMpf2(mpf_get_prec(data));
         mpf_set(m_Data, data);
     }
 
     HighPrecision(HighPrecision&& other) {
         m_Data[0] = other.m_Data[0];
         other.m_Data[0] = {};
+
+        m_RunDestructor = other.m_RunDestructor;
+        other.m_RunDestructor = false;
     }
 
     ~HighPrecision() {
-        mpf_clear(m_Data);
+        // When using the bump allocator, we don't want to free the memory.
+        // That's part of the point of the bump allocator.
+        if (m_RunDestructor) {
+            mpf_clear(m_Data);
+        }
     }
 
     HighPrecision& operator=(const HighPrecision& other) {
+        if (this == &other) {
+            return *this;
+        }
+
         mpf_set_prec(m_Data, other.precisionInBits());
         mpf_set(m_Data, other.m_Data);
         return *this;
     }
 
     HighPrecision& operator=(HighPrecision&& other) {
+        if (this == &other) {
+            return *this;
+        }
+
         m_Data[0] = other.m_Data[0];
         other.m_Data[0] = {};
+        
+        m_RunDestructor = other.m_RunDestructor;
+        other.m_RunDestructor = false;
+
         return *this;
     }
 
-    HighPrecision(double data) {
-        mpf_init(m_Data);
+    HighPrecision(double data)
+    {
+        InitMpf();
         mpf_set_d(m_Data, data);
     }
 
-    HighPrecision(uint64_t data) {
-        mpf_init(m_Data);
+    HighPrecision(uint64_t data)
+    {
+        InitMpf();
         mpf_set_ui(m_Data, data);
     }
 
-    HighPrecision(uint32_t data) {
-        mpf_init(m_Data);
+    HighPrecision(uint32_t data)
+    {
+        InitMpf();
         mpf_set_ui(m_Data, data);
     }
 
-    HighPrecision(int64_t data) {
-        mpf_init(m_Data);
+    HighPrecision(int64_t data)
+    {
+        InitMpf();
         mpf_set_si(m_Data, data);
     }
 
-    HighPrecision(int data) {
-        mpf_init(m_Data);
+    HighPrecision(int data)
+    {
+        InitMpf();
         mpf_set_si(m_Data, data);
     }
 
-    HighPrecision(long data) {
-        mpf_init(m_Data);
+    HighPrecision(long data) 
+    {
+        InitMpf();
         mpf_set_si(m_Data, data);
     }
 
-    HighPrecision(std::string data) {
-        mpf_init(m_Data);
+    HighPrecision(std::string data)
+    {
+        InitMpf();
         mpf_set_str(m_Data, data.c_str(), 10);
     }
 
@@ -238,8 +281,13 @@ public:
         return static_cast<float>(mpf_get_d(m_Data));
     }
 
+    void DisableDestructor() {
+        m_RunDestructor = false;
+    }
+
 private:
     mpf_t m_Data;
+    bool m_RunDestructor;
 };
 
 

@@ -1004,7 +1004,17 @@ void LAReference<IterType, Float, SubType, PExtras>::GenerateApproximationData(
         PeriodDetected = CreateLAFromOrbit(m_LAParameters, PerturbationResults, maxRefIteration);
     }
 
-    if (!PeriodDetected) return;
+    auto finish = [&]() {
+        m_LAs.Trim();
+        m_LAStages.Trim();
+
+        m_BenchmarkDataLA.StopTimer();
+    };
+
+    if (!PeriodDetected) {
+        finish();
+        return;
+    }
 
     while (true) {
         PeriodDetected = CreateNewLAStage(m_LAParameters, PerturbationResults, maxRefIteration);
@@ -1014,7 +1024,7 @@ void LAReference<IterType, Float, SubType, PExtras>::GenerateApproximationData(
     CreateATFromLA(radius, UseSmallExponents);
     m_IsValid = true;
 
-    m_BenchmarkDataLA.StopTimer();
+    finish();
 }
 
 // TODO - this is a mess

@@ -1,6 +1,8 @@
 #include "stdafx.h"
 #include "HDRFloat.h"
 
+#include "Vectors.h"
+
 double twoPowExpDataDbl[2048];
 float twoPowExpDataFlt[256];
 double* twoPowExpDbl;
@@ -32,4 +34,6 @@ void InitStatics()
         int index = i - MinFloatExponent;
         twoPowExpFlt[index] = f;
     }
+
+    VectorStaticInit();
 }

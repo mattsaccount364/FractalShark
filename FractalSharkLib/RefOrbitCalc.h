@@ -153,6 +153,16 @@ private:
     template<typename IterType, class T, PerturbExtras PExtras>
     void DrawPerturbationResultsHelper();
 
+    template<RefOrbitCalc::ReuseMode Reuse>
+    void InitAllocatorsIfNeeded(
+        std::unique_ptr<MPIRBoundedAllocator>& boundedAllocator,
+        std::unique_ptr<MPIRBumpAllocator>& bumpAllocator);
+
+    template<RefOrbitCalc::ReuseMode Reuse>
+    void ShutdownAllocatorsIfNeeded(
+        std::unique_ptr<MPIRBoundedAllocator>& boundedAllocator,
+        std::unique_ptr<MPIRBumpAllocator>& bumpAllocator);
+
     class ScopedAffinity {
     public:
         ScopedAffinity(
@@ -170,6 +180,7 @@ private:
         HANDLE m_Thread2;
         HANDLE m_Thread3;
     };
+
 
     PerturbationAlg m_PerturbationAlg;
     Fractal& m_Fractal;

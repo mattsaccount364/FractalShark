@@ -2,10 +2,15 @@
 
 #include <mpir.h>
 
+// Forward declare GrowableVector
+template <typename T>
+class GrowableVector;
+
 // Bump allocator that bumps downwards
-struct ScopedMPIRAllocators {
-    ScopedMPIRAllocators();
-    ~ScopedMPIRAllocators();
+class MPIRBoundedAllocator {
+public:
+    MPIRBoundedAllocator();
+    ~MPIRBoundedAllocator();
 
     void InitScopedAllocators();
 
@@ -35,11 +40,44 @@ private:
     static void NewFree(void* ptr, size_t size);
 };
 
-struct ScopedMPIRPrecision
+// Bump allocator backed by a GrowableVector
+class MPIRBumpAllocator {
+public:
+    MPIRBumpAllocator();
+    ~MPIRBumpAllocator();
+
+    void InitScopedAllocators();
+
+    static void InitTls();
+    static void ShutdownTls();
+    static std::unique_ptr<GrowableVector<uint8_t>> GetAllocated();
+    static bool IsBumpAllocatorInstalled();
+
+private:
+    void* (*ExistingMalloc) (size_t);
+    void* (*ExistingRealloc) (void*, size_t, size_t);
+    void (*ExistingFree) (void*, size_t);
+
+    static std::atomic<size_t> MaxAllocatedDebug;
+    static bool InstalledBumpAllocator;
+
+    static void* NewMalloc(size_t size);
+    static void* NewRealloc(void* ptr, size_t old_size, size_t new_size);
+    static void NewFree(void* ptr, size_t size);
+
+    static constexpr size_t NumAllocators = 4;
+    static std::unique_ptr<GrowableVector<uint8_t>> m_Allocated[NumAllocators];
+    static thread_local uint64_t m_ThreadIndex;
+    static std::atomic<uint64_t> m_MaxIndex;
+};
+
+class MPIRPrecision
 {
+public:
     size_t m_SavedBits;
-    ScopedMPIRPrecision(size_t bits);
-    ~ScopedMPIRPrecision();
+
+    MPIRPrecision(size_t bits);
+    ~MPIRPrecision();
     void reset(size_t bits);
     void reset();
 };

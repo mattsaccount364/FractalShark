@@ -593,7 +593,11 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
     auto* results = PerturbationResultsArray[PerturbationResultsArray.size() - 1].get();
 
     InitResults<IterType, T, decltype(*results), PExtras, Reuse>(*results, cx, cy);
-    ScopedMPIRAllocators allocators{};
+
+    std::unique_ptr<MPIRBoundedAllocator> boundedAllocator;
+    std::unique_ptr<MPIRBumpAllocator> bumpAllocator;
+
+    InitAllocatorsIfNeeded<Reuse>(boundedAllocator, bumpAllocator);
 
     // convert digits of precision to bits of precision and round up
     auto originalPrecision = mpf_get_default_prec();
@@ -603,11 +607,6 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
         double bitsOfPrecision = boostPrecisionInDecimal * 3.3219280948873626;
         int bits = static_cast<int>(bitsOfPrecision);
         mpf_set_default_prec(bits);
-    }
-
-    if constexpr (Reuse != RefOrbitCalc::ReuseMode::SaveForReuse) {
-        allocators.InitScopedAllocators();
-        allocators.InitTls();
     }
 
     {
@@ -797,15 +796,13 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
         results->SetBad(false);
     }
 
-    results->CompleteResults<PExtras, Reuse>();
+    results->CompleteResults<PExtras, Reuse>(nullptr);
     m_GuessReserveSize = results->GetCountOrbitEntries();
     }
 
     mpf_set_default_prec(originalPrecision);
 
-    if constexpr (Reuse != RefOrbitCalc::ReuseMode::SaveForReuse) {
-        allocators.ShutdownTls();
-    }
+    ShutdownAllocatorsIfNeeded<Reuse>(boundedAllocator, bumpAllocator);
 }
 
 template<
@@ -848,7 +845,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
         return false;
     }
 
-    ScopedMPIRPrecision prec(AuthoritativeReuseExtraPrecisionInBits);
+    MPIRPrecision prec(AuthoritativeReuseExtraPrecisionInBits);
     InitResults<IterType, T, decltype(*results), PerturbExtras::Disable, ReuseMode::DontSaveForReuse>(*results, cx, cy);
 
     mpf_t zx, zy;
@@ -1075,7 +1072,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
     mpf_clear(temp_mpf);
     mpf_clear(temp2_mpf);
 
-    results->CompleteResults<PerturbExtras::Disable, ReuseMode::DontSaveForReuse>();
+    results->CompleteResults<PerturbExtras::Disable, ReuseMode::DontSaveForReuse>(nullptr);
     m_GuessReserveSize = results->GetCountOrbitEntries();
 
     return true;
@@ -1121,7 +1118,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
         return false;
     }
 
-    ScopedMPIRPrecision prec(AuthoritativeReuseExtraPrecisionInBits);
+    MPIRPrecision prec(AuthoritativeReuseExtraPrecisionInBits);
     InitResults<IterType, T, decltype(*results), PerturbExtras::Disable, ReuseMode::DontSaveForReuse>(*results, cx, cy);
     
     mpf_t zx, zy;
@@ -1530,7 +1527,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     _aligned_free(threadZxdata);
     _aligned_free(threadZydata);
 
-    results->CompleteResults<PerturbExtras::Disable, ReuseMode::DontSaveForReuse>();
+    results->CompleteResults<PerturbExtras::Disable, ReuseMode::DontSaveForReuse>(nullptr);
     m_GuessReserveSize = results->GetCountOrbitEntries();
 
     return true;
@@ -1552,12 +1549,11 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
     auto* results = PerturbationResultsArray[PerturbationResultsArray.size() - 1].get();
 
     InitResults<IterType, T, decltype(*results), PExtras, Reuse>(*results, cx, cy);
-    ScopedMPIRAllocators allocators{};
 
-    if constexpr (Reuse != RefOrbitCalc::ReuseMode::SaveForReuse) {
-        allocators.InitScopedAllocators();
-        allocators.InitTls();
-    }
+    std::unique_ptr<MPIRBoundedAllocator> boundedAllocator;
+    std::unique_ptr<MPIRBumpAllocator> bumpAllocator;
+
+    InitAllocatorsIfNeeded<Reuse>(boundedAllocator, bumpAllocator);
 
     {
         mpf_t cx_mpf;
@@ -1618,6 +1614,11 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
                 zx_low = T{ 0.0 };
             }
 
+            ~ThreadZxData() {
+                mpf_clear(zx);
+                mpf_clear(zx_sq);
+            }
+
             mpf_t zx;
             mpf_t zx_sq;
             T zx_low;
@@ -1628,6 +1629,11 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
                 mpf_init(zy);
                 mpf_init(zy_sq);
                 zy_low = T{ 0.0 };
+            }
+
+            ~ThreadZyData() {
+                mpf_clear(zy);
+                mpf_clear(zy_sq);
             }
 
             mpf_t zy;
@@ -1664,9 +1670,9 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
 
         memset(ThreadReusedMemory, 0, sizeof(*ThreadReusedMemory));
 
+        // Note: not initializing the bump allocator in the thread.
+        // The two helper threads don't allocate memory via MPIR.
         auto ThreadSqZx = [](ThreadPtrs<ThreadZxData>* ThreadMemory) {
-            ScopedMPIRAllocators::InitTls();
-
             for (;;) {
                 ThreadZxData* expected = ThreadMemory->In.load();
                 ThreadZxData* ok = nullptr;
@@ -1690,13 +1696,9 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
                 // Give result back.
                 CheckFinishCriteria;
             }
-
-            ScopedMPIRAllocators::ShutdownTls();
         };
 
         auto ThreadSqZy = [](ThreadPtrs<ThreadZyData>* ThreadMemory) {
-            ScopedMPIRAllocators::InitTls();
-
             for (;;) {
                 ThreadZyData* expected = ThreadMemory->In.load();
                 ThreadZyData* ok = nullptr;
@@ -1720,8 +1722,6 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
                 // Give result back.
                 CheckFinishCriteria;
             }
-
-            ScopedMPIRAllocators::ShutdownTls();
         };
 
         auto ThreadReused = [&](ThreadPtrs<ThreadReusedData>* ThreadMemory) {
@@ -1988,13 +1988,11 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
         _aligned_free(threadZydata);
         _aligned_free(threadReuseddata);
 
-        results->CompleteResults<PExtras, Reuse>();
+        results->CompleteResults<PExtras, Reuse>(bumpAllocator.get());
         m_GuessReserveSize = results->GetCountOrbitEntries();
     }
 
-    if constexpr (Reuse != RefOrbitCalc::ReuseMode::SaveForReuse) {
-        allocators.ShutdownTls();
-    }
+    ShutdownAllocatorsIfNeeded<Reuse>(boundedAllocator, bumpAllocator);
 }
 
 template<
@@ -2724,6 +2722,34 @@ void RefOrbitCalc::DrawPerturbationResults() {
 
     drawbatch.template operator() < uint32_t > ();
     drawbatch.template operator() < uint64_t > ();
+}
+
+template<RefOrbitCalc::ReuseMode Reuse>
+void RefOrbitCalc::InitAllocatorsIfNeeded(
+    std::unique_ptr<MPIRBoundedAllocator>& boundedAllocator,
+    std::unique_ptr<MPIRBumpAllocator>& bumpAllocator) {
+    if constexpr (Reuse != RefOrbitCalc::ReuseMode::SaveForReuse) {
+        boundedAllocator = std::make_unique<MPIRBoundedAllocator>();
+        boundedAllocator->InitScopedAllocators();
+        boundedAllocator->InitTls();
+    }
+    else {
+        bumpAllocator = std::make_unique<MPIRBumpAllocator>();
+        bumpAllocator->InitScopedAllocators();
+        bumpAllocator->InitTls();
+    }
+}
+
+template<RefOrbitCalc::ReuseMode Reuse>
+void RefOrbitCalc::ShutdownAllocatorsIfNeeded(
+    std::unique_ptr<MPIRBoundedAllocator>& boundedAllocator,
+    std::unique_ptr<MPIRBumpAllocator>& bumpAllocator) {
+    if constexpr (Reuse != RefOrbitCalc::ReuseMode::SaveForReuse) {
+        boundedAllocator->ShutdownTls();
+    }
+    else {
+        bumpAllocator->ShutdownTls();
+    }
 }
 
 RefOrbitCalc::ScopedAffinity::ScopedAffinity(

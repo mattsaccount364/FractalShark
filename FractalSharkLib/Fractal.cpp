@@ -705,7 +705,6 @@ void Fractal::AutoZoom() {
     HighPrecision guessX;
     HighPrecision guessY;
 
-    double newExp = 0;
     HighPrecision p10_9;
 
     size_t retries = 0;

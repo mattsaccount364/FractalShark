@@ -25,6 +25,8 @@ enum class GrowableVectorTypes {
 
 std::wstring GetFileExtension(GrowableVectorTypes Type);
 
+void VectorStaticInit();
+
 // The purpose of this class is to manage a memory-mapped file, using win32 APIs
 // such as MapViewOfFile, or to provide non-file-backed storage that's virtually contiguous.
 // This is used to load and save the orbit data, when using a file.
@@ -48,16 +50,6 @@ private:
     size_t m_GrowByElts;
 
 public:
-    EltT* GetData() const;
-
-    std::wstring GetFilename() const;
-
-    size_t GetCapacity() const;
-
-    size_t GetSize() const;
-
-    bool ValidFile() const;
-
     GrowableVector(const GrowableVector& other) = delete;
     GrowableVector& operator=(const GrowableVector& other) = delete;
     GrowableVector(GrowableVector&& other) noexcept;
@@ -78,34 +70,82 @@ public:
         std::wstring filename,
         size_t initial_size);
 
+    // The destructor closes the file and cleans up the memory.
     ~GrowableVector();
 
+    // The subscript operator allows access to the elements of the vector.
     EltT& operator[](size_t index);
 
+    // Constant version of the subscript operator.
     const EltT& operator[](size_t index) const;
 
-    void PushBack(const EltT& val);
+    // The GetData method returns a pointer to the data.
+    EltT* GetData() const;
 
-    void PopBack();
+    // The GetFilename method returns the filename of the file backing the vector.
+    std::wstring GetFilename() const;
 
-    EltT& Back();
+    // The GetCapacity method returns the capacity of the vector.
+    size_t GetCapacity() const;
 
+    // The GetSize method returns the size of the vector.
+    size_t GetSize() const;
+
+    // The ValidFile method returns true if the file is valid.
+    bool ValidFile() const;
+
+    // The Back method returns the last element of the vector.
     const EltT& Back() const;
 
+    // The PushBack method adds an element to the end of the vector.
+    void PushBack(const EltT& val);
+
+    // The PopBack method removes the last element of the vector.
+    void PopBack();
+
+    // The Back method returns the last element of the vector.
+    EltT& Back();
+
+    // The Clear method clears the vector and resets the size to zero.
     void Clear();
 
-    void CloseMapping(bool CloseFileToo);
+    // The CloseMapping method closes the memory mapping and the file.
+    void CloseMapping();
 
+    // The Trim method trims the vector to the size of the data.
+    // This is useful to ensure that no extra memory is allocated.
     void Trim();
 
+    // The GetAddPointOptions method returns the AddPointOptions,
+    // which specifies whether to save the data to the file,
+    // or to keep it in memory only.
     AddPointOptions GetAddPointOptions() const;
 
+    // The MutableReserveKeepFileSize method reserves memory for the vector,
     void MutableReserveKeepFileSize(size_t capacity);
+
+    // The MutableResize method resizes the vector,
+    // using the specified capacity and size.
     void MutableResize(size_t capacity, size_t size);
+
+    // The MutableResize method resizes the vector, using
+    // the same value for both the capacity and the size.
     void MutableResize(size_t size);
 
+    // The GrowVectorIfNeeded method grows the vector if needed,
+    // reserving additional memory in the process.
+    void GrowVectorIfNeeded();
+
 private:
-    static constexpr size_t InitialGrowByElts = 512 * 1024;
+
+    // TODO was 512 * 1024
+    static constexpr size_t InitialGrowByElts = 1024;
+
+    uint32_t InternalOpenFile();
+    void MutableFileResizeOpen(size_t capacity);
+
+    void TrimEnableWithoutSave();
+    void TrimEnableWithSave();
 
     bool UsingAnonymous() const;
 

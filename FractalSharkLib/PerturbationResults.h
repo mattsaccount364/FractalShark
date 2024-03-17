@@ -118,6 +118,7 @@ public:
         m_AuthoritativePrecisionInBits{},
         m_ReuseX{},
         m_ReuseY{},
+        m_ReuseAllocations{},
         m_BenchmarkOrbit{} {
     
         if (add_point_options == AddPointOptions::OpenExistingWithSave) {
@@ -137,6 +138,11 @@ public:
     }
 
     ~PerturbationResults() {
+        // Clear these first to ensure the memory is freed before the 
+        // bump allocator is destroyed.
+        m_ReuseX.clear();
+        m_ReuseY.clear();
+
         CloseMetaFileIfOpen();
     }
 
@@ -204,6 +210,14 @@ public:
         m_ReuseX.reserve(other.m_ReuseX.size());
         m_ReuseY.reserve(other.m_ReuseY.size());
 
+        // TODO: for reuse case, we don't copy the allocations.  This is a bug
+        // but we shouldn't hit it in practice?  I think?
+        if (other.m_ReuseAllocations != nullptr) {
+            DebugBreak();
+        }
+
+        m_ReuseAllocations = nullptr;
+
         for (size_t i = 0; i < other.m_FullOrbit.GetSize(); i++) {
             if constexpr (PExtras == PerturbExtras::Bad) {
                 m_FullOrbit.PushBack({ (T)other.m_FullOrbit[i].x, (T)other.m_FullOrbit[i].y, other.m_FullOrbit[i].bad != 0 });
@@ -257,6 +271,7 @@ public:
         m_AuthoritativePrecisionInBits = other.m_AuthoritativePrecisionInBits;
         m_ReuseX = other.m_ReuseX;
         m_ReuseY = other.m_ReuseY;
+        m_ReuseAllocations = std::move(other.m_ReuseAllocations);
 
         m_BenchmarkOrbit = other.m_BenchmarkOrbit;
 
@@ -464,7 +479,7 @@ public:
             metafile >> descriptor_string_junk;
             metafile >> prec;
 
-            ScopedMPIRPrecision p{ prec };
+            MPIRPrecision p{ prec };
 
             std::string shiX;
             metafile >> descriptor_string_junk;
@@ -480,7 +495,7 @@ public:
             metafile >> descriptor_string_junk;
             metafile >> prec;
 
-            ScopedMPIRPrecision p{prec};
+            MPIRPrecision p{prec};
 
             std::string shiY;
             metafile >> descriptor_string_junk;
@@ -562,6 +577,7 @@ public:
 
         m_ReuseX.push_back(Zero);
         m_ReuseY.push_back(Zero);
+        m_ReuseAllocations = nullptr;
     }
 
     template<class T, PerturbExtras PExtras, RefOrbitCalc::ReuseMode Reuse>
@@ -615,6 +631,7 @@ public:
             m_AuthoritativePrecisionInBits = cx.precisionInBits();
             m_ReuseX.reserve(ReserveSize);
             m_ReuseY.reserve(ReserveSize);
+            m_ReuseAllocations = nullptr;
 
             InitReused();
         }
@@ -630,12 +647,13 @@ public:
     }
 
     template<PerturbExtras PExtras, RefOrbitCalc::ReuseMode Reuse>
-    void CompleteResults() {
+    void CompleteResults(MPIRBumpAllocator *allocatorsIfAny) {
         m_FullOrbit.Trim();
 
         if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
             m_ReuseX.shrink_to_fit();
             m_ReuseY.shrink_to_fit();
+            m_ReuseAllocations = allocatorsIfAny->GetAllocated();
         }
 
         m_BenchmarkOrbit.StopTimer();
@@ -733,7 +751,10 @@ public:
     }
 
     void AddReusedEntry(HighPrecision x, HighPrecision y) {
+        x.DisableDestructor();
         m_ReuseX.push_back(std::move(x));
+
+        y.DisableDestructor();
         m_ReuseY.push_back(std::move(y));
     }
 
@@ -941,6 +962,7 @@ private:
     uint64_t m_AuthoritativePrecisionInBits;
     std::vector<HighPrecision> m_ReuseX;
     std::vector<HighPrecision> m_ReuseY;
+    std::unique_ptr<GrowableVector<uint8_t>> m_ReuseAllocations;
 
     BenchmarkData m_BenchmarkOrbit;
 };

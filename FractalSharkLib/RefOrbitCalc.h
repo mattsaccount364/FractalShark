@@ -112,6 +112,7 @@ public:
         int32_t &CompressionErrorExp,
         uint64_t &OrbitMilliseconds,
         uint64_t &LAMilliseconds,
+        uint64_t &LASize,
         std::string &PerturbationAlg);
     void SaveOrbitAsText() const;
 

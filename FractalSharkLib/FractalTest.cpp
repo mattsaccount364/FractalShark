@@ -219,6 +219,7 @@ void FractalTest::Benchmark() {
         int32_t CompressionErrorExp;
         uint64_t OrbitMilliseconds;
         uint64_t LAMilliseconds;
+        uint64_t LASize;
         std::string PerturbationAlg;
         m_Fractal.GetSomeDetails(
             InternalPeriodMaybeZero,
@@ -227,6 +228,7 @@ void FractalTest::Benchmark() {
             CompressionErrorExp,
             OrbitMilliseconds,
             LAMilliseconds,
+            LASize,
             PerturbationAlg);
 
         overallTimes.push_back(m_Fractal.GetBenchmarkOverall().GetDeltaInMs());

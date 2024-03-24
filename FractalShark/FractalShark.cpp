@@ -282,33 +282,39 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
 
     case 'H':
     case 'h':
+    {
+        auto &laParameters = gFractal->GetLAParameters();
         if (shiftDown) {
-            gFractal->GetLAParameters().AdjustLAThresholdScaleExponent(-1);
-            gFractal->GetLAParameters().AdjustLAThresholdCScaleExponent(-1);
+            laParameters.AdjustLAThresholdScaleExponent(-1);
+            laParameters.AdjustLAThresholdCScaleExponent(-1);
         }
         else {
-            gFractal->GetLAParameters().AdjustLAThresholdScaleExponent(1);
-            gFractal->GetLAParameters().AdjustLAThresholdCScaleExponent(1);
+            laParameters.AdjustLAThresholdScaleExponent(1);
+            laParameters.AdjustLAThresholdCScaleExponent(1);
         }
         gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
         gFractal->ForceRecalc();
         PaintAsNecessary(hWnd);
         break;
+    }
 
     case 'J':
     case 'j':
+    {
+        auto &laParameters = gFractal->GetLAParameters();
         if (shiftDown) {
-            gFractal->GetLAParameters().AdjustPeriodDetectionThreshold2Exponent(-1);
-            gFractal->GetLAParameters().AdjustStage0PeriodDetectionThreshold2Exponent(-1);
+            laParameters.AdjustPeriodDetectionThreshold2Exponent(-1);
+            laParameters.AdjustStage0PeriodDetectionThreshold2Exponent(-1);
         }
         else {
-            gFractal->GetLAParameters().AdjustPeriodDetectionThreshold2Exponent(1);
-            gFractal->GetLAParameters().AdjustStage0PeriodDetectionThreshold2Exponent(1);
+            laParameters.AdjustPeriodDetectionThreshold2Exponent(1);
+            laParameters.AdjustStage0PeriodDetectionThreshold2Exponent(1);
         }
         gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::LAOnly);
         gFractal->ForceRecalc();
         PaintAsNecessary(hWnd);
         break;
+    }
 
     case 'I':
     case 'i':
@@ -1530,6 +1536,7 @@ void MenuGetCurPos(HWND hWnd)
     int32_t CompressionErrorExp;
     uint64_t OrbitMilliseconds;
     uint64_t LAMilliseconds;
+    uint64_t LASize;
     std::string PerturbationAlg;
 
     gFractal->GetSomeDetails(
@@ -1539,6 +1546,7 @@ void MenuGetCurPos(HWND hWnd)
         CompressionErrorExp,
         OrbitMilliseconds,
         LAMilliseconds,
+        LASize,
         PerturbationAlg);
 
     auto ActualPeriodIfAny = (InternalPeriodMaybeZero > 0) ? (InternalPeriodMaybeZero - 1) : 0;
@@ -1552,7 +1560,8 @@ void MenuGetCurPos(HWND hWnd)
         std::string("Compression ratio = ") + std::to_string((double)UncompressedIters / (double)CompressedIters) + "\r\n" +
         std::string("Compression error exp = ") + std::to_string(CompressionErrorExp) + "\r\n";
 
-    const auto threadingVal = gFractal->GetLAParameters().GetThreading();
+    const auto &laParameters = gFractal->GetLAParameters();
+    const auto threadingVal = laParameters.GetThreading();
     std::string threadingStr;
     if (threadingVal == LAParameters::LAThreadingAlgorithm::SingleThreaded) {
         threadingStr = "Single threaded";
@@ -1566,21 +1575,23 @@ void MenuGetCurPos(HWND hWnd)
 
     const auto laParametersStr =
         std::string("Detection method = ")
-            + std::to_string(gFractal->GetLAParameters().GetDetectionMethod()) + "\r\n" +
+            + std::to_string(laParameters.GetDetectionMethod()) + "\r\n" +
         std::string("Threshold scale = ")
-            + std::to_string(gFractal->GetLAParameters().GetLAThresholdScaleExp()) + "\r\n" +
+            + std::to_string(laParameters.GetLAThresholdScaleExp()) + "\r\n" +
         std::string("Threshold C scale = ")
-            + std::to_string(gFractal->GetLAParameters().GetLAThresholdCScaleExp()) + "\r\n" +
+            + std::to_string(laParameters.GetLAThresholdCScaleExp()) + "\r\n" +
         std::string("Stage 0 period detection threshold 2 = ")
-            + std::to_string(gFractal->GetLAParameters().GetStage0PeriodDetectionThreshold2Exp()) + "\r\n" +
+            + std::to_string(laParameters.GetStage0PeriodDetectionThreshold2Exp()) + "\r\n" +
         std::string("Period detection threshold 2 = ")
-            + std::to_string(gFractal->GetLAParameters().GetPeriodDetectionThreshold2Exp()) + "\r\n" +
+            + std::to_string(laParameters.GetPeriodDetectionThreshold2Exp()) + "\r\n" +
         std::string("Stage 0 period detection threshold = ")
-            + std::to_string(gFractal->GetLAParameters().GetStage0PeriodDetectionThresholdExp()) + "\r\n" +
+            + std::to_string(laParameters.GetStage0PeriodDetectionThresholdExp()) + "\r\n" +
         std::string("Period detection threshold = ")
-            + std::to_string(gFractal->GetLAParameters().GetPeriodDetectionThresholdExp()) + "\r\n" +
+            + std::to_string(laParameters.GetPeriodDetectionThresholdExp()) + "\r\n" +
         std::string("LA Threading: ")
-            + threadingStr + "\r\n";
+            + threadingStr + "\r\n" +
+        std::string("LA size: ")
+            + std::to_string(LASize) + "\r\n";
 
     const auto benchmarkData =
         std::string("Overall time (ms) = ") + std::to_string(gFractal->GetBenchmarkOverall().GetDeltaInMs()) + "\r\n" +

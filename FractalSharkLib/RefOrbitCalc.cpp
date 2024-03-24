@@ -2656,6 +2656,7 @@ void RefOrbitCalc::GetSomeDetails(
     int32_t &CompressionErrorExp,
     uint64_t &OrbitMilliseconds,
     uint64_t &LAMilliseconds,
+    uint64_t &LASize,
     std::string& PerturbationAlg) {
 
     InternalPeriodMaybeZero = 0;
@@ -2664,6 +2665,7 @@ void RefOrbitCalc::GetSomeDetails(
     CompressionErrorExp = 0;
     OrbitMilliseconds = 0;
     LAMilliseconds = 0;
+    LASize = 0;
 
     auto lambda = [&](auto &&arg) {
         if (arg != nullptr) {
@@ -2675,6 +2677,7 @@ void RefOrbitCalc::GetSomeDetails(
 
             if (arg->GetLaReference() != nullptr) {
                 LAMilliseconds = arg->GetLaReference()->GetBenchmarkLA().GetDeltaInMs();
+                LASize = arg->GetLaReference()->GetLAs().GetSize();
             }
         }
     };

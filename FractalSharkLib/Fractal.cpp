@@ -1261,7 +1261,7 @@ void Fractal::View(size_t view)
         break;
 
     case 27:
-        //::MessageBox(nullptr, L"Warning: This is a very large image.  It will take a long time to render.", L"Warning", MB_OK | MB_APPLMODAL | MB_ICONWARNING);
+        ::MessageBox(nullptr, L"Warning: This is a very large image.  It will take a long time to render.", L"Warning", MB_OK | MB_APPLMODAL | MB_ICONWARNING);
 
         //This text is copied to clipboard.Using "GpuHDRx2x32PerturbedRCLAv2"
         //    Antialiasing : 1

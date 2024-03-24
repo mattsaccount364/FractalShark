@@ -1007,7 +1007,6 @@ void LAReference<IterType, Float, SubType, PExtras>::GenerateApproximationData(
     auto finish = [&]() {
         m_LAs.Trim();
         m_LAStages.Trim();
-
         m_BenchmarkDataLA.StopTimer();
     };
 

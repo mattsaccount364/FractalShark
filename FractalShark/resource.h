@@ -361,6 +361,8 @@
 #define IDM_MEMORY_LIMIT_1              33167
 #define ID_MEMORYMANAGEMENT_REMOVEMEMORYLIMIT 33168
 #define IDM_MEMORY_LIMIT_0              33169
+#define ID_PERTURBATION_AUTO            33170
+#define IDM_PERTURBATION_AUTO           33171
 #define IDM_VIEW1                       34001
 #define IDM_VIEW2                       34002
 #define IDM_VIEW3                       34003
@@ -398,7 +400,7 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        131
-#define _APS_NEXT_COMMAND_VALUE         33170
+#define _APS_NEXT_COMMAND_VALUE         33172
 #define _APS_NEXT_CONTROL_VALUE         1000
 #define _APS_NEXT_SYMED_VALUE           110
 #endif

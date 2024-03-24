@@ -32,7 +32,8 @@ public:
         MTPeriodicity3,
         MTPeriodicity3PerturbMTHighSTMed,
         MTPeriodicity3PerturbMTHighMTMed,
-        MTPeriodicity5
+        MTPeriodicity5,
+        Auto
     };
 
     enum class PerturbationResultType {

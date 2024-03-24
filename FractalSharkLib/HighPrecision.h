@@ -225,7 +225,6 @@ public:
 
     std::string str() const {
         char temp[32768];
-        auto prec = mpf_get_prec(m_Data);
         gmp_snprintf(temp, 32768, "%.Fe", m_Data);
         std::string result(temp);
         return result;

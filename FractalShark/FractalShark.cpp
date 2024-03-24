@@ -832,6 +832,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 break;
             }
 
+            case IDM_PERTURBATION_AUTO:
+            {
+                gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::Auto);
+                break;
+            }
+
             case IDM_PERTURBATION_SINGLETHREAD:
             {
                 gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::ST);

@@ -131,6 +131,7 @@ public:
     inline uint32_t GetIterationPrecision(void) const { return m_IterationPrecision; }
     inline void SetIterationPrecision(uint32_t iteration_precision) { m_IterationPrecision = iteration_precision;  }
 
+    HighPrecision GetZoomFactor() const;
     void SetPerturbationAlg(RefOrbitCalc::PerturbationAlg alg);
     void ClearPerturbationResults(RefOrbitCalc::PerturbationResultType type);
     void SavePerturbationOrbits();

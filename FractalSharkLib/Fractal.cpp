@@ -669,7 +669,7 @@ void Fractal::InitialDefaultViewAndSettings(int width, int height) {
 
     SetIterationPrecision(1);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed);
-    m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3);
+    m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::Auto);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::STPeriodicity);
     m_RefOrbit.ResetGuess();
 
@@ -1619,6 +1619,11 @@ void Fractal::SetIterType(IterTypeEnum type) {
     }
 }
 
+HighPrecision Fractal::GetZoomFactor() const {
+    PointZoomBBConverter converter{ m_MinX, m_MinY, m_MaxX, m_MaxY };
+    return converter.zoomFactor;
+}
+
 void Fractal::SetPerturbationAlg(RefOrbitCalc::PerturbationAlg alg) {
     m_RefOrbit.SetPerturbationAlg(alg);
 }
@@ -1659,16 +1664,16 @@ RenderAlgorithm Fractal::GetRenderAlgorithm() const {
     //
 
     if (m_RenderAlgorithm == RenderAlgorithm::AUTO) {
-        PointZoomBBConverter converter{ m_MinX, m_MinY, m_MaxX, m_MaxY };
-        if (converter.zoomFactor < HighPrecision{ 1e4 }) {
+        HighPrecision zoomFactor = GetZoomFactor();
+        if (zoomFactor < HighPrecision{ 1e4 }) {
             // A bit borderline at 3840x1600 x16 AA
             return RenderAlgorithm::Gpu1x32;
         }
-        else if (converter.zoomFactor < HighPrecision{ 1e9 }) {
+        else if (zoomFactor < HighPrecision{ 1e9 }) {
             // Safe, maybe even full LA is a little better but barely
             return RenderAlgorithm::Gpu1x32PerturbedLAv2PO;
         }
-        else if (converter.zoomFactor < HighPrecision{ 1e34 }) {
+        else if (zoomFactor < HighPrecision{ 1e34 }) {
             // This seems to work at x16 AA 3840x1600
             return RenderAlgorithm::Gpu1x32PerturbedLAv2;
         }

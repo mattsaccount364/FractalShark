@@ -268,6 +268,7 @@ BEGIN
             MENUITEM "Clear Perturbation References - High", IDM_PERTURB_CLEAR_HIGH
             MENUITEM "Show Perturbation Results",   IDM_PERTURB_RESULTS
             MENUITEM SEPARATOR
+            MENUITEM "Auto (default)",              IDM_PERTURBATION_AUTO
             MENUITEM "Single Thread (ST)",          IDM_PERTURBATION_SINGLETHREAD
             MENUITEM "Multi Thread (MT)",           IDM_PERTURBATION_MULTITHREAD
             MENUITEM "ST + Periodicity",            IDM_PERTURBATION_SINGLETHREAD_PERIODICITY

@@ -87,7 +87,7 @@ static inline void PrefetchHighPrec(const mpf_t& target) {
 
 
 RefOrbitCalc::RefOrbitCalc(Fractal& Fractal)
-    : m_PerturbationAlg{ PerturbationAlg::MTPeriodicity3 },
+    : m_PerturbationAlg{ PerturbationAlg::Auto },
       m_Fractal(Fractal),
       m_PerturbationGuessCalcX(0),
       m_PerturbationGuessCalcY(0),
@@ -151,7 +151,7 @@ bool RefOrbitCalc::RequiresCompression() const {
 }
 
 bool RefOrbitCalc::RequiresReuse() const {
-    switch (m_PerturbationAlg) {
+    switch (GetPerturbationAlg()) {
     case PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed:
     case PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed:
         return true;
@@ -505,33 +505,33 @@ void RefOrbitCalc::AddPerturbationReferencePoint() {
         m_PerturbationGuessCalcY = (m_Fractal.GetMaxY() + m_Fractal.GetMinY()) / HighPrecision(2);
     }
     
-    if (m_PerturbationAlg == PerturbationAlg::ST) {
+    if (GetPerturbationAlg() == PerturbationAlg::ST) {
         AddPerturbationReferencePointST<IterType, T, SubType, false, BenchmarkState, PExtras, ReuseMode::DontSaveForReuse>(
             m_PerturbationGuessCalcX,
             m_PerturbationGuessCalcY);
     }
-    else if (m_PerturbationAlg == PerturbationAlg::MT) {
+    else if (GetPerturbationAlg() == PerturbationAlg::MT) {
         AddPerturbationReferencePointMT3<IterType, T, SubType, false, BenchmarkState, PExtras, ReuseMode::DontSaveForReuse>(
             m_PerturbationGuessCalcX,
             m_PerturbationGuessCalcY);
     }
-    else if (m_PerturbationAlg == PerturbationAlg::STPeriodicity) {
+    else if (GetPerturbationAlg() == PerturbationAlg::STPeriodicity) {
         AddPerturbationReferencePointST<IterType, T, SubType, true, BenchmarkState, PExtras, ReuseMode::DontSaveForReuse>(
             m_PerturbationGuessCalcX,
             m_PerturbationGuessCalcY);
     }
-    else if (m_PerturbationAlg == PerturbationAlg::MTPeriodicity3) {
+    else if (GetPerturbationAlg() == PerturbationAlg::MTPeriodicity3) {
         AddPerturbationReferencePointMT3<IterType, T, SubType, true, BenchmarkState, PExtras, ReuseMode::DontSaveForReuse>(
             m_PerturbationGuessCalcX,
             m_PerturbationGuessCalcY);
     }
-    else if (m_PerturbationAlg == PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed ||
-                m_PerturbationAlg == PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed) {
+    else if (GetPerturbationAlg() == PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed ||
+        GetPerturbationAlg() == PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed) {
         AddPerturbationReferencePointMT3<IterType, T, SubType, true, BenchmarkState, PExtras, ReuseMode::SaveForReuse>(
             m_PerturbationGuessCalcX,
             m_PerturbationGuessCalcY);
     }
-    else if (m_PerturbationAlg == PerturbationAlg::MTPeriodicity5) {
+    else if (GetPerturbationAlg() == PerturbationAlg::MTPeriodicity5) {
         AddPerturbationReferencePointMT5<IterType, T, SubType, true, BenchmarkState, PExtras, ReuseMode::DontSaveForReuse>(
             m_PerturbationGuessCalcX,
             m_PerturbationGuessCalcY);
@@ -2601,7 +2601,18 @@ void RefOrbitCalc::SetPerturbationAlg(PerturbationAlg alg) {
 }
 
 RefOrbitCalc::PerturbationAlg RefOrbitCalc::GetPerturbationAlg() const {
-    return m_PerturbationAlg;
+    if (m_PerturbationAlg == PerturbationAlg::Auto) {
+        HighPrecision zoomFactor = m_Fractal.GetZoomFactor();
+        if (zoomFactor < HighPrecision{ 1e100 }) {
+            return PerturbationAlg::STPeriodicity;
+        }
+        else {
+            return PerturbationAlg::MTPeriodicity3;
+        }
+    }
+    else {
+        return m_PerturbationAlg;
+    }
 }
 
 std::string RefOrbitCalc::GetPerturbationAlgStr() const {
@@ -2618,7 +2629,7 @@ std::string RefOrbitCalc::GetPerturbationAlgStr() const {
     };
     */
 
-    switch (m_PerturbationAlg) {
+    switch (GetPerturbationAlg()) {
     case PerturbationAlg::ST:
         return "ST";
     case PerturbationAlg::MT:

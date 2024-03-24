@@ -224,11 +224,10 @@ public:
     }
 
     std::string str() const {
-        mp_exp_t exponent;
-        char* str = mpf_get_str(NULL, &exponent, 10, 0, m_Data);
-        std::string result(str);
-        result += "e" + std::to_string(exponent);
-        free(str);
+        char temp[32768];
+        auto prec = mpf_get_prec(m_Data);
+        gmp_snprintf(temp, 32768, "%.Fe", m_Data);
+        std::string result(temp);
         return result;
     }
 

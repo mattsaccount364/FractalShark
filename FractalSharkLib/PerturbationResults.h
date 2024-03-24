@@ -18,6 +18,8 @@
 
 #include "ScopedMpir.h"
 
+#include <thread>
+
 std::wstring GetTimeAsString(size_t generation_number);
 
 template<typename IterType, class T, PerturbExtras PExtras>
@@ -184,6 +186,65 @@ public:
     }
 
     template<bool IncludeLA, class Other, PerturbExtras PExtras = PerturbExtras::Disable>
+    void CopyFullOrbitVector(
+        const PerturbationResults<IterType, Other, PExtras>& other) {
+
+        m_FullOrbit.MutableResize(other.m_FullOrbit.GetSize());
+
+        // Split other.m_FullOrbit across multiple threads.
+        // Use std::hardware_concurrency() to determine the number of threads.
+        // Each thread will get a range of indices to copy.
+        // Each thread will copy the range of indices to m_FullOrbit.
+        const auto workPerThread = 1'000'000;
+        const auto altNumThreads = other.m_FullOrbit.GetSize() / workPerThread;
+        const auto maxThreads = std::thread::hardware_concurrency();
+        const auto numThreadsMaybeZero = altNumThreads > maxThreads ? maxThreads : altNumThreads;
+        const auto numThreads = numThreadsMaybeZero == 0 ? 1 : numThreadsMaybeZero;
+        auto numElementsPerThread = other.m_FullOrbit.GetSize() / numThreads;
+
+        auto oneThread = [&](size_t start, size_t end) {
+            for (size_t i = start; i < end; i++) {
+                if constexpr (PExtras == PerturbExtras::Bad) {
+                    m_FullOrbit[i] = GPUReferenceIter<T, PExtras>{
+                        (T)other.m_FullOrbit[i].x,
+                        (T)other.m_FullOrbit[i].y,
+                        other.m_FullOrbit[i].bad != 0
+                    };
+                }
+                else if constexpr (PExtras == PerturbExtras::EnableCompression) {
+                    m_FullOrbit[i] = GPUReferenceIter<T, PExtras>{
+                        (T)other.m_FullOrbit[i].x,
+                        (T)other.m_FullOrbit[i].y,
+                        other.m_FullOrbit[i].CompressionIndex
+                    };
+                }
+                else {
+                    m_FullOrbit[i] = GPUReferenceIter<T, PExtras>{
+                        (T)other.m_FullOrbit[i].x,
+                        (T)other.m_FullOrbit[i].y
+                    };
+                }
+            }
+            };
+
+        std::vector<std::thread> threads;
+        for (size_t i = 0; i < numThreads; i++) {
+            size_t start = i * numElementsPerThread;
+            size_t end = (i + 1) * numElementsPerThread;
+
+            if (i == numThreads - 1) {
+                end = other.m_FullOrbit.GetSize();
+            }
+
+            threads.push_back(std::thread(oneThread, start, end));
+        }
+
+        for (auto& thread : threads) {
+            thread.join();
+        }
+    }
+
+    template<bool IncludeLA, class Other, PerturbExtras PExtras = PerturbExtras::Disable>
     void CopyPerturbationResults(
         const PerturbationResults<IterType, Other, PExtras>& other) {
 
@@ -218,17 +279,7 @@ public:
 
         m_ReuseAllocations = nullptr;
 
-        for (size_t i = 0; i < other.m_FullOrbit.GetSize(); i++) {
-            if constexpr (PExtras == PerturbExtras::Bad) {
-                m_FullOrbit.PushBack({ (T)other.m_FullOrbit[i].x, (T)other.m_FullOrbit[i].y, other.m_FullOrbit[i].bad != 0 });
-            }
-            else if constexpr (PExtras == PerturbExtras::EnableCompression) {
-                m_FullOrbit.PushBack({ (T)other.m_FullOrbit[i].x, (T)other.m_FullOrbit[i].y, other.m_FullOrbit[i].CompressionIndex });
-            }
-            else {
-                m_FullOrbit.PushBack({ (T)other.m_FullOrbit[i].x, (T)other.m_FullOrbit[i].y });
-            }
-        }
+        CopyFullOrbitVector<IncludeLA, Other, PExtras>(other);
 
         assert(m_UncompressedItersInOrbit == m_FullOrbit.GetSize());
 

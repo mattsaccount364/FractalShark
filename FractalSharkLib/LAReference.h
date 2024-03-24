@@ -14,6 +14,9 @@
 #include "Vectors.h"
 #include "BenchmarkData.h"
 
+#include <thread>
+#include <vector>
+
 template<typename IterType, class HDRFloat, class SubType>
 class ATInfo;
 
@@ -167,10 +170,40 @@ public:
         m_IsValid = other.m_IsValid;
 
         m_LAs.MutableResize(other.m_LAs.GetSize());
-        for (int i = 0; i < other.m_LAs.GetSize(); i++) {
-            m_LAs[i] = other.m_LAs[i];
+
+        // Split other.m_LAs across multiple threads.
+        // Use std::hardware_concurrency() to determine the number of threads.
+        // Each thread will get a range of indices to copy.
+        // Each thread will copy the range of indices to m_LAs.
+        const auto workPerThread = 1'000'000;
+        const auto altNumThreads = other.m_LAs.GetSize() / workPerThread;
+        const auto maxThreads = std::thread::hardware_concurrency();
+        const auto numThreadsMaybeZero = altNumThreads > maxThreads ? maxThreads : altNumThreads;
+        const auto numThreads = numThreadsMaybeZero == 0 ? 1 : numThreadsMaybeZero;
+        auto numElementsPerThread = other.m_LAs.GetSize() / numThreads;
+
+        auto oneThread = [&](size_t start, size_t end) {
+            for (size_t i = start; i < end; i++) {
+                m_LAs[i] = other.m_LAs[i];
+            }
+        };
+
+        std::vector<std::thread> threads;
+        for (size_t i = 0; i < numThreads; i++) {
+            size_t start = i * numElementsPerThread;
+            size_t end = (i + 1) * numElementsPerThread;
+            if (i == numThreads - 1) {
+                end = other.m_LAs.GetSize();
+            }
+            threads.push_back(std::thread(oneThread, start, end));
         }
+
         m_LAStages.MutableResize(other.m_LAStages.GetSize());
+
+        for (auto& thread : threads) {
+            thread.join();
+        }
+
         for (int i = 0; i < other.m_LAStages.GetSize(); i++) {
             m_LAStages[i] = other.m_LAStages[i];
         }

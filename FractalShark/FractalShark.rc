@@ -276,10 +276,6 @@ BEGIN
             MENUITEM "MT2 + Periodicity + Perturb MT", IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_MTMED
             MENUITEM "MT5 + Periodicity",           IDM_PERTURBATION_MULTITHREAD5_PERIODICITY, INACTIVE
             MENUITEM SEPARATOR
-            MENUITEM "Enable Auto-Save Orbit (file per point)", IDM_PERTURB_AUTOSAVE_ON
-            MENUITEM "Enable Auto-Save Orbit (delete when done)", IDM_PERTURB_AUTOSAVE_ON_DELETE
-            MENUITEM "Disable Auto-Save Orbit",     IDM_PERTURB_AUTOSAVE_OFF
-            MENUITEM SEPARATOR
             MENUITEM "Clear and Reload Reference Orbits", IDM_PERTURBATION_LOAD
             MENUITEM "Save Reference Orbits",       IDM_PERTURBATION_SAVE
         END
@@ -305,6 +301,15 @@ BEGIN
             MENUITEM "Pa&lette Rotation",           IDM_PALETTEROTATE, INACTIVE
         END
         MENUITEM SEPARATOR
+        POPUP "Memory Management"
+        BEGIN
+            MENUITEM "Enable Auto-Save Orbit (delete when done, default)", IDM_PERTURB_AUTOSAVE_ON_DELETE
+            MENUITEM "Enable Auto-Save Orbit (keep files)", IDM_PERTURB_AUTOSAVE_ON
+            MENUITEM "Disable Auto-Save Orbit",     IDM_PERTURB_AUTOSAVE_OFF
+            MENUITEM SEPARATOR
+            MENUITEM "Remove Memory Limits",        IDM_MEMORY_LIMIT_0
+            MENUITEM "Leave max of (1/2*ram, 8GB) free (default)", IDM_MEMORY_LIMIT_1
+        END
         MENUITEM "Show Rendering Details",      IDM_CURPOS
         MENUITEM "Benchmark (5x, full recalc)", IDM_BENCHMARK
         POPUP "Save"

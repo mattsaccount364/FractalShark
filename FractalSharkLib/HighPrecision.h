@@ -325,10 +325,12 @@ void check_size() {
 
 
 // Amount of extra precision before forcing a full-precision recalculation
-constexpr size_t AuthoritativeMinExtraPrecisionInBits = 25 * 8;
+// Roughly 25 digits = 83 bits = 25*3.321.  MPIR will round up anyway.
+constexpr size_t AuthoritativeMinExtraPrecisionInBits = 83;
 
-// Amount of precision used for medium-precision reference orbit.
-constexpr size_t AuthoritativeReuseExtraPrecisionInBits = 100 * 8;
+// Amount of precision used for medium-precision reference orbit in bits.
+// Nothing special about 800.  Just ensure it's bigger than the one above.
+constexpr size_t AuthoritativeReuseExtraPrecisionInBits = 800;
 
 // TODO move to templates
 //using IterType = uint32_t;

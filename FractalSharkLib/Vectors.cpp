@@ -14,6 +14,7 @@
 #pragma comment(lib, "ntdll")
 
 typedef uint32_t NTSTATUS;
+static constexpr size_t InitialGrowByElts = 512 * 1024;
 
 typedef enum _SECTION_INHERIT {
     ViewShare = 1,
@@ -216,8 +217,9 @@ const EltT& GrowableVector<EltT>::operator[](size_t index) const {
 template<class EltT>
 void GrowableVector<EltT>::GrowVectorIfNeeded() {
     if (m_UsedSizeInElts == m_CapacityInElts) {
-        MutableReserveKeepFileSize(m_CapacityInElts + m_GrowByElts);
-        m_GrowByElts = m_GrowByElts * 2;
+        static constexpr size_t GrowBy512Mb = 512 * 1024 * 1024 / sizeof(EltT);
+        MutableReserveKeepFileSize(m_CapacityInElts + GrowBy512Mb);
+        m_GrowByElts = m_GrowByElts + GrowBy512Mb;
     }
 }
 

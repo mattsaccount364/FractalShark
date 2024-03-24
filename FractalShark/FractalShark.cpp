@@ -2,10 +2,13 @@
 #include "resource.h"
 #include "Fractal.h"
 #include "FractalTest.h"
+#include "JobObject.h"
 
 #include <Dbghelp.h>
 
 // Global Variables:
+std::unique_ptr<JobObject> gJobObj;
+
 HINSTANCE hInst;                // current instance
 LPCWSTR szWindowClass = L"FractalWindow";
 HMENU gPopupMenu;
@@ -76,6 +79,7 @@ void MenuSaveRefOrbitAsText();
 void MenuAlgHelp(HWND hWnd);
 void MenuViewsHelp(HWND hWnd);
 void MenuShowHotkeys(HWND hWnd);
+
 void PaintAsNecessary(HWND hWnd);
 
 bool IsDownControl() { return (GetAsyncKeyState(VK_CONTROL) & 0x8000) == 0x8000; };
@@ -94,6 +98,8 @@ int APIENTRY WinMain(HINSTANCE hInstance,
 
     // Initialize global strings
     MyRegisterClass(hInstance);
+
+    gJobObj = std::make_unique<JobObject>();
 
     // Perform application initialization:
     HWND hWnd = InitInstance(hInstance, nCmdShow);
@@ -899,6 +905,18 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
                 break;
             }
 
+            case IDM_MEMORY_LIMIT_0:
+            {
+                gJobObj = nullptr;
+                break;
+            }
+
+            case IDM_MEMORY_LIMIT_1:
+            {
+                gJobObj = std::make_unique<JobObject>();
+                break;
+            }
+
             case IDM_PALETTEROTATE:
             {
                 MenuPaletteRotation(hWnd);
@@ -1496,7 +1514,7 @@ void MenuGetCurPos(HWND hWnd)
     auto ptYStr = std::string(s.begin(), s.end());
 
     auto reducedPrecZF = pz.zoomFactor;
-    reducedPrecZF.precisionInBits(10 * 8);
+    reducedPrecZF.precisionInBits(50);
     s = setupSS(reducedPrecZF);
     auto zoomFactorStr = std::string(s.begin(), s.end());
 
@@ -1555,7 +1573,7 @@ void MenuGetCurPos(HWND hWnd)
             + std::to_string(gFractal->GetLAParameters().GetStage0PeriodDetectionThresholdExp()) + "\r\n" +
         std::string("Period detection threshold = ")
             + std::to_string(gFractal->GetLAParameters().GetPeriodDetectionThresholdExp()) + "\r\n" +
-        std::string("Threading: ")
+        std::string("LA Threading: ")
             + threadingStr + "\r\n";
 
     const auto benchmarkData =
@@ -1582,11 +1600,6 @@ void MenuGetCurPos(HWND hWnd)
         "\r\n"
         "Additional details:\r\n"
         "%s\r\n"
-        "Bounding box:\r\n"
-        "minX = HighPrecision{ \"%s\" };\r\n"
-        "minY = HighPrecision{ \"%s\" };\r\n"
-        "maxX = HighPrecision{ \"%s\" };\r\n"
-        "maxY = HighPrecision{ \"%s\" };\r\n"
         "SetNumIterations<IterTypeFull>(%zu);\r\n",
         gFractal->GetRenderAlgorithmName(),
         gFractal->GetGpuAntialiasing(),
@@ -1598,11 +1611,24 @@ void MenuGetCurPos(HWND hWnd)
         laParametersStr.c_str(),
         benchmarkData.c_str(),
         additionalDetailsStr.c_str(),
-        sminX.c_str(), sminY.c_str(),
-        smaxX.c_str(), smaxY.c_str(),
         gFractal->GetNumIterations<IterTypeFull>());
-    std::string stringCopy = mem;
 
+    const std::string stringCopy = mem;
+    char temp2[numBytes];
+
+    // Put some extra information on the clipboard.
+    snprintf(temp2, numBytes,
+        "Bounding box:\r\n"
+        "minX = HighPrecision{ \"%s\" };\r\n"
+        "minY = HighPrecision{ \"%s\" };\r\n"
+        "maxX = HighPrecision{ \"%s\" };\r\n"
+        "maxY = HighPrecision{ \"%s\" };\r\n",
+        sminX.c_str(), sminY.c_str(),
+        smaxX.c_str(), smaxY.c_str());
+
+    // Append temp2 to mem without overrunning the buffer 
+    // using strncat.
+    strncat(mem, temp2, numBytes - stringCopy.size() - 1);
     GlobalUnlock(hData);
 
     //

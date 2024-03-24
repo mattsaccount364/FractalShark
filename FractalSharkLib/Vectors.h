@@ -137,21 +137,35 @@ public:
     void GrowVectorIfNeeded();
 
 private:
-
-    // TODO was 512 * 1024
-    static constexpr size_t InitialGrowByElts = 1024;
-
+    // The InternalOpenFile method opens the file but
+    // does not map it to memory.
     uint32_t InternalOpenFile();
+
+    // The MutableFileResizeOpen method extends
+    // the section of the file that is mapped to memory.
     void MutableFileResizeOpen(size_t capacity);
 
+    // The TrimEnableWithoutSave trims the vector
+    // in the case of a temporary file-backed vector.
     void TrimEnableWithoutSave();
+
+    // The TrimEnableWithSave trims the vector
+    // sets the file size to the size of the vector.
     void TrimEnableWithSave();
 
+    // The UsingAnonymous method returns true if the vector
+    // is backed by anonymous memory.
     bool UsingAnonymous() const;
 
+    // The MutableFileCommit method creates and maps a section
+    // of the file to memory.
     void MutableFileCommit(size_t new_elt_count);
 
+    // The MutableAnonymousCommit method commits regular
+    // pagefile backed memory.
     void MutableAnonymousCommit(size_t new_elt_count);
 
+    // The MutableReserve method reserves memory for the vector
+    // using anonymous memory.
     void MutableReserve(size_t new_reserved_bytes);
 };

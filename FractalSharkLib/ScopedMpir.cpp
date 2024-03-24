@@ -192,17 +192,24 @@ void MPIRBumpAllocator::InitScopedAllocators() {
 
     InstalledBumpAllocator = true;
 
-    m_MaxIndex = 0;
+    // Note: initialize m_MaxIndex to 1 so that the first thread to call InitTls will get index 1.
+    // That way, if a thread doesn't call InitTls, it will get index 0, and it will AV
+    // if it tries to use the allocator. This is a good thing, because it means that
+    // we will catch the error early, rather than having it silently corrupt memory.
+    m_MaxIndex = 1;
     m_ThreadIndex = 0;
 
-    // Initialize all the allocators:
-    for (size_t i = 0; i < NumAllocators; i++) {
+    // Initialize all the allocators except at index 0.
+    // Index 0 is left uninitialized so that we can catch errors if a thread doesn't call InitTls.
+    m_Allocated[0] = nullptr;
+    for (size_t i = 1; i < NumAllocators; i++) {
         m_Allocated[i] = std::make_unique<GrowableVector<uint8_t>>(AddPointOptions::EnableWithoutSave, L"");
     }
 }
 
 void MPIRBumpAllocator::InitTls() {
     // Atomically increment m_MaxIndex and use the result as the index for this thread.
+    // Returns the previous value of m_MaxIndex.
     m_ThreadIndex = m_MaxIndex.fetch_add(1, std::memory_order_seq_cst);
 }
 
@@ -235,7 +242,7 @@ void* MPIRBumpAllocator::NewMalloc(size_t size) {
 void* MPIRBumpAllocator::NewRealloc(void* ptr, size_t old_size, size_t new_size) {
     // Implement realloc by copying memory to new location and freeing old location.
     auto minSize = std::min(old_size, new_size);
-    void *newLoc = NewMalloc(minSize);
+    void *newLoc = NewMalloc(new_size);
     memcpy(newLoc, ptr, minSize);
     return newLoc;
 

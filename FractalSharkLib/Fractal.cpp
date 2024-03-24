@@ -668,8 +668,8 @@ void Fractal::InitialDefaultViewAndSettings(int width, int height) {
     SetRenderAlgorithm(RenderAlgorithm::AUTO);
 
     SetIterationPrecision(1);
-    m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed);
-    //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3);
+    //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed);
+    m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::STPeriodicity);
     m_RefOrbit.ResetGuess();
 
@@ -686,9 +686,10 @@ void Fractal::InitialDefaultViewAndSettings(int width, int height) {
     //SetResultsAutosave(AddPointOptions::DontSave);
     LoadPerturbationOrbits();
 
-    //View(0);
+    View(0);
     //View(1);
-    View(11);
+    //View(11);
+    //View(14);
     //View(27); // extremely hard
     ChangedMakeDirty();
 
@@ -973,7 +974,8 @@ void Fractal::View(size_t view)
     HighPrecision maxY;
 
     // Kludgy.  Resets at end of function.
-    SetPrecision(50000*8, minX, minY, maxX, maxY);
+    // Roughly 50000 digits of precision (50000 * 3.321)
+    SetPrecision(166050, minX, minY, maxX, maxY);
     ResetDimensions(MAXSIZE_T, MAXSIZE_T, 1);
 
     // Reset to default reference compression if applicable

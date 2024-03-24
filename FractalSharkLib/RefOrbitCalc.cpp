@@ -599,16 +599,6 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
 
     InitAllocatorsIfNeeded<Reuse>(boundedAllocator, bumpAllocator);
 
-    // convert digits of precision to bits of precision and round up
-    auto originalPrecision = mpf_get_default_prec();
-    auto boostPrecisionInDecimal = HighPrecision::defaultPrecisionInBits();
-    
-    {
-        double bitsOfPrecision = boostPrecisionInDecimal * 3.3219280948873626;
-        int bits = static_cast<int>(bitsOfPrecision);
-        mpf_set_default_prec(bits);
-    }
-
     {
     mpf_t cx_mpf;
     mpf_init(cx_mpf);
@@ -799,8 +789,6 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
     results->CompleteResults<PExtras, Reuse>(nullptr);
     m_GuessReserveSize = results->GetCountOrbitEntries();
     }
-
-    mpf_set_default_prec(originalPrecision);
 
     ShutdownAllocatorsIfNeeded<Reuse>(boundedAllocator, bumpAllocator);
 }
@@ -1670,9 +1658,27 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
 
         memset(ThreadReusedMemory, 0, sizeof(*ThreadReusedMemory));
 
-        // Note: not initializing the bump allocator in the thread.
-        // The two helper threads don't allocate memory via MPIR.
-        auto ThreadSqZx = [](ThreadPtrs<ThreadZxData>* ThreadMemory) {
+        auto InitTls = [&]() {
+            if constexpr (Reuse != RefOrbitCalc::ReuseMode::SaveForReuse) {
+                boundedAllocator->InitTls();
+            }
+            else {
+                bumpAllocator->InitTls();
+            }
+        };
+
+        auto ShutdownTls = [&]() {
+            if constexpr (Reuse != RefOrbitCalc::ReuseMode::SaveForReuse) {
+                boundedAllocator->ShutdownTls();
+            }
+            else {
+                bumpAllocator->ShutdownTls();
+            }
+        };
+
+        auto ThreadSqZx = [&InitTls,&ShutdownTls](ThreadPtrs<ThreadZxData>* ThreadMemory) {
+            InitTls();
+
             for (;;) {
                 ThreadZxData* expected = ThreadMemory->In.load();
                 ThreadZxData* ok = nullptr;
@@ -1696,9 +1702,13 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
                 // Give result back.
                 CheckFinishCriteria;
             }
+
+            ShutdownTls();
         };
 
-        auto ThreadSqZy = [](ThreadPtrs<ThreadZyData>* ThreadMemory) {
+        auto ThreadSqZy = [&InitTls, &ShutdownTls](ThreadPtrs<ThreadZyData>* ThreadMemory) {
+            InitTls();
+
             for (;;) {
                 ThreadZyData* expected = ThreadMemory->In.load();
                 ThreadZyData* ok = nullptr;
@@ -1722,6 +1732,8 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
                 // Give result back.
                 CheckFinishCriteria;
             }
+
+            ShutdownTls();
         };
 
         auto ThreadReused = [&](ThreadPtrs<ThreadReusedData>* ThreadMemory) {

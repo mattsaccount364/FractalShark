@@ -1256,6 +1256,27 @@ static CUDA_CRAP constexpr T &&HdrReduce(T&& incoming) {
     }
 }
 
+template<class T, class U>
+static CUDA_CRAP constexpr T HdrMaxReduced(const T& one, const U& two) {
+    static_assert(
+        std::is_same<T, double>::value ||
+        std::is_same<T, float>::value ||
+        std::is_same<T, HDRFloat<double>>::value ||
+        std::is_same<T, HDRFloat<float>>::value, "No");
+    static_assert(!std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value, "!");
+    static_assert(!std::is_same<T, CudaDblflt<dblflt>>::value, "!");
+    if constexpr (std::is_same<T, HDRFloat<double>>::value ||
+        std::is_same<T, HDRFloat<float>>::value) {
+        if (one.compareTo(two) > 0) {
+            return one;
+        }
+
+        return two;
+    }
+    else {
+        return (one > two) ? one : two;
+    }
+}
 
 template<class T, class U>
 static CUDA_CRAP constexpr T HdrMaxPositiveReduced(const T& one, const U& two) {

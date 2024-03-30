@@ -101,6 +101,8 @@ int APIENTRY WinMain(HINSTANCE hInstance,
 
     gJobObj = std::make_unique<JobObject>();
 
+    mpf_set_default_prec(256);
+
     // Perform application initialization:
     HWND hWnd = InitInstance(hInstance, nCmdShow);
     if (hWnd == nullptr)
@@ -1519,13 +1521,13 @@ void MenuGetCurPos(HWND hWnd)
     auto smaxY = std::string(s.begin(), s.end());
 
     PointZoomBBConverter pz{ minX, minY, maxX, maxY };
-    s = setupSS(pz.ptX);
+    s = setupSS(pz.GetPtX());
     auto ptXStr = std::string(s.begin(), s.end());
 
-    s = setupSS(pz.ptY);
+    s = setupSS(pz.GetPtY());
     auto ptYStr = std::string(s.begin(), s.end());
 
-    auto reducedPrecZF = pz.zoomFactor;
+    auto reducedPrecZF = pz.GetZoomFactor();
     reducedPrecZF.precisionInBits(50);
     s = setupSS(reducedPrecZF);
     auto zoomFactorStr = std::string(s.begin(), s.end());

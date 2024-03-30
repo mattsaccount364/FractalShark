@@ -788,7 +788,7 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
 
     results->CompleteResults<PExtras, Reuse>(nullptr);
     m_GuessReserveSize = results->GetCountOrbitEntries();
-    }
+    } // End of scope for allocators.
 
     ShutdownAllocatorsIfNeeded<Reuse>(boundedAllocator, bumpAllocator);
 }
@@ -1544,465 +1544,465 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
     InitAllocatorsIfNeeded<Reuse>(boundedAllocator, bumpAllocator);
 
     {
-        mpf_t cx_mpf;
-        mpf_init(cx_mpf);
-        mpf_set(cx_mpf, cx.backend());
+    mpf_t cx_mpf;
+    mpf_init(cx_mpf);
+    mpf_set(cx_mpf, cx.backend());
 
-        mpf_t cy_mpf;
-        mpf_init(cy_mpf);
-        mpf_set(cy_mpf, cy.backend());
+    mpf_t cy_mpf;
+    mpf_init(cy_mpf);
+    mpf_set(cy_mpf, cy.backend());
+
+    mpf_t zx;
+    mpf_init(zx);
+
+    mpf_t zy;
+    mpf_init(zy);
+
+    mpf_t zx2, zy2;
+    mpf_init(zx2);
+    mpf_init(zy2);
+
+    mpf_t temp_mpf;
+    mpf_init(temp_mpf);
+
+    mpf_t temp2_mpf;
+    mpf_init(temp2_mpf);
+
+    constexpr bool floatOrDouble =
+        std::is_same<T, double>::value ||
+        std::is_same<T, float>::value;
+    T cx_cast;
+    T cy_cast;
+    if constexpr (floatOrDouble) {
+        cx_cast = (T)mpf_get_d(cx_mpf);
+        cy_cast = (T)mpf_get_d(cy_mpf);
+    }
+    else {
+        int32_t cx_exponent, cy_exponent;
+        double cx_mantissa, cy_mantissa;
+
+        cx_exponent = static_cast<int32_t>(mpf_get_2exp_d(&cx_mantissa, cx_mpf));
+        cy_exponent = static_cast<int32_t>(mpf_get_2exp_d(&cy_mantissa, cy_mpf));
+
+        cx_cast = T{ cx_exponent, static_cast<SubType>(cx_mantissa) };
+        cy_cast = T{ cy_exponent, static_cast<SubType>(cy_mantissa) };
+    }
+
+    T dzdcX = T{ 1.0 };
+    T dzdcY = T{ 0.0 };
+
+    const T small_float = T((SubType)1.1754944e-38);
+    // Note: results->bad is not here.  See end of this function.
+    SubType glitch = (SubType)0.0000001;
+
+    struct ThreadZxData {
+        ThreadZxData() {
+            mpf_init(zx);
+            mpf_init(zx_sq);
+            zx_low = T{ 0.0 };
+        }
+
+        ~ThreadZxData() {
+            mpf_clear(zx);
+            mpf_clear(zx_sq);
+        }
 
         mpf_t zx;
-        mpf_init(zx);
+        mpf_t zx_sq;
+        T zx_low;
+    };
+
+    struct ThreadZyData {
+        ThreadZyData() {
+            mpf_init(zy);
+            mpf_init(zy_sq);
+            zy_low = T{ 0.0 };
+        }
+
+        ~ThreadZyData() {
+            mpf_clear(zy);
+            mpf_clear(zy_sq);
+        }
 
         mpf_t zy;
-        mpf_init(zy);
+        mpf_t zy_sq;
+        T zy_low;
+    };
 
-        mpf_t zx2, zy2;
-        mpf_init(zx2);
-        mpf_init(zy2);
+    struct ThreadReusedData {
+        HighPrecision zx;
+        HighPrecision zy;
+    };
 
-        mpf_t temp_mpf;
-        mpf_init(temp_mpf);
+    auto* ThreadZxMemory = (ThreadPtrs<ThreadZxData> *)
+        _aligned_malloc(sizeof(ThreadPtrs<ThreadZxData>), 64);
+    if (ThreadZxMemory == nullptr) {
+        throw std::bad_alloc();
+    }
 
-        mpf_t temp2_mpf;
-        mpf_init(temp2_mpf);
+    memset(ThreadZxMemory, 0, sizeof(*ThreadZxMemory));
 
-        constexpr bool floatOrDouble =
-            std::is_same<T, double>::value ||
-            std::is_same<T, float>::value;
-        T cx_cast;
-        T cy_cast;
-        if constexpr (floatOrDouble) {
-            cx_cast = (T)mpf_get_d(cx_mpf);
-            cy_cast = (T)mpf_get_d(cy_mpf);
+    auto* ThreadZyMemory = (ThreadPtrs<ThreadZyData> *)
+        _aligned_malloc(sizeof(ThreadPtrs<ThreadZyData>), 64);
+    if (ThreadZyMemory == nullptr) {
+        throw std::bad_alloc();
+    }
+
+    memset(ThreadZyMemory, 0, sizeof(*ThreadZyMemory));
+
+    auto* ThreadReusedMemory = (ThreadPtrs<ThreadReusedData> *)
+        _aligned_malloc(sizeof(ThreadPtrs<ThreadReusedData>), 64);
+    if (ThreadReusedMemory == nullptr) {
+        throw std::bad_alloc();
+    }
+
+    memset(ThreadReusedMemory, 0, sizeof(*ThreadReusedMemory));
+
+    auto InitTls = [&]() {
+        if constexpr (Reuse != RefOrbitCalc::ReuseMode::SaveForReuse) {
+            boundedAllocator->InitTls();
         }
         else {
-            int32_t cx_exponent, cy_exponent;
-            double cx_mantissa, cy_mantissa;
-
-            cx_exponent = static_cast<int32_t>(mpf_get_2exp_d(&cx_mantissa, cx_mpf));
-            cy_exponent = static_cast<int32_t>(mpf_get_2exp_d(&cy_mantissa, cy_mpf));
-
-            cx_cast = T{ cx_exponent, static_cast<SubType>(cx_mantissa) };
-            cy_cast = T{ cy_exponent, static_cast<SubType>(cy_mantissa) };
+            bumpAllocator->InitTls();
         }
+    };
 
-        T dzdcX = T{ 1.0 };
-        T dzdcY = T{ 0.0 };
-
-        const T small_float = T((SubType)1.1754944e-38);
-        // Note: results->bad is not here.  See end of this function.
-        SubType glitch = (SubType)0.0000001;
-
-        struct ThreadZxData {
-            ThreadZxData() {
-                mpf_init(zx);
-                mpf_init(zx_sq);
-                zx_low = T{ 0.0 };
-            }
-
-            ~ThreadZxData() {
-                mpf_clear(zx);
-                mpf_clear(zx_sq);
-            }
-
-            mpf_t zx;
-            mpf_t zx_sq;
-            T zx_low;
-        };
-
-        struct ThreadZyData {
-            ThreadZyData() {
-                mpf_init(zy);
-                mpf_init(zy_sq);
-                zy_low = T{ 0.0 };
-            }
-
-            ~ThreadZyData() {
-                mpf_clear(zy);
-                mpf_clear(zy_sq);
-            }
-
-            mpf_t zy;
-            mpf_t zy_sq;
-            T zy_low;
-        };
-
-        struct ThreadReusedData {
-            HighPrecision zx;
-            HighPrecision zy;
-        };
-
-        auto* ThreadZxMemory = (ThreadPtrs<ThreadZxData> *)
-            _aligned_malloc(sizeof(ThreadPtrs<ThreadZxData>), 64);
-        if (ThreadZxMemory == nullptr) {
-            throw std::bad_alloc();
+    auto ShutdownTls = [&]() {
+        if constexpr (Reuse != RefOrbitCalc::ReuseMode::SaveForReuse) {
+            boundedAllocator->ShutdownTls();
         }
-
-        memset(ThreadZxMemory, 0, sizeof(*ThreadZxMemory));
-
-        auto* ThreadZyMemory = (ThreadPtrs<ThreadZyData> *)
-            _aligned_malloc(sizeof(ThreadPtrs<ThreadZyData>), 64);
-        if (ThreadZyMemory == nullptr) {
-            throw std::bad_alloc();
+        else {
+            bumpAllocator->ShutdownTls();
         }
+    };
 
-        memset(ThreadZyMemory, 0, sizeof(*ThreadZyMemory));
+    auto ThreadSqZx = [&InitTls,&ShutdownTls](ThreadPtrs<ThreadZxData>* ThreadMemory) {
+        InitTls();
 
-        auto* ThreadReusedMemory = (ThreadPtrs<ThreadReusedData> *)
-            _aligned_malloc(sizeof(ThreadPtrs<ThreadReusedData>), 64);
-        if (ThreadReusedMemory == nullptr) {
-            throw std::bad_alloc();
-        }
+        for (;;) {
+            ThreadZxData* expected = ThreadMemory->In.load();
+            ThreadZxData* ok = nullptr;
 
-        memset(ThreadReusedMemory, 0, sizeof(*ThreadReusedMemory));
+            CheckStartCriteria;
+            //PrefetchHighPrec(ok->zx);
 
-        auto InitTls = [&]() {
-            if constexpr (Reuse != RefOrbitCalc::ReuseMode::SaveForReuse) {
-                boundedAllocator->InitTls();
+            // ok->zx_low = (T)mpf_get_d(ok->zx);
+            if constexpr (floatOrDouble) {
+                ok->zx_low = (T)mpf_get_d(ok->zx);
             }
             else {
-                bumpAllocator->InitTls();
+                int32_t zx_exponent;
+                double zx_mantissa;
+                zx_exponent = static_cast<int32_t>(mpf_get_2exp_d(&zx_mantissa, ok->zx));
+                ok->zx_low = T{ zx_exponent, static_cast<SubType>(zx_mantissa) };
             }
-        };
 
-        auto ShutdownTls = [&]() {
-            if constexpr (Reuse != RefOrbitCalc::ReuseMode::SaveForReuse) {
-                boundedAllocator->ShutdownTls();
+            mpf_mul(ok->zx_sq, ok->zx, ok->zx);
+
+            // Give result back.
+            CheckFinishCriteria;
+        }
+
+        ShutdownTls();
+    };
+
+    auto ThreadSqZy = [&InitTls, &ShutdownTls](ThreadPtrs<ThreadZyData>* ThreadMemory) {
+        InitTls();
+
+        for (;;) {
+            ThreadZyData* expected = ThreadMemory->In.load();
+            ThreadZyData* ok = nullptr;
+
+            CheckStartCriteria;
+            //PrefetchHighPrec(ok->zy);
+
+            //ok->zy_low = (T)mpf_get_d(ok->zy);
+            if constexpr (floatOrDouble) {
+                ok->zy_low = (T)mpf_get_d(ok->zy);
             }
             else {
-                bumpAllocator->ShutdownTls();
+                int32_t zy_exponent;
+                double zy_mantissa;
+                zy_exponent = static_cast<int32_t>(mpf_get_2exp_d(&zy_mantissa, ok->zy));
+                ok->zy_low = T{ zy_exponent, static_cast<SubType>(zy_mantissa) };
             }
-        };
 
-        auto ThreadSqZx = [&InitTls,&ShutdownTls](ThreadPtrs<ThreadZxData>* ThreadMemory) {
-            InitTls();
+            mpf_mul(ok->zy_sq, ok->zy, ok->zy);
 
-            for (;;) {
-                ThreadZxData* expected = ThreadMemory->In.load();
-                ThreadZxData* ok = nullptr;
+            // Give result back.
+            CheckFinishCriteria;
+        }
 
-                CheckStartCriteria;
-                //PrefetchHighPrec(ok->zx);
+        ShutdownTls();
+    };
 
-                // ok->zx_low = (T)mpf_get_d(ok->zx);
-                if constexpr (floatOrDouble) {
-                    ok->zx_low = (T)mpf_get_d(ok->zx);
+    auto ThreadReused = [&](ThreadPtrs<ThreadReusedData>* ThreadMemory) {
+        for (;;) {
+            ThreadReusedData* expected = ThreadMemory->In.load();
+            ThreadReusedData* ok = nullptr;
+
+            CheckStartCriteria;
+
+            AddReused(*results, ok->zx, ok->zy);
+
+            // Give result back.
+            CheckFinishCriteria;
+        }
+    };
+
+    auto* threadZxdata = (ThreadZxData*)_aligned_malloc(sizeof(ThreadZxData), 64);
+    auto* threadZydata = (ThreadZyData*)_aligned_malloc(sizeof(ThreadZyData), 64);
+    auto* threadReuseddata = (ThreadReusedData*)_aligned_malloc(sizeof(ThreadReusedData), 64);
+
+    new (threadZxdata) (ThreadZxData){};
+    new (threadZydata) (ThreadZyData){};
+    new (threadReuseddata) (ThreadReusedData){};
+
+    std::unique_ptr<std::thread> tZx(new std::thread(ThreadSqZx, ThreadZxMemory));
+    std::unique_ptr<std::thread> tZy(new std::thread(ThreadSqZy, ThreadZyMemory));
+
+    std::unique_ptr<std::thread> tReuse;
+    if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
+        //tReuse = std::make_unique<std::thread>(ThreadSqZy, ThreadReusedMemory); // TODO
+    }
+
+    ScopedAffinity scopedAffinity{
+        *this,
+        GetCurrentThread(),
+        tZx->native_handle(),
+        tZy->native_handle() };
+
+    ThreadZxData* expectedZx = nullptr;
+    ThreadZyData* expectedZy = nullptr;
+
+    bool done1 = false;
+    bool done2 = false;
+
+    mpf_t zy_sq_orig;
+    mpf_init(zy_sq_orig);
+
+    mpf_set(zx, cx_mpf);
+    mpf_set(zy, cy_mpf);
+
+    bool periodicity_should_break = false;
+
+    static const T HighOne = T{ 1.0 };
+    static const T HighTwo = T{ 2.0 };
+    static const T TwoFiftySix = T(256);
+
+    bool zyStarted = false;
+
+    T double_zx_last = T{ 0.0 };
+    T double_zy_last = T{ 0.0 };
+
+    RefOrbitCompressor<IterType, T, PExtras> compressor{
+        *results,
+        m_Fractal.GetCompressionErrorExp() };
+
+    for (IterTypeFull i = 0; i < m_Fractal.GetNumIterations<IterType>(); i++)
+    {
+        // Start Zx squaring thread
+        mpf_set(threadZxdata->zx, zx);
+
+        if (!zyStarted) {
+            mpf_set(threadZydata->zy, zy);
+        }
+
+        ThreadZxMemory->In.store(
+            threadZxdata,
+            std::memory_order_release);
+
+        if (!zyStarted) {
+            // Start Zy squaring thread
+            ThreadZyMemory->In.store(
+                threadZydata,
+                std::memory_order_relaxed);
+
+            zyStarted = true;
+        }
+
+        T double_zx = double_zx_last;
+        T double_zy = double_zy_last;
+
+        SubType zn_size;
+
+        if (i > 0) {
+            if constexpr (PExtras == PerturbExtras::Disable) {
+                results->AddUncompressedIteration({ double_zx, double_zy });
+            }
+            else if constexpr (PExtras == PerturbExtras::EnableCompression) {
+                compressor.MaybeAddCompressedIteration({ double_zx, double_zy, i });
+            }
+            else if constexpr (PExtras == PerturbExtras::Bad) {
+                results->AddUncompressedIteration({ double_zx, double_zy, false });
+            }
+
+            if constexpr (PExtras == PerturbExtras::Bad) {
+                const T norm = HdrReduce((double_zx * double_zx + double_zy * double_zy) * glitch);
+                const auto zx_reduced = HdrReduce(HdrAbs((T)double_zx));
+                const auto zy_reduced = HdrReduce(HdrAbs((T)double_zy));
+
+                const bool underflow =
+                    (HdrCompareToBothPositiveReducedLE(zx_reduced, small_float) ||
+                        HdrCompareToBothPositiveReducedLE(zy_reduced, small_float) ||
+                        HdrCompareToBothPositiveReducedLE(norm, small_float));
+                results->SetBad(underflow);
+            }
+
+            // Note: not T.
+            const SubType tempZX = (SubType)double_zx + (SubType)cx_cast;
+            const SubType tempZY = (SubType)double_zy + (SubType)cy_cast;
+            zn_size = tempZX * tempZX + tempZY * tempZY;
+
+            if constexpr (Periodicity) {
+                HdrReduce(dzdcX);
+                auto dzdcX1 = HdrAbs(dzdcX);
+
+                HdrReduce(dzdcY);
+                auto dzdcY1 = HdrAbs(dzdcY);
+
+                HdrReduce(double_zx);
+                auto zxCopy1 = HdrAbs(double_zx);
+
+                HdrReduce(double_zy);
+                auto zyCopy1 = HdrAbs(double_zy);
+
+                T n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
+
+                T r0 = HdrMaxPositiveReduced(dzdcX1, dzdcY1);
+                auto n3 = results->GetMaxRadius() * r0 * HighTwo; // TODO optimize HDRFloat *2.
+                HdrReduce(n3);
+
+                if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
+                    if constexpr (BenchmarkState == BenchmarkMode::Disable) {
+                        periodicity_should_break = true;
+                    }
                 }
                 else {
-                    int32_t zx_exponent;
-                    double zx_mantissa;
-                    zx_exponent = static_cast<int32_t>(mpf_get_2exp_d(&zx_mantissa, ok->zx));
-                    ok->zx_low = T{ zx_exponent, static_cast<SubType>(zx_mantissa) };
+                    auto dzdcXOrig = dzdcX;
+                    dzdcX = HighTwo * (double_zx * dzdcX - double_zy * dzdcY) + HighOne;
+                    dzdcY = HighTwo * (double_zx * dzdcY + double_zy * dzdcXOrig);
                 }
-
-                mpf_mul(ok->zx_sq, ok->zx, ok->zx);
-
-                // Give result back.
-                CheckFinishCriteria;
             }
+        }
+        else {
+            zn_size = 0;
+        }
 
-            ShutdownTls();
-        };
-
-        auto ThreadSqZy = [&InitTls, &ShutdownTls](ThreadPtrs<ThreadZyData>* ThreadMemory) {
-            InitTls();
-
-            for (;;) {
-                ThreadZyData* expected = ThreadMemory->In.load();
-                ThreadZyData* ok = nullptr;
-
-                CheckStartCriteria;
-                //PrefetchHighPrec(ok->zy);
-
-                //ok->zy_low = (T)mpf_get_d(ok->zy);
-                if constexpr (floatOrDouble) {
-                    ok->zy_low = (T)mpf_get_d(ok->zy);
-                }
-                else {
-                    int32_t zy_exponent;
-                    double zy_mantissa;
-                    zy_exponent = static_cast<int32_t>(mpf_get_2exp_d(&zy_mantissa, ok->zy));
-                    ok->zy_low = T{ zy_exponent, static_cast<SubType>(zy_mantissa) };
-                }
-
-                mpf_mul(ok->zy_sq, ok->zy, ok->zy);
-
-                // Give result back.
-                CheckFinishCriteria;
-            }
-
-            ShutdownTls();
-        };
-
-        auto ThreadReused = [&](ThreadPtrs<ThreadReusedData>* ThreadMemory) {
-            for (;;) {
-                ThreadReusedData* expected = ThreadMemory->In.load();
-                ThreadReusedData* ok = nullptr;
-
-                CheckStartCriteria;
-
-                AddReused(*results, ok->zx, ok->zy);
-
-                // Give result back.
-                CheckFinishCriteria;
-            }
-        };
-
-        auto* threadZxdata = (ThreadZxData*)_aligned_malloc(sizeof(ThreadZxData), 64);
-        auto* threadZydata = (ThreadZyData*)_aligned_malloc(sizeof(ThreadZyData), 64);
-        auto* threadReuseddata = (ThreadReusedData*)_aligned_malloc(sizeof(ThreadReusedData), 64);
-
-        new (threadZxdata) (ThreadZxData){};
-        new (threadZydata) (ThreadZyData){};
-        new (threadReuseddata) (ThreadReusedData){};
-
-        std::unique_ptr<std::thread> tZx(new std::thread(ThreadSqZx, ThreadZxMemory));
-        std::unique_ptr<std::thread> tZy(new std::thread(ThreadSqZy, ThreadZyMemory));
-
-        std::unique_ptr<std::thread> tReuse;
         if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
-            //tReuse = std::make_unique<std::thread>(ThreadSqZy, ThreadReusedMemory); // TODO
+            AddReused(*results, zx, zy);
         }
 
-        ScopedAffinity scopedAffinity{
-            *this,
-            GetCurrentThread(),
-            tZx->native_handle(),
-            tZy->native_handle() };
+        // zy = zx * 2 * zy + cy;
 
-        ThreadZxData* expectedZx = nullptr;
-        ThreadZyData* expectedZy = nullptr;
+        // Store in temp
+        mpf_mul(temp_mpf, zx, zy);
+        mpf_mul_ui(temp_mpf, temp_mpf, 2);
+        mpf_add(zy, temp_mpf, cy_mpf);
 
-        bool done1 = false;
-        bool done2 = false;
+        done1 = false;
+        done2 = false;
+        bool quitting = false;
 
-        mpf_t zy_sq_orig;
-        mpf_init(zy_sq_orig);
+        for (;;) {
+            expectedZy = threadZydata;
 
-        mpf_set(zx, cx_mpf);
-        mpf_set(zy, cy_mpf);
+            _mm_pause();
+            if (!done2 &&
+                ThreadZyMemory->Out.compare_exchange_weak(expectedZy,
+                    nullptr,
+                    std::memory_order_release)) {
+                done2 = true;
 
-        bool periodicity_should_break = false;
-
-        static const T HighOne = T{ 1.0 };
-        static const T HighTwo = T{ 2.0 };
-        static const T TwoFiftySix = T(256);
-
-        bool zyStarted = false;
-
-        T double_zx_last = T{ 0.0 };
-        T double_zy_last = T{ 0.0 };
-
-        RefOrbitCompressor<IterType, T, PExtras> compressor{
-            *results,
-            m_Fractal.GetCompressionErrorExp() };
-
-        for (IterTypeFull i = 0; i < m_Fractal.GetNumIterations<IterType>(); i++)
-        {
-            // Start Zx squaring thread
-            mpf_set(threadZxdata->zx, zx);
-
-            if (!zyStarted) {
-                mpf_set(threadZydata->zy, zy);
-            }
-
-            ThreadZxMemory->In.store(
-                threadZxdata,
-                std::memory_order_release);
-
-            if (!zyStarted) {
-                // Start Zy squaring thread
-                ThreadZyMemory->In.store(
-                    threadZydata,
-                    std::memory_order_relaxed);
-
-                zyStarted = true;
-            }
-
-            T double_zx = double_zx_last;
-            T double_zy = double_zy_last;
-
-            SubType zn_size;
-
-            if (i > 0) {
-                if constexpr (PExtras == PerturbExtras::Disable) {
-                    results->AddUncompressedIteration({ double_zx, double_zy });
-                }
-                else if constexpr (PExtras == PerturbExtras::EnableCompression) {
-                    compressor.MaybeAddCompressedIteration({ double_zx, double_zy, i });
-                }
-                else if constexpr (PExtras == PerturbExtras::Bad) {
-                    results->AddUncompressedIteration({ double_zx, double_zy, false });
-                }
-
-                if constexpr (PExtras == PerturbExtras::Bad) {
-                    const T norm = HdrReduce((double_zx * double_zx + double_zy * double_zy) * glitch);
-                    const auto zx_reduced = HdrReduce(HdrAbs((T)double_zx));
-                    const auto zy_reduced = HdrReduce(HdrAbs((T)double_zy));
-
-                    const bool underflow =
-                        (HdrCompareToBothPositiveReducedLE(zx_reduced, small_float) ||
-                            HdrCompareToBothPositiveReducedLE(zy_reduced, small_float) ||
-                            HdrCompareToBothPositiveReducedLE(norm, small_float));
-                    results->SetBad(underflow);
-                }
-
-                // Note: not T.
-                const SubType tempZX = (SubType)double_zx + (SubType)cx_cast;
-                const SubType tempZY = (SubType)double_zy + (SubType)cy_cast;
-                zn_size = tempZX * tempZX + tempZY * tempZY;
+                PrefetchHighPrec(threadZydata->zy_sq);
 
                 if constexpr (Periodicity) {
-                    HdrReduce(dzdcX);
-                    auto dzdcX1 = HdrAbs(dzdcX);
-
-                    HdrReduce(dzdcY);
-                    auto dzdcY1 = HdrAbs(dzdcY);
-
-                    HdrReduce(double_zx);
-                    auto zxCopy1 = HdrAbs(double_zx);
-
-                    HdrReduce(double_zy);
-                    auto zyCopy1 = HdrAbs(double_zy);
-
-                    T n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
-
-                    T r0 = HdrMaxPositiveReduced(dzdcX1, dzdcY1);
-                    auto n3 = results->GetMaxRadius() * r0 * HighTwo; // TODO optimize HDRFloat *2.
-                    HdrReduce(n3);
-
-                    if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
-                        if constexpr (BenchmarkState == BenchmarkMode::Disable) {
-                            periodicity_should_break = true;
-                        }
-                    }
-                    else {
-                        auto dzdcXOrig = dzdcX;
-                        dzdcX = HighTwo * (double_zx * dzdcX - double_zy * dzdcY) + HighOne;
-                        dzdcY = HighTwo * (double_zx * dzdcY + double_zy * dzdcXOrig);
-                    }
-                }
-            }
-            else {
-                zn_size = 0;
-            }
-
-            if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
-                AddReused(*results, zx, zy);  // TODO
-            }
-
-            // zy = zx * 2 * zy + cy;
-
-            // Store in temp
-            mpf_mul(temp_mpf, zx, zy);
-            mpf_mul_ui(temp_mpf, temp_mpf, 2);
-            mpf_add(zy, temp_mpf, cy_mpf);
-
-            done1 = false;
-            done2 = false;
-            bool quitting = false;
-
-            for (;;) {
-                expectedZy = threadZydata;
-
-                _mm_pause();
-                if (!done2 &&
-                    ThreadZyMemory->Out.compare_exchange_weak(expectedZy,
-                        nullptr,
-                        std::memory_order_release)) {
-                    done2 = true;
-
-                    PrefetchHighPrec(threadZydata->zy_sq);
-
-                    if constexpr (Periodicity) {
-                        if (periodicity_should_break) {
-                            results->SetPeriodMaybeZero((IterType)results->GetCountOrbitEntries());
-                            quitting = true;
-                        }
-                    }
-
-                    if (zn_size > 256) {
+                    if (periodicity_should_break) {
+                        results->SetPeriodMaybeZero((IterType)results->GetCountOrbitEntries());
                         quitting = true;
                     }
-
-                    if (!quitting) {
-                        mpf_set(zy_sq_orig, threadZydata->zy_sq);
-                        double_zy_last = threadZydata->zy_low;
-
-                        // Restart right away!
-                        mpf_set(threadZydata->zy, zy);
-
-                        ThreadZyMemory->In.store(
-                            threadZydata,
-                            std::memory_order_release);
-                    }
                 }
 
-                expectedZx = threadZxdata;
-
-                _mm_pause();
-                if (!done1 &&
-                    ThreadZxMemory->Out.compare_exchange_weak(expectedZx,
-                        nullptr,
-                        std::memory_order_release)) {
-                    done1 = true;
-
-                    double_zx_last = threadZxdata->zx_low;
-                    PrefetchHighPrec(threadZxdata->zx_sq);
+                if (zn_size > 256) {
+                    quitting = true;
                 }
 
-                if (done1 && done2) {
-                    break;
+                if (!quitting) {
+                    mpf_set(zy_sq_orig, threadZydata->zy_sq);
+                    double_zy_last = threadZydata->zy_low;
+
+                    // Restart right away!
+                    mpf_set(threadZydata->zy, zy);
+
+                    ThreadZyMemory->In.store(
+                        threadZydata,
+                        std::memory_order_release);
                 }
             }
 
-            // zx = threadZxdata->zx_sq - zy_sq_orig + cx;
-            mpf_sub(temp_mpf, threadZxdata->zx_sq, zy_sq_orig);
-            mpf_add(zx, temp_mpf, cx_mpf);
+            expectedZx = threadZxdata;
 
-            if (!quitting) {
-                continue;
+            _mm_pause();
+            if (!done1 &&
+                ThreadZxMemory->Out.compare_exchange_weak(expectedZx,
+                    nullptr,
+                    std::memory_order_release)) {
+                done1 = true;
+
+                double_zx_last = threadZxdata->zx_low;
+                PrefetchHighPrec(threadZxdata->zx_sq);
             }
 
-            break;
+            if (done1 && done2) {
+                break;
+            }
         }
 
-        if constexpr (PExtras == PerturbExtras::Bad) {
-            results->SetBad(false);
+        // zx = threadZxdata->zx_sq - zy_sq_orig + cx;
+        mpf_sub(temp_mpf, threadZxdata->zx_sq, zy_sq_orig);
+        mpf_add(zx, temp_mpf, cx_mpf);
+
+        if (!quitting) {
+            continue;
         }
 
-        bool res1 = false, res2 = false;
-        while (!res1) {
-            expectedZx = nullptr;
-            res1 = ThreadZxMemory->In.compare_exchange_strong(expectedZx, (ThreadZxData*)0x1, std::memory_order_release);
-        }
-
-        while (!res2) {
-            expectedZy = nullptr;
-            res2 = ThreadZyMemory->In.compare_exchange_strong(expectedZy, (ThreadZyData*)0x1, std::memory_order_release);
-        }
-
-        tZx->join();
-        tZy->join();
-        //tReuse->join();  // TODO
-
-        _aligned_free(ThreadZxMemory);
-        _aligned_free(ThreadZyMemory);
-        _aligned_free(ThreadReusedMemory);
-
-        threadZxdata->~ThreadZxData();
-        threadZydata->~ThreadZyData();
-        threadReuseddata->~ThreadReusedData();
-
-        _aligned_free(threadZxdata);
-        _aligned_free(threadZydata);
-        _aligned_free(threadReuseddata);
-
-        results->CompleteResults<PExtras, Reuse>(bumpAllocator.get());
-        m_GuessReserveSize = results->GetCountOrbitEntries();
+        break;
     }
+
+    if constexpr (PExtras == PerturbExtras::Bad) {
+        results->SetBad(false);
+    }
+
+    bool res1 = false, res2 = false;
+    while (!res1) {
+        expectedZx = nullptr;
+        res1 = ThreadZxMemory->In.compare_exchange_strong(expectedZx, (ThreadZxData*)0x1, std::memory_order_release);
+    }
+
+    while (!res2) {
+        expectedZy = nullptr;
+        res2 = ThreadZyMemory->In.compare_exchange_strong(expectedZy, (ThreadZyData*)0x1, std::memory_order_release);
+    }
+
+    tZx->join();
+    tZy->join();
+    //tReuse->join();  // TODO
+
+    _aligned_free(ThreadZxMemory);
+    _aligned_free(ThreadZyMemory);
+    _aligned_free(ThreadReusedMemory);
+
+    threadZxdata->~ThreadZxData();
+    threadZydata->~ThreadZyData();
+    threadReuseddata->~ThreadReusedData();
+
+    _aligned_free(threadZxdata);
+    _aligned_free(threadZydata);
+    _aligned_free(threadReuseddata);
+
+    results->CompleteResults<PExtras, Reuse>(bumpAllocator.get());
+    m_GuessReserveSize = results->GetCountOrbitEntries();
+    } // End of scope for boundedAllocator and bumpAllocator
 
     ShutdownAllocatorsIfNeeded<Reuse>(boundedAllocator, bumpAllocator);
 }

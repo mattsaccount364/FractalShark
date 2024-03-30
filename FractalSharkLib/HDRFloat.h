@@ -1448,7 +1448,8 @@ static CUDA_CRAP std::string HdrToString(const T& dat) {
         ss << "mantissa: " << static_cast<double>(dat) << " exp: 0";
         return ss.str();
     }
-    else if constexpr (std::is_same<T, HighPrecision>::value) {
+    else if constexpr (std::is_same<T, HighPrecisionT<HPDestructor::True>>::value ||
+                       std::is_same<T, HighPrecisionT<HPDestructor::False>>::value) {
         return dat.str();
     }
     else {

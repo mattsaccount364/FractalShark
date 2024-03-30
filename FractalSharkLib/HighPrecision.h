@@ -11,54 +11,68 @@
 
 #include "ScopedMpir.h"
 
-class HighPrecision {
+enum class HPDestructor : bool {
+    False = false,
+    True = true,
+};
+
+template<HPDestructor Destructor>
+class HighPrecisionT {
 public:
-    void InitDestructor() {
-        m_RunDestructor = !MPIRBumpAllocator::IsBumpAllocatorInstalled();
-    }
+    // Friend the other version of HighPrecisionT so we can copy between them.
+    template<HPDestructor T>
+    friend class HighPrecisionT;
 
     void InitMpf() {
         mpf_init(m_Data);
-        InitDestructor();
     }
 
     void InitMpf2(uint64_t precisionInBits) {
         mpf_init2(m_Data, precisionInBits);
-        InitDestructor();
     }
 
-    HighPrecision() {
+    HighPrecisionT() {
         InitMpf();
     }
 
-    HighPrecision(const HighPrecision& other) {
+    HighPrecisionT(const HighPrecisionT& other) {
         InitMpf2(other.precisionInBits());
         mpf_set(m_Data, other.m_Data);
     }
 
-    HighPrecision(const mpf_t& data)
+    template<HPDestructor T>
+    HighPrecisionT(const HighPrecisionT<T>& other) {
+        InitMpf2(other.precisionInBits());
+        mpf_set(m_Data, other.m_Data);
+    }
+
+    HighPrecisionT(const mpf_t& data)
     {
         InitMpf2(mpf_get_prec(data));
         mpf_set(m_Data, data);
     }
 
-    HighPrecision(HighPrecision&& other) {
+    HighPrecisionT(HighPrecisionT&& other) {
         m_Data[0] = other.m_Data[0];
         other.m_Data[0] = {};
-
-        m_RunDestructor = other.m_RunDestructor;
-        other.m_RunDestructor = false;
     }
 
-    ~HighPrecision() {
+    template<HPDestructor T>
+    HighPrecisionT(HighPrecisionT<T>&& other) {
+        m_Data[0] = other.m_Data[0];
+        other.m_Data[0] = {};
+    }
+
+    ~HighPrecisionT() {
         // When using the bump allocator, we don't want to free the memory.
         // That's part of the point of the bump allocator.
-        if (m_RunDestructor) {
+        if constexpr (Destructor == HPDestructor::True) {
             mpf_clear(m_Data);
+            m_Data[0] = {};
         }
     }
 
-    HighPrecision& operator=(const HighPrecision& other) {
+    HighPrecisionT& operator=(const HighPrecisionT& other) {
         if (this == &other) {
             return *this;
         }
@@ -68,7 +82,19 @@ public:
         return *this;
     }
 
-    HighPrecision& operator=(HighPrecision&& other) {
+    template<HPDestructor T>
+    HighPrecisionT<T>& operator=(const HighPrecisionT<T>& other) {
+        if (this == &other) {
+            return *this;
+        }
+
+        mpf_set_prec(m_Data, other.precisionInBits());
+        mpf_set(m_Data, other.m_Data);
+        return *this;
+    }
+
+
+    HighPrecisionT& operator=(HighPrecisionT&& other) {
         if (this == &other) {
             return *this;
         }
@@ -76,49 +102,58 @@ public:
         m_Data[0] = other.m_Data[0];
         other.m_Data[0] = {};
         
-        m_RunDestructor = other.m_RunDestructor;
-        other.m_RunDestructor = false;
-
         return *this;
     }
 
-    HighPrecision(double data)
+    template<HPDestructor T>
+    HighPrecisionT<T>& operator=(HighPrecisionT<T>&& other) {
+        if (this == &other) {
+            return *this;
+        }
+
+        m_Data[0] = other.m_Data[0];
+        other.m_Data[0] = {};
+        
+        return *this;
+    }
+
+    HighPrecisionT(double data)
     {
         InitMpf();
         mpf_set_d(m_Data, data);
     }
 
-    HighPrecision(uint64_t data)
+    HighPrecisionT(uint64_t data)
     {
         InitMpf();
         mpf_set_ui(m_Data, data);
     }
 
-    HighPrecision(uint32_t data)
+    HighPrecisionT(uint32_t data)
     {
         InitMpf();
         mpf_set_ui(m_Data, data);
     }
 
-    HighPrecision(int64_t data)
+    HighPrecisionT(int64_t data)
     {
         InitMpf();
         mpf_set_si(m_Data, data);
     }
 
-    HighPrecision(int data)
+    HighPrecisionT(int data)
     {
         InitMpf();
         mpf_set_si(m_Data, data);
     }
 
-    HighPrecision(long data) 
+    HighPrecisionT(long data) 
     {
         InitMpf();
         mpf_set_si(m_Data, data);
     }
 
-    HighPrecision(std::string data)
+    HighPrecisionT(std::string data)
     {
         InitMpf();
         mpf_set_str(m_Data, data.c_str(), 10);
@@ -133,93 +168,93 @@ public:
     }
 
     template<typename T>
-    HighPrecision& operator=(const T &data) {
+    HighPrecisionT& operator=(const T &data) {
         mpf_set_d(m_Data, data);
         return *this;
     }
 
-    HighPrecision& operator=(const char* data) {
+    HighPrecisionT& operator=(const char* data) {
         mpf_set_str(m_Data, data, 10);
         return *this;
     }
 
-    HighPrecision& operator=(const std::string& data) {
+    HighPrecisionT& operator=(const std::string& data) {
         mpf_set_str(m_Data, data.c_str(), 10);
         return *this;
     }
 
-    HighPrecision& operator+=(const HighPrecision& data) {
+    HighPrecisionT& operator+=(const HighPrecisionT& data) {
         mpf_add(m_Data, m_Data, data.m_Data);
         return *this;
     }
 
-    HighPrecision& operator-=(const HighPrecision& data) {
+    HighPrecisionT& operator-=(const HighPrecisionT& data) {
         mpf_sub(m_Data, m_Data, data.m_Data);
         return *this;
     }
 
-    HighPrecision& operator*=(const HighPrecision& data) {
+    HighPrecisionT& operator*=(const HighPrecisionT& data) {
         mpf_mul(m_Data, m_Data, data.m_Data);
         return *this;
     }
 
-    HighPrecision& operator/=(const HighPrecision& data) {
+    HighPrecisionT& operator/=(const HighPrecisionT& data) {
         mpf_div(m_Data, m_Data, data.m_Data);
         return *this;
     }
 
-    friend HighPrecision operator+(const HighPrecision& lhs, const HighPrecision& rhs) {
-        HighPrecision result;
+    friend HighPrecisionT operator+(const HighPrecisionT& lhs, const HighPrecisionT& rhs) {
+        HighPrecisionT result;
         mpf_add(result.m_Data, lhs.m_Data, rhs.m_Data);
         return result;
     }
 
-    friend HighPrecision operator-(const HighPrecision& lhs, const HighPrecision& rhs) {
-        HighPrecision result;
+    friend HighPrecisionT operator-(const HighPrecisionT& lhs, const HighPrecisionT& rhs) {
+        HighPrecisionT result;
         mpf_sub(result.m_Data, lhs.m_Data, rhs.m_Data);
         return result;
     }
 
-    HighPrecision operator-() const {
-        HighPrecision result;
+    HighPrecisionT operator-() const {
+        HighPrecisionT result;
         mpf_neg(result.m_Data, m_Data);
         return result;
     }
 
-    friend HighPrecision operator*(const HighPrecision& lhs, const HighPrecision& rhs) {
-        HighPrecision result;
+    friend HighPrecisionT operator*(const HighPrecisionT& lhs, const HighPrecisionT& rhs) {
+        HighPrecisionT result;
         mpf_mul(result.m_Data, lhs.m_Data, rhs.m_Data);
         return result;
     }
 
-    friend HighPrecision operator/(const HighPrecision& lhs, const HighPrecision& rhs) {
-        HighPrecision result;
+    friend HighPrecisionT operator/(const HighPrecisionT& lhs, const HighPrecisionT& rhs) {
+        HighPrecisionT result;
         mpf_div(result.m_Data, lhs.m_Data, rhs.m_Data);
         return result;
     }
 
-    friend bool operator==(const HighPrecision& lhs, const HighPrecision& rhs) {
+    friend bool operator==(const HighPrecisionT& lhs, const HighPrecisionT& rhs) {
         return mpf_cmp(lhs.m_Data, rhs.m_Data) == 0;
     }
 
-    friend bool operator!=(const HighPrecision& lhs, const HighPrecision& rhs) {
+    friend bool operator!=(const HighPrecisionT& lhs, const HighPrecisionT& rhs) {
         return mpf_cmp(lhs.m_Data, rhs.m_Data) != 0;
     }
 
-    friend bool operator<(const HighPrecision& lhs, const HighPrecision& rhs) {
+    friend bool operator<(const HighPrecisionT& lhs, const HighPrecisionT& rhs) {
         return mpf_cmp(lhs.m_Data, rhs.m_Data) < 0;
     }
 
     
-    friend bool operator>(const HighPrecision& lhs, const HighPrecision& rhs) {
+    friend bool operator>(const HighPrecisionT& lhs, const HighPrecisionT& rhs) {
         return mpf_cmp(lhs.m_Data, rhs.m_Data) > 0;
     }
 
-    friend bool operator<=(const HighPrecision& lhs, const HighPrecision& rhs) {
+    friend bool operator<=(const HighPrecisionT& lhs, const HighPrecisionT& rhs) {
         return mpf_cmp(lhs.m_Data, rhs.m_Data) <= 0;
     }
 
-    friend bool operator>=(const HighPrecision& lhs, const HighPrecision& rhs) {
+    friend bool operator>=(const HighPrecisionT& lhs, const HighPrecisionT& rhs) {
         return mpf_cmp(lhs.m_Data, rhs.m_Data) >= 0;
     }
 
@@ -231,12 +266,12 @@ public:
     }
 
     // Provide operator<< that returns a string representation of m_Data:
-    friend std::ostream& operator<<(std::ostream& os, const HighPrecision& data) {
+    friend std::ostream& operator<<(std::ostream& os, const HighPrecisionT& data) {
         os << data.str();
         return os;
     }
 
-    friend std::istream& operator>>(std::istream& is, HighPrecision& data) {
+    friend std::istream& operator>>(std::istream& is, HighPrecisionT& data) {
         std::string str;
         is >> str;
         data = str;
@@ -257,8 +292,8 @@ public:
         exponent = static_cast<int32_t>(mpf_get_2exp_d(&mantissa, m_Data));
     }
 
-    friend HighPrecision abs(const HighPrecision& data) {
-        HighPrecision result;
+    friend HighPrecisionT abs(const HighPrecisionT& data) {
+        HighPrecisionT result;
         mpf_abs(result.m_Data, data.m_Data);
         return result;
     }
@@ -279,15 +314,11 @@ public:
         return static_cast<float>(mpf_get_d(m_Data));
     }
 
-    void DisableDestructor() {
-        m_RunDestructor = false;
-    }
-
 private:
     mpf_t m_Data;
-    bool m_RunDestructor;
 };
 
+using HighPrecision = HighPrecisionT<HPDestructor::True>;
 
 template<class From, class To>
 To Convert(From data) {

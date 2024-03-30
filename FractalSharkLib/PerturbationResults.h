@@ -802,18 +802,15 @@ public:
     }
 
     void AddReusedEntry(HighPrecision x, HighPrecision y) {
-        x.DisableDestructor();
         m_ReuseX.push_back(std::move(x));
-
-        y.DisableDestructor();
         m_ReuseY.push_back(std::move(y));
     }
 
-    const HighPrecision& GetReuseXEntry(size_t uncompressed_index) const {
+    const HighPrecisionT<HPDestructor::False>& GetReuseXEntry(size_t uncompressed_index) const {
         return m_ReuseX[uncompressed_index];
     }
 
-    const HighPrecision& GetReuseYEntry(size_t uncompressed_index) const {
+    const HighPrecisionT<HPDestructor::False>& GetReuseYEntry(size_t uncompressed_index) const {
         return m_ReuseY[uncompressed_index];
     }
 
@@ -1011,8 +1008,8 @@ private:
     std::unique_ptr<LAReference<IterType, T, SubType, PExtras>> m_LaReference;
 
     uint64_t m_AuthoritativePrecisionInBits;
-    std::vector<HighPrecision> m_ReuseX;
-    std::vector<HighPrecision> m_ReuseY;
+    std::vector<HighPrecisionT<HPDestructor::False>> m_ReuseX;
+    std::vector<HighPrecisionT<HPDestructor::False>> m_ReuseY;
     std::unique_ptr<GrowableVector<uint8_t>> m_ReuseAllocations;
 
     BenchmarkData m_BenchmarkOrbit;

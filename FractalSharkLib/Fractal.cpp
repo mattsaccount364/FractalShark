@@ -1140,10 +1140,10 @@ void Fractal::View(size_t view)
             HighPrecision{ "1.4e301" }
         };
 
-        minX = convert.minX;
-        minY = convert.minY;
-        maxX = convert.maxX;
-        maxY = convert.maxY;
+        minX = convert.GetMinX();
+        minY = convert.GetMinY();
+        maxX = convert.GetMaxX();
+        maxY = convert.GetMaxY();
         SetNumIterations<IterTypeFull>(10100100);
         break;
     }
@@ -1165,10 +1165,10 @@ void Fractal::View(size_t view)
             HighPrecision{ "4.98201309068883908096e+44" }
         };
 
-        minX = convert.minX;
-        minY = convert.minY;
-        maxX = convert.maxX;
-        maxY = convert.maxY;
+        minX = convert.GetMinX();
+        minY = convert.GetMinY();
+        maxX = convert.GetMaxX();
+        maxY = convert.GetMaxY();
         SetNumIterations<IterTypeFull>(4718592);
         break;
     }
@@ -1244,10 +1244,10 @@ void Fractal::View(size_t view)
             HighPrecision{ "1e19" }
         };
 
-        minX = convert.minX;
-        minY = convert.minY;
-        maxX = convert.maxX;
-        maxY = convert.maxY;
+        minX = convert.GetMinX();
+        minY = convert.GetMinY();
+        maxX = convert.GetMaxX();
+        maxY = convert.GetMaxY();
         SetNumIterations<IterTypeFull>(1'100'100'100);
         break;
     }
@@ -1304,10 +1304,10 @@ void Fractal::View(size_t view)
             HighPrecision{ "1" } / HighPrecision{ "1.9e-3068" }
         };
 
-        minX = convert.minX;
-        minY = convert.minY;
-        maxX = convert.maxX;
-        maxY = convert.maxY;
+        minX = convert.GetMinX();
+        minY = convert.GetMinY();
+        maxX = convert.GetMaxX();
+        maxY = convert.GetMaxY();
         SetNumIterations<IterTypeFull>(1'000'000'000);
         break;
     }
@@ -1621,7 +1621,7 @@ void Fractal::SetIterType(IterTypeEnum type) {
 
 HighPrecision Fractal::GetZoomFactor() const {
     PointZoomBBConverter converter{ m_MinX, m_MinY, m_MaxX, m_MaxY };
-    return converter.zoomFactor;
+    return converter.GetZoomFactor();
 }
 
 void Fractal::SetPerturbationAlg(RefOrbitCalc::PerturbationAlg alg) {

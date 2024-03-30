@@ -17,13 +17,28 @@ public:
     friend class FloatComplex<CudaDblflt<dblflt>>;
 
 #ifndef __CUDACC__ 
+    template<bool IntegerOutput>
     CUDA_CRAP std::string ToString() const {
-        std::stringstream ss;
-        ss << std::setprecision(std::numeric_limits<double>::max_digits10);
-        ss << "mantissaReal: " << static_cast<double>(this->mantissaReal)
-            << " mantissaImag: " << static_cast<double>(this->mantissaImag)
-            << " exp: 0";
-        return ss.str();
+        if constexpr (!IntegerOutput) {
+            std::stringstream ss;
+            ss << std::setprecision(std::numeric_limits<double>::max_digits10);
+            ss << "mantissaReal: " << static_cast<double>(this->mantissaReal)
+                << " mantissaImag: " << static_cast<double>(this->mantissaImag)
+                << " exp: 0";
+            return ss.str();
+        }
+        else {
+            // Interpret the bits as a double and return the string as hex
+            auto doubleMantReal = static_cast<double>(mantissaReal);
+            auto doubleMantImag = static_cast<double>(mantissaImag);
+            uint64_t* mantissaRealBits = reinterpret_cast<uint64_t*>(&doubleMantReal);
+            uint64_t *mantissaImagBits = reinterpret_cast<uint64_t*>(&doubleMantImag);
+            std::stringstream ss;
+            ss << "mantissaReal: 0x" << std::hex << *mantissaRealBits
+                << " mantissaImag: 0x" << std::hex << *mantissaImagBits
+                << " exp: 0";
+            return ss.str();
+        }
     }
 #endif
 

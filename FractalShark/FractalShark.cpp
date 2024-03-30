@@ -22,7 +22,7 @@ std::unique_ptr<Fractal> gFractal;
 ATOM              MyRegisterClass(HINSTANCE hInstance);
 HWND              InitInstance(HINSTANCE, int);
 LRESULT CALLBACK  WndProc(HWND, UINT, WPARAM, LPARAM);
-void              UnInit(HWND, ATOM);
+void              UnInit(HWND);
 
 LONG WINAPI unhandled_handler(struct _EXCEPTION_POINTERS* apExceptionInfo);
 
@@ -97,7 +97,7 @@ int APIENTRY WinMain(HINSTANCE hInstance,
     // SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
 
     // Initialize global strings
-    auto cls = MyRegisterClass(hInstance);
+    MyRegisterClass(hInstance);
 
     gJobObj = std::make_unique<JobObject>();
 
@@ -118,7 +118,7 @@ int APIENTRY WinMain(HINSTANCE hInstance,
     }
 
     // Cleanup
-    UnInit(hWnd, cls);
+    UnInit(hWnd);
 
 #ifdef _DEBUG
     // We have a 16-byte leak thanks to Windows no matter what we do.
@@ -167,7 +167,7 @@ HWND InitInstance(HINSTANCE hInstance, int nCmdShow)
 { // Store instance handle in our global variable
     hInst = hInstance;
 
-    constexpr bool startWindowed = false;
+    constexpr bool startWindowed = true;
     constexpr DWORD forceStartWidth = 0;
     constexpr DWORD forceStartHeight = 0;
 
@@ -240,7 +240,7 @@ HWND InitInstance(HINSTANCE hInstance, int nCmdShow)
 //
 // Performs all cleanup operations
 //
-void UnInit(HWND hWnd, ATOM cls)
+void UnInit(HWND hWnd)
 {
     DestroyMenu(gPopupMenu);
     DestroyWindow(hWnd);

@@ -24,13 +24,27 @@ public:
     friend class HDRFloatComplex<CudaDblflt<dblflt>>;
 
 #ifndef __CUDACC__ 
+    template<bool IntegerOutput>
     CUDA_CRAP std::string ToString() const {
-        std::stringstream ss;
-        ss << std::setprecision(std::numeric_limits<double>::max_digits10);
-        ss << "mantissaReal: " << static_cast<double>(this->mantissaReal)
-            << " mantissaImag: " << static_cast<double>(this->mantissaImag)
-            << " exp: " << this->exp;
-        return ss.str();
+        if constexpr (!IntegerOutput) {
+            std::stringstream ss;
+            ss << std::setprecision(std::numeric_limits<double>::max_digits10);
+            ss << "mantissaReal: " << static_cast<double>(this->mantissaReal)
+                << " mantissaImag: " << static_cast<double>(this->mantissaImag)
+                << " exp: " << this->exp;
+            return ss.str();
+        }
+        else {
+            // Interpret the bits as integers and output the integers:
+            std::stringstream ss;
+            const double localMantissaReal = static_cast<double>(this->mantissaReal);
+            const double localMantissaImag = static_cast<double>(this->mantissaImag);
+            const uint64_t localExp = static_cast<uint64_t>(this->exp);
+            ss << "mantissaReal: 0x" << std::hex << *reinterpret_cast<const uint64_t*>(&localMantissaReal)
+                << " mantissaImag: 0x" << std::hex << *reinterpret_cast<const uint64_t*>(&localMantissaImag)
+                << " exp: 0x" << std::hex << localExp;
+            return ss.str();
+        }
     }
 #endif
 

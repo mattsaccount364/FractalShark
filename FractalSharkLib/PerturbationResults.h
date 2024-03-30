@@ -40,6 +40,8 @@ public:
     friend class CompressionHelper<IterType, T, PExtras>;
     friend class RefOrbitCompressor<IterType, T, PExtras>;
 
+    static constexpr char Version[] = "0.44";
+
     static constexpr bool Is2X32 = (
         std::is_same<T, HDRFloat<CudaDblflt<MattDblflt>>>::value ||
         std::is_same<T, CudaDblflt<MattDblflt>>::value);
@@ -340,6 +342,9 @@ public:
             return;
         }
 
+        // Write a version number
+        metafile << Version << std::endl;
+
         metafile << m_FullOrbit.GetSize() << std::endl;
 
         if constexpr (std::is_same<IterType, uint32_t>::value) {
@@ -380,12 +385,12 @@ public:
         }
 
         metafile << "PrecisionInBits: " << m_OrbitX.precisionInBits() << std::endl;
-        metafile << "HighPrecisionReal: " << HdrToString(m_OrbitX) << std::endl;
+        metafile << "HighPrecisionReal: " << HdrToString<true>(m_OrbitX) << std::endl;
         metafile << "PrecisionInBits: " << m_OrbitY.precisionInBits() << std::endl;
-        metafile << "HighPrecisionImaginary: " << HdrToString(m_OrbitY) << std::endl;
-        metafile << "LowPrecisionReal: " << HdrToString(m_OrbitXLow) << std::endl;
-        metafile << "LowPrecisionImaginary: " << HdrToString(m_OrbitYLow) << std::endl;
-        metafile << "MaxRadius: " << HdrToString(m_MaxRadius) << std::endl;
+        metafile << "HighPrecisionImaginary: " << HdrToString<true>(m_OrbitY) << std::endl;
+        metafile << "LowPrecisionReal: " << HdrToString<true>(m_OrbitXLow) << std::endl;
+        metafile << "LowPrecisionImaginary: " << HdrToString<true>(m_OrbitYLow) << std::endl;
+        metafile << "MaxRadius: " << HdrToString<true>(m_MaxRadius) << std::endl;
         metafile << "MaxIterationsPerPixel: " << m_MaxIterations << std::endl;
         metafile << "Period: " << m_PeriodMaybeZero << std::endl;
         metafile << "CompressionErrorExponent: " << m_CompressionErrorExp << std::endl;
@@ -434,6 +439,13 @@ public:
         std::ifstream metafile(GenFilename(GrowableVectorTypes::Metadata), std::ios::binary);
         if (!metafile.is_open()) {
             ::MessageBox(nullptr, L"Failed to open file for reading 1", L"", MB_OK | MB_APPLMODAL);
+            return false;
+        }
+
+        // Read version number
+        std::string version;
+        metafile >> version;
+        if (version != Version) {
             return false;
         }
 
@@ -557,9 +569,9 @@ public:
             m_OrbitYStr = shiY;
         }
 
-        HdrFromIfStream<T, SubType>(m_OrbitXLow, metafile);
-        HdrFromIfStream<T, SubType>(m_OrbitYLow, metafile);
-        HdrFromIfStream<T, SubType>(m_MaxRadius, metafile);
+        HdrFromIfStream<true, T, SubType>(m_OrbitXLow, metafile);
+        HdrFromIfStream<true, T, SubType>(m_OrbitYLow, metafile);
+        HdrFromIfStream<true, T, SubType>(m_MaxRadius, metafile);
 
         {
             std::string maxIterationsStr;
@@ -648,8 +660,8 @@ public:
 
         m_OrbitX = cx;
         m_OrbitY = cy;
-        m_OrbitXStr = HdrToString(cx);  
-        m_OrbitYStr = HdrToString(cy);
+        m_OrbitXStr = HdrToString<false>(cx);
+        m_OrbitYStr = HdrToString<false>(cy);
         m_OrbitXLow = T{ cx };
         m_OrbitYLow = T{ cy };
 
@@ -921,13 +933,13 @@ public:
             return;
         }
 
-        out << "m_OrbitX: " << HdrToString(m_OrbitX) << std::endl;
-        out << "m_OrbitY: " << HdrToString(m_OrbitY) << std::endl;
+        out << "m_OrbitX: " << HdrToString<false>(m_OrbitX) << std::endl;
+        out << "m_OrbitY: " << HdrToString<false>(m_OrbitY) << std::endl;
         out << "m_OrbitXStr: " << m_OrbitXStr << std::endl;
         out << "m_OrbitYStr: " << m_OrbitYStr << std::endl;
-        out << "m_OrbitXLow: " << HdrToString(m_OrbitXLow) << std::endl;
-        out << "m_OrbitYLow: " << HdrToString(m_OrbitYLow) << std::endl;
-        out << "m_MaxRadius: " << HdrToString(m_MaxRadius) << std::endl;
+        out << "m_OrbitXLow: " << HdrToString<false>(m_OrbitXLow) << std::endl;
+        out << "m_OrbitYLow: " << HdrToString<false>(m_OrbitYLow) << std::endl;
+        out << "m_MaxRadius: " << HdrToString<false>(m_MaxRadius) << std::endl;
         out << "m_MaxIterations: " << m_MaxIterations << std::endl;
         out << "m_PeriodMaybeZero: " << m_PeriodMaybeZero << std::endl;
         out << "m_CompressionErrorExp: " << m_CompressionErrorExp << std::endl;
@@ -938,8 +950,8 @@ public:
 
         // Write out all values in m_FullOrbit:
         for (size_t i = 0; i < m_FullOrbit.GetSize(); i++) {
-            out << "m_FullOrbit[" << i << "].x: " << HdrToString(m_FullOrbit[i].x) << std::endl;
-            out << "m_FullOrbit[" << i << "].y: " << HdrToString(m_FullOrbit[i].y) << std::endl;
+            out << "m_FullOrbit[" << i << "].x: " << HdrToString<false>(m_FullOrbit[i].x) << std::endl;
+            out << "m_FullOrbit[" << i << "].y: " << HdrToString<false>(m_FullOrbit[i].y) << std::endl;
         }
 
         out << "m_ReuseX: " << m_ReuseX.size() << std::endl;
@@ -951,8 +963,8 @@ public:
         }
 
         for (size_t i = 0; i < m_ReuseX.size(); i++) {
-            out << "m_ReuseX[" << i << "]: " << HdrToString(m_ReuseX[i]) << std::endl;
-            out << "m_ReuseY[" << i << "]: " << HdrToString(m_ReuseY[i]) << std::endl;
+            out << "m_ReuseX[" << i << "]: " << HdrToString<false>(m_ReuseX[i]) << std::endl;
+            out << "m_ReuseY[" << i << "]: " << HdrToString<false>(m_ReuseY[i]) << std::endl;
         }
 
         out.close();

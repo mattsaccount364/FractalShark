@@ -106,11 +106,25 @@ public:
     static constexpr int MinFloatExponent = -126;
 
 #ifndef __CUDACC__ 
+    template<bool IntegerOutput>
     CUDA_CRAP std::string ToString() const {
-        std::stringstream ss;
-        ss << std::setprecision(std::numeric_limits<double>::max_digits10);
-        ss << "mantissa: " << static_cast<double>(Base::mantissa) << " exp: " << Base::exp;
-        return ss.str();
+        if constexpr (!IntegerOutput) {
+            std::stringstream ss;
+            ss << std::setprecision(std::numeric_limits<double>::max_digits10);
+            ss << "mantissa: " << static_cast<double>(Base::mantissa) << " exp: " << Base::exp;
+            return ss.str();
+        }
+        else {
+            // Reinterpret the bits of Base::mantissa as an integer
+            // Don't use bitcast
+            std::stringstream ss;
+            const double res = static_cast<double>(Base::mantissa);
+            const uint64_t mantissaInteger = *reinterpret_cast<const uint64_t*>(&res);
+            const uint64_t localExp = Base::exp;
+            const uint64_t expInteger = *reinterpret_cast<const uint64_t*>(&localExp);
+            ss << "mantissa: 0x" << std::hex << mantissaInteger << " exp: 0x" << std::hex << expInteger;
+            return ss.str();
+        }
     }
 #endif
 
@@ -1460,27 +1474,50 @@ static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedGE(const T& one, 
 }
 
 #ifndef __CUDACC__
-template<class T>
+template<bool IntegerOutput, class T>
 static CUDA_CRAP std::string HdrToString(const T& dat) {
     if constexpr (
         std::is_same<T, double>::value ||
         std::is_same<T, float>::value) {
 
-        std::stringstream ss;
-        ss << std::setprecision(std::numeric_limits<double>::max_digits10);
-        ss << "mantissa: " << static_cast<double>(dat) << " exp: 0";
-        return ss.str();
+        if constexpr (!IntegerOutput) {
+            std::stringstream ss;
+            ss << std::setprecision(std::numeric_limits<double>::max_digits10);
+            ss << "mantissa: " << static_cast<double>(dat) << " exp: 0";
+            return ss.str();
+        }
+        else {
+            // Interpret the bits as an integer and output that
+            const auto doubleDat = static_cast<double>(dat);
+            uint64_t bits = *reinterpret_cast<const uint64_t*>(&doubleDat);
+            std::stringstream ss;
+            ss << "mantissa: 0x" << std::hex << bits << " exp: 0";
+            return ss.str();
+        }
     }
     else if constexpr (std::is_same<T, HighPrecisionT<HPDestructor::True>>::value ||
                        std::is_same<T, HighPrecisionT<HPDestructor::False>>::value) {
         return dat.str();
     }
     else {
-        return dat.ToString();
+        return dat.ToString<IntegerOutput>();
     }
 }
 
-template<class T, typename SubType>
+template<bool IntegerInput>
+static CUDA_CRAP double HdrFromIntToDbl(const std::string& mantissaStr) {
+    if constexpr (!IntegerInput) {
+        return std::stod(mantissaStr);
+    }
+    else {
+        // Interpret bits of the integer as a double
+        // Interpret the mantissaStr as hex
+        uint64_t bits = std::stoull(mantissaStr, nullptr, 16);
+        return *reinterpret_cast<double*>(&bits);
+    }
+}
+
+template<bool IntegerInput, class T, typename SubType>
 static CUDA_CRAP void HdrFromIfStream(T &out, std::ifstream& metafile) {
     std::string descriptor_string_junk;
     double mantissa;
@@ -1492,7 +1529,7 @@ static CUDA_CRAP void HdrFromIfStream(T &out, std::ifstream& metafile) {
     std::string mantissaStr;
     metafile >> mantissaStr;
     metafile >> mantissaStr;
-    mantissa = std::stod(mantissaStr);
+    mantissa = HdrFromIntToDbl<IntegerInput>(mantissaStr);
 
     if constexpr (
         std::is_same<T, double>::value ||
@@ -1513,13 +1550,13 @@ static CUDA_CRAP void HdrFromIfStream(T &out, std::ifstream& metafile) {
             std::string mantissaImagStr;
             metafile >> mantissaImagStr;
             metafile >> mantissaImagStr;
-            mantissa2 = std::stod(mantissaImagStr);
+            mantissa2 = HdrFromIntToDbl<IntegerInput>(mantissaImagStr);
         }
 
         std::string exponentStr;
         metafile >> exponentStr;
         metafile >> exponentStr;
-        exponent = std::stoi(exponentStr);
+        exponent = static_cast<int32_t>(std::stoull(exponentStr, nullptr, 16));
 
         if constexpr (
             std::is_same<T, HDRFloat<float>>::value ||

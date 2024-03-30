@@ -490,10 +490,10 @@ void Fractal::SetPosition(
     m_MinY = MinY;
     m_MaxY = MaxY;
 
-    m_MinXStr = HdrToString(m_MinX);
-    m_MaxXStr = HdrToString(m_MaxX);
-    m_MinYStr = HdrToString(m_MinY);
-    m_MaxYStr = HdrToString(m_MaxY);
+    m_MinXStr = HdrToString<false>(m_MinX);
+    m_MaxXStr = HdrToString<false>(m_MaxX);
+    m_MinYStr = HdrToString<false>(m_MinY);
+    m_MaxYStr = HdrToString<false>(m_MaxY);
 }
 
 //////////////////////////////////////////////////////////////////////////////

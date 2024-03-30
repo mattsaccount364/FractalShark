@@ -43,17 +43,17 @@ public:
 public:
     bool WriteMetadata(std::ofstream& metafile) const {
         metafile << "StepLength: " << StepLength << std::endl;
-        metafile << "ThresholdC: " << HdrToString(ThresholdC) << std::endl;
-        metafile << "SqrEscapeRadius: " << HdrToString(SqrEscapeRadius) << std::endl;
-        metafile << "RefC: " << HdrToString(RefC) << std::endl;
-        metafile << "ZCoeff: " << HdrToString(ZCoeff) << std::endl;
-        metafile << "CCoeff: " << HdrToString(CCoeff) << std::endl;
-        metafile << "InvZCoeff: " << HdrToString(InvZCoeff) << std::endl;
-        metafile << "CCoeffSqrInvZCoeff: " << HdrToString(CCoeffSqrInvZCoeff) << std::endl;
-        metafile << "CCoeffInvZCoeff: " << HdrToString(CCoeffInvZCoeff) << std::endl;
-        metafile << "CCoeffNormSqr: " << HdrToString(CCoeffNormSqr) << std::endl;
-        metafile << "RefCNormSqr: " << HdrToString(RefCNormSqr) << std::endl;
-        metafile << "factor: " << HdrToString(factor) << std::endl;
+        metafile << "ThresholdC: " << HdrToString<true>(ThresholdC) << std::endl;
+        metafile << "SqrEscapeRadius: " << HdrToString<true>(SqrEscapeRadius) << std::endl;
+        metafile << "RefC: " << HdrToString<true>(RefC) << std::endl;
+        metafile << "ZCoeff: " << HdrToString<true>(ZCoeff) << std::endl;
+        metafile << "CCoeff: " << HdrToString<true>(CCoeff) << std::endl;
+        metafile << "InvZCoeff: " << HdrToString<true>(InvZCoeff) << std::endl;
+        metafile << "CCoeffSqrInvZCoeff: " << HdrToString<true>(CCoeffSqrInvZCoeff) << std::endl;
+        metafile << "CCoeffInvZCoeff: " << HdrToString<true>(CCoeffInvZCoeff) << std::endl;
+        metafile << "CCoeffNormSqr: " << HdrToString<true>(CCoeffNormSqr) << std::endl;
+        metafile << "RefCNormSqr: " << HdrToString<true>(RefCNormSqr) << std::endl;
+        metafile << "factor: " << HdrToString<true>(factor) << std::endl;
         return true;
     }
 
@@ -67,17 +67,17 @@ public:
             StepLength = (IterType)std::stoll(step_length);
         }
 
-        HdrFromIfStream<HDRFloat, SubType>(ThresholdC, metafile);
-        HdrFromIfStream<HDRFloat, SubType>(SqrEscapeRadius, metafile);
-        HdrFromIfStream<HDRFloatComplex, SubType>(RefC, metafile);
-        HdrFromIfStream<HDRFloatComplex, SubType>(ZCoeff, metafile);
-        HdrFromIfStream<HDRFloatComplex, SubType>(CCoeff, metafile);
-        HdrFromIfStream<HDRFloatComplex, SubType>(InvZCoeff, metafile);
-        HdrFromIfStream<HDRFloatComplex, SubType>(CCoeffSqrInvZCoeff, metafile);
-        HdrFromIfStream<HDRFloatComplex, SubType>(CCoeffInvZCoeff, metafile);
-        HdrFromIfStream<HDRFloat, SubType>(CCoeffNormSqr, metafile);
-        HdrFromIfStream<HDRFloat, SubType>(RefCNormSqr, metafile);
-        HdrFromIfStream<HDRFloat, SubType>(factor, metafile);
+        HdrFromIfStream<true, HDRFloat, SubType>(ThresholdC, metafile);
+        HdrFromIfStream<true, HDRFloat, SubType>(SqrEscapeRadius, metafile);
+        HdrFromIfStream<true, HDRFloatComplex, SubType>(RefC, metafile);
+        HdrFromIfStream<true, HDRFloatComplex, SubType>(ZCoeff, metafile);
+        HdrFromIfStream<true, HDRFloatComplex, SubType>(CCoeff, metafile);
+        HdrFromIfStream<true, HDRFloatComplex, SubType>(InvZCoeff, metafile);
+        HdrFromIfStream<true, HDRFloatComplex, SubType>(CCoeffSqrInvZCoeff, metafile);
+        HdrFromIfStream<true, HDRFloatComplex, SubType>(CCoeffInvZCoeff, metafile);
+        HdrFromIfStream<true, HDRFloat, SubType>(CCoeffNormSqr, metafile);
+        HdrFromIfStream<true, HDRFloat, SubType>(RefCNormSqr, metafile);
+        HdrFromIfStream<true, HDRFloat, SubType>(factor, metafile);
         return true;
     }
 

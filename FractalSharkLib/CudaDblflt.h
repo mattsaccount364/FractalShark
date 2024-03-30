@@ -92,6 +92,7 @@ public:
     }
 
 #ifndef __CUDACC__ 
+    template<bool IntegerOutput>
     CUDA_CRAP std::string ToString() const {
         std::stringstream ss;
         ss << std::setprecision(std::numeric_limits<double>::max_digits10);

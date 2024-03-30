@@ -689,7 +689,9 @@ public:
         m_FullOrbit.PushBack({});
         m_UncompressedItersInOrbit = 1;
 
-        if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
+        if constexpr (
+            Reuse == RefOrbitCalc::ReuseMode::SaveForReuse1 ||
+            Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2) {
             m_AuthoritativePrecisionInBits = cx.precisionInBits();
             m_ReuseX.reserve(ReserveSize);
             m_ReuseY.reserve(ReserveSize);
@@ -707,13 +709,15 @@ public:
     }
 
     template<PerturbExtras PExtras, RefOrbitCalc::ReuseMode Reuse>
-    void CompleteResults(MPIRBumpAllocator *allocatorsIfAny) {
+    void CompleteResults(std::unique_ptr<GrowableVector<uint8_t>> allocatorIfAny) {
         m_FullOrbit.Trim();
 
-        if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
-            m_ReuseX.shrink_to_fit();
-            m_ReuseY.shrink_to_fit();
-            m_ReuseAllocations = allocatorsIfAny->GetAllocated();
+        if constexpr (
+            Reuse == RefOrbitCalc::ReuseMode::SaveForReuse1 ||
+            Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2) {
+            //m_ReuseX.shrink_to_fit();
+            //m_ReuseY.shrink_to_fit();
+            m_ReuseAllocations = std::move(allocatorIfAny);
         }
 
         m_BenchmarkOrbit.StopTimer();

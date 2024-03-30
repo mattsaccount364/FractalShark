@@ -16,7 +16,8 @@ class RefOrbitCalc {
 public:
     enum class ReuseMode {
         DontSaveForReuse,
-        SaveForReuse,
+        SaveForReuse1,
+        SaveForReuse2,
         RunWithReuse
     };
 
@@ -31,7 +32,8 @@ public:
         STPeriodicity,
         MTPeriodicity3,
         MTPeriodicity3PerturbMTHighSTMed,
-        MTPeriodicity3PerturbMTHighMTMed,
+        MTPeriodicity3PerturbMTHighMTMed1,
+        MTPeriodicity3PerturbMTHighMTMed2,
         MTPeriodicity5,
         Auto
     };
@@ -171,7 +173,8 @@ private:
             RefOrbitCalc& refOrbitCalc,
             HANDLE thread1,
             HANDLE thread2,
-            HANDLE thread3);
+            HANDLE thread3,
+            HANDLE thread4);
         ~ScopedAffinity();
 
         void SetCpuAffinityAsNeeded();
@@ -181,6 +184,7 @@ private:
         HANDLE m_Thread1;
         HANDLE m_Thread2;
         HANDLE m_Thread3;
+        HANDLE m_Thread4;
     };
 
 

@@ -50,7 +50,8 @@ public:
 
     static void InitTls();
     static void ShutdownTls();
-    static std::unique_ptr<GrowableVector<uint8_t>> GetAllocated();
+    static std::unique_ptr<GrowableVector<uint8_t>> GetAllocated(size_t index);
+    static size_t GetAllocatorIndex();
     static bool IsBumpAllocatorInstalled();
 
 private:
@@ -65,7 +66,7 @@ private:
     static void* NewRealloc(void* ptr, size_t old_size, size_t new_size);
     static void NewFree(void* ptr, size_t size);
 
-    static constexpr size_t NumAllocators = 4;
+    static constexpr size_t NumAllocators = 5;
     static std::unique_ptr<GrowableVector<uint8_t>> m_Allocated[NumAllocators];
     static thread_local uint64_t m_ThreadIndex;
     static std::atomic<uint64_t> m_MaxIndex;

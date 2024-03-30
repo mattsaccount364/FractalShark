@@ -223,8 +223,12 @@ void MPIRBumpAllocator::ShutdownTls() {
     m_Allocated[m_ThreadIndex].reset();
 }
 
-std::unique_ptr<GrowableVector<uint8_t>> MPIRBumpAllocator::GetAllocated() {
-    return std::move(m_Allocated[m_ThreadIndex]);
+std::unique_ptr<GrowableVector<uint8_t>> MPIRBumpAllocator::GetAllocated(size_t index) {
+    return std::move(m_Allocated[index]);
+}
+
+size_t MPIRBumpAllocator::GetAllocatorIndex() {
+    return m_ThreadIndex;
 }
 
 void* MPIRBumpAllocator::NewMalloc(size_t size) {

@@ -153,7 +153,8 @@ bool RefOrbitCalc::RequiresCompression() const {
 bool RefOrbitCalc::RequiresReuse() const {
     switch (GetPerturbationAlg()) {
     case PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed:
-    case PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed:
+    case PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed1:
+    case PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed2:
         return true;
     default:
         return false;
@@ -525,9 +526,16 @@ void RefOrbitCalc::AddPerturbationReferencePoint() {
             m_PerturbationGuessCalcX,
             m_PerturbationGuessCalcY);
     }
-    else if (GetPerturbationAlg() == PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed ||
+    else if (
+        GetPerturbationAlg() == PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed1 ||
         GetPerturbationAlg() == PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed) {
-        AddPerturbationReferencePointMT3<IterType, T, SubType, true, BenchmarkState, PExtras, ReuseMode::SaveForReuse>(
+
+        AddPerturbationReferencePointMT3<IterType, T, SubType, true, BenchmarkState, PExtras, ReuseMode::SaveForReuse1>(
+            m_PerturbationGuessCalcX,
+            m_PerturbationGuessCalcY);
+    }
+    else if (GetPerturbationAlg() == PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed2) {
+        AddPerturbationReferencePointMT3<IterType, T, SubType, true, BenchmarkState, PExtras, ReuseMode::SaveForReuse2>(
             m_PerturbationGuessCalcX,
             m_PerturbationGuessCalcY);
     }
@@ -599,7 +607,10 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
 
     InitAllocatorsIfNeeded<Reuse>(boundedAllocator, bumpAllocator);
 
-    if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
+    if constexpr (
+        Reuse == RefOrbitCalc::ReuseMode::SaveForReuse1 ||
+        Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2) {
+
         results->InitReused();
     }
 
@@ -706,7 +717,9 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
             results->AddUncompressedIteration({ double_zx, double_zy, false });
         }
 
-        if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
+        if constexpr (
+            Reuse == RefOrbitCalc::ReuseMode::SaveForReuse1 ||
+            Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2) {
             AddReused(*results, zx, zy);
         }
 
@@ -790,7 +803,7 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
         results->SetBad(false);
     }
 
-    results->CompleteResults<PExtras, Reuse>(nullptr);
+    results->CompleteResults<PExtras, Reuse>(bumpAllocator->GetAllocated(0));
     m_GuessReserveSize = results->GetCountOrbitEntries();
     } // End of scope for allocators.
 
@@ -1352,7 +1365,8 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
             *this,
             GetCurrentThread(),
             tZx->native_handle(),
-            tZy->native_handle() };
+            tZy->native_handle(),
+            nullptr };
 
     ThreadZxData* expectedZx = nullptr;
     ThreadZyData* expectedZy = nullptr;
@@ -1558,9 +1572,14 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
 
     InitAllocatorsIfNeeded<Reuse>(boundedAllocator, bumpAllocator);
 
-    if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
+    if constexpr (
+        Reuse == RefOrbitCalc::ReuseMode::SaveForReuse1 ||
+        Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2) {
+
         results->InitReused();
     }
+
+    std::unique_ptr<GrowableVector<uint8_t>> reusedAllocator;
 
     {
     mpf_t cx_mpf;
@@ -1649,8 +1668,18 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
     };
 
     struct ThreadReusedData {
-        HighPrecision zx;
-        HighPrecision zy;
+        ThreadReusedData() {
+            mpf_init(zx);
+            mpf_init(zy);
+        }
+
+        ~ThreadReusedData() {
+            mpf_clear(zx);
+            mpf_clear(zy);
+        }
+
+        mpf_t zx;
+        mpf_t zy;
     };
 
     auto* ThreadZxMemory = (ThreadPtrs<ThreadZxData> *)
@@ -1678,7 +1707,9 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
     memset(ThreadReusedMemory, 0, sizeof(*ThreadReusedMemory));
 
     auto InitTls = [&]() {
-        if constexpr (Reuse != RefOrbitCalc::ReuseMode::SaveForReuse) {
+        if constexpr (
+            Reuse != RefOrbitCalc::ReuseMode::SaveForReuse1 &&
+            Reuse != RefOrbitCalc::ReuseMode::SaveForReuse2) {
             boundedAllocator->InitTls();
         }
         else {
@@ -1687,7 +1718,9 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
     };
 
     auto ShutdownTls = [&]() {
-        if constexpr (Reuse != RefOrbitCalc::ReuseMode::SaveForReuse) {
+        if constexpr (
+            Reuse != RefOrbitCalc::ReuseMode::SaveForReuse1 &&
+            Reuse != RefOrbitCalc::ReuseMode::SaveForReuse2) {
             boundedAllocator->ShutdownTls();
         }
         else {
@@ -1755,7 +1788,15 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
         ShutdownTls();
     };
 
-    auto ThreadReused = [&](ThreadPtrs<ThreadReusedData>* ThreadMemory) {
+    auto ThreadReused = [
+        results,
+        &bumpAllocator,
+        &reusedAllocator,
+        &InitTls,
+        &ShutdownTls](ThreadPtrs<ThreadReusedData>* ThreadMemory) {
+
+        InitTls();
+
         for (;;) {
             ThreadReusedData* expected = ThreadMemory->In.load();
             ThreadReusedData* ok = nullptr;
@@ -1767,6 +1808,11 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
             // Give result back.
             CheckFinishCriteria;
         }
+
+        auto index = bumpAllocator->GetAllocatorIndex();
+        reusedAllocator = bumpAllocator->GetAllocated(index);
+
+        ShutdownTls();
     };
 
     auto* threadZxdata = (ThreadZxData*)_aligned_malloc(sizeof(ThreadZxData), 64);
@@ -1781,18 +1827,22 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
     std::unique_ptr<std::thread> tZy(DEBUG_NEW std::thread(ThreadSqZy, ThreadZyMemory));
 
     std::unique_ptr<std::thread> tReuse;
-    if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
-        //tReuse = std::make_unique<std::thread>(ThreadSqZy, ThreadReusedMemory); // TODO
+
+    // Mode 2 we use another thread
+    if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2) {
+        tReuse = std::unique_ptr<std::thread>(DEBUG_NEW std::thread(ThreadReused, ThreadReusedMemory));
     }
 
     ScopedAffinity scopedAffinity{
         *this,
         GetCurrentThread(),
         tZx->native_handle(),
-        tZy->native_handle() };
+        tZy->native_handle(),
+        tReuse ? tReuse->native_handle() : nullptr };
 
     ThreadZxData* expectedZx = nullptr;
     ThreadZyData* expectedZy = nullptr;
+    ThreadReusedData* expectedReused = nullptr;
 
     bool done1 = false;
     bool done2 = false;
@@ -1903,13 +1953,33 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
                     dzdcY = HighTwo * (double_zx * dzdcY + double_zy * dzdcXOrig);
                 }
             }
+
+            if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2) {
+                for (;;) {
+                    expectedReused = threadReuseddata;
+
+                    _mm_pause();
+                    if (ThreadReusedMemory->Out.compare_exchange_weak(expectedReused,
+                        nullptr,
+                        std::memory_order_release)) {
+                        break;
+                    }
+                }
+            }
         }
         else {
             zn_size = 0;
         }
 
-        if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
+        if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse1) {
             AddReused(*results, zx, zy);
+        } else if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2) {
+            mpf_set(threadReuseddata->zx, zx);
+            mpf_set(threadReuseddata->zy, zy);
+
+            ThreadReusedMemory->In.store(
+                threadReuseddata,
+                std::memory_order_release);
         }
 
         // zy = zx * 2 * zy + cy;
@@ -1992,7 +2062,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
         results->SetBad(false);
     }
 
-    bool res1 = false, res2 = false;
+    bool res1 = false, res2 = false, res3 = false;
     while (!res1) {
         expectedZx = nullptr;
         res1 = ThreadZxMemory->In.compare_exchange_strong(expectedZx, (ThreadZxData*)0x1, std::memory_order_release);
@@ -2003,9 +2073,16 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
         res2 = ThreadZyMemory->In.compare_exchange_strong(expectedZy, (ThreadZyData*)0x1, std::memory_order_release);
     }
 
+    while (!res3) {
+        expectedReused = nullptr;
+        res3 = ThreadReusedMemory->In.compare_exchange_strong(expectedReused, (ThreadReusedData*)0x1, std::memory_order_release);
+    }
+
     tZx->join();
     tZy->join();
-    //tReuse->join();  // TODO
+    if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2) {
+        tReuse->join();
+    }
 
     _aligned_free(ThreadZxMemory);
     _aligned_free(ThreadZyMemory);
@@ -2019,7 +2096,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
     _aligned_free(threadZydata);
     _aligned_free(threadReuseddata);
 
-    results->CompleteResults<PExtras, Reuse>(bumpAllocator.get());
+    results->CompleteResults<PExtras, Reuse>(std::move(reusedAllocator));
     m_GuessReserveSize = results->GetCountOrbitEntries();
     } // End of scope for boundedAllocator and bumpAllocator
 
@@ -2165,7 +2242,8 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
                 added = AddPerturbationReferencePointSTReuse<IterType, T, SubType, true, BenchmarkMode::Disable>
                     (m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
                 break;
-            case PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed:
+            case PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed1:
+            case PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed2:
                 added = AddPerturbationReferencePointMT3Reuse<IterType, T, SubType, true, BenchmarkMode::Disable>
                     (m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
                 break;
@@ -2643,7 +2721,8 @@ std::string RefOrbitCalc::GetPerturbationAlgStr() const {
         STPeriodicity,
         MTPeriodicity3,
         MTPeriodicity3PerturbMTHighSTMed,
-        MTPeriodicity3PerturbMTHighMTMed,
+        MTPeriodicity3PerturbMTHighMTMed1,
+        MTPeriodicity3PerturbMTHighMTMed2,
         MTPeriodicity5
     };
     */
@@ -2659,8 +2738,10 @@ std::string RefOrbitCalc::GetPerturbationAlgStr() const {
         return "MTPeriodicity2";
     case PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed:
         return "MTPeriodicity2PerturbMTHighSTMed";
-    case PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed:
-        return "MTPeriodicity2PerturbMTHighMTMed";
+    case PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed1:
+        return "MTPeriodicity2PerturbMTHighMTMed1";
+    case PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed2:
+        return "MTPeriodicity2PerturbMTHighMTMed2";
     case PerturbationAlg::MTPeriodicity5:
         return "MTPeriodicity5";
     default:
@@ -2773,7 +2854,10 @@ template<RefOrbitCalc::ReuseMode Reuse>
 void RefOrbitCalc::InitAllocatorsIfNeeded(
     std::unique_ptr<MPIRBoundedAllocator>& boundedAllocator,
     std::unique_ptr<MPIRBumpAllocator>& bumpAllocator) {
-    if constexpr (Reuse != RefOrbitCalc::ReuseMode::SaveForReuse) {
+    if constexpr (
+        Reuse != RefOrbitCalc::ReuseMode::SaveForReuse1 &&
+        Reuse != RefOrbitCalc::ReuseMode::SaveForReuse2) {
+
         boundedAllocator = std::make_unique<MPIRBoundedAllocator>();
         boundedAllocator->InitScopedAllocators();
         boundedAllocator->InitTls();
@@ -2789,7 +2873,9 @@ template<RefOrbitCalc::ReuseMode Reuse>
 void RefOrbitCalc::ShutdownAllocatorsIfNeeded(
     std::unique_ptr<MPIRBoundedAllocator>& boundedAllocator,
     std::unique_ptr<MPIRBumpAllocator>& bumpAllocator) {
-    if constexpr (Reuse != RefOrbitCalc::ReuseMode::SaveForReuse) {
+    if constexpr (
+        Reuse != RefOrbitCalc::ReuseMode::SaveForReuse1 &&
+        Reuse != RefOrbitCalc::ReuseMode::SaveForReuse2) {
         boundedAllocator->ShutdownTls();
     }
     else {
@@ -2801,17 +2887,19 @@ RefOrbitCalc::ScopedAffinity::ScopedAffinity(
     RefOrbitCalc &refOrbitCalc,
     HANDLE thread1,
     HANDLE thread2,
-    HANDLE thread3) :
+    HANDLE thread3,
+    HANDLE thread4) :
     m_RefOrbitCalc(refOrbitCalc),
     m_Thread1(thread1),
     m_Thread2(thread2),
-    m_Thread3(thread3) {
+    m_Thread3(thread3),
+    m_Thread4(thread4) {
 
     SetCpuAffinityAsNeeded();
 }
 
 RefOrbitCalc::ScopedAffinity::~ScopedAffinity() {
-    // Note, ignore threads 2/3 -- they're temporaries in RefOrbitCalc.
+    // Note, ignore threads 2/3/4 -- they're temporaries in RefOrbitCalc.
     SetThreadAffinityMask(m_Thread1, 0xFFFFFFFF);
 
     // Reset to default priority:
@@ -2826,19 +2914,44 @@ void RefOrbitCalc::ScopedAffinity::SetCpuAffinityAsNeeded() {
     }
 
     if (m_RefOrbitCalc.m_HyperthreadingEnabled) {
-        SetThreadAffinityMask(m_Thread1, 0x1 << 3);
-        SetThreadAffinityMask(m_Thread2, 0x1 << 5);
-        SetThreadAffinityMask(m_Thread3, 0x1 << 7);
+        if (m_Thread1) {
+            SetThreadAffinityMask(m_Thread1, 0x1 << 3);
+        }
+
+        if (m_Thread2) {
+            SetThreadAffinityMask(m_Thread2, 0x1 << 5);
+        }
+
+        if (m_Thread3) {
+            SetThreadAffinityMask(m_Thread3, 0x1 << 7);
+        }
+
+        if (m_Thread4) {
+            SetThreadAffinityMask(m_Thread4, 0x1 << 9);
+        }
     }
     else {
-        SetThreadAffinityMask(m_Thread1, 0x1 << 1);
-        SetThreadAffinityMask(m_Thread2, 0x1 << 2);
-        SetThreadAffinityMask(m_Thread3, 0x1 << 3);
+        if (m_Thread1) {
+            SetThreadAffinityMask(m_Thread1, 0x1 << 1);
+        }
+
+        if (m_Thread2) {
+            SetThreadAffinityMask(m_Thread2, 0x1 << 2);
+        }
+
+        if (m_Thread3) {
+            SetThreadAffinityMask(m_Thread3, 0x1 << 3);
+        }
+
+        if (m_Thread4) {
+            SetThreadAffinityMask(m_Thread4, 0x1 << 4);
+        }
     }
 
     //SetThreadPriority(m_Thread1, THREAD_PRIORITY_ABOVE_NORMAL);
     //SetThreadPriority(m_Thread2, THREAD_PRIORITY_ABOVE_NORMAL);
     //SetThreadPriority(m_Thread3, THREAD_PRIORITY_ABOVE_NORMAL);
+    //SetThreadPriority(m_Thread4, THREAD_PRIORITY_ABOVE_NORMAL);
 }
 
 

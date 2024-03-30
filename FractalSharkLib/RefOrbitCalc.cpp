@@ -599,6 +599,10 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
 
     InitAllocatorsIfNeeded<Reuse>(boundedAllocator, bumpAllocator);
 
+    if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
+        results->InitReused();
+    }
+
     {
     mpf_t cx_mpf;
     mpf_init(cx_mpf);
@@ -1515,6 +1519,17 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     _aligned_free(threadZxdata);
     _aligned_free(threadZydata);
 
+    mpf_clear(zx);
+    mpf_clear(zy);
+    mpf_clear(HighOne);
+    mpf_clear(HighTwo);
+    mpf_clear(DeltaReal);
+    mpf_clear(DeltaImaginary);
+    mpf_clear(DeltaSub0X);
+    mpf_clear(DeltaSub0Y);
+    mpf_clear(DeltaSubNX);
+    mpf_clear(DeltaSubNY);
+
     results->CompleteResults<PerturbExtras::Disable, ReuseMode::DontSaveForReuse>(nullptr);
     m_GuessReserveSize = results->GetCountOrbitEntries();
 
@@ -1542,6 +1557,10 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
     std::unique_ptr<MPIRBumpAllocator> bumpAllocator;
 
     InitAllocatorsIfNeeded<Reuse>(boundedAllocator, bumpAllocator);
+
+    if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse) {
+        results->InitReused();
+    }
 
     {
     mpf_t cx_mpf;

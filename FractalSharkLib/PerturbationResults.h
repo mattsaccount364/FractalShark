@@ -628,7 +628,6 @@ public:
 
         m_ReuseX.push_back(Zero);
         m_ReuseY.push_back(Zero);
-        m_ReuseAllocations = nullptr;
     }
 
     template<class T, PerturbExtras PExtras, RefOrbitCalc::ReuseMode Reuse>
@@ -683,8 +682,6 @@ public:
             m_ReuseX.reserve(ReserveSize);
             m_ReuseY.reserve(ReserveSize);
             m_ReuseAllocations = nullptr;
-
-            InitReused();
         }
         else if constexpr (Reuse == RefOrbitCalc::ReuseMode::DontSaveForReuse) {
             m_AuthoritativePrecisionInBits = 0;

@@ -671,9 +671,9 @@ void Fractal::InitialDefaultViewAndSettings(int width, int height) {
     SetRenderAlgorithm(RenderAlgorithm::AUTO);
 
     SetIterationPrecision(1);
-    m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed);
+    //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed);
-    //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::Auto);
+    m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::Auto);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::STPeriodicity);
     m_RefOrbit.ResetGuess();
 
@@ -689,9 +689,9 @@ void Fractal::InitialDefaultViewAndSettings(int width, int height) {
     SetResultsAutosave(AddPointOptions::EnableWithoutSave);
     //SetResultsAutosave(AddPointOptions::DontSave);
     LoadPerturbationOrbits();
-    //View(0);
+    View(0);
     //View(1);
-    View(11);
+    //View(11);
     //View(14);
     //View(27); // extremely hard
     ChangedMakeDirty();
@@ -3161,7 +3161,9 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
     blas.Init((IterType)results->GetCountOrbitEntries(), results->GetMaxRadius());
 
     T dx = T((m_MaxX - m_MinX) / HighPrecision{ m_ScrnWidth * GetGpuAntialiasing() });
+    HdrReduce(dx);
     T dy = T((m_MaxY - m_MinY) / HighPrecision{ m_ScrnHeight * GetGpuAntialiasing() });
+    HdrReduce(dy);
 
     T centerX = (T)(results->GetHiX() - m_MinX);
     HdrReduce(centerX);

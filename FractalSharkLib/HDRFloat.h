@@ -178,12 +178,12 @@ public:
     }
 
 #ifndef __CUDACC__
-    constexpr explicit HDRFloat(const mpf_t &other) {
-        double mantissa;
+    //constexpr explicit HDRFloat(const mpf_t &other) {
+    //    double mantissa;
 
-        Base::exp = static_cast<TExp>(mpf_get_2exp_d(&mantissa, other));
-        Base::mantissa = static_cast<T>(mantissa);
-    }
+    //    Base::exp = static_cast<TExp>(mpf_get_2exp_d(&mantissa, other));
+    //    Base::mantissa = static_cast<T>(mantissa);
+    //}
 #endif
 
     template<class U, typename =
@@ -257,13 +257,8 @@ public:
         }
     }
 
-    HDRFloat(int64_t number) {
-        Base::mantissa = (T)number;
-        Base::exp = 0;
-    }
-
 #ifndef __CUDACC__
-    HDRFloat(const HighPrecision &number) {
+    HDRFloat(const HighPrecisionT<HPDestructor::True> &number) {
 
         if (number == HighPrecision{}) {
             Base::mantissa = T{};
@@ -1198,7 +1193,8 @@ template<class T>
 static CUDA_CRAP constexpr void HdrReduce(T& incoming) {
     constexpr auto HighPrecPossible = // LOLZ I imagine there's a nicer way to do this here
 #ifndef __CUDACC__
-        std::is_same<T, HighPrecision>::value;
+        std::is_same<T, HighPrecisionT<HPDestructor::False>>::value ||
+        std::is_same<T, HighPrecisionT<HPDestructor::True>>::value;
 #else
         false;
 #endif
@@ -1230,7 +1226,8 @@ template<class T>
 static CUDA_CRAP constexpr T &&HdrReduce(T&& incoming) {
     constexpr auto HighPrecPossible = // LOLZ I imagine there's a nicer way to do this here
 #ifndef __CUDACC__
-        std::is_same<T, HighPrecision>::value;
+        std::is_same<T, HighPrecisionT<HPDestructor::False>>::value ||
+        std::is_same<T, HighPrecisionT<HPDestructor::True>>::value;
 #else
         false;
 #endif
@@ -1308,7 +1305,8 @@ template<class T, class U>
 static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedLT(const T& one, const U& two) {
     constexpr auto HighPrecPossible = // LOLZ I imagine there's a nicer way to do this here
 #ifndef __CUDACC__
-        std::is_same<T, HighPrecision>::value;
+        std::is_same<T, HighPrecisionT<HPDestructor::False>>::value ||
+        std::is_same<T, HighPrecisionT<HPDestructor::True>>::value;
 #else
         false;
 #endif
@@ -1335,7 +1333,8 @@ template<class T, int32_t CompareAgainst>
 static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedLT(const T& one) {
     constexpr auto HighPrecPossible = // LOLZ I imagine there's a nicer way to do this here
 #ifndef __CUDACC__
-        std::is_same<T, HighPrecision>::value;
+        std::is_same<T, HighPrecisionT<HPDestructor::False>>::value ||
+        std::is_same<T, HighPrecisionT<HPDestructor::True>>::value;
 #else
         false;
 #endif
@@ -1362,7 +1361,8 @@ template<class T, class U>
 static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedLE(const T& one, const U& two) {
     constexpr auto HighPrecPossible = // LOLZ I imagine there's a nicer way to do this here
 #ifndef __CUDACC__
-        std::is_same<T, HighPrecision>::value;
+        std::is_same<T, HighPrecisionT<HPDestructor::False>>::value ||
+        std::is_same<T, HighPrecisionT<HPDestructor::True>>::value;
 #else
         false;
 #endif
@@ -1388,7 +1388,8 @@ template<class T, class U>
 static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedGT(const T& one, const U& two) {
     constexpr auto HighPrecPossible = // LOLZ I imagine there's a nicer way to do this here
 #ifndef __CUDACC__
-        std::is_same<T, HighPrecision>::value;
+        std::is_same<T, HighPrecisionT<HPDestructor::False>>::value ||
+        std::is_same<T, HighPrecisionT<HPDestructor::True>>::value;
 #else
         false;
 #endif
@@ -1414,7 +1415,8 @@ template<class T, class U>
 static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedGE(const T& one, const U& two) {
     constexpr auto HighPrecPossible = // LOLZ I imagine there's a nicer way to do this here
 #ifndef __CUDACC__
-        std::is_same<T, HighPrecision>::value;
+        std::is_same<T, HighPrecisionT<HPDestructor::False>>::value ||
+        std::is_same<T, HighPrecisionT<HPDestructor::True>>::value;
 #else
         false;
 #endif

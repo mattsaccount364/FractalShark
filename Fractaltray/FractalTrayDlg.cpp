@@ -476,7 +476,7 @@ DWORD WINAPI CalcProc(LPVOID lpParameter)
     std::wstring filename, filename_bmp, filename_png;
 
     // default width/height:
-    Fractal* fractal = new Fractal(DefaultWidth, DefaultHeight, nullptr, false);
+    Fractal* fractal = DEBUG_NEW Fractal(DefaultWidth, DefaultHeight, nullptr, false);
 
     for (int i = 0;; i++) {
         if (param->stop == true) {

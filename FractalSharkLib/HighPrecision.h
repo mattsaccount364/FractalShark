@@ -99,6 +99,7 @@ public:
             return *this;
         }
 
+        mpf_clear(m_Data);
         m_Data[0] = other.m_Data[0];
         other.m_Data[0] = {};
         
@@ -111,6 +112,7 @@ public:
             return *this;
         }
 
+        mpf_clear(m_Data);
         m_Data[0] = other.m_Data[0];
         other.m_Data[0] = {};
         

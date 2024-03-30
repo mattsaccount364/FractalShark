@@ -5,9 +5,9 @@
 ItersMemoryContainer::ItersMemoryContainer() :
     m_IterType(IterTypeEnum::Bits32),
     m_ItersMemory32(nullptr),
-    m_ItersArray32(nullptr),
+    m_ItersArray32{},
     m_ItersMemory64(nullptr),
-    m_ItersArray64(nullptr),
+    m_ItersArray64{},
     m_Width(),
     m_Height(),
     m_Total(),
@@ -30,9 +30,9 @@ ItersMemoryContainer::ItersMemoryContainer(
     size_t total_antialiasing)
     : m_IterType(type),
     m_ItersMemory32(nullptr),
-    m_ItersArray32(nullptr),
+    m_ItersArray32{},
     m_ItersMemory64(nullptr),
-    m_ItersArray64(nullptr),
+    m_ItersArray64{},
     m_Width(),
     m_Height(),
     m_Total(),
@@ -67,14 +67,14 @@ ItersMemoryContainer::ItersMemoryContainer(
 
     if (m_IterType == IterTypeEnum::Bits32) {
         m_ItersMemory32 = std::make_unique<uint32_t[]>(m_RoundedTotal);
-        m_ItersArray32 = new uint32_t * [m_RoundedHeight];
+        m_ItersArray32.resize(m_RoundedHeight);
         for (size_t i = 0; i < m_RoundedHeight; i++) {
             m_ItersArray32[i] = &m_ItersMemory32[i * m_RoundedWidth];
         }
     }
     else {
         m_ItersMemory64 = std::make_unique<uint64_t[]>(m_RoundedTotal);
-        m_ItersArray64 = new uint64_t * [m_RoundedHeight];
+        m_ItersArray64.resize(m_RoundedHeight);
         for (size_t i = 0; i < m_RoundedHeight; i++) {
             m_ItersArray64[i] = &m_ItersMemory64[i * m_RoundedWidth];
         }
@@ -126,7 +126,7 @@ ItersMemoryContainer &ItersMemoryContainer::operator=(const ItersMemoryContainer
 
     if (m_IterType == IterTypeEnum::Bits32) {
         m_ItersMemory32 = std::make_unique<uint32_t[]>(other.m_RoundedTotal);
-        m_ItersArray32 = new uint32_t * [other.m_RoundedHeight];
+        m_ItersArray32.resize(other.m_RoundedHeight);
         for (size_t i = 0; i < other.m_RoundedHeight; i++) {
             m_ItersArray32[i] = &m_ItersMemory32[i * other.m_RoundedWidth];
         }
@@ -135,7 +135,7 @@ ItersMemoryContainer &ItersMemoryContainer::operator=(const ItersMemoryContainer
     }
     else {
         m_ItersMemory64 = std::make_unique<uint64_t[]>(other.m_RoundedTotal);
-        m_ItersArray64 = new uint64_t * [other.m_RoundedHeight];
+        m_ItersArray64.resize(other.m_RoundedHeight);
         for (size_t i = 0; i < other.m_RoundedHeight; i++) {
             m_ItersArray64[i] = &m_ItersMemory64[i * other.m_RoundedWidth];
         }
@@ -156,11 +156,8 @@ ItersMemoryContainer& ItersMemoryContainer::operator=(ItersMemoryContainer&& oth
     m_ItersMemory32 = std::move(other.m_ItersMemory32);
     m_ItersMemory64 = std::move(other.m_ItersMemory64);
 
-    m_ItersArray32 = other.m_ItersArray32;
-    other.m_ItersArray32 = nullptr;
-
-    m_ItersArray64 = other.m_ItersArray64;
-    other.m_ItersArray64 = nullptr;
+    m_ItersArray32 = std::move(other.m_ItersArray32);
+    m_ItersArray64 = std::move(other.m_ItersArray64);
 
     m_Width = other.m_Width;
     m_Height = other.m_Height;
@@ -188,16 +185,6 @@ ItersMemoryContainer::~ItersMemoryContainer() {
     m_ItersMemory32 = nullptr;
     m_ItersMemory64 = nullptr;
     m_RoundedOutputColorMemory = nullptr;
-
-    if (m_ItersArray32) {
-        delete[] m_ItersArray32;
-        m_ItersArray32 = nullptr;
-    }
-
-    if (m_ItersArray64) {
-        delete[] m_ItersArray64;
-        m_ItersArray64 = nullptr;
-    }
 }
 
 IterTypeFull ItersMemoryContainer::GetItersArrayValSlow(size_t x, size_t y) const {

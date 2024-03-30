@@ -54,7 +54,7 @@ PngParallelSave::~PngParallelSave() {
 
 void PngParallelSave::StartThread() {
     assert(m_Thread == nullptr);
-    m_Thread = std::unique_ptr<std::thread>(new std::thread(&PngParallelSave::Run, this));
+    m_Thread = std::make_unique<std::thread>(&PngParallelSave::Run, this);
 }
 
 void PngParallelSave::Run() {

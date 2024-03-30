@@ -16,13 +16,13 @@ bool gWindowed; // Says whether we are in windowed mode or not.
 HDC gHDC;
 
 // Fractal:
-Fractal *gFractal = nullptr;
+std::unique_ptr<Fractal> gFractal;
 
 // Foward declarations of functions included in this code module:
 ATOM              MyRegisterClass(HINSTANCE hInstance);
 HWND              InitInstance(HINSTANCE, int);
 LRESULT CALLBACK  WndProc(HWND, UINT, WPARAM, LPARAM);
-void              UnInit(void);
+void              UnInit(HWND, ATOM);
 
 LONG WINAPI unhandled_handler(struct _EXCEPTION_POINTERS* apExceptionInfo);
 
@@ -97,7 +97,7 @@ int APIENTRY WinMain(HINSTANCE hInstance,
     // SetPriorityClass(GetCurrentProcess(), HIGH_PRIORITY_CLASS);
 
     // Initialize global strings
-    MyRegisterClass(hInstance);
+    auto cls = MyRegisterClass(hInstance);
 
     gJobObj = std::make_unique<JobObject>();
 
@@ -105,13 +105,12 @@ int APIENTRY WinMain(HINSTANCE hInstance,
 
     // Perform application initialization:
     HWND hWnd = InitInstance(hInstance, nCmdShow);
-    if (hWnd == nullptr)
-    {
+    if (hWnd == nullptr) {
         return 1;
     }
 
-    // Main message loop:
-    MSG msg;
+    //// Main message loop:
+    MSG msg{};
     while (GetMessage(&msg, nullptr, 0, 0) > 0)
     {
         TranslateMessage(&msg);
@@ -119,7 +118,14 @@ int APIENTRY WinMain(HINSTANCE hInstance,
     }
 
     // Cleanup
-    UnInit();
+    UnInit(hWnd, cls);
+
+#ifdef _DEBUG
+    // We have a 16-byte leak thanks to Windows no matter what we do.
+
+    _CrtSetReportMode(_CRT_WARN, _CRTDBG_MODE_DEBUG);
+    _CrtDumpMemoryLeaks();
+#endif
 
     return (int)msg.wParam;
 }
@@ -219,7 +225,7 @@ HWND InitInstance(HINSTANCE hInstance, int nCmdShow)
     RECT rt;
     GetClientRect(hWnd, &rt);
 
-    gFractal = new Fractal(rt.right, rt.bottom, hWnd, false);
+    gFractal = std::make_unique<Fractal>(rt.right, rt.bottom, hWnd, false);
 
     // Display!
     ShowWindow(hWnd, nCmdShow);
@@ -234,10 +240,13 @@ HWND InitInstance(HINSTANCE hInstance, int nCmdShow)
 //
 // Performs all cleanup operations
 //
-void UnInit(void)
+void UnInit(HWND hWnd, ATOM cls)
 {
     DestroyMenu(gPopupMenu);
-    delete gFractal;
+    DestroyWindow(hWnd);
+    UnregisterClass(szWindowClass, hInst);
+    gFractal.reset();
+    gJobObj.reset();
 }
 
 void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/) {

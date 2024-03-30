@@ -38,10 +38,10 @@ struct ItersMemoryContainer {
     template<typename IterType>
     IterType** GetItersArray() {
         if constexpr (sizeof(IterType) == sizeof(uint32_t)) {
-            return m_ItersArray32;
+            return m_ItersArray32.data();
         }
         else {
-            return m_ItersArray64;
+            return m_ItersArray64.data();
         }
     }
 
@@ -80,9 +80,9 @@ private:
     IterTypeEnum m_IterType;
 
     std::unique_ptr<uint32_t[]> m_ItersMemory32;
-    uint32_t** m_ItersArray32;
+    std::vector<uint32_t*> m_ItersArray32;
 
     std::unique_ptr<uint64_t[]> m_ItersMemory64;
-    uint64_t** m_ItersArray64;
+    std::vector<uint64_t*> m_ItersArray64;
 
 };

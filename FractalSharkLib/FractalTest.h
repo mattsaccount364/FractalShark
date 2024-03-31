@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 #include "GPU_Types.h"
+#include "RefOrbitCalc.h"
 
 class Fractal;
 
@@ -10,7 +11,7 @@ public:
     FractalTest(Fractal &fractal);
     
     void BasicTest();
-    void Benchmark();
+    void Benchmark(RefOrbitCalc::PerturbationResultType type);
 
 private:
     void BasicTestInternal(size_t& test_index);

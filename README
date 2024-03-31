@@ -20,7 +20,7 @@ First, FractalShark includes numerous NVIDIA CUDA implementations, demonstrating
 
 Second, and more importantly, FractalShark includes two different CUDA-based linear approximation implementations.  Linear approximation is a relatively new technique for getting high performance visualizations, and no existing CUDA implementations appear to exist.  These implementations are ported from FractalZoomer (https://github.com/hrkalona/Fractal-Zoomer), and themselves originated from Claude (https://mathr.co.uk/web/) and Zhuoran (https://github.com/5E-324/Imagina).
 
-Third, FractalShark includes a multi-threaded reference orbit calculation for a little better performance.  Using three threads total, with two for squaring and one for coordinating appears to offer superior performance, at least on an AMD-5950X.  Calculating the reference orbit is the single-largest bottleneck to high magnification renders, so it's important to spend some time on that.  This implementation beats all other known examples in performance assuming you have a modern multi-core CPU capable of executing AVX-2 instructions.  More optimizations are possible here that are as-yet unexplored.  This implementation also includes a custom memory allocator, which offers significant performance benefits on high-period, low-precision reference orbits.
+Third, FractalShark includes a multi-threaded reference orbit calculation for a little better performance.  Using three threads total, with two for squaring and one for coordinating appears to offer superior performance, at least on an AMD-5950X.  Calculating the reference orbit is the single-largest bottleneck to high magnification renders, so it's important to spend some time on that.  This implementation beats all other known examples in performance assuming you have a modern multi-core CPU capable of executing AVX-2 instructions.  More optimizations are possible here that are as-yet unexplored.  This implementation also uses a custom memory allocator for an optional "perturbed perturbation" implementation, wherein intermediate resolution reference orbit entries are stored and re-used for subsequent zooms.
 
 Another neat FractalShark-specific feature is that an implementation of a "2x32" type combined with optional linear approximation and "float+exp."  This implementation supports a pair of 32 bit floating point numbers + an exponent, to provide a combined ~48 bit mantissa without using the native 64-bit type.  The benefit is significant performance improvements on consumer video cards, with nearly the same precision.  This implementation is CUDA-only.  On a CPU, you might as well you use the native 64-bit type.
 
@@ -118,7 +118,7 @@ https://github.com/5E-324/Imagina
 
 https://sourceforge.net/projects/fractalzoomer/
 
-- FractalShark uses several third-party libraries: MPIR, Boost, and WPngImage (https://github.com/WarpRules/WPngImage).  I also found a CUDA QuadDouble and DblDbl implementations somewhere and have example kernels demonstrating their use.
+- FractalShark uses several third-party libraries: MPIR, and WPngImage (https://github.com/WarpRules/WPngImage).  I also found a CUDA QuadDouble and DblDbl implementations somewhere and have example kernels demonstrating their use.
 
 - FractalShark's reference orbit compression is novel code, but based on the approach Zhuoran described here: https://fractalforums.org/fractal-mathematics-and-new-theories/28/reference-compression/5142.  Claude posted a simple easy-to-understand sample here, which FractalShark's implementation is loosely based on: https://code.mathr.co.uk/fractal-bits/tree/HEAD:/mandelbrot-reference-compression
 
@@ -142,8 +142,6 @@ Build instructions
 
 - git clone https://github.com/mattsaccount364/FractalShark.git
 - cd FractalShark
-- Download boost from: https://www.boost.org/
-- Decompress it under the FractalShark clone.  Name the directory it goes in boost_1_81_0 if the version is slightly different.  No need to build this.  We just use a few headers.
 - git clone https://github.com/BrianGladman/mpir.git
 - Open mpir\msvc\vs22\mpir.sln
 - Rebuild everything.  Note, you probably want YASM installed at: 'C:\Program Files\yasm\*'.  This may take a little while.

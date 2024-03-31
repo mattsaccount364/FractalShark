@@ -313,7 +313,6 @@ BEGIN
             MENUITEM "Leave max of (1/2*ram, 8GB) free (default)", IDM_MEMORY_LIMIT_1
         END
         MENUITEM "Show Rendering Details",      IDM_CURPOS
-        MENUITEM "Benchmark (5x, full recalc)", IDM_BENCHMARK
         POPUP "Save"
         BEGIN
             MENUITEM "Save Location...",            IDM_SAVELOCATION
@@ -321,6 +320,9 @@ BEGIN
             MENUITEM "Save Iterations as Text",     IDM_SAVE_ITERS_TEXT
             MENUITEM "Save Bitmap Ima&ge",          IDM_SAVEBMP
             MENUITEM "Save Reference Orbit as Text", IDM_SAVE_REFORBIT_TEXT
+            MENUITEM SEPARATOR
+            MENUITEM "Benchmark (5x, full recalc)", IDM_BENCHMARK_FULL
+            MENUITEM "Benchmark (5x, intermediate only)", IDM_BENCHMARK_INT
         END
         MENUITEM "Load Location...",            IDM_LOADLOCATION
         MENUITEM SEPARATOR

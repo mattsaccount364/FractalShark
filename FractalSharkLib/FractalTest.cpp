@@ -196,7 +196,7 @@ void FractalTest::BasicTest() {
     m_Fractal.CalcFractal(false);
 }
 
-void FractalTest::Benchmark() {
+void FractalTest::Benchmark(RefOrbitCalc::PerturbationResultType type) {
     static constexpr size_t NumIterations = 5;
 
     if (m_Fractal.GetRepaint() == false) {
@@ -209,7 +209,7 @@ void FractalTest::Benchmark() {
     std::vector<size_t> LAGenerationTimes;
 
     for (size_t i = 0; i < NumIterations; i++) {
-        m_Fractal.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+        m_Fractal.ClearPerturbationResults(type);
         m_Fractal.ForceRecalc();
         m_Fractal.CalcFractal(false);
 

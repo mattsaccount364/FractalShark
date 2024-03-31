@@ -193,7 +193,7 @@ void mandel_2x_double(
 
     //// Approach 1
     // TODO need to take dbldbl as parameters to this
-    // convert boost high precision to dbldbl?
+    // convert high precision to dbldbl?
 
     dbldbl cx2 = add_double_to_dbldbl(cx.y, cx.x);
     dbldbl cy2 = add_double_to_dbldbl(cy.y, cy.x);
@@ -414,7 +414,7 @@ void mandel_2x_float(
 
     ////// Approach 1
     //// TODO need to take dblflt as parameters to this
-    //// convert boost high precision to dblflt?
+    //// convert high precision to dblflt?
 
     //dblflt cx2 = add_float_to_dblflt(cx.y, cx.x);
     //dblflt cy2 = add_float_to_dblflt(cy.y, cy.x);

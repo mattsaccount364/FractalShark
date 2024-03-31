@@ -2895,7 +2895,7 @@ RefOrbitCalc::ScopedAffinity::ScopedAffinity(
     m_Thread3(thread3),
     m_Thread4(thread4) {
 
-    SetCpuAffinityAsNeeded();
+    //SetCpuAffinityAsNeeded();
 }
 
 RefOrbitCalc::ScopedAffinity::~ScopedAffinity() {

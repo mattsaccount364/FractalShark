@@ -167,7 +167,7 @@ HWND InitInstance(HINSTANCE hInstance, int nCmdShow)
 { // Store instance handle in our global variable
     hInst = hInstance;
 
-    constexpr bool startWindowed = false;
+    constexpr bool startWindowed = true;
     constexpr DWORD forceStartWidth = 0;
     constexpr DWORD forceStartHeight = 0;
 
@@ -894,6 +894,12 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             case IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_MTMED2:
             {
                 gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed2);
+                break;
+            }
+
+            case IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_MTMED3:
+            {
+                gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3);
                 break;
             }
 

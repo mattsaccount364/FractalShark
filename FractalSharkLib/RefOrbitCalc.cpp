@@ -155,6 +155,7 @@ bool RefOrbitCalc::RequiresReuse() const {
     case PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed:
     case PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed1:
     case PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed2:
+    case PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3:
         return true;
     default:
         return false;
@@ -526,9 +527,13 @@ void RefOrbitCalc::AddPerturbationReferencePoint() {
             m_PerturbationGuessCalcX,
             m_PerturbationGuessCalcY);
     }
-    else if (
-        GetPerturbationAlg() == PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed1 ||
-        GetPerturbationAlg() == PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed) {
+    else if (GetPerturbationAlg() == PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed) {
+        // TODO use MT version
+        AddPerturbationReferencePointST<IterType, T, SubType, true, BenchmarkState, PExtras, ReuseMode::SaveForReuse3>(
+            m_PerturbationGuessCalcX,
+            m_PerturbationGuessCalcY);
+    }
+    else if (GetPerturbationAlg() == PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed1) {
 
         AddPerturbationReferencePointMT3<IterType, T, SubType, true, BenchmarkState, PExtras, ReuseMode::SaveForReuse1>(
             m_PerturbationGuessCalcX,
@@ -539,6 +544,11 @@ void RefOrbitCalc::AddPerturbationReferencePoint() {
             m_PerturbationGuessCalcX,
             m_PerturbationGuessCalcY);
     }
+    else if (GetPerturbationAlg() == PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3) {
+        AddPerturbationReferencePointMT3<IterType, T, SubType, true, BenchmarkState, PExtras, ReuseMode::SaveForReuse3>(
+            m_PerturbationGuessCalcX,
+            m_PerturbationGuessCalcY);
+    }
     else if (GetPerturbationAlg() == PerturbationAlg::MTPeriodicity5) {
         AddPerturbationReferencePointMT5<IterType, T, SubType, true, BenchmarkState, PExtras, ReuseMode::DontSaveForReuse>(
             m_PerturbationGuessCalcX,
@@ -546,20 +556,21 @@ void RefOrbitCalc::AddPerturbationReferencePoint() {
     }
 }
 
-template<class T>
-static void AddReused(T &results, const HighPrecision& zx, const HighPrecision& zy) {
-    HighPrecision ReducedZx;
-    HighPrecision ReducedZy;
-
-    ReducedZx = zx;
-    ReducedZy = zy;
-
-    //assert(RequiresReuse());
-    ReducedZx.precisionInBits(AuthoritativeReuseExtraPrecisionInBits);
-    ReducedZy.precisionInBits(AuthoritativeReuseExtraPrecisionInBits);
-
-    results.AddReusedEntry(std::move(ReducedZx), std::move(ReducedZy));
-}
+// TODO remove me
+//template<class T>
+//static void AddReused(T &results, const HighPrecision& zx, const HighPrecision& zy) {
+//    HighPrecision ReducedZx;
+//    HighPrecision ReducedZy;
+//
+//    ReducedZx = zx;
+//    ReducedZy = zy;
+//
+//    //assert(RequiresReuse());
+//    ReducedZx.precisionInBits(AuthoritativeReuseExtraPrecisionInBits);
+//    ReducedZy.precisionInBits(AuthoritativeReuseExtraPrecisionInBits);
+//
+//    results.AddUncompressedReusedEntry(std::move(ReducedZx), std::move(ReducedZy));
+//}
 
 size_t RefOrbitCalc::GetNextGenerationNumber() {
     ++m_GenerationNumber;
@@ -609,7 +620,8 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
 
     if constexpr (
         Reuse == RefOrbitCalc::ReuseMode::SaveForReuse1 ||
-        Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2) {
+        Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2 ||
+        Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3) {
 
         results->InitReused();
     }
@@ -676,6 +688,10 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
         *results,
         m_Fractal.GetCompressionErrorExp() };
 
+    IntermediateOrbitCompressor<IterType, T, PExtras> intermediateCompressor{
+        *results,
+        m_Fractal.GetCompressionErrorExp() };
+
     mpf_set(zx, cx_mpf);
     mpf_set(zy, cy_mpf);
     
@@ -719,8 +735,10 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
 
         if constexpr (
             Reuse == RefOrbitCalc::ReuseMode::SaveForReuse1 ||
-            Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2) {
-            AddReused(*results, zx, zy);
+            Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2 ||
+            Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3) {
+            // AddReused(*results, zx, zy);
+            intermediateCompressor.MaybeAddCompressedIteration(zx, zy);
         }
 
         if constexpr (PExtras == PerturbExtras::Bad) {
@@ -926,9 +944,14 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
     mpf_t temp2_mpf;
     mpf_init(temp2_mpf);
 
+    IntermediateCompressionHelper<IterType, T, PerturbExtras::Disable> intermediateCompressor{ *results };
+
     constexpr bool floatOrDouble =
         std::is_same<T, double>::value ||
         std::is_same<T, float>::value;
+
+    const HighPrecisionT<HPDestructor::False>* ReuseX = nullptr;
+    const HighPrecisionT<HPDestructor::False>* ReuseY = nullptr;
 
     for (i = 0; i < m_Fractal.GetNumIterations<IterType>(); i++) {
         if constexpr (Periodicity) {
@@ -945,13 +968,19 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
         mpf_set(DeltaSubNXOrig, DeltaSubNX);
         mpf_set(DeltaSubNYOrig, DeltaSubNY);
 
+        existingResults->GetReuseEntries(
+            intermediateCompressor,
+            RefIteration,
+            ReuseX,
+            ReuseY);
+
         //DeltaSubNX =
-        //    DeltaSubNXOrig * (existingResults->GetReuseXEntry(RefIteration) * HighTwo + DeltaSubNXOrig) -
-        //    DeltaSubNYOrig * (existingResults->GetReuseYEntry(RefIteration) * HighTwo + DeltaSubNYOrig) +
+        //    DeltaSubNXOrig * ((*ReuseX) * HighTwo + DeltaSubNXOrig) -
+        //    DeltaSubNYOrig * ((*ReuseY) * HighTwo + DeltaSubNYOrig) +
         //    DeltaSub0X;
-        mpf_mul(temp_mpf, existingResults->GetReuseXEntry(RefIteration).backend(), HighTwo);
+        mpf_mul(temp_mpf, ReuseX->backend(), HighTwo);
         mpf_add(temp_mpf, temp_mpf, DeltaSubNXOrig);
-        mpf_mul(temp2_mpf, existingResults->GetReuseYEntry(RefIteration).backend(), HighTwo);
+        mpf_mul(temp2_mpf, ReuseY->backend(), HighTwo);
         mpf_add(temp2_mpf, temp2_mpf, DeltaSubNYOrig);
         mpf_mul(DeltaSubNX, DeltaSubNXOrig, temp_mpf);
         mpf_mul(temp_mpf, DeltaSubNYOrig, temp2_mpf);
@@ -959,12 +988,12 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
         mpf_add(DeltaSubNX, DeltaSubNX, DeltaSub0X);
 
         //DeltaSubNY =
-        //    DeltaSubNXOrig * (existingResults->GetReuseYEntry(RefIteration) * HighTwo + DeltaSubNYOrig) +
-        //    DeltaSubNYOrig * (existingResults->GetReuseXEntry(RefIteration) * HighTwo + DeltaSubNXOrig) +
+        //    DeltaSubNXOrig * ((*ReuseY) * HighTwo + DeltaSubNYOrig) +
+        //    DeltaSubNYOrig * ((*ReuseX) * HighTwo + DeltaSubNXOrig) +
         //    DeltaSub0Y;
-        mpf_mul(temp_mpf, existingResults->GetReuseYEntry(RefIteration).backend(), HighTwo);
+        mpf_mul(temp_mpf, ReuseY->backend(), HighTwo);
         mpf_add(temp_mpf, temp_mpf, DeltaSubNYOrig);
-        mpf_mul(temp2_mpf, existingResults->GetReuseXEntry(RefIteration).backend(), HighTwo);
+        mpf_mul(temp2_mpf, ReuseX->backend(), HighTwo);
         mpf_add(temp2_mpf, temp2_mpf, DeltaSubNXOrig);
         mpf_mul(DeltaSubNY, DeltaSubNXOrig, temp_mpf);
         mpf_mul(temp_mpf, DeltaSubNYOrig, temp2_mpf);
@@ -990,11 +1019,17 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
 
         // results->AddUncompressedIteration({ tempZXLow, tempZYLow });
 
-        //zx = existingResults->GetReuseXEntry(RefIteration) + DeltaSubNX;
-        mpf_add(zx, existingResults->GetReuseXEntry(RefIteration).backend(), DeltaSubNX);
+        existingResults->GetReuseEntries(
+            intermediateCompressor,
+            RefIteration,
+            ReuseX,
+            ReuseY);
 
-        //zy = existingResults->GetReuseYEntry(RefIteration) + DeltaSubNY;
-        mpf_add(zy, existingResults->GetReuseYEntry(RefIteration).backend(), DeltaSubNY);
+        //zx = (*ReuseX) + DeltaSubNX;
+        mpf_add(zx, ReuseX->backend(), DeltaSubNX);
+
+        //zy = (*ReuseY) + DeltaSubNY;
+        mpf_add(zy, ReuseY->backend(), DeltaSubNY);
 
         zn_size = tempZXLow * tempZXLow + tempZYLow * tempZYLow;
         HdrReduce(zn_size);
@@ -1262,6 +1297,9 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
         mpf_t temp2_mpf;
         mpf_init(temp2_mpf);
 
+        const HighPrecisionT<HPDestructor::False>* ReuseX = nullptr;
+        const HighPrecisionT<HPDestructor::False>* ReuseY = nullptr;
+
         for (;;) {
             ThreadZxData* expected = ThreadMemory->In.load();
             ThreadZxData* ok = nullptr;
@@ -1273,20 +1311,28 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
             //PrefetchHighPrec(existingReuseX[ok->ReferenceIteration]);
             //PrefetchHighPrec(existingReuseY[ok->ReferenceIteration]);
 
+            // TODO:
+            assert(false);
+            // existingResults->GetReuseEntries(ok->ReferenceIteration, ReuseX, ReuseY);
+
             //ok->DeltaSubNX =
-            //    (*ok->DeltaSubNXOrig) * (existingResults->GetReuseXEntry(ok->ReferenceIteration) * HighTwo + (*ok->DeltaSubNXOrig)) -
-            //    (*ok->DeltaSubNYOrig) * (existingResults->GetReuseYEntry(ok->ReferenceIteration) * HighTwo + (*ok->DeltaSubNYOrig)) +
+            //    (*ok->DeltaSubNXOrig) * ((*ReuseX) * HighTwo + (*ok->DeltaSubNXOrig)) -
+            //    (*ok->DeltaSubNYOrig) * ((*ReuseY) * HighTwo + (*ok->DeltaSubNYOrig)) +
             //    (*ok->DeltaSub0X);
 
-            mpf_mul(temp_mpf, existingResults->GetReuseXEntry(ok->ReferenceIteration).backend(), HighTwo);
+            mpf_mul(temp_mpf, ReuseX->backend(), HighTwo);
             mpf_add(temp_mpf, temp_mpf, *ok->DeltaSubNXOrig);
-            mpf_mul(temp2_mpf, existingResults->GetReuseYEntry(ok->ReferenceIteration).backend(), HighTwo);
+            mpf_mul(temp2_mpf, ReuseY->backend(), HighTwo);
             mpf_add(temp2_mpf, temp2_mpf, *ok->DeltaSubNYOrig);
             mpf_mul(ok->DeltaSubNX, *ok->DeltaSubNXOrig, temp_mpf);
             mpf_mul(temp_mpf, *ok->DeltaSubNYOrig, temp2_mpf);
             mpf_sub(ok->DeltaSubNX, ok->DeltaSubNX, temp_mpf);
             mpf_add(ok->DeltaSubNX, ok->DeltaSubNX, *ok->DeltaSub0X);
-            mpf_add(ok->OutZx, existingResults->GetReuseXEntry(ok->ReferenceIteration + 1).backend(), ok->DeltaSubNX);
+
+            // TODO
+            assert(false);
+            // existingResults->GetReuseEntries(ok->ReferenceIteration + 1, ReuseX, ReuseY);
+            mpf_add(ok->OutZx, ReuseX->backend(), ok->DeltaSubNX);
             if constexpr (floatOrDouble) {
                 ok->OutDeltaSubNXLow = (T)mpf_get_d(ok->DeltaSubNX);
                 ok->OutZxLow = (T)mpf_get_d(ok->OutZx);
@@ -1311,6 +1357,9 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
         mpf_t temp2_mpf;
         mpf_init(temp2_mpf);
 
+        const HighPrecisionT<HPDestructor::False>* ReuseX = nullptr;
+        const HighPrecisionT<HPDestructor::False>* ReuseY = nullptr;
+
         for (;;) {
             ThreadZyData* expected = ThreadMemory->In.load();
             ThreadZyData* ok = nullptr;
@@ -1322,19 +1371,27 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
             //PrefetchHighPrec(existingReuseX[ok->ReferenceIteration]);
             //PrefetchHighPrec(existingReuseY[ok->ReferenceIteration]);
 
+            // TODO:
+            assert(false);
+            // existingResults->GetReuseEntries(ok->ReferenceIteration, ReuseX, ReuseY);
+
             //ok->DeltaSubNY =
-            //    (*ok->DeltaSubNXOrig) * (existingResults->GetReuseYEntry(ok->ReferenceIteration) * HighTwo + (*ok->DeltaSubNYOrig)) +
-            //    (*ok->DeltaSubNYOrig) * (existingResults->GetReuseXEntry(ok->ReferenceIteration) * HighTwo + (*ok->DeltaSubNXOrig)) +
+            //    (*ok->DeltaSubNXOrig) * ((*ReuseY) * HighTwo + (*ok->DeltaSubNYOrig)) +
+            //    (*ok->DeltaSubNYOrig) * ((*ReuseX) * HighTwo + (*ok->DeltaSubNXOrig)) +
             //    (*ok->DeltaSub0Y);
-            mpf_mul(temp_mpf, existingResults->GetReuseYEntry(ok->ReferenceIteration).backend(), HighTwo);
+            mpf_mul(temp_mpf, ReuseY->backend(), HighTwo);
             mpf_add(temp_mpf, temp_mpf, *ok->DeltaSubNYOrig);
-            mpf_mul(temp2_mpf, existingResults->GetReuseXEntry(ok->ReferenceIteration).backend(), HighTwo);
+            mpf_mul(temp2_mpf, ReuseX->backend(), HighTwo);
             mpf_add(temp2_mpf, temp2_mpf, *ok->DeltaSubNXOrig);
             mpf_mul(ok->DeltaSubNY, *ok->DeltaSubNXOrig, temp_mpf);
             mpf_mul(temp_mpf, *ok->DeltaSubNYOrig, temp2_mpf);
             mpf_add(ok->DeltaSubNY, ok->DeltaSubNY, temp_mpf);
             mpf_add(ok->DeltaSubNY, ok->DeltaSubNY, *ok->DeltaSub0Y);
-            mpf_add(ok->OutZy, existingResults->GetReuseYEntry(ok->ReferenceIteration + 1).backend(), ok->DeltaSubNY);
+
+            // TODO
+            assert(false);
+            // existingResults->GetReuseEntries(ok->ReferenceIteration + 1, ReuseX, ReuseY);
+            mpf_add(ok->OutZy, ReuseY->backend(), ok->DeltaSubNY);
             if constexpr (floatOrDouble) {
                 ok->OutDeltaSubNYLow = (T)mpf_get_d(ok->DeltaSubNY);
                 ok->OutZyLow = (T)mpf_get_d(ok->OutZy);
@@ -1574,7 +1631,8 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
 
     if constexpr (
         Reuse == RefOrbitCalc::ReuseMode::SaveForReuse1 ||
-        Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2) {
+        Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2 ||
+        Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3) {
 
         results->InitReused();
     }
@@ -1709,7 +1767,8 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
     auto InitTls = [&]() {
         if constexpr (
             Reuse != RefOrbitCalc::ReuseMode::SaveForReuse1 &&
-            Reuse != RefOrbitCalc::ReuseMode::SaveForReuse2) {
+            Reuse != RefOrbitCalc::ReuseMode::SaveForReuse2 &&
+            Reuse != RefOrbitCalc::ReuseMode::SaveForReuse3) {
             boundedAllocator->InitTls();
         }
         else {
@@ -1720,7 +1779,8 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
     auto ShutdownTls = [&]() {
         if constexpr (
             Reuse != RefOrbitCalc::ReuseMode::SaveForReuse1 &&
-            Reuse != RefOrbitCalc::ReuseMode::SaveForReuse2) {
+            Reuse != RefOrbitCalc::ReuseMode::SaveForReuse2 &&
+            Reuse != RefOrbitCalc::ReuseMode::SaveForReuse3) {
             boundedAllocator->ShutdownTls();
         }
         else {
@@ -1803,7 +1863,10 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
 
             CheckStartCriteria;
 
-            AddReused(*results, ok->zx, ok->zy);
+            // AddReused(*results, ok->zx, ok->zy);
+
+            assert(false);
+            // TODO
 
             // Give result back.
             CheckFinishCriteria;
@@ -1829,7 +1892,10 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
     std::unique_ptr<std::thread> tReuse;
 
     // Mode 2 we use another thread
-    if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2) {
+    if constexpr (
+        Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2 ||
+        Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3) {
+
         tReuse = std::unique_ptr<std::thread>(DEBUG_NEW std::thread(ThreadReused, ThreadReusedMemory));
     }
 
@@ -1954,7 +2020,10 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
                 }
             }
 
-            if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2) {
+            if constexpr (
+                Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2 ||
+                Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2) {
+
                 for (;;) {
                     expectedReused = threadReuseddata;
 
@@ -1972,8 +2041,12 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
         }
 
         if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse1) {
-            AddReused(*results, zx, zy);
-        } else if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2) {
+            assert(false);
+            // AddReused(*results, zx, zy);
+            // TODO
+        } else if constexpr (
+            Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2 ||
+            Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3) {
             mpf_set(threadReuseddata->zx, zx);
             mpf_set(threadReuseddata->zy, zy);
 
@@ -2080,7 +2153,11 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
 
     tZx->join();
     tZy->join();
-    if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2) {
+
+    if constexpr (
+        Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2 ||
+        Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3) {
+
         tReuse->join();
     }
 
@@ -2244,6 +2321,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
                 break;
             case PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed1:
             case PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed2:
+            case PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3:
                 added = AddPerturbationReferencePointMT3Reuse<IterType, T, SubType, true, BenchmarkMode::Disable>
                     (m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
                 break;
@@ -2723,6 +2801,7 @@ std::string RefOrbitCalc::GetPerturbationAlgStr() const {
         MTPeriodicity3PerturbMTHighSTMed,
         MTPeriodicity3PerturbMTHighMTMed1,
         MTPeriodicity3PerturbMTHighMTMed2,
+        MTPeriodicity3PerturbMTHighMTMed3,
         MTPeriodicity5
     };
     */
@@ -2742,6 +2821,8 @@ std::string RefOrbitCalc::GetPerturbationAlgStr() const {
         return "MTPeriodicity2PerturbMTHighMTMed1";
     case PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed2:
         return "MTPeriodicity2PerturbMTHighMTMed2";
+    case PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3:
+        return "MTPeriodicity2PerturbMTHighMTMed3";
     case PerturbationAlg::MTPeriodicity5:
         return "MTPeriodicity5";
     default:
@@ -2856,7 +2937,8 @@ void RefOrbitCalc::InitAllocatorsIfNeeded(
     std::unique_ptr<MPIRBumpAllocator>& bumpAllocator) {
     if constexpr (
         Reuse != RefOrbitCalc::ReuseMode::SaveForReuse1 &&
-        Reuse != RefOrbitCalc::ReuseMode::SaveForReuse2) {
+        Reuse != RefOrbitCalc::ReuseMode::SaveForReuse2 &&
+        Reuse != RefOrbitCalc::ReuseMode::SaveForReuse3) {
 
         boundedAllocator = std::make_unique<MPIRBoundedAllocator>();
         boundedAllocator->InitScopedAllocators();
@@ -2875,7 +2957,8 @@ void RefOrbitCalc::ShutdownAllocatorsIfNeeded(
     std::unique_ptr<MPIRBumpAllocator>& bumpAllocator) {
     if constexpr (
         Reuse != RefOrbitCalc::ReuseMode::SaveForReuse1 &&
-        Reuse != RefOrbitCalc::ReuseMode::SaveForReuse2) {
+        Reuse != RefOrbitCalc::ReuseMode::SaveForReuse2 &&
+        Reuse != RefOrbitCalc::ReuseMode::SaveForReuse3) {
         boundedAllocator->ShutdownTls();
     }
     else {

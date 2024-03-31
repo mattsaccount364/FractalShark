@@ -18,6 +18,7 @@ public:
         DontSaveForReuse,
         SaveForReuse1,
         SaveForReuse2,
+        SaveForReuse3,
         RunWithReuse
     };
 
@@ -34,6 +35,7 @@ public:
         MTPeriodicity3PerturbMTHighSTMed,
         MTPeriodicity3PerturbMTHighMTMed1,
         MTPeriodicity3PerturbMTHighMTMed2,
+        MTPeriodicity3PerturbMTHighMTMed3,
         MTPeriodicity5,
         Auto
     };

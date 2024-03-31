@@ -368,6 +368,8 @@
 #define IDM_BENCHMARK_FULL              33174
 #define ID_SAVE_BENCHMARK               33175
 #define IDM_BENCHMARK_INT               33176
+#define ID_PERTURBATION_MT3             33177
+#define IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_MTMED3 33178
 #define IDM_VIEW1                       34001
 #define IDM_VIEW2                       34002
 #define IDM_VIEW3                       34003
@@ -405,7 +407,7 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        131
-#define _APS_NEXT_COMMAND_VALUE         33177
+#define _APS_NEXT_COMMAND_VALUE         33179
 #define _APS_NEXT_CONTROL_VALUE         1000
 #define _APS_NEXT_SYMED_VALUE           110
 #endif

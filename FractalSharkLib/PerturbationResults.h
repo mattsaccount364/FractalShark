@@ -26,6 +26,9 @@ template<typename IterType, class T, PerturbExtras PExtras>
 class RefOrbitCompressor;
 
 template<typename IterType, class T, PerturbExtras PExtras>
+class IntermediateOrbitCompressor;
+
+template<typename IterType, class T, PerturbExtras PExtras>
 class PerturbationResults : public TemplateHelpers<IterType, T, PExtras> {
 
 public:
@@ -38,7 +41,9 @@ public:
     using HDRFloatComplex = TemplateHelpers::template HDRFloatComplex<LocalSubType>;
 
     friend class CompressionHelper<IterType, T, PExtras>;
+    friend class IntermediateCompressionHelper<IterType, T, PExtras>;
     friend class RefOrbitCompressor<IterType, T, PExtras>;
+    friend class IntermediateOrbitCompressor<IterType, T, PExtras>;
 
     static constexpr char Version[] = "0.44";
 
@@ -632,6 +637,8 @@ public:
         }
     }
 
+
+
     void InitReused() {
         HighPrecision Zero = 0;
 
@@ -691,7 +698,8 @@ public:
 
         if constexpr (
             Reuse == RefOrbitCalc::ReuseMode::SaveForReuse1 ||
-            Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2) {
+            Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2 ||
+            Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3) {
             m_AuthoritativePrecisionInBits = cx.precisionInBits();
             m_ReuseX.reserve(ReserveSize);
             m_ReuseY.reserve(ReserveSize);
@@ -714,7 +722,8 @@ public:
 
         if constexpr (
             Reuse == RefOrbitCalc::ReuseMode::SaveForReuse1 ||
-            Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2) {
+            Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2 ||
+            Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3) {
             //m_ReuseX.shrink_to_fit();
             //m_ReuseY.shrink_to_fit();
             m_ReuseAllocations = std::move(allocatorIfAny);
@@ -814,17 +823,32 @@ public:
         return m_ReuseX.size();
     }
 
-    void AddReusedEntry(HighPrecision x, HighPrecision y) {
+    void AddUncompressedReusedEntry(HighPrecision x, HighPrecision y) {
         m_ReuseX.push_back(std::move(x));
         m_ReuseY.push_back(std::move(y));
     }
 
-    const HighPrecisionT<HPDestructor::False>& GetReuseXEntry(size_t uncompressed_index) const {
-        return m_ReuseX[uncompressed_index];
+    // Take references to pointers to avoid copying.
+    // Set the pointers to point at the specified index.
+    void GetReuseEntries(
+        IntermediateCompressionHelper<IterType, T, PExtras>& PerThreadCompressionHelper,
+        size_t uncompressed_index,
+        const HighPrecisionT<HPDestructor::False> *&x,
+        const HighPrecisionT<HPDestructor::False> *&y) const {
+
+        PerThreadCompressionHelper.GetReuseEntries(
+            uncompressed_index,
+            x,
+            y);
     }
 
-    const HighPrecisionT<HPDestructor::False>& GetReuseYEntry(size_t uncompressed_index) const {
-        return m_ReuseY[uncompressed_index];
+    void GetReuseEntries(
+        size_t uncompressed_index,
+        const HighPrecisionT<HPDestructor::False>*& x,
+        const HighPrecisionT<HPDestructor::False>*& y) const {
+
+        x = &m_ReuseX[uncompressed_index];
+        y = &m_ReuseY[uncompressed_index];
     }
 
     IterType GetMaxIterations() const {
@@ -1023,6 +1047,7 @@ private:
     uint64_t m_AuthoritativePrecisionInBits;
     std::vector<HighPrecisionT<HPDestructor::False>> m_ReuseX;
     std::vector<HighPrecisionT<HPDestructor::False>> m_ReuseY;
+    std::vector<IterTypeFull> m_ReuseIndices;
     std::unique_ptr<GrowableVector<uint8_t>> m_ReuseAllocations;
 
     BenchmarkData m_BenchmarkOrbit;
@@ -1095,5 +1120,83 @@ public:
         HdrReduce(zy);
 
         results.m_UncompressedItersInOrbit++;
+    }
+};
+
+
+template<typename IterType, class T, PerturbExtras PExtras>
+class IntermediateOrbitCompressor : public TemplateHelpers<IterType, T, PExtras> {
+    template<typename IterType, class T, PerturbExtras PExtras> friend class PerturbationResults;
+
+    using TemplateHelpers = TemplateHelpers<IterType, T, PExtras>;
+    using SubType = TemplateHelpers::SubType;
+
+    template<class LocalSubType>
+    using HDRFloatComplex = TemplateHelpers::template HDRFloatComplex<LocalSubType>;
+
+    friend class CompressionHelper<IterType, T, PExtras>;
+
+    PerturbationResults<IterType, T, PExtras>& results;
+    HighPrecision zx;
+    HighPrecision zy;
+    HighPrecision cx;
+    HighPrecision cy;
+    HighPrecision Two;
+    HighPrecision CompressionError;
+    HighPrecision ReducedZx;
+    HighPrecision ReducedZy;
+    int32_t CompressionErrorExp;
+    IterTypeFull CurCompressedIndex;
+
+public:
+    IntermediateOrbitCompressor(
+        PerturbationResults<IterType, T, PExtras>& results,
+        int32_t CompressionErrorExp) :
+        results{ results },
+        zx{ results.GetHiX() },
+        zy{ results.GetHiY() },
+        cx{ results.GetHiX() },
+        cy{ results.GetHiY() },
+        Two{ 2 },
+        CompressionError{ std::pow(10, CompressionErrorExp) },
+        CompressionErrorExp{ CompressionErrorExp },
+        CurCompressedIndex{} {
+
+        cx.precisionInBits(AuthoritativeReuseExtraPrecisionInBits);
+        cy.precisionInBits(AuthoritativeReuseExtraPrecisionInBits);
+
+        // This code can run even if compression is disabled, but it doesn't matter.
+        results.m_CompressionErrorExp = CompressionErrorExp;
+    }
+
+    void MaybeAddCompressedIteration(const HighPrecision &incomingZx, const HighPrecision &incomingZy) {
+        // TODO eliminate this copy
+        ReducedZx = incomingZx;
+        ReducedZy = incomingZy;
+
+        ReducedZx.precisionInBits(AuthoritativeReuseExtraPrecisionInBits);
+        ReducedZy.precisionInBits(AuthoritativeReuseExtraPrecisionInBits);
+
+        auto errX = zx - ReducedZx;
+        auto errY = zy - ReducedZy;
+
+        auto norm_z = ReducedZx * ReducedZx + ReducedZy * ReducedZy;
+        auto err = (errX * errX + errY * errY) * CompressionError;
+
+        if (HdrCompareToBothPositiveReducedGE(err, norm_z)) {
+            results.AddUncompressedReusedEntry(ReducedZx, ReducedZy);
+
+            zx = ReducedZx;
+            zy = ReducedZy;
+
+            // Corresponds to the entry just added
+            CurCompressedIndex++;
+            //assert(CurCompressedIndex == results.m_ReuseX.GetSize() - 1);
+            //assert(CurCompressedIndex == results.m_ReuseY.GetSize() - 1);
+        }
+
+        auto zx_old = zx;
+        zx = zx * zx - zy * zy + cx;
+        zy = Two * zx_old * zy + cy;
     }
 };

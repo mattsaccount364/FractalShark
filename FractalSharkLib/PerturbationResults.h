@@ -1150,14 +1150,15 @@ class IntermediateOrbitCompressor : public TemplateHelpers<IterType, T, PExtras>
     friend class CompressionHelper<IterType, T, PExtras>;
 
     PerturbationResults<IterType, T, PExtras>& results;
-    HighPrecision zx;
-    HighPrecision zy;
-    HighPrecision cx;
-    HighPrecision cy;
-    HighPrecision Two;
-    HighPrecision CompressionError;
-    HighPrecision ReducedZx;
-    HighPrecision ReducedZy;
+    mpf_t zx;
+    mpf_t zy;
+    mpf_t cx;
+    mpf_t cy;
+    mpf_t Two;
+    mpf_t CompressionError;
+    mpf_t ReducedZx;
+    mpf_t ReducedZy;
+    mpf_t Temp[6];
     int32_t CompressionErrorExp;
     IterTypeFull CurCompressedIndex;
 
@@ -1166,20 +1167,60 @@ public:
         PerturbationResults<IterType, T, PExtras>& results,
         int32_t CompressionErrorExp) :
         results{ results },
-        zx{ results.GetHiX() },
-        zy{ results.GetHiY() },
-        cx{ results.GetHiX() },
-        cy{ results.GetHiY() },
-        Two{ 2 },
-        CompressionError{ std::pow(10, CompressionErrorExp) },
-        CompressionErrorExp{ CompressionErrorExp },
+        zx{},
+        zy{},
+        cx{},
+        cy{},
+        Two{},
+        CompressionError{},
+        ReducedZx{},
+        ReducedZy{},
+        Temp{},
+        CompressionErrorExp{},
         CurCompressedIndex{} {
 
-        cx.precisionInBits(AuthoritativeReuseExtraPrecisionInBits);
-        cy.precisionInBits(AuthoritativeReuseExtraPrecisionInBits);
+        mpf_init2(zx, AuthoritativeReuseExtraPrecisionInBits);
+        mpf_set(zx, *results.GetHiX().backendRaw());
+
+        mpf_init2(zy, AuthoritativeReuseExtraPrecisionInBits);
+        mpf_set(zy, *results.GetHiY().backendRaw());
+
+        mpf_init2(cx, AuthoritativeReuseExtraPrecisionInBits);
+        mpf_set(cx, *results.GetHiX().backendRaw());
+
+        mpf_init2(cy, AuthoritativeReuseExtraPrecisionInBits);
+        mpf_set(cy, *results.GetHiY().backendRaw());
+
+        mpf_init2(Two, AuthoritativeReuseExtraPrecisionInBits);
+        mpf_set_d(Two, 2);
+
+        mpf_init2(CompressionError, AuthoritativeReuseExtraPrecisionInBits);
+        mpf_set_d(CompressionError, std::pow(10, CompressionErrorExp));
+
+        mpf_init2(ReducedZx, AuthoritativeReuseExtraPrecisionInBits);
+        mpf_init2(ReducedZy, AuthoritativeReuseExtraPrecisionInBits);
+
+        for (size_t i = 0; i < 6; i++) {
+            mpf_init2(Temp[i], AuthoritativeReuseExtraPrecisionInBits);
+        }
 
         // This code can run even if compression is disabled, but it doesn't matter.
         results.m_CompressionErrorExp = CompressionErrorExp;
+    }
+
+    ~IntermediateOrbitCompressor() {
+        mpf_clear(zx);
+        mpf_clear(zy);
+        mpf_clear(cx);
+        mpf_clear(cy);
+        mpf_clear(Two);
+        mpf_clear(CompressionError);
+        mpf_clear(ReducedZx);
+        mpf_clear(ReducedZy);
+        
+        for (size_t i = 0; i < 6; i++) {
+            mpf_clear(Temp[i]);
+        }
     }
 
     void MaybeAddCompressedIteration(
@@ -1187,24 +1228,44 @@ public:
         const HighPrecision &incomingZy,
         IterTypeFull index) {
 
-        // TODO eliminate this copy
-        ReducedZx = incomingZx;
-        ReducedZy = incomingZy;
+        mpf_set(ReducedZx, *incomingZx.backendRaw());
+        mpf_set(ReducedZy, *incomingZy.backendRaw());
 
-        ReducedZx.precisionInBits(AuthoritativeReuseExtraPrecisionInBits);
-        ReducedZy.precisionInBits(AuthoritativeReuseExtraPrecisionInBits);
+        {
+            // auto errX = zx - ReducedZx;
+            mpf_sub(Temp[0], zx, ReducedZx);
 
-        auto errX = zx - ReducedZx;
-        auto errY = zy - ReducedZy;
+            // auto errY = zy - ReducedZy;
+            mpf_sub(Temp[1], zy, ReducedZy);
+        }
 
-        auto norm_z = ReducedZx * ReducedZx + ReducedZy * ReducedZy;
-        auto err = (errX * errX + errY * errY) * CompressionError;
+        // Temp[0] = errX
+        // Temp[1] = errY
 
-        if (HdrCompareToBothPositiveReducedGE(err, norm_z)) {
+        // auto err = (errX * errX + errY * errY) * CompressionError;
+        {
+            mpf_mul(Temp[2], Temp[0], Temp[0]);
+            mpf_mul(Temp[3], Temp[1], Temp[1]);
+            mpf_add(Temp[4], Temp[2], Temp[3]);
+            mpf_mul(Temp[5], Temp[4], CompressionError);
+        }
+
+        // Temp[5] = err
+
+        // auto norm_z = ReducedZx * ReducedZx + ReducedZy * ReducedZy;
+        {
+            mpf_mul(Temp[2], ReducedZx, ReducedZx);
+            mpf_mul(Temp[3], ReducedZy, ReducedZy);
+            mpf_add(Temp[4], Temp[2], Temp[3]);
+        }
+
+        // Temp[4] = norm_z
+
+        if (mpf_cmp(Temp[5], Temp[4]) >= 0) {
             results.AddUncompressedReusedEntry(ReducedZx, ReducedZy, index);
 
-            zx = ReducedZx;
-            zy = ReducedZy;
+            mpf_set(zx, ReducedZx);
+            mpf_set(zy, ReducedZy);
 
             // Corresponds to the entry just added
             CurCompressedIndex++;
@@ -1212,8 +1273,21 @@ public:
             //assert(CurCompressedIndex == results.m_ReuseY.GetSize() - 1);
         }
 
-        auto zx_old = zx;
-        zx = zx * zx - zy * zy + cx;
-        zy = Two * zx_old * zy + cy;
+        // auto zx_old = zx;
+        // zx = zx * zx - zy * zy + cx;
+        // zy = Two * zx_old * zy + cy;
+
+        {
+            mpf_set(Temp[0], zx); // zx_old
+
+            mpf_mul(Temp[2], zx, zx);
+            mpf_mul(Temp[3], zy, zy);
+            mpf_sub(zx, Temp[2], Temp[3]);
+            mpf_add(zx, zx, cx);
+
+            mpf_mul(Temp[2], Two, Temp[0]);
+            mpf_mul(zy, Temp[2], zy);
+            mpf_add(zy, zy, cy);
+        }
     }
 };

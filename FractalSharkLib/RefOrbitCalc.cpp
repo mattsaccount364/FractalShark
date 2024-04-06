@@ -951,8 +951,8 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
         std::is_same<T, double>::value ||
         std::is_same<T, float>::value;
 
-    const HighPrecisionT<HPDestructor::False>* ReuseX = nullptr;
-    const HighPrecisionT<HPDestructor::False>* ReuseY = nullptr;
+    mpf_t* ReuseX = nullptr;
+    mpf_t* ReuseY = nullptr;
 
     for (i = 0; i < m_Fractal.GetNumIterations<IterType>(); i++) {
         if constexpr (Periodicity) {
@@ -979,9 +979,9 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
         //    DeltaSubNXOrig * ((*ReuseX) * HighTwo + DeltaSubNXOrig) -
         //    DeltaSubNYOrig * ((*ReuseY) * HighTwo + DeltaSubNYOrig) +
         //    DeltaSub0X;
-        mpf_mul(temp_mpf, ReuseX->backend(), HighTwo);
+        mpf_mul(temp_mpf, *ReuseX, HighTwo);
         mpf_add(temp_mpf, temp_mpf, DeltaSubNXOrig);
-        mpf_mul(temp2_mpf, ReuseY->backend(), HighTwo);
+        mpf_mul(temp2_mpf, *ReuseY, HighTwo);
         mpf_add(temp2_mpf, temp2_mpf, DeltaSubNYOrig);
         mpf_mul(DeltaSubNX, DeltaSubNXOrig, temp_mpf);
         mpf_mul(temp_mpf, DeltaSubNYOrig, temp2_mpf);
@@ -992,9 +992,9 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
         //    DeltaSubNXOrig * ((*ReuseY) * HighTwo + DeltaSubNYOrig) +
         //    DeltaSubNYOrig * ((*ReuseX) * HighTwo + DeltaSubNXOrig) +
         //    DeltaSub0Y;
-        mpf_mul(temp_mpf, ReuseY->backend(), HighTwo);
+        mpf_mul(temp_mpf, *ReuseY, HighTwo);
         mpf_add(temp_mpf, temp_mpf, DeltaSubNYOrig);
-        mpf_mul(temp2_mpf, ReuseX->backend(), HighTwo);
+        mpf_mul(temp2_mpf, *ReuseX, HighTwo);
         mpf_add(temp2_mpf, temp2_mpf, DeltaSubNXOrig);
         mpf_mul(DeltaSubNY, DeltaSubNXOrig, temp_mpf);
         mpf_mul(temp_mpf, DeltaSubNYOrig, temp2_mpf);
@@ -1027,10 +1027,10 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
             ReuseY);
 
         //zx = (*ReuseX) + DeltaSubNX;
-        mpf_add(zx, ReuseX->backend(), DeltaSubNX);
+        mpf_add(zx, *ReuseX, DeltaSubNX);
 
         //zy = (*ReuseY) + DeltaSubNY;
-        mpf_add(zy, ReuseY->backend(), DeltaSubNY);
+        mpf_add(zy, *ReuseY, DeltaSubNY);
 
         zn_size = tempZXLow * tempZXLow + tempZYLow * tempZYLow;
         HdrReduce(zn_size);

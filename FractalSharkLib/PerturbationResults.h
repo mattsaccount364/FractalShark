@@ -843,8 +843,8 @@ public:
     void GetCompressedReuseEntries(
         IntermediateCompressionHelper<IterType, T, PExtras>& PerThreadCompressionHelper,
         size_t uncompressed_index,
-        const HighPrecisionT<HPDestructor::False> *&x,
-        const HighPrecisionT<HPDestructor::False> *&y) const {
+        mpf_t *&x,
+        mpf_t *&y) const {
 
         PerThreadCompressionHelper.GetReuseEntries(
             uncompressed_index,

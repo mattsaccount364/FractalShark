@@ -183,6 +183,8 @@ private:
     mutable CachedIter<T> CachedIter2;
 };
 
+#ifndef __CUDACC__
+
 template<typename IterType, class T, PerturbExtras PExtras>
 class IntermediateCompressionHelper : public TemplateHelpers<IterType, T, PExtras> {
 public:
@@ -211,7 +213,10 @@ public:
         const HighPrecisionT<HPDestructor::False>*& outX,
         const HighPrecisionT<HPDestructor::False>*& outY) const {
 
-        auto runOneIter = [&](auto& zx, auto& zy) {
+        auto runOneIter = [&](
+            HighPrecisionT<HPDestructor::False>& zx,
+            HighPrecisionT<HPDestructor::False>& zy) {
+
             auto zx_old = zx;
             zx = zx * zx - zy * zy + cx;
             zy = Two * zx_old * zy + cy;
@@ -220,20 +225,26 @@ public:
         if (CachedIter1.UncompressedIter == uncompressed_index) {
             outX = &CachedIter1.zx;
             outY = &CachedIter1.zy;
+            return;
         }
 
         if (CachedIter2.UncompressedIter == uncompressed_index) {
             outX = &CachedIter2.zx;
             outY = &CachedIter2.zy;
+            return;
         }
 
         auto LinearScan = [&](auto& iter, auto& other) -> bool {
             if (iter.UncompressedIter + 1 == uncompressed_index) {
+                assert(
+                    results.m_ReuseX.size() == results.m_ReuseY.size() &&
+                    results.m_ReuseX.size() == results.m_ReuseIndices.size());
+
                 bool condition =
-                    (iter.CompressedIter + 1 < results.m_FullOrbit.GetSize() &&
+                    (iter.CompressedIter + 1 < results.m_ReuseX.size() &&
                         (iter.UncompressedIter + 1 <
                             results.m_ReuseIndices[iter.CompressedIter + 1])) ||
-                    iter.CompressedIter + 1 == results.m_FullOrbit.GetSize();
+                    iter.CompressedIter + 1 == results.m_ReuseX.size();
 
                 if (condition) {
                     other = iter;
@@ -258,12 +269,14 @@ public:
         if (ret) {
             outX = &CachedIter1.zx;
             outY = &CachedIter1.zy;
+            return;
         }
 
         ret = LinearScan(CachedIter2, CachedIter1);
         if (ret) {
             outX = &CachedIter2.zx;
             outY = &CachedIter2.zy;
+            return;
         }
 
         // Do a binary search.  Given the uncompressed index, search the compressed
@@ -293,8 +306,8 @@ public:
 
         auto BestCompressedIndexGuess = BinarySearch(uncompressed_index);
 
-        const auto &zx = results.m_ReuseX[BestCompressedIndexGuess];
-        const auto &zy = results.m_ReuseY[BestCompressedIndexGuess];
+        auto zx = results.m_ReuseX[BestCompressedIndexGuess];
+        auto zy = results.m_ReuseY[BestCompressedIndexGuess];
 
         for (size_t cur_uncompressed_index = results.m_ReuseIndices[BestCompressedIndexGuess];
             cur_uncompressed_index < results.m_UncompressedItersInOrbit;
@@ -305,12 +318,11 @@ public:
                 CachedIter1 = CachedIter<T>(&zx, &zy, cur_uncompressed_index, BestCompressedIndexGuess);
                 outX = &CachedIter1.zx;
                 outY = &CachedIter1.zy;
+                return;
             }
 
             runOneIter(zx, zy);
         }
-
-        return {};
     }
 
 private:
@@ -328,8 +340,8 @@ private:
             const HighPrecisionT<HPDestructor::False>* zy,
             size_t uncompressed_iter,
             size_t compressed_iter) :
-            zx(zx),
-            zy(zy),
+            zx(*zx),
+            zy(*zy),
             UncompressedIter(uncompressed_iter),
             CompressedIter(compressed_iter) {
         }
@@ -353,3 +365,5 @@ private:
     HighPrecisionT<HPDestructor::False> cy;
     HighPrecisionT<HPDestructor::False> Two;
 };
+
+#endif

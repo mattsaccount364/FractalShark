@@ -127,6 +127,7 @@ public:
         m_AuthoritativePrecisionInBits{},
         m_ReuseX{},
         m_ReuseY{},
+        m_ReuseIndices{},
         m_ReuseAllocations{},
         m_BenchmarkOrbit{} {
     
@@ -151,6 +152,7 @@ public:
         // bump allocator is destroyed.
         m_ReuseX.clear();
         m_ReuseY.clear();
+        m_ReuseIndices.clear();
 
         CloseMetaFileIfOpen();
     }
@@ -277,6 +279,7 @@ public:
         m_AuthoritativePrecisionInBits = other.m_AuthoritativePrecisionInBits;
         m_ReuseX.reserve(other.m_ReuseX.size());
         m_ReuseY.reserve(other.m_ReuseY.size());
+        m_ReuseIndices.reserve(other.m_ReuseIndices.size());
 
         // TODO: for reuse case, we don't copy the allocations.  This is a bug
         // but we shouldn't hit it in practice?  I think?
@@ -293,6 +296,7 @@ public:
         m_AuthoritativePrecisionInBits = other.m_AuthoritativePrecisionInBits;
         m_ReuseX = other.m_ReuseX;
         m_ReuseY = other.m_ReuseY;
+        m_ReuseIndices = other.m_ReuseIndices;
 
         m_BenchmarkOrbit = other.m_BenchmarkOrbit;
 
@@ -647,6 +651,7 @@ public:
 
         m_ReuseX.push_back(Zero);
         m_ReuseY.push_back(Zero);
+        m_ReuseIndices.push_back(0);
     }
 
     template<class T, PerturbExtras PExtras, RefOrbitCalc::ReuseMode Reuse>
@@ -823,14 +828,19 @@ public:
         return m_ReuseX.size();
     }
 
-    void AddUncompressedReusedEntry(HighPrecision x, HighPrecision y) {
+    void AddUncompressedReusedEntry(
+        HighPrecision x,
+        HighPrecision y,
+        IterTypeFull index) {
+
         m_ReuseX.push_back(std::move(x));
         m_ReuseY.push_back(std::move(y));
+        m_ReuseIndices.push_back(index);
     }
 
     // Take references to pointers to avoid copying.
     // Set the pointers to point at the specified index.
-    void GetReuseEntries(
+    void GetCompressedReuseEntries(
         IntermediateCompressionHelper<IterType, T, PExtras>& PerThreadCompressionHelper,
         size_t uncompressed_index,
         const HighPrecisionT<HPDestructor::False> *&x,
@@ -842,7 +852,7 @@ public:
             y);
     }
 
-    void GetReuseEntries(
+    void GetUncompressedReuseEntries(
         size_t uncompressed_index,
         const HighPrecisionT<HPDestructor::False>*& x,
         const HighPrecisionT<HPDestructor::False>*& y) const {
@@ -984,7 +994,9 @@ public:
 
         out << "m_ReuseX: " << m_ReuseX.size() << std::endl;
         out << "m_ReuseY: " << m_ReuseY.size() << std::endl;
-        if (m_ReuseX.size() != m_ReuseY.size()) {
+        out << "m_ReuseIndices: " << m_ReuseIndices.size() << std::endl;
+        if (m_ReuseX.size() != m_ReuseY.size() ||
+            m_ReuseX.size() != m_ReuseIndices.size()) {
             ::MessageBox(nullptr, L"m_ReuseX and m_ReuseY are different sizes.", L"", MB_OK | MB_APPLMODAL);
             out.close();
             return;
@@ -993,6 +1005,7 @@ public:
         for (size_t i = 0; i < m_ReuseX.size(); i++) {
             out << "m_ReuseX[" << i << "]: " << HdrToString<false>(m_ReuseX[i]) << std::endl;
             out << "m_ReuseY[" << i << "]: " << HdrToString<false>(m_ReuseY[i]) << std::endl;
+            out << "m_ReuseIndices[" << i << "]: " << m_ReuseIndices[i] << std::endl;
         }
 
         out.close();
@@ -1169,7 +1182,11 @@ public:
         results.m_CompressionErrorExp = CompressionErrorExp;
     }
 
-    void MaybeAddCompressedIteration(const HighPrecision &incomingZx, const HighPrecision &incomingZy) {
+    void MaybeAddCompressedIteration(
+        const HighPrecision &incomingZx,
+        const HighPrecision &incomingZy,
+        IterTypeFull index) {
+
         // TODO eliminate this copy
         ReducedZx = incomingZx;
         ReducedZy = incomingZy;
@@ -1184,7 +1201,7 @@ public:
         auto err = (errX * errX + errY * errY) * CompressionError;
 
         if (HdrCompareToBothPositiveReducedGE(err, norm_z)) {
-            results.AddUncompressedReusedEntry(ReducedZx, ReducedZy);
+            results.AddUncompressedReusedEntry(ReducedZx, ReducedZy, index);
 
             zx = ReducedZx;
             zy = ReducedZy;

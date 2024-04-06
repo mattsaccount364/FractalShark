@@ -738,7 +738,7 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
             Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2 ||
             Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3) {
             // AddReused(*results, zx, zy);
-            intermediateCompressor.MaybeAddCompressedIteration(zx, zy);
+            intermediateCompressor.MaybeAddCompressedIteration(zx, zy, i + 1);
         }
 
         if constexpr (PExtras == PerturbExtras::Bad) {
@@ -821,7 +821,7 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
         results->SetBad(false);
     }
 
-    results->CompleteResults<PExtras, Reuse>(bumpAllocator->GetAllocated(0));
+    results->CompleteResults<PExtras, Reuse>(bumpAllocator->GetAllocated(1));
     m_GuessReserveSize = results->GetCountOrbitEntries();
     } // End of scope for allocators.
 
@@ -841,8 +841,9 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
     PerturbationResultsArray.push_back(std::move(newArray));
 
     auto* existingResults = GetUsefulPerturbationResults<IterType, T, true, PerturbExtras::Disable>();
-    if (existingResults == nullptr || existingResults->GetReuseSize() < 5) {
-        // TODO Lame hack with < 5.
+    // TODO Lame hack with < 5.
+    // existingResults->GetReuseSize() < 5
+    if (existingResults == nullptr) {
         PerturbationResultsArray.pop_back();
         return false;
     }
@@ -944,7 +945,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
     mpf_t temp2_mpf;
     mpf_init(temp2_mpf);
 
-    IntermediateCompressionHelper<IterType, T, PerturbExtras::Disable> intermediateCompressor{ *results };
+    IntermediateCompressionHelper<IterType, T, PerturbExtras::Disable> intermediateCompressor{ *existingResults };
 
     constexpr bool floatOrDouble =
         std::is_same<T, double>::value ||
@@ -968,7 +969,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
         mpf_set(DeltaSubNXOrig, DeltaSubNX);
         mpf_set(DeltaSubNYOrig, DeltaSubNY);
 
-        existingResults->GetReuseEntries(
+        existingResults->GetCompressedReuseEntries(
             intermediateCompressor,
             RefIteration,
             ReuseX,
@@ -1019,7 +1020,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
 
         // results->AddUncompressedIteration({ tempZXLow, tempZYLow });
 
-        existingResults->GetReuseEntries(
+        existingResults->GetCompressedReuseEntries(
             intermediateCompressor,
             RefIteration,
             ReuseX,
@@ -1131,8 +1132,9 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     PerturbationResultsArray.push_back(std::move(newArray));
 
     auto* existingResults = GetUsefulPerturbationResults<IterType, T, true, PerturbExtras::Disable>();
-    if (existingResults == nullptr || existingResults->GetReuseSize() < 5) {
-        // TODO Lame hack with < 5.
+    // TODO Lame hack with < 5.
+    // existingResults->GetReuseSize() < 5
+    if (existingResults == nullptr) {
         PerturbationResultsArray.pop_back();
         return false;
     }

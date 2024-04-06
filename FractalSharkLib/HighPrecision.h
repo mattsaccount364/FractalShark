@@ -1,5 +1,12 @@
 #pragma once
 
+enum class HPDestructor : bool {
+    False = false,
+    True = true,
+};
+
+template<HPDestructor Destructor>
+class HighPrecisionT;
 
 #ifndef __CUDACC__
 
@@ -10,11 +17,6 @@
 #include <iostream>
 
 #include "ScopedMpir.h"
-
-enum class HPDestructor : bool {
-    False = false,
-    True = true,
-};
 
 template<HPDestructor Destructor>
 class HighPrecisionT {

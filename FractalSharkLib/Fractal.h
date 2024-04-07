@@ -50,6 +50,8 @@ struct RefOrbitDetails {
     uint64_t CompressedIntermediateIters;
     int32_t CompressionErrorExp;
     int32_t IntermediateCompressionErrorExp;
+    int64_t DeltaIntermediatePrecision;
+    int64_t ExtraIntermediatePrecision;
     uint64_t OrbitMilliseconds;
     uint64_t LAMilliseconds;
     uint64_t LASize;

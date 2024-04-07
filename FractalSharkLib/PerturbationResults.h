@@ -130,7 +130,9 @@ public:
         m_ReuseY{},
         m_ReuseIndices{},
         m_ReuseAllocations{},
-        m_BenchmarkOrbit{} {
+        m_BenchmarkOrbit{},
+        m_DeltaPrecisionCached{},
+        m_ExtraPrecisionCached{} {
     
         if (add_point_options == AddPointOptions::OpenExistingWithSave) {
             return;
@@ -302,6 +304,9 @@ public:
 
         m_BenchmarkOrbit = other.m_BenchmarkOrbit;
 
+        m_DeltaPrecisionCached = other.m_DeltaPrecisionCached;
+        m_ExtraPrecisionCached = other.m_ExtraPrecisionCached;
+
         if constexpr (IncludeLA) {
             if (other.GetLaReference() != nullptr) {
                 m_LaReference = std::make_unique<LAReference<IterType, T, SubType, PExtras>>(
@@ -339,6 +344,9 @@ public:
         m_ReuseAllocations = std::move(other.m_ReuseAllocations);
 
         m_BenchmarkOrbit = other.m_BenchmarkOrbit;
+
+        m_DeltaPrecisionCached = other.m_DeltaPrecisionCached;
+        m_ExtraPrecisionCached = other.m_ExtraPrecisionCached;
 
         // compression - don't copy LA data.  Regenerate if needed.
     }
@@ -1027,6 +1035,22 @@ public:
         out.close();
     }
 
+    void GetIntermediatePrecision(
+        int64_t &deltaPrecision,
+        int64_t &extraPrecision) const {
+
+        deltaPrecision = m_DeltaPrecisionCached;
+        extraPrecision = m_ExtraPrecisionCached;
+    }
+
+    void SetIntermediateCachedPrecision(
+        int64_t deltaPrecision,
+        int64_t extraPrecision) {
+
+        m_DeltaPrecisionCached = deltaPrecision;
+        m_ExtraPrecisionCached = extraPrecision;
+    }
+
 private:
     void CloseMetaFileIfOpen() const {
         if (m_MetaFileHandle != INVALID_HANDLE_VALUE) {
@@ -1081,6 +1105,9 @@ private:
     std::unique_ptr<GrowableVector<uint8_t>> m_ReuseAllocations;
 
     BenchmarkData m_BenchmarkOrbit;
+
+    int64_t m_DeltaPrecisionCached;
+    int64_t m_ExtraPrecisionCached;
 };
 
 template<typename IterType, class T, PerturbExtras PExtras>

@@ -1583,7 +1583,9 @@ void MenuGetCurPos(HWND hWnd)
         std::string("Compression error exp = ") + std::to_string(details.CompressionErrorExp) + "\r\n" +
         std::string("CompressedIntermediateIters = ") + std::to_string(details.CompressedIntermediateIters) + "\r\n" +
         std::string("Reuse compression error exp = ") + std::to_string(details.IntermediateCompressionErrorExp) + "\r\n" +
-        std::string("Reuse compression ratio = ") + std::to_string((double)details.UncompressedIters / (double)details.CompressedIntermediateIters) + "\r\n";
+        std::string("Reuse compression ratio = ") + std::to_string((double)details.UncompressedIters / (double)details.CompressedIntermediateIters) + "\r\n" +
+        std::string("DeltaIntermediatePrecision = ") + std::to_string(details.DeltaIntermediatePrecision) + "\r\n" +
+        std::string("ExtraIntermediatePrecision = ") + std::to_string(details.ExtraIntermediatePrecision) + "\r\n";
 
     const auto &laParameters = gFractal->GetLAParameters();
     const auto threadingVal = laParameters.GetThreading();

@@ -834,6 +834,48 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
     ShutdownAllocatorsIfNeeded<Reuse>(boundedAllocator, bumpAllocator);
 }
 
+void RefOrbitCalc::GetEstimatedPrecision(
+    uint64_t authoritativePrecisionInBits,
+    int64_t& deltaPrecision,
+    int64_t& extraPrecision) const {
+
+    const int64_t NewPrec = m_Fractal.GetPrecision(
+        m_Fractal.GetMinX(),
+        m_Fractal.GetMinY(),
+        m_Fractal.GetMaxX(),
+        m_Fractal.GetMaxY(),
+        RequiresReuse());
+    deltaPrecision = NewPrec - authoritativePrecisionInBits;
+    extraPrecision = static_cast<int64_t>(AuthoritativeReuseExtraPrecisionInBits - AuthoritativeMinExtraPrecisionInBits);
+}
+
+template<typename IterType, class T>
+bool RefOrbitCalc::GetReuseResults(
+    std::vector<std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::Disable>>>& perturbationResultsArray,
+    const PerturbationResults<IterType, T, PerturbExtras::Disable> & existingAuthoritativeResults,
+    PerturbationResults<IterType, T, PerturbExtras::Disable> *&outResults) const {
+
+    int64_t deltaPrecision;
+    int64_t extraPrecision;
+    GetEstimatedPrecision(
+        existingAuthoritativeResults.GetAuthoritativePrecisionInBits(),
+        deltaPrecision,
+        extraPrecision);
+
+    // This all generally works and only starts to suffer precision problems after
+    // about 2^AuthoritativeReuseExtraPrecisionInBits. The problem naturally is the original
+    // reference orbit is calculated only to so many digits.
+    if (deltaPrecision >= extraPrecision) {
+        //::MessageBox(nullptr, L"Regenerating authoritative orbit is required", L"", MB_OK | MB_APPLMODAL);
+        perturbationResultsArray.pop_back();
+        return false;
+    }
+
+    outResults = perturbationResultsArray[perturbationResultsArray.size() - 1].get();
+    outResults->SetIntermediateCachedPrecision(deltaPrecision, extraPrecision);
+    return true;
+}
+
 template<
     typename IterType,
     class T,
@@ -855,24 +897,12 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
         return false;
     }
 
-    auto* results = PerturbationResultsArray[PerturbationResultsArray.size() - 1].get();
-
-    const int64_t NewPrec = m_Fractal.GetPrecision(
-        m_Fractal.GetMinX(),
-        m_Fractal.GetMinY(),
-        m_Fractal.GetMaxX(),
-        m_Fractal.GetMaxY(),
-        RequiresReuse());
-    const int64_t existingPrecision = existingResults->GetAuthoritativePrecisionInBits();
-    const int64_t deltaPrecision = NewPrec - existingPrecision;
-    const int64_t extraPrecision = static_cast<int64_t>(AuthoritativeReuseExtraPrecisionInBits - AuthoritativeMinExtraPrecisionInBits);
-
-    // This all generally works and only starts to suffer precision problems after
-    // about 10^AuthoritativeReuseExtraPrecisionInBits. The problem naturally is the original
-    // reference orbit is calculated only to so many digits.
-    if(deltaPrecision >= extraPrecision) {
-        //::MessageBox(nullptr, L"Regenerating authoritative orbit is required", L"", MB_OK | MB_APPLMODAL);
-        PerturbationResultsArray.pop_back();
+    PerturbationResults<IterType, T, PerturbExtras::Disable>* results = nullptr;
+    bool reuse = GetReuseResults<IterType, T>(
+        PerturbationResultsArray,
+        *existingResults,
+        results);
+    if (!reuse) {
         return false;
     }
 
@@ -1147,24 +1177,12 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
         return false;
     }
 
-    auto* results = PerturbationResultsArray[PerturbationResultsArray.size() - 1].get();
-
-    const int64_t NewPrec = m_Fractal.GetPrecision(
-        m_Fractal.GetMinX(),
-        m_Fractal.GetMinY(),
-        m_Fractal.GetMaxX(),
-        m_Fractal.GetMaxY(),
-        RequiresReuse());
-    const int64_t existingPrecision = existingResults->GetAuthoritativePrecisionInBits();
-    const int64_t deltaPrecision = NewPrec - existingPrecision;
-    const int64_t extraPrecision = static_cast<int64_t>(AuthoritativeReuseExtraPrecisionInBits - AuthoritativeMinExtraPrecisionInBits);
-
-    // This all generally works and only starts to suffer precision problems after
-    // about 10^AuthoritativeReuseExtraPrecisionInBits. The problem naturally is the original
-    // reference orbit is calculated only to so many digits.
-    if (deltaPrecision >= extraPrecision) {
-        //::MessageBox(nullptr, L"Regenerating authoritative orbit is required", L"", MB_OK | MB_APPLMODAL);
-        PerturbationResultsArray.pop_back();
+    PerturbationResults<IterType, T, PerturbExtras::Disable>* results = nullptr;
+    bool reuse = GetReuseResults<IterType, T>(
+        PerturbationResultsArray,
+        *existingResults,
+        results);
+    if (!reuse) {
         return false;
     }
 
@@ -2947,6 +2965,10 @@ void RefOrbitCalc::GetSomeDetails(RefOrbitDetails &details) const {
                 LASize = arg->GetLaReference()->GetLAs().GetSize();
             }
 
+            int64_t deltaPrecisionCached = 0;
+            int64_t extraPrecisionCached = 0;
+            arg->GetIntermediatePrecision(deltaPrecisionCached, extraPrecisionCached);
+
             details = {
                 arg->GetPeriodMaybeZero(),
                 arg->GetCompressedOrbitSize(),
@@ -2954,6 +2976,8 @@ void RefOrbitCalc::GetSomeDetails(RefOrbitDetails &details) const {
                 arg->GetReuseSize(),
                 arg->GetCompressionErrorExp(),
                 arg->GetIntermediateCompressionErrorExp(),
+                deltaPrecisionCached,
+                extraPrecisionCached,
                 arg->GetBenchmarkOrbit(),
                 LAMilliseconds,
                 LASize,

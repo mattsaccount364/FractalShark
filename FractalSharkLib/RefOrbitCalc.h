@@ -162,6 +162,19 @@ private:
         std::unique_ptr<MPIRBoundedAllocator>& boundedAllocator,
         std::unique_ptr<MPIRBumpAllocator>& bumpAllocator);
 
+    template<
+        typename IterType,
+        class T>
+    bool GetReuseResults(
+        std::vector<std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::Disable>>>& perturbationResultsArray,
+        const PerturbationResults<IterType, T, PerturbExtras::Disable>& existingAuthoritativeResults,
+        PerturbationResults<IterType, T, PerturbExtras::Disable>*& outResults) const;
+
+    void GetEstimatedPrecision(
+        uint64_t authoritativePrecisionInBits,
+        int64_t& deltaPrecision,
+        int64_t& extraPrecision) const;
+
     class ScopedAffinity {
     public:
         ScopedAffinity(

@@ -287,7 +287,8 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
     case 'E':
     case 'e':
         gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-        gFractal->SetCompressionErrorExp();
+        gFractal->DefaultCompressionErrorExp(Fractal::CompressionError::Low);
+        gFractal->DefaultCompressionErrorExp(Fractal::CompressionError::Intermediate);
         PaintAsNecessary(hWnd);
         break;
 
@@ -360,6 +361,13 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
     case 'q':
     case 'Q':
         gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+        if (shiftDown) {
+            gFractal->DecCompressionError(Fractal::CompressionError::Intermediate);
+        }
+        else {
+            gFractal->IncCompressionError(Fractal::CompressionError::Intermediate);
+        }
+        PaintAsNecessary(hWnd);
         break;
 
     case 'R':
@@ -385,10 +393,10 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
     case 'w':
         gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
         if (shiftDown) {
-            gFractal->DecCompressionError();
+            gFractal->DecCompressionError(Fractal::CompressionError::Low);
         }
         else {
-            gFractal->IncCompressionError();
+            gFractal->IncCompressionError(Fractal::CompressionError::Low);
         }
         PaintAsNecessary(hWnd);
         break;
@@ -1560,35 +1568,22 @@ void MenuGetCurPos(HWND hWnd)
     s = setupSS(reducedPrecZF);
     auto zoomFactorStr = std::string(s.begin(), s.end());
 
-    uint64_t InternalPeriodMaybeZero;
-    uint64_t CompressedIters;
-    uint64_t UncompressedIters;
-    int32_t CompressionErrorExp;
-    uint64_t OrbitMilliseconds;
-    uint64_t LAMilliseconds;
-    uint64_t LASize;
-    std::string PerturbationAlg;
+    RefOrbitDetails details;
+    gFractal->GetSomeDetails(details);
 
-    gFractal->GetSomeDetails(
-        InternalPeriodMaybeZero,
-        CompressedIters,
-        UncompressedIters,
-        CompressionErrorExp,
-        OrbitMilliseconds,
-        LAMilliseconds,
-        LASize,
-        PerturbationAlg);
-
-    auto ActualPeriodIfAny = (InternalPeriodMaybeZero > 0) ? (InternalPeriodMaybeZero - 1) : 0;
+    auto ActualPeriodIfAny = (details.InternalPeriodMaybeZero > 0) ? (details.InternalPeriodMaybeZero - 1) : 0;
 
     const auto additionalDetailsStr =
-        std::string("PerturbationAlg = ") + PerturbationAlg + "\r\n" +
-        std::string("InternalPeriodIfAny = ") + std::to_string(InternalPeriodMaybeZero) + "\r\n" +
+        std::string("PerturbationAlg = ") + details.PerturbationAlg + "\r\n" +
+        std::string("InternalPeriodIfAny = ") + std::to_string(details.InternalPeriodMaybeZero) + "\r\n" +
         std::string("ActualPeriodIfAny = ") + std::to_string(ActualPeriodIfAny) + "\r\n" +
-        std::string("CompressedIters = ") + std::to_string(CompressedIters) + "\r\n" +
-        std::string("UncompressedIters = ") + std::to_string(UncompressedIters) + "\r\n" +
-        std::string("Compression ratio = ") + std::to_string((double)UncompressedIters / (double)CompressedIters) + "\r\n" +
-        std::string("Compression error exp = ") + std::to_string(CompressionErrorExp) + "\r\n";
+        std::string("CompressedIters = ") + std::to_string(details.CompressedIters) + "\r\n" +
+        std::string("UncompressedIters = ") + std::to_string(details.UncompressedIters) + "\r\n" +
+        std::string("Compression ratio = ") + std::to_string((double)details.UncompressedIters / (double)details.CompressedIters) + "\r\n" +
+        std::string("Compression error exp = ") + std::to_string(details.CompressionErrorExp) + "\r\n" +
+        std::string("CompressedIntermediateIters = ") + std::to_string(details.CompressedIntermediateIters) + "\r\n" +
+        std::string("Reuse compression error exp = ") + std::to_string(details.IntermediateCompressionErrorExp) + "\r\n" +
+        std::string("Reuse compression ratio = ") + std::to_string((double)details.UncompressedIters / (double)details.CompressedIntermediateIters) + "\r\n";
 
     const auto &laParameters = gFractal->GetLAParameters();
     const auto threadingVal = laParameters.GetThreading();
@@ -1621,13 +1616,13 @@ void MenuGetCurPos(HWND hWnd)
         std::string("LA Threading: ")
             + threadingStr + "\r\n" +
         std::string("LA size: ")
-            + std::to_string(LASize) + "\r\n";
+            + std::to_string(details.LASize) + "\r\n";
 
     const auto benchmarkData =
         std::string("Overall time (ms) = ") + std::to_string(gFractal->GetBenchmarkOverall().GetDeltaInMs()) + "\r\n" +
         std::string("Per pixel (ms) = ") + std::to_string(gFractal->GetBenchmarkPerPixel().GetDeltaInMs()) + "\r\n" +
-        std::string("RefOrbit time (ms) = ") + std::to_string(OrbitMilliseconds) + "\r\n" +
-        std::string("LA generation time (ms) = ") + std::to_string(LAMilliseconds) + "\r\n";
+        std::string("RefOrbit time (ms) = ") + std::to_string(details.OrbitMilliseconds) + "\r\n" +
+        std::string("LA generation time (ms) = ") + std::to_string(details.LAMilliseconds) + "\r\n";
 
     snprintf(
         mem,

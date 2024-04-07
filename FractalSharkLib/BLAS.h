@@ -42,5 +42,5 @@ private:
     std::vector<size_t> m_ElementsPerLevel;
 
     PerturbationResults<IterType, T, PExtras>& m_PerturbationResults;
-    std::unique_ptr<CompressionHelper<IterType, T, PExtras>> m_CompressionHelper;
+    std::unique_ptr<RuntimeDecompressor<IterType, T, PExtras>> m_CompressionHelper;
 };

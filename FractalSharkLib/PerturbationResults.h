@@ -40,8 +40,8 @@ public:
     template<class LocalSubType>
     using HDRFloatComplex = TemplateHelpers::template HDRFloatComplex<LocalSubType>;
 
-    friend class CompressionHelper<IterType, T, PExtras>;
-    friend class IntermediateCompressionHelper<IterType, T, PExtras>;
+    friend class RuntimeDecompressor<IterType, T, PExtras>;
+    friend class IntermediateRuntimeDecompressor<IterType, T, PExtras>;
     friend class RefOrbitCompressor<IterType, T, PExtras>;
     friend class IntermediateOrbitCompressor<IterType, T, PExtras>;
 
@@ -117,6 +117,7 @@ public:
         m_MaxIterations{},
         m_PeriodMaybeZero{},
         m_CompressionErrorExp{},
+        m_IntermediateCompressionErrorExp{},
         m_RefOrbitOptions{ add_point_options },
         m_BaseFilename{ base_filename },
         m_MetaFileHandle{ INVALID_HANDLE_VALUE },
@@ -267,6 +268,7 @@ public:
         m_MaxIterations = other.GetMaxIterations();
         m_PeriodMaybeZero = other.GetPeriodMaybeZero();
         m_CompressionErrorExp = other.GetCompressionErrorExp();
+        m_IntermediateCompressionErrorExp = other.GetIntermediateCompressionErrorExp();
 
         // m_RefOrbitOptions // Unchanged
         m_BaseFilename = GenBaseFilename(m_GenerationNumber);
@@ -322,7 +324,8 @@ public:
         m_MaxRadius = other.GetMaxRadius();
         m_MaxIterations = other.GetMaxIterations();
         m_PeriodMaybeZero = other.GetPeriodMaybeZero();
-        m_CompressionErrorExp = other.GetCompressionErrorExp();        
+        m_CompressionErrorExp = other.GetCompressionErrorExp();
+        m_IntermediateCompressionErrorExp = other.GetIntermediateCompressionErrorExp();
         m_RefOrbitOptions = other.GetRefOrbitOptions();
         m_BaseFilename = GenBaseFilename(m_GenerationNumber);
         m_MetaFileHandle = INVALID_HANDLE_VALUE;
@@ -403,6 +406,7 @@ public:
         metafile << "MaxIterationsPerPixel: " << m_MaxIterations << std::endl;
         metafile << "Period: " << m_PeriodMaybeZero << std::endl;
         metafile << "CompressionErrorExponent: " << m_CompressionErrorExp << std::endl;
+        metafile << "IntermediateCompressionErrorExponent: " << m_IntermediateCompressionErrorExp << std::endl;
         metafile << "UncompressedIterationsInOrbit: " << m_UncompressedItersInOrbit << std::endl;
 
         if (m_LaReference != nullptr &&
@@ -604,6 +608,13 @@ public:
         }
 
         {
+            std::string intermediateCompressionErrorStr;
+            metafile >> descriptor_string_junk;
+            metafile >> intermediateCompressionErrorStr;
+            m_IntermediateCompressionErrorExp = static_cast<int32_t>(std::stoll(intermediateCompressionErrorStr));
+        }
+
+        {
             std::string uncompressedItersInOrbitStr;
             metafile >> descriptor_string_junk;
             metafile >> uncompressedItersInOrbitStr;
@@ -629,7 +640,7 @@ public:
 
     template<class U = SubType>
     typename HDRFloatComplex<U> GetComplex(
-        CompressionHelper<IterType, T, PExtras> &PerThreadCompressionHelper,
+        RuntimeDecompressor<IterType, T, PExtras> &PerThreadCompressionHelper,
         size_t uncompressed_index) const {
 
         if constexpr (PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::Bad) {
@@ -819,6 +830,10 @@ public:
         return m_CompressionErrorExp;
     }
 
+    int32_t GetIntermediateCompressionErrorExp() const {
+        return m_IntermediateCompressionErrorExp;
+    }
+
     AddPointOptions GetRefOrbitOptions() const {
         return m_RefOrbitOptions;
     }
@@ -841,10 +856,10 @@ public:
     // Take references to pointers to avoid copying.
     // Set the pointers to point at the specified index.
     void GetCompressedReuseEntries(
-        IntermediateCompressionHelper<IterType, T, PExtras>& PerThreadCompressionHelper,
+        IntermediateRuntimeDecompressor<IterType, T, PExtras>& PerThreadCompressionHelper,
         size_t uncompressed_index,
-        mpf_t *&x,
-        mpf_t *&y) const {
+        const mpf_t *&x,
+        const mpf_t *&y) const {
 
         PerThreadCompressionHelper.GetReuseEntries(
             uncompressed_index,
@@ -854,11 +869,11 @@ public:
 
     void GetUncompressedReuseEntries(
         size_t uncompressed_index,
-        const HighPrecisionT<HPDestructor::False>*& x,
-        const HighPrecisionT<HPDestructor::False>*& y) const {
+        const mpf_t*& x,
+        const mpf_t*& y) const {
 
-        x = &m_ReuseX[uncompressed_index];
-        y = &m_ReuseY[uncompressed_index];
+        x = m_ReuseX[uncompressed_index].backendRaw();
+        y = m_ReuseY[uncompressed_index].backendRaw();
     }
 
     IterType GetMaxIterations() const {
@@ -981,6 +996,7 @@ public:
         out << "m_MaxIterations: " << m_MaxIterations << std::endl;
         out << "m_PeriodMaybeZero: " << m_PeriodMaybeZero << std::endl;
         out << "m_CompressionErrorExp: " << m_CompressionErrorExp << std::endl;
+        out << "m_IntermediateCompressionErrorExp: " << m_IntermediateCompressionErrorExp << std::endl;
         out << "m_RefOrbitOptions: " << static_cast<int>(m_RefOrbitOptions) << std::endl;
         out << "m_FullOrbit: " << m_FullOrbit.GetSize() << std::endl;
         out << "m_UncompressedItersInOrbit: " << m_UncompressedItersInOrbit << std::endl;
@@ -1046,6 +1062,7 @@ private:
     IterType m_MaxIterations;
     IterType m_PeriodMaybeZero;  // Zero if not worked out
     int32_t m_CompressionErrorExp;
+    int32_t m_IntermediateCompressionErrorExp;
 
     AddPointOptions m_RefOrbitOptions;
     std::wstring m_BaseFilename;
@@ -1076,7 +1093,7 @@ class RefOrbitCompressor : public TemplateHelpers<IterType, T, PExtras> {
     template<class LocalSubType>
     using HDRFloatComplex = TemplateHelpers::template HDRFloatComplex<LocalSubType>;
 
-    friend class CompressionHelper<IterType, T, PExtras>;
+    friend class RuntimeDecompressor<IterType, T, PExtras>;
 
     PerturbationResults<IterType, T, PExtras> &results;
     T zx;
@@ -1147,7 +1164,7 @@ class IntermediateOrbitCompressor : public TemplateHelpers<IterType, T, PExtras>
     template<class LocalSubType>
     using HDRFloatComplex = TemplateHelpers::template HDRFloatComplex<LocalSubType>;
 
-    friend class CompressionHelper<IterType, T, PExtras>;
+    friend class RuntimeDecompressor<IterType, T, PExtras>;
 
     PerturbationResults<IterType, T, PExtras>& results;
     mpf_t zx;
@@ -1159,7 +1176,7 @@ class IntermediateOrbitCompressor : public TemplateHelpers<IterType, T, PExtras>
     mpf_t ReducedZx;
     mpf_t ReducedZy;
     mpf_t Temp[6];
-    int32_t CompressionErrorExp;
+    int32_t IntermediateCompressionErrorExp;
     IterTypeFull CurCompressedIndex;
 
 public:
@@ -1176,8 +1193,10 @@ public:
         ReducedZx{},
         ReducedZy{},
         Temp{},
-        CompressionErrorExp{},
+        IntermediateCompressionErrorExp{},
         CurCompressedIndex{} {
+
+        // This code can run even if compression is disabled, but it doesn't matter.
 
         mpf_init2(zx, AuthoritativeReuseExtraPrecisionInBits);
         mpf_set(zx, *results.GetHiX().backendRaw());
@@ -1194,6 +1213,8 @@ public:
         mpf_init2(Two, AuthoritativeReuseExtraPrecisionInBits);
         mpf_set_d(Two, 2);
 
+        results.m_IntermediateCompressionErrorExp = CompressionErrorExp;
+
         mpf_init2(CompressionError, AuthoritativeReuseExtraPrecisionInBits);
         mpf_set_d(CompressionError, std::pow(10, CompressionErrorExp));
 
@@ -1203,9 +1224,6 @@ public:
         for (size_t i = 0; i < 6; i++) {
             mpf_init2(Temp[i], AuthoritativeReuseExtraPrecisionInBits);
         }
-
-        // This code can run even if compression is disabled, but it doesn't matter.
-        results.m_CompressionErrorExp = CompressionErrorExp;
     }
 
     ~IntermediateOrbitCompressor() {
@@ -1224,12 +1242,12 @@ public:
     }
 
     void MaybeAddCompressedIteration(
-        const HighPrecision &incomingZx,
-        const HighPrecision &incomingZy,
+        mpf_t incomingZx,
+        mpf_t incomingZy,
         IterTypeFull index) {
 
-        mpf_set(ReducedZx, *incomingZx.backendRaw());
-        mpf_set(ReducedZy, *incomingZy.backendRaw());
+        mpf_set(ReducedZx, incomingZx);
+        mpf_set(ReducedZy, incomingZy);
 
         {
             // auto errX = zx - ReducedZx;
@@ -1289,5 +1307,13 @@ public:
             mpf_mul(zy, Temp[2], zy);
             mpf_add(zy, zy, cy);
         }
+    }
+
+    void MaybeAddCompressedIteration(
+        const HighPrecision &incomingZx,
+        const HighPrecision &incomingZy,
+        IterTypeFull index) {
+
+        MaybeAddCompressedIteration(*incomingZx.backendRaw(), *incomingZy.backendRaw(), index);
     }
 };

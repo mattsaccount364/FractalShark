@@ -357,7 +357,6 @@ void check_size() {
 }
 
 
-// Amount of extra precision before forcing a full-precision recalculation
 // Roughly 25 digits = 83 bits = 25*3.321.  MPIR will round up anyway.
 constexpr size_t AuthoritativeMinExtraPrecisionInBits = 83;
 

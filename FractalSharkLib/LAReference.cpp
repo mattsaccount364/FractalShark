@@ -31,7 +31,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbit(
     const PerturbationResults<IterType, PerturbType, PExtras>& PerturbationResults,
     IterType maxRefIteration) {
 
-    auto compressionHelper{ std::make_unique<CompressionHelper<IterType, Float, PExtras>>(PerturbationResults) };
+    auto compressionHelper{ std::make_unique<RuntimeDecompressor<IterType, Float, PExtras>>(PerturbationResults) };
 
     {
         m_IsValid = false;
@@ -228,7 +228,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
     const PerturbationResults<IterType, PerturbType, PExtras>& PerturbationResults,
     IterType maxRefIteration) {
 
-    auto compressionHelper{ std::make_unique<CompressionHelper<IterType, Float, PExtras>> (PerturbationResults) };
+    auto compressionHelper{ std::make_unique<RuntimeDecompressor<IterType, Float, PExtras>> (PerturbationResults) };
 
     // This is not supported.
     if (m_AddPointOptions == AddPointOptions::OpenExistingWithSave) {
@@ -412,7 +412,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
             this
         ]() {
 
-        auto compressionHelper{ std::make_unique<CompressionHelper<IterType, Float, PExtras>>(PerturbationResults) };
+        auto compressionHelper{ std::make_unique<RuntimeDecompressor<IterType, Float, PExtras>>(PerturbationResults) };
 
         const auto threadBoundary = maxRefIteration / ThreadCount;
 
@@ -508,7 +508,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
             this
         ](uint32_t ThreadID) {
 
-        auto compressionHelper{ std::make_unique<CompressionHelper<IterType, Float, PExtras>>(PerturbationResults) };
+        auto compressionHelper{ std::make_unique<RuntimeDecompressor<IterType, Float, PExtras>>(PerturbationResults) };
 
         auto NextThread = ThreadID + 1;
         const auto LastThread = ThreadCount - 1;
@@ -809,7 +809,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateNewLAStage(
 
     IterType Period = 0;
 
-    auto compressionHelper{ std::make_unique<CompressionHelper<IterType, Float, PExtras>>(PerturbationResults) };
+    auto compressionHelper{ std::make_unique<RuntimeDecompressor<IterType, Float, PExtras>>(PerturbationResults) };
 
     if (PrevStage > MaxLAStages) {
         ::MessageBox(nullptr, L"Too many stages :(", L"", MB_OK | MB_APPLMODAL);

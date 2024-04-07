@@ -43,6 +43,19 @@
 template<typename IterType, class T, class SubType, PerturbExtras PExtras>
 class LAReference;
 
+struct RefOrbitDetails {
+    uint64_t InternalPeriodMaybeZero;
+    uint64_t CompressedIters;
+    uint64_t UncompressedIters;
+    uint64_t CompressedIntermediateIters;
+    int32_t CompressionErrorExp;
+    int32_t IntermediateCompressionErrorExp;
+    uint64_t OrbitMilliseconds;
+    uint64_t LAMilliseconds;
+    uint64_t LASize;
+    std::string PerturbationAlg;
+};
+
 class Fractal
 {
 public:
@@ -120,12 +133,23 @@ public:
     inline void SetRenderAlgorithm(RenderAlgorithm alg) { m_RenderAlgorithm = alg; }
     const char *GetRenderAlgorithmName() const;
 
-    static constexpr int32_t DefaultCompressionExp = 18;
-    float GetCompressionError() const;
-    int32_t GetCompressionErrorExp() const;
-    void IncCompressionError();
-    void DecCompressionError();
-    void SetCompressionErrorExp(int32_t CompressionExp = DefaultCompressionExp);
+    enum class CompressionError : size_t {
+        Low,
+        Intermediate,
+        Num
+    };
+
+    static constexpr int32_t DefaultCompressionExp[] = {
+        18,
+        250 // Alternative: (AuthoritativeReuseExtraPrecisionInBits / 8)
+    };
+
+    double GetCompressionError(enum class CompressionError) const;
+    int32_t GetCompressionErrorExp(enum class CompressionError) const;
+    void IncCompressionError(enum class CompressionError);
+    void DecCompressionError(enum class CompressionError);
+    void SetCompressionErrorExp(enum class CompressionError, int32_t CompressionExp);
+    void DefaultCompressionErrorExp(enum class CompressionError);
 
     inline uint32_t GetGpuAntialiasing(void) const { return m_GpuAntialiasing; }
     inline uint32_t GetIterationPrecision(void) const { return m_IterationPrecision; }
@@ -182,24 +206,8 @@ public:
     inline size_t GetRenderWidth(void) const { return m_ScrnWidth; }
     inline size_t GetRenderHeight(void) const { return m_ScrnHeight; }
 
-    void GetSomeDetails(
-        uint64_t& InternalPeriodMaybeZero,
-        uint64_t& CompressedIters,
-        uint64_t& UncompressedIters,
-        int32_t& CompressionErrorExp,
-        uint64_t& OrbitMilliseconds,
-        uint64_t& LAMilliseconds,
-        uint64_t& LASize,
-        std::string &PerturbationAlg) {
-        m_RefOrbit.GetSomeDetails(
-            InternalPeriodMaybeZero,
-            CompressedIters,
-            UncompressedIters,
-            CompressionErrorExp,
-            OrbitMilliseconds,
-            LAMilliseconds,
-            LASize,
-            PerturbationAlg);
+    void GetSomeDetails(RefOrbitDetails &details) const {
+        m_RefOrbit.GetSomeDetails(details);
     }
 
     void SetResultsAutosave(AddPointOptions Enable);
@@ -397,8 +405,8 @@ private:
     BYTE m_ProcessPixelRow[BrokenMaxFractalSize];
 
     // Reference compression
-    int32_t m_CompressionExp;
-    float m_CompressionError;
+    int32_t m_CompressionExp[static_cast<size_t>(CompressionError::Num)];
+    double m_CompressionError[static_cast<size_t>(CompressionError::Num)];
 
     // GPU rendering
     GPURenderer m_r;

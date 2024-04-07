@@ -8,6 +8,7 @@
 #include <vector>
 
 class Fractal;
+struct RefOrbitDetails;
 
 template<typename IterType, class T, PerturbExtras PExtras>
 class PerturbationResults;
@@ -109,15 +110,7 @@ public:
     void SaveAllOrbits();
     void LoadAllOrbits();
 
-    void GetSomeDetails(
-        uint64_t &InternalPeriodMaybeZero,
-        uint64_t &CompressedIters,
-        uint64_t &UncompressedIters,
-        int32_t &CompressionErrorExp,
-        uint64_t &OrbitMilliseconds,
-        uint64_t &LAMilliseconds,
-        uint64_t &LASize,
-        std::string &PerturbationAlg);
+    void GetSomeDetails(RefOrbitDetails &details) const;
     void SaveOrbitAsText() const;
 
     void DrawPerturbationResults();
@@ -135,10 +128,10 @@ private:
     template<typename IterType, class T, PerturbExtras PExtras>
     PerturbationResults<IterType, T, PExtras>& GetPerturbationResults(size_t index);
 
-    template<typename IterType, class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState>
+    template<typename IterType, class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, ReuseMode Reuse>
     bool AddPerturbationReferencePointSTReuse(HighPrecision initX, HighPrecision initY);
 
-    template<typename IterType, class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState>
+    template<typename IterType, class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, ReuseMode Reuse>
     bool AddPerturbationReferencePointMT3Reuse(HighPrecision initX, HighPrecision initY);
 
     template<typename IterType, class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, PerturbExtras PExtras, ReuseMode Reuse>

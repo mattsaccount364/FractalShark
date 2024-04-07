@@ -671,14 +671,15 @@ void Fractal::InitialDefaultViewAndSettings(int width, int height) {
     SetRenderAlgorithm(RenderAlgorithm::AUTO);
 
     SetIterationPrecision(1);
-    m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed);
-    //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed);
-    // m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3);
+    //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed);
+    //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed1);
+    m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::Auto);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::STPeriodicity);
     m_RefOrbit.ResetGuess();
 
-    SetCompressionErrorExp();
+    DefaultCompressionErrorExp(CompressionError::Low);
+    DefaultCompressionErrorExp(CompressionError::Intermediate);
     if (width != 0 && height != 0) {
         ResetDimensions(width, height, 1);
     }
@@ -983,7 +984,8 @@ void Fractal::View(size_t view)
     ResetDimensions(MAXSIZE_T, MAXSIZE_T, 1);
 
     // Reset to default reference compression if applicable
-    SetCompressionErrorExp();
+    DefaultCompressionErrorExp(CompressionError::Low);
+    DefaultCompressionErrorExp(CompressionError::Intermediate);
 
     switch (view) {
     case 1:
@@ -1294,7 +1296,7 @@ void Fractal::View(size_t view)
         minY = HighPrecision{ "0.258843760578193851766291691547748715299348571148609040920129594652828778695849190155002622224812073888468037993123944" };
         maxX = HighPrecision{ "-0.70862955989319937346224936117162744514799710717496754578203159009350016117537665689062408950527358545539304236349863" };
         maxY = HighPrecision{ "0.258843760578193851766291691547748715299348571148609040920340427370810926544385191871426814029226476053584030974625928" };
-        SetCompressionErrorExp(20);
+        SetCompressionErrorExp(Fractal::CompressionError::Low, 20);
         SetIterType(IterTypeEnum::Bits64);
         SetNumIterations<IterTypeFull>(1'000'000'000'000'000);
         break;
@@ -1700,39 +1702,55 @@ const char *Fractal::GetRenderAlgorithmName() const {
     return RenderAlgorithmStr[static_cast<size_t>(GetRenderAlgorithm())];
 }
 
-float Fractal::GetCompressionError() const {
-    return m_CompressionError;
+double Fractal::GetCompressionError(enum class CompressionError err) const {
+    return m_CompressionError[static_cast<size_t>(err)];
 }
 
-int32_t Fractal::GetCompressionErrorExp() const {
-    return m_CompressionExp;
+int32_t Fractal::GetCompressionErrorExp(enum class CompressionError err) const {
+    return m_CompressionExp[static_cast<size_t>(err)];
 }
 
-void Fractal::IncCompressionError() {
-    m_CompressionExp++;
-    m_CompressionError = static_cast<float>(std::pow(10.0, m_CompressionExp));
-    ChangedMakeDirty();
-}
-
-void Fractal::DecCompressionError() {
-    if (m_CompressionExp <= 1) {
+void Fractal::IncCompressionError(enum class CompressionError err) {
+    // Roughly 1.0e300 is the maximum value we can have
+    size_t errIndex = static_cast<size_t>(err);
+    if (m_CompressionExp[errIndex] >= 300) {
         return;
     }
 
-    m_CompressionExp--;
-    m_CompressionError = static_cast<float>(std::pow(10.0, m_CompressionExp));
+    m_CompressionExp[errIndex]++;
+    m_CompressionError[errIndex] = std::pow(10.0, m_CompressionExp[errIndex]);
     ChangedMakeDirty();
 }
 
-void Fractal::SetCompressionErrorExp(int32_t CompressionExp) {
-    m_CompressionExp = CompressionExp;
-    m_CompressionError = static_cast<float>(std::pow(10.0, m_CompressionExp));
-    ChangedMakeDirty();
-
-    if (m_CompressionExp >= 35) { // Roughly float exponent range
-        m_CompressionExp = 35;
+void Fractal::DecCompressionError(enum class CompressionError err) {
+    size_t errIndex = static_cast<size_t>(err);
+    if (m_CompressionExp[errIndex] <= 1) {
         return;
     }
+
+    m_CompressionExp[errIndex]--;
+    m_CompressionError[errIndex] = std::pow(10.0, m_CompressionExp[errIndex]);
+    ChangedMakeDirty();
+}
+
+void Fractal::SetCompressionErrorExp(enum class CompressionError err, int32_t CompressionExp) {
+    size_t errIndex = static_cast<size_t>(err);
+
+    // Roughly 1.0e300 is the maximum value we can have
+    if (CompressionExp >= 300) {
+        CompressionExp = 300;
+    }
+
+    m_CompressionExp[errIndex] = CompressionExp;
+    m_CompressionError[errIndex] = std::pow(10.0, m_CompressionExp[errIndex]);
+    ChangedMakeDirty();
+}
+
+void Fractal::DefaultCompressionErrorExp(enum class CompressionError err) {
+    size_t errIndex = static_cast<size_t>(err);
+    m_CompressionExp[errIndex] = DefaultCompressionExp[errIndex];
+    m_CompressionError[errIndex] = static_cast<float>(std::pow(10.0, m_CompressionExp[errIndex]));
+    ChangedMakeDirty();
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2961,7 +2979,7 @@ void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
 
     auto one_thread = [&]() {
         auto compressionHelper{
-            std::make_unique<CompressionHelper<IterType, double, PerturbExtras::Disable>>(PerturbationResults) };
+            std::make_unique<RuntimeDecompressor<IterType, double, PerturbExtras::Disable>>(PerturbationResults) };
 
         for (size_t y = 0; y < m_ScrnHeight * GetGpuAntialiasing(); y++) {
             if (atomics[y] != 0) {
@@ -3183,7 +3201,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
         //bool periodicity_should_break = false;
 
         auto compressionHelper{
-            std::make_unique<CompressionHelper<IterType, T, PerturbExtras::Disable>>(*results) };
+            std::make_unique<RuntimeDecompressor<IterType, T, PerturbExtras::Disable>>(*results) };
 
         for (size_t y = 0; y < m_ScrnHeight * GetGpuAntialiasing(); y++) {
             if (atomics[y] != 0) {
@@ -3430,7 +3448,7 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
 
     auto one_thread = [&]() {
         auto compressionHelper{
-            std::make_unique<CompressionHelper<IterType, T, PExtras>>(*results)};
+            std::make_unique<RuntimeDecompressor<IterType, T, PExtras>>(*results)};
 
         for (size_t y = 0; y < m_ScrnHeight * GetGpuAntialiasing(); y++) {
             if (atomics[y] != 0) {

@@ -213,28 +213,13 @@ void FractalTest::Benchmark(RefOrbitCalc::PerturbationResultType type) {
         m_Fractal.ForceRecalc();
         m_Fractal.CalcFractal(false);
 
-        uint64_t InternalPeriodMaybeZero;
-        uint64_t CompressedIters;
-        uint64_t UncompressedIters;
-        int32_t CompressionErrorExp;
-        uint64_t OrbitMilliseconds;
-        uint64_t LAMilliseconds;
-        uint64_t LASize;
-        std::string PerturbationAlg;
-        m_Fractal.GetSomeDetails(
-            InternalPeriodMaybeZero,
-            CompressedIters,
-            UncompressedIters,
-            CompressionErrorExp,
-            OrbitMilliseconds,
-            LAMilliseconds,
-            LASize,
-            PerturbationAlg);
+        RefOrbitDetails details;
+        m_Fractal.GetSomeDetails(details);
 
         overallTimes.push_back(m_Fractal.GetBenchmarkOverall().GetDeltaInMs());
         perPixelTimes.push_back(m_Fractal.GetBenchmarkPerPixel().GetDeltaInMs());
-        refOrbitTimes.push_back(OrbitMilliseconds);
-        LAGenerationTimes.push_back(LAMilliseconds);
+        refOrbitTimes.push_back(details.OrbitMilliseconds);
+        LAGenerationTimes.push_back(details.LAMilliseconds);
     }
 
     // Write benchmarkData to the file BenchmarkResults.txt.  Truncate

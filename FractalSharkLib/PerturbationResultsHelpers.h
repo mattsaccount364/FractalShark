@@ -32,7 +32,7 @@ template<typename IterType, class T, PerturbExtras PExtras>
 class GPUPerturbResults;
 
 template<typename IterType, class T, PerturbExtras PExtras>
-class CompressionHelper : public TemplateHelpers<IterType, T, PExtras> {
+class RuntimeDecompressor : public TemplateHelpers<IterType, T, PExtras> {
 public:
     using TemplateHelpers = TemplateHelpers<IterType, T, PExtras>;
     using SubType = TemplateHelpers::SubType;
@@ -40,14 +40,14 @@ public:
     template<class LocalSubType>
     using HDRFloatComplex = TemplateHelpers::template HDRFloatComplex<LocalSubType>;
 
-    CompressionHelper(const PerturbationResults<IterType, T, PExtras>& results) :
+    RuntimeDecompressor(const PerturbationResults<IterType, T, PExtras>& results) :
         results(results),
         CachedIter1{},
         CachedIter2{}
     {
     }
 
-    CompressionHelper(const CompressionHelper& other) = default;
+    RuntimeDecompressor(const RuntimeDecompressor& other) = default;
 
     template<class U>
     HDRFloatComplex<U> GetCompressedComplex(size_t uncompressed_index) const {
@@ -186,7 +186,7 @@ private:
 #ifndef __CUDACC__
 
 template<typename IterType, class T, PerturbExtras PExtras>
-class IntermediateCompressionHelper : public TemplateHelpers<IterType, T, PExtras> {
+class IntermediateRuntimeDecompressor : public TemplateHelpers<IterType, T, PExtras> {
 public:
     using TemplateHelpers = TemplateHelpers<IterType, T, PExtras>;
     using SubType = TemplateHelpers::SubType;
@@ -194,7 +194,7 @@ public:
     template<class LocalSubType>
     using HDRFloatComplex = TemplateHelpers::template HDRFloatComplex<LocalSubType>;
 
-    IntermediateCompressionHelper(const PerturbationResults<IterType, T, PExtras>& results) :
+    IntermediateRuntimeDecompressor(const PerturbationResults<IterType, T, PExtras>& results) :
         results(results),
         m_CachedIter{},
         cx{},
@@ -219,9 +219,9 @@ public:
         }
     }
 
-    IntermediateCompressionHelper(const IntermediateCompressionHelper& other) = default;
+    IntermediateRuntimeDecompressor(const IntermediateRuntimeDecompressor& other) = default;
 
-    ~IntermediateCompressionHelper() {
+    ~IntermediateRuntimeDecompressor() {
         mpf_clear(cx);
         mpf_clear(cy);
         mpf_clear(Two);
@@ -234,8 +234,8 @@ public:
 
     void GetReuseEntries(
         size_t uncompressed_index,
-        mpf_t *&outX,
-        mpf_t *&outY) const {
+        const mpf_t *&outX,
+        const mpf_t *&outY) const {
 
         auto runOneIter = [&](
             mpf_t zx,

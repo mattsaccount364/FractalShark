@@ -101,7 +101,7 @@ BEGIN
             MENUITEM "#9 - bug: scaled/BLA/32-bit failure", IDM_VIEW9
             MENUITEM "#10 - ~10^130, ~2b iterations", IDM_VIEW10
             MENUITEM "#11 - ~10^700 or so, ~3m iterations", IDM_VIEW11
-            MENUITEM "#12 - Nearby #11",            IDM_VIEW12
+            MENUITEM "#12 - Nearby #14",            IDM_VIEW12
             MENUITEM "#13 - ~10^4000, ~100m iterations, 16xAA", IDM_VIEW13
             MENUITEM "#14 - ~10^6000, ~2b iterations, 16xAA", IDM_VIEW14
             MENUITEM "#15 - ~10^140, high period",  IDM_VIEW15

@@ -155,8 +155,46 @@ void MPIRBoundedAllocator::NewFree(void* ptr, size_t /*size*/) {
 
 //////////////////////////////////////////////////////////////////////////
 
+ThreadMemory::ThreadMemory()
+    : m_Bump{ std::make_unique<GrowableVector<uint8_t>>(AddPointOptions::EnableWithoutSave, L"") },
+    m_FreedMemory{},
+    m_FreedMemorySize{} {
+}
+
+void* ThreadMemory::Allocate(size_t size) {
+    // Search the list in reverse order, so we find the most recently freed memory first.
+    for (size_t i = m_FreedMemory.size(); i-- > 0;) {
+        if (m_FreedMemorySize[i] >= size) {
+            void* ptr = m_FreedMemory[i];
+            m_FreedMemory.erase(m_FreedMemory.begin() + i);
+            m_FreedMemorySize.erase(m_FreedMemorySize.begin() + i);
+            return ptr;
+        }
+    }
+
+    // Round up size to nearest 64-byte multiple
+    size = (size + 63) & ~63;
+    m_Bump->GrowVectorIfNeeded();
+    m_Bump->MutableResize(m_Bump->GetSize() + size);
+    return m_Bump->GetData() + m_Bump->GetSize() - size;
+}
+
+void ThreadMemory::Free(void* ptr, size_t size) {
+    // Note: stores the pointer and size in a vector, so that we can reuse it later.
+    static constexpr size_t maxFreedMemory = 4;
+    size_t alignedSize = (size + 63) & ~63;
+    if (m_FreedMemory.size() >= maxFreedMemory) {
+        // Erase the first element and push the new one.
+        m_FreedMemory.erase(m_FreedMemory.begin());
+        m_FreedMemorySize.erase(m_FreedMemorySize.begin());
+    }
+
+    m_FreedMemory.push_back(ptr);
+    m_FreedMemorySize.push_back(alignedSize);
+}
+
 std::atomic<size_t> MPIRBumpAllocator::MaxAllocatedDebug = 0;
-std::unique_ptr<GrowableVector<uint8_t>> MPIRBumpAllocator::m_Allocated[NumAllocators];
+std::unique_ptr<ThreadMemory> MPIRBumpAllocator::m_Allocated[NumAllocators];
 thread_local uint64_t MPIRBumpAllocator::m_ThreadIndex;
 std::atomic<uint64_t> MPIRBumpAllocator::m_MaxIndex = 0;
 
@@ -175,6 +213,10 @@ MPIRBumpAllocator::~MPIRBumpAllocator() {
         ExistingMalloc,
         ExistingRealloc,
         ExistingFree);
+
+    for (size_t i = 0; i < NumAllocators; i++) {
+        m_Allocated[i].reset();
+    }
 
     InstalledBumpAllocator = false;
 }
@@ -203,7 +245,7 @@ void MPIRBumpAllocator::InitScopedAllocators() {
     // Index 0 is left uninitialized so that we can catch errors if a thread doesn't call InitTls.
     m_Allocated[0] = nullptr;
     for (size_t i = 1; i < NumAllocators; i++) {
-        m_Allocated[i] = std::make_unique<GrowableVector<uint8_t>>(AddPointOptions::EnableWithoutSave, L"");
+        m_Allocated[i] = std::make_unique<ThreadMemory>();
     }
 }
 
@@ -214,16 +256,13 @@ void MPIRBumpAllocator::InitTls() {
 }
 
 void MPIRBumpAllocator::ShutdownTls() {
-    if constexpr (DebugInstrument) {
-        if (m_Allocated[m_ThreadIndex]->GetSize() != 0) {
-            DebugBreak();
-        }
-    }
+    // Can we really check for leaks here given how we're using it?
+    // Whatever.  Be careful LOLZ
 
     m_Allocated[m_ThreadIndex].reset();
 }
 
-std::unique_ptr<GrowableVector<uint8_t>> MPIRBumpAllocator::GetAllocated(size_t index) {
+std::unique_ptr<ThreadMemory> MPIRBumpAllocator::GetAllocated(size_t index) {
     return std::move(m_Allocated[index]);
 }
 
@@ -232,15 +271,8 @@ size_t MPIRBumpAllocator::GetAllocatorIndex() {
 }
 
 void* MPIRBumpAllocator::NewMalloc(size_t size) {
-    // Round up size to nearest 64-byte multiple
-    size = (size + 63) & ~63;
-
-    auto curAllocator = m_Allocated[m_ThreadIndex].get();
-    curAllocator->GrowVectorIfNeeded();
-    curAllocator->MutableResize(curAllocator->GetSize() + size);
-    return curAllocator->GetData() + curAllocator->GetSize() - size;
-
-    //return malloc(size);
+    auto& curAllocator = *m_Allocated[m_ThreadIndex];
+    return curAllocator.Allocate(size);
 }
 
 void* MPIRBumpAllocator::NewRealloc(void* ptr, size_t old_size, size_t new_size) {
@@ -253,8 +285,11 @@ void* MPIRBumpAllocator::NewRealloc(void* ptr, size_t old_size, size_t new_size)
     //return realloc(ptr, new_size);
 }
 
-void MPIRBumpAllocator::NewFree(void* /*ptr*/, size_t /*size*/) {    
-    // Do nothing - leak it!
+void MPIRBumpAllocator::NewFree(void* ptr, size_t size) {
+    if (m_Allocated[m_ThreadIndex] != nullptr) {
+        auto& curAllocator = *m_Allocated[m_ThreadIndex];
+        curAllocator.Free(ptr, size);
+    }
 }
 
 MPIRPrecision::MPIRPrecision(size_t bits) : m_SavedBits(HighPrecision::defaultPrecisionInBits())

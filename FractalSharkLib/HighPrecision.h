@@ -302,6 +302,12 @@ public:
         return result;
     }
 
+    HighPrecisionT power(int32_t powToRaiseTo) {
+        HighPrecisionT result;
+        mpf_pow_ui(result.m_Data, m_Data, powToRaiseTo);
+        return result;
+    }
+
     const __mpf_struct *backend() const {
         return &m_Data[0];
     }
@@ -357,8 +363,9 @@ void check_size() {
 }
 
 
-// Roughly 25 digits = 83 bits = 25*3.321.  MPIR will round up anyway.
-constexpr size_t AuthoritativeMinExtraPrecisionInBits = 83;
+// Was 83: Roughly 25 digits = 83 bits = 25*3.321.  MPIR will round up anyway.
+// Set to 120 instead for better compression results.  Search for DefaultCompressionExp.
+constexpr size_t AuthoritativeMinExtraPrecisionInBits = 120;
 
 // Amount of precision used for medium-precision reference orbit in bits.
 // Nothing special about 800.  Just ensure it's bigger than the one above.

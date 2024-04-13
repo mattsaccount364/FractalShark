@@ -741,7 +741,7 @@ public:
     }
 
     template<PerturbExtras PExtras, RefOrbitCalc::ReuseMode Reuse>
-    void CompleteResults(std::unique_ptr<GrowableVector<uint8_t>> allocatorIfAny) {
+    void CompleteResults(std::unique_ptr<ThreadMemory> allocatorIfAny) {
         m_FullOrbit.Trim();
 
         if constexpr (
@@ -1102,7 +1102,7 @@ private:
     std::vector<HighPrecisionT<HPDestructor::False>> m_ReuseX;
     std::vector<HighPrecisionT<HPDestructor::False>> m_ReuseY;
     std::vector<IterTypeFull> m_ReuseIndices;
-    std::unique_ptr<GrowableVector<uint8_t>> m_ReuseAllocations;
+    std::unique_ptr<ThreadMemory> m_ReuseAllocations;
 
     BenchmarkData m_BenchmarkOrbit;
 
@@ -1243,7 +1243,8 @@ public:
         results.m_IntermediateCompressionErrorExp = CompressionErrorExp;
 
         mpf_init2(CompressionError, AuthoritativeReuseExtraPrecisionInBits);
-        mpf_set_d(CompressionError, std::pow(10, CompressionErrorExp));
+        mpf_set_d(CompressionError, 10);
+        mpf_pow_ui(CompressionError, CompressionError, CompressionErrorExp);
 
         mpf_init2(ReducedZx, AuthoritativeReuseExtraPrecisionInBits);
         mpf_init2(ReducedZy, AuthoritativeReuseExtraPrecisionInBits);

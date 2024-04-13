@@ -1,6 +1,7 @@
 #pragma once
 
 #include <mpir.h>
+#include <vector>
 
 // Forward declare GrowableVector
 template <typename T>
@@ -40,6 +41,19 @@ private:
     static void NewFree(void* ptr, size_t size);
 };
 
+class ThreadMemory {
+public:
+    ThreadMemory();
+
+    void* Allocate(size_t size);
+    void Free(void* ptr, size_t size);
+
+private:
+    std::unique_ptr<GrowableVector<uint8_t>> m_Bump;
+    std::vector<void*> m_FreedMemory;
+    std::vector<size_t> m_FreedMemorySize;
+};
+
 // Bump allocator backed by a GrowableVector
 class MPIRBumpAllocator {
 public:
@@ -50,7 +64,7 @@ public:
 
     static void InitTls();
     static void ShutdownTls();
-    static std::unique_ptr<GrowableVector<uint8_t>> GetAllocated(size_t index);
+    static std::unique_ptr<ThreadMemory> GetAllocated(size_t index);
     static size_t GetAllocatorIndex();
     static bool IsBumpAllocatorInstalled();
 
@@ -67,7 +81,7 @@ private:
     static void NewFree(void* ptr, size_t size);
 
     static constexpr size_t NumAllocators = 5;
-    static std::unique_ptr<GrowableVector<uint8_t>> m_Allocated[NumAllocators];
+    static std::unique_ptr<ThreadMemory> m_Allocated[NumAllocators];
     static thread_local uint64_t m_ThreadIndex;
     static std::atomic<uint64_t> m_MaxIndex;
 };

@@ -1731,7 +1731,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
         results->InitReused();
     }
 
-    std::unique_ptr<GrowableVector<uint8_t>> reusedAllocator;
+    std::unique_ptr<ThreadMemory> reusedAllocator;
 
     {
     mpf_t cx_mpf;

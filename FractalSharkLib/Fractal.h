@@ -143,10 +143,10 @@ public:
 
     static constexpr int32_t DefaultCompressionExp[] = {
         18,
-        250 // Alternative: (AuthoritativeReuseExtraPrecisionInBits / 8)
+        450 // Consider AuthoritativeMinExtraPrecisionInBits.  TODO: 450 is a guess.
     };
 
-    double GetCompressionError(enum class CompressionError) const;
+    const HighPrecision &GetCompressionError(enum class CompressionError) const;
     int32_t GetCompressionErrorExp(enum class CompressionError) const;
     void IncCompressionError(enum class CompressionError);
     void DecCompressionError(enum class CompressionError);
@@ -408,7 +408,7 @@ private:
 
     // Reference compression
     int32_t m_CompressionExp[static_cast<size_t>(CompressionError::Num)];
-    double m_CompressionError[static_cast<size_t>(CompressionError::Num)];
+    HighPrecision m_CompressionError[static_cast<size_t>(CompressionError::Num)];
 
     // GPU rendering
     GPURenderer m_r;

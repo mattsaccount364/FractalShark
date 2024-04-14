@@ -213,6 +213,7 @@
   <ItemGroup>
     <Image Include="..\FractalServer\ServerIcon.ico" />
     <Image Include="FractalShark.ico" />
+    <Image Include="FractalShark.png" />
     <Image Include="small.ico" />
   </ItemGroup>
   <ItemGroup>

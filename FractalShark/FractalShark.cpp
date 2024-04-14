@@ -4,6 +4,9 @@
 #include "FractalTest.h"
 #include "JobObject.h"
 
+#include <memory>
+#include "OpenGLContext.h"
+
 #include <Dbghelp.h>
 
 // Global Variables:
@@ -13,7 +16,6 @@ HINSTANCE hInst;                // current instance
 LPCWSTR szWindowClass = L"FractalWindow";
 HMENU gPopupMenu;
 bool gWindowed; // Says whether we are in windowed mode or not.
-HDC gHDC;
 
 // Fractal:
 std::unique_ptr<Fractal> gFractal;
@@ -53,6 +55,9 @@ struct SavedLocation {
 };
 
 std::vector<SavedLocation> gSavedLocations;
+
+void DrawFractalShark(HWND hWnd);
+void DrawFractalSharkGdi(HWND hWnd, int nCmdShow);
 
 // Controlling functions
 void MenuGoBack(HWND hWnd);
@@ -155,6 +160,105 @@ ATOM MyRegisterClass(HINSTANCE hInstance)
     return RegisterClassEx(&wcex);
 }
 
+void DrawFractalShark(HWND hWnd) {
+    auto glContext = std::make_unique<OpenGlContext>(hWnd);
+    if (!glContext->IsValid()) {
+        return;
+    }
+
+    glContext->DrawFractalShark(hWnd);
+}
+
+void DrawFractalSharkGdi(HWND hWnd, int nCmdShow) {
+    //image.loadImage("FractalShark.png");
+    // Get a pointer to the binary data in the IDB_PNG1 resource
+    HRSRC hRes = FindResource(hInst, MAKEINTRESOURCE(IDB_PNG_SPLASH), L"PNG");
+    if (hRes == nullptr) {
+        return;
+    }
+    
+    //  Convert the HRSRC into a pointer to the actual data
+    HGLOBAL hResData = LoadResource(hInst, hRes);
+    if (hResData == nullptr) {
+        return;
+    }
+
+    void* pResData = LockResource(hResData);
+    if (pResData == nullptr) {
+        return;
+    }
+
+    //  Get the size of the resource data
+    DWORD dwSize = SizeofResource(hInst, hRes);
+    if (dwSize == 0) {
+        return;
+    }
+
+    WPngImage image{};
+    image.loadImageFromRAM(pResData, dwSize, WPngImage::PixelFormat::kPixelFormat_RGBA8);
+
+    std::vector<uint8_t> imageBytes;
+    imageBytes.resize(image.width() * image.height() * 4);
+
+    for (int y = 0; y < image.height(); y++) {
+        for (int x = 0; x < image.width(); x++) {
+            auto pixel = image.get8(x, y);
+            imageBytes[(y * image.width() + x) * 4 + 0] = pixel.b;
+            imageBytes[(y * image.width() + x) * 4 + 1] = pixel.g;
+            imageBytes[(y * image.width() + x) * 4 + 2] = pixel.r;
+            imageBytes[(y * image.width() + x) * 4 + 3] = pixel.a;
+        }
+    }
+
+    RECT windowDimensions;
+    GetClientRect(hWnd, &windowDimensions);
+    
+    // Create a bitmap and render it to hWnd
+    HDC hdc = GetDC(hWnd);
+    HDC hdcMem = CreateCompatibleDC(hdc);
+    HBITMAP hBitmap = CreateBitmap(image.width(), image.height(), 1, 32, imageBytes.data());
+
+    // Render the bitmap to the window, scaling the bitmap down if needed.
+    // If it needs to be scaled up, just leave it at its original size.
+    SelectObject(hdcMem, hBitmap);
+
+    // Find the min width and height between the window and the bitmap, and render it up to that size
+    const int windowWidth = (int)windowDimensions.right;
+    const int windowHeight = (int)windowDimensions.bottom;
+
+    SetStretchBltMode(hdc, HALFTONE);
+    SetBrushOrgEx(hdc, 0, 0, nullptr);
+
+    // Clear the window with black
+    RECT rt;
+    GetClientRect(hWnd, &rt);
+    FillRect(hdc, &rt, (HBRUSH)GetStockObject(BLACK_BRUSH));
+
+    // Display!
+    ShowWindow(hWnd, nCmdShow);
+
+    // Given the image width and window dimensions, calculate the starting point for the image
+    // such that it ends up centered.
+    int startX = (windowWidth - image.width()) / 2;
+    int startY = (windowHeight - image.height()) / 2;
+
+    if (windowWidth < image.width() || windowHeight < image.height()) {
+        StretchBlt(hdc, 0, 0, windowWidth, windowHeight, hdcMem, 0, 0, image.width(), image.height(), SRCCOPY);
+    }
+    else {
+        // Center the image
+        BitBlt(hdc, startX, startY, image.width(), image.height(), hdcMem, 0, 0, SRCCOPY);
+    }
+
+    //ShowWindow(hWnd, nCmdShow);
+    //ShowWindow(hWnd, SW_RESTORE);
+
+    // Clean up
+    DeleteObject(hBitmap);
+    DeleteDC(hdcMem);
+    ReleaseDC(hWnd, hdc);
+}
+
 //
 //   PURPOSE: Saves instance handle and creates main window
 //
@@ -168,6 +272,7 @@ HWND InitInstance(HINSTANCE hInstance, int nCmdShow)
     hInst = hInstance;
 
     constexpr bool startWindowed = true;
+    constexpr bool finishWindowed = false;
     constexpr DWORD forceStartWidth = 0;
     constexpr DWORD forceStartHeight = 0;
 
@@ -204,16 +309,24 @@ HWND InitInstance(HINSTANCE hInstance, int nCmdShow)
         height = forceStartHeight;
     }
 
+    DWORD wndFlags = WS_POPUP | WS_THICKFRAME;
+
+    if (!startWindowed) {
+        wndFlags |= WS_MAXIMIZE;
+    }
+
     // Create the window
     HWND hWnd;
-    hWnd = CreateWindow(szWindowClass, L"", WS_POPUP | WS_THICKFRAME,
+    hWnd = CreateWindow(szWindowClass, L"", wndFlags,
         startX, startY, width, height,
         nullptr, nullptr, hInstance, nullptr);
 
-    if (!hWnd)
-    {
+    if (!hWnd) {
         return nullptr;
     }
+
+    // DrawFractalShark(hWnd);
+    DrawFractalSharkGdi(hWnd, nCmdShow);
 
     // Put us on top
     //SetWindowPos (hWnd, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE);
@@ -227,11 +340,9 @@ HWND InitInstance(HINSTANCE hInstance, int nCmdShow)
 
     gFractal = std::make_unique<Fractal>(rt.right, rt.bottom, hWnd, false);
 
-    // Display!
-    ShowWindow(hWnd, nCmdShow);
-
-    if constexpr (startWindowed == false) {
+    if constexpr (finishWindowed == false) {
         SendMessage(hWnd, WM_SYSCOMMAND, SC_MAXIMIZE, 0);
+        gWindowed = false;
     }
 
     return hWnd;
@@ -1392,16 +1503,14 @@ void MenuWindowed(HWND hWnd, bool square)
     if (gWindowed == false)
     {
         bool temporaryChange = false;
-        if (gFractal->GetRepaint() == true)
-        {
+        if (gFractal->GetRepaint() == true) {
             gFractal->SetRepaint(false);
             temporaryChange = true;
         }
 
         SendMessage(hWnd, WM_SYSCOMMAND, SC_RESTORE, 0);
 
-        if (temporaryChange == true)
-        {
+        if (temporaryChange == true) {
             gFractal->SetRepaint(true);
         }
 
@@ -1464,6 +1573,8 @@ void MenuWindowed(HWND hWnd, bool square)
             gFractal->ResetDimensions(rt.right, rt.bottom);
         }
     }
+
+    PaintAsNecessary(hWnd);
 }
 
 void MenuMultiplyIterations(HWND hWnd, double factor)
@@ -1701,7 +1812,6 @@ void MenuPaletteRotation(HWND)
     {
         gFractal->RotateFractalPalette(10);
         gFractal->DrawFractal(false);
-        //SwapBuffers (gHDC);
         GetCursorPos(&CurPos);
         if (abs(CurPos.x - OrgPos.x) > 5 ||
             abs(CurPos.y - OrgPos.y) > 5)

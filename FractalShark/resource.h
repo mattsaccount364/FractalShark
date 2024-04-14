@@ -15,6 +15,8 @@
 #define IDR_MAINFRAME                   128
 #define IDR_MENU_POPUP                  129
 #define IDM_ALG_SSE2                    130
+#define IDB_PNG1                        131
+#define IDB_PNG_SPLASH                  131
 #define IDM_MINIMIZE                    32774
 #define IDM_STANDARDVIEW                32775
 #define IDM_INCREASEITERATIONS          32776
@@ -406,7 +408,7 @@
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        131
+#define _APS_NEXT_RESOURCE_VALUE        132
 #define _APS_NEXT_COMMAND_VALUE         33179
 #define _APS_NEXT_CONTROL_VALUE         1000
 #define _APS_NEXT_SYMED_VALUE           110

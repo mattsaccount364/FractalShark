@@ -302,7 +302,7 @@ public:
         return result;
     }
 
-    HighPrecisionT power(int32_t powToRaiseTo) {
+    HighPrecisionT power(int32_t powToRaiseTo) const {
         HighPrecisionT result;
         mpf_pow_ui(result.m_Data, m_Data, powToRaiseTo);
         return result;

@@ -19,6 +19,7 @@
 #include "BenchmarkData.h"
 
 #include "PerturbationResults.h"
+#include "PrecisionCalculator.h"
 
 #include <chrono>
 
@@ -411,63 +412,34 @@ void Fractal::ResetDimensions(size_t width,
 // are "calculator coordinates," not screen coordinates.
 //////////////////////////////////////////////////////////////////////////////
 void Fractal::SetPrecision(
-    size_t precInBits,
+    uint64_t precInBits,
     HighPrecision& minX,
     HighPrecision& minY,
     HighPrecision& maxX,
     HighPrecision& maxY)
 {
-    auto prec2 = static_cast<uint32_t>(precInBits);
-    HighPrecision::defaultPrecisionInBits(prec2);
+    HighPrecision::defaultPrecisionInBits(precInBits);
 
-    minX.precisionInBits(prec2);
-    maxX.precisionInBits(prec2);
-    minY.precisionInBits(prec2);
-    maxY.precisionInBits(prec2);
-}
-
-size_t Fractal::GetPrecision(
-    const HighPrecision& minX,
-    const HighPrecision& minY,
-    const HighPrecision& maxX,
-    const HighPrecision& maxY,
-    bool RequiresReuse)
-{
-    auto deltaX = abs(maxX - minX);
-    auto deltaY = abs(maxY - minY);
-
-    long temp_expX;
-    double tempMantissaX;
-    deltaX.frexp(tempMantissaX, temp_expX);
-    long temp_expY;
-    double tempMantissaY;
-    deltaY.frexp(tempMantissaY, temp_expY);
-
-    size_t larger = (size_t)std::max(abs(temp_expX), abs(temp_expY));
-
-    if (RequiresReuse) {
-        larger += AuthoritativeReuseExtraPrecisionInBits;
-    }
-    else {
-        larger += AuthoritativeMinExtraPrecisionInBits;
-    }
-    return larger;
+    minX.precisionInBits(precInBits);
+    maxX.precisionInBits(precInBits);
+    minY.precisionInBits(precInBits);
+    maxY.precisionInBits(precInBits);
 }
 
 void Fractal::SetPrecision() {
-    uint32_t precInBits = static_cast<uint32_t>(GetPrecision());
+    auto precInBits = GetPrecision();
     SetPrecision(precInBits, m_MinX, m_MinY, m_MaxX, m_MaxY);
 }
 
-size_t Fractal::GetPrecision(void) const {
-    return GetPrecision(m_MinX, m_MinY, m_MaxX, m_MaxY, m_RefOrbit.RequiresReuse());
+uint64_t Fractal::GetPrecision(void) const {
+    return PrecisionCalculator::GetPrecision(m_MinX, m_MinY, m_MaxX, m_MaxY, m_RefOrbit.RequiresReuse());
 }
 
 bool Fractal::RecenterViewCalc(HighPrecision MinX, HighPrecision MinY, HighPrecision MaxX, HighPrecision MaxY)
 {
     SaveCurPos();
 
-    size_t prec = GetPrecision(MinX, MinY, MaxX, MaxY, m_RefOrbit.RequiresReuse());
+    auto prec = PrecisionCalculator::GetPrecision(MinX, MinY, MaxX, MaxY, m_RefOrbit.RequiresReuse());
     SetPrecision(prec, MinX, MinY, MaxX, MaxY);
     SetPosition(MinX, MinY, MaxX, MaxY);
 
@@ -673,8 +645,8 @@ void Fractal::InitialDefaultViewAndSettings(int width, int height) {
     SetIterationPrecision(1);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed1);
-    m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3);
-    //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::Auto);
+    //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3);
+    m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::Auto);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::STPeriodicity);
     m_RefOrbit.ResetGuess();
 
@@ -691,9 +663,9 @@ void Fractal::InitialDefaultViewAndSettings(int width, int height) {
     SetResultsAutosave(AddPointOptions::EnableWithoutSave);
     //SetResultsAutosave(AddPointOptions::DontSave);
     LoadPerturbationOrbits();
-    //View(0);
+    View(0);
     //View(5);
-    View(14);
+    //View(11);
     //View(14);
     //View(27); // extremely hard
     ChangedMakeDirty();
@@ -1082,10 +1054,10 @@ void Fractal::View(size_t view)
         minY = HighPrecision{ "-0.06744780927701335119415722995059170914204410549488939856276708324527235898639356887734291279309469373068729038486837338182723971219233698" };
         maxX = HighPrecision{ "-0.7483637942536300149503483214787034876591588411716933148186744630883569643446693595154771110299201854417711330238558567565796397623653681" };
         maxY = HighPrecision{ "-0.06744780927701335119415722995059170914204410549488939856276708324527235898639356887734291279309469373068697845700777769514407116615856846" };
-        //SetNumIterations<IterTypeFull>(2147483646);
+        SetNumIterations<IterTypeFull>(2147483646);
 
         // Period detected:
-        SetNumIterations<IterTypeFull>(16125357);
+        //SetNumIterations<IterTypeFull>(16125357);
         break;
 
     case 11:
@@ -1719,24 +1691,24 @@ int32_t Fractal::GetCompressionErrorExp(enum class CompressionError err) const {
     return m_CompressionExp[static_cast<size_t>(err)];
 }
 
-void Fractal::IncCompressionError(enum class CompressionError err) {
+void Fractal::IncCompressionError(enum class CompressionError err, int32_t amount) {
     size_t errIndex = static_cast<size_t>(err);
     if (m_CompressionExp[errIndex] >= 1000) {
         return;
     }
 
-    m_CompressionExp[errIndex]++;
+    m_CompressionExp[errIndex] += amount;
     m_CompressionError[errIndex] = HighPrecision{ 10.0 }.power(m_CompressionExp[errIndex]);
     ChangedMakeDirty();
 }
 
-void Fractal::DecCompressionError(enum class CompressionError err) {
+void Fractal::DecCompressionError(enum class CompressionError err, int32_t amount) {
     size_t errIndex = static_cast<size_t>(err);
     if (m_CompressionExp[errIndex] <= 1) {
         return;
     }
 
-    m_CompressionExp[errIndex]--;
+    m_CompressionExp[errIndex] -= amount;
     m_CompressionError[errIndex] = HighPrecision{ 10.0 }.power(m_CompressionExp[errIndex]);
     ChangedMakeDirty();
 }

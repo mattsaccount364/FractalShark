@@ -362,10 +362,10 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
     case 'Q':
         gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
         if (shiftDown) {
-            gFractal->DecCompressionError(Fractal::CompressionError::Intermediate);
+            gFractal->DecCompressionError(Fractal::CompressionError::Intermediate, 10);
         }
         else {
-            gFractal->IncCompressionError(Fractal::CompressionError::Intermediate);
+            gFractal->IncCompressionError(Fractal::CompressionError::Intermediate, 10);
         }
         PaintAsNecessary(hWnd);
         break;
@@ -393,10 +393,10 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
     case 'w':
         gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
         if (shiftDown) {
-            gFractal->DecCompressionError(Fractal::CompressionError::Low);
+            gFractal->DecCompressionError(Fractal::CompressionError::Low, 1);
         }
         else {
-            gFractal->IncCompressionError(Fractal::CompressionError::Low);
+            gFractal->IncCompressionError(Fractal::CompressionError::Low, 1);
         }
         PaintAsNecessary(hWnd);
         break;
@@ -1526,7 +1526,7 @@ void MenuGetCurPos(HWND hWnd)
     HighPrecision minX, minY;
     HighPrecision maxX, maxY;
 
-    size_t prec = gFractal->GetPrecision();
+    auto prec = gFractal->GetPrecision();
 
     minX = gFractal->GetMinX();
     minY = gFractal->GetMinY();
@@ -1911,13 +1911,14 @@ void MenuShowHotkeys(HWND /*hWnd*/) {
         L"o - Recalculate and benchmark current display, reusing perturbation results\r\n"
         L"P - Clear all perturbation results and recalculate\r\n"
         L"p - Recalculate current display, reusing perturbation results\r\n"
-        L"q/Q - Clear all perturbation results and do nothing else\r\n"
         L"R - Clear all perturbation results and recalculate\r\n"
         L"r - Recalculate current display, reusing perturbation results\r\n"
         L"\r\n"
         L"Reference Compression\r\n"
         L"e - Clear all perturbation results, reset error exponent to 19 (default).  Recalculate.\r\n"
-        L"w - Reduce reference compression: less error, more memory. Recalculate.\r\n"
+        L"q - Decrease intermediate orbit compression: less error, more memory. Recalculate.\r\n"
+        L"Q - Increase intermediate orbit compression: more error, less memory. Recalculate.\r\n"
+        L"w - Decrease reference compression: less error, more memory. Recalculate.\r\n"
         L"W - Increase reference compression: more error, less memory. Recalculate.\r\n"
         L"\r\n"
         L"Linear Approximation parameters, adjustments by powers of two\r\n"

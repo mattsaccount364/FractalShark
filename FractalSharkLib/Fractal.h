@@ -18,7 +18,6 @@
 
 
 #include "GPU_Render.h"
-//#include "PerturbationResults.h"
 
 #include "WPngImage\WPngImage.hh"
 #include "ItersMemoryContainer.h"
@@ -76,15 +75,9 @@ public:
 
     static unsigned long WINAPI CheckForAbortThread(void *fractal);
 
-    static size_t GetPrecision(
-        const HighPrecision& minX,
-        const HighPrecision& minY,
-        const HighPrecision& maxX,
-        const HighPrecision& maxY,
-        bool RequiresReuse);
-    size_t GetPrecision(void) const;
+    uint64_t GetPrecision(void) const;
     static void SetPrecision(
-        size_t prec,
+        uint64_t prec,
         HighPrecision& minX,
         HighPrecision& minY,
         HighPrecision& maxX,
@@ -148,8 +141,8 @@ public:
 
     const HighPrecision &GetCompressionError(enum class CompressionError) const;
     int32_t GetCompressionErrorExp(enum class CompressionError) const;
-    void IncCompressionError(enum class CompressionError);
-    void DecCompressionError(enum class CompressionError);
+    void IncCompressionError(enum class CompressionError, int32_t amount);
+    void DecCompressionError(enum class CompressionError, int32_t amount);
     void SetCompressionErrorExp(enum class CompressionError, int32_t CompressionExp);
     void DefaultCompressionErrorExp(enum class CompressionError);
 

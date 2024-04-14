@@ -5,6 +5,7 @@
 #include "PerturbationResults.h"
 
 #include "ScopedMpir.h"
+#include "PrecisionCalculator.h"
 
 #include <vector>
 #include <memory>
@@ -561,22 +562,6 @@ void RefOrbitCalc::AddPerturbationReferencePoint() {
     }
 }
 
-// TODO remove me
-//template<class T>
-//static void AddReused(T &results, const HighPrecision& zx, const HighPrecision& zy) {
-//    HighPrecision ReducedZx;
-//    HighPrecision ReducedZy;
-//
-//    ReducedZx = zx;
-//    ReducedZy = zy;
-//
-//    //assert(RequiresReuse());
-//    ReducedZx.precisionInBits(AuthoritativeReuseExtraPrecisionInBits);
-//    ReducedZy.precisionInBits(AuthoritativeReuseExtraPrecisionInBits);
-//
-//    results.AddUncompressedReusedEntry(std::move(ReducedZx), std::move(ReducedZy));
-//}
-
 size_t RefOrbitCalc::GetNextGenerationNumber() {
     ++m_GenerationNumber;
     return m_GenerationNumber;
@@ -705,26 +690,14 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
         mpf_mul_2exp(zx2, zx, 1); // Multiply by 2
         mpf_mul_2exp(zy2, zy, 1);
 
-        // TODO mpz_get_d_2exp
         T double_zx;
         T double_zy;
 
-        //  = (T)mpf_get_d(zx);
-        // = (T)mpf_get_d(zy);
         if constexpr (floatOrDouble) {
             double_zx = (T)mpf_get_d(zx);
             double_zy = (T)mpf_get_d(zy);
         }
         else {
-            //int32_t zx_exponent, zy_exponent;
-            //double zx_mantissa, zy_mantissa;
-
-            //zx_exponent = static_cast<int32_t>(mpf_get_2exp_d(&zx_mantissa, zx));
-            //zy_exponent = static_cast<int32_t>(mpf_get_2exp_d(&zy_mantissa, zy));
-
-            //double_zx = T{ zx_exponent, static_cast<SubType>(zx_mantissa) };
-            //double_zy = T{ zy_exponent, static_cast<SubType>(zy_mantissa) };
-
             double_zx = T{ zx };
             double_zy = T{ zy };
         }
@@ -839,18 +812,23 @@ void RefOrbitCalc::GetEstimatedPrecision(
     int64_t& deltaPrecision,
     int64_t& extraPrecision) const {
 
-    const int64_t NewPrec = m_Fractal.GetPrecision(
+    const bool reuse = RequiresReuse();
+    //const bool reuse = false;
+    const auto NewPrec = PrecisionCalculator::GetPrecision(
         m_Fractal.GetMinX(),
         m_Fractal.GetMinY(),
         m_Fractal.GetMaxX(),
         m_Fractal.GetMaxY(),
-        RequiresReuse());
-    deltaPrecision = NewPrec - authoritativePrecisionInBits;
+        reuse);
+    //const int64_t NewPrec = m_Fractal.GetMinX().precisionInBits();
+    deltaPrecision = static_cast<int64_t>(NewPrec - authoritativePrecisionInBits);
     extraPrecision = static_cast<int64_t>(AuthoritativeReuseExtraPrecisionInBits - AuthoritativeMinExtraPrecisionInBits);
 }
 
 template<typename IterType, class T>
 bool RefOrbitCalc::GetReuseResults(
+    const HighPrecision &cx,
+    const HighPrecision &cy,
     std::vector<std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::Disable>>>& perturbationResultsArray,
     const PerturbationResults<IterType, T, PerturbExtras::Disable> & existingAuthoritativeResults,
     PerturbationResults<IterType, T, PerturbExtras::Disable> *&outResults) const {
@@ -866,7 +844,25 @@ bool RefOrbitCalc::GetReuseResults(
     // about 2^AuthoritativeReuseExtraPrecisionInBits. The problem naturally is the original
     // reference orbit is calculated only to so many digits.
     if (deltaPrecision >= extraPrecision) {
-        //::MessageBox(nullptr, L"Regenerating authoritative orbit is required", L"", MB_OK | MB_APPLMODAL);
+        //::MessageBox(nullptr, L"Regenerating authoritative orbit is required 1", L"", MB_OK | MB_APPLMODAL);
+        perturbationResultsArray.pop_back();
+        return false;
+    }
+
+    // Verify that existing results are for an orbit that's "nearby" the current point
+    // we're trying to perturb.
+    const auto& existingResultsHiX = existingAuthoritativeResults.GetHiX();
+    const auto& existingResultsHiY = existingAuthoritativeResults.GetHiY();
+    const auto deltaX = abs(cx - existingResultsHiX);
+    const auto deltaY = abs(cy - existingResultsHiY);
+    if (deltaX > existingAuthoritativeResults.GetMaxRadiusHigh() ||
+        deltaY > existingAuthoritativeResults.GetMaxRadiusHigh()) {
+        //const std::string deltaStr =
+        //    cx.str() + ", " + cy.str() + ", " +
+        //    existingResultsHiX.str() + ", " + existingResultsHiY.str() + ", " +
+        //    deltaX.str() + ", " + deltaY.str();
+        //const std::string outputStr = "Regenerating authoritative orbit is required 2: " + deltaStr;
+        //::MessageBoxA(nullptr, outputStr.c_str(), "", MB_OK | MB_APPLMODAL);
         perturbationResultsArray.pop_back();
         return false;
     }
@@ -890,15 +886,19 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
     PerturbationResultsArray.push_back(std::move(newArray));
 
     auto* existingResults = GetUsefulPerturbationResults<IterType, T, true, PerturbExtras::Disable>();
+
     // TODO Lame hack with < 5.
-    // existingResults->GetReuseSize() < 5
-    if (existingResults == nullptr) {
+    if (existingResults == nullptr ||
+        existingResults->GetPeriodMaybeZero() < 5) {
+
         PerturbationResultsArray.pop_back();
         return false;
     }
 
     PerturbationResults<IterType, T, PerturbExtras::Disable>* results = nullptr;
     bool reuse = GetReuseResults<IterType, T>(
+        cx,
+        cy,
         PerturbationResultsArray,
         *existingResults,
         results);
@@ -1106,6 +1106,13 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
 
             if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
                 if constexpr (BenchmarkState == BenchmarkMode::Disable) {
+                    // TODO: note that this implementation simply does not seem
+                    // to work with period-2 orbits.  It's not clear why.
+                    //T reducedZx = (T)mpf_get_d(zx);
+                    //T reducedZy = (T)mpf_get_d(zy);
+                    //results->AddUncompressedIteration({ reducedZx, reducedZy });
+
+                    // Break before adding the result.
                     results->SetPeriodMaybeZero((IterType)results->GetCountOrbitEntries());
                     break;
                 }
@@ -1170,15 +1177,19 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     PerturbationResultsArray.push_back(std::move(newArray));
 
     auto* existingResults = GetUsefulPerturbationResults<IterType, T, true, PerturbExtras::Disable>();
+
     // TODO Lame hack with < 5.
-    // existingResults->GetReuseSize() < 5
-    if (existingResults == nullptr) {
+    if (existingResults == nullptr ||
+        existingResults->GetPeriodMaybeZero() < 5) {
+
         PerturbationResultsArray.pop_back();
         return false;
     }
 
     PerturbationResults<IterType, T, PerturbExtras::Disable>* results = nullptr;
     bool reuse = GetReuseResults<IterType, T>(
+        cx,
+        cy,
         PerturbationResultsArray,
         *existingResults,
         results);
@@ -1551,7 +1562,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
 
         ++RefIteration;
 
-        // Lame conditional.
+        // TODO Lame conditional.
         // Could erase first elt but that's O(n) in size of vector
         if (RanOnce) {
             results->AddUncompressedIteration({ tempZXLow, tempZYLow });
@@ -1587,6 +1598,12 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
 
             if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
                 if constexpr (BenchmarkState == BenchmarkMode::Disable) {
+                    // TODO: note that this implementation simply does not seem
+                    // to work with period-2 orbits.  It's not clear why.
+                    //T reducedZx = (T)mpf_get_d(zx);
+                    //T reducedZy = (T)mpf_get_d(zy);
+                    //results->AddUncompressedIteration({ reducedZx, reducedZy });
+
                     // Break before adding the result.
                     results->SetPeriodMaybeZero((IterType)results->GetCountOrbitEntries());
                     break;
@@ -2899,11 +2916,17 @@ void RefOrbitCalc::SetPerturbationAlg(PerturbationAlg alg) {
 RefOrbitCalc::PerturbationAlg RefOrbitCalc::GetPerturbationAlg() const {
     if (m_PerturbationAlg == PerturbationAlg::Auto) {
         HighPrecision zoomFactor = m_Fractal.GetZoomFactor();
-        if (zoomFactor < HighPrecision{ 1e100 }) {
+
+        if (zoomFactor < HighPrecision{ 10 }.power(150)) {
             return PerturbationAlg::STPeriodicity;
         }
-        else {
+        else if (zoomFactor < HighPrecision{ 10 }.power(2000)) {
             return PerturbationAlg::MTPeriodicity3;
+        }
+        else {
+            // Roll the dice and hope the intermediate precision orbit
+            // works! :-)
+            return PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3;
         }
     }
     else {

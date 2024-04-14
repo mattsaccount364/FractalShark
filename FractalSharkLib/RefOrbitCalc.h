@@ -166,6 +166,8 @@ private:
         typename IterType,
         class T>
     bool GetReuseResults(
+        const HighPrecision &cx,
+        const HighPrecision &cy,
         std::vector<std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::Disable>>>& perturbationResultsArray,
         const PerturbationResults<IterType, T, PerturbExtras::Disable>& existingAuthoritativeResults,
         PerturbationResults<IterType, T, PerturbExtras::Disable>*& outResults) const;

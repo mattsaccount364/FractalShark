@@ -17,6 +17,7 @@
 #include "Utilities.h"
 
 #include "ScopedMpir.h"
+#include "PrecisionCalculator.h"
 
 #include <thread>
 
@@ -114,6 +115,7 @@ public:
         m_OrbitXLow{},
         m_OrbitYLow{},
         m_MaxRadius{},
+        m_MaxRadiusHigh{},
         m_MaxIterations{},
         m_PeriodMaybeZero{},
         m_CompressionErrorExp{},
@@ -267,6 +269,7 @@ public:
         m_OrbitXLow = static_cast<T>(Convert<HighPrecision, double>(m_OrbitX));
         m_OrbitYLow = static_cast<T>(Convert<HighPrecision, double>(m_OrbitY));
         m_MaxRadius = (T)other.GetMaxRadius();
+        m_MaxRadiusHigh = other.GetMaxRadiusHigh();
         m_MaxIterations = other.GetMaxIterations();
         m_PeriodMaybeZero = other.GetPeriodMaybeZero();
         m_CompressionErrorExp = other.GetCompressionErrorExp();
@@ -281,31 +284,22 @@ public:
         m_UncompressedItersInOrbit = other.m_UncompressedItersInOrbit;
 
         m_AuthoritativePrecisionInBits = other.m_AuthoritativePrecisionInBits;
-        m_ReuseX.reserve(other.m_ReuseX.size());
-        m_ReuseY.reserve(other.m_ReuseY.size());
-        m_ReuseIndices.reserve(other.m_ReuseIndices.size());
 
         // TODO: for reuse case, we don't copy the allocations.  This is a bug
         // but we shouldn't hit it in practice?  I think?
-        if (other.m_ReuseAllocations != nullptr) {
-            DebugBreak();
-        }
-
+        m_ReuseX = {};
+        m_ReuseY = {};
+        m_ReuseIndices = {};
         m_ReuseAllocations = nullptr;
 
         CopyFullOrbitVector<IncludeLA, Other, PExtras>(other);
 
         assert(m_UncompressedItersInOrbit == m_FullOrbit.GetSize());
 
-        m_AuthoritativePrecisionInBits = other.m_AuthoritativePrecisionInBits;
-        m_ReuseX = other.m_ReuseX;
-        m_ReuseY = other.m_ReuseY;
-        m_ReuseIndices = other.m_ReuseIndices;
-
         m_BenchmarkOrbit = other.m_BenchmarkOrbit;
 
-        m_DeltaPrecisionCached = other.m_DeltaPrecisionCached;
-        m_ExtraPrecisionCached = other.m_ExtraPrecisionCached;
+        m_DeltaPrecisionCached = 0;
+        m_ExtraPrecisionCached = 0;
 
         if constexpr (IncludeLA) {
             if (other.GetLaReference() != nullptr) {
@@ -327,6 +321,7 @@ public:
         m_OrbitXLow = other.GetOrbitXLow();
         m_OrbitYLow = other.GetOrbitYLow();
         m_MaxRadius = other.GetMaxRadius();
+        m_MaxRadiusHigh = other.GetMaxRadiusHigh();
         m_MaxIterations = other.GetMaxIterations();
         m_PeriodMaybeZero = other.GetPeriodMaybeZero();
         m_CompressionErrorExp = other.GetCompressionErrorExp();
@@ -411,6 +406,7 @@ public:
         metafile << "LowPrecisionReal: " << HdrToString<true>(m_OrbitXLow) << std::endl;
         metafile << "LowPrecisionImaginary: " << HdrToString<true>(m_OrbitYLow) << std::endl;
         metafile << "MaxRadius: " << HdrToString<true>(m_MaxRadius) << std::endl;
+        // don't bother with m_MaxRadiusHigh
         metafile << "MaxIterationsPerPixel: " << m_MaxIterations << std::endl;
         metafile << "Period: " << m_PeriodMaybeZero << std::endl;
         metafile << "CompressionErrorExponent: " << m_CompressionErrorExp << std::endl;
@@ -593,6 +589,7 @@ public:
         HdrFromIfStream<true, T, SubType>(m_OrbitXLow, metafile);
         HdrFromIfStream<true, T, SubType>(m_OrbitYLow, metafile);
         HdrFromIfStream<true, T, SubType>(m_MaxRadius, metafile);
+        // don't bother with m_MaxRadiusHigh
 
         {
             std::string maxIterationsStr;
@@ -701,10 +698,12 @@ public:
         // e.g. HDRFloat<float> vs HDRFloat<double>.  This 2.0 here seems to compensat, but
         // makes no sense.  So what bug are we covering up here?
         if constexpr (std::is_same<T, HDRFloat<double>>::value) {
-            m_MaxRadius = T((radiusX > radiusY ? radiusX : radiusY) * HighPrecision { 2.0 });
+            m_MaxRadiusHigh = (radiusX > radiusY ? radiusX : radiusY) * HighPrecision{ 2.0 };
+            m_MaxRadius = T(m_MaxRadiusHigh);
         }
         else {
-            m_MaxRadius = T(radiusX > radiusY ? radiusX : radiusY);
+            m_MaxRadiusHigh = radiusX > radiusY ? radiusX : radiusY;
+            m_MaxRadius = T(m_MaxRadiusHigh);
         }
 
         HdrReduce(m_MaxRadius);
@@ -724,7 +723,8 @@ public:
             Reuse == RefOrbitCalc::ReuseMode::SaveForReuse1 ||
             Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2 ||
             Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3) {
-            m_AuthoritativePrecisionInBits = cx.precisionInBits();
+            m_AuthoritativePrecisionInBits =
+                PrecisionCalculator::GetPrecision(minX, minY, maxX, maxY, true);
             m_ReuseX.reserve(ReserveSize);
             m_ReuseY.reserve(ReserveSize);
             m_ReuseAllocations = nullptr;
@@ -815,6 +815,10 @@ public:
     // Radius used for periodicity checking
     T GetMaxRadius() const {
         return m_MaxRadius;
+    }
+
+    HighPrecision GetMaxRadiusHigh() const {
+        return m_MaxRadiusHigh;
     }
 
     // Used only with scaled kernels
@@ -1001,6 +1005,7 @@ public:
         out << "m_OrbitXLow: " << HdrToString<false>(m_OrbitXLow) << std::endl;
         out << "m_OrbitYLow: " << HdrToString<false>(m_OrbitYLow) << std::endl;
         out << "m_MaxRadius: " << HdrToString<false>(m_MaxRadius) << std::endl;
+        // don't bother with m_MaxRadiusHigh
         out << "m_MaxIterations: " << m_MaxIterations << std::endl;
         out << "m_PeriodMaybeZero: " << m_PeriodMaybeZero << std::endl;
         out << "m_CompressionErrorExp: " << m_CompressionErrorExp << std::endl;
@@ -1035,6 +1040,8 @@ public:
         out.close();
     }
 
+    // For information purposes only, not used for anything
+    // other than reporting.
     void GetIntermediatePrecision(
         int64_t &deltaPrecision,
         int64_t &extraPrecision) const {
@@ -1043,6 +1050,8 @@ public:
         extraPrecision = m_ExtraPrecisionCached;
     }
 
+    // For information purposes only, not used for anything
+    // other than reporting.
     void SetIntermediateCachedPrecision(
         int64_t deltaPrecision,
         int64_t extraPrecision) {
@@ -1083,6 +1092,7 @@ private:
     T m_OrbitXLow;
     T m_OrbitYLow;
     T m_MaxRadius;
+    HighPrecision m_MaxRadiusHigh; // Just for convenience
     IterType m_MaxIterations;
     IterType m_PeriodMaybeZero;  // Zero if not worked out
     int32_t m_CompressionErrorExp;

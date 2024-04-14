@@ -44,6 +44,7 @@
     <ClInclude Include="PerturbationResultsHelpers.h" />
     <ClInclude Include="PngParallelSave.h" />
     <ClInclude Include="PointZoomBBConverter.h" />
+    <ClInclude Include="PrecisionCalculator.h" />
     <ClInclude Include="QuadDouble\common.cuh" />
     <ClInclude Include="QuadDouble\cuda_header.cuh" />
     <ClInclude Include="QuadDouble\gqd_basic.cuh" />
@@ -74,6 +75,7 @@
     <ClCompile Include="PerturbationResults.cpp" />
     <ClCompile Include="PngParallelSave.cpp" />
     <ClCompile Include="PointZoomBBConverter.cpp" />
+    <ClCompile Include="PrecisionCalculator.cpp" />
     <ClCompile Include="RefOrbitCalc.cpp" />
     <ClCompile Include="ScopedMpir.cpp" />
     <ClCompile Include="Utilities.cpp" />

@@ -250,6 +250,9 @@ void DrawFractalSharkGdi(HWND hWnd, int nCmdShow) {
         BitBlt(hdc, startX, startY, image.width(), image.height(), hdcMem, 0, 0, SRCCOPY);
     }
 
+    // Set the window as opaque
+    SetLayeredWindowAttributes(hWnd, RGB(0, 0, 0), 255, LWA_ALPHA);
+
     //ShowWindow(hWnd, nCmdShow);
     //ShowWindow(hWnd, SW_RESTORE);
 
@@ -324,6 +327,12 @@ HWND InitInstance(HINSTANCE hInstance, int nCmdShow)
     if (!hWnd) {
         return nullptr;
     }
+
+    // Use  SetWindowLong to make the window layered
+    SetWindowLong(hWnd, GWL_EXSTYLE, GetWindowLong(hWnd, GWL_EXSTYLE) | WS_EX_LAYERED);
+
+    // Set the window as transparent
+    SetLayeredWindowAttributes(hWnd, RGB(0, 0, 0), 0, LWA_ALPHA);
 
     // DrawFractalShark(hWnd);
     DrawFractalSharkGdi(hWnd, nCmdShow);

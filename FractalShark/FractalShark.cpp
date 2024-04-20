@@ -2045,6 +2045,7 @@ void MenuShowHotkeys(HWND /*hWnd*/) {
         L"h - Increase LA Threshold Scale exponents.  Less accurate/faster per-pixel\r\n"
         L"J - Decrease LA period detection exponents.  Less memory/slower per-pixel\r\n"
         L"j - Increase LA period detection exponents.  More memory/faster per-pixel\r\n"
+        L"\r\n"
         L"Palettes\r\n"
         L"T - Use prior auxiliary palette depth (mul/div iteration count by 2)\r\n"
         L"t - Use next auxiliary palette depth (mul/div iteration count by 2)\r\n"

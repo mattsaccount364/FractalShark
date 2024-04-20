@@ -111,7 +111,7 @@ public:
     void LoadAllOrbits();
 
     void GetSomeDetails(RefOrbitDetails &details) const;
-    void SaveOrbitAsText() const;
+    void SaveOrbitAsText(PerturbExtras PExtras) const;
 
     void DrawPerturbationResults();
 
@@ -208,8 +208,8 @@ private:
 
     size_t m_GuessReserveSize;
 
-    size_t GetNextGenerationNumber();
-    size_t m_GenerationNumber;
+    size_t GetNextGenerationNumber() const;
+    mutable size_t m_GenerationNumber;
 
     size_t m_NumCpuCores;
     bool m_HyperthreadingEnabled;

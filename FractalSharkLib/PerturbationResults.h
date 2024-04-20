@@ -334,9 +334,11 @@ public:
         m_UncompressedItersInOrbit = other.m_UncompressedItersInOrbit;
 
         m_AuthoritativePrecisionInBits = other.m_AuthoritativePrecisionInBits;
-        m_ReuseX = other.m_ReuseX;
-        m_ReuseY = other.m_ReuseY;
-        m_ReuseAllocations = std::move(other.m_ReuseAllocations);
+
+        // Not supported
+        m_ReuseX = {};
+        m_ReuseY = {};
+        m_ReuseAllocations = nullptr;
 
         m_BenchmarkOrbit = other.m_BenchmarkOrbit;
 
@@ -903,11 +905,11 @@ public:
         size_t new_generation_number) {
 
         constexpr bool disable_compression = false;
-        const auto Two = T{ 2 };
+        const auto Two = T{ 2.0f };
 
         m_CompressionErrorExp = compression_error_exp_param;
-        auto err = std::pow(10, m_CompressionErrorExp);
-        const auto CompressionError = static_cast<T>(err);
+        auto compErr = std::pow(10, m_CompressionErrorExp);
+        const auto CompressionError = static_cast<T>(compErr);
 
         auto compressed =
             std::make_unique<PerturbationResults<IterType, T, PerturbExtras::EnableCompression>>(
@@ -941,13 +943,13 @@ public:
                     zx = m_FullOrbit[i].x;
                     zy = m_FullOrbit[i].y;
 
-                    compressed->FullOrbit.PushBack({ m_FullOrbit[i].x, m_FullOrbit[i].y, i });
+                    compressed->m_FullOrbit.PushBack({ m_FullOrbit[i].x, m_FullOrbit[i].y, i });
                 }
 
                 auto zx_old = zx;
                 zx = zx * zx - zy * zy + m_OrbitXLow;
                 HdrReduce(zx);
-                zy = Two *zx_old * zy + m_OrbitYLow;
+                zy = Two * zx_old * zy + m_OrbitYLow;
                 HdrReduce(zy);
             }
         }
@@ -969,7 +971,7 @@ public:
         size_t compressed_index = 0;
 
         for (size_t i = 0; i < m_UncompressedItersInOrbit; i++) {
-            if (compressed_index < compressed_orb.size() &&
+            if (compressed_index < compressed_orb.GetSize() &&
                 compressed_orb[compressed_index].CompressionIndex == i) {
                 zx = compressed_orb[compressed_index].x;
                 zy = compressed_orb[compressed_index].y;

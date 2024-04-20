@@ -44,6 +44,11 @@ private:
 class ThreadMemory {
 public:
     ThreadMemory();
+    ThreadMemory(const ThreadMemory &) = delete;
+    ThreadMemory &operator=(const ThreadMemory &) = delete;
+    ~ThreadMemory() = default;
+    ThreadMemory(ThreadMemory &&) = default;
+    ThreadMemory &operator=(ThreadMemory &&) = default;
 
     void* Allocate(size_t size);
     void Free(void* ptr, size_t size);

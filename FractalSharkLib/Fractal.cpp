@@ -3931,7 +3931,7 @@ int Fractal::SaveItersAsText(std::wstring filename_base) {
 }
 
 void Fractal::SaveRefOrbitAsText() {
-    m_RefOrbit.SaveOrbitAsText();
+    m_RefOrbit.SaveOrbitAsText(PerturbExtras::EnableCompression);
 }
 
 void Fractal::SetResultsAutosave(AddPointOptions Enable) {

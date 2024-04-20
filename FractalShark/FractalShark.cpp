@@ -275,7 +275,7 @@ HWND InitInstance(HINSTANCE hInstance, int nCmdShow)
     hInst = hInstance;
 
     constexpr bool startWindowed = true;
-    constexpr bool finishWindowed = false;
+    constexpr bool finishWindowed = true;
     constexpr DWORD forceStartWidth = 0;
     constexpr DWORD forceStartHeight = 0;
 

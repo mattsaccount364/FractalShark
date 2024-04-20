@@ -562,7 +562,7 @@ void RefOrbitCalc::AddPerturbationReferencePoint() {
     }
 }
 
-size_t RefOrbitCalc::GetNextGenerationNumber() {
+size_t RefOrbitCalc::GetNextGenerationNumber() const {
     ++m_GenerationNumber;
     return m_GenerationNumber;
 }
@@ -3014,10 +3014,66 @@ void RefOrbitCalc::GetSomeDetails(RefOrbitDetails &details) const {
     static_assert(static_cast<int>(RenderAlgorithm::MAX) == 61, "Fix me");
 }
 
-void RefOrbitCalc::SaveOrbitAsText() const {
-    auto lambda = [&](auto&& arg) {
-        if (arg != nullptr) {
-            arg->SaveOrbitAsText();
+// Using a technique like this:
+// template<typename>
+// struct is_std_array : std::false_type {};
+// template<typename T, std::size_t N>
+// struct is_std_array<std::array<T, N>> : std::true_type {};
+// 
+
+template<typename IterType, typename Float, PerturbExtras PExtras>
+struct PerturbTypeParams {
+    using IterType_ = IterType;
+    using Float_ = Float;
+    static constexpr auto PExtras_ = PExtras;
+};
+
+template<
+    template <typename, typename, PerturbExtras> typename PerturbType,
+    typename IterType,
+    typename Float,
+    PerturbExtras PExtras>
+constexpr auto Extract(const PerturbType<IterType, Float, PExtras>&) -> PerturbTypeParams<IterType, Float, PExtras>;
+
+template<typename PerturbType>
+constexpr auto Extract_PExtras = decltype(Extract(std::declval<PerturbType>()))::PExtras_;
+
+template<typename PerturbType>
+using Extract_Float= typename decltype(Extract(std::declval<PerturbType>()))::Float_;
+
+template<typename PerturbType>
+static constexpr bool IsCompressionEnabled() {
+    return Extract_PExtras<PerturbType> == PerturbExtras::EnableCompression;
+}
+
+template<typename PerturbType>
+static constexpr bool IsDblFlt() {
+    return
+        std::is_same<Extract_Float<PerturbType>, CudaDblflt<MattDblflt>>::value ||
+        std::is_same<Extract_Float<PerturbType>, HDRFloat<CudaDblflt<MattDblflt>>>::value;
+}
+
+void RefOrbitCalc::SaveOrbitAsText(PerturbExtras PExtras) const {
+    auto lambda = [this, PExtras](auto&& results) {
+        if (results != nullptr) {
+            if (PExtras == PerturbExtras::EnableCompression) {
+                if constexpr (
+                    !IsCompressionEnabled<decltype(*results)>() &&
+                    !IsDblFlt<decltype(*results)>()) {
+                    auto compressedResults = results->Compress(
+                        m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
+                        GetNextGenerationNumber());
+                    // compressedResults->Decompress(GetNextGenerationNumber());
+                    compressedResults->SaveOrbitAsText();
+                }
+            }
+            else  if (PExtras == PerturbExtras::Disable ||
+                PExtras == PerturbExtras::Bad) {
+                results->SaveOrbitAsText();
+            }
+            else {
+                assert(false);
+            }
         }
     };
 

@@ -1455,17 +1455,19 @@ static CUDA_CRAP constexpr bool HdrCompareToBothPositiveReducedGE(const T& one, 
 #else
         false;
 #endif
-    static_assert(!std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value, "!");
-    static_assert(!std::is_same<T, CudaDblflt<dblflt>>::value, "!");
     static_assert(
         std::is_same<T, double>::value ||
         std::is_same<T, float>::value ||
+        std::is_same<T, CudaDblflt<dblflt>>::value ||
         std::is_same<T, HDRFloat<double>>::value ||
         std::is_same<T, HDRFloat<float>>::value ||
+        std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value ||
         HighPrecPossible, "No");
 
-    if constexpr (std::is_same<T, HDRFloat<double>>::value ||
-        std::is_same<T, HDRFloat<float>>::value) {
+    if constexpr (
+        std::is_same<T, HDRFloat<double>>::value ||
+        std::is_same<T, HDRFloat<float>>::value ||
+        std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value) {
         return one.compareToBothPositiveReduced(two) >= 0;
     }
     else {

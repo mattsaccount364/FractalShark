@@ -262,7 +262,8 @@ struct CompressionIndexField {
     CompressionIndexField(IterTypeFull initIndex) : CompressionIndex{ initIndex } {
     }
 
-    [[msvc::no_unique_address]] IterTypeFull CompressionIndex;
+    IterTypeFull CompressionIndex : 63;
+    IterTypeFull Rebase : 1;
 };
 
 template<PerturbExtras PExtras>

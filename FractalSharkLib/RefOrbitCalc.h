@@ -58,7 +58,7 @@ public:
     std::string GetPerturbationAlgStr() const;
 
     template<typename IterType, class T, PerturbExtras PExtras>
-    std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtras>>>& GetPerturbationResults();
+    std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtras>>> &GetPerturbationResults();
 
     void SetOptions(AddPointOptions options);
 
@@ -87,7 +87,7 @@ public:
         PerturbExtras PExtras,
         RefOrbitCalc::Extras Ex,
         class ConvertTType = T>
-    PerturbationResults<IterType, ConvertTType, PExtras>*
+    PerturbationResults<IterType, ConvertTType, PExtras> *
         GetUsefulPerturbationResults();
 
     template<
@@ -97,11 +97,11 @@ public:
         PerturbExtras PExtras,
         RefOrbitCalc::Extras Ex,
         class ConvertTType = T>
-    PerturbationResults<IterType, ConvertTType, PExtras>*
+    PerturbationResults<IterType, ConvertTType, PExtras> *
         GetAndCreateUsefulPerturbationResults();
 
     template<typename IterType, class SrcT, PerturbExtras SrcEnableBad, class DestT, PerturbExtras DestEnableBad>
-    PerturbationResults<IterType, DestT, DestEnableBad>* CopyUsefulPerturbationResults(PerturbationResults<IterType, SrcT, SrcEnableBad>& src_array);
+    PerturbationResults<IterType, DestT, DestEnableBad> *CopyUsefulPerturbationResults(PerturbationResults<IterType, SrcT, SrcEnableBad> &src_array);
 
     void ClearPerturbationResults(PerturbationResultType type);
     void ResetGuess(HighPrecision x = HighPrecision(0), HighPrecision y = HighPrecision(0));
@@ -118,14 +118,14 @@ private:
     static constexpr size_t MaxStoredOrbits = 64;
 
     bool RequiresCompression() const;
-    bool IsThisPerturbationArrayUsed(void* check) const;
+    bool IsThisPerturbationArrayUsed(void *check) const;
 
     template<typename IterType, class T, PerturbExtras PExtras>
-    PerturbationResults<IterType, T, PExtras>* AddPerturbationResults(
+    PerturbationResults<IterType, T, PExtras> *AddPerturbationResults(
         std::unique_ptr<PerturbationResults<IterType, T, PExtras>> results);
 
     template<typename IterType, class T, PerturbExtras PExtras>
-    PerturbationResults<IterType, T, PExtras>& GetPerturbationResults(size_t index);
+    PerturbationResults<IterType, T, PExtras> &GetPerturbationResults(size_t index);
 
     template<typename IterType, class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, ReuseMode Reuse>
     bool AddPerturbationReferencePointSTReuse(HighPrecision initX, HighPrecision initY);
@@ -143,23 +143,23 @@ private:
     void AddPerturbationReferencePointMT5(HighPrecision initX, HighPrecision initY);
 
     template<typename IterType, class T, bool Authoritative, PerturbExtras PExtras>
-    PerturbationResults<IterType, T, PExtras>* GetUsefulPerturbationResults();
+    PerturbationResults<IterType, T, PExtras> *GetUsefulPerturbationResults();
 
     template<typename IterType, class T, class PerturbationResultsType, PerturbExtras PExtras, ReuseMode Reuse>
-    void InitResults(PerturbationResultsType&results, const HighPrecision &initX, const HighPrecision &initY);
+    void InitResults(PerturbationResultsType &results, const HighPrecision &initX, const HighPrecision &initY);
 
     template<typename IterType, class T, PerturbExtras PExtras>
     void DrawPerturbationResultsHelper();
 
     template<RefOrbitCalc::ReuseMode Reuse>
     void InitAllocatorsIfNeeded(
-        std::unique_ptr<MPIRBoundedAllocator>& boundedAllocator,
-        std::unique_ptr<MPIRBumpAllocator>& bumpAllocator);
+        std::unique_ptr<MPIRBoundedAllocator> &boundedAllocator,
+        std::unique_ptr<MPIRBumpAllocator> &bumpAllocator);
 
     template<RefOrbitCalc::ReuseMode Reuse>
     void ShutdownAllocatorsIfNeeded(
-        std::unique_ptr<MPIRBoundedAllocator>& boundedAllocator,
-        std::unique_ptr<MPIRBumpAllocator>& bumpAllocator);
+        std::unique_ptr<MPIRBoundedAllocator> &boundedAllocator,
+        std::unique_ptr<MPIRBumpAllocator> &bumpAllocator);
 
     template<
         typename IterType,
@@ -167,19 +167,19 @@ private:
     bool GetReuseResults(
         const HighPrecision &cx,
         const HighPrecision &cy,
-        std::vector<std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::Disable>>>& perturbationResultsArray,
-        const PerturbationResults<IterType, T, PerturbExtras::Disable>& existingAuthoritativeResults,
-        PerturbationResults<IterType, T, PerturbExtras::Disable>*& outResults) const;
+        std::vector<std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::Disable>>> &perturbationResultsArray,
+        const PerturbationResults<IterType, T, PerturbExtras::Disable> &existingAuthoritativeResults,
+        PerturbationResults<IterType, T, PerturbExtras::Disable> *&outResults) const;
 
     void GetEstimatedPrecision(
         uint64_t authoritativePrecisionInBits,
-        int64_t& deltaPrecision,
-        int64_t& extraPrecision) const;
+        int64_t &deltaPrecision,
+        int64_t &extraPrecision) const;
 
     class ScopedAffinity {
     public:
         ScopedAffinity(
-            RefOrbitCalc& refOrbitCalc,
+            RefOrbitCalc &refOrbitCalc,
             HANDLE thread1,
             HANDLE thread2,
             HANDLE thread3,
@@ -189,7 +189,7 @@ private:
         void SetCpuAffinityAsNeeded();
 
     private:
-        RefOrbitCalc& m_RefOrbitCalc;
+        RefOrbitCalc &m_RefOrbitCalc;
         HANDLE m_Thread1;
         HANDLE m_Thread2;
         HANDLE m_Thread3;
@@ -198,7 +198,7 @@ private:
 
 
     PerturbationAlg m_PerturbationAlg;
-    Fractal& m_Fractal;
+    Fractal &m_Fractal;
 
     HighPrecision m_PerturbationGuessCalcX;
     HighPrecision m_PerturbationGuessCalcY;
@@ -234,49 +234,49 @@ private:
     Container<IterType, PExtras> &GetContainer();
 
     template<typename IterType, PerturbExtras PExtras>
-    const Container<IterType, PExtras>& GetContainer() const;
+    const Container<IterType, PExtras> &GetContainer() const;
 
-    std::variant<
-        PerturbationResults<uint32_t, double, PerturbExtras::Disable>*,
-        PerturbationResults<uint32_t, float, PerturbExtras::Disable>*,
-        PerturbationResults<uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::Disable>*,
-        PerturbationResults<uint32_t, HDRFloat<double>, PerturbExtras::Disable>*,
-        PerturbationResults<uint32_t, HDRFloat<float>, PerturbExtras::Disable>*,
-        PerturbationResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable>*,
+    std::variant <
+        PerturbationResults<uint32_t, double, PerturbExtras::Disable> *,
+        PerturbationResults<uint32_t, float, PerturbExtras::Disable> *,
+        PerturbationResults<uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::Disable> *,
+        PerturbationResults<uint32_t, HDRFloat<double>, PerturbExtras::Disable> *,
+        PerturbationResults<uint32_t, HDRFloat<float>, PerturbExtras::Disable> *,
+        PerturbationResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable> *,
 
-        PerturbationResults<uint32_t, double, PerturbExtras::Bad>*,
-        PerturbationResults<uint32_t, float, PerturbExtras::Bad>*,
-        PerturbationResults<uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::Bad>*,
-        PerturbationResults<uint32_t, HDRFloat<double>, PerturbExtras::Bad>*,
-        PerturbationResults<uint32_t, HDRFloat<float>, PerturbExtras::Bad>*,
-        PerturbationResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad>*,
+        PerturbationResults<uint32_t, double, PerturbExtras::Bad> *,
+        PerturbationResults<uint32_t, float, PerturbExtras::Bad> *,
+        PerturbationResults<uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::Bad> *,
+        PerturbationResults<uint32_t, HDRFloat<double>, PerturbExtras::Bad> *,
+        PerturbationResults<uint32_t, HDRFloat<float>, PerturbExtras::Bad> *,
+        PerturbationResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad> *,
 
-        PerturbationResults<uint32_t, double, PerturbExtras::EnableCompression>*,
-        PerturbationResults<uint32_t, float, PerturbExtras::EnableCompression>*,
-        PerturbationResults<uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::EnableCompression>*,
-        PerturbationResults<uint32_t, HDRFloat<double>, PerturbExtras::EnableCompression>*,
-        PerturbationResults<uint32_t, HDRFloat<float>, PerturbExtras::EnableCompression>*,
-        PerturbationResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::EnableCompression>*,
+        PerturbationResults<uint32_t, double, PerturbExtras::EnableCompression> *,
+        PerturbationResults<uint32_t, float, PerturbExtras::EnableCompression> *,
+        PerturbationResults<uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::EnableCompression> *,
+        PerturbationResults<uint32_t, HDRFloat<double>, PerturbExtras::EnableCompression> *,
+        PerturbationResults<uint32_t, HDRFloat<float>, PerturbExtras::EnableCompression> *,
+        PerturbationResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::EnableCompression> *,
 
-        PerturbationResults<uint64_t, double, PerturbExtras::Disable>*,
-        PerturbationResults<uint64_t, float, PerturbExtras::Disable>*,
-        PerturbationResults<uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::Disable>*,
-        PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::Disable>*,
-        PerturbationResults<uint64_t, HDRFloat<float>, PerturbExtras::Disable>*,
-        PerturbationResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable>*,
+        PerturbationResults<uint64_t, double, PerturbExtras::Disable> *,
+        PerturbationResults<uint64_t, float, PerturbExtras::Disable> *,
+        PerturbationResults<uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::Disable> *,
+        PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::Disable> *,
+        PerturbationResults<uint64_t, HDRFloat<float>, PerturbExtras::Disable> *,
+        PerturbationResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable> *,
 
-        PerturbationResults<uint64_t, double, PerturbExtras::Bad>*,
-        PerturbationResults<uint64_t, float, PerturbExtras::Bad>*,
-        PerturbationResults<uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::Bad>*,
-        PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::Bad>*,
-        PerturbationResults<uint64_t, HDRFloat<float>, PerturbExtras::Bad>*,
-        PerturbationResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad>*,
+        PerturbationResults<uint64_t, double, PerturbExtras::Bad> *,
+        PerturbationResults<uint64_t, float, PerturbExtras::Bad> *,
+        PerturbationResults<uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::Bad> *,
+        PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::Bad> *,
+        PerturbationResults<uint64_t, HDRFloat<float>, PerturbExtras::Bad> *,
+        PerturbationResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad> *,
 
-        PerturbationResults<uint64_t, double, PerturbExtras::EnableCompression>*,
-        PerturbationResults<uint64_t, float, PerturbExtras::EnableCompression>*,
-        PerturbationResults<uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::EnableCompression>*,
-        PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::EnableCompression>*,
-        PerturbationResults<uint64_t, HDRFloat<float>, PerturbExtras::EnableCompression>*,
-        PerturbationResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::EnableCompression>*
+        PerturbationResults<uint64_t, double, PerturbExtras::EnableCompression> *,
+        PerturbationResults<uint64_t, float, PerturbExtras::EnableCompression> *,
+        PerturbationResults<uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::EnableCompression> *,
+        PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::EnableCompression> *,
+        PerturbationResults<uint64_t, HDRFloat<float>, PerturbExtras::EnableCompression> *,
+        PerturbationResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::EnableCompression> *
     > m_LastUsedRefOrbit;
 };

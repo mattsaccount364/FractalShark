@@ -9,29 +9,27 @@
 #include "TrayIcon.h"
 #include <string>
 
-struct CThreadParam
-{
+struct CThreadParam {
     volatile bool stop;
-    const CString* LocationFilename;
+    const CString *LocationFilename;
     int Algorithm;
     HWND hWnd;
 };
 
 DWORD WINAPI CalcProc(LPVOID lpParameter);
-bool FileExists(const std::wstring& filename);
+bool FileExists(const std::wstring &filename);
 
 // CFractalTrayDlg dialog
-class CFractalTrayDlg : public CDialog
-{
+class CFractalTrayDlg : public CDialog {
     // Construction
 public:
-    CFractalTrayDlg(CWnd* pParent = nullptr);  // standard constructor
+    CFractalTrayDlg(CWnd *pParent = nullptr);  // standard constructor
 
     // Dialog Data
     enum { IDD = IDD_FRACTALTRAY_DIALOG };
 
 protected:
-    virtual void DoDataExchange(CDataExchange* pDX);  // DDX/DDV support
+    virtual void DoDataExchange(CDataExchange *pDX);  // DDX/DDV support
 
 
     // Implementation

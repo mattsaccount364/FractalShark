@@ -3,12 +3,11 @@
 namespace PrecisionCalculator {
 
     uint64_t GetPrecision(
-        const HighPrecision& minX,
-        const HighPrecision& minY,
-        const HighPrecision& maxX,
-        const HighPrecision& maxY,
-        bool RequiresReuse)
-    {
+        const HighPrecision &minX,
+        const HighPrecision &minY,
+        const HighPrecision &maxX,
+        const HighPrecision &maxY,
+        bool RequiresReuse) {
         auto deltaX = abs(maxX - minX);
         auto deltaY = abs(maxY - minY);
 
@@ -23,8 +22,7 @@ namespace PrecisionCalculator {
 
         if (RequiresReuse) {
             larger += AuthoritativeReuseExtraPrecisionInBits;
-        }
-        else {
+        } else {
             larger += AuthoritativeMinExtraPrecisionInBits;
         }
         return larger;

@@ -12,7 +12,7 @@ PngParallelSave::PngParallelSave(
     enum Type typ,
     std::wstring filename_base,
     bool copy_the_iters,
-    Fractal& fractal)
+    Fractal &fractal)
     : m_Type(typ),
     m_FilenameBase(filename_base),
     m_Fractal(fractal),
@@ -40,8 +40,7 @@ PngParallelSave::PngParallelSave(
 
     if (m_CopyTheIters) {
         m_CurIters = fractal.m_CurIters;
-    }
-    else {
+    } else {
         m_CurIters = std::move(fractal.m_CurIters);
         fractal.SetCurItersMemory();
     }
@@ -65,8 +64,7 @@ void PngParallelSave::Run() {
     std::wstring ext;
     if (m_Type == Type::PngImg) {
         ext = L".png";
-    }
-    else {
+    } else {
         ext = L".txt";
     }
 
@@ -78,8 +76,7 @@ void PngParallelSave::Run() {
             ::MessageBox(nullptr, L"Not saving, file exists", L"", MB_OK | MB_APPLMODAL);
             return;
         }
-    }
-    else {
+    } else {
         int i = 0;
         do {
             wchar_t temp[512];
@@ -111,10 +108,8 @@ void PngParallelSave::Run() {
 
         WPngImage image((int)m_ScrnWidth, (int)m_ScrnHeight, WPngImage::Pixel16(0, 0, 0));
 
-        for (output_y = 0; output_y < m_ScrnHeight; output_y++)
-        {
-            for (output_x = 0; output_x < m_ScrnWidth; output_x++)
-            {
+        for (output_y = 0; output_y < m_ScrnHeight; output_y++) {
+            for (output_x = 0; output_x < m_ScrnWidth; output_x++) {
                 acc_r = 0;
                 acc_g = 0;
                 acc_b = 0;
@@ -127,8 +122,7 @@ void PngParallelSave::Run() {
                         input_y++) {
 
                         numIters = m_CurIters.GetItersArrayValSlow(input_x, input_y);
-                        if (numIters < m_NumIterations)
-                        {
+                        if (numIters < m_NumIterations) {
                             numIters += m_PaletteRotate;
                             if (numIters >= maxPossibleIters) {
                                 numIters = maxPossibleIters - 1;
@@ -170,8 +164,7 @@ void PngParallelSave::Run() {
         }
 
         ret = image.saveImage(filename_c, WPngImage::PngFileFormat::kPngFileFormat_RGBA16);
-    }
-    else {
+    } else {
         constexpr size_t buf_size = 128;
         char one_val[buf_size];
         std::string out_str;

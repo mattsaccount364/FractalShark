@@ -3,8 +3,7 @@
 
 
 namespace Utilities {
-    bool FileExists(const wchar_t* filename)
-    {
+    bool FileExists(const wchar_t *filename) {
         DWORD dwAttrib = GetFileAttributes(filename);
 
         return (dwAttrib != INVALID_FILE_ATTRIBUTES &&

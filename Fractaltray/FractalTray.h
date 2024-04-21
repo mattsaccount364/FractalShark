@@ -14,8 +14,7 @@
 // See FractalTray.cpp for the implementation of this class
 //
 
-class CFractalTrayApp : public CWinApp
-{
+class CFractalTrayApp : public CWinApp {
 public:
     CFractalTrayApp();
 

@@ -1,7 +1,7 @@
 template<typename IterType, class T>
 __global__
 void mandel_1x_float_perturb_scaled(
-    IterType* OutputIterMatrix,
+    IterType *OutputIterMatrix,
     AntialiasedColors OutputColorMatrix,
     GPUPerturbSingleResults<IterType, float, PerturbExtras::Bad> PerturbFloat,
     GPUPerturbSingleResults<IterType, T, PerturbExtras::Bad> PerturbDouble,
@@ -13,8 +13,7 @@ void mandel_1x_float_perturb_scaled(
     T dy,
     T centerX,
     T centerY,
-    IterType n_iterations)
-{
+    IterType n_iterations) {
     int X = blockIdx.x * blockDim.x + threadIdx.x;
     int Y = blockIdx.y * blockDim.y + threadIdx.y;
     const float LARGE_MANTISSA = 1e30;
@@ -67,8 +66,8 @@ void mandel_1x_float_perturb_scaled(
     T TwoFiftySix = T(256.0);
 
     while (iter < n_iterations) {
-        const GPUReferenceIter<float, PerturbExtras::Bad>* curFloatIter = PerturbFloat.ScaledOnlyGetIter(RefIteration);
-        const GPUReferenceIter<T, PerturbExtras::Bad>* curDoubleIter = PerturbDouble.ScaledOnlyGetIter(RefIteration);
+        const GPUReferenceIter<float, PerturbExtras::Bad> *curFloatIter = PerturbFloat.ScaledOnlyGetIter(RefIteration);
+        const GPUReferenceIter<T, PerturbExtras::Bad> *curDoubleIter = PerturbDouble.ScaledOnlyGetIter(RefIteration);
 
         if (curFloatIter->bad == false) {
             const float DeltaSubNWXOrig = DeltaSubNWX;
@@ -116,8 +115,7 @@ void mandel_1x_float_perturb_scaled(
             if (none) {
                 ++iter;
                 continue;
-            }
-            else if (test1ab) {
+            } else if (test1ab) {
                 DoubleTempZX = (curDoubleIter->x + (T)DeltaSubNWX * S); // Xxrd, xr
                 //HdrReduce(DoubleTempZX);
                 DoubleTempZY = (curDoubleIter->y + (T)DeltaSubNWY * S); // Xxid, xi
@@ -136,9 +134,7 @@ void mandel_1x_float_perturb_scaled(
 
                 ++iter;
                 continue;
-            }
-            else if (testw2)
-            {
+            } else if (testw2) {
                 DoubleTempZX = (T)DeltaSubNWX * S;
                 //HdrReduce(DoubleTempZX);
                 DoubleTempZY = (T)DeltaSubNWY * S;
@@ -156,13 +152,11 @@ void mandel_1x_float_perturb_scaled(
 
                 ++iter;
                 continue;
-            }
-            else {
+            } else {
                 // zn_size fail
                 break;
             }
-        }
-        else {
+        } else {
             // Do full iteration at double precision
             T DeltaSubNWXOrig = (T)DeltaSubNWX;
             T DeltaSubNWYOrig = (T)DeltaSubNWY;
@@ -220,8 +214,7 @@ void mandel_1x_float_perturb_scaled(
                 DeltaSubNWYNew = (curDoubleIter->y + DoubleTempDeltaSubNWY * S); // Xxid, xi
 
                 RefIteration = 0;
-            }
-            else {
+            } else {
                 DeltaSubNWXNew = DoubleTempDeltaSubNWX * S;
                 DeltaSubNWYNew = DoubleTempDeltaSubNWY * S;
             }
@@ -246,7 +239,7 @@ void mandel_1x_float_perturb_scaled(
 template<typename IterType>
 __global__
 void mandel_2x_float_perturb_scaled(
-    IterType* OutputIterMatrix,
+    IterType *OutputIterMatrix,
     AntialiasedColors OutputColorMatrix,
     GPUPerturbSingleResults<IterType, dblflt, PerturbExtras::Bad> PerturbDoubleFlt,
     GPUPerturbSingleResults<IterType, double, PerturbExtras::Bad> PerturbDouble,
@@ -258,8 +251,7 @@ void mandel_2x_float_perturb_scaled(
     double dy,
     double centerX,
     double centerY,
-    IterType n_iterations)
-{
+    IterType n_iterations) {
     int X = blockIdx.x * blockDim.x + threadIdx.x;
     int Y = blockIdx.y * blockDim.y + threadIdx.y;
     const float LARGE_MANTISSA = 1e30;
@@ -307,8 +299,8 @@ void mandel_2x_float_perturb_scaled(
     IterType MaxRefIteration = PerturbDoubleFlt.GetCountOrbitEntries() - 1;
 
     while (iter < n_iterations) {
-        const GPUReferenceIter<dblflt, PerturbExtras::Bad>* curDblFloatIter = PerturbDoubleFlt.ScaledOnlyGetIter(RefIteration);
-        const GPUReferenceIter<double, PerturbExtras::Bad>* curDoubleIter = PerturbDouble.ScaledOnlyGetIter(RefIteration);
+        const GPUReferenceIter<dblflt, PerturbExtras::Bad> *curDblFloatIter = PerturbDoubleFlt.ScaledOnlyGetIter(RefIteration);
+        const GPUReferenceIter<double, PerturbExtras::Bad> *curDoubleIter = PerturbDouble.ScaledOnlyGetIter(RefIteration);
 
         if (curDblFloatIter->bad == false) {
             const dblflt DeltaSubNWXOrig = DeltaSubNWX;
@@ -359,8 +351,7 @@ void mandel_2x_float_perturb_scaled(
             if (none) {
                 ++iter;
                 continue;
-            }
-            else if (test1ab) {
+            } else if (test1ab) {
                 DoubleTempZX = (curDoubleIter->x + dblflt_to_double(DeltaSubNWX) * S); // Xxrd, xr
                 DoubleTempZY = (curDoubleIter->y + dblflt_to_double(DeltaSubNWY) * S); // Xxid, xi
 
@@ -377,9 +368,7 @@ void mandel_2x_float_perturb_scaled(
 
                 ++iter;
                 continue;
-            }
-            else if (testw2)
-            {
+            } else if (testw2) {
                 DoubleTempZX = dblflt_to_double(DeltaSubNWX) * S;
                 DoubleTempZY = dblflt_to_double(DeltaSubNWY) * S;
 
@@ -394,13 +383,11 @@ void mandel_2x_float_perturb_scaled(
 
                 ++iter;
                 continue;
-            }
-            else {
+            } else {
                 // zn_size fail
                 break;
             }
-        }
-        else {
+        } else {
             // Do full iteration at double precision
             double DeltaSubNWXOrig = dblflt_to_double(DeltaSubNWX);
             double DeltaSubNWYOrig = dblflt_to_double(DeltaSubNWY);
@@ -449,8 +436,7 @@ void mandel_2x_float_perturb_scaled(
                 DeltaSubNWYNew = (curDoubleIter->y + DoubleTempDeltaSubNWY * S); // Xxid, xi
 
                 RefIteration = 0;
-            }
-            else {
+            } else {
                 DeltaSubNWXNew = DoubleTempDeltaSubNWX * S;
                 DeltaSubNWYNew = DoubleTempDeltaSubNWY * S;
             }

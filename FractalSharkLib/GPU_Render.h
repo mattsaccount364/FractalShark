@@ -31,8 +31,8 @@ public:
     template<typename IterType, class T>
     uint32_t RenderPerturbBLAScaled(
         RenderAlgorithm algorithm,
-        const GPUPerturbResults<IterType, T, PerturbExtras::Bad>* double_perturb,
-        const GPUPerturbResults<IterType, float, PerturbExtras::Bad>* float_perturb,
+        const GPUPerturbResults<IterType, T, PerturbExtras::Bad> *double_perturb,
+        const GPUPerturbResults<IterType, float, PerturbExtras::Bad> *float_perturb,
         T cx,
         T cy,
         T dx,
@@ -45,8 +45,8 @@ public:
     template<typename IterType>
     uint32_t RenderPerturbBLA(
         RenderAlgorithm algorithm,
-        const GPUPerturbResults<IterType, MattDblflt, PerturbExtras::Disable>* results,
-        BLAS<IterType, MattDblflt>* blas,
+        const GPUPerturbResults<IterType, MattDblflt, PerturbExtras::Disable> *results,
+        BLAS<IterType, MattDblflt> *blas,
         MattDblflt cx,
         MattDblflt cy,
         MattDblflt dx,
@@ -59,8 +59,8 @@ public:
     template<typename IterType, class T>
     uint32_t RenderPerturbBLA(
         RenderAlgorithm algorithm,
-        const GPUPerturbResults<IterType, T, PerturbExtras::Disable>* results,
-        BLAS<IterType, T>* blas,
+        const GPUPerturbResults<IterType, T, PerturbExtras::Disable> *results,
+        BLAS<IterType, T> *blas,
         T cx,
         T cy,
         T dx,
@@ -97,15 +97,15 @@ public:
     template<typename IterType, class T1, class SubType, PerturbExtras PExtras, class T2>
     uint32_t InitializePerturb(
         size_t GenerationNumber1,
-        const GPUPerturbResults<IterType, T1, PExtras>* Perturb1,
+        const GPUPerturbResults<IterType, T1, PExtras> *Perturb1,
         size_t GenerationNumber2,
-        const GPUPerturbResults<IterType, T2, PExtras>* Perturb2,
-        const LAReference<IterType, T1, SubType, PExtras>* LaReferenceHost);
+        const GPUPerturbResults<IterType, T2, PExtras> *Perturb2,
+        const LAReference<IterType, T1, SubType, PExtras> *LaReferenceHost);
 
     template<typename IterType>
     void ClearMemory();
 
-    static const char* ConvertErrorToString(uint32_t err);
+    static const char *ConvertErrorToString(uint32_t err);
 
     // Match in Fractal.cpp
     static const int32_t NB_THREADS_W = 16;  // W=16, H=8 previously seemed OK
@@ -118,8 +118,8 @@ public:
     template<typename IterType>
     uint32_t RenderCurrent(
         IterType n_iterations,
-        IterType* iter_buffer,
-        Color16* color_buffer,
+        IterType *iter_buffer,
+        Color16 *color_buffer,
         ReductionResults *reduction_results);
 
     uint32_t SyncStream(bool altStream);
@@ -153,11 +153,11 @@ private:
 
     template<typename IterType, bool Async>
     uint32_t ExtractItersAndColors(
-        IterType* iter_buffer,
-        Color16* color_buffer,
+        IterType *iter_buffer,
+        Color16 *color_buffer,
         ReductionResults *reduction_results);
 
-    void* OutputIterMatrix;
+    void *OutputIterMatrix;
     ReductionResults *OutputReductionResults;
     AntialiasedColors OutputColorMatrix;
 

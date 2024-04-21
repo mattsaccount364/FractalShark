@@ -46,9 +46,8 @@
 //============================================================================
 // WPngImage class
 //============================================================================
-class WPngImage
-{
- public:
+class WPngImage {
+public:
     //------------------------------------------------------------------------
     // Types
     //------------------------------------------------------------------------
@@ -89,8 +88,7 @@ class WPngImage
     //------------------------------------------------------------------------
     // Enumerations
     //------------------------------------------------------------------------
-    enum PngFileFormat
-    {
+    enum PngFileFormat {
         kPngFileFormat_none,
         kPngFileFormat_GA8,
         kPngFileFormat_GA16,
@@ -98,8 +96,7 @@ class WPngImage
         kPngFileFormat_RGBA16
     };
 
-    enum PixelFormat
-    {
+    enum PixelFormat {
         kPixelFormat_GA8,
         kPixelFormat_GA16,
         kPixelFormat_GAF,
@@ -108,8 +105,7 @@ class WPngImage
         kPixelFormat_RGBAF
     };
 
-    enum PngReadConvert
-    {
+    enum PngReadConvert {
         kPngReadConvert_closestMatch,
         kPngReadConvert_8bit,
         kPngReadConvert_16bit,
@@ -118,8 +114,7 @@ class WPngImage
         kPngReadConvert_RGBA
     };
 
-    enum PngWriteConvert
-    {
+    enum PngWriteConvert {
         kPngWriteConvert_original,
         kPngWriteConvert_closestMatch
     };
@@ -134,17 +129,17 @@ class WPngImage
     WPngImage(int width, int height, Pixel16, PixelFormat = kPixelFormat_RGBA16);
     WPngImage(int width, int height, PixelF, PixelFormat = kPixelFormat_RGBAF);
 
-    WPngImage(const WPngImage&);
-    WPngImage& operator=(const WPngImage&);
+    WPngImage(const WPngImage &);
+    WPngImage &operator=(const WPngImage &);
     ~WPngImage();
 
 #if !WPNGIMAGE_RESTRICT_TO_CPP98
-    WPngImage(WPngImage&&) noexcept;
-    WPngImage& operator=(WPngImage&&) noexcept;
+    WPngImage(WPngImage &&) noexcept;
+    WPngImage &operator=(WPngImage &&) noexcept;
 #endif
 
-    void swap(WPngImage&);
-    void move(WPngImage&);
+    void swap(WPngImage &);
+    void move(WPngImage &);
 
     static const bool isUsingLibpng;
 
@@ -153,40 +148,39 @@ class WPngImage
     // Image loading and creation
     //------------------------------------------------------------------------
 #if !WPNGIMAGE_DISABLE_PNG_FILE_IO_SUPPORT
-    enum IOStatusValue
-    {
+    enum IOStatusValue {
         kIOStatus_Ok,
         kIOStatus_Error_CantOpenFile,
         kIOStatus_Error_NotPNG,
         kIOStatus_Error_PNGLibraryError
     };
 
-    struct IOStatus
-    {
+    struct IOStatus {
         IOStatusValue value;
         std::string fileName, pngLibErrorMsg;
         int errnoValue;
 
-        IOStatus(IOStatusValue v): value(v), errnoValue(0) {}
-        IOStatus(IOStatusValue v, int ev): value(v), errnoValue(ev) {}
-        IOStatus(IOStatusValue v, const std::string& m):
-            value(v), pngLibErrorMsg(m), errnoValue(0) {}
+        IOStatus(IOStatusValue v) : value(v), errnoValue(0) {}
+        IOStatus(IOStatusValue v, int ev) : value(v), errnoValue(ev) {}
+        IOStatus(IOStatusValue v, const std::string &m) :
+            value(v), pngLibErrorMsg(m), errnoValue(0) {
+        }
 
         operator IOStatusValue() const { return value; }
 
-        bool printErrorMsg(std::ostream& = std::cerr) const;
+        bool printErrorMsg(std::ostream & = std::cerr) const;
     };
 
-    IOStatus loadImage(const char* fileName, PngReadConvert = kPngReadConvert_closestMatch);
-    IOStatus loadImage(const char* fileName, PixelFormat);
+    IOStatus loadImage(const char *fileName, PngReadConvert = kPngReadConvert_closestMatch);
+    IOStatus loadImage(const char *fileName, PixelFormat);
 
-    IOStatus loadImage(const std::string& fileName,
-                       PngReadConvert = kPngReadConvert_closestMatch);
-    IOStatus loadImage(const std::string& fileName, PixelFormat);
+    IOStatus loadImage(const std::string &fileName,
+        PngReadConvert = kPngReadConvert_closestMatch);
+    IOStatus loadImage(const std::string &fileName, PixelFormat);
 
-    IOStatus loadImageFromRAM(const void* pngData, std::size_t pngDataSize,
-                              PngReadConvert = kPngReadConvert_closestMatch);
-    IOStatus loadImageFromRAM(const void* pngData, std::size_t pngDataSize, PixelFormat);
+    IOStatus loadImageFromRAM(const void *pngData, std::size_t pngDataSize,
+        PngReadConvert = kPngReadConvert_closestMatch);
+    IOStatus loadImageFromRAM(const void *pngData, std::size_t pngDataSize, PixelFormat);
 #endif
 
     void newImage(int width, int height, PixelFormat = kPixelFormat_RGBA8);
@@ -199,25 +193,25 @@ class WPngImage
     // Image writing
     //------------------------------------------------------------------------
 #if !WPNGIMAGE_DISABLE_PNG_FILE_IO_SUPPORT
-    IOStatus saveImage(const char* fileName,
-                       PngWriteConvert = kPngWriteConvert_closestMatch) const;
-    IOStatus saveImage(const char* fileName, PngFileFormat) const;
+    IOStatus saveImage(const char *fileName,
+        PngWriteConvert = kPngWriteConvert_closestMatch) const;
+    IOStatus saveImage(const char *fileName, PngFileFormat) const;
 
-    IOStatus saveImage(const std::string& fileName,
-                       PngWriteConvert = kPngWriteConvert_closestMatch) const;
-    IOStatus saveImage(const std::string& fileName, PngFileFormat) const;
+    IOStatus saveImage(const std::string &fileName,
+        PngWriteConvert = kPngWriteConvert_closestMatch) const;
+    IOStatus saveImage(const std::string &fileName, PngFileFormat) const;
 
-    IOStatus saveImageToRAM(std::vector<unsigned char>& dest,
-                            PngWriteConvert = kPngWriteConvert_closestMatch) const;
-    IOStatus saveImageToRAM(std::vector<unsigned char>& dest, PngFileFormat) const;
+    IOStatus saveImageToRAM(std::vector<unsigned char> &dest,
+        PngWriteConvert = kPngWriteConvert_closestMatch) const;
+    IOStatus saveImageToRAM(std::vector<unsigned char> &dest, PngFileFormat) const;
 
 #if WPNGIMAGE_RESTRICT_TO_CPP98
-    typedef void(*ByteStreamOutputFunc)(const unsigned char*, std::size_t);
+    typedef void(*ByteStreamOutputFunc)(const unsigned char *, std::size_t);
 #else
-    using ByteStreamOutputFunc = std::function<void(const unsigned char*, std::size_t)>;
+    using ByteStreamOutputFunc = std::function<void(const unsigned char *, std::size_t)>;
 #endif
     IOStatus saveImageToRAM(ByteStreamOutputFunc,
-                            PngWriteConvert = kPngWriteConvert_closestMatch) const;
+        PngWriteConvert = kPngWriteConvert_closestMatch) const;
     IOStatus saveImageToRAM(ByteStreamOutputFunc, PngFileFormat) const;
 #endif
 
@@ -270,16 +264,16 @@ class WPngImage
     void transform(TransformFunc8);
     void transform(TransformFunc16);
     void transform(TransformFuncF);
-    void transform(TransformFunc8, WPngImage& dest) const;
-    void transform(TransformFunc16, WPngImage& dest) const;
-    void transform(TransformFuncF, WPngImage& dest) const;
+    void transform(TransformFunc8, WPngImage &dest) const;
+    void transform(TransformFunc16, WPngImage &dest) const;
+    void transform(TransformFuncF, WPngImage &dest) const;
 
     void transform8(TransformFunc8 f) { transform(f); }
     void transform16(TransformFunc16 f) { transform(f); }
     void transformF(TransformFuncF f) { transform(f); }
-    void transform8(TransformFunc8 f, WPngImage& dest) const { transform(f, dest); }
-    void transform16(TransformFunc16 f, WPngImage& dest) const { transform(f, dest); }
-    void transformF(TransformFuncF f, WPngImage& dest) const { transform(f, dest); }
+    void transform8(TransformFunc8 f, WPngImage &dest) const { transform(f, dest); }
+    void transform16(TransformFunc16 f, WPngImage &dest) const { transform(f, dest); }
+    void transformF(TransformFuncF f, WPngImage &dest) const { transform(f, dest); }
 
 
     //------------------------------------------------------------------------
@@ -304,13 +298,13 @@ class WPngImage
     void drawPixel(int x, int y, Pixel16);
     void drawPixel(int x, int y, PixelF);
 
-    void putImage(int destX, int destY, const WPngImage&);
-    void putImage(int destX, int destY, const WPngImage&,
-                  int srcX, int srcY, int srcWidth, int srcHeight);
+    void putImage(int destX, int destY, const WPngImage &);
+    void putImage(int destX, int destY, const WPngImage &,
+        int srcX, int srcY, int srcWidth, int srcHeight);
 
-    void drawImage(int destX, int destY, const WPngImage&);
-    void drawImage(int destX, int destY, const WPngImage&,
-                   int srcX, int srcY, int srcWidth, int srcHeight);
+    void drawImage(int destX, int destY, const WPngImage &);
+    void drawImage(int destX, int destY, const WPngImage &,
+        int srcX, int srcY, int srcWidth, int srcHeight);
 
     void putHorLine(int x, int y, int length, Pixel8);
     void putHorLine(int x, int y, int length, Pixel16);
@@ -343,54 +337,54 @@ class WPngImage
     //------------------------------------------------------------------------
     // Raw data
     //------------------------------------------------------------------------
-    const Pixel8* getRawPixelData8() const;
-    Pixel8* getRawPixelData8();
-    const Pixel16* getRawPixelData16() const;
-    Pixel16* getRawPixelData16();
-    const PixelF* getRawPixelDataF() const;
-    PixelF* getRawPixelDataF();
+    const Pixel8 *getRawPixelData8() const;
+    Pixel8 *getRawPixelData8();
+    const Pixel16 *getRawPixelData16() const;
+    Pixel16 *getRawPixelData16();
+    const PixelF *getRawPixelDataF() const;
+    PixelF *getRawPixelDataF();
 
 
 
-//----------------------------------------------------------------------------
- private:
-//----------------------------------------------------------------------------
+    //----------------------------------------------------------------------------
+private:
+    //----------------------------------------------------------------------------
     template<typename, typename, typename> struct Pixel;
     template<typename, typename> struct IPixel;
     struct PngDataBase;
     template<typename> struct PngData;
 
-    PngDataBase* mData;
+    PngDataBase *mData;
     int mWidth, mHeight;
 
     template<typename Pixel_t>
     void newImageWithPixelValue(int, int, Pixel_t, PixelFormat);
 
-    void putImage(int, int, const WPngImage&, int, int, int, int, bool);
-    void manageCanvasResize(WPngImage&, int, int);
-    template<typename Pixel_t> void addHorLine(int, int, int, const Pixel_t&, bool);
-    template<typename Pixel_t> void addVertLine(int, int, int, const Pixel_t&, bool);
-    template<typename Pixel_t> void addRect(int, int, int, int, const Pixel_t&, bool, bool);
+    void putImage(int, int, const WPngImage &, int, int, int, int, bool);
+    void manageCanvasResize(WPngImage &, int, int);
+    template<typename Pixel_t> void addHorLine(int, int, int, const Pixel_t &, bool);
+    template<typename Pixel_t> void addVertLine(int, int, int, const Pixel_t &, bool);
+    template<typename Pixel_t> void addRect(int, int, int, int, const Pixel_t &, bool, bool);
 
     static PixelFormat getPixelFormat(PngReadConvert, PngFileFormat);
     static PngFileFormat getClosestMatchFileFormat(PixelFormat);
     static PngFileFormat getFileFormat(PngWriteConvert, PngFileFormat, PixelFormat);
-    void setPixel(std::size_t, const Pixel8&);
-    void setPixel(std::size_t, const Pixel16&);
+    void setPixel(std::size_t, const Pixel8 &);
+    void setPixel(std::size_t, const Pixel16 &);
 
 #if !WPNGIMAGE_DISABLE_PNG_FILE_IO_SUPPORT
-    void setPixelRow(PngFileFormat, int, Byte*, int) const;
-    void setPixelRow(PngFileFormat, int, UInt16*, int) const;
+    void setPixelRow(PngFileFormat, int, Byte *, int) const;
+    void setPixelRow(PngFileFormat, int, UInt16 *, int) const;
 
     struct PngStructs;
-    IOStatus readPngData(PngStructs&, bool, PngReadConvert, PixelFormat);
-    IOStatus performLoadImage(const char*, bool, PngReadConvert, PixelFormat);
-    IOStatus performLoadImageFromRAM(const void*, std::size_t, bool, PngReadConvert, PixelFormat);
-    IOStatus writePngData(PngStructs&, PngFileFormat) const;
-    void performWritePngData(PngStructs&, PngFileFormat, int, int, int) const;
-    IOStatus performSaveImage(const char*, PngFileFormat) const;
+    IOStatus readPngData(PngStructs &, bool, PngReadConvert, PixelFormat);
+    IOStatus performLoadImage(const char *, bool, PngReadConvert, PixelFormat);
+    IOStatus performLoadImageFromRAM(const void *, std::size_t, bool, PngReadConvert, PixelFormat);
+    IOStatus writePngData(PngStructs &, PngFileFormat) const;
+    void performWritePngData(PngStructs &, PngFileFormat, int, int, int) const;
+    IOStatus performSaveImage(const char *, PngFileFormat) const;
     IOStatus performSaveImageToRAM
-    (std::vector<unsigned char>*, ByteStreamOutputFunc, PngFileFormat) const;
+    (std::vector<unsigned char> *, ByteStreamOutputFunc, PngFileFormat) const;
 #endif
 };
 
@@ -399,80 +393,80 @@ class WPngImage
 // Pixel base class
 //============================================================================
 template<typename Pixel_t, typename CT, typename OperatorParam_t>
-struct WPngImage::Pixel
-{
+struct WPngImage::Pixel {
     typedef CT Component_t;
 
     CT r, g, b, a;
 
-    WPNGIMAGE_CONSTEXPR Pixel(CT red, CT green, CT blue, CT alpha):
-        r(red), g(green), b(blue), a(alpha) {}
+    WPNGIMAGE_CONSTEXPR Pixel(CT red, CT green, CT blue, CT alpha) :
+        r(red), g(green), b(blue), a(alpha) {
+    }
 
-    WPNGIMAGE_CONSTEXPR bool operator==(const Pixel_t&) const;
-    WPNGIMAGE_CONSTEXPR bool operator!=(const Pixel_t&) const;
+    WPNGIMAGE_CONSTEXPR bool operator==(const Pixel_t &) const;
+    WPNGIMAGE_CONSTEXPR bool operator!=(const Pixel_t &) const;
 
-    Pixel_t& operator+=(OperatorParam_t);
+    Pixel_t &operator+=(OperatorParam_t);
     Pixel_t operator+(OperatorParam_t) const;
-    Pixel_t& operator-=(OperatorParam_t);
+    Pixel_t &operator-=(OperatorParam_t);
     Pixel_t operator-(OperatorParam_t) const;
-    Pixel_t& operator*=(OperatorParam_t);
+    Pixel_t &operator*=(OperatorParam_t);
     Pixel_t operator*(OperatorParam_t) const;
-    Pixel_t& operator/=(OperatorParam_t);
+    Pixel_t &operator/=(OperatorParam_t);
     Pixel_t operator/(OperatorParam_t) const;
 
-    Pixel_t& operator+=(const Pixel_t&);
-    Pixel_t operator+(const Pixel_t&) const;
-    Pixel_t& operator-=(const Pixel_t&);
-    Pixel_t operator-(const Pixel_t&) const;
-    Pixel_t& operator*=(const Pixel_t&);
-    Pixel_t operator*(const Pixel_t&) const;
-    Pixel_t& operator/=(const Pixel_t&);
-    Pixel_t operator/(const Pixel_t&) const;
+    Pixel_t &operator+=(const Pixel_t &);
+    Pixel_t operator+(const Pixel_t &) const;
+    Pixel_t &operator-=(const Pixel_t &);
+    Pixel_t operator-(const Pixel_t &) const;
+    Pixel_t &operator*=(const Pixel_t &);
+    Pixel_t operator*(const Pixel_t &) const;
+    Pixel_t &operator/=(const Pixel_t &);
+    Pixel_t operator/(const Pixel_t &) const;
 
-    void set(CT v) { r=v; g=v; b=v; }
-    void set(CT v, CT iA) { r=v; g=v; b=v; a=iA; }
-    void set(CT iR, CT iG, CT iB) { r=iR; g=iG; b=iB; }
-    void set(CT iR, CT iG, CT iB, CT iA) { r=iR; g=iG; b=iB; a=iA; }
+    void set(CT v) { r = v; g = v; b = v; }
+    void set(CT v, CT iA) { r = v; g = v; b = v; a = iA; }
+    void set(CT iR, CT iG, CT iB) { r = iR; g = iG; b = iB; }
+    void set(CT iR, CT iG, CT iB, CT iA) { r = iR; g = iG; b = iB; a = iA; }
 
     HSV toHSV() const;
-    void set(const HSV&);
+    void set(const HSV &);
     void setFromHSV(Float hValue, Float sValue, Float vValue);
     void setFromHSV(Float hValue, Float sValue, Float vValue, Float aValue);
     HSL toHSL() const;
-    void set(const HSL&);
+    void set(const HSL &);
     void setFromHSL(Float hValue, Float sValue, Float lValue);
     void setFromHSL(Float hValue, Float sValue, Float lValue, Float aValue);
     XYZ toXYZ() const;
-    void set(const XYZ&);
+    void set(const XYZ &);
     void setFromXYZ(Float xValue, Float yValue, Float zValue);
     void setFromXYZ(Float xValue, Float yValue, Float zValue, Float aValue);
     YXY toYXY() const;
-    void set(const YXY&);
+    void set(const YXY &);
     void setFromYXY(Float YValue, Float xValue, Float yValue);
     void setFromYXY(Float YValue, Float xValue, Float yValue, Float aValue);
     CMY toCMY() const;
-    void set(const CMY&);
+    void set(const CMY &);
     void setFromCMY(Float cValue, Float mValue, Float yValue);
     void setFromCMY(Float cValue, Float mValue, Float yValue, Float aValue);
     CMYK toCMYK() const;
-    void set(const CMYK&);
+    void set(const CMYK &);
     void setFromCMYK(Float cValue, Float mValue, Float yValue, Float kValue);
     void setFromCMYK(Float cValue, Float mValue, Float yValue, Float kValue, Float aValue);
 
-    void blendWith(const Pixel_t& src);
-    Pixel_t blendedPixel(const Pixel_t& src) const;
+    void blendWith(const Pixel_t &src);
+    Pixel_t blendedPixel(const Pixel_t &src) const;
 
-    void averageWith(const Pixel_t&);
-    Pixel_t averagedPixel(const Pixel_t&) const;
-    void averageWith(const Pixel_t*, std::size_t amount);
-    Pixel_t averagedPixel(const Pixel_t*, std::size_t amount) const;
+    void averageWith(const Pixel_t &);
+    Pixel_t averagedPixel(const Pixel_t &) const;
+    void averageWith(const Pixel_t *, std::size_t amount);
+    Pixel_t averagedPixel(const Pixel_t *, std::size_t amount) const;
 
 #if !WPNGIMAGE_RESTRICT_TO_CPP98
     template<typename... Rest>
-    void averageWith(const Pixel_t&, Rest&&...);
+    void averageWith(const Pixel_t &, Rest&&...);
 
     template<typename... Rest>
-    Pixel_t averagedPixel(const Pixel_t&, Rest&&...) const;
+    Pixel_t averagedPixel(const Pixel_t &, Rest&&...) const;
 #endif
 
     CT toGrayCIE() const;
@@ -484,11 +478,10 @@ struct WPngImage::Pixel
 // Pixel base class specialization for integer component types
 // ---------------------------------------------------------------------------
 template<typename Pixel_t, typename CT>
-struct WPngImage::IPixel: public WPngImage::Pixel<Pixel_t, CT, Int32>
-{
-    WPNGIMAGE_CONSTEXPR IPixel(CT red, CT green, CT blue, CT alpha):
-        Pixel<Pixel_t, CT, Int32>::Pixel(red, green, blue, alpha)
-    {}
+struct WPngImage::IPixel : public WPngImage::Pixel<Pixel_t, CT, Int32> {
+    WPNGIMAGE_CONSTEXPR IPixel(CT red, CT green, CT blue, CT alpha) :
+        Pixel<Pixel_t, CT, Int32>::Pixel(red, green, blue, alpha) {
+    }
 
     CT toGray(Int32 rWeight = 299, Int32 gWeight = 587, Int32 bWeight = 114) const;
     Pixel_t grayPixel(Int32 rWeight = 299, Int32 gWeight = 587, Int32 bWeight = 114) const;
@@ -498,146 +491,162 @@ struct WPngImage::IPixel: public WPngImage::Pixel<Pixel_t, CT, Int32>
 //============================================================================
 // WPngImage::Pixel8 definition
 //============================================================================
-struct WPngImage::Pixel8: public WPngImage::IPixel<Pixel8, Byte>
-{
+struct WPngImage::Pixel8 : public WPngImage::IPixel<Pixel8, Byte> {
 #pragma warning(push)
 #pragma warning(disable: 4245)
     static const Byte kComponentMaxValue = ~Byte(0);
 #pragma warning(pop)
 
-    WPNGIMAGE_CONSTEXPR Pixel8():
-        IPixel(0, 0, 0, kComponentMaxValue) {}
+    WPNGIMAGE_CONSTEXPR Pixel8() :
+        IPixel(0, 0, 0, kComponentMaxValue) {
+    }
 
-    explicit WPNGIMAGE_CONSTEXPR Pixel8(Byte gray):
-        IPixel(gray, gray, gray, kComponentMaxValue) {}
+    explicit WPNGIMAGE_CONSTEXPR Pixel8(Byte gray) :
+        IPixel(gray, gray, gray, kComponentMaxValue) {
+    }
 
-    WPNGIMAGE_CONSTEXPR Pixel8(Byte gray, Byte alpha):
-        IPixel(gray, gray, gray, alpha) {}
+    WPNGIMAGE_CONSTEXPR Pixel8(Byte gray, Byte alpha) :
+        IPixel(gray, gray, gray, alpha) {
+    }
 
-    WPNGIMAGE_CONSTEXPR Pixel8(Byte red, Byte green, Byte blue):
-        IPixel(red, green, blue, kComponentMaxValue) {}
+    WPNGIMAGE_CONSTEXPR Pixel8(Byte red, Byte green, Byte blue) :
+        IPixel(red, green, blue, kComponentMaxValue) {
+    }
 
-    WPNGIMAGE_CONSTEXPR Pixel8(Byte red, Byte green, Byte blue, Byte alpha):
-        IPixel(red, green, blue, alpha) {}
+    WPNGIMAGE_CONSTEXPR Pixel8(Byte red, Byte green, Byte blue, Byte alpha) :
+        IPixel(red, green, blue, alpha) {
+    }
 
     explicit Pixel8(Pixel16);
     explicit Pixel8(PixelF);
-    explicit Pixel8(const HSV& hsv): IPixel(0, 0, 0, 0) { set(hsv); }
-    explicit Pixel8(const HSL& hsl): IPixel(0, 0, 0, 0) { set(hsl); }
-    explicit Pixel8(const XYZ& xyz): IPixel(0, 0, 0, 0) { set(xyz); }
-    explicit Pixel8(const YXY& yxy): IPixel(0, 0, 0, 0) { set(yxy); }
-    explicit Pixel8(const CMY& cmy): IPixel(0, 0, 0, 0) { set(cmy); }
-    explicit Pixel8(const CMYK& cmyk): IPixel(0, 0, 0, 0) { set(cmyk); }
+    explicit Pixel8(const HSV &hsv) : IPixel(0, 0, 0, 0) { set(hsv); }
+    explicit Pixel8(const HSL &hsl) : IPixel(0, 0, 0, 0) { set(hsl); }
+    explicit Pixel8(const XYZ &xyz) : IPixel(0, 0, 0, 0) { set(xyz); }
+    explicit Pixel8(const YXY &yxy) : IPixel(0, 0, 0, 0) { set(yxy); }
+    explicit Pixel8(const CMY &cmy) : IPixel(0, 0, 0, 0) { set(cmy); }
+    explicit Pixel8(const CMYK &cmyk) : IPixel(0, 0, 0, 0) { set(cmyk); }
 
-    void interpolate(const Pixel8&, Byte factor);
-    Pixel8 interpolatedPixel(const Pixel8&, Byte factor) const;
-    void rawInterpolate(const Pixel8&, Byte factor);
-    Pixel8 rawInterpolatedPixel(const Pixel8&, Byte factor) const;
+    void interpolate(const Pixel8 &, Byte factor);
+    Pixel8 interpolatedPixel(const Pixel8 &, Byte factor) const;
+    void rawInterpolate(const Pixel8 &, Byte factor);
+    Pixel8 rawInterpolatedPixel(const Pixel8 &, Byte factor) const;
 
     void premultiplyAlpha();
     Pixel8 premultipliedAlphaPixel() const;
 };
 
-inline WPngImage::Pixel8 operator+(WPngImage::Int32 value, const WPngImage::Pixel8& p)
-{ return p + value; }
+inline WPngImage::Pixel8 operator+(WPngImage::Int32 value, const WPngImage::Pixel8 &p) {
+    return p + value;
+}
 
-WPngImage::Pixel8 operator-(WPngImage::Int32, const WPngImage::Pixel8&);
+WPngImage::Pixel8 operator-(WPngImage::Int32, const WPngImage::Pixel8 &);
 
-inline WPngImage::Pixel8 operator*(WPngImage::Int32 value, const WPngImage::Pixel8& p)
-{ return p * value; }
+inline WPngImage::Pixel8 operator*(WPngImage::Int32 value, const WPngImage::Pixel8 &p) {
+    return p * value;
+}
 
-WPngImage::Pixel8 operator/(WPngImage::Int32, const WPngImage::Pixel8&);
+WPngImage::Pixel8 operator/(WPngImage::Int32, const WPngImage::Pixel8 &);
 
 
 //============================================================================
 // WPngImage::Pixel16 definition
 //============================================================================
-struct WPngImage::Pixel16: public WPngImage::IPixel<Pixel16, UInt16>
-{
+struct WPngImage::Pixel16 : public WPngImage::IPixel<Pixel16, UInt16> {
 #pragma warning(push)
 #pragma warning(disable: 4245)
     static const UInt16 kComponentMaxValue = ~UInt16(0);
 #pragma warning(pop)
 
-    WPNGIMAGE_CONSTEXPR Pixel16():
-        IPixel(0, 0, 0, kComponentMaxValue) {}
+    WPNGIMAGE_CONSTEXPR Pixel16() :
+        IPixel(0, 0, 0, kComponentMaxValue) {
+    }
 
-    explicit WPNGIMAGE_CONSTEXPR Pixel16(UInt16 gray):
-        IPixel(gray, gray, gray, kComponentMaxValue) {}
+    explicit WPNGIMAGE_CONSTEXPR Pixel16(UInt16 gray) :
+        IPixel(gray, gray, gray, kComponentMaxValue) {
+    }
 
-    WPNGIMAGE_CONSTEXPR Pixel16(UInt16 gray, UInt16 alpha):
-        IPixel(gray, gray, gray, alpha) {}
+    WPNGIMAGE_CONSTEXPR Pixel16(UInt16 gray, UInt16 alpha) :
+        IPixel(gray, gray, gray, alpha) {
+    }
 
-    WPNGIMAGE_CONSTEXPR Pixel16(UInt16 red, UInt16 green, UInt16 blue):
-        IPixel(red, green, blue, kComponentMaxValue) {}
+    WPNGIMAGE_CONSTEXPR Pixel16(UInt16 red, UInt16 green, UInt16 blue) :
+        IPixel(red, green, blue, kComponentMaxValue) {
+    }
 
-    WPNGIMAGE_CONSTEXPR Pixel16(UInt16 red, UInt16 green, UInt16 blue, UInt16 alpha):
-        IPixel(red, green, blue, alpha) {}
+    WPNGIMAGE_CONSTEXPR Pixel16(UInt16 red, UInt16 green, UInt16 blue, UInt16 alpha) :
+        IPixel(red, green, blue, alpha) {
+    }
 
     explicit Pixel16(Pixel8);
     explicit Pixel16(PixelF);
-    explicit Pixel16(const HSV& hsv): IPixel(0, 0, 0, 0) { set(hsv); }
-    explicit Pixel16(const HSL& hsl): IPixel(0, 0, 0, 0) { set(hsl); }
-    explicit Pixel16(const XYZ& xyz): IPixel(0, 0, 0, 0) { set(xyz); }
-    explicit Pixel16(const YXY& yxy): IPixel(0, 0, 0, 0) { set(yxy); }
-    explicit Pixel16(const CMY& cmy): IPixel(0, 0, 0, 0) { set(cmy); }
-    explicit Pixel16(const CMYK& cmyk): IPixel(0, 0, 0, 0) { set(cmyk); }
+    explicit Pixel16(const HSV &hsv) : IPixel(0, 0, 0, 0) { set(hsv); }
+    explicit Pixel16(const HSL &hsl) : IPixel(0, 0, 0, 0) { set(hsl); }
+    explicit Pixel16(const XYZ &xyz) : IPixel(0, 0, 0, 0) { set(xyz); }
+    explicit Pixel16(const YXY &yxy) : IPixel(0, 0, 0, 0) { set(yxy); }
+    explicit Pixel16(const CMY &cmy) : IPixel(0, 0, 0, 0) { set(cmy); }
+    explicit Pixel16(const CMYK &cmyk) : IPixel(0, 0, 0, 0) { set(cmyk); }
 
-    void interpolate(const Pixel16&, UInt16 factor);
-    Pixel16 interpolatedPixel(const Pixel16&, UInt16 factor) const;
-    void rawInterpolate(const Pixel16&, UInt16 factor);
-    Pixel16 rawInterpolatedPixel(const Pixel16&, UInt16 factor) const;
+    void interpolate(const Pixel16 &, UInt16 factor);
+    Pixel16 interpolatedPixel(const Pixel16 &, UInt16 factor) const;
+    void rawInterpolate(const Pixel16 &, UInt16 factor);
+    Pixel16 rawInterpolatedPixel(const Pixel16 &, UInt16 factor) const;
 
     void premultiplyAlpha();
     Pixel16 premultipliedAlphaPixel() const;
 };
 
-inline WPngImage::Pixel16 operator+(WPngImage::Int32 value, const WPngImage::Pixel16& p)
-{ return p + value; }
+inline WPngImage::Pixel16 operator+(WPngImage::Int32 value, const WPngImage::Pixel16 &p) {
+    return p + value;
+}
 
-WPngImage::Pixel16 operator-(WPngImage::Int32, const WPngImage::Pixel16&);
+WPngImage::Pixel16 operator-(WPngImage::Int32, const WPngImage::Pixel16 &);
 
-inline WPngImage::Pixel16 operator*(WPngImage::Int32 value, const WPngImage::Pixel16& p)
-{ return p * value; }
+inline WPngImage::Pixel16 operator*(WPngImage::Int32 value, const WPngImage::Pixel16 &p) {
+    return p * value;
+}
 
-WPngImage::Pixel16 operator/(WPngImage::Int32, const WPngImage::Pixel16&);
+WPngImage::Pixel16 operator/(WPngImage::Int32, const WPngImage::Pixel16 &);
 
 
 //============================================================================
 // WPngImage::PixelF definition
 //============================================================================
-struct WPngImage::PixelF: public WPngImage::Pixel<PixelF, Float, Float>
-{
-    WPNGIMAGE_CONSTEXPR PixelF():
-        Pixel(0, 0, 0, 1.0f) {}
+struct WPngImage::PixelF : public WPngImage::Pixel<PixelF, Float, Float> {
+    WPNGIMAGE_CONSTEXPR PixelF() :
+        Pixel(0, 0, 0, 1.0f) {
+    }
 
-    explicit WPNGIMAGE_CONSTEXPR PixelF(Float gray):
-        Pixel(gray, gray, gray, 1.0f) {}
+    explicit WPNGIMAGE_CONSTEXPR PixelF(Float gray) :
+        Pixel(gray, gray, gray, 1.0f) {
+    }
 
-    WPNGIMAGE_CONSTEXPR PixelF(Float gray, Float alpha):
-        Pixel(gray, gray, gray, alpha) {}
+    WPNGIMAGE_CONSTEXPR PixelF(Float gray, Float alpha) :
+        Pixel(gray, gray, gray, alpha) {
+    }
 
-    WPNGIMAGE_CONSTEXPR PixelF(Float red, Float green, Float blue):
-        Pixel(red, green, blue, 1.0f) {}
+    WPNGIMAGE_CONSTEXPR PixelF(Float red, Float green, Float blue) :
+        Pixel(red, green, blue, 1.0f) {
+    }
 
-    WPNGIMAGE_CONSTEXPR PixelF(Float red, Float green, Float blue, Float alpha):
-        Pixel(red, green, blue, alpha) {}
+    WPNGIMAGE_CONSTEXPR PixelF(Float red, Float green, Float blue, Float alpha) :
+        Pixel(red, green, blue, alpha) {
+    }
 
     explicit PixelF(Pixel8);
     explicit PixelF(Pixel16);
-    explicit PixelF(const HSV& hsv): Pixel(0, 0, 0, 0) { set(hsv); }
-    explicit PixelF(const HSL& hsl): Pixel(0, 0, 0, 0) { set(hsl); }
-    explicit PixelF(const XYZ& xyz): Pixel(0, 0, 0, 0) { set(xyz); }
-    explicit PixelF(const YXY& yxy): Pixel(0, 0, 0, 0) { set(yxy); }
-    explicit PixelF(const CMY& cmy): Pixel(0, 0, 0, 0) { set(cmy); }
-    explicit PixelF(const CMYK& cmyk): Pixel(0, 0, 0, 0) { set(cmyk); }
+    explicit PixelF(const HSV &hsv) : Pixel(0, 0, 0, 0) { set(hsv); }
+    explicit PixelF(const HSL &hsl) : Pixel(0, 0, 0, 0) { set(hsl); }
+    explicit PixelF(const XYZ &xyz) : Pixel(0, 0, 0, 0) { set(xyz); }
+    explicit PixelF(const YXY &yxy) : Pixel(0, 0, 0, 0) { set(yxy); }
+    explicit PixelF(const CMY &cmy) : Pixel(0, 0, 0, 0) { set(cmy); }
+    explicit PixelF(const CMYK &cmyk) : Pixel(0, 0, 0, 0) { set(cmyk); }
 
     Float toGray(Float rWeight = 0.299f, Float gWeight = 0.587f, Float bWeight = 0.114f) const;
     PixelF grayPixel(Float rWeight = 0.299f, Float gWeight = 0.587f, Float bWeight = 0.114f) const;
-    void interpolate(const PixelF&, Float factor);
-    PixelF interpolatedPixel(const PixelF&, Float factor) const;
-    void rawInterpolate(const PixelF&, Float factor);
-    PixelF rawInterpolatedPixel(const PixelF&, Float factor) const;
+    void interpolate(const PixelF &, Float factor);
+    PixelF interpolatedPixel(const PixelF &, Float factor) const;
+    void rawInterpolate(const PixelF &, Float factor);
+    PixelF rawInterpolatedPixel(const PixelF &, Float factor) const;
 
     void premultiplyAlpha();
     PixelF premultipliedAlphaPixel() const;
@@ -646,15 +655,17 @@ struct WPngImage::PixelF: public WPngImage::Pixel<PixelF, Float, Float>
     PixelF clampedPixel() const;
 };
 
-inline WPngImage::PixelF operator+(WPngImage::Float value, const WPngImage::PixelF& p)
-{ return p + value; }
+inline WPngImage::PixelF operator+(WPngImage::Float value, const WPngImage::PixelF &p) {
+    return p + value;
+}
 
-WPngImage::PixelF operator-(WPngImage::Float, const WPngImage::PixelF&);
+WPngImage::PixelF operator-(WPngImage::Float, const WPngImage::PixelF &);
 
-inline WPngImage::PixelF operator*(WPngImage::Float value, const WPngImage::PixelF& p)
-{ return p * value; }
+inline WPngImage::PixelF operator*(WPngImage::Float value, const WPngImage::PixelF &p) {
+    return p * value;
+}
 
-WPngImage::PixelF operator/(WPngImage::Float, const WPngImage::PixelF&);
+WPngImage::PixelF operator/(WPngImage::Float, const WPngImage::PixelF &);
 
 
 //============================================================================
@@ -662,15 +673,13 @@ WPngImage::PixelF operator/(WPngImage::Float, const WPngImage::PixelF&);
 //============================================================================
 template<typename Pixel_t, typename CT, typename OperatorParam_t>
 WPNGIMAGE_CONSTEXPR
-bool WPngImage::Pixel<Pixel_t, CT, OperatorParam_t>::operator==(const Pixel_t& rhs) const
-{
+bool WPngImage::Pixel<Pixel_t, CT, OperatorParam_t>::operator==(const Pixel_t &rhs) const {
     return r == rhs.r && g == rhs.g && b == rhs.b && a == rhs.a;
 }
 
 template<typename Pixel_t, typename CT, typename OperatorParam_t>
 WPNGIMAGE_CONSTEXPR
-bool WPngImage::Pixel<Pixel_t, CT, OperatorParam_t>::operator!=(const Pixel_t& rhs) const
-{
+bool WPngImage::Pixel<Pixel_t, CT, OperatorParam_t>::operator!=(const Pixel_t &rhs) const {
     return r != rhs.r || g != rhs.g || b != rhs.b || a != rhs.a;
 }
 
@@ -678,8 +687,7 @@ bool WPngImage::Pixel<Pixel_t, CT, OperatorParam_t>::operator!=(const Pixel_t& r
 template<typename Pixel_t, typename CT, typename OperatorParam_t>
 template<typename... Rest>
 void WPngImage::Pixel<Pixel_t, CT, OperatorParam_t>::averageWith
-(const Pixel_t& first, Rest&&... rest)
-{
+(const Pixel_t &first, Rest&&... rest) {
     const Pixel_t pixels[] = { first, rest... };
     averageWith(pixels, 1 + sizeof...(Rest));
 }
@@ -687,8 +695,7 @@ void WPngImage::Pixel<Pixel_t, CT, OperatorParam_t>::averageWith
 template<typename Pixel_t, typename CT, typename OperatorParam_t>
 template<typename... Rest>
 Pixel_t WPngImage::Pixel<Pixel_t, CT, OperatorParam_t>::averagedPixel
-(const Pixel_t& first, Rest&&... rest) const
-{
+(const Pixel_t &first, Rest&&... rest) const {
     const Pixel_t pixels[] = { first, rest... };
     return averagedPixel(pixels, 1 + sizeof...(Rest));
 }

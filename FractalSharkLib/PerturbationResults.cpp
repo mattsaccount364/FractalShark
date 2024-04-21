@@ -169,7 +169,7 @@ void PerturbationResults<IterType, T, PExtras>::SetLaReference(
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>
-LAReference<IterType, T, typename PerturbationResults<IterType, T, PExtras>::SubType, PExtras>*
+LAReference<IterType, T, typename PerturbationResults<IterType, T, PExtras>::SubType, PExtras> *
 PerturbationResults<IterType, T, PExtras>::GetLaReference() const {
     return m_LaReference.get();
 }
@@ -190,7 +190,7 @@ PerturbationResults<IterType, T, PExtras>::CopyPerturbationResults(
 template<typename IterType, class T, PerturbExtras PExtras>
 template<bool IncludeLA, class Other, PerturbExtras PExtrasOther>
 void PerturbationResults<IterType, T, PExtras>::CopyFullOrbitVector(
-    const PerturbationResults<IterType, Other, PExtrasOther>& other) {
+    const PerturbationResults<IterType, Other, PExtrasOther> &other) {
 
     m_FullOrbit.MutableResize(other.m_FullOrbit.GetSize());
 
@@ -213,15 +213,13 @@ void PerturbationResults<IterType, T, PExtras>::CopyFullOrbitVector(
                     (T)other.m_FullOrbit[i].y,
                     other.m_FullOrbit[i].bad != 0
                 };
-            }
-            else if constexpr (PExtras == PerturbExtras::EnableCompression) {
+            } else if constexpr (PExtras == PerturbExtras::EnableCompression) {
                 m_FullOrbit[i] = GPUReferenceIter<T, PExtras>{
                     (T)other.m_FullOrbit[i].x,
                     (T)other.m_FullOrbit[i].y,
                     other.m_FullOrbit[i].CompressionIndex
                 };
-            }
-            else {
+            } else {
                 m_FullOrbit[i] = GPUReferenceIter<T, PExtras>{
                     (T)other.m_FullOrbit[i].x,
                     (T)other.m_FullOrbit[i].y
@@ -242,7 +240,7 @@ void PerturbationResults<IterType, T, PExtras>::CopyFullOrbitVector(
         threads.push_back(std::thread(oneThread, start, end));
     }
 
-    for (auto& thread : threads) {
+    for (auto &thread : threads) {
         thread.join();
     }
 }
@@ -250,7 +248,7 @@ void PerturbationResults<IterType, T, PExtras>::CopyFullOrbitVector(
 template<typename IterType, class T, PerturbExtras PExtras>
 template<bool IncludeLA, class Other, PerturbExtras PExtrasOther>
 void PerturbationResults<IterType, T, PExtras>::CopyPerturbationResults(
-    const PerturbationResults<IterType, Other, PExtrasOther>& other) {
+    const PerturbationResults<IterType, Other, PExtrasOther> &other) {
 
     m_OrbitX = other.GetHiX();
     m_OrbitY = other.GetHiY();
@@ -344,7 +342,7 @@ InstantiateCopyPerturbationResultsNoLA(double, HDRFloat<double>, PerturbExtras::
 
 template<typename IterType, class T, PerturbExtras PExtras>
 template<PerturbExtras OtherBad>
-void PerturbationResults<IterType, T, PExtras>::CopySettingsWithoutOrbit(const PerturbationResults<IterType, T, OtherBad>& other) {
+void PerturbationResults<IterType, T, PExtras>::CopySettingsWithoutOrbit(const PerturbationResults<IterType, T, OtherBad> &other) {
     m_OrbitX = other.GetHiX();
     m_OrbitY = other.GetHiY();
     m_OrbitXStr = other.GetHiXStr();
@@ -398,48 +396,37 @@ void PerturbationResults<IterType, T, PExtras>::WriteMetadata() const {
 
     if constexpr (std::is_same<IterType, uint32_t>::value) {
         metafile << "uint32_t" << std::endl;
-    }
-    else if constexpr (std::is_same<IterType, uint64_t>::value) {
+    } else if constexpr (std::is_same<IterType, uint64_t>::value) {
         metafile << "uint64_t" << std::endl;
-    }
-    else {
+    } else {
         ::MessageBox(nullptr, L"Invalid size.", L"", MB_OK | MB_APPLMODAL);
         return;
     }
 
     if constexpr (std::is_same<T, float>::value) {
         metafile << "float" << std::endl;
-    }
-    else if constexpr (std::is_same<T, CudaDblflt<MattDblflt>>::value) {
+    } else if constexpr (std::is_same<T, CudaDblflt<MattDblflt>>::value) {
         metafile << "CudaDblflt<MattDblflt>" << std::endl;
-    }
-    else if constexpr (std::is_same<T, double>::value) {
+    } else if constexpr (std::is_same<T, double>::value) {
         metafile << "double" << std::endl;
-    }
-    else if constexpr (std::is_same<T, HDRFloat<float>>::value) {
+    } else if constexpr (std::is_same<T, HDRFloat<float>>::value) {
         metafile << "HDRFloat<float>" << std::endl;
-    }
-    else if constexpr (std::is_same<T, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
+    } else if constexpr (std::is_same<T, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
         metafile << "HDRFloat<CudaDblflt<MattDblflt>>" << std::endl;
-    }
-    else if constexpr (std::is_same<T, HDRFloat<double>>::value) {
+    } else if constexpr (std::is_same<T, HDRFloat<double>>::value) {
         metafile << "HDRFloat<double>" << std::endl;
-    }
-    else {
+    } else {
         ::MessageBox(nullptr, L"Invalid type.", L"", MB_OK | MB_APPLMODAL);
         return;
     }
 
     if constexpr (PExtras == PerturbExtras::Bad) {
         metafile << "PerturbExtras::Bad" << std::endl;
-    }
-    else if constexpr (PExtras == PerturbExtras::EnableCompression) {
+    } else if constexpr (PExtras == PerturbExtras::EnableCompression) {
         metafile << "PerturbExtras::EnableCompression" << std::endl;
-    }
-    else if constexpr (PExtras == PerturbExtras::Disable) {
+    } else if constexpr (PExtras == PerturbExtras::Disable) {
         metafile << "PerturbExtras::Disable" << std::endl;
-    }
-    else {
+    } else {
         ::MessageBox(nullptr, L"Invalid bad.", L"", MB_OK | MB_APPLMODAL);
         return;
     }
@@ -519,13 +506,11 @@ bool PerturbationResults<IterType, T, PExtras>::ReadMetadata() {
             if constexpr (std::is_same<IterType, uint32_t>::value) {
                 typematch1 = true;
             }
-        }
-        else if (typestr == "uint64_t") {
+        } else if (typestr == "uint64_t") {
             if constexpr (std::is_same<IterType, uint64_t>::value) {
                 typematch1 = true;
             }
-        }
-        else {
+        } else {
             ::MessageBox(nullptr, L"Invalid size.", L"", MB_OK | MB_APPLMODAL);
             return false;
         }
@@ -539,33 +524,27 @@ bool PerturbationResults<IterType, T, PExtras>::ReadMetadata() {
             if constexpr (std::is_same<T, float>::value) {
                 typematch2 = true;
             }
-        }
-        else if (tstr == "CudaDblflt<MattDblflt>") {
+        } else if (tstr == "CudaDblflt<MattDblflt>") {
             if constexpr (std::is_same<T, CudaDblflt<MattDblflt>>::value) {
                 typematch2 = true;
             }
-        }
-        else if (tstr == "double") {
+        } else if (tstr == "double") {
             if constexpr (std::is_same<T, double>::value) {
                 typematch2 = true;
             }
-        }
-        else if (tstr == "HDRFloat<float>") {
+        } else if (tstr == "HDRFloat<float>") {
             if constexpr (std::is_same<T, HDRFloat<float>>::value) {
                 typematch2 = true;
             }
-        }
-        else if (tstr == "HDRFloat<CudaDblflt<MattDblflt>>") {
+        } else if (tstr == "HDRFloat<CudaDblflt<MattDblflt>>") {
             if constexpr (std::is_same<T, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
                 typematch2 = true;
             }
-        }
-        else if (tstr == "HDRFloat<double>") {
+        } else if (tstr == "HDRFloat<double>") {
             if constexpr (std::is_same<T, HDRFloat<double>>::value) {
                 typematch2 = true;
             }
-        }
-        else {
+        } else {
             ::MessageBox(nullptr, L"Invalid type.", L"", MB_OK | MB_APPLMODAL);
             return false;
         }
@@ -579,18 +558,15 @@ bool PerturbationResults<IterType, T, PExtras>::ReadMetadata() {
             if constexpr (PExtras == PerturbExtras::Bad) {
                 typematch3 = true;
             }
-        }
-        else if (badstr == "PerturbExtras::EnableCompression") {
+        } else if (badstr == "PerturbExtras::EnableCompression") {
             if constexpr (PExtras == PerturbExtras::EnableCompression) {
                 typematch3 = true;
             }
-        }
-        else if (badstr == "PerturbExtras::Disable") {
+        } else if (badstr == "PerturbExtras::Disable") {
             if constexpr (PExtras == PerturbExtras::Disable) {
                 typematch3 = true;
             }
-        }
-        else {
+        } else {
             ::MessageBox(nullptr, L"Invalid bad.", L"", MB_OK | MB_APPLMODAL);
             return false;
         }
@@ -706,12 +682,12 @@ void PerturbationResults<IterType, T, PExtras>::InitReused() {
 template<typename IterType, class T, PerturbExtras PExtras>
 void PerturbationResults<IterType, T, PExtras>::InitResults(
     RefOrbitCalc::ReuseMode Reuse,
-    const HighPrecision& cx,
-    const HighPrecision& cy,
-    const HighPrecision& minX,
-    const HighPrecision& minY,
-    const HighPrecision& maxX,
-    const HighPrecision& maxY,
+    const HighPrecision &cx,
+    const HighPrecision &cy,
+    const HighPrecision &minX,
+    const HighPrecision &minY,
+    const HighPrecision &maxX,
+    const HighPrecision &maxY,
     IterType NumIterations,
     size_t GuessReserveSize) {
 
@@ -734,8 +710,7 @@ void PerturbationResults<IterType, T, PExtras>::InitResults(
     if constexpr (std::is_same<T, HDRFloat<double>>::value) {
         m_MaxRadiusHigh = (radiusX > radiusY ? radiusX : radiusY) * HighPrecision{ 2.0 };
         m_MaxRadius = T(m_MaxRadiusHigh);
-    }
-    else {
+    } else {
         m_MaxRadiusHigh = radiusX > radiusY ? radiusX : radiusY;
         m_MaxRadius = T(m_MaxRadiusHigh);
     }
@@ -761,8 +736,7 @@ void PerturbationResults<IterType, T, PExtras>::InitResults(
         m_ReuseX.reserve(ReserveSize);
         m_ReuseY.reserve(ReserveSize);
         m_ReuseAllocations = nullptr;
-    }
-    else if (Reuse == RefOrbitCalc::ReuseMode::DontSaveForReuse) {
+    } else if (Reuse == RefOrbitCalc::ReuseMode::DontSaveForReuse) {
         m_AuthoritativePrecisionInBits = 0;
     }
 
@@ -874,8 +848,7 @@ template<typename IterType, class T, PerturbExtras PExtras>
 IterType PerturbationResults<IterType, T, PExtras>::GetCountOrbitEntries() const {
     if constexpr (PExtras == PerturbExtras::EnableCompression) {
         assert(m_FullOrbit.GetSize() <= m_UncompressedItersInOrbit);
-    }
-    else {
+    } else {
         assert(m_FullOrbit.GetSize() == m_UncompressedItersInOrbit);
     }
 
@@ -893,27 +866,27 @@ void PerturbationResults<IterType, T, PExtras>::AddUncompressedIteration(GPURefe
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>
-const GPUReferenceIter<T, PExtras>* PerturbationResults<IterType, T, PExtras>::GetOrbitData() const {
+const GPUReferenceIter<T, PExtras> *PerturbationResults<IterType, T, PExtras>::GetOrbitData() const {
     return m_FullOrbit.GetData();
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>
-const HighPrecision& PerturbationResults<IterType, T, PExtras>::GetHiX() const {
+const HighPrecision &PerturbationResults<IterType, T, PExtras>::GetHiX() const {
     return m_OrbitX;
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>
-const HighPrecision& PerturbationResults<IterType, T, PExtras>::GetHiY() const {
+const HighPrecision &PerturbationResults<IterType, T, PExtras>::GetHiY() const {
     return m_OrbitY;
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>
-const std::string& PerturbationResults<IterType, T, PExtras>::GetHiXStr() const {
+const std::string &PerturbationResults<IterType, T, PExtras>::GetHiXStr() const {
     return m_OrbitXStr;
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>
-const std::string& PerturbationResults<IterType, T, PExtras>::GetHiYStr() const {
+const std::string &PerturbationResults<IterType, T, PExtras>::GetHiYStr() const {
     return m_OrbitYStr;
 }
 
@@ -995,10 +968,10 @@ void PerturbationResults<IterType, T, PExtras>::AddUncompressedReusedEntry(
 // Set the pointers to point at the specified index.
 template<typename IterType, class T, PerturbExtras PExtras>
 void PerturbationResults<IterType, T, PExtras>::GetCompressedReuseEntries(
-    IntermediateRuntimeDecompressor<IterType, T, PExtras>& PerThreadCompressionHelper,
+    IntermediateRuntimeDecompressor<IterType, T, PExtras> &PerThreadCompressionHelper,
     size_t uncompressed_index,
-    const mpf_t*& x,
-    const mpf_t*& y) const {
+    const mpf_t *&x,
+    const mpf_t *&y) const {
 
     PerThreadCompressionHelper.GetReuseEntries(
         uncompressed_index,
@@ -1009,8 +982,8 @@ void PerturbationResults<IterType, T, PExtras>::GetCompressedReuseEntries(
 template<typename IterType, class T, PerturbExtras PExtras>
 void PerturbationResults<IterType, T, PExtras>::GetUncompressedReuseEntries(
     size_t uncompressed_index,
-    const mpf_t*& x,
-    const mpf_t*& y) const {
+    const mpf_t *&x,
+    const mpf_t *&y) const {
 
     x = m_ReuseX[uncompressed_index].backendRaw();
     y = m_ReuseY[uncompressed_index].backendRaw();
@@ -1053,8 +1026,7 @@ PerturbationResults<IterType, T, PExtras>::Compress(
         }
 
         return compressed;
-    }
-    else {
+    } else {
         T zx{};
         T zy{};
 
@@ -1107,8 +1079,7 @@ PerturbationResults<IterType, T, PExtras>::Decompress(size_t NewGenerationNumber
             zx = compressed_orb[compressed_index].x;
             zy = compressed_orb[compressed_index].y;
             compressed_index++;
-        }
-        else {
+        } else {
             auto zx_old = zx;
             zx = zx * zx - zy * zy + m_OrbitXLow;
             HdrReduce(zx);
@@ -1178,8 +1149,8 @@ void PerturbationResults<IterType, T, PExtras>::SaveOrbitAsText() const {
 // other than reporting.
 template<typename IterType, class T, PerturbExtras PExtras>
 void PerturbationResults<IterType, T, PExtras>::GetIntermediatePrecision(
-    int64_t& deltaPrecision,
-    int64_t& extraPrecision) const {
+    int64_t &deltaPrecision,
+    int64_t &extraPrecision) const {
 
     deltaPrecision = m_DeltaPrecisionCached;
     extraPrecision = m_ExtraPrecisionCached;
@@ -1217,7 +1188,7 @@ void PerturbationResults<IterType, T, PExtras>::MapExistingFiles() {
             GenFilename(GrowableVectorTypes::LAInfoDeep),
             GenFilename(GrowableVectorTypes::LAStageInfo));
     }
-    catch (const std::exception&) {
+    catch (const std::exception &) {
         m_LaReference = nullptr;
     }
 }
@@ -1225,7 +1196,7 @@ void PerturbationResults<IterType, T, PExtras>::MapExistingFiles() {
 
 template<typename IterType, class T, PerturbExtras PExtras>
 RefOrbitCompressor<IterType, T, PExtras>::RefOrbitCompressor(
-    PerturbationResults<IterType, T, PExtras>& results,
+    PerturbationResults<IterType, T, PExtras> &results,
     int32_t CompressionErrorExp) :
     results{ results },
     zx{ results.m_OrbitXLow },
@@ -1277,7 +1248,7 @@ void RefOrbitCompressor<IterType, T, PExtras>::MaybeAddCompressedIteration(GPURe
 
 template<typename IterType, class T, PerturbExtras PExtras>
 IntermediateOrbitCompressor<IterType, T, PExtras>::IntermediateOrbitCompressor(
-    PerturbationResults<IterType, T, PExtras>& results,
+    PerturbationResults<IterType, T, PExtras> &results,
     int32_t CompressionErrorExp) :
     results{ results },
     zx{},

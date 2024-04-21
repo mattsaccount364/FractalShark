@@ -42,30 +42,30 @@ PointZoomBBConverter::PointZoomBBConverter(
     m_zoomFactor = std::min(std::min(zf1, zf2), std::min(zf3, zf4));
 }
 
-const HighPrecision& PointZoomBBConverter::GetMinX() const {
+const HighPrecision &PointZoomBBConverter::GetMinX() const {
     return m_minX;
 }
 
-const HighPrecision& PointZoomBBConverter::GetMinY() const {
+const HighPrecision &PointZoomBBConverter::GetMinY() const {
     return m_minY;
 }
 
-const HighPrecision& PointZoomBBConverter::GetMaxX() const {
+const HighPrecision &PointZoomBBConverter::GetMaxX() const {
     return m_maxX;
 }
 
-const HighPrecision& PointZoomBBConverter::GetMaxY() const {
+const HighPrecision &PointZoomBBConverter::GetMaxY() const {
     return m_maxY;
 }
 
-const HighPrecision& PointZoomBBConverter::GetPtX() const {
+const HighPrecision &PointZoomBBConverter::GetPtX() const {
     return m_ptX;
 }
 
-const HighPrecision& PointZoomBBConverter::GetPtY() const {
+const HighPrecision &PointZoomBBConverter::GetPtY() const {
     return m_ptY;
 }
 
-const HighPrecision& PointZoomBBConverter::GetZoomFactor() const {
+const HighPrecision &PointZoomBBConverter::GetZoomFactor() const {
     return m_zoomFactor;
 }

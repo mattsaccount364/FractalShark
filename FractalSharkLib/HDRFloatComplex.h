@@ -33,15 +33,14 @@ public:
                 << " mantissaImag: " << static_cast<double>(this->mantissaImag)
                 << " exp: " << this->exp;
             return ss.str();
-        }
-        else {
+        } else {
             // Interpret the bits as integers and output the integers:
             std::stringstream ss;
             const double localMantissaReal = static_cast<double>(this->mantissaReal);
             const double localMantissaImag = static_cast<double>(this->mantissaImag);
             const uint64_t localExp = static_cast<uint64_t>(this->exp);
-            ss << "mantissaReal: 0x" << std::hex << *reinterpret_cast<const uint64_t*>(&localMantissaReal)
-                << " mantissaImag: 0x" << std::hex << *reinterpret_cast<const uint64_t*>(&localMantissaImag)
+            ss << "mantissaReal: 0x" << std::hex << *reinterpret_cast<const uint64_t *>(&localMantissaReal)
+                << " mantissaImag: 0x" << std::hex << *reinterpret_cast<const uint64_t *>(&localMantissaImag)
                 << " exp: 0x" << std::hex << localExp;
             return ss.str();
         }
@@ -91,28 +90,28 @@ private:
     void CUDA_CRAP setMantexp(const HDRFloat &realIn, const HDRFloat &imagIn) {
 
         exp = CudaHostMax(realIn.exp, imagIn.exp);
-        mantissaReal = realIn.mantissa * HDRFloat::getMultiplier(realIn.exp-exp);
-        mantissaImag = imagIn.mantissa * HDRFloat::getMultiplier(imagIn.exp-exp);
+        mantissaReal = realIn.mantissa * HDRFloat::getMultiplier(realIn.exp - exp);
+        mantissaImag = imagIn.mantissa * HDRFloat::getMultiplier(imagIn.exp - exp);
     }
 
 public:
 
     // friends defined inside class body are inline and are hidden from non-ADL lookup
     friend CUDA_CRAP constexpr HDRFloatComplex operator+(HDRFloatComplex lhs,        // passing lhs by value helps optimize chained a+b+c
-        const HDRFloatComplex& rhs) // otherwise, both parameters may be const references
+        const HDRFloatComplex &rhs) // otherwise, both parameters may be const references
     {
         lhs.plus_mutable(rhs); // reuse compound assignment
         return lhs; // return the result by value (uses move constructor)
     }
 
     friend CUDA_CRAP constexpr HDRFloatComplex operator+(HDRFloatComplex lhs,        // passing lhs by value helps optimize chained a+b+c
-        const HDRFloat& rhs) // otherwise, both parameters may be const references
+        const HDRFloat &rhs) // otherwise, both parameters may be const references
     {
         lhs.plus_mutable(rhs); // reuse compound assignment
         return lhs; // return the result by value (uses move constructor)
     }
 
-    CUDA_CRAP constexpr HDRFloatComplex& operator+=(const HDRFloatComplex& other) {
+    CUDA_CRAP constexpr HDRFloatComplex &operator+=(const HDRFloatComplex &other) {
         plus_mutable(other);
         return *this;
     }
@@ -122,9 +121,9 @@ private:
 
         TExp expDiff = exp - value.exp;
 
-        if(expDiff >= HDRFloat::EXPONENT_DIFF_IGNORED) {
+        if (expDiff >= HDRFloat::EXPONENT_DIFF_IGNORED) {
             return *this;
-        } else if(expDiff >= 0) {
+        } else if (expDiff >= 0) {
             SubType mul = HDRFloat::getMultiplier(-expDiff);
             mantissaReal = mantissaReal + value.mantissaReal * mul;
             mantissaImag = mantissaImag + value.mantissaImag * mul;
@@ -133,11 +132,11 @@ private:
             mantissaReal = mantissaReal + value.mantissaReal;
             mantissaImag = mantissaImag + value.mantissaImag;
         }*/
-        else if(expDiff > HDRFloat::MINUS_EXPONENT_DIFF_IGNORED) {
+        else if (expDiff > HDRFloat::MINUS_EXPONENT_DIFF_IGNORED) {
             SubType mul = HDRFloat::getMultiplier(expDiff);
             exp = value.exp;
             mantissaReal = mantissaReal * mul + value.mantissaReal;
-            mantissaImag =  mantissaImag * mul + value.mantissaImag;
+            mantissaImag = mantissaImag * mul + value.mantissaImag;
         } else {
             exp = value.exp;
             mantissaReal = value.mantissaReal;
@@ -180,7 +179,7 @@ public:
 
     // friends defined inside class body are inline and are hidden from non-ADL lookup
     friend CUDA_CRAP constexpr HDRFloatComplex operator*(HDRFloatComplex lhs,        // passing lhs by value helps optimize chained a+b+c
-        const HDRFloatComplex& rhs) // otherwise, both parameters may be const references
+        const HDRFloatComplex &rhs) // otherwise, both parameters may be const references
     {
         lhs.times_mutable(rhs); // reuse compound assignment
         return lhs; // return the result by value (uses move constructor)
@@ -188,13 +187,13 @@ public:
 
     // friends defined inside class body are inline and are hidden from non-ADL lookup
     friend CUDA_CRAP constexpr HDRFloatComplex operator*(HDRFloatComplex lhs,        // passing lhs by value helps optimize chained a+b+c
-        const HDRFloat& rhs) // otherwise, both parameters may be const references
+        const HDRFloat &rhs) // otherwise, both parameters may be const references
     {
         lhs.times_mutable(rhs); // reuse compound assignment
         return lhs; // return the result by value (uses move constructor)
     }
 
-    CUDA_CRAP constexpr HDRFloatComplex& operator*=(const HDRFloatComplex& other) {
+    CUDA_CRAP constexpr HDRFloatComplex &operator*=(const HDRFloatComplex &other) {
         times_mutable(other);
         return *this;
     }
@@ -239,20 +238,20 @@ private:
 
         TExp expDiff = exp - real.exp;
 
-        if(expDiff >= HDRFloat::EXPONENT_DIFF_IGNORED) {
+        if (expDiff >= HDRFloat::EXPONENT_DIFF_IGNORED) {
             return *this;
-        } else if(expDiff >= 0) {
+        } else if (expDiff >= 0) {
             SubType mul = HDRFloat::getMultiplier(-expDiff);
             mantissaReal = mantissaReal + real.mantissa * mul;
         }
         /*else if(expDiff == 0) {
             mantissaReal = mantissaReal + real.mantissa;
         }*/
-        else if(expDiff > HDRFloat::MINUS_EXPONENT_DIFF_IGNORED) {
+        else if (expDiff > HDRFloat::MINUS_EXPONENT_DIFF_IGNORED) {
             SubType mul = HDRFloat::getMultiplier(expDiff);
             exp = real.exp;
             mantissaReal = mantissaReal * mul + real.mantissa;
-            mantissaImag =  mantissaImag * mul;
+            mantissaImag = mantissaImag * mul;
         } else {
             exp = real.exp;
             mantissaReal = real.mantissa;
@@ -265,9 +264,9 @@ private:
 
         TExp expDiff = exp - value.exp;
 
-        if(expDiff >= HDRFloat::EXPONENT_DIFF_IGNORED) {
+        if (expDiff >= HDRFloat::EXPONENT_DIFF_IGNORED) {
             return *this;
-        } else if(expDiff >= 0) {
+        } else if (expDiff >= 0) {
             SubType mul = HDRFloat::getMultiplier(-expDiff);
             mantissaReal = mantissaReal - value.mantissaReal * mul;
             mantissaImag = mantissaImag - value.mantissaImag * mul;
@@ -276,11 +275,11 @@ private:
             mantissaReal = mantissaReal - value.mantissaReal;
             mantissaImag = mantissaImag - value.mantissaImag;
         }*/
-        else if(expDiff > HDRFloat::MINUS_EXPONENT_DIFF_IGNORED) {
+        else if (expDiff > HDRFloat::MINUS_EXPONENT_DIFF_IGNORED) {
             SubType mul = HDRFloat::getMultiplier(expDiff);
             exp = value.exp;
             mantissaReal = mantissaReal * mul - value.mantissaReal;
-            mantissaImag =  mantissaImag * mul - value.mantissaImag;
+            mantissaImag = mantissaImag * mul - value.mantissaImag;
         } else {
             exp = value.exp;
             mantissaReal = -value.mantissaReal;
@@ -294,20 +293,20 @@ private:
 
         TExp expDiff = exp - real.exp;
 
-        if(expDiff >= HDRFloat::EXPONENT_DIFF_IGNORED) {
+        if (expDiff >= HDRFloat::EXPONENT_DIFF_IGNORED) {
             return *this;
-        } else if(expDiff >= 0) {
+        } else if (expDiff >= 0) {
             SubType mul = HDRFloat::getMultiplier(-expDiff);
             mantissaReal = mantissaReal - real.mantissa * mul;
         }
         /*else if(expDiff == 0) {
             mantissaReal = mantissaReal - real.mantissa;
         }*/
-        else if(expDiff > HDRFloat::MINUS_EXPONENT_DIFF_IGNORED) {
+        else if (expDiff > HDRFloat::MINUS_EXPONENT_DIFF_IGNORED) {
             SubType mul = HDRFloat::getMultiplier(expDiff);
             exp = real.exp;
             mantissaReal = mantissaReal * mul - real.mantissa;
-            mantissaImag =  mantissaImag * mul;
+            mantissaImag = mantissaImag * mul;
         } else {
             exp = real.exp;
             mantissaReal = -real.mantissa;
@@ -321,13 +320,13 @@ public:
 
     // friends defined inside class body are inline and are hidden from non-ADL lookup
     friend CUDA_CRAP constexpr HDRFloatComplex operator-(HDRFloatComplex lhs,        // passing lhs by value helps optimize chained a+b+c
-        const HDRFloatComplex& rhs) // otherwise, both parameters may be const references
+        const HDRFloatComplex &rhs) // otherwise, both parameters may be const references
     {
         lhs.sub_mutable(rhs); // reuse compound assignment
         return lhs; // return the result by value (uses move constructor)
     }
 
-    CUDA_CRAP constexpr HDRFloatComplex& operator-=(const HDRFloatComplex& other) {
+    CUDA_CRAP constexpr HDRFloatComplex &operator-=(const HDRFloatComplex &other) {
         sub_mutable(other);
         return *this;
     }
@@ -360,7 +359,7 @@ public:
             mantissaReal *= mul;
             mantissaImag *= mul;
             exp = expCombined;
-        };
+            };
 
         static_assert(
             std::is_same<SubType, double>::value ||
@@ -368,17 +367,17 @@ public:
             std::is_same<SubType, CudaDblflt<dblflt>>::value, "!");
 
         if constexpr (std::is_same<SubType, double>::value) {
-            uint64_t bitsReal = *reinterpret_cast<uint64_t*>(&mantissaReal);
+            uint64_t bitsReal = *reinterpret_cast<uint64_t *>(&mantissaReal);
             f_expReal = (TExp)((bitsReal & 0x7FF0'0000'0000'0000UL) >> 52UL);
 
-            uint64_t bitsImag = *reinterpret_cast<uint64_t*>(&mantissaImag);
+            uint64_t bitsImag = *reinterpret_cast<uint64_t *>(&mantissaImag);
             f_expImag = (TExp)((bitsImag & 0x7FF0'0000'0000'0000UL) >> 52UL);
             helper(HDRFloat::MIN_SMALL_EXPONENT_DOUBLE());
         } else if constexpr (std::is_same<SubType, float>::value) {
-            uint32_t bitsReal = *reinterpret_cast<uint32_t*>(&mantissaReal);
+            uint32_t bitsReal = *reinterpret_cast<uint32_t *>(&mantissaReal);
             f_expReal = (TExp)((bitsReal & 0x7F80'0000UL) >> 23UL);
 
-            uint32_t bitsImag = *reinterpret_cast<uint32_t*>(&mantissaImag);
+            uint32_t bitsImag = *reinterpret_cast<uint32_t *>(&mantissaImag);
             f_expImag = (TExp)((bitsImag & 0x7F80'0000UL) >> 23UL);
             helper(HDRFloat::MIN_SMALL_EXPONENT_FLOAT());
         } else if constexpr (std::is_same<SubType, CudaDblflt<dblflt>>::value) {
@@ -399,7 +398,7 @@ public:
             //exp = expCombined;
         }
     }
-        
+
 private:
 
     HDRFloatComplex CUDA_CRAP square_mutable() {
@@ -443,7 +442,7 @@ private:
 
         SubType tempMantissaReal = (mantissaReal * factor.mantissaReal + mantissaImag * factor.mantissaImag) * temp;
 
-        SubType tempMantissaImag = (mantissaImag * factor.mantissaReal - mantissaReal * factor.mantissaImag)  * temp;
+        SubType tempMantissaImag = (mantissaImag * factor.mantissaReal - mantissaReal * factor.mantissaImag) * temp;
 
         TExp exp = this->exp - factor.exp;
         mantissaReal = tempMantissaReal;
@@ -468,7 +467,7 @@ public:
 
     // friends defined inside class body are inline and are hidden from non-ADL lookup
     friend CUDA_CRAP constexpr HDRFloatComplex operator/(HDRFloatComplex lhs,        // passing lhs by value helps optimize chained a+b+c
-        const HDRFloatComplex& rhs) // otherwise, both parameters may be const references
+        const HDRFloatComplex &rhs) // otherwise, both parameters may be const references
     {
         lhs.divide_mutable(rhs); // reuse compound assignment
         return lhs; // return the result by value (uses move constructor)
@@ -476,13 +475,13 @@ public:
 
     // friends defined inside class body are inline and are hidden from non-ADL lookup
     friend CUDA_CRAP constexpr HDRFloatComplex operator/(HDRFloatComplex lhs,        // passing lhs by value helps optimize chained a+b+c
-        const SubType& rhs) // otherwise, both parameters may be const references
+        const SubType &rhs) // otherwise, both parameters may be const references
     {
         lhs.divide_mutable(rhs); // reuse compound assignment
         return lhs; // return the result by value (uses move constructor)
     }
 
-    CUDA_CRAP constexpr HDRFloatComplex& operator/=(const HDRFloatComplex& other) {
+    CUDA_CRAP constexpr HDRFloatComplex &operator/=(const HDRFloatComplex &other) {
         divide_mutable(other);
         return *this;
     }

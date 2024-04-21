@@ -22,14 +22,14 @@ struct Color16 {
 
 struct AntialiasedColors {
 #ifdef __CUDACC__ 
-    Color16* __restrict__ aa_colors;
+    Color16 *__restrict__ aa_colors;
 #else
-    Color16* aa_colors;
+    Color16 *aa_colors;
 #endif
 };
 
 #ifndef __CUDACC__
-using cudaStream_t = void*;
+using cudaStream_t = void *;
 #endif
 
 struct ReductionResults {
@@ -55,12 +55,12 @@ struct Palette {
     }
 
     Palette(
-        Color16* local_pal,
+        Color16 *local_pal,
         uint32_t local_palIters,
         uint32_t palette_aux_depth,
-        const uint16_t* cached_hostPalR,
-        const uint16_t* cached_hostPalG,
-        const uint16_t* cached_hostPalB) :
+        const uint16_t *cached_hostPalR,
+        const uint16_t *cached_hostPalG,
+        const uint16_t *cached_hostPalB) :
         local_pal(local_pal),
         local_palIters(local_palIters),
         palette_aux_depth(palette_aux_depth),
@@ -69,13 +69,13 @@ struct Palette {
         cached_hostPalB(cached_hostPalB) {
     }
 
-    Color16* local_pal;
+    Color16 *local_pal;
     uint32_t local_palIters;
     uint32_t palette_aux_depth;
 
-    const uint16_t* cached_hostPalR;
-    const uint16_t* cached_hostPalG;
-    const uint16_t* cached_hostPalB;
+    const uint16_t *cached_hostPalR;
+    const uint16_t *cached_hostPalG;
+    const uint16_t *cached_hostPalB;
 };
 
 // These should match the UI menu for sanity's sake
@@ -161,7 +161,7 @@ enum class RenderAlgorithm {
 
 // A list of all the algorithms that are supported by the GPU in string form.
 // The algorithms are listed above in the same order as they are listed here.
-static const char* RenderAlgorithmStr[(size_t)RenderAlgorithm::MAX + 1] =
+static const char *RenderAlgorithmStr[(size_t)RenderAlgorithm::MAX + 1] =
 {
     "CpuHigh",
     "Cpu64",
@@ -279,17 +279,17 @@ class /*alignas(8)*/ GPUReferenceIter :
     PExtras == PerturbExtras::Bad,
     BadField,
     std::conditional_t<PExtras == PerturbExtras::EnableCompression,
-        CompressionIndexField,
-        Empty>> {
+    CompressionIndexField,
+    Empty>> {
 
 public:
 
     using BaseClass = std::conditional_t<
         PExtras == PerturbExtras::Bad,
-            BadField,
-            std::conditional_t<PExtras == PerturbExtras::EnableCompression,
-                CompressionIndexField,
-                Empty>>;
+        BadField,
+        std::conditional_t<PExtras == PerturbExtras::EnableCompression,
+        CompressionIndexField,
+        Empty>>;
 
     static constexpr IterTypeFull BadCompressionIndex = 0xFFFF'FFFF'FFFF'FFFFull;
 
@@ -322,8 +322,8 @@ public:
         y{ init_y } {
     }
 
-    GPUReferenceIter(const GPUReferenceIter& other) = default;
-    GPUReferenceIter& operator=(const GPUReferenceIter& other) = default;
+    GPUReferenceIter(const GPUReferenceIter &other) = default;
+    GPUReferenceIter &operator=(const GPUReferenceIter &other) = default;
 
     // Example of how to pull the SubType out for HdrFloat, or keep the primitive float/double
     using SubType = typename SubTypeChooser<
@@ -362,7 +362,7 @@ public:
         IterType uncompressed_size,
         T OrbitXLow,
         T OrbitYLow,
-        const GPUReferenceIter<T, PExtras>* in_orb,
+        const GPUReferenceIter<T, PExtras> *in_orb,
         IterType PeriodMaybeZero) :
         FullOrbit(in_orb),
         OrbitSize(compressed_size),
@@ -427,7 +427,7 @@ public:
 
 private:
     // May be compressed
-    const GPUReferenceIter<T, PExtras>* FullOrbit;
+    const GPUReferenceIter<T, PExtras> *FullOrbit;
 
     // May be either compressed or uncompressed count
     IterType OrbitSize;
@@ -511,59 +511,59 @@ private:
 
         // THIS IS AWESOME.   HOW STUPID IS THIS?  I can't believe I did this.
 
-        GPUPerturbSingleResults<uint32_t, float, PerturbExtras::Disable>* m_Results32FloatDisable;
-        GPUPerturbSingleResults<uint32_t, float, PerturbExtras::Bad>* m_Results32FloatEnable;
-        GPUPerturbSingleResults<uint32_t, float, PerturbExtras::EnableCompression>* m_Results32FloatRC;
-        GPUPerturbSingleResults<uint32_t, double, PerturbExtras::Disable>* m_Results32DoubleDisable;
-        GPUPerturbSingleResults<uint32_t, double, PerturbExtras::Bad>* m_Results32DoubleEnable;
-        GPUPerturbSingleResults<uint32_t, double, PerturbExtras::EnableCompression>* m_Results32DoubleRC;
-        GPUPerturbSingleResults<uint32_t, CudaDblflt<dblflt>, PerturbExtras::Disable>* m_Results32CudaDblfltDisable;
-        GPUPerturbSingleResults<uint32_t, CudaDblflt<dblflt>, PerturbExtras::Bad>* m_Results32CudaDblfltEnable;
-        GPUPerturbSingleResults<uint32_t, CudaDblflt<dblflt>, PerturbExtras::EnableCompression>* m_Results32CudaDblfltRC;
-        GPUPerturbSingleResults<uint32_t, HDRFloat<float>, PerturbExtras::Disable>* m_Results32HdrFloatDisable;
-        GPUPerturbSingleResults<uint32_t, HDRFloat<float>, PerturbExtras::Bad>* m_Results32HdrFloatEnable;
-        GPUPerturbSingleResults<uint32_t, HDRFloat<float>, PerturbExtras::EnableCompression>* m_Results32HdrFloatRC;
-        GPUPerturbSingleResults<uint32_t, HDRFloat<double>, PerturbExtras::Disable>* m_Results32HdrDoubleDisable;
-        GPUPerturbSingleResults<uint32_t, HDRFloat<double>, PerturbExtras::Bad>* m_Results32HdrDoubleEnable;
-        GPUPerturbSingleResults<uint32_t, HDRFloat<double>, PerturbExtras::EnableCompression>* m_Results32HdrDoubleRC;
-        GPUPerturbSingleResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable>* m_Results32HdrCudaMattDblfltDisable;
-        GPUPerturbSingleResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad>* m_Results32HdrCudaMattDblfltEnable;
-        GPUPerturbSingleResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::EnableCompression>* m_Results32HdrCudaMattDblfltRC;
+        GPUPerturbSingleResults<uint32_t, float, PerturbExtras::Disable> *m_Results32FloatDisable;
+        GPUPerturbSingleResults<uint32_t, float, PerturbExtras::Bad> *m_Results32FloatEnable;
+        GPUPerturbSingleResults<uint32_t, float, PerturbExtras::EnableCompression> *m_Results32FloatRC;
+        GPUPerturbSingleResults<uint32_t, double, PerturbExtras::Disable> *m_Results32DoubleDisable;
+        GPUPerturbSingleResults<uint32_t, double, PerturbExtras::Bad> *m_Results32DoubleEnable;
+        GPUPerturbSingleResults<uint32_t, double, PerturbExtras::EnableCompression> *m_Results32DoubleRC;
+        GPUPerturbSingleResults<uint32_t, CudaDblflt<dblflt>, PerturbExtras::Disable> *m_Results32CudaDblfltDisable;
+        GPUPerturbSingleResults<uint32_t, CudaDblflt<dblflt>, PerturbExtras::Bad> *m_Results32CudaDblfltEnable;
+        GPUPerturbSingleResults<uint32_t, CudaDblflt<dblflt>, PerturbExtras::EnableCompression> *m_Results32CudaDblfltRC;
+        GPUPerturbSingleResults<uint32_t, HDRFloat<float>, PerturbExtras::Disable> *m_Results32HdrFloatDisable;
+        GPUPerturbSingleResults<uint32_t, HDRFloat<float>, PerturbExtras::Bad> *m_Results32HdrFloatEnable;
+        GPUPerturbSingleResults<uint32_t, HDRFloat<float>, PerturbExtras::EnableCompression> *m_Results32HdrFloatRC;
+        GPUPerturbSingleResults<uint32_t, HDRFloat<double>, PerturbExtras::Disable> *m_Results32HdrDoubleDisable;
+        GPUPerturbSingleResults<uint32_t, HDRFloat<double>, PerturbExtras::Bad> *m_Results32HdrDoubleEnable;
+        GPUPerturbSingleResults<uint32_t, HDRFloat<double>, PerturbExtras::EnableCompression> *m_Results32HdrDoubleRC;
+        GPUPerturbSingleResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable> *m_Results32HdrCudaMattDblfltDisable;
+        GPUPerturbSingleResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad> *m_Results32HdrCudaMattDblfltEnable;
+        GPUPerturbSingleResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::EnableCompression> *m_Results32HdrCudaMattDblfltRC;
 
-        GPUPerturbSingleResults<uint64_t, float, PerturbExtras::Disable>* m_Results64FloatDisable;
-        GPUPerturbSingleResults<uint64_t, float, PerturbExtras::Bad>* m_Results64FloatEnable;
-        GPUPerturbSingleResults<uint64_t, float, PerturbExtras::EnableCompression>* m_Results64FloatRC;
-        GPUPerturbSingleResults<uint64_t, double, PerturbExtras::Disable>* m_Results64DoubleDisable;
-        GPUPerturbSingleResults<uint64_t, double, PerturbExtras::Bad>* m_Results64DoubleEnable;
-        GPUPerturbSingleResults<uint64_t, double, PerturbExtras::EnableCompression>* m_Results64DoubleRC;
-        GPUPerturbSingleResults<uint64_t, CudaDblflt<dblflt>, PerturbExtras::Disable>* m_Results64CudaDblfltDisable;
-        GPUPerturbSingleResults<uint64_t, CudaDblflt<dblflt>, PerturbExtras::Bad>* m_Results64CudaDblfltEnable;
-        GPUPerturbSingleResults<uint64_t, CudaDblflt<dblflt>, PerturbExtras::EnableCompression>* m_Results64CudaDblfltRC;
-        GPUPerturbSingleResults<uint64_t, HDRFloat<float>, PerturbExtras::Disable>* m_Results64HdrFloatDisable;
-        GPUPerturbSingleResults<uint64_t, HDRFloat<float>, PerturbExtras::Bad>* m_Results64HdrFloatEnable;
-        GPUPerturbSingleResults<uint64_t, HDRFloat<float>, PerturbExtras::EnableCompression>* m_Results64HdrFloatRC;
-        GPUPerturbSingleResults<uint64_t, HDRFloat<double>, PerturbExtras::Disable>* m_Results64HdrDoubleDisable;
-        GPUPerturbSingleResults<uint64_t, HDRFloat<double>, PerturbExtras::Bad>* m_Results64HdrDoubleEnable;
-        GPUPerturbSingleResults<uint64_t, HDRFloat<double>, PerturbExtras::EnableCompression>* m_Results64HdrDoubleRC;
-        GPUPerturbSingleResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable>* m_Results64HdrCudaMattDblfltDisable;
-        GPUPerturbSingleResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad>* m_Results64HdrCudaMattDblfltEnable;
-        GPUPerturbSingleResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::EnableCompression>* m_Results64HdrCudaMattDblfltRC;
+        GPUPerturbSingleResults<uint64_t, float, PerturbExtras::Disable> *m_Results64FloatDisable;
+        GPUPerturbSingleResults<uint64_t, float, PerturbExtras::Bad> *m_Results64FloatEnable;
+        GPUPerturbSingleResults<uint64_t, float, PerturbExtras::EnableCompression> *m_Results64FloatRC;
+        GPUPerturbSingleResults<uint64_t, double, PerturbExtras::Disable> *m_Results64DoubleDisable;
+        GPUPerturbSingleResults<uint64_t, double, PerturbExtras::Bad> *m_Results64DoubleEnable;
+        GPUPerturbSingleResults<uint64_t, double, PerturbExtras::EnableCompression> *m_Results64DoubleRC;
+        GPUPerturbSingleResults<uint64_t, CudaDblflt<dblflt>, PerturbExtras::Disable> *m_Results64CudaDblfltDisable;
+        GPUPerturbSingleResults<uint64_t, CudaDblflt<dblflt>, PerturbExtras::Bad> *m_Results64CudaDblfltEnable;
+        GPUPerturbSingleResults<uint64_t, CudaDblflt<dblflt>, PerturbExtras::EnableCompression> *m_Results64CudaDblfltRC;
+        GPUPerturbSingleResults<uint64_t, HDRFloat<float>, PerturbExtras::Disable> *m_Results64HdrFloatDisable;
+        GPUPerturbSingleResults<uint64_t, HDRFloat<float>, PerturbExtras::Bad> *m_Results64HdrFloatEnable;
+        GPUPerturbSingleResults<uint64_t, HDRFloat<float>, PerturbExtras::EnableCompression> *m_Results64HdrFloatRC;
+        GPUPerturbSingleResults<uint64_t, HDRFloat<double>, PerturbExtras::Disable> *m_Results64HdrDoubleDisable;
+        GPUPerturbSingleResults<uint64_t, HDRFloat<double>, PerturbExtras::Bad> *m_Results64HdrDoubleEnable;
+        GPUPerturbSingleResults<uint64_t, HDRFloat<double>, PerturbExtras::EnableCompression> *m_Results64HdrDoubleRC;
+        GPUPerturbSingleResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable> *m_Results64HdrCudaMattDblfltDisable;
+        GPUPerturbSingleResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad> *m_Results64HdrCudaMattDblfltEnable;
+        GPUPerturbSingleResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::EnableCompression> *m_Results64HdrCudaMattDblfltRC;
 
         size_t m_GenerationNumber;
 
         GPU_LAReference<uint32_t, float, float> *m_LaReference32Float;
-        GPU_LAReference<uint32_t, double, double>* m_LaReference32Double;
-        GPU_LAReference<uint32_t, CudaDblflt<dblflt>, CudaDblflt<dblflt>>* m_LaReference32CudaDblflt;
-        GPU_LAReference<uint32_t, HDRFloat<float>, float>* m_LaReference32HdrFloat;
-        GPU_LAReference<uint32_t, HDRFloat<double>, double>* m_LaReference32HdrDouble;
-        GPU_LAReference<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>>* m_LaReference32HdrCudaMattDblflt;
+        GPU_LAReference<uint32_t, double, double> *m_LaReference32Double;
+        GPU_LAReference<uint32_t, CudaDblflt<dblflt>, CudaDblflt<dblflt>> *m_LaReference32CudaDblflt;
+        GPU_LAReference<uint32_t, HDRFloat<float>, float> *m_LaReference32HdrFloat;
+        GPU_LAReference<uint32_t, HDRFloat<double>, double> *m_LaReference32HdrDouble;
+        GPU_LAReference<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>> *m_LaReference32HdrCudaMattDblflt;
 
-        GPU_LAReference<uint64_t, float, float>* m_LaReference64Float;
-        GPU_LAReference<uint64_t, double, double>* m_LaReference64Double;
-        GPU_LAReference<uint64_t, CudaDblflt<dblflt>, CudaDblflt<dblflt>>* m_LaReference64CudaDblflt;
-        GPU_LAReference<uint64_t, HDRFloat<float>, float>* m_LaReference64HdrFloat;
-        GPU_LAReference<uint64_t, HDRFloat<double>, double>* m_LaReference64HdrDouble;
-        GPU_LAReference<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>>* m_LaReference64HdrCudaMattDblflt;
+        GPU_LAReference<uint64_t, float, float> *m_LaReference64Float;
+        GPU_LAReference<uint64_t, double, double> *m_LaReference64Double;
+        GPU_LAReference<uint64_t, CudaDblflt<dblflt>, CudaDblflt<dblflt>> *m_LaReference64CudaDblflt;
+        GPU_LAReference<uint64_t, HDRFloat<float>, float> *m_LaReference64HdrFloat;
+        GPU_LAReference<uint64_t, HDRFloat<double>, double> *m_LaReference64HdrDouble;
+        GPU_LAReference<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>> *m_LaReference64HdrCudaMattDblflt;
 
         size_t m_LaGenerationNumber;
     };
@@ -576,73 +576,73 @@ private:
     template<typename Type, PerturbExtras PExtras>
     void SetPtr32(
         size_t GenerationNumber,
-        InternalResults& Results,
-        GPUPerturbSingleResults<uint32_t, Type, PExtras>* ptr);
+        InternalResults &Results,
+        GPUPerturbSingleResults<uint32_t, Type, PExtras> *ptr);
 
     template<typename Type, PerturbExtras PExtras>
     void SetPtr64(
         size_t GenerationNumber,
-        InternalResults& Results,
-        GPUPerturbSingleResults<uint64_t, Type, PExtras>* ptr);
+        InternalResults &Results,
+        GPUPerturbSingleResults<uint64_t, Type, PExtras> *ptr);
 
     template<typename Type, typename SubType>
     void SetLaReferenceInternal32(
         size_t LaGenerationNumber,
-        InternalResults& Results,
-        GPU_LAReference<uint32_t, Type, SubType>* LaReference);
+        InternalResults &Results,
+        GPU_LAReference<uint32_t, Type, SubType> *LaReference);
 
     template<typename Type, typename SubType>
     void SetLaReferenceInternal64(
         size_t LaGenerationNumber,
-        InternalResults& Results,
-        GPU_LAReference<uint64_t, Type, SubType>* LaReference);
+        InternalResults &Results,
+        GPU_LAReference<uint64_t, Type, SubType> *LaReference);
 
     template<typename Type, PerturbExtras PExtras>
-    GPUPerturbSingleResults<uint32_t, Type, PExtras>* GetPtrInternal32(InternalResults& Results);
+    GPUPerturbSingleResults<uint32_t, Type, PExtras> *GetPtrInternal32(InternalResults &Results);
 
     template<typename Type, PerturbExtras PExtras>
-    GPUPerturbSingleResults<uint64_t, Type, PExtras>* GetPtrInternal64(InternalResults& Results);
+    GPUPerturbSingleResults<uint64_t, Type, PExtras> *GetPtrInternal64(InternalResults &Results);
 
     template<typename IterType, typename Type, PerturbExtras PExtras>
-    GPUPerturbSingleResults<IterType, Type, PExtras>* GetPtrInternal(InternalResults& Results);
+    GPUPerturbSingleResults<IterType, Type, PExtras> *GetPtrInternal(InternalResults &Results);
 
     template<typename Type, typename SubType>
-    GPU_LAReference<uint32_t, Type, SubType>*
-        GetLaReferenceInternal32(InternalResults& Results);
+    GPU_LAReference<uint32_t, Type, SubType> *
+        GetLaReferenceInternal32(InternalResults &Results);
 
     template<typename Type, typename SubType>
-    GPU_LAReference<uint64_t, Type, SubType>*
-        GetLaReferenceInternal64(InternalResults& Results);
+    GPU_LAReference<uint64_t, Type, SubType> *
+        GetLaReferenceInternal64(InternalResults &Results);
 
     template<typename IterType, typename Type, typename SubType>
-    GPU_LAReference<IterType, Type, SubType>*
-        GetLaReferenceInternal(InternalResults& Results);
+    GPU_LAReference<IterType, Type, SubType> *
+        GetLaReferenceInternal(InternalResults &Results);
 
     template<typename IterType, typename Type, typename SubType>
     void SetLaReferenceInternal(
         size_t LaGenerationNumber,
-        InternalResults& Results,
-        GPU_LAReference<IterType, Type, SubType>* LaReference);
+        InternalResults &Results,
+        GPU_LAReference<IterType, Type, SubType> *LaReference);
 
-    void DeleteAllInternal(InternalResults& Results);
+    void DeleteAllInternal(InternalResults &Results);
 
 public:
     template<typename IterType, typename Type, PerturbExtras PExtras>
-    void SetPtr1(size_t GenerationNumber, GPUPerturbSingleResults<IterType, Type, PExtras>* ptr);
+    void SetPtr1(size_t GenerationNumber, GPUPerturbSingleResults<IterType, Type, PExtras> *ptr);
 
     template<typename IterType, typename Type, PerturbExtras PExtras>
-    void SetPtr2(size_t GenerationNumber, GPUPerturbSingleResults<IterType, Type, PExtras>* ptr);
+    void SetPtr2(size_t GenerationNumber, GPUPerturbSingleResults<IterType, Type, PExtras> *ptr);
 
     template<typename IterType, typename Type, typename SubType>
     void SetLaReference1(
         size_t LaGenerationNumber,
-        GPU_LAReference<IterType, Type, SubType>* LaReference);
+        GPU_LAReference<IterType, Type, SubType> *LaReference);
 
     template<typename IterType, typename Type, PerturbExtras PExtras>
-    GPUPerturbSingleResults<IterType, Type, PExtras>* GetPtr1();
+    GPUPerturbSingleResults<IterType, Type, PExtras> *GetPtr1();
 
     template<typename IterType, typename Type, PerturbExtras PExtras>
-    GPUPerturbSingleResults<IterType, Type, PExtras>* GetPtr2();
+    GPUPerturbSingleResults<IterType, Type, PExtras> *GetPtr2();
 
     size_t GetHostGenerationNumber1() const;
     size_t GetHostGenerationNumber2() const;
@@ -650,10 +650,10 @@ public:
     size_t GetHostLaGenerationNumber2() const;
 
     template<typename IterType, typename Type, typename SubType>
-    GPU_LAReference<IterType, Type, SubType>* GetLaReference1();
+    GPU_LAReference<IterType, Type, SubType> *GetLaReference1();
 
     template<typename IterType, typename Type, typename SubType>
-    GPU_LAReference<IterType, Type, SubType>* GetLaReference2();
+    GPU_LAReference<IterType, Type, SubType> *GetLaReference2();
 
     void DeleteAll();
 

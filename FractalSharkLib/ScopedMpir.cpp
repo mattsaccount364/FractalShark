@@ -67,11 +67,11 @@ void MPIRBoundedAllocator::ShutdownTls() {
     }
 }
 
-void* MPIRBoundedAllocator::NewMalloc(size_t size) {
+void *MPIRBoundedAllocator::NewMalloc(size_t size) {
     uint8_t *newPtr = AllocatedEnd[AllocatedIndex] - size;
 
     // Round down to requested alignment:
-    newPtr = (uint8_t*)((uintptr_t)newPtr & ~63);
+    newPtr = (uint8_t *)((uintptr_t)newPtr & ~63);
 
     if (newPtr >= &Allocated[AllocatedIndex][0]) {
         AllocationsAndFrees[AllocatedIndex]++;
@@ -91,8 +91,7 @@ void* MPIRBoundedAllocator::NewMalloc(size_t size) {
                     if (result) {
                         break;
                     }
-                }
-                else {
+                } else {
                     break;
                 }
             }
@@ -106,7 +105,7 @@ void* MPIRBoundedAllocator::NewMalloc(size_t size) {
             AllocatedIndex = (AllocatedIndex + 1) % NumBlocks;
             if (AllocationsAndFrees[AllocatedIndex] == 0) {
                 newPtr = &Allocated[AllocatedIndex][BytesPerBlock] - size;
-                newPtr = (uint8_t*)((uintptr_t)newPtr & ~63);
+                newPtr = (uint8_t *)((uintptr_t)newPtr & ~63);
                 AllocationsAndFrees[AllocatedIndex]++;
                 AllocatedEnd[AllocatedIndex] = newPtr;
                 return newPtr;
@@ -121,7 +120,7 @@ void* MPIRBoundedAllocator::NewMalloc(size_t size) {
     }
 }
 
-void* MPIRBoundedAllocator::NewRealloc(void* /*ptr*/, size_t /*old_size*/, size_t /*new_size*/) {
+void *MPIRBoundedAllocator::NewRealloc(void * /*ptr*/, size_t /*old_size*/, size_t /*new_size*/) {
     // This one is like new_malloc, but copy in the prior data.
     //auto ret = NewMalloc(new_size);
     //auto minimum_size = std::min(old_size, new_size);
@@ -133,9 +132,9 @@ void* MPIRBoundedAllocator::NewRealloc(void* /*ptr*/, size_t /*old_size*/, size_
     return nullptr;
 }
 
-void MPIRBoundedAllocator::NewFree(void* ptr, size_t /*size*/) {
+void MPIRBoundedAllocator::NewFree(void *ptr, size_t /*size*/) {
     // Find offset relative to base of Allocated:
-    const uint64_t offset = (uint8_t*)ptr - (uint8_t*)&Allocated[0][0];
+    const uint64_t offset = (uint8_t *)ptr - (uint8_t *)&Allocated[0][0];
 
     // Find index of Allocated:
     const size_t index = offset / BytesPerBlock;
@@ -161,11 +160,11 @@ ThreadMemory::ThreadMemory()
     m_FreedMemorySize{} {
 }
 
-void* ThreadMemory::Allocate(size_t size) {
+void *ThreadMemory::Allocate(size_t size) {
     // Search the list in reverse order, so we find the most recently freed memory first.
     for (size_t i = m_FreedMemory.size(); i-- > 0;) {
         if (m_FreedMemorySize[i] >= size) {
-            void* ptr = m_FreedMemory[i];
+            void *ptr = m_FreedMemory[i];
             m_FreedMemory.erase(m_FreedMemory.begin() + i);
             m_FreedMemorySize.erase(m_FreedMemorySize.begin() + i);
             return ptr;
@@ -179,7 +178,7 @@ void* ThreadMemory::Allocate(size_t size) {
     return m_Bump->GetData() + m_Bump->GetSize() - size;
 }
 
-void ThreadMemory::Free(void* ptr, size_t size) {
+void ThreadMemory::Free(void *ptr, size_t size) {
     // Note: stores the pointer and size in a vector, so that we can reuse it later.
     static constexpr size_t maxFreedMemory = 4;
     size_t alignedSize = (size + 63) & ~63;
@@ -270,12 +269,12 @@ size_t MPIRBumpAllocator::GetAllocatorIndex() {
     return m_ThreadIndex;
 }
 
-void* MPIRBumpAllocator::NewMalloc(size_t size) {
-    auto& curAllocator = *m_Allocated[m_ThreadIndex];
+void *MPIRBumpAllocator::NewMalloc(size_t size) {
+    auto &curAllocator = *m_Allocated[m_ThreadIndex];
     return curAllocator.Allocate(size);
 }
 
-void* MPIRBumpAllocator::NewRealloc(void* ptr, size_t old_size, size_t new_size) {
+void *MPIRBumpAllocator::NewRealloc(void *ptr, size_t old_size, size_t new_size) {
     // Implement realloc by copying memory to new location and freeing old location.
     auto minSize = std::min(old_size, new_size);
     void *newLoc = NewMalloc(new_size);
@@ -285,29 +284,25 @@ void* MPIRBumpAllocator::NewRealloc(void* ptr, size_t old_size, size_t new_size)
     //return realloc(ptr, new_size);
 }
 
-void MPIRBumpAllocator::NewFree(void* ptr, size_t size) {
+void MPIRBumpAllocator::NewFree(void *ptr, size_t size) {
     if (m_Allocated[m_ThreadIndex] != nullptr) {
-        auto& curAllocator = *m_Allocated[m_ThreadIndex];
+        auto &curAllocator = *m_Allocated[m_ThreadIndex];
         curAllocator.Free(ptr, size);
     }
 }
 
-MPIRPrecision::MPIRPrecision(size_t bits) : m_SavedBits(HighPrecision::defaultPrecisionInBits())
-{
+MPIRPrecision::MPIRPrecision(size_t bits) : m_SavedBits(HighPrecision::defaultPrecisionInBits()) {
     HighPrecision::defaultPrecisionInBits(bits);
 }
 
-MPIRPrecision::~MPIRPrecision()
-{
+MPIRPrecision::~MPIRPrecision() {
     HighPrecision::defaultPrecisionInBits(m_SavedBits);
 }
 
-void MPIRPrecision::reset(size_t bits)
-{
+void MPIRPrecision::reset(size_t bits) {
     HighPrecision::defaultPrecisionInBits(bits);
 }
 
-void MPIRPrecision::reset()
-{
+void MPIRPrecision::reset() {
     HighPrecision::defaultPrecisionInBits(m_SavedBits);
 }

@@ -8,12 +8,11 @@
 /////////////////////////////////////////////////////////////////
 // CTrayIcon window
 
-class CTrayIcon : public CObject
-{
+class CTrayIcon : public CObject {
     // Construction/destruction
 public:
     CTrayIcon();
-    CTrayIcon(CWnd* pWnd, UINT uCallbackMessage, LPCTSTR szTip, HICON icon, UINT uID);
+    CTrayIcon(CWnd *pWnd, UINT uCallbackMessage, LPCTSTR szTip, HICON icon, UINT uID);
     virtual ~CTrayIcon();
 
     // Operations
@@ -22,7 +21,7 @@ public:
     BOOL Visible() { return !m_bHidden; }
 
     //Create the tray icon
-    BOOL Create(CWnd* pWnd, UINT uCallbackMessage, LPCTSTR szTip, HICON icon, UINT uID);
+    BOOL Create(CWnd *pWnd, UINT uCallbackMessage, LPCTSTR szTip, HICON icon, UINT uID);
 
     //Change or retrieve the Tooltip text
     BOOL SetTooltipText(LPCTSTR pszTooltipText);
@@ -42,8 +41,8 @@ public:
     void MoveToRight();
 
     //Change or retrieve the window to send notification messages to
-    BOOL SetNotificationWnd(CWnd* pNotifyWnd);
-    CWnd* GetNotificationWnd() const;
+    BOOL SetNotificationWnd(CWnd *pNotifyWnd);
+    CWnd *GetNotificationWnd() const;
 
     //Default handler for tray notification message
     virtual LRESULT OnTrayNotification(WPARAM uID, LPARAM lEvent);

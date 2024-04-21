@@ -1,5 +1,5 @@
 #pragma once
 
 namespace Utilities {
-    bool FileExists(const wchar_t* filename);
+    bool FileExists(const wchar_t *filename);
 } // namespace Utilities

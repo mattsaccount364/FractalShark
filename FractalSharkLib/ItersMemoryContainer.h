@@ -18,29 +18,27 @@ struct ItersMemoryContainer {
         size_t width,
         size_t height,
         size_t total_antialiasing);
-    ItersMemoryContainer(ItersMemoryContainer&&) noexcept;
-    ItersMemoryContainer& operator=(ItersMemoryContainer&&) noexcept;
+    ItersMemoryContainer(ItersMemoryContainer &&) noexcept;
+    ItersMemoryContainer &operator=(ItersMemoryContainer &&) noexcept;
     ~ItersMemoryContainer();
 
-    ItersMemoryContainer(ItersMemoryContainer&) = delete;
-    ItersMemoryContainer& operator=(const ItersMemoryContainer&);
+    ItersMemoryContainer(ItersMemoryContainer &) = delete;
+    ItersMemoryContainer &operator=(const ItersMemoryContainer &);
 
     template<typename IterType>
-    IterType* GetIters() {
+    IterType *GetIters() {
         if constexpr (std::is_same<IterType, uint32_t>::value) {
             return m_ItersMemory32.get();
-        }
-        else {
+        } else {
             return m_ItersMemory64.get();
         }
     }
 
     template<typename IterType>
-    IterType** GetItersArray() {
+    IterType **GetItersArray() {
         if constexpr (sizeof(IterType) == sizeof(uint32_t)) {
             return m_ItersArray32.data();
-        }
-        else {
+        } else {
             return m_ItersArray64.data();
         }
     }
@@ -48,7 +46,7 @@ struct ItersMemoryContainer {
     IterTypeFull GetItersArrayValSlow(size_t x, size_t y) const;
     void SetItersArrayValSlow(size_t x, size_t y, uint64_t val);
 
-    void GetReductionResults(ReductionResults& results) const;
+    void GetReductionResults(ReductionResults &results) const;
 
     // These include antialiasing, so 4x antialiasing implies each is ~2x screen dimension
     size_t m_Width;
@@ -80,9 +78,9 @@ private:
     IterTypeEnum m_IterType;
 
     std::unique_ptr<uint32_t[]> m_ItersMemory32;
-    std::vector<uint32_t*> m_ItersArray32;
+    std::vector<uint32_t *> m_ItersArray32;
 
     std::unique_ptr<uint64_t[]> m_ItersMemory64;
-    std::vector<uint64_t*> m_ItersArray64;
+    std::vector<uint64_t *> m_ItersArray64;
 
 };

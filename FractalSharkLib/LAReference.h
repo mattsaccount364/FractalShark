@@ -64,10 +64,10 @@ private:
 
 public:
     LAReference() = delete;
-    LAReference(const LAReference& other) = delete;
-    LAReference& operator=(const LAReference& other) = delete;
-    LAReference& operator=(LAReference&& other) = delete;
-    LAReference(LAReference&& other) = delete;
+    LAReference(const LAReference &other) = delete;
+    LAReference &operator=(const LAReference &other) = delete;
+    LAReference &operator=(LAReference &&other) = delete;
+    LAReference(LAReference &&other) = delete;
 
     LAReference(
         LAParameters la_parameters,
@@ -77,7 +77,7 @@ public:
         m_AddPointOptions(add_point_options),
         m_UseAT{},
         m_AT{},
-        m_LAStageCount{}, 
+        m_LAStageCount{},
         m_LAParameters{ la_parameters },
         m_IsValid{},
         m_LAs(add_point_options, las_filename),
@@ -100,7 +100,7 @@ public:
         m_BenchmarkDataLA{} {
     }
 
-    bool WriteMetadata(std::ofstream& metafile) const {
+    bool WriteMetadata(std::ofstream &metafile) const {
         metafile << "LAReference:" << std::endl;
         metafile << "AddPointOptions: " << static_cast<uint64_t>(m_AddPointOptions) << std::endl;
         metafile << "UseAT: " << static_cast<uint64_t>(m_UseAT) << std::endl;
@@ -115,13 +115,13 @@ public:
         return m_AT.WriteMetadata(metafile);
     }
 
-    bool ReadMetadata(std::ifstream& metafile) {
+    bool ReadMetadata(std::ifstream &metafile) {
         std::string descriptor_string_junk;
 
         // "LAReference:"
         metafile >> descriptor_string_junk;
 
-        auto convert = []<typename T>(const std::string &str) {
+        auto convert = []<typename T>(const std::string & str) {
             return static_cast<T>(std::stoll(str));
         };
 
@@ -129,28 +129,28 @@ public:
             std::string add_point_options;
             metafile >> descriptor_string_junk;
             metafile >> add_point_options;
-            m_AddPointOptions = convert.template operator()<AddPointOptions>(add_point_options);
+            m_AddPointOptions = convert.template operator() < AddPointOptions > (add_point_options);
         }
 
         {
             std::string use_at;
             metafile >> descriptor_string_junk;
             metafile >> use_at;
-            m_UseAT = convert.template operator()<bool>(use_at);
+            m_UseAT = convert.template operator() < bool > (use_at);
         }
 
         {
             std::string la_stage_count;
             metafile >> descriptor_string_junk;
             metafile >> la_stage_count;
-            m_LAStageCount = convert.template operator()<IterType>(la_stage_count);
+            m_LAStageCount = convert.template operator() < IterType > (la_stage_count);
         }
 
         {
             std::string is_valid;
             metafile >> descriptor_string_junk;
             metafile >> is_valid;
-            m_IsValid = convert.template operator()<bool>(is_valid);
+            m_IsValid = convert.template operator() < bool > (is_valid);
         }
 
         bool res = m_LAParameters.ReadMetadata(metafile);
@@ -162,7 +162,7 @@ public:
     }
 
     template<class OtherT, class Other>
-    void CopyLAReference(const LAReference<IterType, OtherT, Other, PExtras>& other) {
+    void CopyLAReference(const LAReference<IterType, OtherT, Other, PExtras> &other) {
         assert(m_AddPointOptions == other.m_AddPointOptions);
         m_UseAT = other.m_UseAT;
         m_AT = other.m_AT;
@@ -186,7 +186,7 @@ public:
             for (size_t i = start; i < end; i++) {
                 m_LAs[i] = other.m_LAs[i];
             }
-        };
+            };
 
         std::vector<std::thread> threads;
         for (size_t i = 0; i < numThreads; i++) {
@@ -200,7 +200,7 @@ public:
 
         m_LAStages.MutableResize(other.m_LAStages.GetSize());
 
-        for (auto& thread : threads) {
+        for (auto &thread : threads) {
             thread.join();
         }
 
@@ -227,19 +227,19 @@ public:
         return m_LAStageCount;
     }
 
-    GrowableVector<LAInfoDeep<IterType, Float, SubType, PExtras>>& GetLAs() {
+    GrowableVector<LAInfoDeep<IterType, Float, SubType, PExtras>> &GetLAs() {
         return m_LAs;
     }
 
-    const GrowableVector<LAInfoDeep<IterType, Float, SubType, PExtras>>& GetLAs() const {
+    const GrowableVector<LAInfoDeep<IterType, Float, SubType, PExtras>> &GetLAs() const {
         return m_LAs;
     }
 
-    GrowableVector<LAStageInfo<IterType>>& GetLAStages() {
+    GrowableVector<LAStageInfo<IterType>> &GetLAStages() {
         return m_LAStages;
     }
 
-    const GrowableVector<LAStageInfo<IterType>>& GetLAStages() const {
+    const GrowableVector<LAStageInfo<IterType>> &GetLAStages() const {
         return m_LAStages;
     }
 
@@ -261,28 +261,28 @@ private:
     IterType LAsize();
     template<typename PerturbType>
     bool CreateLAFromOrbit(
-        const LAParameters& la_parameters,
-        const PerturbationResults<IterType, PerturbType, PExtras>& PerturbationResults,
+        const LAParameters &la_parameters,
+        const PerturbationResults<IterType, PerturbType, PExtras> &PerturbationResults,
         IterType maxRefIteration);
     template<typename PerturbType>
     bool CreateLAFromOrbitMT(
-        const LAParameters& la_parameters,
-        const PerturbationResults<IterType, PerturbType, PExtras>& PerturbationResults,
+        const LAParameters &la_parameters,
+        const PerturbationResults<IterType, PerturbType, PExtras> &PerturbationResults,
         IterType maxRefIteration);
     template<typename PerturbType>
     bool CreateNewLAStage(
-        const LAParameters& la_parameters,
-        const PerturbationResults<IterType, PerturbType, PExtras>& PerturbationResults,
+        const LAParameters &la_parameters,
+        const PerturbationResults<IterType, PerturbType, PExtras> &PerturbationResults,
         IterType maxRefIteration);
 
 public:
     template<typename PerturbType>
     void GenerateApproximationData(
-        const PerturbationResults<IterType, PerturbType, PExtras>& PerturbationResults,
+        const PerturbationResults<IterType, PerturbType, PExtras> &PerturbationResults,
         Float radius,
         bool UseSmallExponents);
 
-    const BenchmarkData& GetBenchmarkLA() const {
+    const BenchmarkData &GetBenchmarkLA() const {
         return m_BenchmarkDataLA;
     }
 
@@ -295,9 +295,9 @@ public:
     IterType getMacroItCount(IterType CurrentLAStage);
 
     LAstep<IterType, Float, SubType, PExtras>
-    getLA(IterType LAIndex,
-        FloatComplexT dz,
-        /*FloatComplexT dc, */IterType j,
-        IterType iterations,
-        IterType max_iterations);
+        getLA(IterType LAIndex,
+            FloatComplexT dz,
+            /*FloatComplexT dc, */IterType j,
+            IterType iterations,
+            IterType max_iterations);
 };

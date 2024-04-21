@@ -19,10 +19,10 @@ struct PointZoomBBConverter {
     const HighPrecision &GetMinX() const;
     const HighPrecision &GetMinY() const;
     const HighPrecision &GetMaxX() const;
-    const HighPrecision& GetMaxY() const;
-    const HighPrecision& GetPtX() const;
-    const HighPrecision& GetPtY() const;
-    const HighPrecision& GetZoomFactor() const;
+    const HighPrecision &GetMaxY() const;
+    const HighPrecision &GetPtX() const;
+    const HighPrecision &GetPtY() const;
+    const HighPrecision &GetZoomFactor() const;
 
 private:
     HighPrecision m_minX, m_minY;

@@ -6,10 +6,10 @@
 class BenchmarkData {
 public:
     BenchmarkData();
-    BenchmarkData(const BenchmarkData&) = default;
-    BenchmarkData(BenchmarkData&&) = default;
-    BenchmarkData& operator=(const BenchmarkData&) = default;
-    BenchmarkData& operator=(BenchmarkData&&) = default;
+    BenchmarkData(const BenchmarkData &) = default;
+    BenchmarkData(BenchmarkData &&) = default;
+    BenchmarkData &operator=(const BenchmarkData &) = default;
+    BenchmarkData &operator=(BenchmarkData &&) = default;
     ~BenchmarkData() = default;
 
     void StartTimer();

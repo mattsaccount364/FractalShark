@@ -8,8 +8,7 @@ OpenGlContext::OpenGlContext(HWND hWnd)
     , m_hDC(nullptr)
     , m_Valid(false)
     , m_Repainting(true)
-    , m_CachedRect{}
-{
+    , m_CachedRect{} {
     if (m_hWnd) {
         m_hDC = GetDC(m_hWnd);
         PIXELFORMATDESCRIPTOR pfd;
@@ -25,15 +24,13 @@ OpenGlContext::OpenGlContext(HWND hWnd)
         pfd.cColorBits = 32;
 
         pf = ChoosePixelFormat(m_hDC, &pfd);
-        if (pf == 0)
-        {
+        if (pf == 0) {
             MessageBox(nullptr, L"ChoosePixelFormat() failed: Cannot find a suitable pixel format.", L"Error", MB_OK | MB_APPLMODAL);
             m_Valid = false;
             return;
         }
 
-        if (SetPixelFormat(m_hDC, pf, &pfd) == FALSE)
-        {
+        if (SetPixelFormat(m_hDC, pf, &pfd) == FALSE) {
             MessageBox(nullptr, L"SetPixelFormat() failed:  Cannot set format specified.", L"Error", MB_OK | MB_APPLMODAL);
             m_Valid = false;
             return;
@@ -74,8 +71,7 @@ OpenGlContext::~OpenGlContext() {
     }
 }
 
-void OpenGlContext::glResetView()
-{
+void OpenGlContext::glResetView() {
     if (m_hWnd) {
         RECT rt;
         GetClientRect(m_hWnd, &rt);

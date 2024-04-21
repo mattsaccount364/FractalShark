@@ -36,13 +36,13 @@ void VectorStaticInit();
 template<class EltT>
 class GrowableVector {
 private:
-    using Handle = void*;
+    using Handle = void *;
 
     Handle m_FileHandle;
     Handle m_MappedFile;
     size_t m_UsedSizeInElts;
     size_t m_CapacityInElts;
-    EltT* m_Data;
+    EltT *m_Data;
     AddPointOptions m_AddPointOptions;
 
     std::wstring m_Filename;
@@ -50,11 +50,11 @@ private:
     size_t m_GrowByElts;
 
 public:
-    GrowableVector(const GrowableVector& other) = delete;
-    GrowableVector& operator=(const GrowableVector& other) = delete;
-    GrowableVector(GrowableVector&& other) noexcept;
+    GrowableVector(const GrowableVector &other) = delete;
+    GrowableVector &operator=(const GrowableVector &other) = delete;
+    GrowableVector(GrowableVector &&other) noexcept;
 
-    GrowableVector& operator=(GrowableVector&& other) noexcept;
+    GrowableVector &operator=(GrowableVector &&other) noexcept;
 
     // The default constructor creates an empty vector.
     GrowableVector();
@@ -74,13 +74,13 @@ public:
     ~GrowableVector();
 
     // The subscript operator allows access to the elements of the vector.
-    EltT& operator[](size_t index);
+    EltT &operator[](size_t index);
 
     // Constant version of the subscript operator.
-    const EltT& operator[](size_t index) const;
+    const EltT &operator[](size_t index) const;
 
     // The GetData method returns a pointer to the data.
-    EltT* GetData() const;
+    EltT *GetData() const;
 
     // The GetFilename method returns the filename of the file backing the vector.
     std::wstring GetFilename() const;
@@ -95,16 +95,16 @@ public:
     bool ValidFile() const;
 
     // The Back method returns the last element of the vector.
-    const EltT& Back() const;
+    const EltT &Back() const;
 
     // The PushBack method adds an element to the end of the vector.
-    void PushBack(const EltT& val);
+    void PushBack(const EltT &val);
 
     // The PopBack method removes the last element of the vector.
     void PopBack();
 
     // The Back method returns the last element of the vector.
-    EltT& Back();
+    EltT &Back();
 
     // The Clear method clears the vector and resets the size to zero.
     void Clear();

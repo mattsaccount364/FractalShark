@@ -6,7 +6,7 @@
 #include "HDRFloat.h"
 
 template<typename IterType, class T, PerturbExtras PExtras>
-BLAS<IterType, T, PExtras>::BLAS(PerturbationResults<IterType, T, PExtras>& results) :
+BLAS<IterType, T, PExtras>::BLAS(PerturbationResults<IterType, T, PExtras> &results) :
     m_PerturbationResults{ results },
     m_CompressionHelper{ std::make_unique<RuntimeDecompressor<IterType, T, PExtras>>(results) },
     m_OldChunk{},
@@ -14,8 +14,7 @@ BLAS<IterType, T, PExtras>::BLAS(PerturbationResults<IterType, T, PExtras>& resu
     m_L{},
     m_B{},
     m_LM2{},
-    m_ElementsPerLevel{}
-{
+    m_ElementsPerLevel{} {
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>
@@ -63,8 +62,7 @@ BLA<T> BLAS<IterType, T, PExtras>::CreateLStep(size_t level, size_t m, T blaSize
         BLA<T> y = CreateLStep(levelm1, my, blaSize, epsilon);
 
         return MergeTwoBlas(x, y, blaSize);
-    }
-    else {
+    } else {
         return CreateLStep(levelm1, mx, blaSize, epsilon);
     }
 }
@@ -98,14 +96,13 @@ void BLAS<IterType, T, PExtras>::InitInternal(T blaSize, T epsilon) {
         for (size_t m = mStart; m < mEnd; m++) {
             InitLStep(firstLevel, m, blaSize, epsilon);
         }
-    };
+        };
 
     size_t elements = m_ElementsPerLevel[m_FirstLevel] + 1;
     size_t optThreads = elements / WorkThreshholdForThreads;
     if (optThreads > std::thread::hardware_concurrency()) {
         optThreads = std::thread::hardware_concurrency();
-    }
-    else if (optThreads == 0) {
+    } else if (optThreads == 0) {
         optThreads = 1;
     }
 
@@ -123,8 +120,7 @@ void BLAS<IterType, T, PExtras>::InitInternal(T blaSize, T epsilon) {
         for (size_t i = 0; i < threads.size(); i++) {
             threads[i]->join();
         }
-    }
-    else {
+    } else {
         RunInit(m_FirstLevel, 1, elements, blaSize, epsilon);
     }
 }
@@ -138,8 +134,7 @@ void BLAS<IterType, T, PExtras>::MergeOneStep(size_t m, size_t elementsSrc, size
         BLA<T> y = m_B[src][my];
 
         m_B[dest][m] = MergeTwoBlas(x, y, blaSize);
-    }
-    else {
+    } else {
         m_B[dest][m] = m_B[src][mx];
     }
 }
@@ -160,8 +155,7 @@ void BLAS<IterType, T, PExtras>::Merge(T blaSize) {
         size_t optThreads = elementsDst / WorkThreshholdForThreads;
         if (optThreads > std::thread::hardware_concurrency()) {
             optThreads = std::thread::hardware_concurrency();
-        }
-        else if (optThreads == 0) {
+        } else if (optThreads == 0) {
             optThreads = 1;
         }
 
@@ -173,7 +167,7 @@ void BLAS<IterType, T, PExtras>::Merge(T blaSize) {
             for (size_t m = mStart; m < mEnd; m++) {
                 MergeOneStep(m, elementsSrcFinal, srcFinal, destFinal, blaSize);
             }
-        };
+            };
 
         size_t mDelta = elementsDst / optThreads;
         size_t mConsumed = 0;
@@ -189,8 +183,7 @@ void BLAS<IterType, T, PExtras>::Merge(T blaSize) {
             for (size_t i = 0; i < threads.size(); i++) {
                 threads[i]->join();
             }
-        }
-        else {
+        } else {
             SubMerge(0, elementsDst);
         }
 
@@ -241,13 +234,13 @@ void BLAS<IterType, T, PExtras>::Init(size_t InM, T blaSize) {
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>
-BLA<T>* BLAS<IterType, T, PExtras>::LookupBackwards(size_t m, T z2) {
+BLA<T> *BLAS<IterType, T, PExtras>::LookupBackwards(size_t m, T z2) {
 
     if (m == 0) {
         return nullptr;
     }
 
-    BLA<T>* tempB = nullptr;
+    BLA<T> *tempB = nullptr;
 
     int32_t k = (int32_t)m - 1;
 
@@ -265,18 +258,16 @@ BLA<T>* BLAS<IterType, T, PExtras>::LookupBackwards(size_t m, T z2) {
             if (z2.compareToBothPositiveReduced(m_B[m_FirstLevel][0].getR2()) >= 0) {
                 return nullptr;
             }
-        }
-        else {
+        } else {
             if (z2 >= m_B[m_FirstLevel][0].getR2()) {
                 return nullptr;
             }
         }
         zeros = 32;
         ix = 0;
-    }
-    else {
+    } else {
         float v = (float)(k & -k);
-        uint32_t bits = *reinterpret_cast<uint32_t*>(&v);
+        uint32_t bits = *reinterpret_cast<uint32_t *>(&v);
         zeros = (bits >> 23) - 0x7f;
         ix = k >> zeros;
     }

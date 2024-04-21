@@ -2,7 +2,7 @@
 template<class HDRFloatType>
 struct SharedMemStruct {
     using GPUBLA_TYPE = BLA<HDRFloatType>;
-    const GPUBLA_TYPE* __restrict__ altB[32];
+    const GPUBLA_TYPE *__restrict__ altB[32];
     //GPUBLA_TYPE nullBla;
     //struct {
     //    //HDRFloatType curBR2[16];
@@ -15,7 +15,7 @@ struct SharedMemStruct {
 template<typename IterType, int32_t LM2>
 __global__
 void mandel_1x_double_perturb_bla(
-    IterType* OutputIterMatrix,
+    IterType *OutputIterMatrix,
     AntialiasedColors OutputColorMatrix,
     GPUPerturbSingleResults<IterType, double, PerturbExtras::Disable> PerturbDouble,
     GPU_BLAS<IterType, double, BLA<double>, LM2> doubleBlas,
@@ -27,8 +27,7 @@ void mandel_1x_double_perturb_bla(
     double dy,
     double centerX,
     double centerY,
-    IterType n_iterations)
-{
+    IterType n_iterations) {
     int X = blockIdx.x * blockDim.x + threadIdx.x;
     int Y = blockIdx.y * blockDim.y + threadIdx.y;
 
@@ -45,11 +44,11 @@ void mandel_1x_double_perturb_bla(
 
     using GPUBLA_TYPE = BLA<double>;
     char __shared__ SharedMem[sizeof(SharedMemStruct<double>)];
-    auto* shared =
+    auto *shared =
         reinterpret_cast<SharedMemStruct<double>*>(SharedMem);
 
     if (threadIdx.x == 0 && threadIdx.y == 0) {
-        GPUBLA_TYPE** elts = doubleBlas.GetB();
+        GPUBLA_TYPE **elts = doubleBlas.GetB();
 
         for (size_t i = 0; i < doubleBlas.m_NumLevels; i++) {
             shared->altB[i] = elts[i];
@@ -70,7 +69,7 @@ void mandel_1x_double_perturb_bla(
     double DeltaNormSquared = 0;
 
     while (iter < n_iterations) {
-        const BLA<double>* b = nullptr;
+        const BLA<double> *b = nullptr;
         while ((b = doubleBlas.LookupBackwards(shared->altB, RefIteration, DeltaNormSquared)) != nullptr) {
             int l = b->getL();
 
@@ -183,7 +182,7 @@ __global__
 void
 //__launch_bounds__(NB_THREADS_W * NB_THREADS_H, 2)
 mandel_1xHDR_float_perturb_bla(
-    IterType* OutputIterMatrix,
+    IterType *OutputIterMatrix,
     AntialiasedColors OutputColorMatrix,
     GPUPerturbSingleResults<IterType, HDRFloatType, PerturbExtras::Disable> Perturb,
     GPU_BLAS<IterType, HDRFloatType, BLA<HDRFloatType>, LM2> blas,
@@ -195,8 +194,7 @@ mandel_1xHDR_float_perturb_bla(
     const HDRFloatType dy,
     const HDRFloatType centerX,
     const HDRFloatType centerY,
-    IterType n_iterations)
-{
+    IterType n_iterations) {
     const int X = blockIdx.x * blockDim.x + threadIdx.x;
     const int Y = blockIdx.y * blockDim.y + threadIdx.y;
 
@@ -213,11 +211,11 @@ mandel_1xHDR_float_perturb_bla(
 
     using GPUBLA_TYPE = BLA<HDRFloatType>;
     char __shared__ SharedMem[sizeof(SharedMemStruct<HDRFloatType>)];
-    auto* shared =
+    auto *shared =
         reinterpret_cast<SharedMemStruct<HDRFloatType>*>(SharedMem);
 
     if (threadIdx.x == 0 && threadIdx.y == 0) {
-        GPUBLA_TYPE** elts = blas.GetB();
+        GPUBLA_TYPE **elts = blas.GetB();
 
         for (size_t i = 0; i < blas.m_NumLevels; i++) {
             shared->altB[i] = elts[i];
@@ -341,12 +339,11 @@ mandel_1xHDR_float_perturb_bla(
             }
 
             ++iter;
-        }
-        else {
+        } else {
             break;
         }
 
-        const BLA<HDRFloatType>* b = nullptr;
+        const BLA<HDRFloatType> *b = nullptr;
 
         for (;;) {
             b = blas.LookupBackwards(
@@ -376,8 +373,7 @@ mandel_1xHDR_float_perturb_bla(
                 DeltaNormSquared = DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY;
                 HdrReduce(DeltaNormSquared);
                 continue;
-            }
-            else if (res12 && !res3) {
+            } else if (res12 && !res3) {
                 iter += l;
                 RefIteration += l;
 
@@ -409,8 +405,7 @@ mandel_1xHDR_float_perturb_bla(
                 HdrReduce(DeltaNormSquared);
                 RefIteration = 0;
                 break;
-            }
-            else {
+            } else {
                 break;
             }
         }

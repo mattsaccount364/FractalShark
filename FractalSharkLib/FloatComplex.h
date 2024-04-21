@@ -26,13 +26,12 @@ public:
                 << " mantissaImag: " << static_cast<double>(this->mantissaImag)
                 << " exp: 0";
             return ss.str();
-        }
-        else {
+        } else {
             // Interpret the bits as a double and return the string as hex
             auto doubleMantReal = static_cast<double>(mantissaReal);
             auto doubleMantImag = static_cast<double>(mantissaImag);
-            uint64_t* mantissaRealBits = reinterpret_cast<uint64_t*>(&doubleMantReal);
-            uint64_t *mantissaImagBits = reinterpret_cast<uint64_t*>(&doubleMantImag);
+            uint64_t *mantissaRealBits = reinterpret_cast<uint64_t *>(&doubleMantReal);
+            uint64_t *mantissaImagBits = reinterpret_cast<uint64_t *>(&doubleMantImag);
             std::stringstream ss;
             ss << "mantissaReal: 0x" << std::hex << *mantissaRealBits
                 << " mantissaImag: 0x" << std::hex << *mantissaImagBits
@@ -48,12 +47,12 @@ public:
     }
 
     template<class SubType2>
-    CUDA_CRAP constexpr explicit FloatComplex(const FloatComplex<SubType2>& other) {
+    CUDA_CRAP constexpr explicit FloatComplex(const FloatComplex<SubType2> &other) {
         this->mantissaReal = (SubType)other.mantissaReal;
         this->mantissaImag = (SubType)other.mantissaImag;
     }
 
-    CUDA_CRAP constexpr FloatComplex(const FloatComplex& other) {
+    CUDA_CRAP constexpr FloatComplex(const FloatComplex &other) {
         this->mantissaReal = other.mantissaReal;
         this->mantissaImag = other.mantissaImag;
     }
@@ -64,7 +63,7 @@ public:
 
 
 private:
-    void CUDA_CRAP setMantexp(const SubType& realIn, const SubType& imagIn) {
+    void CUDA_CRAP setMantexp(const SubType &realIn, const SubType &imagIn) {
 
         mantissaReal = realIn;
         mantissaImag = imagIn;
@@ -74,20 +73,20 @@ public:
 
     // friends defined inside class body are inline and are hidden from non-ADL lookup
     friend CUDA_CRAP constexpr FloatComplex operator+(FloatComplex lhs,        // passing lhs by value helps optimize chained a+b+c
-        const FloatComplex& rhs) // otherwise, both parameters may be const references
+        const FloatComplex &rhs) // otherwise, both parameters may be const references
     {
         lhs.plus_mutable(rhs); // reuse compound assignment
         return lhs; // return the result by value (uses move constructor)
     }
 
     friend CUDA_CRAP constexpr FloatComplex operator+(FloatComplex lhs,        // passing lhs by value helps optimize chained a+b+c
-        const SubType& rhs) // otherwise, both parameters may be const references
+        const SubType &rhs) // otherwise, both parameters may be const references
     {
         lhs.plus_mutable(rhs); // reuse compound assignment
         return lhs; // return the result by value (uses move constructor)
     }
 
-    CUDA_CRAP constexpr FloatComplex& operator+=(const FloatComplex& other) {
+    CUDA_CRAP constexpr FloatComplex &operator+=(const FloatComplex &other) {
         plus_mutable(other);
         return *this;
     }
@@ -115,7 +114,7 @@ public:
 
     // friends defined inside class body are inline and are hidden from non-ADL lookup
     friend CUDA_CRAP constexpr FloatComplex operator*(FloatComplex lhs,        // passing lhs by value helps optimize chained a+b+c
-        const FloatComplex& rhs) // otherwise, both parameters may be const references
+        const FloatComplex &rhs) // otherwise, both parameters may be const references
     {
         lhs.times_mutable(rhs); // reuse compound assignment
         return lhs; // return the result by value (uses move constructor)
@@ -123,13 +122,13 @@ public:
 
     // friends defined inside class body are inline and are hidden from non-ADL lookup
     friend CUDA_CRAP constexpr FloatComplex operator*(FloatComplex lhs,        // passing lhs by value helps optimize chained a+b+c
-        const SubType& rhs) // otherwise, both parameters may be const references
+        const SubType &rhs) // otherwise, both parameters may be const references
     {
         lhs.times_mutable(rhs); // reuse compound assignment
         return lhs; // return the result by value (uses move constructor)
     }
 
-    CUDA_CRAP constexpr FloatComplex& operator*=(const FloatComplex& other) {
+    CUDA_CRAP constexpr FloatComplex &operator*=(const FloatComplex &other) {
         times_mutable(other);
         return *this;
     }
@@ -173,13 +172,13 @@ public:
 
     // friends defined inside class body are inline and are hidden from non-ADL lookup
     friend CUDA_CRAP constexpr FloatComplex operator-(FloatComplex lhs,        // passing lhs by value helps optimize chained a+b+c
-        const FloatComplex& rhs) // otherwise, both parameters may be const references
+        const FloatComplex &rhs) // otherwise, both parameters may be const references
     {
         lhs.sub_mutable(rhs); // reuse compound assignment
         return lhs; // return the result by value (uses move constructor)
     }
 
-    CUDA_CRAP constexpr FloatComplex& operator-=(const FloatComplex& other) {
+    CUDA_CRAP constexpr FloatComplex &operator-=(const FloatComplex &other) {
         sub_mutable(other);
         return *this;
     }
@@ -234,7 +233,7 @@ public:
 
     // friends defined inside class body are inline and are hidden from non-ADL lookup
     friend CUDA_CRAP constexpr FloatComplex operator/(FloatComplex lhs,        // passing lhs by value helps optimize chained a+b+c
-        const FloatComplex& rhs) // otherwise, both parameters may be const references
+        const FloatComplex &rhs) // otherwise, both parameters may be const references
     {
         lhs.divide_mutable(rhs); // reuse compound assignment
         return lhs; // return the result by value (uses move constructor)
@@ -242,13 +241,13 @@ public:
 
     // friends defined inside class body are inline and are hidden from non-ADL lookup
     friend CUDA_CRAP constexpr FloatComplex operator/(FloatComplex lhs,        // passing lhs by value helps optimize chained a+b+c
-        const SubType& rhs) // otherwise, both parameters may be const references
+        const SubType &rhs) // otherwise, both parameters may be const references
     {
         lhs.divide_mutable(rhs); // reuse compound assignment
         return lhs; // return the result by value (uses move constructor)
     }
 
-    CUDA_CRAP constexpr FloatComplex& operator/=(const FloatComplex& other) {
+    CUDA_CRAP constexpr FloatComplex &operator/=(const FloatComplex &other) {
         divide_mutable(other);
         return *this;
     }
@@ -272,7 +271,7 @@ public:
     }
 
 public:
-    void CUDA_CRAP toComplex(SubType& re, SubType& img) const {
+    void CUDA_CRAP toComplex(SubType &re, SubType &img) const {
         //return new Complex(mantissaReal * MantExp.toExp(exp), mantissaImag * MantExp.toExp(exp));
         auto d = SubType::getMultiplier(exp);
         //return new Complex(MantExp.toDouble(mantissaReal, exp), MantExp.toDouble(mantissaImag, exp));

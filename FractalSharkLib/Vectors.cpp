@@ -21,10 +21,10 @@ typedef enum _SECTION_INHERIT {
     ViewUnmap = 2
 } SECTION_INHERIT;
 
-typedef struct _LSA_UNICODE_STRING { USHORT Length;	USHORT MaximumLength; PWSTR  Buffer; } UNICODE_STRING, * PUNICODE_STRING;
-typedef struct _OBJECT_ATTRIBUTES { ULONG Length; HANDLE RootDirectory; PUNICODE_STRING ObjectName; ULONG Attributes; PVOID SecurityDescriptor;	PVOID SecurityQualityOfService; } OBJECT_ATTRIBUTES, * POBJECT_ATTRIBUTES;
-typedef struct _CLIENT_ID { PVOID UniqueProcess; PVOID UniqueThread; } CLIENT_ID, * PCLIENT_ID;
-using myNtCreateSection = NTSTATUS(NTAPI*)(
+typedef struct _LSA_UNICODE_STRING { USHORT Length;	USHORT MaximumLength; PWSTR  Buffer; } UNICODE_STRING, *PUNICODE_STRING;
+typedef struct _OBJECT_ATTRIBUTES { ULONG Length; HANDLE RootDirectory; PUNICODE_STRING ObjectName; ULONG Attributes; PVOID SecurityDescriptor;	PVOID SecurityQualityOfService; } OBJECT_ATTRIBUTES, *POBJECT_ATTRIBUTES;
+typedef struct _CLIENT_ID { PVOID UniqueProcess; PVOID UniqueThread; } CLIENT_ID, *PCLIENT_ID;
+using myNtCreateSection = NTSTATUS(NTAPI *)(
     OUT PHANDLE SectionHandle,
     IN ULONG DesiredAccess,
     IN POBJECT_ATTRIBUTES ObjectAttributes OPTIONAL,
@@ -32,10 +32,10 @@ using myNtCreateSection = NTSTATUS(NTAPI*)(
     IN ULONG PageAttributess,
     IN ULONG SectionAttributes,
     IN HANDLE FileHandle OPTIONAL);
-using myNtMapViewOfSection = NTSTATUS(NTAPI*)(
+using myNtMapViewOfSection = NTSTATUS(NTAPI *)(
     HANDLE SectionHandle,
     HANDLE ProcessHandle,
-    PVOID* BaseAddress,
+    PVOID *BaseAddress,
     ULONG_PTR ZeroBits,
     SIZE_T CommitSize,
     PLARGE_INTEGER SectionOffset,
@@ -43,7 +43,7 @@ using myNtMapViewOfSection = NTSTATUS(NTAPI*)(
     DWORD InheritDisposition,
     ULONG AllocationType,
     ULONG Win32Protect);
-using myNtExtendSection = NTSTATUS(NTAPI*)(
+using myNtExtendSection = NTSTATUS(NTAPI *)(
     IN HANDLE               SectionHandle,
     IN PLARGE_INTEGER       NewSectionSize);
 
@@ -78,7 +78,7 @@ std::wstring GetFileExtension(GrowableVectorTypes Type) {
 }
 
 template<class EltT>
-EltT* GrowableVector<EltT>::GetData() const {
+EltT *GrowableVector<EltT>::GetData() const {
     return m_Data;
 }
 
@@ -103,7 +103,7 @@ bool GrowableVector<EltT>::ValidFile() const {
 }
 
 template<class EltT>
-GrowableVector<EltT>::GrowableVector(GrowableVector<EltT>&& other) noexcept :
+GrowableVector<EltT>::GrowableVector(GrowableVector<EltT> &&other) noexcept :
     m_FileHandle{ other.m_FileHandle },
     m_MappedFile{ other.m_MappedFile },
     m_UsedSizeInElts{ other.m_UsedSizeInElts },
@@ -126,7 +126,7 @@ GrowableVector<EltT>::GrowableVector(GrowableVector<EltT>&& other) noexcept :
 }
 
 template<class EltT>
-GrowableVector<EltT>& GrowableVector<EltT>::operator=(GrowableVector<EltT>&& other) noexcept {
+GrowableVector<EltT> &GrowableVector<EltT>::operator=(GrowableVector<EltT> &&other) noexcept {
     m_FileHandle = other.m_FileHandle;
     m_MappedFile = other.m_MappedFile;
     m_UsedSizeInElts = other.m_UsedSizeInElts;
@@ -170,8 +170,7 @@ GrowableVector<EltT>::GrowableVector(
     m_AddPointOptions{ add_point_options },
     m_Filename{ filename },
     m_PhysicalMemoryCapacityKB{},
-    m_GrowByElts{ InitialGrowByElts }
-{
+    m_GrowByElts{ InitialGrowByElts } {
     auto ret = GetPhysicallyInstalledSystemMemory(&m_PhysicalMemoryCapacityKB);
     if (ret == FALSE) {
         ::MessageBox(nullptr, L"Failed to get system memory", L"", MB_OK | MB_APPLMODAL);
@@ -192,8 +191,7 @@ GrowableVector<EltT>::GrowableVector(
     AddPointOptions add_point_options,
     std::wstring filename,
     size_t initial_size)
-    : GrowableVector{ add_point_options, filename }
-{
+    : GrowableVector{ add_point_options, filename } {
     m_UsedSizeInElts = initial_size;
     m_CapacityInElts = initial_size;
 }
@@ -205,12 +203,12 @@ GrowableVector<EltT>::~GrowableVector() {
 }
 
 template<class EltT>
-EltT& GrowableVector<EltT>::operator[](size_t index) {
+EltT &GrowableVector<EltT>::operator[](size_t index) {
     return m_Data[index];
 }
 
 template<class EltT>
-const EltT& GrowableVector<EltT>::operator[](size_t index) const {
+const EltT &GrowableVector<EltT>::operator[](size_t index) const {
     return m_Data[index];
 }
 
@@ -224,7 +222,7 @@ void GrowableVector<EltT>::GrowVectorIfNeeded() {
 }
 
 template<class EltT>
-void GrowableVector<EltT>::PushBack(const EltT& val) {
+void GrowableVector<EltT>::PushBack(const EltT &val) {
     GrowVectorIfNeeded();
     m_Data[m_UsedSizeInElts] = val;
     m_UsedSizeInElts++;
@@ -238,12 +236,12 @@ void GrowableVector<EltT>::PopBack() {
 }
 
 template<class EltT>
-EltT& GrowableVector<EltT>::Back() {
+EltT &GrowableVector<EltT>::Back() {
     return m_Data[m_UsedSizeInElts - 1];
 }
 
 template<class EltT>
-const EltT& GrowableVector<EltT>::Back() const {
+const EltT &GrowableVector<EltT>::Back() const {
     return m_Data[m_UsedSizeInElts - 1];
 }
 
@@ -306,7 +304,7 @@ void GrowableVector<EltT>::TrimEnableWithoutSave() {
     auto status2 = fNtMapViewOfSection(
         m_MappedFile,
         GetCurrentProcess(),
-        (PVOID*)&m_Data,
+        (PVOID *)&m_Data,
         0,
         0,
         0,
@@ -327,7 +325,7 @@ void GrowableVector<EltT>::TrimEnableWithoutSave() {
         err += " :(";
         throw FractalSharkSeriousException(err);
     }
- }
+}
 
 template<class EltT>
 void GrowableVector<EltT>::TrimEnableWithSave() {
@@ -362,8 +360,7 @@ template<class EltT>
 void GrowableVector<EltT>::MutableReserveKeepFileSize(size_t capacity) {
     if (!UsingAnonymous()) {
         MutableFileCommit(capacity);
-    }
-    else {
+    } else {
         MutableAnonymousCommit(capacity);
     }
 }
@@ -435,14 +432,12 @@ uint32_t GrowableVector<EltT>::InternalOpenFile() {
 
         if (m_AddPointOptions == AddPointOptions::OpenExistingWithSave) {
             lastError = ERROR_ALREADY_EXISTS;
-        }
-        else {
+        } else {
             // This should be either 0 or ERROR_ALREADY_EXISTS given that
             // the CreateFile call was evidently successful
             lastError = GetLastError();
         }
-    }
-    else {
+    } else {
         // The file must be there because it's open
         lastError = ERROR_ALREADY_EXISTS;
         assert(m_FileHandle != nullptr);
@@ -514,12 +509,10 @@ void GrowableVector<EltT>::MutableFileCommit(size_t capacity) {
             high = existing_file_size.HighPart;
             low = existing_file_size.LowPart;
             m_CapacityInElts = m_UsedSizeInElts;
-        }
-        else {
+        } else {
             m_CapacityInElts = capacity;
         }
-    }
-    else {
+    } else {
         m_UsedSizeInElts = 0;
         m_CapacityInElts = capacity;
     }
@@ -573,8 +566,7 @@ void GrowableVector<EltT>::MutableFileCommit(size_t capacity) {
             m_CapacityInElts * sizeof(EltT);
         allocationAttributes = SEC_RESERVE;
         allocationType = MEM_RESERVE;
-    }
-    else {
+    } else {
         initialSize.QuadPart = 0;
         allocationAttributes = SEC_RESERVE;
         allocationType = MEM_RESERVE;
@@ -600,18 +592,17 @@ void GrowableVector<EltT>::MutableFileCommit(size_t capacity) {
     SIZE_T viewSize;
     if (m_AddPointOptions != AddPointOptions::OpenExistingWithSave) {
         viewSize = m_PhysicalMemoryCapacityKB * 1024;
-    }
-    else {
+    } else {
         viewSize = existing_file_size.QuadPart;
-    }        
+    }
 
     // m_Data = MapViewOfFile(m_MappedFile, FILE_MAP_RESERVE|FILE_MAP_READ|FILE_MAP_WRITE, 0, 0, ViewSize);
     // note MEM_RESERVE
-    const void* OriginalData = m_Data;
+    const void *OriginalData = m_Data;
     status = fNtMapViewOfSection(
         m_MappedFile,
         GetCurrentProcess(),
-        (PVOID*)&m_Data,
+        (PVOID *)&m_Data,
         0,
         0,
         0,
@@ -677,8 +668,7 @@ void GrowableVector<EltT>::MutableAnonymousCommit(size_t capacity) {
             auto code = GetLastError();
             err_str += std::to_string(code);
             throw FractalSharkSeriousException(err_str);
-        }
-        else if (m_Data != res) {
+        } else if (m_Data != res) {
             std::string err = "VirtualAlloc returned a different pointer :(";
             err += std::to_string(reinterpret_cast<uint64_t>(m_Data));
             err += " vs ";
@@ -689,14 +679,13 @@ void GrowableVector<EltT>::MutableAnonymousCommit(size_t capacity) {
             throw FractalSharkSeriousException(err);
         }
 
-        m_Data = static_cast<EltT*>(res);
+        m_Data = static_cast<EltT *>(res);
         m_CapacityInElts = capacity;
     }
 }
 
 template<class EltT>
-void GrowableVector<EltT>::MutableReserve(size_t new_reserved_bytes)
-{
+void GrowableVector<EltT>::MutableReserve(size_t new_reserved_bytes) {
     assert(UsingAnonymous());  // This function is only for anonymous memory.
 
     auto res = VirtualAlloc(
@@ -715,7 +704,7 @@ void GrowableVector<EltT>::MutableReserve(size_t new_reserved_bytes)
         return;
     }
 
-    m_Data = static_cast<EltT*>(res);
+    m_Data = static_cast<EltT *>(res);
 }
 
 

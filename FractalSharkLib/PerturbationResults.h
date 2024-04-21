@@ -34,7 +34,7 @@ namespace Introspection {
         typename IterType,
         typename Float,
         PerturbExtras PExtras>
-    constexpr auto Extract(const PerturbType<IterType, Float, PExtras>&) -> PerturbTypeParams<IterType, Float, PExtras>;
+    constexpr auto Extract(const PerturbType<IterType, Float, PExtras> &) -> PerturbTypeParams<IterType, Float, PExtras>;
 
     template<typename PerturbType>
     constexpr auto Extract_PExtras = decltype(Extract(std::declval<PerturbType>()))::PExtras_;
@@ -125,10 +125,10 @@ public:
 
     ~PerturbationResults();
 
-    PerturbationResults(PerturbationResults&& other) = delete;
+    PerturbationResults(PerturbationResults &&other) = delete;
 
-    PerturbationResults(const PerturbationResults& other) = delete;
-    PerturbationResults& operator=(const PerturbationResults& other) = delete;
+    PerturbationResults(const PerturbationResults &other) = delete;
+    PerturbationResults &operator=(const PerturbationResults &other) = delete;
 
     size_t GetGenerationNumber() const;
 
@@ -137,22 +137,22 @@ public:
     void SetLaReference(
         std::unique_ptr<LAReference<IterType, T, SubType, PExtras>> laReference);
 
-    LAReference<IterType, T, SubType, PExtras>* GetLaReference() const;
+    LAReference<IterType, T, SubType, PExtras> *GetLaReference() const;
 
     std::unique_ptr<PerturbationResults<IterType, T, PExtras>>
-    CopyPerturbationResults(AddPointOptions add_point_options,
-        size_t new_generation_number);
+        CopyPerturbationResults(AddPointOptions add_point_options,
+            size_t new_generation_number);
 
     template<bool IncludeLA, class Other, PerturbExtras PExtrasOther = PerturbExtras::Disable>
     void CopyFullOrbitVector(
-        const PerturbationResults<IterType, Other, PExtrasOther>& other);
+        const PerturbationResults<IterType, Other, PExtrasOther> &other);
 
     template<bool IncludeLA, class Other, PerturbExtras PExtrasOther = PerturbExtras::Disable>
     void CopyPerturbationResults(
-        const PerturbationResults<IterType, Other, PExtrasOther>& other);
+        const PerturbationResults<IterType, Other, PExtrasOther> &other);
 
     template<PerturbExtras OtherBad>
-    void CopySettingsWithoutOrbit(const PerturbationResults<IterType, T, OtherBad>& other);
+    void CopySettingsWithoutOrbit(const PerturbationResults<IterType, T, OtherBad> &other);
 
     void WriteMetadata() const;
 
@@ -170,29 +170,28 @@ public:
 
     template<class U = SubType>
     typename HDRFloatComplex<U> GetComplex(
-        RuntimeDecompressor<IterType, T, PExtras>& PerThreadCompressionHelper,
+        RuntimeDecompressor<IterType, T, PExtras> &PerThreadCompressionHelper,
         size_t uncompressed_index) const {
 
         if constexpr (PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::Bad) {
             return {
                 m_FullOrbit[uncompressed_index].x,
                 m_FullOrbit[uncompressed_index].y };
-        }
-        else {
+        } else {
             return PerThreadCompressionHelper.GetCompressedComplex<U>(uncompressed_index);
         }
     }
-    
+
     void InitReused();
 
     void InitResults(
         RefOrbitCalc::ReuseMode Reuse,
-        const HighPrecision& cx,
-        const HighPrecision& cy,
-        const HighPrecision& minX,
-        const HighPrecision& minY,
-        const HighPrecision& maxX,
-        const HighPrecision& maxY,
+        const HighPrecision &cx,
+        const HighPrecision &cy,
+        const HighPrecision &minX,
+        const HighPrecision &minY,
+        const HighPrecision &maxX,
+        const HighPrecision &maxY,
         IterType NumIterations,
         size_t GuessReserveSize);
 
@@ -209,17 +208,17 @@ public:
     void AddUncompressedIteration(GPUReferenceIter<T, PExtras> result)
         requires (PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::Bad);
 
-    const GPUReferenceIter<T, PExtras>* GetOrbitData() const;
+    const GPUReferenceIter<T, PExtras> *GetOrbitData() const;
 
     // Location of orbit
-    const HighPrecision& GetHiX() const;
+    const HighPrecision &GetHiX() const;
 
     // Location of orbit
-    const HighPrecision& GetHiY() const;
+    const HighPrecision &GetHiY() const;
 
-    const std::string& GetHiXStr() const;
+    const std::string &GetHiXStr() const;
 
-    const std::string& GetHiYStr() const;
+    const std::string &GetHiYStr() const;
 
     T GetOrbitXLow() const;
 
@@ -255,15 +254,15 @@ public:
     // Take references to pointers to avoid copying.
     // Set the pointers to point at the specified index.
     void GetCompressedReuseEntries(
-        IntermediateRuntimeDecompressor<IterType, T, PExtras>& PerThreadCompressionHelper,
+        IntermediateRuntimeDecompressor<IterType, T, PExtras> &PerThreadCompressionHelper,
         size_t uncompressed_index,
-        const mpf_t*& x,
-        const mpf_t*& y) const;
+        const mpf_t *&x,
+        const mpf_t *&y) const;
 
     void GetUncompressedReuseEntries(
         size_t uncompressed_index,
-        const mpf_t*& x,
-        const mpf_t*& y) const;
+        const mpf_t *&x,
+        const mpf_t *&y) const;
 
     IterType GetMaxIterations() const;
 
@@ -287,8 +286,8 @@ public:
     // For information purposes only, not used for anything
     // other than reporting.
     void GetIntermediatePrecision(
-        int64_t& deltaPrecision,
-        int64_t& extraPrecision) const;
+        int64_t &deltaPrecision,
+        int64_t &extraPrecision) const;
 
     // For information purposes only, not used for anything
     // other than reporting.
@@ -358,7 +357,7 @@ class RefOrbitCompressor : public TemplateHelpers<IterType, T, PExtras> {
 
 public:
     RefOrbitCompressor(
-        PerturbationResults<IterType, T, PExtras>& results,
+        PerturbationResults<IterType, T, PExtras> &results,
         int32_t CompressionErrorExp);
 
     void MaybeAddCompressedIteration(GPUReferenceIter<T, PExtras> iter)
@@ -378,7 +377,7 @@ class IntermediateOrbitCompressor : public TemplateHelpers<IterType, T, PExtras>
 
     friend class RuntimeDecompressor<IterType, T, PExtras>;
 
-    PerturbationResults<IterType, T, PExtras>& results;
+    PerturbationResults<IterType, T, PExtras> &results;
     mpf_t zx;
     mpf_t zy;
     mpf_t cx;
@@ -393,7 +392,7 @@ class IntermediateOrbitCompressor : public TemplateHelpers<IterType, T, PExtras>
 
 public:
     IntermediateOrbitCompressor(
-        PerturbationResults<IterType, T, PExtras>& results,
+        PerturbationResults<IterType, T, PExtras> &results,
         int32_t CompressionErrorExp);
 
     ~IntermediateOrbitCompressor();

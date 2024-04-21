@@ -23,10 +23,10 @@ CUDA_CRAP constexpr BLA<T>::BLA(T r2, T RealA, T ImagA, T RealB, T ImagB, int l)
 
 template<class T>
 CUDA_CRAP void BLA<T>::getValue(
-    T& RealDeltaSubN,
-    T& ImagDeltaSubN,
-    const T& RealDeltaSub0,
-    const T& ImagDeltaSub0
+    T &RealDeltaSubN,
+    T &ImagDeltaSubN,
+    const T &RealDeltaSub0,
+    const T &ImagDeltaSub0
 ) const {
 
     //T zxn = Ax * zx - Ay * zy + Bx * cx - By * cy;
@@ -68,7 +68,7 @@ CUDA_CRAP BLA<T> BLA<T>::getGenericStep(
 
 // A = y.A * x.A
 template<class T>
-CUDA_CRAP void BLA<T>::getNewA(const BLA& x, const BLA& y, T& RealValue, T& ImagValue) {
+CUDA_CRAP void BLA<T>::getNewA(const BLA &x, const BLA &y, T &RealValue, T &ImagValue) {
     RealValue = y.Ax * x.Ax - y.Ay * x.Ay;
     HdrReduce(RealValue);
 
@@ -78,7 +78,7 @@ CUDA_CRAP void BLA<T>::getNewA(const BLA& x, const BLA& y, T& RealValue, T& Imag
 
 // B = y.A * x.B + y.B
 template<class T>
-CUDA_CRAP void BLA<T>::getNewB(const BLA& x, const BLA& y, T& RealValue, T& ImagValue) {
+CUDA_CRAP void BLA<T>::getNewB(const BLA &x, const BLA &y, T &RealValue, T &ImagValue) {
     T xBx = x.Bx;
     T xBy = x.By;
     RealValue = y.Ax * xBx - y.Ay * xBy + y.Bx;
@@ -99,7 +99,7 @@ CUDA_CRAP T BLA<T>::getR2() const {
 }
 
 template<class T>
-CUDA_CRAP const T* BLA<T>::getR2Addr() const {
+CUDA_CRAP const T *BLA<T>::getR2Addr() const {
     return &r2;
 }
 
@@ -113,19 +113,19 @@ template class BLA<HDRFloat<double>>;
 ////////////////////////////////////////////////////////////////////////////////////////
 
 template<typename IterType, class T, class GPUBLA_TYPE, int32_t LM2>
-GPU_BLAS<IterType, T, GPUBLA_TYPE, LM2>::GPU_BLAS(const std::vector<std::vector<GPUBLA_TYPE>>& B)
+GPU_BLAS<IterType, T, GPUBLA_TYPE, LM2>::GPU_BLAS(const std::vector<std::vector<GPUBLA_TYPE>> &B)
     : m_B(nullptr),
     m_Err(),
     m_Owned(true) {
 
-    GPUBLA_TYPE** tempB;
-    m_Err = cudaMallocManaged(&tempB, m_NumLevels * sizeof(GPUBLA_TYPE*), cudaMemAttachGlobal);
+    GPUBLA_TYPE **tempB;
+    m_Err = cudaMallocManaged(&tempB, m_NumLevels * sizeof(GPUBLA_TYPE *), cudaMemAttachGlobal);
     if (m_Err != cudaSuccess) {
         return;
     }
 
     m_B = tempB;
-    cudaMemset(m_B, 0, m_NumLevels * sizeof(GPUBLA_TYPE*));
+    cudaMemset(m_B, 0, m_NumLevels * sizeof(GPUBLA_TYPE *));
 
     size_t total = 0;
 
@@ -166,7 +166,7 @@ GPU_BLAS<IterType, T, GPUBLA_TYPE, LM2>::~GPU_BLAS() {
 }
 
 template<typename IterType, class T, class GPUBLA_TYPE, int32_t LM2>
-GPU_BLAS<IterType, T, GPUBLA_TYPE, LM2>::GPU_BLAS(const GPU_BLAS& other) : m_Owned(false) {
+GPU_BLAS<IterType, T, GPUBLA_TYPE, LM2>::GPU_BLAS(const GPU_BLAS &other) : m_Owned(false) {
     if (this == &other) {
         return;
     }
@@ -185,8 +185,8 @@ uint32_t GPU_BLAS<IterType, T, GPUBLA_TYPE, LM2>::CheckValid() const {
 
 #ifdef __CUDA_ARCH__
 template<typename IterType, class T, class GPUBLA_TYPE, int32_t LM2>
-CUDA_CRAP const GPUBLA_TYPE* GPU_BLAS<IterType, T, GPUBLA_TYPE, LM2>::LookupBackwards(
-    const GPUBLA_TYPE* __restrict__* altB,
+CUDA_CRAP const GPUBLA_TYPE *GPU_BLAS<IterType, T, GPUBLA_TYPE, LM2>::LookupBackwards(
+    const GPUBLA_TYPE *__restrict__ *altB,
     //const GPUBLA_TYPE* __restrict__ nullBla,
     /*T* curBR2,*/
     IterType m,
@@ -222,7 +222,7 @@ CUDA_CRAP const GPUBLA_TYPE* GPU_BLAS<IterType, T, GPUBLA_TYPE, LM2>::LookupBack
 
     // Option D:
     // Reverse bit order, count high order zeros.
-    const GPUBLA_TYPE* __restrict__ tempB = nullptr;
+    const GPUBLA_TYPE *__restrict__ tempB = nullptr;
     const IterType zeros = __clz(__brev(k));
     IterType ix = k >> zeros;
 

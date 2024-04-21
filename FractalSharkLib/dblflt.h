@@ -8,14 +8,14 @@ struct MattDblflt {
     MattDblflt() = default;
 
     CUDA_CRAP
-    MattDblflt(const MattDblflt &other) :
+        MattDblflt(const MattDblflt &other) :
         head{ other.head },
         tail{ other.tail } {
         static_assert(sizeof(*this) == 8, "!");
     }
 
     CUDA_CRAP
-    MattDblflt(float a, float b) {
+        MattDblflt(float a, float b) {
         float t1, t2;
         head = a + b;
         t1 = head - a;
@@ -33,7 +33,7 @@ struct MattDblflt {
     //}
 
     CUDA_CRAP
-    explicit MattDblflt(double other) {
+        explicit MattDblflt(double other) {
 
         float a = (float)other;
         float b = (float)(other - (double)a);

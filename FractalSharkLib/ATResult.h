@@ -11,10 +11,10 @@ class ATResult {
 public:
     using FloatComplexT =
         std::conditional<
-            std::is_same<T, ::HDRFloat<float>>::value ||
-            std::is_same<T, ::HDRFloat<double>>::value ||
-            std::is_same<T, ::HDRFloat<CudaDblflt<MattDblflt>>>::value ||
-            std::is_same<T, ::HDRFloat<CudaDblflt<dblflt>>>::value,
+        std::is_same<T, ::HDRFloat<float>>::value ||
+        std::is_same<T, ::HDRFloat<double>>::value ||
+        std::is_same<T, ::HDRFloat<CudaDblflt<MattDblflt>>>::value ||
+        std::is_same<T, ::HDRFloat<CudaDblflt<dblflt>>>::value,
         ::HDRFloatComplex<SubType>,
         ::FloatComplex<SubType>>::type;
 

@@ -65,8 +65,7 @@ extern "C" {
        requirement. To create a double-double from two arbitrary double-precision
        numbers, use add_double_to_dbldbl().
     */
-    __device__ __forceinline__ dbldbl make_dbldbl(double head, double tail)
-    {
+    __device__ __forceinline__ dbldbl make_dbldbl(double head, double tail) {
         dbldbl z;
         z.x = tail;
         z.y = head;
@@ -74,20 +73,17 @@ extern "C" {
     }
 
     /* Return the head of a double-double number */
-    __device__ __forceinline__ double get_dbldbl_head(dbldbl a)
-    {
+    __device__ __forceinline__ double get_dbldbl_head(dbldbl a) {
         return a.y;
     }
 
     /* Return the tail of a double-double number */
-    __device__ __forceinline__ double get_dbldbl_tail(dbldbl a)
-    {
+    __device__ __forceinline__ double get_dbldbl_tail(dbldbl a) {
         return a.x;
     }
 
     /* Compute error-free sum of two unordered doubles. See Knuth, TAOCP vol. 2 */
-    __device__ __forceinline__ dbldbl add_double_to_dbldbl(double a, double b)
-    {
+    __device__ __forceinline__ dbldbl add_double_to_dbldbl(double a, double b) {
         double t1, t2;
         dbldbl z;
         z.y = __dadd_rn(a, b);
@@ -100,8 +96,7 @@ extern "C" {
     }
 
     /* Compute error-free product of two doubles. Take full advantage of FMA */
-    __device__ __forceinline__ dbldbl mul_double_to_dbldbl(double a, double b)
-    {
+    __device__ __forceinline__ dbldbl mul_double_to_dbldbl(double a, double b) {
         dbldbl z;
         z.y = __dmul_rn(a, b);
         z.x = __fma_rn(a, b, -z.y);
@@ -109,8 +104,7 @@ extern "C" {
     }
 
     /* Negate a double-double number, by separately negating head and tail */
-    __device__ __forceinline__ dbldbl neg_dbldbl(dbldbl a)
-    {
+    __device__ __forceinline__ dbldbl neg_dbldbl(dbldbl a) {
         dbldbl z;
         z.y = -a.y;
         z.x = -a.x;
@@ -124,8 +118,7 @@ extern "C" {
        Floating-Point Numbers for GPU Computation. Retrieved on 7/12/2011
        from http://andrewthall.org/papers/df64_qf128.pdf.
     */
-    __device__ __forceinline__ dbldbl add_dbldbl(dbldbl a, dbldbl b)
-    {
+    __device__ __forceinline__ dbldbl add_dbldbl(dbldbl a, dbldbl b) {
         dbldbl z;
         double t1, t2, t3, t4, t5, e;
         t1 = __dadd_rn(a.y, b.y);
@@ -150,8 +143,7 @@ extern "C" {
        Floating-Point Numbers for GPU Computation. Retrieved on 7/12/2011
        from http://andrewthall.org/papers/df64_qf128.pdf.
     */
-    __device__ __forceinline__ dbldbl sub_dbldbl(dbldbl a, dbldbl b)
-    {
+    __device__ __forceinline__ dbldbl sub_dbldbl(dbldbl a, dbldbl b) {
         dbldbl z;
         double t1, t2, t3, t4, t5, e;
         t1 = __dadd_rn(a.y, -b.y);
@@ -174,8 +166,7 @@ extern "C" {
        relative error observed with 10 billion test cases was 5.238480533564479e-32
        (~= 2**-103.9125).
     */
-    __device__ __forceinline__ dbldbl mul_dbldbl(dbldbl a, dbldbl b)
-    {
+    __device__ __forceinline__ dbldbl mul_dbldbl(dbldbl a, dbldbl b) {
         dbldbl t, z;
         double e;
         t.y = __dmul_rn(a.y, b.y);
@@ -188,8 +179,7 @@ extern "C" {
         return z;
     }
 
-    __device__ __forceinline__ dbldbl sqr_dbldbl(dbldbl a)
-    {
+    __device__ __forceinline__ dbldbl sqr_dbldbl(dbldbl a) {
         dbldbl t, z;
         double e;
         t.y = __dmul_rn(a.y, a.y);
@@ -212,8 +202,7 @@ extern "C" {
         return z;
     }
 
-    __device__ __forceinline__ dbldbl shiftleft_dbldbl(dbldbl a)
-    {
+    __device__ __forceinline__ dbldbl shiftleft_dbldbl(dbldbl a) {
         dbldbl z;
         z.x = __dmul_rn(a.x, 2.0);
         z.y = __dmul_rn(a.y, 2.0);
@@ -228,8 +217,7 @@ extern "C" {
        maximum relative error observed with 10 billion test cases was
        1.0161322480099059e-31 (~= 2**-102.9566).
     */
-    __device__ __forceinline__ dbldbl div_dbldbl(dbldbl a, dbldbl b)
-    {
+    __device__ __forceinline__ dbldbl div_dbldbl(dbldbl a, dbldbl b) {
         dbldbl t, z;
         double e, r;
         r = 1.0 / b.y;
@@ -254,8 +242,7 @@ extern "C" {
        relative error observed with 10 billion test cases was
        3.7564109505601846e-32 (~= 2**-104.3923).
     */
-    __device__ __forceinline__ dbldbl sqrt_dbldbl(dbldbl a)
-    {
+    __device__ __forceinline__ dbldbl sqrt_dbldbl(dbldbl a) {
         dbldbl t, z;
         double e, y, s, r;
         r = rsqrt(a.y);
@@ -281,8 +268,7 @@ extern "C" {
        the maximum relative error observed with 10 billion test cases was
        6.4937771666026349e-32 (~= 2**-103.6026)
     */
-    __device__ __forceinline__ dbldbl rsqrt_dbldbl(dbldbl a)
-    {
+    __device__ __forceinline__ dbldbl rsqrt_dbldbl(dbldbl a) {
         dbldbl z;
         double r, s, e;
         r = rsqrt(a.y);

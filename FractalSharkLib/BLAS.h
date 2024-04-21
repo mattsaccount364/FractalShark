@@ -21,7 +21,7 @@ public:
     int32_t m_LM2;//Level -1 is not attainable due to Zero R
     static constexpr int32_t m_FirstLevel = BLA_STARTING_LEVEL - 1;
 
-    BLAS(PerturbationResults<IterType, T, PExtras>& results);
+    BLAS(PerturbationResults<IterType, T, PExtras> &results);
 
 private:
     void InitLStep(size_t level, size_t m, T blaSize, T epsilon);
@@ -34,13 +34,13 @@ private:
 
 public:
     void Init(size_t InM, T blaSize);
-    BLA<T>* LookupBackwards(size_t m, T z2);
+    BLA<T> *LookupBackwards(size_t m, T z2);
 
 private:
     long m_OldChunk;
 
     std::vector<size_t> m_ElementsPerLevel;
 
-    PerturbationResults<IterType, T, PExtras>& m_PerturbationResults;
+    PerturbationResults<IterType, T, PExtras> &m_PerturbationResults;
     std::unique_ptr<RuntimeDecompressor<IterType, T, PExtras>> m_CompressionHelper;
 };

@@ -21,7 +21,7 @@ public:
         LAjdeep{},
         Refp1Deep{},
         newDzDeep{},
-        unusable{true} {
+        unusable{ true } {
     }
 
     IterType step;
@@ -30,9 +30,9 @@ public:
 public:
     using HDRFloatComplex =
         std::conditional<
-            std::is_same<Float, HDRFloat<float>>::value ||
-            std::is_same<Float, HDRFloat<double>>::value ||
-            std::is_same<Float, HDRFloat<MattDblflt>>::value,
+        std::is_same<Float, HDRFloat<float>>::value ||
+        std::is_same<Float, HDRFloat<double>>::value ||
+        std::is_same<Float, HDRFloat<MattDblflt>>::value,
         ::HDRFloatComplex<SubType>,
         ::FloatComplex<SubType>>::type;
 
@@ -95,13 +95,13 @@ public:
 
     using HDRFloatComplex =
         std::conditional<
-            std::is_same<Float, HDRFloat<float>>::value ||
-            std::is_same<Float, HDRFloat<double>>::value ||
-            std::is_same<Float, HDRFloat<CudaDblflt<MattDblflt>>>::value,
+        std::is_same<Float, HDRFloat<float>>::value ||
+        std::is_same<Float, HDRFloat<double>>::value ||
+        std::is_same<Float, HDRFloat<CudaDblflt<MattDblflt>>>::value,
         ::HDRFloatComplex<SubType>,
         ::FloatComplex<SubType>>::type;
 
-    const GPU_LAInfoDeep<IterType, Float, SubType>* LAjdeep;
+    const GPU_LAInfoDeep<IterType, Float, SubType> *LAjdeep;
     HDRFloatComplex Refp1Deep;
     HDRFloatComplex newDzDeep;
 

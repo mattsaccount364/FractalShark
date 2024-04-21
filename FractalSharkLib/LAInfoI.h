@@ -10,7 +10,7 @@ public:
 
     LAStageInfo(const LAStageInfo &other)
         : LAIndex(other.LAIndex),
-          MacroItCount(other.MacroItCount) {
+        MacroItCount(other.MacroItCount) {
     }
 
     IterType LAIndex;
@@ -25,7 +25,7 @@ public:
 
     CUDA_CRAP LAInfoI(const LAInfoI &other)
         : StepLength(other.StepLength),
-          NextStageLAIndex(other.NextStageLAIndex) {
+        NextStageLAIndex(other.NextStageLAIndex) {
     }
 
     CUDA_CRAP LAInfoI() {

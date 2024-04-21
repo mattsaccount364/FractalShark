@@ -28,15 +28,15 @@ public:
         enum Type typ,
         std::wstring filename_base,
         bool copy_the_iters,
-        Fractal& fractal);
+        Fractal &fractal);
     ~PngParallelSave();
     void Run();
     void StartThread();
 
-    PngParallelSave(PngParallelSave&&) = default;
+    PngParallelSave(PngParallelSave &&) = default;
 
     Type m_Type;
-    Fractal& m_Fractal;
+    Fractal &m_Fractal;
     size_t m_ScrnWidth;
     size_t m_ScrnHeight;
     uint32_t m_GpuAntialiasing;
@@ -44,7 +44,7 @@ public:
     IterTypeFull m_PaletteRotate; // Used to shift the palette
     int m_PaletteDepthIndex; // 0, 1, 2
     int m_PaletteAuxDepth;
-    std::vector<uint16_t>* m_PalR[FractalPalette::Num], * m_PalG[FractalPalette::Num], * m_PalB[FractalPalette::Num];
+    std::vector<uint16_t> *m_PalR[FractalPalette::Num], *m_PalG[FractalPalette::Num], *m_PalB[FractalPalette::Num];
     FractalPalette m_WhichPalette;
     std::vector<uint32_t> m_PalIters[FractalPalette::Num];
     ItersMemoryContainer m_CurIters;

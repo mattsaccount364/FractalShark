@@ -57,8 +57,7 @@ struct RefOrbitDetails {
     std::string PerturbationAlg;
 };
 
-class Fractal
-{
+class Fractal {
 public:
     // TODO get rid of this junk:
     friend class PngParallelSave;
@@ -78,15 +77,15 @@ public:
     uint64_t GetPrecision(void) const;
     static void SetPrecision(
         uint64_t prec,
-        HighPrecision& minX,
-        HighPrecision& minY,
-        HighPrecision& maxX,
-        HighPrecision& maxY);
+        HighPrecision &minX,
+        HighPrecision &minY,
+        HighPrecision &maxX,
+        HighPrecision &maxY);
     void SetPrecision();
 
     void ResetDimensions(size_t width = MAXSIZE_T,
-                         size_t height = MAXSIZE_T,
-                         uint32_t gpu_antialiasing = UINT32_MAX);
+        size_t height = MAXSIZE_T,
+        uint32_t gpu_antialiasing = UINT32_MAX);
     bool RecenterViewCalc(HighPrecision MinX, HighPrecision MinY, HighPrecision MaxX, HighPrecision MaxY);
     bool RecenterViewScreen(RECT rect);
     bool CenterAtPoint(size_t x, size_t y);
@@ -148,7 +147,7 @@ public:
 
     inline uint32_t GetGpuAntialiasing(void) const { return m_GpuAntialiasing; }
     inline uint32_t GetIterationPrecision(void) const { return m_IterationPrecision; }
-    inline void SetIterationPrecision(uint32_t iteration_precision) { m_IterationPrecision = iteration_precision;  }
+    inline void SetIterationPrecision(uint32_t iteration_precision) { m_IterationPrecision = iteration_precision; }
 
     HighPrecision GetZoomFactor() const;
     void SetPerturbationAlg(RefOrbitCalc::PerturbationAlg alg);
@@ -194,10 +193,10 @@ public:
     const BenchmarkData &GetBenchmarkOverall() const;
 
     // Used for retrieving our current location
-    inline const HighPrecision& GetMinX(void) const { return m_MinX; }
-    inline const HighPrecision& GetMaxX(void) const { return m_MaxX; }
-    inline const HighPrecision& GetMinY(void) const { return m_MinY; }
-    inline const HighPrecision& GetMaxY(void) const { return m_MaxY; }
+    inline const HighPrecision &GetMinX(void) const { return m_MinX; }
+    inline const HighPrecision &GetMaxX(void) const { return m_MaxX; }
+    inline const HighPrecision &GetMinY(void) const { return m_MinY; }
+    inline const HighPrecision &GetMaxY(void) const { return m_MaxY; }
     inline size_t GetRenderWidth(void) const { return m_ScrnWidth; }
     inline size_t GetRenderHeight(void) const { return m_ScrnHeight; }
 
@@ -217,12 +216,12 @@ public:
     HighPrecision XFromCalcToScreen(HighPrecision x) const;
     HighPrecision YFromCalcToScreen(HighPrecision y) const;
 
-    static DWORD WINAPI ServerManageMainConnectionThread(void*);
-    static DWORD WINAPI ServerManageSubConnectionThread(void*);
+    static DWORD WINAPI ServerManageMainConnectionThread(void *);
+    static DWORD WINAPI ServerManageSubConnectionThread(void *);
 
     void ForceRecalc();
 
-    LAParameters& GetLAParameters();
+    LAParameters &GetLAParameters();
 
 private:
     void Initialize(int width,
@@ -230,7 +229,7 @@ private:
         HWND hWnd,
         bool UseSensoCursor);
     void Uninitialize(void);
-    void PalIncrease(std::vector<uint16_t>& pal, int length, int val1, int val2);
+    void PalIncrease(std::vector<uint16_t> &pal, int length, int val1, int val2);
     void PalTransition(size_t WhichPalette, size_t paletteIndex, int length, int r, int g, int b);
     bool IsDownControl(void);
     void CheckForAbort(void);
@@ -252,21 +251,21 @@ private:
     template<typename IterType>
     void CalcFractalTypedIter(bool MemoryOnly);
 
-    static void DrawFractalThread(size_t index, Fractal* fractal);
+    static void DrawFractalThread(size_t index, Fractal *fractal);
 
-    void FillCoord(HighPrecision& src, MattQFltflt& dest);
-    void FillCoord(HighPrecision& src, MattQDbldbl& dest);
-    void FillCoord(HighPrecision& src, MattDbldbl& dest);
-    void FillCoord(HighPrecision& src, double& dest);
-    void FillCoord(HighPrecision& src, HDRFloat<float>& dest);
-    void FillCoord(HighPrecision& src, HDRFloat<double>& dest);
-    void FillCoord(HighPrecision& src, MattDblflt& dest);
-    void FillCoord(HighPrecision& src, float& dest);
-    void FillCoord(HighPrecision& src, CudaDblflt<MattDblflt>& dest);
-    void FillCoord(HighPrecision& src, HDRFloat<CudaDblflt<MattDblflt>>& dest);
+    void FillCoord(HighPrecision &src, MattQFltflt &dest);
+    void FillCoord(HighPrecision &src, MattQDbldbl &dest);
+    void FillCoord(HighPrecision &src, MattDbldbl &dest);
+    void FillCoord(HighPrecision &src, double &dest);
+    void FillCoord(HighPrecision &src, HDRFloat<float> &dest);
+    void FillCoord(HighPrecision &src, HDRFloat<double> &dest);
+    void FillCoord(HighPrecision &src, MattDblflt &dest);
+    void FillCoord(HighPrecision &src, float &dest);
+    void FillCoord(HighPrecision &src, CudaDblflt<MattDblflt> &dest);
+    void FillCoord(HighPrecision &src, HDRFloat<CudaDblflt<MattDblflt>> &dest);
 
     template<class T>
-    void FillGpuCoords(T& cx2, T& cy2, T& dx2, T& dy2);
+    void FillGpuCoords(T &cx2, T &cy2, T &dx2, T &dy2);
 
     template<typename IterType>
     void CalcAutoFractal();
@@ -388,7 +387,7 @@ private:
     void InitializeMemory();
     void SetCurItersMemory();
 
-    void ReturnIterMemory(ItersMemoryContainer&& to_return);
+    void ReturnIterMemory(ItersMemoryContainer &&to_return);
 
     IterTypeEnum m_IterType;
 

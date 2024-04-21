@@ -10,12 +10,11 @@ LAParameters::LAParameters() :
     m_PeriodDetectionThreshold2Exponent{ DefaultPeriodDetectionThreshold2Exponent },
     m_Stage0PeriodDetectionThresholdExponent{ DefaultStage0PeriodDetectionThresholdExponent },
     m_PeriodDetectionThresholdExponent{ DefaultPeriodDetectionThresholdExponent },
-    m_ThreadingAlgorithm{ DefaultThreadingAlgorithm }
-{
+    m_ThreadingAlgorithm{ DefaultThreadingAlgorithm } {
     PopulateFloatsFromExponents();
 }
 
-bool LAParameters::ReadLine(std::ifstream& metafile, int32_t& value, const char* name) {
+bool LAParameters::ReadLine(std::ifstream &metafile, int32_t &value, const char *name) {
     std::string line;
     metafile >> line;
     if (line != name) {
@@ -162,38 +161,38 @@ LAParameters::LAThreadingAlgorithm LAParameters::GetThreading() const {
 
 void LAParameters::SetDefaults(LADefaults defaults) {
     switch (defaults) {
-        case LADefaults::MaxAccuracy:
-            m_DetectionMethod = DefaultDetectionMethod;
-            m_LAThresholdScaleExponent = DefaultLAThresholdScaleExponent;
-            m_LAThresholdCScaleExponent = DefaultLAThresholdCScaleExponent;
-            m_Stage0PeriodDetectionThreshold2Exponent = DefaultStage0PeriodDetectionThreshold2Exponent;
-            m_PeriodDetectionThreshold2Exponent = DefaultPeriodDetectionThreshold2Exponent;
-            m_Stage0PeriodDetectionThresholdExponent = DefaultStage0PeriodDetectionThresholdExponent;
-            m_PeriodDetectionThresholdExponent = DefaultPeriodDetectionThresholdExponent;
-            break;
+    case LADefaults::MaxAccuracy:
+        m_DetectionMethod = DefaultDetectionMethod;
+        m_LAThresholdScaleExponent = DefaultLAThresholdScaleExponent;
+        m_LAThresholdCScaleExponent = DefaultLAThresholdCScaleExponent;
+        m_Stage0PeriodDetectionThreshold2Exponent = DefaultStage0PeriodDetectionThreshold2Exponent;
+        m_PeriodDetectionThreshold2Exponent = DefaultPeriodDetectionThreshold2Exponent;
+        m_Stage0PeriodDetectionThresholdExponent = DefaultStage0PeriodDetectionThresholdExponent;
+        m_PeriodDetectionThresholdExponent = DefaultPeriodDetectionThresholdExponent;
+        break;
 
-        case LADefaults::MaxPerf:
-            m_DetectionMethod = DefaultDetectionMethod;
-            m_LAThresholdScaleExponent = DefaultLAThresholdScaleExponent + 12;
-            m_LAThresholdCScaleExponent = DefaultLAThresholdCScaleExponent  + 12;
-            m_Stage0PeriodDetectionThreshold2Exponent = DefaultStage0PeriodDetectionThreshold2Exponent;
-            m_PeriodDetectionThreshold2Exponent = DefaultPeriodDetectionThreshold2Exponent;
-            m_Stage0PeriodDetectionThresholdExponent = DefaultStage0PeriodDetectionThresholdExponent;
-            m_PeriodDetectionThresholdExponent = DefaultPeriodDetectionThresholdExponent;
-            break;
+    case LADefaults::MaxPerf:
+        m_DetectionMethod = DefaultDetectionMethod;
+        m_LAThresholdScaleExponent = DefaultLAThresholdScaleExponent + 12;
+        m_LAThresholdCScaleExponent = DefaultLAThresholdCScaleExponent + 12;
+        m_Stage0PeriodDetectionThreshold2Exponent = DefaultStage0PeriodDetectionThreshold2Exponent;
+        m_PeriodDetectionThreshold2Exponent = DefaultPeriodDetectionThreshold2Exponent;
+        m_Stage0PeriodDetectionThresholdExponent = DefaultStage0PeriodDetectionThresholdExponent;
+        m_PeriodDetectionThresholdExponent = DefaultPeriodDetectionThresholdExponent;
+        break;
 
-        case LADefaults::MinMemory:
-            m_DetectionMethod = DefaultDetectionMethod;
-            m_LAThresholdScaleExponent = DefaultLAThresholdScaleExponent;
-            m_LAThresholdCScaleExponent = DefaultLAThresholdCScaleExponent;
-            m_Stage0PeriodDetectionThreshold2Exponent = DefaultStage0PeriodDetectionThreshold2Exponent + 3;
-            m_PeriodDetectionThreshold2Exponent = DefaultPeriodDetectionThreshold2Exponent + 3;
-            m_Stage0PeriodDetectionThresholdExponent = DefaultStage0PeriodDetectionThresholdExponent;
-            m_PeriodDetectionThresholdExponent = DefaultPeriodDetectionThresholdExponent;
-            break;
+    case LADefaults::MinMemory:
+        m_DetectionMethod = DefaultDetectionMethod;
+        m_LAThresholdScaleExponent = DefaultLAThresholdScaleExponent;
+        m_LAThresholdCScaleExponent = DefaultLAThresholdCScaleExponent;
+        m_Stage0PeriodDetectionThreshold2Exponent = DefaultStage0PeriodDetectionThreshold2Exponent + 3;
+        m_PeriodDetectionThreshold2Exponent = DefaultPeriodDetectionThreshold2Exponent + 3;
+        m_Stage0PeriodDetectionThresholdExponent = DefaultStage0PeriodDetectionThresholdExponent;
+        m_PeriodDetectionThresholdExponent = DefaultPeriodDetectionThresholdExponent;
+        break;
 
-        default:
-            break;
+    default:
+        break;
     }
 
     PopulateFloatsFromExponents();

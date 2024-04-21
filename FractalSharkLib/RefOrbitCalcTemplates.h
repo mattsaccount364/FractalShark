@@ -130,7 +130,7 @@ InstantiateGetAndCreateUsefulPerturbationResults2(uint64_t, HDRFloat<double>, do
 InstantiateGetAndCreateUsefulPerturbationResults1(uint64_t, HDRFloat<float>, float, PerturbExtras::EnableCompression, RefOrbitCalc::Extras::None);
 
 InstantiateGetAndCreateUsefulPerturbationResults1(uint64_t, double, double, PerturbExtras::Disable, RefOrbitCalc::Extras::IncludeLAv2);
-InstantiateGetAndCreateUsefulPerturbationResults2(uint64_t, double, double, PerturbExtras::Disable, RefOrbitCalc::Extras::IncludeLAv2, CudaDblflt<MattDblflt>); 
+InstantiateGetAndCreateUsefulPerturbationResults2(uint64_t, double, double, PerturbExtras::Disable, RefOrbitCalc::Extras::IncludeLAv2, CudaDblflt<MattDblflt>);
 InstantiateGetAndCreateUsefulPerturbationResults1(uint64_t, float, float, PerturbExtras::Disable, RefOrbitCalc::Extras::IncludeLAv2);
 InstantiateGetAndCreateUsefulPerturbationResults1(uint64_t, HDRFloat<double>, double, PerturbExtras::Disable, RefOrbitCalc::Extras::IncludeLAv2);
 InstantiateGetAndCreateUsefulPerturbationResults2(uint64_t, HDRFloat<double>, double, PerturbExtras::Disable, RefOrbitCalc::Extras::IncludeLAv2, HDRFloat<CudaDblflt<MattDblflt>>);
@@ -147,94 +147,94 @@ InstantiateGetAndCreateUsefulPerturbationResults1(uint64_t, HDRFloat<float>, flo
 
 
 ///////////////////////////////////////////////////////////////////
-template PerturbationResults<uint32_t, float, PerturbExtras::Bad>*
+template PerturbationResults<uint32_t, float, PerturbExtras::Bad> *
 RefOrbitCalc::CopyUsefulPerturbationResults<
     uint32_t,
     double,
     PerturbExtras::Bad,
     float,
-    PerturbExtras::Bad>(PerturbationResults<uint32_t, double, PerturbExtras::Bad>&);
-template PerturbationResults<uint32_t, HDRFloat<float>, PerturbExtras::Bad>*
+    PerturbExtras::Bad>(PerturbationResults<uint32_t, double, PerturbExtras::Bad> &);
+template PerturbationResults<uint32_t, HDRFloat<float>, PerturbExtras::Bad> *
 RefOrbitCalc::CopyUsefulPerturbationResults<
     uint32_t,
     HDRFloat<double>,
     PerturbExtras::Bad,
     HDRFloat<float>,
-    PerturbExtras::Bad>(PerturbationResults<uint32_t, HDRFloat<double>, PerturbExtras::Bad>&);
-template PerturbationResults<uint32_t, float, PerturbExtras::Bad>*
+    PerturbExtras::Bad>(PerturbationResults<uint32_t, HDRFloat<double>, PerturbExtras::Bad> &);
+template PerturbationResults<uint32_t, float, PerturbExtras::Bad> *
 RefOrbitCalc::CopyUsefulPerturbationResults<
     uint32_t,
     HDRFloat<float>,
     PerturbExtras::Bad,
     float,
-    PerturbExtras::Bad>(PerturbationResults<uint32_t, HDRFloat<float>, PerturbExtras::Bad>&);
+    PerturbExtras::Bad>(PerturbationResults<uint32_t, HDRFloat<float>, PerturbExtras::Bad> &);
 
-template PerturbationResults<uint32_t, float, PerturbExtras::Disable>*
+template PerturbationResults<uint32_t, float, PerturbExtras::Disable> *
 RefOrbitCalc::CopyUsefulPerturbationResults<
     uint32_t,
     double,
     PerturbExtras::Disable,
     float,
-    PerturbExtras::Disable>(PerturbationResults<uint32_t, double, PerturbExtras::Disable>&);
-template PerturbationResults<uint32_t, HDRFloat<float>, PerturbExtras::Disable>*
+    PerturbExtras::Disable>(PerturbationResults<uint32_t, double, PerturbExtras::Disable> &);
+template PerturbationResults<uint32_t, HDRFloat<float>, PerturbExtras::Disable> *
 RefOrbitCalc::CopyUsefulPerturbationResults<
     uint32_t,
     HDRFloat<double>,
     PerturbExtras::Disable,
     HDRFloat<float>,
-    PerturbExtras::Disable>(PerturbationResults<uint32_t, HDRFloat<double>, PerturbExtras::Disable>&);
-template PerturbationResults<uint32_t, float, PerturbExtras::Disable>*
+    PerturbExtras::Disable>(PerturbationResults<uint32_t, HDRFloat<double>, PerturbExtras::Disable> &);
+template PerturbationResults<uint32_t, float, PerturbExtras::Disable> *
 RefOrbitCalc::CopyUsefulPerturbationResults<
     uint32_t,
     HDRFloat<float>,
     PerturbExtras::Disable,
     float,
-    PerturbExtras::Disable>(PerturbationResults<uint32_t, HDRFloat<float>, PerturbExtras::Disable>&);
+    PerturbExtras::Disable>(PerturbationResults<uint32_t, HDRFloat<float>, PerturbExtras::Disable> &);
 ///////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////
-template PerturbationResults<uint64_t, float, PerturbExtras::Bad>*
+template PerturbationResults<uint64_t, float, PerturbExtras::Bad> *
 RefOrbitCalc::CopyUsefulPerturbationResults<
     uint64_t,
     double,
     PerturbExtras::Bad,
     float,
-    PerturbExtras::Bad>(PerturbationResults<uint64_t, double, PerturbExtras::Bad>&);
-template PerturbationResults<uint64_t, HDRFloat<float>, PerturbExtras::Bad>*
+    PerturbExtras::Bad>(PerturbationResults<uint64_t, double, PerturbExtras::Bad> &);
+template PerturbationResults<uint64_t, HDRFloat<float>, PerturbExtras::Bad> *
 RefOrbitCalc::CopyUsefulPerturbationResults<
     uint64_t,
     HDRFloat<double>,
     PerturbExtras::Bad,
     HDRFloat<float>,
-    PerturbExtras::Bad>(PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::Bad>&);
-template PerturbationResults<uint64_t, float, PerturbExtras::Bad>*
+    PerturbExtras::Bad>(PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::Bad> &);
+template PerturbationResults<uint64_t, float, PerturbExtras::Bad> *
 RefOrbitCalc::CopyUsefulPerturbationResults<
     uint64_t,
     HDRFloat<float>,
     PerturbExtras::Bad,
     float,
-    PerturbExtras::Bad>(PerturbationResults<uint64_t, HDRFloat<float>, PerturbExtras::Bad>&);
+    PerturbExtras::Bad>(PerturbationResults<uint64_t, HDRFloat<float>, PerturbExtras::Bad> &);
 
-template PerturbationResults<uint64_t, float, PerturbExtras::Disable>*
+template PerturbationResults<uint64_t, float, PerturbExtras::Disable> *
 RefOrbitCalc::CopyUsefulPerturbationResults<
     uint64_t,
     double,
     PerturbExtras::Disable,
     float,
-    PerturbExtras::Disable>(PerturbationResults<uint64_t, double, PerturbExtras::Disable>&);
-template PerturbationResults<uint64_t, HDRFloat<float>, PerturbExtras::Disable>*
+    PerturbExtras::Disable>(PerturbationResults<uint64_t, double, PerturbExtras::Disable> &);
+template PerturbationResults<uint64_t, HDRFloat<float>, PerturbExtras::Disable> *
 RefOrbitCalc::CopyUsefulPerturbationResults<
     uint64_t,
     HDRFloat<double>,
     PerturbExtras::Disable,
     HDRFloat<float>,
-    PerturbExtras::Disable>(PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::Disable>&);
-template PerturbationResults<uint64_t, float, PerturbExtras::Disable>*
+    PerturbExtras::Disable>(PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::Disable> &);
+template PerturbationResults<uint64_t, float, PerturbExtras::Disable> *
 RefOrbitCalc::CopyUsefulPerturbationResults<
     uint64_t,
     HDRFloat<float>,
     PerturbExtras::Disable,
     float,
-    PerturbExtras::Disable>(PerturbationResults<uint64_t, HDRFloat<float>, PerturbExtras::Disable>&);
+    PerturbExtras::Disable>(PerturbationResults<uint64_t, HDRFloat<float>, PerturbExtras::Disable> &);
 ///////////////////////////////////////////////////////////////////
 

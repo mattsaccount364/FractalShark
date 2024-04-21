@@ -29,37 +29,37 @@ public:
     template <class To, class From, class Res = typename std::enable_if<
         (sizeof(To) == sizeof(From)) &&
         (alignof(To) == alignof(From)) &&
-        std::is_trivially_copyable<From>::value&&
+        std::is_trivially_copyable<From>::value &&
         std::is_trivially_copyable<To>::value,
         To>::type>
-    CUDA_CRAP const Res& bit_cast(const From& src) noexcept {
-        return *reinterpret_cast<const To*>(&src);
+    CUDA_CRAP const Res &bit_cast(const From &src) noexcept {
+        return *reinterpret_cast<const To *>(&src);
     }
 
     // Constructs a CudaDblflt that zeros out the head and tail
     CUDA_CRAP
-    constexpr
-    CudaDblflt() : d{ 0.0f, 0.0f } {
+        constexpr
+        CudaDblflt() : d{ 0.0f, 0.0f } {
     }
 
     CUDA_CRAP
-    constexpr
-    CudaDblflt(const CudaDblflt &other) :
+        constexpr
+        CudaDblflt(const CudaDblflt &other) :
         d{ other.d.head, other.d.tail } {
     }
 
 #ifndef __CUDA_ARCH__
     // Constructs a CudaDblflt from a double
     CUDA_CRAP
-    constexpr
-    CudaDblflt &operator=(double other) {
+        constexpr
+        CudaDblflt &operator=(double other) {
         d = T{ other };
         return *this;
     }
 
     CUDA_CRAP
-    constexpr
-    explicit CudaDblflt(double ind)
+        constexpr
+        explicit CudaDblflt(double ind)
         : d{ ind } {
     }
 #endif
@@ -73,29 +73,29 @@ public:
 #endif
 
     CUDA_CRAP
-    constexpr
-    explicit CudaDblflt(float d)
+        constexpr
+        explicit CudaDblflt(float d)
         : d{ d } {
     }
 
     // Constructs a CudaDblflt from a pair of floats
     CUDA_CRAP
-    constexpr
+        constexpr
         explicit CudaDblflt(float head, float tail) :
         d{ head, tail } {
     }
 
     // Returns the head of the double-float
     CUDA_CRAP
-    constexpr
-    float head() const {
+        constexpr
+        float head() const {
         return d.head;
     }
 
     // Returns the tail of the double-float
     CUDA_CRAP
-    constexpr
-    float tail() const {
+        constexpr
+        float tail() const {
         return d.tail;
     }
 
@@ -118,43 +118,43 @@ public:
 #ifdef __CUDACC__
     //template<typename std::enable_if<std::is_same<T, dbldbl>::value, dbldbl>::type * = 0>
     __device__
-    explicit operator double() const {
+        explicit operator double() const {
         return dblflt_to_double(d);
     }
 
     // Implements operator+ for CudaDblflt
     friend
-    __device__
-    CudaDblflt operator+(CudaDblflt a, const CudaDblflt& b) {
+        __device__
+        CudaDblflt operator+(CudaDblflt a, const CudaDblflt &b) {
         a.d = add_dblflt(a.d, b.d);
         return a;
     }
 
     // Implements operator- for CudaDblflt
     friend
-    __device__
-    CudaDblflt operator-(CudaDblflt a, const CudaDblflt& b) {
+        __device__
+        CudaDblflt operator-(CudaDblflt a, const CudaDblflt &b) {
         a.d = sub_dblflt(a.d, b.d);
         return a;
     }
 
     // Implements unary operator- for CudaDblflt
     friend
-    __device__
-    CudaDblflt operator-(CudaDblflt other) {
+        __device__
+        CudaDblflt operator-(CudaDblflt other) {
         return CudaDblflt{ -other.d.head, -other.d.tail };
     }
 
     // Implements operator* for CudaDblflt
     friend
-    __device__
-    CudaDblflt operator*(CudaDblflt a, const CudaDblflt& b) {
+        __device__
+        CudaDblflt operator*(CudaDblflt a, const CudaDblflt &b) {
         a.d = mul_dblflt(a.d, b.d);
         return a;
     }
 
     __device__
-    CudaDblflt& operator*=(const CudaDblflt& b) {
+        CudaDblflt &operator*=(const CudaDblflt &b) {
         this->d = mul_dblflt(this->d, b.d);
         return *this;
     }
@@ -169,50 +169,50 @@ public:
 
     //  Implements operator/ for CudaDblflt
     friend
-    __device__
-    CudaDblflt operator/(CudaDblflt a, const CudaDblflt& b) {
+        __device__
+        CudaDblflt operator/(CudaDblflt a, const CudaDblflt &b) {
         a.d = div_dblflt(a.d, b.d);
         return a;
     }
 
     // Implements operator< for CudaDblflt
     __device__
-    friend bool operator<(const CudaDblflt& a, const CudaDblflt& b) {
+        friend bool operator<(const CudaDblflt &a, const CudaDblflt &b) {
         return a.d.head < b.d.head || (a.d.head == b.d.head && a.d.tail < b.d.tail);
     }
 
     // Implements operator> for CudaDblflt
     __device__
-    friend bool operator>(const CudaDblflt& a, const CudaDblflt& b) {
+        friend bool operator>(const CudaDblflt &a, const CudaDblflt &b) {
         return !(a < b) && !(b == a);
     }
 
     // Implements operator<= for CudaDblflt
     __device__
-    friend bool operator<=(const CudaDblflt& a, const CudaDblflt& b) {
+        friend bool operator<=(const CudaDblflt &a, const CudaDblflt &b) {
         return !(b > a);
     }
 
     // Implements operator>= for CudaDblflt
     __device__
-    friend bool operator>=(const CudaDblflt& a, const CudaDblflt& b) {
+        friend bool operator>=(const CudaDblflt &a, const CudaDblflt &b) {
         return !(a < b);
     }
 
     // Implements operator== for CudaDblflt
     __device__
-    friend bool operator==(const CudaDblflt& a, const CudaDblflt& b) {
+        friend bool operator==(const CudaDblflt &a, const CudaDblflt &b) {
         return a.d.head == b.d.head && a.d.tail == b.d.tail;
     }
 
     // Implements operator!= for CudaDblflt
     __device__
-    friend bool operator!=(const CudaDblflt& a, const CudaDblflt& b) {
+        friend bool operator!=(const CudaDblflt &a, const CudaDblflt &b) {
         return !(a == b);
     }
 
     __device__
-    CudaDblflt abs() const {
+        CudaDblflt abs() const {
         if (*this < CudaDblflt(0.0f)) {
             return -(*this);
         }
@@ -225,7 +225,7 @@ public:
     }
 
     __device__
-    void Reduce(int32_t &out_exp) {
+        void Reduce(int32_t &out_exp) {
         const auto bits_y = bit_cast<uint32_t>(this->d.head);
         const auto bits_x = bit_cast<uint32_t>(this->d.tail);
         const auto f_exp_y = (int32_t)((bits_y & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT();

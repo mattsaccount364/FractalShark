@@ -2,7 +2,7 @@ template<typename IterType, uint32_t Antialiasing, bool ScaledColor>
 __global__
 void
 antialiasing_kernel(
-    const IterType* __restrict__ OutputIterMatrix,
+    const IterType *__restrict__ OutputIterMatrix,
     uint32_t Width,
     uint32_t Height,
     AntialiasedColors OutputColorMatrix,

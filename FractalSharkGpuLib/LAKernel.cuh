@@ -3,7 +3,7 @@ __global__
 void
 //__launch_bounds__(NB_THREADS_W * NB_THREADS_H, 2)
 mandel_1xHDR_float_perturb_lav2(
-    IterType* OutputIterMatrix,
+    IterType *OutputIterMatrix,
     AntialiasedColors OutputColorMatrix,
     GPUPerturbSingleResults<IterType, T, PExtras> Perturb,
     GPU_LAReference<IterType, T, SubType> LaReference, // "copy"
@@ -16,8 +16,7 @@ mandel_1xHDR_float_perturb_lav2(
     const T dy,
     const T centerX,
     const T centerY,
-    IterType n_iterations)
-{
+    IterType n_iterations) {
     static constexpr bool IsHDR =
         std::is_same<T, ::HDRFloat<float>>::value ||
         std::is_same<T, ::HDRFloat<double>>::value ||
@@ -75,11 +74,10 @@ mandel_1xHDR_float_perturb_lav2(
 
         if (iter != 0 && RefIteration < MaxRefIteration) {
             T tempX;
-            T tempY;            
+            T tempY;
             Perturb.GetIterRandom(RefIteration, tempX, tempY);
             complex0 = TComplex{ tempX, tempY } + DeltaSubN;
-        }
-        else if (iter != 0 && Perturb.GetPeriodMaybeZero() != 0) {
+        } else if (iter != 0 && Perturb.GetPeriodMaybeZero() != 0) {
             RefIteration = RefIteration % Perturb.GetPeriodMaybeZero();
 
             T tempX;
@@ -159,8 +157,7 @@ mandel_1xHDR_float_perturb_lav2(
                         tempSum1,
                         DeltaSub0X,
                         DeltaSub0Y);
-                }
-                else if constexpr (
+                } else if constexpr (
                     std::is_same<T, float>::value ||
                     std::is_same<T, double>::value ||
                     std::is_same<T, CudaDblflt<dblflt>>::value) {
@@ -175,8 +172,7 @@ mandel_1xHDR_float_perturb_lav2(
                         DeltaSubNYOrig * tempSum2 +
                         DeltaSub0Y;
                     HdrReduce(DeltaSubNY);
-                }
-                else {
+                } else {
                     //DeltaSubNX =
                     //    DeltaSubNXOrig * tempSum2 -
                     //    DeltaSubNYOrig * tempSum1 +
@@ -208,8 +204,7 @@ mandel_1xHDR_float_perturb_lav2(
                 T normSquared;
                 if constexpr (IsHDR) {
                     normSquared = { HdrReduce(tempZX.square() + tempZY.square()) };
-                }
-                else {
+                } else {
                     normSquared = { tempZX * tempZX + tempZY * tempZY };
                 }
 
@@ -217,8 +212,7 @@ mandel_1xHDR_float_perturb_lav2(
                     T DeltaNormSquared;
                     if constexpr (IsHDR) {
                         DeltaNormSquared = { HdrReduce(DeltaSubNX.square() + DeltaSubNY.square()) };
-                    }
-                    else {
+                    } else {
                         DeltaNormSquared = { DeltaSubNX * DeltaSubNX + DeltaSubNY * DeltaSubNY };
                     }
 
@@ -232,12 +226,11 @@ mandel_1xHDR_float_perturb_lav2(
                     }
 
                     ++iter;
-                }
-                else {
+                } else {
                     break;
                 }
             }
-        };
+            };
 
         //    for (;;) {
         __syncthreads();

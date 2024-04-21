@@ -1,5 +1,4 @@
-__device__ uint64_t AtomicMax(uint64_t* address, uint64_t val)
-{
+__device__ uint64_t AtomicMax(uint64_t *address, uint64_t val) {
     uint64_t old = *address;
     uint64_t assumed;
     while (val > old) {
@@ -9,8 +8,7 @@ __device__ uint64_t AtomicMax(uint64_t* address, uint64_t val)
     return old;
 }
 
-__device__ uint64_t AtomicMin(uint64_t* address, uint64_t val)
-{
+__device__ uint64_t AtomicMin(uint64_t *address, uint64_t val) {
     uint64_t old = *address;
     uint64_t assumed;
     while (val < old) {
@@ -20,8 +18,7 @@ __device__ uint64_t AtomicMin(uint64_t* address, uint64_t val)
     return old;
 }
 
-__device__ uint64_t AtomicSum(uint64_t* address, uint64_t val)
-{
+__device__ uint64_t AtomicSum(uint64_t *address, uint64_t val) {
     uint64_t old;
     uint64_t assumed;
     for (;;) {
@@ -38,9 +35,8 @@ __device__ uint64_t AtomicSum(uint64_t* address, uint64_t val)
 
 
 #if 0
-__global__ void max_reduce(const float* const d_array, float* d_max,
-    const size_t elements)
-{
+__global__ void max_reduce(const float *const d_array, float *d_max,
+    const size_t elements) {
     extern __shared__ float shared[];
 
     int tid = threadIdx.x;
@@ -53,8 +49,7 @@ __global__ void max_reduce(const float* const d_array, float* d_max,
     }
     __syncthreads();
     gid = (blockDim.x * blockIdx.x) + tid;  // 1
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1)
-    {
+    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
         if (tid < s && gid < elements)
             shared[tid] = max(shared[tid], shared[tid + s]);
         __syncthreads();
@@ -69,16 +64,16 @@ template<typename IterType>
 __global__
 void
 max_kernel(
-    const IterType* __restrict__ OutputIterMatrix,
+    const IterType *__restrict__ OutputIterMatrix,
     uint32_t WidthWithAA,
     uint32_t HeightWithAA,
     ReductionResults *Output) {
-    
+
     auto GetIndex = [](size_t X, size_t Y, size_t OriginalWidth) -> size_t {
         auto RoundedBlocks = OriginalWidth / GPURenderer::NB_THREADS_W + (OriginalWidth % GPURenderer::NB_THREADS_W != 0);
         auto RoundedWidth = RoundedBlocks * GPURenderer::NB_THREADS_W;
         return Y * RoundedWidth + X;
-    };
+        };
 
     __shared__ uint64_t MinShared[128];
     __shared__ uint64_t MaxShared[128];
@@ -93,8 +88,7 @@ max_kernel(
         MaxShared[tid] = 0;
         MinShared[tid] = std::numeric_limits<uint64_t>::max();
         SumShared[tid] = 0;
-    }
-    else {
+    } else {
         MaxShared[tid] = 0;
         MinShared[tid] = std::numeric_limits<uint32_t>::max();;
         SumShared[tid] = 0;

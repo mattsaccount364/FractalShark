@@ -25,23 +25,23 @@ public:
     CUDA_CRAP ATInfo();
 
     template<class T2, class SubType2>
-    CUDA_CRAP ATInfo(const ATInfo<IterType, T2, SubType2>& other)
+    CUDA_CRAP ATInfo(const ATInfo<IterType, T2, SubType2> &other)
         : StepLength(other.StepLength),
-          ThresholdC(HDRFloat(other.ThresholdC)),
-          SqrEscapeRadius(HDRFloat(other.SqrEscapeRadius)),
-          RefC(HDRFloatComplex(other.RefC)),
-          ZCoeff(HDRFloatComplex(other.ZCoeff)),
-          CCoeff(HDRFloatComplex(other.CCoeff)),
-          InvZCoeff(HDRFloatComplex(other.InvZCoeff)),
-          CCoeffSqrInvZCoeff(HDRFloatComplex(other.CCoeffSqrInvZCoeff)),
-          CCoeffInvZCoeff(HDRFloatComplex(other.CCoeffInvZCoeff)),
-          CCoeffNormSqr(HDRFloat(other.CCoeffNormSqr)),
-          RefCNormSqr(HDRFloat(other.RefCNormSqr)),
-          factor(HDRFloat(other.factor)) {
+        ThresholdC(HDRFloat(other.ThresholdC)),
+        SqrEscapeRadius(HDRFloat(other.SqrEscapeRadius)),
+        RefC(HDRFloatComplex(other.RefC)),
+        ZCoeff(HDRFloatComplex(other.ZCoeff)),
+        CCoeff(HDRFloatComplex(other.CCoeff)),
+        InvZCoeff(HDRFloatComplex(other.InvZCoeff)),
+        CCoeffSqrInvZCoeff(HDRFloatComplex(other.CCoeffSqrInvZCoeff)),
+        CCoeffInvZCoeff(HDRFloatComplex(other.CCoeffInvZCoeff)),
+        CCoeffNormSqr(HDRFloat(other.CCoeffNormSqr)),
+        RefCNormSqr(HDRFloat(other.RefCNormSqr)),
+        factor(HDRFloat(other.factor)) {
     }
 
 public:
-    bool WriteMetadata(std::ofstream& metafile) const {
+    bool WriteMetadata(std::ofstream &metafile) const {
         metafile << "StepLength: " << StepLength << std::endl;
         metafile << "ThresholdC: " << HdrToString<true>(ThresholdC) << std::endl;
         metafile << "SqrEscapeRadius: " << HdrToString<true>(SqrEscapeRadius) << std::endl;
@@ -57,7 +57,7 @@ public:
         return true;
     }
 
-    bool ReadMetadata(std::ifstream& metafile) {
+    bool ReadMetadata(std::ifstream &metafile) {
         std::string descriptor_string_junk;
 
         {
@@ -103,8 +103,7 @@ public:
             return
                 result.compareToBothPositiveReduced(RefCNormSqr) > 0 &&
                 SqrEscapeRadius.compareToBothPositiveReduced(Four) > 0;
-        }
-        else {
+        } else {
             return
                 result > RefCNormSqr && SqrEscapeRadius > 4;
         }
@@ -169,7 +168,7 @@ CUDA_CRAP
 void ATInfo<IterType, HDRFloat, SubType>::PerformAT(
     IterType max_iterations,
     HDRFloatComplex DeltaSub0,
-    ATResult<IterType, HDRFloat, SubType>& result) const {
+    ATResult<IterType, HDRFloat, SubType> &result) const {
     //int ATMaxIt = (max_iterations - 1) / StepLength + 1;
     HDRFloat nsq;
     const IterType ATMaxIt = max_iterations / StepLength;
@@ -185,8 +184,7 @@ void ATInfo<IterType, HDRFloat, SubType>::PerformAT(
             if (nsq.compareToBothPositiveReduced(SqrEscapeRadius) > 0) {
                 break;
             }
-        }
-        else {
+        } else {
             if (nsq > SqrEscapeRadius) {
                 break;
             }

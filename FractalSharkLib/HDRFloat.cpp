@@ -5,11 +5,10 @@
 
 double twoPowExpDataDbl[2048];
 float twoPowExpDataFlt[256];
-double* twoPowExpDbl;
-float* twoPowExpFlt;
+double *twoPowExpDbl;
+float *twoPowExpFlt;
 
-void InitStatics()
-{
+void InitStatics() {
     //LN2 = ::log(2);
     //LN2_REC = 1.0 / LN2;
 

@@ -15,23 +15,23 @@ private:
         std::is_same<Float, HDRFloat<CudaDblflt<MattDblflt>>>::value;
     using HDRFloatComplex =
         std::conditional<
-            std::is_same<Float, ::HDRFloat<float>>::value ||
-            std::is_same<Float, ::HDRFloat<double>>::value ||
-            std::is_same<Float, ::HDRFloat<CudaDblflt<MattDblflt>>>::value,
+        std::is_same<Float, ::HDRFloat<float>>::value ||
+        std::is_same<Float, ::HDRFloat<double>>::value ||
+        std::is_same<Float, ::HDRFloat<CudaDblflt<MattDblflt>>>::value,
         ::HDRFloatComplex<SubType>,
         ::FloatComplex<SubType>>::type;
 
 public:
     template<class T2, class SubType2, PerturbExtras OtherPExtras>
-    __host__ GPU_LAReference(const LAReference<IterType, T2, SubType2, OtherPExtras>& other);
-    __host__ GPU_LAReference(const GPU_LAReference& other);
-    __host__ GPU_LAReference(GPU_LAReference&& other);
+    __host__ GPU_LAReference(const LAReference<IterType, T2, SubType2, OtherPExtras> &other);
+    __host__ GPU_LAReference(const GPU_LAReference &other);
+    __host__ GPU_LAReference(GPU_LAReference &&other);
     __host__ GPU_LAReference();
     ~GPU_LAReference();
 
-    
-    GPU_LAReference& operator=(const GPU_LAReference& other) = delete;
-    GPU_LAReference& operator=(GPU_LAReference&& other) = delete;
+
+    GPU_LAReference &operator=(const GPU_LAReference &other) = delete;
+    GPU_LAReference &operator=(GPU_LAReference &&other) = delete;
 
     bool UseAT;
 
@@ -53,10 +53,10 @@ private:
     static constexpr int MaxLAStages = 1024;
     static constexpr int DEFAULT_SIZE = 10000;
 
-    GPU_LAInfoDeep<IterType, Float, SubType> * __restrict__ LAs;
+    GPU_LAInfoDeep<IterType, Float, SubType> *__restrict__ LAs;
     size_t NumLAs;
 
-    LAStageInfo<IterType> * __restrict__ LAStages;
+    LAStageInfo<IterType> *__restrict__ LAStages;
     size_t NumLAStages;
 
     bool AllocHostLA;
@@ -79,7 +79,7 @@ template<typename IterType, class Float, class SubType>
 template<class T2, class SubType2, PerturbExtras OtherPExtras>
 __host__
 GPU_LAReference<IterType, Float, SubType>::GPU_LAReference<T2, SubType2, OtherPExtras>(
-    const LAReference<IterType, T2, SubType2, OtherPExtras>& other) :
+    const LAReference<IterType, T2, SubType2, OtherPExtras> &other) :
     UseAT{ other.UseAT() },
     AT{ other.GetAT() },
     LAStageCount{ other.GetLAStageCount() },
@@ -93,8 +93,8 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference<T2, SubType2, OtherPE
     AllocHostLA{},
     AllocHostLAStages{} {
 
-    GPU_LAInfoDeep<IterType, Float, SubType>* tempLAs;
-    LAStageInfo<IterType>* tempLAStages;
+    GPU_LAInfoDeep<IterType, Float, SubType> *tempLAs;
+    LAStageInfo<IterType> *tempLAStages;
 
     const auto LAMemToAllocate = other.GetLAs().GetSize() * sizeof(GPU_LAInfoDeep<IterType, Float, SubType>);
     m_Err = cudaMalloc(&tempLAs, LAMemToAllocate);
@@ -150,8 +150,7 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference<T2, SubType2, OtherPE
         if (m_Err != cudaSuccess) {
             return;
         }
-    }
-    else {
+    } else {
         for (size_t i = 0; i < other.GetLAs().GetSize(); i++) {
             LAs[i] = other.GetLAs()[i];
         }
@@ -177,8 +176,7 @@ GPU_LAReference<IterType, Float, SubType>::~GPU_LAReference() {
         if (LAs != nullptr) {
             if (AllocHostLA) {
                 cudaFreeHost(LAs);
-            }
-            else {
+            } else {
                 cudaFree(LAs);
             }
 
@@ -188,8 +186,7 @@ GPU_LAReference<IterType, Float, SubType>::~GPU_LAReference() {
         if (LAStages != nullptr) {
             if (AllocHostLAStages) {
                 cudaFreeHost(LAStages);
-            }
-            else {
+            } else {
                 cudaFree(LAStages);
             }
 
@@ -212,11 +209,12 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference()
     LAStages{},
     NumLAStages{},
     AllocHostLA{},
-    AllocHostLAStages{} {}
+    AllocHostLAStages{} {
+}
 
 template<typename IterType, class Float, class SubType>
 __host__
-GPU_LAReference<IterType, Float, SubType>::GPU_LAReference(GPU_LAReference&& other) {
+GPU_LAReference<IterType, Float, SubType>::GPU_LAReference(GPU_LAReference &&other) {
     UseAT = other.UseAT;
     AT = other.AT;
     LAStageCount = other.LAStageCount;
@@ -246,7 +244,7 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference(GPU_LAReference&& oth
 
 template<typename IterType, class Float, class SubType>
 __host__
-GPU_LAReference<IterType, Float, SubType>::GPU_LAReference(const GPU_LAReference& other)
+GPU_LAReference<IterType, Float, SubType>::GPU_LAReference(const GPU_LAReference &other)
     : UseAT{ other.UseAT },
     AT{ other.AT },
     LAStageCount{ other.LAStageCount },
@@ -271,8 +269,7 @@ bool GPU_LAReference<IterType, Float, SubType>::isLAStageInvalid(IterType LAInde
 
     if constexpr (IsHDR) {
         return temp3.compareToBothPositiveReduced(temp2) >= 0;
-    }
-    else {
+    } else {
         return temp3 >= temp2;
     }
 }
@@ -303,7 +300,7 @@ GPU_LAReference<IterType, Float, SubType>::getLA(IterType LAIndex, HDRFloatCompl
     const bool usable = iterations + l <= max_iterations;
 
     if (usable) {
-        const GPU_LAInfoDeep<IterType, Float, SubType>& LAj = LAs[LAIndexj];
+        const GPU_LAInfoDeep<IterType, Float, SubType> &LAj = LAs[LAIndexj];
 
         las = LAj.Prepare(dz);
 

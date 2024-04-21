@@ -44,8 +44,8 @@ public:
 
     CUDA_CRAP void SetDefaults(LADefaults defaults);
 
-    bool ReadMetadata(std::ifstream& metafile);
-    bool WriteMetadata(std::ofstream& metafile) const;
+    bool ReadMetadata(std::ifstream &metafile);
+    bool WriteMetadata(std::ofstream &metafile) const;
 
 private:
     bool ReadLine(std::ifstream &metafile, int32_t &value, const char *name);
@@ -78,5 +78,5 @@ private:
     static constexpr int32_t DefaultPeriodDetectionThresholdExponent = -10;
 
     static constexpr LAThreadingAlgorithm DefaultThreadingAlgorithm = LAThreadingAlgorithm::MultiThreaded;
- };
+};
 

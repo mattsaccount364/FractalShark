@@ -3,12 +3,12 @@
 
 #include "Fractal.h"
 
-FractalTest::FractalTest(Fractal& fractal) : m_Fractal(fractal) {
+FractalTest::FractalTest(Fractal &fractal) : m_Fractal(fractal) {
 }
 
-void FractalTest::BasicTestInternal(size_t& test_index) {
+void FractalTest::BasicTestInternal(size_t &test_index) {
     constexpr bool IncludeSlow = false;
-    const wchar_t* DirName = L"BasicTest";
+    const wchar_t *DirName = L"BasicTest";
     auto ret = CreateDirectory(DirName, nullptr);
     if (ret == 0 && GetLastError() != ERROR_ALREADY_EXISTS) {
         ::MessageBox(nullptr, L"Error creating directory!", L"", MB_OK | MB_APPLMODAL);
@@ -140,8 +140,8 @@ void FractalTest::BasicTestInternal(size_t& test_index) {
 void FractalTest::BasicOneTest(
     size_t view_index,
     size_t test_index,
-    const wchar_t* dir_name,
-    const wchar_t* test_prefix,
+    const wchar_t *dir_name,
+    const wchar_t *test_prefix,
     RenderAlgorithm alg_to_test) {
 
     size_t alg_to_test_int = static_cast<size_t>(alg_to_test);
@@ -226,13 +226,13 @@ void FractalTest::Benchmark(RefOrbitCalc::PerturbationResultType type) {
     // the file if it already exists.
     std::ofstream file("BenchmarkResults.txt", std::ios::binary | std::ios::trunc);
 
-    auto printVectorWithDescription = [&](const std::string& description, const std::vector<size_t>& vec) {
+    auto printVectorWithDescription = [&](const std::string &description, const std::vector<size_t> &vec) {
         file << description << "\r\n";
         for (size_t i = 0; i < NumIterations; i++) {
             file << vec[i] << "\r\n";
         }
         file << "\r\n";
-    };
+        };
 
     printVectorWithDescription("Overall times (ms)", overallTimes);
     printVectorWithDescription("Per pixel times (ms)", perPixelTimes);

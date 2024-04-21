@@ -13,8 +13,8 @@ PerturbResultsCollection::~PerturbResultsCollection() {
 template<typename Type, PerturbExtras PExtras>
 void PerturbResultsCollection::SetPtr32(
     size_t GenerationNumber,
-    InternalResults& Results,
-    GPUPerturbSingleResults<uint32_t, Type, PExtras>* ptr) {
+    InternalResults &Results,
+    GPUPerturbSingleResults<uint32_t, Type, PExtras> *ptr) {
 
     if (Results.m_GenerationNumber == GenerationNumber) {
         return;
@@ -26,17 +26,14 @@ void PerturbResultsCollection::SetPtr32(
         if constexpr (PExtras == PerturbExtras::Disable) {
             delete Results.m_Results32FloatDisable;
             Results.m_Results32FloatDisable = ptr;
-        }
-        else if constexpr (PExtras == PerturbExtras::Bad) {
+        } else if constexpr (PExtras == PerturbExtras::Bad) {
             delete Results.m_Results32FloatEnable;
             Results.m_Results32FloatEnable = ptr;
-        }
-        else if constexpr (PExtras == PerturbExtras::EnableCompression) {
+        } else if constexpr (PExtras == PerturbExtras::EnableCompression) {
             delete Results.m_Results32FloatRC;
             Results.m_Results32FloatRC = ptr;
         }
-    }
-    else if constexpr (std::is_same<Type, double>::value) {
+    } else if constexpr (std::is_same<Type, double>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
             delete Results.m_Results32DoubleDisable;
             Results.m_Results32DoubleDisable = ptr;
@@ -47,8 +44,7 @@ void PerturbResultsCollection::SetPtr32(
             delete Results.m_Results32DoubleRC;
             Results.m_Results32DoubleRC = ptr;
         }
-    }
-    else if constexpr (std::is_same<Type, CudaDblflt<dblflt>>::value) {
+    } else if constexpr (std::is_same<Type, CudaDblflt<dblflt>>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
             delete Results.m_Results32CudaDblfltDisable;
             Results.m_Results32CudaDblfltDisable = ptr;
@@ -59,8 +55,7 @@ void PerturbResultsCollection::SetPtr32(
             delete Results.m_Results32CudaDblfltRC;
             Results.m_Results32CudaDblfltRC = ptr;
         }
-    }
-    else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
+    } else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
             delete Results.m_Results32HdrFloatDisable;
             Results.m_Results32HdrFloatDisable = ptr;
@@ -71,8 +66,7 @@ void PerturbResultsCollection::SetPtr32(
             delete Results.m_Results32HdrFloatRC;
             Results.m_Results32HdrFloatRC = ptr;
         }
-    }
-    else if constexpr (std::is_same<Type, HDRFloat<double>>::value) {
+    } else if constexpr (std::is_same<Type, HDRFloat<double>>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
             delete Results.m_Results32HdrDoubleDisable;
             Results.m_Results32HdrDoubleDisable = ptr;
@@ -83,8 +77,7 @@ void PerturbResultsCollection::SetPtr32(
             delete Results.m_Results32HdrDoubleRC;
             Results.m_Results32HdrDoubleRC = ptr;
         }
-    }
-    else if constexpr (std::is_same<Type, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
+    } else if constexpr (std::is_same<Type, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
             delete Results.m_Results32HdrCudaMattDblfltDisable;
             Results.m_Results32HdrCudaMattDblfltDisable = ptr;
@@ -101,8 +94,8 @@ void PerturbResultsCollection::SetPtr32(
 template<typename Type, PerturbExtras PExtras>
 void PerturbResultsCollection::SetPtr64(
     size_t GenerationNumber,
-    InternalResults& Results,
-    GPUPerturbSingleResults<uint64_t, Type, PExtras>* ptr) {
+    InternalResults &Results,
+    GPUPerturbSingleResults<uint64_t, Type, PExtras> *ptr) {
 
     if (Results.m_GenerationNumber == GenerationNumber) {
         return;
@@ -121,8 +114,7 @@ void PerturbResultsCollection::SetPtr64(
             delete Results.m_Results64FloatRC;
             Results.m_Results64FloatRC = ptr;
         }
-    }
-    else if constexpr (std::is_same<Type, double>::value) {
+    } else if constexpr (std::is_same<Type, double>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
             delete Results.m_Results64DoubleDisable;
             Results.m_Results64DoubleDisable = ptr;
@@ -133,8 +125,7 @@ void PerturbResultsCollection::SetPtr64(
             delete Results.m_Results64DoubleRC;
             Results.m_Results64DoubleRC = ptr;
         }
-    }
-    else if constexpr (std::is_same<Type, CudaDblflt<dblflt>>::value) {
+    } else if constexpr (std::is_same<Type, CudaDblflt<dblflt>>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
             delete Results.m_Results64CudaDblfltDisable;
             Results.m_Results64CudaDblfltDisable = ptr;
@@ -145,8 +136,7 @@ void PerturbResultsCollection::SetPtr64(
             delete Results.m_Results64CudaDblfltRC;
             Results.m_Results64CudaDblfltRC = ptr;
         }
-    }
-    else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
+    } else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
             delete Results.m_Results64HdrFloatDisable;
             Results.m_Results64HdrFloatDisable = ptr;
@@ -157,8 +147,7 @@ void PerturbResultsCollection::SetPtr64(
             delete Results.m_Results64HdrFloatRC;
             Results.m_Results64HdrFloatRC = ptr;
         }
-    }
-    else if constexpr (std::is_same<Type, HDRFloat<double>>::value) {
+    } else if constexpr (std::is_same<Type, HDRFloat<double>>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
             delete Results.m_Results64HdrDoubleDisable;
             Results.m_Results64HdrDoubleDisable = ptr;
@@ -169,8 +158,7 @@ void PerturbResultsCollection::SetPtr64(
             delete Results.m_Results64HdrDoubleRC;
             Results.m_Results64HdrDoubleRC = ptr;
         }
-    }
-    else if constexpr (std::is_same<Type, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
+    } else if constexpr (std::is_same<Type, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
             delete Results.m_Results64HdrCudaMattDblfltDisable;
             Results.m_Results64HdrCudaMattDblfltDisable = ptr;
@@ -185,21 +173,19 @@ void PerturbResultsCollection::SetPtr64(
 }
 
 template<typename IterType, typename Type, PerturbExtras PExtras>
-void PerturbResultsCollection::SetPtr1(size_t GenerationNumber1, GPUPerturbSingleResults<IterType, Type, PExtras>* ptr) {
+void PerturbResultsCollection::SetPtr1(size_t GenerationNumber1, GPUPerturbSingleResults<IterType, Type, PExtras> *ptr) {
     if constexpr (std::is_same<IterType, uint32_t>::value) {
         SetPtr32<Type, PExtras>(GenerationNumber1, m_Results1, ptr);
-    }
-    else if constexpr (std::is_same<IterType, uint64_t>::value) {
+    } else if constexpr (std::is_same<IterType, uint64_t>::value) {
         SetPtr64<Type, PExtras>(GenerationNumber1, m_Results1, ptr);
     }
 }
 
 template<typename IterType, typename Type, PerturbExtras PExtras>
-void PerturbResultsCollection::SetPtr2(size_t GenerationNumber2, GPUPerturbSingleResults<IterType, Type, PExtras>* ptr) {
+void PerturbResultsCollection::SetPtr2(size_t GenerationNumber2, GPUPerturbSingleResults<IterType, Type, PExtras> *ptr) {
     if constexpr (std::is_same<IterType, uint32_t>::value) {
         SetPtr32<Type, PExtras>(GenerationNumber2, m_Results2, ptr);
-    }
-    else if constexpr (std::is_same<IterType, uint64_t>::value) {
+    } else if constexpr (std::is_same<IterType, uint64_t>::value) {
         SetPtr64<Type, PExtras>(GenerationNumber2, m_Results2, ptr);
     }
 }
@@ -207,8 +193,8 @@ void PerturbResultsCollection::SetPtr2(size_t GenerationNumber2, GPUPerturbSingl
 template<typename Type, typename SubType>
 void PerturbResultsCollection::SetLaReferenceInternal32(
     size_t LaGenerationNumber,
-    InternalResults& Results,
-    GPU_LAReference<uint32_t, Type, SubType>* LaReference) {
+    InternalResults &Results,
+    GPU_LAReference<uint32_t, Type, SubType> *LaReference) {
 
     if (LaGenerationNumber == Results.m_LaGenerationNumber) {
         return;
@@ -219,24 +205,19 @@ void PerturbResultsCollection::SetLaReferenceInternal32(
     if constexpr (std::is_same<Type, float>::value) {
         delete Results.m_LaReference32Float;
         Results.m_LaReference32Float = LaReference;
-    }
-    else if constexpr (std::is_same<Type, double>::value) {
+    } else if constexpr (std::is_same<Type, double>::value) {
         delete Results.m_LaReference32Double;
         Results.m_LaReference32Double = LaReference;
-    }
-    else if constexpr (std::is_same<Type, CudaDblflt<MattDblflt>>::value) {
+    } else if constexpr (std::is_same<Type, CudaDblflt<MattDblflt>>::value) {
         delete Results.m_LaReference32CudaDblflt;
         Results.m_LaReference32CudaDblflt = LaReference;
-    }
-    else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
+    } else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
         delete Results.m_LaReference32HdrFloat;
         Results.m_LaReference32HdrFloat = LaReference;
-    }
-    else if constexpr (std::is_same<Type, HDRFloat<double>>::value) {
+    } else if constexpr (std::is_same<Type, HDRFloat<double>>::value) {
         delete Results.m_LaReference32HdrDouble;
         Results.m_LaReference32HdrDouble = LaReference;
-    }
-    else if constexpr (std::is_same<Type, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
+    } else if constexpr (std::is_same<Type, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
         delete Results.m_LaReference32HdrCudaMattDblflt;
         Results.m_LaReference32HdrCudaMattDblflt = LaReference;
     }
@@ -245,8 +226,8 @@ void PerturbResultsCollection::SetLaReferenceInternal32(
 template<typename Type, typename SubType>
 void PerturbResultsCollection::SetLaReferenceInternal64(
     size_t LaGenerationNumber,
-    InternalResults& Results,
-    GPU_LAReference<uint64_t, Type, SubType>* LaReference) {
+    InternalResults &Results,
+    GPU_LAReference<uint64_t, Type, SubType> *LaReference) {
 
     if (LaGenerationNumber == Results.m_LaGenerationNumber) {
         return;
@@ -257,24 +238,19 @@ void PerturbResultsCollection::SetLaReferenceInternal64(
     if constexpr (std::is_same<Type, float>::value) {
         delete Results.m_LaReference64Float;
         Results.m_LaReference64Float = LaReference;
-    }
-    else if constexpr (std::is_same<Type, double>::value) {
+    } else if constexpr (std::is_same<Type, double>::value) {
         delete Results.m_LaReference64Double;
         Results.m_LaReference64Double = LaReference;
-    }
-    else if constexpr (std::is_same<Type, CudaDblflt<MattDblflt>>::value) {
+    } else if constexpr (std::is_same<Type, CudaDblflt<MattDblflt>>::value) {
         delete Results.m_LaReference64CudaDblflt;
         Results.m_LaReference64CudaDblflt = LaReference;
-    }
-    else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
+    } else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
         delete Results.m_LaReference64HdrFloat;
         Results.m_LaReference64HdrFloat = LaReference;
-    }
-    else if constexpr (std::is_same<Type, HDRFloat<double>>::value) {
+    } else if constexpr (std::is_same<Type, HDRFloat<double>>::value) {
         delete Results.m_LaReference64HdrDouble;
         Results.m_LaReference64HdrDouble = LaReference;
-    }
-    else if constexpr (std::is_same<Type, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
+    } else if constexpr (std::is_same<Type, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
         delete Results.m_LaReference64HdrCudaMattDblflt;
         Results.m_LaReference64HdrCudaMattDblflt = LaReference;
     }
@@ -283,12 +259,11 @@ void PerturbResultsCollection::SetLaReferenceInternal64(
 template<typename IterType, typename Type, typename SubType>
 void PerturbResultsCollection::SetLaReferenceInternal(
     size_t LaGenerationNumber,
-    InternalResults& Results,
-    GPU_LAReference<IterType, Type, SubType>* LaReference) {
+    InternalResults &Results,
+    GPU_LAReference<IterType, Type, SubType> *LaReference) {
     if constexpr (std::is_same<IterType, uint32_t>::value) {
         SetLaReferenceInternal32<Type, SubType>(LaGenerationNumber, Results, LaReference);
-    }
-    else if constexpr (std::is_same<IterType, uint64_t>::value) {
+    } else if constexpr (std::is_same<IterType, uint64_t>::value) {
         SetLaReferenceInternal64<Type, SubType>(LaGenerationNumber, Results, LaReference);
     }
 }
@@ -296,12 +271,12 @@ void PerturbResultsCollection::SetLaReferenceInternal(
 template<typename IterType, typename Type, typename SubType>
 void PerturbResultsCollection::SetLaReference1(
     size_t LaGenerationNumber,
-    GPU_LAReference<IterType, Type, SubType>* LaReference) {
+    GPU_LAReference<IterType, Type, SubType> *LaReference) {
     SetLaReferenceInternal(LaGenerationNumber, m_Results1, LaReference);
 }
 
 template<typename Type, PerturbExtras PExtras>
-GPUPerturbSingleResults<uint32_t, Type, PExtras>* PerturbResultsCollection::GetPtrInternal32(InternalResults& Results) {
+GPUPerturbSingleResults<uint32_t, Type, PExtras> *PerturbResultsCollection::GetPtrInternal32(InternalResults &Results) {
     if constexpr (std::is_same<Type, float>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
             return Results.m_Results32FloatDisable;
@@ -310,8 +285,7 @@ GPUPerturbSingleResults<uint32_t, Type, PExtras>* PerturbResultsCollection::GetP
         } else if constexpr (PExtras == PerturbExtras::EnableCompression) {
             return Results.m_Results32FloatRC;
         }
-    }
-    else if constexpr (std::is_same<Type, double>::value) {
+    } else if constexpr (std::is_same<Type, double>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
             return Results.m_Results32DoubleDisable;
         } else if constexpr (PExtras == PerturbExtras::Bad) {
@@ -319,8 +293,7 @@ GPUPerturbSingleResults<uint32_t, Type, PExtras>* PerturbResultsCollection::GetP
         } else if constexpr (PExtras == PerturbExtras::EnableCompression) {
             return Results.m_Results32DoubleRC;
         }
-    }
-    else if constexpr (std::is_same<Type, CudaDblflt<MattDblflt>>::value) {
+    } else if constexpr (std::is_same<Type, CudaDblflt<MattDblflt>>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
             return Results.m_Results32CudaDblfltDisable;
         } else if constexpr (PExtras == PerturbExtras::Bad) {
@@ -328,8 +301,7 @@ GPUPerturbSingleResults<uint32_t, Type, PExtras>* PerturbResultsCollection::GetP
         } else if constexpr (PExtras == PerturbExtras::EnableCompression) {
             return Results.m_Results32CudaDblfltRC;
         }
-    }
-    else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
+    } else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
             return Results.m_Results32HdrFloatDisable;
         } else if constexpr (PExtras == PerturbExtras::Bad) {
@@ -337,8 +309,7 @@ GPUPerturbSingleResults<uint32_t, Type, PExtras>* PerturbResultsCollection::GetP
         } else if constexpr (PExtras == PerturbExtras::EnableCompression) {
             return Results.m_Results32HdrFloatRC;
         }
-    }
-    else if constexpr (std::is_same<Type, HDRFloat<double>>::value) {
+    } else if constexpr (std::is_same<Type, HDRFloat<double>>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
             return Results.m_Results32HdrDoubleDisable;
         } else if constexpr (PExtras == PerturbExtras::Bad) {
@@ -346,8 +317,7 @@ GPUPerturbSingleResults<uint32_t, Type, PExtras>* PerturbResultsCollection::GetP
         } else if constexpr (PExtras == PerturbExtras::EnableCompression) {
             return Results.m_Results32HdrDoubleRC;
         }
-    }
-    else if constexpr (std::is_same<Type, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
+    } else if constexpr (std::is_same<Type, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
             return Results.m_Results32HdrCudaMattDblfltDisable;
         } else if constexpr (PExtras == PerturbExtras::Bad) {
@@ -359,7 +329,7 @@ GPUPerturbSingleResults<uint32_t, Type, PExtras>* PerturbResultsCollection::GetP
 }
 
 template<typename Type, PerturbExtras PExtras>
-GPUPerturbSingleResults<uint64_t, Type, PExtras>* PerturbResultsCollection::GetPtrInternal64(InternalResults& Results) {
+GPUPerturbSingleResults<uint64_t, Type, PExtras> *PerturbResultsCollection::GetPtrInternal64(InternalResults &Results) {
     if constexpr (std::is_same<Type, float>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
             return Results.m_Results64FloatDisable;
@@ -368,8 +338,7 @@ GPUPerturbSingleResults<uint64_t, Type, PExtras>* PerturbResultsCollection::GetP
         } else if constexpr (PExtras == PerturbExtras::EnableCompression) {
             return Results.m_Results64FloatRC;
         }
-    }
-    else if constexpr (std::is_same<Type, double>::value) {
+    } else if constexpr (std::is_same<Type, double>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
             return Results.m_Results64DoubleDisable;
         } else if constexpr (PExtras == PerturbExtras::Bad) {
@@ -377,8 +346,7 @@ GPUPerturbSingleResults<uint64_t, Type, PExtras>* PerturbResultsCollection::GetP
         } else if constexpr (PExtras == PerturbExtras::EnableCompression) {
             return Results.m_Results64DoubleRC;
         }
-    }
-    else if constexpr (std::is_same<Type, CudaDblflt<MattDblflt>>::value) {
+    } else if constexpr (std::is_same<Type, CudaDblflt<MattDblflt>>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
             return Results.m_Results64CudaDblfltDisable;
         } else if constexpr (PExtras == PerturbExtras::Bad) {
@@ -386,8 +354,7 @@ GPUPerturbSingleResults<uint64_t, Type, PExtras>* PerturbResultsCollection::GetP
         } else if constexpr (PExtras == PerturbExtras::EnableCompression) {
             return Results.m_Results64CudaDblfltRC;
         }
-    }
-    else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
+    } else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
             return Results.m_Results64HdrFloatDisable;
         } else if constexpr (PExtras == PerturbExtras::Bad) {
@@ -395,8 +362,7 @@ GPUPerturbSingleResults<uint64_t, Type, PExtras>* PerturbResultsCollection::GetP
         } else if constexpr (PExtras == PerturbExtras::EnableCompression) {
             return Results.m_Results64HdrFloatRC;
         }
-    }
-    else if constexpr (std::is_same<Type, HDRFloat<double>>::value) {
+    } else if constexpr (std::is_same<Type, HDRFloat<double>>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
             return Results.m_Results64HdrDoubleDisable;
         } else if constexpr (PExtras == PerturbExtras::Bad) {
@@ -404,8 +370,7 @@ GPUPerturbSingleResults<uint64_t, Type, PExtras>* PerturbResultsCollection::GetP
         } else if constexpr (PExtras == PerturbExtras::EnableCompression) {
             return Results.m_Results64HdrDoubleRC;
         }
-    }
-    else if constexpr (std::is_same<Type, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
+    } else if constexpr (std::is_same<Type, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
             return Results.m_Results64HdrCudaMattDblfltDisable;
         } else if constexpr (PExtras == PerturbExtras::Bad) {
@@ -417,79 +382,67 @@ GPUPerturbSingleResults<uint64_t, Type, PExtras>* PerturbResultsCollection::GetP
 }
 
 template<typename IterType, typename Type, PerturbExtras PExtras>
-GPUPerturbSingleResults<IterType, Type, PExtras>* PerturbResultsCollection::GetPtrInternal(InternalResults& Results) {
+GPUPerturbSingleResults<IterType, Type, PExtras> *PerturbResultsCollection::GetPtrInternal(InternalResults &Results) {
     if constexpr (std::is_same<IterType, uint32_t>::value) {
         return GetPtrInternal32<Type, PExtras>(Results);
-    }
-    else if constexpr (std::is_same<IterType, uint64_t>::value) {
+    } else if constexpr (std::is_same<IterType, uint64_t>::value) {
         return GetPtrInternal64<Type, PExtras>(Results);
     }
 }
 
 template<typename Type, typename SubType>
-GPU_LAReference<uint32_t, Type, SubType>* PerturbResultsCollection::GetLaReferenceInternal32(
-    InternalResults& Results) {
+GPU_LAReference<uint32_t, Type, SubType> *PerturbResultsCollection::GetLaReferenceInternal32(
+    InternalResults &Results) {
     if constexpr (std::is_same<Type, float>::value) {
         return Results.m_LaReference32Float;
-    }
-    else if constexpr (std::is_same<Type, double>::value) {
+    } else if constexpr (std::is_same<Type, double>::value) {
         return Results.m_LaReference32Double;
-    }
-    else if constexpr (std::is_same<Type, CudaDblflt<MattDblflt>>::value) {
+    } else if constexpr (std::is_same<Type, CudaDblflt<MattDblflt>>::value) {
         return Results.m_LaReference32CudaDblflt;
-    }
-    else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
+    } else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
         return Results.m_LaReference32HdrFloat;
-    }
-    else if constexpr (std::is_same<Type, HDRFloat<double>>::value) {
+    } else if constexpr (std::is_same<Type, HDRFloat<double>>::value) {
         return Results.m_LaReference32HdrDouble;
-    }
-    else if constexpr (std::is_same<Type, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
+    } else if constexpr (std::is_same<Type, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
         return Results.m_LaReference32HdrCudaMattDblflt;
     }
 }
 
 template<typename Type, typename SubType>
-GPU_LAReference<uint64_t, Type, SubType>* PerturbResultsCollection::GetLaReferenceInternal64(
-    InternalResults& Results) {
+GPU_LAReference<uint64_t, Type, SubType> *PerturbResultsCollection::GetLaReferenceInternal64(
+    InternalResults &Results) {
     if constexpr (std::is_same<Type, float>::value) {
         return Results.m_LaReference64Float;
-    }
-    else if constexpr (std::is_same<Type, double>::value) {
+    } else if constexpr (std::is_same<Type, double>::value) {
         return Results.m_LaReference64Double;
-    }
-    else if constexpr (std::is_same<Type, CudaDblflt<MattDblflt>>::value) {
+    } else if constexpr (std::is_same<Type, CudaDblflt<MattDblflt>>::value) {
         return Results.m_LaReference64CudaDblflt;
-    }
-    else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
+    } else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
         return Results.m_LaReference64HdrFloat;
-    }
-    else if constexpr (std::is_same<Type, HDRFloat<double>>::value) {
+    } else if constexpr (std::is_same<Type, HDRFloat<double>>::value) {
         return Results.m_LaReference64HdrDouble;
-    }
-    else if constexpr (std::is_same<Type, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
+    } else if constexpr (std::is_same<Type, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
         return Results.m_LaReference64HdrCudaMattDblflt;
     }
 }
 
 template<typename IterType, typename Type, typename SubType>
-GPU_LAReference<IterType, Type, SubType>* PerturbResultsCollection::GetLaReferenceInternal(
-    InternalResults& Results) {
+GPU_LAReference<IterType, Type, SubType> *PerturbResultsCollection::GetLaReferenceInternal(
+    InternalResults &Results) {
     if constexpr (std::is_same<IterType, uint32_t>::value) {
         return GetLaReferenceInternal32<Type, SubType>(Results);
-    }
-    else if constexpr (std::is_same<IterType, uint64_t>::value) {
+    } else if constexpr (std::is_same<IterType, uint64_t>::value) {
         return GetLaReferenceInternal64<Type, SubType>(Results);
     }
 }
 
 template<typename IterType, typename Type, PerturbExtras PExtras>
-GPUPerturbSingleResults<IterType, Type, PExtras>* PerturbResultsCollection::GetPtr1() {
+GPUPerturbSingleResults<IterType, Type, PExtras> *PerturbResultsCollection::GetPtr1() {
     return GetPtrInternal<IterType, Type, PExtras>(m_Results1);
 }
 
 template<typename IterType, typename Type, PerturbExtras PExtras>
-GPUPerturbSingleResults<IterType, Type, PExtras>* PerturbResultsCollection::GetPtr2() {
+GPUPerturbSingleResults<IterType, Type, PExtras> *PerturbResultsCollection::GetPtr2() {
     return GetPtrInternal<IterType, Type, PExtras>(m_Results2);
 }
 
@@ -510,16 +463,16 @@ size_t PerturbResultsCollection::GetHostLaGenerationNumber2() const {
 }
 
 template<typename IterType, typename Type, typename SubType>
-GPU_LAReference<IterType, Type, SubType>* PerturbResultsCollection::GetLaReference1() {
+GPU_LAReference<IterType, Type, SubType> *PerturbResultsCollection::GetLaReference1() {
     return GetLaReferenceInternal<IterType, Type, SubType>(m_Results1);
 }
 
 template<typename IterType, typename Type, typename SubType>
-GPU_LAReference<IterType, Type, SubType>* PerturbResultsCollection::GetLaReference2() {
+GPU_LAReference<IterType, Type, SubType> *PerturbResultsCollection::GetLaReference2() {
     return GetLaReferenceInternal<IterType, Type, SubType>(m_Results2);
 }
 
-void PerturbResultsCollection::DeleteAllInternal(InternalResults& Results) {
+void PerturbResultsCollection::DeleteAllInternal(InternalResults &Results) {
     Results.m_GenerationNumber = 0;
     Results.m_LaGenerationNumber = 0;
 

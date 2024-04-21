@@ -71,8 +71,7 @@ ItersMemoryContainer::ItersMemoryContainer(
         for (size_t i = 0; i < m_RoundedHeight; i++) {
             m_ItersArray32[i] = &m_ItersMemory32[i * m_RoundedWidth];
         }
-    }
-    else {
+    } else {
         m_ItersMemory64 = std::make_unique<uint64_t[]>(m_RoundedTotal);
         m_ItersArray64.resize(m_RoundedHeight);
         for (size_t i = 0; i < m_RoundedHeight; i++) {
@@ -90,11 +89,11 @@ ItersMemoryContainer::ItersMemoryContainer(
     m_RoundedOutputColorMemory = std::make_unique<Color16[]>(m_RoundedOutputColorTotal);
 };
 
-ItersMemoryContainer::ItersMemoryContainer(ItersMemoryContainer&& other) noexcept {
+ItersMemoryContainer::ItersMemoryContainer(ItersMemoryContainer &&other) noexcept {
     *this = std::move(other);
 }
 
-ItersMemoryContainer &ItersMemoryContainer::operator=(const ItersMemoryContainer& other) {
+ItersMemoryContainer &ItersMemoryContainer::operator=(const ItersMemoryContainer &other) {
     if (this == &other) {
         return *this;
     }
@@ -131,9 +130,8 @@ ItersMemoryContainer &ItersMemoryContainer::operator=(const ItersMemoryContainer
             m_ItersArray32[i] = &m_ItersMemory32[i * other.m_RoundedWidth];
         }
 
-        memcpy (m_ItersMemory32.get(), other.m_ItersMemory32.get(), other.m_RoundedTotal * sizeof(uint32_t));
-    }
-    else {
+        memcpy(m_ItersMemory32.get(), other.m_ItersMemory32.get(), other.m_RoundedTotal * sizeof(uint32_t));
+    } else {
         m_ItersMemory64 = std::make_unique<uint64_t[]>(other.m_RoundedTotal);
         m_ItersArray64.resize(other.m_RoundedHeight);
         for (size_t i = 0; i < other.m_RoundedHeight; i++) {
@@ -146,7 +144,7 @@ ItersMemoryContainer &ItersMemoryContainer::operator=(const ItersMemoryContainer
     return *this;
 }
 
-ItersMemoryContainer& ItersMemoryContainer::operator=(ItersMemoryContainer&& other) noexcept {
+ItersMemoryContainer &ItersMemoryContainer::operator=(ItersMemoryContainer &&other) noexcept {
     if (this == &other) {
         return *this;
     }
@@ -190,8 +188,7 @@ ItersMemoryContainer::~ItersMemoryContainer() {
 IterTypeFull ItersMemoryContainer::GetItersArrayValSlow(size_t x, size_t y) const {
     if (m_IterType == IterTypeEnum::Bits32) {
         return m_ItersArray32[y][x];
-    }
-    else {
+    } else {
         return m_ItersArray64[y][x];
     }
 }
@@ -199,8 +196,7 @@ IterTypeFull ItersMemoryContainer::GetItersArrayValSlow(size_t x, size_t y) cons
 void ItersMemoryContainer::SetItersArrayValSlow(size_t x, size_t y, uint64_t val) {
     if (m_IterType == IterTypeEnum::Bits32) {
         m_ItersArray32[y][x] = (uint32_t)val;
-    }
-    else {
+    } else {
         m_ItersArray64[y][x] = val;
     }
 }
@@ -219,8 +215,7 @@ void ItersMemoryContainer::GetReductionResults(ReductionResults &results) const 
                 results.Sum += m_ItersArray32[i][j];
             }
         }
-    }
-    else {
+    } else {
         for (size_t i = 0; i < m_Height; i++) {
             for (size_t j = 0; j < m_Width; j++) {
                 results.Max = std::max(results.Max, m_ItersArray64[i][j]);

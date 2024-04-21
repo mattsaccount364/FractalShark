@@ -31,35 +31,28 @@ Fractal::Fractal(
     HWND hWnd,
     bool UseSensoCursor) :
     m_CurIters(IterTypeEnum::Bits32, width, height, 1),
-    m_RefOrbit(*this)
-{
+    m_RefOrbit(*this) {
     Initialize(width, height, hWnd, UseSensoCursor);
 }
 
-Fractal::~Fractal()
-{
+Fractal::~Fractal() {
     Uninitialize();
 }
 
 void Fractal::Initialize(int width,
     int height,
     HWND hWnd,
-    bool UseSensoCursor)
-{ // Create the control-key-down/mouse-movement-monitoring thread.
-    if (hWnd != nullptr)
-    {
+    bool UseSensoCursor) { // Create the control-key-down/mouse-movement-monitoring thread.
+    if (hWnd != nullptr) {
         m_AbortThreadQuitFlag = false;
         m_UseSensoCursor = UseSensoCursor;
         m_hWnd = hWnd;
 
         DWORD threadID;
         m_CheckForAbortThread = (HANDLE)CreateThread(nullptr, 0, CheckForAbortThread, this, 0, &threadID);
-        if (m_CheckForAbortThread == nullptr)
-        {
+        if (m_CheckForAbortThread == nullptr) {
         }
-    }
-    else
-    {
+    } else {
         m_AbortThreadQuitFlag = false;
         m_UseSensoCursor = false;
         m_hWnd = nullptr;
@@ -74,11 +67,11 @@ void Fractal::Initialize(int width,
     m_AsyncRenderThreadFinish = false;
     m_AsyncRenderThread = std::make_unique<std::thread>(DrawAsyncGpuFractalThreadStatic, this);
 
-    srand((unsigned int) time(nullptr));
+    srand((unsigned int)time(nullptr));
 
     // Initialize the palette
     auto DefaultPaletteGen = [&](FractalPalette WhichPalette, size_t PaletteIndex, size_t Depth) {
-        int depth_total = (int) (1 << Depth);
+        int depth_total = (int)(1 << Depth);
 
         int max_val = 65535;
         PalTransition(WhichPalette, PaletteIndex, depth_total, max_val, 0, 0);
@@ -89,8 +82,8 @@ void Fractal::Initialize(int width,
         PalTransition(WhichPalette, PaletteIndex, depth_total, max_val, 0, max_val);
         PalTransition(WhichPalette, PaletteIndex, depth_total, 0, 0, 0);
 
-        m_PalIters[WhichPalette][PaletteIndex] = (uint32_t) m_PalR[WhichPalette][PaletteIndex].size();
-    };
+        m_PalIters[WhichPalette][PaletteIndex] = (uint32_t)m_PalR[WhichPalette][PaletteIndex].size();
+        };
 
     auto PatrioticPaletteGen = [&](FractalPalette WhichPalette, size_t PaletteIndex, size_t Depth) {
         int depth_total = (int)(1 << Depth);
@@ -120,8 +113,8 @@ void Fractal::Initialize(int width,
         PalTransition(WhichPalette, PaletteIndex, depth_total, max_val, max_val, max_val);
 
         m_PalIters[WhichPalette][PaletteIndex] = (uint32_t)m_PalR[WhichPalette][PaletteIndex].size();
-    };
-        
+        };
+
     auto SummerPaletteGen = [&](FractalPalette WhichPalette, size_t PaletteIndex, size_t Depth) {
         int depth_total = (int)(1 << Depth);
 
@@ -136,7 +129,7 @@ void Fractal::Initialize(int width,
         PalTransition(WhichPalette, PaletteIndex, depth_total, 0, 0, 0);
 
         m_PalIters[WhichPalette][PaletteIndex] = (uint32_t)m_PalR[WhichPalette][PaletteIndex].size();
-    };
+        };
 
     for (size_t i = 0; i < FractalPalette::Num; i++) {
         m_PalIters[i].resize(NumBitDepths);
@@ -187,7 +180,7 @@ void Fractal::Initialize(int width,
     CreateNewFractalPalette();
 
     // Wait for all this shit to get done
-    for (auto& it : threads) {
+    for (auto &it : threads) {
         it->join();
     }
 
@@ -237,8 +230,7 @@ uint32_t Fractal::InitializeGPUMemory(bool expectedReuse) {
             m_PalIters[m_WhichPalette][m_PaletteDepthIndex],
             m_PaletteAuxDepth,
             expectedReuse);
-    }
-    else {
+    } else {
         return m_r.InitializeMemory<uint64_t>(
             (uint32_t)m_CurIters.m_Width,
             (uint32_t)m_CurIters.m_Height,
@@ -252,7 +244,7 @@ uint32_t Fractal::InitializeGPUMemory(bool expectedReuse) {
     }
 }
 
-void Fractal::ReturnIterMemory(ItersMemoryContainer&& to_return) {
+void Fractal::ReturnIterMemory(ItersMemoryContainer &&to_return) {
     std::unique_lock<std::mutex> lock(m_ItersMemoryStorageLock);
     m_ItersMemoryStorage.push_back(std::move(to_return));
 }
@@ -277,8 +269,7 @@ void Fractal::SetCurItersMemory() {
     }
 }
 
-void Fractal::Uninitialize(void)
-{
+void Fractal::Uninitialize(void) {
 
     {
         std::lock_guard lk(m_AsyncRenderThreadMutex);
@@ -294,16 +285,14 @@ void Fractal::Uninitialize(void)
     CleanupThreads(true);
 
     // Get rid of the abort thread, but only if we actually used it.
-    if (m_CheckForAbortThread != nullptr)
-    {
+    if (m_CheckForAbortThread != nullptr) {
         m_AbortThreadQuitFlag = true;
-        if (WaitForSingleObject(m_CheckForAbortThread, INFINITE) != WAIT_OBJECT_0)
-        {
+        if (WaitForSingleObject(m_CheckForAbortThread, INFINITE) != WAIT_OBJECT_0) {
             ::MessageBox(nullptr, L"Error waiting for abort thread!", L"", MB_OK | MB_APPLMODAL);
         }
     }
 
-    for (auto& thread : m_DrawThreads) {
+    for (auto &thread : m_DrawThreads) {
         {
             std::lock_guard lk(thread->m_DrawThreadMutex);
             thread->m_DrawThreadReady = true;
@@ -313,7 +302,7 @@ void Fractal::Uninitialize(void)
         thread->m_DrawThreadCV.notify_one();
     }
 
-    for (auto& thread : m_DrawThreads) {
+    for (auto &thread : m_DrawThreads) {
         thread->m_Thread->join();
     }
 }
@@ -330,11 +319,9 @@ void Fractal::Uninitialize(void)
 // total_length = number of elements in pal.
 // e.g. unsigned char pal[256];
 //   total_length == 256
-void Fractal::PalIncrease(std::vector<uint16_t> &pal, int length, int val1, int val2)
-{
+void Fractal::PalIncrease(std::vector<uint16_t> &pal, int length, int val1, int val2) {
     double delta = (double)((double)(val2 - val1)) / length;
-    for (int i = 0; i < length; i++)
-    {
+    for (int i = 0; i < length; i++) {
         double result = ((double)val1 + (double)delta * (i + 1));
         pal.push_back((unsigned short)result);
     }
@@ -345,17 +332,13 @@ void Fractal::PalIncrease(std::vector<uint16_t> &pal, int length, int val1, int 
 // length must be > 0
 // Returns index immediately following the last index we filled here
 // Returns -1 if we are at the end.
-void Fractal::PalTransition(size_t WhichPalette, size_t PaletteIndex, int length, int r, int g, int b)
-{
+void Fractal::PalTransition(size_t WhichPalette, size_t PaletteIndex, int length, int r, int g, int b) {
     int curR, curB, curG;
-    if (!m_PalR[WhichPalette][PaletteIndex].empty())
-    {
+    if (!m_PalR[WhichPalette][PaletteIndex].empty()) {
         curR = m_PalR[WhichPalette][PaletteIndex][m_PalR[WhichPalette][PaletteIndex].size() - 1];
         curG = m_PalG[WhichPalette][PaletteIndex][m_PalG[WhichPalette][PaletteIndex].size() - 1];
         curB = m_PalB[WhichPalette][PaletteIndex][m_PalB[WhichPalette][PaletteIndex].size() - 1];
-    }
-    else
-    {
+    } else {
         curR = 0;
         curG = 0;
         curB = 0;
@@ -371,9 +354,8 @@ void Fractal::PalTransition(size_t WhichPalette, size_t PaletteIndex, int length
 // Resets the dimensions of the screen to width x height.
 //////////////////////////////////////////////////////////////////////////////
 void Fractal::ResetDimensions(size_t width,
-                              size_t height,
-                              uint32_t gpu_antialiasing)
-{
+    size_t height,
+    uint32_t gpu_antialiasing) {
     if (width == MAXSIZE_T) {
         width = m_ScrnWidth;
     }
@@ -392,8 +374,7 @@ void Fractal::ResetDimensions(size_t width,
 
     if (m_ScrnWidth != width ||
         m_ScrnHeight != height ||
-        m_GpuAntialiasing != gpu_antialiasing)
-    {
+        m_GpuAntialiasing != gpu_antialiasing) {
         m_ScrnWidth = width;
         m_ScrnHeight = height;
         m_GpuAntialiasing = gpu_antialiasing;
@@ -413,11 +394,10 @@ void Fractal::ResetDimensions(size_t width,
 //////////////////////////////////////////////////////////////////////////////
 void Fractal::SetPrecision(
     uint64_t precInBits,
-    HighPrecision& minX,
-    HighPrecision& minY,
-    HighPrecision& maxX,
-    HighPrecision& maxY)
-{
+    HighPrecision &minX,
+    HighPrecision &minY,
+    HighPrecision &maxX,
+    HighPrecision &maxY) {
     HighPrecision::defaultPrecisionInBits(precInBits);
 
     minX.precisionInBits(precInBits);
@@ -435,8 +415,7 @@ uint64_t Fractal::GetPrecision(void) const {
     return PrecisionCalculator::GetPrecision(m_MinX, m_MinY, m_MaxX, m_MaxY, m_RefOrbit.RequiresReuse());
 }
 
-bool Fractal::RecenterViewCalc(HighPrecision MinX, HighPrecision MinY, HighPrecision MaxX, HighPrecision MaxY)
-{
+bool Fractal::RecenterViewCalc(HighPrecision MinX, HighPrecision MinY, HighPrecision MaxX, HighPrecision MaxY) {
     SaveCurPos();
 
     auto prec = PrecisionCalculator::GetPrecision(MinX, MinY, MaxX, MaxY, m_RefOrbit.RequiresReuse());
@@ -455,8 +434,7 @@ void Fractal::SetPosition(
     HighPrecision MinX,
     HighPrecision MinY,
     HighPrecision MaxX,
-    HighPrecision MaxY)
-{
+    HighPrecision MaxY) {
     m_MinX = MinX;
     m_MaxX = MaxX;
     m_MinY = MinY;
@@ -474,8 +452,7 @@ void Fractal::SetPosition(
 // dimensions were specified when the Fractal object was constructed or whatever
 // coordinates were given to the last call to the Reset function.
 //////////////////////////////////////////////////////////////////////////////
-bool Fractal::RecenterViewScreen(RECT rect)
-{
+bool Fractal::RecenterViewScreen(RECT rect) {
     SaveCurPos();
 
     HighPrecision newMinX = XFromScreenToCalc(HighPrecision{ rect.left });
@@ -578,16 +555,14 @@ bool Fractal::RecenterViewScreen(RECT rect)
                 //if (m_PerturbationGuessCalcY >= m_ScrnHeight || m_PerturbationGuessCalcY < 0 || std::isnan(m_PerturbationGuessCalcY)) {
                 //    m_PerturbationGuessCalcY = 0;
                 //}
-            }
-            else {
+            } else {
                 // Do nothing.  This case can occur if we e.g. change dimension, change gpu antialiasing etc.
             }
-        };
+            };
 
         if (GetIterType() == IterTypeEnum::Bits32) {
             lambda(m_CurIters.GetItersArray<uint32_t>());
-        }
-        else {
+        } else {
             lambda(m_CurIters.GetItersArray<uint64_t>());
         }
     }
@@ -608,8 +583,7 @@ bool Fractal::RecenterViewScreen(RECT rect)
 // cordinates.  These screen coordinates are translated to calculator coordinates
 // for you.
 //////////////////////////////////////////////////////////////////////////////
-bool Fractal::CenterAtPoint(size_t x, size_t y)
-{
+bool Fractal::CenterAtPoint(size_t x, size_t y) {
     const HighPrecision newCenterX = XFromScreenToCalc((HighPrecision)x);
     const HighPrecision newCenterY = YFromScreenToCalc((HighPrecision)y);
     const HighPrecision width = m_MaxX - m_MinX;
@@ -654,8 +628,7 @@ void Fractal::InitialDefaultViewAndSettings(int width, int height) {
     DefaultCompressionErrorExp(CompressionError::Intermediate);
     if (width != 0 && height != 0) {
         ResetDimensions(width, height, 1);
-    }
-    else {
+    } else {
         ResetDimensions(MAXSIZE_T, MAXSIZE_T, 1);
     }
     SetIterType(IterTypeEnum::Bits32);
@@ -720,7 +693,7 @@ void Fractal::AutoZoom() {
 
         bool shouldBreak = false;
 
-        auto lambda = [&](auto** ItersArray, auto NumIterations) {
+        auto lambda = [&](auto **ItersArray, auto NumIterations) {
             if constexpr (h == AutoZoomHeuristic::Default) {
                 ULONG shiftWidth = (ULONG)m_ScrnWidth / 8;
                 ULONG shiftHeight = (ULONG)m_ScrnHeight / 8;
@@ -824,8 +797,7 @@ void Fractal::AutoZoom() {
                     //wchar_t temps[256];
                     //swprintf(temps, 256, L"Coords: %f %f", meanX, meanY);
                     //::MessageBox(nullptr, temps, L"", MB_OK | MB_APPLMODAL);
-                }
-                else {
+                } else {
                     shouldBreak = true;
                     return;
                 }
@@ -877,12 +849,11 @@ void Fractal::AutoZoom() {
                     return;
                 }
             }
-        };
+            };
 
         if (GetIterType() == IterTypeEnum::Bits32) {
             lambda(m_CurIters.GetItersArray<uint32_t>(), GetNumIterations<uint32_t>());
-        }
-        else {
+        } else {
             lambda(m_CurIters.GetItersArray<uint64_t>(), GetNumIterations<uint64_t>());
         }
 
@@ -943,8 +914,7 @@ template void Fractal::AutoZoom<Fractal::AutoZoomHeuristic::Max>();
 // Resets the fractal to the standard view.
 // Make sure the view is square on all monitors at all weird aspect ratios.
 //////////////////////////////////////////////////////////////////////////////
-void Fractal::View(size_t view)
-{
+void Fractal::View(size_t view) {
     HighPrecision minX;
     HighPrecision minY;
     HighPrecision maxX;
@@ -1327,19 +1297,15 @@ void Fractal::View(size_t view)
 // aspect ratio of the monitor!  Wowee!  Thus, the view really is "square" even if
 // your resolution is 1024x768 or some other "nonsquare" resolution.
 //////////////////////////////////////////////////////////////////////////////
-void Fractal::SquareCurrentView(void)
-{
+void Fractal::SquareCurrentView(void) {
     HighPrecision ratio = (HighPrecision)m_ScrnWidth / (HighPrecision)m_ScrnHeight;
     HighPrecision mwidth = (m_MaxX - m_MinX) / ratio;
     HighPrecision height = m_MaxY - m_MinY;
 
-    if (height > mwidth)
-    {
+    if (height > mwidth) {
         m_MinX -= ratio * (height - mwidth) / HighPrecision{ 2.0 };
         m_MaxX += ratio * (height - mwidth) / HighPrecision{ 2.0 };
-    }
-    else if (height < mwidth)
-    {
+    } else if (height < mwidth) {
         m_MinY -= (mwidth - height) / HighPrecision{ 2.0 };
         m_MaxY += (mwidth - height) / HighPrecision{ 2.0 };
     }
@@ -1352,8 +1318,7 @@ void Fractal::SquareCurrentView(void)
 // Used to gradually approach a given target.
 // Used for creating sequences of still images.
 // The images can then be made into a movie!
-void Fractal::ApproachTarget(void)
-{
+void Fractal::ApproachTarget(void) {
     HighPrecision targetIters{ 100000 };
     int numFrames = 1000;
 
@@ -1366,8 +1331,7 @@ void Fractal::ApproachTarget(void)
 
     IterTypeFull baseIters = GetNumIterations<IterTypeFull>();
     HighPrecision incIters = (HighPrecision)((HighPrecision)targetIters - (HighPrecision)baseIters) / (HighPrecision)numFrames;
-    for (int i = 0; i < numFrames; i++)
-    {
+    for (int i = 0; i < numFrames; i++) {
         auto MinX = GetMinX();
         auto MinY = GetMinY();
         auto MaxX = GetMaxX();
@@ -1395,8 +1359,7 @@ void Fractal::ApproachTarget(void)
         wsprintf(temp, L"output%04d", i);
         wcscpy(temp2, temp);
 
-        if (Utilities::FileExists(temp2) == false)
-        { // Create a placeholder file
+        if (Utilities::FileExists(temp2) == false) { // Create a placeholder file
             FILE *file = _wfopen(temp2, L"w+");
             if (file == nullptr) // Fail silently.
             {
@@ -1413,8 +1376,7 @@ void Fractal::ApproachTarget(void)
             // Stop _before_ saving the image, otherwise we will get a
             // corrupt render mixed in with good ones.
             // It's corrupt because it's incomplete!
-            if (m_StopCalculating == true)
-            {
+            if (m_StopCalculating == true) {
                 _wunlink(temp2); // Delete placeholder
                 break;
             }
@@ -1424,8 +1386,7 @@ void Fractal::ApproachTarget(void)
             // particularly exciting.
             int ret = 0;
             ret = SaveCurrentFractal(temp2, false);
-            if (ret == 0)
-            {
+            if (ret == 0) {
                 break;
             }
         }
@@ -1435,10 +1396,8 @@ void Fractal::ApproachTarget(void)
 //////////////////////////////////////////////////////////////////////////////
 // Returns to the previous view.
 //////////////////////////////////////////////////////////////////////////////
-bool Fractal::Back(void)
-{
-    if (!m_PrevMinX.empty())
-    {
+bool Fractal::Back(void) {
+    if (!m_PrevMinX.empty()) {
         SetPosition(
             m_PrevMinX.back(),
             m_PrevMinY.back(),
@@ -1463,8 +1422,7 @@ bool Fractal::Back(void)
 // Used for screen saver program.
 // It is supposed to find an interesting spot to zoom in on.
 // It works rather well as is...
-void Fractal::FindInterestingLocation(RECT *rect)
-{
+void Fractal::FindInterestingLocation(RECT *rect) {
     int x, y;
     int xMin = 0, yMin = 0, xMax = 0, yMax = 0;
     int xMinFinal = 0, yMinFinal = 0, xMaxFinal = 0, yMaxFinal = 0;
@@ -1480,8 +1438,7 @@ void Fractal::FindInterestingLocation(RECT *rect)
     HighPrecision desiredPercent{ (rand() % 75) / 100.0 + .10 };
 
     int i;
-    for (i = 0; i < 1000; i++)
-    {
+    for (i = 0; i < 1000; i++) {
         x = rand() % (m_ScrnWidth - sizeX * 2) + sizeX;
         y = rand() % (m_ScrnHeight - sizeY * 2) + sizeY;
 
@@ -1491,12 +1448,9 @@ void Fractal::FindInterestingLocation(RECT *rect)
         yMax = y + sizeY;
 
         numberAtMax = 0;
-        for (y = yMin; y <= yMax; y++)
-        {
-            for (x = xMin; x <= xMax; x++)
-            {
-                if (numberAtMax > 4200000000)
-                {
+        for (y = yMin; y <= yMax; y++) {
+            for (x = xMin; x <= xMax; x++) {
+                if (numberAtMax > 4200000000) {
                     break;
                 }
 
@@ -1506,8 +1460,7 @@ void Fractal::FindInterestingLocation(RECT *rect)
 
         percentAtMax = (HighPrecision)numberAtMax / ((HighPrecision)sizeX * (HighPrecision)sizeY * (HighPrecision)GetNumIterations<IterTypeFull>());
 
-        if (abs(percentAtMax - desiredPercent) < abs(percentAtMaxFinal - desiredPercent))
-        {
+        if (abs(percentAtMax - desiredPercent) < abs(percentAtMaxFinal - desiredPercent)) {
             numberAtMaxFinal = numberAtMax;
             percentAtMaxFinal = percentAtMax;
             xMinFinal = xMin;
@@ -1516,8 +1469,7 @@ void Fractal::FindInterestingLocation(RECT *rect)
             yMaxFinal = yMax;
         }
 
-        if (m_StopCalculating == true)
-        {
+        if (m_StopCalculating == true) {
             break;
         }
     }
@@ -1533,8 +1485,7 @@ void Fractal::FindInterestingLocation(RECT *rect)
 // This allows the user to use the "Back" function to return to
 // the previous coordinates.
 //////////////////////////////////////////////////////////////////////////////
-void Fractal::SaveCurPos(void)
-{
+void Fractal::SaveCurPos(void) {
     if (m_MinX != m_MaxX ||
         m_MinY != m_MaxY) {
         m_PrevMinX.push_back(m_MinX);
@@ -1548,14 +1499,10 @@ void Fractal::SaveCurPos(void)
 // Functions for dealing with the number of iterations
 ///////////////////////////////////////////////////////////////////////////////
 template<typename IterType>
-void Fractal::SetNumIterations(IterTypeFull num)
-{
-    if (num <= GetMaxIterations<IterType>())
-    {
+void Fractal::SetNumIterations(IterTypeFull num) {
+    if (num <= GetMaxIterations<IterType>()) {
         m_NumIterations = num;
-    }
-    else
-    {
+    } else {
         m_NumIterations = GetMaxIterations<IterType>();
     }
 
@@ -1566,16 +1513,14 @@ template void Fractal::SetNumIterations<uint32_t>(IterTypeFull);
 template void Fractal::SetNumIterations<uint64_t>(IterTypeFull);
 
 template<typename IterType>
-IterType Fractal::GetNumIterations(void) const
-{
+IterType Fractal::GetNumIterations(void) const {
     if constexpr (std::is_same<IterType, uint32_t>::value) {
         if (m_NumIterations > GetMaxIterations<IterType>()) {
             ::MessageBox(nullptr, L"Iteration limit exceeded somehow.", L"", MB_OK | MB_APPLMODAL);
             m_NumIterations = GetMaxIterations<IterType>();
             return GetMaxIterations<IterType>();
         }
-    }
-    else {
+    } else {
         static_assert(std::is_same<IterType, uint64_t>::value, "!");
     }
     return (IterType)m_NumIterations;
@@ -1593,8 +1538,7 @@ constexpr IterType Fractal::GetMaxIterations(void) const {
 IterTypeFull Fractal::GetMaxIterationsRT() const {
     if (GetIterType() == IterTypeEnum::Bits32) {
         return GetMaxIterations<uint32_t>();
-    }
-    else {
+    } else {
         return GetMaxIterations<uint64_t>();
     }
 }
@@ -1635,8 +1579,7 @@ IterTypeEnum Fractal::GetIterType() const {
     return m_IterType;
 }
 
-void Fractal::ResetNumIterations(void)
-{
+void Fractal::ResetNumIterations(void) {
     //
     // Resets the number of iterations to the default value.
     //
@@ -1655,21 +1598,17 @@ RenderAlgorithm Fractal::GetRenderAlgorithm() const {
         if (zoomFactor < HighPrecision{ 1e4 }) {
             // A bit borderline at 3840x1600 x16 AA
             return RenderAlgorithm::Gpu1x32;
-        }
-        else if (zoomFactor < HighPrecision{ 1e9 }) {
+        } else if (zoomFactor < HighPrecision{ 1e9 }) {
             // Safe, maybe even full LA is a little better but barely
             return RenderAlgorithm::Gpu1x32PerturbedLAv2PO;
-        }
-        else if (zoomFactor < HighPrecision{ 1e34 }) {
+        } else if (zoomFactor < HighPrecision{ 1e34 }) {
             // This seems to work at x16 AA 3840x1600
             return RenderAlgorithm::Gpu1x32PerturbedLAv2;
-        }
-        else {
+        } else {
             // Falls apart at high iteration counts with a lot of LA
             return RenderAlgorithm::GpuHDRx32PerturbedLAv2;
         }
-    }
-    else {
+    } else {
         // User-selected forced algorithm selection
         return m_RenderAlgorithm;
     }
@@ -1742,27 +1681,26 @@ bool Fractal::RequiresUseLocalColor() const {
     //
 
     switch (GetRenderAlgorithm()) {
-        case RenderAlgorithm::CpuHigh:
-        case RenderAlgorithm::Cpu64:
-        case RenderAlgorithm::CpuHDR32:
-        case RenderAlgorithm::CpuHDR64:
+    case RenderAlgorithm::CpuHigh:
+    case RenderAlgorithm::Cpu64:
+    case RenderAlgorithm::CpuHDR32:
+    case RenderAlgorithm::CpuHDR64:
 
-        case RenderAlgorithm::Cpu64PerturbedBLA:
-        case RenderAlgorithm::Cpu32PerturbedBLAHDR:
-        case RenderAlgorithm::Cpu64PerturbedBLAHDR:
+    case RenderAlgorithm::Cpu64PerturbedBLA:
+    case RenderAlgorithm::Cpu32PerturbedBLAHDR:
+    case RenderAlgorithm::Cpu64PerturbedBLAHDR:
 
-        case RenderAlgorithm::Cpu32PerturbedBLAV2HDR:
-        case RenderAlgorithm::Cpu64PerturbedBLAV2HDR:
-        case RenderAlgorithm::Cpu32PerturbedRCBLAV2HDR:
-        case RenderAlgorithm::Cpu64PerturbedRCBLAV2HDR:
+    case RenderAlgorithm::Cpu32PerturbedBLAV2HDR:
+    case RenderAlgorithm::Cpu64PerturbedBLAV2HDR:
+    case RenderAlgorithm::Cpu32PerturbedRCBLAV2HDR:
+    case RenderAlgorithm::Cpu64PerturbedRCBLAV2HDR:
         return true;
     default:
         return false;
     }
 }
 
-void Fractal::CalcFractal(bool MemoryOnly)
-{
+void Fractal::CalcFractal(bool MemoryOnly) {
     //if (m_glContext->GetRepaint() == false)
     //{
     //    DrawFractal(MemoryOnly);
@@ -1778,8 +1716,7 @@ void Fractal::CalcFractal(bool MemoryOnly)
 
     if (GetIterType() == IterTypeEnum::Bits32) {
         CalcFractalTypedIter<uint32_t>(MemoryOnly);
-    }
-    else {
+    } else {
         CalcFractalTypedIter<uint64_t>(MemoryOnly);
     }
 
@@ -1800,8 +1737,7 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
     m_StopCalculating = false;
 
     // Do nothing if nothing has changed
-    if (ChangedIsDirty() == false || (m_glContext && m_glContext->GetRepaint() == false))
-    {
+    if (ChangedIsDirty() == false || (m_glContext && m_glContext->GetRepaint() == false)) {
         DrawFractal(MemoryOnly);
         return;
     }
@@ -1889,7 +1825,7 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
         CalcGpuPerturbationFractalBLA<IterType, HDRFloat<double>, double>(MemoryOnly);
         break;
 
-    // LAV2
+        // LAV2
 
     case RenderAlgorithm::Gpu1x32PerturbedLAv2:
         CalcGpuPerturbationFractalLAv2<
@@ -2204,8 +2140,7 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
     SetCursor(LoadCursor(nullptr, IDC_ARROW));
 }
 
-void Fractal::UsePaletteType(FractalPalette type)
-{
+void Fractal::UsePaletteType(FractalPalette type) {
     m_WhichPalette = type;
     auto err = InitializeGPUMemory();
     if (err) {
@@ -2214,8 +2149,7 @@ void Fractal::UsePaletteType(FractalPalette type)
     }
 }
 
-uint32_t Fractal::GetPaletteDepthFromIndex(size_t index) const
-{
+uint32_t Fractal::GetPaletteDepthFromIndex(size_t index) const {
     switch (index) {
     case 0: return 5;
     case 1: return 6;
@@ -2227,8 +2161,7 @@ uint32_t Fractal::GetPaletteDepthFromIndex(size_t index) const
     }
 }
 
-void Fractal::UsePalette(int depth)
-{
+void Fractal::UsePalette(int depth) {
     switch (depth) {
     case 5:
         m_PaletteDepthIndex = 0;
@@ -2290,16 +2223,13 @@ void Fractal::UseNextPaletteAuxDepth(int32_t inc) {
     if (inc < 0) {
         if (m_PaletteAuxDepth == 0) {
             m_PaletteAuxDepth = 17 + inc;
-        }
-        else {
+        } else {
             m_PaletteAuxDepth += inc;
         }
-    }
-    else {
+    } else {
         if (m_PaletteAuxDepth >= 16) {
             m_PaletteAuxDepth = -1 + inc;
-        }
-        else {
+        } else {
             m_PaletteAuxDepth += inc;
         }
     }
@@ -2315,29 +2245,25 @@ uint32_t Fractal::GetPaletteDepth() const {
     return GetPaletteDepthFromIndex(m_PaletteDepthIndex);
 }
 
-void Fractal::ResetFractalPalette(void)
-{
+void Fractal::ResetFractalPalette(void) {
     m_PaletteRotate = 0;
 }
 
-void Fractal::RotateFractalPalette(int delta)
-{
+void Fractal::RotateFractalPalette(int delta) {
     m_PaletteRotate += delta;
-    if (m_PaletteRotate >= GetMaxIterationsRT())
-    {
+    if (m_PaletteRotate >= GetMaxIterationsRT()) {
         m_PaletteRotate = 0;
     }
 }
 
-void Fractal::CreateNewFractalPalette(void)
-{
+void Fractal::CreateNewFractalPalette(void) {
     size_t rtime = __rdtsc();
 
     auto genNextColor = [](int m) -> int {
         const int max_val = 65535 / (m - 1);
         auto val = (rand() % m) * max_val;
         return val;
-    };
+        };
 
     auto RandomPaletteGen = [&](size_t PaletteIndex, size_t Depth) {
         int depth_total = (int)(1 << Depth);
@@ -2366,7 +2292,7 @@ void Fractal::CreateNewFractalPalette(void)
         PalTransition(FractalPalette::Random, PaletteIndex, depth_total, 0, 0, 0);
 
         m_PalIters[FractalPalette::Random][PaletteIndex] = (uint32_t)m_PalR[FractalPalette::Random][PaletteIndex].size();
-    };
+        };
 
     std::vector<std::unique_ptr<std::thread>> threads;
     threads.push_back(std::make_unique<std::thread>(RandomPaletteGen, 0, 5));
@@ -2376,7 +2302,7 @@ void Fractal::CreateNewFractalPalette(void)
     threads.push_back(std::make_unique<std::thread>(RandomPaletteGen, 4, 16));
     threads.push_back(std::make_unique<std::thread>(RandomPaletteGen, 5, 20));
 
-    for (auto& it : threads) {
+    for (auto &it : threads) {
         it->join();
     }
 }
@@ -2387,8 +2313,7 @@ void Fractal::CreateNewFractalPalette(void)
 // get the image oriented right side up. In particular, the line which reads:
 //       glVertex2i (px, m_ScrnHeight - py);
 //////////////////////////////////////////////////////////////////////////////
-void Fractal::DrawFractal(bool /*MemoryOnly*/)
-{
+void Fractal::DrawFractal(bool /*MemoryOnly*/) {
     {
         std::unique_lock lk(m_AsyncRenderThreadMutex);
 
@@ -2437,11 +2362,11 @@ void Fractal::DrawGlFractal(bool LocalColor, bool lastIter) {
     ReductionResults gpuReductionResults;
 
     if (LocalColor) {
-        for (auto& it : m_DrawThreadAtomics) {
+        for (auto &it : m_DrawThreadAtomics) {
             it.store(0);
         }
 
-        for (auto& thread : m_DrawThreads) {
+        for (auto &thread : m_DrawThreads) {
             {
                 std::lock_guard lk(thread->m_DrawThreadMutex);
                 thread->m_DrawThreadProcessed = false;
@@ -2450,18 +2375,17 @@ void Fractal::DrawGlFractal(bool LocalColor, bool lastIter) {
             thread->m_DrawThreadCV.notify_one();
         }
 
-        for (auto& thread : m_DrawThreads) {
+        for (auto &thread : m_DrawThreads) {
             std::unique_lock lk(thread->m_DrawThreadMutex);
             thread->m_DrawThreadCV.wait(lk, [&] {
                 return thread->m_DrawThreadProcessed;
-            });
+                });
         }
 
         // In case we need this we have it.
         // m_CurIters.GetReductionResults(localReductionResults);
-    }
-    else {
-        IterType* iter = nullptr;
+    } else {
+        IterType *iter = nullptr;
         if (lastIter) {
             iter = m_CurIters.GetIters<IterType>();
         }
@@ -2498,8 +2422,7 @@ void Fractal::DrawGlFractal(bool LocalColor, bool lastIter) {
         glTexImage2D(
             GL_TEXTURE_2D, 0, GL_RGBA16, (GLsizei)m_ScrnWidth, (GLsizei)m_ScrnHeight, 0,
             GL_RGBA, GL_UNSIGNED_SHORT, m_DrawOutBytes.get());
-    }
-    else {
+    } else {
         //glTexImage2D(
         //    GL_TEXTURE_2D, 0, GL_RGBA16,
         //    (GLsizei)m_CurIters.m_RoundedOutputColorWidth,
@@ -2548,7 +2471,7 @@ void Fractal::DrawGlFractal(bool LocalColor, bool lastIter) {
     //}
 }
 
-void Fractal::SetRepaint(bool repaint){
+void Fractal::SetRepaint(bool repaint) {
     m_glContext->SetRepaint(repaint);
 }
 
@@ -2573,7 +2496,7 @@ void Fractal::DrawAllPerturbationResults(bool LeaveScreen) {
     glFlush();
 }
 
-void Fractal::DrawFractalThread(size_t index, Fractal* fractal) {
+void Fractal::DrawFractalThread(size_t index, Fractal *fractal) {
     DrawThreadSync &sync = *fractal->m_DrawThreads[index].get();
 
     constexpr size_t BytesPerPixel = 4;
@@ -2582,7 +2505,7 @@ void Fractal::DrawFractalThread(size_t index, Fractal* fractal) {
     for (;;) {
         // Wait until main() sends data
         std::unique_lock lk(sync.m_DrawThreadMutex);
-        
+
         sync.m_DrawThreadCV.wait(lk, [&] {
             return sync.m_DrawThreadReady;
             }
@@ -2596,15 +2519,15 @@ void Fractal::DrawFractalThread(size_t index, Fractal* fractal) {
 
         sync.m_DrawThreadReady = false;
 
-        auto lambda = [&](auto** ItersArray, auto NumIterations) {
+        auto lambda = [&](auto **ItersArray, auto NumIterations) {
             size_t acc_r, acc_g, acc_b;
             size_t outputIndex = 0;
 
             const size_t totalAA = fractal->GetGpuAntialiasing() * fractal->GetGpuAntialiasing();
             uint32_t palIters = fractal->m_PalIters[fractal->m_WhichPalette][fractal->m_PaletteDepthIndex];
-            const uint16_t* palR = fractal->m_PalR[fractal->m_WhichPalette][fractal->m_PaletteDepthIndex].data();
-            const uint16_t* palG = fractal->m_PalG[fractal->m_WhichPalette][fractal->m_PaletteDepthIndex].data();
-            const uint16_t* palB = fractal->m_PalB[fractal->m_WhichPalette][fractal->m_PaletteDepthIndex].data();
+            const uint16_t *palR = fractal->m_PalR[fractal->m_WhichPalette][fractal->m_PaletteDepthIndex].data();
+            const uint16_t *palG = fractal->m_PalG[fractal->m_WhichPalette][fractal->m_PaletteDepthIndex].data();
+            const uint16_t *palB = fractal->m_PalB[fractal->m_WhichPalette][fractal->m_PaletteDepthIndex].data();
             size_t basicFactor = 65536 / NumIterations;
             if (basicFactor == 0) {
                 basicFactor = 1;
@@ -2612,24 +2535,23 @@ void Fractal::DrawFractalThread(size_t index, Fractal* fractal) {
 
             const auto GetBasicColor = [&](
                 size_t numIters,
-                size_t& acc_r,
-                size_t& acc_g,
-                size_t& acc_b) {
+                size_t &acc_r,
+                size_t &acc_g,
+                size_t &acc_b) {
 
-                auto shiftedIters = (numIters >> fractal->m_PaletteAuxDepth);
+                    auto shiftedIters = (numIters >> fractal->m_PaletteAuxDepth);
 
-                if (fractal->m_WhichPalette != FractalPalette::Basic) {
-                    auto palIndex = shiftedIters % palIters;
-                    acc_r += palR[palIndex];
-                    acc_g += palG[palIndex];
-                    acc_b += palB[palIndex];
-                }
-                else {
-                    acc_r += (shiftedIters * basicFactor) & ((1llu << 16) - 1);
-                    acc_g += (shiftedIters * basicFactor) & ((1llu << 16) - 1);
-                    acc_b += (shiftedIters * basicFactor) & ((1llu << 16) - 1);
-                }
-            };
+                    if (fractal->m_WhichPalette != FractalPalette::Basic) {
+                        auto palIndex = shiftedIters % palIters;
+                        acc_r += palR[palIndex];
+                        acc_g += palG[palIndex];
+                        acc_b += palB[palIndex];
+                    } else {
+                        acc_r += (shiftedIters * basicFactor) & ((1llu << 16) - 1);
+                        acc_g += (shiftedIters * basicFactor) & ((1llu << 16) - 1);
+                        acc_b += (shiftedIters * basicFactor) & ((1llu << 16) - 1);
+                    }
+                };
 
             const size_t maxIters = NumIterations;
             for (size_t output_y = 0; output_y < fractal->m_ScrnHeight; output_y++) {
@@ -2646,8 +2568,7 @@ void Fractal::DrawFractalThread(size_t index, Fractal* fractal) {
 
                 for (size_t output_x = 0;
                     output_x < fractal->m_ScrnWidth;
-                    output_x++)
-                {
+                    output_x++) {
                     if (fractal->GetGpuAntialiasing() == 1) {
                         acc_r = 0;
                         acc_g = 0;
@@ -2657,8 +2578,7 @@ void Fractal::DrawFractalThread(size_t index, Fractal* fractal) {
                         const size_t input_y = output_y;
                         size_t numIters = ItersArray[input_y][input_x];
 
-                        if (numIters < maxIters)
-                        {
+                        if (numIters < maxIters) {
                             numIters += fractal->m_PaletteRotate;
                             if (numIters >= maxPossibleIters) {
                                 numIters = maxPossibleIters - 1;
@@ -2666,8 +2586,7 @@ void Fractal::DrawFractalThread(size_t index, Fractal* fractal) {
 
                             GetBasicColor(numIters, acc_r, acc_g, acc_b);
                         }
-                    }
-                    else {
+                    } else {
                         acc_r = 0;
                         acc_g = 0;
                         acc_b = 0;
@@ -2680,8 +2599,7 @@ void Fractal::DrawFractalThread(size_t index, Fractal* fractal) {
                                 input_y++) {
 
                                 size_t numIters = ItersArray[input_y][input_x];
-                                if (numIters < maxIters)
-                                {
+                                if (numIters < maxIters) {
                                     numIters += fractal->m_PaletteRotate;
                                     if (numIters >= maxPossibleIters) {
                                         numIters = maxPossibleIters - 1;
@@ -2704,13 +2622,12 @@ void Fractal::DrawFractalThread(size_t index, Fractal* fractal) {
                     outputIndex += 4;
                 }
             }
-        };
+            };
 
 
         if (fractal->GetIterType() == IterTypeEnum::Bits32) {
             lambda(fractal->m_CurIters.GetItersArray<uint32_t>(), fractal->GetNumIterations<uint32_t>());
-        }
-        else {
+        } else {
             lambda(fractal->m_CurIters.GetItersArray<uint64_t>(), fractal->GetNumIterations<uint64_t>());
         }
 
@@ -2774,10 +2691,9 @@ void Fractal::DrawAsyncGpuFractalThread() {
             bool err;
 
             if (GetIterType() == IterTypeEnum::Bits32) {
-                err = lambda.template operator()<uint32_t>(doneearly);
-            }
-            else {
-                err = lambda.template operator()<uint64_t>(doneearly);
+                err = lambda.template operator() < uint32_t > (doneearly);
+            } else {
+                err = lambda.template operator() < uint64_t > (doneearly);
             }
 
             if (err) {
@@ -2805,7 +2721,7 @@ void Fractal::DrawAsyncGpuFractalThreadStatic(Fractal *fractal) {
     fractal->DrawAsyncGpuFractalThread();
 }
 
-void Fractal::FillCoord(HighPrecision& src, MattQFltflt& dest) {
+void Fractal::FillCoord(HighPrecision &src, MattQFltflt &dest) {
     // qflt
     dest.x = Convert<HighPrecision, float>(src);
     dest.y = Convert<HighPrecision, float>(src - HighPrecision{ dest.x });
@@ -2813,7 +2729,7 @@ void Fractal::FillCoord(HighPrecision& src, MattQFltflt& dest) {
     dest.w = Convert<HighPrecision, float>(src - HighPrecision{ dest.x } - HighPrecision{ dest.y } - HighPrecision{ dest.z });
 }
 
-void Fractal::FillCoord(HighPrecision& src, MattQDbldbl& dest) {
+void Fractal::FillCoord(HighPrecision &src, MattQDbldbl &dest) {
     // qdbl
     dest.x = Convert<HighPrecision, double>(src);
     dest.y = Convert<HighPrecision, double>(src - HighPrecision{ dest.x });
@@ -2821,46 +2737,46 @@ void Fractal::FillCoord(HighPrecision& src, MattQDbldbl& dest) {
     dest.w = Convert<HighPrecision, double>(src - HighPrecision{ dest.x } - HighPrecision{ dest.y } - HighPrecision{ dest.z });
 }
 
-void Fractal::FillCoord(HighPrecision& src, MattDbldbl& dest) {
+void Fractal::FillCoord(HighPrecision &src, MattDbldbl &dest) {
     // dbl
     dest.head = Convert<HighPrecision, double>(src);
     dest.tail = Convert<HighPrecision, double>(src - HighPrecision{ dest.head });
 }
 
-void Fractal::FillCoord(HighPrecision& src, double& dest) {
+void Fractal::FillCoord(HighPrecision &src, double &dest) {
     // doubleOnly
     dest = Convert<HighPrecision, double>(src);
 }
 
-void Fractal::FillCoord(HighPrecision& src, HDRFloat<float>& dest) {
+void Fractal::FillCoord(HighPrecision &src, HDRFloat<float> &dest) {
     // hdrflt
     dest = (HDRFloat<float>)src;
     HdrReduce(dest);
 }
 
-void Fractal::FillCoord(HighPrecision& src, HDRFloat<double>& dest) {
+void Fractal::FillCoord(HighPrecision &src, HDRFloat<double> &dest) {
     //  hdrdbl
     dest = (HDRFloat<double>)src;
     HdrReduce(dest);
 }
 
-void Fractal::FillCoord(HighPrecision& src, MattDblflt& dest) {
+void Fractal::FillCoord(HighPrecision &src, MattDblflt &dest) {
     // flt
     dest.head = Convert<HighPrecision, float>(src);
     dest.tail = Convert<HighPrecision, float>(src - HighPrecision{ dest.head });
 }
 
-void Fractal::FillCoord(HighPrecision& src, float& dest) {
+void Fractal::FillCoord(HighPrecision &src, float &dest) {
     // floatOnly
     dest = Convert<HighPrecision, float>(src);
 }
 
-void Fractal::FillCoord(HighPrecision& src, CudaDblflt<MattDblflt>& dest) {
+void Fractal::FillCoord(HighPrecision &src, CudaDblflt<MattDblflt> &dest) {
     double destDbl = Convert<HighPrecision, double>(src);
     dest = CudaDblflt(destDbl);
 }
 
-void Fractal::FillCoord(HighPrecision& src, HDRFloat<CudaDblflt<MattDblflt>>& dest) {
+void Fractal::FillCoord(HighPrecision &src, HDRFloat<CudaDblflt<MattDblflt>> &dest) {
     HDRFloat<CudaDblflt<MattDblflt>> destDbl(src);
     dest = destDbl;
 }
@@ -2883,8 +2799,7 @@ void Fractal::FillGpuCoords(T &cx2, T &cy2, T &dx2, T &dy2) {
 }
 
 template<typename IterType, class T>
-void Fractal::CalcGpuFractal(bool MemoryOnly)
-{
+void Fractal::CalcGpuFractal(bool MemoryOnly) {
     T cx2{}, cy2{}, dx2{}, dy2{};
     FillGpuCoords<T>(cx2, cy2, dx2, dy2);
 
@@ -2896,12 +2811,12 @@ void Fractal::CalcGpuFractal(bool MemoryOnly)
 
     m_BenchmarkDataPerPixel.StartTimer();
     err = m_r.Render(GetRenderAlgorithm(),
-                     cx2,
-                     cy2,
-                     dx2,
-                     dy2,
-                     GetNumIterations<IterType>(),
-                     m_IterationPrecision);
+        cx2,
+        cy2,
+        dx2,
+        dy2,
+        GetNumIterations<IterType>(),
+        m_IterationPrecision);
 
     if (err) {
         MessageBoxCudaError(err);
@@ -2913,14 +2828,14 @@ void Fractal::CalcGpuFractal(bool MemoryOnly)
 
 template<typename IterType>
 void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
-    auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<
+    auto *results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<
         IterType,
         double,
         double,
         PerturbExtras::Disable,
         RefOrbitCalc::Extras::None>();
 
-    HighPrecision hiDx{ (m_MaxX - m_MinX) / HighPrecision{ m_ScrnWidth *  GetGpuAntialiasing() } };
+    HighPrecision hiDx{ (m_MaxX - m_MinX) / HighPrecision{ m_ScrnWidth * GetGpuAntialiasing() } };
     HighPrecision hiDy{ (m_MaxY - m_MinY) / HighPrecision{ m_ScrnHeight * GetGpuAntialiasing() } };
     double dx = Convert<HighPrecision, double>(hiDx);
     double dy = Convert<HighPrecision, double>(hiDy);
@@ -2970,8 +2885,7 @@ void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
                 continue;
             }
 
-            for (size_t x = 0; x < m_ScrnWidth * GetGpuAntialiasing(); x++)
-            {
+            for (size_t x = 0; x < m_ScrnWidth * GetGpuAntialiasing(); x++) {
                 IterType iter = 0;
                 IterType RefIteration = 0;
                 double deltaReal = dx * x - centerX;
@@ -3051,7 +2965,7 @@ void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
                 m_CurIters.SetItersArrayValSlow(x, y, iter);
             }
         }
-    };
+        };
 
     for (size_t cur_thread = 0; cur_thread < num_threads; cur_thread++) {
         threads.push_back(std::make_unique<std::thread>(one_thread));
@@ -3104,14 +3018,12 @@ void Fractal::CalcCpuHDR(bool MemoryOnly) {
             T sum;
             unsigned int i;
 
-            for (size_t x = 0; x < m_ScrnWidth * GetGpuAntialiasing(); x++)
-            {
+            for (size_t x = 0; x < m_ScrnWidth * GetGpuAntialiasing(); x++) {
                 // (zx + zy)^2 = zx^2 + 2*zx*zy + zy^2
                 // (zx + zy)^3 = zx^3 + 3*zx^2*zy + 3*zx*zy^2 + zy
                 zx = cx;
                 zy = cy;
-                for (i = 0; i < GetNumIterations<IterType>(); i++)
-                { // x^2+2*I*x*y-y^2
+                for (i = 0; i < GetNumIterations<IterType>(); i++) { // x^2+2*I*x*y-y^2
                     zx2 = zx * zx;
                     zy2 = zy * zy;
                     sum = zx2 + zy2;
@@ -3133,7 +3045,7 @@ void Fractal::CalcCpuHDR(bool MemoryOnly) {
                 m_CurIters.SetItersArrayValSlow(x, y, i);
             }
         }
-    };
+        };
 
     for (size_t cur_thread = 0; cur_thread < num_threads; cur_thread++) {
         threads.push_back(std::make_unique<std::thread>(one_thread));
@@ -3148,7 +3060,7 @@ void Fractal::CalcCpuHDR(bool MemoryOnly) {
 
 template<typename IterType, class T, class SubType>
 void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
-    auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<
+    auto *results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<
         IterType,
         T,
         SubType,
@@ -3192,8 +3104,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                 continue;
             }
 
-            for (size_t x = 0; x < m_ScrnWidth * GetGpuAntialiasing(); x++)
-            {
+            for (size_t x = 0; x < m_ScrnWidth * GetGpuAntialiasing(); x++) {
                 IterType iter = 0;
                 IterType RefIteration = 0;
                 T deltaReal = dx * (SubType)x;
@@ -3227,7 +3138,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                         if (iter + l >= GetNumIterations<IterType>()) {
                             break;
                         }
-                        
+
                         iter += l;
 
                         //double t1 = (double)DeltaSubNX;
@@ -3377,7 +3288,7 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
                 m_CurIters.SetItersArrayValSlow(x, y, iter);
             }
         }
-    };
+        };
 
     for (size_t cur_thread = 0; cur_thread < num_threads; cur_thread++) {
         threads.push_back(std::make_unique<std::thread>(one_thread));
@@ -3394,7 +3305,7 @@ template<typename IterType, class SubType, PerturbExtras PExtras>
 void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
     using T = HDRFloat<SubType>;
     using TComplex = HDRFloatComplex<SubType>;
-    auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<
+    auto *results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<
         IterType,
         T,
         SubType,
@@ -3427,7 +3338,7 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
 
     auto one_thread = [&]() {
         auto compressionHelper{
-            std::make_unique<RuntimeDecompressor<IterType, T, PExtras>>(*results)};
+            std::make_unique<RuntimeDecompressor<IterType, T, PExtras>>(*results) };
 
         for (size_t y = 0; y < m_ScrnHeight * GetGpuAntialiasing(); y++) {
             if (atomics[y] != 0) {
@@ -3570,7 +3481,7 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
                 m_CurIters.SetItersArrayValSlow(x, y, iterations);
             }
         }
-    };
+        };
 
     for (size_t cur_thread = 0; cur_thread < num_threads; cur_thread++) {
         threads.push_back(std::make_unique<std::thread>(one_thread));
@@ -3585,7 +3496,7 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
 
 template<typename IterType, class T, class SubType>
 void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
-    auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<
+    auto *results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<
         IterType,
         T,
         SubType,
@@ -3656,7 +3567,7 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
         RefOrbitCalc::Extras::IncludeLAv2 :
         RefOrbitCalc::Extras::None;
 
-    PerturbationResults<IterType, T, PExtras>* results =
+    PerturbationResults<IterType, T, PExtras> *results =
         m_RefOrbit.GetUsefulPerturbationResults<
         IterType,
         ConditionalT,
@@ -3743,13 +3654,13 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
 
 template<typename IterType, class T, class SubType, class T2, class SubType2>
 void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
-    auto* results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<
+    auto *results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<
         IterType,
         T,
         SubType,
         PerturbExtras::Bad,
         RefOrbitCalc::Extras::None>();
-    auto* results2 = m_RefOrbit.CopyUsefulPerturbationResults<
+    auto *results2 = m_RefOrbit.CopyUsefulPerturbationResults<
         IterType,
         T,
         PerturbExtras::Bad,
@@ -3828,8 +3739,7 @@ int Fractal::SaveCurrentFractal(std::wstring filename_base, bool copy_the_iters)
 }
 
 template<PngParallelSave::Type Typ>
-int Fractal::SaveFractalData(std::wstring filename_base, bool copy_the_iters)
-{
+int Fractal::SaveFractalData(std::wstring filename_base, bool copy_the_iters) {
     auto lambda = [&]<typename T>(T & savesInProgress) {
         for (;;) {
             MEMORYSTATUSEX statex;
@@ -3841,8 +3751,7 @@ int Fractal::SaveFractalData(std::wstring filename_base, bool copy_the_iters)
                 if (!CleanupThreads(false)) {
                     Sleep(100);
                 }
-            }
-            else {
+            } else {
                 auto newPtr = std::make_unique<PngParallelSave>(Typ, filename_base, copy_the_iters, *this);
                 savesInProgress.push_back(std::move(newPtr));
                 savesInProgress.back()->StartThread();
@@ -3863,7 +3772,7 @@ bool Fractal::CleanupThreads(bool all) {
 
         while (continueCriteria) {
             for (size_t i = 0; i < savesInProgress.size(); i++) {
-                auto& it = savesInProgress[i];
+                auto &it = savesInProgress[i];
                 if (it->m_Destructable) {
                     savesInProgress.erase(savesInProgress.begin() + i);
                     ret = true;
@@ -3873,8 +3782,7 @@ bool Fractal::CleanupThreads(bool all) {
 
             if (all) {
                 continueCriteria = !savesInProgress.empty();
-            }
-            else {
+            } else {
                 break;
             }
         }
@@ -3884,11 +3792,11 @@ bool Fractal::CleanupThreads(bool all) {
     return ret;
 }
 
-const BenchmarkData& Fractal::GetBenchmarkPerPixel() const {
+const BenchmarkData &Fractal::GetBenchmarkPerPixel() const {
     return m_BenchmarkDataPerPixel;
 }
 
-const BenchmarkData& Fractal::GetBenchmarkOverall() const {
+const BenchmarkData &Fractal::GetBenchmarkOverall() const {
     return m_BenchmarkOverall;
 }
 
@@ -3902,8 +3810,7 @@ const BenchmarkData& Fractal::GetBenchmarkOverall() const {
 // option.  This way, there is no distortion, since scaling from a smaller square
 // view to a larger one doesn't screw anything up.
 //////////////////////////////////////////////////////////////////////////////
-int Fractal::SaveHiResFractal(std::wstring filename)
-{
+int Fractal::SaveHiResFractal(std::wstring filename) {
     //CBitmapWriter bmpWriter;
 
     size_t OldScrnWidth = m_ScrnWidth;
@@ -3937,11 +3844,9 @@ void Fractal::SaveRefOrbitAsText(CompressToDisk compression) {
 void Fractal::SetResultsAutosave(AddPointOptions Enable) {
     if (Enable == AddPointOptions::EnableWithSave) {
         m_RefOrbit.SetOptions(AddPointOptions::EnableWithSave);
-    }
-    else if (Enable == AddPointOptions::EnableWithoutSave) {
+    } else if (Enable == AddPointOptions::EnableWithoutSave) {
         m_RefOrbit.SetOptions(AddPointOptions::EnableWithoutSave);
-    }
-    else {
+    } else {
         m_RefOrbit.SetOptions(AddPointOptions::DontSave);
     }
 }
@@ -3950,15 +3855,12 @@ void Fractal::SetResultsAutosave(AddPointOptions Enable) {
 // Note that it does not return correct results
 // if there are any pixels on the screen that took
 // zero iterations to escape from.
-uint64_t Fractal::FindTotalItersUsed(void)
-{
+uint64_t Fractal::FindTotalItersUsed(void) {
     uint64_t numIters = 0;
     int x, y;
-    for (y = 0; y < m_ScrnHeight; y++)
-    {
-        for (x = 0; x < m_ScrnWidth; x++)
-        {
-            numIters += m_CurIters.GetItersArrayValSlow(x,y);
+    for (y = 0; y < m_ScrnHeight; y++) {
+        for (x = 0; x < m_ScrnWidth; x++) {
+            numIters += m_CurIters.GetItersArrayValSlow(x, y);
         }
     }
 
@@ -3972,8 +3874,7 @@ uint64_t Fractal::FindTotalItersUsed(void)
 // to most computer screens.
 //////////////////////////////////////////////////////////////////////////////
 template<bool IncludeGpuAntialiasing>
-HighPrecision Fractal::XFromScreenToCalc(HighPrecision x)
-{
+HighPrecision Fractal::XFromScreenToCalc(HighPrecision x) {
     HighPrecision aa(IncludeGpuAntialiasing ? GetGpuAntialiasing() : 1);
     HighPrecision highHeight(m_ScrnHeight);
     HighPrecision highWidth(m_ScrnWidth);
@@ -3982,8 +3883,7 @@ HighPrecision Fractal::XFromScreenToCalc(HighPrecision x)
 }
 
 template<bool IncludeGpuAntialiasing>
-HighPrecision Fractal::YFromScreenToCalc(HighPrecision y)
-{
+HighPrecision Fractal::YFromScreenToCalc(HighPrecision y) {
     HighPrecision aa(IncludeGpuAntialiasing ? GetGpuAntialiasing() : 1);
     HighPrecision highHeight(m_ScrnHeight);
     HighPrecision highWidth(m_ScrnWidth);
@@ -3991,15 +3891,13 @@ HighPrecision Fractal::YFromScreenToCalc(HighPrecision y)
     return HighPrecision{ -(y - OriginY) * (m_MaxY - m_MinY) / (highHeight * aa) };
 }
 
-HighPrecision Fractal::XFromCalcToScreen(HighPrecision x) const
-{
+HighPrecision Fractal::XFromCalcToScreen(HighPrecision x) const {
     HighPrecision highHeight(m_ScrnHeight);
     HighPrecision highWidth(m_ScrnWidth);
     return HighPrecision{ (x - m_MinX) * (highWidth / (m_MaxX - m_MinX)) };
 }
 
-HighPrecision Fractal::YFromCalcToScreen(HighPrecision y) const
-{
+HighPrecision Fractal::YFromCalcToScreen(HighPrecision y) const {
     HighPrecision highHeight(m_ScrnHeight);
     HighPrecision highWidth(m_ScrnWidth);
     return HighPrecision{ highHeight - (y - m_MinY) * highHeight / (m_MaxY - m_MinY) };
@@ -4013,42 +3911,35 @@ LAParameters &Fractal::GetLAParameters() {
     return m_LAParameters;
 }
 
-bool Fractal::IsDownControl(void)
-{
+bool Fractal::IsDownControl(void) {
     return ((GetAsyncKeyState(VK_CONTROL) & 0x8000) == 0x8000);
     //return ((GetAsyncKeyState(VK_CONTROL) & 0x8000) == 0x8000) &&
     //    ((m_hWnd != nullptr && GetForegroundWindow() == m_hWnd) ||
     //    (m_hWnd == nullptr));
 };
 
-void Fractal::CheckForAbort(void)
-{
+void Fractal::CheckForAbort(void) {
     POINT pt;
     GetCursorPos(&pt);
     int OrgX = pt.x;
     int OrgY = pt.y;
 
-    for (;;)
-    {
-        if (m_AbortThreadQuitFlag == true)
-        {
+    for (;;) {
+        if (m_AbortThreadQuitFlag == true) {
             break;
         }
 
         Sleep(250);
 
-        if (IsDownControl())
-        {
+        if (IsDownControl()) {
             m_StopCalculating = true;
         }
 
-        if (m_UseSensoCursor == true)
-        {
+        if (m_UseSensoCursor == true) {
             GetCursorPos(&pt);
 
             if (abs(pt.x - OrgX) >= 5 ||
-                abs(pt.y - OrgY) >= 5)
-            {
+                abs(pt.y - OrgY) >= 5) {
                 OrgX = pt.x; // Reset to current location.
                 OrgY = pt.y;
                 m_StopCalculating = true;
@@ -4057,8 +3948,7 @@ void Fractal::CheckForAbort(void)
     }
 }
 
-unsigned long WINAPI Fractal::CheckForAbortThread(void *fractal)
-{
+unsigned long WINAPI Fractal::CheckForAbortThread(void *fractal) {
     ((Fractal *)fractal)->CheckForAbort();
     return 0;
 }

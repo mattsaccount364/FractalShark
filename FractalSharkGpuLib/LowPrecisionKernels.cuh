@@ -3,7 +3,7 @@
 template<typename IterType>
 __global__
 void mandel_4x_float(
-    IterType* OutputIterMatrix,
+    IterType *OutputIterMatrix,
     AntialiasedColors OutputColorMatrix,
     int width,
     int height,
@@ -11,8 +11,8 @@ void mandel_4x_float(
     GQF::gqf_real cy,
     GQF::gqf_real dx,
     GQF::gqf_real dy,
-    IterType n_iterations)
-{
+    IterType n_iterations) {
+
     using namespace GQF;
     int X = blockIdx.x * blockDim.x + threadIdx.x;
     int Y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -59,8 +59,7 @@ void mandel_4x_float(
 
     gqf_real zrsqr = sqr(x);
     gqf_real zisqr = sqr(y);
-    while (zrsqr + zisqr <= four && iter < n_iterations)
-    {
+    while (zrsqr + zisqr <= four && iter < n_iterations) {
         y = x * y;
         y = mul_pwr2(y, 2.0f); // Multiply by two
         y = y + y0;
@@ -76,7 +75,7 @@ void mandel_4x_float(
 template<typename IterType>
 __global__
 void mandel_4x_double(
-    IterType* OutputIterMatrix,
+    IterType *OutputIterMatrix,
     AntialiasedColors OutputColorMatrix,
     int width,
     int height,
@@ -84,8 +83,7 @@ void mandel_4x_double(
     GQD::gqd_real cy,
     GQD::gqd_real dx,
     GQD::gqd_real dy,
-    IterType n_iterations)
-{
+    IterType n_iterations) {
     using namespace GQD;
     int X = blockIdx.x * blockDim.x + threadIdx.x;
     int Y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -126,8 +124,7 @@ void mandel_4x_double(
 
     gqd_real zrsqr = x * x;
     gqd_real zisqr = y * y;
-    while (zrsqr + zisqr <= 4.0 && iter < n_iterations)
-    {
+    while (zrsqr + zisqr <= 4.0 && iter < n_iterations) {
         y = x * y;
         y = y * 2.0; // Multiply by two
         y = y + y0;
@@ -172,7 +169,7 @@ x2 = 1.00000000010e-05 ax2**2+bx2+c = 0.00000000000e+00
 template<typename IterType>
 __global__
 void mandel_2x_double(
-    IterType* OutputIterMatrix,
+    IterType *OutputIterMatrix,
     AntialiasedColors OutputColorMatrix,
     int width,
     int height,
@@ -180,8 +177,7 @@ void mandel_2x_double(
     dbldbl cy,
     dbldbl dx,
     dbldbl dy,
-    IterType n_iterations)
-{
+    IterType n_iterations) {
     int X = blockIdx.x * blockDim.x + threadIdx.x;
     int Y = blockIdx.y * blockDim.y + threadIdx.y;
 
@@ -219,8 +215,7 @@ void mandel_2x_double(
     dbldbl zrsqr = sqr_dbldbl(x);
     dbldbl zisqr = sqr_dbldbl(y);
 
-    while (zrsqr.y + zisqr.y < 4.0 && iter < n_iterations)
-    {
+    while (zrsqr.y + zisqr.y < 4.0 && iter < n_iterations) {
         xtemp = add_dbldbl(sub_dbldbl(zrsqr, zisqr), x0);
         y = add_dbldbl(mul_dbldbl(two, mul_dbldbl(x, y)), y0);
         x = xtemp;
@@ -293,7 +288,7 @@ void mandel_2x_double(
 template<typename IterType, int iteration_precision>
 __global__
 void mandel_1x_double(
-    IterType* OutputIterMatrix,
+    IterType *OutputIterMatrix,
     AntialiasedColors OutputColorMatrix,
     int width,
     int height,
@@ -301,8 +296,7 @@ void mandel_1x_double(
     double cy,
     double dx,
     double dy,
-    IterType n_iterations)
-{
+    IterType n_iterations) {
     int X = blockIdx.x * blockDim.x + threadIdx.x;
     int Y = blockIdx.y * blockDim.y + threadIdx.y;
 
@@ -332,8 +326,7 @@ void mandel_1x_double(
         x = xtemp;
         };
 
-    while (x * x + y * y < 4.0 && iter < n_iterations)
-    {
+    while (x * x + y * y < 4.0 && iter < n_iterations) {
         //xtemp = x * x - y * y + x0;
         //y = 2.0 * x * y + y0;
         //x = xtemp;
@@ -342,20 +335,17 @@ void mandel_1x_double(
         if (iteration_precision == 1) {
             MANDEL_1X_DOUBLE();
             iter++;
-        }
-        else if (iteration_precision == 2) {
+        } else if (iteration_precision == 2) {
             MANDEL_1X_DOUBLE();
             MANDEL_1X_DOUBLE();
             iter += 2;
-        }
-        else if (iteration_precision == 4) {
+        } else if (iteration_precision == 4) {
             MANDEL_1X_DOUBLE();
             MANDEL_1X_DOUBLE();
             MANDEL_1X_DOUBLE();
             MANDEL_1X_DOUBLE();
             iter += 4;
-        }
-        else if (iteration_precision == 8) {
+        } else if (iteration_precision == 8) {
             MANDEL_1X_DOUBLE();
             MANDEL_1X_DOUBLE();
             MANDEL_1X_DOUBLE();
@@ -365,8 +355,7 @@ void mandel_1x_double(
             MANDEL_1X_DOUBLE();
             MANDEL_1X_DOUBLE();
             iter += 8;
-        }
-        else if (iteration_precision == 16) {
+        } else if (iteration_precision == 16) {
             MANDEL_1X_DOUBLE();
             MANDEL_1X_DOUBLE();
             MANDEL_1X_DOUBLE();
@@ -393,7 +382,7 @@ void mandel_1x_double(
 template<typename IterType, int iteration_precision>
 __global__
 void mandel_2x_float(
-    IterType* OutputIterMatrix,
+    IterType *OutputIterMatrix,
     AntialiasedColors OutputColorMatrix,
     int width,
     int height,
@@ -401,8 +390,7 @@ void mandel_2x_float(
     dblflt cy,
     dblflt dx,
     dblflt dy,
-    IterType n_iterations)
-{
+    IterType n_iterations) {
     int X = blockIdx.x * blockDim.x + threadIdx.x;
     int Y = blockIdx.y * blockDim.y + threadIdx.y;
 
@@ -514,25 +502,21 @@ void mandel_2x_float(
         zisqr = sqr_dblflt(y);
         };
 
-    while (zrsqr.head + zisqr.head < 4.0f && iter < n_iterations)
-    {
+    while (zrsqr.head + zisqr.head < 4.0f && iter < n_iterations) {
         if (iteration_precision == 1) {
             MANDEL_2X_FLOAT();
             iter++;
-        }
-        else if (iteration_precision == 2) {
+        } else if (iteration_precision == 2) {
             MANDEL_2X_FLOAT();
             MANDEL_2X_FLOAT();
             iter += 2;
-        }
-        else if (iteration_precision == 4) {
+        } else if (iteration_precision == 4) {
             MANDEL_2X_FLOAT();
             MANDEL_2X_FLOAT();
             MANDEL_2X_FLOAT();
             MANDEL_2X_FLOAT();
             iter += 4;
-        }
-        else if (iteration_precision == 8) {
+        } else if (iteration_precision == 8) {
             MANDEL_2X_FLOAT();
             MANDEL_2X_FLOAT();
             MANDEL_2X_FLOAT();
@@ -542,8 +526,7 @@ void mandel_2x_float(
             MANDEL_2X_FLOAT();
             MANDEL_2X_FLOAT();
             iter += 8;
-        }
-        else if (iteration_precision == 16) {
+        } else if (iteration_precision == 16) {
             MANDEL_2X_FLOAT();
             MANDEL_2X_FLOAT();
             MANDEL_2X_FLOAT();
@@ -570,7 +553,7 @@ void mandel_2x_float(
 template<typename IterType, int iteration_precision>
 __global__
 void mandel_hdr_float(
-    IterType* OutputIterMatrix,
+    IterType *OutputIterMatrix,
     AntialiasedColors OutputColorMatrix,
     int width,
     int height,
@@ -578,8 +561,7 @@ void mandel_hdr_float(
     HDRFloat<CudaDblflt<dblflt>> cy,
     HDRFloat<CudaDblflt<dblflt>> dx,
     HDRFloat<CudaDblflt<dblflt>> dy,
-    IterType n_iterations)
-{
+    IterType n_iterations) {
     int X = blockIdx.x * blockDim.x + threadIdx.x;
     int Y = blockIdx.y * blockDim.y + threadIdx.y;
 
@@ -645,25 +627,21 @@ void mandel_hdr_float(
         zsq_sum.Reduce();
         };
 
-    while (zsq_sum.compareToBothPositiveReduced(Four) < 0 && iter < n_iterations)
-    {
+    while (zsq_sum.compareToBothPositiveReduced(Four) < 0 && iter < n_iterations) {
         if (iteration_precision == 1) {
             MANDEL_2X_FLOAT();
             iter++;
-        }
-        else if (iteration_precision == 2) {
+        } else if (iteration_precision == 2) {
             MANDEL_2X_FLOAT();
             MANDEL_2X_FLOAT();
             iter += 2;
-        }
-        else if (iteration_precision == 4) {
+        } else if (iteration_precision == 4) {
             MANDEL_2X_FLOAT();
             MANDEL_2X_FLOAT();
             MANDEL_2X_FLOAT();
             MANDEL_2X_FLOAT();
             iter += 4;
-        }
-        else if (iteration_precision == 8) {
+        } else if (iteration_precision == 8) {
             MANDEL_2X_FLOAT();
             MANDEL_2X_FLOAT();
             MANDEL_2X_FLOAT();
@@ -673,8 +651,7 @@ void mandel_hdr_float(
             MANDEL_2X_FLOAT();
             MANDEL_2X_FLOAT();
             iter += 8;
-        }
-        else if (iteration_precision == 16) {
+        } else if (iteration_precision == 16) {
             MANDEL_2X_FLOAT();
             MANDEL_2X_FLOAT();
             MANDEL_2X_FLOAT();
@@ -701,7 +678,7 @@ void mandel_hdr_float(
 template<typename IterType, int iteration_precision>
 __global__
 void mandel_1x_float(
-    IterType* OutputIterMatrix,
+    IterType *OutputIterMatrix,
     AntialiasedColors OutputColorMatrix,
     int width,
     int height,
@@ -709,8 +686,7 @@ void mandel_1x_float(
     float cy,
     float dx,
     float dy,
-    IterType n_iterations)
-{
+    IterType n_iterations) {
     int X = blockIdx.x * blockDim.x + threadIdx.x;
     int Y = blockIdx.y * blockDim.y + threadIdx.y;
 
@@ -758,8 +734,7 @@ void mandel_1x_float(
         x = xtemp;
         };
 
-    while (x * x + y * y < 4.0 && iter < n_iterations)
-    {
+    while (x * x + y * y < 4.0 && iter < n_iterations) {
         //xtemp = x * x - y * y + x0;
         //y = 2.0 * x * y + y0;
         //x = xtemp;
@@ -768,20 +743,17 @@ void mandel_1x_float(
         if (iteration_precision == 1) {
             MANDEL_1X_FLOAT();
             iter++;
-        }
-        else if (iteration_precision == 2) {
+        } else if (iteration_precision == 2) {
             MANDEL_1X_FLOAT();
             MANDEL_1X_FLOAT();
             iter += 2;
-        }
-        else if (iteration_precision == 4) {
+        } else if (iteration_precision == 4) {
             MANDEL_1X_FLOAT();
             MANDEL_1X_FLOAT();
             MANDEL_1X_FLOAT();
             MANDEL_1X_FLOAT();
             iter += 4;
-        }
-        else if (iteration_precision == 8) {
+        } else if (iteration_precision == 8) {
             MANDEL_1X_FLOAT();
             MANDEL_1X_FLOAT();
             MANDEL_1X_FLOAT();
@@ -791,8 +763,7 @@ void mandel_1x_float(
             MANDEL_1X_FLOAT();
             MANDEL_1X_FLOAT();
             iter += 8;
-        }
-        else if (iteration_precision == 16) {
+        } else if (iteration_precision == 16) {
             MANDEL_1X_FLOAT();
             MANDEL_1X_FLOAT();
             MANDEL_1X_FLOAT();

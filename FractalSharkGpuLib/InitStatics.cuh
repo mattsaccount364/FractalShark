@@ -3,8 +3,7 @@ __device__ __constant__ double twoPowExpDataDbl[2048];
 __device__ __constant__ float twoPowExpDataFlt[256];
 
 #ifdef __CUDA_ARCH__
-__device__ void InitStatics()
-{
+__device__ void InitStatics() {
     //LN2 = ::log(2);
     //LN2_REC = 1.0 / LN2;
 
@@ -34,8 +33,7 @@ __device__ void InitStatics()
 #endif
 
 __global__
-void mandel_1xHDR_InitStatics()
-{
+void mandel_1xHDR_InitStatics() {
     if (blockIdx.x == 0 &&
         threadIdx.x == 0 &&
         blockIdx.y == 0 &&

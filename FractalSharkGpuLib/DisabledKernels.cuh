@@ -3,8 +3,7 @@
 // TODO Do we need this kind of conversion for the 2x32 LAv2 case:
 template<typename IterType>
 __global__
-void mandel_2x_float_perturb_setup(GPUPerturbSingleResults<IterType, dblflt> PerturbDblFlt)
-{
+void mandel_2x_float_perturb_setup(GPUPerturbSingleResults<IterType, dblflt> PerturbDblFlt) {
     if (blockIdx.x != 0 || blockIdx.y != 0 || threadIdx.x != 0 || threadIdx.y != 0)
         return;
 
@@ -17,7 +16,7 @@ void mandel_2x_float_perturb_setup(GPUPerturbSingleResults<IterType, dblflt> Per
 template<typename IterType>
 __global__
 void mandel_2x_float_perturb(
-    IterType* OutputIterMatrix,
+    IterType *OutputIterMatrix,
     AntialiasedColors OutputColorMatrix,
     GPUPerturbSingleResults<IterType, dblflt> PerturbDblFlt,
     int width,
@@ -28,8 +27,7 @@ void mandel_2x_float_perturb(
     dblflt dy,
     dblflt centerX,
     dblflt centerY,
-    IterType n_iterations)
-{
+    IterType n_iterations) {
 
     //int X = blockIdx.x * blockDim.x + threadIdx.x;
     //int Y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -127,7 +125,7 @@ void mandel_2x_float_perturb(
     DeltaSubNY = add_float_to_dblflt(0, 0);
 
     while (iter < n_iterations) {
-        const GPUReferenceIter<dblflt>* CurIter = &PerturbDblFlt.ScaledOnlyGetIter(RefIteration);
+        const GPUReferenceIter<dblflt> *CurIter = &PerturbDblFlt.ScaledOnlyGetIter(RefIteration);
 
         const dblflt DeltaSubNXOrig = DeltaSubNX;
         const dblflt DeltaSubNYOrig = DeltaSubNY;

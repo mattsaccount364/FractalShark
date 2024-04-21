@@ -40,14 +40,13 @@ public:
     template<class LocalSubType>
     using HDRFloatComplex = TemplateHelpers::template HDRFloatComplex<LocalSubType>;
 
-    RuntimeDecompressor(const PerturbationResults<IterType, T, PExtras>& results) :
+    RuntimeDecompressor(const PerturbationResults<IterType, T, PExtras> &results) :
         results(results),
         CachedIter1{},
-        CachedIter2{}
-    {
+        CachedIter2{} {
     }
 
-    RuntimeDecompressor(const RuntimeDecompressor& other) = default;
+    RuntimeDecompressor(const RuntimeDecompressor &other) = default;
 
     template<class U>
     HDRFloatComplex<U> GetCompressedComplex(size_t uncompressed_index) const {
@@ -58,7 +57,7 @@ public:
             HdrReduce(zx);
             zy = T{ 2 } *zx_old * zy + results.m_OrbitYLow;
             HdrReduce(zy);
-        };
+            };
 
         if (CachedIter1.UncompressedIter == uncompressed_index) {
             return { CachedIter1.zx, CachedIter1.zy };
@@ -68,20 +67,19 @@ public:
             return { CachedIter2.zx, CachedIter2.zy };
         }
 
-        auto LinearScan = [&](CachedIter<T>& iter, CachedIter<T>& other) -> bool {
+        auto LinearScan = [&](CachedIter<T> &iter, CachedIter<T> &other) -> bool {
             if (iter.UncompressedIter + 1 == uncompressed_index) {
                 bool condition =
                     (iter.CompressedIter + 1 < results.m_FullOrbit.GetSize() &&
-                    (iter.UncompressedIter + 1 <
-                        results.m_FullOrbit[iter.CompressedIter + 1].CompressionIndex)) ||
+                        (iter.UncompressedIter + 1 <
+                            results.m_FullOrbit[iter.CompressedIter + 1].CompressionIndex)) ||
                     iter.CompressedIter + 1 == results.m_FullOrbit.GetSize();
 
                 if (condition) {
                     other = iter;
                     runOneIter(iter.zx, iter.zy);
                     iter.UncompressedIter = uncompressed_index;
-                }
-                else {
+                } else {
                     other = iter;
                     iter.CompressedIter++;
                     iter.zx = results.m_FullOrbit[iter.CompressedIter].x;
@@ -93,7 +91,7 @@ public:
             }
 
             return false;
-        };
+            };
 
         bool ret = LinearScan(CachedIter1, CachedIter2);
         if (ret) {
@@ -118,17 +116,15 @@ public:
 
                 if (results.m_FullOrbit[mid].CompressionIndex < uncompressed_index) {
                     low = mid + 1;
-                }
-                else if (results.m_FullOrbit[mid].CompressionIndex > uncompressed_index) {
+                } else if (results.m_FullOrbit[mid].CompressionIndex > uncompressed_index) {
                     high = mid - 1;
-                }
-                else {
+                } else {
                     return mid;
                 }
             }
 
             return high;
-        };
+            };
 
 
         auto BestCompressedIndexGuess = BinarySearch(uncompressed_index);
@@ -178,7 +174,7 @@ private:
         IterTypeFull CompressedIter;
     };
 
-    const PerturbationResults<IterType, T, PExtras>& results;
+    const PerturbationResults<IterType, T, PExtras> &results;
     mutable CachedIter<T> CachedIter1;
     mutable CachedIter<T> CachedIter2;
 };
@@ -194,14 +190,13 @@ public:
     template<class LocalSubType>
     using HDRFloatComplex = TemplateHelpers::template HDRFloatComplex<LocalSubType>;
 
-    IntermediateRuntimeDecompressor(const PerturbationResults<IterType, T, PExtras>& results) :
+    IntermediateRuntimeDecompressor(const PerturbationResults<IterType, T, PExtras> &results) :
         results(results),
         m_CachedIter{},
         cx{},
         cy{},
         Two{},
-        Zero{}
-    {
+        Zero{} {
         mpf_init2(cx, AuthoritativeReuseExtraPrecisionInBits);
         mpf_set(cx, *results.GetHiX().backendRaw());
 
@@ -214,12 +209,12 @@ public:
         mpf_init2(Zero, AuthoritativeReuseExtraPrecisionInBits);
         mpf_set_d(Zero, 0.0);
 
-        for (auto& temp : Temp) {
+        for (auto &temp : Temp) {
             mpf_init2(temp, AuthoritativeReuseExtraPrecisionInBits);
         }
     }
 
-    IntermediateRuntimeDecompressor(const IntermediateRuntimeDecompressor& other) = default;
+    IntermediateRuntimeDecompressor(const IntermediateRuntimeDecompressor &other) = default;
 
     ~IntermediateRuntimeDecompressor() {
         mpf_clear(cx);
@@ -227,7 +222,7 @@ public:
         mpf_clear(Two);
         mpf_clear(Zero);
 
-        for (auto& temp : Temp) {
+        for (auto &temp : Temp) {
             mpf_clear(temp);
         }
     }
@@ -241,21 +236,21 @@ public:
             mpf_t zx,
             mpf_t zy) {
 
-            // auto zx_old = zx;
-            // zx = zx * zx - zy * zy + cx;
-            // zy = Two * zx_old * zy + cy;
+                // auto zx_old = zx;
+                // zx = zx * zx - zy * zy + cx;
+                // zy = Two * zx_old * zy + cy;
 
-            mpf_set(Temp[0], zx);
+                mpf_set(Temp[0], zx);
 
-            mpf_mul(Temp[1], zx, zx);
-            mpf_mul(Temp[2], zy, zy);
-            mpf_sub(Temp[3], Temp[1], Temp[2]);
-            mpf_add(zx, Temp[3], cx);
+                mpf_mul(Temp[1], zx, zx);
+                mpf_mul(Temp[2], zy, zy);
+                mpf_sub(Temp[3], Temp[1], Temp[2]);
+                mpf_add(zx, Temp[3], cx);
 
-            mpf_mul(Temp[4], Temp[0], zy);
-            mpf_mul(Temp[4], Temp[4], Two);
-            mpf_add(zy, Temp[4], cy);
-        };
+                mpf_mul(Temp[4], Temp[0], zy);
+                mpf_mul(Temp[4], Temp[4], Two);
+                mpf_add(zy, Temp[4], cy);
+            };
 
         if (m_CachedIter.UncompressedIter == uncompressed_index) {
             outX = &m_CachedIter.zx;
@@ -274,7 +269,7 @@ public:
             return;
         }
 
-        auto LinearScan = [&](CachedIter& iter) -> void {
+        auto LinearScan = [&](CachedIter &iter) -> void {
             assert(iter.UncompressedIter + 1 == uncompressed_index);
             assert(
                 results.m_ReuseX.size() == results.m_ReuseY.size() &&
@@ -289,14 +284,13 @@ public:
             if (condition) {
                 runOneIter(iter.zx, iter.zy);
                 iter.UncompressedIter = uncompressed_index;
-            }
-            else {
+            } else {
                 iter.CompressedIter++;
                 mpf_set(iter.zx, *results.m_ReuseX[iter.CompressedIter].backendRaw());
                 mpf_set(iter.zy, *results.m_ReuseY[iter.CompressedIter].backendRaw());
                 iter.UncompressedIter = results.m_ReuseIndices[iter.CompressedIter];
             }
-        };
+            };
 
         LinearScan(m_CachedIter);
         outX = &m_CachedIter.zx;
@@ -320,9 +314,9 @@ private:
             mpf_clear(zy);
         }
 
-        CachedIter& operator=(const CachedIter& other) = delete;
-        CachedIter(const CachedIter& other) = delete;
-        CachedIter(CachedIter&& other) noexcept = delete;
+        CachedIter &operator=(const CachedIter &other) = delete;
+        CachedIter(const CachedIter &other) = delete;
+        CachedIter(CachedIter &&other) noexcept = delete;
         CachedIter &operator=(CachedIter &&other) noexcept = delete;
 
         mpf_t zx;
@@ -331,7 +325,7 @@ private:
         IterTypeFull CompressedIter;
     };
 
-    const PerturbationResults<IterType, T, PExtras>& results;
+    const PerturbationResults<IterType, T, PExtras> &results;
     mutable CachedIter m_CachedIter;
 
     mpf_t cx;

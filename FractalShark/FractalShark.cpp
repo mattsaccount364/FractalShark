@@ -26,10 +26,10 @@ HWND              InitInstance(HINSTANCE, int);
 LRESULT CALLBACK  WndProc(HWND, UINT, WPARAM, LPARAM);
 void              UnInit(HWND);
 
-LONG WINAPI unhandled_handler(struct _EXCEPTION_POINTERS* apExceptionInfo);
+LONG WINAPI unhandled_handler(struct _EXCEPTION_POINTERS *apExceptionInfo);
 
 struct SavedLocation {
-    SavedLocation(std::ifstream& infile) {
+    SavedLocation(std::ifstream &infile) {
         // Read minX, minY, maxX, maxY, num_iterations, antialiasing from infile
         // To read minX, read a string and convert to HighPrecision
 
@@ -80,7 +80,6 @@ void MenuLoadCurrentLocation(HWND hWnd);
 void MenuSaveBMP(HWND hWnd);
 void MenuSaveHiResBMP(HWND hWnd);
 void MenuSaveItersAsText();
-void MenuSaveRefOrbitAsText();
 void MenuAlgHelp(HWND hWnd);
 void MenuViewsHelp(HWND hWnd);
 void MenuShowHotkeys(HWND hWnd);
@@ -94,8 +93,7 @@ bool IsDownAlt() { return (GetAsyncKeyState(VK_MENU) & 0x8000) == 0x8000; };
 int APIENTRY WinMain(HINSTANCE hInstance,
     HINSTANCE /*hPrevInstance*/,
     LPSTR     /*lpCmdLine*/,
-    int       nCmdShow)
-{
+    int       nCmdShow) {
     // Create a dump file whenever the gateway crashes only on windows
     SetUnhandledExceptionFilter(unhandled_handler);
 
@@ -116,8 +114,7 @@ int APIENTRY WinMain(HINSTANCE hInstance,
 
     //// Main message loop:
     MSG msg{};
-    while (GetMessage(&msg, nullptr, 0, 0) > 0)
-    {
+    while (GetMessage(&msg, nullptr, 0, 0) > 0) {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }
@@ -139,8 +136,7 @@ int APIENTRY WinMain(HINSTANCE hInstance,
 // Registers the window class
 // Note CS_OWNDC.  This is important for OpenGL.
 //
-ATOM MyRegisterClass(HINSTANCE hInstance)
-{
+ATOM MyRegisterClass(HINSTANCE hInstance) {
     WNDCLASSEX wcex;
 
     wcex.cbSize = sizeof(WNDCLASSEX);
@@ -176,14 +172,14 @@ void DrawFractalSharkGdi(HWND hWnd, int nCmdShow) {
     if (hRes == nullptr) {
         return;
     }
-    
+
     //  Convert the HRSRC into a pointer to the actual data
     HGLOBAL hResData = LoadResource(hInst, hRes);
     if (hResData == nullptr) {
         return;
     }
 
-    void* pResData = LockResource(hResData);
+    void *pResData = LockResource(hResData);
     if (pResData == nullptr) {
         return;
     }
@@ -212,7 +208,7 @@ void DrawFractalSharkGdi(HWND hWnd, int nCmdShow) {
 
     RECT windowDimensions;
     GetClientRect(hWnd, &windowDimensions);
-    
+
     // Create a bitmap and render it to hWnd
     HDC hdc = GetDC(hWnd);
     HDC hdcMem = CreateCompatibleDC(hdc);
@@ -244,8 +240,7 @@ void DrawFractalSharkGdi(HWND hWnd, int nCmdShow) {
 
     if (windowWidth < image.width() || windowHeight < image.height()) {
         StretchBlt(hdc, 0, 0, windowWidth, windowHeight, hdcMem, 0, 0, image.width(), image.height(), SRCCOPY);
-    }
-    else {
+    } else {
         // Center the image
         BitBlt(hdc, startX, startY, image.width(), image.height(), hdcMem, 0, 0, SRCCOPY);
     }
@@ -270,8 +265,7 @@ void DrawFractalSharkGdi(HWND hWnd, int nCmdShow) {
 //     Here we create the main window and return its handle,
 //     and we perform other initialization.
 //
-HWND InitInstance(HINSTANCE hInstance, int nCmdShow)
-{ // Store instance handle in our global variable
+HWND InitInstance(HINSTANCE hInstance, int nCmdShow) { // Store instance handle in our global variable
     hInst = hInstance;
 
     constexpr bool startWindowed = true;
@@ -294,8 +288,7 @@ HWND InitInstance(HINSTANCE hInstance, int nCmdShow)
         // Uncomment to start in smaller window
         gWindowed = true;
         //MenuWindowed(hWnd, true);
-    }
-    else {
+    } else {
         startX = 0;
         startY = 0;
         width = scrnWidth;
@@ -360,8 +353,7 @@ HWND InitInstance(HINSTANCE hInstance, int nCmdShow)
 //
 // Performs all cleanup operations
 //
-void UnInit(HWND hWnd)
-{
+void UnInit(HWND hWnd) {
     DestroyMenu(gPopupMenu);
     DestroyWindow(hWnd);
     UnregisterClass(szWindowClass, hInst);
@@ -385,8 +377,7 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
         if (!shiftDown) {
             MenuCenterView(hWnd, mousePt.x, mousePt.y);
             gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Default>();
-        }
-        else {
+        } else {
             MenuCenterView(hWnd, mousePt.x, mousePt.y);
             gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Max>();
         }
@@ -419,8 +410,7 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
         if (shiftDown) {
             laParameters.AdjustLAThresholdScaleExponent(-1);
             laParameters.AdjustLAThresholdCScaleExponent(-1);
-        }
-        else {
+        } else {
             laParameters.AdjustLAThresholdScaleExponent(1);
             laParameters.AdjustLAThresholdCScaleExponent(1);
         }
@@ -437,8 +427,7 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
         if (shiftDown) {
             laParameters.AdjustPeriodDetectionThreshold2Exponent(-1);
             laParameters.AdjustStage0PeriodDetectionThreshold2Exponent(-1);
-        }
-        else {
+        } else {
             laParameters.AdjustPeriodDetectionThreshold2Exponent(1);
             laParameters.AdjustStage0PeriodDetectionThreshold2Exponent(1);
         }
@@ -483,8 +472,7 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
         gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
         if (shiftDown) {
             gFractal->DecCompressionError(Fractal::CompressionError::Intermediate, 10);
-        }
-        else {
+        } else {
             gFractal->IncCompressionError(Fractal::CompressionError::Intermediate, 10);
         }
         PaintAsNecessary(hWnd);
@@ -502,8 +490,7 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
     case 't':
         if (shiftDown) {
             gFractal->UseNextPaletteAuxDepth(-1);
-        }
-        else {
+        } else {
             gFractal->UseNextPaletteAuxDepth(1);
         }
         gFractal->DrawFractal(false);
@@ -514,8 +501,7 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
         gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
         if (shiftDown) {
             gFractal->DecCompressionError(Fractal::CompressionError::Low, 1);
-        }
-        else {
+        } else {
             gFractal->IncCompressionError(Fractal::CompressionError::Low, 1);
         }
         PaintAsNecessary(hWnd);
@@ -525,8 +511,7 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
     case 'z':
         if (shiftDown) {
             MenuZoomOut(hWnd, mousePt);
-        }
-        else {
+        } else {
             MenuZoomIn(hWnd, mousePt);
         }
         break;
@@ -537,8 +522,7 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
         if (shiftDown) {
             gFractal->CreateNewFractalPalette();
             gFractal->UsePaletteType(FractalPalette::Random);
-        }
-        else {
+        } else {
             gFractal->UseNextPaletteDepth();
         }
         gFractal->DrawFractal(false);
@@ -565,8 +549,7 @@ void HandleKeyDown(HWND hWnd, UINT /*message*/, WPARAM wParam, LPARAM /*lParam*/
 //  WM_DESTROY  - post a quit message and return
 //
 //
-LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
-{ // Used for processing click-and-drag properly:
+LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) { // Used for processing click-and-drag properly:
     static bool lButtonDown = false;
     static int dragBoxX1, dragBoxY1;
 
@@ -583,705 +566,713 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         break; \
     }
 
-    switch (message)
-    {
+    switch (message) {
     case WM_COMMAND:
     {
         int wmId, wmEvent;
         wmId = LOWORD(wParam);
         wmEvent = HIWORD(wParam);
 
-        switch (wmId)
-        { // Go back to the previous location
-            case IDM_BACK:
-            {
-                MenuGoBack(hWnd);
-                break;
-            }
-
-            // Reset the view of the fractal to standard
-            case IDM_STANDARDVIEW:
-            {
-                MenuStandardView(hWnd, 0);
-                break;
-            }
-
-            case IDM_VIEWS_HELP:
-            {
-                MenuViewsHelp(hWnd);
-                break;
-            }
-
-            case IDM_VIEW1:
-            case IDM_VIEW2:
-            case IDM_VIEW3:
-            case IDM_VIEW4:
-            case IDM_VIEW5:
-            case IDM_VIEW6:
-            case IDM_VIEW7:
-            case IDM_VIEW8:
-            case IDM_VIEW9:
-            case IDM_VIEW10:
-            case IDM_VIEW11:
-            case IDM_VIEW12:
-            case IDM_VIEW13:
-            case IDM_VIEW14:
-            case IDM_VIEW15:
-            case IDM_VIEW16:
-            case IDM_VIEW17:
-            case IDM_VIEW18:
-            case IDM_VIEW19:
-            case IDM_VIEW20:
-            case IDM_VIEW21:
-            case IDM_VIEW22:
-            case IDM_VIEW23:
-            case IDM_VIEW24:
-            case IDM_VIEW25:
-            case IDM_VIEW26:
-            case IDM_VIEW27:
-            case IDM_VIEW28:
-            case IDM_VIEW29:
-            {
-                static_assert(IDM_VIEW2 == IDM_VIEW1 + 1, "!");
-                static_assert(IDM_VIEW3 == IDM_VIEW1 + 2, "!");
-                static_assert(IDM_VIEW4 == IDM_VIEW1 + 3, "!");
-                static_assert(IDM_VIEW5 == IDM_VIEW1 + 4, "!");
-                static_assert(IDM_VIEW6 == IDM_VIEW1 + 5, "!");
-                static_assert(IDM_VIEW7 == IDM_VIEW1 + 6, "!");
-                static_assert(IDM_VIEW8 == IDM_VIEW1 + 7, "!");
-                static_assert(IDM_VIEW9 == IDM_VIEW1 + 8, "!");
-                static_assert(IDM_VIEW10 == IDM_VIEW1 + 9, "!");
-                static_assert(IDM_VIEW11 == IDM_VIEW1 + 10, "!");
-                static_assert(IDM_VIEW12 == IDM_VIEW1 + 11, "!");
-                static_assert(IDM_VIEW13 == IDM_VIEW1 + 12, "!");
-                static_assert(IDM_VIEW14 == IDM_VIEW1 + 13, "!");
-                static_assert(IDM_VIEW15 == IDM_VIEW1 + 14, "!");
-                static_assert(IDM_VIEW16 == IDM_VIEW1 + 15, "!");
-                static_assert(IDM_VIEW17 == IDM_VIEW1 + 16, "!");
-                static_assert(IDM_VIEW18 == IDM_VIEW1 + 17, "!");
-                static_assert(IDM_VIEW19 == IDM_VIEW1 + 18, "!");
-                static_assert(IDM_VIEW20 == IDM_VIEW1 + 19, "!");
-                static_assert(IDM_VIEW21 == IDM_VIEW1 + 20, "!");
-                static_assert(IDM_VIEW22 == IDM_VIEW1 + 21, "!");
-                static_assert(IDM_VIEW23 == IDM_VIEW1 + 22, "!");
-                static_assert(IDM_VIEW24 == IDM_VIEW1 + 23, "!");
-                static_assert(IDM_VIEW25 == IDM_VIEW1 + 24, "!");
-                static_assert(IDM_VIEW26 == IDM_VIEW1 + 25, "!");
-                static_assert(IDM_VIEW27 == IDM_VIEW1 + 26, "!");
-                static_assert(IDM_VIEW28 == IDM_VIEW1 + 27, "!");
-                static_assert(IDM_VIEW29 == IDM_VIEW1 + 28, "!");
-
-                MenuStandardView(hWnd, wmId - IDM_VIEW1 + 1);
-                break;
-            }
-
-            // Reset the view of the fractal to "square", taking into
-            // account window aspect ratio.  Eliminates distortion.
-            case IDM_SQUAREVIEW:
-            {
-                MenuSquareView(hWnd);
-                break;
-            }
-
-            // Recenter the current view at the point where the menu was
-            // created, not the current mouse position or some bs like that.
-            case IDM_CENTERVIEW:
-            {
-                MenuCenterView(hWnd, menuX, menuY);
-                break;
-            }
-
-            case IDM_ZOOMIN:
-            {
-                MenuZoomIn(hWnd, { menuX, menuY });
-                break;
-            }
-
-            case IDM_ZOOMOUT:
-            {
-                MenuZoomOut(hWnd, {menuX, menuY});
-                break;
-            }
-
-            case IDM_AUTOZOOM_DEFAULT:
-            {
-                gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Default>();
-                break;
-            }
-
-            case IDM_AUTOZOOM_MAX:
-            {
-                gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Max>();
-                break;
-            }
-
-            case IDM_REPAINTING:
-            {
-                MenuRepainting(hWnd);
-                break;
-            }
-
-            // Make the fractal window a "window" instead of fullscreen
-            case IDM_WINDOWED:
-            {
-                MenuWindowed(hWnd, false);
-                break;
-            }
-
-            case IDM_WINDOWED_SQ:
-            {
-                MenuWindowed(hWnd, true);
-                break;
-            }
-
-            // Minimize the window
-            case IDM_MINIMIZE:
-            {
-                PostMessage(hWnd, WM_SYSCOMMAND, SC_MINIMIZE, 0);
-                break;
-            }
-
-            case IDM_GPUANTIALIASING_1X:
-            {
-                gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 1);
-                break;
-            }
-            case IDM_GPUANTIALIASING_4X:
-            {
-                gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 2);
-                break;
-            }
-            case IDM_GPUANTIALIASING_9X:
-            {
-                gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 3);
-                break;
-            }
-
-            case IDM_GPUANTIALIASING_16X:
-            {
-                gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 4);
-                break;
-            }
-
-            // Iteration precision
-            case IDM_ITERATIONPRECISION_1X:
-            {
-                gFractal->SetIterationPrecision(1);
-                break;
-            }
-    
-            case IDM_ITERATIONPRECISION_2X:
-            {
-                gFractal->SetIterationPrecision(4);
-                break;
-            }
-    
-            case IDM_ITERATIONPRECISION_3X:
-            {
-                gFractal->SetIterationPrecision(8);
-                break;
-            }
-    
-            case IDM_ITERATIONPRECISION_4X:
-            {
-                gFractal->SetIterationPrecision(16);
-                break;
-            }
-    
-            // Change rendering algorithm
-            case IDM_HELP_ALG:
-            {
-                MenuAlgHelp(hWnd);
-                break;
-            }
-
-            MapMenuItemToAlg(IDM_ALG_AUTO, RenderAlgorithm::AUTO);
-            MapMenuItemToAlg(IDM_ALG_CPU_HIGH, RenderAlgorithm::CpuHigh);
-            MapMenuItemToAlg(IDM_ALG_CPU_1_32_HDR, RenderAlgorithm::CpuHDR32);
-            MapMenuItemToAlg(IDM_ALG_CPU_1_32_PERTURB_BLA_HDR, RenderAlgorithm::Cpu32PerturbedBLAHDR);
-            MapMenuItemToAlg(IDM_ALG_CPU_1_32_PERTURB_BLAV2_HDR, RenderAlgorithm::Cpu32PerturbedBLAV2HDR);
-            MapMenuItemToAlg(IDM_ALG_CPU_1_32_PERTURB_RC_BLAV2_HDR, RenderAlgorithm::Cpu32PerturbedRCBLAV2HDR);
-            MapMenuItemToAlg(IDM_ALG_CPU_1_64_PERTURB_BLAV2_HDR, RenderAlgorithm::Cpu64PerturbedBLAV2HDR);
-            MapMenuItemToAlg(IDM_ALG_CPU_1_64_PERTURB_RC_BLAV2_HDR, RenderAlgorithm::Cpu64PerturbedRCBLAV2HDR); 
-            MapMenuItemToAlg(IDM_ALG_CPU_1_64, RenderAlgorithm::Cpu64);
-            MapMenuItemToAlg(IDM_ALG_CPU_1_64_HDR, RenderAlgorithm::CpuHDR64);
-            MapMenuItemToAlg(IDM_ALG_CPU_1_64_PERTURB_BLA, RenderAlgorithm::Cpu64PerturbedBLA);
-            MapMenuItemToAlg(IDM_ALG_CPU_1_64_PERTURB_BLA_HDR, RenderAlgorithm::Cpu64PerturbedBLAHDR);
-            MapMenuItemToAlg(IDM_ALG_GPU_1_64, RenderAlgorithm::Gpu1x64);
-            MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_BLA, RenderAlgorithm::Gpu1x64PerturbedBLA);
-            MapMenuItemToAlg(IDM_ALG_GPU_2_64, RenderAlgorithm::Gpu2x64);
-            MapMenuItemToAlg(IDM_ALG_GPU_4_64, RenderAlgorithm::Gpu4x64);
-            MapMenuItemToAlg(IDM_ALG_GPU_2X32_HDR, RenderAlgorithm::GpuHDRx32);
-            MapMenuItemToAlg(IDM_ALG_GPU_1_32, RenderAlgorithm::Gpu1x32);
-            MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_SCALED, RenderAlgorithm::Gpu1x32PerturbedScaled);
-            MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_SCALED, RenderAlgorithm::GpuHDRx32PerturbedScaled);
-            MapMenuItemToAlg(IDM_ALG_GPU_2_32, RenderAlgorithm::Gpu2x32);
-            MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_SCALED, RenderAlgorithm::Gpu2x32PerturbedScaled);
-            MapMenuItemToAlg(IDM_ALG_GPU_4_32, RenderAlgorithm::Gpu4x32);
-            MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_BLA, RenderAlgorithm::GpuHDRx32PerturbedBLA);
-            MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_BLA, RenderAlgorithm::GpuHDRx64PerturbedBLA);
-            
-            /////////////////////////// Begin LAV2 ///////////////////////////
-            MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_LAV2, RenderAlgorithm::Gpu1x32PerturbedLAv2);
-            MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_LAV2_PO, RenderAlgorithm::Gpu1x32PerturbedLAv2PO);
-            MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_LAV2_LAO, RenderAlgorithm::Gpu1x32PerturbedLAv2LAO);
-            MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_RC_LAV2, RenderAlgorithm::Gpu1x32PerturbedRCLAv2);
-            MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_RC_LAV2_PO, RenderAlgorithm::Gpu1x32PerturbedRCLAv2PO);
-            MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_RC_LAV2_LAO, RenderAlgorithm::Gpu1x32PerturbedRCLAv2LAO);
-
-            MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_LAV2, RenderAlgorithm::Gpu2x32PerturbedLAv2);
-            MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_LAV2_PO, RenderAlgorithm::Gpu2x32PerturbedLAv2PO);
-            MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_LAV2_LAO, RenderAlgorithm::Gpu2x32PerturbedLAv2LAO);
-            MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_RC_LAV2, RenderAlgorithm::Gpu2x32PerturbedRCLAv2);
-            MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_RC_LAV2_PO, RenderAlgorithm::Gpu2x32PerturbedRCLAv2PO);
-            MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_RC_LAV2_LAO, RenderAlgorithm::Gpu2x32PerturbedRCLAv2LAO);
-
-            MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_LAV2, RenderAlgorithm::Gpu1x64PerturbedLAv2);
-            MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_LAV2_PO, RenderAlgorithm::Gpu1x64PerturbedLAv2PO);
-            MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_LAV2_LAO, RenderAlgorithm::Gpu1x64PerturbedLAv2LAO);
-            MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_RC_LAV2, RenderAlgorithm::Gpu1x64PerturbedRCLAv2);
-            MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_RC_LAV2_PO, RenderAlgorithm::Gpu1x64PerturbedRCLAv2PO);
-            MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_RC_LAV2_LAO, RenderAlgorithm::Gpu1x64PerturbedRCLAv2LAO);
-
-            MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_LAV2, RenderAlgorithm::GpuHDRx32PerturbedLAv2);
-            MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_LAV2_PO, RenderAlgorithm::GpuHDRx32PerturbedLAv2PO);
-            MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_LAV2_LAO, RenderAlgorithm::GpuHDRx32PerturbedLAv2LAO);
-            MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_RC_LAV2, RenderAlgorithm::GpuHDRx32PerturbedRCLAv2);
-            MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_RC_LAV2_PO, RenderAlgorithm::GpuHDRx32PerturbedRCLAv2PO);
-            MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_RC_LAV2_LAO, RenderAlgorithm::GpuHDRx32PerturbedRCLAv2LAO);
-
-            MapMenuItemToAlg(IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2, RenderAlgorithm::GpuHDRx2x32PerturbedLAv2);
-            MapMenuItemToAlg(IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2_PO, RenderAlgorithm::GpuHDRx2x32PerturbedLAv2PO);
-            MapMenuItemToAlg(IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2_LAO, RenderAlgorithm::GpuHDRx2x32PerturbedLAv2LAO);
-            MapMenuItemToAlg(IDM_ALG_GPU_HDR_2X32_PERTURB_RC_LAV2, RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2);
-            MapMenuItemToAlg(IDM_ALG_GPU_HDR_2X32_PERTURB_RC_LAV2_PO, RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2PO);
-            MapMenuItemToAlg(IDM_ALG_GPU_HDR_2X32_PERTURB_RC_LAV2_LAO, RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2LAO);
-
-            MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_LAV2, RenderAlgorithm::GpuHDRx64PerturbedLAv2);
-            MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_LAV2_PO, RenderAlgorithm::GpuHDRx64PerturbedLAv2PO);
-            MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_LAV2_LAO, RenderAlgorithm::GpuHDRx64PerturbedLAv2LAO);
-            MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_RC_LAV2, RenderAlgorithm::GpuHDRx64PerturbedRCLAv2);
-            MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_RC_LAV2_PO, RenderAlgorithm::GpuHDRx64PerturbedRCLAv2PO);
-            MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_RC_LAV2_LAO, RenderAlgorithm::GpuHDRx64PerturbedRCLAv2LAO);
-
-            case IDM_LA_SINGLETHREADED:
-            {
-                auto &parameters = gFractal->GetLAParameters();
-                parameters.SetThreading(LAParameters::LAThreadingAlgorithm::SingleThreaded);
-                break;
-            }
-
-            case IDM_LA_MULTITHREADED:
-            {
-                auto &parameters = gFractal->GetLAParameters();
-                parameters.SetThreading(LAParameters::LAThreadingAlgorithm::MultiThreaded);
-                break;
-            }
-
-            case IDM_LA_SETTINGS_1:
-            {
-                auto &parameters = gFractal->GetLAParameters();
-                parameters.SetDefaults(LAParameters::LADefaults::MaxAccuracy);
-                break;
-            }
-
-            case IDM_LA_SETTINGS_2:
-            {
-                auto &parameters = gFractal->GetLAParameters();
-                parameters.SetDefaults(LAParameters::LADefaults::MaxPerf);
-                break;
-            }
-
-            case IDM_LA_SETTINGS_3:
-            {
-                auto &parameters = gFractal->GetLAParameters();
-                parameters.SetDefaults(LAParameters::LADefaults::MinMemory);
-                break;
-            }
-
-            case IDM_BASICTEST:
-            {
-                FractalTest test{ *gFractal };
-                test.BasicTest();
-                break;
-            }
-
-            // Increase the number of iterations we are using.
-            // This will slow down rendering, but image quality
-            // will be improved.
-            case IDM_INCREASEITERATIONS_1P5X:
-            {
-                MenuMultiplyIterations(hWnd, 1.5);
-                break;
-            }
-            case IDM_INCREASEITERATIONS_6X:
-            {
-                MenuMultiplyIterations(hWnd, 6.0);
-                break;
-            }
-
-            case IDM_INCREASEITERATIONS_24X:
-            {
-                MenuMultiplyIterations(hWnd, 24.0);
-                break;
-            }
-            // Decrease the number of iterations we are using
-            case IDM_DECREASEITERATIONS:
-            {
-                MenuMultiplyIterations(hWnd, 2.0/3.0);
-                break;
-            }
-            // Reset the number of iterations to the default
-            case IDM_RESETITERATIONS:
-            {
-                MenuResetIterations(hWnd);
-                break;
-            }
-
-            case IDM_32BIT_ITERATIONS:
-            {
-                gFractal->SetIterType(IterTypeEnum::Bits32);
-                break;
-            }
-
-            case IDM_64BIT_ITERATIONS:
-            {
-                gFractal->SetIterType(IterTypeEnum::Bits64);
-                break;
-            }
-
-            case IDM_PERTURB_RESULTS:
-            {
-                //gFractal->DrawAllPerturbationResults(false);
-                ::MessageBox(hWnd,
-                    L"TODO.  By default these are shown as white pixels overlayed on the image. "
-                    L"It'd be nice to have an option that shows them as white pixels against a "
-                    L"black screen so they're location is obvious.", L"TODO", MB_OK | MB_APPLMODAL);
-                break;
-            }
-            case IDM_PERTURB_CLEAR_ALL:
-            {
-                gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-                break;
-            }
-
-            case IDM_PERTURB_CLEAR_MED:
-            {
-                gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::MediumRes);
-                break;
-            }
-
-            case IDM_PERTURB_CLEAR_HIGH:
-            {
-                gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::HighRes);
-                break;
-            }
-
-            case IDM_PERTURBATION_AUTO:
-            {
-                gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::Auto);
-                break;
-            }
-
-            case IDM_PERTURBATION_SINGLETHREAD:
-            {
-                gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::ST);
-                break;
-            }
-
-            case IDM_PERTURBATION_MULTITHREAD:
-            {
-                gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MT);
-                break;
-            }
-
-            case IDM_PERTURBATION_SINGLETHREAD_PERIODICITY:
-            {
-                gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::STPeriodicity);
-                break;
-            }
-
-            case IDM_PERTURBATION_MULTITHREAD2_PERIODICITY:
-            {
-                gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3);
-                break;
-            }
-
-            case IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_STMED:
-            {
-                gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed);
-                break;
-            }
-
-            case IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_MTMED1:
-            {
-                gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed1);
-                break;
-            }
-
-            case IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_MTMED2:
-            {
-                gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed2);
-                break;
-            }
-
-            case IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_MTMED3:
-            {
-                gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3);
-                break;
-            }
-
-            case IDM_PERTURBATION_MULTITHREAD5_PERIODICITY:
-            {
-                gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity5);
-                break;
-            }
-
-            case IDM_PERTURBATION_SAVE:
-            {
-                gFractal->SavePerturbationOrbits();
-                break;
-             }
-                
-            case IDM_PERTURBATION_LOAD:
-            {
-                gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-                gFractal->LoadPerturbationOrbits();
-                break;
-            }
-
-            case IDM_PERTURB_AUTOSAVE_ON:
-            {
-                gFractal->SetResultsAutosave(AddPointOptions::EnableWithSave);
-                break;
-            }
-
-            case IDM_PERTURB_AUTOSAVE_ON_DELETE:
-            {
-                gFractal->SetResultsAutosave(AddPointOptions::EnableWithoutSave);
-                break;
-            }
-
-            case IDM_PERTURB_AUTOSAVE_OFF:
-            {
-                gFractal->SetResultsAutosave(AddPointOptions::DontSave);
-                break;
-            }
-
-            case IDM_MEMORY_LIMIT_0:
-            {
-                gJobObj = nullptr;
-                break;
-            }
-
-            case IDM_MEMORY_LIMIT_1:
-            {
-                gJobObj = std::make_unique<JobObject>();
-                break;
-            }
-
-            case IDM_PALETTEROTATE:
-            {
-                MenuPaletteRotation(hWnd);
-                break;
-            }
-            case IDM_CREATENEWPALETTE:
-            {
-                MenuCreateNewPalette(hWnd);
-                break;
-            }
-
-            case IDM_PALETTE_TYPE_0:
-            {
-                MenuPaletteType(FractalPalette::Basic);
-                break;
-            }
-
-            case IDM_PALETTE_TYPE_1:
-            {
-                MenuPaletteType(FractalPalette::Default);
-                break;
-            }
-
-            case IDM_PALETTE_TYPE_2:
-            {
-                MenuPaletteType(FractalPalette::Patriotic);
-                break;
-            }
-
-            case IDM_PALETTE_TYPE_3:
-            {
-                MenuPaletteType(FractalPalette::Summer);
-                break;
-            }
-
-            case IDM_PALETTE_TYPE_4:
-            {
-                MenuPaletteType(FractalPalette::Random);
-                break;
-            }
-
-            case IDM_PALETTE_5:
-            {
-                MenuPaletteDepth(5);
-                break;
-            }
-
-            case IDM_PALETTE_6:
-            {
-                MenuPaletteDepth(6);
-                break;
-            }
-
-            case IDM_PALETTE_8:
-            {
-                MenuPaletteDepth(8);
-                break;
-            }
-
-            case IDM_PALETTE_12:
-            {
-                MenuPaletteDepth(12);
-                break;
-            }
-
-            case IDM_PALETTE_16:
-            {
-                MenuPaletteDepth(16);
-                break;
-            }
-
-            case IDM_PALETTE_20:
-            {
-                MenuPaletteDepth(20);
-                break;
-            }
-
-            // Put the current window position on
-            // the clipboard.  The coordinates put
-            // on the clipboard are the "calculator"
-            // coordinates, not screen coordinates.
-            case IDM_CURPOS:
-            {
-                MenuGetCurPos(hWnd);
-                break;
-            }
-            case IDM_BENCHMARK_FULL:
-            {
-                FractalTest test{ *gFractal };
-                test.Benchmark(RefOrbitCalc::PerturbationResultType::All);
-                break;
-            }
-            case IDM_BENCHMARK_INT:
-            {
-                FractalTest test{ *gFractal };
-                test.Benchmark(RefOrbitCalc::PerturbationResultType::MediumRes);
-                break;
-            }
-
-            // Save/load current location
-            case (IDM_SAVELOCATION):
-            {
-                MenuSaveCurrentLocation(hWnd);
-                break;
-            }
-            case (IDM_LOADLOCATION):
-            {
-                MenuLoadCurrentLocation(hWnd);
-                break;
-            }
-            case IDM_SAVEBMP:
-            {
-                MenuSaveBMP(hWnd);
-                break;
-            }
-            case IDM_SAVEHIRESBMP:
-            {
-                MenuSaveHiResBMP(hWnd);
-                break;
-            }
-            case IDM_SAVE_ITERS_TEXT:
-            {
-                MenuSaveItersAsText();
-                break;
-            }
-            case IDM_SAVE_REFORBIT_TEXT:
-            {
-                MenuSaveRefOrbitAsText();
-                break;
-            }
-            case IDM_SHOWHOTKEYS:
-            {
-                MenuShowHotkeys(hWnd);
-                break;
-            }
-            // Exit the program
-            case IDM_EXIT:
-            {
-                DestroyWindow(hWnd);
-                break;
-            }
-
-            case IDM_VIEW_DYNAMIC + 0:
-            case IDM_VIEW_DYNAMIC + 1:
-            case IDM_VIEW_DYNAMIC + 2:
-            case IDM_VIEW_DYNAMIC + 3:
-            case IDM_VIEW_DYNAMIC + 4:
-            case IDM_VIEW_DYNAMIC + 5:
-            case IDM_VIEW_DYNAMIC + 6:
-            case IDM_VIEW_DYNAMIC + 7:
-            case IDM_VIEW_DYNAMIC + 8:
-            case IDM_VIEW_DYNAMIC + 9:
-            case IDM_VIEW_DYNAMIC + 10:
-            case IDM_VIEW_DYNAMIC + 11:
-            case IDM_VIEW_DYNAMIC + 12:
-            case IDM_VIEW_DYNAMIC + 13:
-            case IDM_VIEW_DYNAMIC + 14:
-            case IDM_VIEW_DYNAMIC + 15:
-            case IDM_VIEW_DYNAMIC + 16:
-            case IDM_VIEW_DYNAMIC + 17:
-            case IDM_VIEW_DYNAMIC + 18:
-            case IDM_VIEW_DYNAMIC + 19:
-            case IDM_VIEW_DYNAMIC + 20:
-            case IDM_VIEW_DYNAMIC + 21:
-            case IDM_VIEW_DYNAMIC + 22:
-            case IDM_VIEW_DYNAMIC + 23:
-            case IDM_VIEW_DYNAMIC + 24:
-            case IDM_VIEW_DYNAMIC + 25:
-            case IDM_VIEW_DYNAMIC + 26:
-            case IDM_VIEW_DYNAMIC + 27:
-            case IDM_VIEW_DYNAMIC + 28:
-            case IDM_VIEW_DYNAMIC + 29:
-            {
-                auto index = wmId - IDM_VIEW_DYNAMIC;
-                auto minX = gSavedLocations[index].minX;
-                auto minY = gSavedLocations[index].minY;
-                auto maxX = gSavedLocations[index].maxX;
-                auto maxY = gSavedLocations[index].maxY;
-                auto num_iterations = gSavedLocations[index].num_iterations;
-                auto antialiasing = gSavedLocations[index].antialiasing;
-
-                gFractal->RecenterViewCalc(minX, minY, maxX, maxY);
-                gFractal->SetNumIterations<IterTypeFull>(num_iterations);
-                gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, antialiasing);
-                PaintAsNecessary(hWnd);
-                break;
-            }
-
-            // Catch-all
-            default:
-            {
-                ::MessageBox(hWnd, L"Unknown menu item", L"Error", MB_OK | MB_APPLMODAL);
-                return DefWindowProc(hWnd, message, wParam, lParam); }
-            }
-
+        switch (wmId) { // Go back to the previous location
+        case IDM_BACK:
+        {
+            MenuGoBack(hWnd);
             break;
         }
 
+        // Reset the view of the fractal to standard
+        case IDM_STANDARDVIEW:
+        {
+            MenuStandardView(hWnd, 0);
+            break;
+        }
+
+        case IDM_VIEWS_HELP:
+        {
+            MenuViewsHelp(hWnd);
+            break;
+        }
+
+        case IDM_VIEW1:
+        case IDM_VIEW2:
+        case IDM_VIEW3:
+        case IDM_VIEW4:
+        case IDM_VIEW5:
+        case IDM_VIEW6:
+        case IDM_VIEW7:
+        case IDM_VIEW8:
+        case IDM_VIEW9:
+        case IDM_VIEW10:
+        case IDM_VIEW11:
+        case IDM_VIEW12:
+        case IDM_VIEW13:
+        case IDM_VIEW14:
+        case IDM_VIEW15:
+        case IDM_VIEW16:
+        case IDM_VIEW17:
+        case IDM_VIEW18:
+        case IDM_VIEW19:
+        case IDM_VIEW20:
+        case IDM_VIEW21:
+        case IDM_VIEW22:
+        case IDM_VIEW23:
+        case IDM_VIEW24:
+        case IDM_VIEW25:
+        case IDM_VIEW26:
+        case IDM_VIEW27:
+        case IDM_VIEW28:
+        case IDM_VIEW29:
+        {
+            static_assert(IDM_VIEW2 == IDM_VIEW1 + 1, "!");
+            static_assert(IDM_VIEW3 == IDM_VIEW1 + 2, "!");
+            static_assert(IDM_VIEW4 == IDM_VIEW1 + 3, "!");
+            static_assert(IDM_VIEW5 == IDM_VIEW1 + 4, "!");
+            static_assert(IDM_VIEW6 == IDM_VIEW1 + 5, "!");
+            static_assert(IDM_VIEW7 == IDM_VIEW1 + 6, "!");
+            static_assert(IDM_VIEW8 == IDM_VIEW1 + 7, "!");
+            static_assert(IDM_VIEW9 == IDM_VIEW1 + 8, "!");
+            static_assert(IDM_VIEW10 == IDM_VIEW1 + 9, "!");
+            static_assert(IDM_VIEW11 == IDM_VIEW1 + 10, "!");
+            static_assert(IDM_VIEW12 == IDM_VIEW1 + 11, "!");
+            static_assert(IDM_VIEW13 == IDM_VIEW1 + 12, "!");
+            static_assert(IDM_VIEW14 == IDM_VIEW1 + 13, "!");
+            static_assert(IDM_VIEW15 == IDM_VIEW1 + 14, "!");
+            static_assert(IDM_VIEW16 == IDM_VIEW1 + 15, "!");
+            static_assert(IDM_VIEW17 == IDM_VIEW1 + 16, "!");
+            static_assert(IDM_VIEW18 == IDM_VIEW1 + 17, "!");
+            static_assert(IDM_VIEW19 == IDM_VIEW1 + 18, "!");
+            static_assert(IDM_VIEW20 == IDM_VIEW1 + 19, "!");
+            static_assert(IDM_VIEW21 == IDM_VIEW1 + 20, "!");
+            static_assert(IDM_VIEW22 == IDM_VIEW1 + 21, "!");
+            static_assert(IDM_VIEW23 == IDM_VIEW1 + 22, "!");
+            static_assert(IDM_VIEW24 == IDM_VIEW1 + 23, "!");
+            static_assert(IDM_VIEW25 == IDM_VIEW1 + 24, "!");
+            static_assert(IDM_VIEW26 == IDM_VIEW1 + 25, "!");
+            static_assert(IDM_VIEW27 == IDM_VIEW1 + 26, "!");
+            static_assert(IDM_VIEW28 == IDM_VIEW1 + 27, "!");
+            static_assert(IDM_VIEW29 == IDM_VIEW1 + 28, "!");
+
+            MenuStandardView(hWnd, wmId - IDM_VIEW1 + 1);
+            break;
+        }
+
+        // Reset the view of the fractal to "square", taking into
+        // account window aspect ratio.  Eliminates distortion.
+        case IDM_SQUAREVIEW:
+        {
+            MenuSquareView(hWnd);
+            break;
+        }
+
+        // Recenter the current view at the point where the menu was
+        // created, not the current mouse position or some bs like that.
+        case IDM_CENTERVIEW:
+        {
+            MenuCenterView(hWnd, menuX, menuY);
+            break;
+        }
+
+        case IDM_ZOOMIN:
+        {
+            MenuZoomIn(hWnd, { menuX, menuY });
+            break;
+        }
+
+        case IDM_ZOOMOUT:
+        {
+            MenuZoomOut(hWnd, { menuX, menuY });
+            break;
+        }
+
+        case IDM_AUTOZOOM_DEFAULT:
+        {
+            gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Default>();
+            break;
+        }
+
+        case IDM_AUTOZOOM_MAX:
+        {
+            gFractal->AutoZoom<Fractal::AutoZoomHeuristic::Max>();
+            break;
+        }
+
+        case IDM_REPAINTING:
+        {
+            MenuRepainting(hWnd);
+            break;
+        }
+
+        // Make the fractal window a "window" instead of fullscreen
+        case IDM_WINDOWED:
+        {
+            MenuWindowed(hWnd, false);
+            break;
+        }
+
+        case IDM_WINDOWED_SQ:
+        {
+            MenuWindowed(hWnd, true);
+            break;
+        }
+
+        // Minimize the window
+        case IDM_MINIMIZE:
+        {
+            PostMessage(hWnd, WM_SYSCOMMAND, SC_MINIMIZE, 0);
+            break;
+        }
+
+        case IDM_GPUANTIALIASING_1X:
+        {
+            gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 1);
+            break;
+        }
+        case IDM_GPUANTIALIASING_4X:
+        {
+            gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 2);
+            break;
+        }
+        case IDM_GPUANTIALIASING_9X:
+        {
+            gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 3);
+            break;
+        }
+
+        case IDM_GPUANTIALIASING_16X:
+        {
+            gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, 4);
+            break;
+        }
+
+        // Iteration precision
+        case IDM_ITERATIONPRECISION_1X:
+        {
+            gFractal->SetIterationPrecision(1);
+            break;
+        }
+
+        case IDM_ITERATIONPRECISION_2X:
+        {
+            gFractal->SetIterationPrecision(4);
+            break;
+        }
+
+        case IDM_ITERATIONPRECISION_3X:
+        {
+            gFractal->SetIterationPrecision(8);
+            break;
+        }
+
+        case IDM_ITERATIONPRECISION_4X:
+        {
+            gFractal->SetIterationPrecision(16);
+            break;
+        }
+
+        // Change rendering algorithm
+        case IDM_HELP_ALG:
+        {
+            MenuAlgHelp(hWnd);
+            break;
+        }
+
+        MapMenuItemToAlg(IDM_ALG_AUTO, RenderAlgorithm::AUTO);
+        MapMenuItemToAlg(IDM_ALG_CPU_HIGH, RenderAlgorithm::CpuHigh);
+        MapMenuItemToAlg(IDM_ALG_CPU_1_32_HDR, RenderAlgorithm::CpuHDR32);
+        MapMenuItemToAlg(IDM_ALG_CPU_1_32_PERTURB_BLA_HDR, RenderAlgorithm::Cpu32PerturbedBLAHDR);
+        MapMenuItemToAlg(IDM_ALG_CPU_1_32_PERTURB_BLAV2_HDR, RenderAlgorithm::Cpu32PerturbedBLAV2HDR);
+        MapMenuItemToAlg(IDM_ALG_CPU_1_32_PERTURB_RC_BLAV2_HDR, RenderAlgorithm::Cpu32PerturbedRCBLAV2HDR);
+        MapMenuItemToAlg(IDM_ALG_CPU_1_64_PERTURB_BLAV2_HDR, RenderAlgorithm::Cpu64PerturbedBLAV2HDR);
+        MapMenuItemToAlg(IDM_ALG_CPU_1_64_PERTURB_RC_BLAV2_HDR, RenderAlgorithm::Cpu64PerturbedRCBLAV2HDR);
+        MapMenuItemToAlg(IDM_ALG_CPU_1_64, RenderAlgorithm::Cpu64);
+        MapMenuItemToAlg(IDM_ALG_CPU_1_64_HDR, RenderAlgorithm::CpuHDR64);
+        MapMenuItemToAlg(IDM_ALG_CPU_1_64_PERTURB_BLA, RenderAlgorithm::Cpu64PerturbedBLA);
+        MapMenuItemToAlg(IDM_ALG_CPU_1_64_PERTURB_BLA_HDR, RenderAlgorithm::Cpu64PerturbedBLAHDR);
+        MapMenuItemToAlg(IDM_ALG_GPU_1_64, RenderAlgorithm::Gpu1x64);
+        MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_BLA, RenderAlgorithm::Gpu1x64PerturbedBLA);
+        MapMenuItemToAlg(IDM_ALG_GPU_2_64, RenderAlgorithm::Gpu2x64);
+        MapMenuItemToAlg(IDM_ALG_GPU_4_64, RenderAlgorithm::Gpu4x64);
+        MapMenuItemToAlg(IDM_ALG_GPU_2X32_HDR, RenderAlgorithm::GpuHDRx32);
+        MapMenuItemToAlg(IDM_ALG_GPU_1_32, RenderAlgorithm::Gpu1x32);
+        MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_SCALED, RenderAlgorithm::Gpu1x32PerturbedScaled);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_SCALED, RenderAlgorithm::GpuHDRx32PerturbedScaled);
+        MapMenuItemToAlg(IDM_ALG_GPU_2_32, RenderAlgorithm::Gpu2x32);
+        MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_SCALED, RenderAlgorithm::Gpu2x32PerturbedScaled);
+        MapMenuItemToAlg(IDM_ALG_GPU_4_32, RenderAlgorithm::Gpu4x32);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_BLA, RenderAlgorithm::GpuHDRx32PerturbedBLA);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_BLA, RenderAlgorithm::GpuHDRx64PerturbedBLA);
+
+        /////////////////////////// Begin LAV2 ///////////////////////////
+        MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_LAV2, RenderAlgorithm::Gpu1x32PerturbedLAv2);
+        MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_LAV2_PO, RenderAlgorithm::Gpu1x32PerturbedLAv2PO);
+        MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_LAV2_LAO, RenderAlgorithm::Gpu1x32PerturbedLAv2LAO);
+        MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_RC_LAV2, RenderAlgorithm::Gpu1x32PerturbedRCLAv2);
+        MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_RC_LAV2_PO, RenderAlgorithm::Gpu1x32PerturbedRCLAv2PO);
+        MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_RC_LAV2_LAO, RenderAlgorithm::Gpu1x32PerturbedRCLAv2LAO);
+
+        MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_LAV2, RenderAlgorithm::Gpu2x32PerturbedLAv2);
+        MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_LAV2_PO, RenderAlgorithm::Gpu2x32PerturbedLAv2PO);
+        MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_LAV2_LAO, RenderAlgorithm::Gpu2x32PerturbedLAv2LAO);
+        MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_RC_LAV2, RenderAlgorithm::Gpu2x32PerturbedRCLAv2);
+        MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_RC_LAV2_PO, RenderAlgorithm::Gpu2x32PerturbedRCLAv2PO);
+        MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_RC_LAV2_LAO, RenderAlgorithm::Gpu2x32PerturbedRCLAv2LAO);
+
+        MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_LAV2, RenderAlgorithm::Gpu1x64PerturbedLAv2);
+        MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_LAV2_PO, RenderAlgorithm::Gpu1x64PerturbedLAv2PO);
+        MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_LAV2_LAO, RenderAlgorithm::Gpu1x64PerturbedLAv2LAO);
+        MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_RC_LAV2, RenderAlgorithm::Gpu1x64PerturbedRCLAv2);
+        MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_RC_LAV2_PO, RenderAlgorithm::Gpu1x64PerturbedRCLAv2PO);
+        MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_RC_LAV2_LAO, RenderAlgorithm::Gpu1x64PerturbedRCLAv2LAO);
+
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_LAV2, RenderAlgorithm::GpuHDRx32PerturbedLAv2);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_LAV2_PO, RenderAlgorithm::GpuHDRx32PerturbedLAv2PO);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_LAV2_LAO, RenderAlgorithm::GpuHDRx32PerturbedLAv2LAO);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_RC_LAV2, RenderAlgorithm::GpuHDRx32PerturbedRCLAv2);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_RC_LAV2_PO, RenderAlgorithm::GpuHDRx32PerturbedRCLAv2PO);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_RC_LAV2_LAO, RenderAlgorithm::GpuHDRx32PerturbedRCLAv2LAO);
+
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2, RenderAlgorithm::GpuHDRx2x32PerturbedLAv2);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2_PO, RenderAlgorithm::GpuHDRx2x32PerturbedLAv2PO);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2_LAO, RenderAlgorithm::GpuHDRx2x32PerturbedLAv2LAO);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_2X32_PERTURB_RC_LAV2, RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_2X32_PERTURB_RC_LAV2_PO, RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2PO);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_2X32_PERTURB_RC_LAV2_LAO, RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2LAO);
+
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_LAV2, RenderAlgorithm::GpuHDRx64PerturbedLAv2);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_LAV2_PO, RenderAlgorithm::GpuHDRx64PerturbedLAv2PO);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_LAV2_LAO, RenderAlgorithm::GpuHDRx64PerturbedLAv2LAO);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_RC_LAV2, RenderAlgorithm::GpuHDRx64PerturbedRCLAv2);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_RC_LAV2_PO, RenderAlgorithm::GpuHDRx64PerturbedRCLAv2PO);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_RC_LAV2_LAO, RenderAlgorithm::GpuHDRx64PerturbedRCLAv2LAO);
+
+        case IDM_LA_SINGLETHREADED:
+        {
+            auto &parameters = gFractal->GetLAParameters();
+            parameters.SetThreading(LAParameters::LAThreadingAlgorithm::SingleThreaded);
+            break;
+        }
+
+        case IDM_LA_MULTITHREADED:
+        {
+            auto &parameters = gFractal->GetLAParameters();
+            parameters.SetThreading(LAParameters::LAThreadingAlgorithm::MultiThreaded);
+            break;
+        }
+
+        case IDM_LA_SETTINGS_1:
+        {
+            auto &parameters = gFractal->GetLAParameters();
+            parameters.SetDefaults(LAParameters::LADefaults::MaxAccuracy);
+            break;
+        }
+
+        case IDM_LA_SETTINGS_2:
+        {
+            auto &parameters = gFractal->GetLAParameters();
+            parameters.SetDefaults(LAParameters::LADefaults::MaxPerf);
+            break;
+        }
+
+        case IDM_LA_SETTINGS_3:
+        {
+            auto &parameters = gFractal->GetLAParameters();
+            parameters.SetDefaults(LAParameters::LADefaults::MinMemory);
+            break;
+        }
+
+        case IDM_BASICTEST:
+        {
+            FractalTest test{ *gFractal };
+            test.BasicTest();
+            break;
+        }
+
+        // Increase the number of iterations we are using.
+        // This will slow down rendering, but image quality
+        // will be improved.
+        case IDM_INCREASEITERATIONS_1P5X:
+        {
+            MenuMultiplyIterations(hWnd, 1.5);
+            break;
+        }
+        case IDM_INCREASEITERATIONS_6X:
+        {
+            MenuMultiplyIterations(hWnd, 6.0);
+            break;
+        }
+
+        case IDM_INCREASEITERATIONS_24X:
+        {
+            MenuMultiplyIterations(hWnd, 24.0);
+            break;
+        }
+        // Decrease the number of iterations we are using
+        case IDM_DECREASEITERATIONS:
+        {
+            MenuMultiplyIterations(hWnd, 2.0 / 3.0);
+            break;
+        }
+        // Reset the number of iterations to the default
+        case IDM_RESETITERATIONS:
+        {
+            MenuResetIterations(hWnd);
+            break;
+        }
+
+        case IDM_32BIT_ITERATIONS:
+        {
+            gFractal->SetIterType(IterTypeEnum::Bits32);
+            break;
+        }
+
+        case IDM_64BIT_ITERATIONS:
+        {
+            gFractal->SetIterType(IterTypeEnum::Bits64);
+            break;
+        }
+
+        case IDM_PERTURB_RESULTS:
+        {
+            //gFractal->DrawAllPerturbationResults(false);
+            ::MessageBox(hWnd,
+                L"TODO.  By default these are shown as white pixels overlayed on the image. "
+                L"It'd be nice to have an option that shows them as white pixels against a "
+                L"black screen so they're location is obvious.", L"TODO", MB_OK | MB_APPLMODAL);
+            break;
+        }
+        case IDM_PERTURB_CLEAR_ALL:
+        {
+            gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+            break;
+        }
+
+        case IDM_PERTURB_CLEAR_MED:
+        {
+            gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::MediumRes);
+            break;
+        }
+
+        case IDM_PERTURB_CLEAR_HIGH:
+        {
+            gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::HighRes);
+            break;
+        }
+
+        case IDM_PERTURBATION_AUTO:
+        {
+            gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::Auto);
+            break;
+        }
+
+        case IDM_PERTURBATION_SINGLETHREAD:
+        {
+            gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::ST);
+            break;
+        }
+
+        case IDM_PERTURBATION_MULTITHREAD:
+        {
+            gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MT);
+            break;
+        }
+
+        case IDM_PERTURBATION_SINGLETHREAD_PERIODICITY:
+        {
+            gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::STPeriodicity);
+            break;
+        }
+
+        case IDM_PERTURBATION_MULTITHREAD2_PERIODICITY:
+        {
+            gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3);
+            break;
+        }
+
+        case IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_STMED:
+        {
+            gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed);
+            break;
+        }
+
+        case IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_MTMED1:
+        {
+            gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed1);
+            break;
+        }
+
+        case IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_MTMED2:
+        {
+            gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed2);
+            break;
+        }
+
+        case IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_MTMED3:
+        {
+            gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3);
+            break;
+        }
+
+        case IDM_PERTURBATION_MULTITHREAD5_PERIODICITY:
+        {
+            gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity5);
+            break;
+        }
+
+        case IDM_PERTURBATION_SAVE:
+        {
+            gFractal->SavePerturbationOrbits();
+            break;
+        }
+
+        case IDM_PERTURBATION_LOAD:
+        {
+            gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+            gFractal->LoadPerturbationOrbits();
+            break;
+        }
+
+        case IDM_PERTURB_AUTOSAVE_ON:
+        {
+            gFractal->SetResultsAutosave(AddPointOptions::EnableWithSave);
+            break;
+        }
+
+        case IDM_PERTURB_AUTOSAVE_ON_DELETE:
+        {
+            gFractal->SetResultsAutosave(AddPointOptions::EnableWithoutSave);
+            break;
+        }
+
+        case IDM_PERTURB_AUTOSAVE_OFF:
+        {
+            gFractal->SetResultsAutosave(AddPointOptions::DontSave);
+            break;
+        }
+
+        case IDM_MEMORY_LIMIT_0:
+        {
+            gJobObj = nullptr;
+            break;
+        }
+
+        case IDM_MEMORY_LIMIT_1:
+        {
+            gJobObj = std::make_unique<JobObject>();
+            break;
+        }
+
+        case IDM_PALETTEROTATE:
+        {
+            MenuPaletteRotation(hWnd);
+            break;
+        }
+        case IDM_CREATENEWPALETTE:
+        {
+            MenuCreateNewPalette(hWnd);
+            break;
+        }
+
+        case IDM_PALETTE_TYPE_0:
+        {
+            MenuPaletteType(FractalPalette::Basic);
+            break;
+        }
+
+        case IDM_PALETTE_TYPE_1:
+        {
+            MenuPaletteType(FractalPalette::Default);
+            break;
+        }
+
+        case IDM_PALETTE_TYPE_2:
+        {
+            MenuPaletteType(FractalPalette::Patriotic);
+            break;
+        }
+
+        case IDM_PALETTE_TYPE_3:
+        {
+            MenuPaletteType(FractalPalette::Summer);
+            break;
+        }
+
+        case IDM_PALETTE_TYPE_4:
+        {
+            MenuPaletteType(FractalPalette::Random);
+            break;
+        }
+
+        case IDM_PALETTE_5:
+        {
+            MenuPaletteDepth(5);
+            break;
+        }
+
+        case IDM_PALETTE_6:
+        {
+            MenuPaletteDepth(6);
+            break;
+        }
+
+        case IDM_PALETTE_8:
+        {
+            MenuPaletteDepth(8);
+            break;
+        }
+
+        case IDM_PALETTE_12:
+        {
+            MenuPaletteDepth(12);
+            break;
+        }
+
+        case IDM_PALETTE_16:
+        {
+            MenuPaletteDepth(16);
+            break;
+        }
+
+        case IDM_PALETTE_20:
+        {
+            MenuPaletteDepth(20);
+            break;
+        }
+
+        // Put the current window position on
+        // the clipboard.  The coordinates put
+        // on the clipboard are the "calculator"
+        // coordinates, not screen coordinates.
+        case IDM_CURPOS:
+        {
+            MenuGetCurPos(hWnd);
+            break;
+        }
+        case IDM_BENCHMARK_FULL:
+        {
+            FractalTest test{ *gFractal };
+            test.Benchmark(RefOrbitCalc::PerturbationResultType::All);
+            break;
+        }
+        case IDM_BENCHMARK_INT:
+        {
+            FractalTest test{ *gFractal };
+            test.Benchmark(RefOrbitCalc::PerturbationResultType::MediumRes);
+            break;
+        }
+
+        // Save/load current location
+        case (IDM_SAVELOCATION):
+        {
+            MenuSaveCurrentLocation(hWnd);
+            break;
+        }
+        case (IDM_LOADLOCATION):
+        {
+            MenuLoadCurrentLocation(hWnd);
+            break;
+        }
+        case IDM_SAVEBMP:
+        {
+            MenuSaveBMP(hWnd);
+            break;
+        }
+        case IDM_SAVEHIRESBMP:
+        {
+            MenuSaveHiResBMP(hWnd);
+            break;
+        }
+        case IDM_SAVE_ITERS_TEXT:
+        {
+            MenuSaveItersAsText();
+            break;
+        }
+        case IDM_SAVE_REFORBIT_TEXT:
+        {
+            gFractal->SaveRefOrbitAsText(CompressToDisk::Disable);
+            break;
+        }
+        case IDM_SAVE_REFORBIT_TEXT_SIMPLE:
+        {
+            gFractal->SaveRefOrbitAsText(CompressToDisk::SimpleCompression);
+            break;
+        }
+        case IDM_SAVE_REFORBIT_TEXT_MAX:
+        {
+            gFractal->SaveRefOrbitAsText(CompressToDisk::MaxCompression);
+            break;
+        }
+        case IDM_SHOWHOTKEYS:
+        {
+            MenuShowHotkeys(hWnd);
+            break;
+        }
+        // Exit the program
+        case IDM_EXIT:
+        {
+            DestroyWindow(hWnd);
+            break;
+        }
+
+        case IDM_VIEW_DYNAMIC + 0:
+        case IDM_VIEW_DYNAMIC + 1:
+        case IDM_VIEW_DYNAMIC + 2:
+        case IDM_VIEW_DYNAMIC + 3:
+        case IDM_VIEW_DYNAMIC + 4:
+        case IDM_VIEW_DYNAMIC + 5:
+        case IDM_VIEW_DYNAMIC + 6:
+        case IDM_VIEW_DYNAMIC + 7:
+        case IDM_VIEW_DYNAMIC + 8:
+        case IDM_VIEW_DYNAMIC + 9:
+        case IDM_VIEW_DYNAMIC + 10:
+        case IDM_VIEW_DYNAMIC + 11:
+        case IDM_VIEW_DYNAMIC + 12:
+        case IDM_VIEW_DYNAMIC + 13:
+        case IDM_VIEW_DYNAMIC + 14:
+        case IDM_VIEW_DYNAMIC + 15:
+        case IDM_VIEW_DYNAMIC + 16:
+        case IDM_VIEW_DYNAMIC + 17:
+        case IDM_VIEW_DYNAMIC + 18:
+        case IDM_VIEW_DYNAMIC + 19:
+        case IDM_VIEW_DYNAMIC + 20:
+        case IDM_VIEW_DYNAMIC + 21:
+        case IDM_VIEW_DYNAMIC + 22:
+        case IDM_VIEW_DYNAMIC + 23:
+        case IDM_VIEW_DYNAMIC + 24:
+        case IDM_VIEW_DYNAMIC + 25:
+        case IDM_VIEW_DYNAMIC + 26:
+        case IDM_VIEW_DYNAMIC + 27:
+        case IDM_VIEW_DYNAMIC + 28:
+        case IDM_VIEW_DYNAMIC + 29:
+        {
+            auto index = wmId - IDM_VIEW_DYNAMIC;
+            auto minX = gSavedLocations[index].minX;
+            auto minY = gSavedLocations[index].minY;
+            auto maxX = gSavedLocations[index].maxX;
+            auto maxY = gSavedLocations[index].maxY;
+            auto num_iterations = gSavedLocations[index].num_iterations;
+            auto antialiasing = gSavedLocations[index].antialiasing;
+
+            gFractal->RecenterViewCalc(minX, minY, maxX, maxY);
+            gFractal->SetNumIterations<IterTypeFull>(num_iterations);
+            gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, antialiasing);
+            PaintAsNecessary(hWnd);
+            break;
+        }
+
+        // Catch-all
+        default:
+        {
+            ::MessageBox(hWnd, L"Unknown menu item", L"Error", MB_OK | MB_APPLMODAL);
+            return DefWindowProc(hWnd, message, wParam, lParam);
+        }
+        }
+
+        break;
+    }
+
     case WM_SIZE:
     {
-        if (gFractal != nullptr)
-        {
+        if (gFractal != nullptr) {
             gFractal->ResetDimensions(LOWORD(lParam), HIWORD(lParam));
             PaintAsNecessary(hWnd);
         }
@@ -1309,15 +1300,11 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     // Begin dragging a box for zooming in.
     case WM_LBUTTONDOWN:
     {
-        if (gWindowed == true && IsDownAlt() == true)
-        { // Don't drag a box if we are pressing the ALT key and this is windowed
+        if (gWindowed == true && IsDownAlt() == true) { // Don't drag a box if we are pressing the ALT key and this is windowed
             // mode.  Instead, move the window!
             PostMessage(hWnd, WM_NCLBUTTONDOWN, HTCAPTION, lParam);
-        }
-        else
-        {
-            if (lButtonDown == true)
-            {
+        } else {
+            if (lButtonDown == true) {
                 break;
             }
             lButtonDown = true;
@@ -1331,8 +1318,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     // Zoom in
     case WM_LBUTTONUP:
     {
-        if (lButtonDown == false || IsDownAlt() == true)
-        {
+        if (lButtonDown == false || IsDownAlt() == true) {
             break;
         }
         lButtonDown = false;
@@ -1353,8 +1339,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             newView.top = dragBoxY1;
             newView.bottom = GET_Y_LPARAM(lParam);
             newView.right = (long)((double)newView.left + (double)ratio * (double)((double)newView.bottom - (double)newView.top));
-        }
-        else // Do anything
+        } else // Do anything
         {
             newView.left = dragBoxX1;
             newView.right = GET_X_LPARAM(lParam);
@@ -1362,10 +1347,8 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             newView.bottom = GET_Y_LPARAM(lParam);
         }
 
-        if (gFractal->RecenterViewScreen(newView) == true)
-        {
-            if (MaintainAspectRatio == true)
-            {
+        if (gFractal->RecenterViewScreen(newView) == true) {
+            if (MaintainAspectRatio == true) {
                 gFractal->SquareCurrentView();
             }
 
@@ -1379,8 +1362,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
     case WM_MOUSEMOVE:
     {
-        if (lButtonDown == false)
-        {
+        if (lButtonDown == false) {
             break;
         }
 
@@ -1388,8 +1370,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         RECT rect;
 
         // Erase the previous rectangle.
-        if (prevX1 != -1 || prevY1 != -1)
-        {
+        if (prevX1 != -1 || prevY1 != -1) {
             rect.left = dragBoxX1;
             rect.top = dragBoxY1;
             rect.right = prevX1;
@@ -1398,8 +1379,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             InvertRect(dc, &rect);
         }
 
-        if (IsDownShift() == false)
-        {
+        if (IsDownShift() == false) {
             RECT windowRect;
             GetClientRect(hWnd, &windowRect);
             double ratio = (double)windowRect.right / (double)windowRect.bottom;
@@ -1412,9 +1392,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 
             prevX1 = rect.right;
             prevY1 = rect.bottom;
-        }
-        else
-        {
+        } else {
             rect.left = dragBoxX1;
             rect.top = dragBoxY1;
             rect.right = GET_X_LPARAM(lParam);
@@ -1458,59 +1436,51 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
     // Catch-all.
     default:
     {
-        return DefWindowProc(hWnd, message, wParam, lParam); }
+        return DefWindowProc(hWnd, message, wParam, lParam);
+    }
     }
 
     return 0;
 }
 
-void MenuGoBack(HWND hWnd)
-{
-    if (gFractal->Back() == true)
-    {
+void MenuGoBack(HWND hWnd) {
+    if (gFractal->Back() == true) {
         PaintAsNecessary(hWnd);
     }
 }
 
-void MenuStandardView(HWND hWnd, size_t i)
-{
+void MenuStandardView(HWND hWnd, size_t i) {
     gFractal->View(i);
     PaintAsNecessary(hWnd);
 }
 
-void MenuSquareView(HWND hWnd){
+void MenuSquareView(HWND hWnd) {
     gFractal->SquareCurrentView();
     PaintAsNecessary(hWnd);
 }
 
-void MenuCenterView(HWND hWnd, int x, int y)
-{
+void MenuCenterView(HWND hWnd, int x, int y) {
     gFractal->CenterAtPoint(x, y);
     PaintAsNecessary(hWnd);
 }
 
-void MenuZoomIn(HWND hWnd, POINT mousePt)
-{
+void MenuZoomIn(HWND hWnd, POINT mousePt) {
     gFractal->Zoom(mousePt.x, mousePt.y, -.45);
     PaintAsNecessary(hWnd);
 }
 
-void MenuZoomOut(HWND hWnd, POINT mousePt)
-{
+void MenuZoomOut(HWND hWnd, POINT mousePt) {
     gFractal->Zoom(mousePt.x, mousePt.y, 1);
     PaintAsNecessary(hWnd);
 }
 
-void MenuRepainting(HWND hWnd)
-{
+void MenuRepainting(HWND hWnd) {
     gFractal->ToggleRepainting();
     PaintAsNecessary(hWnd);
 }
 
-void MenuWindowed(HWND hWnd, bool square)
-{
-    if (gWindowed == false)
-    {
+void MenuWindowed(HWND hWnd, bool square) {
+    if (gWindowed == false) {
         bool temporaryChange = false;
         if (gFractal->GetRepaint() == true) {
             gFractal->SetRepaint(false);
@@ -1537,8 +1507,7 @@ void MenuWindowed(HWND hWnd, bool square)
                 width,
                 width,
                 SWP_SHOWWINDOW);
-        }
-        else {
+        } else {
             SetWindowPos(hWnd, HWND_NOTOPMOST,
                 (rect.right - rect.left) / 4,
                 (rect.bottom - rect.top) / 4,
@@ -1553,15 +1522,12 @@ void MenuWindowed(HWND hWnd, bool square)
             GetClientRect(hWnd, &rt);
             gFractal->ResetDimensions(rt.right, rt.bottom);
         }
-    }
-    else
-    {
+    } else {
         int width = GetSystemMetrics(SM_CXSCREEN);
         int height = GetSystemMetrics(SM_CYSCREEN);
 
         bool temporaryChange = false;
-        if (gFractal->GetRepaint() == true)
-        {
+        if (gFractal->GetRepaint() == true) {
             gFractal->SetRepaint(false);
             temporaryChange = true;
         }
@@ -1569,8 +1535,7 @@ void MenuWindowed(HWND hWnd, bool square)
         SetWindowPos(hWnd, HWND_NOTOPMOST, 0, 0, width, height, SWP_SHOWWINDOW);
         SendMessage(hWnd, WM_SYSCOMMAND, SC_MAXIMIZE, 0);
 
-        if (temporaryChange == true)
-        {
+        if (temporaryChange == true) {
             gFractal->SetRepaint(true);
         }
 
@@ -1586,14 +1551,12 @@ void MenuWindowed(HWND hWnd, bool square)
     PaintAsNecessary(hWnd);
 }
 
-void MenuMultiplyIterations(HWND hWnd, double factor)
-{
+void MenuMultiplyIterations(HWND hWnd, double factor) {
     if (gFractal->GetIterType() == IterTypeEnum::Bits32) {
         uint64_t curIters = gFractal->GetNumIterations<uint32_t>();
         curIters = (uint64_t)((double)curIters * (double)factor);
         gFractal->SetNumIterations<uint32_t>(curIters);
-    }
-    else {
+    } else {
         uint64_t curIters = gFractal->GetNumIterations<uint64_t>();
         curIters = (uint64_t)((double)curIters * (double)factor);
         gFractal->SetNumIterations<uint64_t>(curIters);
@@ -1602,42 +1565,36 @@ void MenuMultiplyIterations(HWND hWnd, double factor)
     PaintAsNecessary(hWnd);
 }
 
-void MenuResetIterations(HWND hWnd)
-{
+void MenuResetIterations(HWND hWnd) {
     gFractal->ResetNumIterations();
     PaintAsNecessary(hWnd);
 }
 
-void MenuGetCurPos(HWND hWnd)
-{
+void MenuGetCurPos(HWND hWnd) {
     constexpr size_t numBytes = 32768;
 
     BOOL ret = OpenClipboard(hWnd);
-    if (ret == 0)
-    {
+    if (ret == 0) {
         MessageBox(hWnd, L"Opening the clipboard failed.  Another program must be using it.", L"", MB_OK | MB_APPLMODAL);
         return;
     }
 
     ret = EmptyClipboard();
-    if (ret == 0)
-    {
+    if (ret == 0) {
         MessageBox(hWnd, L"Emptying the clipboard of its current contents failed.  Make sure no other programs are using it.", L"", MB_OK | MB_APPLMODAL);
         CloseClipboard();
         return;
     }
 
     HGLOBAL hData = GlobalAlloc(GMEM_MOVEABLE, numBytes);
-    if (hData == nullptr)
-    {
+    if (hData == nullptr) {
         MessageBox(hWnd, L"Insufficient memory.", L"", MB_OK | MB_APPLMODAL);
         CloseClipboard();
         return;
     }
 
-    char* mem = (char*)GlobalLock(hData);
-    if (mem == nullptr)
-    {
+    char *mem = (char *)GlobalLock(hData);
+    if (mem == nullptr) {
         MessageBox(hWnd, L"Insufficient memory.", L"", MB_OK | MB_APPLMODAL);
         CloseClipboard();
         return;
@@ -1656,13 +1613,13 @@ void MenuGetCurPos(HWND hWnd)
     std::stringstream ss;
     std::string s;
 
-    auto setupSS = [&](const HighPrecision& num) -> std::string {
+    auto setupSS = [&](const HighPrecision &num) -> std::string {
         ss.str("");
         ss.clear();
         ss << std::setprecision(std::numeric_limits<HighPrecision>::max_digits10);
         ss << num;
         return ss.str();
-    };
+        };
 
     s = setupSS(minX);
     auto sminX = std::string(s.begin(), s.end());
@@ -1712,33 +1669,31 @@ void MenuGetCurPos(HWND hWnd)
     std::string threadingStr;
     if (threadingVal == LAParameters::LAThreadingAlgorithm::SingleThreaded) {
         threadingStr = "Single threaded";
-    }
-    else if (threadingVal == LAParameters::LAThreadingAlgorithm::MultiThreaded) {
+    } else if (threadingVal == LAParameters::LAThreadingAlgorithm::MultiThreaded) {
         threadingStr = "Multi threaded";
-    }
-    else {
+    } else {
         threadingStr = "Unknown";
     }
 
     const auto laParametersStr =
         std::string("Detection method = ")
-            + std::to_string(laParameters.GetDetectionMethod()) + "\r\n" +
+        + std::to_string(laParameters.GetDetectionMethod()) + "\r\n" +
         std::string("Threshold scale = ")
-            + std::to_string(laParameters.GetLAThresholdScaleExp()) + "\r\n" +
+        + std::to_string(laParameters.GetLAThresholdScaleExp()) + "\r\n" +
         std::string("Threshold C scale = ")
-            + std::to_string(laParameters.GetLAThresholdCScaleExp()) + "\r\n" +
+        + std::to_string(laParameters.GetLAThresholdCScaleExp()) + "\r\n" +
         std::string("Stage 0 period detection threshold 2 = ")
-            + std::to_string(laParameters.GetStage0PeriodDetectionThreshold2Exp()) + "\r\n" +
+        + std::to_string(laParameters.GetStage0PeriodDetectionThreshold2Exp()) + "\r\n" +
         std::string("Period detection threshold 2 = ")
-            + std::to_string(laParameters.GetPeriodDetectionThreshold2Exp()) + "\r\n" +
+        + std::to_string(laParameters.GetPeriodDetectionThreshold2Exp()) + "\r\n" +
         std::string("Stage 0 period detection threshold = ")
-            + std::to_string(laParameters.GetStage0PeriodDetectionThresholdExp()) + "\r\n" +
+        + std::to_string(laParameters.GetStage0PeriodDetectionThresholdExp()) + "\r\n" +
         std::string("Period detection threshold = ")
-            + std::to_string(laParameters.GetPeriodDetectionThresholdExp()) + "\r\n" +
+        + std::to_string(laParameters.GetPeriodDetectionThresholdExp()) + "\r\n" +
         std::string("LA Threading: ")
-            + threadingStr + "\r\n" +
+        + threadingStr + "\r\n" +
         std::string("LA size: ")
-            + std::to_string(details.LASize) + "\r\n";
+        + std::to_string(details.LASize) + "\r\n";
 
     const auto benchmarkData =
         std::string("Overall time (ms) = ") + std::to_string(gFractal->GetBenchmarkOverall().GetDeltaInMs()) + "\r\n" +
@@ -1800,8 +1755,7 @@ void MenuGetCurPos(HWND hWnd)
     //
 
     HANDLE clpData = SetClipboardData(CF_TEXT, hData);
-    if (clpData == nullptr)
-    {
+    if (clpData == nullptr) {
         MessageBox(hWnd, L"Adding the data to the clipboard failed.  You are probably very low on memory.  Try closing other programs or restarting your computer.", L"", MB_OK | MB_APPLMODAL);
         CloseClipboard();
         return;
@@ -1812,19 +1766,16 @@ void MenuGetCurPos(HWND hWnd)
     ::MessageBoxA(hWnd, stringCopy.c_str(), "", MB_OK | MB_APPLMODAL);
 }
 
-void MenuPaletteRotation(HWND)
-{
+void MenuPaletteRotation(HWND) {
     POINT OrgPos, CurPos;
     GetCursorPos(&OrgPos);
 
-    for (;;)
-    {
+    for (;;) {
         gFractal->RotateFractalPalette(10);
         gFractal->DrawFractal(false);
         GetCursorPos(&CurPos);
         if (abs(CurPos.x - OrgPos.x) > 5 ||
-            abs(CurPos.y - OrgPos.y) > 5)
-        {
+            abs(CurPos.y - OrgPos.y) > 5) {
             break;
         }
     }
@@ -1868,23 +1819,17 @@ void MenuSaveCurrentLocation(HWND hWnd) {
         time_struct.wSecond);
 
     size_t x, y;
-    if (response == IDYES)
-    {
+    if (response == IDYES) {
         x = gFractal->GetRenderWidth();
         y = gFractal->GetRenderHeight();
-        if (x > y)
-        {
-            y = (int)((double) 16384.0 / (double)((double)x / (double)y));
+        if (x > y) {
+            y = (int)((double)16384.0 / (double)((double)x / (double)y));
             x = 16384;
-        }
-        else if (x < y)
-        {
-            x = (int)((double) 16384.0 / (double)((double)y / (double)x));
+        } else if (x < y) {
+            x = (int)((double)16384.0 / (double)((double)y / (double)x));
             y = 16384;
         }
-    }
-    else
-    {
+    } else {
         x = gFractal->GetRenderWidth();
         y = gFractal->GetRenderHeight();
     }
@@ -1954,10 +1899,6 @@ void MenuSaveHiResBMP(HWND) {
 
 void MenuSaveItersAsText() {
     gFractal->SaveItersAsText(L"");
-}
-
-void MenuSaveRefOrbitAsText() {
-    gFractal->SaveRefOrbitAsText();
 }
 
 void BenchmarkMessage(HWND hWnd, size_t milliseconds) {
@@ -2065,8 +2006,7 @@ void MenuShowHotkeys(HWND /*hWnd*/) {
         MB_OK);
 }
 
-void PaintAsNecessary(HWND hWnd)
-{
+void PaintAsNecessary(HWND hWnd) {
     RECT rt;
     GetClientRect(hWnd, &rt);
 
@@ -2074,17 +2014,15 @@ void PaintAsNecessary(HWND hWnd)
         return;
     }
 
-    if (gFractal != nullptr)
-    {
+    if (gFractal != nullptr) {
         gFractal->CalcFractal(false);
     }
 }
 
 // These functions are used to create a minidump when the program crashes.
-typedef BOOL(WINAPI* MINIDUMPWRITEDUMP)(HANDLE hProcess, DWORD dwPid, HANDLE hFile, MINIDUMP_TYPE DumpType, CONST PMINIDUMP_EXCEPTION_INFORMATION ExceptionParam, CONST PMINIDUMP_USER_STREAM_INFORMATION UserStreamParam, CONST PMINIDUMP_CALLBACK_INFORMATION CallbackParam);
+typedef BOOL(WINAPI *MINIDUMPWRITEDUMP)(HANDLE hProcess, DWORD dwPid, HANDLE hFile, MINIDUMP_TYPE DumpType, CONST PMINIDUMP_EXCEPTION_INFORMATION ExceptionParam, CONST PMINIDUMP_USER_STREAM_INFORMATION UserStreamParam, CONST PMINIDUMP_CALLBACK_INFORMATION CallbackParam);
 
-void create_minidump(struct _EXCEPTION_POINTERS* apExceptionInfo)
-{
+void create_minidump(struct _EXCEPTION_POINTERS *apExceptionInfo) {
     HMODULE mhLib = ::LoadLibrary(_T("dbghelp.dll"));
     MINIDUMPWRITEDUMP pDump = (MINIDUMPWRITEDUMP)::GetProcAddress(mhLib, "MiniDumpWriteDump");
 
@@ -2100,8 +2038,7 @@ void create_minidump(struct _EXCEPTION_POINTERS* apExceptionInfo)
     ::CloseHandle(hFile);
 }
 
-LONG WINAPI unhandled_handler(struct _EXCEPTION_POINTERS* apExceptionInfo)
-{
+LONG WINAPI unhandled_handler(struct _EXCEPTION_POINTERS *apExceptionInfo) {
     create_minidump(apExceptionInfo);
     return EXCEPTION_CONTINUE_SEARCH;
 }

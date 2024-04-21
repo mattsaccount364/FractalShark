@@ -110,7 +110,7 @@ public:
     void LoadAllOrbits();
 
     void GetSomeDetails(RefOrbitDetails &details) const;
-    void SaveOrbitAsText(PerturbExtras PExtras) const;
+    void SaveOrbitAsText(CompressToDisk compression) const;
 
     void DrawPerturbationResults();
 

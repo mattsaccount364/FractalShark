@@ -186,7 +186,7 @@ public:
     int SaveCurrentFractal(std::wstring filename_base, bool copy_the_iters);
     int SaveHiResFractal(std::wstring filename_base);
     int SaveItersAsText(std::wstring filename_base);
-    void SaveRefOrbitAsText();
+    void SaveRefOrbitAsText(CompressToDisk compression);
     bool CleanupThreads(bool all);
 
     // Benchmark results

@@ -320,7 +320,10 @@ BEGIN
             MENUITEM "Save High Res Bitmap",        IDM_SAVEHIRESBMP
             MENUITEM "Save Iterations as Text",     IDM_SAVE_ITERS_TEXT
             MENUITEM "Save Bitmap Ima&ge",          IDM_SAVEBMP
+            MENUITEM SEPARATOR
             MENUITEM "Save Reference Orbit as Text", IDM_SAVE_REFORBIT_TEXT
+            MENUITEM "Save Compressed Orbit as Text (simple)", IDM_SAVE_REFORBIT_TEXT_SIMPLE
+            MENUITEM "Save Compressed Orbit as Text (max)", IDM_SAVE_REFORBIT_TEXT_MAX
             MENUITEM SEPARATOR
             MENUITEM "Benchmark (5x, full recalc)", IDM_BENCHMARK_FULL
             MENUITEM "Benchmark (5x, intermediate only)", IDM_BENCHMARK_INT

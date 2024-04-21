@@ -3015,10 +3015,12 @@ void RefOrbitCalc::GetSomeDetails(RefOrbitDetails &details) const {
     static_assert(static_cast<int>(RenderAlgorithm::MAX) == 61, "Fix me");
 }
 
-void RefOrbitCalc::SaveOrbitAsText(PerturbExtras PExtras) const {
-    auto lambda = [this, PExtras](auto&& results) {
+void RefOrbitCalc::SaveOrbitAsText(CompressToDisk compression) const {
+    auto lambda = [this, compression](auto&& results) {
         if (results != nullptr) {
-            if (PExtras == PerturbExtras::EnableCompression) {
+            if (compression == CompressToDisk::Disable) {
+                results->SaveOrbitAsText();
+            } else if (compression == CompressToDisk::SimpleCompression) {
                 if constexpr (
                     Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::Disable>() &&
                     !Introspection::IsDblFlt<decltype(*results)>()) {
@@ -3029,9 +3031,16 @@ void RefOrbitCalc::SaveOrbitAsText(PerturbExtras PExtras) const {
                     compressedResults->SaveOrbitAsText();
                 }
             }
-            else  if (PExtras == PerturbExtras::Disable ||
-                PExtras == PerturbExtras::Bad) {
-                results->SaveOrbitAsText();
+            else if (compression == CompressToDisk::MaxCompression) {
+                if constexpr (
+                    Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::Disable>() &&
+                    !Introspection::IsDblFlt<decltype(*results)>()) {
+                    auto compressedResults = results->Compress(
+                        m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
+                        GetNextGenerationNumber());
+                    // compressedResults->Decompress(GetNextGenerationNumber());
+                    compressedResults->SaveOrbitAsText();
+                }
             }
             else {
                 assert(false);

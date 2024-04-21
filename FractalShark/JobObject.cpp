@@ -2,8 +2,7 @@
 
 #include "JobObject.h"
 
-JobObject::JobObject()
-{
+JobObject::JobObject() {
     // Use a Win32 job object to limit virtual memory used
     // by this process.
 
@@ -26,8 +25,7 @@ JobObject::JobObject()
     size_t Limit2;
     if (totalPhysicalMemoryInKb < EightGb / 1024) {
         Limit2 = 0;
-    }
-    else {
+    } else {
         Limit2 = totalPhysicalMemoryInKb * 1024ULL - EightGb;
     }
 
@@ -50,8 +48,7 @@ JobObject::JobObject()
     }
 }
 
-JobObject::~JobObject()
-{
+JobObject::~JobObject() {
     if (hJob != nullptr) {
         CloseHandle(hJob);
     }

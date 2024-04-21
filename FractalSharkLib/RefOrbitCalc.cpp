@@ -2941,7 +2941,6 @@ void RefOrbitCalc::SaveOrbitAsText(CompressToDisk compression) const {
                     auto compressedResults = results->Compress(
                         m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
                         GetNextGenerationNumber());
-                    // compressedResults->Decompress(GetNextGenerationNumber());
                     compressedResults->SaveOrbitAsText();
                 }
             } else if (compression == CompressToDisk::MaxCompression) {
@@ -2951,7 +2950,6 @@ void RefOrbitCalc::SaveOrbitAsText(CompressToDisk compression) const {
                     auto compressedResults = results->Compress(
                         m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
                         GetNextGenerationNumber());
-                    // compressedResults->Decompress(GetNextGenerationNumber());
                     compressedResults->SaveOrbitAsText();
                 }
             } else {

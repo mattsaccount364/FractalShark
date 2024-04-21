@@ -281,6 +281,12 @@ public:
         Decompress(size_t NewGenerationNumber)
         requires (PExtras == PerturbExtras::EnableCompression && !Introspection::IsTDblFlt<T>());
 
+    std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::EnableCompression>>
+        CompressMax(
+            int32_t compression_error_exp_param,
+            size_t new_generation_number)
+        requires (PExtras == PerturbExtras::Disable && !Introspection::IsTDblFlt<T>());
+
     void SaveOrbitAsText() const;
 
     // For information purposes only, not used for anything

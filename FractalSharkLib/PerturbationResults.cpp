@@ -1093,6 +1093,70 @@ PerturbationResults<IterType, T, PExtras>::Decompress(size_t NewGenerationNumber
     return decompressed;
 }
 
+// For reference:
+// Used:
+//   https://code.mathr.co.uk/fractal-bits/tree/HEAD:/mandelbrot-reference-compression
+//   https://fractalforums.org/fractal-mathematics-and-new-theories/28/reference-compression/5142
+// as a reference for the compression algorithm.
+template<typename IterType, class T, PerturbExtras PExtras>
+std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::EnableCompression>>
+PerturbationResults<IterType, T, PExtras>::CompressMax(
+    int32_t compression_error_exp_param,
+    size_t new_generation_number)
+    requires (PExtras == PerturbExtras::Disable && !Introspection::IsTDblFlt<T>()) {
+
+    constexpr bool disable_compression = false;
+    const auto Two = T{ 2.0f };
+
+    m_CompressionErrorExp = compression_error_exp_param;
+    auto compErr = std::pow(10, m_CompressionErrorExp);
+    const auto CompressionError = static_cast<T>(compErr);
+
+    auto compressed =
+        std::make_unique<PerturbationResults<IterType, T, PerturbExtras::EnableCompression>>(
+            m_FullOrbit.GetAddPointOptions(), new_generation_number);
+    compressed->CopySettingsWithoutOrbit(*this);
+
+    assert(m_FullOrbit.GetSize() > 1);
+
+    if constexpr (disable_compression) {
+        for (size_t i = 0; i < m_FullOrbit.GetSize(); i++) {
+            compressed->FullOrbit.PushBack({ m_FullOrbit[i].x, m_FullOrbit[i].y, i });
+        }
+
+        return compressed;
+    } else {
+        T zx{};
+        T zy{};
+
+        for (size_t i = 0; i < m_FullOrbit.GetSize(); i++) {
+            auto errX = zx - m_FullOrbit[i].x;
+            auto errY = zy - m_FullOrbit[i].y;
+
+            auto norm_z = m_FullOrbit[i].x * m_FullOrbit[i].x + m_FullOrbit[i].y * m_FullOrbit[i].y;
+            HdrReduce(norm_z);
+
+            auto err = (errX * errX + errY * errY) * CompressionError;
+            HdrReduce(err);
+
+            if (HdrCompareToBothPositiveReducedGE(err, norm_z)) {
+                zx = m_FullOrbit[i].x;
+                zy = m_FullOrbit[i].y;
+
+                compressed->m_FullOrbit.PushBack({ m_FullOrbit[i].x, m_FullOrbit[i].y, i });
+            }
+
+            auto zx_old = zx;
+            zx = zx * zx - zy * zy + m_OrbitXLow;
+            HdrReduce(zx);
+            zy = Two * zx_old * zy + m_OrbitYLow;
+            HdrReduce(zy);
+        }
+    }
+
+    return compressed;
+}
+
 template<typename IterType, class T, PerturbExtras PExtras>
 void PerturbationResults<IterType, T, PExtras>::SaveOrbitAsText() const {
     auto outFile = GenFilename(GrowableVectorTypes::DebugOutput);

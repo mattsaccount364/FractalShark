@@ -19,8 +19,7 @@ public:
         DontSaveForReuse,
         SaveForReuse1,
         SaveForReuse2,
-        SaveForReuse3,
-        RunWithReuse
+        SaveForReuse3
     };
 
     enum class BenchmarkMode {

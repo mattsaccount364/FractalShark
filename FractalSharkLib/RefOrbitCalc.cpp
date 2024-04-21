@@ -575,7 +575,8 @@ void RefOrbitCalc::InitResults(
     // We're going to add new results, so clear out the old ones.
     OptimizeMemory();
 
-    results.InitResults<T, PExtras, Reuse>(
+    results.InitResults(
+        Reuse,
         initX,
         initY,
         m_Fractal.GetMinX(),
@@ -800,7 +801,7 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
         results->SetBad(false);
     }
 
-    results->CompleteResults<PExtras, Reuse>(bumpAllocator->GetAllocated(1));
+    results->CompleteResults<Reuse>(bumpAllocator->GetAllocated(1));
     m_GuessReserveSize = results->GetCountOrbitEntries();
     } // End of scope for allocators.
 
@@ -1157,7 +1158,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
     mpf_clear(temp_mpf);
     mpf_clear(temp2_mpf);
 
-    results->CompleteResults<PerturbExtras::Disable, ReuseMode::DontSaveForReuse>(nullptr);
+    results->CompleteResults<ReuseMode::DontSaveForReuse>(nullptr);
     m_GuessReserveSize = results->GetCountOrbitEntries();
 
     return true;
@@ -1712,7 +1713,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     mpf_clear(DeltaSubNX);
     mpf_clear(DeltaSubNY);
 
-    results->CompleteResults<PerturbExtras::Disable, ReuseMode::DontSaveForReuse>(nullptr);
+    results->CompleteResults<ReuseMode::DontSaveForReuse>(nullptr);
     m_GuessReserveSize = results->GetCountOrbitEntries();
 
     return true;
@@ -2305,7 +2306,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
         reusedAllocator = bumpAllocator->GetAllocated(1);
     }
 
-    results->CompleteResults<PExtras, Reuse>(std::move(reusedAllocator));
+    results->CompleteResults<Reuse>(std::move(reusedAllocator));
     m_GuessReserveSize = results->GetCountOrbitEntries();
     } // End of scope for boundedAllocator and bumpAllocator
 
@@ -3014,52 +3015,13 @@ void RefOrbitCalc::GetSomeDetails(RefOrbitDetails &details) const {
     static_assert(static_cast<int>(RenderAlgorithm::MAX) == 61, "Fix me");
 }
 
-// Using a technique like this:
-// template<typename>
-// struct is_std_array : std::false_type {};
-// template<typename T, std::size_t N>
-// struct is_std_array<std::array<T, N>> : std::true_type {};
-// 
-
-template<typename IterType, typename Float, PerturbExtras PExtras>
-struct PerturbTypeParams {
-    using IterType_ = IterType;
-    using Float_ = Float;
-    static constexpr auto PExtras_ = PExtras;
-};
-
-template<
-    template <typename, typename, PerturbExtras> typename PerturbType,
-    typename IterType,
-    typename Float,
-    PerturbExtras PExtras>
-constexpr auto Extract(const PerturbType<IterType, Float, PExtras>&) -> PerturbTypeParams<IterType, Float, PExtras>;
-
-template<typename PerturbType>
-constexpr auto Extract_PExtras = decltype(Extract(std::declval<PerturbType>()))::PExtras_;
-
-template<typename PerturbType>
-using Extract_Float= typename decltype(Extract(std::declval<PerturbType>()))::Float_;
-
-template<typename PerturbType>
-static constexpr bool IsCompressionEnabled() {
-    return Extract_PExtras<PerturbType> == PerturbExtras::EnableCompression;
-}
-
-template<typename PerturbType>
-static constexpr bool IsDblFlt() {
-    return
-        std::is_same<Extract_Float<PerturbType>, CudaDblflt<MattDblflt>>::value ||
-        std::is_same<Extract_Float<PerturbType>, HDRFloat<CudaDblflt<MattDblflt>>>::value;
-}
-
 void RefOrbitCalc::SaveOrbitAsText(PerturbExtras PExtras) const {
     auto lambda = [this, PExtras](auto&& results) {
         if (results != nullptr) {
             if (PExtras == PerturbExtras::EnableCompression) {
                 if constexpr (
-                    !IsCompressionEnabled<decltype(*results)>() &&
-                    !IsDblFlt<decltype(*results)>()) {
+                    Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::Disable>() &&
+                    !Introspection::IsDblFlt<decltype(*results)>()) {
                     auto compressedResults = results->Compress(
                         m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
                         GetNextGenerationNumber());

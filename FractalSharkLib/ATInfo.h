@@ -27,17 +27,17 @@ public:
     template<class T2, class SubType2>
     CUDA_CRAP ATInfo(const ATInfo<IterType, T2, SubType2>& other)
         : StepLength(other.StepLength),
-          ThresholdC(other.ThresholdC),
-          SqrEscapeRadius(other.SqrEscapeRadius),
-          RefC(other.RefC),
-          ZCoeff(other.ZCoeff),
-          CCoeff(other.CCoeff),
-          InvZCoeff(other.InvZCoeff),
-          CCoeffSqrInvZCoeff(other.CCoeffSqrInvZCoeff),
-          CCoeffInvZCoeff(other.CCoeffInvZCoeff),
-          CCoeffNormSqr(other.CCoeffNormSqr),
-          RefCNormSqr(other.RefCNormSqr),
-          factor(other.factor) {
+          ThresholdC(HDRFloat(other.ThresholdC)),
+          SqrEscapeRadius(HDRFloat(other.SqrEscapeRadius)),
+          RefC(HDRFloatComplex(other.RefC)),
+          ZCoeff(HDRFloatComplex(other.ZCoeff)),
+          CCoeff(HDRFloatComplex(other.CCoeff)),
+          InvZCoeff(HDRFloatComplex(other.InvZCoeff)),
+          CCoeffSqrInvZCoeff(HDRFloatComplex(other.CCoeffSqrInvZCoeff)),
+          CCoeffInvZCoeff(HDRFloatComplex(other.CCoeffInvZCoeff)),
+          CCoeffNormSqr(HDRFloat(other.CCoeffNormSqr)),
+          RefCNormSqr(HDRFloat(other.RefCNormSqr)),
+          factor(HDRFloat(other.factor)) {
     }
 
 public:

@@ -166,13 +166,13 @@ public:
 
     template<class SrcT, HDROrder OtherOrder>
     CUDA_CRAP constexpr HDRFloat(const HDRFloat<SrcT, OtherOrder>& other) {
-        Base::mantissa = (T)other.mantissa;
+        Base::mantissa = T(other.mantissa);
         Base::exp = other.exp;
     }
 
     template<class SrcT, HDROrder OtherOrder>
     CUDA_CRAP constexpr HDRFloat(HDRFloat<SrcT, OtherOrder>&& other) {
-        Base::mantissa = (T)other.mantissa;
+        Base::mantissa = T(other.mantissa);
         Base::exp = other.exp;
     }
 

@@ -48,7 +48,7 @@ public:
         d{ other.d.head, other.d.tail } {
     }
 
-#if !defined(__CUDA_ARCH__)
+#ifndef __CUDA_ARCH__
     // Constructs a CudaDblflt from a double
     CUDA_CRAP
     constexpr
@@ -61,6 +61,14 @@ public:
     constexpr
     explicit CudaDblflt(double ind)
         : d{ ind } {
+    }
+#endif
+
+#ifndef __CUDACC__
+    CUDA_CRAP
+        constexpr
+        explicit CudaDblflt(const HighPrecision &ind) {
+        d = T{ static_cast<double>(ind) };
     }
 #endif
 

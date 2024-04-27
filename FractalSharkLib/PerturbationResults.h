@@ -287,6 +287,10 @@ public:
             size_t new_generation_number)
         requires (PExtras == PerturbExtras::Disable && !Introspection::IsTDblFlt<T>());
 
+    std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::Disable>>
+        DecompressMax(size_t NewGenerationNumber)
+        requires (PExtras == PerturbExtras::EnableCompression && !Introspection::IsTDblFlt<T>());
+
     void SaveOrbitAsText() const;
 
     // For information purposes only, not used for anything
@@ -324,6 +328,7 @@ private:
     mutable HANDLE m_MetaFileHandle;
 
     GrowableVector<GPUReferenceIter<T, PExtras>> m_FullOrbit;
+    std::vector<IterTypeFull> m_Rebases;
     IterType m_UncompressedItersInOrbit;
     const size_t m_GenerationNumber;
 

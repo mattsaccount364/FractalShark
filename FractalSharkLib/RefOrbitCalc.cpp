@@ -2293,16 +2293,16 @@ bool RefOrbitCalc::IsPerturbationResultUsefulHere(size_t i) {
                 PerturbationResults.GetAuthoritativePrecisionInBits() != 0 &&
                 (PerturbationResults.GetMaxIterations() > PerturbationResults.GetCountOrbitEntries() ||
                     PerturbationResults.GetMaxIterations() >= m_Fractal.GetNumIterations<IterType>());
+        } else {
+            const auto term1 = PerturbationResults.GetHiX() >= m_Fractal.GetMinX();
+            const auto term2 = PerturbationResults.GetHiX() <= m_Fractal.GetMaxX();
+            const auto term3 = PerturbationResults.GetHiY() >= m_Fractal.GetMinY();
+            const auto term4 = PerturbationResults.GetHiY() <= m_Fractal.GetMaxY();
+            return
+                term1 && term2 && term3 && term4 &&
+                (PerturbationResults.GetMaxIterations() > PerturbationResults.GetCountOrbitEntries() ||
+                    PerturbationResults.GetMaxIterations() >= m_Fractal.GetNumIterations<IterType>());
         }
-
-        const auto term1 = PerturbationResults.GetHiX() >= m_Fractal.GetMinX();
-        const auto term2 = PerturbationResults.GetHiX() <= m_Fractal.GetMaxX();
-        const auto term3 = PerturbationResults.GetHiY() >= m_Fractal.GetMinY();
-        const auto term4 = PerturbationResults.GetHiY() <= m_Fractal.GetMaxY();
-        return
-            term1 && term2 && term3 && term4 &&
-            (PerturbationResults.GetMaxIterations() > PerturbationResults.GetCountOrbitEntries() ||
-                PerturbationResults.GetMaxIterations() >= m_Fractal.GetNumIterations<IterType>());
     };
 
     const auto &results = GetPerturbationResults<IterType, T, PExtras>(i);
@@ -2342,6 +2342,7 @@ template<
     class ConvertTType>
 PerturbationResults<IterType, ConvertTType, PExtras> *
 RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
+    constexpr bool forceCompressDecompressForTesting = true;
     constexpr bool IsHdrDblflt = std::is_same<ConvertTType, HDRFloat<CudaDblflt<MattDblflt>>>::value;
     constexpr bool IsDblflt = std::is_same<ConvertTType, CudaDblflt<MattDblflt>>::value;
     constexpr bool UsingDblflt = IsHdrDblflt || IsDblflt;
@@ -2425,6 +2426,15 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
         added = true;
 
         results = cur_array[cur_array.size() - 1].get();
+
+        // TODO: this is a hack.  We need to fix this.
+        if constexpr (forceCompressDecompressForTesting && PExtras == PerturbExtras::Disable) {
+            auto compressedResults = results->CompressMax(
+                m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
+                GetNextGenerationNumber());
+            auto decompressedResults = compressedResults->DecompressMax(GetNextGenerationNumber());
+            results = AddPerturbationResults(std::move(decompressedResults));
+        }
     }
 
     // This is a weird case.  Suppose you generate a Perturbation-only set of results
@@ -2938,16 +2948,24 @@ void RefOrbitCalc::SaveOrbitAsText(CompressToDisk compression) const {
                 if constexpr (
                     Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::Disable>() &&
                     !Introspection::IsDblFlt<decltype(*results)>()) {
-                    auto compressedResults = results->Compress(
+                    //auto compressedResults = results->Compress(
+                    //    m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
+                    //    GetNextGenerationNumber());
+                    //compressedResults->SaveOrbitAsText();
+
+                    // TODO temp test:
+                    auto compressedResults = results->CompressMax(
                         m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
                         GetNextGenerationNumber());
-                    compressedResults->SaveOrbitAsText();
+                    auto decompressedResults = compressedResults->DecompressMax(GetNextGenerationNumber());
+                    decompressedResults->SaveOrbitAsText();
+
                 }
             } else if (compression == CompressToDisk::MaxCompression) {
                 if constexpr (
                     Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::Disable>() &&
                     !Introspection::IsDblFlt<decltype(*results)>()) {
-                    auto compressedResults = results->Compress(
+                    auto compressedResults = results->CompressMax(
                         m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
                         GetNextGenerationNumber());
                     compressedResults->SaveOrbitAsText();

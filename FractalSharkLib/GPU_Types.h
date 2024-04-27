@@ -259,7 +259,14 @@ struct CompressionIndexField {
     CompressionIndexField() : CompressionIndex{ } {
     }
 
-    CompressionIndexField(IterTypeFull initIndex) : CompressionIndex{ initIndex } {
+    CompressionIndexField(IterTypeFull initIndex) :
+        CompressionIndex{ initIndex },
+        Rebase{} {
+    }
+
+    CompressionIndexField(IterTypeFull initIndex, IterTypeFull rebase)
+        : CompressionIndex{ initIndex },
+        Rebase{ rebase } {
     }
 
     IterTypeFull CompressionIndex : 63;
@@ -302,6 +309,15 @@ public:
         typename U = PerturbExtrasHack<PExtras>,
         std::enable_if_t<U::Val == PerturbExtras::Disable, int> = 0>
     GPUReferenceIter(Type init_x, Type init_y) : x{ init_x }, y{ init_y } {
+    }
+
+    template<
+        typename U = PerturbExtrasHack<PExtras>,
+        std::enable_if_t<U::Val == PerturbExtras::EnableCompression, int> = 0>
+    GPUReferenceIter(Type init_x, Type init_y, IterTypeFull init_compression_index, IterTypeFull rebase)
+        : CompressionIndexField(init_compression_index, rebase),
+        x{ init_x },
+        y{ init_y } {
     }
 
     template<

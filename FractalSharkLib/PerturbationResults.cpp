@@ -359,8 +359,11 @@ void PerturbationResults<IterType, T, PExtras>::CopySettingsWithoutOrbit(const P
     m_BaseFilename = GenBaseFilename(m_GenerationNumber);
     m_MetaFileHandle = INVALID_HANDLE_VALUE;
 
-    m_FullOrbit = {};
+    m_FullOrbit = {}; // Note: not copied
     m_UncompressedItersInOrbit = other.m_UncompressedItersInOrbit;
+
+    // compression - don't copy LA data.  Regenerate if needed.
+    m_LaReference = nullptr;
 
     m_AuthoritativePrecisionInBits = other.m_AuthoritativePrecisionInBits;
 
@@ -373,8 +376,6 @@ void PerturbationResults<IterType, T, PExtras>::CopySettingsWithoutOrbit(const P
 
     m_DeltaPrecisionCached = other.m_DeltaPrecisionCached;
     m_ExtraPrecisionCached = other.m_ExtraPrecisionCached;
-
-    // compression - don't copy LA data.  Regenerate if needed.
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>
@@ -1015,7 +1016,7 @@ PerturbationResults<IterType, T, PExtras>::Compress(
 
     auto compressed =
         std::make_unique<PerturbationResults<IterType, T, PerturbExtras::EnableCompression>>(
-            m_FullOrbit.GetAddPointOptions(), new_generation_number);
+            GetRefOrbitOptions(), new_generation_number);
     compressed->CopySettingsWithoutOrbit(*this);
 
     assert(m_FullOrbit.GetSize() > 1);
@@ -1065,15 +1066,18 @@ PerturbationResults<IterType, T, PExtras>::Decompress(size_t NewGenerationNumber
 
     auto compressed_orb = std::move(m_FullOrbit);
     auto decompressed = std::make_unique<PerturbationResults<IterType, T, PerturbExtras::Disable>>(
-        m_FullOrbit.GetAddPointOptions(), NewGenerationNumber);
+        GetRefOrbitOptions(), NewGenerationNumber);
     decompressed->CopySettingsWithoutOrbit(*this);
+
+    const auto targetUncompressedIters = decompressed->m_UncompressedItersInOrbit;
+    decompressed->m_UncompressedItersInOrbit = 0;
 
     T zx{};
     T zy{};
 
     size_t compressed_index = 0;
 
-    for (size_t i = 0; i < m_UncompressedItersInOrbit; i++) {
+    for (size_t i = 0; i < targetUncompressedIters; i++) {
         if (compressed_index < compressed_orb.GetSize() &&
             compressed_orb[compressed_index].CompressionIndex == i) {
             zx = compressed_orb[compressed_index].x;
@@ -1107,6 +1111,7 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
 
     constexpr bool disable_compression = false;
     const auto Two = T{ 2.0f };
+    const auto MinusTwo = T{ -2.0f };
 
     m_CompressionErrorExp = compression_error_exp_param;
     auto compErr = std::pow(10, m_CompressionErrorExp);
@@ -1114,7 +1119,7 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
 
     auto compressed =
         std::make_unique<PerturbationResults<IterType, T, PerturbExtras::EnableCompression>>(
-            m_FullOrbit.GetAddPointOptions(), new_generation_number);
+            GetRefOrbitOptions(), new_generation_number);
     compressed->CopySettingsWithoutOrbit(*this);
 
     assert(m_FullOrbit.GetSize() > 1);
@@ -1125,36 +1130,312 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
         }
 
         return compressed;
-    } else {
-        T zx{};
-        T zy{};
+    }
 
-        for (size_t i = 0; i < m_FullOrbit.GetSize(); i++) {
-            auto errX = zx - m_FullOrbit[i].x;
-            auto errY = zy - m_FullOrbit[i].y;
+    auto normZ = [](T x, T y) -> T {
+        auto norm_z = x * x + y * y;
+        HdrReduce(norm_z);
+        return norm_z;
+    };
 
-            auto norm_z = m_FullOrbit[i].x * m_FullOrbit[i].x + m_FullOrbit[i].y * m_FullOrbit[i].y;
-            HdrReduce(norm_z);
+    auto normZTimesT = [](T x, T y, T t) -> T {
+        auto norm_z = (x * x + y * y) * t;
+        HdrReduce(norm_z);
+        return norm_z;
+    };
 
-            auto err = (errX * errX + errY * errY) * CompressionError;
-            HdrReduce(err);
+    const auto threshold2 = CompressionError;
+    const T constant1{ 0x1.0p-4 };
+    const T constant2{ 0x1.000001p0 };
+    //const T constant2{ 20000 };
+    T zx{};
+    T zy{};
+
+    IterTypeFull i = 1;
+    for (; i < m_FullOrbit.GetSize(); i++) {
+        const auto norm_z = normZ(m_FullOrbit[i].x, m_FullOrbit[i].y);
+
+        if (HdrCompareToBothPositiveReducedLT(norm_z, constant1)) {
+            zx = m_FullOrbit[i].x;
+            zy = m_FullOrbit[i].y;
+
+            compressed->m_FullOrbit.PushBack({ m_FullOrbit[i].x, m_FullOrbit[i].y, i, true });
+            break;
+        } else {
+            auto err = normZTimesT(zx - m_FullOrbit[i].x, zy - m_FullOrbit[i].y, threshold2);
 
             if (HdrCompareToBothPositiveReducedGE(err, norm_z)) {
+                // else if (std::norm(z - Z[i]) * Threshold2 > std::norm(Z[i]))
                 zx = m_FullOrbit[i].x;
                 zy = m_FullOrbit[i].y;
 
-                compressed->m_FullOrbit.PushBack({ m_FullOrbit[i].x, m_FullOrbit[i].y, i });
+                compressed->m_FullOrbit.PushBack({ m_FullOrbit[i].x, m_FullOrbit[i].y, i, false });
             }
-
-            auto zx_old = zx;
-            zx = zx * zx - zy * zy + m_OrbitXLow;
-            HdrReduce(zx);
-            zy = Two * zx_old * zy + m_OrbitYLow;
-            HdrReduce(zy);
         }
+
+        //z = z * z + c;
+        const auto zx_old = zx;
+        zx = zx * zx - zy * zy + m_OrbitXLow;
+        HdrReduce(zx);
+        zy = Two * zx_old * zy + m_OrbitYLow;
+        HdrReduce(zy);
     }
 
+    auto dzX = zx;
+    auto dzY = zy;
+    IterTypeFull PrevWayPointIteration = i;
+
+    // dz = (Z[0] * 2 + dz) * dz;
+    // dzX + dzY * i = (Z[0].x + Z[0].y * i) * 2
+    // 2 * z0x + 2 * z0y * i + zx + zy * i
+    // x: 2 * z0x + zx
+    // y: 2 * z0y + zy
+    
+    //dzX = Two * m_FullOrbit[0].x * dzX + dzX * dzX;
+    //dzY = MinusTwo * m_FullOrbit[0].y * dzY - dzY * dzY;
+
+    const auto dzX_old = dzX;
+    dzX = Two * m_FullOrbit[0].x * dzX - Two * m_FullOrbit[0].y * dzY + dzX * dzX - dzY * dzY;
+    HdrReduce(dzX);
+    dzY = Two * m_FullOrbit[0].x * dzY + Two * m_FullOrbit[0].y * dzX_old + Two * dzX_old * dzY;
+    HdrReduce(dzY);
+
+    i++;
+    IterTypeFull j = 1;
+
+    for (; i < m_FullOrbit.GetSize(); i++, j++) {
+        // z = dz + Z[j] where m_FullOrbit[j] = Z[j]
+        zx = dzX + m_FullOrbit[j].x;
+        zy = dzY + m_FullOrbit[j].y;
+
+        const auto norm_z_orig = normZ(zx, zy);
+        const auto norm_dz_orig = normZTimesT(dzX, dzY, constant2);
+
+        const auto err = normZTimesT(zx - m_FullOrbit[i].x, zy - m_FullOrbit[i].y, threshold2);
+
+        if (j >= PrevWayPointIteration ||
+            HdrCompareToBothPositiveReducedGE(err, norm_z_orig)) {
+
+            PrevWayPointIteration = i;
+            zx = m_FullOrbit[i].x;
+            zy = m_FullOrbit[i].y;
+            dzX = zx - m_FullOrbit[j].x;
+            dzY = zy - m_FullOrbit[j].y;
+
+            const auto norm_z = normZ(zx, zy);
+            const auto norm_dz = normZ(dzX, dzY);
+            if (HdrCompareToBothPositiveReducedLT(norm_z, norm_dz) || (i - j) * 4 < i) {
+                dzX = zx;
+                dzY = zy;
+                j = 0;
+                compressed->m_FullOrbit.PushBack({ dzX, dzY, i, true });
+            } else {
+                compressed->m_FullOrbit.PushBack({ dzX, dzY, i, false });
+            }
+        } else if (HdrCompareToBothPositiveReducedLT(norm_z_orig, norm_dz_orig)) {
+            dzX = zx;
+            dzY = zy;
+            j = 0;
+
+            const auto rebaseSize = compressed->m_Rebases.size();
+            const auto fullOrbitSize = compressed->m_FullOrbit.GetSize();
+            if (rebaseSize != 0 &&
+                compressed->m_Rebases[rebaseSize - 1] > compressed->m_FullOrbit[fullOrbitSize - 1].CompressionIndex) {
+                compressed->m_Rebases[rebaseSize - 1] = i;
+            } else {
+                compressed->m_Rebases.push_back(i);
+            }
+        }
+
+        // dz = (Z[j] * (long double) 2 + dz) * dz;
+        // Using zx/zy here to indicate m_FullOrbit[j].x/m_FullOrbit[j].y
+        // (dzX + dzY * i) = ((zx + zy * i) * 2 + (dzX + dzY * i)) * (dzX + dzY * i)
+        // (dzX + dzY * i) = ((2 * zx + 2 * zy * i) + (dzX + dzY * i)) * (dzX + dzY * i)
+        // (dzX + dzY * i) = (2 * zx + dzX + 2 * zy * i + dzY * i) * (dzX + dzY * i)
+        // 
+        // dzX = (2 * zx + dzX) * dzX
+        // dzX = 2 * zx * dzX + dzX * dzX
+        // 
+        // dzY = (2 * zy * i + dzY * i) * dzY * i
+        // dzY = -2 * zy * dzY - dzY * dzY
+
+        //dzX = Two * m_FullOrbit[j].x * dzX + dzX * dzX;
+        //HdrReduce(dzX);
+        //dzY = MinusTwo * m_FullOrbit[j].y * dzY - dzY * dzY;
+        //HdrReduce(dzY);
+
+        const auto dzX_old = dzX;
+        dzX = Two * m_FullOrbit[j].x * dzX - Two * m_FullOrbit[j].y * dzY + dzX * dzX - dzY * dzY;
+        HdrReduce(dzX);
+        dzY = Two * m_FullOrbit[j].x * dzY + Two * m_FullOrbit[j].y * dzX_old + Two * dzX_old * dzY;
+        HdrReduce(dzY);
+
+        // auto zx_old = zx;
+        // zx = zx * zx - zy * zy + m_OrbitXLow;
+        // HdrReduce(zx);
+        // zy = Two * zx_old * zy + m_OrbitYLow;
+        // HdrReduce(zy);
+    }
+
+    compressed->m_FullOrbit.PushBack({ {}, {}, ~0ull, false });
+    compressed->m_Rebases.push_back(~0ull);
+
     return compressed;
+}
+
+template<typename IterType, class T, PerturbExtras PExtras>
+std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::Disable>>
+PerturbationResults<IterType, T, PExtras>::DecompressMax(size_t NewGenerationNumber)
+    requires (PExtras == PerturbExtras::EnableCompression && !Introspection::IsTDblFlt<T>()) {
+
+    assert(m_FullOrbit.GetSize() > 0);
+    T zx{};
+    T zy{};
+    IterTypeFull wayPointIndex = 0;
+    IterTypeFull rebaseIndex = 0;
+    GPUReferenceIter<T, PExtras> nextWayPoint = m_FullOrbit[0];
+    IterTypeFull nextRebase = m_Rebases[0];
+
+    auto decompressed =
+        std::make_unique<PerturbationResults<IterType, T, PerturbExtras::Disable>>(
+            GetRefOrbitOptions(), NewGenerationNumber);
+    decompressed->CopySettingsWithoutOrbit(*this);
+    
+    const auto targetUncompressedIters = decompressed->m_UncompressedItersInOrbit;
+    decompressed->m_UncompressedItersInOrbit = 0;
+
+    auto CorrectOrbit = [&](IterTypeFull begin, IterTypeFull end, T diffX, T diffY) {
+        T dzdcX{ 1 }; // FIXME: scaling factor removed
+        T dzdcY{ 0 };
+
+        HdrReduce(diffX);
+        HdrReduce(diffY);
+
+        for (IterTypeFull i = end; i > begin; ) {
+            i--;
+            // dzdc *= Z[i] * 2;
+            // dzdcX + dzdcY * i = (dzdcX + dzdcY * i) * (Z[i].x + Z[i].y * i) * 2
+            // dzdcX + dzdcY * i = (2 * dzdcX + 2 * dzdcY * i) * (Z[i].x + Z[i].y * i)
+            // dzdcX = dzdcX * Z[i].x * 2 - dzdcY * Z[i].y * 2
+            // dzdcY = dzdcX * Z[i].y * 2 + dzdcY * Z[i].x * 2
+            // 
+            // TODO double check this:
+            const auto old_dzdcX = dzdcX;
+            dzdcX = dzdcX * decompressed->m_FullOrbit[i].x * 2 - dzdcY * decompressed->m_FullOrbit[i].y * 2;
+            HdrReduce(dzdcX);
+            dzdcY = old_dzdcX * decompressed->m_FullOrbit[i].y * 2 + dzdcY * decompressed->m_FullOrbit[i].x * 2;
+            HdrReduce(dzdcY);
+
+            // Z[i] += diff / dzdc;
+            // (diffX + diffY*i) / (dzdcX + dzdcY * i) = (diffX + diffY * i) / (dzdcX + dzdcY * i)
+            // resultReal = (diffX * dzdcX + diffY * dzdcY) / (dzdcX * dzdcX + dzdcY * dzdcY)
+            // resultImag = (diffY * dzdcX - diffX * dzdcY) / (dzdcX * dzdcX + dzdcY * dzdcY)
+
+            auto resultReal = (diffX * dzdcX + diffY * dzdcY) / (dzdcX * dzdcX + dzdcY * dzdcY);
+            HdrReduce(resultReal);
+
+            auto resultImag = (diffY * dzdcX - diffX * dzdcY) / (dzdcX * dzdcX + dzdcY * dzdcY);
+            HdrReduce(resultImag);
+            
+            decompressed->m_FullOrbit[i].x += resultReal;
+            HdrReduce(decompressed->m_FullOrbit[i].x);
+            decompressed->m_FullOrbit[i].y += resultImag;
+            HdrReduce(decompressed->m_FullOrbit[i].y);
+            //HdrReduce(decompressed->m_FullOrbit[i].x);
+            //HdrReduce(decompressed->m_FullOrbit[i].y);
+        }
+    };
+
+    IterTypeFull uncompressedCounter = 0;
+    IterTypeFull i = 0;
+    IterTypeFull UncorrectedOrbitBegin = 1;
+    for (; i < targetUncompressedIters; i++) {
+        if (i == nextWayPoint.CompressionIndex) {
+            CorrectOrbit(UncorrectedOrbitBegin, i, nextWayPoint.x - zx, nextWayPoint.y - zy);
+            UncorrectedOrbitBegin = i + 1;
+            zx = nextWayPoint.x;
+            zy = nextWayPoint.y;
+            bool Rebase = nextWayPoint.Rebase;
+            wayPointIndex++;
+            nextWayPoint = m_FullOrbit[wayPointIndex];
+            if (Rebase) {
+                break;
+            }
+        }
+        uncompressedCounter++;
+        decompressed->AddUncompressedIteration({ zx, zy });
+
+        //z = z * z + c;
+        auto zx_old = zx;
+        zx = zx * zx - zy * zy + m_OrbitXLow;
+        HdrReduce(zx);
+        zy = T{ 2.0f } * zx_old * zy + m_OrbitYLow;
+        HdrReduce(zy);
+    }
+    const auto Two = T{ 2.0f };
+    const auto MinusTwo = T{ -2.0f };
+    IterTypeFull j = 0;
+    auto dzX = zx;
+    auto dzY = zy;
+    for (; i < targetUncompressedIters; i++, j++) {
+        zx = dzX + decompressed->m_FullOrbit[j].x;
+        zy = dzY + decompressed->m_FullOrbit[j].y;
+
+        if (i == nextWayPoint.CompressionIndex) {
+            if (nextWayPoint.Rebase) {
+                dzX = zx;
+                dzY = zy;
+                j = 0;
+            }
+
+            CorrectOrbit(UncorrectedOrbitBegin, i, nextWayPoint.x - dzX, nextWayPoint.y - dzY);
+            UncorrectedOrbitBegin = i + 1;
+            dzX = nextWayPoint.x;
+            dzY = nextWayPoint.y;
+            zx = dzX + decompressed->m_FullOrbit[j].x;
+            zy = dzY + decompressed->m_FullOrbit[j].y;
+            wayPointIndex++;
+            nextWayPoint = m_FullOrbit[wayPointIndex];
+        } else if (i == nextRebase) {
+            rebaseIndex++;
+            nextRebase = m_Rebases[rebaseIndex];
+            dzX = zx;
+            dzY = zy;
+            j = 0;
+        } else {
+            // std::norm(z)
+            auto norm_z = zx * zx + zy * zy;
+            HdrReduce(norm_z);
+
+            // std::norm(dz)
+            auto norm_dz = dzX * dzX + dzY * dzY;
+            HdrReduce(norm_dz);
+            
+            if (HdrCompareToBothPositiveReducedLT(norm_z, norm_dz)) {
+                // dz = z;
+                dzX = zx;
+                dzY = zy;
+
+                j = 0;
+            }
+        }
+
+        uncompressedCounter++;
+        decompressed->AddUncompressedIteration({zx, zy});
+        // dz = (Z[j] * 2 + dz) * dz;
+        
+        //dzX = (decompressed->m_FullOrbit[j].x * Two + dzX) * dzX;
+        //HdrReduce(dzX);
+        //dzY = MinusTwo * decompressed->m_FullOrbit[j].y * dzY - dzY * dzY;
+        //HdrReduce(dzY);
+
+        const auto dzX_old = dzX;
+        dzX = Two * decompressed->m_FullOrbit[j].x * dzX - Two * decompressed->m_FullOrbit[j].y * dzY + dzX * dzX - dzY * dzY;
+        HdrReduce(dzX);
+        dzY = Two * decompressed->m_FullOrbit[j].x * dzY + Two * decompressed->m_FullOrbit[j].y * dzX_old + Two * dzX_old * dzY;
+        HdrReduce(dzY);
+    }
+    return decompressed;
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>
@@ -1188,6 +1469,18 @@ void PerturbationResults<IterType, T, PExtras>::SaveOrbitAsText() const {
     for (size_t i = 0; i < m_FullOrbit.GetSize(); i++) {
         out << "m_FullOrbit[" << i << "].x: " << HdrToString<false>(m_FullOrbit[i].x) << std::endl;
         out << "m_FullOrbit[" << i << "].y: " << HdrToString<false>(m_FullOrbit[i].y) << std::endl;
+
+        if constexpr (PExtras == PerturbExtras::EnableCompression) {
+            out << "m_FullOrbit[" << i << "].CompressionIndex: " << m_FullOrbit[i].CompressionIndex << std::endl;
+            out << "m_FullOrbit[" << i << "].Rebase: " << m_FullOrbit[i].Rebase << std::endl;
+        }
+    }
+
+    if constexpr (PExtras == PerturbExtras::EnableCompression) {
+        out << "m_Rebases: " << m_Rebases.size() << std::endl;
+        for (size_t i = 0; i < m_Rebases.size(); i++) {
+            out << "m_Rebases[" << i << "]: " << m_Rebases[i] << std::endl;
+        }
     }
 
     out << "m_ReuseX: " << m_ReuseX.size() << std::endl;

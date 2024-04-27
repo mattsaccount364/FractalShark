@@ -1148,6 +1148,9 @@ static CUDA_CRAP constexpr void HdrReduce(T &incoming) {
         std::is_same<T, HDRFloat<double>>::value ||
         std::is_same<T, HDRFloat<float>>::value ||
         std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value ||
+        std::is_same<T, HDRFloat<double, HDROrder::Right>>::value ||
+        std::is_same<T, HDRFloat<float, HDROrder::Right>>::value ||
+        std::is_same<T, HDRFloat<CudaDblflt<dblflt>, HDROrder::Right>>::value ||
         std::is_same<T, HDRFloatComplex<double>>::value ||
         std::is_same<T, HDRFloatComplex<float>>::value ||
         std::is_same<T, FloatComplex<double>>::value ||
@@ -1158,6 +1161,9 @@ static CUDA_CRAP constexpr void HdrReduce(T &incoming) {
         std::is_same<T, HDRFloat<double>>::value ||
         std::is_same<T, HDRFloat<float>>::value ||
         std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value ||
+        std::is_same<T, HDRFloat<double, HDROrder::Right>>::value ||
+        std::is_same<T, HDRFloat<float, HDROrder::Right>>::value ||
+        std::is_same<T, HDRFloat<CudaDblflt<dblflt>, HDROrder::Right>>::value ||
         std::is_same<T, HDRFloatComplex<double>>::value ||
         std::is_same<T, HDRFloatComplex<float>>::value) {
         incoming.Reduce();

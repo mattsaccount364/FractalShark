@@ -1304,6 +1304,15 @@ PerturbationResults<IterType, T, PExtras>::DecompressMax(size_t NewGenerationNum
     const auto targetUncompressedIters = decompressed->m_UncompressedItersInOrbit;
     decompressed->m_UncompressedItersInOrbit = 0;
 
+    // Just curious what this looked like - set to true if you want the answer.
+    constexpr bool trackCountsPerIndex = true;
+    std::vector<IterTypeFull> countsPerIndex;
+    std::vector<IterTypeFull> indexTouched;
+
+    if constexpr (trackCountsPerIndex) {
+        countsPerIndex.resize(targetUncompressedIters);
+    }
+
     auto CorrectOrbit = [&](IterTypeFull begin, IterTypeFull end, T diffX, T diffY) {
         T dzdcX{ 1 }; // FIXME: scaling factor removed
         T dzdcY{ 0 };
@@ -1341,6 +1350,12 @@ PerturbationResults<IterType, T, PExtras>::DecompressMax(size_t NewGenerationNum
             HdrReduce(decompressed->m_FullOrbit[i].x);
             decompressed->m_FullOrbit[i].y += resultImag;
             HdrReduce(decompressed->m_FullOrbit[i].y);
+
+            if constexpr (trackCountsPerIndex) {
+                countsPerIndex[i]++;
+                indexTouched.push_back(i);
+            }
+
             //HdrReduce(decompressed->m_FullOrbit[i].x);
             //HdrReduce(decompressed->m_FullOrbit[i].y);
         }
@@ -1364,6 +1379,11 @@ PerturbationResults<IterType, T, PExtras>::DecompressMax(size_t NewGenerationNum
         }
         uncompressedCounter++;
         decompressed->AddUncompressedIteration({ zx, zy });
+
+        if constexpr (trackCountsPerIndex) {
+            countsPerIndex[decompressed->m_UncompressedItersInOrbit - 1]++;
+            indexTouched.push_back(decompressed->m_UncompressedItersInOrbit - 1);
+        }
 
         //z = z * z + c;
         auto zx_old = zx;
@@ -1422,6 +1442,12 @@ PerturbationResults<IterType, T, PExtras>::DecompressMax(size_t NewGenerationNum
 
         uncompressedCounter++;
         decompressed->AddUncompressedIteration({zx, zy});
+
+        if constexpr (trackCountsPerIndex) {
+            countsPerIndex[decompressed->m_UncompressedItersInOrbit - 1]++;
+            indexTouched.push_back(decompressed->m_UncompressedItersInOrbit - 1);
+        }
+
         // dz = (Z[j] * 2 + dz) * dz;
         
         //dzX = (decompressed->m_FullOrbit[j].x * Two + dzX) * dzX;
@@ -1435,6 +1461,34 @@ PerturbationResults<IterType, T, PExtras>::DecompressMax(size_t NewGenerationNum
         dzY = Two * decompressed->m_FullOrbit[j].x * dzY + Two * decompressed->m_FullOrbit[j].y * dzX_old + Two * dzX_old * dzY;
         HdrReduce(dzY);
     }
+
+    if constexpr (trackCountsPerIndex) {
+        std::unordered_map<IterTypeFull, IterTypeFull> countsPerIndexMap;
+        for (size_t i = 0; i < countsPerIndex.size(); i++) {
+            countsPerIndexMap[countsPerIndex[i]]++;
+        }
+
+        std::vector<std::pair<IterTypeFull, IterTypeFull>> countsPerIndexVec;
+        countsPerIndexVec.reserve(countsPerIndexMap.size());
+        for (const auto &pair : countsPerIndexMap) {
+            countsPerIndexVec.push_back(pair);
+        }
+
+        std::sort(countsPerIndexVec.begin(), countsPerIndexVec.end(), [](const auto &lhs, const auto &rhs) {
+            return lhs.first < rhs.first;
+        });
+
+        std::ofstream out("countsPerIndex.txt");
+        for (const auto &pair : countsPerIndexVec) {
+            out << pair.first << " " << pair.second << std::endl;
+        }
+
+        std::ofstream out2("indexTouched.txt");
+        for (const auto &index : indexTouched) {
+            out2 << index << std::endl;
+        }
+    }
+
     return decompressed;
 }
 

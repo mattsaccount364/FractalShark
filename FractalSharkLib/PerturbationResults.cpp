@@ -1202,6 +1202,7 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
 
     i++;
     IterTypeFull j = 1;
+    IterTypeFull itersSinceLastWrite = 0;
 
     for (; i < m_FullOrbit.GetSize(); i++, j++) {
         // z = dz + Z[j] where m_FullOrbit[j] = Z[j]
@@ -1213,9 +1214,11 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
 
         const auto err = normZTimesT(zx - m_FullOrbit[i].x, zy - m_FullOrbit[i].y, threshold2);
 
-        if (j >= PrevWayPointIteration ||
-            HdrCompareToBothPositiveReducedGE(err, norm_z_orig)) {
+        const bool condition1 = j >= PrevWayPointIteration;
+        const bool condition2 = HdrCompareToBothPositiveReducedGE(err, norm_z_orig);
+        const bool condition3 = itersSinceLastWrite >= 1000;
 
+        if (condition1 || condition2) {
             PrevWayPointIteration = i;
             zx = m_FullOrbit[i].x;
             zy = m_FullOrbit[i].y;
@@ -1229,9 +1232,15 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
                 dzY = zy;
                 j = 0;
                 compressed->m_FullOrbit.PushBack({ dzX, dzY, i, true });
+                itersSinceLastWrite = 0;
             } else {
                 compressed->m_FullOrbit.PushBack({ dzX, dzY, i, false });
+                itersSinceLastWrite = 0;
             }
+        } else if (condition3) {
+            // TODO So can we use this to keep a bounded amount of shit in memory during decompression e.g. for the intermediate precision thing
+            compressed->m_FullOrbit.PushBack({ dzX, dzY, i, false });
+            itersSinceLastWrite = 0;
         } else if (HdrCompareToBothPositiveReducedLT(norm_z_orig, norm_dz_orig)) {
             dzX = zx;
             dzY = zy;
@@ -1275,6 +1284,8 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
         // HdrReduce(zx);
         // zy = Two * zx_old * zy + m_OrbitYLow;
         // HdrReduce(zy);
+
+        itersSinceLastWrite++;
     }
 
     compressed->m_FullOrbit.PushBack({ {}, {}, ~0ull, false });
@@ -1287,6 +1298,12 @@ template<typename IterType, class T, PerturbExtras PExtras>
 std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::Disable>>
 PerturbationResults<IterType, T, PExtras>::DecompressMax(size_t NewGenerationNumber)
     requires (PExtras == PerturbExtras::EnableCompression && !Introspection::IsTDblFlt<T>()) {
+
+    // Show range of indices touched
+    constexpr bool outputFile = false;
+
+    // Just curious what this looked like - set to true if you want the answer.
+    constexpr bool trackCountsPerIndex = false;
 
     assert(m_FullOrbit.GetSize() > 0);
     T zx{};
@@ -1304,13 +1321,17 @@ PerturbationResults<IterType, T, PExtras>::DecompressMax(size_t NewGenerationNum
     const auto targetUncompressedIters = decompressed->m_UncompressedItersInOrbit;
     decompressed->m_UncompressedItersInOrbit = 0;
 
-    // Just curious what this looked like - set to true if you want the answer.
-    constexpr bool trackCountsPerIndex = true;
     std::vector<IterTypeFull> countsPerIndex;
     std::vector<IterTypeFull> indexTouched;
 
     if constexpr (trackCountsPerIndex) {
         countsPerIndex.resize(targetUncompressedIters);
+    }
+
+    // Write  out the begin and end to a file
+    std::ofstream myfile;
+    if constexpr (outputFile) {
+        myfile.open("begin_end.txt");
     }
 
     auto CorrectOrbit = [&](IterTypeFull begin, IterTypeFull end, T diffX, T diffY) {
@@ -1319,6 +1340,10 @@ PerturbationResults<IterType, T, PExtras>::DecompressMax(size_t NewGenerationNum
 
         HdrReduce(diffX);
         HdrReduce(diffY);
+
+        if constexpr (outputFile) {
+            myfile << begin << " " << end << std::endl;
+        }
 
         for (IterTypeFull i = end; i > begin; ) {
             i--;

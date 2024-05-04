@@ -2342,7 +2342,7 @@ template<
     class ConvertTType>
 PerturbationResults<IterType, ConvertTType, PExtras> *
 RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
-    constexpr bool forceCompressDecompressForTesting = true;
+    constexpr bool forceCompressDecompressForTesting = false;
     constexpr bool IsHdrDblflt = std::is_same<ConvertTType, HDRFloat<CudaDblflt<MattDblflt>>>::value;
     constexpr bool IsDblflt = std::is_same<ConvertTType, CudaDblflt<MattDblflt>>::value;
     constexpr bool UsingDblflt = IsHdrDblflt || IsDblflt;
@@ -2427,7 +2427,8 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
 
         results = cur_array[cur_array.size() - 1].get();
 
-        // TODO: this is a hack.  We need to fix this.
+        // This is a hack for testing, but it's only a hack
+        // if forceCompressDecompressForTesting is true.
         if constexpr (forceCompressDecompressForTesting && PExtras == PerturbExtras::Disable) {
             auto compressedResults = results->CompressMax(
                 m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),

@@ -19,7 +19,8 @@ public:
         DontSaveForReuse,
         SaveForReuse1, // 3 thread, no compression
         SaveForReuse2, // 4 thread, no compression
-        SaveForReuse3 // 4 thread, compression
+        SaveForReuse3, // 4 thread, compression
+        SaveForReuse4, // 4 thread, max compression
     };
 
     enum class BenchmarkMode {
@@ -36,6 +37,7 @@ public:
         MTPeriodicity3PerturbMTHighMTMed1,
         MTPeriodicity3PerturbMTHighMTMed2,
         MTPeriodicity3PerturbMTHighMTMed3,
+        MTPeriodicity3PerturbMTHighMTMed4,
         MTPeriodicity5,
         Auto
     };

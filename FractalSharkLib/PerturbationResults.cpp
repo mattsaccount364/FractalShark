@@ -731,7 +731,8 @@ void PerturbationResults<IterType, T, PExtras>::InitResults(
 
     if (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse1 ||
         Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2 ||
-        Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3) {
+        Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3 ||
+        Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
         m_AuthoritativePrecisionInBits =
             PrecisionCalculator::GetPrecision(minX, minY, maxX, maxY, true);
         m_ReuseX.reserve(ReserveSize);
@@ -743,40 +744,6 @@ void PerturbationResults<IterType, T, PExtras>::InitResults(
 
     m_LaReference = nullptr;
 }
-
-//#define InstantiatePerturbationResultFunction(T, PExtras, AdditionalText) \
-//    template class PerturbationResults<uint32_t, T, PExtras> AdditionalText; \
-//    template class PerturbationResults<uint64_t, T, PExtras> AdditionalText;
-//
-//#define InstantiateMemberFunction(AdditionalText) \
-//InstantiatePerturbationResultFunction(float, PerturbExtras::Disable, AdditionalText); \
-//InstantiatePerturbationResultFunction(float, PerturbExtras::Bad, AdditionalText); \
-//InstantiatePerturbationResultFunction(float, PerturbExtras::SimpleCompression, AdditionalText); \
-// \
-//InstantiatePerturbationResultFunction(double, PerturbExtras::Disable, AdditionalText); \
-//InstantiatePerturbationResultFunction(double, PerturbExtras::Bad, AdditionalText); \
-//InstantiatePerturbationResultFunction(double, PerturbExtras::SimpleCompression, AdditionalText); \
-// \
-//InstantiatePerturbationResultFunction(CudaDblflt<MattDblflt>, PerturbExtras::Disable, AdditionalText); \
-//InstantiatePerturbationResultFunction(CudaDblflt<MattDblflt>, PerturbExtras::Bad, AdditionalText); \
-//InstantiatePerturbationResultFunction(CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression, AdditionalText); \
-// \
-//InstantiatePerturbationResultFunction(HDRFloat<float>, PerturbExtras::Disable, AdditionalText); \
-//InstantiatePerturbationResultFunction(HDRFloat<float>, PerturbExtras::Bad, AdditionalText); \
-//InstantiatePerturbationResultFunction(HDRFloat<float>, PerturbExtras::SimpleCompression, AdditionalText); \
-// \
-//InstantiatePerturbationResultFunction(HDRFloat<double>, PerturbExtras::Disable, AdditionalText); \
-//InstantiatePerturbationResultFunction(HDRFloat<double>, PerturbExtras::Bad, AdditionalText); \
-//InstantiatePerturbationResultFunction(HDRFloat<double>, PerturbExtras::SimpleCompression, AdditionalText); \
-// \
-//InstantiatePerturbationResultFunction(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable, AdditionalText); \
-//InstantiatePerturbationResultFunction(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad, AdditionalText); \
-//InstantiatePerturbationResultFunction(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::SimpleCompression, AdditionalText); \
-//
-//InstantiateMemberFunction(::<RefOrbitCalc::ReuseMode::DontSaveForReuse>());
-//InstantiateMemberFunction(::<RefOrbitCalc::ReuseMode::SaveForReuse1>);
-//InstantiateMemberFunction(::<RefOrbitCalc::ReuseMode::SaveForReuse2>);
-//InstantiateMemberFunction(::<RefOrbitCalc::ReuseMode::SaveForReuse3>);
 
 template<typename IterType, class T, PerturbExtras PExtras>
 uint64_t PerturbationResults<IterType, T, PExtras>::GetBenchmarkOrbit() const {
@@ -791,7 +758,8 @@ void PerturbationResults<IterType, T, PExtras>::CompleteResults(std::unique_ptr<
     if constexpr (
         Reuse == RefOrbitCalc::ReuseMode::SaveForReuse1 ||
         Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2 ||
-        Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3) {
+        Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3 ||
+        Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
         //m_ReuseX.shrink_to_fit();
         //m_ReuseY.shrink_to_fit();
         m_ReuseAllocations = std::move(allocatorIfAny);
@@ -805,10 +773,12 @@ void PerturbationResults<IterType, T, PExtras>::CompleteResults(std::unique_ptr<
     template void PerturbationResults<uint32_t, T, PExtras>::CompleteResults<RefOrbitCalc::ReuseMode::SaveForReuse1>(std::unique_ptr<ThreadMemory>); \
     template void PerturbationResults<uint32_t, T, PExtras>::CompleteResults<RefOrbitCalc::ReuseMode::SaveForReuse2>(std::unique_ptr<ThreadMemory>); \
     template void PerturbationResults<uint32_t, T, PExtras>::CompleteResults<RefOrbitCalc::ReuseMode::SaveForReuse3>(std::unique_ptr<ThreadMemory>); \
+    template void PerturbationResults<uint32_t, T, PExtras>::CompleteResults<RefOrbitCalc::ReuseMode::SaveForReuse4>(std::unique_ptr<ThreadMemory>); \
     template void PerturbationResults<uint32_t, T, PExtras>::CompleteResults<RefOrbitCalc::ReuseMode::DontSaveForReuse>(std::unique_ptr<ThreadMemory>); \
     template void PerturbationResults<uint64_t, T, PExtras>::CompleteResults<RefOrbitCalc::ReuseMode::SaveForReuse1>(std::unique_ptr<ThreadMemory>); \
     template void PerturbationResults<uint64_t, T, PExtras>::CompleteResults<RefOrbitCalc::ReuseMode::SaveForReuse2>(std::unique_ptr<ThreadMemory>); \
     template void PerturbationResults<uint64_t, T, PExtras>::CompleteResults<RefOrbitCalc::ReuseMode::SaveForReuse3>(std::unique_ptr<ThreadMemory>); \
+    template void PerturbationResults<uint64_t, T, PExtras>::CompleteResults<RefOrbitCalc::ReuseMode::SaveForReuse4>(std::unique_ptr<ThreadMemory>); \
     template void PerturbationResults<uint64_t, T, PExtras>::CompleteResults<RefOrbitCalc::ReuseMode::DontSaveForReuse>(std::unique_ptr<ThreadMemory>)
 
 InstantiateCompleteResults(float, PerturbExtras::Disable);
@@ -970,6 +940,19 @@ void PerturbationResults<IterType, T, PExtras>::AddUncompressedReusedEntry(
 template<typename IterType, class T, PerturbExtras PExtras>
 void PerturbationResults<IterType, T, PExtras>::GetCompressedReuseEntries(
     IntermediateRuntimeDecompressor<IterType, T, PExtras> &PerThreadCompressionHelper,
+    size_t uncompressed_index,
+    const mpf_t *&x,
+    const mpf_t *&y) const {
+
+    PerThreadCompressionHelper.GetReuseEntries(
+        uncompressed_index,
+        x,
+        y);
+}
+
+template<typename IterType, class T, PerturbExtras PExtras>
+void PerturbationResults<IterType, T, PExtras>::GetMaxCompressedReuseEntries(
+    IntermediateMaxRuntimeDecompressor<IterType, T, PExtras> &PerThreadCompressionHelper,
     size_t uncompressed_index,
     const mpf_t *&x,
     const mpf_t *&y) const {

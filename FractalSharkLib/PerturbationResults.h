@@ -88,6 +88,7 @@ public:
 
     friend class RuntimeDecompressor<IterType, T, PExtras>;
     friend class IntermediateRuntimeDecompressor<IterType, T, PExtras>;
+    friend class IntermediateMaxRuntimeDecompressor<IterType, T, PExtras>;
     friend class RefOrbitCompressor<IterType, T, PExtras>;
     friend class SimpleIntermediateOrbitCompressor<IterType, T, PExtras>;
     friend class MaxIntermediateOrbitCompressor<IterType, T, PExtras>;
@@ -260,6 +261,12 @@ public:
     // Set the pointers to point at the specified index.
     void GetCompressedReuseEntries(
         IntermediateRuntimeDecompressor<IterType, T, PExtras> &PerThreadCompressionHelper,
+        size_t uncompressed_index,
+        const mpf_t *&x,
+        const mpf_t *&y) const;
+
+    void GetMaxCompressedReuseEntries(
+        IntermediateMaxRuntimeDecompressor<IterType, T, PExtras> &PerThreadCompressionHelper,
         size_t uncompressed_index,
         const mpf_t *&x,
         const mpf_t *&y) const;

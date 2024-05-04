@@ -207,7 +207,7 @@ public:
             workspace.uncompressed_index++;
             workspace.zx = FullOrbit[workspace.uncompressed_index].x;
             workspace.zy = FullOrbit[workspace.uncompressed_index].y;
-        } else if constexpr (PExtras == PerturbExtras::EnableCompression) {
+        } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
             GetCompressedComplexSeq(workspace);
         }
     }

@@ -363,7 +363,7 @@ RefOrbitCalc::GetPerturbationResults() {
             return lambda(c32d);
         } else if constexpr (PExtras == PerturbExtras::Bad) {
             return lambda(c32e);
-        } else if constexpr (PExtras == PerturbExtras::EnableCompression) {
+        } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
             return lambda(c32c);
         }
     } else if constexpr (std::is_same<IterType, uint64_t>::value) {
@@ -371,7 +371,7 @@ RefOrbitCalc::GetPerturbationResults() {
             return lambda(c64d);
         } else if constexpr (PExtras == PerturbExtras::Bad) {
             return lambda(c64e);
-        } else if constexpr (PExtras == PerturbExtras::EnableCompression) {
+        } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
             return lambda(c64c);
         }
     }
@@ -411,7 +411,7 @@ RefOrbitCalc::AddPerturbationResults(std::unique_ptr<PerturbationResults<IterTyp
             return lambda(c32d);
         } else if constexpr (PExtras == PerturbExtras::Bad) {
             return lambda(c32e);
-        } else if constexpr (PExtras == PerturbExtras::EnableCompression) {
+        } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
             return lambda(c32c);
         }
     } else if constexpr (std::is_same<IterType, uint64_t>::value) {
@@ -419,7 +419,7 @@ RefOrbitCalc::AddPerturbationResults(std::unique_ptr<PerturbationResults<IterTyp
             return lambda(c64d);
         } else if constexpr (PExtras == PerturbExtras::Bad) {
             return lambda(c64e);
-        } else if constexpr (PExtras == PerturbExtras::EnableCompression) {
+        } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
             return lambda(c64c);
         }
     }
@@ -452,7 +452,7 @@ RefOrbitCalc::GetPerturbationResults(size_t index) {
             return lambda(c32d);
         } else if constexpr (PExtras == PerturbExtras::Bad) {
             return lambda(c32e);
-        } else if constexpr (PExtras == PerturbExtras::EnableCompression) {
+        } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
             return lambda(c32c);
         }
     } else if constexpr (std::is_same<IterType, uint64_t>::value) {
@@ -460,7 +460,7 @@ RefOrbitCalc::GetPerturbationResults(size_t index) {
             return lambda(c64d);
         } else if constexpr (PExtras == PerturbExtras::Bad) {
             return lambda(c64e);
-        } else if constexpr (PExtras == PerturbExtras::EnableCompression) {
+        } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
             return lambda(c64c);
         }
     }
@@ -640,7 +640,7 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
             *results,
             m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low) };
 
-        IntermediateOrbitCompressor<IterType, T, PExtras> intermediateCompressor{
+        SimpleIntermediateOrbitCompressor<IterType, T, PExtras> intermediateCompressor{
             *results,
             m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Intermediate) };
 
@@ -664,7 +664,7 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
 
             if constexpr (PExtras == PerturbExtras::Disable) {
                 results->AddUncompressedIteration({ double_zx, double_zy });
-            } else if constexpr (PExtras == PerturbExtras::EnableCompression) {
+            } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
                 compressor.MaybeAddCompressedIteration({ double_zx, double_zy, i + 1 });
             } else if constexpr (PExtras == PerturbExtras::Bad) {
                 results->AddUncompressedIteration({ double_zx, double_zy, false });
@@ -1911,7 +1911,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
 
             InitTls();
 
-            IntermediateOrbitCompressor<IterType, T, PExtras> intermediateCompressor{
+            SimpleIntermediateOrbitCompressor<IterType, T, PExtras> intermediateCompressor{
                 *results,
                 IntermediateCompressionErrorExp };
 
@@ -2030,7 +2030,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
                 if (i > 0) {
                     if constexpr (PExtras == PerturbExtras::Disable) {
                         results->AddUncompressedIteration({ double_zx, double_zy });
-                    } else if constexpr (PExtras == PerturbExtras::EnableCompression) {
+                    } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
                         compressor.MaybeAddCompressedIteration({ double_zx, double_zy, i });
                     } else if constexpr (PExtras == PerturbExtras::Bad) {
                         results->AddUncompressedIteration({ double_zx, double_zy, false });
@@ -2347,7 +2347,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
     constexpr bool IsDblflt = std::is_same<ConvertTType, CudaDblflt<MattDblflt>>::value;
     constexpr bool UsingDblflt = IsHdrDblflt || IsDblflt;
     constexpr auto PExtrasHackYay =
-        (PExtras == PerturbExtras::EnableCompression) ? PerturbExtras::Disable : PExtras;
+        (PExtras == PerturbExtras::SimpleCompression) ? PerturbExtras::Disable : PExtras;
     bool added = false;
 
     auto GenLAResults = [&](auto &results, AddPointOptions options_to_use) {
@@ -2456,7 +2456,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
         std::is_same<T, HDRFloat<float>>::value ||
         std::is_same<T, HDRFloat<double>>::value) {
         if constexpr (Ex == Extras::IncludeLAv2) {
-            static_assert(PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::EnableCompression, "!");
+            static_assert(PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::SimpleCompression, "!");
             GenLAResults(results, options_to_use);
         } else {
             results->ClearLaReference();
@@ -2806,10 +2806,10 @@ void RefOrbitCalc::LoadAllOrbits() {
 
     lambda.template operator() < uint32_t, PerturbExtras::Disable > (c32d);
     lambda.template operator() < uint32_t, PerturbExtras::Bad > (c32e);
-    lambda.template operator() < uint32_t, PerturbExtras::EnableCompression > (c32c);
+    lambda.template operator() < uint32_t, PerturbExtras::SimpleCompression > (c32c);
     lambda.template operator() < uint64_t, PerturbExtras::Disable > (c64d);
     lambda.template operator() < uint64_t, PerturbExtras::Bad > (c64e);
-    lambda.template operator() < uint64_t, PerturbExtras::EnableCompression > (c64c);
+    lambda.template operator() < uint64_t, PerturbExtras::SimpleCompression > (c64c);
 }
 
 template<typename IterType, PerturbExtras PExtras>
@@ -2824,13 +2824,13 @@ const RefOrbitCalc::Container<IterType, PExtras> &RefOrbitCalc::GetContainer() c
         return c32d;
     } else if constexpr (std::is_same<IterType, uint32_t>::value && PExtras == PerturbExtras::Bad) {
         return c32e;
-    } else if constexpr (std::is_same<IterType, uint32_t>::value && PExtras == PerturbExtras::EnableCompression) {
+    } else if constexpr (std::is_same<IterType, uint32_t>::value && PExtras == PerturbExtras::SimpleCompression) {
         return c32c;
     } else if constexpr (std::is_same<IterType, uint64_t>::value && PExtras == PerturbExtras::Disable) {
         return c64d;
     } else if constexpr (std::is_same<IterType, uint64_t>::value && PExtras == PerturbExtras::Bad) {
         return c64e;
-    } else if constexpr (std::is_same<IterType, uint64_t>::value && PExtras == PerturbExtras::EnableCompression) {
+    } else if constexpr (std::is_same<IterType, uint64_t>::value && PExtras == PerturbExtras::SimpleCompression) {
         return c64c;
     } else {
         assert(false);
@@ -3018,12 +3018,12 @@ void RefOrbitCalc::DrawPerturbationResults() {
         DrawPerturbationResultsHelper<IterType, HDRFloat<float>, PerturbExtras::Bad>();
         DrawPerturbationResultsHelper<IterType, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad>();
 
-        DrawPerturbationResultsHelper<IterType, double, PerturbExtras::EnableCompression>();
-        DrawPerturbationResultsHelper<IterType, float, PerturbExtras::EnableCompression>();
-        DrawPerturbationResultsHelper<IterType, CudaDblflt<MattDblflt>, PerturbExtras::EnableCompression>();
-        DrawPerturbationResultsHelper<IterType, HDRFloat<double>, PerturbExtras::EnableCompression>();
-        DrawPerturbationResultsHelper<IterType, HDRFloat<float>, PerturbExtras::EnableCompression>();
-        DrawPerturbationResultsHelper<IterType, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::EnableCompression>();
+        DrawPerturbationResultsHelper<IterType, double, PerturbExtras::SimpleCompression>();
+        DrawPerturbationResultsHelper<IterType, float, PerturbExtras::SimpleCompression>();
+        DrawPerturbationResultsHelper<IterType, CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression>();
+        DrawPerturbationResultsHelper<IterType, HDRFloat<double>, PerturbExtras::SimpleCompression>();
+        DrawPerturbationResultsHelper<IterType, HDRFloat<float>, PerturbExtras::SimpleCompression>();
+        DrawPerturbationResultsHelper<IterType, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::SimpleCompression>();
     };
 
     drawbatch.template operator() < uint32_t > ();

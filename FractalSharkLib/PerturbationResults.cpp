@@ -213,7 +213,7 @@ void PerturbationResults<IterType, T, PExtras>::CopyFullOrbitVector(
                     (T)other.m_FullOrbit[i].y,
                     other.m_FullOrbit[i].bad != 0
                 };
-            } else if constexpr (PExtras == PerturbExtras::EnableCompression) {
+            } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
                 m_FullOrbit[i] = GPUReferenceIter<T, PExtras>{
                     (T)other.m_FullOrbit[i].x,
                     (T)other.m_FullOrbit[i].y,
@@ -319,10 +319,10 @@ void PerturbationResults<IterType, T, PExtras>::CopyPerturbationResults(
 
 InstantiateCopyPerturbationResults(CudaDblflt<MattDblflt>, double, PerturbExtras::Disable, PerturbExtras::Disable);
 InstantiateCopyPerturbationResults(HDRFloat<CudaDblflt<MattDblflt>>, HDRFloat<double>, PerturbExtras::Disable, PerturbExtras::Disable);
-InstantiateCopyPerturbationResults(CudaDblflt<MattDblflt>, double, PerturbExtras::EnableCompression, PerturbExtras::EnableCompression);
-InstantiateCopyPerturbationResults(HDRFloat<CudaDblflt<MattDblflt>>, HDRFloat<double>, PerturbExtras::EnableCompression, PerturbExtras::EnableCompression);
+InstantiateCopyPerturbationResults(CudaDblflt<MattDblflt>, double, PerturbExtras::SimpleCompression, PerturbExtras::SimpleCompression);
+InstantiateCopyPerturbationResults(HDRFloat<CudaDblflt<MattDblflt>>, HDRFloat<double>, PerturbExtras::SimpleCompression, PerturbExtras::SimpleCompression);
 InstantiateCopyPerturbationResultsLA(HDRFloat<float>, HDRFloat<double>, PerturbExtras::Disable, PerturbExtras::Disable);
-InstantiateCopyPerturbationResultsLA(HDRFloat<float>, HDRFloat<double>, PerturbExtras::EnableCompression, PerturbExtras::EnableCompression);
+InstantiateCopyPerturbationResultsLA(HDRFloat<float>, HDRFloat<double>, PerturbExtras::SimpleCompression, PerturbExtras::SimpleCompression);
 InstantiateCopyPerturbationResults(float, double, PerturbExtras::Disable, PerturbExtras::Disable);
 InstantiateCopyPerturbationResults(float, double, PerturbExtras::Disable, PerturbExtras::Disable);
 InstantiateCopyPerturbationResults(HDRFloat<float>, HDRFloat<double>, PerturbExtras::Disable, PerturbExtras::Disable);
@@ -423,8 +423,8 @@ void PerturbationResults<IterType, T, PExtras>::WriteMetadata() const {
 
     if constexpr (PExtras == PerturbExtras::Bad) {
         metafile << "PerturbExtras::Bad" << std::endl;
-    } else if constexpr (PExtras == PerturbExtras::EnableCompression) {
-        metafile << "PerturbExtras::EnableCompression" << std::endl;
+    } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
+        metafile << "PerturbExtras::SimpleCompression" << std::endl;
     } else if constexpr (PExtras == PerturbExtras::Disable) {
         metafile << "PerturbExtras::Disable" << std::endl;
     } else {
@@ -559,8 +559,8 @@ bool PerturbationResults<IterType, T, PExtras>::ReadMetadata() {
             if constexpr (PExtras == PerturbExtras::Bad) {
                 typematch3 = true;
             }
-        } else if (badstr == "PerturbExtras::EnableCompression") {
-            if constexpr (PExtras == PerturbExtras::EnableCompression) {
+        } else if (badstr == "PerturbExtras::SimpleCompression") {
+            if constexpr (PExtras == PerturbExtras::SimpleCompression) {
                 typematch3 = true;
             }
         } else if (badstr == "PerturbExtras::Disable") {
@@ -751,27 +751,27 @@ void PerturbationResults<IterType, T, PExtras>::InitResults(
 //#define InstantiateMemberFunction(AdditionalText) \
 //InstantiatePerturbationResultFunction(float, PerturbExtras::Disable, AdditionalText); \
 //InstantiatePerturbationResultFunction(float, PerturbExtras::Bad, AdditionalText); \
-//InstantiatePerturbationResultFunction(float, PerturbExtras::EnableCompression, AdditionalText); \
+//InstantiatePerturbationResultFunction(float, PerturbExtras::SimpleCompression, AdditionalText); \
 // \
 //InstantiatePerturbationResultFunction(double, PerturbExtras::Disable, AdditionalText); \
 //InstantiatePerturbationResultFunction(double, PerturbExtras::Bad, AdditionalText); \
-//InstantiatePerturbationResultFunction(double, PerturbExtras::EnableCompression, AdditionalText); \
+//InstantiatePerturbationResultFunction(double, PerturbExtras::SimpleCompression, AdditionalText); \
 // \
 //InstantiatePerturbationResultFunction(CudaDblflt<MattDblflt>, PerturbExtras::Disable, AdditionalText); \
 //InstantiatePerturbationResultFunction(CudaDblflt<MattDblflt>, PerturbExtras::Bad, AdditionalText); \
-//InstantiatePerturbationResultFunction(CudaDblflt<MattDblflt>, PerturbExtras::EnableCompression, AdditionalText); \
+//InstantiatePerturbationResultFunction(CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression, AdditionalText); \
 // \
 //InstantiatePerturbationResultFunction(HDRFloat<float>, PerturbExtras::Disable, AdditionalText); \
 //InstantiatePerturbationResultFunction(HDRFloat<float>, PerturbExtras::Bad, AdditionalText); \
-//InstantiatePerturbationResultFunction(HDRFloat<float>, PerturbExtras::EnableCompression, AdditionalText); \
+//InstantiatePerturbationResultFunction(HDRFloat<float>, PerturbExtras::SimpleCompression, AdditionalText); \
 // \
 //InstantiatePerturbationResultFunction(HDRFloat<double>, PerturbExtras::Disable, AdditionalText); \
 //InstantiatePerturbationResultFunction(HDRFloat<double>, PerturbExtras::Bad, AdditionalText); \
-//InstantiatePerturbationResultFunction(HDRFloat<double>, PerturbExtras::EnableCompression, AdditionalText); \
+//InstantiatePerturbationResultFunction(HDRFloat<double>, PerturbExtras::SimpleCompression, AdditionalText); \
 // \
 //InstantiatePerturbationResultFunction(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable, AdditionalText); \
 //InstantiatePerturbationResultFunction(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad, AdditionalText); \
-//InstantiatePerturbationResultFunction(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::EnableCompression, AdditionalText); \
+//InstantiatePerturbationResultFunction(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::SimpleCompression, AdditionalText); \
 //
 //InstantiateMemberFunction(::<RefOrbitCalc::ReuseMode::DontSaveForReuse>());
 //InstantiateMemberFunction(::<RefOrbitCalc::ReuseMode::SaveForReuse1>);
@@ -813,32 +813,32 @@ void PerturbationResults<IterType, T, PExtras>::CompleteResults(std::unique_ptr<
 
 InstantiateCompleteResults(float, PerturbExtras::Disable);
 InstantiateCompleteResults(float, PerturbExtras::Bad);
-InstantiateCompleteResults(float, PerturbExtras::EnableCompression);
+InstantiateCompleteResults(float, PerturbExtras::SimpleCompression);
 
 InstantiateCompleteResults(CudaDblflt<MattDblflt>, PerturbExtras::Disable);
 InstantiateCompleteResults(CudaDblflt<MattDblflt>, PerturbExtras::Bad);
-InstantiateCompleteResults(CudaDblflt<MattDblflt>, PerturbExtras::EnableCompression);
+InstantiateCompleteResults(CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression);
 
 InstantiateCompleteResults(double, PerturbExtras::Disable);
 InstantiateCompleteResults(double, PerturbExtras::Bad);
-InstantiateCompleteResults(double, PerturbExtras::EnableCompression);
+InstantiateCompleteResults(double, PerturbExtras::SimpleCompression);
 
 InstantiateCompleteResults(HDRFloat<float>, PerturbExtras::Disable);
 InstantiateCompleteResults(HDRFloat<float>, PerturbExtras::Bad);
-InstantiateCompleteResults(HDRFloat<float>, PerturbExtras::EnableCompression);
+InstantiateCompleteResults(HDRFloat<float>, PerturbExtras::SimpleCompression);
 
 InstantiateCompleteResults(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable);
 InstantiateCompleteResults(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad);
-InstantiateCompleteResults(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::EnableCompression);
+InstantiateCompleteResults(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::SimpleCompression);
 
 InstantiateCompleteResults(HDRFloat<double>, PerturbExtras::Disable);
 InstantiateCompleteResults(HDRFloat<double>, PerturbExtras::Bad);
-InstantiateCompleteResults(HDRFloat<double>, PerturbExtras::EnableCompression);
+InstantiateCompleteResults(HDRFloat<double>, PerturbExtras::SimpleCompression);
 
 
 template<typename IterType, class T, PerturbExtras PExtras>
 size_t PerturbationResults<IterType, T, PExtras>::GetCompressedOrbitSize() const {
-    if constexpr (PExtras == PerturbExtras::EnableCompression) {
+    if constexpr (PExtras == PerturbExtras::SimpleCompression) {
         assert(m_FullOrbit.GetSize() <= m_UncompressedItersInOrbit);
     }
 
@@ -847,7 +847,7 @@ size_t PerturbationResults<IterType, T, PExtras>::GetCompressedOrbitSize() const
 
 template<typename IterType, class T, PerturbExtras PExtras>
 IterType PerturbationResults<IterType, T, PExtras>::GetCountOrbitEntries() const {
-    if constexpr (PExtras == PerturbExtras::EnableCompression) {
+    if constexpr (PExtras == PerturbExtras::SimpleCompression) {
         assert(m_FullOrbit.GetSize() <= m_UncompressedItersInOrbit);
     } else {
         assert(m_FullOrbit.GetSize() == m_UncompressedItersInOrbit);
@@ -1001,7 +1001,7 @@ IterType PerturbationResults<IterType, T, PExtras>::GetMaxIterations() const {
 //   https://fractalforums.org/fractal-mathematics-and-new-theories/28/reference-compression/5142
 // as a reference for the compression algorithm.
 template<typename IterType, class T, PerturbExtras PExtras>
-std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::EnableCompression>>
+std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::SimpleCompression>>
 PerturbationResults<IterType, T, PExtras>::Compress(
     int32_t compression_error_exp_param,
     size_t new_generation_number)
@@ -1015,7 +1015,7 @@ PerturbationResults<IterType, T, PExtras>::Compress(
     const auto CompressionError = static_cast<T>(compErr);
 
     auto compressed =
-        std::make_unique<PerturbationResults<IterType, T, PerturbExtras::EnableCompression>>(
+        std::make_unique<PerturbationResults<IterType, T, PerturbExtras::SimpleCompression>>(
             GetRefOrbitOptions(), new_generation_number);
     compressed->CopySettingsWithoutOrbit(*this);
 
@@ -1062,7 +1062,7 @@ PerturbationResults<IterType, T, PExtras>::Compress(
 template<typename IterType, class T, PerturbExtras PExtras>
 std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::Disable>>
 PerturbationResults<IterType, T, PExtras>::Decompress(size_t NewGenerationNumber)
-    requires (PExtras == PerturbExtras::EnableCompression && !Introspection::IsTDblFlt<T>()) {
+    requires (PExtras == PerturbExtras::SimpleCompression && !Introspection::IsTDblFlt<T>()) {
 
     auto compressed_orb = std::move(m_FullOrbit);
     auto decompressed = std::make_unique<PerturbationResults<IterType, T, PerturbExtras::Disable>>(
@@ -1103,7 +1103,7 @@ PerturbationResults<IterType, T, PExtras>::Decompress(size_t NewGenerationNumber
 //   https://fractalforums.org/fractal-mathematics-and-new-theories/28/reference-compression/5142
 // as a reference for the compression algorithm.
 template<typename IterType, class T, PerturbExtras PExtras>
-std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::EnableCompression>>
+std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::SimpleCompression>>
 PerturbationResults<IterType, T, PExtras>::CompressMax(
     int32_t compression_error_exp_param,
     size_t new_generation_number)
@@ -1111,14 +1111,13 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
 
     constexpr bool disable_compression = false;
     const auto Two = T{ 2.0f };
-    const auto MinusTwo = T{ -2.0f };
 
     m_CompressionErrorExp = compression_error_exp_param;
     auto compErr = std::pow(10, m_CompressionErrorExp);
     const auto CompressionError = static_cast<T>(compErr);
 
     auto compressed =
-        std::make_unique<PerturbationResults<IterType, T, PerturbExtras::EnableCompression>>(
+        std::make_unique<PerturbationResults<IterType, T, PerturbExtras::SimpleCompression>>(
             GetRefOrbitOptions(), new_generation_number);
     compressed->CopySettingsWithoutOrbit(*this);
 
@@ -1146,7 +1145,10 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
 
     const auto threshold2 = CompressionError;
     const T constant1{ 0x1.0p-4 };
+#pragma warning(push)
+#pragma warning(suppress: 4305)
     const T constant2{ 0x1.000001p0 };
+#pragma warning(pop)
     //const T constant2{ 20000 };
     T zx{};
     T zy{};
@@ -1273,10 +1275,10 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
         //dzY = MinusTwo * m_FullOrbit[j].y * dzY - dzY * dzY;
         //HdrReduce(dzY);
 
-        const auto dzX_old = dzX;
+        const auto dzX_old2 = dzX;
         dzX = Two * m_FullOrbit[j].x * dzX - Two * m_FullOrbit[j].y * dzY + dzX * dzX - dzY * dzY;
         HdrReduce(dzX);
-        dzY = Two * m_FullOrbit[j].x * dzY + Two * m_FullOrbit[j].y * dzX_old + Two * dzX_old * dzY;
+        dzY = Two * m_FullOrbit[j].x * dzY + Two * m_FullOrbit[j].y * dzX_old2 + Two * dzX_old2 * dzY;
         HdrReduce(dzY);
 
         // auto zx_old = zx;
@@ -1297,7 +1299,7 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
 template<typename IterType, class T, PerturbExtras PExtras>
 std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::Disable>>
 PerturbationResults<IterType, T, PExtras>::DecompressMax(size_t NewGenerationNumber)
-    requires (PExtras == PerturbExtras::EnableCompression && !Introspection::IsTDblFlt<T>()) {
+    requires (PExtras == PerturbExtras::SimpleCompression && !Introspection::IsTDblFlt<T>()) {
 
     // Show range of indices touched
     constexpr bool outputFile = false;
@@ -1418,7 +1420,6 @@ PerturbationResults<IterType, T, PExtras>::DecompressMax(size_t NewGenerationNum
         HdrReduce(zy);
     }
     const auto Two = T{ 2.0f };
-    const auto MinusTwo = T{ -2.0f };
     IterTypeFull j = 0;
     auto dzX = zx;
     auto dzY = zy;
@@ -1549,13 +1550,13 @@ void PerturbationResults<IterType, T, PExtras>::SaveOrbitAsText() const {
         out << "m_FullOrbit[" << i << "].x: " << HdrToString<false>(m_FullOrbit[i].x) << std::endl;
         out << "m_FullOrbit[" << i << "].y: " << HdrToString<false>(m_FullOrbit[i].y) << std::endl;
 
-        if constexpr (PExtras == PerturbExtras::EnableCompression) {
+        if constexpr (PExtras == PerturbExtras::SimpleCompression) {
             out << "m_FullOrbit[" << i << "].CompressionIndex: " << m_FullOrbit[i].CompressionIndex << std::endl;
             out << "m_FullOrbit[" << i << "].Rebase: " << m_FullOrbit[i].Rebase << std::endl;
         }
     }
 
-    if constexpr (PExtras == PerturbExtras::EnableCompression) {
+    if constexpr (PExtras == PerturbExtras::SimpleCompression) {
         out << "m_Rebases: " << m_Rebases.size() << std::endl;
         for (size_t i = 0; i < m_Rebases.size(); i++) {
             out << "m_Rebases[" << i << "]: " << m_Rebases[i] << std::endl;
@@ -1648,10 +1649,10 @@ RefOrbitCompressor<IterType, T, PExtras>::RefOrbitCompressor(
 
 template<typename IterType, class T, PerturbExtras PExtras>
 void RefOrbitCompressor<IterType, T, PExtras>::MaybeAddCompressedIteration(GPUReferenceIter<T, PExtras> iter)
-    requires (PExtras == PerturbExtras::EnableCompression && !Introspection::IsTDblFlt<T>()) {
+    requires (PExtras == PerturbExtras::SimpleCompression && !Introspection::IsTDblFlt<T>()) {
 
     // This should only run if compression is enabled.
-    static_assert(PExtras == PerturbExtras::EnableCompression, "!");
+    static_assert(PExtras == PerturbExtras::SimpleCompression, "!");
 
     auto errX = zx - iter.x;
     auto errY = zy - iter.y;
@@ -1682,8 +1683,66 @@ void RefOrbitCompressor<IterType, T, PExtras>::MaybeAddCompressedIteration(GPURe
     results.m_UncompressedItersInOrbit++;
 }
 
+#define InstantiatePerturbationResult(T, PExtras) \
+    template class PerturbationResults<uint32_t, T, PExtras>; \
+    template class PerturbationResults<uint64_t, T, PExtras>;
+
+InstantiatePerturbationResult(float, PerturbExtras::Disable);
+InstantiatePerturbationResult(float, PerturbExtras::Bad);
+InstantiatePerturbationResult(float, PerturbExtras::SimpleCompression);
+
+InstantiatePerturbationResult(double, PerturbExtras::Disable);
+InstantiatePerturbationResult(double, PerturbExtras::Bad);
+InstantiatePerturbationResult(double, PerturbExtras::SimpleCompression);
+
+InstantiatePerturbationResult(CudaDblflt<MattDblflt>, PerturbExtras::Disable);
+InstantiatePerturbationResult(CudaDblflt<MattDblflt>, PerturbExtras::Bad);
+InstantiatePerturbationResult(CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression);
+
+InstantiatePerturbationResult(HDRFloat<float>, PerturbExtras::Disable);
+InstantiatePerturbationResult(HDRFloat<float>, PerturbExtras::Bad);
+InstantiatePerturbationResult(HDRFloat<float>, PerturbExtras::SimpleCompression);
+
+InstantiatePerturbationResult(HDRFloat<double>, PerturbExtras::Disable);
+InstantiatePerturbationResult(HDRFloat<double>, PerturbExtras::Bad);
+InstantiatePerturbationResult(HDRFloat<double>, PerturbExtras::SimpleCompression);
+
+InstantiatePerturbationResult(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable);
+InstantiatePerturbationResult(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad);
+InstantiatePerturbationResult(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::SimpleCompression);
+
+#define InstantiateRefOrbitCompressor(T, PExtras) \
+    template class RefOrbitCompressor<uint32_t, T, PExtras>; \
+    template class RefOrbitCompressor<uint64_t, T, PExtras>;
+
+InstantiateRefOrbitCompressor(float, PerturbExtras::Disable);
+InstantiateRefOrbitCompressor(float, PerturbExtras::Bad);
+InstantiateRefOrbitCompressor(float, PerturbExtras::SimpleCompression);
+
+InstantiateRefOrbitCompressor(double, PerturbExtras::Disable);
+InstantiateRefOrbitCompressor(double, PerturbExtras::Bad);
+InstantiateRefOrbitCompressor(double, PerturbExtras::SimpleCompression);
+
+InstantiateRefOrbitCompressor(CudaDblflt<MattDblflt>, PerturbExtras::Disable);
+InstantiateRefOrbitCompressor(CudaDblflt<MattDblflt>, PerturbExtras::Bad);
+InstantiateRefOrbitCompressor(CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression);
+
+InstantiateRefOrbitCompressor(HDRFloat<float>, PerturbExtras::Disable);
+InstantiateRefOrbitCompressor(HDRFloat<float>, PerturbExtras::Bad);
+InstantiateRefOrbitCompressor(HDRFloat<float>, PerturbExtras::SimpleCompression);
+
+InstantiateRefOrbitCompressor(HDRFloat<double>, PerturbExtras::Disable);
+InstantiateRefOrbitCompressor(HDRFloat<double>, PerturbExtras::Bad);
+InstantiateRefOrbitCompressor(HDRFloat<double>, PerturbExtras::SimpleCompression);
+
+InstantiateRefOrbitCompressor(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable);
+InstantiateRefOrbitCompressor(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad);
+InstantiateRefOrbitCompressor(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::SimpleCompression);
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 template<typename IterType, class T, PerturbExtras PExtras>
-IntermediateOrbitCompressor<IterType, T, PExtras>::IntermediateOrbitCompressor(
+SimpleIntermediateOrbitCompressor<IterType, T, PExtras>::SimpleIntermediateOrbitCompressor(
     PerturbationResults<IterType, T, PExtras> &results,
     int32_t CompressionErrorExp) :
     results{ results },
@@ -1731,7 +1790,7 @@ IntermediateOrbitCompressor<IterType, T, PExtras>::IntermediateOrbitCompressor(
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>
-IntermediateOrbitCompressor<IterType, T, PExtras>::~IntermediateOrbitCompressor() {
+SimpleIntermediateOrbitCompressor<IterType, T, PExtras>::~SimpleIntermediateOrbitCompressor() {
     mpf_clear(zx);
     mpf_clear(zy);
     mpf_clear(cx);
@@ -1747,7 +1806,7 @@ IntermediateOrbitCompressor<IterType, T, PExtras>::~IntermediateOrbitCompressor(
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>
-void IntermediateOrbitCompressor<IterType, T, PExtras>::MaybeAddCompressedIteration(
+void SimpleIntermediateOrbitCompressor<IterType, T, PExtras>::MaybeAddCompressedIteration(
     mpf_t incomingZx,
     mpf_t incomingZy,
     IterTypeFull index) {
@@ -1815,86 +1874,194 @@ void IntermediateOrbitCompressor<IterType, T, PExtras>::MaybeAddCompressedIterat
     }
 }
 
-#define InstantiatePerturbationResult(T, PExtras) \
-    template class PerturbationResults<uint32_t, T, PExtras>; \
-    template class PerturbationResults<uint64_t, T, PExtras>;
+#define InstantiateSimpleIntermediateOrbitCompressor(T, PExtras) \
+    template class SimpleIntermediateOrbitCompressor<uint32_t, T, PExtras>; \
+    template class SimpleIntermediateOrbitCompressor<uint64_t, T, PExtras>;
 
-InstantiatePerturbationResult(float, PerturbExtras::Disable);
-InstantiatePerturbationResult(float, PerturbExtras::Bad);
-InstantiatePerturbationResult(float, PerturbExtras::EnableCompression);
+InstantiateSimpleIntermediateOrbitCompressor(float, PerturbExtras::Disable);
+InstantiateSimpleIntermediateOrbitCompressor(float, PerturbExtras::Bad);
+InstantiateSimpleIntermediateOrbitCompressor(float, PerturbExtras::SimpleCompression);
 
-InstantiatePerturbationResult(double, PerturbExtras::Disable);
-InstantiatePerturbationResult(double, PerturbExtras::Bad);
-InstantiatePerturbationResult(double, PerturbExtras::EnableCompression);
+InstantiateSimpleIntermediateOrbitCompressor(double, PerturbExtras::Disable);
+InstantiateSimpleIntermediateOrbitCompressor(double, PerturbExtras::Bad);
+InstantiateSimpleIntermediateOrbitCompressor(double, PerturbExtras::SimpleCompression);
 
-InstantiatePerturbationResult(CudaDblflt<MattDblflt>, PerturbExtras::Disable);
-InstantiatePerturbationResult(CudaDblflt<MattDblflt>, PerturbExtras::Bad);
-InstantiatePerturbationResult(CudaDblflt<MattDblflt>, PerturbExtras::EnableCompression);
+InstantiateSimpleIntermediateOrbitCompressor(CudaDblflt<MattDblflt>, PerturbExtras::Disable);
+InstantiateSimpleIntermediateOrbitCompressor(CudaDblflt<MattDblflt>, PerturbExtras::Bad);
+InstantiateSimpleIntermediateOrbitCompressor(CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression);
 
-InstantiatePerturbationResult(HDRFloat<float>, PerturbExtras::Disable);
-InstantiatePerturbationResult(HDRFloat<float>, PerturbExtras::Bad);
-InstantiatePerturbationResult(HDRFloat<float>, PerturbExtras::EnableCompression);
+InstantiateSimpleIntermediateOrbitCompressor(HDRFloat<float>, PerturbExtras::Disable);
+InstantiateSimpleIntermediateOrbitCompressor(HDRFloat<float>, PerturbExtras::Bad);
+InstantiateSimpleIntermediateOrbitCompressor(HDRFloat<float>, PerturbExtras::SimpleCompression);
 
-InstantiatePerturbationResult(HDRFloat<double>, PerturbExtras::Disable);
-InstantiatePerturbationResult(HDRFloat<double>, PerturbExtras::Bad);
-InstantiatePerturbationResult(HDRFloat<double>, PerturbExtras::EnableCompression);
+InstantiateSimpleIntermediateOrbitCompressor(HDRFloat<double>, PerturbExtras::Disable);
+InstantiateSimpleIntermediateOrbitCompressor(HDRFloat<double>, PerturbExtras::Bad);
+InstantiateSimpleIntermediateOrbitCompressor(HDRFloat<double>, PerturbExtras::SimpleCompression);
 
-InstantiatePerturbationResult(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable);
-InstantiatePerturbationResult(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad);
-InstantiatePerturbationResult(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::EnableCompression);
+InstantiateSimpleIntermediateOrbitCompressor(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable);
+InstantiateSimpleIntermediateOrbitCompressor(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad);
+InstantiateSimpleIntermediateOrbitCompressor(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::SimpleCompression);
 
-#define InstantiateRefOrbitCompressor(T, PExtras) \
-    template class RefOrbitCompressor<uint32_t, T, PExtras>; \
-    template class RefOrbitCompressor<uint64_t, T, PExtras>;
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-InstantiateRefOrbitCompressor(float, PerturbExtras::Disable);
-InstantiateRefOrbitCompressor(float, PerturbExtras::Bad);
-InstantiateRefOrbitCompressor(float, PerturbExtras::EnableCompression);
+template<typename IterType, class T, PerturbExtras PExtras>
+MaxIntermediateOrbitCompressor<IterType, T, PExtras>::MaxIntermediateOrbitCompressor(
+    PerturbationResults<IterType, T, PExtras> &results,
+    int32_t CompressionErrorExp) :
+    results{ results },
+    zx{},
+    zy{},
+    cx{},
+    cy{},
+    Two{},
+    CompressionError{},
+    ReducedZx{},
+    ReducedZy{},
+    Temp{},
+    IntermediateCompressionErrorExp{},
+    CurCompressedIndex{} {
 
-InstantiateRefOrbitCompressor(double, PerturbExtras::Disable);
-InstantiateRefOrbitCompressor(double, PerturbExtras::Bad);
-InstantiateRefOrbitCompressor(double, PerturbExtras::EnableCompression);
+    // This code can run even if compression is disabled, but it doesn't matter.
 
-InstantiateRefOrbitCompressor(CudaDblflt<MattDblflt>, PerturbExtras::Disable);
-InstantiateRefOrbitCompressor(CudaDblflt<MattDblflt>, PerturbExtras::Bad);
-InstantiateRefOrbitCompressor(CudaDblflt<MattDblflt>, PerturbExtras::EnableCompression);
+    mpf_init2(zx, AuthoritativeReuseExtraPrecisionInBits);
+    mpf_set(zx, *results.GetHiX().backendRaw());
 
-InstantiateRefOrbitCompressor(HDRFloat<float>, PerturbExtras::Disable);
-InstantiateRefOrbitCompressor(HDRFloat<float>, PerturbExtras::Bad);
-InstantiateRefOrbitCompressor(HDRFloat<float>, PerturbExtras::EnableCompression);
+    mpf_init2(zy, AuthoritativeReuseExtraPrecisionInBits);
+    mpf_set(zy, *results.GetHiY().backendRaw());
 
-InstantiateRefOrbitCompressor(HDRFloat<double>, PerturbExtras::Disable);
-InstantiateRefOrbitCompressor(HDRFloat<double>, PerturbExtras::Bad);
-InstantiateRefOrbitCompressor(HDRFloat<double>, PerturbExtras::EnableCompression);
+    mpf_init2(cx, AuthoritativeReuseExtraPrecisionInBits);
+    mpf_set(cx, *results.GetHiX().backendRaw());
 
-InstantiateRefOrbitCompressor(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable);
-InstantiateRefOrbitCompressor(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad);
-InstantiateRefOrbitCompressor(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::EnableCompression);
+    mpf_init2(cy, AuthoritativeReuseExtraPrecisionInBits);
+    mpf_set(cy, *results.GetHiY().backendRaw());
 
-#define InstantiateIntermediateOrbitCompressor(T, PExtras) \
-    template class IntermediateOrbitCompressor<uint32_t, T, PExtras>; \
-    template class IntermediateOrbitCompressor<uint64_t, T, PExtras>;
+    mpf_init2(Two, AuthoritativeReuseExtraPrecisionInBits);
+    mpf_set_d(Two, 2);
 
-InstantiateIntermediateOrbitCompressor(float, PerturbExtras::Disable);
-InstantiateIntermediateOrbitCompressor(float, PerturbExtras::Bad);
-InstantiateIntermediateOrbitCompressor(float, PerturbExtras::EnableCompression);
+    results.m_IntermediateCompressionErrorExp = CompressionErrorExp;
 
-InstantiateIntermediateOrbitCompressor(double, PerturbExtras::Disable);
-InstantiateIntermediateOrbitCompressor(double, PerturbExtras::Bad);
-InstantiateIntermediateOrbitCompressor(double, PerturbExtras::EnableCompression);
+    mpf_init2(CompressionError, AuthoritativeReuseExtraPrecisionInBits);
+    mpf_set_d(CompressionError, 10);
+    mpf_pow_ui(CompressionError, CompressionError, CompressionErrorExp);
 
-InstantiateIntermediateOrbitCompressor(CudaDblflt<MattDblflt>, PerturbExtras::Disable);
-InstantiateIntermediateOrbitCompressor(CudaDblflt<MattDblflt>, PerturbExtras::Bad);
-InstantiateIntermediateOrbitCompressor(CudaDblflt<MattDblflt>, PerturbExtras::EnableCompression);
+    mpf_init2(ReducedZx, AuthoritativeReuseExtraPrecisionInBits);
+    mpf_init2(ReducedZy, AuthoritativeReuseExtraPrecisionInBits);
 
-InstantiateIntermediateOrbitCompressor(HDRFloat<float>, PerturbExtras::Disable);
-InstantiateIntermediateOrbitCompressor(HDRFloat<float>, PerturbExtras::Bad);
-InstantiateIntermediateOrbitCompressor(HDRFloat<float>, PerturbExtras::EnableCompression);
+    for (size_t i = 0; i < 6; i++) {
+        mpf_init2(Temp[i], AuthoritativeReuseExtraPrecisionInBits);
+    }
+}
 
-InstantiateIntermediateOrbitCompressor(HDRFloat<double>, PerturbExtras::Disable);
-InstantiateIntermediateOrbitCompressor(HDRFloat<double>, PerturbExtras::Bad);
-InstantiateIntermediateOrbitCompressor(HDRFloat<double>, PerturbExtras::EnableCompression);
+template<typename IterType, class T, PerturbExtras PExtras>
+MaxIntermediateOrbitCompressor<IterType, T, PExtras>::~MaxIntermediateOrbitCompressor() {
+    mpf_clear(zx);
+    mpf_clear(zy);
+    mpf_clear(cx);
+    mpf_clear(cy);
+    mpf_clear(Two);
+    mpf_clear(CompressionError);
+    mpf_clear(ReducedZx);
+    mpf_clear(ReducedZy);
 
-InstantiateIntermediateOrbitCompressor(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable);
-InstantiateIntermediateOrbitCompressor(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad);
-InstantiateIntermediateOrbitCompressor(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::EnableCompression);
+    for (size_t i = 0; i < 6; i++) {
+        mpf_clear(Temp[i]);
+    }
+}
+
+template<typename IterType, class T, PerturbExtras PExtras>
+void MaxIntermediateOrbitCompressor<IterType, T, PExtras>::MaybeAddCompressedIteration(
+    mpf_t incomingZx,
+    mpf_t incomingZy,
+    IterTypeFull index) {
+
+    mpf_set(ReducedZx, incomingZx);
+    mpf_set(ReducedZy, incomingZy);
+
+    {
+        // auto errX = zx - ReducedZx;
+        mpf_sub(Temp[0], zx, ReducedZx);
+
+        // auto errY = zy - ReducedZy;
+        mpf_sub(Temp[1], zy, ReducedZy);
+    }
+
+    // Temp[0] = errX
+    // Temp[1] = errY
+
+    // auto err = (errX * errX + errY * errY) * CompressionError;
+    {
+        mpf_mul(Temp[2], Temp[0], Temp[0]);
+        mpf_mul(Temp[3], Temp[1], Temp[1]);
+        mpf_add(Temp[4], Temp[2], Temp[3]);
+        mpf_mul(Temp[5], Temp[4], CompressionError);
+    }
+
+    // Temp[5] = err
+
+    // auto norm_z = ReducedZx * ReducedZx + ReducedZy * ReducedZy;
+    {
+        mpf_mul(Temp[2], ReducedZx, ReducedZx);
+        mpf_mul(Temp[3], ReducedZy, ReducedZy);
+        mpf_add(Temp[4], Temp[2], Temp[3]);
+    }
+
+    // Temp[4] = norm_z
+
+    if (mpf_cmp(Temp[5], Temp[4]) >= 0) {
+        results.AddUncompressedReusedEntry(ReducedZx, ReducedZy, index);
+
+        mpf_set(zx, ReducedZx);
+        mpf_set(zy, ReducedZy);
+
+        // Corresponds to the entry just added
+        CurCompressedIndex++;
+        //assert(CurCompressedIndex == results.m_ReuseX.GetSize() - 1);
+        //assert(CurCompressedIndex == results.m_ReuseY.GetSize() - 1);
+    }
+
+    // auto zx_old = zx;
+    // zx = zx * zx - zy * zy + cx;
+    // zy = Two * zx_old * zy + cy;
+
+    {
+        mpf_set(Temp[0], zx); // zx_old
+
+        mpf_mul(Temp[2], zx, zx);
+        mpf_mul(Temp[3], zy, zy);
+        mpf_sub(zx, Temp[2], Temp[3]);
+        mpf_add(zx, zx, cx);
+
+        mpf_mul(Temp[2], Two, Temp[0]);
+        mpf_mul(zy, Temp[2], zy);
+        mpf_add(zy, zy, cy);
+    }
+}
+
+#define InstantiateMaxIntermediateOrbitCompressor(T, PExtras) \
+    template class MaxIntermediateOrbitCompressor<uint32_t, T, PExtras>; \
+    template class MaxIntermediateOrbitCompressor<uint64_t, T, PExtras>;
+
+InstantiateMaxIntermediateOrbitCompressor(float, PerturbExtras::Disable);
+InstantiateMaxIntermediateOrbitCompressor(float, PerturbExtras::Bad);
+InstantiateMaxIntermediateOrbitCompressor(float, PerturbExtras::SimpleCompression);
+
+InstantiateMaxIntermediateOrbitCompressor(double, PerturbExtras::Disable);
+InstantiateMaxIntermediateOrbitCompressor(double, PerturbExtras::Bad);
+InstantiateMaxIntermediateOrbitCompressor(double, PerturbExtras::SimpleCompression);
+
+InstantiateMaxIntermediateOrbitCompressor(CudaDblflt<MattDblflt>, PerturbExtras::Disable);
+InstantiateMaxIntermediateOrbitCompressor(CudaDblflt<MattDblflt>, PerturbExtras::Bad);
+InstantiateMaxIntermediateOrbitCompressor(CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression);
+
+InstantiateMaxIntermediateOrbitCompressor(HDRFloat<float>, PerturbExtras::Disable);
+InstantiateMaxIntermediateOrbitCompressor(HDRFloat<float>, PerturbExtras::Bad);
+InstantiateMaxIntermediateOrbitCompressor(HDRFloat<float>, PerturbExtras::SimpleCompression);
+
+InstantiateMaxIntermediateOrbitCompressor(HDRFloat<double>, PerturbExtras::Disable);
+InstantiateMaxIntermediateOrbitCompressor(HDRFloat<double>, PerturbExtras::Bad);
+InstantiateMaxIntermediateOrbitCompressor(HDRFloat<double>, PerturbExtras::SimpleCompression);
+
+InstantiateMaxIntermediateOrbitCompressor(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable);
+InstantiateMaxIntermediateOrbitCompressor(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad);
+InstantiateMaxIntermediateOrbitCompressor(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::SimpleCompression);
+

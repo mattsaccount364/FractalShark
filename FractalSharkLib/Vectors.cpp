@@ -725,12 +725,12 @@ InstantiateLAInfoDeepGrowableVector(uint32_t, HDRFloat<float>, float, PerturbExt
 InstantiateLAInfoDeepGrowableVector(uint32_t, HDRFloat<double>, double, PerturbExtras::Bad);
 InstantiateLAInfoDeepGrowableVector(uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, PerturbExtras::Bad);
 
-InstantiateLAInfoDeepGrowableVector(uint32_t, float, float, PerturbExtras::EnableCompression);
-InstantiateLAInfoDeepGrowableVector(uint32_t, double, double, PerturbExtras::EnableCompression);
-InstantiateLAInfoDeepGrowableVector(uint32_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, PerturbExtras::EnableCompression);
-InstantiateLAInfoDeepGrowableVector(uint32_t, HDRFloat<float>, float, PerturbExtras::EnableCompression);
-InstantiateLAInfoDeepGrowableVector(uint32_t, HDRFloat<double>, double, PerturbExtras::EnableCompression);
-InstantiateLAInfoDeepGrowableVector(uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, PerturbExtras::EnableCompression);
+InstantiateLAInfoDeepGrowableVector(uint32_t, float, float, PerturbExtras::SimpleCompression);
+InstantiateLAInfoDeepGrowableVector(uint32_t, double, double, PerturbExtras::SimpleCompression);
+InstantiateLAInfoDeepGrowableVector(uint32_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression);
+InstantiateLAInfoDeepGrowableVector(uint32_t, HDRFloat<float>, float, PerturbExtras::SimpleCompression);
+InstantiateLAInfoDeepGrowableVector(uint32_t, HDRFloat<double>, double, PerturbExtras::SimpleCompression);
+InstantiateLAInfoDeepGrowableVector(uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression);
 
 InstantiateLAInfoDeepGrowableVector(uint64_t, float, float, PerturbExtras::Disable);
 InstantiateLAInfoDeepGrowableVector(uint64_t, double, double, PerturbExtras::Disable);
@@ -746,12 +746,12 @@ InstantiateLAInfoDeepGrowableVector(uint64_t, HDRFloat<float>, float, PerturbExt
 InstantiateLAInfoDeepGrowableVector(uint64_t, HDRFloat<double>, double, PerturbExtras::Bad);
 InstantiateLAInfoDeepGrowableVector(uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, PerturbExtras::Bad);
 
-InstantiateLAInfoDeepGrowableVector(uint64_t, float, float, PerturbExtras::EnableCompression);
-InstantiateLAInfoDeepGrowableVector(uint64_t, double, double, PerturbExtras::EnableCompression);
-InstantiateLAInfoDeepGrowableVector(uint64_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, PerturbExtras::EnableCompression);
-InstantiateLAInfoDeepGrowableVector(uint64_t, HDRFloat<float>, float, PerturbExtras::EnableCompression);
-InstantiateLAInfoDeepGrowableVector(uint64_t, HDRFloat<double>, double, PerturbExtras::EnableCompression);
-InstantiateLAInfoDeepGrowableVector(uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, PerturbExtras::EnableCompression);
+InstantiateLAInfoDeepGrowableVector(uint64_t, float, float, PerturbExtras::SimpleCompression);
+InstantiateLAInfoDeepGrowableVector(uint64_t, double, double, PerturbExtras::SimpleCompression);
+InstantiateLAInfoDeepGrowableVector(uint64_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression);
+InstantiateLAInfoDeepGrowableVector(uint64_t, HDRFloat<float>, float, PerturbExtras::SimpleCompression);
+InstantiateLAInfoDeepGrowableVector(uint64_t, HDRFloat<double>, double, PerturbExtras::SimpleCompression);
+InstantiateLAInfoDeepGrowableVector(uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression);
 
 
 #define InstantiateGrowableVector(EltT) template class GrowableVector<EltT>
@@ -769,12 +769,12 @@ InstantiateGPUReferenceIterGrowableVector(HDRFloat<float>, PerturbExtras::Disabl
 InstantiateGPUReferenceIterGrowableVector(HDRFloat<double>, PerturbExtras::Disable);
 InstantiateGPUReferenceIterGrowableVector(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable);
 
-InstantiateGPUReferenceIterGrowableVector(float, PerturbExtras::EnableCompression);
-InstantiateGPUReferenceIterGrowableVector(double, PerturbExtras::EnableCompression);
-InstantiateGPUReferenceIterGrowableVector(CudaDblflt<MattDblflt>, PerturbExtras::EnableCompression);
-InstantiateGPUReferenceIterGrowableVector(HDRFloat<float>, PerturbExtras::EnableCompression);
-InstantiateGPUReferenceIterGrowableVector(HDRFloat<double>, PerturbExtras::EnableCompression);
-InstantiateGPUReferenceIterGrowableVector(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::EnableCompression);
+InstantiateGPUReferenceIterGrowableVector(float, PerturbExtras::SimpleCompression);
+InstantiateGPUReferenceIterGrowableVector(double, PerturbExtras::SimpleCompression);
+InstantiateGPUReferenceIterGrowableVector(CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression);
+InstantiateGPUReferenceIterGrowableVector(HDRFloat<float>, PerturbExtras::SimpleCompression);
+InstantiateGPUReferenceIterGrowableVector(HDRFloat<double>, PerturbExtras::SimpleCompression);
+InstantiateGPUReferenceIterGrowableVector(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::SimpleCompression);
 
 InstantiateGPUReferenceIterGrowableVector(float, PerturbExtras::Bad);
 InstantiateGPUReferenceIterGrowableVector(double, PerturbExtras::Bad);

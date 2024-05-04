@@ -285,7 +285,7 @@ class /*alignas(8)*/ GPUReferenceIter :
     public std::conditional_t<
     PExtras == PerturbExtras::Bad,
     BadField,
-    std::conditional_t<PExtras == PerturbExtras::EnableCompression,
+    std::conditional_t<PExtras == PerturbExtras::SimpleCompression,
     CompressionIndexField,
     Empty>> {
 
@@ -294,7 +294,7 @@ public:
     using BaseClass = std::conditional_t<
         PExtras == PerturbExtras::Bad,
         BadField,
-        std::conditional_t<PExtras == PerturbExtras::EnableCompression,
+        std::conditional_t<PExtras == PerturbExtras::SimpleCompression,
         CompressionIndexField,
         Empty>>;
 
@@ -313,7 +313,7 @@ public:
 
     template<
         typename U = PerturbExtrasHack<PExtras>,
-        std::enable_if_t<U::Val == PerturbExtras::EnableCompression, int> = 0>
+        std::enable_if_t<U::Val == PerturbExtras::SimpleCompression, int> = 0>
     GPUReferenceIter(Type init_x, Type init_y, IterTypeFull init_compression_index, IterTypeFull rebase)
         : CompressionIndexField(init_compression_index, rebase),
         x{ init_x },
@@ -322,7 +322,7 @@ public:
 
     template<
         typename U = PerturbExtrasHack<PExtras>,
-        std::enable_if_t<U::Val == PerturbExtras::EnableCompression, int> = 0>
+        std::enable_if_t<U::Val == PerturbExtras::SimpleCompression, int> = 0>
     GPUReferenceIter(Type init_x, Type init_y, IterTypeFull init_compression_index)
         : CompressionIndexField(init_compression_index),
         x{ init_x },
@@ -529,41 +529,41 @@ private:
 
         GPUPerturbSingleResults<uint32_t, float, PerturbExtras::Disable> *m_Results32FloatDisable;
         GPUPerturbSingleResults<uint32_t, float, PerturbExtras::Bad> *m_Results32FloatEnable;
-        GPUPerturbSingleResults<uint32_t, float, PerturbExtras::EnableCompression> *m_Results32FloatRC;
+        GPUPerturbSingleResults<uint32_t, float, PerturbExtras::SimpleCompression> *m_Results32FloatRC;
         GPUPerturbSingleResults<uint32_t, double, PerturbExtras::Disable> *m_Results32DoubleDisable;
         GPUPerturbSingleResults<uint32_t, double, PerturbExtras::Bad> *m_Results32DoubleEnable;
-        GPUPerturbSingleResults<uint32_t, double, PerturbExtras::EnableCompression> *m_Results32DoubleRC;
+        GPUPerturbSingleResults<uint32_t, double, PerturbExtras::SimpleCompression> *m_Results32DoubleRC;
         GPUPerturbSingleResults<uint32_t, CudaDblflt<dblflt>, PerturbExtras::Disable> *m_Results32CudaDblfltDisable;
         GPUPerturbSingleResults<uint32_t, CudaDblflt<dblflt>, PerturbExtras::Bad> *m_Results32CudaDblfltEnable;
-        GPUPerturbSingleResults<uint32_t, CudaDblflt<dblflt>, PerturbExtras::EnableCompression> *m_Results32CudaDblfltRC;
+        GPUPerturbSingleResults<uint32_t, CudaDblflt<dblflt>, PerturbExtras::SimpleCompression> *m_Results32CudaDblfltRC;
         GPUPerturbSingleResults<uint32_t, HDRFloat<float>, PerturbExtras::Disable> *m_Results32HdrFloatDisable;
         GPUPerturbSingleResults<uint32_t, HDRFloat<float>, PerturbExtras::Bad> *m_Results32HdrFloatEnable;
-        GPUPerturbSingleResults<uint32_t, HDRFloat<float>, PerturbExtras::EnableCompression> *m_Results32HdrFloatRC;
+        GPUPerturbSingleResults<uint32_t, HDRFloat<float>, PerturbExtras::SimpleCompression> *m_Results32HdrFloatRC;
         GPUPerturbSingleResults<uint32_t, HDRFloat<double>, PerturbExtras::Disable> *m_Results32HdrDoubleDisable;
         GPUPerturbSingleResults<uint32_t, HDRFloat<double>, PerturbExtras::Bad> *m_Results32HdrDoubleEnable;
-        GPUPerturbSingleResults<uint32_t, HDRFloat<double>, PerturbExtras::EnableCompression> *m_Results32HdrDoubleRC;
+        GPUPerturbSingleResults<uint32_t, HDRFloat<double>, PerturbExtras::SimpleCompression> *m_Results32HdrDoubleRC;
         GPUPerturbSingleResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable> *m_Results32HdrCudaMattDblfltDisable;
         GPUPerturbSingleResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad> *m_Results32HdrCudaMattDblfltEnable;
-        GPUPerturbSingleResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::EnableCompression> *m_Results32HdrCudaMattDblfltRC;
+        GPUPerturbSingleResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::SimpleCompression> *m_Results32HdrCudaMattDblfltRC;
 
         GPUPerturbSingleResults<uint64_t, float, PerturbExtras::Disable> *m_Results64FloatDisable;
         GPUPerturbSingleResults<uint64_t, float, PerturbExtras::Bad> *m_Results64FloatEnable;
-        GPUPerturbSingleResults<uint64_t, float, PerturbExtras::EnableCompression> *m_Results64FloatRC;
+        GPUPerturbSingleResults<uint64_t, float, PerturbExtras::SimpleCompression> *m_Results64FloatRC;
         GPUPerturbSingleResults<uint64_t, double, PerturbExtras::Disable> *m_Results64DoubleDisable;
         GPUPerturbSingleResults<uint64_t, double, PerturbExtras::Bad> *m_Results64DoubleEnable;
-        GPUPerturbSingleResults<uint64_t, double, PerturbExtras::EnableCompression> *m_Results64DoubleRC;
+        GPUPerturbSingleResults<uint64_t, double, PerturbExtras::SimpleCompression> *m_Results64DoubleRC;
         GPUPerturbSingleResults<uint64_t, CudaDblflt<dblflt>, PerturbExtras::Disable> *m_Results64CudaDblfltDisable;
         GPUPerturbSingleResults<uint64_t, CudaDblflt<dblflt>, PerturbExtras::Bad> *m_Results64CudaDblfltEnable;
-        GPUPerturbSingleResults<uint64_t, CudaDblflt<dblflt>, PerturbExtras::EnableCompression> *m_Results64CudaDblfltRC;
+        GPUPerturbSingleResults<uint64_t, CudaDblflt<dblflt>, PerturbExtras::SimpleCompression> *m_Results64CudaDblfltRC;
         GPUPerturbSingleResults<uint64_t, HDRFloat<float>, PerturbExtras::Disable> *m_Results64HdrFloatDisable;
         GPUPerturbSingleResults<uint64_t, HDRFloat<float>, PerturbExtras::Bad> *m_Results64HdrFloatEnable;
-        GPUPerturbSingleResults<uint64_t, HDRFloat<float>, PerturbExtras::EnableCompression> *m_Results64HdrFloatRC;
+        GPUPerturbSingleResults<uint64_t, HDRFloat<float>, PerturbExtras::SimpleCompression> *m_Results64HdrFloatRC;
         GPUPerturbSingleResults<uint64_t, HDRFloat<double>, PerturbExtras::Disable> *m_Results64HdrDoubleDisable;
         GPUPerturbSingleResults<uint64_t, HDRFloat<double>, PerturbExtras::Bad> *m_Results64HdrDoubleEnable;
-        GPUPerturbSingleResults<uint64_t, HDRFloat<double>, PerturbExtras::EnableCompression> *m_Results64HdrDoubleRC;
+        GPUPerturbSingleResults<uint64_t, HDRFloat<double>, PerturbExtras::SimpleCompression> *m_Results64HdrDoubleRC;
         GPUPerturbSingleResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable> *m_Results64HdrCudaMattDblfltDisable;
         GPUPerturbSingleResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad> *m_Results64HdrCudaMattDblfltEnable;
-        GPUPerturbSingleResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::EnableCompression> *m_Results64HdrCudaMattDblfltRC;
+        GPUPerturbSingleResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::SimpleCompression> *m_Results64HdrCudaMattDblfltRC;
 
         size_t m_GenerationNumber;
 

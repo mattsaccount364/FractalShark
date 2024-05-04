@@ -1759,7 +1759,7 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
         CalcCpuPerturbationFractalLAV2<IterType, float, PerturbExtras::Disable>(MemoryOnly);
         break;
     case RenderAlgorithm::Cpu32PerturbedRCBLAV2HDR:
-        CalcCpuPerturbationFractalLAV2<IterType, float, PerturbExtras::EnableCompression>(MemoryOnly);
+        CalcCpuPerturbationFractalLAV2<IterType, float, PerturbExtras::SimpleCompression>(MemoryOnly);
         break;
     case RenderAlgorithm::Cpu64PerturbedBLAV2HDR:
         CalcCpuPerturbationFractalLAV2<IterType, double, PerturbExtras::Disable>(MemoryOnly);
@@ -1852,7 +1852,7 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
             float,
             float,
             LAv2Mode::Full,
-            PerturbExtras::EnableCompression>(MemoryOnly);
+            PerturbExtras::SimpleCompression>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu1x32PerturbedRCLAv2PO:
         CalcGpuPerturbationFractalLAv2<
@@ -1860,7 +1860,7 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
             float,
             float,
             LAv2Mode::PO,
-            PerturbExtras::EnableCompression>(MemoryOnly);
+            PerturbExtras::SimpleCompression>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu1x32PerturbedRCLAv2LAO:
         CalcGpuPerturbationFractalLAv2<
@@ -1868,7 +1868,7 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
             float,
             float,
             LAv2Mode::LAO,
-            PerturbExtras::EnableCompression>(MemoryOnly);
+            PerturbExtras::SimpleCompression>(MemoryOnly);
         break;
 
 
@@ -1903,7 +1903,7 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
             CudaDblflt<MattDblflt>,
             CudaDblflt<MattDblflt>,
             LAv2Mode::Full,
-            PerturbExtras::EnableCompression>(MemoryOnly);
+            PerturbExtras::SimpleCompression>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu2x32PerturbedRCLAv2PO:
         CalcGpuPerturbationFractalLAv2<
@@ -1911,7 +1911,7 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
             CudaDblflt<MattDblflt>,
             CudaDblflt<MattDblflt>,
             LAv2Mode::PO,
-            PerturbExtras::EnableCompression>(MemoryOnly);
+            PerturbExtras::SimpleCompression>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu2x32PerturbedRCLAv2LAO:
         CalcGpuPerturbationFractalLAv2<
@@ -1919,7 +1919,7 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
             CudaDblflt<MattDblflt>,
             CudaDblflt<MattDblflt>,
             LAv2Mode::LAO,
-            PerturbExtras::EnableCompression>(MemoryOnly);
+            PerturbExtras::SimpleCompression>(MemoryOnly);
         break;
 
 
@@ -1954,7 +1954,7 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
             double,
             double,
             LAv2Mode::Full,
-            PerturbExtras::EnableCompression>(MemoryOnly);
+            PerturbExtras::SimpleCompression>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu1x64PerturbedRCLAv2PO:
         CalcGpuPerturbationFractalLAv2<
@@ -1962,7 +1962,7 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
             double,
             double,
             LAv2Mode::PO,
-            PerturbExtras::EnableCompression>(MemoryOnly);
+            PerturbExtras::SimpleCompression>(MemoryOnly);
         break;
     case RenderAlgorithm::Gpu1x64PerturbedRCLAv2LAO:
         CalcGpuPerturbationFractalLAv2<
@@ -1970,7 +1970,7 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
             double,
             double,
             LAv2Mode::LAO,
-            PerturbExtras::EnableCompression>(MemoryOnly);
+            PerturbExtras::SimpleCompression>(MemoryOnly);
         break;
 
 
@@ -2005,7 +2005,7 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
             HDRFloat<float>,
             float,
             LAv2Mode::Full,
-            PerturbExtras::EnableCompression>(MemoryOnly);
+            PerturbExtras::SimpleCompression>(MemoryOnly);
         break;
     case RenderAlgorithm::GpuHDRx32PerturbedRCLAv2PO:
         CalcGpuPerturbationFractalLAv2<
@@ -2013,7 +2013,7 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
             HDRFloat<float>,
             float,
             LAv2Mode::PO,
-            PerturbExtras::EnableCompression>(MemoryOnly);
+            PerturbExtras::SimpleCompression>(MemoryOnly);
         break;
     case RenderAlgorithm::GpuHDRx32PerturbedRCLAv2LAO:
         CalcGpuPerturbationFractalLAv2<
@@ -2021,7 +2021,7 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
             HDRFloat<float>,
             float,
             LAv2Mode::LAO,
-            PerturbExtras::EnableCompression>(MemoryOnly);
+            PerturbExtras::SimpleCompression>(MemoryOnly);
         break;
 
 
@@ -2055,7 +2055,7 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
             HDRFloat<CudaDblflt<MattDblflt>>,
             CudaDblflt<MattDblflt>,
             LAv2Mode::Full,
-            PerturbExtras::EnableCompression>(MemoryOnly);
+            PerturbExtras::SimpleCompression>(MemoryOnly);
         break;
     case RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2PO:
         CalcGpuPerturbationFractalLAv2<
@@ -2063,7 +2063,7 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
             HDRFloat<CudaDblflt<MattDblflt>>,
             CudaDblflt<MattDblflt>,
             LAv2Mode::PO,
-            PerturbExtras::EnableCompression>(MemoryOnly);
+            PerturbExtras::SimpleCompression>(MemoryOnly);
         break;
     case RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2LAO:
         CalcGpuPerturbationFractalLAv2<
@@ -2071,7 +2071,7 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
             HDRFloat<CudaDblflt<MattDblflt>>,
             CudaDblflt<MattDblflt>,
             LAv2Mode::LAO,
-            PerturbExtras::EnableCompression>(MemoryOnly);
+            PerturbExtras::SimpleCompression>(MemoryOnly);
         break;
 
 
@@ -2106,7 +2106,7 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
             HDRFloat<double>,
             double,
             LAv2Mode::Full,
-            PerturbExtras::EnableCompression>(MemoryOnly);
+            PerturbExtras::SimpleCompression>(MemoryOnly);
         break;
     case RenderAlgorithm::GpuHDRx64PerturbedRCLAv2PO:
         CalcGpuPerturbationFractalLAv2<
@@ -2114,7 +2114,7 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
             HDRFloat<double>,
             double,
             LAv2Mode::PO,
-            PerturbExtras::EnableCompression>(MemoryOnly);
+            PerturbExtras::SimpleCompression>(MemoryOnly);
         break;
     case RenderAlgorithm::GpuHDRx64PerturbedRCLAv2LAO:
         CalcGpuPerturbationFractalLAv2<
@@ -2122,7 +2122,7 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
             HDRFloat<double>,
             double,
             LAv2Mode::LAO,
-            PerturbExtras::EnableCompression>(MemoryOnly);
+            PerturbExtras::SimpleCompression>(MemoryOnly);
         break;
     default:
         break;

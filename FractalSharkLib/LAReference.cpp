@@ -17,7 +17,7 @@
 // number here.
 template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
 const int LAReference<IterType, Float, SubType, PExtras>::periodDivisor =
-PExtras == PerturbExtras::EnableCompression ? 8 : 2;
+PExtras == PerturbExtras::SimpleCompression ? 8 : 2;
 
 template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
 IterType LAReference<IterType, Float, SubType, PExtras>::LAsize() {
@@ -1019,14 +1019,14 @@ InitializeApproximationData(uint64_t, ::HDRFloat<float>, float, PerturbExtras::D
 InitializeApproximationData(uint32_t, ::HDRFloat<double>, double, PerturbExtras::Disable);
 InitializeApproximationData(uint64_t, ::HDRFloat<double>, double, PerturbExtras::Disable);
 
-InitializeApproximationData(uint32_t, float, float, PerturbExtras::EnableCompression);
-InitializeApproximationData(uint64_t, float, float, PerturbExtras::EnableCompression);
-InitializeApproximationData(uint32_t, double, double, PerturbExtras::EnableCompression);
-InitializeApproximationData(uint64_t, double, double, PerturbExtras::EnableCompression);
-InitializeApproximationData(uint32_t, ::HDRFloat<float>, float, PerturbExtras::EnableCompression);
-InitializeApproximationData(uint64_t, ::HDRFloat<float>, float, PerturbExtras::EnableCompression);
-InitializeApproximationData(uint32_t, ::HDRFloat<double>, double, PerturbExtras::EnableCompression);
-InitializeApproximationData(uint64_t, ::HDRFloat<double>, double, PerturbExtras::EnableCompression);
+InitializeApproximationData(uint32_t, float, float, PerturbExtras::SimpleCompression);
+InitializeApproximationData(uint64_t, float, float, PerturbExtras::SimpleCompression);
+InitializeApproximationData(uint32_t, double, double, PerturbExtras::SimpleCompression);
+InitializeApproximationData(uint64_t, double, double, PerturbExtras::SimpleCompression);
+InitializeApproximationData(uint32_t, ::HDRFloat<float>, float, PerturbExtras::SimpleCompression);
+InitializeApproximationData(uint64_t, ::HDRFloat<float>, float, PerturbExtras::SimpleCompression);
+InitializeApproximationData(uint32_t, ::HDRFloat<double>, double, PerturbExtras::SimpleCompression);
+InitializeApproximationData(uint64_t, ::HDRFloat<double>, double, PerturbExtras::SimpleCompression);
 
 template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
 void LAReference<IterType, Float, SubType, PExtras>::CreateATFromLA(Float radius, bool UseSmallExponents) {
@@ -1116,7 +1116,7 @@ InitializeLAReference(uint64_t, HDRFloat<float>, float, PerturbExtras::Disable);
 InitializeLAReference(uint32_t, HDRFloat<double>, double, PerturbExtras::Disable);
 InitializeLAReference(uint64_t, HDRFloat<double>, double, PerturbExtras::Disable);
 
-InitializeLAReference(uint32_t, HDRFloat<float>, float, PerturbExtras::EnableCompression);
-InitializeLAReference(uint64_t, HDRFloat<float>, float, PerturbExtras::EnableCompression);
-InitializeLAReference(uint32_t, HDRFloat<double>, double, PerturbExtras::EnableCompression);
-InitializeLAReference(uint64_t, HDRFloat<double>, double, PerturbExtras::EnableCompression);
+InitializeLAReference(uint32_t, HDRFloat<float>, float, PerturbExtras::SimpleCompression);
+InitializeLAReference(uint64_t, HDRFloat<float>, float, PerturbExtras::SimpleCompression);
+InitializeLAReference(uint32_t, HDRFloat<double>, double, PerturbExtras::SimpleCompression);
+InitializeLAReference(uint64_t, HDRFloat<double>, double, PerturbExtras::SimpleCompression);

@@ -17,9 +17,9 @@ class RefOrbitCalc {
 public:
     enum class ReuseMode {
         DontSaveForReuse,
-        SaveForReuse1,
-        SaveForReuse2,
-        SaveForReuse3
+        SaveForReuse1, // 3 thread, no compression
+        SaveForReuse2, // 4 thread, no compression
+        SaveForReuse3 // 4 thread, compression
     };
 
     enum class BenchmarkMode {
@@ -225,10 +225,10 @@ private:
 
     Container<uint32_t, PerturbExtras::Disable> c32d;
     Container<uint32_t, PerturbExtras::Bad> c32e;
-    Container<uint32_t, PerturbExtras::EnableCompression> c32c;
+    Container<uint32_t, PerturbExtras::SimpleCompression> c32c;
     Container<uint64_t, PerturbExtras::Disable> c64d;
     Container<uint64_t, PerturbExtras::Bad> c64e;
-    Container<uint64_t, PerturbExtras::EnableCompression> c64c;
+    Container<uint64_t, PerturbExtras::SimpleCompression> c64c;
 
     template<typename IterType, PerturbExtras PExtras>
     Container<IterType, PExtras> &GetContainer();
@@ -251,12 +251,12 @@ private:
         PerturbationResults<uint32_t, HDRFloat<float>, PerturbExtras::Bad> *,
         PerturbationResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad> *,
 
-        PerturbationResults<uint32_t, double, PerturbExtras::EnableCompression> *,
-        PerturbationResults<uint32_t, float, PerturbExtras::EnableCompression> *,
-        PerturbationResults<uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::EnableCompression> *,
-        PerturbationResults<uint32_t, HDRFloat<double>, PerturbExtras::EnableCompression> *,
-        PerturbationResults<uint32_t, HDRFloat<float>, PerturbExtras::EnableCompression> *,
-        PerturbationResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::EnableCompression> *,
+        PerturbationResults<uint32_t, double, PerturbExtras::SimpleCompression> *,
+        PerturbationResults<uint32_t, float, PerturbExtras::SimpleCompression> *,
+        PerturbationResults<uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression> *,
+        PerturbationResults<uint32_t, HDRFloat<double>, PerturbExtras::SimpleCompression> *,
+        PerturbationResults<uint32_t, HDRFloat<float>, PerturbExtras::SimpleCompression> *,
+        PerturbationResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::SimpleCompression> *,
 
         PerturbationResults<uint64_t, double, PerturbExtras::Disable> *,
         PerturbationResults<uint64_t, float, PerturbExtras::Disable> *,
@@ -272,11 +272,11 @@ private:
         PerturbationResults<uint64_t, HDRFloat<float>, PerturbExtras::Bad> *,
         PerturbationResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad> *,
 
-        PerturbationResults<uint64_t, double, PerturbExtras::EnableCompression> *,
-        PerturbationResults<uint64_t, float, PerturbExtras::EnableCompression> *,
-        PerturbationResults<uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::EnableCompression> *,
-        PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::EnableCompression> *,
-        PerturbationResults<uint64_t, HDRFloat<float>, PerturbExtras::EnableCompression> *,
-        PerturbationResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::EnableCompression> *
+        PerturbationResults<uint64_t, double, PerturbExtras::SimpleCompression> *,
+        PerturbationResults<uint64_t, float, PerturbExtras::SimpleCompression> *,
+        PerturbationResults<uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression> *,
+        PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::SimpleCompression> *,
+        PerturbationResults<uint64_t, HDRFloat<float>, PerturbExtras::SimpleCompression> *,
+        PerturbationResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::SimpleCompression> *
     > m_LastUsedRefOrbit;
 };

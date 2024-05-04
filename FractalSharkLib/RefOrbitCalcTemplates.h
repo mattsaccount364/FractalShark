@@ -19,12 +19,12 @@ InstantiateIsPerturbationResultUsefulHere(HDRFloat<double>, PerturbExtras::Bad);
 InstantiateIsPerturbationResultUsefulHere(HDRFloat<float>, PerturbExtras::Bad);
 InstantiateIsPerturbationResultUsefulHere(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad);
 
-InstantiateIsPerturbationResultUsefulHere(double, PerturbExtras::EnableCompression);
-InstantiateIsPerturbationResultUsefulHere(float, PerturbExtras::EnableCompression);
-InstantiateIsPerturbationResultUsefulHere(CudaDblflt<MattDblflt>, PerturbExtras::EnableCompression);
-InstantiateIsPerturbationResultUsefulHere(HDRFloat<double>, PerturbExtras::EnableCompression);
-InstantiateIsPerturbationResultUsefulHere(HDRFloat<float>, PerturbExtras::EnableCompression);
-InstantiateIsPerturbationResultUsefulHere(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::EnableCompression);
+InstantiateIsPerturbationResultUsefulHere(double, PerturbExtras::SimpleCompression);
+InstantiateIsPerturbationResultUsefulHere(float, PerturbExtras::SimpleCompression);
+InstantiateIsPerturbationResultUsefulHere(CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression);
+InstantiateIsPerturbationResultUsefulHere(HDRFloat<double>, PerturbExtras::SimpleCompression);
+InstantiateIsPerturbationResultUsefulHere(HDRFloat<float>, PerturbExtras::SimpleCompression);
+InstantiateIsPerturbationResultUsefulHere(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::SimpleCompression);
 
 
 
@@ -89,12 +89,12 @@ InstantiateGetAndCreateUsefulPerturbationResults1(uint32_t, HDRFloat<double>, do
 InstantiateGetAndCreateUsefulPerturbationResults2(uint32_t, HDRFloat<double>, double, PerturbExtras::Disable, RefOrbitCalc::Extras::None, HDRFloat<CudaDblflt<MattDblflt>>);
 InstantiateGetAndCreateUsefulPerturbationResults1(uint32_t, HDRFloat<float>, float, PerturbExtras::Disable, RefOrbitCalc::Extras::None);
 
-InstantiateGetAndCreateUsefulPerturbationResults1(uint32_t, double, double, PerturbExtras::EnableCompression, RefOrbitCalc::Extras::None);
-InstantiateGetAndCreateUsefulPerturbationResults2(uint32_t, double, double, PerturbExtras::EnableCompression, RefOrbitCalc::Extras::None, CudaDblflt<MattDblflt>);
-InstantiateGetAndCreateUsefulPerturbationResults1(uint32_t, float, float, PerturbExtras::EnableCompression, RefOrbitCalc::Extras::None);
-InstantiateGetAndCreateUsefulPerturbationResults1(uint32_t, HDRFloat<double>, double, PerturbExtras::EnableCompression, RefOrbitCalc::Extras::None);
-InstantiateGetAndCreateUsefulPerturbationResults2(uint32_t, HDRFloat<double>, double, PerturbExtras::EnableCompression, RefOrbitCalc::Extras::None, HDRFloat<CudaDblflt<MattDblflt>>);
-InstantiateGetAndCreateUsefulPerturbationResults1(uint32_t, HDRFloat<float>, float, PerturbExtras::EnableCompression, RefOrbitCalc::Extras::None);
+InstantiateGetAndCreateUsefulPerturbationResults1(uint32_t, double, double, PerturbExtras::SimpleCompression, RefOrbitCalc::Extras::None);
+InstantiateGetAndCreateUsefulPerturbationResults2(uint32_t, double, double, PerturbExtras::SimpleCompression, RefOrbitCalc::Extras::None, CudaDblflt<MattDblflt>);
+InstantiateGetAndCreateUsefulPerturbationResults1(uint32_t, float, float, PerturbExtras::SimpleCompression, RefOrbitCalc::Extras::None);
+InstantiateGetAndCreateUsefulPerturbationResults1(uint32_t, HDRFloat<double>, double, PerturbExtras::SimpleCompression, RefOrbitCalc::Extras::None);
+InstantiateGetAndCreateUsefulPerturbationResults2(uint32_t, HDRFloat<double>, double, PerturbExtras::SimpleCompression, RefOrbitCalc::Extras::None, HDRFloat<CudaDblflt<MattDblflt>>);
+InstantiateGetAndCreateUsefulPerturbationResults1(uint32_t, HDRFloat<float>, float, PerturbExtras::SimpleCompression, RefOrbitCalc::Extras::None);
 
 InstantiateGetAndCreateUsefulPerturbationResults1(uint32_t, double, double, PerturbExtras::Disable, RefOrbitCalc::Extras::IncludeLAv2);
 InstantiateGetAndCreateUsefulPerturbationResults1(uint32_t, float, float, PerturbExtras::Disable, RefOrbitCalc::Extras::IncludeLAv2);
@@ -103,12 +103,12 @@ InstantiateGetAndCreateUsefulPerturbationResults1(uint32_t, HDRFloat<double>, do
 InstantiateGetAndCreateUsefulPerturbationResults2(uint32_t, HDRFloat<double>, double, PerturbExtras::Disable, RefOrbitCalc::Extras::IncludeLAv2, HDRFloat<CudaDblflt<MattDblflt>>);
 InstantiateGetAndCreateUsefulPerturbationResults1(uint32_t, HDRFloat<float>, float, PerturbExtras::Disable, RefOrbitCalc::Extras::IncludeLAv2);
 
-InstantiateGetAndCreateUsefulPerturbationResults1(uint32_t, double, double, PerturbExtras::EnableCompression, RefOrbitCalc::Extras::IncludeLAv2);
-InstantiateGetAndCreateUsefulPerturbationResults1(uint32_t, float, float, PerturbExtras::EnableCompression, RefOrbitCalc::Extras::IncludeLAv2);
-InstantiateGetAndCreateUsefulPerturbationResults2(uint32_t, double, double, PerturbExtras::EnableCompression, RefOrbitCalc::Extras::IncludeLAv2, CudaDblflt<MattDblflt>);
-InstantiateGetAndCreateUsefulPerturbationResults1(uint32_t, HDRFloat<double>, double, PerturbExtras::EnableCompression, RefOrbitCalc::Extras::IncludeLAv2);
-InstantiateGetAndCreateUsefulPerturbationResults2(uint32_t, HDRFloat<double>, double, PerturbExtras::EnableCompression, RefOrbitCalc::Extras::IncludeLAv2, HDRFloat<CudaDblflt<MattDblflt>>);
-InstantiateGetAndCreateUsefulPerturbationResults1(uint32_t, HDRFloat<float>, float, PerturbExtras::EnableCompression, RefOrbitCalc::Extras::IncludeLAv2);
+InstantiateGetAndCreateUsefulPerturbationResults1(uint32_t, double, double, PerturbExtras::SimpleCompression, RefOrbitCalc::Extras::IncludeLAv2);
+InstantiateGetAndCreateUsefulPerturbationResults1(uint32_t, float, float, PerturbExtras::SimpleCompression, RefOrbitCalc::Extras::IncludeLAv2);
+InstantiateGetAndCreateUsefulPerturbationResults2(uint32_t, double, double, PerturbExtras::SimpleCompression, RefOrbitCalc::Extras::IncludeLAv2, CudaDblflt<MattDblflt>);
+InstantiateGetAndCreateUsefulPerturbationResults1(uint32_t, HDRFloat<double>, double, PerturbExtras::SimpleCompression, RefOrbitCalc::Extras::IncludeLAv2);
+InstantiateGetAndCreateUsefulPerturbationResults2(uint32_t, HDRFloat<double>, double, PerturbExtras::SimpleCompression, RefOrbitCalc::Extras::IncludeLAv2, HDRFloat<CudaDblflt<MattDblflt>>);
+InstantiateGetAndCreateUsefulPerturbationResults1(uint32_t, HDRFloat<float>, float, PerturbExtras::SimpleCompression, RefOrbitCalc::Extras::IncludeLAv2);
 
 InstantiateGetAndCreateUsefulPerturbationResults1(uint64_t, double, double, PerturbExtras::Bad, RefOrbitCalc::Extras::None);
 InstantiateGetAndCreateUsefulPerturbationResults1(uint64_t, float, float, PerturbExtras::Bad, RefOrbitCalc::Extras::None);
@@ -122,12 +122,12 @@ InstantiateGetAndCreateUsefulPerturbationResults1(uint64_t, HDRFloat<double>, do
 InstantiateGetAndCreateUsefulPerturbationResults2(uint64_t, HDRFloat<double>, double, PerturbExtras::Disable, RefOrbitCalc::Extras::None, HDRFloat<CudaDblflt<MattDblflt>>);
 InstantiateGetAndCreateUsefulPerturbationResults1(uint64_t, HDRFloat<float>, float, PerturbExtras::Disable, RefOrbitCalc::Extras::None);
 
-InstantiateGetAndCreateUsefulPerturbationResults1(uint64_t, double, double, PerturbExtras::EnableCompression, RefOrbitCalc::Extras::None);
-InstantiateGetAndCreateUsefulPerturbationResults2(uint64_t, double, double, PerturbExtras::EnableCompression, RefOrbitCalc::Extras::None, CudaDblflt<MattDblflt>);
-InstantiateGetAndCreateUsefulPerturbationResults1(uint64_t, float, float, PerturbExtras::EnableCompression, RefOrbitCalc::Extras::None);
-InstantiateGetAndCreateUsefulPerturbationResults1(uint64_t, HDRFloat<double>, double, PerturbExtras::EnableCompression, RefOrbitCalc::Extras::None);
-InstantiateGetAndCreateUsefulPerturbationResults2(uint64_t, HDRFloat<double>, double, PerturbExtras::EnableCompression, RefOrbitCalc::Extras::None, HDRFloat<CudaDblflt<MattDblflt>>);
-InstantiateGetAndCreateUsefulPerturbationResults1(uint64_t, HDRFloat<float>, float, PerturbExtras::EnableCompression, RefOrbitCalc::Extras::None);
+InstantiateGetAndCreateUsefulPerturbationResults1(uint64_t, double, double, PerturbExtras::SimpleCompression, RefOrbitCalc::Extras::None);
+InstantiateGetAndCreateUsefulPerturbationResults2(uint64_t, double, double, PerturbExtras::SimpleCompression, RefOrbitCalc::Extras::None, CudaDblflt<MattDblflt>);
+InstantiateGetAndCreateUsefulPerturbationResults1(uint64_t, float, float, PerturbExtras::SimpleCompression, RefOrbitCalc::Extras::None);
+InstantiateGetAndCreateUsefulPerturbationResults1(uint64_t, HDRFloat<double>, double, PerturbExtras::SimpleCompression, RefOrbitCalc::Extras::None);
+InstantiateGetAndCreateUsefulPerturbationResults2(uint64_t, HDRFloat<double>, double, PerturbExtras::SimpleCompression, RefOrbitCalc::Extras::None, HDRFloat<CudaDblflt<MattDblflt>>);
+InstantiateGetAndCreateUsefulPerturbationResults1(uint64_t, HDRFloat<float>, float, PerturbExtras::SimpleCompression, RefOrbitCalc::Extras::None);
 
 InstantiateGetAndCreateUsefulPerturbationResults1(uint64_t, double, double, PerturbExtras::Disable, RefOrbitCalc::Extras::IncludeLAv2);
 InstantiateGetAndCreateUsefulPerturbationResults2(uint64_t, double, double, PerturbExtras::Disable, RefOrbitCalc::Extras::IncludeLAv2, CudaDblflt<MattDblflt>);
@@ -136,12 +136,12 @@ InstantiateGetAndCreateUsefulPerturbationResults1(uint64_t, HDRFloat<double>, do
 InstantiateGetAndCreateUsefulPerturbationResults2(uint64_t, HDRFloat<double>, double, PerturbExtras::Disable, RefOrbitCalc::Extras::IncludeLAv2, HDRFloat<CudaDblflt<MattDblflt>>);
 InstantiateGetAndCreateUsefulPerturbationResults1(uint64_t, HDRFloat<float>, float, PerturbExtras::Disable, RefOrbitCalc::Extras::IncludeLAv2);
 
-InstantiateGetAndCreateUsefulPerturbationResults1(uint64_t, double, double, PerturbExtras::EnableCompression, RefOrbitCalc::Extras::IncludeLAv2);
-InstantiateGetAndCreateUsefulPerturbationResults2(uint64_t, double, double, PerturbExtras::EnableCompression, RefOrbitCalc::Extras::IncludeLAv2, CudaDblflt<MattDblflt>);
-InstantiateGetAndCreateUsefulPerturbationResults1(uint64_t, float, float, PerturbExtras::EnableCompression, RefOrbitCalc::Extras::IncludeLAv2);
-InstantiateGetAndCreateUsefulPerturbationResults1(uint64_t, HDRFloat<double>, double, PerturbExtras::EnableCompression, RefOrbitCalc::Extras::IncludeLAv2);
-InstantiateGetAndCreateUsefulPerturbationResults2(uint64_t, HDRFloat<double>, double, PerturbExtras::EnableCompression, RefOrbitCalc::Extras::IncludeLAv2, HDRFloat<CudaDblflt<MattDblflt>>);
-InstantiateGetAndCreateUsefulPerturbationResults1(uint64_t, HDRFloat<float>, float, PerturbExtras::EnableCompression, RefOrbitCalc::Extras::IncludeLAv2);
+InstantiateGetAndCreateUsefulPerturbationResults1(uint64_t, double, double, PerturbExtras::SimpleCompression, RefOrbitCalc::Extras::IncludeLAv2);
+InstantiateGetAndCreateUsefulPerturbationResults2(uint64_t, double, double, PerturbExtras::SimpleCompression, RefOrbitCalc::Extras::IncludeLAv2, CudaDblflt<MattDblflt>);
+InstantiateGetAndCreateUsefulPerturbationResults1(uint64_t, float, float, PerturbExtras::SimpleCompression, RefOrbitCalc::Extras::IncludeLAv2);
+InstantiateGetAndCreateUsefulPerturbationResults1(uint64_t, HDRFloat<double>, double, PerturbExtras::SimpleCompression, RefOrbitCalc::Extras::IncludeLAv2);
+InstantiateGetAndCreateUsefulPerturbationResults2(uint64_t, HDRFloat<double>, double, PerturbExtras::SimpleCompression, RefOrbitCalc::Extras::IncludeLAv2, HDRFloat<CudaDblflt<MattDblflt>>);
+InstantiateGetAndCreateUsefulPerturbationResults1(uint64_t, HDRFloat<float>, float, PerturbExtras::SimpleCompression, RefOrbitCalc::Extras::IncludeLAv2);
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 

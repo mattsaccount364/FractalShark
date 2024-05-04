@@ -68,7 +68,11 @@ template<typename IterType, class T, PerturbExtras PExtras>
 class RefOrbitCompressor;
 
 template<typename IterType, class T, PerturbExtras PExtras>
-class IntermediateOrbitCompressor;
+class SimpleIntermediateOrbitCompressor;
+
+template<typename IterType, class T, PerturbExtras PExtras>
+class MaxIntermediateOrbitCompressor;
+
 
 template<typename IterType, class T, PerturbExtras PExtras>
 class PerturbationResults : public TemplateHelpers<IterType, T, PExtras> {
@@ -85,7 +89,8 @@ public:
     friend class RuntimeDecompressor<IterType, T, PExtras>;
     friend class IntermediateRuntimeDecompressor<IterType, T, PExtras>;
     friend class RefOrbitCompressor<IterType, T, PExtras>;
-    friend class IntermediateOrbitCompressor<IterType, T, PExtras>;
+    friend class SimpleIntermediateOrbitCompressor<IterType, T, PExtras>;
+    friend class MaxIntermediateOrbitCompressor<IterType, T, PExtras>;
 
     static constexpr char Version[] = "0.44";
 
@@ -271,7 +276,7 @@ public:
     //   https://code.mathr.co.uk/fractal-bits/tree/HEAD:/mandelbrot-reference-compression
     //   https://fractalforums.org/fractal-mathematics-and-new-theories/28/reference-compression/5142
     // as a reference for the compression algorithm.
-    std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::EnableCompression>>
+    std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::SimpleCompression>>
         Compress(
             int32_t compression_error_exp_param,
             size_t new_generation_number)
@@ -279,9 +284,9 @@ public:
 
     std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::Disable>>
         Decompress(size_t NewGenerationNumber)
-        requires (PExtras == PerturbExtras::EnableCompression && !Introspection::IsTDblFlt<T>());
+        requires (PExtras == PerturbExtras::SimpleCompression && !Introspection::IsTDblFlt<T>());
 
-    std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::EnableCompression>>
+    std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::SimpleCompression>>
         CompressMax(
             int32_t compression_error_exp_param,
             size_t new_generation_number)
@@ -289,7 +294,7 @@ public:
 
     std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::Disable>>
         DecompressMax(size_t NewGenerationNumber)
-        requires (PExtras == PerturbExtras::EnableCompression && !Introspection::IsTDblFlt<T>());
+        requires (PExtras == PerturbExtras::SimpleCompression && !Introspection::IsTDblFlt<T>());
 
     void SaveOrbitAsText() const;
 
@@ -372,12 +377,12 @@ public:
         int32_t CompressionErrorExp);
 
     void MaybeAddCompressedIteration(GPUReferenceIter<T, PExtras> iter)
-        requires (PExtras == PerturbExtras::EnableCompression && !Introspection::IsTDblFlt<T>());
+        requires (PExtras == PerturbExtras::SimpleCompression && !Introspection::IsTDblFlt<T>());
 };
 
 
 template<typename IterType, class T, PerturbExtras PExtras>
-class IntermediateOrbitCompressor : public TemplateHelpers<IterType, T, PExtras> {
+class SimpleIntermediateOrbitCompressor : public TemplateHelpers<IterType, T, PExtras> {
     template<typename IterType, class T, PerturbExtras PExtras> friend class PerturbationResults;
 
     using TemplateHelpers = TemplateHelpers<IterType, T, PExtras>;
@@ -402,11 +407,49 @@ class IntermediateOrbitCompressor : public TemplateHelpers<IterType, T, PExtras>
     IterTypeFull CurCompressedIndex;
 
 public:
-    IntermediateOrbitCompressor(
+    SimpleIntermediateOrbitCompressor(
         PerturbationResults<IterType, T, PExtras> &results,
         int32_t CompressionErrorExp);
 
-    ~IntermediateOrbitCompressor();
+    ~SimpleIntermediateOrbitCompressor();
+
+    void MaybeAddCompressedIteration(
+        mpf_t incomingZx,
+        mpf_t incomingZy,
+        IterTypeFull index);
+};
+
+template<typename IterType, class T, PerturbExtras PExtras>
+class MaxIntermediateOrbitCompressor : public TemplateHelpers<IterType, T, PExtras> {
+    template<typename IterType, class T, PerturbExtras PExtras> friend class PerturbationResults;
+
+    using TemplateHelpers = TemplateHelpers<IterType, T, PExtras>;
+    using SubType = TemplateHelpers::SubType;
+
+    template<class LocalSubType>
+    using HDRFloatComplex = TemplateHelpers::template HDRFloatComplex<LocalSubType>;
+
+    friend class RuntimeDecompressor<IterType, T, PExtras>;
+
+    PerturbationResults<IterType, T, PExtras> &results;
+    mpf_t zx;
+    mpf_t zy;
+    mpf_t cx;
+    mpf_t cy;
+    mpf_t Two;
+    mpf_t CompressionError;
+    mpf_t ReducedZx;
+    mpf_t ReducedZy;
+    mpf_t Temp[6];
+    int32_t IntermediateCompressionErrorExp;
+    IterTypeFull CurCompressedIndex;
+
+public:
+    MaxIntermediateOrbitCompressor(
+        PerturbationResults<IterType, T, PExtras> &results,
+        int32_t CompressionErrorExp);
+
+    ~MaxIntermediateOrbitCompressor();
 
     void MaybeAddCompressedIteration(
         mpf_t incomingZx,

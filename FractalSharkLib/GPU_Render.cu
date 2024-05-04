@@ -463,12 +463,12 @@ DefineInitializePerturb(uint32_t, class HDRFloat<float>, float, PerturbExtras::D
 DefineInitializePerturb(uint32_t, class HDRFloat<double>, double, PerturbExtras::Disable, HDRFloat<double>);
 DefineInitializePerturb(uint32_t, class HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, PerturbExtras::Disable, HDRFloat<CudaDblflt<MattDblflt>>);
 
-DefineInitializePerturb(uint32_t, float, float, PerturbExtras::EnableCompression, float);
-DefineInitializePerturb(uint32_t, double, double, PerturbExtras::EnableCompression, double);
-DefineInitializePerturb(uint32_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, PerturbExtras::EnableCompression, CudaDblflt<MattDblflt>);
-DefineInitializePerturb(uint32_t, class HDRFloat<float>, float, PerturbExtras::EnableCompression, HDRFloat<float>);
-DefineInitializePerturb(uint32_t, class HDRFloat<double>, double, PerturbExtras::EnableCompression, HDRFloat<double>);
-DefineInitializePerturb(uint32_t, class HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, PerturbExtras::EnableCompression, HDRFloat<CudaDblflt<MattDblflt>>);
+DefineInitializePerturb(uint32_t, float, float, PerturbExtras::SimpleCompression, float);
+DefineInitializePerturb(uint32_t, double, double, PerturbExtras::SimpleCompression, double);
+DefineInitializePerturb(uint32_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression, CudaDblflt<MattDblflt>);
+DefineInitializePerturb(uint32_t, class HDRFloat<float>, float, PerturbExtras::SimpleCompression, HDRFloat<float>);
+DefineInitializePerturb(uint32_t, class HDRFloat<double>, double, PerturbExtras::SimpleCompression, HDRFloat<double>);
+DefineInitializePerturb(uint32_t, class HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression, HDRFloat<CudaDblflt<MattDblflt>>);
 
 DefineInitializePerturb(uint64_t, float, float, PerturbExtras::Disable, float);
 DefineInitializePerturb(uint64_t, double, double, PerturbExtras::Disable, double);
@@ -477,12 +477,12 @@ DefineInitializePerturb(uint64_t, class HDRFloat<float>, float, PerturbExtras::D
 DefineInitializePerturb(uint64_t, class HDRFloat<double>, double, PerturbExtras::Disable, HDRFloat<double>);
 DefineInitializePerturb(uint64_t, class HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, PerturbExtras::Disable, HDRFloat<CudaDblflt<MattDblflt>>);
 
-DefineInitializePerturb(uint64_t, float, float, PerturbExtras::EnableCompression, float);
-DefineInitializePerturb(uint64_t, double, double, PerturbExtras::EnableCompression, double);
-DefineInitializePerturb(uint64_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, PerturbExtras::EnableCompression, CudaDblflt<MattDblflt>);
-DefineInitializePerturb(uint64_t, class HDRFloat<float>, float, PerturbExtras::EnableCompression, HDRFloat<float>);
-DefineInitializePerturb(uint64_t, class HDRFloat<double>, double, PerturbExtras::EnableCompression, HDRFloat<double>);
-DefineInitializePerturb(uint64_t, class HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, PerturbExtras::EnableCompression, HDRFloat<CudaDblflt<MattDblflt>>);
+DefineInitializePerturb(uint64_t, float, float, PerturbExtras::SimpleCompression, float);
+DefineInitializePerturb(uint64_t, double, double, PerturbExtras::SimpleCompression, double);
+DefineInitializePerturb(uint64_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression, CudaDblflt<MattDblflt>);
+DefineInitializePerturb(uint64_t, class HDRFloat<float>, float, PerturbExtras::SimpleCompression, HDRFloat<float>);
+DefineInitializePerturb(uint64_t, class HDRFloat<double>, double, PerturbExtras::SimpleCompression, HDRFloat<double>);
+DefineInitializePerturb(uint64_t, class HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression, HDRFloat<CudaDblflt<MattDblflt>>);
 
 
 bool GPURenderer::MemoryInitialized() const {
@@ -1202,53 +1202,53 @@ InitializeRenderPerturbLAv2(uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblf
 
 
 
-InitializeRenderPerturbLAv2(uint32_t, float, float, LAv2Mode::Full, PerturbExtras::EnableCompression);
-InitializeRenderPerturbLAv2(uint32_t, float, float, LAv2Mode::PO, PerturbExtras::EnableCompression);
-InitializeRenderPerturbLAv2(uint32_t, float, float, LAv2Mode::LAO, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint32_t, float, float, LAv2Mode::Full, PerturbExtras::SimpleCompression);
+InitializeRenderPerturbLAv2(uint32_t, float, float, LAv2Mode::PO, PerturbExtras::SimpleCompression);
+InitializeRenderPerturbLAv2(uint32_t, float, float, LAv2Mode::LAO, PerturbExtras::SimpleCompression);
 
-InitializeRenderPerturbLAv2(uint32_t, double, double, LAv2Mode::Full, PerturbExtras::EnableCompression);
-InitializeRenderPerturbLAv2(uint32_t, double, double, LAv2Mode::PO, PerturbExtras::EnableCompression);
-InitializeRenderPerturbLAv2(uint32_t, double, double, LAv2Mode::LAO, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint32_t, double, double, LAv2Mode::Full, PerturbExtras::SimpleCompression);
+InitializeRenderPerturbLAv2(uint32_t, double, double, LAv2Mode::PO, PerturbExtras::SimpleCompression);
+InitializeRenderPerturbLAv2(uint32_t, double, double, LAv2Mode::LAO, PerturbExtras::SimpleCompression);
 
-InitializeRenderPerturbLAv2(uint32_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::Full, PerturbExtras::EnableCompression);
-InitializeRenderPerturbLAv2(uint32_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::PO, PerturbExtras::EnableCompression);
-InitializeRenderPerturbLAv2(uint32_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::LAO, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint32_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::Full, PerturbExtras::SimpleCompression);
+InitializeRenderPerturbLAv2(uint32_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::PO, PerturbExtras::SimpleCompression);
+InitializeRenderPerturbLAv2(uint32_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::LAO, PerturbExtras::SimpleCompression);
 
-InitializeRenderPerturbLAv2(uint32_t, HDRFloat<float>, float, LAv2Mode::Full, PerturbExtras::EnableCompression);
-InitializeRenderPerturbLAv2(uint32_t, HDRFloat<float>, float, LAv2Mode::PO, PerturbExtras::EnableCompression);
-InitializeRenderPerturbLAv2(uint32_t, HDRFloat<float>, float, LAv2Mode::LAO, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint32_t, HDRFloat<float>, float, LAv2Mode::Full, PerturbExtras::SimpleCompression);
+InitializeRenderPerturbLAv2(uint32_t, HDRFloat<float>, float, LAv2Mode::PO, PerturbExtras::SimpleCompression);
+InitializeRenderPerturbLAv2(uint32_t, HDRFloat<float>, float, LAv2Mode::LAO, PerturbExtras::SimpleCompression);
 
-InitializeRenderPerturbLAv2(uint32_t, HDRFloat<double>, double, LAv2Mode::Full, PerturbExtras::EnableCompression);
-InitializeRenderPerturbLAv2(uint32_t, HDRFloat<double>, double, LAv2Mode::PO, PerturbExtras::EnableCompression);
-InitializeRenderPerturbLAv2(uint32_t, HDRFloat<double>, double, LAv2Mode::LAO, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint32_t, HDRFloat<double>, double, LAv2Mode::Full, PerturbExtras::SimpleCompression);
+InitializeRenderPerturbLAv2(uint32_t, HDRFloat<double>, double, LAv2Mode::PO, PerturbExtras::SimpleCompression);
+InitializeRenderPerturbLAv2(uint32_t, HDRFloat<double>, double, LAv2Mode::LAO, PerturbExtras::SimpleCompression);
 
-InitializeRenderPerturbLAv2(uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::Full, PerturbExtras::EnableCompression);
-InitializeRenderPerturbLAv2(uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::PO, PerturbExtras::EnableCompression);
-InitializeRenderPerturbLAv2(uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::LAO, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::Full, PerturbExtras::SimpleCompression);
+InitializeRenderPerturbLAv2(uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::PO, PerturbExtras::SimpleCompression);
+InitializeRenderPerturbLAv2(uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::LAO, PerturbExtras::SimpleCompression);
 
-InitializeRenderPerturbLAv2(uint64_t, float, float, LAv2Mode::Full, PerturbExtras::EnableCompression);
-InitializeRenderPerturbLAv2(uint64_t, float, float, LAv2Mode::PO, PerturbExtras::EnableCompression);
-InitializeRenderPerturbLAv2(uint64_t, float, float, LAv2Mode::LAO, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint64_t, float, float, LAv2Mode::Full, PerturbExtras::SimpleCompression);
+InitializeRenderPerturbLAv2(uint64_t, float, float, LAv2Mode::PO, PerturbExtras::SimpleCompression);
+InitializeRenderPerturbLAv2(uint64_t, float, float, LAv2Mode::LAO, PerturbExtras::SimpleCompression);
 
-InitializeRenderPerturbLAv2(uint64_t, double, double, LAv2Mode::Full, PerturbExtras::EnableCompression);
-InitializeRenderPerturbLAv2(uint64_t, double, double, LAv2Mode::PO, PerturbExtras::EnableCompression);
-InitializeRenderPerturbLAv2(uint64_t, double, double, LAv2Mode::LAO, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint64_t, double, double, LAv2Mode::Full, PerturbExtras::SimpleCompression);
+InitializeRenderPerturbLAv2(uint64_t, double, double, LAv2Mode::PO, PerturbExtras::SimpleCompression);
+InitializeRenderPerturbLAv2(uint64_t, double, double, LAv2Mode::LAO, PerturbExtras::SimpleCompression);
 
-InitializeRenderPerturbLAv2(uint64_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::Full, PerturbExtras::EnableCompression);
-InitializeRenderPerturbLAv2(uint64_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::PO, PerturbExtras::EnableCompression);
-InitializeRenderPerturbLAv2(uint64_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::LAO, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint64_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::Full, PerturbExtras::SimpleCompression);
+InitializeRenderPerturbLAv2(uint64_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::PO, PerturbExtras::SimpleCompression);
+InitializeRenderPerturbLAv2(uint64_t, CudaDblflt<MattDblflt>, CudaDblflt<MattDblflt>, LAv2Mode::LAO, PerturbExtras::SimpleCompression);
 
-InitializeRenderPerturbLAv2(uint64_t, HDRFloat<float>, float, LAv2Mode::Full, PerturbExtras::EnableCompression);
-InitializeRenderPerturbLAv2(uint64_t, HDRFloat<float>, float, LAv2Mode::PO, PerturbExtras::EnableCompression);
-InitializeRenderPerturbLAv2(uint64_t, HDRFloat<float>, float, LAv2Mode::LAO, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint64_t, HDRFloat<float>, float, LAv2Mode::Full, PerturbExtras::SimpleCompression);
+InitializeRenderPerturbLAv2(uint64_t, HDRFloat<float>, float, LAv2Mode::PO, PerturbExtras::SimpleCompression);
+InitializeRenderPerturbLAv2(uint64_t, HDRFloat<float>, float, LAv2Mode::LAO, PerturbExtras::SimpleCompression);
 
-InitializeRenderPerturbLAv2(uint64_t, HDRFloat<double>, double, LAv2Mode::Full, PerturbExtras::EnableCompression);
-InitializeRenderPerturbLAv2(uint64_t, HDRFloat<double>, double, LAv2Mode::PO, PerturbExtras::EnableCompression);
-InitializeRenderPerturbLAv2(uint64_t, HDRFloat<double>, double, LAv2Mode::LAO, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint64_t, HDRFloat<double>, double, LAv2Mode::Full, PerturbExtras::SimpleCompression);
+InitializeRenderPerturbLAv2(uint64_t, HDRFloat<double>, double, LAv2Mode::PO, PerturbExtras::SimpleCompression);
+InitializeRenderPerturbLAv2(uint64_t, HDRFloat<double>, double, LAv2Mode::LAO, PerturbExtras::SimpleCompression);
 
-InitializeRenderPerturbLAv2(uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::Full, PerturbExtras::EnableCompression);
-InitializeRenderPerturbLAv2(uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::PO, PerturbExtras::EnableCompression);
-InitializeRenderPerturbLAv2(uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::LAO, PerturbExtras::EnableCompression);
+InitializeRenderPerturbLAv2(uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::Full, PerturbExtras::SimpleCompression);
+InitializeRenderPerturbLAv2(uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::PO, PerturbExtras::SimpleCompression);
+InitializeRenderPerturbLAv2(uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>, LAv2Mode::LAO, PerturbExtras::SimpleCompression);
 
 template<typename IterType, class T>
 uint32_t GPURenderer::RenderPerturbBLAScaled(

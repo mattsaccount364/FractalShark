@@ -6,6 +6,7 @@
 
 #include "ScopedMpir.h"
 #include "PrecisionCalculator.h"
+#include "LAReference.h"
 
 #include <vector>
 #include <memory>
@@ -498,7 +499,7 @@ void RefOrbitCalc::AddPerturbationReferencePoint() {
     } else if (GetPerturbationAlg() == PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed) {
         // TODO: we're hardcoding SaveForReuse4 here.  This is the single-threaded case.
         // Single threaded only supports one option, so we're hardcoding it here.
-        AddPerturbationReferencePointMT3<IterType, T, SubType, true, BenchmarkState, PExtras, ReuseMode::SaveForReuse4>(
+        AddPerturbationReferencePointST<IterType, T, SubType, true, BenchmarkState, PExtras, ReuseMode::SaveForReuse4>(
             m_PerturbationGuessCalcX,
             m_PerturbationGuessCalcY);
 
@@ -770,6 +771,10 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
 
         if constexpr (PExtras == PerturbExtras::Bad) {
             results->SetBad(false);
+        }
+
+        if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
+            maxIntermediateCompressor.CompleteResults();
         }
 
         results->CompleteResults<Reuse>(bumpAllocator->GetAllocated(1));
@@ -1304,11 +1309,11 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
         mpf_t temp2_mpf;
         mpf_init(temp2_mpf);
 
-        IntermediateRuntimeDecompressor<IterType, T, PerturbExtras::Disable> intermediateCompressor{
+        IntermediateRuntimeDecompressor<IterType, T, PerturbExtras::Disable> intermediateDecompressor{
             *existingResults
         };
 
-        IntermediateMaxRuntimeDecompressor<IterType, T, PerturbExtras::Disable> maxIntermediateCompressor{
+        IntermediateMaxRuntimeDecompressor<IterType, T, PerturbExtras::Disable> maxIntermediateDecompressor{
             *existingResults
         };
 
@@ -1334,13 +1339,13 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
                 existingResults->GetUncompressedReuseEntries(ok->ReferenceIteration, ReuseX, ReuseY);
             } else if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3) {
                 existingResults->GetCompressedReuseEntries(
-                    intermediateCompressor,
+                    intermediateDecompressor,
                     ok->ReferenceIteration,
                     ReuseX,
                     ReuseY);
             } else if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
                 existingResults->GetMaxCompressedReuseEntries(
-                    maxIntermediateCompressor,
+                    maxIntermediateDecompressor,
                     ok->ReferenceIteration,
                     ReuseX,
                     ReuseY);
@@ -1370,13 +1375,13 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
                 existingResults->GetUncompressedReuseEntries(ok->ReferenceIteration + 1, ReuseX, ReuseY);
             } else if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3) {
                 existingResults->GetCompressedReuseEntries(
-                    intermediateCompressor,
+                    intermediateDecompressor,
                     ok->ReferenceIteration + 1,
                     ReuseX,
                     ReuseY);
             } else if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
                 existingResults->GetMaxCompressedReuseEntries(
-                    maxIntermediateCompressor,
+                    maxIntermediateDecompressor,
                     ok->ReferenceIteration + 1,
                     ReuseX,
                     ReuseY);
@@ -1408,11 +1413,11 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
         mpf_t temp2_mpf;
         mpf_init(temp2_mpf);
 
-        IntermediateRuntimeDecompressor<IterType, T, PerturbExtras::Disable> intermediateCompressor{
+        IntermediateRuntimeDecompressor<IterType, T, PerturbExtras::Disable> intermediateDecompressor{
             *existingResults
         };
 
-        IntermediateMaxRuntimeDecompressor<IterType, T, PerturbExtras::Disable> maxIntermediateCompressor{
+        IntermediateMaxRuntimeDecompressor<IterType, T, PerturbExtras::Disable> maxIntermediateDecompressor{
             *existingResults
         };
 
@@ -1438,13 +1443,13 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
                 existingResults->GetUncompressedReuseEntries(ok->ReferenceIteration, ReuseX, ReuseY);
             } else if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3) {
                 existingResults->GetCompressedReuseEntries(
-                    intermediateCompressor,
+                    intermediateDecompressor,
                     ok->ReferenceIteration,
                     ReuseX,
                     ReuseY);
             } else if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
                 existingResults->GetMaxCompressedReuseEntries(
-                    maxIntermediateCompressor,
+                    maxIntermediateDecompressor,
                     ok->ReferenceIteration,
                     ReuseX,
                     ReuseY);
@@ -1474,13 +1479,13 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
                 existingResults->GetUncompressedReuseEntries(ok->ReferenceIteration + 1, ReuseX, ReuseY);
             } else if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3) {
                 existingResults->GetCompressedReuseEntries(
-                    intermediateCompressor,
+                    intermediateDecompressor,
                     ok->ReferenceIteration + 1,
                     ReuseX,
                     ReuseY);
             } else if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
                 existingResults->GetMaxCompressedReuseEntries(
-                    maxIntermediateCompressor,
+                    maxIntermediateDecompressor,
                     ok->ReferenceIteration + 1,
                     ReuseX,
                     ReuseY);
@@ -1992,6 +1997,10 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
 
                 // Give result back.
                 CheckFinishCriteria;
+            }
+
+            if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
+                maxIntermediateCompressor.CompleteResults();
             }
 
             auto allocatorIndex = bumpAllocator->GetAllocatorIndex();

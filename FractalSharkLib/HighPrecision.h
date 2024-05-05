@@ -48,7 +48,7 @@ public:
         mpf_set(m_Data, other.m_Data);
     }
 
-    HighPrecisionT(const mpf_t &data) {
+    explicit HighPrecisionT(const mpf_t data) {
         InitMpf2(mpf_get_prec(data));
         mpf_set(m_Data, data);
     }

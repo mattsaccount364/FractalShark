@@ -1,14 +1,8 @@
 #pragma once
 
-#include <vector>
-#include <stdint.h>
-#include <fstream>
-#include <type_traits>
-
 #include "HighPrecision.h"
 #include "HDRFloatComplex.h"
 #include "RefOrbitCalc.h"
-#include "LAReference.h"
 
 #include "GPU_Render.h"
 
@@ -20,6 +14,14 @@
 #include "PrecisionCalculator.h"
 
 #include <thread>
+#include <vector>
+#include <stdint.h>
+#include <fstream>
+#include <type_traits>
+#include <array>
+
+template<typename IterType, class T, class SubType, PerturbExtras PExtras>
+class LAReference;
 
 namespace Introspection {
     template<typename IterType, typename Float, PerturbExtras PExtras>
@@ -257,6 +259,13 @@ public:
         HighPrecision y,
         IterTypeFull index);
 
+    void AddUncompressedReusedEntry(
+        const mpf_t x,
+        const mpf_t y,
+        IterTypeFull index);
+
+    void AddUncompressedRebase(IterTypeFull i, IterTypeFull index);
+
     // Take references to pointers to avoid copying.
     // Set the pointers to point at the specified index.
     void GetCompressedReuseEntries(
@@ -421,8 +430,8 @@ public:
     ~SimpleIntermediateOrbitCompressor();
 
     void MaybeAddCompressedIteration(
-        mpf_t incomingZx,
-        mpf_t incomingZy,
+        const mpf_t incomingZx,
+        const mpf_t incomingZy,
         IterTypeFull index);
 };
 
@@ -445,11 +454,37 @@ class MaxIntermediateOrbitCompressor : public TemplateHelpers<IterType, T, PExtr
     mpf_t cy;
     mpf_t Two;
     mpf_t CompressionError;
-    mpf_t ReducedZx;
-    mpf_t ReducedZy;
-    mpf_t Temp[6];
+    mpf_t Err;
+
+    mpf_t Constant1;
+    mpf_t Constant2;
+    mpf_t Threshold2;
+
+    // State maintained between calls
+    IterTypeFull I;
+    IterTypeFull J;
+    IterTypeFull PrevWayPointIteration;
+    IterTypeFull ItersSinceLastWrite;
+    size_t PhaseDone;
+    mpf_t Zx;
+    mpf_t Zy;
+    mpf_t Dzx;
+    mpf_t Dzy;
+    mpf_t DzxOld;
+
+    constexpr static size_t TempCount = 13;
+    std::array<mpf_t, TempCount> Temp;
+
+    constexpr static size_t NormInternalTempCount = 3;
+    std::array<mpf_t, NormInternalTempCount> NormInternalTemp;
+
+    constexpr static size_t NormTempCount = 3;
+    std::array<mpf_t, NormTempCount> NormTemp;
+
     int32_t IntermediateCompressionErrorExp;
     IterTypeFull CurCompressedIndex;
+
+    static constexpr IterTypeFull MaxItersSinceLastWrite = 1000;
 
 public:
     MaxIntermediateOrbitCompressor(
@@ -459,7 +494,9 @@ public:
     ~MaxIntermediateOrbitCompressor();
 
     void MaybeAddCompressedIteration(
-        mpf_t incomingZx,
-        mpf_t incomingZy,
+        const mpf_t incomingZx,
+        const mpf_t incomingZy,
         IterTypeFull index);
+
+    void CompleteResults();
 };

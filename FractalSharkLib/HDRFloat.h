@@ -265,9 +265,8 @@ public:
     }
 
 #ifndef __CUDACC__
-    HDRFloat(const HighPrecisionT<HPDestructor::True> &number) {
-
-        if (number == HighPrecision{}) {
+    explicit HDRFloat(const mpf_t number) {
+        if (mpf_cmp_ui(number, 0) == 0) {
             Base::mantissa = T{};
             Base::exp = MIN_BIG_EXPONENT();
             return;
@@ -276,17 +275,22 @@ public:
         if constexpr (std::is_same<T, CudaDblflt<dblflt>>::value) {
             long temp_exp;
             double tempMantissa;
-            number.frexp(tempMantissa, temp_exp);
+
+            temp_exp = static_cast<int32_t>(mpf_get_2exp_d(&tempMantissa, number));
             Base::mantissa.d.head = (float)tempMantissa;
             Base::mantissa.d.tail = (float)((double)tempMantissa - (double)Base::mantissa.d.head);
             Base::exp = (TExp)temp_exp;
         } else {
             long temp_exp;
             double tempMantissa;
-            number.frexp(tempMantissa, temp_exp);
+            temp_exp = static_cast<int32_t>(mpf_get_2exp_d(&tempMantissa, number));
             Base::mantissa = (T)tempMantissa;
             Base::exp = (TExp)temp_exp;
         }
+    }
+
+    explicit HDRFloat(const HighPrecisionT<HPDestructor::True> &number)
+        : HDRFloat{ *number.backendRaw() } {
     }
 #endif
 

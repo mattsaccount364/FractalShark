@@ -454,6 +454,8 @@ class MaxIntermediateOrbitCompressor : public TemplateHelpers<IterType, T, PExtr
     mpf_t cy;
     mpf_t Two;
     mpf_t CompressionError;
+    mpf_t ReducedZx;
+    mpf_t ReducedZy;
     mpf_t Err;
 
     mpf_t Constant1;
@@ -499,4 +501,5 @@ public:
         IterTypeFull index);
 
     void CompleteResults();
+    void WriteResultsForTesting();
 };

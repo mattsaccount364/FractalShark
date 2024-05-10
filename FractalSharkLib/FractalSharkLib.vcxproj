@@ -38,6 +38,7 @@
     <ClInclude Include="LAInfoI.h" />
     <ClInclude Include="LAParameters.h" />
     <ClInclude Include="LAReference.h" />
+    <ClInclude Include="LargeCoords.h" />
     <ClInclude Include="LAstep.h" />
     <ClInclude Include="OpenGLContext.h" />
     <ClInclude Include="PerturbationResults.h" />

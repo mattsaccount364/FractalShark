@@ -1017,7 +1017,7 @@ PerturbationResults<IterType, T, PExtras>::Compress(
     size_t new_generation_number)
     requires (PExtras == PerturbExtras::Disable && !Introspection::IsTDblFlt<T>()) {
 
-    constexpr bool disable_compression = false;
+    constexpr bool DisableCompression = false;
     const auto Two = T{ 2.0f };
 
     m_CompressionErrorExp = compression_error_exp_param;
@@ -1031,7 +1031,7 @@ PerturbationResults<IterType, T, PExtras>::Compress(
 
     assert(m_FullOrbit.GetSize() > 1);
 
-    if constexpr (disable_compression) {
+    if constexpr (DisableCompression) {
         for (size_t i = 0; i < m_FullOrbit.GetSize(); i++) {
             compressed->FullOrbit.PushBack({ m_FullOrbit[i].x, m_FullOrbit[i].y, i });
         }
@@ -1124,9 +1124,22 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
     // This is an optional adjustment.  Idea is to bound number of iterations
     // that need to reside in memory after decompression.  Set to false
     // for maximum compression, but more memory at decompression time.
-    static constexpr bool UseMaxItersSinceLastWrite = true;
+    static constexpr bool UseMaxItersSinceLastWrite = false;
 
-    constexpr bool disable_compression = false;
+    // Testing
+    static constexpr bool DisableCompression = false;
+
+    // The idea behind MaxIntermediateOrbitCompressor<IterType, T, PExtras>::MaybeAddCompressedIteration
+    // is to use "max compression" on the intermediate orbit to limit memory usage.
+    // Unfortunately, this is not working as expected.  Setting this value to true
+    // produces a file that shows why.  During compression, we rely on most of the earlier
+    // iterations to be present in memory.  If we keep it all in memory in order to
+    // compress it, then the memory savings are lost.
+    // Thus, MaxIntermediateOrbitCompressor<IterType, T, PExtras>::MaybeAddCompressedIteration
+    // is fundamentally broken - it does not appear workable.
+    static constexpr bool TrackJIndexesUsed = false;
+
+
     const auto Two = T{ 2.0f };
 
     m_CompressionErrorExp = compression_error_exp_param;
@@ -1140,7 +1153,7 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
 
     assert(m_FullOrbit.GetSize() > 1);
 
-    if constexpr (disable_compression) {
+    if constexpr (DisableCompression) {
         for (size_t i = 0; i < m_FullOrbit.GetSize(); i++) {
             compressed->FullOrbit.PushBack({ m_FullOrbit[i].x, m_FullOrbit[i].y, i });
         }
@@ -1220,10 +1233,16 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
     IterTypeFull j = 1;
     IterTypeFull itersSinceLastWrite = 0;
 
+    std::vector<IterTypeFull> JIndexes;
+
     for (; i < m_FullOrbit.GetSize(); i++, j++) {
         // z = dz + Z[j] where m_FullOrbit[j] = Z[j]
         zx = dzX + m_FullOrbit[j].x;
         zy = dzY + m_FullOrbit[j].y;
+
+        if constexpr (TrackJIndexesUsed) {
+            JIndexes.push_back(j);
+        }
 
         const auto norm_z_orig = normZ(zx, zy);
         const auto norm_dz_orig = normZTimesT(dzX, dzY, constant2);
@@ -1313,6 +1332,15 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
 
     compressed->m_FullOrbit.PushBack({ {}, {}, ~0ull, false });
     compressed->m_Rebases.push_back(~0ull);
+
+    if constexpr (TrackJIndexesUsed) {
+        // Write out the vector to a text file
+        std::ofstream myfile;
+        myfile.open("j_indexes.txt");
+        for (const auto &j : JIndexes) {
+            myfile << j << std::endl;
+        }
+    }
 
     return compressed;
 }
@@ -1936,6 +1964,8 @@ MaxIntermediateOrbitCompressor<IterType, T, PExtras>::MaxIntermediateOrbitCompre
     cy{},
     Two{},
     CompressionError{},
+    ReducedZx{},
+    ReducedZy{},
     Err{},
     Constant1{},
     Constant2{},
@@ -1979,6 +2009,9 @@ MaxIntermediateOrbitCompressor<IterType, T, PExtras>::MaxIntermediateOrbitCompre
     mpf_set_d(CompressionError, 10);
     mpf_pow_ui(CompressionError, CompressionError, CompressionErrorExp);
 
+    mpf_init2(ReducedZx, AuthoritativeReuseExtraPrecisionInBits);
+    mpf_init2(ReducedZy, AuthoritativeReuseExtraPrecisionInBits);
+
     mpf_init2(Err, AuthoritativeReuseExtraPrecisionInBits);
 
     mpf_init2(Constant1, AuthoritativeReuseExtraPrecisionInBits);
@@ -2017,6 +2050,8 @@ MaxIntermediateOrbitCompressor<IterType, T, PExtras>::~MaxIntermediateOrbitCompr
     mpf_clear(cy);
     mpf_clear(Two);
     mpf_clear(CompressionError);
+    mpf_clear(ReducedZx);
+    mpf_clear(ReducedZy);
 
     mpf_clear(Err);
 
@@ -2044,10 +2079,31 @@ MaxIntermediateOrbitCompressor<IterType, T, PExtras>::~MaxIntermediateOrbitCompr
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>
+void MaxIntermediateOrbitCompressor<IterType, T, PExtras>::WriteResultsForTesting() {
+    // Iterate over the intermediate results, convert to HdrFloat, and write to file.
+    // Use GetUncompressedReuseEntries
+    std::ofstream out("uncompressedReuseEntries.txt");
+    for (size_t i = 0; i < results.m_ReuseX.size(); i++) {
+        out << "m_ReuseX[" << i << "]: " << HdrToString<false>(results.m_ReuseX[i]) << std::endl;
+        out << "m_ReuseY[" << i << "]: " << HdrToString<false>(results.m_ReuseY[i]) << std::endl;
+        out << "m_ReuseIndices[" << i << "]: " << results.m_ReuseIndices[i] << std::endl;
+    }
+}
+
+template<typename IterType, class T, PerturbExtras PExtras>
 void MaxIntermediateOrbitCompressor<IterType, T, PExtras>::MaybeAddCompressedIteration(
     const mpf_t incomingZx,
     const mpf_t incomingZy,
     IterTypeFull index) {
+
+    // This code is broken.  It is not clear how to fix it without compromising runtime memory
+    // consumption.  The initial thought was we could extend "max compression" (see ::CompressMax)
+    // to runtime intermediate orbit compression, but this is not feasible.  The intermediate orbit
+    // compression objective is to minimize the number of reference orbit entries that are
+    // stored in memory.  But this compression algorithm relies on most of them being in memory
+    // in order to achieve a decent compression ratio.
+
+    assert(false); // Not implemented
 
     auto normZ = [&](mpf_t &out, const mpf_t x, const mpf_t y) -> void {
         // auto norm_z = x * x + y * y;
@@ -2064,19 +2120,22 @@ void MaxIntermediateOrbitCompressor<IterType, T, PExtras>::MaybeAddCompressedIte
         mpf_mul(out, NormInternalTemp[0], t);
         };
 
-
     // I == i from original code
 
     if (PhaseDone == 0) {
+        // const auto norm_z = normZ(m_FullOrbit[i].x, m_FullOrbit[i].y);
         normZ(NormTemp[0], incomingZx, incomingZy);
+
+        // if (HdrCompareToBothPositiveReducedLT(norm_z, constant1)) {
         if (mpf_cmp(NormTemp[0], Constant1) < 0) {
             mpf_set(Zx, incomingZx);
             mpf_set(Zy, incomingZy);
 
-            results.AddUncompressedReusedEntry(incomingZx, incomingZy, index);
+            results.AddUncompressedReusedEntry(Zx, Zy, index);
 
             PhaseDone++;
         } else {
+            // auto err = normZTimesT(zx - m_FullOrbit[i].x, zy - m_FullOrbit[i].y, threshold2);
             mpf_sub(Temp[0], Zx, incomingZx);
             mpf_sub(Temp[1], Zy, incomingZy);
 
@@ -2085,7 +2144,7 @@ void MaxIntermediateOrbitCompressor<IterType, T, PExtras>::MaybeAddCompressedIte
                 mpf_set(Zx, incomingZx);
                 mpf_set(Zy, incomingZy);
 
-                results.AddUncompressedReusedEntry(incomingZx, incomingZy, index);
+                results.AddUncompressedReusedEntry(Zx, Zy, index);
             }
         }
 
@@ -2102,9 +2161,9 @@ void MaxIntermediateOrbitCompressor<IterType, T, PExtras>::MaybeAddCompressedIte
             mpf_mul(Temp[0], Two, ZxOld);
             mpf_mul(Zy, Temp[0], Zy);
             mpf_add(Zy, Zy, cy);
+            I++;
         }
 
-        I++;
         return;
     }
 
@@ -2117,25 +2176,45 @@ void MaxIntermediateOrbitCompressor<IterType, T, PExtras>::MaybeAddCompressedIte
         mpf_set(DzxOld, Dzx);
 
         // Use Temp array for intermediate calculations
-        //     dzX = Two * cx * dzX - Two * cy * dzY + dzX * dzX - dzY * dzY;
+        // dzX = Two * cx * dzX - Two * cy * dzY + dzX * dzX - dzY * dzY;
         // dzY = Two * cx * dzY + Two * cy * dzX_old + Two * dzX_old * dzY;
 
+        // Temp[1] = Two * cx * dzX
         mpf_mul(Temp[0], Two, cx);
         mpf_mul(Temp[1], Temp[0], Dzx);
+
+        // Temp[3] = Two * cy * dzY
         mpf_mul(Temp[2], Two, cy);
         mpf_mul(Temp[3], Temp[2], Dzy);
-        mpf_sub(Temp[4], Temp[1], Temp[3]);
-        mpf_mul(Temp[5], Dzx, Dzx);
-        mpf_mul(Temp[6], Dzy, Dzy);
-        mpf_sub(Dzx, Temp[4], Temp[6]);
-        mpf_add(Dzx, Dzx, DzxOld);
 
+        // Temp[4] = Two * cx * dzX - Two * cy * dzY
+        mpf_sub(Temp[4], Temp[1], Temp[3]);
+
+        // Temp[5] = dzX * dzX
+        mpf_mul(Temp[5], Dzx, Dzx);
+
+        // Temp[6] = dzY * dzY
+        mpf_mul(Temp[6], Dzy, Dzy);
+
+        // dzX = Two * cx * dzX - Two * cy * dzY + dzX * dzX - dzY * dzY;
+        mpf_sub(Dzx, Temp[4], Temp[6]);
+        mpf_add(Dzx, Dzx, Temp[5]);
+
+        //////////////////////////////////////////////
+
+        // Temp[8] = Two * cx * dzY
         mpf_mul(Temp[7], Two, cx);
         mpf_mul(Temp[8], Temp[7], Dzy);
+
+        // Temp[10] = Two * cy * dzX_old
         mpf_mul(Temp[9], Two, cy);
         mpf_mul(Temp[10], Temp[9], DzxOld);
+
+        // Temp[12] = Two * dzX_old * dzY
         mpf_mul(Temp[11], Two, DzxOld);
         mpf_mul(Temp[12], Temp[11], Dzy);
+
+        // dzY = Two * cx * dzY + Two * cy * dzX_old + Two * dzX_old * dzY;
         mpf_add(Dzy, Temp[8], Temp[10]);
         mpf_add(Dzy, Dzy, Temp[12]);
 
@@ -2148,6 +2227,8 @@ void MaxIntermediateOrbitCompressor<IterType, T, PExtras>::MaybeAddCompressedIte
 
     // Main loop
     if (PhaseDone == 2) {
+        // TODO: wrong, m_FullOrbit[J] isn't the same as m_FullOrbit[I]
+        // We could fix this by keeping everything in memory but then that would defeat the purpose
         mpf_add(Zx, Dzx, incomingZx);
         mpf_add(Zy, Dzy, incomingZy);
 
@@ -2171,8 +2252,14 @@ void MaxIntermediateOrbitCompressor<IterType, T, PExtras>::MaybeAddCompressedIte
 
         if (Condition1 || Condition2) {
             PrevWayPointIteration = I;
-            mpf_set(Dzx, incomingZx);
-            mpf_set(Dzy, incomingZy);
+            mpf_set(Zx, incomingZx);
+            mpf_set(Zy, incomingZy);
+
+            // dzX = zx - m_FullOrbit[j].x;
+            // dzY = zy - m_FullOrbit[j].y;
+            // 
+            // TODO: mpf_sub(Dzx, Zx, ...
+            // TODO: mpf_sub(Dzy, Zy, ...
 
             normZ(NormTemp[0], Zx, Zy);
             normZ(NormTemp[1], Dzx, Dzy);
@@ -2182,14 +2269,20 @@ void MaxIntermediateOrbitCompressor<IterType, T, PExtras>::MaybeAddCompressedIte
                 mpf_set(Dzy, incomingZy);
                 J = 0;
 
-                results.AddUncompressedReusedEntry(incomingZx, incomingZy, index);
+                results.AddUncompressedReusedEntry(Dzx, Dzy, index);
                 ItersSinceLastWrite = 0;
             } else {
-                results.AddUncompressedReusedEntry(incomingZx, incomingZy, index);
+                mpf_set(ReducedZx, incomingZx);
+                mpf_set(ReducedZy, incomingZy);
+
+                results.AddUncompressedReusedEntry(ReducedZx, ReducedZy, index);
                 ItersSinceLastWrite = 0;
             }
         } else if (Condition3) {
-            results.AddUncompressedReusedEntry(incomingZx, incomingZy, index);
+            mpf_set(ReducedZx, incomingZx);
+            mpf_set(ReducedZy, incomingZy);
+
+            results.AddUncompressedReusedEntry(ReducedZx, ReducedZy, index);
             ItersSinceLastWrite = 0;
         } else if (mpf_cmp(NormTemp[0], NormTemp[1]) < 0) {
             mpf_set(Dzx, incomingZx);
@@ -2201,6 +2294,7 @@ void MaxIntermediateOrbitCompressor<IterType, T, PExtras>::MaybeAddCompressedIte
 
         mpf_set(DzxOld, Dzx);
 
+        // TODO: wrong, m_FullOrbit[J] isn't the same as m_FullOrbit[I]
         // dzX = Two * m_FullOrbit[j].x * dzX - Two * m_FullOrbit[j].y * dzY + dzX * dzX - dzY * dzY;
         // dzY = Two * m_FullOrbit[j].x * dzY + Two * m_FullOrbit[j].y * dzX_old2 + Two * dzX_old2 * dzY;
         mpf_mul(Temp[0], Two, cx);
@@ -2225,6 +2319,11 @@ void MaxIntermediateOrbitCompressor<IterType, T, PExtras>::CompleteResults() {
     assert(PhaseDone == 2);
     results.AddUncompressedReusedEntry(Dzx, Dzy, ~0ull);
     results.m_Rebases.push_back(~0ull);
+
+    constexpr bool EnableWriteResultsForTesting = true;
+    if constexpr (EnableWriteResultsForTesting) {
+        WriteResultsForTesting();
+    }
 }
 
 

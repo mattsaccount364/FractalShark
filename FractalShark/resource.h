@@ -378,6 +378,7 @@
 #define IDM_SAVE_REFORBIT_TEXT_MAX      33183
 #define ID_PERTURBATION_MT4             33184
 #define IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_MTMED4 33185
+#define ID_BUILT_33186                  33186
 #define IDM_VIEW1                       34001
 #define IDM_VIEW2                       34002
 #define IDM_VIEW3                       34003
@@ -407,6 +408,17 @@
 #define IDM_VIEW27                      34027
 #define IDM_VIEW28                      34028
 #define IDM_VIEW29                      34029
+#define IDM_VIEW30                      34030
+#define IDM_VIEW31                      34031
+#define IDM_VIEW32                      34032
+#define IDM_VIEW33                      34033
+#define IDM_VIEW34                      34034
+#define IDM_VIEW35                      34035
+#define IDM_VIEW36                      34036
+#define IDM_VIEW37                      34037
+#define IDM_VIEW38                      34038
+#define IDM_VIEW39                      34039
+#define IDM_VIEW40                      34040
 #define IDM_VIEW_DYNAMIC                35000
 #define IDC_STATIC                      -1
 
@@ -415,7 +427,7 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        132
-#define _APS_NEXT_COMMAND_VALUE         33186
+#define _APS_NEXT_COMMAND_VALUE         33188
 #define _APS_NEXT_CONTROL_VALUE         1000
 #define _APS_NEXT_SYMED_VALUE           110
 #endif

@@ -622,6 +622,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         case IDM_VIEW27:
         case IDM_VIEW28:
         case IDM_VIEW29:
+        case IDM_VIEW30:
+        case IDM_VIEW31:
+        case IDM_VIEW32:
+        case IDM_VIEW33:
+        case IDM_VIEW34:
+        case IDM_VIEW35:
+        case IDM_VIEW36:
+        case IDM_VIEW37:
+        case IDM_VIEW38:
+        case IDM_VIEW39:
+        case IDM_VIEW40:
         {
             static_assert(IDM_VIEW2 == IDM_VIEW1 + 1, "!");
             static_assert(IDM_VIEW3 == IDM_VIEW1 + 2, "!");
@@ -651,6 +662,17 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
             static_assert(IDM_VIEW27 == IDM_VIEW1 + 26, "!");
             static_assert(IDM_VIEW28 == IDM_VIEW1 + 27, "!");
             static_assert(IDM_VIEW29 == IDM_VIEW1 + 28, "!");
+            static_assert(IDM_VIEW30 == IDM_VIEW1 + 29, "!");
+            static_assert(IDM_VIEW31 == IDM_VIEW1 + 30, "!");
+            static_assert(IDM_VIEW32 == IDM_VIEW1 + 31, "!");
+            static_assert(IDM_VIEW33 == IDM_VIEW1 + 32, "!");
+            static_assert(IDM_VIEW34 == IDM_VIEW1 + 33, "!");
+            static_assert(IDM_VIEW35 == IDM_VIEW1 + 34, "!");
+            static_assert(IDM_VIEW36 == IDM_VIEW1 + 35, "!");
+            static_assert(IDM_VIEW37 == IDM_VIEW1 + 36, "!");
+            static_assert(IDM_VIEW38 == IDM_VIEW1 + 37, "!");
+            static_assert(IDM_VIEW39 == IDM_VIEW1 + 38, "!");
+            static_assert(IDM_VIEW40 == IDM_VIEW1 + 39, "!");
 
             MenuStandardView(hWnd, wmId - IDM_VIEW1 + 1);
             break;
@@ -1014,6 +1036,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 
         case IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_MTMED4:
         {
+            // Broken
             gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed4);
             break;
         }

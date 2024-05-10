@@ -188,8 +188,10 @@ void ThreadMemory::Free(void *ptr, size_t size) {
         m_FreedMemorySize.erase(m_FreedMemorySize.begin());
     }
 
-    m_FreedMemory.push_back(ptr);
-    m_FreedMemorySize.push_back(alignedSize);
+    if (ptr != nullptr) {
+        m_FreedMemory.push_back(ptr);
+        m_FreedMemorySize.push_back(alignedSize);
+    }
 }
 
 std::atomic<size_t> MPIRBumpAllocator::MaxAllocatedDebug = 0;

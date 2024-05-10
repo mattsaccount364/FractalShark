@@ -26,7 +26,7 @@ private:
     // It looks like we only need two blocks but we use four in case anything
     // changes in the RefOrbit calculation.  This all is pretty balanced together.
     static constexpr size_t NumBlocks = 4;
-    static constexpr size_t BytesPerBlock = 256 * 1024;
+    static constexpr size_t BytesPerBlock = 1024 * 1024;
 
     thread_local static uint8_t Allocated[NumBlocks][BytesPerBlock];
     thread_local static uint8_t *AllocatedEnd[NumBlocks];

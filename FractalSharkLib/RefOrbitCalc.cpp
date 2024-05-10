@@ -497,9 +497,9 @@ void RefOrbitCalc::AddPerturbationReferencePoint() {
             m_PerturbationGuessCalcX,
             m_PerturbationGuessCalcY);
     } else if (GetPerturbationAlg() == PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed) {
-        // TODO: we're hardcoding SaveForReuse4 here.  This is the single-threaded case.
+        // TODO: we're hardcoding SaveForReuse3 here.  This is the single-threaded case.
         // Single threaded only supports one option, so we're hardcoding it here.
-        AddPerturbationReferencePointST<IterType, T, SubType, true, BenchmarkState, PExtras, ReuseMode::SaveForReuse4>(
+        AddPerturbationReferencePointST<IterType, T, SubType, true, BenchmarkState, PExtras, ReuseMode::SaveForReuse3>(
             m_PerturbationGuessCalcX,
             m_PerturbationGuessCalcY);
 
@@ -2411,7 +2411,7 @@ template<
     class ConvertTType>
 PerturbationResults<IterType, ConvertTType, PExtras> *
 RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
-    constexpr bool forceCompressDecompressForTesting = false;
+    constexpr bool ForceCompressDecompressForTesting = false;
     constexpr bool IsHdrDblflt = std::is_same<ConvertTType, HDRFloat<CudaDblflt<MattDblflt>>>::value;
     constexpr bool IsDblflt = std::is_same<ConvertTType, CudaDblflt<MattDblflt>>::value;
     constexpr bool UsingDblflt = IsHdrDblflt || IsDblflt;
@@ -2501,8 +2501,8 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
         results = cur_array[cur_array.size() - 1].get();
 
         // This is a hack for testing, but it's only a hack
-        // if forceCompressDecompressForTesting is true.
-        if constexpr (forceCompressDecompressForTesting && PExtras == PerturbExtras::Disable) {
+        // if ForceCompressDecompressForTesting is true.
+        if constexpr (ForceCompressDecompressForTesting && PExtras == PerturbExtras::Disable) {
             auto compressedResults = results->CompressMax(
                 m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
                 GetNextGenerationNumber());
@@ -2926,7 +2926,8 @@ RefOrbitCalc::PerturbationAlg RefOrbitCalc::GetPerturbationAlg() const {
         } else {
             // Roll the dice and hope the intermediate precision orbit
             // works! :-)
-            return PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed4;
+            // Note MTPeriodicity3PerturbMTHighMTMed4 is broken.
+            return PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3;
         }
     } else {
         return m_PerturbationAlg;

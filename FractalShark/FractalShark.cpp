@@ -1437,6 +1437,25 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
         break;
     }
 
+    case WM_MOUSEWHEEL:
+    {
+        // Zoom in or out when mouse wheel is scrolled.
+        POINT pt;
+        pt.x = GET_X_LPARAM(lParam);
+        pt.y = GET_Y_LPARAM(lParam);
+
+        // convert to client coordinates
+        ScreenToClient(hWnd, &pt);
+
+        if (GET_WHEEL_DELTA_WPARAM(wParam) > 0) {
+            gFractal->Zoom(pt.x, pt.y, -.3);
+        } else {
+            gFractal->Zoom(pt.x, pt.y, 0.3);
+        }
+        PaintAsNecessary(hWnd);
+        break;
+    }
+
     // Repaint the screen
     case WM_PAINT:
     {

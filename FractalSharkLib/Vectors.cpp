@@ -53,6 +53,11 @@ static myNtExtendSection fNtExtendSection;
 
 void VectorStaticInit() {
     HMODULE hNtDll = GetModuleHandle(L"ntdll.dll");
+
+    if (hNtDll == nullptr) {
+        throw FractalSharkSeriousException("Failed to get handle to ntdll.dll");
+    }
+
     fNtCreateSection = (myNtCreateSection)GetProcAddress(hNtDll, "NtCreateSection");
     fNtMapViewOfSection = (myNtMapViewOfSection)GetProcAddress(hNtDll, "NtMapViewOfSection");
     fNtExtendSection = (myNtExtendSection)GetProcAddress(hNtDll, "NtExtendSection");
@@ -406,9 +411,20 @@ uint32_t GrowableVector<EltT>::InternalOpenFile() {
         if (m_Filename == L"") {
             // Fill a wide string with a random guid
             GUID guid;
-            CoCreateGuid(&guid);
+            auto res = CoCreateGuid(&guid);
+            if (res != S_OK) {
+                std::string err_str = "Failed to create GUID: ";
+                err_str += std::to_string(res);
+                throw FractalSharkSeriousException(err_str);
+            }
+
             wchar_t guid_str[40];
-            StringFromGUID2(guid, guid_str, 40);
+            auto res2 = StringFromGUID2(guid, guid_str, 40);
+            if (res2 == 0) {
+                std::string err_str = "Failed to convert GUID to string: ";
+                err_str += std::to_string(res2);
+                throw FractalSharkSeriousException(err_str);
+            }
 
             // Generate a temporary filename to a non-existent file
             // in the current directory using GetTempFileName

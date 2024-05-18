@@ -18,6 +18,13 @@ public:
         ::HDRFloatComplex<SubType>,
         ::FloatComplex<SubType>>::type;
 
+    CUDA_CRAP ATResult() :
+        dz{},
+        dzdc{},
+        dzdc2{},
+        bla_iterations{},
+        bla_steps{} {}
+
     FloatComplexT dz;
     FloatComplexT dzdc;
     FloatComplexT dzdc2;

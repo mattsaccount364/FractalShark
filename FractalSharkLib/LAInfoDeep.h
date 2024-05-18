@@ -112,7 +112,8 @@ template<typename IterType, class Float, class SubType, PerturbExtras PExtras>
 CUDA_CRAP
 LAInfoDeep<IterType, Float, SubType, PExtras>::LAInfoDeep(
     const LAParameters &la_parameters,
-    HDRFloatComplex z) {
+    HDRFloatComplex z)
+    : MinMag{} {
 
     Ref = z;
 

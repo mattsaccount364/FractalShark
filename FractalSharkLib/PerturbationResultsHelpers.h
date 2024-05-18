@@ -196,7 +196,8 @@ public:
         cx{},
         cy{},
         Two{},
-        Zero{} {
+        Zero{},
+        Temp{} {
         mpf_init2(cx, AuthoritativeReuseExtraPrecisionInBits);
         mpf_set(cx, *results.GetHiX().backendRaw());
 
@@ -350,7 +351,8 @@ public:
         cx{},
         cy{},
         Two{},
-        Zero{} {
+        Zero{},
+        Temp{} {
         mpf_init2(cx, AuthoritativeReuseExtraPrecisionInBits);
         mpf_set(cx, *results.GetHiX().backendRaw());
 

@@ -53,7 +53,7 @@ public:
         mpf_set(m_Data, data);
     }
 
-    HighPrecisionT(HighPrecisionT &&other) {
+    HighPrecisionT(HighPrecisionT &&other) noexcept {
         m_Data[0] = other.m_Data[0];
         other.m_Data[0] = {};
     }
@@ -95,7 +95,7 @@ public:
     }
 
 
-    HighPrecisionT &operator=(HighPrecisionT &&other) {
+    HighPrecisionT &operator=(HighPrecisionT &&other) noexcept {
         if (this == &other) {
             return *this;
         }
@@ -255,9 +255,10 @@ public:
     }
 
     std::string str() const {
-        char temp[32768];
-        gmp_snprintf(temp, 32768, "%.Fe", m_Data);
-        std::string result(temp);
+        constexpr size_t number_of_chars = 128 * 1024;
+        std::vector<char> temp(number_of_chars);
+        gmp_snprintf(temp.data(), number_of_chars, "%.Fe", m_Data);
+        std::string result(temp.data());
         return result;
     }
 

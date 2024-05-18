@@ -1175,7 +1175,7 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
 
     const auto threshold2 = CompressionError;
     const T constant1{ 0x1.0p-4 };
-    const T constant2{ 0x1.000001p0 };
+    const T constant2{ (T)0x1.000001p0 };
     //const T constant2{ 20000 };
     T zx{};
     T zy{};

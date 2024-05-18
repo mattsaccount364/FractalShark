@@ -37,15 +37,35 @@ CUDA_CRAP void InitStatics();
 #define MYALIGN
 
 template<class T, class TExp = int32_t>
-class LMembers {
+class GenericHdrBase {
 public:
+    static CUDA_CRAP constexpr TExp MIN_BIG_EXPONENT() {
+        if constexpr (
+            std::is_same<TExp, int32_t>::value ||
+            std::is_same<TExp, float>::value) {
+            return INT32_MIN >> 3;
+        } else {
+            return INT16_MIN >> 3;
+        }
+    }
+};
+
+template<class T, class TExp = int32_t>
+class LMembers : public GenericHdrBase<T, TExp> {
+public:
+    using GenericHdrBase = GenericHdrBase<T, TExp>;
+    CUDA_CRAP LMembers() : mantissa(T{}), exp(GenericHdrBase::MIN_BIG_EXPONENT()) {}
+
     MYALIGN T mantissa;
     MYALIGN TExp exp;
 };
 
 template<class T, class TExp = int32_t>
-class RMembers {
+class RMembers : public GenericHdrBase<T, TExp> {
 public:
+    using GenericHdrBase = GenericHdrBase<T, TExp>;
+    CUDA_CRAP RMembers() : exp(GenericHdrBase::MIN_BIG_EXPONENT()), mantissa(T{}) {}
+
     MYALIGN TExp exp;
     MYALIGN T mantissa;
 };
@@ -84,17 +104,9 @@ public:
         return -1023;
     }
 
-    static CUDA_CRAP constexpr TExp MIN_BIG_EXPONENT() {
-        if constexpr (
-            std::is_same<TExp, int32_t>::value ||
-            std::is_same<TExp, float>::value) {
-            return INT32_MIN >> 3;
-        } else {
-            return INT16_MIN >> 3;
-        }
-    }
-
 public:
+    using GenericHdrBase = GenericHdrBase<T, TExp>;
+
     static constexpr TExp EXPONENT_DIFF_IGNORED = 120;
     static constexpr TExp MINUS_EXPONENT_DIFF_IGNORED = -EXPONENT_DIFF_IGNORED;
 
@@ -128,7 +140,7 @@ public:
 
     CUDA_CRAP constexpr HDRFloat() {
         Base::mantissa = T{};
-        Base::exp = MIN_BIG_EXPONENT();
+        Base::exp = GenericHdrBase::MIN_BIG_EXPONENT();
     }
 
     // Copy constructor
@@ -207,7 +219,7 @@ public:
         CUDA_CRAP explicit HDRFloat(const U number) { // TODO add constexpr once that compiles
         if (number == U{ 0 }) {
             Base::mantissa = T{ 0.0f };
-            Base::exp = MIN_BIG_EXPONENT();
+            Base::exp = GenericHdrBase::MIN_BIG_EXPONENT();
             return;
         }
 
@@ -268,7 +280,7 @@ public:
     explicit HDRFloat(const mpf_t number) {
         if (mpf_cmp_ui(number, 0) == 0) {
             Base::mantissa = T{};
-            Base::exp = MIN_BIG_EXPONENT();
+            Base::exp = GenericHdrBase::MIN_BIG_EXPONENT();
             return;
         }
 
@@ -452,7 +464,7 @@ public:
         TExp local_exp = Base::exp - factor.exp;
 
         Base::mantissa = local_mantissa;
-        Base::exp = local_exp < MIN_BIG_EXPONENT() ? MIN_BIG_EXPONENT() : local_exp;
+        Base::exp = local_exp < GenericHdrBase::MIN_BIG_EXPONENT() ? GenericHdrBase::MIN_BIG_EXPONENT() : local_exp;
 
         return *this;
     }
@@ -491,7 +503,7 @@ public:
         TExp local_exp = Base::exp + factor.exp;
 
         Base::mantissa = local_mantissa;
-        Base::exp = local_exp < MIN_BIG_EXPONENT() ? MIN_BIG_EXPONENT() : local_exp;
+        Base::exp = local_exp < GenericHdrBase::MIN_BIG_EXPONENT() ? GenericHdrBase::MIN_BIG_EXPONENT() : local_exp;
         return *this;
     }
 
@@ -690,7 +702,7 @@ public:
         TExp local_exp = Base::exp * 2;
 
         Base::mantissa = local_mantissa;
-        Base::exp = local_exp < MIN_BIG_EXPONENT() ? MIN_BIG_EXPONENT() : local_exp;
+        Base::exp = local_exp < GenericHdrBase::MIN_BIG_EXPONENT() ? GenericHdrBase::MIN_BIG_EXPONENT() : local_exp;
         return *this;
     }
 
@@ -719,7 +731,7 @@ public:
 
     CUDA_CRAP constexpr HDRFloat &divide2_mutable() {
         Base::exp--;
-        Base::exp = Base::exp < MIN_BIG_EXPONENT() ? MIN_BIG_EXPONENT() : Base::exp;
+        Base::exp = Base::exp < GenericHdrBase::MIN_BIG_EXPONENT() ? GenericHdrBase::MIN_BIG_EXPONENT() : Base::exp;
         return *this;
     }
 
@@ -730,7 +742,7 @@ public:
     CUDA_CRAP constexpr HDRFloat &divide4_mutable() {
         Base::exp -= 2;
         Base::exp--;
-        Base::exp = Base::exp < MIN_BIG_EXPONENT() ? MIN_BIG_EXPONENT() : Base::exp;
+        Base::exp = Base::exp < GenericHdrBase::MIN_BIG_EXPONENT() ? GenericHdrBase::MIN_BIG_EXPONENT() : Base::exp;
         return *this;
     }
 
@@ -772,7 +784,7 @@ public:
         }
 
         if (Base::mantissa == T{}) {
-            Base::exp = MIN_BIG_EXPONENT();
+            Base::exp = GenericHdrBase::MIN_BIG_EXPONENT();
         }
 
         return *this;
@@ -831,7 +843,7 @@ public:
         }
 
         if (Base::mantissa == T{}) {
-            Base::exp = MIN_BIG_EXPONENT();
+            Base::exp = GenericHdrBase::MIN_BIG_EXPONENT();
         }
 
         return *this;

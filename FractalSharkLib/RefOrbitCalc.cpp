@@ -1230,11 +1230,14 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
 
     struct ThreadZxData {
         ThreadZxData() :
-            DeltaSubNX{},
             ReferenceIteration{},
             DeltaSubNXOrig{},
             DeltaSubNYOrig{},
-            DeltaSub0X{} {
+            DeltaSub0X{},
+            DeltaSubNX{},
+            OutZx{},
+            OutZxLow{},
+            OutDeltaSubNXLow{} {
 
             mpf_init(DeltaSubNX);
             mpf_init(OutZx);
@@ -1257,11 +1260,14 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
 
     struct ThreadZyData {
         ThreadZyData() :
-            DeltaSubNY{},
             ReferenceIteration{},
             DeltaSubNXOrig{},
             DeltaSubNYOrig{},
-            DeltaSub0Y{} {
+            DeltaSub0Y{},
+            DeltaSubNY{},
+            OutZy{},
+            OutZyLow{},
+            OutDeltaSubNYLow{} {
 
             mpf_init(DeltaSubNY);
             mpf_init(OutZy);
@@ -2004,7 +2010,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
             }
 
             auto allocatorIndex = bumpAllocator->GetAllocatorIndex();
-            reusedAllocator = bumpAllocator->GetAllocated(allocatorIndex);
+            bumpAllocator->GetAllocated(allocatorIndex); // Destruct the return value
 
             ShutdownTls();
             };
@@ -2303,7 +2309,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
             _aligned_free(threadReuseddata);
 
             if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse1) {
-                reusedAllocator = bumpAllocator->GetAllocated(1);
+                bumpAllocator->GetAllocated(1); // Destruct the return value
             }
 
             results->CompleteResults<Reuse>(std::move(reusedAllocator));

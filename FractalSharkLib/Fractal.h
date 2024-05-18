@@ -91,6 +91,7 @@ public:
     bool CenterAtPoint(size_t x, size_t y);
     void Zoom(double factor);
     void Zoom(size_t scrnX, size_t scrnY, double factor);
+    void Zoom2(size_t scrnX, size_t scrnY, double factor);
 
     void BasicTest();
 

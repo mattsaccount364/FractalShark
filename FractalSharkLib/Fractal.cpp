@@ -598,14 +598,35 @@ bool Fractal::CenterAtPoint(size_t x, size_t y) {
 }
 
 void Fractal::Zoom(double factor) {
-    HighPrecision deltaX = (m_MaxX - m_MinX) * (HighPrecision)factor;
-    HighPrecision deltaY = (m_MaxY - m_MinY) * (HighPrecision)factor;
+    const HighPrecision deltaX = (m_MaxX - m_MinX) * (HighPrecision)factor;
+    const HighPrecision deltaY = (m_MaxY - m_MinY) * (HighPrecision)factor;
     RecenterViewCalc(m_MinX - deltaX, m_MinY - deltaY, m_MaxX + deltaX, m_MaxY + deltaY);
 }
 
+// This one recenters and zooms in on the mouse cursor.
+// This one is better with the keyboard.
 void Fractal::Zoom(size_t scrnX, size_t scrnY, double factor) {
     CenterAtPoint(scrnX, scrnY);
     Zoom(factor);
+}
+
+// The idea is to zoom in on the mouse cursor, without also recentering it.
+// This one is better with the wheel.
+void Fractal::Zoom2(size_t scrnX, size_t scrnY, double factor) {
+    const HighPrecision newCenterX = XFromScreenToCalc((HighPrecision)scrnX);
+    const HighPrecision newCenterY = YFromScreenToCalc((HighPrecision)scrnY);
+
+    const HighPrecision leftWeight = (newCenterX - m_MinX) / (m_MaxX - m_MinX);
+    const HighPrecision rightWeight = HighPrecision{ 1 } - leftWeight;
+    const HighPrecision topWeight = (newCenterY - m_MinY) / (m_MaxY - m_MinY);
+    const HighPrecision bottomWeight = HighPrecision{ 1 } - topWeight;
+
+    const HighPrecision minX = m_MinX - (m_MaxX - m_MinX) * leftWeight * (HighPrecision)factor;
+    const HighPrecision minY = m_MinY - (m_MaxY - m_MinY) * topWeight * (HighPrecision)factor;
+    const HighPrecision maxX = m_MaxX + (m_MaxX - m_MinX) * rightWeight * (HighPrecision)factor;
+    const HighPrecision maxY = m_MaxY + (m_MaxY - m_MinY) * bottomWeight * (HighPrecision)factor;
+
+    RecenterViewCalc(minX, minY, maxX, maxY);
 }
 
 void Fractal::InitialDefaultViewAndSettings(int width, int height) {
@@ -638,9 +659,9 @@ void Fractal::InitialDefaultViewAndSettings(int width, int height) {
     SetResultsAutosave(AddPointOptions::EnableWithoutSave);
     //SetResultsAutosave(AddPointOptions::DontSave);
     LoadPerturbationOrbits();
-    //View(0);
+    View(0);
     //View(5);
-    View(11);
+    //View(11);
     //View(14);
     //View(27); // extremely hard
     ChangedMakeDirty();
@@ -1300,10 +1321,21 @@ void Fractal::View(size_t view) {
 
     case 0:
     default:
-        minX = HighPrecision{ "-2.5" };
-        minY = HighPrecision{ "-1.5" };
-        maxX = HighPrecision{ "1.5" };
-        maxY = HighPrecision{ "1.5" };
+        //minX = HighPrecision{ "-2.5" };
+        //minY = HighPrecision{ "-1.5" };
+        //maxX = HighPrecision{ "1.5" };
+        //maxY = HighPrecision{ "1.5" };
+
+        PointZoomBBConverter convert{
+            HighPrecision{ "0" },
+            HighPrecision{ "0" },
+            HighPrecision{ "1" }
+        };
+
+        minX = convert.GetMinX();
+        minY = convert.GetMinY();
+        maxX = convert.GetMaxX();
+        maxY = convert.GetMaxY();
         ResetNumIterations();
         break;
     }
@@ -1324,12 +1356,12 @@ void Fractal::SquareCurrentView(void) {
     if (height > mwidth) {
         m_MinX -= ratio * (height - mwidth) / HighPrecision{ 2.0 };
         m_MaxX += ratio * (height - mwidth) / HighPrecision{ 2.0 };
+        m_ChangedWindow = true;
     } else if (height < mwidth) {
         m_MinY -= (mwidth - height) / HighPrecision{ 2.0 };
         m_MaxY += (mwidth - height) / HighPrecision{ 2.0 };
+        m_ChangedWindow = true;
     }
-
-    m_ChangedWindow = true;
 
     CleanupThreads(false);
 }

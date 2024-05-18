@@ -1393,10 +1393,12 @@ LRESULT MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam) {
         ScreenToClient(hWnd, &pt);
 
         if (GET_WHEEL_DELTA_WPARAM(wParam) > 0) {
-            gFractal->Zoom(pt.x, pt.y, -.3);
+            gFractal->Zoom2(pt.x, pt.y, -.3);
         } else {
-            gFractal->Zoom(pt.x, pt.y, 0.3);
+            // gFractal->Zoom(pt.x, pt.y, 0.3);
+            gFractal->Zoom(0.3);
         }
+
         PaintAsNecessary();
         break;
     }

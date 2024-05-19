@@ -7,6 +7,8 @@
 #include "ScopedMpir.h"
 #include "PrecisionCalculator.h"
 #include "LAReference.h"
+#include "Exceptions.h"
+#include "ImaginaOrbit.h"
 
 #include <vector>
 #include <memory>
@@ -3023,11 +3025,11 @@ void RefOrbitCalc::GetSomeDetails(RefOrbitDetails &details) const {
     static_assert(static_cast<int>(RenderAlgorithm::MAX) == 61, "Fix me");
 }
 
-void RefOrbitCalc::SaveOrbitAsText(CompressToDisk compression) const {
+void RefOrbitCalc::SaveOrbit(CompressToDisk compression) const {
     auto lambda = [this, compression](auto &&results) {
         if (results != nullptr) {
             if (compression == CompressToDisk::Disable) {
-                results->SaveOrbitAsText();
+                results->SaveOrbit();
             } else if (compression == CompressToDisk::SimpleCompression) {
                 if constexpr (
                     Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::Disable>() &&
@@ -3035,32 +3037,55 @@ void RefOrbitCalc::SaveOrbitAsText(CompressToDisk compression) const {
                     //auto compressedResults = results->Compress(
                     //    m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
                     //    GetNextGenerationNumber());
-                    //compressedResults->SaveOrbitAsText();
+                    //compressedResults->SaveOrbit();
 
                     // TODO temp test:
                     auto compressedResults = results->CompressMax(
                         m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
                         GetNextGenerationNumber());
                     auto decompressedResults = compressedResults->DecompressMax(GetNextGenerationNumber());
-                    decompressedResults->SaveOrbitAsText();
+                    decompressedResults->SaveOrbit();
 
                 }
-            } else if (compression == CompressToDisk::MaxCompression) {
+            } else if (
+                compression == CompressToDisk::MaxCompression ||
+                compression == CompressToDisk::MaxCompressionBin) {
+
                 if constexpr (
                     Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::Disable>() &&
                     !Introspection::IsDblFlt<decltype(*results)>()) {
                     auto compressedResults = results->CompressMax(
                         m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
                         GetNextGenerationNumber());
-                    compressedResults->SaveOrbitAsText();
+
+                    if (compression == CompressToDisk::MaxCompression) {
+                        compressedResults->SaveOrbit();
+                    } else if (compression == CompressToDisk::MaxCompressionBin) {
+                        compressedResults->SaveOrbitBin();
+                    } else {
+                        throw FractalSharkSeriousException("Unknown compression type");
+                    }
                 }
             } else {
-                assert(false);
+                throw FractalSharkSeriousException("Unknown CompressToDisk");
             }
         }
         };
 
     std::visit(lambda, m_LastUsedRefOrbit);
+}
+
+void RefOrbitCalc::LoadOrbit(std::wstring imagFilename) {
+    // Try to figure out what type to use based on the data stored.
+    // Open the file in binary mode.
+
+    std::ifstream file(imagFilename, std::ios::binary);
+
+    if (!file.is_open()) {
+        throw FractalSharkSeriousException("Could not open file");
+    }
+
+
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>

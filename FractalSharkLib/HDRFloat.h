@@ -217,7 +217,7 @@ public:
         std::is_same<U, int>::value ||
         std::is_same<U, CudaDblflt<dblflt>>::value>>
         CUDA_CRAP explicit HDRFloat(const U number) { // TODO add constexpr once that compiles
-        if (number == U{ 0 }) {
+        if (number == U{}) {
             Base::mantissa = T{ 0.0f };
             Base::exp = GenericHdrBase::MIN_BIG_EXPONENT();
             return;

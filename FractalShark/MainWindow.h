@@ -10,11 +10,13 @@ enum FractalPalette : size_t;
 class MainWindow {
 public:
     struct SavedLocation;
+    struct ImaginaSavedLocation;
 
     MainWindow(HINSTANCE hInstance, int nCmdShow);
     ~MainWindow();
 
     std::vector<SavedLocation> gSavedLocations;
+    std::vector<ImaginaSavedLocation> gImaginaLocations;
 
     // Global Variables:
     std::unique_ptr<JobObject> gJobObj;
@@ -24,6 +26,9 @@ public:
     HMENU gPopupMenu;
     bool gWindowed; // Says whether we are in windowed mode or not.
     HWND hWnd;
+
+    HMENU LoadSubMenu;
+    HMENU ImaginaMenu;
 
     // Fractal:
     std::unique_ptr<Fractal> gFractal;
@@ -65,6 +70,7 @@ public:
     void BenchmarkMessage(size_t milliseconds);
     void MenuAlgHelp();
     void MenuViewsHelp();
+    void MenuLoadImag();
     void MenuShowHotkeys();
 
     void PaintAsNecessary();

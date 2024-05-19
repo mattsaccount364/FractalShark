@@ -11,8 +11,8 @@
 #include <minidumpapiset.h>
 #include <mpir.h>
 
-struct MainWindow::SavedLocation
-{
+struct MainWindow::SavedLocation {
+
     SavedLocation(std::ifstream &infile) {
         // Read minX, minY, maxX, maxY, num_iterations, antialiasing from infile
         // To read minX, read a string and convert to HighPrecision
@@ -38,6 +38,10 @@ struct MainWindow::SavedLocation
     std::string description;
 };
 
+struct MainWindow::ImaginaSavedLocation {
+    std::wstring Filename;
+};
+
 MainWindow::MainWindow(HINSTANCE hInstance, int nCmdShow) {
     gJobObj = std::make_unique<JobObject>();
     mpf_set_default_prec(256);
@@ -55,6 +59,9 @@ MainWindow::MainWindow(HINSTANCE hInstance, int nCmdShow) {
     if (!hWnd) {
         throw std::runtime_error("Failed to create window");
     }
+
+    ImaginaMenu = nullptr;
+    LoadSubMenu = nullptr;
 }
 
 MainWindow::~MainWindow() {
@@ -1162,19 +1169,30 @@ LRESULT MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam) {
         }
         case IDM_SAVE_REFORBIT_TEXT:
         {
-            gFractal->SaveRefOrbitAsText(CompressToDisk::Disable);
+            gFractal->SaveRefOrbit(CompressToDisk::Disable);
             break;
         }
         case IDM_SAVE_REFORBIT_TEXT_SIMPLE:
         {
-            gFractal->SaveRefOrbitAsText(CompressToDisk::SimpleCompression);
+            gFractal->SaveRefOrbit(CompressToDisk::SimpleCompression);
             break;
         }
         case IDM_SAVE_REFORBIT_TEXT_MAX:
         {
-            gFractal->SaveRefOrbitAsText(CompressToDisk::MaxCompression);
+            gFractal->SaveRefOrbit(CompressToDisk::MaxCompression);
             break;
         }
+        case IDM_SAVE_REFORBIT_IMAG_MAX:
+        {
+            gFractal->SaveRefOrbit(CompressToDisk::MaxCompressionBin);
+            break;
+        }
+        case IDM_LOAD_REFORBIT_IMAG_MAX:
+        {
+            MenuLoadImag();
+            break;
+        }
+
         case IDM_SHOWHOTKEYS:
         {
             MenuShowHotkeys();
@@ -1187,38 +1205,41 @@ LRESULT MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam) {
             break;
         }
 
-        case IDM_VIEW_DYNAMIC + 0:
-        case IDM_VIEW_DYNAMIC + 1:
-        case IDM_VIEW_DYNAMIC + 2:
-        case IDM_VIEW_DYNAMIC + 3:
-        case IDM_VIEW_DYNAMIC + 4:
-        case IDM_VIEW_DYNAMIC + 5:
-        case IDM_VIEW_DYNAMIC + 6:
-        case IDM_VIEW_DYNAMIC + 7:
-        case IDM_VIEW_DYNAMIC + 8:
-        case IDM_VIEW_DYNAMIC + 9:
-        case IDM_VIEW_DYNAMIC + 10:
-        case IDM_VIEW_DYNAMIC + 11:
-        case IDM_VIEW_DYNAMIC + 12:
-        case IDM_VIEW_DYNAMIC + 13:
-        case IDM_VIEW_DYNAMIC + 14:
-        case IDM_VIEW_DYNAMIC + 15:
-        case IDM_VIEW_DYNAMIC + 16:
-        case IDM_VIEW_DYNAMIC + 17:
-        case IDM_VIEW_DYNAMIC + 18:
-        case IDM_VIEW_DYNAMIC + 19:
-        case IDM_VIEW_DYNAMIC + 20:
-        case IDM_VIEW_DYNAMIC + 21:
-        case IDM_VIEW_DYNAMIC + 22:
-        case IDM_VIEW_DYNAMIC + 23:
-        case IDM_VIEW_DYNAMIC + 24:
-        case IDM_VIEW_DYNAMIC + 25:
-        case IDM_VIEW_DYNAMIC + 26:
-        case IDM_VIEW_DYNAMIC + 27:
-        case IDM_VIEW_DYNAMIC + 28:
-        case IDM_VIEW_DYNAMIC + 29:
+        case IDM_VIEW_DYNAMIC_ORBIT + 0:
+        case IDM_VIEW_DYNAMIC_ORBIT + 1:
+        case IDM_VIEW_DYNAMIC_ORBIT + 2:
+        case IDM_VIEW_DYNAMIC_ORBIT + 3:
+        case IDM_VIEW_DYNAMIC_ORBIT + 4:
+        case IDM_VIEW_DYNAMIC_ORBIT + 5:
+        case IDM_VIEW_DYNAMIC_ORBIT + 6:
+        case IDM_VIEW_DYNAMIC_ORBIT + 7:
+        case IDM_VIEW_DYNAMIC_ORBIT + 8:
+        case IDM_VIEW_DYNAMIC_ORBIT + 9:
+        case IDM_VIEW_DYNAMIC_ORBIT + 10:
+        case IDM_VIEW_DYNAMIC_ORBIT + 11:
+        case IDM_VIEW_DYNAMIC_ORBIT + 12:
+        case IDM_VIEW_DYNAMIC_ORBIT + 13:
+        case IDM_VIEW_DYNAMIC_ORBIT + 14:
+        case IDM_VIEW_DYNAMIC_ORBIT + 15:
+        case IDM_VIEW_DYNAMIC_ORBIT + 16:
+        case IDM_VIEW_DYNAMIC_ORBIT + 17:
+        case IDM_VIEW_DYNAMIC_ORBIT + 18:
+        case IDM_VIEW_DYNAMIC_ORBIT + 19:
+        case IDM_VIEW_DYNAMIC_ORBIT + 20:
+        case IDM_VIEW_DYNAMIC_ORBIT + 21:
+        case IDM_VIEW_DYNAMIC_ORBIT + 22:
+        case IDM_VIEW_DYNAMIC_ORBIT + 23:
+        case IDM_VIEW_DYNAMIC_ORBIT + 24:
+        case IDM_VIEW_DYNAMIC_ORBIT + 25:
+        case IDM_VIEW_DYNAMIC_ORBIT + 26:
+        case IDM_VIEW_DYNAMIC_ORBIT + 27:
+        case IDM_VIEW_DYNAMIC_ORBIT + 28:
+        case IDM_VIEW_DYNAMIC_ORBIT + 29:
         {
-            auto index = wmId - IDM_VIEW_DYNAMIC;
+            DestroyMenu(LoadSubMenu);
+            LoadSubMenu = nullptr;
+
+            auto index = wmId - IDM_VIEW_DYNAMIC_ORBIT;
             auto minX = gSavedLocations[index].minX;
             auto minY = gSavedLocations[index].minY;
             auto maxX = gSavedLocations[index].maxX;
@@ -1230,6 +1251,45 @@ LRESULT MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam) {
             gFractal->SetNumIterations<IterTypeFull>(num_iterations);
             gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, antialiasing);
             PaintAsNecessary();
+            break;
+        }
+
+        case IDM_VIEW_DYNAMIC_IMAG + 0:
+        case IDM_VIEW_DYNAMIC_IMAG + 1:
+        case IDM_VIEW_DYNAMIC_IMAG + 2:
+        case IDM_VIEW_DYNAMIC_IMAG + 3:
+        case IDM_VIEW_DYNAMIC_IMAG + 4:
+        case IDM_VIEW_DYNAMIC_IMAG + 5:
+        case IDM_VIEW_DYNAMIC_IMAG + 6:
+        case IDM_VIEW_DYNAMIC_IMAG + 7:
+        case IDM_VIEW_DYNAMIC_IMAG + 8:
+        case IDM_VIEW_DYNAMIC_IMAG + 9:
+        case IDM_VIEW_DYNAMIC_IMAG + 10:
+        case IDM_VIEW_DYNAMIC_IMAG + 11:
+        case IDM_VIEW_DYNAMIC_IMAG + 12:
+        case IDM_VIEW_DYNAMIC_IMAG + 13:
+        case IDM_VIEW_DYNAMIC_IMAG + 14:
+        case IDM_VIEW_DYNAMIC_IMAG + 15:
+        case IDM_VIEW_DYNAMIC_IMAG + 16:
+        case IDM_VIEW_DYNAMIC_IMAG + 17:
+        case IDM_VIEW_DYNAMIC_IMAG + 18:
+        case IDM_VIEW_DYNAMIC_IMAG + 19:
+        case IDM_VIEW_DYNAMIC_IMAG + 20:
+        case IDM_VIEW_DYNAMIC_IMAG + 21:
+        case IDM_VIEW_DYNAMIC_IMAG + 22:
+        case IDM_VIEW_DYNAMIC_IMAG + 23:
+        case IDM_VIEW_DYNAMIC_IMAG + 24:
+        case IDM_VIEW_DYNAMIC_IMAG + 25:
+        case IDM_VIEW_DYNAMIC_IMAG + 26:
+        case IDM_VIEW_DYNAMIC_IMAG + 27:
+        case IDM_VIEW_DYNAMIC_IMAG + 28:
+        case IDM_VIEW_DYNAMIC_IMAG + 29:
+        {
+            DestroyMenu(ImaginaMenu);
+            ImaginaMenu = nullptr;
+
+            auto index = wmId - IDM_VIEW_DYNAMIC_IMAG;
+            gFractal->LoadImagRefOrbit(gImaginaLocations[index].Filename);
             break;
         }
 
@@ -1870,7 +1930,7 @@ void MainWindow::MenuLoadCurrentLocation() {
         const std::wstring ws(s.begin(), s.end());
 
         gSavedLocations.push_back(loc);
-        AppendMenu(hSubMenu, MF_STRING, IDM_VIEW_DYNAMIC + index, ws.c_str());
+        AppendMenu(hSubMenu, MF_STRING, IDM_VIEW_DYNAMIC_ORBIT + index, ws.c_str());
         index++;
 
         // Limit the number of locations we show.
@@ -1903,6 +1963,48 @@ void MainWindow::BenchmarkMessage(size_t milliseconds) {
     const std::wstring ws(s.begin(), s.end());
     MessageBox(hWnd, ws.c_str(), L"", MB_OK | MB_APPLMODAL);
 
+}
+
+void MainWindow::MenuLoadImag() {
+    if (ImaginaMenu != nullptr) {
+        DestroyMenu(ImaginaMenu);
+        ImaginaMenu = nullptr;
+    }
+
+    ImaginaMenu = CreatePopupMenu();
+    size_t index = 0;
+
+    std::vector<std::wstring> imagFiles;
+    // Find all files with the extension .im in current directory.
+    // Add filenames to imagFiles.
+
+    WIN32_FIND_DATA FindFileData;
+    HANDLE hFind = FindFirstFile(L"*.im", &FindFileData);
+    if (hFind == INVALID_HANDLE_VALUE) {
+        return;
+    }
+
+    do {
+        imagFiles.push_back(FindFileData.cFileName);
+    } while (FindNextFile(hFind, &FindFileData) != 0);
+
+    FindClose(hFind);
+
+    for (const auto &imagFile : imagFiles) {
+
+        gImaginaLocations.push_back({ imagFile });
+
+        AppendMenu(ImaginaMenu, MF_STRING, IDM_VIEW_DYNAMIC_IMAG + index, imagFile.c_str());
+        index++;
+
+        if (index > 30) {
+            break;
+        }
+    }
+
+    POINT point;
+    GetCursorPos(&point);
+    TrackPopupMenu(ImaginaMenu, 0, point.x, point.y, 0, hWnd, nullptr);
 }
 
 void MainWindow::MenuAlgHelp() {

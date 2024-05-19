@@ -14,13 +14,13 @@ PointZoomBBConverter::PointZoomBBConverter(
     m_maxX = ptX + (HighPrecision{ factor } / m_zoomFactor);
     m_maxY = ptY + (HighPrecision{ factor } / m_zoomFactor);
 
-    double test_minX = (double)m_minX;
-    double test_minY = (double)m_minY;
-    double test_maxX = (double)m_maxX;
-    double test_maxY = (double)m_maxY;
-    double test_ptX = (double)m_ptX;
-    double test_ptY = (double)m_ptY;
-    double test_zoomFactor = (double)m_zoomFactor;
+    //double test_minX = (double)m_minX;
+    //double test_minY = (double)m_minY;
+    //double test_maxX = (double)m_maxX;
+    //double test_maxY = (double)m_maxY;
+    //double test_ptX = (double)m_ptX;
+    //double test_ptY = (double)m_ptY;
+    //double test_zoomFactor = (double)m_zoomFactor;
 
     // std::string all_test_nums = std::to_string(test_minX) + " " + std::to_string(test_minY) + " " + std::to_string(test_maxX) + " " + std::to_string(test_maxY) + " " + std::to_string(test_ptX) + " " + std::to_string(test_ptY) + " " + std::to_string(test_zoomFactor);
 }

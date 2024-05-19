@@ -3,6 +3,8 @@
 #include "Fractal.h"
 #include "PerturbationResults.h"
 
+#include "ImaginaOrbit.h"
+
 #include "LAReference.h"
 
 
@@ -1568,7 +1570,7 @@ PerturbationResults<IterType, T, PExtras>::DecompressMax(size_t NewGenerationNum
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>
-void PerturbationResults<IterType, T, PExtras>::SaveOrbitAsText() const {
+void PerturbationResults<IterType, T, PExtras>::SaveOrbit() const {
     auto outFile = GenFilename(GrowableVectorTypes::DebugOutput);
 
     std::ofstream out(outFile);
@@ -1629,6 +1631,55 @@ void PerturbationResults<IterType, T, PExtras>::SaveOrbitAsText() const {
     }
 
     out.close();
+}
+
+template<typename IterType, class T, PerturbExtras PExtras>
+void PerturbationResults<IterType, T, PExtras>::SaveOrbitBin() const {
+
+    static_assert(std::is_trivially_copyable_v<ReferenceHeader>, "");
+    //static_assert(std::is_trivially_copyable_v<ReferenceTrivialContent>, "");
+    // static_assert(std::is_trivially_copyable_v<LAReferenceTrivialContent>, "");
+
+    auto outFile = GenFilename(GrowableVectorTypes::DebugOutput);
+
+    std::ofstream out(outFile, std::ios::binary);
+    if (!out.is_open()) {
+        ::MessageBox(nullptr, L"Failed to open file for writing 3", L"", MB_OK | MB_APPLMODAL);
+        return;
+    }
+
+    ReferenceHeader header = { TemplateHelpers::IsHDR };
+    out.write(reinterpret_cast<const char *>(&header), sizeof(header));
+
+    ImaginaHRReal prec{ m_OrbitX.precisionInBits() };
+    ImaginaHRReal maxRadius{ m_MaxRadius };
+    ReferenceTrivialContent content = {
+        prec,
+        {},
+        maxRadius
+    };
+
+    out.write(reinterpret_cast<const char *>(&content), sizeof(content));
+
+    LAReferenceTrivialContent laContent = {
+        {},
+        m_FullOrbit.GetSize(),
+        m_MaxIterations,
+        {}, // DoublePrecisionPT
+        {}, // DirectEvaluate
+        m_PeriodMaybeZero != 0,
+        {}, // UseAT
+        {}, // AT
+        {} // LAStageCount
+    };
+
+    out.write(reinterpret_cast<const char *>(&laContent), sizeof(laContent));
+
+    // Write out all values in m_FullOrbit:
+    for (size_t i = 0; i < m_FullOrbit.GetSize(); i++) {
+        out.write(reinterpret_cast<const char *>(&m_FullOrbit[i].x), sizeof(m_FullOrbit[i].x));
+        out.write(reinterpret_cast<const char *>(&m_FullOrbit[i].y), sizeof(m_FullOrbit[i].y));
+    }
 }
 
 // For information purposes only, not used for anything

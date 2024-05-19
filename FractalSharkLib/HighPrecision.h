@@ -375,7 +375,8 @@ enum class PerturbExtras {
 enum class CompressToDisk {
     Disable,
     SimpleCompression,
-    MaxCompression
+    MaxCompression,
+    MaxCompressionBin
 };
 
 // If true, choose type == float/double for primitives.

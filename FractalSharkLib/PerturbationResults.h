@@ -312,7 +312,8 @@ public:
         DecompressMax(size_t NewGenerationNumber)
         requires (PExtras == PerturbExtras::SimpleCompression && !Introspection::IsTDblFlt<T>());
 
-    void SaveOrbitAsText() const;
+    void SaveOrbit() const;
+    void SaveOrbitBin() const;
 
     // For information purposes only, not used for anything
     // other than reporting.

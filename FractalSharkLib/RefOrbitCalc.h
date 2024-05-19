@@ -112,7 +112,8 @@ public:
     void LoadAllOrbits();
 
     void GetSomeDetails(RefOrbitDetails &details) const;
-    void SaveOrbitAsText(CompressToDisk compression) const;
+    void SaveOrbit(CompressToDisk compression) const;
+    void LoadOrbit(std::wstring imagFilename);
 
     void DrawPerturbationResults();
 

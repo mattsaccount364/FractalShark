@@ -265,7 +265,7 @@ HWND MainWindow::InitInstance(HINSTANCE hInstance, int nCmdShow) { // Store inst
     if (!hWnd) {
         return nullptr;
     }
-    
+
     // Initialize the 8 bytes after the window handle to point to this object
     SetWindowLongPtrA(hWnd, 0, (LONG_PTR)this);
 
@@ -1152,6 +1152,11 @@ LRESULT MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam) {
             MenuLoadCurrentLocation();
             break;
         }
+        case IDM_LOAD_ENTERLOCATION:
+        {
+            MenuLoadEnterLocation();
+            break;
+        }
         case IDM_SAVEBMP:
         {
             MenuSaveBMP();
@@ -1942,6 +1947,145 @@ void MainWindow::MenuLoadCurrentLocation() {
     POINT point;
     GetCursorPos(&point);
     TrackPopupMenu(hSubMenu, 0, point.x, point.y, 0, hWnd, nullptr);
+}
+
+void MainWindow::MenuLoadEnterLocation() {
+    // Create a window with three text boxes for entering the location.
+    // The text boxes are for the real, imaginary, and zoom values.
+    // Store the results from the text boxes in three strings.
+    // Set the fractal to the new location and repaint.
+    // Include OK and Cancel buttons.
+    // Use the IDD_DIALOG_LOCATION resource
+
+    // Define EnterLocationDialogProc:
+    // This is a dialog box procedure that handles the dialog box messages.
+    // It should handle WM_COMMAND, and WM_CLOSE.
+    // WM_COMMAND should handle the OK and Cancel buttons.
+    // If the OK button is pressed, it should store the values in the text boxes
+    // in the strings, and then call EndDialog(hWnd, 0).
+    // If the Cancel button is pressed, it should call EndDialog(hWnd, 1).
+    // WM_CLOSE should call EndDialog(hWnd, 1).
+
+    struct Values {
+        Values() :
+            real(""), imag(""), zoom(""), num_iterations(0) {}
+
+        std::string real, imag, zoom;
+        IterTypeFull num_iterations;
+
+        std::string ItersToString() const {
+            return std::to_string(num_iterations);
+        }
+
+        void StringToIters(std::string new_iters) {
+            num_iterations = std::stoull(new_iters);
+        }
+    };
+
+    Values values;
+
+    // Store existing location in the strings.
+    HighPrecision minX = gFractal->GetMinX();
+    HighPrecision minY = gFractal->GetMinY();
+    HighPrecision maxX = gFractal->GetMaxX();
+    HighPrecision maxY = gFractal->GetMaxY();
+
+    PointZoomBBConverter pz{ minX, minY, maxX, maxY };
+    values.real = pz.GetPtX().str();
+    values.imag = pz.GetPtY().str();
+    values.zoom = pz.GetZoomFactor().str();
+    values.num_iterations = gFractal->GetNumIterations<IterTypeFull>();
+
+    auto EnterLocationDialogProc = [](HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) -> INT_PTR {
+        // TODO: static?  This is surely not the right way to do this.
+        static Values *values = nullptr;
+
+        switch (message) {
+        case WM_INITDIALOG:
+        {
+            // Get the pointer to the Values struct from lParam.
+            values = (Values *)lParam;
+
+            // Set the text in the text boxes to the values in the strings.
+            SetDlgItemTextA(hDlg, IDC_EDIT_REAL, values->real.c_str());
+            SetDlgItemTextA(hDlg, IDC_EDIT_IMAG, values->imag.c_str());
+            SetDlgItemTextA(hDlg, IDC_EDIT_ZOOM, values->zoom.c_str());
+            SetDlgItemTextA(hDlg, IDC_EDIT_ITERATIONS, values->ItersToString().c_str());
+            break;
+        }
+        case WM_COMMAND:
+        {
+            if (LOWORD(wParam) == IDOK) {
+                // Get the text from the text boxes.
+                // Store the text in the strings.
+                // Call EndDialog(hDlg, 0);
+
+                // First, figure out how many bytes are needed
+                // to store the text in the text boxes.
+                int len = GetWindowTextLength(GetDlgItem(hDlg, IDC_EDIT_REAL));
+                values->real.resize(len + 1);
+                GetWindowTextA(GetDlgItem(hDlg, IDC_EDIT_REAL), &values->real[0], len + 1);
+
+                len = GetWindowTextLength(GetDlgItem(hDlg, IDC_EDIT_IMAG));
+                values->imag.resize(len + 1);
+                GetWindowTextA(GetDlgItem(hDlg, IDC_EDIT_IMAG), &values->imag[0], len + 1);
+
+                len = GetWindowTextLength(GetDlgItem(hDlg, IDC_EDIT_ZOOM));
+                values->zoom.resize(len + 1);
+                GetWindowTextA(GetDlgItem(hDlg, IDC_EDIT_ZOOM), &values->zoom[0], len + 1);
+
+                len = GetWindowTextLength(GetDlgItem(hDlg, IDC_EDIT_ITERATIONS));
+                std::string new_iters;
+                new_iters.resize(len + 1);
+                GetWindowTextA(GetDlgItem(hDlg, IDC_EDIT_ITERATIONS), &new_iters[0], len + 1);
+                values->StringToIters(new_iters);
+
+                EndDialog(hDlg, 0);
+                return TRUE;
+            } else if (LOWORD(wParam) == IDCANCEL) {
+                // Call EndDialog(hDlg, 1);
+                EndDialog(hDlg, 1);
+                return TRUE;
+            }
+            break;
+        }
+        case WM_CLOSE:
+        {
+            // Call EndDialog(hDlg, 1);
+            EndDialog(hDlg, 1);
+            return TRUE;
+        }
+        }
+
+        return FALSE;
+        };
+
+    // (hInst, MAKEINTRESOURCE(IDD_DIALOG_LOCATION), hWnd, Dlgproc);
+    LPARAM lParam = reinterpret_cast<LPARAM>(&values);
+    auto OkOrCancel = DialogBoxParam(
+        hInst,
+        MAKEINTRESOURCE(IDD_DIALOG_LOCATION),
+        hWnd,
+        EnterLocationDialogProc,
+        lParam);
+
+    if (values.real.empty() || values.imag.empty() || values.zoom.empty()) {
+        return;
+    }
+
+    // If OkOrCancel is 1, return.
+    if (OkOrCancel == 1) {
+        return;
+    }
+
+    // Convert the strings to HighPrecision and set the fractal to the new location.
+    HighPrecision realHP(values.real);
+    HighPrecision imagHP(values.imag);
+    HighPrecision zoomHP(values.zoom);
+
+    gFractal->RecenterViewCalc(realHP, imagHP, zoomHP);
+    gFractal->SetNumIterations<IterTypeFull>(values.num_iterations);
+    PaintAsNecessary();
 }
 
 void MainWindow::MenuSaveBMP() {

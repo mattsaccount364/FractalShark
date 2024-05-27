@@ -115,6 +115,11 @@ public:
 
     static unsigned long WINAPI CheckForAbortThread(void *fractal);
 
+    // Kludgy.  Resets at end of function.
+    // Roughly 50000 digits of precision (50000 * 3.321)
+    //SetPrecision(166050, minX, minY, maxX, maxY);
+    static constexpr size_t MaxPrecisionLame = 400000;
+
     uint64_t GetPrecision(void) const;
     static void SetPrecision(
         uint64_t prec,
@@ -128,6 +133,7 @@ public:
         size_t height = MAXSIZE_T,
         uint32_t gpu_antialiasing = UINT32_MAX);
     bool RecenterViewCalc(HighPrecision MinX, HighPrecision MinY, HighPrecision MaxX, HighPrecision MaxY);
+    bool RecenterViewCalc(HighPrecision CenterX, HighPrecision CenterY, HighPrecision Zoom);
     bool RecenterViewScreen(RECT rect);
     bool CenterAtPoint(size_t x, size_t y);
     void Zoom(double factor);

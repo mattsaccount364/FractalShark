@@ -335,6 +335,7 @@ BEGIN
         BEGIN
             MENUITEM "Load Location...",            IDM_LOADLOCATION
             MENUITEM "Load Imagina Orbit",          IDM_LOAD_REFORBIT_IMAG_MAX
+            MENUITEM "Enter Location",              IDM_LOAD_ENTERLOCATION
         END
         MENUITEM SEPARATOR
         MENUITEM "E&xit",                       IDM_EXIT
@@ -387,6 +388,60 @@ END
 //
 
 IDB_PNG_SPLASH          PNG                     "FractalShark.png"
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// Dialog
+//
+
+IDD_DIALOG_LOCATION DIALOGEX 0, 0, 309, 157
+STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
+CAPTION "Location"
+FONT 8, "MS Shell Dlg", 400, 0, 0x1
+BEGIN
+    DEFPUSHBUTTON   "OK",IDOK,198,136,50,14
+    PUSHBUTTON      "Cancel",IDCANCEL,252,136,50,14
+    EDITTEXT        IDC_EDIT_REAL,7,15,295,33,ES_MULTILINE | ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_IMAG,7,62,295,36,ES_MULTILINE | ES_AUTOHSCROLL
+    LTEXT           "Real:",IDC_STATIC,7,7,18,8
+    LTEXT           "Imaginary:",IDC_STATIC,7,50,36,8
+    LTEXT           "Zoom:",IDC_STATIC,7,102,21,8
+    EDITTEXT        IDC_EDIT_ZOOM,7,111,164,14,ES_AUTOHSCROLL
+    EDITTEXT        IDC_EDIT_ITERATIONS,7,136,164,14,ES_AUTOHSCROLL
+    LTEXT           "Iterations:",IDC_STATIC,7,127,35,8
+END
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// DESIGNINFO
+//
+
+#ifdef APSTUDIO_INVOKED
+GUIDELINES DESIGNINFO
+BEGIN
+    IDD_DIALOG_LOCATION, DIALOG
+    BEGIN
+        LEFTMARGIN, 7
+        RIGHTMARGIN, 302
+        VERTGUIDE, 171
+        TOPMARGIN, 7
+        BOTTOMMARGIN, 150
+    END
+END
+#endif    // APSTUDIO_INVOKED
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// AFX_DIALOG_LAYOUT
+//
+
+IDD_DIALOG_LOCATION AFX_DIALOG_LAYOUT
+BEGIN
+    0
+END
 
 #endif    // English (United States) resources
 /////////////////////////////////////////////////////////////////////////////

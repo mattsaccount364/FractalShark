@@ -21,6 +21,8 @@
 #include <iostream>
 #include <filesystem>
 
+#include "MpirSerialization.h"
+
 // TODO we really should be using std::variant all over.  Oh well!
 
 template<class Type>
@@ -33,20 +35,22 @@ struct ThreadPtrs {
 //#define ENABLE_PREFETCH(ARG0, ARG1)
 
 #define CheckStartCriteria \
-    _mm_pause(); \
-    if (expected == nullptr || \
-        ThreadMemory->In.compare_exchange_weak( \
-            expected, \
-            nullptr, \
-            std::memory_order_relaxed) == false) { \
-        continue; \
+    while (true) { \
+        _mm_pause(); \
+        expected = ThreadMemory->In.load(std::memory_order_relaxed); \
+        if (expected == nullptr) { \
+            continue; \
+        } \
+        if (ThreadMemory->In.compare_exchange_weak(expected, nullptr, std::memory_order_acquire, std::memory_order_relaxed)) { \
+            break; \
+        } \
     } \
- \
     if (expected == (void*)0x1) { \
         break; \
     } \
     ENABLE_PREFETCH((const char*)expected, _MM_HINT_T0); \
     ok = expected; \
+
 
 #define CheckFinishCriteria \
     expected = nullptr; \
@@ -832,10 +836,12 @@ bool RefOrbitCalc::GetReuseResults(
     // we're trying to perturb.
     const auto &existingResultsHiX = existingAuthoritativeResults.GetHiX();
     const auto &existingResultsHiY = existingAuthoritativeResults.GetHiY();
-    const auto deltaX = abs(cx - existingResultsHiX);
-    const auto deltaY = abs(cy - existingResultsHiY);
-    if (deltaX > existingAuthoritativeResults.GetMaxRadiusHigh() ||
-        deltaY > existingAuthoritativeResults.GetMaxRadiusHigh()) {
+    const auto deltaX = T{ abs(cx - existingResultsHiX) };
+    const auto deltaY = T{ abs(cy - existingResultsHiY) };
+
+    if (HdrCompareToBothPositiveReducedGT(deltaX, existingAuthoritativeResults.GetMaxRadius()) ||
+        HdrCompareToBothPositiveReducedGT(deltaY, existingAuthoritativeResults.GetMaxRadius())) {
+
         //const std::string deltaStr =
         //    cx.str() + ", " + cy.str() + ", " +
         //    existingResultsHiX.str() + ", " + existingResultsHiY.str() + ", " +
@@ -3076,16 +3082,61 @@ void RefOrbitCalc::SaveOrbit(CompressToDisk compression) const {
 }
 
 void RefOrbitCalc::LoadOrbit(std::wstring imagFilename) {
-    // Try to figure out what type to use based on the data stored.
-    // Open the file in binary mode.
-
+    constexpr bool singleStepHelper = true;
+    // Read the ReferenceHeader to determine the type
     std::ifstream file(imagFilename, std::ios::binary);
-
     if (!file.is_open()) {
-        throw FractalSharkSeriousException("Could not open file");
+        throw std::runtime_error("Unable to open file");
     }
 
+    // Read the header to determine the type
+    Imagina::IMFileHeader header;
+    file.read(reinterpret_cast<char *>(&header), sizeof(header));
 
+    if (header.Magic != Imagina::IMMagicNumber) {
+        throw std::runtime_error("Invalid file format");
+    }
+
+    // Seek to the location offset to read precision information
+    file.seekg(header.LocationOffset);
+    Imagina::HRReal halfH;
+    file.read(reinterpret_cast<char *>(&halfH), sizeof(Imagina::HRReal));
+
+    uint64_t iterationLimit;
+    file.read((char *)&iterationLimit, sizeof(iterationLimit));
+
+    // Based on the precision of halfH, determine the type
+    uint64_t precision = -std::min(0ll, halfH.getExp()) + 64;
+
+    if constexpr (singleStepHelper) {
+        uint64_t curPos1 = file.tellg();
+    }
+
+    HighPrecision orbitX{ precision, file };
+    HighPrecision orbitY{ precision, file };
+
+    if constexpr (singleStepHelper) {
+        std::string orbitXStr = orbitX.str();
+        std::string orbitYStr = orbitY.str();
+        uint64_t curPos2 = file.tellg();
+    }
+
+    if (header.ReferenceOffset) {
+        file.seekg(header.ReferenceOffset);
+
+        // Depending on the header, read the rest of the file and determine the type
+        // Extended range implies the use of high precision types
+        // For this example, let's assume HDRFloat<HRReal>
+        auto results = std::make_unique<PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::SimpleCompression>>(
+            AddPointOptions::OpenExistingWithSave,
+            GetNextGenerationNumber());
+        results->LoadOrbitBin(std::move(orbitX), std::move(orbitY), halfH, file);
+
+        auto decompressedResults = results->DecompressMax(GetNextGenerationNumber());
+        AddPerturbationResults(std::move(decompressedResults));
+    }
+
+    file.close();
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>

@@ -7,37 +7,48 @@
 
 #include "HDRFloat.h"
 
-using ImaginaHRReal = HDRFloat<double, HDROrder::Left, int64_t>;
-using ImaginaSRReal = double;
+namespace Imagina {
+    using HRReal = HDRFloat<double, HDROrder::Left, int64_t>;
+    using SRReal = double;
 
-struct ReferenceHeader {
-    bool ExtendedRange;
-};
+    constexpr uint64_t IMMagicNumber = 0x000A0D56504D49FF;
 
-struct ReferenceTrivialContent {
-    ImaginaHRReal AbsolutePrecision;
-    ImaginaHRReal RelativePrecision;
-    ImaginaHRReal ValidRadius;
-};
+    struct IMFileHeader {
+        uint64_t Magic;
+        uint64_t Reserved;
+        uint64_t LocationOffset;
+        uint64_t ReferenceOffset;
+    };
 
-struct ImaginaATInfo {
-    size_t StepLength;
-    ImaginaHRReal ThresholdC;
-    ImaginaSRReal SqrEscapeRadius;
-    std::complex<ImaginaSRReal> RefC;
-    std::complex<ImaginaHRReal> ZCoeff, CCoeff, InvZCoeff;
-};
+    struct ReferenceHeader {
+        bool ExtendedRange;
+    };
 
-struct LAReferenceTrivialContent {
-    std::complex<ImaginaSRReal> Refc;
-    size_t RefIt;
-    size_t MaxIt;
-    bool DoublePrecisionPT;
-    bool DirectEvaluate;
-    bool IsPeriodic;
-    bool UseAT;
+    struct ReferenceTrivialContent {
+        HRReal AbsolutePrecision;
+        HRReal RelativePrecision;
+        HRReal ValidRadius;
+    };
 
-    ImaginaATInfo AT;
+    struct ImaginaATInfo {
+        size_t StepLength;
+        HRReal ThresholdC;
+        SRReal SqrEscapeRadius;
+        std::complex<SRReal> RefC;
+        std::complex<HRReal> ZCoeff, CCoeff, InvZCoeff;
+    };
 
-    size_t LAStageCount;
-};
+    struct LAReferenceTrivialContent {
+        std::complex<SRReal> Refc;
+        size_t RefIt;
+        size_t MaxIt;
+        bool DoublePrecisionPT;
+        bool DirectEvaluate;
+        bool IsPeriodic;
+        bool UseAT;
+
+        ImaginaATInfo AT;
+
+        size_t LAStageCount;
+    };
+} // namespace Imagina

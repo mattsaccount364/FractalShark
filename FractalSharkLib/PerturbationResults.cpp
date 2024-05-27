@@ -2,10 +2,8 @@
 
 #include "Fractal.h"
 #include "PerturbationResults.h"
-
-#include "ImaginaOrbit.h"
-
 #include "LAReference.h"
+#include "MPIRSerialization.h"
 
 
 // Returns the current time as a string
@@ -99,7 +97,6 @@ PerturbationResults<IterType, T, PExtras>::PerturbationResults(
     m_OrbitXLow{},
     m_OrbitYLow{},
     m_MaxRadius{},
-    m_MaxRadiusHigh{},
     m_MaxIterations{},
     m_PeriodMaybeZero{},
     m_CompressionErrorExp{},
@@ -261,7 +258,6 @@ void PerturbationResults<IterType, T, PExtras>::CopyPerturbationResults(
     m_OrbitXLow = static_cast<T>(Convert<HighPrecision, double>(m_OrbitX));
     m_OrbitYLow = static_cast<T>(Convert<HighPrecision, double>(m_OrbitY));
     m_MaxRadius = (T)other.GetMaxRadius();
-    m_MaxRadiusHigh = other.GetMaxRadiusHigh();
     m_MaxIterations = other.GetMaxIterations();
     m_PeriodMaybeZero = other.GetPeriodMaybeZero();
     m_CompressionErrorExp = other.GetCompressionErrorExp();
@@ -354,7 +350,6 @@ void PerturbationResults<IterType, T, PExtras>::CopySettingsWithoutOrbit(const P
     m_OrbitXLow = other.GetOrbitXLow();
     m_OrbitYLow = other.GetOrbitYLow();
     m_MaxRadius = other.GetMaxRadius();
-    m_MaxRadiusHigh = other.GetMaxRadiusHigh();
     m_MaxIterations = other.GetMaxIterations();
     m_PeriodMaybeZero = other.GetPeriodMaybeZero();
     m_CompressionErrorExp = other.GetCompressionErrorExp();
@@ -618,7 +613,6 @@ bool PerturbationResults<IterType, T, PExtras>::ReadMetadata() {
     HdrFromIfStream<true, T, SubType>(m_OrbitXLow, metafile);
     HdrFromIfStream<true, T, SubType>(m_OrbitYLow, metafile);
     HdrFromIfStream<true, T, SubType>(m_MaxRadius, metafile);
-    // don't bother with m_MaxRadiusHigh
 
     {
         std::string maxIterationsStr;
@@ -696,10 +690,22 @@ void PerturbationResults<IterType, T, PExtras>::InitResults(
     IterType NumIterations,
     size_t GuessReserveSize) {
 
-    m_BenchmarkOrbit.StartTimer();
+    const auto radiusX = T{ maxX - minX };
+    const auto radiusY = T{ maxY - minY };
 
-    auto radiusX = maxX - minX;
-    auto radiusY = maxY - minY;
+    InitResults(Reuse, cx, cy, radiusX, radiusY, NumIterations, GuessReserveSize);
+}
+
+template<typename IterType, class T, PerturbExtras PExtras>
+void PerturbationResults<IterType, T, PExtras>::InitResults(
+    RefOrbitCalc::ReuseMode Reuse,
+    const HighPrecision &cx,
+    const HighPrecision &cy,
+    const T &radiusX,
+    const T &radiusY,
+    IterType NumIterations,
+    size_t GuessReserveSize) {
+    m_BenchmarkOrbit.StartTimer();
 
     m_OrbitX = cx;
     m_OrbitY = cy;
@@ -708,16 +714,11 @@ void PerturbationResults<IterType, T, PExtras>::InitResults(
     m_OrbitXLow = T{ cx };
     m_OrbitYLow = T{ cy };
 
-    // TODO I don't get it.  Why is this here?
-    // Periodicity checking results in different detected periods depending on the type,
-    // e.g. HDRFloat<float> vs HDRFloat<double>.  This 2.0 here seems to compensat, but
-    // makes no sense.  So what bug are we covering up here?
-    if constexpr (std::is_same<T, HDRFloat<double>>::value) {
-        m_MaxRadiusHigh = (radiusX > radiusY ? radiusX : radiusY) * HighPrecision{ 2.0 };
-        m_MaxRadius = T(m_MaxRadiusHigh);
+    // TODO: Check that this radius is correct
+    if (HdrCompareToBothPositiveReducedGE(radiusX, radiusY)) {
+        m_MaxRadius = radiusX;
     } else {
-        m_MaxRadiusHigh = radiusX > radiusY ? radiusX : radiusY;
-        m_MaxRadius = T(m_MaxRadiusHigh);
+        m_MaxRadius = radiusY;
     }
 
     HdrReduce(m_MaxRadius);
@@ -737,8 +738,9 @@ void PerturbationResults<IterType, T, PExtras>::InitResults(
         Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2 ||
         Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3 ||
         Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
+
         m_AuthoritativePrecisionInBits =
-            PrecisionCalculator::GetPrecision(minX, minY, maxX, maxY, true);
+            PrecisionCalculator::GetPrecision(radiusX, radiusY, true);
         m_ReuseX.reserve(ReserveSize);
         m_ReuseY.reserve(ReserveSize);
         m_ReuseAllocations = nullptr;
@@ -885,11 +887,6 @@ void PerturbationResults<IterType, T, PExtras>::SetBad(bool bad)
     requires (PExtras == PerturbExtras::Bad) {
 
     m_FullOrbit.Back().bad = bad;
-}
-
-template<typename IterType, class T, PerturbExtras PExtras>
-HighPrecision PerturbationResults<IterType, T, PExtras>::GetMaxRadiusHigh() const {
-    return m_MaxRadiusHigh;
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>
@@ -1586,7 +1583,6 @@ void PerturbationResults<IterType, T, PExtras>::SaveOrbit() const {
     out << "m_OrbitXLow: " << HdrToString<false>(m_OrbitXLow) << std::endl;
     out << "m_OrbitYLow: " << HdrToString<false>(m_OrbitYLow) << std::endl;
     out << "m_MaxRadius: " << HdrToString<false>(m_MaxRadius) << std::endl;
-    // don't bother with m_MaxRadiusHigh
     out << "m_MaxIterations: " << m_MaxIterations << std::endl;
     out << "m_PeriodMaybeZero: " << m_PeriodMaybeZero << std::endl;
     out << "m_CompressionErrorExp: " << m_CompressionErrorExp << std::endl;
@@ -1636,7 +1632,7 @@ void PerturbationResults<IterType, T, PExtras>::SaveOrbit() const {
 template<typename IterType, class T, PerturbExtras PExtras>
 void PerturbationResults<IterType, T, PExtras>::SaveOrbitBin() const {
 
-    static_assert(std::is_trivially_copyable_v<ReferenceHeader>, "");
+    static_assert(std::is_trivially_copyable_v<Imagina::ReferenceHeader>, "");
     //static_assert(std::is_trivially_copyable_v<ReferenceTrivialContent>, "");
     // static_assert(std::is_trivially_copyable_v<LAReferenceTrivialContent>, "");
 
@@ -1648,12 +1644,32 @@ void PerturbationResults<IterType, T, PExtras>::SaveOrbitBin() const {
         return;
     }
 
-    ReferenceHeader header = { TemplateHelpers::IsHDR };
-    out.write(reinterpret_cast<const char *>(&header), sizeof(header));
+    //struct IMFileHeader {
+    //    uint64_t Magic;
+    //    uint64_t Reserved;
+    //    uint64_t LocationOffset;
+    //    uint64_t ReferenceOffset;
+    //};
 
-    ImaginaHRReal prec{ m_OrbitX.precisionInBits() };
-    ImaginaHRReal maxRadius{ m_MaxRadius };
-    ReferenceTrivialContent content = {
+    Imagina::IMFileHeader fileHeader;
+    fileHeader.Magic = Imagina::IMMagicNumber;
+    fileHeader.Reserved = 0;
+
+    // Offset into the file of the location
+    fileHeader.LocationOffset = 0;
+
+    // Offset into the file of the reference
+    fileHeader.ReferenceOffset = 0;
+
+    out.write(reinterpret_cast<const char *>(&fileHeader), sizeof(fileHeader));
+
+    Imagina::ReferenceHeader referenceHeader;
+    referenceHeader.ExtendedRange = true;
+    out.write(reinterpret_cast<const char *>(&referenceHeader), sizeof(referenceHeader));
+
+    Imagina::HRReal prec{ m_OrbitX.precisionInBits() };
+    Imagina::HRReal maxRadius{ m_MaxRadius };
+    Imagina::ReferenceTrivialContent content = {
         prec,
         {},
         maxRadius
@@ -1661,7 +1677,7 @@ void PerturbationResults<IterType, T, PExtras>::SaveOrbitBin() const {
 
     out.write(reinterpret_cast<const char *>(&content), sizeof(content));
 
-    LAReferenceTrivialContent laContent = {
+    Imagina::LAReferenceTrivialContent laContent = {
         {},
         m_FullOrbit.GetSize(),
         m_MaxIterations,
@@ -1680,6 +1696,104 @@ void PerturbationResults<IterType, T, PExtras>::SaveOrbitBin() const {
         out.write(reinterpret_cast<const char *>(&m_FullOrbit[i].x), sizeof(m_FullOrbit[i].x));
         out.write(reinterpret_cast<const char *>(&m_FullOrbit[i].y), sizeof(m_FullOrbit[i].y));
     }
+}
+
+template<typename IterType, class T, PerturbExtras PExtras>
+void PerturbationResults<IterType, T, PExtras>::LoadOrbitBin(
+    HighPrecision orbitX,
+    HighPrecision orbitY,
+    const Imagina::HRReal &halfH,
+    std::ifstream &file)
+    requires(std::is_same_v<T, HDRFloat<double>> && PExtras == PerturbExtras::SimpleCompression)
+{
+    constexpr bool singleStepHelper = true;
+
+    Imagina::ReferenceHeader header;
+    file.read(reinterpret_cast<char *>(&header), sizeof(header));
+
+    Imagina::ReferenceTrivialContent content;
+    file.read(reinterpret_cast<char *>(&content), sizeof(content));
+
+    Imagina::LAReferenceTrivialContent laContent;
+    file.read(reinterpret_cast<char *>(&laContent), sizeof(laContent));
+
+    Imagina::HRReal x;
+    Imagina::HRReal y;
+
+    // TODO ValidRadius not used?
+    T radius{};
+    radius.setExp(static_cast<int32_t>(content.ValidRadius.getExp()));
+    radius.setMantissa(content.ValidRadius.getMantissa());
+
+    // Instead, use halfh * 2.0
+    const auto halfH2{ halfH * Imagina::HRReal{ 2.0 } };
+    radius.setExp(static_cast<int32_t>(halfH2.getExp()));
+    radius.setMantissa(halfH2.getMantissa());
+
+    InitResults(
+        RefOrbitCalc::ReuseMode::DontSaveForReuse,
+        orbitX,
+        orbitY,
+        radius,
+        radius,
+        static_cast<IterType>(laContent.MaxIt),
+        0);
+
+    if (laContent.IsPeriodic) {
+        // TODO + 1?
+        m_PeriodMaybeZero = static_cast<IterType>(laContent.RefIt) + 1;
+    } else {
+        m_PeriodMaybeZero = 0;
+    }
+
+    size_t newSize;
+    file.read(reinterpret_cast<char *>(&newSize), sizeof(newSize));
+    m_FullOrbit.MutableResize(newSize);
+
+    // Set the target decompressed iteration count.
+    // This is the number of iterations that will be in the decompressed orbit.
+    // TODO + 1?
+    m_UncompressedItersInOrbit = static_cast<IterType>(laContent.RefIt) + 1;
+
+    for (size_t i = 0; i < newSize; i++) {
+        file.read(reinterpret_cast<char *>(&x), sizeof(x));
+        file.read(reinterpret_cast<char *>(&y), sizeof(y));
+
+        m_FullOrbit[i].x.setMantissa(x.getMantissa());
+
+        const auto newExp = static_cast<int32_t>(x.getExp());
+        m_FullOrbit[i].x.setExp(newExp);
+
+        m_FullOrbit[i].y.setMantissa(y.getMantissa());
+
+        const auto newExp2 = static_cast<int32_t>(y.getExp());
+        m_FullOrbit[i].y.setExp(newExp2);
+
+        // Compression index
+        CompressionIndexField compressionIndex;
+        file.read(reinterpret_cast<char *>(&compressionIndex), sizeof(compressionIndex));
+
+        // Low order 63 bits
+        m_FullOrbit[i].CompressionIndex = compressionIndex.CompressionIndex;
+
+        // High order bit
+        m_FullOrbit[i].Rebase = compressionIndex.Rebase;
+    }
+
+    if constexpr (singleStepHelper) {
+        uint64_t curPos3 = file.tellg();
+    }
+
+    // Rebases
+    size_t rebaseSize;
+    file.read((char *)&rebaseSize, sizeof(rebaseSize));
+    m_Rebases.resize(rebaseSize);
+
+    file.read((char *)m_Rebases.data(), rebaseSize * sizeof(IterTypeFull));
+
+    // Append empty elements to m_Rebases and m_FullOrbit
+    m_FullOrbit.PushBack({});
+    m_Rebases.push_back(0);
 }
 
 // For information purposes only, not used for anything

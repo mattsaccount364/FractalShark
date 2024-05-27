@@ -20,6 +20,8 @@
 #include <type_traits>
 #include <array>
 
+#include "ImaginaOrbit.h"
+
 template<typename IterType, class T, class SubType, PerturbExtras PExtras>
 class LAReference;
 
@@ -203,6 +205,15 @@ public:
         IterType NumIterations,
         size_t GuessReserveSize);
 
+    void InitResults(
+        RefOrbitCalc::ReuseMode Reuse,
+        const HighPrecision &cx,
+        const HighPrecision &cy,
+        const T &radX,
+        const T &radY,
+        IterType NumIterations,
+        size_t GuessReserveSize);
+
     uint64_t GetBenchmarkOrbit() const;
 
     template<RefOrbitCalc::ReuseMode Reuse>
@@ -234,8 +245,6 @@ public:
 
     // Radius used for periodicity checking
     T GetMaxRadius() const;
-
-    HighPrecision GetMaxRadiusHigh() const;
 
     // Used only with scaled kernels
     void SetBad(bool bad) requires (PExtras == PerturbExtras::Bad);
@@ -314,6 +323,12 @@ public:
 
     void SaveOrbit() const;
     void SaveOrbitBin() const;
+    void LoadOrbitBin(
+        HighPrecision orbitX,
+        HighPrecision orbitY,
+        const Imagina::HRReal &halfH,
+        std::ifstream &file)
+        requires(std::is_same_v<T, HDRFloat<double>> && PExtras == PerturbExtras::SimpleCompression);
 
     // For information purposes only, not used for anything
     // other than reporting.
@@ -339,7 +354,6 @@ private:
     T m_OrbitXLow;
     T m_OrbitYLow;
     T m_MaxRadius;
-    HighPrecision m_MaxRadiusHigh; // Just for convenience
     IterType m_MaxIterations;
     IterType m_PeriodMaybeZero;  // Zero if not worked out
     int32_t m_CompressionErrorExp;

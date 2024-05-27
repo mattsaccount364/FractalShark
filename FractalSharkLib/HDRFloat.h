@@ -154,6 +154,12 @@ public:
         Base::exp = other.exp;
     }
 
+    //template<HDROrder OtherOrder, typename OtherTExp>
+    //CUDA_CRAP constexpr explicit HDRFloat(const HDRFloat<T, OtherOrder, OtherTExp> &other) {
+    //    Base::mantissa = other.mantissa;
+    //    Base::exp = other.exp;
+    //}
+
     template<HDROrder OtherOrder>
     CUDA_CRAP constexpr HDRFloat(HDRFloat<T, OtherOrder> &&other) {
         Base::mantissa = other.mantissa;
@@ -436,12 +442,20 @@ public:
         return false;
     }
 
-    CUDA_CRAP constexpr T getMantissa() const { return Base::mantissa; }
+    CUDA_CRAP constexpr T getMantissa() const {
+        return Base::mantissa;
+    }
 
-    CUDA_CRAP constexpr TExp getExp() const { return Base::exp; }
+    CUDA_CRAP constexpr TExp getExp() const {
+        return Base::exp;
+    }
 
     CUDA_CRAP constexpr void setExp(TExp localexp) {
         Base::exp = localexp;
+    }
+
+    CUDA_CRAP constexpr void setMantissa(T mant) {
+        Base::mantissa = mant;
     }
 
     CUDA_CRAP constexpr HDRFloat reciprocal() const {
@@ -497,16 +511,6 @@ public:
         return divide_mutable(other);
     }
 
-    template<HDROrder OtherOrder>
-    CUDA_CRAP constexpr HDRFloat &multiply_mutable(HDRFloat<T, OtherOrder> factor) {
-        T local_mantissa = Base::mantissa * factor.mantissa;
-        TExp local_exp = Base::exp + factor.exp;
-
-        Base::mantissa = local_mantissa;
-        Base::exp = local_exp < GenericHdrBase::MIN_BIG_EXPONENT() ? GenericHdrBase::MIN_BIG_EXPONENT() : local_exp;
-        return *this;
-    }
-
     template<bool plus>
     static CUDA_CRAP HDRFloat custom_perturb1(
         const HDRFloat &DeltaSubNXOrig,
@@ -557,7 +561,7 @@ public:
         return sum2;
     }
 
-    static CUDA_CRAP HDRFloat custom_perturb2(
+    static CUDA_CRAP void custom_perturb2(
         HDRFloat &DeltaSubNX,
         HDRFloat &DeltaSubNY,
         const HDRFloat &DeltaSubNXOrig,
@@ -625,7 +629,7 @@ public:
         HdrReduce(DeltaSubNY);
     }
 
-    static CUDA_CRAP HDRFloat custom_perturb3(
+    static CUDA_CRAP void custom_perturb3(
         HDRFloat &DeltaSubNX,
         HDRFloat &DeltaSubNY,
         const HDRFloat &DeltaSubNXOrig,
@@ -663,30 +667,41 @@ public:
         //HdrReduce(DeltaSubNY);
     }
 
+    template<HDROrder OtherOrder, typename OtherTExp>
+    CUDA_CRAP constexpr HDRFloat &multiply_mutable(const HDRFloat<T, OtherOrder, OtherTExp> &factor) {
+        T local_mantissa = Base::mantissa * factor.mantissa;
+        TExp local_exp = Base::exp + factor.exp;
+
+        Base::mantissa = local_mantissa;
+        Base::exp = local_exp < GenericHdrBase::MIN_BIG_EXPONENT() ? GenericHdrBase::MIN_BIG_EXPONENT() : local_exp;
+        return *this;
+    }
+
     // friends defined inside class body are inline and are hidden from non-ADL lookup
-    template<HDROrder OtherOrder>
+    template<HDROrder OtherOrder, typename OtherTExp>
     friend CUDA_CRAP constexpr HDRFloat operator*(HDRFloat lhs,        // passing lhs by value helps optimize chained a+b+c
-        const HDRFloat<T, OtherOrder> &rhs) // otherwise, both parameters may be const references
+        const HDRFloat<T, OtherOrder, OtherTExp> &rhs) // otherwise, both parameters may be const references
     {
-        lhs.multiply_mutable(rhs); // reuse compound assignment
+        lhs.multiply_mutable<OtherOrder, OtherTExp>(rhs); // reuse compound assignment
         return lhs; // return the result by value (uses move constructor)
     }
 
+    template<HDROrder OtherOrder, typename OtherTExp>
     CUDA_CRAP constexpr HDRFloat &multiply_mutable(T factor) {
-        HDRFloat factorMant = HDRFloat(factor);
-        return multiply_mutable(factorMant);
+        auto factorMant = HDRFloat<T, OtherOrder, OtherTExp>(factor);
+        return multiply_mutable<OtherOrder, OtherTExp>(factorMant);
     }
 
     // friends defined inside class body are inline and are hidden from non-ADL lookup
-    friend CUDA_CRAP constexpr HDRFloat operator*(HDRFloat lhs,        // passing lhs by value helps optimize chained a+b+c
+    friend CUDA_CRAP HDRFloat operator*(HDRFloat lhs,        // passing lhs by value helps optimize chained a+b+c
         const T &rhs) // otherwise, both parameters may be const references
     {
-        lhs.multiply_mutable(rhs); // reuse compound assignment
+        lhs.multiply_mutable<Order, TExp>(rhs); // reuse compound assignment
         return lhs; // return the result by value (uses move constructor)
     }
 
-    template<HDROrder OtherOrder>
-    CUDA_CRAP constexpr HDRFloat &operator*=(const HDRFloat<T, OtherOrder> &other) {
+    template<HDROrder OtherOrder, typename OtherTExp>
+    CUDA_CRAP constexpr HDRFloat &operator*=(const HDRFloat<T, OtherOrder, OtherTExp> &other) {
         return multiply_mutable(other);
     }
 

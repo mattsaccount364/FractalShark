@@ -16,6 +16,12 @@
 #define IDR_MENU_POPUP                  129
 #define IDM_ALG_SSE2                    130
 #define IDB_PNG_SPLASH                  131
+#define IDD_DIALOG_LOCATION             132
+#define IDC_EDIT_REAL                   1000
+#define IDC_EDIT_IMAG                   1001
+#define IDC_EDIT_ZOOM                   1002
+#define IDC_EDIT4                       1003
+#define IDC_EDIT_ITERATIONS             1003
 #define IDM_MINIMIZE                    32774
 #define IDM_STANDARDVIEW                32775
 #define IDM_INCREASEITERATIONS          32776
@@ -384,6 +390,8 @@
 #define ID_POPUP_LOAD33190              33190
 #define IDM_LOAD_IMAG                   33191
 #define IDM_LOAD_REFORBIT_IMAG_MAX      33192
+#define ID_LOAD_ENTERLOCATION           33193
+#define IDM_LOAD_ENTERLOCATION          33194
 #define IDM_VIEW1                       34001
 #define IDM_VIEW2                       34002
 #define IDM_VIEW3                       34003
@@ -432,9 +440,9 @@
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        132
-#define _APS_NEXT_COMMAND_VALUE         33193
-#define _APS_NEXT_CONTROL_VALUE         1000
+#define _APS_NEXT_RESOURCE_VALUE        134
+#define _APS_NEXT_COMMAND_VALUE         33195
+#define _APS_NEXT_CONTROL_VALUE         1004
 #define _APS_NEXT_SYMED_VALUE           110
 #endif
 #endif

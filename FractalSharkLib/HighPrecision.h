@@ -17,6 +17,7 @@ class HighPrecisionT;
 #include <iostream>
 
 #include "ScopedMpir.h"
+#include "MpirSerialization.h"
 
 template<HPDestructor Destructor>
 class HighPrecisionT {
@@ -62,6 +63,11 @@ public:
     HighPrecisionT(HighPrecisionT<T> &&other) {
         m_Data[0] = other.m_Data[0];
         other.m_Data[0] = {};
+    }
+
+    HighPrecisionT(uint64_t precisionInBits, std::istream &file) {
+        mpf_init2(m_Data, precisionInBits);
+        MpirSerialization::mpf_inp_raw_stream(file, m_Data);
     }
 
     ~HighPrecisionT() {
@@ -164,20 +170,21 @@ public:
     }
 
     template<typename T>
-    HighPrecisionT &operator=(const T &data) {
+    HighPrecisionT &operator=(const T &data)
+        requires (std::is_same_v<T, double> || std::is_same_v<T, float>) {
         mpf_set_d(m_Data, data);
         return *this;
     }
 
-    HighPrecisionT &operator=(const char *data) {
-        mpf_set_str(m_Data, data, 10);
-        return *this;
-    }
+    //HighPrecisionT &operator=(const char *data) {
+    //    mpf_set_str(m_Data, data, 10);
+    //    return *this;
+    //}
 
-    HighPrecisionT &operator=(const std::string &data) {
-        mpf_set_str(m_Data, data.c_str(), 10);
-        return *this;
-    }
+    //HighPrecisionT &operator=(const std::string &data) {
+    //    mpf_set_str(m_Data, data.c_str(), 10);
+    //    return *this;
+    //}
 
     HighPrecisionT &operator+=(const HighPrecisionT &data) {
         mpf_add(m_Data, m_Data, data.m_Data);

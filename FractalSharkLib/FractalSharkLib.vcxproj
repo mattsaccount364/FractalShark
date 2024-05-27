@@ -41,6 +41,7 @@
     <ClInclude Include="LAReference.h" />
     <ClInclude Include="LargeCoords.h" />
     <ClInclude Include="LAstep.h" />
+    <ClInclude Include="MpirSerialization.h" />
     <ClInclude Include="OpenGLContext.h" />
     <ClInclude Include="PerturbationResults.h" />
     <ClInclude Include="PerturbationResultsHelpers.h" />
@@ -74,6 +75,7 @@
     <ClCompile Include="ItersMemoryContainer.cpp" />
     <ClCompile Include="LAParameters.cpp" />
     <ClCompile Include="LAReference.cpp" />
+    <ClCompile Include="MpirSerialization.cpp" />
     <ClCompile Include="OpenGLContext.cpp" />
     <ClCompile Include="PerturbationResults.cpp" />
     <ClCompile Include="PngParallelSave.cpp" />

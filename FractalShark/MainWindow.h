@@ -64,6 +64,7 @@ public:
     void MenuGetCurPos();
     void MenuSaveCurrentLocation();
     void MenuLoadCurrentLocation();
+    void MenuLoadEnterLocation();
     void MenuSaveBMP();
     void MenuSaveHiResBMP();
     void MenuSaveItersAsText();

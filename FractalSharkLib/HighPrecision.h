@@ -79,6 +79,10 @@ public:
         }
     }
 
+    void SaveToStream(std::ostream &file) const {
+        MpirSerialization::mpf_out_raw_stream(file, m_Data);
+    }
+
     HighPrecisionT &operator=(const HighPrecisionT &other) {
         if (this == &other) {
             return *this;

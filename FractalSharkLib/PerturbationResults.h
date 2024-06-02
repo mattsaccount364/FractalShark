@@ -315,6 +315,7 @@ public:
         CompressMax(
             int32_t compression_error_exp_param,
             size_t new_generation_number)
+        const
         requires (PExtras == PerturbExtras::Disable && !Introspection::IsTDblFlt<T>());
 
     std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::Disable>>
@@ -323,6 +324,7 @@ public:
 
     void SaveOrbit() const;
     void SaveOrbitBin() const;
+    void SaveOrbitLocation(std::ofstream &file) const;
     void LoadOrbitBin(
         HighPrecision orbitX,
         HighPrecision orbitY,
@@ -356,7 +358,7 @@ private:
     T m_MaxRadius;
     IterType m_MaxIterations;
     IterType m_PeriodMaybeZero;  // Zero if not worked out
-    int32_t m_CompressionErrorExp;
+    mutable int32_t m_CompressionErrorExp;
     int32_t m_IntermediateCompressionErrorExp;
 
     AddPointOptions m_RefOrbitOptions;

@@ -1116,6 +1116,7 @@ std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::SimpleCompressio
 PerturbationResults<IterType, T, PExtras>::CompressMax(
     int32_t compression_error_exp_param,
     size_t new_generation_number)
+    const
     requires (PExtras == PerturbExtras::Disable && !Introspection::IsTDblFlt<T>()) {
 
     static constexpr IterTypeFull MaxItersSinceLastWrite = 1000;
@@ -1644,13 +1645,6 @@ void PerturbationResults<IterType, T, PExtras>::SaveOrbitBin() const {
         return;
     }
 
-    //struct IMFileHeader {
-    //    uint64_t Magic;
-    //    uint64_t Reserved;
-    //    uint64_t LocationOffset;
-    //    uint64_t ReferenceOffset;
-    //};
-
     Imagina::IMFileHeader fileHeader;
     fileHeader.Magic = Imagina::IMMagicNumber;
     fileHeader.Reserved = 0;
@@ -1699,6 +1693,12 @@ void PerturbationResults<IterType, T, PExtras>::SaveOrbitBin() const {
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>
+void PerturbationResults<IterType, T, PExtras>::SaveOrbitLocation(std::ofstream &file) const {
+    m_OrbitX.SaveToStream(file);
+    m_OrbitY.SaveToStream(file);
+}
+
+template<typename IterType, class T, PerturbExtras PExtras>
 void PerturbationResults<IterType, T, PExtras>::LoadOrbitBin(
     HighPrecision orbitX,
     HighPrecision orbitY,
@@ -1708,8 +1708,8 @@ void PerturbationResults<IterType, T, PExtras>::LoadOrbitBin(
 {
     constexpr bool singleStepHelper = true;
 
-    Imagina::ReferenceHeader header;
-    file.read(reinterpret_cast<char *>(&header), sizeof(header));
+    Imagina::ReferenceHeader referenceHeader;
+    file.read(reinterpret_cast<char *>(&referenceHeader), sizeof(referenceHeader));
 
     Imagina::ReferenceTrivialContent content;
     file.read(reinterpret_cast<char *>(&content), sizeof(content));

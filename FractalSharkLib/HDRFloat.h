@@ -472,8 +472,8 @@ public:
         return *this;
     }
 
-    template<HDROrder OtherOrder>
-    CUDA_CRAP constexpr HDRFloat &divide_mutable(HDRFloat<T, OtherOrder> factor) {
+    template<HDROrder OtherOrder, typename OtherTExp>
+    CUDA_CRAP constexpr HDRFloat &divide_mutable(HDRFloat<T, OtherOrder, typename OtherTExp> factor) {
         T local_mantissa = Base::mantissa / factor.mantissa;
         TExp local_exp = Base::exp - factor.exp;
 
@@ -484,9 +484,9 @@ public:
     }
 
     // friends defined inside class body are inline and are hidden from non-ADL lookup
-    template<HDROrder OtherOrder>
+    template<HDROrder OtherOrder, typename OtherTExp>
     friend CUDA_CRAP constexpr HDRFloat operator/(HDRFloat lhs,        // passing lhs by value helps optimize chained a+b+c
-        const HDRFloat<T, OtherOrder> &rhs) // otherwise, both parameters may be const references
+        const HDRFloat<T, OtherOrder, OtherTExp> &rhs) // otherwise, both parameters may be const references
     {
         lhs.divide_mutable(rhs); // reuse compound assignment
         return lhs; // return the result by value (uses move constructor)
@@ -498,16 +498,16 @@ public:
     }
 
     // friends defined inside class body are inline and are hidden from non-ADL lookup
-    template<HDROrder OtherOrder>
-    friend CUDA_CRAP constexpr HDRFloat operator/(HDRFloat<T, OtherOrder> lhs,        // passing lhs by value helps optimize chained a+b+c
+    template<HDROrder OtherOrder, typename OtherTExp>
+    friend CUDA_CRAP constexpr HDRFloat operator/(HDRFloat<T, OtherOrder, OtherTExp> lhs,        // passing lhs by value helps optimize chained a+b+c
         const T &rhs) // otherwise, both parameters may be const references
     {
         lhs.divide_mutable(rhs); // reuse compound assignment
         return lhs; // return the result by value (uses move constructor)
     }
 
-    template<HDROrder OtherOrder>
-    CUDA_CRAP constexpr HDRFloat &operator/=(const HDRFloat<T, OtherOrder> &other) {
+    template<HDROrder OtherOrder, typename OtherTExp>
+    CUDA_CRAP constexpr HDRFloat &operator/=(const HDRFloat<T, OtherOrder, OtherTExp> &other) {
         return divide_mutable(other);
     }
 

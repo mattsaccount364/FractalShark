@@ -113,6 +113,9 @@ public:
 
     void GetSomeDetails(RefOrbitDetails &details) const;
     void SaveOrbit(CompressToDisk compression) const;
+
+    template<typename IterType, class T, PerturbExtras PExtras>
+    void SaveOrbit(const PerturbationResults<IterType, T, PExtras> &results, std::wstring imagFilename) const;
     void LoadOrbit(std::wstring imagFilename);
 
     void DrawPerturbationResults();

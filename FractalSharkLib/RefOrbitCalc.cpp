@@ -3053,24 +3053,25 @@ void RefOrbitCalc::SaveOrbit(CompressToDisk compression) const {
                     decompressedResults->SaveOrbit();
 
                 }
-            } else if (
-                compression == CompressToDisk::MaxCompression ||
-                compression == CompressToDisk::MaxCompressionBin) {
-
+            } else if (compression == CompressToDisk::MaxCompression) {
                 if constexpr (
                     Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::Disable>() &&
                     !Introspection::IsDblFlt<decltype(*results)>()) {
                     auto compressedResults = results->CompressMax(
                         m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
                         GetNextGenerationNumber());
+                    compressedResults->SaveOrbit();
+                } else {
 
-                    if (compression == CompressToDisk::MaxCompression) {
-                        compressedResults->SaveOrbit();
-                    } else if (compression == CompressToDisk::MaxCompressionBin) {
-                        compressedResults->SaveOrbitBin();
-                    } else {
-                        throw FractalSharkSeriousException("Unknown compression type");
-                    }
+                }
+            } else if (compression == CompressToDisk::MaxCompressionBin) {
+
+                if constexpr (
+                    Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::Disable>() &&
+                    !Introspection::IsDblFlt<decltype(*results)>()) {
+
+                    std::wstring outputFilename = results->GenFilename(GrowableVectorTypes::DebugOutput, L"", true);
+                    SaveOrbit(*results, outputFilename);
                 }
             } else {
                 throw FractalSharkSeriousException("Unknown CompressToDisk");
@@ -3081,8 +3082,49 @@ void RefOrbitCalc::SaveOrbit(CompressToDisk compression) const {
     std::visit(lambda, m_LastUsedRefOrbit);
 }
 
+template<typename IterType, class T, PerturbExtras PExtras>
+void RefOrbitCalc::SaveOrbit(
+    const PerturbationResults<IterType, T, PExtras> &results,
+    std::wstring imagFilename) const {
+
+    std::ofstream file(imagFilename, std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Unable to open file");
+    }
+
+    Imagina::IMFileHeader fileHeader;
+    fileHeader.Magic = Imagina::IMMagicNumber;
+    fileHeader.Reserved = 0;
+    fileHeader.LocationOffset = sizeof(fileHeader);
+    fileHeader.ReferenceOffset = 0;
+    file.write(reinterpret_cast<const char *>(&fileHeader), sizeof(fileHeader));
+
+    Imagina::HRReal halfH{ };
+    const auto radius = results.GetMaxRadius();
+    halfH = Imagina::HRReal{ radius / T{ 2.0 } };
+    file.write(reinterpret_cast<const char *>(&halfH), sizeof(Imagina::HRReal));
+
+    const uint64_t iterationLimit = results.GetMaxIterations();
+    file.write((const char *)&iterationLimit, sizeof(iterationLimit));
+
+    const uint64_t locationOffset = file.tellp();
+    results.SaveOrbitLocation(file);
+    
+    const uint64_t referenceOffset = file.tellp();
+    auto compressedResults = results.CompressMax(
+        m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
+        GetNextGenerationNumber());
+
+    compressedResults->SaveOrbitBin();
+
+    file.seekp(0);
+    fileHeader.ReferenceOffset = referenceOffset;
+    fileHeader.LocationOffset = locationOffset;
+}
+
 void RefOrbitCalc::LoadOrbit(std::wstring imagFilename) {
     constexpr bool singleStepHelper = true;
+
     // Read the ReferenceHeader to determine the type
     std::ifstream file(imagFilename, std::ios::binary);
     if (!file.is_open()) {
@@ -3090,15 +3132,15 @@ void RefOrbitCalc::LoadOrbit(std::wstring imagFilename) {
     }
 
     // Read the header to determine the type
-    Imagina::IMFileHeader header;
-    file.read(reinterpret_cast<char *>(&header), sizeof(header));
+    Imagina::IMFileHeader fileHeader;
+    file.read(reinterpret_cast<char *>(&fileHeader), sizeof(fileHeader));
 
-    if (header.Magic != Imagina::IMMagicNumber) {
+    if (fileHeader.Magic != Imagina::IMMagicNumber) {
         throw std::runtime_error("Invalid file format");
     }
 
     // Seek to the location offset to read precision information
-    file.seekg(header.LocationOffset);
+    file.seekg(fileHeader.LocationOffset);
     Imagina::HRReal halfH;
     file.read(reinterpret_cast<char *>(&halfH), sizeof(Imagina::HRReal));
 
@@ -3121,8 +3163,8 @@ void RefOrbitCalc::LoadOrbit(std::wstring imagFilename) {
         uint64_t curPos2 = file.tellg();
     }
 
-    if (header.ReferenceOffset) {
-        file.seekg(header.ReferenceOffset);
+    if (fileHeader.ReferenceOffset) {
+        file.seekg(fileHeader.ReferenceOffset);
 
         // Depending on the header, read the rest of the file and determine the type
         // Extended range implies the use of high precision types

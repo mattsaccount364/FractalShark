@@ -256,21 +256,27 @@ struct BadField {
 // TODO if we template this on IterType, update m_CompressionHelper
 // (GPU + CPU versions) to avoid static_cast all over
 struct CompressionIndexField {
-    CompressionIndexField() : CompressionIndex{ } {
+    CompressionIndexField() : u{ } {
     }
 
-    CompressionIndexField(IterTypeFull initIndex) :
-        CompressionIndex{ initIndex },
-        Rebase{} {
+    CompressionIndexField(IterTypeFull initIndex) {
+        u.f.CompressionIndex = initIndex;
+        u.f.Rebase = 0;
     }
 
-    CompressionIndexField(IterTypeFull initIndex, IterTypeFull rebase)
-        : CompressionIndex{ initIndex },
-        Rebase{ rebase } {
+    CompressionIndexField(IterTypeFull initIndex, IterTypeFull rebase) {
+        u.f.CompressionIndex = initIndex;
+        u.f.Rebase = rebase;
     }
 
-    IterTypeFull CompressionIndex : 63;
-    IterTypeFull Rebase : 1;
+    union U {
+        struct F {
+            IterTypeFull CompressionIndex : 63;
+            IterTypeFull Rebase : 1;
+        } f;
+
+        IterTypeFull Raw;
+    } u;
 };
 
 template<PerturbExtras PExtras>

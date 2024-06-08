@@ -72,7 +72,7 @@ public:
                 bool condition =
                     (iter.CompressedIter + 1 < results.m_FullOrbit.GetSize() &&
                         (iter.UncompressedIter + 1 <
-                            results.m_FullOrbit[iter.CompressedIter + 1].CompressionIndex)) ||
+                            results.m_FullOrbit[iter.CompressedIter + 1].u.f.CompressionIndex)) ||
                     iter.CompressedIter + 1 == results.m_FullOrbit.GetSize();
 
                 if (condition) {
@@ -84,7 +84,7 @@ public:
                     iter.CompressedIter++;
                     iter.zx = results.m_FullOrbit[iter.CompressedIter].x;
                     iter.zy = results.m_FullOrbit[iter.CompressedIter].y;
-                    iter.UncompressedIter = results.m_FullOrbit[iter.CompressedIter].CompressionIndex;
+                    iter.UncompressedIter = results.m_FullOrbit[iter.CompressedIter].u.f.CompressionIndex;
                 }
 
                 return true;
@@ -114,9 +114,9 @@ public:
             while (low <= high) {
                 size_t mid = (low + high) / 2;
 
-                if (results.m_FullOrbit[mid].CompressionIndex < uncompressed_index) {
+                if (results.m_FullOrbit[mid].u.f.CompressionIndex < uncompressed_index) {
                     low = mid + 1;
-                } else if (results.m_FullOrbit[mid].CompressionIndex > uncompressed_index) {
+                } else if (results.m_FullOrbit[mid].u.f.CompressionIndex > uncompressed_index) {
                     high = mid - 1;
                 } else {
                     return mid;
@@ -132,7 +132,7 @@ public:
         T zx = results.m_FullOrbit[BestCompressedIndexGuess].x;
         T zy = results.m_FullOrbit[BestCompressedIndexGuess].y;
 
-        for (size_t cur_uncompressed_index = results.m_FullOrbit[BestCompressedIndexGuess].CompressionIndex;
+        for (size_t cur_uncompressed_index = results.m_FullOrbit[BestCompressedIndexGuess].u.f.CompressionIndex;
             cur_uncompressed_index < results.m_UncompressedItersInOrbit;
             cur_uncompressed_index++) {
 

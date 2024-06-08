@@ -683,8 +683,8 @@ void Fractal::InitialDefaultViewAndSettings(int width, int height) {
     //SetResultsAutosave(AddPointOptions::DontSave);
     LoadPerturbationOrbits();
     //View(0);
-    //View(5);
-    View(11);
+    View(5);
+    //View(11);
     //View(14);
     //View(27); // extremely hard
     ChangedMakeDirty();
@@ -1686,11 +1686,15 @@ RenderAlgorithm Fractal::GetRenderAlgorithm() const {
 }
 
 const char *Fractal::GetRenderAlgorithmName() const {
+    return GetRenderAlgorithmName(GetRenderAlgorithm());
+}
+
+const char *Fractal::GetRenderAlgorithmName(RenderAlgorithm alg) {
     //
-    // Returns the name of the render algorithm in use
+    // Returns the name of the render algorithm
     //
 
-    return RenderAlgorithmStr[static_cast<size_t>(GetRenderAlgorithm())];
+    return RenderAlgorithmStr[static_cast<size_t>(alg)];
 }
 
 const HighPrecision &Fractal::GetCompressionError(enum class CompressionError err) const {
@@ -3908,16 +3912,30 @@ int Fractal::SaveItersAsText(std::wstring filename_base) {
     return SaveFractalData<PngParallelSave::Type::ItersText>(filename_base, true);
 }
 
-void Fractal::SaveRefOrbit(CompressToDisk compression) {
-    m_RefOrbit.SaveOrbit(compression);
+void Fractal::SaveRefOrbit(CompressToDisk compression, std::wstring filename) {
+    m_RefOrbit.SaveOrbit(compression, filename);
 }
 
-void Fractal::SaveImagRefOrbit() {
-    m_RefOrbit.SaveOrbit(CompressToDisk::MaxCompressionBin);
-}
+void Fractal::LoadRefOrbit(CompressToDisk compression, std::wstring filename) {
+    HighPrecision centerX;
+    HighPrecision centerY;
+    HighPrecision zoomFactor;
 
-void Fractal::LoadImagRefOrbit(std::wstring imagFilename) {
-    m_RefOrbit.LoadOrbit(imagFilename);
+    m_RefOrbit.LoadOrbit(
+        compression,
+        filename,
+        centerX,
+        centerY,
+        zoomFactor);
+
+    PointZoomBBConverter zoom(centerX, centerY, zoomFactor);
+
+    std::string centerXStr = centerX.str();
+    std::string centerYStr = centerY.str();
+    std::string zoomFactorStr = zoomFactor.str();
+
+    SetPosition(zoom.GetMinX(), zoom.GetMinY(), zoom.GetMaxX(), zoom.GetMaxY());
+    ChangedMakeDirty();
 }
 
 void Fractal::SetResultsAutosave(AddPointOptions Enable) {
@@ -3984,6 +4002,10 @@ HighPrecision Fractal::YFromCalcToScreen(HighPrecision y) const {
 
 void Fractal::ForceRecalc() {
     ChangedMakeDirty();
+}
+
+const LAParameters &Fractal::GetLAParameters() const {
+    return m_LAParameters;
 }
 
 LAParameters &Fractal::GetLAParameters() {

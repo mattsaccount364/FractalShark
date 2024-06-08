@@ -37,19 +37,21 @@ PointZoomBBConverter::PointZoomBBConverter(
     m_ptX{ (minX + maxX) / HighPrecision(2) },
     m_ptY{ (minY + maxY) / HighPrecision(2) } {
 
-    auto deltaX = m_maxX - m_minX;
+    //auto deltaX = m_maxX - m_minX;
     auto deltaY = m_maxY - m_minY;
 
-    if (deltaX == 0 || deltaY == 0) {
+    if (/*deltaX == 0 || */deltaY == 0) {
         m_zoomFactor = HighPrecision{ 1 };
         return;
     }
 
-    auto zf1 = HighPrecision{ factor } / deltaX * 4;
-    auto zf2 = HighPrecision{ factor } / deltaY * 4;
-    auto zf3 = HighPrecision{ factor } / (m_maxX - m_ptX) * 4;
-    auto zf4 = HighPrecision{ factor } / (m_maxY - m_ptY) * 4;
-    m_zoomFactor = std::min(std::min(zf1, zf2), std::min(zf3, zf4));
+    //auto zf1 = HighPrecision{ factor } / deltaX * 4;
+    auto zf2 = HighPrecision{ factor } / deltaY * 2;
+    //auto zf3 = HighPrecision{ factor } / (m_maxX - m_ptX) * 4;
+    //auto zf4 = HighPrecision{ factor } / (m_maxY - m_ptY) * 4;
+    //m_zoomFactor = std::min(std::min(zf1, zf2), std::min(zf3, zf4));
+    //m_zoomFactor = std::min(zf1, zf2);
+    m_zoomFactor = zf2;
 
     //double test_zf1 = (double)zf1;
     //double test_zf2 = (double)zf2;

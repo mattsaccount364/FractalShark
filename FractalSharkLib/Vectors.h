@@ -20,6 +20,7 @@ enum class GrowableVectorTypes {
     GPUReferenceIter,
     LAInfoDeep,
     LAStageInfo,
+    ImaginaFile,
     DebugOutput
 };
 

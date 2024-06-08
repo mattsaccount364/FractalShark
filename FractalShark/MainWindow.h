@@ -2,10 +2,12 @@
 
 #include <memory>
 #include <vector>
+#include <string>
 
 class JobObject;
 class Fractal;
 enum FractalPalette : size_t;
+enum class CompressToDisk;
 
 class MainWindow {
 public:
@@ -14,6 +16,8 @@ public:
 
     MainWindow(HINSTANCE hInstance, int nCmdShow);
     ~MainWindow();
+
+private:
 
     std::vector<SavedLocation> gSavedLocations;
     std::vector<ImaginaSavedLocation> gImaginaLocations;
@@ -46,6 +50,8 @@ public:
     void DrawFractalShark();
     void DrawFractalSharkGdi(int nCmdShow);
 
+    static std::wstring OpenFileDialog(uint32_t flags);
+
     // Controlling functions
     void MenuGoBack();
     void MenuStandardView(size_t i);
@@ -71,7 +77,9 @@ public:
     void BenchmarkMessage(size_t milliseconds);
     void MenuAlgHelp();
     void MenuViewsHelp();
-    void MenuLoadImag();
+    void MenuLoadImagDyn();
+    void MenuSaveImag(CompressToDisk compression);
+    void MenuLoadImag(CompressToDisk compression);
     void MenuShowHotkeys();
 
     void PaintAsNecessary();

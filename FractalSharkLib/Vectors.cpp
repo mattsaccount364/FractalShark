@@ -74,6 +74,8 @@ std::wstring GetFileExtension(GrowableVectorTypes Type) {
         return L".LAStages";
     case GrowableVectorTypes::LAInfoDeep:
         return L".LAs";
+    case GrowableVectorTypes::ImaginaFile:
+        return L".im";
     case GrowableVectorTypes::DebugOutput:
         return L".debug.txt";
     default:

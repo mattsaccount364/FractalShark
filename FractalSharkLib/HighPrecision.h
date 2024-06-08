@@ -387,7 +387,7 @@ enum class CompressToDisk {
     Disable,
     SimpleCompression,
     MaxCompression,
-    MaxCompressionBin
+    MaxCompressionImagina
 };
 
 // If true, choose type == float/double for primitives.

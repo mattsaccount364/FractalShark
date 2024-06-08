@@ -161,7 +161,7 @@ public:
                 return;
             } else {
                 compressed_index = results.BinarySearch(startUncompressedIndex);
-                uncompressed_index = results.FullOrbit[compressed_index].CompressionIndex;
+                uncompressed_index = results.FullOrbit[compressed_index].u.f.CompressionIndex;
                 zx = results.FullOrbit[compressed_index].x;
                 zy = results.FullOrbit[compressed_index].y;
 
@@ -233,9 +233,9 @@ private:
             while (low <= high) {
                 IterType mid = (low + high) / 2;
 
-                if (FullOrbit[mid].CompressionIndex < uncompressed_index) {
+                if (FullOrbit[mid].u.f.CompressionIndex < uncompressed_index) {
                     low = mid + 1;
-                } else if (FullOrbit[mid].CompressionIndex > uncompressed_index) {
+                } else if (FullOrbit[mid].u.f.CompressionIndex > uncompressed_index) {
                     high = mid - 1;
                 } else {
                     return mid;
@@ -253,7 +253,7 @@ private:
         Type zx = FullOrbit[BestCompressedIndexGuess].x;
         Type zy = FullOrbit[BestCompressedIndexGuess].y;
 
-        for (IterType cur_uncompressed_index = FullOrbit[BestCompressedIndexGuess].CompressionIndex;
+        for (IterType cur_uncompressed_index = FullOrbit[BestCompressedIndexGuess].u.f.CompressionIndex;
             cur_uncompressed_index < UncompressedItersInOrbit;
             cur_uncompressed_index++) {
 
@@ -285,7 +285,7 @@ private:
             //    maybe copying compressed orbit to gpu wrong / uninitialized memory somewhere?
 
 
-        auto nextIndex = FullOrbit[workspace.compressed_index].CompressionIndex;
+        auto nextIndex = FullOrbit[workspace.compressed_index].u.f.CompressionIndex;
         if (nextIndex == workspace.uncompressed_index) {
             workspace.zx = FullOrbit[workspace.compressed_index].x;
             workspace.zy = FullOrbit[workspace.compressed_index].y;

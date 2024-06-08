@@ -2724,6 +2724,8 @@ void RefOrbitCalc::ClearPerturbationResults(PerturbationResultType type) {
 
     m_PerturbationGuessCalcX = 0;
     m_PerturbationGuessCalcY = 0;
+
+    m_LastUsedRefOrbit = {};
 }
 
 void RefOrbitCalc::ResetGuess(HighPrecision x, HighPrecision y) {
@@ -2996,34 +2998,36 @@ void RefOrbitCalc::GetSomeDetails(RefOrbitDetails &details) const {
     details = {};
 
     auto lambda = [&](auto &&arg) {
-        if (arg != nullptr) {
-            uint64_t LAMilliseconds = 0;
-            uint64_t LASize = 0;
-
-            if (arg->GetLaReference() != nullptr) {
-                LAMilliseconds = arg->GetLaReference()->GetBenchmarkLA().GetDeltaInMs();
-                LASize = arg->GetLaReference()->GetLAs().GetSize();
-            }
-
-            int64_t deltaPrecisionCached = 0;
-            int64_t extraPrecisionCached = 0;
-            arg->GetIntermediatePrecision(deltaPrecisionCached, extraPrecisionCached);
-
-            details = {
-                arg->GetPeriodMaybeZero(),
-                arg->GetCompressedOrbitSize(),
-                arg->GetCountOrbitEntries(),
-                arg->GetReuseSize(),
-                arg->GetCompressionErrorExp(),
-                arg->GetIntermediateCompressionErrorExp(),
-                deltaPrecisionCached,
-                extraPrecisionCached,
-                arg->GetBenchmarkOrbit(),
-                LAMilliseconds,
-                LASize,
-                GetPerturbationAlgStr()
-            };
+        if (arg == nullptr) {
+            return;
         }
+
+        uint64_t LAMilliseconds = 0;
+        uint64_t LASize = 0;
+
+        if (arg->GetLaReference() != nullptr) {
+            LAMilliseconds = arg->GetLaReference()->GetBenchmarkLA().GetDeltaInMs();
+            LASize = arg->GetLaReference()->GetLAs().GetSize();
+        }
+
+        int64_t deltaPrecisionCached = 0;
+        int64_t extraPrecisionCached = 0;
+        arg->GetIntermediatePrecision(deltaPrecisionCached, extraPrecisionCached);
+
+        details = {
+            arg->GetPeriodMaybeZero(),
+            arg->GetCompressedOrbitSize(),
+            arg->GetCountOrbitEntries(),
+            arg->GetReuseSize(),
+            arg->GetCompressionErrorExp(),
+            arg->GetIntermediateCompressionErrorExp(),
+            deltaPrecisionCached,
+            extraPrecisionCached,
+            arg->GetBenchmarkOrbit(),
+            LAMilliseconds,
+            LASize,
+            GetPerturbationAlgStr()
+        };
         };
 
     std::visit(lambda, m_LastUsedRefOrbit);
@@ -3031,51 +3035,51 @@ void RefOrbitCalc::GetSomeDetails(RefOrbitDetails &details) const {
     static_assert(static_cast<int>(RenderAlgorithm::MAX) == 61, "Fix me");
 }
 
-void RefOrbitCalc::SaveOrbit(CompressToDisk compression) const {
-    auto lambda = [this, compression](auto &&results) {
-        if (results != nullptr) {
-            if (compression == CompressToDisk::Disable) {
-                results->SaveOrbit();
-            } else if (compression == CompressToDisk::SimpleCompression) {
-                if constexpr (
-                    Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::Disable>() &&
-                    !Introspection::IsDblFlt<decltype(*results)>()) {
-                    //auto compressedResults = results->Compress(
-                    //    m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
-                    //    GetNextGenerationNumber());
-                    //compressedResults->SaveOrbit();
+void RefOrbitCalc::SaveOrbit(CompressToDisk compression, std::wstring filename) const {
+    auto lambda = [this, compression, filename](auto &&results) {
+        if (results == nullptr) {
+            return;
+        }
 
-                    // TODO temp test:
-                    auto compressedResults = results->CompressMax(
-                        m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
-                        GetNextGenerationNumber());
-                    auto decompressedResults = compressedResults->DecompressMax(GetNextGenerationNumber());
-                    decompressedResults->SaveOrbit();
+        if (compression == CompressToDisk::Disable) {
+            results->SaveOrbit(filename);
+        } else if (compression == CompressToDisk::SimpleCompression) {
+            if constexpr (
+                Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::Disable>() &&
+                !Introspection::IsDblFlt<decltype(*results)>()) {
+                auto compressedResults = results->Compress(
+                    m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
+                    GetNextGenerationNumber());
+                compressedResults->SaveOrbit(filename);
 
-                }
-            } else if (compression == CompressToDisk::MaxCompression) {
-                if constexpr (
-                    Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::Disable>() &&
-                    !Introspection::IsDblFlt<decltype(*results)>()) {
-                    auto compressedResults = results->CompressMax(
-                        m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
-                        GetNextGenerationNumber());
-                    compressedResults->SaveOrbit();
-                } else {
-
-                }
-            } else if (compression == CompressToDisk::MaxCompressionBin) {
-
-                if constexpr (
-                    Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::Disable>() &&
-                    !Introspection::IsDblFlt<decltype(*results)>()) {
-
-                    std::wstring outputFilename = results->GenFilename(GrowableVectorTypes::DebugOutput, L"", true);
-                    SaveOrbit(*results, outputFilename);
-                }
-            } else {
-                throw FractalSharkSeriousException("Unknown CompressToDisk");
+                // TODO temp test:
+                // auto compressedResults = results->CompressMax(
+                //     m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
+                //     GetNextGenerationNumber());
+                // auto decompressedResults = compressedResults->DecompressMax(GetNextGenerationNumber());
+                // decompressedResults->SaveOrbit(filename);
             }
+        } else if (compression == CompressToDisk::MaxCompression) {
+            if constexpr (
+                Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::Disable>() &&
+                !Introspection::IsDblFlt<decltype(*results)>()) {
+                auto compressedResults = results->CompressMax(
+                    m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
+                    GetNextGenerationNumber());
+                compressedResults->SaveOrbit(filename);
+            } else {
+
+            }
+        } else if (compression == CompressToDisk::MaxCompressionImagina) {
+
+            if constexpr (
+                Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::Disable>() &&
+                !Introspection::IsDblFlt<decltype(*results)>()) {
+
+                SaveOrbit(*results, filename);
+            }
+        } else {
+            throw FractalSharkSeriousException("Unknown CompressToDisk");
         }
         };
 
@@ -3098,32 +3102,51 @@ void RefOrbitCalc::SaveOrbit(
     fileHeader.LocationOffset = sizeof(fileHeader);
     fileHeader.ReferenceOffset = 0;
     file.write(reinterpret_cast<const char *>(&fileHeader), sizeof(fileHeader));
+    file.flush();
+
+    const uint64_t locationOffset = file.tellp();
 
     Imagina::HRReal halfH{ };
     const auto radius = results.GetMaxRadius();
-    halfH = Imagina::HRReal{ radius / T{ 2.0 } };
+    //halfH = Imagina::HRReal{ T{ 2.0 } / radius };
+    halfH = Imagina::HRReal{ radius };
     file.write(reinterpret_cast<const char *>(&halfH), sizeof(Imagina::HRReal));
+    file.flush();
 
     const uint64_t iterationLimit = results.GetMaxIterations();
     file.write((const char *)&iterationLimit, sizeof(iterationLimit));
+    file.flush();
 
-    const uint64_t locationOffset = file.tellp();
     results.SaveOrbitLocation(file);
-    
+
     const uint64_t referenceOffset = file.tellp();
     auto compressedResults = results.CompressMax(
         m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
         GetNextGenerationNumber());
 
-    compressedResults->SaveOrbitBin();
+    compressedResults->SaveOrbitBin(file);
 
     file.seekp(0);
     fileHeader.ReferenceOffset = referenceOffset;
     fileHeader.LocationOffset = locationOffset;
+
+    file.write(reinterpret_cast<const char *>(&fileHeader), sizeof(fileHeader));
+    file.flush();
 }
 
-void RefOrbitCalc::LoadOrbit(std::wstring imagFilename) {
-    constexpr bool singleStepHelper = true;
+void RefOrbitCalc::LoadOrbit(
+    CompressToDisk compression,
+    std::wstring imagFilename,
+    HighPrecision &centerX,
+    HighPrecision &centerY,
+    HighPrecision &zoomFactor) {
+
+    if (compression != CompressToDisk::MaxCompressionImagina) {
+        ::MessageBox(nullptr, L"Invalid compression type -- expectation is that others are mapped in on startup", L"", MB_OK | MB_APPLMODAL);
+        return;
+    }
+
+    constexpr bool singleStepHelper = false;
 
     // Read the ReferenceHeader to determine the type
     std::ifstream file(imagFilename, std::ios::binary);
@@ -3144,18 +3167,28 @@ void RefOrbitCalc::LoadOrbit(std::wstring imagFilename) {
     Imagina::HRReal halfH;
     file.read(reinterpret_cast<char *>(&halfH), sizeof(Imagina::HRReal));
 
-    uint64_t iterationLimit;
-    file.read((char *)&iterationLimit, sizeof(iterationLimit));
-
     // Based on the precision of halfH, determine the type
     uint64_t precision = -std::min(0ll, halfH.getExp()) + 64;
+
+    // Convert to zoom factor
+    halfH.GetHighPrecision(zoomFactor);
+    zoomFactor = HighPrecision{ 2 } / zoomFactor;
+    std::string zoomFactorStr = zoomFactor.str();
+
+    uint64_t iterationLimit;
+    file.read((char *)&iterationLimit, sizeof(iterationLimit));
 
     if constexpr (singleStepHelper) {
         uint64_t curPos1 = file.tellg();
     }
 
     HighPrecision orbitX{ precision, file };
+    centerX = orbitX;
+    std::string orbitXStr = orbitX.str();
+
     HighPrecision orbitY{ precision, file };
+    centerY = orbitY;
+    std::string orbitYStr = orbitY.str();
 
     if constexpr (singleStepHelper) {
         std::string orbitXStr = orbitX.str();
@@ -3175,7 +3208,7 @@ void RefOrbitCalc::LoadOrbit(std::wstring imagFilename) {
         results->LoadOrbitBin(std::move(orbitX), std::move(orbitY), halfH, file);
 
         auto decompressedResults = results->DecompressMax(GetNextGenerationNumber());
-        AddPerturbationResults(std::move(decompressedResults));
+        m_LastUsedRefOrbit = AddPerturbationResults(std::move(decompressedResults));
     }
 
     file.close();

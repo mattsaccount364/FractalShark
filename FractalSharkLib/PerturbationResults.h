@@ -209,7 +209,6 @@ public:
         RefOrbitCalc::ReuseMode Reuse,
         const HighPrecision &cx,
         const HighPrecision &cy,
-        const T &radX,
         const T &radY,
         IterType NumIterations,
         size_t GuessReserveSize);
@@ -322,8 +321,9 @@ public:
         DecompressMax(size_t NewGenerationNumber)
         requires (PExtras == PerturbExtras::SimpleCompression && !Introspection::IsTDblFlt<T>());
 
-    void SaveOrbit() const;
-    void SaveOrbitBin() const;
+    void SaveOrbit(std::wstring filename) const;
+    void SaveOrbitBin(std::ofstream &file) const
+        requires (PExtras == PerturbExtras::SimpleCompression && !Introspection::IsTDblFlt<T>());
     void SaveOrbitLocation(std::ofstream &file) const;
     void LoadOrbitBin(
         HighPrecision orbitX,

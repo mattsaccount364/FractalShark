@@ -218,7 +218,7 @@ void PerturbationResults<IterType, T, PExtras>::CopyFullOrbitVector(
                 m_FullOrbit[i] = GPUReferenceIter<T, PExtras>{
                     (T)other.m_FullOrbit[i].x,
                     (T)other.m_FullOrbit[i].y,
-                    other.m_FullOrbit[i].CompressionIndex
+                    other.m_FullOrbit[i].u.f.CompressionIndex
                 };
             } else {
                 m_FullOrbit[i] = GPUReferenceIter<T, PExtras>{
@@ -683,17 +683,16 @@ void PerturbationResults<IterType, T, PExtras>::InitResults(
     RefOrbitCalc::ReuseMode Reuse,
     const HighPrecision &cx,
     const HighPrecision &cy,
-    const HighPrecision &minX,
+    const HighPrecision &/*minX*/, // TODO
     const HighPrecision &minY,
-    const HighPrecision &maxX,
+    const HighPrecision &/*maxX*/,
     const HighPrecision &maxY,
     IterType NumIterations,
     size_t GuessReserveSize) {
 
-    const auto radiusX = T{ maxX - minX };
-    const auto radiusY = T{ maxY - minY };
+    const T radiusY{ T{ maxY - minY } / T{ 2.0f } };
 
-    InitResults(Reuse, cx, cy, radiusX, radiusY, NumIterations, GuessReserveSize);
+    InitResults(Reuse, cx, cy, radiusY, NumIterations, GuessReserveSize);
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>
@@ -701,7 +700,6 @@ void PerturbationResults<IterType, T, PExtras>::InitResults(
     RefOrbitCalc::ReuseMode Reuse,
     const HighPrecision &cx,
     const HighPrecision &cy,
-    const T &radiusX,
     const T &radiusY,
     IterType NumIterations,
     size_t GuessReserveSize) {
@@ -713,13 +711,7 @@ void PerturbationResults<IterType, T, PExtras>::InitResults(
     m_OrbitYStr = HdrToString<false>(cy);
     m_OrbitXLow = T{ cx };
     m_OrbitYLow = T{ cy };
-
-    // TODO: Check that this radius is correct
-    if (HdrCompareToBothPositiveReducedGE(radiusX, radiusY)) {
-        m_MaxRadius = radiusX;
-    } else {
-        m_MaxRadius = radiusY;
-    }
+    m_MaxRadius = radiusY;
 
     HdrReduce(m_MaxRadius);
 
@@ -740,7 +732,7 @@ void PerturbationResults<IterType, T, PExtras>::InitResults(
         Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
 
         m_AuthoritativePrecisionInBits =
-            PrecisionCalculator::GetPrecision(radiusX, radiusY, true);
+            PrecisionCalculator::GetPrecision(radiusY, radiusY, true);
         m_ReuseX.reserve(ReserveSize);
         m_ReuseY.reserve(ReserveSize);
         m_ReuseAllocations = nullptr;
@@ -1088,7 +1080,7 @@ PerturbationResults<IterType, T, PExtras>::Decompress(size_t NewGenerationNumber
 
     for (size_t i = 0; i < targetUncompressedIters; i++) {
         if (compressed_index < compressed_orb.GetSize() &&
-            compressed_orb[compressed_index].CompressionIndex == i) {
+            compressed_orb[compressed_index].u.f.CompressionIndex == i) {
             zx = compressed_orb[compressed_index].x;
             zy = compressed_orb[compressed_index].y;
             compressed_index++;
@@ -1291,7 +1283,7 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
             const auto rebaseSize = compressed->m_Rebases.size();
             const auto fullOrbitSize = compressed->m_FullOrbit.GetSize();
             if (rebaseSize != 0 &&
-                compressed->m_Rebases[rebaseSize - 1] > compressed->m_FullOrbit[fullOrbitSize - 1].CompressionIndex) {
+                compressed->m_Rebases[rebaseSize - 1] > compressed->m_FullOrbit[fullOrbitSize - 1].u.f.CompressionIndex) {
                 compressed->m_Rebases[rebaseSize - 1] = i;
             } else {
                 compressed->m_Rebases.push_back(i);
@@ -1441,12 +1433,12 @@ PerturbationResults<IterType, T, PExtras>::DecompressMax(size_t NewGenerationNum
     IterTypeFull i = 0;
     IterTypeFull UncorrectedOrbitBegin = 1;
     for (; i < targetUncompressedIters; i++) {
-        if (i == nextWayPoint.CompressionIndex) {
+        if (i == nextWayPoint.u.f.CompressionIndex) {
             CorrectOrbit(UncorrectedOrbitBegin, i, nextWayPoint.x - zx, nextWayPoint.y - zy);
             UncorrectedOrbitBegin = i + 1;
             zx = nextWayPoint.x;
             zy = nextWayPoint.y;
-            bool Rebase = nextWayPoint.Rebase;
+            bool Rebase = nextWayPoint.u.f.Rebase;
             wayPointIndex++;
             nextWayPoint = m_FullOrbit[wayPointIndex];
             if (Rebase) {
@@ -1476,8 +1468,8 @@ PerturbationResults<IterType, T, PExtras>::DecompressMax(size_t NewGenerationNum
         zx = dzX + decompressed->m_FullOrbit[j].x;
         zy = dzY + decompressed->m_FullOrbit[j].y;
 
-        if (i == nextWayPoint.CompressionIndex) {
-            if (nextWayPoint.Rebase) {
+        if (i == nextWayPoint.u.f.CompressionIndex) {
+            if (nextWayPoint.u.f.Rebase) {
                 dzX = zx;
                 dzY = zy;
                 j = 0;
@@ -1568,8 +1560,8 @@ PerturbationResults<IterType, T, PExtras>::DecompressMax(size_t NewGenerationNum
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>
-void PerturbationResults<IterType, T, PExtras>::SaveOrbit() const {
-    auto outFile = GenFilename(GrowableVectorTypes::DebugOutput);
+void PerturbationResults<IterType, T, PExtras>::SaveOrbit(std::wstring filename) const {
+    auto outFile = filename.empty() ? GenFilename(GrowableVectorTypes::DebugOutput) : filename;
 
     std::ofstream out(outFile);
     if (!out.is_open()) {
@@ -1599,8 +1591,8 @@ void PerturbationResults<IterType, T, PExtras>::SaveOrbit() const {
         out << "m_FullOrbit[" << i << "].y: " << HdrToString<false>(m_FullOrbit[i].y) << std::endl;
 
         if constexpr (PExtras == PerturbExtras::SimpleCompression) {
-            out << "m_FullOrbit[" << i << "].CompressionIndex: " << m_FullOrbit[i].CompressionIndex << std::endl;
-            out << "m_FullOrbit[" << i << "].Rebase: " << m_FullOrbit[i].Rebase << std::endl;
+            out << "m_FullOrbit[" << i << "].CompressionIndex: " << m_FullOrbit[i].u.f.CompressionIndex << std::endl;
+            out << "m_FullOrbit[" << i << "].Rebase: " << m_FullOrbit[i].u.f.Rebase << std::endl;
         }
     }
 
@@ -1631,34 +1623,17 @@ void PerturbationResults<IterType, T, PExtras>::SaveOrbit() const {
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>
-void PerturbationResults<IterType, T, PExtras>::SaveOrbitBin() const {
+void PerturbationResults<IterType, T, PExtras>::SaveOrbitBin(std::ofstream &out) const
+    requires (PExtras == PerturbExtras::SimpleCompression && !Introspection::IsTDblFlt<T>()) {
 
     static_assert(std::is_trivially_copyable_v<Imagina::ReferenceHeader>, "");
     //static_assert(std::is_trivially_copyable_v<ReferenceTrivialContent>, "");
     // static_assert(std::is_trivially_copyable_v<LAReferenceTrivialContent>, "");
 
-    auto outFile = GenFilename(GrowableVectorTypes::DebugOutput);
-
-    std::ofstream out(outFile, std::ios::binary);
-    if (!out.is_open()) {
-        ::MessageBox(nullptr, L"Failed to open file for writing 3", L"", MB_OK | MB_APPLMODAL);
-        return;
-    }
-
-    Imagina::IMFileHeader fileHeader;
-    fileHeader.Magic = Imagina::IMMagicNumber;
-    fileHeader.Reserved = 0;
-
-    // Offset into the file of the location
-    fileHeader.LocationOffset = 0;
-
-    // Offset into the file of the reference
-    fileHeader.ReferenceOffset = 0;
-
-    out.write(reinterpret_cast<const char *>(&fileHeader), sizeof(fileHeader));
-
     Imagina::ReferenceHeader referenceHeader;
-    referenceHeader.ExtendedRange = true;
+
+    referenceHeader.ExtendedRange = TemplateHelpers::IsHDR;
+
     out.write(reinterpret_cast<const char *>(&referenceHeader), sizeof(referenceHeader));
 
     Imagina::HRReal prec{ m_OrbitX.precisionInBits() };
@@ -1685,17 +1660,29 @@ void PerturbationResults<IterType, T, PExtras>::SaveOrbitBin() const {
 
     out.write(reinterpret_cast<const char *>(&laContent), sizeof(laContent));
 
+    size_t orbitSize = m_FullOrbit.GetSize();
+    out.write(reinterpret_cast<const char *>(&orbitSize), sizeof(orbitSize));
+
     // Write out all values in m_FullOrbit:
     for (size_t i = 0; i < m_FullOrbit.GetSize(); i++) {
+        //out.write(reinterpret_cast<const char *>(&m_FullOrbit[i]), sizeof(m_FullOrbit[i]));
         out.write(reinterpret_cast<const char *>(&m_FullOrbit[i].x), sizeof(m_FullOrbit[i].x));
         out.write(reinterpret_cast<const char *>(&m_FullOrbit[i].y), sizeof(m_FullOrbit[i].y));
+        out.write(reinterpret_cast<const char *>(&m_FullOrbit[i].u), sizeof(m_FullOrbit[i].u));
     }
+
+    // Save rebases
+    size_t rebaseSize = m_Rebases.size();
+    out.write(reinterpret_cast<const char *>(&rebaseSize), sizeof(rebaseSize));
+    out.write(reinterpret_cast<const char *>(m_Rebases.data()), rebaseSize * sizeof(IterTypeFull));
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>
 void PerturbationResults<IterType, T, PExtras>::SaveOrbitLocation(std::ofstream &file) const {
     m_OrbitX.SaveToStream(file);
+    file.flush();
     m_OrbitY.SaveToStream(file);
+    file.flush();
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>
@@ -1706,7 +1693,7 @@ void PerturbationResults<IterType, T, PExtras>::LoadOrbitBin(
     std::ifstream &file)
     requires(std::is_same_v<T, HDRFloat<double>> && PExtras == PerturbExtras::SimpleCompression)
 {
-    constexpr bool singleStepHelper = true;
+    constexpr bool singleStepHelper = false;
 
     Imagina::ReferenceHeader referenceHeader;
     file.read(reinterpret_cast<char *>(&referenceHeader), sizeof(referenceHeader));
@@ -1725,16 +1712,14 @@ void PerturbationResults<IterType, T, PExtras>::LoadOrbitBin(
     radius.setExp(static_cast<int32_t>(content.ValidRadius.getExp()));
     radius.setMantissa(content.ValidRadius.getMantissa());
 
-    // Instead, use halfh * 2.0
-    const auto halfH2{ halfH * Imagina::HRReal{ 2.0 } };
-    radius.setExp(static_cast<int32_t>(halfH2.getExp()));
-    radius.setMantissa(halfH2.getMantissa());
+    //const auto halfH{ halfH };
+    radius.setExp(static_cast<int32_t>(halfH.getExp()));
+    radius.setMantissa(halfH.getMantissa());
 
     InitResults(
         RefOrbitCalc::ReuseMode::DontSaveForReuse,
         orbitX,
         orbitY,
-        radius,
         radius,
         static_cast<IterType>(laContent.MaxIt),
         0);
@@ -1774,10 +1759,10 @@ void PerturbationResults<IterType, T, PExtras>::LoadOrbitBin(
         file.read(reinterpret_cast<char *>(&compressionIndex), sizeof(compressionIndex));
 
         // Low order 63 bits
-        m_FullOrbit[i].CompressionIndex = compressionIndex.CompressionIndex;
+        m_FullOrbit[i].u.f.CompressionIndex = compressionIndex.u.f.CompressionIndex;
 
         // High order bit
-        m_FullOrbit[i].Rebase = compressionIndex.Rebase;
+        m_FullOrbit[i].u.f.Rebase = compressionIndex.u.f.Rebase;
     }
 
     if constexpr (singleStepHelper) {

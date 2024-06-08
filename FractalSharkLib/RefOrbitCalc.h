@@ -112,11 +112,16 @@ public:
     void LoadAllOrbits();
 
     void GetSomeDetails(RefOrbitDetails &details) const;
-    void SaveOrbit(CompressToDisk compression) const;
+    void SaveOrbit(CompressToDisk compression, std::wstring filename) const;
 
     template<typename IterType, class T, PerturbExtras PExtras>
     void SaveOrbit(const PerturbationResults<IterType, T, PExtras> &results, std::wstring imagFilename) const;
-    void LoadOrbit(std::wstring imagFilename);
+    void LoadOrbit(
+        CompressToDisk compression,
+        std::wstring imagFilename,
+        HighPrecision &centerX,
+        HighPrecision &centerY,
+        HighPrecision &zoomFactor);
 
     void DrawPerturbationResults();
 
@@ -204,7 +209,7 @@ private:
 
 
     PerturbationAlg m_PerturbationAlg;
-    Fractal &m_Fractal;
+    const Fractal &m_Fractal;
 
     HighPrecision m_PerturbationGuessCalcX;
     HighPrecision m_PerturbationGuessCalcY;

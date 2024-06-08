@@ -392,6 +392,7 @@
 #define IDM_LOAD_REFORBIT_IMAG_MAX      33192
 #define ID_LOAD_ENTERLOCATION           33193
 #define IDM_LOAD_ENTERLOCATION          33194
+#define IDM_LOAD_IMAGINA_DLG            33195
 #define IDM_VIEW1                       34001
 #define IDM_VIEW2                       34002
 #define IDM_VIEW3                       34003

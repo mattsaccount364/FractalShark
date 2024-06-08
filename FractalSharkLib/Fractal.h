@@ -140,7 +140,7 @@ public:
     void Zoom(size_t scrnX, size_t scrnY, double factor);
     void Zoom2(size_t scrnX, size_t scrnY, double factor);
 
-    void BasicTest();
+    void TestBasic();
 
     enum class AutoZoomHeuristic {
         Default,
@@ -174,6 +174,7 @@ public:
     RenderAlgorithm GetRenderAlgorithm(void) const;
     inline void SetRenderAlgorithm(RenderAlgorithm alg) { m_RenderAlgorithm = alg; }
     const char *GetRenderAlgorithmName() const;
+    static const char *GetRenderAlgorithmName(RenderAlgorithm alg);
 
     enum class CompressionError : size_t {
         Low,
@@ -233,9 +234,8 @@ public:
     int SaveCurrentFractal(std::wstring filename_base, bool copy_the_iters);
     int SaveHiResFractal(std::wstring filename_base);
     int SaveItersAsText(std::wstring filename_base);
-    void SaveRefOrbit(CompressToDisk compression);
-    void SaveImagRefOrbit();
-    void LoadImagRefOrbit(std::wstring imagFilename);
+    void SaveRefOrbit(CompressToDisk compression, std::wstring filename);
+    void LoadRefOrbit(CompressToDisk compression, std::wstring filename);
     bool CleanupThreads(bool all);
 
     // Benchmark results
@@ -271,6 +271,7 @@ public:
 
     void ForceRecalc();
 
+    const LAParameters &GetLAParameters() const;
     LAParameters &GetLAParameters();
 
 private:

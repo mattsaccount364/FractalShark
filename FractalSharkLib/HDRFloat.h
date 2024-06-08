@@ -310,6 +310,22 @@ public:
     explicit HDRFloat(const HighPrecisionT<HPDestructor::True> &number)
         : HDRFloat{ *number.backendRaw() } {
     }
+
+    void GetHighPrecision(HighPrecisionT<HPDestructor::True> &number) const {
+        mpf_t temp;
+        mpf_init2(temp, 64);
+
+        mpf_set_d(temp, Base::mantissa);
+
+        if (Base::exp >= 0) {
+            mpf_mul_2exp(temp, temp, Base::exp);
+        } else {
+            mpf_div_2exp(temp, temp, -Base::exp);
+        }
+        
+        number = HighPrecisionT<HPDestructor::True>(temp);
+        mpf_clear(temp);
+    }
 #endif
 
     template<bool GetExpAmt = false>
@@ -474,7 +490,7 @@ public:
 
     template<HDROrder OtherOrder, typename OtherTExp>
     CUDA_CRAP constexpr HDRFloat &divide_mutable(HDRFloat<T, OtherOrder, typename OtherTExp> factor) {
-        T local_mantissa = Base::mantissa / factor.mantissa;
+        T local_mantissa{ Base::mantissa / factor.mantissa };
         TExp local_exp = Base::exp - factor.exp;
 
         Base::mantissa = local_mantissa;

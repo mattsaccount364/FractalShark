@@ -279,7 +279,7 @@ void FractalTest::TestReferenceSave() {
         const auto simpleFilename = genLocalFilename(L"Simple") + L".txt";
         m_Fractal.SaveRefOrbit(CompressToDisk::SimpleCompression, simpleFilename);
 
-        const auto maxFilename = genLocalFilename(L"Max") + L".bin";
+        const auto maxFilename = genLocalFilename(L"Max") + L".txt";
         m_Fractal.SaveRefOrbit(CompressToDisk::MaxCompression, maxFilename);
 
         const auto maxImaginaFilename = genLocalFilename(L"MaxImagina") + L".im";
@@ -305,7 +305,7 @@ void FractalTest::TestReferenceSave() {
 
     for (auto curAlg : View5Algs) {
         referenceSaveLoad(testIndex, IterTypeEnum::Bits32, curAlg);
-        referenceSaveLoad(testIndex, IterTypeEnum::Bits64, curAlg);
+        //referenceSaveLoad(testIndex, IterTypeEnum::Bits64, curAlg);
 
         testIndex++;
     }

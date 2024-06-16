@@ -143,6 +143,11 @@ public:
         Base::exp = GenericHdrBase::MIN_BIG_EXPONENT();
     }
 
+    CUDA_CRAP constexpr explicit HDRFloat(T mant) {
+        Base::mantissa = mant;
+        Base::exp = 0;
+    }
+
     // Copy constructor
     CUDA_CRAP constexpr HDRFloat(const HDRFloat &other) :
         Base(other) {

@@ -2722,8 +2722,8 @@ void RefOrbitCalc::ClearPerturbationResults(PerturbationResultType type) {
     ClearContainer(c64e);
     ClearContainer(c64c);
 
-    m_PerturbationGuessCalcX = 0;
-    m_PerturbationGuessCalcY = 0;
+    m_PerturbationGuessCalcX = {};
+    m_PerturbationGuessCalcY = {};
 
     m_LastUsedRefOrbit = {};
 }
@@ -3191,8 +3191,8 @@ void RefOrbitCalc::LoadOrbit(
     std::string orbitYStr = orbitY.str();
 
     if constexpr (singleStepHelper) {
-        std::string orbitXStr = orbitX.str();
-        std::string orbitYStr = orbitY.str();
+        std::string orbitXStr2 = orbitX.str();
+        std::string orbitYStr2 = orbitY.str();
         uint64_t curPos2 = file.tellg();
     }
 

@@ -130,37 +130,45 @@ public:
         return *this;
     }
 
-    HighPrecisionT(double data) {
+    enum class SetPrecision {
+        True
+    };
+
+    explicit HighPrecisionT(SetPrecision /*setPrecision*/, uint64_t precisionInBits) {
+        mpf_init2(m_Data, precisionInBits);
+    }
+
+    explicit HighPrecisionT(double data) {
         InitMpf();
         mpf_set_d(m_Data, data);
     }
 
-    HighPrecisionT(uint64_t data) {
+    explicit HighPrecisionT(uint64_t data) {
         InitMpf();
         mpf_set_ui(m_Data, data);
     }
 
-    HighPrecisionT(uint32_t data) {
+    explicit HighPrecisionT(uint32_t data) {
         InitMpf();
         mpf_set_ui(m_Data, data);
     }
 
-    HighPrecisionT(int64_t data) {
+    explicit HighPrecisionT(int64_t data) {
         InitMpf();
         mpf_set_si(m_Data, data);
     }
 
-    HighPrecisionT(int data) {
+    explicit HighPrecisionT(int data) {
         InitMpf();
         mpf_set_si(m_Data, data);
     }
 
-    HighPrecisionT(long data) {
+    explicit HighPrecisionT(long data) {
         InitMpf();
         mpf_set_si(m_Data, data);
     }
 
-    HighPrecisionT(std::string data) {
+    explicit HighPrecisionT(std::string data) {
         InitMpf();
         mpf_set_str(m_Data, data.c_str(), 10);
     }
@@ -211,31 +219,31 @@ public:
     }
 
     friend HighPrecisionT operator+(const HighPrecisionT &lhs, const HighPrecisionT &rhs) {
-        HighPrecisionT result;
+        HighPrecisionT result{ SetPrecision::True, lhs.precisionInBits() };
         mpf_add(result.m_Data, lhs.m_Data, rhs.m_Data);
         return result;
     }
 
     friend HighPrecisionT operator-(const HighPrecisionT &lhs, const HighPrecisionT &rhs) {
-        HighPrecisionT result;
+        HighPrecisionT result{ SetPrecision::True, lhs.precisionInBits() };
         mpf_sub(result.m_Data, lhs.m_Data, rhs.m_Data);
         return result;
     }
 
     HighPrecisionT operator-() const {
-        HighPrecisionT result;
+        HighPrecisionT result{ SetPrecision::True, precisionInBits() };
         mpf_neg(result.m_Data, m_Data);
         return result;
     }
 
     friend HighPrecisionT operator*(const HighPrecisionT &lhs, const HighPrecisionT &rhs) {
-        HighPrecisionT result;
+        HighPrecisionT result{ SetPrecision::True, lhs.precisionInBits() };
         mpf_mul(result.m_Data, lhs.m_Data, rhs.m_Data);
         return result;
     }
 
     friend HighPrecisionT operator/(const HighPrecisionT &lhs, const HighPrecisionT &rhs) {
-        HighPrecisionT result;
+        HighPrecisionT result{ SetPrecision::True, lhs.precisionInBits() };
         mpf_div(result.m_Data, lhs.m_Data, rhs.m_Data);
         return result;
     }
@@ -282,7 +290,7 @@ public:
     friend std::istream &operator>>(std::istream &is, HighPrecisionT &data) {
         std::string str;
         is >> str;
-        data = str;
+        data = HighPrecisionT{ str };
         return is;
     }
 
@@ -301,13 +309,13 @@ public:
     }
 
     friend HighPrecisionT abs(const HighPrecisionT &data) {
-        HighPrecisionT result;
+        HighPrecisionT result{ SetPrecision::True, data.precisionInBits() };
         mpf_abs(result.m_Data, data.m_Data);
         return result;
     }
 
     HighPrecisionT power(int32_t powToRaiseTo) const {
-        HighPrecisionT result;
+        HighPrecisionT result{ SetPrecision::True, precisionInBits() };
         mpf_pow_ui(result.m_Data, m_Data, powToRaiseTo);
         return result;
     }

@@ -40,13 +40,13 @@ PointZoomBBConverter::PointZoomBBConverter(
     //auto deltaX = m_maxX - m_minX;
     auto deltaY = m_maxY - m_minY;
 
-    if (/*deltaX == 0 || */deltaY == 0) {
+    if (/*deltaX == 0 || */deltaY == HighPrecision{ 0 }) {
         m_zoomFactor = HighPrecision{ 1 };
         return;
     }
 
     //auto zf1 = HighPrecision{ factor } / deltaX * 4;
-    auto zf2 = HighPrecision{ factor } / deltaY * 2;
+    auto zf2 = HighPrecision{ factor } / deltaY * HighPrecision{ 2 };
     //auto zf3 = HighPrecision{ factor } / (m_maxX - m_ptX) * 4;
     //auto zf4 = HighPrecision{ factor } / (m_maxY - m_ptY) * 4;
     //m_zoomFactor = std::min(std::min(zf1, zf2), std::min(zf3, zf4));

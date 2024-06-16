@@ -710,11 +710,11 @@ void Fractal::AutoZoom() {
 
     HighPrecision Divisor;
     if constexpr (h == AutoZoomHeuristic::Default) {
-        Divisor = 3;
+        Divisor = HighPrecision{ 3 };
     }
 
     if constexpr (h == AutoZoomHeuristic::Max) {
-        Divisor = 32;
+        Divisor = HighPrecision{ 32 };
     }
 
     for (;;) {
@@ -3087,7 +3087,9 @@ void Fractal::CalcCpuHDR(bool MemoryOnly) {
             }
 
             T cx = T{ m_MinX };
-            T cy = T{ T{m_MaxY} - dy * (SubType)y };
+
+            // This is kind of kludgy.  We cast the integer y to a float.
+            T cy = T{ T{m_MaxY} - dy * T{static_cast<float>(y)} };
             T zx, zy;
             T zx2, zy2;
             T sum;

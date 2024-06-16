@@ -668,7 +668,7 @@ bool PerturbationResults<IterType, T, PExtras>::ReadMetadata() {
 
 template<typename IterType, class T, PerturbExtras PExtras>
 void PerturbationResults<IterType, T, PExtras>::InitReused() {
-    HighPrecision Zero = 0;
+    HighPrecision Zero{};
 
     //assert(RequiresReuse());
     Zero.precisionInBits(AuthoritativeReuseExtraPrecisionInBits);
@@ -1636,7 +1636,7 @@ void PerturbationResults<IterType, T, PExtras>::SaveOrbitBin(std::ofstream &out)
 
     out.write(reinterpret_cast<const char *>(&referenceHeader), sizeof(referenceHeader));
 
-    Imagina::HRReal prec{ m_OrbitX.precisionInBits() };
+    Imagina::HRReal prec{ static_cast<double>(m_OrbitX.precisionInBits()) }; // TODO this must be wrong
     Imagina::HRReal maxRadius{ m_MaxRadius };
     Imagina::ReferenceTrivialContent content = {
         prec,
@@ -1646,9 +1646,12 @@ void PerturbationResults<IterType, T, PExtras>::SaveOrbitBin(std::ofstream &out)
 
     out.write(reinterpret_cast<const char *>(&content), sizeof(content));
 
+    // Note: m_FullOrbit.size() is the number of iterations in the compressed orbit.
+    // Instead, we need to write out the number of iterations in the
+    // decompressed orbit, which is m_UncompressedItersInOrbit.
     Imagina::LAReferenceTrivialContent laContent = {
         {},
-        m_FullOrbit.GetSize(),
+        m_UncompressedItersInOrbit - 1, // TODO -1?
         m_MaxIterations,
         {}, // DoublePrecisionPT
         {}, // DirectEvaluate
@@ -1731,16 +1734,16 @@ void PerturbationResults<IterType, T, PExtras>::LoadOrbitBin(
         m_PeriodMaybeZero = 0;
     }
 
-    size_t newSize;
-    file.read(reinterpret_cast<char *>(&newSize), sizeof(newSize));
-    m_FullOrbit.MutableResize(newSize);
+    size_t compressedSize;
+    file.read(reinterpret_cast<char *>(&compressedSize), sizeof(compressedSize));
+    m_FullOrbit.MutableResize(compressedSize);
 
     // Set the target decompressed iteration count.
     // This is the number of iterations that will be in the decompressed orbit.
     // TODO + 1?
     m_UncompressedItersInOrbit = static_cast<IterType>(laContent.RefIt) + 1;
 
-    for (size_t i = 0; i < newSize; i++) {
+    for (size_t i = 0; i < compressedSize; i++) {
         file.read(reinterpret_cast<char *>(&x), sizeof(x));
         file.read(reinterpret_cast<char *>(&y), sizeof(y));
 

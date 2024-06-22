@@ -3644,7 +3644,7 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
         RefOrbitCalc::Extras::IncludeLAv2 :
         RefOrbitCalc::Extras::None;
 
-    PerturbationResults<IterType, T, PExtras> *results =
+    const PerturbationResults<IterType, T, PExtras> *results =
         m_RefOrbit.GetUsefulPerturbationResults<
         IterType,
         ConditionalT,
@@ -3919,22 +3919,22 @@ void Fractal::SaveRefOrbit(CompressToDisk compression, std::wstring filename) {
 }
 
 void Fractal::LoadRefOrbit(CompressToDisk compression, std::wstring filename) {
-    HighPrecision centerX;
-    HighPrecision centerY;
-    HighPrecision zoomFactor;
-
-    m_RefOrbit.LoadOrbit(
+    const auto &perturbResults = *m_RefOrbit.LoadOrbit(
         compression,
-        filename,
-        centerX,
-        centerY,
-        zoomFactor);
+        filename);
+
+    const auto &centerX = perturbResults.GetHiX();
+    const auto &centerY = perturbResults.GetHiY();
+    const auto &zoomFactor = perturbResults.GetHiZoomFactor();
 
     PointZoomBBConverter zoom(centerX, centerY, zoomFactor);
 
-    std::string centerXStr = centerX.str();
-    std::string centerYStr = centerY.str();
-    std::string zoomFactorStr = zoomFactor.str();
+    constexpr bool enableDebug = false;
+    if constexpr (enableDebug) {
+        std::string centerXStr = centerX.str();
+        std::string centerYStr = centerY.str();
+        std::string zoomFactorStr = zoomFactor.str();
+    }
 
     SetPosition(zoom.GetMinX(), zoom.GetMinY(), zoom.GetMaxX(), zoom.GetMaxY());
     ChangedMakeDirty();

@@ -97,7 +97,7 @@ public:
     friend class SimpleIntermediateOrbitCompressor<IterType, T, PExtras>;
     friend class MaxIntermediateOrbitCompressor<IterType, T, PExtras>;
 
-    static constexpr char Version[] = "0.44";
+    static constexpr char Version[] = "0.45";
 
     static constexpr bool Is2X32 = (
         std::is_same<T, HDRFloat<CudaDblflt<MattDblflt>>>::value ||
@@ -228,19 +228,17 @@ public:
 
     const GPUReferenceIter<T, PExtras> *GetOrbitData() const;
 
-    // Location of orbit
     const HighPrecision &GetHiX() const;
-
-    // Location of orbit
     const HighPrecision &GetHiY() const;
+    const HighPrecision &GetHiZoomFactor() const;
 
     const std::string &GetHiXStr() const;
-
     const std::string &GetHiYStr() const;
+    const std::string &GetZoomFactorStr() const;
 
     T GetOrbitXLow() const;
-
     T GetOrbitYLow() const;
+    T GetZoomFactorLow() const;
 
     // Radius used for periodicity checking
     T GetMaxRadius() const;
@@ -304,10 +302,12 @@ public:
         Compress(
             int32_t compression_error_exp_param,
             size_t new_generation_number)
+        const
         requires (PExtras == PerturbExtras::Disable && !Introspection::IsTDblFlt<T>());
 
     std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::Disable>>
         Decompress(size_t NewGenerationNumber)
+        const
         requires (PExtras == PerturbExtras::SimpleCompression && !Introspection::IsTDblFlt<T>());
 
     std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::SimpleCompression>>
@@ -319,6 +319,7 @@ public:
 
     std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::Disable>>
         DecompressMax(size_t NewGenerationNumber)
+        const
         requires (PExtras == PerturbExtras::SimpleCompression && !Introspection::IsTDblFlt<T>());
 
     void SaveOrbit(std::wstring filename) const;
@@ -351,10 +352,13 @@ private:
 
     HighPrecision m_OrbitX;
     HighPrecision m_OrbitY;
+    HighPrecision m_ZoomFactor;
     std::string m_OrbitXStr;
     std::string m_OrbitYStr;
+    std::string m_ZoomFactorStr;
     T m_OrbitXLow;
     T m_OrbitYLow;
+    T m_ZoomFactorLow;
     T m_MaxRadius;
     IterType m_MaxIterations;
     IterType m_PeriodMaybeZero;  // Zero if not worked out

@@ -8,6 +8,11 @@ enum class HPDestructor : bool {
 template<HPDestructor Destructor>
 class HighPrecisionT;
 
+enum class HDROrder;
+
+template<class T, HDROrder Order, class TExp>
+class HDRFloat;
+
 #ifndef __CUDACC__
 
 // Include MPIR header
@@ -171,6 +176,14 @@ public:
     explicit HighPrecisionT(std::string data) {
         InitMpf();
         mpf_set_str(m_Data, data.c_str(), 10);
+    }
+
+    template<typename Type, HDROrder Order, typename TExp>
+    explicit HighPrecisionT(const HDRFloat<Type, Order, TExp> &other) {
+        // Not much point in using a higher precision type given
+        // that we're converting from a lower precision type.
+        InitMpf2(sizeof(double) * 8);
+        other.GetHighPrecision(*this);
     }
 
     void precisionInBits(uint64_t prec) {

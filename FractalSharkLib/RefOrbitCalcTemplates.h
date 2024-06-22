@@ -1,8 +1,8 @@
 #pragma once
 
 #define InstantiateIsPerturbationResultUsefulHere(T, PExtras) \
-template bool RefOrbitCalc::IsPerturbationResultUsefulHere<uint32_t, T, false, PExtras>(size_t i); \
-template bool RefOrbitCalc::IsPerturbationResultUsefulHere<uint64_t, T, false, PExtras>(size_t i); \
+template bool RefOrbitCalc::IsPerturbationResultUsefulHere<uint32_t, T, false, PExtras>(size_t i) const; \
+template bool RefOrbitCalc::IsPerturbationResultUsefulHere<uint64_t, T, false, PExtras>(size_t i) const; \
 
 
 InstantiateIsPerturbationResultUsefulHere(double, PerturbExtras::Disable);
@@ -67,14 +67,14 @@ InstantiateAddPerturbationReferencePoint(uint64_t, HDRFloat<float>, float, Pertu
 #define InstantiateGetAndCreateUsefulPerturbationResults2(IterTypeT, T, SubType, PExtras, Ex, ConvertTType) \
     template PerturbationResults<IterTypeT, ConvertTType, PExtras>* \
     RefOrbitCalc::GetAndCreateUsefulPerturbationResults<IterTypeT, T, SubType, PExtras, Ex, ConvertTType>(); \
-    template PerturbationResults<IterTypeT, ConvertTType, PExtras>* \
-    RefOrbitCalc::GetUsefulPerturbationResults<IterTypeT, T, SubType, PExtras, Ex, ConvertTType>();
+    template const PerturbationResults<IterTypeT, ConvertTType, PExtras>* \
+    RefOrbitCalc::GetUsefulPerturbationResults<IterTypeT, T, SubType, PExtras, Ex, ConvertTType>() const;
 
 #define InstantiateGetAndCreateUsefulPerturbationResults1(IterTypeT, T, SubType, PExtras, Ex) \
     template PerturbationResults<IterTypeT, T, PExtras>* \
     RefOrbitCalc::GetAndCreateUsefulPerturbationResults<IterTypeT, T, SubType, PExtras, Ex>(); \
-    template PerturbationResults<IterTypeT, T, PExtras>* \
-    RefOrbitCalc::GetUsefulPerturbationResults<IterTypeT, T, SubType, PExtras, Ex>();
+    template const PerturbationResults<IterTypeT, T, PExtras>* \
+    RefOrbitCalc::GetUsefulPerturbationResults<IterTypeT, T, SubType, PExtras, Ex>() const;
 
 
 InstantiateGetAndCreateUsefulPerturbationResults1(uint32_t, double, double, PerturbExtras::Bad, RefOrbitCalc::Extras::None);

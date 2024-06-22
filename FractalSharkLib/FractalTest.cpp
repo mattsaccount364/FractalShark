@@ -293,6 +293,9 @@ void FractalTest::TestReferenceSave() {
         m_Fractal.ForceRecalc();
         m_Fractal.CalcFractal(false);
 
+        // Force 64-bit on load
+        m_Fractal.SetIterType(IterTypeEnum::Bits64);
+
         m_Fractal.LoadRefOrbit(CompressToDisk::MaxCompressionImagina, maxImaginaFilename);
         m_Fractal.CalcFractal(false);
 

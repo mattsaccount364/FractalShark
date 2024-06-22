@@ -92,10 +92,13 @@ PerturbationResults<IterType, T, PExtras>::PerturbationResults(
 
     m_OrbitX{},
     m_OrbitY{},
+    m_ZoomFactor{},
     m_OrbitXStr{},
     m_OrbitYStr{},
+    m_ZoomFactorStr{},
     m_OrbitXLow{},
     m_OrbitYLow{},
+    m_ZoomFactorLow{},
     m_MaxRadius{},
     m_MaxIterations{},
     m_PeriodMaybeZero{},
@@ -253,10 +256,13 @@ void PerturbationResults<IterType, T, PExtras>::CopyPerturbationResults(
 
     m_OrbitX = other.GetHiX();
     m_OrbitY = other.GetHiY();
+    m_ZoomFactor = other.GetHiZoomFactor();
     m_OrbitXStr = other.GetHiXStr();
     m_OrbitYStr = other.GetHiYStr();
+    m_ZoomFactorStr = other.GetZoomFactorStr();
     m_OrbitXLow = static_cast<T>(Convert<HighPrecision, double>(m_OrbitX));
     m_OrbitYLow = static_cast<T>(Convert<HighPrecision, double>(m_OrbitY));
+    m_ZoomFactorLow = static_cast<T>(Convert<HighPrecision, double>(m_ZoomFactor));
     m_MaxRadius = (T)other.GetMaxRadius();
     m_MaxIterations = other.GetMaxIterations();
     m_PeriodMaybeZero = other.GetPeriodMaybeZero();
@@ -345,10 +351,13 @@ template<PerturbExtras OtherBad>
 void PerturbationResults<IterType, T, PExtras>::CopySettingsWithoutOrbit(const PerturbationResults<IterType, T, OtherBad> &other) {
     m_OrbitX = other.GetHiX();
     m_OrbitY = other.GetHiY();
+    m_ZoomFactor = other.GetHiZoomFactor();
     m_OrbitXStr = other.GetHiXStr();
     m_OrbitYStr = other.GetHiYStr();
+    m_ZoomFactorStr = other.GetZoomFactorStr();
     m_OrbitXLow = other.GetOrbitXLow();
     m_OrbitYLow = other.GetOrbitYLow();
+    m_ZoomFactorLow = other.GetZoomFactorLow();
     m_MaxRadius = other.GetMaxRadius();
     m_MaxIterations = other.GetMaxIterations();
     m_PeriodMaybeZero = other.GetPeriodMaybeZero();
@@ -435,8 +444,11 @@ void PerturbationResults<IterType, T, PExtras>::WriteMetadata() const {
     metafile << "HighPrecisionReal: " << HdrToString<true>(m_OrbitX) << std::endl;
     metafile << "PrecisionInBits: " << m_OrbitY.precisionInBits() << std::endl;
     metafile << "HighPrecisionImaginary: " << HdrToString<true>(m_OrbitY) << std::endl;
+    metafile << "PrecisionInBits: " << m_ZoomFactor.precisionInBits() << std::endl;
+    metafile << "HighPrecisionZoomFactor: " << HdrToString<true>(m_ZoomFactor) << std::endl;
     metafile << "LowPrecisionReal: " << HdrToString<true>(m_OrbitXLow) << std::endl;
     metafile << "LowPrecisionImaginary: " << HdrToString<true>(m_OrbitYLow) << std::endl;
+    metafile << "LowPrecisionZoomFactor: " << HdrToString<true>(m_ZoomFactorLow) << std::endl;
     metafile << "MaxRadius: " << HdrToString<true>(m_MaxRadius) << std::endl;
     // don't bother with m_MaxRadiusHigh
     metafile << "MaxIterationsPerPixel: " << m_MaxIterations << std::endl;
@@ -610,6 +622,22 @@ bool PerturbationResults<IterType, T, PExtras>::ReadMetadata() {
         m_OrbitYStr = shiY;
     }
 
+    {
+        uint32_t prec;
+        metafile >> descriptor_string_junk;
+        metafile >> prec;
+
+        MPIRPrecision p{ prec };
+
+        std::string shiZ;
+        metafile >> descriptor_string_junk;
+        metafile >> shiZ;
+
+        m_ZoomFactor.precisionInBits(prec);
+        m_ZoomFactor = HighPrecision{ shiZ };
+        m_ZoomFactorStr = shiZ;
+    }
+
     HdrFromIfStream<true, T, SubType>(m_OrbitXLow, metafile);
     HdrFromIfStream<true, T, SubType>(m_OrbitYLow, metafile);
     HdrFromIfStream<true, T, SubType>(m_MaxRadius, metafile);
@@ -705,12 +733,19 @@ void PerturbationResults<IterType, T, PExtras>::InitResults(
     size_t GuessReserveSize) {
     m_BenchmarkOrbit.StartTimer();
 
+    HighPrecision zoomFactor{ radiusY };
+    zoomFactor = HighPrecision{ 2 } / zoomFactor;
+    std::string zoomFactorStr = zoomFactor.str();
+
     m_OrbitX = cx;
     m_OrbitY = cy;
+    m_ZoomFactor = zoomFactor;
     m_OrbitXStr = HdrToString<false>(cx);
     m_OrbitYStr = HdrToString<false>(cy);
+    m_ZoomFactorStr = zoomFactorStr;
     m_OrbitXLow = T{ cx };
     m_OrbitYLow = T{ cy };
+    m_ZoomFactorLow = T{ zoomFactor };
     m_MaxRadius = radiusY;
 
     HdrReduce(m_MaxRadius);
@@ -850,6 +885,11 @@ const HighPrecision &PerturbationResults<IterType, T, PExtras>::GetHiY() const {
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>
+const HighPrecision &PerturbationResults<IterType, T, PExtras>::GetHiZoomFactor() const {
+    return m_ZoomFactor;
+}
+
+template<typename IterType, class T, PerturbExtras PExtras>
 const std::string &PerturbationResults<IterType, T, PExtras>::GetHiXStr() const {
     return m_OrbitXStr;
 }
@@ -860,6 +900,11 @@ const std::string &PerturbationResults<IterType, T, PExtras>::GetHiYStr() const 
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>
+const std::string &PerturbationResults<IterType, T, PExtras>::GetZoomFactorStr() const {
+    return m_ZoomFactorStr;
+}
+
+template<typename IterType, class T, PerturbExtras PExtras>
 T PerturbationResults<IterType, T, PExtras>::GetOrbitXLow() const {
     return m_OrbitXLow;
 }
@@ -867,6 +912,11 @@ T PerturbationResults<IterType, T, PExtras>::GetOrbitXLow() const {
 template<typename IterType, class T, PerturbExtras PExtras>
 T PerturbationResults<IterType, T, PExtras>::GetOrbitYLow() const {
     return m_OrbitYLow;
+}
+
+template<typename IterType, class T, PerturbExtras PExtras>
+T PerturbationResults<IterType, T, PExtras>::GetZoomFactorLow() const {
+    return m_ZoomFactorLow;
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>
@@ -1005,7 +1055,7 @@ template<typename IterType, class T, PerturbExtras PExtras>
 std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::SimpleCompression>>
 PerturbationResults<IterType, T, PExtras>::Compress(
     int32_t compression_error_exp_param,
-    size_t new_generation_number)
+    size_t new_generation_number) const
     requires (PExtras == PerturbExtras::Disable && !Introspection::IsTDblFlt<T>()) {
 
     constexpr bool DisableCompression = false;
@@ -1063,9 +1113,10 @@ PerturbationResults<IterType, T, PExtras>::Compress(
 template<typename IterType, class T, PerturbExtras PExtras>
 std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::Disable>>
 PerturbationResults<IterType, T, PExtras>::Decompress(size_t NewGenerationNumber)
+    const
     requires (PExtras == PerturbExtras::SimpleCompression && !Introspection::IsTDblFlt<T>()) {
 
-    auto compressed_orb = std::move(m_FullOrbit);
+    const auto &compressed_orb = m_FullOrbit;
     auto decompressed = std::make_unique<PerturbationResults<IterType, T, PerturbExtras::Disable>>(
         GetRefOrbitOptions(), NewGenerationNumber);
     decompressed->CopySettingsWithoutOrbit(*this);
@@ -1340,6 +1391,7 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
 template<typename IterType, class T, PerturbExtras PExtras>
 std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::Disable>>
 PerturbationResults<IterType, T, PExtras>::DecompressMax(size_t NewGenerationNumber)
+    const
     requires (PExtras == PerturbExtras::SimpleCompression && !Introspection::IsTDblFlt<T>()) {
 
     // Show range of indices touched
@@ -1667,11 +1719,27 @@ void PerturbationResults<IterType, T, PExtras>::SaveOrbitBin(std::ofstream &out)
     out.write(reinterpret_cast<const char *>(&orbitSize), sizeof(orbitSize));
 
     // Write out all values in m_FullOrbit:
-    for (size_t i = 0; i < m_FullOrbit.GetSize(); i++) {
-        //out.write(reinterpret_cast<const char *>(&m_FullOrbit[i]), sizeof(m_FullOrbit[i]));
-        out.write(reinterpret_cast<const char *>(&m_FullOrbit[i].x), sizeof(m_FullOrbit[i].x));
-        out.write(reinterpret_cast<const char *>(&m_FullOrbit[i].y), sizeof(m_FullOrbit[i].y));
-        out.write(reinterpret_cast<const char *>(&m_FullOrbit[i].u), sizeof(m_FullOrbit[i].u));
+    if constexpr (TemplateHelpers::IsHDR) {
+        Imagina::HRReal x;
+        Imagina::HRReal y;
+        CompressionIndexField compressionIndex;
+
+        for (size_t i = 0; i < m_FullOrbit.GetSize(); i++) {
+            x.setExp(m_FullOrbit[i].x.getExp());
+            x.setMantissa(m_FullOrbit[i].x.getMantissa());
+            out.write(reinterpret_cast<const char *>(&x), sizeof(x));
+
+            y.setExp(m_FullOrbit[i].y.getExp());
+            y.setMantissa(m_FullOrbit[i].y.getMantissa());
+            out.write(reinterpret_cast<const char *>(&y), sizeof(y));
+
+            // Compression index
+            compressionIndex.u.f.CompressionIndex = m_FullOrbit[i].u.f.CompressionIndex;
+            compressionIndex.u.f.Rebase = m_FullOrbit[i].u.f.Rebase;
+            out.write(reinterpret_cast<const char *>(&compressionIndex), sizeof(compressionIndex));
+        }
+    } else {
+        assert(false);
     }
 
     // Save rebases

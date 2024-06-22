@@ -55,6 +55,7 @@ struct RefOrbitDetails {
     uint64_t LAMilliseconds;
     uint64_t LASize;
     std::string PerturbationAlg;
+    HighPrecision ZoomFactor;
 
     RefOrbitDetails() : InternalPeriodMaybeZero{},
         CompressedIters{},
@@ -67,7 +68,9 @@ struct RefOrbitDetails {
         OrbitMilliseconds{},
         LAMilliseconds{},
         LASize{},
-        PerturbationAlg{} {}
+        PerturbationAlg{},
+        ZoomFactor{} {
+    }
 
     RefOrbitDetails(
         uint64_t InternalPeriodMaybeZero,
@@ -81,7 +84,8 @@ struct RefOrbitDetails {
         uint64_t OrbitMilliseconds,
         uint64_t LAMilliseconds,
         uint64_t LASize,
-        std::string PerturbationAlg) :
+        std::string PerturbationAlg,
+        HighPrecision ZoomFactor) :
         InternalPeriodMaybeZero{ InternalPeriodMaybeZero },
         CompressedIters{ CompressedIters },
         UncompressedIters{ UncompressedIters },
@@ -93,9 +97,8 @@ struct RefOrbitDetails {
         OrbitMilliseconds{ OrbitMilliseconds },
         LAMilliseconds{ LAMilliseconds },
         LASize{ LASize },
-        PerturbationAlg{ PerturbationAlg } {}
-
-
+        PerturbationAlg{ PerturbationAlg },
+        ZoomFactor{ ZoomFactor } {}
 };
 
 class Fractal {

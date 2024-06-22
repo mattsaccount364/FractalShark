@@ -347,10 +347,13 @@ void RefOrbitCalc::OptimizeMemory() {
 template<
     typename IterType,
     class T,
-    PerturbExtras PExtras>
-std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtras>>> &
-RefOrbitCalc::GetPerturbationResults() {
-    auto lambda = [&]<typename U>(U & container) -> std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtras>>> & {
+    PerturbExtras PExtras,
+    bool IsConst>
+auto RefOrbitCalc::GetPerturbationResultsImpl(auto &refOrbit) -> std::conditional_t<IsConst,
+    const std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtras>>> &,
+    std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtras>>> &> {
+
+    auto lambda = [&]<typename U>(U & container) -> auto & {
         if constexpr (std::is_same<T, double>::value) {
             return container.m_PerturbationResultsDouble;
         } else if constexpr (std::is_same<T, float>::value) {
@@ -368,21 +371,41 @@ RefOrbitCalc::GetPerturbationResults() {
 
     if constexpr (std::is_same<IterType, uint32_t>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
-            return lambda(c32d);
+            return lambda(refOrbit.c32d);
         } else if constexpr (PExtras == PerturbExtras::Bad) {
-            return lambda(c32e);
+            return lambda(refOrbit.c32e);
         } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
-            return lambda(c32c);
+            return lambda(refOrbit.c32c);
         }
     } else if constexpr (std::is_same<IterType, uint64_t>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
-            return lambda(c64d);
+            return lambda(refOrbit.c64d);
         } else if constexpr (PExtras == PerturbExtras::Bad) {
-            return lambda(c64e);
+            return lambda(refOrbit.c64e);
         } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
-            return lambda(c64c);
+            return lambda(refOrbit.c64c);
         }
     }
+}
+
+// Non-const wrapper
+template<
+    typename IterType,
+    class T,
+    PerturbExtras PExtras>
+std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtras>>> &
+RefOrbitCalc::GetPerturbationResultsMutable() {
+    return GetPerturbationResultsImpl<IterType, T, PExtras, false>(*this);
+}
+
+// Const wrapper
+template<
+    typename IterType,
+    class T,
+    PerturbExtras PExtras>
+const std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtras>>> &
+RefOrbitCalc::GetPerturbationResultsConst() const {
+    return GetPerturbationResultsImpl<IterType, T, PExtras, true>(*this);
 }
 
 void RefOrbitCalc::SetOptions(AddPointOptions options) {
@@ -392,7 +415,7 @@ void RefOrbitCalc::SetOptions(AddPointOptions options) {
 template<typename IterType, class T, PerturbExtras PExtras>
 PerturbationResults<IterType, T, PExtras> *
 RefOrbitCalc::AddPerturbationResults(std::unique_ptr<PerturbationResults<IterType, T, PExtras>> results) {
-    auto lambda = [&]<typename U>(U & container) -> PerturbationResults<IterType, T, PExtras> * {
+    auto lambda = []<typename U>(U & container, std::unique_ptr<PerturbationResults<IterType, T, PExtras>> results) -> PerturbationResults<IterType, T, PExtras> * {
         if constexpr (std::is_same<T, double>::value) {
             container.m_PerturbationResultsDouble.push_back(std::move(results));
             return container.m_PerturbationResultsDouble[container.m_PerturbationResultsDouble.size() - 1].get();
@@ -416,19 +439,19 @@ RefOrbitCalc::AddPerturbationResults(std::unique_ptr<PerturbationResults<IterTyp
 
     if constexpr (std::is_same<IterType, uint32_t>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
-            return lambda(c32d);
+            return lambda(c32d, std::move(results));
         } else if constexpr (PExtras == PerturbExtras::Bad) {
-            return lambda(c32e);
+            return lambda(c32e, std::move(results));
         } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
-            return lambda(c32c);
+            return lambda(c32c, std::move(results));
         }
     } else if constexpr (std::is_same<IterType, uint64_t>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
-            return lambda(c64d);
+            return lambda(c64d, std::move(results));
         } else if constexpr (PExtras == PerturbExtras::Bad) {
-            return lambda(c64e);
+            return lambda(c64e, std::move(results));
         } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
-            return lambda(c64c);
+            return lambda(c64c, std::move(results));
         }
     }
 }
@@ -437,21 +460,21 @@ template<
     typename IterType,
     class T,
     PerturbExtras PExtras>
-PerturbationResults<IterType, T, PExtras> &
-RefOrbitCalc::GetPerturbationResults(size_t index) {
-    auto lambda = [&]<typename U>(U & container) -> PerturbationResults<IterType, T, PExtras> & {
+const PerturbationResults<IterType, T, PExtras> *
+RefOrbitCalc::GetPerturbationResults(size_t index) const {
+    auto lambda = [&]<typename U>(U & container) -> PerturbationResults<IterType, T, PExtras> * {
         if constexpr (std::is_same<T, double>::value) {
-            return *container.m_PerturbationResultsDouble[index];
+            return container.m_PerturbationResultsDouble[index].get();
         } else if constexpr (std::is_same<T, float>::value) {
-            return *container.m_PerturbationResultsFloat[index];
+            return container.m_PerturbationResultsFloat[index].get();
         } else if constexpr (std::is_same<T, CudaDblflt<MattDblflt>>::value) {
-            return *container.m_PerturbationResults2xFloat[index];
+            return container.m_PerturbationResults2xFloat[index].get();
         } else if constexpr (std::is_same<T, HDRFloat<double>>::value) {
-            return *container.m_PerturbationResultsHDRDouble[index];
+            return container.m_PerturbationResultsHDRDouble[index].get();
         } else if constexpr (std::is_same<T, HDRFloat<float>>::value) {
-            return *container.m_PerturbationResultsHDRFloat[index];
+            return container.m_PerturbationResultsHDRFloat[index].get();
         } else if constexpr (std::is_same<T, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
-            return *container.m_PerturbationResultsHDR2xFloat[index];
+            return container.m_PerturbationResultsHDR2xFloat[index].get();
         }
     };
 
@@ -572,7 +595,7 @@ template<
     PerturbExtras PExtras,
     RefOrbitCalc::ReuseMode Reuse>
 void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecision cy) {
-    auto &PerturbationResultsArray = GetPerturbationResults<IterType, T, PExtras>();
+    auto &PerturbationResultsArray = GetPerturbationResultsMutable<IterType, T, PExtras>();
     auto newArray = std::make_unique<PerturbationResults<IterType, T, PExtras>>(
         m_RefOrbitOptions, GetNextGenerationNumber());
     PerturbationResultsArray.push_back(std::move(newArray));
@@ -865,12 +888,12 @@ template<
     RefOrbitCalc::BenchmarkMode BenchmarkState,
     RefOrbitCalc::ReuseMode Reuse>
 bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPrecision cy) {
-    auto &PerturbationResultsArray = GetPerturbationResults<IterType, T, PerturbExtras::Disable>();
+    auto &PerturbationResultsArray = GetPerturbationResultsMutable<IterType, T, PerturbExtras::Disable>();
     auto newArray = std::make_unique<PerturbationResults<IterType, T, PerturbExtras::Disable>>(
         m_RefOrbitOptions, GetNextGenerationNumber());
     PerturbationResultsArray.push_back(std::move(newArray));
 
-    auto *existingResults = GetUsefulPerturbationResults<IterType, T, true, PerturbExtras::Disable>();
+    auto *existingResults = GetUsefulPerturbationResultsMutable<IterType, T, true, PerturbExtras::Disable>();
 
     // TODO Lame hack with < 5.
     if (existingResults == nullptr ||
@@ -1152,12 +1175,12 @@ template<
     RefOrbitCalc::BenchmarkMode BenchmarkState,
     RefOrbitCalc::ReuseMode Reuse>
 bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighPrecision cy) {
-    auto &PerturbationResultsArray = GetPerturbationResults<IterType, T, PerturbExtras::Disable>();
+    auto &PerturbationResultsArray = GetPerturbationResultsMutable<IterType, T, PerturbExtras::Disable>();
     auto newArray = std::make_unique<PerturbationResults<IterType, T, PerturbExtras::Disable>>(
         m_RefOrbitOptions, GetNextGenerationNumber());
     PerturbationResultsArray.push_back(std::move(newArray));
 
-    auto *existingResults = GetUsefulPerturbationResults<IterType, T, true, PerturbExtras::Disable>();
+    auto *existingResults = GetUsefulPerturbationResultsMutable<IterType, T, true, PerturbExtras::Disable>();
 
     // TODO Lame hack with < 5.
     if (existingResults == nullptr ||
@@ -1735,7 +1758,7 @@ template<
     PerturbExtras PExtras,
     RefOrbitCalc::ReuseMode Reuse>
 void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecision cy) {
-    auto &PerturbationResultsArray = GetPerturbationResults<IterType, T, PExtras>();
+    auto &PerturbationResultsArray = GetPerturbationResultsMutable<IterType, T, PExtras>();
     auto newArray = std::make_unique<PerturbationResults<IterType, T, PExtras>>(
         m_RefOrbitOptions, GetNextGenerationNumber());
     PerturbationResultsArray.push_back(std::move(newArray));
@@ -2365,7 +2388,7 @@ template<
     class T,
     bool Authoritative,
     PerturbExtras PExtras>
-bool RefOrbitCalc::IsPerturbationResultUsefulHere(size_t i) {
+bool RefOrbitCalc::IsPerturbationResultUsefulHere(size_t i) const {
 
     auto lambda = [&]<typename T, bool Authoritative, PerturbExtras PExtras>(
         const PerturbationResults<IterType, T, PExtras> &PerturbationResults
@@ -2388,7 +2411,7 @@ bool RefOrbitCalc::IsPerturbationResultUsefulHere(size_t i) {
         }
     };
 
-    const auto &results = GetPerturbationResults<IterType, T, PExtras>(i);
+    const auto &results = *GetPerturbationResults<IterType, T, PExtras>(i);
     return lambda.template operator() < T, Authoritative, PExtras > (results);
 }
 
@@ -2399,9 +2422,9 @@ template<
     PerturbExtras PExtras,
     RefOrbitCalc::Extras Ex,
     class ConvertTType>
-PerturbationResults<IterType, ConvertTType, PExtras> *
-RefOrbitCalc::GetUsefulPerturbationResults() {
-    auto *resultsExisting = GetUsefulPerturbationResults<IterType, ConvertTType, false, PExtras>();
+const PerturbationResults<IterType, ConvertTType, PExtras> *
+RefOrbitCalc::GetUsefulPerturbationResults() const {
+    const auto *resultsExisting = GetUsefulPerturbationResultsMutable<IterType, ConvertTType, false, PExtras>();
 
     if (resultsExisting != nullptr) {
         if constexpr (Ex == RefOrbitCalc::Extras::IncludeLAv2) {
@@ -2460,7 +2483,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
         }
 
         PerturbationResults<IterType, T, PExtrasHackYay> *results =
-            GetUsefulPerturbationResults<IterType, T, false, PExtrasHackYay>();
+            GetUsefulPerturbationResultsMutable<IterType, T, false, PExtrasHackYay>();
         if (results == nullptr) {
             switch (GetPerturbationAlg()) {
             case PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed:
@@ -2492,7 +2515,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
     }
 
     PerturbationResults<IterType, T, PExtras> *results =
-        GetUsefulPerturbationResults<IterType, T, false, PExtras>();
+        GetUsefulPerturbationResultsMutable<IterType, T, false, PExtras>();
     if (results == nullptr) {
         if (added) {
             ::MessageBox(nullptr, L"Why didn't this work! :(", L"", MB_OK | MB_APPLMODAL);
@@ -2500,7 +2523,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
 
         if constexpr (UsingDblflt) {
             PerturbationResults<IterType, ConvertTType, PExtras> *results_converted =
-                GetUsefulPerturbationResults<IterType, ConvertTType, false, PExtras>();
+                GetUsefulPerturbationResultsMutable<IterType, ConvertTType, false, PExtras>();
 
             if (results_converted != nullptr) {
                 return results_converted;
@@ -2508,7 +2531,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
         }
 
         std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtras>>> &cur_array =
-            GetPerturbationResults<IterType, T, PExtras>();
+            GetPerturbationResultsMutable<IterType, T, PExtras>();
         AddPerturbationReferencePoint<IterType, T, SubType, PExtras, BenchmarkMode::Disable>();
         added = true;
 
@@ -2559,7 +2582,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
         };
 
     if constexpr (UsingDblflt) {
-        auto *resultsExisting = GetUsefulPerturbationResults<IterType, ConvertTType, false, PExtras>();
+        auto *resultsExisting = GetUsefulPerturbationResultsMutable<IterType, ConvertTType, false, PExtras>();
 
 
         // The second part of this accounts for the case where the
@@ -2601,9 +2624,10 @@ template<
     class T,
     bool Authoritative,
     PerturbExtras PExtras>
-PerturbationResults<IterType, T, PExtras> *RefOrbitCalc::GetUsefulPerturbationResults() {
+PerturbationResults<IterType, T, PExtras> *RefOrbitCalc::GetUsefulPerturbationResultsMutable() {
     std::vector<PerturbationResults<IterType, T, PExtras> *> useful_results;
-    std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtras>>> &cur_array = GetPerturbationResults<IterType, T, PExtras>();
+    std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtras>>> &cur_array =
+        GetPerturbationResultsMutable<IterType, T, PExtras>();
 
     if (!cur_array.empty()) {
         if (cur_array.size() > MaxStoredOrbits) {
@@ -2618,6 +2642,31 @@ PerturbationResults<IterType, T, PExtras> *RefOrbitCalc::GetUsefulPerturbationRe
     }
 
     PerturbationResults<IterType, T, PExtras> *results = nullptr;
+
+    if (!useful_results.empty()) {
+        results = useful_results[useful_results.size() - 1];
+    }
+
+    return results;
+}
+
+template<
+    typename IterType,
+    class T,
+    bool Authoritative,
+    PerturbExtras PExtras>
+const PerturbationResults<IterType, T, PExtras> *RefOrbitCalc::GetUsefulPerturbationResultsMutable() const {
+    std::vector<PerturbationResults<IterType, T, PExtras> *> useful_results;
+    const std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtras>>> &cur_array =
+        GetPerturbationResultsConst<IterType, T, PExtras>();
+
+    for (size_t i = 0; i < cur_array.size(); i++) {
+        if (IsPerturbationResultUsefulHere<IterType, T, Authoritative, PExtras>(i)) {
+            useful_results.push_back(cur_array[i].get());
+        }
+    }
+
+    const PerturbationResults<IterType, T, PExtras> *results = nullptr;
 
     if (!useful_results.empty()) {
         results = useful_results[useful_results.size() - 1];
@@ -3026,7 +3075,8 @@ void RefOrbitCalc::GetSomeDetails(RefOrbitDetails &details) const {
             arg->GetBenchmarkOrbit(),
             LAMilliseconds,
             LASize,
-            GetPerturbationAlgStr()
+            GetPerturbationAlgStr(),
+            arg->GetHiZoomFactor()
         };
         };
 
@@ -3134,16 +3184,19 @@ void RefOrbitCalc::SaveOrbit(
     file.flush();
 }
 
-void RefOrbitCalc::LoadOrbit(
+/*
+template<typename IterType, class T, PerturbExtras PExtras>
+const PerturbationResults<IterType, T, PExtras> *RefOrbitCalc::LoadOrbit(
     CompressToDisk compression,
-    std::wstring imagFilename,
-    HighPrecision &centerX,
-    HighPrecision &centerY,
-    HighPrecision &zoomFactor) {
+    std::wstring imagFilename) {
+*/
+
+const PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::Disable> *RefOrbitCalc::LoadOrbit(
+    CompressToDisk compression,
+    std::wstring imagFilename) {
 
     if (compression != CompressToDisk::MaxCompressionImagina) {
-        ::MessageBox(nullptr, L"Invalid compression type -- expectation is that others are mapped in on startup", L"", MB_OK | MB_APPLMODAL);
-        return;
+        throw FractalSharkSeriousException("Invalid compression type");
     }
 
     constexpr bool singleStepHelper = false;
@@ -3168,9 +3221,10 @@ void RefOrbitCalc::LoadOrbit(
     file.read(reinterpret_cast<char *>(&halfH), sizeof(Imagina::HRReal));
 
     // Based on the precision of halfH, determine the type
-    uint64_t precision = -std::min(0ll, halfH.getExp()) + 64;
+    uint64_t precision = -std::min(0ll, halfH.getExp()) + AuthoritativeMinExtraPrecisionInBits;
 
     // Convert to zoom factor
+    HighPrecision zoomFactor{};
     halfH.GetHighPrecision(zoomFactor);
     zoomFactor = HighPrecision{ 2 } / zoomFactor;
     std::string zoomFactorStr = zoomFactor.str();
@@ -3183,11 +3237,9 @@ void RefOrbitCalc::LoadOrbit(
     }
 
     HighPrecision orbitX{ precision, file };
-    centerX = orbitX;
     std::string orbitXStr = orbitX.str();
 
     HighPrecision orbitY{ precision, file };
-    centerY = orbitY;
     std::string orbitYStr = orbitY.str();
 
     if constexpr (singleStepHelper) {
@@ -3196,29 +3248,33 @@ void RefOrbitCalc::LoadOrbit(
         uint64_t curPos2 = file.tellg();
     }
 
-    if (fileHeader.ReferenceOffset) {
-        file.seekg(fileHeader.ReferenceOffset);
-
-        // Depending on the header, read the rest of the file and determine the type
-        // Extended range implies the use of high precision types
-        // For this example, let's assume HDRFloat<HRReal>
-        auto results = std::make_unique<PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::SimpleCompression>>(
-            AddPointOptions::OpenExistingWithSave,
-            GetNextGenerationNumber());
-        results->LoadOrbitBin(std::move(orbitX), std::move(orbitY), halfH, file);
-
-        auto decompressedResults = results->DecompressMax(GetNextGenerationNumber());
-        m_LastUsedRefOrbit = AddPerturbationResults(std::move(decompressedResults));
+    if (!fileHeader.ReferenceOffset) {
+        throw FractalSharkSeriousException("Invalid file format");
     }
 
+    file.seekg(fileHeader.ReferenceOffset);
+
+    // Depending on the header, read the rest of the file and determine the type
+    // Extended range implies the use of high precision types
+    // For this example, let's assume HDRFloat<HRReal>
+    auto results = std::make_unique<PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::SimpleCompression>>(
+        AddPointOptions::OpenExistingWithSave,
+        GetNextGenerationNumber());
+    results->LoadOrbitBin(std::move(orbitX), std::move(orbitY), halfH, file);
+
+    auto decompressedResults = results->DecompressMax(GetNextGenerationNumber());
+    auto *result = AddPerturbationResults(std::move(decompressedResults));
+    m_LastUsedRefOrbit = result;
+
     file.close();
+    return result;
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>
 void RefOrbitCalc::DrawPerturbationResultsHelper() {
     // TODO can we just integrate all this with DrawFractal
 
-    const auto &results = GetPerturbationResults<IterType, T, PExtras>();
+    const auto &results = GetPerturbationResultsConst<IterType, T, PExtras>();
     for (size_t i = 0; i < results.size(); i++) {
         if (IsPerturbationResultUsefulHere<IterType, T, false, PExtras>(i)) {
             glColor3f((GLfloat)255, (GLfloat)255, (GLfloat)255);

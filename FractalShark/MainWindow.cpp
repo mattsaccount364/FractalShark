@@ -1757,7 +1757,8 @@ void MainWindow::MenuGetCurPos() {
         std::string("Reuse compression error exp = ") + std::to_string(details.IntermediateCompressionErrorExp) + "\r\n" +
         std::string("Reuse compression ratio = ") + std::to_string((double)details.UncompressedIters / (double)details.CompressedIntermediateIters) + "\r\n" +
         std::string("DeltaIntermediatePrecision = ") + std::to_string(details.DeltaIntermediatePrecision) + "\r\n" +
-        std::string("ExtraIntermediatePrecision = ") + std::to_string(details.ExtraIntermediatePrecision) + "\r\n";
+        std::string("ExtraIntermediatePrecision = ") + std::to_string(details.ExtraIntermediatePrecision) + "\r\n" +
+        std::string("ZoomFactor = ") + details.ZoomFactor.str() + "\r\n";
 
     const auto &laParameters = gFractal->GetLAParameters();
     const auto threadingVal = laParameters.GetThreading();
@@ -2190,11 +2191,19 @@ void MainWindow::MenuLoadImagDyn() {
 
 void MainWindow::MenuSaveImag(CompressToDisk compression) {
     std::wstring filename = OpenFileDialog(OFN_PATHMUSTEXIST);
+    if (filename.empty()) {
+        return;
+    }
+
     gFractal->SaveRefOrbit(compression, filename);
 }
 
 void MainWindow::MenuLoadImag(CompressToDisk compression) {
     std::wstring filename = OpenFileDialog(OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST);
+    if (filename.empty()) {
+        return;
+    }
+
     gFractal->LoadRefOrbit(compression, filename);
     PaintAsNecessary();
 }

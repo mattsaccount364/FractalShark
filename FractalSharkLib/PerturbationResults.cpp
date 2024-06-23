@@ -1706,8 +1706,9 @@ void PerturbationResults<IterType, T, PExtras>::SaveOrbitBin(std::ofstream &out)
     // Note: m_FullOrbit.size() is the number of iterations in the compressed orbit.
     // Instead, we need to write out the number of iterations in the
     // decompressed orbit, which is m_UncompressedItersInOrbit.
+    std::complex<double> refc{ static_cast<double>(m_OrbitX), static_cast<double>(m_OrbitY) };
     Imagina::LAReferenceTrivialContent laContent = {
-        {},
+        refc,
         m_UncompressedItersInOrbit - 1, // TODO -1?
         m_MaxIterations,
         {}, // DoublePrecisionPT

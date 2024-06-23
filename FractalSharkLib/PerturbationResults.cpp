@@ -1775,9 +1775,19 @@ void PerturbationResults<IterType, T, PExtras>::LoadOrbitBin(
     Imagina::ReferenceHeader referenceHeader;
     file.read(reinterpret_cast<char *>(&referenceHeader), sizeof(referenceHeader));
 
+    // Notes
+    // - RelativePrecision not used.  Imagina appears to ignore it.
     Imagina::ReferenceTrivialContent content;
     file.read(reinterpret_cast<char *>(&content), sizeof(content));
 
+    // Notes
+    // - Refc not used.  We convert it from the high precision orbitX and orbitY.
+    //   Imagina uses it though.
+    // We recalculate these next items, and it looks like Imagina does too.  All
+    // are effectively not used during save/load.
+    // - UseAT
+    // - LAStageCount
+    // - AT structure
     Imagina::LAReferenceTrivialContent laContent;
     file.read(reinterpret_cast<char *>(&laContent), sizeof(laContent));
 

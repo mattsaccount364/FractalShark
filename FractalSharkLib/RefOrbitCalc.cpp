@@ -3146,6 +3146,9 @@ void RefOrbitCalc::SaveOrbit(
         throw std::runtime_error("Unable to open file");
     }
 
+    // Note: the flush() calls are just for debugging and the IO performance is
+    // irrelevant on this path so it's fine to leave them in.
+
     Imagina::IMFileHeader fileHeader;
     fileHeader.Magic = Imagina::IMMagicNumber;
     fileHeader.Reserved = 0;
@@ -3158,7 +3161,6 @@ void RefOrbitCalc::SaveOrbit(
 
     Imagina::HRReal halfH{ };
     const auto radius = results.GetMaxRadius();
-    //halfH = Imagina::HRReal{ T{ 2.0 } / radius };
     halfH = Imagina::HRReal{ radius };
     file.write(reinterpret_cast<const char *>(&halfH), sizeof(Imagina::HRReal));
     file.flush();

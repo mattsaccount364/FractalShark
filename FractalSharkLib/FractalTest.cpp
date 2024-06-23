@@ -308,7 +308,7 @@ void FractalTest::TestReferenceSave() {
 
     for (auto curAlg : View5Algs) {
         referenceSaveLoad(testIndex, IterTypeEnum::Bits32, curAlg);
-        //referenceSaveLoad(testIndex, IterTypeEnum::Bits64, curAlg);
+        referenceSaveLoad(testIndex, IterTypeEnum::Bits64, curAlg);
 
         testIndex++;
     }

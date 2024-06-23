@@ -3937,6 +3937,9 @@ void Fractal::LoadRefOrbit(CompressToDisk compression, std::wstring filename) {
     }
 
     SetPosition(zoom.GetMinX(), zoom.GetMinY(), zoom.GetMaxX(), zoom.GetMaxY());
+
+    auto maxIters = perturbResults.GetMaxIterations();
+    SetNumIterations<decltype(maxIters)>(maxIters);
     ChangedMakeDirty();
 }
 

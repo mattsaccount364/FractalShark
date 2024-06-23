@@ -640,6 +640,8 @@ bool PerturbationResults<IterType, T, PExtras>::ReadMetadata() {
 
     HdrFromIfStream<true, T, SubType>(m_OrbitXLow, metafile);
     HdrFromIfStream<true, T, SubType>(m_OrbitYLow, metafile);
+    HdrFromIfStream<true, T, SubType>(m_ZoomFactorLow, metafile);
+
     HdrFromIfStream<true, T, SubType>(m_MaxRadius, metafile);
 
     {
@@ -1688,7 +1690,10 @@ void PerturbationResults<IterType, T, PExtras>::SaveOrbitBin(std::ofstream &out)
 
     out.write(reinterpret_cast<const char *>(&referenceHeader), sizeof(referenceHeader));
 
-    Imagina::HRReal prec{ static_cast<double>(m_OrbitX.precisionInBits()) }; // TODO this must be wrong
+    // This is basically how Imagina stores it so we'll just match it.  TODO Why *16?
+    // Are we just counting bits differently or something?  We don't have pow2 either
+    // Imagina::HRReal prec{ pow2(-double(m_OrbitX.precisionInBits())) * 16.0_hr };
+    Imagina::HRReal prec{ -static_cast<int64_t>(m_OrbitX.precisionInBits()), 2 };
     Imagina::HRReal maxRadius{ m_MaxRadius };
     Imagina::ReferenceTrivialContent content = {
         prec,

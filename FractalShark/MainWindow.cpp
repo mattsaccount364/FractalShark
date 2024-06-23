@@ -70,13 +70,6 @@ MainWindow::~MainWindow() {
     UnInit();
 
     gJobObj.reset();
-
-#ifdef _DEBUG
-    // We have a 16-byte leak thanks to Windows no matter what we do.
-
-    _CrtSetReportMode(_CRT_WARN, _CRTDBG_MODE_DEBUG);
-    _CrtDumpMemoryLeaks();
-#endif
 }
 
 void MainWindow::MainWindow::DrawFractalShark() {
@@ -303,7 +296,10 @@ HWND MainWindow::InitInstance(HINSTANCE hInstance, int nCmdShow) { // Store inst
 // Performs all cleanup operations
 //
 void MainWindow::UnInit() {
-    DestroyMenu(gPopupMenu);
+    ClearMenu(gPopupMenu);
+    ClearMenu(LoadSubMenu);
+    ClearMenu(ImaginaMenu);
+
     DestroyWindow(hWnd);
     UnregisterClass(szWindowClass, hInst);
     gFractal.reset();
@@ -1243,8 +1239,7 @@ LRESULT MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam) {
         case IDM_VIEW_DYNAMIC_ORBIT + 28:
         case IDM_VIEW_DYNAMIC_ORBIT + 29:
         {
-            DestroyMenu(LoadSubMenu);
-            LoadSubMenu = nullptr;
+            ClearMenu(LoadSubMenu);
 
             auto index = wmId - IDM_VIEW_DYNAMIC_ORBIT;
             auto minX = gSavedLocations[index].minX;
@@ -1292,8 +1287,7 @@ LRESULT MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam) {
         case IDM_VIEW_DYNAMIC_IMAG + 28:
         case IDM_VIEW_DYNAMIC_IMAG + 29:
         {
-            DestroyMenu(ImaginaMenu);
-            ImaginaMenu = nullptr;
+            ClearMenu(ImaginaMenu);
 
             auto index = wmId - IDM_VIEW_DYNAMIC_IMAG;
             gFractal->LoadRefOrbit(CompressToDisk::MaxCompressionImagina, gImaginaLocations[index].Filename);
@@ -2145,11 +2139,15 @@ void MainWindow::BenchmarkMessage(size_t milliseconds) {
 
 }
 
-void MainWindow::MenuLoadImagDyn() {
-    if (ImaginaMenu != nullptr) {
-        DestroyMenu(ImaginaMenu);
-        ImaginaMenu = nullptr;
+void MainWindow::ClearMenu(HMENU &menu) {
+    if (menu != nullptr) {
+        DestroyMenu(menu);
+        menu = nullptr;
     }
+}
+
+void MainWindow::MenuLoadImagDyn() {
+    ClearMenu(ImaginaMenu);
 
     ImaginaMenu = CreatePopupMenu();
     size_t index = 0;

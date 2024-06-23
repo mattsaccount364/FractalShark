@@ -3258,7 +3258,7 @@ const PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::Disable> *R
     // Extended range implies the use of high precision types
     // For this example, let's assume HDRFloat<HRReal>
     auto results = std::make_unique<PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::SimpleCompression>>(
-        AddPointOptions::OpenExistingWithSave,
+        AddPointOptions::EnableWithoutSave,
         GetNextGenerationNumber());
     results->LoadOrbitBin(std::move(orbitX), std::move(orbitY), halfH, file);
 

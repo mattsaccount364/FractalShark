@@ -84,6 +84,8 @@ private:
 
     void PaintAsNecessary();
 
+    void ClearMenu(HMENU &menu);
+
     bool IsDownControl() { return (GetAsyncKeyState(VK_CONTROL) & 0x8000) == 0x8000; };
     bool IsDownShift() { return (GetAsyncKeyState(VK_SHIFT) & 0x8000) == 0x8000; };
     bool IsDownAlt() { return (GetAsyncKeyState(VK_MENU) & 0x8000) == 0x8000; };

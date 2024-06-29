@@ -9,7 +9,7 @@ class PerturbationResults;
 template<typename IterType, class T, PerturbExtras PExtras>
 class TemplateHelpers {
 
-protected:
+public:
     // Example of how to pull the SubType out for HdrFloat, or keep the primitive float/double
     using SubType = typename SubTypeChooser<
         std::is_fundamental<T>::value,
@@ -48,23 +48,25 @@ public:
 
     RuntimeDecompressor(const RuntimeDecompressor &other) = default;
 
-    template<class U>
-    HDRFloatComplex<U> GetCompressedComplex(size_t uncompressed_index) const {
-
+    void GetCompressedComplex(size_t uncompressed_index, T &outX, T &outY) const {
         auto runOneIter = [&](auto &zx, auto &zy) {
             auto zx_old = zx;
             zx = zx * zx - zy * zy + results.m_OrbitXLow;
             HdrReduce(zx);
-            zy = T{ 2 } *zx_old * zy + results.m_OrbitYLow;
+            zy = T{ 2 } * zx_old * zy + results.m_OrbitYLow;
             HdrReduce(zy);
             };
 
         if (CachedIter1.UncompressedIter == uncompressed_index) {
-            return { CachedIter1.zx, CachedIter1.zy };
+            outX = CachedIter1.zx;
+            outY = CachedIter1.zy;
+            return;
         }
 
         if (CachedIter2.UncompressedIter == uncompressed_index) {
-            return { CachedIter2.zx, CachedIter2.zy };
+            outX = CachedIter2.zx;
+            outY = CachedIter2.zy;
+            return;
         }
 
         auto LinearScan = [&](CachedIter<T> &iter, CachedIter<T> &other) -> bool {
@@ -95,12 +97,16 @@ public:
 
         bool ret = LinearScan(CachedIter1, CachedIter2);
         if (ret) {
-            return { CachedIter1.zx, CachedIter1.zy };
+            outX = CachedIter1.zx;
+            outY = CachedIter1.zy;
+            return;
         }
 
         ret = LinearScan(CachedIter2, CachedIter1);
         if (ret) {
-            return { CachedIter2.zx, CachedIter2.zy };
+            outX = CachedIter2.zx;
+            outY = CachedIter2.zy;
+            return;
         }
 
         // Do a binary search.  Given the uncompressed index, search the compressed
@@ -139,13 +145,24 @@ public:
             if (cur_uncompressed_index == uncompressed_index) {
                 CachedIter2 = CachedIter1;
                 CachedIter1 = CachedIter<T>(zx, zy, cur_uncompressed_index, BestCompressedIndexGuess);
-                return { zx, zy };
+                outX = zx;
+                outY = zy;
+                return;
             }
 
             runOneIter(zx, zy);
         }
 
-        return {};
+        outX = {};
+        outY = {};
+        return;
+    }
+
+    template<class U>
+    HDRFloatComplex<U> GetCompressedComplex(size_t uncompressed_index) const {
+        T outX, outY;
+        GetCompressedComplex(uncompressed_index, outX, outY);
+        return { outX, outY };
     }
 
 private:

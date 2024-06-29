@@ -10,6 +10,8 @@
 class Fractal;
 struct RefOrbitDetails;
 
+template<typename T>
+class PerturbationResultsBase;
 template<typename IterType, class T, PerturbExtras PExtras>
 class PerturbationResults;
 
@@ -129,14 +131,9 @@ public:
     template<typename IterType, class T, PerturbExtras PExtras>
     void SaveOrbit(const PerturbationResults<IterType, T, PExtras> &results, std::wstring imagFilename) const;
 
-    const PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::Disable> *LoadOrbit(
+    const PerturbationResultsBase<uint64_t> *LoadOrbit(
         CompressToDisk compression,
         std::wstring imagFilename);
-
-    //template<typename IterType, class T, PerturbExtras PExtras>
-    //const PerturbationResults<IterType, T, PExtras> *LoadOrbit(
-    //    CompressToDisk compression,
-    //    std::wstring imagFilename);
 
     void DrawPerturbationResults();
 

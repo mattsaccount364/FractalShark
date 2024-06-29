@@ -77,9 +77,41 @@ class SimpleIntermediateOrbitCompressor;
 template<typename IterType, class T, PerturbExtras PExtras>
 class MaxIntermediateOrbitCompressor;
 
+template<typename IterType>
+class PerturbationResultsBase {
+public:
+    const HighPrecision &GetHiX() const;
+    const HighPrecision &GetHiY() const;
+    const HighPrecision &GetHiZoomFactor() const;
+    IterType GetMaxIterations() const;
+
+protected:
+    PerturbationResultsBase() :
+        m_OrbitX{},
+        m_OrbitY{},
+        m_ZoomFactor{},
+        m_MaxIterations{} {
+    }
+
+    PerturbationResultsBase(
+        const HighPrecision &orbitX,
+        const HighPrecision &orbitY,
+        const HighPrecision &zoomFactor,
+        IterType MaxIterations)
+        : m_OrbitX(orbitX),
+        m_OrbitY(orbitY),
+        m_ZoomFactor(zoomFactor),
+        m_MaxIterations(MaxIterations) {
+    }
+
+    HighPrecision m_OrbitX;
+    HighPrecision m_OrbitY;
+    HighPrecision m_ZoomFactor;
+    IterType m_MaxIterations;
+};
 
 template<typename IterType, class T, PerturbExtras PExtras>
-class PerturbationResults : public TemplateHelpers<IterType, T, PExtras> {
+class PerturbationResults : public PerturbationResultsBase<IterType>, public TemplateHelpers<IterType, T, PExtras> {
 
 public:
     template<typename IterType, class T, PerturbExtras PExtras> friend class PerturbationResults;
@@ -178,6 +210,21 @@ public:
     // (which it then converts to 2x32).  This is a bug.
     bool ReadMetadata();
 
+    void GetComplex(
+        RuntimeDecompressor<IterType, T, PExtras> &PerThreadCompressionHelper,
+        size_t uncompressed_index,
+        T &outX,
+        T &outY) const
+        requires (!Introspection::IsTDblFlt<T>()) {
+
+        if constexpr (PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::Bad) {
+            outX = m_FullOrbit[uncompressed_index].x;
+            outY = m_FullOrbit[uncompressed_index].y;
+        } else {
+            PerThreadCompressionHelper.GetCompressedComplex(uncompressed_index, outX, outY);
+        }
+    }
+
     template<class U = SubType>
     typename HDRFloatComplex<U> GetComplex(
         RuntimeDecompressor<IterType, T, PExtras> &PerThreadCompressionHelper,
@@ -227,10 +274,6 @@ public:
         requires (PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::Bad);
 
     const GPUReferenceIter<T, PExtras> *GetOrbitData() const;
-
-    const HighPrecision &GetHiX() const;
-    const HighPrecision &GetHiY() const;
-    const HighPrecision &GetHiZoomFactor() const;
 
     const std::string &GetHiXStr() const;
     const std::string &GetHiYStr() const;
@@ -291,8 +334,6 @@ public:
         const mpf_t *&x,
         const mpf_t *&y) const;
 
-    IterType GetMaxIterations() const;
-
     // For reference:
     // Used:
     //   https://code.mathr.co.uk/fractal-bits/tree/HEAD:/mandelbrot-reference-compression
@@ -315,7 +356,7 @@ public:
             int32_t compression_error_exp_param,
             size_t new_generation_number)
         const
-        requires (PExtras == PerturbExtras::Disable && !Introspection::IsTDblFlt<T>());
+        requires (!Introspection::IsTDblFlt<T>());
 
     std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::Disable>>
         DecompressMax(size_t NewGenerationNumber)
@@ -331,7 +372,7 @@ public:
         HighPrecision orbitY,
         const Imagina::HRReal &halfH,
         std::ifstream &file)
-        requires(std::is_same_v<T, HDRFloat<double>> && PExtras == PerturbExtras::SimpleCompression);
+        requires(PExtras == PerturbExtras::SimpleCompression); // std::is_same_v<T, HDRFloat<double>> && 
 
     // For information purposes only, not used for anything
     // other than reporting.
@@ -350,17 +391,14 @@ private:
 
     void MapExistingFiles();
 
-    HighPrecision m_OrbitX;
-    HighPrecision m_OrbitY;
-    HighPrecision m_ZoomFactor;
     std::string m_OrbitXStr;
     std::string m_OrbitYStr;
     std::string m_ZoomFactorStr;
     T m_OrbitXLow;
     T m_OrbitYLow;
     T m_ZoomFactorLow;
+
     T m_MaxRadius;
-    IterType m_MaxIterations;
     IterType m_PeriodMaybeZero;  // Zero if not worked out
     mutable int32_t m_CompressionErrorExp;
     int32_t m_IntermediateCompressionErrorExp;

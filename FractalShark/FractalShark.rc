@@ -387,7 +387,9 @@ END
 // PNG
 //
 
-IDB_PNG_SPLASH          PNG                     "FractalShark.png"
+IDB_JPG_SPLASH1          JPG                     "..\\Pics\\Bing generated Fractal Shark.jpg"
+IDB_PNG_SPLASH1          PNG                     "..\\Pics\\FractalShark.png"
+IDB_PNG_SPLASH2          PNG                     "..\\Pics\\Chatgpt Fractal Shark.png"
 
 
 /////////////////////////////////////////////////////////////////////////////

@@ -13,6 +13,11 @@ namespace Imagina {
 
     constexpr uint64_t IMMagicNumber = 0x000A0D56504D49FF;
 
+    // Encode ASCII "Sharks:)" into a 64-bit number, for
+    // a slight derivative of the format.
+    constexpr uint64_t SharksMagicNumber = 0x536861726b733a29;
+    
+
     struct IMFileHeader {
         uint64_t Magic;
         uint64_t Reserved;

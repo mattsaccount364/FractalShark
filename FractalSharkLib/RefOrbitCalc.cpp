@@ -3108,6 +3108,8 @@ void RefOrbitCalc::SaveOrbit(CompressToDisk compression, std::wstring filename) 
                 //     GetNextGenerationNumber());
                 // auto decompressedResults = compressedResults->DecompressMax(GetNextGenerationNumber());
                 // decompressedResults->SaveOrbit(filename);
+            } else {
+                throw FractalSharkSeriousException("Currently unsupported type 3");
             }
         } else if (compression == CompressToDisk::MaxCompression) {
             if constexpr (
@@ -3118,15 +3120,14 @@ void RefOrbitCalc::SaveOrbit(CompressToDisk compression, std::wstring filename) 
                     GetNextGenerationNumber());
                 compressedResults->SaveOrbit(filename);
             } else {
-
+                throw FractalSharkSeriousException("Currently unsupported type 1");
             }
         } else if (compression == CompressToDisk::MaxCompressionImagina) {
 
-            if constexpr (
-                Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::Disable>() &&
-                !Introspection::IsDblFlt<decltype(*results)>()) {
-
+            if constexpr (!Introspection::IsDblFlt<decltype(*results)>()) {
                 SaveOrbit(*results, filename);
+            } else {
+                throw FractalSharkSeriousException("Currently unsupported type 2");
             }
         } else {
             throw FractalSharkSeriousException("Unknown CompressToDisk");
@@ -3150,7 +3151,15 @@ void RefOrbitCalc::SaveOrbit(
     // irrelevant on this path so it's fine to leave them in.
 
     Imagina::IMFileHeader fileHeader;
-    fileHeader.Magic = Imagina::IMMagicNumber;
+    using ResultsSubType = typename std::remove_reference<decltype(results)>::type::SubType;
+    if (std::is_same_v<ResultsSubType, float>) {
+        fileHeader.Magic = Imagina::SharksMagicNumber;
+    } else if (std::is_same_v<ResultsSubType, double>) {
+        fileHeader.Magic = Imagina::IMMagicNumber;
+    } else {
+        throw FractalSharkSeriousException("Invalid SubType");
+    }
+
     fileHeader.Reserved = 0;
     fileHeader.LocationOffset = sizeof(fileHeader);
     fileHeader.ReferenceOffset = 0;
@@ -3159,15 +3168,19 @@ void RefOrbitCalc::SaveOrbit(
 
     const uint64_t locationOffset = file.tellp();
 
-    Imagina::HRReal halfH{ };
-    const auto radius = results.GetMaxRadius();
-    halfH = Imagina::HRReal{ radius };
-    file.write(reinterpret_cast<const char *>(&halfH), sizeof(Imagina::HRReal));
-    file.flush();
+    {
+        Imagina::HRReal halfH{ };
+        const auto radius = results.GetMaxRadius();
+        halfH = Imagina::HRReal{ radius };
+        file.write(reinterpret_cast<const char *>(&halfH), sizeof(Imagina::HRReal));
+        file.flush();
+    }
 
-    const uint64_t iterationLimit = results.GetMaxIterations();
-    file.write((const char *)&iterationLimit, sizeof(iterationLimit));
-    file.flush();
+    {
+        const uint64_t iterationLimit = results.GetMaxIterations();
+        file.write((const char *)&iterationLimit, sizeof(iterationLimit));
+        file.flush();
+    }
 
     results.SaveOrbitLocation(file);
 
@@ -3175,6 +3188,16 @@ void RefOrbitCalc::SaveOrbit(
     auto compressedResults = results.CompressMax(
         m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
         GetNextGenerationNumber());
+
+    static_assert(std::is_trivially_copyable_v<Imagina::ReferenceHeader>, "");
+    //static_assert(std::is_trivially_copyable_v<ReferenceTrivialContent>, "");
+    // static_assert(std::is_trivially_copyable_v<LAReferenceTrivialContent>, "");
+
+    {
+        Imagina::ReferenceHeader referenceHeader;
+        referenceHeader.ExtendedRange = results.IsHDR;
+        file.write(reinterpret_cast<const char *>(&referenceHeader), sizeof(referenceHeader));
+    }
 
     compressedResults->SaveOrbitBin(file);
 
@@ -3186,14 +3209,7 @@ void RefOrbitCalc::SaveOrbit(
     file.flush();
 }
 
-/*
-template<typename IterType, class T, PerturbExtras PExtras>
-const PerturbationResults<IterType, T, PExtras> *RefOrbitCalc::LoadOrbit(
-    CompressToDisk compression,
-    std::wstring imagFilename) {
-*/
-
-const PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::Disable> *RefOrbitCalc::LoadOrbit(
+const PerturbationResultsBase<uint64_t> *RefOrbitCalc::LoadOrbit(
     CompressToDisk compression,
     std::wstring imagFilename) {
 
@@ -3213,7 +3229,9 @@ const PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::Disable> *R
     Imagina::IMFileHeader fileHeader;
     file.read(reinterpret_cast<char *>(&fileHeader), sizeof(fileHeader));
 
-    if (fileHeader.Magic != Imagina::IMMagicNumber) {
+    if (fileHeader.Magic != Imagina::IMMagicNumber &&
+        fileHeader.Magic != Imagina::SharksMagicNumber) {
+
         throw std::runtime_error("Invalid file format");
     }
 
@@ -3256,20 +3274,55 @@ const PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::Disable> *R
 
     file.seekg(fileHeader.ReferenceOffset);
 
+    bool extendedRange = false;
+    {
+        Imagina::ReferenceHeader referenceHeader;
+        file.read(reinterpret_cast<char *>(&referenceHeader), sizeof(referenceHeader));
+
+        extendedRange = referenceHeader.ExtendedRange;
+    }
+
     // Depending on the header, read the rest of the file and determine the type
     // Extended range implies the use of high precision types
     // For this example, let's assume HDRFloat<HRReal>
-    auto results = std::make_unique<PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::SimpleCompression>>(
-        AddPointOptions::EnableWithoutSave,
-        GetNextGenerationNumber());
-    results->LoadOrbitBin(std::move(orbitX), std::move(orbitY), halfH, file);
 
-    auto decompressedResults = results->DecompressMax(GetNextGenerationNumber());
-    auto *result = AddPerturbationResults(std::move(decompressedResults));
-    m_LastUsedRefOrbit = result;
+    auto typeHelper = [&]<typename T>() -> const PerturbationResults<uint64_t, T, PerturbExtras::Disable> * {
+        auto results = std::make_unique<PerturbationResults<uint64_t, T, PerturbExtras::SimpleCompression>>(
+            AddPointOptions::EnableWithoutSave,
+            GetNextGenerationNumber());
+        results->LoadOrbitBin(std::move(orbitX), std::move(orbitY), halfH, file);
+        auto decompressedResults = results->DecompressMax(GetNextGenerationNumber());
+        auto *result = AddPerturbationResults(std::move(decompressedResults));
+        m_LastUsedRefOrbit = result;
 
-    file.close();
-    return result;
+        return result;
+    };
+
+    if (extendedRange) {
+        if (fileHeader.Magic == Imagina::IMMagicNumber) {
+            auto *result = typeHelper.template operator()<HDRFloat<double>>();
+            file.close();
+            return result;
+        } else if (fileHeader.Magic == Imagina::SharksMagicNumber) {
+            auto *result = typeHelper.template operator()<HDRFloat<float>>();
+            file.close();
+            return result;
+        } else {
+            throw FractalSharkSeriousException("Invalid file format");
+        }
+    } else {
+        if (fileHeader.Magic == Imagina::IMMagicNumber) {
+            auto *result = typeHelper.template operator()<double>();
+            file.close();
+            return result;
+        } else if (fileHeader.Magic == Imagina::SharksMagicNumber) {
+            auto *result = typeHelper.template operator()<float>();
+            file.close();
+            return result;
+        } else {
+            throw FractalSharkSeriousException("Invalid file format");
+        }
+    }
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>

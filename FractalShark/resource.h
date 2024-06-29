@@ -15,7 +15,6 @@
 #define IDR_MAINFRAME                   128
 #define IDR_MENU_POPUP                  129
 #define IDM_ALG_SSE2                    130
-#define IDB_PNG_SPLASH                  131
 #define IDD_DIALOG_LOCATION             132
 #define IDC_EDIT_REAL                   1000
 #define IDC_EDIT_IMAG                   1001
@@ -435,13 +434,22 @@
 #define IDM_VIEW40                      34040
 #define IDM_VIEW_DYNAMIC_ORBIT          35000
 #define IDM_VIEW_DYNAMIC_IMAG           36000
+#define IDB_PNG_SPLASH1                 37001
+#define IDB_PNG_SPLASH2                 37002
+#define IDB_PNG_SPLASH3                 37003
+#define IDB_PNG_SPLASH4                 37004
+#define IDB_PNG_SPLASH5                 37005
+#define IDB_PNG_SPLASH6                 37006
+#define IDB_PNG_SPLASH7                 37007
+#define IDB_PNG_SPLASH8                 37008
+#define IDB_PNG_SPLASH9                 37009
 #define IDC_STATIC                      -1
 
 // Next default values for new objects
 // 
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
-#define _APS_NEXT_RESOURCE_VALUE        134
+#define _APS_NEXT_RESOURCE_VALUE        135
 #define _APS_NEXT_COMMAND_VALUE         33195
 #define _APS_NEXT_CONTROL_VALUE         1004
 #define _APS_NEXT_SYMED_VALUE           110

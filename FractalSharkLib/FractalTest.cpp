@@ -241,13 +241,13 @@ void FractalTest::TestReferenceSave() {
 
     RenderAlgorithm View5Algs[] = {
         //RenderAlgorithm::Gpu1x64PerturbedLAv2,
-        //RenderAlgorithm::Gpu1x64PerturbedRCLAv2,
+        RenderAlgorithm::Gpu1x64PerturbedRCLAv2,
         //RenderAlgorithm::GpuHDRx32PerturbedLAv2,
-        //RenderAlgorithm::GpuHDRx32PerturbedRCLAv2,
+        RenderAlgorithm::GpuHDRx32PerturbedRCLAv2,
         //RenderAlgorithm::GpuHDRx2x32PerturbedLAv2,
         //RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2,
-        RenderAlgorithm::GpuHDRx64PerturbedLAv2,
-        //RenderAlgorithm::GpuHDRx64PerturbedRCLAv2,
+        //RenderAlgorithm::GpuHDRx64PerturbedLAv2,
+        RenderAlgorithm::GpuHDRx64PerturbedRCLAv2,
     };
 
     auto referenceSaveLoad = [&](size_t testIndex, IterTypeEnum iterType, RenderAlgorithm algToTest) {

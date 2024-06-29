@@ -3600,7 +3600,7 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
     FillCoord(centerY, centerY2);
 
     GPUPerturbResults<IterType, T, PerturbExtras::Disable> gpu_results{
-        (IterType)results->GetCompressedOrbitSize(),
+        (IterType)results->GetCompressedOrUncompressedOrbitSize(),
         results->GetCountOrbitEntries(),
         results->GetOrbitXLow(),
         results->GetOrbitYLow(),
@@ -3679,7 +3679,7 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
     }
 
     GPUPerturbResults<IterType, T, PExtras> gpu_results{
-        (IterType)results->GetCompressedOrbitSize(),
+        (IterType)results->GetCompressedOrUncompressedOrbitSize(),
         results->GetCountOrbitEntries(),
         results->GetOrbitXLow(),
         results->GetOrbitYLow(),
@@ -3764,7 +3764,7 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
     FillCoord(centerY, centerY2);
 
     GPUPerturbResults<IterType, T, PerturbExtras::Bad> gpu_results{
-        (IterType)results->GetCompressedOrbitSize(),
+        (IterType)results->GetCountOrbitEntries(),
         results->GetCountOrbitEntries(),
         results->GetOrbitXLow(),
         results->GetOrbitYLow(),
@@ -3772,7 +3772,7 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
         results->GetPeriodMaybeZero() };
 
     GPUPerturbResults<IterType, T2, PerturbExtras::Bad> gpu_results2{
-        (IterType)results2->GetCompressedOrbitSize(),
+        (IterType)results2->GetCountOrbitEntries(),
         results2->GetCountOrbitEntries(),
         results2->GetOrbitXLow(),
         results2->GetOrbitYLow(),

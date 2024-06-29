@@ -72,10 +72,10 @@ public:
         auto LinearScan = [&](CachedIter<T> &iter, CachedIter<T> &other) -> bool {
             if (iter.UncompressedIter + 1 == uncompressed_index) {
                 bool condition =
-                    (iter.CompressedIter + 1 < results.m_FullOrbit.GetSize() &&
+                    (iter.CompressedIter + 1 < results.GetCompressedOrbitSize() &&
                         (iter.UncompressedIter + 1 <
                             results.m_FullOrbit[iter.CompressedIter + 1].u.f.CompressionIndex)) ||
-                    iter.CompressedIter + 1 == results.m_FullOrbit.GetSize();
+                    iter.CompressedIter + 1 == results.GetCompressedOrbitSize();
 
                 if (condition) {
                     other = iter;
@@ -115,7 +115,7 @@ public:
         // uncompressed index.
         auto BinarySearch = [&](size_t uncompressed_index) {
             size_t low = 0;
-            size_t high = results.m_FullOrbit.GetSize() - 1;
+            size_t high = results.GetCompressedOrbitSize() - 1;
 
             while (low <= high) {
                 size_t mid = (low + high) / 2;
@@ -139,7 +139,7 @@ public:
         T zy = results.m_FullOrbit[BestCompressedIndexGuess].y;
 
         for (size_t cur_uncompressed_index = results.m_FullOrbit[BestCompressedIndexGuess].u.f.CompressionIndex;
-            cur_uncompressed_index < results.m_UncompressedItersInOrbit;
+            cur_uncompressed_index < results.GetCountOrbitEntries();
             cur_uncompressed_index++) {
 
             if (cur_uncompressed_index == uncompressed_index) {

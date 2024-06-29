@@ -306,7 +306,7 @@ void PerturbationResults<IterType, T, PExtras>::CopyPerturbationResults(
 
     CopyFullOrbitVector<IncludeLA, Other, PExtrasOther>(other);
 
-    assert(m_UncompressedItersInOrbit == m_FullOrbit.GetSize());
+    assert(GetCountOrbitEntries() == m_FullOrbit.GetSize());
 
     m_BenchmarkOrbit = other.m_BenchmarkOrbit;
 
@@ -473,7 +473,7 @@ void PerturbationResults<IterType, T, PExtras>::WriteMetadata() const {
     metafile << "Period: " << m_PeriodMaybeZero << std::endl;
     metafile << "CompressionErrorExponent: " << m_CompressionErrorExp << std::endl;
     metafile << "IntermediateCompressionErrorExponent: " << m_IntermediateCompressionErrorExp << std::endl;
-    metafile << "UncompressedIterationsInOrbit: " << m_UncompressedItersInOrbit << std::endl;
+    metafile << "UncompressedIterationsInOrbit: " << GetCountOrbitEntries() << std::endl;
 
     if (m_LaReference != nullptr &&
         m_LaReference->IsValid()) {
@@ -860,11 +860,22 @@ InstantiateCompleteResults(HDRFloat<double>, PerturbExtras::SimpleCompression);
 
 
 template<typename IterType, class T, PerturbExtras PExtras>
-size_t PerturbationResults<IterType, T, PExtras>::GetCompressedOrbitSize() const {
+size_t PerturbationResults<IterType, T, PExtras>::GetCompressedOrUncompressedOrbitSize() const {
+
     if constexpr (PExtras == PerturbExtras::SimpleCompression) {
         assert(m_FullOrbit.GetSize() <= m_UncompressedItersInOrbit);
+    } else {
+        assert(m_FullOrbit.GetSize() == m_UncompressedItersInOrbit);
     }
 
+    return m_FullOrbit.GetSize();
+}
+
+template<typename IterType, class T, PerturbExtras PExtras>
+size_t PerturbationResults<IterType, T, PExtras>::GetCompressedOrbitSize() const
+    requires (PExtras == PerturbExtras::SimpleCompression) {
+
+    assert(m_FullOrbit.GetSize() <= m_UncompressedItersInOrbit);
     return m_FullOrbit.GetSize();
 }
 
@@ -1070,10 +1081,10 @@ PerturbationResults<IterType, T, PExtras>::Compress(
             GetRefOrbitOptions(), new_generation_number);
     compressed->CopySettingsWithoutOrbit(*this);
 
-    assert(m_FullOrbit.GetSize() > 1);
+    assert(GetCountOrbitEntries() > 1);
 
     if constexpr (DisableCompression) {
-        for (size_t i = 0; i < m_FullOrbit.GetSize(); i++) {
+        for (size_t i = 0; i < GetCountOrbitEntries(); i++) {
             compressed->FullOrbit.PushBack({ m_FullOrbit[i].x, m_FullOrbit[i].y, i });
         }
 
@@ -1082,7 +1093,7 @@ PerturbationResults<IterType, T, PExtras>::Compress(
         T zx{};
         T zy{};
 
-        for (size_t i = 0; i < m_FullOrbit.GetSize(); i++) {
+        for (size_t i = 0; i < GetCountOrbitEntries(); i++) {
             auto errX = zx - m_FullOrbit[i].x;
             auto errY = zy - m_FullOrbit[i].y;
 
@@ -1121,7 +1132,7 @@ PerturbationResults<IterType, T, PExtras>::Decompress(size_t NewGenerationNumber
         GetRefOrbitOptions(), NewGenerationNumber);
     decompressed->CopySettingsWithoutOrbit(*this);
 
-    const auto targetUncompressedIters = decompressed->m_UncompressedItersInOrbit;
+    const auto targetUncompressedIters = decompressed->GetCountOrbitEntries();
     decompressed->m_UncompressedItersInOrbit = 0;
 
     T zx{};
@@ -1194,10 +1205,10 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
             GetRefOrbitOptions(), new_generation_number);
     compressed->CopySettingsWithoutOrbit(*this);
 
-    assert(m_FullOrbit.GetSize() > 1);
+    assert(GetCountOrbitEntries() > 1);
 
     if constexpr (DisableCompression) {
-        for (size_t i = 0; i < m_FullOrbit.GetSize(); i++) {
+        for (size_t i = 0; i < GetCompressedOrbitSize(); i++) {
             compressed->FullOrbit.PushBack({ m_FullOrbit[i].x, m_FullOrbit[i].y, i });
         }
 
@@ -1226,7 +1237,7 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
     RuntimeDecompressor<IterType, T, PExtras> PerThreadCompressionHelper{ *this };
 
     IterTypeFull i = 1;
-    for (; i < m_FullOrbit.GetSize(); i++) {
+    for (; i < GetCountOrbitEntries(); i++) {
         
         const auto norm_z = normZ(m_FullOrbit[i].x, m_FullOrbit[i].y);
 
@@ -1281,7 +1292,7 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
 
     std::vector<IterTypeFull> JIndexes;
 
-    for (; i < m_FullOrbit.GetSize(); i++, j++) {
+    for (; i < GetCountOrbitEntries(); i++, j++) {
         // z = dz + Z[j] where m_FullOrbit[j] = Z[j]
         zx = dzX + m_FullOrbit[j].x;
         zy = dzY + m_FullOrbit[j].y;
@@ -1335,7 +1346,7 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
             j = 0;
 
             const auto rebaseSize = compressed->m_Rebases.size();
-            const auto fullOrbitSize = compressed->m_FullOrbit.GetSize();
+            const auto fullOrbitSize = compressed->GetCountOrbitEntries();
             if (rebaseSize != 0 &&
                 compressed->m_Rebases[rebaseSize - 1] > compressed->m_FullOrbit[fullOrbitSize - 1].u.f.CompressionIndex) {
                 compressed->m_Rebases[rebaseSize - 1] = i;
@@ -1403,7 +1414,7 @@ PerturbationResults<IterType, T, PExtras>::DecompressMax(size_t NewGenerationNum
     // Just curious what this looked like - set to true if you want the answer.
     constexpr bool trackCountsPerIndex = false;
 
-    assert(m_FullOrbit.GetSize() > 0);
+    assert(GetCompressedOrbitSize() > 0);
     T zx{};
     T zy{};
     IterTypeFull wayPointIndex = 0;
@@ -1416,7 +1427,7 @@ PerturbationResults<IterType, T, PExtras>::DecompressMax(size_t NewGenerationNum
             GetRefOrbitOptions(), NewGenerationNumber);
     decompressed->CopySettingsWithoutOrbit(*this);
 
-    const auto targetUncompressedIters = decompressed->m_UncompressedItersInOrbit;
+    const auto targetUncompressedIters = decompressed->GetCountOrbitEntries();
     decompressed->m_UncompressedItersInOrbit = 0;
 
     std::vector<IterTypeFull> countsPerIndex;
@@ -1504,8 +1515,8 @@ PerturbationResults<IterType, T, PExtras>::DecompressMax(size_t NewGenerationNum
         decompressed->AddUncompressedIteration({ zx, zy });
 
         if constexpr (trackCountsPerIndex) {
-            countsPerIndex[decompressed->m_UncompressedItersInOrbit - 1]++;
-            indexTouched.push_back(decompressed->m_UncompressedItersInOrbit - 1);
+            countsPerIndex[decompressed->GetCountOrbitEntries() - 1]++;
+            indexTouched.push_back(decompressed->GetCountOrbitEntries() - 1);
         }
 
         //z = z * z + c;
@@ -1566,8 +1577,8 @@ PerturbationResults<IterType, T, PExtras>::DecompressMax(size_t NewGenerationNum
         decompressed->AddUncompressedIteration({ zx, zy });
 
         if constexpr (trackCountsPerIndex) {
-            countsPerIndex[decompressed->m_UncompressedItersInOrbit - 1]++;
-            indexTouched.push_back(decompressed->m_UncompressedItersInOrbit - 1);
+            countsPerIndex[decompressed->GetCountOrbitEntries() - 1]++;
+            indexTouched.push_back(decompressed->GetCountOrbitEntries() - 1);
         }
 
         // dz = (Z[j] * 2 + dz) * dz;
@@ -1637,11 +1648,11 @@ void PerturbationResults<IterType, T, PExtras>::SaveOrbit(std::wstring filename)
     out << "m_IntermediateCompressionErrorExp: " << m_IntermediateCompressionErrorExp << std::endl;
     out << "m_RefOrbitOptions: " << static_cast<int>(m_RefOrbitOptions) << std::endl;
     out << "m_FullOrbit: " << m_FullOrbit.GetSize() << std::endl;
-    out << "m_UncompressedItersInOrbit: " << m_UncompressedItersInOrbit << std::endl;
+    out << "m_UncompressedItersInOrbit: " << GetCountOrbitEntries() << std::endl;
     out << "m_AuthoritativePrecisionInBits: " << m_AuthoritativePrecisionInBits << std::endl;
 
     // Write out all values in m_FullOrbit:
-    for (size_t i = 0; i < m_FullOrbit.GetSize(); i++) {
+    for (size_t i = 0; i < GetCompressedOrUncompressedOrbitSize(); i++) {
         out << "m_FullOrbit[" << i << "].x: " << HdrToString<false>(m_FullOrbit[i].x) << std::endl;
         out << "m_FullOrbit[" << i << "].y: " << HdrToString<false>(m_FullOrbit[i].y) << std::endl;
 
@@ -1712,7 +1723,7 @@ void PerturbationResults<IterType, T, PExtras>::SaveOrbitBin(std::ofstream &out)
 
     out.write(reinterpret_cast<const char *>(&laContent), sizeof(laContent));
 
-    size_t orbitSize = m_FullOrbit.GetSize();
+    size_t orbitSize = GetCompressedOrbitSize();
     out.write(reinterpret_cast<const char *>(&orbitSize), sizeof(orbitSize));
 
     // Write out all values in m_FullOrbit:
@@ -1721,7 +1732,7 @@ void PerturbationResults<IterType, T, PExtras>::SaveOrbitBin(std::ofstream &out)
         Imagina::HRReal y;
         CompressionIndexField compressionIndex;
 
-        for (size_t i = 0; i < m_FullOrbit.GetSize(); i++) {
+        for (size_t i = 0; i < GetCompressedOrbitSize(); i++) {
             x.setExp(m_FullOrbit[i].x.getExp());
             x.setMantissa(m_FullOrbit[i].x.getMantissa());
             out.write(reinterpret_cast<const char *>(&x), sizeof(x));
@@ -1740,7 +1751,7 @@ void PerturbationResults<IterType, T, PExtras>::SaveOrbitBin(std::ofstream &out)
         double y;
         CompressionIndexField compressionIndex;
 
-        for (size_t i = 0; i < m_FullOrbit.GetSize(); i++) {
+        for (size_t i = 0; i < GetCompressedOrbitSize(); i++) {
             x = static_cast<T>(m_FullOrbit[i].x);
             out.write(reinterpret_cast<const char *>(&x), sizeof(x));
 

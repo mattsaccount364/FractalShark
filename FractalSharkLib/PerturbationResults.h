@@ -265,8 +265,8 @@ public:
     template<RefOrbitCalc::ReuseMode Reuse>
     void CompleteResults(std::unique_ptr<ThreadMemory> allocatorIfAny);
 
-    size_t GetCompressedOrbitSize() const;
-
+    size_t GetCompressedOrUncompressedOrbitSize() const;
+    size_t GetCompressedOrbitSize() const requires (PExtras == PerturbExtras::SimpleCompression);
     IterType GetCountOrbitEntries() const;
 
     // PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::Bad

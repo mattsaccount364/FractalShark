@@ -3065,7 +3065,7 @@ void RefOrbitCalc::GetSomeDetails(RefOrbitDetails &details) const {
 
         details = {
             arg->GetPeriodMaybeZero(),
-            arg->GetCompressedOrbitSize(),
+            arg->GetCompressedOrUncompressedOrbitSize(),
             arg->GetCountOrbitEntries(),
             arg->GetReuseSize(),
             arg->GetCompressionErrorExp(),

@@ -358,8 +358,9 @@ public:
         const
         requires (!Introspection::IsTDblFlt<T>());
 
-    std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::Disable>>
-        DecompressMax(size_t NewGenerationNumber)
+    template<PerturbExtras PExtrasDest>
+    std::unique_ptr<PerturbationResults<IterType, T, PExtrasDest>>
+        DecompressMax(int32_t compression_error_exp_param, size_t NewGenerationNumber)
         const
         requires (PExtras == PerturbExtras::SimpleCompression && !Introspection::IsTDblFlt<T>());
 

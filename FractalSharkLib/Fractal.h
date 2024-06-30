@@ -186,7 +186,7 @@ public:
     };
 
     static constexpr int32_t DefaultCompressionExp[] = {
-        18,
+        40,
         450 // Consider AuthoritativeMinExtraPrecisionInBits.  TODO: 450 is a guess.
     };
 

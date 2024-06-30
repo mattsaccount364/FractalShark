@@ -36,6 +36,16 @@ CUDA_CRAP void InitStatics();
 
 #define MYALIGN
 
+enum class HDROrder {
+    Left,
+    Right
+};
+
+namespace Imagina {
+    using HRReal = HDRFloat<double, HDROrder::Left, int64_t>;
+    using SRReal = double;
+} // namespace Imagina
+
 template<class T, class TExp = int32_t>
 class GenericHdrBase {
 public:
@@ -68,11 +78,6 @@ public:
 
     MYALIGN TExp exp;
     MYALIGN T mantissa;
-};
-
-enum class HDROrder {
-    Left,
-    Right
 };
 
 // TExp can work with float, int16_t or int64_t but all seem to offer worse perf
@@ -146,6 +151,8 @@ public:
     CUDA_CRAP constexpr explicit HDRFloat(T mant) {
         Base::mantissa = mant;
         Base::exp = 0;
+
+        HdrReduce(*this);
     }
 
     // Copy constructor
@@ -341,7 +348,8 @@ public:
 
         if constexpr (std::is_same<T, double>::value) {
             const auto bits = bit_cast<uint64_t>(this->Base::mantissa);
-            const auto f_exp = (int32_t)((bits & 0x7FF0'0000'0000'0000UL) >> 52UL) + MIN_SMALL_EXPONENT_INT_DOUBLE();
+            const auto f_exp =
+                static_cast<TExp>(((bits & 0x7FF0'0000'0000'0000UL) >> 52UL)) + MIN_SMALL_EXPONENT_INT_DOUBLE();
             const auto val = (bits & 0x800F'FFFF'FFFF'FFFFL) | 0x3FF0'0000'0000'0000L;
             const auto f_val = bit_cast<const T>(val);
             Base::exp += f_exp;
@@ -352,7 +360,8 @@ public:
             }
         } else if constexpr (std::is_same<T, float>::value) {
             const auto bits = bit_cast<uint32_t>(this->Base::mantissa);
-            const auto f_exp = (int32_t)((bits & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT_FLOAT();
+            const auto f_exp =
+                static_cast<TExp>(((bits & 0x7F80'0000UL) >> 23UL)) + MIN_SMALL_EXPONENT_INT_FLOAT();
             const auto val = (bits & 0x807F'FFFFL) | 0x3F80'0000L;
             const auto f_val = bit_cast<T>(val);
             Base::exp += f_exp;
@@ -364,8 +373,10 @@ public:
         } else if constexpr (std::is_same<T, CudaDblflt<dblflt>>::value) {
             const auto bits_y = bit_cast<uint32_t>(this->Base::mantissa.d.head);
             const auto bits_x = bit_cast<uint32_t>(this->Base::mantissa.d.tail);
-            const auto f_exp_y = (int32_t)((bits_y & 0x7F80'0000UL) >> 23UL) + MIN_SMALL_EXPONENT_INT_FLOAT();
-            const auto f_exp_x = (int32_t)((bits_x & 0x7F80'0000UL) >> 23UL);
+            const auto f_exp_y =
+                static_cast<TExp>(((bits_y & 0x7F80'0000UL) >> 23UL)) + MIN_SMALL_EXPONENT_INT_FLOAT();
+            const auto f_exp_x =
+                static_cast<TExp>(((bits_x & 0x7F80'0000UL) >> 23UL));
             const auto val_y = (bits_y & 0x807F'FFFFU) | 0x3F80'0000U;
             const auto newexp = f_exp_x - f_exp_y;
             const auto satexp = newexp <= 0 ? 0 : newexp;
@@ -1194,19 +1205,20 @@ static CUDA_CRAP constexpr void HdrReduce(T &incoming) {
 #endif
 
     static_assert(
-        std::is_same<T, double>::value ||
-        std::is_same<T, float>::value ||
-        std::is_same<T, CudaDblflt<dblflt>>::value ||
-        std::is_same<T, HDRFloat<double>>::value ||
-        std::is_same<T, HDRFloat<float>>::value ||
-        std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value ||
-        std::is_same<T, HDRFloat<double, HDROrder::Right>>::value ||
-        std::is_same<T, HDRFloat<float, HDROrder::Right>>::value ||
-        std::is_same<T, HDRFloat<CudaDblflt<dblflt>, HDROrder::Right>>::value ||
-        std::is_same<T, HDRFloatComplex<double>>::value ||
-        std::is_same<T, HDRFloatComplex<float>>::value ||
-        std::is_same<T, FloatComplex<double>>::value ||
-        std::is_same<T, FloatComplex<float>>::value ||
+        std::is_same_v<T, double> ||
+        std::is_same_v<T, float> ||
+        std::is_same_v<T, CudaDblflt<dblflt>> ||
+        std::is_same_v<T, HDRFloat<double>> ||
+        std::is_same_v<T, HDRFloat<float>> ||
+        std::is_same_v<T, HDRFloat<CudaDblflt<dblflt>>> ||
+        std::is_same_v<T, HDRFloat<double, HDROrder::Right>> ||
+        std::is_same_v<T, HDRFloat<float, HDROrder::Right>> ||
+        std::is_same_v<T, HDRFloat<CudaDblflt<dblflt>, HDROrder::Right>> ||
+        std::is_same_v<T, Imagina::HRReal> ||
+        std::is_same_v<T, HDRFloatComplex<double>> ||
+        std::is_same_v<T, HDRFloatComplex<float>> ||
+        std::is_same_v<T, FloatComplex<double>> ||
+        std::is_same_v<T, FloatComplex<float>> ||
         HighPrecPossible, "No");
 
     if constexpr (
@@ -1216,6 +1228,7 @@ static CUDA_CRAP constexpr void HdrReduce(T &incoming) {
         std::is_same<T, HDRFloat<double, HDROrder::Right>>::value ||
         std::is_same<T, HDRFloat<float, HDROrder::Right>>::value ||
         std::is_same<T, HDRFloat<CudaDblflt<dblflt>, HDROrder::Right>>::value ||
+        std::is_same<T, Imagina::HRReal>::value ||
         std::is_same<T, HDRFloatComplex<double>>::value ||
         std::is_same<T, HDRFloatComplex<float>>::value) {
         incoming.Reduce();

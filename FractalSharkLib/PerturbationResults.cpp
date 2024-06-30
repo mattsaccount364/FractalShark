@@ -386,7 +386,7 @@ void PerturbationResults<IterType, T, PExtras>::CopySettingsWithoutOrbit(const P
     m_MetaFileHandle = INVALID_HANDLE_VALUE;
 
     m_FullOrbit = {}; // Note: not copied
-    m_UncompressedItersInOrbit = other.m_UncompressedItersInOrbit;
+    m_UncompressedItersInOrbit = {}; // Note: not copied
 
     // compression - don't copy LA data.  Regenerate if needed.
     m_LaReference = nullptr;
@@ -1080,6 +1080,7 @@ PerturbationResults<IterType, T, PExtras>::Compress(
         std::make_unique<PerturbationResults<IterType, T, PerturbExtras::SimpleCompression>>(
             GetRefOrbitOptions(), new_generation_number);
     compressed->CopySettingsWithoutOrbit(*this);
+    compressed->m_UncompressedItersInOrbit = GetCountOrbitEntries();
 
     assert(GetCountOrbitEntries() > 1);
 
@@ -1131,9 +1132,8 @@ PerturbationResults<IterType, T, PExtras>::Decompress(size_t NewGenerationNumber
     auto decompressed = std::make_unique<PerturbationResults<IterType, T, PerturbExtras::Disable>>(
         GetRefOrbitOptions(), NewGenerationNumber);
     decompressed->CopySettingsWithoutOrbit(*this);
-
-    const auto targetUncompressedIters = decompressed->GetCountOrbitEntries();
-    decompressed->m_UncompressedItersInOrbit = 0;
+    const auto targetUncompressedIters = GetCountOrbitEntries();
+    assert(decompressed->m_UncompressedItersInOrbit == 0);
 
     T zx{};
     T zy{};
@@ -1204,6 +1204,7 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
         std::make_unique<PerturbationResults<IterType, T, PerturbExtras::SimpleCompression>>(
             GetRefOrbitOptions(), new_generation_number);
     compressed->CopySettingsWithoutOrbit(*this);
+    compressed->m_UncompressedItersInOrbit = GetCountOrbitEntries();
 
     assert(GetCountOrbitEntries() > 1);
 
@@ -1239,23 +1240,25 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
     IterTypeFull i = 1;
     for (; i < GetCountOrbitEntries(); i++) {
         
-        const auto norm_z = normZ(m_FullOrbit[i].x, m_FullOrbit[i].y);
+        T outX, outY;
+        GetComplex(PerThreadCompressionHelper, i, outX, outY);
+        const auto norm_z = normZ(outX, outY);
 
         if (HdrCompareToBothPositiveReducedLT(norm_z, constant1)) {
-            zx = m_FullOrbit[i].x;
-            zy = m_FullOrbit[i].y;
+            zx = outX;
+            zy = outY;
 
-            compressed->m_FullOrbit.PushBack({ m_FullOrbit[i].x, m_FullOrbit[i].y, i, true });
+            compressed->m_FullOrbit.PushBack({ outX, outY, i, true });
             break;
         } else {
-            auto err = normZTimesT(zx - m_FullOrbit[i].x, zy - m_FullOrbit[i].y, threshold2);
+            auto err = normZTimesT(zx - outX, zy - outY, threshold2);
 
             if (HdrCompareToBothPositiveReducedGE(err, norm_z)) {
                 // else if (std::norm(z - Z[i]) * Threshold2 > std::norm(Z[i]))
-                zx = m_FullOrbit[i].x;
-                zy = m_FullOrbit[i].y;
+                zx = outX;
+                zy = outY;
 
-                compressed->m_FullOrbit.PushBack({ m_FullOrbit[i].x, m_FullOrbit[i].y, i, false });
+                compressed->m_FullOrbit.PushBack({ outX, outY, i, false });
             }
         }
 
@@ -1280,10 +1283,14 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
     //dzX = Two * m_FullOrbit[0].x * dzX + dzX * dzX;
     //dzY = MinusTwo * m_FullOrbit[0].y * dzY - dzY * dzY;
 
+    T outXi, outYi;
+    T outXj, outYj;
+    GetComplex(PerThreadCompressionHelper, 0, outXi, outYi);
+
     const auto dzX_old = dzX;
-    dzX = Two * m_FullOrbit[0].x * dzX - Two * m_FullOrbit[0].y * dzY + dzX * dzX - dzY * dzY;
+    dzX = Two * outXi * dzX - Two * outYi * dzY + dzX * dzX - dzY * dzY;
     HdrReduce(dzX);
-    dzY = Two * m_FullOrbit[0].x * dzY + Two * m_FullOrbit[0].y * dzX_old + Two * dzX_old * dzY;
+    dzY = Two * outXi * dzY + Two * outYi * dzX_old + Two * dzX_old * dzY;
     HdrReduce(dzY);
 
     i++;
@@ -1293,9 +1300,12 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
     std::vector<IterTypeFull> JIndexes;
 
     for (; i < GetCountOrbitEntries(); i++, j++) {
+        GetComplex(PerThreadCompressionHelper, i, outXi, outYi);
+        GetComplex(PerThreadCompressionHelper, j, outXj, outYj);
+
         // z = dz + Z[j] where m_FullOrbit[j] = Z[j]
-        zx = dzX + m_FullOrbit[j].x;
-        zy = dzY + m_FullOrbit[j].y;
+        zx = dzX + outXj;
+        zy = dzY + outYj;
 
         if constexpr (TrackJIndexesUsed) {
             JIndexes.push_back(j);
@@ -1304,7 +1314,7 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
         const auto norm_z_orig = normZ(zx, zy);
         const auto norm_dz_orig = normZTimesT(dzX, dzY, constant2);
 
-        const auto err = normZTimesT(zx - m_FullOrbit[i].x, zy - m_FullOrbit[i].y, threshold2);
+        const auto err = normZTimesT(zx - outXi, zy - outYi, threshold2);
 
         const bool condition1 = j >= PrevWayPointIteration;
         const bool condition2 = HdrCompareToBothPositiveReducedGE(err, norm_z_orig);
@@ -1312,10 +1322,10 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
 
         if (condition1 || condition2) {
             PrevWayPointIteration = i;
-            zx = m_FullOrbit[i].x;
-            zy = m_FullOrbit[i].y;
-            dzX = zx - m_FullOrbit[j].x;
-            dzY = zy - m_FullOrbit[j].y;
+            zx = outXi;
+            zy = outYi;
+            dzX = zx - outXj;
+            dzY = zy - outYj;
 
             const auto norm_z = normZ(zx, zy);
             const auto norm_dz = normZ(dzX, dzY);
@@ -1373,9 +1383,9 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
         //HdrReduce(dzY);
 
         const auto dzX_old2 = dzX;
-        dzX = Two * m_FullOrbit[j].x * dzX - Two * m_FullOrbit[j].y * dzY + dzX * dzX - dzY * dzY;
+        dzX = Two * outXj * dzX - Two * outYj * dzY + dzX * dzX - dzY * dzY;
         HdrReduce(dzX);
-        dzY = Two * m_FullOrbit[j].x * dzY + Two * m_FullOrbit[j].y * dzX_old2 + Two * dzX_old2 * dzY;
+        dzY = Two * outXj * dzY + Two * outYj * dzX_old2 + Two * dzX_old2 * dzY;
         HdrReduce(dzY);
 
         // auto zx_old = zx;
@@ -1403,8 +1413,11 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>
-std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::Disable>>
-PerturbationResults<IterType, T, PExtras>::DecompressMax(size_t NewGenerationNumber)
+template<PerturbExtras PExtrasDest>
+std::unique_ptr<PerturbationResults<IterType, T, PExtrasDest>>
+PerturbationResults<IterType, T, PExtras>::DecompressMax(
+    int32_t compression_error_exp_param,
+    size_t NewGenerationNumber)
     const
     requires (PExtras == PerturbExtras::SimpleCompression && !Introspection::IsTDblFlt<T>()) {
 
@@ -1427,8 +1440,8 @@ PerturbationResults<IterType, T, PExtras>::DecompressMax(size_t NewGenerationNum
             GetRefOrbitOptions(), NewGenerationNumber);
     decompressed->CopySettingsWithoutOrbit(*this);
 
-    const auto targetUncompressedIters = decompressed->GetCountOrbitEntries();
-    decompressed->m_UncompressedItersInOrbit = 0;
+    const auto targetUncompressedIters = GetCountOrbitEntries(); //decompressed->GetCountOrbitEntries();
+    assert(decompressed->m_UncompressedItersInOrbit == 0);
 
     std::vector<IterTypeFull> countsPerIndex;
     std::vector<IterTypeFull> indexTouched;
@@ -1622,8 +1635,42 @@ PerturbationResults<IterType, T, PExtras>::DecompressMax(size_t NewGenerationNum
         }
     }
 
-    return decompressed;
+    if constexpr (PExtrasDest == PerturbExtras::SimpleCompression) {
+        //
+        // Note: It's not currently possible to decompress a max-compressed orbit, and then re-compress it
+        // on the fly.  This is because the decompression algorithm requires the full orbit to be present.
+        // This is a limitation of the algorithm.  It's possible to decompress the orbit, and then re-compress
+        // it, but this would require the full orbit to be present in memory.
+        // 
+
+        auto reCompressedResults = decompressed->Compress(compression_error_exp_param, NewGenerationNumber);
+        return reCompressedResults;
+    } else {
+        return decompressed;
+    }
 }
+
+// Explicitly instantiate CopyPerturbationResults for all types.
+// This is needed because the function is defined in the header file.
+#define InstantiateDecompressMax(T, PExtras, PExtrasDest) \
+    template std::unique_ptr<PerturbationResults<uint32_t, T, PExtrasDest>> \
+    PerturbationResults<uint32_t, T, PExtras>::DecompressMax<PExtrasDest>( \
+        int32_t compression_error_exp_param, \
+        size_t NewGenerationNumber) const; \
+    template std::unique_ptr<PerturbationResults<uint64_t, T, PExtrasDest>> \
+    PerturbationResults<uint64_t, T, PExtras>::DecompressMax<PExtrasDest>( \
+        int32_t compression_error_exp_param, \
+        size_t NewGenerationNumber) const;
+
+InstantiateDecompressMax(float, PerturbExtras::SimpleCompression, PerturbExtras::Disable)
+InstantiateDecompressMax(double, PerturbExtras::SimpleCompression, PerturbExtras::Disable)
+InstantiateDecompressMax(HDRFloat<float>, PerturbExtras::SimpleCompression, PerturbExtras::Disable)
+InstantiateDecompressMax(HDRFloat<double>, PerturbExtras::SimpleCompression, PerturbExtras::Disable)
+
+InstantiateDecompressMax(float, PerturbExtras::SimpleCompression, PerturbExtras::SimpleCompression)
+InstantiateDecompressMax(double, PerturbExtras::SimpleCompression, PerturbExtras::SimpleCompression)
+InstantiateDecompressMax(HDRFloat<float>, PerturbExtras::SimpleCompression, PerturbExtras::SimpleCompression)
+InstantiateDecompressMax(HDRFloat<double>, PerturbExtras::SimpleCompression, PerturbExtras::SimpleCompression)
 
 template<typename IterType, class T, PerturbExtras PExtras>
 void PerturbationResults<IterType, T, PExtras>::SaveOrbit(std::wstring filename) const {

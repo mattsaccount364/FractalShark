@@ -8,9 +8,6 @@
 #include "HDRFloat.h"
 
 namespace Imagina {
-    using HRReal = HDRFloat<double, HDROrder::Left, int64_t>;
-    using SRReal = double;
-
     constexpr uint64_t IMMagicNumber = 0x000A0D56504D49FF;
 
     // Encode ASCII "Sharks:)" into a 64-bit number, for

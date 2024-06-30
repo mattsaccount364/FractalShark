@@ -2046,305 +2046,305 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
             ShutdownTls();
             };
 
-            auto *threadZxdata = (ThreadZxData *)_aligned_malloc(sizeof(ThreadZxData), 64);
-            auto *threadZydata = (ThreadZyData *)_aligned_malloc(sizeof(ThreadZyData), 64);
-            auto *threadReuseddata = (ThreadReusedData *)_aligned_malloc(sizeof(ThreadReusedData), 64);
+        auto *threadZxdata = (ThreadZxData *)_aligned_malloc(sizeof(ThreadZxData), 64);
+        auto *threadZydata = (ThreadZyData *)_aligned_malloc(sizeof(ThreadZyData), 64);
+        auto *threadReuseddata = (ThreadReusedData *)_aligned_malloc(sizeof(ThreadReusedData), 64);
 
-            new (threadZxdata) (ThreadZxData){};
-            new (threadZydata) (ThreadZyData){};
-            new (threadReuseddata) (ThreadReusedData){};
+        new (threadZxdata) (ThreadZxData){};
+        new (threadZydata) (ThreadZyData){};
+        new (threadReuseddata) (ThreadReusedData){};
 
-            std::unique_ptr<std::thread> tZx(DEBUG_NEW std::thread(ThreadSqZx, ThreadZxMemory));
-            std::unique_ptr<std::thread> tZy(DEBUG_NEW std::thread(ThreadSqZy, ThreadZyMemory));
+        std::unique_ptr<std::thread> tZx(DEBUG_NEW std::thread(ThreadSqZx, ThreadZxMemory));
+        std::unique_ptr<std::thread> tZy(DEBUG_NEW std::thread(ThreadSqZy, ThreadZyMemory));
 
-            std::unique_ptr<std::thread> tReuse;
+        std::unique_ptr<std::thread> tReuse;
 
-            // Mode 2/3 we use another thread
-            if constexpr (
-                Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2 ||
-                Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3 ||
-                Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
+        // Mode 2/3 we use another thread
+        if constexpr (
+            Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2 ||
+            Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3 ||
+            Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
 
-                tReuse = std::unique_ptr<std::thread>(DEBUG_NEW std::thread(ThreadReused, ThreadReusedMemory));
+            tReuse = std::unique_ptr<std::thread>(DEBUG_NEW std::thread(ThreadReused, ThreadReusedMemory));
+        }
+
+        ScopedAffinity scopedAffinity{
+            *this,
+            GetCurrentThread(),
+            tZx->native_handle(),
+            tZy->native_handle(),
+            tReuse ? tReuse->native_handle() : nullptr };
+
+        ThreadZxData *expectedZx = nullptr;
+        ThreadZyData *expectedZy = nullptr;
+        ThreadReusedData *expectedReused = nullptr;
+
+        bool done1 = false;
+        bool done2 = false;
+
+        mpf_t zy_sq_orig;
+        mpf_init(zy_sq_orig);
+
+        mpf_set(zx, cx_mpf);
+        mpf_set(zy, cy_mpf);
+
+        bool periodicity_should_break = false;
+
+        static const T HighOne = T{ 1.0 };
+        static const T HighTwo = T{ 2.0 };
+        static const T TwoFiftySix = T(256);
+
+        bool zyStarted = false;
+
+        T double_zx_last = T{ 0.0 };
+        T double_zy_last = T{ 0.0 };
+
+        RefOrbitCompressor<IterType, T, PExtras> compressor{
+            *results,
+            m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low) };
+
+        for (IterTypeFull i = 0; i < m_Fractal.GetNumIterations<IterType>(); i++) {
+            // Start Zx squaring thread
+            mpf_set(threadZxdata->zx, zx);
+
+            if (!zyStarted) {
+                mpf_set(threadZydata->zy, zy);
             }
 
-            ScopedAffinity scopedAffinity{
-                *this,
-                GetCurrentThread(),
-                tZx->native_handle(),
-                tZy->native_handle(),
-                tReuse ? tReuse->native_handle() : nullptr };
+            ThreadZxMemory->In.store(
+                threadZxdata,
+                std::memory_order_release);
 
-            ThreadZxData *expectedZx = nullptr;
-            ThreadZyData *expectedZy = nullptr;
-            ThreadReusedData *expectedReused = nullptr;
+            if (!zyStarted) {
+                // Start Zy squaring thread
+                ThreadZyMemory->In.store(
+                    threadZydata,
+                    std::memory_order_relaxed);
 
-            bool done1 = false;
-            bool done2 = false;
+                zyStarted = true;
+            }
 
-            mpf_t zy_sq_orig;
-            mpf_init(zy_sq_orig);
+            T double_zx = double_zx_last;
+            T double_zy = double_zy_last;
 
-            mpf_set(zx, cx_mpf);
-            mpf_set(zy, cy_mpf);
+            SubType zn_size;
 
-            bool periodicity_should_break = false;
-
-            static const T HighOne = T{ 1.0 };
-            static const T HighTwo = T{ 2.0 };
-            static const T TwoFiftySix = T(256);
-
-            bool zyStarted = false;
-
-            T double_zx_last = T{ 0.0 };
-            T double_zy_last = T{ 0.0 };
-
-            RefOrbitCompressor<IterType, T, PExtras> compressor{
-                *results,
-                m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low) };
-
-            for (IterTypeFull i = 0; i < m_Fractal.GetNumIterations<IterType>(); i++) {
-                // Start Zx squaring thread
-                mpf_set(threadZxdata->zx, zx);
-
-                if (!zyStarted) {
-                    mpf_set(threadZydata->zy, zy);
+            if (i > 0) {
+                if constexpr (PExtras == PerturbExtras::Disable) {
+                    results->AddUncompressedIteration({ double_zx, double_zy });
+                } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
+                    compressor.MaybeAddCompressedIteration({ double_zx, double_zy, i });
+                } else if constexpr (PExtras == PerturbExtras::Bad) {
+                    results->AddUncompressedIteration({ double_zx, double_zy, false });
                 }
 
-                ThreadZxMemory->In.store(
-                    threadZxdata,
-                    std::memory_order_release);
+                if constexpr (PExtras == PerturbExtras::Bad) {
+                    const T norm = HdrReduce((double_zx * double_zx + double_zy * double_zy) * glitch);
+                    const auto zx_reduced = HdrReduce(HdrAbs((T)double_zx));
+                    const auto zy_reduced = HdrReduce(HdrAbs((T)double_zy));
 
-                if (!zyStarted) {
-                    // Start Zy squaring thread
-                    ThreadZyMemory->In.store(
-                        threadZydata,
-                        std::memory_order_relaxed);
-
-                    zyStarted = true;
+                    const bool underflow =
+                        (HdrCompareToBothPositiveReducedLE(zx_reduced, small_float) ||
+                            HdrCompareToBothPositiveReducedLE(zy_reduced, small_float) ||
+                            HdrCompareToBothPositiveReducedLE(norm, small_float));
+                    results->SetBad(underflow);
                 }
 
-                T double_zx = double_zx_last;
-                T double_zy = double_zy_last;
+                // Note: not T.
+                const SubType tempZX = (SubType)double_zx + (SubType)cx_cast;
+                const SubType tempZY = (SubType)double_zy + (SubType)cy_cast;
+                zn_size = tempZX * tempZX + tempZY * tempZY;
 
-                SubType zn_size;
+                if constexpr (Periodicity) {
+                    HdrReduce(dzdcX);
+                    auto dzdcX1 = HdrAbs(dzdcX);
 
-                if (i > 0) {
-                    if constexpr (PExtras == PerturbExtras::Disable) {
-                        results->AddUncompressedIteration({ double_zx, double_zy });
-                    } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
-                        compressor.MaybeAddCompressedIteration({ double_zx, double_zy, i });
-                    } else if constexpr (PExtras == PerturbExtras::Bad) {
-                        results->AddUncompressedIteration({ double_zx, double_zy, false });
-                    }
+                    HdrReduce(dzdcY);
+                    auto dzdcY1 = HdrAbs(dzdcY);
 
-                    if constexpr (PExtras == PerturbExtras::Bad) {
-                        const T norm = HdrReduce((double_zx * double_zx + double_zy * double_zy) * glitch);
-                        const auto zx_reduced = HdrReduce(HdrAbs((T)double_zx));
-                        const auto zy_reduced = HdrReduce(HdrAbs((T)double_zy));
+                    HdrReduce(double_zx);
+                    auto zxCopy1 = HdrAbs(double_zx);
 
-                        const bool underflow =
-                            (HdrCompareToBothPositiveReducedLE(zx_reduced, small_float) ||
-                                HdrCompareToBothPositiveReducedLE(zy_reduced, small_float) ||
-                                HdrCompareToBothPositiveReducedLE(norm, small_float));
-                        results->SetBad(underflow);
-                    }
+                    HdrReduce(double_zy);
+                    auto zyCopy1 = HdrAbs(double_zy);
 
-                    // Note: not T.
-                    const SubType tempZX = (SubType)double_zx + (SubType)cx_cast;
-                    const SubType tempZY = (SubType)double_zy + (SubType)cy_cast;
-                    zn_size = tempZX * tempZX + tempZY * tempZY;
+                    T n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
 
-                    if constexpr (Periodicity) {
-                        HdrReduce(dzdcX);
-                        auto dzdcX1 = HdrAbs(dzdcX);
+                    T r0 = HdrMaxPositiveReduced(dzdcX1, dzdcY1);
+                    auto n3 = results->GetMaxRadius() * r0 * HighTwo; // TODO optimize HDRFloat *2.
+                    HdrReduce(n3);
 
-                        HdrReduce(dzdcY);
-                        auto dzdcY1 = HdrAbs(dzdcY);
-
-                        HdrReduce(double_zx);
-                        auto zxCopy1 = HdrAbs(double_zx);
-
-                        HdrReduce(double_zy);
-                        auto zyCopy1 = HdrAbs(double_zy);
-
-                        T n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
-
-                        T r0 = HdrMaxPositiveReduced(dzdcX1, dzdcY1);
-                        auto n3 = results->GetMaxRadius() * r0 * HighTwo; // TODO optimize HDRFloat *2.
-                        HdrReduce(n3);
-
-                        if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
-                            if constexpr (BenchmarkState == BenchmarkMode::Disable) {
-                                periodicity_should_break = true;
-                            }
-                        } else {
-                            auto dzdcXOrig = dzdcX;
-                            dzdcX = HighTwo * (double_zx * dzdcX - double_zy * dzdcY) + HighOne;
-                            dzdcY = HighTwo * (double_zx * dzdcY + double_zy * dzdcXOrig);
+                    if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
+                        if constexpr (BenchmarkState == BenchmarkMode::Disable) {
+                            periodicity_should_break = true;
                         }
+                    } else {
+                        auto dzdcXOrig = dzdcX;
+                        dzdcX = HighTwo * (double_zx * dzdcX - double_zy * dzdcY) + HighOne;
+                        dzdcY = HighTwo * (double_zx * dzdcY + double_zy * dzdcXOrig);
                     }
-
-                    if constexpr (
-                        Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2 ||
-                        Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3 ||
-                        Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
-
-                        for (;;) {
-                            expectedReused = threadReuseddata;
-
-                            _mm_pause();
-                            if (ThreadReusedMemory->Out.compare_exchange_weak(expectedReused,
-                                nullptr,
-                                std::memory_order_release)) {
-                                break;
-                            }
-                        }
-                    }
-                } else {
-                    zn_size = 0;
                 }
 
-                if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse1) {
-                    results->AddUncompressedReusedEntry(zx, zy, i + 1);
-                } else if constexpr (
+                if constexpr (
                     Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2 ||
                     Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3 ||
                     Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
 
-                    mpf_set(threadReuseddata->zx, zx);
-                    mpf_set(threadReuseddata->zy, zy);
+                    for (;;) {
+                        expectedReused = threadReuseddata;
 
-                    ThreadReusedMemory->In.store(
-                        threadReuseddata,
-                        std::memory_order_release);
-                }
-
-                // zy = zx * 2 * zy + cy;
-
-                // Store in temp
-                mpf_mul(temp_mpf, zx, zy);
-                mpf_mul_ui(temp_mpf, temp_mpf, 2);
-                mpf_add(zy, temp_mpf, cy_mpf);
-
-                done1 = false;
-                done2 = false;
-                bool quitting = false;
-
-                for (;;) {
-                    expectedZy = threadZydata;
-
-                    _mm_pause();
-                    if (!done2 &&
-                        ThreadZyMemory->Out.compare_exchange_weak(expectedZy,
+                        _mm_pause();
+                        if (ThreadReusedMemory->Out.compare_exchange_weak(expectedReused,
                             nullptr,
                             std::memory_order_release)) {
-                        done2 = true;
-
-                        PrefetchHighPrec(threadZydata->zy_sq);
-
-                        if constexpr (Periodicity) {
-                            if (periodicity_should_break) {
-                                results->SetPeriodMaybeZero((IterType)results->GetCountOrbitEntries());
-                                quitting = true;
-                            }
+                            break;
                         }
-
-                        if (zn_size > 256) {
-                            quitting = true;
-                        }
-
-                        if (!quitting) {
-                            mpf_set(zy_sq_orig, threadZydata->zy_sq);
-                            double_zy_last = threadZydata->zy_low;
-
-                            // Restart right away!
-                            mpf_set(threadZydata->zy, zy);
-
-                            ThreadZyMemory->In.store(
-                                threadZydata,
-                                std::memory_order_release);
-                        }
-                    }
-
-                    expectedZx = threadZxdata;
-
-                    _mm_pause();
-                    if (!done1 &&
-                        ThreadZxMemory->Out.compare_exchange_weak(expectedZx,
-                            nullptr,
-                            std::memory_order_release)) {
-                        done1 = true;
-
-                        double_zx_last = threadZxdata->zx_low;
-                        PrefetchHighPrec(threadZxdata->zx_sq);
-                    }
-
-                    if (done1 && done2) {
-                        break;
                     }
                 }
-
-                // zx = threadZxdata->zx_sq - zy_sq_orig + cx;
-                mpf_sub(temp_mpf, threadZxdata->zx_sq, zy_sq_orig);
-                mpf_add(zx, temp_mpf, cx_mpf);
-
-                if (!quitting) {
-                    continue;
-                }
-
-                break;
+            } else {
+                zn_size = 0;
             }
 
-            if constexpr (PExtras == PerturbExtras::Bad) {
-                results->SetBad(false);
-            }
-
-            bool res1 = false, res2 = false, res3 = false;
-            while (!res1) {
-                expectedZx = nullptr;
-                res1 = ThreadZxMemory->In.compare_exchange_strong(expectedZx, (ThreadZxData *)0x1, std::memory_order_release);
-            }
-
-            while (!res2) {
-                expectedZy = nullptr;
-                res2 = ThreadZyMemory->In.compare_exchange_strong(expectedZy, (ThreadZyData *)0x1, std::memory_order_release);
-            }
-
-            while (!res3) {
-                expectedReused = nullptr;
-                res3 = ThreadReusedMemory->In.compare_exchange_strong(expectedReused, (ThreadReusedData *)0x1, std::memory_order_release);
-            }
-
-            tZx->join();
-            tZy->join();
-
-            if constexpr (
+            if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse1) {
+                results->AddUncompressedReusedEntry(zx, zy, i + 1);
+            } else if constexpr (
                 Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2 ||
                 Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3 ||
                 Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
 
-                tReuse->join();
+                mpf_set(threadReuseddata->zx, zx);
+                mpf_set(threadReuseddata->zy, zy);
+
+                ThreadReusedMemory->In.store(
+                    threadReuseddata,
+                    std::memory_order_release);
             }
 
-            _aligned_free(ThreadZxMemory);
-            _aligned_free(ThreadZyMemory);
-            _aligned_free(ThreadReusedMemory);
+            // zy = zx * 2 * zy + cy;
 
-            threadZxdata->~ThreadZxData();
-            threadZydata->~ThreadZyData();
-            threadReuseddata->~ThreadReusedData();
+            // Store in temp
+            mpf_mul(temp_mpf, zx, zy);
+            mpf_mul_ui(temp_mpf, temp_mpf, 2);
+            mpf_add(zy, temp_mpf, cy_mpf);
 
-            _aligned_free(threadZxdata);
-            _aligned_free(threadZydata);
-            _aligned_free(threadReuseddata);
+            done1 = false;
+            done2 = false;
+            bool quitting = false;
 
-            if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse1) {
-                bumpAllocator->GetAllocated(1); // Destruct the return value
+            for (;;) {
+                expectedZy = threadZydata;
+
+                _mm_pause();
+                if (!done2 &&
+                    ThreadZyMemory->Out.compare_exchange_weak(expectedZy,
+                        nullptr,
+                        std::memory_order_release)) {
+                    done2 = true;
+
+                    PrefetchHighPrec(threadZydata->zy_sq);
+
+                    if constexpr (Periodicity) {
+                        if (periodicity_should_break) {
+                            results->SetPeriodMaybeZero((IterType)results->GetCountOrbitEntries());
+                            quitting = true;
+                        }
+                    }
+
+                    if (zn_size > 256) {
+                        quitting = true;
+                    }
+
+                    if (!quitting) {
+                        mpf_set(zy_sq_orig, threadZydata->zy_sq);
+                        double_zy_last = threadZydata->zy_low;
+
+                        // Restart right away!
+                        mpf_set(threadZydata->zy, zy);
+
+                        ThreadZyMemory->In.store(
+                            threadZydata,
+                            std::memory_order_release);
+                    }
+                }
+
+                expectedZx = threadZxdata;
+
+                _mm_pause();
+                if (!done1 &&
+                    ThreadZxMemory->Out.compare_exchange_weak(expectedZx,
+                        nullptr,
+                        std::memory_order_release)) {
+                    done1 = true;
+
+                    double_zx_last = threadZxdata->zx_low;
+                    PrefetchHighPrec(threadZxdata->zx_sq);
+                }
+
+                if (done1 && done2) {
+                    break;
+                }
             }
 
-            results->CompleteResults<Reuse>(std::move(reusedAllocator));
-            m_GuessReserveSize = results->GetCountOrbitEntries();
+            // zx = threadZxdata->zx_sq - zy_sq_orig + cx;
+            mpf_sub(temp_mpf, threadZxdata->zx_sq, zy_sq_orig);
+            mpf_add(zx, temp_mpf, cx_mpf);
+
+            if (!quitting) {
+                continue;
+            }
+
+            break;
+        }
+
+        if constexpr (PExtras == PerturbExtras::Bad) {
+            results->SetBad(false);
+        }
+
+        bool res1 = false, res2 = false, res3 = false;
+        while (!res1) {
+            expectedZx = nullptr;
+            res1 = ThreadZxMemory->In.compare_exchange_strong(expectedZx, (ThreadZxData *)0x1, std::memory_order_release);
+        }
+
+        while (!res2) {
+            expectedZy = nullptr;
+            res2 = ThreadZyMemory->In.compare_exchange_strong(expectedZy, (ThreadZyData *)0x1, std::memory_order_release);
+        }
+
+        while (!res3) {
+            expectedReused = nullptr;
+            res3 = ThreadReusedMemory->In.compare_exchange_strong(expectedReused, (ThreadReusedData *)0x1, std::memory_order_release);
+        }
+
+        tZx->join();
+        tZy->join();
+
+        if constexpr (
+            Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2 ||
+            Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3 ||
+            Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
+
+            tReuse->join();
+        }
+
+        _aligned_free(ThreadZxMemory);
+        _aligned_free(ThreadZyMemory);
+        _aligned_free(ThreadReusedMemory);
+
+        threadZxdata->~ThreadZxData();
+        threadZydata->~ThreadZyData();
+        threadReuseddata->~ThreadReusedData();
+
+        _aligned_free(threadZxdata);
+        _aligned_free(threadZydata);
+        _aligned_free(threadReuseddata);
+
+        if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse1) {
+            bumpAllocator->GetAllocated(1); // Destruct the return value
+        }
+
+        results->CompleteResults<Reuse>(std::move(reusedAllocator));
+        m_GuessReserveSize = results->GetCountOrbitEntries();
     } // End of scope for boundedAllocator and bumpAllocator
 
     ShutdownAllocatorsIfNeeded<Reuse>(boundedAllocator, bumpAllocator);
@@ -2543,7 +2543,9 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
             auto compressedResults = results->CompressMax(
                 m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
                 GetNextGenerationNumber());
-            auto decompressedResults = compressedResults->DecompressMax(GetNextGenerationNumber());
+            auto decompressedResults = compressedResults->DecompressMax<PerturbExtras::Disable>(
+                m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
+                GetNextGenerationNumber());
             results = AddPerturbationResults(std::move(decompressedResults));
         }
     }
@@ -3085,36 +3087,38 @@ void RefOrbitCalc::GetSomeDetails(RefOrbitDetails &details) const {
     static_assert(static_cast<int>(RenderAlgorithm::MAX) == 61, "Fix me");
 }
 
-void RefOrbitCalc::SaveOrbit(CompressToDisk compression, std::wstring filename) const {
-    auto lambda = [this, compression, filename](auto &&results) {
+void RefOrbitCalc::SaveOrbit(CompressToDisk desiredCompression, std::wstring filename) const {
+    auto lambda = [this, desiredCompression, filename](auto &&results) {
         if (results == nullptr) {
             return;
         }
 
-        if (compression == CompressToDisk::Disable) {
+        if (desiredCompression == CompressToDisk::Disable) {
             results->SaveOrbit(filename);
-        } else if (compression == CompressToDisk::SimpleCompression) {
+        } else if (desiredCompression == CompressToDisk::SimpleCompression) {
             if constexpr (
-                Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::Disable>() &&
+                !Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::Bad>() &&
                 !Introspection::IsDblFlt<decltype(*results)>()) {
-                auto compressedResults = results->Compress(
-                    m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
-                    GetNextGenerationNumber());
-                compressedResults->SaveOrbit(filename);
 
-                // TODO temp test:
-                // auto compressedResults = results->CompressMax(
-                //     m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
-                //     GetNextGenerationNumber());
-                // auto decompressedResults = compressedResults->DecompressMax(GetNextGenerationNumber());
-                // decompressedResults->SaveOrbit(filename);
+                if constexpr (Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::Disable>()) {
+                    auto compressedResults = results->Compress(
+                        m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
+                        GetNextGenerationNumber());
+                    compressedResults->SaveOrbit(filename);
+                } else if constexpr (Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::SimpleCompression>()) {
+                    // Already compressed
+                    results->SaveOrbit(filename);
+                } else {
+                    throw FractalSharkSeriousException("Currently unsupported type 1");
+                }
             } else {
                 throw FractalSharkSeriousException("Currently unsupported type 3");
             }
-        } else if (compression == CompressToDisk::MaxCompression) {
+        } else if (desiredCompression == CompressToDisk::MaxCompression) {
             if constexpr (
-                Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::Disable>() &&
+                !Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::Bad>() &&
                 !Introspection::IsDblFlt<decltype(*results)>()) {
+
                 auto compressedResults = results->CompressMax(
                     m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
                     GetNextGenerationNumber());
@@ -3122,9 +3126,11 @@ void RefOrbitCalc::SaveOrbit(CompressToDisk compression, std::wstring filename) 
             } else {
                 throw FractalSharkSeriousException("Currently unsupported type 1");
             }
-        } else if (compression == CompressToDisk::MaxCompressionImagina) {
+        } else if (desiredCompression == CompressToDisk::MaxCompressionImagina) {
+            if constexpr (
+                !Introspection::IsDblFlt<decltype(*results)>() &&
+                !Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::Bad>()) {
 
-            if constexpr (!Introspection::IsDblFlt<decltype(*results)>()) {
                 SaveOrbit(*results, filename);
             } else {
                 throw FractalSharkSeriousException("Currently unsupported type 2");
@@ -3286,12 +3292,17 @@ const PerturbationResultsBase<uint64_t> *RefOrbitCalc::LoadOrbit(
     // Extended range implies the use of high precision types
     // For this example, let's assume HDRFloat<HRReal>
 
-    auto typeHelper = [&]<typename T>() -> const PerturbationResults<uint64_t, T, PerturbExtras::Disable> * {
+    auto TypeHelper = [&]<typename T, PerturbExtras PExtrasDest>() ->
+        const PerturbationResults<uint64_t, T, PExtrasDest> * {
+
         auto results = std::make_unique<PerturbationResults<uint64_t, T, PerturbExtras::SimpleCompression>>(
             AddPointOptions::EnableWithoutSave,
             GetNextGenerationNumber());
         results->LoadOrbitBin(std::move(orbitX), std::move(orbitY), halfH, file);
-        auto decompressedResults = results->DecompressMax(GetNextGenerationNumber());
+        
+        auto decompressedResults = results->DecompressMax<PExtrasDest>(
+            m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
+            GetNextGenerationNumber());
         auto *result = AddPerturbationResults(std::move(decompressedResults));
         m_LastUsedRefOrbit = result;
 
@@ -3300,25 +3311,49 @@ const PerturbationResultsBase<uint64_t> *RefOrbitCalc::LoadOrbit(
 
     if (extendedRange) {
         if (fileHeader.Magic == Imagina::IMMagicNumber) {
-            auto *result = typeHelper.template operator()<HDRFloat<double>>();
-            file.close();
-            return result;
+            if (RequiresCompression()) {
+                auto *result = TypeHelper.template operator()<HDRFloat<double>, PerturbExtras::SimpleCompression>();
+                file.close();
+                return result;
+            } else {
+                auto *result = TypeHelper.template operator()< HDRFloat<double>, PerturbExtras::Disable>();
+                file.close();
+                return result;
+            }
         } else if (fileHeader.Magic == Imagina::SharksMagicNumber) {
-            auto *result = typeHelper.template operator()<HDRFloat<float>>();
-            file.close();
-            return result;
+            if (RequiresCompression()) {
+                auto *result = TypeHelper.template operator()<HDRFloat<float>, PerturbExtras::SimpleCompression>();
+                file.close();
+                return result;
+            } else {
+                auto *result = TypeHelper.template operator()<HDRFloat<float>, PerturbExtras::Disable>();
+                file.close();
+                return result;
+            }
         } else {
             throw FractalSharkSeriousException("Invalid file format");
         }
     } else {
         if (fileHeader.Magic == Imagina::IMMagicNumber) {
-            auto *result = typeHelper.template operator()<double>();
-            file.close();
-            return result;
+            if (RequiresCompression()) {
+                auto *result = TypeHelper.template operator()<double, PerturbExtras::SimpleCompression>();
+                file.close();
+                return result;
+            } else {
+                auto *result = TypeHelper.template operator()<double, PerturbExtras::Disable>();
+                file.close();
+                return result;
+            }
         } else if (fileHeader.Magic == Imagina::SharksMagicNumber) {
-            auto *result = typeHelper.template operator()<float>();
-            file.close();
-            return result;
+            if (RequiresCompression()) {
+                auto *result = TypeHelper.template operator()<float, PerturbExtras::SimpleCompression>();
+                file.close();
+                return result;
+            } else {
+                auto *result = TypeHelper.template operator()<float, PerturbExtras::Disable>();
+                file.close();
+                return result;
+            }
         } else {
             throw FractalSharkSeriousException("Invalid file format");
         }

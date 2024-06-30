@@ -240,13 +240,15 @@ void FractalTest::TestReferenceSave() {
     TestPreReq(dirName);
 
     RenderAlgorithm View5Algs[] = {
-        //RenderAlgorithm::Gpu1x64PerturbedLAv2,
+        RenderAlgorithm::Gpu1x32PerturbedLAv2,
+        RenderAlgorithm::Gpu1x32PerturbedRCLAv2,
+        RenderAlgorithm::Gpu1x64PerturbedLAv2,
         RenderAlgorithm::Gpu1x64PerturbedRCLAv2,
-        //RenderAlgorithm::GpuHDRx32PerturbedLAv2,
+        RenderAlgorithm::GpuHDRx32PerturbedLAv2,
         RenderAlgorithm::GpuHDRx32PerturbedRCLAv2,
         //RenderAlgorithm::GpuHDRx2x32PerturbedLAv2,
         //RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2,
-        //RenderAlgorithm::GpuHDRx64PerturbedLAv2,
+        RenderAlgorithm::GpuHDRx64PerturbedLAv2,
         RenderAlgorithm::GpuHDRx64PerturbedRCLAv2,
     };
 
@@ -307,7 +309,7 @@ void FractalTest::TestReferenceSave() {
     size_t testIndex = 0;
 
     for (auto curAlg : View5Algs) {
-        referenceSaveLoad(testIndex, IterTypeEnum::Bits32, curAlg);
+        //referenceSaveLoad(testIndex, IterTypeEnum::Bits32, curAlg);
         referenceSaveLoad(testIndex, IterTypeEnum::Bits64, curAlg);
 
         testIndex++;

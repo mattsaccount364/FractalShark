@@ -34,12 +34,14 @@ private:
 
     static std::string GenFilename(
         size_t testIndex,
+        size_t viewIndex,
         RenderAlgorithm algToTest,
         IterTypeEnum iterType,
         std::string baseName);
 
     static std::wstring GenFilenameW(
         size_t testIndex,
+        size_t viewIndex,
         RenderAlgorithm algToTest,
         IterTypeEnum iterType,
         const wchar_t *testPrefix,

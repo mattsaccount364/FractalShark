@@ -392,6 +392,8 @@
 #define ID_LOAD_ENTERLOCATION           33193
 #define IDM_LOAD_ENTERLOCATION          33194
 #define IDM_LOAD_IMAGINA_DLG            33195
+#define ID_SAVE_DIFFIMAGINAORBITS       33195
+#define IDM_DIFF_REFORBIT_IMAG_MAX      33196
 #define IDM_VIEW1                       34001
 #define IDM_VIEW2                       34002
 #define IDM_VIEW3                       34003
@@ -450,7 +452,7 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        135
-#define _APS_NEXT_COMMAND_VALUE         33195
+#define _APS_NEXT_COMMAND_VALUE         33197
 #define _APS_NEXT_CONTROL_VALUE         1004
 #define _APS_NEXT_SYMED_VALUE           110
 #endif

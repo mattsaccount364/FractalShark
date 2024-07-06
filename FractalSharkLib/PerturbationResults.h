@@ -55,14 +55,18 @@ namespace Introspection {
     static constexpr bool IsDblFlt() {
         return
             std::is_same<Extract_Float<PerturbType>, CudaDblflt<MattDblflt>>::value ||
-            std::is_same<Extract_Float<PerturbType>, HDRFloat<CudaDblflt<MattDblflt>>>::value;
+            std::is_same<Extract_Float<PerturbType>, CudaDblflt<dblflt>>::value ||
+            std::is_same<Extract_Float<PerturbType>, HDRFloat<CudaDblflt<MattDblflt>>>::value ||
+            std::is_same<Extract_Float<PerturbType>, HDRFloat<CudaDblflt<dblflt>>>::value;
     }
 
     template<typename T>
     static constexpr bool IsTDblFlt() {
         return
             std::is_same<T, CudaDblflt<MattDblflt>>::value ||
-            std::is_same<T, HDRFloat<CudaDblflt<MattDblflt>>>::value;
+            std::is_same<T, CudaDblflt<dblflt>>::value ||
+            std::is_same<T, HDRFloat<CudaDblflt<MattDblflt>>>::value ||
+            std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value;
     }
 } // namespace PerturbationResultsIntrospection
 
@@ -341,7 +345,7 @@ public:
     // as a reference for the compression algorithm.
     std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::SimpleCompression>>
         Compress(
-            int32_t compression_error_exp_param,
+            int32_t compressionErrorExpParam,
             size_t new_generation_number)
         const
         requires (PExtras == PerturbExtras::Disable && !Introspection::IsTDblFlt<T>());
@@ -353,14 +357,15 @@ public:
 
     std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::SimpleCompression>>
         CompressMax(
-            int32_t compression_error_exp_param,
-            size_t new_generation_number)
+            int32_t compressionErrorExpParam,
+            size_t new_generation_number,
+            bool includeDummy)
         const
         requires (!Introspection::IsTDblFlt<T>());
 
     template<PerturbExtras PExtrasDest>
     std::unique_ptr<PerturbationResults<IterType, T, PExtrasDest>>
-        DecompressMax(int32_t compression_error_exp_param, size_t NewGenerationNumber)
+        DecompressMax(int32_t compressionErrorExpParam, size_t NewGenerationNumber)
         const
         requires (PExtras == PerturbExtras::SimpleCompression && !Introspection::IsTDblFlt<T>());
 
@@ -371,9 +376,15 @@ public:
     void LoadOrbitBin(
         HighPrecision orbitX,
         HighPrecision orbitY,
+        IterType fileProvidedIters,
         const Imagina::HRReal &halfH,
         std::ifstream &file)
         requires(PExtras == PerturbExtras::SimpleCompression); // std::is_same_v<T, HDRFloat<double>> && 
+
+    void DiffOrbit(
+        const PerturbationResults<IterType, T, PExtras> &other,
+        std::wstring outFile) const
+        requires (!Introspection::IsTDblFlt<T>());
 
     // For information purposes only, not used for anything
     // other than reporting.

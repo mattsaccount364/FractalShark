@@ -114,6 +114,8 @@ public:
         // to the provided uncompressed index.  Return the compressed index for that
         // uncompressed index.
         auto BinarySearch = [&](size_t uncompressed_index) {
+            assert(results.GetCompressedOrbitSize() > 0);
+
             size_t low = 0;
             size_t high = results.GetCompressedOrbitSize() - 1;
 

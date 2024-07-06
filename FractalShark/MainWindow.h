@@ -50,7 +50,12 @@ private:
     void DrawFractalShark();
     void DrawFractalSharkGdi(int nCmdShow);
 
-    static std::wstring OpenFileDialog(uint32_t flags);
+    enum class OpenBoxType {
+        Open,
+        Save
+    };
+
+    static std::wstring OpenFileDialog(OpenBoxType type);
 
     // Controlling functions
     void MenuGoBack();
@@ -79,6 +84,7 @@ private:
     void MenuViewsHelp();
     void MenuLoadImagDyn();
     void MenuSaveImag(CompressToDisk compression);
+    void MenuDiffImag();
     void MenuLoadImag(CompressToDisk compression);
     void MenuShowHotkeys();
 

@@ -14,6 +14,7 @@
     <ClInclude Include="ATInfo.h" />
     <ClInclude Include="ATResult.h" />
     <ClInclude Include="BenchmarkData.h" />
+    <ClInclude Include="BenchmarkDataCollection.h" />
     <ClInclude Include="BLA.h" />
     <ClInclude Include="BLAS.h" />
     <ClInclude Include="CudaDblflt.h" />
@@ -63,6 +64,7 @@
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="Utilities.h" />
     <ClInclude Include="Vectors.h" />
+    <ClInclude Include="WaitCursor.h" />
     <ClInclude Include="WPngImage\lodepng.h" />
     <ClInclude Include="WPngImage\WPngImage.hh" />
   </ItemGroup>
@@ -89,6 +91,7 @@
     </ClCompile>
     <ClCompile Include="Utilities.cpp" />
     <ClCompile Include="Vectors.cpp" />
+    <ClCompile Include="WaitCursor.cpp" />
     <ClCompile Include="WPngImage\lodepng.cpp" />
     <ClCompile Include="WPngImage\WPngImage.cc" />
   </ItemGroup>

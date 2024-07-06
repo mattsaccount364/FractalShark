@@ -2542,7 +2542,9 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
         if constexpr (ForceCompressDecompressForTesting && PExtras == PerturbExtras::Disable) {
             auto compressedResults = results->CompressMax(
                 m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
-                GetNextGenerationNumber());
+                GetNextGenerationNumber(),
+                true);
+
             auto decompressedResults = compressedResults->DecompressMax<PerturbExtras::Disable>(
                 m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
                 GetNextGenerationNumber());
@@ -3121,7 +3123,8 @@ void RefOrbitCalc::SaveOrbit(CompressToDisk desiredCompression, std::wstring fil
 
                 auto compressedResults = results->CompressMax(
                     m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
-                    GetNextGenerationNumber());
+                    GetNextGenerationNumber(),
+                    false);
                 compressedResults->SaveOrbit(filename);
             } else {
                 throw FractalSharkSeriousException("Currently unsupported type 1");
@@ -3141,6 +3144,35 @@ void RefOrbitCalc::SaveOrbit(CompressToDisk desiredCompression, std::wstring fil
         };
 
     std::visit(lambda, m_LastUsedRefOrbit);
+}
+
+void RefOrbitCalc::DiffOrbit(
+    CompressToDisk compression,
+    std::wstring outFile,
+    std::wstring filename1,
+    std::wstring filename2) const {
+
+    const auto results1 = LoadOrbitConst(compression, filename1);
+    const auto results2 = LoadOrbitConst(compression, filename2);
+
+    auto lambda = [&](const auto &results1, const auto &results2) {
+        using decl1 = decltype(*results1);
+        using decl2 = decltype(*results2);
+        if constexpr (std::is_same_v<decl1, decl2> &&
+                      !Introspection::IsDblFlt<decl1>() &&
+                      !Introspection::IsDblFlt<decl2>()) {
+            results1->DiffOrbit(*results2, outFile);
+        } else {
+            throw FractalSharkSeriousException("Different types");
+        }
+        };
+
+    try {
+        std::visit(lambda, results1, results2);
+    } catch (const std::exception &e) {
+        const auto outstr = std::string("Error diffing orbits: ") + e.what();
+        ::MessageBoxA(nullptr, "Error diffing orbits", "", MB_OK | MB_APPLMODAL);
+    }
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>
@@ -3183,7 +3215,7 @@ void RefOrbitCalc::SaveOrbit(
     }
 
     {
-        const uint64_t iterationLimit = results.GetMaxIterations();
+        const uint64_t iterationLimit = results.GetMaxIterations() - 1;
         file.write((const char *)&iterationLimit, sizeof(iterationLimit));
         file.flush();
     }
@@ -3193,7 +3225,8 @@ void RefOrbitCalc::SaveOrbit(
     const uint64_t referenceOffset = file.tellp();
     auto compressedResults = results.CompressMax(
         m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
-        GetNextGenerationNumber());
+        GetNextGenerationNumber(),
+        false);
 
     static_assert(std::is_trivially_copyable_v<Imagina::ReferenceHeader>, "");
     //static_assert(std::is_trivially_copyable_v<ReferenceTrivialContent>, "");
@@ -3218,6 +3251,34 @@ void RefOrbitCalc::SaveOrbit(
 const PerturbationResultsBase<uint64_t> *RefOrbitCalc::LoadOrbit(
     CompressToDisk compression,
     std::wstring imagFilename) {
+
+    auto decompressedResults = LoadOrbitConst(compression, imagFilename);
+
+    // get the unique_ptr out of the AwesomeVariantUniquePtr
+    
+    auto lambda = [&](auto &ptr) -> const PerturbationResultsBase<uint64_t> * {
+        // Suppose ptr is of type PerturbationResults<IterType, T, PExtrasDest>
+        // Return the pointer to the base class if IterType is uint64_t, and nullptr otherwise.
+        // Allow any types for T and PExtrasDest.  Only return nullptr if IterType is not uint64_t.
+
+        const auto *retval = ptr.get();
+        using CurIterType = ExtractPerturbationResultsTypes<decltype(retval)>::CurIterType;
+
+        if constexpr (std::is_same_v<CurIterType, uint64_t>) {
+            m_LastUsedRefOrbit = AddPerturbationResults(std::move(ptr));
+            return retval;
+        } else {
+            return nullptr;
+        }
+        };
+
+    auto decompressedResultsPtr = std::visit(lambda, decompressedResults);
+    return decompressedResultsPtr;
+}
+
+RefOrbitCalc::AwesomeVariantUniquePtr RefOrbitCalc::LoadOrbitConst(
+    CompressToDisk compression,
+    std::wstring imagFilename) const {
 
     if (compression != CompressToDisk::MaxCompressionImagina) {
         throw FractalSharkSeriousException("Invalid compression type");
@@ -3293,42 +3354,37 @@ const PerturbationResultsBase<uint64_t> *RefOrbitCalc::LoadOrbit(
     // For this example, let's assume HDRFloat<HRReal>
 
     auto TypeHelper = [&]<typename T, PerturbExtras PExtrasDest>() ->
-        const PerturbationResults<uint64_t, T, PExtrasDest> * {
+        std::unique_ptr<PerturbationResults<uint64_t, T, PExtrasDest>> {
 
         auto results = std::make_unique<PerturbationResults<uint64_t, T, PerturbExtras::SimpleCompression>>(
             AddPointOptions::EnableWithoutSave,
             GetNextGenerationNumber());
-        results->LoadOrbitBin(std::move(orbitX), std::move(orbitY), halfH, file);
+        results->LoadOrbitBin(std::move(orbitX), std::move(orbitY), iterationLimit, halfH, file);
         
         auto decompressedResults = results->DecompressMax<PExtrasDest>(
             m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
             GetNextGenerationNumber());
-        auto *result = AddPerturbationResults(std::move(decompressedResults));
-        m_LastUsedRefOrbit = result;
-
-        return result;
+        return decompressedResults;
     };
+
+    AwesomeVariantUniquePtr retval;
 
     if (extendedRange) {
         if (fileHeader.Magic == Imagina::IMMagicNumber) {
             if (RequiresCompression()) {
-                auto *result = TypeHelper.template operator()<HDRFloat<double>, PerturbExtras::SimpleCompression>();
+                retval = TypeHelper.template operator()<HDRFloat<double>, PerturbExtras::SimpleCompression>();
                 file.close();
-                return result;
             } else {
-                auto *result = TypeHelper.template operator()< HDRFloat<double>, PerturbExtras::Disable>();
+                retval = TypeHelper.template operator()<HDRFloat<double>, PerturbExtras::Disable>();
                 file.close();
-                return result;
             }
         } else if (fileHeader.Magic == Imagina::SharksMagicNumber) {
             if (RequiresCompression()) {
-                auto *result = TypeHelper.template operator()<HDRFloat<float>, PerturbExtras::SimpleCompression>();
+                retval = TypeHelper.template operator()<HDRFloat<float>, PerturbExtras::SimpleCompression>();
                 file.close();
-                return result;
             } else {
-                auto *result = TypeHelper.template operator()<HDRFloat<float>, PerturbExtras::Disable>();
+                retval = TypeHelper.template operator()<HDRFloat<float>, PerturbExtras::Disable>();
                 file.close();
-                return result;
             }
         } else {
             throw FractalSharkSeriousException("Invalid file format");
@@ -3336,28 +3392,39 @@ const PerturbationResultsBase<uint64_t> *RefOrbitCalc::LoadOrbit(
     } else {
         if (fileHeader.Magic == Imagina::IMMagicNumber) {
             if (RequiresCompression()) {
-                auto *result = TypeHelper.template operator()<double, PerturbExtras::SimpleCompression>();
+                retval = TypeHelper.template operator()<double, PerturbExtras::SimpleCompression>();
                 file.close();
-                return result;
             } else {
-                auto *result = TypeHelper.template operator()<double, PerturbExtras::Disable>();
+                retval = TypeHelper.template operator()<double, PerturbExtras::Disable>();
                 file.close();
-                return result;
             }
         } else if (fileHeader.Magic == Imagina::SharksMagicNumber) {
             if (RequiresCompression()) {
-                auto *result = TypeHelper.template operator()<float, PerturbExtras::SimpleCompression>();
+                retval = TypeHelper.template operator()<float, PerturbExtras::SimpleCompression>();
                 file.close();
-                return result;
             } else {
-                auto *result = TypeHelper.template operator()<float, PerturbExtras::Disable>();
+                retval = TypeHelper.template operator()<float, PerturbExtras::Disable>();
                 file.close();
-                return result;
             }
         } else {
             throw FractalSharkSeriousException("Invalid file format");
         }
+
+        //return std::visit([](const auto *ptr) -> PerturbationResultsBase<IterTypeFull> * {
+        //    // Suppose ptr is of type PerturbationResults<IterType, T, PExtrasDest>
+        //    // Return the pointer to the base class if IterType is uint64_t, and nullptr otherwise.
+        //    // Allow any types for T and PExtrasDest.  Only return nullptr if IterType is not uint64_t.
+
+        //    using CurIterType = ExtractPerturbationResultsTypes<decltype(ptr)>::CurIterType;
+        //    if constexpr (std::is_same_v<CurIterType, IterTypeFull>) {
+        //        return ptr;
+        //    } else {
+        //        return nullptr;
+        //    }
+        //}, retval);
     }
+
+    return retval;
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>

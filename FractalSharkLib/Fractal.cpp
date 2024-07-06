@@ -461,10 +461,10 @@ void Fractal::SetPosition(
     m_MinY = MinY;
     m_MaxY = MaxY;
 
-    m_MinXStr = HdrToString<false>(m_MinX);
-    m_MaxXStr = HdrToString<false>(m_MaxX);
-    m_MinYStr = HdrToString<false>(m_MinY);
-    m_MaxYStr = HdrToString<false>(m_MaxY);
+    //m_MinXStr = HdrToString<false>(m_MinX);
+    //m_MaxXStr = HdrToString<false>(m_MaxX);
+    //m_MinYStr = HdrToString<false>(m_MinY);
+    //m_MaxYStr = HdrToString<false>(m_MaxY);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -660,7 +660,7 @@ void Fractal::InitialDefaultViewAndSettings(int width, int height) {
     SetRenderAlgorithm(RenderAlgorithm::GpuHDRx64PerturbedLAv2);
 
     SetIterationPrecision(1);
-    
+
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed1);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3);
@@ -1323,7 +1323,7 @@ void Fractal::View(size_t view) {
         std::string strX;
         std::string strY;
 
-        #include "LargeCoords.h"
+#include "LargeCoords.h"
 
         PointZoomBBConverter convert{
             HighPrecision{ strX.c_str() },
@@ -1782,7 +1782,7 @@ void Fractal::CalcFractal(bool MemoryOnly) {
     //    return;
     //}
 
-    m_BenchmarkOverall.StartTimer();
+    m_BenchmarkData.m_Overall.StartTimer();
 
     // Bypass this function if the screen is too small.
     if (m_ScrnHeight == 0 || m_ScrnWidth == 0) {
@@ -1795,13 +1795,11 @@ void Fractal::CalcFractal(bool MemoryOnly) {
         CalcFractalTypedIter<uint64_t>(MemoryOnly);
     }
 
-    m_BenchmarkOverall.StopTimer();
+    m_BenchmarkData.m_Overall.StopTimer();
 }
 
 template<typename IterType>
 void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
-    SetCursor(LoadCursor(nullptr, IDC_WAIT));
-
     // Test crash dump
     //{volatile int x = 5;
     //volatile int z = 0;
@@ -2210,9 +2208,6 @@ void Fractal::CalcFractalTypedIter(bool MemoryOnly) {
 
     // We are all updated now.
     ChangedMakeClean();
-
-    // Reset the cursor
-    SetCursor(LoadCursor(nullptr, IDC_ARROW));
 }
 
 void Fractal::UsePaletteType(FractalPalette type) {
@@ -2884,7 +2879,7 @@ void Fractal::CalcGpuFractal(bool MemoryOnly) {
         return;
     }
 
-    m_BenchmarkDataPerPixel.StartTimer();
+    m_BenchmarkData.m_PerPixel.StartTimer();
     err = m_r.Render(GetRenderAlgorithm(),
         cx2,
         cy2,
@@ -2898,7 +2893,7 @@ void Fractal::CalcGpuFractal(bool MemoryOnly) {
     }
 
     DrawFractal(MemoryOnly);
-    m_BenchmarkDataPerPixel.StopTimer();
+    m_BenchmarkData.m_PerPixel.StopTimer();
 }
 
 template<typename IterType>
@@ -3612,7 +3607,7 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
     BLAS<IterType, T> blas(*results);
     blas.Init(results->GetCountOrbitEntries(), results->GetMaxRadius());
 
-    m_BenchmarkDataPerPixel.StartTimer();
+    m_BenchmarkData.m_PerPixel.StartTimer();
     result = m_r.RenderPerturbBLA<IterType, T>(GetRenderAlgorithm(),
         &gpu_results,
         &blas,
@@ -3631,7 +3626,7 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
         MessageBoxCudaError(result);
     }
 
-    m_BenchmarkDataPerPixel.StopTimer();
+    m_BenchmarkData.m_PerPixel.StopTimer();
 }
 
 template<typename IterType, class T, class SubType, LAv2Mode Mode, PerturbExtras PExtras>
@@ -3710,7 +3705,7 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
     FillCoord(centerX, centerX2);
     FillCoord(centerY, centerY2);
 
-    m_BenchmarkDataPerPixel.StartTimer();
+    m_BenchmarkData.m_PerPixel.StartTimer();
     auto result = m_r.RenderPerturbLAv2<IterType, T, SubType, Mode, PExtras>(GetRenderAlgorithm(),
         cx2,
         cy2,
@@ -3726,7 +3721,7 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
     }
 
     DrawFractal(MemoryOnly);
-    m_BenchmarkDataPerPixel.StopTimer();
+    m_BenchmarkData.m_PerPixel.StopTimer();
 }
 
 template<typename IterType, class T, class SubType, class T2, class SubType2>
@@ -3784,7 +3779,7 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
         return;
     }
 
-    m_BenchmarkDataPerPixel.StartTimer();
+    m_BenchmarkData.m_PerPixel.StartTimer();
     auto result = m_r.RenderPerturbBLAScaled<IterType, T>(GetRenderAlgorithm(),
         &gpu_results,
         &gpu_results2,
@@ -3802,7 +3797,7 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
     if (result) {
         MessageBoxCudaError(result);
     }
-    m_BenchmarkDataPerPixel.StopTimer();
+    m_BenchmarkData.m_PerPixel.StopTimer();
 }
 
 void Fractal::MessageBoxCudaError(uint32_t result) {
@@ -3869,12 +3864,8 @@ bool Fractal::CleanupThreads(bool all) {
     return ret;
 }
 
-const BenchmarkData &Fractal::GetBenchmarkPerPixel() const {
-    return m_BenchmarkDataPerPixel;
-}
-
-const BenchmarkData &Fractal::GetBenchmarkOverall() const {
-    return m_BenchmarkOverall;
+const BenchmarkDataCollection &Fractal::GetBenchmark() const {
+    return m_BenchmarkData;
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -3914,11 +3905,23 @@ int Fractal::SaveItersAsText(std::wstring filename_base) {
     return SaveFractalData<PngParallelSave::Type::ItersText>(filename_base, true);
 }
 
-void Fractal::SaveRefOrbit(CompressToDisk compression, std::wstring filename) {
+void Fractal::SaveRefOrbit(CompressToDisk compression, std::wstring filename) const {
+    m_BenchmarkData.m_RefOrbitSave.StartTimer();
     m_RefOrbit.SaveOrbit(compression, filename);
+    m_BenchmarkData.m_RefOrbitSave.StopTimer();
+}
+
+void Fractal::DiffRefOrbits(
+    CompressToDisk compression,
+    std::wstring outFile,
+    std::wstring filename1,
+    std::wstring filename2) const {
+
+    m_RefOrbit.DiffOrbit(compression, outFile, filename1, filename2);
 }
 
 void Fractal::LoadRefOrbit(CompressToDisk compression, std::wstring filename) {
+    m_BenchmarkData.m_RefOrbitLoad.StartTimer();
     const auto &perturbResults = *m_RefOrbit.LoadOrbit(
         compression,
         filename);
@@ -3929,7 +3932,7 @@ void Fractal::LoadRefOrbit(CompressToDisk compression, std::wstring filename) {
 
     PointZoomBBConverter zoom(centerX, centerY, zoomFactor);
 
-    constexpr bool enableDebug = false;
+    constexpr bool enableDebug = true;
     if constexpr (enableDebug) {
         std::string centerXStr = centerX.str();
         std::string centerYStr = centerY.str();
@@ -3941,6 +3944,8 @@ void Fractal::LoadRefOrbit(CompressToDisk compression, std::wstring filename) {
     auto maxIters = perturbResults.GetMaxIterations();
     SetNumIterations<decltype(maxIters)>(maxIters);
     ChangedMakeDirty();
+
+    m_BenchmarkData.m_RefOrbitLoad.StopTimer();
 }
 
 void Fractal::SetResultsAutosave(AddPointOptions Enable) {

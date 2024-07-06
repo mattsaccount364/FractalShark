@@ -32,7 +32,7 @@
 
 #include "PngParallelSave.h"
 #include "Utilities.h"
-#include "BenchmarkData.h"
+#include "BenchmarkDataCollection.h"
 
 #include "LAParameters.h"
 
@@ -98,7 +98,8 @@ struct RefOrbitDetails {
         LAMilliseconds{ LAMilliseconds },
         LASize{ LASize },
         PerturbationAlg{ PerturbationAlg },
-        ZoomFactor{ ZoomFactor } {}
+        ZoomFactor{ ZoomFactor } {
+    }
 };
 
 class Fractal {
@@ -186,7 +187,7 @@ public:
     };
 
     static constexpr int32_t DefaultCompressionExp[] = {
-        40,
+        20,
         450 // Consider AuthoritativeMinExtraPrecisionInBits.  TODO: 450 is a guess.
     };
 
@@ -237,13 +238,18 @@ public:
     int SaveCurrentFractal(std::wstring filename_base, bool copy_the_iters);
     int SaveHiResFractal(std::wstring filename_base);
     int SaveItersAsText(std::wstring filename_base);
-    void SaveRefOrbit(CompressToDisk compression, std::wstring filename);
+    void SaveRefOrbit(CompressToDisk compression, std::wstring filename) const;
+    void DiffRefOrbits(
+        CompressToDisk compression,
+        std::wstring outFile,
+        std::wstring filename1,
+        std::wstring filename2) const;
+
     void LoadRefOrbit(CompressToDisk compression, std::wstring filename);
     bool CleanupThreads(bool all);
 
     // Benchmark results
-    const BenchmarkData &GetBenchmarkPerPixel() const;
-    const BenchmarkData &GetBenchmarkOverall() const;
+    const BenchmarkDataCollection &GetBenchmark() const;
 
     // Used for retrieving our current location
     inline const HighPrecision &GetMinX(void) const { return m_MinX; }
@@ -473,8 +479,7 @@ private:
     bool m_AsyncRenderThreadFinish;
 
     // Benchmarking
-    BenchmarkData m_BenchmarkDataPerPixel;
-    BenchmarkData m_BenchmarkOverall;
+    mutable BenchmarkDataCollection m_BenchmarkData;
 
     std::unique_ptr<std::thread> m_AsyncRenderThread;
     std::atomic<uint32_t> m_AsyncGpuRenderIsAtomic;

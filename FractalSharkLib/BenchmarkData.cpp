@@ -1,5 +1,6 @@
 #include "stdafx.h"
 #include "BenchmarkData.h"
+#include "WaitCursor.h"
 
 #include <windows.h>
 
@@ -7,12 +8,57 @@ BenchmarkData::BenchmarkData() :
     m_freq{},
     m_startTime{},
     m_endTime{},
-    m_DeltaTime{} {
+    m_DeltaTime{},
+    m_WaitCursor{ std::make_unique<WaitCursor>()} {
 
     LARGE_INTEGER freq;
 
     QueryPerformanceFrequency(&freq);
     m_freq = freq.QuadPart;
+}
+
+BenchmarkData::~BenchmarkData() {
+    m_WaitCursor.reset();
+}
+
+BenchmarkData::BenchmarkData(const BenchmarkData &other) :
+    m_freq{ other.m_freq },
+    m_startTime{ other.m_startTime },
+    m_endTime{ other.m_endTime },
+    m_DeltaTime{ other.m_DeltaTime },
+    m_WaitCursor{ std::make_unique<WaitCursor>() } {
+}
+
+BenchmarkData::BenchmarkData(BenchmarkData &&other) :
+    m_freq{ other.m_freq },
+    m_startTime{ other.m_startTime },
+    m_endTime{ other.m_endTime },
+    m_DeltaTime{ other.m_DeltaTime },
+    m_WaitCursor{ std::make_unique<WaitCursor>() } {
+}
+
+BenchmarkData &BenchmarkData::operator=(const BenchmarkData &other) {
+    if (this != &other) {
+        m_freq = other.m_freq;
+        m_startTime = other.m_startTime;
+        m_endTime = other.m_endTime;
+        m_DeltaTime = other.m_DeltaTime;
+        m_WaitCursor = std::make_unique<WaitCursor>();
+    }
+
+    return *this;
+}
+
+BenchmarkData &BenchmarkData::operator=(BenchmarkData &&other) {
+    if (this != &other) {
+        m_freq = other.m_freq;
+        m_startTime = other.m_startTime;
+        m_endTime = other.m_endTime;
+        m_DeltaTime = other.m_DeltaTime;
+        m_WaitCursor = std::make_unique<WaitCursor>();
+    }
+
+    return *this;
 }
 
 void BenchmarkData::StartTimer() {
@@ -30,6 +76,8 @@ void BenchmarkData::StopTimer() {
     m_endTime = endTime.QuadPart;
 
     m_DeltaTime = m_endTime - m_startTime;
+
+    m_WaitCursor->ResetCursor();
 }
 
 uint64_t BenchmarkData::GetDeltaInMs() const {

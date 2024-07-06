@@ -330,6 +330,8 @@ BEGIN
             MENUITEM SEPARATOR
             MENUITEM "Benchmark (5x, full recalc)", IDM_BENCHMARK_FULL
             MENUITEM "Benchmark (5x, intermediate only)", IDM_BENCHMARK_INT
+            MENUITEM SEPARATOR
+            MENUITEM "Diff Imagina Orbits (choose two)", IDM_DIFF_REFORBIT_IMAG_MAX
         END
         POPUP "Load"
         BEGIN
@@ -384,12 +386,20 @@ END
 
 /////////////////////////////////////////////////////////////////////////////
 //
+// JPG
+//
+
+IDB_JPG_SPLASH1         JPG                     "..\\Pics\\Bing generated Fractal Shark.jpg"
+
+
+/////////////////////////////////////////////////////////////////////////////
+//
 // PNG
 //
 
-IDB_JPG_SPLASH1          JPG                     "..\\Pics\\Bing generated Fractal Shark.jpg"
-IDB_PNG_SPLASH1          PNG                     "..\\Pics\\FractalShark.png"
-IDB_PNG_SPLASH2          PNG                     "..\\Pics\\Chatgpt Fractal Shark.png"
+IDB_PNG_SPLASH1         PNG                     "..\\Pics\\FractalShark.png"
+
+IDB_PNG_SPLASH2         PNG                     "..\\Pics\\Chatgpt Fractal Shark.png"
 
 
 /////////////////////////////////////////////////////////////////////////////

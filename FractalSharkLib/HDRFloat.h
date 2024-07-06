@@ -1171,14 +1171,13 @@ static CUDA_CRAP T HdrSqrt(const T &incoming) {
 }
 
 template<class T>
-static CUDA_CRAP constexpr T HdrAbs(const T &incoming) {
-    static_assert(
-        std::is_same<T, double>::value ||
-        std::is_same<T, float>::value ||
-        std::is_same<T, CudaDblflt<dblflt>>::value ||
-        std::is_same<T, HDRFloat<double>>::value ||
-        std::is_same<T, HDRFloat<float>>::value ||
-        std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value, "No");
+static CUDA_CRAP constexpr T HdrAbs(const T &incoming)
+    requires (std::is_same<T, double>::value ||
+              std::is_same<T, float>::value ||
+              std::is_same<T, CudaDblflt<MattDblflt>>::value ||
+              std::is_same<T, HDRFloat<double>>::value ||
+              std::is_same<T, HDRFloat<float>>::value ||
+              std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value) {
 
     if constexpr (std::is_same<T, double>::value ||
         std::is_same<T, float>::value) {

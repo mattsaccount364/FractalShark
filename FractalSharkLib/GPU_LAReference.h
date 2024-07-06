@@ -129,11 +129,11 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference<T2, SubType2, OtherPE
         check_size<Float, T2>();
         check_size<SubType, SubType2>();
         check_size<
-            GPU_LAInfoDeep<IterType, Float, SubType>::HDRFloatComplex,
-            LAInfoDeep<IterType, Float, SubType, OtherPExtras>::HDRFloatComplex>();
+            typename GPU_LAInfoDeep<IterType, Float, SubType>::HDRFloatComplex,
+            typename LAInfoDeep<IterType, Float, SubType, OtherPExtras>::HDRFloatComplex>();
         check_size<
-            GPU_LAInfoDeep<IterType, Float, SubType>::HDRFloat,
-            LAInfoDeep<IterType, Float, SubType, OtherPExtras>::HDRFloat>();
+            typename GPU_LAInfoDeep<IterType, Float, SubType>::HDRFloat,
+            typename LAInfoDeep<IterType, Float, SubType, OtherPExtras>::HDRFloat>();
 
         static_assert(
             &static_cast<GPU_LAInfoDeep<IterType, Float, SubType> *>(0)->CCoeff ==

@@ -17,6 +17,94 @@ class PerturbationResults;
 
 class RefOrbitCalc {
 public:
+    using AwesomeVariant = std::variant <
+        const PerturbationResults<uint32_t, double, PerturbExtras::Disable> *,
+        const PerturbationResults<uint32_t, float, PerturbExtras::Disable> *,
+        const PerturbationResults<uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::Disable> *,
+        const PerturbationResults<uint32_t, HDRFloat<double>, PerturbExtras::Disable> *,
+        const PerturbationResults<uint32_t, HDRFloat<float>, PerturbExtras::Disable> *,
+        const PerturbationResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable> *,
+
+        const PerturbationResults<uint32_t, double, PerturbExtras::Bad> *,
+        const PerturbationResults<uint32_t, float, PerturbExtras::Bad> *,
+        const PerturbationResults<uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::Bad> *,
+        const PerturbationResults<uint32_t, HDRFloat<double>, PerturbExtras::Bad> *,
+        const PerturbationResults<uint32_t, HDRFloat<float>, PerturbExtras::Bad> *,
+        const PerturbationResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad> *,
+
+        const PerturbationResults<uint32_t, double, PerturbExtras::SimpleCompression> *,
+        const PerturbationResults<uint32_t, float, PerturbExtras::SimpleCompression> *,
+        const PerturbationResults<uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression> *,
+        const PerturbationResults<uint32_t, HDRFloat<double>, PerturbExtras::SimpleCompression> *,
+        const PerturbationResults<uint32_t, HDRFloat<float>, PerturbExtras::SimpleCompression> *,
+        const PerturbationResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::SimpleCompression> *,
+
+        const PerturbationResults<uint64_t, double, PerturbExtras::Disable> *,
+        const PerturbationResults<uint64_t, float, PerturbExtras::Disable> *,
+        const PerturbationResults<uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::Disable> *,
+        const PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::Disable> *,
+        const PerturbationResults<uint64_t, HDRFloat<float>, PerturbExtras::Disable> *,
+        const PerturbationResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable> *,
+
+        const PerturbationResults<uint64_t, double, PerturbExtras::Bad> *,
+        const PerturbationResults<uint64_t, float, PerturbExtras::Bad> *,
+        const PerturbationResults<uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::Bad> *,
+        const PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::Bad> *,
+        const PerturbationResults<uint64_t, HDRFloat<float>, PerturbExtras::Bad> *,
+        const PerturbationResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad> *,
+
+        const PerturbationResults<uint64_t, double, PerturbExtras::SimpleCompression> *,
+        const PerturbationResults<uint64_t, float, PerturbExtras::SimpleCompression> *,
+        const PerturbationResults<uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression> *,
+        const PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::SimpleCompression> *,
+        const PerturbationResults<uint64_t, HDRFloat<float>, PerturbExtras::SimpleCompression> *,
+        const PerturbationResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::SimpleCompression> *
+    > ;
+
+    using AwesomeVariantUniquePtr = std::variant <
+        std::unique_ptr<PerturbationResults<uint32_t, double, PerturbExtras::Disable>>,
+        std::unique_ptr<PerturbationResults<uint32_t, float, PerturbExtras::Disable>>,
+        std::unique_ptr<PerturbationResults<uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::Disable>>,
+        std::unique_ptr<PerturbationResults<uint32_t, HDRFloat<double>, PerturbExtras::Disable>>,
+        std::unique_ptr<PerturbationResults<uint32_t, HDRFloat<float>, PerturbExtras::Disable>>,
+        std::unique_ptr<PerturbationResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable>>,
+
+        std::unique_ptr<PerturbationResults<uint32_t, double, PerturbExtras::Bad>>,
+        std::unique_ptr<PerturbationResults<uint32_t, float, PerturbExtras::Bad>>,
+        std::unique_ptr<PerturbationResults<uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::Bad>>,
+        std::unique_ptr<PerturbationResults<uint32_t, HDRFloat<double>, PerturbExtras::Bad>>,
+        std::unique_ptr<PerturbationResults<uint32_t, HDRFloat<float>, PerturbExtras::Bad>>,
+        std::unique_ptr<PerturbationResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad>>,
+
+        std::unique_ptr<PerturbationResults<uint32_t, double, PerturbExtras::SimpleCompression>>,
+        std::unique_ptr<PerturbationResults<uint32_t, float, PerturbExtras::SimpleCompression>>,
+        std::unique_ptr<PerturbationResults<uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression>>,
+        std::unique_ptr<PerturbationResults<uint32_t, HDRFloat<double>, PerturbExtras::SimpleCompression>>,
+        std::unique_ptr<PerturbationResults<uint32_t, HDRFloat<float>, PerturbExtras::SimpleCompression>>,
+        std::unique_ptr<PerturbationResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::SimpleCompression>>,
+
+        std::unique_ptr<PerturbationResults<uint64_t, double, PerturbExtras::Disable>>,
+        std::unique_ptr<PerturbationResults<uint64_t, float, PerturbExtras::Disable>>,
+        std::unique_ptr<PerturbationResults<uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::Disable>>,
+        std::unique_ptr<PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::Disable>>,
+        std::unique_ptr<PerturbationResults<uint64_t, HDRFloat<float>, PerturbExtras::Disable>>,
+        std::unique_ptr<PerturbationResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable>>,
+
+        std::unique_ptr<PerturbationResults<uint64_t, double, PerturbExtras::Bad>>,
+        std::unique_ptr<PerturbationResults<uint64_t, float, PerturbExtras::Bad>>,
+        std::unique_ptr<PerturbationResults<uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::Bad>>,
+        std::unique_ptr<PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::Bad>>,
+        std::unique_ptr<PerturbationResults<uint64_t, HDRFloat<float>, PerturbExtras::Bad>>,
+        std::unique_ptr<PerturbationResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad>>,
+
+        std::unique_ptr<PerturbationResults<uint64_t, double, PerturbExtras::SimpleCompression>>,
+        std::unique_ptr<PerturbationResults<uint64_t, float, PerturbExtras::SimpleCompression>>,
+        std::unique_ptr<PerturbationResults<uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression>>,
+        std::unique_ptr<PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::SimpleCompression>>,
+        std::unique_ptr<PerturbationResults<uint64_t, HDRFloat<float>, PerturbExtras::SimpleCompression>>,
+        std::unique_ptr<PerturbationResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::SimpleCompression>>
+    > ;
+
     enum class ReuseMode {
         DontSaveForReuse,
         SaveForReuse1, // 3 thread, no compression
@@ -66,7 +154,7 @@ public:
         class T,
         PerturbExtras PExtras,
         bool IsConst>
-    static auto GetPerturbationResultsImpl(auto &container)->std::conditional_t<IsConst,
+    static auto GetPerturbationResultsImpl(auto &container) -> std::conditional_t<IsConst,
         const std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtras>>> &,
         std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtras>>> &>;
 
@@ -127,6 +215,11 @@ public:
 
     void GetSomeDetails(RefOrbitDetails &details) const;
     void SaveOrbit(CompressToDisk compression, std::wstring filename) const;
+    void DiffOrbit(
+        CompressToDisk compression,
+        std::wstring outFile,
+        std::wstring filename1,
+        std::wstring filename2) const;
 
     template<typename IterType, class T, PerturbExtras PExtras>
     void SaveOrbit(const PerturbationResults<IterType, T, PExtras> &results, std::wstring imagFilename) const;
@@ -134,6 +227,9 @@ public:
     const PerturbationResultsBase<uint64_t> *LoadOrbit(
         CompressToDisk compression,
         std::wstring imagFilename);
+    AwesomeVariantUniquePtr LoadOrbitConst(
+        CompressToDisk compression,
+        std::wstring imagFilename) const;
 
     void DrawPerturbationResults();
 
@@ -262,47 +358,16 @@ private:
     template<typename IterType, PerturbExtras PExtras>
     const Container<IterType, PExtras> &GetContainer() const;
 
-    mutable std::variant <
-        const PerturbationResults<uint32_t, double, PerturbExtras::Disable> *,
-        const PerturbationResults<uint32_t, float, PerturbExtras::Disable> *,
-        const PerturbationResults<uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::Disable> *,
-        const PerturbationResults<uint32_t, HDRFloat<double>, PerturbExtras::Disable> *,
-        const PerturbationResults<uint32_t, HDRFloat<float>, PerturbExtras::Disable> *,
-        const PerturbationResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable> *,
+    mutable AwesomeVariant m_LastUsedRefOrbit;
 
-        const PerturbationResults<uint32_t, double, PerturbExtras::Bad> *,
-        const PerturbationResults<uint32_t, float, PerturbExtras::Bad> *,
-        const PerturbationResults<uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::Bad> *,
-        const PerturbationResults<uint32_t, HDRFloat<double>, PerturbExtras::Bad> *,
-        const PerturbationResults<uint32_t, HDRFloat<float>, PerturbExtras::Bad> *,
-        const PerturbationResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad> *,
+    template<typename T>
+    struct ExtractPerturbationResultsTypes;
 
-        const PerturbationResults<uint32_t, double, PerturbExtras::SimpleCompression> *,
-        const PerturbationResults<uint32_t, float, PerturbExtras::SimpleCompression> *,
-        const PerturbationResults<uint32_t, CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression> *,
-        const PerturbationResults<uint32_t, HDRFloat<double>, PerturbExtras::SimpleCompression> *,
-        const PerturbationResults<uint32_t, HDRFloat<float>, PerturbExtras::SimpleCompression> *,
-        const PerturbationResults<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::SimpleCompression> *,
-
-        const PerturbationResults<uint64_t, double, PerturbExtras::Disable> *,
-        const PerturbationResults<uint64_t, float, PerturbExtras::Disable> *,
-        const PerturbationResults<uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::Disable> *,
-        const PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::Disable> *,
-        const PerturbationResults<uint64_t, HDRFloat<float>, PerturbExtras::Disable> *,
-        const PerturbationResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable> *,
-
-        const PerturbationResults<uint64_t, double, PerturbExtras::Bad> *,
-        const PerturbationResults<uint64_t, float, PerturbExtras::Bad> *,
-        const PerturbationResults<uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::Bad> *,
-        const PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::Bad> *,
-        const PerturbationResults<uint64_t, HDRFloat<float>, PerturbExtras::Bad> *,
-        const PerturbationResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad> *,
-
-        const PerturbationResults<uint64_t, double, PerturbExtras::SimpleCompression> *,
-        const PerturbationResults<uint64_t, float, PerturbExtras::SimpleCompression> *,
-        const PerturbationResults<uint64_t, CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompression> *,
-        const PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::SimpleCompression> *,
-        const PerturbationResults<uint64_t, HDRFloat<float>, PerturbExtras::SimpleCompression> *,
-        const PerturbationResults<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::SimpleCompression> *
-    > m_LastUsedRefOrbit;
+    // Specialization for pointers to MyClass
+    template<typename IterType, class T, PerturbExtras PExtras>
+    struct ExtractPerturbationResultsTypes<const PerturbationResults<IterType, T, PExtras> *> {
+        using CurIterType = IterType;
+        using CurT = T;
+        static constexpr PerturbExtras CurPExtras = PExtras;
+    };
 };

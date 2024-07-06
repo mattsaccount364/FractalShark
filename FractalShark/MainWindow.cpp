@@ -7,6 +7,7 @@
 #include "JobObject.h"
 #include "OpenGLContext.h"
 #include "PngParallelSave.h"
+#include "WaitCursor.h"
 
 #include <minidumpapiset.h>
 #include <mpir.h>
@@ -503,7 +504,12 @@ LRESULT MainWindow::StaticWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM
     }
 
     // And invoke WndProc
-    return pThis->WndProc(message, wParam, lParam);
+    try {
+        return pThis->WndProc(message, wParam, lParam);
+    } catch (const std::exception &e) {
+        MessageBoxA(hWnd, e.what(), "Error", MB_OK);
+        return 0;
+    }
 }
 
 LRESULT MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam) {
@@ -1198,6 +1204,11 @@ LRESULT MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam) {
             MenuSaveImag(CompressToDisk::MaxCompressionImagina);
             break;
         }
+        case IDM_DIFF_REFORBIT_IMAG_MAX:
+        {
+            MenuDiffImag();
+            break;
+        }
         case IDM_LOAD_REFORBIT_IMAG_MAX:
         {
             MenuLoadImagDyn();
@@ -1295,11 +1306,12 @@ LRESULT MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam) {
         case IDM_VIEW_DYNAMIC_IMAG + 28:
         case IDM_VIEW_DYNAMIC_IMAG + 29:
         {
-            ClearMenu(ImaginaMenu);
-
             auto index = wmId - IDM_VIEW_DYNAMIC_IMAG;
             gFractal->LoadRefOrbit(CompressToDisk::MaxCompressionImagina, gImaginaLocations[index].Filename);
             PaintAsNecessary();
+
+            ClearMenu(ImaginaMenu);
+
             break;
         }
 
@@ -1514,7 +1526,7 @@ LRESULT MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam) {
     return 0;
 }
 
-std::wstring MainWindow::OpenFileDialog(uint32_t flags) {
+std::wstring MainWindow::OpenFileDialog(OpenBoxType type) {
     OPENFILENAME ofn;       // common dialog box structure
     wchar_t szFile[260];       // buffer for file name
 
@@ -1530,13 +1542,22 @@ std::wstring MainWindow::OpenFileDialog(uint32_t flags) {
     ofn.lpstrFileTitle = NULL;
     ofn.nMaxFileTitle = 0;
     ofn.lpstrInitialDir = NULL;
-    ofn.Flags = flags;
 
-    // Display the Open dialog box.
-    if (GetOpenFileName(&ofn) == TRUE) {
-        return std::wstring(ofn.lpstrFile);
+    if (type == OpenBoxType::Open) {
+        // Display the Open dialog box.
+        ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+        if (GetOpenFileName(&ofn) == TRUE) {
+            return std::wstring(ofn.lpstrFile);
+        } else {
+            return std::wstring();
+        }
     } else {
-        return std::wstring();
+        ofn.Flags = 0;
+        if (GetSaveFileName(&ofn) == TRUE) {
+            return std::wstring(ofn.lpstrFile);
+        } else {
+            return std::wstring();
+        }
     }
 }
 
@@ -1794,9 +1815,11 @@ void MainWindow::MenuGetCurPos() {
         + std::to_string(details.LASize) + "\r\n";
 
     const auto benchmarkData =
-        std::string("Overall time (ms) = ") + std::to_string(gFractal->GetBenchmarkOverall().GetDeltaInMs()) + "\r\n" +
-        std::string("Per pixel (ms) = ") + std::to_string(gFractal->GetBenchmarkPerPixel().GetDeltaInMs()) + "\r\n" +
-        std::string("RefOrbit time (ms) = ") + std::to_string(details.OrbitMilliseconds) + "\r\n" +
+        std::string("Overall (ms) = ") + std::to_string(gFractal->GetBenchmark().m_Overall.GetDeltaInMs()) + "\r\n" +
+        std::string("Per pixel (ms) = ") + std::to_string(gFractal->GetBenchmark().m_PerPixel.GetDeltaInMs()) + "\r\n" +
+        std::string("RefOrbit save (ms) = ") + std::to_string(gFractal->GetBenchmark().m_RefOrbitSave.GetDeltaInMs()) + "\r\n" +
+        std::string("RefOrbit load (ms) = ") + std::to_string(gFractal->GetBenchmark().m_RefOrbitLoad.GetDeltaInMs()) + "\r\n" +
+        std::string("RefOrbit (ms) = ") + std::to_string(details.OrbitMilliseconds) + "\r\n" +
         std::string("LA generation time (ms) = ") + std::to_string(details.LAMilliseconds) + "\r\n";
 
     snprintf(
@@ -2151,6 +2174,7 @@ void MainWindow::ClearMenu(HMENU &menu) {
     if (menu != nullptr) {
         DestroyMenu(menu);
         menu = nullptr;
+        gImaginaLocations.clear();
     }
 }
 
@@ -2166,15 +2190,16 @@ void MainWindow::MenuLoadImagDyn() {
 
     WIN32_FIND_DATA FindFileData;
     HANDLE hFind = FindFirstFile(L"*.im", &FindFileData);
-    if (hFind == INVALID_HANDLE_VALUE) {
-        return;
+    if (hFind != INVALID_HANDLE_VALUE) {
+        do {
+            imagFiles.push_back(FindFileData.cFileName);
+        } while (FindNextFile(hFind, &FindFileData) != 0);
+
+        FindClose(hFind);
     }
 
-    do {
-        imagFiles.push_back(FindFileData.cFileName);
-    } while (FindNextFile(hFind, &FindFileData) != 0);
-
-    FindClose(hFind);
+    // Even if no files found, just run the following so we get
+    // an empty menu.
 
     for (const auto &imagFile : imagFiles) {
 
@@ -2196,7 +2221,7 @@ void MainWindow::MenuLoadImagDyn() {
 }
 
 void MainWindow::MenuSaveImag(CompressToDisk compression) {
-    std::wstring filename = OpenFileDialog(OFN_PATHMUSTEXIST);
+    std::wstring filename = OpenFileDialog(OpenBoxType::Save);
     if (filename.empty()) {
         return;
     }
@@ -2204,8 +2229,33 @@ void MainWindow::MenuSaveImag(CompressToDisk compression) {
     gFractal->SaveRefOrbit(compression, filename);
 }
 
+void MainWindow::MenuDiffImag() {
+
+    std::wstring outFile = OpenFileDialog(OpenBoxType::Save);
+    if (outFile.empty()) {
+        return;
+    }
+
+    // Open two files, both must exist
+    std::wstring filename1 = OpenFileDialog(OpenBoxType::Open);
+    if (filename1.empty()) {
+        return;
+    }
+
+    std::wstring filename2 = OpenFileDialog(OpenBoxType::Open);
+    if (filename2.empty()) {
+        return;
+    }
+
+    gFractal->DiffRefOrbits(
+        CompressToDisk::MaxCompressionImagina,
+        outFile,
+        filename1,
+        filename2);
+}
+
 void MainWindow::MenuLoadImag(CompressToDisk compression) {
-    std::wstring filename = OpenFileDialog(OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST);
+    std::wstring filename = OpenFileDialog(OpenBoxType::Open);
     if (filename.empty()) {
         return;
     }

@@ -3,14 +3,16 @@
 #include <stdint.h>
 #include "HighPrecision.h"
 
+class WaitCursor;
+
 class BenchmarkData {
 public:
     BenchmarkData();
-    BenchmarkData(const BenchmarkData &) = default;
-    BenchmarkData(BenchmarkData &&) = default;
-    BenchmarkData &operator=(const BenchmarkData &) = default;
-    BenchmarkData &operator=(BenchmarkData &&) = default;
-    ~BenchmarkData() = default;
+    BenchmarkData(const BenchmarkData &);
+    BenchmarkData(BenchmarkData &&);
+    BenchmarkData &operator=(const BenchmarkData &);
+    BenchmarkData &operator=(BenchmarkData &&);
+    ~BenchmarkData();
 
     void StartTimer();
     void StopTimer();
@@ -23,4 +25,6 @@ private:
     uint64_t m_endTime;
 
     uint64_t m_DeltaTime;
+
+    std::unique_ptr<WaitCursor> m_WaitCursor;
 };

@@ -1,12 +1,29 @@
 #include "stdafx.h"
 #include "FractalTest.h"
 
+#include "Exceptions.h"
 #include "Fractal.h"
+
+#include <shellapi.h>
 
 FractalTest::FractalTest(Fractal &fractal) : m_Fractal(fractal) {
 }
 
 void FractalTest::TestPreReq(const wchar_t *dirName) {
+    DWORD ftyp = GetFileAttributesW(dirName);
+    if (ftyp != INVALID_FILE_ATTRIBUTES && (ftyp & FILE_ATTRIBUTE_DIRECTORY)) {
+        SHFILEOPSTRUCT fileOp = { 0 };
+        fileOp.wFunc = FO_DELETE;
+        fileOp.pFrom = dirName;
+        fileOp.fFlags = FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT;
+        auto shRet = SHFileOperation(&fileOp);
+        if (shRet != 0) {
+            ::MessageBox(nullptr, L"Error deleting directory!", L"", MB_OK | MB_APPLMODAL);
+            return;
+        }
+    }
+
+    // Create the directory
     auto ret = CreateDirectory(dirName, nullptr);
     if (ret == 0 && GetLastError() != ERROR_ALREADY_EXISTS) {
         ::MessageBox(nullptr, L"Error creating directory!", L"", MB_OK | MB_APPLMODAL);
@@ -145,6 +162,7 @@ void FractalTest::BasicTestInternal(
 
 std::string FractalTest::GenFilename(
     size_t testIndex,
+    size_t viewIndex,
     RenderAlgorithm algToTest,
     IterTypeEnum iterType,
     std::string baseName) {
@@ -154,6 +172,7 @@ std::string FractalTest::GenFilename(
 
     auto nameWithIntPrefix =
         std::to_string(testIndex) +
+        " - View#" + std::to_string(viewIndex) +
         " - Alg#" + std::to_string(static_cast<size_t>(algToTest)) +
         " - Bits# " + iterTypeStr +
         " - " + baseName;
@@ -162,13 +181,14 @@ std::string FractalTest::GenFilename(
 
 std::wstring FractalTest::GenFilenameW(
     size_t testIndex,
+    size_t viewIndex,
     RenderAlgorithm algToTest,
     IterTypeEnum iterType,
     const wchar_t *testPrefix,
     const wchar_t *dirName,
     std::string baseName) {
 
-    auto nameWithIntPrefix = GenFilename(testIndex, algToTest, iterType, baseName);
+    auto nameWithIntPrefix = GenFilename(testIndex, viewIndex, algToTest, iterType, baseName);
 
     std::wstring filenameW;
     std::transform(
@@ -196,11 +216,9 @@ void FractalTest::BasicOneTest(
     m_Fractal.ForceRecalc();
 
     auto name = m_Fractal.GetRenderAlgorithmName();
-    auto nameWithIntPrefix = GenFilename(testIndex, algToTest, m_Fractal.GetIterType(), name);
-
     m_Fractal.CalcFractal(false);
 
-    const auto filenameW = GenFilenameW(testIndex, algToTest, iterType, testPrefix, dirName, name);
+    const auto filenameW = GenFilenameW(testIndex, viewIndex, algToTest, iterType, testPrefix, dirName, name);
 
     m_Fractal.SaveCurrentFractal(filenameW, false);
     //SaveItersAsText(filenameW);
@@ -239,25 +257,14 @@ void FractalTest::TestReferenceSave() {
     const wchar_t *dirName = L"TestReferenceSave";
     TestPreReq(dirName);
 
-    RenderAlgorithm View5Algs[] = {
-        RenderAlgorithm::Gpu1x32PerturbedLAv2,
-        RenderAlgorithm::Gpu1x32PerturbedRCLAv2,
-        RenderAlgorithm::Gpu1x64PerturbedLAv2,
-        RenderAlgorithm::Gpu1x64PerturbedRCLAv2,
-        RenderAlgorithm::GpuHDRx32PerturbedLAv2,
-        RenderAlgorithm::GpuHDRx32PerturbedRCLAv2,
-        //RenderAlgorithm::GpuHDRx2x32PerturbedLAv2,
-        //RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2,
-        RenderAlgorithm::GpuHDRx64PerturbedLAv2,
-        RenderAlgorithm::GpuHDRx64PerturbedRCLAv2,
-    };
+    m_Fractal.SetResultsAutosave(AddPointOptions::DontSave);
 
-    auto referenceSaveLoad = [&](size_t testIndex, IterTypeEnum iterType, RenderAlgorithm algToTest) {
+    auto referenceSaveLoad = [&](size_t viewIndex, size_t testIndex, IterTypeEnum iterType, RenderAlgorithm algToTest) {
         m_Fractal.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
 
         m_Fractal.SetIterType(iterType);
         m_Fractal.SetRenderAlgorithm(algToTest);
-        m_Fractal.View(5);
+        m_Fractal.View(viewIndex);
         m_Fractal.ForceRecalc();
         m_Fractal.CalcFractal(false);
 
@@ -268,6 +275,7 @@ void FractalTest::TestReferenceSave() {
             std::wstring fullPrefix = testPrefix + std::wstring(L" - ") + extraPrefix;
             return GenFilenameW(
                 testIndex,
+                viewIndex,
                 algToTest,
                 iterType,
                 fullPrefix.c_str(),
@@ -275,11 +283,18 @@ void FractalTest::TestReferenceSave() {
                 algStr);
             };
 
-        const auto disableFilename = genLocalFilename(L"Disable") + L".txt";
-        m_Fractal.SaveRefOrbit(CompressToDisk::Disable, disableFilename);
+        const auto expectedIterations = m_Fractal.GetNumIterations<IterTypeFull>();
 
-        const auto simpleFilename = genLocalFilename(L"Simple") + L".txt";
-        m_Fractal.SaveRefOrbit(CompressToDisk::SimpleCompression, simpleFilename);
+        // Only save view 5 since that's small enough to be reasonable.
+        // Running this test on all views would take a long time and
+        // consume substantial disk space.
+        if (viewIndex == 5) {
+            const auto disableFilename = genLocalFilename(L"Disable") + L".txt";
+            m_Fractal.SaveRefOrbit(CompressToDisk::Disable, disableFilename);
+
+            const auto simpleFilename = genLocalFilename(L"Simple") + L".txt";
+            m_Fractal.SaveRefOrbit(CompressToDisk::SimpleCompression, simpleFilename);
+        }
 
         const auto maxFilename = genLocalFilename(L"Max") + L".txt";
         m_Fractal.SaveRefOrbit(CompressToDisk::MaxCompression, maxFilename);
@@ -299,21 +314,57 @@ void FractalTest::TestReferenceSave() {
         m_Fractal.SetIterType(IterTypeEnum::Bits64);
 
         m_Fractal.LoadRefOrbit(CompressToDisk::MaxCompressionImagina, maxImaginaFilename);
+        if (m_Fractal.GetNumIterations<IterTypeFull>() != expectedIterations) {
+            throw FractalSharkSeriousException("LoadRefOrbit failed to set the correct number of iterations!");
+        }
+
         m_Fractal.CalcFractal(false);
 
         const auto decompressedResultFilename = genLocalFilename(L"Decompressed");
         m_Fractal.SaveCurrentFractal(decompressedResultFilename, false);
         };
 
-    m_Fractal.SetResultsAutosave(AddPointOptions::DontSave);
     size_t testIndex = 0;
+    auto loopAll = [&](size_t view, std::vector<RenderAlgorithm> algsToTest) {
+        for (auto curAlg : algsToTest) {
+            //referenceSaveLoad(view, testIndex, IterTypeEnum::Bits32, curAlg);
+            referenceSaveLoad(view, testIndex, IterTypeEnum::Bits64, curAlg);
 
-    for (auto curAlg : View5Algs) {
-        //referenceSaveLoad(testIndex, IterTypeEnum::Bits32, curAlg);
-        referenceSaveLoad(testIndex, IterTypeEnum::Bits64, curAlg);
+            testIndex++;
+        }
+        };
 
-        testIndex++;
-    }
+    size_t viewToTest;
+
+    const auto View5and10Algs = {
+        RenderAlgorithm::Gpu1x64PerturbedLAv2,
+        RenderAlgorithm::Gpu1x64PerturbedRCLAv2,
+        RenderAlgorithm::GpuHDRx32PerturbedLAv2,
+        RenderAlgorithm::GpuHDRx32PerturbedRCLAv2,
+        //RenderAlgorithm::GpuHDRx2x32PerturbedLAv2,
+        //RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2,
+        RenderAlgorithm::GpuHDRx64PerturbedLAv2,
+        RenderAlgorithm::GpuHDRx64PerturbedRCLAv2,
+    };
+
+    viewToTest = 5;
+    loopAll(viewToTest, View5and10Algs);
+
+    viewToTest = 10;
+    loopAll(viewToTest, View5and10Algs);
+
+    const auto View13and14Algs = {
+        RenderAlgorithm::GpuHDRx32PerturbedLAv2,
+        RenderAlgorithm::GpuHDRx32PerturbedRCLAv2,
+        RenderAlgorithm::GpuHDRx64PerturbedLAv2,
+        RenderAlgorithm::GpuHDRx64PerturbedRCLAv2,
+    };
+
+    viewToTest = 13;
+    loopAll(viewToTest, View13and14Algs);
+
+    viewToTest = 14;
+    loopAll(viewToTest, View13and14Algs);
 }
 
 void FractalTest::Benchmark(RefOrbitCalc::PerturbationResultType type) {
@@ -336,8 +387,8 @@ void FractalTest::Benchmark(RefOrbitCalc::PerturbationResultType type) {
         RefOrbitDetails details;
         m_Fractal.GetSomeDetails(details);
 
-        overallTimes.push_back(m_Fractal.GetBenchmarkOverall().GetDeltaInMs());
-        perPixelTimes.push_back(m_Fractal.GetBenchmarkPerPixel().GetDeltaInMs());
+        overallTimes.push_back(m_Fractal.GetBenchmark().m_Overall.GetDeltaInMs());
+        perPixelTimes.push_back(m_Fractal.GetBenchmark().m_PerPixel.GetDeltaInMs());
         refOrbitTimes.push_back(details.OrbitMilliseconds);
         LAGenerationTimes.push_back(details.LAMilliseconds);
     }

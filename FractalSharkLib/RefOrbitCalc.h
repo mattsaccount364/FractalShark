@@ -149,20 +149,17 @@ public:
     PerturbationAlg GetPerturbationAlg() const;
     std::string GetPerturbationAlgStr() const;
 
-    template<
-        typename IterType,
-        class T,
-        PerturbExtras PExtras,
-        bool IsConst>
-    static auto GetPerturbationResultsImpl(auto &container) -> std::conditional_t<IsConst,
-        const std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtras>>> &,
-        std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtras>>> &>;
+    template<typename IterType, class T, PerturbExtras PExtras>
+    PerturbationResults<IterType, T, PExtras> *GetLast();
 
     template<typename IterType, class T, PerturbExtras PExtras>
-    std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtras>>> &GetPerturbationResultsMutable();
+    const PerturbationResults<IterType, T, PExtras> *GetLastConst() const;
 
     template<typename IterType, class T, PerturbExtras PExtras>
-    const std::vector<std::unique_ptr<PerturbationResults<IterType, T, PExtras>>> &GetPerturbationResultsConst() const;
+    PerturbationResults<IterType, T, PExtras> *GetElt(size_t i);
+
+    template<typename IterType, class T, PerturbExtras PExtras>
+    const PerturbationResults<IterType, T, PExtras> *GetEltConst(size_t i) const;
 
     void SetOptions(AddPointOptions options);
 
@@ -237,11 +234,7 @@ private:
     static constexpr size_t MaxStoredOrbits = 64;
 
     bool RequiresCompression() const;
-    bool IsThisPerturbationArrayUsed(void *check) const;
-
-    template<typename IterType, class T, PerturbExtras PExtras>
-    PerturbationResults<IterType, T, PExtras> *AddPerturbationResults(
-        std::unique_ptr<PerturbationResults<IterType, T, PExtras>> results);
+    //bool IsThisPerturbationArrayUsed(void *check) const;
 
     template<typename IterType, class T, PerturbExtras PExtras>
     const PerturbationResults<IterType, T, PExtras> *GetPerturbationResults(size_t index) const;
@@ -265,7 +258,7 @@ private:
     PerturbationResults<IterType, T, PExtras> *GetUsefulPerturbationResultsMutable();
 
     template<typename IterType, class T, bool Authoritative, PerturbExtras PExtras>
-    const PerturbationResults<IterType, T, PExtras> *GetUsefulPerturbationResultsMutable() const;
+    const PerturbationResults<IterType, T, PExtras> *GetUsefulPerturbationResultsConst() const;
 
     template<typename IterType, class T, class PerturbationResultsType, PerturbExtras PExtras, ReuseMode Reuse>
     void InitResults(PerturbationResultsType &results, const HighPrecision &initX, const HighPrecision &initY);
@@ -289,9 +282,8 @@ private:
     bool GetReuseResults(
         const HighPrecision &cx,
         const HighPrecision &cy,
-        std::vector<std::unique_ptr<PerturbationResults<IterType, T, PerturbExtras::Disable>>> &perturbationResultsArray,
         const PerturbationResults<IterType, T, PerturbExtras::Disable> &existingAuthoritativeResults,
-        PerturbationResults<IterType, T, PerturbExtras::Disable> *&outResults) const;
+        PerturbationResults<IterType, T, PerturbExtras::Disable> *&outResults);
 
     void GetEstimatedPrecision(
         uint64_t authoritativePrecisionInBits,
@@ -335,28 +327,7 @@ private:
     size_t m_NumCpuCores;
     bool m_HyperthreadingEnabled;
 
-    template<typename IterType, PerturbExtras PExtras>
-    struct Container {
-        std::vector<std::unique_ptr<PerturbationResults<IterType, double, PExtras>>> m_PerturbationResultsDouble;
-        std::vector<std::unique_ptr<PerturbationResults<IterType, float, PExtras>>> m_PerturbationResultsFloat;
-        std::vector<std::unique_ptr<PerturbationResults<IterType, CudaDblflt<MattDblflt>, PExtras>>> m_PerturbationResults2xFloat;
-        std::vector<std::unique_ptr<PerturbationResults<IterType, HDRFloat<double>, PExtras>>> m_PerturbationResultsHDRDouble;
-        std::vector<std::unique_ptr<PerturbationResults<IterType, HDRFloat<float>, PExtras>>> m_PerturbationResultsHDRFloat;
-        std::vector<std::unique_ptr<PerturbationResults<IterType, HDRFloat<CudaDblflt<MattDblflt>>, PExtras>>> m_PerturbationResultsHDR2xFloat;
-    };
-
-    Container<uint32_t, PerturbExtras::Disable> c32d;
-    Container<uint32_t, PerturbExtras::Bad> c32e;
-    Container<uint32_t, PerturbExtras::SimpleCompression> c32c;
-    Container<uint64_t, PerturbExtras::Disable> c64d;
-    Container<uint64_t, PerturbExtras::Bad> c64e;
-    Container<uint64_t, PerturbExtras::SimpleCompression> c64c;
-
-    template<typename IterType, PerturbExtras PExtras>
-    Container<IterType, PExtras> &GetContainer();
-
-    template<typename IterType, PerturbExtras PExtras>
-    const Container<IterType, PExtras> &GetContainer() const;
+    std::vector<AwesomeVariantUniquePtr> m_C;
 
     mutable AwesomeVariant m_LastUsedRefOrbit;
 

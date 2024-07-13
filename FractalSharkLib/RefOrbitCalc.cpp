@@ -23,8 +23,6 @@
 
 #include "MpirSerialization.h"
 
-// TODO we really should be using std::variant all over.  Oh well!
-
 template<class Type>
 struct ThreadPtrs {
     std::atomic<Type *> In;
@@ -2322,21 +2320,23 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
 
     auto GenLAResults = [&](auto &results, AddPointOptions options_to_use) {
         if (results->GetLaReference() == nullptr) {
-            auto temp = std::make_unique<LAReference<IterType, T, SubType, PExtras>>(
-                m_Fractal.GetLAParameters(),
-                options_to_use,
-                results->GenFilename(GrowableVectorTypes::LAInfoDeep, L"", true),
-                results->GenFilename(GrowableVectorTypes::LAStageInfo, L"", true));
+            if constexpr (Introspection::TestPExtras<PExtras>::value) {
+                auto temp = std::make_unique<LAReference<IterType, T, SubType, PExtras>>(
+                    m_Fractal.GetLAParameters(),
+                    options_to_use,
+                    results->GenFilename(GrowableVectorTypes::LAInfoDeep, L"", true),
+                    results->GenFilename(GrowableVectorTypes::LAStageInfo, L"", true));
 
-            // TODO the presumption here is results size fits in the target IterType size
-            temp->GenerateApproximationData(
-                *results,
-                results->GetMaxRadius(),
-                UsingDblflt);
+                // TODO the presumption here is results size fits in the target IterType size
+                temp->GenerateApproximationData(
+                    *results,
+                    results->GetMaxRadius(),
+                    UsingDblflt);
 
-            added = true;
+                added = true;
 
-            results->SetLaReference(std::move(temp));
+                results->SetLaReference(std::move(temp));
+            }
         }
         };
 
@@ -2552,14 +2552,9 @@ template<
     class DestT,
     PerturbExtras DestEnableBad>
 PerturbationResults<IterType, DestT, DestEnableBad> *RefOrbitCalc::CopyUsefulPerturbationResults(
-    PerturbationResults<IterType, SrcT, SrcEnableBad> &src_array) {
-    if constexpr (DestEnableBad != SrcEnableBad) {
-        return nullptr;
-    }
-
-    static_assert(
-        (DestEnableBad == PerturbExtras::Disable && SrcEnableBad == PerturbExtras::Disable) ||
-        (DestEnableBad == PerturbExtras::Bad && SrcEnableBad == PerturbExtras::Bad), "!");
+    PerturbationResults<IterType, SrcT, SrcEnableBad> &src_array)
+    requires ((SrcEnableBad == PerturbExtras::Bad && DestEnableBad == PerturbExtras::Bad) ||
+              (SrcEnableBad == PerturbExtras::Disable && DestEnableBad == PerturbExtras::Disable)) {
 
     if constexpr (std::is_same<SrcT, double>::value) {
         auto newarray = std::make_unique<PerturbationResults<IterType, float, DestEnableBad>>(
@@ -2638,11 +2633,17 @@ void RefOrbitCalc::ResetGuess(HighPrecision x, HighPrecision y) {
 
 void RefOrbitCalc::SaveAllOrbits() {
     auto lambda = [&](auto &elt) {
-        auto resultsCopy = elt->CopyPerturbationResults(
-            AddPointOptions::EnableWithSave,
-            GetNextGenerationNumber());
-        resultsCopy->WriteMetadata();
-        };
+
+        const auto *results = elt.get();
+        constexpr auto CurPExtras = ExtractPerturbationResultsTypes<decltype(results)>::CurPExtras;
+
+        if constexpr (CurPExtras != PerturbExtras::MaxCompression) {
+            auto resultsCopy = elt->CopyPerturbationResults(
+                AddPointOptions::EnableWithSave,
+                GetNextGenerationNumber());
+            resultsCopy->WriteMetadata();
+        }
+    };
 
     for (size_t i = 0; i < m_C.size(); i++) {
         std::visit(lambda, m_C[i]);
@@ -2677,7 +2678,7 @@ void RefOrbitCalc::LoadAllOrbits() {
     // This is such a stupid implementation of this but whatever
     // TODO: make this not stupid
     // The idea is to load all the relevant files in the current directory.
-    auto lambda = [&]<typename IterType, PerturbExtras PExtras>(auto & Container) {
+    auto lambda = [&]<typename IterType, PerturbExtras PExtras>() {
         std::string path = ".";
         for (const auto &entry : std::filesystem::directory_iterator(path)) {
             auto file = entry.path().string();
@@ -2748,12 +2749,12 @@ void RefOrbitCalc::LoadAllOrbits() {
         }
     };
 
-    lambda.template operator() < uint32_t, PerturbExtras::Disable > (m_C);
-    lambda.template operator() < uint32_t, PerturbExtras::Bad > (m_C);
-    lambda.template operator() < uint32_t, PerturbExtras::SimpleCompression > (m_C);
-    lambda.template operator() < uint64_t, PerturbExtras::Disable > (m_C);
-    lambda.template operator() < uint64_t, PerturbExtras::Bad > (m_C);
-    lambda.template operator() < uint64_t, PerturbExtras::SimpleCompression > (m_C);
+    lambda.template operator() < uint32_t, PerturbExtras::Disable > ();
+    lambda.template operator() < uint32_t, PerturbExtras::Bad > ();
+    lambda.template operator() < uint32_t, PerturbExtras::SimpleCompression > ();
+    lambda.template operator() < uint64_t, PerturbExtras::Disable > ();
+    lambda.template operator() < uint64_t, PerturbExtras::Bad > ();
+    lambda.template operator() < uint64_t, PerturbExtras::SimpleCompression > ();
 }
 
 void RefOrbitCalc::SetPerturbationAlg(PerturbationAlg alg) {
@@ -3134,7 +3135,7 @@ RefOrbitCalc::AwesomeVariantUniquePtr RefOrbitCalc::LoadOrbitConst(
     auto TypeHelper = [&]<typename T, PerturbExtras PExtrasDest>() ->
         std::unique_ptr<PerturbationResults<uint64_t, T, PExtrasDest>> {
 
-        auto results = std::make_unique<PerturbationResults<uint64_t, T, PerturbExtras::SimpleCompression>>(
+        auto results = std::make_unique<PerturbationResults<uint64_t, T, PerturbExtras::MaxCompression>>(
             AddPointOptions::EnableWithoutSave,
             GetNextGenerationNumber());
         results->LoadOrbitBin(std::move(orbitX), std::move(orbitY), iterationLimit, halfH, file);

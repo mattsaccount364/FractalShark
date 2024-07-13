@@ -202,7 +202,10 @@ public:
         GetAndCreateUsefulPerturbationResults();
 
     template<typename IterType, class SrcT, PerturbExtras SrcEnableBad, class DestT, PerturbExtras DestEnableBad>
-    PerturbationResults<IterType, DestT, DestEnableBad> *CopyUsefulPerturbationResults(PerturbationResults<IterType, SrcT, SrcEnableBad> &src_array);
+    PerturbationResults<IterType, DestT, DestEnableBad> *CopyUsefulPerturbationResults(
+        PerturbationResults<IterType, SrcT, SrcEnableBad> &src_array)
+        requires ((SrcEnableBad == PerturbExtras::Bad && DestEnableBad == PerturbExtras::Bad) ||
+                  (SrcEnableBad == PerturbExtras::Disable && DestEnableBad == PerturbExtras::Disable));
 
     void ClearPerturbationResults(PerturbationResultType type);
     void ResetGuess(HighPrecision x = HighPrecision(0), HighPrecision y = HighPrecision(0));

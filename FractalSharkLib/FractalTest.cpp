@@ -164,16 +164,20 @@ std::string FractalTest::GenFilename(
     size_t testIndex,
     size_t viewIndex,
     RenderAlgorithm algToTest,
+    int32_t compressionError,
     IterTypeEnum iterType,
     std::string baseName) {
 
     auto iterTypeStr =
         IterTypeEnum::Bits32 == iterType ? "32" : "64";
 
+    auto compErrStr = compressionError >= 0 ? std::string(" - CompErr#") + std::to_string(compressionError) : "";
+
     auto nameWithIntPrefix =
         std::to_string(testIndex) +
         " - View#" + std::to_string(viewIndex) +
         " - Alg#" + std::to_string(static_cast<size_t>(algToTest)) +
+        compErrStr +
         " - Bits# " + iterTypeStr +
         " - " + baseName;
     return nameWithIntPrefix;
@@ -183,12 +187,19 @@ std::wstring FractalTest::GenFilenameW(
     size_t testIndex,
     size_t viewIndex,
     RenderAlgorithm algToTest,
+    int32_t compressionError,
     IterTypeEnum iterType,
     const wchar_t *testPrefix,
     const wchar_t *dirName,
     std::string baseName) {
 
-    auto nameWithIntPrefix = GenFilename(testIndex, viewIndex, algToTest, iterType, baseName);
+    auto nameWithIntPrefix = GenFilename(
+        testIndex,
+        viewIndex,
+        algToTest,
+        compressionError,
+        iterType,
+        baseName);
 
     std::wstring filenameW;
     std::transform(
@@ -218,7 +229,15 @@ void FractalTest::BasicOneTest(
     auto name = m_Fractal.GetRenderAlgorithmName();
     m_Fractal.CalcFractal(false);
 
-    const auto filenameW = GenFilenameW(testIndex, viewIndex, algToTest, iterType, testPrefix, dirName, name);
+    const auto filenameW = GenFilenameW(
+        testIndex,
+        viewIndex,
+        algToTest,
+        -1,
+        iterType,
+        testPrefix,
+        dirName,
+        name);
 
     m_Fractal.SaveCurrentFractal(filenameW, false);
     //SaveItersAsText(filenameW);
@@ -248,8 +267,88 @@ void FractalTest::TestBasic() {
     m_Fractal.SetResultsAutosave(AddPointOptions::EnableWithoutSave);
     lambda();
 
+    m_Fractal.SavePerturbationOrbits();
+
     m_Fractal.InitialDefaultViewAndSettings();
     m_Fractal.CalcFractal(false);
+}
+
+void FractalTest::ReferenceSaveLoad (
+    Fractal &fractal,
+    const wchar_t *dirName,
+    size_t viewIndex,
+    size_t testIndex,
+    IterTypeEnum iterType,
+    RenderAlgorithm algToTest,
+    int32_t compressionError) {
+
+    fractal.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+
+    fractal.SetIterType(iterType);
+    fractal.SetRenderAlgorithm(algToTest);
+    fractal.View(viewIndex);
+    fractal.ForceRecalc();
+    fractal.CalcFractal(false);
+
+    const wchar_t *testPrefix = L"RefOrbitTest";
+    const auto algStr = fractal.GetRenderAlgorithmName(algToTest);
+
+    const auto genLocalFilename = [&](const std::wstring extraPrefix) {
+        std::wstring fullPrefix = testPrefix + std::wstring(L" - ") + extraPrefix;
+        return GenFilenameW(
+            testIndex,
+            viewIndex,
+            algToTest,
+            compressionError,
+            iterType,
+            fullPrefix.c_str(),
+            dirName,
+            algStr);
+        };
+
+    const auto expectedIterations = fractal.GetNumIterations<IterTypeFull>();
+
+    if (compressionError >= 0) {
+        fractal.SetCompressionErrorExp(Fractal::CompressionError::Low, compressionError);
+    }
+
+    // Only save view 5 since that's small enough to be reasonable.
+    // Running this test on all views would take a long time and
+    // consume substantial disk space.
+    if (viewIndex == 5) {
+        const auto disableFilename = genLocalFilename(L"Disable") + L".txt";
+        fractal.SaveRefOrbit(CompressToDisk::Disable, disableFilename);
+
+        const auto simpleFilename = genLocalFilename(L"Simple") + L".txt";
+        fractal.SaveRefOrbit(CompressToDisk::SimpleCompression, simpleFilename);
+    }
+
+    const auto maxFilename = genLocalFilename(L"Max") + L".txt";
+    fractal.SaveRefOrbit(CompressToDisk::MaxCompression, maxFilename);
+
+    const auto maxImaginaFilename = genLocalFilename(L"MaxImagina") + L".im";
+    fractal.SaveRefOrbit(CompressToDisk::MaxCompressionImagina, maxImaginaFilename);
+
+    const auto originalImageFilename = genLocalFilename(L"Original");
+    fractal.SaveCurrentFractal(originalImageFilename, false);
+
+    fractal.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+    fractal.View(0);
+    fractal.ForceRecalc();
+    fractal.CalcFractal(false);
+
+    // Force 64-bit on load
+    fractal.SetIterType(IterTypeEnum::Bits64);
+
+    fractal.LoadRefOrbit(CompressToDisk::MaxCompressionImagina, maxImaginaFilename);
+    if (fractal.GetNumIterations<IterTypeFull>() != expectedIterations) {
+        throw FractalSharkSeriousException("LoadRefOrbit failed to set the correct number of iterations!");
+    }
+
+    fractal.CalcFractal(false);
+
+    const auto decompressedResultFilename = genLocalFilename(L"Decompressed");
+    fractal.SaveCurrentFractal(decompressedResultFilename, false);
 }
 
 void FractalTest::TestReferenceSave() {
@@ -259,80 +358,25 @@ void FractalTest::TestReferenceSave() {
 
     m_Fractal.SetResultsAutosave(AddPointOptions::DontSave);
 
-    auto referenceSaveLoad = [&](size_t viewIndex, size_t testIndex, IterTypeEnum iterType, RenderAlgorithm algToTest) {
-        m_Fractal.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-
-        m_Fractal.SetIterType(iterType);
-        m_Fractal.SetRenderAlgorithm(algToTest);
-        m_Fractal.View(viewIndex);
-        m_Fractal.ForceRecalc();
-        m_Fractal.CalcFractal(false);
-
-        const wchar_t *testPrefix = L"RefOrbitTest";
-        const auto algStr = m_Fractal.GetRenderAlgorithmName(algToTest);
-
-        const auto genLocalFilename = [&](const std::wstring extraPrefix) {
-            std::wstring fullPrefix = testPrefix + std::wstring(L" - ") + extraPrefix;
-            return GenFilenameW(
-                testIndex,
-                viewIndex,
-                algToTest,
-                iterType,
-                fullPrefix.c_str(),
-                dirName,
-                algStr);
-            };
-
-        const auto expectedIterations = m_Fractal.GetNumIterations<IterTypeFull>();
-
-        // Only save view 5 since that's small enough to be reasonable.
-        // Running this test on all views would take a long time and
-        // consume substantial disk space.
-        if (viewIndex == 5) {
-            const auto disableFilename = genLocalFilename(L"Disable") + L".txt";
-            m_Fractal.SaveRefOrbit(CompressToDisk::Disable, disableFilename);
-
-            const auto simpleFilename = genLocalFilename(L"Simple") + L".txt";
-            m_Fractal.SaveRefOrbit(CompressToDisk::SimpleCompression, simpleFilename);
-        }
-
-        const auto maxFilename = genLocalFilename(L"Max") + L".txt";
-        m_Fractal.SaveRefOrbit(CompressToDisk::MaxCompression, maxFilename);
-
-        const auto maxImaginaFilename = genLocalFilename(L"MaxImagina") + L".im";
-        m_Fractal.SaveRefOrbit(CompressToDisk::MaxCompressionImagina, maxImaginaFilename);
-
-        const auto originalImageFilename = genLocalFilename(L"Original");
-        m_Fractal.SaveCurrentFractal(originalImageFilename, false);
-
-        m_Fractal.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-        m_Fractal.View(0);
-        m_Fractal.ForceRecalc();
-        m_Fractal.CalcFractal(false);
-
-        // Force 64-bit on load
-        m_Fractal.SetIterType(IterTypeEnum::Bits64);
-
-        m_Fractal.LoadRefOrbit(CompressToDisk::MaxCompressionImagina, maxImaginaFilename);
-        if (m_Fractal.GetNumIterations<IterTypeFull>() != expectedIterations) {
-            throw FractalSharkSeriousException("LoadRefOrbit failed to set the correct number of iterations!");
-        }
-
-        m_Fractal.CalcFractal(false);
-
-        const auto decompressedResultFilename = genLocalFilename(L"Decompressed");
-        m_Fractal.SaveCurrentFractal(decompressedResultFilename, false);
-        };
-
     size_t testIndex = 0;
+
+    m_Fractal.DefaultCompressionErrorExp(Fractal::CompressionError::Low);
+    int32_t compressionError = m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low);
+
     auto loopAll = [&](size_t view, std::vector<RenderAlgorithm> algsToTest) {
         for (auto curAlg : algsToTest) {
-            //referenceSaveLoad(view, testIndex, IterTypeEnum::Bits32, curAlg);
-            referenceSaveLoad(view, testIndex, IterTypeEnum::Bits64, curAlg);
+            ReferenceSaveLoad(
+                m_Fractal,
+                dirName,
+                view,
+                testIndex,
+                IterTypeEnum::Bits64,
+                curAlg,
+                compressionError);
 
             testIndex++;
         }
-        };
+    };
 
     size_t viewToTest;
 
@@ -365,6 +409,51 @@ void FractalTest::TestReferenceSave() {
 
     viewToTest = 14;
     loopAll(viewToTest, View13and14Algs);
+}
+
+void FractalTest::TestVariedCompression() {
+    const wchar_t *dirName = L"TestVariedCompression";
+    TestPreReq(dirName);
+
+    m_Fractal.SetResultsAutosave(AddPointOptions::DontSave);
+
+    size_t testIndex = 0;
+
+    m_Fractal.DefaultCompressionErrorExp(Fractal::CompressionError::Low);
+    int32_t compressionError = m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low);
+
+    auto loopAll = [&](size_t view, std::vector<RenderAlgorithm> algsToTest) {
+        for (auto curAlg : algsToTest) {
+            for (int32_t compressionErrorExp = 1; compressionErrorExp <= compressionError; compressionErrorExp++) {
+                ReferenceSaveLoad(
+                    m_Fractal,
+                    dirName,
+                    view,
+                    testIndex,
+                    IterTypeEnum::Bits64,
+                    curAlg,
+                    compressionErrorExp);
+
+                testIndex++;
+            }
+        }
+        };
+
+    size_t viewToTest;
+
+    const auto View5Algs = {
+        RenderAlgorithm::Gpu1x64PerturbedLAv2,
+        RenderAlgorithm::Gpu1x64PerturbedRCLAv2,
+        RenderAlgorithm::GpuHDRx32PerturbedLAv2,
+        RenderAlgorithm::GpuHDRx32PerturbedRCLAv2,
+        //RenderAlgorithm::GpuHDRx2x32PerturbedLAv2,
+        //RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2,
+        RenderAlgorithm::GpuHDRx64PerturbedLAv2,
+        RenderAlgorithm::GpuHDRx64PerturbedRCLAv2,
+    };
+
+    viewToTest = 5;
+    loopAll(viewToTest, View5Algs);
 }
 
 void FractalTest::Benchmark(RefOrbitCalc::PerturbationResultType type) {

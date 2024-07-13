@@ -401,7 +401,8 @@ using IterTypeFull = uint64_t;
 enum class PerturbExtras {
     Disable,
     Bad,
-    SimpleCompression
+    SimpleCompression,
+    MaxCompression
 };
 
 enum class CompressToDisk {

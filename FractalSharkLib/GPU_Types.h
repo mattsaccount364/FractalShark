@@ -291,7 +291,7 @@ class /*alignas(8)*/ GPUReferenceIter :
     public std::conditional_t<
     PExtras == PerturbExtras::Bad,
     BadField,
-    std::conditional_t<PExtras == PerturbExtras::SimpleCompression,
+    std::conditional_t<PExtras == PerturbExtras::SimpleCompression || PExtras == PerturbExtras::MaxCompression,
     CompressionIndexField,
     Empty>> {
 
@@ -300,7 +300,7 @@ public:
     using BaseClass = std::conditional_t<
         PExtras == PerturbExtras::Bad,
         BadField,
-        std::conditional_t<PExtras == PerturbExtras::SimpleCompression,
+        std::conditional_t<PExtras == PerturbExtras::SimpleCompression || PExtras == PerturbExtras::MaxCompression,
         CompressionIndexField,
         Empty>>;
 
@@ -319,7 +319,7 @@ public:
 
     template<
         typename U = PerturbExtrasHack<PExtras>,
-        std::enable_if_t<U::Val == PerturbExtras::SimpleCompression, int> = 0>
+        std::enable_if_t<U::Val == PerturbExtras::SimpleCompression || U::Val == PerturbExtras::MaxCompression, int> = 0>
     GPUReferenceIter(Type init_x, Type init_y, IterTypeFull init_compression_index, IterTypeFull rebase)
         : CompressionIndexField(init_compression_index, rebase),
         x{ init_x },
@@ -328,7 +328,7 @@ public:
 
     template<
         typename U = PerturbExtrasHack<PExtras>,
-        std::enable_if_t<U::Val == PerturbExtras::SimpleCompression, int> = 0>
+        std::enable_if_t<U::Val == PerturbExtras::SimpleCompression || U::Val == PerturbExtras::MaxCompression, int> = 0>
     GPUReferenceIter(Type init_x, Type init_y, IterTypeFull init_compression_index)
         : CompressionIndexField(init_compression_index),
         x{ init_x },

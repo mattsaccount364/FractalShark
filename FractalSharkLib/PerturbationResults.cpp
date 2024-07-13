@@ -5,6 +5,8 @@
 #include "LAReference.h"
 #include "MPIRSerialization.h"
 #include "Exceptions.h"
+#include "PrecisionCalculator.h"
+#include "ImaginaOrbit.h"
 
 #include <map>
 
@@ -145,7 +147,9 @@ PerturbationResults<IterType, T, PExtras>::PerturbationResults(
         return;
     }
 
-    MapExistingFiles();
+    if constexpr (Introspection::TestPExtras<PExtras>::value) {
+        MapExistingFiles();
+    }
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>
@@ -189,13 +193,17 @@ void PerturbationResults<IterType, T, PExtras>::ClearLaReference() {
 
 template<typename IterType, class T, PerturbExtras PExtras>
 void PerturbationResults<IterType, T, PExtras>::SetLaReference(
-    std::unique_ptr<LAReference<IterType, T, SubType, PExtras>> laReference) {
+    std::unique_ptr<LAReference<IterType, T, SubType, PExtras>> laReference)
+    requires Introspection::TestPExtras<PExtras>::value {
+
     m_LaReference = std::move(laReference);
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>
 LAReference<IterType, T, typename PerturbationResults<IterType, T, PExtras>::SubType, PExtras> *
-PerturbationResults<IterType, T, PExtras>::GetLaReference() const {
+PerturbationResults<IterType, T, PExtras>::GetLaReference() const
+    requires Introspection::TestPExtras<PExtras>::value {
+
     return m_LaReference.get();
 }
 
@@ -203,7 +211,8 @@ template<typename IterType, class T, PerturbExtras PExtras>
 std::unique_ptr<PerturbationResults<IterType, T, PExtras>>
 PerturbationResults<IterType, T, PExtras>::CopyPerturbationResults(
     AddPointOptions add_point_options,
-    size_t new_generation_number) {
+    size_t new_generation_number)
+    requires Introspection::TestPExtras<PExtras>::value {
 
     auto new_ptr = std::make_unique<PerturbationResults<IterType, T, PExtras>>(
         add_point_options,
@@ -273,7 +282,8 @@ void PerturbationResults<IterType, T, PExtras>::CopyFullOrbitVector(
 template<typename IterType, class T, PerturbExtras PExtras>
 template<bool IncludeLA, class Other, PerturbExtras PExtrasOther>
 void PerturbationResults<IterType, T, PExtras>::CopyPerturbationResults(
-    const PerturbationResults<IterType, Other, PExtrasOther> &other) {
+    const PerturbationResults<IterType, Other, PExtrasOther> &other)
+    requires Introspection::TestPExtras<PExtras>::value {
 
     this->m_OrbitX = other.GetHiX();
     this->m_OrbitY = other.GetHiY();
@@ -478,12 +488,14 @@ void PerturbationResults<IterType, T, PExtras>::WriteMetadata() const {
     metafile << "IntermediateCompressionErrorExponent: " << m_IntermediateCompressionErrorExp << std::endl;
     metafile << "UncompressedIterationsInOrbit: " << GetCountOrbitEntries() << std::endl;
 
-    if (m_LaReference != nullptr &&
-        m_LaReference->IsValid()) {
-        bool ret = m_LaReference->WriteMetadata(metafile);
-        if (!ret) {
-            ::MessageBox(nullptr, L"Failed to write LA metadata.", L"", MB_OK | MB_APPLMODAL);
-            return;
+    if constexpr (Introspection::TestPExtras<PExtras>::value) {
+        if (m_LaReference != nullptr &&
+            m_LaReference->IsValid()) {
+            bool ret = m_LaReference->WriteMetadata(metafile);
+            if (!ret) {
+                ::MessageBox(nullptr, L"Failed to write LA metadata.", L"", MB_OK | MB_APPLMODAL);
+                return;
+            }
         }
     }
 
@@ -511,7 +523,9 @@ void PerturbationResults<IterType, T, PExtras>::MaybeOpenMetaFileForDelete() con
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>
-bool PerturbationResults<IterType, T, PExtras>::ReadMetadata() {
+bool PerturbationResults<IterType, T, PExtras>::ReadMetadata()
+    requires Introspection::TestPExtras<PExtras>::value {
+
     std::ifstream metafile(GenFilename(GrowableVectorTypes::Metadata), std::ios::binary);
     if (!metafile.is_open()) {
         ::MessageBox(nullptr, L"Failed to open file for reading 1", L"", MB_OK | MB_APPLMODAL);
@@ -847,6 +861,7 @@ void PerturbationResults<IterType, T, PExtras>::CompleteResults(std::unique_ptr<
 InstantiateCompleteResults(float, PerturbExtras::Disable);
 InstantiateCompleteResults(float, PerturbExtras::Bad);
 InstantiateCompleteResults(float, PerturbExtras::SimpleCompression);
+InstantiateCompleteResults(float, PerturbExtras::MaxCompression);
 
 InstantiateCompleteResults(CudaDblflt<MattDblflt>, PerturbExtras::Disable);
 InstantiateCompleteResults(CudaDblflt<MattDblflt>, PerturbExtras::Bad);
@@ -855,10 +870,12 @@ InstantiateCompleteResults(CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompress
 InstantiateCompleteResults(double, PerturbExtras::Disable);
 InstantiateCompleteResults(double, PerturbExtras::Bad);
 InstantiateCompleteResults(double, PerturbExtras::SimpleCompression);
+InstantiateCompleteResults(double, PerturbExtras::MaxCompression);
 
 InstantiateCompleteResults(HDRFloat<float>, PerturbExtras::Disable);
 InstantiateCompleteResults(HDRFloat<float>, PerturbExtras::Bad);
 InstantiateCompleteResults(HDRFloat<float>, PerturbExtras::SimpleCompression);
+InstantiateCompleteResults(HDRFloat<float>, PerturbExtras::MaxCompression);
 
 InstantiateCompleteResults(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable);
 InstantiateCompleteResults(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad);
@@ -867,6 +884,7 @@ InstantiateCompleteResults(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Simp
 InstantiateCompleteResults(HDRFloat<double>, PerturbExtras::Disable);
 InstantiateCompleteResults(HDRFloat<double>, PerturbExtras::Bad);
 InstantiateCompleteResults(HDRFloat<double>, PerturbExtras::SimpleCompression);
+InstantiateCompleteResults(HDRFloat<double>, PerturbExtras::MaxCompression);
 
 
 template<typename IterType, class T, PerturbExtras PExtras>
@@ -883,7 +901,7 @@ size_t PerturbationResults<IterType, T, PExtras>::GetCompressedOrUncompressedOrb
 
 template<typename IterType, class T, PerturbExtras PExtras>
 size_t PerturbationResults<IterType, T, PExtras>::GetCompressedOrbitSize() const
-    requires (PExtras == PerturbExtras::SimpleCompression) {
+    requires (PExtras == PerturbExtras::SimpleCompression || PExtras == PerturbExtras::MaxCompression) {
 
     assert(m_FullOrbit.GetSize() <= m_UncompressedItersInOrbit);
     return m_FullOrbit.GetSize();
@@ -891,7 +909,7 @@ size_t PerturbationResults<IterType, T, PExtras>::GetCompressedOrbitSize() const
 
 template<typename IterType, class T, PerturbExtras PExtras>
 IterType PerturbationResults<IterType, T, PExtras>::GetCountOrbitEntries() const {
-    if constexpr (PExtras == PerturbExtras::SimpleCompression) {
+    if constexpr (PExtras == PerturbExtras::SimpleCompression || PExtras == PerturbExtras::MaxCompression) {
         assert(m_FullOrbit.GetSize() <= m_UncompressedItersInOrbit);
     } else {
         assert(m_FullOrbit.GetSize() == m_UncompressedItersInOrbit);
@@ -1495,7 +1513,7 @@ PerturbationResults<IterType, T, PExtras>::DecompressMax(
     int32_t compressionErrorExpParam,
     size_t newGenerationNumber)
     const
-    requires (PExtras == PerturbExtras::SimpleCompression && !Introspection::IsTDblFlt<T>()) {
+    requires (PExtras == PerturbExtras::MaxCompression && !Introspection::IsTDblFlt<T>()) {
 
     // Show range of indices touched
     constexpr bool outputFile = false;
@@ -1751,15 +1769,15 @@ PerturbationResults<IterType, T, PExtras>::DecompressMax(
         int32_t compressionErrorExpParam, \
         size_t newGenerationNumber) const;
 
-InstantiateDecompressMax(float, PerturbExtras::SimpleCompression, PerturbExtras::Disable)
-InstantiateDecompressMax(double, PerturbExtras::SimpleCompression, PerturbExtras::Disable)
-InstantiateDecompressMax(HDRFloat<float>, PerturbExtras::SimpleCompression, PerturbExtras::Disable)
-InstantiateDecompressMax(HDRFloat<double>, PerturbExtras::SimpleCompression, PerturbExtras::Disable)
+InstantiateDecompressMax(float, PerturbExtras::MaxCompression, PerturbExtras::Disable)
+InstantiateDecompressMax(double, PerturbExtras::MaxCompression, PerturbExtras::Disable)
+InstantiateDecompressMax(HDRFloat<float>, PerturbExtras::MaxCompression, PerturbExtras::Disable)
+InstantiateDecompressMax(HDRFloat<double>, PerturbExtras::MaxCompression, PerturbExtras::Disable)
 
-InstantiateDecompressMax(float, PerturbExtras::SimpleCompression, PerturbExtras::SimpleCompression)
-InstantiateDecompressMax(double, PerturbExtras::SimpleCompression, PerturbExtras::SimpleCompression)
-InstantiateDecompressMax(HDRFloat<float>, PerturbExtras::SimpleCompression, PerturbExtras::SimpleCompression)
-InstantiateDecompressMax(HDRFloat<double>, PerturbExtras::SimpleCompression, PerturbExtras::SimpleCompression)
+InstantiateDecompressMax(float, PerturbExtras::MaxCompression, PerturbExtras::SimpleCompression)
+InstantiateDecompressMax(double, PerturbExtras::MaxCompression, PerturbExtras::SimpleCompression)
+InstantiateDecompressMax(HDRFloat<float>, PerturbExtras::MaxCompression, PerturbExtras::SimpleCompression)
+InstantiateDecompressMax(HDRFloat<double>, PerturbExtras::MaxCompression, PerturbExtras::SimpleCompression)
 
 template<typename IterType, class T, PerturbExtras PExtras>
 void PerturbationResults<IterType, T, PExtras>::SaveOrbit(std::wstring filename) const {
@@ -1922,7 +1940,7 @@ void PerturbationResults<IterType, T, PExtras>::LoadOrbitBin(
     IterType fileProvidedIters,
     const Imagina::HRReal &halfH,
     std::ifstream &file)
-    requires(PExtras == PerturbExtras::SimpleCompression) // std::is_same_v<T, HDRFloat<double>> && 
+    requires(PExtras == PerturbExtras::MaxCompression) // std::is_same_v<T, HDRFloat<double>> && 
 {
     constexpr bool singleStepHelper = false;
 
@@ -2037,6 +2055,21 @@ void PerturbationResults<IterType, T, PExtras>::LoadOrbitBin(
     m_Rebases.push_back(~0ull);
 }
 
+// Instantiate LoadOrbitBin
+//#define InstantiateLoadOrbitBin(T, PExtras) \
+//    template void PerturbationResults<uint64_t, T, PExtras>::LoadOrbitBin( \
+//        HighPrecision orbitX, \
+//        HighPrecision orbitY, \
+//        uint64_t fileProvidedIters, \
+//        const Imagina::HRReal &halfH, \
+//        std::ifstream &file) \
+
+
+//InstantiateLoadOrbitBin(float, PerturbExtras::MaxCompression);
+//InstantiateLoadOrbitBin(double, PerturbExtras::MaxCompression);
+//InstantiateLoadOrbitBin(HDRFloat<float>, PerturbExtras::MaxCompression);
+//InstantiateLoadOrbitBin(HDRFloat<double>, PerturbExtras::MaxCompression);
+
 template<typename IterType, class T, PerturbExtras PExtras>
 void PerturbationResults<IterType, T, PExtras>::DiffOrbit(
     const PerturbationResults<IterType, T, PExtras> &other,
@@ -2117,7 +2150,9 @@ void PerturbationResults<IterType, T, PExtras>::CloseMetaFileIfOpen() const {
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>
-void PerturbationResults<IterType, T, PExtras>::MapExistingFiles() {
+void PerturbationResults<IterType, T, PExtras>::MapExistingFiles()
+    requires Introspection::TestPExtras<PExtras>::value {
+
     assert(m_LaReference == nullptr);
     assert(m_FullOrbit.GetCapacity() == 0);
 
@@ -2194,10 +2229,12 @@ void RefOrbitCompressor<IterType, T, PExtras>::MaybeAddCompressedIteration(GPURe
 InstantiatePerturbationResult(float, PerturbExtras::Disable);
 InstantiatePerturbationResult(float, PerturbExtras::Bad);
 InstantiatePerturbationResult(float, PerturbExtras::SimpleCompression);
+InstantiatePerturbationResult(float, PerturbExtras::MaxCompression);
 
 InstantiatePerturbationResult(double, PerturbExtras::Disable);
 InstantiatePerturbationResult(double, PerturbExtras::Bad);
 InstantiatePerturbationResult(double, PerturbExtras::SimpleCompression);
+InstantiatePerturbationResult(double, PerturbExtras::MaxCompression);
 
 InstantiatePerturbationResult(CudaDblflt<MattDblflt>, PerturbExtras::Disable);
 InstantiatePerturbationResult(CudaDblflt<MattDblflt>, PerturbExtras::Bad);
@@ -2206,10 +2243,12 @@ InstantiatePerturbationResult(CudaDblflt<MattDblflt>, PerturbExtras::SimpleCompr
 InstantiatePerturbationResult(HDRFloat<float>, PerturbExtras::Disable);
 InstantiatePerturbationResult(HDRFloat<float>, PerturbExtras::Bad);
 InstantiatePerturbationResult(HDRFloat<float>, PerturbExtras::SimpleCompression);
+InstantiatePerturbationResult(HDRFloat<float>, PerturbExtras::MaxCompression);
 
 InstantiatePerturbationResult(HDRFloat<double>, PerturbExtras::Disable);
 InstantiatePerturbationResult(HDRFloat<double>, PerturbExtras::Bad);
 InstantiatePerturbationResult(HDRFloat<double>, PerturbExtras::SimpleCompression);
+InstantiatePerturbationResult(HDRFloat<double>, PerturbExtras::MaxCompression);
 
 InstantiatePerturbationResult(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Disable);
 InstantiatePerturbationResult(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad);

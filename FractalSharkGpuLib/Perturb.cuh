@@ -209,6 +209,9 @@ public:
             workspace.zy = FullOrbit[workspace.uncompressed_index].y;
         } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
             GetCompressedComplexSeq(workspace);
+        } else {
+            // This is a bug, we should never get here
+            workspace = {};
         }
     }
 

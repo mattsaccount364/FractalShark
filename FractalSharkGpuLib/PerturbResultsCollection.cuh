@@ -32,6 +32,8 @@ void PerturbResultsCollection::SetPtr32(
         } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
             delete Results.m_Results32FloatRC;
             Results.m_Results32FloatRC = ptr;
+        } else {
+            static_assert(false, "Unknown PerturbExtras");
         }
     } else if constexpr (std::is_same<Type, double>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
@@ -43,6 +45,8 @@ void PerturbResultsCollection::SetPtr32(
         } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
             delete Results.m_Results32DoubleRC;
             Results.m_Results32DoubleRC = ptr;
+        } else {
+            static_assert(false, "Unknown PerturbExtras");
         }
     } else if constexpr (std::is_same<Type, CudaDblflt<dblflt>>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
@@ -54,6 +58,8 @@ void PerturbResultsCollection::SetPtr32(
         } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
             delete Results.m_Results32CudaDblfltRC;
             Results.m_Results32CudaDblfltRC = ptr;
+        } else {
+            static_assert(false, "Unknown PerturbExtras");
         }
     } else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
@@ -65,6 +71,8 @@ void PerturbResultsCollection::SetPtr32(
         } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
             delete Results.m_Results32HdrFloatRC;
             Results.m_Results32HdrFloatRC = ptr;
+        } else {
+            static_assert(false, "Unknown PerturbExtras");
         }
     } else if constexpr (std::is_same<Type, HDRFloat<double>>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
@@ -76,6 +84,8 @@ void PerturbResultsCollection::SetPtr32(
         } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
             delete Results.m_Results32HdrDoubleRC;
             Results.m_Results32HdrDoubleRC = ptr;
+        } else {
+            static_assert(false, "Unknown PerturbExtras");
         }
     } else if constexpr (std::is_same<Type, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
@@ -87,6 +97,8 @@ void PerturbResultsCollection::SetPtr32(
         } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
             delete Results.m_Results32HdrCudaMattDblfltRC;
             Results.m_Results32HdrCudaMattDblfltRC = ptr;
+        } else {
+            static_assert(false, "Unknown PerturbExtras");
         }
     }
 }
@@ -113,6 +125,8 @@ void PerturbResultsCollection::SetPtr64(
         } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
             delete Results.m_Results64FloatRC;
             Results.m_Results64FloatRC = ptr;
+        } else {
+            static_assert(false, "Unknown PerturbExtras");
         }
     } else if constexpr (std::is_same<Type, double>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
@@ -124,6 +138,8 @@ void PerturbResultsCollection::SetPtr64(
         } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
             delete Results.m_Results64DoubleRC;
             Results.m_Results64DoubleRC = ptr;
+        } else {
+            static_assert(false, "Unknown PerturbExtras");
         }
     } else if constexpr (std::is_same<Type, CudaDblflt<dblflt>>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
@@ -135,6 +151,8 @@ void PerturbResultsCollection::SetPtr64(
         } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
             delete Results.m_Results64CudaDblfltRC;
             Results.m_Results64CudaDblfltRC = ptr;
+        } else {
+            static_assert(false, "Unknown PerturbExtras");
         }
     } else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
@@ -146,6 +164,8 @@ void PerturbResultsCollection::SetPtr64(
         } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
             delete Results.m_Results64HdrFloatRC;
             Results.m_Results64HdrFloatRC = ptr;
+        } else {
+            static_assert(false, "Unknown PerturbExtras");
         }
     } else if constexpr (std::is_same<Type, HDRFloat<double>>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
@@ -157,6 +177,8 @@ void PerturbResultsCollection::SetPtr64(
         } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
             delete Results.m_Results64HdrDoubleRC;
             Results.m_Results64HdrDoubleRC = ptr;
+        } else {
+            static_assert(false, "Unknown PerturbExtras");
         }
     } else if constexpr (std::is_same<Type, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
@@ -168,6 +190,8 @@ void PerturbResultsCollection::SetPtr64(
         } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
             delete Results.m_Results64HdrCudaMattDblfltRC;
             Results.m_Results64HdrCudaMattDblfltRC = ptr;
+        } else {
+            static_assert(false, "Unknown PerturbExtras");
         }
     }
 }
@@ -284,6 +308,8 @@ GPUPerturbSingleResults<uint32_t, Type, PExtras> *PerturbResultsCollection::GetP
             return Results.m_Results32FloatEnable;
         } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
             return Results.m_Results32FloatRC;
+        } else {
+            static_assert(false, "Unknown PerturbExtras");
         }
     } else if constexpr (std::is_same<Type, double>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
@@ -292,6 +318,8 @@ GPUPerturbSingleResults<uint32_t, Type, PExtras> *PerturbResultsCollection::GetP
             return Results.m_Results32DoubleEnable;
         } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
             return Results.m_Results32DoubleRC;
+        } else {
+            static_assert(false, "Unknown PerturbExtras");
         }
     } else if constexpr (std::is_same<Type, CudaDblflt<MattDblflt>>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
@@ -300,6 +328,8 @@ GPUPerturbSingleResults<uint32_t, Type, PExtras> *PerturbResultsCollection::GetP
             return Results.m_Results32CudaDblfltEnable;
         } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
             return Results.m_Results32CudaDblfltRC;
+        } else {
+            static_assert(false, "Unknown PerturbExtras");
         }
     } else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
@@ -308,6 +338,8 @@ GPUPerturbSingleResults<uint32_t, Type, PExtras> *PerturbResultsCollection::GetP
             return Results.m_Results32HdrFloatEnable;
         } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
             return Results.m_Results32HdrFloatRC;
+        } else {
+            static_assert(false, "Unknown PerturbExtras");
         }
     } else if constexpr (std::is_same<Type, HDRFloat<double>>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
@@ -316,6 +348,8 @@ GPUPerturbSingleResults<uint32_t, Type, PExtras> *PerturbResultsCollection::GetP
             return Results.m_Results32HdrDoubleEnable;
         } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
             return Results.m_Results32HdrDoubleRC;
+        } else {
+            static_assert(false, "Unknown PerturbExtras");
         }
     } else if constexpr (std::is_same<Type, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
@@ -324,6 +358,8 @@ GPUPerturbSingleResults<uint32_t, Type, PExtras> *PerturbResultsCollection::GetP
             return Results.m_Results32HdrCudaMattDblfltEnable;
         } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
             return Results.m_Results32HdrCudaMattDblfltRC;
+        } else {
+            static_assert(false, "Unknown PerturbExtras");
         }
     }
 }
@@ -337,6 +373,8 @@ GPUPerturbSingleResults<uint64_t, Type, PExtras> *PerturbResultsCollection::GetP
             return Results.m_Results64FloatEnable;
         } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
             return Results.m_Results64FloatRC;
+        } else {
+            static_assert(false, "Unknown PerturbExtras");
         }
     } else if constexpr (std::is_same<Type, double>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
@@ -345,6 +383,8 @@ GPUPerturbSingleResults<uint64_t, Type, PExtras> *PerturbResultsCollection::GetP
             return Results.m_Results64DoubleEnable;
         } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
             return Results.m_Results64DoubleRC;
+        } else {
+            static_assert(false, "Unknown PerturbExtras");
         }
     } else if constexpr (std::is_same<Type, CudaDblflt<MattDblflt>>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
@@ -353,6 +393,8 @@ GPUPerturbSingleResults<uint64_t, Type, PExtras> *PerturbResultsCollection::GetP
             return Results.m_Results64CudaDblfltEnable;
         } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
             return Results.m_Results64CudaDblfltRC;
+        } else {
+            static_assert(false, "Unknown PerturbExtras");
         }
     } else if constexpr (std::is_same<Type, HDRFloat<float>>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
@@ -361,6 +403,8 @@ GPUPerturbSingleResults<uint64_t, Type, PExtras> *PerturbResultsCollection::GetP
             return Results.m_Results64HdrFloatEnable;
         } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
             return Results.m_Results64HdrFloatRC;
+        } else {
+            static_assert(false, "Unknown PerturbExtras");
         }
     } else if constexpr (std::is_same<Type, HDRFloat<double>>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
@@ -369,6 +413,8 @@ GPUPerturbSingleResults<uint64_t, Type, PExtras> *PerturbResultsCollection::GetP
             return Results.m_Results64HdrDoubleEnable;
         } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
             return Results.m_Results64HdrDoubleRC;
+        } else {
+            static_assert(false, "Unknown PerturbExtras");
         }
     } else if constexpr (std::is_same<Type, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
         if constexpr (PExtras == PerturbExtras::Disable) {
@@ -377,6 +423,8 @@ GPUPerturbSingleResults<uint64_t, Type, PExtras> *PerturbResultsCollection::GetP
             return Results.m_Results64HdrCudaMattDblfltEnable;
         } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
             return Results.m_Results64HdrCudaMattDblfltRC;
+        } else {
+            static_assert(false, "Unknown PerturbExtras");
         }
     }
 }

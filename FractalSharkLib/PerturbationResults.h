@@ -1,74 +1,22 @@
 #pragma once
 
 #include "HighPrecision.h"
-#include "HDRFloatComplex.h"
 #include "RefOrbitCalc.h"
-
-#include "GPU_Render.h"
-
 #include "PerturbationResultsHelpers.h"
 #include "Vectors.h"
-#include "Utilities.h"
-
 #include "ScopedMpir.h"
-#include "PrecisionCalculator.h"
+#include "Introspection.h"
+#include "GPU_Types.h"
 
-#include <thread>
 #include <vector>
-#include <stdint.h>
-#include <fstream>
 #include <type_traits>
 #include <array>
 
-#include "ImaginaOrbit.h"
+template<typename Type, PerturbExtras PExtras>
+class GPUReferenceIter;
 
 template<typename IterType, class T, class SubType, PerturbExtras PExtras>
 class LAReference;
-
-namespace Introspection {
-    template<typename IterType, typename Float, PerturbExtras PExtras>
-    struct PerturbTypeParams {
-        using IterType_ = IterType;
-        using Float_ = Float;
-        static constexpr auto PExtras_ = PExtras;
-    };
-
-    template<
-        template <typename, typename, PerturbExtras> typename PerturbType,
-        typename IterType,
-        typename Float,
-        PerturbExtras PExtras>
-    constexpr auto Extract(const PerturbType<IterType, Float, PExtras> &) -> PerturbTypeParams<IterType, Float, PExtras>;
-
-    template<typename PerturbType>
-    constexpr auto Extract_PExtras = decltype(Extract(std::declval<PerturbType>()))::PExtras_;
-
-    template<typename PerturbType>
-    using Extract_Float = typename decltype(Extract(std::declval<PerturbType>()))::Float_;
-
-    template<typename PerturbType, PerturbExtras PExtrasOther>
-    static constexpr bool PerturbTypeHasPExtras() {
-        return Extract_PExtras<PerturbType> == PExtrasOther;
-    }
-
-    template<typename PerturbType>
-    static constexpr bool IsDblFlt() {
-        return
-            std::is_same<Extract_Float<PerturbType>, CudaDblflt<MattDblflt>>::value ||
-            std::is_same<Extract_Float<PerturbType>, CudaDblflt<dblflt>>::value ||
-            std::is_same<Extract_Float<PerturbType>, HDRFloat<CudaDblflt<MattDblflt>>>::value ||
-            std::is_same<Extract_Float<PerturbType>, HDRFloat<CudaDblflt<dblflt>>>::value;
-    }
-
-    template<typename T>
-    static constexpr bool IsTDblFlt() {
-        return
-            std::is_same<T, CudaDblflt<MattDblflt>>::value ||
-            std::is_same<T, CudaDblflt<dblflt>>::value ||
-            std::is_same<T, HDRFloat<CudaDblflt<MattDblflt>>>::value ||
-            std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value;
-    }
-} // namespace PerturbationResultsIntrospection
 
 std::wstring GetTimeAsString(size_t generation_number);
 
@@ -181,13 +129,17 @@ public:
     void ClearLaReference();
 
     void SetLaReference(
-        std::unique_ptr<LAReference<IterType, T, SubType, PExtras>> laReference);
+        std::unique_ptr<LAReference<IterType, T, SubType, PExtras>> laReference)
+        requires Introspection::TestPExtras<PExtras>::value;
 
-    LAReference<IterType, T, SubType, PExtras> *GetLaReference() const;
+    LAReference<IterType, T, SubType, PExtras> *GetLaReference()
+        const
+        requires Introspection::TestPExtras<PExtras>::value;
 
     std::unique_ptr<PerturbationResults<IterType, T, PExtras>>
         CopyPerturbationResults(AddPointOptions add_point_options,
-            size_t new_generation_number);
+            size_t new_generation_number)
+        requires Introspection::TestPExtras<PExtras>::value;
 
     template<bool IncludeLA, class Other, PerturbExtras PExtrasOther = PerturbExtras::Disable>
     void CopyFullOrbitVector(
@@ -195,7 +147,8 @@ public:
 
     template<bool IncludeLA, class Other, PerturbExtras PExtrasOther = PerturbExtras::Disable>
     void CopyPerturbationResults(
-        const PerturbationResults<IterType, Other, PExtrasOther> &other);
+        const PerturbationResults<IterType, Other, PExtrasOther> &other)
+        requires Introspection::TestPExtras<PExtras>::value;
 
     template<PerturbExtras OtherBad>
     void CopySettingsWithoutOrbit(const PerturbationResults<IterType, T, OtherBad> &other);
@@ -212,7 +165,8 @@ public:
     // The code below works, but 
     // The LA table generation doesn't currently work with 2x32 and only supports 1x64
     // (which it then converts to 2x32).  This is a bug.
-    bool ReadMetadata();
+    bool ReadMetadata()
+        requires Introspection::TestPExtras<PExtras>::value;
 
     void GetComplex(
         RuntimeDecompressor<IterType, T, PExtras> &PerThreadCompressionHelper,
@@ -270,7 +224,8 @@ public:
     void CompleteResults(std::unique_ptr<ThreadMemory> allocatorIfAny);
 
     size_t GetCompressedOrUncompressedOrbitSize() const;
-    size_t GetCompressedOrbitSize() const requires (PExtras == PerturbExtras::SimpleCompression);
+    size_t GetCompressedOrbitSize() const
+        requires (PExtras == PerturbExtras::SimpleCompression || PExtras == PerturbExtras::MaxCompression);
     IterType GetCountOrbitEntries() const;
 
     // PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::Bad
@@ -367,7 +322,7 @@ public:
     std::unique_ptr<PerturbationResults<IterType, T, PExtrasDest>>
         DecompressMax(int32_t compressionErrorExpParam, size_t NewGenerationNumber)
         const
-        requires (PExtras == PerturbExtras::SimpleCompression && !Introspection::IsTDblFlt<T>());
+        requires (PExtras == PerturbExtras::MaxCompression && !Introspection::IsTDblFlt<T>());
 
     void SaveOrbit(std::wstring filename) const;
     void SaveOrbitBin(std::ofstream &file) const
@@ -379,7 +334,7 @@ public:
         IterType fileProvidedIters,
         const Imagina::HRReal &halfH,
         std::ifstream &file)
-        requires(PExtras == PerturbExtras::SimpleCompression); // std::is_same_v<T, HDRFloat<double>> && 
+        requires(PExtras == PerturbExtras::MaxCompression); // std::is_same_v<T, HDRFloat<double>> && 
 
     void DiffOrbit(
         const PerturbationResults<IterType, T, PExtras> &other,
@@ -401,7 +356,8 @@ public:
 private:
     void CloseMetaFileIfOpen() const;
 
-    void MapExistingFiles();
+    void MapExistingFiles()
+        requires Introspection::TestPExtras<PExtras>::value;
 
     std::string m_OrbitXStr;
     std::string m_OrbitYStr;
@@ -424,7 +380,12 @@ private:
     IterType m_UncompressedItersInOrbit;
     const size_t m_GenerationNumber;
 
-    std::unique_ptr<LAReference<IterType, T, SubType, PExtras>> m_LaReference;
+    using LAReferenceConstrainedPtr =
+        std::conditional<
+            Introspection::TestPExtras<PExtras>::value,
+            std::unique_ptr<LAReference<IterType, T, SubType, PExtras>>,
+            void *>::type;
+    LAReferenceConstrainedPtr m_LaReference;
 
     uint64_t m_AuthoritativePrecisionInBits;
     std::vector<HighPrecisionT<HPDestructor::False>> m_ReuseX;

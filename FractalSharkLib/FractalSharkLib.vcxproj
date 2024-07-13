@@ -35,6 +35,7 @@
     <ClInclude Include="HDRFloatComplex.h" />
     <ClInclude Include="HighPrecision.h" />
     <ClInclude Include="ImaginaOrbit.h" />
+    <ClInclude Include="Introspection.h" />
     <ClInclude Include="ItersMemoryContainer.h" />
     <ClInclude Include="LAInfoDeep.h" />
     <ClInclude Include="LAInfoI.h" />

@@ -794,6 +794,13 @@ InstantiateGPUReferenceIterGrowableVector(HDRFloat<float>, PerturbExtras::Simple
 InstantiateGPUReferenceIterGrowableVector(HDRFloat<double>, PerturbExtras::SimpleCompression);
 InstantiateGPUReferenceIterGrowableVector(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::SimpleCompression);
 
+InstantiateGPUReferenceIterGrowableVector(float, PerturbExtras::MaxCompression);
+InstantiateGPUReferenceIterGrowableVector(double, PerturbExtras::MaxCompression);
+InstantiateGPUReferenceIterGrowableVector(CudaDblflt<MattDblflt>, PerturbExtras::MaxCompression);
+InstantiateGPUReferenceIterGrowableVector(HDRFloat<float>, PerturbExtras::MaxCompression);
+InstantiateGPUReferenceIterGrowableVector(HDRFloat<double>, PerturbExtras::MaxCompression);
+InstantiateGPUReferenceIterGrowableVector(HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::MaxCompression);
+
 InstantiateGPUReferenceIterGrowableVector(float, PerturbExtras::Bad);
 InstantiateGPUReferenceIterGrowableVector(double, PerturbExtras::Bad);
 InstantiateGPUReferenceIterGrowableVector(CudaDblflt<MattDblflt>, PerturbExtras::Bad);

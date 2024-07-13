@@ -13,6 +13,7 @@
 #include "LAInfoI.h"
 #include "Vectors.h"
 #include "BenchmarkData.h"
+#include "Introspection.h"
 
 #include <thread>
 #include <vector>
@@ -73,7 +74,9 @@ public:
         LAParameters la_parameters,
         AddPointOptions add_point_options,
         std::wstring las_filename,
-        std::wstring la_stages_filename) :
+        std::wstring la_stages_filename)
+        requires (Introspection::TestPExtras<PExtras>::value)
+        :
         m_AddPointOptions(add_point_options),
         m_UseAT{},
         m_AT{},
@@ -83,12 +86,16 @@ public:
         m_LAs(add_point_options, las_filename),
         m_LAStages(add_point_options, la_stages_filename),
         m_BenchmarkDataLA{} {
+
+        static_assert(PExtras != PerturbExtras::MaxCompression, "MaxCompression not supported in LAReference");
     }
 
     LAReference(
         AddPointOptions add_point_options,
         std::wstring las_filename,
-        std::wstring la_stages_filename) :
+        std::wstring la_stages_filename)
+        requires (Introspection::TestPExtras<PExtras>::value)
+        :
         m_AddPointOptions(add_point_options),
         m_UseAT{},
         m_AT{},
@@ -98,6 +105,12 @@ public:
         m_LAs(add_point_options, las_filename),
         m_LAStages(add_point_options, la_stages_filename),
         m_BenchmarkDataLA{} {
+
+        static_assert(PExtras != PerturbExtras::MaxCompression, "MaxCompression not supported in LAReference");
+    }
+
+    ~LAReference()
+        requires (Introspection::TestPExtras<PExtras>::value) {
     }
 
     bool WriteMetadata(std::ofstream &metafile) const {
@@ -263,12 +276,14 @@ private:
     bool CreateLAFromOrbit(
         const LAParameters &la_parameters,
         const PerturbationResults<IterType, PerturbType, PExtras> &PerturbationResults,
-        IterType maxRefIteration);
+        IterType maxRefIteration)
+        requires (PExtras != PerturbExtras::MaxCompression);
     template<typename PerturbType>
     bool CreateLAFromOrbitMT(
         const LAParameters &la_parameters,
         const PerturbationResults<IterType, PerturbType, PExtras> &PerturbationResults,
-        IterType maxRefIteration);
+        IterType maxRefIteration)
+        requires (PExtras != PerturbExtras::MaxCompression);
     template<typename PerturbType>
     bool CreateNewLAStage(
         const LAParameters &la_parameters,
@@ -280,7 +295,8 @@ public:
     void GenerateApproximationData(
         const PerturbationResults<IterType, PerturbType, PExtras> &PerturbationResults,
         Float radius,
-        bool UseSmallExponents);
+        bool UseSmallExponents)
+        requires (PExtras != PerturbExtras::MaxCompression);
 
     const BenchmarkData &GetBenchmarkLA() const {
         return m_BenchmarkDataLA;

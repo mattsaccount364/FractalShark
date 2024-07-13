@@ -29,7 +29,8 @@ template<typename PerturbType>
 bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbit(
     const LAParameters &la_parameters,
     const PerturbationResults<IterType, PerturbType, PExtras> &PerturbationResults,
-    IterType maxRefIteration) {
+    IterType maxRefIteration)
+    requires (PExtras != PerturbExtras::MaxCompression) {
 
     auto compressionHelper{ std::make_unique<RuntimeDecompressor<IterType, Float, PExtras>>(PerturbationResults) };
 
@@ -222,7 +223,8 @@ template<typename PerturbType>
 bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
     const LAParameters &la_parameters,
     const PerturbationResults<IterType, PerturbType, PExtras> &PerturbationResults,
-    IterType maxRefIteration) {
+    IterType maxRefIteration)
+    requires (PExtras != PerturbExtras::MaxCompression) {
 
     auto compressionHelper{ std::make_unique<RuntimeDecompressor<IterType, Float, PExtras>>(PerturbationResults) };
 
@@ -963,7 +965,8 @@ template<typename PerturbType>
 void LAReference<IterType, Float, SubType, PExtras>::GenerateApproximationData(
     const PerturbationResults<IterType, PerturbType, PExtras> &PerturbationResults,
     Float radius,
-    bool UseSmallExponents) {
+    bool UseSmallExponents)
+    requires (PExtras != PerturbExtras::MaxCompression) {
 
     const IterType maxRefIteration = (IterType)PerturbationResults.GetCountOrbitEntries() - 1;
 

@@ -1639,6 +1639,7 @@ void Fractal::SavePerturbationOrbits() {
 }
 
 void Fractal::LoadPerturbationOrbits() {
+    ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
     m_RefOrbit.LoadAllOrbits();
 }
 

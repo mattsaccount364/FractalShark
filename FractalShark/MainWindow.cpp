@@ -1019,7 +1019,6 @@ LRESULT MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam) {
 
         case IDM_PERTURBATION_LOAD:
         {
-            gFractal->ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
             gFractal->LoadPerturbationOrbits();
             break;
         }

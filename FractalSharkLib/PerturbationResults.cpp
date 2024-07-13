@@ -515,6 +515,7 @@ bool PerturbationResults<IterType, T, PExtras>::ReadMetadata() {
     std::ifstream metafile(GenFilename(GrowableVectorTypes::Metadata), std::ios::binary);
     if (!metafile.is_open()) {
         ::MessageBox(nullptr, L"Failed to open file for reading 1", L"", MB_OK | MB_APPLMODAL);
+        metafile.close();
         return false;
     }
 
@@ -522,6 +523,7 @@ bool PerturbationResults<IterType, T, PExtras>::ReadMetadata() {
     std::string version;
     metafile >> version;
     if (version != Version) {
+        metafile.close();
         return false;
     }
 
@@ -545,6 +547,7 @@ bool PerturbationResults<IterType, T, PExtras>::ReadMetadata() {
             }
         } else {
             ::MessageBox(nullptr, L"Invalid size.", L"", MB_OK | MB_APPLMODAL);
+            metafile.close();
             return false;
         }
     }
@@ -579,6 +582,7 @@ bool PerturbationResults<IterType, T, PExtras>::ReadMetadata() {
             }
         } else {
             ::MessageBox(nullptr, L"Invalid type.", L"", MB_OK | MB_APPLMODAL);
+            metafile.close();
             return false;
         }
     }
@@ -601,11 +605,13 @@ bool PerturbationResults<IterType, T, PExtras>::ReadMetadata() {
             }
         } else {
             ::MessageBox(nullptr, L"Invalid bad.", L"", MB_OK | MB_APPLMODAL);
+            metafile.close();
             return false;
         }
     }
 
     if (!typematch1 || !typematch2 || !typematch3) {
+        metafile.close();
         return false;
     }
 
@@ -714,6 +720,7 @@ bool PerturbationResults<IterType, T, PExtras>::ReadMetadata() {
     // number of elements.
     m_FullOrbit.MutableResize(sz, sz);
 
+    metafile.close();
     return true;
 }
 

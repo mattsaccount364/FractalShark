@@ -504,12 +504,12 @@ LRESULT MainWindow::StaticWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM
     }
 
     // And invoke WndProc
-    try {
+    //try {
         return pThis->WndProc(message, wParam, lParam);
-    } catch (const std::exception &e) {
-        MessageBoxA(hWnd, e.what(), "Error", MB_OK);
-        return 0;
-    }
+    //} catch (const std::exception &e) {
+    //    MessageBoxA(hWnd, e.what(), "Error", MB_OK);
+    //    return 0;
+    //}
 }
 
 LRESULT MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam) {
@@ -868,9 +868,10 @@ LRESULT MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam) {
         case IDM_BASICTEST:
         {
             FractalTest test{ *gFractal };
-            //test.TestBasic();
-            //test.TestReferenceSave();
+            test.TestBasic();
+            test.TestReferenceSave();
             test.TestVariedCompression();
+            test.TestStringConversion();
             break;
         }
 

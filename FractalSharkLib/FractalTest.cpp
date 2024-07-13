@@ -3,6 +3,7 @@
 
 #include "Exceptions.h"
 #include "Fractal.h"
+#include "HDRFloat.h"
 
 #include <shellapi.h>
 
@@ -454,6 +455,231 @@ void FractalTest::TestVariedCompression() {
 
     viewToTest = 5;
     loopAll(viewToTest, View5Algs);
+}
+
+void FractalTest::TestStringConversion() {
+    double double1 = 5.5555;
+    double double2 = 6.6666;
+    float float1 = 15.5555f;
+    float float2 = 16.6666f;
+    float float3 = 17.7777f;
+    float float4 = 18.8888f;
+    int32_t testExp = 5;
+
+    HDRFloat<float> f1(float1);
+    HDRFloat<double> d1(double1);
+    HDRFloat<CudaDblflt<MattDblflt>> m1(testExp, CudaDblflt<MattDblflt>{float1, float2});
+    HDRFloat<CudaDblflt<dblflt>> c1(testExp, CudaDblflt<MattDblflt>{float3, float4});
+
+    HDRFloatComplex<float> f2(float1, float2);
+    HDRFloatComplex<double> d2(double1, double2);
+    HDRFloatComplex<CudaDblflt<MattDblflt>> m2(CudaDblflt<MattDblflt>(float1, float2), CudaDblflt<MattDblflt>(float3, float4));
+    HDRFloatComplex<CudaDblflt<dblflt>> c2(CudaDblflt<dblflt>(float1, float2), CudaDblflt<dblflt>(float3, float4));
+
+    CudaDblflt<MattDblflt> cudaDblflt1(float1, float2);
+    CudaDblflt<dblflt> cudaDblflt2(float1, float2);
+
+    FloatComplex<float> floatComplex1(float1, float2);
+    FloatComplex<double> floatComplex2(double1, double2);
+    FloatComplex<CudaDblflt<MattDblflt>> floatComplex3(CudaDblflt<MattDblflt>(float1, float2), CudaDblflt<MattDblflt>(float3, float4));
+    FloatComplex<CudaDblflt<dblflt>> floatComplex4(CudaDblflt<dblflt>(float1, float2), CudaDblflt<dblflt>(float3, float4));
+
+    std::stringstream is;
+    auto toString = [&]<bool IntOut>(auto &hdr) {
+        auto ret = std::string("Descriptor: ");
+        ret += HdrToString<IntOut>(hdr);
+        // append newline to ret
+        ret += std::string("\n");
+
+        // append string to stringstream
+        is << ret;
+        return ret;
+    };
+
+    std::string allStr;
+    allStr += toString.template operator()<false>(double1);
+    allStr += toString.template operator()<false>(double2);
+    allStr += toString.template operator()<false>(float1);
+    allStr += toString.template operator()<false>(float2);
+    allStr += toString.template operator()<false>(float3);
+    allStr += toString.template operator()<false>(float4);
+
+    allStr += toString.template operator()<false>(f1);
+    allStr += toString.template operator()<false>(d1);
+    allStr += toString.template operator()<false>(m1);
+    allStr += toString.template operator()<false>(c1);
+
+    allStr += toString.template operator()<false>(f2);
+    allStr += toString.template operator()<false>(d2);
+    allStr += toString.template operator()<false>(m2);
+    allStr += toString.template operator()<false>(c2);
+
+    allStr += toString.template operator()<false>(cudaDblflt1);
+    allStr += toString.template operator()<false>(cudaDblflt2);
+
+    allStr += toString.template operator()<false>(floatComplex1);
+    allStr += toString.template operator()<false>(floatComplex2);
+    allStr += toString.template operator()<false>(floatComplex3);
+    allStr += toString.template operator()<false>(floatComplex4);
+
+    allStr += toString.template operator()<true>(double1);
+    allStr += toString.template operator()<true>(double2);
+    allStr += toString.template operator()<true>(float1);
+    allStr += toString.template operator()<true>(float2);
+    allStr += toString.template operator()<true>(float3);
+    allStr += toString.template operator()<true>(float4);
+
+    allStr += toString.template operator()<true>(f1);
+    allStr += toString.template operator()<true>(d1);
+    allStr += toString.template operator()<true>(m1);
+    allStr += toString.template operator()<true>(c1);
+    allStr += toString.template operator()<true>(f2);
+    allStr += toString.template operator()<true>(d2);
+    allStr += toString.template operator()<true>(m2);
+    allStr += toString.template operator()<true>(c2);
+
+    allStr += toString.template operator()<true>(cudaDblflt1);
+    allStr += toString.template operator()<true>(cudaDblflt2);
+
+    allStr += toString.template operator()<true>(floatComplex1);
+    allStr += toString.template operator()<true>(floatComplex2);
+    allStr += toString.template operator()<true>(floatComplex3);
+    allStr += toString.template operator()<true>(floatComplex4);
+
+    // Concatenate all the strings together to prevent the compiler from optimizing them away.
+    ::MessageBoxA(nullptr, allStr.c_str(), "String conversion test", MB_OK | MB_APPLMODAL);
+
+    {
+        // Copy to clipboard
+        if (!OpenClipboard(nullptr)) {
+            throw FractalSharkSeriousException("OpenClipboard failed!");
+        }
+
+        if (!EmptyClipboard()) {
+            throw FractalSharkSeriousException("EmptyClipboard failed!");
+        }
+
+        HGLOBAL hg = GlobalAlloc(GMEM_MOVEABLE, allStr.size() + 1);
+        if (!hg) {
+            CloseClipboard();
+            throw FractalSharkSeriousException("GlobalAlloc failed!");
+        }
+
+        memcpy(GlobalLock(hg), allStr.c_str(), allStr.size() + 1);
+        GlobalUnlock(hg);
+        SetClipboardData(CF_TEXT, hg);
+        CloseClipboard();
+    }
+
+    // convert stringstream to istream
+    std::istringstream iss(is.str());
+
+    // read from istream
+    double readBackDouble1 = 5.5555;
+    double readBackDouble2 = 6.6666;
+    float readBackFloat1 = 15.5555f;
+    float readBackFloat2 = 16.6666f;
+    float readBackFloat3 = 17.7777f;
+    float readBackFloat4 = 18.8888f;
+
+    HDRFloat<float> readBackF1;
+    HDRFloat<double> readBackD1;
+    HDRFloat<CudaDblflt<MattDblflt>> readBackM1;
+    HDRFloat<CudaDblflt<dblflt>> readBackC1;
+
+    HDRFloatComplex<float> readBackF2;
+    HDRFloatComplex<double> readBackD2;
+    HDRFloatComplex<CudaDblflt<MattDblflt>> readBackM2;
+    HDRFloatComplex<CudaDblflt<dblflt>> readBackC2;
+
+    CudaDblflt<MattDblflt> readBackCudaDblflt1;
+    CudaDblflt<dblflt> readBackCudaDblflt2;
+
+    FloatComplex<float> readBackFloatComplex1;
+    FloatComplex<double> readBackFloatComplex2;
+    FloatComplex<CudaDblflt<MattDblflt>> readBackFloatComplex3;
+    FloatComplex<CudaDblflt<dblflt>> readBackFloatComplex4;
+
+    HdrFromIfStream<false, double, double>(readBackDouble1, iss);
+    HdrFromIfStream<false, double, double>(readBackDouble2, iss);
+    HdrFromIfStream<false, float, float>(readBackFloat1, iss);
+    HdrFromIfStream<false, float, float>(readBackFloat2, iss);
+    HdrFromIfStream<false, float, float>(readBackFloat3, iss);
+    HdrFromIfStream<false, float, float>(readBackFloat4, iss);
+
+    HdrFromIfStream<false, HDRFloat<float>, float>(readBackF1, iss);
+    HdrFromIfStream<false, HDRFloat<double>, double>(readBackD1, iss);
+    HdrFromIfStream<false, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>>(readBackM1, iss);
+    HdrFromIfStream<false, HDRFloat<CudaDblflt<dblflt>>, CudaDblflt<dblflt>>(readBackC1, iss);
+
+    HdrFromIfStream<false, HDRFloatComplex<float>, float>(readBackF2, iss);
+    HdrFromIfStream<false, HDRFloatComplex<double>, double>(readBackD2, iss);
+    HdrFromIfStream<false, HDRFloatComplex<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>>(readBackM2, iss);
+    HdrFromIfStream<false, HDRFloatComplex<CudaDblflt<dblflt>>, CudaDblflt<dblflt>>(readBackC2, iss);
+
+    HdrFromIfStream<false, CudaDblflt<MattDblflt>, MattDblflt>(readBackCudaDblflt1, iss);
+    HdrFromIfStream<false, CudaDblflt<dblflt>, dblflt>(readBackCudaDblflt2, iss);
+
+    HdrFromIfStream<false, FloatComplex<float>, float>(readBackFloatComplex1, iss);
+    HdrFromIfStream<false, FloatComplex<double>, double>(readBackFloatComplex2, iss);
+    HdrFromIfStream<false, FloatComplex<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>>(readBackFloatComplex3, iss);
+    HdrFromIfStream<false, FloatComplex<CudaDblflt<dblflt>>, CudaDblflt<dblflt>>(readBackFloatComplex4, iss);
+
+    auto checker = [&](auto &a, auto &b) {
+        if (a != b) {
+            throw FractalSharkSeriousException("String conversion failed!");
+        }
+    };
+
+    HdrFromIfStream<true, double, double>(readBackDouble1, iss);
+    HdrFromIfStream<true, double, double>(readBackDouble2, iss);
+    HdrFromIfStream<true, float, float>(readBackFloat1, iss);
+    HdrFromIfStream<true, float, float>(readBackFloat2, iss);
+    HdrFromIfStream<true, float, float>(readBackFloat3, iss);
+    HdrFromIfStream<true, float, float>(readBackFloat4, iss);
+
+    HdrFromIfStream<true, HDRFloat<float>, float>(readBackF1, iss);
+    HdrFromIfStream<true, HDRFloat<double>, double>(readBackD1, iss);
+    HdrFromIfStream<true, HDRFloat<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>>(readBackM1, iss);
+    HdrFromIfStream<true, HDRFloat<CudaDblflt<dblflt>>, CudaDblflt<dblflt>>(readBackC1, iss);
+
+    HdrFromIfStream<true, HDRFloatComplex<float>, float>(readBackF2, iss);
+    HdrFromIfStream<true, HDRFloatComplex<double>, double>(readBackD2, iss);
+    HdrFromIfStream<true, HDRFloatComplex<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>>(readBackM2, iss);
+    HdrFromIfStream<true, HDRFloatComplex<CudaDblflt<dblflt>>, CudaDblflt<dblflt>>(readBackC2, iss);
+
+    HdrFromIfStream<true, CudaDblflt<MattDblflt>, MattDblflt>(readBackCudaDblflt1, iss);
+    HdrFromIfStream<true, CudaDblflt<dblflt>, dblflt>(readBackCudaDblflt2, iss);
+
+    HdrFromIfStream<true, FloatComplex<float>, float>(readBackFloatComplex1, iss);
+    HdrFromIfStream<true, FloatComplex<double>, double>(readBackFloatComplex2, iss);
+    HdrFromIfStream<true, FloatComplex<CudaDblflt<MattDblflt>>, CudaDblflt<MattDblflt>>(readBackFloatComplex3, iss);
+    HdrFromIfStream<true, FloatComplex<CudaDblflt<dblflt>>, CudaDblflt<dblflt>>(readBackFloatComplex4, iss);
+
+    checker(double1, readBackDouble1);
+    checker(double2, readBackDouble2);
+    checker(float1, readBackFloat1);
+    checker(float2, readBackFloat2);
+    checker(float3, readBackFloat3);
+    checker(float4, readBackFloat4);
+
+    checker(f1, readBackF1);
+    checker(d1, readBackD1);
+    checker(m1, readBackM1);
+    checker(c1, readBackC1);
+
+    checker(f2, readBackF2);
+    checker(d2, readBackD2);
+    checker(m2, readBackM2);
+    checker(c2, readBackC2);
+
+    checker(cudaDblflt1, readBackCudaDblflt1);
+    checker(cudaDblflt2, readBackCudaDblflt2);
+
+    checker(floatComplex1, readBackFloatComplex1);
+    checker(floatComplex2, readBackFloatComplex2);
+    checker(floatComplex3, readBackFloatComplex3);
+    checker(floatComplex4, readBackFloatComplex4);
 }
 
 void FractalTest::Benchmark(RefOrbitCalc::PerturbationResultType type) {

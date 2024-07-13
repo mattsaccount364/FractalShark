@@ -26,24 +26,95 @@ public:
 #ifndef __CUDACC__ 
     template<bool IntegerOutput>
     CUDA_CRAP std::string ToString() const {
+        constexpr bool isDblFlt =
+            std::is_same<SubType, CudaDblflt<dblflt>>::value ||
+            std::is_same<SubType, CudaDblflt<MattDblflt>>::value;
+
+        std::stringstream ss;
         if constexpr (!IntegerOutput) {
-            std::stringstream ss;
             ss << std::setprecision(std::numeric_limits<double>::max_digits10);
-            ss << "mantissaReal: " << static_cast<double>(this->mantissaReal)
-                << " mantissaImag: " << static_cast<double>(this->mantissaImag)
-                << " exp: " << this->exp;
-            return ss.str();
+            if constexpr (!isDblFlt) {
+                // Output the mantissa and exponent as doubles:
+                ss << "mantissaReal: " << static_cast<double>(this->mantissaReal)
+                    << " mantissaImag: " << static_cast<double>(this->mantissaImag)
+                    << " exp: " << this->exp;
+            } else {
+                ss << this->mantissaReal.ToString<IntegerOutput>();
+                ss << " ";
+                ss << this->mantissaImag.ToString<IntegerOutput>();
+
+                ss << " exp: " << this->exp;
+            }
         } else {
-            // Interpret the bits as integers and output the integers:
-            std::stringstream ss;
-            const double localMantissaReal = static_cast<double>(this->mantissaReal);
-            const double localMantissaImag = static_cast<double>(this->mantissaImag);
-            const uint64_t localExp = static_cast<uint64_t>(this->exp);
-            ss << "mantissaReal: 0x" << std::hex << *reinterpret_cast<const uint64_t *>(&localMantissaReal)
-                << " mantissaImag: 0x" << std::hex << *reinterpret_cast<const uint64_t *>(&localMantissaImag)
-                << " exp: 0x" << std::hex << localExp;
-            return ss.str();
+            if constexpr (!isDblFlt) {
+                // Interpret the bits as integers and output the integers:
+                const double localMantissaReal = static_cast<double>(this->mantissaReal);
+                const double localMantissaImag = static_cast<double>(this->mantissaImag);
+                const uint64_t localExp = static_cast<uint64_t>(this->exp);
+                ss << "mantissaReal: 0x" << std::hex << *reinterpret_cast<const uint64_t *>(&localMantissaReal)
+                    << " mantissaImag: 0x" << std::hex << *reinterpret_cast<const uint64_t *>(&localMantissaImag)
+                    << " exp: 0x" << std::hex << localExp;
+            } else {
+                ss << this->mantissaReal.ToString<IntegerOutput>();
+                ss << " ";
+                ss << this->mantissaImag.ToString<IntegerOutput>();
+
+                ss << " exp: 0x" << std::hex << this->exp;
+            }
         }
+
+        return ss.str();
+    }
+
+    template<bool IntegerOutput>
+    CUDA_CRAP void FromIStream(std::istream &is) {
+        constexpr bool isDblFlt =
+            std::is_same<SubType, CudaDblflt<dblflt>>::value ||
+            std::is_same<SubType, CudaDblflt<MattDblflt>>::value;
+
+        if constexpr (!IntegerOutput) {
+            if constexpr (!isDblFlt) {
+                // Read the mantissa and exponent as doubles:
+                double mantissaRealLocal;
+                double mantissaImagLocal;
+                int64_t expInt;
+                std::string tempstr;
+                is >> tempstr >> mantissaRealLocal >> tempstr >> mantissaImagLocal >> tempstr >> expInt;
+                this->mantissaReal = static_cast<SubType>(mantissaRealLocal);
+                this->mantissaImag = static_cast<SubType>(mantissaImagLocal);
+                this->exp = static_cast<TExp>(expInt);
+            } else {
+                this->mantissaReal.FromIStream<IntegerOutput>(is);
+                this->mantissaImag.FromIStream<IntegerOutput>(is);
+                
+                // Read exponent as integer
+                int64_t expInt;
+                std::string tempstr;
+                is >> tempstr >> expInt;
+                this->exp = static_cast<TExp>(expInt);
+            }
+        } else {
+            if constexpr (!isDblFlt) {
+                uint64_t mantissaRealLocal;
+                uint64_t mantissaImagLocal;
+                int64_t expInt;
+                std::string tempstr;
+                is >> tempstr >> std::hex >> mantissaRealLocal >> tempstr >> std::hex >> mantissaImagLocal >> tempstr >> std::hex >> expInt;
+                this->mantissaReal = static_cast<SubType>(*reinterpret_cast<double *>(&mantissaRealLocal));
+                this->mantissaImag = static_cast<SubType>(*reinterpret_cast<double *>(&mantissaImagLocal));
+                this->exp = static_cast<TExp>(expInt);
+            } else {
+                this->mantissaReal.FromIStream<IntegerOutput>(is);
+                this->mantissaImag.FromIStream<IntegerOutput>(is);
+                
+                // Read exponent as integer
+                int64_t expInt;
+                std::string tempstr;
+                is >> tempstr >> expInt;
+                this->exp = static_cast<TExp>(expInt);
+            }
+        }
+
     }
 #endif
 
@@ -114,6 +185,21 @@ public:
     CUDA_CRAP constexpr HDRFloatComplex &operator+=(const HDRFloatComplex &other) {
         plus_mutable(other);
         return *this;
+    }
+
+    CUDA_CRAP bool operator==(const HDRFloatComplex &other) const {
+        if (exp == other.exp &&
+            mantissaReal == other.mantissaReal &&
+            mantissaImag == other.mantissaImag) {
+
+            return true;
+        }
+
+        return false;
+    }
+
+    CUDA_CRAP bool operator!=(const HDRFloatComplex &other) const {
+        return !(*this == other);
     }
 
 private:

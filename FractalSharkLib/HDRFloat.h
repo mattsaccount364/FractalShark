@@ -124,21 +124,68 @@ public:
 #ifndef __CUDACC__ 
     template<bool IntegerOutput>
     CUDA_CRAP std::string ToString() const {
+        constexpr bool isDblFlt =
+            std::is_same<T, CudaDblflt<dblflt>>::value ||
+            std::is_same<T, CudaDblflt<MattDblflt>>::value;
+
+        std::stringstream ss;
         if constexpr (!IntegerOutput) {
-            std::stringstream ss;
-            ss << std::setprecision(std::numeric_limits<double>::max_digits10);
-            ss << "mantissa: " << static_cast<double>(Base::mantissa) << " exp: " << Base::exp;
-            return ss.str();
+            if constexpr (!isDblFlt) {
+                ss << std::setprecision(std::numeric_limits<double>::max_digits10);
+                ss << "mantissa: " << static_cast<double>(Base::mantissa) << " exp: " << Base::exp;
+            } else {
+                ss << Base::mantissa.ToString<IntegerOutput>();
+                ss << " exp: " << Base::exp;
+            }
         } else {
-            // Reinterpret the bits of Base::mantissa as an integer
-            // Don't use bitcast
-            std::stringstream ss;
-            const double res = static_cast<double>(Base::mantissa);
-            const uint64_t mantissaInteger = *reinterpret_cast<const uint64_t *>(&res);
-            const uint64_t localExp = Base::exp;
-            const uint64_t expInteger = *reinterpret_cast<const uint64_t *>(&localExp);
-            ss << "mantissa: 0x" << std::hex << mantissaInteger << " exp: 0x" << std::hex << expInteger;
-            return ss.str();
+            if constexpr (!isDblFlt) {
+                // Reinterpret the bits of Base::mantissa as an integer
+                // Don't use bitcast
+                const double res = static_cast<double>(Base::mantissa);
+                const uint64_t mantissaInteger = *reinterpret_cast<const uint64_t *>(&res);
+                const uint64_t localExp = Base::exp;
+                const uint64_t expInteger = *reinterpret_cast<const uint64_t *>(&localExp);
+                ss << "mantissa: 0x" << std::hex << mantissaInteger << " exp: 0x" << std::hex << expInteger;
+            } else {
+                ss << Base::mantissa.ToString<IntegerOutput>();
+
+                uint64_t tempExp = Base::exp;
+                ss << " exp: 0x" << std::hex << tempExp;
+            }
+        }
+
+        return ss.str();
+    }
+
+    template<bool IntegerOutput>
+    CUDA_CRAP void FromIStream(std::istream &is) {
+        constexpr bool isDblFlt =
+            std::is_same<T, CudaDblflt<dblflt>>::value ||
+            std::is_same<T, CudaDblflt<MattDblflt>>::value;
+
+        std::string tempstr;
+        if constexpr (!IntegerOutput) {
+            if constexpr (!isDblFlt) {
+                is >> tempstr >> Base::mantissa >> tempstr >> Base::exp;
+            } else {
+                Base::mantissa.FromIStream<IntegerOutput>(is);
+                is >> tempstr >> Base::exp;
+            }
+        } else {
+            if constexpr (!isDblFlt) {
+                uint64_t mantissaInteger;
+                uint64_t expInteger;
+                is >> tempstr >> std::hex >> mantissaInteger;
+                is >> tempstr >> std::hex >> expInteger;
+                Base::mantissa = static_cast<T>(*reinterpret_cast<const double *>(&mantissaInteger));
+                Base::exp = static_cast<TExp>(*reinterpret_cast<const uint64_t *>(&expInteger));
+            } else {
+                Base::mantissa.FromIStream<IntegerOutput>(is);
+
+                uint64_t expInteger;
+                is >> tempstr >> std::hex >> expInteger;
+                Base::exp = static_cast<TExp>(*reinterpret_cast<const uint64_t *>(&expInteger));
+            }
         }
     }
 #endif
@@ -1481,7 +1528,7 @@ static CUDA_CRAP std::string HdrToString(const T &dat) {
             const auto doubleDat = static_cast<double>(dat);
             uint64_t bits = *reinterpret_cast<const uint64_t *>(&doubleDat);
             std::stringstream ss;
-            ss << "mantissa: 0x" << std::hex << bits << " exp: 0";
+            ss << "mantissa: 0x" << std::hex << bits << " exp: 0x0";
             return ss.str();
         }
     } else if constexpr (std::is_same<T, HighPrecisionT<HPDestructor::True>>::value ||
@@ -1505,66 +1552,27 @@ static CUDA_CRAP double HdrFromIntToDbl(const std::string &mantissaStr) {
 }
 
 template<bool IntegerInput, class T, typename SubType>
-static CUDA_CRAP void HdrFromIfStream(T &out, std::ifstream &metafile) {
+static CUDA_CRAP void HdrFromIfStream(T &out, std::istream &metafile) {
     std::string descriptor_string_junk;
-    double mantissa;
-    double mantissa2;
-    int32_t exponent;
-
     metafile >> descriptor_string_junk;
-
-    std::string mantissaStr;
-    metafile >> mantissaStr;
-    metafile >> mantissaStr;
-    mantissa = HdrFromIntToDbl<IntegerInput>(mantissaStr);
 
     if constexpr (
         std::is_same<T, double>::value ||
         std::is_same<T, float>::value) {
 
+        double tempMantissa;
+        std::string mantissaStr;
         metafile >> mantissaStr;
         metafile >> mantissaStr;
+        tempMantissa = HdrFromIntToDbl<IntegerInput>(mantissaStr);
+        out = static_cast<SubType>(tempMantissa);
+
+        // Read exponent
+        std::string expStr;
+        metafile >> expStr;
+        metafile >> expStr;
     } else {
-        if constexpr (
-            std::is_same<T, HDRFloatComplex<CudaDblflt<MattDblflt>>>::value ||
-            std::is_same<T, HDRFloatComplex<float>>::value ||
-            std::is_same<T, HDRFloatComplex<double>>::value ||
-            std::is_same<T, FloatComplex<CudaDblflt<MattDblflt>>>::value ||
-            std::is_same<T, FloatComplex<float>>::value ||
-            std::is_same<T, FloatComplex<double>>::value) {
-
-            std::string mantissaImagStr;
-            metafile >> mantissaImagStr;
-            metafile >> mantissaImagStr;
-            mantissa2 = HdrFromIntToDbl<IntegerInput>(mantissaImagStr);
-        }
-
-        std::string exponentStr;
-        metafile >> exponentStr;
-        metafile >> exponentStr;
-        exponent = static_cast<int32_t>(std::stoull(exponentStr, nullptr, 16));
-
-        if constexpr (
-            std::is_same<T, HDRFloat<float>>::value ||
-            std::is_same<T, HDRFloat<double>>::value ||
-            std::is_same<T, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
-            out = T{ exponent, static_cast<SubType>(mantissa) };
-        } else if constexpr (
-            std::is_same<T, float>::value ||
-            std::is_same<T, double>::value ||
-            std::is_same<T, CudaDblflt<MattDblflt>>::value) {
-            out = static_cast<T>(mantissa);
-        } else if constexpr (
-            std::is_same<T, HDRFloatComplex<float>>::value ||
-            std::is_same<T, HDRFloatComplex<CudaDblflt<MattDblflt>>>::value ||
-            std::is_same<T, HDRFloatComplex<double>>::value) {
-            out = T{ exponent, static_cast<SubType>(mantissa), static_cast<SubType>(mantissa2) };
-        } else if constexpr (
-            std::is_same<T, FloatComplex<float>>::value ||
-            std::is_same<T, FloatComplex<CudaDblflt<MattDblflt>>>::value ||
-            std::is_same<T, FloatComplex<double>>::value) {
-            out = T{ static_cast<SubType>(mantissa), static_cast<SubType>(mantissa2) };
-        }
+        out.FromIStream<IntegerInput>(metafile);
     }
 }
 

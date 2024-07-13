@@ -103,9 +103,37 @@ public:
     template<bool IntegerOutput>
     CUDA_CRAP std::string ToString() const {
         std::stringstream ss;
-        ss << std::setprecision(std::numeric_limits<double>::max_digits10);
-        ss << "TODO";
+        if constexpr (!IntegerOutput) {
+            ss << std::setprecision(std::numeric_limits<double>::max_digits10);
+            ss << "mantissaOne: " << static_cast<double>(this->d.head)
+                << " mantissaTwo: " << static_cast<double>(this->d.tail);
+        } else {
+            // Interpret the bits as a double and return the string as hex
+            auto float1 = static_cast<double>(this->d.head);
+            auto float2 = static_cast<double>(this->d.tail);
+            auto *float1Bits = reinterpret_cast<uint64_t *>(&float1);
+            auto *float2Bits = reinterpret_cast<uint64_t *>(&float2);
+            ss << "mantissaOne: 0x" << std::hex << *float1Bits
+                << " mantissaTwo: 0x" << std::hex << *float2Bits;
+        }
         return ss.str();
+    }
+
+    template<bool IntegerOutput>
+    CUDA_CRAP void FromIStream(std::istream &is) {
+        if constexpr (!IntegerOutput) {
+            // Read the floats and ignore the strings.
+            std::string tempstr;
+            is >> tempstr >> d.head >> tempstr >> d.tail;
+            
+        } else {
+            // Read the hex values and interpret them as floats.
+            uint64_t head, tail;
+            std::string tempstr;
+            is >> tempstr >> std::hex >> head >> tempstr >> std::hex >> tail;
+            d.head = static_cast<float>(*reinterpret_cast<double *>(&head));
+            d.tail = static_cast<float>(*reinterpret_cast<double *>(&tail));
+        }
     }
 #endif
 

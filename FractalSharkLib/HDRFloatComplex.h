@@ -46,11 +46,12 @@ public:
                 ss << " exp: " << this->exp;
             }
         } else {
+            const uint64_t localExp = static_cast<uint64_t>(this->exp);
+
             if constexpr (!isDblFlt) {
                 // Interpret the bits as integers and output the integers:
                 const double localMantissaReal = static_cast<double>(this->mantissaReal);
                 const double localMantissaImag = static_cast<double>(this->mantissaImag);
-                const uint64_t localExp = static_cast<uint64_t>(this->exp);
                 ss << "mantissaReal: 0x" << std::hex << *reinterpret_cast<const uint64_t *>(&localMantissaReal)
                     << " mantissaImag: 0x" << std::hex << *reinterpret_cast<const uint64_t *>(&localMantissaImag)
                     << " exp: 0x" << std::hex << localExp;
@@ -59,7 +60,7 @@ public:
                 ss << " ";
                 ss << this->mantissaImag.ToString<IntegerOutput>();
 
-                ss << " exp: 0x" << std::hex << this->exp;
+                ss << " exp: 0x" << std::hex << localExp;
             }
         }
 
@@ -97,7 +98,7 @@ public:
             if constexpr (!isDblFlt) {
                 uint64_t mantissaRealLocal;
                 uint64_t mantissaImagLocal;
-                int64_t expInt;
+                uint64_t expInt;
                 std::string tempstr;
                 is >> tempstr >> std::hex >> mantissaRealLocal >> tempstr >> std::hex >> mantissaImagLocal >> tempstr >> std::hex >> expInt;
                 this->mantissaReal = static_cast<SubType>(*reinterpret_cast<double *>(&mantissaRealLocal));
@@ -108,9 +109,9 @@ public:
                 this->mantissaImag.FromIStream<IntegerOutput>(is);
                 
                 // Read exponent as integer
-                int64_t expInt;
+                uint64_t expInt;
                 std::string tempstr;
-                is >> tempstr >> expInt;
+                is >> tempstr >> std::hex >> expInt;
                 this->exp = static_cast<TExp>(expInt);
             }
         }

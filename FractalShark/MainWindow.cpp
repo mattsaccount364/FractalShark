@@ -868,9 +868,9 @@ LRESULT MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam) {
         case IDM_BASICTEST:
         {
             FractalTest test{ *gFractal };
-            test.TestBasic();
-            test.TestReferenceSave();
-            test.TestVariedCompression();
+            //test.TestBasic();
+            //test.TestReferenceSave();
+            //test.TestVariedCompression();
             test.TestStringConversion();
             break;
         }

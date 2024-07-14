@@ -9,6 +9,8 @@ int APIENTRY WinMain(HINSTANCE hInstance,
 
     MSG msg{};
 
+    _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_WNDW);
+
     {
         MainWindow mainWindow{ hInstance, nCmdShow };
 

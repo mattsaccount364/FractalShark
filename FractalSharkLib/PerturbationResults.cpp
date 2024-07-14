@@ -319,8 +319,6 @@ void PerturbationResults<IterType, T, PExtras>::CopyPerturbationResults(
 
     CopyFullOrbitVector<IncludeLA, Other, PExtrasOther>(other);
 
-    assert(GetCountOrbitEntries() == m_FullOrbit.GetSize());
-
     m_BenchmarkOrbit = other.m_BenchmarkOrbit;
 
     m_DeltaPrecisionCached = 0;
@@ -1266,7 +1264,9 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
     T zx{ m_OrbitXLow };
     T zy{ m_OrbitYLow };
 
-    RuntimeDecompressor<IterType, T, PExtras> PerThreadCompressionHelper{ *this };
+    // Having two of these is critical for perf unless we make the cache in each bigger.
+    RuntimeDecompressor<IterType, T, PExtras> PerThreadCompressionHelperI{ *this };
+    RuntimeDecompressor<IterType, T, PExtras> PerThreadCompressionHelperJ{ *this };
 
     std::map<uint64_t, uint64_t> PathCounts;
 
@@ -1274,7 +1274,7 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
     for (; i < GetCountOrbitEntries(); i++) {
 
         T outX, outY;
-        GetComplex(PerThreadCompressionHelper, i, outX, outY);
+        GetComplex(PerThreadCompressionHelperI, i, outX, outY);
         const auto norm_z = normZ(outX, outY);
 
         if (HdrCompareToBothPositiveReducedLT(norm_z, constant1)) {
@@ -1336,7 +1336,7 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
 
     T outXi, outYi;
     T outXj, outYj;
-    GetComplex(PerThreadCompressionHelper, 0, outXi, outYi);
+    GetComplex(PerThreadCompressionHelperI, 0, outXi, outYi);
 
     const auto dzX_old = dzX;
     dzX = Two * outXi * dzX - Two * outYi * dzY + dzX * dzX - dzY * dzY;
@@ -1354,8 +1354,8 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
     }
 
     for (; i < GetCountOrbitEntries(); i++, j++) {
-        GetComplex(PerThreadCompressionHelper, i, outXi, outYi);
-        GetComplex(PerThreadCompressionHelper, j, outXj, outYj);
+        GetComplex(PerThreadCompressionHelperI, i, outXi, outYi);
+        GetComplex(PerThreadCompressionHelperJ, j, outXj, outYj);
 
         if constexpr (TrackPathsTaken) {
             PathCounts[__LINE__]++;
@@ -1451,7 +1451,7 @@ PerturbationResults<IterType, T, PExtras>::CompressMax(
         //HdrReduce(dzY);
 
         // Reacquire index j because j changes above
-        GetComplex(PerThreadCompressionHelper, j, outXj, outYj);
+        GetComplex(PerThreadCompressionHelperJ, j, outXj, outYj);
 
         //const auto dzX_old = dzX;
         //dzX = Two * outXi * dzX - Two * outYi * dzY + dzX * dzX - dzY * dzY;

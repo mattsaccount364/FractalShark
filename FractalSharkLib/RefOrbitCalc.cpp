@@ -2880,7 +2880,7 @@ void RefOrbitCalc::SaveOrbit(CompressToDisk desiredCompression, std::wstring fil
                 !Introspection::IsDblFlt<decltype(*results)>()) {
 
                 if constexpr (Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::Disable>()) {
-                    auto compressedResults = results->Compress(
+                    const auto compressedResults = results->Compress(
                         m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
                         GetNextGenerationNumber());
                     compressedResults->SaveOrbit(filename);
@@ -2898,11 +2898,31 @@ void RefOrbitCalc::SaveOrbit(CompressToDisk desiredCompression, std::wstring fil
                 !Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::Bad>() &&
                 !Introspection::IsDblFlt<decltype(*results)>()) {
 
-                auto compressedResults = results->CompressMax(
+                const auto compressedResults = results->CompressMax(
                     m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
                     GetNextGenerationNumber(),
                     false);
                 compressedResults->SaveOrbit(filename);
+            } else if constexpr (!Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::Bad>()) {
+                using IterType = decltype(Introspection::Extract(*results))::IterType_;
+
+                if constexpr (results->IsHDR) {
+                    const auto *relatedResults = GetUsefulPerturbationResultsConst<IterType, HDRFloat<double>, false, PerturbExtras::Disable>();
+                    
+                    const auto compressedResults = relatedResults->CompressMax(
+                        m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
+                        GetNextGenerationNumber(),
+                        false);
+                    compressedResults->SaveOrbit(filename);
+                } else {
+                    const auto *relatedResults = GetUsefulPerturbationResultsConst<IterType, double, false, PerturbExtras::Disable>();
+                    
+                    const auto compressedResults = relatedResults->CompressMax(
+                        m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
+                        GetNextGenerationNumber(),
+                        false);
+                    compressedResults->SaveOrbit(filename);
+                }
             } else {
                 throw FractalSharkSeriousException("Currently unsupported type 1");
             }
@@ -2912,6 +2932,16 @@ void RefOrbitCalc::SaveOrbit(CompressToDisk desiredCompression, std::wstring fil
                 !Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::Bad>()) {
 
                 SaveOrbit(*results, filename);
+            } else if constexpr (!Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::Bad>()) {
+                using IterType = decltype(Introspection::Extract(*results))::IterType_;
+                
+                if constexpr (results->IsHDR) {
+                    const auto *relatedResults = GetUsefulPerturbationResultsConst<IterType, HDRFloat<double>, false, PerturbExtras::Disable>();
+                    SaveOrbit(*relatedResults, filename);
+                } else {
+                    const auto *relatedResults = GetUsefulPerturbationResultsConst<IterType, double, false, PerturbExtras::Disable>();
+                    SaveOrbit(*relatedResults, filename);
+                }
             } else {
                 throw FractalSharkSeriousException("Currently unsupported type 2");
             }

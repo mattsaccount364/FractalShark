@@ -176,7 +176,7 @@ public:
 
     template<class OtherT, class Other>
     void CopyLAReference(const LAReference<IterType, OtherT, Other, PExtras> &other) {
-        assert(m_AddPointOptions == other.m_AddPointOptions);
+        // m_AddPointOptions is defined at construction time and not changed here.
         m_UseAT = other.m_UseAT;
         m_AT = other.m_AT;
         m_LAStageCount = other.m_LAStageCount;

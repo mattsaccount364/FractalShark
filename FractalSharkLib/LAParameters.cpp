@@ -22,6 +22,7 @@ bool LAParameters::ReadLine(std::ifstream &metafile, int32_t &value, const char 
         return false;
     }
 
+    // Read as decimal.
     metafile >> value;
     return true;
 }
@@ -43,6 +44,7 @@ bool LAParameters::ReadMetadata(std::ifstream &metafile) {
     }
 
     bool ret = true;
+    metafile >> std::dec;
     ret &= ReadLine(metafile, m_DetectionMethod, "DetectionMethod:");
     ret &= ReadLine(metafile, m_LAThresholdScaleExponent, "LAThresholdScale:");
     ret &= ReadLine(metafile, m_LAThresholdCScaleExponent, "LAThresholdCScale:");
@@ -59,6 +61,7 @@ bool LAParameters::ReadMetadata(std::ifstream &metafile) {
 }
 
 bool LAParameters::WriteMetadata(std::ofstream &metafile) const {
+    metafile << std::dec;
     metafile << "LAParameters:" << std::endl;
     metafile << "DetectionMethod: " << m_DetectionMethod << std::endl;
     metafile << "LAThresholdScale: " << m_LAThresholdScaleExponent << std::endl;

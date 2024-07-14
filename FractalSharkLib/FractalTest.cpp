@@ -465,16 +465,17 @@ void FractalTest::TestStringConversion() {
     float float3 = 17.7777f;
     float float4 = 18.8888f;
     int32_t testExp = 5;
+    int32_t testHdrExp = 1234;
 
-    HDRFloat<float> f1(float1);
-    HDRFloat<double> d1(double1);
+    HDRFloat<float> f1(testHdrExp, float1);
+    HDRFloat<double> d1(testHdrExp, double1);
     HDRFloat<CudaDblflt<MattDblflt>> m1(testExp, CudaDblflt<MattDblflt>{float1, float2});
     HDRFloat<CudaDblflt<dblflt>> c1(testExp, CudaDblflt<MattDblflt>{float3, float4});
 
-    HDRFloatComplex<float> f2(float1, float2);
-    HDRFloatComplex<double> d2(double1, double2);
-    HDRFloatComplex<CudaDblflt<MattDblflt>> m2(CudaDblflt<MattDblflt>(float1, float2), CudaDblflt<MattDblflt>(float3, float4));
-    HDRFloatComplex<CudaDblflt<dblflt>> c2(CudaDblflt<dblflt>(float1, float2), CudaDblflt<dblflt>(float3, float4));
+    HDRFloatComplex<float> f2(float1, float2, testHdrExp);
+    HDRFloatComplex<double> d2(double1, double2, testHdrExp);
+    HDRFloatComplex<CudaDblflt<MattDblflt>> m2(CudaDblflt<MattDblflt>(float1, float2), CudaDblflt<MattDblflt>(float3, float4), testHdrExp);
+    HDRFloatComplex<CudaDblflt<dblflt>> c2(CudaDblflt<dblflt>(float1, float2), CudaDblflt<dblflt>(float3, float4), testHdrExp);
 
     CudaDblflt<MattDblflt> cudaDblflt1(float1, float2);
     CudaDblflt<dblflt> cudaDblflt2(float1, float2);
@@ -547,7 +548,7 @@ void FractalTest::TestStringConversion() {
     allStr += toString.template operator()<true>(floatComplex4);
 
     // Concatenate all the strings together to prevent the compiler from optimizing them away.
-    ::MessageBoxA(nullptr, allStr.c_str(), "String conversion test", MB_OK | MB_APPLMODAL);
+    //::MessageBoxA(nullptr, allStr.c_str(), "String conversion test", MB_OK | MB_APPLMODAL);
 
     {
         // Copy to clipboard

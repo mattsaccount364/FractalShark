@@ -10,24 +10,34 @@
 
 #include <map>
 
-template<typename IterType>
-const HighPrecision &PerturbationResultsBase<IterType>::GetHiX() const {
+const HighPrecision &PerturbationResultsBase::GetHiX() const {
     return this->m_OrbitX;
 }
 
-template<typename IterType>
-const HighPrecision &PerturbationResultsBase<IterType>::GetHiY() const {
+const HighPrecision &PerturbationResultsBase::GetHiY() const {
     return this->m_OrbitY;
 }
 
-template<typename IterType>
-const HighPrecision &PerturbationResultsBase<IterType>::GetHiZoomFactor() const {
+const HighPrecision &PerturbationResultsBase::GetHiZoomFactor() const {
     return this->m_ZoomFactor;
 }
 
+IterTypeFull PerturbationResultsBase::GetMaxIterations() const {
+    return this->m_FullMaxIterations;
+}
+
 template<typename IterType>
-IterType PerturbationResultsBase<IterType>::GetMaxIterations() const {
-    return this->m_MaxIterations;
+void PerturbationResultsBase::SetMaxIterations(IterType numIterations) {
+    this->m_FullMaxIterations = static_cast<IterType>(numIterations);
+}
+
+template<typename IterType>
+void PerturbationResultsBase::SetMaxIterationsSaturate(IterTypeFull numIterations) {
+    if (numIterations > std::numeric_limits<IterType>::max()) {
+        this->m_FullMaxIterations = std::numeric_limits<IterType>::max();
+    } else {
+        this->m_FullMaxIterations = static_cast<IterType>(numIterations);
+    }
 }
 
 // ============================================================================
@@ -116,7 +126,7 @@ PerturbationResults<IterType, T, PExtras>::PerturbationResults(
     AddPointOptions add_point_options,
     size_t Generation) :
 
-    PerturbationResultsBase<IterType>{ },
+    PerturbationResultsBase{ },
     m_OrbitXStr{},
     m_OrbitYStr{},
     m_ZoomFactorStr{},
@@ -295,7 +305,7 @@ void PerturbationResults<IterType, T, PExtras>::CopyPerturbationResults(
     m_OrbitYLow = static_cast<T>(Convert<HighPrecision, double>(this->m_OrbitY));
     m_ZoomFactorLow = static_cast<T>(Convert<HighPrecision, double>(this->m_ZoomFactor));
     m_MaxRadius = (T)other.GetMaxRadius();
-    this->m_MaxIterations = other.GetMaxIterations();
+    SetMaxIterationsSaturate<IterType>(other.GetMaxIterations());
     m_PeriodMaybeZero = other.GetPeriodMaybeZero();
     m_CompressionErrorExp = other.GetCompressionErrorExp();
     m_IntermediateCompressionErrorExp = other.GetIntermediateCompressionErrorExp();
@@ -388,7 +398,7 @@ void PerturbationResults<IterType, T, PExtras>::CopySettingsWithoutOrbit(const P
     m_OrbitYLow = other.GetOrbitYLow();
     m_ZoomFactorLow = other.GetZoomFactorLow();
     m_MaxRadius = other.GetMaxRadius();
-    this->m_MaxIterations = other.GetMaxIterations();
+    SetMaxIterationsSaturate<IterType>(other.GetMaxIterations());
     m_PeriodMaybeZero = other.GetPeriodMaybeZero();
     m_CompressionErrorExp = other.GetCompressionErrorExp();
     m_IntermediateCompressionErrorExp = other.GetIntermediateCompressionErrorExp();
@@ -416,7 +426,9 @@ void PerturbationResults<IterType, T, PExtras>::CopySettingsWithoutOrbit(const P
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>
-void PerturbationResults<IterType, T, PExtras>::WriteMetadata() const {
+void PerturbationResults<IterType, T, PExtras>::WriteMetadata() const
+    requires (PExtras != PerturbExtras::MaxCompression) {
+
     // In this case, we want to close and delete the file if it's open.
     // The code after this function will open the new file for delete.
     CloseMetaFileIfOpen();
@@ -480,7 +492,7 @@ void PerturbationResults<IterType, T, PExtras>::WriteMetadata() const {
     metafile << "LowPrecisionZoomFactor: " << HdrToString<true>(m_ZoomFactorLow) << std::endl;
     metafile << "MaxRadius: " << HdrToString<true>(m_MaxRadius) << std::endl;
     // don't bother with m_MaxRadiusHigh
-    metafile << "MaxIterationsPerPixel: " << this->m_MaxIterations << std::endl;
+    metafile << "MaxIterationsPerPixel: " << this->GetMaxIterations() << std::endl;
     metafile << "Period: " << m_PeriodMaybeZero << std::endl;
     metafile << "CompressionErrorExponent: " << m_CompressionErrorExp << std::endl;
     metafile << "IntermediateCompressionErrorExponent: " << m_IntermediateCompressionErrorExp << std::endl;
@@ -687,7 +699,9 @@ bool PerturbationResults<IterType, T, PExtras>::ReadMetadata()
         std::string maxIterationsStr;
         metafile >> descriptor_string_junk;
         metafile >> maxIterationsStr;
-        this->m_MaxIterations = (IterType)std::stoll(maxIterationsStr);
+
+        IterTypeFull maxIterationsFull = std::stoll(maxIterationsStr);
+        SetMaxIterationsSaturate<IterType>(maxIterationsFull);
     }
 
     {
@@ -773,6 +787,8 @@ void PerturbationResults<IterType, T, PExtras>::InitResults(
     const T &radiusY,
     IterType NumIterations,
     size_t GuessReserveSize) {
+
+    // Note: not using ScopedBenchmarkStopper
     m_BenchmarkOrbit.StartTimer();
 
     HighPrecision zoomFactor{ radiusY };
@@ -792,7 +808,7 @@ void PerturbationResults<IterType, T, PExtras>::InitResults(
 
     HdrReduce(m_MaxRadius);
 
-    this->m_MaxIterations = NumIterations + 1; // +1 for push_back(0) below
+    SetMaxIterations<IterType>(NumIterations + 1); // +1 for push_back(0) below
 
     const size_t ReserveSize = (GuessReserveSize != 0) ? GuessReserveSize : 1'000'000;
 
@@ -1796,7 +1812,7 @@ void PerturbationResults<IterType, T, PExtras>::SaveOrbit(std::wstring filename)
     out << "m_OrbitXLow: " << HdrToString<false>(m_OrbitXLow) << std::endl;
     out << "m_OrbitYLow: " << HdrToString<false>(m_OrbitYLow) << std::endl;
     out << "m_MaxRadius: " << HdrToString<false>(m_MaxRadius) << std::endl;
-    out << "m_MaxIterations: " << this->m_MaxIterations << std::endl;
+    out << "m_MaxIterations: " << GetMaxIterations() << std::endl;
     out << "m_PeriodMaybeZero: " << m_PeriodMaybeZero << std::endl;
     out << "m_CompressionErrorExp: " << m_CompressionErrorExp << std::endl;
     out << "m_IntermediateCompressionErrorExp: " << m_IntermediateCompressionErrorExp << std::endl;
@@ -1866,7 +1882,7 @@ void PerturbationResults<IterType, T, PExtras>::SaveOrbitBin(std::ofstream &out)
     Imagina::LAReferenceTrivialContent laContent{
         refc,
         m_UncompressedItersInOrbit - 1, // TODO -1?
-        this->m_MaxIterations - 2, // TODO -2
+        GetMaxIterations() - 2, // TODO -2
         {}, // DoublePrecisionPT
         {}, // DirectEvaluate
         m_PeriodMaybeZero != 0,

@@ -20,6 +20,7 @@
 
 #include "PerturbationResults.h"
 #include "PrecisionCalculator.h"
+#include "RecommendedSettings.h"
 
 #include <chrono>
 
@@ -656,8 +657,8 @@ void Fractal::InitialDefaultViewAndSettings(int width, int height) {
     //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2);
     //SetRenderAlgorithm(RenderAlgorithm::Gpu2x32PerturbedLAv2);
     //SetRenderAlgorithm(RenderAlgorithm::Gpu2x32PerturbedLAv2LAO);
-    //SetRenderAlgorithm(RenderAlgorithm::AUTO);
-    SetRenderAlgorithm(RenderAlgorithm::GpuHDRx64PerturbedLAv2);
+    SetRenderAlgorithm(RenderAlgorithm::AUTO);
+    //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx64PerturbedLAv2);
 
     SetIterationPrecision(1);
 
@@ -677,13 +678,14 @@ void Fractal::InitialDefaultViewAndSettings(int width, int height) {
     } else {
         ResetDimensions(MAXSIZE_T, MAXSIZE_T, 1);
     }
-    SetIterType(IterTypeEnum::Bits64);
+    //SetIterType(IterTypeEnum::Bits64);
+    SetIterType(IterTypeEnum::Bits32);
 
     SetResultsAutosave(AddPointOptions::EnableWithoutSave);
     //SetResultsAutosave(AddPointOptions::DontSave);
     LoadPerturbationOrbits();
-    //View(0);
-    View(5);
+    View(0);
+    //View(5);
     //View(11);
     //View(14);
     //View(27); // extremely hard
@@ -1601,11 +1603,6 @@ template uint32_t Fractal::GetNumIterations<uint32_t>(void) const;
 template uint64_t Fractal::GetNumIterations<uint64_t>(void) const;
 
 
-template<typename IterType>
-constexpr IterType Fractal::GetMaxIterations(void) const {
-    return ((sizeof(IterType) == 4) ? (INT32_MAX - 1) : (INT64_MAX - 1));
-}
-
 IterTypeFull Fractal::GetMaxIterationsRT() const {
     if (GetIterType() == IterTypeEnum::Bits32) {
         return GetMaxIterations<uint32_t>();
@@ -1783,7 +1780,7 @@ void Fractal::CalcFractal(bool MemoryOnly) {
     //    return;
     //}
 
-    m_BenchmarkData.m_Overall.StartTimer();
+    ScopedBenchmarkStopper stopper(m_BenchmarkData.m_Overall);
 
     // Bypass this function if the screen is too small.
     if (m_ScrnHeight == 0 || m_ScrnWidth == 0) {
@@ -1795,8 +1792,6 @@ void Fractal::CalcFractal(bool MemoryOnly) {
     } else {
         CalcFractalTypedIter<uint64_t>(MemoryOnly);
     }
-
-    m_BenchmarkData.m_Overall.StopTimer();
 }
 
 template<typename IterType>
@@ -2880,7 +2875,7 @@ void Fractal::CalcGpuFractal(bool MemoryOnly) {
         return;
     }
 
-    m_BenchmarkData.m_PerPixel.StartTimer();
+    ScopedBenchmarkStopper stopper(m_BenchmarkData.m_PerPixel);
     err = m_r.Render(GetRenderAlgorithm(),
         cx2,
         cy2,
@@ -2894,7 +2889,6 @@ void Fractal::CalcGpuFractal(bool MemoryOnly) {
     }
 
     DrawFractal(MemoryOnly);
-    m_BenchmarkData.m_PerPixel.StopTimer();
 }
 
 template<typename IterType>
@@ -3608,7 +3602,7 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
     BLAS<IterType, T> blas(*results);
     blas.Init(results->GetCountOrbitEntries(), results->GetMaxRadius());
 
-    m_BenchmarkData.m_PerPixel.StartTimer();
+    ScopedBenchmarkStopper stopper(m_BenchmarkData.m_PerPixel);
     result = m_r.RenderPerturbBLA<IterType, T>(GetRenderAlgorithm(),
         &gpu_results,
         &blas,
@@ -3626,8 +3620,6 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
     if (result) {
         MessageBoxCudaError(result);
     }
-
-    m_BenchmarkData.m_PerPixel.StopTimer();
 }
 
 template<typename IterType, class T, class SubType, LAv2Mode Mode, PerturbExtras PExtras>
@@ -3706,7 +3698,7 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
     FillCoord(centerX, centerX2);
     FillCoord(centerY, centerY2);
 
-    m_BenchmarkData.m_PerPixel.StartTimer();
+    ScopedBenchmarkStopper stopper(m_BenchmarkData.m_PerPixel);
     auto result = m_r.RenderPerturbLAv2<IterType, T, SubType, Mode, PExtras>(GetRenderAlgorithm(),
         cx2,
         cy2,
@@ -3722,7 +3714,6 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
     }
 
     DrawFractal(MemoryOnly);
-    m_BenchmarkData.m_PerPixel.StopTimer();
 }
 
 template<typename IterType, class T, class SubType, class T2, class SubType2>
@@ -3780,7 +3771,7 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
         return;
     }
 
-    m_BenchmarkData.m_PerPixel.StartTimer();
+    ScopedBenchmarkStopper stopper(m_BenchmarkData.m_PerPixel);
     auto result = m_r.RenderPerturbBLAScaled<IterType, T>(GetRenderAlgorithm(),
         &gpu_results,
         &gpu_results2,
@@ -3798,7 +3789,6 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
     if (result) {
         MessageBoxCudaError(result);
     }
-    m_BenchmarkData.m_PerPixel.StopTimer();
 }
 
 void Fractal::MessageBoxCudaError(uint32_t result) {
@@ -3907,9 +3897,8 @@ int Fractal::SaveItersAsText(std::wstring filename_base) {
 }
 
 void Fractal::SaveRefOrbit(CompressToDisk compression, std::wstring filename) const {
-    m_BenchmarkData.m_RefOrbitSave.StartTimer();
+    ScopedBenchmarkStopper stopper(m_BenchmarkData.m_RefOrbitSave);
     m_RefOrbit.SaveOrbit(compression, filename);
-    m_BenchmarkData.m_RefOrbitSave.StopTimer();
 }
 
 void Fractal::DiffRefOrbits(
@@ -3921,11 +3910,55 @@ void Fractal::DiffRefOrbits(
     m_RefOrbit.DiffOrbit(compression, outFile, filename1, filename2);
 }
 
-void Fractal::LoadRefOrbit(CompressToDisk compression, std::wstring filename) {
-    m_BenchmarkData.m_RefOrbitLoad.StartTimer();
+void Fractal::LoadRefOrbit(
+    RecommendedSettings *oldSettings,
+    CompressToDisk compression,
+    ImaginaSettings imaginaSettings,
+    std::wstring filename) {
+
+    ScopedBenchmarkStopper stopper(m_BenchmarkData.m_RefOrbitLoad);
+
+    RecommendedSettings recommendedSettings{};
+
+    // If the render algorithm is set to AUTO, then
+    // use the saved settings.  The concept of "Auto"
+    // seems to imply that we choose the best settings.
+    if (m_RenderAlgorithm == RenderAlgorithm::AUTO) {
+        if (imaginaSettings != ImaginaSettings::UseSaved) {
+            imaginaSettings = ImaginaSettings::UseSaved;
+        }
+    }
+
+    // Store the old algorithm so we can restore it later.
+    if (oldSettings) {
+        // Store "RenderAlgorithm::AUTO" if applicable.
+        oldSettings->RenderAlg = m_RenderAlgorithm;
+        oldSettings->IterType = GetIterType();
+        oldSettings->NumIterations = GetNumIterations<IterTypeFull>();
+    }
+
+    auto renderAlg =
+        imaginaSettings == ImaginaSettings::UseSaved ?
+            RenderAlgorithm::MAX :
+            GetRenderAlgorithm();
+
     const auto &perturbResults = *m_RefOrbit.LoadOrbit(
+        imaginaSettings,
         compression,
-        filename);
+        renderAlg,
+        filename,
+        &recommendedSettings);
+
+    if (imaginaSettings == ImaginaSettings::UseSaved) {
+        SetRenderAlgorithm(recommendedSettings.RenderAlg);
+        SetIterType(recommendedSettings.IterType);
+
+        // This will force it to fit but it should
+        SetNumIterations<IterTypeFull>(recommendedSettings.NumIterations);
+    } else {
+        auto maxIters = perturbResults.GetMaxIterations();
+        SetNumIterations<decltype(maxIters)>(maxIters);
+    }
 
     const auto &centerX = perturbResults.GetHiX();
     const auto &centerY = perturbResults.GetHiY();
@@ -3942,11 +3975,7 @@ void Fractal::LoadRefOrbit(CompressToDisk compression, std::wstring filename) {
 
     SetPosition(zoom.GetMinX(), zoom.GetMinY(), zoom.GetMaxX(), zoom.GetMaxY());
 
-    auto maxIters = perturbResults.GetMaxIterations();
-    SetNumIterations<decltype(maxIters)>(maxIters);
     ChangedMakeDirty();
-
-    m_BenchmarkData.m_RefOrbitLoad.StopTimer();
 }
 
 void Fractal::SetResultsAutosave(AddPointOptions Enable) {

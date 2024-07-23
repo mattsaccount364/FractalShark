@@ -975,7 +975,7 @@ void LAReference<IterType, Float, SubType, PExtras>::GenerateApproximationData(
         return;
     }
 
-    m_BenchmarkDataLA.StartTimer();
+    ScopedBenchmarkStopper stopper(m_BenchmarkDataLA);
 
     bool PeriodDetected;
     if (m_LAParameters.GetThreading() == LAParameters::LAThreadingAlgorithm::MultiThreaded) {
@@ -987,7 +987,6 @@ void LAReference<IterType, Float, SubType, PExtras>::GenerateApproximationData(
     auto finish = [&]() {
         m_LAs.Trim();
         m_LAStages.Trim();
-        m_BenchmarkDataLA.StopTimer();
         };
 
     if (!PeriodDetected) {

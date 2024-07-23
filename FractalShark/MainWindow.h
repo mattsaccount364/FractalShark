@@ -8,6 +8,7 @@ class JobObject;
 class Fractal;
 enum FractalPalette : size_t;
 enum class CompressToDisk;
+enum class ImaginaSettings;
 
 class MainWindow {
 public:
@@ -82,15 +83,18 @@ private:
     void BenchmarkMessage(size_t milliseconds);
     void MenuAlgHelp();
     void MenuViewsHelp();
-    void MenuLoadImagDyn();
+    void MenuLoadImagDyn(ImaginaSettings loadSettings);
     void MenuSaveImag(CompressToDisk compression);
     void MenuDiffImag();
-    void MenuLoadImag(CompressToDisk compression);
+    void MenuLoadImag(
+        ImaginaSettings loadSettings,
+        CompressToDisk compression);
     void MenuShowHotkeys();
 
     void PaintAsNecessary();
 
     void ClearMenu(HMENU &menu);
+    void LoadRefOrbit(CompressToDisk compressToDisk, ImaginaSettings loadSettings, std::wstring filename);
 
     bool IsDownControl() { return (GetAsyncKeyState(VK_CONTROL) & 0x8000) == 0x8000; };
     bool IsDownShift() { return (GetAsyncKeyState(VK_SHIFT) & 0x8000) == 0x8000; };

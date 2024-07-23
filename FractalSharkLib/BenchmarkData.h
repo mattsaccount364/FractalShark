@@ -28,3 +28,17 @@ private:
 
     std::unique_ptr<WaitCursor> m_WaitCursor;
 };
+
+struct ScopedBenchmarkStopper {
+    ScopedBenchmarkStopper(BenchmarkData &data) :
+        m_Data(data) {
+        m_Data.StartTimer();
+    }
+
+    ~ScopedBenchmarkStopper() {
+        m_Data.StopTimer();
+    }
+
+private:
+    BenchmarkData &m_Data;
+};

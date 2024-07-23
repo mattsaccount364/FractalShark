@@ -336,8 +336,10 @@ BEGIN
         POPUP "Load"
         BEGIN
             MENUITEM "Load Location...",            IDM_LOADLOCATION
-            MENUITEM "Load Imagina Orbit...",       IDM_LOAD_REFORBIT_IMAG_MAX
             MENUITEM "Enter Location",              IDM_LOAD_ENTERLOCATION
+            MENUITEM SEPARATOR
+            MENUITEM "Load Imagina Orbit (Match)...", IDM_LOAD_REFORBIT_IMAG_MAX
+            MENUITEM "Load Imagina Orbit (Use Saved)...", IDM_LOAD_REFORBIT_IMAG_MAX_SAVED
         END
         MENUITEM SEPARATOR
         MENUITEM "E&xit",                       IDM_EXIT

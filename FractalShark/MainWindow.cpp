@@ -3,11 +3,12 @@
 #include "MainWindow.h"
 #include "resource.h"
 #include "Fractal.h"
-#include "FractalTest.h"
+#include "CrummyTest.h"
 #include "JobObject.h"
 #include "OpenGLContext.h"
 #include "PngParallelSave.h"
 #include "WaitCursor.h"
+#include "RecommendedSettings.h"
 
 #include <minidumpapiset.h>
 #include <mpir.h>
@@ -42,6 +43,7 @@ struct MainWindow::SavedLocation {
 
 struct MainWindow::ImaginaSavedLocation {
     std::wstring Filename;
+    ImaginaSettings Settings;
 };
 
 MainWindow::MainWindow(HINSTANCE hInstance, int nCmdShow) {
@@ -867,11 +869,8 @@ LRESULT MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam) {
 
         case IDM_BASICTEST:
         {
-            FractalTest test{ *gFractal };
-            //test.TestBasic();
-            //test.TestReferenceSave();
-            //test.TestVariedCompression();
-            test.TestStringConversion();
+            CrummyTest test{ *gFractal };
+            test.TestAll();
             break;
         }
 
@@ -1143,13 +1142,13 @@ LRESULT MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam) {
         }
         case IDM_BENCHMARK_FULL:
         {
-            FractalTest test{ *gFractal };
+            CrummyTest test{ *gFractal };
             test.Benchmark(RefOrbitCalc::PerturbationResultType::All);
             break;
         }
         case IDM_BENCHMARK_INT:
         {
-            FractalTest test{ *gFractal };
+            CrummyTest test{ *gFractal };
             test.Benchmark(RefOrbitCalc::PerturbationResultType::MediumRes);
             break;
         }
@@ -1212,7 +1211,13 @@ LRESULT MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam) {
         }
         case IDM_LOAD_REFORBIT_IMAG_MAX:
         {
-            MenuLoadImagDyn();
+            MenuLoadImagDyn(ImaginaSettings::ConvertToCurrent);
+            break;
+        }
+
+        case IDM_LOAD_REFORBIT_IMAG_MAX_SAVED:
+        {
+            MenuLoadImagDyn(ImaginaSettings::UseSaved);
             break;
         }
 
@@ -1307,10 +1312,12 @@ LRESULT MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam) {
         case IDM_VIEW_DYNAMIC_IMAG + 28:
         case IDM_VIEW_DYNAMIC_IMAG + 29:
         {
-            auto index = wmId - IDM_VIEW_DYNAMIC_IMAG;
-            gFractal->LoadRefOrbit(CompressToDisk::MaxCompressionImagina, gImaginaLocations[index].Filename);
-            PaintAsNecessary();
+            const auto index = wmId - IDM_VIEW_DYNAMIC_IMAG;
 
+            LoadRefOrbit(
+                CompressToDisk::MaxCompressionImagina,
+                gImaginaLocations[index].Settings,
+                gImaginaLocations[index].Filename);
             ClearMenu(ImaginaMenu);
 
             break;
@@ -1318,7 +1325,17 @@ LRESULT MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam) {
 
         case IDM_LOAD_IMAGINA_DLG:
         {
-            MenuLoadImag(CompressToDisk::MaxCompressionImagina);
+            MenuLoadImag(
+                ImaginaSettings::ConvertToCurrent,
+                CompressToDisk::MaxCompressionImagina);
+            break;
+        }
+
+        case IDM_LOAD_IMAGINA_DLG_SAVED:
+        {
+            MenuLoadImag(
+                ImaginaSettings::UseSaved,
+                CompressToDisk::MaxCompressionImagina);
             break;
         }
 
@@ -2179,7 +2196,29 @@ void MainWindow::ClearMenu(HMENU &menu) {
     }
 }
 
-void MainWindow::MenuLoadImagDyn() {
+void MainWindow::LoadRefOrbit(
+    CompressToDisk compressToDisk,
+    ImaginaSettings loadSettings,
+    std::wstring filename) {
+
+    RecommendedSettings settings{};
+    gFractal->LoadRefOrbit(
+        &settings,
+        compressToDisk,
+        loadSettings,
+        filename);
+
+    PaintAsNecessary();
+
+    // Restore only "Auto".  If the savefile changes our iteration type
+    // to 64-bit, just leave it.  The "Auto" concept is kind of weird in
+    // this context.
+    if (settings.RenderAlg == RenderAlgorithm::AUTO) {
+        gFractal->SetRenderAlgorithm(settings.RenderAlg);
+    }
+}
+
+void MainWindow::MenuLoadImagDyn(ImaginaSettings loadSettings) {
     ClearMenu(ImaginaMenu);
 
     ImaginaMenu = CreatePopupMenu();
@@ -2204,7 +2243,7 @@ void MainWindow::MenuLoadImagDyn() {
 
     for (const auto &imagFile : imagFiles) {
 
-        gImaginaLocations.push_back({ imagFile });
+        gImaginaLocations.push_back({ imagFile, loadSettings });
 
         AppendMenu(ImaginaMenu, MF_STRING, IDM_VIEW_DYNAMIC_IMAG + index, imagFile.c_str());
         index++;
@@ -2214,7 +2253,12 @@ void MainWindow::MenuLoadImagDyn() {
         }
     }
 
-    AppendMenu(ImaginaMenu, MF_STRING, IDM_LOAD_IMAGINA_DLG, L"Load from file...");
+    if (loadSettings == ImaginaSettings::ConvertToCurrent) {
+        AppendMenu(ImaginaMenu, MF_STRING, IDM_LOAD_IMAGINA_DLG, L"Load from file (Match)...");
+    } else if (loadSettings == ImaginaSettings::UseSaved) {
+        AppendMenu(ImaginaMenu, MF_STRING, IDM_LOAD_IMAGINA_DLG_SAVED, L"Load from file (Use Saved)...");
+    } else {
+    }
 
     POINT point;
     GetCursorPos(&point);
@@ -2255,14 +2299,16 @@ void MainWindow::MenuDiffImag() {
         filename2);
 }
 
-void MainWindow::MenuLoadImag(CompressToDisk compression) {
+void MainWindow::MenuLoadImag(
+    ImaginaSettings loadSettings,
+    CompressToDisk compression) {
+
     std::wstring filename = OpenFileDialog(OpenBoxType::Open);
     if (filename.empty()) {
         return;
     }
 
-    gFractal->LoadRefOrbit(compression, filename);
-    PaintAsNecessary();
+    LoadRefOrbit(compression, loadSettings, filename);
 }
 
 void MainWindow::MenuAlgHelp() {

@@ -412,6 +412,12 @@ enum class CompressToDisk {
     MaxCompressionImagina
 };
 
+enum class ImaginaSettings {
+    ConvertToCurrent,
+    UseSaved,
+    Max
+};
+
 // If true, choose type == float/double for primitives.
 // If false, choose type == T::TemplateSubType for HdrFloat subtypes.
 // This is kind of a headache.  std::conditional by itself is not adequate here.

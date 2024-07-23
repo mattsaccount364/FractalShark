@@ -7,10 +7,11 @@
 class Fractal;
 enum class IterTypeEnum;
 
-class FractalTest {
+class CrummyTest {
 public:
-    FractalTest(Fractal &fractal);
+    CrummyTest(Fractal &fractal);
 
+    void TestAll();
     void TestBasic();
     void TestReferenceSave();
     void TestVariedCompression();
@@ -37,6 +38,15 @@ private:
     static std::string GenFilename(
         size_t testIndex,
         size_t viewIndex,
+        RenderAlgorithm origAlgToTest,
+        RenderAlgorithm convertAlgToTest,
+        int32_t compressionError,
+        IterTypeEnum iterType,
+        std::string baseName);
+
+    static std::string GenFilename(
+        size_t testIndex,
+        size_t viewIndex,
         RenderAlgorithm algToTest,
         int32_t compressionError,
         IterTypeEnum iterType,
@@ -52,13 +62,26 @@ private:
         const wchar_t *dirName,
         std::string baseName);
 
+    static std::wstring GenFilenameW(
+        size_t testIndex,
+        size_t viewIndex,
+        RenderAlgorithm origAlgToTest,
+        RenderAlgorithm convertAlgToTest,
+        int32_t compressionError,
+        IterTypeEnum iterType,
+        const wchar_t *testPrefix,
+        const wchar_t *dirName,
+        std::string baseName);
+
     void ReferenceSaveLoad(
         Fractal &fractal,
         const wchar_t *dirName,
         size_t viewIndex,
         size_t testIndex,
         IterTypeEnum iterType,
-        RenderAlgorithm algToTest,
+        ImaginaSettings imaginaSettings,
+        RenderAlgorithm origAlgToTest,
+        RenderAlgorithm convertAlgToTest,
         int32_t compressionError);
 
     Fractal &m_Fractal;

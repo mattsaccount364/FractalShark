@@ -168,7 +168,10 @@ public:
     IterType GetNumIterations(void) const;
 
     template<typename IterType>
-    constexpr IterType GetMaxIterations() const;
+    static constexpr IterType GetMaxIterations(void) {
+        return ((sizeof(IterType) == 4) ? (INT32_MAX - 1) : (INT64_MAX - 1));
+    }
+
     IterTypeFull GetMaxIterationsRT() const;
 
     void SetIterType(IterTypeEnum type);
@@ -245,7 +248,12 @@ public:
         std::wstring filename1,
         std::wstring filename2) const;
 
-    void LoadRefOrbit(CompressToDisk compression, std::wstring filename);
+    void LoadRefOrbit(
+        RecommendedSettings *oldSettings,
+        CompressToDisk compression,
+        ImaginaSettings imaginaSettings,
+        std::wstring filename);
+
     bool CleanupThreads(bool all);
 
     // Benchmark results

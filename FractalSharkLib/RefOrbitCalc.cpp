@@ -9,6 +9,8 @@
 #include "LAReference.h"
 #include "Exceptions.h"
 #include "ImaginaOrbit.h"
+#include "RecommendedSettings.h"
+#include "OrbitParameterPack.h"
 
 #include <vector>
 #include <memory>
@@ -92,9 +94,9 @@ static inline void PrefetchHighPrec(const mpf_t &target) {
 }
 
 
-RefOrbitCalc::RefOrbitCalc(Fractal &Fractal)
+RefOrbitCalc::RefOrbitCalc(const Fractal &fractal)
     : m_PerturbationAlg{ PerturbationAlg::Auto },
-    m_Fractal(Fractal),
+    m_Fractal(fractal),
     m_PerturbationGuessCalcX(0),
     m_PerturbationGuessCalcY(0),
     m_RefOrbitOptions{ AddPointOptions::DontSave },
@@ -124,8 +126,8 @@ RefOrbitCalc::RefOrbitCalc(Fractal &Fractal)
     }
 }
 
-bool RefOrbitCalc::RequiresCompression() const {
-    switch (m_Fractal.GetRenderAlgorithm()) {
+bool RefOrbitCalc::RequiresCompression(RenderAlgorithm renderAlg) const {
+    switch (renderAlg) {
     case RenderAlgorithm::Gpu1x32PerturbedRCLAv2:
     case RenderAlgorithm::Gpu1x32PerturbedRCLAv2PO:
     case RenderAlgorithm::Gpu1x32PerturbedRCLAv2LAO:
@@ -168,122 +170,6 @@ bool RefOrbitCalc::RequiresReuse() const {
         return false;
     }
 }
-
-//bool RefOrbitCalc::IsThisPerturbationArrayUsed(void *check) const {
-//    switch (m_Fractal.GetRenderAlgorithm()) {
-//    case RenderAlgorithm::CpuHDR32:
-//    case RenderAlgorithm::CpuHigh:
-//    case RenderAlgorithm::Cpu64:
-//    case RenderAlgorithm::CpuHDR64:
-//    case RenderAlgorithm::Gpu1x64:
-//    case RenderAlgorithm::Gpu2x64:
-//    case RenderAlgorithm::Gpu4x64:
-//    case RenderAlgorithm::Gpu1x32:
-//    case RenderAlgorithm::Gpu2x32:
-//    case RenderAlgorithm::Gpu4x32:
-//        return false;
-//    case RenderAlgorithm::Cpu32PerturbedBLAHDR:
-//    case RenderAlgorithm::Cpu32PerturbedBLAV2HDR:
-//    case RenderAlgorithm::Cpu32PerturbedRCBLAV2HDR:
-//    case RenderAlgorithm::GpuHDRx32PerturbedBLA:
-//    case RenderAlgorithm::GpuHDRx32PerturbedScaled:
-//    case RenderAlgorithm::GpuHDRx32PerturbedLAv2:
-//    case RenderAlgorithm::GpuHDRx32PerturbedLAv2PO:
-//    case RenderAlgorithm::GpuHDRx32PerturbedLAv2LAO:
-//    case RenderAlgorithm::GpuHDRx32PerturbedRCLAv2:
-//    case RenderAlgorithm::GpuHDRx32PerturbedRCLAv2PO:
-//    case RenderAlgorithm::GpuHDRx32PerturbedRCLAv2LAO:
-//        return
-//            check == &c32d.m_PerturbationResultsHDRFloat ||
-//            check == &c32e.m_PerturbationResultsHDRFloat ||
-//            check == &c32c.m_PerturbationResultsHDRFloat ||
-//            check == &c64d.m_PerturbationResultsHDRFloat ||
-//            check == &c64e.m_PerturbationResultsHDRFloat ||
-//            check == &c64c.m_PerturbationResultsHDRFloat;
-//    case RenderAlgorithm::Cpu64PerturbedBLAHDR:
-//    case RenderAlgorithm::Cpu64PerturbedBLAV2HDR:
-//    case RenderAlgorithm::Cpu64PerturbedRCBLAV2HDR:
-//    case RenderAlgorithm::GpuHDRx64PerturbedBLA:
-//    case RenderAlgorithm::GpuHDRx64PerturbedLAv2:
-//    case RenderAlgorithm::GpuHDRx64PerturbedLAv2PO:
-//    case RenderAlgorithm::GpuHDRx64PerturbedLAv2LAO:
-//    case RenderAlgorithm::GpuHDRx64PerturbedRCLAv2:
-//    case RenderAlgorithm::GpuHDRx64PerturbedRCLAv2PO:
-//    case RenderAlgorithm::GpuHDRx64PerturbedRCLAv2LAO:
-//        return
-//            check == &c32d.m_PerturbationResultsHDRDouble ||
-//            check == &c32e.m_PerturbationResultsHDRDouble ||
-//            check == &c32c.m_PerturbationResultsHDRDouble ||
-//            check == &c64d.m_PerturbationResultsHDRDouble ||
-//            check == &c64e.m_PerturbationResultsHDRDouble ||
-//            check == &c64c.m_PerturbationResultsHDRDouble;
-//    case RenderAlgorithm::Gpu1x32PerturbedLAv2:
-//    case RenderAlgorithm::Gpu1x32PerturbedLAv2PO:
-//    case RenderAlgorithm::Gpu1x32PerturbedLAv2LAO:
-//    case RenderAlgorithm::Gpu1x32PerturbedRCLAv2:
-//    case RenderAlgorithm::Gpu1x32PerturbedRCLAv2PO:
-//    case RenderAlgorithm::Gpu1x32PerturbedRCLAv2LAO:
-//        return
-//            check == &c32d.m_PerturbationResultsFloat ||
-//            check == &c32e.m_PerturbationResultsFloat ||
-//            check == &c32c.m_PerturbationResultsFloat ||
-//            check == &c64d.m_PerturbationResultsFloat ||
-//            check == &c64e.m_PerturbationResultsFloat ||
-//            check == &c64c.m_PerturbationResultsFloat;
-//    case RenderAlgorithm::Gpu2x32PerturbedLAv2:
-//    case RenderAlgorithm::Gpu2x32PerturbedLAv2PO:
-//    case RenderAlgorithm::Gpu2x32PerturbedLAv2LAO:
-//    case RenderAlgorithm::Gpu2x32PerturbedRCLAv2:
-//    case RenderAlgorithm::Gpu2x32PerturbedRCLAv2PO:
-//    case RenderAlgorithm::Gpu2x32PerturbedRCLAv2LAO:
-//        return
-//            check == &c32d.m_PerturbationResults2xFloat ||
-//            check == &c32e.m_PerturbationResults2xFloat ||
-//            check == &c32c.m_PerturbationResults2xFloat ||
-//            check == &c64d.m_PerturbationResults2xFloat ||
-//            check == &c64e.m_PerturbationResults2xFloat ||
-//            check == &c64c.m_PerturbationResults2xFloat;
-//    case RenderAlgorithm::Cpu64PerturbedBLA:
-//    case RenderAlgorithm::Gpu1x32PerturbedScaled:
-//    case RenderAlgorithm::Gpu1x64PerturbedBLA:
-//    case RenderAlgorithm::Gpu1x64PerturbedLAv2:
-//    case RenderAlgorithm::Gpu1x64PerturbedLAv2PO:
-//    case RenderAlgorithm::Gpu1x64PerturbedLAv2LAO:
-//    case RenderAlgorithm::Gpu1x64PerturbedRCLAv2:
-//    case RenderAlgorithm::Gpu1x64PerturbedRCLAv2PO:
-//    case RenderAlgorithm::Gpu1x64PerturbedRCLAv2LAO:
-//        return
-//            check == &c32d.m_PerturbationResultsDouble ||
-//            check == &c32e.m_PerturbationResultsDouble ||
-//            check == &c32c.m_PerturbationResultsDouble ||
-//            check == &c64d.m_PerturbationResultsDouble ||
-//            check == &c64e.m_PerturbationResultsDouble ||
-//            check == &c64c.m_PerturbationResultsDouble;
-//    case RenderAlgorithm::GpuHDRx2x32PerturbedLAv2:
-//    case RenderAlgorithm::GpuHDRx2x32PerturbedLAv2PO:
-//    case RenderAlgorithm::GpuHDRx2x32PerturbedLAv2LAO:
-//    case RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2:
-//    case RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2PO:
-//    case RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2LAO:
-//        return
-//            check == &c32d.m_PerturbationResultsHDR2xFloat ||
-//            check == &c32e.m_PerturbationResultsHDR2xFloat ||
-//            check == &c32c.m_PerturbationResultsHDR2xFloat ||
-//            check == &c64d.m_PerturbationResultsHDR2xFloat ||
-//            check == &c64e.m_PerturbationResultsHDR2xFloat ||
-//            check == &c64c.m_PerturbationResultsHDR2xFloat;
-//    case RenderAlgorithm::Gpu2x32PerturbedScaled:
-//        // TODO
-//        //CalcGpuPerturbationFractalBLA<double, double>(MemoryOnly);
-//        assert(false);
-//        return false;
-//    default:
-//        assert(false);
-//        return false;
-//    }
-//
-//    static_assert(static_cast<int>(RenderAlgorithm::MAX) == 61, "Fix me");
-//}
 
 void RefOrbitCalc::OptimizeMemory() {
     PROCESS_MEMORY_COUNTERS_EX checkHappy;
@@ -2554,7 +2440,7 @@ template<
 PerturbationResults<IterType, DestT, DestEnableBad> *RefOrbitCalc::CopyUsefulPerturbationResults(
     PerturbationResults<IterType, SrcT, SrcEnableBad> &src_array)
     requires ((SrcEnableBad == PerturbExtras::Bad && DestEnableBad == PerturbExtras::Bad) ||
-              (SrcEnableBad == PerturbExtras::Disable && DestEnableBad == PerturbExtras::Disable)) {
+(SrcEnableBad == PerturbExtras::Disable && DestEnableBad == PerturbExtras::Disable)) {
 
     if constexpr (std::is_same<SrcT, double>::value) {
         auto newarray = std::make_unique<PerturbationResults<IterType, float, DestEnableBad>>(
@@ -2635,7 +2521,11 @@ void RefOrbitCalc::SaveAllOrbits() {
     auto lambda = [&](auto &elt) {
 
         const auto *results = elt.get();
-        constexpr auto CurPExtras = ExtractPerturbationResultsTypes<decltype(results)>::CurPExtras;
+
+        // Remove const / references / pointers
+        using StrippedType = typename std::decay<decltype(results)>::type;
+        using StrippedType2 = typename std::remove_pointer<StrippedType>::type;
+        constexpr auto CurPExtras = StrippedType2::LocalPExtras;
 
         if constexpr (CurPExtras != PerturbExtras::MaxCompression) {
             auto resultsCopy = elt->CopyPerturbationResults(
@@ -2643,7 +2533,7 @@ void RefOrbitCalc::SaveAllOrbits() {
                 GetNextGenerationNumber());
             resultsCopy->WriteMetadata();
         }
-    };
+        };
 
     for (size_t i = 0; i < m_C.size(); i++) {
         std::visit(lambda, m_C[i]);
@@ -2867,24 +2757,47 @@ void RefOrbitCalc::GetSomeDetails(RefOrbitDetails &details) const {
 }
 
 void RefOrbitCalc::SaveOrbit(CompressToDisk desiredCompression, std::wstring filename) const {
-    auto lambda = [this, desiredCompression, filename](auto &&results) {
+    auto resultsSaver = [this, &filename](const auto &resultsToSave) {
+        const auto compressedResults = resultsToSave->Compress(
+            m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
+            GetNextGenerationNumber());
+        compressedResults->SaveOrbit(filename);
+        };
+
+    auto resultsSaverMax = [this, &filename](const auto &resultsToSave) {
+        const auto compressedResults = resultsToSave->CompressMax(
+            m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
+            GetNextGenerationNumber(),
+            false);
+        compressedResults->SaveOrbit(filename);
+        };
+
+    auto lambda = [
+        this,
+        resultsSaver,
+        resultsSaverMax,
+        desiredCompression,
+        filename](auto &&results) {
+
         if (results == nullptr) {
             return;
         }
+
+        using StrippedType = typename std::decay<decltype(results)>::type;
+        using StrippedType2 = typename std::remove_pointer<StrippedType>::type;
+        constexpr auto PExtras = StrippedType2::LocalPExtras;
+        using IterType = decltype(Introspection::Extract(*results))::IterType_;
 
         if (desiredCompression == CompressToDisk::Disable) {
             results->SaveOrbit(filename);
         } else if (desiredCompression == CompressToDisk::SimpleCompression) {
             if constexpr (
-                !Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::Bad>() &&
+                PExtras != PerturbExtras::Bad &&
                 !Introspection::IsDblFlt<decltype(*results)>()) {
 
-                if constexpr (Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::Disable>()) {
-                    const auto compressedResults = results->Compress(
-                        m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
-                        GetNextGenerationNumber());
-                    compressedResults->SaveOrbit(filename);
-                } else if constexpr (Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::SimpleCompression>()) {
+                if constexpr (PExtras == PerturbExtras::Disable) {
+                    resultsSaver(results);
+                } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
                     // Already compressed
                     results->SaveOrbit(filename);
                 } else {
@@ -2895,33 +2808,19 @@ void RefOrbitCalc::SaveOrbit(CompressToDisk desiredCompression, std::wstring fil
             }
         } else if (desiredCompression == CompressToDisk::MaxCompression) {
             if constexpr (
-                !Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::Bad>() &&
+                PExtras != PerturbExtras::Bad &&
                 !Introspection::IsDblFlt<decltype(*results)>()) {
 
-                const auto compressedResults = results->CompressMax(
-                    m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
-                    GetNextGenerationNumber(),
-                    false);
-                compressedResults->SaveOrbit(filename);
-            } else if constexpr (!Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::Bad>()) {
-                using IterType = decltype(Introspection::Extract(*results))::IterType_;
-
+                resultsSaverMax(results);
+            } else if constexpr (PExtras != PerturbExtras::Bad) {
                 if constexpr (results->IsHDR) {
-                    const auto *relatedResults = GetUsefulPerturbationResultsConst<IterType, HDRFloat<double>, false, PerturbExtras::Disable>();
-                    
-                    const auto compressedResults = relatedResults->CompressMax(
-                        m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
-                        GetNextGenerationNumber(),
-                        false);
-                    compressedResults->SaveOrbit(filename);
+                    const auto *relatedResults = GetUsefulPerturbationResultsConst<IterType, HDRFloat<double>, false, PExtras>();
+
+                    resultsSaverMax(relatedResults);
                 } else {
-                    const auto *relatedResults = GetUsefulPerturbationResultsConst<IterType, double, false, PerturbExtras::Disable>();
-                    
-                    const auto compressedResults = relatedResults->CompressMax(
-                        m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
-                        GetNextGenerationNumber(),
-                        false);
-                    compressedResults->SaveOrbit(filename);
+                    const auto *relatedResults = GetUsefulPerturbationResultsConst<IterType, double, false, PExtras>();
+
+                    resultsSaverMax(relatedResults);
                 }
             } else {
                 throw FractalSharkSeriousException("Currently unsupported type 1");
@@ -2929,17 +2828,15 @@ void RefOrbitCalc::SaveOrbit(CompressToDisk desiredCompression, std::wstring fil
         } else if (desiredCompression == CompressToDisk::MaxCompressionImagina) {
             if constexpr (
                 !Introspection::IsDblFlt<decltype(*results)>() &&
-                !Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::Bad>()) {
+                PExtras != PerturbExtras::Bad) {
 
                 SaveOrbit(*results, filename);
-            } else if constexpr (!Introspection::PerturbTypeHasPExtras<decltype(*results), PerturbExtras::Bad>()) {
-                using IterType = decltype(Introspection::Extract(*results))::IterType_;
-                
+            } else if constexpr (PExtras != PerturbExtras::Bad) {
                 if constexpr (results->IsHDR) {
-                    const auto *relatedResults = GetUsefulPerturbationResultsConst<IterType, HDRFloat<double>, false, PerturbExtras::Disable>();
+                    const auto *relatedResults = GetUsefulPerturbationResultsConst<IterType, HDRFloat<double>, false, PExtras>();
                     SaveOrbit(*relatedResults, filename);
                 } else {
-                    const auto *relatedResults = GetUsefulPerturbationResultsConst<IterType, double, false, PerturbExtras::Disable>();
+                    const auto *relatedResults = GetUsefulPerturbationResultsConst<IterType, double, false, PExtras>();
                     SaveOrbit(*relatedResults, filename);
                 }
             } else {
@@ -2950,7 +2847,7 @@ void RefOrbitCalc::SaveOrbit(CompressToDisk desiredCompression, std::wstring fil
         }
         };
 
-    std::visit(lambda, m_LastUsedRefOrbit);
+        std::visit(lambda, m_LastUsedRefOrbit);
 }
 
 void RefOrbitCalc::DiffOrbit(
@@ -2959,8 +2856,8 @@ void RefOrbitCalc::DiffOrbit(
     std::wstring filename1,
     std::wstring filename2) const {
 
-    const auto results1 = LoadOrbitConst(compression, filename1);
-    const auto results2 = LoadOrbitConst(compression, filename2);
+    const auto results1 = LoadOrbitConst(compression, filename1, nullptr);
+    const auto results2 = LoadOrbitConst(compression, filename2, nullptr);
 
     auto lambda = [&](const auto &results1, const auto &results2) {
         using decl1 = decltype(*results1);
@@ -3056,38 +2953,250 @@ void RefOrbitCalc::SaveOrbit(
     file.flush();
 }
 
-const PerturbationResultsBase<uint64_t> *RefOrbitCalc::LoadOrbit(
+const PerturbationResultsBase *RefOrbitCalc::LoadOrbit(
+    ImaginaSettings imaginaSettings,
     CompressToDisk compression,
-    std::wstring imagFilename) {
+    RenderAlgorithm renderAlg,
+    std::wstring imagFilename,
+    RecommendedSettings *recommendedSettings) {
 
-    auto decompressedResults = LoadOrbitConst(compression, imagFilename);
-
-    // get the unique_ptr out of the AwesomeVariantUniquePtr
-
-    auto lambda = [&](auto &ptr) -> const PerturbationResultsBase<uint64_t> * {
+    auto lambda = [&](auto &ptr) -> const PerturbationResultsBase * {
         // Suppose ptr is of type PerturbationResults<IterType, T, PExtrasDest>
         // Return the pointer to the base class if IterType is uint64_t, and nullptr otherwise.
         // Allow any types for T and PExtrasDest.  Only return nullptr if IterType is not uint64_t.
 
         const auto *retval = ptr.get();
-        using CurIterType = ExtractPerturbationResultsTypes<decltype(retval)>::CurIterType;
+        //using CurIterType = ExtractPerturbationResultsTypes<decltype(retval)>::CurIterType;
 
-        if constexpr (std::is_same_v<CurIterType, uint64_t>) {
-            m_LastUsedRefOrbit = retval;
-            m_C.push_back(std::move(ptr));
-            return retval;
-        } else {
-            return nullptr;
-        }
+        //if constexpr (std::is_same_v<CurIterType, uint64_t>) {
+        m_LastUsedRefOrbit = retval;
+        m_C.push_back(std::move(ptr));
+        return retval;
+        //} else {
+        //    return nullptr;
+        //}
         };
 
-    auto decompressedResultsPtr = std::visit(lambda, decompressedResults);
-    return decompressedResultsPtr;
+    if (imaginaSettings == ImaginaSettings::UseSaved) {
+        auto decompressedResults = LoadOrbitConst(compression, imagFilename, recommendedSettings);
+
+        // get the unique_ptr out of the AwesomeVariantUniquePtr
+
+        auto decompressedResultsPtr = std::visit(lambda, decompressedResults);
+        return decompressedResultsPtr;
+    } else {
+        auto helper = [&]<typename DestIterType, typename T>() -> const PerturbationResultsBase * {
+            if (RequiresCompression(renderAlg)) {
+                constexpr auto PExtrasDest = PerturbExtras::SimpleCompression;
+                auto decompressedResults = LoadOrbitConvert<DestIterType, T, PExtrasDest>(
+                    compression,
+                    imagFilename,
+                    recommendedSettings);
+
+                auto decompressedResultsPtr = std::visit(lambda, decompressedResults);
+                return decompressedResultsPtr;
+            } else {
+                constexpr auto PExtrasDest = PerturbExtras::Disable;
+                auto decompressedResults = LoadOrbitConvert<DestIterType, T, PExtrasDest>(
+                    compression,
+                    imagFilename,
+                    recommendedSettings);
+                auto decompressedResultsPtr = std::visit(lambda, decompressedResults);
+                return decompressedResultsPtr;
+            }
+        };
+
+        auto helperT = [&]<typename T>() -> const PerturbationResultsBase * {
+            const auto RuntimeIterType = m_Fractal.GetIterType();
+            if (RuntimeIterType == IterTypeEnum::Bits64) {
+                return helper.template operator() < uint64_t, T > ();
+            } else {
+                return helper.template operator() < uint32_t, T > ();
+            }
+        };
+
+        switch (renderAlg) {
+        case RenderAlgorithm::GpuHDRx64PerturbedLAv2:
+        case RenderAlgorithm::GpuHDRx64PerturbedLAv2PO:
+        case RenderAlgorithm::GpuHDRx64PerturbedLAv2LAO:
+        case RenderAlgorithm::GpuHDRx64PerturbedRCLAv2:
+        case RenderAlgorithm::GpuHDRx64PerturbedRCLAv2PO:
+        case RenderAlgorithm::GpuHDRx64PerturbedRCLAv2LAO:
+        case RenderAlgorithm::GpuHDRx2x32PerturbedLAv2:
+        case RenderAlgorithm::GpuHDRx2x32PerturbedLAv2PO:
+        case RenderAlgorithm::GpuHDRx2x32PerturbedLAv2LAO:
+        case RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2:
+        case RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2PO:
+        case RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2LAO:
+            return helperT.template operator() < HDRFloat<double> > ();
+
+        case RenderAlgorithm::Gpu1x64PerturbedLAv2:
+        case RenderAlgorithm::Gpu1x64PerturbedLAv2PO:
+        case RenderAlgorithm::Gpu1x64PerturbedLAv2LAO:
+        case RenderAlgorithm::Gpu1x64PerturbedRCLAv2:
+        case RenderAlgorithm::Gpu1x64PerturbedRCLAv2PO:
+        case RenderAlgorithm::Gpu1x64PerturbedRCLAv2LAO:
+        case RenderAlgorithm::Gpu2x32PerturbedLAv2:
+        case RenderAlgorithm::Gpu2x32PerturbedLAv2PO:
+        case RenderAlgorithm::Gpu2x32PerturbedLAv2LAO:
+        case RenderAlgorithm::Gpu2x32PerturbedRCLAv2:
+        case RenderAlgorithm::Gpu2x32PerturbedRCLAv2PO:
+        case RenderAlgorithm::Gpu2x32PerturbedRCLAv2LAO:
+            return helperT.template operator() < double > ();
+
+        case RenderAlgorithm::GpuHDRx32PerturbedLAv2:
+        case RenderAlgorithm::GpuHDRx32PerturbedLAv2PO:
+        case RenderAlgorithm::GpuHDRx32PerturbedLAv2LAO:
+        case RenderAlgorithm::GpuHDRx32PerturbedRCLAv2:
+        case RenderAlgorithm::GpuHDRx32PerturbedRCLAv2PO:
+        case RenderAlgorithm::GpuHDRx32PerturbedRCLAv2LAO:
+            return helperT.template operator() < HDRFloat<float> > ();
+
+        case RenderAlgorithm::Gpu1x32PerturbedLAv2:
+        case RenderAlgorithm::Gpu1x32PerturbedLAv2PO:
+        case RenderAlgorithm::Gpu1x32PerturbedLAv2LAO:
+        case RenderAlgorithm::Gpu1x32PerturbedRCLAv2:
+        case RenderAlgorithm::Gpu1x32PerturbedRCLAv2PO:
+        case RenderAlgorithm::Gpu1x32PerturbedRCLAv2LAO:
+            return helperT.template operator() < float > ();
+
+        default:
+            ::MessageBox(nullptr, L"Unknown render algorithm", L"Error", MB_OK | MB_ICONERROR);
+            return helperT.template operator() < HDRFloat<double> > ();
+        }
+    }
+}
+
+template<typename DestIterType, class DestT, PerturbExtras DestPExtras>
+RefOrbitCalc::AwesomeVariantUniquePtr RefOrbitCalc::LoadOrbitConvert(
+    CompressToDisk compression,
+    std::wstring imagFilename,
+    RecommendedSettings *recommendedSettings) {
+
+    OrbitParameterPack params{};
+    LoadOrbitConstInternal(params, compression, imagFilename, recommendedSettings);
+
+    // Depending on the header, read the rest of the file and determine the type
+    // Extended range implies the use of high precision types
+    // For this example, let's assume HDRFloat<HRReal>
+
+    auto TypeHelper = [&]<typename DestIterType, typename T, PerturbExtras PExtrasDest>() ->
+        std::unique_ptr<PerturbationResults<DestIterType, T, PExtrasDest>> {
+
+        auto results = std::make_unique<PerturbationResults<DestIterType, T, PerturbExtras::MaxCompression>>(
+            AddPointOptions::EnableWithoutSave,
+            GetNextGenerationNumber());
+
+        const auto saturatedIterationLimit = params.GetSaturatedIterationCount<DestIterType>();
+
+        results->LoadOrbitBin(
+            std::move(params.orbitX),
+            std::move(params.orbitY),
+            saturatedIterationLimit,
+            params.halfH,
+            *params.file);
+
+        auto decompressedResults = results->DecompressMax<PExtrasDest>(
+            m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
+            GetNextGenerationNumber());
+        return decompressedResults;
+    };
+
+    AwesomeVariantUniquePtr retval;
+    // params.fileHeader.Magic == Imagina::IMMagicNumber
+    retval = TypeHelper.template operator() < DestIterType, DestT, DestPExtras > ();
+    return retval;
 }
 
 RefOrbitCalc::AwesomeVariantUniquePtr RefOrbitCalc::LoadOrbitConst(
     CompressToDisk compression,
-    std::wstring imagFilename) const {
+    std::wstring imagFilename,
+    RecommendedSettings *recommendedSettings) const {
+
+    OrbitParameterPack params{};
+
+    LoadOrbitConstInternal(params, compression, imagFilename, recommendedSettings);
+
+    // Depending on the header, read the rest of the file and determine the type
+    // Extended range implies the use of HDR types
+
+    auto TypeHelper = [&]<typename IterType, typename T, PerturbExtras PExtrasDest>() ->
+        std::unique_ptr<PerturbationResults<IterType, T, PExtrasDest>> {
+
+        auto results = std::make_unique<PerturbationResults<IterType, T, PerturbExtras::MaxCompression>>(
+            AddPointOptions::EnableWithoutSave,
+            GetNextGenerationNumber());
+
+        // The range of params.iterationLimit should already be checked
+        // so we can safely cast it to IterType
+        results->LoadOrbitBin(
+            std::move(params.orbitX),
+            std::move(params.orbitY),
+            static_cast<IterType>(params.iterationLimit),
+            params.halfH,
+            *params.file);
+
+        auto decompressedResults = results->DecompressMax<PExtrasDest>(
+            m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
+            GetNextGenerationNumber());
+        return decompressedResults;
+    };
+
+    auto SetRenderAlg = [](RecommendedSettings *recommendedSettings, RenderAlgorithm renderAlg) {
+        if (recommendedSettings != nullptr) {
+            recommendedSettings->RenderAlg = renderAlg;
+        }
+        };
+
+    AwesomeVariantUniquePtr retval;
+    auto CombinedHelper = [&]<typename IterType, typename T, PerturbExtras PExtrasDest>(RenderAlgorithm renderAlg) {
+        SetRenderAlg(recommendedSettings, renderAlg);
+        retval = TypeHelper.template operator() < IterType, T, PerturbExtras::Disable > ();
+    };
+
+    if (params.extendedRange) {
+
+        if (params.fileHeader.Magic == Imagina::IMMagicNumber) {
+            if (recommendedSettings->IterType == IterTypeEnum::Bits64) {
+                CombinedHelper.operator() < uint64_t, HDRFloat<double>, PerturbExtras::Disable > (RenderAlgorithm::GpuHDRx64PerturbedLAv2);
+            } else {
+                CombinedHelper.operator() < uint32_t, HDRFloat<double>, PerturbExtras::Disable > (RenderAlgorithm::GpuHDRx64PerturbedLAv2);
+            }
+        } else if (params.fileHeader.Magic == Imagina::SharksMagicNumber) {
+            if (recommendedSettings->IterType == IterTypeEnum::Bits64) {
+                CombinedHelper.operator() < uint64_t, HDRFloat<float>, PerturbExtras::Disable > (RenderAlgorithm::GpuHDRx32PerturbedLAv2);
+            } else {
+                CombinedHelper.operator() < uint32_t, HDRFloat<float>, PerturbExtras::Disable > (RenderAlgorithm::GpuHDRx32PerturbedLAv2);
+            }
+        } else {
+            throw FractalSharkSeriousException("Invalid file format");
+        }
+    } else {
+        if (params.fileHeader.Magic == Imagina::IMMagicNumber) {
+            if (recommendedSettings->IterType == IterTypeEnum::Bits64) {
+                CombinedHelper.operator() < uint64_t, double, PerturbExtras::Disable > (RenderAlgorithm::Gpu1x64PerturbedLAv2);
+            } else {
+                CombinedHelper.operator() < uint32_t, double, PerturbExtras::Disable > (RenderAlgorithm::Gpu1x64PerturbedLAv2);
+            }
+        } else if (params.fileHeader.Magic == Imagina::SharksMagicNumber) {
+            if (recommendedSettings->IterType == IterTypeEnum::Bits64) {
+                CombinedHelper.operator() < uint64_t, float, PerturbExtras::Disable > (RenderAlgorithm::Gpu1x32PerturbedLAv2);
+            } else {
+                CombinedHelper.operator() < uint32_t, float, PerturbExtras::Disable > (RenderAlgorithm::Gpu1x32PerturbedLAv2);
+            }
+        } else {
+            throw FractalSharkSeriousException("Invalid file format");
+        }
+    }
+
+    return retval;
+}
+
+void RefOrbitCalc::LoadOrbitConstInternal(
+    OrbitParameterPack &params,
+    CompressToDisk compression,
+    std::wstring imagFilename,
+    RecommendedSettings *recommendedSettings) const {
 
     if (compression != CompressToDisk::MaxCompressionImagina) {
         throw FractalSharkSeriousException("Invalid compression type");
@@ -3096,14 +3205,14 @@ RefOrbitCalc::AwesomeVariantUniquePtr RefOrbitCalc::LoadOrbitConst(
     constexpr bool singleStepHelper = false;
 
     // Read the ReferenceHeader to determine the type
-    std::ifstream file(imagFilename, std::ios::binary);
-    if (!file.is_open()) {
+    auto file = std::make_unique<std::ifstream>(imagFilename, std::ios::binary);
+    if (!file->is_open()) {
         throw std::runtime_error("Unable to open file");
     }
 
     // Read the header to determine the type
     Imagina::IMFileHeader fileHeader;
-    file.read(reinterpret_cast<char *>(&fileHeader), sizeof(fileHeader));
+    file->read(reinterpret_cast<char *>(&fileHeader), sizeof(fileHeader));
 
     if (fileHeader.Magic != Imagina::IMMagicNumber &&
         fileHeader.Magic != Imagina::SharksMagicNumber) {
@@ -3112,9 +3221,9 @@ RefOrbitCalc::AwesomeVariantUniquePtr RefOrbitCalc::LoadOrbitConst(
     }
 
     // Seek to the location offset to read precision information
-    file.seekg(fileHeader.LocationOffset);
+    file->seekg(fileHeader.LocationOffset);
     Imagina::HRReal halfH;
-    file.read(reinterpret_cast<char *>(&halfH), sizeof(Imagina::HRReal));
+    file->read(reinterpret_cast<char *>(&halfH), sizeof(Imagina::HRReal));
 
     // Based on the precision of halfH, determine the type
     uint64_t precision = -std::min(0ll, halfH.getExp()) + AuthoritativeMinExtraPrecisionInBits;
@@ -3126,114 +3235,52 @@ RefOrbitCalc::AwesomeVariantUniquePtr RefOrbitCalc::LoadOrbitConst(
     std::string zoomFactorStr = zoomFactor.str();
 
     uint64_t iterationLimit;
-    file.read((char *)&iterationLimit, sizeof(iterationLimit));
+    file->read((char *)&iterationLimit, sizeof(iterationLimit));
+    RecommendedSettings settingsOut{ iterationLimit };
 
     if constexpr (singleStepHelper) {
-        uint64_t curPos1 = file.tellg();
+        uint64_t curPos1 = file->tellg();
     }
 
-    HighPrecision orbitX{ precision, file };
+    HighPrecision orbitX{ precision, *file };
     std::string orbitXStr = orbitX.str();
 
-    HighPrecision orbitY{ precision, file };
+    HighPrecision orbitY{ precision, *file };
     std::string orbitYStr = orbitY.str();
 
     if constexpr (singleStepHelper) {
         std::string orbitXStr2 = orbitX.str();
         std::string orbitYStr2 = orbitY.str();
-        uint64_t curPos2 = file.tellg();
+        uint64_t curPos2 = file->tellg();
     }
 
     if (!fileHeader.ReferenceOffset) {
         throw FractalSharkSeriousException("Invalid file format");
     }
 
-    file.seekg(fileHeader.ReferenceOffset);
+    file->seekg(fileHeader.ReferenceOffset);
 
     bool extendedRange = false;
     {
         Imagina::ReferenceHeader referenceHeader;
-        file.read(reinterpret_cast<char *>(&referenceHeader), sizeof(referenceHeader));
+        file->read(reinterpret_cast<char *>(&referenceHeader), sizeof(referenceHeader));
 
         extendedRange = referenceHeader.ExtendedRange;
     }
 
-    // Depending on the header, read the rest of the file and determine the type
-    // Extended range implies the use of high precision types
-    // For this example, let's assume HDRFloat<HRReal>
+    params = OrbitParameterPack(
+        std::move(fileHeader),
+        std::move(orbitX),
+        std::move(orbitY),
+        iterationLimit,
+        halfH,
+        extendedRange,
+        std::move(file)
+    );
 
-    auto TypeHelper = [&]<typename T, PerturbExtras PExtrasDest>() ->
-        std::unique_ptr<PerturbationResults<uint64_t, T, PExtrasDest>> {
-
-        auto results = std::make_unique<PerturbationResults<uint64_t, T, PerturbExtras::MaxCompression>>(
-            AddPointOptions::EnableWithoutSave,
-            GetNextGenerationNumber());
-        results->LoadOrbitBin(std::move(orbitX), std::move(orbitY), iterationLimit, halfH, file);
-
-        auto decompressedResults = results->DecompressMax<PExtrasDest>(
-            m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
-            GetNextGenerationNumber());
-        return decompressedResults;
-    };
-
-    AwesomeVariantUniquePtr retval;
-
-    if (extendedRange) {
-        if (fileHeader.Magic == Imagina::IMMagicNumber) {
-            if (RequiresCompression()) {
-                retval = TypeHelper.template operator() < HDRFloat<double>, PerturbExtras::SimpleCompression > ();
-                file.close();
-            } else {
-                retval = TypeHelper.template operator() < HDRFloat<double>, PerturbExtras::Disable > ();
-                file.close();
-            }
-        } else if (fileHeader.Magic == Imagina::SharksMagicNumber) {
-            if (RequiresCompression()) {
-                retval = TypeHelper.template operator() < HDRFloat<float>, PerturbExtras::SimpleCompression > ();
-                file.close();
-            } else {
-                retval = TypeHelper.template operator() < HDRFloat<float>, PerturbExtras::Disable > ();
-                file.close();
-            }
-        } else {
-            throw FractalSharkSeriousException("Invalid file format");
-        }
-    } else {
-        if (fileHeader.Magic == Imagina::IMMagicNumber) {
-            if (RequiresCompression()) {
-                retval = TypeHelper.template operator() < double, PerturbExtras::SimpleCompression > ();
-                file.close();
-            } else {
-                retval = TypeHelper.template operator() < double, PerturbExtras::Disable > ();
-                file.close();
-            }
-        } else if (fileHeader.Magic == Imagina::SharksMagicNumber) {
-            if (RequiresCompression()) {
-                retval = TypeHelper.template operator() < float, PerturbExtras::SimpleCompression > ();
-                file.close();
-            } else {
-                retval = TypeHelper.template operator() < float, PerturbExtras::Disable > ();
-                file.close();
-            }
-        } else {
-            throw FractalSharkSeriousException("Invalid file format");
-        }
-
-        //return std::visit([](const auto *ptr) -> PerturbationResultsBase<IterTypeFull> * {
-        //    // Suppose ptr is of type PerturbationResults<IterType, T, PExtrasDest>
-        //    // Return the pointer to the base class if IterType is uint64_t, and nullptr otherwise.
-        //    // Allow any types for T and PExtrasDest.  Only return nullptr if IterType is not uint64_t.
-
-        //    using CurIterType = ExtractPerturbationResultsTypes<decltype(ptr)>::CurIterType;
-        //    if constexpr (std::is_same_v<CurIterType, IterTypeFull>) {
-        //        return ptr;
-        //    } else {
-        //        return nullptr;
-        //    }
-        //}, retval);
+    if (recommendedSettings != nullptr) {
+        *recommendedSettings = settingsOut;
     }
-
-    return retval;
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>

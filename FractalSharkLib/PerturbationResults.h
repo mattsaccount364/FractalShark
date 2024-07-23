@@ -29,41 +29,48 @@ class SimpleIntermediateOrbitCompressor;
 template<typename IterType, class T, PerturbExtras PExtras>
 class MaxIntermediateOrbitCompressor;
 
-template<typename IterType>
 class PerturbationResultsBase {
 public:
     const HighPrecision &GetHiX() const;
     const HighPrecision &GetHiY() const;
     const HighPrecision &GetHiZoomFactor() const;
-    IterType GetMaxIterations() const;
+    IterTypeFull GetMaxIterations() const;
 
 protected:
     PerturbationResultsBase() :
         m_OrbitX{},
         m_OrbitY{},
         m_ZoomFactor{},
-        m_MaxIterations{} {
+        m_FullMaxIterations{} {
     }
 
     PerturbationResultsBase(
         const HighPrecision &orbitX,
         const HighPrecision &orbitY,
         const HighPrecision &zoomFactor,
-        IterType MaxIterations)
+        IterTypeFull maxIterations)
         : m_OrbitX(orbitX),
         m_OrbitY(orbitY),
         m_ZoomFactor(zoomFactor),
-        m_MaxIterations(MaxIterations) {
+        m_FullMaxIterations(maxIterations) {
     }
+
+    template<typename IterType>
+    void SetMaxIterations(IterType numIterations);
+
+    template<typename IterType>
+    void SetMaxIterationsSaturate(IterTypeFull numIterations);
 
     HighPrecision m_OrbitX;
     HighPrecision m_OrbitY;
     HighPrecision m_ZoomFactor;
-    IterType m_MaxIterations;
+
+private:
+    IterTypeFull m_FullMaxIterations;
 };
 
 template<typename IterType, class T, PerturbExtras PExtras>
-class PerturbationResults : public PerturbationResultsBase<IterType>, public TemplateHelpers<IterType, T, PExtras> {
+class PerturbationResults : public PerturbationResultsBase, public TemplateHelpers<IterType, T, PExtras> {
 
 public:
     template<typename IterType, class T, PerturbExtras PExtras> friend class PerturbationResults;
@@ -74,6 +81,10 @@ public:
     template<class LocalSubType>
     using HDRFloatComplex = TemplateHelpers::template HDRFloatComplex<LocalSubType>;
 
+    using LocalIterType = IterType;
+    using LocalT = T;
+    static constexpr PerturbExtras LocalPExtras = PExtras;
+
     friend class RuntimeDecompressor<IterType, T, PExtras>;
     friend class IntermediateRuntimeDecompressor<IterType, T, PExtras>;
     friend class IntermediateMaxRuntimeDecompressor<IterType, T, PExtras>;
@@ -81,7 +92,7 @@ public:
     friend class SimpleIntermediateOrbitCompressor<IterType, T, PExtras>;
     friend class MaxIntermediateOrbitCompressor<IterType, T, PExtras>;
 
-    static constexpr char Version[] = "0.45";
+    static constexpr char Version[] = "0.46";
 
     static constexpr bool Is2X32 = (
         std::is_same<T, HDRFloat<CudaDblflt<MattDblflt>>>::value ||
@@ -153,7 +164,8 @@ public:
     template<PerturbExtras OtherBad>
     void CopySettingsWithoutOrbit(const PerturbationResults<IterType, T, OtherBad> &other);
 
-    void WriteMetadata() const;
+    void WriteMetadata() const
+        requires (PExtras != PerturbExtras::MaxCompression);
 
     void MaybeOpenMetaFileForDelete() const;
 

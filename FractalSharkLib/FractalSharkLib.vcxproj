@@ -25,7 +25,7 @@
     <ClInclude Include="Exceptions.h" />
     <ClInclude Include="FloatComplex.h" />
     <ClInclude Include="Fractal.h" />
-    <ClInclude Include="FractalTest.h" />
+    <ClInclude Include="CrummyTest.h" />
     <ClInclude Include="GPU_BLAS.h" />
     <ClInclude Include="GPU_LAInfoDeep.h" />
     <ClInclude Include="GPU_LAReference.h" />
@@ -45,6 +45,7 @@
     <ClInclude Include="LAstep.h" />
     <ClInclude Include="MpirSerialization.h" />
     <ClInclude Include="OpenGLContext.h" />
+    <ClInclude Include="OrbitParameterPack.h" />
     <ClInclude Include="PerturbationResults.h" />
     <ClInclude Include="PerturbationResultsHelpers.h" />
     <ClInclude Include="PngParallelSave.h" />
@@ -59,6 +60,7 @@
     <ClInclude Include="QuadFloat\cuda_header.cuh" />
     <ClInclude Include="QuadFloat\gqf_basic.cuh" />
     <ClInclude Include="QuadFloat\inline.cuh" />
+    <ClInclude Include="RecommendedSettings.h" />
     <ClInclude Include="RefOrbitCalc.h" />
     <ClInclude Include="RefOrbitCalcTemplates.h" />
     <ClInclude Include="ScopedMpir.h" />
@@ -73,17 +75,19 @@
     <ClCompile Include="BenchmarkData.cpp" />
     <ClCompile Include="BLAS.cpp" />
     <ClCompile Include="Fractal.cpp" />
-    <ClCompile Include="FractalTest.cpp" />
+    <ClCompile Include="CrummyTest.cpp" />
     <ClCompile Include="HDRFloat.cpp" />
     <ClCompile Include="ItersMemoryContainer.cpp" />
     <ClCompile Include="LAParameters.cpp" />
     <ClCompile Include="LAReference.cpp" />
     <ClCompile Include="MpirSerialization.cpp" />
     <ClCompile Include="OpenGLContext.cpp" />
+    <ClCompile Include="OrbitParameterPack.cpp" />
     <ClCompile Include="PerturbationResults.cpp" />
     <ClCompile Include="PngParallelSave.cpp" />
     <ClCompile Include="PointZoomBBConverter.cpp" />
     <ClCompile Include="PrecisionCalculator.cpp" />
+    <ClCompile Include="RecommendedSettings.cpp" />
     <ClCompile Include="RefOrbitCalc.cpp" />
     <ClCompile Include="ScopedMpir.cpp" />
     <ClCompile Include="stdafx.cpp">

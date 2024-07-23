@@ -1,19 +1,23 @@
 #pragma once
 
 #include "HDRFloat.h"
-#include "HighPrecision.h"
 #include "Vectors.h"
 #include "BenchmarkData.h"
 #include <variant>
 #include <vector>
+#include <type_traits>
 
 class Fractal;
 struct RefOrbitDetails;
 
-template<typename T>
 class PerturbationResultsBase;
 template<typename IterType, class T, PerturbExtras PExtras>
 class PerturbationResults;
+
+struct RecommendedSettings;
+struct OrbitParameterPack;
+
+enum class RenderAlgorithm;
 
 class RefOrbitCalc {
 public:
@@ -140,7 +144,7 @@ public:
         All
     };
 
-    RefOrbitCalc(Fractal &Fractal);
+    RefOrbitCalc(const Fractal &fractal);
 
     bool RequiresReuse() const;
 
@@ -224,19 +228,36 @@ public:
     template<typename IterType, class T, PerturbExtras PExtras>
     void SaveOrbit(const PerturbationResults<IterType, T, PExtras> &results, std::wstring imagFilename) const;
 
-    const PerturbationResultsBase<uint64_t> *LoadOrbit(
+    const PerturbationResultsBase *LoadOrbit(
+        ImaginaSettings imaginaSettings,
         CompressToDisk compression,
-        std::wstring imagFilename);
-    AwesomeVariantUniquePtr LoadOrbitConst(
+        RenderAlgorithm renderAlg,
+        std::wstring imagFilename,
+        RecommendedSettings *recommendedSettings);
+
+    RefOrbitCalc::AwesomeVariantUniquePtr LoadOrbitConst(
         CompressToDisk compression,
-        std::wstring imagFilename) const;
+        std::wstring imagFilename,
+        RecommendedSettings *recommendedSettings) const;
 
     void DrawPerturbationResults();
 
 private:
     static constexpr size_t MaxStoredOrbits = 64;
 
-    bool RequiresCompression() const;
+    template<typename DestIterType, class DestT, PerturbExtras DestPExtras>
+    RefOrbitCalc::AwesomeVariantUniquePtr LoadOrbitConvert(
+        CompressToDisk compression,
+        std::wstring imagFilename,
+        RecommendedSettings *recommendedSettings);
+
+    void LoadOrbitConstInternal(
+        OrbitParameterPack &orbitParameterPack,
+        CompressToDisk compression,
+        std::wstring imagFilename,
+        RecommendedSettings *recommendedSettings) const;
+
+    bool RequiresCompression(RenderAlgorithm renderAlg) const;
     //bool IsThisPerturbationArrayUsed(void *check) const;
 
     template<typename IterType, class T, PerturbExtras PExtras>
@@ -316,7 +337,6 @@ private:
 
     PerturbationAlg m_PerturbationAlg;
     const Fractal &m_Fractal;
-
     HighPrecision m_PerturbationGuessCalcX;
     HighPrecision m_PerturbationGuessCalcY;
 
@@ -334,14 +354,9 @@ private:
 
     mutable AwesomeVariant m_LastUsedRefOrbit;
 
-    template<typename T>
-    struct ExtractPerturbationResultsTypes;
-
-    // Specialization for pointers to MyClass
-    template<typename IterType, class T, PerturbExtras PExtras>
-    struct ExtractPerturbationResultsTypes<const PerturbationResults<IterType, T, PExtras> *> {
-        using CurIterType = IterType;
-        using CurT = T;
-        static constexpr PerturbExtras CurPExtras = PExtras;
+    // Helper to strip const and reference qualifiers
+    template <typename T>
+    struct StripQualifiers {
+        using Type = typename std::remove_const<typename std::remove_reference<T>::type>::type;
     };
 };

@@ -11,10 +11,10 @@ CrummyTest::CrummyTest(Fractal &fractal) : m_Fractal(fractal) {
 }
 
 void CrummyTest::TestAll() {
-    //TestBasic();
-    //TestReferenceSave();
-    //TestVariedCompression();
-    //TestStringConversion();
+    TestBasic();
+    TestReferenceSave();
+    TestVariedCompression();
+    TestStringConversion();
     TestPerturbedPerturb();
 }
 
@@ -855,7 +855,6 @@ void CrummyTest::TestPerturbedPerturb() {
             m_Fractal.SetIterType(iterType);
             m_Fractal.SetRenderAlgorithm(curAlg);
             m_Fractal.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3);
-            //m_Fractal.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed);
             m_Fractal.View(viewIndex);
             m_Fractal.ForceRecalc();
             m_Fractal.CalcFractal(false);

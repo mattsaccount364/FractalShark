@@ -221,7 +221,7 @@ HWND MainWindow::InitInstance(HINSTANCE hInstance, int nCmdShow) { // Store inst
     hInst = hInstance;
 
     constexpr bool startWindowed = true;
-    constexpr bool finishWindowed = true;
+    constexpr bool finishWindowed = false;
     constexpr DWORD forceStartWidth = 0;
     constexpr DWORD forceStartHeight = 0;
 

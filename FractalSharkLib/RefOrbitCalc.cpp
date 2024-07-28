@@ -1788,7 +1788,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
             }
 
             auto allocatorIndex = bumpAllocator->GetAllocatorIndex();
-            bumpAllocator->GetAllocated(allocatorIndex); // Destruct the return value
+            reusedAllocator = bumpAllocator->GetAllocated(allocatorIndex);
 
             ShutdownTls();
         };

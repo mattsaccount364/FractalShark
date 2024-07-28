@@ -2,9 +2,11 @@
 
 #include "HighPrecision.h"
 
-struct PointZoomBBConverter {
+class PointZoomBBConverter {
+public:
     static constexpr auto factor = 2;
 
+    PointZoomBBConverter();
     PointZoomBBConverter(
         HighPrecision ptX,
         HighPrecision ptY,
@@ -25,8 +27,15 @@ struct PointZoomBBConverter {
     const HighPrecision &GetZoomFactor() const;
 
 private:
-    HighPrecision m_minX, m_minY;
-    HighPrecision m_maxX, m_maxY;
-    HighPrecision m_ptX, m_ptY;
-    HighPrecision m_zoomFactor;
+    HighPrecision m_MinX, m_MinY;
+    HighPrecision m_MaxX, m_MaxY;
+    HighPrecision m_PtX, m_PtY;
+    HighPrecision m_ZoomFactor;
+
+    std::string m_MinXStr, m_MinYStr;
+    std::string m_MaxXStr, m_MaxYStr;
+    std::string m_PtXStr, m_PtYStr;
+    std::string m_ZoomFactorStr;
+
+    static constexpr bool m_Test = true;
 };

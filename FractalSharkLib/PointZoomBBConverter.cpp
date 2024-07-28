@@ -1,28 +1,38 @@
 #include "stdafx.h"
 #include "PointZoomBBConverter.h"
 
+PointZoomBBConverter::PointZoomBBConverter()
+    : m_MinX{},
+    m_MinY{},
+    m_MaxX{},
+    m_MaxY{},
+    m_PtX{},
+    m_PtY{},
+    m_ZoomFactor{} {
+}
+
 PointZoomBBConverter::PointZoomBBConverter(
     HighPrecision ptX,
     HighPrecision ptY,
     HighPrecision zoomFactor)
-    : m_ptX(ptX),
-    m_ptY(ptY),
-    m_zoomFactor(zoomFactor) {
+    : m_PtX(ptX),
+    m_PtY(ptY),
+    m_ZoomFactor(zoomFactor) {
 
-    m_minX = ptX - (HighPrecision{ factor } / m_zoomFactor);
-    m_minY = ptY - (HighPrecision{ factor } / m_zoomFactor);
-    m_maxX = ptX + (HighPrecision{ factor } / m_zoomFactor);
-    m_maxY = ptY + (HighPrecision{ factor } / m_zoomFactor);
+    m_MinX = ptX - (HighPrecision{ factor } / m_ZoomFactor);
+    m_MinY = ptY - (HighPrecision{ factor } / m_ZoomFactor);
+    m_MaxX = ptX + (HighPrecision{ factor } / m_ZoomFactor);
+    m_MaxY = ptY + (HighPrecision{ factor } / m_ZoomFactor);
 
-    //double test_minX = (double)m_minX;
-    //double test_minY = (double)m_minY;
-    //double test_maxX = (double)m_maxX;
-    //double test_maxY = (double)m_maxY;
-    //double test_ptX = (double)m_ptX;
-    //double test_ptY = (double)m_ptY;
-    //double test_zoomFactor = (double)m_zoomFactor;
-
-    // std::string all_test_nums = std::to_string(test_minX) + " " + std::to_string(test_minY) + " " + std::to_string(test_maxX) + " " + std::to_string(test_maxY) + " " + std::to_string(test_ptX) + " " + std::to_string(test_ptY) + " " + std::to_string(test_zoomFactor);
+    if constexpr (m_Test) {
+        m_MinXStr = m_MinX.str();
+        m_MinYStr = m_MinY.str();
+        m_MaxXStr = m_MaxX.str();
+        m_MaxYStr = m_MaxY.str();
+        m_PtXStr = m_PtX.str();
+        m_PtYStr = m_PtY.str();
+        m_ZoomFactorStr = m_ZoomFactor.str();
+    }
 }
 
 PointZoomBBConverter::PointZoomBBConverter(
@@ -30,62 +40,79 @@ PointZoomBBConverter::PointZoomBBConverter(
     HighPrecision minY,
     HighPrecision maxX,
     HighPrecision maxY) :
-    m_minX{ minX },
-    m_minY{ minY },
-    m_maxX{ maxX },
-    m_maxY{ maxY },
-    m_ptX{ (minX + maxX) / HighPrecision(2) },
-    m_ptY{ (minY + maxY) / HighPrecision(2) } {
+    m_MinX{ minX },
+    m_MinY{ minY },
+    m_MaxX{ maxX },
+    m_MaxY{ maxY },
+    m_PtX{ (minX + maxX) / HighPrecision(2) },
+    m_PtY{ (minY + maxY) / HighPrecision(2) } {
 
-    //auto deltaX = m_maxX - m_minX;
-    auto deltaY = m_maxY - m_minY;
+    //auto deltaX = m_MaxX - m_MinX;
+    auto deltaY = m_MaxY - m_MinY;
+
+    if constexpr (m_Test) {
+        std::string minXStr = minX.str();
+        std::string maxXStr = maxX.str();
+        std::string minYStr = minY.str();
+        std::string maxYStr = maxY.str();
+
+        m_MinXStr = m_MinX.str();
+        m_MaxXStr = m_MaxX.str();
+        m_MinYStr = m_MinY.str();
+        m_MaxYStr = m_MaxY.str();
+        m_PtXStr = m_PtX.str();
+        m_PtYStr = m_PtY.str();
+
+        std::string deltaYStr = deltaY.str();
+    }
 
     if (/*deltaX == 0 || */deltaY == HighPrecision{ 0 }) {
-        m_zoomFactor = HighPrecision{ 1 };
+        m_ZoomFactor = HighPrecision{ 1 };
+
+        if constexpr (m_Test) {
+            m_ZoomFactorStr = m_ZoomFactor.str();
+        }
+
         return;
     }
 
     //auto zf1 = HighPrecision{ factor } / deltaX * 4;
     auto zf2 = HighPrecision{ factor } / deltaY * HighPrecision{ 2 };
-    //auto zf3 = HighPrecision{ factor } / (m_maxX - m_ptX) * 4;
-    //auto zf4 = HighPrecision{ factor } / (m_maxY - m_ptY) * 4;
-    //m_zoomFactor = std::min(std::min(zf1, zf2), std::min(zf3, zf4));
-    //m_zoomFactor = std::min(zf1, zf2);
-    m_zoomFactor = zf2;
+    //auto zf3 = HighPrecision{ factor } / (m_MaxX - m_PtX) * 4;
+    //auto zf4 = HighPrecision{ factor } / (m_MaxY - m_PtY) * 4;
+    //m_ZoomFactor = std::min(std::min(zf1, zf2), std::min(zf3, zf4));
+    //m_ZoomFactor = std::min(zf1, zf2);
+    m_ZoomFactor = zf2;
 
-    //double test_zf1 = (double)zf1;
-    //double test_zf2 = (double)zf2;
-    //double test_zf3 = (double)zf3;
-    //double test_zf4 = (double)zf4;
-    //double test_zf = (double)m_zoomFactor;
-
-    //std::string all_test_nums = std::to_string(test_zf1) + " " + std::to_string(test_zf2) + " " + std::to_string(test_zf3) + " " + std::to_string(test_zf4) + " " + std::to_string(test_zf);
+    if constexpr (m_Test) {
+        m_ZoomFactorStr = m_ZoomFactor.str();
+    }
 }
 
 const HighPrecision &PointZoomBBConverter::GetMinX() const {
-    return m_minX;
+    return m_MinX;
 }
 
 const HighPrecision &PointZoomBBConverter::GetMinY() const {
-    return m_minY;
+    return m_MinY;
 }
 
 const HighPrecision &PointZoomBBConverter::GetMaxX() const {
-    return m_maxX;
+    return m_MaxX;
 }
 
 const HighPrecision &PointZoomBBConverter::GetMaxY() const {
-    return m_maxY;
+    return m_MaxY;
 }
 
 const HighPrecision &PointZoomBBConverter::GetPtX() const {
-    return m_ptX;
+    return m_PtX;
 }
 
 const HighPrecision &PointZoomBBConverter::GetPtY() const {
-    return m_ptY;
+    return m_PtY;
 }
 
 const HighPrecision &PointZoomBBConverter::GetZoomFactor() const {
-    return m_zoomFactor;
+    return m_ZoomFactor;
 }

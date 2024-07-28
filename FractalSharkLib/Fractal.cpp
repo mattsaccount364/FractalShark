@@ -462,10 +462,10 @@ void Fractal::SetPosition(
     m_MinY = MinY;
     m_MaxY = MaxY;
 
-    //m_MinXStr = HdrToString<false>(m_MinX);
-    //m_MaxXStr = HdrToString<false>(m_MaxX);
-    //m_MinYStr = HdrToString<false>(m_MinY);
-    //m_MaxYStr = HdrToString<false>(m_MaxY);
+    m_MinXStr = HdrToString<false>(m_MinX);
+    m_MaxXStr = HdrToString<false>(m_MaxX);
+    m_MinYStr = HdrToString<false>(m_MinY);
+    m_MaxYStr = HdrToString<false>(m_MaxY);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -1672,6 +1672,7 @@ RenderAlgorithm Fractal::GetRenderAlgorithm() const {
             return RenderAlgorithm::Gpu1x32PerturbedLAv2PO;
         } else if (zoomFactor < HighPrecision{ 1e34 }) {
             // This seems to work at x16 AA 3840x1600
+            // This 1e34 is the same as at RefOrbitCalc::LoadOrbitConstInternal
             return RenderAlgorithm::Gpu1x32PerturbedLAv2;
         } else {
             // Falls apart at high iteration counts with a lot of LA
@@ -1681,6 +1682,11 @@ RenderAlgorithm Fractal::GetRenderAlgorithm() const {
         // User-selected forced algorithm selection
         return m_RenderAlgorithm;
     }
+}
+
+void Fractal::SetRenderAlgorithm(RenderAlgorithm alg) {
+    m_RenderAlgorithm = alg;
+    m_RefOrbit.ResetLastUsedOrbit();
 }
 
 const char *Fractal::GetRenderAlgorithmName() const {
@@ -3932,9 +3938,16 @@ void Fractal::LoadRefOrbit(
     // Store the old algorithm so we can restore it later.
     if (oldSettings) {
         // Store "RenderAlgorithm::AUTO" if applicable.
-        oldSettings->RenderAlg = m_RenderAlgorithm;
-        oldSettings->IterType = GetIterType();
-        oldSettings->NumIterations = GetNumIterations<IterTypeFull>();
+        *oldSettings = RecommendedSettings{
+            m_MinX,
+            m_MinY,
+            m_MaxX,
+            m_MaxY,
+            m_RenderAlgorithm,
+            GetNumIterations<IterTypeFull>()
+        };
+
+        oldSettings->OverrideIterType(GetIterType());
     }
 
     auto renderAlg =
@@ -3942,7 +3955,7 @@ void Fractal::LoadRefOrbit(
             RenderAlgorithm::MAX :
             GetRenderAlgorithm();
 
-    const auto &perturbResults = *m_RefOrbit.LoadOrbit(
+    m_RefOrbit.LoadOrbit(
         imaginaSettings,
         compression,
         renderAlg,
@@ -3950,30 +3963,15 @@ void Fractal::LoadRefOrbit(
         &recommendedSettings);
 
     if (imaginaSettings == ImaginaSettings::UseSaved) {
-        SetRenderAlgorithm(recommendedSettings.RenderAlg);
-        SetIterType(recommendedSettings.IterType);
-
-        // This will force it to fit but it should
-        SetNumIterations<IterTypeFull>(recommendedSettings.NumIterations);
-    } else {
-        auto maxIters = perturbResults.GetMaxIterations();
-        SetNumIterations<decltype(maxIters)>(maxIters);
+        SetRenderAlgorithm(recommendedSettings.GetRenderAlgorithm());
+        SetIterType(recommendedSettings.GetIterType());
     }
 
-    const auto &centerX = perturbResults.GetHiX();
-    const auto &centerY = perturbResults.GetHiY();
-    const auto &zoomFactor = perturbResults.GetHiZoomFactor();
+    // This will force it to fit but it should
+    SetNumIterations<IterTypeFull>(recommendedSettings.GetNumIterations());
 
-    PointZoomBBConverter zoom(centerX, centerY, zoomFactor);
-
-    constexpr bool enableDebug = true;
-    if constexpr (enableDebug) {
-        std::string centerXStr = centerX.str();
-        std::string centerYStr = centerY.str();
-        std::string zoomFactorStr = zoomFactor.str();
-    }
-
-    SetPosition(zoom.GetMinX(), zoom.GetMinY(), zoom.GetMaxX(), zoom.GetMaxY());
+    const auto &ptz = recommendedSettings.GetPointZoomBBConverter();
+    SetPosition(ptz.GetMinX(), ptz.GetMinY(), ptz.GetMaxX(), ptz.GetMaxY());
 
     ChangedMakeDirty();
 }

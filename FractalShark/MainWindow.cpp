@@ -9,6 +9,7 @@
 #include "PngParallelSave.h"
 #include "WaitCursor.h"
 #include "RecommendedSettings.h"
+#include "Exceptions.h"
 
 #include <minidumpapiset.h>
 #include <mpir.h>
@@ -48,7 +49,7 @@ struct MainWindow::ImaginaSavedLocation {
 
 MainWindow::MainWindow(HINSTANCE hInstance, int nCmdShow) {
     gJobObj = std::make_unique<JobObject>();
-    mpf_set_default_prec(256);
+    HighPrecision::defaultPrecisionInBits(256);
 
     // Create a dump file whenever the gateway crashes only on windows
     SetUnhandledExceptionFilter(unhandled_handler);
@@ -61,7 +62,7 @@ MainWindow::MainWindow(HINSTANCE hInstance, int nCmdShow) {
     // Perform application initialization:
     hWnd = InitInstance(hInstance, nCmdShow);
     if (!hWnd) {
-        throw std::runtime_error("Failed to create window");
+        throw FractalSharkSeriousException("Failed to create window.");
     }
 
     ImaginaMenu = nullptr;
@@ -505,13 +506,41 @@ LRESULT MainWindow::StaticWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM
         return DefWindowProc(hWnd, message, wParam, lParam);
     }
 
+    auto copyToClipboard = [](std::string str) {
+        if (OpenClipboard(nullptr)) {
+            HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, str.size() + 1);
+            if (hMem != nullptr) {
+                char *pMem = (char *)GlobalLock(hMem);
+                if (pMem != nullptr) {
+                    memcpy(pMem, str.c_str(), str.size() + 1);
+                    GlobalUnlock(hMem);
+                    EmptyClipboard();
+                    SetClipboardData(CF_TEXT, hMem);
+                }
+            }
+            CloseClipboard();
+        }
+    };
+
     // And invoke WndProc
-    //try {
+    if (IsDebuggerPresent()) {
         return pThis->WndProc(message, wParam, lParam);
-    //} catch (const std::exception &e) {
-    //    MessageBoxA(hWnd, e.what(), "Error", MB_OK);
-    //    return 0;
-    //}
+    } else {
+        try {
+            return pThis->WndProc(message, wParam, lParam);
+        }
+        catch (const FractalSharkSeriousException &e) {
+            const auto msg = e.GetCallstack("Message copied to clipboard.  CTRL-V to paste.");
+            copyToClipboard(msg);
+            MessageBoxA(hWnd, msg.c_str(), "Error", MB_OK);
+            return 0;
+        }
+        catch (const std::exception &e) {
+            copyToClipboard(e.what());
+            MessageBoxA(hWnd, e.what(), "Error", MB_OK);
+            return 0;
+        }
+    }
 }
 
 LRESULT MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam) {
@@ -1872,10 +1901,11 @@ void MainWindow::MenuGetCurPos() {
         gFractal->GetNumIterations<IterTypeFull>());
 
     const std::string stringCopy = mem;
-    char temp2[numBytes];
+    std::vector<char> temp2;
+    temp2.resize(numBytes);
 
     // Put some extra information on the clipboard.
-    snprintf(temp2, numBytes,
+    snprintf(temp2.data(), numBytes,
         "Bounding box:\r\n"
         "minX = HighPrecision{ \"%s\" };\r\n"
         "minY = HighPrecision{ \"%s\" };\r\n"
@@ -1886,7 +1916,7 @@ void MainWindow::MenuGetCurPos() {
 
     // Append temp2 to mem without overrunning the buffer 
     // using strncat.
-    strncat(mem, temp2, numBytes - stringCopy.size() - 1);
+    strncat(mem, temp2.data(), numBytes - stringCopy.size() - 1);
     GlobalUnlock(hData);
 
     //
@@ -2213,8 +2243,8 @@ void MainWindow::LoadRefOrbit(
     // Restore only "Auto".  If the savefile changes our iteration type
     // to 64-bit, just leave it.  The "Auto" concept is kind of weird in
     // this context.
-    if (settings.RenderAlg == RenderAlgorithm::AUTO) {
-        gFractal->SetRenderAlgorithm(settings.RenderAlg);
+    if (settings.GetRenderAlgorithm() == RenderAlgorithm::AUTO) {
+        gFractal->SetRenderAlgorithm(settings.GetRenderAlgorithm());
     }
 }
 
@@ -2425,6 +2455,10 @@ typedef BOOL(WINAPI *MINIDUMPWRITEDUMP)(HANDLE hProcess, DWORD dwPid, HANDLE hFi
 
 void MainWindow::create_minidump(struct _EXCEPTION_POINTERS *apExceptionInfo) {
     HMODULE mhLib = ::LoadLibrary(_T("dbghelp.dll"));
+    if (mhLib == nullptr) {
+        return;
+    }
+
     MINIDUMPWRITEDUMP pDump = (MINIDUMPWRITEDUMP)::GetProcAddress(mhLib, "MiniDumpWriteDump");
 
     HANDLE  hFile = ::CreateFile(_T("core.dmp"), GENERIC_WRITE, FILE_SHARE_WRITE, nullptr, CREATE_ALWAYS,

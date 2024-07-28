@@ -12,9 +12,10 @@ CrummyTest::CrummyTest(Fractal &fractal) : m_Fractal(fractal) {
 
 void CrummyTest::TestAll() {
     //TestBasic();
-    TestReferenceSave();
+    //TestReferenceSave();
     //TestVariedCompression();
     //TestStringConversion();
+    TestPerturbedPerturb();
 }
 
 void CrummyTest::TestPreReq(const wchar_t *dirName) {
@@ -437,8 +438,6 @@ void CrummyTest::ReferenceSaveLoad (
         fractal.SetRenderAlgorithm(RenderAlgorithm::AUTO);
     }
 
-    RenderAlgorithm oldAlg{};
-
     fractal.LoadRefOrbit(
         nullptr,
         CompressToDisk::MaxCompressionImagina,
@@ -488,6 +487,25 @@ void CrummyTest::TestReferenceSave() {
     };
 
     size_t viewToTest;
+
+    const auto View0Algs = {
+        RenderAlgorithm::Gpu1x32,
+        RenderAlgorithm::Gpu2x32,
+        RenderAlgorithm::GpuHDRx32,
+        RenderAlgorithm::Gpu1x64,
+
+        RenderAlgorithm::Gpu1x64PerturbedLAv2,
+        RenderAlgorithm::Gpu1x64PerturbedRCLAv2,
+        RenderAlgorithm::GpuHDRx32PerturbedLAv2,
+        RenderAlgorithm::GpuHDRx32PerturbedRCLAv2,
+        RenderAlgorithm::GpuHDRx2x32PerturbedLAv2,
+        RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2,
+        RenderAlgorithm::GpuHDRx64PerturbedLAv2,
+        RenderAlgorithm::GpuHDRx64PerturbedRCLAv2,
+    };
+
+    viewToTest = 0;
+    loopAll(viewToTest, View0Algs);
 
     const auto View5and10Algs = {
         RenderAlgorithm::Gpu1x64PerturbedLAv2,
@@ -559,8 +577,8 @@ void CrummyTest::TestVariedCompression() {
         RenderAlgorithm::Gpu1x64PerturbedRCLAv2,
         RenderAlgorithm::GpuHDRx32PerturbedLAv2,
         RenderAlgorithm::GpuHDRx32PerturbedRCLAv2,
-        //RenderAlgorithm::GpuHDRx2x32PerturbedLAv2,
-        //RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2,
+        RenderAlgorithm::GpuHDRx2x32PerturbedLAv2,
+        RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2,
         RenderAlgorithm::GpuHDRx64PerturbedLAv2,
         RenderAlgorithm::GpuHDRx64PerturbedRCLAv2,
     };
@@ -678,7 +696,11 @@ void CrummyTest::TestStringConversion() {
             throw FractalSharkSeriousException("GlobalAlloc failed!");
         }
 
-        memcpy(GlobalLock(hg), allStr.c_str(), allStr.size() + 1);
+        auto *result = GlobalLock(hg);
+        if (result != nullptr) {
+            memcpy(result, allStr.c_str(), allStr.size() + 1);
+        }
+
         GlobalUnlock(hg);
         SetClipboardData(CF_TEXT, hg);
         CloseClipboard();
@@ -793,6 +815,76 @@ void CrummyTest::TestStringConversion() {
     checker(floatComplex2, readBackFloatComplex2);
     checker(floatComplex3, readBackFloatComplex3);
     checker(floatComplex4, readBackFloatComplex4);
+}
+
+void CrummyTest::TestPerturbedPerturb() {
+    const wchar_t *dirName = L"TestPerturbedPerturb";
+    TestPreReq(dirName);
+
+    m_Fractal.SetResultsAutosave(AddPointOptions::DontSave);
+
+    size_t testIndex = 0;
+
+    m_Fractal.DefaultCompressionErrorExp(Fractal::CompressionError::Low);
+    int32_t compressionError = m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low);
+
+    auto loopAll = [&](std::vector<RenderAlgorithm> algsToTest) {
+        for (auto curAlg : algsToTest) {
+
+            const auto viewIndex = 14;
+            const auto perturbedViewIndex = 12;
+            const auto iterType = IterTypeEnum::Bits32;
+            const wchar_t *testPrefix = L"PerturbedPerturb";
+            const auto algStr = m_Fractal.GetRenderAlgorithmName(curAlg);
+
+            const auto genLocalFilename = [&](const std::wstring extraPrefix) {
+                std::wstring fullPrefix = testPrefix + std::wstring(L" - ") + extraPrefix;
+                return GenFilenameW(
+                    testIndex,
+                    viewIndex,
+                    curAlg,
+                    curAlg,
+                    compressionError,
+                    iterType,
+                    fullPrefix.c_str(),
+                    dirName,
+                    algStr);
+                };
+
+            m_Fractal.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+            m_Fractal.SetIterType(iterType);
+            m_Fractal.SetRenderAlgorithm(curAlg);
+            m_Fractal.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3);
+            //m_Fractal.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed);
+            m_Fractal.View(viewIndex);
+            m_Fractal.ForceRecalc();
+            m_Fractal.CalcFractal(false);
+            m_Fractal.SaveCurrentFractal(genLocalFilename(L"Original"), false);
+
+            m_Fractal.View(perturbedViewIndex);
+            m_Fractal.ForceRecalc();
+            m_Fractal.CalcFractal(false);
+
+            m_Fractal.SaveCurrentFractal(genLocalFilename(L"Perturbed"), false);
+        }
+    };
+
+    // TODO: note that using non-HDR on these deep spots
+    // results in a divide by zero.  We should fix that such
+    // that it at least doesn't crash.
+    const auto View12and14Algs = {
+        //RenderAlgorithm::Gpu1x64PerturbedLAv2,
+        //RenderAlgorithm::Gpu1x64PerturbedRCLAv2,
+        // These should work:
+        //RenderAlgorithm::GpuHDRx32PerturbedLAv2,
+        //RenderAlgorithm::GpuHDRx32PerturbedRCLAv2,
+        //RenderAlgorithm::GpuHDRx2x32PerturbedLAv2,
+        //RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2,
+        RenderAlgorithm::GpuHDRx64PerturbedLAv2,
+        RenderAlgorithm::GpuHDRx64PerturbedRCLAv2,
+    };
+
+    loopAll(View12and14Algs);
 }
 
 void CrummyTest::Benchmark(RefOrbitCalc::PerturbationResultType type) {

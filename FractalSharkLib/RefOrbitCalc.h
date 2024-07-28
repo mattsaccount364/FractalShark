@@ -213,6 +213,7 @@ public:
 
     void ClearPerturbationResults(PerturbationResultType type);
     void ResetGuess(HighPrecision x = HighPrecision(0), HighPrecision y = HighPrecision(0));
+    void ResetLastUsedOrbit();
 
     void SaveAllOrbits();
     void LoadAllOrbits();
@@ -226,7 +227,8 @@ public:
         std::wstring filename2) const;
 
     template<typename IterType, class T, PerturbExtras PExtras>
-    void SaveOrbit(const PerturbationResults<IterType, T, PExtras> &results, std::wstring imagFilename) const;
+    void SaveOrbitResults(const PerturbationResults<IterType, T, PExtras> &results, std::wstring imagFilename) const;
+    void SaveOrbitResults(std::wstring imagFilename) const;
 
     const PerturbationResultsBase *LoadOrbit(
         ImaginaSettings imaginaSettings,

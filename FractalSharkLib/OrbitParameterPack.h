@@ -4,12 +4,18 @@
 #include "HighPrecision.h"
 
 struct OrbitParameterPack {
+    enum class IncludedOrbit {
+        NoOrbit,
+        OrbitIncluded
+    };
+
     Imagina::IMFileHeader fileHeader;
     HighPrecision orbitX;
     HighPrecision orbitY;
     uint64_t iterationLimit;
     Imagina::HRReal halfH;
     bool extendedRange;
+    IncludedOrbit m_OrbitType;
     std::unique_ptr<std::ifstream> file;
 
     template<typename IterType>
@@ -29,6 +35,7 @@ struct OrbitParameterPack {
         uint64_t iterationLimit,
         Imagina::HRReal halfH,
         bool extendedRange,
+        IncludedOrbit orbitType,
         std::unique_ptr<std::ifstream> &&file);
     OrbitParameterPack(const OrbitParameterPack &other) = delete;
     OrbitParameterPack &operator=(const OrbitParameterPack &other) = delete;

@@ -8,6 +8,7 @@ OrbitParameterPack::OrbitParameterPack() :
     iterationLimit{},
     halfH{},
     extendedRange{},
+    m_OrbitType{ IncludedOrbit::NoOrbit },
     file{} {
 }
 
@@ -18,6 +19,7 @@ OrbitParameterPack::OrbitParameterPack(
     uint64_t iterationLimit,
     Imagina::HRReal halfH,
     bool extendedRange,
+    IncludedOrbit orbitType,
     std::unique_ptr<std::ifstream> &&file) :
     fileHeader(fileHeader),
     orbitX(std::move(orbitX)),
@@ -25,6 +27,7 @@ OrbitParameterPack::OrbitParameterPack(
     iterationLimit(iterationLimit),
     halfH(halfH),
     extendedRange(extendedRange),
+    m_OrbitType(orbitType),
     file(std::move(file)) {
 }
 
@@ -36,6 +39,7 @@ OrbitParameterPack &OrbitParameterPack::operator=(OrbitParameterPack &&other) {
         iterationLimit = other.iterationLimit;
         halfH = other.halfH;
         extendedRange = other.extendedRange;
+        m_OrbitType = other.m_OrbitType;
         file = std::move(other.file);
     }
 
@@ -49,6 +53,7 @@ OrbitParameterPack::OrbitParameterPack(OrbitParameterPack &&other) :
     iterationLimit(other.iterationLimit),
     halfH(other.halfH),
     extendedRange(other.extendedRange),
+    m_OrbitType(other.m_OrbitType),
     file(std::move(other.file)) {
 }
 

@@ -16,6 +16,7 @@ public:
     void TestReferenceSave();
     void TestVariedCompression();
     void TestStringConversion();
+    void TestPerturbedPerturb();
 
     void Benchmark(RefOrbitCalc::PerturbationResultType type);
 

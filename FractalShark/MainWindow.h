@@ -76,6 +76,7 @@ private:
     void MenuGetCurPos();
     void MenuSaveCurrentLocation();
     void MenuLoadCurrentLocation();
+    static LRESULT EditSubclassProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
     void MenuLoadEnterLocation();
     void MenuSaveBMP();
     void MenuSaveHiResBMP();
@@ -99,5 +100,4 @@ private:
     bool IsDownControl() { return (GetAsyncKeyState(VK_CONTROL) & 0x8000) == 0x8000; };
     bool IsDownShift() { return (GetAsyncKeyState(VK_SHIFT) & 0x8000) == 0x8000; };
     bool IsDownAlt() { return (GetAsyncKeyState(VK_MENU) & 0x8000) == 0x8000; };
-
 };

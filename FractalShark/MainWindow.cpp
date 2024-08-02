@@ -2058,6 +2058,20 @@ void MainWindow::MenuLoadCurrentLocation() {
     TrackPopupMenu(hSubMenu, 0, point.x, point.y, 0, hWnd, nullptr);
 }
 
+// Subclass procedure for the edit controls
+LRESULT MainWindow::EditSubclassProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+    if (uMsg == WM_KEYDOWN) {
+        if ((wParam == 'A') && (GetKeyState(VK_CONTROL) & 0x8000)) {
+            // CTRL+A pressed, select all text
+            SendMessage(hwnd, EM_SETSEL, 0, -1);
+            return 0;
+        }
+    }
+    // Call the original window procedure for the edit control
+    WNDPROC originalProc = (WNDPROC)GetWindowLongPtr(hwnd, GWLP_USERDATA);
+    return CallWindowProc(originalProc, hwnd, uMsg, wParam, lParam);
+}
+
 void MainWindow::MenuLoadEnterLocation() {
     // Create a window with three text boxes for entering the location.
     // The text boxes are for the real, imaginary, and zoom values.
@@ -2105,7 +2119,12 @@ void MainWindow::MenuLoadEnterLocation() {
     values.zoom = pz.GetZoomFactor().str();
     values.num_iterations = gFractal->GetNumIterations<IterTypeFull>();
 
-    auto EnterLocationDialogProc = [](HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam) -> INT_PTR {
+    auto EnterLocationDialogProc = [](
+        HWND hDlg,
+        UINT message,
+        WPARAM wParam,
+        LPARAM lParam) -> INT_PTR {
+
         // TODO: static?  This is surely not the right way to do this.
         static Values *values = nullptr;
 
@@ -2115,13 +2134,50 @@ void MainWindow::MenuLoadEnterLocation() {
             // Get the pointer to the Values struct from lParam.
             values = (Values *)lParam;
 
+            RECT rcDlg, rcScreen;
+            int x, y;
+
+            // Get the dimensions of the dialog box
+            GetWindowRect(hDlg, &rcDlg);
+
+            // Get the dimensions of the screen
+            GetClientRect(GetDesktopWindow(), &rcScreen);
+
+            // Calculate the position to center the dialog box
+            x = (rcScreen.right - (rcDlg.right - rcDlg.left)) / 2;
+            y = (rcScreen.bottom - (rcDlg.bottom - rcDlg.top)) / 2;
+
+            // Move the dialog box to the calculated position
+            SetWindowPos(hDlg, NULL, x, y, 0, 0, SWP_NOZORDER | SWP_NOSIZE);
+
             // Set the text in the text boxes to the values in the strings.
             SetDlgItemTextA(hDlg, IDC_EDIT_REAL, values->real.c_str());
             SetDlgItemTextA(hDlg, IDC_EDIT_IMAG, values->imag.c_str());
             SetDlgItemTextA(hDlg, IDC_EDIT_ZOOM, values->zoom.c_str());
             SetDlgItemTextA(hDlg, IDC_EDIT_ITERATIONS, values->ItersToString().c_str());
+
+            // Subclass the edit controls
+            HWND hEditReal = GetDlgItem(hDlg, IDC_EDIT_REAL);
+            HWND hEditImag = GetDlgItem(hDlg, IDC_EDIT_IMAG);
+            HWND hEditZoom = GetDlgItem(hDlg, IDC_EDIT_ZOOM);
+            HWND hEditIterations = GetDlgItem(hDlg, IDC_EDIT_ITERATIONS);
+
+            auto OriginalEditProcReal = (WNDPROC)SetWindowLongPtr(hEditReal, GWLP_WNDPROC, (LONG_PTR)EditSubclassProc);
+            SetWindowLongPtr(hEditReal, GWLP_USERDATA, (LONG_PTR)OriginalEditProcReal);
+
+            auto OriginalEditProcImag = (WNDPROC)SetWindowLongPtr(hEditImag, GWLP_WNDPROC, (LONG_PTR)EditSubclassProc);
+            SetWindowLongPtr(hEditImag, GWLP_USERDATA, (LONG_PTR)OriginalEditProcImag);
+
+            auto OriginalEditProcZoom = (WNDPROC)SetWindowLongPtr(hEditZoom, GWLP_WNDPROC, (LONG_PTR)EditSubclassProc);
+            SetWindowLongPtr(hEditZoom, GWLP_USERDATA, (LONG_PTR)OriginalEditProcZoom);
+
+            auto OriginalEditProcIterations = (WNDPROC)SetWindowLongPtr(hEditIterations, GWLP_WNDPROC, (LONG_PTR)EditSubclassProc);
+            SetWindowLongPtr(hEditIterations, GWLP_USERDATA, (LONG_PTR)OriginalEditProcIterations);
+
             break;
         }
+
+        
         case WM_COMMAND:
         {
             if (LOWORD(wParam) == IDOK) {
@@ -2188,6 +2244,7 @@ void MainWindow::MenuLoadEnterLocation() {
     }
 
     // Convert the strings to HighPrecision and set the fractal to the new location.
+    HighPrecision::defaultPrecisionInBits(Fractal::MaxPrecisionLame);
     HighPrecision realHP(values.real);
     HighPrecision imagHP(values.imag);
     HighPrecision zoomHP(values.zoom);

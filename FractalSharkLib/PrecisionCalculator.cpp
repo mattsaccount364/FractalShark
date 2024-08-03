@@ -6,6 +6,18 @@
 namespace PrecisionCalculator {
 
     uint64_t GetPrecision(
+        const PointZoomBBConverter &converter,
+        bool requiresReuse) {
+
+        return GetPrecision(
+            converter.GetMinX(),
+            converter.GetMinY(),
+            converter.GetMaxX(),
+            converter.GetMaxY(),
+            requiresReuse);
+    }
+
+    uint64_t GetPrecision(
         const HighPrecision &minX,
         const HighPrecision &minY,
         const HighPrecision &maxX,
@@ -74,8 +86,8 @@ namespace PrecisionCalculator {
             // Get the base-2 exponent of the floating point number
             // using frexp
 
-            std::frexp(radiusX, &temp_expX);
-            std::frexp(radiusY, &temp_expY);
+            std::ignore = std::frexp(radiusX, &temp_expX);
+            std::ignore = std::frexp(radiusY, &temp_expY);
         } else if constexpr (
             std::is_same<T, CudaDblflt<MattDblflt>>::value) {
 

@@ -29,7 +29,7 @@ BenchmarkData::BenchmarkData(const BenchmarkData &other) :
     m_WaitCursor{ std::make_unique<WaitCursor>() } {
 }
 
-BenchmarkData::BenchmarkData(BenchmarkData &&other) :
+BenchmarkData::BenchmarkData(BenchmarkData &&other) noexcept :
     m_freq{ other.m_freq },
     m_startTime{ other.m_startTime },
     m_endTime{ other.m_endTime },
@@ -49,7 +49,7 @@ BenchmarkData &BenchmarkData::operator=(const BenchmarkData &other) {
     return *this;
 }
 
-BenchmarkData &BenchmarkData::operator=(BenchmarkData &&other) {
+BenchmarkData &BenchmarkData::operator=(BenchmarkData &&other) noexcept {
     if (this != &other) {
         m_freq = other.m_freq;
         m_startTime = other.m_startTime;

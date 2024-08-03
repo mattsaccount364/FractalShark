@@ -39,7 +39,7 @@ struct OrbitParameterPack {
         std::unique_ptr<std::ifstream> &&file);
     OrbitParameterPack(const OrbitParameterPack &other) = delete;
     OrbitParameterPack &operator=(const OrbitParameterPack &other) = delete;
-    OrbitParameterPack &operator=(OrbitParameterPack &&other);
-    OrbitParameterPack(OrbitParameterPack &&other);
+    OrbitParameterPack &operator=(OrbitParameterPack &&other) noexcept;
+    OrbitParameterPack(OrbitParameterPack &&other) noexcept;
     ~OrbitParameterPack();
 };

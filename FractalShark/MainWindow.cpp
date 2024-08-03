@@ -21,6 +21,8 @@ struct MainWindow::SavedLocation {
         // Read minX, minY, maxX, maxY, num_iterations, antialiasing from infile
         // To read minX, read a string and convert to HighPrecision
 
+        HighPrecision minX, minY, maxX, maxY;
+
         infile >> width;
         infile >> height;
 
@@ -29,13 +31,15 @@ struct MainWindow::SavedLocation {
         infile >> maxX;
         infile >> maxY;
 
+        ptz = PointZoomBBConverter(minX, minY, maxX, maxY);
+
         infile >> num_iterations;
         infile >> antialiasing;
 
         std::getline(infile, description);
     }
 
-    HighPrecision minX, maxX, minY, maxY;
+    PointZoomBBConverter ptz;
     size_t width, height;
     IterTypeFull num_iterations;
     uint32_t antialiasing;
@@ -1296,14 +1300,11 @@ LRESULT MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam) {
             ClearMenu(LoadSubMenu);
 
             auto index = wmId - IDM_VIEW_DYNAMIC_ORBIT;
-            auto minX = gSavedLocations[index].minX;
-            auto minY = gSavedLocations[index].minY;
-            auto maxX = gSavedLocations[index].maxX;
-            auto maxY = gSavedLocations[index].maxY;
+            auto ptz = gSavedLocations[index].ptz;
             auto num_iterations = gSavedLocations[index].num_iterations;
             auto antialiasing = gSavedLocations[index].antialiasing;
 
-            gFractal->RecenterViewCalc(minX, minY, maxX, maxY);
+            gFractal->RecenterViewCalc(ptz);
             gFractal->SetNumIterations<IterTypeFull>(num_iterations);
             gFractal->ResetDimensions(MAXSIZE_T, MAXSIZE_T, antialiasing);
             PaintAsNecessary();
@@ -2249,7 +2250,8 @@ void MainWindow::MenuLoadEnterLocation() {
     HighPrecision imagHP(values.imag);
     HighPrecision zoomHP(values.zoom);
 
-    gFractal->RecenterViewCalc(realHP, imagHP, zoomHP);
+    PointZoomBBConverter pz2{ realHP, imagHP, zoomHP };
+    gFractal->RecenterViewCalc(pz2);
     gFractal->SetNumIterations<IterTypeFull>(values.num_iterations);
     PaintAsNecessary();
 }

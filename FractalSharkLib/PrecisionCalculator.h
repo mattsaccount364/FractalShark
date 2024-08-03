@@ -1,8 +1,13 @@
 #pragma once
 
 #include "HighPrecision.h"
+#include "PointZoomBBConverter.h"
 
 namespace PrecisionCalculator {
+    uint64_t GetPrecision(
+        const PointZoomBBConverter &converter,
+        bool RequiresReuse);
+
     uint64_t GetPrecision(
         const HighPrecision &minX,
         const HighPrecision &minY,

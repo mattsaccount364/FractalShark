@@ -116,3 +116,33 @@ const HighPrecision &PointZoomBBConverter::GetPtY() const {
 const HighPrecision &PointZoomBBConverter::GetZoomFactor() const {
     return m_ZoomFactor;
 }
+
+void PointZoomBBConverter::SetPrecision(uint64_t precInBits) {
+    HighPrecision::defaultPrecisionInBits(precInBits);
+
+    m_MinX.precisionInBits(precInBits);
+    m_MinY.precisionInBits(precInBits);
+    m_MaxX.precisionInBits(precInBits);
+    m_MaxY.precisionInBits(precInBits);
+    m_PtX.precisionInBits(precInBits);
+    m_PtY.precisionInBits(precInBits);
+    m_ZoomFactor.precisionInBits(precInBits);
+
+    if constexpr (m_Test) {
+        m_MinXStr = m_MinX.str();
+        m_MinYStr = m_MinY.str();
+        m_MaxXStr = m_MaxX.str();
+        m_MaxYStr = m_MaxY.str();
+        m_PtXStr = m_PtX.str();
+        m_PtYStr = m_PtY.str();
+        m_ZoomFactorStr = m_ZoomFactor.str();
+    }
+}
+
+bool PointZoomBBConverter::Degenerate() const {
+    if (m_MinX == m_MaxX || m_MinY == m_MaxY) {
+        return true;
+    }
+
+    return false;
+}

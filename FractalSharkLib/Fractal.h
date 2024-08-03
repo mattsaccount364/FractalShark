@@ -125,19 +125,14 @@ public:
     static constexpr size_t MaxPrecisionLame = 400000;
 
     uint64_t GetPrecision(void) const;
-    static void SetPrecision(
-        uint64_t prec,
-        HighPrecision &minX,
-        HighPrecision &minY,
-        HighPrecision &maxX,
-        HighPrecision &maxY);
+    static uint64_t GetPrecision(const PointZoomBBConverter &ptz, bool requiresReuse);
     void SetPrecision();
+    void SetPrecision(uint64_t prec);
 
     void ResetDimensions(size_t width = MAXSIZE_T,
         size_t height = MAXSIZE_T,
         uint32_t gpu_antialiasing = UINT32_MAX);
-    bool RecenterViewCalc(HighPrecision MinX, HighPrecision MinY, HighPrecision MaxX, HighPrecision MaxY);
-    bool RecenterViewCalc(HighPrecision CenterX, HighPrecision CenterY, HighPrecision Zoom);
+    bool RecenterViewCalc(const PointZoomBBConverter &ptz);
     bool RecenterViewScreen(RECT rect);
     bool CenterAtPoint(size_t x, size_t y);
     void Zoom(double factor);
@@ -260,12 +255,12 @@ public:
     const BenchmarkDataCollection &GetBenchmark() const;
 
     // Used for retrieving our current location
-    inline const HighPrecision &GetMinX(void) const { return m_MinX; }
-    inline const HighPrecision &GetMaxX(void) const { return m_MaxX; }
-    inline const HighPrecision &GetMinY(void) const { return m_MinY; }
-    inline const HighPrecision &GetMaxY(void) const { return m_MaxY; }
-    inline size_t GetRenderWidth(void) const { return m_ScrnWidth; }
-    inline size_t GetRenderHeight(void) const { return m_ScrnHeight; }
+    const HighPrecision &GetMinX(void) const;
+    const HighPrecision &GetMaxX(void) const;
+    const HighPrecision &GetMinY(void) const;
+    const HighPrecision &GetMaxY(void) const;
+    size_t GetRenderWidth(void) const;
+    size_t GetRenderHeight(void) const;
 
     void GetSomeDetails(RefOrbitDetails &details) const {
         m_RefOrbit.GetSomeDetails(details);
@@ -302,12 +297,6 @@ private:
     bool IsDownControl(void);
     void CheckForAbort(void);
 
-    void SetPosition(
-        HighPrecision MinX,
-        HighPrecision MinY,
-        HighPrecision MaxX,
-        HighPrecision MaxY);
-
     void SaveCurPos(void);
 
     // Keeps track of what has changed and what hasn't since the last draw
@@ -321,16 +310,16 @@ private:
 
     static void DrawFractalThread(size_t index, Fractal *fractal);
 
-    void FillCoord(HighPrecision &src, MattQFltflt &dest);
-    void FillCoord(HighPrecision &src, MattQDbldbl &dest);
-    void FillCoord(HighPrecision &src, MattDbldbl &dest);
-    void FillCoord(HighPrecision &src, double &dest);
-    void FillCoord(HighPrecision &src, HDRFloat<float> &dest);
-    void FillCoord(HighPrecision &src, HDRFloat<double> &dest);
-    void FillCoord(HighPrecision &src, MattDblflt &dest);
-    void FillCoord(HighPrecision &src, float &dest);
-    void FillCoord(HighPrecision &src, CudaDblflt<MattDblflt> &dest);
-    void FillCoord(HighPrecision &src, HDRFloat<CudaDblflt<MattDblflt>> &dest);
+    void FillCoord(const HighPrecision &src, MattQFltflt &dest);
+    void FillCoord(const HighPrecision &src, MattQDbldbl &dest);
+    void FillCoord(const HighPrecision &src, MattDbldbl &dest);
+    void FillCoord(const HighPrecision &src, double &dest);
+    void FillCoord(const HighPrecision &src, HDRFloat<float> &dest);
+    void FillCoord(const HighPrecision &src, HDRFloat<double> &dest);
+    void FillCoord(const HighPrecision &src, MattDblflt &dest);
+    void FillCoord(const HighPrecision &src, float &dest);
+    void FillCoord(const HighPrecision &src, CudaDblflt<MattDblflt> &dest);
+    void FillCoord(const HighPrecision &src, HDRFloat<CudaDblflt<MattDblflt>> &dest);
 
     template<class T>
     void FillGpuCoords(T &cx2, T &cy2, T &dx2, T &dy2);
@@ -395,17 +384,11 @@ private:
 
     // Holds all previous positions within the fractal.
     // Allows us to go "back."
-    std::vector<HighPrecision> m_PrevMinX;
-    std::vector<HighPrecision> m_PrevMinY;
-    std::vector<HighPrecision> m_PrevMaxX;
-    std::vector<HighPrecision> m_PrevMaxY;
+    std::vector<PointZoomBBConverter> m_PrevPtz;
 
     // Describes the exact spot within the fractal
     // we are currently looking at.
-    HighPrecision m_MinX, m_MaxX;
-    HighPrecision m_MinY, m_MaxY;
-    std::string m_MinXStr, m_MaxXStr;
-    std::string m_MinYStr, m_MaxYStr;
+    PointZoomBBConverter m_Ptz;
     bool m_ChangedWindow;
 
     // Holds the dimensions of the window onto which we are drawing.

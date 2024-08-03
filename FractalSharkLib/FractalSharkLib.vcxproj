@@ -77,6 +77,7 @@
     <ClCompile Include="Fractal.cpp" />
     <ClCompile Include="CrummyTest.cpp" />
     <ClCompile Include="HDRFloat.cpp" />
+    <ClCompile Include="ImaginaOrbit.cpp" />
     <ClCompile Include="ItersMemoryContainer.cpp" />
     <ClCompile Include="LAParameters.cpp" />
     <ClCompile Include="LAReference.cpp" />

@@ -132,6 +132,7 @@
       <AdditionalDependencies>mpir.lib;opengl32.lib;glu32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>..\mpir\lib\x64\Release;%(AdditionalLibraryDirectories);$(CudaToolkitLibDir)</AdditionalLibraryDirectories>
       <StackReserveSize>16777216</StackReserveSize>
+      <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
     </Link>
     <CudaCompile>
       <AdditionalOptions>-std=c++20 -Xcompiler "/std:c++20" %(AdditionalOptions)</AdditionalOptions>

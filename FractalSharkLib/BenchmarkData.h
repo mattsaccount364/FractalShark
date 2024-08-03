@@ -9,9 +9,9 @@ class BenchmarkData {
 public:
     BenchmarkData();
     BenchmarkData(const BenchmarkData &);
-    BenchmarkData(BenchmarkData &&);
+    BenchmarkData(BenchmarkData &&) noexcept;
     BenchmarkData &operator=(const BenchmarkData &);
-    BenchmarkData &operator=(BenchmarkData &&);
+    BenchmarkData &operator=(BenchmarkData &&) noexcept;
     ~BenchmarkData();
 
     void StartTimer();

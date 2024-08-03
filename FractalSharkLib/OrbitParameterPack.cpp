@@ -31,7 +31,7 @@ OrbitParameterPack::OrbitParameterPack(
     file(std::move(file)) {
 }
 
-OrbitParameterPack &OrbitParameterPack::operator=(OrbitParameterPack &&other) {
+OrbitParameterPack &OrbitParameterPack::operator=(OrbitParameterPack &&other) noexcept {
     if (this != &other) {
         fileHeader = other.fileHeader;
         orbitX = std::move(other.orbitX);
@@ -46,7 +46,7 @@ OrbitParameterPack &OrbitParameterPack::operator=(OrbitParameterPack &&other) {
     return *this;
 }
 
-OrbitParameterPack::OrbitParameterPack(OrbitParameterPack &&other) :
+OrbitParameterPack::OrbitParameterPack(OrbitParameterPack &&other) noexcept :
     fileHeader(other.fileHeader),
     orbitX(std::move(other.orbitX)),
     orbitY(std::move(other.orbitY)),

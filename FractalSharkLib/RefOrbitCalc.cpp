@@ -2087,7 +2087,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
         _aligned_free(threadReuseddata);
 
         if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse1) {
-            bumpAllocator->GetAllocated(1); // Destruct the return value
+            std::ignore = bumpAllocator->GetAllocated(1); // Destruct the return value
         }
 
         results->CompleteResults<Reuse>(std::move(reusedAllocator));

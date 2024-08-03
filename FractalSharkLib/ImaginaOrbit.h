@@ -38,6 +38,8 @@ namespace Imagina {
         SRReal SqrEscapeRadius;
         std::complex<SRReal> RefC;
         std::complex<HRReal> ZCoeff, CCoeff, InvZCoeff;
+
+        ImaginaATInfo();
     };
 
     struct LAReferenceTrivialContent {
@@ -52,5 +54,17 @@ namespace Imagina {
         ImaginaATInfo AT;
 
         size_t LAStageCount;
+
+        LAReferenceTrivialContent();
+        LAReferenceTrivialContent(
+            const std::complex<SRReal> &refc,
+            size_t refIt,
+            size_t maxIt,
+            bool doublePrecisionPT,
+            bool directEvaluate,
+            bool isPeriodic,
+            bool useAT,
+            const ImaginaATInfo &at,
+            size_t laStageCount);
     };
 } // namespace Imagina

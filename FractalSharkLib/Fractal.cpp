@@ -393,79 +393,42 @@ void Fractal::ResetDimensions(size_t width,
 // Recenters the view to the coordinates specified.  Note that the coordinates
 // are "calculator coordinates," not screen coordinates.
 //////////////////////////////////////////////////////////////////////////////
-void Fractal::SetPrecision(
-    uint64_t precInBits,
-    HighPrecision &minX,
-    HighPrecision &minY,
-    HighPrecision &maxX,
-    HighPrecision &maxY) {
-    HighPrecision::defaultPrecisionInBits(precInBits);
-
-    minX.precisionInBits(precInBits);
-    maxX.precisionInBits(precInBits);
-    minY.precisionInBits(precInBits);
-    maxY.precisionInBits(precInBits);
-}
-
 void Fractal::SetPrecision() {
     auto precInBits = GetPrecision();
-    SetPrecision(precInBits, m_MinX, m_MinY, m_MaxX, m_MaxY);
+    m_Ptz.SetPrecision(precInBits);
 }
+
+void Fractal::SetPrecision(uint64_t prec) {
+    m_Ptz.SetPrecision(prec);
+}
+
+//void Fractal::SetPrecision(PointZoomBBConverter &ptz, bool requiresReuse) {
+//    auto precInBits = GetPrecision(ptz, requiresReuse);
+//    ptz.SetPrecision(precInBits);
+//}
 
 uint64_t Fractal::GetPrecision(void) const {
-    return PrecisionCalculator::GetPrecision(m_MinX, m_MinY, m_MaxX, m_MaxY, m_RefOrbit.RequiresReuse());
+    return Fractal::GetPrecision(m_Ptz, m_RefOrbit.RequiresReuse());
 }
 
-bool Fractal::RecenterViewCalc(HighPrecision MinX, HighPrecision MinY, HighPrecision MaxX, HighPrecision MaxY) {
+uint64_t Fractal::GetPrecision(
+    const PointZoomBBConverter &ptz,
+    bool requiresReuse) {
+
+    return PrecisionCalculator::GetPrecision(ptz, requiresReuse);
+}
+
+bool Fractal::RecenterViewCalc(const PointZoomBBConverter &ptz) {
     SaveCurPos();
 
-    auto prec = PrecisionCalculator::GetPrecision(MinX, MinY, MaxX, MaxY, m_RefOrbit.RequiresReuse());
-    SetPrecision(prec, MinX, MinY, MaxX, MaxY);
-    SetPosition(MinX, MinY, MaxX, MaxY);
-
+    m_Ptz = ptz;
     m_RefOrbit.ResetGuess();
 
+    SetPrecision();
     SquareCurrentView();
 
     m_ChangedWindow = true;
     return true;
-}
-
-bool Fractal::RecenterViewCalc(HighPrecision CenterX, HighPrecision CenterY, HighPrecision Zoom) {
-    HighPrecision minX, minY, maxX, maxY;
-    SetPrecision(MaxPrecisionLame, minX, minY, maxX, maxY);
-
-    // Convert incoming CenterX, CenterY to MinX, MinY, MaxX, MaxY.
-    PointZoomBBConverter converter(
-        CenterX,
-        CenterY,
-        Zoom);
-
-    minX = converter.GetMinX();
-    minY = converter.GetMinY();
-    maxX = converter.GetMaxX();
-    maxY = converter.GetMaxY();
-
-    RecenterViewCalc(minX, minY, maxX, maxY);
-
-    m_ChangedWindow = true;
-    return true;
-}
-
-void Fractal::SetPosition(
-    HighPrecision MinX,
-    HighPrecision MinY,
-    HighPrecision MaxX,
-    HighPrecision MaxY) {
-    m_MinX = MinX;
-    m_MaxX = MaxX;
-    m_MinY = MinY;
-    m_MaxY = MaxY;
-
-    m_MinXStr = HdrToString<false>(m_MinX);
-    m_MaxXStr = HdrToString<false>(m_MaxX);
-    m_MinYStr = HdrToString<false>(m_MinY);
-    m_MaxYStr = HdrToString<false>(m_MaxY);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -591,7 +554,7 @@ bool Fractal::RecenterViewScreen(RECT rect) {
 
     // Set m_PerturbationGuessCalc<X|Y> = ... above.
 
-    SetPosition(newMinX, newMinY, newMaxX, newMaxY);
+    m_Ptz = PointZoomBBConverter{ newMinX, newMinY, newMaxX, newMaxY };
 
     SetPrecision();
     SquareCurrentView();
@@ -608,21 +571,30 @@ bool Fractal::RecenterViewScreen(RECT rect) {
 bool Fractal::CenterAtPoint(size_t x, size_t y) {
     const HighPrecision newCenterX = XFromScreenToCalc((HighPrecision)x);
     const HighPrecision newCenterY = YFromScreenToCalc((HighPrecision)y);
-    const HighPrecision width = m_MaxX - m_MinX;
-    const HighPrecision height = m_MaxY - m_MinY;
+    const HighPrecision width = m_Ptz.GetMaxX() - m_Ptz.GetMinX();
+    const HighPrecision height = m_Ptz.GetMaxY() - m_Ptz.GetMinY();
     const auto two = HighPrecision{ 2 };
 
-    return RecenterViewCalc(
+    PointZoomBBConverter ptz{
         newCenterX - width / two,
         newCenterY - height / two,
         newCenterX + width / two,
-        newCenterY + height / two);
+        newCenterY + height / two };
+
+    return RecenterViewCalc(ptz);
 }
 
 void Fractal::Zoom(double factor) {
-    const HighPrecision deltaX = (m_MaxX - m_MinX) * (HighPrecision)factor;
-    const HighPrecision deltaY = (m_MaxY - m_MinY) * (HighPrecision)factor;
-    RecenterViewCalc(m_MinX - deltaX, m_MinY - deltaY, m_MaxX + deltaX, m_MaxY + deltaY);
+    const HighPrecision deltaX = (m_Ptz.GetMaxX() - m_Ptz.GetMinX()) * (HighPrecision)factor;
+    const HighPrecision deltaY = (m_Ptz.GetMaxY() - m_Ptz.GetMinY()) * (HighPrecision)factor;
+
+    PointZoomBBConverter ptz{
+        m_Ptz.GetMinX() - deltaX,
+        m_Ptz.GetMinY() - deltaY,
+        m_Ptz.GetMaxX() + deltaX,
+        m_Ptz.GetMaxY() + deltaY };
+
+    RecenterViewCalc(ptz);
 }
 
 // This one recenters and zooms in on the mouse cursor.
@@ -638,17 +610,23 @@ void Fractal::Zoom2(size_t scrnX, size_t scrnY, double factor) {
     const HighPrecision newCenterX = XFromScreenToCalc((HighPrecision)scrnX);
     const HighPrecision newCenterY = YFromScreenToCalc((HighPrecision)scrnY);
 
-    const HighPrecision leftWeight = (newCenterX - m_MinX) / (m_MaxX - m_MinX);
+    const auto &minX = m_Ptz.GetMinX();
+    const auto &minY = m_Ptz.GetMinY();
+    const auto &maxX = m_Ptz.GetMaxX();
+    const auto &maxY = m_Ptz.GetMaxY();
+
+    const HighPrecision leftWeight = (newCenterX - minX) / (maxX - minX);
     const HighPrecision rightWeight = HighPrecision{ 1 } - leftWeight;
-    const HighPrecision topWeight = (newCenterY - m_MinY) / (m_MaxY - m_MinY);
+    const HighPrecision topWeight = (newCenterY - minY) / (maxY - minY);
     const HighPrecision bottomWeight = HighPrecision{ 1 } - topWeight;
 
-    const HighPrecision minX = m_MinX - (m_MaxX - m_MinX) * leftWeight * (HighPrecision)factor;
-    const HighPrecision minY = m_MinY - (m_MaxY - m_MinY) * topWeight * (HighPrecision)factor;
-    const HighPrecision maxX = m_MaxX + (m_MaxX - m_MinX) * rightWeight * (HighPrecision)factor;
-    const HighPrecision maxY = m_MaxY + (m_MaxY - m_MinY) * bottomWeight * (HighPrecision)factor;
+    const HighPrecision minXFinal = minX - (maxX - minX) * leftWeight * (HighPrecision)factor;
+    const HighPrecision minYFinal = minY - (maxY - minY) * topWeight * (HighPrecision)factor;
+    const HighPrecision maxXFinal = maxX + (maxX - minX) * rightWeight * (HighPrecision)factor;
+    const HighPrecision maxYFinal = maxY + (maxY - minY) * bottomWeight * (HighPrecision)factor;
 
-    RecenterViewCalc(minX, minY, maxX, maxY);
+    PointZoomBBConverter ptz{ minXFinal, minYFinal, maxXFinal, maxYFinal };
+    RecenterViewCalc(ptz);
 }
 
 void Fractal::InitialDefaultViewAndSettings(int width, int height) {
@@ -698,8 +676,8 @@ template<Fractal::AutoZoomHeuristic h>
 void Fractal::AutoZoom() {
     const HighPrecision Two = HighPrecision{ 2 };
 
-    HighPrecision width = m_MaxX - m_MinX;
-    HighPrecision height = m_MaxY - m_MinY;
+    HighPrecision width = m_Ptz.GetMaxX() - m_Ptz.GetMinX();
+    HighPrecision height = m_Ptz.GetMaxY() - m_Ptz.GetMinY();
 
     HighPrecision guessX;
     HighPrecision guessY;
@@ -731,8 +709,8 @@ void Fractal::AutoZoom() {
         double geometricMeanY = 0;
 
         if (retries >= 0) {
-            width = m_MaxX - m_MinX;
-            height = m_MaxY - m_MinY;
+            width = m_Ptz.GetMaxX() - m_Ptz.GetMinX();
+            height = m_Ptz.GetMaxY() - m_Ptz.GetMinY();
             retries = 0;
         }
 
@@ -914,8 +892,8 @@ void Fractal::AutoZoom() {
         HighPrecision newMaxX = guessX + width / Divisor;
         HighPrecision newMaxY = guessY + height / Divisor;
 
-        HighPrecision centerX = (m_MinX + m_MaxX) / Two;
-        HighPrecision centerY = (m_MinY + m_MaxY) / Two;
+        HighPrecision centerX = (m_Ptz.GetMinX() + m_Ptz.GetMaxX()) / Two;
+        HighPrecision centerY = (m_Ptz.GetMinY() + m_Ptz.GetMaxY()) / Two;
 
         HighPrecision defaultMinX = centerX - width / Divisor;
         HighPrecision defaultMinY = centerY - height / Divisor;
@@ -934,11 +912,12 @@ void Fractal::AutoZoom() {
         //HighPrecision weightedNewMaxX = guessX + width / Divisor;
         //HighPrecision weightedNewMaxY = guessY + height / Divisor;
 
-        RecenterViewCalc(
+        PointZoomBBConverter newPtz{
             weightedNewMinX,
             weightedNewMinY,
             weightedNewMaxX,
-            weightedNewMaxY);
+            weightedNewMaxY };
+        RecenterViewCalc(newPtz);
 
         CalcFractal(false);
         //DrawFractal(false);
@@ -968,7 +947,12 @@ void Fractal::View(size_t view) {
     HighPrecision maxX;
     HighPrecision maxY;
 
-    SetPrecision(MaxPrecisionLame, minX, minY, maxX, maxY);
+    HighPrecision::defaultPrecisionInBits(MaxPrecisionLame);
+    minX.precisionInBits(MaxPrecisionLame);
+    minY.precisionInBits(MaxPrecisionLame);
+    maxX.precisionInBits(MaxPrecisionLame);
+    maxY.precisionInBits(MaxPrecisionLame);
+
     ResetDimensions(MAXSIZE_T, MAXSIZE_T, 1);
 
     // Reset to default reference compression if applicable
@@ -1362,7 +1346,8 @@ void Fractal::View(size_t view) {
         break;
     }
 
-    RecenterViewCalc(minX, minY, maxX, maxY);
+    PointZoomBBConverter convert{ minX, minY, maxX, maxY };
+    RecenterViewCalc(convert);
 }
 
 //////////////////////////////////////////////////////////////////////////////
@@ -1371,19 +1356,26 @@ void Fractal::View(size_t view) {
 // your resolution is 1024x768 or some other "nonsquare" resolution.
 //////////////////////////////////////////////////////////////////////////////
 void Fractal::SquareCurrentView(void) {
+    auto minX = m_Ptz.GetMinX();
+    auto minY = m_Ptz.GetMinY();
+    auto maxX = m_Ptz.GetMaxX();
+    auto maxY = m_Ptz.GetMaxY();
+
     HighPrecision ratio = (HighPrecision)m_ScrnWidth / (HighPrecision)m_ScrnHeight;
-    HighPrecision mwidth = (m_MaxX - m_MinX) / ratio;
-    HighPrecision height = m_MaxY - m_MinY;
+    HighPrecision mwidth = (maxX - minX) / ratio;
+    HighPrecision height = maxY - minY;
 
     if (height > mwidth) {
-        m_MinX -= ratio * (height - mwidth) / HighPrecision{ 2.0 };
-        m_MaxX += ratio * (height - mwidth) / HighPrecision{ 2.0 };
+        minX -= ratio * (height - mwidth) / HighPrecision{ 2.0 };
+        maxX += ratio * (height - mwidth) / HighPrecision{ 2.0 };
         m_ChangedWindow = true;
     } else if (height < mwidth) {
-        m_MinY -= (mwidth - height) / HighPrecision{ 2.0 };
-        m_MaxY += (mwidth - height) / HighPrecision{ 2.0 };
+        minY -= (mwidth - height) / HighPrecision{ 2.0 };
+        maxY += (mwidth - height) / HighPrecision{ 2.0 };
         m_ChangedWindow = true;
     }
+
+    m_Ptz = PointZoomBBConverter{ minX, minY, maxX, maxY };
 
     CleanupThreads(false);
 }
@@ -1402,23 +1394,30 @@ void Fractal::ApproachTarget(void) {
 
     SaveCurPos();
 
+    auto MinX = GetMinX();
+    auto MinY = GetMinY();
+    auto MaxX = GetMaxX();
+    auto MaxY = GetMaxY();
+
     IterTypeFull baseIters = GetNumIterations<IterTypeFull>();
     HighPrecision incIters = (HighPrecision)((HighPrecision)targetIters - (HighPrecision)baseIters) / (HighPrecision)numFrames;
     for (int i = 0; i < numFrames; i++) {
-        auto MinX = GetMinX();
-        auto MinY = GetMinY();
-        auto MaxX = GetMaxX();
-        auto MaxY = GetMaxY();
+        auto curMinX = m_Ptz.GetMinX();
+        auto curMinY = m_Ptz.GetMinY();
+        auto curMaxX = m_Ptz.GetMaxX();
+        auto curMaxY = m_Ptz.GetMaxY();
 
-        deltaXMin = (MinX - m_MinX) / HighPrecision{ 75.0 };
-        deltaYMin = (MinY - m_MinY) / HighPrecision{ 75.0 };
-        deltaXMax = (MaxX - m_MaxX) / HighPrecision{ 75.0 };
-        deltaYMax = (MaxY - m_MaxY) / HighPrecision{ 75.0 };
+        deltaXMin = (MinX - curMinX) / HighPrecision{ 75.0 };
+        deltaYMin = (MinY - curMinY) / HighPrecision{ 75.0 };
+        deltaXMax = (MaxX - curMaxX) / HighPrecision{ 75.0 };
+        deltaYMax = (MaxY - curMaxY) / HighPrecision{ 75.0 };
 
-        m_MinX += deltaXMin;
-        m_MinY += deltaYMin;
-        m_MaxX += deltaXMax;
-        m_MaxY += deltaYMax;
+        m_Ptz = PointZoomBBConverter{
+            curMinX + deltaXMin,
+            curMinY + deltaYMin,
+            curMaxX + deltaXMax,
+            curMaxY + deltaYMax
+        };
 
         {
             HighPrecision result = ((HighPrecision)incIters * (HighPrecision)i);
@@ -1470,20 +1469,12 @@ void Fractal::ApproachTarget(void) {
 // Returns to the previous view.
 //////////////////////////////////////////////////////////////////////////////
 bool Fractal::Back(void) {
-    if (!m_PrevMinX.empty()) {
-        SetPosition(
-            m_PrevMinX.back(),
-            m_PrevMinY.back(),
-            m_PrevMaxX.back(),
-            m_PrevMaxY.back());
+    if (!m_PrevPtz.empty()) {
+        m_Ptz = m_PrevPtz.back();
         SetPrecision();
-
         m_RefOrbit.ResetGuess();
 
-        m_PrevMinX.pop_back();
-        m_PrevMinY.pop_back();
-        m_PrevMaxX.pop_back();
-        m_PrevMaxY.pop_back();
+        m_PrevPtz.pop_back();
 
         m_ChangedWindow = true;
         return true;
@@ -1559,12 +1550,8 @@ void Fractal::FindInterestingLocation(RECT *rect) {
 // the previous coordinates.
 //////////////////////////////////////////////////////////////////////////////
 void Fractal::SaveCurPos(void) {
-    if (m_MinX != m_MaxX ||
-        m_MinY != m_MaxY) {
-        m_PrevMinX.push_back(m_MinX);
-        m_PrevMinY.push_back(m_MinY);
-        m_PrevMaxX.push_back(m_MaxX);
-        m_PrevMaxY.push_back(m_MaxY);
+    if (!m_Ptz.Degenerate()) {
+        m_PrevPtz.push_back(m_Ptz);
     }
 }
 
@@ -1619,8 +1606,7 @@ void Fractal::SetIterType(IterTypeEnum type) {
 }
 
 HighPrecision Fractal::GetZoomFactor() const {
-    PointZoomBBConverter converter{ m_MinX, m_MinY, m_MaxX, m_MaxY };
-    return converter.GetZoomFactor();
+    return m_Ptz.GetZoomFactor();
 }
 
 void Fractal::SetPerturbationAlg(RefOrbitCalc::PerturbationAlg alg) {
@@ -2793,7 +2779,7 @@ void Fractal::DrawAsyncGpuFractalThreadStatic(Fractal *fractal) {
     fractal->DrawAsyncGpuFractalThread();
 }
 
-void Fractal::FillCoord(HighPrecision &src, MattQFltflt &dest) {
+void Fractal::FillCoord(const HighPrecision &src, MattQFltflt &dest) {
     // qflt
     dest.x = Convert<HighPrecision, float>(src);
     dest.y = Convert<HighPrecision, float>(src - HighPrecision{ dest.x });
@@ -2801,7 +2787,7 @@ void Fractal::FillCoord(HighPrecision &src, MattQFltflt &dest) {
     dest.w = Convert<HighPrecision, float>(src - HighPrecision{ dest.x } - HighPrecision{ dest.y } - HighPrecision{ dest.z });
 }
 
-void Fractal::FillCoord(HighPrecision &src, MattQDbldbl &dest) {
+void Fractal::FillCoord(const HighPrecision &src, MattQDbldbl &dest) {
     // qdbl
     dest.x = Convert<HighPrecision, double>(src);
     dest.y = Convert<HighPrecision, double>(src - HighPrecision{ dest.x });
@@ -2809,46 +2795,46 @@ void Fractal::FillCoord(HighPrecision &src, MattQDbldbl &dest) {
     dest.w = Convert<HighPrecision, double>(src - HighPrecision{ dest.x } - HighPrecision{ dest.y } - HighPrecision{ dest.z });
 }
 
-void Fractal::FillCoord(HighPrecision &src, MattDbldbl &dest) {
+void Fractal::FillCoord(const HighPrecision &src, MattDbldbl &dest) {
     // dbl
     dest.head = Convert<HighPrecision, double>(src);
     dest.tail = Convert<HighPrecision, double>(src - HighPrecision{ dest.head });
 }
 
-void Fractal::FillCoord(HighPrecision &src, double &dest) {
+void Fractal::FillCoord(const HighPrecision &src, double &dest) {
     // doubleOnly
     dest = Convert<HighPrecision, double>(src);
 }
 
-void Fractal::FillCoord(HighPrecision &src, HDRFloat<float> &dest) {
+void Fractal::FillCoord(const HighPrecision &src, HDRFloat<float> &dest) {
     // hdrflt
     dest = (HDRFloat<float>)src;
     HdrReduce(dest);
 }
 
-void Fractal::FillCoord(HighPrecision &src, HDRFloat<double> &dest) {
+void Fractal::FillCoord(const HighPrecision &src, HDRFloat<double> &dest) {
     //  hdrdbl
     dest = (HDRFloat<double>)src;
     HdrReduce(dest);
 }
 
-void Fractal::FillCoord(HighPrecision &src, MattDblflt &dest) {
+void Fractal::FillCoord(const HighPrecision &src, MattDblflt &dest) {
     // flt
     dest.head = Convert<HighPrecision, float>(src);
     dest.tail = Convert<HighPrecision, float>(src - HighPrecision{ dest.head });
 }
 
-void Fractal::FillCoord(HighPrecision &src, float &dest) {
+void Fractal::FillCoord(const HighPrecision &src, float &dest) {
     // floatOnly
     dest = Convert<HighPrecision, float>(src);
 }
 
-void Fractal::FillCoord(HighPrecision &src, CudaDblflt<MattDblflt> &dest) {
+void Fractal::FillCoord(const HighPrecision &src, CudaDblflt<MattDblflt> &dest) {
     double destDbl = Convert<HighPrecision, double>(src);
     dest = CudaDblflt(destDbl);
 }
 
-void Fractal::FillCoord(HighPrecision &src, HDRFloat<CudaDblflt<MattDblflt>> &dest) {
+void Fractal::FillCoord(const HighPrecision &src, HDRFloat<CudaDblflt<MattDblflt>> &dest) {
     HDRFloat<CudaDblflt<MattDblflt>> destDbl(src);
     dest = destDbl;
 }
@@ -2856,16 +2842,21 @@ void Fractal::FillCoord(HighPrecision &src, HDRFloat<CudaDblflt<MattDblflt>> &de
 
 template<class T>
 void Fractal::FillGpuCoords(T &cx2, T &cy2, T &dx2, T &dy2) {
+    const auto &maxX = m_Ptz.GetMaxX();
+    const auto &minX = m_Ptz.GetMinX();
+    const auto &maxY = m_Ptz.GetMaxY();
+    const auto &minY = m_Ptz.GetMinY();
+
     HighPrecision src_dy =
-        (m_MaxY - m_MinY) /
+        (maxY - minY) /
         (HighPrecision)(m_ScrnHeight * GetGpuAntialiasing());
 
     HighPrecision src_dx =
-        (m_MaxX - m_MinX) /
+        (maxX - minX) /
         (HighPrecision)(m_ScrnWidth * GetGpuAntialiasing());
 
-    FillCoord(m_MinX, cx2);
-    FillCoord(m_MinY, cy2);
+    FillCoord(minX, cx2);
+    FillCoord(minY, cy2);
     FillCoord(src_dx, dx2);
     FillCoord(src_dy, dy2);
 }
@@ -2906,13 +2897,18 @@ void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
         PerturbExtras::Disable,
         RefOrbitCalc::Extras::None>();
 
-    HighPrecision hiDx{ (m_MaxX - m_MinX) / HighPrecision{ m_ScrnWidth * GetGpuAntialiasing() } };
-    HighPrecision hiDy{ (m_MaxY - m_MinY) / HighPrecision{ m_ScrnHeight * GetGpuAntialiasing() } };
+    const auto &maxX = m_Ptz.GetMaxX();
+    const auto &minX = m_Ptz.GetMinX();
+    const auto &maxY = m_Ptz.GetMaxY();
+    const auto &minY = m_Ptz.GetMinY();
+
+    HighPrecision hiDx{ (maxX - minX) / HighPrecision{ m_ScrnWidth * GetGpuAntialiasing() } };
+    HighPrecision hiDy{ (maxY - minY) / HighPrecision{ m_ScrnHeight * GetGpuAntialiasing() } };
     double dx = Convert<HighPrecision, double>(hiDx);
     double dy = Convert<HighPrecision, double>(hiDy);
 
-    double centerX = (double)(results->GetHiX() - m_MinX);
-    double centerY = (double)(results->GetHiY() - m_MaxY);
+    double centerX = (double)(results->GetHiX() - minX);
+    double centerY = (double)(results->GetHiY() - maxY);
 
     static constexpr size_t num_threads = std::thread::hardware_concurrency();
     std::deque<std::atomic_uint64_t> atomics;
@@ -3059,8 +3055,13 @@ void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
 //////////////////////////////////////////////////////////////////////////////
 template<typename IterType, class T, class SubType>
 void Fractal::CalcCpuHDR(bool MemoryOnly) {
-    const T dx = T((m_MaxX - m_MinX) / HighPrecision{ m_ScrnWidth * GetGpuAntialiasing() });
-    const T dy = T((m_MaxY - m_MinY) / HighPrecision{ m_ScrnHeight * GetGpuAntialiasing() });
+    const auto &maxX = m_Ptz.GetMaxX();
+    const auto &minX = m_Ptz.GetMinX();
+    const auto &maxY = m_Ptz.GetMaxY();
+    const auto &minY = m_Ptz.GetMinY();
+
+    const T dx = T((maxX - minX) / HighPrecision{ m_ScrnWidth * GetGpuAntialiasing() });
+    const T dy = T((maxY - minY) / HighPrecision{ m_ScrnHeight * GetGpuAntialiasing() });
 
     const size_t num_threads = std::thread::hardware_concurrency();
     std::deque<std::atomic_uint64_t> atomics;
@@ -3082,10 +3083,10 @@ void Fractal::CalcCpuHDR(bool MemoryOnly) {
                 continue;
             }
 
-            T cx = T{ m_MinX };
+            T cx = T{ minX };
 
             // This is kind of kludgy.  We cast the integer y to a float.
-            T cy = T{ T{m_MaxY} - dy * T{static_cast<float>(y)} };
+            T cy = T{ T{maxY} - dy * T{static_cast<float>(y)} };
             T zx, zy;
             T zx2, zy2;
             T sum;
@@ -3133,6 +3134,11 @@ void Fractal::CalcCpuHDR(bool MemoryOnly) {
 
 template<typename IterType, class T, class SubType>
 void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
+    const auto &maxX = m_Ptz.GetMaxX();
+    const auto &minX = m_Ptz.GetMinX();
+    const auto &maxY = m_Ptz.GetMaxY();
+    const auto &minY = m_Ptz.GetMinY();
+
     auto *results = m_RefOrbit.GetAndCreateUsefulPerturbationResults<
         IterType,
         T,
@@ -3143,14 +3149,14 @@ void Fractal::CalcCpuPerturbationFractalBLA(bool MemoryOnly) {
     BLAS<IterType, T> blas(*results);
     blas.Init((IterType)results->GetCountOrbitEntries(), results->GetMaxRadius());
 
-    T dx = T((m_MaxX - m_MinX) / HighPrecision{ m_ScrnWidth * GetGpuAntialiasing() });
+    T dx = T((maxX - minX) / HighPrecision{ m_ScrnWidth * GetGpuAntialiasing() });
     HdrReduce(dx);
-    T dy = T((m_MaxY - m_MinY) / HighPrecision{ m_ScrnHeight * GetGpuAntialiasing() });
+    T dy = T((maxY - minY) / HighPrecision{ m_ScrnHeight * GetGpuAntialiasing() });
     HdrReduce(dy);
 
-    T centerX = (T)(results->GetHiX() - m_MinX);
+    T centerX = (T)(results->GetHiX() - minX);
     HdrReduce(centerX);
-    T centerY = (T)(results->GetHiY() - m_MaxY);
+    T centerY = (T)(results->GetHiY() - maxY);
     HdrReduce(centerY);
 
     const size_t num_threads = std::thread::hardware_concurrency();;
@@ -3393,14 +3399,19 @@ void Fractal::CalcCpuPerturbationFractalLAV2(bool MemoryOnly) {
 
     auto &LaReference = *results->GetLaReference();
 
-    T dx = T((m_MaxX - m_MinX) / HighPrecision(m_ScrnWidth * GetGpuAntialiasing()));
+    const auto &maxX = m_Ptz.GetMaxX();
+    const auto &minX = m_Ptz.GetMinX();
+    const auto &maxY = m_Ptz.GetMaxY();
+    const auto &minY = m_Ptz.GetMinY();
+
+    T dx = T((maxX - minX) / HighPrecision(m_ScrnWidth * GetGpuAntialiasing()));
     HdrReduce(dx);
-    T dy = T((m_MaxY - m_MinY) / HighPrecision(m_ScrnHeight * GetGpuAntialiasing()));
+    T dy = T((maxY - minY) / HighPrecision(m_ScrnHeight * GetGpuAntialiasing()));
     HdrReduce(dy);
 
-    T centerX = (T)(results->GetHiX() - m_MinX);
+    T centerX = (T)(results->GetHiX() - minX);
     HdrReduce(centerX);
-    T centerY = (T)(results->GetHiY() - m_MaxY);
+    T centerY = (T)(results->GetHiY() - maxY);
     HdrReduce(centerY);
 
     const size_t num_threads = std::thread::hardware_concurrency();;
@@ -3589,8 +3600,8 @@ void Fractal::CalcGpuPerturbationFractalBLA(bool MemoryOnly) {
 
     FillGpuCoords<T>(cx2, cy2, dx2, dy2);
 
-    HighPrecision centerX = results->GetHiX() - m_MinX;
-    HighPrecision centerY = results->GetHiY() - m_MaxY;
+    HighPrecision centerX = results->GetHiX() - m_Ptz.GetMinX();
+    HighPrecision centerY = results->GetHiY() - m_Ptz.GetMaxY();
 
     FillCoord(centerX, centerX2);
     FillCoord(centerY, centerY2);
@@ -3698,8 +3709,8 @@ void Fractal::CalcGpuPerturbationFractalLAv2(bool MemoryOnly) {
 
     FillGpuCoords<T>(cx2, cy2, dx2, dy2);
 
-    HighPrecision centerX = results->GetHiX() - m_MinX;
-    HighPrecision centerY = results->GetHiY() - m_MaxY;
+    HighPrecision centerX = results->GetHiX() - m_Ptz.GetMinX();
+    HighPrecision centerY = results->GetHiY() - m_Ptz.GetMaxY();
 
     FillCoord(centerX, centerX2);
     FillCoord(centerY, centerY2);
@@ -3750,8 +3761,8 @@ void Fractal::CalcGpuPerturbationFractalScaledBLA(bool MemoryOnly) {
 
     FillGpuCoords<T>(cx2, cy2, dx2, dy2);
 
-    HighPrecision centerX = results->GetHiX() - m_MinX;
-    HighPrecision centerY = results->GetHiY() - m_MaxY;
+    HighPrecision centerX = results->GetHiX() - m_Ptz.GetMinX();
+    HighPrecision centerY = results->GetHiY() - m_Ptz.GetMaxY();
 
     FillCoord(centerX, centerX2);
     FillCoord(centerY, centerY2);
@@ -3865,6 +3876,31 @@ const BenchmarkDataCollection &Fractal::GetBenchmark() const {
     return m_BenchmarkData;
 }
 
+const HighPrecision &Fractal::GetMinX(void) const {
+    return m_Ptz.GetMinX();
+}
+
+const HighPrecision &Fractal::GetMaxX(void) const {
+    return m_Ptz.GetMaxX();
+}
+
+const HighPrecision &Fractal::GetMinY(void) const {
+    return m_Ptz.GetMinY();
+}
+
+const HighPrecision &Fractal::GetMaxY(void) const {
+    return m_Ptz.GetMaxY();
+}
+
+size_t Fractal::GetRenderWidth(void) const {
+    return m_ScrnWidth;
+}
+
+size_t Fractal::GetRenderHeight(void) const {
+    return m_ScrnHeight;
+}
+
+
 //////////////////////////////////////////////////////////////////////////////
 // The resolution is 4096x4096.
 // Re-renders the current fractal at very high resolution,
@@ -3939,10 +3975,10 @@ void Fractal::LoadRefOrbit(
     if (oldSettings) {
         // Store "RenderAlgorithm::AUTO" if applicable.
         *oldSettings = RecommendedSettings{
-            m_MinX,
-            m_MinY,
-            m_MaxX,
-            m_MaxY,
+            m_Ptz.GetMinX(),
+            m_Ptz.GetMinY(),
+            m_Ptz.GetMaxX(),
+            m_Ptz.GetMaxY(),
             m_RenderAlgorithm,
             GetNumIterations<IterTypeFull>()
         };
@@ -3971,7 +4007,7 @@ void Fractal::LoadRefOrbit(
     SetNumIterations<IterTypeFull>(recommendedSettings.GetNumIterations());
 
     const auto &ptz = recommendedSettings.GetPointZoomBBConverter();
-    SetPosition(ptz.GetMinX(), ptz.GetMinY(), ptz.GetMaxX(), ptz.GetMaxY());
+    m_Ptz = ptz;
 
     ChangedMakeDirty();
 }
@@ -4013,8 +4049,8 @@ HighPrecision Fractal::XFromScreenToCalc(HighPrecision x) {
     HighPrecision aa(IncludeGpuAntialiasing ? GetGpuAntialiasing() : 1);
     HighPrecision highHeight(m_ScrnHeight);
     HighPrecision highWidth(m_ScrnWidth);
-    HighPrecision OriginX{ highWidth * aa / (m_MaxX - m_MinX) * -m_MinX };
-    return HighPrecision{ (x - OriginX) * (m_MaxX - m_MinX) / (highWidth * aa) };
+    HighPrecision OriginX{ highWidth * aa / (m_Ptz.GetMaxX() - m_Ptz.GetMinX()) * -m_Ptz.GetMinX()};
+    return HighPrecision{ (x - OriginX) * (m_Ptz.GetMaxX() - m_Ptz.GetMinX()) / (highWidth * aa)};
 }
 
 template<bool IncludeGpuAntialiasing>
@@ -4022,20 +4058,20 @@ HighPrecision Fractal::YFromScreenToCalc(HighPrecision y) {
     HighPrecision aa(IncludeGpuAntialiasing ? GetGpuAntialiasing() : 1);
     HighPrecision highHeight(m_ScrnHeight);
     HighPrecision highWidth(m_ScrnWidth);
-    HighPrecision OriginY = (HighPrecision)(highHeight * aa) / (m_MaxY - m_MinY) * m_MaxY;
-    return HighPrecision{ -(y - OriginY) * (m_MaxY - m_MinY) / (highHeight * aa) };
+    HighPrecision OriginY = (HighPrecision)(highHeight * aa) / (m_Ptz.GetMaxY() - m_Ptz.GetMinY()) * m_Ptz.GetMaxY();
+    return HighPrecision{ -(y - OriginY) * (m_Ptz.GetMaxY() - m_Ptz.GetMinY()) / (highHeight * aa)};
 }
 
 HighPrecision Fractal::XFromCalcToScreen(HighPrecision x) const {
     HighPrecision highHeight(m_ScrnHeight);
     HighPrecision highWidth(m_ScrnWidth);
-    return HighPrecision{ (x - m_MinX) * (highWidth / (m_MaxX - m_MinX)) };
+    return HighPrecision{ (x - m_Ptz.GetMinX()) * (highWidth / (m_Ptz.GetMaxX() - m_Ptz.GetMinX()))};
 }
 
 HighPrecision Fractal::YFromCalcToScreen(HighPrecision y) const {
     HighPrecision highHeight(m_ScrnHeight);
     HighPrecision highWidth(m_ScrnWidth);
-    return HighPrecision{ highHeight - (y - m_MinY) * highHeight / (m_MaxY - m_MinY) };
+    return HighPrecision{ highHeight - (y - m_Ptz.GetMinY()) * highHeight / (m_Ptz.GetMaxY() - m_Ptz.GetMinY())};
 }
 
 void Fractal::ForceRecalc() {

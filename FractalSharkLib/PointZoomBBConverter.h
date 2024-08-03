@@ -26,6 +26,10 @@ public:
     const HighPrecision &GetPtY() const;
     const HighPrecision &GetZoomFactor() const;
 
+    void SetPrecision(uint64_t precInBits);
+
+    bool Degenerate() const;
+
 private:
     HighPrecision m_MinX, m_MinY;
     HighPrecision m_MaxX, m_MaxY;

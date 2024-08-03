@@ -1,8 +1,8 @@
 #include "stdafx.h"
 #include "WaitCursor.h"
 
-WaitCursor::WaitCursor() {
-    SetCursor(LoadCursor(nullptr, IDC_WAIT));
+WaitCursor::WaitCursor() : m_hCursor{} {
+    m_hCursor = SetCursor(LoadCursor(nullptr, IDC_WAIT));
 }
 
 WaitCursor::~WaitCursor() {

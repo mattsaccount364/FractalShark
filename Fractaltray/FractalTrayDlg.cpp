@@ -5,6 +5,7 @@
 #include "FractalTray.h"
 #include "FractalTrayDlg.h"
 #include ".\fractaltraydlg.h"
+#include "PrecisionCalculator.h"
 
 #include <math.h>
 #include <io.h>
@@ -336,12 +337,34 @@ void CFractalTrayDlg::OnBnClickedButtonGenerate()
     // TODO or just use float exp
     HighPrecision::defaultPrecisionInBits(PrecisionLimit);
 
-    ConvertCStringToDest(m_SourceCoords, &srcWidth, &srcHeight, &curMinX, &curMinY, &curMaxX, &curMaxY, &sourceIters, &gpuAntialiasing);
-    ConvertCStringToDest(m_DestCoords, &destWidth, &destHeight, &destMinX, &destMinY, &destMaxX, &destMaxY, &targetIters, &gpuAntialiasing);
+    ConvertCStringToDest(
+        m_SourceCoords,
+        &srcWidth,
+        &srcHeight,
+        &curMinX,
+        &curMinY,
+        &curMaxX,
+        &curMaxY,
+        &sourceIters,
+        &gpuAntialiasing);
+    ConvertCStringToDest(
+        m_DestCoords,
+        &destWidth,
+        &destHeight,
+        &destMinX,
+        &destMinY,
+        &destMaxX,
+        &destMaxY,
+        &targetIters,
+        &gpuAntialiasing);
 
     // Reduce precision to something semi-sane
-    auto prec = Fractal::GetPrecision(destMinX, destMinY, destMaxX, destMaxY, false);
-    Fractal::SetPrecision(prec, destMinX, destMinY, destMaxX, destMaxY);
+    const bool requiresReuse = false;
+    PointZoomBBConverter ptz{ curMinX, curMinY, curMaxX, curMaxY };
+    auto precInBits = PrecisionCalculator::GetPrecision(ptz, requiresReuse);
+    ptz.SetPrecision(precInBits);
+
+    auto precInDigits = static_cast<uint64_t>(static_cast<double>(precInBits) / std::log10(2));
 
     curIters = sourceIters;
 
@@ -358,10 +381,11 @@ void CFractalTrayDlg::OnBnClickedButtonGenerate()
     std::vector<std::wstring> final_file;
     for (i = 0; i < MaxFrames; i++)
     {
-        deltaXMin = (destMinX - curMinX) / m_ScaleFactor;
-        deltaYMin = (destMinY - curMinY) / m_ScaleFactor;
-        deltaXMax = (destMaxX - curMaxX) / m_ScaleFactor;
-        deltaYMax = (destMaxY - curMaxY) / m_ScaleFactor;
+        HighPrecision scaleFactor{ m_ScaleFactor };
+        deltaXMin = (destMinX - curMinX) / scaleFactor;
+        deltaYMin = (destMinY - curMinY) / scaleFactor;
+        deltaXMax = (destMaxX - curMaxX) / scaleFactor;
+        deltaYMax = (destMaxY - curMaxY) / scaleFactor;
 
         curMinX += deltaXMin;
         curMinY += deltaYMin;
@@ -369,10 +393,12 @@ void CFractalTrayDlg::OnBnClickedButtonGenerate()
         curMaxY += deltaYMax;
         curIters += (double)incIters;
 
+        ptz = PointZoomBBConverter{ curMinX, curMinY, curMaxX, curMaxY };
+
         sprintf(outputImageFilename, "output-%06zd", i);
 
         std::stringstream ss;
-        ss << std::setprecision(prec);
+        ss << std::setprecision(precInDigits);
         ss << m_ResX << " ";
         ss << m_ResY << " ";
         ss << curMinX << " ";
@@ -410,19 +436,21 @@ int CFractalTrayDlg::HowManyFrames(void)
     ConvertCStringToDest(m_DestCoords, &destWidth, &destHeight, &destMinX, &destMinY, &destMaxX, &destMaxY);
 
     int i;
+    HighPrecision scaleFactor{ m_ScaleFactor };
+    HighPrecision point9{ 0.9 };
     for (i = 0;; i++)
     {
-        deltaXMin = (destMinX - curMinX) / m_ScaleFactor;
-        deltaYMin = (destMinY - curMinY) / m_ScaleFactor;
-        deltaXMax = (destMaxX - curMaxX) / m_ScaleFactor;
-        deltaYMax = (destMaxY - curMaxY) / m_ScaleFactor;
+        deltaXMin = (destMinX - curMinX) / scaleFactor;
+        deltaYMin = (destMinY - curMinY) / scaleFactor;
+        deltaXMax = (destMaxX - curMaxX) / scaleFactor;
+        deltaYMax = (destMaxY - curMaxY) / scaleFactor;
 
         curMinX += deltaXMin;
         curMinY += deltaYMin;
         curMaxX += deltaXMax;
         curMaxY += deltaYMax;
 
-        if (((destMaxX - destMinX) * (destMaxY - destMinY)) / ((curMaxX - curMinX) * (curMaxY - curMinY)) > .9)
+        if (((destMaxX - destMinX) * (destMaxY - destMinY)) / ((curMaxX - curMinX) * (curMaxY - curMinY)) > point9)
         {
             break;
         }
@@ -470,6 +498,7 @@ DWORD WINAPI CalcProc(LPVOID lpParameter)
     uint32_t resX, resY;
     HighPrecision minX, minY, maxX, maxY;
     uint32_t numIters;
+    const bool requiresReuse = false;
 
     uint32_t gpuAntialiasing;
 
@@ -510,7 +539,7 @@ DWORD WINAPI CalcProc(LPVOID lpParameter)
             continue;
         }
 
-        Fractal::SetPrecision(PrecisionLimit, minX, minY, maxX, maxY);
+        HighPrecision::defaultPrecisionInBits(PrecisionLimit);
 
         ConvertCStringToDest(
             line,
@@ -526,8 +555,9 @@ DWORD WINAPI CalcProc(LPVOID lpParameter)
 
         filename = fileprefix + filename;
 
-        auto prec = Fractal::GetPrecision(minX, minY, maxX, maxY, false);
-        Fractal::SetPrecision(prec, minX, minY, maxX, maxY);
+        PointZoomBBConverter ptz{ minX, minY, maxX, maxY };
+        auto prec = PrecisionCalculator::GetPrecision(ptz, requiresReuse);
+        fractal->SetPrecision(prec);
 
         // lame hack
         //numIters /= 200;
@@ -537,7 +567,7 @@ DWORD WINAPI CalcProc(LPVOID lpParameter)
 
         fractal->SetNumIterations<uint32_t>(numIters);
         fractal->ResetDimensions(resX, resY, gpuAntialiasing);
-        fractal->RecenterViewCalc(minX, minY, maxX, maxY);
+        fractal->RecenterViewCalc(ptz);
         fractal->UsePalette(8);
         fractal->CalcFractal(true);
         fractal->SaveCurrentFractal(filename, false);

@@ -225,15 +225,15 @@
     <Image Include="small.ico" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="..\README" />
-  </ItemGroup>
-  <ItemGroup>
     <ProjectReference Include="..\FractalSharkGpuLib\FractalSharkGpuLib.vcxproj">
       <Project>{9dfe26ef-c168-49ef-a26f-dc9fd82c8d4c}</Project>
     </ProjectReference>
     <ProjectReference Include="..\FractalSharkLib\FractalSharkLib.vcxproj">
       <Project>{26552d9e-6051-465a-9405-056be0a65a56}</Project>
     </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\README.md" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

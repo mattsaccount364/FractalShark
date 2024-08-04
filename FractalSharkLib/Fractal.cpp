@@ -1278,9 +1278,13 @@ void Fractal::View(size_t view) {
         minY = HighPrecision{ "0.258843760578193851766291691547748715299348571148609040920129594652828778695849190155002622224812073888468037993123944" };
         maxX = HighPrecision{ "-0.70862955989319937346224936117162744514799710717496754578203159009350016117537665689062408950527358545539304236349863" };
         maxY = HighPrecision{ "0.258843760578193851766291691547748715299348571148609040920340427370810926544385191871426814029226476053584030974625928" };
+        m_LAParameters.SetDefaults(LAParameters::LADefaults::MaxPerf);
         SetCompressionErrorExp(Fractal::CompressionError::Low, 20);
         SetIterType(IterTypeEnum::Bits64);
-        SetNumIterations<IterTypeFull>(1'000'000'000'000'000);
+
+        // 1 quadrillion works but 50 trillion is plenty
+        //SetNumIterations<IterTypeFull>(1'000'000'000'000'000);
+        SetNumIterations<IterTypeFull>(50'000'000'000'000);
         break;
 
     case 28:

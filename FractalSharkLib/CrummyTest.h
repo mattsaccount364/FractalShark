@@ -28,12 +28,12 @@ private:
         size_t &testIndex,
         IterTypeEnum iterType);
 
+    template<TestTypeEnum viewIndex>
     void BasicOneTest(
-        size_t viewIndex,
-        size_t testIndex,
+        auto algToTest,
+        size_t &testIndex,
         const wchar_t *dirName,
         const wchar_t *testPrefix,
-        RenderAlgorithm algToTest,
         IterTypeEnum iterType);
 
     static std::string GenFilename(

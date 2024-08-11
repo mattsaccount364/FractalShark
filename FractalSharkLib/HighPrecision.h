@@ -366,6 +366,15 @@ To Convert(From data) {
         return 0;
     }
 }
+#else // __CUDACC__
+
+//
+// CUDA version of HighPrecision.  Using void
+// means that we can't use the class in any way.
+//
+
+using HighPrecision = void;
+
 #endif
 
 template <

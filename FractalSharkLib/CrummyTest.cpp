@@ -49,124 +49,28 @@ void CrummyTest::BasicTestInternal(
 
     // First, iterate over all the supported RenderAlgorithm entries and render the default view:
     // Skip AUTO plus all LAO-only algorithms.  They produce a black screen for the default view.
-    for (size_t i = 0; i < (size_t)RenderAlgorithm::AUTO; i++) {
-        auto curAlg = static_cast<RenderAlgorithm>(i);
-        if (curAlg != RenderAlgorithm::Gpu1x32PerturbedLAv2LAO &&
-            curAlg != RenderAlgorithm::Gpu2x32PerturbedLAv2LAO &&
-            curAlg != RenderAlgorithm::Gpu1x64PerturbedLAv2LAO &&
-            curAlg != RenderAlgorithm::GpuHDRx32PerturbedLAv2LAO &&
-            curAlg != RenderAlgorithm::GpuHDRx2x32PerturbedLAv2LAO &&
-            curAlg != RenderAlgorithm::GpuHDRx64PerturbedLAv2LAO &&
+    IterateRenderAlgs([&](auto i) {
+        constexpr auto alg = std::get<i>(RenderAlgorithmsTuple);
+        BasicOneTest<TestTypeEnum::View0>(alg, testIndex, dirName, L"Default", iterType);
+        });
 
-            curAlg != RenderAlgorithm::Gpu1x32PerturbedRCLAv2LAO &&
-            curAlg != RenderAlgorithm::Gpu2x32PerturbedRCLAv2LAO &&
-            curAlg != RenderAlgorithm::Gpu1x64PerturbedRCLAv2LAO &&
-            curAlg != RenderAlgorithm::GpuHDRx32PerturbedRCLAv2LAO &&
-            curAlg != RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2LAO &&
-            curAlg != RenderAlgorithm::GpuHDRx64PerturbedRCLAv2LAO) {
-            BasicOneTest(0, testIndex, dirName, L"View0", curAlg, iterType);
-            ++testIndex;
-        }
-    }
-
-    // Now, iterate over all the RenderAlgorithm entries that should work with View #5.
-    RenderAlgorithm View5Algs[] = {
-        RenderAlgorithm::Gpu1x32PerturbedScaled,
-        RenderAlgorithm::Gpu2x32PerturbedScaled,
-        RenderAlgorithm::GpuHDRx32PerturbedScaled,
-
-        RenderAlgorithm::Gpu1x64PerturbedBLA,
-        RenderAlgorithm::GpuHDRx32PerturbedBLA,
-        RenderAlgorithm::GpuHDRx64PerturbedBLA,
-
-        RenderAlgorithm::Gpu1x64PerturbedLAv2,
-        RenderAlgorithm::Gpu1x64PerturbedLAv2PO,
-        RenderAlgorithm::Gpu1x64PerturbedRCLAv2,
-        RenderAlgorithm::Gpu1x64PerturbedRCLAv2PO,
-        RenderAlgorithm::GpuHDRx32PerturbedLAv2,
-        RenderAlgorithm::GpuHDRx32PerturbedLAv2PO,
-        RenderAlgorithm::GpuHDRx32PerturbedRCLAv2,
-        RenderAlgorithm::GpuHDRx32PerturbedRCLAv2PO,
-        RenderAlgorithm::GpuHDRx2x32PerturbedLAv2,
-        RenderAlgorithm::GpuHDRx2x32PerturbedLAv2PO,
-        RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2,
-        RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2PO,
-        RenderAlgorithm::GpuHDRx64PerturbedLAv2,
-        RenderAlgorithm::GpuHDRx64PerturbedLAv2PO,
-        RenderAlgorithm::GpuHDRx64PerturbedRCLAv2,
-        RenderAlgorithm::GpuHDRx64PerturbedRCLAv2PO,
-
-        RenderAlgorithm::Gpu1x64PerturbedLAv2LAO,
-        RenderAlgorithm::Gpu1x64PerturbedRCLAv2LAO,
-        RenderAlgorithm::GpuHDRx32PerturbedLAv2LAO,
-        RenderAlgorithm::GpuHDRx32PerturbedRCLAv2LAO,
-        RenderAlgorithm::GpuHDRx2x32PerturbedLAv2LAO,
-        RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2LAO,
-        RenderAlgorithm::GpuHDRx64PerturbedLAv2LAO,
-        RenderAlgorithm::GpuHDRx64PerturbedRCLAv2LAO,
-    };
-
-    for (auto curAlg : View5Algs) {
-        BasicOneTest(5, testIndex, dirName, L"View5", curAlg, iterType);
-        ++testIndex;
-    }
+    IterateRenderAlgs([&](auto i) {
+        constexpr auto alg = std::get<i>(RenderAlgorithmsTuple);
+        BasicOneTest<TestTypeEnum::View5>(alg, testIndex, dirName, L"View5", iterType);
+        });
 
     if constexpr (IncludeSlow) {
-        // This one is quite slow.  Be advised.
-        RenderAlgorithm View10Algs[] = {
-            RenderAlgorithm::GpuHDRx32PerturbedLAv2,
-            RenderAlgorithm::GpuHDRx32PerturbedRCLAv2,
-            RenderAlgorithm::GpuHDRx2x32PerturbedLAv2,
-            RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2,
-            RenderAlgorithm::GpuHDRx64PerturbedLAv2,
-            RenderAlgorithm::GpuHDRx64PerturbedRCLAv2,
-
-            RenderAlgorithm::GpuHDRx32PerturbedLAv2LAO,
-            RenderAlgorithm::GpuHDRx32PerturbedRCLAv2LAO,
-            RenderAlgorithm::GpuHDRx2x32PerturbedLAv2LAO,
-            RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2LAO,
-            RenderAlgorithm::GpuHDRx64PerturbedLAv2LAO,
-            RenderAlgorithm::GpuHDRx64PerturbedRCLAv2LAO,
-        };
-
-        for (auto curAlg : View10Algs) {
-            BasicOneTest(10, testIndex, dirName, L"View10", curAlg, iterType);
-            ++testIndex;
-        }
+        IterateRenderAlgs([&](auto i) {
+            constexpr auto alg = std::get<i>(RenderAlgorithmsTuple);
+            BasicOneTest<TestTypeEnum::View10>(alg, testIndex, dirName, L"View10", iterType);
+            });
     }
 
     // Finally, iterate over all the RenderAlgorithm entries that should work with View #11.
-    RenderAlgorithm View11Algs[] = {
-        RenderAlgorithm::GpuHDRx32PerturbedScaled,
-
-        RenderAlgorithm::GpuHDRx32PerturbedBLA,
-        RenderAlgorithm::GpuHDRx64PerturbedBLA,
-
-        RenderAlgorithm::GpuHDRx32PerturbedLAv2,
-        RenderAlgorithm::GpuHDRx32PerturbedLAv2PO,
-        RenderAlgorithm::GpuHDRx32PerturbedRCLAv2,
-        RenderAlgorithm::GpuHDRx32PerturbedRCLAv2PO,
-        RenderAlgorithm::GpuHDRx2x32PerturbedLAv2,
-        RenderAlgorithm::GpuHDRx2x32PerturbedLAv2PO,
-        RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2,
-        RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2PO,
-        RenderAlgorithm::GpuHDRx64PerturbedLAv2,
-        RenderAlgorithm::GpuHDRx64PerturbedLAv2PO,
-        RenderAlgorithm::GpuHDRx64PerturbedRCLAv2,
-        RenderAlgorithm::GpuHDRx64PerturbedRCLAv2PO,
-
-        RenderAlgorithm::GpuHDRx32PerturbedLAv2LAO,
-        RenderAlgorithm::GpuHDRx32PerturbedRCLAv2LAO,
-        RenderAlgorithm::GpuHDRx2x32PerturbedLAv2LAO,
-        RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2LAO,
-        RenderAlgorithm::GpuHDRx64PerturbedLAv2LAO,
-        RenderAlgorithm::GpuHDRx64PerturbedRCLAv2LAO,
-    };
-
-    for (auto curAlg : View11Algs) {
-        BasicOneTest(11, testIndex, dirName, L"View11", curAlg, iterType);
-        ++testIndex;
-    }
+    IterateRenderAlgs([&](auto i) {
+        constexpr auto alg = std::get<i>(RenderAlgorithmsTuple);
+        BasicOneTest<TestTypeEnum::View11>(alg, testIndex, dirName, L"View11", iterType);
+        });
 }
 
 std::string CrummyTest::GenFilename(
@@ -185,13 +89,13 @@ std::string CrummyTest::GenFilename(
     if (origAlgToTest == convertAlgToTest) {
         algStr =
             std::string(" - Alg#") +
-            RenderAlgorithmStr[static_cast<size_t>(origAlgToTest)];
+            origAlgToTest.AlgorithmStr;
     } else {
         algStr =
             std::string(" - Alg#") +
-            RenderAlgorithmStr[static_cast<size_t>(origAlgToTest)] +
+            origAlgToTest.AlgorithmStr +
             std::string(" to ") +
-            RenderAlgorithmStr[static_cast<size_t>(convertAlgToTest)];
+            convertAlgToTest.AlgorithmStr;
     }
 
     auto compErrStr = compressionError >= 0 ? std::string(" - CompErr#") + std::to_string(compressionError) : "";
@@ -280,33 +184,37 @@ std::wstring CrummyTest::GenFilenameW(
         baseName);
 }
 
+template<TestTypeEnum testEnumIndex>
 void CrummyTest::BasicOneTest(
-    size_t viewIndex,
-    size_t testIndex,
+    auto algToTest,
+    size_t &testIndex,
     const wchar_t *dirName,
     const wchar_t *testPrefix,
-    RenderAlgorithm algToTest,
     IterTypeEnum iterType) {
 
-    m_Fractal.SetRenderAlgorithm(algToTest);
-    m_Fractal.View(viewIndex);
-    m_Fractal.ForceRecalc();
+    if constexpr (algToTest.TestInclude.Lookup(testEnumIndex) != TestViewEnum::Disabled) {
+        const auto viewIndex = static_cast<size_t>(algToTest.TestInclude.Lookup(testEnumIndex));
 
-    auto name = m_Fractal.GetRenderAlgorithmName();
-    m_Fractal.CalcFractal(false);
+        m_Fractal.SetRenderAlgorithm(algToTest.Algorithm);
+        m_Fractal.View(viewIndex);
+        m_Fractal.ForceRecalc();
 
-    const auto filenameW = GenFilenameW(
-        testIndex,
-        viewIndex,
-        algToTest,
-        -1,
-        iterType,
-        testPrefix,
-        dirName,
-        name);
+        auto name = m_Fractal.GetRenderAlgorithmName();
+        m_Fractal.CalcFractal(false);
 
-    m_Fractal.SaveCurrentFractal(filenameW, false);
-    //SaveItersAsText(filenameW);
+        const auto filenameW = GenFilenameW(
+            testIndex,
+            viewIndex,
+            algToTest.Algorithm,
+            -1,
+            iterType,
+            testPrefix,
+            dirName,
+            name);
+
+        m_Fractal.SaveCurrentFractal(filenameW, false);
+        //SaveItersAsText(filenameW);
+    }
 }
 
 void CrummyTest::TestBasic() {
@@ -337,9 +245,11 @@ void CrummyTest::TestBasic() {
 
     m_Fractal.InitialDefaultViewAndSettings();
     m_Fractal.CalcFractal(false);
+
+    ++testIndex;
 }
 
-void CrummyTest::ReferenceSaveLoad (
+void CrummyTest::ReferenceSaveLoad(
     Fractal &fractal,
     const wchar_t *dirName,
     size_t viewIndex,
@@ -393,20 +303,21 @@ void CrummyTest::ReferenceSaveLoad (
         try {
             const auto simpleFilename = genLocalFilename(L"Simple") + L".txt";
             fractal.SaveRefOrbit(CompressToDisk::SimpleCompression, simpleFilename);
-        } catch (FractalSharkSeriousException &e) {
-            if (origAlgToTest == RenderAlgorithm::GpuHDRx2x32PerturbedLAv2 ||
-                origAlgToTest == RenderAlgorithm::GpuHDRx2x32PerturbedLAv2PO ||
-                origAlgToTest == RenderAlgorithm::GpuHDRx2x32PerturbedLAv2LAO ||
-                origAlgToTest == RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2 ||
-                origAlgToTest == RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2PO ||
-                origAlgToTest == RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2LAO ||
+        }
+        catch (FractalSharkSeriousException &e) {
+            if (origAlgToTest == RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2 ||
+                origAlgToTest == RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2PO ||
+                origAlgToTest == RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2LAO ||
+                origAlgToTest == RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2 ||
+                origAlgToTest == RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2PO ||
+                origAlgToTest == RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2LAO ||
 
-                origAlgToTest == RenderAlgorithm::Gpu2x32PerturbedLAv2 ||
-                origAlgToTest == RenderAlgorithm::Gpu2x32PerturbedLAv2PO ||
-                origAlgToTest == RenderAlgorithm::Gpu2x32PerturbedLAv2LAO ||
-                origAlgToTest == RenderAlgorithm::Gpu2x32PerturbedRCLAv2 ||
-                origAlgToTest == RenderAlgorithm::Gpu2x32PerturbedRCLAv2PO ||
-                origAlgToTest == RenderAlgorithm::Gpu2x32PerturbedRCLAv2LAO) {
+                origAlgToTest == RenderAlgorithmEnum::Gpu2x32PerturbedLAv2 ||
+                origAlgToTest == RenderAlgorithmEnum::Gpu2x32PerturbedLAv2PO ||
+                origAlgToTest == RenderAlgorithmEnum::Gpu2x32PerturbedLAv2LAO ||
+                origAlgToTest == RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2 ||
+                origAlgToTest == RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2PO ||
+                origAlgToTest == RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2LAO) {
 
                 // This is expected to fail for 2x32 algorithms
             } else {
@@ -435,7 +346,7 @@ void CrummyTest::ReferenceSaveLoad (
     fractal.SetIterType(IterTypeEnum::Bits64);
 
     if (origAlgToTest == convertAlgToTest) {
-        fractal.SetRenderAlgorithm(RenderAlgorithm::AUTO);
+        fractal.SetRenderAlgorithm(RenderAlgorithmEnum::AUTO);
     }
 
     fractal.LoadRefOrbit(
@@ -466,19 +377,23 @@ void CrummyTest::TestReferenceSave() {
     m_Fractal.DefaultCompressionErrorExp(Fractal::CompressionError::Low);
     int32_t compressionError = m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low);
 
-    auto loopAll = [&](size_t view, std::vector<RenderAlgorithm> algsToTest) {
-        auto testSettings = { ImaginaSettings::ConvertToCurrent, ImaginaSettings::UseSaved };
-        for (auto curSettings : testSettings) {
-            for (auto curAlg : algsToTest) {
+    auto loopAll = [&]<TestTypeEnum viewEnum>(auto algToTest) {
+        const auto view = algToTest.TestInclude.Lookup(viewEnum);
+        if constexpr (view != TestViewEnum::Disabled) {
+            const auto viewIndex = static_cast<size_t>(view);
+
+            const auto testSettings = { ImaginaSettings::ConvertToCurrent, ImaginaSettings::UseSaved };
+            for (auto curSettings : testSettings) {
+                RenderAlgorithm algToTestRT{ algToTest.Algorithm };
                 ReferenceSaveLoad(
                     m_Fractal,
                     dirName,
-                    view,
+                    viewIndex,
                     testIndex,
                     IterTypeEnum::Bits64,
                     curSettings,
-                    curAlg,
-                    curAlg,
+                    algToTestRT,
+                    algToTestRT,
                     compressionError);
 
                 testIndex++;
@@ -486,56 +401,30 @@ void CrummyTest::TestReferenceSave() {
         }
     };
 
-    size_t viewToTest;
+    IterateRenderAlgs([&](auto i) {
+        constexpr auto alg = std::get<i>(RenderAlgorithmsTuple);
+        loopAll.operator()<TestTypeEnum::ReferenceSave0>(alg);
+        });
 
-    const auto View0Algs = {
-        RenderAlgorithm::Gpu1x32,
-        RenderAlgorithm::Gpu2x32,
-        RenderAlgorithm::GpuHDRx32,
-        RenderAlgorithm::Gpu1x64,
+    IterateRenderAlgs([&](auto i) {
+        constexpr auto alg = std::get<i>(RenderAlgorithmsTuple);
+        loopAll.operator()<TestTypeEnum::ReferenceSave5>(alg);
+        });
 
-        RenderAlgorithm::Gpu1x64PerturbedLAv2,
-        RenderAlgorithm::Gpu1x64PerturbedRCLAv2,
-        RenderAlgorithm::GpuHDRx32PerturbedLAv2,
-        RenderAlgorithm::GpuHDRx32PerturbedRCLAv2,
-        RenderAlgorithm::GpuHDRx2x32PerturbedLAv2,
-        RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2,
-        RenderAlgorithm::GpuHDRx64PerturbedLAv2,
-        RenderAlgorithm::GpuHDRx64PerturbedRCLAv2,
-    };
+    IterateRenderAlgs([&](auto i) {
+        constexpr auto alg = std::get<i>(RenderAlgorithmsTuple);
+        loopAll.operator()<TestTypeEnum::ReferenceSave10>(alg);
+        });
 
-    viewToTest = 0;
-    loopAll(viewToTest, View0Algs);
+    IterateRenderAlgs([&](auto i) {
+        constexpr auto alg = std::get<i>(RenderAlgorithmsTuple);
+        loopAll.operator()<TestTypeEnum::ReferenceSave13>(alg);
+        });
 
-    const auto View5and10Algs = {
-        RenderAlgorithm::Gpu1x64PerturbedLAv2,
-        RenderAlgorithm::Gpu1x64PerturbedRCLAv2,
-        RenderAlgorithm::GpuHDRx32PerturbedLAv2,
-        RenderAlgorithm::GpuHDRx32PerturbedRCLAv2,
-        RenderAlgorithm::GpuHDRx2x32PerturbedLAv2,
-        RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2,
-        RenderAlgorithm::GpuHDRx64PerturbedLAv2,
-        RenderAlgorithm::GpuHDRx64PerturbedRCLAv2,
-    };
-
-    viewToTest = 5;
-    loopAll(viewToTest, View5and10Algs);
-
-    viewToTest = 10;
-    loopAll(viewToTest, View5and10Algs);
-
-    const auto View13and14Algs = {
-        RenderAlgorithm::GpuHDRx32PerturbedLAv2,
-        RenderAlgorithm::GpuHDRx32PerturbedRCLAv2,
-        RenderAlgorithm::GpuHDRx64PerturbedLAv2,
-        RenderAlgorithm::GpuHDRx64PerturbedRCLAv2,
-    };
-
-    viewToTest = 13;
-    loopAll(viewToTest, View13and14Algs);
-
-    viewToTest = 14;
-    loopAll(viewToTest, View13and14Algs);
+    IterateRenderAlgs([&](auto i) {
+        constexpr auto alg = std::get<i>(RenderAlgorithmsTuple);
+        loopAll.operator()<TestTypeEnum::ReferenceSave14>(alg);
+        });
 }
 
 void CrummyTest::TestVariedCompression() {
@@ -549,15 +438,20 @@ void CrummyTest::TestVariedCompression() {
     m_Fractal.DefaultCompressionErrorExp(Fractal::CompressionError::Low);
     int32_t compressionError = m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low);
 
-    auto loopAll = [&](size_t view, std::vector<RenderAlgorithm> algsToTest) {
-        for (auto curAlg : algsToTest) {
+    auto loopAll = [&]<TestTypeEnum viewEnum>(
+        auto algToTest) {
+
+        const auto view = algToTest.TestInclude.Lookup(viewEnum);
+        if constexpr (view != TestViewEnum::Disabled) {
+            const auto viewIndex = static_cast<size_t>(view);
+
             for (int32_t compressionErrorExp = 1; compressionErrorExp <= compressionError; compressionErrorExp++) {
-                const auto origAlg = curAlg;
-                const auto convertToAlg = curAlg;
+                const RenderAlgorithm origAlg{ algToTest.Algorithm };
+                const RenderAlgorithm convertToAlg{ algToTest.Algorithm };
                 ReferenceSaveLoad(
                     m_Fractal,
                     dirName,
-                    view,
+                    viewIndex,
                     testIndex,
                     IterTypeEnum::Bits64,
                     ImaginaSettings::ConvertToCurrent,
@@ -568,23 +462,12 @@ void CrummyTest::TestVariedCompression() {
                 testIndex++;
             }
         }
-        };
-
-    size_t viewToTest;
-
-    const auto View5Algs = {
-        RenderAlgorithm::Gpu1x64PerturbedLAv2,
-        RenderAlgorithm::Gpu1x64PerturbedRCLAv2,
-        RenderAlgorithm::GpuHDRx32PerturbedLAv2,
-        RenderAlgorithm::GpuHDRx32PerturbedRCLAv2,
-        RenderAlgorithm::GpuHDRx2x32PerturbedLAv2,
-        RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2,
-        RenderAlgorithm::GpuHDRx64PerturbedLAv2,
-        RenderAlgorithm::GpuHDRx64PerturbedRCLAv2,
     };
 
-    viewToTest = 5;
-    loopAll(viewToTest, View5Algs);
+    IterateRenderAlgs([&](auto i) {
+        constexpr auto alg = std::get<i>(RenderAlgorithmsTuple);
+        loopAll.operator()<TestTypeEnum::ReferenceSave5 >(alg);
+    });
 }
 
 void CrummyTest::TestStringConversion() {
@@ -616,7 +499,7 @@ void CrummyTest::TestStringConversion() {
     FloatComplex<CudaDblflt<dblflt>> floatComplex4(CudaDblflt<dblflt>(float1, float2), CudaDblflt<dblflt>(float3, float4));
 
     std::stringstream is;
-    auto toString = [&]<bool IntOut>(auto &hdr) {
+    auto toString = [&]<bool IntOut>(auto & hdr) {
         auto ret = std::string("Descriptor: ");
         ret += HdrToString<IntOut>(hdr);
         // append newline to ret
@@ -628,54 +511,54 @@ void CrummyTest::TestStringConversion() {
     };
 
     std::string allStr;
-    allStr += toString.template operator()<false>(double1);
-    allStr += toString.template operator()<false>(double2);
-    allStr += toString.template operator()<false>(float1);
-    allStr += toString.template operator()<false>(float2);
-    allStr += toString.template operator()<false>(float3);
-    allStr += toString.template operator()<false>(float4);
+    allStr += toString.template operator() < false > (double1);
+    allStr += toString.template operator() < false > (double2);
+    allStr += toString.template operator() < false > (float1);
+    allStr += toString.template operator() < false > (float2);
+    allStr += toString.template operator() < false > (float3);
+    allStr += toString.template operator() < false > (float4);
 
-    allStr += toString.template operator()<false>(f1);
-    allStr += toString.template operator()<false>(d1);
-    allStr += toString.template operator()<false>(m1);
-    allStr += toString.template operator()<false>(c1);
+    allStr += toString.template operator() < false > (f1);
+    allStr += toString.template operator() < false > (d1);
+    allStr += toString.template operator() < false > (m1);
+    allStr += toString.template operator() < false > (c1);
 
-    allStr += toString.template operator()<false>(f2);
-    allStr += toString.template operator()<false>(d2);
-    allStr += toString.template operator()<false>(m2);
-    allStr += toString.template operator()<false>(c2);
+    allStr += toString.template operator() < false > (f2);
+    allStr += toString.template operator() < false > (d2);
+    allStr += toString.template operator() < false > (m2);
+    allStr += toString.template operator() < false > (c2);
 
-    allStr += toString.template operator()<false>(cudaDblflt1);
-    allStr += toString.template operator()<false>(cudaDblflt2);
+    allStr += toString.template operator() < false > (cudaDblflt1);
+    allStr += toString.template operator() < false > (cudaDblflt2);
 
-    allStr += toString.template operator()<false>(floatComplex1);
-    allStr += toString.template operator()<false>(floatComplex2);
-    allStr += toString.template operator()<false>(floatComplex3);
-    allStr += toString.template operator()<false>(floatComplex4);
+    allStr += toString.template operator() < false > (floatComplex1);
+    allStr += toString.template operator() < false > (floatComplex2);
+    allStr += toString.template operator() < false > (floatComplex3);
+    allStr += toString.template operator() < false > (floatComplex4);
 
-    allStr += toString.template operator()<true>(double1);
-    allStr += toString.template operator()<true>(double2);
-    allStr += toString.template operator()<true>(float1);
-    allStr += toString.template operator()<true>(float2);
-    allStr += toString.template operator()<true>(float3);
-    allStr += toString.template operator()<true>(float4);
+    allStr += toString.template operator() < true > (double1);
+    allStr += toString.template operator() < true > (double2);
+    allStr += toString.template operator() < true > (float1);
+    allStr += toString.template operator() < true > (float2);
+    allStr += toString.template operator() < true > (float3);
+    allStr += toString.template operator() < true > (float4);
 
-    allStr += toString.template operator()<true>(f1);
-    allStr += toString.template operator()<true>(d1);
-    allStr += toString.template operator()<true>(m1);
-    allStr += toString.template operator()<true>(c1);
-    allStr += toString.template operator()<true>(f2);
-    allStr += toString.template operator()<true>(d2);
-    allStr += toString.template operator()<true>(m2);
-    allStr += toString.template operator()<true>(c2);
+    allStr += toString.template operator() < true > (f1);
+    allStr += toString.template operator() < true > (d1);
+    allStr += toString.template operator() < true > (m1);
+    allStr += toString.template operator() < true > (c1);
+    allStr += toString.template operator() < true > (f2);
+    allStr += toString.template operator() < true > (d2);
+    allStr += toString.template operator() < true > (m2);
+    allStr += toString.template operator() < true > (c2);
 
-    allStr += toString.template operator()<true>(cudaDblflt1);
-    allStr += toString.template operator()<true>(cudaDblflt2);
+    allStr += toString.template operator() < true > (cudaDblflt1);
+    allStr += toString.template operator() < true > (cudaDblflt2);
 
-    allStr += toString.template operator()<true>(floatComplex1);
-    allStr += toString.template operator()<true>(floatComplex2);
-    allStr += toString.template operator()<true>(floatComplex3);
-    allStr += toString.template operator()<true>(floatComplex4);
+    allStr += toString.template operator() < true > (floatComplex1);
+    allStr += toString.template operator() < true > (floatComplex2);
+    allStr += toString.template operator() < true > (floatComplex3);
+    allStr += toString.template operator() < true > (floatComplex4);
 
     // Concatenate all the strings together to prevent the compiler from optimizing them away.
     //::MessageBoxA(nullptr, allStr.c_str(), "String conversion test", MB_OK | MB_APPLMODAL);
@@ -764,7 +647,7 @@ void CrummyTest::TestStringConversion() {
         if (a != b) {
             throw FractalSharkSeriousException("String conversion failed!");
         }
-    };
+        };
 
     HdrFromIfStream<true, double, double>(readBackDouble1, iss);
     HdrFromIfStream<true, double, double>(readBackDouble2, iss);
@@ -828,22 +711,22 @@ void CrummyTest::TestPerturbedPerturb() {
     m_Fractal.DefaultCompressionErrorExp(Fractal::CompressionError::Low);
     int32_t compressionError = m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low);
 
-    auto loopAll = [&](std::vector<RenderAlgorithm> algsToTest) {
-        for (auto curAlg : algsToTest) {
-
+    auto loopAll = [&](auto algToTest) {
+        if constexpr (algToTest.TestInclude.Lookup(TestTypeEnum::PerturbedPerturb12) != TestViewEnum::Disabled) {
             const auto viewIndex = 14;
             const auto perturbedViewIndex = 12;
             const auto iterType = IterTypeEnum::Bits32;
             const wchar_t *testPrefix = L"PerturbedPerturb";
-            const auto algStr = m_Fractal.GetRenderAlgorithmName(curAlg);
+            const auto algStr = std::string(algToTest.AlgorithmStr);
+            RenderAlgorithm algToTestRT{ algToTest.Algorithm };
 
             const auto genLocalFilename = [&](const std::wstring extraPrefix) {
                 std::wstring fullPrefix = testPrefix + std::wstring(L" - ") + extraPrefix;
                 return GenFilenameW(
                     testIndex,
                     viewIndex,
-                    curAlg,
-                    curAlg,
+                    algToTestRT,
+                    algToTestRT,
                     compressionError,
                     iterType,
                     fullPrefix.c_str(),
@@ -853,7 +736,7 @@ void CrummyTest::TestPerturbedPerturb() {
 
             m_Fractal.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
             m_Fractal.SetIterType(iterType);
-            m_Fractal.SetRenderAlgorithm(curAlg);
+            m_Fractal.SetRenderAlgorithm(algToTestRT);
             m_Fractal.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3);
             m_Fractal.View(viewIndex);
             m_Fractal.ForceRecalc();
@@ -868,22 +751,10 @@ void CrummyTest::TestPerturbedPerturb() {
         }
     };
 
-    // TODO: note that using non-HDR on these deep spots
-    // results in a divide by zero.  We should fix that such
-    // that it at least doesn't crash.
-    const auto View12and14Algs = {
-        //RenderAlgorithm::Gpu1x64PerturbedLAv2,
-        //RenderAlgorithm::Gpu1x64PerturbedRCLAv2,
-        // These should work:
-        RenderAlgorithm::GpuHDRx32PerturbedLAv2,
-        RenderAlgorithm::GpuHDRx32PerturbedRCLAv2,
-        RenderAlgorithm::GpuHDRx2x32PerturbedLAv2,
-        RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2,
-        RenderAlgorithm::GpuHDRx64PerturbedLAv2,
-        RenderAlgorithm::GpuHDRx64PerturbedRCLAv2,
-    };
-
-    loopAll(View12and14Algs);
+    IterateRenderAlgs([&](auto i) {
+        constexpr auto alg = std::get<i>(RenderAlgorithmsTuple);
+        loopAll(alg);
+        });
 }
 
 void CrummyTest::Benchmark(RefOrbitCalc::PerturbationResultType type) {

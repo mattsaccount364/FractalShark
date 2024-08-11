@@ -576,7 +576,7 @@ uint32_t GPURenderer::Render(
     dim3 nb_blocks(w_block, h_block, 1);
     dim3 threads_per_block(NB_THREADS_W, NB_THREADS_H, 1);
 
-    if (algorithm == RenderAlgorithm::Gpu1x64) {
+    if (algorithm == RenderAlgorithmEnum::Gpu1x64) {
         // all are doubleOnly
         if constexpr (EnableGpu1x64 && std::is_same<T, double>::value) {
             switch (iteration_precision) {
@@ -612,7 +612,7 @@ uint32_t GPURenderer::Render(
                 break;
             }
         }
-    } else if (algorithm == RenderAlgorithm::Gpu2x64) {
+    } else if (algorithm == RenderAlgorithmEnum::Gpu2x64) {
         if constexpr (EnableGpu2x64 && std::is_same<T, MattDbldbl>::value) {
             dbldbl cx2{ cx.head, cx.tail };
             dbldbl cy2{ cy.head, cy.tail };
@@ -625,7 +625,7 @@ uint32_t GPURenderer::Render(
                 m_Width, m_Height, cx2, cy2, dx2, dy2,
                 n_iterations);
         }
-    } else if (algorithm == RenderAlgorithm::Gpu4x64) {
+    } else if (algorithm == RenderAlgorithmEnum::Gpu4x64) {
         // qdbl
         if constexpr (EnableGpu4x64 && std::is_same<T, MattQDbldbl>::value) {
             using namespace GQD;
@@ -647,7 +647,7 @@ uint32_t GPURenderer::Render(
                 m_Width, m_Height, cx2, cy2, dx2, dy2,
                 n_iterations);
         }
-    } else if (algorithm == RenderAlgorithm::Gpu1x32) {
+    } else if (algorithm == RenderAlgorithmEnum::Gpu1x32) {
         if constexpr (EnableGpu1x32 && std::is_same<T, float>::value) {
             // floatOnly
             switch (iteration_precision) {
@@ -683,7 +683,7 @@ uint32_t GPURenderer::Render(
                 break;
             }
         }
-    } else if (algorithm == RenderAlgorithm::Gpu2x32) {
+    } else if (algorithm == RenderAlgorithmEnum::Gpu2x32) {
         // flt
         if constexpr (EnableGpu2x32 && std::is_same<T, MattDblflt>::value) {
             dblflt cx2{ cx.head, cx.tail };
@@ -724,7 +724,7 @@ uint32_t GPURenderer::Render(
                 break;
             }
         }
-    } else if (algorithm == RenderAlgorithm::Gpu4x32) {
+    } else if (algorithm == RenderAlgorithmEnum::Gpu4x32) {
         // qflt
         if constexpr (EnableGpu4x32 && std::is_same<T, MattQFltflt>::value) {
             using namespace GQF;
@@ -746,7 +746,7 @@ uint32_t GPURenderer::Render(
                 m_Width, m_Height, cx2, cy2, dx2, dy2,
                 n_iterations);
         }
-    } else if (algorithm == RenderAlgorithm::GpuHDRx32) {
+    } else if (algorithm == RenderAlgorithmEnum::GpuHDRx32) {
         if constexpr (EnableGpuHDRx32 && std::is_same<T, HDRFloat<double>>::value) {
             HDRFloat<CudaDblflt<dblflt>> cx2{ cx };
             HDRFloat<CudaDblflt<dblflt>> cy2{ cy };
@@ -971,12 +971,12 @@ uint32_t GPURenderer::RenderPerturbLAv2(
 
     GPU_LAReference<IterType, T, SubType> local_la_copy{ laReferenceCuda != nullptr ? *laReferenceCuda : GPU_LAReference<IterType, T, SubType>{} };
 
-    if ((algorithm == RenderAlgorithm::Gpu1x32PerturbedLAv2) ||
-        (algorithm == RenderAlgorithm::Gpu1x32PerturbedLAv2PO) ||
-        (algorithm == RenderAlgorithm::Gpu1x32PerturbedLAv2LAO) ||
-        (algorithm == RenderAlgorithm::Gpu1x32PerturbedRCLAv2) ||
-        (algorithm == RenderAlgorithm::Gpu1x32PerturbedRCLAv2PO) ||
-        (algorithm == RenderAlgorithm::Gpu1x32PerturbedRCLAv2LAO)) {
+    if ((algorithm == RenderAlgorithmEnum::Gpu1x32PerturbedLAv2) ||
+        (algorithm == RenderAlgorithmEnum::Gpu1x32PerturbedLAv2PO) ||
+        (algorithm == RenderAlgorithmEnum::Gpu1x32PerturbedLAv2LAO) ||
+        (algorithm == RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2) ||
+        (algorithm == RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2PO) ||
+        (algorithm == RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2LAO)) {
 
         if constexpr (
             EnableGpu1x32PerturbedLAv2 && std::is_same<float, T>::value) {
@@ -990,12 +990,12 @@ uint32_t GPURenderer::RenderPerturbLAv2(
                 n_iterations);
         }
     } else if (
-        (algorithm == RenderAlgorithm::Gpu2x32PerturbedLAv2) ||
-        (algorithm == RenderAlgorithm::Gpu2x32PerturbedLAv2PO) ||
-        (algorithm == RenderAlgorithm::Gpu2x32PerturbedLAv2LAO) ||
-        (algorithm == RenderAlgorithm::Gpu2x32PerturbedRCLAv2) ||
-        (algorithm == RenderAlgorithm::Gpu2x32PerturbedRCLAv2PO) ||
-        (algorithm == RenderAlgorithm::Gpu2x32PerturbedRCLAv2LAO)) {
+        (algorithm == RenderAlgorithmEnum::Gpu2x32PerturbedLAv2) ||
+        (algorithm == RenderAlgorithmEnum::Gpu2x32PerturbedLAv2PO) ||
+        (algorithm == RenderAlgorithmEnum::Gpu2x32PerturbedLAv2LAO) ||
+        (algorithm == RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2) ||
+        (algorithm == RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2PO) ||
+        (algorithm == RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2LAO)) {
 
         if constexpr (
             EnableGpu2x32PerturbedLAv2 && std::is_same<CudaDblflt<MattDblflt>, T>::value) {
@@ -1023,12 +1023,12 @@ uint32_t GPURenderer::RenderPerturbLAv2(
                     n_iterations);
         }
     } else if (
-        (algorithm == RenderAlgorithm::Gpu1x64PerturbedLAv2) ||
-        (algorithm == RenderAlgorithm::Gpu1x64PerturbedLAv2PO) ||
-        (algorithm == RenderAlgorithm::Gpu1x64PerturbedLAv2LAO) ||
-        (algorithm == RenderAlgorithm::Gpu1x64PerturbedRCLAv2) ||
-        (algorithm == RenderAlgorithm::Gpu1x64PerturbedRCLAv2PO) ||
-        (algorithm == RenderAlgorithm::Gpu1x64PerturbedRCLAv2LAO)) {
+        (algorithm == RenderAlgorithmEnum::Gpu1x64PerturbedLAv2) ||
+        (algorithm == RenderAlgorithmEnum::Gpu1x64PerturbedLAv2PO) ||
+        (algorithm == RenderAlgorithmEnum::Gpu1x64PerturbedLAv2LAO) ||
+        (algorithm == RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2) ||
+        (algorithm == RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2PO) ||
+        (algorithm == RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2LAO)) {
 
         if constexpr (
             EnableGpu1x64PerturbedLAv2 && std::is_same<double, T>::value) {
@@ -1048,12 +1048,12 @@ uint32_t GPURenderer::RenderPerturbLAv2(
                     n_iterations);
         }
     } else if (
-        (algorithm == RenderAlgorithm::GpuHDRx32PerturbedLAv2) ||
-        (algorithm == RenderAlgorithm::GpuHDRx32PerturbedLAv2PO) ||
-        (algorithm == RenderAlgorithm::GpuHDRx32PerturbedLAv2LAO) ||
-        (algorithm == RenderAlgorithm::GpuHDRx32PerturbedRCLAv2) ||
-        (algorithm == RenderAlgorithm::GpuHDRx32PerturbedRCLAv2PO) ||
-        (algorithm == RenderAlgorithm::GpuHDRx32PerturbedRCLAv2LAO)) {
+        (algorithm == RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2) ||
+        (algorithm == RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2PO) ||
+        (algorithm == RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2LAO) ||
+        (algorithm == RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2) ||
+        (algorithm == RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2PO) ||
+        (algorithm == RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2LAO)) {
 
         if constexpr (
             EnableGpuHDRx32PerturbedLAv2 && std::is_same<HDRFloat<float>, T>::value) {
@@ -1075,12 +1075,12 @@ uint32_t GPURenderer::RenderPerturbLAv2(
                     n_iterations);
         }
     } else if (
-        (algorithm == RenderAlgorithm::GpuHDRx64PerturbedLAv2) ||
-        (algorithm == RenderAlgorithm::GpuHDRx64PerturbedLAv2PO) ||
-        (algorithm == RenderAlgorithm::GpuHDRx64PerturbedLAv2LAO) ||
-        (algorithm == RenderAlgorithm::GpuHDRx64PerturbedRCLAv2) ||
-        (algorithm == RenderAlgorithm::GpuHDRx64PerturbedRCLAv2PO) ||
-        (algorithm == RenderAlgorithm::GpuHDRx64PerturbedRCLAv2LAO)) {
+        (algorithm == RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2) ||
+        (algorithm == RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2PO) ||
+        (algorithm == RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2LAO) ||
+        (algorithm == RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2) ||
+        (algorithm == RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2PO) ||
+        (algorithm == RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2LAO)) {
 
         if constexpr (
             EnableGpuHDRx64PerturbedLAv2 && std::is_same<HDRFloat<double>, T>::value) {
@@ -1102,12 +1102,12 @@ uint32_t GPURenderer::RenderPerturbLAv2(
                     n_iterations);
         }
     } else if (
-        (algorithm == RenderAlgorithm::GpuHDRx2x32PerturbedLAv2) ||
-        (algorithm == RenderAlgorithm::GpuHDRx2x32PerturbedLAv2PO) ||
-        (algorithm == RenderAlgorithm::GpuHDRx2x32PerturbedLAv2LAO) ||
-        (algorithm == RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2) ||
-        (algorithm == RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2PO) ||
-        (algorithm == RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2LAO)) {
+        (algorithm == RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2) ||
+        (algorithm == RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2PO) ||
+        (algorithm == RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2LAO) ||
+        (algorithm == RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2) ||
+        (algorithm == RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2PO) ||
+        (algorithm == RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2LAO)) {
 
         if constexpr (
             EnableGpuHDRx2x32PerturbedLAv2 && std::is_same<HDRFloat<CudaDblflt<MattDblflt>>, T>::value) {
@@ -1301,7 +1301,7 @@ uint32_t GPURenderer::RenderPerturbBLAScaled(
         return result;
     }
 
-    if (algorithm == RenderAlgorithm::Gpu1x32PerturbedScaled) {
+    if (algorithm == RenderAlgorithmEnum::Gpu1x32PerturbedScaled) {
         if constexpr (EnableGpu1x32PerturbedScaled && std::is_same<T, double>::value) {
             // doubleOnly
             mandel_1x_float_perturb_scaled<IterType, T> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
@@ -1312,7 +1312,7 @@ uint32_t GPURenderer::RenderPerturbBLAScaled(
                 centerX, centerY,
                 n_iterations);
         }
-    } else if (algorithm == RenderAlgorithm::GpuHDRx32PerturbedScaled) {
+    } else if (algorithm == RenderAlgorithmEnum::GpuHDRx32PerturbedScaled) {
         if constexpr (EnableGpuHDRx32PerturbedScaled && std::is_same<T, HDRFloat<float>>::value) {
             mandel_1xHDR_InitStatics << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > ();
 
@@ -1413,7 +1413,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
     dim3 nb_blocks(w_block, h_block, 1);
     dim3 threads_per_block(NB_THREADS_W, NB_THREADS_H, 1);
 
-    if (algorithm == RenderAlgorithm::GpuHDRx32PerturbedBLA) {
+    if (algorithm == RenderAlgorithmEnum::GpuHDRx32PerturbedBLA) {
         if constexpr (EnableGpuHDRx32PerturbedBLA && std::is_same<T, HDRFloat<float>>::value) {
             GPUPerturbSingleResults<IterType, HDRFloat<float>, PerturbExtras::Disable> cudaResults(
                 perturb->GetCompressedSize(),
@@ -1450,7 +1450,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
 
             LargeSwitch
         }
-    } else if (algorithm == RenderAlgorithm::GpuHDRx64PerturbedBLA) {
+    } else if (algorithm == RenderAlgorithmEnum::GpuHDRx64PerturbedBLA) {
         if constexpr (EnableGpuHDRx64PerturbedBLA && std::is_same<T, HDRFloat<double>>::value) {
             GPUPerturbSingleResults<IterType, HDRFloat<double>, PerturbExtras::Disable> cudaResults(
                 perturb->GetCompressedSize(),
@@ -1487,7 +1487,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
 
             LargeSwitch
         }
-    } else if (algorithm == RenderAlgorithm::Gpu1x64PerturbedBLA) {
+    } else if (algorithm == RenderAlgorithmEnum::Gpu1x64PerturbedBLA) {
         if constexpr (EnableGpu1x64PerturbedBLA && std::is_same<T, double>::value) {
             GPUPerturbSingleResults<IterType, double, PerturbExtras::Disable> cudaResults(
                 perturb->GetCompressedSize(),
@@ -1525,7 +1525,7 @@ uint32_t GPURenderer::RenderPerturbBLA(
 
             LargeSwitch
         }
-    } else if (algorithm == RenderAlgorithm::Gpu2x32PerturbedScaled) {
+    } else if (algorithm == RenderAlgorithmEnum::Gpu2x32PerturbedScaled) {
         if constexpr (EnableGpu2x32PerturbedScaled && std::is_same<T, dblflt>::value) {
             //GPUPerturbSingleResults<IterType, dblflt> cudaResults(
             //    Perturb->GetCountOrbitEntries(),

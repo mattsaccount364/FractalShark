@@ -796,74 +796,74 @@ LRESULT MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam) {
             break;
         }
 
-        MapMenuItemToAlg(IDM_ALG_AUTO, RenderAlgorithm::AUTO);
-        MapMenuItemToAlg(IDM_ALG_CPU_HIGH, RenderAlgorithm::CpuHigh);
-        MapMenuItemToAlg(IDM_ALG_CPU_1_32_HDR, RenderAlgorithm::CpuHDR32);
-        MapMenuItemToAlg(IDM_ALG_CPU_1_32_PERTURB_BLA_HDR, RenderAlgorithm::Cpu32PerturbedBLAHDR);
-        MapMenuItemToAlg(IDM_ALG_CPU_1_32_PERTURB_BLAV2_HDR, RenderAlgorithm::Cpu32PerturbedBLAV2HDR);
-        MapMenuItemToAlg(IDM_ALG_CPU_1_32_PERTURB_RC_BLAV2_HDR, RenderAlgorithm::Cpu32PerturbedRCBLAV2HDR);
-        MapMenuItemToAlg(IDM_ALG_CPU_1_64_PERTURB_BLAV2_HDR, RenderAlgorithm::Cpu64PerturbedBLAV2HDR);
-        MapMenuItemToAlg(IDM_ALG_CPU_1_64_PERTURB_RC_BLAV2_HDR, RenderAlgorithm::Cpu64PerturbedRCBLAV2HDR);
-        MapMenuItemToAlg(IDM_ALG_CPU_1_64, RenderAlgorithm::Cpu64);
-        MapMenuItemToAlg(IDM_ALG_CPU_1_64_HDR, RenderAlgorithm::CpuHDR64);
-        MapMenuItemToAlg(IDM_ALG_CPU_1_64_PERTURB_BLA, RenderAlgorithm::Cpu64PerturbedBLA);
-        MapMenuItemToAlg(IDM_ALG_CPU_1_64_PERTURB_BLA_HDR, RenderAlgorithm::Cpu64PerturbedBLAHDR);
-        MapMenuItemToAlg(IDM_ALG_GPU_1_64, RenderAlgorithm::Gpu1x64);
-        MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_BLA, RenderAlgorithm::Gpu1x64PerturbedBLA);
-        MapMenuItemToAlg(IDM_ALG_GPU_2_64, RenderAlgorithm::Gpu2x64);
-        MapMenuItemToAlg(IDM_ALG_GPU_4_64, RenderAlgorithm::Gpu4x64);
-        MapMenuItemToAlg(IDM_ALG_GPU_2X32_HDR, RenderAlgorithm::GpuHDRx32);
-        MapMenuItemToAlg(IDM_ALG_GPU_1_32, RenderAlgorithm::Gpu1x32);
-        MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_SCALED, RenderAlgorithm::Gpu1x32PerturbedScaled);
-        MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_SCALED, RenderAlgorithm::GpuHDRx32PerturbedScaled);
-        MapMenuItemToAlg(IDM_ALG_GPU_2_32, RenderAlgorithm::Gpu2x32);
-        MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_SCALED, RenderAlgorithm::Gpu2x32PerturbedScaled);
-        MapMenuItemToAlg(IDM_ALG_GPU_4_32, RenderAlgorithm::Gpu4x32);
-        MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_BLA, RenderAlgorithm::GpuHDRx32PerturbedBLA);
-        MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_BLA, RenderAlgorithm::GpuHDRx64PerturbedBLA);
+        MapMenuItemToAlg(IDM_ALG_AUTO, RenderAlgorithmEnum::AUTO);
+        MapMenuItemToAlg(IDM_ALG_CPU_HIGH, RenderAlgorithmEnum::CpuHigh);
+        MapMenuItemToAlg(IDM_ALG_CPU_1_32_HDR, RenderAlgorithmEnum::CpuHDR32);
+        MapMenuItemToAlg(IDM_ALG_CPU_1_32_PERTURB_BLA_HDR, RenderAlgorithmEnum::Cpu32PerturbedBLAHDR);
+        MapMenuItemToAlg(IDM_ALG_CPU_1_32_PERTURB_BLAV2_HDR, RenderAlgorithmEnum::Cpu32PerturbedBLAV2HDR);
+        MapMenuItemToAlg(IDM_ALG_CPU_1_32_PERTURB_RC_BLAV2_HDR, RenderAlgorithmEnum::Cpu32PerturbedRCBLAV2HDR);
+        MapMenuItemToAlg(IDM_ALG_CPU_1_64_PERTURB_BLAV2_HDR, RenderAlgorithmEnum::Cpu64PerturbedBLAV2HDR);
+        MapMenuItemToAlg(IDM_ALG_CPU_1_64_PERTURB_RC_BLAV2_HDR, RenderAlgorithmEnum::Cpu64PerturbedRCBLAV2HDR);
+        MapMenuItemToAlg(IDM_ALG_CPU_1_64, RenderAlgorithmEnum::Cpu64);
+        MapMenuItemToAlg(IDM_ALG_CPU_1_64_HDR, RenderAlgorithmEnum::CpuHDR64);
+        MapMenuItemToAlg(IDM_ALG_CPU_1_64_PERTURB_BLA, RenderAlgorithmEnum::Cpu64PerturbedBLA);
+        MapMenuItemToAlg(IDM_ALG_CPU_1_64_PERTURB_BLA_HDR, RenderAlgorithmEnum::Cpu64PerturbedBLAHDR);
+        MapMenuItemToAlg(IDM_ALG_GPU_1_64, RenderAlgorithmEnum::Gpu1x64);
+        MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_BLA, RenderAlgorithmEnum::Gpu1x64PerturbedBLA);
+        MapMenuItemToAlg(IDM_ALG_GPU_2_64, RenderAlgorithmEnum::Gpu2x64);
+        MapMenuItemToAlg(IDM_ALG_GPU_4_64, RenderAlgorithmEnum::Gpu4x64);
+        MapMenuItemToAlg(IDM_ALG_GPU_2X32_HDR, RenderAlgorithmEnum::GpuHDRx32);
+        MapMenuItemToAlg(IDM_ALG_GPU_1_32, RenderAlgorithmEnum::Gpu1x32);
+        MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_SCALED, RenderAlgorithmEnum::Gpu1x32PerturbedScaled);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_SCALED, RenderAlgorithmEnum::GpuHDRx32PerturbedScaled);
+        MapMenuItemToAlg(IDM_ALG_GPU_2_32, RenderAlgorithmEnum::Gpu2x32);
+        MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_SCALED, RenderAlgorithmEnum::Gpu2x32PerturbedScaled);
+        MapMenuItemToAlg(IDM_ALG_GPU_4_32, RenderAlgorithmEnum::Gpu4x32);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_BLA, RenderAlgorithmEnum::GpuHDRx32PerturbedBLA);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_BLA, RenderAlgorithmEnum::GpuHDRx64PerturbedBLA);
 
         /////////////////////////// Begin LAV2 ///////////////////////////
-        MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_LAV2, RenderAlgorithm::Gpu1x32PerturbedLAv2);
-        MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_LAV2_PO, RenderAlgorithm::Gpu1x32PerturbedLAv2PO);
-        MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_LAV2_LAO, RenderAlgorithm::Gpu1x32PerturbedLAv2LAO);
-        MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_RC_LAV2, RenderAlgorithm::Gpu1x32PerturbedRCLAv2);
-        MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_RC_LAV2_PO, RenderAlgorithm::Gpu1x32PerturbedRCLAv2PO);
-        MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_RC_LAV2_LAO, RenderAlgorithm::Gpu1x32PerturbedRCLAv2LAO);
+        MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_LAV2, RenderAlgorithmEnum::Gpu1x32PerturbedLAv2);
+        MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_LAV2_PO, RenderAlgorithmEnum::Gpu1x32PerturbedLAv2PO);
+        MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_LAV2_LAO, RenderAlgorithmEnum::Gpu1x32PerturbedLAv2LAO);
+        MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_RC_LAV2, RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2);
+        MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_RC_LAV2_PO, RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2PO);
+        MapMenuItemToAlg(IDM_ALG_GPU_1_32_PERTURB_RC_LAV2_LAO, RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2LAO);
 
-        MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_LAV2, RenderAlgorithm::Gpu2x32PerturbedLAv2);
-        MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_LAV2_PO, RenderAlgorithm::Gpu2x32PerturbedLAv2PO);
-        MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_LAV2_LAO, RenderAlgorithm::Gpu2x32PerturbedLAv2LAO);
-        MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_RC_LAV2, RenderAlgorithm::Gpu2x32PerturbedRCLAv2);
-        MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_RC_LAV2_PO, RenderAlgorithm::Gpu2x32PerturbedRCLAv2PO);
-        MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_RC_LAV2_LAO, RenderAlgorithm::Gpu2x32PerturbedRCLAv2LAO);
+        MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_LAV2, RenderAlgorithmEnum::Gpu2x32PerturbedLAv2);
+        MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_LAV2_PO, RenderAlgorithmEnum::Gpu2x32PerturbedLAv2PO);
+        MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_LAV2_LAO, RenderAlgorithmEnum::Gpu2x32PerturbedLAv2LAO);
+        MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_RC_LAV2, RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2);
+        MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_RC_LAV2_PO, RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2PO);
+        MapMenuItemToAlg(IDM_ALG_GPU_2_32_PERTURB_RC_LAV2_LAO, RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2LAO);
 
-        MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_LAV2, RenderAlgorithm::Gpu1x64PerturbedLAv2);
-        MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_LAV2_PO, RenderAlgorithm::Gpu1x64PerturbedLAv2PO);
-        MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_LAV2_LAO, RenderAlgorithm::Gpu1x64PerturbedLAv2LAO);
-        MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_RC_LAV2, RenderAlgorithm::Gpu1x64PerturbedRCLAv2);
-        MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_RC_LAV2_PO, RenderAlgorithm::Gpu1x64PerturbedRCLAv2PO);
-        MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_RC_LAV2_LAO, RenderAlgorithm::Gpu1x64PerturbedRCLAv2LAO);
+        MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_LAV2, RenderAlgorithmEnum::Gpu1x64PerturbedLAv2);
+        MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_LAV2_PO, RenderAlgorithmEnum::Gpu1x64PerturbedLAv2PO);
+        MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_LAV2_LAO, RenderAlgorithmEnum::Gpu1x64PerturbedLAv2LAO);
+        MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_RC_LAV2, RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2);
+        MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_RC_LAV2_PO, RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2PO);
+        MapMenuItemToAlg(IDM_ALG_GPU_1_64_PERTURB_RC_LAV2_LAO, RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2LAO);
 
-        MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_LAV2, RenderAlgorithm::GpuHDRx32PerturbedLAv2);
-        MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_LAV2_PO, RenderAlgorithm::GpuHDRx32PerturbedLAv2PO);
-        MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_LAV2_LAO, RenderAlgorithm::GpuHDRx32PerturbedLAv2LAO);
-        MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_RC_LAV2, RenderAlgorithm::GpuHDRx32PerturbedRCLAv2);
-        MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_RC_LAV2_PO, RenderAlgorithm::GpuHDRx32PerturbedRCLAv2PO);
-        MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_RC_LAV2_LAO, RenderAlgorithm::GpuHDRx32PerturbedRCLAv2LAO);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_LAV2, RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_LAV2_PO, RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2PO);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_LAV2_LAO, RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2LAO);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_RC_LAV2, RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_RC_LAV2_PO, RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2PO);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_32_PERTURB_RC_LAV2_LAO, RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2LAO);
 
-        MapMenuItemToAlg(IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2, RenderAlgorithm::GpuHDRx2x32PerturbedLAv2);
-        MapMenuItemToAlg(IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2_PO, RenderAlgorithm::GpuHDRx2x32PerturbedLAv2PO);
-        MapMenuItemToAlg(IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2_LAO, RenderAlgorithm::GpuHDRx2x32PerturbedLAv2LAO);
-        MapMenuItemToAlg(IDM_ALG_GPU_HDR_2X32_PERTURB_RC_LAV2, RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2);
-        MapMenuItemToAlg(IDM_ALG_GPU_HDR_2X32_PERTURB_RC_LAV2_PO, RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2PO);
-        MapMenuItemToAlg(IDM_ALG_GPU_HDR_2X32_PERTURB_RC_LAV2_LAO, RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2LAO);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2, RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2_PO, RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2PO);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2_LAO, RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2LAO);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_2X32_PERTURB_RC_LAV2, RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_2X32_PERTURB_RC_LAV2_PO, RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2PO);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_2X32_PERTURB_RC_LAV2_LAO, RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2LAO);
 
-        MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_LAV2, RenderAlgorithm::GpuHDRx64PerturbedLAv2);
-        MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_LAV2_PO, RenderAlgorithm::GpuHDRx64PerturbedLAv2PO);
-        MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_LAV2_LAO, RenderAlgorithm::GpuHDRx64PerturbedLAv2LAO);
-        MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_RC_LAV2, RenderAlgorithm::GpuHDRx64PerturbedRCLAv2);
-        MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_RC_LAV2_PO, RenderAlgorithm::GpuHDRx64PerturbedRCLAv2PO);
-        MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_RC_LAV2_LAO, RenderAlgorithm::GpuHDRx64PerturbedRCLAv2LAO);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_LAV2, RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_LAV2_PO, RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2PO);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_LAV2_LAO, RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2LAO);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_RC_LAV2, RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_RC_LAV2_PO, RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2PO);
+        MapMenuItemToAlg(IDM_ALG_GPU_HDR_64_PERTURB_RC_LAV2_LAO, RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2LAO);
 
         case IDM_LA_SINGLETHREADED:
         {
@@ -2302,7 +2302,7 @@ void MainWindow::LoadRefOrbit(
     // Restore only "Auto".  If the savefile changes our iteration type
     // to 64-bit, just leave it.  The "Auto" concept is kind of weird in
     // this context.
-    if (settings.GetRenderAlgorithm() == RenderAlgorithm::AUTO) {
+    if (settings.GetRenderAlgorithm() == RenderAlgorithmEnum::AUTO) {
         gFractal->SetRenderAlgorithm(settings.GetRenderAlgorithm());
     }
 }

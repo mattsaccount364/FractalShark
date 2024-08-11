@@ -17,7 +17,7 @@ class PerturbationResults;
 struct RecommendedSettings;
 struct OrbitParameterPack;
 
-enum class RenderAlgorithm;
+class RenderAlgorithm;
 
 class RefOrbitCalc {
 public:

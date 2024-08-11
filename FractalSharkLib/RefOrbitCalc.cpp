@@ -11,6 +11,7 @@
 #include "ImaginaOrbit.h"
 #include "RecommendedSettings.h"
 #include "OrbitParameterPack.h"
+#include "MpirSerialization.h"
 
 #include <vector>
 #include <memory>
@@ -22,8 +23,7 @@
 #include <string>
 #include <iostream>
 #include <filesystem>
-
-#include "MpirSerialization.h"
+#include <tuple>
 
 template<class Type>
 struct ThreadPtrs {
@@ -126,38 +126,6 @@ RefOrbitCalc::RefOrbitCalc(const Fractal &fractal)
     }
 }
 
-bool RefOrbitCalc::RequiresCompression(RenderAlgorithm renderAlg) const {
-    switch (renderAlg) {
-    case RenderAlgorithm::Gpu1x32PerturbedRCLAv2:
-    case RenderAlgorithm::Gpu1x32PerturbedRCLAv2PO:
-    case RenderAlgorithm::Gpu1x32PerturbedRCLAv2LAO:
-
-    case RenderAlgorithm::Gpu2x32PerturbedRCLAv2:
-    case RenderAlgorithm::Gpu2x32PerturbedRCLAv2PO:
-    case RenderAlgorithm::Gpu2x32PerturbedRCLAv2LAO:
-
-    case RenderAlgorithm::Gpu1x64PerturbedRCLAv2:
-    case RenderAlgorithm::Gpu1x64PerturbedRCLAv2PO:
-    case RenderAlgorithm::Gpu1x64PerturbedRCLAv2LAO:
-
-    case RenderAlgorithm::GpuHDRx32PerturbedRCLAv2:
-    case RenderAlgorithm::GpuHDRx32PerturbedRCLAv2PO:
-    case RenderAlgorithm::GpuHDRx32PerturbedRCLAv2LAO:
-
-    case RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2:
-    case RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2PO:
-    case RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2LAO:
-
-    case RenderAlgorithm::GpuHDRx64PerturbedRCLAv2:
-    case RenderAlgorithm::GpuHDRx64PerturbedRCLAv2PO:
-    case RenderAlgorithm::GpuHDRx64PerturbedRCLAv2LAO:
-        return true;
-
-    default:
-        return false;
-    }
-}
-
 bool RefOrbitCalc::RequiresReuse() const {
     switch (GetPerturbationAlg()) {
     case PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed:
@@ -229,7 +197,7 @@ RefOrbitCalc::GetElt(size_t i) {
         } else {
             return nullptr;
         }
-    };
+        };
 
     return std::visit(lambda, m_C[i]);
 }
@@ -244,7 +212,7 @@ RefOrbitCalc::GetEltConst(size_t i) const {
         } else {
             return nullptr;
         }
-    };
+        };
 
     return std::visit(lambda, m_C[i]);
 }
@@ -1189,7 +1157,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
 
         mpf_clear(temp_mpf);
         mpf_clear(temp2_mpf);
-    };
+        };
 
     auto ThreadSqZy = [&](ThreadPtrs<ThreadZyData> *ThreadMemory) {
         mpf_t temp_mpf;
@@ -1293,7 +1261,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
 
         mpf_clear(temp_mpf);
         mpf_clear(temp2_mpf);
-    };
+        };
 
     auto *threadZxdata = (ThreadZxData *)_aligned_malloc(sizeof(ThreadZxData), 64);
     auto *threadZydata = (ThreadZyData *)_aligned_malloc(sizeof(ThreadZyData), 64);
@@ -1663,7 +1631,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
             } else {
                 bumpAllocator->InitTls();
             }
-        };
+            };
 
         auto ShutdownTls = [&]() {
             if constexpr (
@@ -1675,7 +1643,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
             } else {
                 bumpAllocator->ShutdownTls();
             }
-        };
+            };
 
         auto ThreadSqZx = [&InitTls, &ShutdownTls](ThreadPtrs<ThreadZxData> *ThreadMemory) {
             InitTls();
@@ -1704,7 +1672,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
             }
 
             ShutdownTls();
-        };
+            };
 
         auto ThreadSqZy = [&InitTls, &ShutdownTls](ThreadPtrs<ThreadZyData> *ThreadMemory) {
             InitTls();
@@ -1733,7 +1701,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
             }
 
             ShutdownTls();
-        };
+            };
 
         const int32_t IntermediateCompressionErrorExp =
             m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Intermediate);
@@ -1791,307 +1759,307 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
             reusedAllocator = bumpAllocator->GetAllocated(allocatorIndex);
 
             ShutdownTls();
-        };
+            };
 
-        auto *threadZxdata = (ThreadZxData *)_aligned_malloc(sizeof(ThreadZxData), 64);
-        auto *threadZydata = (ThreadZyData *)_aligned_malloc(sizeof(ThreadZyData), 64);
-        auto *threadReuseddata = (ThreadReusedData *)_aligned_malloc(sizeof(ThreadReusedData), 64);
+            auto *threadZxdata = (ThreadZxData *)_aligned_malloc(sizeof(ThreadZxData), 64);
+            auto *threadZydata = (ThreadZyData *)_aligned_malloc(sizeof(ThreadZyData), 64);
+            auto *threadReuseddata = (ThreadReusedData *)_aligned_malloc(sizeof(ThreadReusedData), 64);
 
-        new (threadZxdata) (ThreadZxData){};
-        new (threadZydata) (ThreadZyData){};
-        new (threadReuseddata) (ThreadReusedData){};
+            new (threadZxdata) (ThreadZxData){};
+            new (threadZydata) (ThreadZyData){};
+            new (threadReuseddata) (ThreadReusedData){};
 
-        std::unique_ptr<std::thread> tZx(DEBUG_NEW std::thread(ThreadSqZx, ThreadZxMemory));
-        std::unique_ptr<std::thread> tZy(DEBUG_NEW std::thread(ThreadSqZy, ThreadZyMemory));
+            std::unique_ptr<std::thread> tZx(DEBUG_NEW std::thread(ThreadSqZx, ThreadZxMemory));
+            std::unique_ptr<std::thread> tZy(DEBUG_NEW std::thread(ThreadSqZy, ThreadZyMemory));
 
-        std::unique_ptr<std::thread> tReuse;
+            std::unique_ptr<std::thread> tReuse;
 
-        // Mode 2/3 we use another thread
-        if constexpr (
-            Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2 ||
-            Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3 ||
-            Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
-
-            tReuse = std::unique_ptr<std::thread>(DEBUG_NEW std::thread(ThreadReused, ThreadReusedMemory));
-        }
-
-        ScopedAffinity scopedAffinity{
-            *this,
-            GetCurrentThread(),
-            tZx->native_handle(),
-            tZy->native_handle(),
-            tReuse ? tReuse->native_handle() : nullptr };
-
-        ThreadZxData *expectedZx = nullptr;
-        ThreadZyData *expectedZy = nullptr;
-        ThreadReusedData *expectedReused = nullptr;
-
-        bool done1 = false;
-        bool done2 = false;
-
-        mpf_t zy_sq_orig;
-        mpf_init(zy_sq_orig);
-
-        mpf_set(zx, cx_mpf);
-        mpf_set(zy, cy_mpf);
-
-        bool periodicity_should_break = false;
-
-        static const T HighOne = T{ 1.0 };
-        static const T HighTwo = T{ 2.0 };
-        static const T TwoFiftySix = T(256);
-
-        bool zyStarted = false;
-
-        T double_zx_last = T{ 0.0 };
-        T double_zy_last = T{ 0.0 };
-
-        RefOrbitCompressor<IterType, T, PExtras> compressor{
-            *results,
-            m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low) };
-
-        for (IterTypeFull i = 0; i < m_Fractal.GetNumIterations<IterType>(); i++) {
-            // Start Zx squaring thread
-            mpf_set(threadZxdata->zx, zx);
-
-            if (!zyStarted) {
-                mpf_set(threadZydata->zy, zy);
-            }
-
-            ThreadZxMemory->In.store(
-                threadZxdata,
-                std::memory_order_release);
-
-            if (!zyStarted) {
-                // Start Zy squaring thread
-                ThreadZyMemory->In.store(
-                    threadZydata,
-                    std::memory_order_relaxed);
-
-                zyStarted = true;
-            }
-
-            T double_zx = double_zx_last;
-            T double_zy = double_zy_last;
-
-            SubType zn_size;
-
-            if (i > 0) {
-                if constexpr (PExtras == PerturbExtras::Disable) {
-                    results->AddUncompressedIteration({ double_zx, double_zy });
-                } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
-                    compressor.MaybeAddCompressedIteration({ double_zx, double_zy, i });
-                } else if constexpr (PExtras == PerturbExtras::Bad) {
-                    results->AddUncompressedIteration({ double_zx, double_zy, false });
-                }
-
-                if constexpr (PExtras == PerturbExtras::Bad) {
-                    const T norm = HdrReduce((double_zx * double_zx + double_zy * double_zy) * glitch);
-                    const auto zx_reduced = HdrReduce(HdrAbs((T)double_zx));
-                    const auto zy_reduced = HdrReduce(HdrAbs((T)double_zy));
-
-                    const bool underflow =
-                        (HdrCompareToBothPositiveReducedLE(zx_reduced, small_float) ||
-                            HdrCompareToBothPositiveReducedLE(zy_reduced, small_float) ||
-                            HdrCompareToBothPositiveReducedLE(norm, small_float));
-                    results->SetBad(underflow);
-                }
-
-                // Note: not T.
-                const SubType tempZX = (SubType)double_zx + (SubType)cx_cast;
-                const SubType tempZY = (SubType)double_zy + (SubType)cy_cast;
-                zn_size = tempZX * tempZX + tempZY * tempZY;
-
-                if constexpr (Periodicity) {
-                    HdrReduce(dzdcX);
-                    auto dzdcX1 = HdrAbs(dzdcX);
-
-                    HdrReduce(dzdcY);
-                    auto dzdcY1 = HdrAbs(dzdcY);
-
-                    HdrReduce(double_zx);
-                    auto zxCopy1 = HdrAbs(double_zx);
-
-                    HdrReduce(double_zy);
-                    auto zyCopy1 = HdrAbs(double_zy);
-
-                    T n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
-
-                    T r0 = HdrMaxPositiveReduced(dzdcX1, dzdcY1);
-                    auto n3 = results->GetMaxRadius() * r0 * HighTwo; // TODO optimize HDRFloat *2.
-                    HdrReduce(n3);
-
-                    if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
-                        if constexpr (BenchmarkState == BenchmarkMode::Disable) {
-                            periodicity_should_break = true;
-                        }
-                    } else {
-                        auto dzdcXOrig = dzdcX;
-                        dzdcX = HighTwo * (double_zx * dzdcX - double_zy * dzdcY) + HighOne;
-                        dzdcY = HighTwo * (double_zx * dzdcY + double_zy * dzdcXOrig);
-                    }
-                }
-
-                if constexpr (
-                    Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2 ||
-                    Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3 ||
-                    Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
-
-                    for (;;) {
-                        expectedReused = threadReuseddata;
-
-                        _mm_pause();
-                        if (ThreadReusedMemory->Out.compare_exchange_weak(expectedReused,
-                            nullptr,
-                            std::memory_order_release)) {
-                            break;
-                        }
-                    }
-                }
-            } else {
-                zn_size = 0;
-            }
-
-            if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse1) {
-                results->AddUncompressedReusedEntry(zx, zy, i + 1);
-            } else if constexpr (
+            // Mode 2/3 we use another thread
+            if constexpr (
                 Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2 ||
                 Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3 ||
                 Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
 
-                mpf_set(threadReuseddata->zx, zx);
-                mpf_set(threadReuseddata->zy, zy);
-
-                ThreadReusedMemory->In.store(
-                    threadReuseddata,
-                    std::memory_order_release);
+                tReuse = std::unique_ptr<std::thread>(DEBUG_NEW std::thread(ThreadReused, ThreadReusedMemory));
             }
 
-            // zy = zx * 2 * zy + cy;
+            ScopedAffinity scopedAffinity{
+                *this,
+                GetCurrentThread(),
+                tZx->native_handle(),
+                tZy->native_handle(),
+                tReuse ? tReuse->native_handle() : nullptr };
 
-            // Store in temp
-            mpf_mul(temp_mpf, zx, zy);
-            mpf_mul_ui(temp_mpf, temp_mpf, 2);
-            mpf_add(zy, temp_mpf, cy_mpf);
+            ThreadZxData *expectedZx = nullptr;
+            ThreadZyData *expectedZy = nullptr;
+            ThreadReusedData *expectedReused = nullptr;
 
-            done1 = false;
-            done2 = false;
-            bool quitting = false;
+            bool done1 = false;
+            bool done2 = false;
 
-            for (;;) {
-                expectedZy = threadZydata;
+            mpf_t zy_sq_orig;
+            mpf_init(zy_sq_orig);
 
-                _mm_pause();
-                if (!done2 &&
-                    ThreadZyMemory->Out.compare_exchange_weak(expectedZy,
-                        nullptr,
-                        std::memory_order_release)) {
-                    done2 = true;
+            mpf_set(zx, cx_mpf);
+            mpf_set(zy, cy_mpf);
 
-                    PrefetchHighPrec(threadZydata->zy_sq);
+            bool periodicity_should_break = false;
+
+            static const T HighOne = T{ 1.0 };
+            static const T HighTwo = T{ 2.0 };
+            static const T TwoFiftySix = T(256);
+
+            bool zyStarted = false;
+
+            T double_zx_last = T{ 0.0 };
+            T double_zy_last = T{ 0.0 };
+
+            RefOrbitCompressor<IterType, T, PExtras> compressor{
+                *results,
+                m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low) };
+
+            for (IterTypeFull i = 0; i < m_Fractal.GetNumIterations<IterType>(); i++) {
+                // Start Zx squaring thread
+                mpf_set(threadZxdata->zx, zx);
+
+                if (!zyStarted) {
+                    mpf_set(threadZydata->zy, zy);
+                }
+
+                ThreadZxMemory->In.store(
+                    threadZxdata,
+                    std::memory_order_release);
+
+                if (!zyStarted) {
+                    // Start Zy squaring thread
+                    ThreadZyMemory->In.store(
+                        threadZydata,
+                        std::memory_order_relaxed);
+
+                    zyStarted = true;
+                }
+
+                T double_zx = double_zx_last;
+                T double_zy = double_zy_last;
+
+                SubType zn_size;
+
+                if (i > 0) {
+                    if constexpr (PExtras == PerturbExtras::Disable) {
+                        results->AddUncompressedIteration({ double_zx, double_zy });
+                    } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
+                        compressor.MaybeAddCompressedIteration({ double_zx, double_zy, i });
+                    } else if constexpr (PExtras == PerturbExtras::Bad) {
+                        results->AddUncompressedIteration({ double_zx, double_zy, false });
+                    }
+
+                    if constexpr (PExtras == PerturbExtras::Bad) {
+                        const T norm = HdrReduce((double_zx * double_zx + double_zy * double_zy) * glitch);
+                        const auto zx_reduced = HdrReduce(HdrAbs((T)double_zx));
+                        const auto zy_reduced = HdrReduce(HdrAbs((T)double_zy));
+
+                        const bool underflow =
+                            (HdrCompareToBothPositiveReducedLE(zx_reduced, small_float) ||
+                                HdrCompareToBothPositiveReducedLE(zy_reduced, small_float) ||
+                                HdrCompareToBothPositiveReducedLE(norm, small_float));
+                        results->SetBad(underflow);
+                    }
+
+                    // Note: not T.
+                    const SubType tempZX = (SubType)double_zx + (SubType)cx_cast;
+                    const SubType tempZY = (SubType)double_zy + (SubType)cy_cast;
+                    zn_size = tempZX * tempZX + tempZY * tempZY;
 
                     if constexpr (Periodicity) {
-                        if (periodicity_should_break) {
-                            results->SetPeriodMaybeZero((IterType)results->GetCountOrbitEntries());
-                            quitting = true;
+                        HdrReduce(dzdcX);
+                        auto dzdcX1 = HdrAbs(dzdcX);
+
+                        HdrReduce(dzdcY);
+                        auto dzdcY1 = HdrAbs(dzdcY);
+
+                        HdrReduce(double_zx);
+                        auto zxCopy1 = HdrAbs(double_zx);
+
+                        HdrReduce(double_zy);
+                        auto zyCopy1 = HdrAbs(double_zy);
+
+                        T n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
+
+                        T r0 = HdrMaxPositiveReduced(dzdcX1, dzdcY1);
+                        auto n3 = results->GetMaxRadius() * r0 * HighTwo; // TODO optimize HDRFloat *2.
+                        HdrReduce(n3);
+
+                        if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
+                            if constexpr (BenchmarkState == BenchmarkMode::Disable) {
+                                periodicity_should_break = true;
+                            }
+                        } else {
+                            auto dzdcXOrig = dzdcX;
+                            dzdcX = HighTwo * (double_zx * dzdcX - double_zy * dzdcY) + HighOne;
+                            dzdcY = HighTwo * (double_zx * dzdcY + double_zy * dzdcXOrig);
                         }
                     }
 
-                    if (zn_size > 256) {
-                        quitting = true;
+                    if constexpr (
+                        Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2 ||
+                        Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3 ||
+                        Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
+
+                        for (;;) {
+                            expectedReused = threadReuseddata;
+
+                            _mm_pause();
+                            if (ThreadReusedMemory->Out.compare_exchange_weak(expectedReused,
+                                nullptr,
+                                std::memory_order_release)) {
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    zn_size = 0;
+                }
+
+                if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse1) {
+                    results->AddUncompressedReusedEntry(zx, zy, i + 1);
+                } else if constexpr (
+                    Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2 ||
+                    Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3 ||
+                    Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
+
+                    mpf_set(threadReuseddata->zx, zx);
+                    mpf_set(threadReuseddata->zy, zy);
+
+                    ThreadReusedMemory->In.store(
+                        threadReuseddata,
+                        std::memory_order_release);
+                }
+
+                // zy = zx * 2 * zy + cy;
+
+                // Store in temp
+                mpf_mul(temp_mpf, zx, zy);
+                mpf_mul_ui(temp_mpf, temp_mpf, 2);
+                mpf_add(zy, temp_mpf, cy_mpf);
+
+                done1 = false;
+                done2 = false;
+                bool quitting = false;
+
+                for (;;) {
+                    expectedZy = threadZydata;
+
+                    _mm_pause();
+                    if (!done2 &&
+                        ThreadZyMemory->Out.compare_exchange_weak(expectedZy,
+                            nullptr,
+                            std::memory_order_release)) {
+                        done2 = true;
+
+                        PrefetchHighPrec(threadZydata->zy_sq);
+
+                        if constexpr (Periodicity) {
+                            if (periodicity_should_break) {
+                                results->SetPeriodMaybeZero((IterType)results->GetCountOrbitEntries());
+                                quitting = true;
+                            }
+                        }
+
+                        if (zn_size > 256) {
+                            quitting = true;
+                        }
+
+                        if (!quitting) {
+                            mpf_set(zy_sq_orig, threadZydata->zy_sq);
+                            double_zy_last = threadZydata->zy_low;
+
+                            // Restart right away!
+                            mpf_set(threadZydata->zy, zy);
+
+                            ThreadZyMemory->In.store(
+                                threadZydata,
+                                std::memory_order_release);
+                        }
                     }
 
-                    if (!quitting) {
-                        mpf_set(zy_sq_orig, threadZydata->zy_sq);
-                        double_zy_last = threadZydata->zy_low;
+                    expectedZx = threadZxdata;
 
-                        // Restart right away!
-                        mpf_set(threadZydata->zy, zy);
+                    _mm_pause();
+                    if (!done1 &&
+                        ThreadZxMemory->Out.compare_exchange_weak(expectedZx,
+                            nullptr,
+                            std::memory_order_release)) {
+                        done1 = true;
 
-                        ThreadZyMemory->In.store(
-                            threadZydata,
-                            std::memory_order_release);
+                        double_zx_last = threadZxdata->zx_low;
+                        PrefetchHighPrec(threadZxdata->zx_sq);
+                    }
+
+                    if (done1 && done2) {
+                        break;
                     }
                 }
 
-                expectedZx = threadZxdata;
+                // zx = threadZxdata->zx_sq - zy_sq_orig + cx;
+                mpf_sub(temp_mpf, threadZxdata->zx_sq, zy_sq_orig);
+                mpf_add(zx, temp_mpf, cx_mpf);
 
-                _mm_pause();
-                if (!done1 &&
-                    ThreadZxMemory->Out.compare_exchange_weak(expectedZx,
-                        nullptr,
-                        std::memory_order_release)) {
-                    done1 = true;
-
-                    double_zx_last = threadZxdata->zx_low;
-                    PrefetchHighPrec(threadZxdata->zx_sq);
+                if (!quitting) {
+                    continue;
                 }
 
-                if (done1 && done2) {
-                    break;
-                }
+                break;
             }
 
-            // zx = threadZxdata->zx_sq - zy_sq_orig + cx;
-            mpf_sub(temp_mpf, threadZxdata->zx_sq, zy_sq_orig);
-            mpf_add(zx, temp_mpf, cx_mpf);
-
-            if (!quitting) {
-                continue;
+            if constexpr (PExtras == PerturbExtras::Bad) {
+                results->SetBad(false);
             }
 
-            break;
-        }
+            bool res1 = false, res2 = false, res3 = false;
+            while (!res1) {
+                expectedZx = nullptr;
+                res1 = ThreadZxMemory->In.compare_exchange_strong(expectedZx, (ThreadZxData *)0x1, std::memory_order_release);
+            }
 
-        if constexpr (PExtras == PerturbExtras::Bad) {
-            results->SetBad(false);
-        }
+            while (!res2) {
+                expectedZy = nullptr;
+                res2 = ThreadZyMemory->In.compare_exchange_strong(expectedZy, (ThreadZyData *)0x1, std::memory_order_release);
+            }
 
-        bool res1 = false, res2 = false, res3 = false;
-        while (!res1) {
-            expectedZx = nullptr;
-            res1 = ThreadZxMemory->In.compare_exchange_strong(expectedZx, (ThreadZxData *)0x1, std::memory_order_release);
-        }
+            while (!res3) {
+                expectedReused = nullptr;
+                res3 = ThreadReusedMemory->In.compare_exchange_strong(expectedReused, (ThreadReusedData *)0x1, std::memory_order_release);
+            }
 
-        while (!res2) {
-            expectedZy = nullptr;
-            res2 = ThreadZyMemory->In.compare_exchange_strong(expectedZy, (ThreadZyData *)0x1, std::memory_order_release);
-        }
+            tZx->join();
+            tZy->join();
 
-        while (!res3) {
-            expectedReused = nullptr;
-            res3 = ThreadReusedMemory->In.compare_exchange_strong(expectedReused, (ThreadReusedData *)0x1, std::memory_order_release);
-        }
+            if constexpr (
+                Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2 ||
+                Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3 ||
+                Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
 
-        tZx->join();
-        tZy->join();
+                tReuse->join();
+            }
 
-        if constexpr (
-            Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2 ||
-            Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3 ||
-            Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
+            _aligned_free(ThreadZxMemory);
+            _aligned_free(ThreadZyMemory);
+            _aligned_free(ThreadReusedMemory);
 
-            tReuse->join();
-        }
+            threadZxdata->~ThreadZxData();
+            threadZydata->~ThreadZyData();
+            threadReuseddata->~ThreadReusedData();
 
-        _aligned_free(ThreadZxMemory);
-        _aligned_free(ThreadZyMemory);
-        _aligned_free(ThreadReusedMemory);
+            _aligned_free(threadZxdata);
+            _aligned_free(threadZydata);
+            _aligned_free(threadReuseddata);
 
-        threadZxdata->~ThreadZxData();
-        threadZydata->~ThreadZyData();
-        threadReuseddata->~ThreadReusedData();
+            if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse1) {
+                std::ignore = bumpAllocator->GetAllocated(1); // Destruct the return value
+            }
 
-        _aligned_free(threadZxdata);
-        _aligned_free(threadZydata);
-        _aligned_free(threadReuseddata);
-
-        if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse1) {
-            std::ignore = bumpAllocator->GetAllocated(1); // Destruct the return value
-        }
-
-        results->CompleteResults<Reuse>(std::move(reusedAllocator));
-        m_GuessReserveSize = results->GetCountOrbitEntries();
+            results->CompleteResults<Reuse>(std::move(reusedAllocator));
+            m_GuessReserveSize = results->GetCountOrbitEntries();
     } // End of scope for boundedAllocator and bumpAllocator
 
     ShutdownAllocatorsIfNeeded<Reuse>(boundedAllocator, bumpAllocator);
@@ -2108,26 +2076,6 @@ template<
 void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecision cy) {
     ::MessageBox(nullptr, L"AddPerturbationReferencePointMT5 disabled, using MT3", L"", MB_OK | MB_APPLMODAL);
     AddPerturbationReferencePointMT3<IterType, T, SubType, Periodicity, BenchmarkState, PExtras, Reuse>(cx, cy);
-}
-
-
-bool RefOrbitCalc::RequiresReferencePoints() const {
-    switch (m_Fractal.GetRenderAlgorithm()) {
-    case RenderAlgorithm::CpuHigh:
-    case RenderAlgorithm::CpuHDR32:
-    case RenderAlgorithm::CpuHDR64:
-    case RenderAlgorithm::Cpu64:
-    case RenderAlgorithm::Gpu1x64:
-    case RenderAlgorithm::Gpu2x64:
-    case RenderAlgorithm::Gpu4x64:
-    case RenderAlgorithm::Gpu1x32:
-    case RenderAlgorithm::GpuHDRx32:
-    case RenderAlgorithm::Gpu2x32:
-    case RenderAlgorithm::Gpu4x32:
-        return false;
-    default:
-        return true;
-    }
 }
 
 template<
@@ -2222,7 +2170,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
                 results->SetLaReference(std::move(temp));
             }
         }
-    };
+        };
 
     if (RequiresReuse()) {
         if (m_PerturbationGuessCalcX == HighPrecision{} && m_PerturbationGuessCalcY == HighPrecision{}) {
@@ -2329,7 +2277,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
             added) {
             results->WriteMetadata();
         }
-    };
+        };
 
     if constexpr (UsingDblflt) {
         auto *resultsExisting = GetUsefulPerturbationResultsMutable<IterType, ConvertTType, false, PExtras>();
@@ -2484,13 +2432,13 @@ void RefOrbitCalc::ClearPerturbationResults(PerturbationResultType type) {
         }
 
         return false;
-    };
+        };
 
     auto ClearLAIfNeeded = [&](const auto &o) {
         if (type == PerturbationResultType::LAOnly) {
             o->ClearLaReference();
         }
-    };
+        };
 
     auto ClearOne = [&](auto &arr) {
         // First, erase some results completely as needed
@@ -2500,7 +2448,7 @@ void RefOrbitCalc::ClearPerturbationResults(PerturbationResultType type) {
 
         // Now just erase LA results of what's left, if needed
         std::for_each(arr.begin(), arr.end(), ClearLAIfNeeded);
-    };
+        };
 
     m_C.clear();
 
@@ -2535,7 +2483,7 @@ void RefOrbitCalc::SaveAllOrbits() {
                 GetNextGenerationNumber());
             resultsCopy->WriteMetadata();
         }
-    };
+        };
 
     for (size_t i = 0; i < m_C.size(); i++) {
         std::visit(lambda, m_C[i]);
@@ -2549,14 +2497,14 @@ void RefOrbitCalc::LoadAllOrbits() {
             return true;
         }
         return false;
-    };
+        };
 
     // Removes the extension from a filename
     auto stripext = [](std::string fn) -> std::string {
         size_t lastindex = fn.find_last_of(".");
         std::string n = fn.substr(0, lastindex);
         return n;
-    };
+        };
 
     // Convert narrow string to wide string
     auto narrowtowide = [](std::string narrow) -> std::wstring {
@@ -2565,7 +2513,7 @@ void RefOrbitCalc::LoadAllOrbits() {
             return (wchar_t)c;
             });
         return wide;
-    };
+        };
 
     // This is such a stupid implementation of this but whatever
     // TODO: make this not stupid
@@ -2751,11 +2699,12 @@ void RefOrbitCalc::GetSomeDetails(RefOrbitDetails &details) const {
             GetPerturbationAlgStr(),
             arg->GetHiZoomFactor()
         };
-    };
+        };
 
     std::visit(lambda, m_LastUsedRefOrbit);
 
-    static_assert(static_cast<int>(RenderAlgorithm::MAX) == 61, "Fix me");
+    static_assert(static_cast<int>(RenderAlgorithmEnum::MAX) == 61, "Fix me");
+    //static_assert(std::tuple_size<RenderAlgorithmsTupleT>() == 62, "Fix me");
 }
 
 void RefOrbitCalc::SaveOrbit(CompressToDisk desiredCompression, std::wstring filename) const {
@@ -2764,7 +2713,7 @@ void RefOrbitCalc::SaveOrbit(CompressToDisk desiredCompression, std::wstring fil
             m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
             GetNextGenerationNumber());
         compressedResults->SaveOrbit(filename);
-    };
+        };
 
     auto resultsSaverMax = [this, &filename](const auto &resultsToSave) {
         const auto compressedResults = resultsToSave->CompressMax(
@@ -2772,17 +2721,17 @@ void RefOrbitCalc::SaveOrbit(CompressToDisk desiredCompression, std::wstring fil
             GetNextGenerationNumber(),
             false);
         compressedResults->SaveOrbit(filename);
-    };
+        };
 
     bool lastOrbitNull = true;
 
     auto lambda = [
         this,
-        &lastOrbitNull,
-        resultsSaver,
-        resultsSaverMax,
-        desiredCompression,
-        filename](auto &&results) {
+            &lastOrbitNull,
+            resultsSaver,
+            resultsSaverMax,
+            desiredCompression,
+            filename](auto &&results) {
 
         if (results == nullptr) {
             return;
@@ -2852,15 +2801,15 @@ void RefOrbitCalc::SaveOrbit(CompressToDisk desiredCompression, std::wstring fil
         } else {
             throw FractalSharkSeriousException("Unknown CompressToDisk");
         }
-    };
+        };
 
-    // Check if m_LastUsedRefOrbit holds anything
-    std::visit(lambda, m_LastUsedRefOrbit);
+        // Check if m_LastUsedRefOrbit holds anything
+        std::visit(lambda, m_LastUsedRefOrbit);
 
-    if (lastOrbitNull) {
-        // Save location only, no orbit.
-        SaveOrbitResults(filename);
-    }
+        if (lastOrbitNull) {
+            // Save location only, no orbit.
+            SaveOrbitResults(filename);
+        }
 }
 
 void RefOrbitCalc::DiffOrbit(
@@ -2882,7 +2831,7 @@ void RefOrbitCalc::DiffOrbit(
         } else {
             throw FractalSharkSeriousException("Different types");
         }
-    };
+        };
 
     try {
         std::visit(lambda, results1, results2);
@@ -2974,9 +2923,9 @@ void RefOrbitCalc::SaveOrbitResults(std::wstring imagFilename) const {
     if (!file.is_open()) {
         throw FractalSharkSeriousException("Failed to open file for writing");
     }
-    
+
     Imagina::IMFileHeader fileHeader{};
-    fileHeader.Magic = Imagina::IMMagicNumber;    
+    fileHeader.Magic = Imagina::IMMagicNumber;
     fileHeader.Reserved = 0;
     fileHeader.LocationOffset = sizeof(fileHeader);
     fileHeader.ReferenceOffset = 0;
@@ -2992,7 +2941,7 @@ void RefOrbitCalc::SaveOrbitResults(std::wstring imagFilename) const {
         auto minY = m_Fractal.GetMinY();
         auto maxY = m_Fractal.GetMaxY();
 
-        PointZoomBBConverter zoomConverter {
+        PointZoomBBConverter zoomConverter{
             minX, minY, maxX, maxY
         };
 
@@ -3039,7 +2988,7 @@ const PerturbationResultsBase *RefOrbitCalc::LoadOrbit(
         //} else {
         //    return nullptr;
         //}
-    };
+        };
 
     if (imaginaSettings == ImaginaSettings::UseSaved) {
         auto decompressedResults = LoadOrbitConst(compression, imagFilename, recommendedSettings);
@@ -3050,7 +2999,7 @@ const PerturbationResultsBase *RefOrbitCalc::LoadOrbit(
         return decompressedResultsPtr;
     } else {
         auto helper = [&]<typename DestIterType, typename T>() -> const PerturbationResultsBase * {
-            if (RequiresCompression(renderAlg)) {
+            if (renderAlg.RequiresCompression) {
                 constexpr auto PExtrasDest = PerturbExtras::SimpleCompression;
                 auto decompressedResults = LoadOrbitConvert<DestIterType, T, PExtrasDest>(
                     compression,
@@ -3079,49 +3028,50 @@ const PerturbationResultsBase *RefOrbitCalc::LoadOrbit(
             }
         };
 
-        switch (renderAlg) {
-        case RenderAlgorithm::GpuHDRx64PerturbedLAv2:
-        case RenderAlgorithm::GpuHDRx64PerturbedLAv2PO:
-        case RenderAlgorithm::GpuHDRx64PerturbedLAv2LAO:
-        case RenderAlgorithm::GpuHDRx64PerturbedRCLAv2:
-        case RenderAlgorithm::GpuHDRx64PerturbedRCLAv2PO:
-        case RenderAlgorithm::GpuHDRx64PerturbedRCLAv2LAO:
-        case RenderAlgorithm::GpuHDRx2x32PerturbedLAv2:
-        case RenderAlgorithm::GpuHDRx2x32PerturbedLAv2PO:
-        case RenderAlgorithm::GpuHDRx2x32PerturbedLAv2LAO:
-        case RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2:
-        case RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2PO:
-        case RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2LAO:
+
+        switch (renderAlg.Algorithm) {
+        case RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2:
+        case RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2PO:
+        case RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2LAO:
+        case RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2:
+        case RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2PO:
+        case RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2LAO:
+        case RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2:
+        case RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2PO:
+        case RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2LAO:
+        case RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2:
+        case RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2PO:
+        case RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2LAO:
             return helperT.template operator() < HDRFloat<double> > ();
 
-        case RenderAlgorithm::Gpu1x64PerturbedLAv2:
-        case RenderAlgorithm::Gpu1x64PerturbedLAv2PO:
-        case RenderAlgorithm::Gpu1x64PerturbedLAv2LAO:
-        case RenderAlgorithm::Gpu1x64PerturbedRCLAv2:
-        case RenderAlgorithm::Gpu1x64PerturbedRCLAv2PO:
-        case RenderAlgorithm::Gpu1x64PerturbedRCLAv2LAO:
-        case RenderAlgorithm::Gpu2x32PerturbedLAv2:
-        case RenderAlgorithm::Gpu2x32PerturbedLAv2PO:
-        case RenderAlgorithm::Gpu2x32PerturbedLAv2LAO:
-        case RenderAlgorithm::Gpu2x32PerturbedRCLAv2:
-        case RenderAlgorithm::Gpu2x32PerturbedRCLAv2PO:
-        case RenderAlgorithm::Gpu2x32PerturbedRCLAv2LAO:
+        case RenderAlgorithmEnum::Gpu1x64PerturbedLAv2:
+        case RenderAlgorithmEnum::Gpu1x64PerturbedLAv2PO:
+        case RenderAlgorithmEnum::Gpu1x64PerturbedLAv2LAO:
+        case RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2:
+        case RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2PO:
+        case RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2LAO:
+        case RenderAlgorithmEnum::Gpu2x32PerturbedLAv2:
+        case RenderAlgorithmEnum::Gpu2x32PerturbedLAv2PO:
+        case RenderAlgorithmEnum::Gpu2x32PerturbedLAv2LAO:
+        case RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2:
+        case RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2PO:
+        case RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2LAO:
             return helperT.template operator() < double > ();
 
-        case RenderAlgorithm::GpuHDRx32PerturbedLAv2:
-        case RenderAlgorithm::GpuHDRx32PerturbedLAv2PO:
-        case RenderAlgorithm::GpuHDRx32PerturbedLAv2LAO:
-        case RenderAlgorithm::GpuHDRx32PerturbedRCLAv2:
-        case RenderAlgorithm::GpuHDRx32PerturbedRCLAv2PO:
-        case RenderAlgorithm::GpuHDRx32PerturbedRCLAv2LAO:
+        case RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2:
+        case RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2PO:
+        case RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2LAO:
+        case RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2:
+        case RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2PO:
+        case RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2LAO:
             return helperT.template operator() < HDRFloat<float> > ();
 
-        case RenderAlgorithm::Gpu1x32PerturbedLAv2:
-        case RenderAlgorithm::Gpu1x32PerturbedLAv2PO:
-        case RenderAlgorithm::Gpu1x32PerturbedLAv2LAO:
-        case RenderAlgorithm::Gpu1x32PerturbedRCLAv2:
-        case RenderAlgorithm::Gpu1x32PerturbedRCLAv2PO:
-        case RenderAlgorithm::Gpu1x32PerturbedRCLAv2LAO:
+        case RenderAlgorithmEnum::Gpu1x32PerturbedLAv2:
+        case RenderAlgorithmEnum::Gpu1x32PerturbedLAv2PO:
+        case RenderAlgorithmEnum::Gpu1x32PerturbedLAv2LAO:
+        case RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2:
+        case RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2PO:
+        case RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2LAO:
             return helperT.template operator() < float > ();
 
         default:
@@ -3212,9 +3162,9 @@ RefOrbitCalc::AwesomeVariantUniquePtr RefOrbitCalc::LoadOrbitConst(
     };
 
     AwesomeVariantUniquePtr retval;
-    auto CombinedHelper = [&]<typename IterType, typename T, PerturbExtras PExtrasDest>(RenderAlgorithm renderAlg) {
+    auto CombinedHelper = [&]<RenderAlgorithmEnum Algorithm, typename IterType, typename T, PerturbExtras PExtrasDest>() {
         if (recommendedSettings != nullptr) {
-            recommendedSettings->SetRenderAlgorithm(renderAlg);
+            recommendedSettings->SetRenderAlgorithm(RenderAlgorithmCompileTime<Algorithm>::Algorithm);
         }
 
         if (params.m_OrbitType == OrbitParameterPack::IncludedOrbit::OrbitIncluded) {
@@ -3228,15 +3178,31 @@ RefOrbitCalc::AwesomeVariantUniquePtr RefOrbitCalc::LoadOrbitConst(
     if (params.extendedRange) {
         if (params.fileHeader.Magic == Imagina::IMMagicNumber) {
             if (recommendedSettings->GetIterType() == IterTypeEnum::Bits64) {
-                CombinedHelper.operator() < uint64_t, HDRFloat<double>, PerturbExtras::Disable > (RenderAlgorithm::GpuHDRx64PerturbedLAv2);
+                CombinedHelper.operator() <
+                    RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2,
+                    uint64_t,
+                    HDRFloat<double>,
+                    PerturbExtras::Disable > ();
             } else {
-                CombinedHelper.operator() < uint32_t, HDRFloat<double>, PerturbExtras::Disable > (RenderAlgorithm::GpuHDRx64PerturbedLAv2);
+                CombinedHelper.operator() <
+                    RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2,
+                    uint32_t,
+                    HDRFloat<double>,
+                    PerturbExtras::Disable > ();
             }
         } else if (params.fileHeader.Magic == Imagina::SharksMagicNumber) {
             if (recommendedSettings->GetIterType() == IterTypeEnum::Bits64) {
-                CombinedHelper.operator() < uint64_t, HDRFloat<float>, PerturbExtras::Disable > (RenderAlgorithm::GpuHDRx32PerturbedLAv2);
+                CombinedHelper.operator() <
+                    RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2,
+                    uint64_t,
+                    HDRFloat<float>,
+                    PerturbExtras::Disable > ();
             } else {
-                CombinedHelper.operator() < uint32_t, HDRFloat<float>, PerturbExtras::Disable > (RenderAlgorithm::GpuHDRx32PerturbedLAv2);
+                CombinedHelper.operator() <
+                    RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2,
+                    uint32_t,
+                    HDRFloat<float>,
+                    PerturbExtras::Disable > ();
             }
         } else {
             throw FractalSharkSeriousException("Invalid file format");
@@ -3244,15 +3210,31 @@ RefOrbitCalc::AwesomeVariantUniquePtr RefOrbitCalc::LoadOrbitConst(
     } else {
         if (params.fileHeader.Magic == Imagina::IMMagicNumber) {
             if (recommendedSettings->GetIterType() == IterTypeEnum::Bits64) {
-                CombinedHelper.operator() < uint64_t, double, PerturbExtras::Disable > (RenderAlgorithm::Gpu1x64PerturbedLAv2);
+                CombinedHelper.operator() <
+                    RenderAlgorithmEnum::Gpu1x64PerturbedLAv2,
+                    uint64_t,
+                    double,
+                    PerturbExtras::Disable > ();
             } else {
-                CombinedHelper.operator() < uint32_t, double, PerturbExtras::Disable > (RenderAlgorithm::Gpu1x64PerturbedLAv2);
+                CombinedHelper.operator() <
+                    RenderAlgorithmEnum::Gpu1x64PerturbedLAv2,
+                    uint32_t,
+                    double,
+                    PerturbExtras::Disable > ();
             }
         } else if (params.fileHeader.Magic == Imagina::SharksMagicNumber) {
             if (recommendedSettings->GetIterType() == IterTypeEnum::Bits64) {
-                CombinedHelper.operator() < uint64_t, float, PerturbExtras::Disable > (RenderAlgorithm::Gpu1x32PerturbedLAv2);
+                CombinedHelper.operator() <
+                    RenderAlgorithmEnum::Gpu1x32PerturbedLAv2,
+                    uint64_t,
+                    float,
+                    PerturbExtras::Disable > ();
             } else {
-                CombinedHelper.operator() < uint32_t, float, PerturbExtras::Disable > (RenderAlgorithm::Gpu1x32PerturbedLAv2);
+                CombinedHelper.operator() <
+                    RenderAlgorithmEnum::Gpu1x32PerturbedLAv2,
+                    uint32_t,
+                    float,
+                    PerturbExtras::Disable > ();
             }
         } else {
             throw FractalSharkSeriousException("Invalid file format");

@@ -1,9 +1,10 @@
 #pragma once
 
-enum class RenderAlgorithm;
+class RenderAlgorithm;
 enum class IterTypeEnum;
 
 #include "HighPrecision.h"
+#include "RenderAlgorithm.h"
 
 class PointZoomBBConverter;
 

@@ -214,6 +214,8 @@ void CrummyTest::BasicOneTest(
 
         m_Fractal.SaveCurrentFractal(filenameW, false);
         //SaveItersAsText(filenameW);
+
+        ++testIndex;
     }
 }
 
@@ -306,7 +308,7 @@ void CrummyTest::ReferenceSaveLoad(
             fractal.SaveRefOrbit(CompressToDisk::SimpleCompression, simpleFilename);
         }
         catch (FractalSharkSeriousException &e) {
-            if (origAlgToTest.Algorithm == RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2 ||
+            if constexpr (origAlgToTest.Algorithm == RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2 ||
                 origAlgToTest.Algorithm == RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2PO ||
                 origAlgToTest.Algorithm == RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2LAO ||
                 origAlgToTest.Algorithm == RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2 ||
@@ -446,6 +448,8 @@ void CrummyTest::TestVariedCompression() {
             const auto viewIndex = static_cast<size_t>(view);
 
             for (int32_t compressionErrorExp = 1; compressionErrorExp <= compressionError; compressionErrorExp++) {
+                const auto origAlg = algToTest;
+                const auto convertToAlg = algToTest;
                 ReferenceSaveLoad(
                     m_Fractal,
                     dirName,
@@ -453,8 +457,8 @@ void CrummyTest::TestVariedCompression() {
                     testIndex,
                     IterTypeEnum::Bits64,
                     ImaginaSettings::ConvertToCurrent,
-                    algToTest,
-                    algToTest,
+                    origAlg,
+                    convertToAlg,
                     compressionErrorExp);
 
                 testIndex++;

@@ -2704,7 +2704,7 @@ void RefOrbitCalc::GetSomeDetails(RefOrbitDetails &details) const {
     std::visit(lambda, m_LastUsedRefOrbit);
 
     static_assert(static_cast<int>(RenderAlgorithmEnum::MAX) == 61, "Fix me");
-    //static_assert(std::tuple_size<RenderAlgorithmsTupleT>() == 62, "Fix me");
+    static_assert(std::tuple_size<RenderAlgorithmsTupleT>() == 62, "Fix me");
 }
 
 void RefOrbitCalc::SaveOrbit(CompressToDisk desiredCompression, std::wstring filename) const {

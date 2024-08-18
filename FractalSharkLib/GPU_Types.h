@@ -7,12 +7,6 @@
 template<typename IterType, class T, class SubType, PerturbExtras PExtras>
 class LAReference;
 
-enum class LAv2Mode {
-    Full,
-    PO,
-    LAO,
-};
-
 struct Color32 {
     uint32_t r, g, b;
 };

@@ -7,6 +7,13 @@
 #include "HighPrecision.h"
 #include "HDRFloat.h"
 
+enum class LAv2Mode {
+    Invalid,
+    Full,
+    PO,
+    LAO,
+};
+
 enum class TestTypeEnum {
     ViewInit,
     View0 = ViewInit,
@@ -158,6 +165,8 @@ public:
     static const char *AlgorithmStr;
     static bool UseLocalColor;
     static bool RequiresCompression;
+    static bool RequiresReferencePoints;
+    static LAv2Mode LAv2;
 
     static bool TestIncludeInBasic;
     static bool TestIncludeInView5;
@@ -172,6 +181,7 @@ public:
     static constexpr bool UseLocalColor = true;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = false;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -193,6 +203,7 @@ public:
     static constexpr bool UseLocalColor = true;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = false;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -214,6 +225,7 @@ public:
     static constexpr bool UseLocalColor = true;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = false;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -235,6 +247,7 @@ public:
     static constexpr bool UseLocalColor = true;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = false;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -256,6 +269,7 @@ public:
     static constexpr bool UseLocalColor = true;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -277,6 +291,7 @@ public:
     static constexpr bool UseLocalColor = true;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -298,7 +313,7 @@ public:
     static constexpr bool UseLocalColor = true;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
-
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -321,6 +336,7 @@ public:
     static constexpr bool UseLocalColor = true;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -342,6 +358,7 @@ public:
     static constexpr bool UseLocalColor = true;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
 
     static constexpr TestViewMap TestInclude{
          {
@@ -363,6 +380,7 @@ public:
     static constexpr bool UseLocalColor = true;
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -384,6 +402,7 @@ public:
     static constexpr bool UseLocalColor = true;
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -405,6 +424,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = false;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -427,6 +447,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = false;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -449,6 +470,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = false;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -470,6 +492,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = false;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -492,6 +515,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = false;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -513,6 +537,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = false;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -534,6 +559,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = false;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -556,6 +582,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -578,6 +605,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -600,6 +628,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -623,6 +652,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -645,6 +675,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -668,6 +699,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -691,6 +723,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -712,6 +745,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -733,6 +767,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -754,6 +789,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -775,6 +811,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -796,6 +833,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -817,6 +855,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -838,6 +877,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -859,6 +899,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -880,6 +921,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -901,6 +943,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -922,6 +965,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -943,6 +987,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -969,6 +1014,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -991,6 +1037,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -1012,6 +1059,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -1038,6 +1086,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -1060,6 +1109,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -1081,6 +1131,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -1111,6 +1162,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -1134,6 +1186,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -1157,6 +1210,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -1187,6 +1241,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -1210,6 +1265,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -1233,6 +1289,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -1260,6 +1317,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -1283,6 +1341,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -1306,6 +1365,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -1334,6 +1394,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -1357,6 +1418,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -1380,6 +1442,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -1410,6 +1473,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -1433,6 +1497,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -1456,6 +1521,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -1486,6 +1552,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -1509,6 +1576,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = true;
     static constexpr bool RequiresReferencePoints = true;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -1532,6 +1600,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = false;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -1555,6 +1624,7 @@ public:
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = false;
     static constexpr bool RequiresReferencePoints = false;
+    static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
 
     static constexpr TestViewMap TestInclude{
         {

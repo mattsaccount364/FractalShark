@@ -225,7 +225,7 @@ HWND MainWindow::InitInstance(HINSTANCE hInstance, int nCmdShow) { // Store inst
     hInst = hInstance;
 
     constexpr bool startWindowed = true;
-    constexpr bool finishWindowed = false;
+    constexpr bool finishWindowed = true;
     constexpr DWORD forceStartWidth = 0;
     constexpr DWORD forceStartHeight = 0;
 
@@ -560,7 +560,7 @@ LRESULT MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam) {
 #define MapMenuItemToAlg(wmId, renderAlg) \
     case wmId: \
     { \
-        gFractal->SetRenderAlgorithm(renderAlg); \
+        gFractal->SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(renderAlg)); \
         break; \
     }
 

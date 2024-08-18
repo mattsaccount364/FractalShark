@@ -151,86 +151,6 @@ enum class RenderAlgorithmEnum {
     MAX
 };
 
-// A list of all the algorithms that are supported by the GPU in string form.
-// The algorithms are listed above in the same order as they are listed here.
-static std::string RenderAlgorithmStr[(size_t)RenderAlgorithmEnum::MAX + 1] =
-{
-    "CpuHigh",
-    "Cpu64",
-    "CpuHDR32",
-    "CpuHDR64",
-
-    "Cpu64PerturbedBLA",
-    "Cpu32PerturbedBLAHDR",
-    "Cpu64PerturbedBLAHDR",
-
-    "Cpu32PerturbedBLAV2HDR",
-    "Cpu64PerturbedBLAV2HDR",
-    "Cpu32PerturbedRCBLAV2HDR",
-    "Cpu64PerturbedRCBLAV2HDR",
-
-    "Gpu1x32",
-    "Gpu2x32",
-    "Gpu4x32",
-    "Gpu1x64",
-    "Gpu2x64",
-    "Gpu4x64",
-    "GpuHDRx32",
-
-    "Gpu1x32PerturbedScaled",
-    "Gpu2x32PerturbedScaled",
-    "GpuHDRx32PerturbedScaled",
-
-    "Gpu1x64PerturbedBLA",
-    "GpuHDRx32PerturbedBLA",
-    "GpuHDRx64PerturbedBLA",
-
-    "Gpu1x32PerturbedLAv2",
-    "Gpu1x32PerturbedLAv2PO",
-    "Gpu1x32PerturbedLAv2LAO",
-    "Gpu1x32PerturbedRCLAv2",
-    "Gpu1x32PerturbedRCLAv2PO",
-    "Gpu1x32PerturbedRCLAv2LAO",
-
-    "Gpu2x32PerturbedLAv2",
-    "Gpu2x32PerturbedLAv2PO",
-    "Gpu2x32PerturbedLAv2LAO",
-    "Gpu2x32PerturbedRCLAv2",
-    "Gpu2x32PerturbedRCLAv2PO",
-    "Gpu2x32PerturbedRCLAv2LAO",
-
-    "Gpu1x64PerturbedLAv2",
-    "Gpu1x64PerturbedLAv2PO",
-    "Gpu1x64PerturbedLAv2LAO",
-    "Gpu1x64PerturbedRCLAv2",
-    "Gpu1x64PerturbedRCLAv2PO",
-    "Gpu1x64PerturbedRCLAv2LAO",
-
-    "GpuHDRx32PerturbedLAv2",
-    "GpuHDRx32PerturbedLAv2PO",
-    "GpuHDRx32PerturbedLAv2LAO",
-    "GpuHDRx32PerturbedRCLAv2",
-    "GpuHDRx32PerturbedRCLAv2PO",
-    "GpuHDRx32PerturbedRCLAv2LAO",
-
-    "GpuHDRx2x32PerturbedLAv2",
-    "GpuHDRx2x32PerturbedLAv2PO",
-    "GpuHDRx2x32PerturbedLAv2LAO",
-    "GpuHDRx2x32PerturbedRCLAv2",
-    "GpuHDRx2x32PerturbedRCLAv2PO",
-    "GpuHDRx2x32PerturbedRCLAv2LAO",
-
-    "GpuHDRx64PerturbedLAv2",
-    "GpuHDRx64PerturbedLAv2PO",
-    "GpuHDRx64PerturbedLAv2LAO",
-    "GpuHDRx64PerturbedRCLAv2",
-    "GpuHDRx64PerturbedRCLAv2PO",
-    "GpuHDRx64PerturbedRCLAv2LAO",
-
-    "AutoSelect",
-    "MAX"
-};
-
 template<RenderAlgorithmEnum RenderEnum>
 class RenderAlgorithmCompileTime {
 public:
@@ -1634,6 +1554,7 @@ public:
     static constexpr wchar_t AlgorithmStrW[] = L"MAX";
     static constexpr bool UseLocalColor = false;
     static constexpr bool RequiresCompression = false;
+    static constexpr bool RequiresReferencePoints = false;
 
     static constexpr TestViewMap TestInclude{
         {
@@ -1644,6 +1565,14 @@ public:
     using OriginatingType = MainType;
     using SubType = void;
 };
+
+// operator== for RenderAlgorithmCompileTime.  Use templates.
+template<typename RenderAlgCompileTimeRhs, typename RenderAlgCompileTimeLhs>
+constexpr bool operator== (RenderAlgCompileTimeRhs, RenderAlgCompileTimeLhs)
+    requires std::is_base_of_v<RenderAlgorithmCompileTime<RenderAlgCompileTimeRhs::Algorithm>, RenderAlgCompileTimeRhs>
+{
+    return RenderAlgCompileTimeRhs::Algorithm == RenderAlgCompileTimeLhs::Algorithm;
+}
 
 class RenderAlgorithm {
 public:
@@ -1656,14 +1585,16 @@ public:
         TestInclude{ RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>::TestInclude } {
     }
 
-    template<RenderAlgorithmEnum Alg = RenderAlgorithmEnum::AUTO>
-    constexpr RenderAlgorithm(RenderAlgorithmEnum)
-        : Algorithm{ RenderAlgorithmCompileTime<Alg>::Algorithm },
-        AlgorithmStr{ RenderAlgorithmCompileTime<Alg>::AlgorithmStr },
-        UseLocalColor{ RenderAlgorithmCompileTime<Alg>::UseLocalColor },
-        RequiresCompression{ RenderAlgorithmCompileTime<Alg>::RequiresCompression },
-        RequiresReferencePoints{ RenderAlgorithmCompileTime<Alg>::RequiresReferencePoints },
-        TestInclude{ RenderAlgorithmCompileTime<Alg>::TestInclude } {
+    // Requires RenderAlgorithmCompileTime
+    template<typename RenderAlgCompileTime>
+    constexpr RenderAlgorithm(RenderAlgCompileTime Alg)
+        requires std::is_base_of_v<RenderAlgorithmCompileTime<RenderAlgCompileTime::Algorithm>, RenderAlgCompileTime>
+        : Algorithm{ Alg.Algorithm },
+        AlgorithmStr{ Alg.AlgorithmStr },
+        UseLocalColor{ Alg.UseLocalColor },
+        RequiresCompression{ Alg.RequiresCompression },
+        RequiresReferencePoints{ Alg.RequiresReferencePoints },
+        TestInclude{ Alg.TestInclude } {
     }
 
     constexpr RenderAlgorithm(const RenderAlgorithm &other) :
@@ -1695,8 +1626,6 @@ public:
     RenderAlgorithm &operator= (const RenderAlgorithm &other);
     RenderAlgorithm &operator= (RenderAlgorithm &&other);
 
-    static RenderAlgorithmEnum GetAlgorithmEnum(const char *algorithmStr);
-
     RenderAlgorithmEnum Algorithm;
     const char *AlgorithmStr;
     bool UseLocalColor;
@@ -1709,83 +1638,84 @@ public:
 static constexpr
 std::array<RenderAlgorithm, static_cast<size_t>(RenderAlgorithmEnum::MAX) + 1> RenderAlgorithms{
     // CPU algorithms
-    RenderAlgorithm{RenderAlgorithmEnum::CpuHigh},
-    RenderAlgorithm{RenderAlgorithmEnum::Cpu64},
-    RenderAlgorithm{RenderAlgorithmEnum::CpuHDR32},
-    RenderAlgorithm{RenderAlgorithmEnum::CpuHDR64},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::CpuHigh>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::CpuHDR32>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::CpuHDR64>{}},
 
-    RenderAlgorithm{RenderAlgorithmEnum::Cpu64PerturbedBLA},
-    RenderAlgorithm{RenderAlgorithmEnum::Cpu32PerturbedBLAHDR},
-    RenderAlgorithm{RenderAlgorithmEnum::Cpu64PerturbedBLAHDR},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64PerturbedBLA>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu32PerturbedBLAHDR>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64PerturbedBLAHDR>{}},
 
-    RenderAlgorithm{RenderAlgorithmEnum::Cpu32PerturbedBLAV2HDR},
-    RenderAlgorithm{RenderAlgorithmEnum::Cpu64PerturbedBLAV2HDR},
-    RenderAlgorithm{RenderAlgorithmEnum::Cpu32PerturbedRCBLAV2HDR},
-    RenderAlgorithm{RenderAlgorithmEnum::Cpu64PerturbedRCBLAV2HDR},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu32PerturbedBLAV2HDR>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64PerturbedBLAV2HDR>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu32PerturbedRCBLAV2HDR>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Cpu64PerturbedRCBLAV2HDR>{}},
 
     // GPU - low zoom depth:
-    RenderAlgorithm{RenderAlgorithmEnum::Gpu1x32},
-    RenderAlgorithm{RenderAlgorithmEnum::Gpu2x32},
-    RenderAlgorithm{RenderAlgorithmEnum::Gpu4x32},
-    RenderAlgorithm{RenderAlgorithmEnum::Gpu1x64},
-    RenderAlgorithm{RenderAlgorithmEnum::Gpu2x64},
-    RenderAlgorithm{RenderAlgorithmEnum::Gpu4x64},
-    RenderAlgorithm{RenderAlgorithmEnum::GpuHDRx32},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu4x32>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x64>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu4x64>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32>{}},
 
     // GPU
-    RenderAlgorithm{RenderAlgorithmEnum::Gpu1x32PerturbedScaled},
-    RenderAlgorithm{RenderAlgorithmEnum::Gpu2x32PerturbedScaled},
-    RenderAlgorithm{RenderAlgorithmEnum::GpuHDRx32PerturbedScaled},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedScaled>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedScaled>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedScaled>{}},
 
-    RenderAlgorithm{RenderAlgorithmEnum::Gpu1x64PerturbedBLA},
-    RenderAlgorithm{RenderAlgorithmEnum::GpuHDRx32PerturbedBLA},
-    RenderAlgorithm{RenderAlgorithmEnum::GpuHDRx64PerturbedBLA},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedBLA>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedBLA>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedBLA>{}},
 
-    RenderAlgorithm{RenderAlgorithmEnum::Gpu1x32PerturbedLAv2},
-    RenderAlgorithm{RenderAlgorithmEnum::Gpu1x32PerturbedLAv2PO},
-    RenderAlgorithm{RenderAlgorithmEnum::Gpu1x32PerturbedLAv2LAO},
-    RenderAlgorithm{RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2},
-    RenderAlgorithm{RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2PO},
-    RenderAlgorithm{RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2LAO},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedLAv2>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedLAv2PO>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedLAv2LAO>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2PO>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x32PerturbedRCLAv2LAO>{}},
 
-    RenderAlgorithm{RenderAlgorithmEnum::Gpu2x32PerturbedLAv2},
-    RenderAlgorithm{RenderAlgorithmEnum::Gpu2x32PerturbedLAv2PO},
-    RenderAlgorithm{RenderAlgorithmEnum::Gpu2x32PerturbedLAv2LAO},
-    RenderAlgorithm{RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2},
-    RenderAlgorithm{RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2PO},
-    RenderAlgorithm{RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2LAO},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedLAv2>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedLAv2PO>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedLAv2LAO>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2PO>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2LAO>{}},
 
-    RenderAlgorithm{RenderAlgorithmEnum::Gpu1x64PerturbedLAv2},
-    RenderAlgorithm{RenderAlgorithmEnum::Gpu1x64PerturbedLAv2PO},
-    RenderAlgorithm{RenderAlgorithmEnum::Gpu1x64PerturbedLAv2LAO},
-    RenderAlgorithm{RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2},
-    RenderAlgorithm{RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2PO},
-    RenderAlgorithm{RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2LAO},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedLAv2>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedLAv2PO>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedLAv2LAO>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2PO>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::Gpu1x64PerturbedRCLAv2LAO>{}},
 
-    RenderAlgorithm{RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2},
-    RenderAlgorithm{RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2PO},
-    RenderAlgorithm{RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2LAO},
-    RenderAlgorithm{RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2},
-    RenderAlgorithm{RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2PO},
-    RenderAlgorithm{RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2LAO},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2PO>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2LAO>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2PO>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2LAO>{}},
 
-    RenderAlgorithm{RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2},
-    RenderAlgorithm{RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2PO},
-    RenderAlgorithm{RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2LAO},
-    RenderAlgorithm{RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2},
-    RenderAlgorithm{RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2PO},
-    RenderAlgorithm{RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2LAO},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2PO>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2LAO>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2PO>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2LAO>{}},
 
-    RenderAlgorithm{RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2},
-    RenderAlgorithm{RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2PO},
-    RenderAlgorithm{RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2LAO},
-    RenderAlgorithm{RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2},
-    RenderAlgorithm{RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2PO},
-    RenderAlgorithm{RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2LAO},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2PO>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2LAO>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2PO>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2LAO>{}},
 
-    RenderAlgorithm{RenderAlgorithmEnum::AUTO},
-    RenderAlgorithm{RenderAlgorithmEnum::MAX}
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>{}},
+    RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::MAX>{}}
 };
+
 
 using RenderAlgorithmsTupleT = std::tuple <
     RenderAlgorithmCompileTime<RenderAlgorithmEnum::CpuHigh>,
@@ -1868,18 +1798,6 @@ using RenderAlgorithmsTupleT = std::tuple <
 
 constexpr static RenderAlgorithmsTupleT RenderAlgorithmsTuple;
 
-// Given a RenderAlgorithmEnum at runtime, return the associated entry in the 
-// tuple RenderAlgorithmsTupleT.  Template parameter doesn't work for this.
-// Use a giant switch statement to convert the enum to the correct tuple entry.
-//auto GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum algorithm) {
-//    switch (algorithm) {
-//    case RenderAlgorithmEnum::CpuHigh:
-//        return std::get<static_cast<size_t>(RenderAlgorithmEnum::CpuHigh)>(RenderAlgorithmsTuple);
-//    default:
-//        return std::get<static_cast<size_t>(RenderAlgorithmEnum::MAX)>(RenderAlgorithmsTuple);
-//    }
-//}
-
 template<typename F>
 constexpr void IterateRenderAlgs(F &&function) {
     auto unfold = [&]<size_t... Ints>(std::index_sequence<Ints...>) {
@@ -1888,4 +1806,21 @@ constexpr void IterateRenderAlgs(F &&function) {
 
     constexpr auto size = std::tuple_size_v<RenderAlgorithmsTupleT>;
     unfold(std::make_index_sequence<size>());
+}
+
+template<typename F>
+constexpr auto IterateRenderAlgsRet(F &&function) {
+    auto unfold = [&]<size_t... Ints>(std::index_sequence<Ints...>) {
+        return (std::forward<F>(function)(std::integral_constant<size_t, Ints>{}), ...);
+    };
+
+    constexpr auto size = std::tuple_size_v<RenderAlgorithmsTupleT>;
+    return unfold(std::make_index_sequence<size>());
+}
+
+// Given a RenderAlgorithmEnum at runtime, return the associated entry in the 
+// tuple RenderAlgorithmsTupleT.  Template parameter doesn't work for this.
+// Use the IterateRenderAlgs function above to iterate over the tuple.
+constexpr RenderAlgorithm GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum algorithm) {
+    return RenderAlgorithms[static_cast<size_t>(algorithm)];
 }

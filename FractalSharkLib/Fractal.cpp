@@ -635,7 +635,7 @@ void Fractal::InitialDefaultViewAndSettings(int width, int height) {
     //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx2x32PerturbedRCLAv2);
     //SetRenderAlgorithm(RenderAlgorithm::Gpu2x32PerturbedLAv2);
     //SetRenderAlgorithm(RenderAlgorithm::Gpu2x32PerturbedLAv2LAO);
-    SetRenderAlgorithm(RenderAlgorithmEnum::AUTO);
+    SetRenderAlgorithm(RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>{});
     //SetRenderAlgorithm(RenderAlgorithm::GpuHDRx64PerturbedLAv2);
 
     SetIterationPrecision(1);
@@ -1656,17 +1656,17 @@ RenderAlgorithm Fractal::GetRenderAlgorithm() const {
         HighPrecision zoomFactor = GetZoomFactor();
         if (zoomFactor < HighPrecision{ 1e4 }) {
             // A bit borderline at 3840x1600 x16 AA
-            return RenderAlgorithmEnum::Gpu1x32;
+            return GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Gpu1x32);
         } else if (zoomFactor < HighPrecision{ 1e9 }) {
             // Safe, maybe even full LA is a little better but barely
-            return RenderAlgorithmEnum::Gpu1x32PerturbedLAv2PO;
+            return GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Gpu1x32PerturbedLAv2PO);
         } else if (zoomFactor < HighPrecision{ 1e34 }) {
             // This seems to work at x16 AA 3840x1600
             // This 1e34 is the same as at RefOrbitCalc::LoadOrbitConstInternal
-            return RenderAlgorithmEnum::Gpu1x32PerturbedLAv2;
+            return GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Gpu1x32PerturbedLAv2);
         } else {
             // Falls apart at high iteration counts with a lot of LA
-            return RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2;
+            return GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2);
         }
     } else {
         // User-selected forced algorithm selection
@@ -1688,7 +1688,7 @@ const char *Fractal::GetRenderAlgorithmName(RenderAlgorithm alg) {
     // Returns the name of the render algorithm
     //
 
-    return RenderAlgorithmStr[static_cast<size_t>(alg.Algorithm)].c_str();
+    return alg.AlgorithmStr;
 }
 
 const HighPrecision &Fractal::GetCompressionError(enum class CompressionError err) const {
@@ -3992,7 +3992,7 @@ void Fractal::LoadRefOrbit(
 
     auto renderAlg =
         imaginaSettings == ImaginaSettings::UseSaved ?
-            RenderAlgorithmEnum::MAX :
+            GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::MAX) :
             GetRenderAlgorithm();
 
     m_RefOrbit.LoadOrbit(

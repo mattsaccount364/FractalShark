@@ -17,13 +17,3 @@ RenderAlgorithm &RenderAlgorithm::operator=(const RenderAlgorithm &other) {
 RenderAlgorithm &RenderAlgorithm::operator=(RenderAlgorithm &&other) {
     return *this = other;
 }
-
-RenderAlgorithmEnum RenderAlgorithm::GetAlgorithmEnum(const char *algorithmStr) {
-    for (size_t i = 0; i < (size_t)RenderAlgorithmEnum::MAX; i++) {
-        if (algorithmStr == RenderAlgorithmStr[i]) {
-            return (RenderAlgorithmEnum)i;
-        }
-    }
-    return RenderAlgorithmEnum::AUTO;
-}
-

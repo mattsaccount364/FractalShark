@@ -195,7 +195,7 @@ void CrummyTest::BasicOneTest(
     if constexpr (algToTest.TestInclude.Lookup(testEnumIndex) != TestViewEnum::Disabled) {
         const auto viewIndex = static_cast<size_t>(algToTest.TestInclude.Lookup(testEnumIndex));
 
-        m_Fractal.SetRenderAlgorithm(algToTest.Algorithm);
+        m_Fractal.SetRenderAlgorithm(algToTest);
         m_Fractal.View(viewIndex);
         m_Fractal.ForceRecalc();
 
@@ -205,7 +205,7 @@ void CrummyTest::BasicOneTest(
         const auto filenameW = GenFilenameW(
             testIndex,
             viewIndex,
-            algToTest.Algorithm,
+            GetRenderAlgorithmTupleEntry(algToTest.Algorithm),
             -1,
             iterType,
             testPrefix,
@@ -249,6 +249,7 @@ void CrummyTest::TestBasic() {
     ++testIndex;
 }
 
+template<typename OrigAlgToTest, typename ConvertAlgToTest>
 void CrummyTest::ReferenceSaveLoad(
     Fractal &fractal,
     const wchar_t *dirName,
@@ -256,8 +257,8 @@ void CrummyTest::ReferenceSaveLoad(
     size_t testIndex,
     IterTypeEnum iterType,
     ImaginaSettings imaginaSettings,
-    RenderAlgorithm origAlgToTest,
-    RenderAlgorithm convertAlgToTest,
+    OrigAlgToTest origAlgToTest,
+    ConvertAlgToTest convertAlgToTest,
     int32_t compressionError) {
 
     fractal.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
@@ -305,19 +306,19 @@ void CrummyTest::ReferenceSaveLoad(
             fractal.SaveRefOrbit(CompressToDisk::SimpleCompression, simpleFilename);
         }
         catch (FractalSharkSeriousException &e) {
-            if (origAlgToTest == RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2 ||
-                origAlgToTest == RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2PO ||
-                origAlgToTest == RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2LAO ||
-                origAlgToTest == RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2 ||
-                origAlgToTest == RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2PO ||
-                origAlgToTest == RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2LAO ||
+            if (origAlgToTest.Algorithm == RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2 ||
+                origAlgToTest.Algorithm == RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2PO ||
+                origAlgToTest.Algorithm == RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2LAO ||
+                origAlgToTest.Algorithm == RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2 ||
+                origAlgToTest.Algorithm == RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2PO ||
+                origAlgToTest.Algorithm == RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2LAO ||
 
-                origAlgToTest == RenderAlgorithmEnum::Gpu2x32PerturbedLAv2 ||
-                origAlgToTest == RenderAlgorithmEnum::Gpu2x32PerturbedLAv2PO ||
-                origAlgToTest == RenderAlgorithmEnum::Gpu2x32PerturbedLAv2LAO ||
-                origAlgToTest == RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2 ||
-                origAlgToTest == RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2PO ||
-                origAlgToTest == RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2LAO) {
+                origAlgToTest.Algorithm == RenderAlgorithmEnum::Gpu2x32PerturbedLAv2 ||
+                origAlgToTest.Algorithm == RenderAlgorithmEnum::Gpu2x32PerturbedLAv2PO ||
+                origAlgToTest.Algorithm == RenderAlgorithmEnum::Gpu2x32PerturbedLAv2LAO ||
+                origAlgToTest.Algorithm == RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2 ||
+                origAlgToTest.Algorithm == RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2PO ||
+                origAlgToTest.Algorithm == RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2LAO) {
 
                 // This is expected to fail for 2x32 algorithms
             } else {
@@ -346,7 +347,7 @@ void CrummyTest::ReferenceSaveLoad(
     fractal.SetIterType(IterTypeEnum::Bits64);
 
     if (origAlgToTest == convertAlgToTest) {
-        fractal.SetRenderAlgorithm(RenderAlgorithmEnum::AUTO);
+        fractal.SetRenderAlgorithm(RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>{}});
     }
 
     fractal.LoadRefOrbit(
@@ -384,7 +385,6 @@ void CrummyTest::TestReferenceSave() {
 
             const auto testSettings = { ImaginaSettings::ConvertToCurrent, ImaginaSettings::UseSaved };
             for (auto curSettings : testSettings) {
-                RenderAlgorithm algToTestRT{ algToTest.Algorithm };
                 ReferenceSaveLoad(
                     m_Fractal,
                     dirName,
@@ -392,8 +392,8 @@ void CrummyTest::TestReferenceSave() {
                     testIndex,
                     IterTypeEnum::Bits64,
                     curSettings,
-                    algToTestRT,
-                    algToTestRT,
+                    algToTest,
+                    algToTest,
                     compressionError);
 
                 testIndex++;
@@ -446,8 +446,6 @@ void CrummyTest::TestVariedCompression() {
             const auto viewIndex = static_cast<size_t>(view);
 
             for (int32_t compressionErrorExp = 1; compressionErrorExp <= compressionError; compressionErrorExp++) {
-                const RenderAlgorithm origAlg{ algToTest.Algorithm };
-                const RenderAlgorithm convertToAlg{ algToTest.Algorithm };
                 ReferenceSaveLoad(
                     m_Fractal,
                     dirName,
@@ -455,8 +453,8 @@ void CrummyTest::TestVariedCompression() {
                     testIndex,
                     IterTypeEnum::Bits64,
                     ImaginaSettings::ConvertToCurrent,
-                    origAlg,
-                    convertToAlg,
+                    algToTest,
+                    algToTest,
                     compressionErrorExp);
 
                 testIndex++;
@@ -718,7 +716,7 @@ void CrummyTest::TestPerturbedPerturb() {
             const auto iterType = IterTypeEnum::Bits32;
             const wchar_t *testPrefix = L"PerturbedPerturb";
             const auto algStr = std::string(algToTest.AlgorithmStr);
-            RenderAlgorithm algToTestRT{ algToTest.Algorithm };
+            RenderAlgorithm algToTestRT{ GetRenderAlgorithmTupleEntry(algToTest.Algorithm) };
 
             const auto genLocalFilename = [&](const std::wstring extraPrefix) {
                 std::wstring fullPrefix = testPrefix + std::wstring(L" - ") + extraPrefix;

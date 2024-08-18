@@ -74,6 +74,7 @@ private:
         const wchar_t *dirName,
         std::string baseName);
 
+    template<typename OrigAlgToTest, typename ConvertAlgToTest>
     void ReferenceSaveLoad(
         Fractal &fractal,
         const wchar_t *dirName,
@@ -81,8 +82,8 @@ private:
         size_t testIndex,
         IterTypeEnum iterType,
         ImaginaSettings imaginaSettings,
-        RenderAlgorithm origAlgToTest,
-        RenderAlgorithm convertAlgToTest,
+        OrigAlgToTest origAlgToTest,
+        ConvertAlgToTest convertAlgToTest,
         int32_t compressionError);
 
     Fractal &m_Fractal;

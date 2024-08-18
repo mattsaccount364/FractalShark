@@ -3164,7 +3164,7 @@ RefOrbitCalc::AwesomeVariantUniquePtr RefOrbitCalc::LoadOrbitConst(
     AwesomeVariantUniquePtr retval;
     auto CombinedHelper = [&]<RenderAlgorithmEnum Algorithm, typename IterType, typename T, PerturbExtras PExtrasDest>() {
         if (recommendedSettings != nullptr) {
-            recommendedSettings->SetRenderAlgorithm(RenderAlgorithmCompileTime<Algorithm>::Algorithm);
+            recommendedSettings->SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(Algorithm));
         }
 
         if (params.m_OrbitType == OrbitParameterPack::IncludedOrbit::OrbitIncluded) {

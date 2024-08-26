@@ -15,14 +15,16 @@ class HDRFloat;
 
 #ifndef __CUDACC__
 
-// Include MPIR header
+#include "MpirSerialization.h"
+
 #include <mpir.h>
+
 #include <string>
 #include <assert.h>
 #include <iostream>
+#include <vector>
+#include <memory>
 
-#include "ScopedMpir.h"
-#include "MpirSerialization.h"
 
 template<HPDestructor Destructor>
 class HighPrecisionT {

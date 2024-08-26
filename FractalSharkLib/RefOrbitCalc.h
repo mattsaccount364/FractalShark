@@ -19,6 +19,9 @@ struct OrbitParameterPack;
 
 class RenderAlgorithm;
 
+class MPIRBoundedAllocator;
+class MPIRBumpAllocator;
+
 class RefOrbitCalc {
 public:
     using AwesomeVariant = std::variant <

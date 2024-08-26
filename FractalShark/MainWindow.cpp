@@ -1769,7 +1769,7 @@ void MainWindow::MenuGetCurPos() {
     HighPrecision minX, minY;
     HighPrecision maxX, maxY;
 
-    auto prec = gFractal->GetPrecision();
+    const auto prec = gFractal->GetPrecision();
 
     minX = gFractal->GetMinX();
     minY = gFractal->GetMinY();
@@ -1779,7 +1779,7 @@ void MainWindow::MenuGetCurPos() {
     std::stringstream ss;
     std::string s;
 
-    auto setupSS = [&](const HighPrecision &num) -> std::string {
+    const auto setupSS = [&](const HighPrecision &num) -> std::string {
         ss.str("");
         ss.clear();
         ss << std::setprecision(std::numeric_limits<HighPrecision>::max_digits10);
@@ -1788,33 +1788,33 @@ void MainWindow::MenuGetCurPos() {
         };
 
     s = setupSS(minX);
-    auto sminX = std::string(s.begin(), s.end());
+    const auto sminX = std::string(s.begin(), s.end());
 
     s = setupSS(minY);
-    auto sminY = std::string(s.begin(), s.end());
+    const auto sminY = std::string(s.begin(), s.end());
 
     s = setupSS(maxX);
-    auto smaxX = std::string(s.begin(), s.end());
+    const auto smaxX = std::string(s.begin(), s.end());
 
     s = setupSS(maxY);
-    auto smaxY = std::string(s.begin(), s.end());
+    const auto smaxY = std::string(s.begin(), s.end());
 
-    PointZoomBBConverter pz{ minX, minY, maxX, maxY };
+    const PointZoomBBConverter pz{ minX, minY, maxX, maxY };
     s = setupSS(pz.GetPtX());
-    auto ptXStr = std::string(s.begin(), s.end());
+    const auto ptXStr = std::string(s.begin(), s.end());
 
     s = setupSS(pz.GetPtY());
-    auto ptYStr = std::string(s.begin(), s.end());
+    const auto ptYStr = std::string(s.begin(), s.end());
 
     auto reducedPrecZF = pz.GetZoomFactor();
     reducedPrecZF.precisionInBits(50);
     s = setupSS(reducedPrecZF);
-    auto zoomFactorStr = std::string(s.begin(), s.end());
+    const auto zoomFactorStr = std::string(s.begin(), s.end());
 
     RefOrbitDetails details;
     gFractal->GetSomeDetails(details);
 
-    auto ActualPeriodIfAny = (details.InternalPeriodMaybeZero > 0) ? (details.InternalPeriodMaybeZero - 1) : 0;
+    const auto ActualPeriodIfAny = (details.InternalPeriodMaybeZero > 0) ? (details.InternalPeriodMaybeZero - 1) : 0;
 
     const auto additionalDetailsStr =
         std::string("PerturbationAlg = ") + details.PerturbationAlg + "\r\n" +
@@ -1829,7 +1829,7 @@ void MainWindow::MenuGetCurPos() {
         std::string("Reuse compression ratio = ") + std::to_string((double)details.UncompressedIters / (double)details.CompressedIntermediateIters) + "\r\n" +
         std::string("DeltaIntermediatePrecision = ") + std::to_string(details.DeltaIntermediatePrecision) + "\r\n" +
         std::string("ExtraIntermediatePrecision = ") + std::to_string(details.ExtraIntermediatePrecision) + "\r\n" +
-        std::string("ZoomFactor = ") + details.ZoomFactor.str() + "\r\n";
+        std::string("ZoomFactor = ") + zoomFactorStr + "\r\n";
 
     const auto &laParameters = gFractal->GetLAParameters();
     const auto threadingVal = laParameters.GetThreading();

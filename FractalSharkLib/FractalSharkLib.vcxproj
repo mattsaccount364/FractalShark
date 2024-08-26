@@ -63,6 +63,7 @@
     <ClInclude Include="RecommendedSettings.h" />
     <ClInclude Include="RefOrbitCalc.h" />
     <ClInclude Include="RefOrbitCalcTemplates.h" />
+    <ClInclude Include="RefOrbitDetails.h" />
     <ClInclude Include="RenderAlgorithm.h" />
     <ClInclude Include="ScopedMpir.h" />
     <ClInclude Include="stdafx.h" />

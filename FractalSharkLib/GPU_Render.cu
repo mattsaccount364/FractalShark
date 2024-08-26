@@ -276,7 +276,7 @@ uint32_t GPURenderer::InitializeMemory(
     m_Height = antialias_height;
     m_Antialiasing = antialiasing;
     m_IterTypeSize = sizeof(IterType);
-    N_cu = w_block * NB_THREADS_W * h_block * NB_THREADS_H;
+    N_cu = static_cast<decltype(N_cu)>(w_block) * NB_THREADS_W * h_block * NB_THREADS_H;
 
     const auto no_antialias_width = antialias_width / antialiasing;
     const auto no_antialias_height = antialias_height / antialiasing;
@@ -288,7 +288,7 @@ uint32_t GPURenderer::InitializeMemory(
         (no_antialias_height % GPURenderer::NB_THREADS_H_AA != 0);
     local_color_width = no_antialias_width;
     local_color_height = no_antialias_height;
-    N_color_cu = w_color_block * NB_THREADS_W_AA * h_color_block * NB_THREADS_H_AA;
+    N_color_cu = static_cast<decltype(N_color_cu)>(w_color_block) * NB_THREADS_W_AA * h_color_block * NB_THREADS_H_AA;
 
     ResetMemory(ResetLocals::No, ResetPalettes::No, ResetPerturb::Yes);
 

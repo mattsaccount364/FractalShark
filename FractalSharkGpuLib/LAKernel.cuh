@@ -29,7 +29,7 @@ mandel_1xHDR_float_perturb_lav2(
     if (X >= width || Y >= height)
         return;
 
-    int32_t idx = ConvertLocToIndex(X, Y, width);
+    size_t idx = ConvertLocToIndex(X, Y, width);
     //if (OutputIterMatrix[idx] != 0) {
     //    return;
     //}
@@ -237,10 +237,10 @@ mandel_1xHDR_float_perturb_lav2(
 
         //bool differences = false;
         IterType maxRefIteration = 0;
-        const int XStart = blockIdx.x * blockDim.x;
-        const int YStart = blockIdx.y * blockDim.y;
+        const uint64_t XStart = blockIdx.x * blockDim.x;
+        const uint64_t YStart = blockIdx.y * blockDim.y;
 
-        int32_t curidx = ConvertLocToIndex(XStart, YStart, width);
+        size_t curidx = ConvertLocToIndex(XStart, YStart, width);
         maxRefIteration = OutputIterMatrix[curidx];
 
         for (auto yiter = YStart; yiter < YStart + blockDim.y; yiter++) {

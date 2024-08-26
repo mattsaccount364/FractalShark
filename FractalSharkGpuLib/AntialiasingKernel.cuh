@@ -16,7 +16,7 @@ antialiasing_kernel(
     if (output_x >= local_color_width || output_y >= local_color_height)
         return;
 
-    const int32_t color_idx = local_color_width * output_y + output_x; // do not use ConvertLocToIndex
+    const uint64_t color_idx = local_color_width * output_y + output_x; // do not use ConvertLocToIndex
     constexpr auto totalAA = Antialiasing * Antialiasing;
 
     // TODO reduction

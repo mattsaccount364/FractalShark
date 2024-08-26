@@ -31,7 +31,6 @@ Thumbs.db
 *.sln.old
 .vs/
 UpgradeLog*
-*.jpg
 
 Benchmarks.xlsx
 

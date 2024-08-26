@@ -31,7 +31,6 @@ Fractal::Fractal(
     int height,
     HWND hWnd,
     bool UseSensoCursor) :
-    m_CurIters(IterTypeEnum::Bits32, width, height, 1),
     m_RefOrbit(*this) {
     Initialize(width, height, hWnd, UseSensoCursor);
 }
@@ -662,8 +661,8 @@ void Fractal::InitialDefaultViewAndSettings(int width, int height) {
     SetResultsAutosave(AddPointOptions::EnableWithoutSave);
     //SetResultsAutosave(AddPointOptions::DontSave);
     LoadPerturbationOrbits();
-    View(0);
-    //View(5);
+    //View(0);
+    View(5);
     //View(11);
     //View(14);
     //View(27); // extremely hard

@@ -78,6 +78,8 @@ std::wstring GetFileExtension(GrowableVectorTypes Type) {
         return L".im";
     case GrowableVectorTypes::DebugOutput:
         return L".debug.txt";
+    case GrowableVectorTypes::ItersMemoryContainer:
+        return L".iters";
     default:
         assert(false);
         return L".error";
@@ -777,6 +779,9 @@ InstantiateLAInfoDeepGrowableVector(uint64_t, HDRFloat<CudaDblflt<MattDblflt>>, 
 InstantiateGrowableVector(LAStageInfo<uint32_t>);
 InstantiateGrowableVector(LAStageInfo<uint64_t>);
 InstantiateGrowableVector(uint8_t);
+InstantiateGrowableVector(uint16_t);
+InstantiateGrowableVector(uint32_t);
+InstantiateGrowableVector(uint64_t);
 
 #define InstantiateGPUReferenceIterGrowableVector(T, PExtras) template class GrowableVector<GPUReferenceIter<T, PExtras>>
 

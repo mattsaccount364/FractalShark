@@ -2,6 +2,7 @@
 
 #include "HighPrecision.h"
 #include "GPU_Render.h"
+#include "Vectors.h"
 
 enum class IterTypeEnum {
     Bits32,
@@ -28,9 +29,9 @@ struct ItersMemoryContainer {
     template<typename IterType>
     IterType *GetIters() {
         if constexpr (std::is_same<IterType, uint32_t>::value) {
-            return m_ItersMemory32.get();
+            return m_ItersMemory32.GetData();
         } else {
-            return m_ItersMemory64.get();
+            return m_ItersMemory64.GetData();
         }
     }
 
@@ -75,12 +76,16 @@ struct ItersMemoryContainer {
     size_t m_Antialiasing;
 
 private:
+    static std::wstring GetTempFilename();
+
     IterTypeEnum m_IterType;
 
-    std::unique_ptr<uint32_t[]> m_ItersMemory32;
+    std::wstring m_Iters32Filename;
+    GrowableVector<uint32_t> m_ItersMemory32;
     std::vector<uint32_t *> m_ItersArray32;
 
-    std::unique_ptr<uint64_t[]> m_ItersMemory64;
+    std::wstring m_Iters64Filename;
+    GrowableVector<uint64_t> m_ItersMemory64;
     std::vector<uint64_t *> m_ItersArray64;
 
 };

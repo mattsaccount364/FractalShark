@@ -1,12 +1,34 @@
 #include "stdafx.h"
 #include "ItersMemoryContainer.h"
+#include "Utilities.h"
+
 #include <algorithm>
+#include <string>
+
+std::wstring ItersMemoryContainer::GetTempFilename() {
+    size_t counter = 1;
+    std::wstring result;
+    for(;;) {
+        std::wstring optional_suffix = L" - " + std::to_wstring(counter);
+
+        result = L"ItersMemoryContainer" + optional_suffix + GetFileExtension(GrowableVectorTypes::ItersMemoryContainer);
+        if (!Utilities::FileExists(result.c_str())) {
+            break;
+        }
+
+        counter++;
+    }
+
+    return result;
+}
 
 ItersMemoryContainer::ItersMemoryContainer() :
     m_IterType(IterTypeEnum::Bits32),
-    m_ItersMemory32(nullptr),
+    m_Iters32Filename{ GetTempFilename() },
+    m_ItersMemory32{ AddPointOptions::EnableWithoutSave, m_Iters32Filename },
     m_ItersArray32{},
-    m_ItersMemory64(nullptr),
+    m_Iters64Filename{ GetTempFilename() },
+    m_ItersMemory64{ AddPointOptions::EnableWithoutSave, m_Iters64Filename },
     m_ItersArray64{},
     m_Width(),
     m_Height(),
@@ -29,9 +51,11 @@ ItersMemoryContainer::ItersMemoryContainer(
     size_t height,
     size_t total_antialiasing)
     : m_IterType(type),
-    m_ItersMemory32(nullptr),
+    m_Iters32Filename{ GetTempFilename() },
+    m_ItersMemory32{ AddPointOptions::EnableWithoutSave, m_Iters32Filename },
     m_ItersArray32{},
-    m_ItersMemory64(nullptr),
+    m_Iters64Filename{ GetTempFilename() },
+    m_ItersMemory64{ AddPointOptions::EnableWithoutSave, m_Iters64Filename },
     m_ItersArray64{},
     m_Width(),
     m_Height(),
@@ -65,14 +89,27 @@ ItersMemoryContainer::ItersMemoryContainer(
     m_RoundedHeight = h_block * GPURenderer::NB_THREADS_H;
     m_RoundedTotal = m_RoundedWidth * m_RoundedHeight;
 
+    // Find the system page size
+    {
+        SYSTEM_INFO sys_info;
+        GetSystemInfo(&sys_info);
+        const size_t page_size = sys_info.dwPageSize;
+
+        // Complement page_size - 1 to get the mask
+        const size_t mask = ~(page_size - 1);
+
+        // Round to the next page boundary
+        m_RoundedTotal = (m_RoundedTotal + page_size - 1) & mask;
+    }
+
     if (m_IterType == IterTypeEnum::Bits32) {
-        m_ItersMemory32 = std::make_unique<uint32_t[]>(m_RoundedTotal);
+        m_ItersMemory32.MutableResize(m_RoundedTotal);
         m_ItersArray32.resize(m_RoundedHeight);
         for (size_t i = 0; i < m_RoundedHeight; i++) {
             m_ItersArray32[i] = &m_ItersMemory32[i * m_RoundedWidth];
         }
     } else {
-        m_ItersMemory64 = std::make_unique<uint64_t[]>(m_RoundedTotal);
+        m_ItersMemory64.MutableResize(m_RoundedTotal);
         m_ItersArray64.resize(m_RoundedHeight);
         for (size_t i = 0; i < m_RoundedHeight; i++) {
             m_ItersArray64[i] = &m_ItersMemory64[i * m_RoundedWidth];
@@ -124,21 +161,27 @@ ItersMemoryContainer &ItersMemoryContainer::operator=(const ItersMemoryContainer
     m_Antialiasing = other.m_Antialiasing;
 
     if (m_IterType == IterTypeEnum::Bits32) {
-        m_ItersMemory32 = std::make_unique<uint32_t[]>(other.m_RoundedTotal);
+        m_ItersMemory32.MutableResize(other.m_RoundedTotal);
         m_ItersArray32.resize(other.m_RoundedHeight);
         for (size_t i = 0; i < other.m_RoundedHeight; i++) {
             m_ItersArray32[i] = &m_ItersMemory32[i * other.m_RoundedWidth];
         }
 
-        memcpy(m_ItersMemory32.get(), other.m_ItersMemory32.get(), other.m_RoundedTotal * sizeof(uint32_t));
+        memcpy(
+            m_ItersMemory32.GetData(),
+            other.m_ItersMemory32.GetData(),
+            other.m_RoundedTotal * sizeof(uint32_t));
     } else {
-        m_ItersMemory64 = std::make_unique<uint64_t[]>(other.m_RoundedTotal);
+        m_ItersMemory64.MutableResize(other.m_RoundedTotal);
         m_ItersArray64.resize(other.m_RoundedHeight);
         for (size_t i = 0; i < other.m_RoundedHeight; i++) {
             m_ItersArray64[i] = &m_ItersMemory64[i * other.m_RoundedWidth];
         }
 
-        memcpy(m_ItersMemory64.get(), other.m_ItersMemory64.get(), other.m_RoundedTotal * sizeof(uint64_t));
+        memcpy(
+            m_ItersMemory64.GetData(),
+            other.m_ItersMemory64.GetData(),
+            other.m_RoundedTotal * sizeof(uint64_t));
     }
 
     return *this;
@@ -180,8 +223,6 @@ ItersMemoryContainer &ItersMemoryContainer::operator=(ItersMemoryContainer &&oth
 }
 
 ItersMemoryContainer::~ItersMemoryContainer() {
-    m_ItersMemory32 = nullptr;
-    m_ItersMemory64 = nullptr;
     m_RoundedOutputColorMemory = nullptr;
 }
 

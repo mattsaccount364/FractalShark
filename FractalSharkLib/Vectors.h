@@ -21,7 +21,8 @@ enum class GrowableVectorTypes {
     LAInfoDeep,
     LAStageInfo,
     ImaginaFile,
-    DebugOutput
+    DebugOutput,
+    ItersMemoryContainer
 };
 
 std::wstring GetFileExtension(GrowableVectorTypes Type);

@@ -2,7 +2,6 @@
 
 #include "HDRFloat.h"
 #include "Vectors.h"
-#include "BenchmarkData.h"
 #include <variant>
 #include <vector>
 #include <type_traits>

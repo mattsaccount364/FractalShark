@@ -5,6 +5,8 @@
 #include "Fractal.h"
 #include "HDRFloat.h"
 
+#include "..\FractalShark\resource.h"
+
 #include <shellapi.h>
 
 CrummyTest::CrummyTest(Fractal &fractal) : m_Fractal(fractal) {
@@ -14,6 +16,7 @@ void CrummyTest::TestAll() {
     TestBasic();
     TestReferenceSave();
     TestVariedCompression();
+    TestImaginaLoad();
     TestStringConversion();
     TestPerturbedPerturb();
 }
@@ -264,7 +267,6 @@ void CrummyTest::ReferenceSaveLoad(
     int32_t compressionError) {
 
     fractal.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
-
     fractal.SetIterType(iterType);
     fractal.SetRenderAlgorithm(origAlgToTest);
     fractal.View(viewIndex);
@@ -470,6 +472,106 @@ void CrummyTest::TestVariedCompression() {
         constexpr auto alg = std::get<i>(RenderAlgorithmsTuple);
         loopAll.operator()<TestTypeEnum::ReferenceSave5 >(alg);
     });
+}
+
+void CrummyTest::TestImaginaLoad() {
+    // First, write out all the Imagina resources to files
+
+    struct Pair {
+        DWORD rc;
+        const wchar_t *name;
+        int view;
+        const wchar_t *origPngName;
+        const wchar_t *imaginaPngName;
+    };
+
+    const wchar_t *dirName = L"TestImaginaLoad";
+    TestPreReq(dirName);
+
+    std::vector<Pair> pairs;
+    pairs.push_back({ IDR_IMAGINA_VIEW0, L"View0.im", 0, L"View0 Orig.png", L"View0 Imagina.png" });
+    pairs.push_back({ IDR_IMAGINA_VIEW5, L"View5.im", 5, L"View5 Orig.png", L"View5 Imagina.png" });
+    pairs.push_back({ IDR_IMAGINA_VIEW14, L"View14.im", 14, L"View14 Orig.png", L"View14 Imagina.png" });
+    pairs.push_back({ IDR_IMAGINA_VIEW15, L"View15.im", 15, L"View15 Orig.png", L"View15 Imagina.png" });
+    pairs.push_back({ IDR_IMAGINA_VIEW19, L"View19.im", 19, L"View19 Orig.png", L"View19 Imagina.png" });
+    pairs.push_back({ IDR_IMAGINA_VIEWEASY1, L"ViewEasy1.im", -1, L"ViewEasy1 Orig.png", L"ViewEasy1 Imagina.png" });
+
+   auto processOnePair = [this, dirName](const auto &pair) {
+        auto hInst = GetModuleHandle(nullptr);
+
+        auto throwErr = [](const std::string &msg) {
+            auto lastError = GetLastError();
+            std::string msgFull = msg + " Last error: " + std::to_string(lastError);
+            throw FractalSharkSeriousException(msgFull);
+            };
+
+        // Load the Imagina resource
+        auto hRes = FindResource(hInst, MAKEINTRESOURCE(pair.rc), L"SHARK_DATA");
+        if (hRes == nullptr) {
+            throwErr("FindResource failed!");
+        }
+
+        auto hGlobal = LoadResource(hInst, hRes);
+        if (hGlobal == nullptr) {
+            throwErr("LoadResource failed!");
+        }
+
+        auto pRes = LockResource(hGlobal);
+        if (pRes == nullptr) {
+            throwErr("LockResource failed!");
+        }
+
+        auto size = SizeofResource(hInst, hRes);
+        // Write the resource to a file
+        auto filename = pair.name;
+        auto hFile = CreateFile(filename, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (hFile == INVALID_HANDLE_VALUE) {
+            throwErr("CreateFile failed!");
+        }
+
+        DWORD bytesWritten;
+        auto ret = WriteFile(hFile, pRes, size, &bytesWritten, nullptr);
+        if (ret == 0) {
+            CloseHandle(hFile);
+            throw FractalSharkSeriousException("WriteFile failed!");
+        }
+
+        CloseHandle(hFile);
+
+        // Unlock
+        UnlockResource(hGlobal);
+
+        m_Fractal.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+        m_Fractal.SetIterType(IterTypeEnum::Bits64);
+        m_Fractal.SetRenderAlgorithm(RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>{}});
+        m_Fractal.View(pair.view);
+        m_Fractal.ForceRecalc();
+        m_Fractal.CalcFractal(false);
+
+        const auto outOrigFilename = dirName + std::wstring(L"\\") + pair.origPngName;
+        m_Fractal.SaveCurrentFractal(outOrigFilename, false);
+
+        // Load the Imagina file
+        m_Fractal.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+
+        ImaginaSettings imaginaSettings = ImaginaSettings::UseSaved;
+        auto filenameW = std::wstring(pair.name);
+        m_Fractal.LoadRefOrbit(nullptr, CompressToDisk::MaxCompressionImagina, imaginaSettings, filenameW);
+        m_Fractal.CalcFractal(false);
+
+        const auto outImaginaFilename = dirName + std::wstring(L"\\") + pair.imaginaPngName;
+        m_Fractal.SaveCurrentFractal(outImaginaFilename, false);
+
+        // Delete the Imagina file
+        auto ret2 = DeleteFile(filename);
+        if (ret2 == 0) {
+            throwErr("DeleteFile failed!");
+        }
+    };
+
+    for (const auto &pair : pairs) {
+        processOnePair(pair);
+    }
 }
 
 void CrummyTest::TestStringConversion() {

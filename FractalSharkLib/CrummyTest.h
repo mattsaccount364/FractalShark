@@ -15,6 +15,7 @@ public:
     void TestBasic();
     void TestReferenceSave();
     void TestVariedCompression();
+    void TestImaginaLoad();
     void TestStringConversion();
     void TestPerturbedPerturb();
 

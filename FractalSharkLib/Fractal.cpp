@@ -30,8 +30,11 @@ Fractal::Fractal(
     int width,
     int height,
     HWND hWnd,
-    bool UseSensoCursor) :
-    m_RefOrbit(*this) {
+    bool UseSensoCursor,
+    uint64_t commitLimitInBytes) :
+    m_RefOrbit{ *this, commitLimitInBytes },
+    m_CommitLimitInBytes{ commitLimitInBytes } {
+
     Initialize(width, height, hWnd, UseSensoCursor);
 }
 
@@ -1281,7 +1284,7 @@ void Fractal::View(size_t view) {
         SetCompressionErrorExp(Fractal::CompressionError::Low, 20);
         SetIterType(IterTypeEnum::Bits64);
 
-        // 1 quadrillion works but 50 trillion is plenty
+        // 1 quadrillion works but 50 trillion is plenty.  1 trillion is visibly insufficient.
         //SetNumIterations<IterTypeFull>(1'000'000'000'000'000);
         SetNumIterations<IterTypeFull>(50'000'000'000'000);
         break;

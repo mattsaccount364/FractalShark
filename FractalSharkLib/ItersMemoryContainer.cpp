@@ -5,11 +5,11 @@
 #include <algorithm>
 #include <string>
 
-std::wstring ItersMemoryContainer::GetTempFilename() {
-    size_t counter = 1;
+std::wstring ItersMemoryContainer::GetTempFilename(uint64_t numBits) {
+    static std::atomic<uint64_t> counter{};
     std::wstring result;
     for(;;) {
-        std::wstring optional_suffix = L" - " + std::to_wstring(counter);
+        std::wstring optional_suffix = L" - " + std::to_wstring(counter) + L" - " + std::to_wstring(numBits) + L" bits";
 
         result = L"ItersMemoryContainer" + optional_suffix + GetFileExtension(GrowableVectorTypes::ItersMemoryContainer);
         if (!Utilities::FileExists(result.c_str())) {
@@ -24,11 +24,11 @@ std::wstring ItersMemoryContainer::GetTempFilename() {
 
 ItersMemoryContainer::ItersMemoryContainer() :
     m_IterType(IterTypeEnum::Bits32),
-    m_Iters32Filename{ GetTempFilename() },
-    m_ItersMemory32{ AddPointOptions::EnableWithoutSave, m_Iters32Filename },
+    m_Iters32Filename{},
+    m_ItersMemory32{},
     m_ItersArray32{},
-    m_Iters64Filename{ GetTempFilename() },
-    m_ItersMemory64{ AddPointOptions::EnableWithoutSave, m_Iters64Filename },
+    m_Iters64Filename{},
+    m_ItersMemory64{},
     m_ItersArray64{},
     m_Width(),
     m_Height(),
@@ -51,11 +51,11 @@ ItersMemoryContainer::ItersMemoryContainer(
     size_t height,
     size_t total_antialiasing)
     : m_IterType(type),
-    m_Iters32Filename{ GetTempFilename() },
-    m_ItersMemory32{ AddPointOptions::EnableWithoutSave, m_Iters32Filename },
+    m_Iters32Filename{},
+    m_ItersMemory32{},
     m_ItersArray32{},
-    m_Iters64Filename{ GetTempFilename() },
-    m_ItersMemory64{ AddPointOptions::EnableWithoutSave, m_Iters64Filename },
+    m_Iters64Filename{},
+    m_ItersMemory64{},
     m_ItersArray64{},
     m_Width(),
     m_Height(),
@@ -103,13 +103,27 @@ ItersMemoryContainer::ItersMemoryContainer(
     }
 
     if (m_IterType == IterTypeEnum::Bits32) {
+        m_Iters32Filename = GetTempFilename(32);
+        m_ItersMemory32 = GrowableVector<uint32_t>{
+            AddPointOptions::EnableWithoutSave,
+            m_Iters32Filename
+        };
+
         m_ItersMemory32.MutableResize(m_RoundedTotal);
+
         m_ItersArray32.resize(m_RoundedHeight);
         for (size_t i = 0; i < m_RoundedHeight; i++) {
             m_ItersArray32[i] = &m_ItersMemory32[i * m_RoundedWidth];
         }
     } else {
+        m_Iters64Filename = GetTempFilename(64);
+        m_ItersMemory64 = GrowableVector<uint64_t>{
+            AddPointOptions::EnableWithoutSave,
+            m_Iters64Filename
+        };
+
         m_ItersMemory64.MutableResize(m_RoundedTotal);
+
         m_ItersArray64.resize(m_RoundedHeight);
         for (size_t i = 0; i < m_RoundedHeight; i++) {
             m_ItersArray64[i] = &m_ItersMemory64[i * m_RoundedWidth];
@@ -126,8 +140,28 @@ ItersMemoryContainer::ItersMemoryContainer(
     m_RoundedOutputColorMemory = std::make_unique<Color16[]>(m_RoundedOutputColorTotal);
 };
 
-ItersMemoryContainer::ItersMemoryContainer(ItersMemoryContainer &&other) noexcept {
-    *this = std::move(other);
+ItersMemoryContainer::ItersMemoryContainer(ItersMemoryContainer &&other) noexcept 
+    : m_IterType{ std::move(other.m_IterType) },
+    m_Width{ std::move(other.m_Width) },
+    m_Height{ std::move(other.m_Height) },
+    m_Total{ std::move(other.m_Total) },
+    m_OutputWidth{ std::move(other.m_OutputWidth) },
+    m_OutputHeight{ std::move(other.m_OutputHeight) },
+    m_OutputTotal{ std::move(other.m_OutputTotal) },
+    m_RoundedWidth{ std::move(other.m_RoundedWidth) },
+    m_RoundedHeight{ std::move(other.m_RoundedHeight) },
+    m_RoundedTotal{ std::move(other.m_RoundedTotal) },
+    m_RoundedOutputColorWidth{ std::move(other.m_RoundedOutputColorWidth) },
+    m_RoundedOutputColorHeight{ std::move(other.m_RoundedOutputColorHeight) },
+    m_RoundedOutputColorTotal{ std::move(other.m_RoundedOutputColorTotal) },
+    m_RoundedOutputColorMemory{ std::move(other.m_RoundedOutputColorMemory) },
+    m_Antialiasing{ std::move(other.m_Antialiasing) },
+    m_ItersMemory32{ std::move(other.m_ItersMemory32) },
+    m_ItersMemory64{ std::move(other.m_ItersMemory64) },
+    m_ItersArray32{ std::move(other.m_ItersArray32) },
+    m_ItersArray64{ std::move(other.m_ItersArray64) },
+    m_Iters32Filename{ std::move(other.m_Iters32Filename) },
+    m_Iters64Filename{ std::move(other.m_Iters64Filename) } {
 }
 
 ItersMemoryContainer &ItersMemoryContainer::operator=(const ItersMemoryContainer &other) {
@@ -160,7 +194,21 @@ ItersMemoryContainer &ItersMemoryContainer::operator=(const ItersMemoryContainer
 
     m_Antialiasing = other.m_Antialiasing;
 
+    m_ItersMemory32 = {};
+    m_ItersArray32.clear();
+    m_Iters32Filename = L"";
+
+    m_ItersMemory64 = {};
+    m_ItersArray64.clear();
+    m_Iters64Filename = L"";
+
     if (m_IterType == IterTypeEnum::Bits32) {
+        m_Iters32Filename = GetTempFilename(32);
+        m_ItersMemory32 = GrowableVector<uint32_t>{
+            AddPointOptions::EnableWithoutSave,
+            m_Iters32Filename
+        };
+
         m_ItersMemory32.MutableResize(other.m_RoundedTotal);
         m_ItersArray32.resize(other.m_RoundedHeight);
         for (size_t i = 0; i < other.m_RoundedHeight; i++) {
@@ -172,6 +220,12 @@ ItersMemoryContainer &ItersMemoryContainer::operator=(const ItersMemoryContainer
             other.m_ItersMemory32.GetData(),
             other.m_RoundedTotal * sizeof(uint32_t));
     } else {
+        m_Iters64Filename = GetTempFilename(64);
+        m_ItersMemory64 = GrowableVector<uint64_t>{
+            AddPointOptions::EnableWithoutSave,
+            m_Iters64Filename
+        };
+
         m_ItersMemory64.MutableResize(other.m_RoundedTotal);
         m_ItersArray64.resize(other.m_RoundedHeight);
         for (size_t i = 0; i < other.m_RoundedHeight; i++) {
@@ -199,6 +253,9 @@ ItersMemoryContainer &ItersMemoryContainer::operator=(ItersMemoryContainer &&oth
 
     m_ItersArray32 = std::move(other.m_ItersArray32);
     m_ItersArray64 = std::move(other.m_ItersArray64);
+
+    m_Iters32Filename = std::move(other.m_Iters32Filename);
+    m_Iters64Filename = std::move(other.m_Iters64Filename);
 
     m_Width = other.m_Width;
     m_Height = other.m_Height;

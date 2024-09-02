@@ -76,7 +76,7 @@ struct ItersMemoryContainer {
     size_t m_Antialiasing;
 
 private:
-    static std::wstring GetTempFilename();
+    static std::wstring GetTempFilename(uint64_t numBits);
 
     IterTypeEnum m_IterType;
 

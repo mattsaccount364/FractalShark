@@ -94,14 +94,15 @@ static inline void PrefetchHighPrec(const mpf_t &target) {
 }
 
 
-RefOrbitCalc::RefOrbitCalc(const Fractal &fractal)
+RefOrbitCalc::RefOrbitCalc(const Fractal &fractal, uint64_t commitLimitInBytes)
     : m_PerturbationAlg{ PerturbationAlg::Auto },
     m_Fractal(fractal),
     m_PerturbationGuessCalcX(0),
     m_PerturbationGuessCalcY(0),
     m_RefOrbitOptions{ AddPointOptions::DontSave },
     m_GuessReserveSize(),
-    m_GenerationNumber() {
+    m_GenerationNumber(),
+    m_CommitLimitInBytes{ commitLimitInBytes } {
 
     // Get number of CPU cores and whether hyperthreading is enabled
     SYSTEM_INFO sysinfo;
@@ -139,17 +140,31 @@ bool RefOrbitCalc::RequiresReuse() const {
     }
 }
 
+template<typename IterType, class T, PerturbExtras PExtras>
 void RefOrbitCalc::OptimizeMemory() {
     PROCESS_MEMORY_COUNTERS_EX checkHappy;
-    const size_t OMGAlotOfMemory = 128llu * 1024llu * 1024llu * 1024llu;
+    const size_t OMGAlotOfMemory = m_CommitLimitInBytes / 2;
+
+    if (OMGAlotOfMemory == 0) {
+        return;
+    }
+
     GetProcessMemoryInfo(GetCurrentProcess(), (PPROCESS_MEMORY_COUNTERS)&checkHappy, sizeof(checkHappy));
 
-    // TODO clear out the memory if the type of the orbit
-    // is different from the currently selected algorithm.
-    if (checkHappy.cb > OMGAlotOfMemory) {
-        for (size_t i = 0; i < m_C.size(); ++i) {
+    // Clear out the memory if the type of the orbit is different from the currently selected algorithm.
+    if (checkHappy.PagefileUsage > OMGAlotOfMemory) {
+        // Iterate over all elements in the vector and remove the ones that are not of the desired type.
+        auto removalFn = [](auto &elt) {
+            using eltType = std::decay_t<decltype(elt)>;
+            if constexpr (std::is_same_v<eltType, std::unique_ptr<PerturbationResults<IterType, T, PExtras>>>) {
+                return false;  // Keep the element if it is of the desired type
+            } else {
+                return true;   // Remove the element if it is not of the desired type
+            }
+        };
 
-        }
+        m_C.erase(
+            std::remove_if(m_C.begin(), m_C.end(), removalFn), m_C.end());
     }
 
     GetProcessMemoryInfo(GetCurrentProcess(), (PPROCESS_MEMORY_COUNTERS)&checkHappy, sizeof(checkHappy));
@@ -295,8 +310,6 @@ void RefOrbitCalc::InitResults(
     PerturbationResultsType &results,
     const HighPrecision &initX,
     const HighPrecision &initY) {
-    // We're going to add new results, so clear out the old ones.
-    OptimizeMemory();
 
     results.InitResults(
         Reuse,
@@ -321,7 +334,7 @@ template<
 void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecision cy) {
     auto newArray = std::make_unique<PerturbationResults<IterType, T, PExtras>>(
         m_RefOrbitOptions, GetNextGenerationNumber());
-    m_C.push_back(std::move(newArray));
+    PushbackResults(std::move(newArray));
     auto *results = GetLast<IterType, T, PExtras>();
 
     InitResults<IterType, T, decltype(*results), PExtras, Reuse>(*results, cx, cy);
@@ -610,7 +623,7 @@ template<
 bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPrecision cy) {
     auto newArray = std::make_unique<PerturbationResults<IterType, T, PerturbExtras::Disable>>(
         m_RefOrbitOptions, GetNextGenerationNumber());
-    m_C.push_back(std::move(newArray));
+    PushbackResults(std::move(newArray));
     auto *existingResults = GetUsefulPerturbationResultsMutable<IterType, T, true, PerturbExtras::Disable>();
 
     // TODO Lame hack with < 5.
@@ -895,7 +908,7 @@ template<
 bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighPrecision cy) {
     auto newArray = std::make_unique<PerturbationResults<IterType, T, PerturbExtras::Disable>>(
         m_RefOrbitOptions, GetNextGenerationNumber());
-    m_C.push_back(std::move(newArray));
+    PushbackResults(std::move(newArray));
     auto *existingResults = GetUsefulPerturbationResultsMutable<IterType, T, true, PerturbExtras::Disable>();
 
     // TODO Lame hack with < 5.
@@ -1476,7 +1489,7 @@ template<
 void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecision cy) {
     auto newArray = std::make_unique<PerturbationResults<IterType, T, PExtras>>(
         m_RefOrbitOptions, GetNextGenerationNumber());
-    m_C.push_back(std::move(newArray));
+    PushbackResults(std::move(newArray));
     auto *results = GetLast<IterType, T, PExtras>();
 
     InitResults<IterType, T, decltype(*results), PExtras, Reuse>(*results, cx, cy);
@@ -2242,7 +2255,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
             auto decompressedResults = compressedResults->DecompressMax<PerturbExtras::Disable>(
                 m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
                 GetNextGenerationNumber());
-            results = m_C.push_back(std::move(decompressedResults));
+            results = PushbackResults(std::move(decompressedResults));
         }
     }
 
@@ -2305,7 +2318,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults() {
 
             // Save those.
             OptionalSave(results2Raw);
-            m_C.push_back(std::move(results2));
+            PushbackResults(std::move(results2));
             return results2Raw;
         } else {
             m_LastUsedRefOrbit = resultsExisting;
@@ -2974,20 +2987,10 @@ const PerturbationResultsBase *RefOrbitCalc::LoadOrbit(
     RecommendedSettings *recommendedSettings) {
 
     auto lambda = [&](auto &ptr) -> const PerturbationResultsBase * {
-        // Suppose ptr is of type PerturbationResults<IterType, T, PExtrasDest>
-        // Return the pointer to the base class if IterType is uint64_t, and nullptr otherwise.
-        // Allow any types for T and PExtrasDest.  Only return nullptr if IterType is not uint64_t.
-
         const auto *retval = ptr.get();
-        //using CurIterType = ExtractPerturbationResultsTypes<decltype(retval)>::CurIterType;
-
-        //if constexpr (std::is_same_v<CurIterType, uint64_t>) {
         m_LastUsedRefOrbit = retval;
         m_C.push_back(std::move(ptr));
         return retval;
-        //} else {
-        //    return nullptr;
-        //}
         };
 
     if (imaginaSettings == ImaginaSettings::UseSaved) {
@@ -3422,6 +3425,19 @@ void RefOrbitCalc::InitAllocatorsIfNeeded(
         bumpAllocator->InitScopedAllocators();
         bumpAllocator->InitTls();
     }
+}
+
+void RefOrbitCalc::PushbackResults(auto results) {
+    using StrippedType = typename std::decay<decltype(results)>::type;
+    // decayedT is a unique_ptr<PerturbationResults<IterType, T, PExtras>>
+    // Figure out what IterType, T, and PExtras are
+    using StrippedType2 = typename StrippedType::element_type;
+    constexpr auto PExtras = StrippedType2::LocalPExtras;
+    using IterType = decltype(Introspection::Extract(*results))::IterType_;
+    using T = decltype(Introspection::Extract(*results))::Float_;
+
+    OptimizeMemory<IterType, T, PExtras>();
+    m_C.push_back(std::move(results));
 }
 
 template<RefOrbitCalc::ReuseMode Reuse>

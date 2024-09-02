@@ -49,7 +49,6 @@ private:
 
     std::wstring m_Filename;
     size_t m_PhysicalMemoryCapacityKB;
-    size_t m_GrowByElts;
 
 public:
     GrowableVector(const GrowableVector &other) = delete;

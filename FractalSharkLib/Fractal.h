@@ -54,7 +54,8 @@ public:
         int width,
         int height,
         HWND hWnd,
-        bool UseSensoCursor);
+        bool UseSensoCursor,
+        uint64_t commitLimitInBytes);
     ~Fractal();
 
     void InitialDefaultViewAndSettings(int width = 0, int height = 0);
@@ -386,7 +387,7 @@ private:
 
     ItersMemoryContainer m_CurIters;
     std::mutex m_ItersMemoryStorageLock;
-    std::vector<struct ItersMemoryContainer> m_ItersMemoryStorage;
+    std::vector<ItersMemoryContainer> m_ItersMemoryStorage;
 
     static constexpr size_t BrokenMaxFractalSize = 1; // TODO
     BYTE m_ProcessPixelRow[BrokenMaxFractalSize];
@@ -421,4 +422,6 @@ private:
     void MessageBoxCudaError(uint32_t err);
 
     LAParameters m_LAParameters;
+
+    const uint64_t m_CommitLimitInBytes;
 };

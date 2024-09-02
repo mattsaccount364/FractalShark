@@ -19,18 +19,26 @@ void CrummyTest::TestAll() {
     TestImaginaLoad();
     TestStringConversion();
     TestPerturbedPerturb();
+    TestGrowableVector();
 }
 
 void CrummyTest::TestPreReq(const wchar_t *dirName) {
     DWORD ftyp = GetFileAttributesW(dirName);
     if (ftyp != INVALID_FILE_ATTRIBUTES && (ftyp & FILE_ATTRIBUTE_DIRECTORY)) {
-        SHFILEOPSTRUCT fileOp = { 0 };
+        // Delete the directory recursively
+        // Double-null terminated string
+        std::vector<wchar_t> dirNameDoubleNull{};
+        dirNameDoubleNull.resize(std::wcslen(dirName) + 2, L'\0');
+        std::copy(dirName, dirName + std::wcslen(dirName) + 1, dirNameDoubleNull.data());
+
+        SHFILEOPSTRUCT fileOp{};
         fileOp.wFunc = FO_DELETE;
-        fileOp.pFrom = dirName;
-        fileOp.fFlags = FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT;
+        fileOp.pFrom = dirNameDoubleNull.data();
+        fileOp.fFlags = FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT | FOF_ALLOWUNDO;
         auto shRet = SHFileOperation(&fileOp);
         if (shRet != 0) {
-            ::MessageBox(nullptr, L"Error deleting directory!", L"", MB_OK | MB_APPLMODAL);
+            auto wstrMsg = std::wstring(L"Error deleting directory! SHFileOperation returned: ") + std::to_wstring(shRet);
+            ::MessageBox(nullptr, wstrMsg.c_str(), L"", MB_OK | MB_APPLMODAL);
             return;
         }
     }
@@ -38,7 +46,9 @@ void CrummyTest::TestPreReq(const wchar_t *dirName) {
     // Create the directory
     auto ret = CreateDirectory(dirName, nullptr);
     if (ret == 0 && GetLastError() != ERROR_ALREADY_EXISTS) {
-        ::MessageBox(nullptr, L"Error creating directory!", L"", MB_OK | MB_APPLMODAL);
+        auto lastError = GetLastError();
+        std::wstring msg = L"Error creating directory! Last error: " + std::to_wstring(lastError);
+        ::MessageBox(nullptr, msg.c_str(), L"", MB_OK | MB_APPLMODAL);
         return;
     }
 }
@@ -445,7 +455,7 @@ void CrummyTest::TestVariedCompression() {
     auto loopAll = [&]<TestTypeEnum viewEnum>(
         auto algToTest) {
 
-        const auto view = algToTest.TestInclude.Lookup(viewEnum);
+        constexpr auto view = algToTest.TestInclude.Lookup(viewEnum);
         if constexpr (view != TestViewEnum::Disabled) {
             const auto viewIndex = static_cast<size_t>(view);
 
@@ -859,6 +869,61 @@ void CrummyTest::TestPerturbedPerturb() {
         constexpr auto alg = std::get<i>(RenderAlgorithmsTuple);
         loopAll(alg);
         });
+}
+
+void CrummyTest::TestGrowableVector() {
+    auto VerifyContents = [](const GrowableVector<uint64_t> &testVector, uint64_t manyElts) {
+        for (uint64_t i = 0; i < manyElts; i++) {
+            if (testVector[i] != i) {
+                throw FractalSharkSeriousException("GrowableVector contents incorrect!");
+            }
+        }
+    };
+
+    constexpr size_t maxInstantiations = 3;
+    for (size_t numInstantiations = 0; numInstantiations < maxInstantiations; numInstantiations++) {
+        // Defaults to AddPointOptions::DontSave
+        GrowableVector<uint64_t> testVector;
+
+        constexpr uint64_t ManyElts = 1024 * 1024 * 1024;
+        for (uint64_t i = 0; i < ManyElts; i++) {
+            testVector.PushBack(static_cast<uint64_t>(i));
+        }
+
+        // Try moving the vector
+        GrowableVector<uint64_t> testVector2(std::move(testVector));
+
+        // Verify contents
+        VerifyContents(testVector2, ManyElts);
+
+        // Try the move assignment operator
+        GrowableVector<uint64_t> testVector3;
+        testVector3 = std::move(testVector2);
+
+        // Verify contents
+        VerifyContents(testVector3, ManyElts);
+
+        // Verify filename
+        std::wstring filename = testVector3.GetFilename();
+        if (filename != L"") {
+            throw FractalSharkSeriousException("GrowableVector filename incorrect!");
+        }
+
+        // Verify GetAddPointOptions
+        AddPointOptions options = testVector3.GetAddPointOptions();
+        if (options != AddPointOptions::DontSave) {
+            throw FractalSharkSeriousException("GrowableVector AddPointOptions incorrect!");
+        }
+
+        // Trim
+        testVector3.Trim();
+        VerifyContents(testVector3, ManyElts);
+
+        // ValidFile
+        if (testVector3.ValidFile() != true) {
+            throw FractalSharkSeriousException("GrowableVector ValidFile failed!");
+        }
+    }
 }
 
 void CrummyTest::Benchmark(RefOrbitCalc::PerturbationResultType type) {

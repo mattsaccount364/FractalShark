@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 class JobObject {
 public:
     JobObject();
@@ -8,6 +10,10 @@ public:
     JobObject &operator=(const JobObject &) = delete;
     JobObject(const JobObject &) = delete;
 
+    uint64_t GetCommitLimitInBytes() const;
+
 private:
-    HANDLE hJob;
+    // PIMPL
+    class JobObjectImpl;
+    std::unique_ptr<JobObjectImpl> impl;
 };

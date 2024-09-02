@@ -146,11 +146,15 @@ public:
         All
     };
 
-    RefOrbitCalc(const Fractal &fractal);
+    RefOrbitCalc(
+        const Fractal &fractal,
+        uint64_t commitLimitInBytes);
 
     bool RequiresReuse() const;
 
+    template<typename IterType, class T, PerturbExtras PExtras>
     void OptimizeMemory();
+
     void SetPerturbationAlg(PerturbationAlg alg);
     PerturbationAlg GetPerturbationAlg() const;
     std::string GetPerturbationAlgStr() const;
@@ -354,6 +358,7 @@ private:
     size_t m_NumCpuCores;
     bool m_HyperthreadingEnabled;
 
+    void PushbackResults(auto results);
     std::vector<AwesomeVariantUniquePtr> m_C;
 
     mutable AwesomeVariant m_LastUsedRefOrbit;
@@ -363,4 +368,6 @@ private:
     struct StripQualifiers {
         using Type = typename std::remove_const<typename std::remove_reference<T>::type>::type;
     };
+
+    const uint64_t m_CommitLimitInBytes;
 };

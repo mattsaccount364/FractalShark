@@ -222,7 +222,7 @@ unsigned long WINAPI DrawingThread(void *) { /////////////////////////////
     glResetViewDim(rt.right, rt.bottom);
 
     Fractal *gFractal = nullptr;
-    gFractal = DEBUG_NEW Fractal(rt.right, rt.bottom, gHWnd, true);
+    gFractal = DEBUG_NEW Fractal(rt.right, rt.bottom, gHWnd, true, 0);
 
     // Autozoom
     bool gAutoZoomDone = false;

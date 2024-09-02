@@ -17,6 +17,7 @@
     <ClInclude Include="BenchmarkDataCollection.h" />
     <ClInclude Include="BLA.h" />
     <ClInclude Include="BLAS.h" />
+    <ClInclude Include="Callstacks.h" />
     <ClInclude Include="CudaDblflt.h" />
     <ClInclude Include="dbldbl.cuh" />
     <ClInclude Include="dblflt.cuh" />
@@ -33,6 +34,9 @@
     <ClInclude Include="GPU_Types.h" />
     <ClInclude Include="HDRFloat.h" />
     <ClInclude Include="HDRFloatComplex.h" />
+    <ClInclude Include="heap_allocator\include\heap.h" />
+    <ClInclude Include="heap_allocator\include\HeapCpp.h" />
+    <ClInclude Include="heap_allocator\include\llist.h" />
     <ClInclude Include="HighPrecision.h" />
     <ClInclude Include="ImaginaOrbit.h" />
     <ClInclude Include="Introspection.h" />
@@ -76,9 +80,13 @@
   <ItemGroup>
     <ClCompile Include="BenchmarkData.cpp" />
     <ClCompile Include="BLAS.cpp" />
+    <ClCompile Include="Callstacks.cpp" />
+    <ClCompile Include="Exceptions.cpp" />
     <ClCompile Include="Fractal.cpp" />
     <ClCompile Include="CrummyTest.cpp" />
     <ClCompile Include="HDRFloat.cpp" />
+    <ClCompile Include="heap_allocator\commented_heap.cpp" />
+    <ClCompile Include="heap_allocator\llist.cpp" />
     <ClCompile Include="ImaginaOrbit.cpp" />
     <ClCompile Include="ItersMemoryContainer.cpp" />
     <ClCompile Include="LAParameters.cpp" />
@@ -162,7 +170,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions> _CRT_SECURE_NO_WARNINGS;WIN32;WIN64;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalIncludeDirectories>..\FractalClient;..\mpir\lib\x64\Release;..\WPngImage;..\QuadDouble\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\mpir\lib\x64\Release;..\WPngImage;..\QuadDouble\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>

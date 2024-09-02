@@ -2,7 +2,25 @@
 
 #include "JobObject.h"
 
-JobObject::JobObject() {
+class JobObject::JobObjectImpl {
+public:
+    JobObjectImpl();
+    ~JobObjectImpl();
+
+    JobObjectImpl &operator=(const JobObjectImpl &) = delete;
+    JobObjectImpl(const JobObjectImpl &) = delete;
+
+    uint64_t GetCommitLimitInBytes() const;
+
+private:
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION jeli;
+    HANDLE hJob;
+};
+
+JobObject::JobObjectImpl::JobObjectImpl() :
+    jeli{},
+    hJob{}
+{
     // Use a Win32 job object to limit virtual memory used
     // by this process.
 
@@ -18,21 +36,20 @@ JobObject::JobObject() {
     GetPhysicallyInstalledSystemMemory(&totalPhysicalMemoryInKb);
 
     // One option:  limit to half the physical memory
-    constexpr size_t EightGb = 8ULL * 1024ULL * 1024ULL * 1024ULL;
-    const size_t Limit1 = totalPhysicalMemoryInKb * 1024ULL / 2ULL;
+    constexpr size_t EightGbInBytes = 8ULL * 1024ULL * 1024ULL * 1024ULL;
+    const size_t Limit1InBytes = totalPhysicalMemoryInKb * 1024ULL / 2ULL;
 
     // Another option:  limit to physical memory minus 8 GB
-    size_t Limit2;
-    if (totalPhysicalMemoryInKb < EightGb / 1024) {
-        Limit2 = 0;
+    size_t Limit2InBytes;
+    if (totalPhysicalMemoryInKb < EightGbInBytes / 1024) {
+        Limit2InBytes = 0;
     } else {
-        Limit2 = totalPhysicalMemoryInKb * 1024ULL - EightGb;
+        Limit2InBytes = totalPhysicalMemoryInKb * 1024ULL - EightGbInBytes;
     }
 
     // Choose whichever limit is smaller
-    const size_t Limit = Limit1 < Limit2 ? Limit1 : Limit2;
+    const size_t Limit = Limit1InBytes < Limit2InBytes ? Limit1InBytes : Limit2InBytes;
 
-    JOBOBJECT_EXTENDED_LIMIT_INFORMATION jeli = { 0 };
     jeli.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_JOB_MEMORY;
     jeli.JobMemoryLimit = Limit;
     if (!SetInformationJobObject(hJob, JobObjectExtendedLimitInformation, &jeli, sizeof(jeli))) {
@@ -48,8 +65,22 @@ JobObject::JobObject() {
     }
 }
 
-JobObject::~JobObject() {
+JobObject::JobObjectImpl::~JobObjectImpl() {
     if (hJob != nullptr) {
         CloseHandle(hJob);
     }
+}
+
+uint64_t JobObject::JobObjectImpl::GetCommitLimitInBytes() const {
+    return jeli.JobMemoryLimit;
+}
+
+JobObject::JobObject() : impl{std::make_unique<JobObjectImpl>()} {
+}
+
+JobObject::~JobObject() {
+}
+
+uint64_t JobObject::GetCommitLimitInBytes() const {
+    return impl->GetCommitLimitInBytes();
 }

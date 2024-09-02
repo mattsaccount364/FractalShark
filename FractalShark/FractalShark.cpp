@@ -1,6 +1,7 @@
 #include "stdafx.h"
 
 #include "MainWindow.h"
+#include "Callstacks.h"
 
 int APIENTRY WinMain(_In_ HINSTANCE hInstance,
     _In_opt_ HINSTANCE /*hPrevInstance*/,
@@ -9,7 +10,7 @@ int APIENTRY WinMain(_In_ HINSTANCE hInstance,
 
     MSG msg{};
 
-    _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_WNDW);
+    Callstacks::InitCallstacks();
 
     {
         MainWindow mainWindow{ hInstance, nCmdShow };
@@ -21,13 +22,7 @@ int APIENTRY WinMain(_In_ HINSTANCE hInstance,
         }
     }
 
-#ifdef _DEBUG
-    // We have a 16-byte leak thanks to Windows no matter what we do.
-
-    _CrtSetReportMode(_CRT_WARN, _CRTDBG_MODE_DEBUG);
-    _CrtDumpMemoryLeaks();
-#endif
-
+    Callstacks::FreeCallstacks();
     return (int)msg.wParam;
 }
 

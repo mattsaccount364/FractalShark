@@ -298,7 +298,7 @@ HWND MainWindow::InitInstance(HINSTANCE hInstance, int nCmdShow) { // Store inst
     RECT rt;
     GetClientRect(hWnd, &rt);
 
-    gFractal = std::make_unique<Fractal>(rt.right, rt.bottom, hWnd, false);
+    gFractal = std::make_unique<Fractal>(rt.right, rt.bottom, hWnd, false, gJobObj->GetCommitLimitInBytes());
 
     if constexpr (finishWindowed == false) {
         SendMessage(hWnd, WM_SYSCOMMAND, SC_MAXIMIZE, 0);

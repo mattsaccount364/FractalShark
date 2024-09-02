@@ -7,14 +7,15 @@
 #include "LAInfoDeep.h"
 
 #include "Exceptions.h"
+#include "Callstacks.h"
 
 #include <assert.h>
 #include <combaseapi.h>
 
+
 #pragma comment(lib, "ntdll")
 
 typedef uint32_t NTSTATUS;
-static constexpr size_t InitialGrowByElts = 512 * 1024;
 
 typedef enum _SECTION_INHERIT {
     ViewShare = 1,
@@ -120,8 +121,7 @@ GrowableVector<EltT>::GrowableVector(GrowableVector<EltT> &&other) noexcept :
     m_Data{ other.m_Data },
     m_AddPointOptions{ other.m_AddPointOptions },
     m_Filename{ other.m_Filename },
-    m_PhysicalMemoryCapacityKB{ other.m_PhysicalMemoryCapacityKB },
-    m_GrowByElts{ InitialGrowByElts } {
+    m_PhysicalMemoryCapacityKB{ other.m_PhysicalMemoryCapacityKB } {
 
     other.m_FileHandle = nullptr;
     other.m_MappedFile = nullptr;
@@ -131,11 +131,16 @@ GrowableVector<EltT>::GrowableVector(GrowableVector<EltT> &&other) noexcept :
     other.m_AddPointOptions = AddPointOptions::DontSave;
     other.m_Filename = {};
     other.m_PhysicalMemoryCapacityKB = 0;
-    other.m_GrowByElts = 0;
 }
 
 template<class EltT>
 GrowableVector<EltT> &GrowableVector<EltT>::operator=(GrowableVector<EltT> &&other) noexcept {
+    if (this == &other) {
+        return *this;
+    }
+
+    CloseMapping();
+
     m_FileHandle = other.m_FileHandle;
     m_MappedFile = other.m_MappedFile;
     m_UsedSizeInElts = other.m_UsedSizeInElts;
@@ -144,7 +149,6 @@ GrowableVector<EltT> &GrowableVector<EltT>::operator=(GrowableVector<EltT> &&oth
     m_AddPointOptions = other.m_AddPointOptions;
     m_Filename = other.m_Filename;
     m_PhysicalMemoryCapacityKB = other.m_PhysicalMemoryCapacityKB;
-    m_GrowByElts = other.m_GrowByElts;
 
     other.m_FileHandle = nullptr;
     other.m_MappedFile = nullptr;
@@ -154,7 +158,6 @@ GrowableVector<EltT> &GrowableVector<EltT>::operator=(GrowableVector<EltT> &&oth
     other.m_AddPointOptions = AddPointOptions::DontSave;
     other.m_Filename = {};
     other.m_PhysicalMemoryCapacityKB = 0;
-    other.m_GrowByElts = 0;
 
     return *this;
 }
@@ -178,8 +181,8 @@ GrowableVector<EltT>::GrowableVector(
     m_Data{},
     m_AddPointOptions{ add_point_options },
     m_Filename{ filename },
-    m_PhysicalMemoryCapacityKB{},
-    m_GrowByElts{ InitialGrowByElts } {
+    m_PhysicalMemoryCapacityKB{} {
+
     auto ret = GetPhysicallyInstalledSystemMemory(&m_PhysicalMemoryCapacityKB);
     if (ret == FALSE) {
         ::MessageBox(nullptr, L"Failed to get system memory", L"", MB_OK | MB_APPLMODAL);
@@ -224,9 +227,8 @@ const EltT &GrowableVector<EltT>::operator[](size_t index) const {
 template<class EltT>
 void GrowableVector<EltT>::GrowVectorIfNeeded() {
     if (m_UsedSizeInElts == m_CapacityInElts) {
-        static constexpr size_t GrowBy512Mb = 512 * 1024 * 1024 / sizeof(EltT);
-        MutableReserveKeepFileSize(m_CapacityInElts + GrowBy512Mb);
-        m_GrowByElts = m_GrowByElts + GrowBy512Mb;
+        static constexpr size_t GrowByAmount = 256 * 1024 * 1024 / sizeof(EltT);
+        MutableReserveKeepFileSize(m_CapacityInElts + GrowByAmount);
     }
 }
 
@@ -263,15 +265,21 @@ template<class EltT>
 void GrowableVector<EltT>::CloseMapping() {
     if (UsingAnonymous()) {
         if (m_Data != nullptr) {
-            VirtualFree(m_Data, 0, MEM_RELEASE);
+            Callstacks::LogDeallocCallstack(m_Data);
+            auto res = VirtualFree(m_Data, 0, MEM_RELEASE);
+            if (res == FALSE) {
+                std::string err_str = "Failed to free memory: ";
+                auto code = GetLastError();
+                err_str += std::to_string(code);
+                throw FractalSharkSeriousException(err_str);
+            }
+
             m_Data = nullptr;
         }
 
         // m_UsedSizeInElts is unchanged.
         m_CapacityInElts = 0;
-    }
-
-    if (!UsingAnonymous()) {
+    } else {
         if (m_Data != nullptr) {
             UnmapViewOfFile(m_Data);
             m_Data = nullptr;
@@ -666,9 +674,8 @@ template<class EltT>
 void GrowableVector<EltT>::MutableAnonymousCommit(size_t capacity) {
     // Returned value is in KB so convert to bytes.
     if (m_Data == nullptr) {
-        if (UsingAnonymous()) {
-            MutableReserve(m_PhysicalMemoryCapacityKB * 1024);
-        }
+        assert(UsingAnonymous());
+        MutableReserve(m_PhysicalMemoryCapacityKB * 1024);
     }
 
     if (capacity > m_CapacityInElts) {
@@ -676,12 +683,15 @@ void GrowableVector<EltT>::MutableAnonymousCommit(size_t capacity) {
         // Use VirtualAlloc to allocate additional space for the vector.
         // The returned pointer should be the same as the original pointer.
 
+        const auto bytesCount = capacity * sizeof(EltT);
         auto res = VirtualAlloc(
             m_Data,
-            capacity * sizeof(EltT),
+            bytesCount,
             MEM_COMMIT,
             PAGE_READWRITE
         );
+
+        Callstacks::LogAllocCallstack(bytesCount, res);
 
         if (m_Data == nullptr) {
             std::string err_str = "Failed to allocate memory: ";
@@ -714,6 +724,8 @@ void GrowableVector<EltT>::MutableReserve(size_t new_reserved_bytes) {
         MEM_RESERVE,
         PAGE_READWRITE
     );
+
+    Callstacks::LogReserveCallstack(new_reserved_bytes, res);
 
     if (res == nullptr) {
         std::wstring err = L"Failed to reserve memory: ";

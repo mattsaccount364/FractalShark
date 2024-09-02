@@ -106,7 +106,7 @@ ItersMemoryContainer::ItersMemoryContainer(
         m_Iters32Filename = GetTempFilename(32);
         m_ItersMemory32 = GrowableVector<uint32_t>{
             AddPointOptions::EnableWithoutSave,
-            m_Iters32Filename
+            m_Iters32Filename.c_str()
         };
 
         m_ItersMemory32.MutableResize(m_RoundedTotal);
@@ -119,7 +119,7 @@ ItersMemoryContainer::ItersMemoryContainer(
         m_Iters64Filename = GetTempFilename(64);
         m_ItersMemory64 = GrowableVector<uint64_t>{
             AddPointOptions::EnableWithoutSave,
-            m_Iters64Filename
+            m_Iters64Filename.c_str()
         };
 
         m_ItersMemory64.MutableResize(m_RoundedTotal);
@@ -206,7 +206,7 @@ ItersMemoryContainer &ItersMemoryContainer::operator=(const ItersMemoryContainer
         m_Iters32Filename = GetTempFilename(32);
         m_ItersMemory32 = GrowableVector<uint32_t>{
             AddPointOptions::EnableWithoutSave,
-            m_Iters32Filename
+            m_Iters32Filename.c_str()
         };
 
         m_ItersMemory32.MutableResize(other.m_RoundedTotal);
@@ -223,7 +223,7 @@ ItersMemoryContainer &ItersMemoryContainer::operator=(const ItersMemoryContainer
         m_Iters64Filename = GetTempFilename(64);
         m_ItersMemory64 = GrowableVector<uint64_t>{
             AddPointOptions::EnableWithoutSave,
-            m_Iters64Filename
+            m_Iters64Filename.c_str()
         };
 
         m_ItersMemory64.MutableResize(other.m_RoundedTotal);

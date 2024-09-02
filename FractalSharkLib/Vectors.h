@@ -47,7 +47,8 @@ private:
     EltT *m_Data;
     AddPointOptions m_AddPointOptions;
 
-    std::wstring m_Filename;
+    constexpr static size_t MaxPath = 512;
+    wchar_t m_Filename[MaxPath];
     size_t m_PhysicalMemoryCapacityKB;
 
 public:
@@ -60,9 +61,15 @@ public:
     // The default constructor creates an empty vector.
     GrowableVector();
 
+    GrowableVector(
+        AddPointOptions add_point_options,
+        const wchar_t *filename);
+
     // The constructor takes the file to open or create
     // It maps enough memory to accomodate the provided orbit size.
-    GrowableVector(AddPointOptions add_point_options, std::wstring filename);
+    GrowableVector(
+        AddPointOptions add_point_options,
+        std::wstring filename);
 
     // This one takes a filename and size and uses the file specified
     // to back the vector.

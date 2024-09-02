@@ -11,9 +11,9 @@ struct CallstackDetails {
     const void *m_Ptr;
 };
 
-namespace Callstacks {
+struct CallStacks {
     // Initialize some heap tracking.
-    void InitCallstacks();
+    static void InitCallstacks();
 
     // Output a callstack to a file.
     void OutputToFile(std::ofstream &file, const CallstackDetails &callstack);
@@ -33,4 +33,23 @@ namespace Callstacks {
 
     // Free all callstacks, check for leaks.
     void FreeCallstacks();
-}
+
+private:
+
+#ifdef NDEBUG
+    constexpr static bool Debug = false;
+    constexpr static size_t MaxCallstacks = 1000;
+#else
+    constexpr static bool Debug = true;
+    constexpr static size_t MaxCallstacks = std::numeric_limits<int64_t>::max();
+#endif
+
+    std::mutex CallstacksMutex;
+    std::vector<CallstackDetails> ReserveCallstacks;
+    std::vector<CallstackDetails> AllocCallstacks;
+
+    std::ofstream ReserveCallstacksFile;
+    std::ofstream AllocCallstacksFile;
+};
+
+extern std::unique_ptr<CallStacks> GlobalCallstacks;

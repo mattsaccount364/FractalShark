@@ -63,7 +63,6 @@ void Fractal::Initialize(int width,
         m_CheckForAbortThread = nullptr;
     }
 
-    InitStatics();
     InitialDefaultViewAndSettings(width, height);
 
     m_AsyncRenderThreadState = AsyncRenderThreadState::Idle;

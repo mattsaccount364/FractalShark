@@ -83,8 +83,8 @@ public:
         m_LAStageCount{},
         m_LAParameters{ la_parameters },
         m_IsValid{},
-        m_LAs(add_point_options, las_filename),
-        m_LAStages(add_point_options, la_stages_filename),
+        m_LAs(add_point_options, las_filename.c_str()),
+        m_LAStages(add_point_options, la_stages_filename.c_str()),
         m_BenchmarkDataLA{} {
 
         static_assert(PExtras != PerturbExtras::MaxCompression, "MaxCompression not supported in LAReference");
@@ -102,8 +102,8 @@ public:
         m_LAStageCount{},
         m_LAParameters{ },
         m_IsValid{},
-        m_LAs(add_point_options, las_filename),
-        m_LAStages(add_point_options, la_stages_filename),
+        m_LAs(add_point_options, las_filename.c_str()),
+        m_LAStages(add_point_options, la_stages_filename.c_str()),
         m_BenchmarkDataLA{} {
 
         static_assert(PExtras != PerturbExtras::MaxCompression, "MaxCompression not supported in LAReference");

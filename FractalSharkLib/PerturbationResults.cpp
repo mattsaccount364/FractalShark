@@ -59,14 +59,16 @@ std::wstring GetTimeAsString(size_t generation_number) {
     // convert to broken time
     std::tm bt = *std::localtime(&timer);
 
-    std::ostringstream oss;
-
-    oss << std::put_time(&bt, "%Y-%m-%d-%H-%M-%S"); // HH:MM:SS
-    oss << '.' << std::setfill('0') << std::setw(3) << ms.count();
-    auto res = oss.str();
-
     std::wstring wide;
-    std::transform(res.begin(), res.end(), std::back_inserter(wide), [](char c) {
+    std::string temp;
+
+    {
+        char buffer[100];
+        std::strftime(buffer, sizeof(buffer), "%Y-%m-%d-%H-%M-%S", &bt);
+        temp = buffer;
+    }
+
+    std::transform(temp.begin(), temp.end(), std::back_inserter(wide), [](char c) {
         return (wchar_t)c;
         });
 
@@ -314,7 +316,7 @@ void PerturbationResults<IterType, T, PExtras>::CopyPerturbationResults(
     m_BaseFilename = GenBaseFilename(m_GenerationNumber);
     m_MetaFileHandle = INVALID_HANDLE_VALUE;
 
-    m_FullOrbit = { GetRefOrbitOptions(), GenFilename(GrowableVectorTypes::GPUReferenceIter) };
+    m_FullOrbit = { GetRefOrbitOptions(), GenFilename(GrowableVectorTypes::GPUReferenceIter).c_str()};
     m_FullOrbit.MutableResize(other.m_FullOrbit.GetSize(), 0);
     m_UncompressedItersInOrbit = other.m_UncompressedItersInOrbit;
 
@@ -2172,7 +2174,7 @@ void PerturbationResults<IterType, T, PExtras>::MapExistingFiles()
     assert(m_LaReference == nullptr);
     assert(m_FullOrbit.GetCapacity() == 0);
 
-    m_FullOrbit = { GetRefOrbitOptions(), GenFilename(GrowableVectorTypes::GPUReferenceIter) };
+    m_FullOrbit = { GetRefOrbitOptions(), GenFilename(GrowableVectorTypes::GPUReferenceIter).c_str() };
 
     try {
         m_LaReference = std::make_unique<LAReference<IterType, T, SubType, PExtras>>(

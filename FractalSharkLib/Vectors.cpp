@@ -120,8 +120,10 @@ GrowableVector<EltT>::GrowableVector(GrowableVector<EltT> &&other) noexcept :
     m_CapacityInElts{ other.m_CapacityInElts },
     m_Data{ other.m_Data },
     m_AddPointOptions{ other.m_AddPointOptions },
-    m_Filename{ other.m_Filename },
+    m_Filename{},
     m_PhysicalMemoryCapacityKB{ other.m_PhysicalMemoryCapacityKB } {
+
+    wcscpy_s(m_Filename, other.m_Filename);
 
     other.m_FileHandle = nullptr;
     other.m_MappedFile = nullptr;
@@ -129,7 +131,7 @@ GrowableVector<EltT>::GrowableVector(GrowableVector<EltT> &&other) noexcept :
     other.m_CapacityInElts = 0;
     other.m_Data = nullptr;
     other.m_AddPointOptions = AddPointOptions::DontSave;
-    other.m_Filename = {};
+    memset(other.m_Filename, 0, sizeof(other.m_Filename));
     other.m_PhysicalMemoryCapacityKB = 0;
 }
 
@@ -147,7 +149,7 @@ GrowableVector<EltT> &GrowableVector<EltT>::operator=(GrowableVector<EltT> &&oth
     m_CapacityInElts = other.m_CapacityInElts;
     m_Data = other.m_Data;
     m_AddPointOptions = other.m_AddPointOptions;
-    m_Filename = other.m_Filename;
+    wcscpy_s(m_Filename, other.m_Filename);
     m_PhysicalMemoryCapacityKB = other.m_PhysicalMemoryCapacityKB;
 
     other.m_FileHandle = nullptr;
@@ -156,7 +158,7 @@ GrowableVector<EltT> &GrowableVector<EltT>::operator=(GrowableVector<EltT> &&oth
     other.m_CapacityInElts = 0;
     other.m_Data = nullptr;
     other.m_AddPointOptions = AddPointOptions::DontSave;
-    other.m_Filename = {};
+    memset(other.m_Filename, 0, sizeof(other.m_Filename));
     other.m_PhysicalMemoryCapacityKB = 0;
 
     return *this;
@@ -168,20 +170,20 @@ GrowableVector<EltT>::GrowableVector()
     // Default to anonymous memory.
 }
 
-// The constructor takes the file to open or create
-// It maps enough memory to accomodate the provided orbit size.
 template<class EltT>
 GrowableVector<EltT>::GrowableVector(
     AddPointOptions add_point_options,
-    std::wstring filename)
+    const wchar_t *filename)
     : m_FileHandle{},
     m_MappedFile{},
     m_UsedSizeInElts{},
     m_CapacityInElts{},
     m_Data{},
     m_AddPointOptions{ add_point_options },
-    m_Filename{ filename },
+    m_Filename{},
     m_PhysicalMemoryCapacityKB{} {
+
+    wcscpy_s(m_Filename, filename);
 
     auto ret = GetPhysicallyInstalledSystemMemory(&m_PhysicalMemoryCapacityKB);
     if (ret == FALSE) {
@@ -194,6 +196,16 @@ GrowableVector<EltT>::GrowableVector(
         // It should be doing a sparse allocation but who knows.
         MutableFileCommit(1024);
     }
+}
+
+
+// The constructor takes the file to open or create
+// It maps enough memory to accomodate the provided orbit size.
+template<class EltT>
+GrowableVector<EltT>::GrowableVector(
+    AddPointOptions add_point_options,
+    std::wstring filename)
+    : GrowableVector{ add_point_options, filename.c_str() } {
 }
 
 // This one takes a filename and size and uses the file specified
@@ -265,7 +277,7 @@ template<class EltT>
 void GrowableVector<EltT>::CloseMapping() {
     if (UsingAnonymous()) {
         if (m_Data != nullptr) {
-            Callstacks::LogDeallocCallstack(m_Data);
+            GlobalCallstacks->LogDeallocCallstack(m_Data);
             auto res = VirtualFree(m_Data, 0, MEM_RELEASE);
             if (res == FALSE) {
                 std::string err_str = "Failed to free memory: ";
@@ -420,7 +432,7 @@ uint32_t GrowableVector<EltT>::InternalOpenFile() {
             open_mode = OPEN_EXISTING;
         }
 
-        if (m_Filename == L"") {
+        if (wcscmp(m_Filename, L"") == 0) {
             // Fill a wide string with a random guid
             GUID guid;
             auto res = CoCreateGuid(&guid);
@@ -440,10 +452,10 @@ uint32_t GrowableVector<EltT>::InternalOpenFile() {
 
             // Generate a temporary filename to a non-existent file
             // in the current directory using GetTempFileName
-            m_Filename = guid_str;
+            wcscpy_s(m_Filename, guid_str);
         }
 
-        m_FileHandle = CreateFile(m_Filename.c_str(),
+        m_FileHandle = CreateFile(m_Filename,
             desired_access,
             FILE_SHARE_READ,
             nullptr,
@@ -691,7 +703,7 @@ void GrowableVector<EltT>::MutableAnonymousCommit(size_t capacity) {
             PAGE_READWRITE
         );
 
-        Callstacks::LogAllocCallstack(bytesCount, res);
+        GlobalCallstacks->LogAllocCallstack(bytesCount, res);
 
         if (m_Data == nullptr) {
             std::string err_str = "Failed to allocate memory: ";
@@ -725,7 +737,7 @@ void GrowableVector<EltT>::MutableReserve(size_t new_reserved_bytes) {
         PAGE_READWRITE
     );
 
-    Callstacks::LogReserveCallstack(new_reserved_bytes, res);
+    GlobalCallstacks->LogReserveCallstack(new_reserved_bytes, res);
 
     if (res == nullptr) {
         std::wstring err = L"Failed to reserve memory: ";

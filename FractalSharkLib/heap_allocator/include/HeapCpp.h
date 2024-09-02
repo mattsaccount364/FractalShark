@@ -1,62 +1,34 @@
 #pragma once
 
 #include "heap.h"
-#include "Vectors.h"
 
 #include <stdexcept>
+#include <mutex>
+
+void InitGlobalHeap();
+void ShutdownGlobalHeap();
 
 class HeapCpp {
 public:
-    HeapCpp(uintptr_t start) {
-        init_heap(&heap_, start);
-    }
+    HeapCpp();
+    ~HeapCpp();
 
-    void *allocate(size_t size) {
-        void *ptr = heap_alloc(&heap_, size);
-        if (!ptr) {
-            throw std::bad_alloc();
-        }
-        return ptr;
-    }
+    void Init();
 
-    void deallocate(void *ptr) {
-        if (ptr) {
-            heap_free(&heap_, ptr);
-        }
-    }
+    void *Allocate(size_t size);
 
-    void expand(size_t size) {
-        uint64_t result = ::expand(&heap_, size);
-        if (!result) {
-            throw std::runtime_error("HeapCpp expansion failed");
-        }
-    }
+    void Deallocate(void *ptr);
 
-    void contract(size_t size) {
-        ::contract(&heap_, size);
-    }
-
-    static uint64_t getBinIndex(size_t size) {
-        return ::get_bin_index(size);
-    }
-
-    static void createFooter(node_t *head) {
-        ::create_foot(head);
-    }
-
-    static footer_t *getFooter(node_t *head) {
-        return ::get_foot(head);
-    }
-
-    static node_t *getWilderness(heap_t *heap) {
-        return ::get_wilderness(heap);
-    }
-
-    // Destructor to handle any cleanup if necessary
-    ~HeapCpp() {
-        // Clean up if necessary
-    }
+    bool Expand(size_t deltaSizeBytes);
+    bool Contract(size_t deltaSizeBytes);
 
 private:
-    heap_t heap_;
+    uint64_t GetBinIndex(size_t size);
+    void CreateFooter(node_t *head);
+    footer_t *GetFooter(node_t * head);
+    node_t *GetWilderness();
+
+    bool Initialized;
+    heap_t Heap;
+    std::mutex Mutex;
 };

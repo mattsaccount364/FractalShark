@@ -2,6 +2,9 @@
 
 #include "MainWindow.h"
 #include "Callstacks.h"
+#include "heap_allocator\include\HeapCpp.h"
+
+void InitStatics();
 
 int APIENTRY WinMain(_In_ HINSTANCE hInstance,
     _In_opt_ HINSTANCE /*hPrevInstance*/,
@@ -10,7 +13,9 @@ int APIENTRY WinMain(_In_ HINSTANCE hInstance,
 
     MSG msg{};
 
-    Callstacks::InitCallstacks();
+    InitStatics();
+    InitGlobalHeap();
+    GlobalCallstacks->InitCallstacks();
 
     {
         MainWindow mainWindow{ hInstance, nCmdShow };
@@ -22,7 +27,9 @@ int APIENTRY WinMain(_In_ HINSTANCE hInstance,
         }
     }
 
-    Callstacks::FreeCallstacks();
+    GlobalCallstacks->FreeCallstacks();
+    ShutdownGlobalHeap();
+
     return (int)msg.wParam;
 }
 

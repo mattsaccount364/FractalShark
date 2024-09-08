@@ -33,6 +33,4 @@ void InitStatics() {
         int index = i - MinFloatExponent;
         twoPowExpFlt[index] = f;
     }
-
-    VectorStaticInit();
 }

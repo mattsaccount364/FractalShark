@@ -14,7 +14,6 @@ int APIENTRY WinMain(_In_ HINSTANCE hInstance,
     MSG msg{};
 
     InitStatics();
-    InitGlobalHeap();
     GlobalCallstacks->InitCallstacks();
 
     {
@@ -28,7 +27,6 @@ int APIENTRY WinMain(_In_ HINSTANCE hInstance,
     }
 
     GlobalCallstacks->FreeCallstacks();
-    ShutdownGlobalHeap();
 
     return (int)msg.wParam;
 }

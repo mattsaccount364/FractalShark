@@ -128,33 +128,30 @@ public:
             std::is_same<T, CudaDblflt<dblflt>>::value ||
             std::is_same<T, CudaDblflt<MattDblflt>>::value;
 
-        std::stringstream ss;
+        std::string result;
         if constexpr (!IntegerOutput) {
             if constexpr (!isDblFlt) {
-                ss << std::setprecision(std::numeric_limits<double>::max_digits10);
-                ss << "mantissa: " << static_cast<double>(Base::mantissa) << " exp: " << Base::exp;
+                result += std::format("mantissa: {} exp: {}", static_cast<double>(Base::mantissa), Base::exp);
             } else {
-                ss << Base::mantissa.ToString<IntegerOutput>();
-                ss << " exp: " << Base::exp;
+                result += Base::mantissa.ToString<IntegerOutput>();
+                result += std::format(" exp: {}", Base::exp);
             }
         } else {
             if constexpr (!isDblFlt) {
-                // Reinterpret the bits of Base::mantissa as an integer
-                // Don't use bitcast
                 const double res = static_cast<double>(Base::mantissa);
-                const uint64_t mantissaInteger = *reinterpret_cast<const uint64_t *>(&res);
+                const uint64_t mantissaInteger = *reinterpret_cast<const uint64_t*>(&res);
                 const uint64_t localExp = Base::exp;
-                const uint64_t expInteger = *reinterpret_cast<const uint64_t *>(&localExp);
-                ss << "mantissa: 0x" << std::hex << mantissaInteger << " exp: 0x" << std::hex << expInteger;
+                const uint64_t expInteger = *reinterpret_cast<const uint64_t*>(&localExp);
+                result += std::format("mantissa: 0x{:x} exp: 0x{:x}", mantissaInteger, expInteger);
             } else {
-                ss << Base::mantissa.ToString<IntegerOutput>();
+                result += Base::mantissa.ToString<IntegerOutput>();
 
                 uint64_t tempExp = Base::exp;
-                ss << " exp: 0x" << std::hex << tempExp;
+                result += std::format(" exp: 0x{:x}", tempExp);
             }
         }
 
-        return ss.str();
+        return result;
     }
 
     template<bool IntegerOutput>

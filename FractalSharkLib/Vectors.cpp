@@ -245,6 +245,11 @@ void GrowableVector<EltT>::GrowVectorIfNeeded() {
 }
 
 template<class EltT>
+void GrowableVector<EltT>::GrowVectorByAmount(size_t amount) {
+    MutableResize(m_CapacityInElts + amount);
+}
+
+template<class EltT>
 void GrowableVector<EltT>::PushBack(const EltT &val) {
     GrowVectorIfNeeded();
     m_Data[m_UsedSizeInElts] = val;

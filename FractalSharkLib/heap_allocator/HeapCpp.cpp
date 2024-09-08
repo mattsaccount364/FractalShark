@@ -9,33 +9,90 @@
 static int offset = sizeof(uintptr_t) * 2;
 static constexpr auto PAGE_SIZE = 0x1000;
 
-static constexpr bool DebugOut = false;
+// sprintf etc use heap allocations in debug mode, so we can't use them here.
+static constexpr bool LimitedDebugOut = !FractalSharkDebug;
+static constexpr bool FullDebugOut = false;
+
+//
+// Overriding malloc/free is a bit tricky. The problem is that the C runtime library
+// may call malloc/free internally, so if you override malloc/free, you may end up
+// with a stack overflow. The solution is to use a global heap that is initialized
+// before the C runtime library is initialized. This is done by defining a global
+// instance of the HeapCpp class.
+// 
+// When the first attempt is made to allocate memory, the global heap is initialized.
+// This initialization takes place during the C runtime library initialization, and is
+// before any static constructors are called.  This has implications for the order of
+// initialization of static objects and the "meaning" of static objects.
+// 
+// What we do here is call a constructor ourselves manually
+//
 
 // Define a global Heap instance
 static HeapCpp globalHeap;
-static GrowableVector<uint8_t> growableVector;
 
-void InitGlobalHeap() {
+
+void VectorStaticInit();
+
+void HeapCpp::InitGlobalHeap() {
     // Initialize the global heap
-    constexpr auto initialSize = 1024 * 1024 * 1024; // 1 GB
-    growableVector = GrowableVector<uint8_t>(AddPointOptions::EnableWithoutSave, L"HeapFile.bin");
-    growableVector.MutableResize(initialSize);
+    if (globalHeap.Initialized) {
+        return;
+    }
+
+    // Note: sprintf_s etc use heap allocations in debug mode, so we can't use them here.
+    static_assert(sizeof(GrowableVector<uint8_t>) <= GrowableVectorSize);
+
+    // GrowableVector<uint8_t>(AddPointOptions::EnableWithoutSave, L"HeapFile.bin");
+    globalHeap.Growable = std::construct_at(
+        reinterpret_cast<GrowableVector<uint8_t> *>(globalHeap.GrowableVectorMemory),
+        AddPointOptions::EnableWithoutSave,
+        L"HeapFile.bin");
+
+    globalHeap.Growable->MutableResize(GrowByAmtBytes);
     globalHeap.Init();
-
 }
 
-void ShutdownGlobalHeap() {
-    // Shutdown the global heap
-    globalHeap.~HeapCpp();
-}
-
-HeapCpp::HeapCpp()
-    : Initialized(false) {
+HeapCpp::HeapCpp() {
+    // It's very important that we don't do anything here, because this heap
+    // may be used before its static constructor is called.
 }
 
 HeapCpp::~HeapCpp() {
-    growableVector.Clear();
-    Initialized = false;
+
+    // So this is pretty excellent.  We don't want to touch anything here,
+    // because this heap may still be used after it's destroyed.
+
+    auto totalAllocs = CountAllocations();
+    
+    // Check if debugger attached.  Note this isn't necessarily the
+    // end of the program, but it's a good place to check because one would
+    // expect that it's close.
+    if (IsDebuggerPresent()) {
+        // Output totalAllocs to debug console in Visual Studio
+        if constexpr (LimitedDebugOut) {
+            char buffer[256];
+            sprintf_s(buffer, "Total allocations remaining = %zu\n", totalAllocs);
+            OutputDebugStringA(buffer);
+
+            // Print Stats
+            sprintf_s(buffer, "BytesAllocated = %zu\n", Stats.BytesAllocated);
+            OutputDebugStringA(buffer);
+
+            sprintf_s(buffer, "BytesFreed = %zu\n", Stats.BytesFreed);
+            OutputDebugStringA(buffer);
+
+            sprintf_s(buffer, "Allocations = %zu\n", Stats.Allocations);
+            OutputDebugStringA(buffer);
+
+            sprintf_s(buffer, "Frees = %zu\n", Stats.Frees);
+            OutputDebugStringA(buffer);
+        }
+    }
+
+    // Growable->Clear();
+    // std::destroy_at(Growable);
+    // Initialized = false;
 }
 
 // ========================================================
@@ -52,7 +109,7 @@ void HeapCpp::Init() {
         Heap.bins[i] = &Heap.binMemory[i];
     }
 
-    node_t *init_region = reinterpret_cast<node_t *>(growableVector.GetData());
+    node_t *init_region = reinterpret_cast<node_t *>(Growable->GetData());
 
     // first we create the initial region, this is the "wilderness" chunk
     // the heap starts as just one big chunk of allocatable memory
@@ -80,7 +137,13 @@ void HeapCpp::Init() {
 // ========================================================
 
 void *HeapCpp::Allocate(size_t size) {
-    assert(Initialized);
+    if (!Initialized) {
+        VectorStaticInit();
+        InitGlobalHeap();
+    }
+
+    // Round up to nearest 16 bytes
+    size = (size + 0xF) & ~0xF;
 
     std::unique_lock<std::mutex> lock(Mutex);
     
@@ -156,6 +219,12 @@ void *HeapCpp::Allocate(size_t size) {
         Contract(PAGE_SIZE);
     }
 
+    if (reinterpret_cast<uintptr_t>(res) % 16 != 0) {
+        throw std::exception();
+    }
+
+    Stats.Allocations++;
+    Stats.BytesAllocated += size;
     return res;
 }
 
@@ -180,6 +249,10 @@ void HeapCpp::Deallocate(void *ptr) {
     // if the node being free is the start of the heap then there is
     // no need to coalesce so just put it in the right list
     node_t *head = (node_t *)((char *)ptr - offset);
+
+    Stats.BytesFreed += head->size;
+    Stats.Frees++;
+
     if (reinterpret_cast<uintptr_t>(head) == Heap.start) {
         head->hole = 1;
         add_node(Heap.bins[GetBinIndex(head->size)], head);
@@ -236,15 +309,19 @@ void HeapCpp::Deallocate(void *ptr) {
 bool HeapCpp::Expand(size_t deltaSizeBytes) {
     // Mutex must be held
 
-    // Grow by a minimum of 4 pages.
+    // Grow by a minimum of a megabyte
     // Ensure the size to expand is aligned to page size (0x1000).
-    const auto growSizeBytes = std::max(size_t(4 * PAGE_SIZE), deltaSizeBytes * 2);
+    const auto growSizeBytes = std::max(size_t(GrowByAmtBytes), deltaSizeBytes * 2);
 
     // Round up to the nearest page size.
     const auto size = (growSizeBytes + 0xFFF) & ~0xFFF;
 
     // Calculate the new end of the heap.
     void *new_end = (char *)Heap.end + size;
+
+    // Now we need to grow the GrowableVector to match the new heap size, if needed.
+    // That'll ensure the memory is writable and we can use it.
+    Growable->GrowVectorByAmount(size);
 
     // Check if the new end is within the maximum heap size.
 
@@ -312,6 +389,29 @@ bool HeapCpp::Contract(size_t size) {
     return true;
 }
 
+size_t HeapCpp::CountAllocations() const {
+    size_t count = 0;
+
+    // Start at the beginning of the heap
+    uintptr_t current_address = Heap.start;
+
+    // Traverse through the heap until we reach the end
+    while (current_address < Heap.end) {
+        // Get the current node (header) at the current address
+        node_t *current_node = reinterpret_cast<node_t *>(current_address);
+
+        // If it's not a hole, it means it's an active allocation
+        if (current_node->hole == 0) {
+            count++;
+        }
+
+        // Move to the next node by advancing by the size of the current node plus the overhead
+        current_address += sizeof(node_t) + current_node->size + sizeof(footer_t);
+    }
+
+    return count;
+}
+
 // ========================================================
 // this function is the hashing function that converts
 // size => bin index. changing this function will change 
@@ -321,10 +421,11 @@ bool HeapCpp::Contract(size_t size) {
 // ========================================================
 uint64_t HeapCpp::GetBinIndex(size_t size) {
     int index = 0;
-    size = size < 4 ? 4 : size;
+    constexpr auto minAlignment = 16;
+    size = size < minAlignment ? minAlignment : size;
 
     while (size >>= 1) index++;
-    index -= 2;
+    index -= 4;
 
     if (index > BIN_MAX_IDX) {
         assert(false);
@@ -363,13 +464,15 @@ node_t *HeapCpp::GetWilderness() {
     return wild_foot->header;
 }
 
+//////////////////////////////////////////////////////////////////////////
+
 void *CppMalloc(size_t size) {
     auto *res = globalHeap.Allocate(size);
 
     // Output res in hex to debug console in Visual Studio
-    if constexpr (DebugOut) {
+    if constexpr (FullDebugOut) {
         char buffer[256];
-        sprintf_s(buffer, "malloc(%zu) = %p\n", size, res);
+        sprintf(buffer, "malloc(%zu) = %p\n", size, res);
         OutputDebugStringA(buffer);
     }
 
@@ -378,9 +481,9 @@ void *CppMalloc(size_t size) {
 
 void CppFree(void *ptr) {
     // Output ptr in hex to debug console in Visual Studio
-    if constexpr (DebugOut) {
+    if constexpr (FullDebugOut) {
         char buffer[256];
-        sprintf_s(buffer, "free(%p)\n", ptr);
+        sprintf(buffer, "free(%p)\n", ptr);
         OutputDebugStringA(buffer);
     }
 
@@ -419,6 +522,18 @@ extern "C" {
         return CppMalloc(size);
     }
 
+    // We rely on linking with /force:multiple to avoid LNK2005
+#ifdef _DEBUG
+    void *_malloc_dbg(
+        size_t size,
+        int /*blockType*/,
+        const char * /*filename*/,
+        int /*line*/) {
+
+        return CppMalloc(size);
+    }
+#endif
+
     __declspec(restrict)
     void *calloc(size_t num, size_t size) {
         auto *res = CppMalloc(num * size);
@@ -427,6 +542,19 @@ extern "C" {
         }
         return res;
     }
+
+#ifdef _DEBUG
+    // We rely on linking with /force:multiple to avoid LNK2005
+    void *_calloc_dbg(
+        size_t num,
+        size_t size,
+        int /*blockType*/,
+        const char * /*filename*/,
+        int /*line*/) {
+
+        return calloc(num, size);
+    }
+#endif
 
     __declspec(restrict)
     void *aligned_alloc(size_t alignment, size_t size) {
@@ -438,6 +566,12 @@ extern "C" {
     void free(void *ptr) {
         CppFree(ptr);
     }
+
+#ifdef _DEBUG
+    void _free_dbg(void *ptr, int /*blockType*/) {
+        CppFree(ptr);
+    }
+#endif
 
     __declspec(restrict)
     void *realloc(void *ptr, size_t newSize) {

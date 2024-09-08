@@ -144,6 +144,10 @@ public:
     // reserving additional memory in the process.
     void GrowVectorIfNeeded();
 
+    // The GrowVectorByAmount unconditionally grows the vector
+    // by the specified amount.
+    void GrowVectorByAmount(size_t amount);
+
 private:
     // The InternalOpenFile method opens the file but
     // does not map it to memory.

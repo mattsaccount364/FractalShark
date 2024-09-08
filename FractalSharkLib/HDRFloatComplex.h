@@ -30,20 +30,19 @@ public:
             std::is_same<SubType, CudaDblflt<dblflt>>::value ||
             std::is_same<SubType, CudaDblflt<MattDblflt>>::value;
 
-        std::stringstream ss;
         if constexpr (!IntegerOutput) {
-            ss << std::setprecision(std::numeric_limits<double>::max_digits10);
             if constexpr (!isDblFlt) {
                 // Output the mantissa and exponent as doubles:
-                ss << "mantissaReal: " << static_cast<double>(this->mantissaReal)
-                    << " mantissaImag: " << static_cast<double>(this->mantissaImag)
-                    << " exp: " << this->exp;
+                return std::format(
+                    "mantissaReal: {} mantissaImag: {} exp: {}",
+                    static_cast<double>(this->mantissaReal),
+                    static_cast<double>(this->mantissaImag),
+                    this->exp);
             } else {
-                ss << this->mantissaReal.ToString<IntegerOutput>();
-                ss << " ";
-                ss << this->mantissaImag.ToString<IntegerOutput>();
-
-                ss << " exp: " << this->exp;
+                return std::format("{} {} exp: {}",
+                    this->mantissaReal.ToString<IntegerOutput>(),
+                    this->mantissaImag.ToString<IntegerOutput>(),
+                    this->exp);
             }
         } else {
             const uint64_t localExp = static_cast<uint64_t>(this->exp);
@@ -52,19 +51,17 @@ public:
                 // Interpret the bits as integers and output the integers:
                 const double localMantissaReal = static_cast<double>(this->mantissaReal);
                 const double localMantissaImag = static_cast<double>(this->mantissaImag);
-                ss << "mantissaReal: 0x" << std::hex << *reinterpret_cast<const uint64_t *>(&localMantissaReal)
-                    << " mantissaImag: 0x" << std::hex << *reinterpret_cast<const uint64_t *>(&localMantissaImag)
-                    << " exp: 0x" << std::hex << localExp;
+                return std::format("mantissaReal: 0x{:x} mantissaImag: 0x{:x} exp: 0x{:x}",
+                    *reinterpret_cast<const uint64_t *>(&localMantissaReal),
+                    *reinterpret_cast<const uint64_t *>(&localMantissaImag),
+                    localExp);
             } else {
-                ss << this->mantissaReal.ToString<IntegerOutput>();
-                ss << " ";
-                ss << this->mantissaImag.ToString<IntegerOutput>();
-
-                ss << " exp: 0x" << std::hex << localExp;
+                return std::format("{} {} exp: 0x{:x}",
+                    this->mantissaReal.ToString<IntegerOutput>(),
+                    this->mantissaImag.ToString<IntegerOutput>(),
+                    localExp);
             }
         }
-
-        return ss.str();
     }
 
     template<bool IntegerOutput>

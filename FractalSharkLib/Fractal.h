@@ -92,7 +92,7 @@ public:
     template<AutoZoomHeuristic h>
     void AutoZoom();
 
-    void View(size_t i);
+    void View(size_t i, bool includeMsgBox = true);
     void SquareCurrentView(void);
     void ApproachTarget(void);
     bool Back(void);
@@ -228,6 +228,10 @@ public:
 
     const LAParameters &GetLAParameters() const;
     LAParameters &GetLAParameters();
+
+    void GetRenderDetails(
+        std::string &shortStr,
+        std::string &longStr) const;
 
 private:
     void Initialize(int width,

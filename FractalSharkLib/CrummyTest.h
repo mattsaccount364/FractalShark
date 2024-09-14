@@ -19,6 +19,7 @@ public:
     void TestStringConversion();
     void TestPerturbedPerturb();
     void TestGrowableVector();
+    void TestReallyHardView27();
 
     void Benchmark(RefOrbitCalc::PerturbationResultType type);
 

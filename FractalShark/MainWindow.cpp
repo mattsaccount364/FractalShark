@@ -1766,158 +1766,14 @@ void MainWindow::MenuGetCurPos() {
         return;
     }
 
-    HighPrecision minX, minY;
-    HighPrecision maxX, maxY;
-
-    const auto prec = gFractal->GetPrecision();
-
-    minX = gFractal->GetMinX();
-    minY = gFractal->GetMinY();
-    maxX = gFractal->GetMaxX();
-    maxY = gFractal->GetMaxY();
-
-    std::stringstream ss;
-    std::string s;
-
-    const auto setupSS = [&](const HighPrecision &num) -> std::string {
-        ss.str("");
-        ss.clear();
-        ss << std::setprecision(std::numeric_limits<HighPrecision>::max_digits10);
-        ss << num;
-        return ss.str();
-        };
-
-    s = setupSS(minX);
-    const auto sminX = std::string(s.begin(), s.end());
-
-    s = setupSS(minY);
-    const auto sminY = std::string(s.begin(), s.end());
-
-    s = setupSS(maxX);
-    const auto smaxX = std::string(s.begin(), s.end());
-
-    s = setupSS(maxY);
-    const auto smaxY = std::string(s.begin(), s.end());
-
-    const PointZoomBBConverter pz{ minX, minY, maxX, maxY };
-    s = setupSS(pz.GetPtX());
-    const auto ptXStr = std::string(s.begin(), s.end());
-
-    s = setupSS(pz.GetPtY());
-    const auto ptYStr = std::string(s.begin(), s.end());
-
-    auto reducedPrecZF = pz.GetZoomFactor();
-    reducedPrecZF.precisionInBits(50);
-    s = setupSS(reducedPrecZF);
-    const auto zoomFactorStr = std::string(s.begin(), s.end());
-
-    RefOrbitDetails details;
-    gFractal->GetSomeDetails(details);
-
-    const auto ActualPeriodIfAny = (details.InternalPeriodMaybeZero > 0) ? (details.InternalPeriodMaybeZero - 1) : 0;
-
-    const auto additionalDetailsStr =
-        std::string("PerturbationAlg = ") + details.PerturbationAlg + "\r\n" +
-        std::string("InternalPeriodIfAny = ") + std::to_string(details.InternalPeriodMaybeZero) + "\r\n" +
-        std::string("ActualPeriodIfAny = ") + std::to_string(ActualPeriodIfAny) + "\r\n" +
-        std::string("CompressedIters = ") + std::to_string(details.CompressedIters) + "\r\n" +
-        std::string("UncompressedIters = ") + std::to_string(details.UncompressedIters) + "\r\n" +
-        std::string("Compression ratio = ") + std::to_string((double)details.UncompressedIters / (double)details.CompressedIters) + "\r\n" +
-        std::string("Compression error exp = ") + std::to_string(details.CompressionErrorExp) + "\r\n" +
-        std::string("CompressedIntermediateIters = ") + std::to_string(details.CompressedIntermediateIters) + "\r\n" +
-        std::string("Reuse compression error exp = ") + std::to_string(details.IntermediateCompressionErrorExp) + "\r\n" +
-        std::string("Reuse compression ratio = ") + std::to_string((double)details.UncompressedIters / (double)details.CompressedIntermediateIters) + "\r\n" +
-        std::string("DeltaIntermediatePrecision = ") + std::to_string(details.DeltaIntermediatePrecision) + "\r\n" +
-        std::string("ExtraIntermediatePrecision = ") + std::to_string(details.ExtraIntermediatePrecision) + "\r\n" +
-        std::string("ZoomFactor = ") + zoomFactorStr + "\r\n";
-
-    const auto &laParameters = gFractal->GetLAParameters();
-    const auto threadingVal = laParameters.GetThreading();
-    std::string threadingStr;
-    if (threadingVal == LAParameters::LAThreadingAlgorithm::SingleThreaded) {
-        threadingStr = "Single threaded";
-    } else if (threadingVal == LAParameters::LAThreadingAlgorithm::MultiThreaded) {
-        threadingStr = "Multi threaded";
-    } else {
-        threadingStr = "Unknown";
-    }
-
-    const auto laParametersStr =
-        std::string("Detection method = ")
-        + std::to_string(laParameters.GetDetectionMethod()) + "\r\n" +
-        std::string("Threshold scale = ")
-        + std::to_string(laParameters.GetLAThresholdScaleExp()) + "\r\n" +
-        std::string("Threshold C scale = ")
-        + std::to_string(laParameters.GetLAThresholdCScaleExp()) + "\r\n" +
-        std::string("Stage 0 period detection threshold 2 = ")
-        + std::to_string(laParameters.GetStage0PeriodDetectionThreshold2Exp()) + "\r\n" +
-        std::string("Period detection threshold 2 = ")
-        + std::to_string(laParameters.GetPeriodDetectionThreshold2Exp()) + "\r\n" +
-        std::string("Stage 0 period detection threshold = ")
-        + std::to_string(laParameters.GetStage0PeriodDetectionThresholdExp()) + "\r\n" +
-        std::string("Period detection threshold = ")
-        + std::to_string(laParameters.GetPeriodDetectionThresholdExp()) + "\r\n" +
-        std::string("LA Threading: ")
-        + threadingStr + "\r\n" +
-        std::string("LA size: ")
-        + std::to_string(details.LASize) + "\r\n";
-
-    const auto benchmarkData =
-        std::string("Overall (ms) = ") + std::to_string(gFractal->GetBenchmark().m_Overall.GetDeltaInMs()) + "\r\n" +
-        std::string("Per pixel (ms) = ") + std::to_string(gFractal->GetBenchmark().m_PerPixel.GetDeltaInMs()) + "\r\n" +
-        std::string("RefOrbit save (ms) = ") + std::to_string(gFractal->GetBenchmark().m_RefOrbitSave.GetDeltaInMs()) + "\r\n" +
-        std::string("RefOrbit load (ms) = ") + std::to_string(gFractal->GetBenchmark().m_RefOrbitLoad.GetDeltaInMs()) + "\r\n" +
-        std::string("RefOrbit (ms) = ") + std::to_string(details.OrbitMilliseconds) + "\r\n" +
-        std::string("LA generation time (ms) = ") + std::to_string(details.LAMilliseconds) + "\r\n";
-
-    snprintf(
-        mem,
-        numBytes,
-        "This text is copied to clipboard.  Using \"%s\"\r\n"
-        "Antialiasing: %u\r\n"
-        "Palette depth: %u\r\n"
-        "Coordinate precision = %zu;\r\n"
-        "Center X: \"%s\"\r\n"
-        "Center Y: \"%s\"\r\n"
-        "zoomFactor \"%s\"\r\n"
-        "\r\n"
-        "LA parameters:\r\n"
-        "%s\r\n"
-        "Benchmark data:\r\n"
-        "%s\r\n"
-        "\r\n"
-        "Additional details:\r\n"
-        "%s\r\n"
-        "SetNumIterations<IterTypeFull>(%zu);\r\n",
-        gFractal->GetRenderAlgorithmName(),
-        gFractal->GetGpuAntialiasing(),
-        gFractal->GetPaletteDepth(),
-        prec,
-        ptXStr.c_str(),
-        ptYStr.c_str(),
-        zoomFactorStr.c_str(),
-        laParametersStr.c_str(),
-        benchmarkData.c_str(),
-        additionalDetailsStr.c_str(),
-        gFractal->GetNumIterations<IterTypeFull>());
-
-    const std::string stringCopy = mem;
-    std::vector<char> temp2;
-    temp2.resize(numBytes);
-
-    // Put some extra information on the clipboard.
-    snprintf(temp2.data(), numBytes,
-        "Bounding box:\r\n"
-        "minX = HighPrecision{ \"%s\" };\r\n"
-        "minY = HighPrecision{ \"%s\" };\r\n"
-        "maxX = HighPrecision{ \"%s\" };\r\n"
-        "maxY = HighPrecision{ \"%s\" };\r\n",
-        sminX.c_str(), sminY.c_str(),
-        smaxX.c_str(), smaxY.c_str());
+    std::string shortStr, longStr;
+    gFractal->GetRenderDetails(shortStr, longStr);
 
     // Append temp2 to mem without overrunning the buffer 
     // using strncat.
-    strncat(mem, temp2.data(), numBytes - stringCopy.size() - 1);
+    mem[0] = 0;
+    strncpy(mem, longStr.data(), numBytes - 1);
+
     GlobalUnlock(hData);
 
     //
@@ -1933,7 +1789,7 @@ void MainWindow::MenuGetCurPos() {
 
     CloseClipboard();
 
-    ::MessageBoxA(hWnd, stringCopy.c_str(), "", MB_OK | MB_APPLMODAL);
+    ::MessageBoxA(hWnd, shortStr.c_str(), "", MB_OK | MB_APPLMODAL);
 }
 
 void MainWindow::MenuPaletteRotation() {

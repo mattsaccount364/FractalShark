@@ -20,6 +20,7 @@ enum class TestTypeEnum {
     View5,
     View10,
     View11,
+    View27,
     ViewMax,
     ReferenceSave0,
     ReferenceSave5,
@@ -39,6 +40,7 @@ enum class TestViewEnum {
     View12 = 12,
     View13 = 13,
     View14 = 14,
+    View27 = 27,
 };
 
 template<typename Key, typename Value, size_t Size, Value MissingVal>
@@ -1373,6 +1375,7 @@ public:
             std::pair{TestTypeEnum::View5, TestViewEnum::View5},
             std::pair{TestTypeEnum::View10, TestViewEnum::View10},
             std::pair{TestTypeEnum::View11, TestViewEnum::View11},
+            std::pair{TestTypeEnum::View27, TestViewEnum::View27},
             std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
             std::pair{TestTypeEnum::ReferenceSave5, TestViewEnum::View5},
             std::pair{TestTypeEnum::ReferenceSave10, TestViewEnum::View10},

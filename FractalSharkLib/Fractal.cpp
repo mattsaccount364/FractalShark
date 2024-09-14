@@ -942,7 +942,7 @@ template void Fractal::AutoZoom<Fractal::AutoZoomHeuristic::Max>();
 // Resets the fractal to the standard view.
 // Make sure the view is square on all monitors at all weird aspect ratios.
 //////////////////////////////////////////////////////////////////////////////
-void Fractal::View(size_t view) {
+void Fractal::View(size_t view, bool includeMsgBox) {
     HighPrecision minX;
     HighPrecision minY;
     HighPrecision maxX;
@@ -1250,7 +1250,9 @@ void Fractal::View(size_t view) {
         break;
 
     case 27:
-        ::MessageBox(nullptr, L"Warning: This is a very large image.  It will take a long time to render.", L"Warning", MB_OK | MB_APPLMODAL | MB_ICONWARNING);
+        if (includeMsgBox) {
+            ::MessageBox(nullptr, L"Warning: This is a very large image.  It will take a long time to render.", L"Warning", MB_OK | MB_APPLMODAL | MB_ICONWARNING);
+        }
 
         //This text is copied to clipboard.Using "GpuHDRx2x32PerturbedRCLAv2"
         //    Antialiasing : 1
@@ -4022,6 +4024,159 @@ const LAParameters &Fractal::GetLAParameters() const {
 
 LAParameters &Fractal::GetLAParameters() {
     return m_LAParameters;
+}
+
+void Fractal::GetRenderDetails(
+    std::string &shortStr,
+    std::string &longStr) const {
+
+    HighPrecision minX, minY;
+    HighPrecision maxX, maxY;
+
+    const auto prec = GetPrecision();
+
+    minX = GetMinX();
+    minY = GetMinY();
+    maxX = GetMaxX();
+    maxY = GetMaxY();
+
+    std::stringstream ss;
+    std::string s;
+
+    const auto setupSS = [&](const HighPrecision &num) -> std::string {
+        ss.str("");
+        ss.clear();
+        ss << std::setprecision(std::numeric_limits<HighPrecision>::max_digits10);
+        ss << num;
+        return ss.str();
+        };
+
+    s = setupSS(minX);
+    const auto sminX = std::string(s.begin(), s.end());
+
+    s = setupSS(minY);
+    const auto sminY = std::string(s.begin(), s.end());
+
+    s = setupSS(maxX);
+    const auto smaxX = std::string(s.begin(), s.end());
+
+    s = setupSS(maxY);
+    const auto smaxY = std::string(s.begin(), s.end());
+
+    const PointZoomBBConverter pz{ minX, minY, maxX, maxY };
+    s = setupSS(pz.GetPtX());
+    const auto ptXStr = std::string(s.begin(), s.end());
+
+    s = setupSS(pz.GetPtY());
+    const auto ptYStr = std::string(s.begin(), s.end());
+
+    auto reducedPrecZF = pz.GetZoomFactor();
+    reducedPrecZF.precisionInBits(50);
+    s = setupSS(reducedPrecZF);
+    const auto zoomFactorStr = std::string(s.begin(), s.end());
+
+    RefOrbitDetails details;
+    GetSomeDetails(details);
+
+    const auto ActualPeriodIfAny = (details.InternalPeriodMaybeZero > 0) ? (details.InternalPeriodMaybeZero - 1) : 0;
+
+    const auto additionalDetailsStr =
+        std::string("PerturbationAlg = ") + details.PerturbationAlg + "\r\n" +
+        std::string("InternalPeriodIfAny = ") + std::to_string(details.InternalPeriodMaybeZero) + "\r\n" +
+        std::string("ActualPeriodIfAny = ") + std::to_string(ActualPeriodIfAny) + "\r\n" +
+        std::string("CompressedIters = ") + std::to_string(details.CompressedIters) + "\r\n" +
+        std::string("UncompressedIters = ") + std::to_string(details.UncompressedIters) + "\r\n" +
+        std::string("Compression ratio = ") + std::to_string((double)details.UncompressedIters / (double)details.CompressedIters) + "\r\n" +
+        std::string("Compression error exp = ") + std::to_string(details.CompressionErrorExp) + "\r\n" +
+        std::string("CompressedIntermediateIters = ") + std::to_string(details.CompressedIntermediateIters) + "\r\n" +
+        std::string("Reuse compression error exp = ") + std::to_string(details.IntermediateCompressionErrorExp) + "\r\n" +
+        std::string("Reuse compression ratio = ") + std::to_string((double)details.UncompressedIters / (double)details.CompressedIntermediateIters) + "\r\n" +
+        std::string("DeltaIntermediatePrecision = ") + std::to_string(details.DeltaIntermediatePrecision) + "\r\n" +
+        std::string("ExtraIntermediatePrecision = ") + std::to_string(details.ExtraIntermediatePrecision) + "\r\n" +
+        std::string("ZoomFactor = ") + zoomFactorStr + "\r\n";
+
+    const auto &laParameters = GetLAParameters();
+    const auto threadingVal = laParameters.GetThreading();
+    std::string threadingStr;
+    if (threadingVal == LAParameters::LAThreadingAlgorithm::SingleThreaded) {
+        threadingStr = "Single threaded";
+    } else if (threadingVal == LAParameters::LAThreadingAlgorithm::MultiThreaded) {
+        threadingStr = "Multi threaded";
+    } else {
+        threadingStr = "Unknown";
+    }
+
+    const auto laParametersStr =
+        std::string("Detection method = ")
+        + std::to_string(laParameters.GetDetectionMethod()) + "\r\n" +
+        std::string("Threshold scale = ")
+        + std::to_string(laParameters.GetLAThresholdScaleExp()) + "\r\n" +
+        std::string("Threshold C scale = ")
+        + std::to_string(laParameters.GetLAThresholdCScaleExp()) + "\r\n" +
+        std::string("Stage 0 period detection threshold 2 = ")
+        + std::to_string(laParameters.GetStage0PeriodDetectionThreshold2Exp()) + "\r\n" +
+        std::string("Period detection threshold 2 = ")
+        + std::to_string(laParameters.GetPeriodDetectionThreshold2Exp()) + "\r\n" +
+        std::string("Stage 0 period detection threshold = ")
+        + std::to_string(laParameters.GetStage0PeriodDetectionThresholdExp()) + "\r\n" +
+        std::string("Period detection threshold = ")
+        + std::to_string(laParameters.GetPeriodDetectionThresholdExp()) + "\r\n" +
+        std::string("LA Threading: ")
+        + threadingStr + "\r\n" +
+        std::string("LA size: ")
+        + std::to_string(details.LASize) + "\r\n";
+
+    const auto benchmarkData =
+        std::string("Overall (ms) = ") + std::to_string(GetBenchmark().m_Overall.GetDeltaInMs()) + "\r\n" +
+        std::string("Per pixel (ms) = ") + std::to_string(GetBenchmark().m_PerPixel.GetDeltaInMs()) + "\r\n" +
+        std::string("RefOrbit save (ms) = ") + std::to_string(GetBenchmark().m_RefOrbitSave.GetDeltaInMs()) + "\r\n" +
+        std::string("RefOrbit load (ms) = ") + std::to_string(GetBenchmark().m_RefOrbitLoad.GetDeltaInMs()) + "\r\n" +
+        std::string("RefOrbit (ms) = ") + std::to_string(details.OrbitMilliseconds) + "\r\n" +
+        std::string("LA generation time (ms) = ") + std::to_string(details.LAMilliseconds) + "\r\n";
+
+
+    shortStr = std::format(
+        "This text is copied to clipboard.  Using \"{}\"\r\n"
+        "Antialiasing: {}\r\n"
+        "Palette depth: {}\r\n"
+        "Coordinate precision = {};\r\n"
+        "Center X: \"{}\"\r\n"
+        "Center Y: \"{}\"\r\n"
+        "zoomFactor \"{}\"\r\n"
+        "\r\n"
+        "LA parameters:\r\n"
+        "{}\r\n"
+        "Benchmark data:\r\n"
+        "{}\r\n"
+        "\r\n"
+        "Additional details:\r\n"
+        "{}\r\n"
+        "SetNumIterations<IterTypeFull>({});\r\n",
+        GetRenderAlgorithmName(),
+        GetGpuAntialiasing(),
+        GetPaletteDepth(),
+        prec,
+        ptXStr.c_str(),
+        ptYStr.c_str(),
+        zoomFactorStr.c_str(),
+        laParametersStr.c_str(),
+        benchmarkData.c_str(),
+        additionalDetailsStr.c_str(),
+        GetNumIterations<IterTypeFull>());
+
+    longStr = shortStr;
+
+    // Put some extra information on the clipboard.
+    auto tempStr = std::format(
+        "Bounding box:\r\n"
+        "minX = HighPrecision{{ \"{0}\" }};\r\n"
+        "minY = HighPrecision{{ \"{1}\" }};\r\n"
+        "maxX = HighPrecision{{ \"{2}\" }};\r\n"
+        "maxY = HighPrecision{{ \"{3}\" }};\r\n",
+        sminX.c_str(), sminY.c_str(),
+        smaxX.c_str(), smaxY.c_str());
+
+    longStr += tempStr;
 }
 
 bool Fractal::IsDownControl(void) {

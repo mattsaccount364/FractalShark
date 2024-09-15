@@ -102,7 +102,7 @@ public:
     std::wstring GenBaseFilename(size_t generation_number) const;
 
     std::wstring GenBaseFilename(
-        AddPointOptions add_point_options,
+        AddPointOptions addPointOptions,
         size_t generation_number) const;
 
     // Note: This function relies on m_BaseFilename, so order
@@ -115,17 +115,17 @@ public:
         bool add_additional_suffix = false) const;
 
     // Parameters:
-    //  add_point_options - whether to save the orbit or not
+    //  addPointOptions - whether to save the orbit or not
     //  Generation - the generation number of the orbit
     //  base_filename - the base filename of the orbit, used
     //    when opening existing
     PerturbationResults(
         std::wstring base_filename,
-        AddPointOptions add_point_options,
+        AddPointOptions addPointOptions,
         size_t Generation);
 
     PerturbationResults(
-        AddPointOptions add_point_options,
+        AddPointOptions addPointOptions,
         size_t Generation);
 
     ~PerturbationResults();
@@ -148,7 +148,7 @@ public:
         requires Introspection::TestPExtras<PExtras>::value;
 
     std::unique_ptr<PerturbationResults<IterType, T, PExtras>>
-        CopyPerturbationResults(AddPointOptions add_point_options,
+        CopyPerturbationResults(AddPointOptions addPointOptions,
             size_t new_generation_number)
         requires Introspection::TestPExtras<PExtras>::value;
 
@@ -366,6 +366,8 @@ public:
         int64_t extraPrecision);
 
 private:
+    void RecreateFullOrbitVector(size_t overrideViewSize);
+
     void CloseMetaFileIfOpen() const;
 
     void MapExistingFiles()

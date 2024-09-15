@@ -50,6 +50,7 @@ private:
     constexpr static size_t MaxPath = 512;
     wchar_t m_Filename[MaxPath];
     size_t m_PhysicalMemoryCapacityKB;
+    size_t m_OverrideViewSizeBytes;
 
 public:
     GrowableVector(const GrowableVector &other) = delete;
@@ -62,21 +63,15 @@ public:
     GrowableVector();
 
     GrowableVector(
-        AddPointOptions add_point_options,
-        const wchar_t *filename);
+        AddPointOptions addPointOptions,
+        const wchar_t *filename,
+        size_t overrideViewSize);
 
     // The constructor takes the file to open or create
     // It maps enough memory to accomodate the provided orbit size.
     GrowableVector(
-        AddPointOptions add_point_options,
-        std::wstring filename);
-
-    // This one takes a filename and size and uses the file specified
-    // to back the vector.
-    GrowableVector(
-        AddPointOptions add_point_options,
-        std::wstring filename,
-        size_t initial_size);
+        AddPointOptions addPointOptions,
+        const wchar_t *filename);
 
     // The destructor closes the file and cleans up the memory.
     ~GrowableVector();

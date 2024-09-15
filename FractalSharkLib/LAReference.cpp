@@ -239,8 +239,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
     // expected work.  If the work is small, we don't want to use a lot
     // of threads.  If the work is large, we want to use a lot of threads.
     // The work is expected to be large if the number of iterations is large.
-    // constexpr size_t WorkThreshholdForThreads = 50000;
-    constexpr size_t WorkThreshholdForThreads = 5;
+    constexpr size_t WorkThreshholdForThreads = 50000;
 
     size_t ThreadCount = maxRefIteration / WorkThreshholdForThreads;
     if (ThreadCount > std::thread::hardware_concurrency()) {
@@ -381,7 +380,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
 
     for (size_t k = 0; k < ThreadCount; k++) {
         std::wstring filename = L"LAsPerThread" + std::to_wstring(k) + L".dat";
-        LAsPerThread.emplace_back(OptionsToUse, filename);
+        LAsPerThread.emplace_back(OptionsToUse, filename.c_str());
     }
 
     for (auto threadIndex = 0; threadIndex < StartIndexPromise.size(); threadIndex++) {

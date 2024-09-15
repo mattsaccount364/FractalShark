@@ -84,10 +84,10 @@ std::wstring PerturbationResults<IterType, T, PExtras>::GenBaseFilename(size_t g
 
 template<typename IterType, class T, PerturbExtras PExtras>
 std::wstring PerturbationResults<IterType, T, PExtras>::GenBaseFilename(
-    AddPointOptions add_point_options,
+    AddPointOptions addPointOptions,
     size_t generation_number) const {
 
-    if (add_point_options == AddPointOptions::DontSave) {
+    if (addPointOptions == AddPointOptions::DontSave) {
         return L"";
     }
 
@@ -125,7 +125,7 @@ std::wstring PerturbationResults<IterType, T, PExtras>::GenFilename(
 template<typename IterType, class T, PerturbExtras PExtras>
 PerturbationResults<IterType, T, PExtras>::PerturbationResults(
     std::wstring base_filename,
-    AddPointOptions add_point_options,
+    AddPointOptions addPointOptions,
     size_t Generation) :
 
     PerturbationResultsBase{ },
@@ -139,7 +139,7 @@ PerturbationResults<IterType, T, PExtras>::PerturbationResults(
     m_PeriodMaybeZero{},
     m_CompressionErrorExp{},
     m_IntermediateCompressionErrorExp{},
-    m_RefOrbitOptions{ add_point_options },
+    m_RefOrbitOptions{ addPointOptions },
     m_BaseFilename{ base_filename },
     m_MetaFileHandle{ INVALID_HANDLE_VALUE },
     m_FullOrbit{ },
@@ -155,7 +155,7 @@ PerturbationResults<IterType, T, PExtras>::PerturbationResults(
     m_DeltaPrecisionCached{},
     m_ExtraPrecisionCached{} {
 
-    if (add_point_options == AddPointOptions::OpenExistingWithSave) {
+    if (addPointOptions == AddPointOptions::OpenExistingWithSave) {
         return;
     }
 
@@ -166,11 +166,11 @@ PerturbationResults<IterType, T, PExtras>::PerturbationResults(
 
 template<typename IterType, class T, PerturbExtras PExtras>
 PerturbationResults<IterType, T, PExtras>::PerturbationResults(
-    AddPointOptions add_point_options,
+    AddPointOptions addPointOptions,
     size_t Generation)
     : PerturbationResults{
-        GenBaseFilename(add_point_options, Generation),
-        add_point_options,
+        GenBaseFilename(addPointOptions, Generation),
+        addPointOptions,
         Generation } {
 }
 
@@ -222,12 +222,12 @@ PerturbationResults<IterType, T, PExtras>::GetLaReference() const
 template<typename IterType, class T, PerturbExtras PExtras>
 std::unique_ptr<PerturbationResults<IterType, T, PExtras>>
 PerturbationResults<IterType, T, PExtras>::CopyPerturbationResults(
-    AddPointOptions add_point_options,
+    AddPointOptions addPointOptions,
     size_t new_generation_number)
     requires Introspection::TestPExtras<PExtras>::value {
 
     auto new_ptr = std::make_unique<PerturbationResults<IterType, T, PExtras>>(
-        add_point_options,
+        addPointOptions,
         new_generation_number);
     new_ptr->CopyPerturbationResults<true, T, PExtras>(*this);
     return new_ptr;
@@ -389,7 +389,9 @@ InstantiateCopyPerturbationResultsNoLA(double, HDRFloat<double>, PerturbExtras::
 
 template<typename IterType, class T, PerturbExtras PExtras>
 template<PerturbExtras OtherBad>
-void PerturbationResults<IterType, T, PExtras>::CopySettingsWithoutOrbit(const PerturbationResults<IterType, T, OtherBad> &other) {
+void PerturbationResults<IterType, T, PExtras>::CopySettingsWithoutOrbit(
+    const PerturbationResults<IterType, T, OtherBad> &other) {
+
     this->m_OrbitX = other.GetHiX();
     this->m_OrbitY = other.GetHiY();
     this->m_ZoomFactor = other.GetHiZoomFactor();
@@ -408,7 +410,7 @@ void PerturbationResults<IterType, T, PExtras>::CopySettingsWithoutOrbit(const P
     m_BaseFilename = GenBaseFilename(m_GenerationNumber);
     m_MetaFileHandle = INVALID_HANDLE_VALUE;
 
-    m_FullOrbit = {}; // Note: not copied
+    m_FullOrbit = { }; // Note: not copied
     m_UncompressedItersInOrbit = {}; // Note: not copied
 
     // compression - don't copy LA data.  Regenerate if needed.
@@ -425,6 +427,18 @@ void PerturbationResults<IterType, T, PExtras>::CopySettingsWithoutOrbit(const P
 
     m_DeltaPrecisionCached = other.m_DeltaPrecisionCached;
     m_ExtraPrecisionCached = other.m_ExtraPrecisionCached;
+}
+
+template<typename IterType, class T, PerturbExtras PExtras>
+void PerturbationResults<IterType, T, PExtras>::RecreateFullOrbitVector(
+    size_t overrideViewsize) {
+
+    // This is a specific scenario: we support a very large temp file for Imagina orbit
+    // decompression.
+    m_FullOrbit = {
+        AddPointOptions::EnableWithoutSave,
+        GenFilename(GrowableVectorTypes::GPUReferenceIter).c_str(),
+        overrideViewsize };
 }
 
 template<typename IterType, class T, PerturbExtras PExtras>
@@ -1568,6 +1582,14 @@ PerturbationResults<IterType, T, PExtras>::DecompressMax(
 
     const auto targetUncompressedIters = GetCountOrbitEntries(); //decompressed->GetCountOrbitEntries();
     assert(decompressed->m_UncompressedItersInOrbit == 0);
+
+    // Round ViewSizeFromCountBytes to PAGE_SIZE:
+    static constexpr auto PAGE_SIZE = 0x1000;
+    size_t ViewSizeFromCountBytes =
+        targetUncompressedIters * sizeof(GPUReferenceIter<T, PExtras>);
+    ViewSizeFromCountBytes = (ViewSizeFromCountBytes + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+
+    decompressed->RecreateFullOrbitVector(ViewSizeFromCountBytes);
 
     std::vector<IterTypeFull> countsPerIndex;
     std::vector<IterTypeFull> indexTouched;

@@ -72,38 +72,38 @@ public:
 
     LAReference(
         LAParameters la_parameters,
-        AddPointOptions add_point_options,
+        AddPointOptions addPointOptions,
         std::wstring las_filename,
         std::wstring la_stages_filename)
         requires (Introspection::TestPExtras<PExtras>::value)
         :
-        m_AddPointOptions(add_point_options),
+        m_AddPointOptions(addPointOptions),
         m_UseAT{},
         m_AT{},
         m_LAStageCount{},
         m_LAParameters{ la_parameters },
         m_IsValid{},
-        m_LAs(add_point_options, las_filename.c_str()),
-        m_LAStages(add_point_options, la_stages_filename.c_str()),
+        m_LAs(addPointOptions, las_filename.c_str()),
+        m_LAStages(addPointOptions, la_stages_filename.c_str()),
         m_BenchmarkDataLA{} {
 
         static_assert(PExtras != PerturbExtras::MaxCompression, "MaxCompression not supported in LAReference");
     }
 
     LAReference(
-        AddPointOptions add_point_options,
+        AddPointOptions addPointOptions,
         std::wstring las_filename,
         std::wstring la_stages_filename)
         requires (Introspection::TestPExtras<PExtras>::value)
         :
-        m_AddPointOptions(add_point_options),
+        m_AddPointOptions(addPointOptions),
         m_UseAT{},
         m_AT{},
         m_LAStageCount{},
         m_LAParameters{ },
         m_IsValid{},
-        m_LAs(add_point_options, las_filename.c_str()),
-        m_LAStages(add_point_options, la_stages_filename.c_str()),
+        m_LAs(addPointOptions, las_filename.c_str()),
+        m_LAStages(addPointOptions, la_stages_filename.c_str()),
         m_BenchmarkDataLA{} {
 
         static_assert(PExtras != PerturbExtras::MaxCompression, "MaxCompression not supported in LAReference");
@@ -139,10 +139,10 @@ public:
         };
 
         {
-            std::string add_point_options;
+            std::string addPointOptions;
             metafile >> descriptor_string_junk;
-            metafile >> add_point_options;
-            m_AddPointOptions = convert.template operator() < AddPointOptions > (add_point_options);
+            metafile >> addPointOptions;
+            m_AddPointOptions = convert.template operator() < AddPointOptions > (addPointOptions);
         }
 
         {

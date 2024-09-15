@@ -12,6 +12,8 @@ public:
     CrummyTest(Fractal &fractal);
 
     void TestAll();
+
+    // TestAll includes these:
     void TestBasic();
     void TestReferenceSave();
     void TestVariedCompression();
@@ -19,6 +21,8 @@ public:
     void TestStringConversion();
     void TestPerturbedPerturb();
     void TestGrowableVector();
+
+    // TestAll does not include:
     void TestReallyHardView27();
 
     void Benchmark(RefOrbitCalc::PerturbationResultType type);

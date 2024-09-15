@@ -907,6 +907,13 @@ LRESULT MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam) {
             break;
         }
 
+        case IDM_TEST_27:
+        {
+            CrummyTest test{ *gFractal };
+            test.TestReallyHardView27();
+            break;
+        }
+
         // Increase the number of iterations we are using.
         // This will slow down rendering, but image quality
         // will be improved.

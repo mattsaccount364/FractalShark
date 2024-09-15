@@ -121,7 +121,8 @@ GrowableVector<EltT>::GrowableVector(GrowableVector<EltT> &&other) noexcept :
     m_Data{ other.m_Data },
     m_AddPointOptions{ other.m_AddPointOptions },
     m_Filename{},
-    m_PhysicalMemoryCapacityKB{ other.m_PhysicalMemoryCapacityKB } {
+    m_PhysicalMemoryCapacityKB{ other.m_PhysicalMemoryCapacityKB },
+    m_OverrideViewSizeBytes{ other.m_OverrideViewSizeBytes } {
 
     wcscpy_s(m_Filename, other.m_Filename);
 
@@ -133,6 +134,7 @@ GrowableVector<EltT>::GrowableVector(GrowableVector<EltT> &&other) noexcept :
     other.m_AddPointOptions = AddPointOptions::DontSave;
     memset(other.m_Filename, 0, sizeof(other.m_Filename));
     other.m_PhysicalMemoryCapacityKB = 0;
+    other.m_OverrideViewSizeBytes = 0;
 }
 
 template<class EltT>
@@ -151,6 +153,7 @@ GrowableVector<EltT> &GrowableVector<EltT>::operator=(GrowableVector<EltT> &&oth
     m_AddPointOptions = other.m_AddPointOptions;
     wcscpy_s(m_Filename, other.m_Filename);
     m_PhysicalMemoryCapacityKB = other.m_PhysicalMemoryCapacityKB;
+    m_OverrideViewSizeBytes = other.m_OverrideViewSizeBytes;
 
     other.m_FileHandle = nullptr;
     other.m_MappedFile = nullptr;
@@ -160,6 +163,7 @@ GrowableVector<EltT> &GrowableVector<EltT>::operator=(GrowableVector<EltT> &&oth
     other.m_AddPointOptions = AddPointOptions::DontSave;
     memset(other.m_Filename, 0, sizeof(other.m_Filename));
     other.m_PhysicalMemoryCapacityKB = 0;
+    other.m_OverrideViewSizeBytes = 0;
 
     return *this;
 }
@@ -172,16 +176,18 @@ GrowableVector<EltT>::GrowableVector()
 
 template<class EltT>
 GrowableVector<EltT>::GrowableVector(
-    AddPointOptions add_point_options,
-    const wchar_t *filename)
+    AddPointOptions addPointOptions,
+    const wchar_t *filename,
+    size_t overrideViewSize)
     : m_FileHandle{},
     m_MappedFile{},
     m_UsedSizeInElts{},
     m_CapacityInElts{},
     m_Data{},
-    m_AddPointOptions{ add_point_options },
+    m_AddPointOptions{ addPointOptions },
     m_Filename{},
-    m_PhysicalMemoryCapacityKB{} {
+    m_PhysicalMemoryCapacityKB{},
+    m_OverrideViewSizeBytes{ overrideViewSize } {
 
     wcscpy_s(m_Filename, filename);
 
@@ -198,26 +204,15 @@ GrowableVector<EltT>::GrowableVector(
     }
 }
 
-
+// This one takes a filename and size and uses the file specified
+// to back the vector.
 // The constructor takes the file to open or create
 // It maps enough memory to accomodate the provided orbit size.
 template<class EltT>
 GrowableVector<EltT>::GrowableVector(
-    AddPointOptions add_point_options,
-    std::wstring filename)
-    : GrowableVector{ add_point_options, filename.c_str() } {
-}
-
-// This one takes a filename and size and uses the file specified
-// to back the vector.
-template<class EltT>
-GrowableVector<EltT>::GrowableVector(
-    AddPointOptions add_point_options,
-    std::wstring filename,
-    size_t initial_size)
-    : GrowableVector{ add_point_options, filename } {
-    m_UsedSizeInElts = initial_size;
-    m_CapacityInElts = initial_size;
+    AddPointOptions addPointOptions,
+    const wchar_t *filename)
+    : GrowableVector{ addPointOptions, filename, 0 } {
 }
 
 template<class EltT>
@@ -636,7 +631,11 @@ void GrowableVector<EltT>::MutableFileCommit(size_t capacity) {
 
     SIZE_T viewSize;
     if (m_AddPointOptions != AddPointOptions::OpenExistingWithSave) {
-        viewSize = m_PhysicalMemoryCapacityKB * 1024;
+        if (m_OverrideViewSizeBytes > 0) {
+            viewSize = m_OverrideViewSizeBytes;
+        } else {
+            viewSize = m_PhysicalMemoryCapacityKB * 1024;
+        }
     } else {
         viewSize = existing_file_size.QuadPart;
     }
@@ -692,7 +691,11 @@ void GrowableVector<EltT>::MutableAnonymousCommit(size_t capacity) {
     // Returned value is in KB so convert to bytes.
     if (m_Data == nullptr) {
         assert(UsingAnonymous());
-        MutableReserve(m_PhysicalMemoryCapacityKB * 1024);
+        if (m_OverrideViewSizeBytes > 0) {
+            MutableReserve(m_OverrideViewSizeBytes);
+        } else {
+            MutableReserve(m_PhysicalMemoryCapacityKB * 1024);
+        }
     }
 
     if (capacity > m_CapacityInElts) {

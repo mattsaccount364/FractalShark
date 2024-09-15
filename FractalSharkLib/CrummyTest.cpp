@@ -13,14 +13,13 @@ CrummyTest::CrummyTest(Fractal &fractal) : m_Fractal(fractal) {
 }
 
 void CrummyTest::TestAll() {
-    //TestBasic();
-    //TestReferenceSave();
-    //TestVariedCompression();
-    //TestImaginaLoad();
-    //TestStringConversion();
-    //TestPerturbedPerturb();
-    //TestGrowableVector();
-    TestReallyHardView27();
+    TestBasic();
+    TestReferenceSave();
+    TestVariedCompression();
+    TestImaginaLoad();
+    TestStringConversion();
+    TestPerturbedPerturb();
+    TestGrowableVector();
 }
 
 void CrummyTest::TestPreReq(const wchar_t *dirName) {
@@ -935,6 +934,12 @@ void CrummyTest::TestReallyHardView27() {
 
     size_t testIndex = 0;
 
+    static constexpr auto StartError = 18;
+    static constexpr auto EndError = 22;
+
+    static constexpr auto TestView = TestTypeEnum::View27;
+    //static constexpr auto TestView = TestTypeEnum::View5;
+
     auto loopAll = [&]<TestTypeEnum viewEnum>(
         auto algToTest) {
 
@@ -942,7 +947,10 @@ void CrummyTest::TestReallyHardView27() {
         if constexpr (view != TestViewEnum::Disabled) {
             const auto viewIndex = static_cast<size_t>(view);
 
-            for (int32_t compressionErrorExp = 18; compressionErrorExp <= 22; compressionErrorExp++) {
+            for (int32_t compressionErrorExp = StartError;
+                compressionErrorExp <= EndError;
+                compressionErrorExp++) {
+
                 m_Fractal.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
                 const auto iterType = IterTypeEnum::Bits64;
                 m_Fractal.SetIterType(iterType);
@@ -951,7 +959,6 @@ void CrummyTest::TestReallyHardView27() {
                 m_Fractal.View(viewIndex, false);
                 m_Fractal.SetCompressionErrorExp(Fractal::CompressionError::Low, compressionErrorExp);
                 m_Fractal.GetLAParameters().SetDefaults(LAParameters::LADefaults::MaxPerf);
-                m_Fractal.SetNumIterations<IterTypeFull>(50'000'000'000'000ull);
                 m_Fractal.ForceRecalc();
                 m_Fractal.CalcFractal(false);
 
@@ -988,6 +995,18 @@ void CrummyTest::TestReallyHardView27() {
                 file << renderDetailsShort;
                 file.close();
 
+                const auto maxImaginaFilename =
+                    GenFilenameW(
+                        testIndex,
+                        viewIndex,
+                        GetRenderAlgorithmTupleEntry(algToTest.Algorithm),
+                        compressionErrorExp,
+                        iterType,
+                        L"MaxImagina",
+                        dirName,
+                        name) + L".im";
+                m_Fractal.SaveRefOrbit(CompressToDisk::MaxCompressionImagina, maxImaginaFilename);
+
                 testIndex++;
             }
         }
@@ -998,7 +1017,7 @@ void CrummyTest::TestReallyHardView27() {
     //    loopAll.operator() < TestTypeEnum::View5 > (alg);
     //    });
 
-    loopAll.operator() < TestTypeEnum::View27 > (
+    loopAll.operator() < TestView > (
         RenderAlgorithmCompileTime<RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2>{});
 }
 

@@ -249,7 +249,11 @@ BEGIN
             MENUITEM "HDRx2x32 GPU - LAv2",         IDM_ALG_GPU_HDR_2X32_PERTURB_LAV2
             MENUITEM "HDRx64 GPU - LAv2",           IDM_ALG_GPU_HDR_64_PERTURB_LAV2
             MENUITEM SEPARATOR
-            MENUITEM "Run Basic Test (saves files in local dir)", IDM_BASICTEST
+            POPUP "Tests"
+            BEGIN
+                MENUITEM "Run Basic Test (saves files in local dir)", IDM_BASICTEST
+                MENUITEM "Run View #27 test",           IDM_TEST_27
+            END
         END
         POPUP "Iterations"
         BEGIN
@@ -403,12 +407,23 @@ IDB_PNG_SPLASH1         PNG                     "..\\Pics\\FractalShark.png"
 
 IDB_PNG_SPLASH2         PNG                     "..\\Pics\\Chatgpt Fractal Shark.png"
 
-IDR_IMAGINA_VIEW0       SHARK_DATA                  "..\\FromImagina\\View0.im"
-IDR_IMAGINA_VIEW5       SHARK_DATA                  "..\\FromImagina\\View5.im"
-IDR_IMAGINA_VIEW14      SHARK_DATA                  "..\\FromImagina\\View14.im"
-IDR_IMAGINA_VIEW15      SHARK_DATA                  "..\\FromImagina\\View15.im"
-IDR_IMAGINA_VIEW19      SHARK_DATA                  "..\\FromImagina\\View19.im"
-IDR_IMAGINA_VIEWEASY1   SHARK_DATA                  "..\\FromImagina\\ViewEasy1.im"
+
+/////////////////////////////////////////////////////////////////////////////
+//
+// SHARK_DATA
+//
+
+IDR_IMAGINA_VIEW0       SHARK_DATA              "..\\FromImagina\\View0.im"
+
+IDR_IMAGINA_VIEW5       SHARK_DATA              "..\\FromImagina\\View5.im"
+
+IDR_IMAGINA_VIEW14      SHARK_DATA              "..\\FromImagina\\View14.im"
+
+IDR_IMAGINA_VIEW15      SHARK_DATA              "..\\FromImagina\\View15.im"
+
+IDR_IMAGINA_VIEW19      SHARK_DATA              "..\\FromImagina\\View19.im"
+
+IDR_IMAGINA_VIEWEASY1   SHARK_DATA              "..\\FromImagina\\ViewEasy1.im"
 
 
 /////////////////////////////////////////////////////////////////////////////

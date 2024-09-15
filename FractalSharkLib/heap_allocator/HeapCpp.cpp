@@ -137,6 +137,9 @@ void HeapCpp::Init() {
 // ========================================================
 
 void *HeapCpp::Allocate(size_t size) {
+    // We'll assume single-threaded initialization and that no races
+    // occur here.  If you want to use this in a multi-threaded environment,
+    // you'll need to add a mutex here.
     if (!Initialized) {
         VectorStaticInit();
         InitGlobalHeap();

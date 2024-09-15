@@ -543,7 +543,7 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
         }
 
         results->CompleteResults<Reuse>(bumpAllocator->GetAllocated(1));
-        m_GuessReserveSize = results->GetCountOrbitEntries();
+        m_GuessReserveSize = results->GetCompressedOrUncompressedOrbitSize();
     } // End of scope for allocators.
 
     ShutdownAllocatorsIfNeeded<Reuse>(boundedAllocator, bumpAllocator);
@@ -893,7 +893,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointSTReuse(HighPrecision cx, HighPr
     mpf_clear(temp2_mpf);
 
     results->CompleteResults<ReuseMode::DontSaveForReuse>(nullptr);
-    m_GuessReserveSize = results->GetCountOrbitEntries();
+    m_GuessReserveSize = results->GetCompressedOrUncompressedOrbitSize();
 
     return true;
 }
@@ -1473,7 +1473,7 @@ bool RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(HighPrecision cx, HighP
     mpf_clear(DeltaSubNY);
 
     results->CompleteResults<ReuseMode::DontSaveForReuse>(nullptr);
-    m_GuessReserveSize = results->GetCountOrbitEntries();
+    m_GuessReserveSize = results->GetCompressedOrUncompressedOrbitSize();
 
     return true;
 }
@@ -2072,7 +2072,7 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
             }
 
             results->CompleteResults<Reuse>(std::move(reusedAllocator));
-            m_GuessReserveSize = results->GetCountOrbitEntries();
+            m_GuessReserveSize = results->GetCompressedOrUncompressedOrbitSize();
     } // End of scope for boundedAllocator and bumpAllocator
 
     ShutdownAllocatorsIfNeeded<Reuse>(boundedAllocator, bumpAllocator);

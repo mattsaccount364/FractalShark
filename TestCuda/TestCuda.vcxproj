@@ -85,10 +85,37 @@
     <CudaCompile>
       <TargetMachinePlatform>64</TargetMachinePlatform>
       <Include>..\mpir\lib\x64\Release;</Include>
+      <ExtensibleWholeProgramCompilation>true</ExtensibleWholeProgramCompilation>
+      <GenerateLineInfo>true</GenerateLineInfo>
+      <CodeGeneration>compute_52,sm_52;compute_60,sm_60;compute_70,sm_70;compute_80,sm_80;compute_86,sm_86;compute_89,sm_89;compute_90,sm_90;compute_90a,sm_90a;</CodeGeneration>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <CudaCompile Include="TestCuda.cu" />
+    <CudaCompile Include="HpGpu.cu" />
+    <CudaCompile Include="Multiply.cu" />
+    <CudaCompile Include="NullKernel.cu" />
+    <CudaCompile Include="Add.cu" />
+    <CudaCompile Include="MainTestCuda.cu" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="BenchmarkTimer.h" />
+    <ClInclude Include="Conversion.cuh" />
+    <ClInclude Include="HpGpu.cuh" />
+    <ClInclude Include="Multiply.cuh" />
+    <ClInclude Include="NullKernel.cuh" />
+    <ClInclude Include="Add.cuh" />
+    <ClInclude Include="TestTracker.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <CudaCompile Include="BenchmarkTimer.cu">
+      <FileType>Document</FileType>
+    </CudaCompile>
+    <CudaCompile Include="Conversion.cu">
+      <FileType>Document</FileType>
+    </CudaCompile>
+    <CudaCompile Include="TestTracker.cu">
+      <FileType>Document</FileType>
+    </CudaCompile>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

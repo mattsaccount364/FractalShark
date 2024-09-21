@@ -34,11 +34,38 @@ static HeapCpp globalHeap;
 
 void VectorStaticInit();
 
+// Add this function to enable large pages
+BOOL EnableLargePageSupport() {
+    HANDLE hToken;
+    TOKEN_PRIVILEGES tp;
+
+    // Open the current process token
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken)) {
+        return FALSE;
+    }
+
+    // Get the LUID for the "Lock Pages in Memory" privilege
+    LookupPrivilegeValue(NULL, SE_LOCK_MEMORY_NAME, &tp.Privileges[0].Luid);
+
+    tp.PrivilegeCount = 1;
+    tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+    // Enable the privilege
+    AdjustTokenPrivileges(hToken, FALSE, &tp, 0, (PTOKEN_PRIVILEGES)NULL, 0);
+
+    CloseHandle(hToken);
+
+    return (GetLastError() == ERROR_SUCCESS);
+}
+
+
 void HeapCpp::InitGlobalHeap() {
     // Initialize the global heap
     if (globalHeap.Initialized) {
         return;
     }
+
+    EnableLargePageSupport();
 
     // Note: sprintf_s etc use heap allocations in debug mode, so we can't use them here.
     static_assert(sizeof(GrowableVector<uint8_t>) <= GrowableVectorSize);

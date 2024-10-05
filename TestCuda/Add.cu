@@ -3,6 +3,7 @@
 #include "HpGpu.cuh"
 #include "BenchmarkTimer.h"
 #include "TestTracker.h"
+#include "Tests.cuh"
 
 #include <iostream>
 #include <vector>
@@ -14,634 +15,580 @@
 #include <algorithm>
 #include <assert.h>
 
-static TestTracker Tests;
-static constexpr int NUM_ITER = 1000;
+#include <cooperative_groups.h>
 
+
+namespace cg = cooperative_groups;
+
+__device__ void BlellochScanWarp1(uint32_t *carryBits, uint32_t *scanResults, int n) {
+    const uint32_t laneId = threadIdx.x % warpSize;
+    const uint32_t warpMask = __activemask();
+
+    // Each thread loads its carry-out bit
+    uint32_t carryContinue = (laneId < n) ? carryBits[laneId] : 1; // Initialize to 1 if out of bounds
+
+    // Compute the inclusive scan with AND operator
+    uint32_t cumulativeCarryContinue = carryContinue;
+
+    // Perform the inclusive scan
+#pragma unroll
+    for (int offset = 1; offset < warpSize; offset *= 2) {
+        uint32_t neighborCarry = __shfl_up_sync(warpMask, cumulativeCarryContinue, offset);
+        if (laneId >= offset) {
+            cumulativeCarryContinue &= neighborCarry;
+        }
+    }
+
+    // All threads call __shfl_up_sync unconditionally
+    uint32_t temp = __shfl_up_sync(warpMask, cumulativeCarryContinue, 1);
+    uint32_t carryIn;
+
+    // Determine carry-in based on laneId
+    if (laneId > 0) {
+        carryIn = temp;
+    } else {
+        carryIn = 0; // First thread has carry-in zero
+    }
+
+    // Write carry-in to scanResults
+    if (laneId < n) {
+        scanResults[laneId] = carryIn;
+    }
+}
+
+// input = [0, 1, 0, 0]
+// The output[0, 0, 1, 1] from the BlellochScanWarp function is correct for an exclusive prefix sum of your input[0, 1, 0, 0].
+// If your application requires the output[0, 1, 1, 1], you should use an inclusive prefix sum.
+__device__ void BlellochScanWarp(uint32_t * input, uint32_t * output, int n) {
+    uint32_t val = 0;
+    int lane = threadIdx.x; // lane index within the warp (since ThreadsPerBlock == warpSize)
+    uint32_t warp_mask = __ballot_sync(0xFFFFFFFF, lane < n); // Active threads in the warp
+
+    // Load the input value for each thread
+    val = (lane < n) ? input[lane] : 0;
+
+    // Perform inclusive scan using warp-level shuffles
+#pragma unroll
+    for (int offset = 1; offset < 32; offset <<= 1) {
+        uint32_t n = __shfl_up_sync(warp_mask, val, offset);
+        if (lane >= offset) {
+            val += n;
+        }
+    }
+
+    // Convert inclusive scan result to exclusive scan result
+    uint32_t scan_res = __shfl_up_sync(warp_mask, val, 1);
+    if (lane == 0) {
+        scan_res = 0;
+    }
+
+    // Write the result to the output array
+    if (lane < n) {
+        output[lane] = scan_res;
+    }
+}
+
+// Device function to compute carry-in signals by shifting carry-out signals right by one
+__device__ void ComputeCarryInWarp(
+    const uint32_t *carryOuts, // Input carry-out array
+    uint32_t *carryIn,         // Output carry-in array
+    int n) {                   // Number of digits
+
+    int lane = threadIdx.x; // Thread index within the warp
+    unsigned int mask = 0xFFFFFFFF; // Full mask for synchronization
+
+    // Load the carry-out value for this digit
+    uint32_t carry_out = (lane < n) ? carryOuts[lane] : 0;
+
+    // Shift carry-out values up by one to compute carry-in
+    uint32_t shifted_carry = __shfl_up_sync(mask, carry_out, 1);
+
+    // The first digit has no carry-in
+    if (lane == 0) {
+        shifted_carry = 0;
+    }
+
+    // Store the carry-in value
+    if (lane < n) {
+        carryIn[lane] = shifted_carry;
+    }
+}
+
+// Device function to compute carry-in signals across warps using statically allocated shared memory
+__device__ void ComputeCarryIn(
+    const uint32_t *carryOuts, // Input carry-out array
+    uint32_t *carryIn,         // Output carry-in array
+    int n,                     // Number of digits
+    uint32_t *sharedCarryOut   // Statically allocated sharedCarryOut array (size ThreadsPerBlock)
+) {
+    int tid = threadIdx.x;
+
+    // Step 1: Store carryOuts into shared memory
+    if (tid < n) {
+        sharedCarryOut[tid] = carryOuts[tid];
+    }
+
+    // Ensure all carryOuts are written before proceeding
+    __syncthreads();
+
+    // Step 2: Compute carryIn
+    if (tid < n) {
+        if (tid == 0) {
+            // No carry-in for the first digit
+            carryIn[tid] = 0;
+        } else {
+            // Carry-in is the carry-out from the previous digit
+            carryIn[tid] = sharedCarryOut[tid - 1];
+        }
+    }
+
+    // No need for further synchronization as carryIn is now computed
+}
+
+// Device function to compute carry-in signals across warps using statically allocated shared memory
+__device__ void ComputeCarryInDecider(
+    const uint32_t *carryOuts, // Input carry-out array
+    uint32_t *carryIn,         // Output carry-in array
+    int n,                     // Number of digits
+    uint32_t *sharedCarryOut   // Statically allocated sharedCarryOut array (size ThreadsPerBlock)
+) {
+    if constexpr (ThreadsPerBlock <= 32) {
+        ComputeCarryInWarp(carryOuts, carryIn, n);
+    } else {
+        ComputeCarryIn(carryOuts, carryIn, n, sharedCarryOut);
+    }
+}
+
+__device__ void InclusiveBlellochScan(uint32_t *data, uint32_t *scanResults, int n) {
+    __shared__ uint32_t temp[ThreadsPerBlock]; // Shared memory of size n
+
+    int thid = threadIdx.x;
+    temp[thid] = data[thid];
+    __syncthreads();
+
+    // Upsweep phase
+    for (int offset = 1; offset < n; offset *= 2) {
+        if (thid >= offset) {
+            temp[thid] += temp[thid - offset];
+        }
+        __syncthreads();
+    }
+
+    // No need to clear the last element
+
+    // Downsweep phase (not required for inclusive scan)
+    // Copy the results
+    scanResults[thid] = temp[thid];
+}
+
+__device__ uint32_t ShiftRight(uint32_t *digits, int shiftBits, int idx) {
+    int shiftWords = shiftBits / 32;
+    int shiftBitsMod = shiftBits % 32;
+    uint32_t lower = 0, upper = 0;
+    int srcIdx = idx + shiftWords;
+    const int numDigits = HpGpu::NumUint32;
+    if (srcIdx < numDigits) {
+        lower = digits[srcIdx];
+    }
+    if (srcIdx + 1 < numDigits) {
+        upper = digits[srcIdx + 1];
+    }
+    if (shiftBitsMod == 0) {
+        return lower;
+    } else {
+        return (lower >> shiftBitsMod) | (upper << (32 - shiftBitsMod));
+    }
+}
+
+// Device function to perform addition/subtraction with carry handling using Blelloch scan and static shared memory
 __device__ void AddHelper(
     HpGpu *A,
     HpGpu *B,
-    HpGpu *Out) {
+    HpGpu *Out,
+    GlobalAddBlockData *globalData,
+    CarryInfo *carryOuts,        // Array to store carry-out for each block
+    uint32_t *cumulativeCarries, // Array to store cumulative carries
+    cg::grid_group grid,
+    int numBlocks) {
 
-    const int idx = threadIdx.x;
     const int numDigits = HpGpu::NumUint32;
+    const int tid = threadIdx.x;
+    const int blockId = blockIdx.x;
 
-    // Shared memory for intermediate results
-    __shared__ uint32_t tempSum[HpGpu::NumUint32];
-    __shared__ uint32_t carryBits[HpGpu::NumUint32]; // No need for +1
+    // Determine the range of digits this block will handle
+    const int digitsPerBlock = (numDigits + numBlocks - 1) / numBlocks;
+    const int startDigit = blockId * digitsPerBlock;
+    const int endDigit = min(startDigit + digitsPerBlock, numDigits);
+    const int digitsInBlock = endDigit - startDigit;
+
+    // Static shared memory allocation based on predefined maximums
+    __shared__ uint32_t alignedA_static[ThreadsPerBlock];
+    __shared__ uint32_t alignedB_static[ThreadsPerBlock];
+    __shared__ uint32_t tempSum_static[ThreadsPerBlock];
+    __shared__ uint32_t carryBits_static[ThreadsPerBlock];
+    __shared__ uint32_t scanResults_static[ThreadsPerBlock];
+    __shared__ uint32_t sharedCarryOut[ThreadsPerBlock];        // Shared carry-out for ComputeCarryIn
+
+    // Additional shared variables
     __shared__ bool isAddition;
     __shared__ bool AIsBiggerExponent;
     __shared__ bool AIsBiggerMagnitude;
     __shared__ int32_t outExponent;
     __shared__ bool resultIsZero;
 
-    // Step 1: Exponent Alignment
-    if (idx == 0) {
+    // Phase 1: Exponent Alignment
+    if (tid == 0) {
         int32_t expDiff = A->Exponent - B->Exponent;
-        AIsBiggerExponent = expDiff >= 0;
+        AIsBiggerExponent = (expDiff >= 0);
         outExponent = AIsBiggerExponent ? A->Exponent : B->Exponent;
         isAddition = (A->IsNegative == B->IsNegative);
+        resultIsZero = false; // Initialize resultIsZero
+        AIsBiggerMagnitude = true; // Default assumption
     }
-    __syncthreads();
-
-    // Shift digits to align exponents
-    __shared__ uint32_t alignedA[HpGpu::NumUint32];
-    __shared__ uint32_t alignedB[HpGpu::NumUint32];
+    __syncthreads();  // Synchronize all threads in the grid
 
     // Initialize aligned digits to zero
-    if (idx < numDigits) {
-        alignedA[idx] = 0;
-        alignedB[idx] = 0;
+    for (int i = tid; i < digitsInBlock; i += ThreadsPerBlock) {
+        alignedA_static[i] = 0;
+        alignedB_static[i] = 0;
     }
-    __syncthreads();
+    __syncthreads();  // Synchronize within the block after initialization
 
-    // Perform shifting
+    // Perform shifting based on exponent difference
     int shiftBits = abs(A->Exponent - B->Exponent);
-    int shiftWords = shiftBits / 32;
-    int shiftBitsMod = shiftBits % 32;
 
-    if (idx < numDigits) {
-        if (AIsBiggerExponent) {
-            // Shift B right
-            if (idx + shiftWords < numDigits) {
-                uint32_t lower = B->Digits[idx + shiftWords];
-                uint32_t upper = (idx + shiftWords + 1 < numDigits) ? B->Digits[idx + shiftWords + 1] : 0;
-                alignedB[idx] = (shiftBitsMod == 0) ? lower : (lower >> shiftBitsMod) | (upper << (32 - shiftBitsMod));
-            }
-            alignedA[idx] = A->Digits[idx];
-        } else {
-            // Shift A right
-            if (idx + shiftWords < numDigits) {
-                uint32_t lower = A->Digits[idx + shiftWords];
-                uint32_t upper = (idx + shiftWords + 1 < numDigits) ? A->Digits[idx + shiftWords + 1] : 0;
-                alignedA[idx] = (shiftBitsMod == 0) ? lower : (lower >> shiftBitsMod) | (upper << (32 - shiftBitsMod));
-            }
-            alignedB[idx] = B->Digits[idx];
-        }
-    }
-    __syncthreads();
-
-    // Step 2: Compare Magnitudes if necessary
-    resultIsZero = false;
-    if (!isAddition && idx == 0) {
-        // For subtraction, compare magnitudes
-        AIsBiggerMagnitude = false;
-        resultIsZero = true;
-        for (int i = numDigits - 1; i >= 0; --i) {
-            if (alignedA[i] > alignedB[i]) {
-                AIsBiggerMagnitude = true;
-                resultIsZero = false;
-                break;
-            } else if (alignedA[i] < alignedB[i]) {
-                AIsBiggerMagnitude = false;
-                resultIsZero = false;
-                break;
-            }
-            // If equal, continue to next digit
-        }
-        if (resultIsZero) {
-            // The numbers are equal in magnitude
-            for (int i = 0; i < numDigits; ++i) {
-                Out->Digits[i] = 0;
-            }
-            Out->IsNegative = false;
-            Out->Exponent = 0;
-        }
-    }
-    __syncthreads();
-
-    if (!resultIsZero) {
-        // Step 3: Perform Addition or Subtraction
-        uint64_t fullSum = 0;
-
-        if (isAddition) {
-            // Perform addition
-            fullSum = (uint64_t)alignedA[idx] + (uint64_t)alignedB[idx];
-            tempSum[idx] = (uint32_t)(fullSum & 0xFFFFFFFF);
-            carryBits[idx] = (uint32_t)(fullSum >> 32);
-        } else {
-            // Perform subtraction: larger magnitude minus smaller magnitude
-            uint32_t operandLarge = AIsBiggerMagnitude ? alignedA[idx] : alignedB[idx];
-            uint32_t operandSmall = AIsBiggerMagnitude ? alignedB[idx] : alignedA[idx];
-
-            if (operandLarge >= operandSmall) {
-                fullSum = (uint64_t)operandLarge - (uint64_t)operandSmall;
-                tempSum[idx] = (uint32_t)(fullSum & 0xFFFFFFFF);
-                carryBits[idx] = 0;
+    for (int i = tid; i < digitsInBlock; i += ThreadsPerBlock) {
+        int globalIdx = startDigit + i;
+        if (globalIdx < numDigits) {
+            // Shift the number with the smaller exponent
+            if (AIsBiggerExponent) {
+                // Shift B right
+                alignedA_static[i] = A->Digits[globalIdx];
+                alignedB_static[i] = ShiftRight(B->Digits, shiftBits, globalIdx);
             } else {
-                // Borrow occurs
-                fullSum = ((uint64_t)1 << 32) + (uint64_t)operandLarge - (uint64_t)operandSmall;
-                tempSum[idx] = (uint32_t)(fullSum & 0xFFFFFFFF);
-                carryBits[idx] = 1; // Indicate borrow
+                // Shift A right
+                alignedA_static[i] = ShiftRight(A->Digits, shiftBits, globalIdx);
+                alignedB_static[i] = B->Digits[globalIdx];
             }
+        } else {
+            // Zero-fill for indices beyond numDigits
+            alignedA_static[i] = 0;
+            alignedB_static[i] = 0;
         }
-        __syncthreads();
+    }
+    __syncthreads();  // Synchronize within the block after alignment
 
-        // Step 4: Carry/Borrow Propagation (Sequential in thread 0)
-        __shared__ uint32_t carryIn;
-        if (idx == 0) {
-            carryIn = 0;
+    // Phase 2: Compare Magnitudes if necessary
+    if (!isAddition) {
+        if (tid == 0) { // Let only thread 0 perform the magnitude comparison
+            bool magnitudeDetermined = false;
+            for (int idx = numDigits - 1; idx >= 0 && !magnitudeDetermined; --idx) {
+                uint32_t a_digit = 0, b_digit = 0;
 
-            for (int i = 0; i < numDigits; ++i) {
-                if (isAddition) {
-                    uint64_t sumWithCarry = (uint64_t)tempSum[i] + carryIn;
-                    Out->Digits[i] = (uint32_t)(sumWithCarry & 0xFFFFFFFF);
-                    carryIn = (uint32_t)(sumWithCarry >> 32) + carryBits[i];
+                if (AIsBiggerExponent) {
+                    // Shift B right
+                    a_digit = A->Digits[idx];
+                    b_digit = ShiftRight(B->Digits, shiftBits, idx);
                 } else {
-                    // Subtraction
-                    if (carryIn) {
-                        if (tempSum[i] > 0) {
-                            Out->Digits[i] = tempSum[i] - 1;
-                            carryIn = carryBits[i];
-                        } else {
-                            Out->Digits[i] = 0xFFFFFFFF;
-                            carryIn = 1;
-                        }
-                    } else {
-                        Out->Digits[i] = tempSum[i];
-                        carryIn = carryBits[i];
-                    }
-                }
-            }
-
-            // Handle carry out for addition
-            if (isAddition && carryIn > 0) {
-                // Shift all digits right by 1 to accommodate the carry
-                uint32_t carryOut = carryIn; // carryIn is 1 here
-
-                for (int i = numDigits - 1; i >= 0; --i) {
-                    uint64_t shifted = ((uint64_t)Out->Digits[i] >> 1) | ((uint64_t)carryOut << 31);
-                    carryOut = (Out->Digits[i] & 0x1) ? 1 : 0; // Extract the bit that was shifted out
-                    Out->Digits[i] = (uint32_t)(shifted & 0xFFFFFFFF);
+                    // Shift A right
+                    a_digit = ShiftRight(A->Digits, shiftBits, idx);
+                    b_digit = B->Digits[idx];
                 }
 
-                // Increment the exponent due to normalization (since we effectively divided by 2)
-                outExponent += 1;
+                if (a_digit > b_digit) {
+                    AIsBiggerMagnitude = true;
+                    magnitudeDetermined = true;
+                } else if (a_digit < b_digit) {
+                    AIsBiggerMagnitude = false;
+                    magnitudeDetermined = true;
+                }
+                // If equal, continue to next digit
             }
 
-            // Step 5: Set Exponent and Sign
-            Out->Exponent = outExponent;
+            // If all digits are equal, set resultIsZero
+            if (!magnitudeDetermined) {
+                resultIsZero = true;
+            }
+        }
+    }
+    __syncthreads();  // Synchronize to ensure magnitude comparison is complete
 
+    // Phase 3: Perform Addition or Subtraction within the block
+    if (!resultIsZero) {
+        for (int i = tid; i < digitsInBlock; i += ThreadsPerBlock) {
+            if (i >= digitsInBlock) continue;
             if (isAddition) {
-                Out->IsNegative = A->IsNegative;
+                // Perform addition
+                uint64_t fullSum = (uint64_t)alignedA_static[i] + (uint64_t)alignedB_static[i];
+                tempSum_static[i] = (uint32_t)(fullSum & 0xFFFFFFFF);
+                carryBits_static[i] = (uint32_t)(fullSum >> 32);
             } else {
-                // The sign is determined by the operand with the larger magnitude
-                Out->IsNegative = AIsBiggerMagnitude ? A->IsNegative : B->IsNegative;
+                // Perform subtraction: larger magnitude minus smaller magnitude
+                uint32_t operandLarge = AIsBiggerMagnitude ? alignedA_static[i] : alignedB_static[i];
+                uint32_t operandSmall = AIsBiggerMagnitude ? alignedB_static[i] : alignedA_static[i];
 
-                // Handle negative result if subtraction resulted in borrow at the highest digit
-                if (carryIn > 0) {
-                    // Result is negative and needs to be two's complemented
-                    for (int i = 0; i < numDigits; ++i) {
-                        Out->Digits[i] = ~Out->Digits[i];
-                    }
-                    // Add 1 to complete two's complement
-                    uint32_t carry = 1;
-                    for (int i = 0; i < numDigits; ++i) {
-                        uint64_t sum = (uint64_t)Out->Digits[i] + carry;
-                        Out->Digits[i] = (uint32_t)(sum & 0xFFFFFFFF);
-                        carry = (uint32_t)(sum >> 32);
-                        if (carry == 0) break;
-                    }
-                    // Flip the sign
-                    Out->IsNegative = !Out->IsNegative;
+                if (operandLarge >= operandSmall) {
+                    uint64_t fullDiff = (uint64_t)operandLarge - (uint64_t)operandSmall;
+                    tempSum_static[i] = (uint32_t)(fullDiff & 0xFFFFFFFF);
+                    carryBits_static[i] = 0;
+                } else {
+                    // Borrow occurs
+                    uint64_t fullDiff = ((uint64_t)1 << 32) + (uint64_t)operandLarge - (uint64_t)operandSmall;
+                    tempSum_static[i] = (uint32_t)(fullDiff & 0xFFFFFFFF);
+                    carryBits_static[i] = 1; // Indicate borrow
                 }
             }
         }
     }
-    __syncthreads();
+    __syncthreads();  // Synchronize after addition/subtraction
+
+    // Phase 4: Parallel Blelloch Scan on carryBits to compute carry-ins
+    uint32_t initialCarryOutLastDigit = 0;
+    if (!resultIsZero) {
+        // Save the initial carry-out from the last digit before overwriting
+        initialCarryOutLastDigit = carryBits_static[digitsInBlock - 1];
+
+        // Perform Blelloch scan on carryBits_static
+        ComputeCarryInDecider(carryBits_static, scanResults_static, digitsInBlock, sharedCarryOut);
+
+        // After scan, scanResults_static contains the carry-in for each digit
+        // Apply the carry-ins to tempSum_static to get the final output digits
+        for (int i = tid; i < digitsInBlock; i += ThreadsPerBlock) {
+            if (i >= digitsInBlock) continue;
+            if (isAddition) {
+                // Add the carry-in to the sum
+                uint64_t finalSum = (uint64_t)tempSum_static[i] + (uint64_t)scanResults_static[i];
+                Out->Digits[startDigit + i] = (uint32_t)(finalSum & 0xFFFFFFFF);
+                // Record carry-out for the next phase
+                carryBits_static[i] = (uint32_t)(finalSum >> 32);
+            } else {
+                // Subtraction already handled borrow in carryBits_static
+                // Apply borrow-in from scanResults_static
+                uint32_t borrowIn = scanResults_static[i];
+                uint64_t finalDiff = (uint64_t)tempSum_static[i] - (uint64_t)borrowIn;
+                Out->Digits[startDigit + i] = (uint32_t)(finalDiff & 0xFFFFFFFF);
+                // If borrow occurs, set carryBits_static[i] to 1
+                carryBits_static[i] = (finalDiff >> 63) & 1;
+            }
+        }
+    }
+    __syncthreads();  // Synchronize after applying carry-ins
+
+    // Phase 5 & 6: Record carry-outs and compute cumulative carries
+    if (tid == 0) {
+        if (!resultIsZero) {
+            carryOuts[blockId].carryOut = initialCarryOutLastDigit + carryBits_static[digitsInBlock - 1];
+        } else {
+            carryOuts[blockId].carryOut = 0;
+        }
+
+        // Only block 0 computes cumulativeCarries after all carryOuts are recorded
+        if (blockId == 0) {
+            cumulativeCarries[0] = 0; // Initial carry-in is zero
+            for (int i = 1; i <= numBlocks; ++i) {
+                cumulativeCarries[i] = carryOuts[i - 1].carryOut;
+            }
+        }
+    }
+    grid.sync();  // Single synchronization after both operations
+
+    // Phase 7: Apply Cumulative Carries to Each Block's Output
+    if (!resultIsZero) {
+        uint32_t blockCarryIn = cumulativeCarries[blockId];
+        if (digitsInBlock > 0) {
+            if (tid == 0) {
+                if (isAddition) {
+                    uint64_t finalSum = (uint64_t)Out->Digits[startDigit] + (uint64_t)blockCarryIn;
+                    Out->Digits[startDigit] = (uint32_t)(finalSum & 0xFFFFFFFF);
+                    // Update carryBits_static[0] with any new carry-out from this addition
+                    carryBits_static[0] = (uint32_t)(finalSum >> 32);
+                } else {
+                    uint64_t finalDiff = (uint64_t)Out->Digits[startDigit] - (uint64_t)blockCarryIn;
+                    Out->Digits[startDigit] = (uint32_t)(finalDiff & 0xFFFFFFFF);
+                    // Update carryBits_static[0] with any new borrow-out
+                    carryBits_static[0] = (finalDiff >> 63) & 1;
+                }
+            }
+            // Do not modify carryBits_static[tid] for tid != 0
+        }
+    }
+
+    grid.sync();  // Synchronize after applying cumulative carry-ins
+
+    // Phase 7.1: Propagate New Carry-Out Within the Block if Necessary
+    if (!resultIsZero && digitsInBlock > 1) {
+        // Perform Blelloch scan on carryBits_static
+        ComputeCarryInDecider(carryBits_static, scanResults_static, digitsInBlock, sharedCarryOut);
+
+        // Apply the new carry-ins to the output digits
+        for (int i = tid; i < digitsInBlock; i += ThreadsPerBlock) {
+            if (i > 0) { // Skip the first digit
+                if (isAddition) {
+                    uint64_t finalSum = (uint64_t)Out->Digits[startDigit + i] + (uint64_t)scanResults_static[i];
+                    Out->Digits[startDigit + i] = (uint32_t)(finalSum & 0xFFFFFFFF);
+                    // Update carryBits_static[i] with any new carry-out
+                    carryBits_static[i] = (uint32_t)(finalSum >> 32);
+                } else {
+                    uint64_t finalDiff = (uint64_t)Out->Digits[startDigit + i] - (uint64_t)scanResults_static[i];
+                    Out->Digits[startDigit + i] = (uint32_t)(finalDiff & 0xFFFFFFFF);
+                    // Update carryBits_static[i] with any new borrow-out
+                    carryBits_static[i] = (finalDiff >> 63) & 1;
+                }
+            }
+        }
+    }
+    __syncthreads();  // Synchronize after propagating new carry-outs
+
+    // Corrected shifting code in Phase 8
+    if (blockId == numBlocks - 1 && tid == 0) {
+        if (isAddition) {
+            // Retrieve the total carry-out from all blocks
+            uint32_t finalCarryOut = cumulativeCarries[numBlocks];
+
+            if (finalCarryOut > 0) {
+                // Increment the exponent to account for the carry-out
+                outExponent += 1;
+
+                // Shift digits right by one bit, starting from the most significant digit
+                uint32_t carry = finalCarryOut; // Initialize carry with the final carry-out
+                for (int i = numDigits - 1; i >= 0; --i) {
+                    uint32_t newCarry = Out->Digits[i] & 1; // Save LSB before shift
+                    Out->Digits[i] = (Out->Digits[i] >> 1) | (carry << 31); // Shift right and insert carry
+                    carry = newCarry; // Update carry for next digit
+                }
+                // No need to set the MSB separately
+            }
+        } else {
+            // Subtraction: Handle borrow-out if necessary
+            // (Similar logic applies for subtraction if needed)
+        }
+
+        Out->Exponent = outExponent;
+        if (isAddition) {
+            Out->IsNegative = A->IsNegative;
+        } else {
+            // The sign is determined by the operand with the larger magnitude
+            Out->IsNegative = AIsBiggerMagnitude ? A->IsNegative : B->IsNegative;
+        }
+    }
+
+    //grid.sync();  // Synchronize after adjusting exponent and digits
 }
 
 __global__ void AddKernel(
     HpGpu *A,
     HpGpu *B,
-    HpGpu *Out) {
+    HpGpu *Out,
+    GlobalAddBlockData *globalBlockData,
+    CarryInfo *carryOuts,        // Array to store carry-out for each block
+    uint32_t *cumulativeCarries) { // Array to store cumulative carries
 
-    AddHelper(A, B, Out);
+    // Initialize cooperative grid group
+    cg::grid_group grid = cg::this_grid();
+
+    // Total number of blocks launched
+    int numBlocks = gridDim.x;
+
+    // Call the AddHelper function
+    AddHelper(A, B, Out, globalBlockData, carryOuts, cumulativeCarries, grid, numBlocks);
 }
+
+
 
 __global__ void AddKernelTestLoop(
     HpGpu *A,
-    HpGpu *Out) {
+    HpGpu *B,
+    HpGpu *Out,
+    GlobalAddBlockData *globalBlockData,
+    CarryInfo *carryOuts,        // Array to store carry-out for each block
+    uint32_t *cumulativeCarries) { // Array to store cumulative carries
+
+    // Initialize cooperative grid group
+    cg::grid_group grid = cg::this_grid();
+
+    // Total number of blocks launched
+    int numBlocks = gridDim.x;
 
     for (int i = 0; i < NUM_ITER; ++i) {
-        AddHelper(A, Out, Out);
+        AddHelper(A, B, Out, globalBlockData, carryOuts, cumulativeCarries, grid, numBlocks);
     }
 }
 
-__global__ void multiply_high_precision_kernel(
-    HpGpu *A,
-    HpGpu *B,
-    HpGpu *Out) {
-    const int idx = threadIdx.x;
-    __shared__ uint32_t tempProduct[HpGpu::NumUint32 * 2];
+//__global__ void multiply_high_precision_kernel(
+//    HpGpu *A,
+//    HpGpu *B,
+//    HpGpu *Out) {
+//    const int idx = threadIdx.x;
+//    __shared__ uint32_t tempProduct[HpGpu::NumUint32 * 2];
+//
+//    // Initialize tempProduct to zero
+//    if (idx < HpGpu::NumUint32 * 2) {
+//        tempProduct[idx] = 0;
+//    }
+//
+//    __syncthreads();
+//
+//    // Each thread computes partial products
+//    for (int i = 0; i < HpGpu::NumUint32; i++) {
+//        if (idx < HpGpu::NumUint32) {
+//            uint64_t product = (uint64_t)A->Digits[idx] * (uint64_t)B->Digits[i];
+//            int pos = idx + i;
+//
+//            // Atomic addition to handle concurrent writes
+//            atomicAdd(&tempProduct[pos], (uint32_t)(product & 0xFFFFFFFF));
+//            atomicAdd(&tempProduct[pos + 1], (uint32_t)(product >> 32));
+//        }
+//    }
+//
+//    __syncthreads();
+//
+//    // Perform carry propagation
+//    uint32_t carry = 0;
+//    if (idx < HpGpu::NumUint32 * 2) {
+//        uint64_t sum = (uint64_t)tempProduct[idx] + carry;
+//        tempProduct[idx] = (uint32_t)(sum & 0xFFFFFFFF);
+//        carry = (uint32_t)(sum >> 32);
+//    }
+//
+//    __syncthreads();
+//
+//    // Write the result to Out
+//    if (idx < HpGpu::NumUint32) {
+//        Out->Digits[idx] = tempProduct[idx];
+//    }
+//
+//    // Adjust exponent and sign
+//    if (idx == 0) {
+//        Out->Exponent = A->Exponent + B->Exponent;
+//        Out->IsNegative = A->IsNegative ^ B->IsNegative;
+//    }
+//}
 
-    // Initialize tempProduct to zero
-    if (idx < HpGpu::NumUint32 * 2) {
-        tempProduct[idx] = 0;
-    }
+void ComputeAddGpu(void *kernelArgs[]) {
 
-    __syncthreads();
-
-    // Each thread computes partial products
-    for (int i = 0; i < HpGpu::NumUint32; i++) {
-        if (idx < HpGpu::NumUint32) {
-            uint64_t product = (uint64_t)A->Digits[idx] * (uint64_t)B->Digits[i];
-            int pos = idx + i;
-
-            // Atomic addition to handle concurrent writes
-            atomicAdd(&tempProduct[pos], (uint32_t)(product & 0xFFFFFFFF));
-            atomicAdd(&tempProduct[pos + 1], (uint32_t)(product >> 32));
-        }
-    }
-
-    __syncthreads();
-
-    // Perform carry propagation
-    uint32_t carry = 0;
-    if (idx < HpGpu::NumUint32 * 2) {
-        uint64_t sum = (uint64_t)tempProduct[idx] + carry;
-        tempProduct[idx] = (uint32_t)(sum & 0xFFFFFFFF);
-        carry = (uint32_t)(sum >> 32);
-    }
-
-    __syncthreads();
-
-    // Write the result to Out
-    if (idx < HpGpu::NumUint32) {
-        Out->Digits[idx] = tempProduct[idx];
-    }
-
-    // Adjust exponent and sign
-    if (idx == 0) {
-        Out->Exponent = A->Exponent + B->Exponent;
-        Out->IsNegative = A->IsNegative ^ B->IsNegative;
-    }
-}
-
-void ComputeAddGpu(
-    HpGpu *x, // device
-    HpGpu *a, // device
-    HpGpu *temp_result // device
-    ) {
-
-    // Length of x, y, a, b are all the same.
-
-    auto gridSize = 1;
-    dim3 block(HpGpu::NumUint32, 1, 1);
-
-    // allocate temporaries on device
-    AddKernel << <gridSize, block >> > (
-        x,
-        a,
-        temp_result);
+    cudaError_t err = cudaLaunchCooperativeKernel(
+        (void *)AddKernel,
+        dim3(NumBlocks),
+        dim3(ThreadsPerBlock),
+        kernelArgs,
+        0, // Shared memory size
+        0 // Stream
+    );
 
     cudaDeviceSynchronize();
 }
 
-void ComputeAddGpuTestLoop(
-    HpGpu *x, // device
-    HpGpu *temp_result // device
-) {
+void ComputeAddGpuTestLoop(void *kernelArgs[]) {
 
-    // Length of x, y, a, b are all the same.
-
-    auto gridSize = 1;
-    dim3 block(HpGpu::NumUint32, 1, 1);
-
-    // allocate temporaries on device
-    AddKernelTestLoop << <gridSize, block >> > (
-        x,
-        temp_result);
+    cudaError_t err = cudaLaunchCooperativeKernel(
+        (void *)AddKernelTestLoop,
+        dim3(NumBlocks),
+        dim3(ThreadsPerBlock),
+        kernelArgs,
+        0, // Shared memory size
+        0 // Stream
+    );
 
     cudaDeviceSynchronize();
 }
 
-void DiffAgainstHost(
-    bool verbose,
-    int testNum,
-    const mpf_t mpfHostResult,
-    const HpGpu &gpuResult) {
-
-    if (verbose) {
-        std::cout << "\nGPU result: " << std::endl;
-        std::cout << gpuResult.ToString() << std::endl;
-    }
-
-    // Convert the HpGpu results to mpf_t for comparison
-    mpf_t mpfXGpuResult;
-    mpf_init(mpfXGpuResult);
-
-    HpGpuToMpf(gpuResult, mpfXGpuResult);
-
-    // Compute the differences between host and GPU results
-    mpf_t mpfDiff;
-    mpf_init(mpfDiff);
-
-    mpf_sub(mpfDiff, mpfHostResult, mpfXGpuResult);
-
-    // Take absolute delta:
-    mpf_t mpf_diff_abs;
-    mpf_init(mpf_diff_abs);
-    mpf_abs(mpf_diff_abs, mpfDiff);
-
-    // Converted GPU result
-    if (verbose) {
-        std::cout << "\nConverted GPU result:" << std::endl;
-        std::cout << MpfToString(mpfXGpuResult, HpGpu::DefaultPrecBits) << std::endl;
-    }
-
-    // Print the differences
-    std::cout << "\nDifference between host and GPU results:" << std::endl;
-    std::cout << MpfToString(mpf_diff_abs, HpGpu::DefaultPrecBits) << std::endl;
-
-    // If absolute delta is greater than 1e-300, the test is considered failed
-    if (mpf_cmp_d(mpf_diff_abs, 1e-30) > 0) {
-        Tests.MarkFailed(testNum, mpf_diff_abs);
-    }
-
-    mpf_clear(mpfDiff);
-    mpf_clear(mpf_diff_abs);
-    mpf_clear(mpfXGpuResult);
-}
-
-void TestAddTwoNumbersPerf(
-    bool verbose,
-    int testNum,
-    const char *num1,
-    const mpf_t mpfX) {
-
-    // Print the original input values
-    if (verbose) {
-        std::cout << "Original input values:" << std::endl;
-        std::cout << "num1: " << num1 << std::endl;
-        std::cout << "X: " << MpfToString(mpfX, HpGpu::DefaultPrecBits) << std::endl;
-    }
-
-    HpGpu xNum{};
-    MpfToHpGpu(mpfX, xNum, HpGpu::DefaultPrecBits);
-    if (verbose) {
-        std::cout << "\nConverted HpGpu representations:" << std::endl;
-        std::cout << "X: " << xNum.ToString() << std::endl;
-    }
-
-    // Perform the calculation on the host using MPIR
-    mpf_t mpfHostResult;
-    mpf_init(mpfHostResult);
-
-    {
-        BenchmarkTimer hostTimer;
-        ScopedBenchmarkStopper hostStopper{ hostTimer };
-
-        for (size_t i = 0; i < NUM_ITER; ++i) {
-            mpf_add(mpfHostResult, mpfHostResult, mpfX);
-        }
-
-        hostTimer.StopTimer();
-
-        if (verbose) {
-            std::cout << "Host iter time: " << hostTimer.GetDeltaInMs() << " ms" << std::endl;
-        }
-    }
-
-    HpGpu gpuResult2{};
-    {
-        // Perform the calculation on the GPU
-        HpGpu *xGpu;
-        cudaMalloc(&xGpu, sizeof(HpGpu));
-        cudaMemcpy(xGpu, &xNum, sizeof(HpGpu), cudaMemcpyHostToDevice);
-
-        HpGpu *internalGpuResult2;
-        cudaMalloc(&internalGpuResult2, sizeof(HpGpu));
-        cudaMemset(internalGpuResult2, 0, sizeof(HpGpu));
-
-        BenchmarkTimer timer;
-        ScopedBenchmarkStopper stopper{ timer };
-        ComputeAddGpuTestLoop(
-            xGpu,
-            internalGpuResult2);
-
-        cudaMemcpy(&gpuResult2, internalGpuResult2, sizeof(HpGpu), cudaMemcpyDeviceToHost);
-
-        timer.StopTimer();
-        Tests.AddTime(testNum, timer.GetDeltaInMs());
-
-        if (verbose) {
-            std::cout << "GPU iter time: " << timer.GetDeltaInMs() << " ms" << std::endl;
-        }
-
-        cudaFree(internalGpuResult2);
-        cudaFree(xGpu);
-    }
-
-    DiffAgainstHost(verbose, testNum, mpfHostResult, gpuResult2);
-
-    // Clean up MPIR variables
-    mpf_clear(mpfHostResult);
-}
-
-void TestAddTwoNumbersPerf(
-    bool verbose,
-    int testNum,
-    const char *num1) {
-
-    mpf_set_default_prec(HpGpu::DefaultMpirBits);  // Set precision for MPIR floating point
-
-    mpf_t mpfX;
-    mpf_init(mpfX);
-
-    auto res = mpf_set_str(mpfX, num1, 10);
-    if (res == -1) {
-        std::cout << "Error setting mpfX" << std::endl;
-    }
-
-    TestAddTwoNumbersPerf(verbose, testNum, num1, mpfX);
-
-    mpf_clear(mpfX);
-}
-
-void TestAddTwoNumbers(
-    bool verbose,
-    int testNum,
-    const char *num1,
-    const char *num2,
-    const mpf_t mpfX,
-    const mpf_t mpfY) {
-
-    // Print the original input values
-    if (verbose) {
-        std::cout << "Original input values:" << std::endl;
-        std::cout << "num1: " << num1 << std::endl;
-        std::cout << "num2: " << num2 << std::endl;
-        std::cout << "X: " << MpfToString(mpfX, HpGpu::DefaultPrecBits) << std::endl;
-        std::cout << "Y: " << MpfToString(mpfY, HpGpu::DefaultPrecBits) << std::endl;
-    }
-
-    // Convert the input values to HpGpu representations
-    HpGpu xNum{};
-    HpGpu yNum{};
-    MpfToHpGpu(mpfX, xNum, HpGpu::DefaultPrecBits);
-    MpfToHpGpu(mpfY, yNum, HpGpu::DefaultPrecBits);
-
-    if (verbose) {
-        std::cout << "\nConverted HpGpu representations:" << std::endl;
-        std::cout << "X: " << xNum.ToString() << std::endl;
-        std::cout << "Y: " << yNum.ToString() << std::endl;
-    }
-
-    // Perform the calculation on the GPU
-    HpGpu *xGpu;
-    HpGpu *yGpu;
-    cudaMalloc(&xGpu, sizeof(HpGpu));
-    cudaMalloc(&yGpu, sizeof(HpGpu));
-    cudaMemcpy(xGpu, &xNum, sizeof(HpGpu), cudaMemcpyHostToDevice);
-    cudaMemcpy(yGpu, &yNum, sizeof(HpGpu), cudaMemcpyHostToDevice);
-
-    {
-        // Perform the calculation on the host using MPIR
-        HpGpu gpuResult{};
-        mpf_t mpfHostResult;
-        mpf_init(mpfHostResult);
-        mpf_add(mpfHostResult, mpfX, mpfY);
-
-        // Print host result
-        if (verbose) {
-            std::cout << "\nHost result:" << std::endl;
-            std::cout << "Host result: " << MpfToString(mpfHostResult, HpGpu::DefaultPrecBits) << std::endl;
-        }
-
-        HpGpu *internalGpuResult;
-        cudaMalloc(&internalGpuResult, sizeof(HpGpu));
-
-        BenchmarkTimer timer;
-        ScopedBenchmarkStopper stopper{ timer };
-        ComputeAddGpu(
-            xGpu,
-            yGpu,
-            internalGpuResult);
-
-        cudaMemcpy(&gpuResult, internalGpuResult, sizeof(HpGpu), cudaMemcpyDeviceToHost);
-
-        timer.StopTimer();
-        Tests.AddTime(testNum, timer.GetDeltaInMs());
-
-        if (verbose) {
-            std::cout << "GPU single time: " << timer.GetDeltaInMs() << " ms" << std::endl;
-        }
-
-        cudaFree(internalGpuResult);
-
-        DiffAgainstHost(verbose, testNum, mpfHostResult, gpuResult);
-
-        // Clean up MPIR variables
-        mpf_clear(mpfHostResult);
-    }
-
-    cudaFree(xGpu);
-    cudaFree(yGpu);
-}
-
-void TestAddTwoNumbers(
-    bool verbose,
-    int testNum,
-    const char *num1,
-    const char *num2) {
-
-    mpf_set_default_prec(HpGpu::DefaultMpirBits);  // Set precision for MPIR floating point
-
-    mpf_t mpfX, mpfY;
-    mpf_init(mpfX);
-    mpf_init(mpfY);
-
-    auto res = mpf_set_str(mpfX, num1, 10);
-    if (res == -1) {
-        std::cout << "Error setting mpfX" << std::endl;
-    }
-
-    res = mpf_set_str(mpfY, num2, 10);
-    if (res == -1) {
-        std::cout << "Error setting mpfY" << std::endl;
-    }
-
-    TestAddTwoNumbers(verbose, testNum, num1, num2, mpfX, mpfY);
-
-    mpf_clear(mpfX);
-    mpf_clear(mpfY);
-}
-
-void TestAddSpecialNumbers(bool verbose, int testNum) {
-    mpf_t x, y;
-    mpf_init(x);
-    mpf_init(y);
-
-    std::vector<uint32_t> testData;
-    for (size_t i = 0; i < HpGpu::NumUint32; ++i) {
-        testData.push_back(0);
-    }
-
-    assert(testData.size() == HpGpu::NumUint32);
-    testData[testData.size() - 1] = 0x80000000;
-
-    auto strLargeX = Uint32ToMpf(testData.data(), HpGpu::NumUint32 / 2, x);
-    auto strLargeY = Uint32ToMpf(testData.data(), HpGpu::NumUint32 / 2, y);
-    TestAddTwoNumbers(verbose, testNum, strLargeX.c_str(), strLargeY.c_str(), x, y);
-
-    mpf_clear(x);
-    mpf_clear(y);
-}
-
-void TestAllAdd() {
-    constexpr bool verbose = true;
-    const auto set1 = 10;
-    TestAddTwoNumbers(verbose, set1 + 1, "1", "2");
-    TestAddTwoNumbers(verbose, set1 + 2, "0.2", "0.1");
-    TestAddTwoNumbers(verbose, set1 + 3, "0.5", "1.2");
-    TestAddTwoNumbers(verbose, set1 + 4, "0.6", "1.3");
-    TestAddTwoNumbers(verbose, set1 + 5, "0.7", "1.4");
-    TestAddTwoNumbers(verbose, set1 + 6, "0.1", "1.99999999999999999999999999999");
-    TestAddTwoNumbers(verbose, set1 + 7, "0.123124561464451654461", "1.2395123123127298375982735");
-
-    const auto set2 = 20;
-    TestAddTwoNumbers(verbose, set2 + 1, "-0.5", "1.2");
-    TestAddTwoNumbers(verbose, set2 + 2, "-0.6", "1.3");
-    TestAddTwoNumbers(verbose, set2 + 3, "-0.7", "1.4");
-    TestAddTwoNumbers(verbose, set2 + 4, "-0.1", "1.99999999999999999999999999999");
-    TestAddTwoNumbers(verbose, set2 + 5, "-0.123124561464451654461", "1.2395123123127298375982735");
-
-    const auto set3 = 30;
-    TestAddTwoNumbers(verbose, set3 + 1, "-0.5", "-1.2");
-    TestAddTwoNumbers(verbose, set3 + 2, "-0.6", "-1.3");
-    TestAddTwoNumbers(verbose, set3 + 3, "-0.7", "-1.4");
-    TestAddTwoNumbers(verbose, set3 + 4, "-0.1", "-1.99999999999999999999999999999");
-    TestAddTwoNumbers(verbose, set3 + 5, "-0.123124561464451654461", "-1.2395123123127298375982735");
-
-    const auto set4 = 40;
-    TestAddTwoNumbers(verbose, set4 + 1, "0.5265542653452654526545625456254565446654545645649789871322131213156435546435", "-1.263468375787958774985473345435632415334245268476928454653443234164658776634854746584532186639173047328910730217803271839216");
-    TestAddTwoNumbers(verbose, set4 + 2, "0.2999999999965542653452654526545625456254565446654545645649789871322131213156435546435", "-1.263468375787958774985473345435632415334245268476928454653443234164658776634854746584532186639173047328910730217803271839216");
-    TestAddTwoNumbers(verbose, set4 + 3, "0.1265542653452654526545625456254565446654545645649789871322131213156435546435", "-1.2634683757879587749854733454356324153342452684769284546534432341646587766348547465845321866391730473289107302178039999999999999271839216");
-    TestAddTwoNumbers(verbose, set4 + 4, "0.0265542653452654526545625456254565446654545645649789871322131213156435546435", "-1.263468375787958774985473345435632415334245268476928454653443234164658776634854746584532186639173047328910730217803271839216");
-    TestAddTwoNumbers(verbose, set4 + 5, "0.00000000000000000265542653452654526545625456254565446654545645649789871322131213156435546435", "-1.263468375787958774985473345435632415334245268476928454653443234164658776634854746584532186639173047328910730217803271839216");
-
-    const auto set5 = 50;
-    TestAddSpecialNumbers(verbose, set5 + 1);
-
-    const auto set10 = 100;
-    for (auto i = 0; i < 100; i++) {
-        HpGpu x, y;
-        x.GenerateRandomNumber();
-        y.GenerateRandomNumber();
-
-        std::cout << "x.Exponent: " << x.Exponent << ", neg: " << x.IsNegative << std::endl;
-        std::cout << "y.Exponent: " << y.Exponent << ", neg: " << y.IsNegative << std::endl;
-        const std::string x_str = x.ToString();
-        const std::string y_str = y.ToString();
-        TestAddTwoNumbers(true, set10 + i, x_str.c_str(), y_str.c_str());
-    }
-
-    Tests.CheckAllTestsPassed();
-}
-
-void TestAddPerf() {
-    constexpr bool verbose = true;
-    const auto set20 = 200;
-    TestAddTwoNumbersPerf(verbose, set20 + 1, ".1");
-    Tests.CheckAllTestsPassed();
-}

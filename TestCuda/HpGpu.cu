@@ -26,14 +26,33 @@ HpGpu::HpGpu(uint32_t numDigits)
     std::fill(Digits, Digits + NumUint32, 0);
 }
 
+HpGpu::HpGpu(
+    const uint32_t *digitsIn,
+    int32_t expIn,
+    bool isNegative)
+    : Digits{},
+    Exponent{ expIn },
+    IsNegative{ isNegative } {
+
+    memcpy(Digits, digitsIn, sizeof(uint32_t) * NumUint32);
+}
+
 // Function to convert mpf_t to string
 std::string MpfToString(const mpf_t mpf_val, size_t precInBits) {
     char *str = NULL;
-    gmp_asprintf(&str, "%.Fe", mpf_val);
-    std::string result(str);
-    free(str);
 
-    return result;
+    if (precInBits == HpGpu::DefaultPrecBits) {
+        gmp_asprintf(&str, "%.Fe", mpf_val);
+        std::string result(str);
+        free(str);
+        return result;
+    } else {
+        const auto decimalDigits = static_cast<uint32_t>(precInBits / HpGpu::ConvertBitsToDecimals);
+        gmp_asprintf(&str, "%.*Fe", decimalDigits, mpf_val);
+        std::string result(str);
+        free(str);
+        return result;
+    }
 }
 
 // typedef struct
@@ -50,7 +69,7 @@ std::string MpfToString(const mpf_t mpf_val, size_t precInBits) {
 // } __mpf_struct;
 // 
 // typedef __mpf_struct mpf_t[1];
-std::string MpfToHexString(const mpf_t mpf_val, size_t precInBits) {
+std::string MpfToHexString(const mpf_t mpf_val) {
     std::string result;
     mp_exp_t exponent;
     mp_limb_t *limbs = mpf_val[0]._mp_d;
@@ -119,12 +138,17 @@ MpfToHpGpu (
     mpf_t abs_val;
     mpf_init2(abs_val, HpGpu::DefaultMpirBits);
     mpf_abs(abs_val, mpf_val);
-
-    std::cout << "abs_val: " << MpfToString(abs_val, prec_bits) << std::endl;
+    
+    if constexpr (Verbose) {
+        std::cout << "abs_val: " << MpfToString(abs_val, prec_bits) << std::endl;
+    }
 
     // Determine the sign
     number.IsNegative = (mpf_sgn(mpf_val) < 0);
-    std::cout << "prec_bits: " << prec_bits << std::endl;
+    
+    if constexpr (Verbose) {
+        std::cout << "prec_bits: " << prec_bits << std::endl;
+    }
 
     std::vector<uint32_t> data;
     const auto absMpirSize = std::abs(abs_val[0]._mp_size);
@@ -146,10 +170,10 @@ MpfToHpGpu (
 
     static_assert(sizeof(mp_limb_t) == sizeof(uint64_t), "mp_limb_t is not 64 bits");
 
-    {
-        auto exportedIntermediateData = Uint32ArrayToHexString(data.data(), data.size());
-        std::cout << "Exported intermediate data: " << exportedIntermediateData << std::endl;
-    }
+    //{
+    //    auto exportedIntermediateData = Uint32ArrayToHexString(data.data(), data.size());
+    //    std::cout << "Exported intermediate data: " << exportedIntermediateData << std::endl;
+    //}
 
     auto countInBytes = data.size() * sizeof(uint32_t);
 
@@ -172,10 +196,10 @@ MpfToHpGpu (
     // Set the Exponent
     number.Exponent = MpirExponentToHPExponent(mpf_val, static_cast<HpGpu::ExpT>(numBytesToCopy));
      
-    {
-        auto exportedFinalData = Uint32ArrayToHexString(number.Digits, HpGpu::NumUint32);
-        std::cout << "Exported Final data: " << exportedFinalData << ", exponent: " << number.Exponent << std::endl;
-    }
+    //{
+    //    auto exportedFinalData = Uint32ArrayToHexString(number.Digits, HpGpu::NumUint32);
+    //    std::cout << "Exported Final data: " << exportedFinalData << ", exponent: " << number.Exponent << std::endl;
+    //}
 
     //mpf_clear(scaled_val);
     mpf_clear(abs_val);

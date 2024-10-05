@@ -54,5 +54,5 @@ void TestTracker::MarkFailed(size_t testIndex, const mpf_t delta) {
     }
 
     m_Tests[testIndex].Failed = true;
-    m_Tests[testIndex].Delta = MpfToString(delta, HpGpu::DefaultPrecBits);
+    m_Tests[testIndex].Delta = MpfToString(delta, LowPrec);
 }

@@ -1,6 +1,8 @@
 ﻿#include "Add.cuh"
 #include "NullKernel.cuh"
 #include "Conversion.cuh"
+#include "HpGpu.cuh"
+#include "Tests.cuh"
 
 #include <iostream>
 #include <mpir.h>
@@ -44,18 +46,26 @@ void PressKey() {
 }
 
 int main(int argc, char *argv[]) {
+    if constexpr (!SkipCorrectnessTests) {
+        //TestNullKernel();
+        //PressKey();
 
-    //TestNullKernel();
-    //PressKey();
+        bool res = false;
+        res = TestConversion();
+        if (!res) {
+            PressKey();
+        }
 
-    TestConversion();
-    PressKey();
+        res = TestAllBinaryOp<Operator::Add>();
+        if (!res) {
+            PressKey();
+        }
+    }
 
-    TestAllAdd();
-    PressKey();
-
-    //TestAddPerf();
-    //PressKey();
+    bool res = TestBinaryOperatorPerf<Operator::Add>();
+    if (!res) {
+        PressKey();
+    }
 
     return 0;
 }

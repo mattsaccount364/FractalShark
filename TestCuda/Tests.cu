@@ -105,11 +105,12 @@ void TestAddTwoNumbersPerf(
         BenchmarkTimer hostTimer;
         ScopedBenchmarkStopper hostStopper{ hostTimer };
 
-        if constexpr (sharkOperator == Operator::Add) {
-            mpf_add(mpfHostResult, mpfX, mpfY);
-        }
-        else if constexpr (sharkOperator == Operator::Multiply) {
-            mpf_mul(mpfHostResult, mpfX, mpfY);
+        for (int i = 0; i < NUM_ITER; ++i) {
+            if constexpr (sharkOperator == Operator::Add) {
+                mpf_add(mpfHostResult, mpfX, mpfY);
+            } else if constexpr (sharkOperator == Operator::Multiply) {
+                mpf_mul(mpfHostResult, mpfX, mpfY);
+            }
         }
 
         hostTimer.StopTimer();
@@ -133,31 +134,66 @@ void TestAddTwoNumbersPerf(
         cudaMalloc(&internalGpuResult2, sizeof(HpGpu));
         cudaMemset(internalGpuResult2, 0, sizeof(HpGpu));
 
-        // Allocate memory for carryOuts and cumulativeCarries
-        GlobalAddBlockData *globalBlockData;
-        CarryInfo *d_carryOuts;
-        uint32_t *d_cumulativeCarries;
-        cudaMalloc(&globalBlockData, sizeof(GlobalAddBlockData));
-        cudaMalloc(&d_carryOuts, (NumBlocks + 1) * sizeof(CarryInfo));
-        cudaMalloc(&d_cumulativeCarries, (NumBlocks + 1) * sizeof(uint32_t));
-
-        // Prepare kernel arguments
-        void *kernelArgs[] = {
-            (void *)&xGpu,
-            (void *)&yGpu,
-            (void *)&internalGpuResult2,
-            (void *)&globalBlockData,
-            (void *)&d_carryOuts,
-            (void *)&d_cumulativeCarries
-        };
-
         BenchmarkTimer timer;
         ScopedBenchmarkStopper stopper{ timer };
-        ComputeAddGpuTestLoop(kernelArgs);
 
-        // Launch the cooperative kernel
+        if constexpr (sharkOperator == Operator::Add) {
+            // Allocate memory for carryOuts and cumulativeCarries
+            GlobalAddBlockData *globalBlockData;
+            CarryInfo *d_carryOuts;
+            uint32_t *d_cumulativeCarries;
+            cudaMalloc(&globalBlockData, sizeof(GlobalAddBlockData));
+            cudaMalloc(&d_carryOuts, (NumBlocks + 1) * sizeof(CarryInfo));
+            cudaMalloc(&d_cumulativeCarries, (NumBlocks + 1) * sizeof(uint32_t));
 
-        cudaMemcpy(gpuResult2.get(), internalGpuResult2, sizeof(HpGpu), cudaMemcpyDeviceToHost);
+            // Prepare kernel arguments
+            void *kernelArgs[] = {
+                (void *)&xGpu,
+                (void *)&yGpu,
+                (void *)&internalGpuResult2,
+                (void *)&globalBlockData,
+                (void *)&d_carryOuts,
+                (void *)&d_cumulativeCarries
+            };
+
+            ComputeAddGpuTestLoop(kernelArgs);
+
+            // Launch the cooperative kernel
+
+            cudaMemcpy(gpuResult2.get(), internalGpuResult2, sizeof(HpGpu), cudaMemcpyDeviceToHost);
+
+            cudaFree(globalBlockData);
+            cudaFree(d_carryOuts);
+            cudaFree(d_cumulativeCarries);
+        } else if constexpr (sharkOperator == Operator::Multiply) {
+            // Prepare kernel arguments
+            // Allocate memory for carryOuts and cumulativeCarries
+            uint64_t *d_carry1;
+            uint64_t *d_carry2;
+            uint64_t *d_carry3;
+            uint64_t *d_tempProducts;
+            cudaMalloc(&d_carry1, (NumBlocks + 1) * sizeof(uint64_t));
+            cudaMalloc(&d_carry2, (NumBlocks + 1) * sizeof(uint64_t));
+            cudaMalloc(&d_carry3, (NumBlocks + 1) * sizeof(uint64_t));
+            cudaMalloc(&d_tempProducts, 2 * HpGpu::NumUint32 * sizeof(uint64_t));
+
+            void *kernelArgs[] = {
+                (void *)&xGpu,
+                (void *)&yGpu,
+                (void *)&internalGpuResult2,
+                (void *)&d_carry1,
+                (void *)&d_carry2,
+                (void *)&d_carry3,
+                (void *)&d_tempProducts
+            };
+
+            ComputeMultiplyGpuTestLoop(kernelArgs);
+
+            cudaFree(d_carry1);
+            cudaFree(d_carry2);
+            cudaFree(d_carry3);
+            cudaFree(d_tempProducts);
+        }
 
         timer.StopTimer();
         Tests.AddTime(testNum, timer.GetDeltaInMs());
@@ -165,9 +201,6 @@ void TestAddTwoNumbersPerf(
         std::cout << "GPU iter time: " << timer.GetDeltaInMs() << " ms" << std::endl;
 
         cudaFree(internalGpuResult2);
-        cudaFree(globalBlockData);
-        cudaFree(d_carryOuts);
-        cudaFree(d_cumulativeCarries);
         cudaFree(xGpu);
     }
 
@@ -286,9 +319,11 @@ void TestBinOperatorTwoNumbers(
             uint64_t *d_carry1;
             uint64_t *d_carry2;
             uint64_t *d_carry3;
+            uint64_t *d_tempProducts;
             cudaMalloc(&d_carry1, (NumBlocks + 1) * sizeof(uint64_t));
             cudaMalloc(&d_carry2, (NumBlocks + 1) * sizeof(uint64_t));
             cudaMalloc(&d_carry3, (NumBlocks + 1) * sizeof(uint64_t));
+            cudaMalloc(&d_tempProducts, 2 * HpGpu::NumUint32 * sizeof(uint64_t));
 
             void *kernelArgs[] = {
                 (void *)&xGpu,
@@ -296,7 +331,8 @@ void TestBinOperatorTwoNumbers(
                 (void *)&internalGpuResult,
                 (void *)&d_carry1,
                 (void *)&d_carry2,
-                (void *)&d_carry3
+                (void *)&d_carry3,
+                (void *)&d_tempProducts
             };
 
             ComputeMultiplyGpu(kernelArgs);
@@ -304,6 +340,7 @@ void TestBinOperatorTwoNumbers(
             cudaFree(d_carry1);
             cudaFree(d_carry2);
             cudaFree(d_carry3);
+            cudaFree(d_tempProducts);
         }
 
         cudaMemcpy(&gpuResult, internalGpuResult, sizeof(HpGpu), cudaMemcpyDeviceToHost);
@@ -587,6 +624,39 @@ void TestAddSpecialNumbers7(int testNum) {
     TestAddSpecialNumbers<sharkOperator>(testNum, *xNum, *yNum);
 }
 
+template<Operator sharkOperator>
+void TestAddSpecialNumbers8(int testNum) {
+    size_t i = 0;
+    std::vector<uint32_t> testData1;
+    testData1.resize(HpGpu::NumUint32);
+    testData1[i++] = 0;
+    testData1[i++] = 0;
+    testData1[i++] = 0x90000000;
+    testData1[i++] = 0;
+    testData1[i++] = 0;
+    testData1[i++] = 0;
+    testData1[i++] = 0;
+    testData1[i++] = 0;
+
+    i = 0;
+    std::vector<uint32_t> testData2;
+    testData2.resize(HpGpu::NumUint32);
+    testData2[i++] = 0;
+    testData2[i++] = 0;
+    testData2[i++] = 0;
+    testData2[i++] = 2;
+    testData2[i++] = 0;
+    testData2[i++] = 0;
+    testData2[i++] = 0;
+    testData2[i++] = 0;
+
+    const bool isNegative = true;
+    std::unique_ptr<HpGpu> xNum{ std::make_unique<HpGpu>(testData1.data(), 0, !isNegative) };
+    std::unique_ptr<HpGpu> yNum{ std::make_unique<HpGpu>(testData2.data(), 0, !isNegative) };
+
+    TestAddSpecialNumbers<sharkOperator>(testNum, *xNum, *yNum);
+}
+
 
 template<Operator sharkOperator>
 bool TestAllBinaryOp(int testBase) {
@@ -661,6 +731,7 @@ bool TestAllBinaryOp(int testBase) {
         TestAddSpecialNumbers5<sharkOperator>(set6 + 5);
         TestAddSpecialNumbers6<sharkOperator>(set6 + 6);
         TestAddSpecialNumbers7<sharkOperator>(set6 + 7);
+        TestAddSpecialNumbers8<sharkOperator>(set6 + 8);
     }
 
     if constexpr (includeSet10) {
@@ -686,15 +757,14 @@ bool TestAllBinaryOp(int testBase) {
 }
 
 template<Operator sharkOperator>
-bool TestBinaryOperatorPerf() {
-    const auto set20 = 200;
-    TestAddTwoNumbersPerf<sharkOperator>(set20 + 1, ".1", ".1");
+bool TestBinaryOperatorPerf(int testBase) {
+    TestAddTwoNumbersPerf<sharkOperator>(testBase + 1, ".1", ".1");
     return Tests.CheckAllTestsPassed();
 }
 
 // Explicitly instantiate TestBinaryOperatorPerf
-template bool TestBinaryOperatorPerf<Operator::Add>();
-template bool TestBinaryOperatorPerf<Operator::Multiply>();
+template bool TestBinaryOperatorPerf<Operator::Add>(int testBase);
+template bool TestBinaryOperatorPerf<Operator::Multiply>(int testBase);
 
 // Explicitly instantiate TestAllBinaryOp
 template bool TestAllBinaryOp<Operator::Add>(int testBase);

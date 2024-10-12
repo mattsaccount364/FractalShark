@@ -19,4 +19,4 @@ template<Operator sharkOperator>
 bool TestAllBinaryOp(int testBase);
 
 template<Operator sharkOperator>
-bool TestBinaryOperatorPerf();
+bool TestBinaryOperatorPerf(int testBase);

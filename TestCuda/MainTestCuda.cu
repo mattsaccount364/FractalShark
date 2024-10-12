@@ -46,11 +46,12 @@ void PressKey() {
 }
 
 int main(int argc, char *argv[]) {
+    int testBase = 0;
+
     if constexpr (!SkipCorrectnessTests) {
         //TestNullKernel();
         //PressKey();
 
-        int testBase = 0;
         bool res = false;
         res = TestConversion(0);
         if (!res) {
@@ -75,6 +76,12 @@ int main(int argc, char *argv[]) {
     //if (!res) {
     //    PressKey();
     //}
+
+    testBase = 700;
+    bool res = TestBinaryOperatorPerf<Operator::Multiply>(testBase);
+    if (!res) {
+        PressKey();
+    }
 
     return 0;
 }

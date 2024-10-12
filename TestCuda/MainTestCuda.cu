@@ -50,22 +50,31 @@ int main(int argc, char *argv[]) {
         //TestNullKernel();
         //PressKey();
 
+        int testBase = 0;
         bool res = false;
-        res = TestConversion();
+        res = TestConversion(0);
         if (!res) {
             PressKey();
         }
 
-        res = TestAllBinaryOp<Operator::Add>();
+        testBase = 200;
+        res = TestAllBinaryOp<Operator::Multiply>(testBase);
+        if (!res) {
+            PressKey();
+        }
+
+        testBase = 400;
+        res = TestAllBinaryOp<Operator::Add>(testBase);
         if (!res) {
             PressKey();
         }
     }
 
-    bool res = TestBinaryOperatorPerf<Operator::Add>();
-    if (!res) {
-        PressKey();
-    }
+    //testBase = 600;
+    //bool res = TestBinaryOperatorPerf<Operator::Add>(testBase);
+    //if (!res) {
+    //    PressKey();
+    //}
 
     return 0;
 }

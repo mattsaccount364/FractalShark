@@ -3,8 +3,10 @@
 #include "HpGpu.cuh"
 #include "BenchmarkTimer.h"
 #include "TestTracker.h"
+
 #include "Tests.cuh"
 #include "Add.cuh"
+#include "Multiply.cuh"
 
 #include <iostream>
 #include <vector>
@@ -103,8 +105,11 @@ void TestAddTwoNumbersPerf(
         BenchmarkTimer hostTimer;
         ScopedBenchmarkStopper hostStopper{ hostTimer };
 
-        for (size_t i = 0; i < NUM_ITER; ++i) {
+        if constexpr (sharkOperator == Operator::Add) {
             mpf_add(mpfHostResult, mpfX, mpfY);
+        }
+        else if constexpr (sharkOperator == Operator::Multiply) {
+            mpf_mul(mpfHostResult, mpfX, mpfY);
         }
 
         hostTimer.StopTimer();
@@ -231,7 +236,12 @@ void TestBinOperatorTwoNumbers(
         HpGpu gpuResult{};
         mpf_t mpfHostResult;
         mpf_init(mpfHostResult);
-        mpf_add(mpfHostResult, mpfX, mpfY);
+
+        if constexpr (sharkOperator == Operator::Add) {
+            mpf_add(mpfHostResult, mpfX, mpfY);
+        } else if constexpr (sharkOperator == Operator::Multiply) {
+            mpf_mul(mpfHostResult, mpfX, mpfY);
+        }
 
         // Print host result
         if (Verbose) {
@@ -243,27 +253,58 @@ void TestBinOperatorTwoNumbers(
         HpGpu *internalGpuResult;
         cudaMalloc(&internalGpuResult, sizeof(HpGpu));
 
-        // Allocate memory for carryOuts and cumulativeCarries
-        GlobalAddBlockData *globalBlockData;
-        CarryInfo *d_carryOuts;
-        uint32_t *d_cumulativeCarries;
-        cudaMalloc(&globalBlockData, sizeof(GlobalAddBlockData));
-        cudaMalloc(&d_carryOuts, (NumBlocks + 1) * sizeof(CarryInfo));
-        cudaMalloc(&d_cumulativeCarries, (NumBlocks + 1) * sizeof(uint32_t));
-
-        // Prepare kernel arguments
-        void *kernelArgs[] = {
-            (void *)&xGpu,
-            (void *)&yGpu,
-            (void *)&internalGpuResult,
-            (void *)&globalBlockData,
-            (void *)&d_carryOuts,
-            (void *)&d_cumulativeCarries
-        };
-
         BenchmarkTimer timer;
         ScopedBenchmarkStopper stopper{ timer };
-        ComputeAddGpu(kernelArgs);
+
+        if constexpr (sharkOperator == Operator::Add) {
+            // Allocate memory for carryOuts and cumulativeCarries
+            GlobalAddBlockData *globalBlockData;
+            CarryInfo *d_carryOuts;
+            uint32_t *d_cumulativeCarries;
+            cudaMalloc(&globalBlockData, sizeof(GlobalAddBlockData));
+            cudaMalloc(&d_carryOuts, (NumBlocks + 1) * sizeof(CarryInfo));
+            cudaMalloc(&d_cumulativeCarries, (NumBlocks + 1) * sizeof(uint32_t));
+
+            // Prepare kernel arguments
+            void *kernelArgs[] = {
+                (void *)&xGpu,
+                (void *)&yGpu,
+                (void *)&internalGpuResult,
+                (void *)&globalBlockData,
+                (void *)&d_carryOuts,
+                (void *)&d_cumulativeCarries
+            };
+
+            ComputeAddGpu(kernelArgs);
+
+            cudaFree(globalBlockData);
+            cudaFree(d_carryOuts);
+            cudaFree(d_cumulativeCarries);
+        } else if constexpr (sharkOperator == Operator::Multiply) {
+            // Prepare kernel arguments
+            // Allocate memory for carryOuts and cumulativeCarries
+            uint64_t *d_carry1;
+            uint64_t *d_carry2;
+            uint64_t *d_carry3;
+            cudaMalloc(&d_carry1, (NumBlocks + 1) * sizeof(uint64_t));
+            cudaMalloc(&d_carry2, (NumBlocks + 1) * sizeof(uint64_t));
+            cudaMalloc(&d_carry3, (NumBlocks + 1) * sizeof(uint64_t));
+
+            void *kernelArgs[] = {
+                (void *)&xGpu,
+                (void *)&yGpu,
+                (void *)&internalGpuResult,
+                (void *)&d_carry1,
+                (void *)&d_carry2,
+                (void *)&d_carry3
+            };
+
+            ComputeMultiplyGpu(kernelArgs);
+
+            cudaFree(d_carry1);
+            cudaFree(d_carry2);
+            cudaFree(d_carry3);
+        }
 
         cudaMemcpy(&gpuResult, internalGpuResult, sizeof(HpGpu), cudaMemcpyDeviceToHost);
 
@@ -275,9 +316,6 @@ void TestBinOperatorTwoNumbers(
         }
 
         cudaFree(internalGpuResult);
-        cudaFree(globalBlockData);
-        cudaFree(d_carryOuts);
-        cudaFree(d_cumulativeCarries);
 
         DiffAgainstHost<sharkOperator>(testNum, mpfHostResult, gpuResult);
 
@@ -517,8 +555,41 @@ void TestAddSpecialNumbers6(int testNum) {
 }
 
 template<Operator sharkOperator>
-bool TestAllBinaryOp() {
-    constexpr bool Verbose = false;
+void TestAddSpecialNumbers7(int testNum) {
+    size_t i = 0;
+    std::vector<uint32_t> testData1;
+    testData1.resize(HpGpu::NumUint32);
+    testData1[i++] = 0;
+    testData1[i++] = 0;
+    testData1[i++] = 0;
+    testData1[i++] = 0xFFFFFFFF;
+    testData1[i++] = 0;
+    testData1[i++] = 0;
+    testData1[i++] = 0;
+    testData1[i++] = 0;
+
+    i = 0;
+    std::vector<uint32_t> testData2;
+    testData2.resize(HpGpu::NumUint32);
+    testData2[i++] = 0;
+    testData2[i++] = 0;
+    testData2[i++] = 0;
+    testData2[i++] = 0xFFFFFFFF;
+    testData2[i++] = 0;
+    testData2[i++] = 0;
+    testData2[i++] = 0;
+    testData2[i++] = 0;
+
+    const bool isNegative = true;
+    std::unique_ptr<HpGpu> xNum{ std::make_unique<HpGpu>(testData1.data(), 0, !isNegative) };
+    std::unique_ptr<HpGpu> yNum{ std::make_unique<HpGpu>(testData2.data(), 0, !isNegative) };
+
+    TestAddSpecialNumbers<sharkOperator>(testNum, *xNum, *yNum);
+}
+
+
+template<Operator sharkOperator>
+bool TestAllBinaryOp(int testBase) {
     constexpr bool includeSet1 = true;
     constexpr bool includeSet2 = true;
     constexpr bool includeSet3 = true;
@@ -527,8 +598,11 @@ bool TestAllBinaryOp() {
     constexpr bool includeSet6 = true;
     constexpr bool includeSet10 = true;
 
+    // 200s is multiply
+    // 400s is add
+
     if constexpr (includeSet1) {
-        const auto set1 = 10;
+        const auto set1 = testBase + 10;
         TestBinOperatorTwoNumbers<sharkOperator>(set1 + 1, "1", "2");
         TestBinOperatorTwoNumbers<sharkOperator>(set1 + 2, "4294967295", "1");
         TestBinOperatorTwoNumbers<sharkOperator>(set1 + 3, "4294967296", "1");
@@ -541,17 +615,18 @@ bool TestAllBinaryOp() {
     }
 
     if constexpr (includeSet2) {
-        const auto set2 = 20;
-        TestBinOperatorTwoNumbers<sharkOperator>(set2 + 1, "0.2", "0.1");
-        TestBinOperatorTwoNumbers<sharkOperator>(set2 + 2, "0.5", "1.2");
-        TestBinOperatorTwoNumbers<sharkOperator>(set2 + 3, "0.6", "1.3");
-        TestBinOperatorTwoNumbers<sharkOperator>(set2 + 4, "0.7", "1.4");
-        TestBinOperatorTwoNumbers<sharkOperator>(set2 + 5, "0.1", "1.99999999999999999999999999999");
-        TestBinOperatorTwoNumbers<sharkOperator>(set2 + 6, "0.123124561464451654461", "1.2395123123127298375982735");
+        const auto set2 = testBase + 20;
+        TestBinOperatorTwoNumbers<sharkOperator>(set2 + 1, "2", "0.1");
+        TestBinOperatorTwoNumbers<sharkOperator>(set2 + 2, "0.2", "0.1");
+        TestBinOperatorTwoNumbers<sharkOperator>(set2 + 3, "0.5", "1.2");
+        TestBinOperatorTwoNumbers<sharkOperator>(set2 + 4, "0.6", "1.3");
+        TestBinOperatorTwoNumbers<sharkOperator>(set2 + 5, "0.7", "1.4");
+        TestBinOperatorTwoNumbers<sharkOperator>(set2 + 6, "0.1", "1.99999999999999999999999999999");
+        TestBinOperatorTwoNumbers<sharkOperator>(set2 + 7, "0.123124561464451654461", "1.2395123123127298375982735");
     }
 
     if constexpr (includeSet3) {
-        const auto set3 = 30;
+        const auto set3 = testBase + 30;
         TestBinOperatorTwoNumbers<sharkOperator>(set3 + 1, "-0.5", "1.2");
         TestBinOperatorTwoNumbers<sharkOperator>(set3 + 2, "-0.6", "1.3");
         TestBinOperatorTwoNumbers<sharkOperator>(set3 + 3, "-0.7", "1.4");
@@ -560,7 +635,7 @@ bool TestAllBinaryOp() {
     }
 
     if constexpr (includeSet4) {
-        const auto set4 = 40;
+        const auto set4 = testBase + 40;
         TestBinOperatorTwoNumbers<sharkOperator>(set4 + 1, "-0.5", "-1.2");
         TestBinOperatorTwoNumbers<sharkOperator>(set4 + 2, "-0.6", "-1.3");
         TestBinOperatorTwoNumbers<sharkOperator>(set4 + 3, "-0.7", "-1.4");
@@ -569,7 +644,7 @@ bool TestAllBinaryOp() {
     }
 
     if constexpr (includeSet5) {
-        const auto set5 = 50;
+        const auto set5 = testBase + 50;
         TestBinOperatorTwoNumbers<sharkOperator>(set5 + 1, "0.5265542653452654526545625456254565446654545645649789871322131213156435546435", "-1.263468375787958774985473345435632415334245268476928454653443234164658776634854746584532186639173047328910730217803271839216");
         TestBinOperatorTwoNumbers<sharkOperator>(set5 + 2, "0.2999999999965542653452654526545625456254565446654545645649789871322131213156435546435", "-1.263468375787958774985473345435632415334245268476928454653443234164658776634854746584532186639173047328910730217803271839216");
         TestBinOperatorTwoNumbers<sharkOperator>(set5 + 3, "0.1265542653452654526545625456254565446654545645649789871322131213156435546435", "-1.2634683757879587749854733454356324153342452684769284546534432341646587766348547465845321866391730473289107302178039999999999999271839216");
@@ -578,17 +653,18 @@ bool TestAllBinaryOp() {
     }
 
     if constexpr (includeSet6) {
-        const auto set6 = 60;
+        const auto set6 = testBase + 60;
         TestAddSpecialNumbers1<sharkOperator>(set6 + 1);
         TestAddSpecialNumbers2<sharkOperator>(set6 + 2);
         TestAddSpecialNumbers3<sharkOperator>(set6 + 3);
         TestAddSpecialNumbers4<sharkOperator>(set6 + 4);
         TestAddSpecialNumbers5<sharkOperator>(set6 + 5);
         TestAddSpecialNumbers6<sharkOperator>(set6 + 6);
+        TestAddSpecialNumbers7<sharkOperator>(set6 + 7);
     }
 
     if constexpr (includeSet10) {
-        const auto set10 = 100;
+        const auto set10 = testBase + 100;
         for (auto i = 0; i < 100; i++) {
             std::unique_ptr<HpGpu> x = std::make_unique<HpGpu>();
             std::unique_ptr<HpGpu> y = std::make_unique<HpGpu>();
@@ -621,5 +697,5 @@ template bool TestBinaryOperatorPerf<Operator::Add>();
 template bool TestBinaryOperatorPerf<Operator::Multiply>();
 
 // Explicitly instantiate TestAllBinaryOp
-template bool TestAllBinaryOp<Operator::Add>();
-template bool TestAllBinaryOp<Operator::Multiply>();
+template bool TestAllBinaryOp<Operator::Add>(int testBase);
+template bool TestAllBinaryOp<Operator::Multiply>(int testBase);

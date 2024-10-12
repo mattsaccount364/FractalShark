@@ -159,28 +159,6 @@ __device__ void ComputeCarryInDecider(
     }
 }
 
-__device__ void InclusiveBlellochScan(uint32_t *data, uint32_t *scanResults, int n) {
-    __shared__ uint32_t temp[ThreadsPerBlock]; // Shared memory of size n
-
-    int thid = threadIdx.x;
-    temp[thid] = data[thid];
-    __syncthreads();
-
-    // Upsweep phase
-    for (int offset = 1; offset < n; offset *= 2) {
-        if (thid >= offset) {
-            temp[thid] += temp[thid - offset];
-        }
-        __syncthreads();
-    }
-
-    // No need to clear the last element
-
-    // Downsweep phase (not required for inclusive scan)
-    // Copy the results
-    scanResults[thid] = temp[thid];
-}
-
 __device__ uint32_t ShiftRight(uint32_t *digits, int shiftBits, int idx) {
     int shiftWords = shiftBits / 32;
     int shiftBitsMod = shiftBits % 32;

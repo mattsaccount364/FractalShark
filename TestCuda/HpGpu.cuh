@@ -5,7 +5,7 @@
 #include <gmp.h>
 
 static constexpr auto ThreadsPerBlock = 4;
-static constexpr auto NumBlocks = 4;
+static constexpr auto NumBlocks = 2;
 static constexpr auto LowPrec = 32;
 static constexpr int NUM_ITER = 100000;
 static constexpr bool SkipCorrectnessTests = false;

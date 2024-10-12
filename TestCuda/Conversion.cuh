@@ -1,3 +1,3 @@
 #pragma once
 
-bool TestConversion();
+bool TestConversion(int testBase);

@@ -15,6 +15,8 @@
 #include <algorithm>
 
 #include <cooperative_groups.h>
+#include <cooperative_groups/memcpy_async.h>
+#include <cuda/barrier>
 namespace cg = cooperative_groups;
 
 
@@ -44,6 +46,7 @@ __device__ void MultiplyHelper(
     uint64_t *tempProducts      // Temporary buffer to store intermediate products
 ) {
     // Calculate the thread's unique index
+    auto block = cooperative_groups::this_thread_block();
     int threadIdxGlobal = blockIdx.x * blockDim.x + threadIdx.x;
 
     // Each thread handles two digits: low and high
@@ -57,6 +60,18 @@ __device__ void MultiplyHelper(
         // For simplicity, assume NumUint32 is even
     }
 
+    // Shared memory for A and B in double buffering
+    constexpr int BATCH_SIZE = 4;
+    __shared__ uint32_t A_shared[2][BATCH_SIZE];
+    __shared__ uint32_t B_shared[2][BATCH_SIZE + 1];
+
+    // Flags to indicate which buffer is currently being used
+    int currentBuffer = 0;
+    int nextBuffer = 1;
+
+    // Calculate total number of batches
+    int totalBatches = (HpGpu::NumUint32 + BATCH_SIZE - 1) / BATCH_SIZE + 1;
+
     // Initialize temporary products to zero
     if (lowDigitIdx < 2 * HpGpu::NumUint32) {
         tempProducts[lowDigitIdx] = 0;
@@ -64,29 +79,73 @@ __device__ void MultiplyHelper(
     if (highDigitIdx < 2 * HpGpu::NumUint32) {
         tempProducts[highDigitIdx] = 0;
     }
-    __syncthreads();
+
+    // Calculate the starting index for this batch
+    int nextBatchStart = 1 * BATCH_SIZE;
+
+    // Copy A->Digits
+    cg::memcpy_async(block, &A_shared[currentBuffer][0], &A->Digits[0], sizeof(uint32_t) * BATCH_SIZE);
+    // Copy B->Digits
+    cg::memcpy_async(block, &B_shared[currentBuffer][0], &B->Digits[HpGpu::NumUint32 - nextBatchStart], sizeof(uint32_t) * BATCH_SIZE);
+    cg::wait(block);
 
     // Step 1: Compute partial products without atomics
-    {
-        uint64_t sum = 0;
-        for (int j = 0; j < HpGpu::NumUint32; ++j) {
-            int bIndex = lowDigitIdx - j;
-            if (bIndex >= 0 && bIndex < HpGpu::NumUint32) {
-                sum += static_cast<uint64_t>(A->Digits[j]) * static_cast<uint64_t>(B->Digits[bIndex]);
-            }
-        }
-        tempProducts[lowDigitIdx] = sum;
-    }
+    // Loop over batches
+    int origJ = 0;
+    for (int batch = 1; batch < totalBatches; ++batch) {
+        block.sync();
 
-    {
-        uint64_t sum = 0;
-        for (int j = 0; j < HpGpu::NumUint32; ++j) {
-            int bIndex = highDigitIdx - j;
-            if (bIndex >= 0 && bIndex < HpGpu::NumUint32) {
-                sum += static_cast<uint64_t>(A->Digits[j]) * static_cast<uint64_t>(B->Digits[bIndex]);
-            }
+        // Phase 1: Asynchronously load a batch of A and B into shared memory
+        // Only the first thread in the block initiates the copy.
+        // The last iteration does not start a new copy.
+        if (threadIdx.x == 0 && batch < totalBatches - 1) {
+            nextBatchStart = (batch + 1) * BATCH_SIZE;
+
+            // Copy A->Digits
+            cg::memcpy_async(block, &A_shared[nextBuffer][0], &A->Digits[nextBatchStart - BATCH_SIZE], sizeof(uint32_t) * BATCH_SIZE);
+            // Copy B->Digits
+            cg::memcpy_async(block, &B_shared[nextBuffer][0], &B->Digits[HpGpu::NumUint32 - nextBatchStart], sizeof(uint32_t) * BATCH_SIZE);
         }
-        tempProducts[highDigitIdx] = sum;
+
+        {
+            uint64_t sum = 0;
+            for (int j = 0; j < BATCH_SIZE; ++j) {
+                int origBIndex = lowDigitIdx - origJ;
+                int bIndex = lowDigitIdx - (batch - 1) * BATCH_SIZE - j;
+                if (origBIndex >= 0 && origBIndex < HpGpu::NumUint32) {
+                    sum += static_cast<uint64_t>(A_shared[currentBuffer][j]) * static_cast<uint64_t>(B_shared[currentBuffer][bIndex]);
+                }
+
+                origJ++;
+            }
+            tempProducts[lowDigitIdx] += sum;
+        }
+
+        origJ -= BATCH_SIZE;
+
+        {
+            uint64_t sum = 0;
+            for (int j = 0; j < BATCH_SIZE; ++j) {
+                int origBIndex = highDigitIdx - origJ;
+                int bIndex = highDigitIdx - (batch - 1) * BATCH_SIZE - j;
+                if (origBIndex >= 0 && origBIndex < HpGpu::NumUint32) {
+                    sum += static_cast<uint64_t>(A_shared[currentBuffer][j]) * static_cast<uint64_t>(B_shared[currentBuffer][bIndex]);
+                }
+
+                origJ++;
+            }
+            tempProducts[highDigitIdx] += sum;
+        }
+
+        // Phase 2: Wait for the previous copy to complete before using the data
+        if (batch > 0) {
+            // Wait for the previous copy to complete
+            cg::wait(block);
+        }
+
+        // Phase 4: Switch buffers for double buffering
+        currentBuffer = 1 - currentBuffer;
+        nextBuffer = 1 - nextBuffer;
     }
     
     grid.sync();

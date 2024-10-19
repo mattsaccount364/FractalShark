@@ -4,12 +4,12 @@
 #include <string>
 #include <gmp.h>
 
-static constexpr auto ThreadsPerBlock = 128;
-static constexpr auto NumBlocks = 128;
+static constexpr auto ThreadsPerBlock = 4;
+static constexpr auto NumBlocks = 4;
 static constexpr auto LowPrec = 32;
-static constexpr int NUM_ITER = 100;
-static constexpr bool SkipCorrectnessTests = true;
-constexpr bool Verbose = false;
+static constexpr int NUM_ITER = 1000;
+static constexpr bool SkipCorrectnessTests = false;
+constexpr bool Verbose = true;
 
 // Struct to hold both integer and fractional parts of the high-precision number
 struct HpGpu {

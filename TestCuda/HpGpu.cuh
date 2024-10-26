@@ -5,9 +5,9 @@
 #include <gmp.h>
 
 #ifdef _DEBUG
-static constexpr auto ThreadsPerBlock = 4;
-static constexpr auto NumBlocks = 4;
-static constexpr auto LowPrec = 32;
+static constexpr int32_t ThreadsPerBlock = 4;
+static constexpr int32_t NumBlocks = 4;
+static constexpr int32_t LowPrec = 32;
 static constexpr int NUM_ITER = 1000;
 static constexpr bool SkipCorrectnessTests = false;
 constexpr bool Verbose = true;
@@ -15,7 +15,7 @@ constexpr bool Verbose = true;
 static constexpr auto ThreadsPerBlock = 128;
 static constexpr auto NumBlocks = 64;
 static constexpr auto LowPrec = 32;
-static constexpr int NUM_ITER = 100;
+static constexpr int NUM_ITER = 200;
 static constexpr bool SkipCorrectnessTests = true;
 constexpr bool Verbose = false;
 #endif
@@ -34,7 +34,7 @@ struct HpGpu {
     void GenerateRandomNumber();
 
     // Fixed number of uint32_t values
-    constexpr static size_t NumUint32 = ThreadsPerBlock * NumBlocks;
+    constexpr static int32_t NumUint32 = ThreadsPerBlock * NumBlocks;
 
     // Default precision in bits
     constexpr static auto DefaultPrecBits = NumUint32 * sizeof(uint32_t) * 8;

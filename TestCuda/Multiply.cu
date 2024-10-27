@@ -34,7 +34,6 @@ struct PartialSum {
 namespace cg = cooperative_groups;
 
 
-
 //
 // static constexpr int32_t ThreadsPerBlock = /* power of 2 */;
 // static constexpr int32_t NumBlocks = /* power of 2 */;
@@ -53,11 +52,20 @@ __device__ void MultiplyHelper(
     uint64_t * __restrict__ tempProducts      // Temporary buffer to store intermediate products
 ) {
     // Calculate the thread's unique index
-    int threadIdxGlobal = blockIdx.x * blockDim.x + threadIdx.x;
+    const int threadIdxGlobal = blockIdx.x * blockDim.x + threadIdx.x;
+
+    const int threadIdxGlobalMin = blockIdx.x * blockDim.x;
+    const int threadIdxGlobalMax = threadIdxGlobalMin + blockDim.x - 1;
+
+    const int lowDigitIdxMin = threadIdxGlobalMin * 2;
+    const int lowDigitIdxMax = threadIdxGlobalMax * 2;
+
+    const int highDigitIdxMin = lowDigitIdxMin + 1;
+    const int highDigitIdxMax = lowDigitIdxMax + 1;
 
     // Each thread handles two digits: low and high
-    int lowDigitIdx = threadIdxGlobal * 2;
-    int highDigitIdx = lowDigitIdx + 1;
+    const int lowDigitIdx = threadIdxGlobal * 2;
+    const int highDigitIdx = lowDigitIdx + 1;
 
     // Ensure indices do not exceed the temporary buffer size
     if (lowDigitIdx >= 2 * HpGpu::NumUint32) return;
@@ -67,27 +75,26 @@ __device__ void MultiplyHelper(
     if (highDigitIdx < 2 * HpGpu::NumUint32) {
         tempProducts[highDigitIdx] = 0;
     }
-    __syncthreads();
 
-    static constexpr int32_t BATCH_SIZE_A = ThreadsPerBlock;
-    static constexpr int32_t BATCH_SIZE_B = ThreadsPerBlock;
+    static constexpr int32_t BATCH_SIZE_A = BatchSize;
+    static constexpr int32_t BATCH_SIZE_B = BatchSize;
 
     // Compute k_min and k_max
-    int k_min = 2 * blockIdx.x * blockDim.x;
-    int k_max = min(2 * (blockIdx.x + 1) * blockDim.x - 1, 2 * HpGpu::NumUint32 - 1);
+    const int k_min = 2 * blockIdx.x * blockDim.x;
+    const int k_max = min(2 * (blockIdx.x + 1) * blockDim.x - 1, 2 * HpGpu::NumUint32 - 1);
 
     // Compute j_min_block and j_max_block
-    int j_min_block = max(0, k_min - (HpGpu::NumUint32 - 1));
-    int j_max_block = min(k_max, HpGpu::NumUint32 - 1);
+    const int j_min_block = max(0, k_min - (HpGpu::NumUint32 - 1));
+    const int j_max_block = min(k_max, HpGpu::NumUint32 - 1);
 
-    int a_shared_size_required = j_max_block - j_min_block + 1;
+    const int a_shared_size_required = j_max_block - j_min_block + 1;
 
     // Shared memory for A and B with double buffering
     __shared__ __align__(16) uint32_t A_shared[2][BATCH_SIZE_A];
     __shared__ __align__(16) uint32_t B_shared[2][BATCH_SIZE_B];
 
-    int numBatches_A = (a_shared_size_required + BATCH_SIZE_A - 1) / BATCH_SIZE_A;
-    int numBatches_B = (HpGpu::NumUint32 + BATCH_SIZE_B - 1) / BATCH_SIZE_B;
+    const int numBatches_A = (a_shared_size_required + BATCH_SIZE_A - 1) / BATCH_SIZE_A;
+    const int numBatches_B = (HpGpu::NumUint32 + BATCH_SIZE_B - 1) / BATCH_SIZE_B;
 
     uint32_t * __restrict__ tempBufferA = nullptr;
     uint32_t * __restrict__ currentBufferA = A_shared[0];
@@ -100,9 +107,8 @@ __device__ void MultiplyHelper(
     cg::thread_block block = cg::this_thread_block();
 
     // Start loading the first batch of A asynchronously
-    int batchA = 0;
-    int batchStartA = j_min_block + batchA * BATCH_SIZE_A;
-    int elementsToCopyA = min(BATCH_SIZE_A, a_shared_size_required - batchA * BATCH_SIZE_A);
+    const int batchStartA = j_min_block;
+    const int elementsToCopyA = min(BATCH_SIZE_A, a_shared_size_required);
 
     cg::memcpy_async(block, &currentBufferA[0], &A->Digits[batchStartA], sizeof(uint32_t) * elementsToCopyA);
 
@@ -112,40 +118,45 @@ __device__ void MultiplyHelper(
     uint64_t lowDigitIdxSum = 0;
     uint64_t highDigitIdxSum = 0;
 
-    bool waitForFirstBatch;
-
     // Loop over batches of A
-    for (batchA = 0; batchA < numBatches_A; ++batchA) {
-        // Start loading the first batch of B asynchronously
-        int batchB = 0;
-        int batchStartB = batchB * BATCH_SIZE_B;
-        int elementsToCopyB = min(BATCH_SIZE_B, HpGpu::NumUint32 - batchStartB);
-
-        cg::memcpy_async(block, &currentBufferB[0], &B->Digits[batchStartB], sizeof(uint32_t) * elementsToCopyB);
-
+    for (int32_t batchA = 0; batchA < numBatches_A; ++batchA) {
         block.sync();
 
-        int batchStartA = j_min_block + batchA * BATCH_SIZE_A;
-        int batchEndA = batchStartA + elementsToCopyA - 1;
-
-        waitForFirstBatch = false;
+        const int batchStartA = j_min_block + batchA * BATCH_SIZE_A;
+        const int batchEndA = batchStartA + elementsToCopyA - 1;
 
         // Start loading the next batch of A asynchronously if not the last batch
         if (batchA + 1 < numBatches_A) {
-            int nextBatchStartA = j_min_block + (batchA + 1) * BATCH_SIZE_A;
-            int nextElementsToCopyA = min(BATCH_SIZE_A, a_shared_size_required - (batchA + 1) * BATCH_SIZE_A);
+            const int nextBatchStartA = j_min_block + (batchA + 1) * BATCH_SIZE_A;
+            const int nextElementsToCopyA = min(BATCH_SIZE_A, a_shared_size_required - (batchA + 1) * BATCH_SIZE_A);
 
             cg::memcpy_async(block, &nextBufferA[0], &A->Digits[nextBatchStartA], sizeof(uint32_t) * nextElementsToCopyA);
+        }
 
-            // Wait for the first batch of B to be loaded
-            cg::wait_prior<1>(block);
-        } else {
-            // Wait for the first batch of B to be loaded
-            waitForFirstBatch = true;
+        const int bIndex_min_low = lowDigitIdxMin - batchEndA;
+        const int bIndex_max_low = lowDigitIdxMax - batchStartA;
+
+        const int bIndex_min_high = highDigitIdxMin - batchEndA;
+        const int bIndex_max_high = highDigitIdxMax - batchStartA;
+
+        const int bIndex_min = max(0, min(bIndex_min_low, bIndex_min_high));
+        const int bIndex_max = min(HpGpu::NumUint32 - 1, max(bIndex_max_low, bIndex_max_high));
+
+        const int batchB_start = bIndex_min / BATCH_SIZE_B;
+        // const int batchB_end = bIndex_max / BATCH_SIZE_B;
+
+        int batchStartB = batchB_start * BATCH_SIZE_B;
+        {
+            const int elementsToCopyB = min(BATCH_SIZE_B, HpGpu::NumUint32 - batchStartB);
+            cg::memcpy_async(block, &currentBufferB[0], &B->Digits[batchStartB], sizeof(uint32_t) * elementsToCopyB);
         }
 
         // Loop over batches of B
-        for (batchB = 0; batchB < numBatches_B; ++batchB) {
+        for (int batchB = batchB_start; batchB < numBatches_B; ++batchB) {
+            //block.sync();
+
+            const int elementsToCopyB = min(BATCH_SIZE_B, HpGpu::NumUint32 - batchStartB);
+            const int batchEndB = batchStartB + elementsToCopyB - 1;
 
             // Start loading the next batch of B asynchronously if not the last batch
             if (batchB + 1 < numBatches_B) {
@@ -153,17 +164,10 @@ __device__ void MultiplyHelper(
                 int nextElementsToCopyB = min(BATCH_SIZE_B, HpGpu::NumUint32 - nextBatchStartB);
 
                 cg::memcpy_async(block, &nextBufferB[0], &B->Digits[nextBatchStartB], sizeof(uint32_t) * nextElementsToCopyB);
-            }
-
-            if (waitForFirstBatch) {
                 cg::wait_prior<1>(block);
-                waitForFirstBatch = false;
+            } else {
+                cg::wait(block);
             }
-
-            //block.sync();
-
-            int batchStartB = batchB * BATCH_SIZE_B;
-            int batchEndB = batchStartB + elementsToCopyB - 1;
 
             // Compute partial products for lowDigitIdx
             {
@@ -212,11 +216,7 @@ __device__ void MultiplyHelper(
             currentBufferB = nextBufferB;
             nextBufferB = tempBufferB;
 
-            // Wait for the next batch of B to be loaded
-            if (batchB + 1 < numBatches_B) {
-                cg::wait(block);
-            }
-            block.sync();
+            batchStartB += BATCH_SIZE_B;
         }
 
         // Switch buffers for double buffering of A
@@ -274,7 +274,7 @@ __device__ void MultiplyHelper(
                 carryOutsShared[i] += newCarry;
             }
         }
-        __syncthreads();
+        block.sync();
     }
 
     // After propagation, the last thread's carryOut is the block's carryOut
@@ -290,7 +290,6 @@ __device__ void MultiplyHelper(
             carryIns[i] = carryIns[i - 1] + carryOuts_phase3[i - 1];
         }
     }
-    __syncthreads();
     grid.sync(); // Ensure all blocks have computed carryIns
 
 
@@ -312,7 +311,7 @@ __device__ void MultiplyHelper(
     } else {
         carryOutsShared[threadIdx.x * 2 + 1] = 0;
     }
-    __syncthreads();
+    block.sync();
 
     // Phase 6: Record any new carry-outs generated by carry-ins
     if (threadIdx.x == 0) {
@@ -322,7 +321,7 @@ __device__ void MultiplyHelper(
         }
         carryOuts_phase6[blockIdx.x] = blockCarryOut;
     }
-    __syncthreads();
+    block.sync();
 
     // FIX ME: carryOuts_phase6 is unused.
 
@@ -385,7 +384,7 @@ __device__ void MultiplyHelper(
         Out->IsNegative = A->IsNegative != B->IsNegative;
         Out->Exponent += A->Exponent + B->Exponent;
     }
-    __syncthreads();
+    block.sync();
 
     //// Phase 8: Initialize result properties (only block 0's thread 0 does this)
     //if (blockIdx.x == 0 && threadIdx.x == 0) {

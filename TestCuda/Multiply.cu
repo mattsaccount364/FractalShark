@@ -172,42 +172,43 @@ __device__ void MultiplyHelper(
             // Compute partial products for lowDigitIdx
             {
                 uint64_t sumLow = 0;
+                uint64_t sumHigh = 0;
 
-                // Calculate the valid range of j for lowDigitIdx
+                // Calculate the valid ranges of j for lowDigitIdx and highDigitIdx
                 int j_min_low = max(batchStartA, max(j_min_block, lowDigitIdx - batchEndB));
                 int j_max_low = min(batchEndA, min(j_max_block, lowDigitIdx - batchStartB));
 
-                for (int j = j_min_low; j <= j_max_low; ++j) {
-                    int aSharedIndex = j - batchStartA;
-                    int bIndex = lowDigitIdx - j;
-                    int bSharedIndex = bIndex - batchStartB;
-
-                    uint32_t aValue = currentBufferA[aSharedIndex];
-                    uint32_t bValue = currentBufferB[bSharedIndex];
-
-                    sumLow += static_cast<uint64_t>(aValue) * static_cast<uint64_t>(bValue);
-                }
-                lowDigitIdxSum += sumLow;
-            }
-
-            // Compute partial products for highDigitIdx
-            {
-                uint64_t sumHigh = 0;
-
-                // Calculate the valid range of j for highDigitIdx
                 int j_min_high = max(batchStartA, max(j_min_block, highDigitIdx - batchEndB));
                 int j_max_high = min(batchEndA, min(j_max_block, highDigitIdx - batchStartB));
 
-                for (int j = j_min_high; j <= j_max_high; ++j) {
+                // Combined range
+                int j_min = min(j_min_low, j_min_high);
+                int j_max = max(j_max_low, j_max_high);
+
+                // Iterate over the combined range
+                for (int j = j_min; j <= j_max; ++j) {
                     int aSharedIndex = j - batchStartA;
-                    int bIndex = highDigitIdx - j;
-                    int bSharedIndex = bIndex - batchStartB;
-
                     uint32_t aValue = currentBufferA[aSharedIndex];
-                    uint32_t bValue = currentBufferB[bSharedIndex];
 
-                    sumHigh += static_cast<uint64_t>(aValue) * static_cast<uint64_t>(bValue);
+                    // Compute for lowDigitIdx
+                    if (j >= j_min_low && j <= j_max_low) {
+                        int bIndexLow = lowDigitIdx - j;
+                        int bSharedIndexLow = bIndexLow - batchStartB;
+                        uint32_t bValueLow = currentBufferB[bSharedIndexLow];
+
+                        sumLow += static_cast<uint64_t>(aValue) * static_cast<uint64_t>(bValueLow);
+                    }
+
+                    // Compute for highDigitIdx
+                    if (highDigitIdx < 2 * HpGpu::NumUint32 && j >= j_min_high && j <= j_max_high) {
+                        int bIndexHigh = highDigitIdx - j;
+                        int bSharedIndexHigh = bIndexHigh - batchStartB;
+                        uint32_t bValueHigh = currentBufferB[bSharedIndexHigh];
+
+                        sumHigh += static_cast<uint64_t>(aValue) * static_cast<uint64_t>(bValueHigh);
+                    }
                 }
+                lowDigitIdxSum += sumLow;
                 highDigitIdxSum += sumHigh;
             }
 
@@ -252,7 +253,7 @@ __device__ void MultiplyHelper(
     // Phase 3: Sequentially propagate carries within the block
     __shared__ uint32_t carryOutsShared[ThreadsPerBlock];
     carryOutsShared[threadIdx.x] = carryHigh; // Each thread's carryOut from high digit
-    grid.sync();
+    //grid.sync();
 
     // Sequential carry propagation within the block
     for (int i = 1; i < ThreadsPerBlock; ++i) {
@@ -281,47 +282,47 @@ __device__ void MultiplyHelper(
     if (threadIdx.x == ThreadsPerBlock - 1) {
         carryOuts_phase3[blockIdx.x] = carryOutsShared[ThreadsPerBlock - 1];
     }
-    grid.sync(); // Ensure all blocks have computed carryIns
+    //grid.sync(); // Ensure all blocks have computed carryIns
 
-    // Phase 4: Compute carry-ins using prefix sum on carryOuts_phase3
-    if (blockIdx.x == 0 && threadIdx.x == 0) {
-        carryIns[0] = 0; // First block has no carry-in
-        for (int i = 1; i < NumBlocks; ++i) {
-            carryIns[i] = carryIns[i - 1] + carryOuts_phase3[i - 1];
-        }
-    }
-    grid.sync(); // Ensure all blocks have computed carryIns
+    //// Phase 4: Compute carry-ins using prefix sum on carryOuts_phase3
+    //if (blockIdx.x == 0 && threadIdx.x == 0) {
+    //    carryIns[0] = 0; // First block has no carry-in
+    //    for (int i = 1; i < NumBlocks; ++i) {
+    //        carryIns[i] = carryIns[i - 1] + carryOuts_phase3[i - 1];
+    //    }
+    //}
+    //grid.sync(); // Ensure all blocks have computed carryIns
 
 
     // Phase 5: Apply carry-ins to each block's output digits
-    if (lowDigitIdx < HpGpu::NumUint32) {
-        uint64_t sumLow = static_cast<uint64_t>(tempProducts[lowDigitIdx] & 0xFFFFFFFF) + carryOuts_phase3[blockIdx.x];
-        Out->Digits[lowDigitIdx] = static_cast<uint32_t>(sumLow & 0xFFFFFFFF);
-        uint32_t newCarryLow = static_cast<uint32_t>(sumLow >> 32);
-        carryOutsShared[threadIdx.x * 2] = newCarryLow;
-    } else {
-        carryOutsShared[threadIdx.x * 2] = 0;
-    }
+    //if (lowDigitIdx < HpGpu::NumUint32) {
+    //    uint64_t sumLow = static_cast<uint64_t>(tempProducts[lowDigitIdx] & 0xFFFFFFFF) + carryOuts_phase3[blockIdx.x];
+    //    Out->Digits[lowDigitIdx] = static_cast<uint32_t>(sumLow & 0xFFFFFFFF);
+    //    //uint32_t newCarryLow = static_cast<uint32_t>(sumLow >> 32);
+    //    //carryOutsShared[threadIdx.x * 2] = newCarryLow;
+    //} else {
+    //    //carryOutsShared[threadIdx.x * 2] = 0;
+    //}
 
-    if (highDigitIdx < HpGpu::NumUint32) {
-        uint64_t sumHigh = static_cast<uint64_t>(tempProducts[highDigitIdx] & 0xFFFFFFFF) + carryOutsShared[threadIdx.x * 2];
-        Out->Digits[highDigitIdx] = static_cast<uint32_t>(sumHigh & 0xFFFFFFFF);
-        uint32_t newCarryHigh = static_cast<uint32_t>(sumHigh >> 32);
-        carryOutsShared[threadIdx.x * 2 + 1] = newCarryHigh;
-    } else {
-        carryOutsShared[threadIdx.x * 2 + 1] = 0;
-    }
-    block.sync();
+    //if (highDigitIdx < HpGpu::NumUint32) {
+    //    uint64_t sumHigh = static_cast<uint64_t>(tempProducts[highDigitIdx] & 0xFFFFFFFF) + carryOutsShared[threadIdx.x * 2];
+    //    Out->Digits[highDigitIdx] = static_cast<uint32_t>(sumHigh & 0xFFFFFFFF);
+    //    //uint32_t newCarryHigh = static_cast<uint32_t>(sumHigh >> 32);
+    //    //carryOutsShared[threadIdx.x * 2 + 1] = newCarryHigh;
+    //} else {
+    //    //carryOutsShared[threadIdx.x * 2 + 1] = 0;
+    //}
+    ////block.sync();
 
     // Phase 6: Record any new carry-outs generated by carry-ins
-    if (threadIdx.x == 0) {
-        uint64_t blockCarryOut = 0;
-        for (int i = 0; i < ThreadsPerBlock * 2; ++i) {
-            blockCarryOut += carryOutsShared[i];
-        }
-        carryOuts_phase6[blockIdx.x] = blockCarryOut;
-    }
-    block.sync();
+    //if (threadIdx.x == 0) {
+    //    uint64_t blockCarryOut = 0;
+    //    for (int i = 0; i < ThreadsPerBlock * 2; ++i) {
+    //        blockCarryOut += carryOutsShared[i];
+    //    }
+    //    carryOuts_phase6[blockIdx.x] = blockCarryOut;
+    //}
+    //block.sync();
 
     // FIX ME: carryOuts_phase6 is unused.
 

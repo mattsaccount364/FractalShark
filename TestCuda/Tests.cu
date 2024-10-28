@@ -492,169 +492,87 @@ void TestAddSpecialNumbers3(int testNum) {
 }
 
 template<Operator sharkOperator>
-void TestAddSpecialNumbers4(int testNum) {
+void TestAddSpecialNumbersHelper(
+    int testNum,
+    bool isNegative1,
+    std::vector<uint32_t> testData1,
+    bool isNegative2,
+    std::vector<uint32_t> testData2) {
 
-    size_t i = 0;
-    std::vector<uint32_t> testData1;
-    testData1.resize(HpGpu::NumUint32);
-    testData1[i++] = 0xF26D37FC;
-    testData1[i++] = 0xA96025CE;
-    testData1[i++] = 0xB03FC716;
-    testData1[i++] = 0x1DF7182B;
-    testData1[i++] = 0xCCBD69BD;
-    testData1[i++] = 0x40C0F80C;
-    testData1[i++] = 0xFAA0222E;
-    testData1[i++] = 0xD1FDA456;
+    std::vector<uint32_t> testData1Copy;
+    testData1Copy = testData1;
+    testData1Copy.resize(HpGpu::NumUint32);
 
-    i = 0;
-    std::vector<uint32_t> testData2;
-    testData2.resize(HpGpu::NumUint32);
-    testData2[i++] = 0x8BBCDF3;
-    testData2[i++] = 0x4C3E7ACB;
-    testData2[i++] = 0x6691A71D;
-    testData2[i++] = 0xDFE03842;
-    testData2[i++] = 0x3FADCA11;
-    testData2[i++] = 0x4058BC9E;
-    testData2[i++] = 0xF30FD7DE;
-    testData2[i++] = 0xAA6CA582;
+    std::vector<uint32_t> testData2Copy;
+    testData2Copy = testData2;
+    testData2Copy.resize(HpGpu::NumUint32);
 
-    const bool isNegative = true;
-    std::unique_ptr<HpGpu> xNum{ std::make_unique<HpGpu>(testData1.data(), 0, isNegative) };
-    std::unique_ptr<HpGpu> yNum{ std::make_unique<HpGpu>(testData2.data(), 0, isNegative) };
+    std::unique_ptr<HpGpu> xNum{ std::make_unique<HpGpu>(testData1Copy.data(), 0, isNegative1) };
+    std::unique_ptr<HpGpu> yNum{ std::make_unique<HpGpu>(testData2Copy.data(), 0, isNegative2) };
 
     TestAddSpecialNumbers<sharkOperator>(testNum, *xNum, *yNum);
+}
+
+template<Operator sharkOperator>
+void TestAddSpecialNumbers4(int testNum) {
+    TestAddSpecialNumbersHelper<sharkOperator>(
+        testNum,
+        true,
+        std::vector<uint32_t>{ 0xF26D37FC, 0xA96025CE, 0xB03FC716, 0x1DF7182B, 0xCCBD69BD, 0x40C0F80C, 0xFAA0222E, 0xD1FDA456 },
+        true,
+        std::vector<uint32_t>{ 0x8BBCDF3, 0x4C3E7ACB, 0x6691A71D, 0xDFE03842, 0x3FADCA11, 0x4058BC9E, 0xF30FD7DE, 0xAA6CA582 });
 }
 
 template<Operator sharkOperator>
 void TestAddSpecialNumbers5(int testNum) {
-    size_t i = 0;
-    std::vector<uint32_t> testData1;
-    testData1.resize(HpGpu::NumUint32);
-    testData1[i++] = 0;
-    testData1[i++] = 0;
-    testData1[i++] = 0;
-    testData1[i++] = 0;
-    testData1[i++] = 0;
-    testData1[i++] = 0;
-    testData1[i++] = 0xEB062904;
-    testData1[i++] = 0x0A85870C;
-
-    i = 0;
-    std::vector<uint32_t> testData2;
-    testData2.resize(HpGpu::NumUint32);
-    testData2[i++] = 0;
-    testData2[i++] = 0;
-    testData2[i++] = 0;
-    testData2[i++] = 0;
-    testData2[i++] = 0;
-    testData2[i++] = 0;
-    testData2[i++] = 0xD02FF484;
-    testData2[i++] = 0x76D16E0B;
-
-    const bool isNegative = true;
-    std::unique_ptr<HpGpu> xNum{ std::make_unique<HpGpu>(testData1.data(), 0, !isNegative) };
-    std::unique_ptr<HpGpu> yNum{ std::make_unique<HpGpu>(testData2.data(), 0, isNegative) };
-
-    TestAddSpecialNumbers<sharkOperator>(testNum, *xNum, *yNum);
+    TestAddSpecialNumbersHelper<sharkOperator>(
+        testNum,
+        false,
+        std::vector<uint32_t>{ 0, 0, 0, 0, 0, 0, 0, 0xFFFFFFFF },
+        true,
+        std::vector<uint32_t>{ 0, 0, 0, 0, 0, 0, 0, 0xFFFFFFFF });
 }
 
 template<Operator sharkOperator>
 void TestAddSpecialNumbers6(int testNum) {
-    size_t i = 0;
-    std::vector<uint32_t> testData1;
-    testData1.resize(HpGpu::NumUint32);
-    testData1[i++] = 0;
-    testData1[i++] = 0;
-    testData1[i++] = 0;
-    testData1[i++] = 0;
-    testData1[i++] = 0;
-    testData1[i++] = 0;
-    testData1[i++] = 0xFFFFFFFF;
-    testData1[i++] = 0xFFFFFFFF;
-
-    i = 0;
-    std::vector<uint32_t> testData2;
-    testData2.resize(HpGpu::NumUint32);
-    testData2[i++] = 0;
-    testData2[i++] = 0;
-    testData2[i++] = 0;
-    testData2[i++] = 0;
-    testData2[i++] = 0;
-    testData2[i++] = 0;
-    testData2[i++] = 0xFFFFFFFF;
-    testData2[i++] = 0xFFFFFFFF;
-
-    const bool isNegative = true;
-    std::unique_ptr<HpGpu> xNum{ std::make_unique<HpGpu>(testData1.data(), 0, !isNegative) };
-    std::unique_ptr<HpGpu> yNum{ std::make_unique<HpGpu>(testData2.data(), 0, !isNegative) };
-
-    TestAddSpecialNumbers<sharkOperator>(testNum, *xNum, *yNum);
+    TestAddSpecialNumbersHelper<sharkOperator>(
+        testNum,
+        true,
+        std::vector<uint32_t>{ 0xFFFFFFFF, 0xFFFFFFFF },
+        true,
+        std::vector<uint32_t>{ 0xFFFFFFFF, 0xFFFFFFFF });
 }
 
 template<Operator sharkOperator>
 void TestAddSpecialNumbers7(int testNum) {
-    size_t i = 0;
-    std::vector<uint32_t> testData1;
-    testData1.resize(HpGpu::NumUint32);
-    testData1[i++] = 0;
-    testData1[i++] = 0;
-    testData1[i++] = 0;
-    testData1[i++] = 0xFFFFFFFF;
-    testData1[i++] = 0;
-    testData1[i++] = 0;
-    testData1[i++] = 0;
-    testData1[i++] = 0;
-
-    i = 0;
-    std::vector<uint32_t> testData2;
-    testData2.resize(HpGpu::NumUint32);
-    testData2[i++] = 0;
-    testData2[i++] = 0;
-    testData2[i++] = 0;
-    testData2[i++] = 0xFFFFFFFF;
-    testData2[i++] = 0;
-    testData2[i++] = 0;
-    testData2[i++] = 0;
-    testData2[i++] = 0;
-
-    const bool isNegative = true;
-    std::unique_ptr<HpGpu> xNum{ std::make_unique<HpGpu>(testData1.data(), 0, !isNegative) };
-    std::unique_ptr<HpGpu> yNum{ std::make_unique<HpGpu>(testData2.data(), 0, !isNegative) };
-
-    TestAddSpecialNumbers<sharkOperator>(testNum, *xNum, *yNum);
+    TestAddSpecialNumbersHelper<sharkOperator>(
+        testNum,
+        true,
+        std::vector<uint32_t>{ 0, 0xFFFFFFFF, 0xFFFFFFFF },
+        true,
+        std::vector<uint32_t>{ 0, 0xFFFFFFFF, 0xFFFFFFFF });
 }
 
 template<Operator sharkOperator>
 void TestAddSpecialNumbers8(int testNum) {
-    size_t i = 0;
-    std::vector<uint32_t> testData1;
-    testData1.resize(HpGpu::NumUint32);
-    testData1[i++] = 0;
-    testData1[i++] = 0;
-    testData1[i++] = 0x90000000;
-    testData1[i++] = 0;
-    testData1[i++] = 0;
-    testData1[i++] = 0;
-    testData1[i++] = 0;
-    testData1[i++] = 0;
 
-    i = 0;
-    std::vector<uint32_t> testData2;
-    testData2.resize(HpGpu::NumUint32);
-    testData2[i++] = 0;
-    testData2[i++] = 0;
-    testData2[i++] = 0;
-    testData2[i++] = 2;
-    testData2[i++] = 0;
-    testData2[i++] = 0;
-    testData2[i++] = 0;
-    testData2[i++] = 0;
+    TestAddSpecialNumbersHelper<sharkOperator>(
+        testNum,
+        true,
+        std::vector<uint32_t>{ 0, 0, 0xFFFFFFFF, 0xFFFFFFFF },
+        true,
+        std::vector<uint32_t>{ 0, 0, 0xFFFFFFFF, 0xFFFFFFFF });
+}
 
-    const bool isNegative = true;
-    std::unique_ptr<HpGpu> xNum{ std::make_unique<HpGpu>(testData1.data(), 0, !isNegative) };
-    std::unique_ptr<HpGpu> yNum{ std::make_unique<HpGpu>(testData2.data(), 0, !isNegative) };
+template<Operator sharkOperator>
+void TestAddSpecialNumbers9(int testNum) {
 
-    TestAddSpecialNumbers<sharkOperator>(testNum, *xNum, *yNum);
+    TestAddSpecialNumbersHelper<sharkOperator>(
+        testNum,
+        true,
+        std::vector<uint32_t>{ 0, 0, 0, 0xFFFFFFFF, 0xFFFFFFFF },
+        true,
+        std::vector<uint32_t>{ 0, 0, 0, 0xFFFFFFFF, 0xFFFFFFFF });
 }
 
 
@@ -732,6 +650,7 @@ bool TestAllBinaryOp(int testBase) {
         TestAddSpecialNumbers6<sharkOperator>(set6 + 6);
         TestAddSpecialNumbers7<sharkOperator>(set6 + 7);
         TestAddSpecialNumbers8<sharkOperator>(set6 + 8);
+        TestAddSpecialNumbers9<sharkOperator>(set6 + 9);
     }
 
     if constexpr (includeSet10) {

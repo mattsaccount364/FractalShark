@@ -86,7 +86,12 @@ std::string MpfToHexString(const mpf_t mpf_val) {
     // Convert each limb to hex and append to result
     for (int i = 0; i < numLimbs; ++i) {
         char buffer[32];
-        snprintf(buffer, sizeof(buffer), "%016llX ", limbs[i]);
+
+        // Break lim into two 32-bit values and output individually, low then high
+        uint32_t lowOrder = limbs[i] & 0xFFFFFFFF;
+        uint32_t highOrder = limbs[i] >> 32;
+
+        snprintf(buffer, sizeof(buffer), "%08X %08X ", lowOrder, highOrder);
         result += buffer;
     }
 

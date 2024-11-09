@@ -5,8 +5,8 @@
 #include <gmp.h>
 
 #ifdef _DEBUG
-static constexpr int32_t ThreadsPerBlock = 4;
-static constexpr int32_t NumBlocks = 4;
+static constexpr int32_t ThreadsPerBlock = 8;
+static constexpr int32_t NumBlocks = 1;
 static constexpr int32_t BatchSize = 8;
 // static constexpr int32_t ThreadsPerBlock = 4;
 // static constexpr int32_t NumBlocks = 4;

@@ -175,7 +175,7 @@ void TestAddTwoNumbersPerf(
             cudaMalloc(&d_carry1, (NumBlocks + 1) * sizeof(uint64_t));
             cudaMalloc(&d_carry2, (NumBlocks + 1) * sizeof(uint64_t));
             cudaMalloc(&d_carry3, (NumBlocks + 1) * sizeof(uint64_t));
-            cudaMalloc(&d_tempProducts, 2 * HpGpu::NumUint32 * sizeof(uint64_t));
+            cudaMalloc(&d_tempProducts, 16 * HpGpu::NumUint32 * sizeof(uint64_t));
 
             void *kernelArgs[] = {
                 (void *)&xGpu,
@@ -323,7 +323,7 @@ void TestBinOperatorTwoNumbers(
             cudaMalloc(&d_carry1, (NumBlocks + 1) * sizeof(uint64_t));
             cudaMalloc(&d_carry2, (NumBlocks + 1) * sizeof(uint64_t));
             cudaMalloc(&d_carry3, (NumBlocks + 1) * sizeof(uint64_t));
-            cudaMalloc(&d_tempProducts, 2 * HpGpu::NumUint32 * sizeof(uint64_t));
+            cudaMalloc(&d_tempProducts, 32 * HpGpu::NumUint32 * sizeof(uint64_t));
 
             void *kernelArgs[] = {
                 (void *)&xGpu,
@@ -428,6 +428,10 @@ void TestAddSpecialNumbers(int testNum, std::vector<uint32_t> &digits1, std::vec
     mpf_init(x);
     mpf_init(y);
 
+    std::cout << std::endl;
+    std::cout << std::endl;
+    std::cout << "Test " << testNum << std::endl;
+
     auto strLargeX = Uint32ToMpf(digits1.data(), HpGpu::NumUint32 / 2, x);
     auto strLargeY = Uint32ToMpf(digits2.data(), HpGpu::NumUint32 / 2, y);
     TestBinOperatorTwoNumbers<sharkOperator>(testNum, strLargeX.c_str(), strLargeY.c_str(), x, y);
@@ -498,6 +502,10 @@ void TestAddSpecialNumbersHelper(
     std::vector<uint32_t> testData1,
     bool isNegative2,
     std::vector<uint32_t> testData2) {
+
+    std::cout << std::endl;
+    std::cout << std::endl;
+    std::cout << "Test " << testNum << std::endl;
 
     std::vector<uint32_t> testData1Copy;
     testData1Copy = testData1;
@@ -590,67 +598,67 @@ bool TestAllBinaryOp(int testBase) {
     // 400s is add
 
     if constexpr (includeSet1) {
-        const auto set1 = testBase + 10;
-        TestBinOperatorTwoNumbers<sharkOperator>(set1 + 1, "1", "2");
-        TestBinOperatorTwoNumbers<sharkOperator>(set1 + 2, "4294967295", "1");
-        TestBinOperatorTwoNumbers<sharkOperator>(set1 + 3, "4294967296", "1");
-        TestBinOperatorTwoNumbers<sharkOperator>(set1 + 4, "4294967295", "4294967296");
-        TestBinOperatorTwoNumbers<sharkOperator>(set1 + 5, "4294967296", "-1");
-        TestBinOperatorTwoNumbers<sharkOperator>(set1 + 6, "18446744073709551615", "1");
-        TestBinOperatorTwoNumbers<sharkOperator>(set1 + 7, "0", "0.1");
-        TestBinOperatorTwoNumbers<sharkOperator>(set1 + 8, "0.1", "0");
-        TestBinOperatorTwoNumbers<sharkOperator>(set1 + 9, "0", "0");
+        const auto set = testBase + 10;
+        TestBinOperatorTwoNumbers<sharkOperator>(set + 1, "1", "2");
+        TestBinOperatorTwoNumbers<sharkOperator>(set + 2, "4294967295", "1");
+        TestBinOperatorTwoNumbers<sharkOperator>(set + 3, "4294967296", "1");
+        TestBinOperatorTwoNumbers<sharkOperator>(set + 4, "4294967295", "4294967296");
+        TestBinOperatorTwoNumbers<sharkOperator>(set + 5, "4294967296", "-1");
+        TestBinOperatorTwoNumbers<sharkOperator>(set + 6, "18446744073709551615", "1");
+        TestBinOperatorTwoNumbers<sharkOperator>(set + 7, "0", "0.1");
+        TestBinOperatorTwoNumbers<sharkOperator>(set + 8, "0.1", "0");
+        TestBinOperatorTwoNumbers<sharkOperator>(set + 9, "0", "0");
     }
 
     if constexpr (includeSet2) {
-        const auto set2 = testBase + 20;
-        TestBinOperatorTwoNumbers<sharkOperator>(set2 + 1, "2", "0.1");
-        TestBinOperatorTwoNumbers<sharkOperator>(set2 + 2, "0.2", "0.1");
-        TestBinOperatorTwoNumbers<sharkOperator>(set2 + 3, "0.5", "1.2");
-        TestBinOperatorTwoNumbers<sharkOperator>(set2 + 4, "0.6", "1.3");
-        TestBinOperatorTwoNumbers<sharkOperator>(set2 + 5, "0.7", "1.4");
-        TestBinOperatorTwoNumbers<sharkOperator>(set2 + 6, "0.1", "1.99999999999999999999999999999");
-        TestBinOperatorTwoNumbers<sharkOperator>(set2 + 7, "0.123124561464451654461", "1.2395123123127298375982735");
+        const auto set = testBase + 20;
+        TestAddSpecialNumbers1<sharkOperator>(set + 1);
+        TestAddSpecialNumbers2<sharkOperator>(set + 2);
+        TestAddSpecialNumbers3<sharkOperator>(set + 3);
+        TestAddSpecialNumbers4<sharkOperator>(set + 4);
+        TestAddSpecialNumbers5<sharkOperator>(set + 5);
+        TestAddSpecialNumbers6<sharkOperator>(set + 6);
+        TestAddSpecialNumbers7<sharkOperator>(set + 7);
+        TestAddSpecialNumbers8<sharkOperator>(set + 8);
+        TestAddSpecialNumbers9<sharkOperator>(set + 9);
     }
 
     if constexpr (includeSet3) {
-        const auto set3 = testBase + 30;
-        TestBinOperatorTwoNumbers<sharkOperator>(set3 + 1, "-0.5", "1.2");
-        TestBinOperatorTwoNumbers<sharkOperator>(set3 + 2, "-0.6", "1.3");
-        TestBinOperatorTwoNumbers<sharkOperator>(set3 + 3, "-0.7", "1.4");
-        TestBinOperatorTwoNumbers<sharkOperator>(set3 + 4, "-0.1", "1.99999999999999999999999999999");
-        TestBinOperatorTwoNumbers<sharkOperator>(set3 + 5, "-0.123124561464451654461", "1.2395123123127298375982735");
+        const auto set = testBase + 30;
+        TestBinOperatorTwoNumbers<sharkOperator>(set + 1, "2", "0.1");
+        TestBinOperatorTwoNumbers<sharkOperator>(set + 2, "0.2", "0.1");
+        TestBinOperatorTwoNumbers<sharkOperator>(set + 3, "0.5", "1.2");
+        TestBinOperatorTwoNumbers<sharkOperator>(set + 4, "0.6", "1.3");
+        TestBinOperatorTwoNumbers<sharkOperator>(set + 5, "0.7", "1.4");
+        TestBinOperatorTwoNumbers<sharkOperator>(set + 6, "0.1", "1.99999999999999999999999999999");
+        TestBinOperatorTwoNumbers<sharkOperator>(set + 7, "0.123124561464451654461", "1.2395123123127298375982735");
     }
 
     if constexpr (includeSet4) {
-        const auto set4 = testBase + 40;
-        TestBinOperatorTwoNumbers<sharkOperator>(set4 + 1, "-0.5", "-1.2");
-        TestBinOperatorTwoNumbers<sharkOperator>(set4 + 2, "-0.6", "-1.3");
-        TestBinOperatorTwoNumbers<sharkOperator>(set4 + 3, "-0.7", "-1.4");
-        TestBinOperatorTwoNumbers<sharkOperator>(set4 + 4, "-0.1", "-1.99999999999999999999999999999");
-        TestBinOperatorTwoNumbers<sharkOperator>(set4 + 5, "-0.123124561464451654461", "-1.2395123123127298375982735");
+        const auto set = testBase + 40;
+        TestBinOperatorTwoNumbers<sharkOperator>(set + 1, "-0.5", "1.2");
+        TestBinOperatorTwoNumbers<sharkOperator>(set + 2, "-0.6", "1.3");
+        TestBinOperatorTwoNumbers<sharkOperator>(set + 3, "-0.7", "1.4");
+        TestBinOperatorTwoNumbers<sharkOperator>(set + 4, "-0.1", "1.99999999999999999999999999999");
+        TestBinOperatorTwoNumbers<sharkOperator>(set + 5, "-0.123124561464451654461", "1.2395123123127298375982735");
     }
 
     if constexpr (includeSet5) {
-        const auto set5 = testBase + 50;
-        TestBinOperatorTwoNumbers<sharkOperator>(set5 + 1, "0.5265542653452654526545625456254565446654545645649789871322131213156435546435", "-1.263468375787958774985473345435632415334245268476928454653443234164658776634854746584532186639173047328910730217803271839216");
-        TestBinOperatorTwoNumbers<sharkOperator>(set5 + 2, "0.2999999999965542653452654526545625456254565446654545645649789871322131213156435546435", "-1.263468375787958774985473345435632415334245268476928454653443234164658776634854746584532186639173047328910730217803271839216");
-        TestBinOperatorTwoNumbers<sharkOperator>(set5 + 3, "0.1265542653452654526545625456254565446654545645649789871322131213156435546435", "-1.2634683757879587749854733454356324153342452684769284546534432341646587766348547465845321866391730473289107302178039999999999999271839216");
-        TestBinOperatorTwoNumbers<sharkOperator>(set5 + 4, "0.0265542653452654526545625456254565446654545645649789871322131213156435546435", "-1.263468375787958774985473345435632415334245268476928454653443234164658776634854746584532186639173047328910730217803271839216");
-        TestBinOperatorTwoNumbers<sharkOperator>(set5 + 5, "0.00000000000000000265542653452654526545625456254565446654545645649789871322131213156435546435", "-1.263468375787958774985473345435632415334245268476928454653443234164658776634854746584532186639173047328910730217803271839216");
+        const auto set = testBase + 50;
+        TestBinOperatorTwoNumbers<sharkOperator>(set + 1, "-0.5", "-1.2");
+        TestBinOperatorTwoNumbers<sharkOperator>(set + 2, "-0.6", "-1.3");
+        TestBinOperatorTwoNumbers<sharkOperator>(set + 3, "-0.7", "-1.4");
+        TestBinOperatorTwoNumbers<sharkOperator>(set + 4, "-0.1", "-1.99999999999999999999999999999");
+        TestBinOperatorTwoNumbers<sharkOperator>(set + 5, "-0.123124561464451654461", "-1.2395123123127298375982735");
     }
 
     if constexpr (includeSet6) {
-        const auto set6 = testBase + 60;
-        TestAddSpecialNumbers1<sharkOperator>(set6 + 1);
-        TestAddSpecialNumbers2<sharkOperator>(set6 + 2);
-        TestAddSpecialNumbers3<sharkOperator>(set6 + 3);
-        TestAddSpecialNumbers4<sharkOperator>(set6 + 4);
-        TestAddSpecialNumbers5<sharkOperator>(set6 + 5);
-        TestAddSpecialNumbers6<sharkOperator>(set6 + 6);
-        TestAddSpecialNumbers7<sharkOperator>(set6 + 7);
-        TestAddSpecialNumbers8<sharkOperator>(set6 + 8);
-        TestAddSpecialNumbers9<sharkOperator>(set6 + 9);
+        const auto set = testBase + 60;
+        TestBinOperatorTwoNumbers<sharkOperator>(set + 1, "0.5265542653452654526545625456254565446654545645649789871322131213156435546435", "-1.263468375787958774985473345435632415334245268476928454653443234164658776634854746584532186639173047328910730217803271839216");
+        TestBinOperatorTwoNumbers<sharkOperator>(set + 2, "0.2999999999965542653452654526545625456254565446654545645649789871322131213156435546435", "-1.263468375787958774985473345435632415334245268476928454653443234164658776634854746584532186639173047328910730217803271839216");
+        TestBinOperatorTwoNumbers<sharkOperator>(set + 3, "0.1265542653452654526545625456254565446654545645649789871322131213156435546435", "-1.2634683757879587749854733454356324153342452684769284546534432341646587766348547465845321866391730473289107302178039999999999999271839216");
+        TestBinOperatorTwoNumbers<sharkOperator>(set + 4, "0.0265542653452654526545625456254565446654545645649789871322131213156435546435", "-1.263468375787958774985473345435632415334245268476928454653443234164658776634854746584532186639173047328910730217803271839216");
+        TestBinOperatorTwoNumbers<sharkOperator>(set + 5, "0.00000000000000000265542653452654526545625456254565446654545645649789871322131213156435546435", "-1.263468375787958774985473345435632415334245268476928454653443234164658776634854746584532186639173047328910730217803271839216");
     }
 
     if constexpr (includeSet10) {

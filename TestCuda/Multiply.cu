@@ -22,6 +22,39 @@ namespace cg = cooperative_groups;
 #include <cooperative_groups.h>
 namespace cg = cooperative_groups;
 
+__device__ void multiply_uint64(
+    uint64_t a, uint64_t b,
+    uint64_t &low, uint64_t &high) {
+    // Split the inputs into 32-bit halves
+    uint64_t a_low = (uint32_t)(a & 0xFFFFFFFFULL);
+    uint64_t a_high = a >> 32;
+    uint64_t b_low = (uint32_t)(b & 0xFFFFFFFFULL);
+    uint64_t b_high = b >> 32;
+
+    // Compute partial products
+    uint64_t p0 = a_low * b_low;
+    uint64_t p1 = a_low * b_high;
+    uint64_t p2 = a_high * b_low;
+    uint64_t p3 = a_high * b_high;
+
+    // Compute the lower 64 bits of the product
+    uint64_t temp = (p1 + p2);
+    uint64_t carry = (temp < p1) ? 1 : 0;  // Check for overflow in temp
+
+    // Combine the partial products
+    uint64_t low_part = p0 + (temp << 32);
+    if (low_part < p0) {
+        carry += 1;  // Carry from lower 64 bits
+    }
+
+    // Compute the higher 64 bits of the product
+    uint64_t high_part = p3 + (temp >> 32) + carry;
+
+    // Assign the results
+    low = low_part;
+    high = high_part;
+}
+
 // Function to perform addition with carry
 __device__ static void addWithCarry(
     uint64_t a_low, uint64_t a_high,
@@ -82,12 +115,8 @@ __device__ void MultiplyHelperKaratsuba(
     constexpr int Result_offset = Convolution_offset + 4 * N;
 
     // Shared memory allocation
-    __shared__ uint32_t A_shared[n];
-    __shared__ uint32_t B_shared[n];
-
-    // Shared memory arrays
-    __shared__ uint64_t per_thread_carry_out[ThreadsPerBlock];
-    __shared__ uint64_t per_thread_carry_in[ThreadsPerBlock];
+    __shared__ uint64_t A_shared[n];
+    __shared__ uint64_t B_shared[n];
 
     // Load segments of A and B into shared memory
     for (int i = threadIdx.x; i < n; i += ThreadsPerBlock) {
@@ -198,13 +227,12 @@ __device__ void MultiplyHelperKaratsuba(
             uint64_t a = A_shared[i];         // (A0 + A1)[i]
             uint64_t b = B_shared[k - i];     // (B0 + B1)[k - i]
 
-            uint64_t product = a * b;
+            // Compute full 128-bit product
+            uint64_t prod_low, prod_high;
+            multiply_uint64(a, b, prod_low, prod_high);
 
-            // Add product to sum
-            sum_low += product;
-            if (sum_low < product) {
-                sum_high += 1;
-            }
+            // Accumulate the product
+            addWithCarry(sum_low, sum_high, prod_low, prod_high, sum_low, sum_high);
         }
 
         // Store sum_low and sum_high in tempProducts
@@ -294,94 +322,39 @@ __device__ void MultiplyHelperKaratsuba(
 
     // ---- Carry Propagation ----
 
-    uint64_t thread_carry = 0;
-
-    for (int idx = idx_start; idx < idx_end; ++idx) {
-        int result_idx = Convolution_offset + idx * 2;
-
-        uint64_t sum_low = tempProducts[result_idx];        // Lower 64 bits
-        uint64_t sum_high = tempProducts[result_idx + 1];   // Higher 64 bits
-
-        // Add thread_carry to sum_low
-        uint64_t new_sum_low = sum_low + thread_carry;
-        uint64_t carry_from_low = (new_sum_low < sum_low) ? 1 : 0;
-
-        // Add carry_from_low to sum_high
-        uint64_t new_sum_high = sum_high + carry_from_low;
-
-        // Extract digit (lower 32 bits of new_sum_low)
-        uint32_t digit = static_cast<uint32_t>(new_sum_low & 0xFFFFFFFFULL);
-
-        // Compute carry for the next digit
-        thread_carry = new_sum_high + (new_sum_low >> 32);
-
-        // Overwrite tempProducts with the final digit
-        result_idx = Result_offset + idx;
-        tempProducts[result_idx] = digit;
-    }
-
-    // Store per-thread carry-out
-    per_thread_carry_out[threadIdx.x] = thread_carry;
-
-    // Synchronize threads
-    __syncthreads();
-
-    // Perform inter-thread carry propagation serially using a single thread
-    if (threadIdx.x == 0) {
+    if (blockIdx.x == 0 && threadIdx.x == 0) {
+        // Only one thread performs the carry propagation
         uint64_t carry = 0;
-        for (int i = 0; i < ThreadsPerBlock; ++i) {
-            per_thread_carry_in[i] = carry;
-            carry = per_thread_carry_out[i] + carry;
+        int total_result_digits = 2 * N;
+
+        for (int idx = 0; idx < total_result_digits; ++idx) {
+            int result_idx = Convolution_offset + idx * 2;
+            uint64_t sum_low = tempProducts[result_idx];        // Lower 64 bits
+            uint64_t sum_high = tempProducts[result_idx + 1];   // Higher 64 bits
+
+            // Add carry to sum_low
+            uint64_t new_sum_low = sum_low + carry;
+            uint64_t carry_from_low = (new_sum_low < sum_low) ? 1 : 0;
+
+            // Add carry_from_low to sum_high
+            uint64_t new_sum_high = (sum_high << 32) + carry_from_low;
+
+            // Extract digit (lower 32 bits of new_sum_low)
+            uint32_t digit = static_cast<uint32_t>(new_sum_low & 0xFFFFFFFFULL);
+
+            // Compute carry for the next digit
+            carry = new_sum_high + (new_sum_low >> 32);
+
+            // Store the digit
+            tempProducts[Result_offset + idx] = digit;
         }
-        // Optionally store the final carry-out for the block if needed
-        carryOuts_phase6[blockIdx.x] = carry;
+
+        // Handle final carry
+        if (carry > 0) {
+            tempProducts[Result_offset + total_result_digits] = static_cast<uint32_t>(carry & 0xFFFFFFFFULL);
+            total_result_digits += 1;
+        }
     }
-    __syncthreads();
-
-    // ---- Second Pass: Adjust Digits with Inter-Thread Carries ----
-
-    thread_carry = per_thread_carry_in[threadIdx.x];
-
-    for (int idx = idx_start; idx < idx_end; ++idx) {
-        int result_idx = Result_offset + idx;
-
-        uint32_t digit = tempProducts[result_idx];
-
-        // Add carry to digit
-        uint64_t sum = static_cast<uint64_t>(digit) + thread_carry;
-
-        // Update digit and carry
-        digit = static_cast<uint32_t>(sum & 0xFFFFFFFFULL);
-        thread_carry = sum >> 32;
-
-        // Store updated digit
-        tempProducts[result_idx] = digit;
-    }
-
-    // Update per-thread carry-out
-    per_thread_carry_out[threadIdx.x] = thread_carry;
-
-
-    // Synchronize threads
-    __syncthreads();
-
-    // The last thread in the block stores the final carry
-    if (threadIdx.x == ThreadsPerBlock - 1) {
-        carryOuts_phase6[blockIdx.x] = per_thread_carry_out[threadIdx.x];
-    }
-
-    //grid.sync();
-    // TODO block-level carry is busted. Need to fix this.
-
-    // Perform block-level carry propagation using a single thread
-    //if (blockIdx.x == 0 && threadIdx.x == 0) {
-    //    uint64_t carry = 0;
-    //    for (int i = 0; i < gridDim.x; ++i) {
-    //        uint64_t block_carry_in = carry;
-    //        carry = carryOuts_phase6[i] + carry;
-    //        per_block_carry_in[i] = block_carry_in;
-    //    }
-    //}
 
     // Synchronize before adjusting exponent and sign
     grid.sync();

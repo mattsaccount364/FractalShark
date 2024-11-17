@@ -16,8 +16,8 @@ static constexpr int32_t NUM_ITER = 1000;
 static constexpr bool SkipCorrectnessTests = false;
 constexpr bool Verbose = true;
 #else
-static constexpr int32_t ThreadsPerBlock = 64;
-static constexpr int32_t NumBlocks = 128;
+static constexpr int32_t ThreadsPerBlock = 128;
+static constexpr int32_t NumBlocks = 64;
 static constexpr int32_t BatchSize = 512;
 static constexpr int32_t LowPrec = 32;
 static constexpr int32_t NUM_ITER = 200;

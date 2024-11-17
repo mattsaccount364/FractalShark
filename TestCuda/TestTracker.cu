@@ -17,7 +17,9 @@ bool TestTracker::CheckAllTestsPassed() const {
     bool anyFailed = false;
     for (int i = 0; i < NumTests; ++i) {
         if (m_Tests[i].Failed) {
-            std::cout << "Test " << i << " failed!  Delta: " << m_Tests[i].Delta << std::endl;
+            std::cout << "Test " << i << " failed!  " <<
+                "Error: " << m_Tests[i].RelativeError << " " <<
+                "Acceptable error: " << m_Tests[i].AcceptableError << std::endl;
             anyFailed = true;
         }
     }
@@ -47,12 +49,17 @@ void TestTracker::MarkFailed(size_t testIndex) {
 
 }
 
-void TestTracker::MarkFailed(size_t testIndex, const mpf_t delta) {
+void TestTracker::MarkFailed(
+    size_t testIndex,
+    const mpf_t relativeError,
+    const mpf_t acceptableError) {
+
     if (testIndex >= NumTests) {
         std::cout << "Test index out of range!" << std::endl;
         assert(false);
     }
 
     m_Tests[testIndex].Failed = true;
-    m_Tests[testIndex].Delta = MpfToString(delta, LowPrec);
+    m_Tests[testIndex].RelativeError = MpfToString(relativeError, LowPrec);
+    m_Tests[testIndex].AcceptableError = MpfToString(acceptableError, LowPrec);
 }

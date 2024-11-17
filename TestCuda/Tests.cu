@@ -45,9 +45,9 @@ void DiffAgainstHost(
     mpf_sub(mpfDiff, mpfHostResult, mpfXGpuResult);
 
     // Take absolute delta:
-    mpf_t mpf_diff_abs;
-    mpf_init(mpf_diff_abs);
-    mpf_abs(mpf_diff_abs, mpfDiff);
+    mpf_t mpfDiffAbs;
+    mpf_init(mpfDiffAbs);
+    mpf_abs(mpfDiffAbs, mpfDiff);
 
     // Converted GPU result
     if (Verbose) {
@@ -56,16 +56,76 @@ void DiffAgainstHost(
 
         // Print the differences
         std::cout << "\nDifference between host and GPU results:" << std::endl;
-        std::cout << MpfToString(mpf_diff_abs, LowPrec) << std::endl;
+        std::cout << MpfToString(mpfDiffAbs, LowPrec) << std::endl;
     }
 
-    // If absolute delta is greater than 1e-30, the test is considered failed
-    if (mpf_cmp_d(mpf_diff_abs, 1e-30) > 0) {
-        Tests.MarkFailed(testNum, mpf_diff_abs);
+    // Check if the host result is zero to avoid division by zero
+    mp_bitcnt_t gpuPrecBits = HpGpu::DefaultPrecBits;
+    mp_bitcnt_t margin = sizeof(uint32_t) * 8 * 2;
+    mp_bitcnt_t totalPrecBits = (gpuPrecBits > margin) ? (gpuPrecBits - margin) : 1;
+    mpf_t acceptableError;
+
+    if (mpf_cmp_ui(mpfHostResult, 0) != 0) {
+        // Host result is non-zero
+
+        // Compute relative error
+        mpf_t relativeError;
+        mpf_init(relativeError);
+        mpf_sub(relativeError, mpfHostResult, mpfXGpuResult);
+        mpf_div(relativeError, relativeError, mpfHostResult);
+        mpf_abs(relativeError, relativeError);
+
+        // Compute machine epsilon: epsilon = 2^(-totalPrecBits)
+        mpf_t epsilon;
+        mpf_init2(epsilon, totalPrecBits);
+        mpf_set_ui(epsilon, 1);
+        mpf_div_2exp(epsilon, epsilon, totalPrecBits);
+
+        // Compute acceptable error: acceptableError = epsilon * abs(hostResult)
+        mpf_t acceptableError;
+        mpf_init(acceptableError);
+        mpf_mul(acceptableError, epsilon, mpfHostResult);
+        mpf_abs(acceptableError, acceptableError);
+
+        // Compare absolute error with acceptable threshold
+        if (mpf_cmp(relativeError, epsilon) <= 0) {
+            if (Verbose) {
+                std::cout << "\nThe relative error is within acceptable bounds." << std::endl;
+                std::cout << "Relative error: " << MpfToString(relativeError, LowPrec) << std::endl;
+            }
+        } else {
+            std::cerr << "\nError: The relative error exceeds acceptable bounds." << std::endl;
+            std::cout << "Relative error: " << MpfToString(relativeError, LowPrec) << std::endl;
+            Tests.MarkFailed(testNum, relativeError, epsilon);
+        }
+
+        // Clean up
+        mpf_clear(relativeError);
+        mpf_clear(epsilon);
+        mpf_clear(acceptableError);
+    } else {
+        // Host result is zero
+
+        // For zero host result, use an absolute error threshold
+        mpf_t acceptableError;
+        mpf_init2(acceptableError, totalPrecBits);
+        mpf_set_ui(acceptableError, 1);
+        mpf_div_2exp(acceptableError, acceptableError, totalPrecBits);
+
+        if (mpf_cmp(mpfDiffAbs, acceptableError) <= 0) {
+            if (Verbose) {
+                std::cout << "\nThe absolute error is within acceptable bounds." << std::endl;
+            }
+        } else {
+            std::cerr << "\nError: The absolute error exceeds acceptable bounds." << std::endl;
+            Tests.MarkFailed(testNum, mpfDiffAbs, acceptableError);
+        }
+
+        mpf_clear(acceptableError);
     }
 
     mpf_clear(mpfDiff);
-    mpf_clear(mpf_diff_abs);
+    mpf_clear(mpfDiffAbs);
     mpf_clear(mpfXGpuResult);
 }
 

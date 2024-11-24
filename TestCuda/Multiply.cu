@@ -364,23 +364,31 @@ __device__ void MultiplyHelperKaratsuba(
 
     // Global memory for block carry-outs
     // Allocate space for gridDim.x block carry-outs after total_result_digits in carryOuts_phase6
-    uint64_t *block_carry_outs = tempProducts + Result_offset + total_result_digits;
+    uint64_t *block_carry_outs = carryIns;
+    //uint64_t *blocks_need_to_continue = carryIns + NumBlocks;
+
     constexpr auto digits_per_block = ThreadsPerBlock * 2;
     auto block_start_idx = blockIdx.x * digits_per_block;
     auto block_end_idx = min(block_start_idx + digits_per_block, total_result_digits);
 
+    int digits_per_thread = (digits_per_block + blockDim.x - 1) / blockDim.x;
+
+    int thread_start_idx = block_start_idx + threadIdx.x * digits_per_thread;
+    int thread_end_idx = min(thread_start_idx + digits_per_thread, block_end_idx);
+
+    //So the idea is we process the chunk of digits that has digits interleaved with carries.
+    //    This logic should be similar to the global carry propagation but done in parallel on
+    //    each block.
+    //After that step is done, we should have reduced the number of digits we care about
+    //    because weve propagated all the intermediate junk produced above during convolution.
+    //    so we end up with 2 * NumBlocks * ThreadsPerBlock digits.
+    //At that point we do inter-block carry propagation, which is iterative.
+    
+
     // First Pass: Process convolution results to compute initial digits and local carries
+    __shared__ uint64_t shared_carries[ThreadsPerBlock];
+
     {
-        // Calculate the number of digits per thread
-        int digits_per_thread = (digits_per_block + blockDim.x - 1) / blockDim.x;
-
-        // Calculate the start and end indices for this thread
-        int thread_start_idx = block_start_idx + threadIdx.x * digits_per_thread;
-        int thread_end_idx = min(thread_start_idx + digits_per_thread, block_end_idx);
-
-        // Shared memory for per-thread carries
-        __shared__ uint64_t shared_carries[ThreadsPerBlock + 1];
-
         // Initialize local carry
         uint64_t local_carry = 0;
 
@@ -398,52 +406,56 @@ __device__ void MultiplyHelperKaratsuba(
             uint64_t carry_from_low = (new_sum_low < sum_low) ? 1 : 0;
 
             // Combine sum_high and carry_from_low
-            uint64_t new_sum_high = sum_high + carry_from_low;
+            uint64_t new_sum_high = (sum_high << 32) + carry_from_low;
 
-            // Extract partial_digit
-            uint32_t partial_digit = static_cast<uint32_t>(new_sum_low & 0xFFFFFFFFULL);
+            // Extract digit
+            uint32_t digit = static_cast<uint32_t>(new_sum_low & 0xFFFFFFFFULL);
 
             // Compute local carry for next digit
-            local_carry = (new_sum_low >> 32) + (new_sum_high << 32);
+            local_carry = new_sum_high + (new_sum_low >> 32);
 
             // Store the partial digit
-            tempProducts[Result_offset + idx] = partial_digit;
+            tempProducts[Result_offset + idx] = digit;
 
             // Continue to next digit without synchronization since carries are local
         }
 
-        // Store the final local_carry of each thread into shared memory
-        shared_carries[threadIdx.x] = local_carry;
-        __syncthreads();
+        if (threadIdx.x == blockDim.x - 1) {
+            block_carry_outs[blockIdx.x] = local_carry;
+        } else {
+            shared_carries[threadIdx.x] = local_carry;
+        }
+    }
 
-        // Perform an exclusive scan on shared_carries to compute cumulative carries
-        uint64_t cumulative_carry = 0;
-        for (int offset = 1; offset < blockDim.x; offset <<= 1) {
-            uint64_t val = 0;
-            if (threadIdx.x >= offset) {
-                val = shared_carries[threadIdx.x - offset];
+    // Synchronize all blocks
+    grid.sync();
+
+    uint64_t *carries_remaining_global = carryOuts_phase3;
+
+    // Inter-Block Carry Propagation
+    uint64_t local_carry;
+    do {
+        // Get carry-in from the previous block
+        local_carry = 0;
+        if (threadIdx.x == 0 && blockIdx.x > 0) {
+            local_carry = block_carry_outs[blockIdx.x - 1];
+       } else {
+            if (threadIdx.x > 0) {
+                local_carry = shared_carries[threadIdx.x - 1];
             }
-            __syncthreads();
-            uint64_t temp = shared_carries[threadIdx.x];
-            shared_carries[threadIdx.x] = temp + val;
-            __syncthreads();
         }
 
-        // Get the cumulative carry for this thread
-        cumulative_carry = (threadIdx.x == 0) ? 0 : shared_carries[threadIdx.x - 1];
-
-        // Each thread adds the cumulative carry to the digits it processed
-        local_carry = cumulative_carry;
+        // Each thread processes its assigned digits
         for (int idx = thread_start_idx; idx < thread_end_idx; ++idx) {
-            // Read the previously stored partial_digit
-            uint32_t partial_digit = tempProducts[Result_offset + idx];
+            // Read the previously stored digit
+            uint32_t digit = tempProducts[Result_offset + idx];
 
-            // Add local_carry to partial_digit
-            uint64_t sum = static_cast<uint64_t>(partial_digit) + local_carry;
+            // Add local_carry to digit
+            uint64_t sum = static_cast<uint64_t>(digit) + local_carry;
 
-            // Update partial_digit
-            partial_digit = static_cast<uint32_t>(sum & 0xFFFFFFFFULL);
-            tempProducts[Result_offset + idx] = partial_digit;
+            // Update digit
+            digit = static_cast<uint32_t>(sum & 0xFFFFFFFFULL);
+            tempProducts[Result_offset + idx] = digit;
 
             // Compute new local_carry for next digit
             local_carry = sum >> 32;
@@ -455,75 +467,18 @@ __device__ void MultiplyHelperKaratsuba(
 
         // The block's carry-out is the carry from the last thread
         if (threadIdx.x == blockDim.x - 1) {
-            block_carry_outs[blockIdx.x] = local_carry;
-        }
-    }
-
-    // Synchronize all blocks
-    grid.sync();
-
-    // Inter-Block Carry Propagation
-    bool carries_remaining;
-    do {
-        carries_remaining = false;
-
-        // Get carry-in from the previous block
-        uint64_t block_carry_in = 0;
-        if (blockIdx.x > 0) {
-            block_carry_in = block_carry_outs[blockIdx.x - 1];
-        }
-
-        // If there is a carry-in, process the digits again
-        if (block_carry_in > 0) {
-            carries_remaining = true;
-
-            // Reset local carry
-            uint64_t local_carry = block_carry_in;
-
-            // Each thread processes its assigned digits
-            for (int idx = block_start_idx + threadIdx.x; idx < block_end_idx; idx += blockDim.x) {
-                // Read the previously stored digit
-                uint32_t partial_digit = tempProducts[Result_offset + idx];
-
-                // Add local carry to partial_digit
-                uint64_t sum = static_cast<uint64_t>(partial_digit) + local_carry;
-
-                // Update partial_digit
-                partial_digit = static_cast<uint32_t>(sum & 0xFFFFFFFFULL);
-                tempProducts[Result_offset + idx] = partial_digit;
-
-                // Compute new local carry
-                local_carry = sum >> 32;
-
-                // Synchronize threads before processing the next digit
-                __syncthreads();
-            }
-
-            // Update block's carry-out
-            if (threadIdx.x == 0) {
-                block_carry_outs[blockIdx.x] = local_carry;
+            auto temp = shared_carries[threadIdx.x];
+            block_carry_outs[blockIdx.x] = temp;
+            if (temp > 0) {
+                atomicAdd(carries_remaining_global, 1);
             }
         }
 
         // Synchronize all blocks before checking if carries remain
         grid.sync();
 
-        // Use shared memory to check if any block has carries remaining
-        __shared__ bool any_block_carries_remaining;
-        if (threadIdx.x == 0) {
-            any_block_carries_remaining = carries_remaining;
-        }
-        __syncthreads();
-
-        // Determine if any block has carries remaining
-        bool carries_remaining_global = any_block_carries_remaining;
-        __syncthreads();
-
-        // Synchronize all blocks before next iteration
-        grid.sync();
-
         // If no carries remain, exit the loop
-        if (!carries_remaining_global) {
+        if (*carries_remaining_global == 0) {
             break;
         }
 

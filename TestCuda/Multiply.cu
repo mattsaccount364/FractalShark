@@ -114,18 +114,18 @@ __device__ void MultiplyHelperKaratsuba(
     constexpr int Convolution_offset = Z1_offset + 4 * N;
     constexpr int Result_offset = Convolution_offset + 4 * N;
 
-    // Shared memory allocation
-    __shared__ uint64_t A_shared[n];
-    __shared__ uint64_t B_shared[n];
+    //// Shared memory allocation
+    //__shared__ uint64_t A_shared[n];
+    //__shared__ uint64_t B_shared[n];
 
-    // Load segments of A and B into shared memory
-    for (int i = threadIdx.x; i < n; i += ThreadsPerBlock) {
-        A_shared[i] = (i < N) ? A->Digits[i] : 0;  // A0
-        B_shared[i] = (i < N) ? B->Digits[i] : 0;  // B0
-    }
+    //// Load segments of A and B into shared memory
+    //for (int i = threadIdx.x; i < n; i += ThreadsPerBlock) {
+    //    A_shared[i] = (i < N) ? A->Digits[i] : 0;  // A0
+    //    B_shared[i] = (i < N) ? B->Digits[i] : 0;  // B0
+    //}
 
     // Synchronize before starting convolutions
-    __syncthreads();
+    //__syncthreads();
 
     // Common variables for convolution loops
     constexpr int total_k = 2 * n - 1; // Total number of k values
@@ -142,8 +142,8 @@ __device__ void MultiplyHelperKaratsuba(
         int i_end = min(k, n - 1);
 
         for (int i = i_start; i <= i_end; ++i) {
-            uint64_t a = A_shared[i];         // A0[i]
-            uint64_t b = B_shared[k - i];     // B0[k - i]
+            uint64_t a = A->Digits[i]; //A_shared[i];         // A0[i]
+            uint64_t b = B->Digits[k - i]; //B_shared[k - i];     // B0[k - i]
 
             uint64_t product = a * b;
 
@@ -161,14 +161,14 @@ __device__ void MultiplyHelperKaratsuba(
     }
 
     // Synchronize before next convolution
-    __syncthreads();
+    //__syncthreads();
 
-    // Load A1 and B1 into shared memory
-    for (int i = threadIdx.x; i < n; i += ThreadsPerBlock) {
-        int index = i + n;
-        A_shared[i] = (index < N) ? A->Digits[index] : 0;    // A1
-        B_shared[i] = (index < N) ? B->Digits[index] : 0;    // B1
-    }
+    //// Load A1 and B1 into shared memory
+    //for (int i = threadIdx.x; i < n; i += ThreadsPerBlock) {
+    //    int index = i + n;
+    //    A_shared[i] = (index < N) ? A->Digits[index] : 0;    // A1
+    //    B_shared[i] = (index < N) ? B->Digits[index] : 0;    // B1
+    //}
 
     __syncthreads();
 
@@ -181,8 +181,8 @@ __device__ void MultiplyHelperKaratsuba(
         int i_end = min(k, n - 1);
 
         for (int i = i_start; i <= i_end; ++i) {
-            uint64_t a = A_shared[i];         // A1[i]
-            uint64_t b = B_shared[k - i];     // B1[k - i]
+            uint64_t a = A->Digits[i + n]; // A_shared[i];         // A1[i]
+            uint64_t b = B->Digits[k - i + n]; // B_shared[k - i];     // B1[k - i]
 
             uint64_t product = a * b;
 
@@ -199,19 +199,19 @@ __device__ void MultiplyHelperKaratsuba(
         tempProducts[idx + 1] = sum_high;
     }
 
-    // Synchronize before next convolution
-    __syncthreads();
+    //// Synchronize before next convolution
+    //__syncthreads();
 
-    // Compute (A0 + A1) and (B0 + B1) and store in shared memory
-    for (int i = threadIdx.x; i < n; i += ThreadsPerBlock) {
-        uint64_t A0 = (i < N) ? A->Digits[i] : 0;
-        uint64_t A1 = (i + n < N) ? A->Digits[i + n] : 0;
-        A_shared[i] = A0 + A1;               // (A0 + A1)
+    //// Compute (A0 + A1) and (B0 + B1) and store in shared memory
+    //for (int i = threadIdx.x; i < n; i += ThreadsPerBlock) {
+    //    uint64_t A0 = (i < N) ? A->Digits[i] : 0;
+    //    uint64_t A1 = (i + n < N) ? A->Digits[i + n] : 0;
+    //    A_shared[i] = A0 + A1;               // (A0 + A1)
 
-        uint64_t B0 = (i < N) ? B->Digits[i] : 0;
-        uint64_t B1 = (i + n < N) ? B->Digits[i + n] : 0;
-        B_shared[i] = B0 + B1;               // (B0 + B1)
-    }
+    //    uint64_t B0 = (i < N) ? B->Digits[i] : 0;
+    //    uint64_t B1 = (i + n < N) ? B->Digits[i + n] : 0;
+    //    B_shared[i] = B0 + B1;               // (B0 + B1)
+    //}
 
     __syncthreads();
 
@@ -224,8 +224,15 @@ __device__ void MultiplyHelperKaratsuba(
         int i_end = min(k, n - 1);
 
         for (int i = i_start; i <= i_end; ++i) {
-            uint64_t a = A_shared[i];         // (A0 + A1)[i]
-            uint64_t b = B_shared[k - i];     // (B0 + B1)[k - i]
+            // uint64_t a = A_shared[i];         // (A0 + A1)[i]
+            // uint64_t b = B_shared[k - i];     // (B0 + B1)[k - i]
+
+            uint64_t A0 = A->Digits[i];
+            uint64_t A1 = A->Digits[i + n];
+            uint64_t B0 = B->Digits[k - i];
+            uint64_t B1 = B->Digits[k - i + n];
+            auto a = A0 + A1;
+            auto b = B0 + B1;
 
             // Compute full 128-bit product
             uint64_t prod_low, prod_high;
@@ -363,7 +370,7 @@ __device__ void MultiplyHelperKaratsuba(
     int pass = 0;
 
     // Global memory for block carry-outs
-    // Allocate space for gridDim.x block carry-outs after total_result_digits in carryOuts_phase6
+    // Allocate space for gridDim.x block carry-outs after total_result_digits
     uint64_t *block_carry_outs = carryIns;
     //uint64_t *blocks_need_to_continue = carryIns + NumBlocks;
 
@@ -510,17 +517,17 @@ __device__ void MultiplyHelperKaratsuba(
 
     // Only one thread handles the final carry propagation
     if (blockIdx.x == 0 && threadIdx.x == 0) {
-        uint64_t final_carry = carryOuts_phase6[NumBlocks - 1];
+        // uint64_t final_carry = carryOuts_phase6[NumBlocks - 1];
 
         // Initial total_result_digits is 2 * N
         int total_result_digits = 2 * N;
 
         // Handle the final carry-out from the most significant digit
-        if (final_carry > 0) {
-            // Append the final carry as a new digit at the end (most significant digit)
-            tempProducts[Result_offset + total_result_digits] = static_cast<uint32_t>(final_carry & 0xFFFFFFFFULL);
-            total_result_digits += 1;
-        }
+        //if (final_carry > 0) {
+        //    // Append the final carry as a new digit at the end (most significant digit)
+        //    tempProducts[Result_offset + total_result_digits] = static_cast<uint32_t>(final_carry & 0xFFFFFFFFULL);
+        //    total_result_digits += 1;
+        //}
         
         // Determine the highest non-zero digit index in the full result
         int highest_nonzero_index = total_result_digits - 1;

@@ -38,36 +38,46 @@ void computeNextXY_host(mpf_t x, mpf_t y, mpf_t a, mpf_t b, int num_iter) {
     mpf_clear(temp_y);
 }
 
-void PressKey() {
+char PressKey() {
     // Press any key to continue (win32)
     // on console, don't require a newline
     std::cout << "Press any key to continue...";
-    _getch();
+    // Get the character pressed and return it
+    return (char)_getch();
 }
 
-int main(int argc, char *argv[]) {
+int main(int /*argc*/, char * /*argv*/[]) {
     int testBase = 0;
+    bool res = false;
 
     if constexpr (!SkipCorrectnessTests) {
         //TestNullKernel();
         //PressKey();
 
-        bool res = false;
         res = TestConversion(0);
         if (!res) {
-            PressKey();
+            auto q = PressKey();
+            if (q == 'q') {
+                return 0;
+            }
         }
 
         testBase = 200;
         res = TestAllBinaryOp<Operator::Multiply>(testBase);
         if (!res) {
-            PressKey();
+            auto q = PressKey();
+            if (q == 'q') {
+                return 0;
+            }
         }
 
         testBase = 400;
         res = TestAllBinaryOp<Operator::Add>(testBase);
         if (!res) {
-            PressKey();
+            auto q = PressKey();
+            if (q == 'q') {
+                return 0;
+            }
         }
     }
 
@@ -78,9 +88,51 @@ int main(int argc, char *argv[]) {
     //}
 
     testBase = 700;
-    bool res = TestBinaryOperatorPerf<Operator::Multiply>(testBase);
+    res = TestBinaryOperatorPerf<Operator::Multiply>(testBase);
     if (!res) {
-        PressKey();
+        auto q = PressKey();
+        if (q == 'q') {
+            return 0;
+        }
+    }
+
+    if constexpr (SkipCorrectnessTests) {
+        auto q = PressKey();
+        if (q == 'q') {
+            return 0;
+        }
+
+        //TestNullKernel();
+        //q = PressKey();
+        //if (q == 'q') {
+        //    return 0;
+        //}
+
+        res = TestConversion(0);
+        if (!res) {
+            q = PressKey();
+            if (q == 'q') {
+                return 0;
+            }
+        }
+
+        testBase = 200;
+        res = TestAllBinaryOp<Operator::Multiply>(testBase);
+        if (!res) {
+            q = PressKey();
+            if (q == 'q') {
+                return 0;
+            }
+        }
+
+        testBase = 400;
+        res = TestAllBinaryOp<Operator::Add>(testBase);
+        if (!res) {
+            q = PressKey();
+            if (q == 'q') {
+                return 0;
+            }
+        }
     }
 
     return 0;

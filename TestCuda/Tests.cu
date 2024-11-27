@@ -82,7 +82,6 @@ void DiffAgainstHost(
         mpf_div_2exp(epsilon, epsilon, totalPrecBits);
 
         // Compute acceptable error: acceptableError = epsilon * abs(hostResult)
-        mpf_t acceptableError;
         mpf_init(acceptableError);
         mpf_mul(acceptableError, epsilon, mpfHostResult);
         mpf_abs(acceptableError, acceptableError);
@@ -107,7 +106,6 @@ void DiffAgainstHost(
         // Host result is zero
 
         // For zero host result, use an absolute error threshold
-        mpf_t acceptableError;
         mpf_init2(acceptableError, totalPrecBits);
         mpf_set_ui(acceptableError, 1);
         mpf_div_2exp(acceptableError, acceptableError, totalPrecBits);
@@ -235,7 +233,7 @@ void TestAddTwoNumbersPerf(
             cudaMalloc(&d_carry1, (NumBlocks + 1) * sizeof(uint64_t));
             cudaMalloc(&d_carry2, (NumBlocks + 1) * sizeof(uint64_t));
             cudaMalloc(&d_carry3, (NumBlocks + 1) * sizeof(uint64_t));
-            cudaMalloc(&d_tempProducts, 16 * HpGpu::NumUint32 * sizeof(uint64_t));
+            cudaMalloc(&d_tempProducts, 32 * HpGpu::NumUint32 * sizeof(uint64_t));
 
             void *kernelArgs[] = {
                 (void *)&xGpu,
@@ -253,6 +251,8 @@ void TestAddTwoNumbersPerf(
             cudaFree(d_carry2);
             cudaFree(d_carry3);
             cudaFree(d_tempProducts);
+
+            cudaMemcpy(gpuResult2.get(), internalGpuResult2, sizeof(HpGpu), cudaMemcpyDeviceToHost);
         }
 
         timer.StopTimer();
@@ -656,7 +656,7 @@ bool TestAllBinaryOp(int testBase) {
 
     // 200s is multiply
     // 400s is add
-
+    
     if constexpr (includeSet1) {
         const auto set = testBase + 10;
         TestBinOperatorTwoNumbers<sharkOperator>(set + 1, "1", "2");
@@ -668,10 +668,11 @@ bool TestAllBinaryOp(int testBase) {
         TestBinOperatorTwoNumbers<sharkOperator>(set + 7, "0", "0.1");
         TestBinOperatorTwoNumbers<sharkOperator>(set + 8, "0.1", "0");
         TestBinOperatorTwoNumbers<sharkOperator>(set + 9, "0", "0");
+        TestBinOperatorTwoNumbers<sharkOperator>(set + 10, "0.1", "0.1");
     }
 
     if constexpr (includeSet2) {
-        const auto set = testBase + 20;
+        const auto set = testBase + 30;
         TestAddSpecialNumbers1<sharkOperator>(set + 1);
         TestAddSpecialNumbers2<sharkOperator>(set + 2);
         TestAddSpecialNumbers3<sharkOperator>(set + 3);
@@ -684,7 +685,7 @@ bool TestAllBinaryOp(int testBase) {
     }
 
     if constexpr (includeSet3) {
-        const auto set = testBase + 30;
+        const auto set = testBase + 40;
         TestBinOperatorTwoNumbers<sharkOperator>(set + 1, "2", "0.1");
         TestBinOperatorTwoNumbers<sharkOperator>(set + 2, "0.2", "0.1");
         TestBinOperatorTwoNumbers<sharkOperator>(set + 3, "0.5", "1.2");
@@ -695,7 +696,7 @@ bool TestAllBinaryOp(int testBase) {
     }
 
     if constexpr (includeSet4) {
-        const auto set = testBase + 40;
+        const auto set = testBase + 50;
         TestBinOperatorTwoNumbers<sharkOperator>(set + 1, "-0.5", "1.2");
         TestBinOperatorTwoNumbers<sharkOperator>(set + 2, "-0.6", "1.3");
         TestBinOperatorTwoNumbers<sharkOperator>(set + 3, "-0.7", "1.4");
@@ -704,7 +705,7 @@ bool TestAllBinaryOp(int testBase) {
     }
 
     if constexpr (includeSet5) {
-        const auto set = testBase + 50;
+        const auto set = testBase + 60;
         TestBinOperatorTwoNumbers<sharkOperator>(set + 1, "-0.5", "-1.2");
         TestBinOperatorTwoNumbers<sharkOperator>(set + 2, "-0.6", "-1.3");
         TestBinOperatorTwoNumbers<sharkOperator>(set + 3, "-0.7", "-1.4");
@@ -713,7 +714,7 @@ bool TestAllBinaryOp(int testBase) {
     }
 
     if constexpr (includeSet6) {
-        const auto set = testBase + 60;
+        const auto set = testBase + 70;
         TestBinOperatorTwoNumbers<sharkOperator>(set + 1, "0.5265542653452654526545625456254565446654545645649789871322131213156435546435", "-1.263468375787958774985473345435632415334245268476928454653443234164658776634854746584532186639173047328910730217803271839216");
         TestBinOperatorTwoNumbers<sharkOperator>(set + 2, "0.2999999999965542653452654526545625456254565446654545645649789871322131213156435546435", "-1.263468375787958774985473345435632415334245268476928454653443234164658776634854746584532186639173047328910730217803271839216");
         TestBinOperatorTwoNumbers<sharkOperator>(set + 3, "0.1265542653452654526545625456254565446654545645649789871322131213156435546435", "-1.2634683757879587749854733454356324153342452684769284546534432341646587766348547465845321866391730473289107302178039999999999999271839216");

@@ -12,11 +12,11 @@ struct GlobalAddBlockData {
     int32_t AIsBiggerMagnitude;
 };
 
-template<Operator sharkOperator>
+template<class SharkFloatParams, Operator sharkOperator>
 void TestBinOperatorTwoNumbers(int testNum, const char *num1, const char *num2);
 
-template<Operator sharkOperator>
+template<class SharkFloatParams, Operator sharkOperator>
 bool TestAllBinaryOp(int testBase);
 
-template<Operator sharkOperator>
+template<class SharkFloatParams, Operator sharkOperator>
 bool TestBinaryOperatorPerf(int testBase);

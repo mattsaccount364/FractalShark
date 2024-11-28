@@ -1,5 +1,5 @@
 #include "TestTracker.h"
-#include "HpGpu.cuh"
+#include "HpSharkFloat.cuh"
 
 #include <iostream>
 #include <assert.h>
@@ -51,8 +51,8 @@ void TestTracker::MarkFailed(size_t testIndex) {
 
 void TestTracker::MarkFailed(
     size_t testIndex,
-    const mpf_t relativeError,
-    const mpf_t acceptableError) {
+    const std::string &relativeError,
+    const std::string &acceptableError) {
 
     if (testIndex >= NumTests) {
         std::cout << "Test index out of range!" << std::endl;
@@ -60,6 +60,6 @@ void TestTracker::MarkFailed(
     }
 
     m_Tests[testIndex].Failed = true;
-    m_Tests[testIndex].RelativeError = MpfToString(relativeError, LowPrec);
-    m_Tests[testIndex].AcceptableError = MpfToString(acceptableError, LowPrec);
+    m_Tests[testIndex].RelativeError = relativeError;
+    m_Tests[testIndex].AcceptableError = acceptableError;
 }

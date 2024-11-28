@@ -1,7 +1,7 @@
 ﻿#include "Add.cuh"
 #include "NullKernel.cuh"
 #include "Conversion.cuh"
-#include "HpGpu.cuh"
+#include "HpSharkFloat.cuh"
 #include "Tests.cuh"
 
 #include <iostream>
@@ -54,7 +54,7 @@ int main(int /*argc*/, char * /*argv*/[]) {
         //TestNullKernel();
         //PressKey();
 
-        res = TestConversion(0);
+        res = TestConversion<TestSharkParams>(0);
         if (!res) {
             auto q = PressKey();
             if (q == 'q') {
@@ -63,7 +63,7 @@ int main(int /*argc*/, char * /*argv*/[]) {
         }
 
         testBase = 200;
-        res = TestAllBinaryOp<Operator::Multiply>(testBase);
+        res = TestAllBinaryOp<TestSharkParams, Operator::Multiply>(testBase);
         if (!res) {
             auto q = PressKey();
             if (q == 'q') {
@@ -72,7 +72,7 @@ int main(int /*argc*/, char * /*argv*/[]) {
         }
 
         testBase = 400;
-        res = TestAllBinaryOp<Operator::Add>(testBase);
+        res = TestAllBinaryOp<TestSharkParams, Operator::Add>(testBase);
         if (!res) {
             auto q = PressKey();
             if (q == 'q') {
@@ -88,7 +88,7 @@ int main(int /*argc*/, char * /*argv*/[]) {
     //}
 
     testBase = 700;
-    res = TestBinaryOperatorPerf<Operator::Multiply>(testBase);
+    res = TestBinaryOperatorPerf<TestSharkParams, Operator::Multiply>(testBase);
     if (!res) {
         auto q = PressKey();
         if (q == 'q') {
@@ -108,7 +108,7 @@ int main(int /*argc*/, char * /*argv*/[]) {
         //    return 0;
         //}
 
-        res = TestConversion(0);
+        res = TestConversion<TestSharkParams>(0);
         if (!res) {
             q = PressKey();
             if (q == 'q') {
@@ -117,7 +117,7 @@ int main(int /*argc*/, char * /*argv*/[]) {
         }
 
         testBase = 200;
-        res = TestAllBinaryOp<Operator::Multiply>(testBase);
+        res = TestAllBinaryOp<TestSharkParams, Operator::Multiply>(testBase);
         if (!res) {
             q = PressKey();
             if (q == 'q') {
@@ -126,7 +126,7 @@ int main(int /*argc*/, char * /*argv*/[]) {
         }
 
         testBase = 400;
-        res = TestAllBinaryOp<Operator::Add>(testBase);
+        res = TestAllBinaryOp<TestSharkParams, Operator::Add>(testBase);
         if (!res) {
             q = PressKey();
             if (q == 'q') {

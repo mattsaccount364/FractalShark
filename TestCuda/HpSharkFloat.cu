@@ -1,5 +1,5 @@
 
-#include "HpGpu.cuh"
+#include "HpSharkFloat.cuh"
 
 #include <gmp.h>
 #include <iostream>
@@ -8,9 +8,10 @@
 #include <cstdint>
 #include <assert.h>
 
-//static_assert(sizeof(HpGpu) == 4096, "HpGpu size is not 4096 bytes");
+//static_assert(sizeof(HpSharkFloat<SharkFloatParams>) == 4096, "HpSharkFloat<SharkFloatParams> size is not 4096 bytes");
 
-HpGpu::HpGpu()
+template<class SharkFloatParams>
+HpSharkFloat<SharkFloatParams>::HpSharkFloat()
     : Digits{},
     Exponent{ std::numeric_limits<ExpT>::min() },
     IsNegative{} {
@@ -18,7 +19,8 @@ HpGpu::HpGpu()
     // exponent is most negative int32_t
 }
 
-HpGpu::HpGpu(uint32_t numDigits)
+template<class SharkFloatParams>
+HpSharkFloat<SharkFloatParams>::HpSharkFloat(uint32_t numDigits)
     : Digits{},
     Exponent{ std::numeric_limits<ExpT>::min() },
     IsNegative{} {
@@ -26,7 +28,8 @@ HpGpu::HpGpu(uint32_t numDigits)
     std::fill(Digits, Digits + NumUint32, 0);
 }
 
-HpGpu::HpGpu(
+template<class SharkFloatParams>
+HpSharkFloat<SharkFloatParams>::HpSharkFloat(
     const uint32_t *digitsIn,
     int32_t expIn,
     bool isNegative)
@@ -38,16 +41,17 @@ HpGpu::HpGpu(
 }
 
 // Function to convert mpf_t to string
-std::string MpfToString(const mpf_t mpf_val, size_t precInBits) {
+template<class SharkFloatParams>
+std::string MpfToString<SharkFloatParams>(const mpf_t mpf_val, size_t precInBits) {
     char *str = NULL;
 
-    if (precInBits == HpGpu::DefaultPrecBits) {
+    if (precInBits == HpSharkFloat<SharkFloatParams>::DefaultPrecBits) {
         gmp_asprintf(&str, "%.Fe", mpf_val);
         std::string result(str);
         free(str);
         return result;
     } else {
-        const auto decimalDigits = static_cast<uint32_t>(precInBits / HpGpu::ConvertBitsToDecimals);
+        const auto decimalDigits = static_cast<uint32_t>(precInBits / HpSharkFloat<SharkFloatParams>::ConvertBitsToDecimals);
         gmp_asprintf(&str, "%.*Fe", decimalDigits, mpf_val);
         std::string result(str);
         free(str);
@@ -102,7 +106,8 @@ std::string MpfToHexString(const mpf_t mpf_val) {
     return result;
 }
 
-std::string Uint32ArrayToHexString(const uint32_t *array, size_t numElements) {
+std::string
+Uint32ArrayToHexString(const uint32_t *array, size_t numElements) {
     std::string result;
 
     // Convert each 4-byte integer to hex and append to result
@@ -115,42 +120,45 @@ std::string Uint32ArrayToHexString(const uint32_t *array, size_t numElements) {
     return result;
 }
 
-static HpGpu::ExpT
-MpirExponentToHPExponent (
+template<class SharkFloatParams>
+static HpSharkFloat<SharkFloatParams>::ExpT
+MpirExponentToHPExponent(
     const mpf_t mpf_val,
-    HpGpu::ExpT bytesToCopy) {
+    typename HpSharkFloat<SharkFloatParams>::ExpT bytesToCopy) {
 
-    const auto mpirExponentInPow2 = static_cast<HpGpu::ExpT>(mpf_val[0]._mp_exp * sizeof(mp_limb_t) * 8);
+    const auto mpirExponentInPow2 = static_cast<HpSharkFloat<SharkFloatParams>::ExpT>(mpf_val[0]._mp_exp * sizeof(mp_limb_t) * 8);
     return mpirExponentInPow2 - bytesToCopy * 8;
 }
 
+template<class SharkFloatParams>
 mp_exp_t
-HpGpu::HpGpuExponentToMpfExponent (
+HpSharkFloat<SharkFloatParams>::HpGpuExponentToMpfExponent(
     size_t numBytesToCopy) const {
 
     const auto hpExponentInPow2 = static_cast<mp_exp_t>(Exponent + numBytesToCopy * 8);
     return hpExponentInPow2 / (sizeof(mp_limb_t) * 8);
 }
 
-// Function to convert mpf_t to HpGpu
+// Function to convert mpf_t to HpSharkFloat<SharkFloatParams>
+template<class SharkFloatParams>
 void
-MpfToHpGpu (
+MpfToHpGpu(
     const mpf_t mpf_val,
-    HpGpu &number,
+    HpSharkFloat<SharkFloatParams> &number,
     int prec_bits) {
 
     // Get the absolute value of mpf_val
     mpf_t abs_val;
-    mpf_init2(abs_val, HpGpu::DefaultMpirBits);
+    mpf_init2(abs_val, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
     mpf_abs(abs_val, mpf_val);
-    
+
     if constexpr (Verbose) {
-        std::cout << "abs_val: " << MpfToString(abs_val, prec_bits) << std::endl;
+        std::cout << "abs_val: " << MpfToString<SharkFloatParams>(abs_val, prec_bits) << std::endl;
     }
 
     // Determine the sign
     number.IsNegative = (mpf_sgn(mpf_val) < 0);
-    
+
     if constexpr (Verbose) {
         std::cout << "prec_bits: " << prec_bits << std::endl;
     }
@@ -158,7 +166,7 @@ MpfToHpGpu (
     std::vector<uint32_t> data;
     const auto absMpirSize = std::abs(abs_val[0]._mp_size);
     const auto precInUint64 = std::min(mpf_val[0]._mp_prec + 1, absMpirSize);
-    
+
     // Iterate over mpf_val._m_d and copy the data.
     // Put the low order uint32_t first, then the high order uint32_t
     // Keep the endian the same
@@ -183,26 +191,27 @@ MpfToHpGpu (
     auto countInBytes = data.size() * sizeof(uint32_t);
 
     // Copy data into digits array
-    memset(number.Digits, 0, HpGpu::NumUint32 * sizeof(uint32_t));
-        
+    memset(number.Digits, 0, HpSharkFloat<SharkFloatParams>::NumUint32 * sizeof(uint32_t));
+
     // If count is greater than NumUint32, move forward by count - NumUint32
     // because the most significant digits are at the end of the array
     auto startOffset =
-        (countInBytes > HpGpu::NumUint32 * sizeof(uint32_t)) ?
-        countInBytes - HpGpu::NumUint32 * sizeof(uint32_t) :
+        (countInBytes > HpSharkFloat<SharkFloatParams>::NumUint32 * sizeof(uint32_t)) ?
+        countInBytes - HpSharkFloat<SharkFloatParams>::NumUint32 * sizeof(uint32_t) :
         0;
     auto numBytesToCopy = std::min(
         countInBytes,
-        HpGpu::NumUint32 * sizeof(uint32_t));
+        HpSharkFloat<SharkFloatParams>::NumUint32 * sizeof(uint32_t));
     numBytesToCopy = std::min(numBytesToCopy, absMpirSize * sizeof(mp_limb_t));
 
-    memcpy(number.Digits, reinterpret_cast<uint8_t*>(data.data()) + startOffset, numBytesToCopy);
+    memcpy(number.Digits, reinterpret_cast<uint8_t *>(data.data()) + startOffset, numBytesToCopy);
 
     // Set the Exponent
-    number.Exponent = MpirExponentToHPExponent(mpf_val, static_cast<HpGpu::ExpT>(numBytesToCopy));
-     
+    number.Exponent = MpirExponentToHPExponent<SharkFloatParams>(
+        mpf_val, static_cast<HpSharkFloat<SharkFloatParams>::ExpT>(numBytesToCopy));
+
     //{
-    //    auto exportedFinalData = Uint32ArrayToHexString(number.Digits, HpGpu::NumUint32);
+    //    auto exportedFinalData = Uint32ArrayToHexString(number.Digits, HpSharkFloat<SharkFloatParams>::NumUint32);
     //    std::cout << "Exported Final data: " << exportedFinalData << ", exponent: " << number.Exponent << std::endl;
     //}
 
@@ -210,8 +219,9 @@ MpfToHpGpu (
     mpf_clear(abs_val);
 }
 
+template<class SharkFloatParams>
 std::string
-HpGpu::ToHexString() const {
+HpSharkFloat<SharkFloatParams>::ToHexString() const {
 
     std::string result;
 
@@ -235,9 +245,12 @@ HpGpu::ToHexString() const {
     return result;
 }
 
-std::string HpGpu::ToString() const {
+template<class SharkFloatParams>
+std::string
+HpSharkFloat<SharkFloatParams>::ToString() const
+{
     mpf_t mpf_value;
-    mp_bitcnt_t prec = HpGpu::DefaultMpirBits;
+    mp_bitcnt_t prec = HpSharkFloat<SharkFloatParams>::DefaultMpirBits;
     mpf_init2(mpf_value, prec);
 
     // Import the digits into mpf_value.  Convert
@@ -268,7 +281,10 @@ std::string HpGpu::ToString() const {
     return result;
 }
 
-void HpGpu::GenerateRandomNumber() {
+template<class SharkFloatParams>
+void
+HpSharkFloat<SharkFloatParams>::GenerateRandomNumber()
+{
     // Use a random device to seed the random number generator
     std::random_device rd;
     std::mt19937 generator(rd());  // Mersenne Twister for high-quality randomness
@@ -296,15 +312,20 @@ void HpGpu::GenerateRandomNumber() {
 }
 
 
-// Function to convert HpGpu to mpf_t
-void HpGpuToMpf(const HpGpu &hpNum, mpf_t &mpf_val) {
+// Function to convert HpSharkFloat<SharkFloatParams> to mpf_t
+template<class SharkFloatParams>
+void
+HpGpuToMpf (
+    const HpSharkFloat<SharkFloatParams> &hpNum,
+    mpf_t &mpf_val)
+{
     // Initialize an mpz_t integer to hold the significand
     mpz_t mpz_value;
     mpz_init(mpz_value);
 
     // Import the digits array into the mpz_t integer
     // Note: mpz_import expects the least significant word first
-    mpz_import(mpz_value, HpGpu::NumUint32, -1, sizeof(uint32_t), 0, 0, hpNum.Digits);
+    mpz_import(mpz_value, HpSharkFloat<SharkFloatParams>::NumUint32, -1, sizeof(uint32_t), 0, 0, hpNum.Digits);
 
     // Adjust for sign
     if (hpNum.IsNegative) {
@@ -330,6 +351,7 @@ void HpGpuToMpf(const HpGpu &hpNum, mpf_t &mpf_val) {
 
 // Function to convert uint32_t array to mpf_t
 // pow2Exponent is the exponent in base 2
+template<class SharkFloatParams>
 std::string
 Uint32ToMpf (
     const uint32_t *array,
@@ -337,7 +359,7 @@ Uint32ToMpf (
     mpf_t &mpf_val) {
 
     std::vector<uint64_t> data;
-    for (size_t i = 0; i < HpGpu::NumUint32 / 2; ++i) {
+    for (size_t i = 0; i < HpSharkFloat<SharkFloatParams>::NumUint32 / 2; ++i) {
         // Store two uint32_t values in one
         auto value = static_cast<uint64_t>(array[2 * i + 1]) << 32 | array[2 * i];
         data.push_back(value);
@@ -345,7 +367,7 @@ Uint32ToMpf (
 
     const size_t spaceAvailable = mpf_val[0]._mp_prec + 1;
     const auto entriesToCopy = std::min(data.size(), spaceAvailable);
-    
+
     // Copy the data into mpf_val[0]._mp_d
     for (size_t i = 0; i < entriesToCopy; ++i) {
         mpf_val[0]._mp_d[i] = data[i];
@@ -358,5 +380,18 @@ Uint32ToMpf (
     mpf_val[0]._mp_size = static_cast<int>(entriesToCopy);
 
     // Return string representation
-    return MpfToString(mpf_val, HpGpu::DefaultMpirBits);
+    return MpfToString<SharkFloatParams>(mpf_val, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
 }
+
+// Explicit instantiation
+#define ExplicitlyInstantiate(SharkFloatParams) \
+    template class HpSharkFloat<SharkFloatParams>; \
+    template void MpfToHpGpu<SharkFloatParams>(const mpf_t mpf_val, HpSharkFloat<SharkFloatParams> &number, int prec_bits); \
+    template void HpGpuToMpf<SharkFloatParams>(const HpSharkFloat<SharkFloatParams> &hpNum, mpf_t &mpf_val); \
+    template std::string Uint32ToMpf<SharkFloatParams>(const uint32_t *array, int32_t pow64Exponent, mpf_t &mpf_val); \
+    template std::string MpfToString<SharkFloatParams>(const mpf_t mpf_val, size_t precInBits); \
+
+
+ExplicitlyInstantiate(Test4x4SharkParams);
+ExplicitlyInstantiate(Test8x1SharkParams);
+ExplicitlyInstantiate(Test128x64SharkParams);

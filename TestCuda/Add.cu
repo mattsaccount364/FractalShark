@@ -1,6 +1,6 @@
 #include <cuda_runtime.h>
 
-#include "HpGpu.cuh"
+#include "HpSharkFloat.cuh"
 #include "BenchmarkTimer.h"
 #include "TestTracker.h"
 #include "Tests.cuh"
@@ -61,7 +61,7 @@ __device__ void BlellochScanWarp1(uint32_t *carryBits, uint32_t *scanResults, in
 // If your application requires the output[0, 1, 1, 1], you should use an inclusive prefix sum.
 __device__ void BlellochScanWarp(uint32_t * input, uint32_t * output, int n) {
     uint32_t val = 0;
-    int lane = threadIdx.x; // lane index within the warp (since ThreadsPerBlock == warpSize)
+    int lane = threadIdx.x; // lane index within the warp (since SharkFloatParams::ThreadsPerBlock == warpSize)
     uint32_t warp_mask = __ballot_sync(0xFFFFFFFF, lane < n); // Active threads in the warp
 
     // Load the input value for each thread
@@ -119,7 +119,7 @@ __device__ void ComputeCarryIn(
     const uint32_t *carryOuts, // Input carry-out array
     uint32_t *carryIn,         // Output carry-in array
     int n,                     // Number of digits
-    uint32_t *sharedCarryOut   // Statically allocated sharedCarryOut array (size ThreadsPerBlock)
+    uint32_t *sharedCarryOut   // Statically allocated sharedCarryOut array (size SharkFloatParams::ThreadsPerBlock)
 ) {
     int tid = threadIdx.x;
 
@@ -146,25 +146,27 @@ __device__ void ComputeCarryIn(
 }
 
 // Device function to compute carry-in signals across warps using statically allocated shared memory
+template<class SharkFloatParams>
 __device__ void ComputeCarryInDecider(
     const uint32_t *carryOuts, // Input carry-out array
     uint32_t *carryIn,         // Output carry-in array
     int n,                     // Number of digits
-    uint32_t *sharedCarryOut   // Statically allocated sharedCarryOut array (size ThreadsPerBlock)
+    uint32_t *sharedCarryOut   // Statically allocated sharedCarryOut array (size SharkFloatParams::ThreadsPerBlock)
 ) {
-    if constexpr (ThreadsPerBlock <= 32) {
+    if constexpr (SharkFloatParams::ThreadsPerBlock <= 32) {
         ComputeCarryInWarp(carryOuts, carryIn, n);
     } else {
         ComputeCarryIn(carryOuts, carryIn, n, sharedCarryOut);
     }
 }
 
+template<class SharkFloatParams>
 __device__ uint32_t ShiftRight(uint32_t *digits, int shiftBits, int idx) {
     int shiftWords = shiftBits / 32;
     int shiftBitsMod = shiftBits % 32;
     uint32_t lower = 0, upper = 0;
     int srcIdx = idx + shiftWords;
-    const int numDigits = HpGpu::NumUint32;
+    const int numDigits = HpSharkFloat<SharkFloatParams>::NumUint32;
     if (srcIdx < numDigits) {
         lower = digits[srcIdx];
     }
@@ -179,17 +181,18 @@ __device__ uint32_t ShiftRight(uint32_t *digits, int shiftBits, int idx) {
 }
 
 // Device function to perform addition/subtraction with carry handling using Blelloch scan and static shared memory
+template<class SharkFloatParams>
 __device__ void AddHelper(
-    HpGpu *A,
-    HpGpu *B,
-    HpGpu *Out,
+    HpSharkFloat<SharkFloatParams> *A,
+    HpSharkFloat<SharkFloatParams> *B,
+    HpSharkFloat<SharkFloatParams> *Out,
     GlobalAddBlockData *globalData,
     CarryInfo *carryOuts,        // Array to store carry-out for each block
     uint32_t *cumulativeCarries, // Array to store cumulative carries
     cg::grid_group grid,
     int numBlocks) {
 
-    const int numDigits = HpGpu::NumUint32;
+    const int numDigits = HpSharkFloat<SharkFloatParams>::NumUint32;
     const int tid = threadIdx.x;
     const int blockId = blockIdx.x;
 
@@ -200,12 +203,12 @@ __device__ void AddHelper(
     const int digitsInBlock = endDigit - startDigit;
 
     // Static shared memory allocation based on predefined maximums
-    __shared__ uint32_t alignedA_static[ThreadsPerBlock];
-    __shared__ uint32_t alignedB_static[ThreadsPerBlock];
-    __shared__ uint32_t tempSum_static[ThreadsPerBlock];
-    __shared__ uint32_t carryBits_static[ThreadsPerBlock];
-    __shared__ uint32_t scanResults_static[ThreadsPerBlock];
-    __shared__ uint32_t sharedCarryOut[ThreadsPerBlock];        // Shared carry-out for ComputeCarryIn
+    __shared__ uint32_t alignedA_static[SharkFloatParams::ThreadsPerBlock];
+    __shared__ uint32_t alignedB_static[SharkFloatParams::ThreadsPerBlock];
+    __shared__ uint32_t tempSum_static[SharkFloatParams::ThreadsPerBlock];
+    __shared__ uint32_t carryBits_static[SharkFloatParams::ThreadsPerBlock];
+    __shared__ uint32_t scanResults_static[SharkFloatParams::ThreadsPerBlock];
+    __shared__ uint32_t sharedCarryOut[SharkFloatParams::ThreadsPerBlock];        // Shared carry-out for ComputeCarryIn
 
     // Additional shared variables
     __shared__ bool isAddition;
@@ -226,7 +229,7 @@ __device__ void AddHelper(
     __syncthreads();  // Synchronize all threads in the grid
 
     // Initialize aligned digits to zero
-    for (int i = tid; i < digitsInBlock; i += ThreadsPerBlock) {
+    for (int i = tid; i < digitsInBlock; i += SharkFloatParams::ThreadsPerBlock) {
         alignedA_static[i] = 0;
         alignedB_static[i] = 0;
     }
@@ -235,17 +238,17 @@ __device__ void AddHelper(
     // Perform shifting based on exponent difference
     int shiftBits = abs(A->Exponent - B->Exponent);
 
-    for (int i = tid; i < digitsInBlock; i += ThreadsPerBlock) {
+    for (int i = tid; i < digitsInBlock; i += SharkFloatParams::ThreadsPerBlock) {
         int globalIdx = startDigit + i;
         if (globalIdx < numDigits) {
             // Shift the number with the smaller exponent
             if (AIsBiggerExponent) {
                 // Shift B right
                 alignedA_static[i] = A->Digits[globalIdx];
-                alignedB_static[i] = ShiftRight(B->Digits, shiftBits, globalIdx);
+                alignedB_static[i] = ShiftRight<SharkFloatParams>(B->Digits, shiftBits, globalIdx);
             } else {
                 // Shift A right
-                alignedA_static[i] = ShiftRight(A->Digits, shiftBits, globalIdx);
+                alignedA_static[i] = ShiftRight<SharkFloatParams>(A->Digits, shiftBits, globalIdx);
                 alignedB_static[i] = B->Digits[globalIdx];
             }
         } else {
@@ -266,10 +269,10 @@ __device__ void AddHelper(
                 if (AIsBiggerExponent) {
                     // Shift B right
                     a_digit = A->Digits[idx];
-                    b_digit = ShiftRight(B->Digits, shiftBits, idx);
+                    b_digit = ShiftRight<SharkFloatParams>(B->Digits, shiftBits, idx);
                 } else {
                     // Shift A right
-                    a_digit = ShiftRight(A->Digits, shiftBits, idx);
+                    a_digit = ShiftRight<SharkFloatParams>(A->Digits, shiftBits, idx);
                     b_digit = B->Digits[idx];
                 }
 
@@ -293,7 +296,7 @@ __device__ void AddHelper(
 
     // Phase 3: Perform Addition or Subtraction within the block
     if (!resultIsZero) {
-        for (int i = tid; i < digitsInBlock; i += ThreadsPerBlock) {
+        for (int i = tid; i < digitsInBlock; i += SharkFloatParams::ThreadsPerBlock) {
             if (i >= digitsInBlock) continue;
             if (isAddition) {
                 // Perform addition
@@ -327,11 +330,12 @@ __device__ void AddHelper(
         initialCarryOutLastDigit = carryBits_static[digitsInBlock - 1];
 
         // Perform Blelloch scan on carryBits_static
-        ComputeCarryInDecider(carryBits_static, scanResults_static, digitsInBlock, sharedCarryOut);
+        ComputeCarryInDecider<SharkFloatParams>(
+            carryBits_static, scanResults_static, digitsInBlock, sharedCarryOut);
 
         // After scan, scanResults_static contains the carry-in for each digit
         // Apply the carry-ins to tempSum_static to get the final output digits
-        for (int i = tid; i < digitsInBlock; i += ThreadsPerBlock) {
+        for (int i = tid; i < digitsInBlock; i += SharkFloatParams::ThreadsPerBlock) {
             if (i >= digitsInBlock) continue;
             if (isAddition) {
                 // Add the carry-in to the sum
@@ -396,10 +400,11 @@ __device__ void AddHelper(
     // Phase 7.1: Propagate New Carry-Out Within the Block if Necessary
     if (!resultIsZero && digitsInBlock > 1) {
         // Perform Blelloch scan on carryBits_static
-        ComputeCarryInDecider(carryBits_static, scanResults_static, digitsInBlock, sharedCarryOut);
+        ComputeCarryInDecider<SharkFloatParams>(
+            carryBits_static, scanResults_static, digitsInBlock, sharedCarryOut);
 
         // Apply the new carry-ins to the output digits
-        for (int i = tid; i < digitsInBlock; i += ThreadsPerBlock) {
+        for (int i = tid; i < digitsInBlock; i += SharkFloatParams::ThreadsPerBlock) {
             if (i > 0) { // Skip the first digit
                 if (isAddition) {
                     uint64_t finalSum = (uint64_t)Out->Digits[startDigit + i] + (uint64_t)scanResults_static[i];
@@ -453,10 +458,11 @@ __device__ void AddHelper(
     //grid.sync();  // Synchronize after adjusting exponent and digits
 }
 
+template<class SharkFloatParams>
 __global__ void AddKernel(
-    HpGpu *A,
-    HpGpu *B,
-    HpGpu *Out,
+    HpSharkFloat<SharkFloatParams> *A,
+    HpSharkFloat<SharkFloatParams> *B,
+    HpSharkFloat<SharkFloatParams> *Out,
     GlobalAddBlockData *globalBlockData,
     CarryInfo *carryOuts,        // Array to store carry-out for each block
     uint32_t *cumulativeCarries) { // Array to store cumulative carries
@@ -472,11 +478,11 @@ __global__ void AddKernel(
 }
 
 
-
+template<class SharkFloatParams>
 __global__ void AddKernelTestLoop(
-    HpGpu *A,
-    HpGpu *B,
-    HpGpu *Out,
+    HpSharkFloat<SharkFloatParams> *A,
+    HpSharkFloat<SharkFloatParams> *B,
+    HpSharkFloat<SharkFloatParams> *Out,
     GlobalAddBlockData *globalBlockData,
     CarryInfo *carryOuts,        // Array to store carry-out for each block
     uint32_t *cumulativeCarries) { // Array to store cumulative carries
@@ -487,28 +493,28 @@ __global__ void AddKernelTestLoop(
     // Total number of blocks launched
     int numBlocks = gridDim.x;
 
-    for (int i = 0; i < NUM_ITER; ++i) {
+    for (int i = 0; i < TestIterCount; ++i) {
         AddHelper(A, B, Out, globalBlockData, carryOuts, cumulativeCarries, grid, numBlocks);
     }
 }
 
 //__global__ void multiply_high_precision_kernel(
-//    HpGpu *A,
-//    HpGpu *B,
-//    HpGpu *Out) {
+//    HpSharkFloat<SharkFloatParams> *A,
+//    HpSharkFloat<SharkFloatParams> *B,
+//    HpSharkFloat<SharkFloatParams> *Out) {
 //    const int idx = threadIdx.x;
-//    __shared__ uint32_t tempProduct[HpGpu::NumUint32 * 2];
+//    __shared__ uint32_t tempProduct[HpSharkFloat<SharkFloatParams>::NumUint32 * 2];
 //
 //    // Initialize tempProduct to zero
-//    if (idx < HpGpu::NumUint32 * 2) {
+//    if (idx < HpSharkFloat<SharkFloatParams>::NumUint32 * 2) {
 //        tempProduct[idx] = 0;
 //    }
 //
 //    __syncthreads();
 //
 //    // Each thread computes partial products
-//    for (int i = 0; i < HpGpu::NumUint32; i++) {
-//        if (idx < HpGpu::NumUint32) {
+//    for (int i = 0; i < HpSharkFloat<SharkFloatParams>::NumUint32; i++) {
+//        if (idx < HpSharkFloat<SharkFloatParams>::NumUint32) {
 //            uint64_t product = (uint64_t)A->Digits[idx] * (uint64_t)B->Digits[i];
 //            int pos = idx + i;
 //
@@ -522,7 +528,7 @@ __global__ void AddKernelTestLoop(
 //
 //    // Perform carry propagation
 //    uint32_t carry = 0;
-//    if (idx < HpGpu::NumUint32 * 2) {
+//    if (idx < HpSharkFloat<SharkFloatParams>::NumUint32 * 2) {
 //        uint64_t sum = (uint64_t)tempProduct[idx] + carry;
 //        tempProduct[idx] = (uint32_t)(sum & 0xFFFFFFFF);
 //        carry = (uint32_t)(sum >> 32);
@@ -531,7 +537,7 @@ __global__ void AddKernelTestLoop(
 //    __syncthreads();
 //
 //    // Write the result to Out
-//    if (idx < HpGpu::NumUint32) {
+//    if (idx < HpSharkFloat<SharkFloatParams>::NumUint32) {
 //        Out->Digits[idx] = tempProduct[idx];
 //    }
 //
@@ -542,12 +548,13 @@ __global__ void AddKernelTestLoop(
 //    }
 //}
 
+template<class SharkFloatParams>
 void ComputeAddGpu(void *kernelArgs[]) {
 
     cudaError_t err = cudaLaunchCooperativeKernel(
-        (void *)AddKernel,
-        dim3(NumBlocks),
-        dim3(ThreadsPerBlock),
+        (void *)AddKernel<SharkFloatParams>,
+        dim3(SharkFloatParams::NumBlocks),
+        dim3(SharkFloatParams::ThreadsPerBlock),
         kernelArgs,
         0, // Shared memory size
         0 // Stream
@@ -556,12 +563,13 @@ void ComputeAddGpu(void *kernelArgs[]) {
     cudaDeviceSynchronize();
 }
 
+template<class SharkFloatParams>
 void ComputeAddGpuTestLoop(void *kernelArgs[]) {
 
     cudaError_t err = cudaLaunchCooperativeKernel(
-        (void *)AddKernelTestLoop,
-        dim3(NumBlocks),
-        dim3(ThreadsPerBlock),
+        (void *)AddKernelTestLoop<SharkFloatParams>,
+        dim3(SharkFloatParams::NumBlocks),
+        dim3(SharkFloatParams::ThreadsPerBlock),
         kernelArgs,
         0, // Shared memory size
         0 // Stream
@@ -570,3 +578,10 @@ void ComputeAddGpuTestLoop(void *kernelArgs[]) {
     cudaDeviceSynchronize();
 }
 
+#define ExplicitlyInstantiateComputeAddGpu(SharkFloatParams) \
+    template void ComputeAddGpu<SharkFloatParams>(void *kernelArgs[]); \
+    template void ComputeAddGpuTestLoop<SharkFloatParams>(void *kernelArgs[]);
+
+ExplicitlyInstantiateComputeAddGpu(Test4x4SharkParams);
+ExplicitlyInstantiateComputeAddGpu(Test8x1SharkParams);
+ExplicitlyInstantiateComputeAddGpu(Test128x64SharkParams);

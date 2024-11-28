@@ -25,8 +25,8 @@ public:
     void MarkFailed(size_t testIndex);
     void MarkFailed(
         size_t testIndex,
-        const mpf_t relativeError,
-        const mpf_t acceptableError);
+        const std::string &relativeError,
+        const std::string &acceptableError);
 
 private:
     std::vector<PerTest> m_Tests;

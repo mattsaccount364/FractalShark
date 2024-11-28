@@ -2,7 +2,7 @@
 
 #include <cuda_runtime.h>
 
-#include "HpGpu.cuh"
+#include "HpSharkFloat.cuh"
 #include "BenchmarkTimer.h"
 
 #include <iostream>
@@ -78,20 +78,160 @@ __device__ static void subtractWithBorrow(
     result_high = a_high - b_high - borrow_high;
 }
 
+template<class SharkFloatParams>
+__device__ static void CarryPropagation (
+    cg::grid_group &grid,
+    cg::thread_block &block,
+    const uint3 &threadIdx,
+    const uint3 &blockIdx,
+    const uint3 &blockDim,
+    const uint3 &gridDim,
+    int thread_start_idx,
+    int thread_end_idx,
+    int Convolution_offset,
+    int Result_offset,
+    uint64_t * block_carry_outs,
+    uint64_t * tempProducts,
+    uint64_t * carryOuts_phase3,
+    uint64_t * carryOuts_phase6,
+    uint64_t * carryIns) {
+
+    // First Pass: Process convolution results to compute initial digits and local carries
+    __shared__ uint64_t shared_carries[SharkFloatParams::ThreadsPerBlock];
+
+    // Initialize local carry
+    uint64_t local_carry = 0;
+
+    // Constants and offsets
+    constexpr int MaxPasses = 10; // Maximum number of carry propagation passes
+    constexpr int total_result_digits = 2 * HpSharkFloat<SharkFloatParams>::NumUint32;
+
+    // Each thread processes its assigned digits
+    for (int idx = thread_start_idx; idx < thread_end_idx; ++idx) {
+        int sum_low_idx = Convolution_offset + idx * 2;
+        int sum_high_idx = sum_low_idx + 1;
+
+        // Read sum_low and sum_high from global memory
+        uint64_t sum_low = tempProducts[sum_low_idx];     // Lower 64 bits
+        uint64_t sum_high = tempProducts[sum_high_idx];   // Higher 64 bits
+
+        // Add local carry to sum_low
+        uint64_t new_sum_low = sum_low + local_carry;
+        uint64_t carry_from_low = (new_sum_low < sum_low) ? 1 : 0;
+
+        // Combine sum_high and carry_from_low
+        uint64_t new_sum_high = (sum_high << 32) + carry_from_low;
+
+        // Extract digit
+        uint32_t digit = static_cast<uint32_t>(new_sum_low & 0xFFFFFFFFULL);
+
+        // Compute local carry for next digit
+        local_carry = new_sum_high + (new_sum_low >> 32);
+
+        // Store the partial digit
+        tempProducts[Result_offset + idx] = digit;
+
+        // Continue to next digit without synchronization since carries are local
+    }
+
+    if (threadIdx.x == SharkFloatParams::ThreadsPerBlock - 1) {
+        block_carry_outs[blockIdx.x] = local_carry;
+    } else {
+        shared_carries[threadIdx.x] = local_carry;
+    }
+
+    // Synchronize all blocks
+    grid.sync();
+
+    uint64_t *carries_remaining_global = carryOuts_phase3;
+
+    // Inter-Block Carry Propagation
+    int pass = 0;
+
+    do {
+        // Get carry-in from the previous block
+        local_carry = 0;
+        if (threadIdx.x == 0 && blockIdx.x > 0) {
+            local_carry = block_carry_outs[blockIdx.x - 1];
+        } else {
+            if (threadIdx.x > 0) {
+                local_carry = shared_carries[threadIdx.x - 1];
+            }
+        }
+
+        // Each thread processes its assigned digits
+        for (int idx = thread_start_idx; idx < thread_end_idx; ++idx) {
+            // Read the previously stored digit
+            uint32_t digit = tempProducts[Result_offset + idx];
+
+            // Add local_carry to digit
+            uint64_t sum = static_cast<uint64_t>(digit) + local_carry;
+
+            // Update digit
+            digit = static_cast<uint32_t>(sum & 0xFFFFFFFFULL);
+            tempProducts[Result_offset + idx] = digit;
+
+            // Compute new local_carry for next digit
+            local_carry = sum >> 32;
+        }
+
+        // Store the final local_carry of each thread into shared memory
+        shared_carries[threadIdx.x] = local_carry;
+        block.sync();
+
+        // The block's carry-out is the carry from the last thread
+        if (threadIdx.x == SharkFloatParams::ThreadsPerBlock - 1) {
+            auto temp = shared_carries[threadIdx.x];
+            block_carry_outs[blockIdx.x] = temp;
+            if (temp > 0) {
+                atomicAdd(carries_remaining_global, 1);
+            }
+        }
+
+        // Synchronize all blocks before checking if carries remain
+        grid.sync();
+
+        // If no carries remain, exit the loop
+        if (*carries_remaining_global == 0) {
+            break;
+        }
+
+        pass++;
+    } while (pass < MaxPasses);
+
+    // ---- Handle Final Carry-Out ----
+
+    // Synchronize all blocks
+    grid.sync();
+
+    // Handle final carry-out
+    if (threadIdx.x == 0 && blockIdx.x == gridDim.x - 1) {
+        uint64_t final_carry = block_carry_outs[blockIdx.x];
+        if (final_carry > 0) {
+            // Store the final carry as an additional digit
+            tempProducts[Result_offset + total_result_digits] = static_cast<uint32_t>(final_carry & 0xFFFFFFFFULL);
+            // Optionally, you may need to adjust total_result_digits
+        }
+    }
+
+    // Synchronize all blocks before finalization
+    grid.sync();
+}
+
 
 //
-// static constexpr int32_t ThreadsPerBlock = /* power of 2 */;
-// static constexpr int32_t NumBlocks = /* power of 2 */;
-// static constexpr int32_t HpGpu::NumUint32 = ThreadsPerBlock * NumBlocks;
+// static constexpr int32_t SharkFloatParams::ThreadsPerBlock = /* power of 2 */;
+// static constexpr int32_t SharkFloatParams::NumBlocks = /* power of 2 */;
+// static constexpr int32_t HpSharkFloat<SharkFloatParams>::NumUint32 = SharkFloatParams::ThreadsPerBlock * SharkFloatParams::NumBlocks;
 // 
 
-// Assuming that HpGpu::NumUint32 can be large and doesn't fit in shared memory
+// Assuming that HpSharkFloat<SharkFloatParams>::NumUint32 can be large and doesn't fit in shared memory
 // We'll use the provided global memory buffers for large intermediates
-
+template<class SharkFloatParams>
 __device__ void MultiplyHelperKaratsuba(
-    const HpGpu *__restrict__ A,
-    const HpGpu *__restrict__ B,
-    HpGpu *__restrict__ Out,
+    const HpSharkFloat<SharkFloatParams> *__restrict__ A,
+    const HpSharkFloat<SharkFloatParams> *__restrict__ B,
+    HpSharkFloat<SharkFloatParams> *__restrict__ Out,
     uint64_t *__restrict__ carryOuts_phase3,
     uint64_t *__restrict__ carryOuts_phase6,
     uint64_t *__restrict__ carryIns,
@@ -100,10 +240,10 @@ __device__ void MultiplyHelperKaratsuba(
 
     cg::thread_block block = cg::this_thread_block();
 
-    const int threadIdxGlobal = blockIdx.x * ThreadsPerBlock + threadIdx.x;
+    const int threadIdxGlobal = blockIdx.x * SharkFloatParams::ThreadsPerBlock + threadIdx.x;
 
-    constexpr int total_threads = ThreadsPerBlock * NumBlocks;
-    constexpr int N = HpGpu::NumUint32;         // Total number of digits
+    constexpr int total_threads = SharkFloatParams::ThreadsPerBlock * SharkFloatParams::NumBlocks;
+    constexpr int N = HpSharkFloat<SharkFloatParams>::NumUint32;         // Total number of digits
     constexpr int n = (N + 1) / 2;              // Half of N
 
     // Constants for tempProducts offsets
@@ -119,7 +259,7 @@ __device__ void MultiplyHelperKaratsuba(
     //__shared__ uint64_t B_shared[n];
 
     //// Load segments of A and B into shared memory
-    //for (int i = threadIdx.x; i < n; i += ThreadsPerBlock) {
+    //for (int i = threadIdx.x; i < n; i += SharkFloatParams::ThreadsPerBlock) {
     //    A_shared[i] = (i < N) ? A->Digits[i] : 0;  // A0
     //    B_shared[i] = (i < N) ? B->Digits[i] : 0;  // B0
     //}
@@ -164,7 +304,7 @@ __device__ void MultiplyHelperKaratsuba(
     //__syncthreads();
 
     //// Load A1 and B1 into shared memory
-    //for (int i = threadIdx.x; i < n; i += ThreadsPerBlock) {
+    //for (int i = threadIdx.x; i < n; i += SharkFloatParams::ThreadsPerBlock) {
     //    int index = i + n;
     //    A_shared[i] = (index < N) ? A->Digits[index] : 0;    // A1
     //    B_shared[i] = (index < N) ? B->Digits[index] : 0;    // B1
@@ -203,7 +343,7 @@ __device__ void MultiplyHelperKaratsuba(
     //__syncthreads();
 
     //// Compute (A0 + A1) and (B0 + B1) and store in shared memory
-    //for (int i = threadIdx.x; i < n; i += ThreadsPerBlock) {
+    //for (int i = threadIdx.x; i < n; i += SharkFloatParams::ThreadsPerBlock) {
     //    uint64_t A0 = (i < N) ? A->Digits[i] : 0;
     //    uint64_t A1 = (i + n < N) ? A->Digits[i + n] : 0;
     //    A_shared[i] = A0 + A1;               // (A0 + A1)
@@ -363,18 +503,14 @@ __device__ void MultiplyHelperKaratsuba(
     //    }
     //}
 
-    // Constants and offsets
-    constexpr int MaxPasses = 10; // Maximum number of carry propagation passes
-
     // Initialize variables
-    int pass = 0;
 
     // Global memory for block carry-outs
     // Allocate space for gridDim.x block carry-outs after total_result_digits
     uint64_t *block_carry_outs = carryIns;
-    //uint64_t *blocks_need_to_continue = carryIns + NumBlocks;
+    //uint64_t *blocks_need_to_continue = carryIns + SharkFloatParams::NumBlocks;
 
-    constexpr auto digits_per_block = ThreadsPerBlock * 2;
+    constexpr auto digits_per_block = SharkFloatParams::ThreadsPerBlock * 2;
     auto block_start_idx = blockIdx.x * digits_per_block;
     auto block_end_idx = min(block_start_idx + digits_per_block, total_result_digits);
 
@@ -388,190 +524,98 @@ __device__ void MultiplyHelperKaratsuba(
     //    each block.
     //After that step is done, we should have reduced the number of digits we care about
     //    because weve propagated all the intermediate junk produced above during convolution.
-    //    so we end up with 2 * NumBlocks * ThreadsPerBlock digits.
+    //    so we end up with 2 * SharkFloatParams::NumBlocks * SharkFloatParams::ThreadsPerBlock digits.
     //At that point we do inter-block carry propagation, which is iterative.
     
 
-    // First Pass: Process convolution results to compute initial digits and local carries
-    __shared__ uint64_t shared_carries[ThreadsPerBlock];
+    if constexpr (!SharkFloatParams::DisableCarryPropagation) {
 
-    {
-        // Initialize local carry
-        uint64_t local_carry = 0;
-
-        // Each thread processes its assigned digits
-        for (int idx = thread_start_idx; idx < thread_end_idx; ++idx) {
-            int sum_low_idx = Convolution_offset + idx * 2;
-            int sum_high_idx = sum_low_idx + 1;
-
-            // Read sum_low and sum_high from global memory
-            uint64_t sum_low = tempProducts[sum_low_idx];     // Lower 64 bits
-            uint64_t sum_high = tempProducts[sum_high_idx];   // Higher 64 bits
-
-            // Add local carry to sum_low
-            uint64_t new_sum_low = sum_low + local_carry;
-            uint64_t carry_from_low = (new_sum_low < sum_low) ? 1 : 0;
-
-            // Combine sum_high and carry_from_low
-            uint64_t new_sum_high = (sum_high << 32) + carry_from_low;
-
-            // Extract digit
-            uint32_t digit = static_cast<uint32_t>(new_sum_low & 0xFFFFFFFFULL);
-
-            // Compute local carry for next digit
-            local_carry = new_sum_high + (new_sum_low >> 32);
-
-            // Store the partial digit
-            tempProducts[Result_offset + idx] = digit;
-
-            // Continue to next digit without synchronization since carries are local
-        }
-
-        if (threadIdx.x == blockDim.x - 1) {
-            block_carry_outs[blockIdx.x] = local_carry;
-        } else {
-            shared_carries[threadIdx.x] = local_carry;
-        }
-    }
-
-    // Synchronize all blocks
-    grid.sync();
-
-    uint64_t *carries_remaining_global = carryOuts_phase3;
-
-    // Inter-Block Carry Propagation
-    uint64_t local_carry;
-    do {
-        // Get carry-in from the previous block
-        local_carry = 0;
-        if (threadIdx.x == 0 && blockIdx.x > 0) {
-            local_carry = block_carry_outs[blockIdx.x - 1];
-       } else {
-            if (threadIdx.x > 0) {
-                local_carry = shared_carries[threadIdx.x - 1];
-            }
-        }
-
-        // Each thread processes its assigned digits
-        for (int idx = thread_start_idx; idx < thread_end_idx; ++idx) {
-            // Read the previously stored digit
-            uint32_t digit = tempProducts[Result_offset + idx];
-
-            // Add local_carry to digit
-            uint64_t sum = static_cast<uint64_t>(digit) + local_carry;
-
-            // Update digit
-            digit = static_cast<uint32_t>(sum & 0xFFFFFFFFULL);
-            tempProducts[Result_offset + idx] = digit;
-
-            // Compute new local_carry for next digit
-            local_carry = sum >> 32;
-        }
-
-        // Store the final local_carry of each thread into shared memory
-        shared_carries[threadIdx.x] = local_carry;
-        __syncthreads();
-
-        // The block's carry-out is the carry from the last thread
-        if (threadIdx.x == blockDim.x - 1) {
-            auto temp = shared_carries[threadIdx.x];
-            block_carry_outs[blockIdx.x] = temp;
-            if (temp > 0) {
-                atomicAdd(carries_remaining_global, 1);
-            }
-        }
-
-        // Synchronize all blocks before checking if carries remain
+        CarryPropagation<SharkFloatParams>(
+            grid,
+            block,
+            threadIdx,
+            blockIdx,
+            blockDim,
+            gridDim,
+            thread_start_idx,
+            thread_end_idx,
+            Convolution_offset,
+            Result_offset,
+            block_carry_outs,
+            tempProducts,
+            carryOuts_phase3,
+            carryOuts_phase6,
+            carryIns
+        );
+    } else {
         grid.sync();
-
-        // If no carries remain, exit the loop
-        if (*carries_remaining_global == 0) {
-            break;
-        }
-
-        pass++;
-    } while (pass < MaxPasses);
-
-    // ---- Handle Final Carry-Out ----
-
-    // Synchronize all blocks
-    grid.sync();
-
-    // Handle final carry-out
-    if (threadIdx.x == 0 && blockIdx.x == gridDim.x - 1) {
-        uint64_t final_carry = block_carry_outs[blockIdx.x];
-        if (final_carry > 0) {
-            // Store the final carry as an additional digit
-            tempProducts[Result_offset + total_result_digits] = static_cast<uint32_t>(final_carry & 0xFFFFFFFFULL);
-            // Optionally, you may need to adjust total_result_digits
-        }
     }
-
-    // Synchronize all blocks before finalization
-    grid.sync();
-
 
     // ---- Finalize the Result ----
 
     // ---- Handle Any Remaining Final Carry ----
 
     // Only one thread handles the final carry propagation
-    if (blockIdx.x == 0 && threadIdx.x == 0) {
-        // uint64_t final_carry = carryOuts_phase6[NumBlocks - 1];
+    if constexpr (!SharkFloatParams::DisableFinalConstruction) {
+        if (blockIdx.x == 0 && threadIdx.x == 0) {
+            // uint64_t final_carry = carryOuts_phase6[SharkFloatParams::NumBlocks - 1];
 
-        // Initial total_result_digits is 2 * N
-        int total_result_digits = 2 * N;
+            // Initial total_result_digits is 2 * N
+            int total_result_digits = 2 * N;
 
-        // Handle the final carry-out from the most significant digit
-        //if (final_carry > 0) {
-        //    // Append the final carry as a new digit at the end (most significant digit)
-        //    tempProducts[Result_offset + total_result_digits] = static_cast<uint32_t>(final_carry & 0xFFFFFFFFULL);
-        //    total_result_digits += 1;
-        //}
-        
-        // Determine the highest non-zero digit index in the full result
-        int highest_nonzero_index = total_result_digits - 1;
-        while (highest_nonzero_index >= 0) {
-            int result_idx = Result_offset + highest_nonzero_index;
-            uint32_t digit = static_cast<uint32_t>(tempProducts[result_idx]);
-            if (digit != 0) {
-                break;
+            // Handle the final carry-out from the most significant digit
+            //if (final_carry > 0) {
+            //    // Append the final carry as a new digit at the end (most significant digit)
+            //    tempProducts[Result_offset + total_result_digits] = static_cast<uint32_t>(final_carry & 0xFFFFFFFFULL);
+            //    total_result_digits += 1;
+            //}
+
+            // Determine the highest non-zero digit index in the full result
+            int highest_nonzero_index = total_result_digits - 1;
+
+            while (highest_nonzero_index >= 0) {
+                int result_idx = Result_offset + highest_nonzero_index;
+                uint32_t digit = static_cast<uint32_t>(tempProducts[result_idx]);
+                if (digit != 0) {
+                    break;
+                }
+
+                highest_nonzero_index--;
             }
 
-            highest_nonzero_index--;
-        }
-
-        // Determine the number of significant digits
-        int significant_digits = highest_nonzero_index + 1;
-        // Calculate the number of digits to shift to keep the most significant N digits
-        int shift_digits = significant_digits - N;
-        if (shift_digits < 0) {
-            shift_digits = 0;  // No need to shift if we have fewer than N significant digits
-        }
-
-        // Adjust the exponent based on the number of bits shifted
-        Out->Exponent = A->Exponent + B->Exponent + shift_digits * 32;
-
-        // Copy the least significant N digits to Out->Digits
-        int src_idx = Result_offset + shift_digits;
-        for (int i = 0; i < N; ++i, ++src_idx) {
-            if (src_idx <= Result_offset + highest_nonzero_index) {
-                Out->Digits[i] = tempProducts[src_idx];
-            } else {
-                // If we've run out of digits, pad with zeros
-                Out->Digits[i] = 0;
+            // Determine the number of significant digits
+            int significant_digits = highest_nonzero_index + 1;
+            // Calculate the number of digits to shift to keep the most significant N digits
+            int shift_digits = significant_digits - N;
+            if (shift_digits < 0) {
+                shift_digits = 0;  // No need to shift if we have fewer than N significant digits
             }
-        }
 
-        // Set the sign of the result
-        Out->IsNegative = A->IsNegative ^ B->IsNegative;
+            // Adjust the exponent based on the number of bits shifted
+            Out->Exponent = A->Exponent + B->Exponent + shift_digits * 32;
+
+            // Copy the least significant N digits to Out->Digits
+            int src_idx = Result_offset + shift_digits;
+            for (int i = 0; i < N; ++i, ++src_idx) {
+                if (src_idx <= Result_offset + highest_nonzero_index) {
+                    Out->Digits[i] = tempProducts[src_idx];
+                } else {
+                    // If we've run out of digits, pad with zeros
+                    Out->Digits[i] = 0;
+                }
+            }
+
+            // Set the sign of the result
+            Out->IsNegative = A->IsNegative ^ B->IsNegative;
+        }
     }
 }
 
+template<class SharkFloatParams>
 __global__ void MultiplyKernelKaratsuba(
-    const HpGpu *A,
-    const HpGpu *B,
-    HpGpu *Out,
+    const HpSharkFloat<SharkFloatParams> *A,
+    const HpSharkFloat<SharkFloatParams> *B,
+    HpSharkFloat<SharkFloatParams> *Out,
     uint64_t *carryOuts_phase3,
     uint64_t *carryOuts_phase6,
     uint64_t *carryIns,
@@ -585,10 +629,11 @@ __global__ void MultiplyKernelKaratsuba(
     MultiplyHelperKaratsuba(A, B, Out, carryOuts_phase3, carryOuts_phase6, carryIns, grid, tempProducts);
 }
 
+template<class SharkFloatParams>
 __global__ void MultiplyKernelKaratsubaTestLoop(
-    HpGpu *A,
-    HpGpu *B,
-    HpGpu *Out,
+    HpSharkFloat<SharkFloatParams> *A,
+    HpSharkFloat<SharkFloatParams> *B,
+    HpSharkFloat<SharkFloatParams> *Out,
     uint64_t *carryOuts_phase3,
     uint64_t *carryOuts_phase6,
     uint64_t *carryIns,
@@ -597,19 +642,19 @@ __global__ void MultiplyKernelKaratsubaTestLoop(
     // Initialize cooperative grid group
     cg::grid_group grid = cg::this_grid();
 
-    for (int i = 0; i < NUM_ITER; ++i) {
+    for (int i = 0; i < TestIterCount; ++i) {
         // MultiplyHelper(A, B, Out, carryOuts_phase3, carryOuts_phase6, carryIns, grid, tempProducts);
         MultiplyHelperKaratsuba(A, B, Out, carryOuts_phase3, carryOuts_phase6, carryIns, grid, tempProducts);
     }
 }
 
-
+template<class SharkFloatParams>
 void ComputeMultiplyGpu(void *kernelArgs[]) {
 
     cudaError_t err = cudaLaunchCooperativeKernel(
-        (void *)MultiplyKernelKaratsuba,
-        dim3(NumBlocks),
-        dim3(ThreadsPerBlock),
+        (void *)MultiplyKernelKaratsuba<SharkFloatParams>,
+        dim3(SharkFloatParams::NumBlocks),
+        dim3(SharkFloatParams::ThreadsPerBlock),
         kernelArgs,
         0, // Shared memory size
         0 // Stream
@@ -622,12 +667,13 @@ void ComputeMultiplyGpu(void *kernelArgs[]) {
     }
 }
 
+template<class SharkFloatParams>
 void ComputeMultiplyGpuTestLoop(void *kernelArgs[]) {
 
     cudaError_t err = cudaLaunchCooperativeKernel(
-        (void *)MultiplyKernelKaratsubaTestLoop,
-        dim3(NumBlocks),
-        dim3(ThreadsPerBlock),
+        (void *)MultiplyKernelKaratsubaTestLoop<SharkFloatParams>,
+        dim3(SharkFloatParams::NumBlocks),
+        dim3(SharkFloatParams::ThreadsPerBlock),
         kernelArgs,
         0, // Shared memory size
         0 // Stream
@@ -640,3 +686,10 @@ void ComputeMultiplyGpuTestLoop(void *kernelArgs[]) {
     }
 }
 
+#define ExplicitlyInstaniateMultiply(SharkFloatParams) \
+    template void ComputeMultiplyGpu<SharkFloatParams>(void *kernelArgs[]); \
+    template void ComputeMultiplyGpuTestLoop<SharkFloatParams>(void *kernelArgs[]);
+
+ExplicitlyInstaniateMultiply(Test4x4SharkParams);
+ExplicitlyInstaniateMultiply(Test8x1SharkParams);
+ExplicitlyInstaniateMultiply(Test128x64SharkParams);

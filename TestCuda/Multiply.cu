@@ -25,34 +25,8 @@ namespace cg = cooperative_groups;
 __device__ void multiply_uint64(
     uint64_t a, uint64_t b,
     uint64_t &low, uint64_t &high) {
-    // Split the inputs into 32-bit halves
-    uint64_t a_low = (uint32_t)(a & 0xFFFFFFFFULL);
-    uint64_t a_high = a >> 32;
-    uint64_t b_low = (uint32_t)(b & 0xFFFFFFFFULL);
-    uint64_t b_high = b >> 32;
-
-    // Compute partial products
-    uint64_t p0 = a_low * b_low;
-    uint64_t p1 = a_low * b_high;
-    uint64_t p2 = a_high * b_low;
-    uint64_t p3 = a_high * b_high;
-
-    // Compute the lower 64 bits of the product
-    uint64_t temp = (p1 + p2);
-    uint64_t carry = (temp < p1) ? 1 : 0;  // Check for overflow in temp
-
-    // Combine the partial products
-    uint64_t low_part = p0 + (temp << 32);
-    if (low_part < p0) {
-        carry += 1;  // Carry from lower 64 bits
-    }
-
-    // Compute the higher 64 bits of the product
-    uint64_t high_part = p3 + (temp >> 32) + carry;
-
-    // Assign the results
-    low = low_part;
-    high = high_part;
+    low = a * b;
+    high = __umul64hi(a, b);
 }
 
 // Function to perform addition with carry
@@ -265,7 +239,7 @@ __device__ void MultiplyHelperKaratsuba(
     //}
 
     // Synchronize before starting convolutions
-    //__syncthreads();
+    //block.sync();
 
     // Common variables for convolution loops
     constexpr int total_k = 2 * n - 1; // Total number of k values
@@ -301,7 +275,7 @@ __device__ void MultiplyHelperKaratsuba(
     }
 
     // Synchronize before next convolution
-    //__syncthreads();
+    //block.sync();
 
     //// Load A1 and B1 into shared memory
     //for (int i = threadIdx.x; i < n; i += SharkFloatParams::ThreadsPerBlock) {
@@ -310,7 +284,7 @@ __device__ void MultiplyHelperKaratsuba(
     //    B_shared[i] = (index < N) ? B->Digits[index] : 0;    // B1
     //}
 
-    __syncthreads();
+    block.sync();
 
     // ---- Convolution for Z2 = A1 * B1 ----
     for (int k = k_start; k < k_end; ++k) {
@@ -340,7 +314,7 @@ __device__ void MultiplyHelperKaratsuba(
     }
 
     //// Synchronize before next convolution
-    //__syncthreads();
+    //block.sync();
 
     //// Compute (A0 + A1) and (B0 + B1) and store in shared memory
     //for (int i = threadIdx.x; i < n; i += SharkFloatParams::ThreadsPerBlock) {
@@ -353,7 +327,7 @@ __device__ void MultiplyHelperKaratsuba(
     //    B_shared[i] = B0 + B1;               // (B0 + B1)
     //}
 
-    __syncthreads();
+    block.sync();
 
     // ---- Convolution for Z1_temp = (A0 + A1) * (B0 + B1) ----
     for (int k = k_start; k < k_end; ++k) {
@@ -465,7 +439,7 @@ __device__ void MultiplyHelperKaratsuba(
     }
 
     // Synchronize before carry propagation
-    __syncthreads();
+    block.sync();
 
     // ---- Carry Propagation ----
 

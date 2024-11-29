@@ -180,6 +180,26 @@ __device__ uint32_t ShiftRight(uint32_t *digits, int shiftBits, int idx) {
     }
 }
 
+template<class SharkFloatParams>
+__device__ uint32_t ShiftLeft(const uint32_t *digits, int shiftBits, int idx) {
+    int shiftWords = shiftBits / 32;
+    int shiftBitsMod = shiftBits % 32;
+    int srcIdx = idx - shiftWords;
+    uint32_t lower = 0, upper = 0;
+    if (srcIdx >= 0) {
+        lower = digits[srcIdx];
+    }
+    if (srcIdx - 1 >= 0) {
+        upper = digits[srcIdx - 1];
+    }
+    if (shiftBitsMod == 0) {
+        return lower;
+    } else {
+        return (lower << shiftBitsMod) | (upper >> (32 - shiftBitsMod));
+    }
+}
+
+
 // Device function to perform addition/subtraction with carry handling using Blelloch scan and static shared memory
 template<class SharkFloatParams>
 __device__ void AddHelper(
@@ -211,22 +231,107 @@ __device__ void AddHelper(
     __shared__ uint32_t sharedCarryOut[SharkFloatParams::ThreadsPerBlock];        // Shared carry-out for ComputeCarryIn
 
     // Additional shared variables
+    __shared__ int32_t shiftBits;
+    __shared__ int32_t shiftAmount; // For shifting left when shiftBits >= totalBits
     __shared__ bool isAddition;
     __shared__ bool AIsBiggerExponent;
     __shared__ bool AIsBiggerMagnitude;
     __shared__ int32_t outExponent;
     __shared__ bool resultIsZero;
+    __shared__ bool AIsZero;
+    __shared__ bool BIsZero;
+    __shared__ bool computationNeeded;
 
+    // Phase 1: Exponent Alignment and Zero Detection
+    if (tid == 0) {
+        // Zero Detection
+        AIsZero = true;
+        BIsZero = true;
+        for (int i = 0; i < numDigits; ++i) {
+            if (A->Digits[i] != 0) {
+                AIsZero = false;
+                break;
+            }
+        }
+        for (int i = 0; i < numDigits; ++i) {
+            if (B->Digits[i] != 0) {
+                BIsZero = false;
+                break;
+            }
+        }
+
+        if (AIsZero && BIsZero) {
+            resultIsZero = true;
+            computationNeeded = false;
+        } else if (AIsZero) {
+            // A is zero, result is B
+            computationNeeded = false;
+        } else if (BIsZero) {
+            // B is zero, result is A
+            computationNeeded = false;
+        } else {
+            computationNeeded = true;
+        }
+    }
+    __syncthreads(); // Ensure all threads see the updated flags
+
+    // Handle zero cases before computation
+    if (!computationNeeded) {
+        if (resultIsZero) {
+            // Both A and B are zero
+            for (int i = tid; i < numDigits; i += blockDim.x) {
+                Out->Digits[i] = 0;
+            }
+            if (tid == 0) {
+                Out->Exponent = 0;
+                Out->IsNegative = false;
+            }
+        } else if (AIsZero) {
+            // A is zero, copy B to Out
+            for (int i = tid; i < numDigits; i += blockDim.x) {
+                Out->Digits[i] = B->Digits[i];
+            }
+            if (tid == 0) {
+                Out->Exponent = B->Exponent;
+                Out->IsNegative = B->IsNegative;
+            }
+        } else if (BIsZero) {
+            // B is zero, copy A to Out
+            for (int i = tid; i < numDigits; i += blockDim.x) {
+                Out->Digits[i] = A->Digits[i];
+            }
+            if (tid == 0) {
+                Out->Exponent = A->Exponent;
+                Out->IsNegative = A->IsNegative;
+            }
+        }
+        __syncthreads(); // Synchronize before exiting
+        return; // Exit the kernel early
+    }
+
+    // Proceed with computation
     // Phase 1: Exponent Alignment
     if (tid == 0) {
         int32_t expDiff = A->Exponent - B->Exponent;
         AIsBiggerExponent = (expDiff >= 0);
-        outExponent = AIsBiggerExponent ? A->Exponent : B->Exponent;
         isAddition = (A->IsNegative == B->IsNegative);
-        resultIsZero = false; // Initialize resultIsZero
         AIsBiggerMagnitude = true; // Default assumption
+
+        shiftBits = abs(expDiff);
+        const int totalBits = numDigits * 32;
+
+        if (shiftBits >= totalBits) {
+            // Need to shift the number with the larger exponent left
+            shiftAmount = shiftBits - totalBits + 1;
+            outExponent = AIsBiggerExponent ? B->Exponent : A->Exponent;
+        } else {
+            // Normal case, shift the number with the smaller exponent right
+            shiftAmount = 0; // No left shift
+            outExponent = AIsBiggerExponent ? A->Exponent : B->Exponent;
+        }
     }
-    __syncthreads();  // Synchronize all threads in the grid
+    __syncthreads();
+
 
     // Initialize aligned digits to zero
     for (int i = tid; i < digitsInBlock; i += SharkFloatParams::ThreadsPerBlock) {
@@ -236,12 +341,31 @@ __device__ void AddHelper(
     __syncthreads();  // Synchronize within the block after initialization
 
     // Perform shifting based on exponent difference
-    int shiftBits = abs(A->Exponent - B->Exponent);
-
-    for (int i = tid; i < digitsInBlock; i += SharkFloatParams::ThreadsPerBlock) {
-        int globalIdx = startDigit + i;
-        if (globalIdx < numDigits) {
-            // Shift the number with the smaller exponent
+    if (shiftAmount > 0) {
+        // Need to shift the number with the larger exponent left
+        if (AIsBiggerExponent) {
+            // Shift A left
+            for (int i = tid; i < digitsInBlock; i += SharkFloatParams::ThreadsPerBlock) {
+                int globalIdx = startDigit + i;
+                alignedA_static[i] = ShiftLeft<SharkFloatParams>(A->Digits, shiftAmount, globalIdx);
+                alignedB_static[i] = B->Digits[globalIdx];
+            }
+        } else {
+            // Shift B left
+            for (int i = tid; i < digitsInBlock; i += SharkFloatParams::ThreadsPerBlock) {
+                int globalIdx = startDigit + i;
+                alignedA_static[i] = A->Digits[globalIdx];
+                alignedB_static[i] = ShiftLeft<SharkFloatParams>(B->Digits, shiftAmount, globalIdx);
+            }
+        }
+        // Adjust the exponent
+        if (tid == 0) {
+            outExponent += shiftAmount;
+        }
+    } else {
+        // Normal case, shift the number with the smaller exponent right
+        for (int i = tid; i < digitsInBlock; i += SharkFloatParams::ThreadsPerBlock) {
+            int globalIdx = startDigit + i;
             if (AIsBiggerExponent) {
                 // Shift B right
                 alignedA_static[i] = A->Digits[globalIdx];
@@ -251,13 +375,10 @@ __device__ void AddHelper(
                 alignedA_static[i] = ShiftRight<SharkFloatParams>(A->Digits, shiftBits, globalIdx);
                 alignedB_static[i] = B->Digits[globalIdx];
             }
-        } else {
-            // Zero-fill for indices beyond numDigits
-            alignedA_static[i] = 0;
-            alignedB_static[i] = 0;
         }
     }
-    __syncthreads();  // Synchronize within the block after alignment
+    __syncthreads();
+
 
     // Phase 2: Compare Magnitudes if necessary
     if (!isAddition) {
@@ -285,39 +406,32 @@ __device__ void AddHelper(
                 }
                 // If equal, continue to next digit
             }
-
-            // If all digits are equal, set resultIsZero
-            if (!magnitudeDetermined) {
-                resultIsZero = true;
-            }
         }
     }
     __syncthreads();  // Synchronize to ensure magnitude comparison is complete
 
     // Phase 3: Perform Addition or Subtraction within the block
-    if (!resultIsZero) {
-        for (int i = tid; i < digitsInBlock; i += SharkFloatParams::ThreadsPerBlock) {
-            if (i >= digitsInBlock) continue;
-            if (isAddition) {
-                // Perform addition
-                uint64_t fullSum = (uint64_t)alignedA_static[i] + (uint64_t)alignedB_static[i];
-                tempSum_static[i] = (uint32_t)(fullSum & 0xFFFFFFFF);
-                carryBits_static[i] = (uint32_t)(fullSum >> 32);
-            } else {
-                // Perform subtraction: larger magnitude minus smaller magnitude
-                uint32_t operandLarge = AIsBiggerMagnitude ? alignedA_static[i] : alignedB_static[i];
-                uint32_t operandSmall = AIsBiggerMagnitude ? alignedB_static[i] : alignedA_static[i];
+    for (int i = tid; i < digitsInBlock; i += SharkFloatParams::ThreadsPerBlock) {
+        if (i >= digitsInBlock) continue;
+        if (isAddition) {
+            // Perform addition
+            uint64_t fullSum = (uint64_t)alignedA_static[i] + (uint64_t)alignedB_static[i];
+            tempSum_static[i] = (uint32_t)(fullSum & 0xFFFFFFFF);
+            carryBits_static[i] = (uint32_t)(fullSum >> 32);
+        } else {
+            // Perform subtraction: larger magnitude minus smaller magnitude
+            uint32_t operandLarge = AIsBiggerMagnitude ? alignedA_static[i] : alignedB_static[i];
+            uint32_t operandSmall = AIsBiggerMagnitude ? alignedB_static[i] : alignedA_static[i];
 
-                if (operandLarge >= operandSmall) {
-                    uint64_t fullDiff = (uint64_t)operandLarge - (uint64_t)operandSmall;
-                    tempSum_static[i] = (uint32_t)(fullDiff & 0xFFFFFFFF);
-                    carryBits_static[i] = 0;
-                } else {
-                    // Borrow occurs
-                    uint64_t fullDiff = ((uint64_t)1 << 32) + (uint64_t)operandLarge - (uint64_t)operandSmall;
-                    tempSum_static[i] = (uint32_t)(fullDiff & 0xFFFFFFFF);
-                    carryBits_static[i] = 1; // Indicate borrow
-                }
+            if (operandLarge >= operandSmall) {
+                uint64_t fullDiff = (uint64_t)operandLarge - (uint64_t)operandSmall;
+                tempSum_static[i] = (uint32_t)(fullDiff & 0xFFFFFFFF);
+                carryBits_static[i] = 0;
+            } else {
+                // Borrow occurs
+                uint64_t fullDiff = ((uint64_t)1 << 32) + (uint64_t)operandLarge - (uint64_t)operandSmall;
+                tempSum_static[i] = (uint32_t)(fullDiff & 0xFFFFFFFF);
+                carryBits_static[i] = 1; // Indicate borrow
             }
         }
     }
@@ -325,44 +439,38 @@ __device__ void AddHelper(
 
     // Phase 4: Parallel Blelloch Scan on carryBits to compute carry-ins
     uint32_t initialCarryOutLastDigit = 0;
-    if (!resultIsZero) {
-        // Save the initial carry-out from the last digit before overwriting
-        initialCarryOutLastDigit = carryBits_static[digitsInBlock - 1];
+    // Save the initial carry-out from the last digit before overwriting
+    initialCarryOutLastDigit = carryBits_static[digitsInBlock - 1];
 
-        // Perform Blelloch scan on carryBits_static
-        ComputeCarryInDecider<SharkFloatParams>(
-            carryBits_static, scanResults_static, digitsInBlock, sharedCarryOut);
+    // Perform Blelloch scan on carryBits_static
+    ComputeCarryInDecider<SharkFloatParams>(
+        carryBits_static, scanResults_static, digitsInBlock, sharedCarryOut);
 
-        // After scan, scanResults_static contains the carry-in for each digit
-        // Apply the carry-ins to tempSum_static to get the final output digits
-        for (int i = tid; i < digitsInBlock; i += SharkFloatParams::ThreadsPerBlock) {
-            if (i >= digitsInBlock) continue;
-            if (isAddition) {
-                // Add the carry-in to the sum
-                uint64_t finalSum = (uint64_t)tempSum_static[i] + (uint64_t)scanResults_static[i];
-                Out->Digits[startDigit + i] = (uint32_t)(finalSum & 0xFFFFFFFF);
-                // Record carry-out for the next phase
-                carryBits_static[i] = (uint32_t)(finalSum >> 32);
-            } else {
-                // Subtraction already handled borrow in carryBits_static
-                // Apply borrow-in from scanResults_static
-                uint32_t borrowIn = scanResults_static[i];
-                uint64_t finalDiff = (uint64_t)tempSum_static[i] - (uint64_t)borrowIn;
-                Out->Digits[startDigit + i] = (uint32_t)(finalDiff & 0xFFFFFFFF);
-                // If borrow occurs, set carryBits_static[i] to 1
-                carryBits_static[i] = (finalDiff >> 63) & 1;
-            }
+    // After scan, scanResults_static contains the carry-in for each digit
+    // Apply the carry-ins to tempSum_static to get the final output digits
+    for (int i = tid; i < digitsInBlock; i += SharkFloatParams::ThreadsPerBlock) {
+        if (i >= digitsInBlock) continue;
+        if (isAddition) {
+            // Add the carry-in to the sum
+            uint64_t finalSum = (uint64_t)tempSum_static[i] + (uint64_t)scanResults_static[i];
+            Out->Digits[startDigit + i] = (uint32_t)(finalSum & 0xFFFFFFFF);
+            // Record carry-out for the next phase
+            carryBits_static[i] = (uint32_t)(finalSum >> 32);
+        } else {
+            // Subtraction already handled borrow in carryBits_static
+            // Apply borrow-in from scanResults_static
+            uint32_t borrowIn = scanResults_static[i];
+            uint64_t finalDiff = (uint64_t)tempSum_static[i] - (uint64_t)borrowIn;
+            Out->Digits[startDigit + i] = (uint32_t)(finalDiff & 0xFFFFFFFF);
+            // If borrow occurs, set carryBits_static[i] to 1
+            carryBits_static[i] = (finalDiff >> 63) & 1;
         }
     }
     __syncthreads();  // Synchronize after applying carry-ins
 
     // Phase 5 & 6: Record carry-outs and compute cumulative carries
     if (tid == 0) {
-        if (!resultIsZero) {
-            carryOuts[blockId].carryOut = initialCarryOutLastDigit + carryBits_static[digitsInBlock - 1];
-        } else {
-            carryOuts[blockId].carryOut = 0;
-        }
+        carryOuts[blockId].carryOut = initialCarryOutLastDigit + carryBits_static[digitsInBlock - 1];
 
         // Only block 0 computes cumulativeCarries after all carryOuts are recorded
         if (blockId == 0) {
@@ -375,30 +483,28 @@ __device__ void AddHelper(
     grid.sync();  // Single synchronization after both operations
 
     // Phase 7: Apply Cumulative Carries to Each Block's Output
-    if (!resultIsZero) {
-        uint32_t blockCarryIn = cumulativeCarries[blockId];
-        if (digitsInBlock > 0) {
-            if (tid == 0) {
-                if (isAddition) {
-                    uint64_t finalSum = (uint64_t)Out->Digits[startDigit] + (uint64_t)blockCarryIn;
-                    Out->Digits[startDigit] = (uint32_t)(finalSum & 0xFFFFFFFF);
-                    // Update carryBits_static[0] with any new carry-out from this addition
-                    carryBits_static[0] = (uint32_t)(finalSum >> 32);
-                } else {
-                    uint64_t finalDiff = (uint64_t)Out->Digits[startDigit] - (uint64_t)blockCarryIn;
-                    Out->Digits[startDigit] = (uint32_t)(finalDiff & 0xFFFFFFFF);
-                    // Update carryBits_static[0] with any new borrow-out
-                    carryBits_static[0] = (finalDiff >> 63) & 1;
-                }
+    uint32_t blockCarryIn = cumulativeCarries[blockId];
+    if (digitsInBlock > 0) {
+        if (tid == 0) {
+            if (isAddition) {
+                uint64_t finalSum = (uint64_t)Out->Digits[startDigit] + (uint64_t)blockCarryIn;
+                Out->Digits[startDigit] = (uint32_t)(finalSum & 0xFFFFFFFF);
+                // Update carryBits_static[0] with any new carry-out from this addition
+                carryBits_static[0] = (uint32_t)(finalSum >> 32);
+            } else {
+                uint64_t finalDiff = (uint64_t)Out->Digits[startDigit] - (uint64_t)blockCarryIn;
+                Out->Digits[startDigit] = (uint32_t)(finalDiff & 0xFFFFFFFF);
+                // Update carryBits_static[0] with any new borrow-out
+                carryBits_static[0] = (finalDiff >> 63) & 1;
             }
-            // Do not modify carryBits_static[tid] for tid != 0
         }
+        // Do not modify carryBits_static[tid] for tid != 0
     }
 
     grid.sync();  // Synchronize after applying cumulative carry-ins
 
     // Phase 7.1: Propagate New Carry-Out Within the Block if Necessary
-    if (!resultIsZero && digitsInBlock > 1) {
+    if (digitsInBlock > 1) {
         // Perform Blelloch scan on carryBits_static
         ComputeCarryInDecider<SharkFloatParams>(
             carryBits_static, scanResults_static, digitsInBlock, sharedCarryOut);
@@ -498,56 +604,6 @@ __global__ void AddKernelTestLoop(
     }
 }
 
-//__global__ void multiply_high_precision_kernel(
-//    HpSharkFloat<SharkFloatParams> *A,
-//    HpSharkFloat<SharkFloatParams> *B,
-//    HpSharkFloat<SharkFloatParams> *Out) {
-//    const int idx = threadIdx.x;
-//    __shared__ uint32_t tempProduct[HpSharkFloat<SharkFloatParams>::NumUint32 * 2];
-//
-//    // Initialize tempProduct to zero
-//    if (idx < HpSharkFloat<SharkFloatParams>::NumUint32 * 2) {
-//        tempProduct[idx] = 0;
-//    }
-//
-//    __syncthreads();
-//
-//    // Each thread computes partial products
-//    for (int i = 0; i < HpSharkFloat<SharkFloatParams>::NumUint32; i++) {
-//        if (idx < HpSharkFloat<SharkFloatParams>::NumUint32) {
-//            uint64_t product = (uint64_t)A->Digits[idx] * (uint64_t)B->Digits[i];
-//            int pos = idx + i;
-//
-//            // Atomic addition to handle concurrent writes
-//            atomicAdd(&tempProduct[pos], (uint32_t)(product & 0xFFFFFFFF));
-//            atomicAdd(&tempProduct[pos + 1], (uint32_t)(product >> 32));
-//        }
-//    }
-//
-//    __syncthreads();
-//
-//    // Perform carry propagation
-//    uint32_t carry = 0;
-//    if (idx < HpSharkFloat<SharkFloatParams>::NumUint32 * 2) {
-//        uint64_t sum = (uint64_t)tempProduct[idx] + carry;
-//        tempProduct[idx] = (uint32_t)(sum & 0xFFFFFFFF);
-//        carry = (uint32_t)(sum >> 32);
-//    }
-//
-//    __syncthreads();
-//
-//    // Write the result to Out
-//    if (idx < HpSharkFloat<SharkFloatParams>::NumUint32) {
-//        Out->Digits[idx] = tempProduct[idx];
-//    }
-//
-//    // Adjust exponent and sign
-//    if (idx == 0) {
-//        Out->Exponent = A->Exponent + B->Exponent;
-//        Out->IsNegative = A->IsNegative ^ B->IsNegative;
-//    }
-//}
-
 template<class SharkFloatParams>
 void ComputeAddGpu(void *kernelArgs[]) {
 
@@ -561,6 +617,10 @@ void ComputeAddGpu(void *kernelArgs[]) {
     );
 
     cudaDeviceSynchronize();
+
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA error in ComputeAddGpu: " << cudaGetErrorString(err) << std::endl;
+    }
 }
 
 template<class SharkFloatParams>
@@ -576,12 +636,17 @@ void ComputeAddGpuTestLoop(void *kernelArgs[]) {
     );
 
     cudaDeviceSynchronize();
+
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA error in ComputeAddGpuTestLoop: " << cudaGetErrorString(err) << std::endl;
+    }
 }
 
-#define ExplicitlyInstantiateComputeAddGpu(SharkFloatParams) \
+#define ExplicitlyInstantiate(SharkFloatParams) \
     template void ComputeAddGpu<SharkFloatParams>(void *kernelArgs[]); \
     template void ComputeAddGpuTestLoop<SharkFloatParams>(void *kernelArgs[]);
 
-ExplicitlyInstantiateComputeAddGpu(Test4x4SharkParams);
-ExplicitlyInstantiateComputeAddGpu(Test8x1SharkParams);
-ExplicitlyInstantiateComputeAddGpu(Test128x64SharkParams);
+ExplicitlyInstantiate(Test4x4SharkParams);
+ExplicitlyInstantiate(Test4x2SharkParams);
+ExplicitlyInstantiate(Test8x1SharkParams);
+ExplicitlyInstantiate(Test128x64SharkParams);

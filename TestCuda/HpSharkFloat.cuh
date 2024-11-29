@@ -37,6 +37,8 @@ static constexpr bool SkipCorrectnessTests = true;
 constexpr bool Verbose = false;
 #endif
 
+// If you add a new one, search for one of the other types and copy/paste
+using Test4x2SharkParams = GenericSharkFloatParams<4, 2, BatchSize, TestIterCount>;
 using Test4x4SharkParams = GenericSharkFloatParams<4, 4, BatchSize, TestIterCount>;
 using Test8x1SharkParams = GenericSharkFloatParams<8, 1, BatchSize, TestIterCount>;
 using Test128x64SharkParams = GenericSharkFloatParams<128, 64, BatchSize, TestIterCount>;
@@ -52,7 +54,7 @@ using TestSharkParams = Test128x64SharkParams;
 template<class SharkFloatParams>
 struct HpSharkFloat {
     HpSharkFloat();
-    HpSharkFloat(uint32_t numDigits);
+    //HpSharkFloat(uint32_t numDigits);
     HpSharkFloat(const uint32_t *digitsIn, int32_t expIn, bool isNegative);
     ~HpSharkFloat() = default;
     HpSharkFloat &operator=(const HpSharkFloat<SharkFloatParams> &) = delete;

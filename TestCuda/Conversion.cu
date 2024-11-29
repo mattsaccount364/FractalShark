@@ -145,9 +145,10 @@ bool TestConversion(int testBase) {
     return Tests.CheckAllTestsPassed();
 }
 
-#define ExplicitlyInstantiateConversion(SharkFloatParams) \
+#define ExplicitlyInstantiate(SharkFloatParams) \
     template bool TestConversion<SharkFloatParams>(int testBase);
 
-ExplicitlyInstantiateConversion(Test4x4SharkParams);
-ExplicitlyInstantiateConversion(Test8x1SharkParams);
-ExplicitlyInstantiateConversion(Test128x64SharkParams);
+ExplicitlyInstantiate(Test4x4SharkParams);
+ExplicitlyInstantiate(Test4x2SharkParams);
+ExplicitlyInstantiate(Test8x1SharkParams);
+ExplicitlyInstantiate(Test128x64SharkParams);

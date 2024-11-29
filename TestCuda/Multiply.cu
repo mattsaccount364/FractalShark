@@ -64,11 +64,9 @@ __device__ static void CarryPropagation (
     int thread_end_idx,
     int Convolution_offset,
     int Result_offset,
-    uint64_t * block_carry_outs,
-    uint64_t * tempProducts,
-    uint64_t * carryOuts_phase3,
-    uint64_t * carryOuts_phase6,
-    uint64_t * carryIns) {
+    uint64_t * __restrict__ block_carry_outs,
+    uint64_t * __restrict__ tempProducts,
+    uint64_t * __restrict__ carryOuts_phase3) {
 
     // First Pass: Process convolution results to compute initial digits and local carries
     __shared__ uint64_t shared_carries[SharkFloatParams::ThreadsPerBlock];
@@ -284,7 +282,7 @@ __device__ void MultiplyHelperKaratsuba(
     //    B_shared[i] = (index < N) ? B->Digits[index] : 0;    // B1
     //}
 
-    block.sync();
+    //block.sync();
 
     // ---- Convolution for Z2 = A1 * B1 ----
     for (int k = k_start; k < k_end; ++k) {
@@ -327,7 +325,7 @@ __device__ void MultiplyHelperKaratsuba(
     //    B_shared[i] = B0 + B1;               // (B0 + B1)
     //}
 
-    block.sync();
+    //block.sync();
 
     // ---- Convolution for Z1_temp = (A0 + A1) * (B0 + B1) ----
     for (int k = k_start; k < k_end; ++k) {
@@ -517,9 +515,7 @@ __device__ void MultiplyHelperKaratsuba(
             Result_offset,
             block_carry_outs,
             tempProducts,
-            carryOuts_phase3,
-            carryOuts_phase6,
-            carryIns
+            carryOuts_phase3
         );
     } else {
         grid.sync();
@@ -660,10 +656,11 @@ void ComputeMultiplyGpuTestLoop(void *kernelArgs[]) {
     }
 }
 
-#define ExplicitlyInstaniateMultiply(SharkFloatParams) \
+#define ExplicitlyInstantiate(SharkFloatParams) \
     template void ComputeMultiplyGpu<SharkFloatParams>(void *kernelArgs[]); \
     template void ComputeMultiplyGpuTestLoop<SharkFloatParams>(void *kernelArgs[]);
 
-ExplicitlyInstaniateMultiply(Test4x4SharkParams);
-ExplicitlyInstaniateMultiply(Test8x1SharkParams);
-ExplicitlyInstaniateMultiply(Test128x64SharkParams);
+ExplicitlyInstantiate(Test4x4SharkParams);
+ExplicitlyInstantiate(Test4x2SharkParams);
+ExplicitlyInstantiate(Test8x1SharkParams);
+ExplicitlyInstantiate(Test128x64SharkParams);

@@ -19,14 +19,14 @@ HpSharkFloat<SharkFloatParams>::HpSharkFloat()
     // exponent is most negative int32_t
 }
 
-template<class SharkFloatParams>
-HpSharkFloat<SharkFloatParams>::HpSharkFloat(uint32_t numDigits)
-    : Digits{},
-    Exponent{ std::numeric_limits<ExpT>::min() },
-    IsNegative{} {
-
-    std::fill(Digits, Digits + NumUint32, 0);
-}
+//template<class SharkFloatParams>
+//HpSharkFloat<SharkFloatParams>::HpSharkFloat(uint32_t numDigits)
+//    : Digits{},
+//    Exponent{ std::numeric_limits<ExpT>::min() },
+//    IsNegative{} {
+//
+//    std::fill(Digits, Digits + NumUint32, 0);
+//}
 
 template<class SharkFloatParams>
 HpSharkFloat<SharkFloatParams>::HpSharkFloat(
@@ -393,5 +393,6 @@ Uint32ToMpf (
 
 
 ExplicitlyInstantiate(Test4x4SharkParams);
+ExplicitlyInstantiate(Test4x2SharkParams);
 ExplicitlyInstantiate(Test8x1SharkParams);
 ExplicitlyInstantiate(Test128x64SharkParams);

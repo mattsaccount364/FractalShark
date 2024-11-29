@@ -756,13 +756,14 @@ bool TestBinaryOperatorPerf(int testBase) {
 }
 
 // Explicitly instantiate TestAllBinaryOp
-#define InstantiateTestAllBinaryOp(SharkFloatParams) \
+#define ExplicitlyInstantiate(SharkFloatParams) \
     template bool TestAllBinaryOp<SharkFloatParams, Operator::Add>(int testBase); \
     template bool TestAllBinaryOp<SharkFloatParams, Operator::Multiply>(int testBase); \
     template bool TestBinaryOperatorPerf<SharkFloatParams, Operator::Add>(int testBase); \
     template bool TestBinaryOperatorPerf<SharkFloatParams, Operator::Multiply>(int testBase);
 
 
-InstantiateTestAllBinaryOp(Test4x4SharkParams);
-InstantiateTestAllBinaryOp(Test8x1SharkParams);
-InstantiateTestAllBinaryOp(Test128x64SharkParams);
+ExplicitlyInstantiate(Test4x4SharkParams);
+ExplicitlyInstantiate(Test4x2SharkParams);
+ExplicitlyInstantiate(Test8x1SharkParams);
+ExplicitlyInstantiate(Test128x64SharkParams);

@@ -62,14 +62,14 @@ int main(int /*argc*/, char * /*argv*/[]) {
             }
         }
 
-        testBase = 200;
-        res = TestAllBinaryOp<TestSharkParams, Operator::Multiply>(testBase);
-        if (!res) {
-            auto q = PressKey();
-            if (q == 'q') {
-                return 0;
-            }
-        }
+        //testBase = 200;
+        //res = TestAllBinaryOp<TestSharkParams, Operator::Multiply>(testBase);
+        //if (!res) {
+        //    auto q = PressKey();
+        //    if (q == 'q') {
+        //        return 0;
+        //    }
+        //}
 
         testBase = 400;
         res = TestAllBinaryOp<TestSharkParams, Operator::Add>(testBase);

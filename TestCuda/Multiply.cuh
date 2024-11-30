@@ -3,6 +3,8 @@
 template<class SharkFloatParams>
 struct HpSharkFloat;
 
+#include "Tests.cuh"
+
 #include <cooperative_groups.h>
 #include <cooperative_groups/memcpy_async.h>
 #include <cuda/barrier>

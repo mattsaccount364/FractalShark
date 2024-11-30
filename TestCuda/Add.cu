@@ -607,6 +607,8 @@ __global__ void AddKernelTestLoop(
 template<class SharkFloatParams>
 void ComputeAddGpu(void *kernelArgs[]) {
 
+    constexpr auto ExpandedNumDigits = SharkFloatParams::NumUint32 * 2;
+    constexpr size_t SharedMemSize = sizeof(uint32_t) * ExpandedNumDigits * 6; // Adjust as necessary
     cudaError_t err = cudaLaunchCooperativeKernel(
         (void *)AddKernel<SharkFloatParams>,
         dim3(SharkFloatParams::NumBlocks),
@@ -625,6 +627,9 @@ void ComputeAddGpu(void *kernelArgs[]) {
 
 template<class SharkFloatParams>
 void ComputeAddGpuTestLoop(void *kernelArgs[]) {
+
+    constexpr auto ExpandedNumDigits = SharkFloatParams::NumUint32 * 2;
+    constexpr size_t SharedMemSize = sizeof(uint32_t) * ExpandedNumDigits * 6; // Adjust as necessary
 
     cudaError_t err = cudaLaunchCooperativeKernel(
         (void *)AddKernelTestLoop<SharkFloatParams>,

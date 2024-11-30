@@ -19,9 +19,6 @@
 #include <cuda/barrier>
 namespace cg = cooperative_groups;
 
-#include <cooperative_groups.h>
-namespace cg = cooperative_groups;
-
 __device__ void multiply_uint64(
     uint64_t a, uint64_t b,
     uint64_t &low, uint64_t &high) {

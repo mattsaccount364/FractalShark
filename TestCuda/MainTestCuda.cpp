@@ -1,8 +1,8 @@
-﻿#include "Add.cuh"
-#include "NullKernel.cuh"
+﻿#include "NullKernel.cuh"
 #include "Conversion.cuh"
 #include "HpSharkFloat.cuh"
 #include "Tests.cuh"
+
 
 #include <iostream>
 #include <mpir.h>
@@ -81,11 +81,14 @@ int main(int /*argc*/, char * /*argv*/[]) {
         }
     }
 
-    //testBase = 600;
-    //bool res = TestBinaryOperatorPerf<Operator::Add>(testBase);
-    //if (!res) {
-    //    PressKey();
-    //}
+    testBase = 600;
+    res = TestBinaryOperatorPerf<TestSharkParams, Operator::Add>(testBase);
+    if (!res) {
+        auto q = PressKey();
+        if (q == 'q') {
+            return 0;
+        }
+    }
 
     testBase = 700;
     res = TestBinaryOperatorPerf<TestSharkParams, Operator::Multiply>(testBase);

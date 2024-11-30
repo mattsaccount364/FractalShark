@@ -19,15 +19,33 @@
 #include <cuda/barrier>
 namespace cg = cooperative_groups;
 
-__device__ void multiply_uint64(
-    uint64_t a, uint64_t b,
-    uint64_t &low, uint64_t &high) {
-    low = a * b;
-    high = __umul64hi(a, b);
+__device__ int compareDigits(const uint32_t *a, const uint32_t *b, int n) {
+    for (int i = n - 1; i >= 0; --i) {
+        if (a[i] > b[i]) return 1;
+        if (a[i] < b[i]) return -1;
+    }
+    return 0;
 }
 
+__device__ void subtractDigits(const uint32_t *a, const uint32_t *b, uint64_t *result, int n) {
+    uint64_t borrow = 0;
+    for (int i = 0; i < n; ++i) {
+        uint64_t ai = a[i];
+        uint64_t bi = b[i];
+        uint64_t temp = ai - bi - borrow;
+        if (ai < bi + borrow) {
+            borrow = 1;
+            temp += ((uint64_t)1 << 32);
+        } else {
+            borrow = 0;
+        }
+        result[i] = temp;
+    }
+}
+
+
 // Function to perform addition with carry
-__device__ static void addWithCarry(
+__device__ static void add128(
     uint64_t a_low, uint64_t a_high,
     uint64_t b_low, uint64_t b_high,
     uint64_t &result_low, uint64_t &result_high) {
@@ -37,16 +55,19 @@ __device__ static void addWithCarry(
     result_high = a_high + b_high + carry;
 }
 
-// Function to perform subtraction with borrow
-__device__ static void subtractWithBorrow(
+__device__ static void subtract128(
     uint64_t a_low, uint64_t a_high,
     uint64_t b_low, uint64_t b_high,
     uint64_t &result_low, uint64_t &result_high) {
 
-    bool borrow_low = a_low < b_low;
+    uint64_t borrow = 0;
+
+    // Subtract low parts
     result_low = a_low - b_low;
-    uint64_t borrow_high = borrow_low ? 1 : 0;
-    result_high = a_high - b_high - borrow_high;
+    borrow = (a_low < b_low) ? 1 : 0;
+
+    // Subtract high parts with borrow
+    result_high = a_high - b_high - borrow;
 }
 
 template<class SharkFloatParams>
@@ -324,8 +345,49 @@ __device__ void MultiplyHelperKaratsuba(
 
     //block.sync();
 
-    // ---- Convolution for Z1_temp = (A0 + A1) * (B0 + B1) ----
-    for (int k = k_start; k < k_end; ++k) {
+    // ---- Compute Differences x_diff = A1 - A0 and y_diff = B1 - B0 ----
+
+// Arrays to hold the absolute differences (size n)
+    uint64_t x_diff_abs[n];
+    uint64_t y_diff_abs[n];
+    int x_diff_sign = 0; // 0 if positive, 1 if negative
+    int y_diff_sign = 0; // 0 if positive, 1 if negative
+
+    // Compute x_diff_abs and x_diff_sign
+    int x_compare = compareDigits(A->Digits + n, A->Digits, n);
+    if (x_compare >= 0) {
+        x_diff_sign = 0;
+        subtractDigits(A->Digits + n, A->Digits, x_diff_abs, n); // x_diff = A1 - A0
+    } else {
+        x_diff_sign = 1;
+        subtractDigits(A->Digits, A->Digits + n, x_diff_abs, n); // x_diff = A0 - A1
+    }
+
+    // Compute y_diff_abs and y_diff_sign
+    int y_compare = compareDigits(B->Digits + n, B->Digits, n);
+    if (y_compare >= 0) {
+        y_diff_sign = 0;
+        subtractDigits(B->Digits + n, B->Digits, y_diff_abs, n); // y_diff = B1 - B0
+    } else {
+        y_diff_sign = 1;
+        subtractDigits(B->Digits, B->Digits + n, y_diff_abs, n); // y_diff = B0 - B1
+    }
+
+    // Determine the sign of Z1_temp
+    int z1_sign = x_diff_sign ^ y_diff_sign;
+
+
+    // Synchronize before convolution
+    grid.sync();
+
+    // ---- Convolution for Z1_temp = |x_diff| * |y_diff| ----
+    // Update total_k for convolution of differences
+    int total_k_diff = 2 * n - 1;
+
+    int k_diff_start = (threadIdxGlobal * total_k_diff) / total_threads;
+    int k_diff_end = ((threadIdxGlobal + 1) * total_k_diff) / total_threads;
+
+    for (int k = k_diff_start; k < k_diff_end; ++k) {
         uint64_t sum_low = 0;
         uint64_t sum_high = 0;
 
@@ -333,22 +395,17 @@ __device__ void MultiplyHelperKaratsuba(
         int i_end = min(k, n - 1);
 
         for (int i = i_start; i <= i_end; ++i) {
-            // uint64_t a = A_shared[i];         // (A0 + A1)[i]
-            // uint64_t b = B_shared[k - i];     // (B0 + B1)[k - i]
+            uint64_t a = x_diff_abs[i];
+            uint64_t b = y_diff_abs[k - i];
 
-            uint64_t A0 = A->Digits[i];
-            uint64_t A1 = A->Digits[i + n];
-            uint64_t B0 = B->Digits[k - i];
-            uint64_t B1 = B->Digits[k - i + n];
-            auto a = A0 + A1;
-            auto b = B0 + B1;
-
-            // Compute full 128-bit product
-            uint64_t prod_low, prod_high;
-            multiply_uint64(a, b, prod_low, prod_high);
+            uint64_t product = a * b;
 
             // Accumulate the product
-            addWithCarry(sum_low, sum_high, prod_low, prod_high, sum_low, sum_high);
+            uint64_t prev_sum_low = sum_low;
+            sum_low += product;
+            if (sum_low < prev_sum_low) {
+                sum_high += 1;
+            }
         }
 
         // Store sum_low and sum_high in tempProducts
@@ -357,11 +414,20 @@ __device__ void MultiplyHelperKaratsuba(
         tempProducts[idx + 1] = sum_high;
     }
 
-    // Synchronize before subtraction
+    // Synchronize before combining results
     grid.sync();
 
-    // ---- Compute Z1 = Z1_temp - Z0 - Z2 ----
+    // ---- Compute Z1 = Z2 - Z1_temp - Z0 ----
+
+    // We need to compute Z1 = Z2 - Z1_temp - Z0 if z1_sign == 0
+    // or Z1 = Z2 + Z1_temp - Z0 if z1_sign == 1
+
     for (int k = k_start; k < k_end; ++k) {
+        // Retrieve Z2
+        int z2_idx = Z2_offset + k * 2;
+        uint64_t z2_low = tempProducts[z2_idx];
+        uint64_t z2_high = tempProducts[z2_idx + 1];
+
         // Retrieve Z1_temp
         int z1_temp_idx = Z1_temp_offset + k * 2;
         uint64_t z1_temp_low = tempProducts[z1_temp_idx];
@@ -372,18 +438,21 @@ __device__ void MultiplyHelperKaratsuba(
         uint64_t z0_low = tempProducts[z0_idx];
         uint64_t z0_high = tempProducts[z0_idx + 1];
 
-        // Retrieve Z2
-        int z2_idx = Z2_offset + k * 2;
-        uint64_t z2_low = tempProducts[z2_idx];
-        uint64_t z2_high = tempProducts[z2_idx + 1];
-
-        // Compute z0 + z2
-        uint64_t z0z2_low, z0z2_high;
-        addWithCarry(z0_low, z0_high, z2_low, z2_high, z0z2_low, z0z2_high);
-
-        // Compute Z1 = Z1_temp - (Z0 + Z2)
         uint64_t z1_low, z1_high;
-        subtractWithBorrow(z1_temp_low, z1_temp_high, z0z2_low, z0z2_high, z1_low, z1_high);
+
+        // Compute Z1 = Z2 - Z1_temp - Z0 (if z1_sign == 0)
+        // or Z1 = Z2 + Z1_temp - Z0 (if z1_sign == 1)
+        if (z1_sign == 0) {
+            // Compute Z1 = Z2 - Z1_temp - Z0
+            uint64_t temp_low, temp_high;
+            subtract128(z2_low, z2_high, z1_temp_low, z1_temp_high, temp_low, temp_high);
+            subtract128(temp_low, temp_high, z0_low, z0_high, z1_low, z1_high);
+        } else {
+            // Compute Z1 = Z2 + Z1_temp - Z0
+            uint64_t temp_low, temp_high;
+            add128(z2_low, z2_high, z1_temp_low, z1_temp_high, temp_low, temp_high);
+            subtract128(temp_low, temp_high, z0_low, z0_high, z1_low, z1_high);
+        }
 
         // Store z1_low and z1_high in tempProducts
         int z1_idx = Z1_offset + k * 2;
@@ -394,8 +463,9 @@ __device__ void MultiplyHelperKaratsuba(
     // Synchronize before combining results
     grid.sync();
 
-    // ---- Combine Z0, Z1, Z2 into the final result ----
-    constexpr int total_result_digits = 2 * N;
+    // ---- Combine Z0, Z1_temp, Z2 into the final result ----
+
+    constexpr int total_result_digits = 2 * N + 1; // Adjusted for possible extra digit
     int idx_start = (threadIdxGlobal * total_result_digits) / total_threads;
     int idx_end = ((threadIdxGlobal + 1) * total_result_digits) / total_threads;
 
@@ -403,28 +473,52 @@ __device__ void MultiplyHelperKaratsuba(
         uint64_t sum_low = 0;
         uint64_t sum_high = 0;
 
-        // Add Z0 component
-        if (idx < 2 * n - 1) {
-            int z0_idx = Z0_offset + idx * 2;
-            uint64_t z0_low = tempProducts[z0_idx];
-            uint64_t z0_high = tempProducts[z0_idx + 1];
-            addWithCarry(sum_low, sum_high, z0_low, z0_high, sum_low, sum_high);
-        }
-
-        // Add Z1 component shifted by n digits
-        if (idx >= n && (idx - n) < 2 * n - 1) {
-            int z1_idx = Z1_offset + (idx - n) * 2;
-            uint64_t z1_low = tempProducts[z1_idx];
-            uint64_t z1_high = tempProducts[z1_idx + 1];
-            addWithCarry(sum_low, sum_high, z1_low, z1_high, sum_low, sum_high);
-        }
-
-        // Add Z2 component shifted by 2n digits
+        // Add (b^2 + b) * Z2
+        // Add Z2 shifted by 2n digits
         if (idx >= 2 * n && (idx - 2 * n) < 2 * n - 1) {
             int z2_idx = Z2_offset + (idx - 2 * n) * 2;
             uint64_t z2_low = tempProducts[z2_idx];
             uint64_t z2_high = tempProducts[z2_idx + 1];
-            addWithCarry(sum_low, sum_high, z2_low, z2_high, sum_low, sum_high);
+            add128(sum_low, sum_high, z2_low, z2_high, sum_low, sum_high);
+        }
+        // Add Z2 shifted by n digits
+        if (idx >= n && (idx - n) < 2 * n - 1) {
+            int z2_idx = Z2_offset + (idx - n) * 2;
+            uint64_t z2_low = tempProducts[z2_idx];
+            uint64_t z2_high = tempProducts[z2_idx + 1];
+            add128(sum_low, sum_high, z2_low, z2_high, sum_low, sum_high);
+        }
+
+        // Subtract b * Z1_temp
+        // Subtract Z1_temp shifted by n digits
+        if (idx >= n && (idx - n) < 2 * n - 1) {
+            int z1_temp_idx = Z1_temp_offset + (idx - n) * 2;
+            uint64_t z1_temp_low = tempProducts[z1_temp_idx];
+            uint64_t z1_temp_high = tempProducts[z1_temp_idx + 1];
+
+            if (z1_sign == 0) {
+                // Positive, so subtract
+                subtract128(sum_low, sum_high, z1_temp_low, z1_temp_high, sum_low, sum_high);
+            } else {
+                // Negative, so add
+                add128(sum_low, sum_high, z1_temp_low, z1_temp_high, sum_low, sum_high);
+            }
+        }
+
+        // Add (b + 1) * Z0
+        // Add Z0 shifted by n digits
+        if (idx >= n && (idx - n) < 2 * n - 1) {
+            int z0_idx = Z0_offset + (idx - n) * 2;
+            uint64_t z0_low = tempProducts[z0_idx];
+            uint64_t z0_high = tempProducts[z0_idx + 1];
+            add128(sum_low, sum_high, z0_low, z0_high, sum_low, sum_high);
+        }
+        // Add Z0
+        if (idx < 2 * n - 1) {
+            int z0_idx = Z0_offset + idx * 2;
+            uint64_t z0_low = tempProducts[z0_idx];
+            uint64_t z0_high = tempProducts[z0_idx + 1];
+            add128(sum_low, sum_high, z0_low, z0_high, sum_low, sum_high);
         }
 
         // Store sum_low and sum_high in tempProducts
@@ -434,7 +528,7 @@ __device__ void MultiplyHelperKaratsuba(
     }
 
     // Synchronize before carry propagation
-    block.sync();
+    grid.sync();
 
     // ---- Carry Propagation ----
 

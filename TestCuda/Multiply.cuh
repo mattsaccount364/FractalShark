@@ -19,6 +19,18 @@ template<class SharkFloatParams>
 void ComputeMultiplyGpuTestLoop(void *kernelArgs[]);
 
 template<class SharkFloatParams>
+__device__ void MultiplyHelperKaratsubaV1(
+    const HpSharkFloat<SharkFloatParams> *__restrict__ A,
+    const HpSharkFloat<SharkFloatParams> *__restrict__ B,
+    HpSharkFloat<SharkFloatParams> *__restrict__ Out,
+    uint64_t *__restrict__ carryOuts_phase3,
+    uint64_t *__restrict__ carryOuts_phase6,
+    uint64_t *__restrict__ carryIns,
+    cooperative_groups::grid_group grid,
+    uint64_t *__restrict__ tempProducts);
+
+
+template<class SharkFloatParams>
 __device__ void MultiplyHelperKaratsuba(
     const HpSharkFloat<SharkFloatParams> *__restrict__ A,
     const HpSharkFloat<SharkFloatParams> *__restrict__ B,

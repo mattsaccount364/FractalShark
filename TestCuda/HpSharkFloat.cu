@@ -191,17 +191,17 @@ MpfToHpGpu(
     auto countInBytes = data.size() * sizeof(uint32_t);
 
     // Copy data into digits array
-    memset(number.Digits, 0, HpSharkFloat<SharkFloatParams>::NumUint32 * sizeof(uint32_t));
+    memset(number.Digits, 0, SharkFloatParams::NumUint32 * sizeof(uint32_t));
 
     // If count is greater than NumUint32, move forward by count - NumUint32
     // because the most significant digits are at the end of the array
     auto startOffset =
-        (countInBytes > HpSharkFloat<SharkFloatParams>::NumUint32 * sizeof(uint32_t)) ?
-        countInBytes - HpSharkFloat<SharkFloatParams>::NumUint32 * sizeof(uint32_t) :
+        (countInBytes > SharkFloatParams::NumUint32 * sizeof(uint32_t)) ?
+        countInBytes - SharkFloatParams::NumUint32 * sizeof(uint32_t) :
         0;
     auto numBytesToCopy = std::min(
         countInBytes,
-        HpSharkFloat<SharkFloatParams>::NumUint32 * sizeof(uint32_t));
+        SharkFloatParams::NumUint32 * sizeof(uint32_t));
     numBytesToCopy = std::min(numBytesToCopy, absMpirSize * sizeof(mp_limb_t));
 
     memcpy(number.Digits, reinterpret_cast<uint8_t *>(data.data()) + startOffset, numBytesToCopy);
@@ -211,7 +211,7 @@ MpfToHpGpu(
         mpf_val, static_cast<HpSharkFloat<SharkFloatParams>::ExpT>(numBytesToCopy));
 
     //{
-    //    auto exportedFinalData = Uint32ArrayToHexString(number.Digits, HpSharkFloat<SharkFloatParams>::NumUint32);
+    //    auto exportedFinalData = Uint32ArrayToHexString(number.Digits, SharkFloatParams::NumUint32);
     //    std::cout << "Exported Final data: " << exportedFinalData << ", exponent: " << number.Exponent << std::endl;
     //}
 
@@ -325,7 +325,7 @@ HpGpuToMpf (
 
     // Import the digits array into the mpz_t integer
     // Note: mpz_import expects the least significant word first
-    mpz_import(mpz_value, HpSharkFloat<SharkFloatParams>::NumUint32, -1, sizeof(uint32_t), 0, 0, hpNum.Digits);
+    mpz_import(mpz_value, SharkFloatParams::NumUint32, -1, sizeof(uint32_t), 0, 0, hpNum.Digits);
 
     // Adjust for sign
     if (hpNum.IsNegative) {
@@ -359,7 +359,7 @@ Uint32ToMpf (
     mpf_t &mpf_val) {
 
     std::vector<uint64_t> data;
-    for (size_t i = 0; i < HpSharkFloat<SharkFloatParams>::NumUint32 / 2; ++i) {
+    for (size_t i = 0; i < SharkFloatParams::NumUint32 / 2; ++i) {
         // Store two uint32_t values in one
         auto value = static_cast<uint64_t>(array[2 * i + 1]) << 32 | array[2 * i];
         data.push_back(value);

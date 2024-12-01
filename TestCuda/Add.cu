@@ -89,7 +89,7 @@ __device__ void BlellochScanWarp(uint32_t * input, uint32_t * output, int n) {
 }
 
 // Device function to compute carry-in signals by shifting carry-out signals right by one
-__device__ void ComputeCarryInWarp(
+__device__ static void ComputeCarryInWarp(
     const uint32_t *carryOuts, // Input carry-out array
     uint32_t *carryIn,         // Output carry-in array
     int n) {                   // Number of digits
@@ -115,7 +115,7 @@ __device__ void ComputeCarryInWarp(
 }
 
 // Device function to compute carry-in signals across warps using statically allocated shared memory
-__device__ void ComputeCarryIn(
+__device__ static void ComputeCarryIn(
     const uint32_t *carryOuts, // Input carry-out array
     uint32_t *carryIn,         // Output carry-in array
     int n,                     // Number of digits
@@ -166,7 +166,7 @@ __device__ uint32_t ShiftRight(uint32_t *digits, int shiftBits, int idx) {
     int shiftBitsMod = shiftBits % 32;
     uint32_t lower = 0, upper = 0;
     int srcIdx = idx + shiftWords;
-    const int numDigits = HpSharkFloat<SharkFloatParams>::NumUint32;
+    const int numDigits = SharkFloatParams::NumUint32;
     if (srcIdx < numDigits) {
         lower = digits[srcIdx];
     }
@@ -212,7 +212,7 @@ __device__ void AddHelper(
     cg::grid_group grid,
     int numBlocks) {
 
-    const int numDigits = HpSharkFloat<SharkFloatParams>::NumUint32;
+    const int numDigits = SharkFloatParams::NumUint32;
     const int tid = threadIdx.x;
     const int blockId = blockIdx.x;
 

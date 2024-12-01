@@ -47,11 +47,11 @@ __device__ void MultiplyHelperN2(
     const int highDigitIdx = lowDigitIdx + 1;
 
     // Ensure indices do not exceed the temporary buffer size
-    if (lowDigitIdx >= 2 * HpSharkFloat<SharkFloatParams>::NumUint32) return;
+    if (lowDigitIdx >= 2 * SharkFloatParams::NumUint32) return;
 
     // Initialize temporary products to zero
     tempProducts[lowDigitIdx] = 0;
-    if (highDigitIdx < 2 * HpSharkFloat<SharkFloatParams>::NumUint32) {
+    if (highDigitIdx < 2 * SharkFloatParams::NumUint32) {
         tempProducts[highDigitIdx] = 0;
     }
 
@@ -60,11 +60,11 @@ __device__ void MultiplyHelperN2(
 
     // Compute k_min and k_max
     const int k_min = 2 * blockIdx.x * SharkFloatParams::ThreadsPerBlock;
-    const int k_max = min(2 * (blockIdx.x + 1) * SharkFloatParams::ThreadsPerBlock - 1, 2 * HpSharkFloat<SharkFloatParams>::NumUint32 - 1);
+    const int k_max = min(2 * (blockIdx.x + 1) * SharkFloatParams::ThreadsPerBlock - 1, 2 * SharkFloatParams::NumUint32 - 1);
 
     // Compute j_min_block and j_max_block
-    const int j_min_block = max(0, k_min - (HpSharkFloat<SharkFloatParams>::NumUint32 - 1));
-    const int j_max_block = min(k_max, HpSharkFloat<SharkFloatParams>::NumUint32 - 1);
+    const int j_min_block = max(0, k_min - (SharkFloatParams::NumUint32 - 1));
+    const int j_max_block = min(k_max, SharkFloatParams::NumUint32 - 1);
 
     const int a_shared_size_required = j_max_block - j_min_block + 1;
 
@@ -73,7 +73,7 @@ __device__ void MultiplyHelperN2(
     __shared__ __align__(16) uint32_t B_shared[2][BATCH_SIZE_B];
 
     const int numBatches_A = (a_shared_size_required + BATCH_SIZE_A - 1) / BATCH_SIZE_A;
-    const int numBatches_B = (HpSharkFloat<SharkFloatParams>::NumUint32 + BATCH_SIZE_B - 1) / BATCH_SIZE_B;
+    const int numBatches_B = (SharkFloatParams::NumUint32 + BATCH_SIZE_B - 1) / BATCH_SIZE_B;
 
     uint32_t *__restrict__ tempBufferA = nullptr;
     uint32_t *__restrict__ currentBufferA = A_shared[0];
@@ -119,14 +119,14 @@ __device__ void MultiplyHelperN2(
         const int bIndex_max_high = highDigitIdxMax - batchStartA;
 
         const int bIndex_min = max(0, min(bIndex_min_low, bIndex_min_high));
-        const int bIndex_max = min(HpSharkFloat<SharkFloatParams>::NumUint32 - 1, max(bIndex_max_low, bIndex_max_high));
+        const int bIndex_max = min(SharkFloatParams::NumUint32 - 1, max(bIndex_max_low, bIndex_max_high));
 
         const int batchB_start = bIndex_min / BATCH_SIZE_B;
         // const int batchB_end = bIndex_max / BATCH_SIZE_B;
 
         int batchStartB = batchB_start * BATCH_SIZE_B;
         {
-            const int elementsToCopyB = min(BATCH_SIZE_B, HpSharkFloat<SharkFloatParams>::NumUint32 - batchStartB);
+            const int elementsToCopyB = min(BATCH_SIZE_B, SharkFloatParams::NumUint32 - batchStartB);
             cg::memcpy_async(block, &currentBufferB[0], &B->Digits[batchStartB], sizeof(uint32_t) * elementsToCopyB);
         }
 
@@ -134,13 +134,13 @@ __device__ void MultiplyHelperN2(
         for (int batchB = batchB_start; batchB < numBatches_B; ++batchB) {
             //block.sync();
 
-            const int elementsToCopyB = min(BATCH_SIZE_B, HpSharkFloat<SharkFloatParams>::NumUint32 - batchStartB);
+            const int elementsToCopyB = min(BATCH_SIZE_B, SharkFloatParams::NumUint32 - batchStartB);
             const int batchEndB = batchStartB + elementsToCopyB - 1;
 
             // Start loading the next batch of B asynchronously if not the last batch
             if (batchB + 1 < numBatches_B) {
                 int nextBatchStartB = (batchB + 1) * BATCH_SIZE_B;
-                int nextElementsToCopyB = min(BATCH_SIZE_B, HpSharkFloat<SharkFloatParams>::NumUint32 - nextBatchStartB);
+                int nextElementsToCopyB = min(BATCH_SIZE_B, SharkFloatParams::NumUint32 - nextBatchStartB);
 
                 cg::memcpy_async(block, &nextBufferB[0], &B->Digits[nextBatchStartB], sizeof(uint32_t) * nextElementsToCopyB);
                 cg::wait_prior<1>(block);
@@ -179,7 +179,7 @@ __device__ void MultiplyHelperN2(
                     }
 
                     // Compute for highDigitIdx
-                    if (highDigitIdx < 2 * HpSharkFloat<SharkFloatParams>::NumUint32 && j >= j_min_high && j <= j_max_high) {
+                    if (highDigitIdx < 2 * SharkFloatParams::NumUint32 && j >= j_min_high && j <= j_max_high) {
                         int bIndexHigh = highDigitIdx - j;
                         int bSharedIndexHigh = bIndexHigh - batchStartB;
                         uint32_t bValueHigh = currentBufferB[bSharedIndexHigh];
@@ -355,13 +355,13 @@ __device__ void MultiplyHelperN2(
     int totalResultDigits = highestIndex + 1;
 
     // Calculate the initial number of shifts needed
-    int shifts = totalResultDigits - HpSharkFloat<SharkFloatParams>::NumUint32;
+    int shifts = totalResultDigits - SharkFloatParams::NumUint32;
     if (shifts < 0) {
         shifts = 0;
     }
 
-    // Calculate the required shift to ensure maxHighDigitIdx - shifts <= HpSharkFloat<SharkFloatParams>::NumUint32 - 1
-    int requiredShift = highestIndex - (HpSharkFloat<SharkFloatParams>::NumUint32 - 1);
+    // Calculate the required shift to ensure maxHighDigitIdx - shifts <= SharkFloatParams::NumUint32 - 1
+    int requiredShift = highestIndex - (SharkFloatParams::NumUint32 - 1);
     if (shifts < requiredShift) {
         shifts = requiredShift;
     }
@@ -373,10 +373,10 @@ __device__ void MultiplyHelperN2(
     }
 
     // Each thread copies its digits from shared memory to Out->Digits, applying the shift
-    if (lowDigitIdx >= shifts && (lowDigitIdx - shifts) < HpSharkFloat<SharkFloatParams>::NumUint32) {
+    if (lowDigitIdx >= shifts && (lowDigitIdx - shifts) < SharkFloatParams::NumUint32) {
         Out->Digits[lowDigitIdx - shifts] = static_cast<uint32_t>(digitLowShared[threadIdx.x]);
     }
-    if (highDigitIdx >= shifts && (highDigitIdx - shifts) < HpSharkFloat<SharkFloatParams>::NumUint32) {
+    if (highDigitIdx >= shifts && (highDigitIdx - shifts) < SharkFloatParams::NumUint32) {
         Out->Digits[highDigitIdx - shifts] = static_cast<uint32_t>(digitHighShared[threadIdx.x]);
     }
 
@@ -392,7 +392,7 @@ __device__ void MultiplyHelperN2(
         int carryDigits = (finalCarryBits + 31) / 32;
 
         // Shift existing digits to make room for finalCarry digits
-        for (int i = HpSharkFloat<SharkFloatParams>::NumUint32 - 1; i >= carryDigits; --i) {
+        for (int i = SharkFloatParams::NumUint32 - 1; i >= carryDigits; --i) {
             Out->Digits[i] = Out->Digits[i - carryDigits];
         }
 
@@ -464,7 +464,7 @@ __device__ static void CarryPropagation(
 
     // Constants and offsets
     constexpr int MaxPasses = 10; // Maximum number of carry propagation passes
-    constexpr int total_result_digits = 2 * HpSharkFloat<SharkFloatParams>::NumUint32;
+    constexpr int total_result_digits = 2 * SharkFloatParams::NumUint32;
 
     // Each thread processes its assigned digits
     for (int idx = thread_start_idx; idx < thread_end_idx; ++idx) {
@@ -578,7 +578,7 @@ __device__ static void CarryPropagation(
     grid.sync();
 }
 
-// Assuming that HpSharkFloat<SharkFloatParams>::NumUint32 can be large and doesn't fit in shared memory
+// Assuming that SharkFloatParams::NumUint32 can be large and doesn't fit in shared memory
 // We'll use the provided global memory buffers for large intermediates
 template<class SharkFloatParams>
 __device__ void MultiplyHelperKaratsubaV1(
@@ -596,7 +596,7 @@ __device__ void MultiplyHelperKaratsubaV1(
     const int threadIdxGlobal = blockIdx.x * SharkFloatParams::ThreadsPerBlock + threadIdx.x;
 
     constexpr int total_threads = SharkFloatParams::ThreadsPerBlock * SharkFloatParams::NumBlocks;
-    constexpr int N = HpSharkFloat<SharkFloatParams>::NumUint32;         // Total number of digits
+    constexpr int N = SharkFloatParams::NumUint32;         // Total number of digits
     constexpr int n = (N + 1) / 2;              // Half of N
 
     // Constants for tempProducts offsets

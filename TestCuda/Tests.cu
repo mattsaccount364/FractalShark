@@ -235,10 +235,10 @@ void TestAddTwoNumbersPerf(
             uint64_t *d_carry2;
             uint64_t *d_carry3;
             uint64_t *d_tempProducts;
-            cudaMalloc(&d_carry1, (SharkFloatParams::NumBlocks + 1) * sizeof(uint64_t));
-            cudaMalloc(&d_carry2, (SharkFloatParams::NumBlocks + 1) * sizeof(uint64_t));
-            cudaMalloc(&d_carry3, (SharkFloatParams::NumBlocks + 1) * sizeof(uint64_t));
-            cudaMalloc(&d_tempProducts, 32 * HpSharkFloat<SharkFloatParams>::NumUint32 * sizeof(uint64_t));
+            cudaMalloc(&d_carry1,        2 * SharkFloatParams::NumBlocks * sizeof(uint64_t));
+            cudaMalloc(&d_carry2,        2 * SharkFloatParams::NumBlocks * sizeof(uint64_t));
+            cudaMalloc(&d_carry3,        2 * SharkFloatParams::NumBlocks * sizeof(uint64_t));
+            cudaMalloc(&d_tempProducts, 32 * SharkFloatParams::NumUint32 * sizeof(uint64_t));
 
             void *kernelArgs[] = {
                 (void *)&xGpu,
@@ -345,7 +345,8 @@ void TestBinOperatorTwoNumbers(
         if (Verbose) {
             std::cout << "\nHost result:" << std::endl;
             std::cout << "Host result: " << MpfToString<SharkFloatParams>(mpfHostResult, HpSharkFloat<SharkFloatParams>::DefaultPrecBits) << std::endl;
-            std::cout << "Host hex: " << MpfToHexString(mpfHostResult) << std::endl;
+            std::cout << "Host hex: " << std::endl;
+            std::cout << "" << MpfToHexString(mpfHostResult) << std::endl;
         }
 
         HpSharkFloat<SharkFloatParams> *internalGpuResult;
@@ -385,10 +386,10 @@ void TestBinOperatorTwoNumbers(
             uint64_t *d_carry2;
             uint64_t *d_carry3;
             uint64_t *d_tempProducts;
-            cudaMalloc(&d_carry1, (SharkFloatParams::NumBlocks + 1) * sizeof(uint64_t));
-            cudaMalloc(&d_carry2, (SharkFloatParams::NumBlocks + 1) * sizeof(uint64_t));
-            cudaMalloc(&d_carry3, (SharkFloatParams::NumBlocks + 1) * sizeof(uint64_t));
-            cudaMalloc(&d_tempProducts, 32 * HpSharkFloat<SharkFloatParams>::NumUint32 * sizeof(uint64_t));
+            cudaMalloc(&d_carry1,        2 * SharkFloatParams::NumUint32 * sizeof(uint64_t));
+            cudaMalloc(&d_carry2,        2 * SharkFloatParams::NumUint32 * sizeof(uint64_t));
+            cudaMalloc(&d_carry3,        2 * SharkFloatParams::NumUint32 * sizeof(uint64_t));
+            cudaMalloc(&d_tempProducts, 32 * SharkFloatParams::NumUint32 * sizeof(uint64_t));
 
             void *kernelArgs[] = {
                 (void *)&xGpu,
@@ -497,8 +498,8 @@ void TestAddSpecialNumbers(int testNum, std::vector<uint32_t> &digits1, std::vec
     std::cout << std::endl;
     std::cout << "Test " << testNum << std::endl;
 
-    auto strLargeX = Uint32ToMpf<SharkFloatParams>(digits1.data(), HpSharkFloat<SharkFloatParams>::NumUint32 / 2, x);
-    auto strLargeY = Uint32ToMpf<SharkFloatParams>(digits2.data(), HpSharkFloat<SharkFloatParams>::NumUint32 / 2, y);
+    auto strLargeX = Uint32ToMpf<SharkFloatParams>(digits1.data(), SharkFloatParams::NumUint32 / 2, x);
+    auto strLargeY = Uint32ToMpf<SharkFloatParams>(digits2.data(), SharkFloatParams::NumUint32 / 2, y);
     TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(testNum, strLargeX.c_str(), strLargeY.c_str(), x, y);
 
     mpf_clear(x);
@@ -524,11 +525,11 @@ void TestAddSpecialNumbers(
 template<class SharkFloatParams, Operator sharkOperator>
 void TestAddSpecialNumbers1(int testNum) {
     std::vector<uint32_t> testData;
-    for (size_t i = 0; i < HpSharkFloat<SharkFloatParams>::NumUint32; ++i) {
+    for (size_t i = 0; i < SharkFloatParams::NumUint32; ++i) {
         testData.push_back(0);
     }
 
-    assert(testData.size() == HpSharkFloat<SharkFloatParams>::NumUint32);
+    assert(testData.size() == SharkFloatParams::NumUint32);
     testData[testData.size() - 1] = 0x80000000;
 
     TestAddSpecialNumbers<SharkFloatParams, sharkOperator>(testNum, testData, testData);
@@ -537,11 +538,11 @@ void TestAddSpecialNumbers1(int testNum) {
 template<class SharkFloatParams, Operator sharkOperator>
 void TestAddSpecialNumbers2(int testNum) {
     std::vector<uint32_t> testData;
-    for (size_t i = 0; i < HpSharkFloat<SharkFloatParams>::NumUint32; ++i) {
+    for (size_t i = 0; i < SharkFloatParams::NumUint32; ++i) {
         testData.push_back(0);
     }
 
-    assert(testData.size() == HpSharkFloat<SharkFloatParams>::NumUint32);
+    assert(testData.size() == SharkFloatParams::NumUint32);
     testData[testData.size() - 1] = 0xC0000000;
 
     TestAddSpecialNumbers<SharkFloatParams, sharkOperator>(testNum, testData, testData);
@@ -550,11 +551,11 @@ void TestAddSpecialNumbers2(int testNum) {
 template<class SharkFloatParams, Operator sharkOperator>
 void TestAddSpecialNumbers3(int testNum) {
     std::vector<uint32_t> testData;
-    for (size_t i = 0; i < HpSharkFloat<SharkFloatParams>::NumUint32; ++i) {
+    for (size_t i = 0; i < SharkFloatParams::NumUint32; ++i) {
         testData.push_back(0);
     }
 
-    assert(testData.size() == HpSharkFloat<SharkFloatParams>::NumUint32);
+    assert(testData.size() == SharkFloatParams::NumUint32);
     testData[testData.size() - 1] = 0xFFFFFFFF;
 
     TestAddSpecialNumbers<SharkFloatParams, sharkOperator>(testNum, testData, testData);
@@ -574,11 +575,11 @@ void TestAddSpecialNumbersHelper(
 
     std::vector<uint32_t> testData1Copy;
     testData1Copy = testData1;
-    testData1Copy.resize(HpSharkFloat<SharkFloatParams>::NumUint32);
+    testData1Copy.resize(SharkFloatParams::NumUint32);
 
     std::vector<uint32_t> testData2Copy;
     testData2Copy = testData2;
-    testData2Copy.resize(HpSharkFloat<SharkFloatParams>::NumUint32);
+    testData2Copy.resize(SharkFloatParams::NumUint32);
 
     std::unique_ptr<HpSharkFloat<SharkFloatParams>> xNum{ std::make_unique<HpSharkFloat<SharkFloatParams>>(testData1Copy.data(), 0, isNegative1) };
     std::unique_ptr<HpSharkFloat<SharkFloatParams>> yNum{ std::make_unique<HpSharkFloat<SharkFloatParams>>(testData2Copy.data(), 0, isNegative2) };

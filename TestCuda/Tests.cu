@@ -305,7 +305,7 @@ void TestAddTwoNumbersPerf(
 }
 
 template<class SharkFloatParams, Operator sharkOperator>
-void TestBinOperatorTwoNumbers(
+void TestBinOperatorTwoNumbersRawNoSignChange(
     int testNum,
     const HpSharkFloat<SharkFloatParams> &xNum,
     const HpSharkFloat<SharkFloatParams> &yNum,
@@ -430,6 +430,83 @@ void TestBinOperatorTwoNumbers(
     cudaFree(yGpu);
 }
 
+template<class SharkFloatParams, Operator sharkOperator, bool IncludeSigns>
+void TestBinOperatorTwoNumbersRaw(
+    int testNum,
+    const HpSharkFloat<SharkFloatParams> &xNum,
+    const HpSharkFloat<SharkFloatParams> &yNum,
+    const mpf_t &mpfX,
+    const mpf_t &mpfY) {
+
+    // If IncludeSigns is true, then call TestBinOperatorTwoNumbersRawNoSignChange with all four variants
+    // using mpf_neg as needed
+
+    if constexpr (IncludeSigns) {
+        mpf_t mpfXCopy;
+        mpf_t mpfYCopy;
+
+        HpSharkFloat<SharkFloatParams> xNumCopy;
+        HpSharkFloat<SharkFloatParams> yNumCopy;
+
+        auto resetCopy = [&]() {
+            mpf_set(mpfXCopy, mpfX);
+            mpf_set(mpfYCopy, mpfY);
+
+            xNumCopy.DeepCopySameDevice(xNum);
+            yNumCopy.DeepCopySameDevice(yNum);
+            };
+
+        auto printTest = [&](int curTest) {
+            std::cout << std::endl;
+            std::cout << std::endl;
+            std::cout << "Test " << curTest << std::endl;
+            };
+
+        auto negateMpfAndHp = [](mpf_t &mpfCopy, HpSharkFloat<SharkFloatParams> &numCopy) {
+            mpf_neg(mpfCopy, mpfCopy);
+            numCopy.Negate();
+        };
+
+        mpf_init(mpfXCopy);
+        mpf_init(mpfYCopy);
+
+        resetCopy();
+        printTest(testNum);
+        TestBinOperatorTwoNumbersRawNoSignChange<SharkFloatParams, sharkOperator>(
+            testNum, xNumCopy, yNumCopy, mpfXCopy, mpfYCopy);
+        testNum++;
+
+        resetCopy();
+        negateMpfAndHp(mpfXCopy, xNumCopy);
+        printTest(testNum);
+        TestBinOperatorTwoNumbersRawNoSignChange<SharkFloatParams, sharkOperator>(
+            testNum, xNumCopy, yNumCopy, mpfXCopy, mpfYCopy);
+        testNum++;
+
+        resetCopy();
+        negateMpfAndHp(mpfYCopy, yNumCopy);
+        printTest(testNum);
+        TestBinOperatorTwoNumbersRawNoSignChange<SharkFloatParams, sharkOperator>(
+            testNum, xNumCopy, yNumCopy, mpfXCopy, mpfYCopy);
+        testNum++;
+
+        resetCopy();
+        negateMpfAndHp(mpfXCopy, xNumCopy);
+        negateMpfAndHp(mpfYCopy, yNumCopy);
+        printTest(testNum);
+        TestBinOperatorTwoNumbersRawNoSignChange<SharkFloatParams, sharkOperator>(
+            testNum, xNumCopy, yNumCopy, mpfXCopy, mpfYCopy);
+        testNum++;
+
+        mpf_clear(mpfXCopy);
+        mpf_clear(mpfYCopy);
+
+    } else {
+        TestBinOperatorTwoNumbersRawNoSignChange<SharkFloatParams, sharkOperator>(testNum, xNum, yNum, mpfX, mpfY);
+    }
+
+}
+
 template<class SharkFloatParams, Operator sharkOperator>
 void TestBinOperatorTwoNumbers(
     int testNum,
@@ -438,22 +515,75 @@ void TestBinOperatorTwoNumbers(
     const mpf_t &mpfX,
     const mpf_t &mpfY) {
 
-    // Print the original input values
-    if (Verbose) {
-        std::cout << "Original input strings:" << std::endl;
-        std::cout << "num1: " << num1 << std::endl;
-        std::cout << "num2: " << num2 << std::endl;
-        std::cout << "MpfX: " << MpfToString<SharkFloatParams>(mpfX, HpSharkFloat<SharkFloatParams>::DefaultPrecBits) << std::endl;
-        std::cout << "MpfY: " << MpfToString<SharkFloatParams>(mpfY, HpSharkFloat<SharkFloatParams>::DefaultPrecBits) << std::endl;
+    // Copy mpfX and mpfY
+    mpf_t mpfXCopy;
+    mpf_t mpfYCopy;
+    mpf_init(mpfXCopy);
+    mpf_init(mpfYCopy);
+
+    auto curTest = [&]() {
+        // Print the original input values
+        if (Verbose) {
+            std::cout << "Original input strings:" << std::endl;
+            std::cout << "num1: " << num1 << std::endl;
+            std::cout << "num2: " << num2 << std::endl;
+            std::cout << "MpfX: " << MpfToString<SharkFloatParams>(mpfXCopy, HpSharkFloat<SharkFloatParams>::DefaultPrecBits) << std::endl;
+            std::cout << "MpfY: " << MpfToString<SharkFloatParams>(mpfYCopy, HpSharkFloat<SharkFloatParams>::DefaultPrecBits) << std::endl;
+        }
+
+        // Convert the input values to HpSharkFloat<SharkFloatParams> representations
+        std::unique_ptr<HpSharkFloat<SharkFloatParams>> xNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+        std::unique_ptr<HpSharkFloat<SharkFloatParams>> yNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+        MpfToHpGpu(mpfXCopy, *xNum, HpSharkFloat<SharkFloatParams>::DefaultPrecBits);
+        MpfToHpGpu(mpfYCopy, *yNum, HpSharkFloat<SharkFloatParams>::DefaultPrecBits);
+
+        TestBinOperatorTwoNumbersRaw<SharkFloatParams, sharkOperator, false>(
+            testNum, *xNum, *yNum, mpfXCopy, mpfYCopy);
+
+        testNum++;
+    };
+
+    auto resetCopy = [&]() {
+        mpf_set(mpfXCopy, mpfX);
+        mpf_set(mpfYCopy, mpfY);
+    };
+
+    auto printTest = [&](int curTest) {
+        std::cout << std::endl;
+        std::cout << std::endl;
+        std::cout << "Test " << curTest << std::endl;
+    };
+
+    // All four variations of + and - tests
+    {
+        printTest(testNum);
+        resetCopy();
+        curTest();
     }
 
-    // Convert the input values to HpSharkFloat<SharkFloatParams> representations
-    std::unique_ptr<HpSharkFloat<SharkFloatParams>> xNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-    std::unique_ptr<HpSharkFloat<SharkFloatParams>> yNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-    MpfToHpGpu(mpfX, *xNum, HpSharkFloat<SharkFloatParams>::DefaultPrecBits);
-    MpfToHpGpu(mpfY, *yNum, HpSharkFloat<SharkFloatParams>::DefaultPrecBits);
+    {
+        printTest(testNum);
+        resetCopy();
+        mpf_neg(mpfXCopy, mpfXCopy);
+        curTest();
+    }
 
-    TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(testNum, *xNum, *yNum, mpfX, mpfY);
+    {
+        printTest(testNum);
+        resetCopy();
+        mpf_neg(mpfYCopy, mpfYCopy);
+        curTest();
+    }
+
+    {
+        printTest(testNum);
+        resetCopy();
+        mpf_neg(mpfXCopy, mpfXCopy);
+        mpf_neg(mpfYCopy, mpfYCopy);
+    }
+
+    mpf_clear(mpfXCopy);
+    mpf_clear(mpfYCopy);
 }
 
 template<class SharkFloatParams, Operator sharkOperator>
@@ -519,7 +649,8 @@ void TestAddSpecialNumbers(
     HpGpuToMpf(xNum, mpfX);
     HpGpuToMpf(yNum, mpfY);
 
-    TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(testNum, xNum, yNum, mpfX, mpfY);
+    TestBinOperatorTwoNumbersRaw<SharkFloatParams, sharkOperator, true>(
+        testNum, xNum, yNum, mpfX, mpfY);
 }
 
 template<class SharkFloatParams, Operator sharkOperator>
@@ -564,9 +695,7 @@ void TestAddSpecialNumbers3(int testNum) {
 template<class SharkFloatParams, Operator sharkOperator>
 void TestAddSpecialNumbersHelper(
     int testNum,
-    bool isNegative1,
     std::vector<uint32_t> testData1,
-    bool isNegative2,
     std::vector<uint32_t> testData2) {
 
     std::cout << std::endl;
@@ -581,8 +710,8 @@ void TestAddSpecialNumbersHelper(
     testData2Copy = testData2;
     testData2Copy.resize(SharkFloatParams::NumUint32);
 
-    std::unique_ptr<HpSharkFloat<SharkFloatParams>> xNum{ std::make_unique<HpSharkFloat<SharkFloatParams>>(testData1Copy.data(), 0, isNegative1) };
-    std::unique_ptr<HpSharkFloat<SharkFloatParams>> yNum{ std::make_unique<HpSharkFloat<SharkFloatParams>>(testData2Copy.data(), 0, isNegative2) };
+    std::unique_ptr<HpSharkFloat<SharkFloatParams>> xNum{ std::make_unique<HpSharkFloat<SharkFloatParams>>(testData1Copy.data(), 0, false) };
+    std::unique_ptr<HpSharkFloat<SharkFloatParams>> yNum{ std::make_unique<HpSharkFloat<SharkFloatParams>>(testData2Copy.data(), 0, false) };
 
     TestAddSpecialNumbers<SharkFloatParams, sharkOperator>(testNum, *xNum, *yNum);
 }
@@ -591,9 +720,7 @@ template<class SharkFloatParams, Operator sharkOperator>
 void TestAddSpecialNumbers4(int testNum) {
     TestAddSpecialNumbersHelper<SharkFloatParams, sharkOperator>(
         testNum,
-        true,
         std::vector<uint32_t>{ 0xF26D37FC, 0xA96025CE, 0xB03FC716, 0x1DF7182B, 0xCCBD69BD, 0x40C0F80C, 0xFAA0222E, 0xD1FDA456 },
-        true,
         std::vector<uint32_t>{ 0x8BBCDF3, 0x4C3E7ACB, 0x6691A71D, 0xDFE03842, 0x3FADCA11, 0x4058BC9E, 0xF30FD7DE, 0xAA6CA582 });
 }
 
@@ -601,9 +728,7 @@ template<class SharkFloatParams, Operator sharkOperator>
 void TestAddSpecialNumbers5(int testNum) {
     TestAddSpecialNumbersHelper<SharkFloatParams, sharkOperator>(
         testNum,
-        false,
         std::vector<uint32_t>{ 0, 0, 0, 0, 0, 0, 0, 0xFFFFFFFF },
-        true,
         std::vector<uint32_t>{ 0, 0, 0, 0, 0, 0, 0, 0xFFFFFFFF });
 }
 
@@ -611,9 +736,7 @@ template<class SharkFloatParams, Operator sharkOperator>
 void TestAddSpecialNumbers6(int testNum) {
     TestAddSpecialNumbersHelper<SharkFloatParams, sharkOperator>(
         testNum,
-        true,
         std::vector<uint32_t>{ 0xFFFFFFFF, 0xFFFFFFFF },
-        true,
         std::vector<uint32_t>{ 0xFFFFFFFF, 0xFFFFFFFF });
 }
 
@@ -621,9 +744,7 @@ template<class SharkFloatParams, Operator sharkOperator>
 void TestAddSpecialNumbers7(int testNum) {
     TestAddSpecialNumbersHelper<SharkFloatParams, sharkOperator>(
         testNum,
-        true,
         std::vector<uint32_t>{ 0, 0xFFFFFFFF, 0xFFFFFFFF },
-        true,
         std::vector<uint32_t>{ 0, 0xFFFFFFFF, 0xFFFFFFFF });
 }
 
@@ -632,9 +753,7 @@ void TestAddSpecialNumbers8(int testNum) {
 
     TestAddSpecialNumbersHelper<SharkFloatParams, sharkOperator>(
         testNum,
-        true,
         std::vector<uint32_t>{ 0, 0, 0xFFFFFFFF, 0xFFFFFFFF },
-        true,
         std::vector<uint32_t>{ 0, 0, 0xFFFFFFFF, 0xFFFFFFFF });
 }
 
@@ -643,10 +762,26 @@ void TestAddSpecialNumbers9(int testNum) {
 
     TestAddSpecialNumbersHelper<SharkFloatParams, sharkOperator>(
         testNum,
-        true,
         std::vector<uint32_t>{ 0, 0, 0, 0xFFFFFFFF, 0xFFFFFFFF },
-        true,
         std::vector<uint32_t>{ 0, 0, 0, 0xFFFFFFFF, 0xFFFFFFFF });
+}
+
+template<class SharkFloatParams, Operator sharkOperator>
+void TestAddSpecialNumbers10(int testNum) {
+
+    TestAddSpecialNumbersHelper<SharkFloatParams, sharkOperator>(
+        testNum,
+        std::vector<uint32_t>{ 0, 0, 0, 0x2, 0x3 },
+        std::vector<uint32_t>{ 0, 0, 0, 0x5, 0x7 });
+}
+
+template<class SharkFloatParams, Operator sharkOperator>
+void TestAddSpecialNumbers11(int testNum) {
+
+    TestAddSpecialNumbersHelper<SharkFloatParams, sharkOperator>(
+        testNum,
+        std::vector<uint32_t>{ 0, 0, 1, 0, 2 },
+        std::vector<uint32_t>{ 2, 0, 0, 0, 0 });
 }
 
 
@@ -664,73 +799,75 @@ bool TestAllBinaryOp(int testBase) {
     // 400s is add
     
     if constexpr (includeSet1) {
-        const auto set = testBase + 10;
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 1, "1", "2");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 2, "4294967295", "1");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 3, "4294967296", "1");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 4, "4294967295", "4294967296");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 5, "4294967296", "-1");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 6, "18446744073709551615", "1");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 7, "0", "0.1");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 8, "0.1", "0");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 9, "0", "0");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 10, "0.1", "0.1");
+        const auto set = testBase + 100;
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 10, "1", "2");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 20, "4294967295", "1");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 30, "4294967296", "1");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 40, "4294967295", "4294967296");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 50, "4294967296", "-1");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 60, "18446744073709551615", "1");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 70, "0", "0.1");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 80, "0.1", "0");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 90, "0", "0");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 100, "0.1", "0.1");
     }
 
     if constexpr (includeSet2) {
-        const auto set = testBase + 30;
-        TestAddSpecialNumbers1<SharkFloatParams, sharkOperator>(set + 1);
-        TestAddSpecialNumbers2<SharkFloatParams, sharkOperator>(set + 2);
-        TestAddSpecialNumbers3<SharkFloatParams, sharkOperator>(set + 3);
-        TestAddSpecialNumbers4<SharkFloatParams, sharkOperator>(set + 4);
-        TestAddSpecialNumbers5<SharkFloatParams, sharkOperator>(set + 5);
-        TestAddSpecialNumbers6<SharkFloatParams, sharkOperator>(set + 6);
-        TestAddSpecialNumbers7<SharkFloatParams, sharkOperator>(set + 7);
-        TestAddSpecialNumbers8<SharkFloatParams, sharkOperator>(set + 8);
-        TestAddSpecialNumbers9<SharkFloatParams, sharkOperator>(set + 9);
+        const auto set = testBase + 300;
+        TestAddSpecialNumbers1<SharkFloatParams, sharkOperator>(set + 10);
+        TestAddSpecialNumbers2<SharkFloatParams, sharkOperator>(set + 20);
+        TestAddSpecialNumbers3<SharkFloatParams, sharkOperator>(set + 30);
+        TestAddSpecialNumbers4<SharkFloatParams, sharkOperator>(set + 40);
+        TestAddSpecialNumbers5<SharkFloatParams, sharkOperator>(set + 50);
+        TestAddSpecialNumbers6<SharkFloatParams, sharkOperator>(set + 60);
+        TestAddSpecialNumbers7<SharkFloatParams, sharkOperator>(set + 70);
+        TestAddSpecialNumbers8<SharkFloatParams, sharkOperator>(set + 80);
+        TestAddSpecialNumbers9<SharkFloatParams, sharkOperator>(set + 90);
+        TestAddSpecialNumbers10<SharkFloatParams, sharkOperator>(set + 100);
+        TestAddSpecialNumbers11<SharkFloatParams, sharkOperator>(set + 110);
     }
 
     if constexpr (includeSet3) {
-        const auto set = testBase + 40;
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 1, "2", "0.1");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 2, "0.2", "0.1");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 3, "0.5", "1.2");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 4, "0.6", "1.3");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 5, "0.7", "1.4");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 6, "0.1", "1.99999999999999999999999999999");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 7, "0.123124561464451654461", "1.2395123123127298375982735");
+        const auto set = testBase + 500;
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 10, "2", "0.1");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 20, "0.2", "0.1");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 30, "0.5", "1.2");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 40, "0.6", "1.3");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 50, "0.7", "1.4");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 60, "0.1", "1.99999999999999999999999999999");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 70, "0.123124561464451654461", "1.2395123123127298375982735");
     }
 
     if constexpr (includeSet4) {
-        const auto set = testBase + 50;
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 1, "-0.5", "1.2");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 2, "-0.6", "1.3");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 3, "-0.7", "1.4");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 4, "-0.1", "1.99999999999999999999999999999");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 5, "-0.123124561464451654461", "1.2395123123127298375982735");
+        const auto set = testBase + 600;
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 10, "-0.5", "1.2");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 20, "-0.6", "1.3");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 30, "-0.7", "1.4");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 40, "-0.1", "1.99999999999999999999999999999");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 50, "-0.123124561464451654461", "1.2395123123127298375982735");
     }
 
     if constexpr (includeSet5) {
-        const auto set = testBase + 60;
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 1, "-0.5", "-1.2");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 2, "-0.6", "-1.3");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 3, "-0.7", "-1.4");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 4, "-0.1", "-1.99999999999999999999999999999");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 5, "-0.123124561464451654461", "-1.2395123123127298375982735");
+        const auto set = testBase + 700;
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 10, "-0.51", "-1.29");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 20, "-0.61", "-1.39");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 30, "-0.71", "-1.49");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 40, "-0.11", "-1.99999999999999999999999999999");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 50, "-0.123124561464451654461", "-1.2395123123127298375982735");
     }
 
     if constexpr (includeSet6) {
-        const auto set = testBase + 70;
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 1, "0.5265542653452654526545625456254565446654545645649789871322131213156435546435", "-1.263468375787958774985473345435632415334245268476928454653443234164658776634854746584532186639173047328910730217803271839216");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 2, "0.2999999999965542653452654526545625456254565446654545645649789871322131213156435546435", "-1.263468375787958774985473345435632415334245268476928454653443234164658776634854746584532186639173047328910730217803271839216");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 3, "0.1265542653452654526545625456254565446654545645649789871322131213156435546435", "-1.2634683757879587749854733454356324153342452684769284546534432341646587766348547465845321866391730473289107302178039999999999999271839216");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 4, "0.0265542653452654526545625456254565446654545645649789871322131213156435546435", "-1.263468375787958774985473345435632415334245268476928454653443234164658776634854746584532186639173047328910730217803271839216");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 5, "0.00000000000000000265542653452654526545625456254565446654545645649789871322131213156435546435", "-1.263468375787958774985473345435632415334245268476928454653443234164658776634854746584532186639173047328910730217803271839216");
+        const auto set = testBase + 800;
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 10, "0.5265542653452654526545625456254565446654545645649789871322131213156435546435", "-1.263468375787958774985473345435632415334245268476928454653443234164658776634854746584532186639173047328910730217803271839216");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 20, "0.2999999999965542653452654526545625456254565446654545645649789871322131213156435546435", "-1.263468375787958774985473345435632415334245268476928454653443234164658776634854746584532186639173047328910730217803271839216");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 30, "0.1265542653452654526545625456254565446654545645649789871322131213156435546435", "-1.2634683757879587749854733454356324153342452684769284546534432341646587766348547465845321866391730473289107302178039999999999999271839216");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 40, "0.0265542653452654526545625456254565446654545645649789871322131213156435546435", "-1.263468375787958774985473345435632415334245268476928454653443234164658776634854746584532186639173047328910730217803271839216");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 50, "0.00000000000000000265542653452654526545625456254565446654545645649789871322131213156435546435", "-1.263468375787958774985473345435632415334245268476928454653443234164658776634854746584532186639173047328910730217803271839216");
     }
 
     if constexpr (includeSet10) {
-        const auto set10 = testBase + 100;
-        for (auto i = 0; i < 100; i++) {
+        const auto set10 = testBase + 1000;
+        for (auto i = 0; i < 1000; i += 10) {
             std::unique_ptr<HpSharkFloat<SharkFloatParams>> x = std::make_unique<HpSharkFloat<SharkFloatParams>>();
             std::unique_ptr<HpSharkFloat<SharkFloatParams>> y = std::make_unique<HpSharkFloat<SharkFloatParams>>();
 

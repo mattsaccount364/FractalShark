@@ -311,6 +311,22 @@ HpSharkFloat<SharkFloatParams>::GenerateRandomNumber()
     IsNegative = bool_distribution(generator);
 }
 
+template<class SharkFloatParams>
+void
+HpSharkFloat<SharkFloatParams>::Negate()
+{
+    IsNegative = !IsNegative;
+}
+
+template<class SharkFloatParams>
+void
+HpSharkFloat<SharkFloatParams>::DeepCopySameDevice(
+    const HpSharkFloat<SharkFloatParams> &other)
+{
+    memcpy(Digits, other.Digits, sizeof(uint32_t) * NumUint32);
+    Exponent = other.Exponent;
+    IsNegative = other.IsNegative;
+}
 
 // Function to convert HpSharkFloat<SharkFloatParams> to mpf_t
 template<class SharkFloatParams>

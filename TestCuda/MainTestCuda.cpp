@@ -62,7 +62,7 @@ int main(int /*argc*/, char * /*argv*/[]) {
             }
         }
 
-        testBase = 200;
+        testBase = 2000;
         res = TestAllBinaryOp<TestSharkParams, Operator::Multiply>(testBase);
         if (!res) {
             auto q = PressKey();
@@ -71,7 +71,7 @@ int main(int /*argc*/, char * /*argv*/[]) {
             }
         }
 
-        testBase = 400;
+        testBase = 4000;
         res = TestAllBinaryOp<TestSharkParams, Operator::Add>(testBase);
         if (!res) {
             auto q = PressKey();
@@ -81,7 +81,7 @@ int main(int /*argc*/, char * /*argv*/[]) {
         }
     }
 
-    //testBase = 600;
+    //testBase = 6000;
     //res = TestBinaryOperatorPerf<TestSharkParams, Operator::Add>(testBase);
     //if (!res) {
     //    auto q = PressKey();
@@ -90,7 +90,7 @@ int main(int /*argc*/, char * /*argv*/[]) {
     //    }
     //}
 
-    testBase = 700;
+    testBase = 7000;
     res = TestBinaryOperatorPerf<TestSharkParams, Operator::Multiply>(testBase);
     if (!res) {
         auto q = PressKey();
@@ -119,7 +119,7 @@ int main(int /*argc*/, char * /*argv*/[]) {
             }
         }
 
-        testBase = 200;
+        testBase = 2000;
         res = TestAllBinaryOp<TestSharkParams, Operator::Multiply>(testBase);
         if (!res) {
             q = PressKey();
@@ -128,7 +128,7 @@ int main(int /*argc*/, char * /*argv*/[]) {
             }
         }
 
-        testBase = 400;
+        testBase = 4000;
         res = TestAllBinaryOp<TestSharkParams, Operator::Add>(testBase);
         if (!res) {
             q = PressKey();

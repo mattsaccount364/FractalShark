@@ -100,7 +100,7 @@ __device__ void ComputeCarryInDecider(
     }
 }
 
-__device__ static void subtractDigits(const uint32_t *a, const uint32_t *b, uint64_t *result, int n) {
+__device__ static void subtractDigits(const uint32_t *a, const uint32_t *b, uint32_t *result, int n) {
     uint64_t borrow = 0;
     for (int i = 0; i < n; ++i) {
         uint64_t ai = a[i];
@@ -112,7 +112,7 @@ __device__ static void subtractDigits(const uint32_t *a, const uint32_t *b, uint
         } else {
             borrow = 0;
         }
-        result[i] = temp;
+        result[i] = (uint32_t)temp;
     }
 }
 
@@ -123,11 +123,12 @@ __device__ void subtractDigitsParallel(
     const uint32_t *__restrict__ b,
     uint32_t *carryOuts, // Shared array to store block-level borrows
     uint32_t *cumulativeCarries,
-    uint64_t *__restrict__ result,
+    uint32_t *__restrict__ result,
     cg::grid_group &grid,
     cg::thread_block &block) {
 
-    constexpr int N = (SharkFloatParams::NumUint32 + 1) / 2;         // Total number of digits
+    constexpr int N = SharkFloatParams::NumUint32;
+    constexpr auto n = (N + 1) / 2;              // Half of N
 
     const int tid = threadIdx.x;
     const int blockId = blockIdx.x;
@@ -135,9 +136,9 @@ __device__ void subtractDigitsParallel(
 
     // Determine the range of digits this block will handle
     constexpr auto numBlocks = SharkFloatParams::NumBlocks;
-    constexpr auto digitsPerBlock = (N + numBlocks - 1) / numBlocks;
+    constexpr auto digitsPerBlock = (n + numBlocks - 1) / numBlocks;
     const int startDigit = blockId * digitsPerBlock;
-    const int endDigit = min(startDigit + digitsPerBlock, N);
+    const int endDigit = min(startDigit + digitsPerBlock, n);
     const int digitsInBlock = endDigit - startDigit;
 
     uint32_t *a_shared = shared_data;
@@ -162,16 +163,10 @@ __device__ void subtractDigitsParallel(
         uint32_t operandLarge = a_shared[i];
         uint32_t operandSmall = b_shared[i];
 
-        if (operandLarge >= operandSmall) {
-            uint64_t fullDiff = (uint64_t)operandLarge - (uint64_t)operandSmall;
-            tempSum_static[i] = (uint32_t)(fullDiff & 0xFFFFFFFF);
-            carryBits_static[i] = 0;
-        } else {
-            // Borrow occurs
-            uint64_t fullDiff = ((uint64_t)1 << 32) + (uint64_t)operandLarge - (uint64_t)operandSmall;
-            tempSum_static[i] = (uint32_t)(fullDiff & 0xFFFFFFFF);
-            carryBits_static[i] = 1; // Indicate borrow
-        }
+        uint32_t tempDiff = operandLarge - operandSmall;
+        uint32_t borrowOut = (operandLarge < operandSmall) ? 1 : 0;
+        tempSum_static[i] = tempDiff;
+        carryBits_static[i] = borrowOut;
     }
     __syncthreads();  // Synchronize after addition/subtraction
 
@@ -189,13 +184,11 @@ __device__ void subtractDigitsParallel(
     for (int i = tid; i < digitsInBlock; i += SharkFloatParams::ThreadsPerBlock) {
         if (i >= digitsInBlock) continue;
 
-        // Subtraction already handled borrow in carryBits_static
-        // Apply borrow-in from scanResults_static
+        uint32_t tempValue = tempSum_static[i];
         uint32_t borrowIn = scanResults_static[i];
-        uint64_t finalDiff = (uint64_t)tempSum_static[i] - (uint64_t)borrowIn;
-        result[startDigit + i] = (uint32_t)(finalDiff & 0xFFFFFFFF);
-        // If borrow occurs, set carryBits_static[i] to 1
-        carryBits_static[i] = (finalDiff >> 63) & 1;
+        uint32_t finalDiff = tempValue - borrowIn;
+        result[startDigit + i] = finalDiff;
+        carryBits_static[i] = (tempValue < borrowIn) ? 1 : 0;
     }
     __syncthreads();  // Synchronize after applying carry-ins
 
@@ -217,10 +210,11 @@ __device__ void subtractDigitsParallel(
     uint32_t blockCarryIn = cumulativeCarries[blockId];
     if (digitsInBlock > 0) {
         if (tid == 0) {
-            uint64_t finalDiff = (uint64_t)result[startDigit] - (uint64_t)blockCarryIn;
-            result[startDigit] = (uint32_t)(finalDiff & 0xFFFFFFFF);
+            uint32_t originalValue = result[startDigit];
+            uint32_t finalDiff = originalValue - blockCarryIn;
+            result[startDigit] = finalDiff;
             // Update carryBits_static[0] with any new borrow-out
-            carryBits_static[0] = (finalDiff >> 63) & 1;
+            carryBits_static[0] = (originalValue < blockCarryIn) ? 1 : 0;
         }
         // Do not modify carryBits_static[tid] for tid != 0
     }
@@ -236,10 +230,11 @@ __device__ void subtractDigitsParallel(
         // Apply the new carry-ins to the output digits
         for (int i = tid; i < digitsInBlock; i += SharkFloatParams::ThreadsPerBlock) {
             if (i > 0) { // Skip the first digit
-                uint64_t finalDiff = (uint64_t)result[startDigit + i] - (uint64_t)scanResults_static[i];
-                result[startDigit + i] = (uint32_t)(finalDiff & 0xFFFFFFFF);
-                // Update carryBits_static[i] with any new borrow-out
-                carryBits_static[i] = (finalDiff >> 63) & 1;
+                uint32_t tempValue = result[startDigit + i];
+                uint32_t borrowIn = scanResults_static[i];
+                uint32_t finalDiff = tempValue - borrowIn;
+                result[startDigit + i] = finalDiff;
+                carryBits_static[i] = (tempValue < borrowIn) ? 1 : 0;
             }
         }
     }
@@ -533,7 +528,7 @@ __device__ void MultiplyHelperKaratsuba(
     }
 
     //// Synchronize before next convolution
-    //block.sync();
+    block.sync();
 
     //// Compute (A0 + A1) and (B0 + B1) and store in shared memory
     //for (int i = threadIdx.x; i < n; i += SharkFloatParams::ThreadsPerBlock) {
@@ -551,8 +546,8 @@ __device__ void MultiplyHelperKaratsuba(
     // ---- Compute Differences x_diff = A1 - A0 and y_diff = B1 - B0 ----
 
 // Arrays to hold the absolute differences (size n)
-    uint64_t *x_diff_abs = carryOuts_phase6;
-    uint64_t *y_diff_abs = carryOuts_phase6 + n;
+    auto *x_diff_abs = reinterpret_cast<uint32_t*>(carryOuts_phase6);
+    auto *y_diff_abs = reinterpret_cast<uint32_t *>(carryOuts_phase6) + n;
     int x_diff_sign = 0; // 0 if positive, 1 if negative
     int y_diff_sign = 0; // 0 if positive, 1 if negative
 
@@ -562,7 +557,7 @@ __device__ void MultiplyHelperKaratsuba(
     auto *subtractionCarries = reinterpret_cast<uint32_t *>(carryIns);
     auto *cumulativeCarries = subtractionCarries + SharkFloatParams::NumBlocks;
 
-    constexpr bool useParallelSubtract = true;
+    constexpr bool useParallelSubtract = false;
 
     if constexpr (useParallelSubtract) {
         int x_compare = compareDigits(A->Digits + n, A->Digits, n);
@@ -666,9 +661,8 @@ __device__ void MultiplyHelperKaratsuba(
             uint64_t product = a * b;
 
             // Accumulate the product
-            uint64_t prev_sum_low = sum_low;
             sum_low += product;
-            if (sum_low < prev_sum_low) {
+            if (sum_low < product) {
                 sum_high += 1;
             }
         }

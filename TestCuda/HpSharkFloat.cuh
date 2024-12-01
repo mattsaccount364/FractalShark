@@ -47,7 +47,7 @@ using Test128x64SharkParams = GenericSharkFloatParams<8, 2, BatchSize, TestIterC
 
 
 #ifdef _DEBUG
-using TestSharkParams = Test4x4SharkParams;
+using TestSharkParams = Test8x1SharkParams;
 #else
 using TestSharkParams = Test128x64SharkParams;
 #endif
@@ -61,9 +61,12 @@ struct HpSharkFloat {
     ~HpSharkFloat() = default;
     HpSharkFloat &operator=(const HpSharkFloat<SharkFloatParams> &) = delete;
 
+    void DeepCopySameDevice(const HpSharkFloat<SharkFloatParams> &other);
+
     std::string ToString() const;
     std::string ToHexString() const;
     void GenerateRandomNumber();
+    void Negate();
 
     // Default precision in bits
     constexpr static auto NumUint32 = SharkFloatParams::NumUint32;

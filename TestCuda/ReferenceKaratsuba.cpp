@@ -6,18 +6,6 @@
 #include <cstring> // for memset
 #include <vector>
 
-// Helper: Add two arrays (length n) of 32-bit limbs, result in Res
-// Returns carry (0 or 1)
-static uint32_t AddArrays(const uint32_t *A, const uint32_t *B, int n, uint32_t *Res) {
-    uint64_t carry = 0;
-    for (int i = 0; i < n; i++) {
-        uint64_t sum = (uint64_t)A[i] + (uint64_t)B[i] + carry;
-        Res[i] = (uint32_t)(sum & 0xFFFFFFFFULL);
-        carry = sum >> 32;
-    }
-    return (uint32_t)carry;
-}
-
 // Helper: Add arrays of potentially different lengths
 // A_len >= B_len; result length = A_len or A_len+1
 static uint32_t AddArraysDifferentLength(const uint32_t *A, int A_len, const uint32_t *B, int B_len, uint32_t *Res) {
@@ -36,23 +24,6 @@ static uint32_t AddArraysDifferentLength(const uint32_t *A, int A_len, const uin
     return (uint32_t)carry;
 }
 
-// Helper: Subtract B from A, both length n, A >= B
-// Returns borrow
-static uint32_t SubArrays(const uint32_t *A, const uint32_t *B, int n, uint32_t *Res) {
-    uint64_t borrow = 0;
-    for (int i = 0; i < n; i++) {
-        uint64_t a = A[i];
-        uint64_t b = (uint64_t)B[i] + borrow;
-        if (a < b) {
-            Res[i] = (uint32_t)((a + ((uint64_t)1 << 32)) - b);
-            borrow = 1;
-        } else {
-            Res[i] = (uint32_t)(a - b);
-            borrow = 0;
-        }
-    }
-    return (uint32_t)borrow;
-}
 
 // Helper: Naive O(N²) multiplication
 // A and B length n, result length = 2*n
@@ -89,7 +60,7 @@ void MultiplyHelperKaratsuba(
     uint64_t * /*tempProducts*/      // Unused
 ) {
     constexpr int N = SharkFloatParams::NumUint32;
-    if (N == 1) {
+    if constexpr (N == 1) {
         // Just multiply single 32-bit limbs
         uint64_t prod = (uint64_t)A->Digits[0] * (uint64_t)B->Digits[0];
         Out->Digits[0] = (uint32_t)(prod & 0xFFFFFFFFULL);
@@ -155,20 +126,13 @@ void MultiplyHelperKaratsuba(
     std::vector<uint32_t> Z1_temp(2 * max_sum_len, 0);
     NaiveMultiply(A_sum.data(), B_sum.data(), max_sum_len, Z1_temp.data());
 
-    // Z1 = Z1_temp - Z0 - Z2 shifted by half
-    // We'll construct Z1 in a vector large enough to hold shifts
-    // final result length = 2*N
-    std::vector<uint32_t> Z1(2 * N, 0);
+    // Z1 = Z1_temp
+    std::vector<uint32_t> Z1 = Z1_temp;
 
-    // Start Z1 = Z1_temp
-    for (int i = 0; i < 2 * max_sum_len; i++) {
-        Z1[i] = Z1_temp[i];
-    }
-
-    // Z1 = Z1 - Z0
+    // Z1 = Z1 - Z0 (no shift)
     {
-        int min_len = std::min((int)Z1.size(), (int)Z0.size());
         uint32_t borrow = 0;
+        int min_len = std::min((int)Z1.size(), (int)Z0.size());
         for (int i = 0; i < min_len; i++) {
             uint64_t z1_val = Z1[i];
             uint64_t z0_val = (uint64_t)Z0[i] + borrow;
@@ -180,86 +144,117 @@ void MultiplyHelperKaratsuba(
                 borrow = 0;
             }
         }
-        // Propagate borrow if needed
+        
+        // After finishing the min_len loop:
         for (int i = min_len; borrow && i < (int)Z1.size(); i++) {
             uint64_t z1_val = Z1[i];
             if (z1_val < borrow) {
                 Z1[i] = (uint32_t)((z1_val + ((uint64_t)1 << 32)) - borrow);
-                borrow = 1;
+                borrow = 1; // still have borrow because we wrapped
             } else {
                 Z1[i] = (uint32_t)(z1_val - borrow);
-                borrow = 0;
+                borrow = 0; // borrow resolved
             }
         }
-        // If borrow still 1, result negative (shouldn't happen in correct Karatsuba logic)
+
+        // If borrow is still not zero here and we have no more digits in Z1, 
+        // that would indicate Z1 went negative, which shouldn't happen in correct Karatsuba logic.
     }
 
-    // Z1 = Z1 - Z2 shifted by half
-    // Z2 should be subtracted starting at index half (since that corresponds to the "middle" portion)
+    // Z1 = Z1 - Z2 (no shift)
     {
         uint32_t borrow = 0;
-        for (int i = 0; i < (int)Z2.size(); i++) {
-            int idx = i + half;
-            uint64_t z1_val = Z1[idx];
+        int min_len = std::min((int)Z1.size(), (int)Z2.size());
+        for (int i = 0; i < min_len; i++) {
+            uint64_t z1_val = Z1[i];
             uint64_t z2_val = (uint64_t)Z2[i] + borrow;
             if (z1_val < z2_val) {
-                Z1[idx] = (uint32_t)((z1_val + ((uint64_t)1 << 32)) - z2_val);
+                Z1[i] = (uint32_t)((z1_val + ((uint64_t)1 << 32)) - z2_val);
                 borrow = 1;
             } else {
-                Z1[idx] = (uint32_t)(z1_val - z2_val);
+                Z1[i] = (uint32_t)(z1_val - z2_val);
                 borrow = 0;
             }
         }
-        for (int idx = half + (int)Z2.size(); borrow && idx < (int)Z1.size(); idx++) {
-            uint64_t z1_val = Z1[idx];
+        
+        // After finishing the min_len loop:
+        for (int i = min_len; borrow && i < (int)Z1.size(); i++) {
+            uint64_t z1_val = Z1[i];
             if (z1_val < borrow) {
-                Z1[idx] = (uint32_t)((z1_val + ((uint64_t)1 << 32)) - borrow);
-                borrow = 1;
+                Z1[i] = (uint32_t)((z1_val + ((uint64_t)1 << 32)) - borrow);
+                borrow = 1; // still have borrow because we wrapped
             } else {
-                Z1[idx] = (uint32_t)(z1_val - borrow);
-                borrow = 0;
+                Z1[i] = (uint32_t)(z1_val - borrow);
+                borrow = 0; // borrow resolved
             }
         }
+
+        // If borrow is still not zero here and we have no more digits in Z1, 
+        // that would indicate Z1 went negative, which shouldn't happen in correct Karatsuba logic.
     }
 
     // Combine:
     // Result = Z0 + (Z1 << (32*half)) + (Z2 << (32*(2*half)))
+
     // Initialize result:
     std::vector<uint32_t> product(2 * N, 0);
 
     // Add Z0
-    for (int i = 0; i < 2 * half; i++) {
-        product[i] = Z0[i];
+    {
+        int z0_len = (int)Z0.size(); // Typically 2*half
+        int copy_len = std::min(z0_len, 2 * N);
+        for (int i = 0; i < copy_len; i++) {
+            product[i] = Z0[i];
+        }
+        // If z0_len < 2*N, the rest are already zero.
     }
 
     // Add Z1 at offset half
     {
+        int z1_len = (int)Z1.size();
+        int max_i = 2 * N - half; // maximum length we can add
         uint64_t carry = 0;
-        for (int i = 0; i < 2 * N - half; i++) {
-            uint64_t sum = (uint64_t)product[i + half] + (uint64_t)Z1[i] + carry;
+        for (int i = 0; i < max_i; i++) {
+            uint64_t z1_val = (i < z1_len) ? (uint64_t)Z1[i] : 0ULL;
+            uint64_t sum = (uint64_t)product[i + half] + z1_val + carry;
             product[i + half] = (uint32_t)(sum & 0xFFFFFFFFULL);
             carry = sum >> 32;
         }
-        // If carry remains, we ignore since result length fixed at 2*N
+        // If carry remains and we have no space, it just doesn't fit (which typically shouldn't happen in correct Karatsuba)
     }
 
     // Add Z2 at offset 2*half
     {
+        int z2_len = (int)Z2.size(); // Typically 2*high_len
+        int max_i = 2 * N - 2 * half;
         uint64_t carry = 0;
-        for (int i = 0; i < 2 * high_len; i++) {
-            uint64_t sum = (uint64_t)product[i + 2 * half] + (uint64_t)Z2[i] + carry;
+        for (int i = 0; i < max_i; i++) {
+            uint64_t z2_val = (i < z2_len) ? (uint64_t)Z2[i] : 0ULL;
+            uint64_t sum = (uint64_t)product[i + 2 * half] + z2_val + carry;
             product[i + 2 * half] = (uint32_t)(sum & 0xFFFFFFFFULL);
             carry = sum >> 32;
         }
-        // If carry remains, ignore as above.
     }
 
     // Normalize result
     int highest_nonzero_index = 2 * N - 1;
-    while (highest_nonzero_index >= 0 && product[highest_nonzero_index] == 0) highest_nonzero_index--;
-    int significant_digits = highest_nonzero_index + 1;
-    if (significant_digits < 1) significant_digits = 1; // at least one digit
+    while (highest_nonzero_index >= 0 && product[highest_nonzero_index] == 0) {
+        highest_nonzero_index--;
+    }
 
+    int significant_digits = highest_nonzero_index + 1;
+    if (significant_digits < 1) {
+        // Product is zero
+        significant_digits = 1;
+        for (int i = 0; i < N; i++) {
+            Out->Digits[i] = 0;
+        }
+        Out->Exponent = A->Exponent + B->Exponent;
+        Out->IsNegative = false;
+        return;
+    }
+
+    // Determine how many digits we need to shift to keep exactly N digits
     int shift_digits = significant_digits - N;
     if (shift_digits < 0) shift_digits = 0;
 
@@ -276,3 +271,19 @@ void MultiplyHelperKaratsuba(
 
     Out->IsNegative = (A->IsNegative ^ B->IsNegative);
 }
+
+
+#define ExplicitlyInstantiate(SharkFloatParams) \
+    template void MultiplyHelperKaratsuba<SharkFloatParams>( \
+        const HpSharkFloat<SharkFloatParams> *, \
+        const HpSharkFloat<SharkFloatParams> *, \
+        HpSharkFloat<SharkFloatParams> *, \
+        uint64_t *, /*carryOuts_phase3*/ \
+        uint64_t *, /*carryOuts_phase6*/ \
+        uint64_t *, /*carryIns*/ \
+        uint64_t * /*tempProducts*/);
+
+ExplicitlyInstantiate(Test4x4SharkParams);
+ExplicitlyInstantiate(Test4x2SharkParams);
+ExplicitlyInstantiate(Test8x1SharkParams);
+ExplicitlyInstantiate(Test128x64SharkParams);

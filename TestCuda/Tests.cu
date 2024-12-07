@@ -7,6 +7,7 @@
 #include "Tests.cuh"
 #include "Add.cuh"
 #include "Multiply.cuh"
+#include "ReferenceKaratsuba.h"
 
 #include <iostream>
 #include <vector>
@@ -20,9 +21,11 @@
 
 static TestTracker Tests;
 
+// Returns false if the test fails, true otherwise
 template<class SharkFloatParams, Operator sharkOperator>
-void DiffAgainstHost(
+bool DiffAgainstHost(
     int testNum,
+    std::string hostCustomOrGpu,
     const mpf_t mpfHostResult,
     const HpSharkFloat<SharkFloatParams> &gpuResult) {
 
@@ -51,11 +54,11 @@ void DiffAgainstHost(
 
     // Converted GPU result
     if (Verbose) {
-        std::cout << "\nConverted GPU result:" << std::endl;
+        std::cout << "\nConverted " << hostCustomOrGpu << " result:" << std::endl;
         std::cout << MpfToString<SharkFloatParams>(mpfXGpuResult, HpSharkFloat<SharkFloatParams>::DefaultPrecBits) << std::endl;
 
         // Print the differences
-        std::cout << "\nDifference between host and GPU results:" << std::endl;
+        std::cout << "\nDifference between host and " << hostCustomOrGpu << " results:" << std::endl;
         std::cout << MpfToString<SharkFloatParams>(mpfDiffAbs, LowPrec) << std::endl;
     }
 
@@ -64,6 +67,8 @@ void DiffAgainstHost(
     mp_bitcnt_t margin = sizeof(uint32_t) * 8 * 2;
     mp_bitcnt_t totalPrecBits = (gpuPrecBits > margin) ? (gpuPrecBits - margin) : 1;
     mpf_t acceptableError;
+
+    bool testSucceeded = true;
 
     if (mpf_cmp_ui(mpfHostResult, 0) != 0) {
         // Host result is non-zero
@@ -98,6 +103,7 @@ void DiffAgainstHost(
             std::cerr << "\nError: The relative error exceeds acceptable bounds." << std::endl;
             std::cout << "Relative error: " << relativeErrorStr << std::endl;
             Tests.MarkFailed(testNum, relativeErrorStr, epsilonStr);
+            testSucceeded = false;
         }
 
         // Clean up
@@ -122,6 +128,7 @@ void DiffAgainstHost(
         } else {
             std::cerr << "\nError: The absolute error exceeds acceptable bounds." << std::endl;
             Tests.MarkFailed(testNum, mpfDiffAbsStr, absoluteErrorStr);
+            testSucceeded = false;
         }
 
         mpf_clear(acceptableError);
@@ -130,6 +137,8 @@ void DiffAgainstHost(
     mpf_clear(mpfDiff);
     mpf_clear(mpfDiffAbs);
     mpf_clear(mpfXGpuResult);
+
+    return testSucceeded;
 }
 
 template<class SharkFloatParams, Operator sharkOperator>
@@ -269,7 +278,16 @@ void TestAddTwoNumbersPerf(
         cudaFree(xGpu);
     }
 
-    DiffAgainstHost<SharkFloatParams, sharkOperator>(testNum, mpfHostResult, *gpuResult2);
+    bool testSucceeded = DiffAgainstHost<SharkFloatParams, sharkOperator>(
+        testNum,
+        "GPU",
+        mpfHostResult,
+        *gpuResult2);
+    if (!testSucceeded) {
+        std::cout << "Perf correctness test failed" << std::endl;
+    } else {
+        std::cout << "Perf correctness test succeeded" << std::endl;
+    }
 
     // Clean up MPIR variables
     mpf_clear(mpfHostResult);
@@ -319,6 +337,28 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
         std::cout << "Y: " << yNum.ToString() << std::endl;
         std::cout << "Y hex: " << yNum.ToHexString() << std::endl;
     }
+
+    auto TestHostKaratsuba = [&](int testNum, mpf_t mpfHostResult) -> bool {
+        HpSharkFloat<SharkFloatParams> hostKaratsubaOut;
+        MultiplyHelperKaratsuba<SharkFloatParams>(
+            &xNum,
+            &yNum,
+            &hostKaratsubaOut,
+            nullptr,
+            nullptr,
+            nullptr,
+            nullptr
+        );
+
+        std::cout << "Karatsuba result: " << hostKaratsubaOut.ToString() << std::endl;
+        std::cout << "Karatsuba hex: " << hostKaratsubaOut.ToHexString() << std::endl;
+
+        return DiffAgainstHost<SharkFloatParams, sharkOperator>(
+            testNum,
+            "CustomHighPrecision",
+            mpfHostResult,
+            hostKaratsubaOut);
+        };
 
     // Perform the calculation on the GPU
     HpSharkFloat<SharkFloatParams> *xGpu;
@@ -420,7 +460,23 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
 
         cudaFree(internalGpuResult);
 
-        DiffAgainstHost<SharkFloatParams, sharkOperator>(testNum, mpfHostResult, gpuResult);
+        bool testSucceeded = TestHostKaratsuba(testNum, mpfHostResult);
+        if (!testSucceeded) {
+            std::cout << "Custom High Precision failed" << std::endl;
+        } else {
+            std::cout << "Custom High Precision succeeded" << std::endl;
+        }
+
+        testSucceeded = DiffAgainstHost<SharkFloatParams, sharkOperator>(
+            testNum,
+            "GPU",
+            mpfHostResult,
+            gpuResult);
+        if (!testSucceeded) {
+            std::cout << "GPU High Precision failed" << std::endl;
+        } else {
+            std::cout << "GPU High Precision succeeded" << std::endl;
+        }
 
         // Clean up MPIR variables
         mpf_clear(mpfHostResult);

@@ -339,25 +339,47 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
     }
 
     auto TestHostKaratsuba = [&](int testNum, mpf_t mpfHostResult) -> bool {
-        HpSharkFloat<SharkFloatParams> hostKaratsubaOut;
-        MultiplyHelperKaratsuba<SharkFloatParams>(
+        HpSharkFloat<SharkFloatParams> hostKaratsubaOutV1;
+        MultiplyHelperKaratsubaV1<SharkFloatParams>(
             &xNum,
             &yNum,
-            &hostKaratsubaOut,
+            &hostKaratsubaOutV1,
             nullptr,
             nullptr,
             nullptr,
             nullptr
         );
 
-        std::cout << "Karatsuba result: " << hostKaratsubaOut.ToString() << std::endl;
-        std::cout << "Karatsuba hex: " << hostKaratsubaOut.ToHexString() << std::endl;
+        std::cout << "KaratsubaV1 result: " << hostKaratsubaOutV1.ToString() << std::endl;
+        std::cout << "KaratsubaV1 hex: " << hostKaratsubaOutV1.ToHexString() << std::endl;
 
-        return DiffAgainstHost<SharkFloatParams, sharkOperator>(
+        bool res = DiffAgainstHost<SharkFloatParams, sharkOperator>(
             testNum,
-            "CustomHighPrecision",
+            "CustomHighPrecisionV1",
             mpfHostResult,
-            hostKaratsubaOut);
+            hostKaratsubaOutV1);
+
+        HpSharkFloat<SharkFloatParams> hostKaratsubaOutV2;
+        MultiplyHelperKaratsubaV2<SharkFloatParams>(
+            &xNum,
+            &yNum,
+            &hostKaratsubaOutV2,
+            nullptr,
+            nullptr,
+            nullptr,
+            nullptr
+        );
+
+        std::cout << "KaratsubaV2 result: " << hostKaratsubaOutV2.ToString() << std::endl;
+        std::cout << "KaratsubaV2 hex: " << hostKaratsubaOutV2.ToHexString() << std::endl;
+
+        res &= DiffAgainstHost<SharkFloatParams, sharkOperator>(
+            testNum,
+            "CustomHighPrecisionV2",
+            mpfHostResult,
+            hostKaratsubaOutV2);
+
+        return res;
         };
 
     // Perform the calculation on the GPU

@@ -1,0 +1,87 @@
+\documentclass[12pt]{article}
+\usepackage{amsmath} % For math environments
+\usepackage{amssymb} % For additional math symbols
+\usepackage{geometry} % For setting margins
+\geometry{a4paper, margin=1in}
+
+\title{Difference-Based Karatsuba Multiplication}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section*{Introduction}
+This document describes the difference-based Karatsuba multiplication algorithm. The middle term of the Karatsuba formula is computed using differences, and the combination formula is derived based on the sign of the computed differences.
+
+\section*{Karatsuba Middle Term Using Differences}
+The Karatsuba multiplication algorithm divides two input numbers into halves:
+\[
+A = A_0 + A_1 \cdot 2^{32 \cdot \text{half}}, \quad B = B_0 + B_1 \cdot 2^{32 \cdot \text{half}}
+\]
+where \( A_0, A_1, B_0, B_1 \) represent the lower and higher halves of the input numbers.
+
+The middle term of the Karatsuba formula can be computed using differences:
+\[
+x_{\text{diff}} = A_1 - A_0, \quad y_{\text{diff}} = B_1 - B_0
+\]
+and
+\[
+Z_1' = |x_{\text{diff}}| \cdot |y_{\text{diff}}|
+\]
+
+To compute the original middle term \( Z_1 \), we combine \( Z_1' \) with \( Z_0 = A_0 \cdot B_0 \) and \( Z_2 = A_1 \cdot B_1 \), accounting for the signs of \( x_{\text{diff}} \) and \( y_{\text{diff}} \).
+
+\section*{Combination Formulas}
+The combination formula for \( Z_1 \) depends on whether \( x_{\text{diff}} \) and \( y_{\text{diff}} \) have the same sign or opposite signs.
+
+\subsection*{Case 1: Same Sign}
+If \( x_{\text{diff}} \) and \( y_{\text{diff}} \) have the same sign, then:
+\[
+Z_1 = Z_2 + Z_0 - Z_1'
+\]
+
+\subsection*{Case 2: Opposite Signs}
+If \( x_{\text{diff}} \) and \( y_{\text{diff}} \) have opposite signs, then:
+\[
+Z_1 = Z_2 + Z_0 + Z_1'
+\]
+
+\section*{Example}
+Consider the inputs:
+\[
+A = 1, \quad B = 2
+\]
+The high parts of \( A \) and \( B \) are \( A_1 = 0 \) and \( B_1 = 0 \), and the low parts are \( A_0 = 1 \) and \( B_0 = 2 \).
+
+Compute the differences:
+\[
+x_{\text{diff}} = A_1 - A_0 = 0 - 1 = -1, \quad y_{\text{diff}} = B_1 - B_0 = 0 - 2 = -2
+\]
+Both differences are negative, so the signs match. Using the formula for same-sign differences:
+\[
+Z_1 = Z_2 + Z_0 - Z_1'
+\]
+Here:
+\[
+Z_0 = A_0 \cdot B_0 = 1 \cdot 2 = 2, \quad Z_2 = 0, \quad Z_1' = |x_{\text{diff}}| \cdot |y_{\text{diff}}| = 1 \cdot 2 = 2
+\]
+Thus:
+\[
+Z_1 = 0 + 2 - 2 = 0
+\]
+
+The final result is:
+\[
+\text{Result} = Z_0 + (Z_1 \cdot 2^{32 \cdot \text{half}}) + (Z_2 \cdot 2^{64 \cdot \text{half}})
+\]
+In this case:
+\[
+\text{Result} = 2
+\]
+
+\section*{Conclusion}
+This approach has some benefits with respect to carry propagation etc.
+
+\end{document}

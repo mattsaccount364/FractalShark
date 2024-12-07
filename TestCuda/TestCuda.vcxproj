@@ -104,6 +104,7 @@
     </CudaLink>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="ReferenceKaratsuba.cpp" />
     <CudaCompile Include="HpSharkFloat.cu" />
     <CudaCompile Include="IntegrationTest.cu" />
     <CudaCompile Include="Multiply.cu" />
@@ -120,6 +121,7 @@
     <ClInclude Include="Multiply.cuh" />
     <ClInclude Include="NullKernel.cuh" />
     <ClInclude Include="Add.cuh" />
+    <ClInclude Include="ReferenceKaratsuba.h" />
     <ClInclude Include="Tests.cuh" />
     <ClInclude Include="TestTracker.h" />
   </ItemGroup>

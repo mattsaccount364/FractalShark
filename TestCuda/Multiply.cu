@@ -676,55 +676,53 @@ __device__ void MultiplyHelperKaratsuba(
     // Synchronize before combining results
     grid.sync();
 
-    // ---- Compute Z1 = Z2 - Z1_temp - Z0 ----
+    // After computing Z1_temp (Z1'), we now form Z1 directly:
+    // If z1_sign == 0: Z1 = Z2 + Z0 - Z1_temp
+    // If z1_sign == 1: Z1 = Z2 + Z0 + Z1_temp
 
-    // We need to compute Z1 = Z2 - Z1_temp - Z0 if z1_sign == 0
-    // or Z1 = Z2 + Z1_temp - Z0 if z1_sign == 1
+    grid.sync(); // Ensure all computations up to Z1_temp are done
 
     for (int k = k_start; k < k_end; ++k) {
-        // Retrieve Z2
-        int z2_idx = Z2_offset + k * 2;
-        uint64_t z2_low = tempProducts[z2_idx];
-        uint64_t z2_high = tempProducts[z2_idx + 1];
-
-        // Retrieve Z1_temp
-        int z1_temp_idx = Z1_temp_offset + k * 2;
-        uint64_t z1_temp_low = tempProducts[z1_temp_idx];
-        uint64_t z1_temp_high = tempProducts[z1_temp_idx + 1];
-
         // Retrieve Z0
         int z0_idx = Z0_offset + k * 2;
         uint64_t z0_low = tempProducts[z0_idx];
         uint64_t z0_high = tempProducts[z0_idx + 1];
 
-        uint64_t z1_low, z1_high;
+        // Retrieve Z2
+        int z2_idx = Z2_offset + k * 2;
+        uint64_t z2_low = tempProducts[z2_idx];
+        uint64_t z2_high = tempProducts[z2_idx + 1];
 
-        // Compute Z1 = Z2 - Z1_temp - Z0 (if z1_sign == 0)
-        // or Z1 = Z2 + Z1_temp - Z0 (if z1_sign == 1)
+        // Retrieve Z1_temp (Z1')
+        int z1_temp_idx = Z1_temp_offset + k * 2;
+        uint64_t z1_temp_low = tempProducts[z1_temp_idx];
+        uint64_t z1_temp_high = tempProducts[z1_temp_idx + 1];
+
+        // Combine Z2 + Z0 first
+        uint64_t temp_low, temp_high;
+        add128(z2_low, z2_high, z0_low, z0_high, temp_low, temp_high);
+
+        uint64_t z1_low, z1_high;
         if (z1_sign == 0) {
-            // Compute Z1 = Z2 - Z1_temp - Z0
-            uint64_t temp_low, temp_high;
-            subtract128(z2_low, z2_high, z1_temp_low, z1_temp_high, temp_low, temp_high);
-            subtract128(temp_low, temp_high, z0_low, z0_high, z1_low, z1_high);
+            // same sign: Z1 = (Z2 + Z0) - Z1_temp
+            subtract128(temp_low, temp_high, z1_temp_low, z1_temp_high, z1_low, z1_high);
         } else {
-            // Compute Z1 = Z2 + Z1_temp - Z0
-            uint64_t temp_low, temp_high;
-            add128(z2_low, z2_high, z1_temp_low, z1_temp_high, temp_low, temp_high);
-            subtract128(temp_low, temp_high, z0_low, z0_high, z1_low, z1_high);
+            // opposite signs: Z1 = (Z2 + Z0) + Z1_temp
+            add128(temp_low, temp_high, z1_temp_low, z1_temp_high, z1_low, z1_high);
         }
 
-        // Store z1_low and z1_high in tempProducts
+        // Store fully formed Z1
         int z1_idx = Z1_offset + k * 2;
         tempProducts[z1_idx] = z1_low;
         tempProducts[z1_idx + 1] = z1_high;
     }
 
-    // Synchronize before combining results
+    // Synchronize before final combination
     grid.sync();
 
-    // ---- Combine Z0, Z1_temp, Z2 into the final result ----
-
-    constexpr int total_result_digits = 2 * N + 1; // Adjusted for possible extra digit
+    // Now the final combination is just:
+    // final = Z0 + (Z1 << (32*n)) + (Z2 << (64*n))
+    constexpr int total_result_digits = 2 * N + 1;
     int idx_start = (threadIdxGlobal * total_result_digits) / total_threads;
     int idx_end = ((threadIdxGlobal + 1) * total_result_digits) / total_threads;
 
@@ -732,46 +730,6 @@ __device__ void MultiplyHelperKaratsuba(
         uint64_t sum_low = 0;
         uint64_t sum_high = 0;
 
-        // Add (b^2 + b) * Z2
-        // Add Z2 shifted by 2n digits
-        if (idx >= 2 * n && (idx - 2 * n) < 2 * n - 1) {
-            int z2_idx = Z2_offset + (idx - 2 * n) * 2;
-            uint64_t z2_low = tempProducts[z2_idx];
-            uint64_t z2_high = tempProducts[z2_idx + 1];
-            add128(sum_low, sum_high, z2_low, z2_high, sum_low, sum_high);
-        }
-        // Add Z2 shifted by n digits
-        if (idx >= n && (idx - n) < 2 * n - 1) {
-            int z2_idx = Z2_offset + (idx - n) * 2;
-            uint64_t z2_low = tempProducts[z2_idx];
-            uint64_t z2_high = tempProducts[z2_idx + 1];
-            add128(sum_low, sum_high, z2_low, z2_high, sum_low, sum_high);
-        }
-
-        // Subtract b * Z1_temp
-        // Subtract Z1_temp shifted by n digits
-        if (idx >= n && (idx - n) < 2 * n - 1) {
-            int z1_temp_idx = Z1_temp_offset + (idx - n) * 2;
-            uint64_t z1_temp_low = tempProducts[z1_temp_idx];
-            uint64_t z1_temp_high = tempProducts[z1_temp_idx + 1];
-
-            if (z1_sign == 0) {
-                // Positive, so subtract
-                subtract128(sum_low, sum_high, z1_temp_low, z1_temp_high, sum_low, sum_high);
-            } else {
-                // Negative, so add
-                add128(sum_low, sum_high, z1_temp_low, z1_temp_high, sum_low, sum_high);
-            }
-        }
-
-        // Add (b + 1) * Z0
-        // Add Z0 shifted by n digits
-        if (idx >= n && (idx - n) < 2 * n - 1) {
-            int z0_idx = Z0_offset + (idx - n) * 2;
-            uint64_t z0_low = tempProducts[z0_idx];
-            uint64_t z0_high = tempProducts[z0_idx + 1];
-            add128(sum_low, sum_high, z0_low, z0_high, sum_low, sum_high);
-        }
         // Add Z0
         if (idx < 2 * n - 1) {
             int z0_idx = Z0_offset + idx * 2;
@@ -780,7 +738,22 @@ __device__ void MultiplyHelperKaratsuba(
             add128(sum_low, sum_high, z0_low, z0_high, sum_low, sum_high);
         }
 
-        // Store sum_low and sum_high in tempProducts
+        // Add Z1 shifted by n
+        if (idx >= n && (idx - n) < 2 * n - 1) {
+            int z1_idx = Z1_offset + (idx - n) * 2;
+            uint64_t z1_low = tempProducts[z1_idx];
+            uint64_t z1_high = tempProducts[z1_idx + 1];
+            add128(sum_low, sum_high, z1_low, z1_high, sum_low, sum_high);
+        }
+
+        // Add Z2 shifted by 2*n
+        if (idx >= 2 * n && (idx - 2 * n) < 2 * n - 1) {
+            int z2_idx = Z2_offset + (idx - 2 * n) * 2;
+            uint64_t z2_low = tempProducts[z2_idx];
+            uint64_t z2_high = tempProducts[z2_idx + 1];
+            add128(sum_low, sum_high, z2_low, z2_high, sum_low, sum_high);
+        }
+
         int result_idx = Convolution_offset + idx * 2;
         tempProducts[result_idx] = sum_low;
         tempProducts[result_idx + 1] = sum_high;

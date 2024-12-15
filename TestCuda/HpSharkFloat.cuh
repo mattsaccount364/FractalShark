@@ -3,6 +3,7 @@
 #include <cuda_runtime.h>
 #include <string>
 #include <gmp.h>
+#include <vector>
 
 template<
     int32_t pThreadsPerBlock,
@@ -21,6 +22,7 @@ struct GenericSharkFloatParams {
     // to confirm source of performance issues.
     constexpr static bool DisableCarryPropagation = false;
     constexpr static bool DisableFinalConstruction = false;
+    constexpr static bool HostVerbose = true;
 };
 
 static constexpr int32_t LowPrec = 32;
@@ -102,3 +104,15 @@ void HpGpuToMpf (const HpSharkFloat<SharkFloatParams> &hpNum, mpf_t &mpf_val);
 
 template<class SharkFloatParams>
 std::string Uint32ToMpf (const uint32_t *array, int32_t pow64Exponent, mpf_t &mpf_val);
+
+std::string
+UintArrayToHexString (const uint32_t *array, size_t numElements);
+
+std::string
+UintArrayToHexString(const uint64_t *array, size_t numElements);
+
+std::string
+VectorUintToHexString (const std::vector<uint32_t> &arr);
+
+std::string
+VectorUintToHexString(const std::vector<uint64_t> &arr);

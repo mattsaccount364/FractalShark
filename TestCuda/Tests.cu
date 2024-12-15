@@ -30,7 +30,7 @@ bool DiffAgainstHost(
     const HpSharkFloat<SharkFloatParams> &gpuResult) {
 
     if (Verbose) {
-        std::cout << "\nGPU result: " << std::endl;
+        std::cout << "\n" << hostCustomOrGpu << " result: " << std::endl;
         std::cout << gpuResult.ToString() << std::endl;
         std::cout << gpuResult.ToHexString() << std::endl;
     }

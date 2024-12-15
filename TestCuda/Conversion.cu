@@ -19,7 +19,7 @@ template<class SharkFloatParams>
 void TestConvertNumber (
     bool Verbose,
     int testNum,
-    const char*numberStr) {
+    const char *numberStr) {
 
     mpf_set_default_prec(HpSharkFloat<SharkFloatParams>::DefaultMpirBits);  // Set precision for MPIR floating point
 

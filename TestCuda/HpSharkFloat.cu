@@ -107,7 +107,7 @@ std::string MpfToHexString(const mpf_t mpf_val) {
 }
 
 std::string
-Uint32ArrayToHexString(const uint32_t *array, size_t numElements) {
+UintArrayToHexString(const uint32_t *array, size_t numElements) {
     std::string result;
 
     // Convert each 4-byte integer to hex and append to result
@@ -118,6 +118,30 @@ Uint32ArrayToHexString(const uint32_t *array, size_t numElements) {
     }
 
     return result;
+}
+
+std::string
+UintArrayToHexString(const uint64_t *array, size_t numElements) {
+    std::string result;
+
+    // Convert each 8-byte integer to hex and append to result
+    for (size_t i = 0; i < numElements; ++i) {
+        char buffer[32];
+        snprintf(buffer, sizeof(buffer), "%016llX ", array[i]);
+        result += buffer;
+    }
+
+    return result;
+}
+
+std::string
+VectorUintToHexString(const std::vector<uint32_t> &arr) {
+    return UintArrayToHexString(arr.data(), arr.size());
+}
+
+std::string
+VectorUintToHexString(const std::vector<uint64_t> &arr) {
+    return UintArrayToHexString(arr.data(), arr.size());
 }
 
 template<class SharkFloatParams>

@@ -110,7 +110,8 @@
     <CudaCompile Include="HpSharkFloat.cu" />
     <CudaCompile Include="IntegrationTest.cu" />
     <CudaCompile Include="Multiply.cu" />
-    <CudaCompile Include="MultiplyWIP.cu" />
+    <CudaCompile Include="MultiplyKaratsubaV1.cu" />
+    <CudaCompile Include="MultiplyN2.cu" />
     <CudaCompile Include="NullKernel.cu" />
     <CudaCompile Include="Add.cu" />
     <ClCompile Include="MainTestCuda.cpp" />

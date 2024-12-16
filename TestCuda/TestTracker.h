@@ -4,13 +4,15 @@
 #include <vector>
 #include <string>
 #include <gmp.h>
+#include <map>
 
 class TestTracker {
 public:
+
     struct PerTest {
         PerTest();
 
-        bool Failed;
+        std::map<std::string, bool> DescToFailure;
         uint64_t TestMs;
         std::string RelativeError;
         std::string AcceptableError;
@@ -22,9 +24,14 @@ public:
 
     bool CheckAllTestsPassed() const;
     void AddTime(size_t testIndex, uint64_t ms);
-    void MarkFailed(size_t testIndex);
+
+    void MarkSuccess(
+        size_t testIndex,
+        const std::string &description);
+
     void MarkFailed(
         size_t testIndex,
+        const std::string &description,
         const std::string &relativeError,
         const std::string &acceptableError);
 

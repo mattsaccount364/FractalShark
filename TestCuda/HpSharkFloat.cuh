@@ -105,14 +105,18 @@ void HpGpuToMpf (const HpSharkFloat<SharkFloatParams> &hpNum, mpf_t &mpf_val);
 template<class SharkFloatParams>
 std::string Uint32ToMpf (const uint32_t *array, int32_t pow64Exponent, mpf_t &mpf_val);
 
+template<class IntT>
 std::string
-UintArrayToHexString (const uint32_t *array, size_t numElements);
+UintArrayToHexString(const IntT *array, size_t numElements);
 
+template<class IntT>
 std::string
-UintArrayToHexString(const uint64_t *array, size_t numElements);
+UintToHexString(IntT val);
 
+template<class IntT>
 std::string
-VectorUintToHexString (const std::vector<uint32_t> &arr);
+VectorUintToHexString (const std::vector<IntT> &arr);
 
+template<class IntT>
 std::string
-VectorUintToHexString(const std::vector<uint64_t> &arr);
+VectorUintToHexString(const std::vector<IntT> &arr);

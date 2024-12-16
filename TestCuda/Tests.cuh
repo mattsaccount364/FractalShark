@@ -1,7 +1,9 @@
 #pragma once
 enum class Operator {
     Add,
-    Multiply
+    MultiplyN2,
+    MultiplyKaratsubaV1,
+    MultiplyKaratsubaV2,
 };
 
 // Structure to hold carry information for each block

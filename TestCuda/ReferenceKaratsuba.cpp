@@ -1,4 +1,4 @@
-#include "ReferenceKaratsuba.h"
+ï»¿#include "ReferenceKaratsuba.h"
 #include "HpSharkFloat.cuh"
 
 #include <cstdint>
@@ -6,6 +6,7 @@
 #include <cstring> // for memset
 #include <vector>
 #include <iostream>
+#include <assert.h>
 
 // Helper: Add arrays of potentially different lengths
 // A_len >= B_len; result length = A_len or A_len+1
@@ -26,7 +27,7 @@ static uint32_t AddArraysDifferentLengthV1(const uint32_t *A, int A_len, const u
 }
 
 
-// Helper: Naive O(N²) multiplication
+// Helper: Naive O(NÂ²) multiplication
 // A and B length n, result length = 2*n
 static void NaiveMultiplyV1(const uint32_t *A, const uint32_t *B, int n, uint32_t *Res) {
     for (int i = 0; i < 2 * n; i++) {
@@ -274,18 +275,40 @@ void MultiplyHelperKaratsubaV1(
 }
 
 
+static void add128(
+    uint64_t a_low, uint64_t a_high,
+    uint64_t b_low, uint64_t b_high,
+    uint64_t &res_low, uint64_t &res_high) {
+    // 1) Add the low parts
+    uint64_t tmp_low = a_low + b_low;
+    // Check if an overflow carry occurred
+    uint64_t carry = (tmp_low < a_low) ? 1ULL : 0ULL;
+
+    // 2) Add the high parts + carry
+    uint64_t tmp_high = a_high + b_high + carry;
+
+    // Return
+    res_low = tmp_low;
+    res_high = tmp_high;
+}
+
 static void NativeMultiply64(const uint32_t *A, const uint32_t *B, int n, uint64_t *Res) {
-    // Number of partial sums
+    // Number of partial sums = (2*n - 1).
+    // Each partial sum is stored as two 64-bit words in Res.
     int total_k = 2 * n - 1;
-    // Initialize
-    for (int k = 0; k < total_k * 2; k++) {
-        Res[k] = 0ULL;
+
+    // Initialize Res to zero
+    for (int i = 0; i < total_k * 2; i++) {
+        Res[i] = 0ULL;
     }
 
+    // For each partial sum index k
     for (int k = 0; k < total_k; k++) {
-        uint64_t sum_low = 0ULL;
-        uint64_t sum_high = 0ULL;
+        // We'll keep a full 128-bit partial sum in sum_128_{low,high}.
+        uint64_t sum_128_low = 0ULL;
+        uint64_t sum_128_high = 0ULL;
 
+        // Determine which A[i] and B[k - i] to multiply
         int i_start = (k < n) ? 0 : (k - (n - 1));
         int i_end = (k < n) ? k : (n - 1);
 
@@ -293,17 +316,38 @@ static void NativeMultiply64(const uint32_t *A, const uint32_t *B, int n, uint64
             uint64_t a = A[i];
             uint64_t b = B[k - i];
 
+            // 64-bit product
             uint64_t product = a * b;
 
-            uint64_t old_sum_low = sum_low;
-            sum_low += product;
-            if (sum_low < old_sum_low) {
-                sum_high += 1ULL;
-            }
+            // Add product to the 128-bit accumulator
+            // sum_128 = sum_128 + product (treating product as 64-bit low, 0 high)
+            uint64_t res_low, res_high;
+            add128(sum_128_low, sum_128_high, product, 0ULL, res_low, res_high);
+
+            sum_128_low = res_low;
+            sum_128_high = res_high;
         }
 
+        uint64_t sum_low = sum_128_low;
+        uint64_t sum_high = sum_128_high;
+
+        // Store in Res
+        // - Res[k*2]   gets the "low 64 bits" slot, but effectively only the low 32 bits are meaningful.
+        // - Res[k*2+1] gets the upper portion, which can be up to 64 bits.
         Res[k * 2] = sum_low;
         Res[k * 2 + 1] = sum_high;
+
+        //// Now split sum_128 into:
+        ////   sum_low  = lower 32 bits
+        ////   sum_high = remaining bits (up to 96 bits if sum_128_high can hold up to 64 bits + 32 extra from sum_128_low)
+        //uint64_t sum_low = (sum_128_low & 0xFFFFFFFFULL);   // 32-bit portion
+        //uint64_t sum_high = (sum_128_low >> 32) + (sum_128_high << 32); // everything else
+
+        //// Store in Res
+        //// - Res[k*2]   gets the "low 64 bits" slot, but effectively only the low 32 bits are meaningful.
+        //// - Res[k*2+1] gets the upper portion, which can be up to 64 bits.
+        //Res[k * 2] = sum_low;
+        //Res[k * 2 + 1] = sum_high;
     }
 }
 
@@ -359,13 +403,13 @@ void MultiplyHelperKaratsubaV2(
     const uint32_t *B_low = B->Digits;
     const uint32_t *B_high = B->Digits + half;
 
-    auto CompareArrays = [&](const uint32_t *A_, const uint32_t *B_, int length) {
+    auto CompareArrays = [&](const uint32_t *highArray, const uint32_t *lowArray, int length) {
         // Compare from the most significant limb downward
         int result = 0;
 
         for (int i = length - 1; i >= 0; i--) {
-            uint64_t a_val = A_[i];
-            uint64_t b_val = B_[i];
+            uint64_t a_val = highArray[i];
+            uint64_t b_val = lowArray[i];
             if (a_val > b_val) {
                 result = 1;
                 break;
@@ -398,7 +442,7 @@ void MultiplyHelperKaratsubaV2(
             }
             Res[i] = (uint32_t)diff;
         }
-        // Assuming A_ >= B_, no final borrow remains.
+        // Assuming highArray >= lowArray, no final borrow remains.
 
         if constexpr (SharkFloatParams::HostVerbose) {
             std::cout << "SubtractArrays: Result: " << UintArrayToHexString(Res, length) << std::endl;
@@ -478,6 +522,7 @@ void MultiplyHelperKaratsubaV2(
             // Subtract low parts
             result_low = a_low - b_low;
             borrow = (a_low < b_low) ? 1 : 0;
+            //result_low += (borrow << 32);
 
             // Subtract high parts with borrow
             result_high = a_high - b_high - borrow;
@@ -486,11 +531,11 @@ void MultiplyHelperKaratsubaV2(
     int z1_sign = (x_diff_neg ^ y_diff_neg) ? 1 : 0;
     int total_k_full = 2 * n - 1;
 
-    // Compute Z1=(Z2+Z0)±Z1_temp
+    // Compute Z1=(Z2+Z0)Â±Z1_temp
     // First Z2+Z0
     std::vector<uint64_t> Z1(2 * total_k_full, 0ULL);
 
-    // For each "digit" k, we compute Z1[k] = (Z2[k] + Z0[k]) ± Z1_temp[k]
+    // For each "digit" k, we compute Z1[k] = (Z2[k] + Z0[k]) Â± Z1_temp[k]
     // Each "digit" is two 64-bit values: low and high
     for (int k = 0; k < total_k_full; ++k) {
         int idx_low = k * 2;
@@ -507,36 +552,93 @@ void MultiplyHelperKaratsubaV2(
         uint64_t temp_low, temp_high;
         add128(z2_low, z2_high, z0_low, z0_high, temp_low, temp_high);
 
-        // Compute Z1 = (Z2+Z0) ± Z1_temp
+        // Compute Z1 = (Z2+Z0) Â± Z1_temp
         uint64_t z1_low, z1_high;
         if (z1_sign == 0) {
             // Z1 = (Z2 + Z0) - Z1_temp
             subtract128(temp_low, temp_high, z1t_low, z1t_high, z1_low, z1_high);
+
+            //uint64_t neg_z1t_low = ~z1t_low;
+            //uint64_t neg_z1t_high = ~z1t_high;
+            //uint64_t neg_z1t_low_plus1 = neg_z1t_low + 1;
+            //uint64_t neg_z1t_high_plus_carry = neg_z1t_high + (neg_z1t_low_plus1 == 0);
+            //add128(temp_low, temp_high, neg_z1t_low_plus1, neg_z1t_high_plus_carry, z1_low, z1_high);
         } else {
             // Z1 = (Z2 + Z0) + Z1_temp
             add128(temp_low, temp_high, z1t_low, z1t_high, z1_low, z1_high);
+        }
+
+        if constexpr (SharkFloatParams::HostVerbose) {
+            std::string addOrSubtract = (z1_sign == 0) ? "subtract" : "add";
+
+            // Convert temp_low to hex string:
+            std::string temp_low_hex = UintToHexString(temp_low);
+
+            std::cout << addOrSubtract <<
+                " temp_low: " << UintToHexString(temp_low) <<
+                ", temp_high: " << UintToHexString(temp_high) <<
+                ", z1t_low: " << UintToHexString(z1t_low) <<
+                ", z1t_high: " << UintToHexString(z1t_high) <<
+                ", z1_low: " << UintToHexString(z1_low) <<
+                ", z1_high : " << UintToHexString(z1_high) <<
+                std::endl;
         }
 
         Z1[idx_low] = z1_low;
         Z1[idx_high] = z1_high;
     }
 
-    // Now Z1 matches the per-digit computation that CUDA performs.
-    // The subsequent steps (carry propagation, final combination) should produce identical results to CUDA.
-
-
     if constexpr (SharkFloatParams::HostVerbose) {
         std::cout << "Z1: " << VectorUintToHexString(Z1) << std::endl;
     }
 
+    //{
+    //    uint64_t carry = 0LL;
+    //    bool propagate_last = false;
+
+    //    for (int idx = 0; idx < total_k_full; ++idx) {
+    //        int idx_low = idx * 2;
+    //        int idx_high = idx_low + 1;
+
+    //        uint64_t sum_low = Z1[idx_low];
+    //        uint64_t sum_high = Z1[idx_high];
+
+    //        // Add sum_low and carry from previous iteration
+    //        uint64_t new_sum_low = sum_low + carry;
+
+    //        carry = 0;
+    //        if (propagate_last) {
+    //            if (new_sum_low < sum_low) {
+    //                carry = 1ULL;
+    //            }
+    //        }
+
+    //        carry += (sum_high << 32);
+    //        if (carry & 0x8000'0000'0000'0000) {
+    //            propagate_last = false;
+    //        } else {
+    //            propagate_last = true;
+    //        }
+
+    //        // Store the result
+    //        Z1[idx_low] = new_sum_low;
+    //        Z1[idx_high] = 0;
+    //    }
+
+    //    if constexpr (SharkFloatParams::HostVerbose) {
+    //        std::cout << "Z1 post: " << VectorUintToHexString(Z1) << std::endl;
+    //    }
+    //}
+
+    // Now Z1 matches the per-digit computation that CUDA performs.
+    // The subsequent steps (carry propagation, final combination) should produce identical results to CUDA.
+
     // final=Z0+(Z1<<(32*n))+(Z2<<(64*n))
     // N even means (32*n) bits = n/2 64-bit words
     // (64*n) bits = n 64-bit words
-    int z1_shift = (n / 2); // shift in 64-bit words
-    int z2_shift = n;
 
     constexpr int total_result_digits = 2 * N + 1;
-    std::vector<uint64_t> final128(total_result_digits * 2, 0ULL);
+    std::vector<int64_t> final128(total_result_digits * 2, 0ULL);
 
     for (int idx = 0; idx < total_result_digits; ++idx) {
         uint64_t sum_low = 0ULL;
@@ -547,7 +649,18 @@ void MultiplyHelperKaratsubaV2(
             int z0_idx = idx * 2;
             uint64_t z0_low = Z0[z0_idx];
             uint64_t z0_high = Z0[z0_idx + 1];
+
+            if constexpr (SharkFloatParams::HostVerbose) {
+                std::cout << "A iteration: " << idx << std::endl;
+                std::cout << "sum_low: " << UintToHexString(sum_low) << ", sum_high: " << UintToHexString(sum_high) << std::endl;
+            }
+
             add128(sum_low, sum_high, z0_low, z0_high, sum_low, sum_high);
+
+            if constexpr (SharkFloatParams::HostVerbose) {
+                std::cout << "sum_low: " << UintToHexString(sum_low) << ", sum_high: " << UintToHexString(sum_high) << std::endl;
+                std::cout << "z0_low: " << UintToHexString(z0_low) << ", z0_high: " << UintToHexString(z0_high) << std::endl;
+            }
         }
 
         // Add Z1 << (32*n)
@@ -556,7 +669,18 @@ void MultiplyHelperKaratsubaV2(
             int z1_idx = (idx - n) * 2;
             uint64_t z1_low = Z1[z1_idx];
             uint64_t z1_high = Z1[z1_idx + 1];
+
+            if constexpr (SharkFloatParams::HostVerbose) {
+                std::cout << "B iteration: " << idx << std::endl;
+                std::cout << "sum_low: " << UintToHexString(sum_low) << ", sum_high: " << UintToHexString(sum_high) << std::endl;
+            }
+
             add128(sum_low, sum_high, z1_low, z1_high, sum_low, sum_high);
+
+            if constexpr (SharkFloatParams::HostVerbose) {
+                std::cout << "sum_low: " << UintToHexString(sum_low) << ", sum_high: " << UintToHexString(sum_high) << std::endl;
+                std::cout << "z1_low: " << UintToHexString(z1_low) << ", z1_high: " << UintToHexString(z1_high) << std::endl;
+            }
         }
 
         // Add Z2 << (64*n)
@@ -565,7 +689,18 @@ void MultiplyHelperKaratsubaV2(
             int z2_idx = (idx - 2 * n) * 2;
             uint64_t z2_low = Z2[z2_idx];
             uint64_t z2_high = Z2[z2_idx + 1];
+
+            if constexpr (SharkFloatParams::HostVerbose) {
+                std::cout << "C iteration: " << idx << std::endl;
+                std::cout << "sum_low: " << UintToHexString(sum_low) << ", sum_high: " << UintToHexString(sum_high) << std::endl;
+            }
+
             add128(sum_low, sum_high, z2_low, z2_high, sum_low, sum_high);
+
+            if constexpr (SharkFloatParams::HostVerbose) {
+                std::cout << "sum_low: " << UintToHexString(sum_low) << ", sum_high: " << UintToHexString(sum_high) << std::endl;
+                std::cout << "z2_low: " << UintToHexString(z2_low) << ", z2_high: " << UintToHexString(z2_high) << std::endl;
+            }
         }
 
         final128[idx * 2] = sum_low;
@@ -588,32 +723,35 @@ void MultiplyHelperKaratsubaV2(
         uint64_t sum_low = final128[idx * 2];
         uint64_t sum_high = final128[idx * 2 + 1];
 
-        // This matches the CUDA logic:
-        // new_sum_low = sum_low + local_carry
+        // Add local carry to sum_low
+        bool new_sum_low_negative = false;
         uint64_t new_sum_low = sum_low + local_carry;
-        uint64_t carry_from_low = (new_sum_low < sum_low) ? 1ULL : 0ULL;
 
-        // new_sum_high = (sum_high << 32) + carry_from_low
-        // sum_high shifted by 32 bits means sum_high * 2^32
-        uint64_t new_sum_high = (sum_high << 32) + carry_from_low;
-
-        // Extract one 32-bit digit
-        uint32_t digit = (uint32_t)(new_sum_low & 0xFFFFFFFFULL);
+        // Extract one 32-bit digit from new_sum_low
+        auto digit = static_cast<uint32_t>(new_sum_low & 0xFFFFFFFFULL);
         tempDigits.push_back(digit);
 
-        // Compute new local_carry:
-        // local_carry = (new_sum_low >> 32) + new_sum_high
-        uint64_t upper_new_sum_low = new_sum_low >> 32;
-        local_carry = new_sum_high + upper_new_sum_low;
-    }
+        bool local_carry_negative = ((local_carry & (1ULL << 63)) != 0);
+        local_carry = 0ULL;
 
-    // If local_carry remains, extract its digits
-    while (local_carry > 0ULL) {
-        uint32_t digit = (uint32_t)(local_carry & 0xFFFFFFFFULL);
-        tempDigits.push_back(digit);
-        local_carry >>= 32;
-    }
+        if (!local_carry_negative && new_sum_low < sum_low) {
+            local_carry = 1ULL << 32;
+        } else if (local_carry_negative && new_sum_low > sum_low) {
+            new_sum_low_negative = (new_sum_low & 0x8000'0000'0000'0000) != 0;
+        }
 
+        // Update local_carry
+        if (new_sum_low_negative) {
+            // Shift sum_high by 32 bits and add carry_from_low
+            uint64_t upper_new_sum_low = new_sum_low >> 32;
+            upper_new_sum_low |= 0xFFFF'FFFF'0000'0000;
+            local_carry += upper_new_sum_low;
+            local_carry += sum_high << 32;
+        } else {
+            local_carry += new_sum_low >> 32;
+            local_carry += sum_high << 32;
+        }
+    }
 
     // Now we have a sequence of 32-bit digits in tempDigits exactly as the CUDA code would produce.
     // The next step is to normalize, find highest_nonzero_index, and adjust exponent and shift_digits
@@ -652,9 +790,10 @@ void MultiplyHelperKaratsubaV2(
     int shift_digits = significant_digits - N;
 
     // Match CUDA behavior: If we have fewer than N significant digits, do not shift negatively
-    //if (shift_digits < 0) {
-    //    shift_digits = 0;
-    //}
+    if (shift_digits < 0) {
+        shift_digits = 0;
+        //assert(false);
+    }
 
     if constexpr (SharkFloatParams::HostVerbose) {
         std::cout << "Shift digits: " << shift_digits << std::endl;

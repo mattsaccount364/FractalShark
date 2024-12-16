@@ -49,6 +49,7 @@ char PressKey() {
 int main(int /*argc*/, char * /*argv*/[]) {
     int testBase = 0;
     bool res = false;
+    constexpr auto MultiplyOperator = Operator::MultiplyKaratsubaV2;
 
     if constexpr (!SkipCorrectnessTests) {
         //TestNullKernel();
@@ -63,7 +64,7 @@ int main(int /*argc*/, char * /*argv*/[]) {
         }
 
         testBase = 2000;
-        res = TestAllBinaryOp<TestSharkParams, Operator::Multiply>(testBase);
+        res = TestAllBinaryOp<TestSharkParams, MultiplyOperator>(testBase);
         if (!res) {
             auto q = PressKey();
             if (q == 'q') {
@@ -91,7 +92,7 @@ int main(int /*argc*/, char * /*argv*/[]) {
     //}
 
     testBase = 7000;
-    res = TestBinaryOperatorPerf<TestSharkParams, Operator::Multiply>(testBase);
+    res = TestBinaryOperatorPerf<TestSharkParams, MultiplyOperator>(testBase);
     if (!res) {
         auto q = PressKey();
         if (q == 'q') {
@@ -120,7 +121,7 @@ int main(int /*argc*/, char * /*argv*/[]) {
         }
 
         testBase = 2000;
-        res = TestAllBinaryOp<TestSharkParams, Operator::Multiply>(testBase);
+        res = TestAllBinaryOp<TestSharkParams, MultiplyOperator>(testBase);
         if (!res) {
             q = PressKey();
             if (q == 'q') {

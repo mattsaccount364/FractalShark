@@ -364,6 +364,66 @@ __device__ static void CarryPropagation (
         }
 
         // Store the final local_carry of each thread into shared memory
+
+/*
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+This looks broken - we store a local_carry in shared_carries
+but then might terminate the loop before propagating these shared_carries.
+This means that we lose some of these internal carries, which is incorrect.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+*/
         shared_carries[threadIdx.x] = local_carry;
         block.sync();
 
@@ -416,7 +476,7 @@ __device__ static void CarryPropagation (
 // Assuming that SharkFloatParams::NumUint32 can be large and doesn't fit in shared memory
 // We'll use the provided global memory buffers for large intermediates
 template<class SharkFloatParams>
-__device__ void MultiplyHelperKaratsuba(
+__device__ void MultiplyHelperKaratsubaV2(
     const HpSharkFloat<SharkFloatParams> *__restrict__ A,
     const HpSharkFloat<SharkFloatParams> *__restrict__ B,
     HpSharkFloat<SharkFloatParams> *__restrict__ Out,
@@ -909,7 +969,7 @@ __device__ void MultiplyHelperKaratsuba(
 }
 
 template<class SharkFloatParams>
-__global__ void MultiplyKernelKaratsuba(
+__global__ void MultiplyKernelKaratsubaV2(
     const HpSharkFloat<SharkFloatParams> *A,
     const HpSharkFloat<SharkFloatParams> *B,
     HpSharkFloat<SharkFloatParams> *Out,
@@ -923,11 +983,11 @@ __global__ void MultiplyKernelKaratsuba(
 
     // Call the MultiplyHelper function
     //MultiplyHelper(A, B, Out, carryOuts_phase3, carryOuts_phase6, carryIns, grid, tempProducts);
-    MultiplyHelperKaratsuba(A, B, Out, carryOuts_phase3, carryOuts_phase6, carryIns, grid, tempProducts);
+    MultiplyHelperKaratsubaV2(A, B, Out, carryOuts_phase3, carryOuts_phase6, carryIns, grid, tempProducts);
 }
 
 template<class SharkFloatParams>
-__global__ void MultiplyKernelKaratsubaTestLoop(
+__global__ void MultiplyKernelKaratsubaV2TestLoop(
     HpSharkFloat<SharkFloatParams> *A,
     HpSharkFloat<SharkFloatParams> *B,
     HpSharkFloat<SharkFloatParams> *Out,
@@ -941,15 +1001,15 @@ __global__ void MultiplyKernelKaratsubaTestLoop(
 
     for (int i = 0; i < TestIterCount; ++i) {
         // MultiplyHelper(A, B, Out, carryOuts_phase3, carryOuts_phase6, carryIns, grid, tempProducts);
-        MultiplyHelperKaratsuba(A, B, Out, carryOuts_phase3, carryOuts_phase6, carryIns, grid, tempProducts);
+        MultiplyHelperKaratsubaV2(A, B, Out, carryOuts_phase3, carryOuts_phase6, carryIns, grid, tempProducts);
     }
 }
 
 template<class SharkFloatParams>
-void ComputeMultiplyGpu(void *kernelArgs[]) {
+void ComputeMultiplyKaratsubaV2Gpu(void *kernelArgs[]) {
 
     cudaError_t err = cudaLaunchCooperativeKernel(
-        (void *)MultiplyKernelKaratsuba<SharkFloatParams>,
+        (void *)MultiplyKernelKaratsubaV2<SharkFloatParams>,
         dim3(SharkFloatParams::NumBlocks),
         dim3(SharkFloatParams::ThreadsPerBlock),
         kernelArgs,
@@ -960,15 +1020,15 @@ void ComputeMultiplyGpu(void *kernelArgs[]) {
     cudaDeviceSynchronize();
 
     if (err != cudaSuccess) {
-        std::cerr << "CUDA error in MultiplyKernelKaratsuba: " << cudaGetErrorString(err) << std::endl;
+        std::cerr << "CUDA error in MultiplyKernelKaratsubaV2: " << cudaGetErrorString(err) << std::endl;
     }
 }
 
 template<class SharkFloatParams>
-void ComputeMultiplyGpuTestLoop(void *kernelArgs[]) {
+void ComputeMultiplyKaratsubaV2GpuTestLoop(void *kernelArgs[]) {
 
     cudaError_t err = cudaLaunchCooperativeKernel(
-        (void *)MultiplyKernelKaratsubaTestLoop<SharkFloatParams>,
+        (void *)MultiplyKernelKaratsubaV2TestLoop<SharkFloatParams>,
         dim3(SharkFloatParams::NumBlocks),
         dim3(SharkFloatParams::ThreadsPerBlock),
         kernelArgs,
@@ -984,8 +1044,8 @@ void ComputeMultiplyGpuTestLoop(void *kernelArgs[]) {
 }
 
 #define ExplicitlyInstantiate(SharkFloatParams) \
-    template void ComputeMultiplyGpu<SharkFloatParams>(void *kernelArgs[]); \
-    template void ComputeMultiplyGpuTestLoop<SharkFloatParams>(void *kernelArgs[]);
+    template void ComputeMultiplyKaratsubaV2Gpu<SharkFloatParams>(void *kernelArgs[]); \
+    template void ComputeMultiplyKaratsubaV2GpuTestLoop<SharkFloatParams>(void *kernelArgs[]);
 
 ExplicitlyInstantiate(Test4x4SharkParams);
 ExplicitlyInstantiate(Test4x2SharkParams);

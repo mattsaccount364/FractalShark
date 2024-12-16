@@ -69,6 +69,8 @@ void TestConvertNumber (
     mpf_init(mpf_diff_abs);
     mpf_abs(mpf_diff_abs, mpf_diff);
 
+    auto diffStr = MpfToString<SharkFloatParams>(mpf_diff_abs, HpSharkFloat<SharkFloatParams>::DefaultPrecBits);
+
     // Converted GPU result
     if (Verbose) {
         std::cout << "\nConverted GPU result:" << std::endl;
@@ -77,12 +79,14 @@ void TestConvertNumber (
 
         // Print the differences
         std::cout << "\nDifference between host and GPU results:" << std::endl;
-        std::cout << MpfToString<SharkFloatParams>(mpf_diff_abs, HpSharkFloat<SharkFloatParams>::DefaultPrecBits) << std::endl;
+        std::cout << diffStr << std::endl;
     }
 
     // If absolute delta is greater than 1e-300, the test is considered failed
     if (mpf_cmp_d(mpf_diff_abs, 1e-30) > 0) {
-        Tests.MarkFailed(testNum);
+        Tests.MarkFailed(testNum, "conversion", diffStr, "1e-30");
+    } else {
+        Tests.MarkSuccess(testNum, "conversion");
     }
 
     // Clean up MPIR variables

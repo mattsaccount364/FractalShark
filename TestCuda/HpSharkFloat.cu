@@ -106,43 +106,66 @@ std::string MpfToHexString(const mpf_t mpf_val) {
     return result;
 }
 
+template<class IntT>
 std::string
-UintArrayToHexString(const uint32_t *array, size_t numElements) {
+UintArrayToHexString(const IntT *array, size_t numElements) {
+
     std::string result;
 
     // Convert each 4-byte integer to hex and append to result
     for (size_t i = 0; i < numElements; ++i) {
         char buffer[32];
-        snprintf(buffer, sizeof(buffer), "%08X ", array[i]);
+
+        if constexpr (sizeof(IntT) == 4) {
+            snprintf(buffer, sizeof(buffer), "%08X ", static_cast<uint32_t>(array[i]));
+        } else if constexpr (sizeof(IntT) == 8) {
+            snprintf(buffer, sizeof(buffer), "%016llX ", static_cast<uint64_t>(array[i]));
+        } else {
+            static_assert(false, "Unsupported size");
+        }
+
         result += buffer;
     }
 
     return result;
 }
 
+template<class IntT>
 std::string
-UintArrayToHexString(const uint64_t *array, size_t numElements) {
-    std::string result;
+UintToHexString(IntT val) {
 
-    // Convert each 8-byte integer to hex and append to result
-    for (size_t i = 0; i < numElements; ++i) {
-        char buffer[32];
-        snprintf(buffer, sizeof(buffer), "%016llX ", array[i]);
-        result += buffer;
+    char buffer[32];
+
+    if constexpr (sizeof(IntT) == 4) {
+        snprintf(buffer, sizeof(buffer), "%08X", static_cast<uint32_t>(val));
+    } else if constexpr (sizeof(IntT) == 8) {
+        snprintf(buffer, sizeof(buffer), "%016llX", static_cast<uint64_t>(val));
+    } else {
+        static_assert(false, "Unsupported size");
     }
 
-    return result;
+    return buffer;
 }
 
+template<class IntT>
 std::string
-VectorUintToHexString(const std::vector<uint32_t> &arr) {
-    return UintArrayToHexString(arr.data(), arr.size());
+VectorUintToHexString(const std::vector<IntT> &arr) {
+
+    return UintArrayToHexString<IntT>(arr.data(), arr.size());
 }
 
-std::string
-VectorUintToHexString(const std::vector<uint64_t> &arr) {
-    return UintArrayToHexString(arr.data(), arr.size());
-}
+// Explicitly instantiate
+#define ExplicitlyInstantiateUintArrayToHexString(IntT) \
+    template std::string UintArrayToHexString<IntT>(const IntT *array, size_t numElements); \
+    template std::string VectorUintToHexString<IntT>(const std::vector<IntT> &arr); \
+    template std::string UintToHexString<IntT>(IntT val);
+
+ExplicitlyInstantiateUintArrayToHexString(uint32_t);
+ExplicitlyInstantiateUintArrayToHexString(uint64_t);
+
+ExplicitlyInstantiateUintArrayToHexString(int32_t);
+ExplicitlyInstantiateUintArrayToHexString(int64_t);
+
 
 template<class SharkFloatParams>
 static HpSharkFloat<SharkFloatParams>::ExpT
@@ -312,11 +335,34 @@ HpSharkFloat<SharkFloatParams>::GenerateRandomNumber()
     // Use a random device to seed the random number generator
     std::random_device rd;
     std::mt19937 generator(rd());  // Mersenne Twister for high-quality randomness
-    std::uniform_int_distribution<uint32_t> distribution(0, std::numeric_limits<uint32_t>::max());
+
+    std::uniform_int_distribution<uint32_t> distributionCases(0, 4);
+    std::uniform_int_distribution<uint32_t> distributionSmall(0, 16);
+    std::uniform_int_distribution<uint32_t> distributionRand(0, std::numeric_limits<uint32_t>::max());
 
     // Fill uint32_t Digits[NumUint32] with completely random numbers
     for (size_t i = 0; i < NumUint32; ++i) {
-        Digits[i] = distribution(generator);
+        switch (distributionCases(generator)) {
+        case 0:
+            Digits[i] = distributionRand(generator);
+            break;
+        case 1:
+            Digits[i] = std::numeric_limits<uint32_t>::min();
+            break;
+        case 2:
+            Digits[i] = std::numeric_limits<uint32_t>::max();
+            break;
+        case 3:
+            Digits[i] = std::numeric_limits<uint32_t>::max() - distributionSmall(generator);
+            break;
+        case 4:
+            Digits[i] = std::numeric_limits<uint32_t>::min() + distributionSmall(generator);
+            break;
+        default:
+            i--;
+            assert(false);
+            continue;
+        }
     }
 
     // Ensure the most significant bit is not set

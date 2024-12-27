@@ -481,7 +481,7 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
             mpfHostResult,
             hostKaratsubaOutV1);
 
-        if (testNum == 0 && !res) {
+        if (!res) {
             DebugBreak();
         };
 
@@ -505,7 +505,7 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
             mpfHostResult,
             hostKaratsubaOutV2);
 
-        if (testNum == 0 && !res) {
+        if (!res) {
             DebugBreak();
         };
 
@@ -627,6 +627,7 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
             gpuResult);
         if (!testSucceeded) {
             std::cout << "GPU High Precision failed" << std::endl;
+            DebugBreak();
         } else {
             std::cout << "GPU High Precision succeeded" << std::endl;
         }
@@ -1045,6 +1046,15 @@ void TestAddSpecialNumbers17(int testNum) {
 }
 
 template<class SharkFloatParams, Operator sharkOperator>
+void TestAddSpecialNumbers18(int testNum) {
+
+    TestAddSpecialNumbersHelper<SharkFloatParams, sharkOperator>(
+        testNum,
+        std::vector<uint32_t>{ 0x00000001, 0xFFFFFFFF, 0xFFFFFFFC, 0xFFFFFFFF, 0x00000000, 0xFFFFFFFC, 0xE8CFC461, 0xFFFFFFF9 },
+        std::vector<uint32_t>{ 0xFFFFFFF8, 0xD446522A, 0xFFFFFFFF, 0x00000010, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFE, 0xFFFFFFFF });
+}
+
+template<class SharkFloatParams, Operator sharkOperator>
 bool TestAllBinaryOp(int testBase) {
     constexpr bool includeSet1 = true;
     constexpr bool includeSet2 = true;
@@ -1053,7 +1063,7 @@ bool TestAllBinaryOp(int testBase) {
     constexpr bool includeSet5 = true;
     constexpr bool includeSet6 = true;
     constexpr bool includeSet10 = true;
-    constexpr bool includeSet11 = false;
+    constexpr bool includeSet11 = true;
 
     // 200s is multiply
     // 400s is add
@@ -1091,6 +1101,7 @@ bool TestAllBinaryOp(int testBase) {
         TestAddSpecialNumbers15<SharkFloatParams, sharkOperator>(set + 150);
         TestAddSpecialNumbers16<SharkFloatParams, sharkOperator>(set + 160);
         TestAddSpecialNumbers17<SharkFloatParams, sharkOperator>(set + 170);
+        TestAddSpecialNumbers18<SharkFloatParams, sharkOperator>(set + 180);
     }
 
     if constexpr (includeSet3) {

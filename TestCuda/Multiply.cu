@@ -294,32 +294,43 @@ __device__ static void CarryPropagation (
     constexpr int MaxPasses = 10; // Maximum number of carry propagation passes
     constexpr int total_result_digits = 2 * SharkFloatParams::NumUint32;
 
-    // Each thread processes its assigned digits
+    uint64_t *carries_remaining_global = carryOuts_phase3;
+
     for (int idx = thread_start_idx; idx < thread_end_idx; ++idx) {
         int sum_low_idx = Convolution_offset + idx * 2;
         int sum_high_idx = sum_low_idx + 1;
 
-        // Read sum_low and sum_high from global memory
         uint64_t sum_low = tempProducts[sum_low_idx];     // Lower 64 bits
         uint64_t sum_high = tempProducts[sum_high_idx];   // Higher 64 bits
 
         // Add local carry to sum_low
+        bool new_sum_low_negative = false;
         uint64_t new_sum_low = sum_low + local_carry;
-        uint64_t carry_from_low = (new_sum_low < sum_low) ? 1 : 0;
 
-        // Combine sum_high and carry_from_low
-        uint64_t new_sum_high = (sum_high << 32) + carry_from_low;
-
-        // Extract digit
-        uint32_t digit = static_cast<uint32_t>(new_sum_low & 0xFFFFFFFFULL);
-
-        // Compute local carry for next digit
-        local_carry = new_sum_high + (new_sum_low >> 32);
-
-        // Store the partial digit
+        // Extract one 32-bit digit from new_sum_low
+        auto digit = static_cast<uint32_t>(new_sum_low & 0xFFFFFFFFULL);
         tempProducts[Result_offset + idx] = digit;
 
-        // Continue to next digit without synchronization since carries are local
+        bool local_carry_negative = ((local_carry & (1ULL << 63)) != 0);
+        local_carry = 0ULL;
+
+        if (!local_carry_negative && new_sum_low < sum_low) {
+            local_carry = 1ULL << 32;
+        } else if (local_carry_negative && new_sum_low > sum_low) {
+            new_sum_low_negative = (new_sum_low & 0x8000'0000'0000'0000) != 0;
+        }
+
+        // Update local_carry
+        if (new_sum_low_negative) {
+            // Shift sum_high by 32 bits and add carry_from_low
+            uint64_t upper_new_sum_low = new_sum_low >> 32;
+            upper_new_sum_low |= 0xFFFF'FFFF'0000'0000;
+            local_carry += upper_new_sum_low;
+            local_carry += sum_high << 32;
+        } else {
+            local_carry += new_sum_low >> 32;
+            local_carry += sum_high << 32;
+        }
     }
 
     if (threadIdx.x == SharkFloatParams::ThreadsPerBlock - 1) {
@@ -331,12 +342,16 @@ __device__ static void CarryPropagation (
     // Synchronize all blocks
     grid.sync();
 
-    uint64_t *carries_remaining_global = carryOuts_phase3;
-
     // Inter-Block Carry Propagation
     int pass = 0;
 
     do {
+        // Zero out the global carry count for the current pass
+        if (blockIdx.x == 0 && threadIdx.x == 0) {
+            *carries_remaining_global = 0;
+        }
+        grid.sync();
+
         // Get carry-in from the previous block
         local_carry = 0;
         if (threadIdx.x == 0 && blockIdx.x > 0) {
@@ -348,92 +363,38 @@ __device__ static void CarryPropagation (
         }
 
         // Each thread processes its assigned digits
+        bool local_carry_negative = false;
         for (int idx = thread_start_idx; idx < thread_end_idx; ++idx) {
             // Read the previously stored digit
             uint32_t digit = tempProducts[Result_offset + idx];
 
             // Add local_carry to digit
             uint64_t sum = static_cast<uint64_t>(digit) + local_carry;
+            if (local_carry_negative) {
+                // Clear high order 32 bits of sum:
+                sum &= 0x0000'0000'FFFF'FFFF;
+            }
 
             // Update digit
             digit = static_cast<uint32_t>(sum & 0xFFFFFFFFULL);
             tempProducts[Result_offset + idx] = digit;
 
             // Compute new local_carry for next digit
+            local_carry_negative = ((local_carry & (1ULL << 63)) != 0);
             local_carry = sum >> 32;
         }
 
-        // Store the final local_carry of each thread into shared memory
-
-/*
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-This looks broken - we store a local_carry in shared_carries
-but then might terminate the loop before propagating these shared_carries.
-This means that we lose some of these internal carries, which is incorrect.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-*/
         shared_carries[threadIdx.x] = local_carry;
         block.sync();
 
         // The block's carry-out is the carry from the last thread
+        auto temp = shared_carries[threadIdx.x];
         if (threadIdx.x == SharkFloatParams::ThreadsPerBlock - 1) {
-            auto temp = shared_carries[threadIdx.x];
             block_carry_outs[blockIdx.x] = temp;
-            if (temp > 0) {
-                atomicAdd(carries_remaining_global, 1);
-            }
+        }
+
+        if (temp != 0) {
+            atomicAdd(carries_remaining_global, 1);
         }
 
         // Synchronize all blocks before checking if carries remain

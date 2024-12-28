@@ -642,17 +642,17 @@ void MultiplyHelperKaratsubaV2(
             uint64_t z0_low = Z0[z0_idx];
             uint64_t z0_high = Z0[z0_idx + 1];
 
-            if constexpr (SharkFloatParams::HostVerbose) {
-                std::cout << "A iteration: " << idx << std::endl;
-                std::cout << "sum_low: " << UintToHexString(sum_low) << ", sum_high: " << UintToHexString(sum_high) << std::endl;
-            }
+            //if constexpr (SharkFloatParams::HostVerbose) {
+            //    std::cout << "A iteration: " << idx << std::endl;
+            //    std::cout << "sum_low: " << UintToHexString(sum_low) << ", sum_high: " << UintToHexString(sum_high) << std::endl;
+            //}
 
             add128(sum_low, sum_high, z0_low, z0_high, sum_low, sum_high);
 
-            if constexpr (SharkFloatParams::HostVerbose) {
-                std::cout << "sum_low: " << UintToHexString(sum_low) << ", sum_high: " << UintToHexString(sum_high) << std::endl;
-                std::cout << "z0_low: " << UintToHexString(z0_low) << ", z0_high: " << UintToHexString(z0_high) << std::endl;
-            }
+            //if constexpr (SharkFloatParams::HostVerbose) {
+            //    std::cout << "sum_low: " << UintToHexString(sum_low) << ", sum_high: " << UintToHexString(sum_high) << std::endl;
+            //    std::cout << "z0_low: " << UintToHexString(z0_low) << ", z0_high: " << UintToHexString(z0_high) << std::endl;
+            //}
         }
 
         // Add Z1 << (32*n)
@@ -662,17 +662,17 @@ void MultiplyHelperKaratsubaV2(
             uint64_t z1_low = Z1[z1_idx];
             uint64_t z1_high = Z1[z1_idx + 1];
 
-            if constexpr (SharkFloatParams::HostVerbose) {
-                std::cout << "B iteration: " << idx << std::endl;
-                std::cout << "sum_low: " << UintToHexString(sum_low) << ", sum_high: " << UintToHexString(sum_high) << std::endl;
-            }
+            //if constexpr (SharkFloatParams::HostVerbose) {
+            //    std::cout << "B iteration: " << idx << std::endl;
+            //    std::cout << "sum_low: " << UintToHexString(sum_low) << ", sum_high: " << UintToHexString(sum_high) << std::endl;
+            //}
 
             add128(sum_low, sum_high, z1_low, z1_high, sum_low, sum_high);
 
-            if constexpr (SharkFloatParams::HostVerbose) {
-                std::cout << "sum_low: " << UintToHexString(sum_low) << ", sum_high: " << UintToHexString(sum_high) << std::endl;
-                std::cout << "z1_low: " << UintToHexString(z1_low) << ", z1_high: " << UintToHexString(z1_high) << std::endl;
-            }
+            //if constexpr (SharkFloatParams::HostVerbose) {
+            //    std::cout << "sum_low: " << UintToHexString(sum_low) << ", sum_high: " << UintToHexString(sum_high) << std::endl;
+            //    std::cout << "z1_low: " << UintToHexString(z1_low) << ", z1_high: " << UintToHexString(z1_high) << std::endl;
+            //}
         }
 
         // Add Z2 << (64*n)
@@ -682,17 +682,17 @@ void MultiplyHelperKaratsubaV2(
             uint64_t z2_low = Z2[z2_idx];
             uint64_t z2_high = Z2[z2_idx + 1];
 
-            if constexpr (SharkFloatParams::HostVerbose) {
-                std::cout << "C iteration: " << idx << std::endl;
-                std::cout << "sum_low: " << UintToHexString(sum_low) << ", sum_high: " << UintToHexString(sum_high) << std::endl;
-            }
+            //if constexpr (SharkFloatParams::HostVerbose) {
+            //    std::cout << "C iteration: " << idx << std::endl;
+            //    std::cout << "sum_low: " << UintToHexString(sum_low) << ", sum_high: " << UintToHexString(sum_high) << std::endl;
+            //}
 
             add128(sum_low, sum_high, z2_low, z2_high, sum_low, sum_high);
 
-            if constexpr (SharkFloatParams::HostVerbose) {
-                std::cout << "sum_low: " << UintToHexString(sum_low) << ", sum_high: " << UintToHexString(sum_high) << std::endl;
-                std::cout << "z2_low: " << UintToHexString(z2_low) << ", z2_high: " << UintToHexString(z2_high) << std::endl;
-            }
+            //if constexpr (SharkFloatParams::HostVerbose) {
+            //    std::cout << "sum_low: " << UintToHexString(sum_low) << ", sum_high: " << UintToHexString(sum_high) << std::endl;
+            //    std::cout << "z2_low: " << UintToHexString(z2_low) << ", z2_high: " << UintToHexString(z2_high) << std::endl;
+            //}
         }
 
         final128[idx * 2] = sum_low;
@@ -822,4 +822,5 @@ void MultiplyHelperKaratsubaV2(
 ExplicitlyInstantiate(Test4x4SharkParams);
 ExplicitlyInstantiate(Test4x2SharkParams);
 ExplicitlyInstantiate(Test8x1SharkParams);
+ExplicitlyInstantiate(Test8x8SharkParams);
 ExplicitlyInstantiate(Test128x64SharkParams);

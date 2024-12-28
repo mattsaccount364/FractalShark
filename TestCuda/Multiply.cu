@@ -125,25 +125,19 @@ namespace cg = cooperative_groups;
  * Parallel subtraction (a - b), stored in result, using a multi-pass approach
  * to propagate borrows.
  *
- *   shared_data: pointer to shared memory for this block
- *   a, b       : pointer to global arrays of digits (size at least n)
- *   carryOuts  : array in global or shared memory to store block-level borrows
- *   cumulativeCarries : array in global memory to store final block-to-block borrows
- *   result     : pointer to global array where the final digits are written
- *   grid,block : cooperative_groups handles for synchronization
- *
  * The function attempts to subtract each digit of 'b' from 'a' in parallel,
  * then uses repeated passes (do/while) to handle newly introduced borrows
  * until no more remain or a maximum pass count is reached.
  */
 template<class SharkFloatParams>
-__device__ void subtractDigitsParallel(
+__device__ void SubtractDigitsParallel(
     uint32_t *__restrict__ shared_data,
     const uint32_t *__restrict__ a,
     const uint32_t *__restrict__ b,
-    uint32_t *carryOuts,        // Shared array to store block-level borrows
-    uint32_t *cumulativeCarries,
+    uint32_t *__restrict__ subtractionBorrows,
+    uint32_t *__restrict__ subtractionBorrows2,
     uint32_t *__restrict__ result,
+    uint32_t *__restrict__ globalBorrowAny,
     cg::grid_group &grid,
     cg::thread_block &block
 ) {
@@ -160,126 +154,106 @@ __device__ void subtractDigitsParallel(
 
     // Determine which slice of digits this block will handle
     // Example: we split 'n' digits evenly among numBlocks
-    const int digitsPerBlock = (n + numBlocks - 1) / numBlocks;
+    constexpr int digitsPerBlock = (n + numBlocks - 1) / numBlocks;
     const int startDigit = blockId * digitsPerBlock;
     const int endDigit = min(startDigit + digitsPerBlock, n);
     const int digitsInBlock = endDigit - startDigit;
 
-    // If this block has no digits to process, we can exit quickly
-    if (digitsInBlock <= 0) return;
+    const int startIdx = startDigit + tid;
+    const int endIdx = startDigit + digitsInBlock;
+
 
     // Pointers in shared memory
     // We'll store partial differences and borrow bits here
-    uint32_t *a_shared = shared_data;                       // [0 .. digitsInBlock-1]
-    uint32_t *b_shared = a_shared + digitsInBlock;          // [digitsInBlock .. 2*digitsInBlock-1]
-    uint32_t *partialDiff = b_shared + digitsInBlock;          // ...
-    uint32_t *borrowBits = partialDiff + digitsInBlock;
+    //uint32_t *a_shared = shared_data;                       // [0 .. digitsInBlock-1]
+    //uint32_t *b_shared = a_shared + digitsInBlock;          // [digitsInBlock .. 2*digitsInBlock-1]
+    //uint32_t *partialDiff = b_shared + digitsInBlock;          // ...
+    //uint32_t *borrowBits = partialDiff + digitsInBlock;
     // optionally you can do more arrays for second pass or prefix sums, etc.
 
     // 1) Load 'a' and 'b' digits into shared memory
-    for (int i = tid; i < digitsInBlock; i += threadsPerBlock) {
-        a_shared[i] = a[startDigit + i];
-        b_shared[i] = b[startDigit + i];
-    }
-    block.sync();
+    //for (int idx = tid; idx < digitsInBlock; idx += threadsPerBlock) {
+    //    a_shared[idx] = a[startDigit + idx];
+    //    b_shared[idx] = b[startDigit + idx];
+    //}
+    //block.sync();
+    grid.sync();
 
     // 2) First pass: compute naive partial difference (a[i] - b[i]), store in partialDiff
     //    and whether a[i]<b[i] => borrowBit=1 else 0
-    for (int i = tid; i < digitsInBlock; i += threadsPerBlock) {
-        uint32_t ai = a_shared[i];
-        uint32_t bi = b_shared[i];
+    for (int idx = startIdx; idx < endIdx; idx += threadsPerBlock) {
+
+        uint32_t ai = a[idx];
+        uint32_t bi = b[idx];
+
         // naive difference
         uint64_t temp = static_cast<uint64_t>(ai) - static_cast<uint64_t>(bi);
         uint32_t borrow = (ai < bi) ? 1u : 0u;
 
-        partialDiff[i] = static_cast<uint32_t>(temp & 0xFFFFFFFFu);
-        borrowBits[i] = borrow;
+        result[idx] = static_cast<uint32_t>(temp & 0xFFFFFFFFu);
+        subtractionBorrows[idx] = borrow;
     }
-    block.sync();
 
     // We'll do repeated passes to fix newly introduced borrows
     // We'll store in carryOuts[blockId] any leftover borrow from this block if needed
     // but let's keep it simple: we do an in-block multi-pass approach first
-    uint32_t changed_any = 1;  // track if any borrow changed in this pass
-    int passCount = 0;
+
+    int pass = 0;
+    uint64_t local_borrow = 0;
+
+    uint32_t *curBorrow = subtractionBorrows;
+    uint32_t *newBorrow = subtractionBorrows2;
 
     do {
-        // Zero 'changed_any' in shared memory or a local var
-        if (tid == 0) {
-            changed_any = 0;
+        // Synchronize all blocks
+        grid.sync();
+
+        // Zero out the global carry count for the current pass
+        if (blockIdx.x == 0 && threadIdx.x == 0) {
+            *globalBorrowAny = 0;
         }
-        block.sync();
 
-        // Each thread checks whether borrowBits[i] => we must borrow from partialDiff[i+1]
-        for (int i = tid; i < digitsInBlock - 1; i += threadsPerBlock) {
-            // If borrowBits[i] == 1 => partialDiff[i+1] must subtract 1
-            if (borrowBits[i] == 1) {
-                // Sub the borrow from partialDiff[i+1]
-                uint32_t nextVal = partialDiff[i + 1];
-                uint32_t oldVal = nextVal;
-                nextVal = nextVal - 1u;
+        grid.sync();
 
-                // If oldVal==0, we generate a new borrow in borrowBits[i+1]
-                uint32_t newBorrow = (oldVal == 0u) ? 1u : 0u;
+        // Each thread processes its assigned digits
+        for (int idx = startIdx; idx < endIdx; idx += threadsPerBlock) {
+            // Get carry-in from the previous digit
+            local_borrow = 0;
+            if (idx > 0) {
+                local_borrow = curBorrow[idx - 1];
+            }
 
-                // Update partialDiff[i+1] and borrowBits[i+1] if changed
-                partialDiff[i + 1] = nextVal;
-                if (newBorrow > borrowBits[i + 1]) {
-                    borrowBits[i + 1] = newBorrow;
-                    // Mark that we changed something in this pass
-                    atomicMax(&changed_any, 1u);
-                }
+            // Read the previously stored digit
+            uint32_t digit = result[idx];
 
-                // Clear the borrow bit for i => we've consumed it
-                borrowBits[i] = 0u;
+            // Add local_borrow to digit
+            uint64_t sum = static_cast<uint64_t>(digit) - local_borrow;
+
+            // Update digit
+            digit = static_cast<uint32_t>(sum & 0xFFFFFFFFULL);
+            result[idx] = digit;
+
+            // Create new borrow
+            if (sum & 0x8000'0000'0000'0000) {
+                newBorrow[idx] = 1;
+                atomicAdd(globalBorrowAny, 1);
+            } else {
+                newBorrow[idx] = 0;
             }
         }
 
-        block.sync();
+        grid.sync();
 
-        // If changed_any==0 => no new borrows were introduced => we're done
-        // Let one thread read changed_any from shared memory or we do a reduce, etc.
-        uint32_t changed_local = changed_any;
-        block.sync();
-
-        // We can do a single thread check:
-        if (tid == 0) {
-            // gather changed_any from all threads if needed
-        }
-        block.sync();
-
-        passCount++;
-        if (passCount >= MaxPasses) {
-            // if we exceed pass count => break
+        // If no carries remain, exit the loop
+        if (*globalBorrowAny == 0) {
             break;
         }
 
-        // We'll rely on changed_any to be 0 => no new borrows
-    } while (__syncthreads_and(changed_any != 0u));
+        // Swap newBorrow and curBorrow
+        std::swap(curBorrow, newBorrow);
 
-    // Now partialDiff[] is corrected for in-block borrows
-    // Write final partialDiff to global result
-    for (int i = tid; i < digitsInBlock; i += threadsPerBlock) {
-        result[startDigit + i] = partialDiff[i];
-    }
-    block.sync();
-
-    // 3) If you want to pass a leftover borrow out of the block (the last digit), 
-    //    you can check borrowBits[digitsInBlock-1]. If it is 1 => store that in carryOuts[blockId].
-    if (tid == 0 && digitsInBlock > 0) {
-        carryOuts[blockId] = borrowBits[digitsInBlock - 1];
-    }
-    block.sync();
-
-    // 4) In a full multi-block scenario, you'd do an inter-block pass, 
-    //    reading carryOuts[i-1] => applying it to the block i's first digit => 
-    //    re-run the in-block pass. But that is typically done outside this function 
-    //    or in repeated calls with a higher-level logic, similar to your addition multi-pass approach.
-
-    // If you want a final pass to handle cumulativeCarries, you'd do that here, 
-    // but it depends on your multi-block structure.
-
-    // Done
+        pass++;
+    } while (pass < MaxPasses);
 }
 
 
@@ -380,13 +354,13 @@ __device__ static void CarryPropagation (
         shared_carries[threadIdx.x] = local_carry;
     }
 
-    // Synchronize all blocks
-    grid.sync();
-
     // Inter-Block Carry Propagation
     int pass = 0;
 
     do {
+        // Synchronize all blocks
+        grid.sync();
+
         // Zero out the global carry count for the current pass
         if (blockIdx.x == 0 && threadIdx.x == 0) {
             *carries_remaining_global = 0;
@@ -445,14 +419,10 @@ __device__ static void CarryPropagation (
             break;
         }
 
-        grid.sync();
         pass++;
     } while (pass < MaxPasses);
 
     // ---- Handle Final Carry-Out ----
-
-    // Synchronize all blocks
-    grid.sync();
 
     // Handle final carry-out
     if (threadIdx.x == 0 && blockIdx.x == gridDim.x - 1) {
@@ -465,7 +435,7 @@ __device__ static void CarryPropagation (
     }
 
     // Synchronize all blocks before finalization
-    grid.sync();
+    // grid.sync();
 }
 
 
@@ -504,6 +474,8 @@ __device__ void MultiplyHelperKaratsubaV2(
     constexpr int YDiff_offset = XDiff_offset + 1 * N;
     constexpr int GlobalCarryOffset = YDiff_offset + 1 * N;
     constexpr int CarryInsOffset = GlobalCarryOffset + 1 * N;
+    constexpr int CarryInsOffset2 = CarryInsOffset + 1 * N;
+    constexpr int BorrowAnyOffset = CarryInsOffset2 + 1 * N;
 
     //// Shared memory allocation
     //__shared__ uint64_t A_shared[n];
@@ -554,15 +526,6 @@ __device__ void MultiplyHelperKaratsubaV2(
     // Synchronize before next convolution
     //block.sync();
 
-    //// Load A1 and B1 into shared memory
-    //for (int i = threadIdx.x; i < n; i += SharkFloatParams::ThreadsPerBlock) {
-    //    int index = i + n;
-    //    A_shared[i] = (index < N) ? A->Digits[index] : 0;    // A1
-    //    B_shared[i] = (index < N) ? B->Digits[index] : 0;    // B1
-    //}
-
-    //block.sync();
-
     // ---- Convolution for Z2 = A1 * B1 ----
     for (int k = k_start; k < k_end; ++k) {
         uint64_t sum_low = 0;
@@ -593,58 +556,58 @@ __device__ void MultiplyHelperKaratsubaV2(
     //// Synchronize before next convolution
     block.sync();
 
-    //// Compute (A0 + A1) and (B0 + B1) and store in shared memory
-    //for (int i = threadIdx.x; i < n; i += SharkFloatParams::ThreadsPerBlock) {
-    //    uint64_t A0 = (i < N) ? A->Digits[i] : 0;
-    //    uint64_t A1 = (i + n < N) ? A->Digits[i + n] : 0;
-    //    A_shared[i] = A0 + A1;               // (A0 + A1)
-
-    //    uint64_t B0 = (i < N) ? B->Digits[i] : 0;
-    //    uint64_t B1 = (i + n < N) ? B->Digits[i + n] : 0;
-    //    B_shared[i] = B0 + B1;               // (B0 + B1)
-    //}
-
-    //block.sync();
-
     // ---- Compute Differences x_diff = A1 - A0 and y_diff = B1 - B0 ----
 
+    constexpr int total_result_digits = 2 * N + 1;
+    constexpr auto digits_per_block = SharkFloatParams::ThreadsPerBlock * 2;
+    auto block_start_idx = blockIdx.x * digits_per_block;
+    auto block_end_idx = min(block_start_idx + digits_per_block, total_result_digits);
+
+    int digits_per_thread = (digits_per_block + blockDim.x - 1) / blockDim.x;
+
+    int thread_start_idx = block_start_idx + threadIdx.x * digits_per_thread;
+    int thread_end_idx = min(thread_start_idx + digits_per_thread, block_end_idx);
+
     // Arrays to hold the absolute differences (size n)
-    auto *x_diff_abs = reinterpret_cast<uint32_t *>(&tempProducts[XDiff_offset]);
-    auto *y_diff_abs = reinterpret_cast<uint32_t *>(&tempProducts[YDiff_offset]);
+    auto * __restrict__ x_diff_abs = reinterpret_cast<uint32_t *>(&tempProducts[XDiff_offset]);
+    auto * __restrict__ y_diff_abs = reinterpret_cast<uint32_t *>(&tempProducts[YDiff_offset]);
     int x_diff_sign = 0; // 0 if positive, 1 if negative
     int y_diff_sign = 0; // 0 if positive, 1 if negative
 
     // Compute x_diff_abs and x_diff_sign
     extern __shared__ uint32_t shared_data[];
 
-    auto *subtractionCarries = reinterpret_cast<uint32_t *>(&tempProducts[CarryInsOffset]);
-    auto *cumulativeCarries = subtractionCarries + SharkFloatParams::NumBlocks;
+    auto * __restrict__ subtractionBorrows = reinterpret_cast<uint32_t *>(&tempProducts[CarryInsOffset]);
+    auto * __restrict__ subtractionBorrows2 = reinterpret_cast<uint32_t *>(&tempProducts[CarryInsOffset2]);
 
-    constexpr bool useParallelSubtract = false;
+    constexpr bool useParallelSubtract = true;
 
     if constexpr (useParallelSubtract) {
+        uint32_t *globalBorrowAny = reinterpret_cast<uint32_t *>(&tempProducts[BorrowAnyOffset]);
         int x_compare = compareDigits(A->Digits + n, A->Digits, n);
 
         if (x_compare >= 0) {
             x_diff_sign = 0;
-            subtractDigitsParallel<SharkFloatParams>(
+            SubtractDigitsParallel<SharkFloatParams>(
                 shared_data,
                 A->Digits + n,
                 A->Digits,
-                subtractionCarries,
-                cumulativeCarries,
+                subtractionBorrows,
+                subtractionBorrows2,
                 x_diff_abs,
+                globalBorrowAny,
                 grid,
                 block); // x_diff = A1 - A0
         } else {
             x_diff_sign = 1;
-            subtractDigitsParallel<SharkFloatParams>(
+            SubtractDigitsParallel<SharkFloatParams>(
                 shared_data,
                 A->Digits,
                 A->Digits + n,
-                subtractionCarries,
-                cumulativeCarries,
+                subtractionBorrows,
+                subtractionBorrows2,
                 x_diff_abs,
+                globalBorrowAny,
                 grid,
                 block); // x_diff = A0 - A1
         }
@@ -653,24 +616,26 @@ __device__ void MultiplyHelperKaratsubaV2(
         int y_compare = compareDigits(B->Digits + n, B->Digits, n);
         if (y_compare >= 0) {
             y_diff_sign = 0;
-            subtractDigitsParallel<SharkFloatParams>(
+            SubtractDigitsParallel<SharkFloatParams>(
                 shared_data,
                 B->Digits + n,
                 B->Digits,
-                subtractionCarries,
-                cumulativeCarries,
+                subtractionBorrows,
+                subtractionBorrows2,
                 y_diff_abs,
+                globalBorrowAny,
                 grid,
                 block); // y_diff = B1 - B0
         } else {
             y_diff_sign = 1;
-            subtractDigitsParallel<SharkFloatParams>(
+            SubtractDigitsParallel<SharkFloatParams>(
                 shared_data,
                 B->Digits,
                 B->Digits + n,
-                subtractionCarries,
-                cumulativeCarries,
+                subtractionBorrows,
+                subtractionBorrows2,
                 y_diff_abs,
+                globalBorrowAny,
                 grid,
                 block); // y_diff = B0 - B1
         }
@@ -743,8 +708,6 @@ __device__ void MultiplyHelperKaratsubaV2(
     // If z1_sign == 0: Z1 = Z2 + Z0 - Z1_temp
     // If z1_sign == 1: Z1 = Z2 + Z0 + Z1_temp
 
-    grid.sync(); // Ensure all computations up to Z1_temp are done
-
     for (int k = k_start; k < k_end; ++k) {
         // Retrieve Z0
         int z0_idx = Z0_offset + k * 2;
@@ -785,7 +748,6 @@ __device__ void MultiplyHelperKaratsubaV2(
 
     // Now the final combination is just:
     // final = Z0 + (Z1 << (32*n)) + (Z2 << (64*n))
-    constexpr int total_result_digits = 2 * N + 1;
     int idx_start = (threadIdxGlobal * total_result_digits) / total_threads;
     int idx_end = ((threadIdxGlobal + 1) * total_result_digits) / total_threads;
 
@@ -831,15 +793,6 @@ __device__ void MultiplyHelperKaratsubaV2(
     // Allocate space for gridDim.x block carry-outs after total_result_digits
     uint64_t *block_carry_outs = &tempProducts[CarryInsOffset];
     //uint64_t *blocks_need_to_continue = carryIns + SharkFloatParams::NumBlocks;
-
-    constexpr auto digits_per_block = SharkFloatParams::ThreadsPerBlock * 2;
-    auto block_start_idx = blockIdx.x * digits_per_block;
-    auto block_end_idx = min(block_start_idx + digits_per_block, total_result_digits);
-
-    int digits_per_thread = (digits_per_block + blockDim.x - 1) / blockDim.x;
-
-    int thread_start_idx = block_start_idx + threadIdx.x * digits_per_thread;
-    int thread_end_idx = min(thread_start_idx + digits_per_thread, block_end_idx);
 
     //So the idea is we process the chunk of digits that has digits interleaved with carries.
     //    This logic should be similar to the global carry propagation but done in parallel on
@@ -967,19 +920,11 @@ __global__ void MultiplyKernelKaratsubaV2TestLoop(
 }
 
 template<class SharkFloatParams>
-void ComputeMultiplyKaratsubaV2Gpu(void *kernelArgs[]) {
-
-    int numBlocks;
-    cudaError_t err;
-
-    constexpr int N = SharkFloatParams::NumUint32;
-    constexpr auto n = (N + 1) / 2;              // Half of N
-
-    const auto sharedAmountBytes = 10 * n * sizeof(uint32_t);
-
+void PrintMaxActiveBlocks(int sharedAmountBytes) {
     std::cout << "Shared memory size: " << sharedAmountBytes << std::endl;
 
-    err = cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+    int numBlocks;
+    cudaError_t err = cudaOccupancyMaxActiveBlocksPerMultiprocessor(
         &numBlocks,
         MultiplyKernelKaratsubaV2<SharkFloatParams>,
         SharkFloatParams::ThreadsPerBlock,
@@ -991,8 +936,24 @@ void ComputeMultiplyKaratsubaV2Gpu(void *kernelArgs[]) {
         return;
     }
 
-    // Print the number of blocks
-    std::cout << "Number of blocks: " << numBlocks << std::endl;
+    std::cout << "Max active blocks: " << numBlocks << std::endl;
+}
+
+template<class SharkFloatParams>
+void ComputeMultiplyKaratsubaV2Gpu(void *kernelArgs[]) {
+
+    cudaError_t err;
+
+    constexpr int N = SharkFloatParams::NumUint32;
+    constexpr auto n = (N + 1) / 2;              // Half of N
+    const auto sharedAmountBytes = 5 * n * sizeof(uint32_t);
+
+    cudaFuncSetAttribute(
+        MultiplyKernelKaratsubaV2<SharkFloatParams>,
+        cudaFuncAttributeMaxDynamicSharedMemorySize,
+        sharedAmountBytes);
+
+    PrintMaxActiveBlocks<SharkFloatParams>(sharedAmountBytes);
 
     err = cudaLaunchCooperativeKernel(
         (void *)MultiplyKernelKaratsubaV2<SharkFloatParams>,
@@ -1011,15 +972,26 @@ void ComputeMultiplyKaratsubaV2Gpu(void *kernelArgs[]) {
 }
 
 template<class SharkFloatParams>
-void ComputeMultiplyKaratsubaV2GpuTestLoop(void *kernelArgs[]) {
+void ComputeMultiplyKaratsubaV2GpuTestLoop(cudaStream_t &stream, void *kernelArgs[]) {
+
+    constexpr int N = SharkFloatParams::NumUint32;
+    constexpr auto n = (N + 1) / 2;              // Half of N
+    const auto sharedAmountBytes = 5 * n * sizeof(uint32_t);
+
+    cudaFuncSetAttribute(
+        MultiplyKernelKaratsubaV2TestLoop<SharkFloatParams>,
+        cudaFuncAttributeMaxDynamicSharedMemorySize,
+        sharedAmountBytes);
+
+    PrintMaxActiveBlocks<SharkFloatParams>(sharedAmountBytes);
 
     cudaError_t err = cudaLaunchCooperativeKernel(
         (void *)MultiplyKernelKaratsubaV2TestLoop<SharkFloatParams>,
         dim3(SharkFloatParams::NumBlocks),
         dim3(SharkFloatParams::ThreadsPerBlock),
         kernelArgs,
-        0, // Shared memory size
-        0 // Stream
+        sharedAmountBytes, // Shared memory size
+        stream // Stream
     );
 
     cudaDeviceSynchronize();
@@ -1031,9 +1003,10 @@ void ComputeMultiplyKaratsubaV2GpuTestLoop(void *kernelArgs[]) {
 
 #define ExplicitlyInstantiate(SharkFloatParams) \
     template void ComputeMultiplyKaratsubaV2Gpu<SharkFloatParams>(void *kernelArgs[]); \
-    template void ComputeMultiplyKaratsubaV2GpuTestLoop<SharkFloatParams>(void *kernelArgs[]);
+    template void ComputeMultiplyKaratsubaV2GpuTestLoop<SharkFloatParams>(cudaStream_t &stream, void *kernelArgs[]);
 
 ExplicitlyInstantiate(Test4x4SharkParams);
 ExplicitlyInstantiate(Test4x2SharkParams);
 ExplicitlyInstantiate(Test8x1SharkParams);
+ExplicitlyInstantiate(Test8x8SharkParams);
 ExplicitlyInstantiate(Test128x64SharkParams);

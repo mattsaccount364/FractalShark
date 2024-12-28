@@ -18,7 +18,7 @@ template<class SharkFloatParams>
 void ComputeMultiplyN2Gpu(void *kernelArgs[]);
 
 template<class SharkFloatParams>
-void ComputeMultiplyN2GpuTestLoop(void *kernelArgs[]);
+void ComputeMultiplyN2GpuTestLoop(cudaStream_t &stream, void *kernelArgs[]);
 
 template<class SharkFloatParams>
 __device__ void MultiplyHelperN2(
@@ -58,7 +58,7 @@ template<class SharkFloatParams>
 void ComputeMultiplyKaratsubaV1Gpu(void *kernelArgs[]);
 
 template<class SharkFloatParams>
-void ComputeMultiplyKaratsubaV1GpuTestLoop(void *kernelArgs[]);
+void ComputeMultiplyKaratsubaV1GpuTestLoop(cudaStream_t &stream, void *kernelArgs[]);
 
 template<class SharkFloatParams>
 __device__ void MultiplyHelperKaratsubaV1(
@@ -88,7 +88,9 @@ template<class SharkFloatParams>
 void ComputeMultiplyKaratsubaV2Gpu(void *kernelArgs[]);
 
 template<class SharkFloatParams>
-void ComputeMultiplyKaratsubaV2GpuTestLoop(void *kernelArgs[]);
+void ComputeMultiplyKaratsubaV2GpuTestLoop(
+    cudaStream_t &stream,
+    void *kernelArgs[]);
 
 template<class SharkFloatParams>
 __device__ void MultiplyHelperKaratsubaV2(

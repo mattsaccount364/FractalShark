@@ -642,7 +642,7 @@ void ComputeMultiplyKaratsubaV1Gpu(void *kernelArgs[]) {
 }
 
 template<class SharkFloatParams>
-void ComputeMultiplyKaratsubaV1GpuTestLoop(void *kernelArgs[]) {
+void ComputeMultiplyKaratsubaV1GpuTestLoop(cudaStream_t &stream, void *kernelArgs[]) {
 
     cudaError_t err = cudaLaunchCooperativeKernel(
         (void *)MultiplyKernelKaratsubaV1TestLoop<SharkFloatParams>,
@@ -650,7 +650,7 @@ void ComputeMultiplyKaratsubaV1GpuTestLoop(void *kernelArgs[]) {
         dim3(SharkFloatParams::ThreadsPerBlock),
         kernelArgs,
         0, // Shared memory size
-        0 // Stream
+        stream // Stream
     );
 
     cudaDeviceSynchronize();
@@ -662,9 +662,10 @@ void ComputeMultiplyKaratsubaV1GpuTestLoop(void *kernelArgs[]) {
 
 #define ExplicitlyInstantiate(SharkFloatParams) \
     template void ComputeMultiplyKaratsubaV1Gpu<SharkFloatParams>(void *kernelArgs[]); \
-    template void ComputeMultiplyKaratsubaV1GpuTestLoop<SharkFloatParams>(void *kernelArgs[]);
+    template void ComputeMultiplyKaratsubaV1GpuTestLoop<SharkFloatParams>(cudaStream_t &stream, void *kernelArgs[]);
 
 ExplicitlyInstantiate(Test4x4SharkParams);
 ExplicitlyInstantiate(Test4x2SharkParams);
 ExplicitlyInstantiate(Test8x1SharkParams);
+ExplicitlyInstantiate(Test8x8SharkParams);
 ExplicitlyInstantiate(Test128x64SharkParams);

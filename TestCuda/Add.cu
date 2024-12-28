@@ -654,4 +654,5 @@ void ComputeAddGpuTestLoop(void *kernelArgs[]) {
 ExplicitlyInstantiate(Test4x4SharkParams);
 ExplicitlyInstantiate(Test4x2SharkParams);
 ExplicitlyInstantiate(Test8x1SharkParams);
+ExplicitlyInstantiate(Test8x8SharkParams);
 ExplicitlyInstantiate(Test128x64SharkParams);

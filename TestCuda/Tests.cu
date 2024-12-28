@@ -177,10 +177,45 @@ void InvokeMultiplyKernel(
         (void *)&d_tempProducts
     };
 
-    // ComputeMultiplyKaratsubaV2GpuTestLoop<SharkFloatParams>(kernelArgs);
-    kernel(kernelArgs);
+    cudaStream_t stream;
+    cudaStreamCreate(&stream); // Create a stream
+
+    cudaDeviceProp prop;
+    int device_id = 0;
+
+    {
+        cudaGetDeviceProperties(&prop, device_id);
+        cudaDeviceSetLimit(cudaLimitPersistingL2CacheSize, prop.persistingL2CacheMaxSize); /* Set aside max possible size of L2 cache for persisting accesses */
+
+        auto setAccess = [&](void *ptr, size_t num_bytes) {
+            cudaStreamAttrValue stream_attribute;                                         // Stream level attributes data structure
+            stream_attribute.accessPolicyWindow.base_ptr = reinterpret_cast<void *>(ptr); // Global Memory data pointer
+            stream_attribute.accessPolicyWindow.num_bytes = num_bytes;                    // Number of bytes for persisting accesses.
+            // (Must be less than cudaDeviceProp::accessPolicyMaxWindowSize)
+            stream_attribute.accessPolicyWindow.hitRatio = 1.0;                          // Hint for L2 cache hit ratio for persisting accesses in the num_bytes region
+            stream_attribute.accessPolicyWindow.hitProp = cudaAccessPropertyPersisting; // Type of access property on cache hit
+            stream_attribute.accessPolicyWindow.missProp = cudaAccessPropertyStreaming;  // Type of access property on cache miss.
+
+            //Set the attributes to a CUDA stream of type cudaStream_t
+            cudaError_t err = cudaStreamSetAttribute(stream, cudaStreamAttributeAccessPolicyWindow, &stream_attribute);
+            if (err != cudaSuccess) {
+                std::cerr << "CUDA error in setting stream attribute: " << cudaGetErrorString(err) << std::endl;
+            } else {
+                std::cout << "Stream attribute set successfully" << std::endl;
+            }
+        };
+
+        setAccess(xGpu, sizeof(HpSharkFloat<SharkFloatParams>));
+        setAccess(yGpu, sizeof(HpSharkFloat<SharkFloatParams>));
+        setAccess(internalGpuResult2, sizeof(HpSharkFloat<SharkFloatParams>));
+        setAccess(d_tempProducts, 32 * SharkFloatParams::NumUint32 * sizeof(uint64_t));
+    }
+
+    kernel(stream, kernelArgs);
 
     cudaMemcpy(&gpuResult2, internalGpuResult2, sizeof(HpSharkFloat<SharkFloatParams>), cudaMemcpyDeviceToHost);
+
+    cudaStreamDestroy(stream); // Destroy the stream
 
     cudaFree(internalGpuResult2);
     cudaFree(yGpu);
@@ -349,9 +384,13 @@ void TestPerf(
 
 template<class SharkFloatParams, Operator sharkOperator>
 void TestPerf(
-    int testNum,
-    const char *num1,
-    const char *num2) {
+    int testNum) {
+
+    HpSharkFloat<SharkFloatParams> xNum;
+    HpSharkFloat<SharkFloatParams> yNum;
+
+    xNum.GenerateRandomNumber();
+    yNum.GenerateRandomNumber();
 
     mpf_set_default_prec(HpSharkFloat<SharkFloatParams>::DefaultMpirBits);  // Set precision for MPIR floating point
 
@@ -360,17 +399,13 @@ void TestPerf(
     mpf_init(mpfX);
     mpf_init(mpfY);
 
-    auto res = mpf_set_str(mpfX, num1, 10);
-    if (res == -1) {
-        std::cout << "Error setting mpfX" << std::endl;
-    }
+    HpGpuToMpf(xNum, mpfX);
+    HpGpuToMpf(yNum, mpfY);
 
-    res = mpf_set_str(mpfY, num2, 10);
-    if (res == -1) {
-        std::cout << "Error setting mpfY" << std::endl;
-    }
+    auto num1 = xNum.ToString();
+    auto num2 = yNum.ToString();
 
-    TestPerf<SharkFloatParams, sharkOperator>(testNum, num1, num2, mpfX, mpfY);
+    TestPerf<SharkFloatParams, sharkOperator>(testNum, num1.c_str(), num2.c_str(), mpfX, mpfY);
 
     mpf_clear(mpfX);
     mpf_clear(mpfY);
@@ -496,8 +531,10 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
                 &hostKaratsubaOutV1
             );
 
-            std::cout << "KaratsubaV1 result: " << hostKaratsubaOutV1.ToString() << std::endl;
-            std::cout << "KaratsubaV1 hex: " << hostKaratsubaOutV1.ToHexString() << std::endl;
+            if (Verbose) {
+                std::cout << "KaratsubaV1 result: " << hostKaratsubaOutV1.ToString() << std::endl;
+                std::cout << "KaratsubaV1 hex: " << hostKaratsubaOutV1.ToHexString() << std::endl;
+            }
 
             bool res = DiffAgainstHost<SharkFloatParams, sharkOperator>(
                 testNum,
@@ -516,8 +553,10 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
                 &hostKaratsubaOutV2
             );
 
-            std::cout << "KaratsubaV2 result: " << hostKaratsubaOutV2.ToString() << std::endl;
-            std::cout << "KaratsubaV2 hex: " << hostKaratsubaOutV2.ToHexString() << std::endl;
+            if (Verbose) {
+                std::cout << "KaratsubaV2 result: " << hostKaratsubaOutV2.ToString() << std::endl;
+                std::cout << "KaratsubaV2 hex: " << hostKaratsubaOutV2.ToHexString() << std::endl;
+            }
 
             res &= DiffAgainstHost<SharkFloatParams, sharkOperator>(
                 testNum,
@@ -1188,7 +1227,7 @@ bool TestAllBinaryOp(int testBase) {
 
 template<class SharkFloatParams, Operator sharkOperator>
 bool TestBinaryOperatorPerf(int testBase) {
-    TestPerf<SharkFloatParams, sharkOperator>(testBase + 1, ".1", ".1");
+    TestPerf<SharkFloatParams, sharkOperator>(testBase + 1);
     return Tests.CheckAllTestsPassed();
 }
 
@@ -1207,4 +1246,5 @@ bool TestBinaryOperatorPerf(int testBase) {
 ExplicitlyInstantiate(Test4x4SharkParams);
 ExplicitlyInstantiate(Test4x2SharkParams);
 ExplicitlyInstantiate(Test8x1SharkParams);
+ExplicitlyInstantiate(Test8x8SharkParams);
 ExplicitlyInstantiate(Test128x64SharkParams);

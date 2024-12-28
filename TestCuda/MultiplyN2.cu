@@ -24,9 +24,6 @@ __device__ void MultiplyHelperN2(
     const HpSharkFloat<SharkFloatParams> *__restrict__ A,
     const HpSharkFloat<SharkFloatParams> *__restrict__ B,
     HpSharkFloat<SharkFloatParams> *__restrict__ Out,
-    uint64_t *__restrict__ carryOuts_phase3, // Array to store carry-out from Phase 3
-    uint64_t *__restrict__ carryOuts_phase6, // Array to store carry-out from Phase 6
-    uint64_t *__restrict__ carryIns,          // Array to store carry-in for each block
     cg::grid_group grid,
     uint64_t *__restrict__ tempProducts      // Temporary buffer to store intermediate products
 ) {
@@ -54,6 +51,10 @@ __device__ void MultiplyHelperN2(
     if (highDigitIdx < 2 * SharkFloatParams::NumUint32) {
         tempProducts[highDigitIdx] = 0;
     }
+
+    uint64_t *carryOuts_phase3 = tempProducts + 2 * SharkFloatParams::NumUint32;
+    uint64_t *carryOuts_phase6 = carryOuts_phase3 + 2 * SharkFloatParams::NumUint32;
+    uint64_t *carryIns = carryOuts_phase6 + 2 * SharkFloatParams::NumUint32;
 
     static constexpr int32_t BATCH_SIZE_A = BatchSize;
     static constexpr int32_t BATCH_SIZE_B = BatchSize;
@@ -413,17 +414,14 @@ __global__ void MultiplyKernelN2(
     const HpSharkFloat<SharkFloatParams> *A,
     const HpSharkFloat<SharkFloatParams> *B,
     HpSharkFloat<SharkFloatParams> *Out,
-    uint64_t *carryOuts_phase3,
-    uint64_t *carryOuts_phase6,
-    uint64_t *carryIns,
     uint64_t *tempProducts) {
 
     // Initialize cooperative grid group
     cg::grid_group grid = cg::this_grid();
 
     // Call the MultiplyHelper function
-    //MultiplyHelper(A, B, Out, carryOuts_phase3, carryOuts_phase6, carryIns, grid, tempProducts);
-    MultiplyHelperN2(A, B, Out, carryOuts_phase3, carryOuts_phase6, carryIns, grid, tempProducts);
+    //MultiplyHelper(A, B, Out, grid, tempProducts);
+    MultiplyHelperN2(A, B, Out, grid, tempProducts);
 }
 
 template<class SharkFloatParams>
@@ -431,17 +429,14 @@ __global__ void MultiplyKernelN2TestLoop(
     HpSharkFloat<SharkFloatParams> *A,
     HpSharkFloat<SharkFloatParams> *B,
     HpSharkFloat<SharkFloatParams> *Out,
-    uint64_t *carryOuts_phase3,
-    uint64_t *carryOuts_phase6,
-    uint64_t *carryIns,
     uint64_t *tempProducts) { // Array to store cumulative carries
 
     // Initialize cooperative grid group
     cg::grid_group grid = cg::this_grid();
 
     for (int i = 0; i < TestIterCount; ++i) {
-        // MultiplyHelper(A, B, Out, carryOuts_phase3, carryOuts_phase6, carryIns, grid, tempProducts);
-        MultiplyHelperN2(A, B, Out, carryOuts_phase3, carryOuts_phase6, carryIns, grid, tempProducts);
+        // MultiplyHelper(A, B, Out, grid, tempProducts);
+        MultiplyHelperN2(A, B, Out, grid, tempProducts);
     }
 }
 

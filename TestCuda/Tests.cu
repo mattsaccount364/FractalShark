@@ -147,6 +147,7 @@ bool DiffAgainstHost(
 
 template<class SharkFloatParams, typename KernelFunction>
 void InvokeMultiplyKernel(
+    BenchmarkTimer &timer,
     KernelFunction kernel,
     const HpSharkFloat<SharkFloatParams> &xNum,
     const HpSharkFloat<SharkFloatParams> &yNum,
@@ -177,13 +178,16 @@ void InvokeMultiplyKernel(
         (void *)&d_tempProducts
     };
 
-    cudaStream_t stream;
-    cudaStreamCreate(&stream); // Create a stream
+    cudaStream_t stream = nullptr;
+
+    if constexpr (UseCustomStream) {
+        cudaStreamCreate(&stream); // Create a stream
+    }
 
     cudaDeviceProp prop;
     int device_id = 0;
 
-    {
+    if constexpr (UseCustomStream) {
         cudaGetDeviceProperties(&prop, device_id);
         cudaDeviceSetLimit(cudaLimitPersistingL2CacheSize, prop.persistingL2CacheMaxSize); /* Set aside max possible size of L2 cache for persisting accesses */
 
@@ -203,7 +207,7 @@ void InvokeMultiplyKernel(
             } else {
                 std::cout << "Stream attribute set successfully" << std::endl;
             }
-        };
+            };
 
         setAccess(xGpu, sizeof(HpSharkFloat<SharkFloatParams>));
         setAccess(yGpu, sizeof(HpSharkFloat<SharkFloatParams>));
@@ -211,11 +215,16 @@ void InvokeMultiplyKernel(
         setAccess(d_tempProducts, 32 * SharkFloatParams::NumUint32 * sizeof(uint64_t));
     }
 
-    kernel(stream, kernelArgs);
+    {
+        ScopedBenchmarkStopper stopper{ timer };
+        kernel(stream, kernelArgs);
+    }
 
     cudaMemcpy(&gpuResult2, internalGpuResult2, sizeof(HpSharkFloat<SharkFloatParams>), cudaMemcpyDeviceToHost);
 
-    cudaStreamDestroy(stream); // Destroy the stream
+    if constexpr (UseCustomStream) {
+        cudaStreamDestroy(stream); // Destroy the stream
+    }
 
     cudaFree(internalGpuResult2);
     cudaFree(yGpu);
@@ -225,6 +234,7 @@ void InvokeMultiplyKernel(
 
 template<class SharkFloatParams, typename KernelFunction>
 void InvokeAddKernel(
+    BenchmarkTimer &timer,
     KernelFunction kernel,
     const HpSharkFloat<SharkFloatParams> &xNum,
     const HpSharkFloat<SharkFloatParams> &yNum,
@@ -261,7 +271,10 @@ void InvokeAddKernel(
         (void *)&d_cumulativeCarries
     };
 
-    kernel(kernelArgs);
+    {
+        ScopedBenchmarkStopper stopper{ timer };
+        kernel(kernelArgs);
+    }
 
     // Launch the cooperative kernel
 
@@ -333,35 +346,37 @@ void TestPerf(
 
     {
         BenchmarkTimer timer;
-        ScopedBenchmarkStopper stopper{ timer };
 
         if constexpr (sharkOperator == Operator::Add) {
             InvokeAddKernel<SharkFloatParams>(
+                timer,
                 ComputeAddGpuTestLoop<SharkFloatParams>,
                 *xNum,
                 *yNum,
                 *gpuResult2);
         } else if constexpr (sharkOperator == Operator::MultiplyN2) {
             InvokeMultiplyKernel<SharkFloatParams>(
+                timer,
                 ComputeMultiplyN2GpuTestLoop<SharkFloatParams>,
                 *xNum,
                 *yNum,
                 *gpuResult2);
         } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV1) {
             InvokeMultiplyKernel<SharkFloatParams>(
+                timer,
                 ComputeMultiplyKaratsubaV1GpuTestLoop<SharkFloatParams>,
                 *xNum,
                 *yNum,
                 *gpuResult2);
         } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
             InvokeMultiplyKernel<SharkFloatParams>(
+                timer,
                 ComputeMultiplyKaratsubaV2GpuTestLoop<SharkFloatParams>,
                 *xNum,
                 *yNum,
                 *gpuResult2);
         }
 
-        timer.StopTimer();
         Tests.AddTime(testNum, timer.GetDeltaInMs());
 
         std::cout << "GPU iter time: " << timer.GetDeltaInMs() << " ms" << std::endl;
@@ -413,6 +428,7 @@ void TestPerf(
 
 template<class SharkFloatParams, Operator sharkOperator, typename KernelFunction>
 void InvokeMultiplyKernelCorrectness(
+    BenchmarkTimer &timer,
     KernelFunction kernel,
     const HpSharkFloat<SharkFloatParams> &xNum,
     const HpSharkFloat<SharkFloatParams> &yNum,
@@ -443,7 +459,10 @@ void InvokeMultiplyKernelCorrectness(
         (void *)&d_tempProducts
     };
 
-    kernel(kernelArgs);
+    {
+        ScopedBenchmarkStopper stopper{ timer };
+        kernel(kernelArgs);
+    }
 
     cudaMemcpy(&gpuResult, internalGpuResult2, sizeof(HpSharkFloat<SharkFloatParams>), cudaMemcpyDeviceToHost);
 
@@ -455,6 +474,7 @@ void InvokeMultiplyKernelCorrectness(
 
 template<class SharkFloatParams, Operator sharkOperator, typename KernelFunction>
 void InvokeAddKernelCorrectness(
+    BenchmarkTimer &timer,
     KernelFunction /*kernel*/,
     const HpSharkFloat<SharkFloatParams> &xNum,
     const HpSharkFloat<SharkFloatParams> &yNum,
@@ -490,7 +510,10 @@ void InvokeAddKernelCorrectness(
         (void *)&d_cumulativeCarries
     };
 
-    ComputeAddGpu<SharkFloatParams>(kernelArgs);
+    {
+        ScopedBenchmarkStopper stopper{ timer };
+        ComputeAddGpu<SharkFloatParams>(kernelArgs);
+    }
 
     cudaFree(globalBlockData);
     cudaFree(d_carryOuts);
@@ -605,10 +628,10 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
         }
 
         BenchmarkTimer timer;
-        ScopedBenchmarkStopper stopper{ timer };
 
         if constexpr (sharkOperator == Operator::Add) {
             InvokeAddKernelCorrectness<SharkFloatParams, Operator::Add>(
+                timer,
                 ComputeAddGpu<SharkFloatParams>,
                 xNum,
                 yNum,
@@ -616,6 +639,7 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
         }
         else if constexpr (sharkOperator == Operator::MultiplyN2) {
             InvokeMultiplyKernelCorrectness<SharkFloatParams, Operator::MultiplyN2>(
+                timer,
                 ComputeMultiplyN2Gpu<SharkFloatParams>,
                 xNum,
                 yNum,
@@ -623,6 +647,7 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
         }
         else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV1) {
             InvokeMultiplyKernelCorrectness<SharkFloatParams, Operator::MultiplyKaratsubaV1>(
+                timer,
                 ComputeMultiplyKaratsubaV1Gpu<SharkFloatParams>,
                 xNum,
                 yNum,
@@ -630,6 +655,7 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
         }
         else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
             InvokeMultiplyKernelCorrectness<SharkFloatParams, Operator::MultiplyKaratsubaV2>(
+                timer,
                 ComputeMultiplyKaratsubaV2Gpu<SharkFloatParams>,
                 xNum,
                 yNum,
@@ -638,7 +664,6 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
             assert(false);
         }
 
-        timer.StopTimer();
         Tests.AddTime(testNum, timer.GetDeltaInMs());
 
         if (Verbose) {

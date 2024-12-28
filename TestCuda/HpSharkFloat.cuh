@@ -5,16 +5,19 @@
 #include <gmp.h>
 #include <vector>
 
+static constexpr bool UseCustomStream = true;
+static constexpr bool UseSharedMemory = true;
+
 #ifdef _DEBUG
 static constexpr auto TestIterCount = 1000;
 static constexpr auto BatchSize = 8;
 static constexpr bool SkipCorrectnessTests = false;
-constexpr bool Verbose = true;
+static constexpr bool Verbose = true;
 #else
-static constexpr auto TestIterCount = 200;
+static constexpr auto TestIterCount = 5000;
 static constexpr auto BatchSize = 512;
 static constexpr bool SkipCorrectnessTests = true;
-constexpr bool Verbose = false;
+static constexpr bool Verbose = false;
 #endif
 
 template<
@@ -32,8 +35,11 @@ struct GenericSharkFloatParams {
 
     // If these are set to false they produce wrong answers but can be useful
     // to confirm source of performance issues.
+    constexpr static bool DisableAllAdditions = false;
+    constexpr static bool DisableSubtraction = false;
     constexpr static bool DisableCarryPropagation = false;
     constexpr static bool DisableFinalConstruction = false;
+    constexpr static bool ForceNoOp = false;
     constexpr static bool HostVerbose = Verbose;
 };
 
@@ -46,7 +52,7 @@ using Test8x1SharkParams = GenericSharkFloatParams<8, 1, BatchSize, TestIterCoun
 using Test8x8SharkParams = GenericSharkFloatParams<16, 16, BatchSize, TestIterCount>;
 
 //using Test128x64SharkParams = GenericSharkFloatParams<128, 64, BatchSize, TestIterCount>;
-using Test128x64SharkParams = GenericSharkFloatParams<64, 64, BatchSize, TestIterCount>;
+using Test128x64SharkParams = GenericSharkFloatParams<128, 64, BatchSize, TestIterCount>;
 
 
 #ifdef _DEBUG

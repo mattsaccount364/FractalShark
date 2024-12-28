@@ -56,6 +56,7 @@ __device__ static void ComputeCarryInWarp(
 
 // Device function to compute carry-in signals across warps using statically allocated shared memory
 __device__ static void ComputeCarryIn(
+    cg::thread_block &block,
     const uint32_t *carryOuts, // Input carry-out array
     uint32_t *carryIn,         // Output carry-in array
     int n,                     // Number of digits
@@ -69,7 +70,7 @@ __device__ static void ComputeCarryIn(
     }
 
     // Ensure all carryOuts are written before proceeding
-    __syncthreads();
+    block.sync();
 
     // Step 2: Compute carryIn
     if (tid < n) {
@@ -88,6 +89,7 @@ __device__ static void ComputeCarryIn(
 // Device function to compute carry-in signals across warps using statically allocated shared memory
 template<class SharkFloatParams>
 __device__ void ComputeCarryInDecider(
+    cg::thread_block &block,
     const uint32_t *carryOuts, // Input carry-out array
     uint32_t *carryIn,         // Output carry-in array
     int n,                     // Number of digits
@@ -96,7 +98,7 @@ __device__ void ComputeCarryInDecider(
     if constexpr (SharkFloatParams::ThreadsPerBlock <= 32) {
         ComputeCarryInWarp(carryOuts, carryIn, n);
     } else {
-        ComputeCarryIn(carryOuts, carryIn, n, sharedCarryOut);
+        ComputeCarryIn(block, carryOuts, carryIn, n, sharedCarryOut);
     }
 }
 
@@ -154,7 +156,7 @@ __device__ void subtractDigitsParallel(
         a_shared[i] = a[startDigit + i];
         b_shared[i] = b[startDigit + i];
     }
-    __syncthreads();
+    block.sync();
 
     // Phase 3: Perform Addition or Subtraction within the block
     for (int i = tid; i < digitsInBlock; i += SharkFloatParams::ThreadsPerBlock) {
@@ -168,7 +170,7 @@ __device__ void subtractDigitsParallel(
         tempSum_static[i] = tempDiff;
         carryBits_static[i] = borrowOut;
     }
-    __syncthreads();  // Synchronize after addition/subtraction
+    block.sync();  // Synchronize after addition/subtraction
 
     // Phase 4: Parallel Blelloch Scan on carryBits to compute carry-ins
     uint32_t initialCarryOutLastDigit = 0;
@@ -177,7 +179,7 @@ __device__ void subtractDigitsParallel(
 
     // Perform Blelloch scan on carryBits_static
     ComputeCarryInDecider<SharkFloatParams>(
-        carryBits_static, scanResults_static, digitsInBlock, sharedCarryOut);
+        block, carryBits_static, scanResults_static, digitsInBlock, sharedCarryOut);
 
     // After scan, scanResults_static contains the carry-in for each digit
     // Apply the carry-ins to tempSum_static to get the final output digits
@@ -190,7 +192,7 @@ __device__ void subtractDigitsParallel(
         result[startDigit + i] = finalDiff;
         carryBits_static[i] = (tempValue < borrowIn) ? 1 : 0;
     }
-    __syncthreads();  // Synchronize after applying carry-ins
+    block.sync();  // Synchronize after applying carry-ins
 
     // Phase 5 & 6: Record carry-outs and compute cumulative carries
     if (tid == 0) {
@@ -225,20 +227,18 @@ __device__ void subtractDigitsParallel(
     if (digitsInBlock > 1) {
         // Perform Blelloch scan on carryBits_static
         ComputeCarryInDecider<SharkFloatParams>(
-            carryBits_static, scanResults_static, digitsInBlock, sharedCarryOut);
+            block, carryBits_static, scanResults_static, digitsInBlock, sharedCarryOut);
 
         // Apply the new carry-ins to the output digits
         for (int i = tid; i < digitsInBlock; i += SharkFloatParams::ThreadsPerBlock) {
-            if (i > 0) { // Skip the first digit
-                uint32_t tempValue = result[startDigit + i];
-                uint32_t borrowIn = scanResults_static[i];
-                uint32_t finalDiff = tempValue - borrowIn;
-                result[startDigit + i] = finalDiff;
-                carryBits_static[i] = (tempValue < borrowIn) ? 1 : 0;
-            }
+            uint32_t tempValue = result[startDigit + i];
+            uint32_t borrowIn = scanResults_static[i];
+            uint32_t finalDiff = tempValue - borrowIn;
+            result[startDigit + i] = finalDiff;
+            carryBits_static[i] = (tempValue < borrowIn) ? 1 : 0;
         }
     }
-    __syncthreads();  // Synchronize after propagating new carry-outs
+    block.sync();  // Synchronize after propagating new carry-outs
 }
 
 
@@ -350,7 +350,6 @@ __device__ static void CarryPropagation (
         if (blockIdx.x == 0 && threadIdx.x == 0) {
             *carries_remaining_global = 0;
         }
-        grid.sync();
 
         // Get carry-in from the previous block
         local_carry = 0;
@@ -405,6 +404,7 @@ __device__ static void CarryPropagation (
             break;
         }
 
+        grid.sync();
         pass++;
     } while (pass < MaxPasses);
 
@@ -573,12 +573,12 @@ __device__ void MultiplyHelperKaratsubaV2(
     int y_diff_sign = 0; // 0 if positive, 1 if negative
 
     // Compute x_diff_abs and x_diff_sign
-    __shared__ uint32_t shared_data[10 * n];
+    extern __shared__ uint32_t shared_data[];
 
     auto *subtractionCarries = reinterpret_cast<uint32_t *>(carryIns);
     auto *cumulativeCarries = subtractionCarries + SharkFloatParams::NumBlocks;
 
-    constexpr bool useParallelSubtract = false;
+    constexpr bool useParallelSubtract = true;
 
     if constexpr (useParallelSubtract) {
         int x_compare = compareDigits(A->Digits + n, A->Digits, n);
@@ -785,42 +785,6 @@ __device__ void MultiplyHelperKaratsubaV2(
 
     // ---- Carry Propagation ----
 
-    //if (blockIdx.x == 0 && threadIdx.x == 0) {
-    //    // Only one thread performs the carry propagation
-    //    uint64_t carry = 0;
-    //    int total_result_digits = 2 * N;
-
-    //    for (int idx = 0; idx < total_result_digits; ++idx) {
-    //        int result_idx = Convolution_offset + idx * 2;
-    //        uint64_t sum_low = tempProducts[result_idx];        // Lower 64 bits
-    //        uint64_t sum_high = tempProducts[result_idx + 1];   // Higher 64 bits
-
-    //        // Add carry to sum_low
-    //        uint64_t new_sum_low = sum_low + carry;
-    //        uint64_t carry_from_low = (new_sum_low < sum_low) ? 1 : 0;
-
-    //        // Add carry_from_low to sum_high
-    //        uint64_t new_sum_high = (sum_high << 32) + carry_from_low;
-
-    //        // Extract digit (lower 32 bits of new_sum_low)
-    //        uint32_t digit = static_cast<uint32_t>(new_sum_low & 0xFFFFFFFFULL);
-
-    //        // Compute carry for the next digit
-    //        carry = new_sum_high + (new_sum_low >> 32);
-
-    //        // Store the digit
-    //        tempProducts[Result_offset + idx] = digit;
-    //    }
-
-    //    // Handle final carry
-    //    if (carry > 0) {
-    //        tempProducts[Result_offset + total_result_digits] = static_cast<uint32_t>(carry & 0xFFFFFFFFULL);
-    //        total_result_digits += 1;
-    //    }
-    //}
-
-    // Initialize variables
-
     // Global memory for block carry-outs
     // Allocate space for gridDim.x block carry-outs after total_result_digits
     uint64_t *block_carry_outs = carryIns;
@@ -847,10 +811,8 @@ __device__ void MultiplyHelperKaratsubaV2(
     if constexpr (!SharkFloatParams::DisableCarryPropagation) {
 
         // First Pass: Process convolution results to compute initial digits and local carries
-        __shared__ uint64_t shared_carries[SharkFloatParams::ThreadsPerBlock];
-
         CarryPropagation<SharkFloatParams>(
-            shared_carries,
+            (uint64_t *)shared_data,
             grid,
             block,
             threadIdx,
@@ -969,12 +931,37 @@ __global__ void MultiplyKernelKaratsubaV2TestLoop(
 template<class SharkFloatParams>
 void ComputeMultiplyKaratsubaV2Gpu(void *kernelArgs[]) {
 
-    cudaError_t err = cudaLaunchCooperativeKernel(
+    int numBlocks;
+    cudaError_t err;
+
+    constexpr int N = SharkFloatParams::NumUint32;
+    constexpr auto n = (N + 1) / 2;              // Half of N
+
+    const auto sharedAmountBytes = 10 * n * sizeof(uint32_t);
+
+    std::cout << "Shared memory size: " << sharedAmountBytes << std::endl;
+
+    err = cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+        &numBlocks,
+        MultiplyKernelKaratsubaV2<SharkFloatParams>,
+        SharkFloatParams::ThreadsPerBlock,
+        sharedAmountBytes
+    );
+
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA error in cudaOccupancyMaxActiveBlocksPerMultiprocessor: " << cudaGetErrorString(err) << std::endl;
+        return;
+    }
+
+    // Print the number of blocks
+    std::cout << "Number of blocks: " << numBlocks << std::endl;
+
+    err = cudaLaunchCooperativeKernel(
         (void *)MultiplyKernelKaratsubaV2<SharkFloatParams>,
         dim3(SharkFloatParams::NumBlocks),
         dim3(SharkFloatParams::ThreadsPerBlock),
         kernelArgs,
-        0, // Shared memory size
+        sharedAmountBytes, // Shared memory size
         0 // Stream
     );
 

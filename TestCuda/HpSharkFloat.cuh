@@ -45,11 +45,11 @@ using Test4x4SharkParams = GenericSharkFloatParams<4, 4, BatchSize, TestIterCoun
 using Test8x1SharkParams = GenericSharkFloatParams<8, 1, BatchSize, TestIterCount>;
 
 //using Test128x64SharkParams = GenericSharkFloatParams<128, 64, BatchSize, TestIterCount>;
-using Test128x64SharkParams = GenericSharkFloatParams<128, 64, BatchSize, TestIterCount>;
+using Test128x64SharkParams = GenericSharkFloatParams<128, 32, BatchSize, TestIterCount>;
 
 
 #ifdef _DEBUG
-using TestSharkParams = Test4x2SharkParams;
+using TestSharkParams = Test8x1SharkParams;
 #else
 using TestSharkParams = Test128x64SharkParams;
 #endif

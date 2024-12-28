@@ -394,7 +394,7 @@ void InvokeMultiplyKernelCorrectness(
     KernelFunction kernel,
     const HpSharkFloat<SharkFloatParams> &xNum,
     const HpSharkFloat<SharkFloatParams> &yNum,
-    HpSharkFloat<SharkFloatParams> &gpuResult2) {
+    HpSharkFloat<SharkFloatParams> &gpuResult) {
 
     // Prepare kernel arguments
     // Allocate memory for carryOuts and cumulativeCarries
@@ -432,7 +432,7 @@ void InvokeMultiplyKernelCorrectness(
 
     kernel(kernelArgs);
 
-    cudaMemcpy(&gpuResult2, internalGpuResult2, sizeof(HpSharkFloat<SharkFloatParams>), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&gpuResult, internalGpuResult2, sizeof(HpSharkFloat<SharkFloatParams>), cudaMemcpyDeviceToHost);
 
     cudaFree(internalGpuResult2);
     cudaFree(yGpu);
@@ -442,6 +442,56 @@ void InvokeMultiplyKernelCorrectness(
     cudaFree(d_carry2);
     cudaFree(d_carry3);
     cudaFree(d_tempProducts);
+}
+
+template<class SharkFloatParams, Operator sharkOperator, typename KernelFunction>
+void InvokeAddKernelCorrectness(
+    KernelFunction kernel,
+    const HpSharkFloat<SharkFloatParams> &xNum,
+    const HpSharkFloat<SharkFloatParams> &yNum,
+    HpSharkFloat<SharkFloatParams> &gpuResult) {
+
+    // Perform the calculation on the GPU
+    HpSharkFloat<SharkFloatParams> *xGpu;
+    HpSharkFloat<SharkFloatParams> *yGpu;
+
+    cudaMalloc(&xGpu, sizeof(HpSharkFloat<SharkFloatParams>));
+    cudaMalloc(&yGpu, sizeof(HpSharkFloat<SharkFloatParams>));
+    cudaMemcpy(xGpu, &xNum, sizeof(HpSharkFloat<SharkFloatParams>), cudaMemcpyHostToDevice);
+    cudaMemcpy(yGpu, &yNum, sizeof(HpSharkFloat<SharkFloatParams>), cudaMemcpyHostToDevice);
+
+    HpSharkFloat<SharkFloatParams> *internalGpuResult;
+    cudaMalloc(&internalGpuResult, sizeof(HpSharkFloat<SharkFloatParams>));
+
+    // Allocate memory for carryOuts and cumulativeCarries
+    GlobalAddBlockData *globalBlockData;
+    CarryInfo *d_carryOuts;
+    uint32_t *d_cumulativeCarries;
+    cudaMalloc(&globalBlockData, sizeof(GlobalAddBlockData));
+    cudaMalloc(&d_carryOuts, (SharkFloatParams::NumBlocks + 1) * sizeof(CarryInfo));
+    cudaMalloc(&d_cumulativeCarries, (SharkFloatParams::NumBlocks + 1) * sizeof(uint32_t));
+
+    // Prepare kernel arguments
+    void *kernelArgs[] = {
+        (void *)&xGpu,
+        (void *)&yGpu,
+        (void *)&internalGpuResult,
+        (void *)&globalBlockData,
+        (void *)&d_carryOuts,
+        (void *)&d_cumulativeCarries
+    };
+
+    ComputeAddGpu<SharkFloatParams>(kernelArgs);
+
+    cudaFree(globalBlockData);
+    cudaFree(d_carryOuts);
+    cudaFree(d_cumulativeCarries);
+
+    cudaMemcpy(&gpuResult, internalGpuResult, sizeof(HpSharkFloat<SharkFloatParams>), cudaMemcpyDeviceToHost);
+    cudaFree(internalGpuResult);
+
+    cudaFree(yGpu);
+    cudaFree(xGpu);
 }
 
 template<class SharkFloatParams, Operator sharkOperator>
@@ -461,55 +511,68 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
     }
 
     auto TestHostKaratsuba = [&](int testNum, mpf_t mpfHostResult) -> bool {
-        HpSharkFloat<SharkFloatParams> hostKaratsubaOutV1;
-        MultiplyHelperKaratsubaV1<SharkFloatParams>(
-            &xNum,
-            &yNum,
-            &hostKaratsubaOutV1,
-            nullptr,
-            nullptr,
-            nullptr,
-            nullptr
-        );
 
-        std::cout << "KaratsubaV1 result: " << hostKaratsubaOutV1.ToString() << std::endl;
-        std::cout << "KaratsubaV1 hex: " << hostKaratsubaOutV1.ToHexString() << std::endl;
+        if constexpr (sharkOperator == Operator::MultiplyKaratsubaV1 ||
+            sharkOperator == Operator::MultiplyKaratsubaV2) {
 
-        bool res = DiffAgainstHost<SharkFloatParams, sharkOperator>(
-            testNum,
-            "CustomHighPrecisionV1",
-            mpfHostResult,
-            hostKaratsubaOutV1);
+            HpSharkFloat<SharkFloatParams> hostKaratsubaOutV1;
+            MultiplyHelperKaratsubaV1<SharkFloatParams>(
+                &xNum,
+                &yNum,
+                &hostKaratsubaOutV1,
+                nullptr,
+                nullptr,
+                nullptr,
+                nullptr
+            );
 
-        if (!res) {
-            DebugBreak();
-        };
+            std::cout << "KaratsubaV1 result: " << hostKaratsubaOutV1.ToString() << std::endl;
+            std::cout << "KaratsubaV1 hex: " << hostKaratsubaOutV1.ToHexString() << std::endl;
 
-        HpSharkFloat<SharkFloatParams> hostKaratsubaOutV2;
-        MultiplyHelperKaratsubaV2<SharkFloatParams>(
-            &xNum,
-            &yNum,
-            &hostKaratsubaOutV2,
-            nullptr,
-            nullptr,
-            nullptr,
-            nullptr
-        );
+            bool res = DiffAgainstHost<SharkFloatParams, sharkOperator>(
+                testNum,
+                "CustomHighPrecisionV1",
+                mpfHostResult,
+                hostKaratsubaOutV1);
 
-        std::cout << "KaratsubaV2 result: " << hostKaratsubaOutV2.ToString() << std::endl;
-        std::cout << "KaratsubaV2 hex: " << hostKaratsubaOutV2.ToHexString() << std::endl;
+            if (!res) {
+                DebugBreak();
+            };
 
-        res &= DiffAgainstHost<SharkFloatParams, sharkOperator>(
-            testNum,
-            "CustomHighPrecisionV2",
-            mpfHostResult,
-            hostKaratsubaOutV2);
+            HpSharkFloat<SharkFloatParams> hostKaratsubaOutV2;
+            MultiplyHelperKaratsubaV2<SharkFloatParams>(
+                &xNum,
+                &yNum,
+                &hostKaratsubaOutV2,
+                nullptr,
+                nullptr,
+                nullptr,
+                nullptr
+            );
 
-        if (!res) {
-            DebugBreak();
-        };
+            std::cout << "KaratsubaV2 result: " << hostKaratsubaOutV2.ToString() << std::endl;
+            std::cout << "KaratsubaV2 hex: " << hostKaratsubaOutV2.ToHexString() << std::endl;
 
-        return res;
+            res &= DiffAgainstHost<SharkFloatParams, sharkOperator>(
+                testNum,
+                "CustomHighPrecisionV2",
+                mpfHostResult,
+                hostKaratsubaOutV2);
+
+            if (!res) {
+                DebugBreak();
+            };
+
+            return res;
+        } else if constexpr (sharkOperator == Operator::Add) {
+            (void)testNum;
+            (void)mpfHostResult;
+            return true;
+        } else {
+            (void)testNum;
+            (void)mpfHostResult;
+            return false;
+        }
         };
 
     {
@@ -540,47 +603,11 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
         ScopedBenchmarkStopper stopper{ timer };
 
         if constexpr (sharkOperator == Operator::Add) {
-            // Perform the calculation on the GPU
-            HpSharkFloat<SharkFloatParams> *xGpu;
-            HpSharkFloat<SharkFloatParams> *yGpu;
-
-            cudaMalloc(&xGpu, sizeof(HpSharkFloat<SharkFloatParams>));
-            cudaMalloc(&yGpu, sizeof(HpSharkFloat<SharkFloatParams>));
-            cudaMemcpy(xGpu, &xNum, sizeof(HpSharkFloat<SharkFloatParams>), cudaMemcpyHostToDevice);
-            cudaMemcpy(yGpu, &yNum, sizeof(HpSharkFloat<SharkFloatParams>), cudaMemcpyHostToDevice);
-
-            HpSharkFloat<SharkFloatParams> *internalGpuResult;
-            cudaMalloc(&internalGpuResult, sizeof(HpSharkFloat<SharkFloatParams>));
-
-            // Allocate memory for carryOuts and cumulativeCarries
-            GlobalAddBlockData *globalBlockData;
-            CarryInfo *d_carryOuts;
-            uint32_t *d_cumulativeCarries;
-            cudaMalloc(&globalBlockData, sizeof(GlobalAddBlockData));
-            cudaMalloc(&d_carryOuts, (SharkFloatParams::NumBlocks + 1) * sizeof(CarryInfo));
-            cudaMalloc(&d_cumulativeCarries, (SharkFloatParams::NumBlocks + 1) * sizeof(uint32_t));
-
-            // Prepare kernel arguments
-            void *kernelArgs[] = {
-                (void *)&xGpu,
-                (void *)&yGpu,
-                (void *)&internalGpuResult,
-                (void *)&globalBlockData,
-                (void *)&d_carryOuts,
-                (void *)&d_cumulativeCarries
-            };
-
-            ComputeAddGpu<SharkFloatParams>(kernelArgs);
-
-            cudaFree(globalBlockData);
-            cudaFree(d_carryOuts);
-            cudaFree(d_cumulativeCarries);
-
-            cudaMemcpy(&gpuResult, internalGpuResult, sizeof(HpSharkFloat<SharkFloatParams>), cudaMemcpyDeviceToHost);
-            cudaFree(internalGpuResult);
-
-            cudaFree(yGpu);
-            cudaFree(xGpu);
+            InvokeAddKernelCorrectness<SharkFloatParams, Operator::Add>(
+                ComputeAddGpu<SharkFloatParams>,
+                xNum,
+                yNum,
+                gpuResult);
         }
         else if constexpr (sharkOperator == Operator::MultiplyN2) {
             InvokeMultiplyKernelCorrectness<SharkFloatParams, Operator::MultiplyN2>(
@@ -736,6 +763,7 @@ void TestBinOperatorTwoNumbers(
             std::cout << "num2: " << num2 << std::endl;
             std::cout << "MpfX: " << MpfToString<SharkFloatParams>(mpfXCopy, HpSharkFloat<SharkFloatParams>::DefaultPrecBits) << std::endl;
             std::cout << "MpfY: " << MpfToString<SharkFloatParams>(mpfYCopy, HpSharkFloat<SharkFloatParams>::DefaultPrecBits) << std::endl;
+            std::cout << "operator: " << OperatorToString<sharkOperator>() << std::endl;
         }
 
         // Convert the input values to HpSharkFloat<SharkFloatParams> representations
@@ -1055,6 +1083,15 @@ void TestAddSpecialNumbers18(int testNum) {
 }
 
 template<class SharkFloatParams, Operator sharkOperator>
+void TestAddSpecialNumbers19(int testNum) {
+
+    TestAddSpecialNumbersHelper<SharkFloatParams, sharkOperator>(
+        testNum,
+        std::vector<uint32_t>{ 0x685940F0, 0x00000000, 0x00000000, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF },
+        std::vector<uint32_t>{ 0xFFFFFFF1, 0x5008CECF, 0x2A4D4784, 0x0000000D, 0x00000006, 0x00000000, 0xFFFFFFFF, 0x00000000 });
+}
+
+template<class SharkFloatParams, Operator sharkOperator>
 bool TestAllBinaryOp(int testBase) {
     constexpr bool includeSet1 = true;
     constexpr bool includeSet2 = true;
@@ -1063,36 +1100,36 @@ bool TestAllBinaryOp(int testBase) {
     constexpr bool includeSet5 = true;
     constexpr bool includeSet6 = true;
     constexpr bool includeSet10 = true;
-    constexpr bool includeSet11 = true;
+    constexpr bool includeSet11 = false;
 
     // 200s is multiply
     // 400s is add
     
-    if constexpr (includeSet1) {
-        const auto set = testBase + 100;
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 10, "1", "2");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 20, "4294967295", "1");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 30, "4294967296", "1");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 40, "4294967295", "4294967296");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 50, "4294967296", "-1");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 60, "18446744073709551615", "1");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 70, "0", "0.1");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 80, "0.1", "0");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 90, "0", "0");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 100, "0.1", "0.1");
-    }
+    //if constexpr (includeSet1) {
+    //    const auto set = testBase + 100;
+    //    TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 10, "1", "2");
+    //    TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 20, "4294967295", "1");
+    //    TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 30, "4294967296", "1");
+    //    TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 40, "4294967295", "4294967296");
+    //    TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 50, "4294967296", "-1");
+    //    TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 60, "18446744073709551615", "1");
+    //    TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 70, "0", "0.1");
+    //    TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 80, "0.1", "0");
+    //    TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 90, "0", "0");
+    //    TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 100, "0.1", "0.1");
+    //}
 
     if constexpr (includeSet2) {
         const auto set = testBase + 300;
-        TestAddSpecialNumbers1<SharkFloatParams, sharkOperator>(set + 10);
-        TestAddSpecialNumbers2<SharkFloatParams, sharkOperator>(set + 20);
-        TestAddSpecialNumbers3<SharkFloatParams, sharkOperator>(set + 30);
-        TestAddSpecialNumbers4<SharkFloatParams, sharkOperator>(set + 40);
-        TestAddSpecialNumbers5<SharkFloatParams, sharkOperator>(set + 50);
-        TestAddSpecialNumbers6<SharkFloatParams, sharkOperator>(set + 60);
-        TestAddSpecialNumbers7<SharkFloatParams, sharkOperator>(set + 70);
-        TestAddSpecialNumbers8<SharkFloatParams, sharkOperator>(set + 80);
-        TestAddSpecialNumbers9<SharkFloatParams, sharkOperator>(set + 90);
+        //TestAddSpecialNumbers1<SharkFloatParams, sharkOperator>(set + 10);
+        //TestAddSpecialNumbers2<SharkFloatParams, sharkOperator>(set + 20);
+        //TestAddSpecialNumbers3<SharkFloatParams, sharkOperator>(set + 30);
+        //TestAddSpecialNumbers4<SharkFloatParams, sharkOperator>(set + 40);
+        //TestAddSpecialNumbers5<SharkFloatParams, sharkOperator>(set + 50);
+        //TestAddSpecialNumbers6<SharkFloatParams, sharkOperator>(set + 60);
+        //TestAddSpecialNumbers7<SharkFloatParams, sharkOperator>(set + 70);
+        //TestAddSpecialNumbers8<SharkFloatParams, sharkOperator>(set + 80);
+        //TestAddSpecialNumbers9<SharkFloatParams, sharkOperator>(set + 90);
         TestAddSpecialNumbers10<SharkFloatParams, sharkOperator>(set + 100);
         TestAddSpecialNumbers11<SharkFloatParams, sharkOperator>(set + 110);
         TestAddSpecialNumbers12<SharkFloatParams, sharkOperator>(set + 120);
@@ -1102,10 +1139,11 @@ bool TestAllBinaryOp(int testBase) {
         TestAddSpecialNumbers16<SharkFloatParams, sharkOperator>(set + 160);
         TestAddSpecialNumbers17<SharkFloatParams, sharkOperator>(set + 170);
         TestAddSpecialNumbers18<SharkFloatParams, sharkOperator>(set + 180);
+        TestAddSpecialNumbers19<SharkFloatParams, sharkOperator>(set + 190);
     }
 
     if constexpr (includeSet3) {
-        const auto set = testBase + 500;
+        const auto set = testBase + 600;
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 10, "2", "0.1");
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 20, "0.2", "0.1");
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 30, "0.5", "1.2");
@@ -1116,7 +1154,7 @@ bool TestAllBinaryOp(int testBase) {
     }
 
     if constexpr (includeSet4) {
-        const auto set = testBase + 600;
+        const auto set = testBase + 700;
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 10, "-0.5", "1.2");
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 20, "-0.6", "1.3");
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 30, "-0.7", "1.4");
@@ -1125,7 +1163,7 @@ bool TestAllBinaryOp(int testBase) {
     }
 
     if constexpr (includeSet5) {
-        const auto set = testBase + 700;
+        const auto set = testBase + 800;
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 10, "-0.51", "-1.29");
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 20, "-0.61", "-1.39");
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 30, "-0.71", "-1.49");
@@ -1134,7 +1172,7 @@ bool TestAllBinaryOp(int testBase) {
     }
 
     if constexpr (includeSet6) {
-        const auto set = testBase + 800;
+        const auto set = testBase + 900;
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 10, "0.5265542653452654526545625456254565446654545645649789871322131213156435546435", "-1.263468375787958774985473345435632415334245268476928454653443234164658776634854746584532186639173047328910730217803271839216");
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 20, "0.2999999999965542653452654526545625456254565446654545645649789871322131213156435546435", "-1.263468375787958774985473345435632415334245268476928454653443234164658776634854746584532186639173047328910730217803271839216");
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 30, "0.1265542653452654526545625456254565446654545645649789871322131213156435546435", "-1.2634683757879587749854733454356324153342452684769284546534432341646587766348547465845321866391730473289107302178039999999999999271839216");

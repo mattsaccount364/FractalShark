@@ -29,7 +29,7 @@ __global__ void IntegrationKernel(
 
     // Call the AddHelper function
     AddHelper(A, B, Out, globalBlockData, carryOuts, cumulativeCarries, grid, numBlocks);
-    MultiplyHelperKaratsubaV1(A, B, Out, nullptr, nullptr, nullptr, grid, nullptr);
+    MultiplyHelperKaratsubaV1(A, B, Out, grid, nullptr);
 }
 
 
@@ -50,7 +50,7 @@ __global__ void IntegrationKernelTestLoop(
 
     for (int i = 0; i < TestIterCount; ++i) {
         AddHelper(A, B, Out, globalBlockData, carryOuts, cumulativeCarries, grid, numBlocks);
-        MultiplyHelperKaratsubaV1(A, B, Out, nullptr, nullptr, nullptr, grid, nullptr);
+        MultiplyHelperKaratsubaV1(A, B, Out, grid, nullptr);
     }
 }
 

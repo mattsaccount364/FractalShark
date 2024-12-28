@@ -65,9 +65,6 @@ __device__ void MultiplyHelperKaratsubaV1(
     const HpSharkFloat<SharkFloatParams> *__restrict__ A,
     const HpSharkFloat<SharkFloatParams> *__restrict__ B,
     HpSharkFloat<SharkFloatParams> *__restrict__ Out,
-    uint64_t *__restrict__ carryOuts_phase3,
-    uint64_t *__restrict__ carryOuts_phase6,
-    uint64_t *__restrict__ carryIns,
     cooperative_groups::grid_group grid,
     uint64_t *__restrict__ tempProducts);
 
@@ -76,9 +73,6 @@ __global__ void MultiplyKernelKaratsubaV1(
     const HpSharkFloat<SharkFloatParams> *A,
     const HpSharkFloat<SharkFloatParams> *B,
     HpSharkFloat<SharkFloatParams> *Out,
-    uint64_t *carryOuts_phase3,
-    uint64_t *carryOuts_phase6,
-    uint64_t *carryIns,
     uint64_t *tempProducts);
 
 template<class SharkFloatParams>
@@ -86,9 +80,6 @@ __global__ void MultiplyKernelKaratsubaV1TestLoop(
     HpSharkFloat<SharkFloatParams> *A,
     HpSharkFloat<SharkFloatParams> *B,
     HpSharkFloat<SharkFloatParams> *Out,
-    uint64_t *carryOuts_phase3,
-    uint64_t *carryOuts_phase6,
-    uint64_t *carryIns,
     uint64_t *tempProducts);
 
 ////////////////////////////////////////
@@ -104,9 +95,6 @@ __device__ void MultiplyHelperKaratsubaV2(
     const HpSharkFloat<SharkFloatParams> *__restrict__ A,
     const HpSharkFloat<SharkFloatParams> *__restrict__ B,
     HpSharkFloat<SharkFloatParams> *__restrict__ Out,
-    uint64_t *__restrict__ carryOuts_phase3,
-    uint64_t *__restrict__ carryOuts_phase6,
-    uint64_t *__restrict__ carryIns,
     cooperative_groups::grid_group grid,
     uint64_t *__restrict__ tempProducts);
 
@@ -126,9 +114,6 @@ __global__ void MultiplyKernelKaratsubaV2(
     const HpSharkFloat<SharkFloatParams> *A,
     const HpSharkFloat<SharkFloatParams> *B,
     HpSharkFloat<SharkFloatParams> *Out,
-    uint64_t *carryOuts_phase3,
-    uint64_t *carryOuts_phase6,
-    uint64_t *carryIns,
     uint64_t *tempProducts);
 
 template<class SharkFloatParams>
@@ -136,7 +121,4 @@ __global__ void MultiplyKernelKaratsubaV2TestLoop(
     HpSharkFloat<SharkFloatParams> *A,
     HpSharkFloat<SharkFloatParams> *B,
     HpSharkFloat<SharkFloatParams> *Out,
-    uint64_t *carryOuts_phase3,
-    uint64_t *carryOuts_phase6,
-    uint64_t *carryIns,
     uint64_t *tempProducts);

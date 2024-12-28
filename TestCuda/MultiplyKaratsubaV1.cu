@@ -47,6 +47,7 @@ __device__ static void subtractWithBorrow(
 
 template<class SharkFloatParams>
 __device__ static void CarryPropagation(
+    uint64_t *__restrict__ shared_carries,
     cg::grid_group &grid,
     cg::thread_block &block,
     const uint3 &threadIdx,
@@ -59,11 +60,9 @@ __device__ static void CarryPropagation(
     int Result_offset,
     uint64_t *__restrict__ block_carry_outs,
     uint64_t *__restrict__ tempProducts,
-    uint64_t *__restrict__ carryOuts_phase3) {
+    uint64_t *__restrict__ globalCarryCheck) {
 
     // First Pass: Process convolution results to compute initial digits and local carries
-    __shared__ uint64_t shared_carries[SharkFloatParams::ThreadsPerBlock];
-
     // Initialize local carry
     uint64_t local_carry = 0;
 
@@ -71,32 +70,43 @@ __device__ static void CarryPropagation(
     constexpr int MaxPasses = 10; // Maximum number of carry propagation passes
     constexpr int total_result_digits = 2 * SharkFloatParams::NumUint32;
 
-    // Each thread processes its assigned digits
+    uint64_t *carries_remaining_global = globalCarryCheck;
+
     for (int idx = thread_start_idx; idx < thread_end_idx; ++idx) {
         int sum_low_idx = Convolution_offset + idx * 2;
         int sum_high_idx = sum_low_idx + 1;
 
-        // Read sum_low and sum_high from global memory
         uint64_t sum_low = tempProducts[sum_low_idx];     // Lower 64 bits
         uint64_t sum_high = tempProducts[sum_high_idx];   // Higher 64 bits
 
         // Add local carry to sum_low
+        bool new_sum_low_negative = false;
         uint64_t new_sum_low = sum_low + local_carry;
-        uint64_t carry_from_low = (new_sum_low < sum_low) ? 1 : 0;
 
-        // Combine sum_high and carry_from_low
-        uint64_t new_sum_high = (sum_high << 32) + carry_from_low;
-
-        // Extract digit
-        uint32_t digit = static_cast<uint32_t>(new_sum_low & 0xFFFFFFFFULL);
-
-        // Compute local carry for next digit
-        local_carry = new_sum_high + (new_sum_low >> 32);
-
-        // Store the partial digit
+        // Extract one 32-bit digit from new_sum_low
+        auto digit = static_cast<uint32_t>(new_sum_low & 0xFFFFFFFFULL);
         tempProducts[Result_offset + idx] = digit;
 
-        // Continue to next digit without synchronization since carries are local
+        bool local_carry_negative = ((local_carry & (1ULL << 63)) != 0);
+        local_carry = 0ULL;
+
+        if (!local_carry_negative && new_sum_low < sum_low) {
+            local_carry = 1ULL << 32;
+        } else if (local_carry_negative && new_sum_low > sum_low) {
+            new_sum_low_negative = (new_sum_low & 0x8000'0000'0000'0000) != 0;
+        }
+
+        // Update local_carry
+        if (new_sum_low_negative) {
+            // Shift sum_high by 32 bits and add carry_from_low
+            uint64_t upper_new_sum_low = new_sum_low >> 32;
+            upper_new_sum_low |= 0xFFFF'FFFF'0000'0000;
+            local_carry += upper_new_sum_low;
+            local_carry += sum_high << 32;
+        } else {
+            local_carry += new_sum_low >> 32;
+            local_carry += sum_high << 32;
+        }
     }
 
     if (threadIdx.x == SharkFloatParams::ThreadsPerBlock - 1) {
@@ -108,12 +118,15 @@ __device__ static void CarryPropagation(
     // Synchronize all blocks
     grid.sync();
 
-    uint64_t *carries_remaining_global = carryOuts_phase3;
-
     // Inter-Block Carry Propagation
     int pass = 0;
 
     do {
+        // Zero out the global carry count for the current pass
+        if (blockIdx.x == 0 && threadIdx.x == 0) {
+            *carries_remaining_global = 0;
+        }
+
         // Get carry-in from the previous block
         local_carry = 0;
         if (threadIdx.x == 0 && blockIdx.x > 0) {
@@ -125,32 +138,38 @@ __device__ static void CarryPropagation(
         }
 
         // Each thread processes its assigned digits
+        bool local_carry_negative = false;
         for (int idx = thread_start_idx; idx < thread_end_idx; ++idx) {
             // Read the previously stored digit
             uint32_t digit = tempProducts[Result_offset + idx];
 
             // Add local_carry to digit
             uint64_t sum = static_cast<uint64_t>(digit) + local_carry;
+            if (local_carry_negative) {
+                // Clear high order 32 bits of sum:
+                sum &= 0x0000'0000'FFFF'FFFF;
+            }
 
             // Update digit
             digit = static_cast<uint32_t>(sum & 0xFFFFFFFFULL);
             tempProducts[Result_offset + idx] = digit;
 
             // Compute new local_carry for next digit
+            local_carry_negative = ((local_carry & (1ULL << 63)) != 0);
             local_carry = sum >> 32;
         }
 
-        // Store the final local_carry of each thread into shared memory
         shared_carries[threadIdx.x] = local_carry;
         block.sync();
 
         // The block's carry-out is the carry from the last thread
+        auto temp = shared_carries[threadIdx.x];
         if (threadIdx.x == SharkFloatParams::ThreadsPerBlock - 1) {
-            auto temp = shared_carries[threadIdx.x];
             block_carry_outs[blockIdx.x] = temp;
-            if (temp > 0) {
-                atomicAdd(carries_remaining_global, 1);
-            }
+        }
+
+        if (temp != 0) {
+            atomicAdd(carries_remaining_global, 1);
         }
 
         // Synchronize all blocks before checking if carries remain
@@ -161,6 +180,7 @@ __device__ static void CarryPropagation(
             break;
         }
 
+        grid.sync();
         pass++;
     } while (pass < MaxPasses);
 
@@ -190,9 +210,6 @@ __device__ void MultiplyHelperKaratsubaV1(
     const HpSharkFloat<SharkFloatParams> *__restrict__ A,
     const HpSharkFloat<SharkFloatParams> *__restrict__ B,
     HpSharkFloat<SharkFloatParams> *__restrict__ Out,
-    uint64_t *__restrict__ carryOuts_phase3,
-    uint64_t *__restrict__ carryOuts_phase6,
-    uint64_t *__restrict__ carryIns,
     cg::grid_group grid,
     uint64_t *__restrict__ tempProducts) {
 
@@ -211,6 +228,8 @@ __device__ void MultiplyHelperKaratsubaV1(
     constexpr int Z1_offset = Z1_temp_offset + 4 * N;
     constexpr int Convolution_offset = Z1_offset + 4 * N;
     constexpr int Result_offset = Convolution_offset + 4 * N;
+    constexpr int GlobalCarryOffset = Result_offset + 1 * N;
+    constexpr int CarryInsOffset = GlobalCarryOffset + 1 * N;
 
     //// Shared memory allocation
     //__shared__ uint64_t A_shared[n];
@@ -465,8 +484,7 @@ __device__ void MultiplyHelperKaratsubaV1(
 
     // Global memory for block carry-outs
     // Allocate space for gridDim.x block carry-outs after total_result_digits
-    uint64_t *block_carry_outs = carryIns;
-    //uint64_t *blocks_need_to_continue = carryIns + SharkFloatParams::NumBlocks;
+    uint64_t *block_carry_outs = &tempProducts[CarryInsOffset];
 
     constexpr auto digits_per_block = SharkFloatParams::ThreadsPerBlock * 2;
     auto block_start_idx = blockIdx.x * digits_per_block;
@@ -485,10 +503,15 @@ __device__ void MultiplyHelperKaratsubaV1(
     //    so we end up with 2 * SharkFloatParams::NumBlocks * SharkFloatParams::ThreadsPerBlock digits.
     //At that point we do inter-block carry propagation, which is iterative.
 
+    __shared__ uint64_t shared_carries[SharkFloatParams::ThreadsPerBlock];
+
 
     if constexpr (!SharkFloatParams::DisableCarryPropagation) {
 
+        uint64_t *globalCarryCheck = &tempProducts[GlobalCarryOffset];
+
         CarryPropagation<SharkFloatParams>(
+            shared_carries,
             grid,
             block,
             threadIdx,
@@ -501,7 +524,7 @@ __device__ void MultiplyHelperKaratsubaV1(
             Result_offset,
             block_carry_outs,
             tempProducts,
-            carryOuts_phase3
+            globalCarryCheck
         );
     } else {
         grid.sync();
@@ -573,17 +596,14 @@ __global__ void MultiplyKernelKaratsubaV1(
     const HpSharkFloat<SharkFloatParams> *A,
     const HpSharkFloat<SharkFloatParams> *B,
     HpSharkFloat<SharkFloatParams> *Out,
-    uint64_t *carryOuts_phase3,
-    uint64_t *carryOuts_phase6,
-    uint64_t *carryIns,
     uint64_t *tempProducts) {
 
     // Initialize cooperative grid group
     cg::grid_group grid = cg::this_grid();
 
     // Call the MultiplyHelper function
-    //MultiplyHelper(A, B, Out, carryOuts_phase3, carryOuts_phase6, carryIns, grid, tempProducts);
-    MultiplyHelperKaratsubaV1(A, B, Out, carryOuts_phase3, carryOuts_phase6, carryIns, grid, tempProducts);
+    //MultiplyHelper(A, B, Out, grid, tempProducts);
+    MultiplyHelperKaratsubaV1(A, B, Out, grid, tempProducts);
 }
 
 template<class SharkFloatParams>
@@ -591,17 +611,14 @@ __global__ void MultiplyKernelKaratsubaV1TestLoop(
     HpSharkFloat<SharkFloatParams> *A,
     HpSharkFloat<SharkFloatParams> *B,
     HpSharkFloat<SharkFloatParams> *Out,
-    uint64_t *carryOuts_phase3,
-    uint64_t *carryOuts_phase6,
-    uint64_t *carryIns,
     uint64_t *tempProducts) { // Array to store cumulative carries
 
     // Initialize cooperative grid group
     cg::grid_group grid = cg::this_grid();
 
     for (int i = 0; i < TestIterCount; ++i) {
-        // MultiplyHelper(A, B, Out, carryOuts_phase3, carryOuts_phase6, carryIns, grid, tempProducts);
-        MultiplyHelperKaratsubaV1(A, B, Out, carryOuts_phase3, carryOuts_phase6, carryIns, grid, tempProducts);
+        // MultiplyHelper(A, B, Out, grid, tempProducts);
+        MultiplyHelperKaratsubaV1(A, B, Out, grid, tempProducts);
     }
 }
 

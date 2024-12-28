@@ -325,7 +325,7 @@ __device__ static void CarryPropagation (
     int Result_offset,
     uint64_t * __restrict__ block_carry_outs,
     uint64_t * __restrict__ tempProducts,
-    uint64_t * __restrict__ carryOuts_phase3) {
+    uint64_t * __restrict__ globalCarryCheck) {
 
     // First Pass: Process convolution results to compute initial digits and local carries
     // Initialize local carry
@@ -335,7 +335,7 @@ __device__ static void CarryPropagation (
     constexpr int MaxPasses = 10; // Maximum number of carry propagation passes
     constexpr int total_result_digits = 2 * SharkFloatParams::NumUint32;
 
-    uint64_t *carries_remaining_global = carryOuts_phase3;
+    uint64_t *carries_remaining_global = globalCarryCheck;
 
     for (int idx = thread_start_idx; idx < thread_end_idx; ++idx) {
         int sum_low_idx = Convolution_offset + idx * 2;
@@ -482,9 +482,6 @@ __device__ void MultiplyHelperKaratsubaV2(
     const HpSharkFloat<SharkFloatParams> *__restrict__ A,
     const HpSharkFloat<SharkFloatParams> *__restrict__ B,
     HpSharkFloat<SharkFloatParams> *__restrict__ Out,
-    uint64_t *__restrict__ carryOuts_phase3,
-    uint64_t *__restrict__ carryOuts_phase6,
-    uint64_t *__restrict__ carryIns,
     cg::grid_group grid,
     uint64_t *__restrict__ tempProducts) {
 
@@ -503,6 +500,10 @@ __device__ void MultiplyHelperKaratsubaV2(
     constexpr int Z1_offset = Z1_temp_offset + 4 * N;
     constexpr int Convolution_offset = Z1_offset + 4 * N;
     constexpr int Result_offset = Convolution_offset + 4 * N;
+    constexpr int XDiff_offset = Result_offset + 2 * N;
+    constexpr int YDiff_offset = XDiff_offset + 1 * N;
+    constexpr int GlobalCarryOffset = YDiff_offset + 1 * N;
+    constexpr int CarryInsOffset = GlobalCarryOffset + 1 * N;
 
     //// Shared memory allocation
     //__shared__ uint64_t A_shared[n];
@@ -607,19 +608,19 @@ __device__ void MultiplyHelperKaratsubaV2(
 
     // ---- Compute Differences x_diff = A1 - A0 and y_diff = B1 - B0 ----
 
-// Arrays to hold the absolute differences (size n)
-    auto *x_diff_abs = reinterpret_cast<uint32_t*>(carryOuts_phase6);
-    auto *y_diff_abs = reinterpret_cast<uint32_t *>(carryOuts_phase6) + n;
+    // Arrays to hold the absolute differences (size n)
+    auto *x_diff_abs = reinterpret_cast<uint32_t *>(&tempProducts[XDiff_offset]);
+    auto *y_diff_abs = reinterpret_cast<uint32_t *>(&tempProducts[YDiff_offset]);
     int x_diff_sign = 0; // 0 if positive, 1 if negative
     int y_diff_sign = 0; // 0 if positive, 1 if negative
 
     // Compute x_diff_abs and x_diff_sign
     extern __shared__ uint32_t shared_data[];
 
-    auto *subtractionCarries = reinterpret_cast<uint32_t *>(carryIns);
+    auto *subtractionCarries = reinterpret_cast<uint32_t *>(&tempProducts[CarryInsOffset]);
     auto *cumulativeCarries = subtractionCarries + SharkFloatParams::NumBlocks;
 
-    constexpr bool useParallelSubtract = true;
+    constexpr bool useParallelSubtract = false;
 
     if constexpr (useParallelSubtract) {
         int x_compare = compareDigits(A->Digits + n, A->Digits, n);
@@ -828,7 +829,7 @@ __device__ void MultiplyHelperKaratsubaV2(
 
     // Global memory for block carry-outs
     // Allocate space for gridDim.x block carry-outs after total_result_digits
-    uint64_t *block_carry_outs = carryIns;
+    uint64_t *block_carry_outs = &tempProducts[CarryInsOffset];
     //uint64_t *blocks_need_to_continue = carryIns + SharkFloatParams::NumBlocks;
 
     constexpr auto digits_per_block = SharkFloatParams::ThreadsPerBlock * 2;
@@ -851,6 +852,8 @@ __device__ void MultiplyHelperKaratsubaV2(
 
     if constexpr (!SharkFloatParams::DisableCarryPropagation) {
 
+        uint64_t *globalCarryCheck = &tempProducts[GlobalCarryOffset];
+
         // First Pass: Process convolution results to compute initial digits and local carries
         CarryPropagation<SharkFloatParams>(
             (uint64_t *)shared_data,
@@ -866,7 +869,7 @@ __device__ void MultiplyHelperKaratsubaV2(
             Result_offset,
             block_carry_outs,
             tempProducts,
-            carryOuts_phase3
+            globalCarryCheck
         );
     } else {
         grid.sync();
@@ -937,17 +940,14 @@ __global__ void MultiplyKernelKaratsubaV2(
     const HpSharkFloat<SharkFloatParams> *A,
     const HpSharkFloat<SharkFloatParams> *B,
     HpSharkFloat<SharkFloatParams> *Out,
-    uint64_t *carryOuts_phase3,
-    uint64_t *carryOuts_phase6,
-    uint64_t *carryIns,
     uint64_t *tempProducts) {
 
     // Initialize cooperative grid group
     cg::grid_group grid = cg::this_grid();
 
     // Call the MultiplyHelper function
-    //MultiplyHelper(A, B, Out, carryOuts_phase3, carryOuts_phase6, carryIns, grid, tempProducts);
-    MultiplyHelperKaratsubaV2(A, B, Out, carryOuts_phase3, carryOuts_phase6, carryIns, grid, tempProducts);
+    //MultiplyHelper(A, B, Out, carryIns, grid, tempProducts);
+    MultiplyHelperKaratsubaV2(A, B, Out, grid, tempProducts);
 }
 
 template<class SharkFloatParams>
@@ -955,17 +955,14 @@ __global__ void MultiplyKernelKaratsubaV2TestLoop(
     HpSharkFloat<SharkFloatParams> *A,
     HpSharkFloat<SharkFloatParams> *B,
     HpSharkFloat<SharkFloatParams> *Out,
-    uint64_t *carryOuts_phase3,
-    uint64_t *carryOuts_phase6,
-    uint64_t *carryIns,
     uint64_t *tempProducts) { // Array to store cumulative carries
 
     // Initialize cooperative grid group
     cg::grid_group grid = cg::this_grid();
 
     for (int i = 0; i < TestIterCount; ++i) {
-        // MultiplyHelper(A, B, Out, carryOuts_phase3, carryOuts_phase6, carryIns, grid, tempProducts);
-        MultiplyHelperKaratsubaV2(A, B, Out, carryOuts_phase3, carryOuts_phase6, carryIns, grid, tempProducts);
+        // MultiplyHelper(A, B, Out, carryIns, grid, tempProducts);
+        MultiplyHelperKaratsubaV2(A, B, Out, grid, tempProducts);
     }
 }
 

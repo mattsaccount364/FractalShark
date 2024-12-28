@@ -55,11 +55,7 @@ template<class SharkFloatParams>
 void MultiplyHelperKaratsubaV1(
     const HpSharkFloat<SharkFloatParams> *A,
     const HpSharkFloat<SharkFloatParams> *B,
-    HpSharkFloat<SharkFloatParams> *Out,
-    uint64_t * /*carryOuts_phase3*/, // Unused
-    uint64_t * /*carryOuts_phase6*/, // Unused
-    uint64_t * /*carryIns*/,         // Unused
-    uint64_t * /*tempProducts*/      // Unused
+    HpSharkFloat<SharkFloatParams> *Out
 ) {
     constexpr int N = SharkFloatParams::NumUint32;
     if constexpr (N == 1) {
@@ -368,11 +364,7 @@ template<class SharkFloatParams>
 void MultiplyHelperKaratsubaV2(
     const HpSharkFloat<SharkFloatParams> *A,
     const HpSharkFloat<SharkFloatParams> *B,
-    HpSharkFloat<SharkFloatParams> *Out,
-    uint64_t * /*carryOuts_phase3*/,
-    uint64_t * /*carryOuts_phase6*/,
-    uint64_t * /*carryIns*/,
-    uint64_t * /*tempProducts*/
+    HpSharkFloat<SharkFloatParams> *Out
 ) {
     constexpr int N = SharkFloatParams::NumUint32;
     constexpr int n = (N + 1) / 2;
@@ -821,19 +813,11 @@ void MultiplyHelperKaratsubaV2(
     template void MultiplyHelperKaratsubaV1<SharkFloatParams>( \
         const HpSharkFloat<SharkFloatParams> *, \
         const HpSharkFloat<SharkFloatParams> *, \
-        HpSharkFloat<SharkFloatParams> *, \
-        uint64_t *, /*carryOuts_phase3*/ \
-        uint64_t *, /*carryOuts_phase6*/ \
-        uint64_t *, /*carryIns*/ \
-        uint64_t * /*tempProducts*/); \
+        HpSharkFloat<SharkFloatParams> *); \
     template void MultiplyHelperKaratsubaV2<SharkFloatParams>( \
         const HpSharkFloat<SharkFloatParams> *, \
         const HpSharkFloat<SharkFloatParams> *, \
-        HpSharkFloat<SharkFloatParams> *, \
-        uint64_t *, /*carryOuts_phase3*/ \
-        uint64_t *, /*carryOuts_phase6*/ \
-        uint64_t *, /*carryIns*/ \
-        uint64_t * /*tempProducts*/); \
+        HpSharkFloat<SharkFloatParams> *);
 
 ExplicitlyInstantiate(Test4x4SharkParams);
 ExplicitlyInstantiate(Test4x2SharkParams);

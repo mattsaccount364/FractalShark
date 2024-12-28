@@ -49,7 +49,7 @@ using Test128x64SharkParams = GenericSharkFloatParams<128, 32, BatchSize, TestIt
 
 
 #ifdef _DEBUG
-using TestSharkParams = Test8x1SharkParams;
+using TestSharkParams = Test4x4SharkParams;
 #else
 using TestSharkParams = Test128x64SharkParams;
 #endif

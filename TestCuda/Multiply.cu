@@ -130,7 +130,7 @@ namespace cg = cooperative_groups;
  * until no more remain or a maximum pass count is reached.
  */
 template<class SharkFloatParams>
-__device__ void SubtractDigitsParallel(
+__device__ __forceinline__ void SubtractDigitsParallel(
     uint32_t *__restrict__ shared_data,
     const uint32_t *__restrict__ a,
     const uint32_t *__restrict__ b,
@@ -259,7 +259,7 @@ __device__ void SubtractDigitsParallel(
 
 
 // Function to perform addition with carry
-__device__ static void add128(
+__device__ __forceinline__ static void add128(
     uint64_t a_low, uint64_t a_high,
     uint64_t b_low, uint64_t b_high,
     uint64_t &result_low, uint64_t &result_high) {
@@ -269,7 +269,7 @@ __device__ static void add128(
     result_high = a_high + b_high + carry;
 }
 
-__device__ static void subtract128(
+__device__ __forceinline__ static void subtract128(
     uint64_t a_low, uint64_t a_high,
     uint64_t b_low, uint64_t b_high,
     uint64_t &result_low, uint64_t &result_high) {
@@ -285,7 +285,7 @@ __device__ static void subtract128(
 }
 
 template<class SharkFloatParams>
-__device__ static void CarryPropagation (
+__device__ __forceinline__ static void CarryPropagation (
     uint64_t *__restrict__ shared_carries,
     cg::grid_group &grid,
     cg::thread_block &block,
@@ -1012,4 +1012,13 @@ ExplicitlyInstantiate(Test4x4SharkParams);
 ExplicitlyInstantiate(Test4x2SharkParams);
 ExplicitlyInstantiate(Test8x1SharkParams);
 ExplicitlyInstantiate(Test8x8SharkParams);
+
 ExplicitlyInstantiate(Test128x64SharkParams);
+ExplicitlyInstantiate(Test64x64SharkParams);
+ExplicitlyInstantiate(Test32x64SharkParams);
+ExplicitlyInstantiate(Test16x64SharkParams);
+
+ExplicitlyInstantiate(Test128x32SharkParams);
+ExplicitlyInstantiate(Test128x16SharkParams);
+ExplicitlyInstantiate(Test128x8SharkParams);
+ExplicitlyInstantiate(Test128x4SharkParams);

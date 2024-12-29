@@ -358,6 +358,58 @@ static inline void add64withCarry(uint64_t x, uint64_t y, uint64_t carry_in,
     sum = low;
 }
 
+template<class SharkFloatParams>
+int32_t
+CompareArrays (const uint32_t *highArray, const uint32_t *lowArray, int length) {
+    // Compare from the most significant limb downward
+    int result = 0;
+
+    for (int i = length - 1; i >= 0; i--) {
+        uint64_t a_val = highArray[i];
+        uint64_t b_val = lowArray[i];
+        if (a_val > b_val) {
+            result = 1;
+            break;
+        }
+
+        if (a_val < b_val) {
+            result = -1;
+            break;
+        }
+    }
+
+    if constexpr (SharkFloatParams::HostVerbose) {
+        std::cout << "CompareArrays: Result: " << result << std::endl;
+    }
+
+    return result;
+}
+
+template<class SharkFloatParams>
+uint32_t
+SubtractArrays (const uint32_t *A_, const uint32_t *B_, int length, uint32_t *Res) {
+    uint64_t borrow = 0;
+    for (int i = 0; i < length; i++) {
+        uint64_t a_val = A_[i];
+        uint64_t b_val = B_[i];
+        uint64_t diff = a_val - b_val - borrow;
+        if (a_val < (b_val + borrow)) {
+            diff += (1ULL << 32);
+            borrow = 1;
+        } else {
+            borrow = 0;
+        }
+        Res[i] = (uint32_t)diff;
+    }
+    // Assuming highArray >= lowArray, no final borrow remains.
+
+    if constexpr (SharkFloatParams::HostVerbose) {
+        std::cout << "SubtractArrays: Result: " << UintArrayToHexString(Res, length) << std::endl;
+    }
+
+    return (uint32_t)borrow;
+};
+
 // NativeMultiply64 is unchanged, producing sum_low, sum_high pairs in a uint64_t array.
 
 template<class SharkFloatParams>
@@ -395,71 +447,23 @@ void MultiplyHelperKaratsubaV2(
     const uint32_t *B_low = B->Digits;
     const uint32_t *B_high = B->Digits + half;
 
-    auto CompareArrays = [&](const uint32_t *highArray, const uint32_t *lowArray, int length) {
-        // Compare from the most significant limb downward
-        int result = 0;
-
-        for (int i = length - 1; i >= 0; i--) {
-            uint64_t a_val = highArray[i];
-            uint64_t b_val = lowArray[i];
-            if (a_val > b_val) {
-                result = 1;
-                break;
-            }
-
-            if (a_val < b_val) {
-                result = -1;
-                break;
-            }
-        }
-
-        if constexpr (SharkFloatParams::HostVerbose) {
-            std::cout << "CompareArrays: Result: " << result << std::endl;
-        }
-
-        return result;
-    };
-
-    auto SubtractArrays = [&](const uint32_t *A_, const uint32_t *B_, int length, uint32_t *Res) {
-        uint64_t borrow = 0;
-        for (int i = 0; i < length; i++) {
-            uint64_t a_val = A_[i];
-            uint64_t b_val = B_[i];
-            uint64_t diff = a_val - b_val - borrow;
-            if (a_val < (b_val + borrow)) {
-                diff += (1ULL << 32);
-                borrow = 1;
-            } else {
-                borrow = 0;
-            }
-            Res[i] = (uint32_t)diff;
-        }
-        // Assuming highArray >= lowArray, no final borrow remains.
-
-        if constexpr (SharkFloatParams::HostVerbose) {
-            std::cout << "SubtractArrays: Result: " << UintArrayToHexString(Res, length) << std::endl;
-        }
-
-        return (uint32_t)borrow;
-    };
-
-    int x_cmp = CompareArrays(A_high, A_low, half);
+    int x_cmp = CompareArrays<SharkFloatParams>(A_high, A_low, half);
     bool x_diff_neg = false;
     std::vector<uint32_t> x_diff(half, 0);
     if (x_cmp >= 0) {
-        SubtractArrays(A_high, A_low, half, x_diff.data());
+        SubtractArrays<SharkFloatParams>(A_high, A_low, half, x_diff.data());
     } else {
-        SubtractArrays(A_low, A_high, half, x_diff.data());
+        SubtractArrays<SharkFloatParams>(A_low, A_high, half, x_diff.data());
         x_diff_neg = true;
     }
 
-    int y_cmp = CompareArrays(B_high, B_low, half);
+    int y_cmp = CompareArrays<SharkFloatParams>(B_high, B_low, half);
     bool y_diff_neg = false;
     std::vector<uint32_t> y_diff(half, 0);
     if (y_cmp >= 0) {
-        SubtractArrays(B_high, B_low, half, y_diff.data());
+        SubtractArrays<SharkFloatParams>(B_high, B_low, half, y_diff.data());
     } else {
-        SubtractArrays(B_low, B_high, half, y_diff.data());
+        SubtractArrays<SharkFloatParams>(B_low, B_high, half, y_diff.data());
         y_diff_neg = true;
     }
 
@@ -549,12 +553,6 @@ void MultiplyHelperKaratsubaV2(
         if (z1_sign == 0) {
             // Z1 = (Z2 + Z0) - Z1_temp
             subtract128(temp_low, temp_high, z1t_low, z1t_high, z1_low, z1_high);
-
-            //uint64_t neg_z1t_low = ~z1t_low;
-            //uint64_t neg_z1t_high = ~z1t_high;
-            //uint64_t neg_z1t_low_plus1 = neg_z1t_low + 1;
-            //uint64_t neg_z1t_high_plus_carry = neg_z1t_high + (neg_z1t_low_plus1 == 0);
-            //add128(temp_low, temp_high, neg_z1t_low_plus1, neg_z1t_high_plus_carry, z1_low, z1_high);
         } else {
             // Z1 = (Z2 + Z0) + Z1_temp
             add128(temp_low, temp_high, z1t_low, z1t_high, z1_low, z1_high);
@@ -583,44 +581,6 @@ void MultiplyHelperKaratsubaV2(
     if constexpr (SharkFloatParams::HostVerbose) {
         std::cout << "Z1: " << VectorUintToHexString(Z1) << std::endl;
     }
-
-    //{
-    //    uint64_t carry = 0LL;
-    //    bool propagate_last = false;
-
-    //    for (int idx = 0; idx < total_k_full; ++idx) {
-    //        int idx_low = idx * 2;
-    //        int idx_high = idx_low + 1;
-
-    //        uint64_t sum_low = Z1[idx_low];
-    //        uint64_t sum_high = Z1[idx_high];
-
-    //        // Add sum_low and carry from previous iteration
-    //        uint64_t new_sum_low = sum_low + carry;
-
-    //        carry = 0;
-    //        if (propagate_last) {
-    //            if (new_sum_low < sum_low) {
-    //                carry = 1ULL;
-    //            }
-    //        }
-
-    //        carry += (sum_high << 32);
-    //        if (carry & 0x8000'0000'0000'0000) {
-    //            propagate_last = false;
-    //        } else {
-    //            propagate_last = true;
-    //        }
-
-    //        // Store the result
-    //        Z1[idx_low] = new_sum_low;
-    //        Z1[idx_high] = 0;
-    //    }
-
-    //    if constexpr (SharkFloatParams::HostVerbose) {
-    //        std::cout << "Z1 post: " << VectorUintToHexString(Z1) << std::endl;
-    //    }
-    //}
 
     // Now Z1 matches the per-digit computation that CUDA performs.
     // The subsequent steps (carry propagation, final combination) should produce identical results to CUDA.
@@ -823,4 +783,13 @@ ExplicitlyInstantiate(Test4x4SharkParams);
 ExplicitlyInstantiate(Test4x2SharkParams);
 ExplicitlyInstantiate(Test8x1SharkParams);
 ExplicitlyInstantiate(Test8x8SharkParams);
+
 ExplicitlyInstantiate(Test128x64SharkParams);
+ExplicitlyInstantiate(Test64x64SharkParams);
+ExplicitlyInstantiate(Test32x64SharkParams);
+ExplicitlyInstantiate(Test16x64SharkParams);
+
+ExplicitlyInstantiate(Test128x32SharkParams);
+ExplicitlyInstantiate(Test128x16SharkParams);
+ExplicitlyInstantiate(Test128x8SharkParams);
+ExplicitlyInstantiate(Test128x4SharkParams);

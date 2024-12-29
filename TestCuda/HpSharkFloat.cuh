@@ -31,16 +31,24 @@ struct GenericSharkFloatParams {
     static constexpr int32_t BatchSize = pBatchSize;
     static constexpr int32_t TestIterCount = pTestIterCount;
     // Fixed number of uint32_t values
-    constexpr static int32_t NumUint32 = ThreadsPerBlock * NumBlocks;
+    static constexpr int32_t NumUint32 = ThreadsPerBlock * NumBlocks;
 
     // If these are set to false they produce wrong answers but can be useful
     // to confirm source of performance issues.
-    constexpr static bool DisableAllAdditions = false;
-    constexpr static bool DisableSubtraction = false;
-    constexpr static bool DisableCarryPropagation = false;
-    constexpr static bool DisableFinalConstruction = false;
-    constexpr static bool ForceNoOp = false;
-    constexpr static bool HostVerbose = Verbose;
+    static constexpr bool DisableAllAdditions = false;
+    static constexpr bool DisableSubtraction = false;
+    static constexpr bool DisableCarryPropagation = false;
+    static constexpr bool DisableFinalConstruction = false;
+    static constexpr bool ForceNoOp = false;
+    static constexpr bool HostVerbose = Verbose;
+
+    static std::string GetDescription() {
+        std::string desc = "ThreadsPerBlock: " + std::to_string(ThreadsPerBlock) +
+            ", NumBlocks: " + std::to_string(NumBlocks) +
+            ", BatchSize: " + std::to_string(BatchSize) +
+            ", TestIterCount: " + std::to_string(TestIterCount);
+        return desc;
+    }
 };
 
 static constexpr int32_t LowPrec = 32;
@@ -51,8 +59,15 @@ using Test4x4SharkParams = GenericSharkFloatParams<4, 4, BatchSize, TestIterCoun
 using Test8x1SharkParams = GenericSharkFloatParams<8, 1, BatchSize, TestIterCount>;
 using Test8x8SharkParams = GenericSharkFloatParams<16, 16, BatchSize, TestIterCount>;
 
-//using Test128x64SharkParams = GenericSharkFloatParams<128, 64, BatchSize, TestIterCount>;
 using Test128x64SharkParams = GenericSharkFloatParams<128, 64, BatchSize, TestIterCount>;
+using Test64x64SharkParams = GenericSharkFloatParams<64, 64, BatchSize, TestIterCount>;
+using Test32x64SharkParams = GenericSharkFloatParams<32, 64, BatchSize, TestIterCount>;
+using Test16x64SharkParams = GenericSharkFloatParams<16, 64, BatchSize, TestIterCount>;
+
+using Test128x32SharkParams = GenericSharkFloatParams<128, 32, BatchSize, TestIterCount>;
+using Test128x16SharkParams = GenericSharkFloatParams<128, 16, BatchSize, TestIterCount>;
+using Test128x8SharkParams = GenericSharkFloatParams<128, 8, BatchSize, TestIterCount>;
+using Test128x4SharkParams = GenericSharkFloatParams<128, 4, BatchSize, TestIterCount>;
 
 
 #ifdef _DEBUG

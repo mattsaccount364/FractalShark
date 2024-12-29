@@ -83,7 +83,7 @@ int main(int /*argc*/, char * /*argv*/[]) {
     }
 
     //testBase = 6000;
-    //res = TestBinaryOperatorPerf<TestSharkParams, Operator::Add>(testBase);
+    //res = TestBinaryOperatorPerf<Operator::Add>(testBase);
     //if (!res) {
     //    auto q = PressKey();
     //    if (q == 'q') {
@@ -92,7 +92,7 @@ int main(int /*argc*/, char * /*argv*/[]) {
     //}
 
     testBase = 7000;
-    res = TestBinaryOperatorPerf<TestSharkParams, MultiplyOperator>(testBase);
+    res = TestBinaryOperatorPerf<MultiplyOperator>(testBase);
     if (!res) {
         auto q = PressKey();
         if (q == 'q') {

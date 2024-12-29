@@ -36,5 +36,5 @@ void TestBinOperatorTwoNumbers(int testNum, const char *num1, const char *num2);
 template<class SharkFloatParams, Operator sharkOperator>
 bool TestAllBinaryOp(int testBase);
 
-template<class SharkFloatParams, Operator sharkOperator>
+template<Operator sharkOperator>
 bool TestBinaryOperatorPerf(int testBase);

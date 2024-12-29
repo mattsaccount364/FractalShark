@@ -204,8 +204,6 @@ void InvokeMultiplyKernel(
             cudaError_t err = cudaStreamSetAttribute(stream, cudaStreamAttributeAccessPolicyWindow, &stream_attribute);
             if (err != cudaSuccess) {
                 std::cerr << "CUDA error in setting stream attribute: " << cudaGetErrorString(err) << std::endl;
-            } else {
-                std::cout << "Stream attribute set successfully" << std::endl;
             }
             };
 
@@ -305,6 +303,9 @@ void TestPerf(
         std::cout << "num2: " << num2 << std::endl;
         std::cout << "Y: " << MpfToString<SharkFloatParams>(mpfY, HpSharkFloat<SharkFloatParams>::DefaultPrecBits) << std::endl;
     }
+
+    auto desc = SharkFloatParams::GetDescription();
+    std::cout << "\nTest " << testNum << ": " << OperatorToString<sharkOperator>() << " " << desc << std::endl;
 
     auto xNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
     auto yNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
@@ -1250,9 +1251,17 @@ bool TestAllBinaryOp(int testBase) {
     return Tests.CheckAllTestsPassed();
 }
 
-template<class SharkFloatParams, Operator sharkOperator>
+template<Operator sharkOperator>
 bool TestBinaryOperatorPerf(int testBase) {
-    TestPerf<SharkFloatParams, sharkOperator>(testBase + 1);
+    TestPerf<Test128x64SharkParams, sharkOperator>(testBase + 1);
+    TestPerf<Test64x64SharkParams, sharkOperator>(testBase + 2);
+    TestPerf<Test32x64SharkParams, sharkOperator>(testBase + 3);
+    TestPerf<Test16x64SharkParams, sharkOperator>(testBase + 4);
+
+    TestPerf<Test128x32SharkParams, sharkOperator>(testBase + 5);
+    TestPerf<Test128x16SharkParams, sharkOperator>(testBase + 6);
+    TestPerf<Test128x8SharkParams, sharkOperator>(testBase + 7);
+    TestPerf<Test128x4SharkParams, sharkOperator>(testBase + 8);
     return Tests.CheckAllTestsPassed();
 }
 
@@ -1261,15 +1270,25 @@ bool TestBinaryOperatorPerf(int testBase) {
     template bool TestAllBinaryOp<SharkFloatParams, Operator::Add>(int testBase); \
     template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyN2>(int testBase); \
     template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyKaratsubaV1>(int testBase); \
-    template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyKaratsubaV2>(int testBase); \
-    template bool TestBinaryOperatorPerf<SharkFloatParams, Operator::Add>(int testBase); \
-    template bool TestBinaryOperatorPerf<SharkFloatParams, Operator::MultiplyN2>(int testBase); \
-    template bool TestBinaryOperatorPerf<SharkFloatParams, Operator::MultiplyKaratsubaV1>(int testBase); \
-    template bool TestBinaryOperatorPerf<SharkFloatParams, Operator::MultiplyKaratsubaV2>(int testBase);
+    template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyKaratsubaV2>(int testBase);
 
+template bool TestBinaryOperatorPerf<Operator::Add>(int testBase);
+template bool TestBinaryOperatorPerf<Operator::MultiplyN2>(int testBase);
+template bool TestBinaryOperatorPerf<Operator::MultiplyKaratsubaV1>(int testBase);
+template bool TestBinaryOperatorPerf<Operator::MultiplyKaratsubaV2>(int testBase);
 
 ExplicitlyInstantiate(Test4x4SharkParams);
 ExplicitlyInstantiate(Test4x2SharkParams);
 ExplicitlyInstantiate(Test8x1SharkParams);
 ExplicitlyInstantiate(Test8x8SharkParams);
+
 ExplicitlyInstantiate(Test128x64SharkParams);
+ExplicitlyInstantiate(Test64x64SharkParams);
+ExplicitlyInstantiate(Test32x64SharkParams);
+ExplicitlyInstantiate(Test16x64SharkParams);
+
+ExplicitlyInstantiate(Test128x32SharkParams);
+ExplicitlyInstantiate(Test128x16SharkParams);
+ExplicitlyInstantiate(Test128x8SharkParams);
+ExplicitlyInstantiate(Test128x4SharkParams);
+

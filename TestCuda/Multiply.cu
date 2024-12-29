@@ -259,7 +259,7 @@ __device__ __forceinline__ void SubtractDigitsParallel(
 
 
 // Function to perform addition with carry
-__device__ __forceinline__ static void add128(
+__device__ __forceinline__ static void Add128(
     uint64_t a_low, uint64_t a_high,
     uint64_t b_low, uint64_t b_high,
     uint64_t &result_low, uint64_t &result_high) {
@@ -269,7 +269,7 @@ __device__ __forceinline__ static void add128(
     result_high = a_high + b_high + carry;
 }
 
-__device__ __forceinline__ static void subtract128(
+__device__ __forceinline__ static void Subtract128(
     uint64_t a_low, uint64_t a_high,
     uint64_t b_low, uint64_t b_high,
     uint64_t &result_low, uint64_t &result_high) {
@@ -731,15 +731,15 @@ __device__ void MultiplyHelperKaratsubaV2(
 
             // Combine Z2 + Z0 first
             uint64_t temp_low, temp_high;
-            add128(z2_low, z2_high, z0_low, z0_high, temp_low, temp_high);
+            Add128(z2_low, z2_high, z0_low, z0_high, temp_low, temp_high);
 
             uint64_t z1_low, z1_high;
             if (z1_sign == 0) {
                 // same sign: Z1 = (Z2 + Z0) - Z1_temp
-                subtract128(temp_low, temp_high, z1_temp_low, z1_temp_high, z1_low, z1_high);
+                Subtract128(temp_low, temp_high, z1_temp_low, z1_temp_high, z1_low, z1_high);
             } else {
                 // opposite signs: Z1 = (Z2 + Z0) + Z1_temp
-                add128(temp_low, temp_high, z1_temp_low, z1_temp_high, z1_low, z1_high);
+                Add128(temp_low, temp_high, z1_temp_low, z1_temp_high, z1_low, z1_high);
             }
 
             // Store fully formed Z1
@@ -765,7 +765,7 @@ __device__ void MultiplyHelperKaratsubaV2(
                 int z0_idx = Z0_offset + idx * 2;
                 uint64_t z0_low = tempProducts[z0_idx];
                 uint64_t z0_high = tempProducts[z0_idx + 1];
-                add128(sum_low, sum_high, z0_low, z0_high, sum_low, sum_high);
+                Add128(sum_low, sum_high, z0_low, z0_high, sum_low, sum_high);
             }
 
             // Add Z1 shifted by n
@@ -773,7 +773,7 @@ __device__ void MultiplyHelperKaratsubaV2(
                 int z1_idx = Z1_offset + (idx - n) * 2;
                 uint64_t z1_low = tempProducts[z1_idx];
                 uint64_t z1_high = tempProducts[z1_idx + 1];
-                add128(sum_low, sum_high, z1_low, z1_high, sum_low, sum_high);
+                Add128(sum_low, sum_high, z1_low, z1_high, sum_low, sum_high);
             }
 
             // Add Z2 shifted by 2*n
@@ -781,7 +781,7 @@ __device__ void MultiplyHelperKaratsubaV2(
                 int z2_idx = Z2_offset + (idx - 2 * n) * 2;
                 uint64_t z2_low = tempProducts[z2_idx];
                 uint64_t z2_high = tempProducts[z2_idx + 1];
-                add128(sum_low, sum_high, z2_low, z2_high, sum_low, sum_high);
+                Add128(sum_low, sum_high, z2_low, z2_high, sum_low, sum_high);
             }
 
             int result_idx = Convolution_offset + idx * 2;

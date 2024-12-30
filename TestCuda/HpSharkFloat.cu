@@ -154,10 +154,18 @@ VectorUintToHexString(const std::vector<IntT> &arr) {
     return UintArrayToHexString<IntT>(arr.data(), arr.size());
 }
 
+template<class IntT>
+std::string
+VectorUintToHexString(const IntT *arr, size_t numElements) {
+
+    return UintArrayToHexString<IntT>(arr, numElements);
+}
+
 // Explicitly instantiate
 #define ExplicitlyInstantiateUintArrayToHexString(IntT) \
     template std::string UintArrayToHexString<IntT>(const IntT *array, size_t numElements); \
     template std::string VectorUintToHexString<IntT>(const std::vector<IntT> &arr); \
+    template std::string VectorUintToHexString<IntT>(const IntT *arr, size_t numElements); \
     template std::string UintToHexString<IntT>(IntT val);
 
 ExplicitlyInstantiateUintArrayToHexString(uint32_t);

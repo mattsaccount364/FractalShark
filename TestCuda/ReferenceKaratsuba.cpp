@@ -340,18 +340,6 @@ static void NativeMultiply64(const uint32_t *A, const uint32_t *B, int n, uint64
         // - Res[k*2+1] gets the upper portion, which can be up to 64 bits.
         Res[k * 2] = sum_low;
         Res[k * 2 + 1] = sum_high;
-
-        //// Now split sum_128 into:
-        ////   sum_low  = lower 32 bits
-        ////   sum_high = remaining bits (up to 96 bits if sum_128_high can hold up to 64 bits + 32 extra from sum_128_low)
-        //uint64_t sum_low = (sum_128_low & 0xFFFFFFFFULL);   // 32-bit portion
-        //uint64_t sum_high = (sum_128_low >> 32) + (sum_128_high << 32); // everything else
-
-        //// Store in Res
-        //// - Res[k*2]   gets the "low 64 bits" slot, but effectively only the low 32 bits are meaningful.
-        //// - Res[k*2+1] gets the upper portion, which can be up to 64 bits.
-        //Res[k * 2] = sum_low;
-        //Res[k * 2 + 1] = sum_high;
     }
 }
 
@@ -419,39 +407,20 @@ SubtractArrays (const uint32_t *A_, const uint32_t *B_, int length, uint32_t *Re
 }
 
 template<class SharkFloatParams>
-void MultiplyHelperKaratsubaV2(
-    const HpSharkFloat<SharkFloatParams> *A,
-    const HpSharkFloat<SharkFloatParams> *B,
-    HpSharkFloat<SharkFloatParams> *Out
-) {
-    constexpr int N = SharkFloatParams::NumUint32;
-    constexpr int n = (N + 1) / 2;
-    static_assert((N % 2) == 0, "N must be even for this simplified logic.");
-
-    if constexpr (SharkFloatParams::HostVerbose) {
-        std::cout << std::endl;
-        std::cout << "Will perform Karatsuba multiplication on host, running function MultiplyHelperKaratsubaV2." << std::endl;
-    }
-
-    if constexpr (N == 1) {
-        uint64_t prod = (uint64_t)A->Digits[0] * (uint64_t)B->Digits[0];
-        Out->Digits[0] = (uint32_t)(prod & 0xFFFFFFFFULL);
-        Out->Exponent = A->Exponent + B->Exponent;
-        Out->IsNegative = (A->IsNegative ^ B->IsNegative);
-
-        if constexpr (SharkFloatParams::HostVerbose) {
-            std::cout << "Karatsuba N=1: A=" << A->ToHexString() << ", B=" << B->ToHexString() << ", Out=" << Out->ToHexString() << std::endl;
-        }
-
-        return;
-    }
-
+void KaratsubaRecursiveDigits(
+    const uint32_t *A_digits,  // pointer to A's digits
+    const uint32_t *B_digits,
+    int N,                     // number of 32-bit digits in A_digits and B_digits
+    uint64_t *final128      // place where the product digits go
+)
+{
+    const int n = (N + 1) / 2;
     int half = N / 2;
 
-    const uint32_t *A_low = A->Digits;
-    const uint32_t *A_high = A->Digits + half;
-    const uint32_t *B_low = B->Digits;
-    const uint32_t *B_high = B->Digits + half;
+    const uint32_t *A_low = A_digits;
+    const uint32_t *A_high = A_digits + half;
+    const uint32_t *B_low = B_digits;
+    const uint32_t *B_high = B_digits + half;
 
     int x_cmp = CompareArrays<SharkFloatParams>(A_high, A_low, half);
     bool x_diff_neg = false;
@@ -478,30 +447,31 @@ void MultiplyHelperKaratsubaV2(
         std::cout << "y_diff: " << VectorUintToHexString(y_diff) << std::endl;
     }
 
-    int total_k_z0 = 2 * half - 1;
-    int total_k_z2 = 2 * half - 1;
-    int total_k_z1t = 2 * half - 1;
-    int mul_len = half;
+    std::vector<uint64_t> Z0(2 * N + 2, 0ULL);
+    std::vector<uint64_t> Z2(2 * N + 2, 0ULL);
+    std::vector<uint64_t> Z1_temp(2 * N + 2, 0ULL);
+    if (half >= 4) {
+        KaratsubaRecursiveDigits<SharkFloatParams>(A_low, B_low, half, Z0.data());
+        KaratsubaRecursiveDigits<SharkFloatParams>(A_high, B_high, half, Z2.data());
+        KaratsubaRecursiveDigits<SharkFloatParams>((uint32_t *)x_diff.data(), (uint32_t *)y_diff.data(), half, Z1_temp.data());
+    } else {
+        NativeMultiply64(A_low, B_low, half, Z0.data());
 
-    std::vector<uint64_t> Z0(2 * total_k_z0, 0ULL);
-    NativeMultiply64(A_low, B_low, half, Z0.data());
+        if constexpr (SharkFloatParams::HostVerbose) {
+            std::cout << "Z0: " << VectorUintToHexString(Z0) << std::endl;
+        }
 
-    if constexpr (SharkFloatParams::HostVerbose) {
-        std::cout << "Z0: " << VectorUintToHexString(Z0) << std::endl;
-    }
+        NativeMultiply64(A_high, B_high, half, Z2.data());
 
-    std::vector<uint64_t> Z2(2 * total_k_z2, 0ULL);
-    NativeMultiply64(A_high, B_high, half, Z2.data());
+        if constexpr (SharkFloatParams::HostVerbose) {
+            std::cout << "Z2: " << VectorUintToHexString(Z2) << std::endl;
+        }
 
-    if constexpr (SharkFloatParams::HostVerbose) {
-        std::cout << "Z2: " << VectorUintToHexString(Z2) << std::endl;
-    }
+        NativeMultiply64((uint32_t *)x_diff.data(), (uint32_t *)y_diff.data(), half, Z1_temp.data());
 
-    std::vector<uint64_t> Z1_temp(2 * total_k_z1t, 0ULL);
-    NativeMultiply64((uint32_t *)x_diff.data(), (uint32_t *)y_diff.data(), mul_len, Z1_temp.data());
-
-    if constexpr (SharkFloatParams::HostVerbose) {
-        std::cout << "Z1_temp: " << VectorUintToHexString(Z1_temp) << std::endl;
+        if constexpr (SharkFloatParams::HostVerbose) {
+            std::cout << "Z1_temp: " << VectorUintToHexString(Z1_temp) << std::endl;
+        }
     }
 
     int z1_sign = (x_diff_neg ^ y_diff_neg) ? 1 : 0;
@@ -569,9 +539,7 @@ void MultiplyHelperKaratsubaV2(
     // N even means (32*n) bits = n/2 64-bit words
     // (64*n) bits = n 64-bit words
 
-    constexpr int total_result_digits = 2 * N + 1;
-    std::vector<int64_t> final128(total_result_digits * 2, 0ULL);
-
+    const int total_result_digits = 2 * N + 1;
     for (int idx = 0; idx < total_result_digits; ++idx) {
         uint64_t sum_low = 0ULL;
         uint64_t sum_high = 0ULL;
@@ -609,8 +577,50 @@ void MultiplyHelperKaratsubaV2(
         final128[idx * 2 + 1] = sum_high;
     }
 
+    //if constexpr (SharkFloatParams::HostVerbose) {
+    //    std::cout << "final128 after Z2: " << VectorUintToHexString(final128, total_result_digits * 2) << std::endl;
+    //}
+}
+
+template<class SharkFloatParams>
+void MultiplyHelperKaratsubaV2(
+    const HpSharkFloat<SharkFloatParams> *A,
+    const HpSharkFloat<SharkFloatParams> *B,
+    HpSharkFloat<SharkFloatParams> *Out
+) {
+    constexpr int N = SharkFloatParams::NumUint32;
+    static_assert((N % 2) == 0, "N must be even for this simplified logic.");
+
     if constexpr (SharkFloatParams::HostVerbose) {
-        std::cout << "final128 after Z2: " << VectorUintToHexString(final128) << std::endl;
+        std::cout << std::endl;
+        std::cout << "Will perform Karatsuba multiplication on host, running function MultiplyHelperKaratsubaV2." << std::endl;
+    }
+
+    if constexpr (N == 1) {
+        uint64_t prod = (uint64_t)A->Digits[0] * (uint64_t)B->Digits[0];
+        Out->Digits[0] = (uint32_t)(prod & 0xFFFFFFFFULL);
+        Out->Exponent = A->Exponent + B->Exponent;
+        Out->IsNegative = (A->IsNegative ^ B->IsNegative);
+
+        if constexpr (SharkFloatParams::HostVerbose) {
+            std::cout << "Karatsuba N=1: A=" << A->ToHexString() << ", B=" << B->ToHexString() << ", Out=" << Out->ToHexString() << std::endl;
+        }
+
+        return;
+    }
+
+    // 3) Allocate array for up to 2*N digits result
+    constexpr int total_result_digits = 2 * N + 1;
+    std::vector<uint64_t> final128(total_result_digits * 2, 0u);
+
+    {
+        // 1) Possibly do sign logic, exponent logic, etc.
+        // 2) Convert A->Digits, B->Digits into pointers
+        const uint32_t *A_ptr = A->Digits;
+        const uint32_t *B_ptr = B->Digits;
+
+        // 4) Call KaratsubaRecursiveDigits
+        KaratsubaRecursiveDigits<SharkFloatParams>(A_ptr, B_ptr, N, final128.data());
     }
 
     // Assume final128 is arranged as pairs: final128[0], final128[1] form the first pair (sum_low, sum_high),

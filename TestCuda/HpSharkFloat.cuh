@@ -71,7 +71,8 @@ using Test128x4SharkParams = GenericSharkFloatParams<128, 4, BatchSize, TestIter
 
 
 #ifdef _DEBUG
-using TestSharkParams = Test4x4SharkParams;
+//using TestSharkParams = Test4x4SharkParams;
+using TestSharkParams = Test8x1SharkParams;
 #else
 using TestSharkParams = Test128x64SharkParams;
 #endif
@@ -141,4 +142,4 @@ VectorUintToHexString (const std::vector<IntT> &arr);
 
 template<class IntT>
 std::string
-VectorUintToHexString(const std::vector<IntT> &arr);
+VectorUintToHexString(const IntT *arr, size_t numElements);

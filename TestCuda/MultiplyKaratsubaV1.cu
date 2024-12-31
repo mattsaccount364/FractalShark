@@ -68,7 +68,7 @@ __device__ static void CarryPropagation(
 
     // Constants and offsets
     constexpr int MaxPasses = 10; // Maximum number of carry propagation passes
-    constexpr int total_result_digits = 2 * SharkFloatParams::NumUint32;
+    constexpr int total_result_digits = 2 * SharkFloatParams::GlobalNumUint32;
 
     uint64_t *carries_remaining_global = globalCarryCheck;
 
@@ -109,7 +109,7 @@ __device__ static void CarryPropagation(
         }
     }
 
-    if (threadIdx.x == SharkFloatParams::ThreadsPerBlock - 1) {
+    if (threadIdx.x == SharkFloatParams::GlobalThreadsPerBlock - 1) {
         block_carry_outs[blockIdx.x] = local_carry;
     } else {
         shared_carries[threadIdx.x] = local_carry;
@@ -164,7 +164,7 @@ __device__ static void CarryPropagation(
 
         // The block's carry-out is the carry from the last thread
         auto temp = shared_carries[threadIdx.x];
-        if (threadIdx.x == SharkFloatParams::ThreadsPerBlock - 1) {
+        if (threadIdx.x == SharkFloatParams::GlobalThreadsPerBlock - 1) {
             block_carry_outs[blockIdx.x] = temp;
         }
 
@@ -203,7 +203,7 @@ __device__ static void CarryPropagation(
     grid.sync();
 }
 
-// Assuming that SharkFloatParams::NumUint32 can be large and doesn't fit in shared memory
+// Assuming that SharkFloatParams::GlobalNumUint32 can be large and doesn't fit in shared memory
 // We'll use the provided global memory buffers for large intermediates
 template<class SharkFloatParams>
 __device__ void MultiplyHelperKaratsubaV1(
@@ -215,10 +215,10 @@ __device__ void MultiplyHelperKaratsubaV1(
 
     cg::thread_block block = cg::this_thread_block();
 
-    const int threadIdxGlobal = blockIdx.x * SharkFloatParams::ThreadsPerBlock + threadIdx.x;
+    const int threadIdxGlobal = blockIdx.x * SharkFloatParams::GlobalThreadsPerBlock + threadIdx.x;
 
-    constexpr int total_threads = SharkFloatParams::ThreadsPerBlock * SharkFloatParams::NumBlocks;
-    constexpr int N = SharkFloatParams::NumUint32;         // Total number of digits
+    constexpr int total_threads = SharkFloatParams::GlobalThreadsPerBlock * SharkFloatParams::GlobalNumBlocks;
+    constexpr int N = SharkFloatParams::GlobalNumUint32;         // Total number of digits
     constexpr int n = (N + 1) / 2;              // Half of N
 
     // Constants for tempProducts offsets
@@ -236,7 +236,7 @@ __device__ void MultiplyHelperKaratsubaV1(
     //__shared__ uint64_t B_shared[n];
 
     //// Load segments of A and B into shared memory
-    //for (int i = threadIdx.x; i < n; i += SharkFloatParams::ThreadsPerBlock) {
+    //for (int i = threadIdx.x; i < n; i += SharkFloatParams::GlobalThreadsPerBlock) {
     //    A_shared[i] = (i < N) ? A->Digits[i] : 0;  // A0
     //    B_shared[i] = (i < N) ? B->Digits[i] : 0;  // B0
     //}
@@ -281,7 +281,7 @@ __device__ void MultiplyHelperKaratsubaV1(
     //block.sync();
 
     //// Load A1 and B1 into shared memory
-    //for (int i = threadIdx.x; i < n; i += SharkFloatParams::ThreadsPerBlock) {
+    //for (int i = threadIdx.x; i < n; i += SharkFloatParams::GlobalThreadsPerBlock) {
     //    int index = i + n;
     //    A_shared[i] = (index < N) ? A->Digits[index] : 0;    // A1
     //    B_shared[i] = (index < N) ? B->Digits[index] : 0;    // B1
@@ -320,7 +320,7 @@ __device__ void MultiplyHelperKaratsubaV1(
     //block.sync();
 
     //// Compute (A0 + A1) and (B0 + B1) and store in shared memory
-    //for (int i = threadIdx.x; i < n; i += SharkFloatParams::ThreadsPerBlock) {
+    //for (int i = threadIdx.x; i < n; i += SharkFloatParams::GlobalThreadsPerBlock) {
     //    uint64_t A0 = (i < N) ? A->Digits[i] : 0;
     //    uint64_t A1 = (i + n < N) ? A->Digits[i + n] : 0;
     //    A_shared[i] = A0 + A1;               // (A0 + A1)
@@ -486,7 +486,7 @@ __device__ void MultiplyHelperKaratsubaV1(
     // Allocate space for gridDim.x block carry-outs after total_result_digits
     uint64_t *block_carry_outs = &tempProducts[CarryInsOffset];
 
-    constexpr auto digits_per_block = SharkFloatParams::ThreadsPerBlock * 2;
+    constexpr auto digits_per_block = SharkFloatParams::GlobalThreadsPerBlock * 2;
     auto block_start_idx = blockIdx.x * digits_per_block;
     auto block_end_idx = min(block_start_idx + digits_per_block, total_result_digits);
 
@@ -500,10 +500,10 @@ __device__ void MultiplyHelperKaratsubaV1(
     //    each block.
     //After that step is done, we should have reduced the number of digits we care about
     //    because weve propagated all the intermediate junk produced above during convolution.
-    //    so we end up with 2 * SharkFloatParams::NumBlocks * SharkFloatParams::ThreadsPerBlock digits.
+    //    so we end up with 2 * SharkFloatParams::GlobalNumBlocks * SharkFloatParams::GlobalThreadsPerBlock digits.
     //At that point we do inter-block carry propagation, which is iterative.
 
-    __shared__ uint64_t shared_carries[SharkFloatParams::ThreadsPerBlock];
+    __shared__ uint64_t shared_carries[SharkFloatParams::GlobalThreadsPerBlock];
 
 
     if constexpr (!SharkFloatParams::DisableCarryPropagation) {
@@ -537,7 +537,7 @@ __device__ void MultiplyHelperKaratsubaV1(
     // Only one thread handles the final carry propagation
     if constexpr (!SharkFloatParams::DisableFinalConstruction) {
         if (blockIdx.x == 0 && threadIdx.x == 0) {
-            // uint64_t final_carry = carryOuts_phase6[SharkFloatParams::NumBlocks - 1];
+            // uint64_t final_carry = carryOuts_phase6[SharkFloatParams::GlobalNumBlocks - 1];
 
             // Initial total_result_digits is 2 * N
             int total_result_digits = 2 * N;
@@ -627,8 +627,8 @@ void ComputeMultiplyKaratsubaV1Gpu(void *kernelArgs[]) {
 
     cudaError_t err = cudaLaunchCooperativeKernel(
         (void *)MultiplyKernelKaratsubaV1<SharkFloatParams>,
-        dim3(SharkFloatParams::NumBlocks),
-        dim3(SharkFloatParams::ThreadsPerBlock),
+        dim3(SharkFloatParams::GlobalNumBlocks),
+        dim3(SharkFloatParams::GlobalThreadsPerBlock),
         kernelArgs,
         0, // Shared memory size
         0 // Stream
@@ -646,8 +646,8 @@ void ComputeMultiplyKaratsubaV1GpuTestLoop(cudaStream_t &stream, void *kernelArg
 
     cudaError_t err = cudaLaunchCooperativeKernel(
         (void *)MultiplyKernelKaratsubaV1TestLoop<SharkFloatParams>,
-        dim3(SharkFloatParams::NumBlocks),
-        dim3(SharkFloatParams::ThreadsPerBlock),
+        dim3(SharkFloatParams::GlobalNumBlocks),
+        dim3(SharkFloatParams::GlobalThreadsPerBlock),
         kernelArgs,
         0, // Shared memory size
         stream // Stream

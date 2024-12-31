@@ -60,8 +60,8 @@ void ComputeIntegrationGpu(void *kernelArgs[]) {
 
     cudaError_t err = cudaLaunchCooperativeKernel(
         (void *)IntegrationKernel<SharkFloatParams>,
-        dim3(SharkFloatParams::NumBlocks),
-        dim3(SharkFloatParams::ThreadsPerBlock),
+        dim3(SharkFloatParams::GlobalNumBlocks),
+        dim3(SharkFloatParams::GlobalThreadsPerBlock),
         kernelArgs,
         0, // Shared memory size
         0 // Stream
@@ -79,8 +79,8 @@ void ComputeIntegrationTestLoop(void *kernelArgs[]) {
 
     cudaError_t err = cudaLaunchCooperativeKernel(
         (void *)IntegrationKernelTestLoop<SharkFloatParams>,
-        dim3(SharkFloatParams::NumBlocks),
-        dim3(SharkFloatParams::ThreadsPerBlock),
+        dim3(SharkFloatParams::GlobalNumBlocks),
+        dim3(SharkFloatParams::GlobalThreadsPerBlock),
         kernelArgs,
         0, // Shared memory size
         0 // Stream

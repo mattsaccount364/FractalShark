@@ -60,7 +60,7 @@ __device__ static void ComputeCarryIn(
     const uint32_t *carryOuts, // Input carry-out array
     uint32_t *carryIn,         // Output carry-in array
     int n,                     // Number of digits
-    uint32_t *sharedCarryOut   // Statically allocated sharedCarryOut array (size SharkFloatParams::ThreadsPerBlock)
+    uint32_t *sharedCarryOut   // Statically allocated sharedCarryOut array (size SharkFloatParams::GlobalThreadsPerBlock)
 ) {
     int tid = threadIdx.x;
 
@@ -93,9 +93,9 @@ __device__ void ComputeCarryInDecider(
     const uint32_t *carryOuts, // Input carry-out array
     uint32_t *carryIn,         // Output carry-in array
     int n,                     // Number of digits
-    uint32_t *sharedCarryOut   // Statically allocated sharedCarryOut array (size SharkFloatParams::ThreadsPerBlock)
+    uint32_t *sharedCarryOut   // Statically allocated sharedCarryOut array (size SharkFloatParams::GlobalThreadsPerBlock)
 ) {
-    if constexpr (SharkFloatParams::ThreadsPerBlock <= 32) {
+    if constexpr (SharkFloatParams::GlobalThreadsPerBlock <= 32) {
         ComputeCarryInWarp(carryOuts, carryIn, n);
     } else {
         ComputeCarryIn(block, carryOuts, carryIn, n, sharedCarryOut);
@@ -129,7 +129,7 @@ namespace cg = cooperative_groups;
  * then uses repeated passes (do/while) to handle newly introduced borrows
  * until no more remain or a maximum pass count is reached.
  */
-template<class SharkFloatParams>
+template<class SharkFloatParams, int N>
 __device__ __forceinline__ void SubtractDigitsParallel(
     uint32_t *__restrict__ shared_data,
     const uint32_t *__restrict__ a,
@@ -142,11 +142,10 @@ __device__ __forceinline__ void SubtractDigitsParallel(
     cg::thread_block &block
 ) {
     // Constants 
-    constexpr int N = SharkFloatParams::NumUint32;
     constexpr int n = (N + 1) / 2;     // 'n' is how many digits we handle in half
     constexpr int MaxPasses = 10;      // maximum number of multi-pass sweeps
-    constexpr int threadsPerBlock = SharkFloatParams::ThreadsPerBlock;
-    constexpr int numBlocks = SharkFloatParams::NumBlocks;
+    constexpr int threadsPerBlock = SharkFloatParams::GlobalThreadsPerBlock;
+    constexpr int numBlocks = SharkFloatParams::GlobalNumBlocks;
 
     // Identify the block/thread
     const int tid = static_cast<int>(threadIdx.x);
@@ -307,7 +306,7 @@ __device__ __forceinline__ static void CarryPropagation (
 
     // Constants and offsets
     constexpr int MaxPasses = 10; // Maximum number of carry propagation passes
-    constexpr int total_result_digits = 2 * SharkFloatParams::NumUint32;
+    constexpr int total_result_digits = 2 * SharkFloatParams::GlobalNumUint32;
 
     uint64_t *carries_remaining_global = globalCarryCheck;
 
@@ -348,7 +347,7 @@ __device__ __forceinline__ static void CarryPropagation (
         }
     }
 
-    if (threadIdx.x == SharkFloatParams::ThreadsPerBlock - 1) {
+    if (threadIdx.x == SharkFloatParams::GlobalThreadsPerBlock - 1) {
         block_carry_outs[blockIdx.x] = local_carry;
     } else {
         shared_carries[threadIdx.x] = local_carry;
@@ -403,7 +402,7 @@ __device__ __forceinline__ static void CarryPropagation (
 
         // The block's carry-out is the carry from the last thread
         auto temp = shared_carries[threadIdx.x];
-        if (threadIdx.x == SharkFloatParams::ThreadsPerBlock - 1) {
+        if (threadIdx.x == SharkFloatParams::GlobalThreadsPerBlock - 1) {
             block_carry_outs[blockIdx.x] = temp;
         }
 
@@ -438,26 +437,26 @@ __device__ __forceinline__ static void CarryPropagation (
     // grid.sync();
 }
 
-#define DefineTempProductsOffsets() \
-    constexpr int total_threads = SharkFloatParams::ThreadsPerBlock * SharkFloatParams::NumBlocks; \
-    constexpr int n = (N + 1) / 2; \
-    const int threadIdxGlobal = blockIdx.x * SharkFloatParams::ThreadsPerBlock + threadIdx.x; \
-    constexpr int Z0_offset = 0; \
-    constexpr int Z2_offset = Z0_offset + 4 * N; \
-    constexpr int Z1_temp_offset = Z2_offset + 4 * N; \
-    constexpr int Z1_offset = Z1_temp_offset + 4 * N; \
-    constexpr int Convolution_offset = Z1_offset + 4 * N; \
-    constexpr int Result_offset = Convolution_offset + 4 * N; \
-    constexpr int XDiff_offset = Result_offset + 2 * N; \
-    constexpr int YDiff_offset = XDiff_offset + 1 * N; \
-    constexpr int GlobalCarryOffset = YDiff_offset + 1 * N; \
-    constexpr int CarryInsOffset = GlobalCarryOffset + 1 * N; \
-    constexpr int CarryInsOffset2 = CarryInsOffset + 1 * N; \
-    constexpr int BorrowAnyOffset = CarryInsOffset2 + 1 * N; \
+#define DefineTempProductsOffsets(TempBase) \
+    constexpr int total_threads = SharkFloatParams::GlobalThreadsPerBlock * SharkFloatParams::GlobalNumBlocks; \
+    constexpr int n = (NewN + 1) / 2; \
+    const int threadIdxGlobal = blockIdx.x * SharkFloatParams::GlobalThreadsPerBlock + threadIdx.x; \
+    constexpr int Z0_offset = TempBase; \
+    constexpr int Z2_offset = Z0_offset + 4 * NewN; \
+    constexpr int Z1_temp_offset = Z2_offset + 4 * NewN; \
+    constexpr int Z1_offset = Z1_temp_offset + 4 * NewN; \
+    constexpr int Convolution_offset = Z1_offset + 4 * NewN; \
+    constexpr int Result_offset = Convolution_offset + 4 * NewN; \
+    constexpr int XDiff_offset = Result_offset + 2 * NewN; \
+    constexpr int YDiff_offset = XDiff_offset + 1 * NewN; \
+    constexpr int GlobalCarryOffset = YDiff_offset + 1 * NewN; \
+    constexpr int CarryInsOffset = GlobalCarryOffset + 1 * NewN; \
+    constexpr int CarryInsOffset2 = CarryInsOffset + 1 * NewN; \
+    constexpr int BorrowAnyOffset = CarryInsOffset2 + 1 * NewN; \
 
 #define DefineExtraDefinitions() \
-    constexpr int total_result_digits = 2 * N + 1; \
-    constexpr auto digits_per_block = SharkFloatParams::ThreadsPerBlock * 2; \
+    constexpr int total_result_digits = 2 * NewN + 1; \
+    constexpr auto digits_per_block = NewN * 2 / SharkFloatParams::GlobalThreadsPerBlock; \
     auto block_start_idx = blockIdx.x * digits_per_block; \
     auto block_end_idx = min(block_start_idx + digits_per_block, total_result_digits); \
     int digits_per_thread = (digits_per_block + blockDim.x - 1) / blockDim.x; \
@@ -465,94 +464,125 @@ __device__ __forceinline__ static void CarryPropagation (
     int thread_end_idx = min(thread_start_idx + digits_per_thread, block_end_idx); \
 
 
-// Assuming that SharkFloatParams::NumUint32 can be large and doesn't fit in shared memory
+// Assuming that SharkFloatParams::GlobalNumUint32 can be large and doesn't fit in shared memory
 // We'll use the provided global memory buffers for large intermediates
-template<class SharkFloatParams, int N>
+// #define SharkRestrict __restrict__
+#define SharkRestrict
+
+template<class SharkFloatParams, int NewN, int TempBase>
 __device__ void MultiplyDigitsOnly(
-    uint32_t *__restrict__ shared_data,
-    const HpSharkFloat<SharkFloatParams> *__restrict__ A,
-    const HpSharkFloat<SharkFloatParams> *__restrict__ B,
-    HpSharkFloat<SharkFloatParams> *__restrict__ Out,
+    uint32_t *SharkRestrict shared_data,
+    const uint32_t *SharkRestrict aDigits,
+    const uint32_t *SharkRestrict bDigits,
+    uint64_t *SharkRestrict outDigits,
     cg::grid_group &grid,
     cg::thread_block &block,
-    uint64_t *__restrict__ tempProducts) {
+    uint64_t *SharkRestrict tempProducts) {
 
-    DefineTempProductsOffsets();
+    DefineTempProductsOffsets(TempBase);
 
-    //auto *__restrict__ a_shared = shared_data;
-    //auto *__restrict__ b_shared = a_shared + N;
+    //auto *SharkRestrict a_shared = shared_data;
+    //auto *SharkRestrict b_shared = a_shared + NewN;
 
-    //cg::memcpy_async(block, a_shared, A->Digits, sizeof(uint32_t) * N);
-    //cg::memcpy_async(block, b_shared, B->Digits, sizeof(uint32_t) * N);
+    //cg::memcpy_async(block, a_shared, A->Digits, sizeof(uint32_t) * NewN);
+    //cg::memcpy_async(block, b_shared, B->Digits, sizeof(uint32_t) * NewN);
 
     //// Wait for the first batch of A to be loaded
     //cg::wait(block);
 
-    const auto *a_shared = A->Digits;
-    const auto *b_shared = B->Digits;
+    const auto *a_shared = aDigits;
+    const auto *b_shared = bDigits;
 
     // Common variables for convolution loops
     constexpr int total_k = 2 * n - 1; // Total number of k values
-
     int k_start = (threadIdxGlobal * total_k) / total_threads;
     int k_end = ((threadIdxGlobal + 1) * total_k) / total_threads;
 
-    // ---- Convolution for Z0 = A0 * B0 ----
-    for (int k = k_start; k < k_end; ++k) {
-        uint64_t sum_low = 0;
-        uint64_t sum_high = 0;
+    //if constexpr (n <= SharkFloatParams::GlobalNumUint32 / 4) {
 
-        int i_start = max(0, k - (n - 1));
-        int i_end = min(k, n - 1);
+        // ---- Convolution for Z0 = A0 * B0 ----
+        for (int k = k_start; k < k_end; ++k) {
+            uint64_t sum_low = 0;
+            uint64_t sum_high = 0;
 
-        for (int i = i_start; i <= i_end; ++i) {
-            uint64_t a = a_shared[i]; //A_shared[i];         // A0[i]
-            uint64_t b = b_shared[k - i]; //B_shared[k - i];     // B0[k - i]
+            int i_start = max(0, k - (n - 1));
+            int i_end = min(k, n - 1);
 
-            uint64_t product = a * b;
+            for (int i = i_start; i <= i_end; ++i) {
+                uint64_t a = a_shared[i]; //A_shared[i];         // A0[i]
+                uint64_t b = b_shared[k - i]; //B_shared[k - i];     // B0[k - i]
 
-            // Add product to sum
-            sum_low += product;
-            if (sum_low < product) {
-                sum_high += 1;
+                uint64_t product = a * b;
+                 
+                // Add product to sum
+                sum_low += product;
+                if (sum_low < product) {
+                    sum_high += 1;
+                }
             }
+
+            // Store sum_low and sum_high in tempProducts
+            int idx = Z0_offset + k * 2;
+            tempProducts[idx] = sum_low;
+            tempProducts[idx + 1] = sum_high;
         }
 
-        // Store sum_low and sum_high in tempProducts
-        int idx = Z0_offset + k * 2;
-        tempProducts[idx] = sum_low;
-        tempProducts[idx + 1] = sum_high;
-    }
+        // Synchronize before next convolution
+        //block.sync();
 
-    // Synchronize before next convolution
-    //block.sync();
+        // ---- Convolution for Z2 = A1 * B1 ----
+        for (int k = k_start; k < k_end; ++k) {
+            uint64_t sum_low = 0;
+            uint64_t sum_high = 0;
 
-    // ---- Convolution for Z2 = A1 * B1 ----
-    for (int k = k_start; k < k_end; ++k) {
-        uint64_t sum_low = 0;
-        uint64_t sum_high = 0;
+            int i_start = max(0, k - (n - 1));
+            int i_end = min(k, n - 1);
 
-        int i_start = max(0, k - (n - 1));
-        int i_end = min(k, n - 1);
+            for (int i = i_start; i <= i_end; ++i) {
+                uint64_t a = a_shared[i + n]; // A_shared[i];         // A1[i]
+                uint64_t b = b_shared[k - i + n]; // B_shared[k - i];     // B1[k - i]
 
-        for (int i = i_start; i <= i_end; ++i) {
-            uint64_t a = a_shared[i + n]; // A_shared[i];         // A1[i]
-            uint64_t b = b_shared[k - i + n]; // B_shared[k - i];     // B1[k - i]
+                uint64_t product = a * b;
 
-            uint64_t product = a * b;
-
-            // Add product to sum
-            sum_low += product;
-            if (sum_low < product) {
-                sum_high += 1;
+                // Add product to sum
+                sum_low += product;
+                if (sum_low < product) {
+                    sum_high += 1;
+                }
             }
-        }
 
-        // Store sum_low and sum_high in tempProducts
-        int idx = Z2_offset + k * 2;
-        tempProducts[idx] = sum_low;
-        tempProducts[idx + 1] = sum_high;
-    }
+            // Store sum_low and sum_high in tempProducts
+            int idx = Z2_offset + k * 2;
+            tempProducts[idx] = sum_low;
+            tempProducts[idx + 1] = sum_high;
+        }
+    //} else {
+    //    constexpr auto NewTempBase = TempBase + 32 * SharkFloatParams::GlobalNumUint32;
+    //    auto *Z0_OutDigits = &tempProducts[Z0_offset];
+
+    //    MultiplyDigitsOnly<SharkFloatParams, NewN / 2, NewTempBase>(
+    //        shared_data,
+    //        a_shared,
+    //        b_shared,
+    //        Z0_OutDigits,
+    //        grid,
+    //        block,
+    //        tempProducts);
+
+    //    grid.sync();
+
+    //    auto *Z2_OutDigits = &tempProducts[Z2_offset];
+    //    MultiplyDigitsOnly<SharkFloatParams, NewN / 2, NewTempBase>(
+    //        shared_data,
+    //        a_shared + n,
+    //        b_shared + n,
+    //        Z2_OutDigits,
+    //        grid,
+    //        block,
+    //        tempProducts);
+
+    //    grid.sync();
+    //}
 
     // No sync
 
@@ -561,16 +591,16 @@ __device__ void MultiplyDigitsOnly(
     DefineExtraDefinitions();
 
     // Arrays to hold the absolute differences (size n)
-    auto *__restrict__ x_diff_abs = reinterpret_cast<uint32_t *>(&tempProducts[XDiff_offset]);
-    auto *__restrict__ y_diff_abs = reinterpret_cast<uint32_t *>(&tempProducts[YDiff_offset]);
+    auto *SharkRestrict x_diff_abs = reinterpret_cast<uint32_t *>(&tempProducts[XDiff_offset]);
+    auto *SharkRestrict y_diff_abs = reinterpret_cast<uint32_t *>(&tempProducts[YDiff_offset]);
     int x_diff_sign = 0; // 0 if positive, 1 if negative
     int y_diff_sign = 0; // 0 if positive, 1 if negative
 
     // Compute x_diff_abs and x_diff_sign
-    auto *__restrict__ subtractionBorrows = reinterpret_cast<uint32_t *>(&tempProducts[CarryInsOffset]);
-    auto *__restrict__ subtractionBorrows2 = reinterpret_cast<uint32_t *>(&tempProducts[CarryInsOffset2]);
+    auto *SharkRestrict subtractionBorrows = reinterpret_cast<uint32_t *>(&tempProducts[CarryInsOffset]);
+    auto *SharkRestrict subtractionBorrows2 = reinterpret_cast<uint32_t *>(&tempProducts[CarryInsOffset2]);
 
-    constexpr bool useParallelSubtract = true;
+    constexpr bool useParallelSubtract = false;
 
     if constexpr (!SharkFloatParams::DisableSubtraction) {
         if constexpr (useParallelSubtract) {
@@ -579,7 +609,7 @@ __device__ void MultiplyDigitsOnly(
 
             if (x_compare >= 0) {
                 x_diff_sign = 0;
-                SubtractDigitsParallel<SharkFloatParams>(
+                SubtractDigitsParallel<SharkFloatParams::GetHalf, NewN>(
                     shared_data,
                     a_shared + n,
                     a_shared,
@@ -591,7 +621,7 @@ __device__ void MultiplyDigitsOnly(
                     block); // x_diff = A1 - A0
             } else {
                 x_diff_sign = 1;
-                SubtractDigitsParallel<SharkFloatParams>(
+                SubtractDigitsParallel<SharkFloatParams::GetHalf, NewN>(
                     shared_data,
                     a_shared,
                     a_shared + n,
@@ -607,7 +637,7 @@ __device__ void MultiplyDigitsOnly(
             int y_compare = compareDigits(b_shared + n, b_shared, n);
             if (y_compare >= 0) {
                 y_diff_sign = 0;
-                SubtractDigitsParallel<SharkFloatParams>(
+                SubtractDigitsParallel<SharkFloatParams::GetHalf, NewN>(
                     shared_data,
                     b_shared + n,
                     b_shared,
@@ -619,7 +649,7 @@ __device__ void MultiplyDigitsOnly(
                     block); // y_diff = B1 - B0
             } else {
                 y_diff_sign = 1;
-                SubtractDigitsParallel<SharkFloatParams>(
+                SubtractDigitsParallel<SharkFloatParams::GetHalf, NewN>(
                     shared_data,
                     b_shared,
                     b_shared + n,
@@ -780,9 +810,13 @@ __device__ void MultiplyDigitsOnly(
                 Add128(sum_low, sum_high, z2_low, z2_high, sum_low, sum_high);
             }
 
-            int result_idx = Convolution_offset + idx * 2;
-            tempProducts[result_idx] = sum_low;
-            tempProducts[result_idx + 1] = sum_high;
+            //int result_idx = Convolution_offset + idx * 2;
+            //tempProducts[result_idx] = sum_low;
+            //tempProducts[result_idx + 1] = sum_high;
+
+            int result_idx = idx * 2;
+            outDigits[result_idx] = sum_low;
+            outDigits[result_idx + 1] = sum_high;
         }
 
         // Synchronize before carry propagation
@@ -791,12 +825,12 @@ __device__ void MultiplyDigitsOnly(
 }
 
 //
-// static constexpr int32_t SharkFloatParams::ThreadsPerBlock = /* power of 2 */;
-// static constexpr int32_t SharkFloatParams::NumBlocks = /* power of 2 */;
-// static constexpr int32_t SharkFloatParams::NumUint32 = SharkFloatParams::ThreadsPerBlock * SharkFloatParams::NumBlocks;
+// static constexpr int32_t SharkFloatParams::GlobalThreadsPerBlock = /* power of 2 */;
+// static constexpr int32_t SharkFloatParams::GlobalNumBlocks = /* power of 2 */;
+// static constexpr int32_t SharkFloatParams::GlobalNumUint32 = SharkFloatParams::GlobalThreadsPerBlock * SharkFloatParams::GlobalNumBlocks;
 // 
 
-// Assuming that SharkFloatParams::NumUint32 can be large and doesn't fit in shared memory
+// Assuming that SharkFloatParams::GlobalNumUint32 can be large and doesn't fit in shared memory
 // We'll use the provided global memory buffers for large intermediates
 template<class SharkFloatParams>
 __device__ void MultiplyHelperKaratsubaV2(
@@ -807,12 +841,22 @@ __device__ void MultiplyHelperKaratsubaV2(
     cg::thread_block &block,
     uint64_t *__restrict__ tempProducts) {
 
-    constexpr int N = SharkFloatParams::NumUint32;         // Total number of digits
+    constexpr int N = SharkFloatParams::GlobalNumUint32;         // Total number of digits
+    constexpr int NewN = N;
     extern __shared__ uint32_t shared_data[];
 
-    DefineTempProductsOffsets();
+    constexpr auto TempBase = 0;
+    DefineTempProductsOffsets(TempBase);
 
-    MultiplyDigitsOnly<SharkFloatParams, N>(shared_data, A, B, Out, grid, block, tempProducts);
+    auto *subOutDigits = &tempProducts[Convolution_offset];
+    MultiplyDigitsOnly<SharkFloatParams, N, TempBase>(
+        shared_data,
+        A->Digits,
+        B->Digits,
+        subOutDigits,
+        grid,
+        block,
+        tempProducts);
 
     // ---- Carry Propagation ----
 
@@ -849,7 +893,7 @@ __device__ void MultiplyHelperKaratsubaV2(
 
     // ---- Finalize the Result ----
     if constexpr (!SharkFloatParams::DisableFinalConstruction) {
-        // uint64_t final_carry = carryOuts_phase6[SharkFloatParams::NumBlocks - 1];
+        // uint64_t final_carry = carryOuts_phase6[SharkFloatParams::GlobalNumBlocks - 1];
 
         // Initial total_result_digits is 2 * N
         int total_result_digits = 2 * N;
@@ -951,7 +995,7 @@ void PrintMaxActiveBlocks(int sharedAmountBytes) {
     cudaError_t err = cudaOccupancyMaxActiveBlocksPerMultiprocessor(
         &numBlocks,
         MultiplyKernelKaratsubaV2<SharkFloatParams>,
-        SharkFloatParams::ThreadsPerBlock,
+        SharkFloatParams::GlobalThreadsPerBlock,
         sharedAmountBytes
     );
 
@@ -968,7 +1012,7 @@ void ComputeMultiplyKaratsubaV2Gpu(void *kernelArgs[]) {
 
     cudaError_t err;
 
-    constexpr int N = SharkFloatParams::NumUint32;
+    constexpr int N = SharkFloatParams::GlobalNumUint32;
     constexpr auto n = (N + 1) / 2;              // Half of N
     const auto sharedAmountBytes = 5 * n * sizeof(uint32_t);
 
@@ -983,8 +1027,8 @@ void ComputeMultiplyKaratsubaV2Gpu(void *kernelArgs[]) {
 
     err = cudaLaunchCooperativeKernel(
         (void *)MultiplyKernelKaratsubaV2<SharkFloatParams>,
-        dim3(SharkFloatParams::NumBlocks),
-        dim3(SharkFloatParams::ThreadsPerBlock),
+        dim3(SharkFloatParams::GlobalNumBlocks * 2),
+        dim3(SharkFloatParams::GlobalThreadsPerBlock),
         kernelArgs,
         sharedAmountBytes, // Shared memory size
         0 // Stream
@@ -1000,7 +1044,7 @@ void ComputeMultiplyKaratsubaV2Gpu(void *kernelArgs[]) {
 template<class SharkFloatParams>
 void ComputeMultiplyKaratsubaV2GpuTestLoop(cudaStream_t &stream, void *kernelArgs[]) {
 
-    constexpr int N = SharkFloatParams::NumUint32;
+    constexpr int N = SharkFloatParams::GlobalNumUint32;
     constexpr auto n = (N + 1) / 2;              // Half of N
     constexpr auto sharedAmountBytes = UseSharedMemory ? (5 * n * sizeof(uint32_t)) : 0;
 
@@ -1015,8 +1059,8 @@ void ComputeMultiplyKaratsubaV2GpuTestLoop(cudaStream_t &stream, void *kernelArg
 
     cudaError_t err = cudaLaunchCooperativeKernel(
         (void *)MultiplyKernelKaratsubaV2TestLoop<SharkFloatParams>,
-        dim3(SharkFloatParams::NumBlocks),
-        dim3(SharkFloatParams::ThreadsPerBlock),
+        dim3(SharkFloatParams::GlobalNumBlocks),
+        dim3(SharkFloatParams::GlobalThreadsPerBlock),
         kernelArgs,
         sharedAmountBytes, // Shared memory size
         stream // Stream

@@ -26,12 +26,12 @@ template<
     int32_t pBatchSize,
     int32_t pTestIterCount>
 struct GenericSharkFloatParams {
-    static constexpr int32_t ThreadsPerBlock = pThreadsPerBlock;
-    static constexpr int32_t NumBlocks = pNumBlocks;
+    static constexpr int32_t GlobalThreadsPerBlock = pThreadsPerBlock;
+    static constexpr int32_t GlobalNumBlocks = pNumBlocks;
     static constexpr int32_t BatchSize = pBatchSize;
     static constexpr int32_t TestIterCount = pTestIterCount;
     // Fixed number of uint32_t values
-    static constexpr int32_t NumUint32 = ThreadsPerBlock * NumBlocks;
+    static constexpr int32_t GlobalNumUint32 = GlobalThreadsPerBlock * GlobalNumBlocks;
 
     // If these are set to false they produce wrong answers but can be useful
     // to confirm source of performance issues.
@@ -43,12 +43,21 @@ struct GenericSharkFloatParams {
     static constexpr bool HostVerbose = Verbose;
 
     static std::string GetDescription() {
-        std::string desc = "ThreadsPerBlock: " + std::to_string(ThreadsPerBlock) +
-            ", NumBlocks: " + std::to_string(NumBlocks) +
+        std::string desc = "GlobalThreadsPerBlock: " + std::to_string(GlobalThreadsPerBlock) +
+            ", GlobalNumBlocks: " + std::to_string(GlobalNumBlocks) +
             ", BatchSize: " + std::to_string(BatchSize) +
             ", TestIterCount: " + std::to_string(TestIterCount);
         return desc;
     }
+
+    using GetHalf = typename std::conditional_t<
+        (GlobalThreadsPerBlock > 2),
+        GenericSharkFloatParams<GlobalThreadsPerBlock / 2, GlobalNumBlocks, BatchSize, TestIterCount>,
+        typename std::conditional_t<(GlobalNumBlocks > 2),
+        GenericSharkFloatParams<GlobalThreadsPerBlock, GlobalNumBlocks / 2, BatchSize, TestIterCount>,
+        GenericSharkFloatParams<GlobalThreadsPerBlock, GlobalNumBlocks, BatchSize, TestIterCount>
+        >
+    >;
 };
 
 static constexpr int32_t LowPrec = 32;
@@ -94,7 +103,7 @@ struct HpSharkFloat {
     void Negate();
 
     // Default precision in bits
-    constexpr static auto NumUint32 = SharkFloatParams::NumUint32;
+    constexpr static auto NumUint32 = SharkFloatParams::GlobalNumUint32;
     constexpr static auto DefaultPrecBits = NumUint32 * sizeof(uint32_t) * 8;
     constexpr static auto ConvertBitsToDecimals = 3.3219280948873623478703194294894;
     constexpr static auto DefaultPrecDigits = DefaultPrecBits / ConvertBitsToDecimals;
@@ -115,18 +124,18 @@ private:
 };
 
 template<class SharkFloatParams>
-std::string MpfToString (const mpf_t mpf_val, size_t precInBits);
+std::string MpfToString(const mpf_t mpf_val, size_t precInBits);
 
-std::string MpfToHexString (const mpf_t mpf_val);
-
-template<class SharkFloatParams>
-void MpfToHpGpu (const mpf_t mpf_val, HpSharkFloat<SharkFloatParams> &number, int prec_bits);
+std::string MpfToHexString(const mpf_t mpf_val);
 
 template<class SharkFloatParams>
-void HpGpuToMpf (const HpSharkFloat<SharkFloatParams> &hpNum, mpf_t &mpf_val);
+void MpfToHpGpu(const mpf_t mpf_val, HpSharkFloat<SharkFloatParams> &number, int prec_bits);
 
 template<class SharkFloatParams>
-std::string Uint32ToMpf (const uint32_t *array, int32_t pow64Exponent, mpf_t &mpf_val);
+void HpGpuToMpf(const HpSharkFloat<SharkFloatParams> &hpNum, mpf_t &mpf_val);
+
+template<class SharkFloatParams>
+std::string Uint32ToMpf(const uint32_t *array, int32_t pow64Exponent, mpf_t &mpf_val);
 
 template<class IntT>
 std::string
@@ -138,7 +147,7 @@ UintToHexString(IntT val);
 
 template<class IntT>
 std::string
-VectorUintToHexString (const std::vector<IntT> &arr);
+VectorUintToHexString(const std::vector<IntT> &arr);
 
 template<class IntT>
 std::string

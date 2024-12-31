@@ -48,7 +48,7 @@ static void NaiveMultiplyV1(const uint32_t *A, const uint32_t *B, int n, uint32_
 
 
 // Single-level Karatsuba-like function
-// N = SharkFloatParams::NumUint32
+// N = SharkFloatParams::GlobalNumUint32
 // We split A and B into two halves: A_low, A_high, B_low, B_high
 // Then compute Z0, Z2, and Z1 = (A_low+A_high)*(B_low+B_high)-Z0-Z2
 template<class SharkFloatParams>
@@ -57,7 +57,7 @@ void MultiplyHelperKaratsubaV1(
     const HpSharkFloat<SharkFloatParams> *B,
     HpSharkFloat<SharkFloatParams> *Out
 ) {
-    constexpr int N = SharkFloatParams::NumUint32;
+    constexpr int N = SharkFloatParams::GlobalNumUint32;
     if constexpr (N == 1) {
         // Just multiply single 32-bit limbs
         uint64_t prod = (uint64_t)A->Digits[0] * (uint64_t)B->Digits[0];
@@ -452,8 +452,22 @@ void KaratsubaRecursiveDigits(
     std::vector<uint64_t> Z1_temp(2 * N + 2, 0ULL);
     if (half >= 4) {
         KaratsubaRecursiveDigits<SharkFloatParams>(A_low, B_low, half, Z0.data());
+
+        if constexpr (SharkFloatParams::HostVerbose) {
+            std::cout << "Z0: " << VectorUintToHexString(Z0) << std::endl;
+        }
+
         KaratsubaRecursiveDigits<SharkFloatParams>(A_high, B_high, half, Z2.data());
+
+        if constexpr (SharkFloatParams::HostVerbose) {
+            std::cout << "Z2: " << VectorUintToHexString(Z2) << std::endl;
+        }
+
         KaratsubaRecursiveDigits<SharkFloatParams>((uint32_t *)x_diff.data(), (uint32_t *)y_diff.data(), half, Z1_temp.data());
+
+        if constexpr (SharkFloatParams::HostVerbose) {
+            std::cout << "Z1_temp: " << VectorUintToHexString(Z1_temp) << std::endl;
+        }
     } else {
         NativeMultiply64(A_low, B_low, half, Z0.data());
 
@@ -577,9 +591,9 @@ void KaratsubaRecursiveDigits(
         final128[idx * 2 + 1] = sum_high;
     }
 
-    //if constexpr (SharkFloatParams::HostVerbose) {
-    //    std::cout << "final128 after Z2: " << VectorUintToHexString(final128, total_result_digits * 2) << std::endl;
-    //}
+    if constexpr (SharkFloatParams::HostVerbose) {
+        std::cout << "final128 after Z2: " << VectorUintToHexString(final128, total_result_digits * 2) << std::endl;
+    }
 }
 
 template<class SharkFloatParams>
@@ -588,7 +602,7 @@ void MultiplyHelperKaratsubaV2(
     const HpSharkFloat<SharkFloatParams> *B,
     HpSharkFloat<SharkFloatParams> *Out
 ) {
-    constexpr int N = SharkFloatParams::NumUint32;
+    constexpr int N = SharkFloatParams::GlobalNumUint32;
     static_assert((N % 2) == 0, "N must be even for this simplified logic.");
 
     if constexpr (SharkFloatParams::HostVerbose) {

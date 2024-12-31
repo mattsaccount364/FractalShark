@@ -61,7 +61,7 @@ __device__ void BlellochScanWarp1(uint32_t *carryBits, uint32_t *scanResults, in
 // If your application requires the output[0, 1, 1, 1], you should use an inclusive prefix sum.
 __device__ void BlellochScanWarp(uint32_t * input, uint32_t * output, int n) {
     uint32_t val = 0;
-    int lane = threadIdx.x; // lane index within the warp (since SharkFloatParams::ThreadsPerBlock == warpSize)
+    int lane = threadIdx.x; // lane index within the warp (since SharkFloatParams::GlobalThreadsPerBlock == warpSize)
     uint32_t warp_mask = __ballot_sync(0xFFFFFFFF, lane < n); // Active threads in the warp
 
     // Load the input value for each thread
@@ -119,7 +119,7 @@ __device__ static void ComputeCarryIn(
     const uint32_t *carryOuts, // Input carry-out array
     uint32_t *carryIn,         // Output carry-in array
     int n,                     // Number of digits
-    uint32_t *sharedCarryOut   // Statically allocated sharedCarryOut array (size SharkFloatParams::ThreadsPerBlock)
+    uint32_t *sharedCarryOut   // Statically allocated sharedCarryOut array (size SharkFloatParams::GlobalThreadsPerBlock)
 ) {
     int tid = threadIdx.x;
 
@@ -151,9 +151,9 @@ __device__ void ComputeCarryInDecider(
     const uint32_t *carryOuts, // Input carry-out array
     uint32_t *carryIn,         // Output carry-in array
     int n,                     // Number of digits
-    uint32_t *sharedCarryOut   // Statically allocated sharedCarryOut array (size SharkFloatParams::ThreadsPerBlock)
+    uint32_t *sharedCarryOut   // Statically allocated sharedCarryOut array (size SharkFloatParams::GlobalThreadsPerBlock)
 ) {
-    if constexpr (SharkFloatParams::ThreadsPerBlock <= 32) {
+    if constexpr (SharkFloatParams::GlobalThreadsPerBlock <= 32) {
         ComputeCarryInWarp(carryOuts, carryIn, n);
     } else {
         ComputeCarryIn(carryOuts, carryIn, n, sharedCarryOut);
@@ -166,7 +166,7 @@ __device__ uint32_t ShiftRight(uint32_t *digits, int shiftBits, int idx) {
     int shiftBitsMod = shiftBits % 32;
     uint32_t lower = 0, upper = 0;
     int srcIdx = idx + shiftWords;
-    const int numDigits = SharkFloatParams::NumUint32;
+    const int numDigits = SharkFloatParams::GlobalNumUint32;
     if (srcIdx < numDigits) {
         lower = digits[srcIdx];
     }
@@ -212,7 +212,7 @@ __device__ void AddHelper(
     cg::grid_group grid,
     int numBlocks) {
 
-    const int numDigits = SharkFloatParams::NumUint32;
+    const int numDigits = SharkFloatParams::GlobalNumUint32;
     const int tid = threadIdx.x;
     const int blockId = blockIdx.x;
 
@@ -223,12 +223,12 @@ __device__ void AddHelper(
     const int digitsInBlock = endDigit - startDigit;
 
     // Static shared memory allocation based on predefined maximums
-    __shared__ uint32_t alignedA_static[SharkFloatParams::ThreadsPerBlock];
-    __shared__ uint32_t alignedB_static[SharkFloatParams::ThreadsPerBlock];
-    __shared__ uint32_t tempSum_static[SharkFloatParams::ThreadsPerBlock];
-    __shared__ uint32_t carryBits_static[SharkFloatParams::ThreadsPerBlock];
-    __shared__ uint32_t scanResults_static[SharkFloatParams::ThreadsPerBlock];
-    __shared__ uint32_t sharedCarryOut[SharkFloatParams::ThreadsPerBlock];        // Shared carry-out for ComputeCarryIn
+    __shared__ uint32_t alignedA_static[SharkFloatParams::GlobalThreadsPerBlock];
+    __shared__ uint32_t alignedB_static[SharkFloatParams::GlobalThreadsPerBlock];
+    __shared__ uint32_t tempSum_static[SharkFloatParams::GlobalThreadsPerBlock];
+    __shared__ uint32_t carryBits_static[SharkFloatParams::GlobalThreadsPerBlock];
+    __shared__ uint32_t scanResults_static[SharkFloatParams::GlobalThreadsPerBlock];
+    __shared__ uint32_t sharedCarryOut[SharkFloatParams::GlobalThreadsPerBlock];        // Shared carry-out for ComputeCarryIn
 
     // Additional shared variables
     __shared__ int32_t shiftBits;
@@ -334,7 +334,7 @@ __device__ void AddHelper(
 
 
     // Initialize aligned digits to zero
-    for (int i = tid; i < digitsInBlock; i += SharkFloatParams::ThreadsPerBlock) {
+    for (int i = tid; i < digitsInBlock; i += SharkFloatParams::GlobalThreadsPerBlock) {
         alignedA_static[i] = 0;
         alignedB_static[i] = 0;
     }
@@ -345,14 +345,14 @@ __device__ void AddHelper(
         // Need to shift the number with the larger exponent left
         if (AIsBiggerExponent) {
             // Shift A left
-            for (int i = tid; i < digitsInBlock; i += SharkFloatParams::ThreadsPerBlock) {
+            for (int i = tid; i < digitsInBlock; i += SharkFloatParams::GlobalThreadsPerBlock) {
                 int globalIdx = startDigit + i;
                 alignedA_static[i] = ShiftLeft<SharkFloatParams>(A->Digits, shiftAmount, globalIdx);
                 alignedB_static[i] = B->Digits[globalIdx];
             }
         } else {
             // Shift B left
-            for (int i = tid; i < digitsInBlock; i += SharkFloatParams::ThreadsPerBlock) {
+            for (int i = tid; i < digitsInBlock; i += SharkFloatParams::GlobalThreadsPerBlock) {
                 int globalIdx = startDigit + i;
                 alignedA_static[i] = A->Digits[globalIdx];
                 alignedB_static[i] = ShiftLeft<SharkFloatParams>(B->Digits, shiftAmount, globalIdx);
@@ -364,7 +364,7 @@ __device__ void AddHelper(
         }
     } else {
         // Normal case, shift the number with the smaller exponent right
-        for (int i = tid; i < digitsInBlock; i += SharkFloatParams::ThreadsPerBlock) {
+        for (int i = tid; i < digitsInBlock; i += SharkFloatParams::GlobalThreadsPerBlock) {
             int globalIdx = startDigit + i;
             if (AIsBiggerExponent) {
                 // Shift B right
@@ -411,7 +411,7 @@ __device__ void AddHelper(
     __syncthreads();  // Synchronize to ensure magnitude comparison is complete
 
     // Phase 3: Perform Addition or Subtraction within the block
-    for (int i = tid; i < digitsInBlock; i += SharkFloatParams::ThreadsPerBlock) {
+    for (int i = tid; i < digitsInBlock; i += SharkFloatParams::GlobalThreadsPerBlock) {
         if (i >= digitsInBlock) continue;
         if (isAddition) {
             // Perform addition
@@ -448,7 +448,7 @@ __device__ void AddHelper(
 
     // After scan, scanResults_static contains the carry-in for each digit
     // Apply the carry-ins to tempSum_static to get the final output digits
-    for (int i = tid; i < digitsInBlock; i += SharkFloatParams::ThreadsPerBlock) {
+    for (int i = tid; i < digitsInBlock; i += SharkFloatParams::GlobalThreadsPerBlock) {
         if (i >= digitsInBlock) continue;
         if (isAddition) {
             // Add the carry-in to the sum
@@ -510,7 +510,7 @@ __device__ void AddHelper(
             carryBits_static, scanResults_static, digitsInBlock, sharedCarryOut);
 
         // Apply the new carry-ins to the output digits
-        for (int i = tid; i < digitsInBlock; i += SharkFloatParams::ThreadsPerBlock) {
+        for (int i = tid; i < digitsInBlock; i += SharkFloatParams::GlobalThreadsPerBlock) {
             if (i > 0) { // Skip the first digit
                 if (isAddition) {
                     uint64_t finalSum = (uint64_t)Out->Digits[startDigit + i] + (uint64_t)scanResults_static[i];
@@ -607,12 +607,12 @@ __global__ void AddKernelTestLoop(
 template<class SharkFloatParams>
 void ComputeAddGpu(void *kernelArgs[]) {
 
-    constexpr auto ExpandedNumDigits = SharkFloatParams::NumUint32 * 2;
+    constexpr auto ExpandedNumDigits = SharkFloatParams::GlobalNumUint32 * 2;
     constexpr size_t SharedMemSize = sizeof(uint32_t) * ExpandedNumDigits * 6; // Adjust as necessary
     cudaError_t err = cudaLaunchCooperativeKernel(
         (void *)AddKernel<SharkFloatParams>,
-        dim3(SharkFloatParams::NumBlocks),
-        dim3(SharkFloatParams::ThreadsPerBlock),
+        dim3(SharkFloatParams::GlobalNumBlocks),
+        dim3(SharkFloatParams::GlobalThreadsPerBlock),
         kernelArgs,
         0, // Shared memory size
         0 // Stream
@@ -628,13 +628,13 @@ void ComputeAddGpu(void *kernelArgs[]) {
 template<class SharkFloatParams>
 void ComputeAddGpuTestLoop(void *kernelArgs[]) {
 
-    constexpr auto ExpandedNumDigits = SharkFloatParams::NumUint32 * 2;
+    constexpr auto ExpandedNumDigits = SharkFloatParams::GlobalNumUint32 * 2;
     constexpr size_t SharedMemSize = sizeof(uint32_t) * ExpandedNumDigits * 6; // Adjust as necessary
 
     cudaError_t err = cudaLaunchCooperativeKernel(
         (void *)AddKernelTestLoop<SharkFloatParams>,
-        dim3(SharkFloatParams::NumBlocks),
-        dim3(SharkFloatParams::ThreadsPerBlock),
+        dim3(SharkFloatParams::GlobalNumBlocks),
+        dim3(SharkFloatParams::GlobalThreadsPerBlock),
         kernelArgs,
         0, // Shared memory size
         0 // Stream

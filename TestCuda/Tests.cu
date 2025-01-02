@@ -1138,36 +1138,36 @@ bool TestAllBinaryOp(int testBase) {
     // 200s is multiply
     // 400s is add
     
-    //if constexpr (includeSet1) {
-    //    const auto set = testBase + 100;
-    //    TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 10, "1", "2");
-    //    TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 20, "4294967295", "1");
-    //    TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 30, "4294967296", "1");
-    //    TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 40, "4294967295", "4294967296");
-    //    TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 50, "4294967296", "-1");
-    //    TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 60, "18446744073709551615", "1");
-    //    TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 70, "0", "0.1");
-    //    TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 80, "0.1", "0");
-    //    TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 90, "0", "0");
-    //    TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 100, "0.1", "0.1");
-    //}
+    if constexpr (includeSet1) {
+        const auto set = testBase + 100;
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 10, "1", "2");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 20, "4294967295", "1");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 30, "4294967296", "1");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 40, "4294967295", "4294967296");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 50, "4294967296", "-1");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 60, "18446744073709551615", "1");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 70, "0", "0.1");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 80, "0.1", "0");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 90, "0", "0");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 100, "0.1", "0.1");
+    }
 
     if constexpr (includeSet2) {
         const auto set = testBase + 300;
-        //TestAddSpecialNumbers1<SharkFloatParams, sharkOperator>(set + 10);
-        //TestAddSpecialNumbers2<SharkFloatParams, sharkOperator>(set + 20);
-        //TestAddSpecialNumbers3<SharkFloatParams, sharkOperator>(set + 30);
-        //TestAddSpecialNumbers4<SharkFloatParams, sharkOperator>(set + 40);
-        //TestAddSpecialNumbers5<SharkFloatParams, sharkOperator>(set + 50);
-        //TestAddSpecialNumbers6<SharkFloatParams, sharkOperator>(set + 60);
-        //TestAddSpecialNumbers7<SharkFloatParams, sharkOperator>(set + 70);
-        //TestAddSpecialNumbers8<SharkFloatParams, sharkOperator>(set + 80);
-        //TestAddSpecialNumbers9<SharkFloatParams, sharkOperator>(set + 90);
-        //TestAddSpecialNumbers10<SharkFloatParams, sharkOperator>(set + 100);
-        //TestAddSpecialNumbers11<SharkFloatParams, sharkOperator>(set + 110);
-        //TestAddSpecialNumbers12<SharkFloatParams, sharkOperator>(set + 120);
-        //TestAddSpecialNumbers13<SharkFloatParams, sharkOperator>(set + 130);
-        //TestAddSpecialNumbers14<SharkFloatParams, sharkOperator>(set + 140);
+        TestAddSpecialNumbers1<SharkFloatParams, sharkOperator>(set + 10);
+        TestAddSpecialNumbers2<SharkFloatParams, sharkOperator>(set + 20);
+        TestAddSpecialNumbers3<SharkFloatParams, sharkOperator>(set + 30);
+        TestAddSpecialNumbers4<SharkFloatParams, sharkOperator>(set + 40);
+        TestAddSpecialNumbers5<SharkFloatParams, sharkOperator>(set + 50);
+        TestAddSpecialNumbers6<SharkFloatParams, sharkOperator>(set + 60);
+        TestAddSpecialNumbers7<SharkFloatParams, sharkOperator>(set + 70);
+        TestAddSpecialNumbers8<SharkFloatParams, sharkOperator>(set + 80);
+        TestAddSpecialNumbers9<SharkFloatParams, sharkOperator>(set + 90);
+        TestAddSpecialNumbers10<SharkFloatParams, sharkOperator>(set + 100);
+        TestAddSpecialNumbers11<SharkFloatParams, sharkOperator>(set + 110);
+        TestAddSpecialNumbers12<SharkFloatParams, sharkOperator>(set + 120);
+        TestAddSpecialNumbers13<SharkFloatParams, sharkOperator>(set + 130);
+        TestAddSpecialNumbers14<SharkFloatParams, sharkOperator>(set + 140);
         TestAddSpecialNumbers15<SharkFloatParams, sharkOperator>(set + 150);
         TestAddSpecialNumbers16<SharkFloatParams, sharkOperator>(set + 160);
         TestAddSpecialNumbers17<SharkFloatParams, sharkOperator>(set + 170);
@@ -1283,6 +1283,7 @@ ExplicitlyInstantiate(Test4x4SharkParams);
 ExplicitlyInstantiate(Test4x2SharkParams);
 ExplicitlyInstantiate(Test8x1SharkParams);
 ExplicitlyInstantiate(Test8x8SharkParams);
+ExplicitlyInstantiate(Test16x16SharkParams);
 
 ExplicitlyInstantiate(Test128x64SharkParams);
 ExplicitlyInstantiate(Test64x64SharkParams);

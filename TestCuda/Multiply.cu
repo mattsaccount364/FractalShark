@@ -438,7 +438,7 @@ __device__ __forceinline__ static void CarryPropagation (
 }
 
 #define DefineTempProductsOffsets(TempBase) \
-    constexpr int total_threads = SharkFloatParams::GlobalThreadsPerBlock * SharkFloatParams::GlobalNumBlocks; \
+    constexpr int total_threads = SharkFloatParams::GlobalThreadsPerBlock * NewNumBlocks; \
     constexpr int n = (NewN + 1) / 2; \
     const int threadIdxGlobal = blockIdx.x * SharkFloatParams::GlobalThreadsPerBlock + threadIdx.x; \
     constexpr int Z0_offset = TempBase; \
@@ -450,13 +450,17 @@ __device__ __forceinline__ static void CarryPropagation (
     constexpr int XDiff_offset = Result_offset + 2 * NewN; \
     constexpr int YDiff_offset = XDiff_offset + 1 * NewN; \
     constexpr int GlobalCarryOffset = YDiff_offset + 1 * NewN; \
-    constexpr int CarryInsOffset = GlobalCarryOffset + 1 * NewN; \
+    constexpr int SubtractionOffset1 = GlobalCarryOffset + 1 * NewN; \
+    constexpr int SubtractionOffset2 = SubtractionOffset1 + 1 * NewN; \
+    constexpr int BorrowAnyOffset = SubtractionOffset2 + 1 * NewN; \
+    /* Note, overlaps: */ \
+    constexpr int CarryInsOffset = TempBase; \
     constexpr int CarryInsOffset2 = CarryInsOffset + 1 * NewN; \
-    constexpr int BorrowAnyOffset = CarryInsOffset2 + 1 * NewN; \
+
 
 #define DefineExtraDefinitions() \
     constexpr int total_result_digits = 2 * NewN + 1; \
-    constexpr auto digits_per_block = NewN * 2 / SharkFloatParams::GlobalThreadsPerBlock; \
+    constexpr auto digits_per_block = NewN * 2 / SharkFloatParams::GlobalNumBlocks; \
     auto block_start_idx = blockIdx.x * digits_per_block; \
     auto block_end_idx = min(block_start_idx + digits_per_block, total_result_digits); \
     int digits_per_thread = (digits_per_block + blockDim.x - 1) / blockDim.x; \
@@ -469,12 +473,12 @@ __device__ __forceinline__ static void CarryPropagation (
 // #define SharkRestrict __restrict__
 #define SharkRestrict
 
-template<class SharkFloatParams, int NewN, int TempBase>
+template<class SharkFloatParams, int NewN, int NewNumBlocks, int TempBase>
 __device__ void MultiplyDigitsOnly(
     uint32_t *SharkRestrict shared_data,
     const uint32_t *SharkRestrict aDigits,
     const uint32_t *SharkRestrict bDigits,
-    uint64_t *SharkRestrict outDigits,
+    uint64_t *SharkRestrict final128,
     cg::grid_group &grid,
     cg::thread_block &block,
     uint64_t *SharkRestrict tempProducts) {
@@ -498,91 +502,98 @@ __device__ void MultiplyDigitsOnly(
     int k_start = (threadIdxGlobal * total_k) / total_threads;
     int k_end = ((threadIdxGlobal + 1) * total_k) / total_threads;
 
-    //if constexpr (n <= SharkFloatParams::GlobalNumUint32 / 4) {
+    auto *Z0_OutDigits = &tempProducts[Z0_offset];
+    auto *Z2_OutDigits = &tempProducts[Z2_offset];
 
-        // ---- Convolution for Z0 = A0 * B0 ----
-        for (int k = k_start; k < k_end; ++k) {
-            uint64_t sum_low = 0;
-            uint64_t sum_high = 0;
+    constexpr bool UseConvolution =
+        ((n <= SharkFloatParams::GlobalNumUint32 / 4) || (NewNumBlocks <= std::max(SharkFloatParams::GlobalNumBlocks / 4, 1)));
 
-            int i_start = max(0, k - (n - 1));
-            int i_end = min(k, n - 1);
+    if constexpr (UseConvolution) {
 
-            for (int i = i_start; i <= i_end; ++i) {
-                uint64_t a = a_shared[i]; //A_shared[i];         // A0[i]
-                uint64_t b = b_shared[k - i]; //B_shared[k - i];     // B0[k - i]
+        if (threadIdxGlobal < NewN) {
 
-                uint64_t product = a * b;
-                 
-                // Add product to sum
-                sum_low += product;
-                if (sum_low < product) {
-                    sum_high += 1;
+            // ---- Convolution for Z0 = A0 * B0 ----
+            for (int k = k_start; k < k_end; ++k) {
+                uint64_t sum_low = 0;
+                uint64_t sum_high = 0;
+
+                int i_start = max(0, k - (n - 1));
+                int i_end = min(k, n - 1);
+
+                for (int i = i_start; i <= i_end; ++i) {
+                    uint64_t a = a_shared[i]; //A_shared[i];         // A0[i]
+                    uint64_t b = b_shared[k - i]; //B_shared[k - i];     // B0[k - i]
+
+                    uint64_t product = a * b;
+
+                    // Add product to sum
+                    sum_low += product;
+                    if (sum_low < product) {
+                        sum_high += 1;
+                    }
                 }
+
+                // Store sum_low and sum_high in tempProducts
+                int idx = k * 2;
+                Z0_OutDigits[idx] = sum_low;
+                Z0_OutDigits[idx + 1] = sum_high;
             }
 
-            // Store sum_low and sum_high in tempProducts
-            int idx = Z0_offset + k * 2;
-            tempProducts[idx] = sum_low;
-            tempProducts[idx + 1] = sum_high;
-        }
+            // Synchronize before next convolution
+            //block.sync();
 
-        // Synchronize before next convolution
-        //block.sync();
+            // ---- Convolution for Z2 = A1 * B1 ----
+            for (int k = k_start; k < k_end; ++k) {
+                uint64_t sum_low = 0;
+                uint64_t sum_high = 0;
 
-        // ---- Convolution for Z2 = A1 * B1 ----
-        for (int k = k_start; k < k_end; ++k) {
-            uint64_t sum_low = 0;
-            uint64_t sum_high = 0;
+                int i_start = max(0, k - (n - 1));
+                int i_end = min(k, n - 1);
 
-            int i_start = max(0, k - (n - 1));
-            int i_end = min(k, n - 1);
+                for (int i = i_start; i <= i_end; ++i) {
+                    uint64_t a = a_shared[i + n]; // A_shared[i];         // A1[i]
+                    uint64_t b = b_shared[k - i + n]; // B_shared[k - i];     // B1[k - i]
 
-            for (int i = i_start; i <= i_end; ++i) {
-                uint64_t a = a_shared[i + n]; // A_shared[i];         // A1[i]
-                uint64_t b = b_shared[k - i + n]; // B_shared[k - i];     // B1[k - i]
+                    uint64_t product = a * b;
 
-                uint64_t product = a * b;
-
-                // Add product to sum
-                sum_low += product;
-                if (sum_low < product) {
-                    sum_high += 1;
+                    // Add product to sum
+                    sum_low += product;
+                    if (sum_low < product) {
+                        sum_high += 1;
+                    }
                 }
+
+                // Store sum_low and sum_high in tempProducts
+                int idx = k * 2;
+                Z2_OutDigits[idx] = sum_low;
+                Z2_OutDigits[idx + 1] = sum_high;
             }
-
-            // Store sum_low and sum_high in tempProducts
-            int idx = Z2_offset + k * 2;
-            tempProducts[idx] = sum_low;
-            tempProducts[idx + 1] = sum_high;
         }
-    //} else {
-    //    constexpr auto NewTempBase = TempBase + 32 * SharkFloatParams::GlobalNumUint32;
-    //    auto *Z0_OutDigits = &tempProducts[Z0_offset];
+    } else {
+        constexpr auto NewTempBase = TempBase + 32 * SharkFloatParams::GlobalNumUint32;
+        
+        MultiplyDigitsOnly<SharkFloatParams, NewN / 2, NewNumBlocks / 2, NewTempBase>(
+            shared_data,
+            a_shared,
+            b_shared,
+            Z0_OutDigits,
+            grid,
+            block,
+            tempProducts);
 
-    //    MultiplyDigitsOnly<SharkFloatParams, NewN / 2, NewTempBase>(
-    //        shared_data,
-    //        a_shared,
-    //        b_shared,
-    //        Z0_OutDigits,
-    //        grid,
-    //        block,
-    //        tempProducts);
+        grid.sync();
 
-    //    grid.sync();
+        MultiplyDigitsOnly<SharkFloatParams, NewN / 2, NewNumBlocks / 2, NewTempBase>(
+            shared_data,
+            a_shared + n,
+            b_shared + n,
+            Z2_OutDigits,
+            grid,
+            block,
+            tempProducts);
 
-    //    auto *Z2_OutDigits = &tempProducts[Z2_offset];
-    //    MultiplyDigitsOnly<SharkFloatParams, NewN / 2, NewTempBase>(
-    //        shared_data,
-    //        a_shared + n,
-    //        b_shared + n,
-    //        Z2_OutDigits,
-    //        grid,
-    //        block,
-    //        tempProducts);
-
-    //    grid.sync();
-    //}
+        grid.sync();
+    }
 
     // No sync
 
@@ -597,14 +608,14 @@ __device__ void MultiplyDigitsOnly(
     int y_diff_sign = 0; // 0 if positive, 1 if negative
 
     // Compute x_diff_abs and x_diff_sign
-    auto *SharkRestrict subtractionBorrows = reinterpret_cast<uint32_t *>(&tempProducts[CarryInsOffset]);
-    auto *SharkRestrict subtractionBorrows2 = reinterpret_cast<uint32_t *>(&tempProducts[CarryInsOffset2]);
+    auto *SharkRestrict subtractionBorrows = reinterpret_cast<uint32_t *>(&tempProducts[SubtractionOffset1]);
+    auto *SharkRestrict subtractionBorrows2 = reinterpret_cast<uint32_t *>(&tempProducts[SubtractionOffset2]);
+    auto *SharkRestrict globalBorrowAny = reinterpret_cast<uint32_t *>(&tempProducts[BorrowAnyOffset]);
 
     constexpr bool useParallelSubtract = false;
 
     if constexpr (!SharkFloatParams::DisableSubtraction) {
         if constexpr (useParallelSubtract) {
-            uint32_t *globalBorrowAny = reinterpret_cast<uint32_t *>(&tempProducts[BorrowAnyOffset]);
             int x_compare = compareDigits(a_shared + n, a_shared, n);
 
             if (x_compare >= 0) {
@@ -661,24 +672,26 @@ __device__ void MultiplyDigitsOnly(
                     block); // y_diff = B0 - B1
             }
         } else {
-            int x_compare = compareDigits(a_shared + n, a_shared, n);
+            if (threadIdxGlobal < NewN) {
+                int x_compare = compareDigits(a_shared + n, a_shared, n);
 
-            if (x_compare >= 0) {
-                x_diff_sign = 0;
-                subtractDigits(a_shared + n, a_shared, x_diff_abs, n); // x_diff = A1 - A0
-            } else {
-                x_diff_sign = 1;
-                subtractDigits(a_shared, a_shared + n, x_diff_abs, n); // x_diff = A0 - A1
-            }
+                if (x_compare >= 0) {
+                    x_diff_sign = 0;
+                    subtractDigits(a_shared + n, a_shared, x_diff_abs, n); // x_diff = A1 - A0
+                } else {
+                    x_diff_sign = 1;
+                    subtractDigits(a_shared, a_shared + n, x_diff_abs, n); // x_diff = A0 - A1
+                }
 
-            // Compute y_diff_abs and y_diff_sign
-            int y_compare = compareDigits(b_shared + n, b_shared, n);
-            if (y_compare >= 0) {
-                y_diff_sign = 0;
-                subtractDigits(b_shared + n, b_shared, y_diff_abs, n); // y_diff = B1 - B0
-            } else {
-                y_diff_sign = 1;
-                subtractDigits(b_shared, b_shared + n, y_diff_abs, n); // y_diff = B0 - B1
+                // Compute y_diff_abs and y_diff_sign
+                int y_compare = compareDigits(b_shared + n, b_shared, n);
+                if (y_compare >= 0) {
+                    y_diff_sign = 0;
+                    subtractDigits(b_shared + n, b_shared, y_diff_abs, n); // y_diff = B1 - B0
+                } else {
+                    y_diff_sign = 1;
+                    subtractDigits(b_shared, b_shared + n, y_diff_abs, n); // y_diff = B0 - B1
+                }
             }
         }
     }
@@ -703,32 +716,51 @@ __device__ void MultiplyDigitsOnly(
 
     int k_diff_start = (threadIdxGlobal * total_k_diff) / total_threads;
     int k_diff_end = ((threadIdxGlobal + 1) * total_k_diff) / total_threads;
+    auto *Z1_temp_digits = &tempProducts[Z1_temp_offset];
 
-    for (int k = k_diff_start; k < k_diff_end; ++k) {
-        uint64_t sum_low = 0;
-        uint64_t sum_high = 0;
+    if constexpr (UseConvolution) {
 
-        int i_start = max(0, k - (n - 1));
-        int i_end = min(k, n - 1);
+        if (threadIdxGlobal < NewN) {
+            for (int k = k_diff_start; k < k_diff_end; ++k) {
+                uint64_t sum_low = 0;
+                uint64_t sum_high = 0;
 
-        for (int i = i_start; i <= i_end; ++i) {
-            uint64_t a = x_diff_abs[i];
-            uint64_t b = y_diff_abs[k - i];
+                int i_start = max(0, k - (n - 1));
+                int i_end = min(k, n - 1);
 
-            uint64_t product = a * b;
+                for (int i = i_start; i <= i_end; ++i) {
+                    uint64_t a = x_diff_abs[i];
+                    uint64_t b = y_diff_abs[k - i];
 
-            // Accumulate the product
-            sum_low += product;
-            if (sum_low < product) {
-                sum_high += 1;
+                    uint64_t product = a * b;
+
+                    // Accumulate the product
+                    sum_low += product;
+                    if (sum_low < product) {
+                        sum_high += 1;
+                    }
+                }
+
+                // Store sum_low and sum_high in tempProducts
+                int idx = k * 2;
+                Z1_temp_digits[idx] = sum_low;
+                Z1_temp_digits[idx + 1] = sum_high;
             }
         }
-
-        // Store sum_low and sum_high in tempProducts
-        int idx = Z1_temp_offset + k * 2;
-        tempProducts[idx] = sum_low;
-        tempProducts[idx + 1] = sum_high;
+    } else {
+        constexpr auto NewTempBase = TempBase + 32 * SharkFloatParams::GlobalNumUint32;
+        MultiplyDigitsOnly<SharkFloatParams, NewN / 2, NewNumBlocks / 2, NewTempBase>(
+            shared_data,
+            x_diff_abs,
+            y_diff_abs,
+            Z1_temp_digits,
+            grid,
+            block,
+            tempProducts);
+        grid.sync();
     }
+
+    auto *Z1_digits = &tempProducts[Z1_offset];
 
     if constexpr (!SharkFloatParams::DisableAllAdditions) {
 
@@ -739,39 +771,42 @@ __device__ void MultiplyDigitsOnly(
         // If z1_sign == 0: Z1 = Z2 + Z0 - Z1_temp
         // If z1_sign == 1: Z1 = Z2 + Z0 + Z1_temp
 
-        for (int k = k_start; k < k_end; ++k) {
-            // Retrieve Z0
-            int z0_idx = Z0_offset + k * 2;
-            uint64_t z0_low = tempProducts[z0_idx];
-            uint64_t z0_high = tempProducts[z0_idx + 1];
+        if (threadIdxGlobal < NewN) {
 
-            // Retrieve Z2
-            int z2_idx = Z2_offset + k * 2;
-            uint64_t z2_low = tempProducts[z2_idx];
-            uint64_t z2_high = tempProducts[z2_idx + 1];
+            for (int k = k_start; k < k_end; ++k) {
+                // Retrieve Z0
+                int z0_idx = Z0_offset + k * 2;
+                uint64_t z0_low = tempProducts[z0_idx];
+                uint64_t z0_high = tempProducts[z0_idx + 1];
 
-            // Retrieve Z1_temp (Z1')
-            int z1_temp_idx = Z1_temp_offset + k * 2;
-            uint64_t z1_temp_low = tempProducts[z1_temp_idx];
-            uint64_t z1_temp_high = tempProducts[z1_temp_idx + 1];
+                // Retrieve Z2
+                int z2_idx = Z2_offset + k * 2;
+                uint64_t z2_low = tempProducts[z2_idx];
+                uint64_t z2_high = tempProducts[z2_idx + 1];
 
-            // Combine Z2 + Z0 first
-            uint64_t temp_low, temp_high;
-            Add128(z2_low, z2_high, z0_low, z0_high, temp_low, temp_high);
+                // Retrieve Z1_temp (Z1')
+                int z1_temp_idx = Z1_temp_offset + k * 2;
+                uint64_t z1_temp_low = tempProducts[z1_temp_idx];
+                uint64_t z1_temp_high = tempProducts[z1_temp_idx + 1];
 
-            uint64_t z1_low, z1_high;
-            if (z1_sign == 0) {
-                // same sign: Z1 = (Z2 + Z0) - Z1_temp
-                Subtract128(temp_low, temp_high, z1_temp_low, z1_temp_high, z1_low, z1_high);
-            } else {
-                // opposite signs: Z1 = (Z2 + Z0) + Z1_temp
-                Add128(temp_low, temp_high, z1_temp_low, z1_temp_high, z1_low, z1_high);
+                // Combine Z2 + Z0 first
+                uint64_t temp_low, temp_high;
+                Add128(z2_low, z2_high, z0_low, z0_high, temp_low, temp_high);
+
+                uint64_t z1_low, z1_high;
+                if (z1_sign == 0) {
+                    // same sign: Z1 = (Z2 + Z0) - Z1_temp
+                    Subtract128(temp_low, temp_high, z1_temp_low, z1_temp_high, z1_low, z1_high);
+                } else {
+                    // opposite signs: Z1 = (Z2 + Z0) + Z1_temp
+                    Add128(temp_low, temp_high, z1_temp_low, z1_temp_high, z1_low, z1_high);
+                }
+
+                // Store fully formed Z1
+                int z1_idx = k * 2;
+                Z1_digits[z1_idx] = z1_low;
+                Z1_digits[z1_idx + 1] = z1_high;
             }
-
-            // Store fully formed Z1
-            int z1_idx = Z1_offset + k * 2;
-            tempProducts[z1_idx] = z1_low;
-            tempProducts[z1_idx + 1] = z1_high;
         }
 
         // Synchronize before final combination
@@ -782,41 +817,43 @@ __device__ void MultiplyDigitsOnly(
         int idx_start = (threadIdxGlobal * total_result_digits) / total_threads;
         int idx_end = ((threadIdxGlobal + 1) * total_result_digits) / total_threads;
 
-        for (int idx = idx_start; idx < idx_end; ++idx) {
-            uint64_t sum_low = 0;
-            uint64_t sum_high = 0;
+        if (threadIdxGlobal < NewN) {
+            for (int idx = idx_start; idx < idx_end; ++idx) {
+                uint64_t sum_low = 0;
+                uint64_t sum_high = 0;
 
-            // Add Z0
-            if (idx < 2 * n - 1) {
-                int z0_idx = Z0_offset + idx * 2;
-                uint64_t z0_low = tempProducts[z0_idx];
-                uint64_t z0_high = tempProducts[z0_idx + 1];
-                Add128(sum_low, sum_high, z0_low, z0_high, sum_low, sum_high);
+                // Add Z0
+                if (idx < 2 * n - 1) {
+                    int z0_idx = Z0_offset + idx * 2;
+                    uint64_t z0_low = tempProducts[z0_idx];
+                    uint64_t z0_high = tempProducts[z0_idx + 1];
+                    Add128(sum_low, sum_high, z0_low, z0_high, sum_low, sum_high);
+                }
+
+                // Add Z1 shifted by n
+                if (idx >= n && (idx - n) < 2 * n - 1) {
+                    int z1_idx = Z1_offset + (idx - n) * 2;
+                    uint64_t z1_low = tempProducts[z1_idx];
+                    uint64_t z1_high = tempProducts[z1_idx + 1];
+                    Add128(sum_low, sum_high, z1_low, z1_high, sum_low, sum_high);
+                }
+
+                // Add Z2 shifted by 2*n
+                if (idx >= 2 * n && (idx - 2 * n) < 2 * n - 1) {
+                    int z2_idx = Z2_offset + (idx - 2 * n) * 2;
+                    uint64_t z2_low = tempProducts[z2_idx];
+                    uint64_t z2_high = tempProducts[z2_idx + 1];
+                    Add128(sum_low, sum_high, z2_low, z2_high, sum_low, sum_high);
+                }
+
+                //int result_idx = Convolution_offset + idx * 2;
+                //tempProducts[result_idx] = sum_low;
+                //tempProducts[result_idx + 1] = sum_high;
+
+                int result_idx = idx * 2;
+                final128[result_idx] = sum_low;
+                final128[result_idx + 1] = sum_high;
             }
-
-            // Add Z1 shifted by n
-            if (idx >= n && (idx - n) < 2 * n - 1) {
-                int z1_idx = Z1_offset + (idx - n) * 2;
-                uint64_t z1_low = tempProducts[z1_idx];
-                uint64_t z1_high = tempProducts[z1_idx + 1];
-                Add128(sum_low, sum_high, z1_low, z1_high, sum_low, sum_high);
-            }
-
-            // Add Z2 shifted by 2*n
-            if (idx >= 2 * n && (idx - 2 * n) < 2 * n - 1) {
-                int z2_idx = Z2_offset + (idx - 2 * n) * 2;
-                uint64_t z2_low = tempProducts[z2_idx];
-                uint64_t z2_high = tempProducts[z2_idx + 1];
-                Add128(sum_low, sum_high, z2_low, z2_high, sum_low, sum_high);
-            }
-
-            //int result_idx = Convolution_offset + idx * 2;
-            //tempProducts[result_idx] = sum_low;
-            //tempProducts[result_idx + 1] = sum_high;
-
-            int result_idx = idx * 2;
-            outDigits[result_idx] = sum_low;
-            outDigits[result_idx + 1] = sum_high;
         }
 
         // Synchronize before carry propagation
@@ -843,17 +880,18 @@ __device__ void MultiplyHelperKaratsubaV2(
 
     constexpr int N = SharkFloatParams::GlobalNumUint32;         // Total number of digits
     constexpr int NewN = N;
+    constexpr int NewNumBlocks = SharkFloatParams::GlobalNumBlocks;
     extern __shared__ uint32_t shared_data[];
 
     constexpr auto TempBase = 0;
     DefineTempProductsOffsets(TempBase);
 
-    auto *subOutDigits = &tempProducts[Convolution_offset];
-    MultiplyDigitsOnly<SharkFloatParams, N, TempBase>(
+    auto *final128 = &tempProducts[Convolution_offset];
+    MultiplyDigitsOnly<SharkFloatParams, N, SharkFloatParams::GlobalNumBlocks, TempBase>(
         shared_data,
         A->Digits,
         B->Digits,
-        subOutDigits,
+        final128,
         grid,
         block,
         tempProducts);
@@ -863,6 +901,7 @@ __device__ void MultiplyHelperKaratsubaV2(
     // Global memory for block carry-outs
     // Allocate space for gridDim.x block carry-outs after total_result_digits
     uint64_t *block_carry_outs = &tempProducts[CarryInsOffset];
+    auto *resultDigits = &tempProducts[Result_offset];
 
     if constexpr (!SharkFloatParams::DisableCarryPropagation) {
 
@@ -1027,7 +1066,7 @@ void ComputeMultiplyKaratsubaV2Gpu(void *kernelArgs[]) {
 
     err = cudaLaunchCooperativeKernel(
         (void *)MultiplyKernelKaratsubaV2<SharkFloatParams>,
-        dim3(SharkFloatParams::GlobalNumBlocks * 2),
+        dim3(SharkFloatParams::GlobalNumBlocks),
         dim3(SharkFloatParams::GlobalThreadsPerBlock),
         kernelArgs,
         sharedAmountBytes, // Shared memory size
@@ -1081,6 +1120,7 @@ ExplicitlyInstantiate(Test4x4SharkParams);
 ExplicitlyInstantiate(Test4x2SharkParams);
 ExplicitlyInstantiate(Test8x1SharkParams);
 ExplicitlyInstantiate(Test8x8SharkParams);
+ExplicitlyInstantiate(Test16x16SharkParams);
 
 ExplicitlyInstantiate(Test128x64SharkParams);
 ExplicitlyInstantiate(Test64x64SharkParams);

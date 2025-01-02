@@ -655,7 +655,7 @@ ExplicitlyInstantiate(Test4x4SharkParams);
 ExplicitlyInstantiate(Test4x2SharkParams);
 ExplicitlyInstantiate(Test8x1SharkParams);
 ExplicitlyInstantiate(Test8x8SharkParams);
-ExplicitlyInstantiate(Test16x16SharkParams);
+ExplicitlyInstantiate(Test16x4SharkParams);
 
 ExplicitlyInstantiate(Test128x64SharkParams);
 ExplicitlyInstantiate(Test64x64SharkParams);

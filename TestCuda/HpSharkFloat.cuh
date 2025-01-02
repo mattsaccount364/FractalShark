@@ -14,7 +14,7 @@ static constexpr auto BatchSize = 8;
 static constexpr bool SkipCorrectnessTests = false;
 static constexpr bool Verbose = true;
 #else
-static constexpr auto TestIterCount = 5000;
+static constexpr auto TestIterCount = 500;
 static constexpr auto BatchSize = 512;
 static constexpr bool SkipCorrectnessTests = true;
 static constexpr bool Verbose = false;
@@ -67,7 +67,7 @@ using Test4x2SharkParams = GenericSharkFloatParams<4, 2, BatchSize, TestIterCoun
 using Test4x4SharkParams = GenericSharkFloatParams<4, 4, BatchSize, TestIterCount>;
 using Test8x1SharkParams = GenericSharkFloatParams<8, 1, BatchSize, TestIterCount>;
 using Test8x8SharkParams = GenericSharkFloatParams<8, 8, BatchSize, TestIterCount>;
-using Test16x16SharkParams = GenericSharkFloatParams<16, 4, BatchSize, TestIterCount>;
+using Test16x4SharkParams = GenericSharkFloatParams<16, 4, BatchSize, TestIterCount>;
 
 using Test128x64SharkParams = GenericSharkFloatParams<128, 64, BatchSize, TestIterCount>;
 using Test64x64SharkParams = GenericSharkFloatParams<64, 64, BatchSize, TestIterCount>;
@@ -80,12 +80,12 @@ using Test128x8SharkParams = GenericSharkFloatParams<128, 8, BatchSize, TestIter
 using Test128x4SharkParams = GenericSharkFloatParams<128, 4, BatchSize, TestIterCount>;
 
 
-#ifdef _DEBUG
-using TestSharkParams = Test4x4SharkParams;
-//using TestSharkParams = Test8x1SharkParams;
-#else
-using TestSharkParams = Test128x64SharkParams;
-#endif
+//#ifdef _DEBUG
+//using TestSharkParams = Test4x4SharkParams;
+////using TestSharkParams = Test8x1SharkParams;
+//#else
+//using TestSharkParams = Test128x64SharkParams;
+//#endif
 
 // Struct to hold both integer and fractional parts of the high-precision number
 template<class SharkFloatParams>

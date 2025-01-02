@@ -457,7 +457,7 @@ void KaratsubaRecursiveDigits(
     std::vector<uint64_t> Z2(2 * N + 2, 0ULL);
     std::vector<uint64_t> Z1_temp(2 * N + 2, 0ULL);
 
-    const bool UseConvolution = (half <= 16);
+    const bool UseConvolution = (half <= 2);
 
     if (UseConvolution) {
         NativeMultiply64(A_low, B_low, half, Z0.data());
@@ -766,7 +766,7 @@ ExplicitlyInstantiate(Test4x4SharkParams);
 ExplicitlyInstantiate(Test4x2SharkParams);
 ExplicitlyInstantiate(Test8x1SharkParams);
 ExplicitlyInstantiate(Test8x8SharkParams);
-ExplicitlyInstantiate(Test16x16SharkParams);
+ExplicitlyInstantiate(Test16x4SharkParams);
 
 ExplicitlyInstantiate(Test128x64SharkParams);
 ExplicitlyInstantiate(Test64x64SharkParams);

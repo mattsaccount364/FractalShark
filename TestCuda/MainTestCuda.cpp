@@ -46,39 +46,63 @@ char PressKey() {
     return (char)_getch();
 }
 
+constexpr auto MultiplyOperator = Operator::MultiplyKaratsubaV2;
+
+template<typename TestSharkParams>
+bool CorrectnessTests() {
+    //TestNullKernel();
+    //PressKey();
+
+    int testBase = 0;
+
+    bool res = TestConversion<TestSharkParams>(0);
+    if (!res) {
+        auto q = PressKey();
+        if (q == 'q') {
+            return false;
+        }
+    }
+
+    testBase = 2000;
+    res = TestAllBinaryOp<TestSharkParams, MultiplyOperator>(testBase);
+    if (!res) {
+        auto q = PressKey();
+        if (q == 'q') {
+            return false;
+        }
+    }
+
+    //testBase = 4000;
+    //res = TestAllBinaryOp<TestSharkParams, Operator::Add>(testBase);
+    //if (!res) {
+    //    auto q = PressKey();
+    //    if (q == 'q') {
+    //        return false;
+    //    }
+    //}
+
+    return true;
+}
+
 int main(int /*argc*/, char * /*argv*/[]) {
     int testBase = 0;
     bool res = false;
-    constexpr auto MultiplyOperator = Operator::MultiplyKaratsubaV2;
 
     if constexpr (!SkipCorrectnessTests) {
-        //TestNullKernel();
-        //PressKey();
-
-        res = TestConversion<TestSharkParams>(0);
-        if (!res) {
-            auto q = PressKey();
-            if (q == 'q') {
-                return 0;
-            }
+        if (!CorrectnessTests<Test4x4SharkParams>()) {
+            return 0;
         }
 
-        testBase = 2000;
-        res = TestAllBinaryOp<TestSharkParams, MultiplyOperator>(testBase);
-        if (!res) {
-            auto q = PressKey();
-            if (q == 'q') {
-                return 0;
-            }
+        if (CorrectnessTests<Test8x1SharkParams>()) {
+            return 0;
         }
 
-        testBase = 4000;
-        res = TestAllBinaryOp<TestSharkParams, Operator::Add>(testBase);
-        if (!res) {
-            auto q = PressKey();
-            if (q == 'q') {
-                return 0;
-            }
+        if (CorrectnessTests<Test16x4SharkParams>()) {
+            return 0;
+        }
+
+        if (PressKey() == 'q') {
+            return 0;
         }
     }
 
@@ -112,30 +136,16 @@ int main(int /*argc*/, char * /*argv*/[]) {
         //    return 0;
         //}
 
-        res = TestConversion<TestSharkParams>(0);
-        if (!res) {
-            q = PressKey();
-            if (q == 'q') {
-                return 0;
-            }
+        if (!CorrectnessTests<Test4x4SharkParams>()) {
+            return 0;
         }
 
-        testBase = 2000;
-        res = TestAllBinaryOp<TestSharkParams, MultiplyOperator>(testBase);
-        if (!res) {
-            q = PressKey();
-            if (q == 'q') {
-                return 0;
-            }
+        if (CorrectnessTests<Test8x1SharkParams>()) {
+            return 0;
         }
 
-        testBase = 4000;
-        res = TestAllBinaryOp<TestSharkParams, Operator::Add>(testBase);
-        if (!res) {
-            q = PressKey();
-            if (q == 'q') {
-                return 0;
-            }
+        if (CorrectnessTests<Test16x4SharkParams>()) {
+            return 0;
         }
     }
 

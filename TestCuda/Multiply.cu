@@ -142,98 +142,60 @@ __device__ __forceinline__ void SubtractDigitsParallel(
     cg::thread_block &block
 ) {
     // Constants 
-    constexpr int n = (N + 1) / 2;     // 'n' is how many digits we handle in half
+    constexpr int n = (N + 1) / 2;     // 'n' is how many digits
     constexpr int MaxPasses = 10;      // maximum number of multi-pass sweeps
-    constexpr int threadsPerBlock = SharkFloatParams::GlobalThreadsPerBlock;
-    constexpr int numBlocks = SharkFloatParams::GlobalNumBlocks;
 
-    // Identify the block/thread
-    const int tid = static_cast<int>(threadIdx.x);
-    const int blockId = static_cast<int>(blockIdx.x);
+    // We'll define a grid–stride range covering [0..n) for each pass
+    // 1) global thread id
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    // 2) stride
+    int stride = blockDim.x * gridDim.x;
 
-    // Determine which slice of digits this block will handle
-    // Example: we split 'n' digits evenly among numBlocks
-    constexpr int digitsPerBlock = (n + numBlocks - 1) / numBlocks;
-    const int startDigit = blockId * digitsPerBlock;
-    const int endDigit = min(startDigit + digitsPerBlock, n);
-    const int digitsInBlock = endDigit - startDigit;
-
-    const int startIdx = startDigit + tid;
-    const int endIdx = startDigit + digitsInBlock;
-
-
-    // Pointers in shared memory
-    // We'll store partial differences and borrow bits here
-    //uint32_t *a_shared = shared_data;                       // [0 .. digitsInBlock-1]
-    //uint32_t *b_shared = a_shared + digitsInBlock;          // [digitsInBlock .. 2*digitsInBlock-1]
-    //uint32_t *partialDiff = b_shared + digitsInBlock;          // ...
-    //uint32_t *borrowBits = partialDiff + digitsInBlock;
-    // optionally you can do more arrays for second pass or prefix sums, etc.
-
-    // 1) Load 'a' and 'b' digits into shared memory
-    //for (int idx = tid; idx < digitsInBlock; idx += threadsPerBlock) {
-    //    a_shared[idx] = a[startDigit + idx];
-    //    b_shared[idx] = b[startDigit + idx];
-    //}
-    //block.sync();
-    //grid.sync();
-
-    // 2) First pass: compute naive partial difference (a[i] - b[i]), store in partialDiff
-    //    and whether a[i]<b[i] => borrowBit=1 else 0
-    for (int idx = startIdx; idx < endIdx; idx += threadsPerBlock) {
-
+    // (1) First pass: naive partial difference (a[i] - b[i]) and set borrowBit
+    // Instead of dividing digits among blocks, each thread does a grid–stride loop:
+    for (int idx = tid; idx < n; idx += stride) {
         uint32_t ai = a[idx];
         uint32_t bi = b[idx];
 
         // naive difference
-        uint64_t temp = static_cast<uint64_t>(ai) - static_cast<uint64_t>(bi);
+        uint64_t diff = (uint64_t)ai - (uint64_t)bi;
         uint32_t borrow = (ai < bi) ? 1u : 0u;
 
-        result[idx] = static_cast<uint32_t>(temp & 0xFFFFFFFFu);
+        result[idx] = static_cast<uint32_t>(diff & 0xFFFFFFFFu);
         subtractionBorrows[idx] = borrow;
     }
 
+    // sync the entire grid before multi-pass fixes
+    grid.sync();
+
     // We'll do repeated passes to fix newly introduced borrows
-    // We'll store in carryOuts[blockId] any leftover borrow from this block if needed
-    // but let's keep it simple: we do an in-block multi-pass approach first
-
-    int pass = 0;
-    uint64_t local_borrow = 0;
-
     uint32_t *curBorrow = subtractionBorrows;
     uint32_t *newBorrow = subtractionBorrows2;
+    int pass = 0;
 
     do {
-        // Synchronize all blocks
-        grid.sync();
-
-        // Zero out the global carry count for the current pass
+        // Zero out the borrow count
         if (blockIdx.x == 0 && threadIdx.x == 0) {
             *globalBorrowAny = 0;
         }
-
         grid.sync();
 
-        // Each thread processes its assigned digits
-        for (int idx = startIdx; idx < endIdx; idx += threadsPerBlock) {
-            // Get carry-in from the previous digit
-            local_borrow = 0;
-            if (idx > 0) {
-                local_borrow = curBorrow[idx - 1];
+        // (2) For each digit, apply the borrow from the previous digit
+        for (int idx = tid; idx < n; idx += stride) {
+            uint64_t borrow_in = 0ULL;
+            if (idx > 0) {   // borrow_in is from digit (idx-1)
+                borrow_in = (uint64_t)(curBorrow[idx - 1]);
             }
 
-            // Read the previously stored digit
             uint32_t digit = result[idx];
+            // subtract the borrow
+            uint64_t sum = (uint64_t)digit - borrow_in;
 
-            // Add local_borrow to digit
-            uint64_t sum = static_cast<uint64_t>(digit) - local_borrow;
+            // store updated digit
+            result[idx] = static_cast<uint32_t>(sum & 0xFFFFFFFFULL);
 
-            // Update digit
-            digit = static_cast<uint32_t>(sum & 0xFFFFFFFFULL);
-            result[idx] = digit;
-
-            // Create new borrow
-            if (sum & 0x8000'0000'0000'0000) {
+            // If sum is negative => top bit is 1 => new borrow
+            if (sum & 0x8000'0000'0000'0000ULL) {
                 newBorrow[idx] = 1;
                 atomicAdd(globalBorrowAny, 1);
             } else {
@@ -241,15 +203,19 @@ __device__ __forceinline__ void SubtractDigitsParallel(
             }
         }
 
+        // sync before checking if any new borrows remain
         grid.sync();
 
-        // If no carries remain, exit the loop
         if (*globalBorrowAny == 0) {
-            break;
+            break;  // no new borrows => done
         }
 
-        // Swap newBorrow and curBorrow
-        std::swap(curBorrow, newBorrow);
+        grid.sync();
+
+        // swap curBorrow, newBorrow
+        uint32_t *tmp = curBorrow;
+        curBorrow = newBorrow;
+        newBorrow = tmp;
 
         pass++;
     } while (pass < MaxPasses);
@@ -510,64 +476,64 @@ __device__ void MultiplyDigitsOnly(
 
     if constexpr (UseConvolution) {
 
-        if (threadIdxGlobal < NewN) {
+        // Suppose total_k = 2*n - 1 for Z0
+        int tid = threadIdxGlobal;
+        int stride = blockDim.x * NewNumBlocks;
 
-            // ---- Convolution for Z0 = A0 * B0 ----
-            for (int k = k_start; k < k_end; ++k) {
-                uint64_t sum_low = 0;
-                uint64_t sum_high = 0;
+        for (int k = tid; k < total_k; k += stride) {
+            uint64_t sum_low = 0;
+            uint64_t sum_high = 0;
 
-                int i_start = max(0, k - (n - 1));
-                int i_end = min(k, n - 1);
+            int i_start = max(0, k - (n - 1));
+            int i_end = min(k, n - 1);
 
-                for (int i = i_start; i <= i_end; ++i) {
-                    uint64_t a = a_shared[i]; //A_shared[i];         // A0[i]
-                    uint64_t b = b_shared[k - i]; //B_shared[k - i];     // B0[k - i]
+            for (int i = i_start; i <= i_end; ++i) {
+                uint64_t a = a_shared[i]; //A_shared[i];         // A0[i]
+                uint64_t b = b_shared[k - i]; //B_shared[k - i];     // B0[k - i]
 
-                    uint64_t product = a * b;
+                uint64_t product = a * b;
 
-                    // Add product to sum
-                    sum_low += product;
-                    if (sum_low < product) {
-                        sum_high += 1;
-                    }
+                // Add product to sum
+                sum_low += product;
+                if (sum_low < product) {
+                    sum_high += 1;
                 }
-
-                // Store sum_low and sum_high in tempProducts
-                int idx = k * 2;
-                Z0_OutDigits[idx] = sum_low;
-                Z0_OutDigits[idx + 1] = sum_high;
             }
 
-            // Synchronize before next convolution
-            //block.sync();
+            // Store sum_low and sum_high in tempProducts
+            int idx = k * 2;
+            Z0_OutDigits[idx] = sum_low;
+            Z0_OutDigits[idx + 1] = sum_high;
+        }
 
-            // ---- Convolution for Z2 = A1 * B1 ----
-            for (int k = k_start; k < k_end; ++k) {
-                uint64_t sum_low = 0;
-                uint64_t sum_high = 0;
+        // Synchronize before next convolution
+        //block.sync();
 
-                int i_start = max(0, k - (n - 1));
-                int i_end = min(k, n - 1);
+        // ---- Convolution for Z2 = A1 * B1 ----
+        for (int k = tid; k < total_k; k += stride) {
+            uint64_t sum_low = 0;
+            uint64_t sum_high = 0;
 
-                for (int i = i_start; i <= i_end; ++i) {
-                    uint64_t a = a_shared[i + n]; // A_shared[i];         // A1[i]
-                    uint64_t b = b_shared[k - i + n]; // B_shared[k - i];     // B1[k - i]
+            int i_start = max(0, k - (n - 1));
+            int i_end = min(k, n - 1);
 
-                    uint64_t product = a * b;
+            for (int i = i_start; i <= i_end; ++i) {
+                uint64_t a = a_shared[i + n]; // A_shared[i];         // A1[i]
+                uint64_t b = b_shared[k - i + n]; // B_shared[k - i];     // B1[k - i]
 
-                    // Add product to sum
-                    sum_low += product;
-                    if (sum_low < product) {
-                        sum_high += 1;
-                    }
+                uint64_t product = a * b;
+
+                // Add product to sum
+                sum_low += product;
+                if (sum_low < product) {
+                    sum_high += 1;
                 }
-
-                // Store sum_low and sum_high in tempProducts
-                int idx = k * 2;
-                Z2_OutDigits[idx] = sum_low;
-                Z2_OutDigits[idx + 1] = sum_high;
             }
+
+            // Store sum_low and sum_high in tempProducts
+            int idx = k * 2;
+            Z2_OutDigits[idx] = sum_low;
+            Z2_OutDigits[idx + 1] = sum_high;
         }
     } else {
         constexpr auto NewTempBase = TempBase + 32 * SharkFloatParams::GlobalNumUint32;
@@ -612,7 +578,7 @@ __device__ void MultiplyDigitsOnly(
     auto *SharkRestrict subtractionBorrows2 = reinterpret_cast<uint32_t *>(&tempProducts[SubtractionOffset2]);
     auto *SharkRestrict globalBorrowAny = reinterpret_cast<uint32_t *>(&tempProducts[BorrowAnyOffset]);
 
-    constexpr bool useParallelSubtract = false;
+    constexpr bool useParallelSubtract = true;
 
     if constexpr (!SharkFloatParams::DisableSubtraction) {
         if constexpr (useParallelSubtract) {
@@ -620,7 +586,7 @@ __device__ void MultiplyDigitsOnly(
 
             if (x_compare >= 0) {
                 x_diff_sign = 0;
-                SubtractDigitsParallel<SharkFloatParams::GetHalf, NewN>(
+                SubtractDigitsParallel<SharkFloatParams, NewN>(
                     shared_data,
                     a_shared + n,
                     a_shared,
@@ -632,7 +598,7 @@ __device__ void MultiplyDigitsOnly(
                     block); // x_diff = A1 - A0
             } else {
                 x_diff_sign = 1;
-                SubtractDigitsParallel<SharkFloatParams::GetHalf, NewN>(
+                SubtractDigitsParallel<SharkFloatParams, NewN>(
                     shared_data,
                     a_shared,
                     a_shared + n,
@@ -648,7 +614,7 @@ __device__ void MultiplyDigitsOnly(
             int y_compare = compareDigits(b_shared + n, b_shared, n);
             if (y_compare >= 0) {
                 y_diff_sign = 0;
-                SubtractDigitsParallel<SharkFloatParams::GetHalf, NewN>(
+                SubtractDigitsParallel<SharkFloatParams, NewN>(
                     shared_data,
                     b_shared + n,
                     b_shared,
@@ -660,7 +626,7 @@ __device__ void MultiplyDigitsOnly(
                     block); // y_diff = B1 - B0
             } else {
                 y_diff_sign = 1;
-                SubtractDigitsParallel<SharkFloatParams::GetHalf, NewN>(
+                SubtractDigitsParallel<SharkFloatParams, NewN>(
                     shared_data,
                     b_shared,
                     b_shared + n,

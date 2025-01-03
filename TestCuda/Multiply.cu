@@ -141,6 +141,11 @@ __device__ __forceinline__ void SubtractDigitsParallel(
     cg::grid_group &grid,
     cg::thread_block &block
 ) {
+
+    if (blockIdx.x == 0 && threadIdx.x == 0) {
+        *globalBorrowAny = 0;
+    }
+
     // Constants 
     constexpr int n = (N + 1) / 2;     // 'n' is how many digits
     constexpr int MaxPasses = 10;      // maximum number of multi-pass sweeps
@@ -166,20 +171,17 @@ __device__ __forceinline__ void SubtractDigitsParallel(
     }
 
     // sync the entire grid before multi-pass fixes
-    grid.sync();
+    //grid.sync();
 
     // We'll do repeated passes to fix newly introduced borrows
     uint32_t *curBorrow = subtractionBorrows;
     uint32_t *newBorrow = subtractionBorrows2;
     int pass = 0;
+    uint32_t initialBorrowAny = 0;
+
+    grid.sync();
 
     do {
-        // Zero out the borrow count
-        if (blockIdx.x == 0 && threadIdx.x == 0) {
-            *globalBorrowAny = 0;
-        }
-        grid.sync();
-
         // (2) For each digit, apply the borrow from the previous digit
         for (int idx = tid; idx < n; idx += stride) {
             uint64_t borrow_in = 0ULL;
@@ -206,11 +208,13 @@ __device__ __forceinline__ void SubtractDigitsParallel(
         // sync before checking if any new borrows remain
         grid.sync();
 
-        if (*globalBorrowAny == 0) {
+        auto tempCopyGlobalBorrowAny = *globalBorrowAny;
+        if (tempCopyGlobalBorrowAny == initialBorrowAny) {
             break;  // no new borrows => done
         }
 
-        grid.sync();
+        // grid.sync();
+        initialBorrowAny = tempCopyGlobalBorrowAny;
 
         // swap curBorrow, newBorrow
         uint32_t *tmp = curBorrow;
@@ -435,7 +439,7 @@ __device__ __forceinline__ static void CarryPropagation (
         }
 
         shared_carries[threadIdx.x] = local_carry;
-        grid.sync();
+        block.sync();
 
         // The block's carry-out is the carry from the last thread
         auto temp = shared_carries[threadIdx.x];
@@ -519,7 +523,7 @@ __device__ __forceinline__ static void CarryPropagation (
 // #define SharkRestrict
 
 template<class SharkFloatParams, int NewN, int NewNumBlocks, int TempBase>
-__device__ void MultiplyDigitsOnly(
+__device__ __forceinline__ void MultiplyDigitsOnly(
     uint32_t *SharkRestrict shared_data,
     const uint32_t *SharkRestrict aDigits,
     const uint32_t *SharkRestrict bDigits,
@@ -551,97 +555,6 @@ __device__ void MultiplyDigitsOnly(
         auto *global_x_diff_abs = reinterpret_cast<uint32_t *>(&tempProducts[XDiff_offset]);
         auto *global_y_diff_abs = reinterpret_cast<uint32_t *>(&tempProducts[YDiff_offset]);
     //}
-
-
-    if constexpr (UseConvolution) {
-
-        int tid = blockIdx.x * blockDim.x + threadIdx.x;
-        int stride = blockDim.x * gridDim.x;
-
-        // A single loop that covers 2*total_k elements
-        for (int idx = tid; idx < 2 * total_k; idx += stride) {
-            // Check if idx < total_k => handle Z0, else handle Z2
-            if (idx < total_k) {
-                // Z0 partial sums
-                int k = idx;
-                uint64_t sum_low = 0ULL, sum_high = 0ULL;
-
-                int i_start = max(0, k - (n - 1));
-                int i_end = min(k, n - 1);
-                for (int i = i_start; i <= i_end; i++) {
-                    uint64_t a = a_shared[i]; //A_shared[i];         // A0[i]
-                    uint64_t b = b_shared[k - i]; //B_shared[k - i];     // B0[k - i]
-
-                    uint64_t product = a * b;
-
-                    // Add product to sum
-                    sum_low += product;
-                    if (sum_low < product) {
-                        sum_high += 1;
-                    }
-                }
-
-                // store sum_low, sum_high in Z0_OutDigits
-                int out_idx = k * 2;
-                Z0_OutDigits[out_idx] = sum_low;
-                Z0_OutDigits[out_idx + 1] = sum_high;
-            } else {
-                // Z2 partial sums
-                int k = idx - total_k; // shift to [0..total_k-1]
-                uint64_t sum_low = 0ULL, sum_high = 0ULL;
-
-                int i_start = max(0, k - (n - 1));
-                int i_end = min(k, n - 1);
-                for (int i = i_start; i <= i_end; i++) {
-                    uint64_t a = a_shared[i + n]; // A_shared[i];         // A1[i]
-                    uint64_t b = b_shared[k - i + n]; // B_shared[k - i];     // B1[k - i]
-
-                    uint64_t product = a * b;
-
-                    // Add product to sum
-                    sum_low += product;
-                    if (sum_low < product) {
-                        sum_high += 1;
-                    }
-                }
-
-                // store sum_low, sum_high in Z2_OutDigits
-                int out_idx = k * 2;
-                Z2_OutDigits[out_idx] = sum_low;
-                Z2_OutDigits[out_idx + 1] = sum_high;
-            }
-        }
-    } else {
-        constexpr auto NewTempBase = TempBase + 32 * SharkFloatParams::GlobalNumUint32;
-
-        MultiplyDigitsOnly<SharkFloatParams, NewN / 2, NewNumBlocks / 2, NewTempBase>(
-            shared_data,
-            a_shared,
-            b_shared,
-            x_diff_abs,
-            y_diff_abs,
-            Z0_OutDigits,
-            grid,
-            block,
-            tempProducts);
-
-        grid.sync();
-
-        MultiplyDigitsOnly<SharkFloatParams, NewN / 2, NewNumBlocks / 2, NewTempBase>(
-            shared_data,
-            a_shared + n,
-            b_shared + n,
-            x_diff_abs,
-            y_diff_abs,
-            Z2_OutDigits,
-            grid,
-            block,
-            tempProducts);
-
-        grid.sync();
-    }
-
-    // No sync
 
     // ---- Compute Differences x_diff = A1 - A0 and y_diff = B1 - B0 ----
 
@@ -739,12 +652,100 @@ __device__ void MultiplyDigitsOnly(
         }
     }
 
+    if constexpr (UseConvolution) {
+
+        int tid = blockIdx.x * blockDim.x + threadIdx.x;
+        int stride = blockDim.x * gridDim.x;
+
+        // A single loop that covers 2*total_k elements
+        for (int idx = tid; idx < 2 * total_k; idx += stride) {
+            // Check if idx < total_k => handle Z0, else handle Z2
+            if (idx < total_k) {
+                // Z0 partial sums
+                int k = idx;
+                uint64_t sum_low = 0ULL, sum_high = 0ULL;
+
+                int i_start = max(0, k - (n - 1));
+                int i_end = min(k, n - 1);
+                for (int i = i_start; i <= i_end; i++) {
+                    uint64_t a = a_shared[i]; //A_shared[i];         // A0[i]
+                    uint64_t b = b_shared[k - i]; //B_shared[k - i];     // B0[k - i]
+
+                    uint64_t product = a * b;
+
+                    // Add product to sum
+                    sum_low += product;
+                    if (sum_low < product) {
+                        sum_high += 1;
+                    }
+                }
+
+                // store sum_low, sum_high in Z0_OutDigits
+                int out_idx = k * 2;
+                Z0_OutDigits[out_idx] = sum_low;
+                Z0_OutDigits[out_idx + 1] = sum_high;
+            } else {
+                // Z2 partial sums
+                int k = idx - total_k; // shift to [0..total_k-1]
+                uint64_t sum_low = 0ULL, sum_high = 0ULL;
+
+                int i_start = max(0, k - (n - 1));
+                int i_end = min(k, n - 1);
+                for (int i = i_start; i <= i_end; i++) {
+                    uint64_t a = a_shared[i + n]; // A_shared[i];         // A1[i]
+                    uint64_t b = b_shared[k - i + n]; // B_shared[k - i];     // B1[k - i]
+
+                    uint64_t product = a * b;
+
+                    // Add product to sum
+                    sum_low += product;
+                    if (sum_low < product) {
+                        sum_high += 1;
+                    }
+                }
+
+                // store sum_low, sum_high in Z2_OutDigits
+                int out_idx = k * 2;
+                Z2_OutDigits[out_idx] = sum_low;
+                Z2_OutDigits[out_idx + 1] = sum_high;
+            }
+        }
+    } else {
+        constexpr auto NewTempBase = TempBase + 32 * SharkFloatParams::GlobalNumUint32;
+
+        MultiplyDigitsOnly<SharkFloatParams, NewN / 2, NewNumBlocks / 2, NewTempBase>(
+            shared_data,
+            a_shared,
+            b_shared,
+            x_diff_abs,
+            y_diff_abs,
+            Z0_OutDigits,
+            grid,
+            block,
+            tempProducts);
+
+        //grid.sync();
+
+        MultiplyDigitsOnly<SharkFloatParams, NewN / 2, NewNumBlocks / 2, NewTempBase>(
+            shared_data,
+            a_shared + n,
+            b_shared + n,
+            x_diff_abs,
+            y_diff_abs,
+            Z2_OutDigits,
+            grid,
+            block,
+            tempProducts);
+
+        //grid.sync();
+    }
+
     // Determine the sign of Z1_temp
     int z1_sign = x_diff_sign ^ y_diff_sign;
 
 
     // Synchronize before convolution
-    grid.sync();
+    //grid.sync();
 
     // ---- Convolution for Z1_temp = |x_diff| * |y_diff| ----
     // Update total_k for convolution of differences
@@ -786,8 +787,6 @@ __device__ void MultiplyDigitsOnly(
             Z1_temp_digits[idx] = sum_low;
             Z1_temp_digits[idx + 1] = sum_high;
         }
-
-        grid.sync();
     } else {
         constexpr auto NewTempBase = TempBase + 32 * SharkFloatParams::GlobalNumUint32;
         MultiplyDigitsOnly<SharkFloatParams, NewN / 2, NewNumBlocks / 2, NewTempBase>(
@@ -800,15 +799,16 @@ __device__ void MultiplyDigitsOnly(
             grid,
             block,
             tempProducts);
-        grid.sync();
     }
+
+    grid.sync();
 
     auto *Z1_digits = &tempProducts[Z1_offset];
 
     if constexpr (!SharkFloatParams::DisableAllAdditions) {
 
         // Synchronize before combining results
-        grid.sync();
+        //grid.sync();
 
         // After computing Z1_temp (Z1'), we now form Z1 directly:
         // If z1_sign == 0: Z1 = Z2 + Z0 - Z1_temp

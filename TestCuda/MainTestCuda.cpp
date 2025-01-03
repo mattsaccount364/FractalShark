@@ -111,6 +111,10 @@ int main(int /*argc*/, char * /*argv*/[]) {
             return 0;
         }
 
+        if (CorrectnessTests<Test8x8SharkParams>()) {
+            return 0;
+        }
+
         if (CorrectnessTests<Test16x4SharkParams>()) {
             return 0;
         }

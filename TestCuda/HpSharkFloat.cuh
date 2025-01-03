@@ -14,7 +14,7 @@ static constexpr auto BatchSize = 8;
 static constexpr bool SkipCorrectnessTests = false;
 static constexpr bool Verbose = true;
 #else
-static constexpr auto TestIterCount = 500;
+static constexpr auto TestIterCount = 5000;
 static constexpr auto BatchSize = 512;
 static constexpr bool SkipCorrectnessTests = true;
 static constexpr bool Verbose = false;

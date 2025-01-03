@@ -3,6 +3,7 @@
 #include "HpSharkFloat.cuh"
 #include "Tests.cuh"
 
+#include <cuda_runtime.h> 
 
 #include <iostream>
 #include <mpir.h>
@@ -87,6 +88,19 @@ bool CorrectnessTests() {
 int main(int /*argc*/, char * /*argv*/[]) {
     int testBase = 0;
     bool res = false;
+
+    int deviceCount;
+    cudaGetDeviceCount(&deviceCount);
+
+    for (int i = 0; i < deviceCount; ++i) {
+        cudaDeviceProp prop;
+        cudaGetDeviceProperties(&prop, i);
+        std::cout << "Device " << i << ": " << prop.sharedMemPerMultiprocessor << " bytes of shared memory per block." << std::endl;
+
+        // persistingL2CacheMaxSize
+        std::cout << "Device " << i << ": " << prop.persistingL2CacheMaxSize << " bytes of L2 cache." << std::endl;
+    }
+
 
     if constexpr (!SkipCorrectnessTests) {
         if (!CorrectnessTests<Test4x4SharkParams>()) {

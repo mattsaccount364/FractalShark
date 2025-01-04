@@ -103,19 +103,19 @@ int main(int /*argc*/, char * /*argv*/[]) {
 
 
     if constexpr (!SkipCorrectnessTests) {
-        if (!CorrectnessTests<Test4x4SharkParams>()) {
+        if (!CorrectnessTests<TestCorrectnessSharkParams1>()) {
             return 0;
         }
 
-        if (CorrectnessTests<Test8x1SharkParams>()) {
+        if (CorrectnessTests<TestCorrectnessSharkParams2>()) {
             return 0;
         }
 
-        if (CorrectnessTests<Test8x8SharkParams>()) {
+        if (CorrectnessTests<TestCorrectnessSharkParams3>()) {
             return 0;
         }
 
-        if (CorrectnessTests<Test16x4SharkParams>()) {
+        if (CorrectnessTests<TestCorrectnessSharkParams4>()) {
             return 0;
         }
 
@@ -154,15 +154,19 @@ int main(int /*argc*/, char * /*argv*/[]) {
         //    return 0;
         //}
 
-        if (!CorrectnessTests<Test4x4SharkParams>()) {
+        if (!CorrectnessTests<TestCorrectnessSharkParams1>()) {
             return 0;
         }
 
-        if (CorrectnessTests<Test8x1SharkParams>()) {
+        if (CorrectnessTests<TestCorrectnessSharkParams2>()) {
             return 0;
         }
 
-        if (CorrectnessTests<Test16x4SharkParams>()) {
+        if (CorrectnessTests<TestCorrectnessSharkParams3>()) {
+            return 0;
+        }
+
+        if (CorrectnessTests<TestCorrectnessSharkParams4>()) {
             return 0;
         }
     }

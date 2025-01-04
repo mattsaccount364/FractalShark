@@ -1255,16 +1255,15 @@ bool TestAllBinaryOp(int testBase) {
 
 template<Operator sharkOperator>
 bool TestBinaryOperatorPerf(int testBase) {
-    //TestPerf<Test128x128SharkParams, sharkOperator>(testBase + 1);
-    TestPerf<Test128x64SharkParams, sharkOperator>(testBase + 1);
-    TestPerf<Test64x64SharkParams, sharkOperator>(testBase + 2);
-    TestPerf<Test32x64SharkParams, sharkOperator>(testBase + 3);
-    TestPerf<Test16x64SharkParams, sharkOperator>(testBase + 4);
+    TestPerf<TestPerSharkParams1, sharkOperator>(testBase + 1);
+    TestPerf<TestPerSharkParams2, sharkOperator>(testBase + 2);
+    TestPerf<TestPerSharkParams3, sharkOperator>(testBase + 3);
+    TestPerf<TestPerSharkParams4, sharkOperator>(testBase + 4);
 
-    TestPerf<Test128x32SharkParams, sharkOperator>(testBase + 5);
-    TestPerf<Test128x16SharkParams, sharkOperator>(testBase + 6);
-    TestPerf<Test128x8SharkParams, sharkOperator>(testBase + 7);
-    TestPerf<Test128x4SharkParams, sharkOperator>(testBase + 8);
+    TestPerf<TestPerSharkParams5, sharkOperator>(testBase + 5);
+    TestPerf<TestPerSharkParams6, sharkOperator>(testBase + 6);
+    TestPerf<TestPerSharkParams7, sharkOperator>(testBase + 7);
+    TestPerf<TestPerSharkParams8, sharkOperator>(testBase + 8);
     return Tests.CheckAllTestsPassed();
 }
 
@@ -1280,20 +1279,4 @@ template bool TestBinaryOperatorPerf<Operator::MultiplyN2>(int testBase);
 template bool TestBinaryOperatorPerf<Operator::MultiplyKaratsubaV1>(int testBase);
 template bool TestBinaryOperatorPerf<Operator::MultiplyKaratsubaV2>(int testBase);
 
-ExplicitlyInstantiate(Test4x4SharkParams);
-ExplicitlyInstantiate(Test4x2SharkParams);
-ExplicitlyInstantiate(Test8x1SharkParams);
-ExplicitlyInstantiate(Test8x8SharkParams);
-ExplicitlyInstantiate(Test16x4SharkParams);
-
-//ExplicitlyInstantiate(Test128x128SharkParams);
-ExplicitlyInstantiate(Test128x64SharkParams);
-ExplicitlyInstantiate(Test64x64SharkParams);
-ExplicitlyInstantiate(Test32x64SharkParams);
-ExplicitlyInstantiate(Test16x64SharkParams);
-
-ExplicitlyInstantiate(Test128x32SharkParams);
-ExplicitlyInstantiate(Test128x16SharkParams);
-ExplicitlyInstantiate(Test128x8SharkParams);
-ExplicitlyInstantiate(Test128x4SharkParams);
-
+ExplicitInstantiateAll();

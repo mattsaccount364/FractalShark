@@ -62,6 +62,24 @@ struct GenericSharkFloatParams {
 
 static constexpr int32_t LowPrec = 32;
 
+#define ExplicitInstantiateAll() \
+    ExplicitlyInstantiate(Test4x4SharkParams); \
+    ExplicitlyInstantiate(Test4x2SharkParams); \
+    ExplicitlyInstantiate(Test8x1SharkParams); \
+    ExplicitlyInstantiate(Test8x8SharkParams); \
+    ExplicitlyInstantiate(Test16x4SharkParams); \
+ \
+    /*ExplicitlyInstantiate(Test128x128SharkParams);*/ \
+    ExplicitlyInstantiate(Test128x64SharkParams); \
+    ExplicitlyInstantiate(Test64x64SharkParams); \
+    ExplicitlyInstantiate(Test32x64SharkParams); \
+    ExplicitlyInstantiate(Test16x64SharkParams); \
+ \
+    ExplicitlyInstantiate(Test128x32SharkParams); \
+    ExplicitlyInstantiate(Test128x16SharkParams); \
+    ExplicitlyInstantiate(Test128x8SharkParams); \
+    ExplicitlyInstantiate(Test128x4SharkParams); \
+
 // If you add a new one, search for one of the other types and copy/paste
 using Test4x2SharkParams = GenericSharkFloatParams<4, 2, BatchSize, TestIterCount>;
 using Test4x4SharkParams = GenericSharkFloatParams<4, 4, BatchSize, TestIterCount>;
@@ -80,13 +98,22 @@ using Test128x16SharkParams = GenericSharkFloatParams<128, 16, BatchSize, TestIt
 using Test128x8SharkParams = GenericSharkFloatParams<128, 8, BatchSize, TestIterCount>;
 using Test128x4SharkParams = GenericSharkFloatParams<128, 4, BatchSize, TestIterCount>;
 
+// Performance test sizes
+using TestPerSharkParams1 = Test128x64SharkParams;
+using TestPerSharkParams2 = Test64x64SharkParams;
+using TestPerSharkParams3 = Test32x64SharkParams;
+using TestPerSharkParams4 = Test16x64SharkParams;
 
-//#ifdef _DEBUG
-//using TestSharkParams = Test4x4SharkParams;
-////using TestSharkParams = Test8x1SharkParams;
-//#else
-//using TestSharkParams = Test128x64SharkParams;
-//#endif
+using TestPerSharkParams5 = Test128x32SharkParams;
+using TestPerSharkParams6 = Test128x16SharkParams;
+using TestPerSharkParams7 = Test128x8SharkParams;
+using TestPerSharkParams8 = Test128x4SharkParams;
+
+// Correctness test sizes
+using TestCorrectnessSharkParams1 = Test4x4SharkParams;
+using TestCorrectnessSharkParams2 = Test8x1SharkParams;
+using TestCorrectnessSharkParams3 = Test8x8SharkParams;
+using TestCorrectnessSharkParams4 = Test16x4SharkParams;
 
 // Struct to hold both integer and fractional parts of the high-precision number
 template<class SharkFloatParams>

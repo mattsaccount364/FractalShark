@@ -762,19 +762,4 @@ void MultiplyHelperKaratsubaV2(
         const HpSharkFloat<SharkFloatParams> *, \
         HpSharkFloat<SharkFloatParams> *);
 
-ExplicitlyInstantiate(Test4x4SharkParams);
-ExplicitlyInstantiate(Test4x2SharkParams);
-ExplicitlyInstantiate(Test8x1SharkParams);
-ExplicitlyInstantiate(Test8x8SharkParams);
-ExplicitlyInstantiate(Test16x4SharkParams);
-
-//ExplicitlyInstantiate(Test128x128SharkParams);
-ExplicitlyInstantiate(Test128x64SharkParams);
-ExplicitlyInstantiate(Test64x64SharkParams);
-ExplicitlyInstantiate(Test32x64SharkParams);
-ExplicitlyInstantiate(Test16x64SharkParams);
-
-ExplicitlyInstantiate(Test128x32SharkParams);
-ExplicitlyInstantiate(Test128x16SharkParams);
-ExplicitlyInstantiate(Test128x8SharkParams);
-ExplicitlyInstantiate(Test128x4SharkParams);
+ExplicitInstantiateAll();

@@ -107,15 +107,19 @@ int main(int /*argc*/, char * /*argv*/[]) {
             return 0;
         }
 
-        if (CorrectnessTests<TestCorrectnessSharkParams2>()) {
+        if (!CorrectnessTests<TestCorrectnessSharkParams2>()) {
             return 0;
         }
 
-        if (CorrectnessTests<TestCorrectnessSharkParams3>()) {
+        if (!CorrectnessTests<TestCorrectnessSharkParams3>()) {
             return 0;
         }
 
-        if (CorrectnessTests<TestCorrectnessSharkParams4>()) {
+        if (!CorrectnessTests<TestCorrectnessSharkParams4>()) {
+            return 0;
+        }
+
+        if (!CorrectnessTests<TestCorrectnessSharkParams5>()) {
             return 0;
         }
 
@@ -158,15 +162,19 @@ int main(int /*argc*/, char * /*argv*/[]) {
             return 0;
         }
 
-        if (CorrectnessTests<TestCorrectnessSharkParams2>()) {
+        if (!CorrectnessTests<TestCorrectnessSharkParams2>()) {
             return 0;
         }
 
-        if (CorrectnessTests<TestCorrectnessSharkParams3>()) {
+        if (!CorrectnessTests<TestCorrectnessSharkParams3>()) {
             return 0;
         }
 
-        if (CorrectnessTests<TestCorrectnessSharkParams4>()) {
+        if (!CorrectnessTests<TestCorrectnessSharkParams4>()) {
+            return 0;
+        }
+
+        if (!CorrectnessTests<TestCorrectnessSharkParams5>()) {
             return 0;
         }
     }

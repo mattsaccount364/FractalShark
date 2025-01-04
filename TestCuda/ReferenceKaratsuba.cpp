@@ -406,7 +406,7 @@ SubtractArrays (const uint32_t *A_, const uint32_t *B_, int length, uint32_t *Re
     return (uint32_t)borrow;
 }
 
-template<class SharkFloatParams>
+template<class SharkFloatParams, int NewNumBlocks>
 void KaratsubaRecursiveDigits(
     const uint32_t *A_digits,  // pointer to A's digits
     const uint32_t *B_digits,
@@ -421,7 +421,7 @@ void KaratsubaRecursiveDigits(
     }
 
     const int n = (N + 1) / 2;
-    int half = N / 2;
+    const int half = N / 2;
 
     const uint32_t *A_low = A_digits;
     const uint32_t *A_high = A_digits + half;
@@ -457,7 +457,11 @@ void KaratsubaRecursiveDigits(
     std::vector<uint64_t> Z2(2 * N + 2, 0ULL);
     std::vector<uint64_t> Z1_temp(2 * N + 2, 0ULL);
 
-    const bool UseConvolution = (half <= 2);
+    constexpr auto ConvolutionLimit = 9;
+    const bool UseConvolution =
+        (NewNumBlocks <= std::max(SharkFloatParams::GlobalNumBlocks / ConvolutionLimit, 1) ||
+        (NewNumBlocks % 3 != 0));
+    //const bool UseConvolution = true;
 
     if (UseConvolution) {
         NativeMultiply64(A_low, B_low, half, Z0.data());
@@ -478,19 +482,19 @@ void KaratsubaRecursiveDigits(
             std::cout << "Z1_temp: " << VectorUintToHexString(Z1_temp) << std::endl;
         }
     } else {
-        KaratsubaRecursiveDigits<SharkFloatParams>(A_low, B_low, half, Z0);
+        KaratsubaRecursiveDigits<SharkFloatParams, NewNumBlocks / 3>(A_low, B_low, half, Z0);
 
         if constexpr (SharkFloatParams::HostVerbose) {
             std::cout << "Z0: " << VectorUintToHexString(Z0) << std::endl;
         }
 
-        KaratsubaRecursiveDigits<SharkFloatParams>(A_high, B_high, half, Z2);
+        KaratsubaRecursiveDigits<SharkFloatParams, NewNumBlocks / 3>(A_high, B_high, half, Z2);
 
         if constexpr (SharkFloatParams::HostVerbose) {
             std::cout << "Z2: " << VectorUintToHexString(Z2) << std::endl;
         }
 
-        KaratsubaRecursiveDigits<SharkFloatParams>((uint32_t *)x_diff.data(), (uint32_t *)y_diff.data(), half, Z1_temp);
+        KaratsubaRecursiveDigits<SharkFloatParams, NewNumBlocks / 3>((uint32_t *)x_diff.data(), (uint32_t *)y_diff.data(), half, Z1_temp);
 
         if constexpr (SharkFloatParams::HostVerbose) {
             std::cout << "Z1_temp: " << VectorUintToHexString(Z1_temp) << std::endl;
@@ -643,7 +647,7 @@ void MultiplyHelperKaratsubaV2(
         const uint32_t *B_ptr = B->Digits;
 
         // 4) Call KaratsubaRecursiveDigits
-        KaratsubaRecursiveDigits<SharkFloatParams>(A_ptr, B_ptr, N, final128);
+        KaratsubaRecursiveDigits<SharkFloatParams, SharkFloatParams::GlobalNumBlocks>(A_ptr, B_ptr, N, final128);
     }
 
     // Assume final128 is arranged as pairs: final128[0], final128[1] form the first pair (sum_low, sum_high),

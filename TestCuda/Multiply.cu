@@ -89,7 +89,7 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallel(
 
     // Constants 
     constexpr int n = (N + 1) / 2;     // 'n' is how many digits
-    constexpr int MaxPasses = 10;      // maximum number of multi-pass sweeps
+    constexpr int MaxPasses = 150;      // maximum number of multi-pass sweeps
 
     // We'll define a grid–stride range covering [0..n) for each pass
     // 1) global thread id
@@ -303,7 +303,7 @@ __device__ SharkForceInlineReleaseOnly static void CarryPropagation (
     uint64_t local_carry = 0;
 
     // Constants and offsets
-    constexpr int MaxPasses = 10; // Maximum number of carry propagation passes
+    constexpr int MaxPasses = 150; // Maximum number of carry propagation passes
     constexpr int total_result_digits = 2 * SharkFloatParams::GlobalNumUint32;
 
     uint64_t *carries_remaining_global = globalCarryCheck;
@@ -442,6 +442,9 @@ __device__ SharkForceInlineReleaseOnly static void CarryPropagation (
     // grid.sync();
 }
 
+// Look for Uint64ToAllocateForMultiply and ScratchMemoryArrays
+// and make sure the number of NewN arrays we're using here fits within that limit.
+// The list here should go up to ScratchMemoryArrays.
 #define DefineTempProductsOffsets(TempBase) \
     constexpr int n = (NewN + 1) / 2; \
     const int threadIdxGlobal = block.group_index().x * SharkFloatParams::GlobalThreadsPerBlock + block.thread_index().x; \
@@ -520,19 +523,17 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
     const auto *a_shared = aDigits;
     const auto *b_shared = bDigits;
 
-    // Common variables for convolution loops
-    constexpr int total_k = 2 * n - 1; // Total number of k values
-
     auto *Z0_OutDigits = &tempProducts[Z0_offset];
     auto *Z1_temp_digits = &tempProducts[Z1_temp_offset];
     auto *Z2_OutDigits = &tempProducts[Z2_offset];
-    
 
-    constexpr auto ConvolutionLimit = 1; // 2^whatevs = ConvolutionLimit
+    constexpr int total_k = 2 * n - 1; // Total number of k values
+    constexpr auto ConvolutionLimit = 9; // 3^whatevs = ConvolutionLimit
     constexpr bool UseConvolution =
-        (NewNumBlocks <= std::max(SharkFloatParams::GlobalNumBlocks / ConvolutionLimit, 1));
-
-    //constexpr bool UseConvolution = true;
+        (NewNumBlocks <= std::max(SharkFloatParams::GlobalNumBlocks / ConvolutionLimit, 1) ||
+        (NewNumBlocks % 3 != 0));
+    constexpr bool EnableSharedDiff = true;
+    constexpr bool UseParallelSubtract = true;
 
     // Arrays to hold the absolute differences (size n)
     auto *global_x_diff_abs = reinterpret_cast<uint32_t *>(&tempProducts[XDiff_offset]);
@@ -552,10 +553,8 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
     auto *SharkRestrict subtractionBorrows4 = reinterpret_cast<uint32_t *>(&tempProducts[SubtractionOffset4]);
     auto *SharkRestrict globalBorrowAny = reinterpret_cast<uint32_t *>(&tempProducts[BorrowGlobalOffset]);
 
-    constexpr bool useParallelSubtract = true;
-
     if constexpr (!SharkFloatParams::DisableSubtraction) {
-        if constexpr (useParallelSubtract) {
+        if constexpr (UseParallelSubtract) {
             int x_compare = CompareDigits(a_shared + n, a_shared, n);
             int y_compare = CompareDigits(b_shared + n, b_shared, n);
 
@@ -662,14 +661,18 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
 
     if constexpr (UseConvolution) {
         // Replace A and B in shared memory with their absolute differences
-        cg::memcpy_async(block, const_cast<uint32_t *>(x_diff_abs), global_x_diff_abs, sizeof(uint32_t) * n);
-        cg::memcpy_async(block, const_cast<uint32_t *>(y_diff_abs), global_y_diff_abs, sizeof(uint32_t) * n);
+        if constexpr (EnableSharedDiff) {
+            cg::memcpy_async(block, const_cast<uint32_t *>(x_diff_abs), global_x_diff_abs, sizeof(uint32_t) * n);
+            cg::memcpy_async(block, const_cast<uint32_t *>(y_diff_abs), global_y_diff_abs, sizeof(uint32_t) * n);
+        }
 
         const int tid = RelativeBlockIndex * blockDim.x + block.thread_index().x;
         const int stride = blockDim.x * ExecutionNumBlocks;
 
-        // Wait for the first batch of A to be loaded
-        cg::wait(block);
+        if constexpr (EnableSharedDiff) {
+            // Wait for the first batch of A to be loaded
+            cg::wait(block);
+        }
 
         // A single loop that covers 2*total_k elements
         for (int idx = tid; idx < 3 * total_k; idx += stride) {
@@ -731,8 +734,8 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                 int i_end = min(k, n - 1);
 
                 for (int i = i_start; i <= i_end; ++i) {
-                    uint64_t a = x_diff_abs[i];
-                    uint64_t b = y_diff_abs[k - i];
+                    uint64_t a = EnableSharedDiff ? x_diff_abs[i] : global_x_diff_abs[i];
+                    uint64_t b = EnableSharedDiff ? y_diff_abs[k - i] : global_y_diff_abs[k - i];
 
                     uint64_t product = a * b;
 
@@ -751,14 +754,16 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
         }
     } else {
         constexpr auto NumBlocksRatio = ConvolutionLimit * SharkFloatParams::GlobalNumBlocks / NewNumBlocks;
-        constexpr auto NewTempBase1 = TempBase + 32 * SharkFloatParams::GlobalNumUint32 * NumBlocksRatio;
+
+        constexpr auto NewTempBase1 =
+            TempBase + ScratchMemoryArrays * SharkFloatParams::GlobalNumUint32 * NumBlocksRatio;
 
         MultiplyDigitsOnly<
             SharkFloatParams,
             NewN / 2,
             ExecutionBlockBase,
-            ExecutionNumBlocks / 2,
-            NewNumBlocks / 2,
+            ExecutionNumBlocks / 3,
+            NewNumBlocks / 3,
             NewTempBase1>(
             shared_data,
             A,
@@ -772,14 +777,15 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             block,
             tempProducts);
 
-        constexpr auto NewTempBase2 = TempBase + 32 * SharkFloatParams::GlobalNumUint32 * (NumBlocksRatio * 2);
+        constexpr auto NewTempBase2 =
+            TempBase + ScratchMemoryArrays * SharkFloatParams::GlobalNumUint32 * (NumBlocksRatio * 2);
 
         MultiplyDigitsOnly<
             SharkFloatParams,
             NewN / 2,
-            ExecutionBlockBase + ExecutionNumBlocks / 2,
-            ExecutionNumBlocks / 2,
-            NewNumBlocks / 2,
+            ExecutionBlockBase + ExecutionNumBlocks / 3,
+            ExecutionNumBlocks / 3,
+            NewNumBlocks / 3,
             NewTempBase2>(
             shared_data,
             A,
@@ -795,40 +801,87 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
 
         //grid.sync();
 
-        // Replace A and B in shared memory with their absolute differences
-        cg::memcpy_async(block, const_cast<uint32_t *>(a_shared), global_x_diff_abs, sizeof(uint32_t) * n);
-        cg::memcpy_async(block, const_cast<uint32_t *>(b_shared), global_y_diff_abs, sizeof(uint32_t) * n);
-        
-        // Wait for the first batch of A to be loaded
-        cg::wait(block);
+        {
+            constexpr auto NewExecutionBlockBase = ExecutionBlockBase + 2 * ExecutionNumBlocks / 3;
+            constexpr auto NewExecutionNumBlocks = ExecutionNumBlocks / 3;
 
-        MultiplyDigitsOnly<
-            SharkFloatParams,
-            NewN / 2,
-            ExecutionBlockBase,
-            ExecutionNumBlocks,
-            NewNumBlocks / 2,
-            NewTempBase1>( // TODO change base and parallelize similarly?
-            shared_data,
-            A,
-            B,
-            a_shared,
-            b_shared,
-            x_diff_abs,
-            y_diff_abs,
-            Z1_temp_digits,
-            grid,
-            block,
-            tempProducts);
+            const bool ExecuteAtAll =
+                !((NewExecutionBlockBase > 0 && block.group_index().x < NewExecutionBlockBase) ||
+                    block.group_index().x >= NewExecutionBlockBase + NewExecutionNumBlocks);
+            constexpr bool EnableMoreParallelism = true;
+            constexpr auto NewTempBase3 =
+                TempBase + ScratchMemoryArrays * SharkFloatParams::GlobalNumUint32 * (NumBlocksRatio * 3);
 
-        cg::memcpy_async(block, const_cast<uint32_t *>(a_shared), A->Digits, sizeof(uint32_t) * SharkFloatParams::GlobalNumUint32);
-        cg::memcpy_async(block, const_cast<uint32_t *>(b_shared), B->Digits, sizeof(uint32_t) * SharkFloatParams::GlobalNumUint32);
+            // Replace A and B in shared memory with their absolute differences
+            if constexpr (EnableSharedDiff) {
+                cg::memcpy_async(block,
+                    const_cast<uint32_t *>(a_shared),
+                    global_x_diff_abs,
+                    sizeof(uint32_t) * n);
+                cg::memcpy_async(block,
+                    const_cast<uint32_t *>(b_shared),
+                    global_y_diff_abs,
+                    sizeof(uint32_t) * n);
+                cg::wait(block);
+            }
+
+            if (EnableMoreParallelism && ExecuteAtAll) {
+                MultiplyDigitsOnly<
+                    SharkFloatParams,
+                    NewN / 2,
+                    NewExecutionBlockBase,
+                    NewExecutionNumBlocks,
+                    NewNumBlocks / 3,
+                    NewTempBase3>(
+                        shared_data,
+                        A,
+                        B,
+                        EnableSharedDiff ? a_shared : global_x_diff_abs,
+                        EnableSharedDiff ? b_shared : global_y_diff_abs,
+                        x_diff_abs,
+                        y_diff_abs,
+                        Z1_temp_digits,
+                        grid,
+                        block,
+                        tempProducts);
+            }
+
+            if constexpr (!EnableMoreParallelism) {
+                MultiplyDigitsOnly<
+                    SharkFloatParams,
+                    NewN / 2,
+                    ExecutionBlockBase,
+                    ExecutionNumBlocks,
+                    NewNumBlocks / 3,
+                    NewTempBase3>(
+                        shared_data,
+                        A,
+                        B,
+                        EnableSharedDiff ? a_shared : global_x_diff_abs,
+                        EnableSharedDiff ? b_shared : global_y_diff_abs,
+                        x_diff_abs,
+                        y_diff_abs,
+                        Z1_temp_digits,
+                        grid,
+                        block,
+                        tempProducts);
+            }
+
+            if constexpr (EnableSharedDiff) {
+                cg::memcpy_async(block,
+                    const_cast<uint32_t *>(a_shared),
+                    A->Digits,
+                    sizeof(uint32_t) * SharkFloatParams::GlobalNumUint32);
+                cg::memcpy_async(block,
+                    const_cast<uint32_t *>(b_shared),
+                    B->Digits,
+                    sizeof(uint32_t) * SharkFloatParams::GlobalNumUint32);
+                cg::wait(block);
+            }
+        }
     }
 
     grid.sync();
-
-    // Wait for the first batch of A to be loaded
-    cg::wait(block);
 
     auto *Z1_digits = &tempProducts[Z1_offset];
 

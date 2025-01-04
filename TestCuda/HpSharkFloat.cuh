@@ -14,7 +14,7 @@ static constexpr auto BatchSize = 8;
 static constexpr bool SkipCorrectnessTests = false;
 static constexpr bool Verbose = true;
 #else
-static constexpr auto TestIterCount = 5000;
+static constexpr auto TestIterCount = 250;
 static constexpr auto BatchSize = 512;
 static constexpr bool SkipCorrectnessTests = true;
 static constexpr bool Verbose = false;
@@ -60,60 +60,67 @@ struct GenericSharkFloatParams {
     >;
 };
 
+static constexpr auto ScratchMemoryCopies = 256;
+static constexpr auto ScratchMemoryArrays = 32;
 static constexpr int32_t LowPrec = 32;
 
 #define ExplicitInstantiateAll() \
-    ExplicitlyInstantiate(Test4x4SharkParams); \
-    ExplicitlyInstantiate(Test4x2SharkParams); \
+    ExplicitlyInstantiate(Test4x9SharkParams); \
+    ExplicitlyInstantiate(Test4x12SharkParams); \
     ExplicitlyInstantiate(Test8x1SharkParams); \
-    ExplicitlyInstantiate(Test8x8SharkParams); \
-    ExplicitlyInstantiate(Test16x4SharkParams); \
+    ExplicitlyInstantiate(Test4x36SharkParams); \
+    ExplicitlyInstantiate(Test4x6SharkParams); \
  \
     /*ExplicitlyInstantiate(Test128x128SharkParams);*/ \
-    ExplicitlyInstantiate(Test128x64SharkParams); \
-    ExplicitlyInstantiate(Test64x64SharkParams); \
-    ExplicitlyInstantiate(Test32x64SharkParams); \
-    ExplicitlyInstantiate(Test16x64SharkParams); \
+    ExplicitlyInstantiate(Test128x63SharkParams); \
+    ExplicitlyInstantiate(Test64x63SharkParams); \
+    ExplicitlyInstantiate(Test32x63SharkParams); \
+    ExplicitlyInstantiate(Test16x63SharkParams); \
  \
-    ExplicitlyInstantiate(Test128x32SharkParams); \
-    ExplicitlyInstantiate(Test128x16SharkParams); \
-    ExplicitlyInstantiate(Test128x8SharkParams); \
-    ExplicitlyInstantiate(Test128x4SharkParams); \
+    ExplicitlyInstantiate(Test128x36SharkParams); \
+    ExplicitlyInstantiate(Test128x18SharkParams); \
+    ExplicitlyInstantiate(Test128x9SharkParams); \
+    ExplicitlyInstantiate(Test128x3SharkParams); \
+
+// TODO: all implementations are assuming a multiple of 2 number of blocks
+// When using recursion/convolution then the you need 2^n blocks where n
+// is the number of recursions
 
 // If you add a new one, search for one of the other types and copy/paste
-using Test4x2SharkParams = GenericSharkFloatParams<4, 2, BatchSize, TestIterCount>;
-using Test4x4SharkParams = GenericSharkFloatParams<4, 4, BatchSize, TestIterCount>;
-using Test8x1SharkParams = GenericSharkFloatParams<8, 1, BatchSize, TestIterCount>;
-using Test8x8SharkParams = GenericSharkFloatParams<8, 8, BatchSize, TestIterCount>;
-using Test16x4SharkParams = GenericSharkFloatParams<16, 4, BatchSize, TestIterCount>;
+using Test4x36SharkParams = GenericSharkFloatParams<6, 36, BatchSize, TestIterCount>;
+using Test4x12SharkParams = GenericSharkFloatParams<4, 36, BatchSize, TestIterCount>;
+using Test4x9SharkParams = GenericSharkFloatParams<6, 12, BatchSize, TestIterCount>;
+using Test8x1SharkParams = GenericSharkFloatParams<4, 12, BatchSize, TestIterCount>;
+using Test4x6SharkParams = GenericSharkFloatParams<6, 4, BatchSize, TestIterCount>;
 
 //using Test128x128SharkParams = GenericSharkFloatParams<128, 128, BatchSize, TestIterCount>;
-using Test128x64SharkParams = GenericSharkFloatParams<128, 64, BatchSize, TestIterCount>;
-using Test64x64SharkParams = GenericSharkFloatParams<64, 64, BatchSize, TestIterCount>;
-using Test32x64SharkParams = GenericSharkFloatParams<32, 64, BatchSize, TestIterCount>;
-using Test16x64SharkParams = GenericSharkFloatParams<16, 64, BatchSize, TestIterCount>;
+using Test128x63SharkParams = GenericSharkFloatParams<96, 72, BatchSize, TestIterCount>;
+using Test64x63SharkParams = GenericSharkFloatParams<64, 72, BatchSize, TestIterCount>;
+using Test32x63SharkParams = GenericSharkFloatParams<32, 72, BatchSize, TestIterCount>;
+using Test16x63SharkParams = GenericSharkFloatParams<16, 72, BatchSize, TestIterCount>;
 
-using Test128x32SharkParams = GenericSharkFloatParams<128, 32, BatchSize, TestIterCount>;
-using Test128x16SharkParams = GenericSharkFloatParams<128, 16, BatchSize, TestIterCount>;
-using Test128x8SharkParams = GenericSharkFloatParams<128, 8, BatchSize, TestIterCount>;
-using Test128x4SharkParams = GenericSharkFloatParams<128, 4, BatchSize, TestIterCount>;
+using Test128x36SharkParams = GenericSharkFloatParams<112, 72, BatchSize, TestIterCount>;
+using Test128x18SharkParams = GenericSharkFloatParams<112, 36, BatchSize, TestIterCount>;
+using Test128x9SharkParams = GenericSharkFloatParams<112, 12, BatchSize, TestIterCount>;
+using Test128x3SharkParams = GenericSharkFloatParams<112, 6, BatchSize, TestIterCount>;
 
 // Performance test sizes
-using TestPerSharkParams1 = Test128x64SharkParams;
-using TestPerSharkParams2 = Test64x64SharkParams;
-using TestPerSharkParams3 = Test32x64SharkParams;
-using TestPerSharkParams4 = Test16x64SharkParams;
+using TestPerSharkParams1 = Test128x63SharkParams;
+using TestPerSharkParams2 = Test64x63SharkParams;
+using TestPerSharkParams3 = Test32x63SharkParams;
+using TestPerSharkParams4 = Test16x63SharkParams;
 
-using TestPerSharkParams5 = Test128x32SharkParams;
-using TestPerSharkParams6 = Test128x16SharkParams;
-using TestPerSharkParams7 = Test128x8SharkParams;
-using TestPerSharkParams8 = Test128x4SharkParams;
+using TestPerSharkParams5 = Test128x36SharkParams;
+using TestPerSharkParams6 = Test128x18SharkParams;
+using TestPerSharkParams7 = Test128x9SharkParams;
+using TestPerSharkParams8 = Test128x3SharkParams;
 
 // Correctness test sizes
-using TestCorrectnessSharkParams1 = Test4x4SharkParams;
-using TestCorrectnessSharkParams2 = Test8x1SharkParams;
-using TestCorrectnessSharkParams3 = Test8x8SharkParams;
-using TestCorrectnessSharkParams4 = Test16x4SharkParams;
+using TestCorrectnessSharkParams1 = Test4x36SharkParams;
+using TestCorrectnessSharkParams2 = Test4x12SharkParams;
+using TestCorrectnessSharkParams3 = Test8x1SharkParams;
+using TestCorrectnessSharkParams4 = Test4x9SharkParams;
+using TestCorrectnessSharkParams5 = Test4x6SharkParams;
 
 // Struct to hold both integer and fractional parts of the high-precision number
 template<class SharkFloatParams>

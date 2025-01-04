@@ -14,7 +14,7 @@ static constexpr auto BatchSize = 8;
 static constexpr bool SkipCorrectnessTests = false;
 static constexpr bool Verbose = true;
 #else
-static constexpr auto TestIterCount = 200;
+static constexpr auto TestIterCount = 5000;
 static constexpr auto BatchSize = 512;
 static constexpr bool SkipCorrectnessTests = true;
 static constexpr bool Verbose = false;
@@ -69,6 +69,7 @@ using Test8x1SharkParams = GenericSharkFloatParams<8, 1, BatchSize, TestIterCoun
 using Test8x8SharkParams = GenericSharkFloatParams<8, 8, BatchSize, TestIterCount>;
 using Test16x4SharkParams = GenericSharkFloatParams<16, 4, BatchSize, TestIterCount>;
 
+//using Test128x128SharkParams = GenericSharkFloatParams<128, 128, BatchSize, TestIterCount>;
 using Test128x64SharkParams = GenericSharkFloatParams<128, 64, BatchSize, TestIterCount>;
 using Test64x64SharkParams = GenericSharkFloatParams<64, 64, BatchSize, TestIterCount>;
 using Test32x64SharkParams = GenericSharkFloatParams<32, 64, BatchSize, TestIterCount>;

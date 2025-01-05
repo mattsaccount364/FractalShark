@@ -59,6 +59,8 @@ namespace cg = cooperative_groups;
  * The function attempts to subtract each digit of 'b' from 'a' in parallel,
  * then uses repeated passes (do/while) to handle newly introduced borrows
  * until no more remain or a maximum pass count is reached.
+ * 
+ * Corrupts contexts of x_diff_abs shared memory intentionally
  */
 template<
     class SharkFloatParams,
@@ -66,7 +68,8 @@ template<
     int ExecutionBlockBase,
     int ExecutionNumBlocks>
 __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallel(
-    uint32_t *__restrict__ shared_data,
+    uint32_t *__restrict__ x_diff_abs,
+    uint32_t *__restrict__ y_diff_abs,
     const uint32_t *__restrict__ a1,
     const uint32_t *__restrict__ b1,
     const uint32_t *__restrict__ a2,
@@ -81,10 +84,16 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallel(
     cg::grid_group &grid,
     cg::thread_block &block
 ) {
+    // Note: stops on this.
+    auto *sharedBorrowAny = x_diff_abs;
 
     // Note: not ExecutionBlockBase
     if (block.group_index().x == 0 && block.thread_index().x == 0) {
         *globalBorrowAny = 0;
+    }
+
+    if (block.thread_index().x == 0) {
+        *sharedBorrowAny = 0;
     }
 
     // Constants 
@@ -157,17 +166,29 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallel(
             // If sum is negative => top bit is 1 => new borrow
             if (sum1 & 0x8000'0000'0000'0000ULL) {
                 newBorrow1[idx] = 1;
-                atomicAdd(globalBorrowAny, 1);
+                atomicAdd(sharedBorrowAny, 1);
             } else {
                 newBorrow1[idx] = 0;
             }
 
             if (sum2 & 0x8000'0000'0000'0000ULL) {
                 newBorrow2[idx] = 1;
-                atomicAdd(globalBorrowAny, 1);
+                atomicAdd(sharedBorrowAny, 1);
             } else {
                 newBorrow2[idx] = 0;
             }
+        }
+
+        // (a) Block-level synchronization (so all threads see final sharedBorrowAny)
+        block.sync();
+
+        // The block's thread 0 aggregates once into globalBorrowAny
+        if (block.thread_index().x == 0) {
+            // Add sharedBorrowAny to the global counter
+            atomicAdd(globalBorrowAny, *sharedBorrowAny);
+
+            // Reset local aggregator for the next pass
+            *sharedBorrowAny = 0;
         }
 
         // sync before checking if any new borrows remain
@@ -562,7 +583,8 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                 x_diff_sign = 0;
                 y_diff_sign = 0;
                 SubtractDigitsParallel<SharkFloatParams, NewN, ExecutionBlockBase, ExecutionNumBlocks>(
-                    shared_data,
+                    x_diff_abs,
+                    y_diff_abs,
                     a_shared + n,
                     a_shared,
                     b_shared + n,
@@ -580,7 +602,8 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                 x_diff_sign = 1;
                 y_diff_sign = 1;
                 SubtractDigitsParallel<SharkFloatParams, NewN, ExecutionBlockBase, ExecutionNumBlocks>(
-                    shared_data,
+                    x_diff_abs,
+                    y_diff_abs,
                     a_shared,
                     a_shared + n,
                     b_shared,
@@ -598,7 +621,8 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                 x_diff_sign = 0;
                 y_diff_sign = 1;
                 SubtractDigitsParallel<SharkFloatParams, NewN, ExecutionBlockBase, ExecutionNumBlocks>(
-                    shared_data,
+                    x_diff_abs,
+                    y_diff_abs,
                     a_shared + n,
                     a_shared,
                     b_shared,
@@ -616,7 +640,8 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                 x_diff_sign = 1;
                 y_diff_sign = 0;
                 SubtractDigitsParallel<SharkFloatParams, NewN, ExecutionBlockBase, ExecutionNumBlocks>(
-                    shared_data,
+                    x_diff_abs,
+                    y_diff_abs,
                     a_shared,
                     a_shared + n,
                     b_shared + n,

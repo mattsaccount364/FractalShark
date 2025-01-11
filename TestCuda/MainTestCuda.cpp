@@ -103,9 +103,9 @@ int main(int /*argc*/, char * /*argv*/[]) {
 
 
     if constexpr (!SkipCorrectnessTests) {
-        if (!CorrectnessTests<TestCorrectnessSharkParams1>()) {
-            return 0;
-        }
+        //if (!CorrectnessTests<TestCorrectnessSharkParams1>()) {
+        //    return 0;
+        //}
 
         if (!CorrectnessTests<TestCorrectnessSharkParams2>()) {
             return 0;

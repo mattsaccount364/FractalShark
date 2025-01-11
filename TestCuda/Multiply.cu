@@ -25,19 +25,37 @@ namespace cg = cooperative_groups;
 #define SharkForceInlineReleaseOnly __forceinline__
 #endif
 
-__device__ int CompareDigits(const uint32_t *a, const uint32_t *b, int n) {
-    for (int i = n - 1; i >= 0; --i) {
-        if (a[i] > b[i]) return 1;
-        if (a[i] < b[i]) return -1;
+template<int n1, int n2>
+__device__ int CompareDigits(const uint32_t *highArray, const uint32_t *lowArray) {
+    if constexpr (n1 > n2) {
+        return 1;
+    } else if constexpr (n2 > n1) {
+        return -1;
+    } else {
+        // n1 == n2
+        for (int i = n1 - 1; i >= 0; --i) {
+            if (highArray[i] > lowArray[i]) return 1;
+            if (highArray[i] < lowArray[i]) return -1;
+        }
     }
     return 0;
 }
 
-__device__ static void SubtractDigitsSerial(const uint32_t *a, const uint32_t *b, uint32_t *result, int n) {
+template<int n1, int n2>
+__device__ static void SubtractDigitsSerial(const uint32_t *a, const uint32_t *b, uint32_t *result) {
     uint64_t borrow = 0;
-    for (int i = 0; i < n; ++i) {
-        uint64_t ai = a[i];
-        uint64_t bi = b[i];
+    for (int i = 0; i < n1; ++i) {
+        uint64_t ai;
+        uint64_t bi;
+
+        ai = a[i];
+
+        if (i >= n2) {
+            bi = 0;
+        } else {
+            bi = b[i];
+        }
+
         uint64_t temp = ai - bi - borrow;
         if (ai < bi + borrow) {
             borrow = 1;
@@ -64,7 +82,8 @@ namespace cg = cooperative_groups;
  */
 template<
     class SharkFloatParams,
-    int N,
+    int n1,
+    int n2,
     int ExecutionBlockBase,
     int ExecutionNumBlocks>
 __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallel(
@@ -97,23 +116,35 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallel(
     }
 
     // Constants 
-    constexpr int n = (N + 1) / 2;     // 'n' is how many digits
     constexpr int MaxPasses = 150;      // maximum number of multi-pass sweeps
 
     // We'll define a grid–stride range covering [0..n) for each pass
     // 1) global thread id
-    int tid = (block.group_index().x - ExecutionBlockBase) * blockDim.x + block.thread_index().x;
+    int tid = (block.group_index().x - ExecutionBlockBase) * block.dim_threads().x + block.thread_index().x;
     // 2) stride
-    int stride = blockDim.x * ExecutionNumBlocks;
+    int stride = block.dim_threads().x * ExecutionNumBlocks;
 
     // (1) First pass: naive partial difference (a[i] - b[i]) and set borrowBit
     // Instead of dividing digits among blocks, each thread does a grid–stride loop:
-    for (int idx = tid; idx < n; idx += stride) {
-        uint32_t ai1 = a1[idx];
-        uint32_t bi1 = b1[idx];
+    for (int idx = tid; idx < n1; idx += stride) {
+        uint32_t ai1;
+        uint32_t bi1;
+        uint32_t ai2;
+        uint32_t bi2;
 
-        uint32_t ai2 = a2[idx];
-        uint32_t bi2 = b2[idx];
+        if (idx >= n2) {
+            ai1 = a1[idx];
+            bi1 = 0;
+
+            ai2 = a2[idx];
+            bi2 = 0;
+        } else {
+            ai1 = a1[idx];
+            bi1 = b1[idx];
+
+            ai2 = a2[idx];
+            bi2 = b2[idx];
+        }
 
         // naive difference
         uint64_t diff1 = (uint64_t)ai1 - (uint64_t)bi1;
@@ -144,7 +175,7 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallel(
 
     do {
         // (2) For each digit, apply the borrow from the previous digit
-        for (int idx = tid; idx < n; idx += stride) {
+        for (int idx = tid; idx < n1; idx += stride) {
             uint64_t borrow_in1 = 0ULL;
             uint64_t borrow_in2 = 0ULL;
             if (idx > 0) {   // borrow_in is from digit (idx-1)
@@ -250,8 +281,6 @@ __device__ SharkForceInlineReleaseOnly static void SerialCarryPropagation(
     cg::thread_block &block,
     const uint3 &threadIdx,
     const uint3 &blockIdx,
-    const uint3 &blockDim,
-    const uint3 &gridDim,
     int thread_start_idx,
     int thread_end_idx,
     int Convolution_offset,
@@ -309,8 +338,6 @@ __device__ SharkForceInlineReleaseOnly static void CarryPropagation (
     cg::thread_block &block,
     const uint3 &threadIdx,
     const uint3 &blockIdx,
-    const uint3 &blockDim,
-    const uint3 &gridDim,
     int thread_start_idx,
     int thread_end_idx,
     int Convolution_offset,
@@ -450,7 +477,7 @@ __device__ SharkForceInlineReleaseOnly static void CarryPropagation (
     // ---- Handle Final Carry-Out ----
 
     // Handle final carry-out
-    if (block.thread_index().x == 0 && block.group_index().x == gridDim.x - 1) {
+    if (block.thread_index().x == 0 && block.group_index().x == grid.dim_blocks().x - 1) {
         uint64_t final_carry = block_carry_outs[block.group_index().x];
         if (final_carry > 0) {
             // Store the final carry as an additional digit
@@ -467,7 +494,8 @@ __device__ SharkForceInlineReleaseOnly static void CarryPropagation (
 // and make sure the number of NewN arrays we're using here fits within that limit.
 // The list here should go up to ScratchMemoryArrays.
 #define DefineTempProductsOffsets(TempBase) \
-    constexpr int n = (NewN + 1) / 2; \
+    constexpr int n1 = NewN1; \
+    constexpr int n2 = NewN2; \
     const int threadIdxGlobal = block.group_index().x * SharkFloatParams::GlobalThreadsPerBlock + block.thread_index().x; \
     constexpr int BorrowGlobalOffset = 0; \
     constexpr int Z0_offset = TempBase; \
@@ -494,7 +522,7 @@ __device__ SharkForceInlineReleaseOnly static void CarryPropagation (
     constexpr auto digits_per_block = NewN * 2 / ExecutionNumBlocks; \
     auto block_start_idx = block.group_index().x * digits_per_block; \
     auto block_end_idx = min(block_start_idx + digits_per_block, total_result_digits); \
-    int digits_per_thread = (digits_per_block + blockDim.x - 1) / blockDim.x; \
+    int digits_per_thread = (digits_per_block + block.dim_threads().x - 1) / block.dim_threads().x; \
     int thread_start_idx = block_start_idx + block.thread_index().x * digits_per_thread; \
     int thread_end_idx = min(thread_start_idx + digits_per_thread, block_end_idx);
 
@@ -503,27 +531,29 @@ __device__ SharkForceInlineReleaseOnly static void CarryPropagation (
     constexpr auto digits_per_block = SharkFloatParams::GlobalThreadsPerBlock * 2; \
     auto block_start_idx = block.group_index().x * digits_per_block; \
     auto block_end_idx = min(block_start_idx + digits_per_block, total_result_digits); \
-    int digits_per_thread = (digits_per_block + blockDim.x - 1) / blockDim.x; \
+    int digits_per_thread = (digits_per_block + block.dim_threads().x - 1) / block.dim_threads().x; \
     int thread_start_idx = block_start_idx + block.thread_index().x * digits_per_thread; \
     int thread_end_idx = min(thread_start_idx + digits_per_thread, block_end_idx);
 
 
 // Assuming that SharkFloatParams::GlobalNumUint32 can be large and doesn't fit in shared memory
 // We'll use the provided global memory buffers for large intermediates
-#define SharkRestrict __restrict__
-// #define SharkRestrict
+// #define SharkRestrict __restrict__
+#define SharkRestrict
 
 template<
     class SharkFloatParams,
     int NewN,
+    int NewN1,
+    int NewN2,
     int ExecutionBlockBase,
     int ExecutionNumBlocks,
     int NewNumBlocks,
     int TempBase>
 __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
     uint32_t *SharkRestrict shared_data,
-    const HpSharkFloat<SharkFloatParams> *__restrict__ A,
-    const HpSharkFloat<SharkFloatParams> *__restrict__ B,
+    const HpSharkFloat<SharkFloatParams> *SharkRestrict A,
+    const HpSharkFloat<SharkFloatParams> *SharkRestrict B,
     const uint32_t *SharkRestrict aDigits,
     const uint32_t *SharkRestrict bDigits,
     uint32_t *SharkRestrict x_diff_abs,
@@ -548,12 +578,12 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
     auto *Z1_temp_digits = &tempProducts[Z1_temp_offset];
     auto *Z2_OutDigits = &tempProducts[Z2_offset];
 
-    constexpr int total_k = 2 * n - 1; // Total number of k values
+    constexpr int total_k = 2 * n1 - 1; // Total number of k values
     constexpr auto ConvolutionLimit = 9; // 3^whatevs = ConvolutionLimit
     constexpr bool UseConvolution =
         (NewNumBlocks <= std::max(SharkFloatParams::GlobalNumBlocks / ConvolutionLimit, 1) ||
         (NewNumBlocks % 3 != 0));
-    constexpr bool EnableSharedDiff = true;
+    constexpr bool EnableSharedDiff = false;
     constexpr bool UseParallelSubtract = true;
 
     // Arrays to hold the absolute differences (size n)
@@ -576,18 +606,18 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
 
     if constexpr (!SharkFloatParams::DisableSubtraction) {
         if constexpr (UseParallelSubtract) {
-            int x_compare = CompareDigits(a_shared + n, a_shared, n);
-            int y_compare = CompareDigits(b_shared + n, b_shared, n);
+            int x_compare = CompareDigits<n1, n1>(a_shared + n1, a_shared);
+            int y_compare = CompareDigits<n1, n1>(b_shared + n1, b_shared);
 
             if (x_compare >= 0 && y_compare >= 0) {
                 x_diff_sign = 0;
                 y_diff_sign = 0;
-                SubtractDigitsParallel<SharkFloatParams, NewN, ExecutionBlockBase, ExecutionNumBlocks>(
+                SubtractDigitsParallel<SharkFloatParams, n1, n1, ExecutionBlockBase, ExecutionNumBlocks>(
                     x_diff_abs,
                     y_diff_abs,
-                    a_shared + n,
+                    a_shared + n1,
                     a_shared,
-                    b_shared + n,
+                    b_shared + n1,
                     b_shared,
                     subtractionBorrows,
                     subtractionBorrows2,
@@ -601,13 +631,13 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             } else if (x_compare < 0 && y_compare < 0) {
                 x_diff_sign = 1;
                 y_diff_sign = 1;
-                SubtractDigitsParallel<SharkFloatParams, NewN, ExecutionBlockBase, ExecutionNumBlocks>(
+                SubtractDigitsParallel<SharkFloatParams, n1, n1, ExecutionBlockBase, ExecutionNumBlocks>(
                     x_diff_abs,
                     y_diff_abs,
                     a_shared,
-                    a_shared + n,
+                    a_shared + n1,
                     b_shared,
-                    b_shared + n,
+                    b_shared + n1,
                     subtractionBorrows,
                     subtractionBorrows2,
                     subtractionBorrows3,
@@ -620,13 +650,13 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             } else if (x_compare >= 0 && y_compare < 0) {
                 x_diff_sign = 0;
                 y_diff_sign = 1;
-                SubtractDigitsParallel<SharkFloatParams, NewN, ExecutionBlockBase, ExecutionNumBlocks>(
+                SubtractDigitsParallel<SharkFloatParams, n1, n1, ExecutionBlockBase, ExecutionNumBlocks>(
                     x_diff_abs,
                     y_diff_abs,
-                    a_shared + n,
+                    a_shared + n1,
                     a_shared,
                     b_shared,
-                    b_shared + n,
+                    b_shared + n1,
                     subtractionBorrows,
                     subtractionBorrows2,
                     subtractionBorrows3,
@@ -639,12 +669,12 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             } else {
                 x_diff_sign = 1;
                 y_diff_sign = 0;
-                SubtractDigitsParallel<SharkFloatParams, NewN, ExecutionBlockBase, ExecutionNumBlocks>(
+                SubtractDigitsParallel<SharkFloatParams, n1, n1, ExecutionBlockBase, ExecutionNumBlocks>(
                     x_diff_abs,
                     y_diff_abs,
                     a_shared,
-                    a_shared + n,
-                    b_shared + n,
+                    a_shared + n1,
+                    b_shared + n1,
                     b_shared,
                     subtractionBorrows,
                     subtractionBorrows2,
@@ -658,24 +688,24 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             }
         } else {
             if (block.thread_index().x == 0 && block.group_index().x == ExecutionBlockBase) {
-                int x_compare = CompareDigits(a_shared + n, a_shared, n);
+                int x_compare = CompareDigits<n1, n1>(a_shared + n1, a_shared);
 
                 if (x_compare >= 0) {
                     x_diff_sign = 0;
-                    SubtractDigitsSerial(a_shared + n, a_shared, global_x_diff_abs, n); // x_diff = A1 - A0
+                    SubtractDigitsSerial<n1, n1>(a_shared + n1, a_shared, global_x_diff_abs); // x_diff = A1 - A0
                 } else {
                     x_diff_sign = 1;
-                    SubtractDigitsSerial(a_shared, a_shared + n, global_x_diff_abs, n); // x_diff = A0 - A1
+                    SubtractDigitsSerial<n1, n1>(a_shared, a_shared + n1, global_x_diff_abs); // x_diff = A0 - A1
                 }
 
                 // Compute y_diff_abs and y_diff_sign
-                int y_compare = CompareDigits(b_shared + n, b_shared, n);
+                int y_compare = CompareDigits<n1, n1>(b_shared + n1, b_shared);
                 if (y_compare >= 0) {
                     y_diff_sign = 0;
-                    SubtractDigitsSerial(b_shared + n, b_shared, global_y_diff_abs, n); // y_diff = B1 - B0
+                    SubtractDigitsSerial<n1, n1>(b_shared + n1, b_shared, global_y_diff_abs); // y_diff = B1 - B0
                 } else {
                     y_diff_sign = 1;
-                    SubtractDigitsSerial(b_shared, b_shared + n, global_y_diff_abs, n); // y_diff = B0 - B1
+                    SubtractDigitsSerial<n1, n1>(b_shared, b_shared + n1, global_y_diff_abs); // y_diff = B0 - B1
                 }
             }
         }
@@ -687,12 +717,12 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
     if constexpr (UseConvolution) {
         // Replace A and B in shared memory with their absolute differences
         if constexpr (EnableSharedDiff) {
-            cg::memcpy_async(block, const_cast<uint32_t *>(x_diff_abs), global_x_diff_abs, sizeof(uint32_t) * n);
-            cg::memcpy_async(block, const_cast<uint32_t *>(y_diff_abs), global_y_diff_abs, sizeof(uint32_t) * n);
+            cg::memcpy_async(block, const_cast<uint32_t *>(x_diff_abs), global_x_diff_abs, sizeof(uint32_t) * n1);
+            cg::memcpy_async(block, const_cast<uint32_t *>(y_diff_abs), global_y_diff_abs, sizeof(uint32_t) * n1);
         }
 
-        const int tid = RelativeBlockIndex * blockDim.x + block.thread_index().x;
-        const int stride = blockDim.x * ExecutionNumBlocks;
+        const int tid = RelativeBlockIndex * block.dim_threads().x + block.thread_index().x;
+        const int stride = block.dim_threads().x * ExecutionNumBlocks;
 
         if constexpr (EnableSharedDiff) {
             // Wait for the first batch of A to be loaded
@@ -707,11 +737,18 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                 int k = idx;
                 uint64_t sum_low = 0ULL, sum_high = 0ULL;
 
-                int i_start = max(0, k - (n - 1));
-                int i_end = min(k, n - 1);
+                int i_start = max(0, k - (n1 - 1));
+                int i_end = min(k, n1 - 1);
                 for (int i = i_start; i <= i_end; i++) {
                     uint64_t a = a_shared[i]; //A_shared[i];         // A0[i]
-                    uint64_t b = b_shared[k - i]; //B_shared[k - i];     // B0[k - i]
+
+                    uint64_t b;
+                    
+                    //if (k - i < n1) { // TODO
+                        b = b_shared[k - i]; // B_shared[k - i];     // B0[k - i]
+                    //} else {
+                    //    b = 0;
+                    //}
 
                     uint64_t product = a * b;
 
@@ -731,11 +768,17 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                 int k = idx - total_k; // shift to [0..total_k-1]
                 uint64_t sum_low = 0ULL, sum_high = 0ULL;
 
-                int i_start = max(0, k - (n - 1));
-                int i_end = min(k, n - 1);
+                int i_start = max(0, k - (n1 - 1));
+                int i_end = min(k, n1 - 1);
                 for (int i = i_start; i <= i_end; i++) {
-                    uint64_t a = a_shared[i + n]; // A_shared[i];         // A1[i]
-                    uint64_t b = b_shared[k - i + n]; // B_shared[k - i];     // B1[k - i]
+                    uint64_t a = a_shared[i + n1]; // A_shared[i];         // A1[i]
+                    uint64_t b;
+                    
+                    //if (k - i + n1 < n1) { // TODO
+                        b = b_shared[k - i + n1]; // B_shared[k - i];     // B1[k - i]
+                    //} else {
+                    //    b = 0;
+                    //}
 
                     uint64_t product = a * b;
 
@@ -755,12 +798,18 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                 uint64_t sum_low = 0;
                 uint64_t sum_high = 0;
 
-                int i_start = max(0, k - (n - 1));
-                int i_end = min(k, n - 1);
+                int i_start = max(0, k - (n1 - 1));
+                int i_end = min(k, n1 - 1);
 
                 for (int i = i_start; i <= i_end; ++i) {
                     uint64_t a = EnableSharedDiff ? x_diff_abs[i] : global_x_diff_abs[i];
-                    uint64_t b = EnableSharedDiff ? y_diff_abs[k - i] : global_y_diff_abs[k - i];
+                    uint64_t b;
+                    
+                    //if (k - i < n1) {
+                        b = EnableSharedDiff ? y_diff_abs[k - i] : global_y_diff_abs[k - i];
+                    //} else {
+                    //    b = 0;
+                    //}
 
                     uint64_t product = a * b;
 
@@ -772,9 +821,9 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                 }
 
                 // Store sum_low and sum_high in tempProducts
-                int idx = k * 2;
-                Z1_temp_digits[idx] = sum_low;
-                Z1_temp_digits[idx + 1] = sum_high;
+                int out_idx = k * 2;
+                Z1_temp_digits[out_idx] = sum_low;
+                Z1_temp_digits[out_idx + 1] = sum_high;
             }
         }
     } else {
@@ -783,9 +832,17 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
         constexpr auto NewTempBase1 =
             TempBase + ScratchMemoryArrays * SharkFloatParams::GlobalNumUint32 * NumBlocksRatio;
 
+        constexpr auto SubNewN = NewN / 2;
+        constexpr auto SubNewNRoundUp = (NewN + 1) / 2;
+        constexpr auto SubNewN1 = (SubNewN + 1) / 2;
+        //constexpr auto SubNewN2 = SubNewNRoundUp - SubNewN1;
+        constexpr auto SubNewN2 = SubNewN1;
+
         MultiplyDigitsOnly<
             SharkFloatParams,
-            NewN / 2,
+            SubNewN,
+            SubNewN1,
+            SubNewN1,
             ExecutionBlockBase,
             ExecutionNumBlocks / 3,
             NewNumBlocks / 3,
@@ -804,10 +861,13 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
 
         constexpr auto NewTempBase2 =
             TempBase + ScratchMemoryArrays * SharkFloatParams::GlobalNumUint32 * (NumBlocksRatio * 2);
-
+        // constexpr auto SubRemainingNewN = NewN - SubNewN;
+        constexpr auto SubRemainingNewN = SubNewN;
         MultiplyDigitsOnly<
             SharkFloatParams,
-            NewN / 2,
+            SubRemainingNewN,
+            SubNewN1,
+            SubNewN1,
             ExecutionBlockBase + ExecutionNumBlocks / 3,
             ExecutionNumBlocks / 3,
             NewNumBlocks / 3,
@@ -815,8 +875,8 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             shared_data,
             A,
             B,
-            a_shared + n,
-            b_shared + n,
+            a_shared + n1,
+            b_shared + n1,
             x_diff_abs,
             y_diff_abs,
             Z2_OutDigits,
@@ -842,18 +902,20 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                 cg::memcpy_async(block,
                     const_cast<uint32_t *>(a_shared),
                     global_x_diff_abs,
-                    sizeof(uint32_t) * n);
+                    sizeof(uint32_t) * n1);
                 cg::memcpy_async(block,
                     const_cast<uint32_t *>(b_shared),
                     global_y_diff_abs,
-                    sizeof(uint32_t) * n);
+                    sizeof(uint32_t) * n1);
                 cg::wait(block);
             }
 
             if (EnableMoreParallelism && ExecuteAtAll) {
                 MultiplyDigitsOnly<
                     SharkFloatParams,
-                    NewN / 2,
+                    SubNewN,
+                    SubNewN1,
+                    SubNewN1,
                     NewExecutionBlockBase,
                     NewExecutionNumBlocks,
                     NewNumBlocks / 3,
@@ -874,7 +936,9 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             if constexpr (!EnableMoreParallelism) {
                 MultiplyDigitsOnly<
                     SharkFloatParams,
-                    NewN / 2,
+                    SubNewN,
+                    SubNewN1,
+                    SubNewN1,
                     ExecutionBlockBase,
                     ExecutionNumBlocks,
                     NewNumBlocks / 3,
@@ -916,8 +980,8 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
         // If z1_sign == 0: Z1 = Z2 + Z0 - Z1_temp
         // If z1_sign == 1: Z1 = Z2 + Z0 + Z1_temp
 
-        const int tid = RelativeBlockIndex * blockDim.x + block.thread_index().x;
-        const int stride = blockDim.x * ExecutionNumBlocks;
+        const int tid = RelativeBlockIndex * block.dim_threads().x + block.thread_index().x;
+        const int stride = block.dim_threads().x * ExecutionNumBlocks;
 
         for (int i = tid; i < total_k; i += stride) {
             // Retrieve Z0
@@ -964,7 +1028,7 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             uint64_t sum_high = 0;
 
             // Add Z0
-            if (i < 2 * n - 1) {
+            if (i < 2 * n1 - 1) {
                 int z0_idx = i * 2;
                 uint64_t z0_low = Z0_OutDigits[z0_idx];
                 uint64_t z0_high = Z0_OutDigits[z0_idx + 1];
@@ -972,16 +1036,16 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             }
 
             // Add Z1 shifted by n
-            if (i >= n && (i - n) < 2 * n - 1) {
-                int z1_idx = (i - n) * 2;
+            if (i >= n1 && (i - n1) < 2 * n1 - 1) {
+                int z1_idx = (i - n1) * 2;
                 uint64_t z1_low = Z1_digits[z1_idx];
                 uint64_t z1_high = Z1_digits[z1_idx + 1];
                 Add128(sum_low, sum_high, z1_low, z1_high, sum_low, sum_high);
             }
 
             // Add Z2 shifted by 2*n
-            if (i >= 2 * n && (i - 2 * n) < 2 * n - 1) {
-                int z2_idx = (i - 2 * n) * 2;
+            if (i >= 2 * n1 && (i - 2 * n1) < 2 * n1 - 1) {
+                int z2_idx = (i - 2 * n1) * 2;
                 uint64_t z2_low = Z2_OutDigits[z2_idx];
                 uint64_t z2_high = Z2_OutDigits[z2_idx + 1];
                 Add128(sum_low, sum_high, z2_low, z2_high, sum_low, sum_high);
@@ -1023,6 +1087,10 @@ __device__ void MultiplyHelperKaratsubaV2(
     // Note using 128-bytes for perf
     constexpr auto EndOfSharedGlobalMemory = 128;
     constexpr auto TempBase = EndOfSharedGlobalMemory;
+
+    constexpr auto NewN1 = (NewN + 1) / 2;
+    //constexpr auto NewN2 = NewN - NewN / 2;   /* n1 is larger or same */
+    constexpr auto NewN2 = NewN1;
     DefineTempProductsOffsets(TempBase);
 
     auto *SharkRestrict a_shared = shared_data;
@@ -1042,6 +1110,8 @@ __device__ void MultiplyHelperKaratsubaV2(
     auto *final128 = &tempProducts[Convolution_offset];
     MultiplyDigitsOnly<SharkFloatParams,
         N,
+        n1,
+        n1,
         ExecutionBlockBase,
         ExecutionNumBlocks,
         SharkFloatParams::GlobalNumBlocks,
@@ -1063,7 +1133,7 @@ __device__ void MultiplyHelperKaratsubaV2(
     // ---- Carry Propagation ----
 
     // Global memory for block carry-outs
-    // Allocate space for gridDim.x block carry-outs after total_result_digits
+    // Allocate space for grid.dim_blocks().x block carry-outs after total_result_digits
     uint64_t *block_carry_outs = &tempProducts[CarryInsOffset];
     auto *resultDigits = &tempProducts[Result_offset];
 
@@ -1083,8 +1153,6 @@ __device__ void MultiplyHelperKaratsubaV2(
                 block,
                 block.thread_index(),
                 block.group_index(),
-                blockDim,
-                gridDim,
                 thread_start_idx,
                 thread_end_idx,
                 Convolution_offset,
@@ -1100,8 +1168,6 @@ __device__ void MultiplyHelperKaratsubaV2(
                 block,
                 block.thread_index(),
                 block.group_index(),
-                blockDim,
-                gridDim,
                 thread_start_idx,
                 thread_end_idx,
                 Convolution_offset,
@@ -1153,8 +1219,8 @@ __device__ void MultiplyHelperKaratsubaV2(
             Out->IsNegative = A->IsNegative ^ B->IsNegative;
         }
 
-        int tid = block.thread_index().x + block.group_index().x * blockDim.x;
-        int stride = blockDim.x * gridDim.x;
+        int tid = block.thread_index().x + block.group_index().x * block.dim_threads().x;
+        int stride = block.dim_threads().x * grid.dim_blocks().x;
 
         // src_idx is the starting index in tempProducts[] from which we copy
         int src_idx = Result_offset + shift_digits;

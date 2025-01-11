@@ -87,10 +87,10 @@ static constexpr int32_t LowPrec = 32;
 // is the number of recursions
 
 // If you add a new one, search for one of the other types and copy/paste
-using Test4x36SharkParams = GenericSharkFloatParams<6, 36, BatchSize, TestIterCount>;
-using Test4x12SharkParams = GenericSharkFloatParams<4, 36, BatchSize, TestIterCount>;
-using Test4x9SharkParams = GenericSharkFloatParams<6, 12, BatchSize, TestIterCount>;
-using Test8x1SharkParams = GenericSharkFloatParams<4, 12, BatchSize, TestIterCount>;
+using Test4x36SharkParams = GenericSharkFloatParams<4, 3, BatchSize, TestIterCount>;
+using Test4x12SharkParams = GenericSharkFloatParams<6, 3, BatchSize, TestIterCount>;
+using Test4x9SharkParams = GenericSharkFloatParams<4, 9, BatchSize, TestIterCount>;
+using Test8x1SharkParams = GenericSharkFloatParams<6, 9, BatchSize, TestIterCount>;
 using Test4x6SharkParams = GenericSharkFloatParams<6, 4, BatchSize, TestIterCount>;
 
 //using Test128x128SharkParams = GenericSharkFloatParams<128, 128, BatchSize, TestIterCount>;

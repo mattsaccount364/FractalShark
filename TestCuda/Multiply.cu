@@ -606,8 +606,8 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
 
     if constexpr (!SharkFloatParams::DisableSubtraction) {
         if constexpr (UseParallelSubtract) {
-            int x_compare = CompareDigits<n1, n1>(a_shared + n1, a_shared);
-            int y_compare = CompareDigits<n1, n1>(b_shared + n1, b_shared);
+            int x_compare = CompareDigits<n1, n2>(a_shared + n1, a_shared);
+            int y_compare = CompareDigits<n1, n2>(b_shared + n1, b_shared);
 
             if (x_compare >= 0 && y_compare >= 0) {
                 x_diff_sign = 0;
@@ -688,7 +688,7 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             }
         } else {
             if (block.thread_index().x == 0 && block.group_index().x == ExecutionBlockBase) {
-                int x_compare = CompareDigits<n1, n1>(a_shared + n1, a_shared);
+                int x_compare = CompareDigits<n1, n2>(a_shared + n1, a_shared);
 
                 if (x_compare >= 0) {
                     x_diff_sign = 0;
@@ -699,7 +699,7 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                 }
 
                 // Compute y_diff_abs and y_diff_sign
-                int y_compare = CompareDigits<n1, n1>(b_shared + n1, b_shared);
+                int y_compare = CompareDigits<n1, n2>(b_shared + n1, b_shared);
                 if (y_compare >= 0) {
                     y_diff_sign = 0;
                     SubtractDigitsSerial<n1, n1>(b_shared + n1, b_shared, global_y_diff_abs); // y_diff = B1 - B0
@@ -842,7 +842,7 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             SharkFloatParams,
             SubNewN,
             SubNewN1,
-            SubNewN1,
+            SubNewN2,
             ExecutionBlockBase,
             ExecutionNumBlocks / 3,
             NewNumBlocks / 3,
@@ -867,7 +867,7 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             SharkFloatParams,
             SubRemainingNewN,
             SubNewN1,
-            SubNewN1,
+            SubNewN2,
             ExecutionBlockBase + ExecutionNumBlocks / 3,
             ExecutionNumBlocks / 3,
             NewNumBlocks / 3,
@@ -915,7 +915,7 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                     SharkFloatParams,
                     SubNewN,
                     SubNewN1,
-                    SubNewN1,
+                    SubNewN2,
                     NewExecutionBlockBase,
                     NewExecutionNumBlocks,
                     NewNumBlocks / 3,
@@ -938,7 +938,7 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                     SharkFloatParams,
                     SubNewN,
                     SubNewN1,
-                    SubNewN1,
+                    SubNewN2,
                     ExecutionBlockBase,
                     ExecutionNumBlocks,
                     NewNumBlocks / 3,
@@ -1111,7 +1111,7 @@ __device__ void MultiplyHelperKaratsubaV2(
     MultiplyDigitsOnly<SharkFloatParams,
         N,
         n1,
-        n1,
+        n2,
         ExecutionBlockBase,
         ExecutionNumBlocks,
         SharkFloatParams::GlobalNumBlocks,

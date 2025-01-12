@@ -27,15 +27,20 @@ namespace cg = cooperative_groups;
 
 template<int n1, int n2>
 __device__ int CompareDigits(const uint32_t *highArray, const uint32_t *lowArray) {
-    if constexpr (n1 > n2) {
-        return 1;
-    } else if constexpr (n2 > n1) {
-        return -1;
-    } else {
-        // n1 == n2
-        for (int i = n1 - 1; i >= 0; --i) {
-            if (highArray[i] > lowArray[i]) return 1;
-            if (highArray[i] < lowArray[i]) return -1;
+    // The biggest possible “digit index” is one less
+    // than the max of the two sizes.
+    int maxLen = std::max(n1, n2);
+
+    // Compare top-down, from maxLen-1 down to 0
+    for (int i = maxLen - 1; i >= 0; --i) {
+        // Treat out-of-range as zero
+        uint32_t a_val = (i < n1) ? highArray[i] : 0u;
+        uint32_t b_val = (i < n2) ? lowArray[i] : 0u;
+
+        if (a_val > b_val) {
+            return 1;  // A is bigger
+        } else if (a_val < b_val) {
+            return -1; // B is bigger
         }
     }
     return 0;
@@ -623,8 +628,8 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
 
     if constexpr (!SharkFloatParams::DisableSubtraction) {
         if constexpr (UseParallelSubtract) {
-            int x_compare = CompareDigits<n1, n2>(a_shared + n1, a_shared);
-            int y_compare = CompareDigits<n1, n2>(b_shared + n1, b_shared);
+            int x_compare = CompareDigits<n2, n1>(a_shared + n1, a_shared);
+            int y_compare = CompareDigits<n2, n1>(b_shared + n1, b_shared);
 
             if (x_compare >= 0 && y_compare >= 0) {
                 x_diff_sign = 0;
@@ -737,20 +742,20 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
 
                 if (x_compare >= 0) {
                     x_diff_sign = 0;
-                    SubtractDigitsSerial<n1, n1>(a_shared + n1, a_shared, global_x_diff_abs); // x_diff = A1 - A0
+                    SubtractDigitsSerial<n2, n1>(a_shared + n1, a_shared, global_x_diff_abs); // x_diff = A1 - A0
                 } else {
                     x_diff_sign = 1;
-                    SubtractDigitsSerial<n1, n1>(a_shared, a_shared + n1, global_x_diff_abs); // x_diff = A0 - A1
+                    SubtractDigitsSerial<n1, n2>(a_shared, a_shared + n1, global_x_diff_abs); // x_diff = A0 - A1
                 }
 
                 // Compute y_diff_abs and y_diff_sign
                 int y_compare = CompareDigits<n1, n2>(b_shared + n1, b_shared);
                 if (y_compare >= 0) {
                     y_diff_sign = 0;
-                    SubtractDigitsSerial<n1, n1>(b_shared + n1, b_shared, global_y_diff_abs); // y_diff = B1 - B0
+                    SubtractDigitsSerial<n2, n1>(b_shared + n1, b_shared, global_y_diff_abs); // y_diff = B1 - B0
                 } else {
                     y_diff_sign = 1;
-                    SubtractDigitsSerial<n1, n1>(b_shared, b_shared + n1, global_y_diff_abs); // y_diff = B0 - B1
+                    SubtractDigitsSerial<n1, n2>(b_shared, b_shared + n1, global_y_diff_abs); // y_diff = B0 - B1
                 }
             }
         }
@@ -766,6 +771,8 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             cg::memcpy_async(block, const_cast<uint32_t *>(y_diff_abs), global_y_diff_abs, sizeof(uint32_t) * n1);
         }
 
+        The reference implementation is correct.  Compare it against here.  It looks like
+            subtraction works with odd digit counts so we need to update convolution
         const int tid = RelativeBlockIndex * block.dim_threads().x + block.thread_index().x;
         const int stride = block.dim_threads().x * ExecutionNumBlocks;
 
@@ -789,11 +796,11 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
 
                     uint64_t b;
                     
-                    //if (k - i < n1) { // TODO
+                    if (k - i < n1) { // TODO
                         b = b_shared[k - i]; // B_shared[k - i];     // B0[k - i]
-                    //} else {
-                    //    b = 0;
-                    //}
+                    } else {
+                        b = 0;
+                    }
 
                     uint64_t product = a * b;
 
@@ -819,11 +826,11 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                     uint64_t a = a_shared[i + n1]; // A_shared[i];         // A1[i]
                     uint64_t b;
                     
-                    //if (k - i + n1 < n1) { // TODO
+                    if (k - i + n1 < n1) { // TODO
                         b = b_shared[k - i + n1]; // B_shared[k - i];     // B1[k - i]
-                    //} else {
-                    //    b = 0;
-                    //}
+                    } else {
+                        b = 0;
+                    }
 
                     uint64_t product = a * b;
 
@@ -880,8 +887,7 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
         constexpr auto SubNewN = NewN / 2;
         constexpr auto SubNewNRoundUp = (NewN + 1) / 2;
         constexpr auto SubNewN1 = (SubNewN + 1) / 2;
-        //constexpr auto SubNewN2 = SubNewNRoundUp - SubNewN1;
-        constexpr auto SubNewN2 = SubNewN1;
+        constexpr auto SubNewN2 = SubNewNRoundUp - SubNewN1;
 
         MultiplyDigitsOnly<
             SharkFloatParams,
@@ -906,8 +912,7 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
 
         constexpr auto NewTempBase2 =
             TempBase + ScratchMemoryArrays * SharkFloatParams::GlobalNumUint32 * (NumBlocksRatio * 2);
-        // constexpr auto SubRemainingNewN = NewN - SubNewN;
-        constexpr auto SubRemainingNewN = SubNewN;
+        constexpr auto SubRemainingNewN = NewN - SubNewN;
         MultiplyDigitsOnly<
             SharkFloatParams,
             SubRemainingNewN,

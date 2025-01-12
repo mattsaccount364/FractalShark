@@ -496,8 +496,10 @@ void KaratsubaRecursiveDigits(
     bool x_diff_neg = false;
     std::vector<uint32_t> x_diff;
     if (x_cmp >= 0) {
+        std::cout << "A_high - A_low" << std::endl;
         SubtractDigitsSerial<SharkFloatParams>(A_high, A_low, x_diff);
     } else {
+        std::cout << "A_low - A_high" << std::endl;
         SubtractDigitsSerial<SharkFloatParams>(A_low, A_high, x_diff);
         x_diff_neg = true;
     }
@@ -506,8 +508,10 @@ void KaratsubaRecursiveDigits(
     bool y_diff_neg = false;
     std::vector<uint32_t> y_diff;
     if (y_cmp >= 0) {
+        std::cout << "B_high - B_low" << std::endl;
         SubtractDigitsSerial<SharkFloatParams>(B_high, B_low, y_diff);
     } else {
+        std::cout << "B_low - B_high" << std::endl;
         SubtractDigitsSerial<SharkFloatParams>(B_low, B_high, y_diff);
         y_diff_neg = true;
     }

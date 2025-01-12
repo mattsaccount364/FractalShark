@@ -311,10 +311,19 @@ HpSharkFloat<SharkFloatParams>::ToString() const
     // Import the digits into mpf_value.  Convert
     // from uint32_t to mp_limb_t, which is uint64_t
     static_assert(sizeof(mp_limb_t) == sizeof(uint64_t), "mp_limb_t is not 64 bits");
-    static_assert(NumUint32 % 2 == 0, "NumUint32 is not divisible by 2");
-    for (size_t i = 0; i < NumUint32 / 2; ++i) {
+    
+    // Number of 64-bit limbs = ceil(NumUint32 / 2).
+    constexpr size_t limbCount = (NumUint32 + 1) / 2;
+
+    for (size_t i = 0; i < limbCount; ++i) {
         // Store two uint32_t values in one
-        auto value = static_cast<uint64_t>(Digits[2 * i + 1]) << 32 | Digits[2 * i];
+        auto lowPart = Digits[2 * i];
+        uint64_t highPart = 0;
+        if (2 * i + 1 < NumUint32) {
+            highPart = Digits[2 * i + 1];
+        }
+
+        auto value = (highPart << 32) | lowPart;
         mpf_value[0]._mp_d[i] = value;
     }
 

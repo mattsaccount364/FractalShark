@@ -89,9 +89,9 @@ static constexpr int32_t LowPrec = 32;
 // If you add a new one, search for one of the other types and copy/paste
 using Test4x36SharkParams = GenericSharkFloatParams<4, 3, BatchSize, TestIterCount>;
 using Test4x12SharkParams = GenericSharkFloatParams<6, 3, BatchSize, TestIterCount>;
-using Test4x9SharkParams = GenericSharkFloatParams<4, 9, BatchSize, TestIterCount>;
-using Test8x1SharkParams = GenericSharkFloatParams<6, 9, BatchSize, TestIterCount>;
-using Test4x6SharkParams = GenericSharkFloatParams<6, 4, BatchSize, TestIterCount>;
+using Test4x9SharkParams = GenericSharkFloatParams<5, 9, BatchSize, TestIterCount>;
+using Test8x1SharkParams = GenericSharkFloatParams<7, 9, BatchSize, TestIterCount>;
+using Test4x6SharkParams = GenericSharkFloatParams<7, 4, BatchSize, TestIterCount>;
 
 //using Test128x128SharkParams = GenericSharkFloatParams<128, 128, BatchSize, TestIterCount>;
 using Test128x63SharkParams = GenericSharkFloatParams<96, 72, BatchSize, TestIterCount>;

@@ -82,8 +82,10 @@ namespace cg = cooperative_groups;
  */
 template<
     class SharkFloatParams,
-    int n1,
-    int n2,
+    int a1n,
+    int b1n,
+    int a2n,
+    int b2n,
     int ExecutionBlockBase,
     int ExecutionNumBlocks>
 __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallel(
@@ -124,26 +126,41 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallel(
     // 2) stride
     int stride = block.dim_threads().x * ExecutionNumBlocks;
 
+    auto n1max = std::max(a1n, b1n);
+    auto n2max = std::max(a2n, b2n);
+    auto nmax = std::max(n1max, n2max);
+
     // (1) First pass: naive partial difference (a[i] - b[i]) and set borrowBit
     // Instead of dividing digits among blocks, each thread does a grid–stride loop:
-    for (int idx = tid; idx < n1; idx += stride) {
+    for (int idx = tid; idx < nmax; idx += stride) {
         uint32_t ai1;
         uint32_t bi1;
         uint32_t ai2;
         uint32_t bi2;
 
-        if (idx >= n2) {
+        // Fill in with 0s if idx is out of bounds
+        if (idx < a1n) {
             ai1 = a1[idx];
-            bi1 = 0;
-
-            ai2 = a2[idx];
-            bi2 = 0;
         } else {
-            ai1 = a1[idx];
-            bi1 = b1[idx];
+            ai1 = 0;
+        }
 
+        if (idx < a2n) {
             ai2 = a2[idx];
+        } else {
+            ai2 = 0;
+        }
+
+        if (idx < b1n) {
+            bi1 = b1[idx];
+        } else {
+            bi1 = 0;
+        }
+
+        if (idx < b2n) {
             bi2 = b2[idx];
+        } else {
+            bi2 = 0;
         }
 
         // naive difference
@@ -175,7 +192,7 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallel(
 
     do {
         // (2) For each digit, apply the borrow from the previous digit
-        for (int idx = tid; idx < n1; idx += stride) {
+        for (int idx = tid; idx < nmax; idx += stride) {
             uint64_t borrow_in1 = 0ULL;
             uint64_t borrow_in2 = 0ULL;
             if (idx > 0) {   // borrow_in is from digit (idx-1)
@@ -612,79 +629,107 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             if (x_compare >= 0 && y_compare >= 0) {
                 x_diff_sign = 0;
                 y_diff_sign = 0;
-                SubtractDigitsParallel<SharkFloatParams, n1, n1, ExecutionBlockBase, ExecutionNumBlocks>(
-                    x_diff_abs,
-                    y_diff_abs,
-                    a_shared + n1,
-                    a_shared,
-                    b_shared + n1,
-                    b_shared,
-                    subtractionBorrows,
-                    subtractionBorrows2,
-                    subtractionBorrows3,
-                    subtractionBorrows4,
-                    global_x_diff_abs,
-                    global_y_diff_abs,
-                    globalBorrowAny,
-                    grid,
-                    block);
+                SubtractDigitsParallel<
+                    SharkFloatParams,
+                    n2,
+                    n1,
+                    n2,
+                    n1,
+                    ExecutionBlockBase,
+                    ExecutionNumBlocks>(
+                        x_diff_abs,
+                        y_diff_abs,
+                        a_shared + n1,
+                        a_shared,
+                        b_shared + n1,
+                        b_shared,
+                        subtractionBorrows,
+                        subtractionBorrows2,
+                        subtractionBorrows3,
+                        subtractionBorrows4,
+                        global_x_diff_abs,
+                        global_y_diff_abs,
+                        globalBorrowAny,
+                        grid,
+                        block);
             } else if (x_compare < 0 && y_compare < 0) {
                 x_diff_sign = 1;
                 y_diff_sign = 1;
-                SubtractDigitsParallel<SharkFloatParams, n1, n1, ExecutionBlockBase, ExecutionNumBlocks>(
-                    x_diff_abs,
-                    y_diff_abs,
-                    a_shared,
-                    a_shared + n1,
-                    b_shared,
-                    b_shared + n1,
-                    subtractionBorrows,
-                    subtractionBorrows2,
-                    subtractionBorrows3,
-                    subtractionBorrows4,
-                    global_x_diff_abs,
-                    global_y_diff_abs,
-                    globalBorrowAny,
-                    grid,
-                    block);
+                SubtractDigitsParallel<
+                    SharkFloatParams,
+                    n1,
+                    n2,
+                    n1,
+                    n2,
+                    ExecutionBlockBase,
+                    ExecutionNumBlocks>(
+                        x_diff_abs,
+                        y_diff_abs,
+                        a_shared,
+                        a_shared + n1,
+                        b_shared,
+                        b_shared + n1,
+                        subtractionBorrows,
+                        subtractionBorrows2,
+                        subtractionBorrows3,
+                        subtractionBorrows4,
+                        global_x_diff_abs,
+                        global_y_diff_abs,
+                        globalBorrowAny,
+                        grid,
+                        block);
             } else if (x_compare >= 0 && y_compare < 0) {
                 x_diff_sign = 0;
                 y_diff_sign = 1;
-                SubtractDigitsParallel<SharkFloatParams, n1, n1, ExecutionBlockBase, ExecutionNumBlocks>(
-                    x_diff_abs,
-                    y_diff_abs,
-                    a_shared + n1,
-                    a_shared,
-                    b_shared,
-                    b_shared + n1,
-                    subtractionBorrows,
-                    subtractionBorrows2,
-                    subtractionBorrows3,
-                    subtractionBorrows4,
-                    global_x_diff_abs,
-                    global_y_diff_abs,
-                    globalBorrowAny,
-                    grid,
-                    block);
+                SubtractDigitsParallel<
+                    SharkFloatParams,
+                    n2,
+                    n1,
+                    n1,
+                    n2,
+                    ExecutionBlockBase,
+                    ExecutionNumBlocks>(
+                        x_diff_abs,
+                        y_diff_abs,
+                        a_shared + n1,
+                        a_shared,
+                        b_shared,
+                        b_shared + n1,
+                        subtractionBorrows,
+                        subtractionBorrows2,
+                        subtractionBorrows3,
+                        subtractionBorrows4,
+                        global_x_diff_abs,
+                        global_y_diff_abs,
+                        globalBorrowAny,
+                        grid,
+                        block);
             } else {
                 x_diff_sign = 1;
                 y_diff_sign = 0;
-                SubtractDigitsParallel<SharkFloatParams, n1, n1, ExecutionBlockBase, ExecutionNumBlocks>(
-                    x_diff_abs,
-                    y_diff_abs,
-                    a_shared,
-                    a_shared + n1,
-                    b_shared + n1,
-                    b_shared,
-                    subtractionBorrows,
-                    subtractionBorrows2,
-                    subtractionBorrows3,
-                    subtractionBorrows4,
-                    global_x_diff_abs,
-                    global_y_diff_abs,
-                    globalBorrowAny,
-                    grid,
-                    block);
+                SubtractDigitsParallel<
+                    SharkFloatParams,
+                    n1,
+                    n2,
+                    n2,
+                    n1,
+                    ExecutionBlockBase,
+                    ExecutionNumBlocks>(
+                        x_diff_abs,
+                        y_diff_abs,
+                        a_shared,
+                        a_shared + n1,
+                        b_shared + n1,
+                        b_shared,
+                        subtractionBorrows,
+                        subtractionBorrows2,
+                        subtractionBorrows3,
+                        subtractionBorrows4,
+                        global_x_diff_abs,
+                        global_y_diff_abs,
+                        globalBorrowAny,
+                        grid,
+                        block);
             }
         } else {
             if (block.thread_index().x == 0 && block.group_index().x == ExecutionBlockBase) {

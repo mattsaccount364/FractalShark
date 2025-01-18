@@ -616,7 +616,7 @@ __global__ void MultiplyKernelKaratsubaV1TestLoop(
     // Initialize cooperative grid group
     cg::grid_group grid = cg::this_grid();
 
-    for (int i = 0; i < TestIterCount; ++i) {
+    for (int i = 0; i < SharkTestIterCount; ++i) {
         // MultiplyHelper(A, B, Out, grid, tempProducts);
         MultiplyHelperKaratsubaV1(A, B, Out, grid, tempProducts);
     }

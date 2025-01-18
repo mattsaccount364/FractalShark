@@ -48,7 +48,7 @@ __global__ void IntegrationKernelTestLoop(
     // Total number of blocks launched
     int numBlocks = gridDim.x;
 
-    for (int i = 0; i < TestIterCount; ++i) {
+    for (int i = 0; i < SharkTestIterCount; ++i) {
         AddHelper(A, B, Out, globalBlockData, carryOuts, cumulativeCarries, grid, numBlocks);
         MultiplyHelperKaratsubaV1(A, B, Out, grid, nullptr);
     }

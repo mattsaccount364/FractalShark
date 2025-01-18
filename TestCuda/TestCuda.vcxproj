@@ -57,6 +57,7 @@
       <AdditionalIncludeDirectories>..\mpir\lib\x64\Debug;%(AdditionalIncludeDirectories);$(CudaToolkitIncludeDir)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -83,6 +84,7 @@
       <AdditionalIncludeDirectories>..\mpir\lib\x64\Release;%(AdditionalIncludeDirectories);$(CudaToolkitIncludeDir)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -121,6 +123,9 @@
   <ItemGroup>
     <ClInclude Include="BenchmarkTimer.h" />
     <ClInclude Include="Conversion.cuh" />
+    <ClInclude Include="DebugChecksum.cuh" />
+    <ClInclude Include="DebugChecksumHost.h" />
+    <ClInclude Include="ExplicitInstantiate.h" />
     <ClInclude Include="HpSharkFloat.cuh" />
     <ClInclude Include="IntegrationTest.cuh" />
     <ClInclude Include="Multiply.cuh" />

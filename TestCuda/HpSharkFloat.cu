@@ -112,6 +112,9 @@ UintArrayToHexString(const IntT *array, size_t numElements) {
 
     std::string result;
 
+    // Append numElements
+    result += "Len:" + std::to_string(numElements) + ", ";
+
     // Convert each 4-byte integer to hex and append to result
     for (size_t i = 0; i < numElements; ++i) {
         char buffer[32];
@@ -207,14 +210,14 @@ MpfToHpGpu(
     mpf_init2(abs_val, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
     mpf_abs(abs_val, mpf_val);
 
-    if constexpr (Verbose) {
+    if constexpr (SharkFloatParams::HostVerbose) {
         std::cout << "abs_val: " << MpfToString<SharkFloatParams>(abs_val, prec_bits) << std::endl;
     }
 
     // Determine the sign
     number.IsNegative = (mpf_sgn(mpf_val) < 0);
 
-    if constexpr (Verbose) {
+    if constexpr (SharkFloatParams::HostVerbose) {
         std::cout << "prec_bits: " << prec_bits << std::endl;
     }
 
@@ -400,6 +403,34 @@ HpSharkFloat<SharkFloatParams>::GenerateRandomNumber()
 
 template<class SharkFloatParams>
 void
+HpSharkFloat<SharkFloatParams>::GenerateRandomNumber2() {
+    // Use a random device to seed the random number generator
+    std::random_device rd;
+    std::mt19937 generator(rd());  // Mersenne Twister for high-quality randomness
+
+    std::uniform_int_distribution<uint32_t> distributionCases(0, 3);
+    std::uniform_int_distribution<uint32_t> distributionSmall(0, 16);
+    std::uniform_int_distribution<uint32_t> distributionRand(0, std::numeric_limits<uint32_t>::max());
+
+    mpf_t mpf_value;
+    // Initialize an mpf_t variable
+    mpf_init2(mpf_value, DefaultPrecBits);
+    mpf_set_d(mpf_value, 1.0);
+    mpf_div_ui(mpf_value, mpf_value, distributionRand(generator) + 1);
+    //mpf_sqrt(mpf_value, mpf_value);
+
+    // Convert MPF to HpSharkFloat<SharkFloatParams>
+    MpfToHpGpu<SharkFloatParams>(mpf_value, *this, DefaultPrecBits);
+
+    mpf_clear(mpf_value);
+
+    // Random boolean for IsNegative
+    std::bernoulli_distribution bool_distribution(0.5);
+    IsNegative = bool_distribution(generator);
+}
+
+template<class SharkFloatParams>
+void
 HpSharkFloat<SharkFloatParams>::Negate()
 {
     IsNegative = !IsNegative;
@@ -462,7 +493,7 @@ Uint32ToMpf (
     mpf_t &mpf_val) {
 
     std::vector<uint64_t> data;
-    for (size_t i = 0; i < SharkFloatParams::GlobalNumUint32 / 2; ++i) {
+    for (size_t i = 0; i < SharkFloatParams::HalfLimbsRoundedUp; ++i) {
         // Store two uint32_t values in one
         auto value = static_cast<uint64_t>(array[2 * i + 1]) << 32 | array[2 * i];
         data.push_back(value);

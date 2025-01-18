@@ -56,8 +56,8 @@ __device__ void MultiplyHelperN2(
     uint64_t *carryOuts_phase6 = carryOuts_phase3 + 2 * SharkFloatParams::GlobalNumUint32;
     uint64_t *carryIns = carryOuts_phase6 + 2 * SharkFloatParams::GlobalNumUint32;
 
-    static constexpr int32_t BATCH_SIZE_A = BatchSize;
-    static constexpr int32_t BATCH_SIZE_B = BatchSize;
+    static constexpr int32_t BATCH_SIZE_A = SharkBatchSize;
+    static constexpr int32_t BATCH_SIZE_B = SharkBatchSize;
 
     // Compute k_min and k_max
     const int k_min = 2 * blockIdx.x * SharkFloatParams::GlobalThreadsPerBlock;
@@ -434,7 +434,7 @@ __global__ void MultiplyKernelN2TestLoop(
     // Initialize cooperative grid group
     cg::grid_group grid = cg::this_grid();
 
-    for (int i = 0; i < TestIterCount; ++i) {
+    for (int i = 0; i < SharkTestIterCount; ++i) {
         // MultiplyHelper(A, B, Out, grid, tempProducts);
         MultiplyHelperN2(A, B, Out, grid, tempProducts);
     }

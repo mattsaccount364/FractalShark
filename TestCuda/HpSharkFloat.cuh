@@ -5,19 +5,28 @@
 #include <gmp.h>
 #include <vector>
 
-static constexpr bool UseCustomStream = true;
+static constexpr bool SharkCustomStream = true;
 static constexpr bool UseSharedMemory = true;
 
-#ifdef _DEBUG
-static constexpr auto TestIterCount = 1000;
-static constexpr auto BatchSize = 8;
-static constexpr bool SkipCorrectnessTests = false;
-static constexpr bool Verbose = true;
+// Undefine to include N2, v1 etc.
+// #define MULTI_KERNEL
+
+#ifdef MULTI_KERNEL
+static constexpr auto MultiKernel = true;
 #else
-static constexpr auto TestIterCount = 250;
-static constexpr auto BatchSize = 512;
-static constexpr bool SkipCorrectnessTests = true;
-static constexpr bool Verbose = false;
+static constexpr auto MultiKernel = false;
+#endif
+
+#ifdef _DEBUG
+static constexpr auto SharkTestIterCount = 1000;
+static constexpr auto SharkBatchSize = 8;
+static constexpr bool SharkCorrectnessTests = false;
+static constexpr bool SharkDebug = true;
+#else
+static constexpr auto SharkTestIterCount = 250;
+static constexpr auto SharkBatchSize = 512;
+static constexpr bool SharkCorrectnessTests = true;
+static constexpr bool SharkDebug = false;
 #endif
 
 template<
@@ -28,10 +37,11 @@ template<
 struct GenericSharkFloatParams {
     static constexpr int32_t GlobalThreadsPerBlock = pThreadsPerBlock;
     static constexpr int32_t GlobalNumBlocks = pNumBlocks;
-    static constexpr int32_t BatchSize = pBatchSize;
-    static constexpr int32_t TestIterCount = pTestIterCount;
+    static constexpr int32_t SharkBatchSize = pBatchSize;
+    static constexpr int32_t SharkTestIterCount = pTestIterCount;
     // Fixed number of uint32_t values
     static constexpr int32_t GlobalNumUint32 = GlobalThreadsPerBlock * GlobalNumBlocks;
+    static constexpr int32_t HalfLimbsRoundedUp = (GlobalNumUint32 + 1) / 2;
 
     // If these are set to false they produce wrong answers but can be useful
     // to confirm source of performance issues.
@@ -40,69 +50,66 @@ struct GenericSharkFloatParams {
     static constexpr bool DisableCarryPropagation = false;
     static constexpr bool DisableFinalConstruction = false;
     static constexpr bool ForceNoOp = false;
-    static constexpr bool HostVerbose = Verbose;
+    static constexpr bool HostVerbose = SharkDebug;
+    static constexpr bool DebugChecksums = true;
+
+    static constexpr auto ConvolutionLimit = 81; // 3^whatevs = ConvolutionLimit
+    static constexpr auto ConvolutionLimitPow = 4; // 3^whatevs = ConvolutionLimit
 
     static std::string GetDescription() {
         std::string desc = "GlobalThreadsPerBlock: " + std::to_string(GlobalThreadsPerBlock) +
             ", GlobalNumBlocks: " + std::to_string(GlobalNumBlocks) +
-            ", BatchSize: " + std::to_string(BatchSize) +
-            ", TestIterCount: " + std::to_string(TestIterCount);
+            ", SharkBatchSize: " + std::to_string(SharkBatchSize) +
+            ", SharkTestIterCount: " + std::to_string(SharkTestIterCount);
         return desc;
     }
 
     using GetHalf = typename std::conditional_t<
         (GlobalThreadsPerBlock > 2),
-        GenericSharkFloatParams<GlobalThreadsPerBlock / 2, GlobalNumBlocks, BatchSize, TestIterCount>,
+        GenericSharkFloatParams<GlobalThreadsPerBlock / 2, GlobalNumBlocks, SharkBatchSize, SharkTestIterCount>,
         typename std::conditional_t<(GlobalNumBlocks > 2),
-        GenericSharkFloatParams<GlobalThreadsPerBlock, GlobalNumBlocks / 2, BatchSize, TestIterCount>,
-        GenericSharkFloatParams<GlobalThreadsPerBlock, GlobalNumBlocks, BatchSize, TestIterCount>
+        GenericSharkFloatParams<GlobalThreadsPerBlock, GlobalNumBlocks / 2, SharkBatchSize, SharkTestIterCount>,
+        GenericSharkFloatParams<GlobalThreadsPerBlock, GlobalNumBlocks, SharkBatchSize, SharkTestIterCount>
         >
     >;
 };
 
-static constexpr auto ScratchMemoryCopies = 256;
+static constexpr auto ScratchMemoryCopies = 1024;
 static constexpr auto ScratchMemoryArrays = 32;
+// The 32 here is from DefineTempProductsOffsets
+static constexpr auto Uint64ToAllocateForMultiply =
+    ScratchMemoryCopies * ScratchMemoryArrays;
+// Additional constants, 256-uint64 times number of "frames"
+static constexpr auto AdditionalUInt64PerFrame = 256;
+static constexpr auto Uint64AdditionalConstants = AdditionalUInt64PerFrame * ScratchMemoryCopies;
+
 static constexpr int32_t LowPrec = 32;
 
-#define ExplicitInstantiateAll() \
-    ExplicitlyInstantiate(Test4x9SharkParams); \
-    ExplicitlyInstantiate(Test4x12SharkParams); \
-    ExplicitlyInstantiate(Test8x1SharkParams); \
-    ExplicitlyInstantiate(Test4x36SharkParams); \
-    ExplicitlyInstantiate(Test4x6SharkParams); \
- \
-    /*ExplicitlyInstantiate(Test128x128SharkParams);*/ \
-    ExplicitlyInstantiate(Test128x63SharkParams); \
-    ExplicitlyInstantiate(Test64x63SharkParams); \
-    ExplicitlyInstantiate(Test32x63SharkParams); \
-    ExplicitlyInstantiate(Test16x63SharkParams); \
- \
-    ExplicitlyInstantiate(Test128x36SharkParams); \
-    ExplicitlyInstantiate(Test128x18SharkParams); \
-    ExplicitlyInstantiate(Test128x9SharkParams); \
-    ExplicitlyInstantiate(Test128x3SharkParams); \
+#include "ExplicitInstantiate.h"
+
+
 
 // TODO: all implementations are assuming a multiple of 2 number of blocks
 // When using recursion/convolution then the you need 2^n blocks where n
 // is the number of recursions
 
 // If you add a new one, search for one of the other types and copy/paste
-using Test4x36SharkParams = GenericSharkFloatParams<4, 3, BatchSize, TestIterCount>;
-using Test4x12SharkParams = GenericSharkFloatParams<6, 3, BatchSize, TestIterCount>;
-using Test4x9SharkParams = GenericSharkFloatParams<5, 9, BatchSize, TestIterCount>;
-using Test8x1SharkParams = GenericSharkFloatParams<7, 9, BatchSize, TestIterCount>;
-using Test4x6SharkParams = GenericSharkFloatParams<7, 4, BatchSize, TestIterCount>;
+using Test8x1SharkParams = GenericSharkFloatParams<8, 1, SharkBatchSize, SharkTestIterCount>;
+using Test4x36SharkParams = GenericSharkFloatParams<16, 39, SharkBatchSize, SharkTestIterCount>;
+using Test4x12SharkParams = GenericSharkFloatParams<17, 36, SharkBatchSize, SharkTestIterCount>;
+using Test4x9SharkParams = GenericSharkFloatParams<17, 39, SharkBatchSize, SharkTestIterCount>;
+using Test4x6SharkParams = GenericSharkFloatParams<13, 48, SharkBatchSize, SharkTestIterCount>;
 
-//using Test128x128SharkParams = GenericSharkFloatParams<128, 128, BatchSize, TestIterCount>;
-using Test128x63SharkParams = GenericSharkFloatParams<96, 72, BatchSize, TestIterCount>;
-using Test64x63SharkParams = GenericSharkFloatParams<64, 72, BatchSize, TestIterCount>;
-using Test32x63SharkParams = GenericSharkFloatParams<32, 72, BatchSize, TestIterCount>;
-using Test16x63SharkParams = GenericSharkFloatParams<16, 72, BatchSize, TestIterCount>;
+//using Test128x128SharkParams = GenericSharkFloatParams<128, 128, SharkBatchSize, SharkTestIterCount>;
+using Test128x63SharkParams = GenericSharkFloatParams<96, 81, SharkBatchSize, SharkTestIterCount>;
+using Test64x63SharkParams = GenericSharkFloatParams<64, 81, SharkBatchSize, SharkTestIterCount>;
+using Test32x63SharkParams = GenericSharkFloatParams<32, 81, SharkBatchSize, SharkTestIterCount>;
+using Test16x63SharkParams = GenericSharkFloatParams<16, 81, SharkBatchSize, SharkTestIterCount>;
 
-using Test128x36SharkParams = GenericSharkFloatParams<112, 72, BatchSize, TestIterCount>;
-using Test128x18SharkParams = GenericSharkFloatParams<112, 36, BatchSize, TestIterCount>;
-using Test128x9SharkParams = GenericSharkFloatParams<112, 12, BatchSize, TestIterCount>;
-using Test128x3SharkParams = GenericSharkFloatParams<112, 6, BatchSize, TestIterCount>;
+using Test128x36SharkParams = GenericSharkFloatParams<100, 81, SharkBatchSize, SharkTestIterCount>;
+using Test128x18SharkParams = GenericSharkFloatParams<100, 36, SharkBatchSize, SharkTestIterCount>;
+using Test128x9SharkParams = GenericSharkFloatParams<100, 12, SharkBatchSize, SharkTestIterCount>;
+using Test128x3SharkParams = GenericSharkFloatParams<100, 6, SharkBatchSize, SharkTestIterCount>;
 
 // Performance test sizes
 using TestPerSharkParams1 = Test128x63SharkParams;
@@ -116,11 +123,11 @@ using TestPerSharkParams7 = Test128x9SharkParams;
 using TestPerSharkParams8 = Test128x3SharkParams;
 
 // Correctness test sizes
-using TestCorrectnessSharkParams1 = Test4x36SharkParams;
+using TestCorrectnessSharkParams1 = Test8x1SharkParams;
 using TestCorrectnessSharkParams2 = Test4x12SharkParams;
-using TestCorrectnessSharkParams3 = Test8x1SharkParams;
-using TestCorrectnessSharkParams4 = Test4x9SharkParams;
-using TestCorrectnessSharkParams5 = Test4x6SharkParams;
+using TestCorrectnessSharkParams3 = Test4x9SharkParams;
+using TestCorrectnessSharkParams4 = Test4x36SharkParams;
+using TestCorrectnessSharkParams5 = Test4x6SharkParams /*Test128x63SharkParams*/;
 
 // Struct to hold both integer and fractional parts of the high-precision number
 template<class SharkFloatParams>
@@ -136,6 +143,7 @@ struct HpSharkFloat {
     std::string ToString() const;
     std::string ToHexString() const;
     void GenerateRandomNumber();
+    void GenerateRandomNumber2();
     void Negate();
 
     // Default precision in bits

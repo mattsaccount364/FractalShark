@@ -73,14 +73,16 @@ bool CorrectnessTests() {
         }
     }
 
-    //testBase = 4000;
-    //res = TestAllBinaryOp<TestSharkParams, Operator::Add>(testBase);
-    //if (!res) {
-    //    auto q = PressKey();
-    //    if (q == 'q') {
-    //        return false;
-    //    }
-    //}
+#ifdef MULTI_KERNEL
+    testBase = 4000;
+    res = TestAllBinaryOp<TestSharkParams, Operator::Add>(testBase);
+    if (!res) {
+        auto q = PressKey();
+        if (q == 'q') {
+            return false;
+        }
+    }
+#endif
 
     return true;
 }
@@ -102,11 +104,11 @@ int main(int /*argc*/, char * /*argv*/[]) {
     }
 
 
-    if constexpr (!SkipCorrectnessTests) {
+    if constexpr (!SharkCorrectnessTests) {
         if (!CorrectnessTests<TestCorrectnessSharkParams1>()) {
             return 0;
         }
-
+        
         if (!CorrectnessTests<TestCorrectnessSharkParams2>()) {
             return 0;
         }
@@ -123,19 +125,23 @@ int main(int /*argc*/, char * /*argv*/[]) {
             return 0;
         }
 
+        // ComicalCorrectness();
+
         if (PressKey() == 'q') {
             return 0;
         }
     }
 
-    //testBase = 6000;
-    //res = TestBinaryOperatorPerf<Operator::Add>(testBase);
-    //if (!res) {
-    //    auto q = PressKey();
-    //    if (q == 'q') {
-    //        return 0;
-    //    }
-    //}
+    if constexpr (MultiKernel) {
+        testBase = 6000;
+        res = TestBinaryOperatorPerf<Operator::Add>(testBase);
+        if (!res) {
+            auto q = PressKey();
+            if (q == 'q') {
+                return 0;
+            }
+        }
+    }
 
     testBase = 7000;
     res = TestBinaryOperatorPerf<MultiplyOperator>(testBase);
@@ -146,7 +152,7 @@ int main(int /*argc*/, char * /*argv*/[]) {
         }
     }
 
-    if constexpr (SkipCorrectnessTests) {
+    if constexpr (SharkCorrectnessTests) {
         auto q = PressKey();
         if (q == 'q') {
             return 0;

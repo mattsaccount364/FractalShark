@@ -127,7 +127,7 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallel(
     }
 
     // Constants 
-    constexpr int MaxPasses = 150;      // maximum number of multi-pass sweeps
+    constexpr int MaxPasses = 5000;     // maximum number of multi-pass sweeps
 
     // We'll define a grid–stride range covering [0..n) for each pass
     // 1) global thread id
@@ -270,6 +270,13 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallel(
 
         pass++;
     } while (pass < MaxPasses);
+
+    if constexpr (SharkDebug) {
+        if (pass == MaxPasses && block.group_index().x == 0) {
+            // This will deadlock the kernel because this problem is hard to diagnose
+            grid.sync();
+        }
+    }
 }
 
 
@@ -548,7 +555,7 @@ static_assert(AdditionalUInt64PerFrame == 256, "See below");
 
 #define DefineExtraDefinitions() \
     const auto RelativeBlockIndex = block.group_index().x - ExecutionBlockBase; \
-    constexpr int total_result_digits = 2 * NewN + 1; \
+    constexpr int total_result_digits = 2 * NewN; \
     constexpr auto digits_per_block = NewN * 2 / ExecutionNumBlocks; \
     auto block_start_idx = block.group_index().x * digits_per_block; \
     auto block_end_idx = min(block_start_idx + digits_per_block, total_result_digits); \
@@ -557,7 +564,7 @@ static_assert(AdditionalUInt64PerFrame == 256, "See below");
     int thread_end_idx = min(thread_start_idx + digits_per_thread, block_end_idx);
 
 #define DefineCarryDefinitions() \
-    constexpr int total_result_digits = 2 * NewN + 1; \
+    constexpr int total_result_digits = 2 * NewN; \
     constexpr auto digits_per_block = SharkFloatParams::GlobalThreadsPerBlock * 2; \
     auto block_start_idx = block.group_index().x * digits_per_block; \
     auto block_end_idx = min(block_start_idx + digits_per_block, total_result_digits); \
@@ -774,8 +781,23 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
         }
     }
 
-    debugTracker32->Reset(grid, block, global_x_diff_abs, std::max(n1, n2), DebugState32::Purpose::XDiff);
-    debugTracker32->Reset(grid, block, global_y_diff_abs, std::max(n1, n2), DebugState32::Purpose::YDiff);
+
+    if constexpr (SharkFloatParams::DebugChecksums) {
+        grid.sync();
+    }
+
+    const bool record = block.thread_index().x == 0 && block.group_index().x == ExecutionBlockBase;
+    debugTracker32->Reset(record, grid, block, global_x_diff_abs, std::max(n1, n2), DebugState32::Purpose::XDiff);
+
+    if constexpr (SharkFloatParams::DebugChecksums) {
+        grid.sync();
+    }
+
+    debugTracker32->Reset(record, grid, block, global_y_diff_abs, std::max(n1, n2), DebugState32::Purpose::YDiff);
+
+    if constexpr (SharkFloatParams::DebugChecksums) {
+        grid.sync();
+    }
 
     // Determine the sign of Z1_temp
     int z1_sign = x_diff_sign ^ y_diff_sign;
@@ -804,8 +826,12 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                 int k = idx;
                 uint64_t sum_low = 0ULL, sum_high = 0ULL;
 
-                int i_start = max(0, k - (n1 - 1));
-                int i_end = min(k, n1 - 1);
+                //int i_start = max(0, k - (n1 - 1));
+                //int i_end = min(k, n1 - 1);
+
+                int i_start = (k < n1) ? 0 : (k - (n1 - 1));
+                int i_end = (k < n1) ? k : (n1 - 1);
+
                 for (int i = i_start; i <= i_end; i++) {
                     uint64_t a;
                     uint64_t b;
@@ -831,8 +857,11 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                 int k = idx - total_k; // shift to [0..total_k-1]
                 uint64_t sum_low = 0ULL, sum_high = 0ULL;
 
-                int i_start = max(0, k - (n2 - 1));
-                int i_end = min(k, n2 - 1);
+                // int i_start = max(0, k - (n2 - 1));
+                // int i_end = min(k, n2 - 1);
+                int i_start = (k < n2) ? 0 : (k - (n2 - 1));
+                int i_end = (k < n2) ? k : (n2 - 1);
+
                 for (int i = i_start; i <= i_end; i++) {
                     uint64_t a;
                     uint64_t b;
@@ -858,8 +887,10 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                 uint64_t sum_low = 0;
                 uint64_t sum_high = 0;
 
-                int i_start = max(0, k - (MaxHalfN - 1));
-                int i_end = min(k, MaxHalfN - 1);
+                //int i_start = max(0, k - (MaxHalfN - 1));
+                //int i_end = min(k, MaxHalfN - 1);
+                int i_start = (k < MaxHalfN) ? 0 : (k - (MaxHalfN - 1));
+                int i_end = (k < MaxHalfN) ? k : (MaxHalfN - 1);
 
                 for (int i = i_start; i <= i_end; ++i) {
                     uint64_t a;
@@ -1063,9 +1094,23 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
 
     grid.sync();
 
-    debugTracker64->Reset(grid, block, Z0_OutDigits, total_k, DebugState64::Purpose::Z0);
-    debugTracker64->Reset(grid, block, Z2_OutDigits, total_k, DebugState64::Purpose::Z2);
-    debugTracker64->Reset(grid, block, Z1_temp_digits, total_k, DebugState64::Purpose::Z2);
+    debugTracker64->Reset(record, grid, block, Z0_OutDigits, total_k * 2, DebugState64::Purpose::Z0);
+
+    if constexpr (SharkFloatParams::DebugChecksums) {
+        grid.sync();
+    }
+
+    debugTracker64->Reset(record, grid, block, Z2_OutDigits, total_k * 2, DebugState64::Purpose::Z2);
+
+    if constexpr (SharkFloatParams::DebugChecksums) {
+        grid.sync();
+    }
+
+    debugTracker64->Reset(record, grid, block, Z1_temp_digits, total_k * 2, DebugState64::Purpose::Z2);
+
+    if constexpr (SharkFloatParams::DebugChecksums) {
+        grid.sync();
+    }
 
     auto *Z1_digits = &tempProducts[Z1_offset];
 
@@ -1113,12 +1158,18 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             Z1_digits[z1_idx + 1] = z1_high;
         }
 
+        if constexpr (SharkFloatParams::DebugChecksums) {
+            grid.sync();
+        }
+
+        debugTracker64->Reset(record, grid, block, Z1_digits, total_k * 2, DebugState64::Purpose::Z1);
+
         // Synchronize before final combination
         grid.sync();
 
         // Now the final combination is just:
         // final = Z0 + (Z1 << (32*n)) + (Z2 << (64*n))
-        for (int i = tid; i < total_result_digits; i += stride) {
+        for (int i = tid; i < total_result_digits - 1; i += stride) {
             uint64_t sum_low = 0;
             uint64_t sum_high = 0;
 
@@ -1150,6 +1201,12 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             final128[result_idx] = sum_low;
             final128[result_idx + 1] = sum_high;
         }
+
+        if constexpr (SharkFloatParams::DebugChecksums) {
+            grid.sync();
+        }
+
+        debugTracker64->Reset(record, grid, block, final128, (total_result_digits - 1) * 2, DebugState64::Purpose::Final128);
 
         // Synchronize before carry propagation
         grid.sync();
@@ -1196,7 +1253,7 @@ __device__ void MultiplyHelperKaratsubaV2 (
     auto *SharkRestrict a_shared = shared_data;
     auto *SharkRestrict b_shared = a_shared + NewN;
     auto *SharkRestrict x_diff_abs = b_shared + NewN;
-    auto *SharkRestrict y_diff_abs = x_diff_abs + NewN / 2;
+    auto *SharkRestrict y_diff_abs = x_diff_abs + (NewN + 1) / 2;
 
     cg::memcpy_async(block, a_shared, A->Digits, sizeof(uint32_t) * NewN);
     cg::memcpy_async(block, b_shared, B->Digits, sizeof(uint32_t) * NewN);

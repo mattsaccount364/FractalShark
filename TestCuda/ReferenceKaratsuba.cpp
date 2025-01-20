@@ -304,6 +304,8 @@ static void NativeMultiply64(
 
     auto n = static_cast<int>(A.size()); // TODO
 
+    assert(n == B.size());
+
     // Number of partial sums = (2*n - 1).
     // Each partial sum is stored as two 64-bit words in Res.
     int total_k = 2 * n - 1;
@@ -345,8 +347,9 @@ static void NativeMultiply64(
         // Store in Res
         // - Res[k*2]   gets the "low 64 bits" slot, but effectively only the low 32 bits are meaningful.
         // - Res[k*2+1] gets the upper portion, which can be up to 64 bits.
-        Res[k * 2] = sum_low;
-        Res[k * 2 + 1] = sum_high;
+        const auto idx = k * 2;
+        Res[idx] = sum_low;
+        Res[idx + 1] = sum_high;
     }
 }
 
@@ -566,9 +569,10 @@ void KaratsubaRecursiveDigits(
         std::cout << "y_diff checksum: " << yDiffChecksum.GetStr() << std::endl;
     }
 
-    std::vector<uint64_t> Z0(2 * fullADigits + 2, 0ULL);
-    std::vector<uint64_t> Z2(2 * fullADigits + 2, 0ULL);
-    std::vector<uint64_t> Z1_temp(2 * fullADigits + 2, 0ULL);
+    const auto zLen = (2 * maxHalfSize - 1) * 2;
+    std::vector<uint64_t> Z0(zLen, 0ULL);
+    std::vector<uint64_t> Z2(zLen, 0ULL);
+    std::vector<uint64_t> Z1_temp(zLen, 0ULL);
 
     const bool UseConvolution =
         (NewNumBlocks <= std::max(SharkFloatParams::GlobalNumBlocks / SharkFloatParams::ConvolutionLimit, 1) ||
@@ -706,7 +710,7 @@ void KaratsubaRecursiveDigits(
     // N even means (32*n) bits = n/2 64-bit words
     // (64*n) bits = n 64-bit words
 
-    const int total_result_digits = 2 * fullADigits;
+    const int total_result_digits = 2 * fullADigits - 1;
     for (int idx = 0; idx < total_result_digits; ++idx) {
         uint64_t sum_low = 0ULL;
         uint64_t sum_high = 0ULL;

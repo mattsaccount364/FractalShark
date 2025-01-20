@@ -2,6 +2,8 @@
 
 #include <vector>
 #include <cstdint>
+#include <iomanip>
+#include <sstream>
 
 template <class SharkFloatParams, typename ChecksumT>
 struct DebugStateHost {
@@ -149,9 +151,11 @@ DebugStateHost<SharkFloatParams, ChecksumT>::DebugStateHost(
 
 template <class SharkFloatParams, typename ChecksumT>
 std::string DebugStateHost<SharkFloatParams, ChecksumT>::GetStr() const {
-    std::string retVal;
-    retVal += std::string("DebugStateHost: ") + std::to_string(Checksum);
-    retVal += std::string(", Purpose: ") + std::to_string(static_cast<int>(ChecksumPurpose));
-    retVal += std::string(", Size: ") + std::to_string(ArrayToChecksum.size());
-    return retVal;
+    std::stringstream ss;
+    
+    ss << "Checksum: 0x" << std::hex << Checksum;
+    ss << ", Purpose: " << std::dec << static_cast<int>(ChecksumPurpose);
+    ss << ", Size: " << ArrayToChecksum.size();
+
+    return ss.str();
 }

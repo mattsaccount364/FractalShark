@@ -23,7 +23,7 @@ static constexpr auto SharkBatchSize = 8;
 static constexpr bool SharkCorrectnessTests = false;
 static constexpr bool SharkDebug = true;
 #else
-static constexpr auto SharkTestIterCount = 250;
+static constexpr auto SharkTestIterCount = 5000;
 static constexpr auto SharkBatchSize = 512;
 static constexpr bool SharkCorrectnessTests = true;
 static constexpr bool SharkDebug = false;
@@ -50,11 +50,14 @@ struct GenericSharkFloatParams {
     static constexpr bool DisableCarryPropagation = false;
     static constexpr bool DisableFinalConstruction = false;
     static constexpr bool ForceNoOp = false;
-    static constexpr bool HostVerbose = SharkDebug;
+    static constexpr bool HostVerbose = false; // SharkDebug;
     static constexpr bool DebugChecksums = true;
 
-    static constexpr auto ConvolutionLimit = 81; // 3^whatevs = ConvolutionLimit
-    static constexpr auto ConvolutionLimitPow = 4; // 3^whatevs = ConvolutionLimit
+    //static constexpr auto ConvolutionLimit = 81; // 3^whatevs = ConvolutionLimit
+    //static constexpr auto ConvolutionLimitPow = 4; // 3^whatevs = ConvolutionLimit
+
+    static constexpr auto ConvolutionLimit = 9; // 3^whatevs = ConvolutionLimit
+    static constexpr auto ConvolutionLimitPow = 2; // 3^whatevs = ConvolutionLimit
 
     static std::string GetDescription() {
         std::string desc = "GlobalThreadsPerBlock: " + std::to_string(GlobalThreadsPerBlock) +
@@ -94,11 +97,12 @@ static constexpr int32_t LowPrec = 32;
 // is the number of recursions
 
 // If you add a new one, search for one of the other types and copy/paste
-using Test8x1SharkParams = GenericSharkFloatParams<8, 1, SharkBatchSize, SharkTestIterCount>;
-using Test4x36SharkParams = GenericSharkFloatParams<16, 39, SharkBatchSize, SharkTestIterCount>;
-using Test4x12SharkParams = GenericSharkFloatParams<17, 36, SharkBatchSize, SharkTestIterCount>;
-using Test4x9SharkParams = GenericSharkFloatParams<17, 39, SharkBatchSize, SharkTestIterCount>;
-using Test4x6SharkParams = GenericSharkFloatParams<13, 48, SharkBatchSize, SharkTestIterCount>;
+// using Test8x1SharkParams = GenericSharkFloatParams<8, 1, SharkBatchSize, SharkTestIterCount>;
+using Test8x1SharkParams = GenericSharkFloatParams<5, 6, SharkBatchSize, SharkTestIterCount>;
+using Test4x36SharkParams = GenericSharkFloatParams<4, 36, SharkBatchSize, SharkTestIterCount>;
+using Test4x12SharkParams = GenericSharkFloatParams<4, 12, SharkBatchSize, SharkTestIterCount>;
+using Test4x9SharkParams = GenericSharkFloatParams<4, 9, SharkBatchSize, SharkTestIterCount>;
+using Test4x6SharkParams = GenericSharkFloatParams<4, 6, SharkBatchSize, SharkTestIterCount>;
 
 //using Test128x128SharkParams = GenericSharkFloatParams<128, 128, SharkBatchSize, SharkTestIterCount>;
 using Test128x63SharkParams = GenericSharkFloatParams<96, 81, SharkBatchSize, SharkTestIterCount>;
@@ -124,10 +128,10 @@ using TestPerSharkParams8 = Test128x3SharkParams;
 
 // Correctness test sizes
 using TestCorrectnessSharkParams1 = Test8x1SharkParams;
-using TestCorrectnessSharkParams2 = Test4x12SharkParams;
+using TestCorrectnessSharkParams2 = Test4x36SharkParams;
 using TestCorrectnessSharkParams3 = Test4x9SharkParams;
-using TestCorrectnessSharkParams4 = Test4x36SharkParams;
-using TestCorrectnessSharkParams5 = Test4x6SharkParams /*Test128x63SharkParams*/;
+using TestCorrectnessSharkParams4 = Test4x12SharkParams;
+using TestCorrectnessSharkParams5 = Test4x6SharkParams;
 
 // Struct to hold both integer and fractional parts of the high-precision number
 template<class SharkFloatParams>

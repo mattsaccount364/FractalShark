@@ -34,6 +34,7 @@ struct DebugState {
     };
 
     __device__ void Reset(
+        bool record,
         cooperative_groups::grid_group &grid,
         cooperative_groups::thread_block &block,
         const ChecksumT *arrayToChecksum,
@@ -96,6 +97,7 @@ __device__ ChecksumT DebugState<SharkFloatParams, ChecksumT>::ComputeCRC3264(
 
 template <class SharkFloatParams, typename ChecksumT>
 __device__ void DebugState<SharkFloatParams, ChecksumT>::Reset(
+    bool record,
     cooperative_groups::grid_group &grid,
     cooperative_groups::thread_block &block,
     const ChecksumT *arrayToChecksum,
@@ -103,7 +105,7 @@ __device__ void DebugState<SharkFloatParams, ChecksumT>::Reset(
     Purpose purpose)
 {
     if constexpr (SharkFloatParams::DebugChecksums) {
-        if (block.group_index().x == 0 && block.thread_index().x == 0) {
+        if (record) {
             // Initialize the checksum to zero
             Checksum = 0;
             Block = block.group_index().x;

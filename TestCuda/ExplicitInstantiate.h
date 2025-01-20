@@ -1,6 +1,6 @@
 #pragma once
 
-static constexpr auto ComicalThreadCount = 18;
+static constexpr auto ComicalThreadCount = 13;
 #define ComicalTest1  GenericSharkFloatParams<ComicalThreadCount, 1, SharkBatchSize, SharkTestIterCount>
 #define ComicalTest2  GenericSharkFloatParams<ComicalThreadCount, 2, SharkBatchSize, SharkTestIterCount>
 #define ComicalTest3  GenericSharkFloatParams<ComicalThreadCount, 3, SharkBatchSize, SharkTestIterCount>
@@ -101,8 +101,8 @@ static constexpr auto ComicalThreadCount = 18;
     ExplicitlyInstantiate(Test128x18SharkParams); \
     ExplicitlyInstantiate(Test128x9SharkParams); \
     ExplicitlyInstantiate(Test128x3SharkParams); \
-
-#define ExplicitlyDisabledCorrectness \
+\
+/*#define ExplicitlyDisabledCorrectness*/ \
 \
     ExplicitlyInstantiate(ComicalTest1) \
     ExplicitlyInstantiate(ComicalTest2) \

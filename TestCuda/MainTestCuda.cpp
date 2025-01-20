@@ -125,7 +125,7 @@ int main(int /*argc*/, char * /*argv*/[]) {
             return 0;
         }
 
-        // ComicalCorrectness();
+        ComicalCorrectness();
 
         if (PressKey() == 'q') {
             return 0;

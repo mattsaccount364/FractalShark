@@ -5,7 +5,7 @@
 #include <iomanip>
 #include <sstream>
 
-template <class SharkFloatParams, typename ChecksumT>
+template <class SharkFloatParams>
 struct DebugStateHost {
 
     // CRC64 polynomial (ISO 3309 standard)
@@ -43,8 +43,15 @@ struct DebugStateHost {
      * @param purpose         The intended purpose (for debugging context).
      */
     DebugStateHost(
-        const std::vector<ChecksumT> &arrayToChecksum,
-        Purpose purpose
+        const std::vector<uint32_t> &arrayToChecksum,
+        Purpose purpose,
+        int callIndex
+    );
+
+    DebugStateHost(
+        const std::vector<uint64_t> &arrayToChecksum,
+        Purpose purpose,
+        int callIndex
     );
 
     /**
@@ -57,9 +64,17 @@ struct DebugStateHost {
      * @param purpose  The intended purpose (for debugging context).
      */
     DebugStateHost(
-        const ChecksumT *data,
+        const uint32_t *data,
         size_t size,
-        Purpose purpose
+        Purpose purpose,
+        int callIndex
+    );
+
+    DebugStateHost(
+        const uint64_t *data,
+        size_t size,
+        Purpose purpose,
+        int callIndex
     );
 
     std::string GetStr() const;
@@ -71,91 +86,150 @@ struct DebugStateHost {
      * @param initialCrc      Starting CRC value (commonly 0).
      * @return                64-bit CRC of the vector content.
      */
-    static ChecksumT ComputeCRC3264(
-        const std::vector<ChecksumT> &arrayToChecksum,
-        ChecksumT initialCrc
+    static uint64_t ComputeCRC64(
+        const std::vector<uint64_t> &arrayToChecksum,
+        uint64_t initialCrc
     );
 
-    std::vector<ChecksumT> ArrayToChecksum;  ///< Stores a copy of the data
-    ChecksumT              Checksum;         ///< Stores the computed CRC64 (if computed)
+    static uint64_t ComputeCRC64(
+        const std::vector<uint32_t> &arrayToChecksum,
+        uint64_t initialCrc
+    );
+
+    std::vector<uint32_t> ArrayToChecksum32;  ///< Stores a copy of the data
+    std::vector<uint64_t> ArrayToChecksum64;  ///< Stores a copy of the data
+    uint64_t Checksum;         ///< Stores the computed CRC64 (if computed)
     Purpose               ChecksumPurpose;          ///< Enum describing the purpose of this debug state
+    int                   CallIndex;                ///< Index of the call that generated this debug state
 };
 
 //
 // Implementation
 //
 
-template <class SharkFloatParams, typename ChecksumT>
-ChecksumT DebugStateHost<SharkFloatParams, ChecksumT>::ComputeCRC3264(
-    const std::vector<ChecksumT> &arrayToChecksum,
-    ChecksumT initialCrc
+template <class SharkFloatParams>
+uint64_t DebugStateHost<SharkFloatParams>::ComputeCRC64(
+    const std::vector<uint32_t> &arrayToChecksum,
+    uint64_t initialCrc
 ) {
-    if constexpr (std::is_same_v< ChecksumT, uint64_t>) {
-        uint64_t crc = initialCrc;
-        for (uint64_t word : arrayToChecksum) {
-            crc ^= word;
-            for (int bit = 0; bit < 64; ++bit) {
-                if (crc & 1ULL) {
-                    crc = (crc >> 1) ^ CRC64_POLY;
-                } else {
-                    crc >>= 1;
-                }
+    uint64_t crc = initialCrc;
+    for (uint64_t word : arrayToChecksum) {
+        crc ^= word;
+        for (int bit = 0; bit < 64; ++bit) {
+            if (crc & 1ULL) {
+                crc = (crc >> 1) ^ CRC64_POLY;
+            } else {
+                crc >>= 1;
             }
         }
-        return crc;
-    } else if constexpr (std::is_same_v< ChecksumT, uint32_t>) {
-        uint32_t crc = initialCrc;
-        for (uint32_t word : arrayToChecksum) {
-            crc ^= word;
-            for (int bit = 0; bit < 32; ++bit) {
-                if (crc & 1U) {
-                    crc = (crc >> 1) ^ CRC32_POLY;
-                } else {
-                    crc >>= 1;
-                }
-            }
-        }
-        return static_cast<ChecksumT>(crc);
-    } else {
-        return 0;
     }
+    return crc;
 }
 
-template <class SharkFloatParams, typename ChecksumT>
-DebugStateHost<SharkFloatParams, ChecksumT>::DebugStateHost(
-    const std::vector<ChecksumT> &arrayToChecksum,
-    Purpose purpose
+template <class SharkFloatParams>
+uint64_t DebugStateHost<SharkFloatParams>::ComputeCRC64(
+    const std::vector<uint64_t> &arrayToChecksum,
+    uint64_t initialCrc
 )
-    // Forward to pointer+length constructor:
-    : DebugStateHost(arrayToChecksum.data(), arrayToChecksum.size(), purpose) {
+{
+    uint64_t crc = initialCrc;
+    for (uint64_t word : arrayToChecksum) {
+        crc ^= word;
+        for (int bit = 0; bit < 64; ++bit) {
+            if (crc & 1ULL) {
+                crc = (crc >> 1) ^ CRC64_POLY;
+            } else {
+                crc >>= 1;
+            }
+        }
+    }
+    return crc;
+}
+
+
+template <class SharkFloatParams>
+DebugStateHost<SharkFloatParams>::DebugStateHost(
+    const std::vector<uint32_t> &arrayToChecksum,
+    Purpose purpose,
+    int callIndex
+)
+// Forward to pointer+length constructor:
+    : DebugStateHost(arrayToChecksum.data(), arrayToChecksum.size(), purpose, callIndex)
+{
     // No additional logic needed here since we rely on the other constructor
 }
 
-template <class SharkFloatParams, typename ChecksumT>
-DebugStateHost<SharkFloatParams, ChecksumT>::DebugStateHost(
-    const ChecksumT *data,
-    size_t size,
-    Purpose purpose
+template <class SharkFloatParams>
+DebugStateHost<SharkFloatParams>::DebugStateHost(
+    const std::vector<uint64_t> &arrayToChecksum,
+    Purpose purpose,
+    int callIndex
 )
-    : ArrayToChecksum{} // empty vector, will fill below if non-null data
+// Forward to pointer+length constructor:
+    : DebugStateHost(arrayToChecksum.data(), arrayToChecksum.size(), purpose, callIndex)
+{
+    // No additional logic needed here since we rely on the other constructor
+}
+
+template <class SharkFloatParams>
+DebugStateHost<SharkFloatParams>::DebugStateHost(
+    const uint32_t *data,
+    size_t size,
+    Purpose purpose,
+    int callIndex
+)
+    : ArrayToChecksum32{}
+    , ArrayToChecksum64{}
     , Checksum(0)
-    , ChecksumPurpose(purpose) {
+    , ChecksumPurpose(purpose)
+    , CallIndex(callIndex)
+{
     if constexpr (SharkFloatParams::DebugChecksums) {
         // Copy data if valid
         if (data != nullptr && size > 0) {
-            ArrayToChecksum.assign(data, data + size);
-            Checksum = ComputeCRC3264(ArrayToChecksum, 0);
+            ArrayToChecksum32.assign(data, data + size);
+            Checksum = ComputeCRC64(ArrayToChecksum32, 0);
         }
     }
 }
 
-template <class SharkFloatParams, typename ChecksumT>
-std::string DebugStateHost<SharkFloatParams, ChecksumT>::GetStr() const {
+template <class SharkFloatParams>
+DebugStateHost<SharkFloatParams>::DebugStateHost(
+    const uint64_t *data,
+    size_t size,
+    Purpose purpose,
+    int callIndex
+)
+    : ArrayToChecksum32{}
+    , ArrayToChecksum64{}
+    , Checksum(0)
+    , ChecksumPurpose(purpose)
+    , CallIndex(callIndex)
+{
+    if constexpr (SharkFloatParams::DebugChecksums) {
+        // Copy data if valid
+        if (data != nullptr && size > 0) {
+            ArrayToChecksum64.assign(data, data + size);
+            Checksum = ComputeCRC64(ArrayToChecksum64, 0);
+        }
+    }
+}
+
+template <class SharkFloatParams>
+std::string DebugStateHost<SharkFloatParams>::GetStr() const
+{
     std::stringstream ss;
     
     ss << "Checksum: 0x" << std::hex << Checksum;
     ss << ", Purpose: " << std::dec << static_cast<int>(ChecksumPurpose);
-    ss << ", Size: " << ArrayToChecksum.size();
+
+    if (ArrayToChecksum32.size() > 0) {
+        ss << ", Size: " << ArrayToChecksum32.size();
+    } else {
+        ss << ", Size: " << ArrayToChecksum64.size();
+    }
+
+    ss << ", CallIndex: " << CallIndex;
 
     return ss.str();
 }

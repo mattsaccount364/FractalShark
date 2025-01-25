@@ -1,5 +1,9 @@
 # Introduction
 
+## 2025-1-26 News
+
+This page actually gets traffic occasionally, so I just wanted to post a short update.  Since last August, I've been working on a CUDA-based, high-precision reference orbit implementation.  The objective is to beat FractalShark's existing multithreaded reference-orbit performance at higher digit counts, at least if you have a decent card.  Scroll down to "2025-1 - What's going on with this native CUDA reference orbit calculation?" to see more information on this subject.
+
 ## What is FractalShark?
 
 A Mandelbrot Set renderer optimized for use with NVIDIA GPUs.
@@ -113,6 +117,63 @@ Many.
 - FractalShark's reference orbit compression is novel code, but based on the approach Zhuoran described here: [Reference Compression](https://fractalforums.org/fractal-mathematics-and-new-theories/28/reference-compression/5142). Claude posted a simple easy-to-understand sample here, which FractalShark's implementation is loosely based on: [Fractal Bits](https://code.mathr.co.uk/fractal-bits/tree/HEAD:/mandelbrot-reference-compression)
 
 - This implementation would probably not have happened without the work of these folks so thank you!
+
+## 2025-1 - What's going on with this native CUDA reference orbit calculation?
+
+The repository ("TestCuda") has a new Karatsuba, high-precision, floating point multiply implementation working on my GPU and results are showing the CPU take 3-4x longer (MPIR/AVX2) than the GPU on sequential multiplies of random numbers.  That's a key point - sequential multiplies, so the result is applicable to e.g. a reference orbit calculation.  I'm really happy with this result, because there's leftover hardware on the GPU that could be used to run a couple of these in parallel (e.g. two squares and a multiplication or three squares for Mandelbrot).
+
+Getting high-throughput high-precision on-GPU is already more-or-less solved:  Nvidia already provides a library for it (see related work below).  But getting sequential to work decently at sizes that are still interesting (e.g. ones we might actually try on the Mandelbrot) is not as widely investigated, which is why I've been dwelling on this for a while and still have only mediocre results :p
+
+A variety of caveats currently:
+- I'm comparing a 5950X vs RTX 4090, which clearly affects the relative numbers.
+- The approach requires CUDA cooperative groups, which I think is RTX 2xxx and later, so fairly recent cards.
+- The size I'm getting the best result at currently is relatively large: 8192 32-bit limbs, which is pretty big.  It still beats the CPU down to 2048 limbs though (CPU takes 1.6x longer here) and at that size there is a bunch of unused hardware on the GPU so it should be possible to do the three multiplies for Mandelbrot in parallel.
+
+Anyhow, I wanted to post it because this is a pretty complex investigation and I expect to spend some more time on it because it's been fun to look at.
+
+Here are some bullet points on the approach:
+- Uses CUDA cooperative groups, so we should be able to do a reference orbit with a single kernel invocation.
+- 32-bit limbs, 128-bit intermediate results (2x64 integers) because of intermediate carries.  Really it's just 64 bits + plus a few more.  This approach is likely not super-efficient but it's where we're at.
+- Stores the input mantissa in the chip "shared memory".  For 8192 limbs, that's 8192 * 4 bytes * 2 numbers to multiply = 64KB, and then stores 2 * 16KB extra for an intermediate Karatsuba result, for 96KB total.  This piece is negotiable and I could bring down/eliminate the shared memory requirement depending on how things progress.
+- One GPU thread per input limb, or two output limbs per thread.  It does a full 16384 limb output in this example and then truncates/shifts it.
+- The GPU floating point format has a separate integer exponent, which is overkill for Mandelbrot but I figured I'd keep it for now because it's not a performance problem.  It also keeps a sign separately.
+- The application I'm using to test this has a bunch of cases to verify that it's producing correct results.  It generates pseudo-random numbers with many 0xFFF... limbs, zero-limbs, and related, to force carries/borrows.  The test program compares all results against my own Karatsuba CPU-based implementation I can use as a reference, and more importantly, the MPIR implementation (mpf_mul) for correctness.
+- I've got MPIR to GPU and GPU to MPIR conversion capability, so it's easy to translate formats as needed.
+- The GPU implementation gets its best performance when it doesn't recurse, and instead switches straight to convolutions on the sub problems.  Recursing is still getting me slightly worse performance and I think I know why but haven't worked out how to fix it.
+
+Here is some related work:
+A Study of High Performance Multiple Precision Arithmetic on Graphics Processing Units
+Niall Emmart
+https://scholarworks.umass.edu/server/api/core/bitstreams/3cd92dff-0d11-4976-8556-2dc34d0abb27/content
+
+- This recent dissertation on the subject is the most relevant.  I've not read the whole thing because I wanted to learn more about it all myself first, but it's clear to me this topic is quite deep.
+
+Missing a trick: Karatsuba variations
+Michael Scott
+https://eprint.iacr.org/2015/1247
+
+MFFT: A GPU Accelerated Highly Efficient Mixed-Precision Large-Scale FFT Framework
+https://dl.acm.org/doi/full/10.1145/3605148
+
+Karatsuba Multiplication in GMP:
+https://gmplib.org/manual/Karatsuba-Multiplication
+
+Karatsuba:
+https://en.wikipedia.org/wiki/Karatsuba_algorithm
+
+Toom Cook:
+https://en.wikipedia.org/wiki/Toom%E2%80%93Cook_multiplication
+
+Schönhage–Strassen algorithm
+https://en.wikipedia.org/wiki/Sch%C3%B6nhage%E2%80%93Strassen_algorithm
+
+CGBN: CGBN: CUDA Accelerated Multiple Precision Arithmetic (Big Num) using Cooperative Groups
+https://github.com/NVlabs/CGBN
+
+All the code is here / GPL etc but it's just an experiment and not integrated with the application:
+https://github.com/mattsaccount364/FractalShark
+
+It'll all end up in FractalShark eventually assuming I can get something end-to-end working, and at this point I believe I can, but this is very slow-going yet.  Anyway, it's a fun area and I'll probably continuing dinking with it, so there probably won't be much new on FractalShark proper until I can get this behemoth under better control.  And we'll see if it works out - lots of remaining details to resolve and it may not work decently when combined into a full reference orbit.  Overall though I'm really happy with where it's at.  Happy to answer questions etc.
 
 ## Closing
 

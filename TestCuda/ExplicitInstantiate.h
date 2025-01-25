@@ -1,5 +1,7 @@
 #pragma once
 
+#define ENABLE_COMICAL_CORRECTNESS 1
+
 static constexpr auto ComicalThreadCount = 13;
 #define ComicalTest1  GenericSharkFloatParams<ComicalThreadCount, 1, SharkBatchSize, SharkTestIterCount>
 #define ComicalTest2  GenericSharkFloatParams<ComicalThreadCount, 2, SharkBatchSize, SharkTestIterCount>
@@ -83,27 +85,8 @@ static constexpr auto ComicalThreadCount = 13;
 #define ComicalTest80 GenericSharkFloatParams<ComicalThreadCount, 80, SharkBatchSize, SharkTestIterCount>
 #define ComicalTest81 GenericSharkFloatParams<ComicalThreadCount, 81, SharkBatchSize, SharkTestIterCount>
 
-
-#define ExplicitInstantiateAll() \
-    ExplicitlyInstantiate(Test4x9SharkParams); \
-    ExplicitlyInstantiate(Test4x12SharkParams); \
-    ExplicitlyInstantiate(Test8x1SharkParams); \
-    ExplicitlyInstantiate(Test4x36SharkParams); \
-    ExplicitlyInstantiate(Test4x6SharkParams); \
-\
-    /*ExplicitlyInstantiate(Test128x128SharkParams);*/ \
-    ExplicitlyInstantiate(Test128x63SharkParams); \
-    ExplicitlyInstantiate(Test64x63SharkParams); \
-    ExplicitlyInstantiate(Test32x63SharkParams); \
-    ExplicitlyInstantiate(Test16x63SharkParams); \
-\
-    ExplicitlyInstantiate(Test128x36SharkParams); \
-    ExplicitlyInstantiate(Test128x18SharkParams); \
-    ExplicitlyInstantiate(Test128x9SharkParams); \
-    ExplicitlyInstantiate(Test128x3SharkParams); \
-\
-/*#define ExplicitlyDisabledCorrectness*/ \
-\
+#ifdef ENABLE_COMICAL_CORRECTNESS
+#define InstantiateComicalCorrectness() \
     ExplicitlyInstantiate(ComicalTest1) \
     ExplicitlyInstantiate(ComicalTest2) \
     ExplicitlyInstantiate(ComicalTest3) \
@@ -184,10 +167,34 @@ static constexpr auto ComicalThreadCount = 13;
     ExplicitlyInstantiate(ComicalTest78) \
     ExplicitlyInstantiate(ComicalTest79) \
     ExplicitlyInstantiate(ComicalTest80) \
-    ExplicitlyInstantiate(ComicalTest81) \
+    ExplicitlyInstantiate(ComicalTest81)
+#else
+#define InstantiateComicalCorrectness()
+#endif
 
-// #define ExplicitlyDisabledCorrectness \
 
+#define ExplicitInstantiateAll() \
+    ExplicitlyInstantiate(Test4x9SharkParams); \
+    ExplicitlyInstantiate(Test4x12SharkParams); \
+    ExplicitlyInstantiate(Test8x1SharkParams); \
+    ExplicitlyInstantiate(Test4x36SharkParams); \
+    ExplicitlyInstantiate(Test4x6SharkParams); \
+\
+    /*ExplicitlyInstantiate(Test128x128SharkParams);*/ \
+    ExplicitlyInstantiate(Test128x63SharkParams); \
+    ExplicitlyInstantiate(Test64x63SharkParams); \
+    ExplicitlyInstantiate(Test32x63SharkParams); \
+    ExplicitlyInstantiate(Test16x63SharkParams); \
+\
+    ExplicitlyInstantiate(Test128x36SharkParams); \
+    ExplicitlyInstantiate(Test128x18SharkParams); \
+    ExplicitlyInstantiate(Test128x9SharkParams); \
+    ExplicitlyInstantiate(Test128x3SharkParams); \
+\
+    InstantiateComicalCorrectness(); \
+
+
+#ifdef ENABLE_COMICAL_CORRECTNESS
 #define ComicalCorrectness() \
     if (!CorrectnessTests<ComicalTest1>()) { return 0; } \
     if (!CorrectnessTests<ComicalTest2>()) { return 0; } \
@@ -269,6 +276,7 @@ static constexpr auto ComicalThreadCount = 13;
     if (!CorrectnessTests<ComicalTest78>()) { return 0; } \
     if (!CorrectnessTests<ComicalTest79>()) { return 0; } \
     if (!CorrectnessTests<ComicalTest80>()) { return 0; } \
-    if (!CorrectnessTests<ComicalTest81>()) { return 0; } \
-    
-
+    if (!CorrectnessTests<ComicalTest81>()) { return 0; }
+#else
+#define ComicalCorrectness()
+#endif

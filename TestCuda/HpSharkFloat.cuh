@@ -53,11 +53,14 @@ struct GenericSharkFloatParams {
     static constexpr bool HostVerbose = false; // SharkDebug;
     static constexpr bool DebugChecksums = true;
 
-    //static constexpr auto ConvolutionLimit = 81; // 3^whatevs = ConvolutionLimit
-    //static constexpr auto ConvolutionLimitPow = 4; // 3^whatevs = ConvolutionLimit
+    static constexpr auto ConvolutionLimit = 81; // 3^whatevs = ConvolutionLimit
+    static constexpr auto ConvolutionLimitPow = 4; // 3^whatevs = ConvolutionLimit
 
-    static constexpr auto ConvolutionLimit = 9; // 3^whatevs = ConvolutionLimit
-    static constexpr auto ConvolutionLimitPow = 2; // 3^whatevs = ConvolutionLimit
+    //static constexpr auto ConvolutionLimit = 9; // 3^whatevs = ConvolutionLimit
+    //static constexpr auto ConvolutionLimitPow = 2; // 3^whatevs = ConvolutionLimit
+
+    //static constexpr auto ConvolutionLimit = 3; // 3^whatevs = ConvolutionLimit
+    //static constexpr auto ConvolutionLimitPow = 1; // 3^whatevs = ConvolutionLimit
 
     static std::string GetDescription() {
         std::string desc = "GlobalThreadsPerBlock: " + std::to_string(GlobalThreadsPerBlock) +
@@ -77,14 +80,25 @@ struct GenericSharkFloatParams {
     >;
 };
 
-static constexpr auto ScratchMemoryCopies = 1024;
+// This one should account for maximum call index, e.g. if we generate 500 calls
+// recursively then we need this to be at 500.
+static constexpr auto ScratchMemoryCopies = 256;
+
+// Number of arrays of digits on each frame
 static constexpr auto ScratchMemoryArrays = 32;
-// The 32 here is from DefineTempProductsOffsets
-static constexpr auto Uint64ToAllocateForMultiply =
-    ScratchMemoryCopies * ScratchMemoryArrays;
-// Additional constants, 256-uint64 times number of "frames"
+
+// Additional space per frame:
 static constexpr auto AdditionalUInt64PerFrame = 256;
-static constexpr auto Uint64AdditionalConstants = AdditionalUInt64PerFrame * ScratchMemoryCopies;
+
+// Additional space up front, globally-shared:
+static constexpr auto AdditionalGlobalChecksumSpace = 1024 * 1024;
+static constexpr auto AdditionalGlobalSyncSpace = 128;
+static constexpr auto AdditionalUInt64Global = AdditionalGlobalChecksumSpace + AdditionalGlobalSyncSpace;
+
+template<class SharkFloatParams>
+static constexpr auto CalculateFrameSize() {
+    return ScratchMemoryArrays * SharkFloatParams::GlobalNumUint32 + AdditionalUInt64PerFrame;
+}
 
 static constexpr int32_t LowPrec = 32;
 
@@ -97,12 +111,11 @@ static constexpr int32_t LowPrec = 32;
 // is the number of recursions
 
 // If you add a new one, search for one of the other types and copy/paste
-// using Test8x1SharkParams = GenericSharkFloatParams<8, 1, SharkBatchSize, SharkTestIterCount>;
-using Test8x1SharkParams = GenericSharkFloatParams<5, 6, SharkBatchSize, SharkTestIterCount>;
-using Test4x36SharkParams = GenericSharkFloatParams<4, 36, SharkBatchSize, SharkTestIterCount>;
-using Test4x12SharkParams = GenericSharkFloatParams<4, 12, SharkBatchSize, SharkTestIterCount>;
-using Test4x9SharkParams = GenericSharkFloatParams<4, 9, SharkBatchSize, SharkTestIterCount>;
-using Test4x6SharkParams = GenericSharkFloatParams<4, 6, SharkBatchSize, SharkTestIterCount>;
+using Test8x1SharkParams = GenericSharkFloatParams<8, 1, SharkBatchSize, SharkTestIterCount>;
+using Test4x36SharkParams = GenericSharkFloatParams<4, 6, SharkBatchSize, SharkTestIterCount>;
+using Test4x12SharkParams = GenericSharkFloatParams<5, 6, SharkBatchSize, SharkTestIterCount>;
+using Test4x9SharkParams = GenericSharkFloatParams<4, 12, SharkBatchSize, SharkTestIterCount>;
+using Test4x6SharkParams = GenericSharkFloatParams<4, 36, SharkBatchSize, SharkTestIterCount>;
 
 //using Test128x128SharkParams = GenericSharkFloatParams<128, 128, SharkBatchSize, SharkTestIterCount>;
 using Test128x63SharkParams = GenericSharkFloatParams<96, 81, SharkBatchSize, SharkTestIterCount>;

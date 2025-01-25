@@ -8,6 +8,7 @@
 #include "Add.cuh"
 #include "Multiply.cuh"
 #include "ReferenceKaratsuba.h"
+#include "DebugChecksumHost.h"
 
 #include <iostream>
 #include <vector>
@@ -163,7 +164,7 @@ void InvokeMultiplyKernel(
     // Allocate memory for carryOuts and cumulativeCarries
     uint64_t *d_tempProducts;
     constexpr auto BytesToAllocate =
-        (Uint64AdditionalConstants + Uint64ToAllocateForMultiply * SharkFloatParams::GlobalNumUint32) * sizeof(uint64_t);
+        (AdditionalUInt64Global + ScratchMemoryCopies * CalculateFrameSize<SharkFloatParams>()) * sizeof(uint64_t);
     cudaMalloc(&d_tempProducts, BytesToAllocate);
 
     // Perform the calculation on the GPU
@@ -447,7 +448,7 @@ void InvokeMultiplyKernelCorrectness(
     // Allocate memory for carryOuts and cumulativeCarries
     uint64_t *d_tempProducts;
     constexpr auto BytesToAllocate =
-        (Uint64AdditionalConstants + Uint64ToAllocateForMultiply * SharkFloatParams::GlobalNumUint32) * sizeof(uint64_t);
+        (AdditionalUInt64Global + ScratchMemoryCopies * CalculateFrameSize<SharkFloatParams>()) * sizeof(uint64_t);
     cudaMalloc(&d_tempProducts, BytesToAllocate);
 
     // Perform the calculation on the GPU
@@ -553,7 +554,10 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
         std::cout << "Y hex: " << yNum.ToHexString() << std::endl;
     }
 
-    auto TestHostKaratsuba = [&](int testNum, mpf_t mpfHostResult) -> bool {
+    auto TestHostKaratsuba = [&](
+        int testNum,
+        mpf_t mpfHostResult,
+        std::vector<DebugStateHost<SharkFloatParams>> &debugStates) -> bool {
 
         if constexpr (sharkOperator == Operator::MultiplyKaratsubaV1 ||
             sharkOperator == Operator::MultiplyKaratsubaV2) {
@@ -584,7 +588,8 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
             MultiplyHelperKaratsubaV2<SharkFloatParams>(
                 &xNum,
                 &yNum,
-                &hostKaratsubaOutV2
+                &hostKaratsubaOutV2,
+                debugStates
             );
 
             if constexpr (SharkFloatParams::HostVerbose) {
@@ -682,7 +687,8 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
         }
     }
 
-    bool testSucceeded = TestHostKaratsuba(testNum, mpfHostResult);
+    std::vector<DebugStateHost<SharkFloatParams>> debugStates;
+    bool testSucceeded = TestHostKaratsuba(testNum, mpfHostResult, debugStates);
     if (!testSucceeded) {
         std::cout << "Custom High Precision failed" << std::endl;
     } else {

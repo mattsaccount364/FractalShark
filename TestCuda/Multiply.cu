@@ -523,19 +523,19 @@ __device__ SharkForceInlineReleaseOnly static void CarryPropagation (
     // grid.sync();
 }
 
-// Look for Uint64ToAllocateForMultiply and ScratchMemoryArrays
+// Look for CalculateFrameSize and ScratchMemoryArrays
 // and make sure the number of NewN arrays we're using here fits within that limit.
 // The list here should go up to ScratchMemoryArrays.
 static_assert(AdditionalUInt64PerFrame == 256, "See below");
-#define DefineTempProductsOffsets(TempBase) \
+#define DefineTempProductsOffsets(TempBase, CallIndex) \
     constexpr int n1 = NewN1; \
     constexpr int n2 = NewN2; \
     const int threadIdxGlobal = block.group_index().x * SharkFloatParams::GlobalThreadsPerBlock + block.thread_index().x; \
-    constexpr int BorrowGlobalOffset = 0; \
-    constexpr int TestMultiplier = 2; \
-    auto *debugTracker32 = reinterpret_cast<DebugState<SharkFloatParams, uint32_t>*>(&tempProducts[TempBase]); \
-    auto *debugTracker64 = reinterpret_cast<DebugState<SharkFloatParams, uint64_t>*>(&tempProducts[TempBase + 128]); \
-    constexpr int Z0_offset = TempBase + AdditionalUInt64PerFrame; \
+    constexpr int TestMultiplier = 1; \
+    constexpr auto CallOffset = CallIndex * CalculateFrameSize<SharkFloatParams>(); \
+    constexpr auto TempBaseOffset = TempBase + CallOffset; \
+    auto *debugTracker = reinterpret_cast<DebugState<SharkFloatParams>*>(&tempProducts[TempBaseOffset]); \
+    constexpr int Z0_offset = TempBaseOffset + AdditionalUInt64PerFrame; \
     constexpr int Z2_offset = Z0_offset + 4 * NewN * TestMultiplier; \
     constexpr int Z1_temp_offset = Z2_offset + 4 * NewN * TestMultiplier; \
     constexpr int Z1_offset = Z1_temp_offset + 4 * NewN * TestMultiplier; \
@@ -547,10 +547,7 @@ static_assert(AdditionalUInt64PerFrame == 256, "See below");
     constexpr int SubtractionOffset1 = GlobalCarryOffset + 1 * NewN * TestMultiplier;   /* 26 */ \
     constexpr int SubtractionOffset2 = SubtractionOffset1 + 1 * NewN * TestMultiplier;  /* 27 */ \
     constexpr int SubtractionOffset3 = SubtractionOffset2 + 1 * NewN * TestMultiplier;  /* 28 */ \
-    constexpr int SubtractionOffset4 = SubtractionOffset3 + 1 * NewN * TestMultiplier;  /* 29 */ \
-    constexpr int BorrowAnyOffset = SubtractionOffset4 + 1 * NewN * TestMultiplier;     /* 30 */ \
-    /* Note, overlaps: */ \
-    constexpr int CarryInsOffset = TempBase;
+    constexpr int SubtractionOffset4 = SubtractionOffset3 + 1 * NewN * TestMultiplier;  /* 29 */
 
 
 #define DefineExtraDefinitions() \
@@ -581,14 +578,14 @@ static_assert(AdditionalUInt64PerFrame == 256, "See below");
 template<
     class SharkFloatParams,
     int RecursionDepth,
+    int CallIndex,
     int NewN,
     int NewN1,
     int NewN2,
     int ExecutionBlockBase,
     int ExecutionNumBlocks,
     int NewNumBlocks,
-    int TempBase,
-    int TempBaseLength>
+    int TempBase>
 __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
     uint32_t *SharkRestrict shared_data,
     const HpSharkFloat<SharkFloatParams> *SharkRestrict A,
@@ -608,10 +605,9 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
         return;
     }
 
-    DefineTempProductsOffsets(TempBase);
+    DefineTempProductsOffsets(TempBase, CallIndex);
 
-    using DebugState32 = DebugState<SharkFloatParams, uint32_t>;
-    using DebugState64 = DebugState<SharkFloatParams, uint64_t>;
+    using DebugState = DebugState<SharkFloatParams>;
 
     const auto *a_shared = aDigits;
     const auto *b_shared = bDigits;
@@ -625,7 +621,7 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
     constexpr bool UseConvolution =
         (NewNumBlocks <= std::max(SharkFloatParams::GlobalNumBlocks / SharkFloatParams::ConvolutionLimit, 1) ||
         (NewNumBlocks % 3 != 0));
-    constexpr bool EnableSharedDiff = false;
+    constexpr bool EnableSharedDiff = false; // TODO
     constexpr bool UseParallelSubtract = true;
 
     // Arrays to hold the absolute differences (size n)
@@ -644,6 +640,8 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
     auto *SharkRestrict subtractionBorrows2 = reinterpret_cast<uint32_t *>(&tempProducts[SubtractionOffset2]);
     auto *SharkRestrict subtractionBorrows3 = reinterpret_cast<uint32_t *>(&tempProducts[SubtractionOffset3]);
     auto *SharkRestrict subtractionBorrows4 = reinterpret_cast<uint32_t *>(&tempProducts[SubtractionOffset4]);
+
+    constexpr int BorrowGlobalOffset = 0;
     auto *SharkRestrict globalBorrowAny = reinterpret_cast<uint32_t *>(&tempProducts[BorrowGlobalOffset]);
 
     if constexpr (!SharkFloatParams::DisableSubtraction) {
@@ -787,13 +785,13 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
     }
 
     const bool record = block.thread_index().x == 0 && block.group_index().x == ExecutionBlockBase;
-    debugTracker32->Reset(record, grid, block, global_x_diff_abs, std::max(n1, n2), DebugState32::Purpose::XDiff);
+    debugTracker->Reset(record, grid, block, global_x_diff_abs, MaxHalfN, DebugState::Purpose::XDiff, CallIndex);
 
     if constexpr (SharkFloatParams::DebugChecksums) {
         grid.sync();
     }
 
-    debugTracker32->Reset(record, grid, block, global_y_diff_abs, std::max(n1, n2), DebugState32::Purpose::YDiff);
+    debugTracker->Reset(record, grid, block, global_y_diff_abs, MaxHalfN, DebugState::Purpose::YDiff, CallIndex);
 
     if constexpr (SharkFloatParams::DebugChecksums) {
         grid.sync();
@@ -826,9 +824,6 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                 int k = idx;
                 uint64_t sum_low = 0ULL, sum_high = 0ULL;
 
-                //int i_start = max(0, k - (n1 - 1));
-                //int i_end = min(k, n1 - 1);
-
                 int i_start = (k < n1) ? 0 : (k - (n1 - 1));
                 int i_end = (k < n1) ? k : (n1 - 1);
 
@@ -857,8 +852,6 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                 int k = idx - total_k; // shift to [0..total_k-1]
                 uint64_t sum_low = 0ULL, sum_high = 0ULL;
 
-                // int i_start = max(0, k - (n2 - 1));
-                // int i_end = min(k, n2 - 1);
                 int i_start = (k < n2) ? 0 : (k - (n2 - 1));
                 int i_end = (k < n2) ? k : (n2 - 1);
 
@@ -887,8 +880,6 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                 uint64_t sum_low = 0;
                 uint64_t sum_high = 0;
 
-                //int i_start = max(0, k - (MaxHalfN - 1));
-                //int i_end = min(k, MaxHalfN - 1);
                 int i_start = (k < MaxHalfN) ? 0 : (k - (MaxHalfN - 1));
                 int i_end = (k < MaxHalfN) ? k : (MaxHalfN - 1);
 
@@ -928,45 +919,19 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
         constexpr auto SubNewN2b = SubRemainingNewN / 2;
         constexpr auto SubNewN1b = SubRemainingNewN - SubNewN2b;   /* n1 is larger or same */
 
-        //constexpr auto NewTempBase1 =
-        //    TempBase + ScratchMemoryArrays * 4 * SubNewNRoundUp * NumBlocksRatio;
-        //constexpr auto NewTempBase2 =
-        //    TempBase + ScratchMemoryArrays * 4 * SubRemainingNewN * (NumBlocksRatio * 2);
-        //constexpr auto NewTempBase3 =
-        //    TempBase + ScratchMemoryArrays * 4 * SubNewNRoundUp * (NumBlocksRatio * 3);
-
-        //constexpr auto NewTempBase1 =
-        //    TempBase + ScratchMemoryArrays * SharkFloatParams::GlobalNumUint32 * NumBlocksRatio;
-        //constexpr auto NewTempBase2 =
-        //    TempBase + ScratchMemoryArrays * SharkFloatParams::GlobalNumUint32 * (NumBlocksRatio * 2);
-        //constexpr auto NewTempBase3 =
-        //    TempBase + ScratchMemoryArrays * SharkFloatParams::GlobalNumUint32 * (NumBlocksRatio * 3);
-
         static_assert(RecursionDepth <= 5, "Unexpected recursion depth");
-
-        constexpr auto NewTempBaseLength = TempBaseLength / 4;
-        constexpr auto NewTempBase1 =
-            TempBase + 1 * NewTempBaseLength;
-        constexpr auto NewTempBase2 =
-            TempBase + 2 * NewTempBaseLength;
-        constexpr auto NewTempBase3 =
-            TempBase + 3 * NewTempBaseLength;
-
-        static_assert(NewTempBaseLength >=
-            AdditionalUInt64PerFrame + 2 * ScratchMemoryArrays * SharkFloatParams::GlobalNumUint32,
-            "Not enough memory");
 
         MultiplyDigitsOnly<
             SharkFloatParams,
             RecursionDepth + 1,
+            CallIndex * 3 - 1,
             SubNewNRoundUp,
             SubNewN1a,
             SubNewN2a,
             ExecutionBlockBase,
             ExecutionNumBlocks / 3,
             NewNumBlocks / 3,
-            NewTempBase1,
-            NewTempBaseLength>(
+            TempBase>(
             shared_data,
             A,
             B,
@@ -982,14 +947,14 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
         MultiplyDigitsOnly<
             SharkFloatParams,
             RecursionDepth + 1,
+            CallIndex * 3,
             SubRemainingNewN,
             SubNewN1b,
             SubNewN2b,
             ExecutionBlockBase + ExecutionNumBlocks / 3,
             ExecutionNumBlocks / 3,
             NewNumBlocks / 3,
-            NewTempBase2,
-            NewTempBaseLength>(
+            TempBase>(
             shared_data,
             A,
             B,
@@ -1011,35 +976,33 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             const bool ExecuteAtAll =
                 !((NewExecutionBlockBase > 0 && block.group_index().x < NewExecutionBlockBase) ||
                     block.group_index().x >= NewExecutionBlockBase + NewExecutionNumBlocks);
-            constexpr bool EnableMoreParallelism = true;
-
-            // Replace A and B in shared memory with their absolute differences
-            if constexpr (EnableSharedDiff) {
-                cg::memcpy_async(block,
-                    const_cast<uint32_t *>(a_shared),
-                    global_x_diff_abs,
-                    sizeof(uint32_t) * MaxHalfN);
-                cg::memcpy_async(block,
-                    const_cast<uint32_t *>(b_shared),
-                    global_y_diff_abs,
-                    sizeof(uint32_t) * MaxHalfN);
-                cg::wait(block);
-            }
-
             constexpr auto MaxSubNewN = std::max(SubNewN1a, SubNewN2a);
 
-            if (EnableMoreParallelism && ExecuteAtAll) {
+            if (ExecuteAtAll) {
+                // Replace A and B in shared memory with their absolute differences
+                if constexpr (EnableSharedDiff) {
+                    cg::memcpy_async(block,
+                        const_cast<uint32_t *>(a_shared),
+                        global_x_diff_abs,
+                        sizeof(uint32_t) * MaxHalfN);
+                    cg::memcpy_async(block,
+                        const_cast<uint32_t *>(b_shared),
+                        global_y_diff_abs,
+                        sizeof(uint32_t) * MaxHalfN);
+                    cg::wait(block);
+                }
+
                 MultiplyDigitsOnly<
                     SharkFloatParams,
                     RecursionDepth + 1,
+                    CallIndex * 3 + 1,
                     SubNewNRoundUp,
                     MaxSubNewN,
                     MaxSubNewN,
                     NewExecutionBlockBase,
                     NewExecutionNumBlocks,
                     NewNumBlocks / 3,
-                    NewTempBase3,
-                    NewTempBaseLength>(
+                    TempBase>(
                         shared_data,
                         A,
                         B,
@@ -1051,62 +1014,37 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                         grid,
                         block,
                         tempProducts);
-            }
 
-            if constexpr (!EnableMoreParallelism) {
-                MultiplyDigitsOnly<
-                    SharkFloatParams,
-                    RecursionDepth + 1,
-                    SubNewNRoundUp,
-                    MaxSubNewN,
-                    MaxSubNewN,
-                    ExecutionBlockBase,
-                    ExecutionNumBlocks,
-                    NewNumBlocks / 3,
-                    NewTempBase3,
-                    NewTempBaseLength>(
-                        shared_data,
-                        A,
-                        B,
-                        EnableSharedDiff ? a_shared : global_x_diff_abs,
-                        EnableSharedDiff ? b_shared : global_y_diff_abs,
-                        x_diff_abs,
-                        y_diff_abs,
-                        Z1_temp_digits,
-                        grid,
-                        block,
-                        tempProducts);
-            }
-
-            if constexpr (EnableSharedDiff) {
-                cg::memcpy_async(block,
-                    const_cast<uint32_t *>(a_shared),
-                    A->Digits,
-                    sizeof(uint32_t) * SharkFloatParams::GlobalNumUint32);
-                cg::memcpy_async(block,
-                    const_cast<uint32_t *>(b_shared),
-                    B->Digits,
-                    sizeof(uint32_t) * SharkFloatParams::GlobalNumUint32);
-                cg::wait(block);
+                if constexpr (EnableSharedDiff) {
+                    cg::memcpy_async(block,
+                        const_cast<uint32_t *>(a_shared),
+                        A->Digits,
+                        sizeof(uint32_t) * SharkFloatParams::GlobalNumUint32);
+                    cg::memcpy_async(block,
+                        const_cast<uint32_t *>(b_shared),
+                        B->Digits,
+                        sizeof(uint32_t) * SharkFloatParams::GlobalNumUint32);
+                    cg::wait(block);
+                }
             }
         }
     }
 
     grid.sync();
 
-    debugTracker64->Reset(record, grid, block, Z0_OutDigits, total_k * 2, DebugState64::Purpose::Z0);
+    debugTracker->Reset(record, grid, block, Z0_OutDigits, total_k * 2, DebugState::Purpose::Z0, CallIndex);
 
     if constexpr (SharkFloatParams::DebugChecksums) {
         grid.sync();
     }
 
-    debugTracker64->Reset(record, grid, block, Z2_OutDigits, total_k * 2, DebugState64::Purpose::Z2);
+    debugTracker->Reset(record, grid, block, Z2_OutDigits, total_k * 2, DebugState::Purpose::Z2, CallIndex);
 
     if constexpr (SharkFloatParams::DebugChecksums) {
         grid.sync();
     }
 
-    debugTracker64->Reset(record, grid, block, Z1_temp_digits, total_k * 2, DebugState64::Purpose::Z2);
+    debugTracker->Reset(record, grid, block, Z1_temp_digits, total_k * 2, DebugState::Purpose::Z1_offset, CallIndex);
 
     if constexpr (SharkFloatParams::DebugChecksums) {
         grid.sync();
@@ -1162,7 +1100,7 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             grid.sync();
         }
 
-        debugTracker64->Reset(record, grid, block, Z1_digits, total_k * 2, DebugState64::Purpose::Z1);
+        debugTracker->Reset(record, grid, block, Z1_digits, total_k * 2, DebugState::Purpose::Z1, CallIndex);
 
         // Synchronize before final combination
         grid.sync();
@@ -1206,7 +1144,7 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             grid.sync();
         }
 
-        debugTracker64->Reset(record, grid, block, final128, (total_result_digits - 1) * 2, DebugState64::Purpose::Final128);
+        debugTracker->Reset(record, grid, block, final128, (total_result_digits - 1) * 2, DebugState::Purpose::Final128, CallIndex);
 
         // Synchronize before carry propagation
         grid.sync();
@@ -1235,10 +1173,8 @@ __device__ void MultiplyHelperKaratsubaV2 (
     extern __shared__ uint32_t shared_data[];
 
 
-    // Define a shared global space for a bit of synchronization data.
-    // Note using 128-bytes for perf
-    constexpr auto EndOfSharedGlobalMemory = 128;
-    constexpr auto TempBase = EndOfSharedGlobalMemory;
+    // Define a shared global space for a synchronization data + debug information
+    constexpr auto TempBase = AdditionalUInt64Global;
 
     constexpr auto NewN1 = (NewN + 1) / 2;
     constexpr auto NewN2 = NewN - NewN1;   /* n1 is larger or same */
@@ -1248,7 +1184,8 @@ __device__ void MultiplyHelperKaratsubaV2 (
     //constexpr auto NewN1 = (SubNewN + 1) / 2;
     //constexpr auto NewN2 = SubNewNRoundUp - NewN1;
 
-    DefineTempProductsOffsets(TempBase);
+    constexpr auto CallIndex = 0;
+    DefineTempProductsOffsets(TempBase, CallIndex);
 
     auto *SharkRestrict a_shared = shared_data;
     auto *SharkRestrict b_shared = a_shared + NewN;
@@ -1264,22 +1201,19 @@ __device__ void MultiplyHelperKaratsubaV2 (
     constexpr auto ExecutionBlockBase = 0;
     constexpr auto ExecutionNumBlocks = SharkFloatParams::GlobalNumBlocks;
     constexpr auto RecursionDepth = 1;
-    constexpr auto OriginalTempBase = TempBase;
-    constexpr auto TempBaseLength =
-        Uint64AdditionalConstants + Uint64ToAllocateForMultiply * SharkFloatParams::GlobalNumUint32;
 
     auto *final128 = &tempProducts[Convolution_offset];
     MultiplyDigitsOnly<
         SharkFloatParams,
         RecursionDepth,
+        CallIndex + 1,
         N,
         n1,
         n2,
         ExecutionBlockBase,
         ExecutionNumBlocks,
         SharkFloatParams::GlobalNumBlocks,
-        TempBase,
-        TempBaseLength>(
+        TempBase>(
         shared_data,
         A,
         B,
@@ -1298,8 +1232,9 @@ __device__ void MultiplyHelperKaratsubaV2 (
 
     // Global memory for block carry-outs
     // Allocate space for grid.dim_blocks().x block carry-outs after total_result_digits
+    // Note, overlaps:
+    constexpr int CarryInsOffset = TempBase;
     uint64_t *block_carry_outs = &tempProducts[CarryInsOffset];
-    auto *resultDigits = &tempProducts[Result_offset];
 
     if constexpr (!SharkFloatParams::DisableCarryPropagation) {
 
@@ -1346,6 +1281,11 @@ __device__ void MultiplyHelperKaratsubaV2 (
     } else {
         grid.sync();
     }
+
+    using DebugState = DebugState<SharkFloatParams>;
+    const uint64_t *resultEntries = &tempProducts[Result_offset];
+    const bool record = block.thread_index().x == 0 && block.group_index().x == ExecutionBlockBase;
+    debugTracker->Reset(record, grid, block, resultEntries, 2 * N + 1, DebugState::Purpose::Result_offset, CallIndex);
 
     // ---- Finalize the Result ----
     if constexpr (!SharkFloatParams::DisableFinalConstruction) {

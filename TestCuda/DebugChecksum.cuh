@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <cooperative_groups.h>
 
-template <class SharkFloatParams, typename ChecksumT>
+template <class SharkFloatParams>
 struct DebugState {
 
     // CRC64 polynomial (ISO 3309 standard)
@@ -37,72 +37,94 @@ struct DebugState {
         bool record,
         cooperative_groups::grid_group &grid,
         cooperative_groups::thread_block &block,
-        const ChecksumT *arrayToChecksum,
+        const uint32_t *arrayToChecksum,
         size_t arraySize,
-        Purpose purpose
+        Purpose purpose,
+        int callIndex
         );
 
-    static __device__ ChecksumT ComputeCRC3264(
-        const ChecksumT *data,
+    __device__ void Reset(
+        bool record,
+        cooperative_groups::grid_group &grid,
+        cooperative_groups::thread_block &block,
+        const uint64_t *arrayToChecksum,
+        size_t arraySize,
+        Purpose purpose,
+        int callIndex
+    );
+
+    static __device__ uint64_t ComputeCRC64(
+        const uint32_t *data,
         size_t size,
-        ChecksumT initialCrc);
+        uint64_t initialCrc);
+
+    static __device__ uint64_t ComputeCRC64(
+        const uint64_t *data,
+        size_t size,
+        uint64_t initialCrc);
 
     int Block;
     int Thread;
     uint64_t ArraySize;
-    ChecksumT Checksum;
+    uint64_t Checksum;
     Purpose ChecksumPurpose;
+    int CallIndex;
 };
 
 
 // Function to compute CRC64 for a single data chunk
-template <class SharkFloatParams, typename ChecksumT>
-__device__ ChecksumT DebugState<SharkFloatParams, ChecksumT>::ComputeCRC3264(
-    const ChecksumT *data,
+template <class SharkFloatParams>
+__device__ uint64_t DebugState<SharkFloatParams>::ComputeCRC64(
+    const uint32_t *data,
     size_t size,
-    ChecksumT initialCrc) {
+    uint64_t initialCrc) {
 
-    if constexpr (std::is_same_v< ChecksumT, uint64_t>) {
-        uint64_t crc = initialCrc;
-        for(size_t i = 0; i < size; i++) {
-            auto word = data[i];
-            crc ^= word;
-            for (int bit = 0; bit < 64; ++bit) {
-                if (crc & 1ULL) {
-                    crc = (crc >> 1) ^ CRC64_POLY;
-                } else {
-                    crc >>= 1;
-                }
+    uint64_t crc = initialCrc;
+    for(size_t i = 0; i < size; i++) {
+        auto word = data[i];
+        crc ^= word;
+        for (int bit = 0; bit < 64; ++bit) {
+            if (crc & 1ULL) {
+                crc = (crc >> 1) ^ CRC64_POLY;
+            } else {
+                crc >>= 1;
             }
         }
-        return crc;
-    } else if constexpr (std::is_same_v< ChecksumT, uint32_t>) {
-        uint32_t crc = initialCrc;
-        for (size_t i = 0; i < size; i++) {
-            auto word = data[i];
-            crc ^= word;
-            for (int bit = 0; bit < 32; ++bit) {
-                if (crc & 1U) {
-                    crc = (crc >> 1) ^ CRC32_POLY;
-                } else {
-                    crc >>= 1;
-                }
-            }
-        }
-        return static_cast<ChecksumT>(crc);
-    } else {
-        return 0;
     }
+    return crc;
 }
 
-template <class SharkFloatParams, typename ChecksumT>
-__device__ void DebugState<SharkFloatParams, ChecksumT>::Reset(
+// Function to compute CRC64 for a single data chunk
+template <class SharkFloatParams>
+__device__ uint64_t DebugState<SharkFloatParams>::ComputeCRC64(
+    const uint64_t *data,
+    size_t size,
+    uint64_t initialCrc) {
+
+    uint64_t crc = initialCrc;
+    for (size_t i = 0; i < size; i++) {
+        auto word = data[i];
+        crc ^= word;
+        for (int bit = 0; bit < 64; ++bit) {
+            if (crc & 1ULL) {
+                crc = (crc >> 1) ^ CRC64_POLY;
+            } else {
+                crc >>= 1;
+            }
+        }
+    }
+    return crc;
+}
+
+template <class SharkFloatParams>
+__device__ void DebugState<SharkFloatParams>::Reset(
     bool record,
     cooperative_groups::grid_group &grid,
     cooperative_groups::thread_block &block,
-    const ChecksumT *arrayToChecksum,
+    const uint32_t *arrayToChecksum,
     size_t arraySize,
-    Purpose purpose)
+    Purpose purpose,
+    int callIndex)
 {
     if constexpr (SharkFloatParams::DebugChecksums) {
         if (record) {
@@ -116,7 +138,39 @@ __device__ void DebugState<SharkFloatParams, ChecksumT>::Reset(
             ChecksumPurpose = purpose;
 
             // Compute the checksum for the given array
-            Checksum = ComputeCRC3264(arrayToChecksum, arraySize, 0);
+            Checksum = ComputeCRC64(arrayToChecksum, arraySize, 0);
+
+            CallIndex = callIndex;
         }
     }
 }
+
+template <class SharkFloatParams>
+__device__ void DebugState<SharkFloatParams>::Reset(
+    bool record,
+    cooperative_groups::grid_group &grid,
+    cooperative_groups::thread_block &block,
+    const uint64_t *arrayToChecksum,
+    size_t arraySize,
+    Purpose purpose,
+    int callIndex)
+{
+    if constexpr (SharkFloatParams::DebugChecksums) {
+        if (record) {
+            // Initialize the checksum to zero
+            Checksum = 0;
+            Block = block.group_index().x;
+            Thread = block.thread_index().x;
+            ArraySize = arraySize;
+
+            // Set the purpose of the checksum
+            ChecksumPurpose = purpose;
+
+            // Compute the checksum for the given array
+            Checksum = ComputeCRC64(arrayToChecksum, arraySize, 0);
+
+            CallIndex = callIndex;
+        }
+    }
+}
+

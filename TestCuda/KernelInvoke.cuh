@@ -2,6 +2,8 @@
 
 #include <functional>
 
+struct DebugStateRaw;
+
 struct CUstream_st;
 using cudaStream_t = CUstream_st *;
 
@@ -40,7 +42,8 @@ void InvokeMultiplyKernelCorrectness(
     std::function<void(void *[])> kernel,
     const HpSharkFloat<SharkFloatParams> &xNum,
     const HpSharkFloat<SharkFloatParams> &yNum,
-    HpSharkFloat<SharkFloatParams> &gpuResult);
+    HpSharkFloat<SharkFloatParams> &gpuResult,
+    std::vector<DebugStateRaw> *debugResults);
 
 template<class SharkFloatParams, Operator sharkOperator>
 void InvokeAddKernelCorrectness(

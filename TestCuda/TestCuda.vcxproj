@@ -134,10 +134,12 @@
     <ClInclude Include="CudaCrap.h" />
     <ClInclude Include="DebugChecksum.cuh" />
     <ClInclude Include="DebugChecksumHost.h" />
+    <ClInclude Include="DebugStateRaw.h" />
     <ClInclude Include="ExplicitInstantiate.h" />
     <ClInclude Include="HpSharkFloat.cuh" />
     <ClInclude Include="IntegrationTest.cuh" />
     <ClInclude Include="KernelInvoke.cuh" />
+    <ClInclude Include="MainTestCuda.h" />
     <ClInclude Include="Multiply.cuh" />
     <ClInclude Include="MultiplyInternal.cuh" />
     <ClInclude Include="NullKernel.cuh" />

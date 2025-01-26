@@ -1,6 +1,7 @@
 #pragma once
 
-#pragma once
+#include "DebugStateRaw.h"
+
 #include <string>
 #include <gmp.h>
 #include <vector>
@@ -23,7 +24,7 @@ static constexpr bool SharkDebug = true;
 static constexpr bool SharkDebug = false;
 #endif
 
-static constexpr auto SharkTestIterCount = 200;
+static constexpr auto SharkTestIterCount = 5000;
 static constexpr auto SharkBatchSize = SharkDebug ? 8 : 512;
 static constexpr bool SharkInfiniteCorrectnessTests = true;
 static constexpr bool SharkCorrectnessTests = SharkDebug;
@@ -50,12 +51,13 @@ struct GenericSharkFloatParams {
     static constexpr bool DisableCarryPropagation = false;
     static constexpr bool DisableFinalConstruction = false;
     static constexpr bool ForceNoOp = false;
-    static constexpr bool HostVerbose = false; // SharkDebug;
+    static constexpr bool HostVerbose = SharkDebug;
     static constexpr bool DebugChecksums = SharkDebug;
 
     // 3^whatevs = ConvolutionLimit
     static constexpr auto ConvolutionLimit = SharkDebug ? 3 : 81;
     static constexpr auto ConvolutionLimitPow = SharkDebug ? 1 : 4;
+    static constexpr auto NumDebugStates = ((ConvolutionLimit + 1) * 3 * static_cast<int>(DebugStatePurpose::NumPurposes));
 
     //static constexpr auto ConvolutionLimit = 9;
     //static constexpr auto ConvolutionLimitPow = 2;
@@ -92,6 +94,7 @@ static constexpr auto ScratchMemoryArrays = 32;
 static constexpr auto AdditionalUInt64PerFrame = 256;
 
 // Additional space up front, globally-shared:
+// Units are uint64_t
 static constexpr auto AdditionalGlobalChecksumSpace = SharkDebug ? 1024 * 1024 : 0;
 static constexpr auto AdditionalGlobalSyncSpace = 128;
 static constexpr auto AdditionalUInt64Global = AdditionalGlobalChecksumSpace + AdditionalGlobalSyncSpace;

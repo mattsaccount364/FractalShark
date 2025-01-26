@@ -1,9 +1,11 @@
 #pragma once
 
+#include "DebugStateRaw.h"
+
+#ifdef __CUDACC__
+
 #include <cstdint>
 #include <cooperative_groups.h>
-
-
 
 template <class SharkFloatParams>
 struct DebugState {
@@ -12,37 +14,13 @@ struct DebugState {
     static constexpr uint64_t CRC64_POLY = 0x42F0E1EBA9EA3693ULL;
     static constexpr uint32_t CRC32_POLY = 0xEDB88320UL;
 
-    enum class Purpose {
-        ADigits,
-        BDigits,
-        XDiff,
-        YDiff,
-        Z0,
-        Z1,
-        Z2,
-        Z1_temp_offset,
-        Z1_offset,
-        Final128,
-        Convolution_offset,
-        Result_offset,
-        XDiff_offset,
-        YDiff_offset,
-        GlobalCarryOffset,
-        SubtractionOffset1,
-        SubractionOffset2,
-        SubtractionOffset3,
-        SubtractionOffset4,
-        BorrowAnyOffset,
-        NumPurposes
-    };
-
     __device__ void Reset(
         bool record,
         cooperative_groups::grid_group &grid,
         cooperative_groups::thread_block &block,
         const uint32_t *arrayToChecksum,
         size_t arraySize,
-        Purpose purpose,
+        DebugStatePurpose purpose,
         int callIndex
         );
 
@@ -52,7 +30,7 @@ struct DebugState {
         cooperative_groups::thread_block &block,
         const uint64_t *arrayToChecksum,
         size_t arraySize,
-        Purpose purpose,
+        DebugStatePurpose purpose,
         int callIndex
     );
 
@@ -66,12 +44,7 @@ struct DebugState {
         size_t size,
         uint64_t initialCrc);
 
-    int Block;
-    int Thread;
-    uint64_t ArraySize;
-    uint64_t Checksum;
-    Purpose ChecksumPurpose;
-    int CallIndex;
+    DebugStateRaw Data;
 };
 
 
@@ -126,24 +99,24 @@ __device__ void DebugState<SharkFloatParams>::Reset(
     cooperative_groups::thread_block &block,
     const uint32_t *arrayToChecksum,
     size_t arraySize,
-    Purpose purpose,
+    DebugStatePurpose purpose,
     int callIndex)
 {
     if constexpr (SharkFloatParams::DebugChecksums) {
         if (record) {
             // Initialize the checksum to zero
-            Checksum = 0;
-            Block = block.group_index().x;
-            Thread = block.thread_index().x;
-            ArraySize = arraySize;
+            Data.Checksum = 0;
+            Data.Block = block.group_index().x;
+            Data.Thread = block.thread_index().x;
+            Data.ArraySize = arraySize;
 
             // Set the purpose of the checksum
-            ChecksumPurpose = purpose;
+            Data.ChecksumPurpose = purpose;
 
             // Compute the checksum for the given array
-            Checksum = ComputeCRC64(arrayToChecksum, arraySize, 0);
+            Data.Checksum = ComputeCRC64(arrayToChecksum, arraySize, 0);
 
-            CallIndex = callIndex;
+            Data.CallIndex = callIndex;
         }
     }
 }
@@ -155,25 +128,26 @@ __device__ void DebugState<SharkFloatParams>::Reset(
     cooperative_groups::thread_block &block,
     const uint64_t *arrayToChecksum,
     size_t arraySize,
-    Purpose purpose,
+    DebugStatePurpose purpose,
     int callIndex)
 {
     if constexpr (SharkFloatParams::DebugChecksums) {
         if (record) {
             // Initialize the checksum to zero
-            Checksum = 0;
-            Block = block.group_index().x;
-            Thread = block.thread_index().x;
-            ArraySize = arraySize;
+            Data.Checksum = 0;
+            Data.Block = block.group_index().x;
+            Data.Thread = block.thread_index().x;
+            Data.ArraySize = arraySize;
 
             // Set the purpose of the checksum
-            ChecksumPurpose = purpose;
+            Data.ChecksumPurpose = purpose;
 
             // Compute the checksum for the given array
-            Checksum = ComputeCRC64(arrayToChecksum, arraySize, 0);
+            Data.Checksum = ComputeCRC64(arrayToChecksum, arraySize, 0);
 
-            CallIndex = callIndex;
+            Data.CallIndex = callIndex;
         }
     }
 }
 
+#endif // __CUDACC__

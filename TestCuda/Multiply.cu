@@ -80,14 +80,14 @@ __device__ static void SubtractDigitsSerial(const uint32_t *a, const uint32_t *b
 namespace cg = cooperative_groups;
 
 /**
- * Parallel subtraction (a - b), stored in result, using a multi-pass approach
- * to propagate borrows.
+ * Parallel subtraction (a1 - b1) and (a2 - b2), stored in global_(x|y)_diff_abs,
+ * using a multi-pass approach to propagate borrows.
  *
  * The function attempts to subtract each digit of 'b' from 'a' in parallel,
  * then uses repeated passes (do/while) to handle newly introduced borrows
  * until no more remain or a maximum pass count is reached.
  * 
- * Corrupts contexts of x_diff_abs shared memory intentionally
+ * Corrupts x_diff_abs shared memory intentionally
  */
 template<
     class SharkFloatParams,
@@ -108,8 +108,8 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallel(
     uint32_t *__restrict__ subtractionBorrows1b,
     uint32_t *__restrict__ subtractionBorrows2a,
     uint32_t *__restrict__ subtractionBorrows2b,
-    uint32_t *__restrict__ result1,
-    uint32_t *__restrict__ result2,
+    uint32_t *__restrict__ global_x_diff_abs,
+    uint32_t *__restrict__ global_y_diff_abs,
     uint32_t *__restrict__ globalBorrowAny,
     cg::grid_group &grid,
     cg::thread_block &block
@@ -179,10 +179,10 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallel(
         uint32_t borrow1 = (ai1 < bi1) ? 1u : 0u;
         uint32_t borrow2 = (ai2 < bi2) ? 1u : 0u;
 
-        result1[idx] = static_cast<uint32_t>(diff1 & 0xFFFFFFFFu);
+        global_x_diff_abs[idx] = static_cast<uint32_t>(diff1 & 0xFFFFFFFFu);
         subtractionBorrows1a[idx] = borrow1;
 
-        result2[idx] = static_cast<uint32_t>(diff2 & 0xFFFFFFFFu);
+        global_y_diff_abs[idx] = static_cast<uint32_t>(diff2 & 0xFFFFFFFFu);
         subtractionBorrows2a[idx] = borrow2;
     }
 
@@ -209,16 +209,16 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallel(
                 borrow_in2 = (uint64_t)(curBorrow2[idx - 1]);
             }
 
-            uint32_t digit1 = result1[idx];
-            uint32_t digit2 = result2[idx];
+            uint32_t digit1 = global_x_diff_abs[idx];
+            uint32_t digit2 = global_y_diff_abs[idx];
 
             // subtract the borrow
             uint64_t sum1 = (uint64_t)digit1 - borrow_in1;
             uint64_t sum2 = (uint64_t)digit2 - borrow_in2;
 
             // store updated digit
-            result1[idx] = static_cast<uint32_t>(sum1 & 0xFFFFFFFFULL);
-            result2[idx] = static_cast<uint32_t>(sum2 & 0xFFFFFFFFULL);
+            global_x_diff_abs[idx] = static_cast<uint32_t>(sum1 & 0xFFFFFFFFULL);
+            global_y_diff_abs[idx] = static_cast<uint32_t>(sum2 & 0xFFFFFFFFULL);
 
             // If sum is negative => top bit is 1 => new borrow
             if (sum1 & 0x8000'0000'0000'0000ULL) {
@@ -528,8 +528,6 @@ __device__ SharkForceInlineReleaseOnly static void CarryPropagation (
 // The list here should go up to ScratchMemoryArrays.
 static_assert(AdditionalUInt64PerFrame == 256, "See below");
 #define DefineTempProductsOffsets(TempBase, CallIndex) \
-    constexpr int n1 = NewN1; \
-    constexpr int n2 = NewN2; \
     const int threadIdxGlobal = block.group_index().x * SharkFloatParams::GlobalThreadsPerBlock + block.thread_index().x; \
     constexpr int TestMultiplier = 1; \
     constexpr auto CallOffset = CallIndex * CalculateFrameSize<SharkFloatParams>(); \
@@ -574,7 +572,7 @@ static_assert(AdditionalUInt64PerFrame == 256, "See below");
 template<
     class SharkFloatParams,
     int CallIndex,
-    DebugState<SharkFloatParams>::Purpose Purpose,
+    DebugStatePurpose Purpose,
     typename ArrayType>
 __device__ SharkForceInlineReleaseOnly void
 GetCurrentDebugState (
@@ -585,7 +583,7 @@ GetCurrentDebugState (
     const ArrayType *arrayToChecksum,
     size_t arraySize)
 {
-    constexpr auto maxPurposes = static_cast<int>(DebugState<SharkFloatParams>::Purpose::NumPurposes);
+    constexpr auto maxPurposes = static_cast<int>(DebugStatePurpose::NumPurposes);
     constexpr auto curPurpose = static_cast<int>(Purpose);
     debugTrackerArray[CallIndex * maxPurposes + curPurpose].Reset(
         record, grid, block, arrayToChecksum, arraySize, Purpose, CallIndex);
@@ -601,8 +599,8 @@ template<
     int RecursionDepth,
     int CallIndex,
     int NewN,
-    int NewN1,
-    int NewN2,
+    int n1,
+    int n2,
     int ExecutionBlockBase,
     int ExecutionNumBlocks,
     int NewNumBlocks,
@@ -632,10 +630,27 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
     constexpr bool UseConvolution =
         (NewNumBlocks <= std::max(SharkFloatParams::GlobalNumBlocks / SharkFloatParams::ConvolutionLimit, 1) ||
         (NewNumBlocks % 3 != 0));
-    constexpr bool EnableSharedDiff = false; // TODO
+    constexpr bool EnableSharedDiff = true; // TODO
     constexpr bool UseParallelSubtract = true;
 
     using DebugState = DebugState<SharkFloatParams>;
+
+    const bool record = block.thread_index().x == 0 && block.group_index().x == ExecutionBlockBase;
+
+    {
+        if constexpr (SharkFloatParams::DebugChecksums) {
+            grid.sync();
+        }
+
+        GetCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::ADigits, uint32_t>(
+            record, debugTrackerArray, grid, block, aDigits, NewN);
+        GetCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::BDigits, uint32_t>(
+            record, debugTrackerArray, grid, block, bDigits, NewN);
+
+        if constexpr (SharkFloatParams::DebugChecksums) {
+            grid.sync();
+        }
+    }
 
     auto *Z0_OutDigits = &tempProducts[Z0_offset];
     auto *Z1_temp_digits = &tempProducts[Z1_temp_offset];
@@ -659,10 +674,34 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
     auto *SharkRestrict subtractionBorrows4 = reinterpret_cast<uint32_t *>(&tempProducts[SubtractionOffset4]);
     auto *SharkRestrict globalBorrowAny = reinterpret_cast<uint32_t *>(&tempProducts[BorrowGlobalOffset]);
 
+    const auto SharkRestrict *a_high = aDigits + n1;
+    const auto SharkRestrict *b_high = bDigits + n1;
+    const auto SharkRestrict *a_low = aDigits;
+    const auto SharkRestrict *b_low = bDigits;
+
+    {
+        if constexpr (SharkFloatParams::DebugChecksums) {
+            grid.sync();
+        }
+
+        GetCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::AHalfHigh>(
+            record, debugTrackerArray, grid, block, a_high, n2);
+        GetCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::AHalfLow>(
+            record, debugTrackerArray, grid, block, a_low, n1);
+        GetCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::BHalfHigh>(
+            record, debugTrackerArray, grid, block, b_high, n2);
+        GetCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::BHalfLow>(
+            record, debugTrackerArray, grid, block, b_low, n1);
+
+        if constexpr (SharkFloatParams::DebugChecksums) {
+            grid.sync();
+        }
+    }
+
     if constexpr (!SharkFloatParams::DisableSubtraction) {
         if constexpr (UseParallelSubtract) {
-            int x_compare = CompareDigits<n2, n1>(aDigits + n1, aDigits);
-            int y_compare = CompareDigits<n2, n1>(bDigits + n1, bDigits);
+            int x_compare = CompareDigits<n2, n1>(a_high, a_low);
+            int y_compare = CompareDigits<n2, n1>(b_high, b_low);
 
             if (x_compare >= 0 && y_compare >= 0) {
                 x_diff_sign = 0;
@@ -677,10 +716,10 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                     ExecutionNumBlocks>(
                         x_diff_abs,
                         y_diff_abs,
-                        aDigits + n1,
-                        aDigits,
-                        bDigits + n1,
-                        bDigits,
+                        a_high,
+                        a_low,
+                        b_high,
+                        b_low,
                         subtractionBorrows,
                         subtractionBorrows2,
                         subtractionBorrows3,
@@ -703,10 +742,10 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                     ExecutionNumBlocks>(
                         x_diff_abs,
                         y_diff_abs,
-                        aDigits,
-                        aDigits + n1,
-                        bDigits,
-                        bDigits + n1,
+                        a_low,
+                        a_high,
+                        b_low,
+                        b_high,
                         subtractionBorrows,
                         subtractionBorrows2,
                         subtractionBorrows3,
@@ -729,10 +768,10 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                     ExecutionNumBlocks>(
                         x_diff_abs,
                         y_diff_abs,
-                        aDigits + n1,
-                        aDigits,
-                        bDigits,
-                        bDigits + n1,
+                        a_high,
+                        a_low,
+                        b_low,
+                        b_high,
                         subtractionBorrows,
                         subtractionBorrows2,
                         subtractionBorrows3,
@@ -755,10 +794,10 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                     ExecutionNumBlocks>(
                         x_diff_abs,
                         y_diff_abs,
-                        aDigits,
-                        aDigits + n1,
-                        bDigits + n1,
-                        bDigits,
+                        a_low,
+                        a_high,
+                        b_high,
+                        b_low,
                         subtractionBorrows,
                         subtractionBorrows2,
                         subtractionBorrows3,
@@ -771,24 +810,24 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             }
         } else {
             if (block.thread_index().x == 0 && block.group_index().x == ExecutionBlockBase) {
-                int x_compare = CompareDigits<n1, n2>(aDigits + n1, aDigits);
+                int x_compare = CompareDigits<n1, n2>(a_high, a_low);
 
                 if (x_compare >= 0) {
                     x_diff_sign = 0;
-                    SubtractDigitsSerial<n2, n1>(aDigits + n1, aDigits, global_x_diff_abs); // x_diff = A1 - A0
+                    SubtractDigitsSerial<n2, n1>(a_high, a_low, global_x_diff_abs); // x_diff = A1 - A0
                 } else {
                     x_diff_sign = 1;
-                    SubtractDigitsSerial<n1, n2>(aDigits, aDigits + n1, global_x_diff_abs); // x_diff = A0 - A1
+                    SubtractDigitsSerial<n1, n2>(a_low, a_high, global_x_diff_abs); // x_diff = A0 - A1
                 }
 
                 // Compute y_diff_abs and y_diff_sign
-                int y_compare = CompareDigits<n1, n2>(bDigits + n1, bDigits);
+                int y_compare = CompareDigits<n1, n2>(b_high, b_low);
                 if (y_compare >= 0) {
                     y_diff_sign = 0;
-                    SubtractDigitsSerial<n2, n1>(bDigits + n1, bDigits, global_y_diff_abs); // y_diff = B1 - B0
+                    SubtractDigitsSerial<n2, n1>(b_high, b_low, global_y_diff_abs); // y_diff = B1 - B0
                 } else {
                     y_diff_sign = 1;
-                    SubtractDigitsSerial<n1, n2>(bDigits, bDigits + n1, global_y_diff_abs); // y_diff = B0 - B1
+                    SubtractDigitsSerial<n1, n2>(b_low, b_high, global_y_diff_abs); // y_diff = B0 - B1
                 }
             }
         }
@@ -799,15 +838,14 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
         grid.sync();
     }
 
-    const bool record = block.thread_index().x == 0 && block.group_index().x == ExecutionBlockBase;
-    GetCurrentDebugState<SharkFloatParams, CallIndex, DebugState::Purpose::XDiff>(
+    GetCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::XDiff>(
         record, debugTrackerArray, grid, block, global_x_diff_abs, MaxHalfN);
 
     if constexpr (SharkFloatParams::DebugChecksums) {
         grid.sync();
     }
 
-    GetCurrentDebugState<SharkFloatParams, CallIndex, DebugState::Purpose::YDiff>(
+    GetCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::YDiff>(
         record, debugTrackerArray, grid, block, global_y_diff_abs, MaxHalfN);
 
     if constexpr (SharkFloatParams::DebugChecksums) {
@@ -1014,8 +1052,8 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                     RecursionDepth + 1,
                     CallIndex * 3 + 1,
                     SubNewNRoundUp,
-                    MaxSubNewN,
-                    MaxSubNewN,
+                    SubNewN1a,
+                    SubNewN2a,
                     NewExecutionBlockBase,
                     NewExecutionNumBlocks,
                     NewNumBlocks / 3,
@@ -1049,21 +1087,21 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
 
     grid.sync();
 
-    GetCurrentDebugState<SharkFloatParams, CallIndex, DebugState::Purpose::Z0>(
+    GetCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z0>(
         record, debugTrackerArray, grid, block, Z0_OutDigits, total_k * 2);
 
     if constexpr (SharkFloatParams::DebugChecksums) {
         grid.sync();
     }
 
-    GetCurrentDebugState<SharkFloatParams, CallIndex, DebugState::Purpose::Z2>(
+    GetCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z2>(
         record, debugTrackerArray, grid, block, Z2_OutDigits, total_k * 2);
 
     if constexpr (SharkFloatParams::DebugChecksums) {
         grid.sync();
     }
 
-    GetCurrentDebugState<SharkFloatParams, CallIndex, DebugState::Purpose::Z1_offset>(
+    GetCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z1_offset>(
         record, debugTrackerArray, grid, block, Z1_temp_digits, total_k * 2);
 
     if constexpr (SharkFloatParams::DebugChecksums) {
@@ -1120,7 +1158,7 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             grid.sync();
         }
 
-        GetCurrentDebugState<SharkFloatParams, CallIndex, DebugState::Purpose::Z1>(
+        GetCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z1>(
             record, debugTrackerArray, grid, block, Z1_digits, total_k * 2);
 
         // Synchronize before final combination
@@ -1165,7 +1203,7 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             grid.sync();
         }
 
-        GetCurrentDebugState<SharkFloatParams, CallIndex, DebugState::Purpose::Final128>(
+        GetCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Final128>(
             record, debugTrackerArray, grid, block, final128, (total_result_digits - 1) * 2);
 
         // Synchronize before carry propagation
@@ -1220,8 +1258,8 @@ __device__ void MultiplyHelperKaratsubaV2 (
         RecursionDepth,
         CallIndex + 1,
         NewN,
-        n1,
-        n2,
+        NewN1,
+        NewN2,
         ExecutionBlockBase,
         ExecutionNumBlocks,
         SharkFloatParams::GlobalNumBlocks,
@@ -1296,8 +1334,8 @@ __device__ void MultiplyHelperKaratsubaV2 (
     using DebugState = DebugState<SharkFloatParams>;
     const uint64_t *resultEntries = &tempProducts[Result_offset];
     const bool record = block.thread_index().x == 0 && block.group_index().x == ExecutionBlockBase;
-    GetCurrentDebugState<SharkFloatParams, CallIndex, DebugState::Purpose::Result_offset>(
-        record, debugTrackerArray, grid, block, resultEntries, 2 * NewN + 1);
+    GetCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Result_offset>(
+        record, debugTrackerArray, grid, block, resultEntries, 2 * NewN);
 
     // ---- Finalize the Result ----
     if constexpr (!SharkFloatParams::DisableFinalConstruction) {

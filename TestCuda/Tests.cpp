@@ -376,7 +376,7 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
         std::cout << "" << MpfToHexString(mpfHostResult) << std::endl;
     }
 
-
+    std::vector<DebugStateRaw> debugStatesCuda{};
     if constexpr (TestGpu) {
         BenchmarkTimer timer;
 
@@ -393,7 +393,8 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
                 ComputeMultiplyKaratsubaV2Gpu<SharkFloatParams>,
                 xNum,
                 yNum,
-                gpuResult);
+                gpuResult,
+                &debugStatesCuda);
         } else {
             assert(false);
         }
@@ -405,12 +406,52 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
         }
     }
 
-    std::vector<DebugStateHost<SharkFloatParams>> debugStates;
-    bool testSucceeded = TestHostKaratsuba(testNum, mpfHostResult, debugStates);
+    std::vector<DebugStateHost<SharkFloatParams>> debugResultsHost;
+    bool testSucceeded = TestHostKaratsuba(testNum, mpfHostResult, debugResultsHost);
     if (!testSucceeded) {
         std::cout << "Custom High Precision failed" << std::endl;
     } else {
         std::cout << "Custom High Precision succeeded" << std::endl;
+    }
+
+    // Compare debugResultsCuda against debugResultsHost
+    if constexpr (SharkDebug) {
+        assert (debugResultsHost.size() == debugStatesCuda.size());
+
+        for (size_t i = 0; i < debugResultsHost.size(); ++i) {
+            const auto &host = debugResultsHost[i];
+            const auto &cuda = debugStatesCuda[i];
+
+            if (host.Checksum != cuda.Checksum) {
+                std::cerr << "Error: Checksum mismatch" << std::endl;
+
+                // Print all fields of cuda:
+                std::cerr << "Block: " << cuda.Block << std::endl;
+                std::cerr << "Thread: " << cuda.Thread << std::endl;
+                std::cerr << "ArraySize: " << cuda.ArraySize << std::endl;
+                std::cerr << "Checksum: 0x" << std::hex << cuda.Checksum << std::endl;
+                std::cerr << "ChecksumPurpose: " << static_cast<int>(cuda.ChecksumPurpose) << std::endl;
+                std::cerr << "CallIndex: " << cuda.CallIndex << std::endl;
+
+                // Print all fields of host
+                std::cerr << std::endl;
+                std::cerr << "ArrayToChecksum32: " << std::endl;
+                for (size_t j = 0; j < host.ArrayToChecksum32.size(); ++j) {
+                    std::cerr << host.ArrayToChecksum32[j] << " ";
+                }
+
+                std::cerr << "ArrayToChecksum64: " << std::endl;
+                for (size_t j = 0; j < host.ArrayToChecksum64.size(); ++j) {
+                    std::cerr << host.ArrayToChecksum64[j] << " ";
+                }
+
+                std::cerr << "Checksum: 0x" << std::hex << host.Checksum << std::endl;
+                std::cerr << "ChecksumPurpose: " << static_cast<int>(host.ChecksumPurpose) << std::endl;
+                std::cerr << "CallIndex: " << host.CallIndex << std::endl;
+
+                DebugBreak();
+            }
+        }
     }
 
     if constexpr (TestGpu) {

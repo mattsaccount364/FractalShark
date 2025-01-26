@@ -172,7 +172,8 @@ void InvokeMultiplyKernelCorrectness(
     std::function<void(void *[])> kernel,
     const HpSharkFloat<SharkFloatParams> &xNum,
     const HpSharkFloat<SharkFloatParams> &yNum,
-    HpSharkFloat<SharkFloatParams> &gpuResult) {
+    HpSharkFloat<SharkFloatParams> &gpuResult,
+    std::vector<DebugStateRaw> *debugResults) {
 
     // Prepare kernel arguments
     // Allocate memory for carryOuts and cumulativeCarries
@@ -207,6 +208,15 @@ void InvokeMultiplyKernelCorrectness(
     }
 
     cudaMemcpy(&gpuResult, internalGpuResult2, sizeof(HpSharkFloat<SharkFloatParams>), cudaMemcpyDeviceToHost);
+
+    if (debugResults != nullptr && SharkDebug) {
+        debugResults->resize(SharkFloatParams::NumDebugStates);
+        cudaMemcpy(
+            debugResults->data(),
+            &d_tempProducts[AdditionalGlobalSyncSpace],
+            SharkFloatParams::NumDebugStates * sizeof(DebugStateRaw),
+            cudaMemcpyDeviceToHost);
+    }
 
     cudaFree(internalGpuResult2);
     cudaFree(yGpu);
@@ -286,7 +296,8 @@ void InvokeAddKernelCorrectness(
         std::function<void(void*[])> kernel, \
         const HpSharkFloat<SharkFloatParams> &xNum, \
         const HpSharkFloat<SharkFloatParams> &yNum, \
-        HpSharkFloat<SharkFloatParams> &gpuResult); \
+        HpSharkFloat<SharkFloatParams> &gpuResult, \
+        std::vector<DebugStateRaw> *debugResults); \
     template void InvokeAddKernelCorrectness<SharkFloatParams, Operator::Add>( \
         BenchmarkTimer &timer, \
         std::function<void(void*[])> kernel, \

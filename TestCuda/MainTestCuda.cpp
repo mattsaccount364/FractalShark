@@ -8,6 +8,7 @@
 #include <iostream>
 #include <mpir.h>
 #include <conio.h>
+#include "MainTestCuda.h"
 
 // Function to perform the calculation on the host using MPIR
 void computeNextXY_host(mpf_t x, mpf_t y, mpf_t a, mpf_t b, int num_iter) {
@@ -87,6 +88,36 @@ bool CorrectnessTests() {
     return true;
 }
 
+int RunCorrectnessTest() {
+    do {
+        if (!CorrectnessTests<TestCorrectnessSharkParams1>()) {
+            return 0;
+        }
+
+        if (!CorrectnessTests<TestCorrectnessSharkParams2>()) {
+            return 0;
+        }
+
+        if (!CorrectnessTests<TestCorrectnessSharkParams3>()) {
+            return 0;
+        }
+
+        if (!CorrectnessTests<TestCorrectnessSharkParams4>()) {
+            return 0;
+        }
+
+        if (!CorrectnessTests<TestCorrectnessSharkParams5>()) {
+            return 0;
+        }
+
+        ComicalCorrectness();
+    } while (SharkInfiniteCorrectnessTests);
+
+    if (PressKey() == 'q') {
+        return 0;
+    }
+}
+
 int main(int /*argc*/, char * /*argv*/[]) {
     int testBase = 0;
     bool res = false;
@@ -103,32 +134,15 @@ int main(int /*argc*/, char * /*argv*/[]) {
         std::cout << "Device " << i << ": " << prop.persistingL2CacheMaxSize << " bytes of L2 cache." << std::endl;
     }
 
+    //TestNullKernel();
+    //q = PressKey();
+    //if (q == 'q') {
+    //    return 0;
+    //}
+
     if constexpr (SharkCorrectnessTests) {
-        do {
-            if (!CorrectnessTests<TestCorrectnessSharkParams1>()) {
-                return 0;
-            }
-
-            if (!CorrectnessTests<TestCorrectnessSharkParams2>()) {
-                return 0;
-            }
-
-            if (!CorrectnessTests<TestCorrectnessSharkParams3>()) {
-                return 0;
-            }
-
-            if (!CorrectnessTests<TestCorrectnessSharkParams4>()) {
-                return 0;
-            }
-
-            if (!CorrectnessTests<TestCorrectnessSharkParams5>()) {
-                return 0;
-            }
-
-            ComicalCorrectness();
-        } while (SharkInfiniteCorrectnessTests);
-
-        if (PressKey() == 'q') {
+        auto res = RunCorrectnessTest();
+        if (!res) {
             return 0;
         }
     }
@@ -154,34 +168,8 @@ int main(int /*argc*/, char * /*argv*/[]) {
     }
 
     if constexpr (!SharkCorrectnessTests) {
-        auto q = PressKey();
-        if (q == 'q') {
-            return 0;
-        }
-
-        //TestNullKernel();
-        //q = PressKey();
-        //if (q == 'q') {
-        //    return 0;
-        //}
-
-        if (!CorrectnessTests<TestCorrectnessSharkParams1>()) {
-            return 0;
-        }
-
-        if (!CorrectnessTests<TestCorrectnessSharkParams2>()) {
-            return 0;
-        }
-
-        if (!CorrectnessTests<TestCorrectnessSharkParams3>()) {
-            return 0;
-        }
-
-        if (!CorrectnessTests<TestCorrectnessSharkParams4>()) {
-            return 0;
-        }
-
-        if (!CorrectnessTests<TestCorrectnessSharkParams5>()) {
+        auto res = RunCorrectnessTest();
+        if (!res) {
             return 0;
         }
     }

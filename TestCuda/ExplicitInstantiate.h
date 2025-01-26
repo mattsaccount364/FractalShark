@@ -180,7 +180,6 @@ static constexpr auto ComicalThreadCount = 13;
     ExplicitlyInstantiate(Test4x36SharkParams); \
     ExplicitlyInstantiate(Test4x6SharkParams); \
 \
-    /*ExplicitlyInstantiate(Test128x128SharkParams);*/ \
     ExplicitlyInstantiate(Test128x63SharkParams); \
     ExplicitlyInstantiate(Test64x63SharkParams); \
     ExplicitlyInstantiate(Test32x63SharkParams); \

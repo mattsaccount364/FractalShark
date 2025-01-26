@@ -1,7 +1,7 @@
 ﻿#include "NullKernel.cuh"
 #include "Conversion.cuh"
 #include "HpSharkFloat.cuh"
-#include "Tests.cuh"
+#include "Tests.h"
 
 #include <cuda_runtime.h> 
 
@@ -103,29 +103,30 @@ int main(int /*argc*/, char * /*argv*/[]) {
         std::cout << "Device " << i << ": " << prop.persistingL2CacheMaxSize << " bytes of L2 cache." << std::endl;
     }
 
+    if constexpr (SharkCorrectnessTests) {
+        do {
+            if (!CorrectnessTests<TestCorrectnessSharkParams1>()) {
+                return 0;
+            }
 
-    if constexpr (!SharkCorrectnessTests) {
-        if (!CorrectnessTests<TestCorrectnessSharkParams1>()) {
-            return 0;
-        }
-        
-        if (!CorrectnessTests<TestCorrectnessSharkParams2>()) {
-            return 0;
-        }
+            if (!CorrectnessTests<TestCorrectnessSharkParams2>()) {
+                return 0;
+            }
 
-        if (!CorrectnessTests<TestCorrectnessSharkParams3>()) {
-            return 0;
-        }
+            if (!CorrectnessTests<TestCorrectnessSharkParams3>()) {
+                return 0;
+            }
 
-        if (!CorrectnessTests<TestCorrectnessSharkParams4>()) {
-            return 0;
-        }
+            if (!CorrectnessTests<TestCorrectnessSharkParams4>()) {
+                return 0;
+            }
 
-        if (!CorrectnessTests<TestCorrectnessSharkParams5>()) {
-            return 0;
-        }
+            if (!CorrectnessTests<TestCorrectnessSharkParams5>()) {
+                return 0;
+            }
 
-        ComicalCorrectness();
+            ComicalCorrectness();
+        } while (SharkInfiniteCorrectnessTests);
 
         if (PressKey() == 'q') {
             return 0;
@@ -152,7 +153,7 @@ int main(int /*argc*/, char * /*argv*/[]) {
         }
     }
 
-    if constexpr (SharkCorrectnessTests) {
+    if constexpr (!SharkCorrectnessTests) {
         auto q = PressKey();
         if (q == 'q') {
             return 0;

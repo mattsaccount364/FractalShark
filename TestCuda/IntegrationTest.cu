@@ -1,5 +1,7 @@
 #include "Add.cuh"
+#include "AddInternal.cuh"
 #include "Multiply.cuh"
+#include "MultiplyInternal.cuh"
 
 #include "HpSharkFloat.cuh"
 

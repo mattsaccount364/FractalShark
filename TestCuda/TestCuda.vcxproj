@@ -113,26 +113,37 @@
     <ClCompile Include="ReferenceKaratsuba.cpp" />
     <CudaCompile Include="HpSharkFloat.cu" />
     <CudaCompile Include="IntegrationTest.cu" />
+    <CudaCompile Include="KernelInvoke.cu" />
     <CudaCompile Include="Multiply.cu" />
-    <CudaCompile Include="MultiplyKaratsubaV1.cu" />
-    <CudaCompile Include="MultiplyN2.cu" />
+    <CudaCompile Include="Archived\MultiplyKaratsubaV1.cu">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </CudaCompile>
+    <CudaCompile Include="Archived\MultiplyN2.cu">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
+    </CudaCompile>
     <CudaCompile Include="NullKernel.cu" />
     <CudaCompile Include="Add.cu" />
     <ClCompile Include="MainTestCuda.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="AddInternal.cuh" />
     <ClInclude Include="BenchmarkTimer.h" />
     <ClInclude Include="Conversion.cuh" />
+    <ClInclude Include="CudaCrap.h" />
     <ClInclude Include="DebugChecksum.cuh" />
     <ClInclude Include="DebugChecksumHost.h" />
     <ClInclude Include="ExplicitInstantiate.h" />
     <ClInclude Include="HpSharkFloat.cuh" />
     <ClInclude Include="IntegrationTest.cuh" />
+    <ClInclude Include="KernelInvoke.cuh" />
     <ClInclude Include="Multiply.cuh" />
+    <ClInclude Include="MultiplyInternal.cuh" />
     <ClInclude Include="NullKernel.cuh" />
     <ClInclude Include="Add.cuh" />
     <ClInclude Include="ReferenceKaratsuba.h" />
-    <ClInclude Include="Tests.cuh" />
+    <ClInclude Include="Tests.h" />
     <ClInclude Include="TestTracker.h" />
   </ItemGroup>
   <ItemGroup>
@@ -142,7 +153,9 @@
     <CudaCompile Include="Conversion.cu">
       <FileType>Document</FileType>
     </CudaCompile>
-    <CudaCompile Include="Tests.cu" />
+    <ClCompile Include="Tests.cpp">
+      <FileType>Document</FileType>
+    </ClCompile>
     <CudaCompile Include="TestTracker.cu">
       <FileType>Document</FileType>
     </CudaCompile>

@@ -957,8 +957,10 @@ void MultiplyHelperKaratsubaV2(
     Out->IsNegative = (A->IsNegative ^ B->IsNegative);
 
     // Print debugStates
-    for (const auto &state : debugStates) {
-        std::cout << state.GetStr() << std::endl;
+    if constexpr (SharkFloatParams::HostVerbose) {
+        for (const auto &state : debugStates) {
+            std::cout << state.GetStr() << std::endl;
+        }
     }
 }
 

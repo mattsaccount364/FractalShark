@@ -1,6 +1,6 @@
 #pragma once
 
-#include <cuda_runtime.h>
+#pragma once
 #include <string>
 #include <gmp.h>
 #include <vector>
@@ -18,16 +18,16 @@ static constexpr auto MultiKernel = false;
 #endif
 
 #ifdef _DEBUG
-static constexpr auto SharkTestIterCount = 1000;
-static constexpr auto SharkBatchSize = 8;
-static constexpr bool SharkCorrectnessTests = false;
 static constexpr bool SharkDebug = true;
 #else
-static constexpr auto SharkTestIterCount = 5000;
-static constexpr auto SharkBatchSize = 512;
-static constexpr bool SharkCorrectnessTests = true;
 static constexpr bool SharkDebug = false;
 #endif
+
+static constexpr auto SharkTestIterCount = 200;
+static constexpr auto SharkBatchSize = SharkDebug ? 8 : 512;
+static constexpr bool SharkInfiniteCorrectnessTests = true;
+static constexpr bool SharkCorrectnessTests = SharkDebug;
+
 
 template<
     int32_t pThreadsPerBlock,
@@ -51,16 +51,17 @@ struct GenericSharkFloatParams {
     static constexpr bool DisableFinalConstruction = false;
     static constexpr bool ForceNoOp = false;
     static constexpr bool HostVerbose = false; // SharkDebug;
-    static constexpr bool DebugChecksums = true;
+    static constexpr bool DebugChecksums = SharkDebug;
 
-    static constexpr auto ConvolutionLimit = 81; // 3^whatevs = ConvolutionLimit
-    static constexpr auto ConvolutionLimitPow = 4; // 3^whatevs = ConvolutionLimit
+    // 3^whatevs = ConvolutionLimit
+    static constexpr auto ConvolutionLimit = SharkDebug ? 3 : 81;
+    static constexpr auto ConvolutionLimitPow = SharkDebug ? 1 : 4;
 
-    //static constexpr auto ConvolutionLimit = 9; // 3^whatevs = ConvolutionLimit
-    //static constexpr auto ConvolutionLimitPow = 2; // 3^whatevs = ConvolutionLimit
+    //static constexpr auto ConvolutionLimit = 9;
+    //static constexpr auto ConvolutionLimitPow = 2;
 
-    //static constexpr auto ConvolutionLimit = 3; // 3^whatevs = ConvolutionLimit
-    //static constexpr auto ConvolutionLimitPow = 1; // 3^whatevs = ConvolutionLimit
+    //static constexpr auto ConvolutionLimit = 3;
+    //static constexpr auto ConvolutionLimitPow = 1;
 
     static std::string GetDescription() {
         std::string desc = "GlobalThreadsPerBlock: " + std::to_string(GlobalThreadsPerBlock) +
@@ -91,7 +92,7 @@ static constexpr auto ScratchMemoryArrays = 32;
 static constexpr auto AdditionalUInt64PerFrame = 256;
 
 // Additional space up front, globally-shared:
-static constexpr auto AdditionalGlobalChecksumSpace = 1024 * 1024;
+static constexpr auto AdditionalGlobalChecksumSpace = SharkDebug ? 1024 * 1024 : 0;
 static constexpr auto AdditionalGlobalSyncSpace = 128;
 static constexpr auto AdditionalUInt64Global = AdditionalGlobalChecksumSpace + AdditionalGlobalSyncSpace;
 
@@ -100,7 +101,7 @@ static constexpr auto CalculateFrameSize() {
     return ScratchMemoryArrays * SharkFloatParams::GlobalNumUint32 + AdditionalUInt64PerFrame;
 }
 
-static constexpr int32_t LowPrec = 32;
+static constexpr auto LowPrec = 32;
 
 #include "ExplicitInstantiate.h"
 

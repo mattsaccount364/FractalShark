@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <cooperative_groups.h>
 
+
+
 template <class SharkFloatParams>
 struct DebugState {
 
@@ -30,7 +32,8 @@ struct DebugState {
         SubractionOffset2,
         SubtractionOffset3,
         SubtractionOffset4,
-        BorrowAnyOffset
+        BorrowAnyOffset,
+        NumPurposes
     };
 
     __device__ void Reset(

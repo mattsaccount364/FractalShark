@@ -32,7 +32,8 @@ struct DebugStateHost {
         SubractionOffset2,
         SubtractionOffset3,
         SubtractionOffset4,
-        BorrowAnyOffset
+        BorrowAnyOffset,
+        NumPurposes
     };
 
     /**

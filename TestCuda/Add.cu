@@ -3,7 +3,8 @@
 #include "HpSharkFloat.cuh"
 #include "BenchmarkTimer.h"
 #include "TestTracker.h"
-#include "Tests.cuh"
+#include "KernelInvoke.cuh"
+#include "Tests.h"
 
 #include <iostream>
 #include <vector>

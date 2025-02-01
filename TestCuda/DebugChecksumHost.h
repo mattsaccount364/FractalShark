@@ -189,7 +189,7 @@ DebugStateHost<SharkFloatParams>::DebugStateHost(
     , ChecksumPurpose(purpose)
     , CallIndex(callIndex)
 {
-    if constexpr (SharkFloatParams::DebugChecksums) {
+    if constexpr (DebugChecksums) {
         // Copy data if valid
         if (data != nullptr && size > 0) {
             ArrayToChecksum32.assign(data, data + size);
@@ -211,7 +211,7 @@ DebugStateHost<SharkFloatParams>::DebugStateHost(
     , ChecksumPurpose(purpose)
     , CallIndex(callIndex)
 {
-    if constexpr (SharkFloatParams::DebugChecksums) {
+    if constexpr (DebugChecksums) {
         // Copy data if valid
         if (data != nullptr && size > 0) {
             ArrayToChecksum64.assign(data, data + size);
@@ -227,13 +227,13 @@ void DebugStateHost<SharkFloatParams>::Reset(
     DebugStatePurpose purpose,
     int callIndex
 ) {
-    if constexpr (SharkFloatParams::DebugChecksums) {
+    if constexpr (DebugChecksums) {
         ArrayToChecksum32.assign(arrayToChecksum, arrayToChecksum + arraySize);
         Checksum = ComputeCRC64(ArrayToChecksum32, 0);
-    }
 
-    ChecksumPurpose = purpose;
-    CallIndex = callIndex;
+        ChecksumPurpose = purpose;
+        CallIndex = callIndex;
+    }
 }
 
 template <class SharkFloatParams>
@@ -243,13 +243,13 @@ void DebugStateHost<SharkFloatParams>::Reset(
     DebugStatePurpose purpose,
     int callIndex
 ) {
-    if constexpr (SharkFloatParams::DebugChecksums) {
+    if constexpr (DebugChecksums) {
         ArrayToChecksum64.assign(arrayToChecksum, arrayToChecksum + arraySize);
         Checksum = ComputeCRC64(ArrayToChecksum64, 0);
-    }
 
-    ChecksumPurpose = purpose;
-    CallIndex = callIndex;
+        ChecksumPurpose = purpose;
+        CallIndex = callIndex;
+    }
 }
 
 template <class SharkFloatParams>

@@ -491,6 +491,11 @@ void KaratsubaRecursiveDigits(
 
     using DebugState = DebugStateHost<SharkFloatParams>;
 
+    constexpr auto NewSize = (CallIndex + 1) * static_cast<int>(DebugStatePurpose::NumPurposes);
+    if (NewSize > debugStates.size()) {
+        debugStates.resize(NewSize);
+    }
+
     const auto &debugAState = GetCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::ADigits>(
         debugStates, A_digits.data(), A_digits.size());
     const auto &debugBState = GetCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::BDigits>(
@@ -764,7 +769,7 @@ void KaratsubaRecursiveDigits(
     // N even means (32*n) bits = n/2 64-bit words
     // (64*n) bits = n 64-bit words
 
-    const int total_result_digits = 2 * fullADigits - 1;
+    const int total_result_digits = 2 * fullADigits;
 
     // If the input array is larger, then the high-order entries
     // remain zero.
@@ -859,7 +864,7 @@ void MultiplyHelperKaratsubaV2(
     //DebugState debugBState{ B->Digits, SharkFloatParams::GlobalNumUint32, DebugStatePurpose::BDigits, CallIndex };
     //debugStates.push_back(debugBState);
 
-    debugStates.resize(SharkFloatParams::NumDebugStates);
+    //debugStates.resize(SharkFloatParams::NumDebugStates);
 
     {
         // 1) Possibly do sign logic, exponent logic, etc.

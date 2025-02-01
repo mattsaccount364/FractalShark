@@ -19,6 +19,7 @@
 #include "Add.cuh"
 #include "Multiply.cuh"
 
+#define NOMINMAX
 #include <windows.h>
 
 static TestTracker Tests;
@@ -415,21 +416,29 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
     }
 
     // Compare debugResultsCuda against debugResultsHost
-    if constexpr (SharkDebug) {
-        assert (debugResultsHost.size() == debugStatesCuda.size());
+    if constexpr (DebugChecksums) {
+        assert (debugResultsHost.size() <= debugStatesCuda.size());
 
+        // Note that the hosts results should be exactly the right size, whereas
+        // the CUDA results may be larger due to the way the kernel is written.
         for (size_t i = 0; i < debugResultsHost.size(); ++i) {
             const auto &host = debugResultsHost[i];
             const auto &cuda = debugStatesCuda[i];
 
-            if (host.Checksum != cuda.Checksum) {
+            const auto maxHostArraySize = std::max(host.ArrayToChecksum32.size(), host.ArrayToChecksum64.size());
+
+            if (host.Checksum != cuda.Checksum ||
+                host.ChecksumPurpose != cuda.ChecksumPurpose ||
+                host.CallIndex != cuda.CallIndex ||
+                maxHostArraySize != cuda.ArraySize) {
+
                 std::cerr << "Error: Checksum mismatch" << std::endl;
 
                 // Print all fields of cuda:
                 std::cerr << "Block: " << cuda.Block << std::endl;
                 std::cerr << "Thread: " << cuda.Thread << std::endl;
                 std::cerr << "ArraySize: " << cuda.ArraySize << std::endl;
-                std::cerr << "Checksum: 0x" << std::hex << cuda.Checksum << std::endl;
+                std::cerr << "Checksum: 0x" << std::hex << cuda.Checksum << std::dec << std::endl;
                 std::cerr << "ChecksumPurpose: " << static_cast<int>(cuda.ChecksumPurpose) << std::endl;
                 std::cerr << "CallIndex: " << cuda.CallIndex << std::endl;
 
@@ -440,12 +449,18 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
                     std::cerr << host.ArrayToChecksum32[j] << " ";
                 }
 
+                std::cerr << std::endl;
+                std::cerr << "ArrayToChecksum32 length: " << host.ArrayToChecksum32.size() << std::endl;
+
                 std::cerr << "ArrayToChecksum64: " << std::endl;
                 for (size_t j = 0; j < host.ArrayToChecksum64.size(); ++j) {
                     std::cerr << host.ArrayToChecksum64[j] << " ";
                 }
 
-                std::cerr << "Checksum: 0x" << std::hex << host.Checksum << std::endl;
+                std::cerr << std::endl;
+                std::cerr << "ArrayToChecksum64 length: " << host.ArrayToChecksum64.size() << std::endl;
+
+                std::cerr << "Checksum: 0x" << std::hex << host.Checksum << std::dec << std::endl;
                 std::cerr << "ChecksumPurpose: " << static_cast<int>(host.ChecksumPurpose) << std::endl;
                 std::cerr << "CallIndex: " << host.CallIndex << std::endl;
 

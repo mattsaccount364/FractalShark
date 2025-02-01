@@ -34,6 +34,14 @@ struct DebugState {
         int callIndex
     );
 
+    __device__ void Erase(
+        bool record,
+        cooperative_groups::grid_group &grid,
+        cooperative_groups::thread_block &block,
+        DebugStatePurpose purpose,
+        int callIndex
+    );
+
     static __device__ uint64_t ComputeCRC64(
         const uint32_t *data,
         size_t size,
@@ -102,7 +110,7 @@ __device__ void DebugState<SharkFloatParams>::Reset(
     DebugStatePurpose purpose,
     int callIndex)
 {
-    if constexpr (SharkFloatParams::DebugChecksums) {
+    if constexpr (DebugChecksums) {
         if (record) {
             // Initialize the checksum to zero
             Data.Checksum = 0;
@@ -131,7 +139,7 @@ __device__ void DebugState<SharkFloatParams>::Reset(
     DebugStatePurpose purpose,
     int callIndex)
 {
-    if constexpr (SharkFloatParams::DebugChecksums) {
+    if constexpr (DebugChecksums) {
         if (record) {
             // Initialize the checksum to zero
             Data.Checksum = 0;
@@ -146,6 +154,27 @@ __device__ void DebugState<SharkFloatParams>::Reset(
             Data.Checksum = ComputeCRC64(arrayToChecksum, arraySize, 0);
 
             Data.CallIndex = callIndex;
+        }
+    }
+}
+
+template <class SharkFloatParams>
+__device__ void DebugState<SharkFloatParams>::Erase(
+    bool record,
+    cooperative_groups::grid_group &grid,
+    cooperative_groups::thread_block &block,
+    DebugStatePurpose purpose,
+    int callIndex)
+{
+    if constexpr (DebugChecksums) {
+        if (record) {
+            // Initialize the checksum to zero
+            Data.Checksum = 0;
+            Data.Block = 0;
+            Data.Thread = 0;
+            Data.ArraySize = 0;
+            Data.ChecksumPurpose = DebugStatePurpose::Invalid;
+            Data.CallIndex = 0;
         }
     }
 }

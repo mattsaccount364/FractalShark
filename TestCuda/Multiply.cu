@@ -572,10 +572,27 @@ static_assert(AdditionalUInt64PerFrame == 256, "See below");
 template<
     class SharkFloatParams,
     int CallIndex,
+    DebugStatePurpose Purpose>
+__device__ SharkForceInlineReleaseOnly void
+EraseCurrentDebugState(
+    bool record,
+    DebugState<SharkFloatParams> *debugTrackerArray,
+    cooperative_groups::grid_group &grid,
+    cooperative_groups::thread_block &block) {
+
+    constexpr auto maxPurposes = static_cast<int>(DebugStatePurpose::NumPurposes);
+    constexpr auto curPurpose = static_cast<int>(Purpose);
+    debugTrackerArray[CallIndex * maxPurposes + curPurpose].Erase(
+        record, grid, block, Purpose, CallIndex);
+}
+
+template<
+    class SharkFloatParams,
+    int CallIndex,
     DebugStatePurpose Purpose,
     typename ArrayType>
 __device__ SharkForceInlineReleaseOnly void
-GetCurrentDebugState (
+StoreCurrentDebugState (
     bool record,
     DebugState<SharkFloatParams> *debugTrackerArray,
     cooperative_groups::grid_group &grid,
@@ -637,19 +654,17 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
 
     const bool record = block.thread_index().x == 0 && block.group_index().x == ExecutionBlockBase;
 
-    {
-        if constexpr (SharkFloatParams::DebugChecksums) {
-            grid.sync();
-        }
+    if constexpr (DebugChecksums) {
+        grid.sync();
 
-        GetCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::ADigits, uint32_t>(
+        EraseCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Invalid>(
+            record, debugTrackerArray, grid, block);
+        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::ADigits, uint32_t>(
             record, debugTrackerArray, grid, block, aDigits, NewN);
-        GetCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::BDigits, uint32_t>(
+        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::BDigits, uint32_t>(
             record, debugTrackerArray, grid, block, bDigits, NewN);
 
-        if constexpr (SharkFloatParams::DebugChecksums) {
-            grid.sync();
-        }
+        grid.sync();
     }
 
     auto *Z0_OutDigits = &tempProducts[Z0_offset];
@@ -679,23 +694,19 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
     const auto SharkRestrict *a_low = aDigits;
     const auto SharkRestrict *b_low = bDigits;
 
-    {
-        if constexpr (SharkFloatParams::DebugChecksums) {
-            grid.sync();
-        }
+    if constexpr (DebugChecksums) {
+        grid.sync();
 
-        GetCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::AHalfHigh>(
+        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::AHalfHigh>(
             record, debugTrackerArray, grid, block, a_high, n2);
-        GetCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::AHalfLow>(
+        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::AHalfLow>(
             record, debugTrackerArray, grid, block, a_low, n1);
-        GetCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::BHalfHigh>(
+        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::BHalfHigh>(
             record, debugTrackerArray, grid, block, b_high, n2);
-        GetCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::BHalfLow>(
+        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::BHalfLow>(
             record, debugTrackerArray, grid, block, b_low, n1);
 
-        if constexpr (SharkFloatParams::DebugChecksums) {
-            grid.sync();
-        }
+        grid.sync();
     }
 
     if constexpr (!SharkFloatParams::DisableSubtraction) {
@@ -834,23 +845,29 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
     }
 
 
-    if constexpr (SharkFloatParams::DebugChecksums) {
+    if constexpr (DebugChecksums) {
+        grid.sync();
+    
+        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::XDiff>(
+            record, debugTrackerArray, grid, block, global_x_diff_abs, MaxHalfN);
+        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::YDiff>(
+            record, debugTrackerArray, grid, block, global_y_diff_abs, MaxHalfN);
+
         grid.sync();
     }
 
-    GetCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::XDiff>(
-        record, debugTrackerArray, grid, block, global_x_diff_abs, MaxHalfN);
+    constexpr auto NumBlocksRatio =
+        SharkFloatParams::ConvolutionLimitPow *
+        SharkFloatParams::GlobalNumBlocks /
+        NewNumBlocks;
 
-    if constexpr (SharkFloatParams::DebugChecksums) {
-        grid.sync();
-    }
+    constexpr auto SubNewNRoundUp = (NewN + 1) / 2;
+    constexpr auto SubNewN2a = SubNewNRoundUp / 2;
+    constexpr auto SubNewN1a = SubNewNRoundUp - SubNewN2a;   /* n1 is larger or same */
 
-    GetCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::YDiff>(
-        record, debugTrackerArray, grid, block, global_y_diff_abs, MaxHalfN);
-
-    if constexpr (SharkFloatParams::DebugChecksums) {
-        grid.sync();
-    }
+    constexpr auto SubRemainingNewN = NewN - SubNewNRoundUp;
+    constexpr auto SubNewN2b = SubRemainingNewN / 2;
+    constexpr auto SubNewN1b = SubRemainingNewN - SubNewN2b;   /* n1 is larger or same */
 
     // Determine the sign of Z1_temp
     int z1_sign = x_diff_sign ^ y_diff_sign;
@@ -960,20 +977,21 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                 Z1_temp_digits[out_idx + 1] = sum_high;
             }
         }
+
+        if constexpr (DebugChecksums) {
+            grid.sync();
+
+            StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z0>(
+                record, debugTrackerArray, grid, block, Z0_OutDigits, total_k * 2);
+            StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z2>(
+                record, debugTrackerArray, grid, block, Z2_OutDigits, total_k * 2);
+            StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z1_offset>(
+                record, debugTrackerArray, grid, block, Z1_temp_digits, total_k * 2);
+
+            grid.sync();
+        }
+
     } else {
-        constexpr auto NumBlocksRatio =
-            SharkFloatParams::ConvolutionLimitPow *
-            SharkFloatParams::GlobalNumBlocks /
-            NewNumBlocks;
-
-        constexpr auto SubNewNRoundUp = (NewN + 1) / 2;
-        constexpr auto SubNewN2a = SubNewNRoundUp / 2;
-        constexpr auto SubNewN1a = SubNewNRoundUp - SubNewN2a;   /* n1 is larger or same */
-
-        constexpr auto SubRemainingNewN = NewN - SubNewNRoundUp;
-        constexpr auto SubNewN2b = SubRemainingNewN / 2;
-        constexpr auto SubNewN1b = SubRemainingNewN - SubNewN2b;   /* n1 is larger or same */
-
         static_assert(RecursionDepth <= 5, "Unexpected recursion depth");
 
         MultiplyDigitsOnly<
@@ -1082,31 +1100,23 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                     cg::wait(block);
                 }
             }
+
+            if constexpr (DebugChecksums) {
+                grid.sync();
+
+                StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z0>(
+                    record, debugTrackerArray, grid, block, Z0_OutDigits, SubNewNRoundUp * 2 * 2);
+                StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z2>(
+                    record, debugTrackerArray, grid, block, Z2_OutDigits, SubRemainingNewN * 2 * 2);
+                StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z1_offset>(
+                    record, debugTrackerArray, grid, block, Z1_temp_digits, SubNewNRoundUp * 2 * 2);
+
+                grid.sync();
+            }
         }
     }
 
     grid.sync();
-
-    GetCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z0>(
-        record, debugTrackerArray, grid, block, Z0_OutDigits, total_k * 2);
-
-    if constexpr (SharkFloatParams::DebugChecksums) {
-        grid.sync();
-    }
-
-    GetCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z2>(
-        record, debugTrackerArray, grid, block, Z2_OutDigits, total_k * 2);
-
-    if constexpr (SharkFloatParams::DebugChecksums) {
-        grid.sync();
-    }
-
-    GetCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z1_offset>(
-        record, debugTrackerArray, grid, block, Z1_temp_digits, total_k * 2);
-
-    if constexpr (SharkFloatParams::DebugChecksums) {
-        grid.sync();
-    }
 
     auto *Z1_digits = &tempProducts[Z1_offset];
 
@@ -1154,19 +1164,19 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             Z1_digits[z1_idx + 1] = z1_high;
         }
 
-        if constexpr (SharkFloatParams::DebugChecksums) {
+        if constexpr (DebugChecksums) {
             grid.sync();
-        }
 
-        GetCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z1>(
-            record, debugTrackerArray, grid, block, Z1_digits, total_k * 2);
+            StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z1>(
+                record, debugTrackerArray, grid, block, Z1_digits, total_k * 2);
+        }
 
         // Synchronize before final combination
         grid.sync();
 
         // Now the final combination is just:
         // final = Z0 + (Z1 << (32*n)) + (Z2 << (64*n))
-        for (int i = tid; i < total_result_digits - 1; i += stride) {
+        for (int i = tid; i < total_result_digits; i += stride) {
             uint64_t sum_low = 0;
             uint64_t sum_high = 0;
 
@@ -1199,12 +1209,14 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             final128[result_idx + 1] = sum_high;
         }
 
-        if constexpr (SharkFloatParams::DebugChecksums) {
+        if constexpr (DebugChecksums) {
             grid.sync();
-        }
 
-        GetCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Final128>(
-            record, debugTrackerArray, grid, block, final128, (total_result_digits - 1) * 2);
+            StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Final128>(
+                record, debugTrackerArray, grid, block, final128, total_result_digits * 2);
+            EraseCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Result_offset>(
+                record, debugTrackerArray, grid, block);
+        }
 
         // Synchronize before carry propagation
         grid.sync();
@@ -1248,6 +1260,26 @@ __device__ void MultiplyHelperKaratsubaV2 (
 
     cg::memcpy_async(block, aDigits, A->Digits, sizeof(uint32_t) * NewN);
     cg::memcpy_async(block, bDigits, B->Digits, sizeof(uint32_t) * NewN);
+
+    if constexpr (DebugChecksums) {
+        const bool record = block.thread_index().x == 0 && block.group_index().x == ExecutionBlockBase;
+        EraseCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Invalid>(record, debugTrackerArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::ADigits>(record, debugTrackerArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::BDigits>(record, debugTrackerArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::AHalfHigh>(record, debugTrackerArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::AHalfLow>(record, debugTrackerArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::BHalfHigh>(record, debugTrackerArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::BHalfLow>(record, debugTrackerArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::XDiff>(record, debugTrackerArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::YDiff>(record, debugTrackerArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z0>(record, debugTrackerArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z1>(record, debugTrackerArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z2>(record, debugTrackerArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z1_offset>(record, debugTrackerArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Final128>(record, debugTrackerArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Result_offset>(record, debugTrackerArray, grid, block);
+        static_assert(static_cast<int>(DebugStatePurpose::NumPurposes) == 15, "Unexpected number of purposes");
+    }
 
     // Wait for the first batch of A to be loaded
     cg::wait(block);
@@ -1334,8 +1366,15 @@ __device__ void MultiplyHelperKaratsubaV2 (
     using DebugState = DebugState<SharkFloatParams>;
     const uint64_t *resultEntries = &tempProducts[Result_offset];
     const bool record = block.thread_index().x == 0 && block.group_index().x == ExecutionBlockBase;
-    GetCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Result_offset>(
-        record, debugTrackerArray, grid, block, resultEntries, 2 * NewN);
+
+    if constexpr (DebugChecksums) {
+        grid.sync();
+
+        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Result_offset>(
+            record, debugTrackerArray, grid, block, resultEntries, 2 * NewN);
+
+        grid.sync();
+    }
 
     // ---- Finalize the Result ----
     if constexpr (!SharkFloatParams::DisableFinalConstruction) {

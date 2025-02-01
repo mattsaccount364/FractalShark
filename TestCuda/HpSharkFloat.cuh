@@ -27,8 +27,8 @@ static constexpr bool SharkDebug = false;
 static constexpr auto SharkTestIterCount = 5000;
 static constexpr auto SharkBatchSize = SharkDebug ? 8 : 512;
 static constexpr bool SharkInfiniteCorrectnessTests = true;
-static constexpr bool SharkCorrectnessTests = SharkDebug;
-
+static constexpr bool SharkCorrectnessTests = true;
+static constexpr bool DebugChecksums = true;
 
 template<
     int32_t pThreadsPerBlock,
@@ -51,19 +51,22 @@ struct GenericSharkFloatParams {
     static constexpr bool DisableCarryPropagation = false;
     static constexpr bool DisableFinalConstruction = false;
     static constexpr bool ForceNoOp = false;
-    static constexpr bool HostVerbose = SharkDebug;
-    static constexpr bool DebugChecksums = SharkDebug;
+    static constexpr bool HostVerbose = false;
 
     // 3^whatevs = ConvolutionLimit
-    static constexpr auto ConvolutionLimit = SharkDebug ? 3 : 81;
-    static constexpr auto ConvolutionLimitPow = SharkDebug ? 1 : 4;
-    static constexpr auto NumDebugStates = ((ConvolutionLimit + 1) * 3 * static_cast<int>(DebugStatePurpose::NumPurposes));
+    //static constexpr auto ConvolutionLimit = SharkDebug ? 3 : 81;
+    //static constexpr auto ConvolutionLimitPow = SharkDebug ? 1 : 4;
+
+    static constexpr auto ConvolutionLimit = 3;
+    static constexpr auto ConvolutionLimitPow = 1;
 
     //static constexpr auto ConvolutionLimit = 9;
     //static constexpr auto ConvolutionLimitPow = 2;
 
     //static constexpr auto ConvolutionLimit = 3;
     //static constexpr auto ConvolutionLimitPow = 1;
+
+    static constexpr auto NumDebugStates = ((ConvolutionLimit + 1) * 3 * static_cast<int>(DebugStatePurpose::NumPurposes));
 
     static std::string GetDescription() {
         std::string desc = "GlobalThreadsPerBlock: " + std::to_string(GlobalThreadsPerBlock) +
@@ -95,7 +98,7 @@ static constexpr auto AdditionalUInt64PerFrame = 256;
 
 // Additional space up front, globally-shared:
 // Units are uint64_t
-static constexpr auto AdditionalGlobalChecksumSpace = SharkDebug ? 1024 * 1024 : 0;
+static constexpr auto AdditionalGlobalChecksumSpace = DebugChecksums ? 1024 * 1024 : 0;
 static constexpr auto AdditionalGlobalSyncSpace = 128;
 static constexpr auto AdditionalUInt64Global = AdditionalGlobalChecksumSpace + AdditionalGlobalSyncSpace;
 

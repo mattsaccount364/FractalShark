@@ -17,16 +17,7 @@ enum class DebugStatePurpose {
     Z2,
     Z1_offset,
     Final128,
-    Convolution_offset,
     Result_offset,
-    XDiff_offset,
-    YDiff_offset,
-    GlobalCarryOffset,
-    SubtractionOffset1,
-    SubractionOffset2,
-    SubtractionOffset3,
-    SubtractionOffset4,
-    BorrowAnyOffset,
     NumPurposes
 };
 

@@ -175,12 +175,18 @@ void InvokeMultiplyKernelCorrectness(
     HpSharkFloat<SharkFloatParams> &gpuResult,
     std::vector<DebugStateRaw> *debugResults) {
 
+    static constexpr bool DebugInitCudaMemory = true;
+
     // Prepare kernel arguments
     // Allocate memory for carryOuts and cumulativeCarries
     uint64_t *d_tempProducts;
     constexpr auto BytesToAllocate =
         (AdditionalUInt64Global + ScratchMemoryCopies * CalculateFrameSize<SharkFloatParams>()) * sizeof(uint64_t);
     cudaMalloc(&d_tempProducts, BytesToAllocate);
+
+    if constexpr (DebugInitCudaMemory) {
+        cudaMemset(d_tempProducts, 0xCD, BytesToAllocate);
+    }
 
     // Perform the calculation on the GPU
     HpSharkFloat<SharkFloatParams> *xGpu;
@@ -193,7 +199,12 @@ void InvokeMultiplyKernelCorrectness(
 
     HpSharkFloat<SharkFloatParams> *internalGpuResult2;
     cudaMalloc(&internalGpuResult2, sizeof(HpSharkFloat<SharkFloatParams>));
-    cudaMemset(internalGpuResult2, 0, sizeof(HpSharkFloat<SharkFloatParams>));
+
+    if constexpr (!DebugInitCudaMemory) {
+        cudaMemset(internalGpuResult2, 0, sizeof(HpSharkFloat<SharkFloatParams>));
+    } else {
+        cudaMemset(internalGpuResult2, 0xCD, sizeof(HpSharkFloat<SharkFloatParams>));
+    }
 
     void *kernelArgs[] = {
         (void *)&xGpu,
@@ -209,13 +220,15 @@ void InvokeMultiplyKernelCorrectness(
 
     cudaMemcpy(&gpuResult, internalGpuResult2, sizeof(HpSharkFloat<SharkFloatParams>), cudaMemcpyDeviceToHost);
 
-    if (debugResults != nullptr && SharkDebug) {
-        debugResults->resize(SharkFloatParams::NumDebugStates);
-        cudaMemcpy(
-            debugResults->data(),
-            &d_tempProducts[AdditionalGlobalSyncSpace],
-            SharkFloatParams::NumDebugStates * sizeof(DebugStateRaw),
-            cudaMemcpyDeviceToHost);
+    if (debugResults != nullptr) {
+        if constexpr (DebugChecksums) {
+            debugResults->resize(SharkFloatParams::NumDebugStates);
+            cudaMemcpy(
+                debugResults->data(),
+                &d_tempProducts[AdditionalGlobalSyncSpace],
+                SharkFloatParams::NumDebugStates * sizeof(DebugStateRaw),
+                cudaMemcpyDeviceToHost);
+        }
     }
 
     cudaFree(internalGpuResult2);

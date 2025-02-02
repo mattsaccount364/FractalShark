@@ -184,7 +184,9 @@ void InvokeMultiplyKernelCorrectness(
         (AdditionalUInt64Global + ScratchMemoryCopies * CalculateFrameSize<SharkFloatParams>()) * sizeof(uint64_t);
     cudaMalloc(&d_tempProducts, BytesToAllocate);
 
-    if constexpr (DebugInitCudaMemory) {
+    if constexpr (!DebugInitCudaMemory) {
+        cudaMemset(d_tempProducts, 0, BytesToAllocate);
+    } else {
         cudaMemset(d_tempProducts, 0xCD, BytesToAllocate);
     }
 

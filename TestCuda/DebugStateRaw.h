@@ -2,6 +2,16 @@
 
 #include <stdint.h>
 
+enum class UseConvolution {
+    No,
+    Yes
+};
+
+enum class RecordIt {
+    No,
+    Yes
+};
+
 enum class DebugStatePurpose {
     Invalid,
     ADigits,
@@ -28,4 +38,5 @@ struct DebugStateRaw {
     uint64_t Checksum;
     DebugStatePurpose ChecksumPurpose;
     int CallIndex;
+    UseConvolution Convolution;
 };

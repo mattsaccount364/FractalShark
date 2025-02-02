@@ -416,7 +416,8 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
     }
 
     // Compare debugResultsCuda against debugResultsHost
-    if constexpr (DebugChecksums) {
+    bool ChecksumFailure = false;
+    if constexpr (TestGpu && DebugChecksums) {
         assert (debugResultsHost.size() <= debugStatesCuda.size());
 
         // Note that the hosts results should be exactly the right size, whereas
@@ -432,7 +433,9 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
                 host.CallIndex != cuda.CallIndex ||
                 maxHostArraySize != cuda.ArraySize) {
 
+                std::cerr << "======================================" << std::endl;
                 std::cerr << "Error: Checksum mismatch" << std::endl;
+                std::cerr << "GPU:" << std::endl;
 
                 // Print all fields of cuda:
                 std::cerr << "Block: " << cuda.Block << std::endl;
@@ -441,12 +444,14 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
                 std::cerr << "Checksum: 0x" << std::hex << cuda.Checksum << std::dec << std::endl;
                 std::cerr << "ChecksumPurpose: " << static_cast<int>(cuda.ChecksumPurpose) << std::endl;
                 std::cerr << "CallIndex: " << cuda.CallIndex << std::endl;
+                std::cerr << "Convolution: " << static_cast<int>(cuda.Convolution) << std::endl;
 
                 // Print all fields of host
                 std::cerr << std::endl;
+                std::cerr << "Host reference implementation:" << std::endl;
                 std::cerr << "ArrayToChecksum32: " << std::endl;
                 for (size_t j = 0; j < host.ArrayToChecksum32.size(); ++j) {
-                    std::cerr << host.ArrayToChecksum32[j] << " ";
+                    std::cerr << std::hex << "0x" << host.ArrayToChecksum32[j] << std::dec << " ";
                 }
 
                 std::cerr << std::endl;
@@ -454,7 +459,7 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
 
                 std::cerr << "ArrayToChecksum64: " << std::endl;
                 for (size_t j = 0; j < host.ArrayToChecksum64.size(); ++j) {
-                    std::cerr << host.ArrayToChecksum64[j] << " ";
+                    std::cerr << std::hex << "0x" << host.ArrayToChecksum64[j] << std::dec << " ";
                 }
 
                 std::cerr << std::endl;
@@ -463,6 +468,9 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
                 std::cerr << "Checksum: 0x" << std::hex << host.Checksum << std::dec << std::endl;
                 std::cerr << "ChecksumPurpose: " << static_cast<int>(host.ChecksumPurpose) << std::endl;
                 std::cerr << "CallIndex: " << host.CallIndex << std::endl;
+                std::cerr << "Convolution: " << static_cast<int>(host.Convolution) << std::endl;
+
+                ChecksumFailure = true;
 
                 DebugBreak();
             }
@@ -480,6 +488,11 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
            DebugBreak();
         } else {
             std::cout << "GPU High Precision succeeded" << std::endl;
+
+            if (ChecksumFailure) {
+                std::cerr << "Checksum failure (debug issue), see above results" << std::endl;
+                DebugBreak();
+            }
         }
 
         // Clean up MPIR variables

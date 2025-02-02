@@ -51,14 +51,16 @@ struct GenericSharkFloatParams {
     static constexpr bool DisableCarryPropagation = false;
     static constexpr bool DisableFinalConstruction = false;
     static constexpr bool ForceNoOp = false;
+
+    // If true, the host will print out a lot of stuff
     static constexpr bool HostVerbose = false;
 
     // 3^whatevs = ConvolutionLimit
-    //static constexpr auto ConvolutionLimit = SharkDebug ? 3 : 81;
-    //static constexpr auto ConvolutionLimitPow = SharkDebug ? 1 : 4;
+    static constexpr auto ConvolutionLimit = SharkDebug ? 9 : 27;
+    static constexpr auto ConvolutionLimitPow = SharkDebug ? 2 : 3;
 
-    static constexpr auto ConvolutionLimit = 3;
-    static constexpr auto ConvolutionLimitPow = 1;
+    //static constexpr auto ConvolutionLimit = 3;
+    //static constexpr auto ConvolutionLimitPow = 1;
 
     //static constexpr auto ConvolutionLimit = 9;
     //static constexpr auto ConvolutionLimitPow = 2;
@@ -119,6 +121,7 @@ static constexpr auto LowPrec = 32;
 
 // If you add a new one, search for one of the other types and copy/paste
 using Test8x1SharkParams = GenericSharkFloatParams<8, 1, SharkBatchSize, SharkTestIterCount>;
+//using Test8x1SharkParams = GenericSharkFloatParams<13, 3, SharkBatchSize, SharkTestIterCount>;
 using Test4x36SharkParams = GenericSharkFloatParams<4, 6, SharkBatchSize, SharkTestIterCount>;
 using Test4x12SharkParams = GenericSharkFloatParams<5, 6, SharkBatchSize, SharkTestIterCount>;
 using Test4x9SharkParams = GenericSharkFloatParams<4, 12, SharkBatchSize, SharkTestIterCount>;

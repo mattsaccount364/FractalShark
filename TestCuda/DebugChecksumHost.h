@@ -48,28 +48,32 @@ struct DebugStateHost {
         const uint32_t *data,
         size_t size,
         DebugStatePurpose purpose,
-        int callIndex
+        int callIndex,
+        UseConvolution useConvolution
     );
 
     DebugStateHost(
         const uint64_t *data,
         size_t size,
         DebugStatePurpose purpose,
-        int callIndex
+        int callIndex,
+        UseConvolution useConvolution
     );
 
     void Reset(
         const uint32_t *arrayToChecksum,
         size_t arraySize,
         DebugStatePurpose Purpose,
-        int CallIndex
+        int CallIndex,
+        UseConvolution useConvolution
     );
 
     void Reset(
         const uint64_t *arrayToChecksum,
         size_t arraySize,
         DebugStatePurpose Purpose,
-        int CallIndex
+        int CallIndex,
+        UseConvolution useConvolution
     );
 
     std::string GetStr() const;
@@ -96,6 +100,7 @@ struct DebugStateHost {
     uint64_t Checksum;         ///< Stores the computed CRC64 (if computed)
     DebugStatePurpose               ChecksumPurpose;          ///< Enum describing the purpose of this debug state
     int                   CallIndex;                ///< Index of the call that generated this debug state
+    UseConvolution  Convolution;
 };
 
 //
@@ -108,7 +113,8 @@ DebugStateHost<SharkFloatParams>::DebugStateHost()
     , ArrayToChecksum64{}
     , Checksum{}
     , ChecksumPurpose{}
-    , CallIndex{} {
+    , CallIndex{}
+    , Convolution{} {
     // No additional logic needed here since we rely on the other constructor
 }
 
@@ -181,13 +187,15 @@ DebugStateHost<SharkFloatParams>::DebugStateHost(
     const uint32_t *data,
     size_t size,
     DebugStatePurpose purpose,
-    int callIndex
+    int callIndex,
+    UseConvolution useConvolution
 )
     : ArrayToChecksum32{}
     , ArrayToChecksum64{}
     , Checksum(0)
     , ChecksumPurpose(purpose)
     , CallIndex(callIndex)
+    , Convolution(useConvolution)
 {
     if constexpr (DebugChecksums) {
         // Copy data if valid
@@ -203,13 +211,15 @@ DebugStateHost<SharkFloatParams>::DebugStateHost(
     const uint64_t *data,
     size_t size,
     DebugStatePurpose purpose,
-    int callIndex
+    int callIndex,
+    UseConvolution useConvolution
 )
     : ArrayToChecksum32{}
     , ArrayToChecksum64{}
     , Checksum(0)
     , ChecksumPurpose(purpose)
     , CallIndex(callIndex)
+    , Convolution(useConvolution)
 {
     if constexpr (DebugChecksums) {
         // Copy data if valid
@@ -225,7 +235,8 @@ void DebugStateHost<SharkFloatParams>::Reset(
     const uint32_t *arrayToChecksum,
     size_t arraySize,
     DebugStatePurpose purpose,
-    int callIndex
+    int callIndex,
+    UseConvolution useConvolution
 ) {
     if constexpr (DebugChecksums) {
         ArrayToChecksum32.assign(arrayToChecksum, arrayToChecksum + arraySize);
@@ -233,6 +244,8 @@ void DebugStateHost<SharkFloatParams>::Reset(
 
         ChecksumPurpose = purpose;
         CallIndex = callIndex;
+
+        Convolution = useConvolution;
     }
 }
 
@@ -241,7 +254,8 @@ void DebugStateHost<SharkFloatParams>::Reset(
     const uint64_t *arrayToChecksum,
     size_t arraySize,
     DebugStatePurpose purpose,
-    int callIndex
+    int callIndex,
+    UseConvolution useConvolution
 ) {
     if constexpr (DebugChecksums) {
         ArrayToChecksum64.assign(arrayToChecksum, arrayToChecksum + arraySize);
@@ -249,6 +263,8 @@ void DebugStateHost<SharkFloatParams>::Reset(
 
         ChecksumPurpose = purpose;
         CallIndex = callIndex;
+
+        Convolution = useConvolution;
     }
 }
 
@@ -267,6 +283,7 @@ std::string DebugStateHost<SharkFloatParams>::GetStr() const
     }
 
     ss << ", CallIndex: " << CallIndex;
+    ss << ", Convolution: " << static_cast<int>(Convolution);
 
     return ss.str();
 }

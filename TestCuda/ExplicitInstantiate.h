@@ -1,6 +1,6 @@
 #pragma once
 
-// #define ENABLE_COMICAL_CORRECTNESS 1
+#define ENABLE_COMICAL_CORRECTNESS 1
 
 static constexpr auto ComicalThreadCount = 13;
 #define ComicalTest1  GenericSharkFloatParams<ComicalThreadCount, 1, SharkBatchSize, SharkTestIterCount>

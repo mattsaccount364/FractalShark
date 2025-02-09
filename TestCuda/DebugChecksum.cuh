@@ -22,6 +22,7 @@ struct DebugState {
         const uint32_t *arrayToChecksum,
         size_t arraySize,
         DebugStatePurpose purpose,
+        int recursionDepth,
         int callIndex
         );
 
@@ -33,6 +34,7 @@ struct DebugState {
         const uint64_t *arrayToChecksum,
         size_t arraySize,
         DebugStatePurpose purpose,
+        int recursionDepth,
         int callIndex
     );
 
@@ -41,6 +43,7 @@ struct DebugState {
         cooperative_groups::grid_group &grid,
         cooperative_groups::thread_block &block,
         DebugStatePurpose purpose,
+        int recursionDepth,
         int callIndex
     );
 
@@ -111,6 +114,7 @@ __device__ void DebugState<SharkFloatParams>::Reset(
     const uint32_t *arrayToChecksum,
     size_t arraySize,
     DebugStatePurpose purpose,
+    int recursionDepth,
     int callIndex)
 {
     if constexpr (DebugChecksums) {
@@ -127,6 +131,7 @@ __device__ void DebugState<SharkFloatParams>::Reset(
             // Compute the checksum for the given array
             Data.Checksum = ComputeCRC64(arrayToChecksum, arraySize, 0);
 
+            Data.RecursionDepth = recursionDepth;
             Data.CallIndex = callIndex;
             Data.Convolution = useConvolution;
         }
@@ -142,6 +147,7 @@ __device__ void DebugState<SharkFloatParams>::Reset(
     const uint64_t *arrayToChecksum,
     size_t arraySize,
     DebugStatePurpose purpose,
+    int recursionDepth,
     int callIndex)
 {
     if constexpr (DebugChecksums) {
@@ -158,6 +164,7 @@ __device__ void DebugState<SharkFloatParams>::Reset(
             // Compute the checksum for the given array
             Data.Checksum = ComputeCRC64(arrayToChecksum, arraySize, 0);
 
+            Data.RecursionDepth = recursionDepth;
             Data.CallIndex = callIndex;
             Data.Convolution = useConvolution;
         }
@@ -170,6 +177,7 @@ __device__ void DebugState<SharkFloatParams>::Erase(
     cooperative_groups::grid_group &grid,
     cooperative_groups::thread_block &block,
     DebugStatePurpose purpose,
+    int recursionDepth,
     int callIndex)
 {
     if constexpr (DebugChecksums) {
@@ -180,6 +188,8 @@ __device__ void DebugState<SharkFloatParams>::Erase(
             Data.Thread = 0;
             Data.ArraySize = 0;
             Data.ChecksumPurpose = DebugStatePurpose::Invalid;
+
+            Data.RecursionDepth = 0;
             Data.CallIndex = 0;
             Data.Convolution = UseConvolution::No;
         }

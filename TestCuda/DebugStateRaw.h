@@ -37,6 +37,7 @@ struct DebugStateRaw {
     uint64_t ArraySize;
     uint64_t Checksum;
     DebugStatePurpose ChecksumPurpose;
+    int RecursionDepth;
     int CallIndex;
     UseConvolution Convolution;
 };

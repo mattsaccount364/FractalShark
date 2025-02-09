@@ -279,6 +279,323 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallel(
     }
 }
 
+template<
+    class SharkFloatParams,
+    int a1n, int b1n,
+    int a2n, int b2n,
+    int ExecutionBlockBase,
+    int ExecutionNumBlocks>
+__device__ SharkForceInlineReleaseOnly void SubtractDigitsParallelImproved3(
+    // Working arrays (which may be in shared memory)
+    uint32_t *__restrict__ x_diff_abs,
+    uint32_t *__restrict__ y_diff_abs,
+    // Input digit arrays (for the two halves)
+    const uint32_t *__restrict__ a1,
+    const uint32_t *__restrict__ b1,
+    const uint32_t *__restrict__ a2,
+    const uint32_t *__restrict__ b2,
+    // Two borrow arrays (one for each half)
+    uint32_t *__restrict__ subtractionBorrows1a,
+    uint32_t *__restrict__ subtractionBorrows2a,
+    uint32_t *__restrict__ subtractionBorrows1b,
+    uint32_t *__restrict__ subtractionBorrows2b,
+    // An array (of size ExecutionNumBlocks) for storing each block’s final borrow
+    uint32_t *__restrict__ blockBorrow1,
+    uint32_t *__restrict__ blockBorrow2,
+    // Global buffers to hold the “working” differences
+    uint32_t *__restrict__ global_x_diff_abs,
+    uint32_t *__restrict__ global_y_diff_abs,
+    // A single global counter to indicate if any borrow remains
+    uint32_t *__restrict__ globalBorrowAny,
+    cg::grid_group &grid,
+    cg::thread_block &block) {
+
+    if constexpr (ExecutionNumBlocks > 1) {
+        // Compute maximum digit count from the two halves.
+        constexpr int n1max = (a1n > b1n) ? a1n : b1n;
+        constexpr int n2max = (a2n > b2n) ? a2n : b2n;
+        constexpr int nmax = (n1max > n2max) ? n1max : n2max;
+
+        // Use the same mapping as the original:
+        const int tid = (block.group_index().x - ExecutionBlockBase) * block.dim_threads().x + block.thread_index().x;
+        const int stride = block.dim_threads().x * ExecutionNumBlocks;
+
+        // Reset the global borrow counter.
+        if (block.group_index().x == 0 && block.thread_index().x == 0) {
+            *globalBorrowAny = 0;
+        }
+
+        // Erase the per-block borrow arrays.
+        if (block.thread_index().x == 0) {
+            blockBorrow1[block.group_index().x] = 0;
+            blockBorrow2[block.group_index().x] = 0;
+        }
+
+        auto *curSubtract1 = subtractionBorrows1a;
+        auto *curSubtract2 = subtractionBorrows2a;
+        auto *newSubtract1 = subtractionBorrows1b;
+        auto *newSubtract2 = subtractionBorrows2b;
+
+        // === (1) INITIAL SUBTRACTION: Process all digits using a grid–stride loop.
+        // Only active blocks (those with group_index().x in [ExecutionBlockBase, ExecutionBlockBase+ExecutionNumBlocks))
+        // participate.
+
+        // Compute chunk size for each block.
+        const int blockIdx = block.group_index().x - ExecutionBlockBase;
+
+        const int baseSize = nmax / ExecutionNumBlocks;         // integer division
+        const int remainder = nmax % ExecutionNumBlocks;          // extra digits to distribute
+        const int chunkSize = (blockIdx < remainder) ? (baseSize + 1) : baseSize;
+        const int blockStart = blockIdx * baseSize + min(blockIdx, remainder);
+        const int blockEnd = blockStart + chunkSize;
+
+        {
+            // Each thread in the block processes its assigned indices in the contiguous chunk.
+            for (int idx = blockStart + block.thread_index().x;
+                idx < blockEnd;
+                idx += block.dim_threads().x) {
+
+                uint32_t a1_val = (idx < a1n) ? a1[idx] : 0;
+                uint32_t b1_val = (idx < b1n) ? b1[idx] : 0;
+                uint32_t a2_val = (idx < a2n) ? a2[idx] : 0;
+                uint32_t b2_val = (idx < b2n) ? b2[idx] : 0;
+
+                uint64_t diff1 = (uint64_t)a1_val - b1_val;
+                uint64_t diff2 = (uint64_t)a2_val - b2_val;
+
+                uint32_t borrow1 = (a1_val < b1_val) ? 1u : 0u;
+                uint32_t borrow2 = (a2_val < b2_val) ? 1u : 0u;
+
+                global_x_diff_abs[idx] = static_cast<uint32_t>(diff1);
+                global_y_diff_abs[idx] = static_cast<uint32_t>(diff2);
+
+                curSubtract1[idx] = borrow1;
+                curSubtract2[idx] = borrow2;
+
+                // Initialize newSubtract as well
+                newSubtract1[idx] = 0;
+                newSubtract2[idx] = 0;
+            }
+        }
+
+        grid.sync();
+
+        // === (2b) Each block’s last thread writes its final borrow.
+        if (block.thread_index().x == block.dim_threads().x - 1) {
+            // Each block processes a contiguous chunk.
+            // const int blockStart = (block.group_index().x - ExecutionBlockBase) * block.dim_threads().x;
+            // const int blockEnd = blockStart + block.dim_threads().x; // exclusive
+
+            const uint32_t finalBorrow1 = curSubtract1[blockEnd - 1];
+            blockBorrow1[block.group_index().x] = finalBorrow1;
+            curSubtract1[blockEnd - 1] = 0;
+
+            const uint32_t finalBorrow2 = curSubtract2[blockEnd - 1];
+            blockBorrow2[block.group_index().x] = finalBorrow2;
+            curSubtract2[blockEnd - 1] = 0;
+        }
+
+        grid.sync();  // Ensure all initial differences and borrows are computed
+
+        uint32_t initialBorrowAny = 0;
+
+        // === (2) OUTER LOOP: Propagate borrows across blocks.
+        const int MAX_OUTER_PASSES = 5000; // Adjust as needed.
+        int outerPass = 0;
+        do {
+            uint32_t injection1 = 0, injection2 = 0;
+
+            if (block.thread_index().x == 0) {
+                injection1 = (block.group_index().x > ExecutionBlockBase)
+                    ? blockBorrow1[block.group_index().x - 1]
+                    : 0;
+                injection2 = (block.group_index().x > ExecutionBlockBase)
+                    ? blockBorrow2[block.group_index().x - 1]
+                    : 0;
+            }
+            block.sync();
+
+            // === (2a) LOCAL PROPAGATION WITHIN THE BLOCK.
+            // Iterate blockDim.x times so that a borrow created at the block’s start
+            // immediately cascades through.
+
+            for (int pass = 0; pass < chunkSize; ++pass) {
+
+                for (int localIdx = blockStart + block.thread_index().x;
+                    localIdx < blockEnd;
+                    localIdx += block.dim_threads().x) {
+
+                    // For x_diff_abs:
+                    uint32_t borrow1;
+                    if (block.thread_index().x == 0) {
+                        // Only on the first pass do we subtract the injected borrow.
+                        borrow1 = (pass == 0) ? injection1 : 0;
+                    } else {
+                        borrow1 = curSubtract1[localIdx - 1];
+                    }
+                    const uint64_t newVal1 = (uint64_t)global_x_diff_abs[localIdx] - borrow1;
+                    global_x_diff_abs[localIdx] = static_cast<uint32_t>(newVal1 & 0xFFFFFFFFULL);
+
+                    // Last thread in the block that actually did anything
+                    if (block.thread_index().x == chunkSize - 1) {
+                        newSubtract1[localIdx] |= (newVal1 & 0x8000000000000000ULL) ? 1u : 0u;
+                        curSubtract1[localIdx] |= (newVal1 & 0x8000000000000000ULL) ? 1u : 0u;
+                    } else {
+                        newSubtract1[localIdx] = (newVal1 & 0x8000000000000000ULL) ? 1u : 0u;
+                    }
+
+                    // For y_diff_abs:
+                    uint32_t borrow2;
+                    if (block.thread_index().x == 0) {
+                        borrow2 = (pass == 0) ? injection2 : 0;
+                    } else {
+                        borrow2 = curSubtract2[localIdx - 1];
+                    }
+                    const uint64_t newVal2 = (uint64_t)global_y_diff_abs[localIdx] - borrow2;
+                    global_y_diff_abs[localIdx] = static_cast<uint32_t>(newVal2 & 0xFFFFFFFFULL);
+
+                    // Last thread in the block that actually did anything
+                    if (block.thread_index().x == chunkSize - 1) {
+                        newSubtract2[localIdx] |= (newVal2 & 0x8000000000000000ULL) ? 1u : 0u;
+                        curSubtract2[localIdx] |= (newVal2 & 0x8000000000000000ULL) ? 1u : 0u;
+                    } else {
+                        newSubtract2[localIdx] = (newVal2 & 0x8000000000000000ULL) ? 1u : 0u;
+                    }
+                }
+
+                // Swap curSubtract and newSubtract.
+                auto *tmp = curSubtract1;
+                curSubtract1 = newSubtract1;
+                newSubtract1 = tmp;
+
+                tmp = curSubtract2;
+                curSubtract2 = newSubtract2;
+                newSubtract2 = tmp;
+
+                block.sync();
+            }
+            grid.sync();
+
+            // === (2b) Each block’s last thread writes its final borrow.
+            if (block.thread_index().x == block.dim_threads().x - 1) {
+                const uint32_t finalBorrow1 = curSubtract1[blockEnd - 1];
+                blockBorrow1[block.group_index().x] = finalBorrow1;
+                curSubtract1[blockEnd - 1] = 0;
+                newSubtract1[blockEnd - 1] = 0;
+
+                const uint32_t finalBorrow2 = curSubtract2[blockEnd - 1];
+                blockBorrow2[block.group_index().x] = finalBorrow2;
+                curSubtract2[blockEnd - 1] = 0;
+                newSubtract2[blockEnd - 1] = 0;
+            }
+            grid.sync();
+
+            // === (2c) Global aggregation: One designated block sums the per–block borrows.
+            if (block.group_index().x == ExecutionBlockBase &&
+                block.thread_index().x == 0) {
+
+                uint32_t totalBorrow = 0;
+                for (int i = ExecutionBlockBase; i < ExecutionBlockBase + ExecutionNumBlocks; ++i) {
+                    totalBorrow += blockBorrow1[i];
+                    totalBorrow += blockBorrow2[i];
+                }
+
+                atomicAdd(globalBorrowAny, totalBorrow);  // Overwrite with the new total.
+            }
+            grid.sync();
+
+            uint32_t tempCopyGlobalBorrowAny = *globalBorrowAny;
+            if (tempCopyGlobalBorrowAny == initialBorrowAny)
+                break;  // no new borrows → done
+
+            grid.sync();
+
+            initialBorrowAny = tempCopyGlobalBorrowAny;
+            outerPass++;
+        } while (outerPass < MAX_OUTER_PASSES);
+
+        grid.sync();  // Final grid sync to guarantee all blocks are done.
+
+
+    } else { //////////////////////////////////////////////////////////////////////
+
+        // Compute maximum digit count.
+        constexpr int n1max = (a1n > b1n) ? a1n : b1n;
+        constexpr int n2max = (a2n > b2n) ? a2n : b2n;
+        constexpr int nmax = (n1max > n2max) ? n1max : n2max;
+
+        // For one block, block.group_index().x == ExecutionBlockBase.
+        // Define a simple block–stride loop over the contiguous chunk: [0, nmax).
+        const int tid = block.thread_index().x;
+        const int stride = block.dim_threads().x;
+        const int blockStart = 0;
+        const int blockEnd = nmax; // all digits in [0, nmax)
+
+        auto *curSubtract1 = subtractionBorrows1a;
+        auto *curSubtract2 = subtractionBorrows2a;
+        auto *newSubtract1 = subtractionBorrows1b;
+        auto *newSubtract2 = subtractionBorrows2b;
+
+        // INITIAL SUBTRACTION: each thread processes its assigned digits.
+        for (int idx = blockStart + tid; idx < blockEnd; idx += stride) {
+            uint32_t a1_val = (idx < a1n) ? a1[idx] : 0;
+            uint32_t b1_val = (idx < b1n) ? b1[idx] : 0;
+            uint32_t a2_val = (idx < a2n) ? a2[idx] : 0;
+            uint32_t b2_val = (idx < b2n) ? b2[idx] : 0;
+
+            uint64_t diff1 = (uint64_t)a1_val - b1_val;
+            uint64_t diff2 = (uint64_t)a2_val - b2_val;
+
+            uint32_t borrow1 = (a1_val < b1_val) ? 1u : 0u;
+            uint32_t borrow2 = (a2_val < b2_val) ? 1u : 0u;
+
+            global_x_diff_abs[idx] = static_cast<uint32_t>(diff1);
+            global_y_diff_abs[idx] = static_cast<uint32_t>(diff2);
+
+            curSubtract1[idx] = borrow1;
+            curSubtract2[idx] = borrow2;
+        }
+        block.sync();
+
+        // OUTER LOOP: Propagate borrows until stabilization.
+        // Since there is one block, there’s no inter–block injection.
+        uint32_t initialBorrowAny = 0;
+        const int MAX_OUTER_PASSES = 5000;
+        int outerPass = 0;
+
+        // LOCAL PROPAGATION: For each pass, each thread processes its indices in [blockStart, blockEnd)
+        // using a block–stride loop.
+        // We run (blockEnd - blockStart + 1) passes to ensure complete propagation.
+
+        for (int pass = 0; pass < (blockEnd - blockStart + 1); ++pass) {
+            for (int idx = blockStart + tid; idx < blockEnd; idx += stride) {
+                // For the first digit, there is no previous digit, so the borrow is 0.
+                uint32_t borrow1 = (idx == blockStart) ? 0 : curSubtract1[idx - 1];
+                uint64_t newVal1 = static_cast<uint64_t>(global_x_diff_abs[idx]) - borrow1;
+                global_x_diff_abs[idx] = static_cast<uint32_t>(newVal1 & 0xFFFFFFFFULL);
+                newSubtract1[idx] = (newVal1 & 0x8000000000000000ULL) ? 1 : 0;
+
+                uint32_t borrow2 = (idx == blockStart) ? 0 : curSubtract2[idx - 1];
+                uint64_t newVal2 = static_cast<uint64_t>(global_y_diff_abs[idx]) - borrow2;
+                global_y_diff_abs[idx] = static_cast<uint32_t>(newVal2 & 0xFFFFFFFFULL);
+                newSubtract2[idx] = (newVal2 & 0x8000000000000000ULL) ? 1 : 0;
+            }
+
+            // All threads synchronize after processing the entire chunk.
+            block.sync();
+
+            // Swap curSubtract and newSubtract.
+            auto *tmp = curSubtract1;
+            curSubtract1 = newSubtract1;
+            newSubtract1 = tmp;
+
+            tmp = curSubtract2;
+            curSubtract2 = newSubtract2;
+            newSubtract2 = tmp;
+        }
+    }
+}
+
 
 
 // Function to perform addition with carry
@@ -533,21 +850,25 @@ static_assert(AdditionalUInt64PerFrame == 256, "See below");
     constexpr auto CallOffset = CallIndex * CalculateFrameSize<SharkFloatParams>(); \
     constexpr auto TempBaseOffset = TempBase + CallOffset; \
     constexpr auto BorrowGlobalOffset = 0; \
+    constexpr auto BorrowBlockLevelOffset1 = MaxBlocks; \
+    constexpr auto BorrowBlockLevelOffset2 = MaxBlocks * 2; \
     constexpr auto Checksum_offset = AdditionalGlobalSyncSpace; \
     auto *debugTrackerArray = reinterpret_cast<DebugState<SharkFloatParams>*>(&tempProducts[Checksum_offset]); \
-    constexpr auto Z0_offset = TempBaseOffset + AdditionalUInt64PerFrame; \
-    constexpr auto Z2_offset = Z0_offset + 4 * NewN * TestMultiplier; \
-    constexpr auto Z1_temp_offset = Z2_offset + 4 * NewN * TestMultiplier; \
-    constexpr auto Z1_offset = Z1_temp_offset + 4 * NewN * TestMultiplier; \
-    constexpr auto Convolution_offset = Z1_offset + 4 * NewN * TestMultiplier;       /* 17 */ \
-    constexpr auto Result_offset = Convolution_offset + 4 * NewN * TestMultiplier;   /* 21 */ \
-    constexpr auto XDiff_offset = Result_offset + 2 * NewN * TestMultiplier;         /* 23 */ \
-    constexpr auto YDiff_offset = XDiff_offset + 1 * NewN * TestMultiplier;          /* 24 */ \
-    constexpr auto GlobalCarryOffset = YDiff_offset + 1 * NewN * TestMultiplier;     /* 25 */ \
-    constexpr auto SubtractionOffset1 = GlobalCarryOffset + 1 * NewN * TestMultiplier;   /* 26 */ \
-    constexpr auto SubtractionOffset2 = SubtractionOffset1 + 1 * NewN * TestMultiplier;  /* 27 */ \
-    constexpr auto SubtractionOffset3 = SubtractionOffset2 + 1 * NewN * TestMultiplier;  /* 28 */ \
-    constexpr auto SubtractionOffset4 = SubtractionOffset3 + 1 * NewN * TestMultiplier;  /* 29 */
+    constexpr auto Z0_offset = TempBaseOffset + AdditionalUInt64PerFrame; /* 0 */ \
+    constexpr auto Z2_offset = Z0_offset + 4 * NewN * TestMultiplier; /* 4 */ \
+    constexpr auto Z1_temp_offset = Z2_offset + 4 * NewN * TestMultiplier; /* 8 */ \
+    constexpr auto Z1_offset = Z1_temp_offset + 4 * NewN * TestMultiplier; /* 12 */ \
+    constexpr auto Convolution_offset = Z1_offset + 4 * NewN * TestMultiplier;       /* 16 */ \
+    constexpr auto Result_offset = Convolution_offset + 4 * NewN * TestMultiplier;   /* 20 */ \
+    constexpr auto XDiff_offset = Result_offset + 2 * NewN * TestMultiplier;         /* 22 */ \
+    constexpr auto YDiff_offset = XDiff_offset + 1 * NewN * TestMultiplier;          /* 23 */ \
+    constexpr auto GlobalCarryOffset = YDiff_offset + 1 * NewN * TestMultiplier;     /* 24 */ \
+    constexpr auto SubtractionOffset1 = GlobalCarryOffset + 1 * NewN * TestMultiplier;   /* 25 */ \
+    constexpr auto SubtractionOffset2 = SubtractionOffset1 + 1 * NewN * TestMultiplier;  /* 26 */ \
+    constexpr auto SubtractionOffset3 = SubtractionOffset2 + 1 * NewN * TestMultiplier;  /* 27 */ \
+    constexpr auto SubtractionOffset4 = SubtractionOffset3 + 1 * NewN * TestMultiplier;  /* 28 */ \
+    constexpr auto SubtractionOffset5 = SubtractionOffset4 + 1 * NewN * TestMultiplier;  /* 29 */ \
+    constexpr auto SubtractionOffset6 = SubtractionOffset5 + 1 * NewN * TestMultiplier;  /* 30 */ \
 
 
 #define DefineExtraDefinitions() \
@@ -571,6 +892,7 @@ static_assert(AdditionalUInt64PerFrame == 256, "See below");
 
 template<
     class SharkFloatParams,
+    int RecursionDepth,
     int CallIndex,
     DebugStatePurpose Purpose>
 __device__ SharkForceInlineReleaseOnly void
@@ -583,11 +905,12 @@ EraseCurrentDebugState(
     constexpr auto maxPurposes = static_cast<int>(DebugStatePurpose::NumPurposes);
     constexpr auto curPurpose = static_cast<int>(Purpose);
     debugTrackerArray[CallIndex * maxPurposes + curPurpose].Erase(
-        record, grid, block, Purpose, CallIndex);
+        record, grid, block, Purpose, RecursionDepth, CallIndex);
 }
 
 template<
     class SharkFloatParams,
+    int RecursionDepth,
     int CallIndex,
     DebugStatePurpose Purpose,
     typename ArrayType>
@@ -604,7 +927,7 @@ StoreCurrentDebugState (
     constexpr auto maxPurposes = static_cast<int>(DebugStatePurpose::NumPurposes);
     constexpr auto curPurpose = static_cast<int>(Purpose);
     debugTrackerArray[CallIndex * maxPurposes + curPurpose].Reset(
-        record, useConvolution, grid, block, arrayToChecksum, arraySize, Purpose, CallIndex);
+        record, useConvolution, grid, block, arrayToChecksum, arraySize, Purpose, RecursionDepth, CallIndex);
 }
 
 // Assuming that SharkFloatParams::GlobalNumUint32 can be large and doesn't fit in shared memory
@@ -662,11 +985,11 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
     if constexpr (DebugChecksums) {
         grid.sync();
 
-        EraseCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Invalid>(
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Invalid>(
             record, debugTrackerArray, grid, block);
-        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::ADigits, uint32_t>(
+        StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::ADigits, uint32_t>(
             record, UseConvolutionHere, debugTrackerArray, grid, block, aDigits, NewN);
-        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::BDigits, uint32_t>(
+        StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BDigits, uint32_t>(
             record, UseConvolutionHere, debugTrackerArray, grid, block, bDigits, NewN);
 
         grid.sync();
@@ -693,6 +1016,8 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
     auto *SharkRestrict subtractionBorrows3 = reinterpret_cast<uint32_t *>(&tempProducts[SubtractionOffset3]);
     auto *SharkRestrict subtractionBorrows4 = reinterpret_cast<uint32_t *>(&tempProducts[SubtractionOffset4]);
     auto *SharkRestrict globalBorrowAny = reinterpret_cast<uint32_t *>(&tempProducts[BorrowGlobalOffset]);
+    auto *SharkRestrict globalBlockBorrow1 = reinterpret_cast<uint32_t *>(&tempProducts[BorrowBlockLevelOffset1]);
+    auto *SharkRestrict globalBlockBorrow2 = reinterpret_cast<uint32_t *>(&tempProducts[BorrowBlockLevelOffset2]);
 
     const auto SharkRestrict *a_high = aDigits + n1;
     const auto SharkRestrict *b_high = bDigits + n1;
@@ -702,13 +1027,13 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
     if constexpr (DebugChecksums) {
         grid.sync();
 
-        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::AHalfHigh>(
+        StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::AHalfHigh>(
             record, UseConvolutionHere, debugTrackerArray, grid, block, a_high, n2);
-        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::AHalfLow>(
+        StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::AHalfLow>(
             record, UseConvolutionHere, debugTrackerArray, grid, block, a_low, n1);
-        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::BHalfHigh>(
+        StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BHalfHigh>(
             record, UseConvolutionHere, debugTrackerArray, grid, block, b_high, n2);
-        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::BHalfLow>(
+        StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BHalfLow>(
             record, UseConvolutionHere, debugTrackerArray, grid, block, b_low, n1);
 
         grid.sync();
@@ -722,7 +1047,7 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             if (x_compare >= 0 && y_compare >= 0) {
                 x_diff_sign = 0;
                 y_diff_sign = 0;
-                SubtractDigitsParallel<
+                SubtractDigitsParallelImproved3<
                     SharkFloatParams,
                     n2,
                     n1,
@@ -740,6 +1065,8 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                         subtractionBorrows2,
                         subtractionBorrows3,
                         subtractionBorrows4,
+                        globalBlockBorrow1,
+                        globalBlockBorrow2,
                         global_x_diff_abs,
                         global_y_diff_abs,
                         globalBorrowAny,
@@ -748,7 +1075,7 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             } else if (x_compare < 0 && y_compare < 0) {
                 x_diff_sign = 1;
                 y_diff_sign = 1;
-                SubtractDigitsParallel<
+                SubtractDigitsParallelImproved3<
                     SharkFloatParams,
                     n1,
                     n2,
@@ -766,6 +1093,8 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                         subtractionBorrows2,
                         subtractionBorrows3,
                         subtractionBorrows4,
+                        globalBlockBorrow1,
+                        globalBlockBorrow2,
                         global_x_diff_abs,
                         global_y_diff_abs,
                         globalBorrowAny,
@@ -774,7 +1103,7 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             } else if (x_compare >= 0 && y_compare < 0) {
                 x_diff_sign = 0;
                 y_diff_sign = 1;
-                SubtractDigitsParallel<
+                SubtractDigitsParallelImproved3<
                     SharkFloatParams,
                     n2,
                     n1,
@@ -792,6 +1121,8 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                         subtractionBorrows2,
                         subtractionBorrows3,
                         subtractionBorrows4,
+                        globalBlockBorrow1,
+                        globalBlockBorrow2,
                         global_x_diff_abs,
                         global_y_diff_abs,
                         globalBorrowAny,
@@ -800,7 +1131,7 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             } else {
                 x_diff_sign = 1;
                 y_diff_sign = 0;
-                SubtractDigitsParallel<
+                SubtractDigitsParallelImproved3<
                     SharkFloatParams,
                     n1,
                     n2,
@@ -818,6 +1149,8 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                         subtractionBorrows2,
                         subtractionBorrows3,
                         subtractionBorrows4,
+                        globalBlockBorrow1,
+                        globalBlockBorrow2,
                         global_x_diff_abs,
                         global_y_diff_abs,
                         globalBorrowAny,
@@ -852,9 +1185,9 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
     if constexpr (DebugChecksums) {
         grid.sync();
     
-        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::XDiff>(
+        StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::XDiff>(
             record, UseConvolutionHere, debugTrackerArray, grid, block, global_x_diff_abs, MaxHalfN);
-        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::YDiff>(
+        StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::YDiff>(
             record, UseConvolutionHere, debugTrackerArray, grid, block, global_y_diff_abs, MaxHalfN);
 
         grid.sync();
@@ -1109,11 +1442,11 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
     if constexpr (DebugChecksums) {
         grid.sync();
 
-        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z0>(
+        StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z0>(
             record, UseConvolutionHere, debugTrackerArray, grid, block, Z0_OutDigits, FinalZ0Size);
-        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z2>(
+        StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2>(
             record, UseConvolutionHere, debugTrackerArray, grid, block, Z2_OutDigits, FinalZ2Size);
-        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z1_offset>(
+        StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1_offset>(
             record, UseConvolutionHere, debugTrackerArray, grid, block, Z1_temp_digits, FinalZ1TempSize);
 
         grid.sync();
@@ -1170,7 +1503,7 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
         if constexpr (DebugChecksums) {
             grid.sync();
 
-            StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z1>(
+            StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1>(
                 record, UseConvolutionHere, debugTrackerArray, grid, block, Z1_digits, total_k * 2);
         }
 
@@ -1215,9 +1548,9 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
         if constexpr (DebugChecksums) {
             grid.sync();
 
-            StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Final128>(
+            StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Final128>(
                 record, UseConvolutionHere, debugTrackerArray, grid, block, final128, total_result_digits * 2);
-            EraseCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Result_offset>(
+            EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offset>(
                 record, debugTrackerArray, grid, block);
         }
 
@@ -1253,7 +1586,7 @@ __device__ void MultiplyHelperKaratsubaV2 (
     constexpr auto CarryInsOffset = TempBase;
     constexpr auto ExecutionBlockBase = 0;
     constexpr auto ExecutionNumBlocks = SharkFloatParams::GlobalNumBlocks;
-    constexpr auto RecursionDepth = 1;
+    constexpr auto RecursionDepth = 0;
     DefineTempProductsOffsets(TempBase, CallIndex);
 
     auto *SharkRestrict aDigits = shared_data;
@@ -1269,21 +1602,21 @@ __device__ void MultiplyHelperKaratsubaV2 (
             (block.thread_index().x == 0 && block.group_index().x == ExecutionBlockBase) ?
             RecordIt::Yes :
             RecordIt::No;
-        EraseCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Invalid>(record, debugTrackerArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::ADigits>(record, debugTrackerArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::BDigits>(record, debugTrackerArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::AHalfHigh>(record, debugTrackerArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::AHalfLow>(record, debugTrackerArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::BHalfHigh>(record, debugTrackerArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::BHalfLow>(record, debugTrackerArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::XDiff>(record, debugTrackerArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::YDiff>(record, debugTrackerArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z0>(record, debugTrackerArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z1>(record, debugTrackerArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z2>(record, debugTrackerArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z1_offset>(record, debugTrackerArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Final128>(record, debugTrackerArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Result_offset>(record, debugTrackerArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Invalid>(record, debugTrackerArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::ADigits>(record, debugTrackerArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BDigits>(record, debugTrackerArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::AHalfHigh>(record, debugTrackerArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::AHalfLow>(record, debugTrackerArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BHalfHigh>(record, debugTrackerArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BHalfLow>(record, debugTrackerArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::XDiff>(record, debugTrackerArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::YDiff>(record, debugTrackerArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z0>(record, debugTrackerArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1>(record, debugTrackerArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2>(record, debugTrackerArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1_offset>(record, debugTrackerArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Final128>(record, debugTrackerArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offset>(record, debugTrackerArray, grid, block);
         static_assert(static_cast<int>(DebugStatePurpose::NumPurposes) == 15, "Unexpected number of purposes");
     }
 
@@ -1293,7 +1626,7 @@ __device__ void MultiplyHelperKaratsubaV2 (
     auto *final128 = &tempProducts[Convolution_offset];
     MultiplyDigitsOnly<
         SharkFloatParams,
-        RecursionDepth,
+        RecursionDepth + 1,
         CallIndex + 1,
         NewN,
         NewN1,
@@ -1379,7 +1712,7 @@ __device__ void MultiplyHelperKaratsubaV2 (
     if constexpr (DebugChecksums) {
         grid.sync();
 
-        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Result_offset>(
+        StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offset>(
             record, UseConvolution::No, debugTrackerArray, grid, block, resultEntries, 2 * NewN);
 
         grid.sync();

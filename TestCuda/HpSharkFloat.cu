@@ -95,7 +95,7 @@ std::string MpfToHexString(const mpf_t mpf_val) {
         uint32_t lowOrder = limbs[i] & 0xFFFFFFFF;
         uint32_t highOrder = limbs[i] >> 32;
 
-        snprintf(buffer, sizeof(buffer), "%08X %08X ", lowOrder, highOrder);
+        snprintf(buffer, sizeof(buffer), "0x%08X 0x%08X ", lowOrder, highOrder);
         result += buffer;
     }
 
@@ -117,12 +117,12 @@ UintArrayToHexString(const IntT *array, size_t numElements) {
 
     // Convert each 4-byte integer to hex and append to result
     for (size_t i = 0; i < numElements; ++i) {
-        char buffer[32];
+        char buffer[64];
 
         if constexpr (sizeof(IntT) == 4) {
-            snprintf(buffer, sizeof(buffer), "%08X ", static_cast<uint32_t>(array[i]));
+            snprintf(buffer, sizeof(buffer), "0x%08x ", static_cast<uint32_t>(array[i]));
         } else if constexpr (sizeof(IntT) == 8) {
-            snprintf(buffer, sizeof(buffer), "%016llX ", static_cast<uint64_t>(array[i]));
+            snprintf(buffer, sizeof(buffer), "0x%016llx ", static_cast<uint64_t>(array[i]));
         } else {
             static_assert(false, "Unsupported size");
         }
@@ -140,9 +140,9 @@ UintToHexString(IntT val) {
     char buffer[32];
 
     if constexpr (sizeof(IntT) == 4) {
-        snprintf(buffer, sizeof(buffer), "%08X", static_cast<uint32_t>(val));
+        snprintf(buffer, sizeof(buffer), "0x%08X", static_cast<uint32_t>(val));
     } else if constexpr (sizeof(IntT) == 8) {
-        snprintf(buffer, sizeof(buffer), "%016llX", static_cast<uint64_t>(val));
+        snprintf(buffer, sizeof(buffer), "0x%016llX", static_cast<uint64_t>(val));
     } else {
         static_assert(false, "Unsupported size");
     }
@@ -293,7 +293,7 @@ HpSharkFloat<SharkFloatParams>::ToHexString() const {
     for (size_t i = 0; i < NumUint32; ++i) {
         // Convert each 4-byte integer to hex and append to result
         char buffer[32];
-        snprintf(buffer, sizeof(buffer), "%08X ", Digits[i]);
+        snprintf(buffer, sizeof(buffer), "0x%08X ", Digits[i]);
         result += buffer;
     }
 

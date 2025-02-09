@@ -928,6 +928,15 @@ void TestAddSpecialNumbers19(int testNum) {
 }
 
 template<class SharkFloatParams, Operator sharkOperator>
+void TestAddSpecialNumbers20(int testNum) {
+
+    TestAddSpecialNumbersHelper<SharkFloatParams, sharkOperator>(
+        testNum,
+        std::vector<uint32_t>{ 0xFFFFFFFF, 0x556B0E43, 0x4EECA55A, 0x0000000E, 0xFFFFFFFF, 0x00000000, 0xFFFFFFF8, 0x9B1194D6, 0xFFFFFFFF, 0x00000000, 0x13C1799F, 0x00000000, 0xC5F37A5D, 0xFFFFFFF4, 0x6FBC0EFF, 0x00000008, 0xFFFFFFFF, 0x00000000, 0xFFFFFFEF, 0xB06FA6C3, 0x0000000F, 0xFFFFFFF4, 0x00000007, 0xFFFFFFFF },
+        std::vector<uint32_t>{ 0x0503FC0B, 0xF26CA6A5, 0xFFFFFFFF, 0xFFFFFFFF, 0x00000007, 0x00000010, 0xE640F2D9, 0x00000000, 0xFFFFFFF5, 0xFFFFFFFF, 0xFFFFFFF0, 0xFFFFFFFF, 0x00000004, 0x379A6DBB, 0xFFFFFFFF, 0x00000008, 0x00000002, 0xFFFFFFFF, 0x00000000, 0x0000000B, 0x00000000, 0xFFFFFFEF, 0xFFFFFFFF, 0x093E223D });
+}
+
+template<class SharkFloatParams, Operator sharkOperator>
 bool TestAllBinaryOp(int testBase) {
     constexpr bool includeSet1 = true;
     constexpr bool includeSet2 = true;
@@ -976,6 +985,7 @@ bool TestAllBinaryOp(int testBase) {
         TestAddSpecialNumbers17<SharkFloatParams, sharkOperator>(set + 170);
         TestAddSpecialNumbers18<SharkFloatParams, sharkOperator>(set + 180);
         TestAddSpecialNumbers19<SharkFloatParams, sharkOperator>(set + 190);
+        TestAddSpecialNumbers20<SharkFloatParams, sharkOperator>(set + 200);
     }
 
     if constexpr (includeSet3) {
@@ -1018,8 +1028,8 @@ bool TestAllBinaryOp(int testBase) {
 
     if constexpr (includeSet10) {
         const auto set10 = testBase + 1000;
-        std::unique_ptr<HpSharkFloat<SharkFloatParams>> x = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-        std::unique_ptr<HpSharkFloat<SharkFloatParams>> y = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+        auto x = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+        auto y = std::make_unique<HpSharkFloat<SharkFloatParams>>();
 
         for (auto i = 0; i < 1000; i += 10) {
             if (i % 2 == 0) {

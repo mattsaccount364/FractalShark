@@ -56,8 +56,8 @@ struct GenericSharkFloatParams {
     static constexpr bool HostVerbose = false;
 
     // 3^whatevs = ConvolutionLimit
-    static constexpr auto ConvolutionLimit = SharkDebug ? 9 : 27;
-    static constexpr auto ConvolutionLimitPow = SharkDebug ? 2 : 3;
+    static constexpr auto ConvolutionLimit = SharkDebug ? 3 : 27;
+    static constexpr auto ConvolutionLimitPow = SharkDebug ? 1 : 3;
 
     //static constexpr auto ConvolutionLimit = 3;
     //static constexpr auto ConvolutionLimitPow = 1;
@@ -100,8 +100,9 @@ static constexpr auto AdditionalUInt64PerFrame = 256;
 
 // Additional space up front, globally-shared:
 // Units are uint64_t
+static constexpr auto MaxBlocks = 256;
 static constexpr auto AdditionalGlobalChecksumSpace = DebugChecksums ? 1024 * 1024 : 0;
-static constexpr auto AdditionalGlobalSyncSpace = 128;
+static constexpr auto AdditionalGlobalSyncSpace = 128 * MaxBlocks;
 static constexpr auto AdditionalUInt64Global = AdditionalGlobalChecksumSpace + AdditionalGlobalSyncSpace;
 
 template<class SharkFloatParams>
@@ -121,11 +122,10 @@ static constexpr auto LowPrec = 32;
 
 // If you add a new one, search for one of the other types and copy/paste
 using Test8x1SharkParams = GenericSharkFloatParams<8, 1, SharkBatchSize, SharkTestIterCount>;
-//using Test8x1SharkParams = GenericSharkFloatParams<13, 3, SharkBatchSize, SharkTestIterCount>;
 using Test4x36SharkParams = GenericSharkFloatParams<4, 6, SharkBatchSize, SharkTestIterCount>;
 using Test4x12SharkParams = GenericSharkFloatParams<5, 6, SharkBatchSize, SharkTestIterCount>;
-using Test4x9SharkParams = GenericSharkFloatParams<4, 12, SharkBatchSize, SharkTestIterCount>;
-using Test4x6SharkParams = GenericSharkFloatParams<4, 36, SharkBatchSize, SharkTestIterCount>;
+using Test4x9SharkParams = GenericSharkFloatParams<5, 12, SharkBatchSize, SharkTestIterCount>;
+using Test4x6SharkParams = GenericSharkFloatParams<7, 9, SharkBatchSize, SharkTestIterCount>;
 
 //using Test128x128SharkParams = GenericSharkFloatParams<128, 128, SharkBatchSize, SharkTestIterCount>;
 using Test128x63SharkParams = GenericSharkFloatParams<96, 81, SharkBatchSize, SharkTestIterCount>;

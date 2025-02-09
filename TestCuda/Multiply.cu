@@ -279,6 +279,196 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallel(
     }
 }
 
+template<
+    class SharkFloatParams,
+    int a1n, int b1n,
+    int a2n, int b2n,
+    int ExecutionBlockBase,
+    int ExecutionNumBlocks>
+__device__ SharkForceInlineReleaseOnly void SubtractDigitsParallelImproved3(
+    // Working arrays (which may be in shared memory)
+    uint32_t *__restrict__ x_diff_abs,
+    uint32_t *__restrict__ y_diff_abs,
+    // Input digit arrays (for the two halves)
+    const uint32_t *__restrict__ a1,
+    const uint32_t *__restrict__ b1,
+    const uint32_t *__restrict__ a2,
+    const uint32_t *__restrict__ b2,
+    // Two borrow arrays (one for each half)
+    uint32_t *__restrict__ subtractionBorrows1,
+    uint32_t *__restrict__ subtractionBorrows2,
+    // An array (of size ExecutionNumBlocks) for storing each block’s final borrow
+    uint32_t *__restrict__ blockBorrow1,
+    uint32_t *__restrict__ blockBorrow2,
+    // Global buffers to hold the “working” differences
+    uint32_t *__restrict__ global_x_diff_abs,
+    uint32_t *__restrict__ global_y_diff_abs,
+    // A single global counter to indicate if any borrow remains
+    uint32_t *__restrict__ globalBorrowAny,
+    cg::grid_group &grid,
+    cg::thread_block &block) {
+    // Compute maximum digit count from the two halves.
+    constexpr int n1max = (a1n > b1n) ? a1n : b1n;
+    constexpr int n2max = (a2n > b2n) ? a2n : b2n;
+    constexpr int nmax = (n1max > n2max) ? n1max : n2max;
+
+    // Use the same mapping as the original:
+    const int tid = (block.group_index().x - ExecutionBlockBase) * block.dim_threads().x + block.thread_index().x;
+    const int stride = block.dim_threads().x * ExecutionNumBlocks;
+
+    // Each block processes a contiguous chunk.
+    const int blockStart = (block.group_index().x - ExecutionBlockBase) * block.dim_threads().x;
+    const int blockEnd = blockStart + block.dim_threads().x; // exclusive
+
+    // Reset the global borrow counter.
+    if (block.group_index().x == 0 && block.thread_index().x == 0) {
+        *globalBorrowAny = 0;
+    }
+
+    // Erase the per-block borrow arrays.
+    if (block.thread_index().x == 0) {
+        blockBorrow1[block.group_index().x] = 0;
+        blockBorrow2[block.group_index().x] = 0;
+    }
+
+    // === (1) INITIAL SUBTRACTION: Process all digits using a grid–stride loop.
+    // Only active blocks (those with group_index().x in [ExecutionBlockBase, ExecutionBlockBase+ExecutionNumBlocks))
+    // participate.
+    for (int idx = tid; idx < nmax; idx += stride) {
+        uint32_t a1_val = (idx < a1n) ? a1[idx] : 0;
+        uint32_t b1_val = (idx < b1n) ? b1[idx] : 0;
+        uint32_t a2_val = (idx < a2n) ? a2[idx] : 0;
+        uint32_t b2_val = (idx < b2n) ? b2[idx] : 0;
+
+        uint64_t diff1 = (uint64_t)a1_val - b1_val;
+        uint64_t diff2 = (uint64_t)a2_val - b2_val;
+
+        uint32_t borrow1 = (a1_val < b1_val) ? 1u : 0u;
+        uint32_t borrow2 = (a2_val < b2_val) ? 1u : 0u;
+
+        global_x_diff_abs[idx] = static_cast<uint32_t>(diff1);
+        global_y_diff_abs[idx] = static_cast<uint32_t>(diff2);
+
+        subtractionBorrows1[idx] = borrow1;
+        subtractionBorrows2[idx] = borrow2;
+    }
+
+    grid.sync();
+
+    // === (2b) Each block’s last thread writes its final borrow.
+    if (block.thread_index().x == block.dim_threads().x - 1) {
+        const uint32_t finalBorrow1 = subtractionBorrows1[blockEnd - 1];
+        blockBorrow1[block.group_index().x] = finalBorrow1;
+
+        const uint32_t finalBorrow2 = subtractionBorrows2[blockEnd - 1];
+        blockBorrow2[block.group_index().x] = finalBorrow2;
+    }
+
+    grid.sync();  // Ensure all initial differences and borrows are computed
+
+    uint32_t initialBorrowAny = 0;
+
+    // === (2) OUTER LOOP: Propagate borrows across blocks.
+    const int MAX_OUTER_PASSES = 5000; // Adjust as needed.
+    int outerPass = 0;
+    do {
+        // For thread 0 in each block, load the inter–block borrow once.
+        const int localIdx = blockStart + block.thread_index().x;
+
+        if (block.thread_index().x == block.dim_threads().x - 1) {
+            subtractionBorrows1[localIdx] = 0;
+            subtractionBorrows2[localIdx] = 0;
+        }
+
+        uint32_t injection1 = 0, injection2 = 0;
+        if (block.thread_index().x == 0) {
+            injection1 = (block.group_index().x > ExecutionBlockBase)
+                ? blockBorrow1[block.group_index().x - 1]
+                : 0;
+            injection2 = (block.group_index().x > ExecutionBlockBase)
+                ? blockBorrow2[block.group_index().x - 1]
+                : 0;
+        }
+        block.sync();
+
+        // === (2a) LOCAL PROPAGATION WITHIN THE BLOCK.
+        // Iterate blockDim.x times so that a borrow created at the block’s start
+        // immediately cascades through.
+
+        for (int pass = 0; pass < block.dim_threads().x + 1; ++pass) {
+            if (localIdx < nmax) {
+                // For x_diff_abs:
+                uint32_t borrow1;
+                if (block.thread_index().x == 0) {
+                    // Only on the first pass do we subtract the injected borrow.
+                    borrow1 = (pass == 0) ? injection1 : 0;
+                } else {
+                    borrow1 = subtractionBorrows1[localIdx - 1];
+                }
+                const uint64_t newVal1 = (uint64_t)global_x_diff_abs[localIdx] - borrow1;
+                global_x_diff_abs[localIdx] = static_cast<uint32_t>(newVal1 & 0xFFFFFFFFULL);
+                
+                if (block.thread_index().x == block.dim_threads().x - 1) {
+                    subtractionBorrows1[localIdx] |= (newVal1 & 0x8000000000000000ULL) ? 1u : 0u;
+                } else {
+                    subtractionBorrows1[localIdx] = (newVal1 & 0x8000000000000000ULL) ? 1u : 0u;
+                }
+
+                // For y_diff_abs:
+                uint32_t borrow2;
+                if (block.thread_index().x == 0) {
+                    borrow2 = (pass == 0) ? injection2 : 0;
+                } else {
+                    borrow2 = subtractionBorrows2[localIdx - 1];
+                }
+                const uint64_t newVal2 = (uint64_t)global_y_diff_abs[localIdx] - borrow2;
+                global_y_diff_abs[localIdx] = static_cast<uint32_t>(newVal2 & 0xFFFFFFFFULL);
+
+                if (block.thread_index().x == block.dim_threads().x - 1) {
+                    subtractionBorrows2[localIdx] |= (newVal2 & 0x8000000000000000ULL) ? 1u : 0u;
+                } else {
+                    subtractionBorrows2[localIdx] = (newVal2 & 0x8000000000000000ULL) ? 1u : 0u;
+                }
+            }
+
+            block.sync();
+        }
+        grid.sync();
+
+        // === (2b) Each block’s last thread writes its final borrow.
+        if (block.thread_index().x == block.dim_threads().x - 1) {
+            const uint32_t finalBorrow1 = subtractionBorrows1[blockEnd - 1];
+            blockBorrow1[block.group_index().x] = finalBorrow1;
+
+            const uint32_t finalBorrow2 = subtractionBorrows2[blockEnd - 1];
+            blockBorrow2[block.group_index().x] = finalBorrow2;
+        }
+        grid.sync();
+
+        // === (2c) Global aggregation: One designated block sums the per–block borrows.
+        if (block.group_index().x == ExecutionBlockBase && block.thread_index().x == 0) {
+            uint32_t totalBorrow = 0;
+            for (int i = ExecutionBlockBase; i < ExecutionBlockBase + ExecutionNumBlocks; ++i) {
+                totalBorrow += blockBorrow1[i];
+                totalBorrow += blockBorrow2[i];
+            }
+
+            atomicAdd(globalBorrowAny, totalBorrow);  // Overwrite with the new total.
+        }
+        grid.sync();
+
+        uint32_t tempCopyGlobalBorrowAny = *globalBorrowAny;
+        if (tempCopyGlobalBorrowAny == initialBorrowAny)
+            break;  // no new borrows → done
+
+        grid.sync();
+        initialBorrowAny = tempCopyGlobalBorrowAny;
+        outerPass++;
+    } while (outerPass < MAX_OUTER_PASSES);
+
+    grid.sync();  // Final grid sync to guarantee all blocks are done.
+}
+
 
 
 // Function to perform addition with carry
@@ -533,6 +723,8 @@ static_assert(AdditionalUInt64PerFrame == 256, "See below");
     constexpr auto CallOffset = CallIndex * CalculateFrameSize<SharkFloatParams>(); \
     constexpr auto TempBaseOffset = TempBase + CallOffset; \
     constexpr auto BorrowGlobalOffset = 0; \
+    constexpr auto BorrowBlockLevelOffset1 = MaxBlocks; \
+    constexpr auto BorrowBlockLevelOffset2 = MaxBlocks * 2; \
     constexpr auto Checksum_offset = AdditionalGlobalSyncSpace; \
     auto *debugTrackerArray = reinterpret_cast<DebugState<SharkFloatParams>*>(&tempProducts[Checksum_offset]); \
     constexpr auto Z0_offset = TempBaseOffset + AdditionalUInt64PerFrame; \
@@ -693,6 +885,8 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
     auto *SharkRestrict subtractionBorrows3 = reinterpret_cast<uint32_t *>(&tempProducts[SubtractionOffset3]);
     auto *SharkRestrict subtractionBorrows4 = reinterpret_cast<uint32_t *>(&tempProducts[SubtractionOffset4]);
     auto *SharkRestrict globalBorrowAny = reinterpret_cast<uint32_t *>(&tempProducts[BorrowGlobalOffset]);
+    auto *SharkRestrict globalBlockBorrow1 = reinterpret_cast<uint32_t *>(&tempProducts[BorrowBlockLevelOffset1]);
+    auto *SharkRestrict globalBlockBorrow2 = reinterpret_cast<uint32_t *>(&tempProducts[BorrowBlockLevelOffset2]);
 
     const auto SharkRestrict *a_high = aDigits + n1;
     const auto SharkRestrict *b_high = bDigits + n1;
@@ -722,7 +916,7 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             if (x_compare >= 0 && y_compare >= 0) {
                 x_diff_sign = 0;
                 y_diff_sign = 0;
-                SubtractDigitsParallel<
+                SubtractDigitsParallelImproved3<
                     SharkFloatParams,
                     n2,
                     n1,
@@ -738,8 +932,8 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                         b_low,
                         subtractionBorrows,
                         subtractionBorrows2,
-                        subtractionBorrows3,
-                        subtractionBorrows4,
+                        globalBlockBorrow1,
+                        globalBlockBorrow2,
                         global_x_diff_abs,
                         global_y_diff_abs,
                         globalBorrowAny,
@@ -748,7 +942,7 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             } else if (x_compare < 0 && y_compare < 0) {
                 x_diff_sign = 1;
                 y_diff_sign = 1;
-                SubtractDigitsParallel<
+                SubtractDigitsParallelImproved3<
                     SharkFloatParams,
                     n1,
                     n2,
@@ -764,8 +958,8 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                         b_high,
                         subtractionBorrows,
                         subtractionBorrows2,
-                        subtractionBorrows3,
-                        subtractionBorrows4,
+                        globalBlockBorrow1,
+                        globalBlockBorrow2,
                         global_x_diff_abs,
                         global_y_diff_abs,
                         globalBorrowAny,
@@ -774,7 +968,7 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             } else if (x_compare >= 0 && y_compare < 0) {
                 x_diff_sign = 0;
                 y_diff_sign = 1;
-                SubtractDigitsParallel<
+                SubtractDigitsParallelImproved3<
                     SharkFloatParams,
                     n2,
                     n1,
@@ -790,8 +984,8 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                         b_high,
                         subtractionBorrows,
                         subtractionBorrows2,
-                        subtractionBorrows3,
-                        subtractionBorrows4,
+                        globalBlockBorrow1,
+                        globalBlockBorrow2,
                         global_x_diff_abs,
                         global_y_diff_abs,
                         globalBorrowAny,
@@ -800,7 +994,7 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             } else {
                 x_diff_sign = 1;
                 y_diff_sign = 0;
-                SubtractDigitsParallel<
+                SubtractDigitsParallelImproved3<
                     SharkFloatParams,
                     n1,
                     n2,
@@ -816,8 +1010,8 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                         b_low,
                         subtractionBorrows,
                         subtractionBorrows2,
-                        subtractionBorrows3,
-                        subtractionBorrows4,
+                        globalBlockBorrow1,
+                        globalBlockBorrow2,
                         global_x_diff_abs,
                         global_y_diff_abs,
                         globalBorrowAny,

@@ -747,6 +747,7 @@ bool LAReference<IterType, Float, SubType, PExtras>::CreateLAFromOrbitMT(
             //}
 
             // The faster way to do this is to use memcpy.
+            const auto origSize = m_LAs.GetSize();
 
             // m_LAs.Back() points to the last valid element in the vector.  Append
             // the data from the thread to the end of the vector.  Increment

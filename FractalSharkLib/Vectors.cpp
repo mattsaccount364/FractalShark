@@ -513,12 +513,6 @@ void GrowableVector<EltT>::MutableFileCommit(size_t capacity) {
         return;
     }
 
-    // Get the large page size
-    SIZE_T largePageSize = GetLargePageMinimum();
-    if (largePageSize == 0) {
-        throw FractalSharkSeriousException("Large pages are not supported on this system.");
-    }
-
     DWORD lastError = InternalOpenFile();
 
     // Check all the things that could have gone wrong
@@ -533,11 +527,9 @@ void GrowableVector<EltT>::MutableFileCommit(size_t capacity) {
 
     static_assert(sizeof(size_t) == sizeof(uint64_t), "!");
     static_assert(sizeof(DWORD) == sizeof(uint32_t), "!");
-    uint64_t totalNewSize = capacity * sizeof(EltT);
-    uint64_t totalSizeWithLargePages = (totalNewSize + largePageSize - 1) & ~(largePageSize - 1);
-
-    DWORD high = totalSizeWithLargePages >> 32;
-    DWORD low = totalSizeWithLargePages & 0xFFFFFFFF;
+    uint64_t total_new_size = capacity * sizeof(EltT);
+    DWORD high = total_new_size >> 32;
+    DWORD low = total_new_size & 0xFFFFFFFF;
 
     LARGE_INTEGER existing_file_size{};
     if (lastError == ERROR_ALREADY_EXISTS) {
@@ -612,15 +604,13 @@ void GrowableVector<EltT>::MutableFileCommit(size_t capacity) {
     if (m_AddPointOptions != AddPointOptions::OpenExistingWithSave) {
         initialSize.QuadPart =
             m_CapacityInElts * sizeof(EltT);
-        allocationAttributes = SEC_RESERVE | SEC_LARGE_PAGES;
+        allocationAttributes = SEC_RESERVE;
         allocationType = MEM_RESERVE;
     } else {
         initialSize.QuadPart = 0;
-        allocationAttributes = SEC_RESERVE | SEC_LARGE_PAGES;
+        allocationAttributes = SEC_RESERVE;
         allocationType = MEM_RESERVE;
     }
-
-    So it doesnt work right now.  git status shows current mods, committed stuff seems fine.
 
     DWORD status = fNtCreateSection(
         &m_MappedFile,

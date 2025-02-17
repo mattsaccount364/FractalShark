@@ -15,6 +15,8 @@
 \section*{Introduction}
 This document describes the difference-based Karatsuba multiplication algorithm. The middle term of the Karatsuba formula is computed using differences, and the combination formula is derived based on the sign of the computed differences.
 
+After that, this document summarizes some performance optimizations that aren't yet implemented.
+
 \section*{Karatsuba Middle Term Using Differences}
 The Karatsuba multiplication algorithm divides two input numbers into halves:
 \[
@@ -31,24 +33,24 @@ and
 Z_1' = |x_{\text{diff}}| \cdot |y_{\text{diff}}|
 \]
 
-To compute the original middle term \( Z_1 \), we combine \( Z_1' \) with \( Z_0 = A_0 \cdot B_0 \) and \( Z_2 = A_1 \cdot B_1 \), accounting for the signs of \( x_{\text{diff}} \) and \( y_{\text{diff}} \).
+This approach has some benefits with respect to carry propagation etc.  To compute the original middle term \( Z_1 \), we combine \( Z_1' \) with \( Z_0 = A_0 \cdot B_0 \) and \( Z_2 = A_1 \cdot B_1 \), accounting for the signs of \( x_{\text{diff}} \) and \( y_{\text{diff}} \).
 
-\section*{Combination Formulas}
+\subsection*{Combination Formulas}
 The combination formula for \( Z_1 \) depends on whether \( x_{\text{diff}} \) and \( y_{\text{diff}} \) have the same sign or opposite signs.
 
-\subsection*{Case 1: Same Sign}
+\subsubsection*{Case 1: Same Sign}
 If \( x_{\text{diff}} \) and \( y_{\text{diff}} \) have the same sign, then:
 \[
 Z_1 = Z_2 + Z_0 - Z_1'
 \]
 
-\subsection*{Case 2: Opposite Signs}
+\subsubsection*{Case 2: Opposite Signs}
 If \( x_{\text{diff}} \) and \( y_{\text{diff}} \) have opposite signs, then:
 \[
 Z_1 = Z_2 + Z_0 + Z_1'
 \]
 
-\section*{Example}
+\subsection*{Example}
 Consider the inputs:
 \[
 A = 1, \quad B = 2
@@ -81,7 +83,24 @@ In this case:
 \text{Result} = 2
 \]
 
-\section*{Conclusion}
-This approach has some benefits with respect to carry propagation etc.
+\section{Performance Optimizations}
+
+This section summarizes some possible optimization ideas.
+
+\begin{itemize}
+\item Subtraction step ideas
+    \begin{itemize}
+    \item Use shared memory during subtraction steps.
+    \item Consider whether full-grid subtraction even makes sense and instead do it all in one block to avoid grid-level synchronization?
+    \item Alternatively, consider processing multiple subtractions per iteration to reduce per-digit synchronizations.
+    \item Parallel scan:  The current iterative borrow propagation (do/while loop) ``pushes'' borrows one digit at a time, which may require many iterations. Consider reformulating the borrow propagation as a parallel prefix-sum (Blelloch scan). A well-implemented scan can propagate borrows in O(log n) steps rather than O(n) iterations.
+\end{itemize}
+\item Increase occupancy: update the kernel such that we can use 128 blocks (RTX 4090 max) for all number sizes.
+\item Prefetch values on each convolution iteration into registers and set up a pipeline strategy to hide shared memory access latency.
+\item Use warp-level intrinsics.  Warp intrinsics for parallel reduction: For example, rather than synchronizing after processing every digit, perform a warp-level reduction (using __shfl_* etc.) to combine results, then have only one thread write the result.
+\item Use 30-bit limbs or similar to avoid spilling to 2x64 values.
+\item Ensure CUDA kernel start time has L2 cache hints specified for appropriate amount of memory.  It's not currently.  We should be able to guarantee 100\% hit rate.
+\item 
+\end{itemize}
 
 \end{document}

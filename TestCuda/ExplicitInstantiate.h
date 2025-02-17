@@ -1,6 +1,11 @@
 #pragma once
 
-//#define ENABLE_COMICAL_CORRECTNESS 1
+#define ENABLE_COMICAL_CORRECTNESS 1
+
+// 0 = just one correctness test, intended for fast re-compile of a specific failure
+// 1 = all basic correctness tests/all basic perf tests
+// 2 = setup for profiling only, one kernel
+#define ENABLE_BASIC_CORRECTNESS 1
 
 static constexpr auto ComicalThreadCount = 13;
 #define ComicalTest1  GenericSharkFloatParams<ComicalThreadCount, 1, SharkBatchSize, SharkTestIterCount>
@@ -173,25 +178,32 @@ static constexpr auto ComicalThreadCount = 13;
 #endif
 
 
+#if ENABLE_BASIC_CORRECTNESS == 0
 #define ExplicitInstantiateAll() \
-    ExplicitlyInstantiate(Test4x9SharkParams); \
-    ExplicitlyInstantiate(Test4x12SharkParams); \
-    ExplicitlyInstantiate(Test8x1SharkParams); \
-    ExplicitlyInstantiate(Test4x36SharkParams); \
-    ExplicitlyInstantiate(Test4x6SharkParams); \
-\
-    ExplicitlyInstantiate(Test128x63SharkParams); \
-    ExplicitlyInstantiate(Test64x63SharkParams); \
-    ExplicitlyInstantiate(Test32x63SharkParams); \
-    ExplicitlyInstantiate(Test16x63SharkParams); \
-\
-    ExplicitlyInstantiate(Test128x36SharkParams); \
-    ExplicitlyInstantiate(Test128x18SharkParams); \
-    ExplicitlyInstantiate(Test128x9SharkParams); \
-    ExplicitlyInstantiate(Test128x3SharkParams); \
-\
-    InstantiateComicalCorrectness(); \
-
+        ExplicitlyInstantiate(Test8x1SharkParams);
+#elif ENABLE_BASIC_CORRECTNESS == 1
+    #define ExplicitInstantiateAll() \
+        ExplicitlyInstantiate(Test4x9SharkParams); \
+        ExplicitlyInstantiate(Test4x12SharkParams); \
+        ExplicitlyInstantiate(Test8x1SharkParams); \
+        ExplicitlyInstantiate(Test4x36SharkParams); \
+        ExplicitlyInstantiate(Test4x6SharkParams); \
+    \
+        ExplicitlyInstantiate(Test128x63SharkParams); \
+        ExplicitlyInstantiate(Test64x63SharkParams); \
+        ExplicitlyInstantiate(Test32x63SharkParams); \
+        ExplicitlyInstantiate(Test16x63SharkParams); \
+    \
+        ExplicitlyInstantiate(Test128x36SharkParams); \
+        ExplicitlyInstantiate(Test128x18SharkParams); \
+        ExplicitlyInstantiate(Test128x9SharkParams); \
+        ExplicitlyInstantiate(Test128x3SharkParams); \
+    \
+        InstantiateComicalCorrectness();
+#elif ENABLE_BASIC_CORRECTNESS == 2
+#define ExplicitInstantiateAll() \
+        ExplicitlyInstantiate(Test128x63SharkParams);
+#endif
 
 #ifdef ENABLE_COMICAL_CORRECTNESS
 #define ComicalCorrectness() \

@@ -28,7 +28,7 @@ static constexpr auto SharkTestIterCount = 5000;
 static constexpr auto SharkBatchSize = SharkDebug ? 8 : 512;
 static constexpr bool SharkInfiniteCorrectnessTests = true;
 static constexpr bool SharkCorrectnessTests = true;
-static constexpr bool DebugChecksums = true;
+static constexpr bool DebugChecksums = false;
 
 template<
     int32_t pThreadsPerBlock,
@@ -53,11 +53,11 @@ struct GenericSharkFloatParams {
     static constexpr bool ForceNoOp = false;
 
     // If true, the host will print out a lot of stuff
-    static constexpr bool HostVerbose = true;
+    static constexpr bool HostVerbose = false;
 
     // 3^whatevs = ConvolutionLimit
-    static constexpr auto ConvolutionLimit = SharkDebug ? 9 : 27;
-    static constexpr auto ConvolutionLimitPow = SharkDebug ? 2 : 3;
+    // static constexpr auto ConvolutionLimit = SharkDebug ?  27: 81;
+    // static constexpr auto ConvolutionLimitPow = SharkDebug ? 3 : 4;
 
     //static constexpr auto ConvolutionLimit = 3;
     //static constexpr auto ConvolutionLimitPow = 1;
@@ -65,8 +65,8 @@ struct GenericSharkFloatParams {
     //static constexpr auto ConvolutionLimit = 9;
     //static constexpr auto ConvolutionLimitPow = 2;
 
-    //static constexpr auto ConvolutionLimit = 3;
-    //static constexpr auto ConvolutionLimitPow = 1;
+    static constexpr auto ConvolutionLimit = 27;
+    static constexpr auto ConvolutionLimitPow = 3;
 
     static constexpr auto NumDebugStates = ((ConvolutionLimit + 1) * 3 * static_cast<int>(DebugStatePurpose::NumPurposes));
 
@@ -116,16 +116,12 @@ static constexpr auto LowPrec = 32;
 
 
 
-// TODO: all implementations are assuming a multiple of 2 number of blocks
-// When using recursion/convolution then the you need 2^n blocks where n
-// is the number of recursions
-
 // If you add a new one, search for one of the other types and copy/paste
-using Test8x1SharkParams = GenericSharkFloatParams<7, 9, SharkBatchSize, SharkTestIterCount>;
+using Test8x1SharkParams = GenericSharkFloatParams<8, 1, SharkBatchSize, SharkTestIterCount>;
 using Test4x36SharkParams = GenericSharkFloatParams<4, 6, SharkBatchSize, SharkTestIterCount>;
-using Test4x12SharkParams = GenericSharkFloatParams<5, 6, SharkBatchSize, SharkTestIterCount>;
+using Test4x12SharkParams = GenericSharkFloatParams<3, 18, SharkBatchSize, SharkTestIterCount>;
 using Test4x9SharkParams = GenericSharkFloatParams<5, 12, SharkBatchSize, SharkTestIterCount>;
-using Test4x6SharkParams = GenericSharkFloatParams<8, 1, SharkBatchSize, SharkTestIterCount>;
+using Test4x6SharkParams = GenericSharkFloatParams<7, 9, SharkBatchSize, SharkTestIterCount>;
 
 //using Test128x128SharkParams = GenericSharkFloatParams<128, 128, SharkBatchSize, SharkTestIterCount>;
 using Test128x63SharkParams = GenericSharkFloatParams<96, 81, SharkBatchSize, SharkTestIterCount>;

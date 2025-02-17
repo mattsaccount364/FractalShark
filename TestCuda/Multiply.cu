@@ -279,6 +279,11 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallel(
     }
 }
 
+
+// This implementation is pretty ameteur hour since we're not doing blelloch scan
+// Next version maybe I'll try something in that direction.  For now since we're
+// mostly dealing with random numbers anyway and not weird cases where every digit
+// generates a borrow or something, this should be good enough.
 template<
     class SharkFloatParams,
     int a1n, int b1n,
@@ -309,6 +314,9 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallelImproved3(
     uint32_t *__restrict__ globalBorrowAny,
     cg::grid_group &grid,
     cg::thread_block &block) {
+
+    // Note: stops on this.
+    auto *sharedBorrowAny = x_diff_abs;
 
     if constexpr (ExecutionNumBlocks > 1) {
         // Compute maximum digit count from the two halves.
@@ -400,7 +408,7 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallelImproved3(
         uint32_t initialBorrowAny = 0;
 
         // === (2) OUTER LOOP: Propagate borrows across blocks.
-        const int MAX_OUTER_PASSES = 5000; // Adjust as needed.
+        const int MaxPasses = 500; // Adjust as needed.
         int outerPass = 0;
         do {
             uint32_t injection1 = 0, injection2 = 0;
@@ -419,7 +427,13 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallelImproved3(
             // Iterate blockDim.x times so that a borrow created at the block’s start
             // immediately cascades through.
 
-            for (int pass = 0; pass < chunkSize; ++pass) {
+            for (int pass = 0; pass < nmax; ++pass) {
+
+                if (block.thread_index().x == 0) {
+                    *sharedBorrowAny = 0;
+                }
+
+                block.sync();
 
                 for (int localIdx = blockStart + block.thread_index().x;
                     localIdx < blockEnd;
@@ -429,7 +443,18 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallelImproved3(
                     uint32_t borrow1;
                     if (block.thread_index().x == 0) {
                         // Only on the first pass do we subtract the injected borrow.
-                        borrow1 = (pass == 0) ? injection1 : 0;
+                        if (pass == 0 && localIdx == blockStart) {
+                            borrow1 = injection1;
+                        } else {
+                            if (localIdx == blockStart) {
+                                borrow1 = 0;
+                            } else {
+                                // This path occurs when there are few threads but extra digits.
+                                // Thread 0 might iterate the inner loop once, and in that case
+                                // propagation needs to happen.
+                                borrow1 = curSubtract1[localIdx - 1];
+                            }
+                        }
                     } else {
                         borrow1 = curSubtract1[localIdx - 1];
                     }
@@ -437,17 +462,37 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallelImproved3(
                     global_x_diff_abs[localIdx] = static_cast<uint32_t>(newVal1 & 0xFFFFFFFFULL);
 
                     // Last thread in the block that actually did anything
-                    if (block.thread_index().x == chunkSize - 1) {
-                        newSubtract1[localIdx] |= (newVal1 & 0x8000000000000000ULL) ? 1u : 0u;
-                        curSubtract1[localIdx] |= (newVal1 & 0x8000000000000000ULL) ? 1u : 0u;
+                    if (newVal1 & 0x8000000000000000ULL) {
+                        atomicAdd(sharedBorrowAny, 1);
+
+                        if (localIdx == blockEnd - 1) {
+                            newSubtract1[localIdx] |= 1u;
+                            curSubtract1[localIdx] |= 1u;
+                        } else {
+                            newSubtract1[localIdx] = 1u;
+                        }
                     } else {
-                        newSubtract1[localIdx] = (newVal1 & 0x8000000000000000ULL) ? 1u : 0u;
+                        if (localIdx < blockEnd - 1) {
+                            newSubtract1[localIdx] = 0u;
+                        }
                     }
 
                     // For y_diff_abs:
                     uint32_t borrow2;
                     if (block.thread_index().x == 0) {
-                        borrow2 = (pass == 0) ? injection2 : 0;
+                        // Only on the first pass do we subtract the injected borrow.
+                        if (pass == 0 && localIdx == blockStart) {
+                            borrow2 = injection2;
+                        } else {
+                            if (localIdx == blockStart) {
+                                borrow2 = 0;
+                            } else {
+                                // This path occurs when there are few threads but extra digits.
+                                // Thread 0 might iterate the inner loop once, and in that case
+                                // propagation needs to happen.
+                                borrow2 = curSubtract2[localIdx - 1];
+                            }
+                        }
                     } else {
                         borrow2 = curSubtract2[localIdx - 1];
                     }
@@ -455,11 +500,19 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallelImproved3(
                     global_y_diff_abs[localIdx] = static_cast<uint32_t>(newVal2 & 0xFFFFFFFFULL);
 
                     // Last thread in the block that actually did anything
-                    if (block.thread_index().x == chunkSize - 1) {
-                        newSubtract2[localIdx] |= (newVal2 & 0x8000000000000000ULL) ? 1u : 0u;
-                        curSubtract2[localIdx] |= (newVal2 & 0x8000000000000000ULL) ? 1u : 0u;
+                    if (newVal2 & 0x8000000000000000ULL) {
+                        atomicAdd(sharedBorrowAny, 1);
+
+                        if (localIdx == blockEnd - 1) {
+                            newSubtract2[localIdx] |= 1u;
+                            curSubtract2[localIdx] |= 1u;
+                        } else {
+                            newSubtract2[localIdx] = 1u;
+                        }
                     } else {
-                        newSubtract2[localIdx] = (newVal2 & 0x8000000000000000ULL) ? 1u : 0u;
+                        if (localIdx < blockEnd - 1) {
+                            newSubtract2[localIdx] = 0u;
+                        }
                     }
                 }
 
@@ -473,6 +526,13 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallelImproved3(
                 newSubtract2 = tmp;
 
                 block.sync();
+
+                auto tmpBorrow = *sharedBorrowAny;
+
+                block.sync();
+
+                if (tmpBorrow == 0)
+                    break;  // no new borrows
             }
             grid.sync();
 
@@ -512,7 +572,7 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallelImproved3(
 
             initialBorrowAny = tempCopyGlobalBorrowAny;
             outerPass++;
-        } while (outerPass < MAX_OUTER_PASSES);
+        } while (outerPass < MaxPasses);
 
         grid.sync();  // Final grid sync to guarantee all blocks are done.
 
@@ -555,6 +615,7 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallelImproved3(
             curSubtract1[idx] = borrow1;
             curSubtract2[idx] = borrow2;
         }
+
         block.sync();
 
         // OUTER LOOP: Propagate borrows until stabilization.
@@ -568,21 +629,45 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallelImproved3(
         // We run (blockEnd - blockStart + 1) passes to ensure complete propagation.
 
         for (int pass = 0; pass < (blockEnd - blockStart + 1); ++pass) {
+            if (block.thread_index().x == 0) {
+                *sharedBorrowAny = 0;
+            }
+
+            block.sync();
+
             for (int idx = blockStart + tid; idx < blockEnd; idx += stride) {
                 // For the first digit, there is no previous digit, so the borrow is 0.
                 uint32_t borrow1 = (idx == blockStart) ? 0 : curSubtract1[idx - 1];
                 uint64_t newVal1 = static_cast<uint64_t>(global_x_diff_abs[idx]) - borrow1;
                 global_x_diff_abs[idx] = static_cast<uint32_t>(newVal1 & 0xFFFFFFFFULL);
-                newSubtract1[idx] = (newVal1 & 0x8000000000000000ULL) ? 1 : 0;
+
+                if (newVal1 & 0x8000000000000000ULL) {
+                    newSubtract1[idx] = 1;
+                    atomicAdd(sharedBorrowAny, 1);
+                } else {
+                    newSubtract1[idx] = 0;
+                }
 
                 uint32_t borrow2 = (idx == blockStart) ? 0 : curSubtract2[idx - 1];
                 uint64_t newVal2 = static_cast<uint64_t>(global_y_diff_abs[idx]) - borrow2;
                 global_y_diff_abs[idx] = static_cast<uint32_t>(newVal2 & 0xFFFFFFFFULL);
-                newSubtract2[idx] = (newVal2 & 0x8000000000000000ULL) ? 1 : 0;
+
+                if (newVal2 & 0x8000000000000000ULL) {
+                    newSubtract2[idx] = 1;
+                    atomicAdd(sharedBorrowAny, 1);
+                } else {
+                    newSubtract2[idx] = 0;
+                }
             }
 
             // All threads synchronize after processing the entire chunk.
             block.sync();
+
+            auto tmpBorrow = *sharedBorrowAny;
+            block.sync();
+            if (tmpBorrow == 0) {
+                break;  // no new borrows
+            }
 
             // Swap curSubtract and newSubtract.
             auto *tmp = curSubtract1;
@@ -1182,6 +1267,8 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
         }
     }
 
+    block.sync();
+
     if constexpr (DebugChecksums) {
         grid.sync();
     
@@ -1232,6 +1319,11 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
         const int tid = RelativeBlockIndex * block.dim_threads().x + block.thread_index().x;
         const int stride = block.dim_threads().x * ExecutionNumBlocks;
 
+        //if (tid == 3) {
+        //    Z0_OutDigits[8] = block.dim_threads().x;
+        //    Z0_OutDigits[9] = block.thread_index().x;
+        //}
+
         if constexpr (EnableSharedDiff) {
             // Wait for the first batch of A to be loaded
             cg::wait(block);
@@ -1265,7 +1357,6 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                     }
                 }
 
-                // store sum_low, sum_high in Z0_OutDigits
                 int out_idx = k * 2;
                 Z0_OutDigits[out_idx] = sum_low;
                 Z0_OutDigits[out_idx + 1] = sum_high;
@@ -1444,6 +1535,13 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
 
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z0>(
             record, UseConvolutionHere, debugTrackerArray, grid, block, Z0_OutDigits, FinalZ0Size);
+
+        //cg::memcpy_async(block,
+        //    (uint64_t *)debugTrackerArray,
+        //    (uint64_t *)Z0_OutDigits,
+        //    sizeof(uint64_t) * FinalZ0Size);
+        //cg::wait(block);
+
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2>(
             record, UseConvolutionHere, debugTrackerArray, grid, block, Z2_OutDigits, FinalZ2Size);
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1_offset>(

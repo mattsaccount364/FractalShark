@@ -89,11 +89,13 @@ bool CorrectnessTests() {
 }
 
 int RunCorrectnessTest() {
+#if (ENABLE_BASIC_CORRECTNESS == 0) || (ENABLE_BASIC_CORRECTNESS == 1)
     do {
         if (!CorrectnessTests<TestCorrectnessSharkParams1>()) {
             return 0;
         }
 
+#if ENABLE_BASIC_CORRECTNESS == 1
         if (!CorrectnessTests<TestCorrectnessSharkParams2>()) {
             return 0;
         }
@@ -109,6 +111,7 @@ int RunCorrectnessTest() {
         if (!CorrectnessTests<TestCorrectnessSharkParams5>()) {
             return 0;
         }
+#endif
 
         ComicalCorrectness();
     } while (SharkInfiniteCorrectnessTests);
@@ -116,6 +119,9 @@ int RunCorrectnessTest() {
     if (PressKey() == 'q') {
         return 0;
     }
+#endif
+
+    return 1;
 }
 
 int main(int /*argc*/, char * /*argv*/[]) {
@@ -147,6 +153,7 @@ int main(int /*argc*/, char * /*argv*/[]) {
         }
     }
 
+#if (ENABLE_BASIC_CORRECTNESS == 2) || (ENABLE_BASIC_CORRECTNESS == 1)
     if constexpr (MultiKernel) {
         testBase = 6000;
         res = TestBinaryOperatorPerf<Operator::Add>(testBase);
@@ -166,6 +173,7 @@ int main(int /*argc*/, char * /*argv*/[]) {
             return 0;
         }
     }
+#endif
 
     if constexpr (!SharkCorrectnessTests) {
         auto res = RunCorrectnessTest();

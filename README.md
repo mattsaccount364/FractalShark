@@ -1,8 +1,8 @@
 # Introduction
 
-## 2025-1-26 News
+## 2025-2-17 News
 
-This page actually gets traffic occasionally, so I just wanted to post a short update.  Since last August, I've been working on a CUDA-based, high-precision reference orbit implementation.  The objective is to beat FractalShark's existing multithreaded reference-orbit performance at higher digit counts, at least if you have a decent card.  Scroll down to "2025-1 - What's going on with this native CUDA reference orbit calculation?" to see more information on this subject.
+This page actually gets traffic occasionally, so I just wanted to post a short update.  Since last August, I've been working on a CUDA-based, high-precision reference orbit implementation.  The objective is to beat FractalShark's existing multithreaded reference-orbit performance at higher digit counts, at least if you have a decent card.  Scroll down to "2025-2 - What's going on with this native CUDA reference orbit calculation?" for the latest information on this subject.
 
 ## What is FractalShark?
 
@@ -117,6 +117,22 @@ Many.
 - FractalShark's reference orbit compression is novel code, but based on the approach Zhuoran described here: [Reference Compression](https://fractalforums.org/fractal-mathematics-and-new-theories/28/reference-compression/5142). Claude posted a simple easy-to-understand sample here, which FractalShark's implementation is loosely based on: [Fractal Bits](https://code.mathr.co.uk/fractal-bits/tree/HEAD:/mandelbrot-reference-compression)
 
 - This implementation would probably not have happened without the work of these folks so thank you!
+
+## 2025-2 - What's going on with this native CUDA reference orbit calculation?
+
+It's been a month so here's an update before I go on vacation.  I'm still focusing on multiply performance and correctness.  I have a pretty aggressive test framework set up now and am evaluating it with various number sizes and hardware allocations.  Supporting weird lengths makes it easier to apply more levels of Karatsuba recursion.
+
+I've added optional debug-specific logic that calculates checksums of each intermediate step and outputs those as well.  The host calculates the same intermediate checksums using my reference CPU implementation and comparison of the two happens in the test framework.  This approach is a pretty handy way to debug this nightmarish stuff because it just compares these checksums and immediately identifies where the first discrepency arises in the CUDA calculation.  The discrepency points right at the bad chunk of code.  Getting this checksumming strategy to work reliably was a real pain but it's a lot easier to debug than just getting a result that says "wrong answer."
+
+For additional validation, it's initializing all dynamically-allocated CUDA global memory with a 0xCDCDCDCD pattern, so if the implementation misses a byte, or overwrites something incorrectly, the checksum immediately captures it and makes it clear where the problem occurred.  This is not default CUDA behavior so I just put in a memset.  This approach also helps ensure that I have clear definitions for how many digits are being processed at each point in the calculation, since CUDA doesn't have nice std::vector or related containers.
+
+One annoying thing I hit is slow compilation times.  It's using templates aggressively, so the kernel it spits out is optimized for a specific length of number.  That's OK in principle because we can just produce a series of kernels for different precisions but the downside is compiling a bunch of them takes quite a while and produces large code sizes.  It may make more sense to introduce more runtime variables and rely less on templates here but as it is this endeavor is mostly an academic exercise anyway, and I'm not expecting this thing to replace the existing CPU-based reference orbit calculations we have in the general sense.  But it'd be cool to get high performance in some meaningful range of scenarios anyway, hehe.
+
+I'll probably try moving to 3x parallel multiplies soon as a step toward a reference orbit, because I want to check that this thing can still compile effectively with that change.  This kernel already requires a fair number of registers in order to perform (avoid spilling registers to memory) and that's a bit of a concern because if 3x parallel multiplies pushes it over the edge, performance will suffer.  There are various things I could do to decrease register usage of course, but all this stuff takes time.  Once 3x multiplies works, then adding the additions/subtracts for a reference orbit should be OK.  Those would take place after the multiplies so should have no adverse effect on register use.
+
+After that I still have to deal with periodicity and truncating the high-precision values to float/exp, and all that will take more time.  This part may actually be rather costly perf-wise if I'm not careful because the naive approach is to serialize it with the rest of the calculation but that's a waste of hardware.
+
+In a nutshell, this is a fun project and I'm having a blast, but it ended up bigger than I anticipated given how far I'm from the actual goal.  I'll keep grinding away at and we'll see where it can go.
 
 ## 2025-1 - What's going on with this native CUDA reference orbit calculation?
 

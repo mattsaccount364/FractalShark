@@ -2875,7 +2875,7 @@ void Fractal::CalcCpuPerturbationFractal(bool MemoryOnly) {
 
     auto one_thread = [&]() {
         auto compressionHelper{
-            std::make_unique<RuntimeDecompressor<IterType, double, PerturbExtras::Disable>>(PerturbationResults) };
+            std::make_unique<RuntimeDecompressor<IterType, double, PerturbExtras::Disable>>(*results) };
 
         for (size_t y = 0; y < m_ScrnHeight * GetGpuAntialiasing(); y++) {
             if (atomics[y] != 0) {

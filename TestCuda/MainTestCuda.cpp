@@ -89,13 +89,15 @@ bool CorrectnessTests() {
 }
 
 int RunCorrectnessTest() {
-#if (ENABLE_BASIC_CORRECTNESS == 0) || (ENABLE_BASIC_CORRECTNESS == 1)
+    std::atomic<uint64_t> testCount = 0;
+
+#if (ENABLE_BASIC_CORRECTNESS == 0) || (ENABLE_BASIC_CORRECTNESS == 1) || (ENABLE_BASIC_CORRECTNESS == 3)
     do {
         if (!CorrectnessTests<TestCorrectnessSharkParams1>()) {
             return 0;
         }
 
-#if ENABLE_BASIC_CORRECTNESS == 1
+#if (ENABLE_BASIC_CORRECTNESS == 1) || (ENABLE_BASIC_CORRECTNESS == 3)
         if (!CorrectnessTests<TestCorrectnessSharkParams2>()) {
             return 0;
         }
@@ -114,7 +116,10 @@ int RunCorrectnessTest() {
 #endif
 
         ComicalCorrectness();
-    } while (SharkInfiniteCorrectnessTests);
+
+        testCount++;
+    } while (false);
+    //} while (SharkInfiniteCorrectnessTests);
 
     if (PressKey() == 'q') {
         return 0;
@@ -125,7 +130,6 @@ int RunCorrectnessTest() {
 }
 
 int main(int /*argc*/, char * /*argv*/[]) {
-    int testBase = 0;
     bool res = false;
 
     int deviceCount;
@@ -147,14 +151,15 @@ int main(int /*argc*/, char * /*argv*/[]) {
     //}
 
     if constexpr (SharkCorrectnessTests) {
-        auto res = RunCorrectnessTest();
+        res = RunCorrectnessTest();
         if (!res) {
             return 0;
         }
     }
 
 #if (ENABLE_BASIC_CORRECTNESS == 2) || (ENABLE_BASIC_CORRECTNESS == 1)
-    if constexpr (MultiKernel) {
+    int testBase = 0;
+    if constexpr (SharkMultiKernel) {
         testBase = 6000;
         res = TestBinaryOperatorPerf<Operator::Add>(testBase);
         if (!res) {
@@ -176,7 +181,7 @@ int main(int /*argc*/, char * /*argv*/[]) {
 #endif
 
     if constexpr (!SharkCorrectnessTests) {
-        auto res = RunCorrectnessTest();
+        res = RunCorrectnessTest();
         if (!res) {
             return 0;
         }

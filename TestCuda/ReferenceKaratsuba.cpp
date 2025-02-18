@@ -453,7 +453,7 @@ template<
     typename ArrayType>
 const DebugStateHost<SharkFloatParams> &
 GetCurrentDebugState(
-    std::vector<DebugStateHost<SharkFloatParams>> &debugTrackerArray,
+    std::vector<DebugStateHost<SharkFloatParams>> &debugChecksumArray,
     UseConvolution useConvolution,
     const ArrayType *arrayToChecksum,
     size_t arraySize) {
@@ -462,7 +462,7 @@ GetCurrentDebugState(
     constexpr auto curPurpose = static_cast<int>(Purpose);
     const auto index = CallIndex * maxPurposes + curPurpose;
 
-    auto &retval = debugTrackerArray[index];
+    auto &retval = debugChecksumArray[index];
     retval.Reset(
         arrayToChecksum, arraySize, Purpose, RecursionDepth, CallIndex, useConvolution);
     return retval;

@@ -117,7 +117,7 @@ __device__ void DebugState<SharkFloatParams>::Reset(
     int recursionDepth,
     int callIndex)
 {
-    if constexpr (DebugChecksums) {
+    if constexpr (SharkDebugChecksums) {
         if (record == RecordIt::Yes) {
             // Initialize the checksum to zero
             Data.Checksum = 0;
@@ -150,7 +150,7 @@ __device__ void DebugState<SharkFloatParams>::Reset(
     int recursionDepth,
     int callIndex)
 {
-    if constexpr (DebugChecksums) {
+    if constexpr (SharkDebugChecksums) {
         if (record == RecordIt::Yes) {
             // Initialize the checksum to zero
             Data.Checksum = 0;
@@ -180,7 +180,7 @@ __device__ void DebugState<SharkFloatParams>::Erase(
     int recursionDepth,
     int callIndex)
 {
-    if constexpr (DebugChecksums) {
+    if constexpr (SharkDebugChecksums) {
         if (record == RecordIt::Yes) {
             // Initialize the checksum to zero
             Data.Checksum = 0;

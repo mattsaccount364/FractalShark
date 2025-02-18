@@ -590,6 +590,7 @@ __global__ void AddKernelTestLoop(
     HpSharkFloat<SharkFloatParams> *A,
     HpSharkFloat<SharkFloatParams> *B,
     HpSharkFloat<SharkFloatParams> *Out,
+    uint64_t numIters,
     GlobalAddBlockData *globalBlockData,
     CarryInfo *carryOuts,        // Array to store carry-out for each block
     uint32_t *cumulativeCarries) { // Array to store cumulative carries
@@ -600,7 +601,7 @@ __global__ void AddKernelTestLoop(
     // Total number of blocks launched
     int numBlocks = gridDim.x;
 
-    for (int i = 0; i < SharkTestIterCount; ++i) {
+    for (int i = 0; i < numIters; ++i) {
         AddHelper(A, B, Out, globalBlockData, carryOuts, cumulativeCarries, grid, numBlocks);
     }
 }
@@ -615,7 +616,7 @@ void ComputeAddGpu(void *kernelArgs[]) {
         dim3(SharkFloatParams::GlobalNumBlocks),
         dim3(SharkFloatParams::GlobalThreadsPerBlock),
         kernelArgs,
-        0, // Shared memory size
+        SharedMemSize, // Shared memory size
         0 // Stream
     );
 
@@ -637,7 +638,7 @@ void ComputeAddGpuTestLoop(void *kernelArgs[]) {
         dim3(SharkFloatParams::GlobalNumBlocks),
         dim3(SharkFloatParams::GlobalThreadsPerBlock),
         kernelArgs,
-        0, // Shared memory size
+        SharedMemSize, // Shared memory size
         0 // Stream
     );
 

@@ -611,12 +611,13 @@ __global__ void MultiplyKernelKaratsubaV1TestLoop(
     HpSharkFloat<SharkFloatParams> *A,
     HpSharkFloat<SharkFloatParams> *B,
     HpSharkFloat<SharkFloatParams> *Out,
+    uint64_t numIters,
     uint64_t *tempProducts) { // Array to store cumulative carries
 
     // Initialize cooperative grid group
     cg::grid_group grid = cg::this_grid();
 
-    for (int i = 0; i < SharkTestIterCount; ++i) {
+    for (int i = 0; i < numIters; ++i) {
         // MultiplyHelper(A, B, Out, grid, tempProducts);
         MultiplyHelperKaratsubaV1(A, B, Out, grid, tempProducts);
     }

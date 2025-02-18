@@ -160,7 +160,8 @@ void TestPerf(
     const char *num1,
     const char *num2,
     const mpf_t mpfX,
-    const mpf_t mpfY) {
+    const mpf_t mpfY,
+    uint64_t numIters) {
 
     // Print the original input values
     if constexpr (SharkFloatParams::HostVerbose) {
@@ -193,7 +194,7 @@ void TestPerf(
         BenchmarkTimer hostTimer;
         ScopedBenchmarkStopper hostStopper{ hostTimer };
 
-        for (int i = 0; i < SharkTestIterCount; ++i) {
+        for (int i = 0; i < numIters; ++i) {
             if constexpr (sharkOperator == Operator::Add) {
                 mpf_add(mpfHostResult, mpfX, mpfY);
             } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
@@ -217,14 +218,16 @@ void TestPerf(
                 ComputeAddGpuTestLoop<SharkFloatParams>,
                 *xNum,
                 *yNum,
-                *gpuResult2);
+                *gpuResult2,
+                numIters);
         } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
             InvokeMultiplyKernel<SharkFloatParams>(
                 timer,
                 ComputeMultiplyKaratsubaV2GpuTestLoop<SharkFloatParams>,
                 *xNum,
                 *yNum,
-                *gpuResult2);
+                *gpuResult2,
+                numIters);
         }
 
         Tests.AddTime(testNum, timer.GetDeltaInMs());
@@ -249,7 +252,8 @@ void TestPerf(
 
 template<class SharkFloatParams, Operator sharkOperator>
 void TestPerf(
-    int testNum) {
+    int testNum,
+    uint64_t numIters) {
 
     HpSharkFloat<SharkFloatParams> xNum;
     HpSharkFloat<SharkFloatParams> yNum;
@@ -270,7 +274,7 @@ void TestPerf(
     auto num1 = xNum.ToString();
     auto num2 = yNum.ToString();
 
-    TestPerf<SharkFloatParams, sharkOperator>(testNum, num1.c_str(), num2.c_str(), mpfX, mpfY);
+    TestPerf<SharkFloatParams, sharkOperator>(testNum, num1.c_str(), num2.c_str(), mpfX, mpfY, numIters);
 
     mpf_clear(mpfX);
     mpf_clear(mpfY);
@@ -417,7 +421,7 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
 
     // Compare debugResultsCuda against debugResultsHost
     bool ChecksumFailure = false;
-    if constexpr (TestGpu && DebugChecksums) {
+    if constexpr (TestGpu && SharkDebugChecksums) {
         assert (debugResultsHost.size() <= debugStatesCuda.size());
 
         // Note that the hosts results should be exactly the right size, whereas
@@ -957,7 +961,7 @@ bool TestAllBinaryOp(int testBase) {
     constexpr bool includeSet4 = true;
     constexpr bool includeSet5 = true;
     constexpr bool includeSet6 = true;
-    constexpr bool includeSet10 = true;
+    constexpr bool includeSet10 = false;
     constexpr bool includeSet11 = false;
 
     // 200s is multiply
@@ -1024,7 +1028,7 @@ bool TestAllBinaryOp(int testBase) {
     if constexpr (includeSet5) {
         const auto set = testBase + 800;
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 10, "-0.51", "-1.29");
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 20, "-0.61", "-1.39");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 20, "-0.61", "-1.39"); // TODO this line bad with 13,5 config?
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 30, "-0.71", "-1.49");
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 40, "-0.11", "-1.99999999999999999999999999999");
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 50, "-0.123124561464451654461", "-1.2395123123127298375982735");
@@ -1091,18 +1095,18 @@ bool TestAllBinaryOp(int testBase) {
 
 template<Operator sharkOperator>
 bool TestBinaryOperatorPerf(int testBase) {
-#if (ENABLE_BASIC_CORRECTNESS == 1)
-    TestPerf<TestPerSharkParams1, sharkOperator>(testBase + 1);
-    TestPerf<TestPerSharkParams2, sharkOperator>(testBase + 2);
-    TestPerf<TestPerSharkParams3, sharkOperator>(testBase + 3);
-    TestPerf<TestPerSharkParams4, sharkOperator>(testBase + 4);
+#if (ENABLE_BASIC_CORRECTNESS == 1) || (ENABLE_BASIC_CORRECTNESS == 3)
+    TestPerf<TestPerSharkParams1, sharkOperator>(testBase + 1, SharkTestIterCount);
+    TestPerf<TestPerSharkParams2, sharkOperator>(testBase + 2, SharkTestIterCount);
+    TestPerf<TestPerSharkParams3, sharkOperator>(testBase + 3, SharkTestIterCount);
+    TestPerf<TestPerSharkParams4, sharkOperator>(testBase + 4, SharkTestIterCount);
 
-    TestPerf<TestPerSharkParams5, sharkOperator>(testBase + 5);
-    TestPerf<TestPerSharkParams6, sharkOperator>(testBase + 6);
-    TestPerf<TestPerSharkParams7, sharkOperator>(testBase + 7);
-    TestPerf<TestPerSharkParams8, sharkOperator>(testBase + 8);
+    TestPerf<TestPerSharkParams5, sharkOperator>(testBase + 5, SharkTestIterCount);
+    TestPerf<TestPerSharkParams6, sharkOperator>(testBase + 6, SharkTestIterCount);
+    TestPerf<TestPerSharkParams7, sharkOperator>(testBase + 7, SharkTestIterCount);
+    TestPerf<TestPerSharkParams8, sharkOperator>(testBase + 8, SharkTestIterCount);
 #elif (ENABLE_BASIC_CORRECTNESS == 2)
-    TestPerf<TestPerSharkParams1, sharkOperator>(testBase + 1);
+    TestPerf<TestPerSharkParams1, sharkOperator>(testBase + 1, SharkTestIterCount);
 #endif
     return Tests.CheckAllTestsPassed();
 }

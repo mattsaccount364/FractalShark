@@ -31,6 +31,7 @@ CUDA_GLOBAL void AddKernelTestLoop(
     HpSharkFloat<SharkFloatParams> *A,
     HpSharkFloat<SharkFloatParams> *B,
     HpSharkFloat<SharkFloatParams> *Out,
+    uint64_t numIters,
     GlobalAddBlockData *globalBlockData,
     CarryInfo *carryOuts,        // Array to store carry-out for each block
     uint32_t *cumulativeCarries); // Array to store cumulative carries

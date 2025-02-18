@@ -1,6 +1,8 @@
 ﻿#include "Multiply.cuh"
 
 #include <cuda_runtime.h>
+#include <curand.h>
+#include <curand_kernel.h>
 
 #include "HpSharkFloat.cuh"
 #include "BenchmarkTimer.h"
@@ -28,6 +30,34 @@ namespace cg = cooperative_groups;
 // #define SharkForceInlineReleaseOnly __forceinline__
 #define SharkForceInlineReleaseOnly
 #endif
+
+void
+__device__ DebugInitRandom (
+    cg::thread_block &block,
+    curandState *state)
+{
+    int index = block.group_index().x * block.dim_threads().x + block.thread_index().x;
+    curand_init(1234, index, 0, &state[index]);
+}
+
+void
+__device__ DebugRandomDelay (
+    cg::thread_block &block,
+    curandState *state)
+{
+    int idx = block.group_index().x * block.dim_threads().x + block.thread_index().x;
+
+    static constexpr int maxIters = 1000;
+    float myrandf = curand_uniform(&state[idx]);
+    myrandf *= (maxIters + 0.999999);
+    int myrand = (int)truncf(myrandf);
+
+    volatile int dummy = 0;
+    for (auto i = 0; i < myrand; ++i) {
+        auto orig = dummy;
+        dummy = orig + 1;
+    }
+}
 
 template<int n1, int n2>
 __device__ int CompareDigits(const uint32_t *highArray, const uint32_t *lowArray) {
@@ -315,8 +345,11 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallelImproved3(
     cg::grid_group &grid,
     cg::thread_block &block) {
 
-    // Note: stops on this.
-    auto *sharedBorrowAny = x_diff_abs;
+    // Note: steps on this.
+    auto *sharedBorrowAny =
+        SharkUseSharedMemory ?
+        x_diff_abs :
+        &x_diff_abs[block.group_index().x];
 
     if constexpr (ExecutionNumBlocks > 1) {
         // Compute maximum digit count from the two halves.
@@ -617,12 +650,6 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallelImproved3(
         }
 
         block.sync();
-
-        // OUTER LOOP: Propagate borrows until stabilization.
-        // Since there is one block, there’s no inter–block injection.
-        uint32_t initialBorrowAny = 0;
-        const int MAX_OUTER_PASSES = 5000;
-        int outerPass = 0;
 
         // LOCAL PROPAGATION: For each pass, each thread processes its indices in [blockStart, blockEnd)
         // using a block–stride loop.
@@ -934,11 +961,10 @@ static_assert(AdditionalUInt64PerFrame == 256, "See below");
     constexpr int TestMultiplier = 1; \
     constexpr auto CallOffset = CallIndex * CalculateFrameSize<SharkFloatParams>(); \
     constexpr auto TempBaseOffset = TempBase + CallOffset; \
-    constexpr auto BorrowGlobalOffset = 0; \
-    constexpr auto BorrowBlockLevelOffset1 = MaxBlocks; \
-    constexpr auto BorrowBlockLevelOffset2 = MaxBlocks * 2; \
     constexpr auto Checksum_offset = AdditionalGlobalSyncSpace; \
-    auto *debugTrackerArray = reinterpret_cast<DebugState<SharkFloatParams>*>(&tempProducts[Checksum_offset]); \
+    auto *debugChecksumArray = reinterpret_cast<DebugState<SharkFloatParams>*>(&tempProducts[Checksum_offset]); \
+    constexpr auto Random_offset = Checksum_offset + AdditionalGlobalRandomSpace; \
+    auto *debugRandomArray = reinterpret_cast<curandState *>(&tempProducts[Random_offset]); \
     constexpr auto Z0_offset = TempBaseOffset + AdditionalUInt64PerFrame; /* 0 */ \
     constexpr auto Z2_offset = Z0_offset + 4 * NewN * TestMultiplier; /* 4 */ \
     constexpr auto Z1_temp_offset = Z2_offset + 4 * NewN * TestMultiplier; /* 8 */ \
@@ -955,6 +981,10 @@ static_assert(AdditionalUInt64PerFrame == 256, "See below");
     constexpr auto SubtractionOffset5 = SubtractionOffset4 + 1 * NewN * TestMultiplier;  /* 29 */ \
     constexpr auto SubtractionOffset6 = SubtractionOffset5 + 1 * NewN * TestMultiplier;  /* 30 */ \
 
+#define TempProductsGlobals(TempBase, CallIndex) \
+    constexpr auto BorrowGlobalOffset = 0; \
+    constexpr auto BorrowBlockLevelOffset1 = MaxBlocks; \
+    constexpr auto BorrowBlockLevelOffset2 = MaxBlocks * 2; \
 
 #define DefineExtraDefinitions() \
     const auto RelativeBlockIndex = block.group_index().x - ExecutionBlockBase; \
@@ -983,13 +1013,13 @@ template<
 __device__ SharkForceInlineReleaseOnly void
 EraseCurrentDebugState(
     RecordIt record,
-    DebugState<SharkFloatParams> *debugTrackerArray,
+    DebugState<SharkFloatParams> *debugChecksumArray,
     cooperative_groups::grid_group &grid,
     cooperative_groups::thread_block &block) {
 
     constexpr auto maxPurposes = static_cast<int>(DebugStatePurpose::NumPurposes);
     constexpr auto curPurpose = static_cast<int>(Purpose);
-    debugTrackerArray[CallIndex * maxPurposes + curPurpose].Erase(
+    debugChecksumArray[CallIndex * maxPurposes + curPurpose].Erase(
         record, grid, block, Purpose, RecursionDepth, CallIndex);
 }
 
@@ -1003,7 +1033,7 @@ __device__ SharkForceInlineReleaseOnly void
 StoreCurrentDebugState (
     RecordIt record,
     UseConvolution useConvolution,
-    DebugState<SharkFloatParams> *debugTrackerArray,
+    DebugState<SharkFloatParams> *debugChecksumArray,
     cooperative_groups::grid_group &grid,
     cooperative_groups::thread_block &block,
     const ArrayType *arrayToChecksum,
@@ -1011,7 +1041,7 @@ StoreCurrentDebugState (
 {
     constexpr auto maxPurposes = static_cast<int>(DebugStatePurpose::NumPurposes);
     constexpr auto curPurpose = static_cast<int>(Purpose);
-    debugTrackerArray[CallIndex * maxPurposes + curPurpose].Reset(
+    debugChecksumArray[CallIndex * maxPurposes + curPurpose].Reset(
         record, useConvolution, grid, block, arrayToChecksum, arraySize, Purpose, RecursionDepth, CallIndex);
 }
 
@@ -1051,13 +1081,15 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
     }
 
     DefineTempProductsOffsets(TempBase, CallIndex);
+    TempProductsGlobals(TempBase, CallIndex);
+
     constexpr auto MaxHalfN = std::max(n1, n2);
     constexpr int total_k = MaxHalfN * 2 - 1; // Total number of k values
     constexpr bool UseConvolutionBool =
         (NewNumBlocks <= std::max(SharkFloatParams::GlobalNumBlocks / SharkFloatParams::ConvolutionLimit, 1) ||
         (NewNumBlocks % 3 != 0));
     constexpr UseConvolution UseConvolutionHere = UseConvolutionBool ? UseConvolution::Yes : UseConvolution::No;
-    constexpr bool EnableSharedDiff = true;
+    constexpr bool EnableSharedDiff = (SharkUseSharedMemory && true); // Make sure it's false if !SharkUseSharedMemory
     constexpr bool UseParallelSubtract = true;
 
     using DebugState = DebugState<SharkFloatParams>;
@@ -1067,17 +1099,21 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
         RecordIt::Yes :
         RecordIt::No;
 
-    if constexpr (DebugChecksums) {
+    if constexpr (SharkDebugChecksums) {
         grid.sync();
 
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Invalid>(
-            record, debugTrackerArray, grid, block);
+            record, debugChecksumArray, grid, block);
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::ADigits, uint32_t>(
-            record, UseConvolutionHere, debugTrackerArray, grid, block, aDigits, NewN);
+            record, UseConvolutionHere, debugChecksumArray, grid, block, aDigits, NewN);
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BDigits, uint32_t>(
-            record, UseConvolutionHere, debugTrackerArray, grid, block, bDigits, NewN);
+            record, UseConvolutionHere, debugChecksumArray, grid, block, bDigits, NewN);
 
         grid.sync();
+    }
+
+    if constexpr (SharkDebugRandomDelays) {
+        DebugRandomDelay(block, debugRandomArray);
     }
 
     auto *Z0_OutDigits = &tempProducts[Z0_offset];
@@ -1109,19 +1145,23 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
     const auto SharkRestrict *a_low = aDigits;
     const auto SharkRestrict *b_low = bDigits;
 
-    if constexpr (DebugChecksums) {
+    if constexpr (SharkDebugChecksums) {
         grid.sync();
 
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::AHalfHigh>(
-            record, UseConvolutionHere, debugTrackerArray, grid, block, a_high, n2);
+            record, UseConvolutionHere, debugChecksumArray, grid, block, a_high, n2);
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::AHalfLow>(
-            record, UseConvolutionHere, debugTrackerArray, grid, block, a_low, n1);
+            record, UseConvolutionHere, debugChecksumArray, grid, block, a_low, n1);
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BHalfHigh>(
-            record, UseConvolutionHere, debugTrackerArray, grid, block, b_high, n2);
+            record, UseConvolutionHere, debugChecksumArray, grid, block, b_high, n2);
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BHalfLow>(
-            record, UseConvolutionHere, debugTrackerArray, grid, block, b_low, n1);
+            record, UseConvolutionHere, debugChecksumArray, grid, block, b_low, n1);
 
         grid.sync();
+    }
+
+    if constexpr (SharkDebugRandomDelays) {
+        DebugRandomDelay(block, debugRandomArray);
     }
 
     if constexpr (!SharkFloatParams::DisableSubtraction) {
@@ -1267,17 +1307,19 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
         }
     }
 
-    block.sync();
+    grid.sync();
 
-    if constexpr (DebugChecksums) {
-        grid.sync();
-    
+    if constexpr (SharkDebugChecksums) {
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::XDiff>(
-            record, UseConvolutionHere, debugTrackerArray, grid, block, global_x_diff_abs, MaxHalfN);
+            record, UseConvolutionHere, debugChecksumArray, grid, block, global_x_diff_abs, MaxHalfN);
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::YDiff>(
-            record, UseConvolutionHere, debugTrackerArray, grid, block, global_y_diff_abs, MaxHalfN);
+            record, UseConvolutionHere, debugChecksumArray, grid, block, global_y_diff_abs, MaxHalfN);
 
         grid.sync();
+    }
+
+    if constexpr (SharkDebugRandomDelays) {
+        DebugRandomDelay(block, debugRandomArray);
     }
 
     constexpr auto NumBlocksRatio =
@@ -1530,27 +1572,29 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
         }
     }
 
-    if constexpr (DebugChecksums) {
-        grid.sync();
+    grid.sync();
 
+    if constexpr (SharkDebugChecksums) {
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z0>(
-            record, UseConvolutionHere, debugTrackerArray, grid, block, Z0_OutDigits, FinalZ0Size);
+            record, UseConvolutionHere, debugChecksumArray, grid, block, Z0_OutDigits, FinalZ0Size);
 
         //cg::memcpy_async(block,
-        //    (uint64_t *)debugTrackerArray,
+        //    (uint64_t *)debugChecksumArray,
         //    (uint64_t *)Z0_OutDigits,
         //    sizeof(uint64_t) * FinalZ0Size);
         //cg::wait(block);
 
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2>(
-            record, UseConvolutionHere, debugTrackerArray, grid, block, Z2_OutDigits, FinalZ2Size);
+            record, UseConvolutionHere, debugChecksumArray, grid, block, Z2_OutDigits, FinalZ2Size);
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1_offset>(
-            record, UseConvolutionHere, debugTrackerArray, grid, block, Z1_temp_digits, FinalZ1TempSize);
+            record, UseConvolutionHere, debugChecksumArray, grid, block, Z1_temp_digits, FinalZ1TempSize);
 
         grid.sync();
     }
 
-    grid.sync();
+    if constexpr (SharkDebugRandomDelays) {
+        DebugRandomDelay(block, debugRandomArray);
+    }
 
     auto *Z1_digits = &tempProducts[Z1_offset];
 
@@ -1598,15 +1642,19 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             Z1_digits[z1_idx + 1] = z1_high;
         }
 
-        if constexpr (DebugChecksums) {
+        if constexpr (SharkDebugChecksums) {
             grid.sync();
 
             StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1>(
-                record, UseConvolutionHere, debugTrackerArray, grid, block, Z1_digits, total_k * 2);
+                record, UseConvolutionHere, debugChecksumArray, grid, block, Z1_digits, total_k * 2);
         }
 
         // Synchronize before final combination
         grid.sync();
+
+        if constexpr (SharkDebugRandomDelays) {
+            DebugRandomDelay(block, debugRandomArray);
+        }
 
         // Now the final combination is just:
         // final = Z0 + (Z1 << (32*n)) + (Z2 << (64*n))
@@ -1643,17 +1691,21 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             final128[result_idx + 1] = sum_high;
         }
 
-        if constexpr (DebugChecksums) {
+        if constexpr (SharkDebugChecksums) {
             grid.sync();
 
             StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Final128>(
-                record, UseConvolutionHere, debugTrackerArray, grid, block, final128, total_result_digits * 2);
+                record, UseConvolutionHere, debugChecksumArray, grid, block, final128, total_result_digits * 2);
             EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offset>(
-                record, debugTrackerArray, grid, block);
+                record, debugChecksumArray, grid, block);
         }
 
         // Synchronize before carry propagation
         grid.sync();
+
+        if constexpr (SharkDebugRandomDelays) {
+            DebugRandomDelay(block, debugRandomArray);
+        }
     }
 }
 
@@ -1687,39 +1739,61 @@ __device__ void MultiplyHelperKaratsubaV2 (
     constexpr auto RecursionDepth = 0;
     DefineTempProductsOffsets(TempBase, CallIndex);
 
-    auto *SharkRestrict aDigits = shared_data;
-    auto *SharkRestrict bDigits = aDigits + NewN;
-    auto *SharkRestrict x_diff_abs = bDigits + NewN;
-    auto *SharkRestrict y_diff_abs = x_diff_abs + (NewN + 1) / 2;
+    if constexpr (SharkDebugRandomDelays) {
+        DebugInitRandom(block, debugRandomArray);
+    }
 
-    cg::memcpy_async(block, aDigits, A->Digits, sizeof(uint32_t) * NewN);
-    cg::memcpy_async(block, bDigits, B->Digits, sizeof(uint32_t) * NewN);
+    auto *SharkRestrict aDigits =
+        SharkUseSharedMemory ?
+        (shared_data) :
+        const_cast<uint32_t*>(A->Digits);
+    auto *SharkRestrict bDigits =
+        SharkUseSharedMemory ?
+        (aDigits + NewN) :
+        const_cast<uint32_t *>(B->Digits);
+    auto *SharkRestrict x_diff_abs =
+        SharkUseSharedMemory ?
+        reinterpret_cast<uint32_t *>(bDigits + NewN) :
+        reinterpret_cast<uint32_t*>(&tempProducts[XDiff_offset]);
+    auto *SharkRestrict y_diff_abs =
+        SharkUseSharedMemory ?
+        reinterpret_cast<uint32_t *>(x_diff_abs + (NewN + 1) / 2) :
+        reinterpret_cast<uint32_t *>(&tempProducts[YDiff_offset]);
 
-    if constexpr (DebugChecksums) {
+    if constexpr (SharkUseSharedMemory) {
+        cg::memcpy_async(block, aDigits, A->Digits, sizeof(uint32_t) * NewN);
+        cg::memcpy_async(block, bDigits, B->Digits, sizeof(uint32_t) * NewN);
+    }
+
+    if constexpr (SharkDebugChecksums) {
         const RecordIt record =
             (block.thread_index().x == 0 && block.group_index().x == ExecutionBlockBase) ?
             RecordIt::Yes :
             RecordIt::No;
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Invalid>(record, debugTrackerArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::ADigits>(record, debugTrackerArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BDigits>(record, debugTrackerArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::AHalfHigh>(record, debugTrackerArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::AHalfLow>(record, debugTrackerArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BHalfHigh>(record, debugTrackerArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BHalfLow>(record, debugTrackerArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::XDiff>(record, debugTrackerArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::YDiff>(record, debugTrackerArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z0>(record, debugTrackerArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1>(record, debugTrackerArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2>(record, debugTrackerArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1_offset>(record, debugTrackerArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Final128>(record, debugTrackerArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offset>(record, debugTrackerArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Invalid>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::ADigits>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BDigits>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::AHalfHigh>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::AHalfLow>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BHalfHigh>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BHalfLow>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::XDiff>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::YDiff>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z0>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1_offset>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Final128>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offset>(record, debugChecksumArray, grid, block);
         static_assert(static_cast<int>(DebugStatePurpose::NumPurposes) == 15, "Unexpected number of purposes");
     }
 
     // Wait for the first batch of A to be loaded
     cg::wait(block);
+
+    if constexpr (SharkDebugRandomDelays) {
+        DebugRandomDelay(block, debugRandomArray);
+    }
 
     auto *final128 = &tempProducts[Convolution_offset];
     MultiplyDigitsOnly<
@@ -1807,13 +1881,17 @@ __device__ void MultiplyHelperKaratsubaV2 (
         RecordIt::Yes :
         RecordIt::No;
 
-    if constexpr (DebugChecksums) {
+    if constexpr (SharkDebugChecksums) {
         grid.sync();
 
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offset>(
-            record, UseConvolution::No, debugTrackerArray, grid, block, resultEntries, 2 * NewN);
+            record, UseConvolution::No, debugChecksumArray, grid, block, resultEntries, 2 * NewN);
 
         grid.sync();
+    }
+
+    if constexpr (SharkDebugRandomDelays) {
+        DebugRandomDelay(block, debugRandomArray);
     }
 
     // ---- Finalize the Result ----
@@ -1876,6 +1954,7 @@ __device__ void MultiplyHelperKaratsubaV2 (
 }
 
 template<class SharkFloatParams>
+__maxnreg__(SharkRegisterLimit)
 __global__ void MultiplyKernelKaratsubaV2(
     const HpSharkFloat<SharkFloatParams> *A,
     const HpSharkFloat<SharkFloatParams> *B,
@@ -1892,17 +1971,20 @@ __global__ void MultiplyKernelKaratsubaV2(
 }
 
 template<class SharkFloatParams>
-__global__ void MultiplyKernelKaratsubaV2TestLoop(
+__global__ void
+ __maxnreg__(SharkRegisterLimit)
+MultiplyKernelKaratsubaV2TestLoop(
     HpSharkFloat<SharkFloatParams> *A,
     HpSharkFloat<SharkFloatParams> *B,
     HpSharkFloat<SharkFloatParams> *Out,
+    uint64_t numIters,
     uint64_t *tempProducts) { // Array to store cumulative carries
 
     // Initialize cooperative grid group
     cg::grid_group grid = cg::this_grid();
     cg::thread_block block = cg::this_thread_block();
 
-    for (int i = 0; i < SharkTestIterCount; ++i) {
+    for (int i = 0; i < numIters; ++i) {
         // MultiplyHelper(A, B, Out, carryIns, grid, tempProducts);
         if constexpr (!SharkFloatParams::ForceNoOp) {
             MultiplyHelperKaratsubaV2(A, B, Out, grid, block, tempProducts);
@@ -1913,23 +1995,45 @@ __global__ void MultiplyKernelKaratsubaV2TestLoop(
 }
 
 template<class SharkFloatParams>
-void PrintMaxActiveBlocks(int sharedAmountBytes) {
+void PrintMaxActiveBlocks(void *kernelFn, int sharedAmountBytes) {
     std::cout << "Shared memory size: " << sharedAmountBytes << std::endl;
 
     int numBlocks;
-    cudaError_t err = cudaOccupancyMaxActiveBlocksPerMultiprocessor(
-        &numBlocks,
-        MultiplyKernelKaratsubaV2<SharkFloatParams>,
-        SharkFloatParams::GlobalThreadsPerBlock,
-        sharedAmountBytes
-    );
+    cudaError_t err;
+    {
 
-    if (err != cudaSuccess) {
-        std::cerr << "CUDA error in cudaOccupancyMaxActiveBlocksPerMultiprocessor: " << cudaGetErrorString(err) << std::endl;
-        return;
+        err = cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+            &numBlocks,
+            kernelFn,
+            SharkFloatParams::GlobalThreadsPerBlock,
+            sharedAmountBytes
+        );
+
+        if (err != cudaSuccess) {
+            std::cerr << "CUDA error in cudaOccupancyMaxActiveBlocksPerMultiprocessor: " << cudaGetErrorString(err) << std::endl;
+            return;
+        }
+
+        std::cout << "Max active blocks: " << numBlocks << std::endl;
     }
 
-    std::cout << "Max active blocks: " << numBlocks << std::endl;
+    {
+        size_t availableSharedMemory = 0;
+        constexpr auto NumBlocksPerSM = 1;
+        err = cudaOccupancyAvailableDynamicSMemPerBlock(
+            &availableSharedMemory,
+            kernelFn,
+            NumBlocksPerSM,
+            SharkFloatParams::GlobalThreadsPerBlock
+        );
+
+        if (err != cudaSuccess) {
+            std::cerr << "CUDA error in cudaOccupancyAvailableDynamicSMemPerBlock: " << cudaGetErrorString(err) << std::endl;
+            return;
+        }
+
+        std::cout << "Available shared memory per block: " << availableSharedMemory << std::endl;
+    }
 }
 
 template<class SharkFloatParams>
@@ -1939,7 +2043,10 @@ void ComputeMultiplyKaratsubaV2Gpu(void *kernelArgs[]) {
 
     constexpr int NewN = SharkFloatParams::GlobalNumUint32;
     constexpr auto n = (NewN + 1) / 2;              // Half of NewN
-    constexpr auto sharedAmountBytes = UseSharedMemory ? (2 * NewN + 2 * n) * sizeof(uint32_t) : 0;
+    constexpr auto sharedAmountBytes =
+        SharkUseSharedMemory ?
+        (2 * NewN + 2 * n) * sizeof(uint32_t) :
+        SharkConstantSharedRequiredBytes;
 
     if constexpr (SharkCustomStream) {
         cudaFuncSetAttribute(
@@ -1947,7 +2054,9 @@ void ComputeMultiplyKaratsubaV2Gpu(void *kernelArgs[]) {
             cudaFuncAttributeMaxDynamicSharedMemorySize,
             sharedAmountBytes);
 
-        PrintMaxActiveBlocks<SharkFloatParams>(sharedAmountBytes);
+        PrintMaxActiveBlocks<SharkFloatParams>(
+            MultiplyKernelKaratsubaV2<SharkFloatParams>,
+            sharedAmountBytes);
     }
 
     err = cudaLaunchCooperativeKernel(
@@ -1971,7 +2080,10 @@ void ComputeMultiplyKaratsubaV2GpuTestLoop(cudaStream_t &stream, void *kernelArg
 
     constexpr int NewN = SharkFloatParams::GlobalNumUint32;
     constexpr auto n = (NewN + 1) / 2;              // Half of NewN
-    constexpr auto sharedAmountBytes = UseSharedMemory ? (2 * NewN + 2 * n) * sizeof(uint32_t) : 0;
+    constexpr auto sharedAmountBytes =
+        SharkUseSharedMemory ?
+        (2 * NewN + 2 * n) * sizeof(uint32_t) :
+        SharkConstantSharedRequiredBytes;
 
     if constexpr (SharkCustomStream) {
         cudaFuncSetAttribute(
@@ -1979,7 +2091,9 @@ void ComputeMultiplyKaratsubaV2GpuTestLoop(cudaStream_t &stream, void *kernelArg
             cudaFuncAttributeMaxDynamicSharedMemorySize,
             sharedAmountBytes);
 
-        PrintMaxActiveBlocks<SharkFloatParams>(sharedAmountBytes);
+        PrintMaxActiveBlocks<SharkFloatParams>(
+            MultiplyKernelKaratsubaV2TestLoop<SharkFloatParams>,
+            sharedAmountBytes);
     }
 
     cudaError_t err = cudaLaunchCooperativeKernel(

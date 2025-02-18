@@ -26,7 +26,8 @@ void InvokeMultiplyKernel(
     std::function<void(cudaStream_t &, void *[])> kernel,
     const HpSharkFloat<SharkFloatParams> &xNum,
     const HpSharkFloat<SharkFloatParams> &yNum,
-    HpSharkFloat<SharkFloatParams> &gpuResult2);
+    HpSharkFloat<SharkFloatParams> &gpuResult2,
+    uint64_t numIters);
 
 template<class SharkFloatParams>
 void InvokeAddKernel(
@@ -34,7 +35,8 @@ void InvokeAddKernel(
     std::function<void(void *[])> kernel,
     const HpSharkFloat<SharkFloatParams> &xNum,
     const HpSharkFloat<SharkFloatParams> &yNum,
-    HpSharkFloat<SharkFloatParams> &gpuResult2);
+    HpSharkFloat<SharkFloatParams> &gpuResult2,
+    uint64_t numIters);
 
 template<class SharkFloatParams, Operator sharkOperator>
 void InvokeMultiplyKernelCorrectness(

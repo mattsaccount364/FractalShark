@@ -125,7 +125,6 @@ int RunCorrectnessTest() {
 }
 
 int main(int /*argc*/, char * /*argv*/[]) {
-    int testBase = 0;
     bool res = false;
 
     int deviceCount;
@@ -147,14 +146,15 @@ int main(int /*argc*/, char * /*argv*/[]) {
     //}
 
     if constexpr (SharkCorrectnessTests) {
-        auto res = RunCorrectnessTest();
+        res = RunCorrectnessTest();
         if (!res) {
             return 0;
         }
     }
 
 #if (ENABLE_BASIC_CORRECTNESS == 2) || (ENABLE_BASIC_CORRECTNESS == 1)
-    if constexpr (MultiKernel) {
+    int testBase = 0;
+    if constexpr (SharkMultiKernel) {
         testBase = 6000;
         res = TestBinaryOperatorPerf<Operator::Add>(testBase);
         if (!res) {
@@ -176,7 +176,7 @@ int main(int /*argc*/, char * /*argv*/[]) {
 #endif
 
     if constexpr (!SharkCorrectnessTests) {
-        auto res = RunCorrectnessTest();
+        res = RunCorrectnessTest();
         if (!res) {
             return 0;
         }

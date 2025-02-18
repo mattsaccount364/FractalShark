@@ -32,4 +32,5 @@ CUDA_GLOBAL void MultiplyKernelKaratsubaV2TestLoop(
     HpSharkFloat<SharkFloatParams> *A,
     HpSharkFloat<SharkFloatParams> *B,
     HpSharkFloat<SharkFloatParams> *Out,
+    uint64_t numIters,
     uint64_t *tempProducts);

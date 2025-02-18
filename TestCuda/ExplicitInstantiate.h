@@ -8,87 +8,87 @@
 #define ENABLE_BASIC_CORRECTNESS 1
 
 static constexpr auto ComicalThreadCount = 13;
-#define ComicalTest1  GenericSharkFloatParams<ComicalThreadCount, 1, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest2  GenericSharkFloatParams<ComicalThreadCount, 2, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest3  GenericSharkFloatParams<ComicalThreadCount, 3, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest4  GenericSharkFloatParams<ComicalThreadCount, 4, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest5  GenericSharkFloatParams<ComicalThreadCount, 5, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest6  GenericSharkFloatParams<ComicalThreadCount, 6, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest7  GenericSharkFloatParams<ComicalThreadCount, 7, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest8  GenericSharkFloatParams<ComicalThreadCount, 8, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest9  GenericSharkFloatParams<ComicalThreadCount, 9, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest10 GenericSharkFloatParams<ComicalThreadCount, 10, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest11 GenericSharkFloatParams<ComicalThreadCount, 11, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest12 GenericSharkFloatParams<ComicalThreadCount, 12, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest13 GenericSharkFloatParams<ComicalThreadCount, 13, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest14 GenericSharkFloatParams<ComicalThreadCount, 14, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest15 GenericSharkFloatParams<ComicalThreadCount, 15, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest16 GenericSharkFloatParams<ComicalThreadCount, 16, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest17 GenericSharkFloatParams<ComicalThreadCount, 17, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest18 GenericSharkFloatParams<ComicalThreadCount, 18, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest19 GenericSharkFloatParams<ComicalThreadCount, 19, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest20 GenericSharkFloatParams<ComicalThreadCount, 20, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest21 GenericSharkFloatParams<ComicalThreadCount, 21, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest22 GenericSharkFloatParams<ComicalThreadCount, 22, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest23 GenericSharkFloatParams<ComicalThreadCount, 23, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest24 GenericSharkFloatParams<ComicalThreadCount, 24, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest25 GenericSharkFloatParams<ComicalThreadCount, 25, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest26 GenericSharkFloatParams<ComicalThreadCount, 26, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest27 GenericSharkFloatParams<ComicalThreadCount, 27, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest28 GenericSharkFloatParams<ComicalThreadCount, 28, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest29 GenericSharkFloatParams<ComicalThreadCount, 29, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest30 GenericSharkFloatParams<ComicalThreadCount, 30, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest31 GenericSharkFloatParams<ComicalThreadCount, 31, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest32 GenericSharkFloatParams<ComicalThreadCount, 32, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest33 GenericSharkFloatParams<ComicalThreadCount, 33, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest34 GenericSharkFloatParams<ComicalThreadCount, 34, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest35 GenericSharkFloatParams<ComicalThreadCount, 35, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest36 GenericSharkFloatParams<ComicalThreadCount, 36, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest37 GenericSharkFloatParams<ComicalThreadCount, 37, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest38 GenericSharkFloatParams<ComicalThreadCount, 38, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest39 GenericSharkFloatParams<ComicalThreadCount, 39, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest40 GenericSharkFloatParams<ComicalThreadCount, 40, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest41 GenericSharkFloatParams<ComicalThreadCount, 41, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest42 GenericSharkFloatParams<ComicalThreadCount, 42, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest43 GenericSharkFloatParams<ComicalThreadCount, 43, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest44 GenericSharkFloatParams<ComicalThreadCount, 44, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest45 GenericSharkFloatParams<ComicalThreadCount, 45, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest46 GenericSharkFloatParams<ComicalThreadCount, 46, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest47 GenericSharkFloatParams<ComicalThreadCount, 47, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest48 GenericSharkFloatParams<ComicalThreadCount, 48, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest49 GenericSharkFloatParams<ComicalThreadCount, 49, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest50 GenericSharkFloatParams<ComicalThreadCount, 50, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest51 GenericSharkFloatParams<ComicalThreadCount, 51, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest52 GenericSharkFloatParams<ComicalThreadCount, 52, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest53 GenericSharkFloatParams<ComicalThreadCount, 53, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest54 GenericSharkFloatParams<ComicalThreadCount, 54, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest55 GenericSharkFloatParams<ComicalThreadCount, 55, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest56 GenericSharkFloatParams<ComicalThreadCount, 56, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest57 GenericSharkFloatParams<ComicalThreadCount, 57, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest58 GenericSharkFloatParams<ComicalThreadCount, 58, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest59 GenericSharkFloatParams<ComicalThreadCount, 59, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest60 GenericSharkFloatParams<ComicalThreadCount, 60, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest61 GenericSharkFloatParams<ComicalThreadCount, 61, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest62 GenericSharkFloatParams<ComicalThreadCount, 62, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest63 GenericSharkFloatParams<ComicalThreadCount, 63, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest64 GenericSharkFloatParams<ComicalThreadCount, 64, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest65 GenericSharkFloatParams<ComicalThreadCount, 65, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest66 GenericSharkFloatParams<ComicalThreadCount, 66, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest67 GenericSharkFloatParams<ComicalThreadCount, 67, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest68 GenericSharkFloatParams<ComicalThreadCount, 68, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest69 GenericSharkFloatParams<ComicalThreadCount, 69, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest70 GenericSharkFloatParams<ComicalThreadCount, 70, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest71 GenericSharkFloatParams<ComicalThreadCount, 71, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest72 GenericSharkFloatParams<ComicalThreadCount, 72, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest73 GenericSharkFloatParams<ComicalThreadCount, 73, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest74 GenericSharkFloatParams<ComicalThreadCount, 74, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest75 GenericSharkFloatParams<ComicalThreadCount, 75, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest76 GenericSharkFloatParams<ComicalThreadCount, 76, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest77 GenericSharkFloatParams<ComicalThreadCount, 77, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest78 GenericSharkFloatParams<ComicalThreadCount, 78, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest79 GenericSharkFloatParams<ComicalThreadCount, 79, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest80 GenericSharkFloatParams<ComicalThreadCount, 80, SharkBatchSize, SharkTestIterCount>
-#define ComicalTest81 GenericSharkFloatParams<ComicalThreadCount, 81, SharkBatchSize, SharkTestIterCount>
+#define ComicalTest1  GenericSharkFloatParams<ComicalThreadCount, 1, SharkBatchSize>
+#define ComicalTest2  GenericSharkFloatParams<ComicalThreadCount, 2, SharkBatchSize>
+#define ComicalTest3  GenericSharkFloatParams<ComicalThreadCount, 3, SharkBatchSize>
+#define ComicalTest4  GenericSharkFloatParams<ComicalThreadCount, 4, SharkBatchSize>
+#define ComicalTest5  GenericSharkFloatParams<ComicalThreadCount, 5, SharkBatchSize>
+#define ComicalTest6  GenericSharkFloatParams<ComicalThreadCount, 6, SharkBatchSize>
+#define ComicalTest7  GenericSharkFloatParams<ComicalThreadCount, 7, SharkBatchSize>
+#define ComicalTest8  GenericSharkFloatParams<ComicalThreadCount, 8, SharkBatchSize>
+#define ComicalTest9  GenericSharkFloatParams<ComicalThreadCount, 9, SharkBatchSize>
+#define ComicalTest10 GenericSharkFloatParams<ComicalThreadCount, 10, SharkBatchSize>
+#define ComicalTest11 GenericSharkFloatParams<ComicalThreadCount, 11, SharkBatchSize>
+#define ComicalTest12 GenericSharkFloatParams<ComicalThreadCount, 12, SharkBatchSize>
+#define ComicalTest13 GenericSharkFloatParams<ComicalThreadCount, 13, SharkBatchSize>
+#define ComicalTest14 GenericSharkFloatParams<ComicalThreadCount, 14, SharkBatchSize>
+#define ComicalTest15 GenericSharkFloatParams<ComicalThreadCount, 15, SharkBatchSize>
+#define ComicalTest16 GenericSharkFloatParams<ComicalThreadCount, 16, SharkBatchSize>
+#define ComicalTest17 GenericSharkFloatParams<ComicalThreadCount, 17, SharkBatchSize>
+#define ComicalTest18 GenericSharkFloatParams<ComicalThreadCount, 18, SharkBatchSize>
+#define ComicalTest19 GenericSharkFloatParams<ComicalThreadCount, 19, SharkBatchSize>
+#define ComicalTest20 GenericSharkFloatParams<ComicalThreadCount, 20, SharkBatchSize>
+#define ComicalTest21 GenericSharkFloatParams<ComicalThreadCount, 21, SharkBatchSize>
+#define ComicalTest22 GenericSharkFloatParams<ComicalThreadCount, 22, SharkBatchSize>
+#define ComicalTest23 GenericSharkFloatParams<ComicalThreadCount, 23, SharkBatchSize>
+#define ComicalTest24 GenericSharkFloatParams<ComicalThreadCount, 24, SharkBatchSize>
+#define ComicalTest25 GenericSharkFloatParams<ComicalThreadCount, 25, SharkBatchSize>
+#define ComicalTest26 GenericSharkFloatParams<ComicalThreadCount, 26, SharkBatchSize>
+#define ComicalTest27 GenericSharkFloatParams<ComicalThreadCount, 27, SharkBatchSize>
+#define ComicalTest28 GenericSharkFloatParams<ComicalThreadCount, 28, SharkBatchSize>
+#define ComicalTest29 GenericSharkFloatParams<ComicalThreadCount, 29, SharkBatchSize>
+#define ComicalTest30 GenericSharkFloatParams<ComicalThreadCount, 30, SharkBatchSize>
+#define ComicalTest31 GenericSharkFloatParams<ComicalThreadCount, 31, SharkBatchSize>
+#define ComicalTest32 GenericSharkFloatParams<ComicalThreadCount, 32, SharkBatchSize>
+#define ComicalTest33 GenericSharkFloatParams<ComicalThreadCount, 33, SharkBatchSize>
+#define ComicalTest34 GenericSharkFloatParams<ComicalThreadCount, 34, SharkBatchSize>
+#define ComicalTest35 GenericSharkFloatParams<ComicalThreadCount, 35, SharkBatchSize>
+#define ComicalTest36 GenericSharkFloatParams<ComicalThreadCount, 36, SharkBatchSize>
+#define ComicalTest37 GenericSharkFloatParams<ComicalThreadCount, 37, SharkBatchSize>
+#define ComicalTest38 GenericSharkFloatParams<ComicalThreadCount, 38, SharkBatchSize>
+#define ComicalTest39 GenericSharkFloatParams<ComicalThreadCount, 39, SharkBatchSize>
+#define ComicalTest40 GenericSharkFloatParams<ComicalThreadCount, 40, SharkBatchSize>
+#define ComicalTest41 GenericSharkFloatParams<ComicalThreadCount, 41, SharkBatchSize>
+#define ComicalTest42 GenericSharkFloatParams<ComicalThreadCount, 42, SharkBatchSize>
+#define ComicalTest43 GenericSharkFloatParams<ComicalThreadCount, 43, SharkBatchSize>
+#define ComicalTest44 GenericSharkFloatParams<ComicalThreadCount, 44, SharkBatchSize>
+#define ComicalTest45 GenericSharkFloatParams<ComicalThreadCount, 45, SharkBatchSize>
+#define ComicalTest46 GenericSharkFloatParams<ComicalThreadCount, 46, SharkBatchSize>
+#define ComicalTest47 GenericSharkFloatParams<ComicalThreadCount, 47, SharkBatchSize>
+#define ComicalTest48 GenericSharkFloatParams<ComicalThreadCount, 48, SharkBatchSize>
+#define ComicalTest49 GenericSharkFloatParams<ComicalThreadCount, 49, SharkBatchSize>
+#define ComicalTest50 GenericSharkFloatParams<ComicalThreadCount, 50, SharkBatchSize>
+#define ComicalTest51 GenericSharkFloatParams<ComicalThreadCount, 51, SharkBatchSize>
+#define ComicalTest52 GenericSharkFloatParams<ComicalThreadCount, 52, SharkBatchSize>
+#define ComicalTest53 GenericSharkFloatParams<ComicalThreadCount, 53, SharkBatchSize>
+#define ComicalTest54 GenericSharkFloatParams<ComicalThreadCount, 54, SharkBatchSize>
+#define ComicalTest55 GenericSharkFloatParams<ComicalThreadCount, 55, SharkBatchSize>
+#define ComicalTest56 GenericSharkFloatParams<ComicalThreadCount, 56, SharkBatchSize>
+#define ComicalTest57 GenericSharkFloatParams<ComicalThreadCount, 57, SharkBatchSize>
+#define ComicalTest58 GenericSharkFloatParams<ComicalThreadCount, 58, SharkBatchSize>
+#define ComicalTest59 GenericSharkFloatParams<ComicalThreadCount, 59, SharkBatchSize>
+#define ComicalTest60 GenericSharkFloatParams<ComicalThreadCount, 60, SharkBatchSize>
+#define ComicalTest61 GenericSharkFloatParams<ComicalThreadCount, 61, SharkBatchSize>
+#define ComicalTest62 GenericSharkFloatParams<ComicalThreadCount, 62, SharkBatchSize>
+#define ComicalTest63 GenericSharkFloatParams<ComicalThreadCount, 63, SharkBatchSize>
+#define ComicalTest64 GenericSharkFloatParams<ComicalThreadCount, 64, SharkBatchSize>
+#define ComicalTest65 GenericSharkFloatParams<ComicalThreadCount, 65, SharkBatchSize>
+#define ComicalTest66 GenericSharkFloatParams<ComicalThreadCount, 66, SharkBatchSize>
+#define ComicalTest67 GenericSharkFloatParams<ComicalThreadCount, 67, SharkBatchSize>
+#define ComicalTest68 GenericSharkFloatParams<ComicalThreadCount, 68, SharkBatchSize>
+#define ComicalTest69 GenericSharkFloatParams<ComicalThreadCount, 69, SharkBatchSize>
+#define ComicalTest70 GenericSharkFloatParams<ComicalThreadCount, 70, SharkBatchSize>
+#define ComicalTest71 GenericSharkFloatParams<ComicalThreadCount, 71, SharkBatchSize>
+#define ComicalTest72 GenericSharkFloatParams<ComicalThreadCount, 72, SharkBatchSize>
+#define ComicalTest73 GenericSharkFloatParams<ComicalThreadCount, 73, SharkBatchSize>
+#define ComicalTest74 GenericSharkFloatParams<ComicalThreadCount, 74, SharkBatchSize>
+#define ComicalTest75 GenericSharkFloatParams<ComicalThreadCount, 75, SharkBatchSize>
+#define ComicalTest76 GenericSharkFloatParams<ComicalThreadCount, 76, SharkBatchSize>
+#define ComicalTest77 GenericSharkFloatParams<ComicalThreadCount, 77, SharkBatchSize>
+#define ComicalTest78 GenericSharkFloatParams<ComicalThreadCount, 78, SharkBatchSize>
+#define ComicalTest79 GenericSharkFloatParams<ComicalThreadCount, 79, SharkBatchSize>
+#define ComicalTest80 GenericSharkFloatParams<ComicalThreadCount, 80, SharkBatchSize>
+#define ComicalTest81 GenericSharkFloatParams<ComicalThreadCount, 81, SharkBatchSize>
 
 #ifdef ENABLE_COMICAL_CORRECTNESS
 #define InstantiateComicalCorrectness() \

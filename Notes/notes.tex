@@ -97,7 +97,7 @@ This section summarizes some possible optimization ideas.
 \end{itemize}
 \item Increase occupancy: update the kernel such that we can use 128 blocks (RTX 4090 max) for all number sizes.
 \item Prefetch values on each convolution iteration into registers and set up a pipeline strategy to hide shared memory access latency.
-\item Use warp-level intrinsics.  Warp intrinsics for parallel reduction: For example, rather than synchronizing after processing every digit, perform a warp-level reduction (using __shfl_* etc.) to combine results, then have only one thread write the result.
+\item Use warp-level intrinsics.  Warp intrinsics for parallel reduction: For example, rather than synchronizing after processing every digit, perform a warp-level reduction (using \verb|__shfl_*| etc.) to combine results, then have only one thread write the result.
 \item Use 30-bit limbs or similar to avoid spilling to 2x64 values.
 \item Ensure CUDA kernel start time has L2 cache hints specified for appropriate amount of memory.  It's not currently.  We should be able to guarantee 100\% hit rate.
 \item 

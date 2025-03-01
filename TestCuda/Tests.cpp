@@ -70,7 +70,10 @@ bool DiffAgainstHost(
 
     // Check if the host result is zero to avoid division by zero
     mp_bitcnt_t gpuPrecBits = HpSharkFloat<SharkFloatParams>::DefaultPrecBits;
-    mp_bitcnt_t margin = sizeof(uint32_t) * 8 * 2;
+
+    // Most of the time, 32 * 2 is enough, but the worst case seems to require the 2 extra bits.
+    // Example of worst case multiply: 1.3 * 1.3
+    mp_bitcnt_t margin = sizeof(uint32_t) * 8 * 2 + 2;
     mp_bitcnt_t totalPrecBits = (gpuPrecBits > margin) ? (gpuPrecBits - margin) : 1;
     mpf_t acceptableError;
 
@@ -217,57 +220,62 @@ void TestPerf(
         std::cout << "Host iter time: " << hostTimer.GetDeltaInMs() << " ms" << std::endl;
     }
 
-    auto gpuResult2XX = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-    auto gpuResult2XY = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-    auto gpuResult2YY = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+    if constexpr (SharkTestGpu) {
 
-    {
-        BenchmarkTimer timer;
+        auto gpuResult2XX = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+        auto gpuResult2XY = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+        auto gpuResult2YY = std::make_unique<HpSharkFloat<SharkFloatParams>>();
 
-        if constexpr (sharkOperator == Operator::Add) {
-            InvokeAddKernel<SharkFloatParams>(
-                timer,
-                ComputeAddGpuTestLoop<SharkFloatParams>,
-                *xNum,
-                *yNum,
-                *gpuResult2XY,
-                numIters);
-        } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
-            InvokeMultiplyKernel<SharkFloatParams>(
-                timer,
-                ComputeMultiplyKaratsubaV2GpuTestLoop<SharkFloatParams>,
-                *xNum,
-                *yNum,
-                *gpuResult2XX,
-                *gpuResult2XY,
-                *gpuResult2YY,
-                numIters);
+        {
+            BenchmarkTimer timer;
+
+            if constexpr (sharkOperator == Operator::Add) {
+                InvokeAddKernel<SharkFloatParams>(
+                    timer,
+                    ComputeAddGpuTestLoop<SharkFloatParams>,
+                    *xNum,
+                    *yNum,
+                    *gpuResult2XY,
+                    numIters);
+            } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
+                InvokeMultiplyKernel<SharkFloatParams>(
+                    timer,
+                    ComputeMultiplyKaratsubaV2GpuTestLoop<SharkFloatParams>,
+                    *xNum,
+                    *yNum,
+                    *gpuResult2XX,
+                    *gpuResult2XY,
+                    *gpuResult2YY,
+                    numIters);
+            }
+
+            Tests.AddTime(testNum, timer.GetDeltaInMs());
+
+            std::cout << "GPU iter time: " << timer.GetDeltaInMs() << " ms" << std::endl;
         }
 
-        Tests.AddTime(testNum, timer.GetDeltaInMs());
+        auto CheckDiff = [&](
+            int testNum,
+            const char *hostCustomOrGpu,
+            const mpf_t &mpfHostResult,
+            const HpSharkFloat<SharkFloatParams> &gpuResult) {
 
-        std::cout << "GPU iter time: " << timer.GetDeltaInMs() << " ms" << std::endl;
+            auto testSucceeded =
+                DiffAgainstHost<SharkFloatParams, sharkOperator>(testNum, hostCustomOrGpu, mpfHostResult, gpuResult);
+            if (!testSucceeded) {
+                std::cout << "Perf correctness test failed" << std::endl;
+            } else {
+                std::cout << "Perf correctness test succeeded" << std::endl;
+            }
+
+            return testSucceeded;
+        };
+
+        bool testSucceeded = true;
+        testSucceeded &= CheckDiff(testNum, "GPU", mpfHostResultXX, *gpuResult2XX);
+        testSucceeded &= CheckDiff(testNum, "GPU", mpfHostResultXY, *gpuResult2XY);
+        testSucceeded &= CheckDiff(testNum, "GPU", mpfHostResultYY, *gpuResult2YY);
     }
-
-    auto CheckDiff = [&](
-        int testNum,
-        const char *hostCustomOrGpu,
-        const mpf_t &mpfHostResult,
-        const HpSharkFloat<SharkFloatParams> &gpuResult) {
-
-        auto testSucceeded =
-            DiffAgainstHost<SharkFloatParams, sharkOperator>(testNum, hostCustomOrGpu, mpfHostResult, gpuResult);
-        if (!testSucceeded) {
-            std::cout << "Perf correctness test failed" << std::endl;
-        } else {
-            std::cout << "Perf correctness test succeeded" << std::endl;
-        }
-    };
-
-    bool testSucceeded = true;
-    testSucceeded &= CheckDiff(testNum, "GPU", mpfHostResultXX, *gpuResult2XX);
-    testSucceeded &= CheckDiff(testNum, "GPU", mpfHostResultXY, *gpuResult2XY);
-    testSucceeded &= CheckDiff(testNum, "GPU", mpfHostResultYY, *gpuResult2YY);
 
     // Clean up MPIR variables
     mpf_clear(mpfHostResultXX);
@@ -393,8 +401,6 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
         }
         };
 
-    static constexpr bool TestGpu = false;
-
     // Perform the calculation on the host using MPIR
     HpSharkFloat<SharkFloatParams> gpuResultXX{};
     HpSharkFloat<SharkFloatParams> gpuResultXY{};
@@ -435,7 +441,7 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
     }
 
     std::vector<DebugStateRaw> debugStatesCuda{};
-    if constexpr (TestGpu) {
+    if constexpr (SharkTestGpu) {
         BenchmarkTimer timer;
 
         if constexpr (sharkOperator == Operator::Add) {
@@ -482,7 +488,7 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
 
     // Compare debugResultsCuda against debugResultsHost
     bool ChecksumFailure = false;
-    if constexpr (TestGpu && SharkDebugChecksums) {
+    if constexpr (SharkTestGpu && SharkDebugChecksums) {
         assert (debugResultsHost.size() <= debugStatesCuda.size());
 
         // Note that the hosts results should be exactly the right size, whereas
@@ -557,7 +563,7 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
         return testSucceeded;
         };
 
-    if constexpr (TestGpu) {
+    if constexpr (SharkTestGpu) {
         bool testSucceeded = true;
         testSucceeded &= CheckGPUResult(testNum, "GPU", mpfHostResultXX, gpuResultXX);
         testSucceeded &= CheckGPUResult(testNum, "GPU", mpfHostResultXY, gpuResultXY);

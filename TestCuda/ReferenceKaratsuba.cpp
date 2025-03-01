@@ -214,7 +214,9 @@ template<
 void KaratsubaRecursiveDigits(
     const std::vector<uint32_t> &A_digits,  // pointer to A's digits
     const std::vector<uint32_t> &B_digits,
-    std::vector<uint64_t> &final128, // place where the product digits go
+    std::vector<uint64_t> &final128XX,
+    std::vector<uint64_t> &final128XY,
+    std::vector<uint64_t> &final128YY,
     std::vector<DebugStateHost<SharkFloatParams>> &debugStates
 )
 {
@@ -371,60 +373,101 @@ void KaratsubaRecursiveDigits(
         (UseConvolutionHere == UseConvolution::Yes) ?
         (total_k * 2) :  // (2 * A_low.size() - 1) * 2
         (2 * 2 * A_low.size());
-    std::vector<uint64_t> Z0(FinalZ0Size, initValue64);
+    std::vector<uint64_t> Z0XX(FinalZ0Size, initValue64);
+    std::vector<uint64_t> Z0XY(FinalZ0Size, initValue64);
+    std::vector<uint64_t> Z0YY(FinalZ0Size, initValue64);
 
     assert(A_high.size() == B_high.size());
     const auto FinalZ2Size =
         (UseConvolutionHere == UseConvolution::Yes) ?
         total_k * 2 : // (2 * A_high.size() - 1) * 2
         (2 * 2 * A_high.size());
-    std::vector<uint64_t> Z2(FinalZ2Size, initValue64);
+    std::vector<uint64_t> Z2XX(FinalZ2Size, initValue64);
+    std::vector<uint64_t> Z2XY(FinalZ2Size, initValue64);
+    std::vector<uint64_t> Z2YY(FinalZ2Size, initValue64);
 
     assert(x_diff.size() == y_diff.size());
     const auto FinalZ1TempSize = 
         (UseConvolutionHere == UseConvolution::Yes) ?
         total_k * 2 : // (2 * MaxHalfN - 1) * 2
         (2 * 2 * x_diff.size());
-    std::vector<uint64_t> Z1_temp(FinalZ1TempSize, initValue64);
+    std::vector<uint64_t> Z1_tempXX(FinalZ1TempSize, initValue64);
+    std::vector<uint64_t> Z1_tempXY(FinalZ1TempSize, initValue64);
+    std::vector<uint64_t> Z1_tempYY(FinalZ1TempSize, initValue64);
 
     if constexpr (UseConvolutionHere == UseConvolution::Yes) {
 
         assert(A_low.size() == B_low.size());
-        NativeMultiply64(NewN1, total_k, A_low, B_low, Z0);
 
-        const auto &Z0Checksum =
-            GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z0>(
-                debugStates, UseConvolutionHere, Z0.data(), Z0.size());
+        NativeMultiply64(NewN1, total_k, A_low, A_low, Z0XX);
+        NativeMultiply64(NewN1, total_k, A_low, B_low, Z0XY);
+        NativeMultiply64(NewN1, total_k, B_low, B_low, Z0YY);
 
-        if constexpr (SharkFloatParams::HostVerbose) {
-            std::cout << "Z0: " << VectorUintToHexString(Z0) << std::endl;
-            std::cout << "Z0 checksum: " << Z0Checksum.GetStr() << std::endl;
-        }
+        auto ProcessOneZ0 = [&](
+            [[maybe_unused]] const char *name,
+            const std::vector<uint64_t> &Z0) {
+
+            const auto &Z0Checksum =
+                GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z0>(
+                    debugStates, UseConvolutionHere, Z0.data(), Z0.size());
+
+            if constexpr (SharkFloatParams::HostVerbose) {
+                std::cout << name << ": " << VectorUintToHexString(Z0) << std::endl;
+                std::cout << name << " checksum: " << Z0Checksum.GetStr() << std::endl;
+            }
+            };
+
+        ProcessOneZ0("Z0XX", Z0XX);
+        ProcessOneZ0("Z0XY", Z0XY);
+        ProcessOneZ0("Z0YY", Z0YY);
 
         assert(A_high.size() == B_high.size());
-        NativeMultiply64(NewN2, total_k, A_high, B_high, Z2);
 
-        const auto &Z2Checksum =
-            GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2>(
-                debugStates, UseConvolutionHere, Z2.data(), Z2.size());
+        NativeMultiply64(NewN2, total_k, A_high, A_high, Z2XX);
+        NativeMultiply64(NewN2, total_k, A_high, B_high, Z2XY);
+        NativeMultiply64(NewN2, total_k, B_high, B_high, Z2YY);
 
-        if constexpr (SharkFloatParams::HostVerbose) {
-            std::cout << "Z2: " << VectorUintToHexString(Z2) << std::endl;
-            std::cout << "Z2 checksum: " << Z2Checksum.GetStr() << std::endl;
-        }
+        auto ProcessOneZ2 = [&](
+            [[maybe_unused]] const char *name,
+            const std::vector<uint64_t> &Z2) {
+
+            const auto &Z2Checksum =
+                GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2>(
+                    debugStates, UseConvolutionHere, Z2.data(), Z2.size());
+            if constexpr (SharkFloatParams::HostVerbose) {
+                std::cout << name << ": " << VectorUintToHexString(Z2) << std::endl;
+                std::cout << name << " checksum: " << Z2Checksum.GetStr() << std::endl;
+            }
+            };
+        
+        ProcessOneZ2("Z2XX", Z2XX);
+        ProcessOneZ2("Z2XY", Z2XY);
+        ProcessOneZ2("Z2YY", Z2YY);
 
         assert(x_diff.size() == y_diff.size());
-        NativeMultiply64(MaxHalfN, total_k, x_diff, y_diff, Z1_temp);
 
-        const auto &Z1TempChecksum =
-            GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1_offset>(
-                debugStates, UseConvolutionHere, Z1_temp.data(), Z1_temp.size());
+        NativeMultiply64(MaxHalfN, total_k, x_diff, x_diff, Z1_tempXX);
+        NativeMultiply64(MaxHalfN, total_k, x_diff, y_diff, Z1_tempXY);
+        NativeMultiply64(MaxHalfN, total_k, y_diff, y_diff, Z1_tempYY);
 
-        if constexpr (SharkFloatParams::HostVerbose) {
-            std::cout << "Z1_temp: " << VectorUintToHexString(Z1_temp) << std::endl;
-            std::cout << "Z1_temp checksum: " << Z1TempChecksum.GetStr() << std::endl;
-        }
+        auto ProcessOneZ1Temp = [&](
+            [[maybe_unused]] const char *name,
+            const std::vector<uint64_t> &Z1_temp) {
+
+            const auto &Z1TempChecksum =
+                GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1_offset>(
+                    debugStates, UseConvolutionHere, Z1_temp.data(), Z1_temp.size());
+            if constexpr (SharkFloatParams::HostVerbose) {
+                std::cout << name << ": " << VectorUintToHexString(Z1_temp) << std::endl;
+                std::cout << name << " checksum: " << Z1TempChecksum.GetStr() << std::endl;
+            }
+            };
+
+        ProcessOneZ1Temp("Z1_tempXX", Z1_tempXX);
+        ProcessOneZ1Temp("Z1_tempXY", Z1_tempXY);
+        ProcessOneZ1Temp("Z1_tempYY", Z1_tempYY);
     } else {
+        
         KaratsubaRecursiveDigits<
             SharkFloatParams,
             NewNumBlocks / 3,
@@ -432,119 +475,167 @@ void KaratsubaRecursiveDigits(
             CallIndex * 3 - 1>(
             A_low,
             B_low,
-            Z0,
+            Z0XX,
+            Z0XY,
+            Z0YY,
             debugStates);
 
-        const auto &Z0Checksum =
-            GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z0>(
-                debugStates, UseConvolutionHere, Z0.data(), Z0.size());
+        auto ProcessOneZ0 = [&](
+            [[maybe_unused]] const char *name,
+            std::vector<uint64_t> &Z0) {
 
-        if constexpr (SharkFloatParams::HostVerbose) {
-            std::cout << "Z0: " << VectorUintToHexString(Z0) << std::endl;
-            std::cout << "Z0 checksum: " << Z0Checksum.GetStr() << std::endl;
-        }
+            const auto &Z0Checksum =
+                GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z0>(
+                    debugStates, UseConvolutionHere, Z0.data(), Z0.size());
+
+            if constexpr (SharkFloatParams::HostVerbose) {
+                std::cout << name << ": " << VectorUintToHexString(Z0) << std::endl;
+                std::cout << name << " checksum: " << Z0Checksum.GetStr() << std::endl;
+            }
+        };
+
+        ProcessOneZ0("Z0XX", Z0XX);
+        ProcessOneZ0("Z0XY", Z0XY);
+        ProcessOneZ0("Z0YY", Z0YY);
 
         KaratsubaRecursiveDigits<
             SharkFloatParams,
             NewNumBlocks / 3,
             RecursionDepth + 1,
             CallIndex * 3>(
-            A_high,
-            B_high,
-            Z2,
-            debugStates);
+                A_high,
+                B_high,
+                Z2XX,
+                Z2XY,
+                Z2YY,
+                debugStates);
 
-        const auto &Z2Checksum =
-            GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2>(
-                debugStates, UseConvolutionHere, Z2.data(), Z2.size());
+        auto ProcessOneZ2 = [&](
+            [[maybe_unused]] const char *name,
+            std::vector<uint64_t> &Z2) {
 
-        if constexpr (SharkFloatParams::HostVerbose) {
-            std::cout << "Z2: " << VectorUintToHexString(Z2) << std::endl;
-            std::cout << "Z2 checksum: " << Z2Checksum.GetStr() << std::endl;
-        }
+            const auto &Z2Checksum =
+                GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2>(
+                    debugStates, UseConvolutionHere, Z2.data(), Z2.size());
+            if constexpr (SharkFloatParams::HostVerbose) {
+                std::cout << name << ": " << VectorUintToHexString(Z2) << std::endl;
+                std::cout << name << " checksum: " << Z2Checksum.GetStr() << std::endl;
+            }
+            };
+
+        ProcessOneZ2("Z2XX", Z2XX);
+        ProcessOneZ2("Z2XY", Z2XY);
+        ProcessOneZ2("Z2YY", Z2YY);
 
         KaratsubaRecursiveDigits<
             SharkFloatParams,
             NewNumBlocks / 3,
             RecursionDepth + 1,
             CallIndex * 3 + 1>(
-            x_diff,
-            y_diff,
-            Z1_temp,
-            debugStates);
+                x_diff,
+                y_diff,
+                Z1_tempXX,
+                Z1_tempXY,
+                Z1_tempYY,
+                debugStates);
 
-        const auto &Z1TempChecksum =
-            GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1_offset>(
-                debugStates, UseConvolutionHere, Z1_temp.data(), Z1_temp.size());
+        auto ProcessOneZ1Temp = [&](
+            [[maybe_unused]] const char *name,
+            std::vector<uint64_t> &Z1_temp) {
 
-        if constexpr (SharkFloatParams::HostVerbose) {
-            std::cout << "Z1_temp: " << VectorUintToHexString(Z1_temp) << std::endl;
-            std::cout << "Z1_temp checksum: " << Z1TempChecksum.GetStr() << std::endl;
-        }
+            const auto &Z1TempChecksum =
+                GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1_offset>(
+                    debugStates, UseConvolutionHere, Z1_temp.data(), Z1_temp.size());
+            if constexpr (SharkFloatParams::HostVerbose) {
+                std::cout << name << ": " << VectorUintToHexString(Z1_temp) << std::endl;
+                std::cout << name << " checksum: " << Z1TempChecksum.GetStr() << std::endl;
+            }
+            };
+
+        ProcessOneZ1Temp("Z1_tempXX", Z1_tempXX);
+        ProcessOneZ1Temp("Z1_tempXY", Z1_tempXY);
+        ProcessOneZ1Temp("Z1_tempYY", Z1_tempYY);
     }
 
-    int z1_sign = (x_diff_neg ^ y_diff_neg) ? 1 : 0;
+    const int z1_signXX = (x_diff_neg ^ x_diff_neg) ? 1 : 0;
+    const int z1_signXY = (x_diff_neg ^ y_diff_neg) ? 1 : 0;
+    const int z1_signYY = (y_diff_neg ^ y_diff_neg) ? 1 : 0;
     int total_k_full = 2 * NewN1 - 1;
 
     // Compute Z1=(Z2+Z0)±Z1_temp
     // First Z2+Z0
-    std::vector<uint64_t> Z1(2 * total_k_full, 0ULL);
+    std::vector<uint64_t> Z1XX(2 * total_k_full, 0ULL);
+    std::vector<uint64_t> Z1XY(2 * total_k_full, 0ULL);
+    std::vector<uint64_t> Z1YY(2 * total_k_full, 0ULL);
 
-    // For each "digit" k, we compute Z1[k] = (Z2[k] + Z0[k]) ± Z1_temp[k]
-    // Each "digit" is two 64-bit values: low and high
-    for (int k = 0; k < total_k_full; ++k) {
-        int idx_low = k * 2;
-        int idx_high = idx_low + 1;
+    auto ProcessOneZ1 = [&](
+        [[maybe_unused]] const char *name,
+        const int z1_sign,
+        std::vector<uint64_t> &Z1,
+        const std::vector<uint64_t> &Z0,
+        const std::vector<uint64_t> &Z2,
+        const std::vector<uint64_t> &Z1_temp) {
 
-        uint64_t z0_low = Z0[idx_low];
-        uint64_t z0_high = Z0[idx_high];
-        uint64_t z2_low = idx_low < Z2.size() ? Z2[idx_low] : 0;
-        uint64_t z2_high = idx_high < Z2.size() ? Z2[idx_high] : 0;
-        uint64_t z1t_low = Z1_temp[idx_low];
-        uint64_t z1t_high = Z1_temp[idx_high];
+        // For each "digit" k, we compute Z1[k] = (Z2[k] + Z0[k]) ± Z1_temp[k]
+        // Each "digit" is two 64-bit values: low and high
+        for (int k = 0; k < total_k_full; ++k) {
+            int idx_low = k * 2;
+            int idx_high = idx_low + 1;
 
-        // Compute (Z2 + Z0)
-        uint64_t temp_low, temp_high;
-        Add128(z2_low, z2_high, z0_low, z0_high, temp_low, temp_high);
+            uint64_t z0_low = Z0[idx_low];
+            uint64_t z0_high = Z0[idx_high];
+            uint64_t z2_low = idx_low < Z2.size() ? Z2[idx_low] : 0;
+            uint64_t z2_high = idx_high < Z2.size() ? Z2[idx_high] : 0;
+            uint64_t z1t_low = Z1_temp[idx_low];
+            uint64_t z1t_high = Z1_temp[idx_high];
 
-        // Compute Z1 = (Z2+Z0) ± Z1_temp
-        uint64_t z1_low, z1_high;
-        if (z1_sign == 0) {
-            // Z1 = (Z2 + Z0) - Z1_temp
-            Subtract128(temp_low, temp_high, z1t_low, z1t_high, z1_low, z1_high);
-        } else {
-            // Z1 = (Z2 + Z0) + Z1_temp
-            Add128(temp_low, temp_high, z1t_low, z1t_high, z1_low, z1_high);
+            // Compute (Z2 + Z0)
+            uint64_t temp_low, temp_high;
+            Add128(z2_low, z2_high, z0_low, z0_high, temp_low, temp_high);
+
+            // Compute Z1 = (Z2+Z0) ± Z1_temp
+            uint64_t z1_low, z1_high;
+            if (z1_sign == 0) {
+                // Z1 = (Z2 + Z0) - Z1_temp
+                Subtract128(temp_low, temp_high, z1t_low, z1t_high, z1_low, z1_high);
+            } else {
+                // Z1 = (Z2 + Z0) + Z1_temp
+                Add128(temp_low, temp_high, z1t_low, z1t_high, z1_low, z1_high);
+            }
+
+            if constexpr (SharkFloatParams::HostVerbose) {
+                std::string addOrSubtract = (z1_sign == 0) ? "subtract" : "add";
+
+                // Convert temp_low to hex string:
+                std::string temp_low_hex = UintToHexString(temp_low);
+
+                std::cout << addOrSubtract <<
+                    " temp_low: " << UintToHexString(temp_low) <<
+                    ", temp_high: " << UintToHexString(temp_high) <<
+                    ", z1t_low: " << UintToHexString(z1t_low) <<
+                    ", z1t_high: " << UintToHexString(z1t_high) <<
+                    ", z1_low: " << UintToHexString(z1_low) <<
+                    ", z1_high : " << UintToHexString(z1_high) <<
+                    std::endl;
+            }
+
+            Z1[idx_low] = z1_low;
+            Z1[idx_high] = z1_high;
         }
+
+        const auto &Z1Checksum =
+            GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1>(
+                debugStates, UseConvolutionHere, Z1.data(), Z1.size());
 
         if constexpr (SharkFloatParams::HostVerbose) {
-            std::string addOrSubtract = (z1_sign == 0) ? "subtract" : "add";
-
-            // Convert temp_low to hex string:
-            std::string temp_low_hex = UintToHexString(temp_low);
-
-            std::cout << addOrSubtract <<
-                " temp_low: " << UintToHexString(temp_low) <<
-                ", temp_high: " << UintToHexString(temp_high) <<
-                ", z1t_low: " << UintToHexString(z1t_low) <<
-                ", z1t_high: " << UintToHexString(z1t_high) <<
-                ", z1_low: " << UintToHexString(z1_low) <<
-                ", z1_high : " << UintToHexString(z1_high) <<
-                std::endl;
+            std::cout << name << ": " << VectorUintToHexString(Z1) << std::endl;
+            std::cout << name << " checksum: " << Z1Checksum.GetStr() << std::endl;
         }
+        };
 
-        Z1[idx_low] = z1_low;
-        Z1[idx_high] = z1_high;
-    }
-
-    const auto &Z1Checksum =
-        GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1>(
-            debugStates, UseConvolutionHere, Z1.data(), Z1.size());
-
-    if constexpr (SharkFloatParams::HostVerbose) {
-        std::cout << "Z1: " << VectorUintToHexString(Z1) << std::endl;
-        std::cout << "Z1 checksum: " << Z1Checksum.GetStr() << std::endl;
-    }
+    ProcessOneZ1("Z1XX", z1_signXX, Z1XX, Z0XX, Z2XX, Z1_tempXX);
+    ProcessOneZ1("Z1XY", z1_signXY, Z1XY, Z0XY, Z2XY, Z1_tempXY);
+    ProcessOneZ1("Z1YY", z1_signYY, Z1YY, Z0YY, Z2YY, Z1_tempYY);
 
     // Now Z1 matches the per-digit computation that CUDA performs.
     // The subsequent steps (carry propagation, final combination) should produce identical results to CUDA.
@@ -553,65 +644,74 @@ void KaratsubaRecursiveDigits(
     // N even means (32*n) bits = n/2 64-bit words
     // (64*n) bits = n 64-bit words
 
-    const int total_result_digits = 2 * NewN;
+    auto ProcessOneFinal128 = [&](
+        [[maybe_unused]] const char *name,
+        std::vector<uint64_t> &final128,
+        const std::vector<uint64_t> &Z0,
+        const std::vector<uint64_t> &Z1,
+        const std::vector<uint64_t> &Z2) {
 
-    // If the input array is larger, then the high-order entries
-    // remain zero.
-    if (final128.size() != total_result_digits * 2) {
-        // final128.resize(total_result_digits * 2, 0ULL);
-        assert(false);
-    }
+        const int total_result_digits = 2 * NewN;
 
-    for (int idx = 0; idx < total_result_digits; ++idx) {
-        uint64_t sum_low = 0ULL;
-        uint64_t sum_high = 0ULL;
+        // If the input array is larger, then the high-order entries
+        // remain zero.
+        assert(final128.size() == total_result_digits * 2);
 
-        // Add Z0 if in range
-        if (idx < 2 * NewN1 - 1) {
-            int z0_idx = idx * 2;
-            uint64_t z0_low = Z0[z0_idx];
-            uint64_t z0_high = Z0[z0_idx + 1];
+        for (int idx = 0; idx < total_result_digits; ++idx) {
+            uint64_t sum_low = 0ULL;
+            uint64_t sum_high = 0ULL;
 
-            Add128(sum_low, sum_high, z0_low, z0_high, sum_low, sum_high);
+            // Add Z0 if in range
+            if (idx < 2 * NewN1 - 1) {
+                int z0_idx = idx * 2;
+                uint64_t z0_low = Z0[z0_idx];
+                uint64_t z0_high = Z0[z0_idx + 1];
+
+                Add128(sum_low, sum_high, z0_low, z0_high, sum_low, sum_high);
+            }
+
+            // Add Z1 << (32*n)
+            // Shifting by 32*n means skipping n digits. If idx >= n, we add Z1 digit (idx-n)
+            if (idx >= NewN1 && (idx - NewN1) < (2 * NewN1 - 1)) {
+                int z1_idx = (idx - NewN1) * 2;
+                uint64_t z1_low = Z1[z1_idx];
+                uint64_t z1_high = Z1[z1_idx + 1];
+
+                Add128(sum_low, sum_high, z1_low, z1_high, sum_low, sum_high);
+            }
+
+            // Add Z2 << (64*n)
+            // Shifting by 64*n means skipping 2*n digits. If idx >= 2*n, we add Z2 digit (idx-2*n)
+            if (idx >= 2 * NewN1 && (idx - 2 * NewN1) < (2 * NewN1 - 1)) {
+                int z2_idx = (idx - 2 * NewN1) * 2;
+                uint64_t z2_low = z2_idx < Z2.size() ? Z2[z2_idx] : 0;
+                uint64_t z2_high = (z2_idx + 1 < Z2.size()) ? Z2[z2_idx + 1] : 0;
+
+                Add128(sum_low, sum_high, z2_low, z2_high, sum_low, sum_high);
+            }
+
+            final128[idx * 2] = sum_low;
+            final128[idx * 2 + 1] = sum_high;
         }
 
-        // Add Z1 << (32*n)
-        // Shifting by 32*n means skipping n digits. If idx >= n, we add Z1 digit (idx-n)
-        if (idx >= NewN1 && (idx - NewN1) < (2 * NewN1 - 1)) {
-            int z1_idx = (idx - NewN1) * 2;
-            uint64_t z1_low = Z1[z1_idx];
-            uint64_t z1_high = Z1[z1_idx + 1];
+        // Checksum only assigned digits
+        const auto &Final128Checksum =
+            GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Final128>(
+                debugStates, UseConvolutionHere, final128.data(), total_result_digits * 2);
 
-            Add128(sum_low, sum_high, z1_low, z1_high, sum_low, sum_high);
+        if constexpr (SharkFloatParams::HostVerbose) {
+            std::cout << name << " after Z2: " << VectorUintToHexString(final128.data(), total_result_digits * 2) << std::endl;
+            std::cout << name << " checksum: " << Final128Checksum.GetStr() << std::endl;
         }
+    };
 
-        // Add Z2 << (64*n)
-        // Shifting by 64*n means skipping 2*n digits. If idx >= 2*n, we add Z2 digit (idx-2*n)
-        if (idx >= 2 * NewN1 && (idx - 2 * NewN1) < (2 * NewN1 - 1)) {
-            int z2_idx = (idx - 2 * NewN1) * 2;
-            uint64_t z2_low = z2_idx < Z2.size() ? Z2[z2_idx] : 0;
-            uint64_t z2_high = (z2_idx + 1 < Z2.size()) ? Z2[z2_idx + 1] : 0;
-
-            Add128(sum_low, sum_high, z2_low, z2_high, sum_low, sum_high);
-        }
-
-        final128[idx * 2] = sum_low;
-        final128[idx * 2 + 1] = sum_high;
-    }
-
-    // Checksum only assigned digits
-    const auto &Final128Checksum =
-        GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Final128>(
-            debugStates, UseConvolutionHere, final128.data(), total_result_digits * 2);
-
-    if constexpr (SharkFloatParams::HostVerbose) {
-        std::cout << "final128 after Z2: " << VectorUintToHexString(final128.data(), total_result_digits * 2) << std::endl;
-        std::cout << "final128 checksum: " << Final128Checksum.GetStr() << std::endl;
-    }
+    ProcessOneFinal128("final128XX", final128XX, Z0XX, Z1XX, Z2XX);
+    ProcessOneFinal128("final128XY", final128XY, Z0XY, Z1XY, Z2XY);
+    ProcessOneFinal128("final128YY", final128YY, Z0YY, Z1YY, Z2YY);
 }
 
 template<class SharkFloatParams>
-void MultiplyHelperKaratsubaV2(
+void MultiplyHelperKaratsubaV2 (
     const HpSharkFloat<SharkFloatParams> *A,
     const HpSharkFloat<SharkFloatParams> *B,
     HpSharkFloat<SharkFloatParams> *OutXX,
@@ -626,24 +726,16 @@ void MultiplyHelperKaratsubaV2(
         std::cout << "Will perform Karatsuba multiplication on host, running function MultiplyHelperKaratsubaV2." << std::endl;
     }
 
-    if constexpr (N == 1) {
-        uint64_t prod = (uint64_t)A->Digits[0] * (uint64_t)B->Digits[0];
-        OutXY->Digits[0] = (uint32_t)(prod & 0xFFFFFFFFULL);
-        OutXY->Exponent = A->Exponent + B->Exponent;
-        OutXY->IsNegative = (A->IsNegative ^ B->IsNegative);
-
-        if constexpr (SharkFloatParams::HostVerbose) {
-            std::cout << "Karatsuba N=1: A=" << A->ToHexString() << ", B=" << B->ToHexString() << ", OutXY=" << OutXY->ToHexString() << std::endl;
-        }
-
-        return;
-    }
-
     // 3) Allocate array for up to 2*N digits result
     constexpr int total_result_digits = 2 * N;
 
-    std::vector<uint64_t> final128;
-    final128.resize(total_result_digits * 2);
+    std::vector<uint64_t> final128XX;
+    std::vector<uint64_t> final128XY;
+    std::vector<uint64_t> final128YY;
+    
+    final128XX.resize(total_result_digits * 2);
+    final128XY.resize(total_result_digits * 2);
+    final128YY.resize(total_result_digits * 2);
 
     constexpr auto CallIndex = 0;
     constexpr auto RecursionDepth = 0;
@@ -684,7 +776,9 @@ void MultiplyHelperKaratsubaV2(
             CallIndex + 1>(
             A_vector,
             B_vector,
-            final128,
+            final128XX,
+            final128XY,
+            final128YY,
             debugStates);
     }
 
@@ -692,124 +786,159 @@ void MultiplyHelperKaratsubaV2(
     // final128[2], final128[3] the second pair, and so forth.
     // Each pair corresponds to one "digit position" before final normalization.
 
-    std::vector<uint32_t> tempDigits;
-    tempDigits.reserve(total_result_digits); // At least one digit per pair
-    uint64_t local_carry = 0ULL;
-    for (int idx = 0; idx < total_result_digits; ++idx) {
-        uint64_t sum_low;
-        uint64_t sum_high;
+    std::vector<uint32_t> tempDigitsXX;
+    std::vector<uint32_t> tempDigitsXY;
+    std::vector<uint32_t> tempDigitsYY;
 
-        if (idx >= final128.size() / 2) {
-            sum_low = 0ULL;
-            sum_high = 0ULL;
-        } else {
-            sum_low = final128[idx * 2];
-            sum_high = final128[idx * 2 + 1];
+    auto ProcessOneTempDigits = [&] (
+        std::vector<uint32_t> &tempDigits,
+        const std::vector<uint64_t> &final128) {
+
+        tempDigits.reserve(total_result_digits); // At least one digit per pair
+        uint64_t local_carry = 0ULL;
+        for (int idx = 0; idx < total_result_digits; ++idx) {
+            uint64_t sum_low;
+            uint64_t sum_high;
+
+            if (idx >= final128.size() / 2) {
+                sum_low = 0ULL;
+                sum_high = 0ULL;
+            } else {
+                sum_low = final128[idx * 2];
+                sum_high = final128[idx * 2 + 1];
+            }
+
+            // Add local carry to sum_low
+            bool new_sum_low_negative = false;
+            uint64_t new_sum_low = sum_low + local_carry;
+
+            // Extract one 32-bit digit from new_sum_low
+            auto digit = static_cast<uint32_t>(new_sum_low & 0xFFFFFFFFULL);
+            tempDigits.push_back(digit);
+
+            bool local_carry_negative = ((local_carry & (1ULL << 63)) != 0);
+            local_carry = 0ULL;
+
+            if (!local_carry_negative && new_sum_low < sum_low) {
+                local_carry = 1ULL << 32;
+            } else if (local_carry_negative && new_sum_low > sum_low) {
+                new_sum_low_negative = (new_sum_low & 0x8000'0000'0000'0000) != 0;
+            }
+
+            // Update local_carry
+            if (new_sum_low_negative) {
+                // Shift sum_high by 32 bits and add carry_from_low
+                uint64_t upper_new_sum_low = new_sum_low >> 32;
+                upper_new_sum_low |= 0xFFFF'FFFF'0000'0000;
+                local_carry += upper_new_sum_low;
+                local_carry += sum_high << 32;
+            } else {
+                local_carry += new_sum_low >> 32;
+                local_carry += sum_high << 32;
+            }
         }
+        };
 
-        // Add local carry to sum_low
-        bool new_sum_low_negative = false;
-        uint64_t new_sum_low = sum_low + local_carry;
-
-        // Extract one 32-bit digit from new_sum_low
-        auto digit = static_cast<uint32_t>(new_sum_low & 0xFFFFFFFFULL);
-        tempDigits.push_back(digit);
-
-        bool local_carry_negative = ((local_carry & (1ULL << 63)) != 0);
-        local_carry = 0ULL;
-
-        if (!local_carry_negative && new_sum_low < sum_low) {
-            local_carry = 1ULL << 32;
-        } else if (local_carry_negative && new_sum_low > sum_low) {
-            new_sum_low_negative = (new_sum_low & 0x8000'0000'0000'0000) != 0;
-        }
-
-        // Update local_carry
-        if (new_sum_low_negative) {
-            // Shift sum_high by 32 bits and add carry_from_low
-            uint64_t upper_new_sum_low = new_sum_low >> 32;
-            upper_new_sum_low |= 0xFFFF'FFFF'0000'0000;
-            local_carry += upper_new_sum_low;
-            local_carry += sum_high << 32;
-        } else {
-            local_carry += new_sum_low >> 32;
-            local_carry += sum_high << 32;
-        }
-    }
+    ProcessOneTempDigits(tempDigitsXX, final128XX);
+    ProcessOneTempDigits(tempDigitsXY, final128XY);
+    ProcessOneTempDigits(tempDigitsYY, final128YY);
 
     // Now we have a sequence of 32-bit digits in tempDigits exactly as the CUDA code would produce.
     // The next step is to normalize, find highest_nonzero_index, and adjust exponent and shift_digits
     // in the same manner as the CUDA version does.
 
-    const auto &resultDigitsChecksum =
+    // TODO
+    const auto &resultDigitsChecksumXY =
         GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offset>(
-            debugStates, UseConvolution::No, tempDigits.data(), 2 * N);
+            debugStates, UseConvolution::No, tempDigitsXY.data(), 2 * N);
 
-    if constexpr (SharkFloatParams::HostVerbose) {
-        std::cout << "tempDigits: " << VectorUintToHexString(tempDigits) << std::endl;
-        std::cout << "tempDigits checksum: " << resultDigitsChecksum.GetStr() << std::endl;
-    }
+    auto PrintOneTempDigits = [&](
+        [[maybe_unused]] const std::vector<uint32_t> &tempDigits,
+        [[maybe_unused]] const std::string &name) {
+            if constexpr (SharkFloatParams::HostVerbose) {
+                std::cout << name << ": " << VectorUintToHexString(tempDigits) << std::endl;
+                std::cout << name << " checksum: " << resultDigitsChecksumXY.GetStr() << std::endl;
+            }
+        };
+
+    PrintOneTempDigits(tempDigitsXX, "tempDigitsXX");
+    PrintOneTempDigits(tempDigitsXY, "tempDigitsXY");
+    PrintOneTempDigits(tempDigitsYY, "tempDigitsYY");
 
     // tempDigits now contains a properly carry-normalized array of 32-bit digits.
     // You can then adjust the exponent and choose exactly N digits for the final output.
 
     // Normalize result
-    int highest_nonzero_index = (int)tempDigits.size() - 1;
-    while (highest_nonzero_index >= 0 && tempDigits[highest_nonzero_index] == 0) {
-        highest_nonzero_index--;
-    }
 
-    if constexpr (SharkFloatParams::HostVerbose) {
-        std::cout << "Highest nonzero index: " << highest_nonzero_index << std::endl;
-    }
+    auto NormalizeOne = [&](
+        HpSharkFloat<SharkFloatParams> &Out,
+        const HpSharkFloat<SharkFloatParams> &A,
+        const HpSharkFloat<SharkFloatParams> &B,
+        const std::vector<uint32_t> &tempDigits) {
 
-    int significant_digits = highest_nonzero_index + 1;
-    if (significant_digits < 1) {
-        // Product is zero
-        significant_digits = 1;
-        for (int i = 0; i < N; i++) {
-            OutXY->Digits[i] = 0;
+        int highest_nonzero_index = (int)tempDigits.size() - 1;
+        while (highest_nonzero_index >= 0 && tempDigits[highest_nonzero_index] == 0) {
+            highest_nonzero_index--;
         }
-        OutXY->Exponent = A->Exponent + B->Exponent;
-        OutXY->IsNegative = false;
-        return;
-    }
 
-    // Determine how many digits we need to shift to keep exactly N digits.
-    int shift_digits = significant_digits - N;
-
-    // Match CUDA behavior: If we have fewer than N significant digits, do not shift negatively
-    if (shift_digits < 0) {
-        shift_digits = 0;
-        //assert(false);
-    }
-
-    if constexpr (SharkFloatParams::HostVerbose) {
-        std::cout << "Shift digits: " << shift_digits << std::endl;
-    }
-
-    // Update the exponent accordingly
-    OutXY->Exponent = A->Exponent + B->Exponent + shift_digits * 32;
-
-    // Extract exactly N digits
-    int src_idx = shift_digits;
-    for (int i = 0; i < N; i++, src_idx++) {
-        uint32_t val = 0;
-        if (src_idx >= 0 && src_idx < significant_digits) {
-            val = tempDigits[src_idx];
+        if constexpr (SharkFloatParams::HostVerbose) {
+            std::cout << "Highest nonzero index: " << highest_nonzero_index << std::endl;
         }
-        OutXY->Digits[i] = val;
-    }
 
-    // Set the sign
+        int significant_digits = highest_nonzero_index + 1;
+        if (significant_digits < 1) {
+            // Product is zero
+            significant_digits = 1;
+            for (int i = 0; i < N; i++) {
+                Out.Digits[i] = 0;
+            }
+            Out.Exponent = A.Exponent + B.Exponent;
+            Out.IsNegative = false;
+            return;
+        }
+
+        // Determine how many digits we need to shift to keep exactly N digits.
+        int shift_digits = significant_digits - N;
+
+        // Match CUDA behavior: If we have fewer than N significant digits, do not shift negatively
+        if (shift_digits < 0) {
+            shift_digits = 0;
+            //assert(false);
+        }
+
+        if constexpr (SharkFloatParams::HostVerbose) {
+            std::cout << "Shift digits: " << shift_digits << std::endl;
+        }
+
+        // Update the exponent accordingly
+        Out.Exponent = A.Exponent + B.Exponent + shift_digits * 32;
+
+        // Extract exactly N digits
+        int src_idx = shift_digits;
+        for (int i = 0; i < N; i++, src_idx++) {
+            uint32_t val = 0;
+            if (src_idx >= 0 && src_idx < significant_digits) {
+                val = tempDigits[src_idx];
+            }
+            Out.Digits[i] = val;
+        }
+
+        // Print debugStates
+        if constexpr (SharkFloatParams::HostVerbose) {
+            for (const auto &state : debugStates) {
+                std::cout << state.GetStr() << std::endl;
+            }
+        }
+        };
+
+    NormalizeOne(*OutXX, *A, *A, tempDigitsXX);
+    OutXX->IsNegative = false;
+
+    NormalizeOne(*OutXY, *A, *B, tempDigitsXY);
     OutXY->IsNegative = (A->IsNegative ^ B->IsNegative);
 
-    // Print debugStates
-    if constexpr (SharkFloatParams::HostVerbose) {
-        for (const auto &state : debugStates) {
-            std::cout << state.GetStr() << std::endl;
-        }
-    }
+    NormalizeOne(*OutYY, *B, *B, tempDigitsYY);
+    OutYY->IsNegative = false;
 }
 
 

@@ -6,12 +6,17 @@
 #include <gmp.h>
 #include <vector>
 
+// Assuming that SharkFloatParams::GlobalNumUint32 can be large and doesn't fit in shared memory
+// We'll use the provided global memory buffers for large intermediates
+#define SharkRestrict __restrict__
+// #define SharkRestrict
+
 // 0 = just one correctness test, intended for fast re-compile of a specific failure
 // 1 = all basic correctness tests/all basic perf tests
 // 2 = setup for profiling only, one kernel
 // 3 = all basic correctness tests + comical tests
 // See ExplicitInstantiate.h for more information
-#define ENABLE_BASIC_CORRECTNESS 1
+#define ENABLE_BASIC_CORRECTNESS 2
 static constexpr auto SharkComicalThreadCount = 13;
 static constexpr auto SharkTestIterCount = 5000;
 

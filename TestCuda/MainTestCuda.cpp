@@ -118,8 +118,7 @@ int RunCorrectnessTest() {
         ComicalCorrectness();
 
         testCount++;
-    } while (false);
-    //} while (SharkInfiniteCorrectnessTests);
+    } while (SharkInfiniteCorrectnessTests);
 
     if (PressKey() == 'q') {
         return 0;

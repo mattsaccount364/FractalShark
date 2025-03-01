@@ -31,6 +31,9 @@ namespace cg = cooperative_groups;
 #define SharkForceInlineReleaseOnly
 #endif
 
+// Initialize the random number generator state.  Note that
+// this uses a constant seed.  This is lame and we should be
+// using a different seed for each thread.
 void
 __device__ DebugInitRandom (
     cg::thread_block &block,
@@ -40,6 +43,9 @@ __device__ DebugInitRandom (
     curand_init(1234, index, 0, &state[index]);
 }
 
+// Introduce a random delay.  This delay is per-thread and is
+// intended to exacerbate any races.  Note that you may want
+// instead a block-level delay.  This isn't it.
 void
 __device__ DebugRandomDelay (
     cg::thread_block &block,
@@ -59,8 +65,12 @@ __device__ DebugRandomDelay (
     }
 }
 
+// Compare two digit arrays, returning 1 if a > b, -1 if a < b, and 0 if equal
 template<int n1, int n2>
-__device__ int CompareDigits(const uint32_t *highArray, const uint32_t *lowArray) {
+__device__ int CompareDigits(
+    const uint32_t *SharkRestrict highArray,
+    const uint32_t *SharkRestrict lowArray)
+{
     // The biggest possible “digit index” is one less
     // than the max of the two sizes.
     int maxLen = std::max(n1, n2);
@@ -80,6 +90,8 @@ __device__ int CompareDigits(const uint32_t *highArray, const uint32_t *lowArray
     return 0;
 }
 
+// Subtract two digit arrays, returning the result.
+// This is a serial implementation.
 template<int n1, int n2>
 __device__ static void SubtractDigitsSerial(const uint32_t *a, const uint32_t *b, uint32_t *result) {
     uint64_t borrow = 0;
@@ -128,24 +140,24 @@ template<
     int ExecutionBlockBase,
     int ExecutionNumBlocks>
 __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallel(
-    uint32_t *__restrict__ x_diff_abs,
-    uint32_t *__restrict__ y_diff_abs,
-    const uint32_t *__restrict__ a1,
-    const uint32_t *__restrict__ b1,
-    const uint32_t *__restrict__ a2,
-    const uint32_t *__restrict__ b2,
-    uint32_t *__restrict__ subtractionBorrows1a,
-    uint32_t *__restrict__ subtractionBorrows1b,
-    uint32_t *__restrict__ subtractionBorrows2a,
-    uint32_t *__restrict__ subtractionBorrows2b,
-    uint32_t *__restrict__ global_x_diff_abs,
-    uint32_t *__restrict__ global_y_diff_abs,
-    uint32_t *__restrict__ globalBorrowAny,
+    uint32_t *SharkRestrict x_diff_abs,
+    uint32_t *SharkRestrict y_diff_abs,
+    const uint32_t *SharkRestrict a1,
+    const uint32_t *SharkRestrict b1,
+    const uint32_t *SharkRestrict a2,
+    const uint32_t *SharkRestrict b2,
+    uint32_t *SharkRestrict subtractionBorrows1a,
+    uint32_t *SharkRestrict subtractionBorrows1b,
+    uint32_t *SharkRestrict subtractionBorrows2a,
+    uint32_t *SharkRestrict subtractionBorrows2b,
+    uint32_t *SharkRestrict global_x_diff_abs,
+    uint32_t *SharkRestrict global_y_diff_abs,
+    uint32_t *SharkRestrict globalBorrowAny,
     cg::grid_group &grid,
     cg::thread_block &block
 ) {
-    // Note: stops on this.
-    auto *sharedBorrowAny = x_diff_abs;
+    // Note: steps on this.
+    auto *SharkRestrict sharedBorrowAny = x_diff_abs;
 
     // Note: not ExecutionBlockBase
     if (block.group_index().x == 0 && block.thread_index().x == 0) {
@@ -216,9 +228,6 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallel(
         subtractionBorrows2a[idx] = borrow2;
     }
 
-    // sync the entire grid before multi-pass fixes
-    //grid.sync();
-
     // We'll do repeated passes to fix newly introduced borrows
     uint32_t *curBorrow1 = subtractionBorrows1a;
     uint32_t *newBorrow1 = subtractionBorrows1b;
@@ -227,6 +236,7 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallel(
     int pass = 0;
     uint32_t initialBorrowAny = 0;
 
+    // sync the entire grid before multi-pass fixes
     grid.sync();
 
     do {
@@ -322,31 +332,31 @@ template<
     int ExecutionNumBlocks>
 __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallelImproved3(
     // Working arrays (which may be in shared memory)
-    uint32_t *__restrict__ x_diff_abs,
-    uint32_t *__restrict__ y_diff_abs,
+    uint32_t *SharkRestrict x_diff_abs,
+    uint32_t *SharkRestrict y_diff_abs,
     // Input digit arrays (for the two halves)
-    const uint32_t *__restrict__ a1,
-    const uint32_t *__restrict__ b1,
-    const uint32_t *__restrict__ a2,
-    const uint32_t *__restrict__ b2,
+    const uint32_t *SharkRestrict a1,
+    const uint32_t *SharkRestrict b1,
+    const uint32_t *SharkRestrict a2,
+    const uint32_t *SharkRestrict b2,
     // Two borrow arrays (one for each half)
-    uint32_t *__restrict__ subtractionBorrows1a,
-    uint32_t *__restrict__ subtractionBorrows2a,
-    uint32_t *__restrict__ subtractionBorrows1b,
-    uint32_t *__restrict__ subtractionBorrows2b,
+    uint32_t *SharkRestrict subtractionBorrows1a,
+    uint32_t *SharkRestrict subtractionBorrows2a,
+    uint32_t *SharkRestrict subtractionBorrows1b,
+    uint32_t *SharkRestrict subtractionBorrows2b,
     // An array (of size ExecutionNumBlocks) for storing each block’s final borrow
-    uint32_t *__restrict__ blockBorrow1,
-    uint32_t *__restrict__ blockBorrow2,
+    uint32_t *SharkRestrict blockBorrow1,
+    uint32_t *SharkRestrict blockBorrow2,
     // Global buffers to hold the “working” differences
-    uint32_t *__restrict__ global_x_diff_abs,
-    uint32_t *__restrict__ global_y_diff_abs,
+    uint32_t *SharkRestrict global_x_diff_abs,
+    uint32_t *SharkRestrict global_y_diff_abs,
     // A single global counter to indicate if any borrow remains
-    uint32_t *__restrict__ globalBorrowAny,
+    uint32_t *SharkRestrict globalBorrowAny,
     cg::grid_group &grid,
     cg::thread_block &block) {
 
     // Note: steps on this.
-    auto *sharedBorrowAny =
+    auto *SharkRestrict sharedBorrowAny =
         SharkUseSharedMemory ?
         x_diff_abs :
         &x_diff_abs[block.group_index().x];
@@ -372,10 +382,10 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallelImproved3(
             blockBorrow2[block.group_index().x] = 0;
         }
 
-        auto *curSubtract1 = subtractionBorrows1a;
-        auto *curSubtract2 = subtractionBorrows2a;
-        auto *newSubtract1 = subtractionBorrows1b;
-        auto *newSubtract2 = subtractionBorrows2b;
+        auto *SharkRestrict curSubtract1 = subtractionBorrows1a;
+        auto *SharkRestrict curSubtract2 = subtractionBorrows2a;
+        auto *SharkRestrict newSubtract1 = subtractionBorrows1b;
+        auto *SharkRestrict newSubtract2 = subtractionBorrows2b;
 
         // === (1) INITIAL SUBTRACTION: Process all digits using a grid–stride loop.
         // Only active blocks (those with group_index().x in [ExecutionBlockBase, ExecutionBlockBase+ExecutionNumBlocks))
@@ -550,7 +560,7 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallelImproved3(
                 }
 
                 // Swap curSubtract and newSubtract.
-                auto *tmp = curSubtract1;
+                auto *SharkRestrict tmp = curSubtract1;
                 curSubtract1 = newSubtract1;
                 newSubtract1 = tmp;
 
@@ -624,10 +634,10 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallelImproved3(
         const int blockStart = 0;
         const int blockEnd = nmax; // all digits in [0, nmax)
 
-        auto *curSubtract1 = subtractionBorrows1a;
-        auto *curSubtract2 = subtractionBorrows2a;
-        auto *newSubtract1 = subtractionBorrows1b;
-        auto *newSubtract2 = subtractionBorrows2b;
+        auto *SharkRestrict curSubtract1 = subtractionBorrows1a;
+        auto *SharkRestrict curSubtract2 = subtractionBorrows2a;
+        auto *SharkRestrict newSubtract1 = subtractionBorrows1b;
+        auto *SharkRestrict newSubtract2 = subtractionBorrows2b;
 
         // INITIAL SUBTRACTION: each thread processes its assigned digits.
         for (int idx = blockStart + tid; idx < blockEnd; idx += stride) {
@@ -697,7 +707,7 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallelImproved3(
             }
 
             // Swap curSubtract and newSubtract.
-            auto *tmp = curSubtract1;
+            auto *SharkRestrict tmp = curSubtract1;
             curSubtract1 = newSubtract1;
             newSubtract1 = tmp;
 
@@ -738,7 +748,7 @@ __device__ SharkForceInlineReleaseOnly static void Subtract128(
 
 template<class SharkFloatParams>
 __device__ SharkForceInlineReleaseOnly static void SerialCarryPropagation(
-    uint64_t *__restrict__ shared_carries,
+    uint64_t *SharkRestrict shared_carries,
     cg::grid_group &grid,
     cg::thread_block &block,
     const uint3 &threadIdx,
@@ -747,9 +757,9 @@ __device__ SharkForceInlineReleaseOnly static void SerialCarryPropagation(
     int thread_end_idx,
     int Convolution_offset,
     int Result_offset,
-    uint64_t *__restrict__ block_carry_outs,
-    uint64_t *__restrict__ tempProducts,
-    uint64_t *__restrict__ globalCarryCheck) {
+    uint64_t *SharkRestrict block_carry_outs,
+    uint64_t *SharkRestrict tempProducts,
+    uint64_t *SharkRestrict globalCarryCheck) {
 
     if (block.thread_index().x == 0 && block.group_index().x == 0) {
         uint64_t local_carry = 0;
@@ -795,7 +805,7 @@ __device__ SharkForceInlineReleaseOnly static void SerialCarryPropagation(
 
 template<class SharkFloatParams>
 __device__ SharkForceInlineReleaseOnly static void CarryPropagation (
-    uint64_t *__restrict__ shared_carries,
+    uint64_t *SharkRestrict shared_carries,
     cg::grid_group &grid,
     cg::thread_block &block,
     const uint3 &threadIdx,
@@ -804,9 +814,9 @@ __device__ SharkForceInlineReleaseOnly static void CarryPropagation (
     int thread_end_idx,
     int Convolution_offset,
     int Result_offset,
-    uint64_t * __restrict__ block_carry_outs,
-    uint64_t * __restrict__ tempProducts,
-    uint64_t * __restrict__ globalCarryCheck) {
+    uint64_t *SharkRestrict block_carry_outs,
+    uint64_t *SharkRestrict tempProducts,
+    uint64_t *SharkRestrict globalCarryCheck) {
 
     // First Pass: Process convolution results to compute initial digits and local carries
     // Initialize local carry
@@ -962,9 +972,9 @@ static_assert(AdditionalUInt64PerFrame == 256, "See below");
     constexpr auto CallOffset = CallIndex * CalculateFrameSize<SharkFloatParams>(); \
     constexpr auto TempBaseOffset = TempBase + CallOffset; \
     constexpr auto Checksum_offset = AdditionalGlobalSyncSpace; \
-    auto *debugChecksumArray = reinterpret_cast<DebugState<SharkFloatParams>*>(&tempProducts[Checksum_offset]); \
+    auto *SharkRestrict debugChecksumArray = reinterpret_cast<DebugState<SharkFloatParams>*>(&tempProducts[Checksum_offset]); \
     constexpr auto Random_offset = Checksum_offset + AdditionalGlobalRandomSpace; \
-    auto *debugRandomArray = reinterpret_cast<curandState *>(&tempProducts[Random_offset]); \
+    auto *SharkRestrict debugRandomArray = reinterpret_cast<curandState *>(&tempProducts[Random_offset]); \
     constexpr auto Z0_offset = TempBaseOffset + AdditionalUInt64PerFrame; /* 0 */ \
     constexpr auto Z2_offset = Z0_offset + 4 * NewN * TestMultiplier; /* 4 */ \
     constexpr auto Z1_temp_offset = Z2_offset + 4 * NewN * TestMultiplier; /* 8 */ \
@@ -1045,11 +1055,6 @@ StoreCurrentDebugState (
         record, useConvolution, grid, block, arrayToChecksum, arraySize, Purpose, RecursionDepth, CallIndex);
 }
 
-// Assuming that SharkFloatParams::GlobalNumUint32 can be large and doesn't fit in shared memory
-// We'll use the provided global memory buffers for large intermediates
-// #define SharkRestrict __restrict__
-#define SharkRestrict
-
 template<
     class SharkFloatParams,
     int RecursionDepth,
@@ -1116,13 +1121,13 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
         DebugRandomDelay(block, debugRandomArray);
     }
 
-    auto *Z0_OutDigits = &tempProducts[Z0_offset];
-    auto *Z1_temp_digits = &tempProducts[Z1_temp_offset];
-    auto *Z2_OutDigits = &tempProducts[Z2_offset];
+    auto *SharkRestrict Z0_OutDigits = &tempProducts[Z0_offset];
+    auto *SharkRestrict Z1_temp_digits = &tempProducts[Z1_temp_offset];
+    auto *SharkRestrict Z2_OutDigits = &tempProducts[Z2_offset];
 
     // Arrays to hold the absolute differences (size n)
-    auto *global_x_diff_abs = reinterpret_cast<uint32_t *>(&tempProducts[XDiff_offset]);
-    auto *global_y_diff_abs = reinterpret_cast<uint32_t *>(&tempProducts[YDiff_offset]);
+    auto *SharkRestrict global_x_diff_abs = reinterpret_cast<uint32_t *>(&tempProducts[XDiff_offset]);
+    auto *SharkRestrict global_y_diff_abs = reinterpret_cast<uint32_t *>(&tempProducts[YDiff_offset]);
 
     // ---- Compute Differences x_diff = A1 - A0 and y_diff = B1 - B0 ----
 
@@ -1140,10 +1145,10 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
     auto *SharkRestrict globalBlockBorrow1 = reinterpret_cast<uint32_t *>(&tempProducts[BorrowBlockLevelOffset1]);
     auto *SharkRestrict globalBlockBorrow2 = reinterpret_cast<uint32_t *>(&tempProducts[BorrowBlockLevelOffset2]);
 
-    const auto SharkRestrict *a_high = aDigits + n1;
-    const auto SharkRestrict *b_high = bDigits + n1;
-    const auto SharkRestrict *a_low = aDigits;
-    const auto SharkRestrict *b_low = bDigits;
+    const auto *SharkRestrict a_high = aDigits + n1;
+    const auto *SharkRestrict b_high = bDigits + n1;
+    const auto *SharkRestrict a_low = aDigits;
+    const auto *SharkRestrict b_low = bDigits;
 
     if constexpr (SharkDebugChecksums) {
         grid.sync();
@@ -1596,7 +1601,7 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
         DebugRandomDelay(block, debugRandomArray);
     }
 
-    auto *Z1_digits = &tempProducts[Z1_offset];
+    auto *SharkRestrict Z1_digits = &tempProducts[Z1_offset];
 
     if constexpr (!SharkFloatParams::DisableAllAdditions) {
 
@@ -1719,12 +1724,12 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
 // We'll use the provided global memory buffers for large intermediates
 template<class SharkFloatParams>
 __device__ void MultiplyHelperKaratsubaV2 (
-    const HpSharkFloat<SharkFloatParams> *__restrict__ A,
-    const HpSharkFloat<SharkFloatParams> *__restrict__ B,
-    HpSharkFloat<SharkFloatParams> *__restrict__ Out,
+    const HpSharkFloat<SharkFloatParams> *SharkRestrict A,
+    const HpSharkFloat<SharkFloatParams> *SharkRestrict B,
+    HpSharkFloat<SharkFloatParams> *SharkRestrict Out,
     cg::grid_group &grid,
     cg::thread_block &block,
-    uint64_t *__restrict__ tempProducts) {
+    uint64_t *SharkRestrict tempProducts) {
 
     extern __shared__ uint32_t shared_data[];
 
@@ -1795,7 +1800,7 @@ __device__ void MultiplyHelperKaratsubaV2 (
         DebugRandomDelay(block, debugRandomArray);
     }
 
-    auto *final128 = &tempProducts[Convolution_offset];
+    auto *SharkRestrict final128 = &tempProducts[Convolution_offset];
     MultiplyDigitsOnly<
         SharkFloatParams,
         RecursionDepth + 1,

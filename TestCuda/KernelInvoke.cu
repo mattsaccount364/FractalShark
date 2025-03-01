@@ -181,18 +181,21 @@ void InvokeMultiplyKernelCorrectness(
 
     static constexpr bool DebugInitCudaMemory = true;
 
+    auto InitMemory = [&](void *ptr, size_t numBytes) {
+        if constexpr (!DebugInitCudaMemory) {
+            cudaMemset(ptr, 0, numBytes);
+        } else {
+            cudaMemset(ptr, 0xCD, numBytes);
+        }
+    };
+
     // Prepare kernel arguments
     // Allocate memory for carryOuts and cumulativeCarries
     uint64_t *d_tempProducts;
     constexpr auto BytesToAllocate =
         (AdditionalUInt64Global + ScratchMemoryCopies * CalculateFrameSize<SharkFloatParams>()) * sizeof(uint64_t);
     cudaMalloc(&d_tempProducts, BytesToAllocate);
-
-    if constexpr (!DebugInitCudaMemory) {
-        cudaMemset(d_tempProducts, 0, BytesToAllocate);
-    } else {
-        cudaMemset(d_tempProducts, 0xCD, BytesToAllocate);
-    }
+    InitMemory(d_tempProducts, BytesToAllocate);
 
     // Perform the calculation on the GPU
     HpSharkFloat<SharkFloatParams> *xGpu;
@@ -203,19 +206,24 @@ void InvokeMultiplyKernelCorrectness(
     cudaMalloc(&yGpu, sizeof(HpSharkFloat<SharkFloatParams>));
     cudaMemcpy(yGpu, &yNum, sizeof(HpSharkFloat<SharkFloatParams>), cudaMemcpyHostToDevice);
 
-    HpSharkFloat<SharkFloatParams> *internalGpuResult2;
-    cudaMalloc(&internalGpuResult2, sizeof(HpSharkFloat<SharkFloatParams>));
+    HpSharkFloat<SharkFloatParams> *internalGpuResultXX;
+    cudaMalloc(&internalGpuResultXX, sizeof(HpSharkFloat<SharkFloatParams>));
+    InitMemory(internalGpuResultXX, sizeof(HpSharkFloat<SharkFloatParams>));
 
-    if constexpr (!DebugInitCudaMemory) {
-        cudaMemset(internalGpuResult2, 0, sizeof(HpSharkFloat<SharkFloatParams>));
-    } else {
-        cudaMemset(internalGpuResult2, 0xCD, sizeof(HpSharkFloat<SharkFloatParams>));
-    }
+    HpSharkFloat<SharkFloatParams> *internalGpuResultXY;
+    cudaMalloc(&internalGpuResultXY, sizeof(HpSharkFloat<SharkFloatParams>));
+    InitMemory(internalGpuResultXY, sizeof(HpSharkFloat<SharkFloatParams>));
+
+    HpSharkFloat<SharkFloatParams> *internalGpuResultYY;
+    cudaMalloc(&internalGpuResultYY, sizeof(HpSharkFloat<SharkFloatParams>));
+    InitMemory(internalGpuResultYY, sizeof(HpSharkFloat<SharkFloatParams>));
 
     void *kernelArgs[] = {
         (void *)&xGpu,
         (void *)&yGpu,
-        (void *)&internalGpuResult2,
+        (void *)&internalGpuResultXX,
+        (void *)&internalGpuResultXY,
+        (void *)&internalGpuResultYY,
         (void *)&d_tempProducts
     };
 
@@ -224,7 +232,9 @@ void InvokeMultiplyKernelCorrectness(
         kernel(kernelArgs);
     }
 
-    cudaMemcpy(&gpuResult, internalGpuResult2, sizeof(HpSharkFloat<SharkFloatParams>), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&gpuResult, internalGpuResultXX, sizeof(HpSharkFloat<SharkFloatParams>), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&gpuResult, internalGpuResultXY, sizeof(HpSharkFloat<SharkFloatParams>), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&gpuResult, internalGpuResultYY, sizeof(HpSharkFloat<SharkFloatParams>), cudaMemcpyDeviceToHost);
 
     if (debugResults != nullptr) {
         if constexpr (SharkDebugChecksums) {
@@ -237,7 +247,10 @@ void InvokeMultiplyKernelCorrectness(
         }
     }
 
-    cudaFree(internalGpuResult2);
+    cudaFree(internalGpuResultYY);
+    cudaFree(internalGpuResultXY);
+    cudaFree(internalGpuResultXX);
+
     cudaFree(yGpu);
     cudaFree(xGpu);
     cudaFree(d_tempProducts);

@@ -16,7 +16,7 @@
 // 2 = setup for profiling only, one kernel
 // 3 = all basic correctness tests + comical tests
 // See ExplicitInstantiate.h for more information
-#define ENABLE_BASIC_CORRECTNESS 2
+#define ENABLE_BASIC_CORRECTNESS 0
 static constexpr auto SharkComicalThreadCount = 13;
 static constexpr auto SharkTestIterCount = 5000;
 
@@ -74,7 +74,7 @@ struct GenericSharkFloatParams {
     static constexpr bool ForceNoOp = false;
 
     // If true, the host will print out a lot of stuff
-    static constexpr bool HostVerbose = false;
+    static constexpr bool HostVerbose = true;
 
     // 3^whatevs = ConvolutionLimit
     // static constexpr auto ConvolutionLimit = SharkDebug ? 27: 81;

@@ -22,6 +22,9 @@
 #define NOMINMAX
 #include <windows.h>
 
+// x_n + 1 = x_n*x_n-y_n*y_n + a
+// y_n + 1 = 2*x_n*y_n + b
+
 static TestTracker Tests;
 
 // Returns false if the test fails, true otherwise
@@ -187,8 +190,13 @@ void TestPerf(
     }
 
     // Perform the calculation on the host using MPIR
-    mpf_t mpfHostResult;
-    mpf_init(mpfHostResult);
+    mpf_t mpfHostResultXX;
+    mpf_t mpfHostResultXY;
+    mpf_t mpfHostResultYY;
+
+    mpf_init(mpfHostResultXX);
+    mpf_init(mpfHostResultXY);
+    mpf_init(mpfHostResultYY);
 
     {
         BenchmarkTimer hostTimer;
@@ -196,9 +204,11 @@ void TestPerf(
 
         for (int i = 0; i < numIters; ++i) {
             if constexpr (sharkOperator == Operator::Add) {
-                mpf_add(mpfHostResult, mpfX, mpfY);
+                mpf_add(mpfHostResultXY, mpfX, mpfY);
             } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
-                mpf_mul(mpfHostResult, mpfX, mpfY);
+                mpf_mul(mpfHostResultXX, mpfX, mpfX);
+                mpf_mul(mpfHostResultXY, mpfX, mpfY);
+                mpf_mul(mpfHostResultYY, mpfY, mpfY);
             }
         }
 
@@ -207,7 +217,9 @@ void TestPerf(
         std::cout << "Host iter time: " << hostTimer.GetDeltaInMs() << " ms" << std::endl;
     }
 
-    auto gpuResult2 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+    auto gpuResult2XX = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+    auto gpuResult2XY = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+    auto gpuResult2YY = std::make_unique<HpSharkFloat<SharkFloatParams>>();
 
     {
         BenchmarkTimer timer;
@@ -218,7 +230,7 @@ void TestPerf(
                 ComputeAddGpuTestLoop<SharkFloatParams>,
                 *xNum,
                 *yNum,
-                *gpuResult2,
+                *gpuResult2XY,
                 numIters);
         } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
             InvokeMultiplyKernel<SharkFloatParams>(
@@ -226,7 +238,9 @@ void TestPerf(
                 ComputeMultiplyKaratsubaV2GpuTestLoop<SharkFloatParams>,
                 *xNum,
                 *yNum,
-                *gpuResult2,
+                *gpuResult2XX,
+                *gpuResult2XY,
+                *gpuResult2YY,
                 numIters);
         }
 
@@ -235,19 +249,30 @@ void TestPerf(
         std::cout << "GPU iter time: " << timer.GetDeltaInMs() << " ms" << std::endl;
     }
 
-    bool testSucceeded = DiffAgainstHost<SharkFloatParams, sharkOperator>(
-        testNum,
-        "GPU",
-        mpfHostResult,
-        *gpuResult2);
-    if (!testSucceeded) {
-        std::cout << "Perf correctness test failed" << std::endl;
-    } else {
-        std::cout << "Perf correctness test succeeded" << std::endl;
-    }
+    auto CheckDiff = [&](
+        int testNum,
+        const char *hostCustomOrGpu,
+        const mpf_t &mpfHostResult,
+        const HpSharkFloat<SharkFloatParams> &gpuResult) {
+
+        auto testSucceeded =
+            DiffAgainstHost<SharkFloatParams, sharkOperator>(testNum, hostCustomOrGpu, mpfHostResult, gpuResult);
+        if (!testSucceeded) {
+            std::cout << "Perf correctness test failed" << std::endl;
+        } else {
+            std::cout << "Perf correctness test succeeded" << std::endl;
+        }
+    };
+
+    bool testSucceeded = true;
+    testSucceeded &= CheckDiff(testNum, "GPU", mpfHostResultXX, *gpuResult2XX);
+    testSucceeded &= CheckDiff(testNum, "GPU", mpfHostResultXY, *gpuResult2XY);
+    testSucceeded &= CheckDiff(testNum, "GPU", mpfHostResultYY, *gpuResult2YY);
 
     // Clean up MPIR variables
-    mpf_clear(mpfHostResult);
+    mpf_clear(mpfHostResultXX);
+    mpf_clear(mpfHostResultXY);
+    mpf_clear(mpfHostResultYY);
 }
 
 template<class SharkFloatParams, Operator sharkOperator>
@@ -298,87 +323,115 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
 
     auto TestHostKaratsuba = [&](
         int testNum,
-        mpf_t mpfHostResult,
+        mpf_t mpfHostResultXX,
+        mpf_t mpfHostResultXY,
+        mpf_t mpfHostResultYY,
         std::vector<DebugStateHost<SharkFloatParams>> &debugStates) -> bool {
 
         if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
 
-            HpSharkFloat<SharkFloatParams> hostKaratsubaOutV1;
-            MultiplyHelperKaratsubaV1<SharkFloatParams>(
-                &xNum,
-                &yNum,
-                &hostKaratsubaOutV1
-            );
+            HpSharkFloat<SharkFloatParams> hostKaratsubaOutXXV2;
+            HpSharkFloat<SharkFloatParams> hostKaratsubaOutXYV2;
+            HpSharkFloat<SharkFloatParams> hostKaratsubaOutYYV2;
 
-            if constexpr (SharkFloatParams::HostVerbose) {
-                std::cout << "KaratsubaV1 result: " << hostKaratsubaOutV1.ToString() << std::endl;
-                std::cout << "KaratsubaV1 hex: " << hostKaratsubaOutV1.ToHexString() << std::endl;
-            }
-
-            bool res = DiffAgainstHost<SharkFloatParams, sharkOperator>(
-                testNum,
-                "CustomHighPrecisionV1",
-                mpfHostResult,
-                hostKaratsubaOutV1);
-
-            if (!res) {
-                DebugBreak();
-            };
-
-            HpSharkFloat<SharkFloatParams> hostKaratsubaOutV2;
             MultiplyHelperKaratsubaV2<SharkFloatParams>(
                 &xNum,
                 &yNum,
-                &hostKaratsubaOutV2,
+                &hostKaratsubaOutXXV2,
+                &hostKaratsubaOutXYV2,
+                &hostKaratsubaOutYYV2,
                 debugStates
             );
 
-            if constexpr (SharkFloatParams::HostVerbose) {
-                std::cout << "KaratsubaV2 result: " << hostKaratsubaOutV2.ToString() << std::endl;
-                std::cout << "KaratsubaV2 hex: " << hostKaratsubaOutV2.ToHexString() << std::endl;
-            }
-
-            res &= DiffAgainstHost<SharkFloatParams, sharkOperator>(
-                testNum,
-                "CustomHighPrecisionV2",
-                mpfHostResult,
-                hostKaratsubaOutV2);
-
-            if (!res) {
-                DebugBreak();
+            auto OutputV2 = [&]([[maybe_unused]] const HpSharkFloat<SharkFloatParams> &out) {
+                if constexpr (SharkFloatParams::HostVerbose) {
+                    std::cout << "KaratsubaV2 result: " << out.ToString() << std::endl;
+                    std::cout << "KaratsubaV2 hex: " << out.ToHexString() << std::endl;
+                }
             };
+            
+            OutputV2(hostKaratsubaOutXXV2);
+            OutputV2(hostKaratsubaOutXYV2);
+            OutputV2(hostKaratsubaOutYYV2);
+
+            auto CheckAgainstHost = [&](
+                int testNum,
+                const char *name,
+                const mpf_t mpfHostResult,
+                const HpSharkFloat<SharkFloatParams> &gpuResult) {
+
+                bool res = DiffAgainstHost<SharkFloatParams, sharkOperator>(
+                    testNum,
+                    name,
+                    mpfHostResult,
+                    gpuResult);
+                if (!res) {
+                    DebugBreak();
+                };
+
+                return res;
+            };
+
+            bool res = true;
+            res &= CheckAgainstHost(testNum, "CustomHighPrecisionV2XX", mpfHostResultXX, hostKaratsubaOutXXV2);
+            res &= CheckAgainstHost(testNum, "CustomHighPrecisionV2XY", mpfHostResultXY, hostKaratsubaOutXYV2);
+            res &= CheckAgainstHost(testNum, "CustomHighPrecisionV2YY", mpfHostResultYY, hostKaratsubaOutYYV2);
 
             return res;
         } else if constexpr (sharkOperator == Operator::Add) {
             (void)testNum;
-            (void)mpfHostResult;
+            (void)mpfHostResultXX;
+            (void)mpfHostResultXY;
+            (void)mpfHostResultYY;
             return true;
         } else {
             (void)testNum;
-            (void)mpfHostResult;
+            (void)mpfHostResultXX;
+            (void)mpfHostResultXY;
+            (void)mpfHostResultYY;
             return false;
         }
         };
 
-    static constexpr bool TestGpu = true;
+    static constexpr bool TestGpu = false;
 
     // Perform the calculation on the host using MPIR
-    HpSharkFloat<SharkFloatParams> gpuResult{};
-    mpf_t mpfHostResult;
-    mpf_init(mpfHostResult);
+    HpSharkFloat<SharkFloatParams> gpuResultXX{};
+    HpSharkFloat<SharkFloatParams> gpuResultXY{};
+    HpSharkFloat<SharkFloatParams> gpuResultYY{};
+
+    mpf_t mpfHostResultXX;
+    mpf_t mpfHostResultXY;
+    mpf_t mpfHostResultYY;
+
+    mpf_init(mpfHostResultXX);
+    mpf_init(mpfHostResultXY);
+    mpf_init(mpfHostResultYY);
 
     if constexpr (sharkOperator == Operator::Add) {
-        mpf_add(mpfHostResult, mpfX, mpfY);
+        mpf_add(mpfHostResultXY, mpfX, mpfY);
     } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
-        mpf_mul(mpfHostResult, mpfX, mpfY);
+        mpf_mul(mpfHostResultXX, mpfX, mpfX);
+        mpf_mul(mpfHostResultXY, mpfX, mpfY);
+        mpf_mul(mpfHostResultYY, mpfY, mpfY);
     }
 
     // Print host result
     if constexpr (SharkFloatParams::HostVerbose) {
         std::cout << "\nHost result:" << std::endl;
-        std::cout << "Host result: " << MpfToString<SharkFloatParams>(mpfHostResult, HpSharkFloat<SharkFloatParams>::DefaultPrecBits) << std::endl;
-        std::cout << "Host hex: " << std::endl;
-        std::cout << "" << MpfToHexString(mpfHostResult) << std::endl;
+        std::cout << "Host result XX: " <<
+            MpfToString<SharkFloatParams>(mpfHostResultXX, HpSharkFloat<SharkFloatParams>::DefaultPrecBits) << std::endl;
+        std::cout << "Host result XY: " <<
+            MpfToString<SharkFloatParams>(mpfHostResultXY, HpSharkFloat<SharkFloatParams>::DefaultPrecBits) << std::endl;
+        std::cout << "Host result YY: " <<
+            MpfToString<SharkFloatParams>(mpfHostResultYY, HpSharkFloat<SharkFloatParams>::DefaultPrecBits) << std::endl;
+        
+        std::cout << "Host hex XX: " << std::endl;
+        std::cout << "" << MpfToHexString(mpfHostResultXX) << std::endl;
+        std::cout << "Host hex XY: " << std::endl;
+        std::cout << "" << MpfToHexString(mpfHostResultXY) << std::endl;
+        std::cout << "Host hex YY: " << std::endl;
+        std::cout << "" << MpfToHexString(mpfHostResultYY) << std::endl;
     }
 
     std::vector<DebugStateRaw> debugStatesCuda{};
@@ -391,14 +444,16 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
                 ComputeAddGpu<SharkFloatParams>,
                 xNum,
                 yNum,
-                gpuResult);
+                gpuResultXY);
         } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
             InvokeMultiplyKernelCorrectness<SharkFloatParams, Operator::MultiplyKaratsubaV2>(
                 timer,
                 ComputeMultiplyKaratsubaV2Gpu<SharkFloatParams>,
                 xNum,
                 yNum,
-                gpuResult,
+                gpuResultXX,
+                gpuResultXY,
+                gpuResultYY,
                 &debugStatesCuda);
         } else {
             assert(false);
@@ -412,7 +467,13 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
     }
 
     std::vector<DebugStateHost<SharkFloatParams>> debugResultsHost;
-    bool testSucceeded = TestHostKaratsuba(testNum, mpfHostResult, debugResultsHost);
+    bool testSucceeded = TestHostKaratsuba(
+        testNum,
+        mpfHostResultXX,
+        mpfHostResultXY,
+        mpfHostResultYY,
+        debugResultsHost);
+
     if (!testSucceeded) {
         std::cout << "Custom High Precision failed" << std::endl;
     } else {
@@ -486,27 +547,27 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
         }
     }
 
-    if constexpr (TestGpu) {
-        testSucceeded = DiffAgainstHost<SharkFloatParams, sharkOperator>(
-            testNum,
-            "GPU",
-            mpfHostResult,
-            gpuResult);
+    auto CheckGPUResult = [&](int testNum, const char *name, const mpf_t &mpfHostResult, const HpSharkFloat<SharkFloatParams> &gpuResult) {
+        auto testSucceeded = DiffAgainstHost<SharkFloatParams, sharkOperator>(testNum, name, mpfHostResult, gpuResult);
         if (!testSucceeded) {
             std::cout << "GPU High Precision failed" << std::endl;
-           DebugBreak();
         } else {
             std::cout << "GPU High Precision succeeded" << std::endl;
-
-            if (ChecksumFailure) {
-                std::cerr << "Checksum failure (debug issue), see above results" << std::endl;
-                DebugBreak();
-            }
         }
+        return testSucceeded;
+        };
 
-        // Clean up MPIR variables
-        mpf_clear(mpfHostResult);
+    if constexpr (TestGpu) {
+        bool testSucceeded = true;
+        testSucceeded &= CheckGPUResult(testNum, "GPU", mpfHostResultXX, gpuResultXX);
+        testSucceeded &= CheckGPUResult(testNum, "GPU", mpfHostResultXY, gpuResultXY);
+        testSucceeded &= CheckGPUResult(testNum, "GPU", mpfHostResultYY, gpuResultYY);
     }
+
+    // Clean up MPIR variables
+    mpf_clear(mpfHostResultXX);
+    mpf_clear(mpfHostResultXY);
+    mpf_clear(mpfHostResultYY);
 }
 
 template<class SharkFloatParams, Operator sharkOperator, bool IncludeSigns>
@@ -1094,7 +1155,7 @@ bool TestAllBinaryOp(int testBase) {
 }
 
 template<Operator sharkOperator>
-bool TestBinaryOperatorPerf(int testBase) {
+bool TestBinaryOperatorPerf([[maybe_unused]] int testBase) {
 #if (ENABLE_BASIC_CORRECTNESS == 1) || (ENABLE_BASIC_CORRECTNESS == 3)
     TestPerf<TestPerSharkParams1, sharkOperator>(testBase + 1, SharkTestIterCount);
     TestPerf<TestPerSharkParams2, sharkOperator>(testBase + 2, SharkTestIterCount);

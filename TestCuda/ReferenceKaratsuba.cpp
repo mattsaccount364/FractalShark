@@ -11,268 +11,6 @@
 #include <iostream>
 #include <assert.h>
 
-// Helper: Add arrays of potentially different lengths
-// A_len >= B_len; result length = A_len or A_len+1
-static uint32_t AddArraysDifferentLengthV1(const uint32_t *A, int A_len, const uint32_t *B, int B_len, uint32_t *Res) {
-    uint64_t carry = 0;
-    int i = 0;
-    for (; i < B_len; i++) {
-        uint64_t sum = (uint64_t)A[i] + (uint64_t)B[i] + carry;
-        Res[i] = (uint32_t)sum;
-        carry = sum >> 32;
-    }
-    for (; i < A_len; i++) {
-        uint64_t sum = (uint64_t)A[i] + carry;
-        Res[i] = (uint32_t)sum;
-        carry = sum >> 32;
-    }
-    return (uint32_t)carry;
-}
-
-
-// Helper: Naive O(N²) multiplication
-// A and B length n, result length = 2*n
-static void NaiveMultiplyV1(const uint32_t *A, const uint32_t *B, int n, uint32_t *Res) {
-    for (int i = 0; i < 2 * n; i++) {
-        Res[i] = 0;
-    }
-
-    for (int i = 0; i < n; i++) {
-        uint64_t carry = 0;
-        uint64_t a = A[i];
-        for (int j = 0; j < n; j++) {
-            uint64_t mul = (uint64_t)a * (uint64_t)B[j] + (uint64_t)Res[i + j] + carry;
-            Res[i + j] = (uint32_t)(mul & 0xFFFFFFFFULL);
-            carry = mul >> 32;
-        }
-        Res[i + n] = (uint32_t)carry;
-    }
-}
-
-
-// Single-level Karatsuba-like function
-// N = SharkFloatParams::GlobalNumUint32
-// We split A and B into two halves: A_low, A_high, B_low, B_high
-// Then compute Z0, Z2, and Z1 = (A_low+A_high)*(B_low+B_high)-Z0-Z2
-template<class SharkFloatParams>
-void MultiplyHelperKaratsubaV1(
-    const HpSharkFloat<SharkFloatParams> *A,
-    const HpSharkFloat<SharkFloatParams> *B,
-    HpSharkFloat<SharkFloatParams> *Out
-) {
-    constexpr int N = SharkFloatParams::GlobalNumUint32;
-    if constexpr (N == 1) {
-        // Just multiply single 32-bit limbs
-        uint64_t prod = (uint64_t)A->Digits[0] * (uint64_t)B->Digits[0];
-        Out->Digits[0] = (uint32_t)(prod & 0xFFFFFFFFULL);
-        // If we had more limbs, they'd go here, but we only have one.
-        Out->Exponent = A->Exponent + B->Exponent;
-        Out->IsNegative = (A->IsNegative ^ B->IsNegative);
-        return;
-    }
-
-    // Split in half
-    int half = N / 2; // If N is not even, we can still do this, one half is half, another half = N-half
-    int high_len = N - half;
-
-    const uint32_t *A_low = A->Digits;
-    const uint32_t *A_high = A->Digits + half;
-    const uint32_t *B_low = B->Digits;
-    const uint32_t *B_high = B->Digits + half;
-
-    // Compute Z0 = A_low * B_low (length 2*half)
-    std::vector<uint32_t> Z0(2 * half, 0);
-    NaiveMultiplyV1(A_low, B_low, half, Z0.data());
-
-    // Compute Z2 = A_high * B_high (length 2*high_len)
-    std::vector<uint32_t> Z2(2 * high_len, 0);
-    NaiveMultiplyV1(A_high, B_high, high_len, Z2.data());
-
-    // Compute (A_low + A_high) and (B_low + B_high)
-    // The sum arrays can have length = max(half, high_len)+1 in worst case
-    int sum_len = std::max(half, high_len) + 1;
-    std::vector<uint32_t> A_sum(sum_len, 0);
-    std::vector<uint32_t> B_sum(sum_len, 0);
-
-    // Add A_low and A_high
-    if (high_len >= half) {
-        // Copy A_high
-        for (int i = 0; i < high_len; i++) A_sum[i] = A_high[i];
-        uint32_t carry = AddArraysDifferentLengthV1(A_sum.data(), high_len, A_low, half, A_sum.data());
-        if (carry) A_sum[high_len] = carry;
-    } else {
-        // Copy A_low
-        for (int i = 0; i < half; i++) A_sum[i] = A_low[i];
-        uint32_t carry = AddArraysDifferentLengthV1(A_sum.data(), half, A_high, high_len, A_sum.data());
-        if (carry) A_sum[half] = carry;
-    }
-
-    // Add B_low and B_high
-    if (high_len >= half) {
-        for (int i = 0; i < high_len; i++) B_sum[i] = B_high[i];
-        uint32_t carry = AddArraysDifferentLengthV1(B_sum.data(), high_len, B_low, half, B_sum.data());
-        if (carry) B_sum[high_len] = carry;
-    } else {
-        for (int i = 0; i < half; i++) B_sum[i] = B_low[i];
-        uint32_t carry = AddArraysDifferentLengthV1(B_sum.data(), half, B_high, high_len, B_sum.data());
-        if (carry) B_sum[half] = carry;
-    }
-
-    // Determine actual lengths of A_sum and B_sum
-    int A_sum_len = sum_len; while (A_sum_len > 1 && A_sum[A_sum_len - 1] == 0) A_sum_len--;
-    int B_sum_len = sum_len; while (B_sum_len > 1 && B_sum[B_sum_len - 1] == 0) B_sum_len--;
-
-    int max_sum_len = std::max(A_sum_len, B_sum_len);
-    // Z1_temp = (A_sum * B_sum)
-    std::vector<uint32_t> Z1_temp(2 * max_sum_len, 0);
-    NaiveMultiplyV1(A_sum.data(), B_sum.data(), max_sum_len, Z1_temp.data());
-
-    // Z1 = Z1_temp
-    std::vector<uint32_t> Z1 = Z1_temp;
-
-    // Z1 = Z1 - Z0 (no shift)
-    {
-        uint32_t borrow = 0;
-        int min_len = std::min((int)Z1.size(), (int)Z0.size());
-        for (int i = 0; i < min_len; i++) {
-            uint64_t z1_val = Z1[i];
-            uint64_t z0_val = (uint64_t)Z0[i] + borrow;
-            if (z1_val < z0_val) {
-                Z1[i] = (uint32_t)((z1_val + ((uint64_t)1 << 32)) - z0_val);
-                borrow = 1;
-            } else {
-                Z1[i] = (uint32_t)(z1_val - z0_val);
-                borrow = 0;
-            }
-        }
-        
-        // After finishing the min_len loop:
-        for (int i = min_len; borrow && i < (int)Z1.size(); i++) {
-            uint64_t z1_val = Z1[i];
-            if (z1_val < borrow) {
-                Z1[i] = (uint32_t)((z1_val + ((uint64_t)1 << 32)) - borrow);
-                borrow = 1; // still have borrow because we wrapped
-            } else {
-                Z1[i] = (uint32_t)(z1_val - borrow);
-                borrow = 0; // borrow resolved
-            }
-        }
-
-        // If borrow is still not zero here and we have no more digits in Z1, 
-        // that would indicate Z1 went negative, which shouldn't happen in correct Karatsuba logic.
-    }
-
-    // Z1 = Z1 - Z2 (no shift)
-    {
-        uint32_t borrow = 0;
-        int min_len = std::min((int)Z1.size(), (int)Z2.size());
-        for (int i = 0; i < min_len; i++) {
-            uint64_t z1_val = Z1[i];
-            uint64_t z2_val = (uint64_t)Z2[i] + borrow;
-            if (z1_val < z2_val) {
-                Z1[i] = (uint32_t)((z1_val + ((uint64_t)1 << 32)) - z2_val);
-                borrow = 1;
-            } else {
-                Z1[i] = (uint32_t)(z1_val - z2_val);
-                borrow = 0;
-            }
-        }
-        
-        // After finishing the min_len loop:
-        for (int i = min_len; borrow && i < (int)Z1.size(); i++) {
-            uint64_t z1_val = Z1[i];
-            if (z1_val < borrow) {
-                Z1[i] = (uint32_t)((z1_val + ((uint64_t)1 << 32)) - borrow);
-                borrow = 1; // still have borrow because we wrapped
-            } else {
-                Z1[i] = (uint32_t)(z1_val - borrow);
-                borrow = 0; // borrow resolved
-            }
-        }
-
-        // If borrow is still not zero here and we have no more digits in Z1, 
-        // that would indicate Z1 went negative, which shouldn't happen in correct Karatsuba logic.
-    }
-
-    // Combine:
-    // Result = Z0 + (Z1 << (32*half)) + (Z2 << (32*(2*half)))
-
-    // Initialize result:
-    std::vector<uint32_t> product(2 * N, 0);
-
-    // Add Z0
-    {
-        int z0_len = (int)Z0.size(); // Typically 2*half
-        int copy_len = std::min(z0_len, 2 * N);
-        for (int i = 0; i < copy_len; i++) {
-            product[i] = Z0[i];
-        }
-        // If z0_len < 2*N, the rest are already zero.
-    }
-
-    // Add Z1 at offset half
-    {
-        int z1_len = (int)Z1.size();
-        int max_i = 2 * N - half; // maximum length we can add
-        uint64_t carry = 0;
-        for (int i = 0; i < max_i; i++) {
-            uint64_t z1_val = (i < z1_len) ? (uint64_t)Z1[i] : 0ULL;
-            uint64_t sum = (uint64_t)product[i + half] + z1_val + carry;
-            product[i + half] = (uint32_t)(sum & 0xFFFFFFFFULL);
-            carry = sum >> 32;
-        }
-        // If carry remains and we have no space, it just doesn't fit (which typically shouldn't happen in correct Karatsuba)
-    }
-
-    // Add Z2 at offset 2*half
-    {
-        int z2_len = (int)Z2.size(); // Typically 2*high_len
-        int max_i = 2 * N - 2 * half;
-        uint64_t carry = 0;
-        for (int i = 0; i < max_i; i++) {
-            uint64_t z2_val = (i < z2_len) ? (uint64_t)Z2[i] : 0ULL;
-            uint64_t sum = (uint64_t)product[i + 2 * half] + z2_val + carry;
-            product[i + 2 * half] = (uint32_t)(sum & 0xFFFFFFFFULL);
-            carry = sum >> 32;
-        }
-    }
-
-    // Normalize result
-    int highest_nonzero_index = 2 * N - 1;
-    while (highest_nonzero_index >= 0 && product[highest_nonzero_index] == 0) {
-        highest_nonzero_index--;
-    }
-
-    int significant_digits = highest_nonzero_index + 1;
-    if (significant_digits < 1) {
-        // Product is zero
-        significant_digits = 1;
-        for (int i = 0; i < N; i++) {
-            Out->Digits[i] = 0;
-        }
-        Out->Exponent = A->Exponent + B->Exponent;
-        Out->IsNegative = false;
-        return;
-    }
-
-    // Determine how many digits we need to shift to keep exactly N digits
-    int shift_digits = significant_digits - N;
-    //if (shift_digits < 0) shift_digits = 0;
-
-    Out->Exponent = A->Exponent + B->Exponent + shift_digits * 32;
-
-    int src_idx = shift_digits;
-    for (int i = 0; i < N; i++, src_idx++) {
-        uint32_t val = 0;
-        if (src_idx >= 0 && src_idx < significant_digits) {
-            val = product[src_idx];
-        }
-        Out->Digits[i] = val;
-    }
-
-    Out->IsNegative = (A->IsNegative ^ B->IsNegative);
-}
-
 void Add128 (
     uint64_t a_low, uint64_t a_high,
     uint64_t b_low, uint64_t b_high,
@@ -480,19 +218,15 @@ void KaratsubaRecursiveDigits(
     std::vector<DebugStateHost<SharkFloatParams>> &debugStates
 )
 {
-    const int fullADigits = static_cast<int>(A_digits.size());
-    const int fullBDigits = static_cast<int>(B_digits.size());
-    assert(fullADigits == fullBDigits);
+    const int NewN = static_cast<int>(A_digits.size());
 
-    const int halfARoundedUp = (fullADigits + 1) / 2;
-    const int halfARoundedDown = fullADigits / 2;
-    const int halfBRoundedUp = (fullBDigits + 1) / 2;
-    const int halfBRoundedDown = fullBDigits / 2;
+    {
+        const int fullBDigits = static_cast<int>(B_digits.size());
+        assert(NewN == fullBDigits);
+    }
 
-    const int NewN1 = halfARoundedUp;
-    const int NewN2 = halfARoundedDown;
-    assert(NewN1 == halfBRoundedUp);
-    assert(NewN2 == halfBRoundedDown);
+    const int NewN1 = (NewN + 1) / 2;
+    const int NewN2 = NewN / 2;
 
     using DebugState = DebugStateHost<SharkFloatParams>;
 
@@ -513,8 +247,7 @@ void KaratsubaRecursiveDigits(
 
     if constexpr (SharkFloatParams::HostVerbose) {
         std::cout << "KaratsubaRecursiveDigits (index: " << CallIndex << "):" << std::endl;
-        std::cout << "fullADigits = " << fullADigits << std::endl;
-        std::cout << "fullBDigits = " << fullBDigits << std::endl;
+        std::cout << "NewN = " << NewN << std::endl;
         std::cout << "A->Digits checksum: " << debugAState.GetStr() << std::endl;
         std::cout << "B->Digits checksum: " << debugBState.GetStr() << std::endl;
         std::cout << VectorUintToHexString(A_digits) << " * ";
@@ -529,7 +262,7 @@ void KaratsubaRecursiveDigits(
     assert(A_low.size() == NewN1);
 
     std::vector<uint32_t> A_high;
-    for (size_t i = NewN1; i < fullADigits; i++) {
+    for (size_t i = NewN1; i < NewN; i++) {
         A_high.push_back(A_digits[i]);
     }
 
@@ -543,7 +276,7 @@ void KaratsubaRecursiveDigits(
     assert(B_low.size() == NewN1);
 
     std::vector<uint32_t> B_high;
-    for (size_t i = NewN1; i < fullBDigits; i++) {
+    for (size_t i = NewN1; i < NewN; i++) {
         B_high.push_back(B_digits[i]);
     }
 
@@ -557,17 +290,13 @@ void KaratsubaRecursiveDigits(
         std::cout << "B_high: " << B_high.size() << std::endl;
     }
 
-    const auto &debugAHalfHigh =
-        GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::AHalfHigh>(
+    GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::AHalfHigh>(
             debugStates, UseConvolutionHere, A_high.data(), A_high.size());
-    const auto &debugAHalfLow =
-        GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::AHalfLow>(
+    GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::AHalfLow>(
             debugStates, UseConvolutionHere, A_low.data(), A_low.size());
-    const auto &debugBHalfHigh =
-        GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BHalfHigh>(
+    GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BHalfHigh>(
             debugStates, UseConvolutionHere, B_high.data(), B_high.size());
-    const auto &debugBHalfLow =
-        GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BHalfLow>(
+    GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BHalfLow>(
             debugStates, UseConvolutionHere, B_low.data(), B_low.size());
 
     const auto initValue64 = 0xCDCDCDCDCDCDCDCDULL;
@@ -636,15 +365,6 @@ void KaratsubaRecursiveDigits(
         std::cout << "y_diff: " << VectorUintToHexString(y_diff) << std::endl;
         std::cout << "y_diff checksum: " << yDiffChecksum.GetStr() << std::endl;
     }
-
-    const auto NewN = fullADigits;
-    const auto SubNewNRoundUp = (NewN + 1) / 2;
-    const auto SubNewN2a = SubNewNRoundUp / 2;
-    const auto SubNewN1a = SubNewNRoundUp - SubNewN2a;   /* n1 is larger or same */
-
-    const auto SubRemainingNewN = NewN - SubNewNRoundUp;
-    const auto SubNewN2b = SubRemainingNewN / 2;
-    const auto SubNewN1b = SubRemainingNewN - SubNewN2b;   /* n1 is larger or same */
 
     assert(A_low.size() == B_low.size());
     const auto FinalZ0Size =
@@ -833,7 +553,7 @@ void KaratsubaRecursiveDigits(
     // N even means (32*n) bits = n/2 64-bit words
     // (64*n) bits = n 64-bit words
 
-    const int total_result_digits = 2 * fullADigits;
+    const int total_result_digits = 2 * NewN;
 
     // If the input array is larger, then the high-order entries
     // remain zero.
@@ -894,7 +614,9 @@ template<class SharkFloatParams>
 void MultiplyHelperKaratsubaV2(
     const HpSharkFloat<SharkFloatParams> *A,
     const HpSharkFloat<SharkFloatParams> *B,
-    HpSharkFloat<SharkFloatParams> *Out,
+    HpSharkFloat<SharkFloatParams> *OutXX,
+    HpSharkFloat<SharkFloatParams> *OutXY,
+    HpSharkFloat<SharkFloatParams> *OutYY,
     std::vector<DebugStateHost<SharkFloatParams>> &debugStates
 ) {
     constexpr int N = SharkFloatParams::GlobalNumUint32;
@@ -906,12 +628,12 @@ void MultiplyHelperKaratsubaV2(
 
     if constexpr (N == 1) {
         uint64_t prod = (uint64_t)A->Digits[0] * (uint64_t)B->Digits[0];
-        Out->Digits[0] = (uint32_t)(prod & 0xFFFFFFFFULL);
-        Out->Exponent = A->Exponent + B->Exponent;
-        Out->IsNegative = (A->IsNegative ^ B->IsNegative);
+        OutXY->Digits[0] = (uint32_t)(prod & 0xFFFFFFFFULL);
+        OutXY->Exponent = A->Exponent + B->Exponent;
+        OutXY->IsNegative = (A->IsNegative ^ B->IsNegative);
 
         if constexpr (SharkFloatParams::HostVerbose) {
-            std::cout << "Karatsuba N=1: A=" << A->ToHexString() << ", B=" << B->ToHexString() << ", Out=" << Out->ToHexString() << std::endl;
+            std::cout << "Karatsuba N=1: A=" << A->ToHexString() << ", B=" << B->ToHexString() << ", OutXY=" << OutXY->ToHexString() << std::endl;
         }
 
         return;
@@ -1046,10 +768,10 @@ void MultiplyHelperKaratsubaV2(
         // Product is zero
         significant_digits = 1;
         for (int i = 0; i < N; i++) {
-            Out->Digits[i] = 0;
+            OutXY->Digits[i] = 0;
         }
-        Out->Exponent = A->Exponent + B->Exponent;
-        Out->IsNegative = false;
+        OutXY->Exponent = A->Exponent + B->Exponent;
+        OutXY->IsNegative = false;
         return;
     }
 
@@ -1067,7 +789,7 @@ void MultiplyHelperKaratsubaV2(
     }
 
     // Update the exponent accordingly
-    Out->Exponent = A->Exponent + B->Exponent + shift_digits * 32;
+    OutXY->Exponent = A->Exponent + B->Exponent + shift_digits * 32;
 
     // Extract exactly N digits
     int src_idx = shift_digits;
@@ -1076,11 +798,11 @@ void MultiplyHelperKaratsubaV2(
         if (src_idx >= 0 && src_idx < significant_digits) {
             val = tempDigits[src_idx];
         }
-        Out->Digits[i] = val;
+        OutXY->Digits[i] = val;
     }
 
     // Set the sign
-    Out->IsNegative = (A->IsNegative ^ B->IsNegative);
+    OutXY->IsNegative = (A->IsNegative ^ B->IsNegative);
 
     // Print debugStates
     if constexpr (SharkFloatParams::HostVerbose) {
@@ -1092,13 +814,11 @@ void MultiplyHelperKaratsubaV2(
 
 
 #define ExplicitlyInstantiate(SharkFloatParams) \
-    template void MultiplyHelperKaratsubaV1<SharkFloatParams>( \
-        const HpSharkFloat<SharkFloatParams> *, \
-        const HpSharkFloat<SharkFloatParams> *, \
-        HpSharkFloat<SharkFloatParams> *); \
     template void MultiplyHelperKaratsubaV2<SharkFloatParams>( \
         const HpSharkFloat<SharkFloatParams> *, \
         const HpSharkFloat<SharkFloatParams> *, \
+        HpSharkFloat<SharkFloatParams> *, \
+        HpSharkFloat<SharkFloatParams> *, \
         HpSharkFloat<SharkFloatParams> *, \
         std::vector<DebugStateHost<SharkFloatParams>> &debugStates);
 

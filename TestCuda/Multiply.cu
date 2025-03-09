@@ -751,12 +751,10 @@ __device__ SharkForceInlineReleaseOnly static void SerialCarryPropagation(
     uint64_t *SharkRestrict shared_carries,
     cg::grid_group &grid,
     cg::thread_block &block,
-    const uint3 &threadIdx,
-    const uint3 &blockIdx,
     int thread_start_idx,
     int thread_end_idx,
-    int Convolution_offset,
-    int Result_offset,
+    int Convolution_offsetXY, // TODO just use pointers
+    int Result_offsetXY,
     uint64_t *SharkRestrict block_carry_outs,
     uint64_t *SharkRestrict tempProducts,
     uint64_t *SharkRestrict globalCarryCheck) {
@@ -765,7 +763,7 @@ __device__ SharkForceInlineReleaseOnly static void SerialCarryPropagation(
         uint64_t local_carry = 0;
 
         for (int idx = 0; idx < SharkFloatParams::GlobalNumUint32 * 2 + 1; ++idx) {
-            int sum_low_idx = Convolution_offset + idx * 2;
+            int sum_low_idx = Convolution_offsetXY + idx * 2;
             int sum_high_idx = sum_low_idx + 1;
 
             uint64_t sum_low = tempProducts[sum_low_idx];     // Lower 64 bits
@@ -777,7 +775,7 @@ __device__ SharkForceInlineReleaseOnly static void SerialCarryPropagation(
 
             // Extract one 32-bit digit from new_sum_low
             auto digit = static_cast<uint32_t>(new_sum_low & 0xFFFFFFFFULL);
-            tempProducts[Result_offset + idx] = digit;
+            tempProducts[Result_offsetXY + idx] = digit;
 
             bool local_carry_negative = ((local_carry & (1ULL << 63)) != 0);
             local_carry = 0ULL;
@@ -808,19 +806,28 @@ __device__ SharkForceInlineReleaseOnly static void CarryPropagation (
     uint64_t *SharkRestrict shared_carries,
     cg::grid_group &grid,
     cg::thread_block &block,
-    const uint3 &threadIdx,
-    const uint3 &blockIdx,
     int thread_start_idx,
     int thread_end_idx,
-    int Convolution_offset,
-    int Result_offset,
+    const uint64_t *SharkRestrict final128XX,
+    const uint64_t *SharkRestrict final128XY,
+    const uint64_t *SharkRestrict final128YY,
+    uint64_t *SharkRestrict resultXX,
+    uint64_t *SharkRestrict resultXY,
+    uint64_t *SharkRestrict resultYY,
     uint64_t *SharkRestrict block_carry_outs,
-    uint64_t *SharkRestrict tempProducts,
     uint64_t *SharkRestrict globalCarryCheck) {
+
+    // TODO: Ensure we allocate a minimum amount of shared memory to support shared_carries use
+    // TODO: Ensure we allocate a minimum amount of global memory to support block_carry_outs use
 
     // First Pass: Process convolution results to compute initial digits and local carries
     // Initialize local carry
-    uint64_t local_carry = 0;
+    uint64_t local_carry_xx = 0;
+    uint64_t local_carry_xy = 0;
+    uint64_t local_carry_yy = 0;
+
+    const auto MaxBlocks = grid.group_dim().x;
+    const auto MaxThreads = block.dim_threads().x;
 
     // Constants and offsets
     constexpr int MaxPasses = 5000; // Maximum number of carry propagation passes
@@ -829,46 +836,73 @@ __device__ SharkForceInlineReleaseOnly static void CarryPropagation (
     uint64_t *carries_remaining_global = globalCarryCheck;
 
     for (int idx = thread_start_idx; idx < thread_end_idx; ++idx) {
-        int sum_low_idx = Convolution_offset + idx * 2;
-        int sum_high_idx = sum_low_idx + 1;
+        const int sum_low_idx = idx * 2;
+        const int sum_high_idx = sum_low_idx + 1;
 
-        uint64_t sum_low = tempProducts[sum_low_idx];     // Lower 64 bits
-        uint64_t sum_high = tempProducts[sum_high_idx];   // Higher 64 bits
+        const uint64_t xx_sum_low = final128XX[sum_low_idx];     // Lower 64 bits
+        const uint64_t xx_sum_high = final128XX[sum_high_idx];   // Higher 64 bits
+
+        const uint64_t xy_sum_low = final128XY[sum_low_idx];     // Lower 64 bits
+        const uint64_t xy_sum_high = final128XY[sum_high_idx];   // Higher 64 bits
+
+        const uint64_t yy_sum_low = final128YY[sum_low_idx];     // Lower 64 bits
+        const uint64_t yy_sum_high = final128YY[sum_high_idx];   // Higher 64 bits
 
         // Add local carry to sum_low
-        bool new_sum_low_negative = false;
-        uint64_t new_sum_low = sum_low + local_carry;
+        auto LocalCarry = [](
+            uint64_t &local_carry,
+            uint64_t sum_low,
+            uint64_t sum_high,
+            uint64_t *result,
+            int idx) {
 
-        // Extract one 32-bit digit from new_sum_low
-        auto digit = static_cast<uint32_t>(new_sum_low & 0xFFFFFFFFULL);
-        tempProducts[Result_offset + idx] = digit;
+            bool new_sum_low_negative = false;
+            const uint64_t new_sum_low = sum_low + local_carry;
 
-        bool local_carry_negative = ((local_carry & (1ULL << 63)) != 0);
-        local_carry = 0ULL;
+            // Extract one 32-bit digit from new_sum_low
+            const auto digit = static_cast<uint32_t>(new_sum_low & 0xFFFFFFFFULL);
+            result[idx] = digit;
 
-        if (!local_carry_negative && new_sum_low < sum_low) {
-            local_carry = 1ULL << 32;
-        } else if (local_carry_negative && new_sum_low > sum_low) {
-            new_sum_low_negative = (new_sum_low & 0x8000'0000'0000'0000) != 0;
-        }
+            const bool local_carry_negative = ((local_carry & (1ULL << 63)) != 0);
+            local_carry = 0ULL;
 
-        // Update local_carry
-        if (new_sum_low_negative) {
-            // Shift sum_high by 32 bits and add carry_from_low
-            uint64_t upper_new_sum_low = new_sum_low >> 32;
-            upper_new_sum_low |= 0xFFFF'FFFF'0000'0000;
-            local_carry += upper_new_sum_low;
-            local_carry += sum_high << 32;
-        } else {
-            local_carry += new_sum_low >> 32;
-            local_carry += sum_high << 32;
-        }
+            if (!local_carry_negative && new_sum_low < sum_low) {
+                local_carry = 1ULL << 32;
+            } else if (local_carry_negative && new_sum_low > sum_low) {
+                new_sum_low_negative = (new_sum_low & 0x8000'0000'0000'0000) != 0;
+            }
+
+            // Update local_carry
+            if (new_sum_low_negative) {
+                // Shift sum_high by 32 bits and add carry_from_low
+                uint64_t upper_new_sum_low = new_sum_low >> 32;
+                upper_new_sum_low |= 0xFFFF'FFFF'0000'0000;
+                local_carry += upper_new_sum_low;
+                local_carry += sum_high << 32;
+            } else {
+                local_carry += new_sum_low >> 32;
+                local_carry += sum_high << 32;
+            }
+        };
+
+        // Process xx_sum
+        LocalCarry(local_carry_xx, xx_sum_low, xx_sum_high, resultXX, idx);
+
+        // Process xy_sum
+        LocalCarry(local_carry_xy, xy_sum_low, xy_sum_high, resultXY, idx);
+
+        // Process yy_sum
+        LocalCarry(local_carry_yy, yy_sum_low, yy_sum_high, resultYY, idx);
     }
 
     if (block.thread_index().x == SharkFloatParams::GlobalThreadsPerBlock - 1) {
-        block_carry_outs[block.group_index().x] = local_carry;
+        block_carry_outs[block.group_index().x + 0 * MaxBlocks] = local_carry_xx;
+        block_carry_outs[block.group_index().x + 1 * MaxBlocks] = local_carry_xy;
+        block_carry_outs[block.group_index().x + 2 * MaxBlocks] = local_carry_yy;
     } else {
-        shared_carries[block.thread_index().x] = local_carry;
+        shared_carries[block.thread_index().x + 0 * MaxThreads] = local_carry_xx;
+        shared_carries[block.thread_index().x + 1 * MaxThreads] = local_carry_xy;
+        shared_carries[block.thread_index().x + 2 * MaxThreads] = local_carry_yy;
     }
 
     // Inter-Block Carry Propagation
@@ -884,54 +918,96 @@ __device__ SharkForceInlineReleaseOnly static void CarryPropagation (
         }
 
         // Get carry-in from the previous block
-        local_carry = 0;
-        if (block.thread_index().x == 0 && block.group_index().x > 0) {
-            local_carry = block_carry_outs[block.group_index().x - 1];
-        } else {
-            if (block.thread_index().x > 0) {
-                local_carry = shared_carries[block.thread_index().x - 1];
+        // The warning here is about the constant template parameter not being used in
+        // the parameter list.  I don't understand why it's even a warning?  Maybe because
+        // it cannot be inferred?  It's clearly being used in the body?
+#pragma nv_diag_suppress 445
+        auto LocalCarryIn = []<int XX_XY_YY>(
+            cg::thread_block & block,
+            const int MaxBlocks,
+            const int MaxThreads,
+            uint64_t &local_carry,
+            uint64_t *SharkRestrict block_carry_outs,
+            uint64_t *SharkRestrict shared_carries) {
+
+            local_carry = 0;
+            if (block.thread_index().x == 0 && block.group_index().x > 0) {
+                local_carry = block_carry_outs[block.group_index().x + XX_XY_YY * MaxBlocks - 1];
+            } else {
+                if (block.thread_index().x > 0) {
+                    local_carry = shared_carries[block.thread_index().x + XX_XY_YY * MaxThreads - 1];
+                }
             }
-        }
+            };
+#pragma nv_diag_default 445
+
+        // Initialize local carry for this pass
+        LocalCarryIn.template operator()<0>(block, MaxBlocks, MaxThreads, local_carry_xx, block_carry_outs, shared_carries);
+        LocalCarryIn.template operator()<1>(block, MaxBlocks, MaxThreads, local_carry_xy, block_carry_outs, shared_carries);
+        LocalCarryIn.template operator()<2>(block, MaxBlocks, MaxThreads, local_carry_yy, block_carry_outs, shared_carries);
 
         // Each thread processes its assigned digits
         for (int idx = thread_start_idx; idx < thread_end_idx; ++idx) {
-            // Read the previously stored digit
-            uint32_t digit = tempProducts[Result_offset + idx];
 
-            // Add local_carry to digit
-            uint64_t sum = static_cast<uint64_t>(digit) + local_carry;
+            auto LocalCarry = [](uint64_t *SharkRestrict resultXY, uint64_t &local_carry, int idx) {
+                // Read the previously stored digit
+                const uint32_t digit = resultXY[idx];
 
-            // Update digit
-            digit = static_cast<uint32_t>(sum & 0xFFFFFFFFULL);
-            tempProducts[Result_offset + idx] = digit;
+                // Add local_carry to digit
+                const uint64_t sum = static_cast<uint64_t>(digit) + local_carry;
 
-            local_carry = 0;
+                // Update digit
+                resultXY[idx] = static_cast<uint32_t>(sum & 0xFFFFFFFFULL);
 
-            // Check negativity of the 64-bit sum
-            // If "sum" is negative, its top bit is set. 
-            bool sum_is_negative = ((sum & (1ULL << 63)) != 0ULL);
+                local_carry = 0;
 
-            if (sum_is_negative) {
-                // sign-extend the top 32 bits
-                uint64_t upper_bits = (sum >> 32);
-                upper_bits |= 0xFFFF'FFFF'0000'0000ULL;  // set top 32 bits to 1
-                local_carry += upper_bits;               // incorporate sign-extended bits
-            } else {
-                // normal path: just add top 32 bits
-                local_carry += (sum >> 32);
-            }
+                // Check negativity of the 64-bit sum
+                // If "sum" is negative, its top bit is set. 
+                const bool sum_is_negative = ((sum & (1ULL << 63)) != 0ULL);
+                if (sum_is_negative) {
+                    // sign-extend the top 32 bits
+                    uint64_t upper_bits = (sum >> 32);
+                    upper_bits |= 0xFFFF'FFFF'0000'0000ULL;  // set top 32 bits to 1
+                    local_carry += upper_bits;               // incorporate sign-extended bits
+                } else {
+                    // normal path: just add top 32 bits
+                    local_carry += (sum >> 32);
+                }
+            };
+
+            // Process xx_sum
+            LocalCarry(resultXX, local_carry_xx, idx);
+
+            // Process xy_sum
+            LocalCarry(resultXY, local_carry_xy, idx);
+
+            // Process yy_sum
+            LocalCarry(resultYY, local_carry_yy, idx);
         }
 
-        shared_carries[block.thread_index().x] = local_carry;
+        // TODO should we interleave each of these instead of separating them?  probably?
+        shared_carries[block.thread_index().x + 0 * MaxThreads] = local_carry_xx;
+        shared_carries[block.thread_index().x + 1 * MaxThreads] = local_carry_xy;
+        shared_carries[block.thread_index().x + 2 * MaxThreads] = local_carry_yy;
         block.sync();
 
         // The block's carry-out is the carry from the last thread
-        auto temp = shared_carries[block.thread_index().x];
+        const auto temp_xx = shared_carries[block.thread_index().x + 0 * MaxThreads];
         if (block.thread_index().x == SharkFloatParams::GlobalThreadsPerBlock - 1) {
-            block_carry_outs[block.group_index().x] = temp;
+            block_carry_outs[block.group_index().x + 0 * MaxBlocks] = temp_xx;
         }
 
-        if (temp != 0) {
+        const auto temp_xy = shared_carries[block.thread_index().x + 1 * MaxThreads];
+        if (block.thread_index().x == SharkFloatParams::GlobalThreadsPerBlock - 1) {
+            block_carry_outs[block.group_index().x + 1 * MaxBlocks] = temp_xy;
+        }
+
+        const auto temp_yy = shared_carries[block.thread_index().x + 2 * MaxThreads];
+        if (block.thread_index().x == SharkFloatParams::GlobalThreadsPerBlock - 1) {
+            block_carry_outs[block.group_index().x + 2 * MaxBlocks] = temp_yy;
+        }
+
+        if (temp_xx != 0 || temp_xy != 0 || temp_yy != 0) {
             atomicAdd(carries_remaining_global, 1);
         }
 
@@ -948,13 +1024,25 @@ __device__ SharkForceInlineReleaseOnly static void CarryPropagation (
 
     // ---- Handle Final Carry-Out ----
 
+    // TODO is this correct?  remove?
     // Handle final carry-out
     if (block.thread_index().x == 0 && block.group_index().x == grid.dim_blocks().x - 1) {
-        uint64_t final_carry = block_carry_outs[block.group_index().x];
-        if (final_carry > 0) {
+        uint64_t final_carry_xx = block_carry_outs[block.group_index().x + 0 * MaxBlocks];
+        if (final_carry_xx > 0) {
             // Store the final carry as an additional digit
-            tempProducts[Result_offset + total_result_digits] = static_cast<uint32_t>(final_carry & 0xFFFFFFFFULL);
-            // Optionally, you may need to adjust total_result_digits
+            resultXX[total_result_digits] = static_cast<uint32_t>(final_carry_xx & 0xFFFFFFFFULL);
+        }
+
+        uint64_t final_carry_xy = block_carry_outs[block.group_index().x + 1 * MaxBlocks];
+        if (final_carry_xy > 0) {
+            // Store the final carry as an additional digit
+            resultXY[total_result_digits] = static_cast<uint32_t>(final_carry_xy & 0xFFFFFFFFULL);
+        }
+
+        uint64_t final_carry_yy = block_carry_outs[block.group_index().x + 2 * MaxBlocks];
+        if (final_carry_yy > 0) {
+            // Store the final carry as an additional digit
+            resultYY[total_result_digits] = static_cast<uint32_t>(final_carry_yy & 0xFFFFFFFFULL);
         }
     }
 
@@ -975,13 +1063,25 @@ static_assert(AdditionalUInt64PerFrame == 256, "See below");
     auto *SharkRestrict debugChecksumArray = reinterpret_cast<DebugState<SharkFloatParams>*>(&tempProducts[Checksum_offset]); \
     constexpr auto Random_offset = Checksum_offset + AdditionalGlobalRandomSpace; \
     auto *SharkRestrict debugRandomArray = reinterpret_cast<curandState *>(&tempProducts[Random_offset]); \
-    constexpr auto Z0_offset = TempBaseOffset + AdditionalUInt64PerFrame; /* 0 */ \
-    constexpr auto Z2_offset = Z0_offset + 4 * NewN * TestMultiplier; /* 4 */ \
-    constexpr auto Z1_temp_offset = Z2_offset + 4 * NewN * TestMultiplier; /* 8 */ \
-    constexpr auto Z1_offset = Z1_temp_offset + 4 * NewN * TestMultiplier; /* 12 */ \
-    constexpr auto Convolution_offset = Z1_offset + 4 * NewN * TestMultiplier;       /* 16 */ \
-    constexpr auto Result_offset = Convolution_offset + 4 * NewN * TestMultiplier;   /* 20 */ \
-    constexpr auto XDiff_offset = Result_offset + 2 * NewN * TestMultiplier;         /* 22 */ \
+    constexpr auto Z0_offsetXX = TempBaseOffset + AdditionalUInt64PerFrame;          /* 0 */ \
+    constexpr auto Z0_offsetXY = Z0_offsetXX + 4 * NewN * TestMultiplier;            /* 4 */ \
+    constexpr auto Z0_offsetYY = Z0_offsetXY + 4 * NewN * TestMultiplier;            /* 8 */ \
+    constexpr auto Z2_offsetXX = Z0_offsetYY + 4 * NewN * TestMultiplier;            /* 12 */ \
+    constexpr auto Z2_offsetXY = Z2_offsetXX + 4 * NewN * TestMultiplier;            /* 16 */ \
+    constexpr auto Z2_offsetYY = Z2_offsetXY + 4 * NewN * TestMultiplier;            /* 20 */ \
+    constexpr auto Z1_temp_offsetXX = Z2_offsetYY + 4 * NewN * TestMultiplier;       /* 24 */ \
+    constexpr auto Z1_temp_offsetXY = Z1_temp_offsetXX + 4 * NewN * TestMultiplier;  /* 28 */ \
+    constexpr auto Z1_temp_offsetYY = Z1_temp_offsetXY + 4 * NewN * TestMultiplier;  /* 32 */ \
+    constexpr auto Z1_offsetXX = Z1_temp_offsetYY + 4 * NewN * TestMultiplier;       /* 36 */ \
+    constexpr auto Z1_offsetXY = Z1_offsetXX + 4 * NewN * TestMultiplier;            /* 40 */ \
+    constexpr auto Z1_offsetYY = Z1_offsetXY + 4 * NewN * TestMultiplier;            /* 44 */ \
+    constexpr auto Convolution_offsetXX = Z1_offsetYY + 4 * NewN * TestMultiplier;   /* 48 */ \
+    constexpr auto Convolution_offsetXY = Convolution_offsetXX + 4 * NewN * TestMultiplier; /* 52 */ \
+    constexpr auto Convolution_offsetYY = Convolution_offsetXY + 4 * NewN * TestMultiplier; /* 56 */ \
+    constexpr auto Result_offsetXX = Convolution_offsetYY + 4 * NewN * TestMultiplier;      /* 60 */ \
+    constexpr auto Result_offsetXY = Result_offsetXX + 4 * NewN * TestMultiplier;           /* 64 */ \
+    constexpr auto Result_offsetYY = Result_offsetXY + 4 * NewN * TestMultiplier;    /* 68 */ \
+    constexpr auto XDiff_offset = Result_offsetYY + 2 * NewN * TestMultiplier;         /* 22 */ \
     constexpr auto YDiff_offset = XDiff_offset + 1 * NewN * TestMultiplier;          /* 23 */ \
     constexpr auto GlobalCarryOffset = YDiff_offset + 1 * NewN * TestMultiplier;     /* 24 */ \
     constexpr auto SubtractionOffset1 = GlobalCarryOffset + 1 * NewN * TestMultiplier;   /* 25 */ \
@@ -1074,7 +1174,9 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
     const uint32_t *SharkRestrict bDigits,
     uint32_t *SharkRestrict x_diff_abs,
     uint32_t *SharkRestrict y_diff_abs,
-    uint64_t *SharkRestrict final128,
+    uint64_t *SharkRestrict final128XX,
+    uint64_t *SharkRestrict final128XY,
+    uint64_t *SharkRestrict final128YY,
     cg::grid_group &grid,
     cg::thread_block &block,
     uint64_t *SharkRestrict tempProducts) {
@@ -1121,9 +1223,17 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
         DebugRandomDelay(block, debugRandomArray);
     }
 
-    auto *SharkRestrict Z0_OutDigits = &tempProducts[Z0_offset];
-    auto *SharkRestrict Z1_temp_digits = &tempProducts[Z1_temp_offset];
-    auto *SharkRestrict Z2_OutDigits = &tempProducts[Z2_offset];
+    auto *SharkRestrict Z0_OutDigitsXX = &tempProducts[Z0_offsetXX];
+    auto *SharkRestrict Z0_OutDigitsXY = &tempProducts[Z0_offsetXY];
+    auto *SharkRestrict Z0_OutDigitsYY = &tempProducts[Z0_offsetYY];
+
+    auto *SharkRestrict Z1_temp_digitsXX = &tempProducts[Z1_temp_offsetXX];
+    auto *SharkRestrict Z1_temp_digitsXY = &tempProducts[Z1_temp_offsetXY];
+    auto *SharkRestrict Z1_temp_digitsYY = &tempProducts[Z1_temp_offsetYY];
+
+    auto *SharkRestrict Z2_OutDigitsXX = &tempProducts[Z2_offsetXX];
+    auto *SharkRestrict Z2_OutDigitsXY = &tempProducts[Z2_offsetXY];
+    auto *SharkRestrict Z2_OutDigitsYY = &tempProducts[Z2_offsetYY];
 
     // Arrays to hold the absolute differences (size n)
     auto *SharkRestrict global_x_diff_abs = reinterpret_cast<uint32_t *>(&tempProducts[XDiff_offset]);
@@ -1341,7 +1451,11 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
     constexpr auto SubNewN1b = SubRemainingNewN - SubNewN2b;   /* n1 is larger or same */
 
     // Determine the sign of Z1_temp
-    int z1_sign = x_diff_sign ^ y_diff_sign;
+    // int z1_sign = x_diff_sign ^ y_diff_sign;
+
+    const int z1_signXX = (x_diff_sign ^ x_diff_sign) ? 1 : 0; // TODO obviously can be simplified
+    const int z1_signXY = (x_diff_sign ^ y_diff_sign) ? 1 : 0;
+    const int z1_signYY = (y_diff_sign ^ y_diff_sign) ? 1 : 0;
 
     constexpr auto FinalZ0Size =
         (UseConvolutionHere == UseConvolution::Yes) ?
@@ -1366,11 +1480,6 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
         const int tid = RelativeBlockIndex * block.dim_threads().x + block.thread_index().x;
         const int stride = block.dim_threads().x * ExecutionNumBlocks;
 
-        //if (tid == 3) {
-        //    Z0_OutDigits[8] = block.dim_threads().x;
-        //    Z0_OutDigits[9] = block.thread_index().x;
-        //}
-
         if constexpr (EnableSharedDiff) {
             // Wait for the first batch of A to be loaded
             cg::wait(block);
@@ -1383,86 +1492,162 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             if (idx < total_k) {
                 // Z0 partial sums
                 int k = idx;
-                uint64_t sum_low = 0ULL, sum_high = 0ULL;
+                uint64_t xx_sum_low = 0ULL, xx_sum_high = 0ULL;
+                uint64_t xy_sum_low = 0ULL, xy_sum_high = 0ULL;
+                uint64_t yy_sum_low = 0ULL, yy_sum_high = 0ULL;
 
                 int i_start = (k < n1) ? 0 : (k - (n1 - 1));
                 int i_end = (k < n1) ? k : (n1 - 1);
 
                 for (int i = i_start; i <= i_end; i++) {
-                    uint64_t a;
-                    uint64_t b;
+                    // X * X
+                    uint64_t xx_a = aDigits[i];
+                    uint64_t xx_b = aDigits[k - i];
 
-                    a = aDigits[i]; // A_shared[i];         // A0[i]
-                    b = bDigits[k - i]; // B_shared[k - i];     // B0[k - i]
+                    // X * Y
+                    uint64_t xy_a = aDigits[i];     // A0[i]
+                    uint64_t xy_b = bDigits[k - i]; // B0[k - i]
 
-                    uint64_t product = a * b;
+                    // Y * Y
+                    uint64_t yy_a = bDigits[i];     // A0[i]
+                    uint64_t yy_b = bDigits[k - i]; // B0[k - i]
+
+                    // Calculate products
+                    uint64_t xx_product = xx_a * xx_b;
+                    uint64_t xy_product = xy_a * xy_b;
+                    uint64_t yy_product = yy_a * yy_b;
 
                     // Add product to sum
-                    sum_low += product;
-                    if (sum_low < product) {
-                        sum_high += 1;
+                    xx_sum_low += xx_product;
+                    if (xx_sum_low < xx_product) {
+                        xx_sum_high += 1;
+                    }
+
+                    xy_sum_low += xy_product;
+                    if (xy_sum_low < xy_product) {
+                        xy_sum_high += 1;
+                    }
+
+                    yy_sum_low += yy_product;
+                    if (yy_sum_low < yy_product) {
+                        yy_sum_high += 1;
                     }
                 }
 
                 int out_idx = k * 2;
-                Z0_OutDigits[out_idx] = sum_low;
-                Z0_OutDigits[out_idx + 1] = sum_high;
+
+                // Write the results to the output arrays
+                Z0_OutDigitsXX[out_idx] = xx_sum_low;
+                Z0_OutDigitsXX[out_idx + 1] = xx_sum_high;
+
+                Z0_OutDigitsXY[out_idx] = xy_sum_low;
+                Z0_OutDigitsXY[out_idx + 1] = xy_sum_high;
+
+                Z0_OutDigitsYY[out_idx] = yy_sum_low;
+                Z0_OutDigitsYY[out_idx + 1] = yy_sum_high;
             } else if (idx < 2 * total_k) {
                 // Z2 partial sums
                 int k = idx - total_k; // shift to [0..total_k-1]
-                uint64_t sum_low = 0ULL, sum_high = 0ULL;
+                uint64_t xx_sum_low = 0ULL, xx_sum_high = 0ULL;
+                uint64_t xy_sum_low = 0ULL, xy_sum_high = 0ULL;
+                uint64_t yy_sum_low = 0ULL, yy_sum_high = 0ULL;
 
                 int i_start = (k < n2) ? 0 : (k - (n2 - 1));
                 int i_end = (k < n2) ? k : (n2 - 1);
 
                 for (int i = i_start; i <= i_end; i++) {
-                    uint64_t a;
-                    uint64_t b;
+                    uint64_t xx_a = aDigits[i + n1]; // A1[i]
+                    uint64_t xx_b = aDigits[k - i + n1]; // A1[k - i]
 
-                    a = aDigits[i + n1]; // A_shared[i];         // A1[i]
-                    b = bDigits[k - i + n1]; // B_shared[k - i];     // B1[k - i]
+                    uint64_t xy_a = aDigits[i + n1]; // A1[i]
+                    uint64_t xy_b = bDigits[k - i + n1]; // B1[k - i]
 
-                    uint64_t product = a * b;
+                    uint64_t yy_a = bDigits[i + n1]; // B1[i]
+                    uint64_t yy_b = bDigits[k - i + n1]; // B1[k - i]
+
+                    // Calculate products
+                    uint64_t xx_product = xx_a * xx_b;
+                    uint64_t xy_product = xy_a * xy_b;
+                    uint64_t yy_product = yy_a * yy_b;
 
                     // Add product to sum
-                    sum_low += product;
-                    if (sum_low < product) {
-                        sum_high += 1;
+                    xx_sum_low += xx_product;
+                    if (xx_sum_low < xx_product) {
+                        xx_sum_high += 1;
+                    }
+
+                    xy_sum_low += xy_product;
+                    if (xy_sum_low < xy_product) {
+                        xy_sum_high += 1;
+                    }
+
+                    yy_sum_low += yy_product;
+                    if (yy_sum_low < yy_product) {
+                        yy_sum_high += 1;
                     }
                 }
 
-                // store sum_low, sum_high in Z2_OutDigits
+                // store sum_low, sum_high in Z2_OutDigitsXY
                 int out_idx = k * 2;
-                Z2_OutDigits[out_idx] = sum_low;
-                Z2_OutDigits[out_idx + 1] = sum_high;
+                Z2_OutDigitsXX[out_idx] = xx_sum_low;
+                Z2_OutDigitsXX[out_idx + 1] = xx_sum_high;
+
+                Z2_OutDigitsXY[out_idx] = xy_sum_low;
+                Z2_OutDigitsXY[out_idx + 1] = xy_sum_high;
+
+                Z2_OutDigitsYY[out_idx] = yy_sum_low;
+                Z2_OutDigitsYY[out_idx + 1] = yy_sum_high;
             } else {
                 int k = idx - 2 * total_k; // shift to [0..total_k-1]
-                uint64_t sum_low = 0;
-                uint64_t sum_high = 0;
+                uint64_t xx_sum_low = 0ULL, xx_sum_high = 0ULL;
+                uint64_t xy_sum_low = 0ULL, xy_sum_high = 0ULL;
+                uint64_t yy_sum_low = 0ULL, yy_sum_high = 0ULL;
 
                 int i_start = (k < MaxHalfN) ? 0 : (k - (MaxHalfN - 1));
                 int i_end = (k < MaxHalfN) ? k : (MaxHalfN - 1);
 
                 for (int i = i_start; i <= i_end; ++i) {
-                    uint64_t a;
-                    uint64_t b;
+                    uint64_t xx_a = EnableSharedDiff ? x_diff_abs[i] : global_x_diff_abs[i];
+                    uint64_t xx_b = EnableSharedDiff ? x_diff_abs[k - i] : global_x_diff_abs[k - i];
 
-                    a = EnableSharedDiff ? x_diff_abs[i] : global_x_diff_abs[i];
-                    b = EnableSharedDiff ? y_diff_abs[k - i] : global_y_diff_abs[k - i];
+                    uint64_t xy_a = EnableSharedDiff ? x_diff_abs[i] : global_x_diff_abs[i];
+                    uint64_t xy_b = EnableSharedDiff ? y_diff_abs[k - i] : global_y_diff_abs[k - i];
 
-                    uint64_t product = a * b;
+                    uint64_t yy_a = EnableSharedDiff ? y_diff_abs[i] : global_y_diff_abs[i];
+                    uint64_t yy_b = EnableSharedDiff ? y_diff_abs[k - i] : global_y_diff_abs[k - i];
+
+                    // Calculate products
+                    uint64_t xx_product = xx_a * xx_b;
+                    uint64_t xy_product = xy_a * xy_b;
+                    uint64_t yy_product = yy_a * yy_b;
 
                     // Accumulate the product
-                    sum_low += product;
-                    if (sum_low < product) {
-                        sum_high += 1;
+                    xx_sum_low += xx_product;
+                    if (xx_sum_low < xx_product) {
+                        xx_sum_high += 1;
+                    }
+
+                    xy_sum_low += xy_product;
+                    if (xy_sum_low < xy_product) {
+                        xy_sum_high += 1;
+                    }
+
+                    yy_sum_low += yy_product;
+                    if (yy_sum_low < yy_product) {
+                        yy_sum_high += 1;
                     }
                 }
 
                 // Store sum_low and sum_high in tempProducts
                 int out_idx = k * 2;
-                Z1_temp_digits[out_idx] = sum_low;
-                Z1_temp_digits[out_idx + 1] = sum_high;
+                Z1_temp_digitsXX[out_idx] = xx_sum_low;
+                Z1_temp_digitsXX[out_idx + 1] = xx_sum_high;
+
+                Z1_temp_digitsXY[out_idx] = xy_sum_low;
+                Z1_temp_digitsXY[out_idx + 1] = xy_sum_high;
+
+                Z1_temp_digitsYY[out_idx] = yy_sum_low;
+                Z1_temp_digitsYY[out_idx + 1] = yy_sum_high;
             }
         }
     } else {
@@ -1486,7 +1671,9 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             bDigits,
             x_diff_abs,
             y_diff_abs,
-            Z0_OutDigits,
+            Z0_OutDigitsXX,
+            Z0_OutDigitsXY,
+            Z0_OutDigitsYY,
             grid,
             block,
             tempProducts);
@@ -1509,7 +1696,9 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             bDigits + n1,
             x_diff_abs,
             y_diff_abs,
-            Z2_OutDigits,
+            Z2_OutDigitsXX,
+            Z2_OutDigitsXY,
+            Z2_OutDigitsYY,
             grid,
             block,
             tempProducts);
@@ -1557,7 +1746,9 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                         EnableSharedDiff ? bDigits : global_y_diff_abs,
                         x_diff_abs,
                         y_diff_abs,
-                        Z1_temp_digits,
+                        Z1_temp_digitsXX,
+                        Z1_temp_digitsXY,
+                        Z1_temp_digitsYY,
                         grid,
                         block,
                         tempProducts);
@@ -1580,19 +1771,26 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
     grid.sync();
 
     if constexpr (SharkDebugChecksums) {
-        StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z0>(
-            record, UseConvolutionHere, debugChecksumArray, grid, block, Z0_OutDigits, FinalZ0Size);
+        StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z0XX>(
+            record, UseConvolutionHere, debugChecksumArray, grid, block, Z0_OutDigitsXX, FinalZ0Size);
+        StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z0XY>(
+            record, UseConvolutionHere, debugChecksumArray, grid, block, Z0_OutDigitsXY, FinalZ0Size);
+        StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z0YY>(
+            record, UseConvolutionHere, debugChecksumArray, grid, block, Z0_OutDigitsYY, FinalZ0Size);
 
-        //cg::memcpy_async(block,
-        //    (uint64_t *)debugChecksumArray,
-        //    (uint64_t *)Z0_OutDigits,
-        //    sizeof(uint64_t) * FinalZ0Size);
-        //cg::wait(block);
+        StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2XX>(
+            record, UseConvolutionHere, debugChecksumArray, grid, block, Z2_OutDigitsXX, FinalZ2Size);
+        StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2XY>(
+            record, UseConvolutionHere, debugChecksumArray, grid, block, Z2_OutDigitsXY, FinalZ2Size);
+        StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2YY>(
+            record, UseConvolutionHere, debugChecksumArray, grid, block, Z2_OutDigitsYY, FinalZ2Size);
 
-        StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2>(
-            record, UseConvolutionHere, debugChecksumArray, grid, block, Z2_OutDigits, FinalZ2Size);
-        StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1_offset>(
-            record, UseConvolutionHere, debugChecksumArray, grid, block, Z1_temp_digits, FinalZ1TempSize);
+        StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1_offsetXX>(
+            record, UseConvolutionHere, debugChecksumArray, grid, block, Z1_temp_digitsXX, FinalZ1TempSize);
+        StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1_offsetXY>(
+            record, UseConvolutionHere, debugChecksumArray, grid, block, Z1_temp_digitsXY, FinalZ1TempSize);
+        StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1_offsetYY>(
+            record, UseConvolutionHere, debugChecksumArray, grid, block, Z1_temp_digitsYY, FinalZ1TempSize);
 
         grid.sync();
     }
@@ -1601,7 +1799,9 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
         DebugRandomDelay(block, debugRandomArray);
     }
 
-    auto *SharkRestrict Z1_digits = &tempProducts[Z1_offset];
+    auto *SharkRestrict Z1_digitsXX = &tempProducts[Z1_offsetXX];
+    auto *SharkRestrict Z1_digitsXY = &tempProducts[Z1_offsetXY];
+    auto *SharkRestrict Z1_digitsYY = &tempProducts[Z1_offsetYY];
 
     if constexpr (!SharkFloatParams::DisableAllAdditions) {
 
@@ -1615,43 +1815,97 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
         for (int i = tid; i < total_k; i += stride) {
             // Retrieve Z0
             int z0_idx = i * 2;
-            uint64_t z0_low = Z0_OutDigits[z0_idx];
-            uint64_t z0_high = Z0_OutDigits[z0_idx + 1];
+            const uint64_t xx_z0_low = Z0_OutDigitsXX[z0_idx];
+            const uint64_t xx_z0_high = Z0_OutDigitsXX[z0_idx + 1];
+
+            const uint64_t xy_z0_low = Z0_OutDigitsXY[z0_idx];
+            const uint64_t xy_z0_high = Z0_OutDigitsXY[z0_idx + 1];
+
+            const uint64_t yy_z0_low = Z0_OutDigitsYY[z0_idx];
+            const uint64_t yy_z0_high = Z0_OutDigitsYY[z0_idx + 1];
 
             // Retrieve Z2
             int z2_idx = i * 2;
-            uint64_t z2_low = z2_idx < FinalZ2Size ? Z2_OutDigits[z2_idx] : 0;
-            uint64_t z2_high = z2_idx < FinalZ2Size ? Z2_OutDigits[z2_idx + 1] : 0;
+            const uint64_t xx_z2_low = z2_idx < FinalZ2Size ? Z2_OutDigitsXX[z2_idx] : 0;
+            const uint64_t xx_z2_high = z2_idx < FinalZ2Size ? Z2_OutDigitsXX[z2_idx + 1] : 0;
+
+            const uint64_t xy_z2_low = z2_idx < FinalZ2Size ? Z2_OutDigitsXY[z2_idx] : 0;
+            const uint64_t xy_z2_high = z2_idx < FinalZ2Size ? Z2_OutDigitsXY[z2_idx + 1] : 0;
+
+            const uint64_t yy_z2_low = z2_idx < FinalZ2Size ? Z2_OutDigitsYY[z2_idx] : 0;
+            const uint64_t yy_z2_high = z2_idx < FinalZ2Size ? Z2_OutDigitsYY[z2_idx + 1] : 0;
 
             // Retrieve Z1_temp (Z1')
             int z1_temp_idx = i * 2;
-            uint64_t z1_temp_low = Z1_temp_digits[z1_temp_idx];
-            uint64_t z1_temp_high = Z1_temp_digits[z1_temp_idx + 1];
+            const uint64_t xx_z1_temp_low = Z1_temp_digitsXX[z1_temp_idx];
+            const uint64_t xx_z1_temp_high = Z1_temp_digitsXX[z1_temp_idx + 1];
+
+            const uint64_t xy_z1_temp_low = Z1_temp_digitsXY[z1_temp_idx];
+            const uint64_t xy_z1_temp_high = Z1_temp_digitsXY[z1_temp_idx + 1];
+
+            const uint64_t yy_z1_temp_low = Z1_temp_digitsYY[z1_temp_idx];
+            const uint64_t yy_z1_temp_high = Z1_temp_digitsYY[z1_temp_idx + 1];
 
             // Combine Z2 + Z0 first
-            uint64_t temp_low, temp_high;
-            Add128(z2_low, z2_high, z0_low, z0_high, temp_low, temp_high);
+            uint64_t xx_temp_low, xx_temp_high;
+            uint64_t xy_temp_low, xy_temp_high;
+            uint64_t yy_temp_low, yy_temp_high;
 
-            uint64_t z1_low, z1_high;
-            if (z1_sign == 0) {
+            Add128(xx_z2_low, xx_z2_high, xx_z0_low, xx_z0_high, xx_temp_low, xx_temp_high);
+            Add128(xy_z2_low, xy_z2_high, xy_z0_low, xy_z0_high, xy_temp_low, xy_temp_high);
+            Add128(yy_z2_low, yy_z2_high, yy_z0_low, yy_z0_high, yy_temp_low, yy_temp_high);
+
+            // Now combine with Z1_temp
+            // Z1 = (Z2 + Z0) +/- Z1_temp
+            uint64_t xx_z1_low, xx_z1_high;
+            uint64_t xy_z1_low, xy_z1_high;
+            uint64_t yy_z1_low, yy_z1_high;
+
+            if (z1_signXX == 0) {
                 // same sign: Z1 = (Z2 + Z0) - Z1_temp
-                Subtract128(temp_low, temp_high, z1_temp_low, z1_temp_high, z1_low, z1_high);
+                Subtract128(xx_temp_low, xx_temp_high, xx_z1_temp_low, xx_z1_temp_high, xx_z1_low, xx_z1_high);
             } else {
                 // opposite signs: Z1 = (Z2 + Z0) + Z1_temp
-                Add128(temp_low, temp_high, z1_temp_low, z1_temp_high, z1_low, z1_high);
+                Add128(xx_temp_low, xx_temp_high, xx_z1_temp_low, xx_z1_temp_high, xx_z1_low, xx_z1_high);
+            }
+
+            if (z1_signXY == 0) {
+                // same sign: Z1 = (Z2 + Z0) - Z1_temp
+                Subtract128(xy_temp_low, xy_temp_high, xy_z1_temp_low, xy_z1_temp_high, xy_z1_low, xy_z1_high);
+            } else {
+                // opposite signs: Z1 = (Z2 + Z0) + Z1_temp
+                Add128(xy_temp_low, xy_temp_high, xy_z1_temp_low, xy_z1_temp_high, xy_z1_low, xy_z1_high);
+            }
+
+            if (z1_signYY == 0) {
+                // same sign: Z1 = (Z2 + Z0) - Z1_temp
+                Subtract128(yy_temp_low, yy_temp_high, yy_z1_temp_low, yy_z1_temp_high, yy_z1_low, yy_z1_high);
+            } else {
+                // opposite signs: Z1 = (Z2 + Z0) + Z1_temp
+                Add128(yy_temp_low, yy_temp_high, yy_z1_temp_low, yy_z1_temp_high, yy_z1_low, yy_z1_high);
             }
 
             // Store fully formed Z1
             int z1_idx = i * 2;
-            Z1_digits[z1_idx] = z1_low;
-            Z1_digits[z1_idx + 1] = z1_high;
+            Z1_digitsXX[z1_idx] = xx_z1_low;
+            Z1_digitsXX[z1_idx + 1] = xx_z1_high;
+
+            Z1_digitsXY[z1_idx] = xy_z1_low;
+            Z1_digitsXY[z1_idx + 1] = xy_z1_high;
+
+            Z1_digitsYY[z1_idx] = yy_z1_low;
+            Z1_digitsYY[z1_idx + 1] = yy_z1_high;
         }
 
         if constexpr (SharkDebugChecksums) {
             grid.sync();
 
-            StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1>(
-                record, UseConvolutionHere, debugChecksumArray, grid, block, Z1_digits, total_k * 2);
+            StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1XX>(
+                record, UseConvolutionHere, debugChecksumArray, grid, block, Z1_digitsXX, total_k * 2);
+            StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1XY>(
+                record, UseConvolutionHere, debugChecksumArray, grid, block, Z1_digitsXY, total_k * 2);
+            StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1YY>(
+                record, UseConvolutionHere, debugChecksumArray, grid, block, Z1_digitsYY, total_k * 2);
         }
 
         // Synchronize before final combination
@@ -1664,44 +1918,97 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
         // Now the final combination is just:
         // final = Z0 + (Z1 << (32*n)) + (Z2 << (64*n))
         for (int i = tid; i < total_result_digits; i += stride) {
-            uint64_t sum_low = 0;
-            uint64_t sum_high = 0;
+            uint64_t xx_sum_low = 0;
+            uint64_t xx_sum_high = 0;
+
+            uint64_t xy_sum_low = 0;
+            uint64_t xy_sum_high = 0;
+
+            uint64_t yy_sum_low = 0;
+            uint64_t yy_sum_high = 0;
 
             // Add Z0
             if (i < 2 * n1 - 1) {
                 int z0_idx = i * 2;
-                uint64_t z0_low = Z0_OutDigits[z0_idx];
-                uint64_t z0_high = Z0_OutDigits[z0_idx + 1];
-                Add128(sum_low, sum_high, z0_low, z0_high, sum_low, sum_high);
+
+                const uint64_t xx_z0_low = Z0_OutDigitsXX[z0_idx];
+                const uint64_t xx_z0_high = Z0_OutDigitsXX[z0_idx + 1];
+
+                const uint64_t xy_z0_low = Z0_OutDigitsXY[z0_idx];
+                const uint64_t xy_z0_high = Z0_OutDigitsXY[z0_idx + 1];
+
+                const uint64_t yy_z0_low = Z0_OutDigitsYY[z0_idx];
+                const uint64_t yy_z0_high = Z0_OutDigitsYY[z0_idx + 1];
+                
+                Add128(xx_sum_low, xx_sum_high, xx_z0_low, xx_z0_high, xx_sum_low, xx_sum_high);
+                Add128(xy_sum_low, xy_sum_high, xy_z0_low, xy_z0_high, xy_sum_low, xy_sum_high);
+                Add128(yy_sum_low, yy_sum_high, yy_z0_low, yy_z0_high, yy_sum_low, yy_sum_high);
             }
 
             // Add Z1 shifted by n
             if (i >= n1 && (i - n1) < 2 * n1 - 1) {
                 int z1_idx = (i - n1) * 2;
-                uint64_t z1_low = Z1_digits[z1_idx];
-                uint64_t z1_high = Z1_digits[z1_idx + 1];
-                Add128(sum_low, sum_high, z1_low, z1_high, sum_low, sum_high);
+
+                const uint64_t xx_z1_low = Z1_digitsXX[z1_idx];
+                const uint64_t xx_z1_high = Z1_digitsXX[z1_idx + 1];
+
+                const uint64_t xy_z1_low = Z1_digitsXY[z1_idx];
+                const uint64_t xy_z1_high = Z1_digitsXY[z1_idx + 1];
+
+                const uint64_t yy_z1_low = Z1_digitsYY[z1_idx];
+                const uint64_t yy_z1_high = Z1_digitsYY[z1_idx + 1];
+
+                Add128(xx_sum_low, xx_sum_high, xx_z1_low, xx_z1_high, xx_sum_low, xx_sum_high);
+                Add128(xy_sum_low, xy_sum_high, xy_z1_low, xy_z1_high, xy_sum_low, xy_sum_high);
+                Add128(yy_sum_low, yy_sum_high, yy_z1_low, yy_z1_high, yy_sum_low, yy_sum_high);
             }
 
             // Add Z2 shifted by 2*n
             if (i >= 2 * n1 && (i - 2 * n1) < 2 * n1 - 1) {
                 int z2_idx = (i - 2 * n1) * 2;
-                uint64_t z2_low = z2_idx < FinalZ2Size ? Z2_OutDigits[z2_idx] : 0;
-                uint64_t z2_high = z2_idx + 1 < FinalZ2Size ? Z2_OutDigits[z2_idx + 1] : 0;
-                Add128(sum_low, sum_high, z2_low, z2_high, sum_low, sum_high);
+
+                const uint64_t xx_z2_low = z2_idx < FinalZ2Size ? Z2_OutDigitsXX[z2_idx] : 0;
+                const uint64_t xx_z2_high = z2_idx + 1 < FinalZ2Size ? Z2_OutDigitsXX[z2_idx + 1] : 0;
+
+                const uint64_t xy_z2_low = z2_idx < FinalZ2Size ? Z2_OutDigitsXY[z2_idx] : 0;
+                const uint64_t xy_z2_high = z2_idx + 1 < FinalZ2Size ? Z2_OutDigitsXY[z2_idx + 1] : 0;
+
+                const uint64_t yy_z2_low = z2_idx < FinalZ2Size ? Z2_OutDigitsYY[z2_idx] : 0;
+                const uint64_t yy_z2_high = z2_idx + 1 < FinalZ2Size ? Z2_OutDigitsYY[z2_idx + 1] : 0;
+
+                Add128(xx_sum_low, xx_sum_high, xx_z2_low, xx_z2_high, xx_sum_low, xx_sum_high);
+                Add128(xy_sum_low, xy_sum_high, xy_z2_low, xy_z2_high, xy_sum_low, xy_sum_high);
+                Add128(yy_sum_low, yy_sum_high, yy_z2_low, yy_z2_high, yy_sum_low, yy_sum_high);
             }
 
             int result_idx = i * 2;
-            final128[result_idx] = sum_low;
-            final128[result_idx + 1] = sum_high;
+
+            // Store the final result
+            final128XX[result_idx] = xx_sum_low;
+            final128XX[result_idx + 1] = xx_sum_high;
+
+            final128XY[result_idx] = xy_sum_low;
+            final128XY[result_idx + 1] = xy_sum_high;
+
+            final128YY[result_idx] = yy_sum_low;
+            final128YY[result_idx + 1] = yy_sum_high;
         }
 
         if constexpr (SharkDebugChecksums) {
             grid.sync();
 
-            StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Final128>(
-                record, UseConvolutionHere, debugChecksumArray, grid, block, final128, total_result_digits * 2);
-            EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offset>(
+            StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Final128XX>(
+                record, UseConvolutionHere, debugChecksumArray, grid, block, final128XX, total_result_digits * 2);
+            StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Final128XY>(
+                record, UseConvolutionHere, debugChecksumArray, grid, block, final128XY, total_result_digits * 2);
+            StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Final128YY>(
+                record, UseConvolutionHere, debugChecksumArray, grid, block, final128YY, total_result_digits * 2);
+
+            EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offsetXX>(
+                record, debugChecksumArray, grid, block);
+            EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offsetXY>(
+                record, debugChecksumArray, grid, block);
+            EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offsetYY>(
                 record, debugChecksumArray, grid, block);
         }
 
@@ -1724,12 +2031,16 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
 // We'll use the provided global memory buffers for large intermediates
 template<class SharkFloatParams>
 __device__ void MultiplyHelperKaratsubaV2 (
-    const HpSharkFloat<SharkFloatParams> *SharkRestrict A,
-    const HpSharkFloat<SharkFloatParams> *SharkRestrict B,
-    HpSharkFloat<SharkFloatParams> *SharkRestrict Out,
+    HpSharkComboResults<SharkFloatParams> *SharkRestrict combo,
     cg::grid_group &grid,
     cg::thread_block &block,
     uint64_t *SharkRestrict tempProducts) {
+
+    const HpSharkFloat<SharkFloatParams> *SharkRestrict A = &combo->A;
+    const HpSharkFloat<SharkFloatParams> *SharkRestrict B = &combo->B;
+    HpSharkFloat<SharkFloatParams> *SharkRestrict OutXX = &combo->ResultX2;
+    HpSharkFloat<SharkFloatParams> *SharkRestrict OutXY = &combo->ResultXY;
+    HpSharkFloat<SharkFloatParams> *SharkRestrict OutYY = &combo->ResultY2;
 
     extern __shared__ uint32_t shared_data[];
 
@@ -1784,13 +2095,25 @@ __device__ void MultiplyHelperKaratsubaV2 (
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BHalfLow>(record, debugChecksumArray, grid, block);
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::XDiff>(record, debugChecksumArray, grid, block);
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::YDiff>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z0>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1_offset>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Final128>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offset>(record, debugChecksumArray, grid, block);
-        static_assert(static_cast<int>(DebugStatePurpose::NumPurposes) == 15, "Unexpected number of purposes");
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z0XX>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z0XY>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z0YY>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1XX>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1XY>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1YY>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2XX>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2XY>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2YY>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1_offsetXX>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1_offsetXY>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1_offsetYY>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Final128XX>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Final128XY>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Final128YY>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offsetXX>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offsetXY>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offsetYY>(record, debugChecksumArray, grid, block);
+        static_assert(static_cast<int>(DebugStatePurpose::NumPurposes) == 27, "Unexpected number of purposes");
     }
 
     // Wait for the first batch of A to be loaded
@@ -1800,7 +2123,10 @@ __device__ void MultiplyHelperKaratsubaV2 (
         DebugRandomDelay(block, debugRandomArray);
     }
 
-    auto *SharkRestrict final128 = &tempProducts[Convolution_offset];
+    auto *SharkRestrict final128XX = &tempProducts[Convolution_offsetXX];
+    auto *SharkRestrict final128XY = &tempProducts[Convolution_offsetXY];
+    auto *SharkRestrict final128YY = &tempProducts[Convolution_offsetYY];
+
     MultiplyDigitsOnly<
         SharkFloatParams,
         RecursionDepth + 1,
@@ -1819,7 +2145,9 @@ __device__ void MultiplyHelperKaratsubaV2 (
         bDigits,
         x_diff_abs,
         y_diff_abs,
-        final128,
+        final128XX,
+        final128XY,
+        final128YY,
         grid,
         block,
         tempProducts);
@@ -1833,10 +2161,13 @@ __device__ void MultiplyHelperKaratsubaV2 (
     // Note, overlaps:
     uint64_t *block_carry_outs = &tempProducts[CarryInsOffset];
 
+    auto *SharkRestrict resultXX = &tempProducts[Result_offsetXX];
+    auto *SharkRestrict resultXY = &tempProducts[Result_offsetXY];
+    auto *SharkRestrict resultYY = &tempProducts[Result_offsetYY];
+
     if constexpr (!SharkFloatParams::DisableCarryPropagation) {
 
         DefineCarryDefinitions();
-
         constexpr bool UseParallelCarry = true;
         uint64_t *globalCarryCheck = &tempProducts[GlobalCarryOffset];
 
@@ -1847,14 +2178,16 @@ __device__ void MultiplyHelperKaratsubaV2 (
                 (uint64_t *)shared_data,
                 grid,
                 block,
-                block.thread_index(),
-                block.group_index(),
                 thread_start_idx,
                 thread_end_idx,
-                Convolution_offset,
-                Result_offset,
+                final128XX,
+                final128XY,
+                final128YY,
+                resultXX,
+                resultXY,
+                resultYY,
                 block_carry_outs,
-                tempProducts,
+
                 globalCarryCheck
             );
         } else {
@@ -1862,12 +2195,10 @@ __device__ void MultiplyHelperKaratsubaV2 (
                 (uint64_t *)shared_data,
                 grid,
                 block,
-                block.thread_index(),
-                block.group_index(),
                 thread_start_idx,
                 thread_end_idx,
-                Convolution_offset,
-                Result_offset,
+                Convolution_offsetXY, // TODO
+                Result_offsetXY,
                 block_carry_outs,
                 tempProducts,
                 globalCarryCheck
@@ -1880,7 +2211,9 @@ __device__ void MultiplyHelperKaratsubaV2 (
     }
 
     using DebugState = DebugState<SharkFloatParams>;
-    const uint64_t *resultEntries = &tempProducts[Result_offset];
+    const uint64_t *resultEntriesXX = &tempProducts[Result_offsetXX];
+    const uint64_t *resultEntriesXY = &tempProducts[Result_offsetXY];
+    const uint64_t *resultEntriesYY = &tempProducts[Result_offsetYY];
     const RecordIt record =
         (block.thread_index().x == 0 && block.group_index().x == ExecutionBlockBase) ?
         RecordIt::Yes :
@@ -1889,8 +2222,12 @@ __device__ void MultiplyHelperKaratsubaV2 (
     if constexpr (SharkDebugChecksums) {
         grid.sync();
 
-        StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offset>(
-            record, UseConvolution::No, debugChecksumArray, grid, block, resultEntries, 2 * NewN);
+        StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offsetXX>(
+            record, UseConvolution::No, debugChecksumArray, grid, block, resultEntriesXX, 2 * NewN);
+        StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offsetXY>(
+            record, UseConvolution::No, debugChecksumArray, grid, block, resultEntriesXY, 2 * NewN);
+        StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offsetYY>(
+            record, UseConvolution::No, debugChecksumArray, grid, block, resultEntriesYY, 2 * NewN);
 
         grid.sync();
     }
@@ -1907,63 +2244,148 @@ __device__ void MultiplyHelperKaratsubaV2 (
         int total_result_digits = 2 * NewN;
 
         // Determine the highest non-zero digit index in the full result
-        int highest_nonzero_index = total_result_digits - 1;
+        int highest_nonzero_index_xx = total_result_digits - 1;
+        int highest_nonzero_index_xy = total_result_digits - 1;
+        int highest_nonzero_index_yy = total_result_digits - 1;
 
-        while (highest_nonzero_index >= 0) {
-            int result_idx = Result_offset + highest_nonzero_index;
-            uint32_t digit = static_cast<uint32_t>(tempProducts[result_idx]);
-            if (digit != 0) {
-                break;
+        auto HighestNonzeroIndex = [](const uint64_t *result, int &highest_nonzero_index) {
+            while (highest_nonzero_index >= 0) {
+                int result_idx = highest_nonzero_index;
+                uint32_t digit = static_cast<uint32_t>(result[result_idx]);
+                if (digit != 0) {
+                    break;
+                }
+                highest_nonzero_index--;
             }
+            };
 
-            highest_nonzero_index--;
-        }
+        HighestNonzeroIndex(resultEntriesXX, highest_nonzero_index_xx);
+        HighestNonzeroIndex(resultEntriesXY, highest_nonzero_index_xy);
+        HighestNonzeroIndex(resultEntriesYY, highest_nonzero_index_yy);
 
         // Determine the number of significant digits
-        int significant_digits = highest_nonzero_index + 1;
+        const int significant_digits_xx = highest_nonzero_index_xx + 1;
+        const int significant_digits_xy = highest_nonzero_index_xy + 1;
+        const int significant_digits_yy = highest_nonzero_index_yy + 1;
+
         // Calculate the number of digits to shift to keep the most significant NewN digits
-        int shift_digits = significant_digits - NewN;
-        if (shift_digits < 0) {
-            shift_digits = 0;  // No need to shift if we have fewer than NewN significant digits
+        int shift_digits_xx = significant_digits_xx - NewN;
+        if (shift_digits_xx < 0) {
+            shift_digits_xx = 0;  // No need to shift if we have fewer than NewN significant digits
         }
 
-        if (block.group_index().x == 0 && block.thread_index().x == 0) {
-            // Adjust the exponent based on the number of bits shifted
-            Out->Exponent = A->Exponent + B->Exponent + shift_digits * 32;
-
-            // Set the sign of the result
-            Out->IsNegative = A->IsNegative ^ B->IsNegative;
+        int shift_digits_xy = significant_digits_xy - NewN;
+        if (shift_digits_xy < 0) {
+            shift_digits_xy = 0;  // No need to shift if we have fewer than NewN significant digits
         }
 
-        int tid = block.thread_index().x + block.group_index().x * block.dim_threads().x;
-        int stride = block.dim_threads().x * grid.dim_blocks().x;
+        int shift_digits_yy = significant_digits_yy - NewN;
+        if (shift_digits_yy < 0) {
+            shift_digits_yy = 0;  // No need to shift if we have fewer than NewN significant digits
+        }
 
-        // src_idx is the starting index in tempProducts[] from which we copy
-        int src_idx = Result_offset + shift_digits;
-        int last_src = Result_offset + highest_nonzero_index; // The last valid index
+        auto ExponentAndSign = [](
+            cg::thread_block &block,
+            const HpSharkFloat<SharkFloatParams> *A,
+            const HpSharkFloat<SharkFloatParams> *B,
+            bool forcePositive,
+            HpSharkFloat<SharkFloatParams> *Out,
+            int shift_digits) {
 
-        // We'll do a grid-stride loop over i in [0 .. NewN)
-        for (int i = tid; i < NewN; i += stride) {
-            // Corresponding source index for digit i
-            int src = src_idx + i;
+            if (block.group_index().x == 0 && block.thread_index().x == 0) {
+                // Adjust the exponent based on the number of bits shifted
+                Out->Exponent = A->Exponent + B->Exponent + shift_digits * 32;
 
-            if (src <= last_src) {
-                // Copy from tempProducts
-                Out->Digits[i] = tempProducts[src];
-            } else {
-                // Pad with zero if we've run out of digits
-                Out->Digits[i] = 0;
+                // Set the sign of the result
+                Out->IsNegative = (forcePositive) ? false : (A->IsNegative ^ B->IsNegative);
             }
-        }
+        };
+
+        ExponentAndSign(
+            block,
+            A,
+            B,
+            true,
+            OutXX,
+            shift_digits_xx);
+
+        ExponentAndSign(
+            block,
+            A,
+            B,
+            false,
+            OutXY,
+            shift_digits_xy);
+
+        ExponentAndSign(
+            block,
+            A,
+            B,
+            true,
+            OutYY,
+            shift_digits_yy);
+
+        auto Finalize = [](
+            cg::grid_group &grid,
+            cg::thread_block &block,
+            const uint64_t *result,
+            int highest_nonzero_index,
+            int shift_digits,
+            HpSharkFloat<SharkFloatParams> *Out) {
+
+            const int tid = block.thread_index().x + block.group_index().x * block.dim_threads().x;
+            const int stride = block.dim_threads().x * grid.dim_blocks().x;
+
+            // src_idx is the starting index in tempProducts[] from which we copy
+            // TODO:
+            const int src_idx = shift_digits;
+            const int last_src = highest_nonzero_index; // The last valid index
+
+            // We'll do a grid-stride loop over i in [0 .. NewN)
+            for (int i = tid; i < NewN; i += stride) {
+                // Corresponding source index for digit i
+                int src = src_idx + i;
+
+                if (src <= last_src) {
+                    // Copy from tempProducts
+                    Out->Digits[i] = result[src];
+                } else {
+                    // Pad with zero if we've run out of digits
+                    Out->Digits[i] = 0;
+                }
+            }
+        };
+
+        Finalize(
+            grid,
+            block,
+            resultEntriesXX,
+            highest_nonzero_index_xx,
+            shift_digits_xx,
+            OutXX);
+
+        Finalize(
+            grid,
+            block,
+            resultEntriesXY,
+            highest_nonzero_index_xy,
+            shift_digits_xy,
+            OutXY);
+
+        Finalize(
+            grid,
+            block,
+            resultEntriesYY,
+            highest_nonzero_index_yy,
+            shift_digits_yy,
+            OutYY);
     }
 }
 
 template<class SharkFloatParams>
 __maxnreg__(SharkRegisterLimit)
-__global__ void MultiplyKernelKaratsubaV2(
-    const HpSharkFloat<SharkFloatParams> *A,
-    const HpSharkFloat<SharkFloatParams> *B,
-    HpSharkFloat<SharkFloatParams> *Out,
+__global__ void MultiplyKernelKaratsubaV2 (
+    HpSharkComboResults<SharkFloatParams> *combo,
     uint64_t *tempProducts) {
 
     // Initialize cooperative grid group
@@ -1972,16 +2394,14 @@ __global__ void MultiplyKernelKaratsubaV2(
 
     // Call the MultiplyHelper function
     //MultiplyHelper(A, B, Out, carryIns, grid, tempProducts);
-    MultiplyHelperKaratsubaV2(A, B, Out, grid, block, tempProducts);
+    MultiplyHelperKaratsubaV2(combo, grid, block, tempProducts);
 }
 
 template<class SharkFloatParams>
 __global__ void
  __maxnreg__(SharkRegisterLimit)
-MultiplyKernelKaratsubaV2TestLoop(
-    HpSharkFloat<SharkFloatParams> *A,
-    HpSharkFloat<SharkFloatParams> *B,
-    HpSharkFloat<SharkFloatParams> *Out,
+MultiplyKernelKaratsubaV2TestLoop (
+    HpSharkComboResults<SharkFloatParams> *combo,
     uint64_t numIters,
     uint64_t *tempProducts) { // Array to store cumulative carries
 
@@ -1992,7 +2412,7 @@ MultiplyKernelKaratsubaV2TestLoop(
     for (int i = 0; i < numIters; ++i) {
         // MultiplyHelper(A, B, Out, carryIns, grid, tempProducts);
         if constexpr (!SharkFloatParams::ForceNoOp) {
-            MultiplyHelperKaratsubaV2(A, B, Out, grid, block, tempProducts);
+            MultiplyHelperKaratsubaV2(combo, grid, block, tempProducts);
         } else {
             grid.sync();
         }

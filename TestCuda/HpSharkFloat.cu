@@ -197,6 +197,20 @@ HpSharkFloat<SharkFloatParams>::HpGpuExponentToMpfExponent(
     return hpExponentInPow2 / (sizeof(mp_limb_t) * 8);
 }
 
+template<class SharkFloatParams>
+HpSharkFloat<SharkFloatParams> &
+HpSharkFloat<SharkFloatParams>::operator= (
+    const HpSharkFloat<SharkFloatParams> &other)
+{
+    if (this != &other) {
+        memcpy(Digits, other.Digits, sizeof(uint32_t) * NumUint32);
+        Exponent = other.Exponent;
+        IsNegative = other.IsNegative;
+    }
+
+    return *this;
+}
+
 // Function to convert mpf_t to HpSharkFloat<SharkFloatParams>
 template<class SharkFloatParams>
 void

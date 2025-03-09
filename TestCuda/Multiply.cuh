@@ -6,6 +6,9 @@
 template<class SharkFloatParams>
 struct HpSharkFloat;
 
+template<class SharkFloatParams>
+struct HpSharkComboResults;
+
 #include "KernelInvoke.cuh"
 #include "Tests.h"
 
@@ -22,15 +25,11 @@ void ComputeMultiplyKaratsubaV2GpuTestLoop(
 
 template<class SharkFloatParams>
 CUDA_GLOBAL void MultiplyKernelKaratsubaV2(
-    const HpSharkFloat<SharkFloatParams> *A,
-    const HpSharkFloat<SharkFloatParams> *B,
-    HpSharkFloat<SharkFloatParams> *Out,
+    HpSharkComboResults<SharkFloatParams> *combo,
     uint64_t *tempProducts);
 
 template<class SharkFloatParams>
 CUDA_GLOBAL void MultiplyKernelKaratsubaV2TestLoop(
-    HpSharkFloat<SharkFloatParams> *A,
-    HpSharkFloat<SharkFloatParams> *B,
-    HpSharkFloat<SharkFloatParams> *Out,
+    HpSharkComboResults<SharkFloatParams> *combo,
     uint64_t numIters,
     uint64_t *tempProducts);

@@ -181,8 +181,9 @@ void TestPerf(
     auto desc = SharkFloatParams::GetDescription();
     std::cout << "\nTest " << testNum << ": " << OperatorToString<sharkOperator>() << " " << desc << std::endl;
 
-    auto xNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-    auto yNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+    auto combo = std::make_unique<HpSharkComboResults<SharkFloatParams>>();
+    auto xNum = &combo.A;
+    auto yNum = &combo.B;
     auto resultNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
     MpfToHpGpu(mpfX, *xNum, HpSharkFloat<SharkFloatParams>::DefaultPrecBits);
     MpfToHpGpu(mpfY, *yNum, HpSharkFloat<SharkFloatParams>::DefaultPrecBits);
@@ -222,9 +223,9 @@ void TestPerf(
 
     if constexpr (SharkTestGpu) {
 
-        auto gpuResult2XX = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-        auto gpuResult2XY = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-        auto gpuResult2YY = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+        auto gpuResult2XX = combo.ResultX2;
+        auto gpuResult2XY = combo.ResultXY;
+        auto gpuResult2YY = combo.ResultY2;
 
         {
             BenchmarkTimer timer;
@@ -241,11 +242,7 @@ void TestPerf(
                 InvokeMultiplyKernel<SharkFloatParams>(
                     timer,
                     ComputeMultiplyKaratsubaV2GpuTestLoop<SharkFloatParams>,
-                    *xNum,
-                    *yNum,
-                    *gpuResult2XX,
-                    *gpuResult2XY,
-                    *gpuResult2YY,
+                    *combo,
                     numIters);
             }
 
@@ -444,22 +441,22 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
     if constexpr (SharkTestGpu) {
         BenchmarkTimer timer;
 
+        HpSharkComboResults<SharkFloatParams> combo;
+        combo.A = xNum;
+        combo.B = yNum;
+
         if constexpr (sharkOperator == Operator::Add) {
             InvokeAddKernelCorrectness<SharkFloatParams, Operator::Add>(
                 timer,
                 ComputeAddGpu<SharkFloatParams>,
-                xNum,
-                yNum,
-                gpuResultXY);
+                combo.A,
+                combo.B,
+                combo.ResultXY);
         } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
             InvokeMultiplyKernelCorrectness<SharkFloatParams, Operator::MultiplyKaratsubaV2>(
                 timer,
                 ComputeMultiplyKaratsubaV2Gpu<SharkFloatParams>,
-                xNum,
-                yNum,
-                gpuResultXX,
-                gpuResultXY,
-                gpuResultYY,
+                combo,
                 &debugStatesCuda);
         } else {
             assert(false);
@@ -470,6 +467,10 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
         if constexpr (SharkFloatParams::HostVerbose) {
             std::cout << "GPU single time: " << timer.GetDeltaInMs() << " ms" << std::endl;
         }
+
+        gpuResultXX = combo.ResultX2;
+        gpuResultXY = combo.ResultXY;
+        gpuResultYY = combo.ResultY2;
     }
 
     std::vector<DebugStateHost<SharkFloatParams>> debugResultsHost;
@@ -505,7 +506,7 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
                 maxHostArraySize != cuda.ArraySize) {
 
                 std::cerr << "======================================" << std::endl;
-                std::cerr << "Error: Checksum mismatch" << std::endl;
+                std::cerr << "Error: Checksum mismatch at index 0x" << std::hex << i << std::endl;
                 std::cerr << "GPU:" << std::endl;
 
                 // Print all fields of cuda:
@@ -515,6 +516,7 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
 
                 std::cerr << "Checksum: 0x" << std::hex << cuda.Checksum << std::dec << std::endl;
                 std::cerr << "ChecksumPurpose: " << static_cast<int>(cuda.ChecksumPurpose) << std::endl;
+                std::cerr << "ChecksumPurpose: " << DebugStatePurposeToString(cuda.ChecksumPurpose) << std::endl;
 
                 std::cerr << "RecursionDepth: " << cuda.RecursionDepth << std::endl;
                 std::cerr << "CallIndex: " << cuda.CallIndex << std::endl;
@@ -541,6 +543,7 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
 
                 std::cerr << "Checksum: 0x" << std::hex << host.Checksum << std::dec << std::endl;
                 std::cerr << "ChecksumPurpose: " << static_cast<int>(host.ChecksumPurpose) << std::endl;
+                std::cerr << "ChecksumPurpose: " << DebugStatePurposeToString(host.ChecksumPurpose) << std::endl;
 
                 std::cerr << "RecursionDepth: " << host.RecursionDepth << std::endl;
                 std::cerr << "CallIndex: " << host.CallIndex << std::endl;
@@ -557,6 +560,7 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
         auto testSucceeded = DiffAgainstHost<SharkFloatParams, sharkOperator>(testNum, name, mpfHostResult, gpuResult);
         if (!testSucceeded) {
             std::cout << "GPU High Precision failed" << std::endl;
+            DebugBreak();
         } else {
             std::cout << "GPU High Precision succeeded" << std::endl;
         }
@@ -564,7 +568,7 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
         };
 
     if constexpr (SharkTestGpu) {
-        bool testSucceeded = true;
+        testSucceeded = true;
         testSucceeded &= CheckGPUResult(testNum, "GPU", mpfHostResultXX, gpuResultXX);
         testSucceeded &= CheckGPUResult(testNum, "GPU", mpfHostResultXY, gpuResultXY);
         testSucceeded &= CheckGPUResult(testNum, "GPU", mpfHostResultYY, gpuResultYY);

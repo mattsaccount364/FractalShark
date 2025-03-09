@@ -25,9 +25,7 @@ template<class SharkFloatParams>
 void InvokeMultiplyKernel(
     BenchmarkTimer &timer,
     std::function<void(cudaStream_t &, void *[])> kernel,
-    const HpSharkFloat<SharkFloatParams> &xNum,
-    const HpSharkFloat<SharkFloatParams> &yNum,
-    HpSharkFloat<SharkFloatParams> &gpuResult2,
+    HpSharkComboResults<SharkFloatParams> &combo,
     uint64_t numIters) {
 
     // Prepare kernel arguments
@@ -37,23 +35,12 @@ void InvokeMultiplyKernel(
         (AdditionalUInt64Global + ScratchMemoryCopies * CalculateFrameSize<SharkFloatParams>()) * sizeof(uint64_t);
     cudaMalloc(&d_tempProducts, BytesToAllocate);
 
-    // Perform the calculation on the GPU
-    HpSharkFloat<SharkFloatParams> *xGpu;
-    cudaMalloc(&xGpu, sizeof(HpSharkFloat<SharkFloatParams>));
-    cudaMemcpy(xGpu, &xNum, sizeof(HpSharkFloat<SharkFloatParams>), cudaMemcpyHostToDevice);
-
-    HpSharkFloat<SharkFloatParams> *yGpu;
-    cudaMalloc(&yGpu, sizeof(HpSharkFloat<SharkFloatParams>));
-    cudaMemcpy(yGpu, &yNum, sizeof(HpSharkFloat<SharkFloatParams>), cudaMemcpyHostToDevice);
-
-    HpSharkFloat<SharkFloatParams> *internalGpuResult2;
-    cudaMalloc(&internalGpuResult2, sizeof(HpSharkFloat<SharkFloatParams>));
-    cudaMemset(internalGpuResult2, 0, sizeof(HpSharkFloat<SharkFloatParams>));
+    HpSharkComboResults<SharkFloatParams> *comboGpu;
+    cudaMalloc(&comboGpu, sizeof(HpSharkComboResults<SharkFloatParams>));
+    cudaMemcpy(comboGpu, &combo, sizeof(HpSharkComboResults<SharkFloatParams>), cudaMemcpyHostToDevice);
 
     void *kernelArgs[] = {
-        (void *)&xGpu,
-        (void *)&yGpu,
-        (void *)&internalGpuResult2,
+        (void *)&comboGpu,
         (void *)&numIters,
         (void *)&d_tempProducts
     };
@@ -87,9 +74,7 @@ void InvokeMultiplyKernel(
             }
             };
 
-        setAccess(xGpu, sizeof(HpSharkFloat<SharkFloatParams>));
-        setAccess(yGpu, sizeof(HpSharkFloat<SharkFloatParams>));
-        setAccess(internalGpuResult2, sizeof(HpSharkFloat<SharkFloatParams>));
+        setAccess(comboGpu, sizeof(HpSharkComboResults<SharkFloatParams>));
         setAccess(d_tempProducts, 32 * SharkFloatParams::GlobalNumUint32 * sizeof(uint64_t));
     }
 
@@ -98,15 +83,13 @@ void InvokeMultiplyKernel(
         kernel(stream, kernelArgs);
     }
 
-    cudaMemcpy(&gpuResult2, internalGpuResult2, sizeof(HpSharkFloat<SharkFloatParams>), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&combo, comboGpu, sizeof(HpSharkComboResults<SharkFloatParams>), cudaMemcpyDeviceToHost);
 
     if constexpr (SharkCustomStream) {
         cudaStreamDestroy(stream); // Destroy the stream
     }
 
-    cudaFree(internalGpuResult2);
-    cudaFree(yGpu);
-    cudaFree(xGpu);
+    cudaFree(comboGpu);
     cudaFree(d_tempProducts);
 }
 
@@ -174,9 +157,7 @@ template<class SharkFloatParams, Operator sharkOperator>
 void InvokeMultiplyKernelCorrectness(
     BenchmarkTimer &timer,
     std::function<void(void *[])> kernel,
-    const HpSharkFloat<SharkFloatParams> &xNum,
-    const HpSharkFloat<SharkFloatParams> &yNum,
-    HpSharkFloat<SharkFloatParams> &gpuResult,
+    HpSharkComboResults<SharkFloatParams> &combo,
     std::vector<DebugStateRaw> *debugResults) {
 
     static constexpr bool DebugInitCudaMemory = true;
@@ -194,28 +175,22 @@ void InvokeMultiplyKernelCorrectness(
         cudaMemset(d_tempProducts, 0xCD, BytesToAllocate);
     }
 
-    // Perform the calculation on the GPU
-    HpSharkFloat<SharkFloatParams> *xGpu;
-    cudaMalloc(&xGpu, sizeof(HpSharkFloat<SharkFloatParams>));
-    cudaMemcpy(xGpu, &xNum, sizeof(HpSharkFloat<SharkFloatParams>), cudaMemcpyHostToDevice);
-
-    HpSharkFloat<SharkFloatParams> *yGpu;
-    cudaMalloc(&yGpu, sizeof(HpSharkFloat<SharkFloatParams>));
-    cudaMemcpy(yGpu, &yNum, sizeof(HpSharkFloat<SharkFloatParams>), cudaMemcpyHostToDevice);
-
-    HpSharkFloat<SharkFloatParams> *internalGpuResult2;
-    cudaMalloc(&internalGpuResult2, sizeof(HpSharkFloat<SharkFloatParams>));
+    HpSharkComboResults<SharkFloatParams> *comboGpu;
+    cudaMalloc(&comboGpu, sizeof(HpSharkComboResults<SharkFloatParams>));
+    cudaMemcpy(comboGpu, &combo, sizeof(HpSharkComboResults<SharkFloatParams>), cudaMemcpyHostToDevice);
 
     if constexpr (!DebugInitCudaMemory) {
-        cudaMemset(internalGpuResult2, 0, sizeof(HpSharkFloat<SharkFloatParams>));
+        cudaMemset(&comboGpu->ResultX2, 0, sizeof(HpSharkFloat<SharkFloatParams>));
+        cudaMemset(&comboGpu->ResultXY, 0, sizeof(HpSharkFloat<SharkFloatParams>));
+        cudaMemset(&comboGpu->ResultY2, 0, sizeof(HpSharkFloat<SharkFloatParams>));
     } else {
-        cudaMemset(internalGpuResult2, 0xCD, sizeof(HpSharkFloat<SharkFloatParams>));
+        cudaMemset(&comboGpu->ResultX2, 0xCD, sizeof(HpSharkFloat<SharkFloatParams>));
+        cudaMemset(&comboGpu->ResultXY, 0xCD, sizeof(HpSharkFloat<SharkFloatParams>));
+        cudaMemset(&comboGpu->ResultY2, 0xCD, sizeof(HpSharkFloat<SharkFloatParams>));
     }
 
     void *kernelArgs[] = {
-        (void *)&xGpu,
-        (void *)&yGpu,
-        (void *)&internalGpuResult2,
+        (void *)&comboGpu,
         (void *)&d_tempProducts
     };
 
@@ -224,7 +199,7 @@ void InvokeMultiplyKernelCorrectness(
         kernel(kernelArgs);
     }
 
-    cudaMemcpy(&gpuResult, internalGpuResult2, sizeof(HpSharkFloat<SharkFloatParams>), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&combo, comboGpu, sizeof(HpSharkComboResults<SharkFloatParams>), cudaMemcpyDeviceToHost);
 
     if (debugResults != nullptr) {
         if constexpr (SharkDebugChecksums) {
@@ -237,9 +212,7 @@ void InvokeMultiplyKernelCorrectness(
         }
     }
 
-    cudaFree(internalGpuResult2);
-    cudaFree(yGpu);
-    cudaFree(xGpu);
+    cudaFree(comboGpu);
     cudaFree(d_tempProducts);
 }
 
@@ -301,9 +274,7 @@ void InvokeAddKernelCorrectness(
     template void InvokeMultiplyKernel<SharkFloatParams>( \
         BenchmarkTimer &timer, \
         std::function<void(cudaStream_t &, void *[])> kernel, \
-        const HpSharkFloat<SharkFloatParams> &xNum, \
-        const HpSharkFloat<SharkFloatParams> &yNum, \
-        HpSharkFloat<SharkFloatParams> &gpuResult2, \
+        HpSharkComboResults<SharkFloatParams> &combo, \
         uint64_t numIters); \
     template void InvokeAddKernel<SharkFloatParams>( \
         BenchmarkTimer &timer, \
@@ -315,9 +286,7 @@ void InvokeAddKernelCorrectness(
     template void InvokeMultiplyKernelCorrectness<SharkFloatParams, Operator::MultiplyKaratsubaV2>( \
         BenchmarkTimer &timer, \
         std::function<void(void*[])> kernel, \
-        const HpSharkFloat<SharkFloatParams> &xNum, \
-        const HpSharkFloat<SharkFloatParams> &yNum, \
-        HpSharkFloat<SharkFloatParams> &gpuResult, \
+        HpSharkComboResults<SharkFloatParams> &combo, \
         std::vector<DebugStateRaw> *debugResults); \
     template void InvokeAddKernelCorrectness<SharkFloatParams, Operator::Add>( \
         BenchmarkTimer &timer, \

@@ -2,6 +2,12 @@
 
 #include <functional>
 
+template<class SharkFloatParams>
+struct HpSharkFloat;
+
+template<class SharkFloatParams>
+struct HpSharkComboResults;
+
 struct DebugStateRaw;
 
 struct CUstream_st;
@@ -24,9 +30,7 @@ template<class SharkFloatParams>
 void InvokeMultiplyKernel(
     BenchmarkTimer &timer,
     std::function<void(cudaStream_t &, void *[])> kernel,
-    const HpSharkFloat<SharkFloatParams> &xNum,
-    const HpSharkFloat<SharkFloatParams> &yNum,
-    HpSharkFloat<SharkFloatParams> &gpuResult2,
+    HpSharkComboResults<SharkFloatParams> &combo,
     uint64_t numIters);
 
 template<class SharkFloatParams>
@@ -42,9 +46,7 @@ template<class SharkFloatParams, Operator sharkOperator>
 void InvokeMultiplyKernelCorrectness(
     BenchmarkTimer &timer,
     std::function<void(void *[])> kernel,
-    const HpSharkFloat<SharkFloatParams> &xNum,
-    const HpSharkFloat<SharkFloatParams> &yNum,
-    HpSharkFloat<SharkFloatParams> &gpuResult,
+    HpSharkComboResults<SharkFloatParams> &combo,
     std::vector<DebugStateRaw> *debugResults);
 
 template<class SharkFloatParams, Operator sharkOperator>

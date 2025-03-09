@@ -8,15 +8,15 @@
 
 // Assuming that SharkFloatParams::GlobalNumUint32 can be large and doesn't fit in shared memory
 // We'll use the provided global memory buffers for large intermediates
-#define SharkRestrict __restrict__
-// #define SharkRestrict
+// #define SharkRestrict __restrict__
+#define SharkRestrict
 
 // 0 = just one correctness test, intended for fast re-compile of a specific failure
 // 1 = all basic correctness tests/all basic perf tests
 // 2 = setup for profiling only, one kernel
 // 3 = all basic correctness tests + comical tests
 // See ExplicitInstantiate.h for more information
-#define ENABLE_BASIC_CORRECTNESS 3
+#define ENABLE_BASIC_CORRECTNESS 0
 static constexpr auto SharkComicalThreadCount = 13;
 static constexpr auto SharkTestIterCount = 5000;
 
@@ -53,7 +53,7 @@ static constexpr bool SharkDebugChecksums = true;
 static constexpr bool SharkDebugRandomDelays = false;
 
 // Set to false to bypass all GPU tests and only do reference/host-side
-static constexpr bool SharkTestGpu = false;
+static constexpr bool SharkTestGpu = true;
 
 
 template<
@@ -120,7 +120,7 @@ struct GenericSharkFloatParams {
 static constexpr auto ScratchMemoryCopies = 256;
 
 // Number of arrays of digits on each frame
-static constexpr auto ScratchMemoryArrays = 32;
+static constexpr auto ScratchMemoryArrays = 96;
 
 // Additional space per frame:
 static constexpr auto AdditionalUInt64PerFrame = 256;
@@ -195,7 +195,7 @@ struct HpSharkFloat {
     //HpSharkFloat(uint32_t numDigits);
     HpSharkFloat(const uint32_t *digitsIn, int32_t expIn, bool isNegative);
     ~HpSharkFloat() = default;
-    HpSharkFloat &operator=(const HpSharkFloat<SharkFloatParams> &) = delete;
+    HpSharkFloat &operator=(const HpSharkFloat<SharkFloatParams> &);
 
     void DeepCopySameDevice(const HpSharkFloat<SharkFloatParams> &other);
 
@@ -224,6 +224,15 @@ struct HpSharkFloat {
 
 private:
     mp_exp_t HpGpuExponentToMpfExponent(size_t numBytesToCopy) const;
+};
+
+template<class SharkFloatParams>
+struct HpSharkComboResults {
+    HpSharkFloat<SharkFloatParams> A;
+    HpSharkFloat<SharkFloatParams> B;
+    HpSharkFloat<SharkFloatParams> ResultX2;
+    HpSharkFloat<SharkFloatParams> ResultXY;
+    HpSharkFloat<SharkFloatParams> ResultY2;
 };
 
 template<class SharkFloatParams>

@@ -182,8 +182,8 @@ void TestPerf(
     std::cout << "\nTest " << testNum << ": " << OperatorToString<sharkOperator>() << " " << desc << std::endl;
 
     auto combo = std::make_unique<HpSharkComboResults<SharkFloatParams>>();
-    auto xNum = &combo.A;
-    auto yNum = &combo.B;
+    auto xNum = &combo->A;
+    auto yNum = &combo->B;
     auto resultNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
     MpfToHpGpu(mpfX, *xNum, HpSharkFloat<SharkFloatParams>::DefaultPrecBits);
     MpfToHpGpu(mpfY, *yNum, HpSharkFloat<SharkFloatParams>::DefaultPrecBits);
@@ -223,9 +223,9 @@ void TestPerf(
 
     if constexpr (SharkTestGpu) {
 
-        auto gpuResult2XX = combo.ResultX2;
-        auto gpuResult2XY = combo.ResultXY;
-        auto gpuResult2YY = combo.ResultY2;
+        auto *gpuResult2XX = &combo->ResultX2;
+        auto *gpuResult2XY = &combo->ResultXY;
+        auto *gpuResult2YY = &combo->ResultY2;
 
         {
             BenchmarkTimer timer;
@@ -1032,7 +1032,7 @@ bool TestAllBinaryOp(int testBase) {
     constexpr bool includeSet4 = true;
     constexpr bool includeSet5 = true;
     constexpr bool includeSet6 = true;
-    constexpr bool includeSet10 = false;
+    constexpr bool includeSet10 = true;
     constexpr bool includeSet11 = false;
 
     // 200s is multiply
@@ -1046,9 +1046,13 @@ bool TestAllBinaryOp(int testBase) {
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 40, "4294967295", "4294967296");
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 50, "4294967296", "-1");
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 60, "18446744073709551615", "1");
+
+        // Note that this next test fails but ....
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 70, "0", "0.1");
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 80, "0.1", "0");
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 90, "0", "0");
+
+        // This one passes? WTF  and why not checksum failure
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 100, "0.1", "0.1");
     }
 
@@ -1139,8 +1143,8 @@ bool TestAllBinaryOp(int testBase) {
     }
 
     if constexpr (includeSet11) {
-        std::unique_ptr<HpSharkFloat<SharkFloatParams>> x = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-        std::unique_ptr<HpSharkFloat<SharkFloatParams>> y = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+        auto x = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+        auto y = std::make_unique<HpSharkFloat<SharkFloatParams>>();
 
         for (size_t counter = 0;; counter++) {
             if (counter % 2 == 0) {

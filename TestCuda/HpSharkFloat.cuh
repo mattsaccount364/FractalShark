@@ -8,15 +8,15 @@
 
 // Assuming that SharkFloatParams::GlobalNumUint32 can be large and doesn't fit in shared memory
 // We'll use the provided global memory buffers for large intermediates
-// #define SharkRestrict __restrict__
-#define SharkRestrict
+#define SharkRestrict __restrict__
+// #define SharkRestrict
 
 // 0 = just one correctness test, intended for fast re-compile of a specific failure
 // 1 = all basic correctness tests/all basic perf tests
 // 2 = setup for profiling only, one kernel
 // 3 = all basic correctness tests + comical tests
 // See ExplicitInstantiate.h for more information
-#define ENABLE_BASIC_CORRECTNESS 0
+#define ENABLE_BASIC_CORRECTNESS 2
 static constexpr auto SharkComicalThreadCount = 13;
 static constexpr auto SharkTestIterCount = 5000;
 
@@ -49,7 +49,7 @@ static constexpr bool SharkDebug = false;
 static constexpr auto SharkBatchSize = SharkDebug ? 8 : 512;
 static constexpr bool SharkInfiniteCorrectnessTests = true;
 static constexpr bool SharkCorrectnessTests = true;
-static constexpr bool SharkDebugChecksums = true;
+static constexpr bool SharkDebugChecksums = false;
 static constexpr bool SharkDebugRandomDelays = false;
 
 // Set to false to bypass all GPU tests and only do reference/host-side
@@ -95,6 +95,9 @@ struct GenericSharkFloatParams {
 
     // static constexpr auto ConvolutionLimit = 27;
     // static constexpr auto ConvolutionLimitPow = 3;
+
+    // static constexpr auto ConvolutionLimit = 81;
+    // static constexpr auto ConvolutionLimitPow = 4;
 
     static constexpr auto NumDebugStates = ((ConvolutionLimit + 1) * 3 * static_cast<int>(DebugStatePurpose::NumPurposes));
 
@@ -159,8 +162,8 @@ using Test4x9SharkParams = GenericSharkFloatParams<5, 12, SharkBatchSize>;
 using Test4x6SharkParams = GenericSharkFloatParams<7, 9, SharkBatchSize>;
 
 //using Test128x128SharkParams = GenericSharkFloatParams<128, 128, SharkBatchSize>;
-using Test128x63SharkParams = GenericSharkFloatParams<96, 81, SharkBatchSize>;
-//using Test128x63SharkParams = GenericSharkFloatParams<128, 128, SharkBatchSize, 4096>; // Use for ENABLE_BASIC_CORRECTNESS==2
+//using Test128x63SharkParams = GenericSharkFloatParams<96, 81, SharkBatchSize>;
+using Test128x63SharkParams = GenericSharkFloatParams<256, 126, SharkBatchSize, 7776>; // Use for ENABLE_BASIC_CORRECTNESS==2
 using Test64x63SharkParams = GenericSharkFloatParams<64, 81, SharkBatchSize>;
 using Test32x63SharkParams = GenericSharkFloatParams<32, 81, SharkBatchSize>;
 using Test16x63SharkParams = GenericSharkFloatParams<16, 81, SharkBatchSize>;

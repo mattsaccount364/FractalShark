@@ -223,7 +223,7 @@ void KaratsubaRecursiveDigits(
     const int NewN = static_cast<int>(A_digits.size());
 
     {
-        const int fullBDigits = static_cast<int>(B_digits.size());
+        [[maybe_unused]] const int fullBDigits = static_cast<int>(B_digits.size());
         assert(NewN == fullBDigits);
     }
 
@@ -495,7 +495,7 @@ void KaratsubaRecursiveDigits(
             std::vector<uint64_t> &Z0) {
 
             const auto &Z0Checksum =
-                GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z0>(
+                GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugPurpose>(
                     debugStates, UseConvolutionHere, Z0.data(), Z0.size());
 
             if constexpr (SharkFloatParams::HostVerbose) {
@@ -528,7 +528,7 @@ void KaratsubaRecursiveDigits(
             std::vector<uint64_t> &Z2) {
 
             const auto &Z2Checksum =
-                GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2>(
+                GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugPurpose>(
                     debugStates, UseConvolutionHere, Z2.data(), Z2.size());
             if constexpr (SharkFloatParams::HostVerbose) {
                 std::cout << name << ": " << VectorUintToHexString(Z2) << std::endl;
@@ -560,7 +560,7 @@ void KaratsubaRecursiveDigits(
             std::vector<uint64_t> &Z1_temp) {
 
             const auto &Z1TempChecksum =
-                GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1_offset>(
+                GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugPurpose>(
                     debugStates, UseConvolutionHere, Z1_temp.data(), Z1_temp.size());
             if constexpr (SharkFloatParams::HostVerbose) {
                 std::cout << name << ": " << VectorUintToHexString(Z1_temp) << std::endl;

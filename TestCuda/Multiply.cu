@@ -2304,7 +2304,7 @@ __device__ void MultiplyHelperKaratsubaV2 (
         ExponentAndSign(
             block,
             A,
-            B,
+            A,
             true,
             OutXX,
             shift_digits_xx);
@@ -2319,7 +2319,7 @@ __device__ void MultiplyHelperKaratsubaV2 (
 
         ExponentAndSign(
             block,
-            A,
+            B,
             B,
             true,
             OutYY,

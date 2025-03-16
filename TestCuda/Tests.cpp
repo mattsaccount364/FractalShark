@@ -1171,15 +1171,15 @@ bool TestAllBinaryOp(int testBase) {
 template<Operator sharkOperator>
 bool TestBinaryOperatorPerf([[maybe_unused]] int testBase) {
 #if (ENABLE_BASIC_CORRECTNESS == 1) || (ENABLE_BASIC_CORRECTNESS == 3)
-    TestPerf<TestPerSharkParams1, sharkOperator>(testBase + 1, SharkTestIterCount);
-    TestPerf<TestPerSharkParams2, sharkOperator>(testBase + 2, SharkTestIterCount);
-    TestPerf<TestPerSharkParams3, sharkOperator>(testBase + 3, SharkTestIterCount);
-    TestPerf<TestPerSharkParams4, sharkOperator>(testBase + 4, SharkTestIterCount);
+    TestPerf<TestPerSharkParams1, sharkOperator>(testBase + 1, 50000);
+    TestPerf<TestPerSharkParams2, sharkOperator>(testBase + 2, 50000);
+    TestPerf<TestPerSharkParams3, sharkOperator>(testBase + 3, 50000);
+    TestPerf<TestPerSharkParams4, sharkOperator>(testBase + 4, 50000);
 
-    TestPerf<TestPerSharkParams5, sharkOperator>(testBase + 5, SharkTestIterCount);
-    TestPerf<TestPerSharkParams6, sharkOperator>(testBase + 6, SharkTestIterCount);
-    TestPerf<TestPerSharkParams7, sharkOperator>(testBase + 7, SharkTestIterCount);
-    TestPerf<TestPerSharkParams8, sharkOperator>(testBase + 8, SharkTestIterCount);
+    TestPerf<TestPerSharkParams5, sharkOperator>(testBase + 5, 50000);
+    TestPerf<TestPerSharkParams6, sharkOperator>(testBase + 6, 50000);
+    TestPerf<TestPerSharkParams7, sharkOperator>(testBase + 7, 50000);
+    TestPerf<TestPerSharkParams8, sharkOperator>(testBase + 8, 50000);
 #elif (ENABLE_BASIC_CORRECTNESS == 2)
     TestPerf<TestPerSharkParams1, sharkOperator>(testBase + 1, SharkTestIterCount);
 #endif

@@ -180,6 +180,11 @@ int main(int /*argc*/, char * /*argv*/[]) {
 #endif
 
     if constexpr (!SharkCorrectnessTests) {
+        auto q = PressKey();
+        if (q == 'q') {
+            return 0;
+        }
+
         res = RunCorrectnessTest();
         if (!res) {
             return 0;

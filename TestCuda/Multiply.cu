@@ -1100,20 +1100,21 @@ static_assert(AdditionalUInt64PerFrame == 256, "See below");
     const auto RelativeBlockIndex = block.group_index().x - ExecutionBlockBase; \
     constexpr int total_result_digits = 2 * NewN; \
     constexpr auto digits_per_block = NewN * 2 / ExecutionNumBlocks; \
-    auto block_start_idx = block.group_index().x * digits_per_block; \
-    auto block_end_idx = min(block_start_idx + digits_per_block, total_result_digits); \
-    int digits_per_thread = (digits_per_block + block.dim_threads().x - 1) / block.dim_threads().x; \
-    int thread_start_idx = block_start_idx + block.thread_index().x * digits_per_thread; \
-    int thread_end_idx = min(thread_start_idx + digits_per_thread, block_end_idx);
+    const auto block_start_idx = block.group_index().x * digits_per_block; \
+    const auto block_end_idx = min(block_start_idx + digits_per_block, total_result_digits); \
+    const int digits_per_thread = (digits_per_block + block.dim_threads().x - 1) / block.dim_threads().x; \
+    const int thread_start_idx = block_start_idx + block.thread_index().x * digits_per_thread; \
+    const int thread_end_idx = min(thread_start_idx + digits_per_thread, block_end_idx);
 
 #define DefineCarryDefinitions() \
-    constexpr int total_result_digits = 2 * NewN; \
-    constexpr auto digits_per_block = SharkFloatParams::GlobalThreadsPerBlock * 2; \
-    auto block_start_idx = block.group_index().x * digits_per_block; \
-    auto block_end_idx = min(block_start_idx + digits_per_block, total_result_digits); \
-    int digits_per_thread = (digits_per_block + block.dim_threads().x - 1) / block.dim_threads().x; \
-    int thread_start_idx = block_start_idx + block.thread_index().x * digits_per_thread; \
-    int thread_end_idx = min(thread_start_idx + digits_per_thread, block_end_idx);
+    constexpr auto total_result_digits = 2 * NewN; \
+    constexpr auto per_thread_multiplier = 1; \
+    constexpr auto total_threads = SharkFloatParams::GlobalThreadsPerBlock * SharkFloatParams::GlobalNumBlocks * per_thread_multiplier; \
+    const int digits_per_thread = (total_result_digits + total_threads - 1) / total_threads; \
+    const int thread_idx = block.group_index().x * SharkFloatParams::GlobalThreadsPerBlock + block.thread_index().x; \
+    const int thread_start_idx = thread_idx * digits_per_thread; \
+    const int thread_end_idx = min(thread_start_idx + digits_per_thread, total_result_digits); \
+
 
 template<
     class SharkFloatParams,

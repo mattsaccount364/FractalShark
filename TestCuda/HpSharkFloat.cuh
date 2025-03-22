@@ -11,14 +11,20 @@
 #define SharkRestrict __restrict__
 // #define SharkRestrict
 
+#ifdef _DEBUG
+static constexpr bool SharkDebug = true;
+#else
+static constexpr bool SharkDebug = false;
+#endif
+
 // 0 = just one correctness test, intended for fast re-compile of a specific failure
 // 1 = all basic correctness tests/all basic perf tests
 // 2 = setup for profiling only, one kernel
 // 3 = all basic correctness tests + comical tests
 // See ExplicitInstantiate.h for more information
-#define ENABLE_BASIC_CORRECTNESS 1
+#define ENABLE_BASIC_CORRECTNESS 3
 static constexpr auto SharkComicalThreadCount = 13;
-static constexpr auto SharkTestIterCount = 5000;
+static constexpr auto SharkTestIterCount = SharkDebug ? 3 : 50000;
 
 // Set to true to use a custom stream for the kernel launch
 static constexpr auto SharkCustomStream = true;
@@ -40,20 +46,15 @@ static constexpr auto SharkMultiKernel = true;
 static constexpr auto SharkMultiKernel = false;
 #endif
 
-#ifdef _DEBUG
-static constexpr bool SharkDebug = true;
-#else
-static constexpr bool SharkDebug = false;
-#endif
-
 static constexpr auto SharkBatchSize = SharkDebug ? 8 : 512;
 static constexpr bool SharkInfiniteCorrectnessTests = true;
-static constexpr bool SharkCorrectnessTests = false;
-static constexpr bool SharkDebugChecksums = false;
+static constexpr bool SharkCorrectnessTests = true;
+static constexpr bool SharkDebugChecksums = SharkDebug;
 static constexpr bool SharkDebugRandomDelays = false;
 
 // Set to false to bypass all GPU tests and only do reference/host-side
 static constexpr bool SharkTestGpu = true;
+static constexpr bool SharkBenchmarkAgainstHost = true;
 
 
 template<
@@ -137,14 +138,14 @@ static constexpr auto LowPrec = 32;
 
 
 // If you add a new one, search for one of the other types and copy/paste
-using Test8x1SharkParams = GenericSharkFloatParams<8, 1, 7776>; // Use for ENABLE_BASIC_CORRECTNESS==2
-//using Test8x1SharkParams = GenericSharkFloatParams<8, 1>; // Use for ENABLE_BASIC_CORRECTNESS==1
+// using Test8x1SharkParams = GenericSharkFloatParams<64, 108, 7776, 9>; // Use for ENABLE_BASIC_CORRECTNESS==2
+using Test8x1SharkParams = GenericSharkFloatParams<8, 1>; // Use for ENABLE_BASIC_CORRECTNESS==1
 // using Test8x1SharkParams = GenericSharkFloatParams<13, 5>;
 // using Test8x1SharkParams = GenericSharkFloatParams<95, 81>;
-using Test4x36SharkParams = GenericSharkFloatParams<4, 6>;
-using Test4x12SharkParams = GenericSharkFloatParams<3, 18>;
-using Test4x9SharkParams = GenericSharkFloatParams<5, 12>;
-using Test4x6SharkParams = GenericSharkFloatParams<7, 9>;
+using Test4x36SharkParams = GenericSharkFloatParams<4, 6, 32>;
+using Test4x12SharkParams = GenericSharkFloatParams<3, 18, 50>;
+using Test4x9SharkParams = GenericSharkFloatParams<5, 12, 80>;
+using Test4x6SharkParams = GenericSharkFloatParams<7, 9, 74>;
 
 // Use for ENABLE_BASIC_CORRECTNESS==2
 

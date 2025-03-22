@@ -48,7 +48,8 @@ char PressKey() {
     return (char)_getch();
 }
 
-constexpr auto MultiplyOperator = Operator::MultiplyKaratsubaV2;
+// constexpr auto MainOperator = Operator::MultiplyKaratsubaV2;
+constexpr auto MainOperator = Operator::Add;
 
 template<typename TestSharkParams>
 bool CorrectnessTests() {
@@ -66,7 +67,7 @@ bool CorrectnessTests() {
     }
 
     testBase = 2000;
-    res = TestAllBinaryOp<TestSharkParams, MultiplyOperator>(testBase);
+    res = TestAllBinaryOp<TestSharkParams, MainOperator>(testBase);
     if (!res) {
         auto q = PressKey();
         if (q == 'q') {
@@ -74,16 +75,16 @@ bool CorrectnessTests() {
         }
     }
 
-#ifdef MULTI_KERNEL
-    testBase = 4000;
-    res = TestAllBinaryOp<TestSharkParams, Operator::Add>(testBase);
-    if (!res) {
-        auto q = PressKey();
-        if (q == 'q') {
-            return false;
+    if constexpr (SharkMultiKernel) {
+        testBase = 4000;
+        res = TestAllBinaryOp<TestSharkParams, Operator::Add>(testBase);
+        if (!res) {
+            auto q = PressKey();
+            if (q == 'q') {
+                return false;
+            }
         }
     }
-#endif
 
     return true;
 }
@@ -170,7 +171,7 @@ int main(int /*argc*/, char * /*argv*/[]) {
     }
 
     testBase = 7000;
-    res = TestBinaryOperatorPerf<MultiplyOperator>(testBase);
+    res = TestBinaryOperatorPerf<MainOperator>(testBase);
     if (!res) {
         auto q = PressKey();
         if (q == 'q') {

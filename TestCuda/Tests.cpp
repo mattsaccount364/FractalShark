@@ -4,6 +4,7 @@
 
 #include "Tests.h"
 #include "ReferenceKaratsuba.h"
+#include "ReferenceAdd.h"
 #include "DebugChecksumHost.h"
 
 #include <iostream>
@@ -335,31 +336,78 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
         mpf_t mpfHostResultYY,
         std::vector<DebugStateHost<SharkFloatParams>> &debugStates) -> bool {
 
-        if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
+        HpSharkFloat<SharkFloatParams> hostKaratsubaOutXXV2;
+        HpSharkFloat<SharkFloatParams> hostKaratsubaOutXYV2;
+        HpSharkFloat<SharkFloatParams> hostKaratsubaOutYYV2;
 
-            HpSharkFloat<SharkFloatParams> hostKaratsubaOutXXV2;
-            HpSharkFloat<SharkFloatParams> hostKaratsubaOutXYV2;
-            HpSharkFloat<SharkFloatParams> hostKaratsubaOutYYV2;
+        MultiplyHelperKaratsubaV2<SharkFloatParams>(
+            &xNum,
+            &yNum,
+            &hostKaratsubaOutXXV2,
+            &hostKaratsubaOutXYV2,
+            &hostKaratsubaOutYYV2,
+            debugStates
+        );
 
-            MultiplyHelperKaratsubaV2<SharkFloatParams>(
+        auto OutputV2 = [&]([[maybe_unused]] const HpSharkFloat<SharkFloatParams> &out) {
+            if constexpr (SharkFloatParams::HostVerbose) {
+                std::cout << "KaratsubaV2 result: " << out.ToString() << std::endl;
+                std::cout << "KaratsubaV2 hex: " << out.ToHexString() << std::endl;
+            }
+        };
+            
+        OutputV2(hostKaratsubaOutXXV2);
+        OutputV2(hostKaratsubaOutXYV2);
+        OutputV2(hostKaratsubaOutYYV2);
+
+        auto CheckAgainstHost = [&](
+            int testNum,
+            const char *name,
+            const mpf_t mpfHostResult,
+            const HpSharkFloat<SharkFloatParams> &gpuResult) {
+
+            bool res = DiffAgainstHost<SharkFloatParams, sharkOperator>(
+                testNum,
+                name,
+                mpfHostResult,
+                gpuResult);
+            if (!res) {
+                DebugBreak();
+            };
+
+            return res;
+        };
+
+        bool res = true;
+        res &= CheckAgainstHost(testNum, "CustomHighPrecisionV2XX", mpfHostResultXX, hostKaratsubaOutXXV2);
+        res &= CheckAgainstHost(testNum, "CustomHighPrecisionV2XY", mpfHostResultXY, hostKaratsubaOutXYV2);
+        res &= CheckAgainstHost(testNum, "CustomHighPrecisionV2YY", mpfHostResultYY, hostKaratsubaOutYYV2);
+
+        return res;
+        };
+
+    auto TestHostAdd = [&](
+        int testNum,
+        mpf_t mpfHostResultXY,
+        std::vector<DebugStateHost<SharkFloatParams>> &debugStates) -> bool {
+
+            HpSharkFloat<SharkFloatParams> hostAddResult;
+
+            AddHelper<SharkFloatParams>(
                 &xNum,
                 &yNum,
-                &hostKaratsubaOutXXV2,
-                &hostKaratsubaOutXYV2,
-                &hostKaratsubaOutYYV2,
+                &hostAddResult,
                 debugStates
             );
 
-            auto OutputV2 = [&]([[maybe_unused]] const HpSharkFloat<SharkFloatParams> &out) {
+            auto OutputAdd = [&]([[maybe_unused]] const HpSharkFloat<SharkFloatParams> &out) {
                 if constexpr (SharkFloatParams::HostVerbose) {
-                    std::cout << "KaratsubaV2 result: " << out.ToString() << std::endl;
-                    std::cout << "KaratsubaV2 hex: " << out.ToHexString() << std::endl;
+                    std::cout << "Add result: " << out.ToString() << std::endl;
+                    std::cout << "Add hex: " << out.ToHexString() << std::endl;
                 }
-            };
-            
-            OutputV2(hostKaratsubaOutXXV2);
-            OutputV2(hostKaratsubaOutXYV2);
-            OutputV2(hostKaratsubaOutYYV2);
+                };
+
+            OutputAdd(hostAddResult);
 
             auto CheckAgainstHost = [&](
                 int testNum,
@@ -367,37 +415,22 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
                 const mpf_t mpfHostResult,
                 const HpSharkFloat<SharkFloatParams> &gpuResult) {
 
-                bool res = DiffAgainstHost<SharkFloatParams, sharkOperator>(
-                    testNum,
-                    name,
-                    mpfHostResult,
-                    gpuResult);
-                if (!res) {
-                    DebugBreak();
+                    bool res = DiffAgainstHost<SharkFloatParams, sharkOperator>(
+                        testNum,
+                        name,
+                        mpfHostResult,
+                        gpuResult);
+                    if (!res) {
+                        DebugBreak();
+                    };
+
+                    return res;
                 };
 
-                return res;
-            };
-
             bool res = true;
-            res &= CheckAgainstHost(testNum, "CustomHighPrecisionV2XX", mpfHostResultXX, hostKaratsubaOutXXV2);
-            res &= CheckAgainstHost(testNum, "CustomHighPrecisionV2XY", mpfHostResultXY, hostKaratsubaOutXYV2);
-            res &= CheckAgainstHost(testNum, "CustomHighPrecisionV2YY", mpfHostResultYY, hostKaratsubaOutYYV2);
+            res &= CheckAgainstHost(testNum, "CustomHighPrecisionV2XY", mpfHostResultXY, hostAddResult);
 
             return res;
-        } else if constexpr (sharkOperator == Operator::Add) {
-            (void)testNum;
-            (void)mpfHostResultXX;
-            (void)mpfHostResultXY;
-            (void)mpfHostResultYY;
-            return true;
-        } else {
-            (void)testNum;
-            (void)mpfHostResultXX;
-            (void)mpfHostResultXY;
-            (void)mpfHostResultYY;
-            return false;
-        }
         };
 
     // Perform the calculation on the host using MPIR
@@ -476,12 +509,23 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
     }
 
     std::vector<DebugStateHost<SharkFloatParams>> debugResultsHost;
-    bool testSucceeded = TestHostKaratsuba(
-        testNum,
-        mpfHostResultXX,
-        mpfHostResultXY,
-        mpfHostResultYY,
-        debugResultsHost);
+
+    bool testSucceeded = false;
+    if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
+        testSucceeded = TestHostKaratsuba(
+            testNum,
+            mpfHostResultXX,
+            mpfHostResultXY,
+            mpfHostResultYY,
+            debugResultsHost);
+    } else if constexpr (sharkOperator == Operator::Add) {
+        testSucceeded = TestHostAdd(
+            testNum,
+            mpfHostResultXY,
+            debugResultsHost);
+    } else {
+        assert(false);
+    }
 
     if (!testSucceeded) {
         std::cout << "Custom High Precision failed" << std::endl;
@@ -1195,7 +1239,8 @@ bool TestBinaryOperatorPerf([[maybe_unused]] int testBase) {
     template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyKaratsubaV2>(int testBase);
 #else
 #define ExplicitlyInstantiate(SharkFloatParams) \
-    template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyKaratsubaV2>(int testBase);
+    /* template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyKaratsubaV2>(int testBase); */ \
+    template bool TestAllBinaryOp<SharkFloatParams, Operator::Add>(int testBase);
 #endif
 
 template bool TestBinaryOperatorPerf<Operator::Add>(int testBase);

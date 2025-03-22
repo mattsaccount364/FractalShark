@@ -22,7 +22,7 @@ static constexpr bool SharkDebug = false;
 // 2 = setup for profiling only, one kernel
 // 3 = all basic correctness tests + comical tests
 // See ExplicitInstantiate.h for more information
-#define ENABLE_BASIC_CORRECTNESS 3
+#define ENABLE_BASIC_CORRECTNESS 0
 static constexpr auto SharkComicalThreadCount = 13;
 static constexpr auto SharkTestIterCount = SharkDebug ? 3 : 50000;
 
@@ -53,7 +53,7 @@ static constexpr bool SharkDebugChecksums = SharkDebug;
 static constexpr bool SharkDebugRandomDelays = false;
 
 // Set to false to bypass all GPU tests and only do reference/host-side
-static constexpr bool SharkTestGpu = true;
+static constexpr bool SharkTestGpu = false;
 static constexpr bool SharkBenchmarkAgainstHost = true;
 
 

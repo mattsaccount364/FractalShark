@@ -28,6 +28,12 @@ static constexpr auto SharkMultiKernel = false;
 
 // Define to enable GPU kernel compilation
 // #define SHARK_INCLUDE_KERNELS
+// Set to false to bypass all GPU tests and only do reference/host-side
+#ifdef SHARK_INCLUDE_KERNELS
+static constexpr bool SharkTestGpu = true;
+#else
+static constexpr bool SharkTestGpu = false;
+#endif
 
 // 0 = just one correctness test, intended for fast re-compile of a specific failure
 // 1 = all basic correctness tests/all basic perf tests
@@ -55,8 +61,6 @@ static constexpr bool SharkCorrectnessTests = true;
 static constexpr bool SharkDebugChecksums = SharkDebug;
 static constexpr bool SharkDebugRandomDelays = false;
 
-// Set to false to bypass all GPU tests and only do reference/host-side
-static constexpr bool SharkTestGpu = false;
 static constexpr bool SharkBenchmarkAgainstHost = true;
 
 

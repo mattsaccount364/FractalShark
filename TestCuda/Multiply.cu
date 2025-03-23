@@ -2629,4 +2629,6 @@ void ComputeMultiplyKaratsubaV2GpuTestLoop(cudaStream_t &stream, void *kernelArg
     template void ComputeMultiplyKaratsubaV2Gpu<SharkFloatParams>(void *kernelArgs[]); \
     template void ComputeMultiplyKaratsubaV2GpuTestLoop<SharkFloatParams>(cudaStream_t &stream, void *kernelArgs[]);
 
+#ifdef SHARK_INCLDUDE_KERNELS
 ExplicitInstantiateAll();
+#endif

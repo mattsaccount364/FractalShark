@@ -17,12 +17,24 @@ static constexpr bool SharkDebug = true;
 static constexpr bool SharkDebug = false;
 #endif
 
+// Undefine to include N2, v1 etc.
+// #define MULTI_KERNEL
+
+#ifdef MULTI_KERNEL
+static constexpr auto SharkMultiKernel = true;
+#else
+static constexpr auto SharkMultiKernel = false;
+#endif
+
+// Define to enable GPU kernel compilation
+// #define SHARK_INCLUDE_KERNELS
+
 // 0 = just one correctness test, intended for fast re-compile of a specific failure
 // 1 = all basic correctness tests/all basic perf tests
 // 2 = setup for profiling only, one kernel
 // 3 = all basic correctness tests + comical tests
 // See ExplicitInstantiate.h for more information
-#define ENABLE_BASIC_CORRECTNESS 0
+#define ENABLE_BASIC_CORRECTNESS 3
 static constexpr auto SharkComicalThreadCount = 13;
 static constexpr auto SharkTestIterCount = SharkDebug ? 3 : 50000;
 
@@ -36,15 +48,6 @@ static constexpr auto SharkRegisterLimit = 255;
 // TODO not hooked up right, leave as 0.  Idea is if we need fixed-size
 // amount of shared memory we can use this but as it is we don't use it.
 static constexpr auto SharkConstantSharedRequiredBytes = 0;
-
-// Undefine to include N2, v1 etc.
-// #define MULTI_KERNEL
-
-#ifdef MULTI_KERNEL
-static constexpr auto SharkMultiKernel = true;
-#else
-static constexpr auto SharkMultiKernel = false;
-#endif
 
 static constexpr auto SharkBatchSize = SharkDebug ? 8 : 512;
 static constexpr bool SharkInfiniteCorrectnessTests = true;
@@ -79,7 +82,7 @@ struct GenericSharkFloatParams {
     static constexpr bool ForceNoOp = false;
 
     // If true, the host will print out a lot of stuff
-    static constexpr bool HostVerbose = true;
+    static constexpr bool HostVerbose = false;
 
     // 1, 3, 9, 27, 81
     static constexpr auto ConvolutionLimit = pConvolutionLimit;

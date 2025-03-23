@@ -295,4 +295,6 @@ void InvokeAddKernelCorrectness(
         const HpSharkFloat<SharkFloatParams> &yNum, \
         HpSharkFloat<SharkFloatParams> &gpuResult);
 
+#ifdef SHARK_INCLUDE_KERNELS
 ExplicitInstantiateAll();
+#endif

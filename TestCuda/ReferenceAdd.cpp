@@ -1,7 +1,6 @@
 ﻿#include "ReferenceKaratsuba.h"
 #include "HpSharkFloat.cuh"
 #include "DebugChecksumHost.h"
-
 #include "DebugChecksum.cuh"
 
 #include <cstdint>
@@ -52,88 +51,83 @@ inline int CountLeadingZeros(uint32_t x) {
         if (x & (1u << bit))
             break;
         ++count;
-
     }
     return count;
 }
 
-//---------------------------------------------------------------------
-// Multi-word shifts for extended (little-endian) arrays.
-// We'll implement multi-word right shift in little endian order
-// by applying our ShiftRight() to each word.
-// (We assume that our provided ShiftRight already works for little endian.)
-//---------------------------------------------------------------------
+//
+// Multi-word shift routines for little-endian arrays
+//
 
-// MultiWordRightShift_LittleEndian: shift an array 'in' of length 'n' right by L bits,
+// MultiWordRightShift_LittleEndian: shift an array 'in' (of length n) right by L bits,
 // storing the result in 'out'. (out and in may be distinct.)
 inline void MultiWordRightShift_LittleEndian(const std::vector<uint32_t> &in, int L, std::vector<uint32_t> &out) {
-    const auto n = static_cast<int>(in.size());
+    const int n = static_cast<int>(in.size());
     out.resize(n, 0);
     for (int i = 0; i < n; i++) {
         out[i] = ShiftRight(in.data(), L, i, n);
     }
 }
 
-// MultiWordLeftShift_LittleEndian: shift an array 'in' of length 'n' left by L bits,
+// MultiWordLeftShift_LittleEndian: shift an array 'in' (of length n) left by L bits,
 // storing the result in 'out'.
 inline void MultiWordLeftShift_LittleEndian(const std::vector<uint32_t> &in, int L, std::vector<uint32_t> &out) {
-    const auto n = static_cast<int>(in.size());
+    const int n = static_cast<int>(in.size());
     out.resize(n, 0);
     for (int i = 0; i < n; i++) {
         out[i] = ShiftLeft(in.data(), L, i, n);
     }
 }
 
-//---------------------------------------------------------------------
-// ExtendedNormalize: Normalizes an extended little-endian array 'ext'
-// so that its most–significant set bit is moved to bit (totalExtBits - 1)
-// (i.e. the highest bit of the extended field). 'storedExp' is adjusted accordingly.
-// The out–parameter 'isZero' is set to true if the entire array is zero.
-//---------------------------------------------------------------------
-void ExtendedNormalize(std::vector<uint32_t> &ext, int &storedExp, bool &isZero) {
-    const auto n = static_cast<int>(ext.size());
-    // Find the index of the most-significant nonzero word.
+//
+// New ExtendedNormalize routine
+//
+// Instead of copying (shifting) the entire array, this routine computes
+// a shift offset (L) such that if you were to left-shift the original array by L bits,
+// its most-significant set bit would be in the highest bit position of the extended field.
+// It then adjusts the stored exponent accordingly and returns the shift offset.
+//
+int ExtendedNormalizeShiftIndex(const std::vector<uint32_t> &ext, int &storedExp, bool &isZero) {
+    const int n = static_cast<int>(ext.size());
     int msd = n - 1;
     while (msd >= 0 && ext[msd] == 0)
         msd--;
     if (msd < 0) {
-        // The number is zero.
         isZero = true;
-        return;
+        return 0;  // For zero, the shift offset is irrelevant.
     }
     isZero = false;
-    int clz = CountLeadingZeros(ext[msd]); // Count high-order zero bits in ext[msd]
+    int clz = CountLeadingZeros(ext[msd]);
     // In little-endian, the overall bit index of the MSB is:
-    //     current_msb = msd * 32 + (31 - clz)
+    //    current_msb = msd * 32 + (31 - clz)
     int current_msb = msd * 32 + (31 - clz);
     int totalExtBits = n * 32;
-    // We want the MSB to end up at bit (totalExtBits - 1)
-    int L = (totalExtBits - 1) - current_msb; // number of bits to shift left
-    if (L > 0) {
-        std::vector<uint32_t> shifted;
-        // Use our helper routine to perform the left shift.
-        MultiWordLeftShift_LittleEndian(ext, L, shifted);
-        ext = shifted;
-        storedExp -= L;
-    }
+    // Compute the left-shift needed so that the MSB moves to bit (totalExtBits - 1).
+    int L = (totalExtBits - 1) - current_msb;
+    // Adjust the exponent as if we had shifted the number left by L bits.
+    storedExp -= L;
+    return L;
 }
 
+//
+// Helper to retrieve a normalized digit on the fly.
+// Given the original extended array and a shift offset (obtained from ExtendedNormalizeShiftIndex),
+// this returns the digit at index 'idx' as if the array had been left-shifted by shiftOffset bits.
+//
+inline uint32_t GetNormalizedDigit(const std::vector<uint32_t> &ext, int shiftOffset, int idx) {
+    return ShiftLeft(ext.data(), shiftOffset, idx, ext.size());
+}
 
-
-//---------------------------------------------------------------------
-// Final normalization: convert the extended result (little endian)
-// into a nominal result with GlobalNumUint32 words, by re-normalizing.
-// In little endian, the nominal representation's most significant word is at index (GlobalNumUint32 - 1).
-// We find the most significant set bit in the extended result and compute how many bits
-// we need to shift right (if the number is "too wide") or left (if it's "too narrow")
-// so that the most significant set bit ends up at bit position: (GlobalNumUint32*32 - 1).
-// Then we adjust the exponent accordingly.
-//---------------------------------------------------------------------
+//
+// Final normalization: Convert the extended result (little-endian)
+// into a nominal result with GlobalNumUint32 words by re-normalizing.
+// This function remains mostly unchanged.
+//
 template <class SharkFloatParams>
 void FinalNormalizeExtendedResult(const std::vector<uint32_t> &extResult, int &outExponent, std::vector<uint32_t> &finalResult) {
     const int nominalWords = SharkFloatParams::GlobalNumUint32;
     const int extDigits = extResult.size();
-    // In little endian, find the index of the highest nonzero word.
+    // Find the index of the highest nonzero word.
     int msd = 0;
     for (int i = extDigits - 1; i >= 0; i--) {
         if (extResult[i] != 0) { msd = i; break; }
@@ -143,36 +137,33 @@ void FinalNormalizeExtendedResult(const std::vector<uint32_t> &extResult, int &o
     // Desired overall bit position for the nominal result's MSB:
     int desired = (nominalWords - 1) * 32 + 31;
     int shiftNeeded = currentOverall - desired;
-    // Copy extResult to a working vector.
+    // Work on a temporary copy.
     std::vector<uint32_t> temp = extResult;
     if (shiftNeeded > 0) {
-        // Need to shift right by shiftNeeded bits.
         std::vector<uint32_t> shifted;
         MultiWordRightShift_LittleEndian(temp, shiftNeeded, shifted);
         temp = shifted;
         outExponent += shiftNeeded;
     } else if (shiftNeeded < 0) {
-        // Need to shift left by -shiftNeeded bits.
         int L = -shiftNeeded;
         std::vector<uint32_t> shifted;
         MultiWordLeftShift_LittleEndian(temp, L, shifted);
         temp = shifted;
         outExponent -= L;
     }
-    // Now, we want the nominal result to be in the lower nominalWords digits.
-    // In little endian, that means indices 0..(nominalWords - 1).
+    // Extract the nominal GlobalNumUint32 words.
     finalResult.resize(nominalWords);
     for (int i = 0; i < nominalWords; i++) {
         finalResult[i] = temp[i];
     }
 }
 
-
-//---------------------------------------------------------------------
+//
 // Extended arithmetic using little-endian representation.
-// This function uses extended working precision (with guard words) to perform
-// addition/subtraction with correct alignment and sign handling.
-//---------------------------------------------------------------------
+// This version uses the new normalization approach, where the extended operands
+// are not copied; instead, a shift index is returned and used later to compute
+// normalized digits on the fly.
+//
 template<class SharkFloatParams>
 void AddHelper(
     const HpSharkFloat<SharkFloatParams> *A,
@@ -187,7 +178,7 @@ void AddHelper(
     // --- Set up extended working precision ---
     const int guard = 2;
     const int extDigits = SharkFloatParams::GlobalNumUint32 + guard;
-    // Create extended arrays (little endian, index 0 is LSB).
+    // Create extended arrays (little-endian, index 0 is LSB).
     std::vector<uint32_t> extA(extDigits, 0);
     std::vector<uint32_t> extB(extDigits, 0);
     for (int i = 0; i < SharkFloatParams::GlobalNumUint32; i++) {
@@ -203,32 +194,34 @@ void AddHelper(
         std::cout << "extB exponent: " << normB.Exponent << std::endl;
     }
 
-    // --- Extended Normalization ---
+    // --- Extended Normalization using shift indices ---
     bool normA_isZero = false, normB_isZero = false;
-    ExtendedNormalize(extA, normA.Exponent, normA_isZero);
-    ExtendedNormalize(extB, normB.Exponent, normB_isZero);
+    int shiftA = ExtendedNormalizeShiftIndex(extA, normA.Exponent, normA_isZero);
+    int shiftB = ExtendedNormalizeShiftIndex(extB, normB.Exponent, normB_isZero);
+    // Note: extA and extB remain unmodified; the normalization is applied on the fly.
 
+    // --- Compute normalized representations on the fly ---
+    std::vector<uint32_t> normAvec(extDigits, 0);
+    std::vector<uint32_t> normBvec(extDigits, 0);
+    for (int i = 0; i < extDigits; i++) {
+        normAvec[i] = GetNormalizedDigit(extA, shiftA, i);
+        normBvec[i] = GetNormalizedDigit(extB, shiftB, i);
+    }
     if constexpr (SharkFloatParams::HostVerbose) {
-        std::cout << "extA after normalization: " << VectorUintToHexString(extA) << std::endl;
+        std::cout << "Normalized extA: " << VectorUintToHexString(normAvec) << std::endl;
         std::cout << "normA exponent after normalization: " << normA.Exponent << std::endl;
-        std::cout << "extB after normalization: " << VectorUintToHexString(extB) << std::endl;
+        std::cout << "Normalized extB: " << VectorUintToHexString(normBvec) << std::endl;
         std::cout << "normB exponent after normalization: " << normB.Exponent << std::endl;
     }
 
     // --- Compute Effective Exponents ---
-    // For a normalized little-endian number, we assume that the nominal representation
-    // consists of GlobalNumUint32 words and that the most-significant word (at index GlobalNumUint32-1)
-    // should have its top bit (bit 31) set. Thus, if the number is nonzero, we define:
-    //
-    //      effectiveExp = storedExponent + (GlobalNumUint32*32 - 32)
-    //
-    // If the number is zero (as reported by ExtendedNormalize), we assign a very low effective exponent.
+    // For a normalized little-endian number, we assume the nominal representation
+    // consists of GlobalNumUint32 words and that the MSB (at index GlobalNumUint32-1) is set.
     int effExpA, effExpB;
     if (normA_isZero)
         effExpA = -100000000;
     else
         effExpA = normA.Exponent + (SharkFloatParams::GlobalNumUint32 * 32 - 32);
-
     if (normB_isZero)
         effExpB = -100000000;
     else
@@ -241,39 +234,29 @@ void AddHelper(
     } else if (effExpA < effExpB) {
         AIsBiggerMagnitude = false;
     } else {
-        // Effective exponents are equal: compare extended normalized arrays.
-        // extA and extB have been produced by ExtendedNormalize.
-        AIsBiggerMagnitude = false; // default: they are equal
+        AIsBiggerMagnitude = false; // default if equal
         for (int i = extDigits - 1; i >= 0; i--) {
-            if (extA[i] > extB[i]) {
-                AIsBiggerMagnitude = true;
-                break;
-            } else if (extA[i] < extB[i]) {
-                AIsBiggerMagnitude = false;
-                break;
-            }
+            if (normAvec[i] > normBvec[i]) { AIsBiggerMagnitude = true; break; } else if (normAvec[i] < normBvec[i]) { AIsBiggerMagnitude = false; break; }
         }
     }
     int diff = AIsBiggerMagnitude ? (effExpA - effExpB) : (effExpB - effExpA);
     int32_t outExponent = AIsBiggerMagnitude ? normA.Exponent : normB.Exponent;
 
-
     // --- Determine operation: addition if same sign; otherwise subtraction.
     bool sameSign = (normA.IsNegative == normB.IsNegative);
 
     // --- Alignment ---
-    // In little-endian representation, we align by shifting the smaller operand right by 'diff' bits.
-    std::vector<uint32_t> alignedA = extA;
+    // In little-endian, we align by shifting the smaller operand right by 'diff' bits.
+    std::vector<uint32_t> alignedA(extDigits, 0);
     std::vector<uint32_t> alignedB(extDigits, 0);
     if (AIsBiggerMagnitude) {
-        for (int i = 0; i < extDigits; i++) {
-            alignedB[i] = ShiftRight(extB.data(), diff, i, extDigits);
-        }
+        // A is larger: use normAvec as is; shift normBvec right by diff.
+        alignedA = normAvec;
+        MultiWordRightShift_LittleEndian(normBvec, diff, alignedB);
     } else {
-        for (int i = 0; i < extDigits; i++) {
-            alignedA[i] = ShiftRight(extA.data(), diff, i, extDigits);
-        }
-        alignedB = extB;
+        // B is larger: use normBvec as is; shift normAvec right by diff.
+        alignedB = normBvec;
+        MultiWordRightShift_LittleEndian(normAvec, diff, alignedA);
     }
     if constexpr (SharkFloatParams::HostVerbose) {
         std::cout << "alignedA: " << VectorUintToHexString(alignedA) << std::endl;
@@ -285,38 +268,33 @@ void AddHelper(
     if (sameSign) {
         // ---- Addition Branch ----
         uint64_t carry = 0;
-        // Addition: process from LSB (index 0) upward.
         for (int i = 0; i < extDigits; i++) {
             uint64_t sum = (uint64_t)alignedA[i] + (uint64_t)alignedB[i] + carry;
             extResult[i] = (uint32_t)(sum & 0xFFFFFFFF);
             carry = sum >> 32;
         }
         if (carry > 0) {
-            // Instead of a simple right-shift loop, allocate a temporary array with one extra word.
+            // Handle overflow by a 1-bit right shift of the result.
             outExponent += 1;
             std::vector<uint32_t> temp(extDigits + 1, 0);
-            // Copy extResult into temp (indices 0..extDigits-1).
             for (int i = 0; i < extDigits; i++) {
                 temp[i] = extResult[i];
             }
-            // Set the extra (most significant) word to the carry.
             temp[extDigits] = (uint32_t)carry;
-            // Now perform a 1-bit right shift over the entire (extDigits+1)-word array.
             std::vector<uint32_t> shifted(temp.size(), 0);
             for (int i = 0; i < (int)temp.size(); i++) {
-                const auto sz = static_cast<int>(temp.size());
+                const int sz = temp.size();
                 shifted[i] = ShiftRight(temp.data(), 1, i, sz);
             }
-            // Drop the extra word (i.e. take indices 0..extDigits-1) as the new extResult.
             for (int i = 0; i < extDigits; i++) {
                 extResult[i] = shifted[i];
             }
         }
         // The result sign remains the same.
     } else {
+        // ---- Subtraction Branch ----
         uint64_t borrow = 0;
         if (AIsBiggerMagnitude) {
-            // Compute extResult = alignedA - alignedB.
             for (int i = 0; i < extDigits; i++) {
                 int64_t diffVal = (int64_t)alignedA[i] - (int64_t)alignedB[i] - borrow;
                 if (diffVal < 0) {
@@ -328,7 +306,6 @@ void AddHelper(
                 extResult[i] = (uint32_t)(diffVal & 0xFFFFFFFF);
             }
         } else {
-            // Compute extResult = alignedB - alignedA.
             for (int i = 0; i < extDigits; i++) {
                 int64_t diffVal = (int64_t)alignedB[i] - (int64_t)alignedA[i] - borrow;
                 if (diffVal < 0) {
@@ -346,10 +323,7 @@ void AddHelper(
         std::cout << "extResult after arithmetic: " << VectorUintToHexString(extResult) << std::endl;
     }
 
-    // --- Final Normalization: re-normalize the extended result into nominal precision.
-    // In little-endian, the nominal representation consists of GlobalNumUint32 words,
-    // with index 0 = LSB and index (GlobalNumUint32 - 1) = MSB.
-    // Find the overall bit index of the most significant set bit in extResult.
+    // --- Final Normalization ---
     int msdResult = 0;
     for (int i = extDigits - 1; i >= 0; i--) {
         if (extResult[i] != 0) { msdResult = i; break; }
@@ -360,7 +334,6 @@ void AddHelper(
     int shiftNeeded = currentOverall - desiredOverall;
     std::vector<uint32_t> finalExt = extResult;
     if (shiftNeeded > 0) {
-        // Shift right by shiftNeeded bits.
         std::vector<uint32_t> shifted;
         MultiWordRightShift_LittleEndian(finalExt, shiftNeeded, shifted);
         finalExt = shifted;
@@ -372,7 +345,6 @@ void AddHelper(
         finalExt = shifted;
         outExponent -= L;
     }
-    // Now, extract the nominal GlobalNumUint32 words.
     std::vector<uint32_t> finalResult(SharkFloatParams::GlobalNumUint32, 0);
     for (int i = 0; i < SharkFloatParams::GlobalNumUint32; i++) {
         finalResult[i] = finalExt[i];
@@ -391,7 +363,9 @@ void AddHelper(
     debugStates.push_back(dbg);
 }
 
-
+//
+// Explicit instantiation macro (assumes ExplicitInstantiateAll is defined elsewhere)
+//
 #define ExplicitlyInstantiate(SharkFloatParams) \
     template void AddHelper<SharkFloatParams>( \
         const HpSharkFloat<SharkFloatParams> *, \

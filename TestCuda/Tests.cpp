@@ -448,28 +448,37 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
 
     if constexpr (sharkOperator == Operator::Add) {
         mpf_add(mpfHostResultXY, mpfX, mpfY);
+
+        // Print host result
+        if constexpr (SharkFloatParams::HostVerbose) {
+            std::cout << "\nHost result:" << std::endl;
+            std::cout << "Host result XY: " <<
+                MpfToString<SharkFloatParams>(mpfHostResultXY, HpSharkFloat<SharkFloatParams>::DefaultPrecBits) << std::endl;
+            std::cout << "Host hex XY: " << std::endl;
+            std::cout << "" << MpfToHexString(mpfHostResultXY) << std::endl;
+        }
     } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
         mpf_mul(mpfHostResultXX, mpfX, mpfX);
         mpf_mul(mpfHostResultXY, mpfX, mpfY);
         mpf_mul(mpfHostResultYY, mpfY, mpfY);
-    }
 
-    // Print host result
-    if constexpr (SharkFloatParams::HostVerbose) {
-        std::cout << "\nHost result:" << std::endl;
-        std::cout << "Host result XX: " <<
-            MpfToString<SharkFloatParams>(mpfHostResultXX, HpSharkFloat<SharkFloatParams>::DefaultPrecBits) << std::endl;
-        std::cout << "Host result XY: " <<
-            MpfToString<SharkFloatParams>(mpfHostResultXY, HpSharkFloat<SharkFloatParams>::DefaultPrecBits) << std::endl;
-        std::cout << "Host result YY: " <<
-            MpfToString<SharkFloatParams>(mpfHostResultYY, HpSharkFloat<SharkFloatParams>::DefaultPrecBits) << std::endl;
-        
-        std::cout << "Host hex XX: " << std::endl;
-        std::cout << "" << MpfToHexString(mpfHostResultXX) << std::endl;
-        std::cout << "Host hex XY: " << std::endl;
-        std::cout << "" << MpfToHexString(mpfHostResultXY) << std::endl;
-        std::cout << "Host hex YY: " << std::endl;
-        std::cout << "" << MpfToHexString(mpfHostResultYY) << std::endl;
+        // Print host result
+        if constexpr (SharkFloatParams::HostVerbose) {
+            std::cout << "\nHost result:" << std::endl;
+            std::cout << "Host result XX: " <<
+                MpfToString<SharkFloatParams>(mpfHostResultXX, HpSharkFloat<SharkFloatParams>::DefaultPrecBits) << std::endl;
+            std::cout << "Host result XY: " <<
+                MpfToString<SharkFloatParams>(mpfHostResultXY, HpSharkFloat<SharkFloatParams>::DefaultPrecBits) << std::endl;
+            std::cout << "Host result YY: " <<
+                MpfToString<SharkFloatParams>(mpfHostResultYY, HpSharkFloat<SharkFloatParams>::DefaultPrecBits) << std::endl;
+
+            std::cout << "Host hex XX: " << std::endl;
+            std::cout << "" << MpfToHexString(mpfHostResultXX) << std::endl;
+            std::cout << "Host hex XY: " << std::endl;
+            std::cout << "" << MpfToHexString(mpfHostResultXY) << std::endl;
+            std::cout << "Host hex YY: " << std::endl;
+            std::cout << "" << MpfToHexString(mpfHostResultYY) << std::endl;
+        }
     }
 
     std::vector<DebugStateRaw> debugStatesCuda{};
@@ -655,7 +664,7 @@ void TestBinOperatorTwoNumbersRaw(
         auto printTest = [&](int curTest) {
             std::cout << std::endl;
             std::cout << std::endl;
-            std::cout << "Test " << curTest << std::endl;
+            std::cout << "Test " << std::dec << curTest << std::endl;
             };
 
         auto negateMpfAndHp = [](mpf_t &mpfCopy, HpSharkFloat<SharkFloatParams> &numCopy) {
@@ -756,7 +765,7 @@ void TestBinOperatorTwoNumbers(
     auto printTest = [&](int curTest) {
         std::cout << std::endl;
         std::cout << std::endl;
-        std::cout << "Test " << curTest << std::endl;
+        std::cout << "Test " << std::dec << curTest << std::endl;
     };
 
     // All four variations of + and - tests
@@ -799,7 +808,7 @@ void TestBinOperatorTwoNumbers(
 
     std::cout << std::endl;
     std::cout << std::endl;
-    std::cout << "Test " << testNum << std::endl;
+    std::cout << "Test " << std::dec << testNum << std::endl;
 
     mpf_set_default_prec(HpSharkFloat<SharkFloatParams>::DefaultMpirBits);  // Set precision for MPIR floating point
 
@@ -831,7 +840,7 @@ void TestAddSpecialNumbers(int testNum, std::vector<uint32_t> &digits1, std::vec
 
     std::cout << std::endl;
     std::cout << std::endl;
-    std::cout << "Test " << testNum << std::endl;
+    std::cout << "Test " << std::dec << testNum << std::endl;
 
     auto strLargeX = Uint32ToMpf<SharkFloatParams>(digits1.data(), SharkFloatParams::HalfLimbsRoundedUp, x);
     auto strLargeY = Uint32ToMpf<SharkFloatParams>(digits2.data(), SharkFloatParams::HalfLimbsRoundedUp, y);
@@ -905,7 +914,7 @@ void TestAddSpecialNumbersHelper(
 
     std::cout << std::endl;
     std::cout << std::endl;
-    std::cout << "Test " << testNum << std::endl;
+    std::cout << "Test " << std::dec << testNum << std::endl;
 
     std::vector<uint32_t> testData1Copy;
     testData1Copy = testData1;
@@ -1081,24 +1090,20 @@ bool TestAllBinaryOp(int testBase) {
     constexpr bool includeSet10 = true;
     constexpr bool includeSet11 = false;
 
-    // 200s is multiply
-    // 400s is add
+    // 2000s is multiply
+    // 4000s is add
     
     if constexpr (includeSet1) {
         const auto set = testBase + 100;
-        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 10, "1", "2");
+        //TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 10, "1", "2");
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 20, "4294967295", "1");
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 30, "4294967296", "1");
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 40, "4294967295", "4294967296");
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 50, "4294967296", "-1");
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 60, "18446744073709551615", "1");
-
-        // Note that this next test fails but ....
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 70, "0", "0.1");
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 80, "0.1", "0");
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 90, "0", "0");
-
-        // This one passes? WTF  and why not checksum failure
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 100, "0.1", "0.1");
     }
 

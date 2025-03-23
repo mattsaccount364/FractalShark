@@ -50,7 +50,7 @@ bool TestTracker::CheckAllTestsPassed() const {
         }
 
         if (anyFailed) {
-            std::cout << "Test " << i << " failed!  " <<
+            std::cout << "Test " << std::dec << i << " failed!  " <<
                 combinedDesc << ", " <<
                 "Error: " << m_Tests[i].RelativeError << " " <<
                 "Acceptable error: " << m_Tests[i].AcceptableError << std::endl;
@@ -60,7 +60,7 @@ bool TestTracker::CheckAllTestsPassed() const {
     // Print out times for those that are non-zero
     for (int i = 0; i < m_Tests.size(); ++i) {
         if (m_Tests[i].TestMs > 10) {
-            std::cout << "Test " << i << " took " << m_Tests[i].TestMs << " ms" << std::endl;
+            std::cout << "Test " << std::dec << i << " took " << m_Tests[i].TestMs << " ms" << std::endl;
         }
     }
 

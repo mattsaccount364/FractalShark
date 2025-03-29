@@ -1080,6 +1080,29 @@ void TestAddSpecialNumbers20(int testNum) {
 }
 
 template<class SharkFloatParams, Operator sharkOperator>
+void TestAddSpecialNumbers21(int testNum, int exponentOverride2) {
+
+    std::vector<uint32_t> allFs{};
+    for (size_t i = 0; i < SharkFloatParams::GlobalNumUint32; ++i) {
+        allFs.push_back(0xFFFFFFFF);
+    }
+    allFs.resize(SharkFloatParams::GlobalNumUint32);
+
+    std::vector<uint32_t> justOne{};
+    justOne.push_back(1);
+    justOne.resize(SharkFloatParams::GlobalNumUint32);
+
+    std::cout << std::endl;
+    std::cout << std::endl;
+    std::cout << "Test " << std::dec << testNum << ", exponentOverride2: " << exponentOverride2 << std::endl;
+
+    auto xNum = std::make_unique<HpSharkFloat<SharkFloatParams>>(allFs.data(), 0, false);
+    auto yNum = std::make_unique<HpSharkFloat<SharkFloatParams>>(justOne.data(), exponentOverride2, false);
+
+    TestAddSpecialNumbers<SharkFloatParams, sharkOperator>(testNum, *xNum, *yNum);
+}
+
+template<class SharkFloatParams, Operator sharkOperator>
 bool TestAllBinaryOp(int testBase) {
     constexpr bool includeSet1 = true;
     constexpr bool includeSet2 = true;
@@ -1167,6 +1190,20 @@ bool TestAllBinaryOp(int testBase) {
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 30, "0.1265542653452654526545625456254565446654545645649789871322131213156435546435", "-1.2634683757879587749854733454356324153342452684769284546534432341646587766348547465845321866391730473289107302178039999999999999271839216");
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 40, "0.0265542653452654526545625456254565446654545645649789871322131213156435546435", "-1.263468375787958774985473345435632415334245268476928454653443234164658776634854746584532186639173047328910730217803271839216");
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 50, "0.00000000000000000265542653452654526545625456254565446654545645649789871322131213156435546435", "-1.263468375787958774985473345435632415334245268476928454653443234164658776634854746584532186639173047328910730217803271839216");
+    }
+
+    if constexpr (sharkOperator == Operator::Add && SharkFloatParams::GlobalNumUint32 == 8) {
+        auto x = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+        auto y = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+
+        for (auto i = -512; i < 512; i++) {
+            if constexpr (SharkFloatParams::HostVerbose) {
+                std::cout << "x.Exponent: " << x->Exponent << ", neg: " << x->IsNegative << std::endl;
+                std::cout << "y.Exponent: " << y->Exponent << ", neg: " << y->IsNegative << std::endl;
+            }
+            
+            TestAddSpecialNumbers21<SharkFloatParams, sharkOperator>(0, i);
+        }
     }
 
     if constexpr (includeSet10) {

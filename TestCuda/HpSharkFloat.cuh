@@ -86,7 +86,7 @@ struct GenericSharkFloatParams {
     static constexpr bool ForceNoOp = false;
 
     // If true, the host will print out a lot of stuff
-    static constexpr bool HostVerbose = false;
+    static constexpr bool HostVerbose = true;
 
     // 1, 3, 9, 27, 81
     static constexpr auto ConvolutionLimit = pConvolutionLimit;

@@ -31,7 +31,7 @@ inline uint32_t ShiftRight(const uint32_t *digits, int shiftBits, int idx, int n
 
 // ShiftLeft: Shifts the number (given by its digit array) left by shiftBits.
 // idx is the index of the digit to compute.
-inline uint32_t ShiftLeft(const uint32_t *digits, int shiftBits, int idx, int /*numDigits*/) {
+inline uint32_t ShiftLeft(const uint32_t *digits, int shiftBits, int idx) {
     int shiftWords = shiftBits / 32;
     int shiftBitsMod = shiftBits % 32;
     int srcIdx = idx - shiftWords;
@@ -75,7 +75,7 @@ inline void MultiWordLeftShift_LittleEndian(const std::vector<uint32_t> &in, int
     const int n = static_cast<int>(in.size());
     out.resize(n, 0);
     for (int i = 0; i < n; i++) {
-        out[i] = ShiftLeft(in.data(), L, i, n);
+        out[i] = ShiftLeft(in.data(), L, i);
     }
 }
 
@@ -115,7 +115,7 @@ int ExtendedNormalizeShiftIndex(const std::vector<uint32_t> &ext, int &storedExp
 // this returns the digit at index 'idx' as if the array had been left-shifted by shiftOffset bits.
 //
 inline uint32_t GetNormalizedDigit(const std::vector<uint32_t> &ext, int shiftOffset, int idx) {
-    return ShiftLeft(ext.data(), shiftOffset, idx, ext.size());
+    return ShiftLeft(ext.data(), shiftOffset, idx);
 }
 
 //
@@ -283,8 +283,8 @@ void AddHelper(
             temp[extDigits] = (uint32_t)carry;
             std::vector<uint32_t> shifted(temp.size(), 0);
             for (int i = 0; i < (int)temp.size(); i++) {
-                const int sz = temp.size();
-                shifted[i] = ShiftRight(temp.data(), 1, i, sz);
+                const auto sz = temp.size();
+                shifted[i] = ShiftRight(temp.data(), 1, i, static_cast<int>(sz));
             }
             for (int i = 0; i < extDigits; i++) {
                 extResult[i] = shifted[i];

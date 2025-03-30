@@ -20,14 +20,14 @@
 // idx is the index of the digit to compute. The parameter numDigits prevents out-of-bounds access.
 uint32_t ShiftRight (
     const uint32_t *digits,
-    int32_t shiftBits,
-    int32_t idx,
-    int32_t numDigits)
+    const int32_t shiftBits,
+    const int32_t idx,
+    const int32_t numDigits)
 {
-    int32_t shiftWords = shiftBits / 32;
-    int32_t shiftBitsMod = shiftBits % 32;
-    uint32_t lower = (idx + shiftWords < numDigits) ? digits[idx + shiftWords] : 0;
-    uint32_t upper = (idx + shiftWords + 1 < numDigits) ? digits[idx + shiftWords + 1] : 0;
+    const int32_t shiftWords = shiftBits / 32;
+    const int32_t shiftBitsMod = shiftBits % 32;
+    const uint32_t lower = (idx + shiftWords < numDigits) ? digits[idx + shiftWords] : 0;
+    const uint32_t upper = (idx + shiftWords + 1 < numDigits) ? digits[idx + shiftWords + 1] : 0;
     if (shiftBitsMod == 0) {
         return lower;
     } else {
@@ -44,9 +44,9 @@ uint32_t ShiftLeft (
     const int32_t shiftBits,
     const int32_t idx)
 {
-    int32_t shiftWords = shiftBits / 32;
-    int32_t shiftBitsMod = shiftBits % 32;
-    int32_t srcIdx = idx - shiftWords;
+    const int32_t shiftWords = shiftBits / 32;
+    const int32_t shiftBitsMod = shiftBits % 32;
+    const int32_t srcIdx = idx - shiftWords;
 
     int32_t srcDigitLower;
     if (srcIdx < actualDigits) {
@@ -64,8 +64,8 @@ uint32_t ShiftLeft (
         srcDigitUpper = 0;
     }
 
-    uint32_t lower = (srcIdx >= 0) ? srcDigitLower : 0;
-    uint32_t upper = (srcIdx - 1 >= 0) ? srcDigitUpper : 0;
+    const uint32_t lower = (srcIdx >= 0) ? srcDigitLower : 0;
+    const uint32_t upper = (srcIdx - 1 >= 0) ? srcDigitUpper : 0;
     if (shiftBitsMod == 0) {
         return lower;
     } else {
@@ -79,7 +79,7 @@ uint32_t ShiftLeft (
 // return __clz(x);
 // }
 int32_t CountLeadingZeros (
-    uint32_t x)
+    const uint32_t x)
 {
     int32_t count = 0;
     for (int32_t bit = 31; bit >= 0; --bit) {
@@ -98,18 +98,14 @@ int32_t CountLeadingZeros (
 // storing the result in 'out'. (out and in may be distinct.)
 void MultiWordRightShift_LittleEndian (
     const uint32_t *in,
-    int32_t inN,
-    int32_t L,
+    const int32_t inN,
+    const int32_t L,
     uint32_t *out,
-    int32_t outSz)
+    const int32_t outSz)
 {
     assert(inN >= outSz);
 
-    for (int32_t i = 0; i < inN; i++) {
-        if (i >= outSz) {
-            break;
-        }
-
+    for (int32_t i = 0; i < outSz; i++) {
         out[i] = ShiftRight(in, L, i, inN);
     }
 }
@@ -118,28 +114,24 @@ void MultiWordRightShift_LittleEndian (
 // storing the result in 'out'.
 void MultiWordLeftShift_LittleEndian(
     const uint32_t *in,
-    int32_t extDigits,
-    int32_t actualDigits,
-    int32_t L,
+    const int32_t extDigits,
+    const int32_t actualDigits,
+    const int32_t L,
     uint32_t *out,
-    int32_t outSz)
+    const int32_t outSz)
 {
     assert(extDigits >= outSz);
 
     for (int32_t i = 0; i < outSz; i++) {
-        if (i >= outSz) {
-            break;
-        }
-
         out[i] = ShiftLeft(in, actualDigits, extDigits, L, i);
     }
 }
 
 uint32_t GetExtLimb(
     const uint32_t *ext,
-    int32_t actualDigits,
-    int32_t extDigits,
-    int32_t idx) {
+    const int32_t actualDigits,
+    const int32_t extDigits,
+    const int32_t idx) {
     
     if (idx < actualDigits) {
         return ext[idx];
@@ -159,8 +151,8 @@ uint32_t GetExtLimb(
 //
 int32_t ExtendedNormalizeShiftIndex (
     const uint32_t *ext,
-    int32_t actualDigits,
-    int32_t extDigits,
+    const int32_t actualDigits,
+    const int32_t extDigits,
     int32_t &storedExp,
     bool &isZero)
 {
@@ -172,13 +164,13 @@ int32_t ExtendedNormalizeShiftIndex (
         return 0;  // For zero, the shift offset is irrelevant.
     }
     isZero = false;
-    int32_t clz = CountLeadingZeros(GetExtLimb(ext, actualDigits, extDigits, msd));
+    const int32_t clz = CountLeadingZeros(GetExtLimb(ext, actualDigits, extDigits, msd));
     // In little-endian, the overall bit index of the MSB is:
     //    current_msb = msd * 32 + (31 - clz)
-    int32_t current_msb = msd * 32 + (31 - clz);
-    int32_t totalExtBits = extDigits * 32;
+    const int32_t current_msb = msd * 32 + (31 - clz);
+    const int32_t totalExtBits = extDigits * 32;
     // Compute the left-shift needed so that the MSB moves to bit (totalExtBits - 1).
-    int32_t L = (totalExtBits - 1) - current_msb;
+    const int32_t L = (totalExtBits - 1) - current_msb;
     // Adjust the exponent as if we had shifted the number left by L bits.
     storedExp -= L;
     return L;
@@ -191,10 +183,10 @@ int32_t ExtendedNormalizeShiftIndex (
 //
 uint32_t GetNormalizedDigit (
     const uint32_t *ext,
-    int32_t actualDigits,
-    int32_t extDigits,
-    int32_t shiftOffset,
-    int32_t idx)
+    const int32_t actualDigits,
+    const int32_t extDigits,
+    const int32_t shiftOffset,
+    const int32_t idx)
 {
     return ShiftLeft(ext, actualDigits, extDigits, shiftOffset, idx);
 }
@@ -204,18 +196,18 @@ uint32_t GetNormalizedDigit (
 template <class SharkFloatParams>
 uint32_t GetShiftedNormalizedDigit (
     const uint32_t *ext,
-    int32_t actualDigits,
-    int32_t extDigits,
-    int32_t shiftOffset,
-    int32_t diff,
-    int32_t idx)
+    const int32_t actualDigits,
+    const int32_t extDigits,
+    const int32_t shiftOffset,
+    const int32_t diff,
+    const int32_t idx)
 {
     // const int32_t n = SharkFloatParams::GlobalNumUint32; // normalized length
-    int32_t wordShift = diff / 32;
-    int32_t bitShift = diff % 32;
-    uint32_t lower = (idx + wordShift < extDigits) ?
+    const int32_t wordShift = diff / 32;
+    const int32_t bitShift = diff % 32;
+    const uint32_t lower = (idx + wordShift < extDigits) ?
         GetNormalizedDigit(ext, actualDigits, extDigits, shiftOffset, idx + wordShift) : 0;
-    uint32_t upper = (idx + wordShift + 1 < extDigits) ?
+    const uint32_t upper = (idx + wordShift + 1 < extDigits) ?
         GetNormalizedDigit(ext, actualDigits, extDigits, shiftOffset, idx + wordShift + 1) : 0;
     if (bitShift == 0)
         return lower;
@@ -315,9 +307,9 @@ void AddHelper(
     const auto *extB = B->Digits;
 
     // --- Set up extended working precision ---
-    const int32_t guard = 2;
-    const int32_t actualDigits = SharkFloatParams::GlobalNumUint32;
-    const int32_t extDigits = SharkFloatParams::GlobalNumUint32 + guard;
+    constexpr int32_t guard = 2;
+    constexpr int32_t actualDigits = SharkFloatParams::GlobalNumUint32;
+    constexpr int32_t extDigits = SharkFloatParams::GlobalNumUint32 + guard;
     // Create extended arrays (little-endian, index 0 is LSB).
     std::vector<uint32_t> extResult(extDigits, 0);
 
@@ -335,12 +327,23 @@ void AddHelper(
     bool normA_isZero = false, normB_isZero = false;
     int32_t newAExponent = A->Exponent;
     int32_t newBExponent = B->Exponent;
-    const int32_t shiftA = ExtendedNormalizeShiftIndex(extA, actualDigits, extDigits, newAExponent, normA_isZero);
-    const int32_t shiftB = ExtendedNormalizeShiftIndex(extB, actualDigits, extDigits, newBExponent, normB_isZero);
+    const int32_t shiftA = ExtendedNormalizeShiftIndex(
+        extA,
+        actualDigits,
+        extDigits,
+        newAExponent,
+        normA_isZero);
+
+    const int32_t shiftB = ExtendedNormalizeShiftIndex(
+        extB,
+        actualDigits,
+        extDigits,
+        newBExponent,
+        normB_isZero);
 
     // --- Compute Effective Exponents ---
-    const int32_t effExpA = normA_isZero ? -100000000 : newAExponent + (SharkFloatParams::GlobalNumUint32 * 32 - 32);
-    const int32_t effExpB = normB_isZero ? -100000000 : newBExponent + (SharkFloatParams::GlobalNumUint32 * 32 - 32);
+    const int32_t effExpA = normA_isZero ? -100'000'000 : newAExponent + (SharkFloatParams::GlobalNumUint32 * 32 - 32);
+    const int32_t effExpB = normB_isZero ? -100'000'000 : newBExponent + (SharkFloatParams::GlobalNumUint32 * 32 - 32);
 
     // --- Determine which operand has larger magnitude ---
     // If effective exponents differ, use them. If equal, compare normalized digits on the fly.
@@ -527,9 +530,7 @@ void AddHelper(
             std::cout << "No shift needed: " << shiftNeeded << std::endl;
         }
         // No shift needed, just copy the result.
-        for (int32_t i = 0; i < SharkFloatParams::GlobalNumUint32; i++) {
-            OutXY->Digits[i] = extResult[i];
-        }
+        memcpy(OutXY->Digits, extResult.data(), SharkFloatParams::GlobalNumUint32 * sizeof(uint32_t));
     }
 
     OutXY->Exponent = outExponent;

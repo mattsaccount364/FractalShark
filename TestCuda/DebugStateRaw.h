@@ -84,6 +84,7 @@ DebugStatePurposeToString(DebugStatePurpose purpose) {
 }
 
 struct DebugStateRaw {
+    int Initialized;
     int Block;
     int Thread;
     uint64_t ArraySize;

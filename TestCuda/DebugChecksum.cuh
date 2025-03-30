@@ -120,6 +120,7 @@ __device__ void DebugState<SharkFloatParams>::Reset(
     if constexpr (SharkDebugChecksums) {
         if (record == RecordIt::Yes) {
             // Initialize the checksum to zero
+            Data.Initialized = 1;
             Data.Checksum = 0;
             Data.Block = block.group_index().x;
             Data.Thread = block.thread_index().x;
@@ -153,6 +154,7 @@ __device__ void DebugState<SharkFloatParams>::Reset(
     if constexpr (SharkDebugChecksums) {
         if (record == RecordIt::Yes) {
             // Initialize the checksum to zero
+            Data.Initialized = 1;
             Data.Checksum = 0;
             Data.Block = block.group_index().x;
             Data.Thread = block.thread_index().x;
@@ -183,6 +185,7 @@ __device__ void DebugState<SharkFloatParams>::Erase(
     if constexpr (SharkDebugChecksums) {
         if (record == RecordIt::Yes) {
             // Initialize the checksum to zero
+            Data.Initialized = 0;
             Data.Checksum = 0;
             Data.Block = 0;
             Data.Thread = 0;

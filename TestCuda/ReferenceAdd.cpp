@@ -18,7 +18,8 @@
 
 // ShiftRight: Shifts the number (given by its digit array) right by shiftBits.
 // idx is the index of the digit to compute. The parameter numDigits prevents out-of-bounds access.
-uint32_t ShiftRight (
+static uint32_t
+ShiftRight (
     const uint32_t *digits,
     const int32_t shiftBits,
     const int32_t idx,
@@ -37,7 +38,8 @@ uint32_t ShiftRight (
 
 // ShiftLeft: Shifts the number (given by its digit array) left by shiftBits.
 // idx is the index of the digit to compute.
-uint32_t ShiftLeft (
+static uint32_t
+ShiftLeft (
     const uint32_t *digits,
     const int32_t actualDigits,
     const int32_t extDigits,
@@ -78,7 +80,8 @@ uint32_t ShiftLeft (
 // __device__ int32_t CountLeadingZerosCUDA(uint32_t x) {
 // return __clz(x);
 // }
-int32_t CountLeadingZeros (
+static int32_t
+CountLeadingZeros (
     const uint32_t x)
 {
     int32_t count = 0;
@@ -96,7 +99,8 @@ int32_t CountLeadingZeros (
 
 // MultiWordRightShift_LittleEndian: shift an array 'in' (of length n) right by L bits,
 // storing the result in 'out'. (out and in may be distinct.)
-void MultiWordRightShift_LittleEndian (
+static void
+MultiWordRightShift_LittleEndian (
     const uint32_t *in,
     const int32_t inN,
     const int32_t L,
@@ -112,7 +116,8 @@ void MultiWordRightShift_LittleEndian (
 
 // MultiWordLeftShift_LittleEndian: shift an array 'in' (of length n) left by L bits,
 // storing the result in 'out'.
-void MultiWordLeftShift_LittleEndian(
+static void
+MultiWordLeftShift_LittleEndian(
     const uint32_t *in,
     const int32_t extDigits,
     const int32_t actualDigits,
@@ -127,7 +132,8 @@ void MultiWordLeftShift_LittleEndian(
     }
 }
 
-uint32_t GetExtLimb(
+static uint32_t
+GetExtLimb(
     const uint32_t *ext,
     const int32_t actualDigits,
     const int32_t extDigits,
@@ -149,7 +155,8 @@ uint32_t GetExtLimb(
 // its most-significant set bit would be in the highest bit position of the extended field.
 // It then adjusts the stored exponent accordingly and returns the shift offset.
 //
-int32_t ExtendedNormalizeShiftIndex (
+static int32_t
+ExtendedNormalizeShiftIndex (
     const uint32_t *ext,
     const int32_t actualDigits,
     const int32_t extDigits,
@@ -181,7 +188,8 @@ int32_t ExtendedNormalizeShiftIndex (
 // Given the original extended array and a shift offset (obtained from ExtendedNormalizeShiftIndex),
 // this returns the digit at index 'idx' as if the array had been left-shifted by shiftOffset bits.
 //
-uint32_t GetNormalizedDigit (
+static uint32_t
+GetNormalizedDigit (
     const uint32_t *ext,
     const int32_t actualDigits,
     const int32_t extDigits,
@@ -194,7 +202,8 @@ uint32_t GetNormalizedDigit (
 // New helper: Computes the aligned digit for the normalized value on the fly.
 // 'diff' is the additional right shift required for alignment.
 template <class SharkFloatParams>
-uint32_t GetShiftedNormalizedDigit (
+static uint32_t
+GetShiftedNormalizedDigit (
     const uint32_t *ext,
     const int32_t actualDigits,
     const int32_t extDigits,
@@ -216,7 +225,8 @@ uint32_t GetShiftedNormalizedDigit (
 }
 
 template<class SharkFloatParams>
-void GetCorrespondingLimbs (
+static void
+GetCorrespondingLimbs (
     const uint32_t *extA,
     const int32_t actualASize,
     const int32_t extASize,
@@ -260,7 +270,7 @@ template<
     class SharkFloatParams,
     DebugStatePurpose Purpose,
     typename ArrayType>
-const DebugStateHost<SharkFloatParams> &
+static const DebugStateHost<SharkFloatParams> &
 GetCurrentDebugState(
     std::vector<DebugStateHost<SharkFloatParams>> &debugChecksumArray,
     const ArrayType *arrayToChecksum,
@@ -277,7 +287,8 @@ GetCurrentDebugState(
     return retval;
 }
 
-bool CompareMagnitudes (
+static bool
+CompareMagnitudes (
     int32_t effExpA,
     int32_t effExpB,
     const int32_t actualDigits,
@@ -317,7 +328,8 @@ bool CompareMagnitudes (
 // normalized digits on the fly.
 //
 template<class SharkFloatParams>
-void AddHelper(
+void
+AddHelper (
     const HpSharkFloat<SharkFloatParams> *A,
     const HpSharkFloat<SharkFloatParams> *B,
     HpSharkFloat<SharkFloatParams> *OutXY,
@@ -337,7 +349,7 @@ void AddHelper(
     constexpr int32_t actualDigits = SharkFloatParams::GlobalNumUint32;
     constexpr int32_t extDigits = SharkFloatParams::GlobalNumUint32 + guard;
     // Create extended arrays (little-endian, index 0 is LSB).
-    std::vector<uint32_t> extResult(extDigits, 0);
+    std::vector<uint64_t> extResult(extDigits, 0);
 
     // The guard words (indices GlobalNumUint32 to extDigits-1) are left as zero.
 
@@ -379,9 +391,21 @@ void AddHelper(
         newBExponent,
         normB_isZero);
 
+    if constexpr (SharkFloatParams::HostVerbose) {
+        std::cout << "extA after normalization: " << VectorUintToHexString(extA, actualDigits) << std::endl;
+        std::cout << "extB after normalization: " << VectorUintToHexString(extB, actualDigits) << std::endl;
+        std::cout << "shiftA: " << shiftA << std::endl;
+        std::cout << "shiftB: " << shiftB << std::endl;
+    }
+
     // --- Compute Effective Exponents ---
     const int32_t effExpA = normA_isZero ? -100'000'000 : newAExponent + (SharkFloatParams::GlobalNumUint32 * 32 - 32);
     const int32_t effExpB = normB_isZero ? -100'000'000 : newBExponent + (SharkFloatParams::GlobalNumUint32 * 32 - 32);
+
+    if constexpr (SharkFloatParams::HostVerbose) {
+        std::cout << "effExpA: " << effExpA << std::endl;
+        std::cout << "effExpB: " << effExpB << std::endl;
+    }
 
     // --- Determine which operand has larger magnitude ---
     // If effective exponents differ, use them. If equal, compare normalized digits on the fly.
@@ -397,6 +421,12 @@ void AddHelper(
 
     const int32_t diff = AIsBiggerMagnitude ? (effExpA - effExpB) : (effExpB - effExpA);
     int32_t outExponent = AIsBiggerMagnitude ? newAExponent : newBExponent;
+
+    if constexpr (SharkFloatParams::HostVerbose) {
+        std::cout << "AIsBiggerMagnitude: " << AIsBiggerMagnitude << std::endl;
+        std::cout << "diff: " << diff << std::endl;
+        std::cout << "outExponent: " << outExponent << std::endl;
+    }
 
     // --- Extended Arithmetic ---
     if (sameSign) {
@@ -501,6 +531,15 @@ void AddHelper(
         std::cout << "extResult after arithmetic: " << VectorUintToHexString(extResult) << std::endl;
         std::cout << "outExponent after arithmetic, before renormalization: " << outExponent << std::endl;
         std::cout << "extResult: " << VectorUintToHexString(extResult) << std::endl;
+    }
+
+    if constexpr (SharkDebugChecksums) {
+        const auto &debugResultState = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::Final128XY>(
+            debugStates, extResult.data(), extDigits);
+
+        if constexpr (SharkFloatParams::HostVerbose) {
+            std::cout << "extResult checksum: " << debugResultState.GetStr() << std::endl;
+        }
     }
 
     // --- Final Normalization ---

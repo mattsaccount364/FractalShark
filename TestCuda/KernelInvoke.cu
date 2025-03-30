@@ -227,7 +227,8 @@ void InvokeAddKernelCorrectness(
     cudaMalloc(&internalGpuResult, sizeof(HpSharkFloat<SharkFloatParams>));
     cudaMemset(internalGpuResult, 0, sizeof(HpSharkFloat<SharkFloatParams>));
 
-    constexpr auto BytesToAllocate = (AdditionalUInt64Global + SharkFloatParams::GlobalNumUint32 + 2) * sizeof(uint32_t);
+    constexpr auto BytesToAllocate =
+        (AdditionalUInt64Global + SharkFloatParams::GlobalNumUint32 * 4) * sizeof(uint32_t);
     uint32_t *g_extResult;
     cudaMalloc(&g_extResult, BytesToAllocate);
 

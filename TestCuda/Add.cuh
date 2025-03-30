@@ -22,7 +22,7 @@ CUDA_GLOBAL void AddKernel(
     const HpSharkFloat<SharkFloatParams> *A,
     const HpSharkFloat<SharkFloatParams> *B,
     HpSharkFloat<SharkFloatParams> *Out,
-    uint32_t *g_extResult);
+    uint32_t *tempData);
 
 template<class SharkFloatParams>
 CUDA_GLOBAL void AddKernelTestLoop(
@@ -30,5 +30,5 @@ CUDA_GLOBAL void AddKernelTestLoop(
     const HpSharkFloat<SharkFloatParams> *B,
     HpSharkFloat<SharkFloatParams> *Out,
     uint64_t numIters,
-    uint32_t *g_extResult);
+    uint32_t *tempData);
 

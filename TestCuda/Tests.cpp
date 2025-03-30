@@ -568,6 +568,7 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
                 std::cerr << "GPU:" << std::endl;
 
                 // Print all fields of cuda:
+                std::cerr << "Initialized: " << cuda.Initialized << std::endl;
                 std::cerr << "Block: " << cuda.Block << std::endl;
                 std::cerr << "Thread: " << cuda.Thread << std::endl;
                 std::cerr << "ArraySize: " << cuda.ArraySize << std::endl;
@@ -626,10 +627,15 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
         };
 
     if constexpr (SharkTestGpu) {
-        testSucceeded = true;
-        testSucceeded &= CheckGPUResult(testNum, "GPU", mpfHostResultXX, gpuResultXX);
-        testSucceeded &= CheckGPUResult(testNum, "GPU", mpfHostResultXY, gpuResultXY);
-        testSucceeded &= CheckGPUResult(testNum, "GPU", mpfHostResultYY, gpuResultYY);
+        if constexpr (sharkOperator == Operator::Add) {
+            testSucceeded = true;
+            testSucceeded &= CheckGPUResult(testNum, "GPU", mpfHostResultXY, gpuResultXY);
+        } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
+            testSucceeded = true;
+            testSucceeded &= CheckGPUResult(testNum, "GPU", mpfHostResultXX, gpuResultXX);
+            testSucceeded &= CheckGPUResult(testNum, "GPU", mpfHostResultXY, gpuResultXY);
+            testSucceeded &= CheckGPUResult(testNum, "GPU", mpfHostResultYY, gpuResultYY);
+        }
     }
 
     // Clean up MPIR variables

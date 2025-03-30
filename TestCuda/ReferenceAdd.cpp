@@ -18,10 +18,14 @@
 
 // ShiftRight: Shifts the number (given by its digit array) right by shiftBits.
 // idx is the index of the digit to compute. The parameter numDigits prevents out-of-bounds access.
-inline uint32_t ShiftRight (const uint32_t *digits, int shiftBits, int idx, int numDigits)
+uint32_t ShiftRight (
+    const uint32_t *digits,
+    int32_t shiftBits,
+    int32_t idx,
+    int32_t numDigits)
 {
-    int shiftWords = shiftBits / 32;
-    int shiftBitsMod = shiftBits % 32;
+    int32_t shiftWords = shiftBits / 32;
+    int32_t shiftBitsMod = shiftBits % 32;
     uint32_t lower = (idx + shiftWords < numDigits) ? digits[idx + shiftWords] : 0;
     uint32_t upper = (idx + shiftWords + 1 < numDigits) ? digits[idx + shiftWords + 1] : 0;
     if (shiftBitsMod == 0) {
@@ -33,11 +37,14 @@ inline uint32_t ShiftRight (const uint32_t *digits, int shiftBits, int idx, int 
 
 // ShiftLeft: Shifts the number (given by its digit array) left by shiftBits.
 // idx is the index of the digit to compute.
-inline uint32_t ShiftLeft (const uint32_t *digits, int shiftBits, int idx)
+uint32_t ShiftLeft (
+    const uint32_t *digits,
+    int32_t shiftBits,
+    int32_t idx)
 {
-    int shiftWords = shiftBits / 32;
-    int shiftBitsMod = shiftBits % 32;
-    int srcIdx = idx - shiftWords;
+    int32_t shiftWords = shiftBits / 32;
+    int32_t shiftBitsMod = shiftBits % 32;
+    int32_t srcIdx = idx - shiftWords;
     uint32_t lower = (srcIdx >= 0) ? digits[srcIdx] : 0;
     uint32_t upper = (srcIdx - 1 >= 0) ? digits[srcIdx - 1] : 0;
     if (shiftBitsMod == 0) {
@@ -49,13 +56,14 @@ inline uint32_t ShiftLeft (const uint32_t *digits, int shiftBits, int idx)
 
 // Portable helper: CountLeadingZeros for a 32-bit integer.
 // On CUDA consider:
-// __device__ inline int CountLeadingZerosCUDA(uint32_t x) {
+// __device__ int32_t CountLeadingZerosCUDA(uint32_t x) {
 // return __clz(x);
 // }
-inline int CountLeadingZeros (uint32_t x)
+int32_t CountLeadingZeros (
+    uint32_t x)
 {
-    int count = 0;
-    for (int bit = 31; bit >= 0; --bit) {
+    int32_t count = 0;
+    for (int32_t bit = 31; bit >= 0; --bit) {
         if (x & (1u << bit))
             break;
         ++count;
@@ -69,22 +77,42 @@ inline int CountLeadingZeros (uint32_t x)
 
 // MultiWordRightShift_LittleEndian: shift an array 'in' (of length n) right by L bits,
 // storing the result in 'out'. (out and in may be distinct.)
-inline void MultiWordRightShift_LittleEndian (const std::vector<uint32_t> &in, int L, std::vector<uint32_t> &out)
+void MultiWordRightShift_LittleEndian (
+    const std::vector<uint32_t> &in,
+    int32_t L,
+    uint32_t *out,
+    int32_t n)
 {
-    const int n = static_cast<int>(in.size());
-    out.resize(n, 0);
-    for (int i = 0; i < n; i++) {
+    const int32_t inN = static_cast<int32_t>(in.size());
+    assert(inN >= n);
+
+    for (int32_t i = 0; i < inN; i++) {
+        if (i >= n) {
+            out[i] = 0;
+            continue;
+        }
+
         out[i] = ShiftRight(in.data(), L, i, n);
     }
 }
 
 // MultiWordLeftShift_LittleEndian: shift an array 'in' (of length n) left by L bits,
 // storing the result in 'out'.
-inline void MultiWordLeftShift_LittleEndian (const std::vector<uint32_t> &in, int L, std::vector<uint32_t> &out)
+void MultiWordLeftShift_LittleEndian (
+    const std::vector<uint32_t> &in,
+    int32_t L,
+    uint32_t *out,
+    int32_t n)
 {
-    const int n = static_cast<int>(in.size());
-    out.resize(n, 0);
-    for (int i = 0; i < n; i++) {
+    const int32_t inN = static_cast<int32_t>(in.size());
+    assert(inN >= n);
+
+    for (int32_t i = 0; i < n; i++) {
+        if (i >= inN) {
+            out[i] = 0;
+            continue;
+        }
+
         out[i] = ShiftLeft(in.data(), L, i);
     }
 }
@@ -97,10 +125,10 @@ inline void MultiWordLeftShift_LittleEndian (const std::vector<uint32_t> &in, in
 // its most-significant set bit would be in the highest bit position of the extended field.
 // It then adjusts the stored exponent accordingly and returns the shift offset.
 //
-int ExtendedNormalizeShiftIndex (const std::vector<uint32_t> &ext, int &storedExp, bool &isZero)
+int32_t ExtendedNormalizeShiftIndex (const std::vector<uint32_t> &ext, int32_t &storedExp, bool &isZero)
 {
-    const int n = static_cast<int>(ext.size());
-    int msd = n - 1;
+    const int32_t n = static_cast<int32_t>(ext.size());
+    int32_t msd = n - 1;
     while (msd >= 0 && ext[msd] == 0)
         msd--;
     if (msd < 0) {
@@ -108,13 +136,13 @@ int ExtendedNormalizeShiftIndex (const std::vector<uint32_t> &ext, int &storedEx
         return 0;  // For zero, the shift offset is irrelevant.
     }
     isZero = false;
-    int clz = CountLeadingZeros(ext[msd]);
+    int32_t clz = CountLeadingZeros(ext[msd]);
     // In little-endian, the overall bit index of the MSB is:
     //    current_msb = msd * 32 + (31 - clz)
-    int current_msb = msd * 32 + (31 - clz);
-    int totalExtBits = n * 32;
+    int32_t current_msb = msd * 32 + (31 - clz);
+    int32_t totalExtBits = n * 32;
     // Compute the left-shift needed so that the MSB moves to bit (totalExtBits - 1).
-    int L = (totalExtBits - 1) - current_msb;
+    int32_t L = (totalExtBits - 1) - current_msb;
     // Adjust the exponent as if we had shifted the number left by L bits.
     storedExp -= L;
     return L;
@@ -125,64 +153,20 @@ int ExtendedNormalizeShiftIndex (const std::vector<uint32_t> &ext, int &storedEx
 // Given the original extended array and a shift offset (obtained from ExtendedNormalizeShiftIndex),
 // this returns the digit at index 'idx' as if the array had been left-shifted by shiftOffset bits.
 //
-inline uint32_t GetNormalizedDigit (const std::vector<uint32_t> &ext, int shiftOffset, int idx)
+uint32_t GetNormalizedDigit (const std::vector<uint32_t> &ext, int32_t shiftOffset, int32_t idx)
 {
     return ShiftLeft(ext.data(), shiftOffset, idx);
-}
-
-//
-// Final normalization: Convert the extended result (little-endian)
-// into a nominal result with GlobalNumUint32 words by re-normalizing.
-// This function remains mostly unchanged.
-//
-template <class SharkFloatParams>
-void FinalNormalizeExtendedResult (
-    const std::vector<uint32_t> &extResult,
-    int &outExponent,
-    std::vector<uint32_t> &finalResult)
-{
-    const int nominalWords = SharkFloatParams::GlobalNumUint32;
-    const int extDigits = extResult.size();
-    // Find the index of the highest nonzero word.
-    int msd = 0;
-    for (int i = extDigits - 1; i >= 0; i--) {
-        if (extResult[i] != 0) { msd = i; break; }
-    }
-    int clz = CountLeadingZeros(extResult[msd]);
-    int currentOverall = msd * 32 + (31 - clz);
-    // Desired overall bit position for the nominal result's MSB:
-    int desired = (nominalWords - 1) * 32 + 31;
-    int shiftNeeded = currentOverall - desired;
-    // Work on a temporary copy.
-    std::vector<uint32_t> temp = extResult;
-    if (shiftNeeded > 0) {
-        std::vector<uint32_t> shifted;
-        MultiWordRightShift_LittleEndian(temp, shiftNeeded, shifted);
-        temp = shifted;
-        outExponent += shiftNeeded;
-    } else if (shiftNeeded < 0) {
-        int L = -shiftNeeded;
-        std::vector<uint32_t> shifted;
-        MultiWordLeftShift_LittleEndian(temp, L, shifted);
-        temp = shifted;
-        outExponent -= L;
-    }
-    // Extract the nominal GlobalNumUint32 words.
-    finalResult.resize(nominalWords);
-    for (int i = 0; i < nominalWords; i++) {
-        finalResult[i] = temp[i];
-    }
 }
 
 // New helper: Computes the aligned digit for the normalized value on the fly.
 // 'diff' is the additional right shift required for alignment.
 template <class SharkFloatParams>
-inline uint32_t GetShiftedNormalizedDigit (const std::vector<uint32_t> &ext, int shiftOffset, int diff, int idx)
+uint32_t GetShiftedNormalizedDigit (const std::vector<uint32_t> &ext, int32_t shiftOffset, int32_t diff, int32_t idx)
 {
-    // const int n = SharkFloatParams::GlobalNumUint32; // normalized length
-    const int n = static_cast<int>(ext.size());
-    int wordShift = diff / 32;
-    int bitShift = diff % 32;
+    // const int32_t n = SharkFloatParams::GlobalNumUint32; // normalized length
+    const int32_t n = static_cast<int32_t>(ext.size());
+    int32_t wordShift = diff / 32;
+    int32_t bitShift = diff % 32;
     uint32_t lower = (idx + wordShift < n) ? GetNormalizedDigit(ext, shiftOffset, idx + wordShift) : 0;
     uint32_t upper = (idx + wordShift + 1 < n) ? GetNormalizedDigit(ext, shiftOffset, idx + wordShift + 1) : 0;
     if (bitShift == 0)
@@ -192,14 +176,14 @@ inline uint32_t GetShiftedNormalizedDigit (const std::vector<uint32_t> &ext, int
 }
 
 template<class SharkFloatParams>
-inline void GetCorrespondingLimbs (
+void GetCorrespondingLimbs (
     const std::vector<uint32_t> &extA,
     const std::vector<uint32_t> &extB,
-    const int shiftA,
-    const int shiftB,
+    const int32_t shiftA,
+    const int32_t shiftB,
     const bool AIsBiggerMagnitude,
-    const int diff,
-    const int index,
+    const int32_t diff,
+    const int32_t index,
     uint64_t &alignedA,
     uint64_t &alignedB)
 {
@@ -217,9 +201,9 @@ inline void GetCorrespondingLimbs (
 }
 
 bool CompareMagnitudes (
-    int effExpA,
-    int effExpB,
-    const int extDigits,
+    int32_t effExpA,
+    int32_t effExpB,
+    const int32_t extDigits,
     const std::vector<uint32_t> &extA,
     const int32_t shiftA,
     const std::vector<uint32_t> &extB,
@@ -232,7 +216,7 @@ bool CompareMagnitudes (
         AIsBiggerMagnitude = false;
     } else {
         AIsBiggerMagnitude = false; // default if equal
-        for (int i = extDigits - 1; i >= 0; i--) {
+        for (int32_t i = extDigits - 1; i >= 0; i--) {
             uint32_t digitA = GetNormalizedDigit(extA, shiftA, i);
             uint32_t digitB = GetNormalizedDigit(extB, shiftB, i);
             if (digitA > digitB) {
@@ -266,12 +250,12 @@ void AddHelper(
     const auto &normB = *B;
 
     // --- Set up extended working precision ---
-    const int guard = 2;
-    const int extDigits = SharkFloatParams::GlobalNumUint32 + guard;
+    const int32_t guard = 2;
+    const int32_t extDigits = SharkFloatParams::GlobalNumUint32 + guard;
     // Create extended arrays (little-endian, index 0 is LSB).
     std::vector<uint32_t> extA(extDigits, 0);
     std::vector<uint32_t> extB(extDigits, 0);
-    for (int i = 0; i < SharkFloatParams::GlobalNumUint32; i++) {
+    for (int32_t i = 0; i < SharkFloatParams::GlobalNumUint32; i++) {
         extA[i] = normA.Digits[i];
         extB[i] = normB.Digits[i];
     }
@@ -293,14 +277,14 @@ void AddHelper(
     const int32_t shiftB = ExtendedNormalizeShiftIndex(extB, newBExponent, normB_isZero);
 
     // --- Compute Effective Exponents ---
-    const int effExpA = normA_isZero ? -100000000 : newAExponent + (SharkFloatParams::GlobalNumUint32 * 32 - 32);
-    const int effExpB = normB_isZero ? -100000000 : newBExponent + (SharkFloatParams::GlobalNumUint32 * 32 - 32);
+    const int32_t effExpA = normA_isZero ? -100000000 : newAExponent + (SharkFloatParams::GlobalNumUint32 * 32 - 32);
+    const int32_t effExpB = normB_isZero ? -100000000 : newBExponent + (SharkFloatParams::GlobalNumUint32 * 32 - 32);
 
     // --- Determine which operand has larger magnitude ---
     // If effective exponents differ, use them. If equal, compare normalized digits on the fly.
     const bool AIsBiggerMagnitude = CompareMagnitudes(effExpA, effExpB, extDigits, extA, shiftA, extB, shiftB);
 
-    const int diff = AIsBiggerMagnitude ? (effExpA - effExpB) : (effExpB - effExpA);
+    const int32_t diff = AIsBiggerMagnitude ? (effExpA - effExpB) : (effExpB - effExpA);
     int32_t outExponent = AIsBiggerMagnitude ? newAExponent : newBExponent;
 
     // --- Extended Arithmetic ---
@@ -308,7 +292,7 @@ void AddHelper(
     if (sameSign) {
         // ---- Addition Branch ----
         uint64_t carry = 0;
-        for (int i = 0; i < extDigits; i++) {
+        for (int32_t i = 0; i < extDigits; i++) {
             uint64_t alignedA = 0, alignedB = 0;
             GetCorrespondingLimbs<SharkFloatParams>(
                 extA, extB, shiftA, shiftB, AIsBiggerMagnitude, diff, i, alignedA, alignedB);
@@ -321,7 +305,7 @@ void AddHelper(
             // Use a single variable to hold the extra bit from the next word.
             uint32_t nextBit = (uint32_t)carry & 1; // carry is either 0 or 1
             // Process in reverse order so that we use the original value of each word.
-            for (int i = extDigits - 1; i >= 0; i--) {
+            for (int32_t i = extDigits - 1; i >= 0; i--) {
                 uint32_t current = extResult[i];
                 // The new value is the current word right-shifted by 1, with the previous word's LSB (held in nextBit)
                 // shifted into the high bit.
@@ -336,7 +320,7 @@ void AddHelper(
         // ---- Subtraction Branch ----
         uint64_t borrow = 0;
         if (AIsBiggerMagnitude) {
-            for (int i = 0; i < extDigits; i++) {
+            for (int32_t i = 0; i < extDigits; i++) {
                 uint64_t alignedA = 0, alignedB = 0;
                 GetCorrespondingLimbs<SharkFloatParams>(
                     extA, extB, shiftA, shiftB, AIsBiggerMagnitude, diff, i, alignedA, alignedB);
@@ -350,7 +334,7 @@ void AddHelper(
                 extResult[i] = (uint32_t)(diffVal & 0xFFFFFFFF);
             }
         } else {
-            for (int i = 0; i < extDigits; i++) {
+            for (int32_t i = 0; i < extDigits; i++) {
                 uint64_t alignedA = 0, alignedB = 0;
                 GetCorrespondingLimbs<SharkFloatParams>(
                     extA, extB, shiftA, shiftB, AIsBiggerMagnitude, diff, i, alignedA, alignedB);
@@ -374,13 +358,13 @@ void AddHelper(
     }
 
     // --- Final Normalization ---
-    int msdResult = 0;
-    for (int i = extDigits - 1; i >= 0; i--) {
+    int32_t msdResult = 0;
+    for (int32_t i = extDigits - 1; i >= 0; i--) {
         if (extResult[i] != 0) { msdResult = i; break; }
     }
-    const int clzResult = CountLeadingZeros(extResult[msdResult]);
-    const int currentOverall = msdResult * 32 + (31 - clzResult);
-    const int desiredOverall = (SharkFloatParams::GlobalNumUint32 - 1) * 32 + 31;
+    const int32_t clzResult = CountLeadingZeros(extResult[msdResult]);
+    const int32_t currentOverall = msdResult * 32 + (31 - clzResult);
+    const int32_t desiredOverall = (SharkFloatParams::GlobalNumUint32 - 1) * 32 + 31;
 
     if constexpr (SharkFloatParams::HostVerbose) {
         std::cout << "Count leading zeros: " << clzResult << std::endl;
@@ -389,14 +373,17 @@ void AddHelper(
         std::cout << "Desired overall bit position: " << desiredOverall << std::endl;
     }
 
-    const int shiftNeeded = currentOverall - desiredOverall;
+    const int32_t shiftNeeded = currentOverall - desiredOverall;
     std::vector<uint32_t> shifted;
+    shifted.resize(extDigits, 0);
+
     if (shiftNeeded > 0) {
         if constexpr (SharkFloatParams::HostVerbose) {
             std::cout << "Shift needed branch A: " << shiftNeeded << std::endl;
         }
 
-        MultiWordRightShift_LittleEndian(extResult, shiftNeeded, shifted);
+        const auto shiftedSz = static_cast<int32_t>(shifted.size());
+        MultiWordRightShift_LittleEndian(extResult, shiftNeeded, shifted.data(), shiftedSz);
         outExponent += shiftNeeded;
 
         if constexpr (SharkFloatParams::HostVerbose) {
@@ -409,8 +396,9 @@ void AddHelper(
             std::cout << "Shift needed branch B: " << shiftNeeded << std::endl;
         }
 
-        int L = -shiftNeeded;
-        MultiWordLeftShift_LittleEndian(extResult, L, shifted);
+        const int32_t L = -shiftNeeded;
+        const auto shiftedSz = static_cast<int32_t>(shifted.size());
+        MultiWordLeftShift_LittleEndian(extResult, L, shifted.data(), shiftedSz);
         outExponent -= L;
 
         if constexpr (SharkFloatParams::HostVerbose) {
@@ -418,14 +406,17 @@ void AddHelper(
             std::cout << "L after left shift: " << L << std::endl;
             std::cout << "Final outExponent after left shift: " << outExponent << std::endl;
         }
+    } else {
+        if constexpr (SharkFloatParams::HostVerbose) {
+            std::cout << "No shift needed: " << shiftNeeded << std::endl;
+        }
+        // No shift needed, just copy the result.
+        shifted = extResult;
     }
-    std::vector<uint32_t> finalResult(SharkFloatParams::GlobalNumUint32, 0);
-    for (int i = 0; i < SharkFloatParams::GlobalNumUint32; i++) {
-        finalResult[i] = shifted[i];
-    }
+
     OutXY->Exponent = outExponent;
-    for (int i = 0; i < SharkFloatParams::GlobalNumUint32; i++) {
-        OutXY->Digits[i] = finalResult[i];
+    for (int32_t i = 0; i < SharkFloatParams::GlobalNumUint32; i++) {
+        OutXY->Digits[i] = shifted[i];
     }
     // Set the result sign.
     if (sameSign)

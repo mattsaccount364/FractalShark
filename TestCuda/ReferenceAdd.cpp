@@ -78,42 +78,40 @@ int32_t CountLeadingZeros (
 // MultiWordRightShift_LittleEndian: shift an array 'in' (of length n) right by L bits,
 // storing the result in 'out'. (out and in may be distinct.)
 void MultiWordRightShift_LittleEndian (
-    const std::vector<uint32_t> &in,
+    const uint32_t *in,
+    int32_t inN,
     int32_t L,
     uint32_t *out,
-    int32_t n)
+    int32_t outSz)
 {
-    const int32_t inN = static_cast<int32_t>(in.size());
-    assert(inN >= n);
+    assert(inN >= outSz);
 
     for (int32_t i = 0; i < inN; i++) {
-        if (i >= n) {
-            out[i] = 0;
-            continue;
+        if (i >= outSz) {
+            break;
         }
 
-        out[i] = ShiftRight(in.data(), L, i, n);
+        out[i] = ShiftRight(in, L, i, inN);
     }
 }
 
 // MultiWordLeftShift_LittleEndian: shift an array 'in' (of length n) left by L bits,
 // storing the result in 'out'.
 void MultiWordLeftShift_LittleEndian (
-    const std::vector<uint32_t> &in,
+    const uint32_t *in,
+    int32_t inN,
     int32_t L,
     uint32_t *out,
-    int32_t n)
+    int32_t outSz)
 {
-    const int32_t inN = static_cast<int32_t>(in.size());
-    assert(inN >= n);
+    assert(inN >= outSz);
 
-    for (int32_t i = 0; i < n; i++) {
-        if (i >= inN) {
-            out[i] = 0;
-            continue;
+    for (int32_t i = 0; i < outSz; i++) {
+        if (i >= outSz) {
+            break;
         }
 
-        out[i] = ShiftLeft(in.data(), L, i);
+        out[i] = ShiftLeft(in, L, i);
     }
 }
 
@@ -125,9 +123,12 @@ void MultiWordLeftShift_LittleEndian (
 // its most-significant set bit would be in the highest bit position of the extended field.
 // It then adjusts the stored exponent accordingly and returns the shift offset.
 //
-int32_t ExtendedNormalizeShiftIndex (const std::vector<uint32_t> &ext, int32_t &storedExp, bool &isZero)
+int32_t ExtendedNormalizeShiftIndex (
+    const uint32_t *ext,
+    int32_t n,
+    int32_t &storedExp,
+    bool &isZero)
 {
-    const int32_t n = static_cast<int32_t>(ext.size());
     int32_t msd = n - 1;
     while (msd >= 0 && ext[msd] == 0)
         msd--;
@@ -273,8 +274,8 @@ void AddHelper(
     bool normA_isZero = false, normB_isZero = false;
     int32_t newAExponent = normA.Exponent;
     int32_t newBExponent = normB.Exponent;
-    const int32_t shiftA = ExtendedNormalizeShiftIndex(extA, newAExponent, normA_isZero);
-    const int32_t shiftB = ExtendedNormalizeShiftIndex(extB, newBExponent, normB_isZero);
+    const int32_t shiftA = ExtendedNormalizeShiftIndex(extA.data(), extDigits, newAExponent, normA_isZero);
+    const int32_t shiftB = ExtendedNormalizeShiftIndex(extB.data(), extDigits, newBExponent, normB_isZero);
 
     // --- Compute Effective Exponents ---
     const int32_t effExpA = normA_isZero ? -100000000 : newAExponent + (SharkFloatParams::GlobalNumUint32 * 32 - 32);
@@ -360,8 +361,12 @@ void AddHelper(
     // --- Final Normalization ---
     int32_t msdResult = 0;
     for (int32_t i = extDigits - 1; i >= 0; i--) {
-        if (extResult[i] != 0) { msdResult = i; break; }
+        if (extResult[i] != 0) {
+            msdResult = i;
+            break;
+        }
     }
+
     const int32_t clzResult = CountLeadingZeros(extResult[msdResult]);
     const int32_t currentOverall = msdResult * 32 + (31 - clzResult);
     const int32_t desiredOverall = (SharkFloatParams::GlobalNumUint32 - 1) * 32 + 31;
@@ -374,20 +379,19 @@ void AddHelper(
     }
 
     const int32_t shiftNeeded = currentOverall - desiredOverall;
-    std::vector<uint32_t> shifted;
-    shifted.resize(extDigits, 0);
-
     if (shiftNeeded > 0) {
         if constexpr (SharkFloatParams::HostVerbose) {
             std::cout << "Shift needed branch A: " << shiftNeeded << std::endl;
         }
 
-        const auto shiftedSz = static_cast<int32_t>(shifted.size());
-        MultiWordRightShift_LittleEndian(extResult, shiftNeeded, shifted.data(), shiftedSz);
+        const auto shiftedSz = SharkFloatParams::GlobalNumUint32;
+        MultiWordRightShift_LittleEndian(extResult.data(), extDigits, shiftNeeded, OutXY->Digits, shiftedSz);
         outExponent += shiftNeeded;
 
         if constexpr (SharkFloatParams::HostVerbose) {
-            std::cout << "Final extResult after right shift: " << VectorUintToHexString(shifted) << std::endl;
+            std::cout << "Final extResult after right shift: " <<
+                VectorUintToHexString(OutXY->Digits, shiftedSz) <<
+                std::endl;
             std::cout << "ShiftNeeded after right shift: " << shiftNeeded << std::endl;
             std::cout << "Final outExponent after right shift: " << outExponent << std::endl;
         }
@@ -397,12 +401,14 @@ void AddHelper(
         }
 
         const int32_t L = -shiftNeeded;
-        const auto shiftedSz = static_cast<int32_t>(shifted.size());
-        MultiWordLeftShift_LittleEndian(extResult, L, shifted.data(), shiftedSz);
+        const auto shiftedSz = static_cast<int32_t>(SharkFloatParams::GlobalNumUint32);
+        MultiWordLeftShift_LittleEndian(extResult.data(), extDigits, L, OutXY->Digits, shiftedSz);
         outExponent -= L;
 
         if constexpr (SharkFloatParams::HostVerbose) {
-            std::cout << "Final extResult after left shift: " << VectorUintToHexString(shifted) << std::endl;
+            std::cout << "Final extResult after left shift: " <<
+                VectorUintToHexString(OutXY->Digits, shiftedSz) <<
+                std::endl;
             std::cout << "L after left shift: " << L << std::endl;
             std::cout << "Final outExponent after left shift: " << outExponent << std::endl;
         }
@@ -411,13 +417,12 @@ void AddHelper(
             std::cout << "No shift needed: " << shiftNeeded << std::endl;
         }
         // No shift needed, just copy the result.
-        shifted = extResult;
+        for (int32_t i = 0; i < SharkFloatParams::GlobalNumUint32; i++) {
+            OutXY->Digits[i] = extResult[i];
+        }
     }
 
     OutXY->Exponent = outExponent;
-    for (int32_t i = 0; i < SharkFloatParams::GlobalNumUint32; i++) {
-        OutXY->Digits[i] = shifted[i];
-    }
     // Set the result sign.
     if (sameSign)
         OutXY->IsNegative = normA.IsNegative;

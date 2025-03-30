@@ -317,22 +317,20 @@ void AddHelper(
             carry = sum >> 32;
         }
         if (carry > 0) {
-            // Handle overflow by a 1-bit right shift of the result.
             outExponent += 1;
-            std::vector<uint32_t> temp(extDigits + 1, 0);
-            for (int i = 0; i < extDigits; i++) {
-                temp[i] = extResult[i];
-            }
-            temp[extDigits] = (uint32_t)carry;
-            std::vector<uint32_t> shifted(temp.size(), 0);
-            for (int i = 0; i < (int)temp.size(); i++) {
-                const auto sz = temp.size();
-                shifted[i] = ShiftRight(temp.data(), 1, i, static_cast<int>(sz));
-            }
-            for (int i = 0; i < extDigits; i++) {
-                extResult[i] = shifted[i];
+            // Use a single variable to hold the extra bit from the next word.
+            uint32_t nextBit = (uint32_t)carry & 1; // carry is either 0 or 1
+            // Process in reverse order so that we use the original value of each word.
+            for (int i = extDigits - 1; i >= 0; i--) {
+                uint32_t current = extResult[i];
+                // The new value is the current word right-shifted by 1, with the previous word's LSB (held in nextBit)
+                // shifted into the high bit.
+                extResult[i] = (current >> 1) | (nextBit << 31);
+                // Extract the LSB of the current word (from the original value) to use for the next iteration.
+                nextBit = current & 1;
             }
         }
+
         // The result sign remains the same.
     } else {
         // ---- Subtraction Branch ----
@@ -380,9 +378,9 @@ void AddHelper(
     for (int i = extDigits - 1; i >= 0; i--) {
         if (extResult[i] != 0) { msdResult = i; break; }
     }
-    int clzResult = CountLeadingZeros(extResult[msdResult]);
-    int currentOverall = msdResult * 32 + (31 - clzResult);
-    int desiredOverall = (SharkFloatParams::GlobalNumUint32 - 1) * 32 + 31;
+    const int clzResult = CountLeadingZeros(extResult[msdResult]);
+    const int currentOverall = msdResult * 32 + (31 - clzResult);
+    const int desiredOverall = (SharkFloatParams::GlobalNumUint32 - 1) * 32 + 31;
 
     if constexpr (SharkFloatParams::HostVerbose) {
         std::cout << "Count leading zeros: " << clzResult << std::endl;
@@ -391,20 +389,18 @@ void AddHelper(
         std::cout << "Desired overall bit position: " << desiredOverall << std::endl;
     }
 
-    int shiftNeeded = currentOverall - desiredOverall;
-    std::vector<uint32_t> finalExt = extResult;
+    const int shiftNeeded = currentOverall - desiredOverall;
+    std::vector<uint32_t> shifted;
     if (shiftNeeded > 0) {
         if constexpr (SharkFloatParams::HostVerbose) {
             std::cout << "Shift needed branch A: " << shiftNeeded << std::endl;
         }
 
-        std::vector<uint32_t> shifted;
-        MultiWordRightShift_LittleEndian(finalExt, shiftNeeded, shifted);
-        finalExt = shifted;
+        MultiWordRightShift_LittleEndian(extResult, shiftNeeded, shifted);
         outExponent += shiftNeeded;
 
         if constexpr (SharkFloatParams::HostVerbose) {
-            std::cout << "Final extResult after right shift: " << VectorUintToHexString(finalExt) << std::endl;
+            std::cout << "Final extResult after right shift: " << VectorUintToHexString(shifted) << std::endl;
             std::cout << "ShiftNeeded after right shift: " << shiftNeeded << std::endl;
             std::cout << "Final outExponent after right shift: " << outExponent << std::endl;
         }
@@ -414,20 +410,18 @@ void AddHelper(
         }
 
         int L = -shiftNeeded;
-        std::vector<uint32_t> shifted;
-        MultiWordLeftShift_LittleEndian(finalExt, L, shifted);
-        finalExt = shifted;
+        MultiWordLeftShift_LittleEndian(extResult, L, shifted);
         outExponent -= L;
 
         if constexpr (SharkFloatParams::HostVerbose) {
-            std::cout << "Final extResult after left shift: " << VectorUintToHexString(finalExt) << std::endl;
+            std::cout << "Final extResult after left shift: " << VectorUintToHexString(shifted) << std::endl;
             std::cout << "L after left shift: " << L << std::endl;
             std::cout << "Final outExponent after left shift: " << outExponent << std::endl;
         }
     }
     std::vector<uint32_t> finalResult(SharkFloatParams::GlobalNumUint32, 0);
     for (int i = 0; i < SharkFloatParams::GlobalNumUint32; i++) {
-        finalResult[i] = finalExt[i];
+        finalResult[i] = shifted[i];
     }
     OutXY->Exponent = outExponent;
     for (int i = 0; i < SharkFloatParams::GlobalNumUint32; i++) {

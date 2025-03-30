@@ -192,7 +192,7 @@ inline uint32_t GetShiftedNormalizedDigit (const std::vector<uint32_t> &ext, int
 }
 
 template<class SharkFloatParams>
-inline int64_t GetCorrespondingLimbs (
+inline void GetCorrespondingLimbs (
     const std::vector<uint32_t> &extA,
     const std::vector<uint32_t> &extB,
     const int shiftA,
@@ -200,8 +200,8 @@ inline int64_t GetCorrespondingLimbs (
     const bool AIsBiggerMagnitude,
     const int diff,
     const int index,
-    int64_t &alignedA,
-    int64_t &alignedB)
+    uint64_t &alignedA,
+    uint64_t &alignedB)
 {
     if (AIsBiggerMagnitude) {
         // A is larger: normalized A is used as is.
@@ -303,34 +303,16 @@ void AddHelper(
     const int diff = AIsBiggerMagnitude ? (effExpA - effExpB) : (effExpB - effExpA);
     int32_t outExponent = AIsBiggerMagnitude ? newAExponent : newBExponent;
 
-    // --- Combined Normalization and Alignment ---
-    // Instead of creating separate normAvec/normBvec, we directly create alignedA and alignedB.
-    std::vector<uint32_t> alignedA(extDigits, 0);
-    std::vector<uint32_t> alignedB(extDigits, 0);
-    if (AIsBiggerMagnitude) {
-        // A is larger: normalized A is used as is.
-        // For B, we normalize and then shift right by 'diff'.
-        for (int i = 0; i < extDigits; i++) {
-            alignedA[i] = GetNormalizedDigit(extA, shiftA, i);
-            alignedB[i] = GetShiftedNormalizedDigit<SharkFloatParams>(extB, shiftB, diff, i);
-        }
-    } else {
-        // B is larger: normalized B is used as is.
-        // For A, we normalize and shift right by 'diff'.
-        for (int i = 0; i < extDigits; i++) {
-            alignedB[i] = GetNormalizedDigit(extB, shiftB, i);
-            alignedA[i] = GetShiftedNormalizedDigit<SharkFloatParams>(extA, shiftA, diff, i);
-        }
-    }
-
-
     // --- Extended Arithmetic ---
     std::vector<uint32_t> extResult(extDigits, 0);
     if (sameSign) {
         // ---- Addition Branch ----
         uint64_t carry = 0;
         for (int i = 0; i < extDigits; i++) {
-            uint64_t sum = (uint64_t)alignedA[i] + (uint64_t)alignedB[i] + carry;
+            uint64_t alignedA = 0, alignedB = 0;
+            GetCorrespondingLimbs<SharkFloatParams>(
+                extA, extB, shiftA, shiftB, AIsBiggerMagnitude, diff, i, alignedA, alignedB);
+            uint64_t sum = alignedA + alignedB + carry;
             extResult[i] = (uint32_t)(sum & 0xFFFFFFFF);
             carry = sum >> 32;
         }
@@ -357,7 +339,10 @@ void AddHelper(
         uint64_t borrow = 0;
         if (AIsBiggerMagnitude) {
             for (int i = 0; i < extDigits; i++) {
-                int64_t diffVal = (int64_t)alignedA[i] - (int64_t)alignedB[i] - borrow;
+                uint64_t alignedA = 0, alignedB = 0;
+                GetCorrespondingLimbs<SharkFloatParams>(
+                    extA, extB, shiftA, shiftB, AIsBiggerMagnitude, diff, i, alignedA, alignedB);
+                int64_t diffVal = (int64_t)alignedA - (int64_t)alignedB - borrow;
                 if (diffVal < 0) {
                     diffVal += ((uint64_t)1 << 32);
                     borrow = 1;
@@ -368,7 +353,10 @@ void AddHelper(
             }
         } else {
             for (int i = 0; i < extDigits; i++) {
-                int64_t diffVal = (int64_t)alignedB[i] - (int64_t)alignedA[i] - borrow;
+                uint64_t alignedA = 0, alignedB = 0;
+                GetCorrespondingLimbs<SharkFloatParams>(
+                    extA, extB, shiftA, shiftB, AIsBiggerMagnitude, diff, i, alignedA, alignedB);
+                int64_t diffVal = (int64_t)alignedB - (int64_t)alignedA - borrow;
                 if (diffVal < 0) {
                     diffVal += ((uint64_t)1 << 32);
                     borrow = 1;

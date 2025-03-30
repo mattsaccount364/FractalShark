@@ -39,14 +39,33 @@ uint32_t ShiftRight (
 // idx is the index of the digit to compute.
 uint32_t ShiftLeft (
     const uint32_t *digits,
-    int32_t shiftBits,
-    int32_t idx)
+    const int32_t actualDigits,
+    const int32_t extDigits,
+    const int32_t shiftBits,
+    const int32_t idx)
 {
     int32_t shiftWords = shiftBits / 32;
     int32_t shiftBitsMod = shiftBits % 32;
     int32_t srcIdx = idx - shiftWords;
-    uint32_t lower = (srcIdx >= 0) ? digits[srcIdx] : 0;
-    uint32_t upper = (srcIdx - 1 >= 0) ? digits[srcIdx - 1] : 0;
+
+    int32_t srcDigitLower;
+    if (srcIdx < actualDigits) {
+        srcDigitLower = digits[srcIdx];
+    } else {
+        assert(srcIdx < extDigits);
+        srcDigitLower = 0;
+    }
+
+    int32_t srcDigitUpper;
+    if (srcIdx - 1 >= 0) {
+        srcDigitUpper = digits[srcIdx - 1];
+    } else {
+        assert(srcIdx - 1 < extDigits);
+        srcDigitUpper = 0;
+    }
+
+    uint32_t lower = (srcIdx >= 0) ? srcDigitLower : 0;
+    uint32_t upper = (srcIdx - 1 >= 0) ? srcDigitUpper : 0;
     if (shiftBitsMod == 0) {
         return lower;
     } else {
@@ -97,21 +116,36 @@ void MultiWordRightShift_LittleEndian (
 
 // MultiWordLeftShift_LittleEndian: shift an array 'in' (of length n) left by L bits,
 // storing the result in 'out'.
-void MultiWordLeftShift_LittleEndian (
+void MultiWordLeftShift_LittleEndian(
     const uint32_t *in,
-    int32_t inN,
+    int32_t extDigits,
+    int32_t actualDigits,
     int32_t L,
     uint32_t *out,
     int32_t outSz)
 {
-    assert(inN >= outSz);
+    assert(extDigits >= outSz);
 
     for (int32_t i = 0; i < outSz; i++) {
         if (i >= outSz) {
             break;
         }
 
-        out[i] = ShiftLeft(in, L, i);
+        out[i] = ShiftLeft(in, actualDigits, extDigits, L, i);
+    }
+}
+
+uint32_t GetExtLimb(
+    const uint32_t *ext,
+    int32_t actualDigits,
+    int32_t extDigits,
+    int32_t idx) {
+    
+    if (idx < actualDigits) {
+        return ext[idx];
+    } else {
+        assert(idx < extDigits);
+        return 0;
     }
 }
 
@@ -125,23 +159,24 @@ void MultiWordLeftShift_LittleEndian (
 //
 int32_t ExtendedNormalizeShiftIndex (
     const uint32_t *ext,
-    int32_t n,
+    int32_t actualDigits,
+    int32_t extDigits,
     int32_t &storedExp,
     bool &isZero)
 {
-    int32_t msd = n - 1;
-    while (msd >= 0 && ext[msd] == 0)
+    int32_t msd = extDigits - 1;
+    while (msd >= 0 && GetExtLimb(ext, actualDigits, extDigits, msd) == 0)
         msd--;
     if (msd < 0) {
         isZero = true;
         return 0;  // For zero, the shift offset is irrelevant.
     }
     isZero = false;
-    int32_t clz = CountLeadingZeros(ext[msd]);
+    int32_t clz = CountLeadingZeros(GetExtLimb(ext, actualDigits, extDigits, msd));
     // In little-endian, the overall bit index of the MSB is:
     //    current_msb = msd * 32 + (31 - clz)
     int32_t current_msb = msd * 32 + (31 - clz);
-    int32_t totalExtBits = n * 32;
+    int32_t totalExtBits = extDigits * 32;
     // Compute the left-shift needed so that the MSB moves to bit (totalExtBits - 1).
     int32_t L = (totalExtBits - 1) - current_msb;
     // Adjust the exponent as if we had shifted the number left by L bits.
@@ -156,10 +191,12 @@ int32_t ExtendedNormalizeShiftIndex (
 //
 uint32_t GetNormalizedDigit (
     const uint32_t *ext,
+    int32_t actualDigits,
+    int32_t extDigits,
     int32_t shiftOffset,
     int32_t idx)
 {
-    return ShiftLeft(ext, shiftOffset, idx);
+    return ShiftLeft(ext, actualDigits, extDigits, shiftOffset, idx);
 }
 
 // New helper: Computes the aligned digit for the normalized value on the fly.
@@ -167,7 +204,8 @@ uint32_t GetNormalizedDigit (
 template <class SharkFloatParams>
 uint32_t GetShiftedNormalizedDigit (
     const uint32_t *ext,
-    int32_t n,
+    int32_t actualDigits,
+    int32_t extDigits,
     int32_t shiftOffset,
     int32_t diff,
     int32_t idx)
@@ -175,8 +213,10 @@ uint32_t GetShiftedNormalizedDigit (
     // const int32_t n = SharkFloatParams::GlobalNumUint32; // normalized length
     int32_t wordShift = diff / 32;
     int32_t bitShift = diff % 32;
-    uint32_t lower = (idx + wordShift < n) ? GetNormalizedDigit(ext, shiftOffset, idx + wordShift) : 0;
-    uint32_t upper = (idx + wordShift + 1 < n) ? GetNormalizedDigit(ext, shiftOffset, idx + wordShift + 1) : 0;
+    uint32_t lower = (idx + wordShift < extDigits) ?
+        GetNormalizedDigit(ext, actualDigits, extDigits, shiftOffset, idx + wordShift) : 0;
+    uint32_t upper = (idx + wordShift + 1 < extDigits) ?
+        GetNormalizedDigit(ext, actualDigits, extDigits, shiftOffset, idx + wordShift + 1) : 0;
     if (bitShift == 0)
         return lower;
     else
@@ -186,9 +226,11 @@ uint32_t GetShiftedNormalizedDigit (
 template<class SharkFloatParams>
 void GetCorrespondingLimbs (
     const uint32_t *extA,
-    int32_t extASize,
+    const int32_t actualASize,
+    const int32_t extASize,
     const uint32_t *extB,
-    int32_t extBSize,
+    const int32_t actualBSize,
+    const int32_t extBSize,
     const int32_t shiftA,
     const int32_t shiftB,
     const bool AIsBiggerMagnitude,
@@ -200,19 +242,32 @@ void GetCorrespondingLimbs (
     if (AIsBiggerMagnitude) {
         // A is larger: normalized A is used as is.
         // For B, we normalize and then shift right by 'diff'.
-        alignedA = GetNormalizedDigit(extA, shiftA, index);
-        alignedB = GetShiftedNormalizedDigit<SharkFloatParams>(extB, extBSize, shiftB, diff, index);
+        alignedA = GetNormalizedDigit(extA, actualASize, extASize, shiftA, index);
+        alignedB = GetShiftedNormalizedDigit<SharkFloatParams>(
+            extB,
+            actualBSize,
+            extBSize,
+            shiftB,
+            diff,
+            index);
     } else {
         // B is larger: normalized B is used as is.
         // For A, we normalize and shift right by 'diff'.
-        alignedB = GetNormalizedDigit(extB, shiftB, index);
-        alignedA = GetShiftedNormalizedDigit<SharkFloatParams>(extA, extASize, shiftA, diff, index);
+        alignedB = GetNormalizedDigit(extB, actualBSize, extBSize, shiftB, index);
+        alignedA = GetShiftedNormalizedDigit<SharkFloatParams>(
+            extA,
+            actualASize,
+            extASize,
+            shiftA,
+            diff,
+            index);
     }
 }
 
 bool CompareMagnitudes (
     int32_t effExpA,
     int32_t effExpB,
+    const int32_t actualDigits,
     const int32_t extDigits,
     const uint32_t *extA,
     const int32_t shiftA,
@@ -227,8 +282,8 @@ bool CompareMagnitudes (
     } else {
         AIsBiggerMagnitude = false; // default if equal
         for (int32_t i = extDigits - 1; i >= 0; i--) {
-            uint32_t digitA = GetNormalizedDigit(extA, shiftA, i);
-            uint32_t digitB = GetNormalizedDigit(extB, shiftB, i);
+            uint32_t digitA = GetNormalizedDigit(extA, actualDigits, extDigits, shiftA, i);
+            uint32_t digitB = GetNormalizedDigit(extB, actualDigits, extDigits, shiftB, i);
             if (digitA > digitB) {
                 AIsBiggerMagnitude = true;
                 break;
@@ -256,35 +311,32 @@ void AddHelper(
     std::vector<DebugStateHost<SharkFloatParams>> &debugStates
 ) {
     // Make local copies.
-    const auto &normA = *A;
-    const auto &normB = *B;
+    const auto *extA = A->Digits;
+    const auto *extB = B->Digits;
 
     // --- Set up extended working precision ---
     const int32_t guard = 2;
+    const int32_t actualDigits = SharkFloatParams::GlobalNumUint32;
     const int32_t extDigits = SharkFloatParams::GlobalNumUint32 + guard;
     // Create extended arrays (little-endian, index 0 is LSB).
-    std::vector<uint32_t> extA(extDigits, 0);
-    std::vector<uint32_t> extB(extDigits, 0);
-    for (int32_t i = 0; i < SharkFloatParams::GlobalNumUint32; i++) {
-        extA[i] = normA.Digits[i];
-        extB[i] = normB.Digits[i];
-    }
+    std::vector<uint32_t> extResult(extDigits, 0);
+
     // The guard words (indices GlobalNumUint32 to extDigits-1) are left as zero.
 
     if constexpr (SharkFloatParams::HostVerbose) {
         std::cout << "extA: " << VectorUintToHexString(extA) << std::endl;
-        std::cout << "extA exponent: " << normA.Exponent << std::endl;
+        std::cout << "extA exponent: " << A->Exponent << std::endl;
         std::cout << "extB: " << VectorUintToHexString(extB) << std::endl;
-        std::cout << "extB exponent: " << normB.Exponent << std::endl;
+        std::cout << "extB exponent: " << B->Exponent << std::endl;
     }
 
     // --- Extended Normalization using shift indices ---
-    const bool sameSign = (normA.IsNegative == normB.IsNegative);
+    const bool sameSign = (A->IsNegative == B->IsNegative);
     bool normA_isZero = false, normB_isZero = false;
-    int32_t newAExponent = normA.Exponent;
-    int32_t newBExponent = normB.Exponent;
-    const int32_t shiftA = ExtendedNormalizeShiftIndex(extA.data(), extDigits, newAExponent, normA_isZero);
-    const int32_t shiftB = ExtendedNormalizeShiftIndex(extB.data(), extDigits, newBExponent, normB_isZero);
+    int32_t newAExponent = A->Exponent;
+    int32_t newBExponent = B->Exponent;
+    const int32_t shiftA = ExtendedNormalizeShiftIndex(extA, actualDigits, extDigits, newAExponent, normA_isZero);
+    const int32_t shiftB = ExtendedNormalizeShiftIndex(extB, actualDigits, extDigits, newBExponent, normB_isZero);
 
     // --- Compute Effective Exponents ---
     const int32_t effExpA = normA_isZero ? -100000000 : newAExponent + (SharkFloatParams::GlobalNumUint32 * 32 - 32);
@@ -295,26 +347,28 @@ void AddHelper(
     const bool AIsBiggerMagnitude = CompareMagnitudes(
         effExpA,
         effExpB,
+        actualDigits,
         extDigits,
-        extA.data(),
+        extA,
         shiftA,
-        extB.data(),
+        extB,
         shiftB);
 
     const int32_t diff = AIsBiggerMagnitude ? (effExpA - effExpB) : (effExpB - effExpA);
     int32_t outExponent = AIsBiggerMagnitude ? newAExponent : newBExponent;
 
     // --- Extended Arithmetic ---
-    std::vector<uint32_t> extResult(extDigits, 0);
     if (sameSign) {
         // ---- Addition Branch ----
         uint64_t carry = 0;
         for (int32_t i = 0; i < extDigits; i++) {
             uint64_t alignedA = 0, alignedB = 0;
             GetCorrespondingLimbs<SharkFloatParams>(
-                extA.data(),
+                extA,
+                actualDigits,
                 extDigits,
-                extB.data(),
+                extB,
+                actualDigits,
                 extDigits,
                 shiftA,
                 shiftB,
@@ -350,9 +404,11 @@ void AddHelper(
             for (int32_t i = 0; i < extDigits; i++) {
                 uint64_t alignedA = 0, alignedB = 0;
                 GetCorrespondingLimbs<SharkFloatParams>(
-                    extA.data(),
+                    extA,
+                    actualDigits,
                     extDigits,
-                    extB.data(),
+                    extB,
+                    actualDigits,
                     extDigits,
                     shiftA,
                     shiftB,
@@ -374,9 +430,11 @@ void AddHelper(
             for (int32_t i = 0; i < extDigits; i++) {
                 uint64_t alignedA = 0, alignedB = 0;
                 GetCorrespondingLimbs<SharkFloatParams>(
-                    extA.data(),
+                    extA,
+                    actualDigits,
                     extDigits,
-                    extB.data(),
+                    extB,
+                    actualDigits,
                     extDigits,
                     shiftA,
                     shiftB,
@@ -448,7 +506,13 @@ void AddHelper(
 
         const int32_t L = -shiftNeeded;
         const auto shiftedSz = static_cast<int32_t>(SharkFloatParams::GlobalNumUint32);
-        MultiWordLeftShift_LittleEndian(extResult.data(), extDigits, L, OutXY->Digits, shiftedSz);
+        MultiWordLeftShift_LittleEndian(
+            extResult.data(),
+            actualDigits,
+            extDigits,
+            L,
+            OutXY->Digits,
+            shiftedSz);
         outExponent -= L;
 
         if constexpr (SharkFloatParams::HostVerbose) {
@@ -471,9 +535,9 @@ void AddHelper(
     OutXY->Exponent = outExponent;
     // Set the result sign.
     if (sameSign)
-        OutXY->IsNegative = normA.IsNegative;
+        OutXY->IsNegative = A->IsNegative;
     else
-        OutXY->IsNegative = AIsBiggerMagnitude ? normA.IsNegative : normB.IsNegative;
+        OutXY->IsNegative = AIsBiggerMagnitude ? A->IsNegative : B->IsNegative;
 
     DebugStateHost<SharkFloatParams> dbg;
     debugStates.push_back(dbg);

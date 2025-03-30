@@ -24,13 +24,6 @@
 
 namespace cg = cooperative_groups;
 
-#ifdef _DEBUG
-#define SharkForceInlineReleaseOnly
-#else
-// #define SharkForceInlineReleaseOnly __forceinline__
-#define SharkForceInlineReleaseOnly
-#endif
-
 // Initialize the random number generator state.  Note that
 // this uses a constant seed.  This is lame and we should be
 // using a different seed for each thread.
@@ -2629,6 +2622,6 @@ void ComputeMultiplyKaratsubaV2GpuTestLoop(cudaStream_t &stream, void *kernelArg
     template void ComputeMultiplyKaratsubaV2Gpu<SharkFloatParams>(void *kernelArgs[]); \
     template void ComputeMultiplyKaratsubaV2GpuTestLoop<SharkFloatParams>(cudaStream_t &stream, void *kernelArgs[]);
 
-#ifdef SHARK_INCLDUDE_KERNELS
+#ifdef SHARK_INCLUDE_KERNELS
 ExplicitInstantiateAll();
 #endif

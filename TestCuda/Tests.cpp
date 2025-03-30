@@ -234,7 +234,7 @@ void TestPerf(
             BenchmarkTimer timer;
 
             if constexpr (sharkOperator == Operator::Add) {
-                InvokeAddKernel<SharkFloatParams>(
+                InvokeAddKernelPerf<SharkFloatParams>(
                     timer,
                     ComputeAddGpuTestLoop<SharkFloatParams>,
                     *xNum,
@@ -242,7 +242,7 @@ void TestPerf(
                     *gpuResult2XY,
                     numIters);
             } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
-                InvokeMultiplyKernel<SharkFloatParams>(
+                InvokeAddKernelPerf<SharkFloatParams>(
                     timer,
                     ComputeMultiplyKaratsubaV2GpuTestLoop<SharkFloatParams>,
                     *combo,
@@ -497,7 +497,8 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
                 ComputeAddGpu<SharkFloatParams>,
                 combo.A,
                 combo.B,
-                combo.ResultXY);
+                combo.ResultXY,
+                &debugStatesCuda);
         } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
             InvokeMultiplyKernelCorrectness<SharkFloatParams, Operator::MultiplyKaratsubaV2>(
                 timer,

@@ -27,7 +27,7 @@ static constexpr auto SharkMultiKernel = false;
 #endif
 
 // Define to enable GPU kernel compilation
-// #define SHARK_INCLUDE_KERNELS
+#define SHARK_INCLUDE_KERNELS
 // Set to false to bypass all GPU tests and only do reference/host-side
 #ifdef SHARK_INCLUDE_KERNELS
 static constexpr bool SharkTestGpu = true;
@@ -35,12 +35,19 @@ static constexpr bool SharkTestGpu = true;
 static constexpr bool SharkTestGpu = false;
 #endif
 
+#ifdef _DEBUG
+#define SharkForceInlineReleaseOnly
+#else
+// #define SharkForceInlineReleaseOnly __forceinline__
+#define SharkForceInlineReleaseOnly
+#endif
+
 // 0 = just one correctness test, intended for fast re-compile of a specific failure
 // 1 = all basic correctness tests/all basic perf tests
 // 2 = setup for profiling only, one kernel
 // 3 = all basic correctness tests + comical tests
 // See ExplicitInstantiate.h for more information
-#define ENABLE_BASIC_CORRECTNESS 3
+#define ENABLE_BASIC_CORRECTNESS 0
 static constexpr auto SharkComicalThreadCount = 13;
 static constexpr auto SharkTestIterCount = SharkDebug ? 3 : 50000;
 
@@ -86,7 +93,7 @@ struct GenericSharkFloatParams {
     static constexpr bool ForceNoOp = false;
 
     // If true, the host will print out a lot of stuff
-    static constexpr bool HostVerbose = false;
+    static constexpr bool HostVerbose = true;
 
     // 1, 3, 9, 27, 81
     static constexpr auto ConvolutionLimit = pConvolutionLimit;

@@ -114,8 +114,8 @@
   <ItemGroup>
     <ClCompile Include="ReferenceAdd.cpp" />
     <ClCompile Include="ReferenceKaratsuba.cpp" />
+    <CudaCompile Include="Add.cu" />
     <CudaCompile Include="HpSharkFloat.cu" />
-    <CudaCompile Include="IntegrationTest.cu" />
     <CudaCompile Include="KernelInvoke.cu" />
     <CudaCompile Include="Multiply.cu" />
     <CudaCompile Include="Archived\MultiplyKaratsubaV1.cu">
@@ -127,10 +127,10 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </CudaCompile>
     <CudaCompile Include="NullKernel.cu" />
-    <CudaCompile Include="Add.cu" />
     <ClCompile Include="MainTestCuda.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Add.cuh" />
     <ClInclude Include="AddInternal.cuh" />
     <ClInclude Include="BenchmarkTimer.h" />
     <ClInclude Include="Conversion.cuh" />
@@ -140,13 +140,11 @@
     <ClInclude Include="DebugStateRaw.h" />
     <ClInclude Include="ExplicitInstantiate.h" />
     <ClInclude Include="HpSharkFloat.cuh" />
-    <ClInclude Include="IntegrationTest.cuh" />
     <ClInclude Include="KernelInvoke.cuh" />
     <ClInclude Include="MainTestCuda.h" />
     <ClInclude Include="Multiply.cuh" />
     <ClInclude Include="MultiplyInternal.cuh" />
     <ClInclude Include="NullKernel.cuh" />
-    <ClInclude Include="Add.cuh" />
     <ClInclude Include="ReferenceAdd.h" />
     <ClInclude Include="ReferenceKaratsuba.h" />
     <ClInclude Include="Tests.h" />

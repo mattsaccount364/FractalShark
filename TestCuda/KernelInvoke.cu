@@ -22,7 +22,7 @@
 
 
 template<class SharkFloatParams>
-void InvokeMultiplyKernel(
+void InvokeAddKernelPerf(
     BenchmarkTimer &timer,
     std::function<void(cudaStream_t &, void *[])> kernel,
     HpSharkComboResults<SharkFloatParams> &combo,
@@ -94,21 +94,13 @@ void InvokeMultiplyKernel(
 }
 
 template<class SharkFloatParams>
-void InvokeAddKernel(
+void InvokeAddKernelPerf(
     BenchmarkTimer &timer,
     std::function<void(void *[])> kernel,
     const HpSharkFloat<SharkFloatParams> &xNum,
     const HpSharkFloat<SharkFloatParams> &yNum,
     HpSharkFloat<SharkFloatParams> &gpuResult2,
     uint64_t numIters) {
-
-    // Allocate memory for carryOuts and cumulativeCarries
-    GlobalAddBlockData *globalBlockData;
-    CarryInfo *d_carryOuts;
-    uint32_t *d_cumulativeCarries;
-    cudaMalloc(&globalBlockData, sizeof(GlobalAddBlockData));
-    cudaMalloc(&d_carryOuts, (SharkFloatParams::GlobalNumBlocks + 1) * sizeof(CarryInfo));
-    cudaMalloc(&d_cumulativeCarries, (SharkFloatParams::GlobalNumBlocks + 1) * sizeof(uint32_t));
 
     // Perform the calculation on the GPU
     HpSharkFloat<SharkFloatParams> *xGpu;
@@ -123,35 +115,32 @@ void InvokeAddKernel(
     cudaMalloc(&internalGpuResult2, sizeof(HpSharkFloat<SharkFloatParams>));
     cudaMemset(internalGpuResult2, 0, sizeof(HpSharkFloat<SharkFloatParams>));
 
+    uint32_t *g_extResult;
+    cudaMalloc(&g_extResult, (SharkFloatParams::GlobalNumUint32 + 2) * sizeof(uint32_t));
+
     // Prepare kernel arguments
     void *kernelArgs[] = {
         (void *)&xGpu,
         (void *)&yGpu,
         (void *)&internalGpuResult2,
         (void *)&numIters,
-        (void *)&globalBlockData,
-        (void *)&d_carryOuts,
-        (void *)&d_cumulativeCarries
+        (void *)&g_extResult
     };
 
+    // Launch the cooperative kernel
     {
         ScopedBenchmarkStopper stopper{ timer };
         kernel(kernelArgs);
     }
 
-    // Launch the cooperative kernel
-
     cudaMemcpy(&gpuResult2, internalGpuResult2, sizeof(HpSharkFloat<SharkFloatParams>), cudaMemcpyDeviceToHost);
 
+    // Free memory
+    cudaFree(g_extResult);
     cudaFree(internalGpuResult2);
     cudaFree(yGpu);
     cudaFree(xGpu);
-
-    cudaFree(globalBlockData);
-    cudaFree(d_carryOuts);
-    cudaFree(d_cumulativeCarries);
 }
-
 
 template<class SharkFloatParams, Operator sharkOperator>
 void InvokeMultiplyKernelCorrectness(
@@ -222,36 +211,32 @@ void InvokeAddKernelCorrectness(
     std::function<void(void *[])> kernel,
     const HpSharkFloat<SharkFloatParams> &xNum,
     const HpSharkFloat<SharkFloatParams> &yNum,
-    HpSharkFloat<SharkFloatParams> &gpuResult) {
+    HpSharkFloat<SharkFloatParams> &gpuResult,
+    std::vector<DebugStateRaw> *debugResults) {
 
     // Perform the calculation on the GPU
     HpSharkFloat<SharkFloatParams> *xGpu;
-    HpSharkFloat<SharkFloatParams> *yGpu;
-
     cudaMalloc(&xGpu, sizeof(HpSharkFloat<SharkFloatParams>));
-    cudaMalloc(&yGpu, sizeof(HpSharkFloat<SharkFloatParams>));
     cudaMemcpy(xGpu, &xNum, sizeof(HpSharkFloat<SharkFloatParams>), cudaMemcpyHostToDevice);
+
+    HpSharkFloat<SharkFloatParams> *yGpu;
+    cudaMalloc(&yGpu, sizeof(HpSharkFloat<SharkFloatParams>));
     cudaMemcpy(yGpu, &yNum, sizeof(HpSharkFloat<SharkFloatParams>), cudaMemcpyHostToDevice);
 
     HpSharkFloat<SharkFloatParams> *internalGpuResult;
     cudaMalloc(&internalGpuResult, sizeof(HpSharkFloat<SharkFloatParams>));
+    cudaMemset(internalGpuResult, 0, sizeof(HpSharkFloat<SharkFloatParams>));
 
-    // Allocate memory for carryOuts and cumulativeCarries
-    GlobalAddBlockData *globalBlockData;
-    CarryInfo *d_carryOuts;
-    uint32_t *d_cumulativeCarries;
-    cudaMalloc(&globalBlockData, sizeof(GlobalAddBlockData));
-    cudaMalloc(&d_carryOuts, (SharkFloatParams::GlobalNumBlocks + 1) * sizeof(CarryInfo));
-    cudaMalloc(&d_cumulativeCarries, (SharkFloatParams::GlobalNumBlocks + 1) * sizeof(uint32_t));
+    constexpr auto BytesToAllocate = (AdditionalUInt64Global + SharkFloatParams::GlobalNumUint32 + 2) * sizeof(uint32_t);
+    uint32_t *g_extResult;
+    cudaMalloc(&g_extResult, BytesToAllocate);
 
     // Prepare kernel arguments
     void *kernelArgs[] = {
         (void *)&xGpu,
         (void *)&yGpu,
         (void *)&internalGpuResult,
-        (void *)&globalBlockData,
-        (void *)&d_carryOuts,
-        (void *)&d_cumulativeCarries
+        (void *)&g_extResult
     };
 
     {
@@ -259,24 +244,32 @@ void InvokeAddKernelCorrectness(
         ComputeAddGpu<SharkFloatParams>(kernelArgs);
     }
 
-    cudaFree(globalBlockData);
-    cudaFree(d_carryOuts);
-    cudaFree(d_cumulativeCarries);
-
     cudaMemcpy(&gpuResult, internalGpuResult, sizeof(HpSharkFloat<SharkFloatParams>), cudaMemcpyDeviceToHost);
-    cudaFree(internalGpuResult);
 
+    if (debugResults != nullptr) {
+        if constexpr (SharkDebugChecksums) {
+            debugResults->resize(SharkFloatParams::NumDebugStates);
+            cudaMemcpy(
+                debugResults->data(),
+                &g_extResult[AdditionalGlobalSyncSpace],
+                SharkFloatParams::NumDebugStates * sizeof(DebugStateRaw),
+                cudaMemcpyDeviceToHost);
+        }
+    }
+
+    cudaFree(g_extResult);
+    cudaFree(internalGpuResult);
     cudaFree(yGpu);
     cudaFree(xGpu);
 }
 
 #define ExplicitlyInstantiate(SharkFloatParams) \
-    template void InvokeMultiplyKernel<SharkFloatParams>( \
+    template void InvokeAddKernelPerf<SharkFloatParams>( \
         BenchmarkTimer &timer, \
         std::function<void(cudaStream_t &, void *[])> kernel, \
         HpSharkComboResults<SharkFloatParams> &combo, \
         uint64_t numIters); \
-    template void InvokeAddKernel<SharkFloatParams>( \
+    template void InvokeAddKernelPerf<SharkFloatParams>( \
         BenchmarkTimer &timer, \
         std::function<void(void*[])> kernel, \
         const HpSharkFloat<SharkFloatParams> &xNum, \
@@ -293,7 +286,8 @@ void InvokeAddKernelCorrectness(
         std::function<void(void*[])> kernel, \
         const HpSharkFloat<SharkFloatParams> &xNum, \
         const HpSharkFloat<SharkFloatParams> &yNum, \
-        HpSharkFloat<SharkFloatParams> &gpuResult);
+        HpSharkFloat<SharkFloatParams> &gpuResult, \
+        std::vector<DebugStateRaw> *debugResults);
 
 #ifdef SHARK_INCLUDE_KERNELS
 ExplicitInstantiateAll();

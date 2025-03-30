@@ -19,16 +19,20 @@ void ComputeAddGpu(void *kernelArgs[]);
 
 template<class SharkFloatParams>
 CUDA_GLOBAL void AddKernel(
-    const HpSharkFloat<SharkFloatParams> *A,
-    const HpSharkFloat<SharkFloatParams> *B,
+    HpSharkFloat<SharkFloatParams> *A,
+    HpSharkFloat<SharkFloatParams> *B,
     HpSharkFloat<SharkFloatParams> *Out,
-    uint32_t *g_extResult);
+    GlobalAddBlockData *globalBlockData,
+    CarryInfo *carryOuts,        // Array to store carry-out for each block
+    uint32_t *cumulativeCarries); // Array to store cumulative carries
 
 template<class SharkFloatParams>
 CUDA_GLOBAL void AddKernelTestLoop(
-    const HpSharkFloat<SharkFloatParams> *A,
-    const HpSharkFloat<SharkFloatParams> *B,
+    HpSharkFloat<SharkFloatParams> *A,
+    HpSharkFloat<SharkFloatParams> *B,
     HpSharkFloat<SharkFloatParams> *Out,
     uint64_t numIters,
-    uint32_t *g_extResult);
+    GlobalAddBlockData *globalBlockData,
+    CarryInfo *carryOuts,        // Array to store carry-out for each block
+    uint32_t *cumulativeCarries); // Array to store cumulative carries
 

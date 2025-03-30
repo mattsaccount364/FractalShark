@@ -256,6 +256,27 @@ void GetCorrespondingLimbs (
     }
 }
 
+template<
+    class SharkFloatParams,
+    DebugStatePurpose Purpose,
+    typename ArrayType>
+const DebugStateHost<SharkFloatParams> &
+GetCurrentDebugState(
+    std::vector<DebugStateHost<SharkFloatParams>> &debugChecksumArray,
+    const ArrayType *arrayToChecksum,
+    size_t arraySize) {
+
+    constexpr auto curPurpose = static_cast<int>(Purpose);
+    constexpr auto CallIndex = 0;
+    constexpr auto UseConvolution = UseConvolution::No;
+    constexpr auto RecursionDepth = 0;
+
+    auto &retval = debugChecksumArray[curPurpose];
+    retval.Reset(
+        arrayToChecksum, arraySize, Purpose, RecursionDepth, CallIndex, UseConvolution);
+    return retval;
+}
+
 bool CompareMagnitudes (
     int32_t effExpA,
     int32_t effExpB,
@@ -302,6 +323,11 @@ void AddHelper(
     HpSharkFloat<SharkFloatParams> *OutXY,
     std::vector<DebugStateHost<SharkFloatParams>> &debugStates
 ) {
+    if constexpr (SharkDebugChecksums) {
+        constexpr auto NewDebugStateSize = static_cast<int>(DebugStatePurpose::NumPurposes);
+        debugStates.resize(NewDebugStateSize);
+    }
+
     // Make local copies.
     const auto *extA = A->Digits;
     const auto *extB = B->Digits;
@@ -316,10 +342,22 @@ void AddHelper(
     // The guard words (indices GlobalNumUint32 to extDigits-1) are left as zero.
 
     if constexpr (SharkFloatParams::HostVerbose) {
-        std::cout << "extA: " << VectorUintToHexString(extA) << std::endl;
+        std::cout << "extA: " << VectorUintToHexString(extA, actualDigits) << std::endl;
         std::cout << "extA exponent: " << A->Exponent << std::endl;
-        std::cout << "extB: " << VectorUintToHexString(extB) << std::endl;
+        std::cout << "extB: " << VectorUintToHexString(extB, actualDigits) << std::endl;
         std::cout << "extB exponent: " << B->Exponent << std::endl;
+    }
+
+    if constexpr (SharkDebugChecksums) {
+        const auto &debugAState = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::ADigits>(
+            debugStates, extA, actualDigits);
+        const auto &debugBState = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::BDigits>(
+            debugStates, extB, actualDigits);
+
+        if constexpr (SharkFloatParams::HostVerbose) {
+            std::cout << "A->Digits checksum: " << debugAState.GetStr() << std::endl;
+            std::cout << "B->Digits checksum: " << debugBState.GetStr() << std::endl;
+        }
     }
 
     // --- Extended Normalization using shift indices ---
@@ -539,9 +577,6 @@ void AddHelper(
         OutXY->IsNegative = A->IsNegative;
     else
         OutXY->IsNegative = AIsBiggerMagnitude ? A->IsNegative : B->IsNegative;
-
-    DebugStateHost<SharkFloatParams> dbg;
-    debugStates.push_back(dbg);
 }
 
 //

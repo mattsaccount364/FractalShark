@@ -17,24 +17,15 @@ class BenchmarkTimer;
 
 enum class Operator;
 
-// Structure to hold carry information for each block
-struct CarryInfo {
-    uint32_t carryOut;    // Carry-out from the block's computation
-};
-
-struct GlobalAddBlockData {
-    int32_t AIsBiggerMagnitude;
-};
-
 template<class SharkFloatParams>
-void InvokeMultiplyKernel(
+void InvokeAddKernelPerf(
     BenchmarkTimer &timer,
     std::function<void(cudaStream_t &, void *[])> kernel,
     HpSharkComboResults<SharkFloatParams> &combo,
     uint64_t numIters);
 
 template<class SharkFloatParams>
-void InvokeAddKernel(
+void InvokeAddKernelPerf(
     BenchmarkTimer &timer,
     std::function<void(void *[])> kernel,
     const HpSharkFloat<SharkFloatParams> &xNum,
@@ -55,4 +46,5 @@ void InvokeAddKernelCorrectness(
     std::function<void(void *[])> kernel,
     const HpSharkFloat<SharkFloatParams> &xNum,
     const HpSharkFloat<SharkFloatParams> &yNum,
-    HpSharkFloat<SharkFloatParams> &gpuResult);
+    HpSharkFloat<SharkFloatParams> &gpuResult,
+    std::vector<DebugStateRaw> *debugResults);

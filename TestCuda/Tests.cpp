@@ -113,12 +113,14 @@ bool DiffAgainstHost(
             if constexpr (SharkFloatParams::HostVerbose) {
                 std::cout << "\nThe relative error is within acceptable bounds." << std::endl;
                 std::cout << "Relative error: " << epsilonStr << std::endl;
+                std::cout << "Epsilon: " << relativeErrorStr << std::endl;
             }
 
             Tests.MarkSuccess(testNum, hostCustomOrGpu);
         } else {
             std::cerr << "\nError: The relative error exceeds acceptable bounds." << std::endl;
             std::cout << "Relative error: " << relativeErrorStr << std::endl;
+            std::cout << "Epsilon: " << epsilonStr << std::endl;
             Tests.MarkFailed(testNum, hostCustomOrGpu, relativeErrorStr, epsilonStr);
             testSucceeded = false;
         }
@@ -1195,6 +1197,12 @@ bool TestAllBinaryOp(int testBase) {
     if constexpr (sharkOperator == Operator::Add && SharkFloatParams::GlobalNumUint32 == 8) {
         auto x = std::make_unique<HpSharkFloat<SharkFloatParams>>();
         auto y = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+
+        static constexpr auto SpecificTest1 = 255;
+        static constexpr auto SpecificTest2 = 256;
+
+        TestAddSpecialNumbers21<SharkFloatParams, sharkOperator>(0, SpecificTest1);
+        TestAddSpecialNumbers21<SharkFloatParams, sharkOperator>(0, SpecificTest2);
 
         for (auto i = -512; i < 512; i++) {
             if constexpr (SharkFloatParams::HostVerbose) {

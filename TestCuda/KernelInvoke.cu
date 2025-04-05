@@ -24,7 +24,6 @@
 template<class SharkFloatParams>
 void InvokeMultiplyKernelPerf(
     BenchmarkTimer &timer,
-    std::function<void(cudaStream_t &, void *[])> kernel,
     HpSharkComboResults<SharkFloatParams> &combo,
     uint64_t numIters) {
 
@@ -80,7 +79,7 @@ void InvokeMultiplyKernelPerf(
 
     {
         ScopedBenchmarkStopper stopper{ timer };
-        kernel(stream, kernelArgs);
+        ComputeMultiplyKaratsubaV2GpuTestLoop<SharkFloatParams>(stream, kernelArgs);
     }
 
     cudaMemcpy(&combo, comboGpu, sizeof(HpSharkComboResults<SharkFloatParams>), cudaMemcpyDeviceToHost);
@@ -96,7 +95,6 @@ void InvokeMultiplyKernelPerf(
 template<class SharkFloatParams>
 void InvokeAddKernelPerf(
     BenchmarkTimer &timer,
-    std::function<void(void *[])> kernel,
     HpSharkAddComboResults<SharkFloatParams> &combo,
     uint64_t numIters) {
 
@@ -105,8 +103,10 @@ void InvokeAddKernelPerf(
     cudaMalloc(&comboResults, sizeof(HpSharkAddComboResults<SharkFloatParams>));
     cudaMemcpy(comboResults, &combo, sizeof(HpSharkAddComboResults<SharkFloatParams>), cudaMemcpyHostToDevice);
 
+    constexpr auto BytesToAllocate =
+        (AdditionalUInt64Global + CalculateAddFrameSize<SharkFloatParams>()) * sizeof(uint64_t);
     uint32_t *g_extResult;
-    cudaMalloc(&g_extResult, (SharkFloatParams::GlobalNumUint32 + 2) * sizeof(uint32_t));
+    cudaMalloc(&g_extResult, BytesToAllocate);
 
     // Prepare kernel arguments
     void *kernelArgs[] = {
@@ -118,10 +118,10 @@ void InvokeAddKernelPerf(
     // Launch the cooperative kernel
     {
         ScopedBenchmarkStopper stopper{ timer };
-        kernel(kernelArgs);
+        ComputeAddGpuTestLoop<SharkFloatParams>(kernelArgs);
     }
 
-    cudaMemcpy(&combo, comboResults, sizeof(HpSharkFloat<SharkFloatParams>), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&combo, comboResults, sizeof(HpSharkAddComboResults<SharkFloatParams>), cudaMemcpyDeviceToHost);
 
     // Free memory
     cudaFree(g_extResult);
@@ -171,7 +171,7 @@ void InvokeMultiplyKernelCorrectness(
 
     {
         ScopedBenchmarkStopper stopper{ timer };
-        kernel(kernelArgs);
+        ComputeMultiplyKaratsubaV2Gpu<SharkFloatParams>(kernelArgs);
     }
 
     cudaMemcpy(&combo, comboGpu, sizeof(HpSharkComboResults<SharkFloatParams>), cudaMemcpyDeviceToHost);
@@ -194,7 +194,6 @@ void InvokeMultiplyKernelCorrectness(
 template<class SharkFloatParams, Operator sharkOperator>
 void InvokeAddKernelCorrectness(
     BenchmarkTimer &timer,
-    std::function<void(void *[])> kernel,
     HpSharkAddComboResults<SharkFloatParams> &combo,
     std::vector<DebugStateRaw> *debugResults) {
 
@@ -204,7 +203,7 @@ void InvokeAddKernelCorrectness(
     cudaMemcpy(comboResults, &combo, sizeof(HpSharkAddComboResults<SharkFloatParams>), cudaMemcpyHostToDevice);
 
     constexpr auto BytesToAllocate =
-        (AdditionalUInt64Global + SharkFloatParams::GlobalNumUint32 * 4) * sizeof(uint32_t);
+        (AdditionalUInt64Global + CalculateAddFrameSize<SharkFloatParams>()) * sizeof(uint64_t);
     uint32_t *g_extResult;
     cudaMalloc(&g_extResult, BytesToAllocate);
 
@@ -239,22 +238,18 @@ void InvokeAddKernelCorrectness(
 #define ExplicitlyInstantiate(SharkFloatParams) \
     template void InvokeMultiplyKernelPerf<SharkFloatParams>( \
         BenchmarkTimer &timer, \
-        std::function<void(cudaStream_t &, void *[])> kernel, \
         HpSharkComboResults<SharkFloatParams> &combo, \
         uint64_t numIters); \
     template void InvokeAddKernelPerf<SharkFloatParams>( \
         BenchmarkTimer &timer, \
-        std::function<void(void*[])> kernel, \
         HpSharkAddComboResults<SharkFloatParams> &combo, \
         uint64_t numIters); \
     template void InvokeMultiplyKernelCorrectness<SharkFloatParams, Operator::MultiplyKaratsubaV2>( \
         BenchmarkTimer &timer, \
-        std::function<void(void*[])> kernel, \
         HpSharkComboResults<SharkFloatParams> &combo, \
         std::vector<DebugStateRaw> *debugResults); \
     template void InvokeAddKernelCorrectness<SharkFloatParams, Operator::Add>( \
         BenchmarkTimer &timer, \
-        std::function<void(void*[])> kernel, \
         HpSharkAddComboResults<SharkFloatParams> &combo, \
         std::vector<DebugStateRaw> *debugResults);
 

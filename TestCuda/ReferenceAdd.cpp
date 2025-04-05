@@ -487,25 +487,16 @@ AddHelper (
     // --- Phase 2: Propagation ---
     // Propagate carries (if addition) or borrows (if subtraction)
     // and store the corrected 32-bit digit into propagatedResult.
+    int64_t carry = 0;
     if (sameSign) {
         // Propagate carry for addition.
-        int64_t carry = 0;
         for (int32_t i = 0; i < extDigits; i++) {
             int64_t sum = (int64_t)extResult[i] + carry;
             propagatedResult[i] = (uint32_t)(sum & 0xFFFFFFFFULL);
             carry = sum >> 32;
         }
-        if (carry > 0) {
-            outExponent += 1;
-            // (Optionally, handle a final carry by shifting right by 1 bit.)
-            // For example:
-            uint32_t nextBit = (uint32_t)(carry & 1ULL);
-            for (int32_t i = extDigits - 1; i >= 0; i--) {
-                uint32_t current = propagatedResult[i];
-                propagatedResult[i] = (current >> 1) | (nextBit << 31);
-                nextBit = current & 1;
-            }
-        }
+
+        // Note we'll handle final carry later.
     } else {
         // Propagate borrow for subtraction.
         int64_t borrow = 0;
@@ -538,6 +529,18 @@ AddHelper (
 
         if constexpr (SharkFloatParams::HostVerbose) {
             std::cout << "propagatedResult checksum: " << debugResultState.GetStr() << std::endl;
+        }
+    }
+
+    if (carry > 0) {
+        outExponent += 1;
+        // (Optionally, handle a final carry by shifting right by 1 bit.)
+        // For example:
+        uint32_t nextBit = (uint32_t)(carry & 1ULL);
+        for (int32_t i = extDigits - 1; i >= 0; i--) {
+            uint32_t current = propagatedResult[i];
+            propagatedResult[i] = (current >> 1) | (nextBit << 31);
+            nextBit = current & 1;
         }
     }
 

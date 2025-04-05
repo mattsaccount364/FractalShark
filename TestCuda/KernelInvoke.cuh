@@ -8,6 +8,9 @@ struct HpSharkFloat;
 template<class SharkFloatParams>
 struct HpSharkComboResults;
 
+template<class SharkFloatParams>
+struct HpSharkAddComboResults;
+
 struct DebugStateRaw;
 
 struct CUstream_st;
@@ -18,7 +21,7 @@ class BenchmarkTimer;
 enum class Operator;
 
 template<class SharkFloatParams>
-void InvokeAddKernelPerf(
+void InvokeMultiplyKernelPerf(
     BenchmarkTimer &timer,
     std::function<void(cudaStream_t &, void *[])> kernel,
     HpSharkComboResults<SharkFloatParams> &combo,
@@ -28,9 +31,7 @@ template<class SharkFloatParams>
 void InvokeAddKernelPerf(
     BenchmarkTimer &timer,
     std::function<void(void *[])> kernel,
-    const HpSharkFloat<SharkFloatParams> &xNum,
-    const HpSharkFloat<SharkFloatParams> &yNum,
-    HpSharkFloat<SharkFloatParams> &gpuResult2,
+    HpSharkAddComboResults<SharkFloatParams> &combo,
     uint64_t numIters);
 
 template<class SharkFloatParams, Operator sharkOperator>
@@ -44,7 +45,5 @@ template<class SharkFloatParams, Operator sharkOperator>
 void InvokeAddKernelCorrectness(
     BenchmarkTimer &timer,
     std::function<void(void *[])> kernel,
-    const HpSharkFloat<SharkFloatParams> &xNum,
-    const HpSharkFloat<SharkFloatParams> &yNum,
-    HpSharkFloat<SharkFloatParams> &gpuResult,
+    HpSharkAddComboResults<SharkFloatParams> &combo,
     std::vector<DebugStateRaw> *debugResults);

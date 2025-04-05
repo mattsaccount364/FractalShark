@@ -141,7 +141,7 @@ static constexpr auto AdditionalUInt64Global =
     AdditionalGlobalSyncSpace + AdditionalGlobalRandomSpace + AdditionalGlobalChecksumSpace;
 
 template<class SharkFloatParams>
-static constexpr auto CalculateFrameSize() {
+static constexpr auto CalculateMultiplyFrameSize() {
     return ScratchMemoryArrays * SharkFloatParams::GlobalNumUint32 + AdditionalUInt64PerFrame;
 }
 
@@ -228,6 +228,13 @@ struct HpSharkComboResults {
     HpSharkFloat<SharkFloatParams> ResultX2;
     HpSharkFloat<SharkFloatParams> ResultXY;
     HpSharkFloat<SharkFloatParams> ResultY2;
+};
+
+template<class SharkFloatParams>
+struct HpSharkAddComboResults {
+    HpSharkFloat<SharkFloatParams> A;
+    HpSharkFloat<SharkFloatParams> B;
+    HpSharkFloat<SharkFloatParams> ResultX2;
 };
 
 template<class SharkFloatParams>

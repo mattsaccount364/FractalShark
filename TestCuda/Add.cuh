@@ -19,16 +19,12 @@ void ComputeAddGpu(void *kernelArgs[]);
 
 template<class SharkFloatParams>
 CUDA_GLOBAL void AddKernel(
-    const HpSharkFloat<SharkFloatParams> *A,
-    const HpSharkFloat<SharkFloatParams> *B,
-    HpSharkFloat<SharkFloatParams> *Out,
+    HpSharkAddComboResults<SharkFloatParams> *combo,
     uint32_t *tempData);
 
 template<class SharkFloatParams>
 CUDA_GLOBAL void AddKernelTestLoop(
-    const HpSharkFloat<SharkFloatParams> *A,
-    const HpSharkFloat<SharkFloatParams> *B,
-    HpSharkFloat<SharkFloatParams> *Out,
+    HpSharkAddComboResults<SharkFloatParams> *combo,
     uint64_t numIters,
     uint32_t *tempData);
 

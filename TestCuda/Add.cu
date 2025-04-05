@@ -328,9 +328,7 @@ template <class SharkFloatParams>
 __device__ void AddHelper (
     cg::grid_group &grid,
     cg::thread_block &block,
-    const HpSharkFloat<SharkFloatParams> *A,
-    const HpSharkFloat<SharkFloatParams> *B,
-    HpSharkFloat<SharkFloatParams> *OutXY,
+    HpSharkAddComboResults<SharkFloatParams> *SharkRestrict combo,
     uint32_t *tempData) {
 
     // --- Constants and Parameters ---
@@ -340,6 +338,9 @@ __device__ void AddHelper (
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     constexpr int NewN = SharkFloatParams::GlobalNumUint32;
 
+    const auto *A = &combo->A;
+    const auto *B = &combo->B;
+    auto *OutXY = &combo->ResultX2;
     const auto *extA = A->Digits;
     const auto *extB = B->Digits;
 
@@ -625,9 +626,7 @@ __device__ void AddHelper (
 
 template<class SharkFloatParams>
 __global__ void AddKernel(
-    const HpSharkFloat<SharkFloatParams> *A,
-    const HpSharkFloat<SharkFloatParams> *B,
-    HpSharkFloat<SharkFloatParams> *Out,
+    HpSharkAddComboResults<SharkFloatParams> *SharkRestrict combo,
     uint32_t *tempData) {
 
     // Initialize cooperative grid group
@@ -635,14 +634,12 @@ __global__ void AddKernel(
     cg::thread_block block = cg::this_thread_block();
 
     // Call the AddHelper function
-    AddHelper(grid, block, A, B, Out, tempData);
+    AddHelper(grid, block, combo, tempData);
 }
 
 template<class SharkFloatParams>
 __global__ void AddKernelTestLoop(
-    const HpSharkFloat<SharkFloatParams> *A,
-    const HpSharkFloat<SharkFloatParams> *B,
-    HpSharkFloat<SharkFloatParams> *Out,
+    HpSharkAddComboResults<SharkFloatParams> *SharkRestrict combo,
     uint64_t numIters,
     uint32_t *tempData) {
 
@@ -651,7 +648,7 @@ __global__ void AddKernelTestLoop(
     cg::thread_block block = cg::this_thread_block();
 
     for (int i = 0; i < numIters; ++i) {
-        AddHelper(grid, block, A, B, Out, tempData);
+        AddHelper(grid, block, combo, tempData);
     }
 }
 

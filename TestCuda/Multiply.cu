@@ -1043,14 +1043,14 @@ __device__ SharkForceInlineReleaseOnly static void CarryPropagation (
     // grid.sync();
 }
 
-// Look for CalculateFrameSize and ScratchMemoryArrays
+// Look for CalculateMultiplyFrameSize and ScratchMemoryArrays
 // and make sure the number of NewN arrays we're using here fits within that limit.
 // The list here should go up to ScratchMemoryArrays.
 static_assert(AdditionalUInt64PerFrame == 256, "See below");
 #define DefineTempProductsOffsets(TempBase, CallIndex) \
     const int threadIdxGlobal = block.group_index().x * SharkFloatParams::GlobalThreadsPerBlock + block.thread_index().x; \
     constexpr int TestMultiplier = 1; \
-    constexpr auto CallOffset = CallIndex * CalculateFrameSize<SharkFloatParams>(); \
+    constexpr auto CallOffset = CallIndex * CalculateMultiplyFrameSize<SharkFloatParams>(); \
     constexpr auto TempBaseOffset = TempBase + CallOffset; \
     constexpr auto Checksum_offset = AdditionalGlobalSyncSpace; \
     auto *SharkRestrict debugChecksumArray = reinterpret_cast<DebugState<SharkFloatParams>*>(&tempProducts[Checksum_offset]); \

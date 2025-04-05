@@ -242,7 +242,7 @@ void TestPerf(
                     *gpuResult2XY,
                     numIters);
             } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
-                InvokeAddKernelPerf<SharkFloatParams>(
+                InvokeMultiplyKernelPerf<SharkFloatParams>(
                     timer,
                     ComputeMultiplyKaratsubaV2GpuTestLoop<SharkFloatParams>,
                     *combo,
@@ -487,24 +487,32 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
     if constexpr (SharkTestGpu) {
         BenchmarkTimer timer;
 
-        HpSharkComboResults<SharkFloatParams> combo;
-        combo.A = xNum;
-        combo.B = yNum;
-
         if constexpr (sharkOperator == Operator::Add) {
+            HpSharkAddComboResults<SharkFloatParams> combo;
+            combo.A = xNum;
+            combo.B = yNum;
+
             InvokeAddKernelCorrectness<SharkFloatParams, Operator::Add>(
                 timer,
                 ComputeAddGpu<SharkFloatParams>,
-                combo.A,
-                combo.B,
-                combo.ResultXY,
+                combo,
                 &debugStatesCuda);
+
+            gpuResultXY = combo.ResultX2;
         } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
+            HpSharkComboResults<SharkFloatParams> combo;
+            combo.A = xNum;
+            combo.B = yNum;
+
             InvokeMultiplyKernelCorrectness<SharkFloatParams, Operator::MultiplyKaratsubaV2>(
                 timer,
                 ComputeMultiplyKaratsubaV2Gpu<SharkFloatParams>,
                 combo,
                 &debugStatesCuda);
+
+            gpuResultXX = combo.ResultX2;
+            gpuResultXY = combo.ResultXY;
+            gpuResultYY = combo.ResultY2;
         } else {
             assert(false);
         }
@@ -514,10 +522,6 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
         if constexpr (SharkFloatParams::HostVerbose) {
             std::cout << "GPU single time: " << timer.GetDeltaInMs() << " ms" << std::endl;
         }
-
-        gpuResultXX = combo.ResultX2;
-        gpuResultXY = combo.ResultXY;
-        gpuResultYY = combo.ResultY2;
     }
 
     std::vector<DebugStateHost<SharkFloatParams>> debugResultsHost;

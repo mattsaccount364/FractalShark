@@ -398,10 +398,6 @@ __device__ void AddHelper (
         grid.sync();
     }
 
-    // We assume that the kernel is launched with at least extDigits threads.
-    if (idx >= extDigits)
-        return;
-
     // --- Extended Normalization using shift indices ---
     const bool sameSign = (A->IsNegative == B->IsNegative);
     bool normA_isZero = false, normB_isZero = false;
@@ -442,29 +438,11 @@ __device__ void AddHelper (
     int32_t outExponent = AIsBiggerMagnitude ? newAExponent : newBExponent;
 
     // --- Each thread computes its aligned limb.
-    uint64_t alignedA = 0, alignedB = 0;
+    for (int i = idx; i < extDigits; i += blockDim.x * gridDim.x) {
+        uint64_t alignedA = 0, alignedB = 0;
 
-    uint64_t prelim = 0;
-    if (sameSign) {
-        GetCorrespondingLimbs<SharkFloatParams>(
-            extA,
-            actualDigits,
-            extDigits,
-            extB,
-            actualDigits,
-            extDigits,
-            shiftA,
-            shiftB,
-            AIsBiggerMagnitude,
-            diff,
-            idx,
-            alignedA,
-            alignedB);
-        prelim = alignedA + alignedB;
-    } else {
-        // ---- Subtraction Branch ----
-        if (AIsBiggerMagnitude) {
-            uint64_t alignedA = 0, alignedB = 0;
+        uint64_t prelim = 0;
+        if (sameSign) {
             GetCorrespondingLimbs<SharkFloatParams>(
                 extA,
                 actualDigits,
@@ -476,38 +454,58 @@ __device__ void AddHelper (
                 shiftB,
                 AIsBiggerMagnitude,
                 diff,
-                idx,
+                i,
                 alignedA,
                 alignedB);
-            int64_t diffVal = (int64_t)alignedA - (int64_t)alignedB;
-            prelim = diffVal;
+            prelim = alignedA + alignedB;
         } else {
-            uint64_t alignedA = 0, alignedB = 0;
-            GetCorrespondingLimbs<SharkFloatParams>(
-                extA,
-                actualDigits,
-                extDigits,
-                extB,
-                actualDigits,
-                extDigits,
-                shiftA,
-                shiftB,
-                AIsBiggerMagnitude,
-                diff,
-                idx,
-                alignedA,
-                alignedB);
-            int64_t diffVal = (int64_t)alignedB - (int64_t)alignedA;
-            prelim = diffVal;
+            // ---- Subtraction Branch ----
+            if (AIsBiggerMagnitude) {
+                uint64_t alignedA = 0, alignedB = 0;
+                GetCorrespondingLimbs<SharkFloatParams>(
+                    extA,
+                    actualDigits,
+                    extDigits,
+                    extB,
+                    actualDigits,
+                    extDigits,
+                    shiftA,
+                    shiftB,
+                    AIsBiggerMagnitude,
+                    diff,
+                    i,
+                    alignedA,
+                    alignedB);
+                int64_t diffVal = (int64_t)alignedA - (int64_t)alignedB;
+                prelim = diffVal;
+            } else {
+                uint64_t alignedA = 0, alignedB = 0;
+                GetCorrespondingLimbs<SharkFloatParams>(
+                    extA,
+                    actualDigits,
+                    extDigits,
+                    extB,
+                    actualDigits,
+                    extDigits,
+                    shiftA,
+                    shiftB,
+                    AIsBiggerMagnitude,
+                    diff,
+                    i,
+                    alignedA,
+                    alignedB);
+                int64_t diffVal = (int64_t)alignedB - (int64_t)alignedA;
+                prelim = diffVal;
+            }
         }
-    }
 
-    // Write preliminary result (without carry/borrow propagation) to global temporary.
-    final128[idx] = prelim;
+        // Write preliminary result (without carry/borrow propagation) to global temporary.
+        final128[i] = prelim;
+    }
 
     if constexpr (SharkDebugChecksums) {
         grid.sync();
-        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Final128XY, uint64_t>(
+        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z2XY, uint64_t>(
             record, debugChecksumArray, grid, block, final128, extDigits);
         grid.sync();
     } else {
@@ -555,7 +553,15 @@ __device__ void AddHelper (
         }
     }
 
-    
+    if constexpr (SharkDebugChecksums) {
+        grid.sync();
+        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Final128XY, uint64_t>(
+            record, debugChecksumArray, grid, block, final128, extDigits);
+        grid.sync();
+    } else {
+        grid.sync();
+    }
+
     // --- Final Normalization ---
     // Thread 0 finds the most-significant digit (msd) and computes the shift needed.
     int msdResult;
@@ -572,11 +578,7 @@ __device__ void AddHelper (
         int currentOverall = msdResult * 32 + (31 - clzResult);
         int desiredOverall = (actualDigits - 1) * 32 + 31;
         shiftNeeded = currentOverall - desiredOverall;
-    }
-    grid.sync();
 
-    // Now, thread 0 performs the final shift and writes the fixed–precision result.
-    if (idx == 0) {
         if (shiftNeeded > 0) {
             // Right-shift extResult.
             for (int i = 0; i < actualDigits; i++) {
@@ -599,14 +601,25 @@ __device__ void AddHelper (
             }
             outExponent -= L;
         } else {
-            // No shifting needed; simply copy.
-            memcpy(OutXY->Digits, final128, actualDigits * sizeof(uint32_t));
+            // No shifting needed; simply copy.  Convert to uint32_t along the way
+            
+            for (int i = 0; i < actualDigits; i++) {
+                OutXY->Digits[i] = final128[i];
+            }
         }
         OutXY->Exponent = outExponent;
         // Set result sign.
         OutXY->IsNegative = sameSign ? A->IsNegative : (AIsBiggerMagnitude ? A->IsNegative : B->IsNegative);
     }
-    grid.sync();
+
+    if constexpr (SharkDebugChecksums) {
+        grid.sync();
+        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Result_offsetXY, uint32_t>(
+            record, debugChecksumArray, grid, block, OutXY->Digits, actualDigits);
+        grid.sync();
+    } else {
+        grid.sync();
+    }
 }
 
 

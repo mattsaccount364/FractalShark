@@ -27,7 +27,7 @@ static constexpr auto SharkMultiKernel = false;
 #endif
 
 // Define to enable GPU kernel compilation
-//#define SHARK_INCLUDE_KERNELS
+#define SHARK_INCLUDE_KERNELS
 // Set to false to bypass all GPU tests and only do reference/host-side
 #ifdef SHARK_INCLUDE_KERNELS
 static constexpr bool SharkTestGpu = true;

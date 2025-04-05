@@ -474,6 +474,16 @@ AddHelper (
         }
     }
 
+    if constexpr (SharkDebugChecksums) {
+        const auto &debugResultState = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2XY>(
+            debugStates, extResult.data(), extDigits);
+
+        if constexpr (SharkFloatParams::HostVerbose) {
+            std::cout << "extResult checksum: " << debugResultState.GetStr() << std::endl;
+            std::cout << "extResult after arithmetic: " << VectorUintToHexString(extResult) << std::endl;
+        }
+    }
+
     // --- Phase 2: Propagation ---
     // Propagate carries (if addition) or borrows (if subtraction)
     // and store the corrected 32-bit digit into propagatedResult.
@@ -605,6 +615,15 @@ AddHelper (
         OutXY->IsNegative = A->IsNegative;
     else
         OutXY->IsNegative = AIsBiggerMagnitude ? A->IsNegative : B->IsNegative;
+
+    if constexpr (SharkDebugChecksums) {
+        const auto &debugResultState = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::Result_offsetXY>(
+            debugStates, OutXY->Digits, SharkFloatParams::GlobalNumUint32);
+
+        if constexpr (SharkFloatParams::HostVerbose) {
+            std::cout << "OutXY->Digits checksum: " << debugResultState.GetStr() << std::endl;
+        }
+    }
 }
 
 //

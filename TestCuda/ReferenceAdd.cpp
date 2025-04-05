@@ -428,130 +428,119 @@ AddHelper (
         std::cout << "outExponent: " << outExponent << std::endl;
     }
 
-    // --- Extended Arithmetic ---
+    std::vector<uint32_t> propagatedResult(extDigits, 0); // Result after propagation
+
+    // --- Phase 1: Raw Extended Arithmetic ---
+    // Compute the raw limb-wise result without propagation.
     if (sameSign) {
-        // ---- Addition Branch ----
-        uint64_t carry = 0;
+        // Addition branch.
         for (int32_t i = 0; i < extDigits; i++) {
             uint64_t alignedA = 0, alignedB = 0;
             GetCorrespondingLimbs<SharkFloatParams>(
-                extA,
-                actualDigits,
-                extDigits,
-                extB,
-                actualDigits,
-                extDigits,
-                shiftA,
-                shiftB,
-                AIsBiggerMagnitude,
-                diff,
-                i,
-                alignedA,
-                alignedB);
-            uint64_t sum = alignedA + alignedB + carry;
-            extResult[i] = (uint32_t)(sum & 0xFFFFFFFF);
-            carry = sum >> 32;
+                extA, actualDigits, extDigits,
+                extB, actualDigits, extDigits,
+                shiftA, shiftB,
+                AIsBiggerMagnitude, diff, i,
+                alignedA, alignedB);
+            extResult[i] = alignedA + alignedB;
         }
-        if (carry > 0) {
-            outExponent += 1;
-            // Use a single variable to hold the extra bit from the next word.
-            uint32_t nextBit = (uint32_t)carry & 1; // carry is either 0 or 1
-            // Process in reverse order so that we use the original value of each word.
-            for (int32_t i = extDigits - 1; i >= 0; i--) {
-                uint32_t current = extResult[i];
-                // The new value is the current word right-shifted by 1, with the previous word's LSB (held in nextBit)
-                // shifted into the high bit.
-                extResult[i] = (current >> 1) | (nextBit << 31);
-                // Extract the LSB of the current word (from the original value) to use for the next iteration.
-                nextBit = current & 1;
-            }
-        }
-
-        // The result sign remains the same.
     } else {
-        // ---- Subtraction Branch ----
-        uint64_t borrow = 0;
+        // Subtraction branch.
         if (AIsBiggerMagnitude) {
             for (int32_t i = 0; i < extDigits; i++) {
                 uint64_t alignedA = 0, alignedB = 0;
                 GetCorrespondingLimbs<SharkFloatParams>(
-                    extA,
-                    actualDigits,
-                    extDigits,
-                    extB,
-                    actualDigits,
-                    extDigits,
-                    shiftA,
-                    shiftB,
-                    AIsBiggerMagnitude,
-                    diff,
-                    i,
-                    alignedA,
-                    alignedB);
-                int64_t diffVal = (int64_t)alignedA - (int64_t)alignedB - borrow;
-                if (diffVal < 0) {
-                    diffVal += ((uint64_t)1 << 32);
-                    borrow = 1;
-                } else {
-                    borrow = 0;
-                }
-                extResult[i] = (uint32_t)(diffVal & 0xFFFFFFFF);
+                    extA, actualDigits, extDigits,
+                    extB, actualDigits, extDigits,
+                    shiftA, shiftB,
+                    AIsBiggerMagnitude, diff, i,
+                    alignedA, alignedB);
+                // Compute raw difference (which may be negative).
+                int64_t rawDiff = (int64_t)alignedA - (int64_t)alignedB;
+                extResult[i] = (uint64_t)rawDiff;
             }
         } else {
             for (int32_t i = 0; i < extDigits; i++) {
                 uint64_t alignedA = 0, alignedB = 0;
                 GetCorrespondingLimbs<SharkFloatParams>(
-                    extA,
-                    actualDigits,
-                    extDigits,
-                    extB,
-                    actualDigits,
-                    extDigits,
-                    shiftA,
-                    shiftB,
-                    AIsBiggerMagnitude,
-                    diff,
-                    i,
-                    alignedA,
-                    alignedB);
-                int64_t diffVal = (int64_t)alignedB - (int64_t)alignedA - borrow;
-                if (diffVal < 0) {
-                    diffVal += ((uint64_t)1 << 32);
-                    borrow = 1;
-                } else {
-                    borrow = 0;
-                }
-                extResult[i] = (uint32_t)(diffVal & 0xFFFFFFFF);
+                    extA, actualDigits, extDigits,
+                    extB, actualDigits, extDigits,
+                    shiftA, shiftB,
+                    AIsBiggerMagnitude, diff, i,
+                    alignedA, alignedB);
+                int64_t rawDiff = (int64_t)alignedB - (int64_t)alignedA;
+                extResult[i] = (uint64_t)rawDiff;
             }
+        }
+    }
+
+    // --- Phase 2: Propagation ---
+    // Propagate carries (if addition) or borrows (if subtraction)
+    // and store the corrected 32-bit digit into propagatedResult.
+    if (sameSign) {
+        // Propagate carry for addition.
+        int64_t carry = 0;
+        for (int32_t i = 0; i < extDigits; i++) {
+            int64_t sum = (int64_t)extResult[i] + carry;
+            propagatedResult[i] = (uint32_t)(sum & 0xFFFFFFFFULL);
+            carry = sum >> 32;
+        }
+        if (carry > 0) {
+            outExponent += 1;
+            // (Optionally, handle a final carry by shifting right by 1 bit.)
+            // For example:
+            uint32_t nextBit = (uint32_t)(carry & 1ULL);
+            for (int32_t i = extDigits - 1; i >= 0; i--) {
+                uint32_t current = propagatedResult[i];
+                propagatedResult[i] = (current >> 1) | (nextBit << 31);
+                nextBit = current & 1;
+            }
+        }
+    } else {
+        // Propagate borrow for subtraction.
+        int64_t borrow = 0;
+        for (int32_t i = 0; i < extDigits; i++) {
+            int64_t diffVal = (int64_t)extResult[i] - borrow;
+            if (diffVal < 0) {
+                diffVal += (1LL << 32);
+                borrow = 1;
+            } else {
+                borrow = 0;
+            }
+            propagatedResult[i] = (uint32_t)(diffVal & 0xFFFFFFFFULL);
         }
         assert(borrow == 0 && "Final borrow in subtraction should be zero");
     }
 
+    // At this point, the propagatedResult array holds the result of the borrow/carry propagation.
+    // A subsequent normalization step would adjust these digits (and the exponent) so that the most-significant
+    // bit is in the desired position. This normalization step is omitted here.
+
     if constexpr (SharkFloatParams::HostVerbose) {
-        std::cout << "extResult after arithmetic: " << VectorUintToHexString(extResult) << std::endl;
+        std::cout << "propagatedResult after arithmetic: " << VectorUintToHexString(propagatedResult) << std::endl;
         std::cout << "outExponent after arithmetic, before renormalization: " << outExponent << std::endl;
-        std::cout << "extResult: " << VectorUintToHexString(extResult) << std::endl;
+        std::cout << "propagatedResult: " << VectorUintToHexString(propagatedResult) << std::endl;
     }
 
     if constexpr (SharkDebugChecksums) {
         const auto &debugResultState = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::Final128XY>(
-            debugStates, extResult.data(), extDigits);
+            debugStates, propagatedResult.data(), extDigits);
 
         if constexpr (SharkFloatParams::HostVerbose) {
-            std::cout << "extResult checksum: " << debugResultState.GetStr() << std::endl;
+            std::cout << "propagatedResult checksum: " << debugResultState.GetStr() << std::endl;
         }
     }
 
     // --- Final Normalization ---
     int32_t msdResult = 0;
     for (int32_t i = extDigits - 1; i >= 0; i--) {
-        if (extResult[i] != 0) {
+        if (propagatedResult[i] != 0) {
             msdResult = i;
             break;
         }
     }
 
-    const int32_t clzResult = CountLeadingZeros(extResult[msdResult]);
+    const int32_t clzResult = CountLeadingZeros(propagatedResult[msdResult]);
     const int32_t currentOverall = msdResult * 32 + (31 - clzResult);
     const int32_t desiredOverall = (SharkFloatParams::GlobalNumUint32 - 1) * 32 + 31;
 
@@ -569,11 +558,11 @@ AddHelper (
         }
 
         const auto shiftedSz = SharkFloatParams::GlobalNumUint32;
-        MultiWordRightShift_LittleEndian(extResult.data(), extDigits, shiftNeeded, OutXY->Digits, shiftedSz);
+        MultiWordRightShift_LittleEndian(propagatedResult.data(), extDigits, shiftNeeded, OutXY->Digits, shiftedSz);
         outExponent += shiftNeeded;
 
         if constexpr (SharkFloatParams::HostVerbose) {
-            std::cout << "Final extResult after right shift: " <<
+            std::cout << "Final propagatedResult after right shift: " <<
                 VectorUintToHexString(OutXY->Digits, shiftedSz) <<
                 std::endl;
             std::cout << "ShiftNeeded after right shift: " << shiftNeeded << std::endl;
@@ -587,7 +576,7 @@ AddHelper (
         const int32_t L = -shiftNeeded;
         const auto shiftedSz = static_cast<int32_t>(SharkFloatParams::GlobalNumUint32);
         MultiWordLeftShift_LittleEndian(
-            extResult.data(),
+            propagatedResult.data(),
             actualDigits,
             extDigits,
             L,
@@ -596,7 +585,7 @@ AddHelper (
         outExponent -= L;
 
         if constexpr (SharkFloatParams::HostVerbose) {
-            std::cout << "Final extResult after left shift: " <<
+            std::cout << "Final propagatedResult after left shift: " <<
                 VectorUintToHexString(OutXY->Digits, shiftedSz) <<
                 std::endl;
             std::cout << "L after left shift: " << L << std::endl;
@@ -607,7 +596,7 @@ AddHelper (
             std::cout << "No shift needed: " << shiftNeeded << std::endl;
         }
         // No shift needed, just copy the result.
-        memcpy(OutXY->Digits, extResult.data(), SharkFloatParams::GlobalNumUint32 * sizeof(uint32_t));
+        memcpy(OutXY->Digits, propagatedResult.data(), SharkFloatParams::GlobalNumUint32 * sizeof(uint32_t));
     }
 
     OutXY->Exponent = outExponent;

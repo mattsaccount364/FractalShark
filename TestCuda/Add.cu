@@ -378,6 +378,180 @@ SerialCarryPropagation (
     }
 }
 
+
+template <class SharkFloatParams>
+__device__ SharkForceInlineReleaseOnly void
+CarryPropagationPP(
+    uint32_t *sharedData,  // must be allocated with at least 2*n*sizeof(uint32_t)
+    uint32_t *globalSync,  // unused in this version (still provided for interface compatibility)
+    uint64_t *final128,
+    const int32_t extDigits,
+    uint32_t *carry1,
+    uint32_t *carry2,
+    int32_t &outExponent,
+    int32_t &finalShiftRight,
+    bool sameSign,
+    cg::thread_block &block,
+    cg::grid_group &grid) {
+    // We assume that extDigits is small. Let n be the next power of two >= extDigits.
+    int n = 1;
+    while (n < extDigits) n *= 2;
+
+    // We use sharedData to hold two arrays (each of length n):
+    // s_g[0..n-1] will hold the "generate" flag (0 or 1) for each digit,
+    // s_p[0..n-1] will hold the "propagate" flag (0 or 1).
+    // (For the exclusive scan we use the Blelloch algorithm.)
+    uint32_t *s_g = carry1;       // first n elements
+    uint32_t *s_p = carry2;       // next n elements
+
+    const int totalThreads = grid.size();
+    int tid = block.thread_index().x + block.group_index().x * blockDim.x;
+
+    // --- Initialization ---
+    // Only the first extDigits threads load a digit; for i >= extDigits we initialize to identity: (0,1).
+    for (int i = tid; i < n; i += totalThreads) {
+        if (i < extDigits) {
+            // Load the preliminary digit.
+            uint64_t x = final128[i];
+            // Let low = lower 32 bits and hi = upper 32 bits.
+            uint32_t low = (uint32_t)x;
+            uint32_t hi = (uint32_t)(x >> 32);
+            // In our addition branch, the updated digit will be computed as:
+            //    new_value = (x + c) mod 2^32,
+            // and c_(i+1) = (x + c_i) >> 32.
+            // We "extract" a (g, p) pair for the digit.
+            // A digit will definitely produce a carry if its high part is 1;
+            // if hi is 0 then a carry will result only if low == 0xFFFFFFFF (i.e. adding 1 overflows).
+            s_g[i] = (hi == 1) || (low == 0xFFFFFFFF) ? 1 : 0;
+            s_p[i] = (low == 0xFFFFFFFF) ? 1 : 0;
+        } else {
+            // Identity element for the operator is (0,1).
+            s_g[i] = 0;
+            s_p[i] = 1;
+        }
+    }
+    grid.sync();
+
+    // --- Upsweep phase (reduce) ---
+    // For d = 1,2,4,..., n/2, each thread whose index fits combines a pair of nodes.
+    for (int d = 1; d < n; d *= 2) {
+        int index = (tid + 1) * d * 2 - 1;  // each thread works on one index
+        if (index < n) {
+            uint32_t g1 = s_g[index - d];
+            uint32_t p1 = s_p[index - d];
+            uint32_t g2 = s_g[index];
+            uint32_t p2 = s_p[index];
+            // Combine according to our operator:
+            // (g, p) = (g2 OR (p2 AND g1), p2 AND p1)
+            s_g[index] = g2 | (p2 & g1);
+            s_p[index] = p2 & p1;
+        }
+        grid.sync();
+    }
+
+    // --- Set the last element to the identity (for exclusive scan) ---
+    if (tid == 0) {
+        s_g[n - 1] = 0;
+        s_p[n - 1] = 1;
+    }
+    grid.sync();
+
+    // --- Downsweep phase ---
+    for (int d = n / 2; d >= 1; d /= 2) {
+        int index = (tid + 1) * d * 2 - 1;
+        if (index < n) {
+            uint32_t t = s_g[index - d];
+            // The left child becomes the current node
+            s_g[index - d] = s_g[index];
+            s_p[index - d] = s_p[index];  // (p is not used afterward but update for completeness)
+            // Update the current node by combining the left child's original value with the right child.
+            s_g[index] = s_g[index] | (s_p[index] & t);
+            // (We do not need to update s_p[index] further.)
+        }
+        grid.sync();
+    }
+    // Now s_g[0..extDigits-1] contains the exclusive scan results.
+    // In particular, for digit i the carry into that digit is given by s_g[i].
+    grid.sync();
+
+    if (sameSign) {
+        // --- Update digits using the computed carries ---
+        auto original_last_digit = final128[extDigits - 1]; // save the original last digit
+        for (int i = tid; i < extDigits; i += totalThreads) {
+            uint32_t carryIn = s_g[i]; // carry into digit i
+            uint64_t sum = final128[i] + carryIn;
+            // Write the 32-bit result back.
+            final128[i] = sum & 0xFFFFFFFF;
+        }
+        grid.sync();
+
+        // --- Determine overall final carry ---
+        uint32_t carryIn = s_g[extDigits - 1];
+        uint64_t lastVal = original_last_digit; // saved before updating final128[extDigits-1]
+        uint64_t S = lastVal + carryIn;
+        uint32_t finalCarry = S >> 32;
+        if (finalCarry > 0u) {
+            finalShiftRight = 1;
+        }
+    } else {
+        // --- Subtraction branch (parallel AND scan) ---
+        // For subtraction the recurrence is:
+        //     borrow[0] = 0, and for each i, borrow[i+1] = (borrow[i] AND (final128[i] == 0))
+        // We can perform an exclusive scan over the predicate (final128[i]==0) using AND.
+
+        for (int i = tid; i < n; i += totalThreads) {
+            if (i == 0) {
+                s_g[0] = 0;  // initial borrow is 0
+            } else if (i < extDigits) {
+                // Use the previous digit's value to decide whether a borrow would propagate.
+                s_g[i] = (final128[i - 1] == 0) ? 1 : 0;
+            } else {
+                // For indices beyond extDigits, use the identity (which for AND is 1)
+                s_g[i] = 1;
+            }
+            // We leave s_p unchanged (it isn't used in the subtraction branch)
+        }
+        grid.sync();
+
+        // Upsweep for AND-scan.
+        for (int d = 1; d < n; d *= 2) {
+            int index = (tid + 1) * d * 2 - 1;
+            if (index < n) {
+                s_g[index] = s_g[index] & s_g[index - d];
+            }
+            grid.sync();
+        }
+        if (tid == 0) {
+            s_g[n - 1] = 1;
+        }
+        grid.sync();
+        // Downsweep for exclusive scan.
+        for (int d = n / 2; d >= 1; d /= 2) {
+            int index = (tid + 1) * d * 2 - 1;
+            if (index < n) {
+                uint32_t t = s_g[index - d];
+                s_g[index - d] = s_g[index];
+                s_g[index] = t & s_g[index];
+            }
+            grid.sync();
+        }
+        grid.sync();
+        // Now for each digit, the borrow into digit i is in s_g[i].
+        for (int i = tid; i < extDigits; i += totalThreads) {
+            uint32_t borrow = s_g[i];
+            int64_t diffVal = (int64_t)final128[i] - borrow;
+            final128[i] = (uint32_t)(diffVal & 0xFFFFFFFFu);
+        }
+        grid.sync();
+        if (tid == 0) {
+            // Optionally check that the final borrow is zero.
+            assert(s_g[extDigits - 1] == 0);
+        }
+    }
+    grid.sync();
+}
+
+
 template <class SharkFloatParams>
 __device__ SharkForceInlineReleaseOnly void
 CarryPropagation (
@@ -747,7 +921,7 @@ __device__ void AddHelper(
 
     // --- Carry/Borrow Propagation ---
     int shiftNeeded = 0;
-    CarryPropagation<SharkFloatParams>(
+    CarryPropagationPP<SharkFloatParams>(
         sharedData,
         globalSync,
         final128,

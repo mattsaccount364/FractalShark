@@ -121,7 +121,6 @@
     <ClInclude Include="Perturb.cuh" />
     <ClInclude Include="PerturbResultsCollection.cuh" />
     <ClInclude Include="ReductionKernels.cuh" />
-    <ClInclude Include="ScaledKernels.cuh" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

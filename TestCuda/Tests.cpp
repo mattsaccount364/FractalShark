@@ -204,7 +204,7 @@ void TestPerf(
     mpf_init(mpfHostResultXY);
     mpf_init(mpfHostResultYY);
 
-    if constexpr (SharkBenchmarkAgainstHost) {
+    if constexpr (SharkTestBenchmarkAgainstHost) {
         BenchmarkTimer hostTimer;
         ScopedBenchmarkStopper hostStopper{ hostTimer };
 
@@ -259,7 +259,7 @@ void TestPerf(
                 std::cout << "GPU iter time: " << timer.GetDeltaInMs() << " ms" << std::endl;
             }
 
-            if constexpr (SharkBenchmarkAgainstHost) {
+            if constexpr (SharkTestBenchmarkAgainstHost) {
                 bool testSucceeded = true;
                 testSucceeded &= CheckDiff(testNum, "GPU", mpfHostResultXY, gpuResultXY);
             }
@@ -284,7 +284,7 @@ void TestPerf(
                 std::cout << "GPU iter time: " << timer.GetDeltaInMs() << " ms" << std::endl;
             }
 
-            if constexpr (SharkBenchmarkAgainstHost) {
+            if constexpr (SharkTestBenchmarkAgainstHost) {
                 bool testSucceeded = true;
                 testSucceeded &= CheckDiff(testNum, "GPU", mpfHostResultXX, gpuResult2XX);
                 testSucceeded &= CheckDiff(testNum, "GPU", mpfHostResultXY, gpuResult2XY);
@@ -467,10 +467,10 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
 
         // Print host result
         if constexpr (SharkFloatParams::HostVerbose) {
-            std::cout << "\nHost result:" << std::endl;
-            std::cout << "Host result XY: " <<
+            std::cout << "\nCorrect MPIR result:" << std::endl;
+            std::cout << "Correct MPIR result XY: " <<
                 MpfToString<SharkFloatParams>(mpfHostResultXY, HpSharkFloat<SharkFloatParams>::DefaultPrecBits) << std::endl;
-            std::cout << "Host hex XY: " << std::endl;
+            std::cout << "Correct MPIR hex XY: " << std::endl;
             std::cout << "" << MpfToHexString(mpfHostResultXY) << std::endl;
         }
     } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
@@ -480,19 +480,19 @@ void TestBinOperatorTwoNumbersRawNoSignChange(
 
         // Print host result
         if constexpr (SharkFloatParams::HostVerbose) {
-            std::cout << "\nHost result:" << std::endl;
-            std::cout << "Host result XX: " <<
+            std::cout << "\nCorrect MPIR result:" << std::endl;
+            std::cout << "Correct MPIR result XX: " <<
                 MpfToString<SharkFloatParams>(mpfHostResultXX, HpSharkFloat<SharkFloatParams>::DefaultPrecBits) << std::endl;
-            std::cout << "Host result XY: " <<
+            std::cout << "Correct MPIR result XY: " <<
                 MpfToString<SharkFloatParams>(mpfHostResultXY, HpSharkFloat<SharkFloatParams>::DefaultPrecBits) << std::endl;
-            std::cout << "Host result YY: " <<
+            std::cout << "Correct MPIR result YY: " <<
                 MpfToString<SharkFloatParams>(mpfHostResultYY, HpSharkFloat<SharkFloatParams>::DefaultPrecBits) << std::endl;
 
-            std::cout << "Host hex XX: " << std::endl;
+            std::cout << "Correct MPIR hex XX: " << std::endl;
             std::cout << "" << MpfToHexString(mpfHostResultXX) << std::endl;
-            std::cout << "Host hex XY: " << std::endl;
+            std::cout << "Correct MPIR hex XY: " << std::endl;
             std::cout << "" << MpfToHexString(mpfHostResultXY) << std::endl;
-            std::cout << "Host hex YY: " << std::endl;
+            std::cout << "Correct MPIR hex YY: " << std::endl;
             std::cout << "" << MpfToHexString(mpfHostResultYY) << std::endl;
         }
     }
@@ -695,7 +695,7 @@ void TestBinOperatorTwoNumbersRaw(
         auto negateMpfAndHp = [](mpf_t &mpfCopy, HpSharkFloat<SharkFloatParams> &numCopy) {
             mpf_neg(mpfCopy, mpfCopy);
             numCopy.Negate();
-        };
+            };
 
         mpf_init(mpfXCopy);
         mpf_init(mpfYCopy);
@@ -707,14 +707,18 @@ void TestBinOperatorTwoNumbersRaw(
         testNum++;
 
         resetCopy();
-        negateMpfAndHp(mpfXCopy, xNumCopy);
+        if constexpr (!SharkTestForceSameSign) {
+            negateMpfAndHp(mpfXCopy, xNumCopy);
+        }
         printTest(testNum);
         TestBinOperatorTwoNumbersRawNoSignChange<SharkFloatParams, sharkOperator>(
             testNum, xNumCopy, yNumCopy, mpfXCopy, mpfYCopy);
         testNum++;
 
         resetCopy();
-        negateMpfAndHp(mpfYCopy, yNumCopy);
+        if constexpr (!SharkTestForceSameSign) {
+            negateMpfAndHp(mpfYCopy, yNumCopy);
+        }
         printTest(testNum);
         TestBinOperatorTwoNumbersRawNoSignChange<SharkFloatParams, sharkOperator>(
             testNum, xNumCopy, yNumCopy, mpfXCopy, mpfYCopy);
@@ -803,14 +807,19 @@ void TestBinOperatorTwoNumbers(
     {
         printTest(testNum);
         resetCopy();
-        mpf_neg(mpfXCopy, mpfXCopy);
+
+        if constexpr (!SharkTestForceSameSign) {
+            mpf_neg(mpfXCopy, mpfXCopy);
+        }
         curTest();
     }
 
     {
         printTest(testNum);
         resetCopy();
-        mpf_neg(mpfYCopy, mpfYCopy);
+        if constexpr (!SharkTestForceSameSign) {
+            mpf_neg(mpfYCopy, mpfYCopy);
+        }
         curTest();
     }
 
@@ -1152,8 +1161,8 @@ bool TestAllBinaryOp(int testBase) {
     
     if constexpr (includeSet1) {
         const auto set = testBase + 100;
-        //TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 10, "1", "2");
-        //TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 20, "4294967295", "1");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 10, "1", "2");
+        TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 20, "4294967295", "1");
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 30, "4294967296", "1");
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 40, "4294967295", "4294967296");
         TestBinOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 50, "4294967296", "-1");

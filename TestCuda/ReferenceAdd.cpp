@@ -11,6 +11,8 @@
 #include <assert.h>
 #include "ReferenceAdd.h"
 
+static constexpr auto UseBellochPropagation = true;
+
 //
 // Helper functions to perform bit shifts on a fixed-width digit array.
 // They mirror the CUDA device functions but work sequentially on the full array.
@@ -321,6 +323,188 @@ CompareMagnitudes (
     return AIsBiggerMagnitude;
 }
 
+
+// A small structure to hold the generate/propagate pair for a digit.
+struct GenProp {
+    uint32_t g; // generate: indicates that this digit produces a carry regardless of incoming carry.
+    uint32_t p; // propagate: indicates that if an incoming carry exists, it will be passed along.
+};
+
+// The combine operator for two GenProp pairs.
+// If you have a block with operator f(x) = g OR (p AND x),
+// then the combination for two adjacent blocks is given by:
+inline GenProp Combine (
+    const GenProp &left,
+    const GenProp &right) {
+    GenProp out;
+    out.g = right.g | (right.p & left.g);
+    out.p = right.p & left.p;
+    return out;
+}
+
+// Unified CarryPropagationPP.
+// If sameSign is true, this is the addition branch;
+// if false, it is the subtraction branch (we guarantee that the final result is positive).
+template<class SharkFloatParams>
+void CarryPropagationPP (
+    const bool sameSign,
+    const int32_t extDigits,
+    const std::vector<uint64_t> extResultVector,
+    uint32_t &carry,
+    std::vector<uint32_t> &propagatedResultVector)
+{
+    // Check that the sizes are as expected.
+    assert(extResultVector.size() == extDigits);
+    const auto *extResult = extResultVector.data();
+    assert(propagatedResultVector.size() == extDigits);
+    uint32_t *propagatedResult = propagatedResultVector.data();
+
+    // Step 1. Build the sigma vector (per-digit signals).
+    std::vector<GenProp> working(extDigits);
+    for (int i = 0; i < extDigits; i++) {
+        if (sameSign) {
+            // Addition case.
+            uint32_t lo = static_cast<uint32_t>(extResult[i] & 0xFFFFFFFFULL);
+            uint32_t hi = static_cast<uint32_t>(extResult[i] >> 32);
+            working[i].g = hi;  // generates a carry if the high half is nonzero.
+            working[i].p = (lo == 0xFFFFFFFFUL) ? 1 : 0;  // propagates incoming carry if low half is full.
+        } else {
+            // Subtraction case.
+            int64_t raw = static_cast<int64_t>(extResult[i]);
+            working[i].g = (raw < 0) ? 1 : 0;  // generate a borrow if the raw difference is negative.
+            // For borrow propagation, a digit will propagate a borrow if it's exactly 0
+            // (if we subtract 1 from 0, we need to borrow)
+            uint32_t lo = static_cast<uint32_t>(extResult[i] & 0xFFFFFFFFULL);
+            uint32_t hi = static_cast<uint32_t>(extResult[i] >> 32);
+            working[i].p = (lo == 0 && hi == 0) ? 1 : 0;  // propagate if the entire digit is 0
+        }
+    }
+
+    if constexpr (SharkFloatParams::HostVerbose) {
+        std::cout << "CarryPropagationPP Working array:" << std::endl;
+        for (int i = 0; i < extDigits; i++) {
+            std::cout << "  " << i << ": g = " << working[i].g << ", p = " << working[i].p << std::endl;
+        }
+    }
+
+    // Step 2. Perform an inclusive (upsweep) scan on the per-digit signals.
+    // The inclusive array at index i contains the combined operator for sigma[0..i].
+    assert(working.size() == extDigits);
+    std::vector<GenProp> scratch(extDigits); // one scratch array of size extDigits
+
+    // Use raw pointers that point to the current input and output buffers.
+    GenProp *in = working.data();
+    GenProp *out = scratch.data();
+
+    // Perform the upsweep (inclusive scan) in log2(extDigits) passes.
+    for (int offset = 1; offset < extDigits; offset *= 2) {
+        for (int i = 0; i < extDigits; i++) {
+            if (i >= offset)
+                out[i] = Combine(in[i - offset], in[i]);
+            else
+                out[i] = in[i];
+        }
+        // Swap the roles for the next pass.
+        std::swap(in, out);
+    }
+
+    // Now "in" points to the final inclusive scan result for indices 0 .. extDigits-1.
+    const GenProp *inclusive = in;
+
+    if constexpr (SharkFloatParams::HostVerbose) {
+        std::cout << "CarryPropagationPP Inclusive array:" << std::endl;
+        for (int i = 0; i < extDigits; i++) {
+            std::cout << "  " << i << ": g = " << inclusive[i].g << ", p = " << inclusive[i].p << std::endl;
+        }
+    }
+
+    // Step 3. Compute the carries (or borrows) via an exclusive scan.
+    // The exclusive operator for digit i is taken to be:
+    //   - For digit 0: use the identity operator {0, 1}.
+    //   - For digit i (i>=1): use inclusive[i-1].
+    // Then the carry/borrow applied to the digit is: op.g OR (op.p AND initialCarry).
+    // We assume an initial carry (or borrow) of 0.
+    GenProp identity = { 0, 1 };
+    constexpr auto initialValue = 0;
+    std::vector<uint32_t> carries(extDigits + 1, 0);
+    carries[0] = initialValue;
+    for (int i = 1; i <= extDigits; i++) {
+        carries[i] = inclusive[i - 1].g | (inclusive[i - 1].p & initialValue);
+    }
+
+    if constexpr (SharkFloatParams::HostVerbose) {
+        std::cout << "CarryPropagationPP Carries array:" << std::endl;
+        for (int i = 0; i <= extDigits; i++) {
+            std::cout << "  " << i << ": " << carries[i] << std::endl;
+        }
+    }
+
+    // Step 4. Apply the computed carry/borrow to get the final 32-bit result.
+    if (sameSign) {
+        // Addition: add the carry.
+        for (int i = 0; i < extDigits; i++) {
+            uint64_t sum = extResult[i] + carries[i];
+            propagatedResult[i] = static_cast<uint32_t>(sum & 0xFFFFFFFFULL);
+        }
+    } else {
+        // Subtraction: subtract the borrow.
+        // (By construction, the final overall borrow is guaranteed to be zero.)
+        for (int i = 0; i < extDigits; i++) {
+            int64_t diff = static_cast<int64_t>(extResult[i]) - carries[i];
+            propagatedResult[i] = static_cast<uint32_t>(diff & 0xFFFFFFFFULL);
+        }
+    }
+
+    if constexpr (SharkFloatParams::HostVerbose) {
+        std::cout << "CarryPropagationPP Propagated result:" << std::endl;
+        for (int i = 0; i < extDigits; i++) {
+            std::cout << "  " << i << ": " << propagatedResult[i] << std::endl;
+        }
+    }
+
+    // The final element (at position extDigits in the carries array)
+    // is the overall carry (or borrow). For subtraction we expect this to be 0.
+    carry = carries[extDigits];
+
+    if constexpr (SharkFloatParams::HostVerbose) {
+        std::cout << "CarryPropagationPP Final carry: " << carry << std::endl;
+    }
+}
+
+template<class SharkFloatParams>
+void CarryPropagation (
+    const bool sameSign,
+    const int32_t extDigits,
+    std::vector<uint64_t> &extResult,
+    uint32_t &carry,
+    std::vector<uint32_t> &propagatedResult)
+{
+    if (sameSign) {
+        // Propagate carry for addition.
+        for (int32_t i = 0; i < extDigits; i++) {
+            int64_t sum = (int64_t)extResult[i] + carry;
+            propagatedResult[i] = (uint32_t)(sum & 0xFFFFFFFFULL);
+            carry = sum >> 32;
+        }
+
+        // Note we'll handle final carry later.
+    } else {
+        // Propagate borrow for subtraction.
+        int64_t borrow = 0;
+        for (int32_t i = 0; i < extDigits; i++) {
+            int64_t diffVal = (int64_t)extResult[i] - borrow;
+            if (diffVal < 0) {
+                diffVal += (1LL << 32);
+                borrow = 1;
+            } else {
+                borrow = 0;
+            }
+            propagatedResult[i] = (uint32_t)(diffVal & 0xFFFFFFFFULL);
+        }
+        assert(borrow == 0 && "Final borrow in subtraction should be zero");
+    }
+}
+
 //
 // Extended arithmetic using little-endian representation.
 // This version uses the new normalization approach, where the extended operands
@@ -428,8 +612,6 @@ AddHelper (
         std::cout << "outExponent: " << outExponent << std::endl;
     }
 
-    std::vector<uint32_t> propagatedResult(extDigits, 0); // Result after propagation
-
     // --- Phase 1: Raw Extended Arithmetic ---
     // Compute the raw limb-wise result without propagation.
     if (sameSign) {
@@ -446,6 +628,9 @@ AddHelper (
         }
     } else {
         // Subtraction branch.
+        std::vector<uint64_t> alignedADebug;
+        std::vector<uint64_t> alignedBDebug;
+
         if (AIsBiggerMagnitude) {
             for (int32_t i = 0; i < extDigits; i++) {
                 uint64_t alignedA = 0, alignedB = 0;
@@ -458,6 +643,9 @@ AddHelper (
                 // Compute raw difference (which may be negative).
                 int64_t rawDiff = (int64_t)alignedA - (int64_t)alignedB;
                 extResult[i] = (uint64_t)rawDiff;
+
+                alignedADebug.push_back(alignedA);
+                alignedBDebug.push_back(alignedB);
             }
         } else {
             for (int32_t i = 0; i < extDigits; i++) {
@@ -470,7 +658,16 @@ AddHelper (
                     alignedA, alignedB);
                 int64_t rawDiff = (int64_t)alignedB - (int64_t)alignedA;
                 extResult[i] = (uint64_t)rawDiff;
+
+                alignedADebug.push_back(alignedA);
+                alignedBDebug.push_back(alignedB);
             }
+        }
+
+        if constexpr (SharkFloatParams::HostVerbose) {
+            std::cout << "These are effectively the arrays we're adding and subtracting:" << std::endl;
+            std::cout << "alignedADebug: " << VectorUintToHexString(alignedADebug) << std::endl;
+            std::cout << "alignedBDebug: " << VectorUintToHexString(alignedBDebug) << std::endl;
         }
     }
 
@@ -487,30 +684,23 @@ AddHelper (
     // --- Phase 2: Propagation ---
     // Propagate carries (if addition) or borrows (if subtraction)
     // and store the corrected 32-bit digit into propagatedResult.
-    int64_t carry = 0;
-    if (sameSign) {
-        // Propagate carry for addition.
-        for (int32_t i = 0; i < extDigits; i++) {
-            int64_t sum = (int64_t)extResult[i] + carry;
-            propagatedResult[i] = (uint32_t)(sum & 0xFFFFFFFFULL);
-            carry = sum >> 32;
-        }
 
-        // Note we'll handle final carry later.
+    uint32_t carry = 0;
+    std::vector<uint32_t> propagatedResult(extDigits, 0); // Result after propagation
+    if constexpr (UseBellochPropagation) {
+        CarryPropagationPP<SharkFloatParams>(
+            sameSign,
+            extDigits,
+            extResult,
+            carry,
+            propagatedResult);
     } else {
-        // Propagate borrow for subtraction.
-        int64_t borrow = 0;
-        for (int32_t i = 0; i < extDigits; i++) {
-            int64_t diffVal = (int64_t)extResult[i] - borrow;
-            if (diffVal < 0) {
-                diffVal += (1LL << 32);
-                borrow = 1;
-            } else {
-                borrow = 0;
-            }
-            propagatedResult[i] = (uint32_t)(diffVal & 0xFFFFFFFFULL);
-        }
-        assert(borrow == 0 && "Final borrow in subtraction should be zero");
+        CarryPropagation<SharkFloatParams>(
+            sameSign,
+            extDigits,
+            extResult,
+            carry,
+            propagatedResult);
     }
 
     // At this point, the propagatedResult array holds the result of the borrow/carry propagation.
@@ -521,6 +711,7 @@ AddHelper (
         std::cout << "propagatedResult after arithmetic: " << VectorUintToHexString(propagatedResult) << std::endl;
         std::cout << "outExponent after arithmetic, before renormalization: " << outExponent << std::endl;
         std::cout << "propagatedResult: " << VectorUintToHexString(propagatedResult) << std::endl;
+        std::cout << "carry out: 0x" << std::hex << carry << std::endl;
     }
 
     if constexpr (SharkDebugChecksums) {
@@ -536,7 +727,7 @@ AddHelper (
         outExponent += 1;
         // (Optionally, handle a final carry by shifting right by 1 bit.)
         // For example:
-        uint32_t nextBit = (uint32_t)(carry & 1ULL);
+        uint32_t nextBit = (uint32_t)(carry & 1U);
         for (int32_t i = extDigits - 1; i >= 0; i--) {
             uint32_t current = propagatedResult[i];
             propagatedResult[i] = (current >> 1) | (nextBit << 31);

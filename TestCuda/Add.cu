@@ -378,10 +378,159 @@ SerialCarryPropagation (
     }
 }
 
+// Define our custom combine operator as a device lambda.
+__device__ uint32_t
+CombineBorrow(
+    uint32_t x,
+    uint32_t y
+) {
+    // x and y are encoded as: (sat << 1) | b.
+    uint32_t sat_x = (x >> 1) & 1;
+    uint32_t b_x = x & 1;
+    uint32_t sat_y = (y >> 1) & 1;
+    uint32_t b_y = y & 1;
+    // The combined borrow propagates if:
+    //   new_b = b_y OR (b_x AND sat_x)
+    uint32_t new_b = b_y | (b_x & sat_x);
+    // The saturation value is simply taken from the right element.
+    return (sat_y << 1) | new_b;
+}
+
+// A small structure to hold the generate/propagate pair for a digit.
+struct GenProp {
+    uint32_t g; // generate: indicates that this digit produces a carry regardless of incoming carry.
+    uint32_t p; // propagate: indicates that if an incoming carry exists, it will be passed along.
+};
+
+// The combine operator for two GenProp pairs.
+// If you have a block with operator f(x) = g OR (p AND x),
+// then the combination for two adjacent blocks is given by:
+__device__ inline GenProp Combine (
+    const GenProp &left,
+    const GenProp &right) {
+    GenProp out;
+    out.g = right.g | (right.p & left.g);
+    out.p = right.p & left.p;
+    return out;
+}
 
 template <class SharkFloatParams>
+__device__ inline void CarryPropagationPP2 (
+    uint32_t *sharedData,   // allocated with at least 2*n*sizeof(uint32_t); unused here.
+    uint32_t *globalSync,   // unused (provided for interface compatibility)
+    uint64_t *final128,     // the extended result digits
+    const int32_t extDigits,  // number of digits in final128 to process
+    uint32_t *carry1,         // will be reinterpreted as an array of GenProp (working vector)
+    uint32_t *carry2,         // will be reinterpreted as an array of GenProp (scratch buffer)
+    int32_t &outExponent,     // (unchanged; provided for interface compatibility)
+    int32_t &finalShiftRight, // will be set to 1 if there is an overall carry; 0 otherwise
+    bool sameSign,            // true for addition; false for subtraction (borrow propagation)
+    cg::thread_block &block,
+    cg::grid_group &grid) {
+    // Determine grid-stride parameters.
+    const int totalThreads = grid.size();
+    const int tid = block.thread_index().x + block.group_index().x * blockDim.x;
+
+    // Reinterpret carry1 and carry2 as arrays of GenProp.
+    GenProp *working = reinterpret_cast<GenProp *>(carry1);  // working array
+    GenProp *scratch = reinterpret_cast<GenProp *>(carry2);    // scratch array
+
+    //--------------------------------------------------------------------------
+    // Phase 1: Initialize the per-digit signals.
+    //
+    // For addition (sameSign):
+    //   working[i].g = (high 32 bits of final128[i] != 0) ? 1 : 0;
+    //   working[i].p = (low 32 bits of final128[i] == 0xFFFFFFFF) ? 1 : 0;
+    //
+    // For subtraction:
+    //   working[i].g = (int64_t(final128[i]) < 0) ? 1 : 0;
+    //   working[i].p = ((low 32 bits == 0) && (high 32 bits == 0)) ? 1 : 0;
+    //--------------------------------------------------------------------------
+    for (int i = tid; i < extDigits; i += totalThreads) {
+        uint64_t digit = final128[i];
+        uint32_t lo = static_cast<uint32_t>(digit);
+        uint32_t hi = static_cast<uint32_t>(digit >> 32);
+        if (sameSign) {
+            working[i].g = (hi != 0) ? 1 : 0;
+            working[i].p = (lo == 0xFFFFFFFFu) ? 1 : 0;
+        } else {
+            int64_t raw = static_cast<int64_t>(digit);
+            working[i].g = (raw < 0) ? 1 : 0;
+            working[i].p = ((lo == 0) && (hi == 0)) ? 1 : 0;
+        }
+    }
+    grid.sync();
+
+    //--------------------------------------------------------------------------
+    // Phase 2: Perform an inclusive scan on the working vector.
+    //
+    // We perform log2(extDigits) passes. In each pass, each thread processes 
+    // one or more elements via a grid-stride loop. For each element i >= offset,
+    // the new signal is computed as:
+    //    scratch[i] = Combine(working[i-offset], working[i])
+    // Otherwise, we simply copy working[i] to scratch[i].
+    // Then we swap working and scratch.
+    //--------------------------------------------------------------------------
+    if (extDigits > 1) {
+        for (int offset = 1; offset < extDigits; offset *= 2) {
+            for (int i = tid; i < extDigits; i += totalThreads) {
+                if (i >= offset) {
+                    scratch[i] = Combine(working[i - offset], working[i]);
+                } else {
+                    scratch[i] = working[i];
+                }
+            }
+            grid.sync();
+
+            // Swap pointers so that 'working' always points to the most up-to-date array.
+            GenProp *temp = working;
+            working = scratch;
+            scratch = temp;
+            grid.sync();
+        }
+    }
+    // At this point, working[0..extDigits-1] holds the inclusive scan results.
+
+    //--------------------------------------------------------------------------
+    // Phase 3: Convert to an exclusive scan and update the digits.
+    //
+    // The exclusive scan is defined by taking an identity for index 0 and
+    // for i >= 1 using working[i-1]. (The identity is equivalent to a GenProp 
+    // of {0, 1}, but since the overall initial carry is 0, we simply use 0.)
+    //
+    // For addition: update each digit with final128[i] = (final128[i] + incomingCarry) & 0xFFFFFFFF.
+    // For subtraction: subtract the incoming borrow.
+    //--------------------------------------------------------------------------
+    for (int i = tid; i < extDigits; i += totalThreads) {
+        uint32_t incoming = (i == 0) ? 0 : working[i - 1].g;
+        if (sameSign) {
+            uint64_t sum = final128[i] + incoming;
+            final128[i] = sum & 0xFFFFFFFFULL;
+        } else {
+            int64_t diff = static_cast<int64_t>(final128[i]) - incoming;
+            final128[i] = static_cast<uint32_t>(diff & 0xFFFFFFFFULL);
+        }
+    }
+    grid.sync();
+
+    //--------------------------------------------------------------------------
+    // Phase 4: Final carry/borrrow update.
+    //
+    // For addition: the overall carry is given by working[extDigits - 1].g.
+    // If it is nonzero, then we set finalShiftRight = 1.
+    // For subtraction, we assume the final borrow is zero.
+    //--------------------------------------------------------------------------
+    if (sameSign) {
+        uint32_t overallCarry = working[extDigits - 1].g;
+        finalShiftRight = (overallCarry > 0) ? 1 : 0;
+    }
+    grid.sync();
+}
+
+// Older implementation buggy with add samesign == true.
+template <class SharkFloatParams>
 __device__ SharkForceInlineReleaseOnly void
-CarryPropagationPP(
+CarryPropagationPP (
     uint32_t *sharedData,  // must be allocated with at least 2*n*sizeof(uint32_t)
     uint32_t *globalSync,  // unused in this version (still provided for interface compatibility)
     uint64_t *final128,
@@ -394,8 +543,7 @@ CarryPropagationPP(
     cg::thread_block &block,
     cg::grid_group &grid) {
     // We assume that extDigits is small. Let n be the next power of two >= extDigits.
-    int n = 1;
-    while (n < extDigits) n *= 2;
+    const auto n = extDigits;
 
     // We use sharedData to hold two arrays (each of length n):
     // s_g[0..n-1] will hold the "generate" flag (0 or 1) for each digit,
@@ -404,79 +552,123 @@ CarryPropagationPP(
     uint32_t *s_g = carry1;       // first n elements
     uint32_t *s_p = carry2;       // next n elements
 
+    static constexpr auto SequentialBits = true;
+
     const int totalThreads = grid.size();
     int tid = block.thread_index().x + block.group_index().x * blockDim.x;
 
-    // --- Initialization ---
-    // Only the first extDigits threads load a digit; for i >= extDigits we initialize to identity: (0,1).
-    for (int i = tid; i < n; i += totalThreads) {
-        if (i < extDigits) {
-            // Load the preliminary digit.
+    if (sameSign) {
+        // --- Initialization ---
+        // Only the first extDigits threads load a digit; for i >= extDigits we initialize to identity: (0,1).
+        for (int i = tid; i < n; i += totalThreads) {
+            // i < extDigits always here
             uint64_t x = final128[i];
-            // Let low = lower 32 bits and hi = upper 32 bits.
             uint32_t low = (uint32_t)x;
             uint32_t hi = (uint32_t)(x >> 32);
-            // In our addition branch, the updated digit will be computed as:
-            //    new_value = (x + c) mod 2^32,
-            // and c_(i+1) = (x + c_i) >> 32.
-            // We "extract" a (g, p) pair for the digit.
-            // A digit will definitely produce a carry if its high part is 1;
-            // if hi is 0 then a carry will result only if low == 0xFFFFFFFF (i.e. adding 1 overflows).
-            s_g[i] = (hi == 1) || (low == 0xFFFFFFFF) ? 1 : 0;
+            s_g[i] = (hi == 1) ? 1 : 0;
             s_p[i] = (low == 0xFFFFFFFF) ? 1 : 0;
+        }
+        grid.sync();
+
+        // --- Upsweep phase (reduce) ---
+        // For d = 1,2,4,..., n/2, each thread whose index fits combines a pair of nodes.
+        if constexpr (!SequentialBits) {
+            for (int d = 1; d < n; d *= 2) {
+                int index = (tid + 1) * d * 2 - 1;  // each thread works on one index
+                if (index < n) {
+                    uint32_t g1 = s_g[index - d];
+                    uint32_t p1 = s_p[index - d];
+                    uint32_t g2 = s_g[index];
+                    uint32_t p2 = s_p[index];
+                    // Combine according to our operator:
+                    // (g, p) = (g2 OR (p2 AND g1), p2 AND p1)
+                    s_g[index] = g2 | (p2 & g1);
+                    s_p[index] = p2 & p1;
+                }
+                grid.sync();
+            }
+
+            // --- Set the last element to the identity (for exclusive scan) ---
+            if (tid == 0) {
+                s_g[n - 1] = 0;
+                s_p[n - 1] = 1;
+            }
         } else {
-            // Identity element for the operator is (0,1).
-            s_g[i] = 0;
-            s_p[i] = 1;
-        }
-    }
-    grid.sync();
+            // Upsweep phase (reduce) – corrected operator (note the order of operands)
+            if (block.thread_index().x == 0 && block.group_index().x == 0) {
+                for (int d = 1; d < n; d *= 2) {
+                    // Process every segment of 2*d elements.
+                    for (int index = 2 * d - 1; index < n; index += 2 * d) {
+                        // left child is at index - d, right child is at index.
+                        uint32_t left_g = s_g[index - d];
+                        uint32_t left_p = s_p[index - d];
+                        uint32_t right_g = s_g[index];
+                        uint32_t right_p = s_p[index];
+                        // Combine using the left-to-right operator:
+                        // (g, p) = (left_g OR (left_p & right_g), left_p AND right_p)
+                        s_g[index] = left_g | (left_p & right_g);
+                        s_p[index] = left_p & right_p;
+                    }
+                }
+            }
+            grid.sync();
 
-    // --- Upsweep phase (reduce) ---
-    // For d = 1,2,4,..., n/2, each thread whose index fits combines a pair of nodes.
-    for (int d = 1; d < n; d *= 2) {
-        int index = (tid + 1) * d * 2 - 1;  // each thread works on one index
-        if (index < n) {
-            uint32_t g1 = s_g[index - d];
-            uint32_t p1 = s_p[index - d];
-            uint32_t g2 = s_g[index];
-            uint32_t p2 = s_p[index];
-            // Combine according to our operator:
-            // (g, p) = (g2 OR (p2 AND g1), p2 AND p1)
-            s_g[index] = g2 | (p2 & g1);
-            s_p[index] = p2 & p1;
-        }
-        grid.sync();
-    }
-
-    // --- Set the last element to the identity (for exclusive scan) ---
-    if (tid == 0) {
-        s_g[n - 1] = 0;
-        s_p[n - 1] = 1;
-    }
-    grid.sync();
-
-    // --- Downsweep phase ---
-    for (int d = n / 2; d >= 1; d /= 2) {
-        int index = (tid + 1) * d * 2 - 1;
-        if (index < n) {
-            uint32_t t = s_g[index - d];
-            // The left child becomes the current node
-            s_g[index - d] = s_g[index];
-            s_p[index - d] = s_p[index];  // (p is not used afterward but update for completeness)
-            // Update the current node by combining the left child's original value with the right child.
-            s_g[index] = s_g[index] | (s_p[index] & t);
-            // (We do not need to update s_p[index] further.)
+            // --- Set the last element to the identity (for exclusive scan) ---
+            if (tid == 0) {
+                s_g[n - 1] = 0;
+                s_p[n - 1] = 1;
+            }
         }
         grid.sync();
-    }
-    // Now s_g[0..extDigits-1] contains the exclusive scan results.
-    // In particular, for digit i the carry into that digit is given by s_g[i].
-    grid.sync();
 
-    if (sameSign) {
+        // --- Downsweep phase (exclusive scan for addition) ---
+        // Now perform the downsweep: update only indices k satisfying ((k+1) mod (2*d)) == 0.
+        if constexpr (!SequentialBits) {
+            for (int d = n / 2; d >= 1; d /= 2) {
+                // Use grid-stride loops to cover all indices.
+                for (int k = block.thread_index().x + block.group_index().x * blockDim.x;
+                    k < n;
+                    k += grid.size()) {
+                    // Check if k is the last index of its block of 2*d elements.
+                    if (((k + 1) % (2 * d)) == 0) {
+                        uint32_t temp = s_g[k - d];
+                        s_g[k - d] = s_g[k];
+                        if (d == 1) {
+                            // On the final downsweep pass, simply assign the left value.
+                            s_g[k] = temp;
+                        } else {
+                            s_g[k] = s_g[k] | (s_p[k] & temp); // standard combine for d > 1
+                        }
+                    }
+                }
+
+                grid.sync();
+            }
+        } else {
+            if (block.thread_index().x == 0 && block.group_index().x == 0) {
+                for (int d = n / 2; d >= 1; d /= 2) {
+                    for (int base = 0; base < n; base += 2 * d) {
+                        int k = base + 2 * d - 1; // rightmost node of the segment
+                        uint32_t temp = s_g[k - d]; // save left child's g
+                        s_g[k - d] = s_g[k];        // set left value to what the right child held
+                        if (d == 1)
+                            s_g[k] = temp;
+                        else
+                            s_g[k] = temp | (s_p[k - d] & s_g[k]);
+                    }
+                }
+            }
+
+            grid.sync();
+        }
+
+        // Now s_g[0..extDigits-1] contains the exclusive scan results.
+        // In particular, for digit i the carry into that digit is given by s_g[i].
+        grid.sync();
+
         // --- Update digits using the computed carries ---
         auto original_last_digit = final128[extDigits - 1]; // save the original last digit
+        grid.sync();
         for (int i = tid; i < extDigits; i += totalThreads) {
             uint32_t carryIn = s_g[i]; // carry into digit i
             uint64_t sum = final128[i] + carryIn;
@@ -494,58 +686,81 @@ CarryPropagationPP(
             finalShiftRight = 1;
         }
     } else {
-        // --- Subtraction branch (parallel AND scan) ---
-        // For subtraction the recurrence is:
-        //     borrow[0] = 0, and for each i, borrow[i+1] = (borrow[i] AND (final128[i] == 0))
-        // We can perform an exclusive scan over the predicate (final128[i]==0) using AND.
-
+        // --- Subtraction branch (parallel custom scan for borrow propagation) ---
+        // For subtraction we assume the final result is nonnegative so no borrow should remain.
+        // The sequential logic is:
+        //
+        //   borrow[0] = 0,
+        //   for i >= 1:
+        //     borrow[i] = ( (final128[i-1] - incoming) < 0 )
+        //               and then, if final128[i-1] (as 32-bit) equals 0xFFFFFFFF, the borrow propagates.
+        //
+        // We encode for each digit i (for i>=1) a 2-bit value:
+        //   s_g[i] = (sat << 1) | b,
+        // where b = 1 if final128[i-1] (the 64-bit preliminary difference) is negative,
+        // and sat = 1 if the lower 32 bits of final128[i-1] equal 0xFFFFFFFF.
+        //
+        // For i == 0, no incoming borrow: we use 0.
+        // For indices i >= extDigits (padding) we use the identity element for our operator,
+        // which we choose as (sat=1, b=0) --> value 2.
         for (int i = tid; i < n; i += totalThreads) {
             if (i == 0) {
-                s_g[0] = 0;  // initial borrow is 0
+                // No incoming borrow.
+                s_g[0] = 0;
             } else if (i < extDigits) {
-                // Use the previous digit's value to decide whether a borrow would propagate.
-                s_g[i] = (final128[i - 1] == 0) ? 1 : 0;
+                uint32_t b = (((int64_t)final128[i - 1] < 0) ? 1 : 0);
+                uint32_t sat = (((uint32_t)final128[i - 1] == 0xFFFFFFFFu) ? 1 : 0);
+                s_g[i] = (sat << 1) | b;
             } else {
-                // For indices beyond extDigits, use the identity (which for AND is 1)
-                s_g[i] = 1;
+                // For padded indices use the identity element (sat=1, b=0) so that it does not cancel a borrow.
+                s_g[i] = 2;
             }
-            // We leave s_p unchanged (it isn't used in the subtraction branch)
+            // s_p is not used in this branch.
         }
         grid.sync();
 
-        // Upsweep for AND-scan.
+        // --- Upsweep phase using custom operator ---
         for (int d = 1; d < n; d *= 2) {
-            int index = (tid + 1) * d * 2 - 1;
-            if (index < n) {
-                s_g[index] = s_g[index] & s_g[index - d];
+            // Each thread processes one or more indices via a grid-stride loop.
+            for (int index = (tid + 1) * d * 2 - 1; index < n; index += grid.size() * d * 2) {
+                s_g[index] = CombineBorrow(s_g[index - d], s_g[index]);
             }
             grid.sync();
         }
+
+        // --- Set the last element to the identity (0) for the downsweep ---
         if (tid == 0) {
-            s_g[n - 1] = 1;
+            s_g[n - 1] = 2;
         }
         grid.sync();
-        // Downsweep for exclusive scan.
-        for (int d = n / 2; d >= 1; d /= 2) {
-            int index = (tid + 1) * d * 2 - 1;
-            if (index < n) {
-                uint32_t t = s_g[index - d];
-                s_g[index - d] = s_g[index];
-                s_g[index] = t & s_g[index];
+
+        // --- Downsweep phase using custom operator ---
+        // Parallel Hillis–Steele inclusive scan using CombineBorrow.
+        // Note: 'I' is the identity for our CombineBorrow operator; for our encoding, we take I = 2.
+        // (Assumes extDigits is <= the number of elements in s_g.)
+        for (int d = 1; d < extDigits; d *= 2) {
+            // Each thread processes indices in grid stride.
+            for (int i = block.thread_index().x + block.group_index().x * blockDim.x;
+                i < extDigits;
+                i += grid.size()) {
+                // For indices with i >= d, combine the element from i-d with s_g[i].
+                uint32_t prev = (i >= d) ? s_g[i - d] : 2;  // Use identity for out-of-bound indexes.
+                uint32_t cur = s_g[i];
+                // Compute the inclusive scan value at index i.
+                uint32_t combined = (i >= d) ? CombineBorrow(prev, cur) : cur;
+                // Write this back to s_g[i]. (It is ok if the update is not strictly barrier-synchronized
+                // between iterations, as long as we put an overall __syncthreads() after each step.)
+                s_g[i] = combined;
             }
             grid.sync();
         }
-        grid.sync();
-        // Now for each digit, the borrow into digit i is in s_g[i].
+
+        // Now s_g[0..extDigits-1] holds, in its lower bit, the incoming borrow for each digit.
+        // Decode the borrow flag (the lower bit) and update final128 accordingly.
         for (int i = tid; i < extDigits; i += totalThreads) {
-            uint32_t borrow = s_g[i];
-            int64_t diffVal = (int64_t)final128[i] - borrow;
+            uint32_t borrow = s_g[i] & 1;
+            uint64_t diffVal = (uint64_t)final128[i] - borrow;
             final128[i] = (uint32_t)(diffVal & 0xFFFFFFFFu);
-        }
-        grid.sync();
-        if (tid == 0) {
-            // Optionally check that the final borrow is zero.
-            assert(s_g[extDigits - 1] == 0);
         }
     }
     grid.sync();
@@ -715,11 +930,11 @@ CarryPropagation (
 }
 
 template <class SharkFloatParams>
-__device__ void AddHelper(
+__device__ void AddHelper (
     cg::grid_group &grid,
     cg::thread_block &block,
     HpSharkAddComboResults<SharkFloatParams> *SharkRestrict combo,
-    uint32_t *tempData) {
+    uint64_t *tempData) {
 
     extern __shared__ uint32_t sharedData[];
 
@@ -748,7 +963,7 @@ __device__ void AddHelper(
     auto *SharkRestrict final128 =
         reinterpret_cast<uint64_t *>(&tempData[Final128Offset]);
     
-    constexpr auto Carry1_offset = Final128Offset + 4 * SharkFloatParams::GlobalNumUint32;
+    constexpr auto Carry1_offset = Final128Offset + 8 * SharkFloatParams::GlobalNumUint32;
     auto *SharkRestrict carry1 =
         reinterpret_cast<uint32_t *>(&tempData[Carry1_offset]);
 
@@ -921,7 +1136,7 @@ __device__ void AddHelper(
 
     // --- Carry/Borrow Propagation ---
     int shiftNeeded = 0;
-    CarryPropagationPP<SharkFloatParams>(
+    CarryPropagationPP2<SharkFloatParams>(
         sharedData,
         globalSync,
         final128,
@@ -1039,7 +1254,7 @@ __device__ void AddHelper(
 template<class SharkFloatParams>
 __global__ void AddKernel(
     HpSharkAddComboResults<SharkFloatParams> *SharkRestrict combo,
-    uint32_t *tempData) {
+    uint64_t *tempData) {
 
     // Initialize cooperative grid group
     cg::grid_group grid = cg::this_grid();
@@ -1053,7 +1268,7 @@ template<class SharkFloatParams>
 __global__ void AddKernelTestLoop(
     HpSharkAddComboResults<SharkFloatParams> *SharkRestrict combo,
     uint64_t numIters,
-    uint32_t *tempData) {
+    uint64_t *tempData) {
 
     // Initialize cooperative grid group
     cg::grid_group grid = cg::this_grid();

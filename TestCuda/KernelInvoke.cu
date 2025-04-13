@@ -105,7 +105,7 @@ void InvokeAddKernelPerf(
 
     constexpr auto BytesToAllocate =
         (AdditionalUInt64Global + CalculateAddFrameSize<SharkFloatParams>()) * sizeof(uint64_t);
-    uint32_t *g_extResult;
+    uint64_t *g_extResult;
     cudaMalloc(&g_extResult, BytesToAllocate);
 
     // Prepare kernel arguments
@@ -204,7 +204,7 @@ void InvokeAddKernelCorrectness(
 
     constexpr auto BytesToAllocate =
         (AdditionalUInt64Global + CalculateAddFrameSize<SharkFloatParams>()) * sizeof(uint64_t);
-    uint32_t *g_extResult;
+    uint64_t *g_extResult;
     cudaMalloc(&g_extResult, BytesToAllocate);
 
     // Prepare kernel arguments

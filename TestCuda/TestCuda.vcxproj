@@ -131,7 +131,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Add.cuh" />
-    <ClInclude Include="AddInternal.cuh" />
+    <ClInclude Include="Archived\ScaledKernels.cuh" />
     <ClInclude Include="BenchmarkTimer.h" />
     <ClInclude Include="Conversion.cuh" />
     <ClInclude Include="CudaCrap.h" />

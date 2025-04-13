@@ -20,11 +20,11 @@ void ComputeAddGpu(void *kernelArgs[]);
 template<class SharkFloatParams>
 CUDA_GLOBAL void AddKernel(
     HpSharkAddComboResults<SharkFloatParams> *combo,
-    uint32_t *tempData);
+    uint64_t *tempData);
 
 template<class SharkFloatParams>
 CUDA_GLOBAL void AddKernelTestLoop(
     HpSharkAddComboResults<SharkFloatParams> *combo,
     uint64_t numIters,
-    uint32_t *tempData);
+    uint64_t *tempData);
 

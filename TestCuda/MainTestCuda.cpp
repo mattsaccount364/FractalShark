@@ -119,7 +119,7 @@ int RunCorrectnessTest() {
         ComicalCorrectness();
 
         testCount++;
-    } while (SharkInfiniteCorrectnessTests);
+    } while (SharkTestInfiniteCorrectness);
 
     if (PressKey() == 'q') {
         return 0;
@@ -150,7 +150,7 @@ int main(int /*argc*/, char * /*argv*/[]) {
     //    return 0;
     //}
 
-    if constexpr (SharkCorrectnessTests) {
+    if constexpr (SharkTestCorrectness) {
         res = RunCorrectnessTest();
         if (!res) {
             return 0;
@@ -180,7 +180,7 @@ int main(int /*argc*/, char * /*argv*/[]) {
     }
 #endif
 
-    if constexpr (!SharkCorrectnessTests) {
+    if constexpr (!SharkTestCorrectness) {
         auto q = PressKey();
         if (q == 'q') {
             return 0;

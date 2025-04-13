@@ -47,8 +47,8 @@ static constexpr bool SharkTestGpu = false;
 // 2 = setup for profiling only, one kernel
 // 3 = all basic correctness tests + comical tests
 // See ExplicitInstantiate.h for more information
-#define ENABLE_BASIC_CORRECTNESS 0
-static constexpr auto SharkComicalThreadCount = 13;
+#define ENABLE_BASIC_CORRECTNESS 1
+static constexpr auto SharkTestComicalThreadCount = 13;
 static constexpr auto SharkTestIterCount = SharkDebug ? 3 : 50000;
 
 // Set to true to use a custom stream for the kernel launch
@@ -63,12 +63,14 @@ static constexpr auto SharkRegisterLimit = 255;
 static constexpr auto SharkConstantSharedRequiredBytes = 0;
 
 static constexpr auto SharkBatchSize = SharkDebug ? 8 : 512;
-static constexpr bool SharkInfiniteCorrectnessTests = true;
-static constexpr bool SharkCorrectnessTests = true;
+
 static constexpr bool SharkDebugChecksums = SharkDebug;
 static constexpr bool SharkDebugRandomDelays = false;
 
-static constexpr bool SharkBenchmarkAgainstHost = true;
+static constexpr bool SharkTestInfiniteCorrectness = true;
+static constexpr bool SharkTestCorrectness = true;
+static constexpr auto SharkTestForceSameSign = false;
+static constexpr bool SharkTestBenchmarkAgainstHost = true;
 
 
 template<
@@ -93,7 +95,7 @@ struct GenericSharkFloatParams {
     static constexpr bool ForceNoOp = false;
 
     // If true, the host will print out a lot of stuff
-    static constexpr bool HostVerbose = true;
+    static constexpr bool HostVerbose = false;
 
     // 1, 3, 9, 27, 81
     static constexpr auto ConvolutionLimit = pConvolutionLimit;
@@ -147,7 +149,7 @@ static constexpr auto CalculateMultiplyFrameSize() {
 
 template<class SharkFloatParams>
 static constexpr auto CalculateAddFrameSize() {
-    return SharkFloatParams::GlobalNumUint32 * 12;
+    return SharkFloatParams::GlobalNumUint32 * 16 + AdditionalUInt64PerFrame;
 }
 
 static constexpr auto LowPrec = 32;

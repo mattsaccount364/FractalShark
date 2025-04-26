@@ -1,8 +1,8 @@
 # Introduction
 
-## 2025-2-17 News
+## 2025-4-26 News
 
-This page actually gets traffic occasionally, so I just wanted to post a short update.  Since last August, I've been working on a CUDA-based, high-precision reference orbit implementation.  The objective is to beat FractalShark's existing multithreaded reference-orbit performance at higher digit counts, at least if you have a decent card.  Scroll down to "2025-2 - What's going on with this native CUDA reference orbit calculation?" for the latest information on this subject.
+This page actually gets traffic occasionally, so I just wanted to post a short update.  Since last August, I've been working on a CUDA-based, high-precision reference orbit implementation.  The objective is to beat FractalShark's existing multithreaded reference-orbit performance at higher digit counts, at least if you have a decent card.  Scroll down to "2025-4 - What's going on with this native CUDA reference orbit calculation?" for the latest information on this subject.
 
 ## What is FractalShark?
 
@@ -118,6 +118,43 @@ Many.
 
 - This implementation would probably not have happened without the work of these folks so thank you!
 
+## 2025-4-26
+
+This high-precision arithmetic project is a lot of fun even if it's pretty ameteur-hour -- I know I'm leaving a lot of perf on the table yet.
+
+Here's a brief update.  I'm happy enough with Karatsuba multiply now.  I've got 3x parallel multiplies working.  For Mandelbrot, that corresponds to x^2, y^2 and x*y.  Rather than doing an optimized squaring implementation, I'm just jamming everything into the same Karatsuba implementation, so that all the synchronization is re-used.
+
+A few weeks ago I had CUDA floating point add working.  That's much easier of course, though carry propagation is interesting.  I tried a parallel prefix sum but the performance was a bit underwhelming in the average case, which is what I care about.  I instead implemented a more naive strategy that has better average case perf and linear worst-case performance, which I think I'm fine with for Mandelbrot.  I'm not using warp-level primitives and haven't hooked up shared memory on that, so it's horrid performance compared to simply doing it on the CPU but as a percentage of the total it's minor, because large multiplies are so costly.  I'm not that worried about Add at this point.
+
+I'm currently hooking up a 5-way combined add/subtract that does A - B + C and D+ E in parallel to produce two outputs.  These inputs corresponds to X^2 - Y^2 + C_x and 2*X*Y + C_y.
+
+Strategy-wise, the idea is to complete this multi-way add operator, and then we should be able to do a reference orbit using alternating 3-way multiply and 5-way add calls in CUDA.  It also needs periodicity detection and high-precision to float+exp conversion, which shouldn't be bad.  Maybe in a few months I'll have something working end-to-end.
+
+I was also speculating about trying SchÃ¶nhage-Strassen CUDA multiply, but that's a ways out.
+
+## 2025-3
+
+It's been a month so here's an update before I go on vacation.  I'm still focusing on multiply performance and correctness.  I have a pretty aggressive test framework set up now and am evaluating it with various number sizes and hardware allocations.  Supporting weird lengths makes it easier to apply more levels of Karatsuba recursion.
+
+I've added optional debug-specific logic that calculates checksums of each intermediate step and outputs those as well.  The host calculates the same intermediate checksums using my reference CPU implementation and comparison of the two happens in the test framework.  This approach is a pretty handy way to debug this nightmarish stuff because it just compares these checksums and immediately identifies where the first discrepency arises in the CUDA calculation.  The discrepency points right at the bad chunk of code.  Getting this checksumming strategy to work reliably was a real pain but it's a lot easier to debug than just getting a result that says "wrong answer."
+
+For additional validation, it's initializing all dynamically-allocated CUDA global memory with a 0xCDCDCDCD pattern, so if the implementation misses a byte, or overwrites something incorrectly, the checksum immediately captures it and makes it clear where the problem occurred.  This is not default CUDA behavior so I just put in a memset.  This approach also helps ensure that I have clear definitions for how many digits are being processed at each point in the calculation, since CUDA doesn't have nice std::vector or related containers.
+
+One annoying thing I hit is slow compilation times.  It's using templates aggressively, so the kernel it spits out is optimized for a specific length of number.  That's OK in principle because we can just produce a series of kernels for different precisions but the downside is compiling a bunch of them takes quite a while and produces large code sizes.  It may make more sense to introduce more runtime variables and rely less on templates here but as it is this endeavor is mostly an academic exercise anyway, and I'm not expecting this thing to replace the existing CPU-based reference orbit calculations we have in the general sense.  But it'd be cool to get high performance in some meaningful range of scenarios anyway, hehe.
+
+I'll probably try moving to 3x parallel multiplies soon as a step toward a reference orbit, because I want to check that this thing can still compile effectively with that change.  This kernel already requires a fair number of registers in order to perform (avoid spilling registers to memory) and that's a bit of a concern because if 3x parallel multiplies pushes it over the edge, performance will suffer.  There are various things I could do to decrease register usage of course, but all this stuff takes time.  Once 3x multiplies works, then adding the additions/subtracts for a reference orbit should be OK.  Those would take place after the multiplies so should have no adverse effect on register use.
+
+After that I still have to deal with periodicity and truncating the high-precision values to float/exp, and all that will take more time.  This part may actually be rather costly perf-wise if I'm not careful because the naive approach is to serialize it with the rest of the calculation but that's a waste of hardware.
+
+In a nutshell, this is a fun project and I'm having a blast, but it ended up bigger than I anticipated given how far I'm from the actual goal.  I'll keep grinding away at and we'll see where it can go.
+
+Current best result (5950X MPIR vs RTX 4090), 50000 sequential multiplies of 7776-limb numbers, 128 blocks, 96 threads/block, uses shared memory and 162 registers (max 255):
+
+Host iter time: 26051 ms
+GPU iter time: 2757 ms
+
+Edited from earlier, fussing with perf-related parameters.  I'm very happy with how it's looking now. 
+
 ## 2025-2 - What's going on with this native CUDA reference orbit calculation?
 
 It's been a month so here's an update before I go on vacation.  I'm still focusing on multiply performance and correctness.  I have a pretty aggressive test framework set up now and am evaluating it with various number sizes and hardware allocations.  Supporting weird lengths makes it easier to apply more levels of Karatsuba recursion.
@@ -180,7 +217,7 @@ https://en.wikipedia.org/wiki/Karatsuba_algorithm
 Toom Cook:
 https://en.wikipedia.org/wiki/Toom%E2%80%93Cook_multiplication
 
-Schönhage–Strassen algorithm
+Schï¿½nhageï¿½Strassen algorithm
 https://en.wikipedia.org/wiki/Sch%C3%B6nhage%E2%80%93Strassen_algorithm
 
 CGBN: CGBN: CUDA Accelerated Multiple Precision Arithmetic (Big Num) using Cooperative Groups
@@ -197,7 +234,7 @@ If you're bored and want to try yet another Mandelbrot set renderer, give it a g
 
 ## History
 
-- **2001**: The first version of FractalShark I did as a freshman in college. I added a basic network/distributed strategy to speed it up. It split the work across machines. This feature is now broken and won’t be revived.
+- **2001**: The first version of FractalShark I did as a freshman in college. I added a basic network/distributed strategy to speed it up. It split the work across machines. This feature is now broken and wonï¿½t be revived.
 - **2008**: I did a distributed version that ran on the University of Wisconsin's "Condor" platform. That was pretty cool, and allowed for fast creation of zoom movies.
 - **2017**: I resurrected it, and added high precision, but no perturbation or anything else. At that point, it was theoretically capable of rendering very deep images, but it was so slow as to be largely useless.
 - **2023-2024**: I bought this new video card, and wanted to play with it, so ended up learning about CUDA and all these clever algorithmic approaches you all have found out to speed this up. So here we are.

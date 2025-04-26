@@ -18,7 +18,7 @@ static constexpr bool SharkDebug = false;
 #endif
 
 // Undefine to include N2, v1 etc.
-// #define MULTI_KERNEL
+#define MULTI_KERNEL
 
 #ifdef MULTI_KERNEL
 static constexpr auto SharkMultiKernel = true;
@@ -27,7 +27,7 @@ static constexpr auto SharkMultiKernel = false;
 #endif
 
 // Define to enable GPU kernel compilation
-#define SHARK_INCLUDE_KERNELS
+//#define SHARK_INCLUDE_KERNELS
 // Set to false to bypass all GPU tests and only do reference/host-side
 #ifdef SHARK_INCLUDE_KERNELS
 static constexpr bool SharkTestGpu = true;
@@ -47,7 +47,7 @@ static constexpr bool SharkTestGpu = false;
 // 2 = setup for profiling only, one kernel
 // 3 = all basic correctness tests + comical tests
 // See ExplicitInstantiate.h for more information
-#define ENABLE_BASIC_CORRECTNESS 1
+#define ENABLE_BASIC_CORRECTNESS 0
 static constexpr auto SharkTestComicalThreadCount = 13;
 static constexpr auto SharkTestIterCount = SharkDebug ? 3 : 50000;
 
@@ -71,6 +71,7 @@ static constexpr bool SharkTestInfiniteCorrectness = true;
 static constexpr bool SharkTestCorrectness = true;
 static constexpr auto SharkTestForceSameSign = false;
 static constexpr bool SharkTestBenchmarkAgainstHost = true;
+static constexpr bool SharkTestInitCudaMemory = true;
 
 
 template<
@@ -95,7 +96,7 @@ struct GenericSharkFloatParams {
     static constexpr bool ForceNoOp = false;
 
     // If true, the host will print out a lot of stuff
-    static constexpr bool HostVerbose = false;
+    static constexpr bool HostVerbose = true;
 
     // 1, 3, 9, 27, 81
     static constexpr auto ConvolutionLimit = pConvolutionLimit;
@@ -160,6 +161,7 @@ static constexpr auto LowPrec = 32;
 
 // If you add a new one, search for one of the other types and copy/paste
 // using Test8x1SharkParams = GenericSharkFloatParams<64, 108, 7776, 9>; // Use for ENABLE_BASIC_CORRECTNESS==2
+//using Test8x1SharkParams = GenericSharkFloatParams<32, 4>; // Use for ENABLE_BASIC_CORRECTNESS==1
 using Test8x1SharkParams = GenericSharkFloatParams<8, 1>; // Use for ENABLE_BASIC_CORRECTNESS==1
 //using Test8x1SharkParams = GenericSharkFloatParams<4, 6>; // Use for ENABLE_BASIC_CORRECTNESS==1
 // using Test8x1SharkParams = GenericSharkFloatParams<13, 5>;
@@ -243,7 +245,8 @@ template<class SharkFloatParams>
 struct HpSharkAddComboResults {
     HpSharkFloat<SharkFloatParams> A;
     HpSharkFloat<SharkFloatParams> B;
-    HpSharkFloat<SharkFloatParams> ResultX2;
+    HpSharkFloat<SharkFloatParams> Result1X2;
+    HpSharkFloat<SharkFloatParams> Result2X2;
 };
 
 template<class SharkFloatParams>

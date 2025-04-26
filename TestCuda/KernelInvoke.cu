@@ -135,8 +135,6 @@ void InvokeMultiplyKernelCorrectness(
     HpSharkComboResults<SharkFloatParams> &combo,
     std::vector<DebugStateRaw> *debugResults) {
 
-    static constexpr bool DebugInitCudaMemory = true;
-
     // Prepare kernel arguments
     // Allocate memory for carryOuts and cumulativeCarries
     uint64_t *d_tempProducts;
@@ -144,7 +142,7 @@ void InvokeMultiplyKernelCorrectness(
         (AdditionalUInt64Global + ScratchMemoryCopies * CalculateMultiplyFrameSize<SharkFloatParams>()) * sizeof(uint64_t);
     cudaMalloc(&d_tempProducts, BytesToAllocate);
 
-    if constexpr (!DebugInitCudaMemory) {
+    if constexpr (!SharkTestInitCudaMemory) {
         cudaMemset(d_tempProducts, 0, BytesToAllocate);
     } else {
         cudaMemset(d_tempProducts, 0xCD, BytesToAllocate);
@@ -154,7 +152,7 @@ void InvokeMultiplyKernelCorrectness(
     cudaMalloc(&comboGpu, sizeof(HpSharkComboResults<SharkFloatParams>));
     cudaMemcpy(comboGpu, &combo, sizeof(HpSharkComboResults<SharkFloatParams>), cudaMemcpyHostToDevice);
 
-    if constexpr (!DebugInitCudaMemory) {
+    if constexpr (!SharkTestInitCudaMemory) {
         cudaMemset(&comboGpu->ResultX2, 0, sizeof(HpSharkFloat<SharkFloatParams>));
         cudaMemset(&comboGpu->ResultXY, 0, sizeof(HpSharkFloat<SharkFloatParams>));
         cudaMemset(&comboGpu->ResultY2, 0, sizeof(HpSharkFloat<SharkFloatParams>));
@@ -201,6 +199,14 @@ void InvokeAddKernelCorrectness(
     HpSharkAddComboResults<SharkFloatParams> *comboResults;
     cudaMalloc(&comboResults, sizeof(HpSharkAddComboResults<SharkFloatParams>));
     cudaMemcpy(comboResults, &combo, sizeof(HpSharkAddComboResults<SharkFloatParams>), cudaMemcpyHostToDevice);
+
+    if constexpr (!SharkTestInitCudaMemory) {
+        cudaMemset(comboResults->Result1X2, 0, sizeof(HpSharkAddComboResults<SharkFloatParams>));
+        cudaMemset(comboResults->Result2X2, 0, sizeof(HpSharkAddComboResults<SharkFloatParams>));
+    } else {
+        cudaMemset(comboResults->Result1X2, 0xCD, sizeof(HpSharkAddComboResults<SharkFloatParams>));
+        cudaMemset(comboResults->Result2X2, 0xCD, sizeof(HpSharkAddComboResults<SharkFloatParams>));
+    }
 
     constexpr auto BytesToAllocate =
         (AdditionalUInt64Global + CalculateAddFrameSize<SharkFloatParams>()) * sizeof(uint64_t);

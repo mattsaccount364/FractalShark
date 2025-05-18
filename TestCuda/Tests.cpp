@@ -1,4 +1,4 @@
-#include "HpSharkFloat.cuh"
+﻿#include "HpSharkFloat.cuh"
 #include "BenchmarkTimer.h"
 #include "TestTracker.h"
 
@@ -43,8 +43,9 @@ struct IntSignCombo {
 
 // Returns false if the test fails, true otherwise
 template<class SharkFloatParams, Operator sharkOperator>
-bool DiffAgainstHost (
+bool DiffAgainstHostNonZero (
     int testNum,
+    int /*numTerms*/,
     std::string hostCustomOrGpu,
     const mpf_t mpfHostResult,
     const HpSharkFloat<SharkFloatParams> &gpuResult) {
@@ -92,6 +93,10 @@ bool DiffAgainstHost (
     mpf_t acceptableError;
 
     bool testSucceeded = true;
+
+    I think this error detection is working?  It's kind of not tidy because
+        it calls the old implementation in the zero case.  This shold be cleaned
+        up.
 
     // Init a zero mpf:
     mpf_t mpfZero;
@@ -175,6 +180,211 @@ bool DiffAgainstHost (
 
     return testSucceeded;
 }
+
+template<class SharkFloatParams, Operator sharkOperator>
+bool DiffAgainstHost(
+    int testNum,
+    int numTerms,               // 2 or 3
+    std::string hostCustomOrGpu,
+    const mpf_t  mpfHostResult,
+    const HpSharkFloat<SharkFloatParams> &gpuResult) {
+    // 1) Optional verbose print of GPU result
+    if constexpr (SharkFloatParams::HostVerbose) {
+        std::cout << "\n" << hostCustomOrGpu << " (GPU) result:\n"
+            << gpuResult.ToString() << "\n"
+            << gpuResult.ToHexString() << "\n";
+    }
+
+    // 2) Convert host mpf_t → HpSharkFloat via MpfToHpGpu
+    HpSharkFloat<SharkFloatParams> hostShark;
+    MpfToHpGpu<SharkFloatParams>(
+        mpfHostResult,
+        hostShark,
+        HpSharkFloat<SharkFloatParams>::DefaultPrecBits
+    );
+
+    // 3) Build absolute‐difference mpf: |host - gpu|
+    mpf_t mpfXGpu;
+    mpf_t mpfDiff;
+    mpf_t mpfDiffAbs;
+
+    mpf_init(mpfXGpu);
+    mpf_init(mpfDiff);
+    mpf_init(mpfDiffAbs);
+
+    HpGpuToMpf(gpuResult, mpfXGpu);
+    mpf_sub(mpfDiff, mpfHostResult, mpfXGpu);
+    mpf_abs(mpfDiffAbs, mpfDiff);
+
+    // 4) Quick check: is host exactly zero?
+    mpf_t mpfZero;
+    mpf_init(mpfZero);
+    mpf_set_ui(mpfZero, 0);
+
+    const bool hostIsZero = (mpf_cmp(mpfHostResult, mpfZero) == 0);
+    mpf_clear(mpfZero);
+
+    if (hostIsZero) {
+        // ---- FALLBACK: absolute ULP‐based threshold at GPU exponent ----
+        mp_bitcnt_t P = HpSharkFloat<SharkFloatParams>::DefaultPrecBits;
+        mpf_t eps;
+        mpf_init2(eps, P);
+        mpf_set_ui(eps, 1);
+
+        if constexpr (SharkFloatParams::HostVerbose) {
+            std::cout << "\nBefore fallback absolute-error threshold : "
+                << MpfToString<SharkFloatParams>(eps, LowPrec) << "\n";
+            std::cout << "Absolute difference: "
+                << MpfToString<SharkFloatParams>(mpfDiffAbs, LowPrec) << "\n";
+        }
+
+        // 2) compute trueExponent = expGpu + (M*32 - 1)
+        const int mantBits = int(HpSharkFloat<SharkFloatParams>::NumUint32) * 32;
+        int trueExp = gpuResult.Exponent + (mantBits - 1);
+
+        // 3) shift eps to 2^trueExp
+        if (trueExp >= 0) {
+            mpf_mul_2exp(eps, eps, trueExp);
+        } else {
+            mpf_div_2exp(eps, eps, -trueExp);
+        }
+
+        // 4) scale by (numTerms-1)
+        mpf_mul_ui(eps, eps, static_cast<unsigned long>(numTerms - 1));
+
+        if constexpr (SharkFloatParams::HostVerbose) {
+            std::cout << "\nFallback absolute-error threshold : "
+                << MpfToString<SharkFloatParams>(eps, LowPrec) << "\n";
+            std::cout << "Absolute difference: "
+                << MpfToString<SharkFloatParams>(mpfDiffAbs, LowPrec) << "\n";
+        }
+
+        bool ok = (mpf_cmp(mpfDiffAbs, eps) <= 0);
+
+        if (ok) {
+            Tests.MarkSuccess(testNum, hostCustomOrGpu);
+        } else {
+            std::string diffStr = MpfToString<SharkFloatParams>(mpfDiffAbs, LowPrec);
+            std::string threshStr = MpfToString<SharkFloatParams>(eps, LowPrec);
+            std::cerr << "\nError: absolute error “" << diffStr
+                << "” > allowed “" << threshStr << "”\n";
+            Tests.MarkFailed(testNum, hostCustomOrGpu, diffStr, threshStr);
+        }
+
+        mpf_clear(eps);
+        mpf_clear(mpfXGpu);
+        mpf_clear(mpfDiff);
+        mpf_clear(mpfDiffAbs);
+        return ok;
+    }
+
+#if 0
+    // ---- ULP‐count check for nonzero host ----
+
+    // 5) Pull out the raw limb arrays
+    constexpr size_t N = HpSharkFloat<SharkFloatParams>::NumUint32;
+    const uint32_t *H = hostShark.Digits;
+    const uint32_t *G = gpuResult.Digits;
+
+    // 6) Verbose dump of raw bits
+    if constexpr (SharkFloatParams::HostVerbose) {
+        std::cout << "\nRaw mantissa limbs (MS --> LS):\n"
+            << std::showbase << std::hex
+            << "  Host:";
+        for (int i = int(N) - 1; i >= 0; --i) std::cout << " " << H[i];
+        std::cout << "\n  GPU :";
+        for (int i = int(N) - 1; i >= 0; --i) std::cout << " " << G[i];
+        std::cout << std::dec << "\n\n";
+    }
+
+    // 7) Quick exact‐match check
+    bool match = true;
+    for (size_t i = 0; i < N; ++i) {
+        if (H[i] != G[i]) {
+            match = false;
+            break;
+        }
+    }
+
+    if (match) {
+        Tests.MarkSuccess(testNum, hostCustomOrGpu);
+        mpf_clear(mpfXGpu);
+        mpf_clear(mpfDiff);
+        mpf_clear(mpfDiffAbs);
+        return true;
+    }
+
+    // 8) Determine which is larger for subtraction A - B
+    const uint32_t *A = nullptr, *B = nullptr;
+    for (int i = int(N) - 1; i >= 0; --i) {
+        if (H[i] > G[i]) {
+            A = H;
+            B = G;
+            break;
+        }
+
+        if (H[i] < G[i]) {
+            A = G;
+            B = H;
+            break;
+        }
+    }
+
+    // 9) Subtract to get ULP difference limbs
+    uint32_t diff[N];
+    uint64_t borrow = 0;
+    for (size_t i = 0; i < N; ++i) {
+        uint64_t ai = uint64_t(A[i]);
+        uint64_t bi = uint64_t(B[i]) + borrow;
+        borrow = (ai < bi) ? 1 : 0;
+        diff[i] = uint32_t(ai - bi);
+    }
+
+    // 10) Check ULP distance ≤ numTerms-1
+    bool ok = true;
+    for (int i = int(N) - 1; i >= 1; --i) {
+        if (diff[i] != 0) {
+            ok = false;
+            break;
+        }
+    }
+
+    if (diff[0] > uint32_t(numTerms - 1)) {
+        ok = false;
+    }
+
+    // 11) Report ULP result in hex
+    if (ok) {
+        if constexpr (SharkFloatParams::HostVerbose) {
+            std::cout << std::showbase << std::hex
+                << "\nULP distance = " << diff[0]
+                << " <= " << (numTerms - 1)
+                << std::dec << " --> PASS\n";
+        }
+        Tests.MarkSuccess(testNum, hostCustomOrGpu);
+    } else {
+        std::ostringstream a, b;
+        a << std::showbase << std::hex << diff[0];
+        b << std::showbase << std::hex << (numTerms - 1);
+        std::cerr << "\nError: ULP distance " << a.str()
+            << " > allowed " << b.str() << "\n";
+        Tests.MarkFailed(testNum, hostCustomOrGpu, a.str(), b.str());
+    }
+
+    // 12) Clean up
+    mpf_clear(mpfXGpu);
+    mpf_clear(mpfDiff);
+    mpf_clear(mpfDiffAbs);
+#endif
+
+    return DiffAgainstHostNonZero<SharkFloatParams, sharkOperator>(
+        testNum,
+        numTerms,
+        hostCustomOrGpu,
+        mpfHostResult,
+        gpuResult);
+}
+
 
 template<class SharkFloatParams, Operator sharkOperator>
 void TestPerf (
@@ -377,12 +587,14 @@ void TestPerf (
 template<class SharkFloatParams, Operator sharkOperator>
 bool CheckAgainstHost(
     int testNum,
+    int numTerms,
     const char *name,
     const mpf_t mpfHostResult,
     const HpSharkFloat<SharkFloatParams> &gpuResult)
 {
     bool res = DiffAgainstHost<SharkFloatParams, sharkOperator>(
         testNum,
+        numTerms,
         name,
         mpfHostResult,
         gpuResult);
@@ -464,9 +676,10 @@ void TestTernaryOperatorTwoNumbersRawNoSignChange(
         OutputV2(hostKaratsubaOutYYV2);
 
         bool res = true;
-        res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(testNum, "CustomHighPrecisionV2XX", mpfHostResultXX, hostKaratsubaOutXXV2);
-        res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(testNum, "CustomHighPrecisionV2XY", mpfHostResultXY1, hostKaratsubaOutXYV2);
-        res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(testNum, "CustomHighPrecisionV2YY", mpfHostResultYY, hostKaratsubaOutYYV2);
+        constexpr auto numTerms = 2;
+        res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(testNum, numTerms, "CustomHighPrecisionV2XX", mpfHostResultXX, hostKaratsubaOutXXV2);
+        res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(testNum, numTerms, "CustomHighPrecisionV2XY", mpfHostResultXY1, hostKaratsubaOutXYV2);
+        res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(testNum, numTerms, "CustomHighPrecisionV2YY", mpfHostResultYY, hostKaratsubaOutYYV2);
 
         return res;
         };
@@ -507,8 +720,10 @@ void TestTernaryOperatorTwoNumbersRawNoSignChange(
             OutputAdd("Add result 2: ", hostAddResult2);
 
             bool res = true;
-            res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(testNum, "CustomHighPrecisionV2XY1", mpfHostResultXY1, hostAddResult1);
-            res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(testNum, "CustomHighPrecisionV2XY2", mpfHostResultXY2, hostAddResult2);
+            constexpr auto numTermsPartABC = 3;
+            res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(testNum, numTermsPartABC, "CustomHighPrecisionV2XY1", mpfHostResultXY1, hostAddResult1);
+            constexpr auto numTermsPartDE = 2;
+            res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(testNum, numTermsPartDE, "CustomHighPrecisionV2XY2", mpfHostResultXY2, hostAddResult2);
 
             return res;
         };
@@ -716,11 +931,17 @@ void TestTernaryOperatorTwoNumbersRawNoSignChange(
 
     auto CheckGPUResult = [](
         int testNum,
+        int numTerms,
         const char *name,
         const mpf_t &mpfHostResult,
         const HpSharkFloat<SharkFloatParams> &gpuResult) {
 
-        auto testSucceeded = DiffAgainstHost<SharkFloatParams, sharkOperator>(testNum, name, mpfHostResult, gpuResult);
+        auto testSucceeded = DiffAgainstHost<SharkFloatParams, sharkOperator>(
+            testNum,
+            numTerms,
+            name,
+            mpfHostResult,
+            gpuResult);
         if (!testSucceeded) {
             std::cout << "GPU High Precision failed" << std::endl;
             DebugBreak();
@@ -733,13 +954,16 @@ void TestTernaryOperatorTwoNumbersRawNoSignChange(
     if constexpr (SharkTestGpu) {
         if constexpr (sharkOperator == Operator::Add) {
             testSucceeded = true;
-            testSucceeded &= CheckGPUResult(testNum, "GPU", mpfHostResultXY1, gpuResultXY1);
-            testSucceeded &= CheckGPUResult(testNum, "GPU", mpfHostResultXY2, gpuResultXY2);
+            constexpr auto numTermsABC = 3;
+            testSucceeded &= CheckGPUResult(testNum, numTermsABC, "GPU", mpfHostResultXY1, gpuResultXY1);
+            constexpr auto numTermsDE = 2;
+            testSucceeded &= CheckGPUResult(testNum, numTermsDE, "GPU", mpfHostResultXY2, gpuResultXY2);
         } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
             testSucceeded = true;
-            testSucceeded &= CheckGPUResult(testNum, "GPU", mpfHostResultXX, gpuResultXX);
-            testSucceeded &= CheckGPUResult(testNum, "GPU", mpfHostResultXY1, gpuResultXY1);
-            testSucceeded &= CheckGPUResult(testNum, "GPU", mpfHostResultYY, gpuResultYY);
+            constexpr auto numTerms = 2;
+            testSucceeded &= CheckGPUResult(testNum, numTerms, "GPU", mpfHostResultXX, gpuResultXX);
+            testSucceeded &= CheckGPUResult(testNum, numTerms, "GPU", mpfHostResultXY1, gpuResultXY1);
+            testSucceeded &= CheckGPUResult(testNum, numTerms, "GPU", mpfHostResultYY, gpuResultYY);
         }
     }
 
@@ -799,7 +1023,7 @@ void TestTernaryOperatorTwoNumbersRaw (
         // With three numbers, there are 8 combinations of signs
         // 
 
-        /* {
+        {
             resetCopy();
             printTest(testNum);
             TestTernaryOperatorTwoNumbersRawNoSignChange<SharkFloatParams, sharkOperator>(
@@ -833,7 +1057,7 @@ void TestTernaryOperatorTwoNumbersRaw (
             TestTernaryOperatorTwoNumbersRawNoSignChange<SharkFloatParams, sharkOperator>(
                 testNum, xNumCopy, mpfXCopy.get(), mpfInputLen);
             testNum++;
-        }*/
+        }
 
         {
             resetCopy();
@@ -1566,7 +1790,7 @@ bool TestAllBinaryOp(int testBase) {
 
     // 2000s is multiply
     // 4000s is add
-    
+    //
     //if constexpr (includeSet1) {
     //    const auto set = testBase + 100;
     //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 10, "7", "19", "0");
@@ -1647,11 +1871,18 @@ bool TestAllBinaryOp(int testBase) {
     }
 
     if constexpr (sharkOperator == Operator::Add && SharkFloatParams::GlobalNumUint32 == 8) {
-        static constexpr auto SpecificTest1 = 255;
-        static constexpr auto SpecificTest2 = 256;
+        static constexpr auto SpecificTest1 = -129;
+        static constexpr auto SpecificTest2 = -128;
+        static constexpr auto SpecificTest3 = -127;
+        static constexpr auto SpecificTest4 = 255;
+        static constexpr auto SpecificTest5 = 256;
 
         TestTernarySpecial21<SharkFloatParams, sharkOperator>(0, SpecificTest1);
         TestTernarySpecial21<SharkFloatParams, sharkOperator>(0, SpecificTest2);
+        TestTernarySpecial21<SharkFloatParams, sharkOperator>(0, SpecificTest3);
+        TestTernarySpecial21<SharkFloatParams, sharkOperator>(0, SpecificTest4);
+        TestTernarySpecial21<SharkFloatParams, sharkOperator>(0, SpecificTest5);
+        //DebugBreak();
 
         for (auto i = -512; i < 512; i++) {
             if constexpr (SharkFloatParams::HostVerbose) {

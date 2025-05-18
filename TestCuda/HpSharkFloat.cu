@@ -232,7 +232,7 @@ MpfToHpGpu(
     number.IsNegative = (mpf_sgn(mpf_val) < 0);
 
     if constexpr (SharkFloatParams::HostVerbose) {
-        std::cout << "prec_bits: " << prec_bits << std::endl;
+        std::cout << "prec_bits: " << std::dec << prec_bits << std::endl;
     }
 
     std::vector<uint32_t> data;

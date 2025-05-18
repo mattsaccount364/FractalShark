@@ -802,21 +802,37 @@ ComputeABCComparison(
                     : uint64_t(signedXY);
             }
 
-            // 4) Find MSB of magXY to compute outExpRawXY
+            // 4) Find MSB of magXY (all 64 bits!) to compute outExpRawXY
+            auto clz64 = [](uint64_t v) {
+                // on GCC/Clang you could use __builtin_clzll(v), but here's a portable fallback:
+                if (v == 0) return 64;
+                int c = 0;
+                for (int b = 63; b >= 0; --b) {
+                    if (v & (1ull << b)) break;
+                    ++c;
+
+                }
+                return c;
+                };
+
             int32_t msd = -1;
-            uint32_t absAtMSD = 0;
+            uint64_t absAtMSD64 = 0;
             for (int32_t i = extDigits - 1; i >= 0; --i) {
                 if (magXY[i] != 0) {
                     msd = i;
-                    absAtMSD = static_cast<uint32_t>(magXY[i]);
+                    absAtMSD64 = magXY[i];
                     break;
+
                 }
+
             }
+
             if (msd < 0) {
                 outExpRawXY = -100000000;  // exact zero
             } else {
-                int32_t clz = CountLeadingZeros(absAtMSD);
-                int32_t bitIndex = msd * 32 + (31 - clz);
+                int32_t clz = clz64(absAtMSD64);
+                // now the “1” bit is at position (63-clz) within this 64-bit limb
+                int32_t bitIndex = msd * 32 + (63 - clz);
                 outExpRawXY = expXY - ((extDigits * 32 - 1) - bitIndex);
             }
 
@@ -1107,7 +1123,7 @@ AddHelper(
     const bool IsNegativeE = E_B->IsNegative;
 
     // --- Set up extended working precision ---
-    constexpr int32_t guard = 2;
+    constexpr int32_t guard = 4;
     constexpr int32_t numActualDigits = SharkFloatParams::GlobalNumUint32;
     constexpr int32_t numActualDigitsPlusGuard = SharkFloatParams::GlobalNumUint32 + guard;
     // Create extended arrays (little-endian, index 0 is LSB).
@@ -1410,21 +1426,39 @@ AddHelper(
         }
     }
 
+    // captures: numActualDigitsPlusGuard
+// captures: numActualDigitsPlusGuard
     auto handleFinalCarry = [&](
         int32_t &outExponent,
         uint32_t carry,
-        std::vector<uint32_t> &propagatedResult) {
+        std::vector<uint32_t> &propagatedResult
+        ) {
+            if (carry == 0) return;
 
-            if (carry > 0) {
-                outExponent += 1;
-                uint32_t nextBit = carry & 1U;
-                for (int32_t i = numActualDigitsPlusGuard - 1; i >= 0; i--) {
-                    uint32_t current = propagatedResult[i];
-                    propagatedResult[i] = (current >> 1) | (nextBit << 31);
-                    nextBit = current & 1;
-                }
+            // we only ever see carry==1 or carry==2
+            const int shift = (carry == 2 ? 2 : 1);
+            outExponent += shift;
+
+            // seed the bits that will be injected into the MS limb
+            // (carry is already only low 1 or 2 bits)
+            uint32_t highBits = carry;
+
+            // now walk from MS limb downward
+            for (int i = numActualDigitsPlusGuard - 1; i >= 0; --i) {
+                uint32_t w = propagatedResult[i];
+                // grab the low 'shift' bits to feed into the next iteration
+                uint32_t lowMask = (1u << shift) - 1;
+                uint32_t nextHighBits = w & lowMask;
+
+                // shift right and OR-in the bits carried from above
+                propagatedResult[i] = (w >> shift)
+                    | (highBits << (32 - shift));
+
+                highBits = nextHighBits;
             }
         };
+
+
 
     handleFinalCarry(outExponent_ABC, carry_ABC, propagatedResult_ABC);
     handleFinalCarry(outExponent_DE, carry_DE, propagatedResult_DE);

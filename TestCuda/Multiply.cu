@@ -2078,6 +2078,9 @@ __device__ void MultiplyHelperKaratsubaV2 (
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Invalid>(record, debugChecksumArray, grid, block);
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::ADigits>(record, debugChecksumArray, grid, block);
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BDigits>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::CDigits>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::DDigits>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::EDigits>(record, debugChecksumArray, grid, block);
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::AHalfHigh>(record, debugChecksumArray, grid, block);
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::AHalfLow>(record, debugChecksumArray, grid, block);
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BHalfHigh>(record, debugChecksumArray, grid, block);
@@ -2099,10 +2102,14 @@ __device__ void MultiplyHelperKaratsubaV2 (
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Final128XX>(record, debugChecksumArray, grid, block);
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Final128XY>(record, debugChecksumArray, grid, block);
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Final128YY>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::FinalAdd1>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::FinalAdd2>(record, debugChecksumArray, grid, block);
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offsetXX>(record, debugChecksumArray, grid, block);
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offsetXY>(record, debugChecksumArray, grid, block);
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offsetYY>(record, debugChecksumArray, grid, block);
-        static_assert(static_cast<int>(DebugStatePurpose::NumPurposes) == 27, "Unexpected number of purposes");
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_Add1>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_Add2>(record, debugChecksumArray, grid, block);
+        static_assert(static_cast<int32_t>(DebugStatePurpose::NumPurposes) == 34, "Unexpected number of purposes");
     }
 
     // Wait for the first batch of A to be loaded

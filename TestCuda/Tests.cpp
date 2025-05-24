@@ -94,10 +94,6 @@ bool DiffAgainstHostNonZero (
 
     bool testSucceeded = true;
 
-    I think this error detection is working?  It's kind of not tidy because
-        it calls the old implementation in the zero case.  This shold be cleaned
-        up.
-
     // Init a zero mpf:
     mpf_t mpfZero;
     mpf_init(mpfZero);
@@ -150,6 +146,7 @@ bool DiffAgainstHostNonZero (
     } else {
         // Host result is zero
 
+#if 0
         // For zero host result, use an absolute error threshold
         mpf_init2(acceptableError, totalPrecBits);
         mpf_set_ui(acceptableError, 1);
@@ -171,6 +168,8 @@ bool DiffAgainstHostNonZero (
         }
 
         mpf_clear(acceptableError);
+#endif
+        assert(false);
     }
 
     mpf_clear(mpfZero);
@@ -792,16 +791,19 @@ void TestTernaryOperatorTwoNumbersRawNoSignChange(
 
         if constexpr (sharkOperator == Operator::Add) {
             HpSharkAddComboResults<SharkFloatParams> combo;
-            combo.A = aNum;
-            combo.B = bNum;
+            combo.A_X2 = aNum;
+            combo.B_Y2 = bNum;
+            combo.C_A = cNum;
+            combo.D_2X = dNum;
+            combo.E_B = eNum;
 
             InvokeAddKernelCorrectness<SharkFloatParams, Operator::Add>(
                 timer,
                 combo,
                 &debugStatesCuda);
 
-            gpuResultXY1 = combo.Result1X2;
-            gpuResultXY2 = combo.Result2X2;
+            gpuResultXY1 = combo.Result1_A_B_C;
+            gpuResultXY2 = combo.Result2_D_E;
         } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
             HpSharkComboResults<SharkFloatParams> combo;
             combo.A = aNum;
@@ -1156,6 +1158,7 @@ void TestTernaryOperatorTwoNumbers (
 
     for (size_t i = 0; i < mpfInLen; ++i) {
         mpf_init(mpfCopy[i]);
+        mpf_set(mpfCopy[i], mpfIn[i]);
     }
 
     ClearConsole();
@@ -1192,6 +1195,7 @@ void TestTernaryOperatorTwoNumbers (
     auto resetCopy = [&]() {
         for (size_t i = 0; i < mpfInLen; ++i) {
             mpf_init(mpfCopy[i]);
+            mpf_set(mpfCopy[i], mpfIn[i]);
         }
     };
 
@@ -1786,24 +1790,24 @@ bool TestAllBinaryOp(int testBase) {
     constexpr bool includeSet5 = true;
     constexpr bool includeSet6 = true;
     constexpr bool includeSet10 = true;
-    constexpr bool includeSet11 = false;
+    constexpr bool includeSet11 = true;
 
     // 2000s is multiply
     // 4000s is add
     //
-    //if constexpr (includeSet1) {
-    //    const auto set = testBase + 100;
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 10, "7", "19", "0");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 20, "4294967295", "1", "4294967296");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 30, "4294967296", "1", "1");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 40, "4294967295", "4294967296", "1");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 50, "4294967296", "-1", "1");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 60, "18446744073709551615", "1", "1");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 70, "0", "0.1", "0.3");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 80, "0.1", "0", "0.1");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 90, "0", "0", "0");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 100, "0.1", "0.1", "0.1");
-    //}
+    if constexpr (includeSet1) {
+        const auto set = testBase + 100;
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 10, "7", "19", "0");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 20, "4294967295", "1", "4294967296");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 30, "4294967296", "1", "1");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 40, "4294967295", "4294967296", "1");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 50, "4294967296", "-1", "1");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 60, "18446744073709551615", "1", "1");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 70, "0", "0.1", "0.3");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 80, "0.1", "0", "0.1");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 90, "0", "0", "0");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 100, "0.1", "0.1", "0.1");
+    }
 
     if constexpr (includeSet2) {
         const auto set = testBase + 300;
@@ -1931,23 +1935,34 @@ bool TestAllBinaryOp(int testBase) {
     if constexpr (includeSet11) {
         auto x = std::make_unique<HpSharkFloat<SharkFloatParams>>();
         auto y = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+        auto z = std::make_unique<HpSharkFloat<SharkFloatParams>>();
 
         for (size_t counter = 0;; counter++) {
             if (counter % 2 == 0) {
                 x->GenerateRandomNumber();
                 y->GenerateRandomNumber();
+                z->GenerateRandomNumber();
             } else {
                 x->GenerateRandomNumber2();
                 y->GenerateRandomNumber2();
+                z->GenerateRandomNumber2();
             }
 
             if constexpr (SharkFloatParams::HostVerbose) {
                 std::cout << "x.Exponent: " << x->Exponent << ", neg: " << x->IsNegative << std::endl;
                 std::cout << "y.Exponent: " << y->Exponent << ", neg: " << y->IsNegative << std::endl;
+                std::cout << "z.Exponent: " << z->Exponent << ", neg: " << z->IsNegative << std::endl;
             }
+
             const std::string x_str = x->ToString();
             const std::string y_str = y->ToString();
-            TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(0, x_str.c_str(), y_str.c_str());
+            const std::string z_str = z->ToString();
+
+            TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+                0,
+                x_str.c_str(),
+                y_str.c_str(),
+                z_str.c_str());
         }
     }
 

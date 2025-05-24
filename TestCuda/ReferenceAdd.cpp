@@ -1070,10 +1070,10 @@ void Phase1_ABC(
     }
 
     if constexpr (SharkDebugChecksums) {
-        const auto &dbg = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2XY>(
+        const auto &debugResultState = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2XX>(
             debugStates, extResult_ABC.data(), extDigits);
         if constexpr (SharkFloatParams::HostVerbose) {
-            std::cout << "Phase1_ABC checksum: " << dbg.GetStr() << "\n";
+            std::cout << "Phase1_ABC checksum: " << debugResultState.GetStr() << "\n";
         }
     }
 
@@ -1123,7 +1123,7 @@ AddHelper(
     const bool IsNegativeE = E_B->IsNegative;
 
     // --- Set up extended working precision ---
-    constexpr int32_t guard = 4;
+    constexpr int32_t guard = 2;
     constexpr int32_t numActualDigits = SharkFloatParams::GlobalNumUint32;
     constexpr int32_t numActualDigitsPlusGuard = SharkFloatParams::GlobalNumUint32 + guard;
     // Create extended arrays (little-endian, index 0 is LSB).

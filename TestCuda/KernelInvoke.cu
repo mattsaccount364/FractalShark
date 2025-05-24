@@ -131,7 +131,6 @@ void InvokeAddKernelPerf(
 template<class SharkFloatParams, Operator sharkOperator>
 void InvokeMultiplyKernelCorrectness(
     BenchmarkTimer &timer,
-    std::function<void(void *[])> kernel,
     HpSharkComboResults<SharkFloatParams> &combo,
     std::vector<DebugStateRaw> *debugResults) {
 
@@ -201,11 +200,11 @@ void InvokeAddKernelCorrectness(
     cudaMemcpy(comboResults, &combo, sizeof(HpSharkAddComboResults<SharkFloatParams>), cudaMemcpyHostToDevice);
 
     if constexpr (!SharkTestInitCudaMemory) {
-        cudaMemset(comboResults->Result1X2, 0, sizeof(HpSharkAddComboResults<SharkFloatParams>));
-        cudaMemset(comboResults->Result2X2, 0, sizeof(HpSharkAddComboResults<SharkFloatParams>));
+        cudaMemset(&comboResults->Result1_A_B_C, 0, sizeof(HpSharkFloat<SharkFloatParams>));
+        cudaMemset(&comboResults->Result2_D_E, 0, sizeof(HpSharkFloat<SharkFloatParams>));
     } else {
-        cudaMemset(comboResults->Result1X2, 0xCD, sizeof(HpSharkAddComboResults<SharkFloatParams>));
-        cudaMemset(comboResults->Result2X2, 0xCD, sizeof(HpSharkAddComboResults<SharkFloatParams>));
+        cudaMemset(&comboResults->Result1_A_B_C, 0xCD, sizeof(HpSharkFloat<SharkFloatParams>));
+        cudaMemset(&comboResults->Result2_D_E, 0xCD, sizeof(HpSharkFloat<SharkFloatParams>));
     }
 
     constexpr auto BytesToAllocate =

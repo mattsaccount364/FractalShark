@@ -56,6 +56,9 @@ DebugStatePurposeStrings {
     "Invalid",
     "ADigits",
     "BDigits",
+    "CDigits",
+    "DDigits",
+    "EDigits",
     "AHalfHigh",
     "AHalfLow",
     "BHalfHigh",
@@ -77,9 +80,13 @@ DebugStatePurposeStrings {
     "Final128XX",
     "Final128XY",
     "Final128YY",
+    "FinalAdd1",
+    "FinalAdd2",
     "Result_offsetXX",
     "Result_offsetXY",
-    "Result_offsetYY"
+    "Result_offsetYY",
+    "Result_Add1",
+    "Result_Add2"
 };
 
 inline constexpr const char *

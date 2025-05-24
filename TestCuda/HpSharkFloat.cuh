@@ -27,7 +27,7 @@ static constexpr auto SharkMultiKernel = false;
 #endif
 
 // Define to enable GPU kernel compilation
-//#define SHARK_INCLUDE_KERNELS
+#define SHARK_INCLUDE_KERNELS
 // Set to false to bypass all GPU tests and only do reference/host-side
 #ifdef SHARK_INCLUDE_KERNELS
 static constexpr bool SharkTestGpu = true;
@@ -243,10 +243,13 @@ struct HpSharkComboResults {
 
 template<class SharkFloatParams>
 struct HpSharkAddComboResults {
-    HpSharkFloat<SharkFloatParams> A;
-    HpSharkFloat<SharkFloatParams> B;
-    HpSharkFloat<SharkFloatParams> Result1X2;
-    HpSharkFloat<SharkFloatParams> Result2X2;
+    HpSharkFloat<SharkFloatParams> A_X2;
+    HpSharkFloat<SharkFloatParams> B_Y2;
+    HpSharkFloat<SharkFloatParams> C_A;
+    HpSharkFloat<SharkFloatParams> D_2X;
+    HpSharkFloat<SharkFloatParams> E_B;
+    HpSharkFloat<SharkFloatParams> Result1_A_B_C;
+    HpSharkFloat<SharkFloatParams> Result2_D_E;
 };
 
 template<class SharkFloatParams>

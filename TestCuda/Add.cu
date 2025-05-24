@@ -212,10 +212,10 @@ GetShiftedNormalizedDigit (
 template<class SharkFloatParams>
 __device__ SharkForceInlineReleaseOnly void
 GetCorrespondingLimbs (
-    const uint32_t *extA,
+    const uint32_t *ext_A_X2,
     const int32_t actualASize,
     const int32_t extASize,
-    const uint32_t *extB,
+    const uint32_t *ext_B_Y2,
     const int32_t actualBSize,
     const int32_t extBSize,
     const int32_t shiftA,
@@ -228,9 +228,9 @@ GetCorrespondingLimbs (
     if (AIsBiggerMagnitude) {
         // A is larger: normalized A is used as is.
         // For B, we normalize and then shift right by 'diff'.
-        alignedA = GetNormalizedDigit(extA, actualASize, extASize, shiftA, index);
+        alignedA = GetNormalizedDigit(ext_A_X2, actualASize, extASize, shiftA, index);
         alignedB = GetShiftedNormalizedDigit<SharkFloatParams>(
-            extB,
+            ext_B_Y2,
             actualBSize,
             extBSize,
             shiftB,
@@ -239,9 +239,9 @@ GetCorrespondingLimbs (
     } else {
         // B is larger: normalized B is used as is.
         // For A, we normalize and shift right by 'diff'.
-        alignedB = GetNormalizedDigit(extB, actualBSize, extBSize, shiftB, index);
+        alignedB = GetNormalizedDigit(ext_B_Y2, actualBSize, extBSize, shiftB, index);
         alignedA = GetShiftedNormalizedDigit<SharkFloatParams>(
-            extA,
+            ext_A_X2,
             actualASize,
             extASize,
             shiftA,
@@ -256,9 +256,9 @@ CompareMagnitudes (
     int32_t effExpB,
     const int32_t actualDigits,
     const int32_t extDigits,
-    const uint32_t *extA,
+    const uint32_t *ext_A_X2,
     const int32_t shiftA,
-    const uint32_t *extB,
+    const uint32_t *ext_B_Y2,
     const int32_t shiftB) {
     bool AIsBiggerMagnitude;
 
@@ -269,8 +269,8 @@ CompareMagnitudes (
     } else {
         AIsBiggerMagnitude = false; // default if equal
         for (int32_t i = extDigits - 1; i >= 0; i--) {
-            uint32_t digitA = GetNormalizedDigit(extA, actualDigits, extDigits, shiftA, i);
-            uint32_t digitB = GetNormalizedDigit(extB, actualDigits, extDigits, shiftB, i);
+            uint32_t digitA = GetNormalizedDigit(ext_A_X2, actualDigits, extDigits, shiftA, i);
+            uint32_t digitB = GetNormalizedDigit(ext_B_Y2, actualDigits, extDigits, shiftB, i);
             if (digitA > digitB) {
                 AIsBiggerMagnitude = true;
                 break;
@@ -1252,11 +1252,26 @@ __device__ void AddHelper (
     int32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
     constexpr int32_t NewN = SharkFloatParams::GlobalNumUint32;
 
-    const auto *A = &combo->A;
-    const auto *B = &combo->B;
-    auto *OutXY = &combo->Result1X2;
-    const auto *extA = A->Digits;
-    const auto *extB = B->Digits;
+    const auto *A_X2 = &combo->A_X2;
+    const auto *B_Y2 = &combo->B_Y2;
+    const auto *C_A = &combo->C_A;
+    const auto *D_2X = &combo->D_2X;
+    const auto *E_B = &combo->E_B;
+
+    const auto *ext_A_X2 = combo->A_X2.Digits;
+    const auto *ext_B_Y2 = combo->B_Y2.Digits;
+    const auto *ext_C_A = combo->C_A.Digits;
+    const auto *ext_D_2X = combo->D_2X.Digits;
+    const auto *ext_E_B = combo->E_B.Digits;
+
+    const bool IsNegativeA = A_X2->IsNegative;
+    const bool IsNegativeB = !B_Y2->IsNegative; // A - B + C
+    const bool IsNegativeC = C_A->IsNegative;
+    const bool IsNegativeD = D_2X->IsNegative;
+    const bool IsNegativeE = E_B->IsNegative;
+
+    auto *Out_A_B_C = &combo->Result1_A_B_C;
+    auto *Out_D_E = &combo->Result2_D_E;
 
     constexpr auto GlobalSync_offset = 0;
     auto *SharkRestrict globalSync =
@@ -1293,6 +1308,9 @@ __device__ void AddHelper (
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Invalid>(record, debugChecksumArray, grid, block);
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::ADigits>(record, debugChecksumArray, grid, block);
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::BDigits>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::CDigits>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::DDigits>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::EDigits>(record, debugChecksumArray, grid, block);
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::AHalfHigh>(record, debugChecksumArray, grid, block);
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::AHalfLow>(record, debugChecksumArray, grid, block);
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::BHalfHigh>(record, debugChecksumArray, grid, block);
@@ -1314,33 +1332,43 @@ __device__ void AddHelper (
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Final128XX>(record, debugChecksumArray, grid, block);
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Final128XY>(record, debugChecksumArray, grid, block);
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Final128YY>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::FinalAdd1>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::FinalAdd2>(record, debugChecksumArray, grid, block);
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Result_offsetXX>(record, debugChecksumArray, grid, block);
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Result_offsetXY>(record, debugChecksumArray, grid, block);
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Result_offsetYY>(record, debugChecksumArray, grid, block);
-        static_assert(static_cast<int32_t>(DebugStatePurpose::NumPurposes) == 27, "Unexpected number of purposes");
+        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Result_Add1>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Result_Add2>(record, debugChecksumArray, grid, block);
+        static_assert(static_cast<int32_t>(DebugStatePurpose::NumPurposes) == 34, "Unexpected number of purposes");
 
         StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::ADigits, uint32_t>(
-            record, debugChecksumArray, grid, block, A->Digits, NewN);
+            record, debugChecksumArray, grid, block, A_X2->Digits, NewN);
         StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::BDigits, uint32_t>(
-            record, debugChecksumArray, grid, block, B->Digits, NewN);
+            record, debugChecksumArray, grid, block, B_Y2->Digits, NewN);
+        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::CDigits, uint32_t>(
+            record, debugChecksumArray, grid, block, C_A->Digits, NewN);
+        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::DDigits, uint32_t>(
+            record, debugChecksumArray, grid, block, D_2X->Digits, NewN);
+        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::EDigits, uint32_t>(
+            record, debugChecksumArray, grid, block, E_B->Digits, NewN);
 
         grid.sync();
     }
 
     // --- Extended Normalization using shift indices ---
-    const bool sameSign = (A->IsNegative == B->IsNegative);
+    const bool sameSign = (A_X2->IsNegative == B_Y2->IsNegative);
     bool normA_isZero = false, normB_isZero = false;
-    int32_t newAExponent = A->Exponent;
-    int32_t newBExponent = B->Exponent;
+    int32_t newAExponent = A_X2->Exponent;
+    int32_t newBExponent = B_Y2->Exponent;
     const int32_t shiftA = ExtendedNormalizeShiftIndex(
-        extA,
+        ext_A_X2,
         actualDigits,
         extDigits,
         newAExponent,
         normA_isZero);
 
     const int32_t shiftB = ExtendedNormalizeShiftIndex(
-        extB,
+        ext_B_Y2,
         actualDigits,
         extDigits,
         newBExponent,
@@ -1358,9 +1386,9 @@ __device__ void AddHelper (
         effExpB,
         actualDigits,
         extDigits,
-        extA,
+        ext_A_X2,
         shiftA,
-        extB,
+        ext_B_Y2,
         shiftB);
 
     const int32_t diff = AIsBiggerMagnitude ? (effExpA - effExpB) : (effExpB - effExpA);
@@ -1373,10 +1401,10 @@ __device__ void AddHelper (
         uint64_t prelim = 0;
         if (sameSign) {
             GetCorrespondingLimbs<SharkFloatParams>(
-                extA,
+                ext_A_X2,
                 actualDigits,
                 extDigits,
-                extB,
+                ext_B_Y2,
                 actualDigits,
                 extDigits,
                 shiftA,
@@ -1392,10 +1420,10 @@ __device__ void AddHelper (
             if (AIsBiggerMagnitude) {
                 uint64_t alignedA = 0, alignedB = 0;
                 GetCorrespondingLimbs<SharkFloatParams>(
-                    extA,
+                    ext_A_X2,
                     actualDigits,
                     extDigits,
-                    extB,
+                    ext_B_Y2,
                     actualDigits,
                     extDigits,
                     shiftA,
@@ -1410,10 +1438,10 @@ __device__ void AddHelper (
             } else {
                 uint64_t alignedA = 0, alignedB = 0;
                 GetCorrespondingLimbs<SharkFloatParams>(
-                    extA,
+                    ext_A_X2,
                     actualDigits,
                     extDigits,
-                    extB,
+                    ext_B_Y2,
                     actualDigits,
                     extDigits,
                     shiftA,
@@ -1460,7 +1488,7 @@ __device__ void AddHelper (
 
     if constexpr (SharkDebugChecksums) {
         grid.sync();
-        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Final128XY, uint64_t>(
+        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::FinalAdd2, uint64_t>(
             record, debugChecksumArray, grid, block, final128, extDigits);
         grid.sync();
     } else {
@@ -1510,12 +1538,12 @@ __device__ void AddHelper (
         for (int32_t i = tid; i < actualDigits; i += stride) {
             uint32_t lower = (i + wordShift < extDigits) ? final128[i + wordShift] : 0;
             uint32_t upper = (i + wordShift + 1 < extDigits) ? final128[i + wordShift + 1] : 0;
-            OutXY->Digits[i] = (bitShift == 0) ? lower : (lower >> bitShift) | (upper << (32 - bitShift));
+            Out_A_B_C->Digits[i] = (bitShift == 0) ? lower : (lower >> bitShift) | (upper << (32 - bitShift));
 
             if (i == actualDigits - 1) {
                 if (injectHighOrderBit) {
                     // Set the high-order bit of the last digit.
-                    OutXY->Digits[actualDigits - 1] |= (1u << 31);
+                    Out_A_B_C->Digits[actualDigits - 1] |= (1u << 31);
                 }
             }
         }
@@ -1529,7 +1557,7 @@ __device__ void AddHelper (
             int32_t srcIdx = i - wordShift;
             uint32_t lower = (srcIdx >= 0 && srcIdx < extDigits) ? final128[srcIdx] : 0;
             uint32_t upper = (srcIdx - 1 >= 0 && srcIdx - 1 < extDigits) ? final128[srcIdx - 1] : 0;
-            OutXY->Digits[i] = (bitShift == 0) ? lower : (lower << bitShift) | (upper >> (32 - bitShift));
+            Out_A_B_C->Digits[i] = (bitShift == 0) ? lower : (lower << bitShift) | (upper >> (32 - bitShift));
         }
 
         if (tid == 0) {
@@ -1539,20 +1567,20 @@ __device__ void AddHelper (
         // No shifting needed; simply copy.  Convert to uint32_t along the way
 
         for (int32_t i = tid; i < actualDigits; i += stride) {
-            OutXY->Digits[i] = final128[i];
+            Out_A_B_C->Digits[i] = final128[i];
         }
     }
 
     if (idx == 0) {
-        OutXY->Exponent = outExponent;
+        Out_A_B_C->Exponent = outExponent;
         // Set result sign.
-        OutXY->IsNegative = sameSign ? A->IsNegative : (AIsBiggerMagnitude ? A->IsNegative : B->IsNegative);
+        Out_A_B_C->IsNegative = sameSign ? A_X2->IsNegative : (AIsBiggerMagnitude ? A_X2->IsNegative : B_Y2->IsNegative);
     }
 
     if constexpr (SharkDebugChecksums) {
         grid.sync();
         StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Result_offsetXY, uint32_t>(
-            record, debugChecksumArray, grid, block, OutXY->Digits, actualDigits);
+            record, debugChecksumArray, grid, block, Out_A_B_C->Digits, actualDigits);
         grid.sync();
     } else {
         grid.sync();

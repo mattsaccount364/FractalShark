@@ -294,16 +294,14 @@ CompareMagnitudes2Way (
     const int32_t shiftA,
     const int32_t shiftB,
     const uint32_t *extA,
-    const uint32_t *extB,
-    int32_t &biasedExponentAB) {
+    const uint32_t *extB)
+{
     bool AIsBiggerMagnitude;
 
     if (effExpA > effExpB) {
         AIsBiggerMagnitude = true;
-        biasedExponentAB = effExpA;
     } else if (effExpA < effExpB) {
         AIsBiggerMagnitude = false;
-        biasedExponentAB = effExpB;
     } else {
         AIsBiggerMagnitude = false; // default if equal
         for (int32_t i = extDigits - 1; i >= 0; i--) {
@@ -311,11 +309,9 @@ CompareMagnitudes2Way (
             uint32_t digitB = GetNormalizedDigit(extB, actualDigits, extDigits, shiftB, i);
             if (digitA > digitB) {
                 AIsBiggerMagnitude = true;
-                biasedExponentAB = effExpA;
                 break;
             } else if (digitA < digitB) {
                 AIsBiggerMagnitude = false;
-                biasedExponentAB = effExpB;
                 break;
             }
         }
@@ -610,7 +606,8 @@ void Phase1_DE(
     const int32_t newEExponent,
     int32_t &outExponent_DE,
     std::vector<uint64_t> &extResult_D_E,
-    std::vector<DebugStateHost<SharkFloatParams>> &debugStates) {
+    std::vector<DebugStateHost<SharkFloatParams>> &debugStates)
+{
     const bool sameSignDE = (IsNegativeD == IsNegativeE);
     const int32_t diffDE = DIsBiggerMagnitude ? (effExpD - effExpE) : (effExpE - effExpD);
     outExponent_DE = DIsBiggerMagnitude ? newDExponent : newEExponent;
@@ -649,7 +646,7 @@ void Phase1_DE(
                     DIsBiggerMagnitude, diffDE, i,
                     alignedA, alignedB);
                 // Compute raw difference (which may be negative).
-                int64_t rawDiff = (int64_t)alignedA - (int64_t)alignedB;
+                const int64_t rawDiff = (int64_t)alignedA - (int64_t)alignedB;
                 extResult_D_E[i] = (uint64_t)rawDiff;
 
                 alignedDDebug.push_back(alignedA);
@@ -664,7 +661,7 @@ void Phase1_DE(
                     shiftD, shiftE,
                     DIsBiggerMagnitude, diffDE, i,
                     alignedA, alignedB);
-                int64_t rawDiff = (int64_t)alignedB - (int64_t)alignedA;
+                const int64_t rawDiff = (int64_t)alignedB - (int64_t)alignedA;
                 extResult_D_E[i] = (uint64_t)rawDiff;
 
                 alignedDDebug.push_back(alignedA);
@@ -770,13 +767,11 @@ ComputeABCComparison(
         bool &outXYgtZ
         ) {
             // 1) Determine which magnitude is larger (for alignment only)
-            int32_t dummyExp;
             bool XgtY = CompareMagnitudes2Way(
                 expX, expY,
                 actualDigits, extDigits,
                 shiftX, shiftY,
-                extX, extY,
-                dummyExp);
+                extX, extY);
 
             // 2) Compute exponent-diff and biased exponent
             int32_t diffXY = XgtY ? (expX - expY) : (expY - expX);
@@ -1322,7 +1317,6 @@ AddHelper(
 
     // D + E
     // If effective exponents differ, use them. If equal, compare normalized digits on the fly.
-    int32_t biasedExpDE = 0;
     const bool DIsBiggerMagnitude = CompareMagnitudes2Way(
         effExpD,
         effExpE,
@@ -1331,8 +1325,7 @@ AddHelper(
         shiftDLeftToGetMsb,
         shiftELeftToGetMsb,
         ext_D_2X,
-        ext_E_B,
-        biasedExpDE);
+        ext_E_B);
 
     if constexpr (SharkFloatParams::HostVerbose) {
         std::cout << "DIsBiggerMagnitude: " << DIsBiggerMagnitude << std::endl;

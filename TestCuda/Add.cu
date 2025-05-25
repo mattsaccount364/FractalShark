@@ -254,12 +254,12 @@ __device__ SharkForceInlineReleaseOnly bool
 CompareMagnitudes2Way (
     const int32_t effExpA,
     const int32_t effExpB,
-    const int32_t numActualDigits,
-    const int32_t numActualDigitsPlusGuard,
-    const uint32_t *ext_A_X2,
-    const int32_t shiftALeftToGetMsb,
-    const uint32_t *ext_B_Y2,
-    const int32_t shiftBLeftToGetMsb) {
+    const int32_t actualDigits,
+    const int32_t extDigits,
+    const int32_t shiftA,
+    const int32_t shiftB,
+    const uint32_t *extA,
+    const uint32_t *extB) {
     bool AIsBiggerMagnitude;
 
     if (effExpA > effExpB) {
@@ -268,9 +268,9 @@ CompareMagnitudes2Way (
         AIsBiggerMagnitude = false;
     } else {
         AIsBiggerMagnitude = false; // default if equal
-        for (int32_t i = numActualDigitsPlusGuard - 1; i >= 0; i--) {
-            uint32_t digitA = GetNormalizedDigit(ext_A_X2, numActualDigits, numActualDigitsPlusGuard, shiftALeftToGetMsb, i);
-            uint32_t digitB = GetNormalizedDigit(ext_B_Y2, numActualDigits, numActualDigitsPlusGuard, shiftBLeftToGetMsb, i);
+        for (int32_t i = extDigits - 1; i >= 0; i--) {
+            uint32_t digitA = GetNormalizedDigit(extA, actualDigits, extDigits, shiftA, i);
+            uint32_t digitB = GetNormalizedDigit(extB, actualDigits, extDigits, shiftB, i);
             if (digitA > digitB) {
                 AIsBiggerMagnitude = true;
                 break;
@@ -282,6 +282,78 @@ CompareMagnitudes2Way (
     }
 
     return AIsBiggerMagnitude;
+}
+
+
+// "Strict" ordering of three magnitudes (ignores exact ties - see note below)
+enum class ThreeWayMagnitude {
+    A_GT_B_GT_C,  // A > B > C
+    A_GT_C_GT_B,  // A > C > B
+    B_GT_A_GT_C,  // B > A > C
+    B_GT_C_GT_A,  // B > C > A
+    C_GT_A_GT_B,  // C > A > B
+    C_GT_B_GT_A   // C > B > A
+};
+
+__device__ ThreeWayMagnitude
+CompareMagnitudes3Way (
+    const int32_t effExpA,
+    const int32_t effExpB,
+    const int32_t effExpC,
+    const int32_t actualDigits,
+    const int32_t extDigits,
+    const int32_t shiftA,
+    const int32_t shiftB,
+    const int32_t shiftC,
+    const uint32_t *extA,
+    const uint32_t *extB,
+    const uint32_t *extC,
+    int32_t &outExp
+) {
+    // Helper: returns true if "first" is strictly bigger than "second"
+    auto cmp = [&](const uint32_t *e1, int32_t s1, int32_t exp1,
+        const uint32_t *e2, int32_t s2, int32_t exp2) {
+            if (exp1 != exp2)
+                return exp1 > exp2;
+            // exponents equal -> compare normalized digits high->low
+            for (int32_t i = extDigits - 1; i >= 0; --i) {
+                uint32_t d1 = GetNormalizedDigit(e1, actualDigits, extDigits, s1, i);
+                uint32_t d2 = GetNormalizedDigit(e2, actualDigits, extDigits, s2, i);
+                if (d1 != d2)
+                    return d1 > d2;
+            }
+            return false;  // treat exact equality as "not greater"
+        };
+
+    // 1) Is A the strict max?
+    if (cmp(extA, shiftA, effExpA, extB, shiftB, effExpB) &&
+        cmp(extA, shiftA, effExpA, extC, shiftC, effExpC)) {
+        // now order B vs C
+        outExp = effExpA;
+        if (cmp(extB, shiftB, effExpB, extC, shiftC, effExpC))
+            return ThreeWayMagnitude::A_GT_B_GT_C;
+        else
+            return ThreeWayMagnitude::A_GT_C_GT_B;
+    }
+    // 2) Is B the strict max?
+    else if (cmp(extB, shiftB, effExpB, extA, shiftA, effExpA) &&
+        cmp(extB, shiftB, effExpB, extC, shiftC, effExpC)) {
+        // now order A vs C
+        outExp = effExpB;
+        if (cmp(extA, shiftA, effExpA, extC, shiftC, effExpC))
+            return ThreeWayMagnitude::B_GT_A_GT_C;
+        else
+            return ThreeWayMagnitude::B_GT_C_GT_A;
+    }
+    // 3) Otherwise C is the (strict) max
+    else {
+        // order A vs B
+        outExp = effExpC;
+        if (cmp(extA, shiftA, effExpA, extB, shiftB, effExpB))
+            return ThreeWayMagnitude::C_GT_A_GT_B;
+        else
+            return ThreeWayMagnitude::C_GT_B_GT_A;
+    }
 }
 
 template<
@@ -412,6 +484,110 @@ __device__ inline GenProp Combine (
     out.g = right.g | (right.p & left.g);
     out.p = right.p & left.p;
     return out;
+}
+
+template<class SharkFloatParams, int32_t CallIndex>
+__device__ SharkForceInlineReleaseOnly void
+Phase1_DE (
+    cg::thread_block &block,
+    cg::grid_group &grid,
+    const RecordIt record,
+    const int32_t idx,
+    const bool DIsBiggerMagnitude,
+    const bool IsNegativeD,
+    const bool IsNegativeE,
+    const int32_t numActualDigitsPlusGuard,
+    const int32_t numActualDigits,
+    const auto *ext_D_2X,
+    const auto *ext_E_B,
+    const int32_t shiftD,
+    const int32_t shiftE,
+    const int32_t effExpD,
+    const int32_t effExpE,
+    const int32_t newDExponent,
+    const int32_t newEExponent,
+    int32_t &outExponent_DE,
+    uint64_t *final128,  // the extended result digits
+    DebugState<SharkFloatParams> *debugChecksumArray)
+{
+    const bool sameSignDE = (IsNegativeD == IsNegativeE);
+    const int32_t diffDE = DIsBiggerMagnitude ? (effExpD - effExpE) : (effExpE - effExpD);
+    outExponent_DE = DIsBiggerMagnitude ? newDExponent : newEExponent;
+
+    // --- Each thread computes its aligned limb.
+    for (int32_t i = idx; i < numActualDigitsPlusGuard; i += blockDim.x * gridDim.x) {
+        uint64_t alignedA = 0, alignedB = 0;
+
+        uint64_t prelim = 0;
+        if (sameSignDE) {
+            GetCorrespondingLimbs<SharkFloatParams>(
+                ext_D_2X,
+                numActualDigits,
+                numActualDigitsPlusGuard,
+                ext_E_B,
+                numActualDigits,
+                numActualDigitsPlusGuard,
+                shiftD,
+                shiftE,
+                DIsBiggerMagnitude,
+                diffDE,
+                i,
+                alignedA,
+                alignedB);
+            prelim = alignedA + alignedB;
+        } else {
+            // ---- Subtraction Branch ----
+            if (DIsBiggerMagnitude) {
+                uint64_t alignedA = 0, alignedB = 0;
+                GetCorrespondingLimbs<SharkFloatParams>(
+                    ext_D_2X,
+                    numActualDigits,
+                    numActualDigitsPlusGuard,
+                    ext_E_B,
+                    numActualDigits,
+                    numActualDigitsPlusGuard,
+                    shiftD,
+                    shiftE,
+                    DIsBiggerMagnitude,
+                    diffDE,
+                    i,
+                    alignedA,
+                    alignedB);
+                int64_t diffVal = (int64_t)alignedA - (int64_t)alignedB;
+                prelim = diffVal;
+            } else {
+                uint64_t alignedA = 0, alignedB = 0;
+                GetCorrespondingLimbs<SharkFloatParams>(
+                    ext_D_2X,
+                    numActualDigits,
+                    numActualDigitsPlusGuard,
+                    ext_E_B,
+                    numActualDigits,
+                    numActualDigitsPlusGuard,
+                    shiftD,
+                    shiftE,
+                    DIsBiggerMagnitude,
+                    diffDE,
+                    i,
+                    alignedA,
+                    alignedB);
+                const int64_t diffVal = (int64_t)alignedB - (int64_t)alignedA;
+                prelim = diffVal;
+            }
+        }
+
+        // Write preliminary result (without carry/borrow propagation) to global temporary.
+        final128[i] = prelim;
+    }
+
+    if constexpr (SharkDebugChecksums) {
+        grid.sync();
+        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z2XY, uint64_t>(
+            record, debugChecksumArray, grid, block, final128, numActualDigitsPlusGuard);
+        grid.sync();
+    } else {
+        grid.sync();
+    }
 }
 
 template <class SharkFloatParams>
@@ -1076,7 +1252,7 @@ CarryPropagationPPTry1Buggy (
 
 template <class SharkFloatParams>
 __device__ SharkForceInlineReleaseOnly void
-CarryPropagation (
+CarryPropagationDE (
     uint32_t *sharedData,
     uint32_t *globalSync,   // global sync array; element 0 is used for borrow/carry count
     uint64_t *final128,
@@ -1406,111 +1582,95 @@ __device__ void AddHelper (
         normE_isZero);
 
     // --- Compute Effective Exponents ---
-    const int32_t effExpA = normA_isZero ? -100'000'000 : newAExponent + (SharkFloatParams::GlobalNumUint32 * 32 - 32);
-    const int32_t effExpB = normB_isZero ? -100'000'000 : newBExponent + (SharkFloatParams::GlobalNumUint32 * 32 - 32);
+    const auto bias = (SharkFloatParams::GlobalNumUint32 * 32 - 32);
+    const int32_t effExpA = normA_isZero ? -100'000'000 : newAExponent + bias;
+    const int32_t effExpB = normB_isZero ? -100'000'000 : newBExponent + bias;
+    const int32_t effExpC = normC_isZero ? -100'000'000 : newCExponent + bias;
+    const int32_t effExpD = normD_isZero ? -100'000'000 : newDExponent + bias;
+    const int32_t effExpE = normE_isZero ? -100'000'000 : newEExponent + bias;
 
 
     // --- Determine which operand has larger magnitude ---
-    // If effective exponents differ, use them. If equal, compare normalized digits on the fly.
-    const bool AIsBiggerMagnitude = CompareMagnitudes2Way(
+
+    // Do a 3-way comparison of the other three operands.
+    // We need to compare A_X2, B_Y2, and C_A.
+    // The result is a 3-way ordering of the three operands.
+
+    // A, B, C:
+    int32_t biasedExpABC = 0;
+    const auto threeWayMagnitude = CompareMagnitudes3Way(
         effExpA,
         effExpB,
+        effExpC,
         numActualDigits,
         numActualDigitsPlusGuard,
-        ext_A_X2,
         shiftALeftToGetMsb,
+        shiftBLeftToGetMsb,
+        shiftCLeftToGetMsb,
+        ext_A_X2,
         ext_B_Y2,
-        shiftBLeftToGetMsb);
+        ext_C_A,
+        biasedExpABC);
 
-    const int32_t diff = AIsBiggerMagnitude ? (effExpA - effExpB) : (effExpB - effExpA);
-    int32_t outExponent = AIsBiggerMagnitude ? newAExponent : newBExponent;
+    int32_t outExponent_ABC = 0;
+    
+    /*
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    */
 
-    // --- Each thread computes its aligned limb.
-    for (int32_t i = idx; i < numActualDigitsPlusGuard; i += blockDim.x * gridDim.x) {
-        uint64_t alignedA = 0, alignedB = 0;
+    const bool DIsBiggerMagnitude = CompareMagnitudes2Way(
+        effExpD,
+        effExpE,
+        numActualDigits,
+        numActualDigitsPlusGuard,
+        shiftDLeftToGetMsb,
+        shiftELeftToGetMsb,
+        ext_D_2X,
+        ext_E_B);
 
-        uint64_t prelim = 0;
-        if (sameSign) {
-            GetCorrespondingLimbs<SharkFloatParams>(
-                ext_A_X2,
-                numActualDigits,
-                numActualDigitsPlusGuard,
-                ext_B_Y2,
-                numActualDigits,
-                numActualDigitsPlusGuard,
-                shiftALeftToGetMsb,
-                shiftBLeftToGetMsb,
-                AIsBiggerMagnitude,
-                diff,
-                i,
-                alignedA,
-                alignedB);
-            prelim = alignedA + alignedB;
-        } else {
-            // ---- Subtraction Branch ----
-            if (AIsBiggerMagnitude) {
-                uint64_t alignedA = 0, alignedB = 0;
-                GetCorrespondingLimbs<SharkFloatParams>(
-                    ext_A_X2,
-                    numActualDigits,
-                    numActualDigitsPlusGuard,
-                    ext_B_Y2,
-                    numActualDigits,
-                    numActualDigitsPlusGuard,
-                    shiftALeftToGetMsb,
-                    shiftBLeftToGetMsb,
-                    AIsBiggerMagnitude,
-                    diff,
-                    i,
-                    alignedA,
-                    alignedB);
-                int64_t diffVal = (int64_t)alignedA - (int64_t)alignedB;
-                prelim = diffVal;
-            } else {
-                uint64_t alignedA = 0, alignedB = 0;
-                GetCorrespondingLimbs<SharkFloatParams>(
-                    ext_A_X2,
-                    numActualDigits,
-                    numActualDigitsPlusGuard,
-                    ext_B_Y2,
-                    numActualDigits,
-                    numActualDigitsPlusGuard,
-                    shiftALeftToGetMsb,
-                    shiftBLeftToGetMsb,
-                    AIsBiggerMagnitude,
-                    diff,
-                    i,
-                    alignedA,
-                    alignedB);
-                int64_t diffVal = (int64_t)alignedB - (int64_t)alignedA;
-                prelim = diffVal;
-            }
-        }
-
-        // Write preliminary result (without carry/borrow propagation) to global temporary.
-        final128[i] = prelim;
-    }
-
-    if constexpr (SharkDebugChecksums) {
-        grid.sync();
-        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z2XY, uint64_t>(
-            record, debugChecksumArray, grid, block, final128, numActualDigitsPlusGuard);
-        grid.sync();
-    } else {
-        grid.sync();
-    }
+    int32_t outExponent_DE = 0;
+    Phase1_DE<SharkFloatParams, CallIndex>(
+        block,
+        grid,
+        record,
+        idx,
+        DIsBiggerMagnitude,
+        IsNegativeD,
+        IsNegativeE,
+        numActualDigitsPlusGuard,
+        numActualDigits,
+        ext_D_2X,
+        ext_E_B,
+        shiftDLeftToGetMsb,
+        shiftELeftToGetMsb,
+        effExpD,
+        effExpE,
+        newDExponent,
+        newEExponent,
+        outExponent_DE,
+        final128,  // the extended result digits
+        debugChecksumArray);
 
     int32_t shiftNeeded = 0;
     if constexpr (!SharkFloatParams::DisableCarryPropagation) {
         // --- Carry/Borrow Propagation ---
-        CarryPropagation<SharkFloatParams>(
+        CarryPropagationDE<SharkFloatParams>(
             sharedData,
             globalSync,
             final128,
             numActualDigitsPlusGuard,
             carry1,
             carry2,
-            outExponent,
+            outExponent_DE,
             shiftNeeded,
             sameSign,
             block,
@@ -1569,17 +1729,17 @@ __device__ void AddHelper (
         for (int32_t i = tid; i < numActualDigits; i += stride) {
             uint32_t lower = (i + wordShift < numActualDigitsPlusGuard) ? final128[i + wordShift] : 0;
             uint32_t upper = (i + wordShift + 1 < numActualDigitsPlusGuard) ? final128[i + wordShift + 1] : 0;
-            Out_A_B_C->Digits[i] = (bitShift == 0) ? lower : (lower >> bitShift) | (upper << (32 - bitShift));
+            Out_D_E->Digits[i] = (bitShift == 0) ? lower : (lower >> bitShift) | (upper << (32 - bitShift));
 
             if (i == numActualDigits - 1) {
                 if (injectHighOrderBit) {
                     // Set the high-order bit of the last digit.
-                    Out_A_B_C->Digits[numActualDigits - 1] |= (1u << 31);
+                    Out_D_E->Digits[numActualDigits - 1] |= (1u << 31);
                 }
             }
         }
 
-        outExponent += shiftNeeded;
+        outExponent_DE += shiftNeeded;
     } else if (shiftNeeded < 0) {
         int32_t wordShift = (-shiftNeeded) / 32;
         int32_t bitShift = (-shiftNeeded) % 32;
@@ -1588,30 +1748,30 @@ __device__ void AddHelper (
             int32_t srcIdx = i - wordShift;
             uint32_t lower = (srcIdx >= 0 && srcIdx < numActualDigitsPlusGuard) ? final128[srcIdx] : 0;
             uint32_t upper = (srcIdx - 1 >= 0 && srcIdx - 1 < numActualDigitsPlusGuard) ? final128[srcIdx - 1] : 0;
-            Out_A_B_C->Digits[i] = (bitShift == 0) ? lower : (lower << bitShift) | (upper >> (32 - bitShift));
+            Out_D_E->Digits[i] = (bitShift == 0) ? lower : (lower << bitShift) | (upper >> (32 - bitShift));
         }
 
         if (tid == 0) {
-            outExponent -= (-shiftNeeded);
+            outExponent_DE -= (-shiftNeeded);
         }
     } else {
         // No shifting needed; simply copy.  Convert to uint32_t along the way
 
         for (int32_t i = tid; i < numActualDigits; i += stride) {
-            Out_A_B_C->Digits[i] = final128[i];
+            Out_D_E->Digits[i] = final128[i];
         }
     }
 
     if (idx == 0) {
-        Out_A_B_C->Exponent = outExponent;
+        Out_D_E->Exponent = outExponent_DE;
         // Set result sign.
-        Out_A_B_C->IsNegative = sameSign ? A_X2->IsNegative : (AIsBiggerMagnitude ? A_X2->IsNegative : B_Y2->IsNegative);
+        Out_D_E->IsNegative = sameSign ? A_X2->IsNegative : (DIsBiggerMagnitude ? A_X2->IsNegative : B_Y2->IsNegative);
     }
 
     if constexpr (SharkDebugChecksums) {
         grid.sync();
-        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Result_offsetXY, uint32_t>(
-            record, debugChecksumArray, grid, block, Out_A_B_C->Digits, numActualDigits);
+        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Result_Add2, uint32_t>(
+            record, debugChecksumArray, grid, block, Out_D_E->Digits, numActualDigits);
         grid.sync();
     } else {
         grid.sync();

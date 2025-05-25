@@ -1123,7 +1123,7 @@ AddHelper(
     const bool IsNegativeE = E_B->IsNegative;
 
     // --- Set up extended working precision ---
-    constexpr int32_t guard = 2;
+    constexpr int32_t guard = 4;
     constexpr int32_t numActualDigits = SharkFloatParams::GlobalNumUint32;
     constexpr int32_t numActualDigitsPlusGuard = SharkFloatParams::GlobalNumUint32 + guard;
     // Create extended arrays (little-endian, index 0 is LSB).

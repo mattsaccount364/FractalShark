@@ -600,7 +600,7 @@ void Phase1_DE(
     const bool IsNegativeE,
     const int32_t extDigits,
     const int32_t actualDigits,
-    const auto *ext_D_2x,
+    const auto *ext_D_2X,
     const auto *ext_E_B,
     const int32_t shiftD,
     const int32_t shiftE,
@@ -627,7 +627,7 @@ void Phase1_DE(
         for (int32_t i = 0; i < extDigits; i++) {
             uint64_t alignedA = 0, alignedB = 0;
             GetCorrespondingLimbs<SharkFloatParams>(
-                ext_D_2x, actualDigits, extDigits,
+                ext_D_2X, actualDigits, extDigits,
                 ext_E_B, actualDigits, extDigits,
                 shiftD, shiftE,
                 DIsBiggerMagnitude, diffDE, i,
@@ -643,7 +643,7 @@ void Phase1_DE(
             for (int32_t i = 0; i < extDigits; i++) {
                 uint64_t alignedA = 0, alignedB = 0;
                 GetCorrespondingLimbs<SharkFloatParams>(
-                    ext_D_2x, actualDigits, extDigits,
+                    ext_D_2X, actualDigits, extDigits,
                     ext_E_B, actualDigits, extDigits,
                     shiftD, shiftE,
                     DIsBiggerMagnitude, diffDE, i,
@@ -659,7 +659,7 @@ void Phase1_DE(
             for (int32_t i = 0; i < extDigits; i++) {
                 uint64_t alignedA = 0, alignedB = 0;
                 GetCorrespondingLimbs<SharkFloatParams>(
-                    ext_D_2x, actualDigits, extDigits,
+                    ext_D_2X, actualDigits, extDigits,
                     ext_E_B, actualDigits, extDigits,
                     shiftD, shiftE,
                     DIsBiggerMagnitude, diffDE, i,
@@ -1113,7 +1113,7 @@ AddHelper(
     const auto *ext_A_X2 = A_X2->Digits;
     const auto *ext_B_Y2 = B_Y2->Digits;
     const auto *ext_C_A = C_A->Digits;
-    const auto *ext_D_2x = D_2X->Digits;
+    const auto *ext_D_2X = D_2X->Digits;
     const auto *ext_E_B = E_B->Digits;
 
     const bool IsNegativeA = A_X2->IsNegative;
@@ -1145,9 +1145,9 @@ AddHelper(
         std::cout << "ext_C_A exponent: " << C_A->Exponent << std::endl;
         std::cout << "ext_C_A sign: " << (IsNegativeC ? "-" : "+") << std::endl;
 
-        std::cout << "ext_D_2x: " << VectorUintToHexString(ext_D_2x, numActualDigits) << std::endl;
-        std::cout << "ext_D_2x exponent: " << D_2X->Exponent << std::endl;
-        std::cout << "ext_D_2x sign: " << (IsNegativeD ? "-" : "+") << std::endl;
+        std::cout << "ext_D_2X: " << VectorUintToHexString(ext_D_2X, numActualDigits) << std::endl;
+        std::cout << "ext_D_2X exponent: " << D_2X->Exponent << std::endl;
+        std::cout << "ext_D_2X sign: " << (IsNegativeD ? "-" : "+") << std::endl;
 
         std::cout << "ext_E_B: " << VectorUintToHexString(ext_E_B, numActualDigits) << std::endl;
         std::cout << "ext_E_B exponent: " << E_B->Exponent << std::endl;
@@ -1168,7 +1168,7 @@ AddHelper(
             debugStates, ext_C_A, numActualDigits);
 
         const auto &debugDState = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::DDigits>(
-            debugStates, ext_D_2x, numActualDigits);
+            debugStates, ext_D_2X, numActualDigits);
 
         const auto &debugEState = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::EDigits>(
             debugStates, ext_E_B, numActualDigits);
@@ -1218,7 +1218,7 @@ AddHelper(
         normC_isZero);
 
     const int32_t shiftDLeftToGetMsb = ExtendedNormalizeShiftIndex(
-        ext_D_2x,
+        ext_D_2X,
         numActualDigits,
         numActualDigitsPlusGuard,
         newDExponent,
@@ -1241,7 +1241,7 @@ AddHelper(
         std::cout << "ext_C_A after normalization: " << VectorUintToHexString(ext_C_A, numActualDigits) << std::endl;
         std::cout << "shiftCLeftToGetMsb: " << shiftCLeftToGetMsb << std::endl;
 
-        std::cout << "ext_D_2x after normalization: " << VectorUintToHexString(ext_D_2x, numActualDigits) << std::endl;
+        std::cout << "ext_D_2X after normalization: " << VectorUintToHexString(ext_D_2X, numActualDigits) << std::endl;
         std::cout << "shiftDLeftToGetMsb: " << shiftDLeftToGetMsb << std::endl;
 
         std::cout << "ext_E_B after normalization: " << VectorUintToHexString(ext_E_B, numActualDigits) << std::endl;
@@ -1330,7 +1330,7 @@ AddHelper(
         numActualDigitsPlusGuard,
         shiftDLeftToGetMsb,
         shiftELeftToGetMsb,
-        ext_D_2x,
+        ext_D_2X,
         ext_E_B,
         biasedExpDE);
 
@@ -1346,7 +1346,7 @@ AddHelper(
         IsNegativeE,
         numActualDigitsPlusGuard,
         numActualDigits,
-        ext_D_2x,
+        ext_D_2X,
         ext_E_B,
         shiftDLeftToGetMsb,
         shiftELeftToGetMsb,

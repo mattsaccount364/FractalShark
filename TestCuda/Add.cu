@@ -46,16 +46,16 @@ ShiftRight (
 __device__ SharkForceInlineReleaseOnly uint32_t
 ShiftLeft (
     const uint32_t *digits,
-    const int32_t actualDigits,
-    const int32_t extDigits,
+    const int32_t numActualDigits,
+    const int32_t numActualDigitsPlusGuard,
     const int32_t shiftBits,
     const int32_t idx) {
     const int32_t shiftWords = shiftBits / 32;
     const int32_t shiftBitsMod = shiftBits % 32;
     const int32_t srcIdx = idx - shiftWords;
 
-    int32_t srcDigitLower = (srcIdx >= 0 && srcIdx < actualDigits) ? digits[srcIdx] : 0;
-    int32_t srcDigitUpper = (srcIdx - 1 >= 0 && srcIdx - 1 < actualDigits) ? digits[srcIdx - 1] : 0;
+    int32_t srcDigitLower = (srcIdx >= 0 && srcIdx < numActualDigits) ? digits[srcIdx] : 0;
+    int32_t srcDigitUpper = (srcIdx - 1 >= 0 && srcIdx - 1 < numActualDigits) ? digits[srcIdx - 1] : 0;
 
     const uint32_t lower = (srcIdx >= 0) ? srcDigitLower : 0;
     const uint32_t upper = (srcIdx - 1 >= 0) ? srcDigitUpper : 0;
@@ -108,29 +108,29 @@ MultiWordRightShift_LittleEndian (
 __device__ SharkForceInlineReleaseOnly void
 MultiWordLeftShift_LittleEndian (
     const uint32_t *in,
-    const int32_t extDigits,
-    const int32_t actualDigits,
+    const int32_t numActualDigitsPlusGuard,
+    const int32_t numActualDigits,
     const int32_t L,
     uint32_t *out,
     const int32_t outSz) {
-    assert(extDigits >= outSz);
+    assert(numActualDigitsPlusGuard >= outSz);
 
     for (int32_t i = 0; i < outSz; i++) {
-        out[i] = ShiftLeft(in, actualDigits, extDigits, L, i);
+        out[i] = ShiftLeft(in, numActualDigits, numActualDigitsPlusGuard, L, i);
     }
 }
 
 __device__ SharkForceInlineReleaseOnly uint32_t
 GetExtLimb (
     const uint32_t *ext,
-    const int32_t actualDigits,
-    const int32_t extDigits,
+    const int32_t numActualDigits,
+    const int32_t numActualDigitsPlusGuard,
     const int32_t idx) {
 
-    if (idx < actualDigits) {
+    if (idx < numActualDigits) {
         return ext[idx];
     } else {
-        assert(idx < extDigits);
+        assert(idx < numActualDigitsPlusGuard);
         return 0;
     }
 }
@@ -146,23 +146,23 @@ GetExtLimb (
 __device__ SharkForceInlineReleaseOnly int32_t
 ExtendedNormalizeShiftIndex (
     const uint32_t *ext,
-    const int32_t actualDigits,
-    const int32_t extDigits,
+    const int32_t numActualDigits,
+    const int32_t numActualDigitsPlusGuard,
     int32_t &storedExp,
     bool &isZero) {
-    int32_t msd = extDigits - 1;
-    while (msd >= 0 && GetExtLimb(ext, actualDigits, extDigits, msd) == 0)
+    int32_t msd = numActualDigitsPlusGuard - 1;
+    while (msd >= 0 && GetExtLimb(ext, numActualDigits, numActualDigitsPlusGuard, msd) == 0)
         msd--;
     if (msd < 0) {
         isZero = true;
         return 0;  // For zero, the shift offset is irrelevant.
     }
     isZero = false;
-    const int32_t clz = CountLeadingZeros(GetExtLimb(ext, actualDigits, extDigits, msd));
+    const int32_t clz = CountLeadingZeros(GetExtLimb(ext, numActualDigits, numActualDigitsPlusGuard, msd));
     // In little-endian, the overall bit index of the MSB is:
     //    current_msb = msd * 32 + (31 - clz)
     const int32_t current_msb = msd * 32 + (31 - clz);
-    const int32_t totalExtBits = extDigits * 32;
+    const int32_t totalExtBits = numActualDigitsPlusGuard * 32;
     // Compute the left-shift needed so that the MSB moves to bit (totalExtBits - 1).
     const int32_t L = (totalExtBits - 1) - current_msb;
     // Adjust the exponent as if we had shifted the number left by L bits.
@@ -178,11 +178,11 @@ ExtendedNormalizeShiftIndex (
 __device__ SharkForceInlineReleaseOnly uint32_t
 GetNormalizedDigit (
     const uint32_t *ext,
-    const int32_t actualDigits,
-    const int32_t extDigits,
+    const int32_t numActualDigits,
+    const int32_t numActualDigitsPlusGuard,
     const int32_t shiftOffset,
     const int32_t idx) {
-    return ShiftLeft(ext, actualDigits, extDigits, shiftOffset, idx);
+    return ShiftLeft(ext, numActualDigits, numActualDigitsPlusGuard, shiftOffset, idx);
 }
 
 // New helper: Computes the aligned digit for the normalized value on the fly.
@@ -191,18 +191,18 @@ template <class SharkFloatParams>
 __device__ SharkForceInlineReleaseOnly uint32_t
 GetShiftedNormalizedDigit (
     const uint32_t *ext,
-    const int32_t actualDigits,
-    const int32_t extDigits,
+    const int32_t numActualDigits,
+    const int32_t numActualDigitsPlusGuard,
     const int32_t shiftOffset,
     const int32_t diff,
     const int32_t idx) {
     // const int32_t n = SharkFloatParams::GlobalNumUint32; // normalized length
     const int32_t wordShift = diff / 32;
     const int32_t bitShift = diff % 32;
-    const uint32_t lower = (idx + wordShift < extDigits) ?
-        GetNormalizedDigit(ext, actualDigits, extDigits, shiftOffset, idx + wordShift) : 0;
-    const uint32_t upper = (idx + wordShift + 1 < extDigits) ?
-        GetNormalizedDigit(ext, actualDigits, extDigits, shiftOffset, idx + wordShift + 1) : 0;
+    const uint32_t lower = (idx + wordShift < numActualDigitsPlusGuard) ?
+        GetNormalizedDigit(ext, numActualDigits, numActualDigitsPlusGuard, shiftOffset, idx + wordShift) : 0;
+    const uint32_t upper = (idx + wordShift + 1 < numActualDigitsPlusGuard) ?
+        GetNormalizedDigit(ext, numActualDigits, numActualDigitsPlusGuard, shiftOffset, idx + wordShift + 1) : 0;
     if (bitShift == 0)
         return lower;
     else
@@ -218,8 +218,8 @@ GetCorrespondingLimbs (
     const uint32_t *ext_B_Y2,
     const int32_t actualBSize,
     const int32_t extBSize,
-    const int32_t shiftA,
-    const int32_t shiftB,
+    const int32_t shiftALeftToGetMsb,
+    const int32_t shiftBLeftToGetMsb,
     const bool AIsBiggerMagnitude,
     const int32_t diff,
     const int32_t index,
@@ -228,38 +228,38 @@ GetCorrespondingLimbs (
     if (AIsBiggerMagnitude) {
         // A is larger: normalized A is used as is.
         // For B, we normalize and then shift right by 'diff'.
-        alignedA = GetNormalizedDigit(ext_A_X2, actualASize, extASize, shiftA, index);
+        alignedA = GetNormalizedDigit(ext_A_X2, actualASize, extASize, shiftALeftToGetMsb, index);
         alignedB = GetShiftedNormalizedDigit<SharkFloatParams>(
             ext_B_Y2,
             actualBSize,
             extBSize,
-            shiftB,
+            shiftBLeftToGetMsb,
             diff,
             index);
     } else {
         // B is larger: normalized B is used as is.
         // For A, we normalize and shift right by 'diff'.
-        alignedB = GetNormalizedDigit(ext_B_Y2, actualBSize, extBSize, shiftB, index);
+        alignedB = GetNormalizedDigit(ext_B_Y2, actualBSize, extBSize, shiftBLeftToGetMsb, index);
         alignedA = GetShiftedNormalizedDigit<SharkFloatParams>(
             ext_A_X2,
             actualASize,
             extASize,
-            shiftA,
+            shiftALeftToGetMsb,
             diff,
             index);
     }
 }
 
 __device__ SharkForceInlineReleaseOnly bool
-CompareMagnitudes (
-    int32_t effExpA,
-    int32_t effExpB,
-    const int32_t actualDigits,
-    const int32_t extDigits,
+CompareMagnitudes2Way (
+    const int32_t effExpA,
+    const int32_t effExpB,
+    const int32_t numActualDigits,
+    const int32_t numActualDigitsPlusGuard,
     const uint32_t *ext_A_X2,
-    const int32_t shiftA,
+    const int32_t shiftALeftToGetMsb,
     const uint32_t *ext_B_Y2,
-    const int32_t shiftB) {
+    const int32_t shiftBLeftToGetMsb) {
     bool AIsBiggerMagnitude;
 
     if (effExpA > effExpB) {
@@ -268,9 +268,9 @@ CompareMagnitudes (
         AIsBiggerMagnitude = false;
     } else {
         AIsBiggerMagnitude = false; // default if equal
-        for (int32_t i = extDigits - 1; i >= 0; i--) {
-            uint32_t digitA = GetNormalizedDigit(ext_A_X2, actualDigits, extDigits, shiftA, i);
-            uint32_t digitB = GetNormalizedDigit(ext_B_Y2, actualDigits, extDigits, shiftB, i);
+        for (int32_t i = numActualDigitsPlusGuard - 1; i >= 0; i--) {
+            uint32_t digitA = GetNormalizedDigit(ext_A_X2, numActualDigits, numActualDigitsPlusGuard, shiftALeftToGetMsb, i);
+            uint32_t digitB = GetNormalizedDigit(ext_B_Y2, numActualDigits, numActualDigitsPlusGuard, shiftBLeftToGetMsb, i);
             if (digitA > digitB) {
                 AIsBiggerMagnitude = true;
                 break;
@@ -330,8 +330,8 @@ SerialCarryPropagation (
     uint32_t *sharedData,
     uint32_t *globalSync,
     uint64_t *final128,
-    const int32_t extDigits,
-    uint32_t *carry,      // global memory array for intermediate carries (length extDigits+1)
+    const int32_t numActualDigitsPlusGuard,
+    uint32_t *carry,      // global memory array for intermediate carries (length numActualDigitsPlusGuard+1)
     int32_t &outExponent,  // note: if you need the updated exponent outside, you might pass this by reference
     bool sameSign,
     cg::thread_block &block,
@@ -343,7 +343,7 @@ SerialCarryPropagation (
         if (sameSign) {
             // Addition: propagate carry.
             uint64_t carry = 0;
-            for (int32_t i = 0; i < extDigits; i++) {
+            for (int32_t i = 0; i < numActualDigitsPlusGuard; i++) {
                 uint64_t sum = (uint64_t)final128[i] + carry;
                 final128[i] = (uint32_t)(sum & 0xFFFFFFFF);
                 carry = sum >> 32;
@@ -353,7 +353,7 @@ SerialCarryPropagation (
                 outExponent += 1;
                 // Right-shift the extended result by one bit.
                 uint32_t nextBit = finalCarry & 1;
-                for (int32_t i = extDigits - 1; i >= 0; i--) {
+                for (int32_t i = numActualDigitsPlusGuard - 1; i >= 0; i--) {
                     uint32_t current = final128[i];
                     final128[i] = (current >> 1) | (nextBit << 31);
                     nextBit = current & 1;
@@ -362,7 +362,7 @@ SerialCarryPropagation (
         } else {
             // Subtraction: propagate borrow.
             uint32_t borrow = 0;
-            for (int32_t i = 0; i < extDigits; i++) {
+            for (int32_t i = 0; i < numActualDigitsPlusGuard; i++) {
                 int64_t diffVal = (int64_t)final128[i] - borrow;
                 if (diffVal < 0) {
                     diffVal += ((uint64_t)1 << 32);
@@ -419,7 +419,7 @@ __device__ inline void CarryPropagationPP3 (
     uint32_t *sharedData,   // allocated with at least 2*n*sizeof(uint32_t); unused here.
     uint32_t *globalSync,   // unused (provided for interface compatibility)
     uint64_t *final128,     // the extended result digits
-    const int32_t extDigits,  // number of digits in final128 to process
+    const int32_t numActualDigitsPlusGuard,  // number of digits in final128 to process
     uint32_t *carry1,         // will be reinterpreted as an array of GenProp (working vector)
     uint32_t *carry2,         // will be reinterpreted as an array of GenProp (scratch buffer)
     int32_t &outExponent,     // (unchanged; provided for interface compatibility)
@@ -440,7 +440,7 @@ __device__ inline void CarryPropagationPP3 (
     if (grid.thread_rank() == 0) *carries_remaining = 1;
 
     // zero out both carry buffers
-    for (int32_t i = globalIdx; i <= extDigits; i += stride) {
+    for (int32_t i = globalIdx; i <= numActualDigitsPlusGuard; i += stride) {
         carry1[i] = carry2[i] = 0;
     }
     grid.sync();
@@ -461,7 +461,7 @@ __device__ inline void CarryPropagationPP3 (
         uint64_t *final128,
         uint32_t *carries_remaining,
         int32_t globalIdx,
-        int32_t extDigits,
+        int32_t numActualDigitsPlusGuard,
         bool    sameSign,
         uint32_t *&curCarry,
         uint32_t *&nextCarry
@@ -482,8 +482,8 @@ __device__ inline void CarryPropagationPP3 (
         const auto numBlocks = grid.group_dim().x;
         const auto physicalWarpsPerBlock = (block.size() + W - 1) / W;
         //const auto numPhysicalWarps = physicalWarpsPerBlock * numBlocks;
-        //const auto numLogicalWarpsRequired = (extDigits + (W - 1)) / W;
-        const auto chunksRequired = (extDigits + grid.size() - 1) / grid.size();
+        //const auto numLogicalWarpsRequired = (numActualDigitsPlusGuard + (W - 1)) / W;
+        const auto chunksRequired = (numActualDigitsPlusGuard + grid.size() - 1) / grid.size();
 
         // each thread's flat ID
         const auto tid = block.thread_index().x + block.group_index().x * blockDim.x;
@@ -501,7 +501,7 @@ __device__ inline void CarryPropagationPP3 (
         for (int chunk = 0; chunk < chunksRequired; chunk++) {
             const auto base = chunk * totalThreads;
             const auto i = base + physicalWarpsPerBlock * warpIdInBlock + lane;
-            const bool doWork = (i >= base) && (i < extDigits);
+            const bool doWork = (i >= base) && (i < numActualDigitsPlusGuard);
 
             uint32_t sum = 0, carry = 0;
             if (doWork) {
@@ -580,7 +580,7 @@ __device__ inline void CarryPropagationPP3 (
                 final128,
                 carries_remaining_global,
                 globalIdx,
-                extDigits,
+                numActualDigitsPlusGuard,
                 sameSign,
                 curCarry,
                 nextCarry
@@ -603,13 +603,13 @@ __device__ inline void CarryPropagationPP3 (
 
             uint32_t totalNewCarry = 0;
             // Each thread updates its assigned digits in a grid-stride loop.
-            for (int32_t i = globalIdx; i < extDigits; i += stride) {
+            for (int32_t i = globalIdx; i < numActualDigitsPlusGuard; i += stride) {
                 uint32_t incoming = (i == 0) ? 0u : curCarry[i];
                 uint64_t sum = final128[i] + incoming;
                 uint32_t newDigit = (uint32_t)(sum & 0xFFFFFFFFu);
                 uint32_t newCarry = (uint32_t)(sum >> 32);
                 final128[i] = newDigit;
-                if (i < extDigits - 1) {
+                if (i < numActualDigitsPlusGuard - 1) {
                     nextCarry[i + 1] = newCarry;
                 } else {
                     // Always merge the new carry with the previous final carry.
@@ -635,7 +635,7 @@ __device__ inline void CarryPropagationPP3 (
         }
 
         // After the loop, thread 0 checks if a final carry remains.
-        uint32_t finalCarry = curCarry[extDigits];
+        uint32_t finalCarry = curCarry[numActualDigitsPlusGuard];
         if (finalCarry > 0u) {
             finalShiftRight = 1;
         }
@@ -650,7 +650,7 @@ __device__ inline void CarryPropagationPP3 (
                 final128,
                 carries_remaining_global,
                 globalIdx,
-                extDigits,
+                numActualDigitsPlusGuard,
                 sameSign,
                 curCarry,
                 nextCarry
@@ -674,7 +674,7 @@ __device__ inline void CarryPropagationPP3 (
 
             uint32_t totalNewBorrow = 0;
             // Each thread processes its grid-stride subset.
-            for (int32_t i = globalIdx; i < extDigits; i += stride) {
+            for (int32_t i = globalIdx; i < numActualDigitsPlusGuard; i += stride) {
                 // For digit 0, no incoming borrow.
                 uint32_t incoming = (i == 0) ? 0u : curCarry[i];
                 int64_t diffVal = (int64_t)final128[i] - incoming;
@@ -707,7 +707,7 @@ __device__ inline void CarryPropagationPP3 (
 
         // Finally, thread 0 checks that no borrow remains.
         if (globalIdx == 0) {
-            assert(curCarry[extDigits] == 0);
+            assert(curCarry[numActualDigitsPlusGuard] == 0);
         }
     }
 
@@ -723,7 +723,7 @@ __device__ inline void CarryPropagationPP2 (
     uint32_t *sharedData,   // allocated with at least 2*n*sizeof(uint32_t); unused here.
     uint32_t *globalSync,   // unused (provided for interface compatibility)
     uint64_t *final128,     // the extended result digits
-    const int32_t extDigits,  // number of digits in final128 to process
+    const int32_t numActualDigitsPlusGuard,  // number of digits in final128 to process
     uint32_t *carry1,         // will be reinterpreted as an array of GenProp (working vector)
     uint32_t *carry2,         // will be reinterpreted as an array of GenProp (scratch buffer)
     int32_t &outExponent,     // (unchanged; provided for interface compatibility)
@@ -750,7 +750,7 @@ __device__ inline void CarryPropagationPP2 (
     //   working[i].g = (int64_t(final128[i]) < 0) ? 1 : 0;
     //   working[i].p = ((low 32 bits == 0) && (high 32 bits == 0)) ? 1 : 0;
     //--------------------------------------------------------------------------
-    for (int32_t i = tid; i < extDigits; i += totalThreads) {
+    for (int32_t i = tid; i < numActualDigitsPlusGuard; i += totalThreads) {
         uint64_t digit = final128[i];
         uint32_t lo = static_cast<uint32_t>(digit);
         uint32_t hi = static_cast<uint32_t>(digit >> 32);
@@ -768,16 +768,16 @@ __device__ inline void CarryPropagationPP2 (
     //--------------------------------------------------------------------------
     // Phase 2: Perform an inclusive scan on the working vector.
     //
-    // We perform log2(extDigits) passes. In each pass, each thread processes 
+    // We perform log2(numActualDigitsPlusGuard) passes. In each pass, each thread processes 
     // one or more elements via a grid-stride loop. For each element i >= offset,
     // the new signal is computed as:
     //    scratch[i] = Combine(working[i-offset], working[i])
     // Otherwise, we simply copy working[i] to scratch[i].
     // Then we swap working and scratch.
     //--------------------------------------------------------------------------
-    if (extDigits > 1) {
-        for (int32_t offset = 1; offset < extDigits; offset *= 2) {
-            for (int32_t i = tid; i < extDigits; i += totalThreads) {
+    if (numActualDigitsPlusGuard > 1) {
+        for (int32_t offset = 1; offset < numActualDigitsPlusGuard; offset *= 2) {
+            for (int32_t i = tid; i < numActualDigitsPlusGuard; i += totalThreads) {
                 if (i >= offset) {
                     scratch[i] = Combine(working[i - offset], working[i]);
                 } else {
@@ -793,7 +793,7 @@ __device__ inline void CarryPropagationPP2 (
             grid.sync();
         }
     }
-    // At this point, working[0..extDigits-1] holds the inclusive scan results.
+    // At this point, working[0..numActualDigitsPlusGuard-1] holds the inclusive scan results.
 
     //--------------------------------------------------------------------------
     // Phase 3: Convert to an exclusive scan and update the digits.
@@ -805,7 +805,7 @@ __device__ inline void CarryPropagationPP2 (
     // For addition: update each digit with final128[i] = (final128[i] + incomingCarry) & 0xFFFFFFFF.
     // For subtraction: subtract the incoming borrow.
     //--------------------------------------------------------------------------
-    for (int32_t i = tid; i < extDigits; i += totalThreads) {
+    for (int32_t i = tid; i < numActualDigitsPlusGuard; i += totalThreads) {
         uint32_t incoming = (i == 0) ? 0 : working[i - 1].g;
         if (sameSign) {
             uint64_t sum = final128[i] + incoming;
@@ -820,12 +820,12 @@ __device__ inline void CarryPropagationPP2 (
     //--------------------------------------------------------------------------
     // Phase 4: Final carry/borrrow update.
     //
-    // For addition: the overall carry is given by working[extDigits - 1].g.
+    // For addition: the overall carry is given by working[numActualDigitsPlusGuard - 1].g.
     // If it is nonzero, then we set finalShiftRight = 1.
     // For subtraction, we assume the final borrow is zero.
     //--------------------------------------------------------------------------
     if (sameSign) {
-        uint32_t overallCarry = working[extDigits - 1].g;
+        uint32_t overallCarry = working[numActualDigitsPlusGuard - 1].g;
         finalShiftRight = (overallCarry > 0) ? 1 : 0;
     }
     grid.sync();
@@ -841,7 +841,7 @@ CarryPropagationPPTry1Buggy (
     uint32_t *sharedData,  // must be allocated with at least 2*n*sizeof(uint32_t)
     uint32_t *globalSync,  // unused in this version (still provided for interface compatibility)
     uint64_t *final128,
-    const int32_t extDigits,
+    const int32_t numActualDigitsPlusGuard,
     uint32_t *carry1,
     uint32_t *carry2,
     int32_t &outExponent,
@@ -849,8 +849,8 @@ CarryPropagationPPTry1Buggy (
     bool sameSign,
     cg::thread_block &block,
     cg::grid_group &grid) {
-    // We assume that extDigits is small. Let n be the next power of two >= extDigits.
-    const auto n = extDigits;
+    // We assume that numActualDigitsPlusGuard is small. Let n be the next power of two >= numActualDigitsPlusGuard.
+    const auto n = numActualDigitsPlusGuard;
 
     // We use sharedData to hold two arrays (each of length n):
     // s_g[0..n-1] will hold the "generate" flag (0 or 1) for each digit,
@@ -866,9 +866,9 @@ CarryPropagationPPTry1Buggy (
 
     if (sameSign) {
         // --- Initialization ---
-        // Only the first extDigits threads load a digit; for i >= extDigits we initialize to identity: (0,1).
+        // Only the first numActualDigitsPlusGuard threads load a digit; for i >= numActualDigitsPlusGuard we initialize to identity: (0,1).
         for (int32_t i = tid; i < n; i += totalThreads) {
-            // i < extDigits always here
+            // i < numActualDigitsPlusGuard always here
             uint64_t x = final128[i];
             uint32_t low = (uint32_t)x;
             uint32_t hi = (uint32_t)(x >> 32);
@@ -969,14 +969,14 @@ CarryPropagationPPTry1Buggy (
             grid.sync();
         }
 
-        // Now s_g[0..extDigits-1] contains the exclusive scan results.
+        // Now s_g[0..numActualDigitsPlusGuard-1] contains the exclusive scan results.
         // In particular, for digit i the carry into that digit is given by s_g[i].
         grid.sync();
 
         // --- Update digits using the computed carries ---
-        auto original_last_digit = final128[extDigits - 1]; // save the original last digit
+        auto original_last_digit = final128[numActualDigitsPlusGuard - 1]; // save the original last digit
         grid.sync();
-        for (int32_t i = tid; i < extDigits; i += totalThreads) {
+        for (int32_t i = tid; i < numActualDigitsPlusGuard; i += totalThreads) {
             uint32_t carryIn = s_g[i]; // carry into digit i
             uint64_t sum = final128[i] + carryIn;
             // Write the 32-bit result back.
@@ -985,8 +985,8 @@ CarryPropagationPPTry1Buggy (
         grid.sync();
 
         // --- Determine overall final carry ---
-        uint32_t carryIn = s_g[extDigits - 1];
-        uint64_t lastVal = original_last_digit; // saved before updating final128[extDigits-1]
+        uint32_t carryIn = s_g[numActualDigitsPlusGuard - 1];
+        uint64_t lastVal = original_last_digit; // saved before updating final128[numActualDigitsPlusGuard-1]
         uint64_t S = lastVal + carryIn;
         uint32_t finalCarry = S >> 32;
         if (finalCarry > 0u) {
@@ -1008,13 +1008,13 @@ CarryPropagationPPTry1Buggy (
         // and sat = 1 if the lower 32 bits of final128[i-1] equal 0xFFFFFFFF.
         //
         // For i == 0, no incoming borrow: we use 0.
-        // For indices i >= extDigits (padding) we use the identity element for our operator,
+        // For indices i >= numActualDigitsPlusGuard (padding) we use the identity element for our operator,
         // which we choose as (sat=1, b=0) --> value 2.
         for (int32_t i = tid; i < n; i += totalThreads) {
             if (i == 0) {
                 // No incoming borrow.
                 s_g[0] = 0;
-            } else if (i < extDigits) {
+            } else if (i < numActualDigitsPlusGuard) {
                 uint32_t b = (((int64_t)final128[i - 1] < 0) ? 1 : 0);
                 uint32_t sat = (((uint32_t)final128[i - 1] == 0xFFFFFFFFu) ? 1 : 0);
                 s_g[i] = (sat << 1) | b;
@@ -1044,11 +1044,11 @@ CarryPropagationPPTry1Buggy (
         // --- Downsweep phase using custom operator ---
         // Parallel Hillis–Steele inclusive scan using CombineBorrow.
         // Note: 'I' is the identity for our CombineBorrow operator; for our encoding, we take I = 2.
-        // (Assumes extDigits is <= the number of elements in s_g.)
-        for (int32_t d = 1; d < extDigits; d *= 2) {
+        // (Assumes numActualDigitsPlusGuard is <= the number of elements in s_g.)
+        for (int32_t d = 1; d < numActualDigitsPlusGuard; d *= 2) {
             // Each thread processes indices in grid stride.
             for (int32_t i = block.thread_index().x + block.group_index().x * blockDim.x;
-                i < extDigits;
+                i < numActualDigitsPlusGuard;
                 i += grid.size()) {
                 // For indices with i >= d, combine the element from i-d with s_g[i].
                 uint32_t prev = (i >= d) ? s_g[i - d] : 2;  // Use identity for out-of-bound indexes.
@@ -1062,9 +1062,9 @@ CarryPropagationPPTry1Buggy (
             grid.sync();
         }
 
-        // Now s_g[0..extDigits-1] holds, in its lower bit, the incoming borrow for each digit.
+        // Now s_g[0..numActualDigitsPlusGuard-1] holds, in its lower bit, the incoming borrow for each digit.
         // Decode the borrow flag (the lower bit) and update final128 accordingly.
-        for (int32_t i = tid; i < extDigits; i += totalThreads) {
+        for (int32_t i = tid; i < numActualDigitsPlusGuard; i += totalThreads) {
             uint32_t borrow = s_g[i] & 1;
             uint64_t diffVal = (uint64_t)final128[i] - borrow;
             final128[i] = (uint32_t)(diffVal & 0xFFFFFFFFu);
@@ -1080,9 +1080,9 @@ CarryPropagation (
     uint32_t *sharedData,
     uint32_t *globalSync,   // global sync array; element 0 is used for borrow/carry count
     uint64_t *final128,
-    const int32_t extDigits,
-    uint32_t *carry1,        // global memory array for intermediate carries/borrows (length extDigits+1)
-    uint32_t *carry2,        // global memory array for intermediate carries/borrows (length extDigits+1)
+    const int32_t numActualDigitsPlusGuard,
+    uint32_t *carry1,        // global memory array for intermediate carries/borrows (length numActualDigitsPlusGuard+1)
+    uint32_t *carry2,        // global memory array for intermediate carries/borrows (length numActualDigitsPlusGuard+1)
     int32_t &outExponent,    // note: if you need the updated exponent outside, you might pass this by reference
     int32_t &finalShiftRight,
     bool sameSign,
@@ -1109,7 +1109,7 @@ CarryPropagation (
     auto existing_carries_remaining = 0;
 
     // Zero out the carry array.
-    for (int32_t i = globalIdx; i < extDigits; i += stride) {
+    for (int32_t i = globalIdx; i < numActualDigitsPlusGuard; i += stride) {
         carry1[i] = 0;
         carry2[i] = 0;
     }
@@ -1138,13 +1138,13 @@ CarryPropagation (
 
             uint32_t totalNewCarry = 0;
             // Each thread updates its assigned digits in a grid-stride loop.
-            for (int32_t i = globalIdx; i < extDigits; i += stride) {
+            for (int32_t i = globalIdx; i < numActualDigitsPlusGuard; i += stride) {
                 uint32_t incoming = (i == 0) ? 0u : curCarry[i];
                 uint64_t sum = final128[i] + incoming;
                 uint32_t newDigit = (uint32_t)(sum & 0xFFFFFFFFu);
                 uint32_t newCarry = (uint32_t)(sum >> 32);
                 final128[i] = newDigit;
-                if (i < extDigits - 1) {
+                if (i < numActualDigitsPlusGuard - 1) {
                     nextCarry[i + 1] = newCarry;
                 } else {
                     // Always merge the new carry with the previous final carry.
@@ -1170,7 +1170,7 @@ CarryPropagation (
         }
 
         // After the loop, thread 0 checks if a final carry remains.
-        uint32_t finalCarry = curCarry[extDigits];
+        uint32_t finalCarry = curCarry[numActualDigitsPlusGuard];
         if (finalCarry > 0u) {
             finalShiftRight = 1;
         }
@@ -1196,7 +1196,7 @@ CarryPropagation (
 
             uint32_t totalNewBorrow = 0;
             // Each thread processes its grid-stride subset.
-            for (int32_t i = globalIdx; i < extDigits; i += stride) {
+            for (int32_t i = globalIdx; i < numActualDigitsPlusGuard; i += stride) {
                 // For digit 0, no incoming borrow.
                 uint32_t incoming = (i == 0) ? 0u : curCarry[i];
                 int64_t diffVal = (int64_t)final128[i] - incoming;
@@ -1229,7 +1229,7 @@ CarryPropagation (
 
         // Finally, thread 0 checks that no borrow remains.
         if (globalIdx == 0) {
-            assert(curCarry[extDigits] == 0);
+            assert(curCarry[numActualDigitsPlusGuard] == 0);
         }
     }
 
@@ -1247,8 +1247,8 @@ __device__ void AddHelper (
 
     // --- Constants and Parameters ---
     constexpr int32_t guard = 4;
-    constexpr int32_t actualDigits = SharkFloatParams::GlobalNumUint32;
-    constexpr int32_t extDigits = SharkFloatParams::GlobalNumUint32 + guard;
+    constexpr int32_t numActualDigits = SharkFloatParams::GlobalNumUint32;
+    constexpr int32_t numActualDigitsPlusGuard = SharkFloatParams::GlobalNumUint32 + guard;
     int32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
     constexpr int32_t NewN = SharkFloatParams::GlobalNumUint32;
 
@@ -1357,22 +1357,53 @@ __device__ void AddHelper (
 
     // --- Extended Normalization using shift indices ---
     const bool sameSign = (A_X2->IsNegative == B_Y2->IsNegative);
-    bool normA_isZero = false, normB_isZero = false;
+
+    bool normA_isZero = false;
+    bool normB_isZero = false;
+    bool normC_isZero = false;
+    bool normD_isZero = false;
+    bool normE_isZero = false;
+
     int32_t newAExponent = A_X2->Exponent;
     int32_t newBExponent = B_Y2->Exponent;
-    const int32_t shiftA = ExtendedNormalizeShiftIndex(
+    int32_t newCExponent = C_A->Exponent;
+    int32_t newDExponent = D_2X->Exponent;
+    int32_t newEExponent = E_B->Exponent;
+
+    const int32_t shiftALeftToGetMsb = ExtendedNormalizeShiftIndex(
         ext_A_X2,
-        actualDigits,
-        extDigits,
+        numActualDigits,
+        numActualDigitsPlusGuard,
         newAExponent,
         normA_isZero);
 
-    const int32_t shiftB = ExtendedNormalizeShiftIndex(
+    const int32_t shiftBLeftToGetMsb = ExtendedNormalizeShiftIndex(
         ext_B_Y2,
-        actualDigits,
-        extDigits,
+        numActualDigits,
+        numActualDigitsPlusGuard,
         newBExponent,
         normB_isZero);
+
+    const int32_t shiftCLeftToGetMsb = ExtendedNormalizeShiftIndex(
+        ext_C_A,
+        numActualDigits,
+        numActualDigitsPlusGuard,
+        newCExponent,
+        normC_isZero);
+
+    const int32_t shiftDLeftToGetMsb = ExtendedNormalizeShiftIndex(
+        ext_D_2X,
+        numActualDigits,
+        numActualDigitsPlusGuard,
+        newDExponent,
+        normD_isZero);
+
+    const int32_t shiftELeftToGetMsb = ExtendedNormalizeShiftIndex(
+        ext_E_B,
+        numActualDigits,
+        numActualDigitsPlusGuard,
+        newEExponent,
+        normE_isZero);
 
     // --- Compute Effective Exponents ---
     const int32_t effExpA = normA_isZero ? -100'000'000 : newAExponent + (SharkFloatParams::GlobalNumUint32 * 32 - 32);
@@ -1381,34 +1412,34 @@ __device__ void AddHelper (
 
     // --- Determine which operand has larger magnitude ---
     // If effective exponents differ, use them. If equal, compare normalized digits on the fly.
-    const bool AIsBiggerMagnitude = CompareMagnitudes(
+    const bool AIsBiggerMagnitude = CompareMagnitudes2Way(
         effExpA,
         effExpB,
-        actualDigits,
-        extDigits,
+        numActualDigits,
+        numActualDigitsPlusGuard,
         ext_A_X2,
-        shiftA,
+        shiftALeftToGetMsb,
         ext_B_Y2,
-        shiftB);
+        shiftBLeftToGetMsb);
 
     const int32_t diff = AIsBiggerMagnitude ? (effExpA - effExpB) : (effExpB - effExpA);
     int32_t outExponent = AIsBiggerMagnitude ? newAExponent : newBExponent;
 
     // --- Each thread computes its aligned limb.
-    for (int32_t i = idx; i < extDigits; i += blockDim.x * gridDim.x) {
+    for (int32_t i = idx; i < numActualDigitsPlusGuard; i += blockDim.x * gridDim.x) {
         uint64_t alignedA = 0, alignedB = 0;
 
         uint64_t prelim = 0;
         if (sameSign) {
             GetCorrespondingLimbs<SharkFloatParams>(
                 ext_A_X2,
-                actualDigits,
-                extDigits,
+                numActualDigits,
+                numActualDigitsPlusGuard,
                 ext_B_Y2,
-                actualDigits,
-                extDigits,
-                shiftA,
-                shiftB,
+                numActualDigits,
+                numActualDigitsPlusGuard,
+                shiftALeftToGetMsb,
+                shiftBLeftToGetMsb,
                 AIsBiggerMagnitude,
                 diff,
                 i,
@@ -1421,13 +1452,13 @@ __device__ void AddHelper (
                 uint64_t alignedA = 0, alignedB = 0;
                 GetCorrespondingLimbs<SharkFloatParams>(
                     ext_A_X2,
-                    actualDigits,
-                    extDigits,
+                    numActualDigits,
+                    numActualDigitsPlusGuard,
                     ext_B_Y2,
-                    actualDigits,
-                    extDigits,
-                    shiftA,
-                    shiftB,
+                    numActualDigits,
+                    numActualDigitsPlusGuard,
+                    shiftALeftToGetMsb,
+                    shiftBLeftToGetMsb,
                     AIsBiggerMagnitude,
                     diff,
                     i,
@@ -1439,13 +1470,13 @@ __device__ void AddHelper (
                 uint64_t alignedA = 0, alignedB = 0;
                 GetCorrespondingLimbs<SharkFloatParams>(
                     ext_A_X2,
-                    actualDigits,
-                    extDigits,
+                    numActualDigits,
+                    numActualDigitsPlusGuard,
                     ext_B_Y2,
-                    actualDigits,
-                    extDigits,
-                    shiftA,
-                    shiftB,
+                    numActualDigits,
+                    numActualDigitsPlusGuard,
+                    shiftALeftToGetMsb,
+                    shiftBLeftToGetMsb,
                     AIsBiggerMagnitude,
                     diff,
                     i,
@@ -1463,7 +1494,7 @@ __device__ void AddHelper (
     if constexpr (SharkDebugChecksums) {
         grid.sync();
         StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z2XY, uint64_t>(
-            record, debugChecksumArray, grid, block, final128, extDigits);
+            record, debugChecksumArray, grid, block, final128, numActualDigitsPlusGuard);
         grid.sync();
     } else {
         grid.sync();
@@ -1476,7 +1507,7 @@ __device__ void AddHelper (
             sharedData,
             globalSync,
             final128,
-            extDigits,
+            numActualDigitsPlusGuard,
             carry1,
             carry2,
             outExponent,
@@ -1489,7 +1520,7 @@ __device__ void AddHelper (
     if constexpr (SharkDebugChecksums) {
         grid.sync();
         StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::FinalAdd2, uint64_t>(
-            record, debugChecksumArray, grid, block, final128, extDigits);
+            record, debugChecksumArray, grid, block, final128, numActualDigitsPlusGuard);
         grid.sync();
     } else {
         grid.sync();
@@ -1504,15 +1535,15 @@ __device__ void AddHelper (
     if (injectHighOrderBit) {
         shiftNeeded = 1;
 
-        int32_t msdResult = extDigits - 1;
+        int32_t msdResult = numActualDigitsPlusGuard - 1;
         int32_t clzResult = 0;
         int32_t currentOverall = msdResult * 32 + (31 - clzResult);
-        int32_t desiredOverall = (actualDigits - 1) * 32 + 31;
+        int32_t desiredOverall = (numActualDigits - 1) * 32 + 31;
         shiftNeeded += currentOverall - desiredOverall;
 
     } else {
         msdResult = 0;
-        for (int32_t i = extDigits - 1; i >= 0; i--) {
+        for (int32_t i = numActualDigitsPlusGuard - 1; i >= 0; i--) {
             if (final128[i] != 0) {
                 msdResult = i;
                 break;
@@ -1521,7 +1552,7 @@ __device__ void AddHelper (
 
         int32_t clzResult = __clz(final128[msdResult]);
         int32_t currentOverall = msdResult * 32 + (31 - clzResult);
-        int32_t desiredOverall = (actualDigits - 1) * 32 + 31;
+        int32_t desiredOverall = (numActualDigits - 1) * 32 + 31;
         shiftNeeded += currentOverall - desiredOverall;
     }
 
@@ -1529,21 +1560,21 @@ __device__ void AddHelper (
     int32_t stride = blockDim.x * gridDim.x;
 
     if (shiftNeeded > 0) {
-        // Make sure shiftNeeded, extDigits, actualDigits, and final128 are computed and 
+        // Make sure shiftNeeded, numActualDigitsPlusGuard, numActualDigits, and final128 are computed and 
         // available to all threads (e.g. computed by thread 0 and then synchronized).
         int32_t wordShift = shiftNeeded / 32;
         int32_t bitShift = shiftNeeded % 32;
 
         // Each thread handles a subset of indices.
-        for (int32_t i = tid; i < actualDigits; i += stride) {
-            uint32_t lower = (i + wordShift < extDigits) ? final128[i + wordShift] : 0;
-            uint32_t upper = (i + wordShift + 1 < extDigits) ? final128[i + wordShift + 1] : 0;
+        for (int32_t i = tid; i < numActualDigits; i += stride) {
+            uint32_t lower = (i + wordShift < numActualDigitsPlusGuard) ? final128[i + wordShift] : 0;
+            uint32_t upper = (i + wordShift + 1 < numActualDigitsPlusGuard) ? final128[i + wordShift + 1] : 0;
             Out_A_B_C->Digits[i] = (bitShift == 0) ? lower : (lower >> bitShift) | (upper << (32 - bitShift));
 
-            if (i == actualDigits - 1) {
+            if (i == numActualDigits - 1) {
                 if (injectHighOrderBit) {
                     // Set the high-order bit of the last digit.
-                    Out_A_B_C->Digits[actualDigits - 1] |= (1u << 31);
+                    Out_A_B_C->Digits[numActualDigits - 1] |= (1u << 31);
                 }
             }
         }
@@ -1553,10 +1584,10 @@ __device__ void AddHelper (
         int32_t wordShift = (-shiftNeeded) / 32;
         int32_t bitShift = (-shiftNeeded) % 32;
 
-        for (int32_t i = tid; i < actualDigits; i += stride) {
+        for (int32_t i = tid; i < numActualDigits; i += stride) {
             int32_t srcIdx = i - wordShift;
-            uint32_t lower = (srcIdx >= 0 && srcIdx < extDigits) ? final128[srcIdx] : 0;
-            uint32_t upper = (srcIdx - 1 >= 0 && srcIdx - 1 < extDigits) ? final128[srcIdx - 1] : 0;
+            uint32_t lower = (srcIdx >= 0 && srcIdx < numActualDigitsPlusGuard) ? final128[srcIdx] : 0;
+            uint32_t upper = (srcIdx - 1 >= 0 && srcIdx - 1 < numActualDigitsPlusGuard) ? final128[srcIdx - 1] : 0;
             Out_A_B_C->Digits[i] = (bitShift == 0) ? lower : (lower << bitShift) | (upper >> (32 - bitShift));
         }
 
@@ -1566,7 +1597,7 @@ __device__ void AddHelper (
     } else {
         // No shifting needed; simply copy.  Convert to uint32_t along the way
 
-        for (int32_t i = tid; i < actualDigits; i += stride) {
+        for (int32_t i = tid; i < numActualDigits; i += stride) {
             Out_A_B_C->Digits[i] = final128[i];
         }
     }
@@ -1580,7 +1611,7 @@ __device__ void AddHelper (
     if constexpr (SharkDebugChecksums) {
         grid.sync();
         StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Result_offsetXY, uint32_t>(
-            record, debugChecksumArray, grid, block, Out_A_B_C->Digits, actualDigits);
+            record, debugChecksumArray, grid, block, Out_A_B_C->Digits, numActualDigits);
         grid.sync();
     } else {
         grid.sync();

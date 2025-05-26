@@ -202,7 +202,7 @@ __device__ inline void CarryPropagationPP3_DE (
     uint32_t *carry1,         // will be reinterpreted as an array of GenProp (working vector)
     uint32_t *carry2,         // will be reinterpreted as an array of GenProp (scratch buffer)
     int32_t &outExponent,     // (unchanged; provided for interface compatibility)
-    int32_t &finalShiftRight, // will be set to 1 if there is an overall carry; 0 otherwise
+    int32_t &carryAcc_DE, // will be set to 1 if there is an overall carry; 0 otherwise
     bool sameSign,            // true for addition; false for subtraction (borrow propagation)
     cg::thread_block &block,
     cg::grid_group &grid) {
@@ -414,7 +414,7 @@ __device__ inline void CarryPropagationPP3_DE (
         // After the loop, thread 0 checks if a final carry remains.
         uint32_t finalCarry = curCarry[numActualDigitsPlusGuard];
         if (finalCarry > 0u) {
-            finalShiftRight = 1;
+            carryAcc_DE = 1;
         }
 
     } else {
@@ -504,7 +504,7 @@ __device__ inline void CarryPropagationPP2_DE(
     uint32_t *carry1,         // will be reinterpreted as an array of GenProp (working vector)
     uint32_t *carry2,         // will be reinterpreted as an array of GenProp (scratch buffer)
     int32_t &outExponent,     // (unchanged; provided for interface compatibility)
-    int32_t &finalShiftRight, // will be set to 1 if there is an overall carry; 0 otherwise
+    int32_t &carryAcc_DE, // will be set to 1 if there is an overall carry; 0 otherwise
     bool sameSign,            // true for addition; false for subtraction (borrow propagation)
     cg::thread_block &block,
     cg::grid_group &grid) {
@@ -598,12 +598,12 @@ __device__ inline void CarryPropagationPP2_DE(
     // Phase 4: Final carry/borrrow update.
     //
     // For addition: the overall carry is given by working[numActualDigitsPlusGuard - 1].g.
-    // If it is nonzero, then we set finalShiftRight = 1.
+    // If it is nonzero, then we set carryAcc_DE = 1.
     // For subtraction, we assume the final borrow is zero.
     //--------------------------------------------------------------------------
     if (sameSign) {
         uint32_t overallCarry = working[numActualDigitsPlusGuard - 1].g;
-        finalShiftRight = (overallCarry > 0) ? 1 : 0;
+        carryAcc_DE = (overallCarry > 0) ? 1 : 0;
     }
     grid.sync();
 }
@@ -622,7 +622,7 @@ CarryPropagationPPTry1Buggy_DE (
     uint32_t *carry1,
     uint32_t *carry2,
     int32_t &outExponent,
-    int32_t &finalShiftRight,
+    int32_t &carryAcc_DE,
     bool sameSign,
     cg::thread_block &block,
     cg::grid_group &grid) {
@@ -767,7 +767,7 @@ CarryPropagationPPTry1Buggy_DE (
         uint64_t S = lastVal + carryIn;
         uint32_t finalCarry = S >> 32;
         if (finalCarry > 0u) {
-            finalShiftRight = 1;
+            carryAcc_DE = 1;
         }
     } else {
         // --- Subtraction branch (parallel custom scan for borrow propagation) ---
@@ -860,7 +860,7 @@ CarryPropagationDE (
     const int32_t numActualDigitsPlusGuard,
     uint32_t *carry1,        // global memory array for intermediate carries/borrows (length numActualDigitsPlusGuard+1)
     uint32_t *carry2,        // global memory array for intermediate carries/borrows (length numActualDigitsPlusGuard+1)
-    int32_t &finalShiftRight,
+    int32_t &carryAcc_DE,
     bool sameSign,
     cg::thread_block &block,
     cg::grid_group &grid) {
@@ -948,7 +948,7 @@ CarryPropagationDE (
         // After the loop, thread 0 checks if a final carry remains.
         uint32_t finalCarry = curCarry[numActualDigitsPlusGuard];
         if (finalCarry > 0u) {
-            finalShiftRight = 1;
+            carryAcc_DE = 1;
         }
 
     } else {

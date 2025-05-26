@@ -392,10 +392,6 @@ __device__ void AddHelper (
     static constexpr auto CallIndex = 0;
 
     if constexpr (SharkDebugChecksums) {
-        const RecordIt record =
-            (block.thread_index().x == 0 && block.group_index().x == 0) ?
-            RecordIt::Yes :
-            RecordIt::No;
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Invalid>(record, debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::ADigits>(record, debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::BDigits>(record, debugStates, grid, block);
@@ -447,7 +443,7 @@ __device__ void AddHelper (
     }
 
     // --- Extended Normalization using shift indices ---
-    const bool sameSign = (A_X2->IsNegative == B_Y2->IsNegative);
+    const bool sameSign = (D_2X->IsNegative == E_B->IsNegative);
 
     bool normA_isZero = false;
     bool normB_isZero = false;
@@ -591,7 +587,7 @@ __device__ void AddHelper (
         final128_DE,  // the extended result digits
         debugStates);
 
-    int32_t shiftNeeded = 0;
+    int32_t carryAcc_DE = 0;
     int32_t carryAcc_ABC = 0;
     if constexpr (!SharkFloatParams::DisableCarryPropagation) {
         // --- Carry/Borrow Propagation ---
@@ -602,7 +598,7 @@ __device__ void AddHelper (
             numActualDigitsPlusGuard,
             carry1,
             carry2,
-            shiftNeeded,
+            carryAcc_DE,
             sameSign,
             block,
             grid);
@@ -633,84 +629,132 @@ __device__ void AddHelper (
 
     // --- Final Normalization ---
     // Thread 0 finds the most-significant digit (msd) and computes the shift needed.
-    int32_t msdResult;
+    auto handleFinalCarry = [](
+        int32_t &carryAcc,
+        const int32_t numActualDigitsPlusGuard,
+        const int32_t numActualDigits,
+        uint64_t *final128
+        ) {
+            int32_t msdResult;
 
-    bool injectHighOrderBit = (shiftNeeded > 0);
+            if (carryAcc) {
+                int32_t msdResult = numActualDigitsPlusGuard - 1;
+                int32_t clzResult = 0;
+                int32_t currentOverall = msdResult * 32 + (31 - clzResult);
+                int32_t desiredOverall = (numActualDigits - 1) * 32 + 31;
+                carryAcc += currentOverall - desiredOverall;
+            } else {
+                msdResult = 0;
+                for (int32_t i = numActualDigitsPlusGuard - 1; i >= 0; i--) {
+                    if (final128[i] != 0) {
+                        msdResult = i;
+                        break;
+                    }
+                }
 
-    if (injectHighOrderBit) {
-        shiftNeeded = 1;
-
-        int32_t msdResult = numActualDigitsPlusGuard - 1;
-        int32_t clzResult = 0;
-        int32_t currentOverall = msdResult * 32 + (31 - clzResult);
-        int32_t desiredOverall = (numActualDigits - 1) * 32 + 31;
-        shiftNeeded += currentOverall - desiredOverall;
-
-    } else {
-        msdResult = 0;
-        for (int32_t i = numActualDigitsPlusGuard - 1; i >= 0; i--) {
-            if (final128_DE[i] != 0) {
-                msdResult = i;
-                break;
+                int32_t clzResult = __clz(final128[msdResult]);
+                int32_t currentOverall = msdResult * 32 + (31 - clzResult);
+                int32_t desiredOverall = (numActualDigits - 1) * 32 + 31;
+                carryAcc += currentOverall - desiredOverall;
             }
-        }
+        };
 
-        int32_t clzResult = __clz(final128_DE[msdResult]);
-        int32_t currentOverall = msdResult * 32 + (31 - clzResult);
-        int32_t desiredOverall = (numActualDigits - 1) * 32 + 31;
-        shiftNeeded += currentOverall - desiredOverall;
-    }
+    handleFinalCarry(
+        carryAcc_ABC,
+        numActualDigitsPlusGuard,
+        numActualDigits,
+        final128_ABC
+    );
 
-    int32_t tid = blockIdx.x * blockDim.x + threadIdx.x;
-    int32_t stride = blockDim.x * gridDim.x;
+    handleFinalCarry(
+        carryAcc_DE,
+        numActualDigitsPlusGuard,
+        numActualDigits,
+        final128_DE
+    );
 
-    if (shiftNeeded > 0) {
-        // Make sure shiftNeeded, numActualDigitsPlusGuard, numActualDigits, and final128_DE are computed and 
-        // available to all threads (e.g. computed by thread 0 and then synchronized).
-        int32_t wordShift = shiftNeeded / 32;
-        int32_t bitShift = shiftNeeded % 32;
+    const int32_t stride = blockDim.x * gridDim.x;
 
-        // Each thread handles a subset of indices.
-        for (int32_t i = tid; i < numActualDigits; i += stride) {
-            uint32_t lower = (i + wordShift < numActualDigitsPlusGuard) ? final128_DE[i + wordShift] : 0;
-            uint32_t upper = (i + wordShift + 1 < numActualDigitsPlusGuard) ? final128_DE[i + wordShift + 1] : 0;
-            Out_D_E->Digits[i] = (bitShift == 0) ? lower : (lower >> bitShift) | (upper << (32 - bitShift));
+    auto finalResolution = [](
+        const int32_t idx,
+        const int32_t stride,
+        const int32_t carryAcc_DE,
+        const int32_t numActualDigitsPlusGuard,
+        const int32_t numActualDigits,
+        const uint64_t *final128_DE,
+        HpSharkFloat<SharkFloatParams> *OutSharkFloat,
+        int32_t &outExponent_DE
+        ) {
+            if (carryAcc_DE > 0) {
+                // Make sure carryAcc_DE, numActualDigitsPlusGuard, numActualDigits, and final128_DE are computed and 
+                // available to all threads
+                int32_t wordShift = carryAcc_DE / 32;
+                int32_t bitShift = carryAcc_DE % 32;
 
-            if (i == numActualDigits - 1) {
-                if (injectHighOrderBit) {
-                    // Set the high-order bit of the last digit.
-                    Out_D_E->Digits[numActualDigits - 1] |= (1u << 31);
+                // Each thread handles a subset of indices.
+                for (int32_t i = idx; i < numActualDigits; i += stride) {
+                    uint32_t lower = (i + wordShift < numActualDigitsPlusGuard) ? final128_DE[i + wordShift] : 0;
+                    uint32_t upper = (i + wordShift + 1 < numActualDigitsPlusGuard) ? final128_DE[i + wordShift + 1] : 0;
+                    OutSharkFloat->Digits[i] = (bitShift == 0) ? lower : (lower >> bitShift) | (upper << (32 - bitShift));
+
+                    if (i == numActualDigits - 1) {
+                        // Set the high-order bit of the last digit.
+                        OutSharkFloat->Digits[numActualDigits - 1] |= (1u << 31);
+                    }
+                }
+
+                outExponent_DE += carryAcc_DE;
+            } else if (carryAcc_DE < 0) {
+                int32_t wordShift = (-carryAcc_DE) / 32;
+                int32_t bitShift = (-carryAcc_DE) % 32;
+
+                for (int32_t i = idx; i < numActualDigits; i += stride) {
+                    int32_t srcIdx = i - wordShift;
+                    uint32_t lower = (srcIdx >= 0 && srcIdx < numActualDigitsPlusGuard) ? final128_DE[srcIdx] : 0;
+                    uint32_t upper = (srcIdx - 1 >= 0 && srcIdx - 1 < numActualDigitsPlusGuard) ? final128_DE[srcIdx - 1] : 0;
+                    OutSharkFloat->Digits[i] = (bitShift == 0) ? lower : (lower << bitShift) | (upper >> (32 - bitShift));
+                }
+
+                if (idx == 0) {
+                    outExponent_DE -= (-carryAcc_DE);
+                }
+            } else {
+                // No shifting needed; simply copy.  Convert to uint32_t along the way
+
+                for (int32_t i = idx; i < numActualDigits; i += stride) {
+                    OutSharkFloat->Digits[i] = final128_DE[i];
                 }
             }
-        }
+        };
 
-        outExponent_DE += shiftNeeded;
-    } else if (shiftNeeded < 0) {
-        int32_t wordShift = (-shiftNeeded) / 32;
-        int32_t bitShift = (-shiftNeeded) % 32;
+    finalResolution(
+        idx,
+        stride,
+        carryAcc_ABC,
+        numActualDigitsPlusGuard,
+        numActualDigits,
+        final128_ABC,
+        Out_A_B_C,
+        outExponent_ABC
+    );
 
-        for (int32_t i = tid; i < numActualDigits; i += stride) {
-            int32_t srcIdx = i - wordShift;
-            uint32_t lower = (srcIdx >= 0 && srcIdx < numActualDigitsPlusGuard) ? final128_DE[srcIdx] : 0;
-            uint32_t upper = (srcIdx - 1 >= 0 && srcIdx - 1 < numActualDigitsPlusGuard) ? final128_DE[srcIdx - 1] : 0;
-            Out_D_E->Digits[i] = (bitShift == 0) ? lower : (lower << bitShift) | (upper >> (32 - bitShift));
-        }
-
-        if (tid == 0) {
-            outExponent_DE -= (-shiftNeeded);
-        }
-    } else {
-        // No shifting needed; simply copy.  Convert to uint32_t along the way
-
-        for (int32_t i = tid; i < numActualDigits; i += stride) {
-            Out_D_E->Digits[i] = final128_DE[i];
-        }
-    }
+    finalResolution(
+        idx,
+        stride,
+        carryAcc_DE,
+        numActualDigitsPlusGuard,
+        numActualDigits,
+        final128_DE,
+        Out_D_E,
+        outExponent_DE
+    );
 
     if (idx == 0) {
         Out_D_E->Exponent = outExponent_DE;
-        // Set result sign.
         Out_D_E->IsNegative = sameSign ? A_X2->IsNegative : (DIsBiggerMagnitude ? A_X2->IsNegative : B_Y2->IsNegative);
+
+        Out_A_B_C->Exponent = outExponent_ABC;
+        Out_A_B_C->IsNegative = isNegative_ABC;
     }
 
     if constexpr (SharkDebugChecksums) {

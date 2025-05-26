@@ -1084,6 +1084,7 @@ void TestTernaryOperatorTwoNumbersRaw (
 
     for (size_t i = 0; i < mpfInputLen; ++i) {
         mpf_init(mpfXCopy[i]);
+        mpf_set(mpfXCopy[i], mpfInputX[i]);
     }
 
     // If IncludeSigns is true, then call TestTernaryOperatorTwoNumbersRawNoSignChange with all four variants

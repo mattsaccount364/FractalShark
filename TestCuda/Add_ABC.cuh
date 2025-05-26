@@ -391,10 +391,10 @@ void Phase1_ABC (
     }
 
     if constexpr (SharkDebugChecksums) {
-        grid.sync();
+        //grid.sync();
         StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z2XX, uint64_t>(
             record, debugStates, grid, block, final128_ABC, numActualDigitsPlusGuard);
-        grid.sync();
+        //grid.sync();
     }
 }
 

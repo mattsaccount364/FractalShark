@@ -540,33 +540,33 @@ __device__ void AddHelper (
     // --- Phase 1: A - B + C ---
     int32_t outExponent_ABC = 0;
     bool isNegative_ABC = false;
-    //Phase1_ABC<SharkFloatParams, CallIndex>(
-    //    block,
-    //    grid,
-    //    record,
-    //    idx,
-    //    threeWayMagnitude,
-    //    IsNegativeA,
-    //    IsNegativeB,
-    //    IsNegativeC,
-    //    numActualDigitsPlusGuard,
-    //    numActualDigits,
-    //    ext_A_X2,
-    //    ext_B_Y2,
-    //    ext_C_A,
-    //    shiftALeftToGetMsb,
-    //    shiftBLeftToGetMsb,
-    //    shiftCLeftToGetMsb,
-    //    effExpA,
-    //    effExpB,
-    //    effExpC,
-    //    biasedExpABC,
-    //    bias,
-    //    isNegative_ABC,
-    //    outExponent_ABC,
-    //    final128_ABC,
-    //    debugStates
-    //);
+    Phase1_ABC<SharkFloatParams, CallIndex>(
+        block,
+        grid,
+        record,
+        idx,
+        threeWayMagnitude,
+        IsNegativeA,
+        IsNegativeB,
+        IsNegativeC,
+        numActualDigitsPlusGuard,
+        numActualDigits,
+        ext_A_X2,
+        ext_B_Y2,
+        ext_C_A,
+        shiftALeftToGetMsb,
+        shiftBLeftToGetMsb,
+        shiftCLeftToGetMsb,
+        effExpA,
+        effExpB,
+        effExpC,
+        biasedExpABC,
+        bias,
+        isNegative_ABC,
+        outExponent_ABC,
+        final128_ABC,
+        debugStates
+    );
 
     int32_t outExponent_DE = 0;
     Phase1_DE<SharkFloatParams, CallIndex>(

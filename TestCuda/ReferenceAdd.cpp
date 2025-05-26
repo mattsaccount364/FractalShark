@@ -724,160 +724,148 @@ void CarryPropagation_ABC(
 }
 
 template<class SharkFloatParams>
+static void CmpSignedRawVsThird (
+    const uint32_t *extX, const uint32_t *extY, const uint32_t *extZ,
+    int32_t expX, int32_t expY, int32_t expZ,
+    int32_t shiftX, int32_t shiftY, int32_t shiftZ,
+    bool    sX, bool    sY,
+    const int32_t actualDigits,
+    const int32_t numActualDigitsPlusGuard,
+    bool &outXYgtZ)
+{
+    // 1) Which is larger, X or Y?  (for alignment)
+    bool XgtY = CompareMagnitudes2Way(
+        expX, expY,
+        actualDigits, numActualDigitsPlusGuard,
+        shiftX, shiftY,
+        extX, extY);
+
+    // 2) Alignment bias
+    int32_t diffXY = XgtY ? (expX - expY) : (expY - expX);
+    int32_t expXY = XgtY ? expX : expY;
+
+    // Helper to compute the signed-raw limb i:
+    auto computeAbsXY = [&](int i)->uint64_t {
+        uint64_t a, b;
+        GetCorrespondingLimbs<SharkFloatParams>(
+            extX, actualDigits, numActualDigitsPlusGuard,
+            extY, actualDigits, numActualDigitsPlusGuard,
+            shiftX, shiftY,
+            XgtY, diffXY,
+            i, a, b);
+
+        int64_t signedXY = (sX ? -int64_t(a) : int64_t(a))
+            + (sY ? -int64_t(b) : int64_t(b));
+        return signedXY < 0 ? uint64_t(-signedXY)
+            : uint64_t(signedXY);
+        };
+
+    // portable count-leading-zeros on a 64-bit
+    auto clz64 = [&](uint64_t v) {
+        if (v == 0) return 64;
+        int c = 0;
+        for (int b = 63; b >= 0; --b) {
+            if (v & (1ull << b)) break;
+            ++c;
+        }
+        return c;
+        };
+
+    // --- PASS 1: scan for MS nonzero limb ---
+    int32_t msd = -1;
+    uint64_t absAtMSD = 0;
+    for (int i = numActualDigitsPlusGuard - 1; i >= 0; --i) {
+        uint64_t a = computeAbsXY(i);
+        if (a != 0) {
+            msd = i;
+            absAtMSD = a;
+            break;
+        }
+    }
+
+    int32_t expRawXY;
+    if (msd < 0) {
+        // exact zero
+        expRawXY = INT32_MIN / 2;
+    } else {
+        int32_t clz = clz64(absAtMSD);
+        // bit position of that “1”
+        int32_t bitIndex = msd * 32 + (63 - clz);
+        expRawXY = expXY - ((numActualDigitsPlusGuard * 32 - 1) - bitIndex);
+    }
+
+    // --- PASS 2: compare against Z ---
+    if (expRawXY > expZ) {
+        outXYgtZ = true;
+    } else if (expRawXY < expZ) {
+        outXYgtZ = false;
+    } else {
+        // tie → digit-by-digit
+        outXYgtZ = false;
+        for (int i = numActualDigitsPlusGuard - 1; i >= 0; --i) {
+            uint64_t limbXY = computeAbsXY(i);
+            // Z’s normalized 32-bit digit
+            uint32_t z_d = GetNormalizedDigit(extZ, actualDigits, numActualDigitsPlusGuard, shiftZ, i);
+            if (limbXY > z_d) { outXYgtZ = true;  break; }
+            if (limbXY < z_d) { outXYgtZ = false; break; }
+        }
+    }
+}
+
+
+template<class SharkFloatParams>
 static void
-ComputeABCComparison(
+ComputeABCComparison (
     // normalized, extended digit arrays
     const uint32_t *extA,
     const uint32_t *extB,
     const uint32_t *extC,
     // sizes
-    int32_t actualDigits,
-    int32_t extDigits,
+    const int32_t actualDigits,
+    const int32_t extDigits,
     // normalization shifts
-    int32_t shiftA,
-    int32_t shiftB,
-    int32_t shiftC,
+    const int32_t shiftA,
+    const int32_t shiftB,
+    const int32_t shiftC,
     // effective exponents
-    int32_t effExpA,
-    int32_t effExpB,
-    int32_t effExpC,
+    const int32_t effExpA,
+    const int32_t effExpB,
+    const int32_t effExpC,
     // input signs
     bool signA,
     bool signB,
     bool signC,
     // outputs:
-    int32_t &expRawAB,         // exponent of raw_signed(A–B)
     bool &ABIsBiggerThanC,  // |raw_signed(A–B)| > |C| ?
     bool &ACIsBiggerThanB,  // |raw_signed(A–C)| > |B| ?
-    bool &BCIsBiggerThanA   // |raw_signed(B–C)| > |A| ?
-) {
-    auto cmpSignedRawVsThird = [&](
-        const uint32_t *extX,
-        const uint32_t *extY,
-        const uint32_t *extZ,
-        int32_t expX,
-        int32_t expY,
-        int32_t expZ,
-        int32_t shiftX,
-        int32_t shiftY,
-        int32_t shiftZ,
-        bool    sX,
-        bool    sY,
-        int32_t &outExpRawXY,
-        bool &outXYgtZ
-        ) {
-            // 1) Determine which magnitude is larger (for alignment only)
-            bool XgtY = CompareMagnitudes2Way(
-                expX, expY,
-                actualDigits, extDigits,
-                shiftX, shiftY,
-                extX, extY);
-
-            // 2) Compute exponent-diff and biased exponent
-            int32_t diffXY = XgtY ? (expX - expY) : (expY - expX);
-            int32_t expXY = XgtY ? expX : expY;
-
-            // 3) Build a signed‐raw array of |(±X) + (±Y)| magnitudes
-            std::vector<uint64_t> magXY(extDigits);
-            for (int32_t i = 0; i < extDigits; ++i) {
-                uint64_t x_l, y_l;
-                GetCorrespondingLimbs<SharkFloatParams>(
-                    extX, actualDigits, extDigits,
-                    extY, actualDigits, extDigits,
-                    shiftX, shiftY,
-                    XgtY, diffXY,
-                    i, x_l, y_l);
-
-                int64_t signedXY =
-                    (sX ? -int64_t(x_l) : int64_t(x_l))
-                    + (sY ? -int64_t(y_l) : int64_t(y_l));
-
-                magXY[i] = signedXY < 0
-                    ? uint64_t(-signedXY)
-                    : uint64_t(signedXY);
-            }
-
-            // 4) Find MSB of magXY (all 64 bits!) to compute outExpRawXY
-            auto clz64 = [](uint64_t v) {
-                // on GCC/Clang you could use __builtin_clzll(v), but here's a portable fallback:
-                if (v == 0) return 64;
-                int c = 0;
-                for (int b = 63; b >= 0; --b) {
-                    if (v & (1ull << b)) break;
-                    ++c;
-
-                }
-                return c;
-                };
-
-            int32_t msd = -1;
-            uint64_t absAtMSD64 = 0;
-            for (int32_t i = extDigits - 1; i >= 0; --i) {
-                if (magXY[i] != 0) {
-                    msd = i;
-                    absAtMSD64 = magXY[i];
-                    break;
-
-                }
-
-            }
-
-            if (msd < 0) {
-                outExpRawXY = -100000000;  // exact zero
-            } else {
-                int32_t clz = clz64(absAtMSD64);
-                // now the “1” bit is at position (63-clz) within this 64-bit limb
-                int32_t bitIndex = msd * 32 + (63 - clz);
-                outExpRawXY = expXY - ((extDigits * 32 - 1) - bitIndex);
-            }
-
-            // 5) Compare magXY vs Z’s magnitude
-            if (outExpRawXY > expZ) {
-                outXYgtZ = true;
-            } else if (outExpRawXY < expZ) {
-                outXYgtZ = false;
-            } else {
-                // tie on exponent → compare limbs high→low
-                outXYgtZ = false;
-                for (int32_t i = extDigits - 1; i >= 0; --i) {
-                    uint32_t z_d = GetNormalizedDigit(extZ, actualDigits, extDigits, shiftZ, i);
-                    if (magXY[i] > z_d) { outXYgtZ = true;  break; } else if (magXY[i] < z_d) { outXYgtZ = false; break; }
-                }
-            }
-        };
-
+    bool &BCIsBiggerThanA)  // |raw_signed(B–C)| > |A| ?
+{
     // compute raw_signed(A–B) vs C
-    cmpSignedRawVsThird(
+    CmpSignedRawVsThird<SharkFloatParams>(
         extA, extB, extC,
         effExpA, effExpB, effExpC,
         shiftA, shiftB, shiftC,
         signA, signB,
-        expRawAB,
+        actualDigits, extDigits,
         ABIsBiggerThanC);
 
     // compute raw_signed(A–C) vs B
-    {
-        int32_t dummyExp;
-        cmpSignedRawVsThird(
-            extA, extC, extB,
-            effExpA, effExpC, effExpB,
-            shiftA, shiftC, shiftB,
-            signA, signC,
-            dummyExp,
-            ACIsBiggerThanB);
-    }
+    CmpSignedRawVsThird<SharkFloatParams>(
+        extA, extC, extB,
+        effExpA, effExpC, effExpB,
+        shiftA, shiftC, shiftB,
+        signA, signC,
+        actualDigits, extDigits,
+        ACIsBiggerThanB);
 
     // compute raw_signed(B–C) vs A
-    {
-        int32_t dummyExp;
-        cmpSignedRawVsThird(
-            extB, extC, extA,
-            effExpB, effExpC, effExpA,
-            shiftB, shiftC, shiftA,
-            signB, signC,
-            dummyExp,
-            BCIsBiggerThanA);
-    }
+    CmpSignedRawVsThird<SharkFloatParams>(
+        extB, extC, extA,
+        effExpB, effExpC, effExpA,
+        shiftB, shiftC, shiftA,
+        signB, signC,
+        actualDigits, extDigits,
+        BCIsBiggerThanA);
 }
 
 
@@ -910,14 +898,12 @@ void Phase1_ABC(
     extResult_ABC.assign(extDigits, 0ull);
 
     bool ABIsBiggerThanC, ACIsBiggerThanB, BCIsBiggerThanA;
-    int32_t expRawAB;
     ComputeABCComparison<SharkFloatParams>(
         extA, extB, extC,
         actualDigits, extDigits,
         shiftA, shiftB, shiftC,
         effExpA, effExpB, effExpC,
         IsNegativeA, IsNegativeB, IsNegativeC,
-        expRawAB,
         ABIsBiggerThanC,
         ACIsBiggerThanB,
         BCIsBiggerThanA);

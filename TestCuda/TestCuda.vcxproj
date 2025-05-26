@@ -115,6 +115,8 @@
     <ClCompile Include="ReferenceAdd.cpp" />
     <ClCompile Include="ReferenceKaratsuba.cpp" />
     <CudaCompile Include="Add.cu" />
+    <ClInclude Include="Add_ABC.cuh" />
+    <ClInclude Include="Add_DE.cuh" />
     <CudaCompile Include="HpSharkFloat.cu" />
     <CudaCompile Include="KernelInvoke.cu" />
     <CudaCompile Include="Multiply.cu" />

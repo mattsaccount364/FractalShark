@@ -37,7 +37,7 @@ void Subtract128 (
     result_high = a_high - b_high - borrow;
 }
 
-static void NativeMultiply64(
+static void NativeMultiply64 (
     int n,
     int total_k,
     const std::vector<uint32_t> &A,
@@ -91,7 +91,7 @@ static void NativeMultiply64(
 }
 
 // Helper to add two 64-bit values plus a carry-in, produce sum and carry-out
-static inline void add64withCarry(uint64_t x, uint64_t y, uint64_t carry_in,
+static inline void add64withCarry (uint64_t x, uint64_t y, uint64_t carry_in,
     uint64_t &sum, uint64_t &carry_out) {
     uint64_t low = x + carry_in;
     carry_out = (low < x) ? 1ULL : 0ULL;
@@ -190,8 +190,8 @@ template<
     DebugStatePurpose Purpose,
     typename ArrayType>
 const DebugStateHost<SharkFloatParams> &
-GetCurrentDebugState(
-    std::vector<DebugStateHost<SharkFloatParams>> &debugChecksumArray,
+GetCurrentDebugState (
+    std::vector<DebugStateHost<SharkFloatParams>> &debugStates,
     UseConvolution useConvolution,
     const ArrayType *arrayToChecksum,
     size_t arraySize) {
@@ -200,7 +200,7 @@ GetCurrentDebugState(
     constexpr auto curPurpose = static_cast<int>(Purpose);
     const auto index = CallIndex * maxPurposes + curPurpose;
 
-    auto &retval = debugChecksumArray[index];
+    auto &retval = debugStates[index];
     retval.Reset(
         arrayToChecksum, arraySize, Purpose, RecursionDepth, CallIndex, useConvolution);
     return retval;
@@ -211,7 +211,7 @@ template<
     int NewNumBlocks,
     int RecursionDepth,
     int CallIndex>
-void KaratsubaRecursiveDigits(
+void KaratsubaRecursiveDigits (
     const std::vector<uint32_t> &A_digits,  // pointer to A's digits
     const std::vector<uint32_t> &B_digits,
     std::vector<uint64_t> &final128XX,

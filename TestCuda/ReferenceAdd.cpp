@@ -270,7 +270,7 @@ template<
     typename ArrayType>
 static const DebugStateHost<SharkFloatParams> &
 GetCurrentDebugState(
-    std::vector<DebugStateHost<SharkFloatParams>> &debugChecksumArray,
+    std::vector<DebugStateHost<SharkFloatParams>> &debugStates,
     const ArrayType *arrayToChecksum,
     size_t arraySize) {
 
@@ -279,7 +279,7 @@ GetCurrentDebugState(
     constexpr auto UseConvolution = UseConvolution::No;
     constexpr auto RecursionDepth = 0;
 
-    auto &retval = debugChecksumArray[curPurpose];
+    auto &retval = debugStates[curPurpose];
     retval.Reset(
         arrayToChecksum, arraySize, Purpose, RecursionDepth, CallIndex, UseConvolution);
     return retval;
@@ -1420,7 +1420,6 @@ AddHelper(
     }
 
     // captures: numActualDigitsPlusGuard
-// captures: numActualDigitsPlusGuard
     auto handleFinalCarry = [&](
         int32_t &outExponent,
         uint32_t carry,
@@ -1450,8 +1449,6 @@ AddHelper(
                 highBits = nextHighBits;
             }
         };
-
-
 
     handleFinalCarry(outExponent_ABC, carry_ABC, propagatedResult_ABC);
     handleFinalCarry(outExponent_DE, carry_DE, propagatedResult_DE);

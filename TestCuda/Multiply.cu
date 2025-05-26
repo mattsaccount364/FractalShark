@@ -1053,7 +1053,7 @@ static_assert(AdditionalUInt64PerFrame == 256, "See below");
     constexpr auto CallOffset = CallIndex * CalculateMultiplyFrameSize<SharkFloatParams>(); \
     constexpr auto TempBaseOffset = TempBase + CallOffset; \
     constexpr auto Checksum_offset = AdditionalGlobalSyncSpace; \
-    auto *SharkRestrict debugChecksumArray = reinterpret_cast<DebugState<SharkFloatParams>*>(&tempProducts[Checksum_offset]); \
+    auto *SharkRestrict debugStates = reinterpret_cast<DebugState<SharkFloatParams>*>(&tempProducts[Checksum_offset]); \
     constexpr auto Random_offset = Checksum_offset + AdditionalGlobalRandomSpace; \
     auto *SharkRestrict debugRandomArray = reinterpret_cast<curandState *>(&tempProducts[Random_offset]); \
     constexpr auto Z0_offsetXX = TempBaseOffset + AdditionalUInt64PerFrame;          /* 0 */ \
@@ -1117,13 +1117,13 @@ template<
 __device__ SharkForceInlineReleaseOnly void
 EraseCurrentDebugState(
     RecordIt record,
-    DebugState<SharkFloatParams> *debugChecksumArray,
+    DebugState<SharkFloatParams> *debugStates,
     cooperative_groups::grid_group &grid,
     cooperative_groups::thread_block &block) {
 
     constexpr auto maxPurposes = static_cast<int>(DebugStatePurpose::NumPurposes);
     constexpr auto curPurpose = static_cast<int>(Purpose);
-    debugChecksumArray[CallIndex * maxPurposes + curPurpose].Erase(
+    debugStates[CallIndex * maxPurposes + curPurpose].Erase(
         record, grid, block, Purpose, RecursionDepth, CallIndex);
 }
 
@@ -1137,7 +1137,7 @@ __device__ SharkForceInlineReleaseOnly void
 StoreCurrentDebugState (
     RecordIt record,
     UseConvolution useConvolution,
-    DebugState<SharkFloatParams> *debugChecksumArray,
+    DebugState<SharkFloatParams> *debugStates,
     cooperative_groups::grid_group &grid,
     cooperative_groups::thread_block &block,
     const ArrayType *arrayToChecksum,
@@ -1145,7 +1145,7 @@ StoreCurrentDebugState (
 {
     constexpr auto maxPurposes = static_cast<int>(DebugStatePurpose::NumPurposes);
     constexpr auto curPurpose = static_cast<int>(Purpose);
-    debugChecksumArray[CallIndex * maxPurposes + curPurpose].Reset(
+    debugStates[CallIndex * maxPurposes + curPurpose].Reset(
         record, useConvolution, grid, block, arrayToChecksum, arraySize, Purpose, RecursionDepth, CallIndex);
 }
 
@@ -1204,11 +1204,11 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
         grid.sync();
 
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Invalid>(
-            record, debugChecksumArray, grid, block);
+            record, debugStates, grid, block);
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::ADigits, uint32_t>(
-            record, UseConvolutionHere, debugChecksumArray, grid, block, aDigits, NewN);
+            record, UseConvolutionHere, debugStates, grid, block, aDigits, NewN);
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BDigits, uint32_t>(
-            record, UseConvolutionHere, debugChecksumArray, grid, block, bDigits, NewN);
+            record, UseConvolutionHere, debugStates, grid, block, bDigits, NewN);
 
         grid.sync();
     }
@@ -1258,13 +1258,13 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
         grid.sync();
 
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::AHalfHigh>(
-            record, UseConvolutionHere, debugChecksumArray, grid, block, a_high, n2);
+            record, UseConvolutionHere, debugStates, grid, block, a_high, n2);
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::AHalfLow>(
-            record, UseConvolutionHere, debugChecksumArray, grid, block, a_low, n1);
+            record, UseConvolutionHere, debugStates, grid, block, a_low, n1);
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BHalfHigh>(
-            record, UseConvolutionHere, debugChecksumArray, grid, block, b_high, n2);
+            record, UseConvolutionHere, debugStates, grid, block, b_high, n2);
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BHalfLow>(
-            record, UseConvolutionHere, debugChecksumArray, grid, block, b_low, n1);
+            record, UseConvolutionHere, debugStates, grid, block, b_low, n1);
 
         grid.sync();
     }
@@ -1420,9 +1420,9 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
 
     if constexpr (SharkDebugChecksums) {
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::XDiff>(
-            record, UseConvolutionHere, debugChecksumArray, grid, block, global_x_diff_abs, MaxHalfN);
+            record, UseConvolutionHere, debugStates, grid, block, global_x_diff_abs, MaxHalfN);
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::YDiff>(
-            record, UseConvolutionHere, debugChecksumArray, grid, block, global_y_diff_abs, MaxHalfN);
+            record, UseConvolutionHere, debugStates, grid, block, global_y_diff_abs, MaxHalfN);
 
         grid.sync();
     }
@@ -1761,25 +1761,25 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
 
     if constexpr (SharkDebugChecksums) {
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z0XX>(
-            record, UseConvolutionHere, debugChecksumArray, grid, block, Z0_OutDigitsXX, FinalZ0Size);
+            record, UseConvolutionHere, debugStates, grid, block, Z0_OutDigitsXX, FinalZ0Size);
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z0XY>(
-            record, UseConvolutionHere, debugChecksumArray, grid, block, Z0_OutDigitsXY, FinalZ0Size);
+            record, UseConvolutionHere, debugStates, grid, block, Z0_OutDigitsXY, FinalZ0Size);
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z0YY>(
-            record, UseConvolutionHere, debugChecksumArray, grid, block, Z0_OutDigitsYY, FinalZ0Size);
+            record, UseConvolutionHere, debugStates, grid, block, Z0_OutDigitsYY, FinalZ0Size);
 
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2XX>(
-            record, UseConvolutionHere, debugChecksumArray, grid, block, Z2_OutDigitsXX, FinalZ2Size);
+            record, UseConvolutionHere, debugStates, grid, block, Z2_OutDigitsXX, FinalZ2Size);
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2XY>(
-            record, UseConvolutionHere, debugChecksumArray, grid, block, Z2_OutDigitsXY, FinalZ2Size);
+            record, UseConvolutionHere, debugStates, grid, block, Z2_OutDigitsXY, FinalZ2Size);
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2YY>(
-            record, UseConvolutionHere, debugChecksumArray, grid, block, Z2_OutDigitsYY, FinalZ2Size);
+            record, UseConvolutionHere, debugStates, grid, block, Z2_OutDigitsYY, FinalZ2Size);
 
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1_offsetXX>(
-            record, UseConvolutionHere, debugChecksumArray, grid, block, Z1_temp_digitsXX, FinalZ1TempSize);
+            record, UseConvolutionHere, debugStates, grid, block, Z1_temp_digitsXX, FinalZ1TempSize);
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1_offsetXY>(
-            record, UseConvolutionHere, debugChecksumArray, grid, block, Z1_temp_digitsXY, FinalZ1TempSize);
+            record, UseConvolutionHere, debugStates, grid, block, Z1_temp_digitsXY, FinalZ1TempSize);
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1_offsetYY>(
-            record, UseConvolutionHere, debugChecksumArray, grid, block, Z1_temp_digitsYY, FinalZ1TempSize);
+            record, UseConvolutionHere, debugStates, grid, block, Z1_temp_digitsYY, FinalZ1TempSize);
 
         grid.sync();
     }
@@ -1890,11 +1890,11 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             grid.sync();
 
             StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1XX>(
-                record, UseConvolutionHere, debugChecksumArray, grid, block, Z1_digitsXX, total_k * 2);
+                record, UseConvolutionHere, debugStates, grid, block, Z1_digitsXX, total_k * 2);
             StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1XY>(
-                record, UseConvolutionHere, debugChecksumArray, grid, block, Z1_digitsXY, total_k * 2);
+                record, UseConvolutionHere, debugStates, grid, block, Z1_digitsXY, total_k * 2);
             StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1YY>(
-                record, UseConvolutionHere, debugChecksumArray, grid, block, Z1_digitsYY, total_k * 2);
+                record, UseConvolutionHere, debugStates, grid, block, Z1_digitsYY, total_k * 2);
         }
 
         // Synchronize before final combination
@@ -1987,18 +1987,18 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             grid.sync();
 
             StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Final128XX>(
-                record, UseConvolutionHere, debugChecksumArray, grid, block, final128XX, total_result_digits * 2);
+                record, UseConvolutionHere, debugStates, grid, block, final128XX, total_result_digits * 2);
             StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Final128XY>(
-                record, UseConvolutionHere, debugChecksumArray, grid, block, final128XY, total_result_digits * 2);
+                record, UseConvolutionHere, debugStates, grid, block, final128XY, total_result_digits * 2);
             StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Final128YY>(
-                record, UseConvolutionHere, debugChecksumArray, grid, block, final128YY, total_result_digits * 2);
+                record, UseConvolutionHere, debugStates, grid, block, final128YY, total_result_digits * 2);
 
             EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offsetXX>(
-                record, debugChecksumArray, grid, block);
+                record, debugStates, grid, block);
             EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offsetXY>(
-                record, debugChecksumArray, grid, block);
+                record, debugStates, grid, block);
             EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offsetYY>(
-                record, debugChecksumArray, grid, block);
+                record, debugStates, grid, block);
         }
 
         // Synchronize before carry propagation
@@ -2075,40 +2075,40 @@ __device__ void MultiplyHelperKaratsubaV2 (
             (block.thread_index().x == 0 && block.group_index().x == ExecutionBlockBase) ?
             RecordIt::Yes :
             RecordIt::No;
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Invalid>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::ADigits>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BDigits>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::CDigits>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::DDigits>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::EDigits>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::AHalfHigh>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::AHalfLow>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BHalfHigh>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BHalfLow>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::XDiff>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::YDiff>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z0XX>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z0XY>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z0YY>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1XX>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1XY>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1YY>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2XX>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2XY>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2YY>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1_offsetXX>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1_offsetXY>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1_offsetYY>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Final128XX>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Final128XY>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Final128YY>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::FinalAdd1>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::FinalAdd2>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offsetXX>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offsetXY>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offsetYY>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_Add1>(record, debugChecksumArray, grid, block);
-        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_Add2>(record, debugChecksumArray, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Invalid>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::ADigits>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BDigits>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::CDigits>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::DDigits>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::EDigits>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::AHalfHigh>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::AHalfLow>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BHalfHigh>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BHalfLow>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::XDiff>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::YDiff>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z0XX>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z0XY>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z0YY>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1XX>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1XY>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1YY>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2XX>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2XY>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2YY>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1_offsetXX>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1_offsetXY>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1_offsetYY>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Final128XX>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Final128XY>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Final128YY>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::FinalAdd1>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::FinalAdd2>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offsetXX>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offsetXY>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offsetYY>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_Add1>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_Add2>(record, debugStates, grid, block);
         static_assert(static_cast<int32_t>(DebugStatePurpose::NumPurposes) == 34, "Unexpected number of purposes");
     }
 
@@ -2219,11 +2219,11 @@ __device__ void MultiplyHelperKaratsubaV2 (
         grid.sync();
 
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offsetXX>(
-            record, UseConvolution::No, debugChecksumArray, grid, block, resultEntriesXX, 2 * NewN);
+            record, UseConvolution::No, debugStates, grid, block, resultEntriesXX, 2 * NewN);
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offsetXY>(
-            record, UseConvolution::No, debugChecksumArray, grid, block, resultEntriesXY, 2 * NewN);
+            record, UseConvolution::No, debugStates, grid, block, resultEntriesXY, 2 * NewN);
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offsetYY>(
-            record, UseConvolution::No, debugChecksumArray, grid, block, resultEntriesYY, 2 * NewN);
+            record, UseConvolution::No, debugStates, grid, block, resultEntriesYY, 2 * NewN);
 
         grid.sync();
     }

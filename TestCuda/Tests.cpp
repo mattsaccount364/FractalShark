@@ -714,6 +714,8 @@ void TestCoreAdd (
 
     assert(inputX.size() == 3 || inputX.size() == 5);
 
+    assert(inputX.size() == mpfInputLen);
+
     const auto &aNum = inputX[0];
     const auto &bNum = inputX[1];
     const auto &cNum = inputX[2];
@@ -1277,7 +1279,9 @@ void TestTernaryOperatorTwoNumbers (
         }
 
         // Convert the input values to HpSharkFloat<SharkFloatParams> representations
-        std::vector<HpSharkFloat<SharkFloatParams>> xNumCopy{5};
+        std::vector<HpSharkFloat<SharkFloatParams>> xNumCopy{ mpfInLen };
+
+        assert(xNumCopy.size() == num.size());
 
         for (size_t i = 0; i < num.size(); ++i) {
             MpfToHpGpu(mpfCopy[i], xNumCopy[i], HpSharkFloat<SharkFloatParams>::DefaultPrecBits);

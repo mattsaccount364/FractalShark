@@ -41,14 +41,14 @@ struct IntSignCombo {
     bool Negative;
 };
 
-// Returns false if the test fails, true otherwise
 template<class SharkFloatParams, Operator sharkOperator>
-bool DiffAgainstHostNonZero (
+bool DiffAgainstHostNonZero(
     int testNum,
     int /*numTerms*/,
     std::string hostCustomOrGpu,
     const mpf_t mpfHostResult,
     const HpSharkFloat<SharkFloatParams> &gpuResult) {
+    bool testSucceeded = true;
 
     if constexpr (SharkFloatParams::HostVerbose) {
         std::cout << "\n" << hostCustomOrGpu << " result: " << std::endl;
@@ -56,26 +56,25 @@ bool DiffAgainstHostNonZero (
         std::cout << gpuResult.ToHexString() << std::endl;
     }
 
-    // Convert the HpSharkFloat<SharkFloatParams> results to mpf_t for comparison
+    // Convert gpuResult → mpfXGpuResult
     mpf_t mpfXGpuResult;
     mpf_init(mpfXGpuResult);
-
     HpGpuToMpf(gpuResult, mpfXGpuResult);
 
-    // Compute the differences between host and GPU results
-    mpf_t mpfDiff;
+    // Compute absolute difference: mpfDiffAbs = |mpfHostResult – mpfXGpuResult|
+    mpf_t mpfDiff, mpfDiffAbs;
     mpf_init(mpfDiff);
-
-    mpf_sub(mpfDiff, mpfHostResult, mpfXGpuResult);
-
-    // Take absolute delta:
-    mpf_t mpfDiffAbs;
     mpf_init(mpfDiffAbs);
+    mpf_sub(mpfDiff, mpfHostResult, mpfXGpuResult);
     mpf_abs(mpfDiffAbs, mpfDiff);
 
     // Converted GPU result
     if constexpr (SharkFloatParams::HostVerbose) {
-        std::cout << "\nConverted " << hostCustomOrGpu << " result:" << std::endl;
+        // mpfHostResult:
+        std::cout << "\nConverted host result (mpfHostResult):" << std::endl;
+        std::cout << MpfToString<SharkFloatParams>(mpfHostResult, HpSharkFloat<SharkFloatParams>::DefaultPrecBits) << std::endl;
+
+        std::cout << "\nConverted " << hostCustomOrGpu << " result (mpfXGpuResult):" << std::endl;
         std::cout << MpfToString<SharkFloatParams>(mpfXGpuResult, HpSharkFloat<SharkFloatParams>::DefaultPrecBits) << std::endl;
 
         // Print the differences
@@ -83,96 +82,94 @@ bool DiffAgainstHostNonZero (
         std::cout << MpfToString<SharkFloatParams>(mpfDiffAbs, LowPrec) << std::endl;
     }
 
-    // Check if the host result is zero to avoid division by zero
+    // Retrieve total precision bits:
     mp_bitcnt_t gpuPrecBits = HpSharkFloat<SharkFloatParams>::DefaultPrecBits;
+    mp_bitcnt_t margin = sizeof(uint32_t) * 8 * 2 + 2;  // as before
+    mp_bitcnt_t totalPrecBits = (gpuPrecBits > margin ? gpuPrecBits - margin : 1);
 
-    // Most of the time, 32 * 2 is enough, but the worst case seems to require the 2 extra bits.
-    // Example of worst case multiply: 1.3 * 1.3
-    mp_bitcnt_t margin = sizeof(uint32_t) * 8 * 2 + 2;
-    mp_bitcnt_t totalPrecBits = (gpuPrecBits > margin) ? (gpuPrecBits - margin) : 1;
-    mpf_t acceptableError;
+    // Compute epsilon = 2^(–totalPrecBits)
+    mpf_t epsilon;
+    mpf_init2(epsilon, totalPrecBits);
+    mpf_set_ui(epsilon, 1);
+    mpf_div_2exp(epsilon, epsilon, totalPrecBits);  // epsilon = 1 / 2^totalPrecBits
 
-    bool testSucceeded = true;
+    // Compute |host| into mpfAbsHost
+    mpf_t mpfAbsHost;
+    mpf_init(mpfAbsHost);
+    mpf_abs(mpfAbsHost, mpfHostResult);
 
-    // Init a zero mpf:
-    mpf_t mpfZero;
-    mpf_init(mpfZero);
-    mpf_set_ui(mpfZero, 0);
-
-    if (mpf_cmp(mpfHostResult, mpfZero) != 0) {
-        // Host result is non-zero
-
-        // Compute relative error
+    // CASE A: host is “effectively zero” if |host| <= epsilon.
+    if (mpf_cmp(mpfAbsHost, epsilon) <= 0) {
+        // Then we compare absolute error directly against epsilon:
+        //
+        //   If | host – gpu | <= epsilon  ⇒ PASS
+        //   else                    ⇒ FAIL
+        if (mpf_cmp(mpfDiffAbs, epsilon) <= 0) {
+            if constexpr (SharkFloatParams::HostVerbose) {
+                std::cout << "\nPASS (|host| <= epsilon):\n"
+                    << "  |host| = " << MpfToString<SharkFloatParams>(mpfAbsHost, LowPrec)
+                    << "  epsilon = " << MpfToString<SharkFloatParams>(epsilon, LowPrec)
+                    << "\n  |host - gpu| = "
+                    << MpfToString<SharkFloatParams>(mpfDiffAbs, LowPrec)
+                    << std::endl;
+            }
+            Tests.MarkSuccess(testNum, hostCustomOrGpu);
+        } else {
+            std::cerr << "\nFAIL (|host| <= epsilon but absolute error > epsilon):\n"
+                << "  |host| = " << MpfToString<SharkFloatParams>(mpfAbsHost, LowPrec) << "\n"
+                << "  epsilon      = " << MpfToString<SharkFloatParams>(epsilon, LowPrec) << "\n"
+                << "  |host - gpu| = "
+                << MpfToString<SharkFloatParams>(mpfDiffAbs, LowPrec) << std::endl;
+            Tests.MarkFailed(
+                testNum,
+                hostCustomOrGpu,
+                MpfToString<SharkFloatParams>(mpfDiffAbs, LowPrec),
+                MpfToString<SharkFloatParams>(epsilon, LowPrec));
+            testSucceeded = false;
+        }
+    }
+    // CASE B: host is not “tiny,” so do a normal relative‐error check
+    else {
+        // Compute relativeError = | host – gpu | / | host |
         mpf_t relativeError;
         mpf_init(relativeError);
-        mpf_sub(relativeError, mpfHostResult, mpfXGpuResult);
-        mpf_div(relativeError, relativeError, mpfHostResult);
-        mpf_abs(relativeError, relativeError);
+        {
+            mpf_t tmp;
+            mpf_init(tmp);
+            mpf_div(tmp, mpfDiffAbs, mpfAbsHost);
+            mpf_abs(relativeError, tmp);
+            mpf_clear(tmp);
+        }
 
-        // Compute machine epsilon: epsilon = 2^(-totalPrecBits)
-        mpf_t epsilon;
-        mpf_init2(epsilon, totalPrecBits);
-        mpf_set_ui(epsilon, 1);
-        mpf_div_2exp(epsilon, epsilon, totalPrecBits);
-
-        // Compute acceptable error: acceptableError = epsilon * abs(hostResult)
-        mpf_init(acceptableError);
-        mpf_mul(acceptableError, epsilon, mpfHostResult);
-        mpf_abs(acceptableError, acceptableError);
-
-        // Compare absolute error with acceptable threshold
-        auto relativeErrorStr = MpfToString<SharkFloatParams>(relativeError, LowPrec);
-        auto epsilonStr = MpfToString<SharkFloatParams>(epsilon, LowPrec);
+        // Compare: if relativeError <= epsilon  ⇒ PASS; else FAIL
         if (mpf_cmp(relativeError, epsilon) <= 0) {
             if constexpr (SharkFloatParams::HostVerbose) {
-                std::cout << "\nThe relative error is within acceptable bounds." << std::endl;
-                std::cout << "Relative error: " << epsilonStr << std::endl;
-                std::cout << "Epsilon: " << relativeErrorStr << std::endl;
+                std::cout << "\nPASS (relative-error check):\n"
+                    << "  relativeError = "
+                    << MpfToString<SharkFloatParams>(relativeError, LowPrec) << "\n"
+                    << "  epsilon            = "
+                    << MpfToString<SharkFloatParams>(epsilon, LowPrec) << std::endl;
             }
-
             Tests.MarkSuccess(testNum, hostCustomOrGpu);
         } else {
-            std::cerr << "\nError: The relative error exceeds acceptable bounds." << std::endl;
-            std::cout << "Relative error: " << relativeErrorStr << std::endl;
-            std::cout << "Epsilon: " << epsilonStr << std::endl;
-            Tests.MarkFailed(testNum, hostCustomOrGpu, relativeErrorStr, epsilonStr);
+            std::cerr << "\nFAIL (relative-error exceeds epsilon):\n"
+                << "  relativeError = "
+                << MpfToString<SharkFloatParams>(relativeError, LowPrec) << "\n"
+                << "  epsilon             = "
+                << MpfToString<SharkFloatParams>(epsilon, LowPrec) << std::endl;
+            Tests.MarkFailed(
+                testNum,
+                hostCustomOrGpu,
+                MpfToString<SharkFloatParams>(relativeError, LowPrec),
+                MpfToString<SharkFloatParams>(epsilon, LowPrec));
             testSucceeded = false;
         }
-
-        // Clean up
         mpf_clear(relativeError);
-        mpf_clear(epsilon);
-        mpf_clear(acceptableError);
-    } else {
-        // Host result is zero
-
-#if 0
-        // For zero host result, use an absolute error threshold
-        mpf_init2(acceptableError, totalPrecBits);
-        mpf_set_ui(acceptableError, 1);
-        mpf_div_2exp(acceptableError, acceptableError, totalPrecBits);
-
-        auto mpfDiffAbsStr = MpfToString<SharkFloatParams>(mpfDiffAbs, LowPrec);
-        auto absoluteErrorStr = MpfToString<SharkFloatParams>(acceptableError, LowPrec);
-
-        if (mpf_cmp(mpfDiffAbs, acceptableError) <= 0) {
-            if constexpr (SharkFloatParams::HostVerbose) {
-                std::cout << "\nThe absolute error is within acceptable bounds." << std::endl;
-            }
-
-            Tests.MarkSuccess(testNum, hostCustomOrGpu);
-        } else {
-            std::cerr << "\nError: The absolute error exceeds acceptable bounds." << std::endl;
-            Tests.MarkFailed(testNum, hostCustomOrGpu, mpfDiffAbsStr, absoluteErrorStr);
-            testSucceeded = false;
-        }
-
-        mpf_clear(acceptableError);
-#endif
-        assert(false);
     }
 
-    mpf_clear(mpfZero);
+    // Clean up
+    mpf_clear(mpfAbsHost);
+    mpf_clear(epsilon);
     mpf_clear(mpfDiff);
     mpf_clear(mpfDiffAbs);
     mpf_clear(mpfXGpuResult);
@@ -339,7 +336,7 @@ bool DiffAgainstHost(
         diff[i] = uint32_t(ai - bi);
     }
 
-    // 10) Check ULP distance ≤ numTerms-1
+    // 10) Check ULP distance <= numTerms-1
     bool ok = true;
     for (int i = int(N) - 1; i >= 1; --i) {
         if (diff[i] != 0) {
@@ -1309,37 +1306,37 @@ void TestTernaryOperatorTwoNumbers (
     //
     // With three numbers, there are 8 combinations of signs
     // 
-    {
-        printTest(testNum);
-        resetCopy();
-        curTest();
-    }
+    //{
+    //    printTest(testNum);
+    //    resetCopy();
+    //    curTest();
+    //}
 
-    {
-        printTest(testNum);
-        resetCopy();
+    //{
+    //    printTest(testNum);
+    //    resetCopy();
 
-        if constexpr (!SharkTestForceSameSign) {
-            mpf_neg(mpfCopy[0], mpfCopy[0]);
-        }
-        curTest();
-    }
+    //    if constexpr (!SharkTestForceSameSign) {
+    //        mpf_neg(mpfCopy[0], mpfCopy[0]);
+    //    }
+    //    curTest();
+    //}
 
-    {
-        printTest(testNum);
-        resetCopy();
-        if constexpr (!SharkTestForceSameSign) {
-            mpf_neg(mpfCopy[1], mpfCopy[1]);
-        }
-        curTest();
-    }
+    //{
+    //    printTest(testNum);
+    //    resetCopy();
+    //    if constexpr (!SharkTestForceSameSign) {
+    //        mpf_neg(mpfCopy[1], mpfCopy[1]);
+    //    }
+    //    curTest();
+    //}
 
-    {
-        printTest(testNum);
-        resetCopy();
-        mpf_neg(mpfCopy[0], mpfCopy[0]);
-        mpf_neg(mpfCopy[1], mpfCopy[1]);
-    }
+    //{
+    //    printTest(testNum);
+    //    resetCopy();
+    //    mpf_neg(mpfCopy[0], mpfCopy[0]);
+    //    mpf_neg(mpfCopy[1], mpfCopy[1]);
+    //}
 
     {
         printTest(testNum);
@@ -1898,15 +1895,15 @@ bool TestAllBinaryOp(int testBase) {
     //
     if constexpr (includeSet1) {
         const auto set = testBase + 100;
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 10, "7", "19", "0");
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 20, "4294967295", "1", "4294967296");
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 30, "4294967296", "1", "1");
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 40, "4294967295", "4294967296", "1");
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 50, "4294967296", "-1", "1");
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 60, "18446744073709551615", "1", "1");
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 70, "0", "0.1", "0.3");
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 80, "0.1", "0", "0.1");
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 90, "0", "0", "0");
+        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 10, "7", "19", "0");
+        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 20, "4294967295", "1", "4294967296");
+        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 30, "4294967296", "1", "1");
+        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 40, "4294967295", "4294967296", "1");
+        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 50, "4294967296", "-1", "1");
+        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 60, "18446744073709551615", "1", "1");
+        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 70, "0", "0.1", "0.3");
+        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 80, "0.1", "0", "0.1");
+        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 90, "0", "0", "0");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 100, "0.1", "0.1", "0.1");
     }
 

@@ -1,8 +1,8 @@
 # Introduction
 
-## 2025-4-26 News
+## 2025-6-15 News
 
-This page actually gets traffic occasionally, so I just wanted to post a short update.  Since last August, I've been working on a CUDA-based, high-precision reference orbit implementation.  The objective is to beat FractalShark's existing multithreaded reference-orbit performance at higher digit counts, at least if you have a decent card.  Scroll down to "2025-4 - What's going on with this native CUDA reference orbit calculation?" for the latest information on this subject.
+This page actually gets traffic occasionally, so I just wanted to post a short update.  Since last August, I've been working on a CUDA-based, high-precision reference orbit implementation.  The objective is to beat FractalShark's existing multithreaded reference-orbit performance at higher digit counts, at least if you have a decent card.  Scroll down to "[2025-6-15](#2025-6-15)" for the latest information on this subject.
 
 ## What is FractalShark?
 
@@ -117,6 +117,12 @@ Many.
 - FractalShark's reference orbit compression is novel code, but based on the approach Zhuoran described here: [Reference Compression](https://fractalforums.org/fractal-mathematics-and-new-theories/28/reference-compression/5142). Claude posted a simple easy-to-understand sample here, which FractalShark's implementation is loosely based on: [Fractal Bits](https://code.mathr.co.uk/fractal-bits/tree/HEAD:/mandelbrot-reference-compression)
 
 - This implementation would probably not have happened without the work of these folks so thank you!
+
+## 2025-6-15
+
+Short update.  Still fussing with it, with some delays because of vacation etc.  Having some issues with the optimized "add" implementation that does the 5-way add/subtract.  It's a fun project, but has ended up more complex than I'd expected.  The reference implementation is almost working the way I want.
+
+Worst case I could dump it and fallback to a series of regular A+B adds/subtracts but I'm pretty determined to make the optimized approach work.  TBD if the performance actually pays off.  (Yes, I can hear you saying the Mandelbrot multiplies/squares dominate the cost, but it's bugging me and fun to play with).
 
 ## 2025-4-26
 

@@ -212,14 +212,15 @@ struct HpSharkFloat {
     void Negate();
 
     // Default precision in bits
+    using DigitType = uint32_t;
     constexpr static auto NumUint32 = SharkFloatParams::GlobalNumUint32;
-    constexpr static auto DefaultPrecBits = NumUint32 * sizeof(uint32_t) * 8;
+    constexpr static auto DefaultPrecBits = NumUint32 * sizeof(DigitType) * 8;
     constexpr static auto ConvertBitsToDecimals = 3.3219280948873623478703194294894;
     constexpr static auto DefaultPrecDigits = DefaultPrecBits / ConvertBitsToDecimals;
     constexpr static auto DefaultMpirBits = DefaultPrecBits;
 
     // Digits in base 2^32
-    uint32_t Digits[NumUint32];
+    DigitType Digits[NumUint32];
 
     // Exponent in base 2
     using ExpT = int32_t;

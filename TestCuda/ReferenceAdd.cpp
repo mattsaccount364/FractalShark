@@ -406,6 +406,80 @@ CompareMagnitudes3Way (
     }
 }
 
+template<class SharkFloatParams>
+static ThreeWayMagnitude
+CompareMagnitudes3WayRelativeToBase(
+    // the “base” exponent (after normalization + bias)
+    const int32_t effExpBase,
+
+    // raw shift to bring each into their MSB position
+    const int32_t shiftA,
+    const int32_t shiftB,
+    const int32_t shiftC,
+
+    // extra right‐shifts to align to effExpBase
+    const int32_t diffA,
+    const int32_t diffB,
+    const int32_t diffC,
+
+    // mantissa arrays (little‐endian, length = extDigits)
+    const uint32_t *extA,
+    const uint32_t *extB,
+    const uint32_t *extC,
+
+    // digit counts
+    const int32_t actualDigits,
+    const int32_t extDigits,
+
+    // out: the chosen exponent for the result
+    int32_t &outExp
+) {
+    // We'll always report back the base exponent.
+    outExp = effExpBase;
+
+    // Helper: lex compare two aligned mantissas (no exponent check)
+    auto cmpAligned = [&](
+        const uint32_t *e1, int32_t s1, int32_t d1,
+        const uint32_t *e2, int32_t s2, int32_t d2
+        ) {
+            for (int32_t i = extDigits - 1; i >= 0; --i) {
+                uint32_t m1 = GetShiftedNormalizedDigit<SharkFloatParams>(
+                    e1, actualDigits, extDigits, s1, d1, i);
+                uint32_t m2 = GetShiftedNormalizedDigit<SharkFloatParams>(
+                    e2, actualDigits, extDigits, s2, d2, i);
+                if (m1 != m2)
+                    return (m1 > m2);
+            }
+            return false;  // tie → not greater
+        };
+
+    // 1) Is A the strict max?
+    if (cmpAligned(extA, shiftA, diffA, extB, shiftB, diffB) &&
+        cmpAligned(extA, shiftA, diffA, extC, shiftC, diffC)) {
+        // now order B vs C
+        if (cmpAligned(extB, shiftB, diffB, extC, shiftC, diffC))
+            return ThreeWayMagnitude::A_GT_B_GT_C;
+        else
+            return ThreeWayMagnitude::A_GT_C_GT_B;
+    }
+    // 2) Is B the strict max?
+    else if (cmpAligned(extB, shiftB, diffB, extA, shiftA, diffA) &&
+        cmpAligned(extB, shiftB, diffB, extC, shiftC, diffC)) {
+        // now order A vs C
+        if (cmpAligned(extA, shiftA, diffA, extC, shiftC, diffC))
+            return ThreeWayMagnitude::B_GT_A_GT_C;
+        else
+            return ThreeWayMagnitude::B_GT_C_GT_A;
+    }
+    // 3) Otherwise C is the strict max
+    else {
+        // order A vs B
+        if (cmpAligned(extA, shiftA, diffA, extB, shiftB, diffB))
+            return ThreeWayMagnitude::C_GT_A_GT_B;
+        else
+            return ThreeWayMagnitude::C_GT_B_GT_A;
+    }
+}
 
 
 // A small structure to hold the generate/propagate pair for a digit.
@@ -417,7 +491,7 @@ struct GenProp {
 // The combine operator for two GenProp pairs.
 // If you have a block with operator f(x) = g OR (p AND x),
 // then the combination for two adjacent blocks is given by:
-inline GenProp Combine(
+inline GenProp Combine (
     const GenProp &left,
     const GenProp &right) {
     GenProp out;
@@ -430,7 +504,7 @@ inline GenProp Combine(
 // If sameSign is true, this is the addition branch;
 // if false, it is the subtraction branch (we guarantee that the final result is positive).
 template<class SharkFloatParams>
-void CarryPropagationPP_DE(
+void CarryPropagationPP_DE (
     const bool sameSign,
     const int32_t extDigits,
     const std::vector<uint64_t> extResultVector,
@@ -555,7 +629,7 @@ void CarryPropagationPP_DE(
 }
 
 template<class SharkFloatParams>
-void CarryPropagation_DE(
+void CarryPropagation_DE (
     const bool sameSign,
     const int32_t extDigits,
     std::vector<uint64_t> &extResult,
@@ -590,7 +664,7 @@ void CarryPropagation_DE(
 
 
 template<class SharkFloatParams>
-void Phase1_DE(
+void Phase1_DE (
     const bool DIsBiggerMagnitude,
     const bool IsNegativeD,
     const bool IsNegativeE,
@@ -689,7 +763,7 @@ void Phase1_DE(
 
 
 template<class SharkFloatParams>
-void CarryPropagation_ABC(
+void CarryPropagation_ABC (
     const int32_t            extDigits,
     std::vector<uint64_t> &extResult,         // raw signed limbs from Phase1_ABC
     int32_t &carryAcc,         // signed carry-in/out (init to 0)
@@ -726,7 +800,7 @@ void CarryPropagation_ABC(
 
 template<class SharkFloatParams>
 static void
-ComputeABCComparison(
+ComputeABCComparison (
     // normalized, extended digit arrays (little‐endian; index 0 = LSB)
     //   extA, extB, extC each have length = extDigits (actualDigits + guardWords)
     const uint32_t *extA,
@@ -762,353 +836,276 @@ ComputeABCComparison(
     bool &ABIsBiggerThanC,  // “is |(±A) – (±B)| > |C| ?”
     bool &ACIsBiggerThanB,  // “is |(±A) – (±C)| > |B| ?”
     bool &BCIsBiggerThanA   // “is |(±B) – (±C)| > |A| ?”
-) {
+)
+{
     // 1) Compute how far each must be right‐shifted to line up with biasedExpABC:
     int32_t diffA = biasedExpABC - effExpA;
     int32_t diffB = biasedExpABC - effExpB;
     int32_t diffC = biasedExpABC - effExpC;
 
-    //
-    // Helper lambda: “compare |(±X) – (±Y)| vs. |Z|” when all three are aligned to
-    //   exponent = biasedExpABC.  We pass in shiftX, shiftY, diffX, diffY, shiftZ, diffZ,
-    //   plus signX, signY, signZ.  That means “X has been normalized with shiftX; to
-    //   align it to biasedExpABC, we further shift right by diffX bits (using
-    //   GetShiftedNormalizedDigit).  Likewise for Y and Z.”
-    //
-    //auto CmpAlignedPairVsThird = [&](
-    //    const uint32_t *extX,
-    //    const uint32_t *extY,
-    //    const uint32_t *extZ,
-    //    int32_t shiftX,
-    //    int32_t diffX,
-    //    int32_t shiftY,
-    //    int32_t diffY,
-    //    int32_t shiftZ,
-    //    int32_t diffZ,
-    //    bool    sX,
-    //    bool    sY,
-    //    bool    /*sZ*/,
-    //    const int32_t actualDigits,
-    //    const int32_t extDigits,
-    //    bool &outXYgtZ
-    //    ) {
-    //        //
-    //        // PHASE A: Compute expRawXY = exponent of the signed‐raw value (±X ± Y)
-    //        //           on the common grid = biasedExpABC.  We scan high→low over i=extDigits–1..0,
-    //        //           each time computing the 64‐bit aligned chunks (a,b) of X and Y via
-    //        //           GetShiftedNormalizedDigit(extX, shiftX, diffX, i) etc., then forming
-    //        //           signed64 = (sX? -a : +a)  +  (sY? -b : +b).  We take mag64 = |signed64|.
-    //        //           On the first nonzero mag64, we record msd=i, absAtMSD64=mag64, break.
-    //        //
-    //        int32_t msd = -1;
-    //        uint64_t absAtMSD64 = 0ull;
-    //        for (int32_t i = extDigits - 1; i >= 0; --i) {
-    //            // (a) Fetch the aligned 64-bit limb of X at index i:
-    //            uint64_t a = GetShiftedNormalizedDigit<SharkFloatParams>(
-    //                extX,
-    //                actualDigits,
-    //                extDigits,
-    //                shiftX,
-    //                diffX,
-    //                i
-    //            );
-    //            // (b) Fetch the aligned 64-bit limb of Y at index i:
-    //            uint64_t b = GetShiftedNormalizedDigit<SharkFloatParams>(
-    //                extY,
-    //                actualDigits,
-    //                extDigits,
-    //                shiftY,
-    //                diffY,
-    //                i
-    //            );
-    //            // (c) Form the signed‐raw 64-bit value:
-    //            int64_t signed64;
-    //            if (sX == sY) {
-    //                // same sign → addition of magnitudes
-    //                signed64 = int64_t(a) + int64_t(b);
-    //            } else {
-    //                // opposite signs → subtraction of magnitudes
-    //                if (a >= b)       signed64 = int64_t(a) - int64_t(b);
-    //                else               signed64 = int64_t(b) - int64_t(a);
-    //            }
-    //            // (d) absolute value:
-    //            uint64_t mag64 = (signed64 < 0 ? uint64_t(-signed64) : uint64_t(signed64));
-    //            if (mag64 != 0ull) {
-    //                msd = i;
-    //                absAtMSD64 = mag64;
-    //                break;
-    //            }
-    //            // else keep scanning downward
-    //        }
-
-    //        // Compute expRawXY from (msd, absAtMSD64).  If msd < 0, result is zero.
-    //        int32_t expRawXY;
-    //        if (msd < 0) {
-    //            // exactly zero
-    //            expRawXY = INT32_MIN / 2;
-    //        } else {
-    //            // count‐leading‐zeros in that 64-bit chunk:
-    //            auto clz64 = [&](uint64_t v) {
-    //                if (v == 0ull) return 64;
-    //                int cnt = 0;
-    //                for (int b = 63; b >= 0; --b) {
-    //                    if (v & (1ull << b)) break;
-    //                    ++cnt;
-    //                }
-    //                return cnt;
-    //                };
-    //            int32_t clz = clz64(absAtMSD64);
-    //            // global “bit index” within [0..extDigits*32−1]
-    //            int32_t bitIndex = msd * 32 + (63 - clz);
-    //            // expXY = biasedExpABC;  // by construction, we aligned both X and Y to biasedExpABC
-    //            expRawXY = biasedExpABC - ((extDigits * 32 - 1) - bitIndex);
-    //        }
-
-    //        // Now compare expRawXY vs expZ (where expZ = biasedExpABC if Z ≠ 0, or some sentinel if zero)
-    //        // To determine expZ, we could scan Z’s 64-bit limbs in exactly the same way.  But
-    //        // notice: in our three‐way code, “Z” is one of A,B,C aligned to biasedExpABC.  Hence
-    //        // as long as Z ≠ 0, its topmost 1‐bit also sits somewhere ≤ (extDigits*32−1).  Its effective
-    //        // exponent is biasedExpABC – ((extDigits*32−1) – bitIndexZ).  But if Z were exactly zero,
-    //        // we’d have to assign expZ = INT32_MIN/2.  Easiest: just repeat the same msd logic for Z.
-    //        //
-    //        int32_t msdZ = -1;
-    //        uint64_t absAtMSDZ64 = 0ull;
-    //        for (int32_t i = extDigits - 1; i >= 0; --i) {
-    //            uint64_t z_i = GetShiftedNormalizedDigit<SharkFloatParams>(
-    //                extZ,
-    //                actualDigits,
-    //                extDigits,
-    //                shiftZ,
-    //                diffZ,
-    //                i
-    //            );
-    //            if (z_i != 0ull) {
-    //                msdZ = i;
-    //                absAtMSDZ64 = z_i;
-    //                break;
-    //            }
-    //        }
-    //        int32_t expZ;
-    //        if (msdZ < 0) {
-    //            expZ = INT32_MIN / 2;
-    //        } else {
-    //            auto clz64 = [&](uint64_t v) {
-    //                if (v == 0ull) return 64;
-    //                int cnt = 0;
-    //                for (int b = 63; b >= 0; --b) {
-    //                    if (v & (1ull << b)) break;
-    //                    ++cnt;
-    //                }
-    //                return cnt;
-    //                };
-    //            int32_t clzZ = clz64(absAtMSDZ64);
-    //            int32_t bitIndexZ = msdZ * 32 + (63 - clzZ);
-    //            expZ = biasedExpABC - ((extDigits * 32 - 1) - bitIndexZ);
-    //        }
-
-    //        // Quick exponent compare:
-    //        if (expRawXY > expZ) {
-    //            outXYgtZ = true;
-    //            return;
-    //        } else if (expRawXY < expZ) {
-    //            outXYgtZ = false;
-    //            return;
-    //        }
-
-    //        // PHASE B: exponents tie → compare 32-bit “top‐words” of |X±Y| vs |Z| in one pass.
-    //        outXYgtZ = false;
-    //        for (int32_t i = extDigits - 1; i >= 0; --i) {
-    //            // (1) Fetch aligned 32-bit word of X at index i:
-    //            uint64_t a32 = GetShiftedNormalizedDigit<SharkFloatParams>(
-    //                extX,
-    //                actualDigits,
-    //                extDigits,
-    //                shiftX,
-    //                diffX,
-    //                i
-    //            );
-    //            // (2) Fetch aligned 32-bit word of Y at index i:
-    //            uint64_t b32 = GetShiftedNormalizedDigit<SharkFloatParams>(
-    //                extY,
-    //                actualDigits,
-    //                extDigits,
-    //                shiftY,
-    //                diffY,
-    //                i
-    //            );
-    //            // (3) Form one 32-bit “chunk” of |X±Y|:
-    //            uint32_t D;
-    //            if (sX == sY) {
-    //                // addition:
-    //                uint64_t sum64 = a32 + b32;
-    //                D = uint32_t(sum64 & 0xFFFFFFFFULL);
-    //            } else {
-    //                // subtraction:
-    //                D = (a32 >= b32 ? uint32_t(a32 - b32)
-    //                    : uint32_t(b32 - a32));
-    //            }
-    //            // (4) Fetch Z’s aligned 32-bit word at index i:
-    //            uint64_t z64 = GetShiftedNormalizedDigit<SharkFloatParams>(
-    //                extZ,
-    //                actualDigits,
-    //                extDigits,
-    //                shiftZ,
-    //                diffZ,
-    //                i
-    //            );
-    //            uint32_t dZ = uint32_t(z64);
-    //            // (5) Compare and early-exit:
-    //            if (D > dZ) {
-    //                outXYgtZ = true;
-    //                return;
-    //            } else if (D < dZ) {
-    //                outXYgtZ = false;
-    //                return;
-    //            }
-    //            // else D == dZ → continue
-    //        }
-    //        // if we reach here, |X±Y| == |Z| exactly
-    //        outXYgtZ = false;
-    //    };
-
-auto CmpAlignedPairVsThird = [&](
-    const uint32_t *extX,
-    const uint32_t *extY,
-    const uint32_t *extZ,
-    int32_t shiftX,
-    int32_t diffX,
-    int32_t shiftY,
-    int32_t diffY,
-    int32_t shiftZ,
-    int32_t diffZ,
-    bool    sX,
-    bool    sY,
-    bool    /*sZ*/,
-    const int32_t actualDigits,
-    const int32_t extDigits,
-    bool &outXYgtZ
-    ) {
-
-        // Helper: compute “borrow‐in” to limb i by scanning downward until
-        // a generate (g_j==1) or a broken propagate (p_k==0) is found.
-        auto computeBorrowIn = [&](int32_t i) -> uint32_t {
-            // chain==true means so far every lower limb was p==1
-            bool chain = true;
-            for (int32_t j = i - 1; j >= 0 && chain; --j) {
-                // re-compute raw64_j = signed(a_j ± b_j)
-                uint64_t a_j = GetShiftedNormalizedDigit<SharkFloatParams>(extX, actualDigits, extDigits, shiftX, diffX, j);
-                uint64_t b_j = GetShiftedNormalizedDigit<SharkFloatParams>(extY, actualDigits, extDigits, shiftY, diffY, j);
-                int64_t raw_j = (sX == sY
-                    ? int64_t(a_j) + int64_t(b_j)
-                    : (a_j >= b_j ? int64_t(a_j) - int64_t(b_j)
-                        : int64_t(b_j) - int64_t(a_j)));
-                // generate if negative, propagate if exactly zero
-                bool g = (raw_j < 0);
-                bool p = (static_cast<uint32_t>(raw_j) == 0U
-                    && static_cast<uint32_t>(uint64_t(raw_j) >> 32) == 0U);
-                if (g)   return 1U;   // a borrow was generated below and can pass up
-                if (!p) break;        // chain broken → no borrow from lower limbs
+    // just after you compute `ordering`:
+    // compare extBase vs extOther after both have been normalized & shifted to the same exponent frame
+    auto CompareMagnitudes2WayRelativeToBase = [&](
+        const uint32_t *extBase, int32_t shiftBase, int32_t diffBase,
+        const uint32_t *extOther, int32_t shiftOther, int32_t diffOther
+        ) {
+            // lex‐compare high→low
+            for (int32_t i = extDigits - 1; i >= 0; --i) {
+                uint32_t mB = GetShiftedNormalizedDigit<SharkFloatParams>(
+                    extBase, actualDigits, extDigits, shiftBase, diffBase, i);
+                uint32_t mO = GetShiftedNormalizedDigit<SharkFloatParams>(
+                    extOther, actualDigits, extDigits, shiftOther, diffOther, i);
+                if (mB > mO) return true;
+                if (mB < mO) return false;
             }
-            return 0U;
-            };
+            // treat exact equality as “greater or equal”
+            return true;
+        };
 
-        // --- Fast path + lazy borrow per limb ---
-        for (int32_t i = extDigits - 1; i >= 0; --i) {
-            // (1) raw 32-bit chunk of |X±Y|
-            uint64_t a = GetShiftedNormalizedDigit<SharkFloatParams>(extX, actualDigits, extDigits, shiftX, diffX, i);
-            uint64_t b = GetShiftedNormalizedDigit<SharkFloatParams>(extY, actualDigits, extDigits, shiftY, diffY, i);
-            uint32_t D_raw = (sX == sY
-                ? uint32_t((a + b) & 0xFFFFFFFFULL)
-                : uint32_t((a >= b ? a - b : b - a)));
+    // now compute each X≥Y flag with one call apiece:
+    const bool AB_XgeY = CompareMagnitudes2WayRelativeToBase(
+        extA, shiftA, diffA,
+        extB, shiftB, diffB
+    );
+    const bool AC_XgeY = CompareMagnitudes2WayRelativeToBase(
+        extA, shiftA, diffA,
+        extC, shiftC, diffC
+    );
+    const bool BC_XgeY = CompareMagnitudes2WayRelativeToBase(
+        extB, shiftB, diffB,
+        extC, shiftC, diffC
+    );
 
-            // (2) aligned Z chunk
+    auto CmpAlignedPairVsThird = [&](
+        const uint32_t *extX,
+        const uint32_t *extY,
+        const uint32_t *extZ,
+        int32_t shiftX,
+        int32_t diffX,
+        int32_t shiftY,
+        int32_t diffY,
+        int32_t shiftZ,
+        int32_t diffZ,
+        bool    sX,
+        bool    sY,
+        bool    XgeY,
+        const int32_t actualDigits,
+        const int32_t extDigits,
+        bool &outXYgtZ
+        )
+    {
+        // --- Phase A: single‐limb early‐exit test at i = extDigits−1 ---
+        {
+            int32_t i = extDigits - 1;
+
+            // (a) Fetch top 64-bit limb of X and Y
+            uint64_t a = GetShiftedNormalizedDigit<SharkFloatParams>(
+                extX, actualDigits, extDigits, shiftX, diffX, i);
+            uint64_t b = GetShiftedNormalizedDigit<SharkFloatParams>(
+                extY, actualDigits, extDigits, shiftY, diffY, i);
+
+            // (b) Compute signed raw and absolute value
+            int64_t raw64 = (sX == sY
+                ? int64_t(a) + int64_t(b)
+                : (a >= b ? int64_t(a) - int64_t(b)
+                    : int64_t(b) - int64_t(a)));
+            uint64_t mag64 = raw64 < 0 ? uint64_t(-raw64) : uint64_t(raw64);
+
+            // (c) Split into low-word and carry-out
+            uint32_t carry = uint32_t(mag64 >> 32);               // overflow bit
+            uint32_t D_low = uint32_t(mag64 & 0xFFFFFFFFULL);     // low 32 bits
+
+            // (d) Fetch top aligned Z word
             uint32_t dZ = uint32_t(
                 GetShiftedNormalizedDigit<SharkFloatParams>(
                     extZ, actualDigits, extDigits, shiftZ, diffZ, i));
 
-            // Fast exit when no borrow can change the outcome:
-            if (D_raw < dZ) { outXYgtZ = false; return; }
-            if (D_raw > dZ + 1U) { outXYgtZ = true;  return; }
+            // (e) Early exits by simple inequalities:
+            //     - any carry → |X±Y| has a higher bit
+            //     - D_low > dZ+1 → even a borrow of 1 can’t drop it below Z
+            if (carry != 0U || D_low > dZ + 1U) {
+                outXYgtZ = true;
+                return;
+            }
+            if (D_low < dZ) {
+                outXYgtZ = false;
+                return;
+            }
 
-            // --- slow path for D_raw == dZ or dZ+1 ---
-            uint32_t borrow = computeBorrowIn(i);
-            uint32_t D_prop = D_raw - borrow;
-
-            if (D_prop < dZ) { outXYgtZ = false; return; }
-            if (D_prop > dZ) { outXYgtZ = true;  return; }
-            // else D_prop == dZ → keep scanning down
+            // else we’re in the narrow window (D_low == dZ or dZ+1):
+            // fall through into the borrow‐aware Phase B loop below
         }
 
-        // exact equality
+
+        //
+        // --- Phase B: exponents tied → lexicographic compare of 32-bit words ---
+        //
+        auto computeBorrowIn = [&](int32_t i) -> uint32_t {
+            // scan all lower limbs j = i–1 … 0
+            for (int32_t j = i - 1; j >= 0; --j) {
+                uint64_t a_j = GetShiftedNormalizedDigit<SharkFloatParams>(
+                    extX, actualDigits, extDigits, shiftX, diffX, j);
+                uint64_t b_j = GetShiftedNormalizedDigit<SharkFloatParams>(
+                    extY, actualDigits, extDigits, shiftY, diffY, j);
+
+                // exactly the same signed raw you did in Phase B:
+                int64_t raw_j = (sX != sY)
+                    ? (XgeY ? int64_t(a_j) - int64_t(b_j)
+                        : int64_t(b_j) - int64_t(a_j))
+                    : int64_t(a_j) + int64_t(b_j);
+
+                if (raw_j < 0) {
+                    // borrow was generated at j
+                    return 1U;
+                }
+                if (raw_j > 0) {
+                    // no borrow could pass upward
+                    return 0U;
+                }
+                // raw_j == 0 → keep scanning (propagate)
+            }
+            // if we get here, everything below was zero → no borrow
+            return 0U;
+            };
+
+
+        // assume before this loop you computed:
+        bool doSubtract = (sX != sY);
+
+        // word-by-word compare
+        for (int32_t i = extDigits - 1; i >= 0; --i) {
+            uint64_t a = GetShiftedNormalizedDigit<SharkFloatParams>(
+                extX, actualDigits, extDigits, shiftX, diffX, i);
+            uint64_t b = GetShiftedNormalizedDigit<SharkFloatParams>(
+                extY, actualDigits, extDigits, shiftY, diffY, i);
+
+            uint32_t D_low;
+            uint32_t carry_or_borrow = 0;
+
+            if (!doSubtract) {
+                // addition branch
+                uint64_t sum = a + b;
+                D_low = uint32_t(sum);
+                carry_or_borrow = uint32_t(sum >> 32);  // any overflow → carry
+            } else {
+                // subtraction branch: always X - Y when XgeY, or Y - X otherwise
+                if (XgeY) {
+                    uint64_t diff = a - b;
+                    D_low = uint32_t(diff);
+                    // no immediate borrow here (we'll detect cross-digit borrows in computeBorrowIn)
+                } else {
+                    uint64_t diff = b - a;
+                    D_low = uint32_t(diff);
+                    // likewise no per-digit borrow
+                }
+                // we deliberately leave carry_or_borrow == 0,
+                // because any actual borrow will be found by computeBorrowIn
+            }
+
+            uint32_t dZ = uint32_t(
+                GetShiftedNormalizedDigit<SharkFloatParams>(
+                    extZ, actualDigits, extDigits, shiftZ, diffZ, i));
+
+            // fast-exit on addition‐overflow or clear non‐borrow
+            if (!doSubtract) {
+                if (carry_or_borrow != 0U) {
+                    outXYgtZ = true;
+                    return;
+                }
+            }
+
+            // fast-exit on magnitude compare without borrow
+            if (D_low < dZ) {
+                outXYgtZ = false;
+                return;
+            }
+            if (D_low > dZ + 1U) {
+                outXYgtZ = true;
+                return;
+            }
+
+            // slow‐path: inject borrow from lower limbs
+            uint32_t borrow = computeBorrowIn(i);
+            uint32_t D_prop = D_low - borrow;
+
+            if (D_prop < dZ) {
+                outXYgtZ = false;
+                return;
+            }
+            if (D_prop > dZ) {
+                outXYgtZ = true;
+                return;
+            }
+            // else tie → continue
+        }
+
+        // exact tie
         outXYgtZ = false;
     };
 
-
     // Now call that helper three times, each time aligning all three mantissas to biasedExpABC:
-
     //  i)  “Is |(±A) – (±B)| > |C| ?”
-        CmpAlignedPairVsThird(
-            /* extX      */ extA,
-            /* extY      */ extB,
-            /* extZ      */ extC,
-            /* shiftX    */ shiftA,
-            /* diffX     */ diffA,
-            /* shiftY    */ shiftB,
-            /* diffY     */ diffB,
-            /* shiftZ    */ shiftC,
-            /* diffZ     */ diffC,
-            /* sX        */ signA,
-            /* sY        */ signB,
-            /* sZ        */ signC,
-            /* actualDig */ actualDigits,
-            /* extDig    */ extDigits,
-            /* out       */ ABIsBiggerThanC
-        );
+    CmpAlignedPairVsThird(
+        /* extX      */ extA, 
+        /* extY      */ extB,
+        /* extZ      */ extC,
+        /* shiftX    */ shiftA,
+        /* diffX     */ diffA,
+        /* shiftY    */ shiftB,
+        /* diffY     */ diffB,
+        /* shiftZ    */ shiftC,
+        /* diffZ     */ diffC,
+        /* sX        */ signA,
+        /* sY        */ signB,
+        AB_XgeY,
+        /* actualDig */ actualDigits,
+        /* extDig    */ extDigits,
+        /* out       */ ABIsBiggerThanC
+    );
 
-        //  ii) “Is |(±A) – (±C)| > |B| ?”
-        CmpAlignedPairVsThird(
-            /* extX      */ extA,
-            /* extY      */ extC,
-            /* extZ      */ extB,
-            /* shiftX    */ shiftA,
-            /* diffX     */ diffA,
-            /* shiftY    */ shiftC,
-            /* diffY     */ diffC,
-            /* shiftZ    */ shiftB,
-            /* diffZ     */ diffB,
-            /* sX        */ signA,
-            /* sY        */ signC,
-            /* sZ        */ signB,
-            /* actualDig */ actualDigits,
-            /* extDig    */ extDigits,
-            /* out       */ ACIsBiggerThanB
-        );
+    //  ii) “Is |(±A) – (±C)| > |B| ?”
+    CmpAlignedPairVsThird(
+        /* extX      */ extA,
+        /* extY      */ extC,
+        /* extZ      */ extB,
+        /* shiftX    */ shiftA,
+        /* diffX     */ diffA,
+        /* shiftY    */ shiftC,
+        /* diffY     */ diffC,
+        /* shiftZ    */ shiftB,
+        /* diffZ     */ diffB,
+        /* sX        */ signA,
+        /* sY        */ signC,
+        AC_XgeY,
+        /* actualDig */ actualDigits,
+        /* extDig    */ extDigits,
+        /* out       */ ACIsBiggerThanB
+    );
 
-        // iii) “Is |(±B) – (±C)| > |A| ?”
-        CmpAlignedPairVsThird(
-            /* extX      */ extB,
-            /* extY      */ extC,
-            /* extZ      */ extA,
-            /* shiftX    */ shiftB,
-            /* diffX     */ diffB,
-            /* shiftY    */ shiftC,
-            /* diffY     */ diffC,
-            /* shiftZ    */ shiftA,
-            /* diffZ     */ diffA,
-            /* sX        */ signB,
-            /* sY        */ signC,
-            /* sZ        */ signA,
-            /* actualDig */ actualDigits,
-            /* extDig    */ extDigits,
-            /* out       */ BCIsBiggerThanA
-        );
-
+    // iii) “Is |(±B) – (±C)| > |A| ?”
+    CmpAlignedPairVsThird(
+        /* extX      */ extB,
+        /* extY      */ extC,
+        /* extZ      */ extA,
+        /* shiftX    */ shiftB,
+        /* diffX     */ diffB,
+        /* shiftY    */ shiftC,
+        /* diffY     */ diffC,
+        /* shiftZ    */ shiftA,
+        /* diffZ     */ diffA,
+        /* sX        */ signB,
+        /* sY        */ signC,
+        BC_XgeY,
+        /* actualDig */ actualDigits,
+        /* extDig    */ extDigits,
+        /* out       */ BCIsBiggerThanA
+    );
 }
 
 
 
 template<class SharkFloatParams>
-void Phase1_ABC(
+void Phase1_ABC (
     const ThreeWayMagnitude ordering,
     const bool IsNegativeA,
     const bool IsNegativeB,
@@ -1327,10 +1324,10 @@ void Phase1_ABC(
     }
 
     // if it wasn’t all zero, we may have a carry out but no borrow.
-    if (msd >= 0) {
-        uint64_t top = extResult_ABC[msd];
-        assert((top & 0xFFFF'FFF0'0000'0000ULL) == 0ULL);
-    }
+    //if (msd >= 0) {
+    //    uint64_t top = extResult_ABC[msd];
+    //    assert((top & 0xFFFF'FFF0'0000'0000ULL) == 0ULL);
+    //}
 }
 
 //
@@ -1345,7 +1342,7 @@ void Phase1_ABC(
 //
 template<class SharkFloatParams>
 void
-AddHelper(
+AddHelper (
     const HpSharkFloat<SharkFloatParams> *A_X2,
     const HpSharkFloat<SharkFloatParams> *B_Y2,
     const HpSharkFloat<SharkFloatParams> *C_A,
@@ -1483,19 +1480,10 @@ AddHelper(
         normE_isZero);
 
     if constexpr (SharkFloatParams::HostVerbose) {
-        std::cout << "ext_A_X2 after normalization: " << VectorUintToHexString(ext_A_X2, numActualDigits) << std::endl;
         std::cout << "shiftALeftToGetMsb: " << shiftALeftToGetMsb << std::endl;
-
-        std::cout << "ext_B_Y2 after normalization: " << VectorUintToHexString(ext_B_Y2, numActualDigits) << std::endl;
         std::cout << "shiftBLeftToGetMsb: " << shiftBLeftToGetMsb << std::endl;
-
-        std::cout << "ext_C_A after normalization: " << VectorUintToHexString(ext_C_A, numActualDigits) << std::endl;
         std::cout << "shiftCLeftToGetMsb: " << shiftCLeftToGetMsb << std::endl;
-
-        std::cout << "ext_D_2X after normalization: " << VectorUintToHexString(ext_D_2X, numActualDigits) << std::endl;
         std::cout << "shiftDLeftToGetMsb: " << shiftDLeftToGetMsb << std::endl;
-
-        std::cout << "ext_E_B after normalization: " << VectorUintToHexString(ext_E_B, numActualDigits) << std::endl;
         std::cout << "shiftELeftToGetMsb: " << shiftELeftToGetMsb << std::endl;
     }
 
@@ -1526,8 +1514,8 @@ AddHelper(
             }
 
             std::cout << VectorUintToHexString(normalizedDigits.data(), numActualDigitsPlusGuard) << std::endl;
-        };
-        
+            };
+
         PrintOneNormalizedArray(ext_A_X2, shiftALeftToGetMsb, "ext_A_X2");
         PrintOneNormalizedArray(ext_B_Y2, shiftBLeftToGetMsb, "ext_B_Y2");
         PrintOneNormalizedArray(ext_C_A, shiftCLeftToGetMsb, "ext_C_A");
@@ -1557,6 +1545,24 @@ AddHelper(
         ext_B_Y2,
         ext_C_A,
         biasedExpABC);
+
+    {
+        auto PrintOneShiftedNormalizedArray = [&](const uint32_t *ext, int32_t shift, int32_t diff, const std::string &name) {
+            std::cout << name << " shifted normalized: ";
+            std::vector<uint32_t> shiftedNormalizedDigits(numActualDigitsPlusGuard, 0);
+            for (int32_t i = 0; i < numActualDigitsPlusGuard; ++i) {
+                uint32_t digit = GetShiftedNormalizedDigit<SharkFloatParams>(ext, numActualDigits, numActualDigitsPlusGuard, shift, diff, i);
+                shiftedNormalizedDigits[i] = digit;
+            }
+            std::cout << VectorUintToHexString(shiftedNormalizedDigits.data(), numActualDigitsPlusGuard) << std::endl;
+            };
+
+        PrintOneShiftedNormalizedArray(ext_A_X2, shiftALeftToGetMsb, biasedExpABC - effExpA, "ext_A_X2");
+        PrintOneShiftedNormalizedArray(ext_B_Y2, shiftBLeftToGetMsb, biasedExpABC - effExpB, "ext_B_Y2");
+        PrintOneShiftedNormalizedArray(ext_C_A, shiftCLeftToGetMsb, biasedExpABC - effExpC, "ext_C_A");
+        PrintOneShiftedNormalizedArray(ext_D_2X, shiftDLeftToGetMsb, biasedExpABC - effExpD, "ext_D_2X");
+        PrintOneShiftedNormalizedArray(ext_E_B, shiftELeftToGetMsb, biasedExpABC - effExpE, "ext_E_B");
+    }
 
     int32_t outExponent_ABC = 0;
 

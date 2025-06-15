@@ -13,6 +13,8 @@
 #include <cmath>
 #include <algorithm>
 
+#include <assert.h>
+
 static TestTracker Tests;
 
 template<class SharkFloatParams>
@@ -64,34 +66,61 @@ void TestConvertNumber (
     mpf_sub(mpf_diff, mpf_x, mpf_x_gpu_result);
 
     // Take absolute delta:
-    mpf_t mpf_diff_abs; 
-    mpf_init(mpf_diff_abs);
-    mpf_abs(mpf_diff_abs, mpf_diff);
+    {
+        // Compute the precision-based threshold epislon = 2^(-DefaultMpirBits)
+        mpf_t mpf_diff_abs;
+        mpf_init(mpf_diff_abs);
+        mpf_abs(mpf_diff_abs, mpf_diff);
 
-    auto diffStr = MpfToString<SharkFloatParams>(mpf_diff_abs, HpSharkFloat<SharkFloatParams>::DefaultPrecBits);
+        mpf_t mpf_threshold;
+        mpf_init2(
+            mpf_threshold,
+            HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
+        mpf_set_ui(mpf_threshold, 1);  // mpf_threshold = 1
 
-    // Converted GPU result
-    if constexpr (SharkFloatParams::HostVerbose) {
-        std::cout << "\nConverted GPU result:" << std::endl;
-        std::cout << "X: " << MpfToString<SharkFloatParams>(mpf_x_gpu_result, HpSharkFloat<SharkFloatParams>::DefaultPrecBits) << std::endl;
-        std::cout << "X hex: " << MpfToHexString(mpf_x_gpu_result) << std::endl;
+        // divide by 2^DefaultMpirBits
+        mpf_div_2exp(
+            mpf_threshold,
+            mpf_threshold,
+            HpSharkFloat<SharkFloatParams>::DefaultMpirBits - 2 * 8 * sizeof(HpSharkFloat<SharkFloatParams>::DigitType)
+        );
 
-        // Print the differences
-        std::cout << "\nDifference between host and GPU results:" << std::endl;
-        std::cout << diffStr << std::endl;
-    }
+        // for reporting: turn epsilon into a string at the same print precision you use elsewhere
+        auto thresholdStr = MpfToString<SharkFloatParams>(
+            mpf_threshold,
+            HpSharkFloat<SharkFloatParams>::DefaultPrecBits
+        );
 
-    // If absolute delta is greater than 1e-300, the test is considered failed
-    if (mpf_cmp_d(mpf_diff_abs, 1e-30) > 0) {
-        Tests.MarkFailed(testNum, "conversion", diffStr, "1e-30");
-    } else {
-        Tests.MarkSuccess(testNum, "conversion");
+        auto diffStr = MpfToString<SharkFloatParams>(mpf_diff_abs, HpSharkFloat<SharkFloatParams>::DefaultPrecBits);
+
+        // Converted GPU result
+        if constexpr (SharkFloatParams::HostVerbose) {
+            std::cout << "\nConverted GPU result:" << std::endl;
+            std::cout << "X: " << MpfToString<SharkFloatParams>(mpf_x_gpu_result, HpSharkFloat<SharkFloatParams>::DefaultPrecBits) << std::endl;
+            std::cout << "X hex: " << MpfToHexString(mpf_x_gpu_result) << std::endl;
+
+            // Print the differences
+            std::cout << "\nDifference between host and GPU results:" << std::endl;
+            std::cout << diffStr << std::endl;
+            std::cout << "Threshold epsilon: " << thresholdStr << std::endl;
+        }
+
+        // now compare |delta| against epsilon instead of a hard-coded 1e-30
+        if (mpf_cmp(mpf_diff_abs, mpf_threshold) > 0) {
+            Tests.MarkFailed(testNum, "conversion", diffStr, thresholdStr);
+            assert(false);
+        } else {
+            Tests.MarkSuccess(testNum, "conversion");
+        }
+
+        // clean up
+        mpf_clear(mpf_threshold);
+        mpf_clear(mpf_diff_abs);
     }
 
     // Clean up MPIR variables
     mpf_clear(mpf_x);
     mpf_clear(mpf_diff);
-    mpf_clear(mpf_diff_abs);
     mpf_clear(mpf_x_gpu_result);
 }
 
@@ -131,6 +160,9 @@ bool TestConversion(int testBase) {
     TestConvertNumber<SharkFloatParams>(set5 + 2, "-0.2");
     TestConvertNumber<SharkFloatParams>(set5 + 3, "-0.3");
     TestConvertNumber<SharkFloatParams>(set5 + 4, "-0.4");
+    TestConvertNumber<SharkFloatParams>(set5 + 5, "1.999999999");
+    TestConvertNumber<SharkFloatParams>(set5 + 6, "1.99999999999999999999999999999");
+    TestConvertNumber<SharkFloatParams>(set5 + 7, "1.9999999999999999999999999999999999999999999999");
 
     const auto set6 = testBase + 60;
     TestConvertNumber<SharkFloatParams>(set6 + 1, "4294967297");

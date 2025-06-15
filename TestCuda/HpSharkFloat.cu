@@ -211,25 +211,27 @@ HpSharkFloat<SharkFloatParams>::operator= (
     return *this;
 }
 
+
+
 // Function to convert mpf_t to HpSharkFloat<SharkFloatParams>
 template<class SharkFloatParams>
 void
 MpfToHpGpu(
-    const mpf_t mpf_val,
+    const mpf_t mpf_value,
     HpSharkFloat<SharkFloatParams> &number,
     int prec_bits) {
 
-    // Get the absolute value of mpf_val
+    // Get the absolute value of mpf_value
     mpf_t abs_val;
     mpf_init2(abs_val, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
-    mpf_abs(abs_val, mpf_val);
+    mpf_abs(abs_val, mpf_value);
 
     if constexpr (SharkFloatParams::HostVerbose) {
         std::cout << "abs_val: " << MpfToString<SharkFloatParams>(abs_val, prec_bits) << std::endl;
     }
 
     // Determine the sign
-    number.IsNegative = (mpf_sgn(mpf_val) < 0);
+    number.IsNegative = (mpf_sgn(mpf_value) < 0);
 
     if constexpr (SharkFloatParams::HostVerbose) {
         std::cout << "prec_bits: " << std::dec << prec_bits << std::endl;
@@ -237,30 +239,98 @@ MpfToHpGpu(
 
     std::vector<uint32_t> data;
     const auto absMpirSize = std::abs(abs_val[0]._mp_size);
-    const auto precInUint64 = std::min(mpf_val[0]._mp_prec + 1, absMpirSize);
+    const auto precInUint64 = std::min(mpf_value[0]._mp_prec + 1, absMpirSize);
 
-    // Iterate over mpf_val._m_d and copy the data.
+    // Iterate over mpf_value._m_d and copy the data.
     // Put the low order uint32_t first, then the high order uint32_t
     // Keep the endian the same
     for (auto i = 0; i < precInUint64; ++i) {
-        const uint32_t lowOrder = mpf_val[0]._mp_d[i] & 0xFFFFFFFF;
+        const uint32_t lowOrder = mpf_value[0]._mp_d[i] & 0xFFFFFFFF;
         data.push_back(lowOrder);
-        const uint32_t highOrder = mpf_val[0]._mp_d[i] >> 32;
+        const uint32_t highOrder = mpf_value[0]._mp_d[i] >> 32;
         data.push_back(highOrder);
     }
 
-    //for (auto i = data.size() * 2; i < (mpf_val[0]._mp_prec + 1) * 2; i++) {
-    //    data.push_back(0);
-    //}
+    // ----------------------------------------------------------------
+    // Inline normalization lambdas:
+    // ----------------------------------------------------------------
+
+    int32_t N = (int32_t)data.size();
+
+    // 1) count leading zeros in a 32-bit word
+    auto countLZ32 = [&](uint32_t x) {
+        int32_t c = 0;
+        for (int32_t b = 31; b >= 0; --b) {
+            if (x & (1u << b)) break;
+            ++c;
+        }
+        return c;
+        };
+
+    // 2) shift one 32-bit word of the array left by L bits:
+    auto shiftLeftWord = [&](int32_t L, int32_t idx) -> uint32_t {
+        const int32_t shiftWords = L / 32;
+        const int32_t shiftBitsMod = L % 32;
+        int32_t srcIdx = idx - shiftWords;
+
+        uint32_t lower = (srcIdx >= 0 && srcIdx < N)
+            ? data[srcIdx] : 0;
+        uint32_t upper = (srcIdx - 1 >= 0 && srcIdx - 1 < N)
+            ? data[srcIdx - 1] : 0;
+
+        if (shiftBitsMod == 0) {
+            return lower;
+        } else {
+            return (lower << shiftBitsMod)
+                | (upper >> (32 - shiftBitsMod));
+        }
+        };
+
+    // 3) shift the entire data[] vector left by L bits
+    auto shiftLeftArray = [&](int32_t L) {
+        std::vector<uint32_t> tmp(N);
+        for (int32_t i = 0; i < N; ++i) {
+            tmp[i] = shiftLeftWord(L, i);
+        }
+        data = std::move(tmp);
+        };
+
+    // 3) normalize so the top-most 1 ends up in bit (N*32-1)
+    //    returns how many bits we shifted
+    auto normalizeData = [&]() {
+        // find highest nonzero limb
+        int32_t msd = -1;
+        for (int32_t i = N - 1; i >= 0; --i) {
+            if (data[i] != 0) { msd = i; break; }
+        }
+        if (msd < 0) return 0;  // all zero --> no shift
+
+        // count leading zeros in that limb
+        int32_t lz = countLZ32(data[msd]);
+        int32_t bitIndex = msd * 32 + (31 - lz);
+        int32_t target = N * 32 - 1;
+        int32_t shiftL = target - bitIndex;
+        if (shiftL > 0) shiftLeftArray(shiftL);
+        return shiftL;
+        };
+
+    // run normalization on the raw data[]
+    auto dataCopy = data; // keep a copy for debugging
+    int32_t shiftBits = normalizeData();
 
     static_assert(sizeof(mp_limb_t) == sizeof(uint64_t), "mp_limb_t is not 64 bits");
 
-    //{
-    //    auto exportedIntermediateData = Uint32ArrayToHexString(data.data(), data.size());
-    //    std::cout << "Exported intermediate data: " << exportedIntermediateData << std::endl;
-    //}
+    {
+        if constexpr (SharkFloatParams::HostVerbose) {
+            auto originalDataStr = VectorUintToHexString(dataCopy);
+            auto shiftedDataStr = VectorUintToHexString(data);
+            std::cout << "Original data: " << originalDataStr << std::endl;
+            std::cout << "Shifted data: " << shiftedDataStr << ", shiftBits: " << shiftBits << std::endl;
+            std::cout << "Shift bits: " << shiftBits << std::endl;
+        }
+    }
 
-    auto countInBytes = data.size() * sizeof(uint32_t);
+    auto countInBytes = N * sizeof(uint32_t);
 
     // Copy data into digits array
     memset(number.Digits, 0, SharkFloatParams::GlobalNumUint32 * sizeof(uint32_t));
@@ -279,8 +349,14 @@ MpfToHpGpu(
     memcpy(number.Digits, reinterpret_cast<uint8_t *>(data.data()) + startOffset, numBytesToCopy);
 
     // Set the Exponent
+    //number.Exponent = MpirExponentToHPExponent<SharkFloatParams>(
+    //    mpf_value, static_cast<HpSharkFloat<SharkFloatParams>::ExpT>(numBytesToCopy));
+
+    // set exponent from MPIR *then* subtract our normalization shift
     number.Exponent = MpirExponentToHPExponent<SharkFloatParams>(
-        mpf_val, static_cast<HpSharkFloat<SharkFloatParams>::ExpT>(numBytesToCopy));
+        mpf_value,
+        static_cast<typename HpSharkFloat<SharkFloatParams>::ExpT>(numBytesToCopy)
+    ) - shiftBits;
 
     //{
     //    auto exportedFinalData = Uint32ArrayToHexString(number.Digits, SharkFloatParams::GlobalNumUint32);
@@ -343,6 +419,8 @@ HpSharkFloat<SharkFloatParams>::ToString() const
         auto value = (highPart << 32) | lowPart;
         mpf_value[0]._mp_d[i] = value;
     }
+
+    The MPIR representation requires a power of 2 exponent so we need to deal with that.
 
     mpf_value[0]._mp_exp = HpGpuExponentToMpfExponent(NumUint32 * sizeof(uint32_t));
     mpf_value[0]._mp_size = NumUint32 / 2;
@@ -480,7 +558,7 @@ HpGpuToMpf (
         mpz_neg(mpz_value, mpz_value);
     }
 
-    // Set mpf_val to mpz_value
+    // Set mpf_value to mpz_value
     mpf_set_z(mpf_val, mpz_value);
 
     // Adjust the exponent
@@ -516,7 +594,7 @@ Uint32ToMpf (
     const size_t spaceAvailable = mpf_val[0]._mp_prec + 1;
     const auto entriesToCopy = std::min(data.size(), spaceAvailable);
 
-    // Copy the data into mpf_val[0]._mp_d
+    // Copy the data into mpf_value[0]._mp_d
     for (size_t i = 0; i < entriesToCopy; ++i) {
         mpf_val[0]._mp_d[i] = data[i];
     }

@@ -79,10 +79,13 @@ void TestConvertNumber (
         mpf_set_ui(mpf_threshold, 1);  // mpf_threshold = 1
 
         // divide by 2^DefaultMpirBits
+        // constexpr auto PrecisionOffset = 2 * 8 * sizeof(HpSharkFloat<SharkFloatParams>::DigitType);
+        constexpr auto PrecisionOffset = 1;
+
         mpf_div_2exp(
             mpf_threshold,
             mpf_threshold,
-            HpSharkFloat<SharkFloatParams>::DefaultMpirBits - 2 * 8 * sizeof(HpSharkFloat<SharkFloatParams>::DigitType)
+            HpSharkFloat<SharkFloatParams>::DefaultMpirBits - PrecisionOffset
         );
 
         // for reporting: turn epsilon into a string at the same print precision you use elsewhere

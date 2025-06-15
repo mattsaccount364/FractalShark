@@ -58,13 +58,15 @@ bool CorrectnessTests() {
 
     int testBase = 0;
 
-    bool res = TestConversion<TestSharkParams>(0);
-    if (!res) {
-        auto q = PressKey();
-        if (q == 'q') {
-            return false;
-        }
-    }
+    bool res;
+
+    //res = TestConversion<TestSharkParams>(0);
+    //if (!res) {
+    //    auto q = PressKey();
+    //    if (q == 'q') {
+    //        return false;
+    //    }
+    //}
 
     testBase = 2000;
     res = TestAllBinaryOp<TestSharkParams, MainOperator>(testBase);

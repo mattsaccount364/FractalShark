@@ -1002,7 +1002,7 @@ ComputeABCComparison (
                 // because any actual borrow will be found by computeBorrowIn
             }
 
-            uint32_t dZ = uint32_t(
+            uint64_t dZ = uint64_t(
                 GetShiftedNormalizedDigit<SharkFloatParams>(
                     extZ, actualDigits, extDigits, shiftZ, diffZ, i));
 
@@ -1015,18 +1015,19 @@ ComputeABCComparison (
             }
 
             // fast-exit on magnitude compare without borrow
-            if (D_low < dZ) {
+            uint64_t temp_Dlow = D_low;
+            if (temp_Dlow < dZ) {
                 outXYgtZ = false;
                 return;
             }
-            if (D_low > dZ + 1U) {
+            if (temp_Dlow > dZ + 1llu) {
                 outXYgtZ = true;
                 return;
             }
 
             // slow‐path: inject borrow from lower limbs
             uint32_t borrow = computeBorrowIn(i);
-            uint32_t D_prop = D_low - borrow;
+            uint64_t D_prop = D_low - borrow;
 
             if (D_prop < dZ) {
                 outXYgtZ = false;

@@ -585,7 +585,7 @@ __device__ void MultiplyHelperKaratsubaV1(
             }
 
             // Set the sign of the result
-            Out->IsNegative = A->IsNegative ^ B->IsNegative;
+            Out->SetNegative(A->GetNegative() ^ B->GetNegative());
         }
     }
 }

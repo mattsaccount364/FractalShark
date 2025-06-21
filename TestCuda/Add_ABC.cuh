@@ -76,7 +76,7 @@ void CmpSignedRawVsThird (
     } else if (expRawXY < expZ) {
         outXYgtZ = false;
     } else {
-        // tie → digit-by-digit
+        // tie --> digit-by-digit
         outXYgtZ = false;
         for (int i = numActualDigitsPlusGuard - 1; i >= 0; --i) {
             uint64_t limbXY = computeAbsXY(i);
@@ -373,15 +373,15 @@ void Phase1_ABC (
 
         uint64_t magABC;
         if (signXY == signZ) {
-            // same sign → addition
+            // same sign --> addition
             magABC = magXY + Z;
             IsNegativeABC = signXY;
         } else if (XYgtZ) {
-            // |X±Y| ≥ |Z| → subtraction in that order
+            // |X±Y| ≥ |Z| --> subtraction in that order
             magABC = magXY - Z;
             IsNegativeABC = signXY;
         } else {
-            // |Z| > |X±Y| → subtraction the other way
+            // |Z| > |X±Y| --> subtraction the other way
             magABC = Z - magXY;
             IsNegativeABC = signZ;
         }

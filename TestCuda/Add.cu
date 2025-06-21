@@ -355,11 +355,11 @@ __device__ void AddHelper (
     const auto *ext_D_2X = combo->D_2X.Digits;
     const auto *ext_E_B = combo->E_B.Digits;
 
-    const bool IsNegativeA = A_X2->IsNegative;
-    const bool IsNegativeB = !B_Y2->IsNegative; // A - B + C
-    const bool IsNegativeC = C_A->IsNegative;
-    const bool IsNegativeD = D_2X->IsNegative;
-    const bool IsNegativeE = E_B->IsNegative;
+    const bool IsNegativeA = A_X2->GetNegative();
+    const bool IsNegativeB = !B_Y2->GetNegative(); // A - B + C
+    const bool IsNegativeC = C_A->GetNegative();
+    const bool IsNegativeD = D_2X->GetNegative();
+    const bool IsNegativeE = E_B->GetNegative();
 
     auto *Out_A_B_C = &combo->Result1_A_B_C;
     auto *Out_D_E = &combo->Result2_D_E;
@@ -443,7 +443,7 @@ __device__ void AddHelper (
     }
 
     // --- Extended Normalization using shift indices ---
-    const bool sameSign = (D_2X->IsNegative == E_B->IsNegative);
+    const bool sameSign = (D_2X->GetNegative() == E_B->GetNegative());
 
     bool normA_isZero = false;
     bool normB_isZero = false;
@@ -751,10 +751,10 @@ __device__ void AddHelper (
 
     if (idx == 0) {
         Out_D_E->Exponent = outExponent_DE;
-        Out_D_E->IsNegative = sameSign ? A_X2->IsNegative : (DIsBiggerMagnitude ? A_X2->IsNegative : B_Y2->IsNegative);
+        Out_D_E->SetNegative(sameSign ? A_X2->GetNegative() : (DIsBiggerMagnitude ? A_X2->GetNegative() : B_Y2->GetNegative()));
 
         Out_A_B_C->Exponent = outExponent_ABC;
-        Out_A_B_C->IsNegative = isNegative_ABC;
+        Out_A_B_C->SetNegative(isNegative_ABC);
     }
 
     if constexpr (SharkDebugChecksums) {

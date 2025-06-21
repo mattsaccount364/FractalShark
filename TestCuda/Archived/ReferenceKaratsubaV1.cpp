@@ -78,7 +78,7 @@ void MultiplyHelperKaratsubaV1(
         Out->Digits[0] = (uint32_t)(prod & 0xFFFFFFFFULL);
         // If we had more limbs, they'd go here, but we only have one.
         Out->Exponent = A->Exponent + B->Exponent;
-        Out->IsNegative = (A->IsNegative ^ B->IsNegative);
+        Out->SetNegative(A->GetNegative() ^ B->GetNegative());
         return;
     }
 
@@ -262,7 +262,7 @@ void MultiplyHelperKaratsubaV1(
             Out->Digits[i] = 0;
         }
         Out->Exponent = A->Exponent + B->Exponent;
-        Out->IsNegative = false;
+        Out->SetNegative(false);
         return;
     }
 
@@ -281,7 +281,7 @@ void MultiplyHelperKaratsubaV1(
         Out->Digits[i] = val;
     }
 
-    Out->IsNegative = (A->IsNegative ^ B->IsNegative);
+    Out->SetNegative(A->GetNegative() ^ B->GetNegative());
 }
 
 

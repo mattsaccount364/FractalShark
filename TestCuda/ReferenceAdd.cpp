@@ -450,7 +450,7 @@ CompareMagnitudes3WayRelativeToBase(
                 if (m1 != m2)
                     return (m1 > m2);
             }
-            return false;  // tie → not greater
+            return false;  // tie --> not greater
         };
 
     // 1) Is A the strict max?
@@ -821,8 +821,6 @@ ComputeABCComparison (
     const int32_t effExpB,
     const int32_t effExpC,
 
-    // three‐way ordering (precomputed by CompareMagnitudes3Way in Phase1_ABC)
-    const ThreeWayMagnitude ordering,
     const int32_t              biasedExpABC,
 
     // input signs (for A–B, B–C, etc.); in Phase1_ABC the caller already flipped
@@ -849,7 +847,7 @@ ComputeABCComparison (
         const uint32_t *extBase, int32_t shiftBase, int32_t diffBase,
         const uint32_t *extOther, int32_t shiftOther, int32_t diffOther
         ) {
-            // lex‐compare high→low
+            // lex‐compare high-->low
             for (int32_t i = extDigits - 1; i >= 0; --i) {
                 uint32_t mB = GetShiftedNormalizedDigit<SharkFloatParams>(
                     extBase, actualDigits, extDigits, shiftBase, diffBase, i);
@@ -921,8 +919,8 @@ ComputeABCComparison (
                     extZ, actualDigits, extDigits, shiftZ, diffZ, i));
 
             // (e) Early exits by simple inequalities:
-            //     - any carry → |X±Y| has a higher bit
-            //     - D_low > dZ+1 → even a borrow of 1 can’t drop it below Z
+            //     - any carry --> |X±Y| has a higher bit
+            //     - D_low > dZ+1 --> even a borrow of 1 can’t drop it below Z
             if (carry != 0U || D_low > dZ + 1U) {
                 outXYgtZ = true;
                 return;
@@ -938,7 +936,7 @@ ComputeABCComparison (
 
 
         //
-        // --- Phase B: exponents tied → lexicographic compare of 32-bit words ---
+        // --- Phase B: exponents tied --> lexicographic compare of 32-bit words ---
         //
         auto computeBorrowIn = [&](int32_t i) -> uint32_t {
             // scan all lower limbs j = i–1 … 0
@@ -962,9 +960,9 @@ ComputeABCComparison (
                     // no borrow could pass upward
                     return 0U;
                 }
-                // raw_j == 0 → keep scanning (propagate)
+                // raw_j == 0 --> keep scanning (propagate)
             }
-            // if we get here, everything below was zero → no borrow
+            // if we get here, everything below was zero --> no borrow
             return 0U;
             };
 
@@ -986,7 +984,7 @@ ComputeABCComparison (
                 // addition branch
                 uint64_t sum = a + b;
                 D_low = uint32_t(sum);
-                carry_or_borrow = uint32_t(sum >> 32);  // any overflow → carry
+                carry_or_borrow = uint32_t(sum >> 32);  // any overflow --> carry
             } else {
                 // subtraction branch: always X - Y when XgeY, or Y - X otherwise
                 if (XgeY) {
@@ -1037,7 +1035,7 @@ ComputeABCComparison (
                 outXYgtZ = true;
                 return;
             }
-            // else tie → continue
+            // else tie --> continue
         }
 
         // exact tie
@@ -1139,7 +1137,7 @@ void Phase1_ABC (
         actualDigits, extDigits,
         shiftA, shiftB, shiftC,
         effExpA, effExpB, effExpC,
-        ordering, biasedExpABC_local,
+        biasedExpABC_local,
         IsNegativeA, IsNegativeB, IsNegativeC,
         ABIsBiggerThanC,
         ACIsBiggerThanB,
@@ -1274,15 +1272,15 @@ void Phase1_ABC (
 
         uint64_t magABC;
         if (signXY == signZ) {
-            // same sign → addition
+            // same sign --> addition
             magABC = magXY + Z;
             IsNegativeABC = signXY;
         } else if (XYgtZ) {
-            // |X±Y| ≥ |Z| → subtraction in that order
+            // |X±Y| ≥ |Z| --> subtraction in that order
             magABC = magXY - Z;
             IsNegativeABC = signXY;
         } else {
-            // |Z| > |X±Y| → subtraction the other way
+            // |Z| > |X±Y| --> subtraction the other way
             magABC = Z - magXY;
             IsNegativeABC = signZ;
         }
@@ -1365,11 +1363,11 @@ AddHelper (
     const auto *ext_D_2X = D_2X->Digits;
     const auto *ext_E_B = E_B->Digits;
 
-    const bool IsNegativeA = A_X2->IsNegative;
-    const bool IsNegativeB = !B_Y2->IsNegative; // A - B + C
-    const bool IsNegativeC = C_A->IsNegative;
-    const bool IsNegativeD = D_2X->IsNegative;
-    const bool IsNegativeE = E_B->IsNegative;
+    const bool IsNegativeA = A_X2->GetNegative();
+    const bool IsNegativeB = !B_Y2->GetNegative(); // A - B + C
+    const bool IsNegativeC = C_A->GetNegative();
+    const bool IsNegativeD = D_2X->GetNegative();
+    const bool IsNegativeE = E_B->GetNegative();
 
     // --- Set up extended working precision ---
     constexpr int32_t guard = 4;
@@ -1635,13 +1633,13 @@ AddHelper (
         debugStates);
 
 
-    // then carry-propagate extResult_ABC into OutXY1->Digits, set OutXY1->Exponent/IsNegative
+    // then carry-propagate extResult_ABC into OutXY1->Digits, set OutXY1->Exponent/GetNegative()
 
     // --- Phase 2: Propagation ---
     // Propagate carries (if addition) or borrows (if subtraction)
     // and store the corrected 32-bit digit into propagatedResult.
 
-    const bool sameSignDE = (D_2X->IsNegative == E_B->IsNegative);
+    const bool sameSignDE = (D_2X->GetNegative() == E_B->GetNegative());
 
     uint32_t carry_ABC = 0;
     uint32_t carry_DE = 0;
@@ -1832,7 +1830,7 @@ AddHelper (
         OutXY1);
 
     OutXY1->Exponent = outExponent_ABC;
-    OutXY1->IsNegative = isNegative_ABC;
+    OutXY1->SetNegative(isNegative_ABC);
 
     finalResolution(
         "D + E: ",
@@ -1846,9 +1844,9 @@ AddHelper (
     OutXY2->Exponent = outExponent_DE;
     // Set the result sign.
     if (sameSignDE)
-        OutXY2->IsNegative = D_2X->IsNegative;
+        OutXY2->SetNegative(D_2X->GetNegative());
     else
-        OutXY2->IsNegative = DIsBiggerMagnitude ? D_2X->IsNegative : E_B->IsNegative;
+        OutXY2->SetNegative(DIsBiggerMagnitude ? D_2X->GetNegative() : E_B->GetNegative());
 
     if constexpr (SharkFloatParams::HostVerbose) {
         std::cout << "Final Resolution completed" << std::endl;

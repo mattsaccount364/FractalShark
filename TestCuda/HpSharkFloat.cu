@@ -1,4 +1,4 @@
-
+﻿
 #include "HpSharkFloat.cuh"
 
 #include <gmp.h>
@@ -177,22 +177,12 @@ ExplicitlyInstantiateUintArrayToHexString(uint64_t);
 ExplicitlyInstantiateUintArrayToHexString(int32_t);
 ExplicitlyInstantiateUintArrayToHexString(int64_t);
 
-
-template<class SharkFloatParams>
-static HpSharkFloat<SharkFloatParams>::ExpT
-MpirExponentToHPExponent(
-    const mpf_t mpf_val,
-    typename HpSharkFloat<SharkFloatParams>::ExpT bytesToCopy) {
-
-    const auto mpirExponentInPow2 = static_cast<HpSharkFloat<SharkFloatParams>::ExpT>(mpf_val[0]._mp_exp * sizeof(mp_limb_t) * 8);
-    return mpirExponentInPow2 - bytesToCopy * 8;
-}
-
 template<class SharkFloatParams>
 mp_exp_t
 HpSharkFloat<SharkFloatParams>::HpGpuExponentToMpfExponent(
     size_t numBytesToCopy) const {
 
+    assert(Exponent % 32 == 0);
     const auto hpExponentInPow2 = static_cast<mp_exp_t>(Exponent + numBytesToCopy * 8);
     return hpExponentInPow2 / (sizeof(mp_limb_t) * 8);
 }
@@ -216,9 +206,8 @@ HpSharkFloat<SharkFloatParams>::operator= (
 // Function to convert mpf_t to HpSharkFloat<SharkFloatParams>
 template<class SharkFloatParams>
 void
-MpfToHpGpu(
+HpSharkFloat<SharkFloatParams>::MpfToHpGpu(
     const mpf_t mpf_value,
-    HpSharkFloat<SharkFloatParams> &number,
     int prec_bits) {
 
     // Get the absolute value of mpf_value
@@ -231,7 +220,7 @@ MpfToHpGpu(
     }
 
     // Determine the sign
-    number.IsNegative = (mpf_sgn(mpf_value) < 0);
+    IsNegative = (mpf_sgn(mpf_value) < 0);
 
     if constexpr (SharkFloatParams::HostVerbose) {
         std::cout << "prec_bits: " << std::dec << prec_bits << std::endl;
@@ -333,34 +322,96 @@ MpfToHpGpu(
     auto countInBytes = N * sizeof(uint32_t);
 
     // Copy data into digits array
-    memset(number.Digits, 0, SharkFloatParams::GlobalNumUint32 * sizeof(uint32_t));
+    memset(Digits, 0, SharkFloatParams::GlobalNumUint32 * sizeof(uint32_t));
 
     // If count is greater than NumUint32, move forward by count - NumUint32
     // because the most significant digits are at the end of the array
-    auto startOffset =
-        (countInBytes > SharkFloatParams::GlobalNumUint32 * sizeof(uint32_t)) ?
-        countInBytes - SharkFloatParams::GlobalNumUint32 * sizeof(uint32_t) :
-        0;
-    auto numBytesToCopy = std::min(
-        countInBytes,
-        SharkFloatParams::GlobalNumUint32 * sizeof(uint32_t));
-    numBytesToCopy = std::min(numBytesToCopy, absMpirSize * sizeof(mp_limb_t));
 
-    memcpy(number.Digits, reinterpret_cast<uint8_t *>(data.data()) + startOffset, numBytesToCopy);
+    //auto startOffset =
+    //    (countInBytes > SharkFloatParams::GlobalNumUint32 * sizeof(uint32_t)) ?
+    //    countInBytes - SharkFloatParams::GlobalNumUint32 * sizeof(uint32_t) :
+    //    0;
+    //auto numBytesToCopy = std::min(
+    //    countInBytes,
+    //    SharkFloatParams::GlobalNumUint32 * sizeof(uint32_t));
+    //numBytesToCopy = std::min(numBytesToCopy, absMpirSize * sizeof(mp_limb_t));
 
-    // Set the Exponent
-    //number.Exponent = MpirExponentToHPExponent<SharkFloatParams>(
-    //    mpf_value, static_cast<HpSharkFloat<SharkFloatParams>::ExpT>(numBytesToCopy));
+    //memcpy(Digits, reinterpret_cast<uint8_t *>(data.data()) + startOffset, numBytesToCopy);
 
-    // set exponent from MPIR *then* subtract our normalization shift
-    number.Exponent = MpirExponentToHPExponent<SharkFloatParams>(
-        mpf_value,
-        static_cast<typename HpSharkFloat<SharkFloatParams>::ExpT>(numBytesToCopy)
-    ) - shiftBits;
+    // Now compute how to right‐align 'data' into our fixed-width buffer:
+    {
+        size_t blockBytes = SharkFloatParams::GlobalNumUint32 * sizeof(uint32_t);
+        size_t srcOffset = (countInBytes > blockBytes)
+            ? (countInBytes - blockBytes)
+            : 0;
+        size_t toCopy = std::min(countInBytes, blockBytes);
+        // if toCopy < blockBytes, destOffset > 0 --> move data into the high-order end
+        size_t destOffset = (countInBytes > blockBytes)
+            ? 0
+            : (blockBytes - toCopy);
+
+        memcpy(
+            reinterpret_cast<uint8_t *>(Digits) + destOffset,
+            reinterpret_cast<uint8_t *>(data.data()) + srcOffset,
+            toCopy
+        );
+
+        // now recompute Exponent (inlined MpirExponentToHPExponent + fixes)
+        {
+            using ExpT = typename HpSharkFloat<SharkFloatParams>::ExpT;
+            // how many bits per MPIR limb
+            ExpT limbBits = static_cast<ExpT>(sizeof(mp_limb_t) * 8);
+            // MPIR’s exponent in bits
+            ExpT mpirExpBits = static_cast<ExpT>(mpf_value[0]._mp_exp) * limbBits;
+            // total raw mantissa bits (absMpirSize limbs)
+            ExpT rawBits = static_cast<ExpT>(absMpirSize) * limbBits;
+
+            // 1) subtract the full raw mantissa to get normalized exponent
+            ExpT E = mpirExpBits - rawBits;
+            // 2) undo the left‐normalization we applied earlier
+            E -= static_cast<ExpT>(shiftBits);
+            // 3) adjust for bytes dropped/padded by memcpy:
+            //      − srcOffset bytes ⇒ mantissa>>=(srcOffset*8)  ⇒ add srcOffset*8
+            //      − destOffset bytes ⇒ mantissa<<=(destOffset*8) ⇒ subtract destOffset*8
+            ExpT byteOffset = static_cast<ExpT>(srcOffset)
+                - static_cast<ExpT>(destOffset);
+            E += byteOffset * static_cast<ExpT>(8);
+
+            Exponent = E;
+        }
+
+        //// set exponent from MPIR *then* subtract our normalization shift
+        //{
+        //    using ExpT = typename HpSharkFloat<SharkFloatParams>::ExpT;
+        //    ExpT bytesCopied = static_cast<ExpT>(toCopy);
+        //    ExpT byteShiftLog = static_cast<ExpT>(srcOffset)   // dropped low‐order bytes --> mantissa >> (srcOffset*8)
+        //        - static_cast<ExpT>(destOffset);  // zero-padded high‐order bytes --> mantissa << (destOffset*8)
+
+        //    // base exponent from MPIR (depends on how many raw mantissa bytes)
+        //    const auto mpirExponentInPow2 = static_cast<ExpT>(mpf_value[0]._mp_exp * sizeof(mp_limb_t) * 8);
+        //    ExpT E = mpirExponentInPow2 - bytesCopied * 8;
+
+        //    // subtract the bit-normalization shift, then adjust for our memcpy shift
+        //    Exponent = E
+        //        - static_cast<ExpT>(shiftBits)
+        //        + bytesShiftLog * 8;
+        //}
+    }
+
+    // The high-order bit of Digits should be set, or the entire array should be 0.
+    if ((Digits[SharkFloatParams::GlobalNumUint32 - 1] & 0x8000'0000u) == 0) {
+        for (size_t i = 0; i < SharkFloatParams::GlobalNumUint32; ++i) {
+            if (Digits[i] != 0) {
+                assert(false && "High-order bit of Digits is not set, but Digits is not zero.");
+            }
+        }
+    } else {
+        assert((Digits[SharkFloatParams::GlobalNumUint32 - 1] & 0x8000'0000u) != 0);
+    }
 
     //{
-    //    auto exportedFinalData = Uint32ArrayToHexString(number.Digits, SharkFloatParams::GlobalNumUint32);
-    //    std::cout << "Exported Final data: " << exportedFinalData << ", exponent: " << number.Exponent << std::endl;
+    //    auto exportedFinalData = Uint32ArrayToHexString(Digits, SharkFloatParams::GlobalNumUint32);
+    //    std::cout << "Exported Final data: " << exportedFinalData << ", exponent: " << Exponent << std::endl;
     //}
 
     //mpf_clear(scaled_val);
@@ -401,32 +452,7 @@ HpSharkFloat<SharkFloatParams>::ToString() const
     mp_bitcnt_t prec = HpSharkFloat<SharkFloatParams>::DefaultMpirBits;
     mpf_init2(mpf_value, prec);
 
-    // Import the digits into mpf_value.  Convert
-    // from uint32_t to mp_limb_t, which is uint64_t
-    static_assert(sizeof(mp_limb_t) == sizeof(uint64_t), "mp_limb_t is not 64 bits");
-    
-    // Number of 64-bit limbs = ceil(NumUint32 / 2).
-    constexpr size_t limbCount = (NumUint32 + 1) / 2;
-
-    for (size_t i = 0; i < limbCount; ++i) {
-        // Store two uint32_t values in one
-        auto lowPart = Digits[2 * i];
-        uint64_t highPart = 0;
-        if (2 * i + 1 < NumUint32) {
-            highPart = Digits[2 * i + 1];
-        }
-
-        auto value = (highPart << 32) | lowPart;
-        mpf_value[0]._mp_d[i] = value;
-    }
-
-    The MPIR representation requires a power of 2 exponent so we need to deal with that.
-
-    mpf_value[0]._mp_exp = HpGpuExponentToMpfExponent(NumUint32 * sizeof(uint32_t));
-    mpf_value[0]._mp_size = NumUint32 / 2;
-    if (IsNegative) {
-        mpf_value[0]._mp_size = -mpf_value[0]._mp_size;
-    }
+    HpGpuToMpf(mpf_value);
 
     // Use gmp_printf
     char *str = NULL;
@@ -491,6 +517,8 @@ HpSharkFloat<SharkFloatParams>::GenerateRandomNumber()
     // Random boolean for IsNegative
     std::bernoulli_distribution bool_distribution(0.5);
     IsNegative = bool_distribution(generator);
+
+    Normalize();
 }
 
 template<class SharkFloatParams>
@@ -512,13 +540,15 @@ HpSharkFloat<SharkFloatParams>::GenerateRandomNumber2() {
     //mpf_sqrt(mpf_value, mpf_value);
 
     // Convert MPF to HpSharkFloat<SharkFloatParams>
-    MpfToHpGpu<SharkFloatParams>(mpf_value, *this, DefaultPrecBits);
+    MpfToHpGpu(mpf_value, DefaultPrecBits);
 
     mpf_clear(mpf_value);
 
     // Random boolean for IsNegative
     std::bernoulli_distribution bool_distribution(0.5);
     IsNegative = bool_distribution(generator);
+
+    Normalize();
 }
 
 template<class SharkFloatParams>
@@ -538,23 +568,144 @@ HpSharkFloat<SharkFloatParams>::DeepCopySameDevice(
     IsNegative = other.IsNegative;
 }
 
+template<class SharkFloatParams>
+void
+HpSharkFloat<SharkFloatParams>::Normalize() {
+    // 1) find the most-significant non-zero limb
+    int32_t firstNonZeroIndex = -1;
+    for (int32_t i = NumUint32 - 1; i >= 0; --i) {
+        if (Digits[i] != 0) {
+            firstNonZeroIndex = i;
+            break;
+        }
+    }
+
+    if (firstNonZeroIndex < 0) {
+        // all zero --> set to true zero
+        Exponent = -100'000'000;
+        IsNegative = false;
+        return;
+    }
+
+    // portable count-leading-zeros
+    auto countLeadingZeros = [](uint32_t x) -> int32_t {
+        if (x == 0) return 32;
+        int32_t n = 0;
+        for (int32_t b = 31; b >= 0; --b) {
+            if (x & (1u << b)) break;
+            ++n;
+        }
+        return n;
+        };
+
+    // 2) how many whole-words, and how many extra bits?
+    int32_t bitShift = countLeadingZeros(Digits[firstNonZeroIndex]);
+    int32_t wordShift = (NumUint32 - 1) - firstNonZeroIndex;
+    int32_t totalShift = wordShift * 32 + bitShift;
+
+    // 3) word-level shift (move limbs up, zero fill below)
+    if (wordShift > 0) {
+        for (int32_t i = NumUint32 - 1; i >= wordShift; --i) {
+            Digits[i] = Digits[i - wordShift];
+        }
+        for (int32_t i = wordShift - 1; i >= 0; --i) {
+            Digits[i] = 0;
+        }
+    }
+
+    // 4) bit-level shift with carry between limbs
+    if (bitShift > 0) {
+        for (int32_t i = NumUint32 - 1; i > 0; --i) {
+            Digits[i] = (Digits[i] << bitShift)
+                | (Digits[i - 1] >> (32 - bitShift));
+        }
+        Digits[0] <<= bitShift;
+    }
+
+    // 5) adjust exponent
+    Exponent -= totalShift;
+    if (Exponent < -100'000'000) {
+        Exponent = -100'000'000;
+    }
+
+    // 6) sanity check: top bit should now be set (unless true zero)
+    assert((Digits[NumUint32 - 1] & 0x8000'0000u) != 0
+        || Exponent == -100'000'000);
+}
+
+template<class SharkFloatParams>
+void
+HpSharkFloat<SharkFloatParams>::DenormalizeLosePrecision() {
+    // We want Exponent to end up as a multiple of 64
+    // by shifting our mantissa right and compensating in the exponent.
+    // This is useful for converting to mpf_t, which expects
+    // the exponent to be a multiple of 64.  But we lose precision, so
+    // this is useless.
+
+    // 1) Compute rem = Exponent mod 64 in [0..63]
+    int32_t rem = Exponent % 64;
+    if (rem < 0) rem += 64;
+
+    // 2) How many bits to shift right so (Exponent + bitOffset) % 64 == 0
+    int32_t bitOffset = (64 - rem) % 64;  // in [0..63]
+
+    if (bitOffset > 0) {
+        // 3a) split into whole-word shifts and small-bit shifts
+        int32_t wordShift = bitOffset / 32;        // 0 or 1
+        int32_t smallShift = bitOffset % 32;        // 0..31
+
+        // 3b) first do the small-bit right-shift across words
+        if (smallShift > 0) {
+            int32_t inv = 32 - smallShift;
+            for (int32_t i = 0; i < NumUint32 - 1; ++i) {
+                Digits[i] = (Digits[i] >> smallShift)
+                    | (Digits[i + 1] << inv);
+            }
+            Digits[NumUint32 - 1] >>= smallShift;
+        }
+
+        // 3c) then do the whole-word shift (zero-fill high words)
+        if (wordShift > 0) {
+            for (int32_t i = 0; i + wordShift < NumUint32; ++i) {
+                Digits[i] = Digits[i + wordShift];
+            }
+            for (int32_t i = NumUint32 - wordShift; i < NumUint32; ++i) {
+                Digits[i] = 0;
+            }
+        }
+
+        // 4) compensate in the exponent
+        Exponent += bitOffset;
+    }
+
+    // 5) Now exponent is guaranteed a multiple of 64
+    assert((Exponent & 63) == 0);
+    // Note: the top limb (Digits[NumUint32-1]) may now be zero.
+}
+
+
+
 // Function to convert HpSharkFloat<SharkFloatParams> to mpf_t
 template<class SharkFloatParams>
 void
-HpGpuToMpf (
-    const HpSharkFloat<SharkFloatParams> &hpNum,
-    mpf_t &mpf_val)
+HpSharkFloat<SharkFloatParams>::HpGpuToMpf (
+    mpf_t &mpf_val) const
 {
     // Initialize an mpz_t integer to hold the significand
     mpz_t mpz_value;
     mpz_init(mpz_value);
 
+    // This is not performant but let's assume we're not doing this often
+    HpSharkFloat<SharkFloatParams> copyOfThis;
+    copyOfThis.DeepCopySameDevice(*this);
+    copyOfThis.Normalize();
+
     // Import the digits array into the mpz_t integer
     // Note: mpz_import expects the least significant word first
-    mpz_import(mpz_value, SharkFloatParams::GlobalNumUint32, -1, sizeof(uint32_t), 0, 0, hpNum.Digits);
+    mpz_import(mpz_value, SharkFloatParams::GlobalNumUint32, -1, sizeof(uint32_t), 0, 0, copyOfThis.Digits);
 
     // Adjust for sign
-    if (hpNum.IsNegative) {
+    if (copyOfThis.IsNegative) {
         mpz_neg(mpz_value, mpz_value);
     }
 
@@ -563,7 +714,7 @@ HpGpuToMpf (
 
     // Adjust the exponent
     // Since the exponent is in base 2^32, adjust by multiplying/dividing by 2^(exponent * 32)
-    int64_t total_bits = (int64_t)(hpNum.Exponent); // Exponent is already in bits
+    int64_t total_bits = (int64_t)(copyOfThis.Exponent); // Exponent is already in bits
     if (total_bits > 0) {
         mpf_mul_2exp(mpf_val, mpf_val, (mp_bitcnt_t)total_bits);
     } else if (total_bits < 0) {
@@ -609,11 +760,19 @@ Uint32ToMpf (
     return MpfToString<SharkFloatParams>(mpf_val, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
 }
 
+template<class SharkFloatParams>
+void HpSharkFloat<SharkFloatParams>::SetNegative(bool isNegative) {
+    IsNegative = isNegative;
+}
+
+template<class SharkFloatParams>
+bool HpSharkFloat<SharkFloatParams>::GetNegative() const {
+    return IsNegative;
+}
+
 // Explicit instantiation
 #define ExplicitlyInstantiate(SharkFloatParams) \
     template class HpSharkFloat<SharkFloatParams>; \
-    template void MpfToHpGpu<SharkFloatParams>(const mpf_t mpf_val, HpSharkFloat<SharkFloatParams> &number, int prec_bits); \
-    template void HpGpuToMpf<SharkFloatParams>(const HpSharkFloat<SharkFloatParams> &hpNum, mpf_t &mpf_val); \
     template std::string Uint32ToMpf<SharkFloatParams>(const uint32_t *array, int32_t pow64Exponent, mpf_t &mpf_val); \
     template std::string MpfToString<SharkFloatParams>(const mpf_t mpf_val, size_t precInBits); \
 

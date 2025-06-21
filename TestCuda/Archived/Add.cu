@@ -285,7 +285,7 @@ __device__ void AddHelper(
             }
             if (tid == 0) {
                 Out->Exponent = 0;
-                Out->IsNegative = false;
+                Out->SetNegative(false);
             }
         } else if (AIsZero) {
             // A is zero, copy B to Out
@@ -294,7 +294,7 @@ __device__ void AddHelper(
             }
             if (tid == 0) {
                 Out->Exponent = B->Exponent;
-                Out->IsNegative = B->IsNegative;
+                Out->SetNegative(B->GetNegative());
             }
         } else if (BIsZero) {
             // B is zero, copy A to Out
@@ -303,7 +303,7 @@ __device__ void AddHelper(
             }
             if (tid == 0) {
                 Out->Exponent = A->Exponent;
-                Out->IsNegative = A->IsNegative;
+                Out->SetNegative(A->GetNegative());
             }
         }
         __syncthreads(); // Synchronize before exiting
@@ -315,7 +315,7 @@ __device__ void AddHelper(
     if (tid == 0) {
         int32_t expDiff = A->Exponent - B->Exponent;
         AIsBiggerExponent = (expDiff >= 0);
-        isAddition = (A->IsNegative == B->IsNegative);
+        isAddition = (A->GetNegative() == B->GetNegative());
         AIsBiggerMagnitude = true; // Default assumption
 
         shiftBits = abs(expDiff);
@@ -555,10 +555,10 @@ __device__ void AddHelper(
 
         Out->Exponent = outExponent;
         if (isAddition) {
-            Out->IsNegative = A->IsNegative;
+            Out->SetNegative(A->GetNegative());
         } else {
             // The sign is determined by the operand with the larger magnitude
-            Out->IsNegative = AIsBiggerMagnitude ? A->IsNegative : B->IsNegative;
+            Out->SetNegative(AIsBiggerMagnitude ? A->GetNegative() : B->GetNegative());
         }
     }
 

@@ -60,13 +60,13 @@ bool CorrectnessTests() {
 
     bool res;
 
-    //res = TestConversion<TestSharkParams>(0);
-    //if (!res) {
-    //    auto q = PressKey();
-    //    if (q == 'q') {
-    //        return false;
-    //    }
-    //}
+    res = TestConversion<TestSharkParams>(0);
+    if (!res) {
+        auto q = PressKey();
+        if (q == 'q') {
+            return false;
+        }
+    }
 
     testBase = 2000;
     res = TestAllBinaryOp<TestSharkParams, MainOperator>(testBase);

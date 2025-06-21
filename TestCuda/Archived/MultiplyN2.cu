@@ -370,7 +370,7 @@ __device__ void MultiplyHelperN2(
     // Adjust the exponent accordingly
     if (blockIdx.x == 0 && threadIdx.x == 0) {
         Out->Exponent = A->Exponent + B->Exponent + shifts * 32;
-        Out->IsNegative = A->IsNegative ^ B->IsNegative;
+        Out->SetNegative(A->GetNegative() ^ B->GetNegative());
     }
 
     // Each thread copies its digits from shared memory to Out->Digits, applying the shift

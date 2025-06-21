@@ -210,6 +210,11 @@ struct HpSharkFloat {
     void GenerateRandomNumber();
     void GenerateRandomNumber2();
     void Negate();
+    void Normalize();
+    void DenormalizeLosePrecision();
+
+    void SetNegative(bool isNegative);
+    bool GetNegative() const;
 
     // Default precision in bits
     using DigitType = uint32_t;
@@ -219,6 +224,9 @@ struct HpSharkFloat {
     constexpr static auto DefaultPrecDigits = DefaultPrecBits / ConvertBitsToDecimals;
     constexpr static auto DefaultMpirBits = DefaultPrecBits;
 
+    void HpGpuToMpf(mpf_t &mpf_val) const;
+    void MpfToHpGpu(const mpf_t mpf_val, int prec_bits);
+
     // Digits in base 2^32
     DigitType Digits[NumUint32];
 
@@ -226,10 +234,10 @@ struct HpSharkFloat {
     using ExpT = int32_t;
     ExpT Exponent;
 
+private:
     // Sign
     bool IsNegative;
 
-private:
     mp_exp_t HpGpuExponentToMpfExponent(size_t numBytesToCopy) const;
 };
 
@@ -257,12 +265,6 @@ template<class SharkFloatParams>
 std::string MpfToString(const mpf_t mpf_val, size_t precInBits);
 
 std::string MpfToHexString(const mpf_t mpf_val);
-
-template<class SharkFloatParams>
-void MpfToHpGpu(const mpf_t mpf_val, HpSharkFloat<SharkFloatParams> &number, int prec_bits);
-
-template<class SharkFloatParams>
-void HpGpuToMpf(const HpSharkFloat<SharkFloatParams> &hpNum, mpf_t &mpf_val);
 
 template<class SharkFloatParams>
 std::string Uint32ToMpf(const uint32_t *array, int32_t pow64Exponent, mpf_t &mpf_val);

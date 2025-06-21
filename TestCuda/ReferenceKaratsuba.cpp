@@ -921,7 +921,7 @@ void MultiplyHelperKaratsubaV2 (
                 Out.Digits[i] = 0;
             }
             Out.Exponent = A.Exponent + B.Exponent;
-            Out.IsNegative = false;
+            Out.SetNegative(false);
             return;
         }
 
@@ -960,13 +960,13 @@ void MultiplyHelperKaratsubaV2 (
         };
 
     NormalizeOne(*OutXX, *A, *A, tempDigitsXX);
-    OutXX->IsNegative = false;
+    OutXX->SetNegative(false);
 
     NormalizeOne(*OutXY, *A, *B, tempDigitsXY);
-    OutXY->IsNegative = (A->IsNegative ^ B->IsNegative);
+    OutXY->SetNegative(A->GetNegative() ^ B->GetNegative());
 
     NormalizeOne(*OutYY, *B, *B, tempDigitsYY);
-    OutYY->IsNegative = false;
+    OutYY->SetNegative(false);
 }
 
 

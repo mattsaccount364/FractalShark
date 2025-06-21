@@ -602,7 +602,7 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallelImproved3(
 
             uint32_t tempCopyGlobalBorrowAny = *globalBorrowAny;
             if (tempCopyGlobalBorrowAny == initialBorrowAny)
-                break;  // no new borrows → done
+                break;  // no new borrows --> done
 
             grid.sync();
 
@@ -2293,7 +2293,7 @@ __device__ void MultiplyHelperKaratsubaV2 (
                 Out->Exponent = A->Exponent + B->Exponent + shift_digits * 32;
 
                 // Set the sign of the result
-                Out->IsNegative = (forcePositive) ? false : (A->IsNegative ^ B->IsNegative);
+                Out->SetNegative(forcePositive ? false : (A->GetNegative() ^ B->GetNegative()));
             }
         };
 

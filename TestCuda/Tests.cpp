@@ -65,10 +65,10 @@ bool DiffAgainstHostNonZero(
         std::cout << gpuResult.ToHexString() << std::endl;
     }
 
-    // Convert gpuResult → mpfXGpuResult
+    // Convert gpuResult --> mpfXGpuResult
     mpf_t mpfXGpuResult;
     mpf_init(mpfXGpuResult);
-    HpGpuToMpf(gpuResult, mpfXGpuResult);
+    gpuResult.HpGpuToMpf(mpfXGpuResult);
 
     // Compute absolute difference: mpfDiffAbs = |mpfHostResult – mpfXGpuResult|
     mpf_t mpfDiff, mpfDiffAbs;
@@ -200,11 +200,10 @@ bool DiffAgainstHost(
             << gpuResult.ToHexString() << "\n";
     }
 
-    // 2) Convert host mpf_t → HpSharkFloat via MpfToHpGpu
+    // 2) Convert host mpf_t --> HpSharkFloat via MpfToHpGpu
     HpSharkFloat<SharkFloatParams> hostShark;
-    MpfToHpGpu<SharkFloatParams>(
+    hostShark.MpfToHpGpu(
         mpfHostResult,
-        hostShark,
         HpSharkFloat<SharkFloatParams>::DefaultPrecBits
     );
 
@@ -217,7 +216,7 @@ bool DiffAgainstHost(
     mpf_init(mpfDiff);
     mpf_init(mpfDiffAbs);
 
-    HpGpuToMpf(gpuResult, mpfXGpu);
+    gpuResult.HpGpuToMpf(mpfXGpu);
     mpf_sub(mpfDiff, mpfHostResult, mpfXGpu);
     mpf_abs(mpfDiffAbs, mpfDiff);
 
@@ -421,9 +420,9 @@ void TestPerf (
     auto zNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
 
     auto resultNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-    MpfToHpGpu(mpfX, *xNum, HpSharkFloat<SharkFloatParams>::DefaultPrecBits);
-    MpfToHpGpu(mpfY, *yNum, HpSharkFloat<SharkFloatParams>::DefaultPrecBits);
-    MpfToHpGpu(mpfZ, *zNum, HpSharkFloat<SharkFloatParams>::DefaultPrecBits);
+    xNum->MpfToHpGpu(mpfX, HpSharkFloat<SharkFloatParams>::DefaultPrecBits);
+    yNum->MpfToHpGpu(mpfY, HpSharkFloat<SharkFloatParams>::DefaultPrecBits);
+    zNum->MpfToHpGpu(mpfZ, HpSharkFloat<SharkFloatParams>::DefaultPrecBits);
 
     if constexpr (SharkFloatParams::HostVerbose) {
         std::cout << "\nConverted HpSharkFloat<SharkFloatParams> representations:" << std::endl;
@@ -566,9 +565,9 @@ void TestPerf (
     mpf_init(mpfY);
     mpf_init(mpfZ);
 
-    HpGpuToMpf(xNum, mpfX);
-    HpGpuToMpf(yNum, mpfY);
-    HpGpuToMpf(zNum, mpfZ);
+    xNum.HpGpuToMpf(mpfX);
+    yNum.HpGpuToMpf(mpfY);
+    zNum.HpGpuToMpf(mpfZ);
 
     auto num1 = xNum.ToString();
     auto num2 = yNum.ToString();
@@ -1291,7 +1290,7 @@ void TestTernaryOperatorTwoNumbers (
         assert(xNumCopy.size() == num.size());
 
         for (size_t i = 0; i < num.size(); ++i) {
-            MpfToHpGpu(mpfCopy[i], xNumCopy[i], HpSharkFloat<SharkFloatParams>::DefaultPrecBits);
+            xNumCopy[i].MpfToHpGpu(mpfCopy[i], HpSharkFloat<SharkFloatParams>::DefaultPrecBits);
         }
 
         TestTernaryOperatorTwoNumbersRaw<SharkFloatParams, sharkOperator, false>(
@@ -1528,11 +1527,11 @@ void TestTernarySpecial(
         mpf_init(mpfXCopy[i]);
     }
 
-    HpGpuToMpf(xNum, mpfXCopy[0]);
-    HpGpuToMpf(yNum, mpfXCopy[1]);
-    HpGpuToMpf(zNum, mpfXCopy[2]);
-    HpGpuToMpf(xNum2, mpfXCopy[3]);
-    HpGpuToMpf(yNum2, mpfXCopy[4]);
+    xNum.HpGpuToMpf(mpfXCopy[0]);
+    yNum.HpGpuToMpf(mpfXCopy[1]);
+    zNum.HpGpuToMpf(mpfXCopy[2]);
+    xNum2.HpGpuToMpf(mpfXCopy[3]);
+    yNum2.HpGpuToMpf(mpfXCopy[4]);
 
     TestTernaryOperatorTwoNumbersRaw<SharkFloatParams, sharkOperator, true>(
         testNum,
@@ -2037,9 +2036,9 @@ bool TestAllBinaryOp(int testBase) {
             }
 
             if constexpr (SharkFloatParams::HostVerbose) {
-                std::cout << "x.Exponent: " << x->Exponent << ", neg: " << x->IsNegative << std::endl;
-                std::cout << "y.Exponent: " << y->Exponent << ", neg: " << y->IsNegative << std::endl;
-                std::cout << "z.Exponent: " << z->Exponent << ", neg: " << z->IsNegative << std::endl;
+                std::cout << "x.Exponent: " << x->Exponent << ", neg: " << x->GetNegative() << std::endl;
+                std::cout << "y.Exponent: " << y->Exponent << ", neg: " << y->GetNegative() << std::endl;
+                std::cout << "z.Exponent: " << z->Exponent << ", neg: " << z->GetNegative() << std::endl;
             }
 
             const std::string x_str = x->ToString();
@@ -2071,9 +2070,9 @@ bool TestAllBinaryOp(int testBase) {
             }
 
             if constexpr (SharkFloatParams::HostVerbose) {
-                std::cout << "x.Exponent: " << x->Exponent << ", neg: " << x->IsNegative << std::endl;
-                std::cout << "y.Exponent: " << y->Exponent << ", neg: " << y->IsNegative << std::endl;
-                std::cout << "z.Exponent: " << z->Exponent << ", neg: " << z->IsNegative << std::endl;
+                std::cout << "x.Exponent: " << x->Exponent << ", neg: " << x->GetNegative() << std::endl;
+                std::cout << "y.Exponent: " << y->Exponent << ", neg: " << y->GetNegative() << std::endl;
+                std::cout << "z.Exponent: " << z->Exponent << ", neg: " << z->GetNegative() << std::endl;
             }
 
             const std::string x_str = x->ToString();

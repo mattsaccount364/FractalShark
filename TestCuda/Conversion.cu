@@ -43,7 +43,7 @@ void TestConvertNumber (
 
     // Convert the input values to HpSharkFloat<SharkFloatParams> representations
     HpSharkFloat<SharkFloatParams> x_num{};
-    MpfToHpGpu(mpf_x, x_num, HpSharkFloat<SharkFloatParams>::DefaultPrecBits);
+    x_num.MpfToHpGpu(mpf_x, HpSharkFloat<SharkFloatParams>::DefaultPrecBits);
 
     if constexpr (SharkFloatParams::HostVerbose) {
         // Convert the HpSharkFloat<SharkFloatParams> results to strings
@@ -57,7 +57,7 @@ void TestConvertNumber (
     mpf_t mpf_x_gpu_result;
     mpf_init(mpf_x_gpu_result);
 
-    HpGpuToMpf(x_num, mpf_x_gpu_result);
+    x_num.HpGpuToMpf(mpf_x_gpu_result);
 
     // Compute the differences between host and GPU results
     mpf_t mpf_diff;
@@ -140,6 +140,11 @@ bool TestConversion(int testBase) {
     TestConvertNumber<SharkFloatParams>(set2 + 2, "0.2");
     TestConvertNumber<SharkFloatParams>(set2 + 3, "0.3");
     TestConvertNumber<SharkFloatParams>(set2 + 4, "0.4");
+    TestConvertNumber<SharkFloatParams>(set2 + 5, "0.5");
+    TestConvertNumber<SharkFloatParams>(set2 + 6, "0.6");
+    TestConvertNumber<SharkFloatParams>(set2 + 7, "0.7");
+    TestConvertNumber<SharkFloatParams>(set2 + 8, "0.8");
+    TestConvertNumber<SharkFloatParams>(set2 + 9, "0.9");
 
     const auto set3 = testBase + 30;
     TestConvertNumber<SharkFloatParams>(set3 + 1, "1e-50");
@@ -163,11 +168,16 @@ bool TestConversion(int testBase) {
     TestConvertNumber<SharkFloatParams>(set5 + 2, "-0.2");
     TestConvertNumber<SharkFloatParams>(set5 + 3, "-0.3");
     TestConvertNumber<SharkFloatParams>(set5 + 4, "-0.4");
-    TestConvertNumber<SharkFloatParams>(set5 + 5, "1.999999999");
-    TestConvertNumber<SharkFloatParams>(set5 + 6, "1.99999999999999999999999999999");
-    TestConvertNumber<SharkFloatParams>(set5 + 7, "1.9999999999999999999999999999999999999999999999");
+    TestConvertNumber<SharkFloatParams>(set5 + 5, "-0.5");
+    TestConvertNumber<SharkFloatParams>(set5 + 6, "-0.6");
+    TestConvertNumber<SharkFloatParams>(set5 + 7, "-0.7");
+    TestConvertNumber<SharkFloatParams>(set5 + 8, "-0.8");
+    TestConvertNumber<SharkFloatParams>(set5 + 9, "-0.9");
+    TestConvertNumber<SharkFloatParams>(set5 + 10, "1.999999999");
+    TestConvertNumber<SharkFloatParams>(set5 + 11, "1.99999999999999999999999999999");
+    TestConvertNumber<SharkFloatParams>(set5 + 12, "1.9999999999999999999999999999999999999999999999");
 
-    const auto set6 = testBase + 60;
+    const auto set6 = testBase + 70;
     TestConvertNumber<SharkFloatParams>(set6 + 1, "4294967297");
     TestConvertNumber<SharkFloatParams>(set6 + 2, "18446744073709551617");
     TestConvertNumber<SharkFloatParams>(set6 + 3, "55340232221128654849"); // 2^65 + 2^64 + 1
@@ -176,7 +186,7 @@ bool TestConversion(int testBase) {
     TestConvertNumber<SharkFloatParams>(set6 + 6, "-55340232221128654849");
     TestConvertNumber<SharkFloatParams>(set6 + 7, "18446744073709551615");
 
-    const auto set7 = testBase + 70;
+    const auto set7 = testBase + 80;
     TestConvertNumber<SharkFloatParams>(set7 + 1, "4294967297.0000152587890625"); // 2^32 + 1 + 1/2^16
     TestConvertNumber<SharkFloatParams>(set7 + 2, "18446744073709551617.0000152587890625");
     TestConvertNumber<SharkFloatParams>(set7 + 3, "55340232221128654849.0000152587890625");

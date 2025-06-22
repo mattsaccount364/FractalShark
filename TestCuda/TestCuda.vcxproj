@@ -114,6 +114,8 @@
   <ItemGroup>
     <ClCompile Include="ReferenceAdd.cpp" />
     <ClCompile Include="ReferenceKaratsuba.cpp" />
+    <ClCompile Include="TestVerbose.cpp" />
+    <ClInclude Include="TestVerbose.h" />
     <CudaCompile Include="Add.cu" />
     <ClInclude Include="Add_ABC.cuh" />
     <ClInclude Include="Add_DE.cuh" />

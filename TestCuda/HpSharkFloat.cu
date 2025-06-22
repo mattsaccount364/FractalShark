@@ -1,4 +1,5 @@
-﻿
+﻿#include "TestVerbose.h"
+
 #include "HpSharkFloat.cuh"
 
 #include <gmp.h>
@@ -38,6 +39,8 @@ HpSharkFloat<SharkFloatParams>::HpSharkFloat(
     IsNegative{ isNegative } {
 
     memcpy(Digits, digitsIn, sizeof(uint32_t) * NumUint32);
+
+    Normalize();
 }
 
 // Function to convert mpf_t to string
@@ -215,14 +218,14 @@ HpSharkFloat<SharkFloatParams>::MpfToHpGpu(
     mpf_init2(abs_val, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
     mpf_abs(abs_val, mpf_value);
 
-    if constexpr (SharkFloatParams::HostVerbose) {
+    if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "abs_val: " << MpfToString<SharkFloatParams>(abs_val, prec_bits) << std::endl;
     }
 
     // Determine the sign
     IsNegative = (mpf_sgn(mpf_value) < 0);
 
-    if constexpr (SharkFloatParams::HostVerbose) {
+    if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "prec_bits: " << std::dec << prec_bits << std::endl;
     }
 
@@ -310,7 +313,7 @@ HpSharkFloat<SharkFloatParams>::MpfToHpGpu(
     static_assert(sizeof(mp_limb_t) == sizeof(uint64_t), "mp_limb_t is not 64 bits");
 
     {
-        if constexpr (SharkFloatParams::HostVerbose) {
+        if (SharkVerbose == VerboseMode::Debug) {
             auto originalDataStr = VectorUintToHexString(dataCopy);
             auto shiftedDataStr = VectorUintToHexString(data);
             std::cout << "Original data: " << originalDataStr << std::endl;

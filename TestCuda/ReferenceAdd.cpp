@@ -1,4 +1,5 @@
-﻿#include "ReferenceKaratsuba.h"
+﻿#include "TestVerbose.h"
+#include "ReferenceKaratsuba.h"
 #include "HpSharkFloat.cuh"
 #include "DebugChecksumHost.h"
 #include "DebugChecksum.cuh"
@@ -521,7 +522,7 @@ void CarryPropagationPP_DE (
         }
     }
 
-    if constexpr (SharkFloatParams::HostVerbose) {
+    if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "CarryPropagationPP_DE Working array:" << std::endl;
         for (int i = 0; i < extDigits; i++) {
             std::cout << "  " << i << ": g = " << working[i].g << ", p = " << working[i].p << std::endl;
@@ -552,7 +553,7 @@ void CarryPropagationPP_DE (
     // Now "in" points to the final inclusive scan result for indices 0 .. numActualDigitsPlusGuard-1.
     const GenProp *inclusive = in;
 
-    if constexpr (SharkFloatParams::HostVerbose) {
+    if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "CarryPropagationPP_DE Inclusive array:" << std::endl;
         for (int i = 0; i < extDigits; i++) {
             std::cout << "  " << i << ": g = " << inclusive[i].g << ", p = " << inclusive[i].p << std::endl;
@@ -573,7 +574,7 @@ void CarryPropagationPP_DE (
         carries[i] = inclusive[i - 1].g | (inclusive[i - 1].p & initialValue);
     }
 
-    if constexpr (SharkFloatParams::HostVerbose) {
+    if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "CarryPropagationPP_DE Carries array:" << std::endl;
         for (int i = 0; i <= extDigits; i++) {
             std::cout << "  " << i << ": " << carries[i] << std::endl;
@@ -596,7 +597,7 @@ void CarryPropagationPP_DE (
         }
     }
 
-    if constexpr (SharkFloatParams::HostVerbose) {
+    if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "CarryPropagationPP_DE Propagated result:" << std::endl;
         for (int i = 0; i < extDigits; i++) {
             std::cout << "  " << i << ": " << propagatedResult[i] << std::endl;
@@ -607,7 +608,7 @@ void CarryPropagationPP_DE (
     // is the overall carry (or borrow). For subtraction we expect this to be 0.
     carry = carries[extDigits];
 
-    if constexpr (SharkFloatParams::HostVerbose) {
+    if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "CarryPropagationPP_DE Final carry: " << carry << std::endl;
     }
 }
@@ -670,7 +671,7 @@ void Phase1_DE (
     const int32_t diffDE = DIsBiggerMagnitude ? (effExpD - effExpE) : (effExpE - effExpD);
     outExponent_DE = DIsBiggerMagnitude ? newDExponent : newEExponent;
 
-    if constexpr (SharkFloatParams::HostVerbose) {
+    if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "diffDE: " << diffDE << std::endl;
         std::cout << "outExponent_DE: " << outExponent_DE << std::endl;
     }
@@ -727,7 +728,7 @@ void Phase1_DE (
             }
         }
 
-        if constexpr (SharkFloatParams::HostVerbose) {
+        if (SharkVerbose == VerboseMode::Debug) {
             std::cout << "Phase1_DE - These are effectively the arrays we're adding and subtracting:" << std::endl;
             std::cout << "alignedDDebug: " << VectorUintToHexString(alignedDDebug) << std::endl;
             std::cout << "alignedEDebug: " << VectorUintToHexString(alignedEDebug) << std::endl;
@@ -738,7 +739,7 @@ void Phase1_DE (
         const auto &debugResultState = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2XY>(
             debugStates, extResult_D_E.data(), extDigits);
 
-        if constexpr (SharkFloatParams::HostVerbose) {
+        if (SharkVerbose == VerboseMode::Debug) {
             std::cout << "extResult_D_E checksum: " << debugResultState.GetStr() << std::endl;
             std::cout << "extResult_D_E after arithmetic: " << VectorUintToHexString(extResult_D_E) << std::endl;
         }
@@ -776,7 +777,7 @@ void CarryPropagation_ABC (
 
     // On exit, carryAcc may be positive (overflow) or negative (net borrow).
     // You can inspect it to adjust exponent / final sign:
-    if constexpr (SharkFloatParams::HostVerbose) {
+    if (SharkVerbose == VerboseMode::Debug) {
         assert(carryAcc >= 0);
         std::cout << "CarryPropagation3 final carryAcc = " << carryAcc << std::endl;
     }
@@ -805,7 +806,8 @@ ComputeABCComparison (
     const int32_t effExpB,
     const int32_t effExpC,
 
-    const int32_t              biasedExpABC,
+    const int32_t           biasedExpABC,
+    const ThreeWayMagnitude ordering,
 
     // input signs (for A–B, B–C, etc.); in Phase1_ABC the caller already flipped
     // signB if you are doing A–B+C, but here we assume signA, signB, signC are
@@ -827,9 +829,11 @@ ComputeABCComparison (
 
     // just after you compute `ordering`:
     // compare extBase vs extOther after both have been normalized & shifted to the same exponent frame
-    auto CompareMagnitudes2WayRelativeToBase = [&](
+    auto CompareMagnitudes2WayRelativeToBase = [](
         const uint32_t *extBase, int32_t shiftBase, int32_t diffBase,
-        const uint32_t *extOther, int32_t shiftOther, int32_t diffOther
+        const uint32_t *extOther, int32_t shiftOther, int32_t diffOther,
+        const int32_t actualDigits,
+        const int32_t extDigits
         ) {
             // lex‐compare high-->low
             for (int32_t i = extDigits - 1; i >= 0; --i) {
@@ -847,18 +851,21 @@ ComputeABCComparison (
     // now compute each X≥Y flag with one call apiece:
     const bool AB_XgeY = CompareMagnitudes2WayRelativeToBase(
         extA, shiftA, diffA,
-        extB, shiftB, diffB
+        extB, shiftB, diffB,
+        actualDigits, extDigits
     );
     const bool AC_XgeY = CompareMagnitudes2WayRelativeToBase(
         extA, shiftA, diffA,
-        extC, shiftC, diffC
+        extC, shiftC, diffC,
+        actualDigits, extDigits
     );
     const bool BC_XgeY = CompareMagnitudes2WayRelativeToBase(
         extB, shiftB, diffB,
-        extC, shiftC, diffC
+        extC, shiftC, diffC,
+        actualDigits, extDigits
     );
 
-    auto CmpAlignedPairVsThird = [&](
+    auto CmpAlignedPairVsThird = [](
         const uint32_t *extX,
         const uint32_t *extY,
         const uint32_t *extZ,
@@ -917,7 +924,6 @@ ComputeABCComparison (
             // else we’re in the narrow window (D_low == dZ or dZ+1):
             // fall through into the borrow‐aware Phase B loop below
         }
-
 
         //
         // --- Phase B: exponents tied --> lexicographic compare of 32-bit words ---
@@ -1121,11 +1127,17 @@ void Phase1_ABC (
         actualDigits, extDigits,
         shiftA, shiftB, shiftC,
         effExpA, effExpB, effExpC,
-        biasedExpABC_local,
+        biasedExpABC_local, ordering,
         IsNegativeA, IsNegativeB, IsNegativeC,
         ABIsBiggerThanC,
         ACIsBiggerThanB,
         BCIsBiggerThanA);
+
+    if (SharkVerbose == VerboseMode::Debug) {
+        std::cout << "Phase1_ABC - ABIsBiggerThanC: " << ABIsBiggerThanC << std::endl;
+        std::cout << "Phase1_ABC - ACIsBiggerThanB: " << ACIsBiggerThanB << std::endl;
+        std::cout << "Phase1_ABC - BCIsBiggerThanA: " << BCIsBiggerThanA << std::endl;
+    }
 
     // How far each input must be shifted right to align at biasedExpABC_local
     int32_t diffA = biasedExpABC_local - effExpA;
@@ -1288,7 +1300,7 @@ void Phase1_ABC (
     }
 
     // Debug printing
-    if constexpr (SharkFloatParams::HostVerbose) {
+    if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "Phase1_ABC - These are effectively the arrays we're adding and subtracting:\n";
         std::cout << "alignedXDebug (" << arrayXStr << "): " << (signX ? "-" : "+") << VectorUintToHexString(alignedXDebug) << "\n";
         std::cout << "alignedYDebug (" << arrayYStr << "): " << (signY ? "-" : "+") << VectorUintToHexString(alignedYDebug) << "\n";
@@ -1301,7 +1313,7 @@ void Phase1_ABC (
     if constexpr (SharkDebugChecksums) {
         const auto &debugResultState = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2XX>(
             debugStates, extResult_ABC.data(), extDigits);
-        if constexpr (SharkFloatParams::HostVerbose) {
+        if (SharkVerbose == VerboseMode::Debug) {
             std::cout << "Phase1_ABC checksum: " << debugResultState.GetStr() << "\n";
         }
     }
@@ -1354,7 +1366,7 @@ AddHelper (
     const bool IsNegativeE = E_B->GetNegative();
 
     // --- Set up extended working precision ---
-    constexpr int32_t guard = 4;
+    constexpr int32_t guard = SharkFloatParams::Guard;
     constexpr int32_t numActualDigits = SharkFloatParams::GlobalNumUint32;
     constexpr int32_t numActualDigitsPlusGuard = SharkFloatParams::GlobalNumUint32 + guard;
     // Create extended arrays (little-endian, index 0 is LSB).
@@ -1363,7 +1375,7 @@ AddHelper (
 
     // The guard words (indices GlobalNumUint32 to numActualDigitsPlusGuard-1) are left as zero.
 
-    if constexpr (SharkFloatParams::HostVerbose) {
+    if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "ext_A_X2: " << VectorUintToHexString(ext_A_X2, numActualDigits) << std::endl;
         std::cout << "ext_A_X2 exponent: " << A_X2->Exponent << std::endl;
         std::cout << "ext_A_X2 sign: " << (IsNegativeA ? "-" : "+") << std::endl;
@@ -1404,7 +1416,7 @@ AddHelper (
         const auto &debugEState = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::EDigits>(
             debugStates, ext_E_B, numActualDigits);
 
-        if constexpr (SharkFloatParams::HostVerbose) {
+        if (SharkVerbose == VerboseMode::Debug) {
             std::cout << "A_X2->Digits checksum: " << debugState.GetStr() << std::endl;
             std::cout << "B_Y2->Digits checksum: " << debugBState.GetStr() << std::endl;
             std::cout << "C_A->Digits checksum: " << debugCState.GetStr() << std::endl;
@@ -1462,7 +1474,7 @@ AddHelper (
         newEExponent,
         normE_isZero);
 
-    if constexpr (SharkFloatParams::HostVerbose) {
+    if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "shiftALeftToGetMsb: " << shiftALeftToGetMsb << std::endl;
         std::cout << "shiftBLeftToGetMsb: " << shiftBLeftToGetMsb << std::endl;
         std::cout << "shiftCLeftToGetMsb: " << shiftCLeftToGetMsb << std::endl;
@@ -1478,7 +1490,7 @@ AddHelper (
     const int32_t effExpD = normD_isZero ? -100'000'000 : newDExponent + bias;
     const int32_t effExpE = normE_isZero ? -100'000'000 : newEExponent + bias;
 
-    if constexpr (SharkFloatParams::HostVerbose) {
+    if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "effExpA: " << effExpA << std::endl;
         std::cout << "effExpB: " << effExpB << std::endl;
         std::cout << "effExpC: " << effExpC << std::endl;
@@ -1529,7 +1541,7 @@ AddHelper (
         ext_C_A,
         biasedExpABC);
 
-    {
+    if (SharkVerbose == VerboseMode::Debug) {
         auto PrintOneShiftedNormalizedArray = [&](
             const uint32_t *ext,
             const int32_t shift,
@@ -1561,7 +1573,7 @@ AddHelper (
 
     int32_t outExponent_ABC = 0;
 
-    if constexpr (SharkFloatParams::HostVerbose) {
+    if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "threeWayMagnitude: " << ThreeWayMagnitudeToString(threeWayMagnitude) << std::endl;
         std::cout << "outExponent_ABC: " << outExponent_ABC << std::endl;
     }
@@ -1604,7 +1616,7 @@ AddHelper (
         ext_D_2X,
         ext_E_B);
 
-    if constexpr (SharkFloatParams::HostVerbose) {
+    if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "DIsBiggerMagnitude: " << DIsBiggerMagnitude << std::endl;
     }
 
@@ -1673,7 +1685,7 @@ AddHelper (
     // A subsequent normalization step would adjust these digits (and the exponent) so that the most-significant
     // bit is in the desired position. This normalization step is omitted here.
 
-    if constexpr (SharkFloatParams::HostVerbose) {
+    if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "propagatedResult_ABC after arithmetic: " << VectorUintToHexString(propagatedResult_ABC) << std::endl;
         std::cout << "propagatedResult_ABC: " << VectorUintToHexString(propagatedResult_ABC) << std::endl;
         std::cout << "carry_ABC out: 0x" << std::hex << carry_ABC << std::endl;
@@ -1690,7 +1702,7 @@ AddHelper (
         const auto &debugResultState_DE = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::FinalAdd2>(
             debugStates, propagatedResult_DE.data(), numActualDigitsPlusGuard);
 
-        if constexpr (SharkFloatParams::HostVerbose) {
+        if (SharkVerbose == VerboseMode::Debug) {
             std::cout << "propagatedResult_ABC checksum: " << debugResultState_ABC.GetStr() << std::endl;
             std::cout << "propagatedResult_DE checksum: " << debugResultState_DE.GetStr() << std::endl;
         }
@@ -1758,7 +1770,7 @@ AddHelper (
             const int32_t currentOverall = msdResult * 32 + (31 - clzResult);
             const int32_t desiredOverall = (SharkFloatParams::GlobalNumUint32 - 1) * 32 + 31;
 
-            if constexpr (SharkFloatParams::HostVerbose) {
+            if (SharkVerbose == VerboseMode::Debug) {
                 std::cout << "prefixOutStr: " << prefixOutStr << std::endl;
                 std::cout << "Count leading zeros: " << clzResult << std::endl;
                 std::cout << "Current MSB index: " << msdResult << std::endl;
@@ -1768,7 +1780,7 @@ AddHelper (
 
             const int32_t shiftNeeded = currentOverall - desiredOverall;
             if (shiftNeeded > 0) {
-                if constexpr (SharkFloatParams::HostVerbose) {
+                if (SharkVerbose == VerboseMode::Debug) {
                     std::cout << "Shift needed branch D_2X: " << shiftNeeded << std::endl;
                 }
 
@@ -1776,7 +1788,7 @@ AddHelper (
                 MultiWordRightShift_LittleEndian(propagatedResult.data(), extDigits, shiftNeeded, ResultOut->Digits, shiftedSz);
                 outExponent += shiftNeeded;
 
-                if constexpr (SharkFloatParams::HostVerbose) {
+                if (SharkVerbose == VerboseMode::Debug) {
                     std::cout << "Final propagatedResult after right shift: " <<
                         VectorUintToHexString(ResultOut->Digits, shiftedSz) <<
                         std::endl;
@@ -1784,7 +1796,7 @@ AddHelper (
                     std::cout << "Final outExponent after right shift: " << outExponent << std::endl;
                 }
             } else if (shiftNeeded < 0) {
-                if constexpr (SharkFloatParams::HostVerbose) {
+                if (SharkVerbose == VerboseMode::Debug) {
                     std::cout << "Shift needed branch E_B: " << shiftNeeded << std::endl;
                 }
 
@@ -1799,7 +1811,7 @@ AddHelper (
                     shiftedSz);
                 outExponent -= L;
 
-                if constexpr (SharkFloatParams::HostVerbose) {
+                if (SharkVerbose == VerboseMode::Debug) {
                     std::cout << "Final propagatedResult after left shift: " <<
                         VectorUintToHexString(ResultOut->Digits, shiftedSz) <<
                         std::endl;
@@ -1807,7 +1819,7 @@ AddHelper (
                     std::cout << "Final outExponent after left shift: " << outExponent << std::endl;
                 }
             } else {
-                if constexpr (SharkFloatParams::HostVerbose) {
+                if (SharkVerbose == VerboseMode::Debug) {
                     std::cout << "No shift needed: " << shiftNeeded << std::endl;
                 }
                 // No shift needed, just copy the result.
@@ -1844,7 +1856,7 @@ AddHelper (
     else
         OutXY2->SetNegative(DIsBiggerMagnitude ? D_2X->GetNegative() : E_B->GetNegative());
 
-    if constexpr (SharkFloatParams::HostVerbose) {
+    if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "Final Resolution completed" << std::endl;
         std::cout << "Formatted results: " << std::endl;
         std::cout << "OutXY1: " << OutXY2->ToHexString() << std::endl;
@@ -1858,7 +1870,7 @@ AddHelper (
         const auto &debugResultState_DE = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::Result_Add2>(
             debugStates, OutXY2->Digits, SharkFloatParams::GlobalNumUint32);
 
-        if constexpr (SharkFloatParams::HostVerbose) {
+        if (SharkVerbose == VerboseMode::Debug) {
             std::cout << "OutXY1->Digits checksum: " << debugResultState_ABC.GetStr() << std::endl;
             std::cout << "OutXY2->Digits checksum: " << debugResultState_DE.GetStr() << std::endl;
         }

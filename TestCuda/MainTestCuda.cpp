@@ -1,4 +1,5 @@
-﻿#include "NullKernel.cuh"
+﻿#include "TestVerbose.h"
+#include "NullKernel.cuh"
 #include "Conversion.cuh"
 #include "HpSharkFloat.cuh"
 #include "Tests.h"
@@ -133,6 +134,18 @@ int RunCorrectnessTest() {
 
 int main(int /*argc*/, char * /*argv*/[]) {
     bool res = false;
+
+    {
+        std::cout << "Verbose? (0 = No, 1 = Yes): ";
+        int verboseInput;
+        std::cin >> verboseInput;
+
+        if (verboseInput == 1) {
+            SetVerboseMode(VerboseMode::Debug);
+        } else {
+            SetVerboseMode(VerboseMode::None);
+        }
+    }
 
     int deviceCount;
     cudaGetDeviceCount(&deviceCount);

@@ -84,6 +84,7 @@ struct GenericSharkFloatParams {
     static constexpr int32_t GlobalNumBlocks = pNumBlocks;
     static constexpr int32_t SharkBatchSize = ::SharkBatchSize;
     // Fixed number of uint32_t values
+    static constexpr int32_t Guard = 4;
     static constexpr int32_t GlobalNumUint32 = pNumDigits;
     static constexpr int32_t HalfLimbsRoundedUp = (GlobalNumUint32 + 1) / 2;
 
@@ -94,9 +95,6 @@ struct GenericSharkFloatParams {
     static constexpr bool DisableCarryPropagation = false;
     static constexpr bool DisableFinalConstruction = false;
     static constexpr bool ForceNoOp = false;
-
-    // If true, the host will print out a lot of stuff
-    static constexpr bool HostVerbose = true;
 
     // 1, 3, 9, 27, 81
     static constexpr auto ConvolutionLimit = pConvolutionLimit;

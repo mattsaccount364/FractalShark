@@ -337,7 +337,7 @@ __device__ void AddHelper (
     extern __shared__ uint32_t sharedData[];
 
     // --- Constants and Parameters ---
-    constexpr int32_t guard = 4;
+    constexpr int32_t guard = SharkFloatParams::Guard;
     constexpr int32_t numActualDigits = SharkFloatParams::GlobalNumUint32;
     constexpr int32_t numActualDigitsPlusGuard = SharkFloatParams::GlobalNumUint32 + guard;
     int32_t idx = blockIdx.x * blockDim.x + threadIdx.x;

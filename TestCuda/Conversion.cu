@@ -1,3 +1,5 @@
+#include "TestVerbose.h"
+
 #include <cuda_runtime.h>
 
 #include "HpSharkFloat.cuh"
@@ -14,6 +16,7 @@
 #include <algorithm>
 
 #include <assert.h>
+
 
 static TestTracker Tests;
 
@@ -33,7 +36,7 @@ void TestConvertNumber (
     }
 
     // Print the original input values
-    if constexpr (SharkFloatParams::HostVerbose) {
+    if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "Original input values:" << std::endl;
         std::cout << "numberStr: " << numberStr << std::endl;
         std::cout << "X: " << MpfToString<SharkFloatParams>(
@@ -45,7 +48,7 @@ void TestConvertNumber (
     HpSharkFloat<SharkFloatParams> x_num{};
     x_num.MpfToHpGpu(mpf_x, HpSharkFloat<SharkFloatParams>::DefaultPrecBits);
 
-    if constexpr (SharkFloatParams::HostVerbose) {
+    if (SharkVerbose == VerboseMode::Debug) {
         // Convert the HpSharkFloat<SharkFloatParams> results to strings
         std::string gpu_str = x_num.ToString();
         std::cout << "\nHighPrecisionNumber representations:" << std::endl;
@@ -97,7 +100,7 @@ void TestConvertNumber (
         auto diffStr = MpfToString<SharkFloatParams>(mpf_diff_abs, HpSharkFloat<SharkFloatParams>::DefaultPrecBits);
 
         // Converted GPU result
-        if constexpr (SharkFloatParams::HostVerbose) {
+        if (SharkVerbose == VerboseMode::Debug) {
             std::cout << "\nConverted GPU result:" << std::endl;
             std::cout << "X: " << MpfToString<SharkFloatParams>(mpf_x_gpu_result, HpSharkFloat<SharkFloatParams>::DefaultPrecBits) << std::endl;
             std::cout << "X hex: " << MpfToHexString(mpf_x_gpu_result) << std::endl;

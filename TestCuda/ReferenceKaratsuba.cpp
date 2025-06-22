@@ -1,4 +1,5 @@
-﻿#include "ReferenceKaratsuba.h"
+﻿#include "TestVerbose.h"
+#include "ReferenceKaratsuba.h"
 #include "HpSharkFloat.cuh"
 #include "DebugChecksumHost.h"
 
@@ -122,7 +123,7 @@ CompareDigits (const std::vector<uint32_t> &highArray, const std::vector<uint32_
     }
 
     // They are exactly equal
-    if constexpr (SharkFloatParams::HostVerbose) {
+    if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "CompareDigits: Result: 0" << std::endl;
     }
     return 0;
@@ -139,7 +140,7 @@ SubtractDigitsSerial (
     const auto n2 = static_cast<int>(B_.size());
     const auto maxN = std::max(n1, n2);
 
-    if constexpr (SharkFloatParams::HostVerbose) {
+    if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "SubtractDigitsSerial Input: A: " << VectorUintToHexString(A_) << std::endl;
         std::cout << "SubtractDigitsSerial Input: B: " << VectorUintToHexString(B_) << std::endl;
     }
@@ -174,7 +175,7 @@ SubtractDigitsSerial (
     }
     // Assuming highArray >= lowArray, no final borrow remains.
 
-    if constexpr (SharkFloatParams::HostVerbose) {
+    if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "SubtractDigitsSerial: Result: " << VectorUintToHexString(Res) << std::endl;
     }
 
@@ -247,7 +248,7 @@ void KaratsubaRecursiveDigits (
     const auto &debugBState = GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BDigits>(
         debugStates, UseConvolutionHere, B_digits.data(), B_digits.size());
 
-    if constexpr (SharkFloatParams::HostVerbose) {
+    if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "KaratsubaRecursiveDigits (index: " << CallIndex << "):" << std::endl;
         std::cout << "NewN = " << NewN << std::endl;
         std::cout << "A->Digits checksum: " << debugAState.GetStr() << std::endl;
@@ -285,7 +286,7 @@ void KaratsubaRecursiveDigits (
     assert(B_high.size() == NewN2);
 
     // Print lengths of A_low, A_high, B_low, B_high
-    if constexpr (SharkFloatParams::HostVerbose) {
+    if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "A_low: " << A_low.size() << std::endl;
         std::cout << "A_high: " << A_high.size() << std::endl;
         std::cout << "B_low: " << B_low.size() << std::endl;
@@ -312,13 +313,13 @@ void KaratsubaRecursiveDigits (
     x_diff.resize(NewN1, initValue32);
 
     if (x_cmp >= 0) {
-        if constexpr (SharkFloatParams::HostVerbose) {
+        if (SharkVerbose == VerboseMode::Debug) {
             std::cout << "A_high - A_low" << std::endl;
         }
 
         SubtractDigitsSerial<SharkFloatParams>(A_high, A_low, x_diff);
     } else {
-        if constexpr (SharkFloatParams::HostVerbose) {
+        if (SharkVerbose == VerboseMode::Debug) {
             std::cout << "A_low - A_high" << std::endl;
         }
 
@@ -332,13 +333,13 @@ void KaratsubaRecursiveDigits (
     y_diff.resize(NewN1, initValue32);
 
     if (y_cmp >= 0) {
-        if constexpr (SharkFloatParams::HostVerbose) {
+        if (SharkVerbose == VerboseMode::Debug) {
             std::cout << "B_high - B_low" << std::endl;
         }
 
         SubtractDigitsSerial<SharkFloatParams>(B_high, B_low, y_diff);
     } else {
-        if constexpr (SharkFloatParams::HostVerbose) {
+        if (SharkVerbose == VerboseMode::Debug) {
             std::cout << "B_low - B_high" << std::endl;
         }
 
@@ -361,7 +362,7 @@ void KaratsubaRecursiveDigits (
     assert(x_diff.size() == MaxHalfN);
     assert(y_diff.size() == MaxHalfN);
 
-    if constexpr (SharkFloatParams::HostVerbose) {
+    if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "x_diff: " << VectorUintToHexString(x_diff) << std::endl;
         std::cout << "x_diff checksum: " << xDiffChecksum.GetStr() << std::endl;
         std::cout << "y_diff: " << VectorUintToHexString(y_diff) << std::endl;
@@ -412,7 +413,7 @@ void KaratsubaRecursiveDigits (
                 GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugPurpose>(
                     debugStates, UseConvolutionHere, Z0.data(), Z0.size());
 
-            if constexpr (SharkFloatParams::HostVerbose) {
+            if (SharkVerbose == VerboseMode::Debug) {
                 std::cout << name << ": " << VectorUintToHexString(Z0) << std::endl;
                 std::cout << name << " checksum: " << Z0Checksum.GetStr() << std::endl;
             }
@@ -438,7 +439,7 @@ void KaratsubaRecursiveDigits (
             const auto &Z2Checksum =
                 GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugPurpose>(
                     debugStates, UseConvolutionHere, Z2.data(), Z2.size());
-            if constexpr (SharkFloatParams::HostVerbose) {
+            if (SharkVerbose == VerboseMode::Debug) {
                 std::cout << name << ": " << VectorUintToHexString(Z2) << std::endl;
                 std::cout << name << " checksum: " << Z2Checksum.GetStr() << std::endl;
             }
@@ -464,7 +465,7 @@ void KaratsubaRecursiveDigits (
             const auto &Z1TempChecksum =
                 GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugPurpose>(
                     debugStates, UseConvolutionHere, Z1_temp.data(), Z1_temp.size());
-            if constexpr (SharkFloatParams::HostVerbose) {
+            if (SharkVerbose == VerboseMode::Debug) {
                 std::cout << name << ": " << VectorUintToHexString(Z1_temp) << std::endl;
                 std::cout << name << " checksum: " << Z1TempChecksum.GetStr() << std::endl;
             }
@@ -498,7 +499,7 @@ void KaratsubaRecursiveDigits (
                 GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugPurpose>(
                     debugStates, UseConvolutionHere, Z0.data(), Z0.size());
 
-            if constexpr (SharkFloatParams::HostVerbose) {
+            if (SharkVerbose == VerboseMode::Debug) {
                 std::cout << name << ": " << VectorUintToHexString(Z0) << std::endl;
                 std::cout << name << " checksum: " << Z0Checksum.GetStr() << std::endl;
             }
@@ -530,7 +531,7 @@ void KaratsubaRecursiveDigits (
             const auto &Z2Checksum =
                 GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugPurpose>(
                     debugStates, UseConvolutionHere, Z2.data(), Z2.size());
-            if constexpr (SharkFloatParams::HostVerbose) {
+            if (SharkVerbose == VerboseMode::Debug) {
                 std::cout << name << ": " << VectorUintToHexString(Z2) << std::endl;
                 std::cout << name << " checksum: " << Z2Checksum.GetStr() << std::endl;
             }
@@ -562,7 +563,7 @@ void KaratsubaRecursiveDigits (
             const auto &Z1TempChecksum =
                 GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugPurpose>(
                     debugStates, UseConvolutionHere, Z1_temp.data(), Z1_temp.size());
-            if constexpr (SharkFloatParams::HostVerbose) {
+            if (SharkVerbose == VerboseMode::Debug) {
                 std::cout << name << ": " << VectorUintToHexString(Z1_temp) << std::endl;
                 std::cout << name << " checksum: " << Z1TempChecksum.GetStr() << std::endl;
             }
@@ -622,7 +623,7 @@ void KaratsubaRecursiveDigits (
                 Add128(temp_low, temp_high, z1t_low, z1t_high, z1_low, z1_high);
             }
 
-            if constexpr (SharkFloatParams::HostVerbose) {
+            if (SharkVerbose == VerboseMode::Debug) {
                 std::string addOrSubtract = (z1_sign == 0) ? "subtract" : "add";
 
                 // Convert temp_low to hex string:
@@ -646,7 +647,7 @@ void KaratsubaRecursiveDigits (
             GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugPurpose>(
                 debugStates, UseConvolutionHere, Z1.data(), Z1.size());
 
-        if constexpr (SharkFloatParams::HostVerbose) {
+        if (SharkVerbose == VerboseMode::Debug) {
             std::cout << name << ": " << VectorUintToHexString(Z1) << std::endl;
             std::cout << name << " checksum: " << Z1Checksum.GetStr() << std::endl;
         }
@@ -721,7 +722,7 @@ void KaratsubaRecursiveDigits (
             GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugPurpose>(
                 debugStates, UseConvolutionHere, final128.data(), total_result_digits * 2);
 
-        if constexpr (SharkFloatParams::HostVerbose) {
+        if (SharkVerbose == VerboseMode::Debug) {
             std::cout << name << " after Z2: " << VectorUintToHexString(final128.data(), total_result_digits * 2) << std::endl;
             std::cout << name << " checksum: " << Final128Checksum.GetStr() << std::endl;
         }
@@ -746,7 +747,7 @@ void MultiplyHelperKaratsubaV2 (
 ) {
     constexpr int N = SharkFloatParams::GlobalNumUint32;
 
-    if constexpr (SharkFloatParams::HostVerbose) {
+    if (SharkVerbose == VerboseMode::Debug) {
         std::cout << std::endl;
         std::cout << "Will perform Karatsuba multiplication on host, running function MultiplyHelperKaratsubaV2." << std::endl;
     }
@@ -880,7 +881,7 @@ void MultiplyHelperKaratsubaV2 (
             GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugPurpose>(
                 debugStates, UseConvolution::No, tempDigits.data(), 2 * N);
 
-        if constexpr (SharkFloatParams::HostVerbose) {
+        if (SharkVerbose == VerboseMode::Debug) {
             std::cout << name << ": " << VectorUintToHexString(tempDigits) << std::endl;
             std::cout << name << " checksum: " << resultDigitsChecksumXY.GetStr() << std::endl;
         }
@@ -909,7 +910,7 @@ void MultiplyHelperKaratsubaV2 (
             highest_nonzero_index--;
         }
 
-        if constexpr (SharkFloatParams::HostVerbose) {
+        if (SharkVerbose == VerboseMode::Debug) {
             std::cout << "Highest nonzero index: " << highest_nonzero_index << std::endl;
         }
 
@@ -934,7 +935,7 @@ void MultiplyHelperKaratsubaV2 (
             //assert(false);
         }
 
-        if constexpr (SharkFloatParams::HostVerbose) {
+        if (SharkVerbose == VerboseMode::Debug) {
             std::cout << "Shift digits: " << shift_digits << std::endl;
         }
 
@@ -952,7 +953,7 @@ void MultiplyHelperKaratsubaV2 (
         }
 
         // Print debugStates
-        if constexpr (SharkFloatParams::HostVerbose) {
+        if (SharkVerbose == VerboseMode::Debug) {
             for (const auto &state : debugStates) {
                 std::cout << state.GetStr() << std::endl;
             }

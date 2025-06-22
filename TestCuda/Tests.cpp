@@ -70,7 +70,7 @@ bool DiffAgainstHostNonZero(
     mpf_init(mpfXGpuResult);
     gpuResult.HpGpuToMpf(mpfXGpuResult);
 
-    // Compute absolute difference: mpfDiffAbs = |mpfHostResult – mpfXGpuResult|
+    // Compute absolute difference: mpfDiffAbs = |mpfHostResult - mpfXGpuResult|
     mpf_t mpfDiff, mpfDiffAbs;
     mpf_init(mpfDiff);
     mpf_init(mpfDiffAbs);
@@ -96,7 +96,7 @@ bool DiffAgainstHostNonZero(
     mp_bitcnt_t margin = sizeof(uint32_t) * 8 * 2 + 2;  // as before
     mp_bitcnt_t totalPrecBits = (gpuPrecBits > margin ? gpuPrecBits - margin : 1);
 
-    // Compute epsilon = 2^(–totalPrecBits)
+    // Compute epsilon = 2^(-totalPrecBits)
     mpf_t epsilon;
     mpf_init2(epsilon, totalPrecBits);
     mpf_set_ui(epsilon, 1);
@@ -107,12 +107,12 @@ bool DiffAgainstHostNonZero(
     mpf_init(mpfAbsHost);
     mpf_abs(mpfAbsHost, mpfHostResult);
 
-    // CASE A: host is “effectively zero” if |host| <= epsilon.
+    // CASE A: host is "effectively zero" if |host| <= epsilon.
     if (mpf_cmp(mpfAbsHost, epsilon) <= 0) {
         // Then we compare absolute error directly against epsilon:
         //
-        //   If | host – gpu | <= epsilon  ⇒ PASS
-        //   else                    ⇒ FAIL
+        //   If | host - gpu | <= epsilon --> PASS
+        //   else                    --> FAIL
         if (mpf_cmp(mpfDiffAbs, epsilon) <= 0) {
             if constexpr (SharkFloatParams::HostVerbose) {
                 std::cout << "\nPASS (|host| <= epsilon):\n"
@@ -137,9 +137,9 @@ bool DiffAgainstHostNonZero(
             testSucceeded = false;
         }
     }
-    // CASE B: host is not “tiny,” so do a normal relative‐error check
+    // CASE B: host is not "tiny," so do a normal relative-error check
     else {
-        // Compute relativeError = | host – gpu | / | host |
+        // Compute relativeError = | host - gpu | / | host |
         mpf_t relativeError;
         mpf_init(relativeError);
         {
@@ -150,7 +150,7 @@ bool DiffAgainstHostNonZero(
             mpf_clear(tmp);
         }
 
-        // Compare: if relativeError <= epsilon  ⇒ PASS; else FAIL
+        // Compare: if relativeError <= epsilon --> PASS; else FAIL
         if (mpf_cmp(relativeError, epsilon) <= 0) {
             if constexpr (SharkFloatParams::HostVerbose) {
                 std::cout << "\nPASS (relative-error check):\n"
@@ -207,7 +207,7 @@ bool DiffAgainstHost(
         HpSharkFloat<SharkFloatParams>::DefaultPrecBits
     );
 
-    // 3) Build absolute‐difference mpf: |host - gpu|
+    // 3) Build absolute-difference mpf: |host - gpu|
     mpf_t mpfXGpu;
     mpf_t mpfDiff;
     mpf_t mpfDiffAbs;
@@ -229,7 +229,7 @@ bool DiffAgainstHost(
     mpf_clear(mpfZero);
 
     if (hostIsZero) {
-        // ---- FALLBACK: absolute ULP‐based threshold at GPU exponent ----
+        // ---- FALLBACK: absolute ULP-based threshold at GPU exponent ----
         mp_bitcnt_t P = HpSharkFloat<SharkFloatParams>::DefaultPrecBits;
         mpf_t eps;
         mpf_init2(eps, P);
@@ -270,8 +270,8 @@ bool DiffAgainstHost(
         } else {
             std::string diffStr = MpfToString<SharkFloatParams>(mpfDiffAbs, LowPrec);
             std::string threshStr = MpfToString<SharkFloatParams>(eps, LowPrec);
-            std::cerr << "\nError: absolute error “" << diffStr
-                << "” > allowed “" << threshStr << "”\n";
+            std::cerr << "\nError: absolute error \"" << diffStr
+                << "\" > allowed \"" << threshStr << "\"\n";
             Tests.MarkFailed(testNum, hostCustomOrGpu, diffStr, threshStr);
         }
 
@@ -281,105 +281,6 @@ bool DiffAgainstHost(
         mpf_clear(mpfDiffAbs);
         return ok;
     }
-
-#if 0
-    // ---- ULP‐count check for nonzero host ----
-
-    // 5) Pull out the raw limb arrays
-    constexpr size_t N = HpSharkFloat<SharkFloatParams>::NumUint32;
-    const uint32_t *H = hostShark.Digits;
-    const uint32_t *G = gpuResult.Digits;
-
-    // 6) Verbose dump of raw bits
-    if constexpr (SharkFloatParams::HostVerbose) {
-        std::cout << "\nRaw mantissa limbs (MS --> LS):\n"
-            << std::showbase << std::hex
-            << "  Host:";
-        for (int i = int(N) - 1; i >= 0; --i) std::cout << " " << H[i];
-        std::cout << "\n  GPU :";
-        for (int i = int(N) - 1; i >= 0; --i) std::cout << " " << G[i];
-        std::cout << std::dec << "\n\n";
-    }
-
-    // 7) Quick exact‐match check
-    bool match = true;
-    for (size_t i = 0; i < N; ++i) {
-        if (H[i] != G[i]) {
-            match = false;
-            break;
-        }
-    }
-
-    if (match) {
-        Tests.MarkSuccess(testNum, hostCustomOrGpu);
-        mpf_clear(mpfXGpu);
-        mpf_clear(mpfDiff);
-        mpf_clear(mpfDiffAbs);
-        return true;
-    }
-
-    // 8) Determine which is larger for subtraction A - B
-    const uint32_t *A = nullptr, *B = nullptr;
-    for (int i = int(N) - 1; i >= 0; --i) {
-        if (H[i] > G[i]) {
-            A = H;
-            B = G;
-            break;
-        }
-
-        if (H[i] < G[i]) {
-            A = G;
-            B = H;
-            break;
-        }
-    }
-
-    // 9) Subtract to get ULP difference limbs
-    uint32_t diff[N];
-    uint64_t borrow = 0;
-    for (size_t i = 0; i < N; ++i) {
-        uint64_t ai = uint64_t(A[i]);
-        uint64_t bi = uint64_t(B[i]) + borrow;
-        borrow = (ai < bi) ? 1 : 0;
-        diff[i] = uint32_t(ai - bi);
-    }
-
-    // 10) Check ULP distance <= numTerms-1
-    bool ok = true;
-    for (int i = int(N) - 1; i >= 1; --i) {
-        if (diff[i] != 0) {
-            ok = false;
-            break;
-        }
-    }
-
-    if (diff[0] > uint32_t(numTerms - 1)) {
-        ok = false;
-    }
-
-    // 11) Report ULP result in hex
-    if (ok) {
-        if constexpr (SharkFloatParams::HostVerbose) {
-            std::cout << std::showbase << std::hex
-                << "\nULP distance = " << diff[0]
-                << " <= " << (numTerms - 1)
-                << std::dec << " --> PASS\n";
-        }
-        Tests.MarkSuccess(testNum, hostCustomOrGpu);
-    } else {
-        std::ostringstream a, b;
-        a << std::showbase << std::hex << diff[0];
-        b << std::showbase << std::hex << (numTerms - 1);
-        std::cerr << "\nError: ULP distance " << a.str()
-            << " > allowed " << b.str() << "\n";
-        Tests.MarkFailed(testNum, hostCustomOrGpu, a.str(), b.str());
-    }
-
-    // 12) Clean up
-    mpf_clear(mpfXGpu);
-    mpf_clear(mpfDiff);
-    mpf_clear(mpfDiffAbs);
-#endif
 
     return DiffAgainstHostNonZero<SharkFloatParams, sharkOperator>(
         testNum,

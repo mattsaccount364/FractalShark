@@ -182,7 +182,7 @@ __device__ uint32_t ShiftRight(uint32_t *digits, int shiftBits, int idx) {
 }
 
 template<class SharkFloatParams>
-__device__ uint32_t ShiftLeft(const uint32_t *digits, int shiftBits, int idx) {
+__device__ uint32_t GetNormalizedDigit(const uint32_t *digits, int shiftBits, int idx) {
     int shiftWords = shiftBits / 32;
     int shiftBitsMod = shiftBits % 32;
     int srcIdx = idx - shiftWords;
@@ -348,7 +348,7 @@ __device__ void AddHelper(
             // Shift A left
             for (int i = tid; i < digitsInBlock; i += SharkFloatParams::GlobalThreadsPerBlock) {
                 int globalIdx = startDigit + i;
-                alignedA_static[i] = ShiftLeft<SharkFloatParams>(A->Digits, shiftAmount, globalIdx);
+                alignedA_static[i] = GetNormalizedDigit<SharkFloatParams>(A->Digits, shiftAmount, globalIdx);
                 alignedB_static[i] = B->Digits[globalIdx];
             }
         } else {
@@ -356,7 +356,7 @@ __device__ void AddHelper(
             for (int i = tid; i < digitsInBlock; i += SharkFloatParams::GlobalThreadsPerBlock) {
                 int globalIdx = startDigit + i;
                 alignedA_static[i] = A->Digits[globalIdx];
-                alignedB_static[i] = ShiftLeft<SharkFloatParams>(B->Digits, shiftAmount, globalIdx);
+                alignedB_static[i] = GetNormalizedDigit<SharkFloatParams>(B->Digits, shiftAmount, globalIdx);
             }
         }
         // Adjust the exponent

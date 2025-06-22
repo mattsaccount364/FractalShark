@@ -40,21 +40,22 @@ ShiftRight(
     }
 }
 
-// ShiftLeft: Shifts the number (given by its digit array) left by shiftBits.
+// GetNormalizedDigit: Shifts the number (given by its digit array) left by shiftBits.
 // idx is the index of the digit to compute.
 static uint32_t
-ShiftLeft(
+GetNormalizedDigit (
     const uint32_t *digits,
     const int32_t actualDigits,
     const int32_t extDigits,
     const int32_t shiftBits,
-    const int32_t idx) {
+    const int32_t idx)
+{
     const int32_t shiftWords = shiftBits / 32;
     const int32_t shiftBitsMod = shiftBits % 32;
     const int32_t srcIdx = idx - shiftWords;
 
     int32_t srcDigitLower;
-    if (srcIdx < actualDigits) {
+    if (srcIdx < actualDigits && srcIdx >= 0) {
         srcDigitLower = digits[srcIdx];
     } else {
         assert(srcIdx < extDigits);
@@ -62,19 +63,17 @@ ShiftLeft(
     }
 
     int32_t srcDigitUpper;
-    if (srcIdx - 1 >= 0) {
+    if (srcIdx - 1 < actualDigits && srcIdx - 1 >= 0) {
         srcDigitUpper = digits[srcIdx - 1];
     } else {
         assert(srcIdx - 1 < extDigits);
         srcDigitUpper = 0;
     }
 
-    const uint32_t lower = (srcIdx >= 0) ? srcDigitLower : 0;
-    const uint32_t upper = (srcIdx - 1 >= 0) ? srcDigitUpper : 0;
     if (shiftBitsMod == 0) {
-        return lower;
+        return srcDigitLower;
     } else {
-        return (lower << shiftBitsMod) | (upper >> (32 - shiftBitsMod));
+        return (srcDigitLower << shiftBitsMod) | (srcDigitUpper >> (32 - shiftBitsMod));
     }
 }
 
@@ -128,7 +127,7 @@ MultiWordLeftShift_LittleEndian(
     assert(extDigits >= outSz);
 
     for (int32_t i = 0; i < outSz; i++) {
-        out[i] = ShiftLeft(in, actualDigits, extDigits, L, i);
+        out[i] = GetNormalizedDigit(in, actualDigits, extDigits, L, i);
     }
 }
 
@@ -180,21 +179,6 @@ ExtendedNormalizeShiftIndex(
     // Adjust the exponent as if we had shifted the number left by L bits.
     storedExp -= L;
     return L;
-}
-
-//
-// Helper to retrieve a normalized digit on the fly.
-// Given the original extended array and a shift offset (obtained from ExtendedNormalizeShiftIndex),
-// this returns the digit at index 'idx' as if the array had been left-shifted by shiftOffset bits.
-//
-static uint32_t
-GetNormalizedDigit(
-    const uint32_t *ext,
-    const int32_t actualDigits,
-    const int32_t extDigits,
-    const int32_t shiftOffset,
-    const int32_t idx) {
-    return ShiftLeft(ext, actualDigits, extDigits, shiftOffset, idx);
 }
 
 // New helper: Computes the aligned digit for the normalized value on the fly.
@@ -1546,15 +1530,27 @@ AddHelper (
         biasedExpABC);
 
     {
-        auto PrintOneShiftedNormalizedArray = [&](const uint32_t *ext, int32_t shift, int32_t diff, const std::string &name) {
+        auto PrintOneShiftedNormalizedArray = [&](
+            const uint32_t *ext,
+            const int32_t shift,
+            const int32_t diff,
+            const std::string &name)
+        {
             std::cout << name << " shifted normalized: ";
             std::vector<uint32_t> shiftedNormalizedDigits(numActualDigitsPlusGuard, 0);
             for (int32_t i = 0; i < numActualDigitsPlusGuard; ++i) {
-                uint32_t digit = GetShiftedNormalizedDigit<SharkFloatParams>(ext, numActualDigits, numActualDigitsPlusGuard, shift, diff, i);
+                const uint32_t digit = GetShiftedNormalizedDigit<SharkFloatParams>(
+                    ext,
+                    numActualDigits,
+                    numActualDigitsPlusGuard,
+                    shift,
+                    diff,
+                    i);
+
                 shiftedNormalizedDigits[i] = digit;
             }
             std::cout << VectorUintToHexString(shiftedNormalizedDigits.data(), numActualDigitsPlusGuard) << std::endl;
-            };
+        };
 
         PrintOneShiftedNormalizedArray(ext_A_X2, shiftALeftToGetMsb, biasedExpABC - effExpA, "ext_A_X2");
         PrintOneShiftedNormalizedArray(ext_B_Y2, shiftBLeftToGetMsb, biasedExpABC - effExpB, "ext_B_Y2");

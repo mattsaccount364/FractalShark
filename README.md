@@ -223,7 +223,7 @@ https://en.wikipedia.org/wiki/Karatsuba_algorithm
 Toom Cook:
 https://en.wikipedia.org/wiki/Toom%E2%80%93Cook_multiplication
 
-Sch�nhage�Strassen algorithm
+Schönhage-Strassen algorithm
 https://en.wikipedia.org/wiki/Sch%C3%B6nhage%E2%80%93Strassen_algorithm
 
 CGBN: CGBN: CUDA Accelerated Multiple Precision Arithmetic (Big Num) using Cooperative Groups
@@ -240,7 +240,7 @@ If you're bored and want to try yet another Mandelbrot set renderer, give it a g
 
 ## History
 
-- **2001**: The first version of FractalShark I did as a freshman in college. I added a basic network/distributed strategy to speed it up. It split the work across machines. This feature is now broken and won�t be revived.
+- **2001**: The first version of FractalShark I did as a freshman in college. I added a basic network/distributed strategy to speed it up. It split the work across machines. This feature is now broken and won't be revived.
 - **2008**: I did a distributed version that ran on the University of Wisconsin's "Condor" platform. That was pretty cool, and allowed for fast creation of zoom movies.
 - **2017**: I resurrected it, and added high precision, but no perturbation or anything else. At that point, it was theoretically capable of rendering very deep images, but it was so slow as to be largely useless.
 - **2023-2024**: I bought this new video card, and wanted to play with it, so ended up learning about CUDA and all these clever algorithmic approaches you all have found out to speed this up. So here we are.

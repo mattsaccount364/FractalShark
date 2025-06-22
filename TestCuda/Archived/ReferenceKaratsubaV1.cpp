@@ -284,36 +284,6 @@ void MultiplyHelperKaratsubaV1(
     Out->SetNegative(A->GetNegative() ^ B->GetNegative());
 }
 
-
-/*
-
-            HpSharkFloat<SharkFloatParams> hostKaratsubaOutV1;
-            MultiplyHelperKaratsubaV1<SharkFloatParams>(
-                &xNum,
-                &yNum,
-                &hostKaratsubaOutV1
-            );
-
-            if constexpr (SharkFloatParams::HostVerbose) {
-                std::cout << "KaratsubaV1 result: " << hostKaratsubaOutV1.ToString() << std::endl;
-                std::cout << "KaratsubaV1 hex: " << hostKaratsubaOutV1.ToHexString() << std::endl;
-            }
-
-            bool res = DiffAgainstHost<SharkFloatParams, sharkOperator>(
-                testNum,
-                "CustomHighPrecisionV1",
-                mpfHostResult,
-                hostKaratsubaOutV1);
-
-            if (!res) {
-                DebugBreak();
-            };
-
-*/
-
-
-
-
 #define ExplicitlyInstantiate(SharkFloatParams) \
     template void MultiplyHelperKaratsubaV1<SharkFloatParams>( \
         const HpSharkFloat<SharkFloatParams> *, \

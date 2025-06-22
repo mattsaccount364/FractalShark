@@ -817,9 +817,7 @@ ComputeABCComparison (
     const bool signC,
 
     // outputs (same as before):
-    bool &ABIsBiggerThanC,  // “is |(±A) – (±B)| > |C| ?”
-    bool &ACIsBiggerThanB,  // “is |(±A) – (±C)| > |B| ?”
-    bool &BCIsBiggerThanA   // “is |(±B) – (±C)| > |A| ?”
+    bool &XYgtZ  // true if X ≥ Y > Z
 )
 {
     // 1) Compute how far each must be right‐shifted to line up with biasedExpABC:
@@ -834,36 +832,19 @@ ComputeABCComparison (
         const uint32_t *extOther, int32_t shiftOther, int32_t diffOther,
         const int32_t actualDigits,
         const int32_t extDigits
-        ) {
-            // lex‐compare high-->low
-            for (int32_t i = extDigits - 1; i >= 0; --i) {
-                uint32_t mB = GetShiftedNormalizedDigit<SharkFloatParams>(
-                    extBase, actualDigits, extDigits, shiftBase, diffBase, i);
-                uint32_t mO = GetShiftedNormalizedDigit<SharkFloatParams>(
-                    extOther, actualDigits, extDigits, shiftOther, diffOther, i);
-                if (mB > mO) return true;
-                if (mB < mO) return false;
-            }
-            // treat exact equality as “greater or equal”
-            return true;
-        };
-
-    // now compute each X≥Y flag with one call apiece:
-    const bool AB_XgeY = CompareMagnitudes2WayRelativeToBase(
-        extA, shiftA, diffA,
-        extB, shiftB, diffB,
-        actualDigits, extDigits
-    );
-    const bool AC_XgeY = CompareMagnitudes2WayRelativeToBase(
-        extA, shiftA, diffA,
-        extC, shiftC, diffC,
-        actualDigits, extDigits
-    );
-    const bool BC_XgeY = CompareMagnitudes2WayRelativeToBase(
-        extB, shiftB, diffB,
-        extC, shiftC, diffC,
-        actualDigits, extDigits
-    );
+    ) {
+        // lex‐compare high-->low
+        for (int32_t i = extDigits - 1; i >= 0; --i) {
+            uint32_t mB = GetShiftedNormalizedDigit<SharkFloatParams>(
+                extBase, actualDigits, extDigits, shiftBase, diffBase, i);
+            uint32_t mO = GetShiftedNormalizedDigit<SharkFloatParams>(
+                extOther, actualDigits, extDigits, shiftOther, diffOther, i);
+            if (mB > mO) return true;
+            if (mB < mO) return false;
+        }
+        // treat exact equality as “greater or equal”
+        return true;
+    };
 
     auto CmpAlignedPairVsThird = [](
         const uint32_t *extX,
@@ -1032,66 +1013,119 @@ ComputeABCComparison (
         outXYgtZ = false;
     };
 
-    // Now call that helper three times, each time aligning all three mantissas to biasedExpABC:
-    //  i)  “Is |(±A) – (±B)| > |C| ?”
-    CmpAlignedPairVsThird(
-        /* extX      */ extA, 
-        /* extY      */ extB,
-        /* extZ      */ extC,
-        /* shiftX    */ shiftA,
-        /* diffX     */ diffA,
-        /* shiftY    */ shiftB,
-        /* diffY     */ diffB,
-        /* shiftZ    */ shiftC,
-        /* diffZ     */ diffC,
-        /* sX        */ signA,
-        /* sY        */ signB,
-        AB_XgeY,
-        /* actualDig */ actualDigits,
-        /* extDig    */ extDigits,
-        /* out       */ ABIsBiggerThanC
-    );
+    switch (ordering) {
+    case ThreeWayMagnitude::A_GT_B_GT_C:
+    case ThreeWayMagnitude::B_GT_A_GT_C:
+    {
+        const bool AB_XgeY = CompareMagnitudes2WayRelativeToBase(
+            extA, shiftA, diffA,
+            extB, shiftB, diffB,
+            actualDigits, extDigits
+        );
 
-    //  ii) “Is |(±A) – (±C)| > |B| ?”
-    CmpAlignedPairVsThird(
-        /* extX      */ extA,
-        /* extY      */ extC,
-        /* extZ      */ extB,
-        /* shiftX    */ shiftA,
-        /* diffX     */ diffA,
-        /* shiftY    */ shiftC,
-        /* diffY     */ diffC,
-        /* shiftZ    */ shiftB,
-        /* diffZ     */ diffB,
-        /* sX        */ signA,
-        /* sY        */ signC,
-        AC_XgeY,
-        /* actualDig */ actualDigits,
-        /* extDig    */ extDigits,
-        /* out       */ ACIsBiggerThanB
-    );
+        // Now call that helper three times, each time aligning all three mantissas to biasedExpABC:
+        //  i)  “Is |(±A) – (±B)| > |C| ?”
+        CmpAlignedPairVsThird(
+            /* extX      */ extA,
+            /* extY      */ extB,
+            /* extZ      */ extC,
+            /* shiftX    */ shiftA,
+            /* diffX     */ diffA,
+            /* shiftY    */ shiftB,
+            /* diffY     */ diffB,
+            /* shiftZ    */ shiftC,
+            /* diffZ     */ diffC,
+            /* sX        */ signA,
+            /* sY        */ signB,
+            AB_XgeY,
+            /* actualDig */ actualDigits,
+            /* extDig    */ extDigits,
+            /* out       */ XYgtZ
+        );
 
-    // iii) “Is |(±B) – (±C)| > |A| ?”
-    CmpAlignedPairVsThird(
-        /* extX      */ extB,
-        /* extY      */ extC,
-        /* extZ      */ extA,
-        /* shiftX    */ shiftB,
-        /* diffX     */ diffB,
-        /* shiftY    */ shiftC,
-        /* diffY     */ diffC,
-        /* shiftZ    */ shiftA,
-        /* diffZ     */ diffA,
-        /* sX        */ signB,
-        /* sY        */ signC,
-        BC_XgeY,
-        /* actualDig */ actualDigits,
-        /* extDig    */ extDigits,
-        /* out       */ BCIsBiggerThanA
-    );
+        if (SharkVerbose == VerboseMode::Debug) {
+            std::cout << "Phase1_ABC - XYgtZ/ABIsBiggerThanC: " << XYgtZ << std::endl;
+        }
+
+        break;
+    }
+
+    case ThreeWayMagnitude::A_GT_C_GT_B:
+    case ThreeWayMagnitude::C_GT_A_GT_B:
+    {
+        const bool AC_XgeY = CompareMagnitudes2WayRelativeToBase(
+            extA, shiftA, diffA,
+            extC, shiftC, diffC,
+            actualDigits, extDigits
+        );
+
+        //  ii) “Is |(±A) – (±C)| > |B| ?”
+        CmpAlignedPairVsThird(
+            /* extX      */ extA,
+            /* extY      */ extC,
+            /* extZ      */ extB,
+            /* shiftX    */ shiftA,
+            /* diffX     */ diffA,
+            /* shiftY    */ shiftC,
+            /* diffY     */ diffC,
+            /* shiftZ    */ shiftB,
+            /* diffZ     */ diffB,
+            /* sX        */ signA,
+            /* sY        */ signC,
+            AC_XgeY,
+            /* actualDig */ actualDigits,
+            /* extDig    */ extDigits,
+            /* out       */ XYgtZ
+        );
+
+
+        if (SharkVerbose == VerboseMode::Debug) {
+            std::cout << "Phase1_ABC - XYgtZ/ACIsBiggerThanB: " << XYgtZ << std::endl;
+        }
+
+        break;
+    }
+
+    case ThreeWayMagnitude::B_GT_C_GT_A:
+    case ThreeWayMagnitude::C_GT_B_GT_A:
+    {
+        const bool BC_XgeY = CompareMagnitudes2WayRelativeToBase(
+            extB, shiftB, diffB,
+            extC, shiftC, diffC,
+            actualDigits, extDigits
+        );
+
+        // iii) “Is |(±B) – (±C)| > |A| ?”
+        CmpAlignedPairVsThird(
+            /* extX      */ extB,
+            /* extY      */ extC,
+            /* extZ      */ extA,
+            /* shiftX    */ shiftB,
+            /* diffX     */ diffB,
+            /* shiftY    */ shiftC,
+            /* diffY     */ diffC,
+            /* shiftZ    */ shiftA,
+            /* diffZ     */ diffA,
+            /* sX        */ signB,
+            /* sY        */ signC,
+            BC_XgeY,
+            /* actualDig */ actualDigits,
+            /* extDig    */ extDigits,
+            /* out       */ XYgtZ
+        );
+
+
+        if (SharkVerbose == VerboseMode::Debug) {
+            std::cout << "Phase1_ABC - XYgtZ/BCIsBiggerThanA: " << XYgtZ << std::endl;
+        }
+
+        break;
+    }
+
+    default:
+        assert(false && "Invalid ThreeWayMagnitude ordering");
+    }
 }
-
-
 
 template<class SharkFloatParams>
 void Phase1_ABC (
@@ -1121,7 +1155,7 @@ void Phase1_ABC (
     outExponent_ABC = biasedExpABC_local - bias;
     extResult_ABC.assign(extDigits, 0ull);
 
-    bool ABIsBiggerThanC, ACIsBiggerThanB, BCIsBiggerThanA;
+    bool XYgtZ = false;
     ComputeABCComparison<SharkFloatParams>(
         extA, extB, extC,
         actualDigits, extDigits,
@@ -1129,15 +1163,7 @@ void Phase1_ABC (
         effExpA, effExpB, effExpC,
         biasedExpABC_local, ordering,
         IsNegativeA, IsNegativeB, IsNegativeC,
-        ABIsBiggerThanC,
-        ACIsBiggerThanB,
-        BCIsBiggerThanA);
-
-    if (SharkVerbose == VerboseMode::Debug) {
-        std::cout << "Phase1_ABC - ABIsBiggerThanC: " << ABIsBiggerThanC << std::endl;
-        std::cout << "Phase1_ABC - ACIsBiggerThanB: " << ACIsBiggerThanB << std::endl;
-        std::cout << "Phase1_ABC - BCIsBiggerThanA: " << BCIsBiggerThanA << std::endl;
-    }
+        XYgtZ);
 
     // How far each input must be shifted right to align at biasedExpABC_local
     int32_t diffA = biasedExpABC_local - effExpA;
@@ -1189,19 +1215,6 @@ void Phase1_ABC (
         break;
     default:
         assert(false);
-    }
-
-    bool XYgtZ = false;
-    switch (ordering) {
-    case ThreeWayMagnitude::A_GT_B_GT_C:
-    case ThreeWayMagnitude::B_GT_A_GT_C:
-        XYgtZ = ABIsBiggerThanC;    break;
-    case ThreeWayMagnitude::A_GT_C_GT_B:
-    case ThreeWayMagnitude::C_GT_A_GT_B:
-        XYgtZ = ACIsBiggerThanB;    break;
-    case ThreeWayMagnitude::B_GT_C_GT_A:
-    case ThreeWayMagnitude::C_GT_B_GT_A:
-        XYgtZ = BCIsBiggerThanA;    break;
     }
 
     std::string arrayXStr, arrayYStr, arrayZStr;

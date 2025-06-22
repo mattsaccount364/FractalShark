@@ -721,7 +721,6 @@ void Phase1_DE (
     }
 }
 
-
 template<class SharkFloatParams>
 void CarryPropagation_ABC (
     const int32_t            extDigits,
@@ -830,6 +829,7 @@ CompareMagnitudes2WayRelativeToBase (
 
 template<class SharkFloatParams>
 void CmpAlignedPairVsThird (
+    ThreeWayMagnitudeOrdering ordering,
     const uint32_t *extX,
     const uint32_t *extY,
     const uint32_t *extZ,
@@ -847,15 +847,18 @@ void CmpAlignedPairVsThird (
     bool &outXYgtZ
     )
 {
+    bool normalizeX, normalizeY, normalizeZ;
+    ThreeWayMagnitude::OrderingToNormalize(ordering, normalizeX, normalizeY, normalizeZ);
+
     // --- Phase A: single-limb early-exit test at i = extDigits-1 ---
     {
         int32_t i = extDigits - 1;
 
         // (a) Fetch top 64-bit limb of X and Y
         uint64_t a = FetchNormalizedDigit<SharkFloatParams>(
-            extX, actualDigits, extDigits, shiftX, diffX, i, false);
+            extX, actualDigits, extDigits, shiftX, diffX, i, normalizeX);
         uint64_t b = FetchNormalizedDigit<SharkFloatParams>(
-            extY, actualDigits, extDigits, shiftY, diffY, i, false);
+            extY, actualDigits, extDigits, shiftY, diffY, i, normalizeY);
 
         // (b) Compute signed raw and absolute value
         int64_t raw64 = (sX == sY
@@ -871,7 +874,7 @@ void CmpAlignedPairVsThird (
         // (d) Fetch top aligned Z word
         uint32_t dZ = uint32_t(
             FetchNormalizedDigit<SharkFloatParams>(
-                extZ, actualDigits, extDigits, shiftZ, diffZ, i, false));
+                extZ, actualDigits, extDigits, shiftZ, diffZ, i, normalizeZ));
 
         // (e) Early exits by simple inequalities:
         //     - any carry --> |X +/- Y| has a higher bit
@@ -896,9 +899,9 @@ void CmpAlignedPairVsThird (
         // scan all lower limbs j = i-1 ... 0
         for (int32_t j = i - 1; j >= 0; --j) {
             uint64_t a_j = FetchNormalizedDigit<SharkFloatParams>(
-                extX, actualDigits, extDigits, shiftX, diffX, j, false);
+                extX, actualDigits, extDigits, shiftX, diffX, j, normalizeX);
             uint64_t b_j = FetchNormalizedDigit<SharkFloatParams>(
-                extY, actualDigits, extDigits, shiftY, diffY, j, false);
+                extY, actualDigits, extDigits, shiftY, diffY, j, normalizeY);
 
             // exactly the same signed raw you did in Phase B:
             int64_t raw_j = (sX != sY)
@@ -927,9 +930,9 @@ void CmpAlignedPairVsThird (
     // word-by-word compare
     for (int32_t i = extDigits - 1; i >= 0; --i) {
         uint64_t a = FetchNormalizedDigit<SharkFloatParams>(
-            extX, actualDigits, extDigits, shiftX, diffX, i, false);
+            extX, actualDigits, extDigits, shiftX, diffX, i, normalizeX);
         uint64_t b = FetchNormalizedDigit<SharkFloatParams>(
-            extY, actualDigits, extDigits, shiftY, diffY, i, false);
+            extY, actualDigits, extDigits, shiftY, diffY, i, normalizeY);
 
         uint32_t D_low;
         uint32_t carry_or_borrow = 0;
@@ -956,7 +959,7 @@ void CmpAlignedPairVsThird (
 
         uint64_t dZ = uint64_t(
             FetchNormalizedDigit<SharkFloatParams>(
-                extZ, actualDigits, extDigits, shiftZ, diffZ, i, false));
+                extZ, actualDigits, extDigits, shiftZ, diffZ, i, normalizeZ));
 
         // fast-exit on addition-overflow or clear non-borrow
         if (!doSubtract) {
@@ -1055,6 +1058,7 @@ ComputeABCComparison (
         // Now call that helper three times, each time aligning all three mantissas to biasedExpABC:
         //  i)  "Is |( +/- A) - ( +/- B)| > |C| ?"
         CmpAlignedPairVsThird<SharkFloatParams>(
+            ordering,
             /* extX      */ extA,
             /* extY      */ extB,
             /* extZ      */ extC,
@@ -1094,6 +1098,7 @@ ComputeABCComparison (
 
         //  ii) "Is |( +/- A) - ( +/- C)| > |B| ?"
         CmpAlignedPairVsThird<SharkFloatParams>(
+            ordering,
             /* extX      */ extA,
             /* extY      */ extC,
             /* extZ      */ extB,
@@ -1134,6 +1139,7 @@ ComputeABCComparison (
 
         // iii) "Is |( +/- B) - ( +/- C)| > |A| ?"
         CmpAlignedPairVsThird<SharkFloatParams>(
+            ordering,
             /* extX      */ extB,
             /* extY      */ extC,
             /* extZ      */ extA,

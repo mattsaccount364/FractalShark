@@ -105,7 +105,7 @@ static inline void add64withCarry (uint64_t x, uint64_t y, uint64_t carry_in,
 template<class SharkFloatParams>
 int32_t
 CompareDigits (const std::vector<uint32_t> &highArray, const std::vector<uint32_t> &lowArray) {
-    // The biggest possible “digit index” is one less
+    // The biggest possible "digit index" is one less
     // than the max of the two sizes.
     int maxLen = static_cast<int>(std::max(highArray.size(), lowArray.size()));
 
@@ -582,7 +582,7 @@ void KaratsubaRecursiveDigits (
     const int z1_signYY = (y_diff_neg ^ y_diff_neg) ? 1 : 0;
     int total_k_full = 2 * NewN1 - 1;
 
-    // Compute Z1=(Z2+Z0)±Z1_temp
+    // Compute Z1=(Z2+Z0) +/- Z1_temp
     // First Z2+Z0
     std::vector<uint64_t> Z1XX(2 * total_k_full, 0ULL);
     std::vector<uint64_t> Z1XY(2 * total_k_full, 0ULL);
@@ -596,7 +596,7 @@ void KaratsubaRecursiveDigits (
         const std::vector<uint64_t> &Z2,
         const std::vector<uint64_t> &Z1_temp) {
 
-        // For each "digit" k, we compute Z1[k] = (Z2[k] + Z0[k]) ± Z1_temp[k]
+        // For each "digit" k, we compute Z1[k] = (Z2[k] + Z0[k])  +/-  Z1_temp[k]
         // Each "digit" is two 64-bit values: low and high
         for (int k = 0; k < total_k_full; ++k) {
             int idx_low = k * 2;
@@ -613,7 +613,7 @@ void KaratsubaRecursiveDigits (
             uint64_t temp_low, temp_high;
             Add128(z2_low, z2_high, z0_low, z0_high, temp_low, temp_high);
 
-            // Compute Z1 = (Z2+Z0) ± Z1_temp
+            // Compute Z1 = (Z2+Z0)  +/-  Z1_temp
             uint64_t z1_low, z1_high;
             if (z1_sign == 0) {
                 // Z1 = (Z2 + Z0) - Z1_temp

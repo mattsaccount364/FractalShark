@@ -64,7 +64,7 @@ __device__ int CompareDigits(
     const uint32_t *SharkRestrict highArray,
     const uint32_t *SharkRestrict lowArray)
 {
-    // The biggest possible “digit index” is one less
+    // The biggest possible "digit index" is one less
     // than the max of the two sizes.
     int maxLen = std::max(n1, n2);
 
@@ -164,7 +164,7 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallel(
     // Constants 
     constexpr int MaxPasses = 5000;     // maximum number of multi-pass sweeps
 
-    // We'll define a grid–stride range covering [0..n) for each pass
+    // We'll define a grid-stride range covering [0..n) for each pass
     // 1) global thread id
     int tid = (block.group_index().x - ExecutionBlockBase) * block.dim_threads().x + block.thread_index().x;
     // 2) stride
@@ -175,7 +175,7 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallel(
     constexpr auto nmax = std::max(n1max, n2max);
 
     // (1) First pass: naive partial difference (a[i] - b[i]) and set borrowBit
-    // Instead of dividing digits among blocks, each thread does a grid–stride loop:
+    // Instead of dividing digits among blocks, each thread does a grid-stride loop:
     for (int idx = tid; idx < nmax; idx += stride) {
         uint32_t ai1;
         uint32_t bi1;
@@ -337,10 +337,10 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallelImproved3(
     uint32_t *SharkRestrict subtractionBorrows2a,
     uint32_t *SharkRestrict subtractionBorrows1b,
     uint32_t *SharkRestrict subtractionBorrows2b,
-    // An array (of size ExecutionNumBlocks) for storing each block’s final borrow
+    // An array (of size ExecutionNumBlocks) for storing each block's final borrow
     uint32_t *SharkRestrict blockBorrow1,
     uint32_t *SharkRestrict blockBorrow2,
-    // Global buffers to hold the “working” differences
+    // Global buffers to hold the "working" differences
     uint32_t *SharkRestrict global_x_diff_abs,
     uint32_t *SharkRestrict global_y_diff_abs,
     // A single global counter to indicate if any borrow remains
@@ -380,7 +380,7 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallelImproved3(
         auto *SharkRestrict newSubtract1 = subtractionBorrows1b;
         auto *SharkRestrict newSubtract2 = subtractionBorrows2b;
 
-        // === (1) INITIAL SUBTRACTION: Process all digits using a grid–stride loop.
+        // === (1) INITIAL SUBTRACTION: Process all digits using a grid-stride loop.
         // Only active blocks (those with group_index().x in [ExecutionBlockBase, ExecutionBlockBase+ExecutionNumBlocks))
         // participate.
 
@@ -424,7 +424,7 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallelImproved3(
 
         grid.sync();
 
-        // === (2b) Each block’s last thread writes its final borrow.
+        // === (2b) Each block's last thread writes its final borrow.
         if (block.thread_index().x == block.dim_threads().x - 1) {
             // Each block processes a contiguous chunk.
             // const int blockStart = (block.group_index().x - ExecutionBlockBase) * block.dim_threads().x;
@@ -460,7 +460,7 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallelImproved3(
             block.sync();
 
             // === (2a) LOCAL PROPAGATION WITHIN THE BLOCK.
-            // Iterate blockDim.x times so that a borrow created at the block’s start
+            // Iterate blockDim.x times so that a borrow created at the block's start
             // immediately cascades through.
 
             for (int pass = 0; pass < nmax; ++pass) {
@@ -572,7 +572,7 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallelImproved3(
             }
             grid.sync();
 
-            // === (2b) Each block’s last thread writes its final borrow.
+            // === (2b) Each block's last thread writes its final borrow.
             if (block.thread_index().x == block.dim_threads().x - 1) {
                 const uint32_t finalBorrow1 = curSubtract1[blockEnd - 1];
                 blockBorrow1[block.group_index().x] = finalBorrow1;
@@ -586,7 +586,7 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallelImproved3(
             }
             grid.sync();
 
-            // === (2c) Global aggregation: One designated block sums the per–block borrows.
+            // === (2c) Global aggregation: One designated block sums the per-block borrows.
             if (block.group_index().x == ExecutionBlockBase &&
                 block.thread_index().x == 0) {
 
@@ -621,7 +621,7 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallelImproved3(
         constexpr int nmax = (n1max > n2max) ? n1max : n2max;
 
         // For one block, block.group_index().x == ExecutionBlockBase.
-        // Define a simple block–stride loop over the contiguous chunk: [0, nmax).
+        // Define a simple block-stride loop over the contiguous chunk: [0, nmax).
         const int tid = block.thread_index().x;
         const int stride = block.dim_threads().x;
         const int blockStart = 0;
@@ -655,7 +655,7 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallelImproved3(
         block.sync();
 
         // LOCAL PROPAGATION: For each pass, each thread processes its indices in [blockStart, blockEnd)
-        // using a block–stride loop.
+        // using a block-stride loop.
         // We run (blockEnd - blockStart + 1) passes to ensure complete propagation.
 
         for (int pass = 0; pass < (blockEnd - blockStart + 1); ++pass) {

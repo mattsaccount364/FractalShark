@@ -341,7 +341,7 @@ HpSharkFloat<SharkFloatParams>::MpfToHpGpu(
 
     //memcpy(Digits, reinterpret_cast<uint8_t *>(data.data()) + startOffset, numBytesToCopy);
 
-    // Now compute how to right‐align 'data' into our fixed-width buffer:
+    // Now compute how to right-align 'data' into our fixed-width buffer:
     {
         size_t blockBytes = SharkFloatParams::GlobalNumUint32 * sizeof(uint32_t);
         size_t srcOffset = (countInBytes > blockBytes)
@@ -364,18 +364,18 @@ HpSharkFloat<SharkFloatParams>::MpfToHpGpu(
             using ExpT = typename HpSharkFloat<SharkFloatParams>::ExpT;
             // how many bits per MPIR limb
             ExpT limbBits = static_cast<ExpT>(sizeof(mp_limb_t) * 8);
-            // MPIR’s exponent in bits
+            // MPIR's exponent in bits
             ExpT mpirExpBits = static_cast<ExpT>(mpf_value[0]._mp_exp) * limbBits;
             // total raw mantissa bits (absMpirSize limbs)
             ExpT rawBits = static_cast<ExpT>(absMpirSize) * limbBits;
 
             // 1) subtract the full raw mantissa to get normalized exponent
             ExpT E = mpirExpBits - rawBits;
-            // 2) undo the left‐normalization we applied earlier
+            // 2) undo the left-normalization we applied earlier
             E -= static_cast<ExpT>(shiftBits);
             // 3) adjust for bytes dropped/padded by memcpy:
-            //      − srcOffset bytes ⇒ mantissa>>=(srcOffset*8)  ⇒ add srcOffset*8
-            //      − destOffset bytes ⇒ mantissa<<=(destOffset*8) ⇒ subtract destOffset*8
+            //      - srcOffset bytes => mantissa>>=(srcOffset*8)  => add srcOffset*8
+            //      - destOffset bytes => mantissa<<=(destOffset*8) => subtract destOffset*8
             ExpT byteOffset = static_cast<ExpT>(srcOffset)
                 - static_cast<ExpT>(destOffset);
             E += byteOffset * static_cast<ExpT>(8);
@@ -387,8 +387,8 @@ HpSharkFloat<SharkFloatParams>::MpfToHpGpu(
         //{
         //    using ExpT = typename HpSharkFloat<SharkFloatParams>::ExpT;
         //    ExpT bytesCopied = static_cast<ExpT>(toCopy);
-        //    ExpT byteShiftLog = static_cast<ExpT>(srcOffset)   // dropped low‐order bytes --> mantissa >> (srcOffset*8)
-        //        - static_cast<ExpT>(destOffset);  // zero-padded high‐order bytes --> mantissa << (destOffset*8)
+        //    ExpT byteShiftLog = static_cast<ExpT>(srcOffset)   // dropped low-order bytes --> mantissa >> (srcOffset*8)
+        //        - static_cast<ExpT>(destOffset);  // zero-padded high-order bytes --> mantissa << (destOffset*8)
 
         //    // base exponent from MPIR (depends on how many raw mantissa bytes)
         //    const auto mpirExponentInPow2 = static_cast<ExpT>(mpf_value[0]._mp_exp * sizeof(mp_limb_t) * 8);

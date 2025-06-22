@@ -65,7 +65,7 @@ void CmpSignedRawVsThird (
         expRawXY = INT32_MIN / 2;
     } else {
         int32_t clz = clz64(absAtMSD);
-        // bit position of that “1”
+        // bit position of that "1"
         int32_t bitIndex = msd * 32 + (63 - clz);
         expRawXY = expXY - ((numActualDigitsPlusGuard * 32 - 1) - bitIndex);
     }
@@ -80,7 +80,7 @@ void CmpSignedRawVsThird (
         outXYgtZ = false;
         for (int i = numActualDigitsPlusGuard - 1; i >= 0; --i) {
             uint64_t limbXY = computeAbsXY(i);
-            // Z’s normalized 32-bit digit
+            // Z's normalized 32-bit digit
             uint32_t z_d = GetNormalizedDigit(extZ, actualDigits, numActualDigitsPlusGuard, shiftZ, i);
             if (limbXY > z_d) { outXYgtZ = true;  break; }
             if (limbXY < z_d) { outXYgtZ = false; break; }
@@ -111,11 +111,11 @@ ComputeABCComparison (
     const bool signB,
     const bool signC,
     // outputs:
-    bool &ABIsBiggerThanC,  // |raw_signed(A–B)| > |C| ?
-    bool &ACIsBiggerThanB,  // |raw_signed(A–C)| > |B| ?
-    bool &BCIsBiggerThanA   // |raw_signed(B–C)| > |A| ?
+    bool &ABIsBiggerThanC,  // |raw_signed(A-B)| > |C| ?
+    bool &ACIsBiggerThanB,  // |raw_signed(A-C)| > |B| ?
+    bool &BCIsBiggerThanA   // |raw_signed(B-C)| > |A| ?
 ) {
-    // compute raw_signed(A–B) vs C
+    // compute raw_signed(A-B) vs C
     CmpSignedRawVsThird<SharkFloatParams>(
         extA, extB, extC,
         effExpA, effExpB, effExpC,
@@ -124,7 +124,7 @@ ComputeABCComparison (
         actualDigits, numActualDigitsPlusGuard,
         ABIsBiggerThanC);
 
-    // compute raw_signed(A–C) vs B
+    // compute raw_signed(A-C) vs B
     CmpSignedRawVsThird<SharkFloatParams>(
         extA, extC, extB,
         effExpA, effExpC, effExpB,
@@ -133,7 +133,7 @@ ComputeABCComparison (
         actualDigits, numActualDigitsPlusGuard,
         ACIsBiggerThanB);
 
-    // compute raw_signed(B–C) vs A
+    // compute raw_signed(B-C) vs A
     CmpSignedRawVsThird<SharkFloatParams>(
         extB, extC, extA,
         effExpB, effExpC, effExpA,
@@ -366,10 +366,10 @@ void Phase1_ABC (
             assert(false);  // unknown ordering
         }
 
-        // 2) always “larger - smaller” when signs differ, otherwise add
+        // 2) always "larger - smaller" when signs differ, otherwise add
         uint64_t magXY = (signX == signY) ? (X + Y)
             : (X - Y);
-        bool   signXY = signX;  // if we subtracted, X was the larger so X’s sign wins
+        bool   signXY = signX;  // if we subtracted, X was the larger so X's sign wins
 
         uint64_t magABC;
         if (signXY == signZ) {
@@ -377,11 +377,11 @@ void Phase1_ABC (
             magABC = magXY + Z;
             IsNegativeABC = signXY;
         } else if (XYgtZ) {
-            // |X±Y| ≥ |Z| --> subtraction in that order
+            // |X +/- Y| >= |Z| --> subtraction in that order
             magABC = magXY - Z;
             IsNegativeABC = signXY;
         } else {
-            // |Z| > |X±Y| --> subtraction the other way
+            // |Z| > |X +/- Y| --> subtraction the other way
             magABC = Z - magXY;
             IsNegativeABC = signZ;
         }

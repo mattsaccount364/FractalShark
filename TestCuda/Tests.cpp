@@ -118,13 +118,15 @@ bool DiffAgainstHostNonZero (
     // compute floor(log2(1/err)) in high precision
     auto BitsOfError = [&](const mpf_t err) -> int {
         mpf_t invErr;
+        if (mpf_sgn(err) == 0) {
+            return static_cast<int>(totalPrecBits);
+        }
+
         mpf_init2(invErr, totalPrecBits);
         mpf_ui_div(invErr, 1, err);                  // invErr = 1/err
         
         mp_exp_t exp;
         mpf_get_d_2exp(&exp, invErr);
-        mpf_clear(invErr);
-
         mpf_clear(invErr);
         return static_cast<int>(exp) - 1;            // floor(log_2(invErr))
     };
@@ -1796,20 +1798,20 @@ bool TestAllBinaryOp(int testBase) {
 
     // 2000s is multiply
     // 4000s is add
-    /*
-    if constexpr (includeSet1) {
-        const auto set = testBase + 100;
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 10, "7", "19", "0");
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 20, "4294967295", "1", "4294967296");
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 30, "4294967296", "1", "1");
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 40, "4294967295", "4294967296", "1");
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 50, "4294967296", "-1", "1");
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 60, "18446744073709551615", "1", "1");
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 70, "0", "0.1", "0.3");
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 80, "0.1", "0", "0.1");
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 90, "0", "0", "0");
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 100, "0.1", "0.1", "0.1");
-    }*/
+    
+    //if constexpr (includeSet1) {
+    //    const auto set = testBase + 100;
+    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 10, "7", "19", "0");
+    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 20, "4294967295", "1", "4294967296");
+    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 30, "4294967296", "1", "1");
+    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 40, "4294967295", "4294967296", "1");
+    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 50, "4294967296", "-1", "1");
+    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 60, "18446744073709551615", "1", "1");
+    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 70, "0", "0.1", "0.3");
+    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 80, "0.1", "0", "0.1");
+    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 90, "0", "0", "0");
+    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 100, "0.1", "0.1", "0.1");
+    //}
 
     if constexpr (includeSet2) {
         const auto set = testBase + 300;

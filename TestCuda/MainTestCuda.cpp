@@ -11,6 +11,12 @@
 #include <conio.h>
 #include "MainTestCuda.h"
 
+#include <iostream>
+#include <string>
+#include <conio.h>      // _kbhit()
+#include <windows.h>    // Sleep()
+#include <chrono>       // steady_clock
+
 // Function to perform the calculation on the host using MPIR
 void computeNextXY_host(mpf_t x, mpf_t y, mpf_t a, mpf_t b, int num_iter) {
     mpf_t x_squared, y_squared, two_xy, temp_x, temp_y;
@@ -132,19 +138,52 @@ int RunCorrectnessTest() {
     return 1;
 }
 
+/// Prompts the user with `promptText`, waits up to `timeoutSec` seconds for a line
+/// on stdin, and returns the parsed integer. If the user types nothing within the
+/// timeout, returns `defaultValue`.
+int PromptIntWithTimeout(
+    const std::string &promptText,
+    int defaultValue = 1,
+    int timeoutSec = 3,
+    int sleepIntervalMs = 50
+) {
+    std::cout << promptText << " " << std::flush;
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeoutSec);
+    std::string line;
+
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (_kbhit()) {
+            // read the rest of the line
+            std::getline(std::cin, line);
+            break;
+        }
+        Sleep(sleepIntervalMs);
+    }
+
+    if (line.empty()) {
+        std::cout << "\n( no input in " << timeoutSec
+            << "s, defaulting to " << defaultValue << " )\n";
+        return defaultValue;
+    }
+
+    try {
+        return std::stoi(line);
+    }
+    catch (...) {
+        std::cout << "( couldn’t parse “" << line
+            << "”, defaulting to " << defaultValue << " )\n";
+        return defaultValue;
+    }
+}
+
 int main(int /*argc*/, char * /*argv*/[]) {
     bool res = false;
 
-    {
-        std::cout << "Verbose? (0 = No, 1 = Yes): ";
-        int verboseInput;
-        std::cin >> verboseInput;
-
-        if (verboseInput == 1) {
-            SetVerboseMode(VerboseMode::Debug);
-        } else {
-            SetVerboseMode(VerboseMode::None);
-        }
+    int verboseInput = PromptIntWithTimeout("Verbose? (0 = No, 1 = Yes):", /*default=*/1, /*timeoutSec=*/3);
+    if (verboseInput == 1) {
+        SetVerboseMode(VerboseMode::Debug);
+    } else {
+        SetVerboseMode(VerboseMode::None);
     }
 
     int deviceCount;

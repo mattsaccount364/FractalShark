@@ -3,6 +3,83 @@
 #include <cassert>
 #include <string>
 
+
+enum class ThreeWayLargestOrdering : int {
+    A_GT_AllOthers = 0,
+    B_GT_AllOthers = 1,
+    C_GT_AllOthers = 2,
+    COUNT
+};
+
+class ThreeWayLargestInfo {
+public:
+    struct Info {
+        ThreeWayLargestOrdering ordering;
+        const char *description;
+        bool            normalizeA;
+        bool            normalizeB;
+        bool            normalizeC;
+    };
+
+    // ——— Three constexpr entries ———
+    static constexpr Info A_GT_AllOthers{
+        ThreeWayLargestOrdering::A_GT_AllOthers,
+        "A is the largest",
+        true,   // normalize A against the others
+        false,
+        false
+    };
+
+    static constexpr Info B_GT_AllOthers{
+        ThreeWayLargestOrdering::B_GT_AllOthers,
+        "B is the largest",
+        false,
+        true,
+        false
+    };
+
+    static constexpr Info C_GT_AllOthers{
+        ThreeWayLargestOrdering::C_GT_AllOthers,
+        "C is the largest",
+        false,
+        false,
+        true
+    };
+
+    // ——— Public API ———
+
+    static std::string ToString(ThreeWayLargestOrdering o) {
+        return InfoFor(o).description;
+    }
+
+    static void OrderingToNormalize(ThreeWayLargestOrdering o,
+        bool &useA,
+        bool &useB,
+        bool &useC) {
+        auto &I = InfoFor(o);
+        useA = I.normalizeA;
+        useB = I.normalizeB;
+        useC = I.normalizeC;
+    }
+
+private:
+    // lookup table
+    static constexpr std::array<Info, (int)ThreeWayLargestOrdering::COUNT> Table = { {
+        A_GT_AllOthers,
+        B_GT_AllOthers,
+        C_GT_AllOthers
+    } };
+
+    static constexpr const Info &InfoFor(ThreeWayLargestOrdering o) {
+        int idx = static_cast<int>(o);
+        assert(idx >= 0 && idx < (int)ThreeWayLargestOrdering::COUNT);
+        return Table[idx];
+    }
+};
+
+
+//////////////////////////////////////////////////////////////////////////////
+
 enum class ThreeWayMagnitudeOrdering : int {
     A_GT_B_GT_C = 0,
     A_GT_C_GT_B = 1,

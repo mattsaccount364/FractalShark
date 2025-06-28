@@ -306,7 +306,7 @@ CompareMagnitudes2Way (
     return AIsBiggerMagnitude;
 }
 
-static ThreeWayMagnitudeOrdering
+static ThreeWayLargestOrdering
 CompareMagnitudes3Way (
     const int32_t effExpA,
     const int32_t effExpB,
@@ -318,8 +318,7 @@ CompareMagnitudes3Way (
     const int32_t shiftC,
     const uint32_t *extA,
     const uint32_t *extB,
-    const uint32_t *extC,
-    int32_t &outExp
+    const uint32_t *extC
     )
 {
     // Helper: returns true if "first" is strictly bigger than "second"
@@ -340,31 +339,16 @@ CompareMagnitudes3Way (
     // 1) Is A the strict max?
     if (cmp(extA, shiftA, effExpA, extB, shiftB, effExpB) &&
         cmp(extA, shiftA, effExpA, extC, shiftC, effExpC)) {
-        // now order B vs C
-        outExp = effExpA;
-        if (cmp(extB, shiftB, effExpB, extC, shiftC, effExpC))
-            return ThreeWayMagnitude::A_GT_B_GT_C.Ordering;
-        else
-            return ThreeWayMagnitude::A_GT_C_GT_B.Ordering;
+        return ThreeWayLargestOrdering::A_GT_AllOthers;
     }
     // 2) Is B the strict max?
     else if (cmp(extB, shiftB, effExpB, extA, shiftA, effExpA) &&
         cmp(extB, shiftB, effExpB, extC, shiftC, effExpC)) {
-        // now order A vs C
-        outExp = effExpB;
-        if (cmp(extA, shiftA, effExpA, extC, shiftC, effExpC))
-            return ThreeWayMagnitude::B_GT_A_GT_C.Ordering;
-        else
-            return ThreeWayMagnitude::B_GT_C_GT_A.Ordering;
+        return ThreeWayLargestOrdering::B_GT_AllOthers;
     }
     // 3) Otherwise C is the (strict) max
     else {
-        // order A vs B
-        outExp = effExpC;
-        if (cmp(extA, shiftA, effExpA, extB, shiftB, effExpB))
-            return ThreeWayMagnitude::C_GT_A_GT_B.Ordering;
-        else
-            return ThreeWayMagnitude::C_GT_B_GT_A.Ordering;
+        return ThreeWayLargestOrdering::C_GT_AllOthers;
     }
 }
 
@@ -1191,161 +1175,123 @@ void Phase1_ABC (
     const int32_t  effExpA,
     const int32_t  effExpB,
     const int32_t  effExpC,
+    const ThreeWayLargestOrdering ordering,
     const int32_t  bias,
 
-    bool &outSign_ABC,
-    bool &outSign_ACB,
-    bool &outSign_BAC,
-    bool &outSign_BCA,
-    bool &outSign_CAB,
-    bool &outSign_CBA,
-    
-    int32_t &outExponent_ABC_Orig,
-    int32_t &outExponent_ACB_Orig,
-    int32_t &outExponent_BAC_Orig,
-    int32_t &outExponent_BCA_Orig,
-    int32_t &outExponent_CAB_Orig,
-    int32_t &outExponent_CBA_Orig,
+    // outputs:
+    bool &outSignTrue,      // sign when X_gtY == true
+    bool &outSignFalse,     // sign when X_gtY == false
+    int32_t &outExpTrue_Orig,  // exponent before bias for true-branch
+    int32_t &outExpFalse_Orig, // exponent before bias for false-branch
+    std::vector<uint64_t> &extResultTrue,   // result limbs for X_gtY == true
+    std::vector<uint64_t> &extResultFalse,   // result limbs for X_gtY == false
 
-    std::vector<uint64_t> &extResult_ABC,
-    std::vector<uint64_t> &extResult_ACB,
-    std::vector<uint64_t> &extResult_BAC,
-    std::vector<uint64_t> &extResult_BCA,
-    std::vector<uint64_t> &extResult_CAB,
-    std::vector<uint64_t> &extResult_CBA,
     std::vector<DebugStateHost<SharkFloatParams>> &debugStates
 ) {
-    // 1) Resize all six result buffers
-    extResult_ABC.assign(extDigits, 0);
-    extResult_ACB.assign(extDigits, 0);
-    extResult_BAC.assign(extDigits, 0);
-    extResult_BCA.assign(extDigits, 0);
-    extResult_CAB.assign(extDigits, 0);
-    extResult_CBA.assign(extDigits, 0);
+    // 1) prepare the two output arrays and signs
+    extResultTrue.assign(extDigits, 0);
+    extResultFalse.assign(extDigits, 0);
+    outSignTrue = false;
+    outSignFalse = false;
 
-    outSign_ABC = false;
-    outSign_ACB = false;
-    outSign_BAC = false;
-    outSign_BCA = false;
-    outSign_CAB = false;
-    outSign_CBA = false;
+    // 2) pick the “base” exponent from the largest input
+    int32_t baseExp;
+    switch (ordering) {
+    case ThreeWayLargestOrdering::A_GT_AllOthers: baseExp = effExpA; break;
+    case ThreeWayLargestOrdering::B_GT_AllOthers: baseExp = effExpB; break;
+    case ThreeWayLargestOrdering::C_GT_AllOthers: baseExp = effExpC; break;
+    default: assert(false); for (;;);
+    }
 
-    // How far each input must be shifted right to align at biasedExpABC_local
-    const int32_t diffA_ABC = effExpA - effExpA;
-    const int32_t diffB_ABC = effExpA - effExpB;
-    const int32_t diffC_ABC = effExpA - effExpC;
+    // 3) single diff per input to align to baseExp
+    int32_t diffA = baseExp - effExpA;
+    int32_t diffB = baseExp - effExpB;
+    int32_t diffC = baseExp - effExpC;
 
-    const int32_t diffA_ACB = effExpA - effExpA;
-    const int32_t diffB_ACB = effExpA - effExpB;
-    const int32_t diffC_ACB = effExpA - effExpC;
+    // 4) pick pointers, signs, shifts and diffs in “X, Y, Z” order
+    const uint32_t *extX, *extY, *extZ;
+    bool  sX, sY, sZ;
+    int32_t shX, shY, shZ, diffY, diffZ;
 
-    const int32_t diffA_BAC = effExpB - effExpA;
-    const int32_t diffB_BAC = effExpB - effExpB;
-    const int32_t diffC_BAC = effExpB - effExpC;
+    switch (ordering) {
+    case ThreeWayLargestOrdering::A_GT_AllOthers:
+        extX = extA; sX = IsNegativeA; shX = shiftA;
+        extY = extB; sY = IsNegativeB; shY = shiftB; diffY = diffB;
+        extZ = extC; sZ = IsNegativeC; shZ = shiftC; diffZ = diffC;
+        break;
+    case ThreeWayLargestOrdering::B_GT_AllOthers:
+        extX = extB; sX = IsNegativeB; shX = shiftB;
+        extY = extA; sY = IsNegativeA; shY = shiftA; diffY = diffA;
+        extZ = extC; sZ = IsNegativeC; shZ = shiftC; diffZ = diffC;
+        break;
+    case ThreeWayLargestOrdering::C_GT_AllOthers:
+        extX = extC; sX = IsNegativeC; shX = shiftC;
+        extY = extA; sY = IsNegativeA; shY = shiftA; diffY = diffA;
+        extZ = extB; sZ = IsNegativeB; shZ = shiftB; diffZ = diffB;
+        break;
+    default: assert(false); for (;;);
+    }
 
-    const int32_t diffA_BCA = effExpB - effExpA;
-    const int32_t diffB_BCA = effExpB - effExpB;
-    const int32_t diffC_BCA = effExpB - effExpC;
-
-    const int32_t diffA_CAB = effExpC - effExpA;
-    const int32_t diffB_CAB = effExpC - effExpB;
-    const int32_t diffC_CAB = effExpC - effExpC;
-
-    const int32_t diffA_CBA = effExpC - effExpA;
-    const int32_t diffB_CBA = effExpC - effExpB;
-    const int32_t diffC_CBA = effExpC - effExpC;
-
-    // helper: compute |±X ±Y ±Z| correctly
-    auto calc3 = [](uint64_t X, bool sX,
+    // 5) helper to do |±X ±Y ±Z| in one pass, given a fixed X_gtY
+    auto calc3 = [](
+        uint64_t X, bool sX,
         uint64_t Y, bool sY,
         uint64_t Z, bool sZ,
-        bool X_gtY,
+        bool     X_gtY,
         bool &outSign
         ) -> uint64_t {
-
-            uint64_t magXY; bool sXY;
+            // (X vs Y)
+            uint64_t magXY;
+            bool     sXY;
             if (sX == sY) {
                 magXY = X + Y;
                 sXY = sX;
-            }
-            else if (X_gtY) { // (X >= Y)
+            } else if (X_gtY) {
                 magXY = X - Y;
                 sXY = sX;
             } else {
                 magXY = Y - X;
                 sXY = sY;
             }
-
+            // (magXY vs Z)
             uint64_t mag;
             if (sXY == sZ) {
                 mag = magXY + Z;
                 outSign = sXY;
-            } else if (X_gtY) { // (magXY >= Z) {
+            } else if (X_gtY) { // reuse X_gtY as proxy for (magXY >= Z)
                 mag = magXY - Z;
                 outSign = sXY;
             } else {
                 mag = Z - magXY;
                 outSign = sZ;
             }
-
             return mag;
         };
 
-    // now the six permutations:
+    // 6) single pass: two calls per digit
     for (int32_t i = 0; i < extDigits; ++i) {
-        // A > B > C
-        bool X_gtY;
-        X_gtY = true;
-        uint64_t XA = GetNormalizedDigit(extA, actualDigits, extDigits, shiftA, i);
-        uint64_t YA = GetShiftedNormalizedDigit<SharkFloatParams>(extB, actualDigits, extDigits, shiftB, diffB_ABC, i);
-        uint64_t ZA = GetShiftedNormalizedDigit<SharkFloatParams>(extC, actualDigits, extDigits, shiftC, diffC_ABC, i);
-        extResult_ABC[i] = calc3(XA, IsNegativeA, YA, IsNegativeB, ZA, IsNegativeC, X_gtY, outSign_ABC);
+        uint64_t Xi = GetNormalizedDigit(
+            extX, actualDigits, extDigits, shX, i);
+        uint64_t Yi = GetShiftedNormalizedDigit<SharkFloatParams>(
+            extY, actualDigits, extDigits, shY, diffY, i);
+        uint64_t Zi = GetShiftedNormalizedDigit<SharkFloatParams>(
+            extZ, actualDigits, extDigits, shZ, diffZ, i);
 
-        // A > C > B
-        X_gtY = false;
-        uint64_t XB = GetNormalizedDigit(extA, actualDigits, extDigits, shiftA, i);
-        uint64_t YB = GetShiftedNormalizedDigit<SharkFloatParams>(extC, actualDigits, extDigits, shiftC, diffC_ACB, i);
-        uint64_t ZB = GetShiftedNormalizedDigit<SharkFloatParams>(extB, actualDigits, extDigits, shiftB, diffB_ACB, i);
-        extResult_ACB[i] = calc3(XB, IsNegativeA, YB, IsNegativeC, ZB, IsNegativeB, X_gtY, outSign_ACB);
-
-        // B > A > C
-        X_gtY = true;
-        uint64_t XC = GetNormalizedDigit(extB, actualDigits, extDigits, shiftB, i);
-        uint64_t YC = GetShiftedNormalizedDigit<SharkFloatParams>(extA, actualDigits, extDigits, shiftA, diffA_BAC, i);
-        uint64_t ZC = GetShiftedNormalizedDigit<SharkFloatParams>(extC, actualDigits, extDigits, shiftC, diffC_BAC, i);
-        extResult_BAC[i] = calc3(XC, IsNegativeB, YC, IsNegativeA, ZC, IsNegativeC, X_gtY, outSign_BAC);
-
-        // B > C > A
-        X_gtY = false;
-        uint64_t XD = GetNormalizedDigit(extB, actualDigits, extDigits, shiftB, i);
-        uint64_t YD = GetShiftedNormalizedDigit<SharkFloatParams>(extC, actualDigits, extDigits, shiftC, diffC_BCA, i);
-        uint64_t ZD = GetShiftedNormalizedDigit<SharkFloatParams>(extA, actualDigits, extDigits, shiftA, diffA_BCA, i);
-        extResult_BCA[i] = calc3(XD, IsNegativeB, YD, IsNegativeC, ZD, IsNegativeA, X_gtY, outSign_BCA);
-
-        // C > A > B
-        X_gtY = true;
-        uint64_t XE = GetNormalizedDigit(extC, actualDigits, extDigits, shiftC, i);
-        uint64_t YE = GetShiftedNormalizedDigit<SharkFloatParams>(extA, actualDigits, extDigits, shiftA, diffA_CAB, i);
-        uint64_t ZE = GetShiftedNormalizedDigit<SharkFloatParams>(extB, actualDigits, extDigits, shiftB, diffB_CAB, i);
-        extResult_CAB[i] = calc3(XE, IsNegativeC, YE, IsNegativeA, ZE, IsNegativeB, X_gtY, outSign_CAB);
-
-        // C > B > A
-        X_gtY = false;
-        uint64_t XF = GetNormalizedDigit(extC, actualDigits, extDigits, shiftC, i);
-        uint64_t YF = GetShiftedNormalizedDigit<SharkFloatParams>(extB, actualDigits, extDigits, shiftB, diffB_CBA, i);
-        uint64_t ZF = GetShiftedNormalizedDigit<SharkFloatParams>(extA, actualDigits, extDigits, shiftA, diffA_CBA, i);
-        extResult_CBA[i] = calc3(XF, IsNegativeC, YF, IsNegativeB, ZF, IsNegativeA, X_gtY, outSign_CBA);
+        // always-true branch
+        extResultTrue[i] = calc3(Xi, sX, Yi, sY, Zi, sZ, /*X_gtY=*/true, outSignTrue);
+        // always-false branch
+        extResultFalse[i] = calc3(Xi, sX, Yi, sY, Zi, sZ, /*X_gtY=*/false, outSignFalse);
     }
+
+    // 7) both exponents (before re-bias) are just baseExp - bias
+    outExpTrue_Orig = baseExp - bias;
+    outExpFalse_Orig = baseExp - bias;
 
     // Debug printing
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "Phase1_ABC - These are effectively the arrays we're adding and subtracting:\n";
-        std::cout << "extResult_ABC: " << VectorUintToHexString(extResult_ABC) << "\n";
-        std::cout << "extResult_ACB: " << VectorUintToHexString(extResult_ACB) << "\n";
-        std::cout << "extResult_BAC: " << VectorUintToHexString(extResult_BAC) << "\n";
-        std::cout << "extResult_BCA: " << VectorUintToHexString(extResult_BCA) << "\n";
-        std::cout << "extResult_CAB: " << VectorUintToHexString(extResult_CAB) << "\n";
-        std::cout << "extResult_CBA: " << VectorUintToHexString(extResult_CBA) << "\n";
+        std::cout << "extResultTrue: " << VectorUintToHexString(extResultTrue) << "\n";
+        std::cout << "extResultFalse: " << VectorUintToHexString(extResultFalse) << "\n";
     }
 
     // Add all PermX arrays to the debug states.
@@ -1357,12 +1303,6 @@ void Phase1_ABC (
     //    }
     //}
 
-    outExponent_ABC_Orig = effExpA - bias;
-    outExponent_ACB_Orig = effExpA - bias;
-    outExponent_BAC_Orig = effExpB - bias;
-    outExponent_BCA_Orig = effExpB - bias;
-    outExponent_CAB_Orig = effExpC - bias;
-    outExponent_CBA_Orig = effExpC - bias;
 }
 
 //
@@ -1409,13 +1349,10 @@ AddHelper (
     constexpr int32_t guard = SharkFloatParams::Guard;
     constexpr int32_t numActualDigits = SharkFloatParams::GlobalNumUint32;
     constexpr int32_t numActualDigitsPlusGuard = SharkFloatParams::GlobalNumUint32 + guard;
+
     // Create extended arrays (little-endian, index 0 is LSB).
-    std::vector<uint64_t> extResult_ABC(numActualDigitsPlusGuard, 0);
-    std::vector<uint64_t> extResult_ACB(numActualDigitsPlusGuard, 0);
-    std::vector<uint64_t> extResult_BAC(numActualDigitsPlusGuard, 0);
-    std::vector<uint64_t> extResult_BCA(numActualDigitsPlusGuard, 0);
-    std::vector<uint64_t> extResult_CAB(numActualDigitsPlusGuard, 0);
-    std::vector<uint64_t> extResult_CBA(numActualDigitsPlusGuard, 0);
+    std::vector<uint64_t> extResultTrue(numActualDigitsPlusGuard, 0);
+    std::vector<uint64_t> extResultFalse(numActualDigitsPlusGuard, 0);
     std::vector<uint64_t> extResult_D_E(numActualDigitsPlusGuard, 0);
 
     // The guard words (indices GlobalNumUint32 to numActualDigitsPlusGuard-1) are left as zero.
@@ -1570,9 +1507,7 @@ AddHelper (
     // The result is a 3-way ordering of the three operands.
 
     // A, B, C:
-
-    int32_t biasedExpABC = 0;
-    ThreeWayMagnitudeOrdering ordering = CompareMagnitudes3Way(
+    ThreeWayLargestOrdering ordering = CompareMagnitudes3Way(
         effExpA,
         effExpB,
         effExpC,
@@ -1583,57 +1518,14 @@ AddHelper (
         shiftCLeftToGetMsb,
         ext_A_X2,
         ext_B_Y2,
-        ext_C_A,
-        biasedExpABC);
+        ext_C_A);
 
-    //if (SharkVerbose == VerboseMode::Debug) {
-    //    auto PrintOneShiftedNormalizedArray = [&](
-    //        const uint32_t *ext,
-    //        const int32_t shift,
-    //        const int32_t diff,
-    //        const std::string &name)
-    //    {
-    //        std::cout << name << " shifted normalized: ";
-    //        std::vector<uint32_t> shiftedNormalizedDigits(numActualDigitsPlusGuard, 0);
-    //        for (int32_t i = 0; i < numActualDigitsPlusGuard; ++i) {
-    //            const uint32_t digit = GetShiftedNormalizedDigit<SharkFloatParams>(
-    //                ext,
-    //                numActualDigits,
-    //                numActualDigitsPlusGuard,
-    //                shift,
-    //                diff,
-    //                i);
-
-    //            shiftedNormalizedDigits[i] = digit;
-    //        }
-    //        std::cout << VectorUintToHexString(shiftedNormalizedDigits.data(), numActualDigitsPlusGuard) << std::endl;
-    //    };
-
-    //    PrintOneShiftedNormalizedArray(ext_A_X2, shiftALeftToGetMsb, biasedExpABC - effExpA, "ext_A_X2");
-    //    PrintOneShiftedNormalizedArray(ext_B_Y2, shiftBLeftToGetMsb, biasedExpABC - effExpB, "ext_B_Y2");
-    //    PrintOneShiftedNormalizedArray(ext_C_A, shiftCLeftToGetMsb, biasedExpABC - effExpC, "ext_C_A");
-    //    PrintOneShiftedNormalizedArray(ext_D_2X, shiftDLeftToGetMsb, biasedExpABC - effExpD, "ext_D_2X");
-    //    PrintOneShiftedNormalizedArray(ext_E_B, shiftELeftToGetMsb, biasedExpABC - effExpE, "ext_E_B");
-    //}
-
-    int32_t outExponent_ABC_Orig = 0;
-    int32_t outExponent_ACB_Orig = 0;
-    int32_t outExponent_BAC_Orig = 0;
-    int32_t outExponent_BCA_Orig = 0;
-    int32_t outExponent_CAB_Orig = 0;
-    int32_t outExponent_CBA_Orig = 0;
-
-    if (SharkVerbose == VerboseMode::Debug) {
-        std::cout << "outExponent_ABC_Orig: " << outExponent_ABC_Orig << std::endl;
-    }
+    int32_t outExponentTrue = 0;
+    int32_t outExponentFalse = 0;
 
     // --- Phase 1: A - B + C ---
-    bool outSign_ABC = false;
-    bool outSign_ACB = false;
-    bool outSign_BAC = false;
-    bool outSign_BCA = false;
-    bool outSign_CAB = false;
-    bool outSign_CBA = false;
+    bool outSignTrue = false;
+    bool outSignFalse = false;
 
     Phase1_ABC<SharkFloatParams>(
         IsNegativeA,
@@ -1650,28 +1542,17 @@ AddHelper (
         effExpA,
         effExpB,
         effExpC,
+        ordering,
         bias,
 
-        outSign_ABC,
-        outSign_ACB,
-        outSign_BAC,
-        outSign_BCA,
-        outSign_CAB,
-        outSign_CBA,
+        outSignTrue,
+        outSignFalse,
         
-        outExponent_ABC_Orig,
-        outExponent_ACB_Orig,
-        outExponent_BAC_Orig,
-        outExponent_BCA_Orig,
-        outExponent_CAB_Orig,
-        outExponent_CBA_Orig,
+        outExponentTrue,
+        outExponentFalse,
 
-        extResult_ABC,
-        extResult_ACB,
-        extResult_BAC,
-        extResult_BCA,
-        extResult_CAB,
-        extResult_CBA,
+        extResultTrue,
+        extResultFalse,
         debugStates
     );
 
@@ -1720,22 +1601,14 @@ AddHelper (
 
     const bool sameSignDE = (D_2X->GetNegative() == E_B->GetNegative());
 
-    int32_t carry_ABC = 0;
-    int32_t carry_ACB = 0;
-    int32_t carry_BAC = 0;
-    int32_t carry_BCA = 0;
-    int32_t carry_CAB = 0;
-    int32_t carry_CBA = 0;
+    int32_t carryTrue = 0;
+    int32_t carryFalse = 0;
 
     int32_t carry_DE = 0;
 
     // Result after propagation
-    std::vector<uint32_t> propagatedResult_ABC(numActualDigitsPlusGuard, 0);
-    std::vector<uint32_t> propagatedResult_ACB(numActualDigitsPlusGuard, 0);
-    std::vector<uint32_t> propagatedResult_BAC(numActualDigitsPlusGuard, 0);
-    std::vector<uint32_t> propagatedResult_BCA(numActualDigitsPlusGuard, 0);
-    std::vector<uint32_t> propagatedResult_CAB(numActualDigitsPlusGuard, 0);
-    std::vector<uint32_t> propagatedResult_CBA(numActualDigitsPlusGuard, 0);
+    std::vector<uint32_t> propagatedResultTrue(numActualDigitsPlusGuard, 0);
+    std::vector<uint32_t> propagatedResultFalse(numActualDigitsPlusGuard, 0);
 
     std::vector<uint32_t> propagatedResult_DE(numActualDigitsPlusGuard, 0);
 
@@ -1752,39 +1625,15 @@ AddHelper (
     } else {
         CarryPropagation_ABC<SharkFloatParams>(
             numActualDigitsPlusGuard,
-            extResult_ABC,
-            carry_ABC,
-            propagatedResult_ABC);
+            extResultTrue,
+            carryTrue,
+            propagatedResultTrue);
 
         CarryPropagation_ABC<SharkFloatParams>(
             numActualDigitsPlusGuard,
-            extResult_ACB,
-            carry_ACB,
-            propagatedResult_ACB);
-
-        CarryPropagation_ABC<SharkFloatParams>(
-            numActualDigitsPlusGuard,
-            extResult_BAC,
-            carry_BAC,
-            propagatedResult_BAC);
-
-        CarryPropagation_ABC<SharkFloatParams>(
-            numActualDigitsPlusGuard,
-            extResult_BCA,
-            carry_BCA,
-            propagatedResult_BCA);
-
-        CarryPropagation_ABC<SharkFloatParams>(
-            numActualDigitsPlusGuard,
-            extResult_CAB,
-            carry_CAB,
-            propagatedResult_CAB);
-
-        CarryPropagation_ABC<SharkFloatParams>(
-            numActualDigitsPlusGuard,
-            extResult_CBA,
-            carry_CBA,
-            propagatedResult_CBA);
+            extResultFalse,
+            carryFalse,
+            propagatedResultFalse);
 
         ///////////////
 
@@ -1801,29 +1650,13 @@ AddHelper (
     // bit is in the desired position. This normalization step is omitted here.
 
     if (SharkVerbose == VerboseMode::Debug) {
-        std::cout << "propagatedResult_ABC after arithmetic: " << VectorUintToHexString(propagatedResult_ABC) << std::endl;
-        std::cout << "propagatedResult_ABC: " << VectorUintToHexString(propagatedResult_ABC) << std::endl;
-        std::cout << "carry_ABC out: 0x" << std::hex << carry_ABC << std::endl;
+        std::cout << "propagatedResultTrue after arithmetic: " << VectorUintToHexString(propagatedResultTrue) << std::endl;
+        std::cout << "propagatedResultTrue: " << VectorUintToHexString(propagatedResultTrue) << std::endl;
+        std::cout << "carryTrue out: 0x" << std::hex << carryTrue << std::endl;
 
-        std::cout << "propagatedResult_ACB after arithmetic: " << VectorUintToHexString(propagatedResult_ACB) << std::endl;
-        std::cout << "propagatedResult_ACB: " << VectorUintToHexString(propagatedResult_ACB) << std::endl;
-        std::cout << "carry_ACB out: 0x" << std::hex << carry_ACB << std::endl;
-
-        std::cout << "propagatedResult_BAC after arithmetic: " << VectorUintToHexString(propagatedResult_BAC) << std::endl;
-        std::cout << "propagatedResult_BAC: " << VectorUintToHexString(propagatedResult_BAC) << std::endl;
-        std::cout << "carry_BAC out: 0x" << std::hex << carry_BAC << std::endl;
-
-        std::cout << "propagatedResult_BCA after arithmetic: " << VectorUintToHexString(propagatedResult_BCA) << std::endl;
-        std::cout << "propagatedResult_BCA: " << VectorUintToHexString(propagatedResult_BCA) << std::endl;
-        std::cout << "carry_BCA out: 0x" << std::hex << carry_BCA << std::endl;
-
-        std::cout << "propagatedResult_CAB after arithmetic: " << VectorUintToHexString(propagatedResult_CAB) << std::endl;
-        std::cout << "propagatedResult_CAB: " << VectorUintToHexString(propagatedResult_CAB) << std::endl;
-        std::cout << "carry_CAB out: 0x" << std::hex << carry_CAB << std::endl;
-
-        std::cout << "propagatedResult_CBA after arithmetic: " << VectorUintToHexString(propagatedResult_CBA) << std::endl;
-        std::cout << "propagatedResult_CBA: " << VectorUintToHexString(propagatedResult_CBA) << std::endl;
-        std::cout << "carry_CBA out: 0x" << std::hex << carry_CBA << std::endl;
+        std::cout << "propagatedResultFalse after arithmetic: " << VectorUintToHexString(propagatedResultFalse) << std::endl;
+        std::cout << "propagatedResultFalse: " << VectorUintToHexString(propagatedResultFalse) << std::endl;
+        std::cout << "carryFalse out: 0x" << std::hex << carryFalse << std::endl;
 
         std::cout << "propagatedResult_DE after arithmetic: " << VectorUintToHexString(propagatedResult_DE) << std::endl;
         std::cout << "propagatedResult_DE: " << VectorUintToHexString(propagatedResult_DE) << std::endl;
@@ -1832,13 +1665,13 @@ AddHelper (
 
     if constexpr (SharkDebugChecksums) {
         const auto &debugResultState_ABC = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::FinalAdd1>(
-            debugStates, propagatedResult_ABC.data(), numActualDigitsPlusGuard);
+            debugStates, propagatedResultTrue.data(), numActualDigitsPlusGuard);
 
         const auto &debugResultState_DE = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::FinalAdd2>(
             debugStates, propagatedResult_DE.data(), numActualDigitsPlusGuard);
 
         if (SharkVerbose == VerboseMode::Debug) {
-            std::cout << "propagatedResult_ABC checksum: " << debugResultState_ABC.GetStr() << std::endl;
+            std::cout << "propagatedResultTrue checksum: " << debugResultState_ABC.GetStr() << std::endl;
             std::cout << "propagatedResult_DE checksum: " << debugResultState_DE.GetStr() << std::endl;
         }
     }
@@ -1881,22 +1714,6 @@ AddHelper (
             }
         };
 
-    int32_t outExponent_ABC = outExponent_ABC_Orig;
-    int32_t outExponent_ACB = outExponent_ACB_Orig;
-    int32_t outExponent_BAC = outExponent_BAC_Orig;
-    int32_t outExponent_BCA = outExponent_BCA_Orig;
-    int32_t outExponent_CAB = outExponent_CAB_Orig;
-    int32_t outExponent_CBA = outExponent_CBA_Orig;
-
-    handleFinalCarry(outExponent_ABC, carry_ABC, propagatedResult_ABC);
-    handleFinalCarry(outExponent_ACB, carry_ACB, propagatedResult_ACB);
-    handleFinalCarry(outExponent_BAC, carry_BAC, propagatedResult_BAC);
-    handleFinalCarry(outExponent_BCA, carry_BCA, propagatedResult_BCA);
-    handleFinalCarry(outExponent_CAB, carry_CAB, propagatedResult_CAB);
-    handleFinalCarry(outExponent_CBA, carry_CBA, propagatedResult_CBA);
-
-    handleFinalCarry(outExponent_DE, carry_DE, propagatedResult_DE);
-
     // --- Final Normalization ---
     int32_t msdResult_DE = 0;
     int32_t msdResult_ABC = 0;
@@ -1915,72 +1732,31 @@ AddHelper (
     bool *selectedOutSign = nullptr;
 
     // Select whichever result has greatest carry (most non-negative) among
-    if (ordering == ThreeWayMagnitudeOrdering::A_GT_B_GT_C || ordering == ThreeWayMagnitudeOrdering::A_GT_C_GT_B) {
-        if (carry_ABC >= carry_ACB) {
-            assert(carry_ABC >= 0);
-            selectedPropagatedResult = propagatedResult_ABC.data();
-            selectedOutExponent = &outExponent_ABC;
-            selectedOutSign = &outSign_ABC;
+    handleFinalCarry(outExponentTrue, carryTrue, propagatedResultTrue);
+    handleFinalCarry(outExponentFalse, carryFalse, propagatedResultFalse);
 
-            if (SharkVerbose == VerboseMode::Debug) {
-                std::cout << "Selected propagatedResult_ABC with carry_ABC: " << carry_ABC << std::endl;
-            }
-        }
-        else {
-            assert(carry_ACB >= 0);
-            selectedPropagatedResult = propagatedResult_ACB.data();
-            selectedOutExponent = &outExponent_ACB;
-            selectedOutSign = &outSign_ACB;
+    if (carryTrue >= carryFalse) {
+        assert(carryTrue >= 0);
+        selectedPropagatedResult = propagatedResultTrue.data();
+        selectedOutExponent = &outExponentTrue;
+        selectedOutSign = &outSignTrue;
 
-            if (SharkVerbose == VerboseMode::Debug) {
-                std::cout << "Selected propagatedResult_ACB with carry_ACB: " << carry_ACB << std::endl;
-            }
-        }
-
-    } else if (ordering == ThreeWayMagnitudeOrdering::B_GT_A_GT_C || ordering == ThreeWayMagnitudeOrdering::B_GT_C_GT_A) {
-        if (carry_BAC >= carry_BCA) {
-            assert(carry_BAC >= 0);
-            selectedPropagatedResult = propagatedResult_BAC.data();
-            selectedOutExponent = &outExponent_BAC;
-            selectedOutSign = &outSign_BAC;
-
-            if (SharkVerbose == VerboseMode::Debug) {
-                std::cout << "Selected propagatedResult_BAC with carry_BAC: " << carry_BAC << std::endl;
-            }
-        }
-        else {
-            assert(carry_BCA >= 0);
-            selectedPropagatedResult = propagatedResult_BCA.data();
-            selectedOutExponent = &outExponent_BCA;
-            selectedOutSign = &outSign_BCA;
-
-            if (SharkVerbose == VerboseMode::Debug) {
-                std::cout << "Selected propagatedResult_BCA with carry_BCA: " << carry_BCA << std::endl;
-            }
-        }
-
-    } else if (ordering == ThreeWayMagnitudeOrdering::C_GT_A_GT_B || ordering == ThreeWayMagnitudeOrdering::C_GT_B_GT_A) {
-        if (carry_CAB >= carry_CBA) {
-            assert(carry_CAB >= 0);
-            selectedPropagatedResult = propagatedResult_CAB.data();
-            selectedOutExponent = &outExponent_CAB;
-            selectedOutSign = &outSign_CAB;
-
-            if (SharkVerbose == VerboseMode::Debug) {
-                std::cout << "Selected propagatedResult_CAB with carry_CAB: " << carry_CAB << std::endl;
-            }
-        }
-        else {
-            assert(carry_CBA >= 0);
-            selectedPropagatedResult = propagatedResult_CBA.data();
-            selectedOutExponent = &outExponent_CBA;
-            selectedOutSign = &outSign_CBA;
-
-            if (SharkVerbose == VerboseMode::Debug) {
-                std::cout << "Selected propagatedResult_CBA with carry_CBA: " << carry_CBA << std::endl;
-            }
+        if (SharkVerbose == VerboseMode::Debug) {
+            std::cout << "Selected propagatedResultTrue with carryTrue: " << carryTrue << std::endl;
         }
     }
+    else {
+        assert(carryFalse >= 0);
+        selectedPropagatedResult = propagatedResultFalse.data();
+        selectedOutExponent = &outExponentFalse;
+        selectedOutSign = &outSignFalse;
+
+        if (SharkVerbose == VerboseMode::Debug) {
+            std::cout << "Selected propagatedResultFalse with carry_ACB: " << carryFalse << std::endl;
+        }
+    }
+
+    handleFinalCarry(outExponent_DE, carry_DE, propagatedResult_DE);
 
     findMSD(selectedPropagatedResult, msdResult_ABC);
     findMSD(propagatedResult_DE.data(), msdResult_DE);

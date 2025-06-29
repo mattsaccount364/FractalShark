@@ -859,6 +859,134 @@ void Phase1_ABC (
 
 }
 
+template<class SharkFloatParams>
+static void
+NormalizeAndCopyResult(
+    const char *prefixOutStr,
+    int32_t                     actualDigits,
+    int32_t                     extDigits,
+    int32_t &exponent,
+    int32_t &carry,
+    std::vector<uint32_t> &propagatedResult,
+    HpSharkFloat<SharkFloatParams> *ResultOut,
+    bool                        outSign
+) noexcept {
+    // --- 1) Inject any carry/borrow back into the digit stream ---
+    if (carry != 0) {
+        if (carry < 0) {
+            if (SharkVerbose == VerboseMode::Debug) {
+                std::cout << prefixOutStr
+                    << " negative carry (" << carry << "), skipping branch\n";
+            }
+            return;
+        }
+        int shift = (carry == 2 ? 2 : 1);
+        exponent += shift;
+        if (SharkVerbose == VerboseMode::Debug) {
+            std::cout << prefixOutStr
+                << " injecting carry " << carry
+                << " as shift " << shift
+                << ", new exponent = 0x" << std::hex << exponent << std::dec << "\n";
+        }
+
+        uint32_t highBits = static_cast<uint32_t>(carry);
+        for (int32_t i = extDigits - 1; i >= 0; --i) {
+            uint32_t w = propagatedResult[i];
+            uint32_t lowMask = (1u << shift) - 1;
+            uint32_t nextHB = w & lowMask;
+            propagatedResult[i] = (w >> shift) | (highBits << (32 - shift));
+            highBits = nextHB;
+        }
+    }
+
+    // --- 2) Locate most‐significant non‐zero word ---
+    int32_t msdResult = 0;
+    for (int32_t i = extDigits - 1; i >= 0; --i) {
+        if (propagatedResult[i] != 0) {
+            msdResult = i;
+            break;
+        }
+    }
+
+    // --- 3) Compute current vs desired bit positions ---
+    int32_t clzResult = CountLeadingZeros(propagatedResult[msdResult]);
+    int32_t currentBit = msdResult * 32 + (31 - clzResult);
+    int32_t desiredBit = (SharkFloatParams::GlobalNumUint32 - 1) * 32 + 31;
+
+    if (SharkVerbose == VerboseMode::Debug) {
+        std::cout << prefixOutStr
+            << " CLZ of word[" << msdResult << "] = 0x" << std::hex << clzResult << "\n"
+            << prefixOutStr
+            << " currentBit = 0x" << currentBit << "\n"
+            << prefixOutStr
+            << " desiredBit = 0x" << desiredBit << std::dec << "\n";
+    }
+
+    // --- 4) Normalize by shifting left or right ---
+    int32_t shiftNeeded = currentBit - desiredBit;
+    if (shiftNeeded > 0) {
+        if (SharkVerbose == VerboseMode::Debug) {
+            std::cout << prefixOutStr
+                << " right-shifting by " << shiftNeeded << "\n";
+        }
+        MultiWordShift<Dir::Right>(
+            propagatedResult.data(),
+            extDigits,
+            shiftNeeded,
+            ResultOut->Digits,
+            actualDigits
+        );
+        exponent += shiftNeeded;
+
+        if (SharkVerbose == VerboseMode::Debug) {
+            std::cout << prefixOutStr
+                << " after right shift: "
+                << VectorUintToHexString(ResultOut->Digits, actualDigits)
+                << "\n"
+                << prefixOutStr
+                << " final exponent = 0x" << std::hex << exponent << std::dec << "\n";
+        }
+    } else if (shiftNeeded < 0) {
+        int32_t L = -shiftNeeded;
+        if (SharkVerbose == VerboseMode::Debug) {
+            std::cout << prefixOutStr
+                << " left-shifting by " << L << "\n";
+        }
+        MultiWordShift<Dir::Left>(
+            propagatedResult.data(),
+            extDigits,
+            L,
+            ResultOut->Digits,
+            actualDigits
+        );
+        exponent -= L;
+
+        if (SharkVerbose == VerboseMode::Debug) {
+            std::cout << prefixOutStr
+                << " after left shift: "
+                << VectorUintToHexString(ResultOut->Digits, actualDigits)
+                << "\n"
+                << prefixOutStr
+                << " final exponent = 0x" << std::hex << exponent << std::dec << "\n";
+        }
+    } else {
+        if (SharkVerbose == VerboseMode::Debug) {
+            std::cout << prefixOutStr
+                << " no normalization shift needed\n";
+        }
+        std::memcpy(
+            ResultOut->Digits,
+            propagatedResult.data(),
+            actualDigits * sizeof(uint32_t)
+        );
+    }
+
+    // --- 5) Set final exponent and sign ---
+    ResultOut->Exponent = exponent;
+    ResultOut->SetNegative(outSign);
+}
+
+
 //
 // Ternary operator that calculates:
 // OutXY1 = A_X2 - B_Y2 + C_A
@@ -1228,195 +1356,50 @@ AddHelper (
         }
     }
 
-    // captures: numActualDigitsPlusGuard
-    auto handleFinalCarry = [&](
-        int32_t &outExponent,
-        int32_t carry,
-        std::vector<uint32_t> &propagatedResult
-        ) {
-            if (carry == 0) {
-                return;
-            }
 
-            // we only ever see carry==1 or carry==2
-            // assert(carry >= 0);
+    // 1) Decide which A−B+C branch to use
+    bool useTrueBranch = (carryTrue >= carryFalse);
 
-            if (carry < 0) {
-                // This result is bogus and will be discarded.
-                return;
-            }
-
-            const int shift = (carry == 2 ? 2 : 1);
-            outExponent += shift;
-
-            // seed the bits that will be injected into the MS limb
-            // (carry is already only low 1 or 2 bits)
-            uint32_t highBits = carry;
-
-            // now walk from MS limb downward
-            for (int i = numActualDigitsPlusGuard - 1; i >= 0; --i) {
-                uint32_t w = propagatedResult[i];
-                // grab the low 'shift' bits to feed into the next iteration
-                uint32_t lowMask = (1u << shift) - 1;
-                uint32_t nextHighBits = w & lowMask;
-
-                // shift right and OR-in the bits carried from above
-                propagatedResult[i] = (w >> shift)
-                    | (highBits << (32 - shift));
-
-                highBits = nextHighBits;
-            }
-        };
-
-    // --- Final Normalization ---
-    int32_t msdResult_DE = 0;
-    int32_t msdResult_ABC = 0;
-
-    auto findMSD = [&](const uint32_t *result, int32_t &msdResult) {
-        for (int32_t i = numActualDigitsPlusGuard - 1; i >= 0; i--) {
-            if (result[i] != 0) {
-                msdResult = i;
-                break;
-            }
-        }
-    };
-
-    uint32_t *selectedPropagatedResult = nullptr;
-    int32_t *selectedOutExponent = nullptr;
-    bool *selectedOutSign = nullptr;
-
-    // Select whichever result has greatest carry (most non-negative) among
-    handleFinalCarry(outExponentTrue, carryTrue, propagatedResultTrue);
-    handleFinalCarry(outExponentFalse, carryFalse, propagatedResultFalse);
-
-    if (carryTrue >= carryFalse) {
-        assert(carryTrue >= 0);
-        selectedPropagatedResult = propagatedResultTrue.data();
-        selectedOutExponent = &outExponentTrue;
-        selectedOutSign = &outSignTrue;
-
-        if (SharkVerbose == VerboseMode::Debug) {
-            std::cout << "Selected propagatedResultTrue with carryTrue: " << carryTrue << std::endl;
-        }
-    }
-    else {
-        assert(carryFalse >= 0);
-        selectedPropagatedResult = propagatedResultFalse.data();
-        selectedOutExponent = &outExponentFalse;
-        selectedOutSign = &outSignFalse;
-
-        if (SharkVerbose == VerboseMode::Debug) {
-            std::cout << "Selected propagatedResultFalse with carry_ACB: " << carryFalse << std::endl;
-        }
+    // 2) Normalize & write *only* that branch
+    if (useTrueBranch) {
+        NormalizeAndCopyResult<SharkFloatParams>(
+            /* prefixOutStr  = */ "A - B + C: ",
+            /* actualDigits  = */ numActualDigits,
+            /* extDigits     = */ numActualDigitsPlusGuard,
+            /* exponent      = */ outExponentTrue,
+            /* carry         = */ carryTrue,
+            /* propagatedRes = */ propagatedResultTrue,
+            /* ResultOut     = */ OutXY1,
+            /* outSign       = */ outSignTrue
+        );
+    } else {
+        NormalizeAndCopyResult<SharkFloatParams>(
+            /* prefixOutStr  = */ "A - B + C: ",
+            /* actualDigits  = */ numActualDigits,
+            /* extDigits     = */ numActualDigitsPlusGuard,
+            /* exponent      = */ outExponentFalse,
+            /* carry         = */ carryFalse,
+            /* propagatedRes = */ propagatedResultFalse,
+            /* ResultOut     = */ OutXY1,
+            /* outSign       = */ outSignFalse
+        );
     }
 
-    handleFinalCarry(outExponent_DE, carry_DE, propagatedResult_DE);
+    // 3) And handle D+E exactly once
+    bool deSign = sameSignDE
+        ? D_2X->GetNegative()
+        : (DIsBiggerMagnitude ? D_2X->GetNegative() : E_B->GetNegative());
 
-    findMSD(selectedPropagatedResult, msdResult_ABC);
-    findMSD(propagatedResult_DE.data(), msdResult_DE);
-
-    auto finalResolution = [](
-        const char *prefixOutStr,
-        const int32_t msdResult,
-        const int32_t actualDigits,
-        const int32_t extDigits,
-        int32_t &outExponent,
-        const uint32_t *selectedPropagatedResult,
-        HpSharkFloat<SharkFloatParams> *ResultOut) {
-
-            const int32_t clzResult = CountLeadingZeros(selectedPropagatedResult[msdResult]);
-            const int32_t currentOverall = msdResult * 32 + (31 - clzResult);
-            const int32_t desiredOverall = (SharkFloatParams::GlobalNumUint32 - 1) * 32 + 31;
-
-            if (SharkVerbose == VerboseMode::Debug) {
-                std::cout << std::hex << "prefixOutStr: " << prefixOutStr << std::endl;
-                std::cout << std::hex << "Count leading zeros: 0x" << clzResult << std::endl;
-                std::cout << std::hex << "Current MSB index: 0x" << msdResult << std::endl;
-                std::cout << std::hex << "Current overall bit position: 0x" << currentOverall << std::endl;
-                std::cout << std::hex << "Desired overall bit position: 0x" << desiredOverall << std::endl;
-            }
-
-            const int32_t shiftNeeded = currentOverall - desiredOverall;
-            if (shiftNeeded > 0) {
-                if (SharkVerbose == VerboseMode::Debug) {
-                    std::cout << "Shift needed branch D_2X: " << shiftNeeded << std::endl;
-                }
-
-                const auto shiftedSz = SharkFloatParams::GlobalNumUint32;
-                MultiWordShift<Dir::Right>(
-                    selectedPropagatedResult,
-                    extDigits,
-                    shiftNeeded,
-                    ResultOut->Digits,
-                    shiftedSz);
-                outExponent += shiftNeeded;
-
-                if (SharkVerbose == VerboseMode::Debug) {
-                    std::cout << "Final selectedPropagatedResult after right shift: " <<
-                        VectorUintToHexString(ResultOut->Digits, shiftedSz) <<
-                        std::endl;
-                    std::cout << std::hex << "ShiftNeeded after right shift: 0x" << shiftNeeded << std::endl;
-                    std::cout << std::hex << "Final outExponent after right shift: 0x" << outExponent << std::endl;
-                }
-            } else if (shiftNeeded < 0) {
-                if (SharkVerbose == VerboseMode::Debug) {
-                    std::cout << std::hex << "Shift needed branch E_B: 0x" << shiftNeeded << std::endl;
-                }
-
-                const int32_t L = -shiftNeeded;
-                const auto shiftedSz = static_cast<int32_t>(SharkFloatParams::GlobalNumUint32);
-                MultiWordShift<Dir::Left>(
-                    selectedPropagatedResult,
-                    extDigits,
-                    L,
-                    ResultOut->Digits,
-                    shiftedSz);
-                outExponent -= L;
-
-                if (SharkVerbose == VerboseMode::Debug) {
-                    std::cout << "Final selectedPropagatedResult after left shift: " <<
-                        VectorUintToHexString(ResultOut->Digits, shiftedSz) <<
-                        std::endl;
-                    std::cout << std::hex <<"L after left shift: 0x" << L << std::endl;
-                    std::cout << std::hex <<"Final outExponent after left shift: 0x" << outExponent << std::endl;
-                }
-            } else {
-                if (SharkVerbose == VerboseMode::Debug) {
-                    std::cout << std::hex << "No shift needed: 0x" << shiftNeeded << std::endl;
-                }
-                // No shift needed, just copy the result.
-                memcpy(ResultOut->Digits, selectedPropagatedResult, SharkFloatParams::GlobalNumUint32 * sizeof(uint32_t));
-            }
-        };
-
-    // --- Finalize the result ---
-    finalResolution(
-        "A - B + C: ",
-        msdResult_ABC,
-        numActualDigits,
-        numActualDigitsPlusGuard,
-        *selectedOutExponent,
-        selectedPropagatedResult,
-        OutXY1);
-
-    OutXY1->Exponent = *selectedOutExponent;
-    OutXY1->SetNegative(*selectedOutSign);
-
-    finalResolution(
-        "D + E: ",
-        msdResult_DE,
-        numActualDigits,
-        numActualDigitsPlusGuard,
-        outExponent_DE,
-        propagatedResult_DE.data(),
-        OutXY2);
-
-    OutXY2->Exponent = outExponent_DE;
-    // Set the result sign.
-    if (sameSignDE)
-        OutXY2->SetNegative(D_2X->GetNegative());
-    else
-        OutXY2->SetNegative(DIsBiggerMagnitude ? D_2X->GetNegative() : E_B->GetNegative());
+    NormalizeAndCopyResult<SharkFloatParams>(
+        /* prefixOutStr  = */ "D + E: ",
+        /* actualDigits  = */ numActualDigits,
+        /* extDigits     = */ numActualDigitsPlusGuard,
+        /* exponent      = */ outExponent_DE,
+        /* carry         = */ carry_DE,
+        /* propagatedRes = */ propagatedResult_DE,
+        /* ResultOut     = */ OutXY2,
+        /* outSign       = */ deSign
+    );
 
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "Final Resolution completed" << std::endl;

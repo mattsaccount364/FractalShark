@@ -667,7 +667,8 @@ void CarryPropagation_ABC (
 }
 
 // 5) helper to do |±X ±Y ±Z| in one pass, given a fixed X_gtY
-uint64_t CoreThreeWayAdd (
+static uint64_t
+CoreThreeWayAdd (
     uint64_t X, bool sX,
     uint64_t Y, bool sY,
     uint64_t Z, bool sZ,

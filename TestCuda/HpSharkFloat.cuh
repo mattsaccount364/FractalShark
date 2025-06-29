@@ -1,5 +1,6 @@
 #pragma once
 
+#include "CudaCrap.h"
 #include "DebugStateRaw.h"
 
 #include <string>
@@ -27,7 +28,7 @@ static constexpr auto SharkMultiKernel = false;
 #endif
 
 // Define to enable GPU kernel compilation
-//#define SHARK_INCLUDE_KERNELS
+#define SHARK_INCLUDE_KERNELS
 // Set to false to bypass all GPU tests and only do reference/host-side
 #ifdef SHARK_INCLUDE_KERNELS
 static constexpr bool SharkTestGpu = true;
@@ -123,7 +124,9 @@ struct GenericSharkFloatParams {
 static constexpr auto ScratchMemoryCopies = 256;
 
 // Number of arrays of digits on each frame
-static constexpr auto ScratchMemoryArrays = 96;
+static constexpr auto ScratchMemoryArraysForMultiply = 96;
+static constexpr auto ScratchMemoryArraysForAdd = 32;
+
 
 // Additional space per frame:
 static constexpr auto AdditionalUInt64PerFrame = 256;
@@ -143,12 +146,12 @@ static constexpr auto AdditionalUInt64Global =
 
 template<class SharkFloatParams>
 static constexpr auto CalculateMultiplyFrameSize() {
-    return ScratchMemoryArrays * SharkFloatParams::GlobalNumUint32 + AdditionalUInt64PerFrame;
+    return ScratchMemoryArraysForMultiply * SharkFloatParams::GlobalNumUint32 + AdditionalUInt64PerFrame;
 }
 
 template<class SharkFloatParams>
 static constexpr auto CalculateAddFrameSize() {
-    return SharkFloatParams::GlobalNumUint32 * 16 + AdditionalUInt64PerFrame;
+    return ScratchMemoryArraysForAdd * SharkFloatParams::GlobalNumUint32 + AdditionalUInt64PerFrame;
 }
 
 static constexpr auto LowPrec = 32;
@@ -211,7 +214,10 @@ struct HpSharkFloat {
     void Normalize();
     void DenormalizeLosePrecision();
 
+    CUDA_CRAP_BOTH
     void SetNegative(bool isNegative);
+
+    CUDA_CRAP_BOTH
     bool GetNegative() const;
 
     // Default precision in bits
@@ -238,6 +244,18 @@ private:
 
     mp_exp_t HpGpuExponentToMpfExponent(size_t numBytesToCopy) const;
 };
+
+template<class SharkFloatParams>
+CUDA_CRAP_BOTH
+void HpSharkFloat<SharkFloatParams>::SetNegative(bool isNegative) {
+    IsNegative = isNegative;
+}
+
+template<class SharkFloatParams>
+CUDA_CRAP_BOTH
+bool HpSharkFloat<SharkFloatParams>::GetNegative() const {
+    return IsNegative;
+}
 
 template<class SharkFloatParams>
 struct HpSharkComboResults {

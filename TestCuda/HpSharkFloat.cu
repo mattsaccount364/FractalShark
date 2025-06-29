@@ -763,21 +763,12 @@ Uint32ToMpf (
     return MpfToString<SharkFloatParams>(mpf_val, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
 }
 
-template<class SharkFloatParams>
-void HpSharkFloat<SharkFloatParams>::SetNegative(bool isNegative) {
-    IsNegative = isNegative;
-}
-
-template<class SharkFloatParams>
-bool HpSharkFloat<SharkFloatParams>::GetNegative() const {
-    return IsNegative;
-}
-
 // Explicit instantiation
-#define ExplicitlyInstantiate(SharkFloatParams) \
-    template class HpSharkFloat<SharkFloatParams>; \
-    template std::string Uint32ToMpf<SharkFloatParams>(const uint32_t *array, int32_t pow64Exponent, mpf_t &mpf_val); \
-    template std::string MpfToString<SharkFloatParams>(const mpf_t mpf_val, size_t precInBits); \
-
+#define ExplicitlyInstantiate(SharkFloatParams)                                              \
+    template class HpSharkFloat<SharkFloatParams>;                                           \
+    template std::string Uint32ToMpf<SharkFloatParams>(                                       \
+        const uint32_t *array, int32_t pow64Exponent, mpf_t &mpf_val);                       \
+    template std::string MpfToString<SharkFloatParams>(                                       \
+        const mpf_t mpf_val, size_t precInBits);
 
 ExplicitInstantiateAll();

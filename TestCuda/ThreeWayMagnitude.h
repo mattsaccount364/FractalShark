@@ -1,8 +1,10 @@
 #pragma once
+
+#include "CudaCrap.h"
+
 #include <array>
 #include <cassert>
 #include <string>
-
 
 enum class ThreeWayLargestOrdering : int {
     A_GT_AllOthers = 0,

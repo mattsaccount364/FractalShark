@@ -1043,9 +1043,9 @@ __device__ SharkForceInlineReleaseOnly static void CarryPropagation (
     // grid.sync();
 }
 
-// Look for CalculateMultiplyFrameSize and ScratchMemoryArrays
+// Look for CalculateMultiplyFrameSize and ScratchMemoryArraysForMultiply
 // and make sure the number of NewN arrays we're using here fits within that limit.
-// The list here should go up to ScratchMemoryArrays.
+// The list here should go up to ScratchMemoryArraysForMultiply.
 static_assert(AdditionalUInt64PerFrame == 256, "See below");
 #define DefineTempProductsOffsets(TempBase, CallIndex) \
     const int threadIdxGlobal = block.group_index().x * SharkFloatParams::GlobalThreadsPerBlock + block.thread_index().x; \
@@ -2096,6 +2096,12 @@ __device__ void MultiplyHelperKaratsubaV2 (
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2XX>(record, debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2XY>(record, debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2YY>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2_Perm1>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2_Perm2>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2_Perm3>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2_Perm4>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2_Perm5>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2_Perm6>(record, debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1_offsetXX>(record, debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1_offsetXY>(record, debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1_offsetYY>(record, debugStates, grid, block);
@@ -2104,12 +2110,13 @@ __device__ void MultiplyHelperKaratsubaV2 (
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Final128YY>(record, debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::FinalAdd1>(record, debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::FinalAdd2>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::FinalAdd3>(record, debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offsetXX>(record, debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offsetXY>(record, debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offsetYY>(record, debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_Add1>(record, debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_Add2>(record, debugStates, grid, block);
-        static_assert(static_cast<int32_t>(DebugStatePurpose::NumPurposes) == 34, "Unexpected number of purposes");
+        static_assert(static_cast<int32_t>(DebugStatePurpose::NumPurposes) == 41, "Unexpected number of purposes");
     }
 
     // Wait for the first batch of A to be loaded

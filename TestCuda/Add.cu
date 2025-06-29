@@ -1,4 +1,4 @@
-#include "HpSharkFloat.cuh"
+﻿#include "HpSharkFloat.cuh"
 #include "BenchmarkTimer.h"
 #include "TestTracker.h"
 #include "KernelInvoke.cuh"
@@ -22,115 +22,117 @@ namespace cg = cooperative_groups;
 // They mirror the CUDA device functions but work sequentially on the full array.
 //
 
-// ShiftRight: Shifts the number (given by its digit array) right by shiftBits.
-// idx is the index of the digit to compute. The parameter numDigits prevents out-of-bounds access.
-__device__ SharkForceInlineReleaseOnly uint32_t
-ShiftRight (
-    const uint32_t *digits,
-    const int32_t shiftBits,
-    const int32_t idx,
-    const int32_t numDigits) {
-    const int32_t shiftWords = shiftBits / 32;
-    const int32_t shiftBitsMod = shiftBits % 32;
-    const uint32_t lower = (idx + shiftWords < numDigits) ? digits[idx + shiftWords] : 0;
-    const uint32_t upper = (idx + shiftWords + 1 < numDigits) ? digits[idx + shiftWords + 1] : 0;
-    if (shiftBitsMod == 0) {
-        return lower;
+
+// Direction tag for our funnel-shift helper
+enum class Dir { Left, Right };
+
+/// Funnels two 32-bit words from 'data' around a bit-offset boundary.
+/// - For Dir::Right, this emulates a right shift across word boundaries.
+/// - For Dir::Left,  this emulates a left  shift across word boundaries.
+/// 'N' is the number of valid words in 'data'; out-of-range indices yield 0.
+template<Dir D>
+static __device__ SharkForceInlineReleaseOnly uint32_t
+FunnelShift32(
+    const uint32_t *data,
+    int              idx,
+    int              N,
+    int              bitOffset) {
+    int wordOff = bitOffset / 32;
+    int b = bitOffset % 32;
+
+    auto pick = [&](int i) -> uint32_t {
+        return (i < 0 || i >= N) ? 0u : data[i];
+        };
+
+    uint32_t low, high;
+    if constexpr (D == Dir::Right) {
+        low = pick(idx + wordOff);
+        high = pick(idx + wordOff + 1);
     } else {
-        return (lower >> shiftBitsMod) | (upper << (32 - shiftBitsMod));
+        low = pick(idx - wordOff);
+        high = pick(idx - wordOff - 1);
     }
+
+    if (b == 0) return low;
+    if constexpr (D == Dir::Right)
+        return (low >> b) | (high << (32 - b));
+    else
+        return (low << b) | (high >> (32 - b));
 }
 
-// ShiftLeft: Shifts the number (given by its digit array) left by shiftBits.
-// idx is the index of the digit to compute.
-__device__ SharkForceInlineReleaseOnly uint32_t
-ShiftLeft (
+/// Retrieves the digit at 'idx' after a left shift by 'shiftBits',
+/// treating words beyond 'actualDigits' as zero (within an 'extDigits' buffer).
+static __device__ SharkForceInlineReleaseOnly uint32_t
+GetNormalizedDigit(
     const uint32_t *digits,
-    const int32_t numActualDigits,
-    const int32_t numActualDigitsPlusGuard,
-    const int32_t shiftBits,
-    const int32_t idx) {
-    const int32_t shiftWords = shiftBits / 32;
-    const int32_t shiftBitsMod = shiftBits % 32;
-    const int32_t srcIdx = idx - shiftWords;
+    int32_t         actualDigits,
+    int32_t         extDigits,
+    int32_t         shiftBits,
+    int32_t         idx) {
+    // ensure idx is within the extended buffer
+    assert(idx >= 0 && idx < extDigits);
 
-    int32_t srcDigitLower = (srcIdx >= 0 && srcIdx < numActualDigits) ? digits[srcIdx] : 0;
-    int32_t srcDigitUpper = (srcIdx - 1 >= 0 && srcIdx - 1 < numActualDigits) ? digits[srcIdx - 1] : 0;
-
-    const uint32_t lower = (srcIdx >= 0) ? srcDigitLower : 0;
-    const uint32_t upper = (srcIdx - 1 >= 0) ? srcDigitUpper : 0;
-    if (shiftBitsMod == 0) {
-        return lower;
-    } else {
-        return (lower << shiftBitsMod) | (upper >> (32 - shiftBitsMod));
-    }
+    // funnel-shift left within the 'actualDigits' region
+    return FunnelShift32<Dir::Left>(
+        digits,
+        idx,
+        actualDigits,
+        shiftBits
+    );
 }
 
-// Portable helper: CountLeadingZeros for a 32-bit integer.
-// On CUDA consider:
-// __device__ int32_t CountLeadingZerosCUDA(uint32_t x) {
-// return __clz(x);
-// }
-__device__ SharkForceInlineReleaseOnly int32_t
-CountLeadingZeros (
+// Counts the number of leading zero bits in a 32-bit unsigned integer.
+// This is a portable implementation of the count leading zeros operation.
+static __device__ SharkForceInlineReleaseOnly int32_t
+CountLeadingZeros(
     const uint32_t x) {
-    int32_t count = 0;
-    for (int32_t bit = 31; bit >= 0; --bit) {
-        if (x & (1u << bit))
-            break;
-        ++count;
-    }
-    return count;
+#if defined(__CUDA_ARCH__)
+    // __clz returns 0–32 inclusive, even for x==0
+    return __clz(static_cast<int>(x));
+#else
+    // std::countl_zero is constexpr in C++20 and returns 32 for x==0
+    return static_cast<int>(std::countl_zero(x));
+#endif
 }
 
 //
 // Multi-word shift routines for little-endian arrays
 //
 
-// MultiWordRightShift_LittleEndian: shift an array 'in' (of length n) right by L bits,
-// storing the result in 'out'. (out and in may be distinct.)
-__device__ SharkForceInlineReleaseOnly void
-MultiWordRightShift_LittleEndian (
+// Generic multi-word shift using the requested parameter names
+template<Dir D>
+static __device__ SharkForceInlineReleaseOnly void
+MultiWordShift(
     const uint32_t *in,
-    const int32_t inN,
-    const int32_t L,
+    const int32_t  extDigits,
+    const int32_t  shiftNeeded,
     uint32_t *out,
-    const int32_t outSz) {
-    assert(inN >= outSz);
-
-    for (int32_t i = 0; i < outSz; i++) {
-        out[i] = ShiftRight(in, L, i, inN);
+    const int32_t  outSz
+) {
+    assert(extDigits >= outSz);
+    for (int32_t i = 0; i < outSz; ++i) {
+        out[i] = FunnelShift32<D>(
+            in,
+            /* idx       = */ i,
+            /* N         = */ extDigits,
+            /* bitOffset = */ shiftNeeded
+        );
     }
 }
 
-// MultiWordLeftShift_LittleEndian: shift an array 'in' (of length n) left by L bits,
-// storing the result in 'out'.
-__device__ SharkForceInlineReleaseOnly void
-MultiWordLeftShift_LittleEndian (
-    const uint32_t *in,
-    const int32_t numActualDigitsPlusGuard,
-    const int32_t numActualDigits,
-    const int32_t L,
-    uint32_t *out,
-    const int32_t outSz) {
-    assert(numActualDigitsPlusGuard >= outSz);
-
-    for (int32_t i = 0; i < outSz; i++) {
-        out[i] = ShiftLeft(in, numActualDigits, numActualDigitsPlusGuard, L, i);
-    }
-}
-
-__device__ SharkForceInlineReleaseOnly uint32_t
-GetExtLimb (
+// Retrieves a limb from an extended array, returning zero for indices beyond the actual digit count.
+// This handles the boundary between actual digits and guard digits in extended precision arithmetic.
+static __device__ SharkForceInlineReleaseOnly uint32_t
+GetExtLimb(
     const uint32_t *ext,
-    const int32_t numActualDigits,
-    const int32_t numActualDigitsPlusGuard,
+    const int32_t actualDigits,
+    const int32_t extDigits,
     const int32_t idx) {
 
-    if (idx < numActualDigits) {
+    if (idx < actualDigits) {
         return ext[idx];
     } else {
-        assert(idx < numActualDigitsPlusGuard);
+        assert(idx < extDigits);
         return 0;
     }
 }
@@ -143,26 +145,29 @@ GetExtLimb (
 // its most-significant set bit would be in the highest bit position of the extended field.
 // It then adjusts the stored exponent accordingly and returns the shift offset.
 //
-__device__ SharkForceInlineReleaseOnly int32_t
-ExtendedNormalizeShiftIndex (
+
+// Computes the bit shift offset needed to normalize an extended precision number.
+// Returns the shift amount and updates the exponent accordingly, without actually performing the shift.
+static __device__ SharkForceInlineReleaseOnly int32_t
+ExtendedNormalizeShiftIndex(
     const uint32_t *ext,
-    const int32_t numActualDigits,
-    const int32_t numActualDigitsPlusGuard,
+    const int32_t actualDigits,
+    const int32_t extDigits,
     int32_t &storedExp,
     bool &isZero) {
-    int32_t msd = numActualDigitsPlusGuard - 1;
-    while (msd >= 0 && GetExtLimb(ext, numActualDigits, numActualDigitsPlusGuard, msd) == 0)
+    int32_t msd = extDigits - 1;
+    while (msd >= 0 && GetExtLimb(ext, actualDigits, extDigits, msd) == 0)
         msd--;
     if (msd < 0) {
         isZero = true;
         return 0;  // For zero, the shift offset is irrelevant.
     }
     isZero = false;
-    const int32_t clz = CountLeadingZeros(GetExtLimb(ext, numActualDigits, numActualDigitsPlusGuard, msd));
+    const int32_t clz = CountLeadingZeros(GetExtLimb(ext, actualDigits, extDigits, msd));
     // In little-endian, the overall bit index of the MSB is:
     //    current_msb = msd * 32 + (31 - clz)
     const int32_t current_msb = msd * 32 + (31 - clz);
-    const int32_t totalExtBits = numActualDigitsPlusGuard * 32;
+    const int32_t totalExtBits = extDigits * 32;
     // Compute the left-shift needed so that the MSB moves to bit (totalExtBits - 1).
     const int32_t L = (totalExtBits - 1) - current_msb;
     // Adjust the exponent as if we had shifted the number left by L bits.
@@ -170,44 +175,30 @@ ExtendedNormalizeShiftIndex (
     return L;
 }
 
-//
-// Helper to retrieve a normalized digit on the fly.
-// Given the original extended array and a shift offset (obtained from ExtendedNormalizeShiftIndex),
-// this returns the digit at index 'idx' as if the array had been left-shifted by shiftOffset bits.
-//
-__device__ SharkForceInlineReleaseOnly uint32_t
-GetNormalizedDigit (
-    const uint32_t *ext,
-    const int32_t numActualDigits,
-    const int32_t numActualDigitsPlusGuard,
-    const int32_t shiftOffset,
-    const int32_t idx) {
-    return ShiftLeft(ext, numActualDigits, numActualDigitsPlusGuard, shiftOffset, idx);
-}
-
 // New helper: Computes the aligned digit for the normalized value on the fly.
-// 'diff' is the additional right shift required for alignment.
+// 'diffDE' is the additional right shift required for alignment.
 template <class SharkFloatParams>
-__device__ SharkForceInlineReleaseOnly uint32_t
-GetShiftedNormalizedDigit (
+static __device__ SharkForceInlineReleaseOnly uint32_t
+GetShiftedNormalizedDigit(
     const uint32_t *ext,
-    const int32_t numActualDigits,
-    const int32_t numActualDigitsPlusGuard,
+    const int32_t actualDigits,
+    const int32_t extDigits,
     const int32_t shiftOffset,
     const int32_t diff,
     const int32_t idx) {
     // const int32_t n = SharkFloatParams::GlobalNumUint32; // normalized length
     const int32_t wordShift = diff / 32;
     const int32_t bitShift = diff % 32;
-    const uint32_t lower = (idx + wordShift < numActualDigitsPlusGuard) ?
-        GetNormalizedDigit(ext, numActualDigits, numActualDigitsPlusGuard, shiftOffset, idx + wordShift) : 0;
-    const uint32_t upper = (idx + wordShift + 1 < numActualDigitsPlusGuard) ?
-        GetNormalizedDigit(ext, numActualDigits, numActualDigitsPlusGuard, shiftOffset, idx + wordShift + 1) : 0;
+    const uint32_t lower = (idx + wordShift < extDigits) ?
+        GetNormalizedDigit(ext, actualDigits, extDigits, shiftOffset, idx + wordShift) : 0;
+    const uint32_t upper = (idx + wordShift + 1 < extDigits) ?
+        GetNormalizedDigit(ext, actualDigits, extDigits, shiftOffset, idx + wordShift + 1) : 0;
     if (bitShift == 0)
         return lower;
     else
         return (lower >> bitShift) | (upper << (32 - bitShift));
 }
+
 
 __device__ SharkForceInlineReleaseOnly bool
 CompareMagnitudes2Way(
@@ -327,6 +318,86 @@ StoreCurrentDebugState (
 #include "Add_ABC.cuh"
 #include "Add_DE.cuh"
 
+
+template<class SharkFloatParams>
+static __device__ SharkForceInlineReleaseOnly void
+NormalizeAndCopyResult(
+    int32_t                     actualDigits,
+    int32_t                     extDigits,
+    int32_t &exponent,
+    int32_t &carry,
+    uint32_t *propagatedResult,
+    HpSharkFloat<SharkFloatParams> *ResultOut,
+    bool                        outSign
+) noexcept {
+    // --- 1) Inject any carry/borrow back into the digit stream ---
+    if (carry != 0) {
+        if (carry < 0) {
+            return;
+        }
+        int shift = (carry == 2 ? 2 : 1);
+        exponent += shift;
+
+        uint32_t highBits = static_cast<uint32_t>(carry);
+        for (int32_t i = extDigits - 1; i >= 0; --i) {
+            uint32_t w = propagatedResult[i];
+            uint32_t lowMask = (1u << shift) - 1;
+            uint32_t nextHB = w & lowMask;
+            propagatedResult[i] = (w >> shift) | (highBits << (32 - shift));
+            highBits = nextHB;
+        }
+    }
+
+    // --- 2) Locate most‐significant non‐zero word ---
+    int32_t msdResult = 0;
+    for (int32_t i = extDigits - 1; i >= 0; --i) {
+        if (propagatedResult[i] != 0) {
+            msdResult = i;
+            break;
+        }
+    }
+
+    // --- 3) Compute current vs desired bit positions ---
+    int32_t clzResult = CountLeadingZeros(propagatedResult[msdResult]);
+    int32_t currentBit = msdResult * 32 + (31 - clzResult);
+    int32_t desiredBit = (SharkFloatParams::GlobalNumUint32 - 1) * 32 + 31;
+
+    // --- 4) Normalize by shifting left or right ---
+    int32_t shiftNeeded = currentBit - desiredBit;
+    if (shiftNeeded > 0) {
+        MultiWordShift<Dir::Right>(
+            propagatedResult,
+            extDigits,
+            shiftNeeded,
+            ResultOut->Digits,
+            actualDigits
+        );
+        exponent += shiftNeeded;
+    } else if (shiftNeeded < 0) {
+        int32_t L = -shiftNeeded;
+        MultiWordShift<Dir::Left>(
+            propagatedResult,
+            extDigits,
+            L,
+            ResultOut->Digits,
+            actualDigits
+        );
+        exponent -= L;
+
+   } else {
+        memcpy(
+            ResultOut->Digits,
+            propagatedResult,
+            actualDigits * sizeof(uint32_t)
+        );
+    }
+
+    // --- 5) Set final exponent and sign ---
+    ResultOut->Exponent = exponent;
+    ResultOut->SetNegative(outSign);
+}
+
+
 template <class SharkFloatParams>
 __device__ void AddHelper (
     cg::grid_group &grid,
@@ -366,8 +437,9 @@ __device__ void AddHelper (
 
     constexpr auto GlobalSync_offset = 0;
     constexpr auto Checksum_offset = AdditionalGlobalSyncSpace;
-    constexpr auto Final128Offset_ABC = AdditionalUInt64Global;
-    constexpr auto Final128Offset_DE = Final128Offset_ABC + 2 * SharkFloatParams::GlobalNumUint32;
+    constexpr auto Final128Offset_ABC_True = AdditionalUInt64Global;
+    constexpr auto Final128Offset_ABC_False = Final128Offset_ABC_True + 2 * SharkFloatParams::GlobalNumUint32;
+    constexpr auto Final128Offset_DE = Final128Offset_ABC_False + 2 * SharkFloatParams::GlobalNumUint32;
     constexpr auto Carry1_offset = Final128Offset_DE + 8 * SharkFloatParams::GlobalNumUint32;
     constexpr auto Carry2_offset = Carry1_offset + 4 * SharkFloatParams::GlobalNumUint32;
 
@@ -375,8 +447,10 @@ __device__ void AddHelper (
         reinterpret_cast<uint32_t *>(&tempData[GlobalSync_offset]);
     auto *SharkRestrict debugStates =
         reinterpret_cast<DebugState<SharkFloatParams>*>(&tempData[Checksum_offset]);
-    auto *SharkRestrict final128_ABC =
-        reinterpret_cast<uint64_t *>(&tempData[Final128Offset_ABC]);
+    auto *SharkRestrict extResultTrue =
+        reinterpret_cast<uint64_t *>(&tempData[Final128Offset_ABC_True]);
+    auto *SharkRestrict extResultFalse =
+        reinterpret_cast<uint64_t *>(&tempData[Final128Offset_ABC_False]);
     auto *SharkRestrict final128_DE =
         reinterpret_cast<uint64_t *>(&tempData[Final128Offset_DE]);
     auto *SharkRestrict carry1 =
@@ -413,6 +487,12 @@ __device__ void AddHelper (
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2XX>(record, debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2XY>(record, debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2YY>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2_Perm1>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2_Perm2>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2_Perm3>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2_Perm4>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2_Perm5>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2_Perm6>(record, debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z1_offsetXX>(record, debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z1_offsetXY>(record, debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z1_offsetYY>(record, debugStates, grid, block);
@@ -421,12 +501,13 @@ __device__ void AddHelper (
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Final128YY>(record, debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::FinalAdd1>(record, debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::FinalAdd2>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::FinalAdd3>(record, debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Result_offsetXX>(record, debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Result_offsetXY>(record, debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Result_offsetYY>(record, debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Result_Add1>(record, debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Result_Add2>(record, debugStates, grid, block);
-        static_assert(static_cast<int32_t>(DebugStatePurpose::NumPurposes) == 34, "Unexpected number of purposes");
+        static_assert(static_cast<int32_t>(DebugStatePurpose::NumPurposes) == 41, "Unexpected number of purposes");
 
         StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::ADigits, uint32_t>(
             record, debugStates, grid, block, A_X2->Digits, NewN);
@@ -534,8 +615,12 @@ __device__ void AddHelper (
         ext_E_B);
 
     // --- Phase 1: A - B + C ---
-    int32_t outExponent_ABC = 0;
-    bool isNegative_ABC = false;
+    int32_t outExponentTrue = 0;
+    int32_t outExponentFalse = 0;
+    
+    bool outSignTrue = false;
+    bool outSignFalse = false;
+    
     Phase1_ABC<SharkFloatParams, CallIndex>(
         block,
         grid,
@@ -556,11 +641,17 @@ __device__ void AddHelper (
         effExpA,
         effExpB,
         effExpC,
-        biasedExpABC,
         bias,
-        isNegative_ABC,
-        outExponent_ABC,
-        final128_ABC,
+
+        outSignTrue,
+        outSignFalse,
+
+        outExponentTrue,
+        outExponentFalse,
+
+        extResultTrue,
+        extResultFalse,
+
         debugStates
     );
 
@@ -587,8 +678,11 @@ __device__ void AddHelper (
         final128_DE,  // the extended result digits
         debugStates);
 
-    int32_t carryAcc_DE = 0;
-    int32_t carryAcc_ABC = 0;
+    int32_t carryTrue = 0;
+    int32_t carryFalse = 0;
+
+    int32_t carry_DE = 0;
+
     if constexpr (!SharkFloatParams::DisableCarryPropagation) {
         // --- Carry/Borrow Propagation ---
         CarryPropagationDE<SharkFloatParams>(
@@ -598,7 +692,7 @@ __device__ void AddHelper (
             numActualDigitsPlusGuard,
             carry1,
             carry2,
-            carryAcc_DE,
+            carry_DE,
             sameSign,
             block,
             grid);
@@ -608,10 +702,22 @@ __device__ void AddHelper (
             globalSync,
             idx,
             numActualDigitsPlusGuard,
-            final128_ABC,
+            extResultTrue,
             carry1,
             carry2,
-            carryAcc_ABC,
+            carryTrue,
+            block,
+            grid);
+
+        CarryPropagation_ABC<SharkFloatParams>(
+            sharedData,
+            globalSync,
+            idx,
+            numActualDigitsPlusGuard,
+            extResultFalse,
+            carry1,
+            carry2,
+            carryFalse,
             block,
             grid);
     }
@@ -619,7 +725,9 @@ __device__ void AddHelper (
     if constexpr (SharkDebugChecksums) {
         grid.sync();
         StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::FinalAdd1, uint64_t>(
-            record, debugStates, grid, block, final128_ABC, numActualDigitsPlusGuard);
+            record, debugStates, grid, block, extResultTrue, numActualDigitsPlusGuard);
+        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::FinalAdd2, uint64_t>(
+            record, debugStates, grid, block, extResultFalse, numActualDigitsPlusGuard);
         StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::FinalAdd2, uint64_t>(
             record, debugStates, grid, block, final128_DE, numActualDigitsPlusGuard);
         grid.sync();
@@ -627,135 +735,50 @@ __device__ void AddHelper (
         grid.sync();
     }
 
-    // --- Final Normalization ---
-    // Thread 0 finds the most-significant digit (msd) and computes the shift needed.
-    auto handleFinalCarry = [](
-        int32_t &carryAcc,
-        const int32_t numActualDigitsPlusGuard,
-        const int32_t numActualDigits,
-        uint64_t *final128
-        ) {
-            int32_t msdResult;
 
-            if (carryAcc) {
-                int32_t msdResult = numActualDigitsPlusGuard - 1;
-                int32_t clzResult = 0;
-                int32_t currentOverall = msdResult * 32 + (31 - clzResult);
-                int32_t desiredOverall = (numActualDigits - 1) * 32 + 31;
-                carryAcc += currentOverall - desiredOverall;
-            } else {
-                msdResult = 0;
-                for (int32_t i = numActualDigitsPlusGuard - 1; i >= 0; i--) {
-                    if (final128[i] != 0) {
-                        msdResult = i;
-                        break;
-                    }
-                }
 
-                int32_t clzResult = __clz(final128[msdResult]);
-                int32_t currentOverall = msdResult * 32 + (31 - clzResult);
-                int32_t desiredOverall = (numActualDigits - 1) * 32 + 31;
-                carryAcc += currentOverall - desiredOverall;
-            }
-        };
+    // 1) Decide which A−B+C branch to use
+    const bool sameSignDE = (D_2X->GetNegative() == E_B->GetNegative());
+    bool useTrueBranch = (carryTrue >= carryFalse);
 
-    handleFinalCarry(
-        carryAcc_ABC,
-        numActualDigitsPlusGuard,
-        numActualDigits,
-        final128_ABC
-    );
-
-    handleFinalCarry(
-        carryAcc_DE,
-        numActualDigitsPlusGuard,
-        numActualDigits,
-        final128_DE
-    );
-
-    const int32_t stride = blockDim.x * gridDim.x;
-
-    auto finalResolution = [](
-        const int32_t idx,
-        const int32_t stride,
-        const int32_t carryAcc_DE,
-        const int32_t numActualDigitsPlusGuard,
-        const int32_t numActualDigits,
-        const uint64_t *final128_DE,
-        HpSharkFloat<SharkFloatParams> *OutSharkFloat,
-        int32_t &outExponent_DE
-        ) {
-            if (carryAcc_DE > 0) {
-                // Make sure carryAcc_DE, numActualDigitsPlusGuard, numActualDigits, and final128_DE are computed and 
-                // available to all threads
-                int32_t wordShift = carryAcc_DE / 32;
-                int32_t bitShift = carryAcc_DE % 32;
-
-                // Each thread handles a subset of indices.
-                for (int32_t i = idx; i < numActualDigits; i += stride) {
-                    uint32_t lower = (i + wordShift < numActualDigitsPlusGuard) ? final128_DE[i + wordShift] : 0;
-                    uint32_t upper = (i + wordShift + 1 < numActualDigitsPlusGuard) ? final128_DE[i + wordShift + 1] : 0;
-                    OutSharkFloat->Digits[i] = (bitShift == 0) ? lower : (lower >> bitShift) | (upper << (32 - bitShift));
-
-                    if (i == numActualDigits - 1) {
-                        // Set the high-order bit of the last digit.
-                        OutSharkFloat->Digits[numActualDigits - 1] |= (1u << 31);
-                    }
-                }
-
-                outExponent_DE += carryAcc_DE;
-            } else if (carryAcc_DE < 0) {
-                int32_t wordShift = (-carryAcc_DE) / 32;
-                int32_t bitShift = (-carryAcc_DE) % 32;
-
-                for (int32_t i = idx; i < numActualDigits; i += stride) {
-                    int32_t srcIdx = i - wordShift;
-                    uint32_t lower = (srcIdx >= 0 && srcIdx < numActualDigitsPlusGuard) ? final128_DE[srcIdx] : 0;
-                    uint32_t upper = (srcIdx - 1 >= 0 && srcIdx - 1 < numActualDigitsPlusGuard) ? final128_DE[srcIdx - 1] : 0;
-                    OutSharkFloat->Digits[i] = (bitShift == 0) ? lower : (lower << bitShift) | (upper >> (32 - bitShift));
-                }
-
-                if (idx == 0) {
-                    outExponent_DE -= (-carryAcc_DE);
-                }
-            } else {
-                // No shifting needed; simply copy.  Convert to uint32_t along the way
-
-                for (int32_t i = idx; i < numActualDigits; i += stride) {
-                    OutSharkFloat->Digits[i] = final128_DE[i];
-                }
-            }
-        };
-
-    finalResolution(
-        idx,
-        stride,
-        carryAcc_ABC,
-        numActualDigitsPlusGuard,
-        numActualDigits,
-        final128_ABC,
-        Out_A_B_C,
-        outExponent_ABC
-    );
-
-    finalResolution(
-        idx,
-        stride,
-        carryAcc_DE,
-        numActualDigitsPlusGuard,
-        numActualDigits,
-        final128_DE,
-        Out_D_E,
-        outExponent_DE
-    );
-
-    if (idx == 0) {
-        Out_D_E->Exponent = outExponent_DE;
-        Out_D_E->SetNegative(sameSign ? A_X2->GetNegative() : (DIsBiggerMagnitude ? A_X2->GetNegative() : B_Y2->GetNegative()));
-
-        Out_A_B_C->Exponent = outExponent_ABC;
-        Out_A_B_C->SetNegative(isNegative_ABC);
+    // 2) Normalize & write *only* that branch
+    if (useTrueBranch) {
+        NormalizeAndCopyResult<SharkFloatParams>(
+            /* actualDigits  = */ numActualDigits,
+            /* extDigits     = */ numActualDigitsPlusGuard,
+            /* exponent      = */ outExponentTrue,
+            /* carry         = */ carryTrue,
+            /* propagatedRes = */ reinterpret_cast<uint32_t*>(extResultTrue),
+            /* ResultOut     = */ Out_A_B_C,
+            /* outSign       = */ outSignTrue
+        );
+    } else {
+        NormalizeAndCopyResult<SharkFloatParams>(
+            /* actualDigits  = */ numActualDigits,
+            /* extDigits     = */ numActualDigitsPlusGuard,
+            /* exponent      = */ outExponentFalse,
+            /* carry         = */ carryFalse,
+            /* propagatedRes = */ reinterpret_cast<uint32_t *>(extResultFalse),
+            /* ResultOut     = */ Out_A_B_C,
+            /* outSign       = */ outSignFalse
+        );
     }
+
+    // 3) And handle D+E exactly once
+    bool deSign = sameSignDE
+        ? D_2X->GetNegative()
+        : (DIsBiggerMagnitude ? D_2X->GetNegative() : E_B->GetNegative());
+
+    NormalizeAndCopyResult<SharkFloatParams>(
+        /* actualDigits  = */ numActualDigits,
+        /* extDigits     = */ numActualDigitsPlusGuard,
+        /* exponent      = */ outExponent_DE,
+        /* carry         = */ carry_DE,
+        /* propagatedRes = */ reinterpret_cast<uint32_t *>(final128_DE),
+        /* ResultOut     = */ Out_D_E,
+        /* outSign       = */ deSign
+    );
+
 
     if constexpr (SharkDebugChecksums) {
         grid.sync();

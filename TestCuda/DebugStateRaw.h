@@ -49,6 +49,7 @@ enum class DebugStatePurpose {
     Final128YY,
     FinalAdd1,
     FinalAdd2,
+    FinalAdd3,
     Result_offsetXX,
     Result_offsetXY,
     Result_offsetYY,
@@ -80,6 +81,12 @@ DebugStatePurposeStrings {
     "Z2XX",
     "Z2XY",
     "Z2YY",
+    "Z2_Perm1",
+    "Z2_Perm2",
+    "Z2_Perm3",
+    "Z2_Perm4",
+    "Z2_Perm5",
+    "Z2_Perm6",
     "Z1_offsetXX",
     "Z1_offsetXY",
     "Z1_offsetYY",
@@ -88,6 +95,7 @@ DebugStatePurposeStrings {
     "Final128YY",
     "FinalAdd1",
     "FinalAdd2",
+    "FinalAdd3",
     "Result_offsetXX",
     "Result_offsetXY",
     "Result_offsetYY",
@@ -97,6 +105,8 @@ DebugStatePurposeStrings {
 
 inline constexpr const char *
 DebugStatePurposeToString(DebugStatePurpose purpose) {
+    static_assert (static_cast<size_t>(DebugStatePurpose::NumPurposes) == DebugStatePurposeStrings.size(),
+        "DebugStatePurposeStrings size mismatch with DebugStatePurpose enum");
     if (static_cast<size_t>(purpose) < DebugStatePurposeStrings.size()) {
         return DebugStatePurposeStrings[static_cast<size_t>(purpose)];
     }

@@ -3,6 +3,8 @@
 #include "HpSharkFloat.cuh"
 #include "DebugChecksumHost.h"
 #include "DebugChecksum.cuh"
+#include "ReferenceAdd.h"
+#include "ThreeWayMagnitude.h"
 
 #include <cstdint>
 #include <algorithm>
@@ -10,129 +12,133 @@
 #include <vector>
 #include <iostream>
 #include <assert.h>
-#include "ReferenceAdd.h"
-#include "ThreeWayMagnitude.h"
+#include <bit>   // for std::countl_zero (C++20)
 
 static constexpr auto UseBellochPropagation = false;
 
 // A - B + C
 // D + E
 
-//
-// Helper functions to perform bit shifts on a fixed-width digit array.
-// They mirror the CUDA device functions but work sequentially on the full array.
-//
+// Direction tag for our funnel-shift helper
+enum class Dir { Left, Right };
 
-// ShiftRight: Shifts the number (given by its digit array) right by shiftBits.
-// idx is the index of the digit to compute. The parameter numDigits prevents out-of-bounds access.
+/// Funnels two 32-bit words from 'data' around a bit-offset boundary.
+/// - For Dir::Right, this emulates a right shift across word boundaries.
+/// - For Dir::Left,  this emulates a left  shift across word boundaries.
+/// 'N' is the number of valid words in 'data'; out-of-range indices yield 0.
+template<Dir D>
 static uint32_t
-ShiftRight (
-    const uint32_t *digits,
-    const int32_t shiftBits,
-    const int32_t idx,
-    const int32_t numDigits) {
-    const int32_t shiftWords = shiftBits / 32;
-    const int32_t shiftBitsMod = shiftBits % 32;
-    const uint32_t lower = (idx + shiftWords < numDigits) ? digits[idx + shiftWords] : 0;
-    const uint32_t upper = (idx + shiftWords + 1 < numDigits) ? digits[idx + shiftWords + 1] : 0;
-    if (shiftBitsMod == 0) {
-        return lower;
+FunnelShift32(
+    const uint32_t *data,
+    int              idx,
+    int              N,
+    int              bitOffset) {
+    int wordOff = bitOffset / 32;
+    int b = bitOffset % 32;
+
+    auto pick = [&](int i) -> uint32_t {
+        return (i < 0 || i >= N) ? 0u : data[i];
+        };
+
+    uint32_t low, high;
+    if constexpr (D == Dir::Right) {
+        low = pick(idx + wordOff);
+        high = pick(idx + wordOff + 1);
     } else {
-        return (lower >> shiftBitsMod) | (upper << (32 - shiftBitsMod));
+        low = pick(idx - wordOff);
+        high = pick(idx - wordOff - 1);
     }
+
+    if (b == 0) return low;
+    if constexpr (D == Dir::Right)
+        return (low >> b) | (high << (32 - b));
+    else
+        return (low << b) | (high >> (32 - b));
 }
 
-// GetNormalizedDigit: Shifts the number (given by its digit array) left by shiftBits.
-// idx is the index of the digit to compute.
+/// Retrieves the digit at 'idx' after a left shift by 'shiftBits',
+/// treating words beyond 'actualDigits' as zero (within an 'extDigits' buffer).
 static uint32_t
-GetNormalizedDigit (
+GetNormalizedDigit(
     const uint32_t *digits,
-    const int32_t actualDigits,
-    const int32_t extDigits,
-    const int32_t shiftBits,
-    const int32_t idx)
-{
-    const int32_t shiftWords = shiftBits / 32;
-    const int32_t shiftBitsMod = shiftBits % 32;
-    const int32_t srcIdx = idx - shiftWords;
+    int32_t         actualDigits,
+    int32_t         extDigits,
+    int32_t         shiftBits,
+    int32_t         idx) {
+    // ensure idx is within the extended buffer
+    assert(idx >= 0 && idx < extDigits);
 
-    int32_t srcDigitLower;
-    if (srcIdx < actualDigits && srcIdx >= 0) {
-        srcDigitLower = digits[srcIdx];
-    } else {
-        assert(srcIdx < extDigits);
-        srcDigitLower = 0;
-    }
-
-    int32_t srcDigitUpper;
-    if (srcIdx - 1 < actualDigits && srcIdx - 1 >= 0) {
-        srcDigitUpper = digits[srcIdx - 1];
-    } else {
-        assert(srcIdx - 1 < extDigits);
-        srcDigitUpper = 0;
-    }
-
-    if (shiftBitsMod == 0) {
-        return srcDigitLower;
-    } else {
-        return (srcDigitLower << shiftBitsMod) | (srcDigitUpper >> (32 - shiftBitsMod));
-    }
+    // funnel-shift left within the 'actualDigits' region
+    return FunnelShift32<Dir::Left>(
+        digits,
+        idx,
+        actualDigits,
+        shiftBits
+    );
 }
 
-// Portable helper: CountLeadingZeros for a 32-bit integer.
-// On CUDA consider:
-// __device__ int32_t CountLeadingZerosCUDA(uint32_t x) {
-// return __clz(x);
-// }
+// Counts the number of leading zero bits in a 32-bit unsigned integer.
+// This is a portable implementation of the count leading zeros operation.
 static int32_t
-CountLeadingZeros (
+CountLeadingZeros(
     const uint32_t x) {
-    int32_t count = 0;
-    for (int32_t bit = 31; bit >= 0; --bit) {
-        if (x & (1u << bit))
-            break;
-        ++count;
-    }
-    return count;
+#if defined(__CUDA_ARCH__)
+    // __clz returns 0–32 inclusive, even for x==0
+    return __clz(static_cast<int>(x));
+#else
+    // std::countl_zero is constexpr in C++20 and returns 32 for x==0
+    return static_cast<int>(std::countl_zero(x));
+#endif
 }
 
 //
 // Multi-word shift routines for little-endian arrays
 //
 
-// MultiWordRightShift_LittleEndian: shift an array 'in' (of length n) right by L bits,
-// storing the result in 'out'. (out and in may be distinct.)
+// Shifts a multi-word integer right by a specified number of bits.
+// The input and output arrays can be the same or different.
 static void
 MultiWordRightShift_LittleEndian (
     const uint32_t *in,
-    const int32_t inN,
-    const int32_t L,
+    const int32_t extDigits,
+    const int32_t shiftNeeded,
     uint32_t *out,
     const int32_t outSz) {
-    assert(inN >= outSz);
+    assert(extDigits >= outSz);
 
     for (int32_t i = 0; i < outSz; i++) {
-        out[i] = ShiftRight(in, L, i, inN);
+        out[i] = FunnelShift32<Dir::Right>(
+            in,
+            i,
+            extDigits,
+            shiftNeeded
+        );
     }
 }
 
-// MultiWordLeftShift_LittleEndian: shift an array 'in' (of length n) left by L bits,
-// storing the result in 'out'.
+// Shifts a multi-word integer left by a specified number of bits.
+// The input and output arrays can be the same or different.
 static void
 MultiWordLeftShift_LittleEndian (
     const uint32_t *in,
     const int32_t extDigits,
-    const int32_t actualDigits,
     const int32_t L,
     uint32_t *out,
     const int32_t outSz) {
     assert(extDigits >= outSz);
 
     for (int32_t i = 0; i < outSz; i++) {
-        out[i] = GetNormalizedDigit(in, actualDigits, extDigits, L, i);
+        out[i] = FunnelShift32<Dir::Left>(
+            in,
+            i,
+            extDigits,
+            L
+        );
     }
 }
 
+// Retrieves a limb from an extended array, returning zero for indices beyond the actual digit count.
+// This handles the boundary between actual digits and guard digits in extended precision arithmetic.
 static uint32_t
 GetExtLimb (
     const uint32_t *ext,
@@ -156,6 +162,9 @@ GetExtLimb (
 // its most-significant set bit would be in the highest bit position of the extended field.
 // It then adjusts the stored exponent accordingly and returns the shift offset.
 //
+
+// Computes the bit shift offset needed to normalize an extended precision number.
+// Returns the shift amount and updates the exponent accordingly, without actually performing the shift.
 static int32_t
 ExtendedNormalizeShiftIndex (
     const uint32_t *ext,
@@ -250,6 +259,7 @@ GetCorrespondingLimbs (
     }
 }
 
+// Retrieves the current debug state for a given purpose and array.
 template<
     class SharkFloatParams,
     DebugStatePurpose Purpose,
@@ -306,6 +316,7 @@ CompareMagnitudes2Way (
     return AIsBiggerMagnitude;
 }
 
+// Compares magnitudes of two normalized extended values and returns true if A >= B.
 static ThreeWayLargestOrdering
 CompareMagnitudes3Way (
     const int32_t effExpA,
@@ -380,7 +391,7 @@ CompareMagnitudes3WayRelativeToBase (
     // out: the chosen exponent for the result
     int32_t &outExp
 ) {
-    // We'll always report back the base exponent.
+    // outExp := base exponent for taming overflows across all branches
     outExp = effExpBase;
 
     // Helper: lex compare two aligned mantissas (no exponent check)
@@ -574,6 +585,7 @@ void CarryPropagationPP_DE (
     }
 }
 
+// Applies straightforward carry or borrow propagation across multi-word signed results.
 template<class SharkFloatParams>
 void CarryPropagation_DE (
     const bool sameSign,
@@ -612,6 +624,7 @@ void CarryPropagation_DE (
     carry = static_cast<int32_t>(carryUnsigned);
 }
 
+// Performs the first phase of D+E addition or subtraction across extended precision digits.
 template<class SharkFloatParams>
 void Phase1_DE (
     const bool DIsBiggerMagnitude,
@@ -710,6 +723,7 @@ void Phase1_DE (
     }
 }
 
+// Propagates raw 64-bit extended results into 32-bit digits with signed carry support.
 template<class SharkFloatParams>
 void CarryPropagation_ABC (
     const int32_t            extDigits,
@@ -746,19 +760,7 @@ void CarryPropagation_ABC (
     }
 }
 
-/**
- * @brief Fetches either a shifted-normalized or raw-normalized digit.
- *
- * @tparam SharkFloatParams  Your float-params type.
- * @param ext         Pointer to the extended, normalized digit array.
- * @param actualDigits Number of "real" digits in the normalized value.
- * @param extDigits    Total length of the ext[] buffer.
- * @param shiftOffset  Bit-shift applied during normalization.
- * @param diffDE       Additional right-shift needed for alignment.
- * @param idx          Index of the digit to fetch [0..extDigits-1].
- * @param useShift     If true, calls GetShiftedNormalizedDigit; else GetNormalizedDigit.
- * @return             The 32-bit word at position idx, correctly aligned.
- */
+// Selects between raw and shifted normalization when fetching digits for comparison.
 template <class SharkFloatParams>
 static inline uint32_t
 FetchNormalizedDigit (
@@ -790,8 +792,7 @@ FetchNormalizedDigit (
     }
 }
 
-// just after you compute `ordering`:
-// compare extBase vs extOther after both have been normalized & shifted to the same exponent frame
+// Performs a two-way lexicographic comparison after normalizing to a base exponent.
 template<class SharkFloatParams>
 bool
 CompareMagnitudes2WayRelativeToBase (
@@ -816,6 +817,7 @@ CompareMagnitudes2WayRelativeToBase (
     return true;
 };
 
+// Compares two aligned values against a third, returning true if the pair is greater than Z.
 template<class SharkFloatParams>
 void CmpAlignedPairVsThird (
     ThreeWayMagnitudeOrdering ordering,
@@ -988,6 +990,8 @@ void CmpAlignedPairVsThird (
     outXYgtZ = false;
 }
 
+// Performs the three-way comparison and selection logic for A-B+C branch.
+// Note this approach is fundamentally broken.
 template<class SharkFloatParams>
 static void
 ComputeABCComparison (
@@ -1025,6 +1029,9 @@ ComputeABCComparison (
     bool &XYgtZ  // true if X >= Y > Z
 )
 {
+    // Whole function is broken.
+    assert(false);
+
     // 1) Compute how far each must be right-shifted to line up with biasedExpABC:
     int32_t diffA = biasedExpABC - effExpA;
     int32_t diffB = biasedExpABC - effExpB;
@@ -1159,6 +1166,7 @@ ComputeABCComparison (
     }
 }
 
+// Executes the first phase of the three-term addition/subtraction (A - B + C).
 template<class SharkFloatParams>
 void Phase1_ABC (
     const bool IsNegativeA,
@@ -1187,7 +1195,8 @@ void Phase1_ABC (
     std::vector<uint64_t> &extResultFalse,   // result limbs for X_gtY == false
 
     std::vector<DebugStateHost<SharkFloatParams>> &debugStates
-) {
+)
+{
     // 1) prepare the two output arrays and signs
     extResultTrue.assign(extDigits, 0);
     extResultFalse.assign(extDigits, 0);
@@ -1197,10 +1206,18 @@ void Phase1_ABC (
     // 2) pick the “base” exponent from the largest input
     int32_t baseExp;
     switch (ordering) {
-    case ThreeWayLargestOrdering::A_GT_AllOthers: baseExp = effExpA; break;
-    case ThreeWayLargestOrdering::B_GT_AllOthers: baseExp = effExpB; break;
-    case ThreeWayLargestOrdering::C_GT_AllOthers: baseExp = effExpC; break;
-    default: assert(false); for (;;);
+        case ThreeWayLargestOrdering::A_GT_AllOthers:
+            baseExp = effExpA;
+            break;
+        case ThreeWayLargestOrdering::B_GT_AllOthers:
+            baseExp = effExpB;
+            break;
+        case ThreeWayLargestOrdering::C_GT_AllOthers:
+            baseExp = effExpC;
+            break;
+        default:
+            assert(false);
+            for (;;);
     }
 
     // 3) single diff per input to align to baseExp
@@ -1215,21 +1232,56 @@ void Phase1_ABC (
 
     switch (ordering) {
     case ThreeWayLargestOrdering::A_GT_AllOthers:
-        extX = extA; sX = IsNegativeA; shX = shiftA;
-        extY = extB; sY = IsNegativeB; shY = shiftB; diffY = diffB;
-        extZ = extC; sZ = IsNegativeC; shZ = shiftC; diffZ = diffC;
+        extX = extA;
+        sX = IsNegativeA;
+        shX = shiftA;
+
+        extY = extB;
+        sY = IsNegativeB;
+        shY = shiftB;
+        diffY = diffB;
+
+        extZ = extC;
+        sZ = IsNegativeC;
+        shZ = shiftC;
+        diffZ = diffC;
         break;
+
     case ThreeWayLargestOrdering::B_GT_AllOthers:
-        extX = extB; sX = IsNegativeB; shX = shiftB;
-        extY = extA; sY = IsNegativeA; shY = shiftA; diffY = diffA;
-        extZ = extC; sZ = IsNegativeC; shZ = shiftC; diffZ = diffC;
+        extX = extB;
+        sX = IsNegativeB;
+        shX = shiftB;
+
+        extY = extA;
+        sY = IsNegativeA;
+        shY = shiftA;
+        diffY = diffA;
+
+        extZ = extC;
+        sZ = IsNegativeC;
+        shZ = shiftC;
+        diffZ = diffC;
         break;
+
     case ThreeWayLargestOrdering::C_GT_AllOthers:
-        extX = extC; sX = IsNegativeC; shX = shiftC;
-        extY = extA; sY = IsNegativeA; shY = shiftA; diffY = diffA;
-        extZ = extB; sZ = IsNegativeB; shZ = shiftB; diffZ = diffB;
+        extX = extC;
+        sX = IsNegativeC;
+        shX = shiftC;
+
+        extY = extA;
+        sY = IsNegativeA;
+        shY = shiftA;
+        diffY = diffA;
+        
+        extZ = extB;
+        sZ = IsNegativeB;
+        shZ = shiftB;
+        diffZ = diffB;
         break;
-    default: assert(false); for (;;);
+
+    default:
+        assert(false);
+        for (;;);
     }
 
     // 5) helper to do |±X ±Y ±Z| in one pass, given a fixed X_gtY
@@ -1253,6 +1305,7 @@ void Phase1_ABC (
                 magXY = Y - X;
                 sXY = sY;
             }
+
             // (magXY vs Z)
             uint64_t mag;
             if (sXY == sZ) {
@@ -1332,7 +1385,7 @@ AddHelper (
         debugStates.resize(NewDebugStateSize);
     }
 
-    // Make local copies.
+    // Refer to incoming digit arrays.
     const auto *ext_A_X2 = A_X2->Digits;
     const auto *ext_B_Y2 = B_Y2->Digits;
     const auto *ext_C_A = C_A->Digits;
@@ -1354,6 +1407,10 @@ AddHelper (
     std::vector<uint64_t> extResultTrue(numActualDigitsPlusGuard, 0);
     std::vector<uint64_t> extResultFalse(numActualDigitsPlusGuard, 0);
     std::vector<uint64_t> extResult_D_E(numActualDigitsPlusGuard, 0);
+
+    std::vector<uint32_t> propagatedResultTrue(numActualDigitsPlusGuard, 0);
+    std::vector<uint32_t> propagatedResultFalse(numActualDigitsPlusGuard, 0);
+    std::vector<uint32_t> propagatedResult_DE(numActualDigitsPlusGuard, 0);
 
     // The guard words (indices GlobalNumUint32 to numActualDigitsPlusGuard-1) are left as zero.
 
@@ -1592,7 +1649,6 @@ AddHelper (
         extResult_D_E,
         debugStates);
 
-
     // then carry-propagate extResult_ABC into OutXY1->Digits, set OutXY1->Exponent/GetNegative()
 
     // --- Phase 2: Propagation ---
@@ -1607,11 +1663,6 @@ AddHelper (
     int32_t carry_DE = 0;
 
     // Result after propagation
-    std::vector<uint32_t> propagatedResultTrue(numActualDigitsPlusGuard, 0);
-    std::vector<uint32_t> propagatedResultFalse(numActualDigitsPlusGuard, 0);
-
-    std::vector<uint32_t> propagatedResult_DE(numActualDigitsPlusGuard, 0);
-
     if constexpr (UseBellochPropagation) {
         CarryPropagationPP_DE<SharkFloatParams>(
             sameSignDE,
@@ -1682,7 +1733,9 @@ AddHelper (
         int32_t carry,
         std::vector<uint32_t> &propagatedResult
         ) {
-            if (carry == 0) return;
+            if (carry == 0) {
+                return;
+            }
 
             // we only ever see carry==1 or carry==2
             // assert(carry >= 0);
@@ -1808,7 +1861,6 @@ AddHelper (
                 const auto shiftedSz = static_cast<int32_t>(SharkFloatParams::GlobalNumUint32);
                 MultiWordLeftShift_LittleEndian(
                     selectedPropagatedResult,
-                    actualDigits,
                     extDigits,
                     L,
                     ResultOut->Digits,

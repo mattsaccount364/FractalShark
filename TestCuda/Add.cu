@@ -30,10 +30,11 @@ enum class Dir { Left, Right };
 /// - For Dir::Right, this emulates a right shift across word boundaries.
 /// - For Dir::Left,  this emulates a left  shift across word boundaries.
 /// 'N' is the number of valid words in 'data'; out-of-range indices yield 0.
+/// Casts values in input array to 32-bits even if it's 64-bit
 template<Dir D>
 static __device__ SharkForceInlineReleaseOnly uint32_t
-FunnelShift32(
-    const uint32_t *data,
+FunnelShift32 (
+    const auto *data,
     int              idx,
     int              N,
     int              bitOffset) {
@@ -41,7 +42,7 @@ FunnelShift32(
     int b = bitOffset % 32;
 
     auto pick = [&](int i) -> uint32_t {
-        return (i < 0 || i >= N) ? 0u : data[i];
+        return (i < 0 || i >= N) ? 0u : static_cast<uint32_t>(data[i]);
         };
 
     uint32_t low, high;
@@ -84,7 +85,7 @@ GetNormalizedDigit(
 // Counts the number of leading zero bits in a 32-bit unsigned integer.
 // This is a portable implementation of the count leading zeros operation.
 static __device__ SharkForceInlineReleaseOnly int32_t
-CountLeadingZeros(
+CountLeadingZeros (
     const uint32_t x) {
 #if defined(__CUDA_ARCH__)
     // __clz returns 0–32 inclusive, even for x==0
@@ -102,8 +103,8 @@ CountLeadingZeros(
 // Generic multi-word shift using the requested parameter names
 template<Dir D>
 static __device__ SharkForceInlineReleaseOnly void
-MultiWordShift(
-    const uint32_t *in,
+MultiWordShift (
+    const auto *in,
     const int32_t  extDigits,
     const int32_t  shiftNeeded,
     uint32_t *out,
@@ -123,7 +124,7 @@ MultiWordShift(
 // Retrieves a limb from an extended array, returning zero for indices beyond the actual digit count.
 // This handles the boundary between actual digits and guard digits in extended precision arithmetic.
 static __device__ SharkForceInlineReleaseOnly uint32_t
-GetExtLimb(
+GetExtLimb (
     const uint32_t *ext,
     const int32_t actualDigits,
     const int32_t extDigits,
@@ -149,7 +150,7 @@ GetExtLimb(
 // Computes the bit shift offset needed to normalize an extended precision number.
 // Returns the shift amount and updates the exponent accordingly, without actually performing the shift.
 static __device__ SharkForceInlineReleaseOnly int32_t
-ExtendedNormalizeShiftIndex(
+ExtendedNormalizeShiftIndex (
     const uint32_t *ext,
     const int32_t actualDigits,
     const int32_t extDigits,
@@ -179,7 +180,7 @@ ExtendedNormalizeShiftIndex(
 // 'diffDE' is the additional right shift required for alignment.
 template <class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly uint32_t
-GetShiftedNormalizedDigit(
+GetShiftedNormalizedDigit (
     const uint32_t *ext,
     const int32_t actualDigits,
     const int32_t extDigits,
@@ -201,7 +202,7 @@ GetShiftedNormalizedDigit(
 
 
 __device__ SharkForceInlineReleaseOnly bool
-CompareMagnitudes2Way(
+CompareMagnitudes2Way (
     const int32_t effExpA,
     const int32_t effExpB,
     const int32_t actualDigits,
@@ -236,7 +237,7 @@ CompareMagnitudes2Way(
 
 template<class SharkFloatParams>
 __device__ SharkForceInlineReleaseOnly void
-GetCorrespondingLimbs(
+GetCorrespondingLimbs (
     const uint32_t *ext_A_X2,
     const int32_t actualASize,
     const int32_t extASize,
@@ -321,12 +322,12 @@ StoreCurrentDebugState (
 
 template<class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly void
-NormalizeAndCopyResult(
+NormalizeAndCopyResult (
     int32_t                     actualDigits,
     int32_t                     extDigits,
     int32_t &exponent,
     int32_t &carry,
-    uint32_t *propagatedResult,
+    auto *scratch,
     HpSharkFloat<SharkFloatParams> *ResultOut,
     bool                        outSign
 ) noexcept {
@@ -340,10 +341,10 @@ NormalizeAndCopyResult(
 
         uint32_t highBits = static_cast<uint32_t>(carry);
         for (int32_t i = extDigits - 1; i >= 0; --i) {
-            uint32_t w = propagatedResult[i];
+            uint32_t w = scratch[i];
             uint32_t lowMask = (1u << shift) - 1;
             uint32_t nextHB = w & lowMask;
-            propagatedResult[i] = (w >> shift) | (highBits << (32 - shift));
+            scratch[i] = (w >> shift) | (highBits << (32 - shift));
             highBits = nextHB;
         }
     }
@@ -351,14 +352,14 @@ NormalizeAndCopyResult(
     // --- 2) Locate most‐significant non‐zero word ---
     int32_t msdResult = 0;
     for (int32_t i = extDigits - 1; i >= 0; --i) {
-        if (propagatedResult[i] != 0) {
+        if (scratch[i] != 0) {
             msdResult = i;
             break;
         }
     }
 
     // --- 3) Compute current vs desired bit positions ---
-    int32_t clzResult = CountLeadingZeros(propagatedResult[msdResult]);
+    int32_t clzResult = CountLeadingZeros(scratch[msdResult]);
     int32_t currentBit = msdResult * 32 + (31 - clzResult);
     int32_t desiredBit = (SharkFloatParams::GlobalNumUint32 - 1) * 32 + 31;
 
@@ -366,7 +367,7 @@ NormalizeAndCopyResult(
     int32_t shiftNeeded = currentBit - desiredBit;
     if (shiftNeeded > 0) {
         MultiWordShift<Dir::Right>(
-            propagatedResult,
+            scratch,
             extDigits,
             shiftNeeded,
             ResultOut->Digits,
@@ -376,7 +377,7 @@ NormalizeAndCopyResult(
     } else if (shiftNeeded < 0) {
         int32_t L = -shiftNeeded;
         MultiWordShift<Dir::Left>(
-            propagatedResult,
+            scratch,
             extDigits,
             L,
             ResultOut->Digits,
@@ -387,7 +388,7 @@ NormalizeAndCopyResult(
    } else {
         memcpy(
             ResultOut->Digits,
-            propagatedResult,
+            scratch,
             actualDigits * sizeof(uint32_t)
         );
     }
@@ -440,8 +441,12 @@ __device__ void AddHelper (
     constexpr auto Final128Offset_ABC_True = AdditionalUInt64Global;
     constexpr auto Final128Offset_ABC_False = Final128Offset_ABC_True + 2 * SharkFloatParams::GlobalNumUint32;
     constexpr auto Final128Offset_DE = Final128Offset_ABC_False + 2 * SharkFloatParams::GlobalNumUint32;
-    constexpr auto Carry1_offset = Final128Offset_DE + 8 * SharkFloatParams::GlobalNumUint32;
+    constexpr auto PropagatedFinal128Offset_ABC_True = Final128Offset_DE + 2 * SharkFloatParams::GlobalNumUint32;
+    constexpr auto PropagatedFinal128Offset_ABC_False = PropagatedFinal128Offset_ABC_True + 2 * SharkFloatParams::GlobalNumUint32;
+    constexpr auto PropagatedFinal128Offset_DE = PropagatedFinal128Offset_ABC_False + 2 * SharkFloatParams::GlobalNumUint32;
+    constexpr auto Carry1_offset = PropagatedFinal128Offset_DE + 2 * SharkFloatParams::GlobalNumUint32;
     constexpr auto Carry2_offset = Carry1_offset + 4 * SharkFloatParams::GlobalNumUint32;
+
 
     auto *SharkRestrict globalSync =
         reinterpret_cast<uint32_t *>(&tempData[GlobalSync_offset]);
@@ -453,6 +458,12 @@ __device__ void AddHelper (
         reinterpret_cast<uint64_t *>(&tempData[Final128Offset_ABC_False]);
     auto *SharkRestrict final128_DE =
         reinterpret_cast<uint64_t *>(&tempData[Final128Offset_DE]);
+    auto *SharkRestrict extResultTrue32 =
+        reinterpret_cast<uint64_t *>(&tempData[PropagatedFinal128Offset_ABC_True]);
+    auto *SharkRestrict extResultFalse32 =
+        reinterpret_cast<uint64_t *>(&tempData[PropagatedFinal128Offset_ABC_False]);
+    auto *SharkRestrict final128_DE32 =
+        reinterpret_cast<uint64_t *>(&tempData[PropagatedFinal128Offset_DE]);
     auto *SharkRestrict carry1 =
         reinterpret_cast<uint32_t *>(&tempData[Carry1_offset]);
     auto *SharkRestrict carry2 =
@@ -728,40 +739,40 @@ __device__ void AddHelper (
             record, debugStates, grid, block, extResultTrue, numActualDigitsPlusGuard);
         StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::FinalAdd2, uint64_t>(
             record, debugStates, grid, block, extResultFalse, numActualDigitsPlusGuard);
-        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::FinalAdd2, uint64_t>(
+        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::FinalAdd3, uint64_t>(
             record, debugStates, grid, block, final128_DE, numActualDigitsPlusGuard);
         grid.sync();
     } else {
         grid.sync();
     }
 
-
-
     // 1) Decide which A−B+C branch to use
     const bool sameSignDE = (D_2X->GetNegative() == E_B->GetNegative());
     bool useTrueBranch = (carryTrue >= carryFalse);
 
     // 2) Normalize & write *only* that branch
-    if (useTrueBranch) {
-        NormalizeAndCopyResult<SharkFloatParams>(
-            /* actualDigits  = */ numActualDigits,
-            /* extDigits     = */ numActualDigitsPlusGuard,
-            /* exponent      = */ outExponentTrue,
-            /* carry         = */ carryTrue,
-            /* propagatedRes = */ reinterpret_cast<uint32_t*>(extResultTrue),
-            /* ResultOut     = */ Out_A_B_C,
-            /* outSign       = */ outSignTrue
-        );
-    } else {
-        NormalizeAndCopyResult<SharkFloatParams>(
-            /* actualDigits  = */ numActualDigits,
-            /* extDigits     = */ numActualDigitsPlusGuard,
-            /* exponent      = */ outExponentFalse,
-            /* carry         = */ carryFalse,
-            /* propagatedRes = */ reinterpret_cast<uint32_t *>(extResultFalse),
-            /* ResultOut     = */ Out_A_B_C,
-            /* outSign       = */ outSignFalse
-        );
+    if (idx == 0) {
+        if (useTrueBranch) {
+            NormalizeAndCopyResult<SharkFloatParams>(
+                /* actualDigits  = */ numActualDigits,
+                /* extDigits     = */ numActualDigitsPlusGuard,
+                /* exponent      = */ outExponentTrue,
+                /* carry         = */ carryTrue,
+                /* propagatedRes = */ extResultTrue,
+                /* ResultOut     = */ Out_A_B_C,
+                /* outSign       = */ outSignTrue
+            );
+        } else {
+            NormalizeAndCopyResult<SharkFloatParams>(
+                /* actualDigits  = */ numActualDigits,
+                /* extDigits     = */ numActualDigitsPlusGuard,
+                /* exponent      = */ outExponentFalse,
+                /* carry         = */ carryFalse,
+                /* propagatedRes = */ extResultFalse,
+                /* ResultOut     = */ Out_A_B_C,
+                /* outSign       = */ outSignFalse
+            );
+        }
     }
 
     // 3) And handle D+E exactly once
@@ -769,16 +780,29 @@ __device__ void AddHelper (
         ? D_2X->GetNegative()
         : (DIsBiggerMagnitude ? D_2X->GetNegative() : E_B->GetNegative());
 
-    NormalizeAndCopyResult<SharkFloatParams>(
-        /* actualDigits  = */ numActualDigits,
-        /* extDigits     = */ numActualDigitsPlusGuard,
-        /* exponent      = */ outExponent_DE,
-        /* carry         = */ carry_DE,
-        /* propagatedRes = */ reinterpret_cast<uint32_t *>(final128_DE),
-        /* ResultOut     = */ Out_D_E,
-        /* outSign       = */ deSign
-    );
+    if (idx == 0) {
+        NormalizeAndCopyResult<SharkFloatParams>(
+            /* actualDigits  = */ numActualDigits,
+            /* extDigits     = */ numActualDigitsPlusGuard,
+            /* exponent      = */ outExponent_DE,
+            /* carry         = */ carry_DE,
+            /* propagatedRes = */ final128_DE,
+            /* ResultOut     = */ Out_D_E,
+            /* outSign       = */ deSign
+        );
+    }
 
+    //const int32_t stride = blockDim.x * gridDim.x;
+    //FinalResolutionDE(
+    //    idx,
+    //    stride,
+    //    carry_DE,
+    //    numActualDigitsPlusGuard,
+    //    numActualDigits,
+    //    final128_DE,
+    //    Out_D_E,
+    //    outExponent_DE
+    //     );
 
     if constexpr (SharkDebugChecksums) {
         grid.sync();
@@ -794,7 +818,7 @@ __device__ void AddHelper (
 
 
 template<class SharkFloatParams>
-__global__ void AddKernel(
+__global__ void AddKernel (
     HpSharkAddComboResults<SharkFloatParams> *SharkRestrict combo,
     uint64_t *tempData) {
 
@@ -807,7 +831,7 @@ __global__ void AddKernel(
 }
 
 template<class SharkFloatParams>
-__global__ void AddKernelTestLoop(
+__global__ void AddKernelTestLoop (
     HpSharkAddComboResults<SharkFloatParams> *SharkRestrict combo,
     uint64_t numIters,
     uint64_t *tempData) {
@@ -822,7 +846,7 @@ __global__ void AddKernelTestLoop(
 }
 
 template<class SharkFloatParams>
-void ComputeAddGpu(void *kernelArgs[]) {
+void ComputeAddGpu (void *kernelArgs[]) {
 
     constexpr auto ExpandedNumDigits = SharkFloatParams::GlobalNumUint32;
     constexpr size_t SharedMemSize = sizeof(uint32_t) * ExpandedNumDigits; // Adjust as necessary
@@ -844,7 +868,7 @@ void ComputeAddGpu(void *kernelArgs[]) {
 }
 
 template<class SharkFloatParams>
-void ComputeAddGpuTestLoop(void *kernelArgs[]) {
+void ComputeAddGpuTestLoop (void *kernelArgs[]) {
 
     constexpr auto ExpandedNumDigits = SharkFloatParams::GlobalNumUint32;
     constexpr size_t SharedMemSize = sizeof(uint32_t) * ExpandedNumDigits; // Adjust as necessary

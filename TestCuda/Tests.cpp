@@ -561,7 +561,8 @@ void ChecksumsCheck (
 
             const auto maxHostArraySize = std::max(host.ArrayToChecksum32.size(), host.ArrayToChecksum64.size());
 
-            if (host.Checksum != cuda.Checksum ||
+            if (host.Initialized != (cuda.Initialized == 1) ||
+                host.Checksum != cuda.Checksum ||
                 host.ChecksumPurpose != cuda.ChecksumPurpose ||
                 host.CallIndex != cuda.CallIndex ||
                 maxHostArraySize != cuda.ArraySize) {
@@ -587,6 +588,7 @@ void ChecksumsCheck (
                 // Print all fields of host
                 std::cerr << std::endl;
                 std::cerr << "Host reference implementation:" << std::endl;
+                std::cerr << "Initialized: " << host.Initialized << std::endl;
                 std::cerr << "ArrayToChecksum32: " << std::endl;
                 for (size_t j = 0; j < host.ArrayToChecksum32.size(); ++j) {
                     std::cerr << std::hex << "0x" << host.ArrayToChecksum32[j] << std::dec << " ";

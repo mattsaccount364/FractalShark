@@ -101,6 +101,7 @@ struct DebugStateHost {
         uint64_t initialCrc
     );
 
+    bool Initialized; // Indicates if the debug state has been initialized
     std::vector<uint32_t> ArrayToChecksum32;  ///< Stores a copy of the data
     std::vector<uint64_t> ArrayToChecksum64;  ///< Stores a copy of the data
     uint64_t Checksum;         ///< Stores the computed CRC64 (if computed)
@@ -116,7 +117,9 @@ struct DebugStateHost {
 
 template <class SharkFloatParams>
 DebugStateHost<SharkFloatParams>::DebugStateHost()
-    : ArrayToChecksum32{}
+    :
+    Initialized{}
+    , ArrayToChecksum32{}
     , ArrayToChecksum64{}
     , Checksum{}
     , ChecksumPurpose{}
@@ -201,7 +204,9 @@ DebugStateHost<SharkFloatParams>::DebugStateHost(
     int callIndex,
     UseConvolution useConvolution
 )
-    : ArrayToChecksum32{}
+    :
+    Initialized{ true }
+    , ArrayToChecksum32{}
     , ArrayToChecksum64{}
     , Checksum(0)
     , ChecksumPurpose(purpose)
@@ -227,7 +232,8 @@ DebugStateHost<SharkFloatParams>::DebugStateHost(
     int callIndex,
     UseConvolution useConvolution
 )
-    : ArrayToChecksum32{}
+    : Initialized{ true }
+    , ArrayToChecksum32{}
     , ArrayToChecksum64{}
     , Checksum(0)
     , ChecksumPurpose(purpose)
@@ -254,6 +260,7 @@ void DebugStateHost<SharkFloatParams>::Reset(
     UseConvolution useConvolution
 ) {
     if constexpr (SharkDebugChecksums) {
+        Initialized = true;
         ArrayToChecksum32.assign(arrayToChecksum, arrayToChecksum + arraySize);
         Checksum = ComputeCRC64(ArrayToChecksum32, 0);
 
@@ -275,6 +282,7 @@ void DebugStateHost<SharkFloatParams>::Reset(
     UseConvolution useConvolution
 ) {
     if constexpr (SharkDebugChecksums) {
+        Initialized = true;
         ArrayToChecksum64.assign(arrayToChecksum, arrayToChecksum + arraySize);
         Checksum = ComputeCRC64(ArrayToChecksum64, 0);
 
@@ -291,7 +299,8 @@ std::string DebugStateHost<SharkFloatParams>::GetStr() const
 {
     std::stringstream ss;
     
-    ss << "Checksum: 0x" << std::hex << Checksum;
+    ss << "Initialized: " << Initialized;
+    ss << ", Checksum: 0x" << std::hex << Checksum;
     ss << ", DebugStatePurpose: " << std::dec << static_cast<int>(ChecksumPurpose);
 
     if (ArrayToChecksum32.size() > 0) {

@@ -29,7 +29,7 @@ enum class Dir { Left, Right };
 template<Dir D>
 static uint32_t
 FunnelShift32 (
-    const uint32_t *data,
+    const auto *data,
     int              idx,
     int              N,
     int              bitOffset) {
@@ -37,7 +37,7 @@ FunnelShift32 (
     int b = bitOffset % 32;
 
     auto pick = [&](int i) -> uint32_t {
-        return (i < 0 || i >= N) ? 0u : data[i];
+        return (i < 0 || i >= N) ? 0u : static_cast<uint32_t>(data[i]);
         };
 
     uint32_t low, high;
@@ -57,16 +57,16 @@ FunnelShift32 (
 }
 
 /// Retrieves the digit at 'idx' after a left shift by 'shiftBits',
-/// treating words beyond 'actualDigits' as zero (within an 'extDigits' buffer).
+/// treating words beyond 'actualDigits' as zero (within an 'numActualDigitsPlusGuard' buffer).
 static uint32_t
 GetNormalizedDigit (
     const uint32_t *digits,
     int32_t         actualDigits,
-    int32_t         extDigits,
+    int32_t         numActualDigitsPlusGuard,
     int32_t         shiftBits,
     int32_t         idx) {
     // ensure idx is within the extended buffer
-    assert(idx >= 0 && idx < extDigits);
+    assert(idx >= 0 && idx < numActualDigitsPlusGuard);
 
     // funnel-shift left within the 'actualDigits' region
     return FunnelShift32<Dir::Left>(
@@ -99,18 +99,18 @@ CountLeadingZeros (
 template<Dir D>
 static void
 MultiWordShift (
-    const uint32_t *in,
-    const int32_t  extDigits,
+    const auto *in,
+    const int32_t  numActualDigitsPlusGuard,
     const int32_t  shiftNeeded,
     uint32_t *out,
     const int32_t  outSz
 ) {
-    assert(extDigits >= outSz);
+    assert(numActualDigitsPlusGuard >= outSz);
     for (int32_t i = 0; i < outSz; ++i) {
         out[i] = FunnelShift32<D>(
             in,
             /* idx       = */ i,
-            /* N         = */ extDigits,
+            /* N         = */ numActualDigitsPlusGuard,
             /* bitOffset = */ shiftNeeded
         );
     }
@@ -122,13 +122,13 @@ static uint32_t
 GetExtLimb (
     const uint32_t *ext,
     const int32_t actualDigits,
-    const int32_t extDigits,
+    const int32_t numActualDigitsPlusGuard,
     const int32_t idx) {
 
     if (idx < actualDigits) {
         return ext[idx];
     } else {
-        assert(idx < extDigits);
+        assert(idx < numActualDigitsPlusGuard);
         return 0;
     }
 }
@@ -148,22 +148,22 @@ static int32_t
 ExtendedNormalizeShiftIndex (
     const uint32_t *ext,
     const int32_t actualDigits,
-    const int32_t extDigits,
+    const int32_t numActualDigitsPlusGuard,
     int32_t &storedExp,
     bool &isZero) {
-    int32_t msd = extDigits - 1;
-    while (msd >= 0 && GetExtLimb(ext, actualDigits, extDigits, msd) == 0)
+    int32_t msd = numActualDigitsPlusGuard - 1;
+    while (msd >= 0 && GetExtLimb(ext, actualDigits, numActualDigitsPlusGuard, msd) == 0)
         msd--;
     if (msd < 0) {
         isZero = true;
         return 0;  // For zero, the shift offset is irrelevant.
     }
     isZero = false;
-    const int32_t clz = CountLeadingZeros(GetExtLimb(ext, actualDigits, extDigits, msd));
+    const int32_t clz = CountLeadingZeros(GetExtLimb(ext, actualDigits, numActualDigitsPlusGuard, msd));
     // In little-endian, the overall bit index of the MSB is:
     //    current_msb = msd * 32 + (31 - clz)
     const int32_t current_msb = msd * 32 + (31 - clz);
-    const int32_t totalExtBits = extDigits * 32;
+    const int32_t totalExtBits = numActualDigitsPlusGuard * 32;
     // Compute the left-shift needed so that the MSB moves to bit (totalExtBits - 1).
     const int32_t L = (totalExtBits - 1) - current_msb;
     // Adjust the exponent as if we had shifted the number left by L bits.
@@ -178,7 +178,7 @@ static uint32_t
 GetShiftedNormalizedDigit (
     const uint32_t *ext,
     const int32_t actualDigits,
-    const int32_t extDigits,
+    const int32_t numActualDigitsPlusGuard,
     const int32_t shiftOffset,
     const int32_t diff,
     const int32_t idx)
@@ -186,10 +186,10 @@ GetShiftedNormalizedDigit (
     // const int32_t n = SharkFloatParams::GlobalNumUint32; // normalized length
     const int32_t wordShift = diff / 32;
     const int32_t bitShift = diff % 32;
-    const uint32_t lower = (idx + wordShift < extDigits) ?
-        GetNormalizedDigit(ext, actualDigits, extDigits, shiftOffset, idx + wordShift) : 0;
-    const uint32_t upper = (idx + wordShift + 1 < extDigits) ?
-        GetNormalizedDigit(ext, actualDigits, extDigits, shiftOffset, idx + wordShift + 1) : 0;
+    const uint32_t lower = (idx + wordShift < numActualDigitsPlusGuard) ?
+        GetNormalizedDigit(ext, actualDigits, numActualDigitsPlusGuard, shiftOffset, idx + wordShift) : 0;
+    const uint32_t upper = (idx + wordShift + 1 < numActualDigitsPlusGuard) ?
+        GetNormalizedDigit(ext, actualDigits, numActualDigitsPlusGuard, shiftOffset, idx + wordShift + 1) : 0;
     if (bitShift == 0)
         return lower;
     else
@@ -265,7 +265,7 @@ CompareMagnitudes2Way (
     const int32_t effExpA,
     const int32_t effExpB,
     const int32_t actualDigits,
-    const int32_t extDigits,
+    const int32_t numActualDigitsPlusGuard,
     const int32_t shiftA,
     const int32_t shiftB,
     const uint32_t *extA,
@@ -279,9 +279,9 @@ CompareMagnitudes2Way (
         AIsBiggerMagnitude = false;
     } else {
         AIsBiggerMagnitude = false; // default if equal
-        for (int32_t i = extDigits - 1; i >= 0; i--) {
-            uint32_t digitA = GetNormalizedDigit(extA, actualDigits, extDigits, shiftA, i);
-            uint32_t digitB = GetNormalizedDigit(extB, actualDigits, extDigits, shiftB, i);
+        for (int32_t i = numActualDigitsPlusGuard - 1; i >= 0; i--) {
+            uint32_t digitA = GetNormalizedDigit(extA, actualDigits, numActualDigitsPlusGuard, shiftA, i);
+            uint32_t digitB = GetNormalizedDigit(extB, actualDigits, numActualDigitsPlusGuard, shiftB, i);
             if (digitA > digitB) {
                 AIsBiggerMagnitude = true;
                 break;
@@ -302,7 +302,7 @@ CompareMagnitudes3Way (
     const int32_t effExpB,
     const int32_t effExpC,
     const int32_t actualDigits,
-    const int32_t extDigits,
+    const int32_t numActualDigitsPlusGuard,
     const int32_t shiftA,
     const int32_t shiftB,
     const int32_t shiftC,
@@ -317,9 +317,9 @@ CompareMagnitudes3Way (
             if (exp1 != exp2)
                 return exp1 > exp2;
             // exponents equal -> compare normalized digits high->low
-            for (int32_t i = extDigits - 1; i >= 0; --i) {
-                uint32_t d1 = GetNormalizedDigit(e1, actualDigits, extDigits, s1, i);
-                uint32_t d2 = GetNormalizedDigit(e2, actualDigits, extDigits, s2, i);
+            for (int32_t i = numActualDigitsPlusGuard - 1; i >= 0; --i) {
+                uint32_t d1 = GetNormalizedDigit(e1, actualDigits, numActualDigitsPlusGuard, s1, i);
+                uint32_t d2 = GetNormalizedDigit(e2, actualDigits, numActualDigitsPlusGuard, s2, i);
                 if (d1 != d2)
                     return d1 > d2;
             }
@@ -366,19 +366,19 @@ inline GenProp Combine (
 template<class SharkFloatParams>
 void CarryPropagationPP_DE (
     const bool sameSign,
-    const int32_t extDigits,
+    const int32_t numActualDigitsPlusGuard,
     const std::vector<uint64_t> extResultVector,
     uint32_t &carry,
     std::vector<uint32_t> &propagatedResultVector) {
     // Check that the sizes are as expected.
-    assert(extResultVector.size() == extDigits);
+    assert(extResultVector.size() == numActualDigitsPlusGuard);
     const auto *extResult = extResultVector.data();
-    assert(propagatedResultVector.size() == extDigits);
+    assert(propagatedResultVector.size() == numActualDigitsPlusGuard);
     uint32_t *propagatedResult = propagatedResultVector.data();
 
     // Step 1. Build the sigma vector (per-digit signals).
-    std::vector<GenProp> working(extDigits);
-    for (int i = 0; i < extDigits; i++) {
+    std::vector<GenProp> working(numActualDigitsPlusGuard);
+    for (int i = 0; i < numActualDigitsPlusGuard; i++) {
         if (sameSign) {
             // Addition case.
             uint32_t lo = static_cast<uint32_t>(extResult[i] & 0xFFFFFFFFULL);
@@ -399,23 +399,23 @@ void CarryPropagationPP_DE (
 
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "CarryPropagationPP_DE Working array:" << std::endl;
-        for (int i = 0; i < extDigits; i++) {
+        for (int i = 0; i < numActualDigitsPlusGuard; i++) {
             std::cout << "  " << i << ": g = " << working[i].g << ", p = " << working[i].p << std::endl;
         }
     }
 
     // Step 2. Perform an inclusive (upsweep) scan on the per-digit signals.
     // The inclusive array at index i contains the combined operator for sigma[0..i].
-    assert(working.size() == extDigits);
-    std::vector<GenProp> scratch(extDigits); // one scratch array of size numActualDigitsPlusGuard
+    assert(working.size() == numActualDigitsPlusGuard);
+    std::vector<GenProp> scratch(numActualDigitsPlusGuard); // one scratch array of size numActualDigitsPlusGuard
 
     // Use raw pointers that point to the current input and output buffers.
     GenProp *in = working.data();
     GenProp *out = scratch.data();
 
     // Perform the upsweep (inclusive scan) in log2(numActualDigitsPlusGuard) passes.
-    for (int offset = 1; offset < extDigits; offset *= 2) {
-        for (int i = 0; i < extDigits; i++) {
+    for (int offset = 1; offset < numActualDigitsPlusGuard; offset *= 2) {
+        for (int i = 0; i < numActualDigitsPlusGuard; i++) {
             if (i >= offset)
                 out[i] = Combine(in[i - offset], in[i]);
             else
@@ -430,7 +430,7 @@ void CarryPropagationPP_DE (
 
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "CarryPropagationPP_DE Inclusive array:" << std::endl;
-        for (int i = 0; i < extDigits; i++) {
+        for (int i = 0; i < numActualDigitsPlusGuard; i++) {
             std::cout << "  " << i << ": g = " << inclusive[i].g << ", p = " << inclusive[i].p << std::endl;
         }
     }
@@ -443,15 +443,15 @@ void CarryPropagationPP_DE (
     // We assume an initial carry (or borrow) of 0.
     GenProp identity = { 0, 1 };
     constexpr auto initialValue = 0;
-    std::vector<uint32_t> carries(extDigits + 1, 0);
+    std::vector<uint32_t> carries(numActualDigitsPlusGuard + 1, 0);
     carries[0] = initialValue;
-    for (int i = 1; i <= extDigits; i++) {
+    for (int i = 1; i <= numActualDigitsPlusGuard; i++) {
         carries[i] = inclusive[i - 1].g | (inclusive[i - 1].p & initialValue);
     }
 
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "CarryPropagationPP_DE Carries array:" << std::endl;
-        for (int i = 0; i <= extDigits; i++) {
+        for (int i = 0; i <= numActualDigitsPlusGuard; i++) {
             std::cout << "  " << i << ": " << carries[i] << std::endl;
         }
     }
@@ -459,14 +459,14 @@ void CarryPropagationPP_DE (
     // Step 4. Apply the computed carry/borrow to get the final 32-bit result.
     if (sameSign) {
         // Addition: add the carry.
-        for (int i = 0; i < extDigits; i++) {
+        for (int i = 0; i < numActualDigitsPlusGuard; i++) {
             uint64_t sum = extResult[i] + carries[i];
             propagatedResult[i] = static_cast<uint32_t>(sum & 0xFFFFFFFFULL);
         }
     } else {
         // Subtraction: subtract the borrow.
         // (By construction, the final overall borrow is guaranteed to be zero.)
-        for (int i = 0; i < extDigits; i++) {
+        for (int i = 0; i < numActualDigitsPlusGuard; i++) {
             int64_t diff = static_cast<int64_t>(extResult[i]) - carries[i];
             propagatedResult[i] = static_cast<uint32_t>(diff & 0xFFFFFFFFULL);
         }
@@ -474,14 +474,14 @@ void CarryPropagationPP_DE (
 
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "CarryPropagationPP_DE Propagated result:" << std::endl;
-        for (int i = 0; i < extDigits; i++) {
+        for (int i = 0; i < numActualDigitsPlusGuard; i++) {
             std::cout << "  " << i << ": " << propagatedResult[i] << std::endl;
         }
     }
 
     // The final element (at position numActualDigitsPlusGuard in the carries array)
     // is the overall carry (or borrow). For subtraction we expect this to be 0.
-    carry = carries[extDigits];
+    carry = carries[numActualDigitsPlusGuard];
 
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "CarryPropagationPP_DE Final carry: " << carry << std::endl;
@@ -492,16 +492,16 @@ void CarryPropagationPP_DE (
 template<class SharkFloatParams>
 void CarryPropagation_DE (
     const bool sameSign,
-    const int32_t extDigits,
+    const int32_t numActualDigitsPlusGuard,
     std::vector<uint64_t> &extResult,
     int32_t &carry,
-    std::vector<uint32_t> &propagatedResult)
+    std::vector<uint64_t> &propagatedResult)
 {
     uint32_t carryUnsigned = static_cast<uint32_t>(carry);
 
     if (sameSign) {
         // Propagate carry for addition.
-        for (int32_t i = 0; i < extDigits; i++) {
+        for (int32_t i = 0; i < numActualDigitsPlusGuard; i++) {
             int64_t sum = (int64_t)extResult[i] + carryUnsigned;
             propagatedResult[i] = (uint32_t)(sum & 0xFFFFFFFFULL);
             carryUnsigned = sum >> 32;
@@ -511,7 +511,7 @@ void CarryPropagation_DE (
     } else {
         // Propagate borrow for subtraction.
         int64_t borrow = 0;
-        for (int32_t i = 0; i < extDigits; i++) {
+        for (int32_t i = 0; i < numActualDigitsPlusGuard; i++) {
             int64_t diffVal = (int64_t)extResult[i] - borrow;
             if (diffVal < 0) {
                 diffVal += (1LL << 32);
@@ -533,7 +533,7 @@ void Phase1_DE (
     const bool DIsBiggerMagnitude,
     const bool IsNegativeD,
     const bool IsNegativeE,
-    const int32_t extDigits,
+    const int32_t numActualDigitsPlusGuard,
     const int32_t actualDigits,
     const auto *ext_D_2X,
     const auto *ext_E_B,
@@ -560,11 +560,11 @@ void Phase1_DE (
     // Compute the raw limb-wise result without propagation.
     if (sameSignDE) {
         // Addition branch.
-        for (int32_t i = 0; i < extDigits; i++) {
+        for (int32_t i = 0; i < numActualDigitsPlusGuard; i++) {
             uint64_t alignedA = 0, alignedB = 0;
             GetCorrespondingLimbs<SharkFloatParams>(
-                ext_D_2X, actualDigits, extDigits,
-                ext_E_B, actualDigits, extDigits,
+                ext_D_2X, actualDigits, numActualDigitsPlusGuard,
+                ext_E_B, actualDigits, numActualDigitsPlusGuard,
                 shiftD, shiftE,
                 DIsBiggerMagnitude, diffDE, i,
                 alignedA, alignedB);
@@ -576,11 +576,11 @@ void Phase1_DE (
         std::vector<uint64_t> alignedEDebug;
 
         if (DIsBiggerMagnitude) {
-            for (int32_t i = 0; i < extDigits; i++) {
+            for (int32_t i = 0; i < numActualDigitsPlusGuard; i++) {
                 uint64_t alignedA = 0, alignedB = 0;
                 GetCorrespondingLimbs<SharkFloatParams>(
-                    ext_D_2X, actualDigits, extDigits,
-                    ext_E_B, actualDigits, extDigits,
+                    ext_D_2X, actualDigits, numActualDigitsPlusGuard,
+                    ext_E_B, actualDigits, numActualDigitsPlusGuard,
                     shiftD, shiftE,
                     DIsBiggerMagnitude, diffDE, i,
                     alignedA, alignedB);
@@ -592,11 +592,11 @@ void Phase1_DE (
                 alignedEDebug.push_back(alignedB);
             }
         } else {
-            for (int32_t i = 0; i < extDigits; i++) {
+            for (int32_t i = 0; i < numActualDigitsPlusGuard; i++) {
                 uint64_t alignedA = 0, alignedB = 0;
                 GetCorrespondingLimbs<SharkFloatParams>(
-                    ext_D_2X, actualDigits, extDigits,
-                    ext_E_B, actualDigits, extDigits,
+                    ext_D_2X, actualDigits, numActualDigitsPlusGuard,
+                    ext_E_B, actualDigits, numActualDigitsPlusGuard,
                     shiftD, shiftE,
                     DIsBiggerMagnitude, diffDE, i,
                     alignedA, alignedB);
@@ -616,8 +616,8 @@ void Phase1_DE (
     }
 
     if constexpr (SharkDebugChecksums) {
-        const auto &debugResultState = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2XY>(
-            debugStates, extResult_D_E.data(), extDigits);
+        const auto &debugResultState = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2XY, uint64_t>(
+            debugStates, extResult_D_E.data(), numActualDigitsPlusGuard);
 
         if (SharkVerbose == VerboseMode::Debug) {
             std::cout << "extResult_D_E checksum: " << debugResultState.GetStr() << std::endl;
@@ -629,18 +629,18 @@ void Phase1_DE (
 // Propagates raw 64-bit extended results into 32-bit digits with signed carry support.
 template<class SharkFloatParams>
 void CarryPropagation_ABC (
-    const int32_t            extDigits,
+    const int32_t            numActualDigitsPlusGuard,
     std::vector<uint64_t> &extResult,         // raw signed limbs from Phase1_ABC
     int32_t &carryAcc,         // signed carry-in/out (init to 0)
-    std::vector<uint32_t> &propagatedResult   // size numActualDigitsPlusGuard
+    std::vector<uint64_t> &propagatedResult   // size numActualDigitsPlusGuard
 ) {
     // Start with zero carry/borrow
     carryAcc = 0;
 
-    assert(extDigits == static_cast<int32_t>(extResult.size()));
-    assert(propagatedResult.size() == extDigits);
+    assert(numActualDigitsPlusGuard == static_cast<int32_t>(extResult.size()));
+    assert(propagatedResult.size() == numActualDigitsPlusGuard);
 
-    for (int32_t i = 0; i < extDigits; ++i) {
+    for (int32_t i = 0; i < numActualDigitsPlusGuard; ++i) {
         // reinterpret the 64-bit limb as signed
         int64_t limb = static_cast<int64_t>(extResult[i]);
 
@@ -711,7 +711,7 @@ void Phase1_ABC (
     const bool IsNegativeA,
     const bool IsNegativeB,
     const bool IsNegativeC,
-    const int32_t  extDigits,
+    const int32_t  numActualDigitsPlusGuard,
     const int32_t  actualDigits,
     const uint32_t *extA,
     const uint32_t *extB,
@@ -737,8 +737,8 @@ void Phase1_ABC (
 )
 {
     // 1) prepare the two output arrays and signs
-    extResultTrue.assign(extDigits, 0);
-    extResultFalse.assign(extDigits, 0);
+    extResultTrue.assign(numActualDigitsPlusGuard, 0);
+    extResultFalse.assign(numActualDigitsPlusGuard, 0);
     outSignTrue = false;
     outSignFalse = false;
 
@@ -824,13 +824,13 @@ void Phase1_ABC (
     }
 
     // 6) single pass: two calls per digit
-    for (int32_t i = 0; i < extDigits; ++i) {
+    for (int32_t i = 0; i < numActualDigitsPlusGuard; ++i) {
         uint64_t Xi = GetNormalizedDigit(
-            extX, actualDigits, extDigits, shX, i);
+            extX, actualDigits, numActualDigitsPlusGuard, shX, i);
         uint64_t Yi = GetShiftedNormalizedDigit<SharkFloatParams>(
-            extY, actualDigits, extDigits, shY, diffY, i);
+            extY, actualDigits, numActualDigitsPlusGuard, shY, diffY, i);
         uint64_t Zi = GetShiftedNormalizedDigit<SharkFloatParams>(
-            extZ, actualDigits, extDigits, shZ, diffZ, i);
+            extZ, actualDigits, numActualDigitsPlusGuard, shZ, diffZ, i);
 
         // always-true branch
         extResultTrue[i] = CoreThreeWayAdd(Xi, sX, Yi, sY, Zi, sZ, /*X_gtY=*/true, outSignTrue);
@@ -849,15 +849,16 @@ void Phase1_ABC (
         std::cout << "extResultFalse: " << VectorUintToHexString(extResultFalse) << "\n";
     }
 
-    // Add all PermX arrays to the debug states.
-    //if constexpr (SharkDebugChecksums) {
-    //    const auto &debugResultState = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2_Perm1>(
-    //        debugStates, extResult_ABC.data(), extDigits);
-    //    if (SharkVerbose == VerboseMode::Debug) {
-    //        std::cout << "Phase1_ABC checksum: " << debugResultState.GetStr() << "\n";
-    //    }
-    //}
-
+    if constexpr (SharkDebugChecksums) {
+        const auto &debugResultState1 = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2_Perm1, uint64_t>(
+            debugStates, extResultTrue.data(), numActualDigitsPlusGuard);
+        const auto &debugResultState2 = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2_Perm2, uint64_t>(
+            debugStates, extResultFalse.data(), numActualDigitsPlusGuard);
+        if (SharkVerbose == VerboseMode::Debug) {
+            std::cout << "Phase1_ABC Z2_Perm1 checksum: " << debugResultState1.GetStr() << "\n";
+            std::cout << "Phase1_ABC Z2_Perm2 checksum: " << debugResultState2.GetStr() << "\n";
+        }
+    }
 }
 
 template<class SharkFloatParams>
@@ -865,10 +866,10 @@ static void
 NormalizeAndCopyResult(
     const char *prefixOutStr,
     int32_t                     actualDigits,
-    int32_t                     extDigits,
+    int32_t                     numActualDigitsPlusGuard,
     int32_t &exponent,
     int32_t &carry,
-    std::vector<uint32_t> &propagatedResult,
+    std::vector<uint64_t> &propagatedResult,
     HpSharkFloat<SharkFloatParams> *ResultOut,
     bool                        outSign
 ) noexcept {
@@ -891,8 +892,8 @@ NormalizeAndCopyResult(
         }
 
         uint32_t highBits = static_cast<uint32_t>(carry);
-        for (int32_t i = extDigits - 1; i >= 0; --i) {
-            uint32_t w = propagatedResult[i];
+        for (int32_t i = numActualDigitsPlusGuard - 1; i >= 0; --i) {
+            uint32_t w = static_cast<uint32_t>(propagatedResult[i]);
             uint32_t lowMask = (1u << shift) - 1;
             uint32_t nextHB = w & lowMask;
             propagatedResult[i] = (w >> shift) | (highBits << (32 - shift));
@@ -902,7 +903,7 @@ NormalizeAndCopyResult(
 
     // --- 2) Locate most‐significant non‐zero word ---
     int32_t msdResult = 0;
-    for (int32_t i = extDigits - 1; i >= 0; --i) {
+    for (int32_t i = numActualDigitsPlusGuard - 1; i >= 0; --i) {
         if (propagatedResult[i] != 0) {
             msdResult = i;
             break;
@@ -910,7 +911,7 @@ NormalizeAndCopyResult(
     }
 
     // --- 3) Compute current vs desired bit positions ---
-    int32_t clzResult = CountLeadingZeros(propagatedResult[msdResult]);
+    int32_t clzResult = CountLeadingZeros(static_cast<uint32_t>(propagatedResult[msdResult]));
     int32_t currentBit = msdResult * 32 + (31 - clzResult);
     int32_t desiredBit = (SharkFloatParams::GlobalNumUint32 - 1) * 32 + 31;
 
@@ -932,7 +933,7 @@ NormalizeAndCopyResult(
         }
         MultiWordShift<Dir::Right>(
             propagatedResult.data(),
-            extDigits,
+            numActualDigitsPlusGuard,
             shiftNeeded,
             ResultOut->Digits,
             actualDigits
@@ -955,7 +956,7 @@ NormalizeAndCopyResult(
         }
         MultiWordShift<Dir::Left>(
             propagatedResult.data(),
-            extDigits,
+            numActualDigitsPlusGuard,
             L,
             ResultOut->Digits,
             actualDigits
@@ -975,6 +976,7 @@ NormalizeAndCopyResult(
             std::cout << prefixOutStr
                 << " no normalization shift needed\n";
         }
+        assert(false); // TODO: I think this path is buggy - copying low order digits?
         std::memcpy(
             ResultOut->Digits,
             propagatedResult.data(),
@@ -1038,9 +1040,9 @@ AddHelper (
     std::vector<uint64_t> extResultFalse(numActualDigitsPlusGuard, 0);
     std::vector<uint64_t> extResult_D_E(numActualDigitsPlusGuard, 0);
 
-    std::vector<uint32_t> propagatedResultTrue(numActualDigitsPlusGuard, 0);
-    std::vector<uint32_t> propagatedResultFalse(numActualDigitsPlusGuard, 0);
-    std::vector<uint32_t> propagatedResult_DE(numActualDigitsPlusGuard, 0);
+    std::vector<uint64_t> propagatedResultTrue(numActualDigitsPlusGuard, 0);
+    std::vector<uint64_t> propagatedResultFalse(numActualDigitsPlusGuard, 0);
+    std::vector<uint64_t> propagatedResult_DE(numActualDigitsPlusGuard, 0);
 
     // The guard words (indices GlobalNumUint32 to numActualDigitsPlusGuard-1) are left as zero.
 
@@ -1070,19 +1072,19 @@ AddHelper (
         // Compute checksums for the extended arrays.
         // Note: we use the actual digits (not the extended size) for the checksum.
 
-        const auto &debugState = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::ADigits>(
+        const auto &debugState = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::ADigits, uint32_t>(
             debugStates, ext_A_X2, numActualDigits);
 
-        const auto &debugBState = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::BDigits>(
+        const auto &debugBState = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::BDigits, uint32_t>(
             debugStates, ext_B_Y2, numActualDigits);
 
-        const auto &debugCState = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::CDigits>(
+        const auto &debugCState = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::CDigits, uint32_t>(
             debugStates, ext_C_A, numActualDigits);
 
-        const auto &debugDState = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::DDigits>(
+        const auto &debugDState = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::DDigits, uint32_t>(
             debugStates, ext_D_2X, numActualDigits);
 
-        const auto &debugEState = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::EDigits>(
+        const auto &debugEState = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::EDigits, uint32_t>(
             debugStates, ext_E_B, numActualDigits);
 
         if (SharkVerbose == VerboseMode::Debug) {
@@ -1345,15 +1347,19 @@ AddHelper (
     }
 
     if constexpr (SharkDebugChecksums) {
-        const auto &debugResultState_ABC = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::FinalAdd1>(
+        const auto &debugPropagatedResultTrue = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::FinalAdd1, uint64_t>(
             debugStates, propagatedResultTrue.data(), numActualDigitsPlusGuard);
 
-        const auto &debugResultState_DE = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::FinalAdd2>(
+        const auto &debugPropagatedResultFalse = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::FinalAdd2, uint64_t>(
+            debugStates, propagatedResultFalse.data(), numActualDigitsPlusGuard);
+
+        const auto &debugPropagatedResult_DE = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::FinalAdd3, uint64_t>(
             debugStates, propagatedResult_DE.data(), numActualDigitsPlusGuard);
 
         if (SharkVerbose == VerboseMode::Debug) {
-            std::cout << "propagatedResultTrue checksum: " << debugResultState_ABC.GetStr() << std::endl;
-            std::cout << "propagatedResult_DE checksum: " << debugResultState_DE.GetStr() << std::endl;
+            std::cout << "propagatedResultTrue checksum: " << debugPropagatedResultTrue.GetStr() << std::endl;
+            std::cout << "propagatedResultFalse checksum: " << debugPropagatedResultFalse.GetStr() << std::endl;
+            std::cout << "propagatedResult_DE checksum: " << debugPropagatedResult_DE.GetStr() << std::endl;
         }
     }
 
@@ -1366,7 +1372,7 @@ AddHelper (
         NormalizeAndCopyResult<SharkFloatParams>(
             /* prefixOutStr  = */ "A - B + C: ",
             /* actualDigits  = */ numActualDigits,
-            /* extDigits     = */ numActualDigitsPlusGuard,
+            /* numActualDigitsPlusGuard     = */ numActualDigitsPlusGuard,
             /* exponent      = */ outExponentTrue,
             /* carry         = */ carryTrue,
             /* propagatedRes = */ propagatedResultTrue,
@@ -1377,7 +1383,7 @@ AddHelper (
         NormalizeAndCopyResult<SharkFloatParams>(
             /* prefixOutStr  = */ "A - B + C: ",
             /* actualDigits  = */ numActualDigits,
-            /* extDigits     = */ numActualDigitsPlusGuard,
+            /* numActualDigitsPlusGuard     = */ numActualDigitsPlusGuard,
             /* exponent      = */ outExponentFalse,
             /* carry         = */ carryFalse,
             /* propagatedRes = */ propagatedResultFalse,
@@ -1394,7 +1400,7 @@ AddHelper (
     NormalizeAndCopyResult<SharkFloatParams>(
         /* prefixOutStr  = */ "D + E: ",
         /* actualDigits  = */ numActualDigits,
-        /* extDigits     = */ numActualDigitsPlusGuard,
+        /* numActualDigitsPlusGuard     = */ numActualDigitsPlusGuard,
         /* exponent      = */ outExponent_DE,
         /* carry         = */ carry_DE,
         /* propagatedRes = */ propagatedResult_DE,
@@ -1410,10 +1416,10 @@ AddHelper (
     }
 
     if constexpr (SharkDebugChecksums) {
-        const auto &debugResultState_ABC = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::Result_Add1>(
+        const auto &debugResultState_ABC = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::Result_Add1, uint32_t>(
             debugStates, OutXY1->Digits, SharkFloatParams::GlobalNumUint32);
 
-        const auto &debugResultState_DE = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::Result_Add2>(
+        const auto &debugResultState_DE = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::Result_Add2, uint32_t>(
             debugStates, OutXY2->Digits, SharkFloatParams::GlobalNumUint32);
 
         if (SharkVerbose == VerboseMode::Debug) {

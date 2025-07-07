@@ -1011,3 +1011,56 @@ CarryPropagationDE (
 
     grid.sync();
 }
+
+template <class SharkFloatParams>
+__device__ SharkForceInlineReleaseOnly void FinalResolutionDE (
+    const int32_t idx,
+    const int32_t stride,
+    const int32_t carryAcc_DE,
+    const int32_t numActualDigitsPlusGuard,
+    const int32_t numActualDigits,
+    const uint64_t *final128_DE,
+    HpSharkFloat<SharkFloatParams> *OutSharkFloat,
+    int32_t &outExponent_DE
+    ) {
+        if (carryAcc_DE > 0) {
+            // Make sure carryAcc_DE, numActualDigitsPlusGuard, numActualDigits, and final128_DE are computed and
+            // available to all threads
+            int32_t wordShift = carryAcc_DE / 32;
+            int32_t bitShift = carryAcc_DE % 32;
+
+            // Each thread handles a subset of indices.
+            for (int32_t i = idx; i < numActualDigits; i += stride) {
+                uint32_t lower = (i + wordShift < numActualDigitsPlusGuard) ? final128_DE[i + wordShift] : 0;
+                uint32_t upper = (i + wordShift + 1 < numActualDigitsPlusGuard) ? final128_DE[i + wordShift + 1] : 0;
+                OutSharkFloat->Digits[i] = (bitShift == 0) ? lower : (lower >> bitShift) | (upper << (32 - bitShift));
+
+                if (i == numActualDigits - 1) {
+                    // Set the high-order bit of the last digit.
+                    OutSharkFloat->Digits[numActualDigits - 1] |= (1u << 31);
+                }
+            }
+
+            outExponent_DE += carryAcc_DE;
+        } else if (carryAcc_DE < 0) {
+            int32_t wordShift = (-carryAcc_DE) / 32;
+            int32_t bitShift = (-carryAcc_DE) % 32;
+
+            for (int32_t i = idx; i < numActualDigits; i += stride) {
+                int32_t srcIdx = i - wordShift;
+                uint32_t lower = (srcIdx >= 0 && srcIdx < numActualDigitsPlusGuard) ? final128_DE[srcIdx] : 0;
+                uint32_t upper = (srcIdx - 1 >= 0 && srcIdx - 1 < numActualDigitsPlusGuard) ? final128_DE[srcIdx - 1] : 0;
+                OutSharkFloat->Digits[i] = (bitShift == 0) ? lower : (lower << bitShift) | (upper >> (32 - bitShift));
+            }
+
+            if (idx == 0) {
+                outExponent_DE -= (-carryAcc_DE);
+            }
+        } else {
+            // No shifting needed; simply copy.  Convert to uint32_t along the way
+
+            for (int32_t i = idx; i < numActualDigits; i += stride) {
+                OutSharkFloat->Digits[i] = final128_DE[i];
+            }
+        }
+    };

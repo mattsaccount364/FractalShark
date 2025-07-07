@@ -6,7 +6,7 @@ CompareMagnitudes3Way (
     const int32_t effExpB,
     const int32_t effExpC,
     const int32_t actualDigits,
-    const int32_t extDigits,
+    const int32_t numActualDigitsPlusGuard,
     const int32_t shiftA,
     const int32_t shiftB,
     const int32_t shiftC,
@@ -21,9 +21,9 @@ CompareMagnitudes3Way (
             if (exp1 != exp2)
                 return exp1 > exp2;
             // exponents equal -> compare normalized digits high->low
-            for (int32_t i = extDigits - 1; i >= 0; --i) {
-                uint32_t d1 = GetNormalizedDigit(e1, actualDigits, extDigits, s1, i);
-                uint32_t d2 = GetNormalizedDigit(e2, actualDigits, extDigits, s2, i);
+            for (int32_t i = numActualDigitsPlusGuard - 1; i >= 0; --i) {
+                uint32_t d1 = GetNormalizedDigit(e1, actualDigits, numActualDigitsPlusGuard, s1, i);
+                uint32_t d2 = GetNormalizedDigit(e2, actualDigits, numActualDigitsPlusGuard, s2, i);
                 if (d1 != d2)
                     return d1 > d2;
             }
@@ -94,7 +94,7 @@ void Phase1_ABC (
     const bool IsNegativeA,
     const bool IsNegativeB,
     const bool IsNegativeC,
-    const int32_t  extDigits,
+    const int32_t  numActualDigitsPlusGuard,
     const int32_t  actualDigits,
     const uint32_t *extA,
     const uint32_t *extB,
@@ -117,10 +117,6 @@ void Phase1_ABC (
     DebugState<SharkFloatParams> *debugStates
 )
 {
-    if (idx > 0) {
-        return;
-    }
-
     outSignTrue = false;
     outSignFalse = false;
 
@@ -206,30 +202,34 @@ void Phase1_ABC (
     }
 
     // 6) single pass: two calls per digit
-    for (int32_t i = 0; i < extDigits; ++i) {
-        uint64_t Xi = GetNormalizedDigit(
-            extX, actualDigits, extDigits, shX, i);
-        uint64_t Yi = GetShiftedNormalizedDigit<SharkFloatParams>(
-            extY, actualDigits, extDigits, shY, diffY, i);
-        uint64_t Zi = GetShiftedNormalizedDigit<SharkFloatParams>(
-            extZ, actualDigits, extDigits, shZ, diffZ, i);
+    if (idx == 0) {
+        for (int32_t i = 0; i < numActualDigitsPlusGuard; ++i) {
+            uint64_t Xi = GetNormalizedDigit(
+                extX, actualDigits, numActualDigitsPlusGuard, shX, i);
+            uint64_t Yi = GetShiftedNormalizedDigit<SharkFloatParams>(
+                extY, actualDigits, numActualDigitsPlusGuard, shY, diffY, i);
+            uint64_t Zi = GetShiftedNormalizedDigit<SharkFloatParams>(
+                extZ, actualDigits, numActualDigitsPlusGuard, shZ, diffZ, i);
 
-        // always-true branch
-        extResultTrue[i] = CoreThreeWayAdd(Xi, sX, Yi, sY, Zi, sZ, /*X_gtY=*/true, outSignTrue);
-        // always-false branch
-        extResultFalse[i] = CoreThreeWayAdd(Xi, sX, Yi, sY, Zi, sZ, /*X_gtY=*/false, outSignFalse);
+            // always-true branch
+            extResultTrue[i] = CoreThreeWayAdd(Xi, sX, Yi, sY, Zi, sZ, /*X_gtY=*/true, outSignTrue);
+            // always-false branch
+            extResultFalse[i] = CoreThreeWayAdd(Xi, sX, Yi, sY, Zi, sZ, /*X_gtY=*/false, outSignFalse);
+        }
     }
 
     // 7) both exponents (before re-bias) are just baseExp - bias
     outExpTrue_Orig = baseExp - bias;
     outExpFalse_Orig = baseExp - bias;
 
-    //if constexpr (SharkDebugChecksums) {
-    //    //grid.sync();
-    //    StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z2XX, uint64_t>(
-    //        record, debugStates, grid, block, final128_ABC, numActualDigitsPlusGuard);
-    //    //grid.sync();
-    //}
+    if constexpr (SharkDebugChecksums) {
+        grid.sync();
+        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z2_Perm1, uint64_t>(
+            record, debugStates, grid, block, extResultTrue, numActualDigitsPlusGuard);
+        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z2_Perm2, uint64_t>(
+            record, debugStates, grid, block, extResultFalse, numActualDigitsPlusGuard);
+        grid.sync();
+    }
 }
 
 template<class SharkFloatParams>

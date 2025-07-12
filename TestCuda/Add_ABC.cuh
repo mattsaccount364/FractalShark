@@ -201,9 +201,10 @@ void Phase1_ABC (
         for (;;);
     }
 
-    // 6) single pass: two calls per digit
-    if (idx == 0) {
-        for (int32_t i = 0; i < numActualDigitsPlusGuard; ++i) {
+    // 6) single pass: two calls per digit, grid-stride version
+    {
+        int32_t stride = grid.size();
+        for (int32_t i = idx; i < numActualDigitsPlusGuard; i += stride) {
             uint64_t Xi = GetNormalizedDigit(
                 extX, actualDigits, numActualDigitsPlusGuard, shX, i);
             uint64_t Yi = GetShiftedNormalizedDigit<SharkFloatParams>(
@@ -247,6 +248,73 @@ void CarryPropagation_ABC (
     cg::grid_group &grid
 )
 {
+    const int32_t N = numActualDigitsPlusGuard;
+    const int32_t stride = grid.size();
+
+    // use the user-passed buffers:
+    uint32_t *curC = carry1;
+    uint32_t *nextC = carry2;
+
+    // only one thread initializes the counter
+    if (block.group_index().x == 0 && block.thread_index().x == 0) {
+        globalSync[0] = 1;
+    }
+
+    // zero out both carry arrays
+    for (int32_t i = idx; i < N + 1; i += stride) {
+        curC[i] = 0u;
+        nextC[i] = 0u;
+    }
+    grid.sync();
+
+    constexpr int maxIter = 1000;
+    uint32_t prevCount = 0;
+
+    // iterative rippling until no new carries
+    for (int iter = 0; iter < maxIter; ++iter) {
+        if (globalSync[0] == prevCount) break;
+        prevCount = globalSync[0];
+
+        grid.sync();
+
+        uint32_t localNew = 0;
+        for (int32_t i = idx; i < N; i += stride) {
+            // incoming carry (borrow if negative)
+            int32_t inC = (i == 0 ? 0 : static_cast<int32_t>(curC[i]));
+            int64_t limb = static_cast<int64_t>(final128_ABC[i]);
+            int64_t sum = limb + inC;
+
+            // write back low 32 bits
+            uint32_t low32 = static_cast<uint32_t>(sum);
+            final128_ABC[i] = low32;
+
+            // arithmetic shift yields signed carry/borrow
+            int32_t newC = static_cast<int32_t>((sum - int64_t(low32)) >> 32);
+            if (i < N - 1) {
+                nextC[i + 1] = static_cast<uint32_t>(newC);
+            } else {
+                nextC[i + 1] = curC[i + 1] + static_cast<uint32_t>(newC);
+            }
+            localNew += (newC != 0);
+        }
+
+        grid.sync();
+
+        if (localNew) {
+            atomicAdd(&globalSync[0], localNew);
+        }
+
+        // swap for next iteration
+        auto *tmp = curC; curC = nextC; nextC = tmp;
+        grid.sync();
+    }
+
+    carryAcc = static_cast<int32_t>(curC[N]);
+    grid.sync();
+}
+
+#if 0
+{
     if (idx != 0) { // TODO
         return;
     }
@@ -272,3 +340,4 @@ void CarryPropagation_ABC (
         // carryAcc = (sum - static_cast<int64_t>(low32)) / (1LL << 32);
     }
 }
+#endif

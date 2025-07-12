@@ -1332,10 +1332,8 @@ AddHelper (
             carryFalse,
             propagatedResultFalse);
 
-        ///////////////
-
-        CarryPropagation_DE<SharkFloatParams>(
-            sameSignDE,
+        // Formerly CarryPropagation_DE with sameSignDE passed:
+        CarryPropagation_ABC<SharkFloatParams>(
             numActualDigitsPlusGuard,
             extResult_D_E,
             carry_DE,

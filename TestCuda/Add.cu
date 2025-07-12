@@ -104,19 +104,25 @@ CountLeadingZeros (
 template<Dir D>
 static __device__ SharkForceInlineReleaseOnly void
 MultiWordShift (
+    const cooperative_groups::grid_group &grid,
+    const cooperative_groups::thread_block &block,
+    const int32_t idx,
     const auto *in,
     const int32_t  extDigits,
     const int32_t  shiftNeeded,
     uint32_t *out,
     const int32_t  outSz
-) {
+)
+{
     assert(extDigits >= outSz);
-    for (int32_t i = 0; i < outSz; ++i) {
+    const auto stride = grid.size();
+
+    for (int32_t i = idx; i < outSz; i += stride) {
         out[i] = FunnelShift32<D>(
             in,
-            /* idx       = */ i,
-            /* N         = */ extDigits,
-            /* bitOffset = */ shiftNeeded
+            i,
+            extDigits,
+            shiftNeeded
         );
     }
 }
@@ -323,31 +329,38 @@ StoreCurrentDebugState (
 template<class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly void
 NormalizeAndCopyResult (
-    int32_t                     actualDigits,
-    int32_t                     extDigits,
-    int32_t &exponent,
+    cooperative_groups::grid_group &grid,
+    cooperative_groups::thread_block &block,
+    const int32_t idx,
+    const int32_t actualDigits,
+    const int32_t extDigits,
+    int32_t exponent,
     int32_t &carry,
     auto *scratch,
     HpSharkFloat<SharkFloatParams> *ResultOut,
-    bool                        outSign
+    const bool outSign
 ) noexcept {
     // --- 1) Inject any carry/borrow back into the digit stream ---
-    if (carry != 0) {
-        if (carry < 0) {
-            return;
-        }
-        int shift = (carry == 2 ? 2 : 1);
-        exponent += shift;
+    if (idx == 0) {
+        if (carry != 0) {
+            if (carry < 0) {
+                return;
+            }
+            int shift = (carry == 2 ? 2 : 1);
+            exponent += shift;
 
-        uint32_t highBits = static_cast<uint32_t>(carry);
-        for (int32_t i = extDigits - 1; i >= 0; --i) {
-            uint32_t w = scratch[i];
-            uint32_t lowMask = (1u << shift) - 1;
-            uint32_t nextHB = w & lowMask;
-            scratch[i] = (w >> shift) | (highBits << (32 - shift));
-            highBits = nextHB;
+            uint32_t highBits = static_cast<uint32_t>(carry);
+            for (int32_t i = extDigits - 1; i >= 0; --i) {
+                uint32_t w = scratch[i];
+                uint32_t lowMask = (1u << shift) - 1;
+                uint32_t nextHB = w & lowMask;
+                scratch[i] = (w >> shift) | (highBits << (32 - shift));
+                highBits = nextHB;
+            }
         }
     }
+
+    grid.sync();
 
     // --- 2) Locate most‐significant non‐zero word ---
     int32_t msdResult = 0;
@@ -367,6 +380,9 @@ NormalizeAndCopyResult (
     int32_t shiftNeeded = currentBit - desiredBit;
     if (shiftNeeded > 0) {
         MultiWordShift<Dir::Right>(
+            grid,
+            block,
+            idx,
             scratch,
             extDigits,
             shiftNeeded,
@@ -377,6 +393,9 @@ NormalizeAndCopyResult (
     } else if (shiftNeeded < 0) {
         int32_t L = -shiftNeeded;
         MultiWordShift<Dir::Left>(
+            grid,
+            block,
+            idx,
             scratch,
             extDigits,
             L,
@@ -388,6 +407,9 @@ NormalizeAndCopyResult (
    } else {
         int32_t L = 0;
         MultiWordShift<Dir::Left>(
+            grid,
+            block,
+            idx,
             scratch,
             extDigits,
             L,
@@ -397,8 +419,12 @@ NormalizeAndCopyResult (
     }
 
     // --- 5) Set final exponent and sign ---
-    ResultOut->Exponent = exponent;
-    ResultOut->SetNegative(outSign);
+    if (idx == 0) {
+        ResultOut->Exponent = exponent;
+        ResultOut->SetNegative(outSign);
+    }
+
+    grid.sync();
 }
 
 
@@ -698,16 +724,15 @@ __device__ void AddHelper (
     int32_t carry_DE = 0;
 
     if constexpr (!SharkFloatParams::DisableCarryPropagation) {
-        // --- Carry/Borrow Propagation ---
-        CarryPropagationDE<SharkFloatParams>(
+        CarryPropagation_ABC<SharkFloatParams>(
             sharedData,
             globalSync,
-            final128_DE,
+            idx,
             numActualDigitsPlusGuard,
+            final128_DE,
             carry1,
             carry2,
             carry_DE,
-            sameSign,
             block,
             grid);
 
@@ -754,28 +779,32 @@ __device__ void AddHelper (
     bool useTrueBranch = (carryTrue >= carryFalse);
 
     // 2) Normalize & write *only* that branch
-    if (idx == 0) {
-        if (useTrueBranch) {
-            NormalizeAndCopyResult<SharkFloatParams>(
-                /* actualDigits  = */ numActualDigits,
-                /* extDigits     = */ numActualDigitsPlusGuard,
-                /* exponent      = */ outExponentTrue,
-                /* carry         = */ carryTrue,
-                /* propagatedRes = */ extResultTrue,
-                /* ResultOut     = */ Out_A_B_C,
-                /* outSign       = */ outSignTrue
-            );
-        } else {
-            NormalizeAndCopyResult<SharkFloatParams>(
-                /* actualDigits  = */ numActualDigits,
-                /* extDigits     = */ numActualDigitsPlusGuard,
-                /* exponent      = */ outExponentFalse,
-                /* carry         = */ carryFalse,
-                /* propagatedRes = */ extResultFalse,
-                /* ResultOut     = */ Out_A_B_C,
-                /* outSign       = */ outSignFalse
-            );
-        }
+    if (useTrueBranch) {
+        NormalizeAndCopyResult<SharkFloatParams>(
+            grid,
+            block,
+            idx,
+            numActualDigits,
+            numActualDigitsPlusGuard,
+            outExponentTrue,
+            carryTrue,
+            extResultTrue,
+            Out_A_B_C,
+            outSignTrue
+        );
+    } else {
+        NormalizeAndCopyResult<SharkFloatParams>(
+            grid,
+            block,
+            idx,
+            numActualDigits,
+            numActualDigitsPlusGuard,
+            outExponentFalse,
+            carryFalse,
+            extResultFalse,
+            Out_A_B_C,
+            outSignFalse
+        );
     }
 
     // 3) And handle D+E exactly once
@@ -783,17 +812,18 @@ __device__ void AddHelper (
         ? D_2X->GetNegative()
         : (DIsBiggerMagnitude ? D_2X->GetNegative() : E_B->GetNegative());
 
-    if (idx == 0) {
-        NormalizeAndCopyResult<SharkFloatParams>(
-            /* actualDigits  = */ numActualDigits,
-            /* extDigits     = */ numActualDigitsPlusGuard,
-            /* exponent      = */ outExponent_DE,
-            /* carry         = */ carry_DE,
-            /* propagatedRes = */ final128_DE,
-            /* ResultOut     = */ Out_D_E,
-            /* outSign       = */ deSign
-        );
-    }
+    NormalizeAndCopyResult<SharkFloatParams>(
+        grid,
+        block,
+        idx,
+        numActualDigits,
+        numActualDigitsPlusGuard,
+        outExponent_DE,
+        carry_DE,
+        final128_DE,
+        Out_D_E,
+        deSign
+    );
 
     //const int32_t stride = blockDim.x * gridDim.x;
     //FinalResolutionDE(

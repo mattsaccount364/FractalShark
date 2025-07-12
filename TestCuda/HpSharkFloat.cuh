@@ -125,7 +125,7 @@ static constexpr auto ScratchMemoryCopies = 256;
 
 // Number of arrays of digits on each frame
 static constexpr auto ScratchMemoryArraysForMultiply = 96;
-static constexpr auto ScratchMemoryArraysForAdd = 32;
+static constexpr auto ScratchMemoryArraysForAdd = 64;
 
 
 // Additional space per frame:

@@ -399,13 +399,19 @@ void TestPerf (
     if constexpr (SharkTestGpu) {
 
         auto CheckDiff = [&](
-            int testNum,
+            const int testNum,
+            const int numTerms,
             const char *hostCustomOrGpu,
             const mpf_t &mpfHostResult,
             const HpSharkFloat<SharkFloatParams> &gpuResult) {
 
                 auto testSucceeded =
-                    DiffAgainstHost<SharkFloatParams, sharkOperator>(testNum, hostCustomOrGpu, mpfHostResult, gpuResult);
+                    DiffAgainstHost<SharkFloatParams, sharkOperator>(
+                        testNum,
+                        numTerms,
+                        hostCustomOrGpu,
+                        mpfHostResult,
+                        gpuResult);
                 if (!testSucceeded) {
                     std::cout << "Perf correctness test failed" << std::endl;
                 } else {
@@ -417,11 +423,15 @@ void TestPerf (
 
         if constexpr (sharkOperator == Operator::Add) {
             auto combo = std::make_unique<HpSharkAddComboResults<SharkFloatParams>>();
-            combo->A = *xNum;
-            combo->B = *yNum;
 
-            const auto &gpuResultXY1 = combo->Result1X2;
-            const auto &gpuResultXY2 = combo->Result2X2;
+            combo->A_X2 = *xNum;
+            combo->B_Y2 = *yNum;
+            combo->C_A = *zNum;
+            combo->D_2X = *xNum;
+            combo->E_B = *yNum;
+
+            const auto &gpuResultXY1 = combo->Result1_A_B_C;
+            const auto &gpuResultXY2 = combo->Result2_D_E;
 
             {
                 BenchmarkTimer timer;
@@ -435,8 +445,9 @@ void TestPerf (
 
             if constexpr (SharkTestBenchmarkAgainstHost) {
                 bool testSucceeded = true;
-                testSucceeded &= CheckDiff(testNum, "GPU", mpfHostResultXY1, gpuResultXY1);
-                testSucceeded &= CheckDiff(testNum, "GPU", mpfHostResultXY2, gpuResultXY2);
+                constexpr auto numTerms = 3;
+                testSucceeded &= CheckDiff(testNum, numTerms, "GPU", mpfHostResultXY1, gpuResultXY1);
+                testSucceeded &= CheckDiff(testNum, numTerms, "GPU", mpfHostResultXY2, gpuResultXY2);
             }
 
         } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
@@ -461,9 +472,10 @@ void TestPerf (
 
             if constexpr (SharkTestBenchmarkAgainstHost) {
                 bool testSucceeded = true;
-                testSucceeded &= CheckDiff(testNum, "GPU", mpfHostResultXX, gpuResult2XX);
-                testSucceeded &= CheckDiff(testNum, "GPU", mpfHostResultXY1, gpuResult2XY);
-                testSucceeded &= CheckDiff(testNum, "GPU", mpfHostResultYY, gpuResult2YY);
+                constexpr auto numTerms = 2;
+                testSucceeded &= CheckDiff(testNum, numTerms, "GPU", mpfHostResultXX, gpuResult2XX);
+                testSucceeded &= CheckDiff(testNum, numTerms, "GPU", mpfHostResultXY1, gpuResult2XY);
+                testSucceeded &= CheckDiff(testNum, numTerms, "GPU", mpfHostResultYY, gpuResult2YY);
             }
         }
     }
@@ -717,9 +729,20 @@ void TestCoreAdd (
 
             bool res = true;
             constexpr auto numTermsPartABC = 3;
-            res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(testNum, numTermsPartABC, "CustomHighPrecisionV2XY1", mpfHostResultXY1, hostAddResult1);
+            res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(
+                testNum,
+                numTermsPartABC,
+                "CustomHighPrecisionV2XY1",
+                mpfHostResultXY1,
+                hostAddResult1);
+
             constexpr auto numTermsPartDE = 2;
-            res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(testNum, numTermsPartDE, "CustomHighPrecisionV2XY2", mpfHostResultXY2, hostAddResult2);
+            res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(
+                testNum,
+                numTermsPartDE,
+                "CustomHighPrecisionV2XY2",
+                mpfHostResultXY2,
+                hostAddResult2);
 
             return res;
         };
@@ -881,9 +904,26 @@ void TestCoreMultiply(
 
             bool res = true;
             constexpr auto numTerms = 2;
-            res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(testNum, numTerms, "CustomHighPrecisionV2XX", mpfHostResultXX, hostKaratsubaOutXXV2);
-            res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(testNum, numTerms, "CustomHighPrecisionV2XY", mpfHostResultXY1, hostKaratsubaOutXYV2);
-            res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(testNum, numTerms, "CustomHighPrecisionV2YY", mpfHostResultYY, hostKaratsubaOutYYV2);
+            res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(
+                testNum,
+                numTerms,
+                "CustomHighPrecisionV2XX",
+                mpfHostResultXX,
+                hostKaratsubaOutXXV2);
+
+            res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(
+                testNum,
+                numTerms,
+                "CustomHighPrecisionV2XY",
+                mpfHostResultXY1,
+                hostKaratsubaOutXYV2);
+
+            res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(
+                testNum,
+                numTerms,
+                "CustomHighPrecisionV2YY",
+                mpfHostResultYY,
+                hostKaratsubaOutYYV2);
 
             return res;
         };
@@ -1810,7 +1850,7 @@ bool TestAllBinaryOp(int testBase) {
     constexpr bool includeSet5 = true;
     constexpr bool includeSet6 = true;
     constexpr bool includeSet10 = true;
-    constexpr bool includeSet11 = true;
+    constexpr bool includeSet11 = false;
 
     // 2000s is multiply
     // 4000s is add

@@ -475,7 +475,12 @@ __device__ void AddHelper (
     constexpr auto PropagatedFinal128Offset_DE = PropagatedFinal128Offset_ABC_False + 2 * SharkFloatParams::GlobalNumUint32;
     constexpr auto Carry1_offset = PropagatedFinal128Offset_DE + 2 * SharkFloatParams::GlobalNumUint32;
     constexpr auto Carry2_offset = Carry1_offset + 4 * SharkFloatParams::GlobalNumUint32;
-
+    constexpr auto Carry3_offset = Carry2_offset + 4 * SharkFloatParams::GlobalNumUint32;
+    constexpr auto Carry4_offset = Carry3_offset + 4 * SharkFloatParams::GlobalNumUint32;
+    constexpr auto Carry5_offset = Carry4_offset + 4 * SharkFloatParams::GlobalNumUint32;
+    constexpr auto Carry6_offset = Carry5_offset + 4 * SharkFloatParams::GlobalNumUint32;
+    constexpr auto TotalGlobalNumUint32Multiple = 2 + 2 + 2 + 2 + 2 + 2 + 6 * 4;
+    static_assert(TotalGlobalNumUint32Multiple == 36);
 
     auto *SharkRestrict globalSync =
         reinterpret_cast<uint32_t *>(&tempData[GlobalSync_offset]);
@@ -497,6 +502,14 @@ __device__ void AddHelper (
         reinterpret_cast<uint32_t *>(&tempData[Carry1_offset]);
     auto *SharkRestrict carry2 =
         reinterpret_cast<uint32_t *>(&tempData[Carry2_offset]);
+    auto *SharkRestrict carry3 =
+        reinterpret_cast<uint32_t *>(&tempData[Carry3_offset]);
+    auto *SharkRestrict carry4 =
+        reinterpret_cast<uint32_t *>(&tempData[Carry4_offset]);
+    auto *SharkRestrict carry5 =
+        reinterpret_cast<uint32_t *>(&tempData[Carry5_offset]);
+    auto *SharkRestrict carry6 =
+        reinterpret_cast<uint32_t *>(&tempData[Carry6_offset]);
 
     const RecordIt record =
         (block.thread_index().x == 0 && block.group_index().x == 0) ?

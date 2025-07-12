@@ -312,32 +312,3 @@ void CarryPropagation_ABC (
     carryAcc = static_cast<int32_t>(curC[N]);
     grid.sync();
 }
-
-#if 0
-{
-    if (idx != 0) { // TODO
-        return;
-    }
-
-    // Start with zero carry/borrow
-    carryAcc = 0;
-
-    for (int32_t i = 0; i < numActualDigitsPlusGuard; ++i) {
-        // reinterpret the 64-bit limb as signed
-        int64_t limb = static_cast<int64_t>(final128_ABC[i]);
-
-        // add in the previous carry (or borrow, if negative)
-        int64_t sum = limb + carryAcc;
-
-        // low 32 bits become the output digit
-        uint32_t low32 = static_cast<uint32_t>(sum & 0xFFFFFFFFULL);
-        final128_ABC[i] = low32;
-
-        // compute next carryAcc = floor(sum/2^32)
-        // (sum - low32) is a multiple of 2^32, so this division is exact
-        carryAcc = (sum - static_cast<int64_t>(low32)) >> 32;
-        // -or equivalently-
-        // carryAcc = (sum - static_cast<int64_t>(low32)) / (1LL << 32);
-    }
-}
-#endif

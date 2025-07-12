@@ -976,11 +976,21 @@ NormalizeAndCopyResult(
             std::cout << prefixOutStr
                 << " no normalization shift needed\n";
         }
-        assert(false); // TODO: I think this path is buggy - copying low order digits?
-        std::memcpy(
-            ResultOut->Digits,
+
+        assert(propagatedResult.size() == static_cast<size_t>(numActualDigitsPlusGuard));
+        assert(sizeof(ResultOut->Digits)/sizeof(ResultOut->Digits[0]) == static_cast<size_t>(actualDigits));
+
+        //
+        // Don't just memcpy because the input digits are 64-bit 
+        // and the output digits are 32-bit.
+        //
+
+        MultiWordShift<Dir::Left>(
             propagatedResult.data(),
-            actualDigits * sizeof(uint32_t)
+            numActualDigitsPlusGuard,
+            0,
+            ResultOut->Digits,
+            actualDigits
         );
     }
 
@@ -1209,6 +1219,10 @@ AddHelper (
         ext_B_Y2,
         ext_C_A);
 
+    if (SharkVerbose == VerboseMode::Debug) {
+        std::cout << "ThreeWayLargestOrdering: " << ThreeWayLargestInfo::ToString(ordering) << std::endl;
+    }
+
     int32_t outExponentTrue = 0;
     int32_t outExponentFalse = 0;
 
@@ -1411,7 +1425,7 @@ AddHelper (
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "Final Resolution completed" << std::endl;
         std::cout << "Formatted results: " << std::endl;
-        std::cout << "OutXY1: " << OutXY2->ToHexString() << std::endl;
+        std::cout << "OutXY1: " << OutXY1->ToHexString() << std::endl;
         std::cout << "OutXY2: " << OutXY2->ToHexString() << std::endl;
     }
 

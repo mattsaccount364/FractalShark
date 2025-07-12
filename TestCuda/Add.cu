@@ -386,10 +386,13 @@ NormalizeAndCopyResult (
         exponent -= L;
 
    } else {
-        memcpy(
-            ResultOut->Digits,
+        int32_t L = 0;
+        MultiWordShift<Dir::Left>(
             scratch,
-            actualDigits * sizeof(uint32_t)
+            extDigits,
+            L,
+            ResultOut->Digits,
+            actualDigits
         );
     }
 

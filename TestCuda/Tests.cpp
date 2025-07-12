@@ -635,12 +635,20 @@ bool CheckGPUResult (
         name,
         mpfHostResult,
         gpuResult);
-    if (!testSucceeded) {
-        std::cout << "GPU High Precision failed" << std::endl;
-        DebugBreak();
-    } else {
-        std::cout << "GPU High Precision succeeded" << std::endl;
+
+    if (SharkVerbose == VerboseMode::Debug) {
+        if (!testSucceeded) {
+            std::cout << "GPU High Precision failed" << std::endl;
+        } else {
+            std::cout << "GPU High Precision succeeded" << std::endl;
+        }
     }
+
+    if (!testSucceeded) {
+        // If the test failed, we should break into the debugger
+        DebugBreak();
+    }
+
     return testSucceeded;
 }
 
@@ -789,10 +797,12 @@ void TestCoreAdd (
         mpfHostResultXY2,
         debugResultsHost);
 
-    if (!testSucceeded) {
-        std::cout << "Custom High Precision failed" << std::endl;
-    } else {
-        std::cout << "Custom High Precision succeeded" << std::endl;
+    if (SharkVerbose == VerboseMode::Debug) {
+        if (!testSucceeded) {
+            std::cout << "Custom High Precision failed" << std::endl;
+        } else {
+            std::cout << "Custom High Precision succeeded" << std::endl;
+        }
     }
 
     ChecksumsCheck<SharkFloatParams>(
@@ -1050,8 +1060,12 @@ void TestTernaryOperatorTwoNumbersRaw (
         };
 
         auto printTest = [&](int curTest) {
-            std::cout << std::endl;
-            std::cout << std::endl;
+
+            if (SharkVerbose == VerboseMode::Debug) {
+                std::cout << std::endl;
+                std::cout << std::endl;
+            }
+
             std::cout << "Test " << std::dec << curTest << std::endl;
             };
 
@@ -1800,7 +1814,7 @@ bool TestAllBinaryOp(int testBase) {
 
     // 2000s is multiply
     // 4000s is add
-    
+    //
     if constexpr (includeSet1) {
         const auto set = testBase + 100;
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 10, "7", "19", "0");
@@ -1886,15 +1900,16 @@ bool TestAllBinaryOp(int testBase) {
         static constexpr auto SpecificTest1 = -129;
         static constexpr auto SpecificTest2 = -128;
         static constexpr auto SpecificTest3 = -127;
-        static constexpr auto SpecificTest4 = 255;
-        static constexpr auto SpecificTest5 = 256;
+        static constexpr auto SpecificTest4 = 127;
+        static constexpr auto SpecificTest5 = 255;
+        static constexpr auto SpecificTest6 = 256;
 
         TestTernarySpecial21<SharkFloatParams, sharkOperator>(0, SpecificTest1);
         TestTernarySpecial21<SharkFloatParams, sharkOperator>(0, SpecificTest2);
         TestTernarySpecial21<SharkFloatParams, sharkOperator>(0, SpecificTest3);
         TestTernarySpecial21<SharkFloatParams, sharkOperator>(0, SpecificTest4);
         TestTernarySpecial21<SharkFloatParams, sharkOperator>(0, SpecificTest5);
-        //DebugBreak();
+        TestTernarySpecial21<SharkFloatParams, sharkOperator>(0, SpecificTest6);
 
         for (auto i = -512; i < 512; i++) {
             if (SharkVerbose == VerboseMode::Debug) {

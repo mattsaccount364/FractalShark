@@ -531,8 +531,6 @@ HpSharkFloat<SharkFloatParams>::GenerateRandomNumber2() {
     std::random_device rd;
     std::mt19937 generator(rd());  // Mersenne Twister for high-quality randomness
 
-    std::uniform_int_distribution<uint32_t> distributionCases(0, 3);
-    std::uniform_int_distribution<uint32_t> distributionSmall(0, 16);
     std::uniform_int_distribution<uint32_t> distributionRand(0, std::numeric_limits<uint32_t>::max());
 
     mpf_t mpf_value;

@@ -19,7 +19,7 @@ static constexpr bool SharkDebug = false;
 #endif
 
 // Undefine to include N2, v1 etc.
-#define MULTI_KERNEL
+//#define MULTI_KERNEL
 
 #ifdef MULTI_KERNEL
 static constexpr auto SharkMultiKernel = true;
@@ -40,7 +40,7 @@ static constexpr bool SharkTestGpu = false;
 #define SharkForceInlineReleaseOnly
 #else
 // #define SharkForceInlineReleaseOnly __forceinline__
-#define SharkForceInlineReleaseOnly
+#define SharkForceInlineReleaseOnly __forceinline__
 #endif
 
 // 0 = just one correctness test, intended for fast re-compile of a specific failure
@@ -48,9 +48,9 @@ static constexpr bool SharkTestGpu = false;
 // 2 = setup for profiling only, one kernel
 // 3 = all basic correctness tests + comical tests
 // See ExplicitInstantiate.h for more information
-#define ENABLE_BASIC_CORRECTNESS 0
+#define ENABLE_BASIC_CORRECTNESS 1
 static constexpr auto SharkTestComicalThreadCount = 13;
-static constexpr auto SharkTestIterCount = SharkDebug ? 3 : 500;
+static constexpr auto SharkTestIterCount = SharkDebug ? 3 : 50000;
 
 // Set to true to use a custom stream for the kernel launch
 static constexpr auto SharkCustomStream = true;
@@ -68,7 +68,12 @@ static constexpr auto SharkBatchSize = SharkDebug ? 8 : 512;
 static constexpr bool SharkDebugChecksums = SharkDebug;
 static constexpr bool SharkDebugRandomDelays = false;
 
-static constexpr bool SharkTestCorrectness = false;
+#if ENABLE_BASIC_CORRECTNESS == 2
+static constexpr bool SharkTestCorrectness = SharkDebug;
+#else
+static constexpr bool SharkTestCorrectness = true;
+#endif
+
 static constexpr bool SharkTestInfiniteCorrectness = SharkTestCorrectness ? true : false;
 static constexpr auto SharkTestForceSameSign = false;
 static constexpr bool SharkTestBenchmarkAgainstHost = true;

@@ -66,6 +66,7 @@ GetNormalizedDigit (
     int32_t         shiftBits,
     int32_t         idx) {
     // ensure idx is within the extended buffer
+    (void)numActualDigitsPlusGuard; // unused in this function, but kept for clarity
     assert(idx >= 0 && idx < numActualDigitsPlusGuard);
 
     // funnel-shift left within the 'actualDigits' region
@@ -124,6 +125,8 @@ GetExtLimb (
     const int32_t actualDigits,
     const int32_t numActualDigitsPlusGuard,
     const int32_t idx) {
+
+    (void)numActualDigitsPlusGuard; // unused in this function, but kept for clarity
 
     if (idx < actualDigits) {
         return ext[idx];
@@ -874,32 +877,18 @@ NormalizeAndCopyResult(
     bool                        outSign
 ) noexcept {
     // --- 1) Inject any carry/borrow back into the digit stream ---
-    if (carry != 0) {
-        if (carry < 0) {
-            if (SharkVerbose == VerboseMode::Debug) {
-                std::cout << prefixOutStr
-                    << " negative carry (" << carry << "), skipping branch\n";
-            }
-            return;
-        }
-        int shift = (carry == 2 ? 2 : 1);
-        exponent += shift;
+    if (carry < 0) {
         if (SharkVerbose == VerboseMode::Debug) {
             std::cout << prefixOutStr
-                << " injecting carry " << carry
-                << " as shift " << shift
-                << ", new exponent = 0x" << std::hex << exponent << std::dec << "\n";
+                << " negative carry (" << carry << "), skipping branch\n";
         }
-
-        uint32_t highBits = static_cast<uint32_t>(carry);
-        for (int32_t i = numActualDigitsPlusGuard - 1; i >= 0; --i) {
-            uint32_t w = static_cast<uint32_t>(propagatedResult[i]);
-            uint32_t lowMask = (1u << shift) - 1;
-            uint32_t nextHB = w & lowMask;
-            propagatedResult[i] = (w >> shift) | (highBits << (32 - shift));
-            highBits = nextHB;
-        }
+        assert(false);
+        return;
     }
+
+    assert(propagatedResult.size() == numActualDigitsPlusGuard);
+    propagatedResult.push_back(static_cast<uint32_t>(carry));
+    numActualDigitsPlusGuard++;
 
     // --- 2) Locate most‐significant non‐zero word ---
     int32_t msdResult = 0;

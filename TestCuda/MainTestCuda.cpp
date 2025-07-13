@@ -55,7 +55,7 @@ char PressKey() {
     return (char)_getch();
 }
 
-// constexpr auto MainOperator = Operator::MultiplyKaratsubaV2;
+//constexpr auto MainOperator = Operator::MultiplyKaratsubaV2;
 constexpr auto MainOperator = Operator::Add;
 
 template<typename TestSharkParams>

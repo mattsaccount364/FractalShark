@@ -316,7 +316,7 @@ void Phase1_ABC (
 template<class SharkFloatParams>
 __device__ SharkForceInlineReleaseOnly void
 CarryPropagation_ABC(
-    uint32_t * /*sharedData*/,
+    uint32_t * sharedData,
     uint32_t *globalSync,                // [0] holds convergence counter
     const int32_t    idx,                       // this thread’s global index
     const int32_t    numActualDigitsPlusGuard,  // N
@@ -343,6 +343,7 @@ CarryPropagation_ABC(
     const int32_t N = numActualDigitsPlusGuard;
     const int32_t stride = grid.size();
     auto *global64 = reinterpret_cast<uint64_t *>(globalSync);
+    //auto *sharedCount = reinterpret_cast<uint64_t *>(sharedData);
 
     // six carry buffers
     uint32_t *curC1 = carry1;
@@ -356,6 +357,10 @@ CarryPropagation_ABC(
     if (block.group_index().x == 0 && block.thread_index().x == 0) {
         *global64 = 1ULL;
     }
+
+    //if (block.thread_index().x == 0) {
+    //    *sharedCount = 0ULL; // reset shared counter
+    //}
 
     for (int32_t i = idx; i < N + 1; i += stride) {
         curC1[i] = nextC1[i] = 0u;
@@ -376,7 +381,7 @@ CarryPropagation_ABC(
 
     for (int32_t iter = 0; iter < maxIter; ++iter) {
         // ── barrier 1: reset convergence mask ──
-        if (*global64 == prevCount) {
+        if (iter > 0 && *global64 == prevCount) {
             break;
         }
 
@@ -394,12 +399,12 @@ CarryPropagation_ABC(
         for (int32_t i = idx; i < N; i += stride) {
             // ABC_True
             if (need1) {
-                int32_t in1 = (i == 0 ? 0 : static_cast<int32_t>(curC1[i]));
-                int64_t limb1 = static_cast<int64_t>(extResultTrue[i]);
-                int64_t sum1 = limb1 + in1;
-                uint32_t lo1 = static_cast<uint32_t>(sum1);
+                const int32_t in1 = (i == 0 ? 0 : static_cast<int32_t>(curC1[i]));
+                const int64_t limb1 = static_cast<int64_t>(extResultTrue[i]);
+                const int64_t sum1 = limb1 + in1;
+                const uint32_t lo1 = static_cast<uint32_t>(sum1);
                 extResultTrue[i] = lo1;
-                int32_t new1 = int32_t((sum1 - static_cast<int64_t>(lo1)) >> 32);
+                const int32_t new1 = int32_t((sum1 - static_cast<int64_t>(lo1)) >> 32);
                 if (i < N - 1) {
                     nextC1[i + 1] = static_cast<uint32_t>(new1);
                 } else {
@@ -410,12 +415,12 @@ CarryPropagation_ABC(
 
             // ABC_False
             if (need2) {
-                int32_t in2 = (i == 0 ? 0 : static_cast<int32_t>(curC2[i]));
-                int64_t limb2 = static_cast<int64_t>(extResultFalse[i]);
-                int64_t sum2 = limb2 + in2;
-                uint32_t lo2 = static_cast<uint32_t>(sum2);
+                const int32_t in2 = (i == 0 ? 0 : static_cast<int32_t>(curC2[i]));
+                const int64_t limb2 = static_cast<int64_t>(extResultFalse[i]);
+                const int64_t sum2 = limb2 + in2;
+                const uint32_t lo2 = static_cast<uint32_t>(sum2);
                 extResultFalse[i] = lo2;
-                int32_t new2 = int32_t((sum2 - static_cast<int64_t>(lo2)) >> 32);
+                const int32_t new2 = int32_t((sum2 - static_cast<int64_t>(lo2)) >> 32);
                 if (i < N - 1) {
                     nextC2[i + 1] = static_cast<uint32_t>(new2);
                 } else {
@@ -426,12 +431,12 @@ CarryPropagation_ABC(
 
             // D+E (DE)
             if (need3) {
-                int32_t in3 = (i == 0 ? 0u : static_cast<int32_t>(curC3[i]));
-                int64_t limb3 = static_cast<int64_t>(final128_DE[i]);
-                int64_t sum3 = limb3 + in3;
-                uint32_t lo3 = static_cast<uint32_t>(sum3);
+                const int32_t in3 = (i == 0 ? 0u : static_cast<int32_t>(curC3[i]));
+                const int64_t limb3 = static_cast<int64_t>(final128_DE[i]);
+                const int64_t sum3 = limb3 + in3;
+                const uint32_t lo3 = static_cast<uint32_t>(sum3);
                 final128_DE[i] = lo3;
-                int32_t new3 = int32_t((sum3 - static_cast<int64_t>(lo3)) >> 32);
+                const int32_t new3 = int32_t((sum3 - static_cast<int64_t>(lo3)) >> 32);
                 if (i < N - 1) {
                     nextC3[i + 1] = new3;
                 } else {
@@ -449,8 +454,8 @@ CarryPropagation_ABC(
         // ── barrier 2: ensure all atomicAdds done before reading ──
         grid.sync();
 
-        // unpack and test for any remaining
-        uint64_t allCounts = *global64;
+        const uint64_t allCounts = *global64;
+
         need1 = ((allCounts >> 0) & FIELD_MASK) != prevCount1;
         need2 = ((allCounts >> SHIFT1) & FIELD_MASK) != prevCount2;
         need3 = ((allCounts >> SHIFT2) & FIELD_MASK) != prevCount3;
@@ -473,8 +478,8 @@ CarryPropagation_ABC(
     }
 
     // final carry extraction
-    carryAcc_ABC_True = int32_t(curC1[N]);
-    carryAcc_ABC_False = int32_t(curC2[N]);
-    carryAcc_DE = int32_t(curC3[N]);
+    carryAcc_ABC_True = static_cast<int32_t>(curC1[N]);
+    carryAcc_ABC_False = static_cast<int32_t>(curC2[N]);
+    carryAcc_DE = static_cast<int32_t>(curC3[N]);
     grid.sync();
 }

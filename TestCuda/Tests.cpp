@@ -858,12 +858,14 @@ void TestCoreMultiply(
     const mpf_t *mpfInputX,
     size_t mpfInputLen)
 {
+    (void)mpfInputLen; // Unused parameter, but kept for compatibility
     assert(inputX.size() == 3 || inputX.size() == 5);
     assert(mpfInputLen >= 2);
 
     const auto &aNum = inputX[0];
     const auto &bNum = inputX[1];
 
+    assert(inputX.size() == mpfInputLen);
     const auto &mpfA = mpfInputX[0];
     const auto &mpfB = mpfInputX[1];
 
@@ -2045,7 +2047,10 @@ bool TestBinaryOperatorPerf([[maybe_unused]] int testBase) {
     TestPerf<TestPerSharkParams7, sharkOperator>(testBase + 7, SharkTestIterCount);
     TestPerf<TestPerSharkParams8, sharkOperator>(testBase + 8, SharkTestIterCount);
 #elif (ENABLE_BASIC_CORRECTNESS == 2)
-    TestPerf<TestPerSharkParams1, sharkOperator>(testBase + 1, SharkTestIterCount);
+    static constexpr auto NumIters = 5;
+    for (size_t i = 0; i < NumIters; i++) {
+        TestPerf<TestPerSharkParams1, sharkOperator>(testBase + 1, SharkTestIterCount);
+    }
 #endif
     return Tests.CheckAllTestsPassed();
 }

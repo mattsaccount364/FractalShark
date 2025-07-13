@@ -233,82 +233,215 @@ void Phase1_ABC (
     }
 }
 
-template<class SharkFloatParams>
-__device__
-void CarryPropagation_ABC (
-    uint32_t *sharedData,
-    uint32_t *globalSync,
-    const int32_t idx,
-    const int32_t numActualDigitsPlusGuard,
-    uint64_t *final128_ABC,         // raw signed limbs from Phase1_ABC
-    uint32_t *carry1,        // global memory array for intermediate carries/borrows (length numActualDigitsPlusGuard+1)
-    uint32_t *carry2,        // global memory array for intermediate carries/borrows (length numActualDigitsPlusGuard+1)
-    int32_t &carryAcc,
+//template<class SharkFloatParams>
+//__device__
+//void CarryPropagation_ABC (
+//    uint32_t *sharedData,
+//    uint32_t *globalSync,
+//    const int32_t idx,
+//    const int32_t numActualDigitsPlusGuard,
+//    uint64_t *final128_ABC,         // raw signed limbs from Phase1_ABC
+//    uint32_t *carry1,        // global memory array for intermediate carries/borrows (length numActualDigitsPlusGuard+1)
+//    uint32_t *carry2,        // global memory array for intermediate carries/borrows (length numActualDigitsPlusGuard+1)
+//    int32_t &carryAcc,
+//    cg::thread_block &block,
+//    cg::grid_group &grid
+//)
+//{
+//    const int32_t N = numActualDigitsPlusGuard;
+//    const int32_t stride = grid.size();
+//
+//    // use the user-passed buffers:
+//    uint32_t *curC = carry1;
+//    uint32_t *nextC = carry2;
+//
+//    // only one thread initializes the counter
+//    if (block.group_index().x == 0 && block.thread_index().x == 0) {
+//        globalSync[0] = 1;
+//    }
+//
+//    // zero out both carry arrays
+//    for (int32_t i = idx; i < N + 1; i += stride) {
+//        curC[i] = 0u;
+//        nextC[i] = 0u;
+//    }
+//    grid.sync();
+//
+//    constexpr int maxIter = 1000;
+//    uint32_t prevCount = 0;
+//
+//    // iterative rippling until no new carries
+//    for (int iter = 0; iter < maxIter; ++iter) {
+//        if (globalSync[0] == prevCount) break;
+//        prevCount = globalSync[0];
+//
+//        grid.sync();
+//
+//        uint32_t localNew = 0;
+//        for (int32_t i = idx; i < N; i += stride) {
+//            // incoming carry (borrow if negative)
+//            int32_t inC = (i == 0 ? 0 : static_cast<int32_t>(curC[i]));
+//            int64_t limb = static_cast<int64_t>(final128_ABC[i]);
+//            int64_t sum = limb + inC;
+//
+//            // write back low 32 bits
+//            uint32_t low32 = static_cast<uint32_t>(sum);
+//            final128_ABC[i] = low32;
+//
+//            // arithmetic shift yields signed carry/borrow
+//            int32_t newC = static_cast<int32_t>((sum - int64_t(low32)) >> 32);
+//            if (i < N - 1) {
+//                nextC[i + 1] = static_cast<uint32_t>(newC);
+//            } else {
+//                nextC[i + 1] = curC[i + 1] + static_cast<uint32_t>(newC);
+//            }
+//            localNew += (newC != 0);
+//        }
+//
+//        grid.sync();
+//
+//        if (localNew) {
+//            atomicAdd(&globalSync[0], localNew);
+//        }
+//
+//        // swap for next iteration
+//        auto *tmp = curC; curC = nextC; nextC = tmp;
+//        grid.sync();
+//    }
+//
+//    carryAcc = static_cast<int32_t>(curC[N]);
+//    grid.sync();
+//}
+
+template <class SharkFloatParams>
+__device__ SharkForceInlineReleaseOnly void
+CarryPropagation_ABC(
+    uint32_t * /*sharedData*/,
+    uint32_t *globalSync,                // [0] holds convergence counter
+    const int32_t    idx,                       // this thread’s global index
+    const int32_t    numActualDigitsPlusGuard,  // N
+    uint64_t *final128_ABC_True,         // Phase1_ABC “true” limbs
+    uint64_t *final128_ABC_False,        // Phase1_ABC “false” limbs
+    uint64_t *final128_DE,               // Phase1_DE limbs
+    uint32_t *carry1,                    // length N+1
+    uint32_t *carry2,                    // length N+1
+    uint32_t *carry3,                    // length N+1
+    uint32_t *carry4,                    // length N+1
+    uint32_t *carry5,                    // length N+1
+    uint32_t *carry6,                    // length N+1
+    int32_t &carryAcc_ABC_True,         // out: final signed carry/borrow
+    int32_t &carryAcc_ABC_False,        // out: final signed carry/borrow
+    int32_t &carryAcc_DE,               // out: final unsigned carry
     cg::thread_block &block,
     cg::grid_group &grid
-)
-{
+) {
     const int32_t N = numActualDigitsPlusGuard;
     const int32_t stride = grid.size();
 
-    // use the user-passed buffers:
-    uint32_t *curC = carry1;
-    uint32_t *nextC = carry2;
+    // assign the six working buffers
+    uint32_t *curC1 = carry1, *nextC1 = carry2;
+    uint32_t *curC2 = carry3, *nextC2 = carry4;
+    uint32_t *curC3 = carry5, *nextC3 = carry6;
 
-    // only one thread initializes the counter
+    // only one thread initializes the global counter
     if (block.group_index().x == 0 && block.thread_index().x == 0) {
         globalSync[0] = 1;
     }
+    grid.sync();
 
-    // zero out both carry arrays
+    // zero all six carry buffers
     for (int32_t i = idx; i < N + 1; i += stride) {
-        curC[i] = 0u;
-        nextC[i] = 0u;
+        curC1[i] = nextC1[i] = 0u;
+        curC2[i] = nextC2[i] = 0u;
+        curC3[i] = nextC3[i] = 0u;
     }
     grid.sync();
 
     constexpr int maxIter = 1000;
     uint32_t prevCount = 0;
 
-    // iterative rippling until no new carries
+    // convergent rippling loop
     for (int iter = 0; iter < maxIter; ++iter) {
+        // if no new carries last iter, we’re done
         if (globalSync[0] == prevCount) break;
         prevCount = globalSync[0];
-
         grid.sync();
 
-        uint32_t localNew = 0;
+        uint32_t localNew = 0u;
+
+        // each thread processes a grid-stride subset
         for (int32_t i = idx; i < N; i += stride) {
-            // incoming carry (borrow if negative)
-            int32_t inC = (i == 0 ? 0 : static_cast<int32_t>(curC[i]));
-            int64_t limb = static_cast<int64_t>(final128_ABC[i]);
-            int64_t sum = limb + inC;
+            //
+            // ——— ABC True ———
+            //
+            int32_t in1 = (i == 0 ? 0 : int32_t(curC1[i]));
+            int64_t sum1 = int64_t(final128_ABC_True[i]) + in1;
+            uint32_t lo1 = uint32_t(sum1);
+            final128_ABC_True[i] = lo1;
+            int32_t new1 = int32_t((sum1 - int64_t(lo1)) >> 32);
+            if (i < N - 1) nextC1[i + 1] = uint32_t(new1);
+            else          nextC1[i + 1] = curC1[i + 1] + uint32_t(new1);
+            localNew += (new1 != 0);
 
-            // write back low 32 bits
-            uint32_t low32 = static_cast<uint32_t>(sum);
-            final128_ABC[i] = low32;
+            //
+            // ——— ABC False ———
+            //
+            int32_t in2 = (i == 0 ? 0 : int32_t(curC2[i]));
+            int64_t sum2 = int64_t(final128_ABC_False[i]) + in2;
+            uint32_t lo2 = uint32_t(sum2);
+            final128_ABC_False[i] = lo2;
+            int32_t new2 = int32_t((sum2 - int64_t(lo2)) >> 32);
+            if (i < N - 1) nextC2[i + 1] = uint32_t(new2);
+            else          nextC2[i + 1] = curC2[i + 1] + uint32_t(new2);
+            localNew += (new2 != 0);
 
-            // arithmetic shift yields signed carry/borrow
-            int32_t newC = static_cast<int32_t>((sum - int64_t(low32)) >> 32);
-            if (i < N - 1) {
-                nextC[i + 1] = static_cast<uint32_t>(newC);
-            } else {
-                nextC[i + 1] = curC[i + 1] + static_cast<uint32_t>(newC);
-            }
-            localNew += (newC != 0);
+            //
+            // ——— D + E (DE) ———
+            //
+            uint32_t in3 = (i == 0 ? 0u : curC3[i]);
+            uint64_t sum3 = final128_DE[i] + in3;
+            uint32_t lo3 = uint32_t(sum3);
+            final128_DE[i] = lo3;
+            uint32_t new3 = uint32_t(sum3 >> 32);
+            if (i < N - 1) nextC3[i + 1] = new3;
+            else          nextC3[i + 1] = curC3[i + 1] + new3;
+            localNew += (new3 != 0);
         }
 
         grid.sync();
 
+        // bump global counter if any thread saw new carries
         if (localNew) {
             atomicAdd(&globalSync[0], localNew);
         }
 
-        // swap for next iteration
-        auto *tmp = curC; curC = nextC; nextC = tmp;
+        // swap buffers
+        {
+            auto *t = curC1;
+            curC1 = nextC1;
+            nextC1 = t;
+        }
+
+        {
+            auto *t = curC2;
+            curC2 = nextC2;
+            nextC2 = t;
+        }
+
+        {
+            auto *t = curC3;
+            curC3 = nextC3;
+            nextC3 = t;
+        }
+
         grid.sync();
     }
 
-    carryAcc = static_cast<int32_t>(curC[N]);
+    // thread (0,0) writes out the final carries
+    if (block.group_index().x == 0 && block.thread_index().x == 0) {
+        carryAcc_ABC_True = int32_t(curC1[N]);
+        carryAcc_ABC_False = int32_t(curC2[N]);
+        carryAcc_DE = int32_t(curC3[N]);
+    }
     grid.sync();
 }

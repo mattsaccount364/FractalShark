@@ -731,10 +731,9 @@ __device__ void AddHelper (
         final128_DE,  // the extended result digits
         debugStates);
 
-    int32_t carryTrue = 0;
-    int32_t carryFalse = 0;
-
-    int32_t carry_DE = 0;
+    int32_t carryAcc_ABC_True = 0;
+    int32_t carryAcc_ABC_False = 0;
+    int32_t carryAcc_DE = 0;
 
     if constexpr (!SharkFloatParams::DisableCarryPropagation) {
         CarryPropagation_ABC<SharkFloatParams>(
@@ -742,34 +741,18 @@ __device__ void AddHelper (
             globalSync,
             idx,
             numActualDigitsPlusGuard,
+            extResultTrue,
+            extResultFalse,
             final128_DE,
             carry1,
             carry2,
-            carry_DE,
-            block,
-            grid);
-
-        CarryPropagation_ABC<SharkFloatParams>(
-            sharedData,
-            globalSync,
-            idx,
-            numActualDigitsPlusGuard,
-            extResultTrue,
-            carry1,
-            carry2,
-            carryTrue,
-            block,
-            grid);
-
-        CarryPropagation_ABC<SharkFloatParams>(
-            sharedData,
-            globalSync,
-            idx,
-            numActualDigitsPlusGuard,
-            extResultFalse,
-            carry1,
-            carry2,
-            carryFalse,
+            carry3,
+            carry4,
+            carry5,
+            carry6,
+            carryAcc_ABC_True,
+            carryAcc_ABC_False,
+            carryAcc_DE,
             block,
             grid);
     }
@@ -789,7 +772,7 @@ __device__ void AddHelper (
 
     // 1) Decide which A−B+C branch to use
     const bool sameSignDE = (D_2X->GetNegative() == E_B->GetNegative());
-    bool useTrueBranch = (carryTrue >= carryFalse);
+    bool useTrueBranch = (carryAcc_ABC_True >= carryAcc_ABC_False);
 
     // 2) Normalize & write *only* that branch
     if (useTrueBranch) {
@@ -800,7 +783,7 @@ __device__ void AddHelper (
             numActualDigits,
             numActualDigitsPlusGuard,
             outExponentTrue,
-            carryTrue,
+            carryAcc_ABC_True,
             extResultTrue,
             Out_A_B_C,
             outSignTrue
@@ -813,7 +796,7 @@ __device__ void AddHelper (
             numActualDigits,
             numActualDigitsPlusGuard,
             outExponentFalse,
-            carryFalse,
+            carryAcc_ABC_False,
             extResultFalse,
             Out_A_B_C,
             outSignFalse
@@ -832,7 +815,7 @@ __device__ void AddHelper (
         numActualDigits,
         numActualDigitsPlusGuard,
         outExponent_DE,
-        carry_DE,
+        carryAcc_DE,
         final128_DE,
         Out_D_E,
         deSign
@@ -842,7 +825,7 @@ __device__ void AddHelper (
     //FinalResolutionDE(
     //    idx,
     //    stride,
-    //    carry_DE,
+    //    carryAcc_DE,
     //    numActualDigitsPlusGuard,
     //    numActualDigits,
     //    final128_DE,

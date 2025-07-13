@@ -375,6 +375,14 @@ void TestPerf (
     mpf_init(mpfHostResultXY2);
     mpf_init(mpfHostResultYY);
 
+    // Reference orbit:
+    mpf_t tempX, tempY, xSquared, ySquared, twoXY;
+    mpf_init(tempX);
+    mpf_init(tempY);
+    mpf_init(xSquared);
+    mpf_init(ySquared);
+    mpf_init(twoXY);
+
     if constexpr (SharkTestBenchmarkAgainstHost) {
         BenchmarkTimer hostTimer;
         ScopedBenchmarkStopper hostStopper{ hostTimer };
@@ -388,6 +396,21 @@ void TestPerf (
                 mpf_mul(mpfHostResultXX, mpfX, mpfX);
                 mpf_mul(mpfHostResultXY1, mpfX, mpfY);
                 mpf_mul(mpfHostResultYY, mpfY, mpfY);
+            } else if constexpr (sharkOperator == Operator::ReferenceOrbit) {
+                // x_(n + 1) = x_n * x_n - y_n * y_n + a
+                // y_(n + 1) = 2 * x_n * y_n + b
+
+                mpf_mul(xSquared, mpfX, mpfX); // x^2
+                mpf_mul(ySquared, mpfY, mpfY); // y^2
+                mpf_mul(twoXY, mpfX, mpfY);    // xy
+                mpf_mul_ui(twoXY, twoXY, 2);   // 2xy
+                mpf_sub(tempX, xSquared, ySquared); // x^2 - y^2
+                mpf_add(mpfHostResultXX, tempX, mpfZ); // x^2 - y^2 + a
+                mpf_add(mpfHostResultXY1, twoXY, mpfY); // 2xy + b
+               
+            } else {
+                std::cerr << "Unknown operator in TestPerf" << std::endl;
+                return;
             }
         }
 
@@ -477,6 +500,30 @@ void TestPerf (
                 testSucceeded &= CheckDiff(testNum, numTerms, "GPU", mpfHostResultXY1, gpuResult2XY);
                 testSucceeded &= CheckDiff(testNum, numTerms, "GPU", mpfHostResultYY, gpuResult2YY);
             }
+        } else if constexpr (sharkOperator == Operator::ReferenceOrbit) {
+            auto combo = std::make_unique<HpSharkReferenceResults<SharkFloatParams>>();
+            combo->A = *xNum;
+            combo->B = *yNum;
+
+            const auto &gpuResultX = combo->ResultA;
+            const auto &gpuResultY = combo->ResultB;
+
+            {
+                BenchmarkTimer timer;
+                InvokeHpSharkReferenceKernelPerf<SharkFloatParams>(
+                    timer,
+                    *combo,
+                    numIters);
+                Tests.AddTime(testNum, timer.GetDeltaInMs());
+                std::cout << "GPU iter time: " << timer.GetDeltaInMs() << " ms" << std::endl;
+            }
+
+            if constexpr (SharkTestBenchmarkAgainstHost) {
+                bool testSucceeded = true;
+                constexpr auto numTerms = 2;
+                testSucceeded &= CheckDiff(testNum, numTerms, "GPU", mpfHostResultXX, gpuResultX);
+                testSucceeded &= CheckDiff(testNum, numTerms, "GPU", mpfHostResultYY, gpuResultY);
+            }
         }
     }
 
@@ -485,6 +532,13 @@ void TestPerf (
     mpf_clear(mpfHostResultXY1);
     mpf_clear(mpfHostResultXY2);
     mpf_clear(mpfHostResultYY);
+
+    // Clean up reference orbit variables
+    mpf_clear(tempX);
+    mpf_clear(tempY);
+    mpf_clear(xSquared);
+    mpf_clear(ySquared);
+    mpf_clear(twoXY);
 }
 
 template<class SharkFloatParams, Operator sharkOperator>
@@ -792,7 +846,7 @@ void TestCoreAdd (
         combo.D_2X = dNum;
         combo.E_B = eNum;
 
-        InvokeAddKernelCorrectness<SharkFloatParams, Operator::Add>(
+        InvokeAddKernelCorrectness<SharkFloatParams>(
             timer,
             combo,
             &debugStatesCuda);
@@ -869,8 +923,6 @@ void TestCoreMultiply(
     const auto &mpfA = mpfInputX[0];
     const auto &mpfB = mpfInputX[1];
 
-    constexpr auto sharkOperator = Operator::MultiplyKaratsubaV2;
-
     auto TestHostKaratsuba = [](
         int testNum,
         const HpSharkFloat<SharkFloatParams> &aNum,
@@ -906,21 +958,21 @@ void TestCoreMultiply(
 
             bool res = true;
             constexpr auto numTerms = 2;
-            res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(
+            res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyKaratsubaV2>(
                 testNum,
                 numTerms,
                 "CustomHighPrecisionV2XX",
                 mpfHostResultXX,
                 hostKaratsubaOutXXV2);
 
-            res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(
+            res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyKaratsubaV2>(
                 testNum,
                 numTerms,
                 "CustomHighPrecisionV2XY",
                 mpfHostResultXY1,
                 hostKaratsubaOutXYV2);
 
-            res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(
+            res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyKaratsubaV2>(
                 testNum,
                 numTerms,
                 "CustomHighPrecisionV2YY",
@@ -976,7 +1028,7 @@ void TestCoreMultiply(
         combo.A = aNum;
         combo.B = bNum;
 
-        InvokeMultiplyKernelCorrectness<SharkFloatParams, Operator::MultiplyKaratsubaV2>(
+        InvokeMultiplyKernelCorrectness<SharkFloatParams>(
             timer,
             combo,
             &debugStatesCuda);
@@ -1019,13 +1071,13 @@ void TestCoreMultiply(
         
         constexpr auto numTerms = 2;
 
-        testSucceeded &= CheckGPUResult<SharkFloatParams, sharkOperator>(
+        testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::MultiplyKaratsubaV2>(
             testNum, numTerms, "GPU", mpfHostResultXX, gpuResultXX);
 
-        testSucceeded &= CheckGPUResult<SharkFloatParams, sharkOperator>(
+        testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::MultiplyKaratsubaV2>(
             testNum, numTerms, "GPU", mpfHostResultXY1, gpuResultXY1);
 
-        testSucceeded &= CheckGPUResult<SharkFloatParams, sharkOperator>(
+        testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::MultiplyKaratsubaV2>(
             testNum, numTerms, "GPU", mpfHostResultYY, gpuResultYY);
     }
 
@@ -1034,6 +1086,125 @@ void TestCoreMultiply(
     mpf_clear(mpfHostResultXY1);
     mpf_clear(mpfHostResultXY2);
     mpf_clear(mpfHostResultYY);
+}
+
+template<class SharkFloatParams>
+void TestCoreReferenceOrbit(
+    int testNum,
+    const std::vector<HpSharkFloat<SharkFloatParams>> &inputX,
+    const mpf_t *mpfInputX,
+    size_t mpfInputLen) {
+    (void)mpfInputLen; // Unused parameter, but kept for compatibility
+    assert(inputX.size() == 3 || inputX.size() == 5);
+    assert(mpfInputLen >= 4);
+
+    const auto &aNum = inputX[0];
+    const auto &bNum = inputX[1];
+
+    assert(inputX.size() == mpfInputLen);
+    const auto &mpfA = mpfInputX[0];
+    const auto &mpfB = mpfInputX[1];
+    const auto &mpfX = mpfInputX[2];
+    const auto &mpfY = mpfInputX[3];
+
+    // Perform the calculation on the using MPIR
+    HpSharkFloat<SharkFloatParams> gpuResultXX{};
+    HpSharkFloat<SharkFloatParams> gpuResultXY1{};
+    HpSharkFloat<SharkFloatParams> gpuResultXY2{};
+    HpSharkFloat<SharkFloatParams> gpuResultYY{};
+
+    mpf_t mpfHostResultX;
+    mpf_t mpfHostResultY;
+
+    mpf_t xSquared;
+    mpf_t ySquared;
+    mpf_t twoXY;
+    mpf_t tempX;
+    mpf_t tempY;
+
+    mpf_init(xSquared);
+    mpf_init(ySquared);
+    mpf_init(twoXY);
+    mpf_init(tempX);
+    mpf_init(tempY);
+
+    mpf_init(mpfHostResultX);
+    mpf_init(mpfHostResultY);
+
+    // x_(n + 1) = x_n * x_n - y_n * y_n + a
+    // y_(n + 1) = 2 * x_n * y_n + b
+
+    mpf_mul(xSquared, mpfX, mpfX); // x^2
+    mpf_mul(ySquared, mpfY, mpfY); // y^2
+    mpf_mul(twoXY, mpfX, mpfY);    // xy
+    mpf_mul_ui(twoXY, twoXY, 2);   // 2xy
+    mpf_sub(tempX, xSquared, ySquared); // x^2 - y^2
+    mpf_add(mpfHostResultX, tempX, mpfA); // x^2 - y^2 + a
+    mpf_add(mpfHostResultY, twoXY, mpfB); // 2xy + b
+
+    // Print host result
+    if (SharkVerbose == VerboseMode::Debug) {
+        std::cout << "\nCorrect MPIR result:" << std::endl;
+        std::cout << "Correct MPIR result X: " <<
+            MpfToString<SharkFloatParams>(mpfHostResultX, HpSharkFloat<SharkFloatParams>::DefaultPrecBits) << std::endl;
+        std::cout << "Correct MPIR result Y: " <<
+            MpfToString<SharkFloatParams>(mpfHostResultY, HpSharkFloat<SharkFloatParams>::DefaultPrecBits) << std::endl;
+
+        std::cout << "Correct MPIR hex X: " << std::endl;
+        std::cout << "" << MpfToHexString(mpfHostResultX) << std::endl;
+        std::cout << "Correct MPIR hex Y: " << std::endl;
+        std::cout << "" << MpfToHexString(mpfHostResultY) << std::endl;
+    }
+
+    std::vector<DebugStateRaw> debugStatesCuda{};
+    if constexpr (SharkTestGpu) {
+
+        assert(false);
+        BenchmarkTimer timer;
+
+        HpSharkComboResults<SharkFloatParams> combo;
+        combo.A = aNum;
+        combo.B = bNum;
+
+        InvokeHpSharkReferenceKernelCorrectness<SharkFloatParams>(
+            timer,
+            combo,
+            &debugStatesCuda);
+
+        gpuResultXX = combo.ResultX2;
+        gpuResultXY1 = combo.ResultXY;
+        gpuResultYY = combo.ResultY2;
+
+        Tests.AddTime(testNum, timer.GetDeltaInMs());
+
+        if (SharkVerbose == VerboseMode::Debug) {
+            std::cout << "GPU single time: " << timer.GetDeltaInMs() << " ms" << std::endl;
+        }
+    }
+
+    std::vector<DebugStateHost<SharkFloatParams>> debugResultsHost;
+
+    if constexpr (SharkTestGpu) {
+        bool testSucceeded = true;
+
+        constexpr auto numTerms = 2;
+
+        testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::ReferenceOrbit>(
+            testNum, numTerms, "GPU", mpfHostResultX, gpuResultXX);
+
+        testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::ReferenceOrbit>(
+            testNum, numTerms, "GPU", mpfHostResultY, gpuResultYY);
+    }
+
+    // Clean up MPIR variables
+    mpf_clear(mpfHostResultX);
+    mpf_clear(mpfHostResultY);
+
+    mpf_clear(xSquared);
+    mpf_clear(ySquared);
+    mpf_clear(twoXY);
+    mpf_clear(tempX);
+    mpf_clear(tempY);
 }
 
 template<class SharkFloatParams, Operator sharkOperator>
@@ -1061,6 +1232,8 @@ void TestTernaryOperatorTwoNumbersRawNoSignChange(
         TestCoreAdd<SharkFloatParams>(testNum, inputX, mpfInputX, mpfInputLen);
     } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
         TestCoreMultiply<SharkFloatParams>(testNum, inputX, mpfInputX, mpfInputLen);
+    } else if constexpr (sharkOperator == Operator::ReferenceOrbit) {
+        TestCoreReferenceOrbit<SharkFloatParams>(testNum, inputX, mpfInputX, mpfInputLen);
     } else {
         static_assert(SharkTestForceSameSign, "Unsupported operator for TestTernaryOperatorTwoNumbersRawNoSignChange");
     }
@@ -2059,14 +2232,17 @@ bool TestBinaryOperatorPerf([[maybe_unused]] int testBase) {
 #ifdef MULTI_KERNEL
 #define ExplicitlyInstantiate(SharkFloatParams) \
     template bool TestAllBinaryOp<SharkFloatParams, Operator::Add>(int testBase); \
-    template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyKaratsubaV2>(int testBase);
+    template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyKaratsubaV2>(int testBase); \
+    template bool TestAllBinaryOp<SharkFloatParams, Operator::ReferenceOrbit>(int testBase);
 #else
 #define ExplicitlyInstantiate(SharkFloatParams) \
-    template bool TestAllBinaryOp<SharkFloatParams, Operator::Add>(int testBase); \
-    /* template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyKaratsubaV2>(int testBase); */
+    /*template bool TestAllBinaryOp<SharkFloatParams, Operator::Add>(int testBase); */ \
+    /*template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyKaratsubaV2>(int testBase); */ \
+    template bool TestAllBinaryOp<SharkFloatParams, Operator::ReferenceOrbit>(int testBase);  
 #endif
 
 template bool TestBinaryOperatorPerf<Operator::Add>(int testBase);
 template bool TestBinaryOperatorPerf<Operator::MultiplyKaratsubaV2>(int testBase);
+template bool TestBinaryOperatorPerf<Operator::ReferenceOrbit>(int testBase);
 
 ExplicitInstantiateAll();

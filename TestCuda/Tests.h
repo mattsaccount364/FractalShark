@@ -3,6 +3,7 @@
 enum class Operator {
     Add,
     MultiplyKaratsubaV2,
+    ReferenceOrbit
 };
 
 template<Operator sharkOperator>
@@ -11,6 +12,8 @@ const char *OperatorToString() {
         return "Operator::Add";
     } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
         return "Operator::MultiplyKaratsubaV2";
+    } else if constexpr (sharkOperator == Operator::ReferenceOrbit) {
+        return "Operator::ReferenceOrbit";
     } else {
         return "Unknown";
     }

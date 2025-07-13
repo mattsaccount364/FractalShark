@@ -11,6 +11,9 @@ struct HpSharkComboResults;
 template<class SharkFloatParams>
 struct HpSharkAddComboResults;
 
+template<class SharkFloatParams>
+struct HpSharkReferenceResults;
+
 struct DebugStateRaw;
 
 struct CUstream_st;
@@ -19,6 +22,12 @@ using cudaStream_t = CUstream_st *;
 class BenchmarkTimer;
 
 enum class Operator;
+
+template<class SharkFloatParams>
+void InvokeHpSharkReferenceKernelPerf(
+    BenchmarkTimer &timer,
+    HpSharkReferenceResults<SharkFloatParams> &combo,
+    uint64_t numIters);
 
 template<class SharkFloatParams>
 void InvokeMultiplyKernelPerf(
@@ -32,13 +41,19 @@ void InvokeAddKernelPerf(
     HpSharkAddComboResults<SharkFloatParams> &combo,
     uint64_t numIters);
 
-template<class SharkFloatParams, Operator sharkOperator>
+template<class SharkFloatParams>
+void InvokeHpSharkReferenceKernelCorrectness(
+    BenchmarkTimer &timer,
+    HpSharkComboResults<SharkFloatParams> &combo,
+    std::vector<DebugStateRaw> *debugResults);
+
+template<class SharkFloatParams>
 void InvokeMultiplyKernelCorrectness(
     BenchmarkTimer &timer,
     HpSharkComboResults<SharkFloatParams> &combo,
     std::vector<DebugStateRaw> *debugResults);
 
-template<class SharkFloatParams, Operator sharkOperator>
+template<class SharkFloatParams>
 void InvokeAddKernelCorrectness(
     BenchmarkTimer &timer,
     HpSharkAddComboResults<SharkFloatParams> &combo,

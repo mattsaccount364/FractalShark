@@ -53,7 +53,7 @@ void ComputeHpSharkReferenceGpu(void *kernelArgs[]) {
 }
 
 template<class SharkFloatParams>
-void ComputeHpSharkReferenceGpuLoop(void *kernelArgs[]) {
+void ComputeHpSharkReferenceGpuLoop(cudaStream_t &stream, void *kernelArgs[]) {
 
     constexpr auto ExpandedNumDigits = SharkFloatParams::GlobalNumUint32;
     constexpr size_t SharedMemSize = sizeof(uint32_t) * ExpandedNumDigits; // Adjust as necessary
@@ -77,7 +77,7 @@ void ComputeHpSharkReferenceGpuLoop(void *kernelArgs[]) {
 
 #define ExplicitlyInstantiate(SharkFloatParams) \
     template void ComputeHpSharkReferenceGpu<SharkFloatParams>(void *kernelArgs[]); \
-    template void ComputeHpSharkReferenceGpuLoop<SharkFloatParams>(void *kernelArgs[]);
+    template void ComputeHpSharkReferenceGpuLoop<SharkFloatParams>(cudaStream_t &stream, void *kernelArgs[]);
 
 #ifdef SHARK_INCLUDE_KERNELS
 ExplicitInstantiateAll();

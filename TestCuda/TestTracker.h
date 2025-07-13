@@ -18,7 +18,7 @@ public:
         std::string AcceptableError;
     };
 
-    constexpr static auto NumTests = 10000;
+    constexpr static auto NumTests = 20000;
 
     TestTracker();
 

@@ -7,6 +7,7 @@
 #include "HpSharkFloat.cuh"
 #include "Add.cuh"
 #include "Multiply.cuh"
+#include "HpSharkReferenceOrbit.cuh"
 #include "ReferenceKaratsuba.h"
 #include "DebugChecksumHost.h"
 
@@ -20,6 +21,79 @@
 #include <algorithm>
 #include <assert.h>
 
+right so the idea is were setting up the integration kernel with a full reference orbit.
+try running it, and it fails, because shits not hooked up yet.  look at full stack, its all a hack job.
+
+template<class SharkFloatParams>
+void InvokeHpSharkReferenceKernelPerf(
+    BenchmarkTimer &timer,
+    HpSharkReferenceResults<SharkFloatParams> &combo,
+    uint64_t numIters) {
+
+    // Prepare kernel arguments
+    // Allocate memory for carryOuts and cumulativeCarries
+    uint64_t *d_tempProducts;
+    constexpr auto BytesToAllocate =
+        (AdditionalUInt64Global + ScratchMemoryCopies * CalculateMultiplyFrameSize<SharkFloatParams>()) * sizeof(uint64_t);
+    cudaMalloc(&d_tempProducts, BytesToAllocate);
+
+    HpSharkReferenceResults<SharkFloatParams> *comboGpu;
+    cudaMalloc(&comboGpu, sizeof(HpSharkReferenceResults<SharkFloatParams>));
+    cudaMemcpy(comboGpu, &combo, sizeof(HpSharkReferenceResults<SharkFloatParams>), cudaMemcpyHostToDevice);
+
+    void *kernelArgs[] = {
+        (void *)&comboGpu,
+        (void *)&numIters,
+        (void *)&d_tempProducts
+    };
+
+    cudaStream_t stream = nullptr;
+
+    if constexpr (SharkCustomStream) {
+        cudaStreamCreate(&stream); // Create a stream
+    }
+
+    cudaDeviceProp prop;
+    int device_id = 0;
+
+    if constexpr (SharkCustomStream) {
+        cudaGetDeviceProperties(&prop, device_id);
+        cudaDeviceSetLimit(cudaLimitPersistingL2CacheSize, prop.persistingL2CacheMaxSize); /* Set aside max possible size of L2 cache for persisting accesses */
+
+        auto setAccess = [&](void *ptr, size_t num_bytes) {
+            cudaStreamAttrValue stream_attribute;                                         // Stream level attributes data structure
+            stream_attribute.accessPolicyWindow.base_ptr = reinterpret_cast<void *>(ptr); // Global Memory data pointer
+            stream_attribute.accessPolicyWindow.num_bytes = num_bytes;                    // Number of bytes for persisting accesses.
+            // (Must be less than cudaDeviceProp::accessPolicyMaxWindowSize)
+            stream_attribute.accessPolicyWindow.hitRatio = 1.0;                          // Hint for L2 cache hit ratio for persisting accesses in the num_bytes region
+            stream_attribute.accessPolicyWindow.hitProp = cudaAccessPropertyPersisting; // Type of access property on cache hit
+            stream_attribute.accessPolicyWindow.missProp = cudaAccessPropertyStreaming;  // Type of access property on cache miss.
+
+            //Set the attributes to a CUDA stream of type cudaStream_t
+            cudaError_t err = cudaStreamSetAttribute(stream, cudaStreamAttributeAccessPolicyWindow, &stream_attribute);
+            if (err != cudaSuccess) {
+                std::cerr << "CUDA error in setting stream attribute: " << cudaGetErrorString(err) << std::endl;
+            }
+            };
+
+        setAccess(comboGpu, sizeof(HpSharkReferenceResults<SharkFloatParams>));
+        setAccess(d_tempProducts, 32 * SharkFloatParams::GlobalNumUint32 * sizeof(uint64_t));
+    }
+
+    {
+        ScopedBenchmarkStopper stopper{ timer };
+        ComputeHpSharkReferenceGpuLoop<SharkFloatParams>(stream, kernelArgs);
+    }
+
+    cudaMemcpy(&combo, comboGpu, sizeof(HpSharkReferenceResults<SharkFloatParams>), cudaMemcpyDeviceToHost);
+
+    if constexpr (SharkCustomStream) {
+        cudaStreamDestroy(stream); // Destroy the stream
+    }
+
+    cudaFree(comboGpu);
+    cudaFree(d_tempProducts);
+}
 
 template<class SharkFloatParams>
 void InvokeMultiplyKernelPerf(
@@ -128,7 +202,67 @@ void InvokeAddKernelPerf(
     cudaFree(comboResults);
 }
 
-template<class SharkFloatParams, Operator sharkOperator>
+template<class SharkFloatParams>
+void InvokeHpSharkReferenceKernelCorrectness(
+    BenchmarkTimer &timer,
+    HpSharkComboResults<SharkFloatParams> &combo,
+    std::vector<DebugStateRaw> *debugResults) {
+
+    // Prepare kernel arguments
+    // Allocate memory for carryOuts and cumulativeCarries
+    uint64_t *d_tempProducts;
+    constexpr auto BytesToAllocate =
+        (AdditionalUInt64Global + ScratchMemoryCopies * CalculateMultiplyFrameSize<SharkFloatParams>()) * sizeof(uint64_t);
+    cudaMalloc(&d_tempProducts, BytesToAllocate);
+
+    if constexpr (!SharkTestInitCudaMemory) {
+        cudaMemset(d_tempProducts, 0, BytesToAllocate);
+    } else {
+        cudaMemset(d_tempProducts, 0xCD, BytesToAllocate);
+    }
+
+    HpSharkComboResults<SharkFloatParams> *comboGpu;
+    cudaMalloc(&comboGpu, sizeof(HpSharkComboResults<SharkFloatParams>));
+    cudaMemcpy(comboGpu, &combo, sizeof(HpSharkComboResults<SharkFloatParams>), cudaMemcpyHostToDevice);
+
+    if constexpr (!SharkTestInitCudaMemory) {
+        cudaMemset(&comboGpu->ResultX2, 0, sizeof(HpSharkFloat<SharkFloatParams>));
+        cudaMemset(&comboGpu->ResultXY, 0, sizeof(HpSharkFloat<SharkFloatParams>));
+        cudaMemset(&comboGpu->ResultY2, 0, sizeof(HpSharkFloat<SharkFloatParams>));
+    } else {
+        cudaMemset(&comboGpu->ResultX2, 0xCD, sizeof(HpSharkFloat<SharkFloatParams>));
+        cudaMemset(&comboGpu->ResultXY, 0xCD, sizeof(HpSharkFloat<SharkFloatParams>));
+        cudaMemset(&comboGpu->ResultY2, 0xCD, sizeof(HpSharkFloat<SharkFloatParams>));
+    }
+
+    void *kernelArgs[] = {
+        (void *)&comboGpu,
+        (void *)&d_tempProducts
+    };
+
+    {
+        ScopedBenchmarkStopper stopper{ timer };
+        ComputeMultiplyKaratsubaV2Gpu<SharkFloatParams>(kernelArgs);
+    }
+
+    cudaMemcpy(&combo, comboGpu, sizeof(HpSharkComboResults<SharkFloatParams>), cudaMemcpyDeviceToHost);
+
+    if (debugResults != nullptr) {
+        if constexpr (SharkDebugChecksums) {
+            debugResults->resize(SharkFloatParams::NumDebugStates);
+            cudaMemcpy(
+                debugResults->data(),
+                &d_tempProducts[AdditionalGlobalSyncSpace],
+                SharkFloatParams::NumDebugStates * sizeof(DebugStateRaw),
+                cudaMemcpyDeviceToHost);
+        }
+    }
+
+    cudaFree(comboGpu);
+    cudaFree(d_tempProducts);
+}
+
+template<class SharkFloatParams>
 void InvokeMultiplyKernelCorrectness(
     BenchmarkTimer &timer,
     HpSharkComboResults<SharkFloatParams> &combo,
@@ -188,7 +322,7 @@ void InvokeMultiplyKernelCorrectness(
     cudaFree(d_tempProducts);
 }
 
-template<class SharkFloatParams, Operator sharkOperator>
+template<class SharkFloatParams>
 void InvokeAddKernelCorrectness(
     BenchmarkTimer &timer,
     HpSharkAddComboResults<SharkFloatParams> &combo,
@@ -241,6 +375,10 @@ void InvokeAddKernelCorrectness(
 }
 
 #define ExplicitlyInstantiate(SharkFloatParams) \
+    template void InvokeHpSharkReferenceKernelPerf<SharkFloatParams>(\
+        BenchmarkTimer &timer, \
+        HpSharkReferenceResults<SharkFloatParams> &combo, \
+        uint64_t numIters); \
     template void InvokeMultiplyKernelPerf<SharkFloatParams>( \
         BenchmarkTimer &timer, \
         HpSharkComboResults<SharkFloatParams> &combo, \
@@ -249,11 +387,16 @@ void InvokeAddKernelCorrectness(
         BenchmarkTimer &timer, \
         HpSharkAddComboResults<SharkFloatParams> &combo, \
         uint64_t numIters); \
-    template void InvokeMultiplyKernelCorrectness<SharkFloatParams, Operator::MultiplyKaratsubaV2>( \
+    \
+    template void InvokeHpSharkReferenceKernelCorrectness<SharkFloatParams>( \
         BenchmarkTimer &timer, \
         HpSharkComboResults<SharkFloatParams> &combo, \
         std::vector<DebugStateRaw> *debugResults); \
-    template void InvokeAddKernelCorrectness<SharkFloatParams, Operator::Add>( \
+    template void InvokeMultiplyKernelCorrectness<SharkFloatParams>( \
+        BenchmarkTimer &timer, \
+        HpSharkComboResults<SharkFloatParams> &combo, \
+        std::vector<DebugStateRaw> *debugResults); \
+    template void InvokeAddKernelCorrectness<SharkFloatParams>( \
         BenchmarkTimer &timer, \
         HpSharkAddComboResults<SharkFloatParams> &combo, \
         std::vector<DebugStateRaw> *debugResults);

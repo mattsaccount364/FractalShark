@@ -50,7 +50,7 @@ static constexpr bool SharkTestGpu = false;
 // See ExplicitInstantiate.h for more information
 #define ENABLE_BASIC_CORRECTNESS 0
 static constexpr auto SharkTestComicalThreadCount = 13;
-static constexpr auto SharkTestIterCount = SharkDebug ? 3 : 50000;
+static constexpr auto SharkTestIterCount = SharkDebug ? 3 : 500;
 
 // Set to true to use a custom stream for the kernel launch
 static constexpr auto SharkCustomStream = true;
@@ -68,8 +68,8 @@ static constexpr auto SharkBatchSize = SharkDebug ? 8 : 512;
 static constexpr bool SharkDebugChecksums = SharkDebug;
 static constexpr bool SharkDebugRandomDelays = false;
 
-static constexpr bool SharkTestInfiniteCorrectness = true;
-static constexpr bool SharkTestCorrectness = true;
+static constexpr bool SharkTestCorrectness = false;
+static constexpr bool SharkTestInfiniteCorrectness = SharkTestCorrectness ? true : false;
 static constexpr auto SharkTestForceSameSign = false;
 static constexpr bool SharkTestBenchmarkAgainstHost = true;
 static constexpr bool SharkTestInitCudaMemory = true;

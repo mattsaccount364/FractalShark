@@ -313,15 +313,15 @@ void Phase1_ABC (
 //    grid.sync();
 //}
 
-template <class SharkFloatParams>
+template<class SharkFloatParams>
 __device__ SharkForceInlineReleaseOnly void
 CarryPropagation_ABC(
     uint32_t * /*sharedData*/,
     uint32_t *globalSync,                // [0] holds convergence counter
     const int32_t    idx,                       // this thread’s global index
     const int32_t    numActualDigitsPlusGuard,  // N
-    uint64_t *final128_ABC_True,         // Phase1_ABC “true” limbs
-    uint64_t *final128_ABC_False,        // Phase1_ABC “false” limbs
+    uint64_t *extResultTrue,         // Phase1_ABC “true” limbs
+    uint64_t *extResultFalse,        // Phase1_ABC “false” limbs
     uint64_t *final128_DE,               // Phase1_DE limbs
     uint32_t *carry1,                    // length N+1
     uint32_t *carry2,                    // length N+1
@@ -335,113 +335,146 @@ CarryPropagation_ABC(
     cg::thread_block &block,
     cg::grid_group &grid
 ) {
+    constexpr int32_t  maxIter = 1000;
+    constexpr uint64_t SHIFT1 = 21;
+    constexpr uint64_t SHIFT2 = 42;
+    constexpr uint64_t FIELD_MASK = (1ULL << 21) - 1;
+
     const int32_t N = numActualDigitsPlusGuard;
     const int32_t stride = grid.size();
+    auto *global64 = reinterpret_cast<uint64_t *>(globalSync);
 
-    // assign the six working buffers
-    uint32_t *curC1 = carry1, *nextC1 = carry2;
-    uint32_t *curC2 = carry3, *nextC2 = carry4;
-    uint32_t *curC3 = carry5, *nextC3 = carry6;
+    // six carry buffers
+    uint32_t *curC1 = carry1;
+    uint32_t *nextC1 = carry2;
+    uint32_t *curC2 = carry3;
+    uint32_t *nextC2 = carry4;
+    uint32_t *curC3 = carry5;
+    uint32_t *nextC3 = carry6;
 
-    // only one thread initializes the global counter
+    // one‐time zeroing
     if (block.group_index().x == 0 && block.thread_index().x == 0) {
-        globalSync[0] = 1;
+        *global64 = 1ULL;
     }
-    grid.sync();
 
-    // zero all six carry buffers
     for (int32_t i = idx; i < N + 1; i += stride) {
         curC1[i] = nextC1[i] = 0u;
         curC2[i] = nextC2[i] = 0u;
         curC3[i] = nextC3[i] = 0u;
     }
+
     grid.sync();
 
-    constexpr int maxIter = 1000;
-    uint32_t prevCount = 0;
+    uint64_t prevCount = 0;
+    uint32_t prevCount1 = 0;
+    uint32_t prevCount2 = 0;
+    uint32_t prevCount3 = 0;
 
-    // convergent rippling loop
-    for (int iter = 0; iter < maxIter; ++iter) {
-        // if no new carries last iter, we’re done
-        if (globalSync[0] == prevCount) break;
-        prevCount = globalSync[0];
+    bool need1 = true;
+    bool need2 = true;
+    bool need3 = true;
+
+    for (int32_t iter = 0; iter < maxIter; ++iter) {
+        // ── barrier 1: reset convergence mask ──
+        if (*global64 == prevCount) {
+            break;
+        }
+
+        prevCount = *global64;
+        prevCount1 = prevCount & FIELD_MASK;
+        prevCount2 = (prevCount >> SHIFT1) & FIELD_MASK;
+        prevCount3 = (prevCount >> SHIFT2) & FIELD_MASK;
+
         grid.sync();
 
-        uint32_t localNew = 0u;
+        // per‐thread packed flag
+        uint64_t localMask = 0ULL;
 
-        // each thread processes a grid-stride subset
+        // grid‐stride per‐digit work
         for (int32_t i = idx; i < N; i += stride) {
-            //
-            // ——— ABC True ———
-            //
-            int32_t in1 = (i == 0 ? 0 : int32_t(curC1[i]));
-            int64_t sum1 = int64_t(final128_ABC_True[i]) + in1;
-            uint32_t lo1 = uint32_t(sum1);
-            final128_ABC_True[i] = lo1;
-            int32_t new1 = int32_t((sum1 - int64_t(lo1)) >> 32);
-            if (i < N - 1) nextC1[i + 1] = uint32_t(new1);
-            else          nextC1[i + 1] = curC1[i + 1] + uint32_t(new1);
-            localNew += (new1 != 0);
+            // ABC_True
+            if (need1) {
+                int32_t in1 = (i == 0 ? 0 : static_cast<int32_t>(curC1[i]));
+                int64_t limb1 = static_cast<int64_t>(extResultTrue[i]);
+                int64_t sum1 = limb1 + in1;
+                uint32_t lo1 = static_cast<uint32_t>(sum1);
+                extResultTrue[i] = lo1;
+                int32_t new1 = int32_t((sum1 - static_cast<int64_t>(lo1)) >> 32);
+                if (i < N - 1) {
+                    nextC1[i + 1] = static_cast<uint32_t>(new1);
+                } else {
+                    nextC1[i + 1] = curC1[i + 1] + static_cast<uint32_t>(new1);
+                }
+                localMask += static_cast<int64_t>(new1 != 0);
+            }
 
-            //
-            // ——— ABC False ———
-            //
-            int32_t in2 = (i == 0 ? 0 : int32_t(curC2[i]));
-            int64_t sum2 = int64_t(final128_ABC_False[i]) + in2;
-            uint32_t lo2 = uint32_t(sum2);
-            final128_ABC_False[i] = lo2;
-            int32_t new2 = int32_t((sum2 - int64_t(lo2)) >> 32);
-            if (i < N - 1) nextC2[i + 1] = uint32_t(new2);
-            else          nextC2[i + 1] = curC2[i + 1] + uint32_t(new2);
-            localNew += (new2 != 0);
+            // ABC_False
+            if (need2) {
+                int32_t in2 = (i == 0 ? 0 : static_cast<int32_t>(curC2[i]));
+                int64_t limb2 = static_cast<int64_t>(extResultFalse[i]);
+                int64_t sum2 = limb2 + in2;
+                uint32_t lo2 = static_cast<uint32_t>(sum2);
+                extResultFalse[i] = lo2;
+                int32_t new2 = int32_t((sum2 - static_cast<int64_t>(lo2)) >> 32);
+                if (i < N - 1) {
+                    nextC2[i + 1] = static_cast<uint32_t>(new2);
+                } else {
+                    nextC2[i + 1] = curC2[i + 1] + static_cast<uint32_t>(new2);
+                }
+                localMask += static_cast<int64_t>(new2 != 0) << SHIFT1;
+            }
 
-            //
-            // ——— D + E (DE) ———
-            //
-            uint32_t in3 = (i == 0 ? 0u : curC3[i]);
-            uint64_t sum3 = final128_DE[i] + in3;
-            uint32_t lo3 = uint32_t(sum3);
-            final128_DE[i] = lo3;
-            uint32_t new3 = uint32_t(sum3 >> 32);
-            if (i < N - 1) nextC3[i + 1] = new3;
-            else          nextC3[i + 1] = curC3[i + 1] + new3;
-            localNew += (new3 != 0);
+            // D+E (DE)
+            if (need3) {
+                int32_t in3 = (i == 0 ? 0u : static_cast<int32_t>(curC3[i]));
+                int64_t limb3 = static_cast<int64_t>(final128_DE[i]);
+                int64_t sum3 = limb3 + in3;
+                uint32_t lo3 = static_cast<uint32_t>(sum3);
+                final128_DE[i] = lo3;
+                int32_t new3 = int32_t((sum3 - static_cast<int64_t>(lo3)) >> 32);
+                if (i < N - 1) {
+                    nextC3[i + 1] = new3;
+                } else {
+                    nextC3[i + 1] = curC3[i + 1] + new3;
+                }
+                localMask += static_cast<int64_t>(new3 != 0) << SHIFT2;
+            }
         }
 
+        // atomic pack of all three flags
+        if (localMask) {
+            atomicAdd(global64, localMask);
+        }
+
+        // ── barrier 2: ensure all atomicAdds done before reading ──
         grid.sync();
 
-        // bump global counter if any thread saw new carries
-        if (localNew) {
-            atomicAdd(&globalSync[0], localNew);
+        // unpack and test for any remaining
+        uint64_t allCounts = *global64;
+        need1 = ((allCounts >> 0) & FIELD_MASK) != prevCount1;
+        need2 = ((allCounts >> SHIFT1) & FIELD_MASK) != prevCount2;
+        need3 = ((allCounts >> SHIFT2) & FIELD_MASK) != prevCount3;
+
+        // swap only the active streams
+        if (need1) {
+            std::swap(curC1, nextC1);
         }
 
-        // swap buffers
-        {
-            auto *t = curC1;
-            curC1 = nextC1;
-            nextC1 = t;
+        if (need2) {
+            std::swap(curC2, nextC2);
         }
 
-        {
-            auto *t = curC2;
-            curC2 = nextC2;
-            nextC2 = t;
+        if (need3) {
+            std::swap(curC3, nextC3);
         }
 
-        {
-            auto *t = curC3;
-            curC3 = nextC3;
-            nextC3 = t;
-        }
-
+        // ── barrier 3: ready for next iteration ──
         grid.sync();
     }
 
-    // thread (0,0) writes out the final carries
-    if (block.group_index().x == 0 && block.thread_index().x == 0) {
-        carryAcc_ABC_True = int32_t(curC1[N]);
-        carryAcc_ABC_False = int32_t(curC2[N]);
-        carryAcc_DE = int32_t(curC3[N]);
-    }
+    // final carry extraction
+    carryAcc_ABC_True = int32_t(curC1[N]);
+    carryAcc_ABC_False = int32_t(curC2[N]);
+    carryAcc_DE = int32_t(curC3[N]);
     grid.sync();
 }

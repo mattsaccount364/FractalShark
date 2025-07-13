@@ -54,7 +54,7 @@ SerialCarryPropagation (
 }
 
 // Define our custom combine operator as a device lambda.
-__device__ uint32_t
+static __device__ uint32_t
 CombineBorrow (
     uint32_t x,
     uint32_t y
@@ -80,7 +80,8 @@ struct GenProp {
 // The combine operator for two GenProp pairs.
 // If you have a block with operator f(x) = g OR (p AND x),
 // then the combination for two adjacent blocks is given by:
-__device__ inline GenProp Combine (
+static __device__ inline GenProp
+Combine (
     const GenProp &left,
     const GenProp &right) {
     GenProp out;
@@ -90,7 +91,7 @@ __device__ inline GenProp Combine (
 }
 
 template<class SharkFloatParams, int32_t CallIndex>
-__device__ SharkForceInlineReleaseOnly void
+static __device__ SharkForceInlineReleaseOnly void
 Phase1_DE (
     cg::thread_block &block,
     cg::grid_group &grid,

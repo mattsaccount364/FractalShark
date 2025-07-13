@@ -27,7 +27,7 @@ namespace cg = cooperative_groups;
 // Initialize the random number generator state.  Note that
 // this uses a constant seed.  This is lame and we should be
 // using a different seed for each thread.
-void
+static void
 __device__ DebugInitRandom (
     cg::thread_block &block,
     curandState *state)
@@ -39,7 +39,7 @@ __device__ DebugInitRandom (
 // Introduce a random delay.  This delay is per-thread and is
 // intended to exacerbate any races.  Note that you may want
 // instead a block-level delay.  This isn't it.
-void
+static void
 __device__ DebugRandomDelay (
     cg::thread_block &block,
     curandState *state)
@@ -60,7 +60,7 @@ __device__ DebugRandomDelay (
 
 // Compare two digit arrays, returning 1 if a > b, -1 if a < b, and 0 if equal
 template<int n1, int n2>
-__device__ int CompareDigits(
+static __device__ int CompareDigits(
     const uint32_t *SharkRestrict highArray,
     const uint32_t *SharkRestrict lowArray)
 {
@@ -86,7 +86,8 @@ __device__ int CompareDigits(
 // Subtract two digit arrays, returning the result.
 // This is a serial implementation.
 template<int n1, int n2>
-__device__ static void SubtractDigitsSerial(const uint32_t *a, const uint32_t *b, uint32_t *result) {
+__device__ static void
+SubtractDigitsSerial(const uint32_t *a, const uint32_t *b, uint32_t *result) {
     uint64_t borrow = 0;
     for (int i = 0; i < n1; ++i) {
         uint64_t ai;
@@ -132,7 +133,8 @@ template<
     int b2n,
     int ExecutionBlockBase,
     int ExecutionNumBlocks>
-__device__ SharkForceInlineReleaseOnly void SubtractDigitsParallel(
+static __device__ SharkForceInlineReleaseOnly void
+SubtractDigitsParallel(
     uint32_t *SharkRestrict x_diff_abs,
     uint32_t *SharkRestrict y_diff_abs,
     const uint32_t *SharkRestrict a1,
@@ -323,7 +325,8 @@ template<
     int a2n, int b2n,
     int ExecutionBlockBase,
     int ExecutionNumBlocks>
-__device__ SharkForceInlineReleaseOnly void SubtractDigitsParallelImproved3(
+static __device__ SharkForceInlineReleaseOnly void
+SubtractDigitsParallelImproved3(
     // Working arrays (which may be in shared memory)
     uint32_t *SharkRestrict x_diff_abs,
     uint32_t *SharkRestrict y_diff_abs,
@@ -714,7 +717,8 @@ __device__ SharkForceInlineReleaseOnly void SubtractDigitsParallelImproved3(
 
 
 // Function to perform addition with carry
-__device__ SharkForceInlineReleaseOnly static void Add128(
+static __device__ SharkForceInlineReleaseOnly void
+Add128(
     uint64_t a_low, uint64_t a_high,
     uint64_t b_low, uint64_t b_high,
     uint64_t &result_low, uint64_t &result_high) {
@@ -724,7 +728,8 @@ __device__ SharkForceInlineReleaseOnly static void Add128(
     result_high = a_high + b_high + carry;
 }
 
-__device__ SharkForceInlineReleaseOnly static void Subtract128(
+static __device__ SharkForceInlineReleaseOnly void
+Subtract128(
     uint64_t a_low, uint64_t a_high,
     uint64_t b_low, uint64_t b_high,
     uint64_t &result_low, uint64_t &result_high) {
@@ -740,7 +745,7 @@ __device__ SharkForceInlineReleaseOnly static void Subtract128(
 }
 
 template<class SharkFloatParams>
-__device__ SharkForceInlineReleaseOnly static void SerialCarryPropagation(
+static __device__ SharkForceInlineReleaseOnly void SerialCarryPropagation(
     uint64_t *SharkRestrict shared_carries,
     cg::grid_group &grid,
     cg::thread_block &block,
@@ -795,7 +800,7 @@ __device__ SharkForceInlineReleaseOnly static void SerialCarryPropagation(
 }
 
 template<class SharkFloatParams>
-__device__ SharkForceInlineReleaseOnly static void CarryPropagation (
+static __device__ SharkForceInlineReleaseOnly void CarryPropagation (
     uint64_t *SharkRestrict shared_carries,
     cg::grid_group &grid,
     cg::thread_block &block,
@@ -1114,7 +1119,7 @@ template<
     int RecursionDepth,
     int CallIndex,
     DebugStatePurpose Purpose>
-__device__ SharkForceInlineReleaseOnly void
+static __device__ SharkForceInlineReleaseOnly void
 EraseCurrentDebugState(
     RecordIt record,
     DebugState<SharkFloatParams> *debugStates,
@@ -1133,7 +1138,7 @@ template<
     int CallIndex,
     DebugStatePurpose Purpose,
     typename ArrayType>
-__device__ SharkForceInlineReleaseOnly void
+static __device__ SharkForceInlineReleaseOnly void
 StoreCurrentDebugState (
     RecordIt record,
     UseConvolution useConvolution,
@@ -1160,7 +1165,7 @@ template<
     int ExecutionNumBlocks,
     int NewNumBlocks,
     int TempBase>
-__device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
+static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
     uint32_t *SharkRestrict shared_data,
     const HpSharkFloat<SharkFloatParams> *SharkRestrict A,
     const HpSharkFloat<SharkFloatParams> *SharkRestrict B,
@@ -2019,7 +2024,7 @@ __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
 // Assuming that SharkFloatParams::GlobalNumUint32 can be large and doesn't fit in shared memory
 // We'll use the provided global memory buffers for large intermediates
 template<class SharkFloatParams>
-__device__ void MultiplyHelperKaratsubaV2 (
+static __device__ void MultiplyHelperKaratsubaV2 (
     HpSharkComboResults<SharkFloatParams> *SharkRestrict combo,
     cg::grid_group &grid,
     cg::thread_block &block,
@@ -2385,257 +2390,3 @@ __device__ void MultiplyHelperKaratsubaV2 (
     }
 }
 
-template<class SharkFloatParams>
-__maxnreg__(SharkRegisterLimit)
-__global__ void MultiplyKernelKaratsubaV2 (
-    HpSharkComboResults<SharkFloatParams> *combo,
-    uint64_t *tempProducts) {
-
-    // Initialize cooperative grid group
-    cg::grid_group grid = cg::this_grid();
-    cg::thread_block block = cg::this_thread_block();
-
-    // Call the MultiplyHelper function
-    //MultiplyHelper(A, B, Out, carryIns, grid, tempProducts);
-    if constexpr (!SharkFloatParams::ForceNoOp) {
-        MultiplyHelperKaratsubaV2(combo, grid, block, tempProducts);
-    } else {
-        grid.sync();
-    }
-}
-
-template<class SharkFloatParams>
-__global__ void
- __maxnreg__(SharkRegisterLimit)
-MultiplyKernelKaratsubaV2TestLoop (
-    HpSharkComboResults<SharkFloatParams> *combo,
-    uint64_t numIters,
-    uint64_t *tempProducts) { // Array to store cumulative carries
-
-    // Initialize cooperative grid group
-    cg::grid_group grid = cg::this_grid();
-    cg::thread_block block = cg::this_thread_block();
-
-    for (int i = 0; i < numIters; ++i) {
-        // MultiplyHelper(A, B, Out, carryIns, grid, tempProducts);
-        if constexpr (!SharkFloatParams::ForceNoOp) {
-            MultiplyHelperKaratsubaV2(combo, grid, block, tempProducts);
-        } else {
-            grid.sync();
-        }
-    }
-}
-
-template<class SharkFloatParams>
-void PrintMaxActiveBlocks(void *kernelFn, int sharedAmountBytes) {
-    std::cout << "Shared memory size: " << sharedAmountBytes << std::endl;
-
-    int numBlocks;
-
-    {
-        // Check the maximum number of active blocks per multiprocessor
-        // with the given shared memory size
-        // This is useful to determine if we can fit more blocks
-        // in the shared memory
-
-        const auto err = cudaOccupancyMaxActiveBlocksPerMultiprocessor(
-            &numBlocks,
-            kernelFn,
-            SharkFloatParams::GlobalThreadsPerBlock,
-            sharedAmountBytes
-        );
-
-        if (err != cudaSuccess) {
-            std::cerr << "CUDA error in cudaOccupancyMaxActiveBlocksPerMultiprocessor: " << cudaGetErrorString(err) << std::endl;
-            return;
-        }
-
-        std::cout << "Max active blocks per multiprocessor: " << numBlocks << std::endl;
-    }
-
-    {
-        size_t availableSharedMemory = 0;
-        const auto err = cudaOccupancyAvailableDynamicSMemPerBlock(
-            &availableSharedMemory,
-            kernelFn,
-            numBlocks,
-            SharkFloatParams::GlobalThreadsPerBlock
-        );
-
-        if (err != cudaSuccess) {
-            std::cerr << "CUDA error in cudaOccupancyAvailableDynamicSMemPerBlock: " << cudaGetErrorString(err) << std::endl;
-            return;
-        }
-
-        std::cout << "Available shared memory per block: " << availableSharedMemory << std::endl;
-    }
-
-    // Check the number of multiprocessors on the device
-    int numSM;
-
-    {
-        const auto err = cudaDeviceGetAttribute(
-            &numSM,
-            cudaDevAttrMultiProcessorCount,
-            0
-        );
-
-        if (err != cudaSuccess) {
-            std::cerr << "CUDA error in cudaDeviceGetAttribute: " << cudaGetErrorString(err) << std::endl;
-            return;
-        }
-
-        std::cout << "Number of multiprocessors: " << numSM << std::endl;
-    }
-
-    int maxConcurrentBlocks = numSM * numBlocks;
-
-    std::cout << "Max concurrent blocks: " << maxConcurrentBlocks << std::endl;
-    if (maxConcurrentBlocks < SharkFloatParams::GlobalNumBlocks) {
-        std::cout << "Warning: Max concurrent blocks exceeds the number of blocks requested." << std::endl;
-    }
-
-    {
-        // Check the maximum number of threads per block
-        int maxThreadsPerBlock;
-        const auto err = cudaDeviceGetAttribute(
-            &maxThreadsPerBlock,
-            cudaDevAttrMaxThreadsPerBlock,
-            0
-        );
-
-        if (err != cudaSuccess) {
-            std::cerr << "CUDA error in cudaDeviceGetAttribute: " << cudaGetErrorString(err) << std::endl;
-            return;
-        }
-
-        std::cout << "Max threads per block: " << maxThreadsPerBlock << std::endl;
-    }
-
-    {
-        // Check the maximum number of threads per multiprocessor
-        int maxThreadsPerMultiprocessor;
-        const auto err = cudaDeviceGetAttribute(
-            &maxThreadsPerMultiprocessor,
-            cudaDevAttrMaxThreadsPerMultiProcessor,
-            0
-        );
-        if (err != cudaSuccess) {
-            std::cerr << "CUDA error in cudaDeviceGetAttribute: " << cudaGetErrorString(err) << std::endl;
-            return;
-        }
-        std::cout << "Max threads per multiprocessor: " << maxThreadsPerMultiprocessor << std::endl;
-    }
-
-    // Check if this device supports cooperative launches
-    int cooperativeLaunch;
-    
-    {
-        const auto err = cudaDeviceGetAttribute(
-            &cooperativeLaunch,
-            cudaDevAttrCooperativeLaunch,
-            0
-        );
-
-        if (err != cudaSuccess) {
-            std::cerr << "CUDA error in cudaDeviceGetAttribute: " << cudaGetErrorString(err) << std::endl;
-            return;
-        }
-
-        if (cooperativeLaunch) {
-            std::cout << "This device supports cooperative launches." << std::endl;
-        } else {
-            std::cout << "This device does not support cooperative launches." << std::endl;
-        }
-    }
-}
-
-template<class SharkFloatParams>
-void ComputeMultiplyKaratsubaV2Gpu(void *kernelArgs[]) {
-
-    cudaError_t err;
-
-    constexpr int NewN = SharkFloatParams::GlobalNumUint32;
-    constexpr auto n = (NewN + 1) / 2;              // Half of NewN
-    constexpr auto sharedAmountBytes =
-        SharkUseSharedMemory ?
-        (2 * NewN + 2 * n) * sizeof(uint32_t) :
-        SharkConstantSharedRequiredBytes;
-
-    if constexpr (SharkCustomStream) {
-        cudaFuncSetAttribute(
-            MultiplyKernelKaratsubaV2<SharkFloatParams>,
-            cudaFuncAttributeMaxDynamicSharedMemorySize,
-            sharedAmountBytes);
-
-        PrintMaxActiveBlocks<SharkFloatParams>(
-            MultiplyKernelKaratsubaV2<SharkFloatParams>,
-            sharedAmountBytes);
-    }
-
-    err = cudaLaunchCooperativeKernel(
-        (void *)MultiplyKernelKaratsubaV2<SharkFloatParams>,
-        dim3(SharkFloatParams::GlobalNumBlocks),
-        dim3(SharkFloatParams::GlobalThreadsPerBlock),
-        kernelArgs,
-        sharedAmountBytes, // Shared memory size
-        0 // Stream
-    );
-
-    auto err2 = cudaGetLastError();
-    if (err != cudaSuccess || err2 != cudaSuccess) {
-        std::cerr << "CUDA error in cudaLaunchCooperativeKernel: " << cudaGetErrorString(err2) << 
-            "err: " << err << std::endl;
-    }
-
-    cudaDeviceSynchronize();
-
-    if (err != cudaSuccess) {
-        std::cerr << "CUDA error in MultiplyKernelKaratsubaV2: " << cudaGetErrorString(err) << std::endl;
-    }
-}
-
-template<class SharkFloatParams>
-void ComputeMultiplyKaratsubaV2GpuTestLoop(cudaStream_t &stream, void *kernelArgs[]) {
-
-    constexpr int NewN = SharkFloatParams::GlobalNumUint32;
-    constexpr auto n = (NewN + 1) / 2;              // Half of NewN
-    constexpr auto sharedAmountBytes =
-        SharkUseSharedMemory ?
-        (2 * NewN + 2 * n) * sizeof(uint32_t) :
-        SharkConstantSharedRequiredBytes;
-
-    if constexpr (SharkCustomStream) {
-        cudaFuncSetAttribute(
-            MultiplyKernelKaratsubaV2TestLoop<SharkFloatParams>,
-            cudaFuncAttributeMaxDynamicSharedMemorySize,
-            sharedAmountBytes);
-
-        PrintMaxActiveBlocks<SharkFloatParams>(
-            MultiplyKernelKaratsubaV2TestLoop<SharkFloatParams>,
-            sharedAmountBytes);
-    }
-
-    cudaError_t err = cudaLaunchCooperativeKernel(
-        (void *)MultiplyKernelKaratsubaV2TestLoop<SharkFloatParams>,
-        dim3(SharkFloatParams::GlobalNumBlocks),
-        dim3(SharkFloatParams::GlobalThreadsPerBlock),
-        kernelArgs,
-        sharedAmountBytes, // Shared memory size
-        stream // Stream
-    );
-
-    cudaDeviceSynchronize();
-
-    if (err != cudaSuccess) {
-        std::cerr << "CUDA error in MultiplyKernelKaratsubaTestLoop: " << cudaGetErrorString(err) << std::endl;
-    }
-}
-
-#define ExplicitlyInstantiate(SharkFloatParams) \
-    template void ComputeMultiplyKaratsubaV2Gpu<SharkFloatParams>(void *kernelArgs[]); \
-    template void ComputeMultiplyKaratsubaV2GpuTestLoop<SharkFloatParams>(cudaStream_t &stream, void *kernelArgs[]);
-
-#ifdef SHARK_INCLUDE_KERNELS
-ExplicitInstantiateAll();
-#endif

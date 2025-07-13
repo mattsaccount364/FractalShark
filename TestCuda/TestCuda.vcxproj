@@ -115,12 +115,15 @@
     <ClCompile Include="ReferenceAdd.cpp" />
     <ClCompile Include="ReferenceKaratsuba.cpp" />
     <ClCompile Include="TestVerbose.cpp" />
+    <ClInclude Include="HpSharkReferenceOrbit.cuh" />
     <ClInclude Include="TestVerbose.h" />
     <ClInclude Include="ThreeWayMagnitude.h" />
     <CudaCompile Include="Add.cu" />
     <ClInclude Include="Add_ABC.cuh" />
     <ClInclude Include="Add_DE.cuh" />
+    <CudaCompile Include="AddTestKernels.cu" />
     <CudaCompile Include="HpSharkFloat.cu" />
+    <CudaCompile Include="HpSharkReferenceOrbit.cu" />
     <CudaCompile Include="KernelInvoke.cu" />
     <CudaCompile Include="Multiply.cu" />
     <CudaCompile Include="Archived\MultiplyKaratsubaV1.cu">
@@ -131,6 +134,7 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </CudaCompile>
+    <CudaCompile Include="MultiplyTestKernels.cu" />
     <CudaCompile Include="NullKernel.cu" />
     <ClCompile Include="MainTestCuda.cpp" />
   </ItemGroup>

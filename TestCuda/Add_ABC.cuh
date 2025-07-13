@@ -1,6 +1,6 @@
 ﻿#include "ThreeWayMagnitude.h"
 
-__device__ SharkForceInlineReleaseOnly ThreeWayLargestOrdering
+static __device__ SharkForceInlineReleaseOnly ThreeWayLargestOrdering
 CompareMagnitudes3Way (
     const int32_t effExpA,
     const int32_t effExpB,
@@ -47,7 +47,8 @@ CompareMagnitudes3Way (
 }
 
 // 5) helper to do |±X ±Y ±Z| in one pass, given a fixed X_gtY
-uint64_t __device__ SharkForceInlineReleaseOnly CoreThreeWayAdd(
+static uint64_t __device__ SharkForceInlineReleaseOnly
+CoreThreeWayAdd(
     uint64_t X, bool sX,
     uint64_t Y, bool sY,
     uint64_t Z, bool sZ,
@@ -84,7 +85,7 @@ uint64_t __device__ SharkForceInlineReleaseOnly CoreThreeWayAdd(
 }
 
 template<class SharkFloatParams, int32_t CallIndex>
-__device__ SharkForceInlineReleaseOnly
+static __device__ SharkForceInlineReleaseOnly
 void Phase1_ABC (
     cg::thread_block &block,
     cg::grid_group &grid,
@@ -314,7 +315,7 @@ void Phase1_ABC (
 //}
 
 template<class SharkFloatParams>
-__device__ SharkForceInlineReleaseOnly void
+static __device__ SharkForceInlineReleaseOnly void
 CarryPropagation_ABC(
     uint32_t * sharedData,
     uint32_t *globalSync,                // [0] holds convergence counter

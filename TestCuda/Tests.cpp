@@ -314,6 +314,10 @@ bool DiffAgainstHost(
         return ok;
     }
 
+    mpf_clear(mpfXGpu);
+    mpf_clear(mpfDiff);
+    mpf_clear(mpfDiffAbs);
+
     return DiffAgainstHostNonZero<SharkFloatParams, sharkOperator>(
         testNum,
         numTerms,
@@ -1168,7 +1172,7 @@ void TestCoreReferenceOrbit(
     if constexpr (SharkTestGpu) {
         BenchmarkTimer timer;
 
-        HpSharkReferenceResults<SharkFloatParams> combo;
+        HpSharkReferenceResults<SharkFloatParams> combo{};
         combo.Add.C_A = aNum;
         combo.Add.E_B = bNum;
         combo.Multiply.A = aNum;
@@ -1206,14 +1210,14 @@ void TestCoreReferenceOrbit(
     }
 
     // Clean up MPIR variables
-    mpf_clear(mpfHostResultX);
-    mpf_clear(mpfHostResultY);
-
     mpf_clear(xSquared);
     mpf_clear(ySquared);
     mpf_clear(twoXY);
     mpf_clear(tempX);
     mpf_clear(tempY);
+
+    mpf_clear(mpfHostResultX);
+    mpf_clear(mpfHostResultY);
 }
 
 template<class SharkFloatParams, Operator sharkOperator>

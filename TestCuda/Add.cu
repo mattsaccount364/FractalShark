@@ -272,9 +272,11 @@ GetShiftedNormalizedDigit (
     // const int32_t n = SharkFloatParams::GlobalNumUint32; // normalized length
     const int32_t wordShift = diff / 32;
     const int32_t bitShift = diff % 32;
-    const uint32_t lower = (idx + wordShift < numActualDigitsPlusGuard) ?
+    const bool inBounds = (idx + wordShift < numActualDigitsPlusGuard && idx + wordShift >= 0);
+    const uint32_t lower = inBounds ?
         GetNormalizedDigit(ext, actualDigits, numActualDigitsPlusGuard, shiftOffset, idx + wordShift) : 0;
-    const uint32_t upper = (idx + wordShift + 1 < numActualDigitsPlusGuard) ?
+    const bool inBoundsPlus1 = (idx + wordShift + 1 < numActualDigitsPlusGuard && idx + wordShift + 1 >= 0);
+    const uint32_t upper = inBoundsPlus1 ?
         GetNormalizedDigit(ext, actualDigits, numActualDigitsPlusGuard, shiftOffset, idx + wordShift + 1) : 0;
     if (bitShift == 0)
         return lower;

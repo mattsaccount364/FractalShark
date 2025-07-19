@@ -1214,6 +1214,12 @@ static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             record, UseConvolutionHere, debugStates, grid, block, aDigits, NewN);
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BDigits, uint32_t>(
             record, UseConvolutionHere, debugStates, grid, block, bDigits, NewN);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::CDigits>(
+            record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::DDigits>(
+            record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::EDigits>(
+            record, debugStates, grid, block);
 
         grid.sync();
     }
@@ -1779,6 +1785,19 @@ static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2YY>(
             record, UseConvolutionHere, debugStates, grid, block, Z2_OutDigitsYY, FinalZ2Size);
 
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2_Perm1>(
+            record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2_Perm2>(
+            record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2_Perm3>(
+            record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2_Perm4>(
+            record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2_Perm5>(
+            record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2_Perm6>(
+            record, debugStates, grid, block);
+
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1_offsetXX>(
             record, UseConvolutionHere, debugStates, grid, block, Z1_temp_digitsXX, FinalZ1TempSize);
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1_offsetXY>(
@@ -1998,11 +2017,23 @@ static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Final128YY>(
                 record, UseConvolutionHere, debugStates, grid, block, final128YY, total_result_digits * 2);
 
+            EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::FinalAdd1>(
+                record, debugStates, grid, block);
+            EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::FinalAdd2>(
+                record, debugStates, grid, block);
+            EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::FinalAdd3>(
+                record, debugStates, grid, block);
+
             EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offsetXX>(
                 record, debugStates, grid, block);
             EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offsetXY>(
                 record, debugStates, grid, block);
             EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offsetYY>(
+                record, debugStates, grid, block);
+
+            EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_Add1>(
+                record, debugStates, grid, block);
+            EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_Add2>(
                 record, debugStates, grid, block);
         }
 

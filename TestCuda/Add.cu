@@ -22,6 +22,24 @@ namespace cg = cooperative_groups;
 // They mirror the CUDA device functions but work sequentially on the full array.
 //
 
+// #define MattsCudaAssert assert
+
+#ifdef _DEBUG
+static __device__ SharkForceInlineReleaseOnly void
+MattsCudaAssert (bool cond) {
+    if (!cond) {
+        //assert(cond);
+        // asm("brkpt;");
+        for (;;);
+    }
+}
+#else
+static __device__ SharkForceInlineReleaseOnly void
+MattsCudaAssert (bool) {
+    // no-op in release builds
+}
+#endif
+
 
 // Direction tag for our funnel-shift helper
 enum class Dir { Left, Right };
@@ -62,16 +80,16 @@ FunnelShift32 (
 }
 
 /// Retrieves the digit at 'idx' after a left shift by 'shiftBits',
-/// treating words beyond 'actualDigits' as zero (within an 'extDigits' buffer).
+/// treating words beyond 'actualDigits' as zero (within an 'numActualDigitsPlusGuard' buffer).
 static __device__ SharkForceInlineReleaseOnly uint32_t
 GetNormalizedDigit(
     const uint32_t *SharkRestrict digits,
     int32_t         actualDigits,
-    int32_t         extDigits,
+    int32_t         numActualDigitsPlusGuard,
     int32_t         shiftBits,
     int32_t         idx) {
     // ensure idx is within the extended buffer
-    assert(idx >= 0 && idx < extDigits);
+    MattsCudaAssert(idx >= 0 && idx < numActualDigitsPlusGuard);
 
     // funnel-shift left within the 'actualDigits' region
     return FunnelShift32<Dir::Left>(
@@ -108,20 +126,20 @@ MultiWordShift (
     const cooperative_groups::thread_block &block,
     const int32_t idx,
     const auto *SharkRestrict in,
-    const int32_t  extDigits,
+    const int32_t  numActualDigitsPlusGuard,
     const int32_t  shiftNeeded,
     auto *SharkRestrict out,
     const int32_t  outSz
 )
 {
-    assert(extDigits >= outSz);
+    MattsCudaAssert(numActualDigitsPlusGuard >= outSz);
     const auto stride = grid.size();
 
     for (int32_t i = idx; i < outSz; i += stride) {
         out[i] = FunnelShift32<D>(
             in,
             i,
-            extDigits,
+            numActualDigitsPlusGuard,
             shiftNeeded
         );
     }
@@ -133,13 +151,13 @@ static __device__ SharkForceInlineReleaseOnly uint32_t
 GetExtLimb (
     const uint32_t *SharkRestrict ext,
     const int32_t actualDigits,
-    const int32_t extDigits,
+    const int32_t numActualDigitsPlusGuard,
     const int32_t idx) {
 
     if (idx < actualDigits) {
         return ext[idx];
     } else {
-        assert(idx < extDigits);
+        MattsCudaAssert(idx < numActualDigitsPlusGuard);
         return 0;
     }
 }
@@ -157,14 +175,14 @@ GetExtLimb (
 template<class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly void
 ExtendedNormalizeShiftIndexAll(
-    // inputs: five little‐endian extended arrays (length extDigits)
+    // inputs: five little‐endian extended arrays (length numActualDigitsPlusGuard)
     const uint32_t *SharkRestrict extA,
     const uint32_t *SharkRestrict extB,
     const uint32_t *SharkRestrict extC,
     const uint32_t *SharkRestrict extD,
     const uint32_t *SharkRestrict extE,
     int32_t actualDigits,
-    int32_t extDigits,
+    int32_t numActualDigitsPlusGuard,
 
     // in/out: stored exponents
     int32_t &expA,
@@ -191,13 +209,13 @@ ExtendedNormalizeShiftIndexAll(
     int32_t msdA = -1, msdB = -1, msdC = -1, msdD = -1, msdE = -1;
 
     // scan downward once
-    for (int32_t i = extDigits - 1; i >= 0; --i) {
+    for (int32_t i = numActualDigitsPlusGuard - 1; i >= 0; --i) {
         // 1) grab all five limbs up front (no data‐dep between them)
-        const uint32_t limbA = GetExtLimb(extA, actualDigits, extDigits, i);
-        const uint32_t limbB = GetExtLimb(extB, actualDigits, extDigits, i);
-        const uint32_t limbC = GetExtLimb(extC, actualDigits, extDigits, i);
-        const uint32_t limbD = GetExtLimb(extD, actualDigits, extDigits, i);
-        const uint32_t limbE = GetExtLimb(extE, actualDigits, extDigits, i);
+        const uint32_t limbA = GetExtLimb(extA, actualDigits, numActualDigitsPlusGuard, i);
+        const uint32_t limbB = GetExtLimb(extB, actualDigits, numActualDigitsPlusGuard, i);
+        const uint32_t limbC = GetExtLimb(extC, actualDigits, numActualDigitsPlusGuard, i);
+        const uint32_t limbD = GetExtLimb(extD, actualDigits, numActualDigitsPlusGuard, i);
+        const uint32_t limbE = GetExtLimb(extE, actualDigits, numActualDigitsPlusGuard, i);
 
         // 2) now update each msd only if we haven’t found it yet
         if (msdA < 0 && limbA != 0) msdA = i;
@@ -219,12 +237,12 @@ ExtendedNormalizeShiftIndexAll(
     isZeroE = (msdE < 0);
 
     // common bias: highest bit index in full ext array
-    const int32_t totalExtBits = extDigits * 32;
+    const int32_t totalExtBits = numActualDigitsPlusGuard * 32;
     auto computeShift = [&](const uint32_t *ext, int32_t &msd, bool &isz, int32_t &exp, int32_t &outShift) {
         if (isz) {
             outShift = 0;
         } else {
-            int32_t limb = GetExtLimb(ext, actualDigits, extDigits, msd);
+            int32_t limb = GetExtLimb(ext, actualDigits, numActualDigitsPlusGuard, msd);
             int32_t clz = CountLeadingZeros(static_cast<uint32_t>(limb));
             int32_t current_msb = msd * 32 + (31 - clz);
             int32_t L = (totalExtBits - 1) - current_msb;
@@ -247,17 +265,17 @@ static __device__ SharkForceInlineReleaseOnly uint32_t
 GetShiftedNormalizedDigit (
     const uint32_t *SharkRestrict ext,
     const int32_t actualDigits,
-    const int32_t extDigits,
+    const int32_t numActualDigitsPlusGuard,
     const int32_t shiftOffset,
     const int32_t diff,
     const int32_t idx) {
     // const int32_t n = SharkFloatParams::GlobalNumUint32; // normalized length
     const int32_t wordShift = diff / 32;
     const int32_t bitShift = diff % 32;
-    const uint32_t lower = (idx + wordShift < extDigits) ?
-        GetNormalizedDigit(ext, actualDigits, extDigits, shiftOffset, idx + wordShift) : 0;
-    const uint32_t upper = (idx + wordShift + 1 < extDigits) ?
-        GetNormalizedDigit(ext, actualDigits, extDigits, shiftOffset, idx + wordShift + 1) : 0;
+    const uint32_t lower = (idx + wordShift < numActualDigitsPlusGuard) ?
+        GetNormalizedDigit(ext, actualDigits, numActualDigitsPlusGuard, shiftOffset, idx + wordShift) : 0;
+    const uint32_t upper = (idx + wordShift + 1 < numActualDigitsPlusGuard) ?
+        GetNormalizedDigit(ext, actualDigits, numActualDigitsPlusGuard, shiftOffset, idx + wordShift + 1) : 0;
     if (bitShift == 0)
         return lower;
     else
@@ -270,7 +288,7 @@ CompareMagnitudes2Way (
     const int32_t effExpA,
     const int32_t effExpB,
     const int32_t actualDigits,
-    const int32_t extDigits,
+    const int32_t numActualDigitsPlusGuard,
     const int32_t shiftA,
     const int32_t shiftB,
     const uint32_t *SharkRestrict extA,
@@ -283,9 +301,9 @@ CompareMagnitudes2Way (
         AIsBiggerMagnitude = false;
     } else {
         AIsBiggerMagnitude = false; // default if equal
-        for (int32_t i = extDigits - 1; i >= 0; i--) {
-            uint32_t digitA = GetNormalizedDigit(extA, actualDigits, extDigits, shiftA, i);
-            uint32_t digitB = GetNormalizedDigit(extB, actualDigits, extDigits, shiftB, i);
+        for (int32_t i = numActualDigitsPlusGuard - 1; i >= 0; i--) {
+            uint32_t digitA = GetNormalizedDigit(extA, actualDigits, numActualDigitsPlusGuard, shiftA, i);
+            uint32_t digitB = GetNormalizedDigit(extB, actualDigits, numActualDigitsPlusGuard, shiftB, i);
             if (digitA > digitB) {
                 AIsBiggerMagnitude = true;
                 break;
@@ -391,7 +409,7 @@ NormalizeAndCopyResult(
     cooperative_groups::thread_block &block,
     const int32_t                      idx,
     const int32_t                      actualDigits,    // = SharkFloatParams::GlobalNumUint32
-    const int32_t                      extDigits,       // = SharkFloatParams::GlobalNumUint32 + SharkFloatParams::Guard
+    const int32_t                      numActualDigitsPlusGuard, // = SharkFloatParams::GlobalNumUint32 + SharkFloatParams::Guard
 
     //  6) A−B+C exponent
     int32_t &outExponentABC,
@@ -507,14 +525,19 @@ NormalizeAndCopyResult(
 }
 
 
-
-
 template <class SharkFloatParams>
-static __device__ void AddHelper (
+static __device__ void AddHelperSeparates(
     cg::grid_group &grid,
     cg::thread_block &block,
-    HpSharkAddComboResults<SharkFloatParams> *SharkRestrict combo,
-    uint64_t *tempData) {
+    const HpSharkFloat<SharkFloatParams> *A_X2,
+    const HpSharkFloat<SharkFloatParams> *B_Y2,
+    const HpSharkFloat<SharkFloatParams> *C_A,
+    const HpSharkFloat<SharkFloatParams> *D_2X,
+    const HpSharkFloat<SharkFloatParams> *E_B,
+    HpSharkFloat<SharkFloatParams> *Out_A_B_C,
+    HpSharkFloat<SharkFloatParams> *Out_D_E,
+    uint64_t *tempData)
+{
 
     extern __shared__ uint32_t sharedData[];
 
@@ -525,26 +548,17 @@ static __device__ void AddHelper (
     int32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
     constexpr int32_t NewN = SharkFloatParams::GlobalNumUint32;
 
-    const auto *A_X2 = &combo->A_X2;
-    const auto *B_Y2 = &combo->B_Y2;
-    const auto *C_A = &combo->C_A;
-    const auto *D_2X = &combo->D_2X;
-    const auto *E_B = &combo->E_B;
-
-    const auto *ext_A_X2 = combo->A_X2.Digits;
-    const auto *ext_B_Y2 = combo->B_Y2.Digits;
-    const auto *ext_C_A = combo->C_A.Digits;
-    const auto *ext_D_2X = combo->D_2X.Digits;
-    const auto *ext_E_B = combo->E_B.Digits;
+    const auto *ext_A_X2 = A_X2->Digits;
+    const auto *ext_B_Y2 = B_Y2->Digits;
+    const auto *ext_C_A = C_A->Digits;
+    const auto *ext_D_2X = D_2X->Digits;
+    const auto *ext_E_B = E_B->Digits;
 
     const bool IsNegativeA = A_X2->GetNegative();
     const bool IsNegativeB = !B_Y2->GetNegative(); // A - B + C
     const bool IsNegativeC = C_A->GetNegative();
     const bool IsNegativeD = D_2X->GetNegative();
     const bool IsNegativeE = E_B->GetNegative();
-
-    auto *Out_A_B_C = &combo->Result1_A_B_C;
-    auto *Out_D_E = &combo->Result2_D_E;
 
     constexpr auto GlobalSync_offset = 0;
     constexpr auto Checksum_offset = AdditionalGlobalSyncSpace;
@@ -750,10 +764,10 @@ static __device__ void AddHelper (
     // --- Phase 1: A - B + C ---
     int32_t outExponentTrue = 0;
     int32_t outExponentFalse = 0;
-    
+
     bool outSignTrue = false;
     bool outSignFalse = false;
-    
+
     Phase1_ABC<SharkFloatParams, CallIndex>(
         block,
         grid,
@@ -920,5 +934,25 @@ static __device__ void AddHelper (
     } else {
         grid.sync();
     }
+}
+
+template <class SharkFloatParams>
+static __device__ void AddHelper (
+    cg::grid_group &grid,
+    cg::thread_block &block,
+    HpSharkAddComboResults<SharkFloatParams> *SharkRestrict combo,
+    uint64_t *tempData) {
+
+    AddHelperSeparates<SharkFloatParams>(
+        grid,
+        block,
+        &combo->A_X2,
+        &combo->B_Y2,
+        &combo->C_A,
+        &combo->D_2X,
+        &combo->E_B,
+        &combo->Result1_A_B_C,
+        &combo->Result2_D_E,
+        tempData);
 }
 

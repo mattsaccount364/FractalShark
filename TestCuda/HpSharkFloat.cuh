@@ -7,6 +7,12 @@
 #include <gmp.h>
 #include <vector>
 
+#if defined(__CUDACC__)
+#include <cuda.h>
+#include <cuda_runtime.h>
+#include <cooperative_groups.h>
+#endif
+
 // Assuming that SharkFloatParams::GlobalNumUint32 can be large and doesn't fit in shared memory
 // We'll use the provided global memory buffers for large intermediates
 #define SharkRestrict __restrict__
@@ -19,7 +25,7 @@ static constexpr bool SharkDebug = false;
 #endif
 
 // Undefine to include N2, v1 etc.
-//#define MULTI_KERNEL
+#define MULTI_KERNEL
 
 #ifdef MULTI_KERNEL
 static constexpr auto SharkMultiKernel = true;
@@ -48,7 +54,7 @@ static constexpr bool SharkTestGpu = false;
 // 2 = setup for profiling only, one kernel
 // 3 = all basic correctness tests + comical tests
 // See ExplicitInstantiate.h for more information
-#define ENABLE_BASIC_CORRECTNESS 2
+#define ENABLE_BASIC_CORRECTNESS 0
 static constexpr auto SharkTestComicalThreadCount = 13;
 static constexpr auto SharkTestIterCount = SharkDebug ? 3 : 50000;
 
@@ -209,7 +215,30 @@ struct HpSharkFloat {
     ~HpSharkFloat() = default;
     HpSharkFloat &operator=(const HpSharkFloat<SharkFloatParams> &);
 
-    void DeepCopySameDevice(const HpSharkFloat<SharkFloatParams> &other);
+    CUDA_CRAP void DeepCopySameDevice(const HpSharkFloat<SharkFloatParams> &other);
+
+#if defined(__CUDA_ARCH__)
+    CUDA_CRAP void DeepCopyGPU(
+        cooperative_groups::grid_group &grid,
+        cooperative_groups::thread_block &block,
+        const HpSharkFloat<SharkFloatParams> &other)
+    {
+        // compute a global thread index
+        int idx = block.group_index().x * block.dim_threads().x + block.thread_index().x;
+        int stride = grid.dim_blocks().x * block.dim_threads().x;
+
+        // copy digits in parallel
+        for (int i = idx; i < SharkFloatParams::GlobalNumUint32; i += stride) {
+            Digits[i] = other.Digits[i];
+        }
+
+        // let one thread handle the scalar fields
+        if (idx == 0) {
+            Exponent = other.Exponent;
+            IsNegative = other.IsNegative;
+        }
+    }
+#endif
 
     std::string ToString() const;
     std::string ToHexString() const;
@@ -263,14 +292,6 @@ bool HpSharkFloat<SharkFloatParams>::GetNegative() const {
 }
 
 template<class SharkFloatParams>
-struct HpSharkReferenceResults {
-    HpSharkFloat<SharkFloatParams> A;
-    HpSharkFloat<SharkFloatParams> B;
-    HpSharkFloat<SharkFloatParams> ResultA;
-    HpSharkFloat<SharkFloatParams> ResultB;
-};
-
-template<class SharkFloatParams>
 struct HpSharkComboResults {
     HpSharkFloat<SharkFloatParams> A;
     HpSharkFloat<SharkFloatParams> B;
@@ -288,6 +309,12 @@ struct HpSharkAddComboResults {
     HpSharkFloat<SharkFloatParams> E_B;
     HpSharkFloat<SharkFloatParams> Result1_A_B_C;
     HpSharkFloat<SharkFloatParams> Result2_D_E;
+};
+
+template<class SharkFloatParams>
+struct HpSharkReferenceResults {
+    HpSharkComboResults<SharkFloatParams> Multiply;
+    HpSharkAddComboResults<SharkFloatParams> Add;
 };
 
 template<class SharkFloatParams>

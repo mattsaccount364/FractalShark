@@ -44,7 +44,7 @@ void InvokeAddKernelPerf(
 template<class SharkFloatParams>
 void InvokeHpSharkReferenceKernelCorrectness(
     BenchmarkTimer &timer,
-    HpSharkComboResults<SharkFloatParams> &combo,
+    HpSharkReferenceResults<SharkFloatParams> &combo,
     std::vector<DebugStateRaw> *debugResults);
 
 template<class SharkFloatParams>

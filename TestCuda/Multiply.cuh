@@ -9,9 +9,6 @@ struct HpSharkFloat;
 template<class SharkFloatParams>
 struct HpSharkComboResults;
 
-template<class SharkFloatParams>
-struct HpSharkAddComboResults;
-
 #include "KernelInvoke.cuh"
 #include "Tests.h"
 

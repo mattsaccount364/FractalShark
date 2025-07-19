@@ -2021,20 +2021,16 @@ static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
 // static constexpr int32_t SharkFloatParams::GlobalNumUint32 = SharkFloatParams::GlobalThreadsPerBlock * SharkFloatParams::GlobalNumBlocks;
 // 
 
-// Assuming that SharkFloatParams::GlobalNumUint32 can be large and doesn't fit in shared memory
-// We'll use the provided global memory buffers for large intermediates
 template<class SharkFloatParams>
-static __device__ void MultiplyHelperKaratsubaV2 (
-    HpSharkComboResults<SharkFloatParams> *SharkRestrict combo,
+static __device__ void MultiplyHelperKaratsubaV2Separates(
+    const HpSharkFloat<SharkFloatParams> *SharkRestrict A,
+    const HpSharkFloat<SharkFloatParams> *SharkRestrict B,
+    HpSharkFloat<SharkFloatParams> *SharkRestrict OutXX,
+    HpSharkFloat<SharkFloatParams> *SharkRestrict OutXY,
+    HpSharkFloat<SharkFloatParams> *SharkRestrict OutYY,
     cg::grid_group &grid,
     cg::thread_block &block,
     uint64_t *SharkRestrict tempProducts) {
-
-    const HpSharkFloat<SharkFloatParams> *SharkRestrict A = &combo->A;
-    const HpSharkFloat<SharkFloatParams> *SharkRestrict B = &combo->B;
-    HpSharkFloat<SharkFloatParams> *SharkRestrict OutXX = &combo->ResultX2;
-    HpSharkFloat<SharkFloatParams> *SharkRestrict OutXY = &combo->ResultXY;
-    HpSharkFloat<SharkFloatParams> *SharkRestrict OutYY = &combo->ResultY2;
 
     extern __shared__ uint32_t shared_data[];
 
@@ -2056,7 +2052,7 @@ static __device__ void MultiplyHelperKaratsubaV2 (
     auto *SharkRestrict aDigits =
         SharkUseSharedMemory ?
         (shared_data) :
-        const_cast<uint32_t*>(A->Digits);
+        const_cast<uint32_t *>(A->Digits);
     auto *SharkRestrict bDigits =
         SharkUseSharedMemory ?
         (aDigits + NewN) :
@@ -2064,7 +2060,7 @@ static __device__ void MultiplyHelperKaratsubaV2 (
     auto *SharkRestrict x_diff_abs =
         SharkUseSharedMemory ?
         reinterpret_cast<uint32_t *>(bDigits + NewN) :
-        reinterpret_cast<uint32_t*>(&tempProducts[XDiff_offset]);
+        reinterpret_cast<uint32_t *>(&tempProducts[XDiff_offset]);
     auto *SharkRestrict y_diff_abs =
         SharkUseSharedMemory ?
         reinterpret_cast<uint32_t *>(x_diff_abs + (NewN + 1) / 2) :
@@ -2146,19 +2142,19 @@ static __device__ void MultiplyHelperKaratsubaV2 (
         ExecutionNumBlocks,
         SharkFloatParams::GlobalNumBlocks,
         TempBase>(
-        shared_data,
-        A,
-        B,
-        aDigits,
-        bDigits,
-        x_diff_abs,
-        y_diff_abs,
-        final128XX,
-        final128XY,
-        final128YY,
-        grid,
-        block,
-        tempProducts);
+            shared_data,
+            A,
+            B,
+            aDigits,
+            bDigits,
+            x_diff_abs,
+            y_diff_abs,
+            final128XX,
+            final128XY,
+            final128YY,
+            grid,
+            block,
+            tempProducts);
 
     grid.sync();
 
@@ -2300,14 +2296,14 @@ static __device__ void MultiplyHelperKaratsubaV2 (
             HpSharkFloat<SharkFloatParams> *Out,
             int shift_digits) {
 
-            if (block.group_index().x == 0 && block.thread_index().x == 0) {
-                // Adjust the exponent based on the number of bits shifted
-                Out->Exponent = A->Exponent + B->Exponent + shift_digits * 32;
+                if (block.group_index().x == 0 && block.thread_index().x == 0) {
+                    // Adjust the exponent based on the number of bits shifted
+                    Out->Exponent = A->Exponent + B->Exponent + shift_digits * 32;
 
-                // Set the sign of the result
-                Out->SetNegative(forcePositive ? false : (A->GetNegative() ^ B->GetNegative()));
-            }
-        };
+                    // Set the sign of the result
+                    Out->SetNegative(forcePositive ? false : (A->GetNegative() ^ B->GetNegative()));
+                }
+            };
 
         ExponentAndSign(
             block,
@@ -2341,28 +2337,28 @@ static __device__ void MultiplyHelperKaratsubaV2 (
             int shift_digits,
             HpSharkFloat<SharkFloatParams> *Out) {
 
-            const int tid = block.thread_index().x + block.group_index().x * block.dim_threads().x;
-            const int stride = block.dim_threads().x * grid.dim_blocks().x;
+                const int tid = block.thread_index().x + block.group_index().x * block.dim_threads().x;
+                const int stride = block.dim_threads().x * grid.dim_blocks().x;
 
-            // src_idx is the starting index in tempProducts[] from which we copy
-            // TODO:
-            const int src_idx = shift_digits;
-            const int last_src = highest_nonzero_index; // The last valid index
+                // src_idx is the starting index in tempProducts[] from which we copy
+                // TODO:
+                const int src_idx = shift_digits;
+                const int last_src = highest_nonzero_index; // The last valid index
 
-            // We'll do a grid-stride loop over i in [0 .. NewN)
-            for (int i = tid; i < NewN; i += stride) {
-                // Corresponding source index for digit i
-                int src = src_idx + i;
+                // We'll do a grid-stride loop over i in [0 .. NewN)
+                for (int i = tid; i < NewN; i += stride) {
+                    // Corresponding source index for digit i
+                    int src = src_idx + i;
 
-                if (src <= last_src) {
-                    // Copy from tempProducts
-                    Out->Digits[i] = result[src];
-                } else {
-                    // Pad with zero if we've run out of digits
-                    Out->Digits[i] = 0;
+                    if (src <= last_src) {
+                        // Copy from tempProducts
+                        Out->Digits[i] = result[src];
+                    } else {
+                        // Pad with zero if we've run out of digits
+                        Out->Digits[i] = 0;
+                    }
                 }
-            }
-        };
+            };
 
         Finalize(
             grid,
@@ -2390,3 +2386,23 @@ static __device__ void MultiplyHelperKaratsubaV2 (
     }
 }
 
+
+// Assuming that SharkFloatParams::GlobalNumUint32 can be large and doesn't fit in shared memory
+// We'll use the provided global memory buffers for large intermediates
+template<class SharkFloatParams>
+static __device__ void MultiplyHelperKaratsubaV2 (
+    HpSharkComboResults<SharkFloatParams> *SharkRestrict combo,
+    cg::grid_group &grid,
+    cg::thread_block &block,
+    uint64_t *SharkRestrict tempProducts) {
+
+    MultiplyHelperKaratsubaV2Separates<SharkFloatParams>(
+        &combo->A,
+        &combo->B,
+        &combo->ResultX2,
+        &combo->ResultXY,
+        &combo->ResultY2,
+        grid,
+        block,
+        tempProducts);
+}

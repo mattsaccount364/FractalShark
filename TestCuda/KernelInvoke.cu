@@ -21,9 +21,6 @@
 #include <algorithm>
 #include <assert.h>
 
-right so the idea is were setting up the integration kernel with a full reference orbit.
-try running it, and it fails, because shits not hooked up yet.  look at full stack, its all a hack job.
-
 template<class SharkFloatParams>
 void InvokeHpSharkReferenceKernelPerf(
     BenchmarkTimer &timer,
@@ -205,11 +202,14 @@ void InvokeAddKernelPerf(
 template<class SharkFloatParams>
 void InvokeHpSharkReferenceKernelCorrectness(
     BenchmarkTimer &timer,
-    HpSharkComboResults<SharkFloatParams> &combo,
+    HpSharkReferenceResults<SharkFloatParams> &combo,
     std::vector<DebugStateRaw> *debugResults) {
 
     // Prepare kernel arguments
     // Allocate memory for carryOuts and cumulativeCarries
+
+    // TODO max of add/multiply frame size
+    // TODO checksum handled
     uint64_t *d_tempProducts;
     constexpr auto BytesToAllocate =
         (AdditionalUInt64Global + ScratchMemoryCopies * CalculateMultiplyFrameSize<SharkFloatParams>()) * sizeof(uint64_t);
@@ -221,19 +221,20 @@ void InvokeHpSharkReferenceKernelCorrectness(
         cudaMemset(d_tempProducts, 0xCD, BytesToAllocate);
     }
 
-    HpSharkComboResults<SharkFloatParams> *comboGpu;
-    cudaMalloc(&comboGpu, sizeof(HpSharkComboResults<SharkFloatParams>));
-    cudaMemcpy(comboGpu, &combo, sizeof(HpSharkComboResults<SharkFloatParams>), cudaMemcpyHostToDevice);
+    HpSharkReferenceResults<SharkFloatParams> *comboGpu;
+    cudaMalloc(&comboGpu, sizeof(HpSharkReferenceResults<SharkFloatParams>));
+    cudaMemcpy(comboGpu, &combo, sizeof(HpSharkReferenceResults<SharkFloatParams>), cudaMemcpyHostToDevice);
 
-    if constexpr (!SharkTestInitCudaMemory) {
-        cudaMemset(&comboGpu->ResultX2, 0, sizeof(HpSharkFloat<SharkFloatParams>));
-        cudaMemset(&comboGpu->ResultXY, 0, sizeof(HpSharkFloat<SharkFloatParams>));
-        cudaMemset(&comboGpu->ResultY2, 0, sizeof(HpSharkFloat<SharkFloatParams>));
-    } else {
-        cudaMemset(&comboGpu->ResultX2, 0xCD, sizeof(HpSharkFloat<SharkFloatParams>));
-        cudaMemset(&comboGpu->ResultXY, 0xCD, sizeof(HpSharkFloat<SharkFloatParams>));
-        cudaMemset(&comboGpu->ResultY2, 0xCD, sizeof(HpSharkFloat<SharkFloatParams>));
-    }
+    uint8_t byteToSet = SharkTestInitCudaMemory ? 0xCD : 0;
+
+    cudaMemset(&comboGpu->Add.A_X2, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
+    cudaMemset(&comboGpu->Add.B_Y2, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
+    cudaMemset(&comboGpu->Add.D_2X, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
+    cudaMemset(&comboGpu->Add.Result1_A_B_C, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
+    cudaMemset(&comboGpu->Add.Result2_D_E, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
+    cudaMemset(&comboGpu->Multiply.ResultX2, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
+    cudaMemset(&comboGpu->Multiply.ResultXY, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
+    cudaMemset(&comboGpu->Multiply.ResultY2, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
 
     void *kernelArgs[] = {
         (void *)&comboGpu,
@@ -242,10 +243,10 @@ void InvokeHpSharkReferenceKernelCorrectness(
 
     {
         ScopedBenchmarkStopper stopper{ timer };
-        ComputeMultiplyKaratsubaV2Gpu<SharkFloatParams>(kernelArgs);
+        ComputeHpSharkReferenceGpu<SharkFloatParams>(kernelArgs);
     }
 
-    cudaMemcpy(&combo, comboGpu, sizeof(HpSharkComboResults<SharkFloatParams>), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&combo, comboGpu, sizeof(HpSharkReferenceResults<SharkFloatParams>), cudaMemcpyDeviceToHost);
 
     if (debugResults != nullptr) {
         if constexpr (SharkDebugChecksums) {
@@ -390,7 +391,7 @@ void InvokeAddKernelCorrectness(
     \
     template void InvokeHpSharkReferenceKernelCorrectness<SharkFloatParams>( \
         BenchmarkTimer &timer, \
-        HpSharkComboResults<SharkFloatParams> &combo, \
+        HpSharkReferenceResults<SharkFloatParams> &combo, \
         std::vector<DebugStateRaw> *debugResults); \
     template void InvokeMultiplyKernelCorrectness<SharkFloatParams>( \
         BenchmarkTimer &timer, \

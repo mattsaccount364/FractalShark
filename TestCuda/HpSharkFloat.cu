@@ -560,6 +560,7 @@ HpSharkFloat<SharkFloatParams>::Negate()
 }
 
 template<class SharkFloatParams>
+CUDA_CRAP
 void
 HpSharkFloat<SharkFloatParams>::DeepCopySameDevice(
     const HpSharkFloat<SharkFloatParams> &other)

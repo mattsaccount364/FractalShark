@@ -903,7 +903,8 @@ void MultiplyHelperKaratsubaV2 (
         HpSharkFloat<SharkFloatParams> &Out,
         const HpSharkFloat<SharkFloatParams> &A,
         const HpSharkFloat<SharkFloatParams> &B,
-        const std::vector<uint32_t> &tempDigits) {
+        const std::vector<uint32_t> &tempDigits,
+        const int32_t additionalFactorsOfTwo) {
 
         int highest_nonzero_index = (int)tempDigits.size() - 1;
         while (highest_nonzero_index >= 0 && tempDigits[highest_nonzero_index] == 0) {
@@ -940,7 +941,7 @@ void MultiplyHelperKaratsubaV2 (
         }
 
         // Update the exponent accordingly
-        Out.Exponent = A.Exponent + B.Exponent + shift_digits * 32;
+        Out.Exponent = A.Exponent + B.Exponent + shift_digits * 32 + additionalFactorsOfTwo;
 
         // Extract exactly N digits
         int src_idx = shift_digits;
@@ -960,13 +961,16 @@ void MultiplyHelperKaratsubaV2 (
         }
         };
 
-    NormalizeOne(*OutXX, *A, *A, tempDigitsXX);
+    constexpr auto additionalFactorOfTwoXX = 0;
+    NormalizeOne(*OutXX, *A, *A, tempDigitsXX, additionalFactorOfTwoXX);
     OutXX->SetNegative(false);
 
-    NormalizeOne(*OutXY, *A, *B, tempDigitsXY);
+    constexpr auto additionalFactorOfTwoXY = 1;
+    NormalizeOne(*OutXY, *A, *B, tempDigitsXY, additionalFactorOfTwoXY);
     OutXY->SetNegative(A->GetNegative() ^ B->GetNegative());
 
-    NormalizeOne(*OutYY, *B, *B, tempDigitsYY);
+    constexpr auto additionalFactorOfTwoYY = 0;
+    NormalizeOne(*OutYY, *B, *B, tempDigitsYY, additionalFactorOfTwoYY);
     OutYY->SetNegative(false);
 }
 

@@ -55,10 +55,6 @@ char PressKey() {
     return (char)_getch();
 }
 
-//constexpr auto MainOperator = Operator::MultiplyKaratsubaV2;
-//constexpr auto MainOperator = Operator::Add;
-constexpr auto MainOperator = Operator::ReferenceOrbit;
-
 template<typename TestSharkParams>
 bool CorrectnessTests() {
     //TestNullKernel();
@@ -76,16 +72,18 @@ bool CorrectnessTests() {
         }
     }
 
-    testBase = 2000;
-    res = TestAllBinaryOp<TestSharkParams, MainOperator>(testBase);
-    if (!res) {
-        auto q = PressKey();
-        if (q == 'q') {
-            return false;
+    if constexpr (SharkEnableReferenceKernel) {
+        testBase = 2000;
+        res = TestAllBinaryOp<TestSharkParams, Operator::ReferenceOrbit>(testBase);
+        if (!res) {
+            auto q = PressKey();
+            if (q == 'q') {
+                return false;
+            }
         }
     }
 
-    if constexpr (SharkMultiKernel) {
+    if constexpr (SharkEnableAddKernel) {
         testBase = 4000;
         res = TestAllBinaryOp<TestSharkParams, Operator::Add>(testBase);
         if (!res) {
@@ -94,7 +92,9 @@ bool CorrectnessTests() {
                 return false;
             }
         }
+    }
 
+    if constexpr (SharkEnableMultiplyKernel) {
         testBase = 6000;
         res = TestAllBinaryOp<TestSharkParams, Operator::MultiplyKaratsubaV2>(testBase);
         if (!res) {
@@ -223,7 +223,7 @@ int main(int /*argc*/, char * /*argv*/[]) {
 
 #if (ENABLE_BASIC_CORRECTNESS == 2) || (ENABLE_BASIC_CORRECTNESS == 1)
     int testBase = 0;
-    if constexpr (SharkMultiKernel) {
+    if constexpr (SharkEnableAddKernel) {
         testBase = 10000;
         res = TestBinaryOperatorPerf<Operator::Add>(testBase);
         if (!res) {
@@ -232,7 +232,9 @@ int main(int /*argc*/, char * /*argv*/[]) {
                 return 0;
             }
         }
+    }
 
+    if constexpr (SharkEnableMultiplyKernel) {
         testBase = 11000;
         res = TestBinaryOperatorPerf<Operator::MultiplyKaratsubaV2>(testBase);
         if (!res) {
@@ -243,12 +245,14 @@ int main(int /*argc*/, char * /*argv*/[]) {
         }
     }
 
-    testBase = 12000;
-    res = TestBinaryOperatorPerf<MainOperator>(testBase);
-    if (!res) {
-        auto q = PressKey();
-        if (q == 'q') {
-            return 0;
+    if constexpr (SharkEnableReferenceKernel) {
+        testBase = 12000;
+        res = TestBinaryOperatorPerf<Operator::ReferenceOrbit>(testBase);
+        if (!res) {
+            auto q = PressKey();
+            if (q == 'q') {
+                return 0;
+            }
         }
     }
 #endif

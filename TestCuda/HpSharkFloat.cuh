@@ -24,13 +24,27 @@ static constexpr bool SharkDebug = true;
 static constexpr bool SharkDebug = false;
 #endif
 
-// Undefine to include N2, v1 etc.
-//#define MULTI_KERNEL
+// Comment out to disable specific kernels
+//#define ENABLE_ADD_KERNEL
+#define ENABLE_MULTIPLY_KERNEL
+//#define ENABLE_REFERENCE_KERNEL
 
-#ifdef MULTI_KERNEL
-static constexpr auto SharkMultiKernel = true;
+#ifdef ENABLE_ADD_KERNEL
+static constexpr auto SharkEnableAddKernel = true;
 #else
-static constexpr auto SharkMultiKernel = false;
+static constexpr auto SharkEnableAddKernel = false;
+#endif
+
+#ifdef ENABLE_MULTIPLY_KERNEL
+static constexpr auto SharkEnableMultiplyKernel = true;
+#else
+static constexpr auto SharkEnableMultiplyKernel = false;
+#endif
+
+#ifdef ENABLE_REFERENCE_KERNEL
+static constexpr auto SharkEnableReferenceKernel = true;
+#else
+static constexpr auto SharkEnableReferenceKernel = false;
 #endif
 
 // Define to enable GPU kernel compilation
@@ -54,7 +68,7 @@ static constexpr bool SharkTestGpu = false;
 // 2 = setup for profiling only, one kernel
 // 3 = all basic correctness tests + comical tests
 // See ExplicitInstantiate.h for more information
-#define ENABLE_BASIC_CORRECTNESS 2
+#define ENABLE_BASIC_CORRECTNESS 0
 static constexpr auto SharkTestComicalThreadCount = 13;
 static constexpr auto SharkTestIterCount = SharkDebug ? 5 : 50000;
 

@@ -4,7 +4,7 @@
 \usepackage{geometry} % For setting margins
 \geometry{a4paper, margin=1in}
 
-\title{Difference-Based Karatsuba Multiplication}
+\title{Notes on the CUDA High-Precision Shark Floating Point Implementation}
 \author{}
 \date{}
 
@@ -12,12 +12,56 @@
 
 \maketitle
 
-\section*{Introduction}
-This document describes the difference-based Karatsuba multiplication algorithm. The middle term of the Karatsuba formula is computed using differences, and the combination formula is derived based on the sign of the computed differences.
+\section{Performance Optimizations}
 
-After that, this document summarizes some performance optimizations that aren't yet implemented.
+This section summarizes some possible optimization ideas.
 
-\section*{Karatsuba Middle Term Using Differences}
+\begin{itemize}
+\item Subtraction step ideas
+    \begin{itemize}
+    \item Use shared memory during subtraction steps.
+    \item Consider whether full-grid subtraction even makes sense and instead do it all in one block to avoid grid-level synchronization?
+    \item Alternatively, consider processing multiple subtractions per iteration to reduce per-digit synchronizations.
+    \item Parallel scan:  The current iterative borrow propagation (do/while loop) ``pushes'' borrows one digit at a time, which may require many iterations. Consider reformulating the borrow propagation as a parallel prefix-sum (Blelloch scan). A well-implemented scan can propagate borrows in O(log n) steps rather than O(n) iterations.
+    \end{itemize}
+\item Increase occupancy: update the kernel such that we can use 128 blocks (RTX 4090 max) for all number sizes.
+\item Prefetch values on each convolution iteration into registers and set up a pipeline strategy to hide shared memory access latency.
+\item Use warp-level intrinsics.  Warp intrinsics for parallel reduction: For example, rather than synchronizing after processing every digit, perform a warp-level reduction (using \verb|__shfl_*| etc.) to combine results, then have only one thread write the result.
+\item Use 30-bit limbs or similar to avoid spilling to 2x64 values.
+\item Ensure CUDA kernel start time has L2 cache hints specified for appropriate amount of memory.  It's not currently.  We should be able to guarantee 100\% hit rate.
+\item The Karatsuba implementation we have likely has a load imbalance issue between threads.  Some threads in the ``middle'' may be doing more work than others.  We should be able to correct/compensate for this by splitting the three multiplies that are taking place across threads differently, such that the average work per thread is more equal.
+    \begin{itemize}
+    \item Example: 7776 input, recurse to 3888 and then 1944 limbs.
+    \item Thread 0, block 0
+    \item total\_k = 1943, 3*1943 = 5829.
+    \item stride=1536=12*128
+    \item idx = 3072
+    \item n1 = 972, n2 = 972
+    \item k = 3072 - 1943 = 1129
+    \item i\_start = 158
+    \item i\_end = 971 = 972-1
+    \end{itemize}
+    
+    And:
+    \begin{itemize}
+    \item Example: 7776 input, recurse to 3888 and then 1944 limbs.
+    \item Thread 0, block 54
+    \item total\_k = 1943, 3*1943 = 5829.
+    \item stride=1536=12*128
+    \item idx = 2304
+    \item n1 = 972, n2 = 972
+    \item k = 2304 - 1943 = 361
+    \item i\_start = 0
+    \item i\_end = 361
+    \end{itemize}
+\item We should be able to use a constant amount of shared memory in the multiplies by copying to/from main memory as needed, different parts of the numbers.  This approach may be difficult to orchestrate but would allow for an occupancy increase by preventing shared memory from being the bottleneck, and would also allow for perf benefits on larger numbers that don't fit entirely in shared memory.
+\end{itemize}
+
+
+\section*{Difference-Based Karatsuba}
+Next, we discuss the difference-based Karatsuba multiplication algorithm. The middle term of the Karatsuba formula is computed using differences, and the combination formula is derived based on the sign of the computed differences.
+
+\subsection*{Karatsuba Middle Term Using Differences}
 The Karatsuba multiplication algorithm divides two input numbers into halves:
 \[
 A = A_0 + A_1 \cdot 2^{32 \cdot \text{half}}, \quad B = B_0 + B_1 \cdot 2^{32 \cdot \text{half}}
@@ -82,25 +126,5 @@ In this case:
 \[
 \text{Result} = 2
 \]
-
-\section{Performance Optimizations}
-
-This section summarizes some possible optimization ideas.
-
-\begin{itemize}
-\item Subtraction step ideas
-    \begin{itemize}
-    \item Use shared memory during subtraction steps.
-    \item Consider whether full-grid subtraction even makes sense and instead do it all in one block to avoid grid-level synchronization?
-    \item Alternatively, consider processing multiple subtractions per iteration to reduce per-digit synchronizations.
-    \item Parallel scan:  The current iterative borrow propagation (do/while loop) ``pushes'' borrows one digit at a time, which may require many iterations. Consider reformulating the borrow propagation as a parallel prefix-sum (Blelloch scan). A well-implemented scan can propagate borrows in O(log n) steps rather than O(n) iterations.
-\end{itemize}
-\item Increase occupancy: update the kernel such that we can use 128 blocks (RTX 4090 max) for all number sizes.
-\item Prefetch values on each convolution iteration into registers and set up a pipeline strategy to hide shared memory access latency.
-\item Use warp-level intrinsics.  Warp intrinsics for parallel reduction: For example, rather than synchronizing after processing every digit, perform a warp-level reduction (using \verb|__shfl_*| etc.) to combine results, then have only one thread write the result.
-\item Use 30-bit limbs or similar to avoid spilling to 2x64 values.
-\item Ensure CUDA kernel start time has L2 cache hints specified for appropriate amount of memory.  It's not currently.  We should be able to guarantee 100\% hit rate.
-\item 
-\end{itemize}
 
 \end{document}

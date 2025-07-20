@@ -25,7 +25,7 @@ static constexpr bool SharkDebug = false;
 #endif
 
 // Undefine to include N2, v1 etc.
-#define MULTI_KERNEL
+//#define MULTI_KERNEL
 
 #ifdef MULTI_KERNEL
 static constexpr auto SharkMultiKernel = true;
@@ -54,9 +54,9 @@ static constexpr bool SharkTestGpu = false;
 // 2 = setup for profiling only, one kernel
 // 3 = all basic correctness tests + comical tests
 // See ExplicitInstantiate.h for more information
-#define ENABLE_BASIC_CORRECTNESS 0
+#define ENABLE_BASIC_CORRECTNESS 2
 static constexpr auto SharkTestComicalThreadCount = 13;
-static constexpr auto SharkTestIterCount = SharkDebug ? 3 : 50000;
+static constexpr auto SharkTestIterCount = SharkDebug ? 5 : 50000;
 
 // Set to true to use a custom stream for the kernel launch
 static constexpr auto SharkCustomStream = true;
@@ -64,14 +64,10 @@ static constexpr auto SharkCustomStream = true;
 // Set to true to use shared memory for the incoming numbers
 static constexpr auto SharkUseSharedMemory = true;
 static constexpr auto SharkRegisterLimit = 255;
-
-// TODO not hooked up right, leave as 0.  Idea is if we need fixed-size
-// amount of shared memory we can use this but as it is we don't use it.
 static constexpr auto SharkConstantSharedRequiredBytes = 0;
-
 static constexpr auto SharkBatchSize = SharkDebug ? 8 : 512;
 
-static constexpr bool SharkDebugChecksums = SharkDebug;
+static constexpr bool SharkDebugChecksums = (ENABLE_BASIC_CORRECTNESS != 2) ? SharkDebug : false;
 static constexpr bool SharkDebugRandomDelays = false;
 
 #if ENABLE_BASIC_CORRECTNESS == 2
@@ -161,6 +157,19 @@ static constexpr auto CalculateMultiplyFrameSize() {
 }
 
 template<class SharkFloatParams>
+constexpr int32_t CalculateMultiplySharedMemorySize() {
+    constexpr int NewN = SharkFloatParams::GlobalNumUint32;
+    constexpr auto n = (NewN + 1) / 2;              // Half of NewN
+
+    //SharkConstantSharedRequiredBytes
+    constexpr auto sharedAmountBytes =
+        SharkUseSharedMemory ?
+        (2 * NewN + 2 * n) * sizeof(uint32_t) :
+        SharkFloatParams::GlobalNumBlocks * SharkFloatParams::GlobalThreadsPerBlock * sizeof(uint32_t);
+    return sharedAmountBytes;
+}
+
+template<class SharkFloatParams>
 static constexpr auto CalculateAddFrameSize() {
     return ScratchMemoryArraysForAdd * SharkFloatParams::GlobalNumUint32 + AdditionalUInt64PerFrame;
 }
@@ -187,9 +196,10 @@ using Test4x6SharkParams = GenericSharkFloatParams<7, 9, 74>;
 
 // Performance test sizes
 constexpr auto StupidMult = 1;
-using TestPerSharkParams1 = GenericSharkFloatParams<64, 128>;
+//using TestPerSharkParams1 = GenericSharkFloatParams<64, 128>;
 //using TestPerSharkParams1 = GenericSharkFloatParams<96, 81>;
 //using TestPerSharkParams1 = GenericSharkFloatParams<128 * StupidMult, 108, 7776, 9>;
+using TestPerSharkParams1 = GenericSharkFloatParams<128, 108, 7776, 9>;
 using TestPerSharkParams2 = GenericSharkFloatParams<64 * StupidMult, 108, 7776, 9>;
 using TestPerSharkParams3 = GenericSharkFloatParams<32 * StupidMult, 108, 7776, 9>;
 using TestPerSharkParams4 = GenericSharkFloatParams<16 * StupidMult, 108, 7776, 9>;
@@ -296,7 +306,7 @@ struct HpSharkComboResults {
     HpSharkFloat<SharkFloatParams> A;
     HpSharkFloat<SharkFloatParams> B;
     HpSharkFloat<SharkFloatParams> ResultX2;
-    HpSharkFloat<SharkFloatParams> ResultXY;
+    HpSharkFloat<SharkFloatParams> Result2XY;
     HpSharkFloat<SharkFloatParams> ResultY2;
 };
 

@@ -42,140 +42,11 @@ MultiplyKernelKaratsubaV2TestLoop(
 }
 
 template<class SharkFloatParams>
-void PrintMaxActiveBlocks(void *kernelFn, int sharedAmountBytes) {
-    std::cout << "Shared memory size: " << sharedAmountBytes << std::endl;
-
-    int numBlocks;
-
-    {
-        // Check the maximum number of active blocks per multiprocessor
-        // with the given shared memory size
-        // This is useful to determine if we can fit more blocks
-        // in the shared memory
-
-        const auto err = cudaOccupancyMaxActiveBlocksPerMultiprocessor(
-            &numBlocks,
-            kernelFn,
-            SharkFloatParams::GlobalThreadsPerBlock,
-            sharedAmountBytes
-        );
-
-        if (err != cudaSuccess) {
-            std::cerr << "CUDA error in cudaOccupancyMaxActiveBlocksPerMultiprocessor: " << cudaGetErrorString(err) << std::endl;
-            return;
-        }
-
-        std::cout << "Max active blocks per multiprocessor: " << numBlocks << std::endl;
-    }
-
-    {
-        size_t availableSharedMemory = 0;
-        const auto err = cudaOccupancyAvailableDynamicSMemPerBlock(
-            &availableSharedMemory,
-            kernelFn,
-            numBlocks,
-            SharkFloatParams::GlobalThreadsPerBlock
-        );
-
-        if (err != cudaSuccess) {
-            std::cerr << "CUDA error in cudaOccupancyAvailableDynamicSMemPerBlock: " << cudaGetErrorString(err) << std::endl;
-            return;
-        }
-
-        std::cout << "Available shared memory per block: " << availableSharedMemory << std::endl;
-    }
-
-    // Check the number of multiprocessors on the device
-    int numSM;
-
-    {
-        const auto err = cudaDeviceGetAttribute(
-            &numSM,
-            cudaDevAttrMultiProcessorCount,
-            0
-        );
-
-        if (err != cudaSuccess) {
-            std::cerr << "CUDA error in cudaDeviceGetAttribute: " << cudaGetErrorString(err) << std::endl;
-            return;
-        }
-
-        std::cout << "Number of multiprocessors: " << numSM << std::endl;
-    }
-
-    int maxConcurrentBlocks = numSM * numBlocks;
-
-    std::cout << "Max concurrent blocks: " << maxConcurrentBlocks << std::endl;
-    if (maxConcurrentBlocks < SharkFloatParams::GlobalNumBlocks) {
-        std::cout << "Warning: Max concurrent blocks exceeds the number of blocks requested." << std::endl;
-    }
-
-    {
-        // Check the maximum number of threads per block
-        int maxThreadsPerBlock;
-        const auto err = cudaDeviceGetAttribute(
-            &maxThreadsPerBlock,
-            cudaDevAttrMaxThreadsPerBlock,
-            0
-        );
-
-        if (err != cudaSuccess) {
-            std::cerr << "CUDA error in cudaDeviceGetAttribute: " << cudaGetErrorString(err) << std::endl;
-            return;
-        }
-
-        std::cout << "Max threads per block: " << maxThreadsPerBlock << std::endl;
-    }
-
-    {
-        // Check the maximum number of threads per multiprocessor
-        int maxThreadsPerMultiprocessor;
-        const auto err = cudaDeviceGetAttribute(
-            &maxThreadsPerMultiprocessor,
-            cudaDevAttrMaxThreadsPerMultiProcessor,
-            0
-        );
-        if (err != cudaSuccess) {
-            std::cerr << "CUDA error in cudaDeviceGetAttribute: " << cudaGetErrorString(err) << std::endl;
-            return;
-        }
-        std::cout << "Max threads per multiprocessor: " << maxThreadsPerMultiprocessor << std::endl;
-    }
-
-    // Check if this device supports cooperative launches
-    int cooperativeLaunch;
-
-    {
-        const auto err = cudaDeviceGetAttribute(
-            &cooperativeLaunch,
-            cudaDevAttrCooperativeLaunch,
-            0
-        );
-
-        if (err != cudaSuccess) {
-            std::cerr << "CUDA error in cudaDeviceGetAttribute: " << cudaGetErrorString(err) << std::endl;
-            return;
-        }
-
-        if (cooperativeLaunch) {
-            std::cout << "This device supports cooperative launches." << std::endl;
-        } else {
-            std::cout << "This device does not support cooperative launches." << std::endl;
-        }
-    }
-}
-
-template<class SharkFloatParams>
 void ComputeMultiplyKaratsubaV2Gpu(void *kernelArgs[]) {
 
     cudaError_t err;
 
-    constexpr int NewN = SharkFloatParams::GlobalNumUint32;
-    constexpr auto n = (NewN + 1) / 2;              // Half of NewN
-    constexpr auto sharedAmountBytes =
-        SharkUseSharedMemory ?
-        (2 * NewN + 2 * n) * sizeof(uint32_t) :
-        SharkConstantSharedRequiredBytes;
+    constexpr auto sharedAmountBytes = CalculateMultiplySharedMemorySize<SharkFloatParams>();
 
     if constexpr (SharkCustomStream) {
         cudaFuncSetAttribute(
@@ -213,12 +84,7 @@ void ComputeMultiplyKaratsubaV2Gpu(void *kernelArgs[]) {
 template<class SharkFloatParams>
 void ComputeMultiplyKaratsubaV2GpuTestLoop(cudaStream_t &stream, void *kernelArgs[]) {
 
-    constexpr int NewN = SharkFloatParams::GlobalNumUint32;
-    constexpr auto n = (NewN + 1) / 2;              // Half of NewN
-    constexpr auto sharedAmountBytes =
-        SharkUseSharedMemory ?
-        (2 * NewN + 2 * n) * sizeof(uint32_t) :
-        SharkConstantSharedRequiredBytes;
+    constexpr auto sharedAmountBytes = CalculateMultiplySharedMemorySize<SharkFloatParams>();
 
     if constexpr (SharkCustomStream) {
         cudaFuncSetAttribute(

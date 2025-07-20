@@ -381,14 +381,21 @@ void TestPerf (
 
     // Reference orbit:
     mpf_t tempX, tempY, xSquared, ySquared, twoXY;
+    mpf_t recurrenceX, recurrenceY;
     mpf_init(tempX);
     mpf_init(tempY);
     mpf_init(xSquared);
     mpf_init(ySquared);
     mpf_init(twoXY);
 
+    mpf_init(recurrenceX);
+    mpf_init(recurrenceY);
+    mpf_set_ui(recurrenceX, 0);
+    mpf_set_ui(recurrenceY, 0);
+
+    BenchmarkTimer hostTimer;
+
     if constexpr (SharkTestBenchmarkAgainstHost) {
-        BenchmarkTimer hostTimer;
         ScopedBenchmarkStopper hostStopper{ hostTimer };
 
         for (int i = 0; i < numIters; ++i) {
@@ -399,19 +406,20 @@ void TestPerf (
             } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
                 mpf_mul(mpfHostResultXX, mpfX, mpfX);
                 mpf_mul(mpfHostResultXY1, mpfX, mpfY);
+                mpf_mul_ui(mpfHostResultXY1, mpfHostResultXY1, 2);
                 mpf_mul(mpfHostResultYY, mpfY, mpfY);
             } else if constexpr (sharkOperator == Operator::ReferenceOrbit) {
                 // x_(n + 1) = x_n * x_n - y_n * y_n + a
                 // y_(n + 1) = 2 * x_n * y_n + b
 
-                mpf_mul(xSquared, mpfX, mpfX); // x^2
-                mpf_mul(ySquared, mpfY, mpfY); // y^2
-                mpf_mul(twoXY, mpfX, mpfY);    // xy
+                mpf_mul(xSquared, recurrenceX, recurrenceX); // x^2
+                mpf_mul(ySquared, recurrenceY, recurrenceY); // y^2
+                mpf_mul(twoXY, recurrenceX, recurrenceY); // xy
                 mpf_mul_ui(twoXY, twoXY, 2);   // 2xy
                 mpf_sub(tempX, xSquared, ySquared); // x^2 - y^2
-                mpf_add(mpfHostResultXX, tempX, mpfZ); // x^2 - y^2 + a
-                mpf_add(mpfHostResultXY1, twoXY, mpfY); // 2xy + b
-               
+                mpf_add(recurrenceX, tempX, mpfX); // x^2 - y^2 + a
+                mpf_add(recurrenceY, twoXY, mpfY); // 2xy + b
+
             } else {
                 std::cerr << "Unknown operator in TestPerf" << std::endl;
                 return;
@@ -468,6 +476,11 @@ void TestPerf (
                     numIters);
                 Tests.AddTime(testNum, timer.GetDeltaInMs());
                 std::cout << "GPU iter time: " << timer.GetDeltaInMs() << " ms" << std::endl;
+
+                if (timer.GetDeltaInMs() != 0) {
+                    std::cout << "Ratio: " << static_cast<double>(hostTimer.GetDeltaInMs())
+                        / static_cast<double>(timer.GetDeltaInMs()) << std::endl;
+                }
             }
 
             if constexpr (SharkTestBenchmarkAgainstHost) {
@@ -484,7 +497,7 @@ void TestPerf (
             combo->B = *yNum;
 
             const auto &gpuResult2XX = combo->ResultX2;
-            const auto &gpuResult2XY = combo->ResultXY;
+            const auto &gpuResult2XY = combo->Result2XY;
             const auto &gpuResult2YY = combo->ResultY2;
 
             {
@@ -495,6 +508,11 @@ void TestPerf (
                     numIters);
                 Tests.AddTime(testNum, timer.GetDeltaInMs());
                 std::cout << "GPU iter time: " << timer.GetDeltaInMs() << " ms" << std::endl;
+
+                if (timer.GetDeltaInMs() != 0) {
+                    std::cout << "Ratio: " << static_cast<double>(hostTimer.GetDeltaInMs())
+                        / static_cast<double>(timer.GetDeltaInMs()) << std::endl;
+                }
             }
 
             if constexpr (SharkTestBenchmarkAgainstHost) {
@@ -506,11 +524,14 @@ void TestPerf (
             }
         } else if constexpr (sharkOperator == Operator::ReferenceOrbit) {
             auto combo = std::make_unique<HpSharkReferenceResults<SharkFloatParams>>();
-            combo->A = *xNum;
-            combo->B = *yNum;
 
-            const auto &gpuResultX = combo->ResultA;
-            const auto &gpuResultY = combo->ResultB;
+            combo->Add.C_A = *xNum;
+            combo->Add.E_B = *yNum;
+            combo->Multiply.A = {};
+            combo->Multiply.B = {};
+
+            const auto &gpuResultX = combo->Multiply.A; 
+            const auto &gpuResultY = combo->Multiply.B;
 
             {
                 BenchmarkTimer timer;
@@ -520,6 +541,11 @@ void TestPerf (
                     numIters);
                 Tests.AddTime(testNum, timer.GetDeltaInMs());
                 std::cout << "GPU iter time: " << timer.GetDeltaInMs() << " ms" << std::endl;
+
+                if (timer.GetDeltaInMs() != 0) {
+                    std::cout << "Ratio: " << static_cast<double>(hostTimer.GetDeltaInMs())
+                        / static_cast<double>(timer.GetDeltaInMs()) << std::endl;
+                }
             }
 
             if constexpr (SharkTestBenchmarkAgainstHost) {
@@ -538,6 +564,9 @@ void TestPerf (
     mpf_clear(mpfHostResultYY);
 
     // Clean up reference orbit variables
+    mpf_clear(recurrenceX);
+    mpf_clear(recurrenceY);
+
     mpf_clear(tempX);
     mpf_clear(tempY);
     mpf_clear(xSquared);
@@ -1004,6 +1033,7 @@ void TestCoreMultiply(
 
     mpf_mul(mpfHostResultXX, mpfA, mpfA);
     mpf_mul(mpfHostResultXY1, mpfA, mpfB);
+    mpf_mul_ui(mpfHostResultXY1, mpfHostResultXY1, 2); // 2 * A * B
     mpf_mul(mpfHostResultYY, mpfB, mpfB);
 
     // Print host result
@@ -1038,7 +1068,7 @@ void TestCoreMultiply(
             &debugStatesCuda);
 
         gpuResultXX = combo.ResultX2;
-        gpuResultXY1 = combo.ResultXY;
+        gpuResultXY1 = combo.Result2XY;
         gpuResultYY = combo.ResultY2;
 
         Tests.AddTime(testNum, timer.GetDeltaInMs());
@@ -1149,7 +1179,7 @@ void TestCoreReferenceOrbit(
     mpf_mul(xSquared, mpfX, mpfX); // x^2
     mpf_mul(ySquared, mpfY, mpfY); // y^2
     mpf_mul(twoXY, mpfX, mpfY);    // xy
-    //mpf_mul_ui(twoXY, twoXY, 2);   // 2xy
+    mpf_mul_ui(twoXY, twoXY, 2);   // 2xy
     mpf_sub(tempX, xSquared, ySquared); // x^2 - y^2
     mpf_add(mpfHostResultX, tempX, mpfA); // x^2 - y^2 + a
     mpf_add(mpfHostResultY, twoXY, mpfB); // 2xy + b
@@ -2260,10 +2290,14 @@ bool TestBinaryOperatorPerf([[maybe_unused]] int testBase) {
     template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyKaratsubaV2>(int testBase); \
     template bool TestAllBinaryOp<SharkFloatParams, Operator::ReferenceOrbit>(int testBase);
 #else
+//#define ExplicitlyInstantiate(SharkFloatParams) \
+//    template bool TestAllBinaryOp<SharkFloatParams, Operator::Add>(int testBase);
+
 #define ExplicitlyInstantiate(SharkFloatParams) \
-    /*template bool TestAllBinaryOp<SharkFloatParams, Operator::Add>(int testBase); */ \
-    /*template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyKaratsubaV2>(int testBase); */ \
-    template bool TestAllBinaryOp<SharkFloatParams, Operator::ReferenceOrbit>(int testBase);  
+    template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyKaratsubaV2>(int testBase);
+
+//#define ExplicitlyInstantiate(SharkFloatParams) \
+//    template bool TestAllBinaryOp<SharkFloatParams, Operator::ReferenceOrbit>(int testBase);
 #endif
 
 template bool TestBinaryOperatorPerf<Operator::Add>(int testBase);

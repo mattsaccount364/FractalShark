@@ -2325,40 +2325,47 @@ static __device__ void MultiplyHelperKaratsubaV2Separates(
             const HpSharkFloat<SharkFloatParams> *B,
             bool forcePositive,
             HpSharkFloat<SharkFloatParams> *Out,
-            int shift_digits) {
+            int shift_digits,
+            int additionalFactorsOfTwo) {
 
                 if (block.group_index().x == 0 && block.thread_index().x == 0) {
                     // Adjust the exponent based on the number of bits shifted
-                    Out->Exponent = A->Exponent + B->Exponent + shift_digits * 32;
+                    Out->Exponent = A->Exponent + B->Exponent + shift_digits * 32 + additionalFactorsOfTwo;
 
                     // Set the sign of the result
                     Out->SetNegative(forcePositive ? false : (A->GetNegative() ^ B->GetNegative()));
                 }
             };
 
+        constexpr auto X2_AdditionalFactorsOfTwo = 0;
         ExponentAndSign(
             block,
             A,
             A,
             true,
             OutXX,
-            shift_digits_xx);
+            shift_digits_xx,
+            X2_AdditionalFactorsOfTwo);
 
+        constexpr auto XY_AdditionalFactorsOfTwo = 1;
         ExponentAndSign(
             block,
             A,
             B,
             false,
             OutXY,
-            shift_digits_xy);
+            shift_digits_xy,
+            XY_AdditionalFactorsOfTwo);
 
+        constexpr auto Y2_AdditionalFactorsOfTwo = 0;
         ExponentAndSign(
             block,
             B,
             B,
             true,
             OutYY,
-            shift_digits_yy);
+            shift_digits_yy,
+            Y2_AdditionalFactorsOfTwo);
 
         auto Finalize = [](
             cg::grid_group &grid,
@@ -2417,6 +2424,129 @@ static __device__ void MultiplyHelperKaratsubaV2Separates(
     }
 }
 
+template<class SharkFloatParams>
+void PrintMaxActiveBlocks(void *kernelFn, int sharedAmountBytes) {
+    std::cout << "Shared memory size: " << sharedAmountBytes << std::endl;
+
+    int numBlocks;
+
+    {
+        // Check the maximum number of active blocks per multiprocessor
+        // with the given shared memory size
+        // This is useful to determine if we can fit more blocks
+        // in the shared memory
+
+        const auto err = cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+            &numBlocks,
+            kernelFn,
+            SharkFloatParams::GlobalThreadsPerBlock,
+            sharedAmountBytes
+        );
+
+        if (err != cudaSuccess) {
+            std::cerr << "CUDA error in cudaOccupancyMaxActiveBlocksPerMultiprocessor: " << cudaGetErrorString(err) << std::endl;
+            return;
+        }
+
+        std::cout << "Max active blocks per multiprocessor: " << numBlocks << std::endl;
+    }
+
+    {
+        size_t availableSharedMemory = 0;
+        const auto err = cudaOccupancyAvailableDynamicSMemPerBlock(
+            &availableSharedMemory,
+            kernelFn,
+            numBlocks,
+            SharkFloatParams::GlobalThreadsPerBlock
+        );
+
+        if (err != cudaSuccess) {
+            std::cerr << "CUDA error in cudaOccupancyAvailableDynamicSMemPerBlock: " << cudaGetErrorString(err) << std::endl;
+            return;
+        }
+
+        std::cout << "Available shared memory per block: " << availableSharedMemory << std::endl;
+    }
+
+    // Check the number of multiprocessors on the device
+    int numSM;
+
+    {
+        const auto err = cudaDeviceGetAttribute(
+            &numSM,
+            cudaDevAttrMultiProcessorCount,
+            0
+        );
+
+        if (err != cudaSuccess) {
+            std::cerr << "CUDA error in cudaDeviceGetAttribute: " << cudaGetErrorString(err) << std::endl;
+            return;
+        }
+
+        std::cout << "Number of multiprocessors: " << numSM << std::endl;
+    }
+
+    int maxConcurrentBlocks = numSM * numBlocks;
+
+    std::cout << "Max concurrent blocks: " << maxConcurrentBlocks << std::endl;
+    if (maxConcurrentBlocks < SharkFloatParams::GlobalNumBlocks) {
+        std::cout << "Warning: Max concurrent blocks exceeds the number of blocks requested." << std::endl;
+    }
+
+    {
+        // Check the maximum number of threads per block
+        int maxThreadsPerBlock;
+        const auto err = cudaDeviceGetAttribute(
+            &maxThreadsPerBlock,
+            cudaDevAttrMaxThreadsPerBlock,
+            0
+        );
+
+        if (err != cudaSuccess) {
+            std::cerr << "CUDA error in cudaDeviceGetAttribute: " << cudaGetErrorString(err) << std::endl;
+            return;
+        }
+
+        std::cout << "Max threads per block: " << maxThreadsPerBlock << std::endl;
+    }
+
+    {
+        // Check the maximum number of threads per multiprocessor
+        int maxThreadsPerMultiprocessor;
+        const auto err = cudaDeviceGetAttribute(
+            &maxThreadsPerMultiprocessor,
+            cudaDevAttrMaxThreadsPerMultiProcessor,
+            0
+        );
+        if (err != cudaSuccess) {
+            std::cerr << "CUDA error in cudaDeviceGetAttribute: " << cudaGetErrorString(err) << std::endl;
+            return;
+        }
+        std::cout << "Max threads per multiprocessor: " << maxThreadsPerMultiprocessor << std::endl;
+    }
+
+    // Check if this device supports cooperative launches
+    int cooperativeLaunch;
+
+    {
+        const auto err = cudaDeviceGetAttribute(
+            &cooperativeLaunch,
+            cudaDevAttrCooperativeLaunch,
+            0
+        );
+
+        if (err != cudaSuccess) {
+            std::cerr << "CUDA error in cudaDeviceGetAttribute: " << cudaGetErrorString(err) << std::endl;
+            return;
+        }
+
+        if (cooperativeLaunch) {
+            std::cout << "This device supports cooperative launches." << std::endl;
+        } else {
+            std::cout << "This device does not support cooperative launches." << std::endl;
+        }
+    }
+}
 
 // Assuming that SharkFloatParams::GlobalNumUint32 can be large and doesn't fit in shared memory
 // We'll use the provided global memory buffers for large intermediates
@@ -2431,7 +2561,7 @@ static __device__ void MultiplyHelperKaratsubaV2 (
         &combo->A,
         &combo->B,
         &combo->ResultX2,
-        &combo->ResultXY,
+        &combo->Result2XY,
         &combo->ResultY2,
         grid,
         block,

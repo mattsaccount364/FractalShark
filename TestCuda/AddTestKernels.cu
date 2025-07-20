@@ -78,6 +78,6 @@ void ComputeAddGpuTestLoop(void *kernelArgs[]) {
     template void ComputeAddGpu<SharkFloatParams>(void *kernelArgs[]); \
     template void ComputeAddGpuTestLoop<SharkFloatParams>(void *kernelArgs[]);
 
-#ifdef SHARK_INCLUDE_KERNELS
+#ifdef ENABLE_ADD_KERNEL
 ExplicitInstantiateAll();
 #endif

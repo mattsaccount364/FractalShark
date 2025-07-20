@@ -152,6 +152,6 @@ void ComputeHpSharkReferenceGpuLoop(cudaStream_t &stream, void *kernelArgs[]) {
     template void ComputeHpSharkReferenceGpu<SharkFloatParams>(void *kernelArgs[]); \
     template void ComputeHpSharkReferenceGpuLoop<SharkFloatParams>(cudaStream_t &stream, void *kernelArgs[]);
 
-#ifdef SHARK_INCLUDE_KERNELS
+#ifdef ENABLE_REFERENCE_KERNEL
 ExplicitInstantiateAll();
 #endif

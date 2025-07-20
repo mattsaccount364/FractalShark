@@ -400,33 +400,51 @@ void InvokeAddKernelCorrectness(
     cudaFree(comboResults);
 }
 
-#define ExplicitlyInstantiate(SharkFloatParams) \
-    template void InvokeHpSharkReferenceKernelPerf<SharkFloatParams>(\
-        BenchmarkTimer &timer, \
-        HpSharkReferenceResults<SharkFloatParams> &combo, \
-        uint64_t numIters); \
-    template void InvokeMultiplyKernelPerf<SharkFloatParams>( \
-        BenchmarkTimer &timer, \
-        HpSharkComboResults<SharkFloatParams> &combo, \
-        uint64_t numIters); \
+#ifdef ENABLE_ADD_KERNEL
+#define ExplicitlyInstantiateAdd(SharkFloatParams) \
     template void InvokeAddKernelPerf<SharkFloatParams>( \
         BenchmarkTimer &timer, \
         HpSharkAddComboResults<SharkFloatParams> &combo, \
         uint64_t numIters); \
-    \
-    template void InvokeHpSharkReferenceKernelCorrectness<SharkFloatParams>( \
-        BenchmarkTimer &timer, \
-        HpSharkReferenceResults<SharkFloatParams> &combo, \
-        std::vector<DebugStateRaw> *debugResults); \
-    template void InvokeMultiplyKernelCorrectness<SharkFloatParams>( \
-        BenchmarkTimer &timer, \
-        HpSharkComboResults<SharkFloatParams> &combo, \
-        std::vector<DebugStateRaw> *debugResults); \
     template void InvokeAddKernelCorrectness<SharkFloatParams>( \
         BenchmarkTimer &timer, \
         HpSharkAddComboResults<SharkFloatParams> &combo, \
         std::vector<DebugStateRaw> *debugResults);
-
-#ifdef SHARK_INCLUDE_KERNELS
-ExplicitInstantiateAll();
+#else
+#define ExplicitlyInstantiateAdd(SharkFloatParams) ;
 #endif
+
+#ifdef ENABLE_MULTIPLY_KERNEL
+#define ExplicitlyInstantiateMultiply(SharkFloatParams) \
+    template void InvokeMultiplyKernelPerf<SharkFloatParams>( \
+        BenchmarkTimer &timer, \
+        HpSharkComboResults<SharkFloatParams> &combo, \
+        uint64_t numIters); \
+    template void InvokeMultiplyKernelCorrectness<SharkFloatParams>( \
+        BenchmarkTimer &timer, \
+        HpSharkComboResults<SharkFloatParams> &combo, \
+        std::vector<DebugStateRaw> *debugResults);
+#else
+#define ExplicitlyInstantiateMultiply(SharkFloatParams) ;
+#endif
+
+#ifdef ENABLE_REFERENCE_KERNEL
+#define ExplicitlyInstantiateHpSharkReference(SharkFloatParams) \
+    template void InvokeHpSharkReferenceKernelPerf<SharkFloatParams>(\
+        BenchmarkTimer &timer, \
+        HpSharkReferenceResults<SharkFloatParams> &combo, \
+        uint64_t numIters); \
+    template void InvokeHpSharkReferenceKernelCorrectness<SharkFloatParams>( \
+        BenchmarkTimer &timer, \
+        HpSharkReferenceResults<SharkFloatParams> &combo, \
+        std::vector<DebugStateRaw> *debugResults);
+#else
+#define ExplicitlyInstantiateHpSharkReference(SharkFloatParams) ;
+#endif
+
+#define ExplicitlyInstantiate(SharkFloatParams) \
+    ExplicitlyInstantiateAdd(SharkFloatParams) \
+    ExplicitlyInstantiateMultiply(SharkFloatParams) \
+    ExplicitlyInstantiateHpSharkReference(SharkFloatParams)
+
+ExplicitInstantiateAll();

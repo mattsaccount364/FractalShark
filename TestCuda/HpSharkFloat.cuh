@@ -26,8 +26,15 @@ static constexpr bool SharkDebug = false;
 
 // Comment out to disable specific kernels
 //#define ENABLE_ADD_KERNEL
-#define ENABLE_MULTIPLY_KERNEL
-//#define ENABLE_REFERENCE_KERNEL
+//#define ENABLE_MULTIPLY_KERNEL
+#define ENABLE_REFERENCE_KERNEL
+
+// 0 = just one correctness test, intended for fast re-compile of a specific failure
+// 1 = all basic correctness tests/all basic perf tests
+// 2 = setup for profiling only, one kernel
+// 3 = all basic correctness tests + comical tests
+// See ExplicitInstantiate.h for more information
+#define ENABLE_BASIC_CORRECTNESS 2
 
 #ifdef ENABLE_ADD_KERNEL
 static constexpr auto SharkEnableAddKernel = true;
@@ -47,14 +54,7 @@ static constexpr auto SharkEnableReferenceKernel = true;
 static constexpr auto SharkEnableReferenceKernel = false;
 #endif
 
-// Define to enable GPU kernel compilation
-#define SHARK_INCLUDE_KERNELS
-// Set to false to bypass all GPU tests and only do reference/host-side
-#ifdef SHARK_INCLUDE_KERNELS
-static constexpr bool SharkTestGpu = true;
-#else
-static constexpr bool SharkTestGpu = false;
-#endif
+static constexpr bool SharkTestGpu = (SharkEnableAddKernel || SharkEnableMultiplyKernel || SharkEnableReferenceKernel);
 
 #ifdef _DEBUG
 #define SharkForceInlineReleaseOnly
@@ -63,14 +63,8 @@ static constexpr bool SharkTestGpu = false;
 #define SharkForceInlineReleaseOnly __forceinline__
 #endif
 
-// 0 = just one correctness test, intended for fast re-compile of a specific failure
-// 1 = all basic correctness tests/all basic perf tests
-// 2 = setup for profiling only, one kernel
-// 3 = all basic correctness tests + comical tests
-// See ExplicitInstantiate.h for more information
-#define ENABLE_BASIC_CORRECTNESS 0
 static constexpr auto SharkTestComicalThreadCount = 13;
-static constexpr auto SharkTestIterCount = SharkDebug ? 5 : 50000;
+static constexpr auto SharkTestIterCount = SharkDebug ? 5 : 500;
 
 // Set to true to use a custom stream for the kernel launch
 static constexpr auto SharkCustomStream = true;
@@ -92,7 +86,7 @@ static constexpr bool SharkTestCorrectness = true;
 
 static constexpr bool SharkTestInfiniteCorrectness = SharkTestCorrectness ? true : false;
 static constexpr auto SharkTestForceSameSign = false;
-static constexpr bool SharkTestBenchmarkAgainstHost = true;
+static constexpr bool SharkTestBenchmarkAgainstHost = false;
 static constexpr bool SharkTestInitCudaMemory = true;
 
 

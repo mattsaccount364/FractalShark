@@ -1491,7 +1491,8 @@ static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             // Check if idx < total_k => handle Z0, else handle Z2
             if (idx < total_k) {
                 // Z0 partial sums
-                int k = idx;
+                const int k_base = idx;
+                int k = k_base; // shift to [0..total_k-1]
                 uint64_t xx_sum_low = 0ULL, xx_sum_high = 0ULL;
                 uint64_t xy_sum_low = 0ULL, xy_sum_high = 0ULL;
                 uint64_t yy_sum_low = 0ULL, yy_sum_high = 0ULL;
@@ -1547,7 +1548,9 @@ static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                 Z0_OutDigitsYY[out_idx + 1] = yy_sum_high;
             } else if (idx < 2 * total_k) {
                 // Z2 partial sums
-                int k = idx - total_k; // shift to [0..total_k-1]
+                const int k_base = idx - total_k; // shift to [0..total_k-1]
+                //int k = (k_base + total_k / 3) % total_k;
+                int k = k_base;
                 uint64_t xx_sum_low = 0ULL, xx_sum_high = 0ULL;
                 uint64_t xy_sum_low = 0ULL, xy_sum_high = 0ULL;
                 uint64_t yy_sum_low = 0ULL, yy_sum_high = 0ULL;
@@ -1598,7 +1601,9 @@ static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                 Z2_OutDigitsYY[out_idx] = yy_sum_low;
                 Z2_OutDigitsYY[out_idx + 1] = yy_sum_high;
             } else {
-                int k = idx - 2 * total_k; // shift to [0..total_k-1]
+                const int k_base = idx - 2 * total_k; // shift to [0..total_k-1]
+                //int k = (k_base + 2 * total_k / 3) % total_k;
+                int k = k_base;
                 uint64_t xx_sum_low = 0ULL, xx_sum_high = 0ULL;
                 uint64_t xy_sum_low = 0ULL, xy_sum_high = 0ULL;
                 uint64_t yy_sum_low = 0ULL, yy_sum_high = 0ULL;

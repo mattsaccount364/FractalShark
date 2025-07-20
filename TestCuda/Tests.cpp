@@ -2286,21 +2286,24 @@ bool TestBinaryOperatorPerf([[maybe_unused]] int testBase) {
 // Explicitly instantiate TestAllBinaryOp
 #ifdef ENABLE_ADD_KERNEL
 #define ADD_KERNEL(SharkFloatParams) \
-    template bool TestAllBinaryOp<SharkFloatParams, Operator::Add>(int testBase);
+    template bool TestAllBinaryOp<SharkFloatParams, Operator::Add>(int testBase); \
+    template bool TestBinaryOperatorPerf<Operator::Add>(int testBase);
 #else
 #define ADD_KERNEL(SharkFloatParams) ;
 #endif
 
 #ifdef ENABLE_MULTIPLY_KERNEL
 #define MULTIPLY_KERNEL(SharkFloatParams) \
-    template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyKaratsubaV2>(int testBase);
+    template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyKaratsubaV2>(int testBase); \
+    template bool TestBinaryOperatorPerf<Operator::MultiplyKaratsubaV2>(int testBase);
 #else
 #define MULTIPLY_KERNEL(SharkFloatParams) ;
 #endif
 
-#ifdef ENABLE_REFERENCE_ORBIT_KERNEL
+#ifdef ENABLE_REFERENCE_KERNEL
 #define REFERENCE_KERNEL(SharkFloatParams) \
-    template bool TestAllBinaryOp<SharkFloatParams, Operator::ReferenceOrbit>(int testBase);
+    template bool TestAllBinaryOp<SharkFloatParams, Operator::ReferenceOrbit>(int testBase); \
+    template bool TestBinaryOperatorPerf<Operator::ReferenceOrbit>(int testBase);
 #else
 #define REFERENCE_KERNEL(SharkFloatParams) ;
 #endif
@@ -2309,9 +2312,5 @@ bool TestBinaryOperatorPerf([[maybe_unused]] int testBase) {
     ADD_KERNEL(SharkFloatParams) \
     MULTIPLY_KERNEL(SharkFloatParams) \
     REFERENCE_KERNEL(SharkFloatParams)
-
-template bool TestBinaryOperatorPerf<Operator::Add>(int testBase);
-template bool TestBinaryOperatorPerf<Operator::MultiplyKaratsubaV2>(int testBase);
-template bool TestBinaryOperatorPerf<Operator::ReferenceOrbit>(int testBase);
 
 ExplicitInstantiateAll();

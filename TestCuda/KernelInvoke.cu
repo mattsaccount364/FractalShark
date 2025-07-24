@@ -426,17 +426,42 @@ void InvokeMultiplyKernelCorrectness(
     uint64_t *d_tempProducts;
     constexpr auto BytesToAllocate =
         (AdditionalUInt64Global + ScratchMemoryCopies * CalculateMultiplyFrameSize<SharkFloatParams>()) * sizeof(uint64_t);
-    cudaMalloc(&d_tempProducts, BytesToAllocate);
+    cudaError_t err = cudaMalloc(&d_tempProducts, BytesToAllocate);
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA error in cudaMalloc (d_tempProducts): " << cudaGetErrorString(err) << std::endl;
+        return;
+    }
 
     if constexpr (!SharkTestInitCudaMemory) {
-        cudaMemset(d_tempProducts, 0, BytesToAllocate);
+        err = cudaMemset(d_tempProducts, 0, BytesToAllocate);
+        if (err != cudaSuccess) {
+            std::cerr << "CUDA error in cudaMemset (d_tempProducts): " << cudaGetErrorString(err) << std::endl;
+            cudaFree(d_tempProducts);
+            return;
+        }
     } else {
-        cudaMemset(d_tempProducts, 0xCD, BytesToAllocate);
+        err = cudaMemset(d_tempProducts, 0xCD, BytesToAllocate);
+        if (err != cudaSuccess) {
+            std::cerr << "CUDA error in cudaMemset (d_tempProducts): " << cudaGetErrorString(err) << std::endl;
+            cudaFree(d_tempProducts);
+            return;
+        }
     }
 
     HpSharkComboResults<SharkFloatParams> *comboGpu;
-    cudaMalloc(&comboGpu, sizeof(HpSharkComboResults<SharkFloatParams>));
-    cudaMemcpy(comboGpu, &combo, sizeof(HpSharkComboResults<SharkFloatParams>), cudaMemcpyHostToDevice);
+    err = cudaMalloc(&comboGpu, sizeof(HpSharkComboResults<SharkFloatParams>));
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA error in cudaMalloc (comboGpu): " << cudaGetErrorString(err) << std::endl;
+        cudaFree(d_tempProducts);
+        return;
+    }
+    err = cudaMemcpy(comboGpu, &combo, sizeof(HpSharkComboResults<SharkFloatParams>), cudaMemcpyHostToDevice);
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA error in cudaMemcpy (comboGpu): " << cudaGetErrorString(err) << std::endl;
+        cudaFree(comboGpu);
+        cudaFree(d_tempProducts);
+        return;
+    }
 
     if constexpr (!SharkTestInitCudaMemory) {
         cudaMemset(&comboGpu->ResultX2, 0, sizeof(HpSharkFloat<SharkFloatParams>));
@@ -458,21 +483,33 @@ void InvokeMultiplyKernelCorrectness(
         ComputeMultiplyKaratsubaV2Gpu<SharkFloatParams>(kernelArgs);
     }
 
-    cudaMemcpy(&combo, comboGpu, sizeof(HpSharkComboResults<SharkFloatParams>), cudaMemcpyDeviceToHost);
+    err = cudaMemcpy(&combo, comboGpu, sizeof(HpSharkComboResults<SharkFloatParams>), cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA error in cudaMemcpy (device to host): " << cudaGetErrorString(err) << std::endl;
+    }
 
     if (debugResults != nullptr) {
         if constexpr (SharkDebugChecksums) {
             debugResults->resize(SharkFloatParams::NumDebugStates);
-            cudaMemcpy(
+            err = cudaMemcpy(
                 debugResults->data(),
                 &d_tempProducts[AdditionalGlobalSyncSpace],
                 SharkFloatParams::NumDebugStates * sizeof(DebugStateRaw),
                 cudaMemcpyDeviceToHost);
+            if (err != cudaSuccess) {
+                std::cerr << "CUDA error in cudaMemcpy (debug results): " << cudaGetErrorString(err) << std::endl;
+            }
         }
     }
 
-    cudaFree(comboGpu);
-    cudaFree(d_tempProducts);
+    err = cudaFree(comboGpu);
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA error in cudaFree (comboGpu): " << cudaGetErrorString(err) << std::endl;
+    }
+    err = cudaFree(d_tempProducts);
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA error in cudaFree (d_tempProducts): " << cudaGetErrorString(err) << std::endl;
+    }
 }
 
 template<class SharkFloatParams>
@@ -483,8 +520,17 @@ void InvokeAddKernelCorrectness(
 
     // Perform the calculation on the GPU
     HpSharkAddComboResults<SharkFloatParams> *comboResults;
-    cudaMalloc(&comboResults, sizeof(HpSharkAddComboResults<SharkFloatParams>));
-    cudaMemcpy(comboResults, &combo, sizeof(HpSharkAddComboResults<SharkFloatParams>), cudaMemcpyHostToDevice);
+    cudaError_t err = cudaMalloc(&comboResults, sizeof(HpSharkAddComboResults<SharkFloatParams>));
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA error in cudaMalloc (comboResults): " << cudaGetErrorString(err) << std::endl;
+        return;
+    }
+    err = cudaMemcpy(comboResults, &combo, sizeof(HpSharkAddComboResults<SharkFloatParams>), cudaMemcpyHostToDevice);
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA error in cudaMemcpy (comboResults): " << cudaGetErrorString(err) << std::endl;
+        cudaFree(comboResults);
+        return;
+    }
 
     if constexpr (!SharkTestInitCudaMemory) {
         cudaMemset(&comboResults->Result1_A_B_C, 0, sizeof(HpSharkFloat<SharkFloatParams>));
@@ -497,7 +543,12 @@ void InvokeAddKernelCorrectness(
     constexpr auto BytesToAllocate =
         (AdditionalUInt64Global + CalculateAddFrameSize<SharkFloatParams>()) * sizeof(uint64_t);
     uint64_t *g_extResult;
-    cudaMalloc(&g_extResult, BytesToAllocate);
+    err = cudaMalloc(&g_extResult, BytesToAllocate);
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA error in cudaMalloc (g_extResult): " << cudaGetErrorString(err) << std::endl;
+        cudaFree(comboResults);
+        return;
+    }
 
     // Prepare kernel arguments
     void *kernelArgs[] = {
@@ -510,21 +561,33 @@ void InvokeAddKernelCorrectness(
         ComputeAddGpu<SharkFloatParams>(kernelArgs);
     }
 
-    cudaMemcpy(&combo, comboResults, sizeof(HpSharkAddComboResults<SharkFloatParams>), cudaMemcpyDeviceToHost);
+    err = cudaMemcpy(&combo, comboResults, sizeof(HpSharkAddComboResults<SharkFloatParams>), cudaMemcpyDeviceToHost);
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA error in cudaMemcpy (device to host): " << cudaGetErrorString(err) << std::endl;
+    }
 
     if (debugResults != nullptr) {
         if constexpr (SharkDebugChecksums) {
             debugResults->resize(SharkFloatParams::NumDebugStates);
-            cudaMemcpy(
+            err = cudaMemcpy(
                 debugResults->data(),
                 &g_extResult[AdditionalGlobalSyncSpace],
                 SharkFloatParams::NumDebugStates * sizeof(DebugStateRaw),
                 cudaMemcpyDeviceToHost);
+            if (err != cudaSuccess) {
+                std::cerr << "CUDA error in cudaMemcpy (debug results): " << cudaGetErrorString(err) << std::endl;
+            }
         }
     }
 
-    cudaFree(g_extResult);
-    cudaFree(comboResults);
+    err = cudaFree(g_extResult);
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA error in cudaFree (g_extResult): " << cudaGetErrorString(err) << std::endl;
+    }
+    err = cudaFree(comboResults);
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA error in cudaFree (comboResults): " << cudaGetErrorString(err) << std::endl;
+    }
 }
 
 #ifdef ENABLE_ADD_KERNEL

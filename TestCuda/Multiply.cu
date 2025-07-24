@@ -1453,9 +1453,9 @@ static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
     // Determine the sign of Z1_temp
     // int z1_sign = x_diff_sign ^ y_diff_sign;
 
-    const int z1_signXX = (x_diff_sign ^ x_diff_sign) ? 1 : 0; // TODO obviously can be simplified
+    const int z1_signXX = 0; // x_diff_sign ^ x_diff_sign is always 0
     const int z1_signXY = (x_diff_sign ^ y_diff_sign) ? 1 : 0;
-    const int z1_signYY = (y_diff_sign ^ y_diff_sign) ? 1 : 0;
+    const int z1_signYY = 0; // y_diff_sign ^ y_diff_sign is always 0
 
     constexpr auto FinalZ0Size =
         (UseConvolutionHere == UseConvolution::Yes) ?

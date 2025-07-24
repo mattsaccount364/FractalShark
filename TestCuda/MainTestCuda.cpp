@@ -197,11 +197,19 @@ int main(int /*argc*/, char * /*argv*/[]) {
     }
 
     int deviceCount;
-    cudaGetDeviceCount(&deviceCount);
+    cudaError_t err = cudaGetDeviceCount(&deviceCount);
+    if (err != cudaSuccess) {
+        std::cerr << "CUDA error in cudaGetDeviceCount: " << cudaGetErrorString(err) << std::endl;
+        return 1;
+    }
 
     for (int i = 0; i < deviceCount; ++i) {
         cudaDeviceProp prop;
-        cudaGetDeviceProperties(&prop, i);
+        err = cudaGetDeviceProperties(&prop, i);
+        if (err != cudaSuccess) {
+            std::cerr << "CUDA error in cudaGetDeviceProperties for device " << i << ": " << cudaGetErrorString(err) << std::endl;
+            continue;
+        }
         std::cout << "Device " << i << ": " << prop.sharedMemPerMultiprocessor << " bytes of shared memory per block." << std::endl;
 
         // persistingL2CacheMaxSize

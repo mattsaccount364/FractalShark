@@ -540,7 +540,6 @@ static __device__ void AddHelperSeparates(
     HpSharkFloat<SharkFloatParams> *Out_D_E,
     uint64_t *tempData)
 {
-
     extern __shared__ uint32_t sharedData[];
 
     // --- Constants and Parameters ---
@@ -833,7 +832,6 @@ static __device__ void AddHelperSeparates(
 
     if constexpr (!SharkFloatParams::DisableCarryPropagation) {
         CarryPropagation_ABC<SharkFloatParams>(
-            sharedData,
             globalSync,
             idx,
             numActualDigitsPlusGuard,

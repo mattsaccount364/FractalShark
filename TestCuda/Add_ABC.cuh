@@ -317,7 +317,6 @@ void Phase1_ABC (
 template<class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly void
 CarryPropagation_ABC(
-    uint32_t * sharedData,
     uint32_t *globalSync,                // [0] holds convergence counter
     const int32_t    idx,                       // this thread’s global index
     const int32_t    numActualDigitsPlusGuard,  // N
@@ -344,7 +343,6 @@ CarryPropagation_ABC(
     const int32_t N = numActualDigitsPlusGuard;
     const int32_t stride = grid.size();
     auto *global64 = reinterpret_cast<uint64_t *>(globalSync);
-    //auto *sharedCount = reinterpret_cast<uint64_t *>(sharedData);
 
     // six carry buffers
     uint32_t *curC1 = carry1;

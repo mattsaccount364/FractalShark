@@ -353,7 +353,7 @@ SubtractDigitsParallelImproved3(
 
     // Note: steps on this.
     auto *SharkRestrict sharedBorrowAny =
-        SharkUseSharedMemory ?
+        SharkLoadAllInShared ?
         x_diff_abs :
         &x_diff_abs[block.group_index().x];
 
@@ -746,7 +746,7 @@ Subtract128(
 
 template<class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly void SerialCarryPropagation(
-    uint64_t *SharkRestrict shared_carries,
+    uint64_t *SharkRestrict shared_data,
     cg::grid_group &grid,
     cg::thread_block &block,
     int thread_start_idx,
@@ -756,6 +756,8 @@ static __device__ SharkForceInlineReleaseOnly void SerialCarryPropagation(
     uint64_t *SharkRestrict block_carry_outs,
     uint64_t *SharkRestrict tempProducts,
     uint64_t *SharkRestrict globalCarryCheck) {
+
+    auto *SharkRestrict shared_carries = shared_data;
 
     if (block.thread_index().x == 0 && block.group_index().x == 0) {
         uint64_t local_carry = 0;
@@ -801,7 +803,7 @@ static __device__ SharkForceInlineReleaseOnly void SerialCarryPropagation(
 
 template<class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly void CarryPropagation (
-    uint64_t *SharkRestrict shared_carries,
+    uint64_t *SharkRestrict shared_data,
     cg::grid_group &grid,
     cg::thread_block &block,
     int thread_start_idx,
@@ -814,6 +816,8 @@ static __device__ SharkForceInlineReleaseOnly void CarryPropagation (
     uint64_t *SharkRestrict resultYY,
     uint64_t *SharkRestrict block_carry_outs,
     uint64_t *SharkRestrict globalCarryCheck) {
+
+    auto *SharkRestrict shared_carries = shared_data;
 
     // TODO: Ensure we allocate a minimum amount of shared memory to support shared_carries use
     // TODO: Ensure we allocate a minimum amount of global memory to support block_carry_outs use
@@ -1165,20 +1169,274 @@ enum class ConditionalAccess {
     True
 };
 
-// Helper function to process batched convolution for Z0, Z2, and Z1_temp
-template<class SharkFloatParams, int BatchSize, ConditionalAccess use_conditional_access>
-__device__ SharkForceInlineReleaseOnly static void ProcessConvolutionBatch (
+// Collaborative loading helper for warp-level cooperation
+template<ConditionalAccess use_conditional_access>
+__device__ SharkForceInlineReleaseOnly static void LoadBatchCollaborative(
+    uint64_t *buffer, int base_i, int batch_size, int k,
+    const uint32_t *aDigits_base, const uint32_t *bDigits_base,
+    int a_offset, int b_offset,
+    const uint32_t *x_diff_abs, const uint32_t *y_diff_abs,
+    const uint32_t *global_x_diff_abs, const uint32_t *global_y_diff_abs,
+    int tid, int blockDim) {
+
+    // Collaborative loading pattern - each thread loads multiple elements
+    constexpr int ElementsPerItem = 6; // xx_a, xx_b, xy_a, xy_b, yy_a, yy_b
+
+    for (int j = tid; j < batch_size * ElementsPerItem; j += blockDim) {
+        int item_idx = j / ElementsPerItem;
+        int element_idx = j % ElementsPerItem;
+
+        if (item_idx >= batch_size) continue;
+
+        int idx = base_i + item_idx;
+        uint64_t value;
+
+        if constexpr (use_conditional_access == ConditionalAccess::True) {
+            // Z1_temp case with conditional access
+            switch (element_idx) {
+            case 0: value = global_x_diff_abs[idx]; break;
+            case 1: value = global_x_diff_abs[k - idx]; break;
+            case 2: value = global_x_diff_abs[idx]; break;
+            case 3: value = global_y_diff_abs[k - idx]; break;
+            case 4: value = global_y_diff_abs[idx]; break;
+            case 5: value = global_y_diff_abs[k - idx]; break;
+            }
+        } else {
+            // Z0 and Z2 cases with direct array access
+            switch (element_idx) {
+            case 0: value = aDigits_base[idx + a_offset]; break;
+            case 1: value = aDigits_base[k - idx + a_offset]; break;
+            case 2: value = aDigits_base[idx + a_offset]; break;
+            case 3: value = bDigits_base[k - idx + b_offset]; break;
+            case 4: value = bDigits_base[idx + a_offset]; break;
+            case 5: value = bDigits_base[k - idx + b_offset]; break;
+            }
+        }
+
+        buffer[j] = value;
+    }
+}
+
+// Direct processing fallback for non-pipelined cases
+template<ConditionalAccess use_conditional_access>
+__device__ SharkForceInlineReleaseOnly static void ProcessBatchDirect(
     int k, int i_start, int i_end, int n_limit,
     const uint32_t *aDigits_base, const uint32_t *bDigits_base,
     int a_offset, int b_offset,
     uint64_t &xx_sum_low, uint64_t &xx_sum_high,
     uint64_t &xy_sum_low, uint64_t &xy_sum_high,
     uint64_t &yy_sum_low, uint64_t &yy_sum_high,
+    const uint32_t *x_diff_abs, const uint32_t *y_diff_abs,
+    const uint32_t *global_x_diff_abs, const uint32_t *global_y_diff_abs) {
+
+    // Original direct computation approach
+    for (int i = i_start; i <= i_end; i++) {
+        uint64_t xx_a, xx_b, xy_a, xy_b, yy_a, yy_b;
+
+        if constexpr (use_conditional_access == ConditionalAccess::True) {
+            xx_a = global_x_diff_abs[i];
+            xx_b = global_x_diff_abs[k - i];
+            xy_a = global_x_diff_abs[i];
+            xy_b = global_y_diff_abs[k - i];
+            yy_a = global_y_diff_abs[i];
+            yy_b = global_y_diff_abs[k - i];
+        } else {
+            xx_a = aDigits_base[i + a_offset];
+            xx_b = aDigits_base[k - i + a_offset];
+            xy_a = aDigits_base[i + a_offset];
+            xy_b = bDigits_base[k - i + b_offset];
+            yy_a = bDigits_base[i + a_offset];
+            yy_b = bDigits_base[k - i + b_offset];
+        }
+
+        uint64_t xx_product = xx_a * xx_b;
+        uint64_t xy_product = xy_a * xy_b;
+        uint64_t yy_product = yy_a * yy_b;
+
+        xx_sum_low += xx_product;
+        if (xx_sum_low < xx_product) xx_sum_high += 1;
+
+        xy_sum_low += xy_product;
+        if (xy_sum_low < xy_product) xy_sum_high += 1;
+
+        yy_sum_low += yy_product;
+        if (yy_sum_low < yy_product) yy_sum_high += 1;
+    }
+}
+
+// Compute from shared memory buffer
+__device__ SharkForceInlineReleaseOnly static void ComputeBatchFromShared(
+    const uint64_t *buffer, int batch_size,
+    uint64_t &xx_sum_low, uint64_t &xx_sum_high,
+    uint64_t &xy_sum_low, uint64_t &xy_sum_high,
+    uint64_t &yy_sum_low, uint64_t &yy_sum_high) {
+
+    constexpr int ElementsPerItem = 6;
+
+#pragma unroll
+    for (int j = 0; j < batch_size; j++) {
+        uint64_t xx_a = buffer[j * ElementsPerItem + 0];
+        uint64_t xx_b = buffer[j * ElementsPerItem + 1];
+        uint64_t xy_a = buffer[j * ElementsPerItem + 2];
+        uint64_t xy_b = buffer[j * ElementsPerItem + 3];
+        uint64_t yy_a = buffer[j * ElementsPerItem + 4];
+        uint64_t yy_b = buffer[j * ElementsPerItem + 5];
+
+        uint64_t xx_product = xx_a * xx_b;
+        uint64_t xy_product = xy_a * xy_b;
+        uint64_t yy_product = yy_a * yy_b;
+
+        xx_sum_low += xx_product;
+        if (xx_sum_low < xx_product) xx_sum_high += 1;
+
+        xy_sum_low += xy_product;
+        if (xy_sum_low < xy_product) xy_sum_high += 1;
+
+        yy_sum_low += yy_product;
+        if (yy_sum_low < yy_product) yy_sum_high += 1;
+    }
+}
+
+
+// Pipelined ProcessConvolutionBatch for when SharkLoadAllInShared is false
+template<class SharkFloatParams, int BatchSize, ConditionalAccess use_conditional_access>
+__device__ SharkForceInlineReleaseOnly static void ProcessConvolutionBatchPipelined(
+    cg::grid_group &grid,
+    cg::thread_block &block,
+    int k, int i_start, int i_end, int n_limit,
+    const uint32_t *aDigits_base, const uint32_t *bDigits_base,
+    int a_offset, int b_offset,
+    uint64_t &xx_sum_low, uint64_t &xx_sum_high,
+    uint64_t &xy_sum_low, uint64_t &xy_sum_high,
+    uint64_t &yy_sum_low, uint64_t &yy_sum_high,
+    uint32_t *shared_data,  // Small constant-sized shared memory buffer
     const uint32_t *x_diff_abs = nullptr,
     const uint32_t *y_diff_abs = nullptr,
     const uint32_t *global_x_diff_abs = nullptr,
     const uint32_t *global_y_diff_abs = nullptr) {
 
+    // Pipeline configuration - optimized for small shared memory
+    constexpr int PipelineDepth = 2;  // Double buffering
+    constexpr int EffectiveBatchSize = (BatchSize < 8) ? BatchSize : 8; // Limit to 8 for pipelining
+    constexpr int ElementsPerBatch = 6; // xx_a, xx_b, xy_a, xy_b, yy_a, yy_b
+    constexpr int SharedBufferSize = PipelineDepth * EffectiveBatchSize * ElementsPerBatch;
+
+    // Shared memory layout: double-buffered
+    uint64_t *buffer_ping = reinterpret_cast<uint64_t *>(shared_data);
+    uint64_t *buffer_pong = buffer_ping + (EffectiveBatchSize * ElementsPerBatch);
+
+    const int tid = block.thread_index().x;
+    const int warp_id = tid / 32;
+    const int lane_id = tid % 32;
+
+    int current_buffer = 0;
+    int pipeline_stage = 0;
+    bool pipeline_active = false;
+
+    for (int i = i_start; i <= i_end; ) {
+        const int remaining = i_end - i + 1;
+        const int current_batch_size = min(min(BatchSize, EffectiveBatchSize), remaining);
+
+        // Select active buffers
+        uint64_t *load_buffer = (current_buffer == 0) ? buffer_ping : buffer_pong;
+        uint64_t *compute_buffer = (current_buffer == 0) ? buffer_pong : buffer_ping;
+
+        // Stage 1: Asynchronous Load (collaborative loading across warp)
+        if (current_batch_size > 0) {
+            LoadBatchCollaborative<use_conditional_access>(
+                load_buffer, i, current_batch_size, k,
+                aDigits_base, bDigits_base, a_offset, b_offset,
+                x_diff_abs, y_diff_abs, global_x_diff_abs, global_y_diff_abs,
+                tid, block.dim_threads().x);
+        }
+
+        // __syncthreads(); // Ensure load is complete
+
+        // Stage 2: Compute from previous iteration (if pipeline is active)
+        if (pipeline_active && pipeline_stage > 0) {
+            ComputeBatchFromShared(
+                compute_buffer, min(BatchSize, EffectiveBatchSize),
+                xx_sum_low, xx_sum_high,
+                xy_sum_low, xy_sum_high,
+                yy_sum_low, yy_sum_high);
+        }
+
+        // For first iteration or when batch size doesn't match effective size
+        if (!pipeline_active || current_batch_size != EffectiveBatchSize) {
+            // Fall back to original approach for remainder
+            int fallback_start = pipeline_active ? i : i_start;
+            ProcessBatchDirect<use_conditional_access>(
+                k, fallback_start, min(fallback_start + current_batch_size - 1, i_end), n_limit,
+                aDigits_base, bDigits_base, a_offset, b_offset,
+                xx_sum_low, xx_sum_high, xy_sum_low, xy_sum_high, yy_sum_low, yy_sum_high,
+                x_diff_abs, y_diff_abs, global_x_diff_abs, global_y_diff_abs);
+            break;
+        }
+
+        // Advance pipeline
+        current_buffer = 1 - current_buffer;
+        pipeline_stage++;
+        pipeline_active = true;
+        i += current_batch_size;
+
+        // __syncthreads();
+    }
+
+    // Drain pipeline - compute final batch
+    if (pipeline_active && pipeline_stage > 0) {
+        uint64_t *final_compute_buffer = (current_buffer == 0) ? buffer_pong : buffer_ping;
+        ComputeBatchFromShared(
+            final_compute_buffer, min(BatchSize, EffectiveBatchSize),
+            xx_sum_low, xx_sum_high,
+            xy_sum_low, xy_sum_high,
+            yy_sum_low, yy_sum_high);
+    }
+}
+
+// Updated main ProcessConvolutionBatch with conditional pipelining
+template<class SharkFloatParams, int BatchSize, ConditionalAccess use_conditional_access>
+__device__ SharkForceInlineReleaseOnly static void ProcessConvolutionBatch(
+    cg::grid_group &grid, cg::thread_block &block,
+    int k, int i_start, int i_end, int n_limit,
+    const uint32_t *aDigits_base, const uint32_t *bDigits_base,
+    int a_offset, int b_offset,
+    uint64_t &xx_sum_low, uint64_t &xx_sum_high,
+    uint64_t &xy_sum_low, uint64_t &xy_sum_high,
+    uint64_t &yy_sum_low, uint64_t &yy_sum_high,
+    uint32_t *shared_data, // Small constant-sized shared memory buffer
+    const uint32_t *x_diff_abs = nullptr,
+    const uint32_t *y_diff_abs = nullptr,
+    const uint32_t *global_x_diff_abs = nullptr,
+    const uint32_t *global_y_diff_abs = nullptr) {
+
+    // Determine if we should use pipelining
+    constexpr bool UsePipelining = !SharkLoadAllInShared && (BatchSize > 4);
+    constexpr auto MinBatchSize = (BatchSize < 8) ? BatchSize : 8; // Limit to 8 for pipelining
+    constexpr int RequiredSharedMemory = 2 * MinBatchSize * 6 * sizeof(uint64_t); // Double buffered
+
+    if constexpr (UsePipelining) {
+        // Use shared memory for pipelining when SharkLoadAllInShared is false
+
+        // Calculate available shared memory after existing usage
+        // When SharkLoadAllInShared is false, shared_data might be used for other purposes
+        // We'll use a small portion at the end
+        uint32_t *pipeline_buffer = shared_data;
+
+        // Check if we have enough shared memory (simplified check)
+        constexpr int AvailableShared = CalculateMultiplySharedMemorySize<SharkFloatParams>();
+
+        if constexpr (RequiredSharedMemory <= AvailableShared) {
+            ProcessConvolutionBatchPipelined<SharkFloatParams, BatchSize, use_conditional_access>(
+                grid, block, k, i_start, i_end, n_limit,
+                aDigits_base, bDigits_base, a_offset, b_offset,
+                xx_sum_low, xx_sum_high, xy_sum_low, xy_sum_high, yy_sum_low, yy_sum_high,
+                pipeline_buffer,
+                x_diff_abs, y_diff_abs, global_x_diff_abs, global_y_diff_abs);
+            return;
+        }
+    }
+
+    // Fall back to original implementation
     for (int i = i_start; i <= i_end; ) {
         int batch_size = 1;
 
@@ -1188,7 +1446,7 @@ __device__ SharkForceInlineReleaseOnly static void ProcessConvolutionBatch (
         }
 
         if ((BatchSize != 1) && batch_size == BatchSize) {
-            // Read batch of elements into local arrays
+            // Original batched approach with local arrays
             uint64_t xx_a_batch[BatchSize], xx_b_batch[BatchSize];
             uint64_t xy_a_batch[BatchSize], xy_b_batch[BatchSize];
             uint64_t yy_a_batch[BatchSize], yy_b_batch[BatchSize];
@@ -1197,23 +1455,19 @@ __device__ SharkForceInlineReleaseOnly static void ProcessConvolutionBatch (
                 int idx = i + j;
 
                 if constexpr (use_conditional_access == ConditionalAccess::True) {
-                    // Z1_temp case with conditional access
-                    xx_a_batch[j] = SharkUseSharedMemory ? x_diff_abs[idx] : global_x_diff_abs[idx];
-                    xx_b_batch[j] = SharkUseSharedMemory ? x_diff_abs[k - idx] : global_x_diff_abs[k - idx];
-
-                    xy_a_batch[j] = SharkUseSharedMemory ? x_diff_abs[idx] : global_x_diff_abs[idx];
-                    xy_b_batch[j] = SharkUseSharedMemory ? y_diff_abs[k - idx] : global_y_diff_abs[k - idx];
-
-                    yy_a_batch[j] = SharkUseSharedMemory ? y_diff_abs[idx] : global_y_diff_abs[idx];
-                    yy_b_batch[j] = SharkUseSharedMemory ? y_diff_abs[k - idx] : global_y_diff_abs[k - idx];
+                    // Z1_temp case - when SharkLoadAllInShared is false, always use global arrays
+                    xx_a_batch[j] = global_x_diff_abs[idx];
+                    xx_b_batch[j] = global_x_diff_abs[k - idx];
+                    xy_a_batch[j] = global_x_diff_abs[idx];
+                    xy_b_batch[j] = global_y_diff_abs[k - idx];
+                    yy_a_batch[j] = global_y_diff_abs[idx];
+                    yy_b_batch[j] = global_y_diff_abs[k - idx];
                 } else {
                     // Z0 and Z2 cases with direct array access
                     xx_a_batch[j] = aDigits_base[idx + a_offset];
                     xx_b_batch[j] = aDigits_base[k - idx + a_offset];
-
                     xy_a_batch[j] = aDigits_base[idx + a_offset];
                     xy_b_batch[j] = bDigits_base[k - idx + b_offset];
-
                     yy_a_batch[j] = bDigits_base[idx + a_offset];
                     yy_b_batch[j] = bDigits_base[k - idx + b_offset];
                 }
@@ -1252,23 +1506,19 @@ __device__ SharkForceInlineReleaseOnly static void ProcessConvolutionBatch (
                 uint64_t xx_a, xx_b, xy_a, xy_b, yy_a, yy_b;
 
                 if constexpr (use_conditional_access == ConditionalAccess::True) {
-                    // Z1_temp case
-                    xx_a = SharkUseSharedMemory ? x_diff_abs[idx] : global_x_diff_abs[idx];
-                    xx_b = SharkUseSharedMemory ? x_diff_abs[k - idx] : global_x_diff_abs[k - idx];
-
-                    xy_a = SharkUseSharedMemory ? x_diff_abs[idx] : global_x_diff_abs[idx];
-                    xy_b = SharkUseSharedMemory ? y_diff_abs[k - idx] : global_y_diff_abs[k - idx];
-
-                    yy_a = SharkUseSharedMemory ? y_diff_abs[idx] : global_y_diff_abs[idx];
-                    yy_b = SharkUseSharedMemory ? y_diff_abs[k - idx] : global_y_diff_abs[k - idx];
+                    // Z1_temp case - when SharkLoadAllInShared is false, always use global arrays
+                    xx_a = global_x_diff_abs[idx];
+                    xx_b = global_x_diff_abs[k - idx];
+                    xy_a = global_x_diff_abs[idx];
+                    xy_b = global_y_diff_abs[k - idx];
+                    yy_a = global_y_diff_abs[idx];
+                    yy_b = global_y_diff_abs[k - idx];
                 } else {
                     // Z0 and Z2 cases
                     xx_a = aDigits_base[idx + a_offset];
                     xx_b = aDigits_base[k - idx + a_offset];
-
                     xy_a = aDigits_base[idx + a_offset];
                     xy_b = bDigits_base[k - idx + b_offset];
-
                     yy_a = bDigits_base[idx + a_offset];
                     yy_b = bDigits_base[k - idx + b_offset];
                 }
@@ -1616,7 +1866,7 @@ static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
 
     if constexpr (UseConvolutionHere == UseConvolution::Yes) {
         // Replace A and B in shared memory with their absolute differences
-        if constexpr (SharkUseSharedMemory) {
+        if constexpr (SharkLoadAllInShared) {
             cg::memcpy_async(block, const_cast<uint32_t *>(x_diff_abs), global_x_diff_abs, sizeof(uint32_t) * MaxHalfN);
             cg::memcpy_async(block, const_cast<uint32_t *>(y_diff_abs), global_y_diff_abs, sizeof(uint32_t) * MaxHalfN);
         }
@@ -1624,7 +1874,7 @@ static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
         const int tid = RelativeBlockIndex * block.dim_threads().x + block.thread_index().x;
         const int stride = block.dim_threads().x * ExecutionNumBlocks;
 
-        if constexpr (SharkUseSharedMemory) {
+        if constexpr (SharkLoadAllInShared) {
             // Wait for the first batch of A to be loaded
             cg::wait(block);
         }
@@ -1645,11 +1895,12 @@ static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                 int i_end = (k < n1) ? k : (n1 - 1);
 
                 ProcessConvolutionBatch<SharkFloatParams, SharkKaratsubaBatchSize, ConditionalAccess::False>(
-                    k, i_start, i_end, n1,
+                    grid, block, k, i_start, i_end, n1,
                     aDigits, bDigits, 0, 0,  // Z0 uses base arrays with no offset
                     xx_sum_low, xx_sum_high,
                     xy_sum_low, xy_sum_high,
-                    yy_sum_low, yy_sum_high);
+                    yy_sum_low, yy_sum_high,
+                    shared_data);
 
                 int out_idx = k * 2;
                 Z0_OutDigitsXX[out_idx] = xx_sum_low;
@@ -1671,11 +1922,12 @@ static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                 int i_end = (k < n2) ? k : (n2 - 1);
 
                 ProcessConvolutionBatch<SharkFloatParams, SharkKaratsubaBatchSize, ConditionalAccess::False>(
-                    k, i_start, i_end, n2,
+                    grid, block, k, i_start, i_end, n2,
                     aDigits, bDigits, n1, n1,  // Z2 uses arrays with n1 offset
                     xx_sum_low, xx_sum_high,
                     xy_sum_low, xy_sum_high,
-                    yy_sum_low, yy_sum_high);
+                    yy_sum_low, yy_sum_high,
+                    shared_data);
 
                 int out_idx = k * 2;
                 Z2_OutDigitsXX[out_idx] = xx_sum_low;
@@ -1696,11 +1948,12 @@ static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                 int i_end = (k < MaxHalfN) ? k : (MaxHalfN - 1);
 
                 ProcessConvolutionBatch<SharkFloatParams, SharkKaratsubaBatchSize, ConditionalAccess::True>(
-                    k, i_start, i_end, MaxHalfN,
+                    grid, block, k, i_start, i_end, MaxHalfN,
                     nullptr, nullptr, 0, 0,  // Not used for Z1_temp
                     xx_sum_low, xx_sum_high,
                     xy_sum_low, xy_sum_high,
                     yy_sum_low, yy_sum_high,
+                    shared_data,
                     x_diff_abs, y_diff_abs,
                     global_x_diff_abs, global_y_diff_abs);
 
@@ -1779,7 +2032,7 @@ static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
 
             if (ExecuteAtAll) {
                 // Replace A and B in shared memory with their absolute differences
-                if constexpr (SharkUseSharedMemory) {
+                if constexpr (SharkLoadAllInShared) {
                     cg::memcpy_async(block,
                         const_cast<uint32_t *>(aDigits),
                         global_x_diff_abs,
@@ -1805,8 +2058,8 @@ static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                         shared_data,
                         A,
                         B,
-                        SharkUseSharedMemory ? aDigits : global_x_diff_abs,
-                        SharkUseSharedMemory ? bDigits : global_y_diff_abs,
+                        SharkLoadAllInShared ? aDigits : global_x_diff_abs,
+                        SharkLoadAllInShared ? bDigits : global_y_diff_abs,
                         x_diff_abs,
                         y_diff_abs,
                         Z1_temp_digitsXX,
@@ -1816,7 +2069,7 @@ static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                         block,
                         tempProducts);
 
-                if constexpr (SharkUseSharedMemory) {
+                if constexpr (SharkLoadAllInShared) {
                     cg::memcpy_async(block,
                         const_cast<uint32_t *>(aDigits),
                         A->Digits,
@@ -2144,23 +2397,23 @@ static __device__ void MultiplyHelperKaratsubaV2Separates(
     }
 
     auto *SharkRestrict aDigits =
-        SharkUseSharedMemory ?
+        SharkLoadAllInShared ?
         (shared_data) :
         const_cast<uint32_t *>(A->Digits);
     auto *SharkRestrict bDigits =
-        SharkUseSharedMemory ?
+        SharkLoadAllInShared ?
         (aDigits + NewN) :
         const_cast<uint32_t *>(B->Digits);
     auto *SharkRestrict x_diff_abs =
-        SharkUseSharedMemory ?
+        SharkLoadAllInShared ?
         reinterpret_cast<uint32_t *>(bDigits + NewN) :
         reinterpret_cast<uint32_t *>(&tempProducts[XDiff_offset]);
     auto *SharkRestrict y_diff_abs =
-        SharkUseSharedMemory ?
+        SharkLoadAllInShared ?
         reinterpret_cast<uint32_t *>(x_diff_abs + (NewN + 1) / 2) :
         reinterpret_cast<uint32_t *>(&tempProducts[YDiff_offset]);
 
-    if constexpr (SharkUseSharedMemory) {
+    if constexpr (SharkLoadAllInShared) {
         cg::memcpy_async(block, aDigits, A->Digits, sizeof(uint32_t) * NewN);
         cg::memcpy_async(block, bDigits, B->Digits, sizeof(uint32_t) * NewN);
     }

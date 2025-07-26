@@ -26,15 +26,15 @@ static constexpr bool SharkDebug = false;
 
 // Comment out to disable specific kernels
 //#define ENABLE_ADD_KERNEL
-//#define ENABLE_MULTIPLY_KERNEL
-#define ENABLE_REFERENCE_KERNEL
+#define ENABLE_MULTIPLY_KERNEL
+//#define ENABLE_REFERENCE_KERNEL
 
 // 0 = just one correctness test, intended for fast re-compile of a specific failure
 // 1 = all basic correctness tests/all basic perf tests
 // 2 = setup for profiling only, one kernel
 // 3 = all basic correctness tests + comical tests
 // See ExplicitInstantiate.h for more information
-#define ENABLE_BASIC_CORRECTNESS 2
+#define ENABLE_BASIC_CORRECTNESS 0
 
 #ifdef ENABLE_ADD_KERNEL
 static constexpr auto SharkEnableAddKernel = true;
@@ -70,11 +70,11 @@ static constexpr auto SharkTestIterCount = SharkDebug ? 5 : 50000;
 static constexpr auto SharkCustomStream = true;
 
 // Set to true to use shared memory for the incoming numbers
-static constexpr auto SharkUseSharedMemory = false;
+static constexpr auto SharkLoadAllInShared = false;
 static constexpr auto SharkRegisterLimit = 255;
 static constexpr auto SharkConstantSharedRequiredBytes = 0;
 static constexpr auto SharkBatchSize = SharkDebug ? 8 : 512;
-static constexpr auto SharkKaratsubaBatchSize = SharkUseSharedMemory ? 1 : 24;
+static constexpr auto SharkKaratsubaBatchSize = SharkLoadAllInShared ? 1 : 24;
 
 static constexpr bool SharkDebugChecksums = (ENABLE_BASIC_CORRECTNESS != 2) ? SharkDebug : false;
 static constexpr bool SharkDebugRandomDelays = false;
@@ -170,11 +170,21 @@ constexpr int32_t CalculateMultiplySharedMemorySize() {
     constexpr int NewN = SharkFloatParams::GlobalNumUint32;
     constexpr auto n = (NewN + 1) / 2;              // Half of NewN
 
+    // Figure out how much shared memory to allocate if we're not loading
+    // everything into shared memory and instead using a constant amount.
+    constexpr auto globalRequiredForCarries =
+        SharkFloatParams::GlobalNumBlocks * SharkFloatParams::GlobalThreadsPerBlock * sizeof(uint32_t);
+    constexpr auto globalRequiredForProducts = 
+        48 * 1024; // 48KB typical limit
+    constexpr auto globalRequired = (globalRequiredForCarries > globalRequiredForProducts) ?
+        globalRequiredForCarries : globalRequiredForProducts;
+
     //SharkConstantSharedRequiredBytes
     constexpr auto sharedAmountBytes =
-        SharkUseSharedMemory ?
+        SharkLoadAllInShared ?
         (2 * NewN + 2 * n) * sizeof(uint32_t) :
-        SharkFloatParams::GlobalNumBlocks * SharkFloatParams::GlobalThreadsPerBlock * sizeof(uint32_t);
+        globalRequired;
+
     return sharedAmountBytes;
 }
 
@@ -190,12 +200,8 @@ static constexpr auto LowPrec = 32;
 
 
 // If you add a new one, search for one of the other types and copy/paste
-// using Test8x1SharkParams = GenericSharkFloatParams<64, 108, 7776, 9>; // Use for ENABLE_BASIC_CORRECTNESS==2
-//using Test8x1SharkParams = GenericSharkFloatParams<32, 4>; // Use for ENABLE_BASIC_CORRECTNESS==1
-using Test8x1SharkParams = GenericSharkFloatParams<8, 1>; // Use for ENABLE_BASIC_CORRECTNESS==1
-//using Test8x1SharkParams = GenericSharkFloatParams<4, 6>; // Use for ENABLE_BASIC_CORRECTNESS==1
-// using Test8x1SharkParams = GenericSharkFloatParams<13, 5>;
-// using Test8x1SharkParams = GenericSharkFloatParams<95, 81>;
+//using Test8x1SharkParams = GenericSharkFloatParams<8, 1>; // Use for ENABLE_BASIC_CORRECTNESS==1
+using Test8x1SharkParams = GenericSharkFloatParams<5, 12, 80>; // Use for ENABLE_BASIC_CORRECTNESS==1
 using Test4x36SharkParams = GenericSharkFloatParams<4, 6, 32>;
 using Test4x12SharkParams = GenericSharkFloatParams<3, 18, 50>;
 using Test4x9SharkParams = GenericSharkFloatParams<5, 12, 80>;

@@ -1154,6 +1154,151 @@ StoreCurrentDebugState (
         record, useConvolution, grid, block, arrayToChecksum, arraySize, Purpose, RecursionDepth, CallIndex);
 }
 
+template<class SharkFloatParams>
+__device__ SharkForceInlineReleaseOnly static void compiler_barrier() {
+    unsigned mask = __activemask();
+    __syncwarp(mask);
+}
+
+enum class ConditionalAccess {
+    False,
+    True
+};
+
+// Helper function to process batched convolution for Z0, Z2, and Z1_temp
+template<class SharkFloatParams, int BatchSize, ConditionalAccess use_conditional_access>
+__device__ SharkForceInlineReleaseOnly static void ProcessConvolutionBatch (
+    int k, int i_start, int i_end, int n_limit,
+    const uint32_t *aDigits_base, const uint32_t *bDigits_base,
+    int a_offset, int b_offset,
+    uint64_t &xx_sum_low, uint64_t &xx_sum_high,
+    uint64_t &xy_sum_low, uint64_t &xy_sum_high,
+    uint64_t &yy_sum_low, uint64_t &yy_sum_high,
+    const uint32_t *x_diff_abs = nullptr,
+    const uint32_t *y_diff_abs = nullptr,
+    const uint32_t *global_x_diff_abs = nullptr,
+    const uint32_t *global_y_diff_abs = nullptr) {
+
+    for (int i = i_start; i <= i_end; ) {
+        int batch_size = 1;
+
+        if constexpr (BatchSize != 1) {
+            const int remaining = i_end - i + 1;
+            batch_size = (remaining >= BatchSize) ? BatchSize : remaining;
+        }
+
+        if ((BatchSize != 1) && batch_size == BatchSize) {
+            // Read batch of elements into local arrays
+            uint64_t xx_a_batch[BatchSize], xx_b_batch[BatchSize];
+            uint64_t xy_a_batch[BatchSize], xy_b_batch[BatchSize];
+            uint64_t yy_a_batch[BatchSize], yy_b_batch[BatchSize];
+
+            for (int j = 0; j < BatchSize; j++) {
+                int idx = i + j;
+
+                if constexpr (use_conditional_access == ConditionalAccess::True) {
+                    // Z1_temp case with conditional access
+                    xx_a_batch[j] = SharkUseSharedMemory ? x_diff_abs[idx] : global_x_diff_abs[idx];
+                    xx_b_batch[j] = SharkUseSharedMemory ? x_diff_abs[k - idx] : global_x_diff_abs[k - idx];
+
+                    xy_a_batch[j] = SharkUseSharedMemory ? x_diff_abs[idx] : global_x_diff_abs[idx];
+                    xy_b_batch[j] = SharkUseSharedMemory ? y_diff_abs[k - idx] : global_y_diff_abs[k - idx];
+
+                    yy_a_batch[j] = SharkUseSharedMemory ? y_diff_abs[idx] : global_y_diff_abs[idx];
+                    yy_b_batch[j] = SharkUseSharedMemory ? y_diff_abs[k - idx] : global_y_diff_abs[k - idx];
+                } else {
+                    // Z0 and Z2 cases with direct array access
+                    xx_a_batch[j] = aDigits_base[idx + a_offset];
+                    xx_b_batch[j] = aDigits_base[k - idx + a_offset];
+
+                    xy_a_batch[j] = aDigits_base[idx + a_offset];
+                    xy_b_batch[j] = bDigits_base[k - idx + b_offset];
+
+                    yy_a_batch[j] = bDigits_base[idx + a_offset];
+                    yy_b_batch[j] = bDigits_base[k - idx + b_offset];
+                }
+            }
+
+            if constexpr (BatchSize != 1) {
+                compiler_barrier<SharkFloatParams>();
+            }
+
+            // Compute products and accumulate
+            for (int j = 0; j < BatchSize; j++) {
+                uint64_t xx_product = xx_a_batch[j] * xx_b_batch[j];
+                uint64_t xy_product = xy_a_batch[j] * xy_b_batch[j];
+                uint64_t yy_product = yy_a_batch[j] * yy_b_batch[j];
+
+                xx_sum_low += xx_product;
+                if (xx_sum_low < xx_product) {
+                    xx_sum_high += 1;
+                }
+
+                xy_sum_low += xy_product;
+                if (xy_sum_low < xy_product) {
+                    xy_sum_high += 1;
+                }
+
+                yy_sum_low += yy_product;
+                if (yy_sum_low < yy_product) {
+                    yy_sum_high += 1;
+                }
+            }
+        } else {
+            // Handle batch sizes < BatchSize without local arrays
+            for (int j = 0; j < batch_size; j++) {
+                int idx = i + j;
+
+                uint64_t xx_a, xx_b, xy_a, xy_b, yy_a, yy_b;
+
+                if constexpr (use_conditional_access == ConditionalAccess::True) {
+                    // Z1_temp case
+                    xx_a = SharkUseSharedMemory ? x_diff_abs[idx] : global_x_diff_abs[idx];
+                    xx_b = SharkUseSharedMemory ? x_diff_abs[k - idx] : global_x_diff_abs[k - idx];
+
+                    xy_a = SharkUseSharedMemory ? x_diff_abs[idx] : global_x_diff_abs[idx];
+                    xy_b = SharkUseSharedMemory ? y_diff_abs[k - idx] : global_y_diff_abs[k - idx];
+
+                    yy_a = SharkUseSharedMemory ? y_diff_abs[idx] : global_y_diff_abs[idx];
+                    yy_b = SharkUseSharedMemory ? y_diff_abs[k - idx] : global_y_diff_abs[k - idx];
+                } else {
+                    // Z0 and Z2 cases
+                    xx_a = aDigits_base[idx + a_offset];
+                    xx_b = aDigits_base[k - idx + a_offset];
+
+                    xy_a = aDigits_base[idx + a_offset];
+                    xy_b = bDigits_base[k - idx + b_offset];
+
+                    yy_a = bDigits_base[idx + a_offset];
+                    yy_b = bDigits_base[k - idx + b_offset];
+                }
+
+                uint64_t xx_product = xx_a * xx_b;
+                uint64_t xy_product = xy_a * xy_b;
+                uint64_t yy_product = yy_a * yy_b;
+
+                xx_sum_low += xx_product;
+                if (xx_sum_low < xx_product) {
+                    xx_sum_high += 1;
+                }
+
+                xy_sum_low += xy_product;
+                if (xy_sum_low < xy_product) {
+                    xy_sum_high += 1;
+                }
+
+                yy_sum_low += yy_product;
+                if (yy_sum_low < yy_product) {
+                    yy_sum_high += 1;
+                }
+            }
+        }
+
+        i += batch_size;
+    }
+}
+
+
 template<
     class SharkFloatParams,
     int RecursionDepth,
@@ -1195,7 +1340,6 @@ static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
         (NewNumBlocks <= std::max(SharkFloatParams::GlobalNumBlocks / SharkFloatParams::ConvolutionLimit, 1) ||
         (NewNumBlocks % 3 != 0));
     constexpr UseConvolution UseConvolutionHere = UseConvolutionBool ? UseConvolution::Yes : UseConvolution::No;
-    constexpr bool EnableSharedDiff = (SharkUseSharedMemory && true); // Make sure it's false if !SharkUseSharedMemory
     constexpr bool UseParallelSubtract = true;
 
     using DebugState = DebugState<SharkFloatParams>;
@@ -1472,7 +1616,7 @@ static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
 
     if constexpr (UseConvolutionHere == UseConvolution::Yes) {
         // Replace A and B in shared memory with their absolute differences
-        if constexpr (EnableSharedDiff) {
+        if constexpr (SharkUseSharedMemory) {
             cg::memcpy_async(block, const_cast<uint32_t *>(x_diff_abs), global_x_diff_abs, sizeof(uint32_t) * MaxHalfN);
             cg::memcpy_async(block, const_cast<uint32_t *>(y_diff_abs), global_y_diff_abs, sizeof(uint32_t) * MaxHalfN);
         }
@@ -1480,7 +1624,7 @@ static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
         const int tid = RelativeBlockIndex * block.dim_threads().x + block.thread_index().x;
         const int stride = block.dim_threads().x * ExecutionNumBlocks;
 
-        if constexpr (EnableSharedDiff) {
+        if constexpr (SharkUseSharedMemory) {
             // Wait for the first batch of A to be loaded
             cg::wait(block);
         }
@@ -1500,50 +1644,18 @@ static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                 int i_start = (k < n1) ? 0 : (k - (n1 - 1));
                 int i_end = (k < n1) ? k : (n1 - 1);
 
-                for (int i = i_start; i <= i_end; i++) {
-                    // X * X
-                    uint64_t xx_a = aDigits[i];
-                    uint64_t xx_b = aDigits[k - i];
-
-                    // X * Y
-                    uint64_t xy_a = aDigits[i];     // A0[i]
-                    uint64_t xy_b = bDigits[k - i]; // B0[k - i]
-
-                    // Y * Y
-                    uint64_t yy_a = bDigits[i];     // A0[i]
-                    uint64_t yy_b = bDigits[k - i]; // B0[k - i]
-
-                    // Calculate products
-                    uint64_t xx_product = xx_a * xx_b;
-                    uint64_t xy_product = xy_a * xy_b;
-                    uint64_t yy_product = yy_a * yy_b;
-
-                    // Add product to sum
-                    xx_sum_low += xx_product;
-                    if (xx_sum_low < xx_product) {
-                        xx_sum_high += 1;
-                    }
-
-                    xy_sum_low += xy_product;
-                    if (xy_sum_low < xy_product) {
-                        xy_sum_high += 1;
-                    }
-
-                    yy_sum_low += yy_product;
-                    if (yy_sum_low < yy_product) {
-                        yy_sum_high += 1;
-                    }
-                }
+                ProcessConvolutionBatch<SharkFloatParams, SharkKaratsubaBatchSize, ConditionalAccess::False>(
+                    k, i_start, i_end, n1,
+                    aDigits, bDigits, 0, 0,  // Z0 uses base arrays with no offset
+                    xx_sum_low, xx_sum_high,
+                    xy_sum_low, xy_sum_high,
+                    yy_sum_low, yy_sum_high);
 
                 int out_idx = k * 2;
-
-                // Write the results to the output arrays
                 Z0_OutDigitsXX[out_idx] = xx_sum_low;
                 Z0_OutDigitsXX[out_idx + 1] = xx_sum_high;
-
                 Z0_OutDigitsXY[out_idx] = xy_sum_low;
                 Z0_OutDigitsXY[out_idx + 1] = xy_sum_high;
-
                 Z0_OutDigitsYY[out_idx] = yy_sum_low;
                 Z0_OutDigitsYY[out_idx + 1] = yy_sum_high;
             } else if (idx < 2 * total_k) {
@@ -1558,46 +1670,18 @@ static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                 int i_start = (k < n2) ? 0 : (k - (n2 - 1));
                 int i_end = (k < n2) ? k : (n2 - 1);
 
-                for (int i = i_start; i <= i_end; i++) {
-                    uint64_t xx_a = aDigits[i + n1]; // A1[i]
-                    uint64_t xx_b = aDigits[k - i + n1]; // A1[k - i]
+                ProcessConvolutionBatch<SharkFloatParams, SharkKaratsubaBatchSize, ConditionalAccess::False>(
+                    k, i_start, i_end, n2,
+                    aDigits, bDigits, n1, n1,  // Z2 uses arrays with n1 offset
+                    xx_sum_low, xx_sum_high,
+                    xy_sum_low, xy_sum_high,
+                    yy_sum_low, yy_sum_high);
 
-                    uint64_t xy_a = aDigits[i + n1]; // A1[i]
-                    uint64_t xy_b = bDigits[k - i + n1]; // B1[k - i]
-
-                    uint64_t yy_a = bDigits[i + n1]; // B1[i]
-                    uint64_t yy_b = bDigits[k - i + n1]; // B1[k - i]
-
-                    // Calculate products
-                    uint64_t xx_product = xx_a * xx_b;
-                    uint64_t xy_product = xy_a * xy_b;
-                    uint64_t yy_product = yy_a * yy_b;
-
-                    // Add product to sum
-                    xx_sum_low += xx_product;
-                    if (xx_sum_low < xx_product) {
-                        xx_sum_high += 1;
-                    }
-
-                    xy_sum_low += xy_product;
-                    if (xy_sum_low < xy_product) {
-                        xy_sum_high += 1;
-                    }
-
-                    yy_sum_low += yy_product;
-                    if (yy_sum_low < yy_product) {
-                        yy_sum_high += 1;
-                    }
-                }
-
-                // store sum_low, sum_high in Z2_OutDigitsXY
                 int out_idx = k * 2;
                 Z2_OutDigitsXX[out_idx] = xx_sum_low;
                 Z2_OutDigitsXX[out_idx + 1] = xx_sum_high;
-
                 Z2_OutDigitsXY[out_idx] = xy_sum_low;
                 Z2_OutDigitsXY[out_idx + 1] = xy_sum_high;
-
                 Z2_OutDigitsYY[out_idx] = yy_sum_low;
                 Z2_OutDigitsYY[out_idx + 1] = yy_sum_high;
             } else {
@@ -1611,46 +1695,20 @@ static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                 int i_start = (k < MaxHalfN) ? 0 : (k - (MaxHalfN - 1));
                 int i_end = (k < MaxHalfN) ? k : (MaxHalfN - 1);
 
-                for (int i = i_start; i <= i_end; ++i) {
-                    uint64_t xx_a = EnableSharedDiff ? x_diff_abs[i] : global_x_diff_abs[i];
-                    uint64_t xx_b = EnableSharedDiff ? x_diff_abs[k - i] : global_x_diff_abs[k - i];
+                ProcessConvolutionBatch<SharkFloatParams, SharkKaratsubaBatchSize, ConditionalAccess::True>(
+                    k, i_start, i_end, MaxHalfN,
+                    nullptr, nullptr, 0, 0,  // Not used for Z1_temp
+                    xx_sum_low, xx_sum_high,
+                    xy_sum_low, xy_sum_high,
+                    yy_sum_low, yy_sum_high,
+                    x_diff_abs, y_diff_abs,
+                    global_x_diff_abs, global_y_diff_abs);
 
-                    uint64_t xy_a = EnableSharedDiff ? x_diff_abs[i] : global_x_diff_abs[i];
-                    uint64_t xy_b = EnableSharedDiff ? y_diff_abs[k - i] : global_y_diff_abs[k - i];
-
-                    uint64_t yy_a = EnableSharedDiff ? y_diff_abs[i] : global_y_diff_abs[i];
-                    uint64_t yy_b = EnableSharedDiff ? y_diff_abs[k - i] : global_y_diff_abs[k - i];
-
-                    // Calculate products
-                    uint64_t xx_product = xx_a * xx_b;
-                    uint64_t xy_product = xy_a * xy_b;
-                    uint64_t yy_product = yy_a * yy_b;
-
-                    // Accumulate the product
-                    xx_sum_low += xx_product;
-                    if (xx_sum_low < xx_product) {
-                        xx_sum_high += 1;
-                    }
-
-                    xy_sum_low += xy_product;
-                    if (xy_sum_low < xy_product) {
-                        xy_sum_high += 1;
-                    }
-
-                    yy_sum_low += yy_product;
-                    if (yy_sum_low < yy_product) {
-                        yy_sum_high += 1;
-                    }
-                }
-
-                // Store sum_low and sum_high in tempProducts
                 int out_idx = k * 2;
                 Z1_temp_digitsXX[out_idx] = xx_sum_low;
                 Z1_temp_digitsXX[out_idx + 1] = xx_sum_high;
-
                 Z1_temp_digitsXY[out_idx] = xy_sum_low;
                 Z1_temp_digitsXY[out_idx + 1] = xy_sum_high;
-
                 Z1_temp_digitsYY[out_idx] = yy_sum_low;
                 Z1_temp_digitsYY[out_idx + 1] = yy_sum_high;
             }
@@ -1721,7 +1779,7 @@ static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
 
             if (ExecuteAtAll) {
                 // Replace A and B in shared memory with their absolute differences
-                if constexpr (EnableSharedDiff) {
+                if constexpr (SharkUseSharedMemory) {
                     cg::memcpy_async(block,
                         const_cast<uint32_t *>(aDigits),
                         global_x_diff_abs,
@@ -1747,8 +1805,8 @@ static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                         shared_data,
                         A,
                         B,
-                        EnableSharedDiff ? aDigits : global_x_diff_abs,
-                        EnableSharedDiff ? bDigits : global_y_diff_abs,
+                        SharkUseSharedMemory ? aDigits : global_x_diff_abs,
+                        SharkUseSharedMemory ? bDigits : global_y_diff_abs,
                         x_diff_abs,
                         y_diff_abs,
                         Z1_temp_digitsXX,
@@ -1758,7 +1816,7 @@ static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                         block,
                         tempProducts);
 
-                if constexpr (EnableSharedDiff) {
+                if constexpr (SharkUseSharedMemory) {
                     cg::memcpy_async(block,
                         const_cast<uint32_t *>(aDigits),
                         A->Digits,

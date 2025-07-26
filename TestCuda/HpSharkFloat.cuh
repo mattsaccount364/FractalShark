@@ -64,16 +64,17 @@ static constexpr bool SharkTestGpu = (SharkEnableAddKernel || SharkEnableMultipl
 #endif
 
 static constexpr auto SharkTestComicalThreadCount = 13;
-static constexpr auto SharkTestIterCount = SharkDebug ? 5 : 500;
+static constexpr auto SharkTestIterCount = SharkDebug ? 5 : 50000;
 
 // Set to true to use a custom stream for the kernel launch
 static constexpr auto SharkCustomStream = true;
 
 // Set to true to use shared memory for the incoming numbers
-static constexpr auto SharkUseSharedMemory = true;
+static constexpr auto SharkUseSharedMemory = false;
 static constexpr auto SharkRegisterLimit = 255;
 static constexpr auto SharkConstantSharedRequiredBytes = 0;
 static constexpr auto SharkBatchSize = SharkDebug ? 8 : 512;
+static constexpr auto SharkKaratsubaBatchSize = SharkUseSharedMemory ? 1 : 24;
 
 static constexpr bool SharkDebugChecksums = (ENABLE_BASIC_CORRECTNESS != 2) ? SharkDebug : false;
 static constexpr bool SharkDebugRandomDelays = false;

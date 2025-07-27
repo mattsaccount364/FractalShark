@@ -24,7 +24,7 @@
 #define NOMINMAX
 #include <windows.h>
 
-static constexpr bool EnableTestSign1 = false;
+static constexpr bool EnableTestSign1 = true;
 static constexpr bool EnableTestSign2 = true;
 static constexpr bool EnableTestSign3 = true;
 static constexpr bool EnableTestSign4 = true;

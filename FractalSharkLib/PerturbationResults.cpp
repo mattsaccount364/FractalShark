@@ -9,6 +9,7 @@
 #include "ImaginaOrbit.h"
 
 #include <map>
+#include <chrono>
 
 const HighPrecision &PerturbationResultsBase::GetHiX() const {
     return this->m_OrbitX;

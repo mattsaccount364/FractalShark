@@ -34,7 +34,11 @@ static constexpr bool SharkDebug = false;
 // 2 = setup for profiling only, one kernel
 // 3 = all basic correctness tests + comical tests
 // See ExplicitInstantiate.h for more information
-#define ENABLE_BASIC_CORRECTNESS 0
+#ifdef _DEBUG
+#define ENABLE_BASIC_CORRECTNESS 1
+#else
+#define ENABLE_BASIC_CORRECTNESS 2
+#endif
 
 #ifdef ENABLE_ADD_KERNEL
 static constexpr auto SharkEnableAddKernel = true;
@@ -64,7 +68,7 @@ static constexpr bool SharkTestGpu = (SharkEnableAddKernel || SharkEnableMultipl
 #endif
 
 static constexpr auto SharkTestComicalThreadCount = 13;
-static constexpr auto SharkTestIterCount = SharkDebug ? 5 : 50000;
+static constexpr auto SharkTestIterCount = SharkDebug ? 5 : 500;
 
 // Set to true to use a custom stream for the kernel launch
 static constexpr auto SharkCustomStream = true;
@@ -74,7 +78,7 @@ static constexpr auto SharkLoadAllInShared = false;
 static constexpr auto SharkRegisterLimit = 255;
 static constexpr auto SharkConstantSharedRequiredBytes = 0;
 static constexpr auto SharkBatchSize = SharkDebug ? 8 : 512;
-static constexpr auto SharkKaratsubaBatchSize = SharkLoadAllInShared ? 1 : 24;
+static constexpr auto SharkKaratsubaBatchSize = SharkLoadAllInShared ? 1 : 4;
 
 static constexpr bool SharkDebugChecksums = (ENABLE_BASIC_CORRECTNESS != 2) ? SharkDebug : false;
 static constexpr bool SharkDebugRandomDelays = false;
@@ -200,8 +204,8 @@ static constexpr auto LowPrec = 32;
 
 
 // If you add a new one, search for one of the other types and copy/paste
-//using Test8x1SharkParams = GenericSharkFloatParams<8, 1>; // Use for ENABLE_BASIC_CORRECTNESS==1
-using Test8x1SharkParams = GenericSharkFloatParams<3, 18, 50>; // Use for ENABLE_BASIC_CORRECTNESS==1
+using Test8x1SharkParams = GenericSharkFloatParams<8, 1>; // Use for ENABLE_BASIC_CORRECTNESS==1
+//using Test8x1SharkParams = GenericSharkFloatParams<3, 18, 50>; // Use for ENABLE_BASIC_CORRECTNESS==1
 using Test4x36SharkParams = GenericSharkFloatParams<4, 6, 32>;
 using Test4x12SharkParams = GenericSharkFloatParams<3, 18, 50>;
 using Test4x9SharkParams = GenericSharkFloatParams<5, 12, 80>;

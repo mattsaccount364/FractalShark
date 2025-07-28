@@ -58,30 +58,54 @@ __device__ DebugRandomDelay (
     }
 }
 
-// Shared memory layout calculator based on recursion depth
+// Shared-memory “bands” prefetch model (used by ProcessConvolutionBatchPipelined):
+// We cache four bands per tile: A_idx[], B_idx[], A_mirr[], B_mirr[].
+// Worst-case unique values per tile (in uint32): 
+//   values = 2*B + 2*(K + B - 1) = 2*K + 4*B - 2
+// where K = threads per block, B = batch size cap per tile.
+// For double buffering, we need 2 * values * sizeof(uint32_t).
+
 template<class SharkFloatParams, int RecursionDepth>
 struct SharedMemoryLayout {
-    // Synchronization variables size (2 uint32_t)
+    // ---- Explanatory constants (no more magic numbers) ----
+    static constexpr int kBytesPerU32 = 4;   // sizeof(uint32_t)
+    static constexpr int kIdxBands = 2;   // A_idx, B_idx
+    static constexpr int kMirrBands = 2;   // A_mirr, B_mirr
+    static constexpr int kDoubleBuffers = 2;   // ping & pong
+    static constexpr int kBatchCapPipelined = 8;   // B_max we support in the tiler (tunable)
+
+    // Threads per block (compile-time for the params)
+    static constexpr int K = SharkFloatParams::GlobalThreadsPerBlock;
+    static constexpr int Bmax = kBatchCapPipelined;
+
+    // Worst-case unique uint32 values needed for one tile (single buffer)
+    // values = 2*B + 2*(K + B - 1) = 2*K + 4*B - 2
+    static constexpr int kWorstCaseTileU32 = (kIdxBands * Bmax) + (kMirrBands * (K + Bmax - 1));
+
+    // Single-buffer bytes for one tile
+    static constexpr int kSingleBufferBytes = kWorstCaseTileU32 * kBytesPerU32;
+
+    // Double-buffer bytes (ping-pong) for overlap
+    static constexpr int kDoubleBufferBytes = kDoubleBuffers * kSingleBufferBytes;
+
+    // ---- Existing shared layout components (unchanged here) ----
     static constexpr int SyncVarsSize = 2 * sizeof(uint32_t);
 
-    // Base shared memory requirements per recursion level
-    static constexpr int BaseSharedMemory = SharkLoadAllInShared ?
-        (SharkFloatParams::GlobalNumUint32 * 4 * 2 + // aDigits + bDigits
-            SharkFloatParams::GlobalNumUint32 * 2 + // x_diff_abs + y_diff_abs
-            1024) : // padding and other uses
-        (2048 + SyncVarsSize); // minimum for pipelining when not loading all in shared + sync vars
+    static constexpr int BaseSharedMemory = SharkLoadAllInShared
+        ? (SharkFloatParams::GlobalNumUint32 * 4 * 2  // aDigits + bDigits
+            + SharkFloatParams::GlobalNumUint32 * 2    // x_diff_abs + y_diff_abs
+            + 1024)                                    // misc padding/other
+        : (2048 + SyncVarsSize);                      // minimum when not loading all in shared + sync vars
 
-    // Pipeline buffer size per recursion level (when not loading all in shared)
-    static constexpr int PipelineBufferSize = !SharkLoadAllInShared ?
-        (2 * 8 * 6 * sizeof(uint64_t)) : 0; // Double buffered, max 8 elements, 6 values each
+    // ---- New pipeline buffer size expressed via the constants above ----
+    static constexpr int PipelineBufferSize = !SharkLoadAllInShared
+        ? kDoubleBufferBytes                 // double-buffered worst-case tile
+        : 0;
 
-    // Calculate offset for this recursion depth
+    // Offsets & totals by recursion
     static constexpr int RecursionOffset = RecursionDepth * (BaseSharedMemory + PipelineBufferSize);
-
-    // Total shared memory needed up to this recursion depth
     static constexpr int TotalSharedMemory = RecursionOffset + BaseSharedMemory + PipelineBufferSize;
 
-    // Ensure we don't exceed shared memory limits
     static_assert(TotalSharedMemory <= 48 * 1024, "Shared memory exceeds 48KB limit");
 };
 
@@ -99,9 +123,8 @@ __device__ uint32_t *GetRecursionPipelineBuffer(uint32_t *base_shared_data) {
         return nullptr; // No pipeline buffer needed
     } else {
         constexpr int base_offset = SharedMemoryLayout<SharkFloatParams, RecursionDepth>::RecursionOffset;
-        constexpr int sync_vars_size = 2 * sizeof(uint32_t); // Space for shared_min_start, shared_max_end
         constexpr int base_size = SharedMemoryLayout<SharkFloatParams, RecursionDepth>::BaseSharedMemory;
-        return base_shared_data + ((base_offset + sync_vars_size + base_size) / sizeof(uint32_t));
+        return base_shared_data + ((base_offset + base_size) / sizeof(uint32_t));
     }
 }
 
@@ -851,43 +874,6 @@ static __device__ SharkForceInlineReleaseOnly void SerialCarryPropagationThread0
                     local_carry += new_sum_low >> 32;
                     local_carry += sum_high << 32;
                 }
-
-                /*
-                int sum_low_idx = idx * 2;
-                int sum_high_idx = sum_low_idx + 1;
-
-                uint64_t sum_low = final128[sum_low_idx];
-                uint64_t sum_high = final128[sum_high_idx];
-
-                // Add local carry to sum_low
-                uint64_t new_sum_low = sum_low + local_carry;
-
-                // Extract one 32-bit digit from new_sum_low
-                uint32_t digit = static_cast<uint32_t>(new_sum_low & 0xFFFFFFFFULL);
-                result[idx] = digit;
-
-                bool local_carry_negative = ((local_carry & (1ULL << 63)) != 0);
-                local_carry = 0ULL;
-
-                if (!local_carry_negative && new_sum_low < sum_low) {
-                    local_carry = 1ULL << 32;
-                } else if (local_carry_negative && new_sum_low > sum_low) {
-                    bool new_sum_low_negative = (new_sum_low & 0x8000000000000000ULL) != 0;
-                    if (new_sum_low_negative) {
-                        uint64_t upper_new_sum_low = new_sum_low >> 32;
-                        upper_new_sum_low |= 0xFFFFFFFF00000000ULL;
-                        local_carry += upper_new_sum_low;
-                        local_carry += sum_high << 32;
-                    } else {
-                        local_carry += new_sum_low >> 32;
-                        local_carry += sum_high << 32;
-                    }
-                } else {
-                    // Normal case
-                    local_carry += new_sum_low >> 32;
-                    local_carry += sum_high << 32;
-                }
-                */
             }
 
             return local_carry;
@@ -941,15 +927,11 @@ static __device__ SharkForceInlineReleaseOnly void SerialCarryPropagation (
             resultXY,
             resultYY);
     }
-
-    // Synchronize to ensure serial work is complete before other threads continue
-    grid.sync();
 }
 
 static __device__ int
 CarryGlobalToIndex (
     const bool PriorIndex,
-    const int MaxBlocks,
     const int block_idx)
 {
     return (block_idx - (PriorIndex ? 1 : 0)) * 3;
@@ -958,7 +940,6 @@ CarryGlobalToIndex (
 static __device__ int
 CarrySharedToIndex (
     const bool PriorIndex,
-    const int MaxThreads,
     const int thread_idx)
 {
     return (thread_idx - (PriorIndex ? 1 : 0)) * 3;
@@ -1075,12 +1056,10 @@ static __device__ SharkForceInlineReleaseOnly void CarryPropagation (
     const auto blockIndexInGrid = block.group_index().x;
     const auto carrySharedToIndex = CarrySharedToIndex(
         false,
-        MaxThreads,
         threadIndexInBlock);
     if (threadIndexInBlock == SharkFloatParams::GlobalThreadsPerBlock - 1) {
         const auto carryGlobalToIndex = CarryGlobalToIndex(
             false,
-            MaxBlocks,
             block.group_index().x);
 
         block_carry_outs[carryGlobalToIndex + 0] = local_carry_xx;
@@ -1127,14 +1106,12 @@ static __device__ SharkForceInlineReleaseOnly void CarryPropagation (
             if (block.thread_index().x == 0 && block.group_index().x > 0) {
                 const auto block_carry_outs_idx = CarryGlobalToIndex(
                     true,
-                    MaxBlocks,
                     block.group_index().x) + XX_XY_YY;
                 local_carry = block_carry_outs[block_carry_outs_idx];
             } else {
                 if (block.thread_index().x > 0) {
                     const auto shared_carries_idx = CarrySharedToIndex(
                         true,
-                        MaxThreads,
                         block.thread_index().x) + XX_XY_YY;
                     local_carry = shared_carries[shared_carries_idx];
                 }
@@ -1206,11 +1183,9 @@ static __device__ SharkForceInlineReleaseOnly void CarryPropagation (
         // TODO should we interleave each of these instead of separating them?  probably?
         const auto carrySharedToCurIndex = CarrySharedToIndex(
             false,
-            MaxThreads,
             block.thread_index().x);
         const auto carryGlobalToCurIndex = CarryGlobalToIndex(
             false,
-            MaxBlocks,
             block.group_index().x);
 
         shared_carries[carrySharedToCurIndex + 0] = local_carry_xx;
@@ -1259,7 +1234,6 @@ static __device__ SharkForceInlineReleaseOnly void CarryPropagation (
     if (block.thread_index().x == 0 && block.group_index().x == grid.dim_blocks().x - 1) {
         const auto carryGlobalToIndex = CarryGlobalToIndex(
             false,
-            MaxBlocks,
             block.group_index().x);
         const auto block_idx_xx = carryGlobalToIndex + 0;
         uint64_t final_carry_xx = block_carry_outs[block_idx_xx];
@@ -1282,9 +1256,6 @@ static __device__ SharkForceInlineReleaseOnly void CarryPropagation (
             resultYY[total_result_digits] = static_cast<uint32_t>(final_carry_yy & 0xFFFFFFFFULL);
         }
     }
-
-    // Synchronize all blocks before finalization
-    // grid.sync();
 }
 
 // Look for CalculateMultiplyFrameSize and ScratchMemoryArraysForMultiply
@@ -1396,7 +1367,19 @@ StoreCurrentDebugState (
 }
 
 template<class SharkFloatParams>
-__device__ SharkForceInlineReleaseOnly static void compiler_barrier() {
+__device__ SharkForceInlineReleaseOnly static void compiler_barrier () {
+
+    //
+    // This implementation is more than just a compiler barrier.
+    // It's a memory fence that ensures all memory operations
+    // are completed before any subsequent operations.
+    // 
+    // But that's more than we need here.
+    // 
+    // Unfortunately, the compiler doesn't provide a direct
+    // way to enforce this at the language level as near as I can tell.
+    //
+
     unsigned mask = __activemask();
     __syncwarp(mask);
 }
@@ -1407,15 +1390,21 @@ enum class ConditionalAccess {
 };
 
 // Collaborative loading helper for warp-level cooperation
-template<ConditionalAccess use_conditional_access>
-__device__ SharkForceInlineReleaseOnly static void LoadBatchCollaborative(
-    uint64_t *buffer, int base_i, int batch_size, int k,
-    const uint32_t *aDigits_base, const uint32_t *bDigits_base,
-    int a_offset, int b_offset,
-    const uint32_t *x_diff_abs, const uint32_t *y_diff_abs,
-    const uint32_t *global_x_diff_abs, const uint32_t *global_y_diff_abs,
-    int tid, int blockDim) {
-
+template<ConditionalAccess UseConditionalAccess>
+__device__ SharkForceInlineReleaseOnly static void LoadBatchCollaborative (
+    uint64_t *buffer,
+    const int base_i,
+    const int batch_size,
+    const int k,
+    const uint32_t *aDigits_base,
+    const uint32_t *bDigits_base,
+    const int a_offset,
+    const int b_offset,
+    const uint32_t *x_diff_abs,
+    const uint32_t *y_diff_abs,
+    const int tid,
+    const int blockDim)
+{
     // Collaborative loading pattern - each thread loads multiple elements
     constexpr int ElementsPerItem = 6; // xx_a, xx_b, xy_a, xy_b, yy_a, yy_b
 
@@ -1423,30 +1412,32 @@ __device__ SharkForceInlineReleaseOnly static void LoadBatchCollaborative(
         int item_idx = j / ElementsPerItem;
         int element_idx = j % ElementsPerItem;
 
-        if (item_idx >= batch_size) continue;
+        if (item_idx >= batch_size) {
+            continue;
+        }
 
         int idx = base_i + item_idx;
         uint64_t value;
 
-        if constexpr (use_conditional_access == ConditionalAccess::True) {
+        if constexpr (UseConditionalAccess == ConditionalAccess::True) {
             // Z1_temp case with conditional access
             switch (element_idx) {
-            case 0: value = global_x_diff_abs[idx]; break;
-            case 1: value = global_x_diff_abs[k - idx]; break;
-            case 2: value = global_x_diff_abs[idx]; break;
-            case 3: value = global_y_diff_abs[k - idx]; break;
-            case 4: value = global_y_diff_abs[idx]; break;
-            case 5: value = global_y_diff_abs[k - idx]; break;
+                case 0: value = x_diff_abs[idx]; break;
+                case 1: value = x_diff_abs[k - idx]; break;
+                case 2: value = x_diff_abs[idx]; break;
+                case 3: value = y_diff_abs[k - idx]; break;
+                case 4: value = y_diff_abs[idx]; break;
+                case 5: value = y_diff_abs[k - idx]; break;
             }
         } else {
             // Z0 and Z2 cases with direct array access
             switch (element_idx) {
-            case 0: value = aDigits_base[idx + a_offset]; break;
-            case 1: value = aDigits_base[k - idx + a_offset]; break;
-            case 2: value = aDigits_base[idx + a_offset]; break;
-            case 3: value = bDigits_base[k - idx + b_offset]; break;
-            case 4: value = bDigits_base[idx + a_offset]; break;
-            case 5: value = bDigits_base[k - idx + b_offset]; break;
+                case 0: value = aDigits_base[idx + a_offset]; break;
+                case 1: value = aDigits_base[k - idx + a_offset]; break;
+                case 2: value = aDigits_base[idx + a_offset]; break;
+                case 3: value = bDigits_base[k - idx + b_offset]; break;
+                case 4: value = bDigits_base[idx + a_offset]; break;
+                case 5: value = bDigits_base[k - idx + b_offset]; break;
             }
         }
 
@@ -1455,7 +1446,7 @@ __device__ SharkForceInlineReleaseOnly static void LoadBatchCollaborative(
 }
 
 // Direct processing fallback for non-pipelined cases
-template<ConditionalAccess use_conditional_access>
+template<ConditionalAccess UseConditionalAccess>
 __device__ SharkForceInlineReleaseOnly static void ProcessBatchDirect(
     int k, int i_start, int i_end, int n_limit,
     const uint32_t *aDigits_base, const uint32_t *bDigits_base,
@@ -1463,26 +1454,25 @@ __device__ SharkForceInlineReleaseOnly static void ProcessBatchDirect(
     uint64_t &xx_sum_low, uint64_t &xx_sum_high,
     uint64_t &xy_sum_low, uint64_t &xy_sum_high,
     uint64_t &yy_sum_low, uint64_t &yy_sum_high,
-    const uint32_t *x_diff_abs, const uint32_t *y_diff_abs,
-    const uint32_t *global_x_diff_abs, const uint32_t *global_y_diff_abs) {
+    const uint32_t *x_diff_abs, const uint32_t *y_diff_abs) {
 
     // Original direct computation approach
     for (int i = i_start; i <= i_end; i++) {
         uint64_t xx_a, xx_b, xy_a, xy_b, yy_a, yy_b;
 
-        if constexpr (use_conditional_access == ConditionalAccess::True) {
-            xx_a = global_x_diff_abs[i];
-            xx_b = global_x_diff_abs[k - i];
-            xy_a = global_x_diff_abs[i];
-            xy_b = global_y_diff_abs[k - i];
-            yy_a = global_y_diff_abs[i];
-            yy_b = global_y_diff_abs[k - i];
+        if constexpr (UseConditionalAccess == ConditionalAccess::True) {
+            xx_a = x_diff_abs[i];
+            xx_b = x_diff_abs[k - i];
+            xy_a = x_diff_abs[i];
+            xy_b = y_diff_abs[k - i];
+            yy_a = y_diff_abs[i];
+            yy_b = y_diff_abs[k - i];
         } else {
             xx_a = aDigits_base[i + a_offset];
             xx_b = aDigits_base[k - i + a_offset];
             xy_a = aDigits_base[i + a_offset];
             xy_b = bDigits_base[k - i + b_offset];
-            yy_a = bDigits_base[i + a_offset];
+            yy_a = bDigits_base[i + b_offset];
             yy_b = bDigits_base[k - i + b_offset];
         }
 
@@ -1501,17 +1491,21 @@ __device__ SharkForceInlineReleaseOnly static void ProcessBatchDirect(
     }
 }
 
-// Compute from shared memory buffer
-__device__ SharkForceInlineReleaseOnly static void ComputeBatchFromShared(
-    const uint64_t *buffer, int batch_size,
-    uint64_t &xx_sum_low, uint64_t &xx_sum_high,
-    uint64_t &xy_sum_low, uint64_t &xy_sum_high,
-    uint64_t &yy_sum_low, uint64_t &yy_sum_high) {
-
+// Compute from shared memory buffer for thread-specific range
+__device__ SharkForceInlineReleaseOnly static void ComputeBatchFromShared (
+    const uint64_t *buffer,
+    int start_offset,
+    int end_offset,
+    uint64_t &xx_sum_low,
+    uint64_t &xx_sum_high,
+    uint64_t &xy_sum_low,
+    uint64_t &xy_sum_high,
+    uint64_t &yy_sum_low,
+    uint64_t &yy_sum_high)
+{
     constexpr int ElementsPerItem = 6;
 
-#pragma unroll
-    for (int j = 0; j < batch_size; j++) {
+    for (int j = start_offset; j <= end_offset; j++) {
         uint64_t xx_a = buffer[j * ElementsPerItem + 0];
         uint64_t xx_b = buffer[j * ElementsPerItem + 1];
         uint64_t xy_a = buffer[j * ElementsPerItem + 2];
@@ -1534,122 +1528,820 @@ __device__ SharkForceInlineReleaseOnly static void ComputeBatchFromShared(
     }
 }
 
+//// Pipelined for when SharkLoadAllInShared is false
+//template<
+//    class SharkFloatParams,
+//    int BatchSize,
+//    ConditionalAccess UseConditionalAccess,
+//    int RecursionDepth>
+//__device__ SharkForceInlineReleaseOnly static void ProcessConvolutionBatchPipelined(
+//    cg::grid_group &grid,
+//    cg::thread_block &block,
+//    const int RelativeBlockIndex,
+//    const int outerIteration,
+//    const int k,
+//    const int i_start,
+//    const int i_end,
+//    const int n_limit,
+//    const uint32_t *aDigits_base,
+//    const uint32_t *bDigits_base,
+//    const int a_offset,
+//    const int b_offset,
+//    uint64_t &xx_sum_low,
+//    uint64_t &xx_sum_high,
+//    uint64_t &xy_sum_low,
+//    uint64_t &xy_sum_high,
+//    uint64_t &yy_sum_low,
+//    uint64_t &yy_sum_high,
+//    uint32_t *shared_data,
+//    const uint32_t *x_diff_abs = nullptr,
+//    const uint32_t *y_diff_abs = nullptr)
+//{
+//    ProcessBatchDirect<UseConditionalAccess>(
+//        k,
+//        i_start,
+//        i_end,
+//        n_limit,
+//        aDigits_base,
+//        bDigits_base,
+//        a_offset,
+//        b_offset,
+//        xx_sum_low,
+//        xx_sum_high,
+//        xy_sum_low,
+//        xy_sum_high,
+//        yy_sum_low,
+//        yy_sum_high,
+//        x_diff_abs,
+//        y_diff_abs);
+//
+//    //// Calculate what idx values this block will handle in the grid-stride loop
+//    //const int stride = block.dim_threads().x * grid.dim_blocks().x;
+//    //const int base_k = RelativeBlockIndex * block.dim_threads().x + outerIteration * stride;
+//    //const int first_k_this_block = base_k;
+//    //const int last_k_this_block = base_k + block.dim_threads().x - 1;
+//
+//    //// Now calculate the i ranges based on the actual k values
+//    //const int first_i_start = (first_k_this_block < n_limit) ? 0 : (first_k_this_block - (n_limit - 1));
+//    //const int last_i_end = (last_k_this_block < n_limit) ? last_k_this_block : (n_limit - 1);
+//
+//    //const int block_wide_i_start = first_i_start;
+//    //const int block_wide_i_end = last_i_end;
+//
+//    //// This gives us the full range of i values [block_wide_i_start, block_wide_i_end] 
+//    //// that will be accessed by any thread in this block during the convolution
+//
+//    //// Pipeline configuration - optimized for small shared memory
+//    //constexpr int EffectiveBatchSize = (BatchSize < 8) ? BatchSize : 8; // Limit to 8 for pipelining
+//    //constexpr int ElementsPerBatch = 6; // xx_a, xx_b, xy_a, xy_b, yy_a, yy_b
+//
+//    //// Shared memory layout: double-buffered
+//    //uint64_t *buffer_ping = reinterpret_cast<uint64_t *>(shared_data);
+//    //uint64_t *buffer_pong = buffer_ping + (EffectiveBatchSize * ElementsPerBatch);
+//
+//    //const int tid = block.thread_index().x;
+//
+//    //int current_buffer = 0;
+//    //int pipeline_stage = 0;
+//    //bool pipeline_active = false;
+//
+//    //for (int block_batch_start = block_wide_i_start;
+//    //    block_batch_start <= block_wide_i_end;
+//    //    block_batch_start += EffectiveBatchSize) {
+//
+//    //    const int remaining = block_wide_i_end - block_batch_start + 1;
+//    //    const int current_batch_size = min(EffectiveBatchSize, remaining);
+//
+//    //    // Select active buffers
+//    //    uint64_t *load_buffer = (current_buffer == 0) ? buffer_ping : buffer_pong;
+//    //    uint64_t *compute_buffer = (current_buffer == 0) ? buffer_pong : buffer_ping;
+//
+//    //    //// Stage 1: Asynchronous Load (collaborative loading across block)
+//    //    //if (current_batch_size > 0) {
+//    //    //    LoadBatchCollaborative<UseConditionalAccess>(
+//    //    //        load_buffer,
+//    //    //        block_batch_start,    // Use block-wide start instead of individual thread's i
+//    //    //        current_batch_size,
+//    //    //        k,
+//    //    //        aDigits_base,
+//    //    //        bDigits_base,
+//    //    //        a_offset,
+//    //    //        b_offset,
+//    //    //        x_diff_abs,
+//    //    //        y_diff_abs,
+//    //    //        tid,
+//    //    //        block.dim_threads().x);
+//    //    //}
+//
+//    //    //block.sync();
+//
+//    //    // Stage 2: Compute from previous iteration (if pipeline is active)
+//    //    if (pipeline_active && pipeline_stage > 0) {
+//    //        // Calculate which part of the previous batch this thread should process
+//    //        int prev_batch_start = block_batch_start - EffectiveBatchSize;
+//    //        int prev_batch_end = prev_batch_start + EffectiveBatchSize - 1;
+//
+//    //        // Find overlap between this thread's range [i_start, i_end] and the loaded range
+//    //        int thread_start_in_chunk = max(i_start, prev_batch_start);
+//    //        int thread_end_in_chunk = min(i_end, prev_batch_end);
+//
+//    //        if (thread_start_in_chunk <= thread_end_in_chunk) {
+//    //            ComputeBatchFromShared(
+//    //                compute_buffer,
+//    //                thread_start_in_chunk - prev_batch_start,  // Start offset in shared buffer
+//    //                thread_end_in_chunk - prev_batch_start,    // End offset in shared buffer
+//    //                xx_sum_low,
+//    //                xx_sum_high,
+//    //                xy_sum_low,
+//    //                xy_sum_high,
+//    //                yy_sum_low,
+//    //                yy_sum_high);
+//    //        }
+//    //    }
+//
+//    //    // For first iteration or when batch size doesn't match effective size
+//    //    if (!pipeline_active || current_batch_size != EffectiveBatchSize) {
+//    //        // First-iteration fallback: do the thread's range and exit
+//    //        if (!pipeline_active) {
+//    //            ProcessBatchDirect<UseConditionalAccess>(
+//    //                k,
+//    //                i_start,
+//    //                i_end,
+//    //                n_limit,
+//    //                aDigits_base,
+//    //                bDigits_base,
+//    //                a_offset,
+//    //                b_offset,
+//    //                xx_sum_low,
+//    //                xx_sum_high,
+//    //                xy_sum_low,
+//    //                xy_sum_high,
+//    //                yy_sum_low,
+//    //                yy_sum_high,
+//    //                x_diff_abs,
+//    //                y_diff_abs);
+//    //            break;
+//    //        }
+//
+//    //        // Tail fallback (partial chunk): intersect with the thread's range
+//    //        int fallback_start = max(i_start, block_batch_start);
+//    //        int fallback_end = min(i_end, block_batch_start + current_batch_size - 1);
+//    //        if (fallback_start <= fallback_end) {
+//    //            ProcessBatchDirect<UseConditionalAccess>(
+//    //                k,
+//    //                fallback_start,
+//    //                fallback_end,
+//    //                n_limit,
+//    //                aDigits_base,
+//    //                bDigits_base,
+//    //                a_offset,
+//    //                b_offset,
+//    //                xx_sum_low,
+//    //                xx_sum_high,
+//    //                xy_sum_low,
+//    //                xy_sum_high,
+//    //                yy_sum_low,
+//    //                yy_sum_high,
+//    //                x_diff_abs,
+//    //                y_diff_abs);
+//    //        }
+//
+//    //        break; // tail handled; you already computed the previous full chunk above
+//
+//    //    }
+//
+//    //    // Advance pipeline
+//    //    //current_buffer = 1 - current_buffer;
+//    //    //pipeline_stage++;
+//    //    pipeline_active = false;
+//
+//    //    //block.sync();
+//    //}
+//
+//    //// Drain pipeline - compute final batch
+//    //if (pipeline_active && pipeline_stage > 0) {
+//    //    uint64_t *final_compute_buffer = (current_buffer == 0) ? buffer_pong : buffer_ping;
+//
+//    //    int prev_chunk_start = block_wide_i_start + (pipeline_stage - 1) * EffectiveBatchSize;
+//    //    int prev_chunk_end = prev_chunk_start + EffectiveBatchSize - 1;
+//
+//    //    // Find overlap between this thread's range [i_start, i_end] and the loaded range
+//    //    int thread_start_in_chunk = max(i_start, prev_chunk_start);
+//    //    int thread_end_in_chunk = min(i_end, prev_chunk_end);
+//
+//    //    ComputeBatchFromShared(
+//    //        final_compute_buffer,
+//    //        thread_start_in_chunk - prev_chunk_start,  // Start offset in shared buffer
+//    //        thread_end_in_chunk - prev_chunk_start,    // End offset in shared buffer
+//    //        xx_sum_low,
+//    //        xx_sum_high,
+//    //        xy_sum_low,
+//    //        xy_sum_high,
+//    //        yy_sum_low,
+//    //        yy_sum_high);
+//    //}
+//}
 
-// Pipelined for when SharkLoadAllInShared is false
-template<class SharkFloatParams, int BatchSize, ConditionalAccess use_conditional_access, int RecursionDepth>
+// Pipelined via banded, *tiled* prefetch (CTA scope) with uniform barriers per tile.
+// Preconditions: caller only enters this path when all threads in the CTA participate
+// in the same iteration (so CTA-wide block.sync() is safe).
+template<class SharkFloatParams, int BatchSize, ConditionalAccess UseConditionalAccess, int RecursionDepth>
 __device__ SharkForceInlineReleaseOnly static void ProcessConvolutionBatchPipelined(
     cg::grid_group &grid,
     cg::thread_block &block,
-    const int k, const int i_start, const int i_end, const int n_limit,
-    const uint32_t *aDigits_base, const uint32_t *bDigits_base,
-    const int a_offset, const int b_offset,
+    const int /*RelativeBlockIndex*/,     // unused here
+    const int /*outerIteration*/,         // unused here
+    const int k,                          // this thread's k
+    const int i_start,                    // this thread's i-range for k
+    const int i_end,
+    const int n_limit,                    // digits per half (n1/n2/MaxHalfN)
+    const uint32_t *aDigits_base,
+    const uint32_t *bDigits_base,
+    const int a_offset,
+    const int b_offset,
     uint64_t &xx_sum_low, uint64_t &xx_sum_high,
     uint64_t &xy_sum_low, uint64_t &xy_sum_high,
     uint64_t &yy_sum_low, uint64_t &yy_sum_high,
-    uint32_t *shared_data,  // Recursion-specific pipeline buffer
+    uint32_t *shared_data,                // recursion's pipeline buffer (u32*)
     const uint32_t *x_diff_abs = nullptr,
-    const uint32_t *y_diff_abs = nullptr,
-    const uint32_t *global_x_diff_abs = nullptr,
-    const uint32_t *global_y_diff_abs = nullptr) {
+    const uint32_t *y_diff_abs = nullptr) {
+    // Runtime block size and small tile size (keep shared footprint tiny and predictable)
+    const int K = block.dim_threads().x;
+    const int B = (BatchSize < 8) ? BatchSize : 8;
 
-    // Pipeline configuration - optimized for small shared memory
-    constexpr int PipelineDepth = 2;  // Double buffering
-    constexpr int EffectiveBatchSize = (BatchSize < 8) ? BatchSize : 8; // Limit to 8 for pipelining
-    constexpr int ElementsPerBatch = 6; // xx_a, xx_b, xy_a, xy_b, yy_a, yy_b
-    constexpr int SharedBufferSize = PipelineDepth * EffectiveBatchSize * ElementsPerBatch;
+    // Contiguous-k assumption for this iteration:
+    // Each thread owns k_t = k0 + threadIdx.x  (so k0 is CTA-uniform)
+    const int k0 = k - block.thread_index().x;
 
-    // Shared memory layout: double-buffered
-    uint64_t *buffer_ping = reinterpret_cast<uint64_t *>(shared_data);
-    uint64_t *buffer_pong = buffer_ping + (EffectiveBatchSize * ElementsPerBatch);
+    // Block-wide i window implied by k_t in [k0 .. k0+K-1]
+    const int first_k_this_block = k0;
+    const int last_k_this_block = k0 + K - 1;
+    const int blk_i_start = (first_k_this_block < n_limit) ? 0 : (first_k_this_block - (n_limit - 1));
+    const int blk_i_end = (last_k_this_block < n_limit) ? last_k_this_block : (n_limit - 1);
 
-    const int tid = block.thread_index().x;
-    const int warp_id = tid / 32;
-    const int lane_id = tid % 32;
-
-    int current_buffer = 0;
-    int pipeline_stage = 0;
-    bool pipeline_active = false;
-
-    for (int i = i_start; i <= i_end; ) {
-        const int remaining = i_end - i + 1;
-        const int current_batch_size = min(min(BatchSize, EffectiveBatchSize), remaining);
-
-        // Select active buffers
-        uint64_t *load_buffer = (current_buffer == 0) ? buffer_ping : buffer_pong;
-        uint64_t *compute_buffer = (current_buffer == 0) ? buffer_pong : buffer_ping;
-
-        // Stage 1: Asynchronous Load (collaborative loading across warp)
-        if (current_batch_size > 0) {
-            LoadBatchCollaborative<use_conditional_access>(
-                load_buffer, i, current_batch_size, k,
-                aDigits_base, bDigits_base, a_offset, b_offset,
-                x_diff_abs, y_diff_abs, global_x_diff_abs, global_y_diff_abs,
-                tid, block.dim_threads().x);
-        }
-
-        block.sync();
-
-        // Stage 2: Compute from previous iteration (if pipeline is active)
-        if (pipeline_active && pipeline_stage > 0) {
-            ComputeBatchFromShared(
-                compute_buffer, min(BatchSize, EffectiveBatchSize),
-                xx_sum_low, xx_sum_high,
-                xy_sum_low, xy_sum_high,
-                yy_sum_low, yy_sum_high);
-        }
-
-        // For first iteration or when batch size doesn't match effective size
-        if (!pipeline_active || current_batch_size != EffectiveBatchSize) {
-            // Fall back to original approach for remainder
-            int fallback_start = pipeline_active ? i : i_start;
-            int fallback_end = pipeline_active ? min(i + current_batch_size - 1, i_end) : i_end;
-            ProcessBatchDirect<use_conditional_access>(
-                k, fallback_start, fallback_end, n_limit,
-                aDigits_base, bDigits_base, a_offset, b_offset,
-                xx_sum_low, xx_sum_high, xy_sum_low, xy_sum_high, yy_sum_low, yy_sum_high,
-                x_diff_abs, y_diff_abs, global_x_diff_abs, global_y_diff_abs);
-            break;  // Now this break is correct - we've processed everything
-        }
-
-        // Advance pipeline
-        current_buffer = 1 - current_buffer;
-        pipeline_stage++;
-        pipeline_active = true;
-        i += current_batch_size;
-
-        block.sync();
+    // Degenerate block-wide window: nothing to compute ⇒ fall back (no CTA syncs)
+    if (blk_i_start > blk_i_end) {
+        ProcessBatchDirect<UseConditionalAccess>(
+            k, i_start, i_end, n_limit,
+            aDigits_base, bDigits_base, a_offset, b_offset,
+            xx_sum_low, xx_sum_high, xy_sum_low, xy_sum_high, yy_sum_low, yy_sum_high,
+            x_diff_abs, y_diff_abs);
+        return;
     }
 
-    // Drain pipeline - compute final batch
-    if (pipeline_active && pipeline_stage > 0) {
-        uint64_t *final_compute_buffer = (current_buffer == 0) ? buffer_pong : buffer_ping;
-        ComputeBatchFromShared(
-            final_compute_buffer, min(BatchSize, EffectiveBatchSize),
-            xx_sum_low, xx_sum_high,
-            xy_sum_low, xy_sum_high,
-            yy_sum_low, yy_sum_high);
+    // Capacity of this recursion’s pipeline slice (in u32)
+    const int cap_u32 =
+        SharedMemoryLayout<SharkFloatParams, RecursionDepth>::PipelineBufferSize / sizeof(uint32_t);
+    uint32_t *const sh_base = shared_data;
+
+    // Tile over the block-wide i range
+    for (int s = blk_i_start; s <= blk_i_end; s += B) {
+        const int count = min(B, blk_i_end - s + 1);   // # of idx on direct side (for this tile)
+
+        // Union mirror window for this tile across *all* threads’ k_t = k0..k0+K-1:
+        // For i in [s .. s+count-1], idx2 = k_t - i ∈ [k0 - (s+count-1) .. (k0+K-1) - s]
+        int min_m = k0 - (s + count - 1);
+        int max_m = (k0 + K - 1) - s;
+
+        // Clamp to valid digit indices
+        if (min_m < 0)            min_m = 0;
+        if (max_m > n_limit - 1)  max_m = n_limit - 1;
+
+        int M = 0;
+        bool has_mirror = (max_m >= min_m);
+        if (has_mirror) {
+            M = max_m - min_m + 1;
+        }
+
+        // Shared layout pointers (only used when do_prefetch==true)
+        uint32_t *A_idx = sh_base;
+        uint32_t *B_idx = A_idx + count;
+        uint32_t *A_mir = B_idx + count;
+        uint32_t *B_mir = A_mir + (has_mirror ? M : 0);
+
+        // Decide if this tile fits in the recursion’s slice
+        const int values_needed = has_mirror ? (2 * count + 2 * M) : (2 * count);
+        const bool do_prefetch = has_mirror && (values_needed <= cap_u32);
+
+        // ---------------------- Phase A: cooperative loads (or dummy) ----------------------
+        if (do_prefetch) {
+            // idx-side (i = s .. s+count-1)
+            for (int j = block.thread_index().x; j < count; j += K) {
+                const int idx = s + j;
+                if constexpr (UseConditionalAccess == ConditionalAccess::True) {
+                    A_idx[j] = x_diff_abs[idx];
+                    B_idx[j] = y_diff_abs[idx];
+                } else {
+                    A_idx[j] = aDigits_base[idx + a_offset];
+                    B_idx[j] = bDigits_base[idx + b_offset];   // NOTE: b_offset is correct for B
+                }
+            }
+
+            // mirror-side (idx2 = min_m .. max_m)
+            for (int m = block.thread_index().x; m < M; m += K) {
+                const int idx2 = min_m + m;
+                if constexpr (UseConditionalAccess == ConditionalAccess::True) {
+                    A_mir[m] = x_diff_abs[idx2];
+                    B_mir[m] = y_diff_abs[idx2];
+                } else {
+                    A_mir[m] = aDigits_base[idx2 + a_offset];
+                    B_mir[m] = bDigits_base[idx2 + b_offset];
+                }
+            }
+        }
+        // Uniform barrier: every thread reaches this regardless of do_prefetch
+        block.sync();
+
+        // ---------------------- Phase B: compute this tile ----------------------
+        const int ts = max(i_start, s);
+        const int te = min(i_end, s + count - 1);
+
+        if (ts <= te) {
+            if (do_prefetch) {
+                // Use cached A_idx/B_idx and A_mir/B_mir
+                for (int i = ts; i <= te; ++i) {
+                    const int j = i - s;        // 0..count-1
+                    const int idx2 = k - i;        // mirror index for this (k,i)
+                    const int m = idx2 - min_m; // 0..M-1
+
+                    // Defensive bounds (should hold by construction)
+                    if ((unsigned)j >= (unsigned)count || (unsigned)m >= (unsigned)M) continue;
+
+                    const uint64_t xx_a = (uint64_t)A_idx[j];
+                    const uint64_t xx_b = (uint64_t)A_mir[m];
+                    const uint64_t xy_a = xx_a;
+                    const uint64_t xy_b = (uint64_t)B_mir[m];
+                    const uint64_t yy_a = (uint64_t)B_idx[j];
+                    const uint64_t yy_b = (uint64_t)B_mir[m];
+
+                    uint64_t p;
+                    p = xx_a * xx_b; xx_sum_low += p; if (xx_sum_low < p) xx_sum_high += 1;
+                    p = xy_a * xy_b; xy_sum_low += p; if (xy_sum_low < p) xy_sum_high += 1;
+                    p = yy_a * yy_b; yy_sum_low += p; if (yy_sum_low < p) yy_sum_high += 1;
+                }
+            } else {
+                // Tile doesn't fit (or has no mirror span) -> compute this tile’s slice directly.
+                ProcessBatchDirect<UseConditionalAccess>(
+                    k, ts, te, n_limit,
+                    aDigits_base, bDigits_base, a_offset, b_offset,
+                    xx_sum_low, xx_sum_high, xy_sum_low, xy_sum_high, yy_sum_low, yy_sum_high,
+                    x_diff_abs, y_diff_abs);
+            }
+        }
+
+        // Uniform barrier: phase boundary before reusing shared for next tile
+        block.sync();
     }
 }
 
-template<class SharkFloatParams, int BatchSize, ConditionalAccess use_conditional_access, int RecursionDepth>
-__device__ SharkForceInlineReleaseOnly static void ProcessConvolutionBatch(
-    cg::grid_group &grid, cg::thread_block &block,
-    int k, int i_start, int i_end, int n_limit,
-    const uint32_t *aDigits_base, const uint32_t *bDigits_base,
-    int a_offset, int b_offset,
-    uint64_t &xx_sum_low, uint64_t &xx_sum_high,
-    uint64_t &xy_sum_low, uint64_t &xy_sum_high,
-    uint64_t &yy_sum_low, uint64_t &yy_sum_high,
-    uint32_t *shared_data, // Small constant-sized shared memory buffer
-    const uint32_t *x_diff_abs = nullptr,
-    const uint32_t *y_diff_abs = nullptr,
-    const uint32_t *global_x_diff_abs = nullptr,
-    const uint32_t *global_y_diff_abs = nullptr) {
+__device__ __forceinline__ void touch_clock_guard() {
+    volatile unsigned t;
+    // Read the SM cycle counter (or use %globaltimer for 64-bit)
+    asm volatile ("mov.u32 %0, %%clock;" : "=r"(t));
 
-    constexpr bool UsePipelining = !SharkLoadAllInShared && (BatchSize > 4);
-    //constexpr bool UsePipelining = false;
+    //// If t == 0 (essentially never), increment the sink.
+    //asm volatile (
+    //    "{ .reg .pred p;            \n\t"
+    //    "  setp.eq.u32 p, %1, 0;   \n\t"
+    //    "  @p add.s32 %0, %0, 1;   \n\t"
+    //    "}"
+    //    : "+r"(sink)        // %0
+    //    : "r"(t)            // %1
+    //    : "cc");
+}
+
+
+//// One loader for a full BatchSize into fixed arrays, emitted as ordered PTX loads.
+//// Pick the cache op you want: .ca (use L1) or .cg (bypass L1).
+//template<ConditionalAccess Cond, int BatchSize>
+//__device__ __forceinline__ void load_buf_ptx(
+//    int base_i, int k,
+//    const uint32_t *__restrict__ aDigits_base,
+//    const uint32_t *__restrict__ bDigits_base,
+//    int a_offset, int b_offset,
+//    const uint32_t *__restrict__ global_x_diff_abs,
+//    const uint32_t *__restrict__ global_y_diff_abs,
+//    uint32_t(&ax)[BatchSize], uint32_t(&bx)[BatchSize],
+//    uint32_t(&ay)[BatchSize], uint32_t(&by)[BatchSize],
+//    uint32_t(&cy)[BatchSize], uint32_t(&dy)[BatchSize]) {
+//#pragma unroll
+//    for (int j = 0; j < BatchSize; ++j) {
+//        const int idx = base_i + j;
+//        const int idx2 = k - idx;
+//
+//        const uint32_t *p_ax, *p_bx, *p_ay, *p_by, *p_cy, *p_dy;
+//
+//        if constexpr (Cond == ConditionalAccess::True) {
+//            p_ax = global_x_diff_abs + idx;
+//            p_bx = global_x_diff_abs + idx2;
+//            p_ay = global_x_diff_abs + idx;
+//            p_by = global_y_diff_abs + idx2;
+//            p_cy = global_y_diff_abs + idx;
+//            p_dy = global_y_diff_abs + idx2;
+//        } else {
+//            p_ax = aDigits_base + (idx + a_offset);
+//            p_bx = aDigits_base + (idx2 + a_offset);
+//            p_ay = aDigits_base + (idx + a_offset);
+//            p_by = bDigits_base + (idx2 + b_offset);
+//            p_cy = bDigits_base + (idx + b_offset);
+//            p_dy = bDigits_base + (idx2 + b_offset);
+//        }
+//
+//        // Inline PTX loads (ordered, not hoisted across the block)
+//        asm volatile ("ld.global.ca.u32 %0, [%1];" : "=r"(ax[j]) : "l"(p_ax) : "memory");
+//        asm volatile ("ld.global.ca.u32 %0, [%1];" : "=r"(bx[j]) : "l"(p_bx) : "memory");
+//        asm volatile ("ld.global.ca.u32 %0, [%1];" : "=r"(ay[j]) : "l"(p_ay) : "memory");
+//        asm volatile ("ld.global.ca.u32 %0, [%1];" : "=r"(by[j]) : "l"(p_by) : "memory");
+//        asm volatile ("ld.global.ca.u32 %0, [%1];" : "=r"(cy[j]) : "l"(p_cy) : "memory");
+//        asm volatile ("ld.global.ca.u32 %0, [%1];" : "=r"(dy[j]) : "l"(p_dy) : "memory");
+//    }
+//
+//    // Prevent motion of surrounding instructions across the load block
+//    //asm volatile ("" ::: "memory");
+//    //touch_clock_guard(); // Touch the clock to prevent reordering
+//}
+
+// ---- Register-output loader for BatchSize == 4 ------------------------------
+//template<ConditionalAccess Cond>
+//__device__ __forceinline__ void load_buf_ptx_regs_4(
+//    int base_i, int k,
+//    const uint32_t *__restrict__ aDigits_base,
+//    const uint32_t *__restrict__ bDigits_base,
+//    int a_offset, int b_offset,
+//    const uint32_t *__restrict__ global_x_diff_abs,
+//    const uint32_t *__restrict__ global_y_diff_abs,
+//    uint32_t(&ax)[4], uint32_t(&bx)[4],
+//    uint32_t(&ay)[4], uint32_t(&by)[4],
+//    uint32_t(&cy)[4], uint32_t(&dy)[4]) {
+//    // Select sources and byte offsets
+//    const uint32_t *AXsrc, *BXsrc, *AYsrc, *BYsrc, *CYsrc, *DYsrc;
+//    uint32_t a_off = 0u, b_off = 0u;
+//
+//    if constexpr (Cond == ConditionalAccess::True) {
+//        AXsrc = global_x_diff_abs;  BXsrc = global_x_diff_abs;
+//        AYsrc = global_x_diff_abs;  BYsrc = global_y_diff_abs;
+//        CYsrc = global_y_diff_abs;  DYsrc = global_y_diff_abs;
+//    } else {
+//        AXsrc = aDigits_base;       BXsrc = aDigits_base;
+//        AYsrc = aDigits_base;       BYsrc = bDigits_base;
+//        CYsrc = bDigits_base;       DYsrc = bDigits_base;
+//        a_off = static_cast<uint32_t>(a_offset);
+//        b_off = static_cast<uint32_t>(b_offset);
+//    }
+//
+//    const unsigned long long a_off_bytes = static_cast<unsigned long long>(a_off) << 2; // *4
+//    const unsigned long long b_off_bytes = static_cast<unsigned long long>(b_off) << 2;
+//
+//    // PTX loads into 24 scalar outputs (they will live in registers).
+//    uint32_t ax0, bx0, ay0, by0, cy0, dy0;
+//    uint32_t ax1, bx1, ay1, by1, cy1, dy1;
+//    uint32_t ax2, bx2, ay2, by2, cy2, dy2;
+//    uint32_t ax3, bx3, ay3, by3, cy3, dy3;
+//
+//    asm volatile(
+//        "{\n\t"
+//        // Temps
+//        ".reg .u32 bi, kk, idx, idx2;\n\t"
+//        ".reg .u64 pAX, pBX, pAY, pBY, pCY, pDY, addr, offA, offB;\n\t"
+//
+//        // Load inputs
+//        "mov.u32  bi,   %24;\n\t"      // base_i
+//        "mov.u32  kk,   %25;\n\t"      // k
+//        "mov.u64  offA, %26;\n\t"      // a_off_bytes
+//        "mov.u64  offB, %27;\n\t"      // b_off_bytes
+//        "mov.u64  pAX,  %28;\n\t"
+//        "mov.u64  pBX,  %29;\n\t"
+//        "mov.u64  pAY,  %30;\n\t"
+//        "mov.u64  pBY,  %31;\n\t"
+//        "mov.u64  pCY,  %32;\n\t"
+//        "mov.u64  pDY,  %33;\n\t"
+//
+//        // ---------------- j = 0 ----------------
+//        "add.u32  idx,  bi, 0;\n\t"
+//        "sub.u32  idx2, kk, idx;\n\t"
+//
+//        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pAX;\n\t"
+//        "ld.global.ca.u32 %0,  [addr];\n\t"     // ax0
+//
+//        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pBX;\n\t"
+//        "ld.global.ca.u32 %1,  [addr];\n\t"     // bx0
+//
+//        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pAY;\n\t"
+//        "ld.global.ca.u32 %2,  [addr];\n\t"     // ay0
+//
+//        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pBY;\n\t"
+//        "ld.global.ca.u32 %3,  [addr];\n\t"     // by0
+//
+//        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pCY;\n\t"
+//        "ld.global.ca.u32 %4,  [addr];\n\t"     // cy0
+//
+//        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pDY;\n\t"
+//        "ld.global.ca.u32 %5,  [addr];\n\t"     // dy0
+//
+//        // ---------------- j = 1 ----------------
+//        "add.u32  idx,  bi, 1;\n\t"
+//        "sub.u32  idx2, kk, idx;\n\t"
+//
+//        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pAX;\n\t"
+//        "ld.global.ca.u32 %6,  [addr];\n\t"     // ax1
+//
+//        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pBX;\n\t"
+//        "ld.global.ca.u32 %7,  [addr];\n\t"     // bx1
+//
+//        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pAY;\n\t"
+//        "ld.global.ca.u32 %8,  [addr];\n\t"     // ay1
+//
+//        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pBY;\n\t"
+//        "ld.global.ca.u32 %9,  [addr];\n\t"     // by1
+//
+//        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pCY;\n\t"
+//        "ld.global.ca.u32 %10, [addr];\n\t"     // cy1
+//
+//        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pDY;\n\t"
+//        "ld.global.ca.u32 %11, [addr];\n\t"     // dy1
+//
+//        // ---------------- j = 2 ----------------
+//        "add.u32  idx,  bi, 2;\n\t"
+//        "sub.u32  idx2, kk, idx;\n\t"
+//
+//        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pAX;\n\t"
+//        "ld.global.ca.u32 %12, [addr];\n\t"     // ax2
+//
+//        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pBX;\n\t"
+//        "ld.global.ca.u32 %13, [addr];\n\t"     // bx2
+//
+//        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pAY;\n\t"
+//        "ld.global.ca.u32 %14, [addr];\n\t"     // ay2
+//
+//        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pBY;\n\t"
+//        "ld.global.ca.u32 %15, [addr];\n\t"     // by2
+//
+//        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pCY;\n\t"
+//        "ld.global.ca.u32 %16, [addr];\n\t"     // cy2
+//
+//        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pDY;\n\t"
+//        "ld.global.ca.u32 %17, [addr];\n\t"     // dy2
+//
+//        // ---------------- j = 3 ----------------
+//        "add.u32  idx,  bi, 3;\n\t"
+//        "sub.u32  idx2, kk, idx;\n\t"
+//
+//        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pAX;\n\t"
+//        "ld.global.ca.u32 %18, [addr];\n\t"     // ax3
+//
+//        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pBX;\n\t"
+//        "ld.global.ca.u32 %19, [addr];\n\t"     // bx3
+//
+//        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pAY;\n\t"
+//        "ld.global.ca.u32 %20, [addr];\n\t"     // ay3
+//
+//        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pBY;\n\t"
+//        "ld.global.ca.u32 %21, [addr];\n\t"     // by3
+//
+//        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pCY;\n\t"
+//        "ld.global.ca.u32 %22, [addr];\n\t"     // cy3
+//
+//        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pDY;\n\t"
+//        "ld.global.ca.u32 %23, [addr];\n\t"     // dy3
+//        "}\n\t"
+//        // ---- outputs (24) ----
+//        : "=r"(ax0), "=r"(bx0), "=r"(ay0), "=r"(by0), "=r"(cy0), "=r"(dy0),
+//        "=r"(ax1), "=r"(bx1), "=r"(ay1), "=r"(by1), "=r"(cy1), "=r"(dy1),
+//        "=r"(ax2), "=r"(bx2), "=r"(ay2), "=r"(by2), "=r"(cy2), "=r"(dy2),
+//        "=r"(ax3), "=r"(bx3), "=r"(ay3), "=r"(by3), "=r"(cy3), "=r"(dy3)
+//        // ---- inputs (10) ----
+//        : "r"(base_i), "r"(k),
+//        "l"(a_off_bytes), "l"(b_off_bytes),
+//        "l"(AXsrc), "l"(BXsrc), "l"(AYsrc), "l"(BYsrc), "l"(CYsrc), "l"(DYsrc)
+//        : "memory"
+//        );
+//
+//    // Move results into your fixed arrays (still constant indices → keep in registers)
+//    ax[0] = ax0; bx[0] = bx0; ay[0] = ay0; by[0] = by0; cy[0] = cy0; dy[0] = dy0;
+//    ax[1] = ax1; bx[1] = bx1; ay[1] = ay1; by[1] = by1; cy[1] = cy1; dy[1] = dy1;
+//    ax[2] = ax2; bx[2] = bx2; ay[2] = ay2; by[2] = by2; cy[2] = cy2; dy[2] = dy2;
+//    ax[3] = ax3; bx[3] = bx3; ay[3] = ay3; by[3] = by3; cy[3] = cy3; dy[3] = dy3;
+//}
+
+template<ConditionalAccess Cond>
+__device__ __forceinline__ void load_buf_ptx_regs_4_global(
+    int base_i, int k,
+    const uint32_t *__restrict__ aDigits_base,
+    const uint32_t *__restrict__ bDigits_base,
+    int a_offset, int b_offset,
+    const uint32_t *__restrict__ global_x_diff_abs,
+    const uint32_t *__restrict__ global_y_diff_abs,
+    uint32_t(&ax)[4], uint32_t(&bx)[4],
+    uint32_t(&ay)[4], uint32_t(&by)[4],
+    uint32_t(&cy)[4], uint32_t(&dy)[4]) {
+    // Select sources and byte offsets
+    const uint32_t *AXsrc, *BXsrc, *AYsrc, *BYsrc, *CYsrc, *DYsrc;
+    uint32_t a_off = 0u, b_off = 0u;
+
+    if constexpr (Cond == ConditionalAccess::True) {
+        AXsrc = global_x_diff_abs;  BXsrc = global_x_diff_abs;
+        AYsrc = global_x_diff_abs;  BYsrc = global_y_diff_abs;
+        CYsrc = global_y_diff_abs;  DYsrc = global_y_diff_abs;
+    } else {
+        AXsrc = aDigits_base;       BXsrc = aDigits_base;
+        AYsrc = aDigits_base;       BYsrc = bDigits_base;
+        CYsrc = bDigits_base;       DYsrc = bDigits_base;
+        a_off = static_cast<uint32_t>(a_offset);
+        b_off = static_cast<uint32_t>(b_offset);
+    }
+
+    const unsigned long long a_off_bytes = static_cast<unsigned long long>(a_off) << 2; // *4
+    const unsigned long long b_off_bytes = static_cast<unsigned long long>(b_off) << 2;
+
+    // PTX loads into 24 scalar outputs (they will live in registers).
+    uint32_t ax0, bx0, ay0, by0, cy0, dy0;
+    uint32_t ax1, bx1, ay1, by1, cy1, dy1;
+    uint32_t ax2, bx2, ay2, by2, cy2, dy2;
+    uint32_t ax3, bx3, ay3, by3, cy3, dy3;
+
+    asm volatile(
+        "{\n\t"
+        // Temps
+        ".reg .u32 bi, kk, idx, idx2;\n\t"
+        ".reg .u64 pAX, pBX, pAY, pBY, pCY, pDY, addr, offA, offB;\n\t"
+
+        // Load inputs
+        "mov.u32  bi,   %24;\n\t"      // base_i
+        "mov.u32  kk,   %25;\n\t"      // k
+        "mov.u64  offA, %26;\n\t"      // a_off_bytes
+        "mov.u64  offB, %27;\n\t"      // b_off_bytes
+        "mov.u64  pAX,  %28;\n\t"
+        "mov.u64  pBX,  %29;\n\t"
+        "mov.u64  pAY,  %30;\n\t"
+        "mov.u64  pBY,  %31;\n\t"
+        "mov.u64  pCY,  %32;\n\t"
+        "mov.u64  pDY,  %33;\n\t"
+
+        // ---------------- j = 0 ----------------
+        "add.u32  idx,  bi, 0;\n\t"
+        "sub.u32  idx2, kk, idx;\n\t"
+
+        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pAX;\n\t"
+        "ld.weak.global.u32 %0,  [addr];\n\t"     // ax0
+
+        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pBX;\n\t"
+        "ld.weak.global.u32 %1,  [addr];\n\t"     // bx0
+
+        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pAY;\n\t"
+        "ld.weak.global.u32 %2,  [addr];\n\t"     // ay0
+
+        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pBY;\n\t"
+        "ld.weak.global.u32 %3,  [addr];\n\t"     // by0
+
+        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pCY;\n\t"
+        "ld.weak.global.u32 %4,  [addr];\n\t"     // cy0
+
+        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pDY;\n\t"
+        "ld.weak.global.u32 %5,  [addr];\n\t"     // dy0
+
+        // ---------------- j = 1 ----------------
+        "add.u32  idx,  bi, 1;\n\t"
+        "sub.u32  idx2, kk, idx;\n\t"
+
+        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pAX;\n\t"
+        "ld.weak.global.u32 %6,  [addr];\n\t"     // ax1
+
+        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pBX;\n\t"
+        "ld.weak.global.u32 %7,  [addr];\n\t"     // bx1
+
+        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pAY;\n\t"
+        "ld.weak.global.u32 %8,  [addr];\n\t"     // ay1
+
+        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pBY;\n\t"
+        "ld.weak.global.u32 %9,  [addr];\n\t"     // by1
+
+        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pCY;\n\t"
+        "ld.weak.global.u32 %10, [addr];\n\t"     // cy1
+
+        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pDY;\n\t"
+        "ld.weak.global.u32 %11, [addr];\n\t"     // dy1
+
+        // ---------------- j = 2 ----------------
+        "add.u32  idx,  bi, 2;\n\t"
+        "sub.u32  idx2, kk, idx;\n\t"
+
+        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pAX;\n\t"
+        "ld.weak.global.u32 %12, [addr];\n\t"     // ax2
+
+        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pBX;\n\t"
+        "ld.weak.global.u32 %13, [addr];\n\t"     // bx2
+
+        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pAY;\n\t"
+        "ld.weak.global.u32 %14, [addr];\n\t"     // ay2
+
+        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pBY;\n\t"
+        "ld.weak.global.u32 %15, [addr];\n\t"     // by2
+
+        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pCY;\n\t"
+        "ld.weak.global.u32 %16, [addr];\n\t"     // cy2
+
+        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pDY;\n\t"
+        "ld.weak.global.u32 %17, [addr];\n\t"     // dy2
+
+        // ---------------- j = 3 ----------------
+        "add.u32  idx,  bi, 3;\n\t"
+        "sub.u32  idx2, kk, idx;\n\t"
+
+        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pAX;\n\t"
+        "ld.weak.global.u32 %18, [addr];\n\t"     // ax3
+
+        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pBX;\n\t"
+        "ld.weak.global.u32 %19, [addr];\n\t"     // bx3
+
+        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pAY;\n\t"
+        "ld.weak.global.u32 %20, [addr];\n\t"     // ay3
+
+        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pBY;\n\t"
+        "ld.weak.global.u32 %21, [addr];\n\t"     // by3
+
+        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pCY;\n\t"
+        "ld.weak.global.u32 %22, [addr];\n\t"     // cy3
+
+        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pDY;\n\t"
+        "ld.weak.global.u32 %23, [addr];\n\t"     // dy3
+        "}\n\t"
+        // ---- outputs (24) ----
+        : "=r"(ax0), "=r"(bx0), "=r"(ay0), "=r"(by0), "=r"(cy0), "=r"(dy0),
+        "=r"(ax1), "=r"(bx1), "=r"(ay1), "=r"(by1), "=r"(cy1), "=r"(dy1),
+        "=r"(ax2), "=r"(bx2), "=r"(ay2), "=r"(by2), "=r"(cy2), "=r"(dy2),
+        "=r"(ax3), "=r"(bx3), "=r"(ay3), "=r"(by3), "=r"(cy3), "=r"(dy3)
+        // ---- inputs (10) ----
+        : "r"(base_i), "r"(k),
+        "l"(a_off_bytes), "l"(b_off_bytes),
+        "l"(AXsrc), "l"(BXsrc), "l"(AYsrc), "l"(BYsrc), "l"(CYsrc), "l"(DYsrc)
+        : "memory"
+        );
+
+    // Move results into your fixed arrays (still constant indices → keep in registers)
+    ax[0] = ax0; bx[0] = bx0; ay[0] = ay0; by[0] = by0; cy[0] = cy0; dy[0] = dy0;
+    ax[1] = ax1; bx[1] = bx1; ay[1] = ay1; by[1] = by1; cy[1] = cy1; dy[1] = dy1;
+    ax[2] = ax2; bx[2] = bx2; ay[2] = ay2; by[2] = by2; cy[2] = cy2; dy[2] = dy2;
+    ax[3] = ax3; bx[3] = bx3; ay[3] = ay3; by[3] = by3; cy[3] = cy3; dy[3] = dy3;
+}
+
+
+// ---- Tiny wrapper so it’s a drop-in for load_buf_ptx<...,4>(...) -------------
+template<ConditionalAccess Cond, int BatchSize>
+__device__ __forceinline__ void load_buf_ptx(
+    int base_i, int k,
+    const uint32_t *__restrict__ aDigits_base,
+    const uint32_t *__restrict__ bDigits_base,
+    int a_offset, int b_offset,
+    const uint32_t *__restrict__ global_x_diff_abs,
+    const uint32_t *__restrict__ global_y_diff_abs,
+    uint32_t(&ax)[BatchSize], uint32_t(&bx)[BatchSize],
+    uint32_t(&ay)[BatchSize], uint32_t(&by)[BatchSize],
+    uint32_t(&cy)[BatchSize], uint32_t(&dy)[BatchSize]) {
+    static_assert(BatchSize == 4, "This PTX loader specialization expects BatchSize == 4");
+    load_buf_ptx_regs_4_global<Cond>(
+        base_i, k, aDigits_base, bDigits_base, a_offset, b_offset,
+        global_x_diff_abs, global_y_diff_abs,
+        ax, bx, ay, by, cy, dy);
+}
+
+
+template<
+    class SharkFloatParams,
+    int BatchSize,
+    bool UsePipelining,
+    ConditionalAccess UseConditionalAccess,
+    int RecursionDepth,
+    int ExecutionBlockBase,
+    int ExecutionNumBlocks>
+__device__ SharkForceInlineReleaseOnly static void ProcessConvolutionBatch(
+    cg::grid_group &grid,
+    cg::thread_block &block,
+    const int RelativeBlockIndex,
+    const int outerIteration,
+    const int k,
+    const int total_k,
+    const int i_start,
+    const int i_end,
+    const int n_limit,
+    const uint32_t *aDigits_base,
+    const uint32_t *bDigits_base,
+    const int a_offset,
+    const int b_offset,
+    uint64_t &xx_sum_low,
+    uint64_t &xx_sum_high,
+    uint64_t &xy_sum_low,
+    uint64_t &xy_sum_high,
+    uint64_t &yy_sum_low,
+    uint64_t &yy_sum_high,
+    uint32_t *shared_data,
+    const uint32_t *x_diff_abs = nullptr,
+    const uint32_t *y_diff_abs = nullptr) {
+
     constexpr auto MinBatchSize = (BatchSize < 8) ? BatchSize : 8; // Limit to 8 for pipelining
-    constexpr int RequiredSharedMemory = 2 * MinBatchSize * 6 * sizeof(uint64_t); // Double buffered
+    constexpr int Krt = SharkFloatParams::GlobalThreadsPerBlock;
+    const int stride = Krt * ExecutionNumBlocks;             // same as your outer loop
+    const int k0_base = RelativeBlockIndex * Krt + outerIteration * stride;
+    const bool fullCTA = (k0_base + Krt - 1) < total_k;        // all threads in CTA have idx < total_k
 
     if constexpr (UsePipelining) {
         // Determine if we should use pipelining
@@ -1659,13 +2351,34 @@ __device__ SharkForceInlineReleaseOnly static void ProcessConvolutionBatch(
         // Check if we have enough shared memory (simplified check)
         constexpr int AvailableShared = CalculateMultiplySharedMemorySize<SharkFloatParams>();
 
-        if constexpr (RequiredSharedMemory <= AvailableShared) {
-            ProcessConvolutionBatchPipelined<SharkFloatParams, BatchSize, use_conditional_access, RecursionDepth>(
-                grid, block, k, i_start, i_end, n_limit,
-                aDigits_base, bDigits_base, a_offset, b_offset,
-                xx_sum_low, xx_sum_high, xy_sum_low, xy_sum_high, yy_sum_low, yy_sum_high,
-                pipeline_buffer,
-                x_diff_abs, y_diff_abs, global_x_diff_abs, global_y_diff_abs);
+        if (fullCTA) {
+            ProcessConvolutionBatchPipelined<
+                SharkFloatParams,
+                BatchSize,
+                UseConditionalAccess,
+                RecursionDepth>(
+
+                    grid,
+                    block,
+                    RelativeBlockIndex,
+                    outerIteration,
+                    k,
+                    i_start,
+                    i_end,
+                    n_limit,
+                    aDigits_base,
+                    bDigits_base,
+                    a_offset,
+                    b_offset,
+                    xx_sum_low,
+                    xx_sum_high,
+                    xy_sum_low,
+                    xy_sum_high,
+                    yy_sum_low,
+                    yy_sum_high,
+                    pipeline_buffer,
+                    x_diff_abs,
+                    y_diff_abs);
             return;
         }
     }
@@ -1680,57 +2393,255 @@ __device__ SharkForceInlineReleaseOnly static void ProcessConvolutionBatch(
         }
 
         if ((BatchSize != 1) && batch_size == BatchSize) {
-            // Original batched approach with local arrays
-            uint64_t xx_a_batch[BatchSize], xx_b_batch[BatchSize];
-            uint64_t xy_a_batch[BatchSize], xy_b_batch[BatchSize];
-            uint64_t yy_a_batch[BatchSize], yy_b_batch[BatchSize];
+            // Consume as many FULL batches as possible starting at i, pipelined via 4 register buffers.
+            const int remaining = i_end - i + 1;
+            const int nFull = remaining / BatchSize;   // guaranteed >= 1 here
 
-            for (int j = 0; j < BatchSize; j++) {
-                int idx = i + j;
+            // Four fixed, compile-time-addressable buffers
+            uint32_t ax0[BatchSize], bx0[BatchSize], ay0[BatchSize], by0[BatchSize], cy0[BatchSize], dy0[BatchSize];
+            uint32_t ax1[BatchSize], bx1[BatchSize], ay1[BatchSize], by1[BatchSize], cy1[BatchSize], dy1[BatchSize];
+            uint32_t ax2[BatchSize], bx2[BatchSize], ay2[BatchSize], by2[BatchSize], cy2[BatchSize], dy2[BatchSize];
+            uint32_t ax3[BatchSize], bx3[BatchSize], ay3[BatchSize], by3[BatchSize], cy3[BatchSize], dy3[BatchSize];
 
-                if constexpr (use_conditional_access == ConditionalAccess::True) {
-                    // Z1_temp case - when SharkLoadAllInShared is false, always use global arrays
-                    xx_a_batch[j] = global_x_diff_abs[idx];
-                    xx_b_batch[j] = global_x_diff_abs[k - idx];
-                    xy_a_batch[j] = global_x_diff_abs[idx];
-                    xy_b_batch[j] = global_y_diff_abs[k - idx];
-                    yy_a_batch[j] = global_y_diff_abs[idx];
-                    yy_b_batch[j] = global_y_diff_abs[k - idx];
+            auto load0 = [&](int base_i) {
+                if constexpr (SharkLoadAllInShared) {
+#pragma unroll
+                    for (int j = 0; j < BatchSize; ++j) {
+                        const int idx = base_i + j;
+                        const int idx2 = k - idx;
+                        if constexpr (UseConditionalAccess == ConditionalAccess::True) {
+                            ax0[j] = x_diff_abs[idx];
+                            bx0[j] = x_diff_abs[idx2];
+                            ay0[j] = x_diff_abs[idx];
+                            by0[j] = y_diff_abs[idx2];
+                            cy0[j] = y_diff_abs[idx];
+                            dy0[j] = y_diff_abs[idx2];
+                        } else {
+                            ax0[j] = aDigits_base[idx + a_offset];
+                            bx0[j] = aDigits_base[idx2 + a_offset];
+                            ay0[j] = aDigits_base[idx + a_offset];
+                            by0[j] = bDigits_base[idx2 + b_offset];
+                            cy0[j] = bDigits_base[idx + b_offset];   // correct: b_offset
+                            dy0[j] = bDigits_base[idx2 + b_offset];
+                        }
+                    }
                 } else {
-                    // Z0 and Z2 cases with direct array access
-                    xx_a_batch[j] = aDigits_base[idx + a_offset];
-                    xx_b_batch[j] = aDigits_base[k - idx + a_offset];
-                    xy_a_batch[j] = aDigits_base[idx + a_offset];
-                    xy_b_batch[j] = bDigits_base[k - idx + b_offset];
-                    yy_a_batch[j] = bDigits_base[idx + a_offset];
-                    yy_b_batch[j] = bDigits_base[k - idx + b_offset];
+                    load_buf_ptx<UseConditionalAccess, BatchSize>(
+                        base_i, k, aDigits_base, bDigits_base, a_offset, b_offset,
+                        x_diff_abs, y_diff_abs,
+                        ax0, bx0, ay0, by0, cy0, dy0);
                 }
-            }
+            };
 
-            if constexpr (BatchSize != 1) {
-                compiler_barrier<SharkFloatParams>();
-            }
+            auto load1 = [&](int base_i) {
+                if constexpr (SharkLoadAllInShared) {
+#pragma unroll
+                    for (int j = 0; j < BatchSize; ++j) {
+                        const int idx = base_i + j;
+                        const int idx2 = k - idx;
+                        if constexpr (UseConditionalAccess == ConditionalAccess::True) {
+                            ax1[j] = x_diff_abs[idx];
+                            bx1[j] = x_diff_abs[idx2];
+                            ay1[j] = x_diff_abs[idx];
+                            by1[j] = y_diff_abs[idx2];
+                            cy1[j] = y_diff_abs[idx];
+                            dy1[j] = y_diff_abs[idx2];
+                        } else {
+                            ax1[j] = aDigits_base[idx + a_offset];
+                            bx1[j] = aDigits_base[idx2 + a_offset];
+                            ay1[j] = aDigits_base[idx + a_offset];
+                            by1[j] = bDigits_base[idx2 + b_offset];
+                            cy1[j] = bDigits_base[idx + b_offset];
+                            dy1[j] = bDigits_base[idx2 + b_offset];
+                        }
+                    }
+                } else {
+                    load_buf_ptx<UseConditionalAccess, BatchSize>(
+                        base_i, k, aDigits_base, bDigits_base, a_offset, b_offset,
+                        x_diff_abs, y_diff_abs,
+                        ax1, bx1, ay1, by1, cy1, dy1);
+                    }
+                };
+            auto load2 = [&](int base_i) {
+                if constexpr (SharkLoadAllInShared) {
+#pragma unroll
+                    for (int j = 0; j < BatchSize; ++j) {
+                        const int idx = base_i + j;
+                        const int idx2 = k - idx;
+                        if constexpr (UseConditionalAccess == ConditionalAccess::True) {
+                            ax2[j] = x_diff_abs[idx];
+                            bx2[j] = x_diff_abs[idx2];
+                            ay2[j] = x_diff_abs[idx];
+                            by2[j] = y_diff_abs[idx2];
+                            cy2[j] = y_diff_abs[idx];
+                            dy2[j] = y_diff_abs[idx2];
+                        } else {
+                            ax2[j] = aDigits_base[idx + a_offset];
+                            bx2[j] = aDigits_base[idx2 + a_offset];
+                            ay2[j] = aDigits_base[idx + a_offset];
+                            by2[j] = bDigits_base[idx2 + b_offset];
+                            cy2[j] = bDigits_base[idx + b_offset];
+                            dy2[j] = bDigits_base[idx2 + b_offset];
+                        }
+                    }
+                } else {
+                    load_buf_ptx<UseConditionalAccess, BatchSize>(
+                        base_i, k, aDigits_base, bDigits_base, a_offset, b_offset,
+                        x_diff_abs, y_diff_abs,
+                        ax2, bx2, ay2, by2, cy2, dy2);
+                }
+            };
 
-            // Compute products and accumulate
-            for (int j = 0; j < BatchSize; j++) {
-                uint64_t xx_product = xx_a_batch[j] * xx_b_batch[j];
-                uint64_t xy_product = xy_a_batch[j] * xy_b_batch[j];
-                uint64_t yy_product = yy_a_batch[j] * yy_b_batch[j];
+            auto load3 = [&](int base_i) {
+                if constexpr (SharkLoadAllInShared) {
+#pragma unroll
+                    for (int j = 0; j < BatchSize; ++j) {
+                        const int idx = base_i + j;
+                        const int idx2 = k - idx;
+                        if constexpr (UseConditionalAccess == ConditionalAccess::True) {
+                            ax3[j] = x_diff_abs[idx];
+                            bx3[j] = x_diff_abs[idx2];
+                            ay3[j] = x_diff_abs[idx];
+                            by3[j] = y_diff_abs[idx2];
+                            cy3[j] = y_diff_abs[idx];
+                            dy3[j] = y_diff_abs[idx2];
+                        } else {
+                            ax3[j] = aDigits_base[idx + a_offset];
+                            bx3[j] = aDigits_base[idx2 + a_offset];
+                            ay3[j] = aDigits_base[idx + a_offset];
+                            by3[j] = bDigits_base[idx2 + b_offset];
+                            cy3[j] = bDigits_base[idx + b_offset];
+                            dy3[j] = bDigits_base[idx2 + b_offset];
+                        }
+                    }
+                } else {
+                    load_buf_ptx<UseConditionalAccess, BatchSize>(
+                        base_i, k, aDigits_base, bDigits_base, a_offset, b_offset,
+                        x_diff_abs, y_diff_abs,
+                        ax3, bx3, ay3, by3, cy3, dy3);
+                }
+            };
 
-                xx_sum_low += xx_product;
-                if (xx_sum_low < xx_product) {
-                    xx_sum_high += 1;
+            auto compute0 = [&]() {
+#pragma unroll
+                for (int j = 0; j < BatchSize; ++j) {
+                    const uint64_t xx_a = (uint64_t)ax0[j], xx_b = (uint64_t)bx0[j];
+                    const uint64_t xy_a = (uint64_t)ay0[j], xy_b = (uint64_t)by0[j];
+                    const uint64_t yy_a = (uint64_t)cy0[j], yy_b = (uint64_t)dy0[j];
+                    uint64_t p;
+                    p = xx_a * xx_b; xx_sum_low += p; if (xx_sum_low < p) xx_sum_high += 1;
+                    p = xy_a * xy_b; xy_sum_low += p; if (xy_sum_low < p) xy_sum_high += 1;
+                    p = yy_a * yy_b; yy_sum_low += p; if (yy_sum_low < p) yy_sum_high += 1;
+                }
+                };
+            auto compute1 = [&]() {
+#pragma unroll
+                for (int j = 0; j < BatchSize; ++j) {
+                    const uint64_t xx_a = (uint64_t)ax1[j], xx_b = (uint64_t)bx1[j];
+                    const uint64_t xy_a = (uint64_t)ay1[j], xy_b = (uint64_t)by1[j];
+                    const uint64_t yy_a = (uint64_t)cy1[j], yy_b = (uint64_t)dy1[j];
+                    uint64_t p;
+                    p = xx_a * xx_b; xx_sum_low += p; if (xx_sum_low < p) xx_sum_high += 1;
+                    p = xy_a * xy_b; xy_sum_low += p; if (xy_sum_low < p) xy_sum_high += 1;
+                    p = yy_a * yy_b; yy_sum_low += p; if (yy_sum_low < p) yy_sum_high += 1;
+                }
+                };
+            auto compute2 = [&]() {
+#pragma unroll
+                for (int j = 0; j < BatchSize; ++j) {
+                    const uint64_t xx_a = (uint64_t)ax2[j], xx_b = (uint64_t)bx2[j];
+                    const uint64_t xy_a = (uint64_t)ay2[j], xy_b = (uint64_t)by2[j];
+                    const uint64_t yy_a = (uint64_t)cy2[j], yy_b = (uint64_t)dy2[j];
+                    uint64_t p;
+                    p = xx_a * xx_b; xx_sum_low += p; if (xx_sum_low < p) xx_sum_high += 1;
+                    p = xy_a * xy_b; xy_sum_low += p; if (xy_sum_low < p) xy_sum_high += 1;
+                    p = yy_a * yy_b; yy_sum_low += p; if (yy_sum_low < p) yy_sum_high += 1;
+                }
+                };
+            auto compute3 = [&]() {
+#pragma unroll
+                for (int j = 0; j < BatchSize; ++j) {
+                    const uint64_t xx_a = (uint64_t)ax3[j], xx_b = (uint64_t)bx3[j];
+                    const uint64_t xy_a = (uint64_t)ay3[j], xy_b = (uint64_t)by3[j];
+                    const uint64_t yy_a = (uint64_t)cy3[j], yy_b = (uint64_t)dy3[j];
+                    uint64_t p;
+                    p = xx_a * xx_b; xx_sum_low += p; if (xx_sum_low < p) xx_sum_high += 1;
+                    p = xy_a * xy_b; xy_sum_low += p; if (xy_sum_low < p) xy_sum_high += 1;
+                    p = yy_a * yy_b; yy_sum_low += p; if (yy_sum_low < p) yy_sum_high += 1;
+                }
+                };
+
+            int base_i = i;
+
+            if (nFull == 1) {
+                load0(base_i);
+                compute0();
+                batch_size = 1 * BatchSize;
+            } else if (nFull == 2) {
+                load0(base_i);
+                load1(base_i + BatchSize);
+                compute0();
+                compute1();
+                batch_size = 2 * BatchSize;
+            } else if (nFull == 3) {
+                load0(base_i);
+                load1(base_i + BatchSize);
+                load2(base_i + 2 * BatchSize);
+                compute0();
+                compute1();
+                compute2();
+                batch_size = 3 * BatchSize;
+            } else {
+                // nFull >= 4 → 4-stage steady-state pipeline
+                load0(base_i + 0 * BatchSize);
+                load1(base_i + 1 * BatchSize);
+                load2(base_i + 2 * BatchSize);
+                load3(base_i + 3 * BatchSize);
+
+                int next = 4;                      // next full batch index to prefetch
+                const int rounds = nFull / 4;      // number of full 4-batch rounds
+                const int rem = nFull % 4;      // remaining prefetched batches to compute after rounds
+
+                for (int r = 0; r < rounds; ++r) {
+                    compute0();
+                    if (next < nFull) {
+                        load0(base_i + next * BatchSize);
+                        ++next;
+                    }
+
+                    compute1();
+                    if (next < nFull) {
+                        load1(base_i + next * BatchSize);
+                        ++next;
+                    }
+
+                    compute2();
+                    if (next < nFull) {
+                        load2(base_i + next * BatchSize);
+                        ++next;
+                    }
+
+                    compute3();
+                    if (next < nFull) {
+                        load3(base_i + next * BatchSize);
+                        ++next;
+                    }
                 }
 
-                xy_sum_low += xy_product;
-                if (xy_sum_low < xy_product) {
-                    xy_sum_high += 1;
+                // Drain: compute remaining prefetched buffers (0..rem-1)
+                if (rem >= 1) {
+                    compute0();
                 }
 
-                yy_sum_low += yy_product;
-                if (yy_sum_low < yy_product) {
-                    yy_sum_high += 1;
+                if (rem >= 2) {
+                    compute1();
                 }
+
+                if (rem >= 3) {
+                    compute2();
+                }
+
+                batch_size = nFull * BatchSize;
             }
         } else {
             // Handle batch sizes < BatchSize without local arrays
@@ -1739,21 +2650,21 @@ __device__ SharkForceInlineReleaseOnly static void ProcessConvolutionBatch(
 
                 uint64_t xx_a, xx_b, xy_a, xy_b, yy_a, yy_b;
 
-                if constexpr (use_conditional_access == ConditionalAccess::True) {
+                if constexpr (UseConditionalAccess == ConditionalAccess::True) {
                     // Z1_temp case - when SharkLoadAllInShared is false, always use global arrays
-                    xx_a = global_x_diff_abs[idx];
-                    xx_b = global_x_diff_abs[k - idx];
-                    xy_a = global_x_diff_abs[idx];
-                    xy_b = global_y_diff_abs[k - idx];
-                    yy_a = global_y_diff_abs[idx];
-                    yy_b = global_y_diff_abs[k - idx];
+                    xx_a = x_diff_abs[idx];
+                    xx_b = x_diff_abs[k - idx];
+                    xy_a = x_diff_abs[idx];
+                    xy_b = y_diff_abs[k - idx];
+                    yy_a = y_diff_abs[idx];
+                    yy_b = y_diff_abs[k - idx];
                 } else {
                     // Z0 and Z2 cases
                     xx_a = aDigits_base[idx + a_offset];
                     xx_b = aDigits_base[k - idx + a_offset];
                     xy_a = aDigits_base[idx + a_offset];
                     xy_b = bDigits_base[k - idx + b_offset];
-                    yy_a = bDigits_base[idx + a_offset];
+                    yy_a = bDigits_base[idx + b_offset];
                     yy_b = bDigits_base[k - idx + b_offset];
                 }
 
@@ -2113,91 +3024,314 @@ static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             cg::wait(block);
         }
 
+        //constexpr bool UsePipelining = !SharkLoadAllInShared && (SharkKaratsubaBatchSize >= 4);
+        constexpr bool UsePipelining = false;
+
         // A single loop that covers 2*total_k elements
-        for (int idx = tid; idx < 3 * total_k; idx += stride) {
-            
-            // Check if idx < total_k => handle Z0, else handle Z2
-            if (idx < total_k) {
+        if constexpr (UsePipelining) {
+            for (int idx = tid, outerIteration = 0; idx < total_k; idx += stride, outerIteration++) {
                 // Z0 partial sums
-                const int k_base = idx;
-                int k = k_base; // shift to [0..total_k-1]
                 uint64_t xx_sum_low = 0ULL, xx_sum_high = 0ULL;
                 uint64_t xy_sum_low = 0ULL, xy_sum_high = 0ULL;
                 uint64_t yy_sum_low = 0ULL, yy_sum_high = 0ULL;
 
-                int i_start = (k < n1) ? 0 : (k - (n1 - 1));
-                int i_end = (k < n1) ? k : (n1 - 1);
+                int i_start = (idx < n1) ? 0 : (idx - (n1 - 1));
+                int i_end = (idx < n1) ? idx : (n1 - 1);
 
-                ProcessConvolutionBatch<SharkFloatParams, SharkKaratsubaBatchSize, ConditionalAccess::False, RecursionDepth>(
-                    grid, block, k, i_start, i_end, n1,
-                    aDigits, bDigits, 0, 0,  // Z0 uses base arrays with no offset
-                    xx_sum_low, xx_sum_high,
-                    xy_sum_low, xy_sum_high,
-                    yy_sum_low, yy_sum_high,
+                ProcessConvolutionBatch<
+                    SharkFloatParams,
+                    SharkKaratsubaBatchSize,
+                    UsePipelining,
+                    ConditionalAccess::False,
+                    RecursionDepth,
+                    ExecutionBlockBase,
+                    ExecutionNumBlocks>(
+
+                    grid,
+                    block,
+                    RelativeBlockIndex,
+                    outerIteration,
+                    idx,
+                    total_k,
+                    i_start,
+                    i_end,
+                    n1,
+                    aDigits,
+                    bDigits,
+                    0,
+                    0,  // Z0 uses base arrays with no offset
+                    xx_sum_low,
+                    xx_sum_high,
+                    xy_sum_low,
+                    xy_sum_high,
+                    yy_sum_low,
+                    yy_sum_high,
                     shared_data);
 
-                int out_idx = k * 2;
+                int out_idx = idx * 2;
                 Z0_OutDigitsXX[out_idx] = xx_sum_low;
                 Z0_OutDigitsXX[out_idx + 1] = xx_sum_high;
                 Z0_OutDigitsXY[out_idx] = xy_sum_low;
                 Z0_OutDigitsXY[out_idx + 1] = xy_sum_high;
                 Z0_OutDigitsYY[out_idx] = yy_sum_low;
                 Z0_OutDigitsYY[out_idx + 1] = yy_sum_high;
-            } else if (idx < 2 * total_k) {
+            }
+
+            block.sync();
+
+            for (int idx = tid, outerIteration = 0; idx < total_k; idx += stride, outerIteration++) {
                 // Z2 partial sums
-                const int k_base = idx - total_k; // shift to [0..total_k-1]
-                //int k = (k_base + total_k / 3) % total_k;
-                int k = k_base;
                 uint64_t xx_sum_low = 0ULL, xx_sum_high = 0ULL;
                 uint64_t xy_sum_low = 0ULL, xy_sum_high = 0ULL;
                 uint64_t yy_sum_low = 0ULL, yy_sum_high = 0ULL;
 
-                int i_start = (k < n2) ? 0 : (k - (n2 - 1));
-                int i_end = (k < n2) ? k : (n2 - 1);
+                int i_start = (idx < n2) ? 0 : (idx - (n2 - 1));
+                int i_end = (idx < n2) ? idx : (n2 - 1);
 
-                ProcessConvolutionBatch<SharkFloatParams, SharkKaratsubaBatchSize, ConditionalAccess::False, RecursionDepth>(
-                    grid, block, k, i_start, i_end, n2,
-                    aDigits, bDigits, n1, n1,  // Z2 uses arrays with n1 offset
-                    xx_sum_low, xx_sum_high,
-                    xy_sum_low, xy_sum_high,
-                    yy_sum_low, yy_sum_high,
+                ProcessConvolutionBatch<
+                    SharkFloatParams,
+                    SharkKaratsubaBatchSize,
+                    UsePipelining,
+                    ConditionalAccess::False,
+                    RecursionDepth,
+                    ExecutionBlockBase,
+                    ExecutionNumBlocks>(
+
+                    grid,
+                    block,
+                    RelativeBlockIndex,
+                    outerIteration,
+                    idx,
+                    total_k,
+                    i_start,
+                    i_end,
+                    n2,
+                    aDigits,
+                    bDigits,
+                    n1,
+                    n1,  // Z2 uses arrays with n1 offset
+                    xx_sum_low,
+                    xx_sum_high,
+                    xy_sum_low,
+                    xy_sum_high,
+                    yy_sum_low,
+                    yy_sum_high,
                     shared_data);
 
-                int out_idx = k * 2;
+                int out_idx = idx * 2;
                 Z2_OutDigitsXX[out_idx] = xx_sum_low;
                 Z2_OutDigitsXX[out_idx + 1] = xx_sum_high;
                 Z2_OutDigitsXY[out_idx] = xy_sum_low;
                 Z2_OutDigitsXY[out_idx + 1] = xy_sum_high;
                 Z2_OutDigitsYY[out_idx] = yy_sum_low;
                 Z2_OutDigitsYY[out_idx + 1] = yy_sum_high;
-            } else {
-                const int k_base = idx - 2 * total_k; // shift to [0..total_k-1]
-                //int k = (k_base + 2 * total_k / 3) % total_k;
-                int k = k_base;
+            }
+
+            block.sync();
+
+            for (int idx = tid, outerIteration = 0; idx < total_k; idx += stride, outerIteration++) {
                 uint64_t xx_sum_low = 0ULL, xx_sum_high = 0ULL;
                 uint64_t xy_sum_low = 0ULL, xy_sum_high = 0ULL;
                 uint64_t yy_sum_low = 0ULL, yy_sum_high = 0ULL;
 
-                int i_start = (k < MaxHalfN) ? 0 : (k - (MaxHalfN - 1));
-                int i_end = (k < MaxHalfN) ? k : (MaxHalfN - 1);
+                int i_start = (idx < MaxHalfN) ? 0 : (idx - (MaxHalfN - 1));
+                int i_end = (idx < MaxHalfN) ? idx : (MaxHalfN - 1);
 
-                ProcessConvolutionBatch<SharkFloatParams, SharkKaratsubaBatchSize, ConditionalAccess::True, RecursionDepth>(
-                    grid, block, k, i_start, i_end, MaxHalfN,
-                    nullptr, nullptr, 0, 0,  // Not used for Z1_temp
-                    xx_sum_low, xx_sum_high,
-                    xy_sum_low, xy_sum_high,
-                    yy_sum_low, yy_sum_high,
+                ProcessConvolutionBatch<
+                    SharkFloatParams,
+                    SharkKaratsubaBatchSize,
+                    UsePipelining,
+                    ConditionalAccess::True,
+                    RecursionDepth,
+                    ExecutionBlockBase,
+                    ExecutionNumBlocks>(
+
+                    grid, block,
+                    RelativeBlockIndex,
+                    outerIteration,
+                    idx,
+                    total_k,
+                    i_start,
+                    i_end,
+                    MaxHalfN,
+                    nullptr,
+                    nullptr,
+                    0,
+                    0,  // Not used for Z1_temp
+                    xx_sum_low,
+                    xx_sum_high,
+                    xy_sum_low,
+                    xy_sum_high,
+                    yy_sum_low,
+                    yy_sum_high,
                     shared_data,
-                    x_diff_abs, y_diff_abs,
-                    global_x_diff_abs, global_y_diff_abs);
+                    SharkLoadAllInShared ? x_diff_abs : global_x_diff_abs,
+                    SharkLoadAllInShared ? y_diff_abs : global_y_diff_abs);
 
-                int out_idx = k * 2;
+                int out_idx = idx * 2;
                 Z1_temp_digitsXX[out_idx] = xx_sum_low;
                 Z1_temp_digitsXX[out_idx + 1] = xx_sum_high;
                 Z1_temp_digitsXY[out_idx] = xy_sum_low;
                 Z1_temp_digitsXY[out_idx + 1] = xy_sum_high;
                 Z1_temp_digitsYY[out_idx] = yy_sum_low;
                 Z1_temp_digitsYY[out_idx + 1] = yy_sum_high;
+            }
+
+            block.sync();
+
+        } else {
+            constexpr int outerIteration = 0;
+            for (int idx = tid; idx < total_k * 3; idx += stride) {
+
+                // Check if idx < total_k => handle Z0, else handle Z2
+                if (idx < total_k) {
+                    // Z0 partial sums
+                    const int k_base = idx;
+                    int k = k_base; // shift to [0..total_k-1]
+                    uint64_t xx_sum_low = 0ULL, xx_sum_high = 0ULL;
+                    uint64_t xy_sum_low = 0ULL, xy_sum_high = 0ULL;
+                    uint64_t yy_sum_low = 0ULL, yy_sum_high = 0ULL;
+
+                    int i_start = (k < n1) ? 0 : (k - (n1 - 1));
+                    int i_end = (k < n1) ? k : (n1 - 1);
+
+                    ProcessConvolutionBatch<
+                        SharkFloatParams,
+                        SharkKaratsubaBatchSize,
+                        UsePipelining,
+                        ConditionalAccess::False,
+                        RecursionDepth,
+                        ExecutionBlockBase,
+                        ExecutionNumBlocks>(
+
+                        grid,
+                        block,
+                        RelativeBlockIndex,
+                        outerIteration,
+                        k,
+                        total_k,
+                        i_start,
+                        i_end,
+                        n1,
+                        aDigits,
+                        bDigits,
+                        0,
+                        0,  // Z0 uses base arrays with no offset
+                        xx_sum_low,
+                        xx_sum_high,
+                        xy_sum_low,
+                        xy_sum_high,
+                        yy_sum_low,
+                        yy_sum_high,
+                        shared_data);
+
+                    int out_idx = k * 2;
+                    Z0_OutDigitsXX[out_idx] = xx_sum_low;
+                    Z0_OutDigitsXX[out_idx + 1] = xx_sum_high;
+                    Z0_OutDigitsXY[out_idx] = xy_sum_low;
+                    Z0_OutDigitsXY[out_idx + 1] = xy_sum_high;
+                    Z0_OutDigitsYY[out_idx] = yy_sum_low;
+                    Z0_OutDigitsYY[out_idx + 1] = yy_sum_high;
+                } else if (idx < 2 * total_k) {
+                    // Z2 partial sums
+                    const int k_base = idx - total_k; // shift to [0..total_k-1]
+                    //int k = (k_base + total_k / 3) % total_k;
+                    int k = k_base;
+                    uint64_t xx_sum_low = 0ULL, xx_sum_high = 0ULL;
+                    uint64_t xy_sum_low = 0ULL, xy_sum_high = 0ULL;
+                    uint64_t yy_sum_low = 0ULL, yy_sum_high = 0ULL;
+
+                    int i_start = (k < n2) ? 0 : (k - (n2 - 1));
+                    int i_end = (k < n2) ? k : (n2 - 1);
+
+                    ProcessConvolutionBatch<
+                        SharkFloatParams,
+                        SharkKaratsubaBatchSize,
+                        UsePipelining,
+                        ConditionalAccess::False,
+                        RecursionDepth,
+                        ExecutionBlockBase,
+                        ExecutionNumBlocks>(
+
+                        grid,
+                        block,
+                        RelativeBlockIndex,
+                        outerIteration,
+                        k,
+                        total_k,
+                        i_start,
+                        i_end,
+                        n2,
+                        aDigits,
+                        bDigits,
+                        n1,
+                        n1,  // Z2 uses arrays with n1 offset
+                        xx_sum_low,
+                        xx_sum_high,
+                        xy_sum_low,
+                        xy_sum_high,
+                        yy_sum_low,
+                        yy_sum_high,
+                        shared_data);
+
+                    int out_idx = k * 2;
+                    Z2_OutDigitsXX[out_idx] = xx_sum_low;
+                    Z2_OutDigitsXX[out_idx + 1] = xx_sum_high;
+                    Z2_OutDigitsXY[out_idx] = xy_sum_low;
+                    Z2_OutDigitsXY[out_idx + 1] = xy_sum_high;
+                    Z2_OutDigitsYY[out_idx] = yy_sum_low;
+                    Z2_OutDigitsYY[out_idx + 1] = yy_sum_high;
+                } else {
+                    const int k_base = idx - 2 * total_k; // shift to [0..total_k-1]
+                    //int k = (k_base + 2 * total_k / 3) % total_k;
+                    int k = k_base;
+                    uint64_t xx_sum_low = 0ULL, xx_sum_high = 0ULL;
+                    uint64_t xy_sum_low = 0ULL, xy_sum_high = 0ULL;
+                    uint64_t yy_sum_low = 0ULL, yy_sum_high = 0ULL;
+
+                    int i_start = (k < MaxHalfN) ? 0 : (k - (MaxHalfN - 1));
+                    int i_end = (k < MaxHalfN) ? k : (MaxHalfN - 1);
+
+                    ProcessConvolutionBatch<
+                        SharkFloatParams,
+                        SharkKaratsubaBatchSize,
+                        UsePipelining,
+                        ConditionalAccess::True,
+                        RecursionDepth,
+                        ExecutionBlockBase,
+                        ExecutionNumBlocks>(
+
+                        grid,
+                        block,
+                        RelativeBlockIndex,
+                        outerIteration,
+                        k,
+                        total_k,
+                        i_start,
+                        i_end,
+                        MaxHalfN,
+                        nullptr,
+                        nullptr,
+                        0,
+                        0,  // Not used for Z1_temp
+                        xx_sum_low,
+                        xx_sum_high,
+                        xy_sum_low,
+                        xy_sum_high,
+                        yy_sum_low,
+                        yy_sum_high,
+                        shared_data,
+                        SharkLoadAllInShared ? x_diff_abs : global_x_diff_abs,
+                        SharkLoadAllInShared ? y_diff_abs : global_y_diff_abs);
+
+                    int out_idx = k * 2;
+                    Z1_temp_digitsXX[out_idx] = xx_sum_low;
+                    Z1_temp_digitsXX[out_idx + 1] = xx_sum_high;
+                    Z1_temp_digitsXY[out_idx] = xy_sum_low;
+                    Z1_temp_digitsXY[out_idx + 1] = xy_sum_high;
+                    Z1_temp_digitsYY[out_idx] = yy_sum_low;
+                    Z1_temp_digitsYY[out_idx + 1] = yy_sum_high;
+                }
             }
         }
     } else {
@@ -2776,6 +3910,8 @@ static __device__ void MultiplyHelperKaratsubaV2Separates(
                 block_carry_outs,
                 globalCarryCheck
             );
+
+            grid.sync();
         } else {
             SerialCarryPropagation<SharkFloatParams>(
                 (uint64_t *)shared_data,

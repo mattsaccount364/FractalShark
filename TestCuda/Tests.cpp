@@ -671,6 +671,7 @@ void ChecksumsCheck (
                 std::cerr << "GPU:" << std::endl;
 
                 // Print all fields of cuda:
+                std::cerr << std::dec;
                 std::cerr << "Initialized: " << cuda.Initialized << std::endl;
                 std::cerr << "Block: " << cuda.Block << std::endl;
                 std::cerr << "Thread: " << cuda.Thread << std::endl;

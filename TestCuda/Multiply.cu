@@ -792,60 +792,158 @@ Subtract128(
 }
 
 template<class SharkFloatParams>
-static __device__ SharkForceInlineReleaseOnly void SerialCarryPropagation(
+static __device__ SharkForceInlineReleaseOnly void SerialCarryPropagationThread0 (
     uint64_t *SharkRestrict shared_data,
     cg::grid_group &grid,
     cg::thread_block &block,
     int thread_start_idx,
     int thread_end_idx,
-    int Convolution_offsetXY, // TODO just use pointers
-    int Result_offsetXY,
-    uint64_t *SharkRestrict block_carry_outs,
-    uint64_t *SharkRestrict tempProducts,
-    uint64_t *SharkRestrict globalCarryCheck) {
+    const uint64_t *SharkRestrict final128XX,
+    const uint64_t *SharkRestrict final128XY,
+    const uint64_t *SharkRestrict final128YY,
+    uint64_t *SharkRestrict resultXX,
+    uint64_t *SharkRestrict resultXY,
+    uint64_t *SharkRestrict resultYY)
+{
+    constexpr int total_result_digits = 2 * SharkFloatParams::GlobalNumUint32;
 
-    auto *SharkRestrict shared_carries = shared_data;
+    // Stateless lambda to process one component (XX, XY, or YY)
+    auto ProcessComponent = [](
+        const uint64_t *final128,
+        uint64_t *result,
+        int total_digits) -> uint64_t {
 
-    if (block.thread_index().x == 0 && block.group_index().x == 0) {
-        uint64_t local_carry = 0;
+            uint64_t local_carry = 0;
 
-        for (int idx = 0; idx < SharkFloatParams::GlobalNumUint32 * 2 + 1; ++idx) {
-            int sum_low_idx = Convolution_offsetXY + idx * 2;
-            int sum_high_idx = sum_low_idx + 1;
+            // Process all digits serially from lowest to highest
+            for (int idx = 0; idx < total_digits; ++idx) {
+                int sum_low_idx = idx * 2;
+                int sum_high_idx = sum_low_idx + 1;
 
-            uint64_t sum_low = tempProducts[sum_low_idx];     // Lower 64 bits
-            uint64_t sum_high = tempProducts[sum_high_idx];   // Higher 64 bits
+                uint64_t sum_low = final128[sum_low_idx];
+                uint64_t sum_high = final128[sum_high_idx];
 
-            // Add local carry to sum_low
-            bool new_sum_low_negative = false;
-            uint64_t new_sum_low = sum_low + local_carry;
+                // Add local carry to sum_low
+                bool new_sum_low_negative = false;
+                uint64_t new_sum_low = sum_low + local_carry;
 
-            // Extract one 32-bit digit from new_sum_low
-            auto digit = static_cast<uint32_t>(new_sum_low & 0xFFFFFFFFULL);
-            tempProducts[Result_offsetXY + idx] = digit;
+                // Extract one 32-bit digit from new_sum_low
+                auto digit = static_cast<uint32_t>(new_sum_low & 0xFFFFFFFFULL);
+                result[idx] = digit;
 
-            bool local_carry_negative = ((local_carry & (1ULL << 63)) != 0);
-            local_carry = 0ULL;
+                bool local_carry_negative = ((local_carry & (1ULL << 63)) != 0);
+                local_carry = 0ULL;
 
-            if (!local_carry_negative && new_sum_low < sum_low) {
-                local_carry = 1ULL << 32;
-            } else if (local_carry_negative && new_sum_low > sum_low) {
-                new_sum_low_negative = (new_sum_low & 0x8000'0000'0000'0000) != 0;
+                if (!local_carry_negative && new_sum_low < sum_low) {
+                    local_carry = 1ULL << 32;
+                } else if (local_carry_negative && new_sum_low > sum_low) {
+                    new_sum_low_negative = (new_sum_low & 0x8000'0000'0000'0000ULL) != 0;
+                }
+
+                // Update local_carry
+                if (new_sum_low_negative) {
+                    // Shift sum_high by 32 bits and add carry_from_low
+                    uint64_t upper_new_sum_low = new_sum_low >> 32;
+                    upper_new_sum_low |= 0xFFFF'FFFF'0000'0000ULL;
+                    local_carry += upper_new_sum_low;
+                    local_carry += sum_high << 32;
+                } else {
+                    local_carry += new_sum_low >> 32;
+                    local_carry += sum_high << 32;
+                }
+
+                /*
+                int sum_low_idx = idx * 2;
+                int sum_high_idx = sum_low_idx + 1;
+
+                uint64_t sum_low = final128[sum_low_idx];
+                uint64_t sum_high = final128[sum_high_idx];
+
+                // Add local carry to sum_low
+                uint64_t new_sum_low = sum_low + local_carry;
+
+                // Extract one 32-bit digit from new_sum_low
+                uint32_t digit = static_cast<uint32_t>(new_sum_low & 0xFFFFFFFFULL);
+                result[idx] = digit;
+
+                bool local_carry_negative = ((local_carry & (1ULL << 63)) != 0);
+                local_carry = 0ULL;
+
+                if (!local_carry_negative && new_sum_low < sum_low) {
+                    local_carry = 1ULL << 32;
+                } else if (local_carry_negative && new_sum_low > sum_low) {
+                    bool new_sum_low_negative = (new_sum_low & 0x8000000000000000ULL) != 0;
+                    if (new_sum_low_negative) {
+                        uint64_t upper_new_sum_low = new_sum_low >> 32;
+                        upper_new_sum_low |= 0xFFFFFFFF00000000ULL;
+                        local_carry += upper_new_sum_low;
+                        local_carry += sum_high << 32;
+                    } else {
+                        local_carry += new_sum_low >> 32;
+                        local_carry += sum_high << 32;
+                    }
+                } else {
+                    // Normal case
+                    local_carry += new_sum_low >> 32;
+                    local_carry += sum_high << 32;
+                }
+                */
             }
 
-            // Update local_carry
-            if (new_sum_low_negative) {
-                // Shift sum_high by 32 bits and add carry_from_low
-                uint64_t upper_new_sum_low = new_sum_low >> 32;
-                upper_new_sum_low |= 0xFFFF'FFFF'0000'0000;
-                local_carry += upper_new_sum_low;
-                local_carry += sum_high << 32;
-            } else {
-                local_carry += new_sum_low >> 32;
-                local_carry += sum_high << 32;
-            }
-        }
+            return local_carry;
+        };
+
+    // Process each component using the lambda
+    uint64_t final_carry_xx = ProcessComponent(final128XX, resultXX, total_result_digits);
+    uint64_t final_carry_xy = ProcessComponent(final128XY, resultXY, total_result_digits);
+    uint64_t final_carry_yy = ProcessComponent(final128YY, resultYY, total_result_digits);
+
+    // Store final carries
+    if (final_carry_xx > 0) {
+        resultXX[total_result_digits] = static_cast<uint32_t>(final_carry_xx & 0xFFFFFFFFULL);
     }
+    if (final_carry_xy > 0) {
+        resultXY[total_result_digits] = static_cast<uint32_t>(final_carry_xy & 0xFFFFFFFFULL);
+    }
+    if (final_carry_yy > 0) {
+        resultYY[total_result_digits] = static_cast<uint32_t>(final_carry_yy & 0xFFFFFFFFULL);
+    }
+}
+
+template<class SharkFloatParams>
+static __device__ SharkForceInlineReleaseOnly void SerialCarryPropagation (
+    uint64_t *SharkRestrict shared_data,
+    cg::grid_group &grid,
+    cg::thread_block &block,
+    int thread_start_idx,
+    int thread_end_idx,
+    const uint64_t *SharkRestrict final128XX,
+    const uint64_t *SharkRestrict final128XY,
+    const uint64_t *SharkRestrict final128YY,
+    uint64_t *SharkRestrict resultXX,
+    uint64_t *SharkRestrict resultXY,
+    uint64_t *SharkRestrict resultYY,
+    uint64_t *SharkRestrict block_carry_outs,
+    uint64_t *SharkRestrict /*globalCarryCheck*/) {
+
+    // Only execute on a single thread to maintain serial behavior
+    if (block.thread_index().x == 0 && block.group_index().x == 0) {
+        SerialCarryPropagationThread0<SharkFloatParams>(
+            shared_data,
+            grid,
+            block,
+            thread_start_idx,
+            thread_end_idx,
+            final128XX,
+            final128XY,
+            final128YY,
+            resultXX,
+            resultXY,
+            resultYY);
+    }
+
+    // Synchronize to ensure serial work is complete before other threads continue
+    grid.sync();
 }
 
 template<class SharkFloatParams>
@@ -1051,8 +1149,9 @@ static __device__ SharkForceInlineReleaseOnly void CarryPropagation (
         shared_carries[block.thread_index().x + 0 * MaxThreads] = local_carry_xx;
         shared_carries[block.thread_index().x + 1 * MaxThreads] = local_carry_xy;
         shared_carries[block.thread_index().x + 2 * MaxThreads] = local_carry_yy;
-        block.sync();
-
+        
+        // This sync is required to address the *carries_remaining_global = 0; assignment
+        // racing with the atomicAdd below.
         grid.sync();
 
         // The block's carry-out is the carry from the last thread
@@ -2582,7 +2681,7 @@ static __device__ void MultiplyHelperKaratsubaV2Separates(
     if constexpr (!SharkFloatParams::DisableCarryPropagation) {
 
         DefineCarryDefinitions();
-        constexpr bool UseParallelCarry = true;
+        constexpr bool UseParallelCarry = false;
         uint64_t *globalCarryCheck = &tempProducts[GlobalCarryOffset];
 
         if constexpr (UseParallelCarry) {
@@ -2610,11 +2709,14 @@ static __device__ void MultiplyHelperKaratsubaV2Separates(
                 block,
                 thread_start_idx,
                 thread_end_idx,
-                Convolution_offsetXY, // TODO
-                Result_offsetXY,
-                block_carry_outs,
-                tempProducts,
-                globalCarryCheck
+                final128XX,
+                final128XY,
+                final128YY,
+                resultXX,
+                resultXY,
+                resultYY,
+                nullptr,
+                nullptr
             );
 
             grid.sync();

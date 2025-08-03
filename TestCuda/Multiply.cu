@@ -946,6 +946,24 @@ static __device__ SharkForceInlineReleaseOnly void SerialCarryPropagation (
     grid.sync();
 }
 
+static __device__ int
+CarryGlobalToIndex (
+    const bool PriorIndex,
+    const int MaxBlocks,
+    const int block_idx)
+{
+    return (block_idx - (PriorIndex ? 1 : 0)) * 3;
+}
+
+static __device__ int
+CarrySharedToIndex (
+    const bool PriorIndex,
+    const int MaxThreads,
+    const int thread_idx)
+{
+    return (thread_idx - (PriorIndex ? 1 : 0)) * 3;
+}
+
 template<class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly void CarryPropagation (
     uint64_t *SharkRestrict shared_data,
@@ -981,6 +999,9 @@ static __device__ SharkForceInlineReleaseOnly void CarryPropagation (
             shared_carries[i] = 0;
         }
     }
+
+    ok so the problem is that thread 0 is fine, thread 1 is fine, and thread 2 is stuck here.
+        thread 1 successfully writes its carry out to shared memory below
     grid.sync();
 
     const auto MaxBlocks = grid.group_dim().x;
@@ -1052,17 +1073,33 @@ static __device__ SharkForceInlineReleaseOnly void CarryPropagation (
         LocalCarry(local_carry_yy, yy_sum_low, yy_sum_high, resultYY, idx);
     }
 
-    if (block.thread_index().x == SharkFloatParams::GlobalThreadsPerBlock - 1) {
-        block_carry_outs[block.group_index().x + 0 * MaxBlocks] = local_carry_xx;
-        block_carry_outs[block.group_index().x + 1 * MaxBlocks] = local_carry_xy;
-        block_carry_outs[block.group_index().x + 2 * MaxBlocks] = local_carry_yy;
-        shared_carries[block.thread_index().x + 0 * MaxThreads] = 0;
-        shared_carries[block.thread_index().x + 1 * MaxThreads] = 0;
-        shared_carries[block.thread_index().x + 2 * MaxThreads] = 0;
+    const auto threadIndexInBlock = block.thread_index().x;
+    const auto blockIndexInGrid = block.group_index().x;
+    const auto carrySharedToIndex = CarrySharedToIndex(
+        false,
+        MaxThreads,
+        threadIndexInBlock);
+    if (threadIndexInBlock == SharkFloatParams::GlobalThreadsPerBlock - 1) {
+        const auto carryGlobalToIndex = CarryGlobalToIndex(
+            false,
+            MaxBlocks,
+            block.group_index().x);
+
+        block_carry_outs[carryGlobalToIndex + 0] = local_carry_xx;
+        block_carry_outs[carryGlobalToIndex + 1] = local_carry_xy;
+        block_carry_outs[carryGlobalToIndex + 2] = local_carry_yy;
+
+        shared_carries[carrySharedToIndex + 0] = local_carry_xx;
+        shared_carries[carrySharedToIndex + 1] = local_carry_xy;
+        shared_carries[carrySharedToIndex + 2] = local_carry_yy;
     } else {
-        shared_carries[block.thread_index().x + 0 * MaxThreads] = local_carry_xx;
-        shared_carries[block.thread_index().x + 1 * MaxThreads] = local_carry_xy;
-        shared_carries[block.thread_index().x + 2 * MaxThreads] = local_carry_yy;
+        shared_carries[carrySharedToIndex + 0] = local_carry_xx;
+        shared_carries[carrySharedToIndex + 1] = local_carry_xy;
+
+        thread 1 writes successfully but thread 2 overwrites it because its behind by 1 grid.sync call:
+        Refer to notepadd++ output, you can see index 4 is the failed one.
+            Carry is non-zero here but 0 at the next breakpoint because thread 2 is overwriting it wrongly.
+        shared_carries[carrySharedToIndex + 2] = local_carry_yy;
     }
 
     // Inter-Block Carry Propagation
@@ -1081,6 +1118,7 @@ static __device__ SharkForceInlineReleaseOnly void CarryPropagation (
         // The warning here is about the constant template parameter not being used in
         // the parameter list.  I don't understand why it's even a warning?  Maybe because
         // it cannot be inferred?  It's clearly being used in the body?
+
 #pragma nv_diag_suppress 445
         auto LocalCarryIn = []<int XX_XY_YY>(
             cg::thread_block & block,
@@ -1092,49 +1130,74 @@ static __device__ SharkForceInlineReleaseOnly void CarryPropagation (
 
             local_carry = 0;
             if (block.thread_index().x == 0 && block.group_index().x > 0) {
-                local_carry = block_carry_outs[block.group_index().x + XX_XY_YY * MaxBlocks - 1];
+                const auto block_carry_outs_idx = CarryGlobalToIndex(
+                    true,
+                    MaxBlocks,
+                    block.group_index().x) + XX_XY_YY;
+                local_carry = block_carry_outs[block_carry_outs_idx];
             } else {
                 if (block.thread_index().x > 0) {
-                    local_carry = shared_carries[block.thread_index().x + XX_XY_YY * MaxThreads - 1];
+                    const auto shared_carries_idx = CarrySharedToIndex(
+                        true,
+                        MaxThreads,
+                        block.thread_index().x) + XX_XY_YY;
+                    local_carry = shared_carries[shared_carries_idx];
                 }
             }
             };
 #pragma nv_diag_default 445
 
         // Initialize local carry for this pass
-        LocalCarryIn.template operator()<0>(block, MaxBlocks, MaxThreads, local_carry_xx, block_carry_outs, shared_carries);
-        LocalCarryIn.template operator()<1>(block, MaxBlocks, MaxThreads, local_carry_xy, block_carry_outs, shared_carries);
-        LocalCarryIn.template operator()<2>(block, MaxBlocks, MaxThreads, local_carry_yy, block_carry_outs, shared_carries);
+        LocalCarryIn.template operator()<0>(
+            block,
+            MaxBlocks,
+            MaxThreads,
+            local_carry_xx,
+            block_carry_outs,
+            shared_carries);
+        LocalCarryIn.template operator()<1>(
+            block,
+            MaxBlocks,
+            MaxThreads,
+            local_carry_xy,
+            block_carry_outs,
+            shared_carries);
+        LocalCarryIn.template operator()<2>(
+            block,
+            MaxBlocks,
+            MaxThreads,
+            local_carry_yy,
+            block_carry_outs,
+            shared_carries);
+
+        auto LocalCarry = [](uint64_t *SharkRestrict resultXY, uint64_t &local_carry, int idx) {
+            // Read the previously stored digit
+            const uint32_t digit = resultXY[idx];
+
+            // Add local_carry to digit
+            const uint64_t sum = static_cast<uint64_t>(digit) + local_carry;
+
+            // Update digit
+            resultXY[idx] = static_cast<uint32_t>(sum & 0xFFFFFFFFULL);
+
+            local_carry = 0;
+
+            // Check negativity of the 64-bit sum
+            // If "sum" is negative, its top bit is set. 
+            const bool sum_is_negative = ((sum & (1ULL << 63)) != 0ULL);
+            if (sum_is_negative) {
+                // sign-extend the top 32 bits
+                uint64_t upper_bits = (sum >> 32);
+                upper_bits |= 0xFFFF'FFFF'0000'0000ULL;  // set top 32 bits to 1
+                local_carry += upper_bits;               // incorporate sign-extended bits
+            } else {
+                // normal path: just add top 32 bits
+                local_carry += (sum >> 32);
+            }
+            };
 
         // Each thread processes its assigned digits
         for (int idx = thread_start_idx; idx < thread_end_idx; ++idx) {
-
-            auto LocalCarry = [](uint64_t *SharkRestrict resultXY, uint64_t &local_carry, int idx) {
-                // Read the previously stored digit
-                const uint32_t digit = resultXY[idx];
-
-                // Add local_carry to digit
-                const uint64_t sum = static_cast<uint64_t>(digit) + local_carry;
-
-                // Update digit
-                resultXY[idx] = static_cast<uint32_t>(sum & 0xFFFFFFFFULL);
-
-                local_carry = 0;
-
-                // Check negativity of the 64-bit sum
-                // If "sum" is negative, its top bit is set. 
-                const bool sum_is_negative = ((sum & (1ULL << 63)) != 0ULL);
-                if (sum_is_negative) {
-                    // sign-extend the top 32 bits
-                    uint64_t upper_bits = (sum >> 32);
-                    upper_bits |= 0xFFFF'FFFF'0000'0000ULL;  // set top 32 bits to 1
-                    local_carry += upper_bits;               // incorporate sign-extended bits
-                } else {
-                    // normal path: just add top 32 bits
-                    local_carry += (sum >> 32);
-                }
-            };
-
             // Process xx_sum
             LocalCarry(resultXX, local_carry_xx, idx);
 
@@ -1146,28 +1209,37 @@ static __device__ SharkForceInlineReleaseOnly void CarryPropagation (
         }
 
         // TODO should we interleave each of these instead of separating them?  probably?
-        shared_carries[block.thread_index().x + 0 * MaxThreads] = local_carry_xx;
-        shared_carries[block.thread_index().x + 1 * MaxThreads] = local_carry_xy;
-        shared_carries[block.thread_index().x + 2 * MaxThreads] = local_carry_yy;
-        
+        const auto carrySharedToCurIndex = CarrySharedToIndex(
+            false,
+            MaxThreads,
+            block.thread_index().x);
+        const auto carryGlobalToCurIndex = CarryGlobalToIndex(
+            false,
+            MaxBlocks,
+            block.group_index().x);
+
+        shared_carries[carrySharedToCurIndex + 0] = local_carry_xx;
+        shared_carries[carrySharedToCurIndex + 1] = local_carry_xy;
+        shared_carries[carrySharedToCurIndex + 2] = local_carry_yy;
+
         // This sync is required to address the *carries_remaining_global = 0; assignment
         // racing with the atomicAdd below.
         grid.sync();
 
         // The block's carry-out is the carry from the last thread
-        const auto temp_xx = shared_carries[block.thread_index().x + 0 * MaxThreads];
+        const auto temp_xx = shared_carries[carrySharedToCurIndex + 0];
         if (block.thread_index().x == SharkFloatParams::GlobalThreadsPerBlock - 1) {
-            block_carry_outs[block.group_index().x + 0 * MaxBlocks] = temp_xx;
+            block_carry_outs[carryGlobalToCurIndex + 0] = temp_xx;
         }
 
-        const auto temp_xy = shared_carries[block.thread_index().x + 1 * MaxThreads];
+        const auto temp_xy = shared_carries[carrySharedToCurIndex + 1];
         if (block.thread_index().x == SharkFloatParams::GlobalThreadsPerBlock - 1) {
-            block_carry_outs[block.group_index().x + 1 * MaxBlocks] = temp_xy;
+            block_carry_outs[carryGlobalToCurIndex + 1] = temp_xy;
         }
 
-        const auto temp_yy = shared_carries[block.thread_index().x + 2 * MaxThreads];
+        const auto temp_yy = shared_carries[carrySharedToCurIndex + 2];
         if (block.thread_index().x == SharkFloatParams::GlobalThreadsPerBlock - 1) {
-            block_carry_outs[block.group_index().x + 2 * MaxBlocks] = temp_yy;
+            block_carry_outs[carryGlobalToCurIndex + 2] = temp_yy;
         }
 
         if (temp_xx != 0 || temp_xy != 0 || temp_yy != 0) {
@@ -1190,19 +1262,26 @@ static __device__ SharkForceInlineReleaseOnly void CarryPropagation (
     // TODO is this correct?  remove?
     // Handle final carry-out
     if (block.thread_index().x == 0 && block.group_index().x == grid.dim_blocks().x - 1) {
-        uint64_t final_carry_xx = block_carry_outs[block.group_index().x + 0 * MaxBlocks];
+        const auto carryGlobalToIndex = CarryGlobalToIndex(
+            false,
+            MaxBlocks,
+            block.group_index().x);
+        const auto block_idx_xx = carryGlobalToIndex + 0;
+        uint64_t final_carry_xx = block_carry_outs[block_idx_xx];
         if (final_carry_xx > 0) {
             // Store the final carry as an additional digit
             resultXX[total_result_digits] = static_cast<uint32_t>(final_carry_xx & 0xFFFFFFFFULL);
         }
 
-        uint64_t final_carry_xy = block_carry_outs[block.group_index().x + 1 * MaxBlocks];
+        const auto block_idx_xy = carryGlobalToIndex + 1;
+        uint64_t final_carry_xy = block_carry_outs[block_idx_xy];
         if (final_carry_xy > 0) {
             // Store the final carry as an additional digit
             resultXY[total_result_digits] = static_cast<uint32_t>(final_carry_xy & 0xFFFFFFFFULL);
         }
 
-        uint64_t final_carry_yy = block_carry_outs[block.group_index().x + 2 * MaxBlocks];
+        const auto block_idx_yy = carryGlobalToIndex + 2;
+        uint64_t final_carry_yy = block_carry_outs[block_idx_yy];
         if (final_carry_yy > 0) {
             // Store the final carry as an additional digit
             resultYY[total_result_digits] = static_cast<uint32_t>(final_carry_yy & 0xFFFFFFFFULL);
@@ -1253,7 +1332,7 @@ static_assert(AdditionalUInt64PerFrame == 256, "See below");
     constexpr auto SubtractionOffset4 = SubtractionOffset3 + 1 * NewN * TestMultiplier;  /* 76 */ \
     constexpr auto SubtractionOffset5 = SubtractionOffset4 + 1 * NewN * TestMultiplier;  /* 77 */ \
     constexpr auto SubtractionOffset6 = SubtractionOffset5 + 1 * NewN * TestMultiplier;  /* 78 */ \
-    constexpr auto CarryInsOffset = SubtractionOffset6 + 1 * NewN * TestMultiplier; /* 79 */ \
+    constexpr auto CarryInsOffset = SubtractionOffset6 + 1 * NewN * TestMultiplier; /* requires 3xNewN 79 */ \
 
 
 #define TempProductsGlobals(TempBase, CallIndex) \

@@ -2681,7 +2681,7 @@ static __device__ void MultiplyHelperKaratsubaV2Separates(
     if constexpr (!SharkFloatParams::DisableCarryPropagation) {
 
         DefineCarryDefinitions();
-        constexpr bool UseParallelCarry = false;
+        constexpr bool UseParallelCarry = true;
         uint64_t *globalCarryCheck = &tempProducts[GlobalCarryOffset];
 
         if constexpr (UseParallelCarry) {

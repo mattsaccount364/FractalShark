@@ -1000,8 +1000,6 @@ static __device__ SharkForceInlineReleaseOnly void CarryPropagation (
         }
     }
 
-    ok so the problem is that thread 0 is fine, thread 1 is fine, and thread 2 is stuck here.
-        thread 1 successfully writes its carry out to shared memory below
     grid.sync();
 
     const auto MaxBlocks = grid.group_dim().x;
@@ -1096,9 +1094,6 @@ static __device__ SharkForceInlineReleaseOnly void CarryPropagation (
         shared_carries[carrySharedToIndex + 0] = local_carry_xx;
         shared_carries[carrySharedToIndex + 1] = local_carry_xy;
 
-        thread 1 writes successfully but thread 2 overwrites it because its behind by 1 grid.sync call:
-        Refer to notepadd++ output, you can see index 4 is the failed one.
-            Carry is non-zero here but 0 at the next breakpoint because thread 2 is overwriting it wrongly.
         shared_carries[carrySharedToIndex + 2] = local_carry_yy;
     }
 

@@ -24,6 +24,17 @@
 
 namespace cg = cooperative_groups;
 
+static constexpr auto
+CalcAlign16Bytes64BitIndex(uint64_t Sixty4BitIndex) {
+    return Sixty4BitIndex % 2 == 0 ? 0 : 1;
+}
+
+static constexpr auto
+CalcAlign16Bytes32BitIndex(uint64_t Thirty2BitIndex) {
+    return 4 - (Thirty2BitIndex % 4);
+}
+
+
 // Initialize the random number generator state.  Note that
 // this uses a constant seed.  This is lame and we should be
 // using a different seed for each thread.
@@ -1271,34 +1282,34 @@ static_assert(AdditionalUInt64PerFrame == 256, "See below");
     auto *SharkRestrict debugStates = reinterpret_cast<DebugState<SharkFloatParams>*>(&tempProducts[Checksum_offset]); \
     constexpr auto Random_offset = Checksum_offset + AdditionalGlobalRandomSpace; \
     auto *SharkRestrict debugRandomArray = reinterpret_cast<curandState *>(&tempProducts[Random_offset]); \
-    constexpr auto Z0_offsetXX = TempBaseOffset + AdditionalUInt64PerFrame;          /* 0 */ \
-    constexpr auto Z0_offsetXY = Z0_offsetXX + 4 * NewN * TestMultiplier;            /* 4 */ \
-    constexpr auto Z0_offsetYY = Z0_offsetXY + 4 * NewN * TestMultiplier;            /* 8 */ \
-    constexpr auto Z2_offsetXX = Z0_offsetYY + 4 * NewN * TestMultiplier;            /* 12 */ \
-    constexpr auto Z2_offsetXY = Z2_offsetXX + 4 * NewN * TestMultiplier;            /* 16 */ \
-    constexpr auto Z2_offsetYY = Z2_offsetXY + 4 * NewN * TestMultiplier;            /* 20 */ \
-    constexpr auto Z1_temp_offsetXX = Z2_offsetYY + 4 * NewN * TestMultiplier;       /* 24 */ \
-    constexpr auto Z1_temp_offsetXY = Z1_temp_offsetXX + 4 * NewN * TestMultiplier;  /* 28 */ \
-    constexpr auto Z1_temp_offsetYY = Z1_temp_offsetXY + 4 * NewN * TestMultiplier;  /* 32 */ \
-    constexpr auto Z1_offsetXX = Z1_temp_offsetYY + 4 * NewN * TestMultiplier;       /* 36 */ \
-    constexpr auto Z1_offsetXY = Z1_offsetXX + 4 * NewN * TestMultiplier;            /* 40 */ \
-    constexpr auto Z1_offsetYY = Z1_offsetXY + 4 * NewN * TestMultiplier;            /* 44 */ \
-    constexpr auto Convolution_offsetXX = Z1_offsetYY + 4 * NewN * TestMultiplier;   /* 48 */ \
-    constexpr auto Convolution_offsetXY = Convolution_offsetXX + 4 * NewN * TestMultiplier; /* 52 */ \
-    constexpr auto Convolution_offsetYY = Convolution_offsetXY + 4 * NewN * TestMultiplier; /* 56 */ \
-    constexpr auto Result_offsetXX = Convolution_offsetYY + 4 * NewN * TestMultiplier;      /* 60 */ \
-    constexpr auto Result_offsetXY = Result_offsetXX + 4 * NewN * TestMultiplier;           /* 64 */ \
-    constexpr auto Result_offsetYY = Result_offsetXY + 4 * NewN * TestMultiplier;    /* 68 */ \
-    constexpr auto XDiff_offset = Result_offsetYY + 2 * NewN * TestMultiplier;         /* 70 */ \
-    constexpr auto YDiff_offset = XDiff_offset + 1 * NewN * TestMultiplier;          /* 71 */ \
-    constexpr auto GlobalCarryOffset = YDiff_offset + 1 * NewN * TestMultiplier;     /* 72 */ \
-    constexpr auto SubtractionOffset1 = GlobalCarryOffset + 1 * NewN * TestMultiplier;   /* 73 */ \
-    constexpr auto SubtractionOffset2 = SubtractionOffset1 + 1 * NewN * TestMultiplier;  /* 74 */ \
-    constexpr auto SubtractionOffset3 = SubtractionOffset2 + 1 * NewN * TestMultiplier;  /* 75 */ \
-    constexpr auto SubtractionOffset4 = SubtractionOffset3 + 1 * NewN * TestMultiplier;  /* 76 */ \
-    constexpr auto SubtractionOffset5 = SubtractionOffset4 + 1 * NewN * TestMultiplier;  /* 77 */ \
-    constexpr auto SubtractionOffset6 = SubtractionOffset5 + 1 * NewN * TestMultiplier;  /* 78 */ \
-    constexpr auto CarryInsOffset = SubtractionOffset6 + 1 * NewN * TestMultiplier; /* requires 3xNewN 79 */ \
+    constexpr auto Z0_offsetXX = TempBaseOffset + AdditionalUInt64PerFrame + CalcAlign16Bytes64BitIndex(TempBaseOffset + AdditionalUInt64PerFrame); /* 0 */ \
+    constexpr auto Z0_offsetXY = Z0_offsetXX + 4 * NewN * TestMultiplier + CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier);            /* 4 */ \
+    constexpr auto Z0_offsetYY = Z0_offsetXY + 4 * NewN * TestMultiplier + CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier);            /* 8 */ \
+    constexpr auto Z2_offsetXX = Z0_offsetYY + 4 * NewN * TestMultiplier + CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier);       /* 12 */ \
+    constexpr auto Z2_offsetXY = Z2_offsetXX + 4 * NewN * TestMultiplier + CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 16 */ \
+    constexpr auto Z2_offsetYY = Z2_offsetXY + 4 * NewN * TestMultiplier + CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 20 */ \
+    constexpr auto Z1_temp_offsetXX = Z2_offsetYY + 4 * NewN * TestMultiplier + CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 24 */ \
+    constexpr auto Z1_temp_offsetXY = Z1_temp_offsetXX + 4 * NewN * TestMultiplier + CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 28 */ \
+    constexpr auto Z1_temp_offsetYY = Z1_temp_offsetXY + 4 * NewN * TestMultiplier + CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 32 */ \
+    constexpr auto Z1_offsetXX = Z1_temp_offsetYY + 4 * NewN * TestMultiplier + CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 36 */ \
+    constexpr auto Z1_offsetXY = Z1_offsetXX + 4 * NewN * TestMultiplier + CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 40 */ \
+    constexpr auto Z1_offsetYY = Z1_offsetXY + 4 * NewN * TestMultiplier + CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 44 */ \
+    constexpr auto Convolution_offsetXX = Z1_offsetYY + 4 * NewN * TestMultiplier + CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 48 */ \
+    constexpr auto Convolution_offsetXY = Convolution_offsetXX + 4 * NewN * TestMultiplier + CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 52 */ \
+    constexpr auto Convolution_offsetYY = Convolution_offsetXY + 4 * NewN * TestMultiplier + CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 56 */ \
+    constexpr auto Result_offsetXX = Convolution_offsetYY + 4 * NewN * TestMultiplier + CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 60 */ \
+    constexpr auto Result_offsetXY = Result_offsetXX + 4 * NewN * TestMultiplier + CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 64 */ \
+    constexpr auto Result_offsetYY = Result_offsetXY + 4 * NewN * TestMultiplier + CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 68 */ \
+    constexpr auto XDiff_offset = Result_offsetYY + 2 * NewN * TestMultiplier + CalcAlign16Bytes64BitIndex(2 * NewN * TestMultiplier); /* 70 */ \
+    constexpr auto YDiff_offset = XDiff_offset + 1 * NewN * TestMultiplier + CalcAlign16Bytes64BitIndex(1 * NewN * TestMultiplier); /* 71 */ \
+    constexpr auto GlobalCarryOffset = YDiff_offset + 1 * NewN * TestMultiplier + CalcAlign16Bytes64BitIndex(1 * NewN * TestMultiplier); /* 72 */ \
+    constexpr auto SubtractionOffset1 = GlobalCarryOffset + 1 * NewN * TestMultiplier + CalcAlign16Bytes64BitIndex(1 * NewN * TestMultiplier); /* 73 */ \
+    constexpr auto SubtractionOffset2 = SubtractionOffset1 + 1 * NewN * TestMultiplier + CalcAlign16Bytes64BitIndex(1 * NewN * TestMultiplier); /* 74 */ \
+    constexpr auto SubtractionOffset3 = SubtractionOffset2 + 1 * NewN * TestMultiplier + CalcAlign16Bytes64BitIndex(1 * NewN * TestMultiplier); /* 75 */ \
+    constexpr auto SubtractionOffset4 = SubtractionOffset3 + 1 * NewN * TestMultiplier + CalcAlign16Bytes64BitIndex(1 * NewN * TestMultiplier); /* 76 */ \
+    constexpr auto SubtractionOffset5 = SubtractionOffset4 + 1 * NewN * TestMultiplier + CalcAlign16Bytes64BitIndex(1 * NewN * TestMultiplier); /* 77 */ \
+    constexpr auto SubtractionOffset6 = SubtractionOffset5 + 1 * NewN * TestMultiplier + CalcAlign16Bytes64BitIndex(1 * NewN * TestMultiplier); /* 78 */ \
+    constexpr auto CarryInsOffset = SubtractionOffset6 + 1 * NewN * TestMultiplier + CalcAlign16Bytes64BitIndex(1 * NewN * TestMultiplier); /* requires 3xNewN 79 */ \
 
 
 #define TempProductsGlobals(TempBase, CallIndex) \
@@ -1911,220 +1922,8 @@ __device__ __forceinline__ void touch_clock_guard() {
 }
 
 
-//// One loader for a full BatchSize into fixed arrays, emitted as ordered PTX loads.
-//// Pick the cache op you want: .ca (use L1) or .cg (bypass L1).
-//template<ConditionalAccess Cond, int BatchSize>
-//__device__ __forceinline__ void load_buf_ptx(
-//    int base_i, int k,
-//    const uint32_t *__restrict__ aDigits_base,
-//    const uint32_t *__restrict__ bDigits_base,
-//    int a_offset, int b_offset,
-//    const uint32_t *__restrict__ global_x_diff_abs,
-//    const uint32_t *__restrict__ global_y_diff_abs,
-//    uint32_t(&ax)[BatchSize], uint32_t(&bx)[BatchSize],
-//    uint32_t(&ay)[BatchSize], uint32_t(&by)[BatchSize],
-//    uint32_t(&cy)[BatchSize], uint32_t(&dy)[BatchSize]) {
-//#pragma unroll
-//    for (int j = 0; j < BatchSize; ++j) {
-//        const int idx = base_i + j;
-//        const int idx2 = k - idx;
-//
-//        const uint32_t *p_ax, *p_bx, *p_ay, *p_by, *p_cy, *p_dy;
-//
-//        if constexpr (Cond == ConditionalAccess::True) {
-//            p_ax = global_x_diff_abs + idx;
-//            p_bx = global_x_diff_abs + idx2;
-//            p_ay = global_x_diff_abs + idx;
-//            p_by = global_y_diff_abs + idx2;
-//            p_cy = global_y_diff_abs + idx;
-//            p_dy = global_y_diff_abs + idx2;
-//        } else {
-//            p_ax = aDigits_base + (idx + a_offset);
-//            p_bx = aDigits_base + (idx2 + a_offset);
-//            p_ay = aDigits_base + (idx + a_offset);
-//            p_by = bDigits_base + (idx2 + b_offset);
-//            p_cy = bDigits_base + (idx + b_offset);
-//            p_dy = bDigits_base + (idx2 + b_offset);
-//        }
-//
-//        // Inline PTX loads (ordered, not hoisted across the block)
-//        asm volatile ("ld.global.ca.u32 %0, [%1];" : "=r"(ax[j]) : "l"(p_ax) : "memory");
-//        asm volatile ("ld.global.ca.u32 %0, [%1];" : "=r"(bx[j]) : "l"(p_bx) : "memory");
-//        asm volatile ("ld.global.ca.u32 %0, [%1];" : "=r"(ay[j]) : "l"(p_ay) : "memory");
-//        asm volatile ("ld.global.ca.u32 %0, [%1];" : "=r"(by[j]) : "l"(p_by) : "memory");
-//        asm volatile ("ld.global.ca.u32 %0, [%1];" : "=r"(cy[j]) : "l"(p_cy) : "memory");
-//        asm volatile ("ld.global.ca.u32 %0, [%1];" : "=r"(dy[j]) : "l"(p_dy) : "memory");
-//    }
-//
-//    // Prevent motion of surrounding instructions across the load block
-//    //asm volatile ("" ::: "memory");
-//    //touch_clock_guard(); // Touch the clock to prevent reordering
-//}
-
-// ---- Register-output loader for BatchSize == 4 ------------------------------
-//template<ConditionalAccess Cond>
-//__device__ __forceinline__ void load_buf_ptx_regs_4(
-//    int base_i, int k,
-//    const uint32_t *__restrict__ aDigits_base,
-//    const uint32_t *__restrict__ bDigits_base,
-//    int a_offset, int b_offset,
-//    const uint32_t *__restrict__ global_x_diff_abs,
-//    const uint32_t *__restrict__ global_y_diff_abs,
-//    uint32_t(&ax)[4], uint32_t(&bx)[4],
-//    uint32_t(&ay)[4], uint32_t(&by)[4],
-//    uint32_t(&cy)[4], uint32_t(&dy)[4]) {
-//    // Select sources and byte offsets
-//    const uint32_t *AXsrc, *BXsrc, *AYsrc, *BYsrc, *CYsrc, *DYsrc;
-//    uint32_t a_off = 0u, b_off = 0u;
-//
-//    if constexpr (Cond == ConditionalAccess::True) {
-//        AXsrc = global_x_diff_abs;  BXsrc = global_x_diff_abs;
-//        AYsrc = global_x_diff_abs;  BYsrc = global_y_diff_abs;
-//        CYsrc = global_y_diff_abs;  DYsrc = global_y_diff_abs;
-//    } else {
-//        AXsrc = aDigits_base;       BXsrc = aDigits_base;
-//        AYsrc = aDigits_base;       BYsrc = bDigits_base;
-//        CYsrc = bDigits_base;       DYsrc = bDigits_base;
-//        a_off = static_cast<uint32_t>(a_offset);
-//        b_off = static_cast<uint32_t>(b_offset);
-//    }
-//
-//    const unsigned long long a_off_bytes = static_cast<unsigned long long>(a_off) << 2; // *4
-//    const unsigned long long b_off_bytes = static_cast<unsigned long long>(b_off) << 2;
-//
-//    // PTX loads into 24 scalar outputs (they will live in registers).
-//    uint32_t ax0, bx0, ay0, by0, cy0, dy0;
-//    uint32_t ax1, bx1, ay1, by1, cy1, dy1;
-//    uint32_t ax2, bx2, ay2, by2, cy2, dy2;
-//    uint32_t ax3, bx3, ay3, by3, cy3, dy3;
-//
-//    asm volatile(
-//        "{\n\t"
-//        // Temps
-//        ".reg .u32 bi, kk, idx, idx2;\n\t"
-//        ".reg .u64 pAX, pBX, pAY, pBY, pCY, pDY, addr, offA, offB;\n\t"
-//
-//        // Load inputs
-//        "mov.u32  bi,   %24;\n\t"      // base_i
-//        "mov.u32  kk,   %25;\n\t"      // k
-//        "mov.u64  offA, %26;\n\t"      // a_off_bytes
-//        "mov.u64  offB, %27;\n\t"      // b_off_bytes
-//        "mov.u64  pAX,  %28;\n\t"
-//        "mov.u64  pBX,  %29;\n\t"
-//        "mov.u64  pAY,  %30;\n\t"
-//        "mov.u64  pBY,  %31;\n\t"
-//        "mov.u64  pCY,  %32;\n\t"
-//        "mov.u64  pDY,  %33;\n\t"
-//
-//        // ---------------- j = 0 ----------------
-//        "add.u32  idx,  bi, 0;\n\t"
-//        "sub.u32  idx2, kk, idx;\n\t"
-//
-//        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pAX;\n\t"
-//        "ld.global.ca.u32 %0,  [addr];\n\t"     // ax0
-//
-//        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pBX;\n\t"
-//        "ld.global.ca.u32 %1,  [addr];\n\t"     // bx0
-//
-//        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pAY;\n\t"
-//        "ld.global.ca.u32 %2,  [addr];\n\t"     // ay0
-//
-//        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pBY;\n\t"
-//        "ld.global.ca.u32 %3,  [addr];\n\t"     // by0
-//
-//        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pCY;\n\t"
-//        "ld.global.ca.u32 %4,  [addr];\n\t"     // cy0
-//
-//        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pDY;\n\t"
-//        "ld.global.ca.u32 %5,  [addr];\n\t"     // dy0
-//
-//        // ---------------- j = 1 ----------------
-//        "add.u32  idx,  bi, 1;\n\t"
-//        "sub.u32  idx2, kk, idx;\n\t"
-//
-//        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pAX;\n\t"
-//        "ld.global.ca.u32 %6,  [addr];\n\t"     // ax1
-//
-//        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pBX;\n\t"
-//        "ld.global.ca.u32 %7,  [addr];\n\t"     // bx1
-//
-//        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pAY;\n\t"
-//        "ld.global.ca.u32 %8,  [addr];\n\t"     // ay1
-//
-//        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pBY;\n\t"
-//        "ld.global.ca.u32 %9,  [addr];\n\t"     // by1
-//
-//        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pCY;\n\t"
-//        "ld.global.ca.u32 %10, [addr];\n\t"     // cy1
-//
-//        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pDY;\n\t"
-//        "ld.global.ca.u32 %11, [addr];\n\t"     // dy1
-//
-//        // ---------------- j = 2 ----------------
-//        "add.u32  idx,  bi, 2;\n\t"
-//        "sub.u32  idx2, kk, idx;\n\t"
-//
-//        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pAX;\n\t"
-//        "ld.global.ca.u32 %12, [addr];\n\t"     // ax2
-//
-//        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pBX;\n\t"
-//        "ld.global.ca.u32 %13, [addr];\n\t"     // bx2
-//
-//        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pAY;\n\t"
-//        "ld.global.ca.u32 %14, [addr];\n\t"     // ay2
-//
-//        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pBY;\n\t"
-//        "ld.global.ca.u32 %15, [addr];\n\t"     // by2
-//
-//        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pCY;\n\t"
-//        "ld.global.ca.u32 %16, [addr];\n\t"     // cy2
-//
-//        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pDY;\n\t"
-//        "ld.global.ca.u32 %17, [addr];\n\t"     // dy2
-//
-//        // ---------------- j = 3 ----------------
-//        "add.u32  idx,  bi, 3;\n\t"
-//        "sub.u32  idx2, kk, idx;\n\t"
-//
-//        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pAX;\n\t"
-//        "ld.global.ca.u32 %18, [addr];\n\t"     // ax3
-//
-//        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pBX;\n\t"
-//        "ld.global.ca.u32 %19, [addr];\n\t"     // bx3
-//
-//        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pAY;\n\t"
-//        "ld.global.ca.u32 %20, [addr];\n\t"     // ay3
-//
-//        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pBY;\n\t"
-//        "ld.global.ca.u32 %21, [addr];\n\t"     // by3
-//
-//        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pCY;\n\t"
-//        "ld.global.ca.u32 %22, [addr];\n\t"     // cy3
-//
-//        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pDY;\n\t"
-//        "ld.global.ca.u32 %23, [addr];\n\t"     // dy3
-//        "}\n\t"
-//        // ---- outputs (24) ----
-//        : "=r"(ax0), "=r"(bx0), "=r"(ay0), "=r"(by0), "=r"(cy0), "=r"(dy0),
-//        "=r"(ax1), "=r"(bx1), "=r"(ay1), "=r"(by1), "=r"(cy1), "=r"(dy1),
-//        "=r"(ax2), "=r"(bx2), "=r"(ay2), "=r"(by2), "=r"(cy2), "=r"(dy2),
-//        "=r"(ax3), "=r"(bx3), "=r"(ay3), "=r"(by3), "=r"(cy3), "=r"(dy3)
-//        // ---- inputs (10) ----
-//        : "r"(base_i), "r"(k),
-//        "l"(a_off_bytes), "l"(b_off_bytes),
-//        "l"(AXsrc), "l"(BXsrc), "l"(AYsrc), "l"(BYsrc), "l"(CYsrc), "l"(DYsrc)
-//        : "memory"
-//        );
-//
-//    // Move results into your fixed arrays (still constant indices → keep in registers)
-//    ax[0] = ax0; bx[0] = bx0; ay[0] = ay0; by[0] = by0; cy[0] = cy0; dy[0] = dy0;
-//    ax[1] = ax1; bx[1] = bx1; ay[1] = ay1; by[1] = by1; cy[1] = cy1; dy[1] = dy1;
-//    ax[2] = ax2; bx[2] = bx2; ay[2] = ay2; by[2] = by2; cy[2] = cy2; dy[2] = dy2;
-//    ax[3] = ax3; bx[3] = bx3; ay[3] = ay3; by[3] = by3; cy[3] = cy3; dy[3] = dy3;
-//}
-
 template<ConditionalAccess Cond>
-__device__ __forceinline__ void load_buf_ptx_regs_4_global(
+__device__ __forceinline__ void load_buf_ptx_regs_4_global_unaligned(
     int base_i, int k,
     const uint32_t *__restrict__ aDigits_base,
     const uint32_t *__restrict__ bDigits_base,
@@ -2284,9 +2083,96 @@ __device__ __forceinline__ void load_buf_ptx_regs_4_global(
     ax[3] = ax3; bx[3] = bx3; ay[3] = ay3; by[3] = by3; cy[3] = cy3; dy[3] = dy3;
 }
 
+// Assumes 16B alignment for all six pointers passed below.
+// BatchSize == 4 version (vector loads).
+template<ConditionalAccess Cond>
+__device__ __forceinline__ void load_buf_ptx_regs_4_global_aligned(
+    int base_i, int k,
+    const uint32_t *__restrict__ aDigits_base,
+    const uint32_t *__restrict__ bDigits_base,
+    int a_offset, int b_offset,
+    const uint32_t *__restrict__ global_x_diff_abs,
+    const uint32_t *__restrict__ global_y_diff_abs,
+    uint32_t(&ax)[4], uint32_t(&bx)[4],
+    uint32_t(&ay)[4], uint32_t(&by)[4],
+    uint32_t(&cy)[4], uint32_t(&dy)[4]) {
+    // Select sources
+    const uint32_t *AXsrc, *BXsrc, *AYsrc, *BYsrc, *CYsrc, *DYsrc;
+    int a_off = 0, b_off = 0;
+
+    if constexpr (Cond == ConditionalAccess::True) {
+        AXsrc = global_x_diff_abs;  BXsrc = global_x_diff_abs;
+        AYsrc = global_x_diff_abs;  BYsrc = global_y_diff_abs;
+        CYsrc = global_y_diff_abs;  DYsrc = global_y_diff_abs;
+    } else {
+        AXsrc = aDigits_base;       BXsrc = aDigits_base;
+        AYsrc = aDigits_base;       BYsrc = bDigits_base;
+        CYsrc = bDigits_base;       DYsrc = bDigits_base;
+        a_off = a_offset;           b_off = b_offset;
+    }
+
+    // Forward indices (ascending)
+    const int i0 = base_i;             // j = 0..3 → i0 + j
+
+    // Mirror indices (descending). Vector load reads ascending [n-3..n], then we reverse.
+    const int n = k - base_i;          // j = 0..3 → n - j
+    const int n_start = n - 3;         // load {n-3,n-2,n-1,n}
+
+    // Final pointers (assumed 16B aligned)
+    const uint32_t *pAX = AXsrc + (a_off + i0);
+    const uint32_t *pAY = AYsrc + (a_off + i0);
+    const uint32_t *pCY = CYsrc + (b_off + i0);
+    const uint32_t *pBX = BXsrc + (a_off + n_start);
+    const uint32_t *pBY = BYsrc + (b_off + n_start);
+    const uint32_t *pDY = DYsrc + (b_off + n_start);
+
+    // Temp regs for mirrored vectors (we’ll reverse after the load)
+    uint32_t axv0, axv1, axv2, axv3;
+    uint32_t ayv0, ayv1, ayv2, ayv3;
+    uint32_t cyv0, cyv1, cyv2, cyv3;
+    uint32_t bxv0, bxv1, bxv2, bxv3;
+    uint32_t byv0, byv1, byv2, byv3;
+    uint32_t dyv0, dyv1, dyv2, dyv3;
+
+    // Single asm block with 6 vector loads; keep them together.
+    asm volatile(
+        "{\n\t"
+        "ld.global.ca.v4.u32 {%0,%1,%2,%3},  [%24];\n\t"  // AX forward
+        "ld.global.ca.v4.u32 {%4,%5,%6,%7},  [%25];\n\t"  // AY forward
+        "ld.global.ca.v4.u32 {%8,%9,%10,%11},[%26];\n\t"  // CY forward
+        "ld.global.ca.v4.u32 {%12,%13,%14,%15},[%27];\n\t"// BX mirror (asc chunk)
+        "ld.global.ca.v4.u32 {%16,%17,%18,%19},[%28];\n\t"// BY mirror (asc chunk)
+        "ld.global.ca.v4.u32 {%20,%21,%22,%23},[%29];\n\t"// DY mirror (asc chunk)
+        "}\n\t"
+        : // 0..23 outputs
+    "=r"(axv0), "=r"(axv1), "=r"(axv2), "=r"(axv3),
+        "=r"(ayv0), "=r"(ayv1), "=r"(ayv2), "=r"(ayv3),
+        "=r"(cyv0), "=r"(cyv1), "=r"(cyv2), "=r"(cyv3),
+        "=r"(bxv0), "=r"(bxv1), "=r"(bxv2), "=r"(bxv3),
+        "=r"(byv0), "=r"(byv1), "=r"(byv2), "=r"(byv3),
+        "=r"(dyv0), "=r"(dyv1), "=r"(dyv2), "=r"(dyv3)
+        : // 24..29 inputs
+        "l"(pAX), "l"(pAY), "l"(pCY), "l"(pBX), "l"(pBY), "l"(pDY)
+        : "memory"
+        );
+
+    // Store forward streams directly
+    ax[0] = axv0; ax[1] = axv1; ax[2] = axv2; ax[3] = axv3;
+    ay[0] = ayv0; ay[1] = ayv1; ay[2] = ayv2; ay[3] = ayv3;
+    cy[0] = cyv0; cy[1] = cyv1; cy[2] = cyv2; cy[3] = cyv3;
+
+    // Reverse mirrored streams
+    bx[0] = bxv3; bx[1] = bxv2; bx[2] = bxv1; bx[3] = bxv0;
+    by[0] = byv3; by[1] = byv2; by[2] = byv1; by[3] = byv0;
+    dy[0] = dyv3; dy[1] = dyv2; dy[2] = dyv1; dy[3] = dyv0;
+
+    // Keep following compute from hoisting above loads
+    asm volatile ("" ::: "memory");
+}
+
 
 // ---- Tiny wrapper so it’s a drop-in for load_buf_ptx<...,4>(...) -------------
-template<ConditionalAccess Cond, int BatchSize>
+template<bool Aligned, ConditionalAccess Cond, int BatchSize>
 __device__ __forceinline__ void load_buf_ptx(
     int base_i, int k,
     const uint32_t *__restrict__ aDigits_base,
@@ -2298,12 +2184,105 @@ __device__ __forceinline__ void load_buf_ptx(
     uint32_t(&ay)[BatchSize], uint32_t(&by)[BatchSize],
     uint32_t(&cy)[BatchSize], uint32_t(&dy)[BatchSize]) {
     static_assert(BatchSize == 4, "This PTX loader specialization expects BatchSize == 4");
-    load_buf_ptx_regs_4_global<Cond>(
-        base_i, k, aDigits_base, bDigits_base, a_offset, b_offset,
-        global_x_diff_abs, global_y_diff_abs,
-        ax, bx, ay, by, cy, dy);
+
+    if constexpr (Aligned) {
+        load_buf_ptx_regs_4_global_aligned<Cond>(
+            base_i, k, aDigits_base, bDigits_base, a_offset, b_offset,
+            global_x_diff_abs, global_y_diff_abs,
+            ax, bx, ay, by, cy, dy);
+    } else {
+        load_buf_ptx_regs_4_global_unaligned<Cond>(
+            base_i, k, aDigits_base, bDigits_base, a_offset, b_offset,
+            global_x_diff_abs, global_y_diff_abs,
+            ax, bx, ay, by, cy, dy);
+    }
 }
 
+// Helper: check 16B alignment for “ptr + elem_index*4”
+__device__ __forceinline__ bool aligned16_addr(const uint32_t *p, int elem_index) {
+    return (((reinterpret_cast<uintptr_t>(p) + (static_cast<uintptr_t>(elem_index) << 2)) & 0xF) == 0);
+}
+
+// Returns true if a full BatchSize (==4) batch starting at i0 can use ld.v4 on all streams
+template<ConditionalAccess UseConditionalAccess>
+__device__ __forceinline__ bool can_vec4_batch(
+    int i0, int k,
+    const uint32_t *aDigits_base, const uint32_t *bDigits_base,
+    int a_offset, int b_offset,
+    const uint32_t *x_diff_abs, const uint32_t *y_diff_abs) {
+    // Forward block starts at i0
+    // Mirror block for width 4 starts at n_start = k - i0 - 3 (we load ascending then index reverse in regs)
+    const int n_start = k - i0 - 3;
+
+    if constexpr (UseConditionalAccess == ConditionalAccess::True) {
+        // globals (no element offsets)
+        return aligned16_addr(x_diff_abs, i0) &&  // A forward (ax/ay)
+            aligned16_addr(y_diff_abs, i0) &&  // B forward (cy)
+            aligned16_addr(x_diff_abs, n_start) &&  // A mirror  (bx)
+            aligned16_addr(y_diff_abs, n_start);    // B mirror  (by/dy)
+    } else {
+        // base arrays with per-array element offsets
+        return aligned16_addr(aDigits_base, a_offset + i0) &&  // A forward (ax/ay)
+            aligned16_addr(bDigits_base, b_offset + i0) &&  // B forward (cy)
+            aligned16_addr(aDigits_base, a_offset + n_start) &&  // A mirror  (bx)
+            aligned16_addr(bDigits_base, b_offset + n_start);    // B mirror  (by/dy)
+    }
+}
+
+// Unified scalar accumulator used for BOTH prologue and epilogue
+template<ConditionalAccess Cond>
+__device__ __forceinline__ void accumulate_scalar_span(
+    int i_lo, int i_hi, int k,
+    const uint32_t *__restrict__ aDigits_base,
+    const uint32_t *__restrict__ bDigits_base,
+    int a_offset, int b_offset,
+    const uint32_t *__restrict__ x_diff_abs,
+    const uint32_t *__restrict__ y_diff_abs,
+    uint64_t &xx_low, uint64_t &xx_high,
+    uint64_t &xy_low, uint64_t &xy_high,
+    uint64_t &yy_low, uint64_t &yy_high) {
+    if (i_lo > i_hi) return;
+#pragma unroll
+    for (int idx = i_lo; idx <= i_hi; ++idx) {
+        const int idx2 = k - idx;
+        uint64_t xx_a, xx_b, xy_a, xy_b, yy_a, yy_b;
+        if constexpr (Cond == ConditionalAccess::True) {
+            xx_a = x_diff_abs[idx];     xx_b = x_diff_abs[idx2];
+            xy_a = x_diff_abs[idx];     xy_b = y_diff_abs[idx2];
+            yy_a = y_diff_abs[idx];     yy_b = y_diff_abs[idx2];
+        } else {
+            xx_a = aDigits_base[idx + a_offset];
+            xx_b = aDigits_base[idx2 + a_offset];
+            xy_a = aDigits_base[idx + a_offset];
+            xy_b = bDigits_base[idx2 + b_offset];
+            yy_a = bDigits_base[idx + b_offset];
+            yy_b = bDigits_base[idx2 + b_offset];
+        }
+        uint64_t p;
+        p = xx_a * xx_b; xx_low += p; if (xx_low < p) xx_high += 1;
+        p = xy_a * xy_b; xy_low += p; if (xy_low < p) xy_high += 1;
+        p = yy_a * yy_b; yy_low += p; if (yy_low < p) yy_high += 1;
+    }
+}
+
+// Find first aligned batch start (width 4) in [i..i_end], or -1 if none.
+template<ConditionalAccess Cond>
+__device__ __forceinline__ int find_aligned_start4(
+    int i, int i_end, int k,
+    const uint32_t *aDigits_base, const uint32_t *bDigits_base,
+    int a_offset, int b_offset,
+    const uint32_t *x_diff_abs, const uint32_t *y_diff_abs) {
+    const int max_t = min(3, i_end - i);
+#pragma unroll
+    for (int t = 0; t <= max_t; ++t) {
+        const int i0 = i + t;
+        if (i0 + 3 <= i_end &&
+            can_vec4_batch<Cond>(i0, k, aDigits_base, bDigits_base, a_offset, b_offset, x_diff_abs, y_diff_abs)) {
+            return i0;
+        }
+    }
+    return -1;
+}
 
 template<
     class SharkFloatParams,
@@ -2336,360 +2315,363 @@ __device__ SharkForceInlineReleaseOnly static void ProcessConvolutionBatch(
     uint32_t *shared_data,
     const uint32_t *x_diff_abs = nullptr,
     const uint32_t *y_diff_abs = nullptr) {
-
-    constexpr auto MinBatchSize = (BatchSize < 8) ? BatchSize : 8; // Limit to 8 for pipelining
+    // ---------------- optional CTA pipelined-shared path ----------------
     constexpr int Krt = SharkFloatParams::GlobalThreadsPerBlock;
-    const int stride = Krt * ExecutionNumBlocks;             // same as your outer loop
+    const int stride = Krt * ExecutionNumBlocks;
     const int k0_base = RelativeBlockIndex * Krt + outerIteration * stride;
-    const bool fullCTA = (k0_base + Krt - 1) < total_k;        // all threads in CTA have idx < total_k
+    const bool fullCTA = (k0_base + Krt - 1) < total_k;
 
     if constexpr (UsePipelining) {
-        // Determine if we should use pipelining
-        // Get recursion-specific shared memory
-        uint32_t *pipeline_buffer = GetRecursionPipelineBuffer<SharkFloatParams, RecursionDepth>(shared_data);
-
-        // Check if we have enough shared memory (simplified check)
-        constexpr int AvailableShared = CalculateMultiplySharedMemorySize<SharkFloatParams>();
+        // Per-recursion buffer in shared for pipelined shared-memory version
+        uint32_t *pipeline_buffer =
+            GetRecursionPipelineBuffer<SharkFloatParams, RecursionDepth>(shared_data);
 
         if (fullCTA) {
             ProcessConvolutionBatchPipelined<
-                SharkFloatParams,
-                BatchSize,
-                UseConditionalAccess,
-                RecursionDepth>(
-
-                    grid,
-                    block,
-                    RelativeBlockIndex,
-                    outerIteration,
-                    k,
-                    i_start,
-                    i_end,
-                    n_limit,
-                    aDigits_base,
-                    bDigits_base,
-                    a_offset,
-                    b_offset,
-                    xx_sum_low,
-                    xx_sum_high,
-                    xy_sum_low,
-                    xy_sum_high,
-                    yy_sum_low,
-                    yy_sum_high,
+                SharkFloatParams, BatchSize, UseConditionalAccess, RecursionDepth>(
+                    grid, block, RelativeBlockIndex, outerIteration,
+                    k, i_start, i_end, n_limit,
+                    aDigits_base, bDigits_base, a_offset, b_offset,
+                    xx_sum_low, xx_sum_high,
+                    xy_sum_low, xy_sum_high,
+                    yy_sum_low, yy_sum_high,
                     pipeline_buffer,
-                    x_diff_abs,
-                    y_diff_abs);
+                    x_diff_abs, y_diff_abs);
             return;
         }
     }
 
-    // Fall back to original implementation
-    for (int i = i_start; i <= i_end; ) {
-        int batch_size = 1;
+    // ---------------- scalar-only fast path when BatchSize==1 ----------------
+    if constexpr (BatchSize == 1) {
+        accumulate_scalar_span<UseConditionalAccess>(
+            i_start, i_end, k,
+            aDigits_base, bDigits_base, a_offset, b_offset,
+            x_diff_abs, y_diff_abs,
+            xx_sum_low, xx_sum_high,
+            xy_sum_low, xy_sum_high,
+            yy_sum_low, yy_sum_high);
+        return;
+    }
 
-        if constexpr (BatchSize != 1) {
-            const int remaining = i_end - i + 1;
-            batch_size = (remaining >= BatchSize) ? BatchSize : remaining;
+    // ---------------- main path (BatchSize>=2; vectorized steady-state when 4) ----------------
+    int i = i_start;
+
+    // If all data already in shared (SharkLoadAllInShared), we can skip alignment steering
+    // and simply use the 4-stage register pipeline with scalar loads from shared.
+    if constexpr (SharkLoadAllInShared) {
+        // Prologue: scalar until we have >= BatchSize items
+        const int pro_end = min(i_end, i + ((i_end - i + 1) % BatchSize) - 1);
+        if (pro_end >= i) {
+            accumulate_scalar_span<UseConditionalAccess>(
+                i, pro_end, k,
+                aDigits_base, bDigits_base, a_offset, b_offset,
+                x_diff_abs, y_diff_abs,
+                xx_sum_low, xx_sum_high, xy_sum_low, xy_sum_high, yy_sum_low, yy_sum_high);
+            i = pro_end + 1;
         }
 
-        if ((BatchSize != 1) && batch_size == BatchSize) {
-            // Consume as many FULL batches as possible starting at i, pipelined via 4 register buffers.
+        // Steady-state: consume as many full batches as possible (scalar loads from shared)
+        while (i + BatchSize - 1 <= i_end) {
             const int remaining = i_end - i + 1;
-            const int nFull = remaining / BatchSize;   // guaranteed >= 1 here
+            const int nFull = remaining / BatchSize;    // >=1
 
-            // Four fixed, compile-time-addressable buffers
+            // Four fixed buffers (compile-time indices)
             uint32_t ax0[BatchSize], bx0[BatchSize], ay0[BatchSize], by0[BatchSize], cy0[BatchSize], dy0[BatchSize];
             uint32_t ax1[BatchSize], bx1[BatchSize], ay1[BatchSize], by1[BatchSize], cy1[BatchSize], dy1[BatchSize];
             uint32_t ax2[BatchSize], bx2[BatchSize], ay2[BatchSize], by2[BatchSize], cy2[BatchSize], dy2[BatchSize];
             uint32_t ax3[BatchSize], bx3[BatchSize], ay3[BatchSize], by3[BatchSize], cy3[BatchSize], dy3[BatchSize];
 
-            auto load0 = [&](int base_i) {
-                if constexpr (SharkLoadAllInShared) {
+            // scalar loaders (from shared inputs x_diff_abs/y_diff_abs or a/b + offsets)
+            auto load_buf_shared = [&](int base_i, uint32_t(&ax)[BatchSize], uint32_t(&bx)[BatchSize],
+                uint32_t(&ay)[BatchSize], uint32_t(&by)[BatchSize],
+                uint32_t(&cy)[BatchSize], uint32_t(&dy)[BatchSize]) {
 #pragma unroll
                     for (int j = 0; j < BatchSize; ++j) {
                         const int idx = base_i + j;
                         const int idx2 = k - idx;
                         if constexpr (UseConditionalAccess == ConditionalAccess::True) {
-                            ax0[j] = x_diff_abs[idx];
-                            bx0[j] = x_diff_abs[idx2];
-                            ay0[j] = x_diff_abs[idx];
-                            by0[j] = y_diff_abs[idx2];
-                            cy0[j] = y_diff_abs[idx];
-                            dy0[j] = y_diff_abs[idx2];
+                            ax[j] = x_diff_abs[idx];
+                            bx[j] = x_diff_abs[idx2];
+                            ay[j] = x_diff_abs[idx];
+                            by[j] = y_diff_abs[idx2];
+                            cy[j] = y_diff_abs[idx];
+                            dy[j] = y_diff_abs[idx2];
                         } else {
-                            ax0[j] = aDigits_base[idx + a_offset];
-                            bx0[j] = aDigits_base[idx2 + a_offset];
-                            ay0[j] = aDigits_base[idx + a_offset];
-                            by0[j] = bDigits_base[idx2 + b_offset];
-                            cy0[j] = bDigits_base[idx + b_offset];   // correct: b_offset
-                            dy0[j] = bDigits_base[idx2 + b_offset];
+                            ax[j] = aDigits_base[idx + a_offset];
+                            bx[j] = aDigits_base[idx2 + a_offset];
+                            ay[j] = aDigits_base[idx + a_offset];
+                            by[j] = bDigits_base[idx2 + b_offset];
+                            cy[j] = bDigits_base[idx + b_offset];
+                            dy[j] = bDigits_base[idx2 + b_offset];
                         }
                     }
-                } else {
-                    load_buf_ptx<UseConditionalAccess, BatchSize>(
-                        base_i, k, aDigits_base, bDigits_base, a_offset, b_offset,
-                        x_diff_abs, y_diff_abs,
-                        ax0, bx0, ay0, by0, cy0, dy0);
-                }
-            };
+                };
 
-            auto load1 = [&](int base_i) {
-                if constexpr (SharkLoadAllInShared) {
+            auto compute_buf = [&](uint32_t(&ax)[BatchSize], uint32_t(&bx)[BatchSize],
+                uint32_t(&ay)[BatchSize], uint32_t(&by)[BatchSize],
+                uint32_t(&cy)[BatchSize], uint32_t(&dy)[BatchSize]) {
 #pragma unroll
                     for (int j = 0; j < BatchSize; ++j) {
-                        const int idx = base_i + j;
-                        const int idx2 = k - idx;
-                        if constexpr (UseConditionalAccess == ConditionalAccess::True) {
-                            ax1[j] = x_diff_abs[idx];
-                            bx1[j] = x_diff_abs[idx2];
-                            ay1[j] = x_diff_abs[idx];
-                            by1[j] = y_diff_abs[idx2];
-                            cy1[j] = y_diff_abs[idx];
-                            dy1[j] = y_diff_abs[idx2];
-                        } else {
-                            ax1[j] = aDigits_base[idx + a_offset];
-                            bx1[j] = aDigits_base[idx2 + a_offset];
-                            ay1[j] = aDigits_base[idx + a_offset];
-                            by1[j] = bDigits_base[idx2 + b_offset];
-                            cy1[j] = bDigits_base[idx + b_offset];
-                            dy1[j] = bDigits_base[idx2 + b_offset];
-                        }
-                    }
-                } else {
-                    load_buf_ptx<UseConditionalAccess, BatchSize>(
-                        base_i, k, aDigits_base, bDigits_base, a_offset, b_offset,
-                        x_diff_abs, y_diff_abs,
-                        ax1, bx1, ay1, by1, cy1, dy1);
+                        const uint64_t xx_a = (uint64_t)ax[j], xx_b = (uint64_t)bx[j];
+                        const uint64_t xy_a = (uint64_t)ay[j], xy_b = (uint64_t)by[j];
+                        const uint64_t yy_a = (uint64_t)cy[j], yy_b = (uint64_t)dy[j];
+                        uint64_t p;
+                        p = xx_a * xx_b; xx_sum_low += p; if (xx_sum_low < p) xx_sum_high += 1;
+                        p = xy_a * xy_b; xy_sum_low += p; if (xy_sum_low < p) xy_sum_high += 1;
+                        p = yy_a * yy_b; yy_sum_low += p; if (yy_sum_low < p) yy_sum_high += 1;
                     }
                 };
-            auto load2 = [&](int base_i) {
-                if constexpr (SharkLoadAllInShared) {
-#pragma unroll
-                    for (int j = 0; j < BatchSize; ++j) {
-                        const int idx = base_i + j;
-                        const int idx2 = k - idx;
-                        if constexpr (UseConditionalAccess == ConditionalAccess::True) {
-                            ax2[j] = x_diff_abs[idx];
-                            bx2[j] = x_diff_abs[idx2];
-                            ay2[j] = x_diff_abs[idx];
-                            by2[j] = y_diff_abs[idx2];
-                            cy2[j] = y_diff_abs[idx];
-                            dy2[j] = y_diff_abs[idx2];
-                        } else {
-                            ax2[j] = aDigits_base[idx + a_offset];
-                            bx2[j] = aDigits_base[idx2 + a_offset];
-                            ay2[j] = aDigits_base[idx + a_offset];
-                            by2[j] = bDigits_base[idx2 + b_offset];
-                            cy2[j] = bDigits_base[idx + b_offset];
-                            dy2[j] = bDigits_base[idx2 + b_offset];
-                        }
-                    }
-                } else {
-                    load_buf_ptx<UseConditionalAccess, BatchSize>(
-                        base_i, k, aDigits_base, bDigits_base, a_offset, b_offset,
-                        x_diff_abs, y_diff_abs,
-                        ax2, bx2, ay2, by2, cy2, dy2);
-                }
-            };
-
-            auto load3 = [&](int base_i) {
-                if constexpr (SharkLoadAllInShared) {
-#pragma unroll
-                    for (int j = 0; j < BatchSize; ++j) {
-                        const int idx = base_i + j;
-                        const int idx2 = k - idx;
-                        if constexpr (UseConditionalAccess == ConditionalAccess::True) {
-                            ax3[j] = x_diff_abs[idx];
-                            bx3[j] = x_diff_abs[idx2];
-                            ay3[j] = x_diff_abs[idx];
-                            by3[j] = y_diff_abs[idx2];
-                            cy3[j] = y_diff_abs[idx];
-                            dy3[j] = y_diff_abs[idx2];
-                        } else {
-                            ax3[j] = aDigits_base[idx + a_offset];
-                            bx3[j] = aDigits_base[idx2 + a_offset];
-                            ay3[j] = aDigits_base[idx + a_offset];
-                            by3[j] = bDigits_base[idx2 + b_offset];
-                            cy3[j] = bDigits_base[idx + b_offset];
-                            dy3[j] = bDigits_base[idx2 + b_offset];
-                        }
-                    }
-                } else {
-                    load_buf_ptx<UseConditionalAccess, BatchSize>(
-                        base_i, k, aDigits_base, bDigits_base, a_offset, b_offset,
-                        x_diff_abs, y_diff_abs,
-                        ax3, bx3, ay3, by3, cy3, dy3);
-                }
-            };
-
-            auto compute0 = [&]() {
-#pragma unroll
-                for (int j = 0; j < BatchSize; ++j) {
-                    const uint64_t xx_a = (uint64_t)ax0[j], xx_b = (uint64_t)bx0[j];
-                    const uint64_t xy_a = (uint64_t)ay0[j], xy_b = (uint64_t)by0[j];
-                    const uint64_t yy_a = (uint64_t)cy0[j], yy_b = (uint64_t)dy0[j];
-                    uint64_t p;
-                    p = xx_a * xx_b; xx_sum_low += p; if (xx_sum_low < p) xx_sum_high += 1;
-                    p = xy_a * xy_b; xy_sum_low += p; if (xy_sum_low < p) xy_sum_high += 1;
-                    p = yy_a * yy_b; yy_sum_low += p; if (yy_sum_low < p) yy_sum_high += 1;
-                }
-                };
-            auto compute1 = [&]() {
-#pragma unroll
-                for (int j = 0; j < BatchSize; ++j) {
-                    const uint64_t xx_a = (uint64_t)ax1[j], xx_b = (uint64_t)bx1[j];
-                    const uint64_t xy_a = (uint64_t)ay1[j], xy_b = (uint64_t)by1[j];
-                    const uint64_t yy_a = (uint64_t)cy1[j], yy_b = (uint64_t)dy1[j];
-                    uint64_t p;
-                    p = xx_a * xx_b; xx_sum_low += p; if (xx_sum_low < p) xx_sum_high += 1;
-                    p = xy_a * xy_b; xy_sum_low += p; if (xy_sum_low < p) xy_sum_high += 1;
-                    p = yy_a * yy_b; yy_sum_low += p; if (yy_sum_low < p) yy_sum_high += 1;
-                }
-                };
-            auto compute2 = [&]() {
-#pragma unroll
-                for (int j = 0; j < BatchSize; ++j) {
-                    const uint64_t xx_a = (uint64_t)ax2[j], xx_b = (uint64_t)bx2[j];
-                    const uint64_t xy_a = (uint64_t)ay2[j], xy_b = (uint64_t)by2[j];
-                    const uint64_t yy_a = (uint64_t)cy2[j], yy_b = (uint64_t)dy2[j];
-                    uint64_t p;
-                    p = xx_a * xx_b; xx_sum_low += p; if (xx_sum_low < p) xx_sum_high += 1;
-                    p = xy_a * xy_b; xy_sum_low += p; if (xy_sum_low < p) xy_sum_high += 1;
-                    p = yy_a * yy_b; yy_sum_low += p; if (yy_sum_low < p) yy_sum_high += 1;
-                }
-                };
-            auto compute3 = [&]() {
-#pragma unroll
-                for (int j = 0; j < BatchSize; ++j) {
-                    const uint64_t xx_a = (uint64_t)ax3[j], xx_b = (uint64_t)bx3[j];
-                    const uint64_t xy_a = (uint64_t)ay3[j], xy_b = (uint64_t)by3[j];
-                    const uint64_t yy_a = (uint64_t)cy3[j], yy_b = (uint64_t)dy3[j];
-                    uint64_t p;
-                    p = xx_a * xx_b; xx_sum_low += p; if (xx_sum_low < p) xx_sum_high += 1;
-                    p = xy_a * xy_b; xy_sum_low += p; if (xy_sum_low < p) xy_sum_high += 1;
-                    p = yy_a * yy_b; yy_sum_low += p; if (yy_sum_low < p) yy_sum_high += 1;
-                }
-                };
-
-            int base_i = i;
 
             if (nFull == 1) {
-                load0(base_i);
-                compute0();
-                batch_size = 1 * BatchSize;
+                load_buf_shared(i, ax0, bx0, ay0, by0, cy0, dy0);
+                compute_buf(ax0, bx0, ay0, by0, cy0, dy0);
+                i += BatchSize;
             } else if (nFull == 2) {
-                load0(base_i);
-                load1(base_i + BatchSize);
-                compute0();
-                compute1();
-                batch_size = 2 * BatchSize;
+                load_buf_shared(i, ax0, bx0, ay0, by0, cy0, dy0);
+                load_buf_shared(i + BatchSize, ax1, bx1, ay1, by1, cy1, dy1);
+                compute_buf(ax0, bx0, ay0, by0, cy0, dy0);
+                compute_buf(ax1, bx1, ay1, by1, cy1, dy1);
+                i += 2 * BatchSize;
             } else if (nFull == 3) {
-                load0(base_i);
-                load1(base_i + BatchSize);
-                load2(base_i + 2 * BatchSize);
-                compute0();
-                compute1();
-                compute2();
-                batch_size = 3 * BatchSize;
+                load_buf_shared(i, ax0, bx0, ay0, by0, cy0, dy0);
+                load_buf_shared(i + BatchSize, ax1, bx1, ay1, by1, cy1, dy1);
+                load_buf_shared(i + 2 * BatchSize, ax2, bx2, ay2, by2, cy2, dy2);
+                compute_buf(ax0, bx0, ay0, by0, cy0, dy0);
+                compute_buf(ax1, bx1, ay1, by1, cy1, dy1);
+                compute_buf(ax2, bx2, ay2, by2, cy2, dy2);
+                i += 3 * BatchSize;
             } else {
-                // nFull >= 4 → 4-stage steady-state pipeline
-                load0(base_i + 0 * BatchSize);
-                load1(base_i + 1 * BatchSize);
-                load2(base_i + 2 * BatchSize);
-                load3(base_i + 3 * BatchSize);
+                // 4-stage steady-state
+                load_buf_shared(i + 0 * BatchSize, ax0, bx0, ay0, by0, cy0, dy0);
+                load_buf_shared(i + 1 * BatchSize, ax1, bx1, ay1, by1, cy1, dy1);
+                load_buf_shared(i + 2 * BatchSize, ax2, bx2, ay2, by2, cy2, dy2);
+                load_buf_shared(i + 3 * BatchSize, ax3, bx3, ay3, by3, cy3, dy3);
 
-                int next = 4;                      // next full batch index to prefetch
-                const int rounds = nFull / 4;      // number of full 4-batch rounds
-                const int rem = nFull % 4;      // remaining prefetched batches to compute after rounds
+                int next = 4;
+                const int nf = nFull;
+                const int rounds = nf / 4;
+                const int rem = nf % 4;
 
                 for (int r = 0; r < rounds; ++r) {
-                    compute0();
-                    if (next < nFull) {
-                        load0(base_i + next * BatchSize);
-                        ++next;
-                    }
+                    compute_buf(ax0, bx0, ay0, by0, cy0, dy0);
+                    if (next < nf) load_buf_shared(i + next * BatchSize, ax0, bx0, ay0, by0, cy0, dy0), ++next;
 
-                    compute1();
-                    if (next < nFull) {
-                        load1(base_i + next * BatchSize);
-                        ++next;
-                    }
+                    compute_buf(ax1, bx1, ay1, by1, cy1, dy1);
+                    if (next < nf) load_buf_shared(i + next * BatchSize, ax1, bx1, ay1, by1, cy1, dy1), ++next;
 
-                    compute2();
-                    if (next < nFull) {
-                        load2(base_i + next * BatchSize);
-                        ++next;
-                    }
+                    compute_buf(ax2, bx2, ay2, by2, cy2, dy2);
+                    if (next < nf) load_buf_shared(i + next * BatchSize, ax2, bx2, ay2, by2, cy2, dy2), ++next;
 
-                    compute3();
-                    if (next < nFull) {
-                        load3(base_i + next * BatchSize);
-                        ++next;
-                    }
+                    compute_buf(ax3, bx3, ay3, by3, cy3, dy3);
+                    if (next < nf) load_buf_shared(i + next * BatchSize, ax3, bx3, ay3, by3, cy3, dy3), ++next;
                 }
+                if (rem >= 1) compute_buf(ax0, bx0, ay0, by0, cy0, dy0);
+                if (rem >= 2) compute_buf(ax1, bx1, ay1, by1, cy1, dy1);
+                if (rem >= 3) compute_buf(ax2, bx2, ay2, by2, cy2, dy2);
 
-                // Drain: compute remaining prefetched buffers (0..rem-1)
-                if (rem >= 1) {
-                    compute0();
-                }
-
-                if (rem >= 2) {
-                    compute1();
-                }
-
-                if (rem >= 3) {
-                    compute2();
-                }
-
-                batch_size = nFull * BatchSize;
+                i += nf * BatchSize;
             }
-        } else {
-            // Handle batch sizes < BatchSize without local arrays
-            for (int j = 0; j < batch_size; j++) {
-                int idx = i + j;
+        }
 
-                uint64_t xx_a, xx_b, xy_a, xy_b, yy_a, yy_b;
+        // Epilogue: scalar tail
+        if (i <= i_end) {
+            accumulate_scalar_span<UseConditionalAccess>(
+                i, i_end, k,
+                aDigits_base, bDigits_base, a_offset, b_offset,
+                x_diff_abs, y_diff_abs,
+                xx_sum_low, xx_sum_high, xy_sum_low, xy_sum_high, yy_sum_low, yy_sum_high);
+        }
+        return;
+    }
 
-                if constexpr (UseConditionalAccess == ConditionalAccess::True) {
-                    // Z1_temp case - when SharkLoadAllInShared is false, always use global arrays
-                    xx_a = x_diff_abs[idx];
-                    xx_b = x_diff_abs[k - idx];
-                    xy_a = x_diff_abs[idx];
-                    xy_b = y_diff_abs[k - idx];
-                    yy_a = y_diff_abs[idx];
-                    yy_b = y_diff_abs[k - idx];
-                } else {
-                    // Z0 and Z2 cases
-                    xx_a = aDigits_base[idx + a_offset];
-                    xx_b = aDigits_base[k - idx + a_offset];
-                    xy_a = aDigits_base[idx + a_offset];
-                    xy_b = bDigits_base[k - idx + b_offset];
-                    yy_a = bDigits_base[idx + b_offset];
-                    yy_b = bDigits_base[k - idx + b_offset];
+    // ---------------- global-memory path with alignment steering (BatchSize==4) ----------------
+    if constexpr (BatchSize != 4) {
+        // Generic non-4 batching → just use your existing scalar-batched fallback
+        for (int base_i = i_start; base_i <= i_end; ) {
+            const int remaining = i_end - base_i + 1;
+            const int bsz = remaining >= BatchSize ? BatchSize : remaining;
+
+            if (bsz == BatchSize) {
+                // scalar batched load + compute
+                uint32_t ax[BatchSize], bx[BatchSize], ay[BatchSize], by[BatchSize], cy[BatchSize], dy[BatchSize];
+#pragma unroll
+                for (int j = 0; j < BatchSize; ++j) {
+                    const int idx = base_i + j;
+                    const int idx2 = k - idx;
+                    if constexpr (UseConditionalAccess == ConditionalAccess::True) {
+                        ax[j] = x_diff_abs[idx];     bx[j] = x_diff_abs[idx2];
+                        ay[j] = x_diff_abs[idx];     by[j] = y_diff_abs[idx2];
+                        cy[j] = y_diff_abs[idx];     dy[j] = y_diff_abs[idx2];
+                    } else {
+                        ax[j] = aDigits_base[idx + a_offset];
+                        bx[j] = aDigits_base[idx2 + a_offset];
+                        ay[j] = aDigits_base[idx + a_offset];
+                        by[j] = bDigits_base[idx2 + b_offset];
+                        cy[j] = bDigits_base[idx + b_offset];
+                        dy[j] = bDigits_base[idx2 + b_offset];
+                    }
                 }
-
-                uint64_t xx_product = xx_a * xx_b;
-                uint64_t xy_product = xy_a * xy_b;
-                uint64_t yy_product = yy_a * yy_b;
-
-                xx_sum_low += xx_product;
-                if (xx_sum_low < xx_product) {
-                    xx_sum_high += 1;
+#pragma unroll
+                for (int j = 0; j < BatchSize; ++j) {
+                    const uint64_t xx_a = (uint64_t)ax[j], xx_b = (uint64_t)bx[j];
+                    const uint64_t xy_a = (uint64_t)ay[j], xy_b = (uint64_t)by[j];
+                    const uint64_t yy_a = (uint64_t)cy[j], yy_b = (uint64_t)dy[j];
+                    uint64_t p;
+                    p = xx_a * xx_b; xx_sum_low += p; if (xx_sum_low < p) xx_sum_high += 1;
+                    p = xy_a * xy_b; xy_sum_low += p; if (xy_sum_low < p) xy_sum_high += 1;
+                    p = yy_a * yy_b; yy_sum_low += p; if (yy_sum_low < p) yy_sum_high += 1;
                 }
+            } else {
+                // scalar tail
+                accumulate_scalar_span<UseConditionalAccess>(
+                    base_i, base_i + bsz - 1, k,
+                    aDigits_base, bDigits_base, a_offset, b_offset,
+                    x_diff_abs, y_diff_abs,
+                    xx_sum_low, xx_sum_high, xy_sum_low, xy_sum_high, yy_sum_low, yy_sum_high);
+            }
+            base_i += bsz;
+        }
+        return;
+    }
 
-                xy_sum_low += xy_product;
-                if (xy_sum_low < xy_product) {
-                    xy_sum_high += 1;
+    // BatchSize == 4: do alignment-steered vectorized steady-state
+    {
+        // Prologue: scalar until first aligned start for a vec4 batch
+        int i_aligned = find_aligned_start4<UseConditionalAccess>(
+            i, i_end, k, aDigits_base, bDigits_base, a_offset, b_offset, x_diff_abs, y_diff_abs);
+
+        if (i_aligned == -1) {
+            // No aligned window at all → all scalar
+            accumulate_scalar_span<UseConditionalAccess>(
+                i, i_end, k,
+                aDigits_base, bDigits_base, a_offset, b_offset,
+                x_diff_abs, y_diff_abs,
+                xx_sum_low, xx_sum_high, xy_sum_low, xy_sum_high, yy_sum_low, yy_sum_high);
+            return;
+        }
+
+        if (i < i_aligned) {
+            accumulate_scalar_span<UseConditionalAccess>(
+                i, i_aligned - 1, k,
+                aDigits_base, bDigits_base, a_offset, b_offset,
+                x_diff_abs, y_diff_abs,
+                xx_sum_low, xx_sum_high, xy_sum_low, xy_sum_high, yy_sum_low, yy_sum_high);
+            i = i_aligned;
+        }
+
+        // Steady-state: vectorized register pipeline on aligned windows
+        while (i + 3 <= i_end) {
+            const int remaining = i_end - i + 1;
+            const int nFull = remaining / 4;   // >= 1
+            const int vecBlocks = nFull;           // how many 4-wide steps
+
+            // Four fixed, compile-time-addressable buffers
+            uint32_t ax0[4], bx0[4], ay0[4], by0[4], cy0[4], dy0[4];
+            uint32_t ax1[4], bx1[4], ay1[4], by1[4], cy1[4], dy1[4];
+            uint32_t ax2[4], bx2[4], ay2[4], by2[4], cy2[4], dy2[4];
+            uint32_t ax3[4], bx3[4], ay3[4], by3[4], cy3[4], dy3[4];
+
+            // Fast aligned vector loader (PTX)
+            auto loadA = [&](int base_i, uint32_t(&ax)[4], uint32_t(&bx)[4],
+                uint32_t(&ay)[4], uint32_t(&by)[4],
+                uint32_t(&cy)[4], uint32_t(&dy)[4]) {
+                    load_buf_ptx<true, UseConditionalAccess, 4>(
+                        base_i, k, aDigits_base, bDigits_base, a_offset, b_offset,
+                        x_diff_abs, y_diff_abs,
+                        ax, bx, ay, by, cy, dy);
+                };
+            // (If you want a safety fallback for a rare misaligned block inside the loop,
+            // you can add a quick check+call to Aligned=false version here.)
+
+            auto compute = [&](uint32_t(&ax)[4], uint32_t(&bx)[4],
+                uint32_t(&ay)[4], uint32_t(&by)[4],
+                uint32_t(&cy)[4], uint32_t(&dy)[4]) {
+#pragma unroll
+                    for (int j = 0; j < 4; ++j) {
+                        const uint64_t xx_a = (uint64_t)ax[j], xx_b = (uint64_t)bx[j];
+                        const uint64_t xy_a = (uint64_t)ay[j], xy_b = (uint64_t)by[j];
+                        const uint64_t yy_a = (uint64_t)cy[j], yy_b = (uint64_t)dy[j];
+                        uint64_t p;
+                        p = xx_a * xx_b; xx_sum_low += p; if (xx_sum_low < p) xx_sum_high += 1;
+                        p = xy_a * xy_b; xy_sum_low += p; if (xy_sum_low < p) xy_sum_high += 1;
+                        p = yy_a * yy_b; yy_sum_low += p; if (yy_sum_low < p) yy_sum_high += 1;
+                    }
+                };
+
+            if (vecBlocks == 1) {
+                loadA(i, ax0, bx0, ay0, by0, cy0, dy0);
+                compute(ax0, bx0, ay0, by0, cy0, dy0);
+                i += 4;
+            } else if (vecBlocks == 2) {
+                loadA(i + 0 * 4, ax0, bx0, ay0, by0, cy0, dy0);
+                loadA(i + 1 * 4, ax1, bx1, ay1, by1, cy1, dy1);
+                compute(ax0, bx0, ay0, by0, cy0, dy0);
+                compute(ax1, bx1, ay1, by1, cy1, dy1);
+                i += 8;
+            } else if (vecBlocks == 3) {
+                loadA(i + 0 * 4, ax0, bx0, ay0, by0, cy0, dy0);
+                loadA(i + 1 * 4, ax1, bx1, ay1, by1, cy1, dy1);
+                loadA(i + 2 * 4, ax2, bx2, ay2, by2, cy2, dy2);
+                compute(ax0, bx0, ay0, by0, cy0, dy0);
+                compute(ax1, bx1, ay1, by1, cy1, dy1);
+                compute(ax2, bx2, ay2, by2, cy2, dy2);
+                i += 12;
+            } else {
+                // vecBlocks >= 4 → 4-stage steady-state, prefetch while computing
+                loadA(i + 0 * 4, ax0, bx0, ay0, by0, cy0, dy0);
+                loadA(i + 1 * 4, ax1, bx1, ay1, by1, cy1, dy1);
+                loadA(i + 2 * 4, ax2, bx2, ay2, by2, cy2, dy2);
+                loadA(i + 3 * 4, ax3, bx3, ay3, by3, cy3, dy3);
+
+                int next = 4;
+                const int rounds = vecBlocks / 4;
+                const int rem = vecBlocks % 4;
+
+                for (int r = 0; r < rounds; ++r) {
+                    compute(ax0, bx0, ay0, by0, cy0, dy0);
+                    if (next < vecBlocks) loadA(i + next * 4, ax0, bx0, ay0, by0, cy0, dy0), ++next;
+
+                    compute(ax1, bx1, ay1, by1, cy1, dy1);
+                    if (next < vecBlocks) loadA(i + next * 4, ax1, bx1, ay1, by1, cy1, dy1), ++next;
+
+                    compute(ax2, bx2, ay2, by2, cy2, dy2);
+                    if (next < vecBlocks) loadA(i + next * 4, ax2, bx2, ay2, by2, cy2, dy2), ++next;
+
+                    compute(ax3, bx3, ay3, by3, cy3, dy3);
+                    if (next < vecBlocks) loadA(i + next * 4, ax3, bx3, ay3, by3, cy3, dy3), ++next;
                 }
+                if (rem >= 1) compute(ax0, bx0, ay0, by0, cy0, dy0);
+                if (rem >= 2) compute(ax1, bx1, ay1, by1, cy1, dy1);
+                if (rem >= 3) compute(ax2, bx2, ay2, by2, cy2, dy2);
 
-                yy_sum_low += yy_product;
-                if (yy_sum_low < yy_product) {
-                    yy_sum_high += 1;
+                i += vecBlocks * 4;
+            }
+
+            // Try to realign again if we still have >=4 left but somehow lost alignment
+            if (i + 3 <= i_end) {
+                const int again = find_aligned_start4<UseConditionalAccess>(
+                    i, i_end, k, aDigits_base, bDigits_base, a_offset, b_offset, x_diff_abs, y_diff_abs);
+                if (again == -1) break;
+                if (again > i) {
+                    // scalar from i..again-1, then continue
+                    accumulate_scalar_span<UseConditionalAccess>(
+                        i, again - 1, k,
+                        aDigits_base, bDigits_base, a_offset, b_offset,
+                        x_diff_abs, y_diff_abs,
+                        xx_sum_low, xx_sum_high, xy_sum_low, xy_sum_high, yy_sum_low, yy_sum_high);
+                    i = again;
                 }
             }
         }
 
-        i += batch_size;
+        // Epilogue scalar
+        if (i <= i_end) {
+            accumulate_scalar_span<UseConditionalAccess>(
+                i, i_end, k,
+                aDigits_base, bDigits_base, a_offset, b_offset,
+                x_diff_abs, y_diff_abs,
+                xx_sum_low, xx_sum_high, xy_sum_low, xy_sum_high, yy_sum_low, yy_sum_high);
+        }
     }
 }
 
@@ -3769,15 +3751,15 @@ static __device__ void MultiplyHelperKaratsubaV2Separates(
         const_cast<uint32_t *>(A->Digits);
     auto *SharkRestrict bDigits =
         SharkLoadAllInShared ?
-        (aDigits + NewN) :
+        (aDigits + NewN + CalcAlign16Bytes32BitIndex(NewN)) :
         const_cast<uint32_t *>(B->Digits);
     auto *SharkRestrict x_diff_abs =
         SharkLoadAllInShared ?
-        reinterpret_cast<uint32_t *>(bDigits + NewN) :
+        reinterpret_cast<uint32_t *>(bDigits + NewN + CalcAlign16Bytes32BitIndex(NewN)) :
         reinterpret_cast<uint32_t *>(&tempProducts[XDiff_offset]);
     auto *SharkRestrict y_diff_abs =
         SharkLoadAllInShared ?
-        reinterpret_cast<uint32_t *>(x_diff_abs + (NewN + 1) / 2) :
+        reinterpret_cast<uint32_t *>(x_diff_abs + (NewN + 1) / 2 + CalcAlign16Bytes32BitIndex((NewN + 1) / 2)) :
         reinterpret_cast<uint32_t *>(&tempProducts[YDiff_offset]);
 
     if constexpr (SharkLoadAllInShared) {

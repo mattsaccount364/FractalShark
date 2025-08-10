@@ -166,7 +166,9 @@ static constexpr auto AdditionalUInt64Global =
 
 template<class SharkFloatParams>
 static constexpr auto CalculateMultiplyFrameSize() {
-    return ScratchMemoryArraysForMultiply * SharkFloatParams::GlobalNumUint32 + AdditionalUInt64PerFrame;
+    constexpr auto retval = ScratchMemoryArraysForMultiply * SharkFloatParams::GlobalNumUint32 + AdditionalUInt64PerFrame;
+    constexpr auto alignAt16BytesConstant = (retval % 16 == 0) ? 0 : (16 - retval % 16);
+    return retval + alignAt16BytesConstant;
 }
 
 template<class SharkFloatParams>
@@ -321,29 +323,29 @@ bool HpSharkFloat<SharkFloatParams>::GetNegative() const {
 }
 
 template<class SharkFloatParams>
-struct HpSharkComboResults {
-    HpSharkFloat<SharkFloatParams> A;
-    HpSharkFloat<SharkFloatParams> B;
-    HpSharkFloat<SharkFloatParams> ResultX2;
-    HpSharkFloat<SharkFloatParams> Result2XY;
-    HpSharkFloat<SharkFloatParams> ResultY2;
+struct alignas(16) HpSharkComboResults{
+    alignas(16) HpSharkFloat<SharkFloatParams> A;
+    alignas(16) HpSharkFloat<SharkFloatParams> B;
+    alignas(16) HpSharkFloat<SharkFloatParams> ResultX2;
+    alignas(16) HpSharkFloat<SharkFloatParams> Result2XY;
+    alignas(16) HpSharkFloat<SharkFloatParams> ResultY2;
 };
 
 template<class SharkFloatParams>
 struct HpSharkAddComboResults {
-    HpSharkFloat<SharkFloatParams> A_X2;
-    HpSharkFloat<SharkFloatParams> B_Y2;
-    HpSharkFloat<SharkFloatParams> C_A;
-    HpSharkFloat<SharkFloatParams> D_2X;
-    HpSharkFloat<SharkFloatParams> E_B;
-    HpSharkFloat<SharkFloatParams> Result1_A_B_C;
-    HpSharkFloat<SharkFloatParams> Result2_D_E;
+    alignas(16) HpSharkFloat<SharkFloatParams> A_X2;
+    alignas(16) HpSharkFloat<SharkFloatParams> B_Y2;
+    alignas(16) HpSharkFloat<SharkFloatParams> C_A;
+    alignas(16) HpSharkFloat<SharkFloatParams> D_2X;
+    alignas(16) HpSharkFloat<SharkFloatParams> E_B;
+    alignas(16) HpSharkFloat<SharkFloatParams> Result1_A_B_C;
+    alignas(16) HpSharkFloat<SharkFloatParams> Result2_D_E;
 };
 
 template<class SharkFloatParams>
 struct HpSharkReferenceResults {
-    HpSharkComboResults<SharkFloatParams> Multiply;
-    HpSharkAddComboResults<SharkFloatParams> Add;
+    alignas(16) HpSharkComboResults<SharkFloatParams> Multiply;
+    alignas(16) HpSharkAddComboResults<SharkFloatParams> Add;
 };
 
 template<class SharkFloatParams>

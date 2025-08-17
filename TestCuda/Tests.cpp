@@ -579,13 +579,13 @@ void TestPerf (
     int testNum,
     uint64_t numIters) {
 
-    HpSharkFloat<SharkFloatParams> xNum;
-    HpSharkFloat<SharkFloatParams> yNum;
-    HpSharkFloat<SharkFloatParams> zNum;
+    auto xNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+    auto yNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+    auto zNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
 
-    xNum.GenerateRandomNumber2();
-    yNum.GenerateRandomNumber2();
-    zNum.GenerateRandomNumber2();
+    xNum->GenerateRandomNumber2();
+    yNum->GenerateRandomNumber2();
+    zNum->GenerateRandomNumber2();
 
     mpf_set_default_prec(HpSharkFloat<SharkFloatParams>::DefaultMpirBits);  // Set precision for MPIR floating point
 
@@ -597,13 +597,13 @@ void TestPerf (
     mpf_init(mpfY);
     mpf_init(mpfZ);
 
-    xNum.HpGpuToMpf(mpfX);
-    yNum.HpGpuToMpf(mpfY);
-    zNum.HpGpuToMpf(mpfZ);
+    xNum->HpGpuToMpf(mpfX);
+    yNum->HpGpuToMpf(mpfY);
+    zNum->HpGpuToMpf(mpfZ);
 
-    auto num1 = xNum.ToString();
-    auto num2 = yNum.ToString();
-    auto num3 = zNum.ToString();
+    auto num1 = xNum->ToString();
+    auto num2 = yNum->ToString();
+    auto num3 = zNum->ToString();
 
     TestPerf<SharkFloatParams, sharkOperator>(
         testNum,

@@ -70,8 +70,10 @@
       <TargetMachinePlatform>64</TargetMachinePlatform>
       <Include>..\mpir\lib\x64\Debug;</Include>
       <AdditionalOptions>-std=c++20 -Xcompiler "/std:c++20"  --expt-relaxed-constexpr -t 0 --default-stream per-thread %(AdditionalOptions)</AdditionalOptions>
-      <SplitCompileCustomThreads>0</SplitCompileCustomThreads>
+      <SplitCompileCustomThreads>
+      </SplitCompileCustomThreads>
       <CodeGeneration>compute_75,sm_75;compute_89,sm_89;</CodeGeneration>
+      <SplitCompile>MaxThreads</SplitCompile>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -99,10 +101,11 @@
       <TargetMachinePlatform>64</TargetMachinePlatform>
       <Include>..\mpir\lib\x64\Release;</Include>
       <ExtensibleWholeProgramCompilation>true</ExtensibleWholeProgramCompilation>
-      <CodeGeneration>compute_75,sm_75;compute_89,sm_89;</CodeGeneration>
+      <CodeGeneration>compute_89,sm_89;</CodeGeneration>
       <AdditionalOptions>-std=c++20 -Xcompiler "/std:c++20"  --expt-relaxed-constexpr -t 0 --default-stream per-thread %(AdditionalOptions)</AdditionalOptions>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
-      <SplitCompileCustomThreads>0</SplitCompileCustomThreads>
+      <SplitCompileCustomThreads>
+      </SplitCompileCustomThreads>
       <GenerateLineInfo>true</GenerateLineInfo>
       <SplitCompile>MaxThreads</SplitCompile>
     </CudaCompile>
@@ -115,6 +118,8 @@
     <ClCompile Include="ReferenceKaratsuba.cpp" />
     <ClCompile Include="TestVerbose.cpp" />
     <ClInclude Include="HpSharkReferenceOrbit.cuh" />
+    <ClInclude Include="MultiplyHelperGlobalUnaligned.cuh" />
+    <ClInclude Include="MultiplyHelperVectorLoads.cuh" />
     <ClInclude Include="TestVerbose.h" />
     <ClInclude Include="ThreeWayMagnitude.h" />
     <CudaCompile Include="Add.cu" />

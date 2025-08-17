@@ -127,7 +127,7 @@ __device__ uint32_t *GetRecursionSyncVars(uint32_t *base_shared_data) {
     return base_shared_data + (base_offset / sizeof(uint32_t));
 }
 
-// Get pipeline buffer for specific recursion depth (when SharkLoadAllInShared is false)
+// Get pipeline buffer for specific recursion depth (when not loading all in shared)
 template<class SharkFloatParams, int RecursionDepth>
 __device__ uint32_t *GetRecursionPipelineBuffer(uint32_t *base_shared_data) {
     if constexpr (SharkLoadAllInShared) {
@@ -214,7 +214,7 @@ template<
     int b2n,
     int ExecutionBlockBase,
     int ExecutionNumBlocks>
-static __device__ SharkForceInlineReleaseOnly void
+__device__ SharkForceInlineReleaseOnly static void
 SubtractDigitsParallel(
     uint32_t *SharkRestrict x_diff_abs,
     uint32_t *SharkRestrict y_diff_abs,
@@ -406,7 +406,7 @@ template<
     int a2n, int b2n,
     int ExecutionBlockBase,
     int ExecutionNumBlocks>
-static __device__ SharkForceInlineReleaseOnly void
+__device__ SharkForceInlineReleaseOnly static void
 SubtractDigitsParallelImproved3(
     // Working arrays (which may be in shared memory)
     uint32_t *SharkRestrict x_diff_abs,
@@ -798,7 +798,7 @@ SubtractDigitsParallelImproved3(
 
 
 // Function to perform addition with carry
-static __device__ SharkForceInlineReleaseOnly void
+__device__ SharkForceInlineReleaseOnly static void
 Add128(
     uint64_t a_low, uint64_t a_high,
     uint64_t b_low, uint64_t b_high,
@@ -809,7 +809,7 @@ Add128(
     result_high = a_high + b_high + carry;
 }
 
-static __device__ SharkForceInlineReleaseOnly void
+__device__ SharkForceInlineReleaseOnly static void
 Subtract128(
     uint64_t a_low, uint64_t a_high,
     uint64_t b_low, uint64_t b_high,
@@ -826,7 +826,8 @@ Subtract128(
 }
 
 template<class SharkFloatParams>
-static __device__ SharkForceInlineReleaseOnly void SerialCarryPropagationThread0 (
+__device__ SharkForceInlineReleaseOnly static void
+SerialCarryPropagationThread0 (
     uint64_t *SharkRestrict shared_data,
     cg::grid_group &grid,
     cg::thread_block &block,
@@ -908,7 +909,8 @@ static __device__ SharkForceInlineReleaseOnly void SerialCarryPropagationThread0
 }
 
 template<class SharkFloatParams>
-static __device__ SharkForceInlineReleaseOnly void SerialCarryPropagation (
+__device__ SharkForceInlineReleaseOnly static void
+SerialCarryPropagation (
     uint64_t *SharkRestrict shared_data,
     cg::grid_group &grid,
     cg::thread_block &block,
@@ -957,7 +959,8 @@ CarrySharedToIndex (
 }
 
 template<class SharkFloatParams>
-static __device__ SharkForceInlineReleaseOnly void CarryPropagation (
+__device__ SharkForceInlineReleaseOnly static void
+CarryPropagation (
     uint64_t *SharkRestrict shared_data,
     cg::grid_group &grid,
     cg::thread_block &block,
@@ -1342,7 +1345,7 @@ template<
     int RecursionDepth,
     int CallIndex,
     DebugStatePurpose Purpose>
-static __device__ SharkForceInlineReleaseOnly void
+__device__ SharkForceInlineReleaseOnly static void
 EraseCurrentDebugState(
     RecordIt record,
     DebugState<SharkFloatParams> *debugStates,
@@ -1361,7 +1364,7 @@ template<
     int CallIndex,
     DebugStatePurpose Purpose,
     typename ArrayType>
-static __device__ SharkForceInlineReleaseOnly void
+__device__ SharkForceInlineReleaseOnly static void
 StoreCurrentDebugState (
     RecordIt record,
     UseConvolution useConvolution,
@@ -1378,7 +1381,8 @@ StoreCurrentDebugState (
 }
 
 template<class SharkFloatParams>
-__device__ SharkForceInlineReleaseOnly static void compiler_barrier () {
+__device__ SharkForceInlineReleaseOnly static void
+compiler_barrier () {
 
     //
     // This implementation is more than just a compiler barrier.
@@ -1402,7 +1406,8 @@ enum class ConditionalAccess {
 
 // Collaborative loading helper for warp-level cooperation
 template<ConditionalAccess UseConditionalAccess>
-__device__ SharkForceInlineReleaseOnly static void LoadBatchCollaborative (
+__device__ SharkForceInlineReleaseOnly static void
+LoadBatchCollaborative (
     uint64_t *buffer,
     const int base_i,
     const int batch_size,
@@ -1458,7 +1463,8 @@ __device__ SharkForceInlineReleaseOnly static void LoadBatchCollaborative (
 
 // Direct processing fallback for non-pipelined cases
 template<ConditionalAccess UseConditionalAccess>
-__device__ SharkForceInlineReleaseOnly static void ProcessBatchDirect(
+__device__ SharkForceInlineReleaseOnly static void
+ProcessBatchDirect(
     int k, int i_start, int i_end, int n_limit,
     const uint32_t *aDigits_base, const uint32_t *bDigits_base,
     int a_offset, int b_offset,
@@ -1503,7 +1509,8 @@ __device__ SharkForceInlineReleaseOnly static void ProcessBatchDirect(
 }
 
 // Compute from shared memory buffer for thread-specific range
-__device__ SharkForceInlineReleaseOnly static void ComputeBatchFromShared (
+__device__ SharkForceInlineReleaseOnly static void
+ComputeBatchFromShared (
     const uint64_t *buffer,
     int start_offset,
     int end_offset,
@@ -1539,225 +1546,12 @@ __device__ SharkForceInlineReleaseOnly static void ComputeBatchFromShared (
     }
 }
 
-//// Pipelined for when SharkLoadAllInShared is false
-//template<
-//    class SharkFloatParams,
-//    int BatchSize,
-//    ConditionalAccess UseConditionalAccess,
-//    int RecursionDepth>
-//__device__ SharkForceInlineReleaseOnly static void ProcessConvolutionBatchPipelined(
-//    cg::grid_group &grid,
-//    cg::thread_block &block,
-//    const int RelativeBlockIndex,
-//    const int outerIteration,
-//    const int k,
-//    const int i_start,
-//    const int i_end,
-//    const int n_limit,
-//    const uint32_t *aDigits_base,
-//    const uint32_t *bDigits_base,
-//    const int a_offset,
-//    const int b_offset,
-//    uint64_t &xx_sum_low,
-//    uint64_t &xx_sum_high,
-//    uint64_t &xy_sum_low,
-//    uint64_t &xy_sum_high,
-//    uint64_t &yy_sum_low,
-//    uint64_t &yy_sum_high,
-//    uint32_t *shared_data,
-//    const uint32_t *x_diff_abs = nullptr,
-//    const uint32_t *y_diff_abs = nullptr)
-//{
-//    ProcessBatchDirect<UseConditionalAccess>(
-//        k,
-//        i_start,
-//        i_end,
-//        n_limit,
-//        aDigits_base,
-//        bDigits_base,
-//        a_offset,
-//        b_offset,
-//        xx_sum_low,
-//        xx_sum_high,
-//        xy_sum_low,
-//        xy_sum_high,
-//        yy_sum_low,
-//        yy_sum_high,
-//        x_diff_abs,
-//        y_diff_abs);
-//
-//    //// Calculate what idx values this block will handle in the grid-stride loop
-//    //const int stride = block.dim_threads().x * grid.dim_blocks().x;
-//    //const int base_k = RelativeBlockIndex * block.dim_threads().x + outerIteration * stride;
-//    //const int first_k_this_block = base_k;
-//    //const int last_k_this_block = base_k + block.dim_threads().x - 1;
-//
-//    //// Now calculate the i ranges based on the actual k values
-//    //const int first_i_start = (first_k_this_block < n_limit) ? 0 : (first_k_this_block - (n_limit - 1));
-//    //const int last_i_end = (last_k_this_block < n_limit) ? last_k_this_block : (n_limit - 1);
-//
-//    //const int block_wide_i_start = first_i_start;
-//    //const int block_wide_i_end = last_i_end;
-//
-//    //// This gives us the full range of i values [block_wide_i_start, block_wide_i_end] 
-//    //// that will be accessed by any thread in this block during the convolution
-//
-//    //// Pipeline configuration - optimized for small shared memory
-//    //constexpr int EffectiveBatchSize = (BatchSize < 8) ? BatchSize : 8; // Limit to 8 for pipelining
-//    //constexpr int ElementsPerBatch = 6; // xx_a, xx_b, xy_a, xy_b, yy_a, yy_b
-//
-//    //// Shared memory layout: double-buffered
-//    //uint64_t *buffer_ping = reinterpret_cast<uint64_t *>(shared_data);
-//    //uint64_t *buffer_pong = buffer_ping + (EffectiveBatchSize * ElementsPerBatch);
-//
-//    //const int tid = block.thread_index().x;
-//
-//    //int current_buffer = 0;
-//    //int pipeline_stage = 0;
-//    //bool pipeline_active = false;
-//
-//    //for (int block_batch_start = block_wide_i_start;
-//    //    block_batch_start <= block_wide_i_end;
-//    //    block_batch_start += EffectiveBatchSize) {
-//
-//    //    const int remaining = block_wide_i_end - block_batch_start + 1;
-//    //    const int current_batch_size = min(EffectiveBatchSize, remaining);
-//
-//    //    // Select active buffers
-//    //    uint64_t *load_buffer = (current_buffer == 0) ? buffer_ping : buffer_pong;
-//    //    uint64_t *compute_buffer = (current_buffer == 0) ? buffer_pong : buffer_ping;
-//
-//    //    //// Stage 1: Asynchronous Load (collaborative loading across block)
-//    //    //if (current_batch_size > 0) {
-//    //    //    LoadBatchCollaborative<UseConditionalAccess>(
-//    //    //        load_buffer,
-//    //    //        block_batch_start,    // Use block-wide start instead of individual thread's i
-//    //    //        current_batch_size,
-//    //    //        k,
-//    //    //        aDigits_base,
-//    //    //        bDigits_base,
-//    //    //        a_offset,
-//    //    //        b_offset,
-//    //    //        x_diff_abs,
-//    //    //        y_diff_abs,
-//    //    //        tid,
-//    //    //        block.dim_threads().x);
-//    //    //}
-//
-//    //    //block.sync();
-//
-//    //    // Stage 2: Compute from previous iteration (if pipeline is active)
-//    //    if (pipeline_active && pipeline_stage > 0) {
-//    //        // Calculate which part of the previous batch this thread should process
-//    //        int prev_batch_start = block_batch_start - EffectiveBatchSize;
-//    //        int prev_batch_end = prev_batch_start + EffectiveBatchSize - 1;
-//
-//    //        // Find overlap between this thread's range [i_start, i_end] and the loaded range
-//    //        int thread_start_in_chunk = max(i_start, prev_batch_start);
-//    //        int thread_end_in_chunk = min(i_end, prev_batch_end);
-//
-//    //        if (thread_start_in_chunk <= thread_end_in_chunk) {
-//    //            ComputeBatchFromShared(
-//    //                compute_buffer,
-//    //                thread_start_in_chunk - prev_batch_start,  // Start offset in shared buffer
-//    //                thread_end_in_chunk - prev_batch_start,    // End offset in shared buffer
-//    //                xx_sum_low,
-//    //                xx_sum_high,
-//    //                xy_sum_low,
-//    //                xy_sum_high,
-//    //                yy_sum_low,
-//    //                yy_sum_high);
-//    //        }
-//    //    }
-//
-//    //    // For first iteration or when batch size doesn't match effective size
-//    //    if (!pipeline_active || current_batch_size != EffectiveBatchSize) {
-//    //        // First-iteration fallback: do the thread's range and exit
-//    //        if (!pipeline_active) {
-//    //            ProcessBatchDirect<UseConditionalAccess>(
-//    //                k,
-//    //                i_start,
-//    //                i_end,
-//    //                n_limit,
-//    //                aDigits_base,
-//    //                bDigits_base,
-//    //                a_offset,
-//    //                b_offset,
-//    //                xx_sum_low,
-//    //                xx_sum_high,
-//    //                xy_sum_low,
-//    //                xy_sum_high,
-//    //                yy_sum_low,
-//    //                yy_sum_high,
-//    //                x_diff_abs,
-//    //                y_diff_abs);
-//    //            break;
-//    //        }
-//
-//    //        // Tail fallback (partial chunk): intersect with the thread's range
-//    //        int fallback_start = max(i_start, block_batch_start);
-//    //        int fallback_end = min(i_end, block_batch_start + current_batch_size - 1);
-//    //        if (fallback_start <= fallback_end) {
-//    //            ProcessBatchDirect<UseConditionalAccess>(
-//    //                k,
-//    //                fallback_start,
-//    //                fallback_end,
-//    //                n_limit,
-//    //                aDigits_base,
-//    //                bDigits_base,
-//    //                a_offset,
-//    //                b_offset,
-//    //                xx_sum_low,
-//    //                xx_sum_high,
-//    //                xy_sum_low,
-//    //                xy_sum_high,
-//    //                yy_sum_low,
-//    //                yy_sum_high,
-//    //                x_diff_abs,
-//    //                y_diff_abs);
-//    //        }
-//
-//    //        break; // tail handled; you already computed the previous full chunk above
-//
-//    //    }
-//
-//    //    // Advance pipeline
-//    //    //current_buffer = 1 - current_buffer;
-//    //    //pipeline_stage++;
-//    //    pipeline_active = false;
-//
-//    //    //block.sync();
-//    //}
-//
-//    //// Drain pipeline - compute final batch
-//    //if (pipeline_active && pipeline_stage > 0) {
-//    //    uint64_t *final_compute_buffer = (current_buffer == 0) ? buffer_pong : buffer_ping;
-//
-//    //    int prev_chunk_start = block_wide_i_start + (pipeline_stage - 1) * EffectiveBatchSize;
-//    //    int prev_chunk_end = prev_chunk_start + EffectiveBatchSize - 1;
-//
-//    //    // Find overlap between this thread's range [i_start, i_end] and the loaded range
-//    //    int thread_start_in_chunk = max(i_start, prev_chunk_start);
-//    //    int thread_end_in_chunk = min(i_end, prev_chunk_end);
-//
-//    //    ComputeBatchFromShared(
-//    //        final_compute_buffer,
-//    //        thread_start_in_chunk - prev_chunk_start,  // Start offset in shared buffer
-//    //        thread_end_in_chunk - prev_chunk_start,    // End offset in shared buffer
-//    //        xx_sum_low,
-//    //        xx_sum_high,
-//    //        xy_sum_low,
-//    //        xy_sum_high,
-//    //        yy_sum_low,
-//    //        yy_sum_high);
-//    //}
-//}
-
 // Pipelined via banded, *tiled* prefetch (CTA scope) with uniform barriers per tile.
 // Preconditions: caller only enters this path when all threads in the CTA participate
 // in the same iteration (so CTA-wide block.sync() is safe).
 template<class SharkFloatParams, int BatchSize, ConditionalAccess UseConditionalAccess, int RecursionDepth>
-__device__ SharkForceInlineReleaseOnly static void ProcessConvolutionBatchPipelined(
+__device__ SharkForceInlineReleaseOnly static void
+ProcessConvolutionBatchPipelined(
     cg::grid_group &grid,
     cg::thread_block &block,
     const int /*RelativeBlockIndex*/,     // unused here
@@ -1905,7 +1699,8 @@ __device__ SharkForceInlineReleaseOnly static void ProcessConvolutionBatchPipeli
     }
 }
 
-__device__ __forceinline__ void touch_clock_guard() {
+__device__ SharkForceInlineReleaseOnly static void
+touch_clock_guard() {
     volatile unsigned t;
     // Read the SM cycle counter (or use %globaltimer for 64-bit)
     asm volatile ("mov.u32 %0, %%clock;" : "=r"(t));
@@ -1923,7 +1718,8 @@ __device__ __forceinline__ void touch_clock_guard() {
 
 
 template<ConditionalAccess Cond>
-__device__ __forceinline__ void load_buf_ptx_regs_4_global_unaligned(
+__device__ SharkForceInlineReleaseOnly static void
+load_buf_ptx_regs_4_global_unaligned(
     int base_i, int k,
     const uint32_t *__restrict__ aDigits_base,
     const uint32_t *__restrict__ bDigits_base,
@@ -2086,7 +1882,8 @@ __device__ __forceinline__ void load_buf_ptx_regs_4_global_unaligned(
 // Assumes 16B alignment for all six pointers passed below.
 // BatchSize == 4 version (vector loads).
 template<ConditionalAccess Cond>
-__device__ __forceinline__ void load_buf_ptx_regs_4_global_aligned(
+__device__ SharkForceInlineReleaseOnly static void
+load_buf_ptx_regs_4_global_aligned(
     int base_i, int k,
     const uint32_t *__restrict__ aDigits_base,
     const uint32_t *__restrict__ bDigits_base,
@@ -2173,7 +1970,8 @@ __device__ __forceinline__ void load_buf_ptx_regs_4_global_aligned(
 
 // ---- Tiny wrapper so it’s a drop-in for load_buf_ptx<...,4>(...) -------------
 template<bool Aligned, ConditionalAccess Cond, int BatchSize>
-__device__ __forceinline__ void load_buf_ptx(
+__device__ SharkForceInlineReleaseOnly static void
+load_buf_ptx(
     int base_i, int k,
     const uint32_t *__restrict__ aDigits_base,
     const uint32_t *__restrict__ bDigits_base,
@@ -2198,40 +1996,10 @@ __device__ __forceinline__ void load_buf_ptx(
     }
 }
 
-// Helper: check 16B alignment for “ptr + elem_index*4”
-__device__ __forceinline__ bool aligned16_addr(const uint32_t *p, int elem_index) {
-    return (((reinterpret_cast<uintptr_t>(p) + (static_cast<uintptr_t>(elem_index) << 2)) & 0xF) == 0);
-}
-
-// Returns true if a full BatchSize (==4) batch starting at i0 can use ld.v4 on all streams
-template<ConditionalAccess UseConditionalAccess>
-__device__ __forceinline__ bool can_vec4_batch(
-    int i0, int k,
-    const uint32_t *aDigits_base, const uint32_t *bDigits_base,
-    int a_offset, int b_offset,
-    const uint32_t *x_diff_abs, const uint32_t *y_diff_abs) {
-    // Forward block starts at i0
-    // Mirror block for width 4 starts at n_start = k - i0 - 3 (we load ascending then index reverse in regs)
-    const int n_start = k - i0 - 3;
-
-    if constexpr (UseConditionalAccess == ConditionalAccess::True) {
-        // globals (no element offsets)
-        return aligned16_addr(x_diff_abs, i0) &&  // A forward (ax/ay)
-            aligned16_addr(y_diff_abs, i0) &&  // B forward (cy)
-            aligned16_addr(x_diff_abs, n_start) &&  // A mirror  (bx)
-            aligned16_addr(y_diff_abs, n_start);    // B mirror  (by/dy)
-    } else {
-        // base arrays with per-array element offsets
-        return aligned16_addr(aDigits_base, a_offset + i0) &&  // A forward (ax/ay)
-            aligned16_addr(bDigits_base, b_offset + i0) &&  // B forward (cy)
-            aligned16_addr(aDigits_base, a_offset + n_start) &&  // A mirror  (bx)
-            aligned16_addr(bDigits_base, b_offset + n_start);    // B mirror  (by/dy)
-    }
-}
-
 // Unified scalar accumulator used for BOTH prologue and epilogue
 template<ConditionalAccess Cond>
-__device__ __forceinline__ void accumulate_scalar_span(
+__device__ SharkForceInlineReleaseOnly static void
+accumulate_scalar_span(
     int i_lo, int i_hi, int k,
     const uint32_t *__restrict__ aDigits_base,
     const uint32_t *__restrict__ bDigits_base,
@@ -2265,34 +2033,28 @@ __device__ __forceinline__ void accumulate_scalar_span(
     }
 }
 
-// Find first aligned batch start (width 4) in [i..i_end], or -1 if none.
-template<ConditionalAccess Cond>
-__device__ __forceinline__ int find_aligned_start4(
-    int i, int i_end, int k,
-    const uint32_t *aDigits_base, const uint32_t *bDigits_base,
-    int a_offset, int b_offset,
-    const uint32_t *x_diff_abs, const uint32_t *y_diff_abs) {
-    const int max_t = min(3, i_end - i);
-#pragma unroll
-    for (int t = 0; t <= max_t; ++t) {
-        const int i0 = i + t;
-        if (i0 + 3 <= i_end &&
-            can_vec4_batch<Cond>(i0, k, aDigits_base, bDigits_base, a_offset, b_offset, x_diff_abs, y_diff_abs)) {
-            return i0;
-        }
-    }
-    return -1;
+__device__ __forceinline__ int warpMinI32(int v) {
+    unsigned m = __activemask();
+    v = min(v, __shfl_down_sync(m, v, 16));
+    v = min(v, __shfl_down_sync(m, v, 8));
+    v = min(v, __shfl_down_sync(m, v, 4));
+    v = min(v, __shfl_down_sync(m, v, 2));
+    v = min(v, __shfl_down_sync(m, v, 1));
+    return __shfl_sync(m, v, 0);
 }
+
+#include "MultiplyHelperVectorLoads.cuh"
+#include "MultiplyHelperGlobalUnaligned.cuh"
 
 template<
     class SharkFloatParams,
     int BatchSize,
-    bool UsePipelining,
     ConditionalAccess UseConditionalAccess,
     int RecursionDepth,
     int ExecutionBlockBase,
     int ExecutionNumBlocks>
-__device__ SharkForceInlineReleaseOnly static void ProcessConvolutionBatch(
+__device__ SharkForceInlineReleaseOnly static void
+ProcessConvolutionDirectLoad(
     cg::grid_group &grid,
     cg::thread_block &block,
     const int RelativeBlockIndex,
@@ -2315,31 +2077,6 @@ __device__ SharkForceInlineReleaseOnly static void ProcessConvolutionBatch(
     uint32_t *shared_data,
     const uint32_t *x_diff_abs = nullptr,
     const uint32_t *y_diff_abs = nullptr) {
-    // ---------------- optional CTA pipelined-shared path ----------------
-    constexpr int Krt = SharkFloatParams::GlobalThreadsPerBlock;
-    const int stride = Krt * ExecutionNumBlocks;
-    const int k0_base = RelativeBlockIndex * Krt + outerIteration * stride;
-    const bool fullCTA = (k0_base + Krt - 1) < total_k;
-
-    if constexpr (UsePipelining) {
-        // Per-recursion buffer in shared for pipelined shared-memory version
-        uint32_t *pipeline_buffer =
-            GetRecursionPipelineBuffer<SharkFloatParams, RecursionDepth>(shared_data);
-
-        if (fullCTA) {
-            ProcessConvolutionBatchPipelined<
-                SharkFloatParams, BatchSize, UseConditionalAccess, RecursionDepth>(
-                    grid, block, RelativeBlockIndex, outerIteration,
-                    k, i_start, i_end, n_limit,
-                    aDigits_base, bDigits_base, a_offset, b_offset,
-                    xx_sum_low, xx_sum_high,
-                    xy_sum_low, xy_sum_high,
-                    yy_sum_low, yy_sum_high,
-                    pipeline_buffer,
-                    x_diff_abs, y_diff_abs);
-            return;
-        }
-    }
 
     // ---------------- scalar-only fast path when BatchSize==1 ----------------
     if constexpr (BatchSize == 1) {
@@ -2485,194 +2222,138 @@ __device__ SharkForceInlineReleaseOnly static void ProcessConvolutionBatch(
     }
 
     // ---------------- global-memory path with alignment steering (BatchSize==4) ----------------
-    if constexpr (BatchSize != 4) {
-        // Generic non-4 batching → just use your existing scalar-batched fallback
-        for (int base_i = i_start; base_i <= i_end; ) {
-            const int remaining = i_end - base_i + 1;
-            const int bsz = remaining >= BatchSize ? BatchSize : remaining;
+    if constexpr (
+        SharkInnerLoopOption == InnerLoopOption::TryUnalignedLoads2 ||
+        SharkInnerLoopOption == InnerLoopOption::TryUnalignedLoads2Shared) {
 
-            if (bsz == BatchSize) {
-                // scalar batched load + compute
-                uint32_t ax[BatchSize], bx[BatchSize], ay[BatchSize], by[BatchSize], cy[BatchSize], dy[BatchSize];
-#pragma unroll
-                for (int j = 0; j < BatchSize; ++j) {
-                    const int idx = base_i + j;
-                    const int idx2 = k - idx;
-                    if constexpr (UseConditionalAccess == ConditionalAccess::True) {
-                        ax[j] = x_diff_abs[idx];     bx[j] = x_diff_abs[idx2];
-                        ay[j] = x_diff_abs[idx];     by[j] = y_diff_abs[idx2];
-                        cy[j] = y_diff_abs[idx];     dy[j] = y_diff_abs[idx2];
-                    } else {
-                        ax[j] = aDigits_base[idx + a_offset];
-                        bx[j] = aDigits_base[idx2 + a_offset];
-                        ay[j] = aDigits_base[idx + a_offset];
-                        by[j] = bDigits_base[idx2 + b_offset];
-                        cy[j] = bDigits_base[idx + b_offset];
-                        dy[j] = bDigits_base[idx2 + b_offset];
-                    }
-                }
-#pragma unroll
-                for (int j = 0; j < BatchSize; ++j) {
-                    const uint64_t xx_a = (uint64_t)ax[j], xx_b = (uint64_t)bx[j];
-                    const uint64_t xy_a = (uint64_t)ay[j], xy_b = (uint64_t)by[j];
-                    const uint64_t yy_a = (uint64_t)cy[j], yy_b = (uint64_t)dy[j];
-                    uint64_t p;
-                    p = xx_a * xx_b; xx_sum_low += p; if (xx_sum_low < p) xx_sum_high += 1;
-                    p = xy_a * xy_b; xy_sum_low += p; if (xy_sum_low < p) xy_sum_high += 1;
-                    p = yy_a * yy_b; yy_sum_low += p; if (yy_sum_low < p) yy_sum_high += 1;
-                }
-            } else {
-                // scalar tail
-                accumulate_scalar_span<UseConditionalAccess>(
-                    base_i, base_i + bsz - 1, k,
-                    aDigits_base, bDigits_base, a_offset, b_offset,
-                    x_diff_abs, y_diff_abs,
-                    xx_sum_low, xx_sum_high, xy_sum_low, xy_sum_high, yy_sum_low, yy_sum_high);
-            }
-            base_i += bsz;
-        }
+        ProcessConvolutionDirectLoad_Unaligned2<SharkFloatParams, 16, UseConditionalAccess,
+            RecursionDepth, ExecutionBlockBase, ExecutionNumBlocks>(
+                i, i_start, i_end, k,
+                aDigits_base, bDigits_base,
+                a_offset, b_offset,
+                xx_sum_low, xx_sum_high,
+                xy_sum_low, xy_sum_high,
+                yy_sum_low, yy_sum_high,
+                x_diff_abs, y_diff_abs);
         return;
     }
 
-    // BatchSize == 4: do alignment-steered vectorized steady-state
-    {
-        // Prologue: scalar until first aligned start for a vec4 batch
-        int i_aligned = find_aligned_start4<UseConditionalAccess>(
-            i, i_end, k, aDigits_base, bDigits_base, a_offset, b_offset, x_diff_abs, y_diff_abs);
+    if constexpr (SharkInnerLoopOption == InnerLoopOption::TryVectorLoads) {
+        //
+        // This implementation uses BatchSize==8 and vector loads.  It
+        // imperfectly handles weird cases where digits don't match number of
+        // threads and some weird digit lengths, but should work for e.g.
+        // 108 blocks, 128 threads per block, and 7776 total digits.
+        // 
+        // Performance experiments are showing this approach is worse than direct
+        // unaligned load-from-global-to-registers and it's far more complex.
+        // It seems like we should be able to get a win in here but the logic for
+        // dealing with the unaligned cases probably is what's slowing it down.
+        //
 
-        if (i_aligned == -1) {
-            // No aligned window at all → all scalar
-            accumulate_scalar_span<UseConditionalAccess>(
+        ProcessConvolutionDirectLoad_BS8_FwdAligned<SharkFloatParams, 8, UseConditionalAccess,
+                                                RecursionDepth, ExecutionBlockBase, ExecutionNumBlocks>(
+            i, i_end, k,
+            aDigits_base, bDigits_base,
+            a_offset, b_offset,
+            xx_sum_low, xx_sum_high,
+            xy_sum_low, xy_sum_high,
+            yy_sum_low, yy_sum_high,
+            x_diff_abs, y_diff_abs);
+        return;
+    }
+
+    if constexpr (SharkInnerLoopOption == InnerLoopOption::TryUnalignedLoads) {
+        //
+        // This implementation uses BatchSize==8 and unaligned loads.
+        //
+
+        ProcessConvolutionDirectLoad_Unaligned<SharkFloatParams, 8, UseConditionalAccess,
+            RecursionDepth, ExecutionBlockBase, ExecutionNumBlocks>(
                 i, i_end, k,
-                aDigits_base, bDigits_base, a_offset, b_offset,
-                x_diff_abs, y_diff_abs,
-                xx_sum_low, xx_sum_high, xy_sum_low, xy_sum_high, yy_sum_low, yy_sum_high);
+                aDigits_base, bDigits_base,
+                a_offset, b_offset,
+                xx_sum_low, xx_sum_high,
+                xy_sum_low, xy_sum_high,
+                yy_sum_low, yy_sum_high,
+                x_diff_abs, y_diff_abs);
+        return;
+    }
+}
+
+template<
+    class SharkFloatParams,
+    int BatchSize,
+    bool UsePipeliningWithShared,
+    ConditionalAccess UseConditionalAccess,
+    int RecursionDepth,
+    int ExecutionBlockBase,
+    int ExecutionNumBlocks>
+__device__ SharkForceInlineReleaseOnly static void
+ProcessConvolutionBatch(
+    cg::grid_group &grid,
+    cg::thread_block &block,
+    const int RelativeBlockIndex,
+    const int outerIteration,
+    const int k,
+    const int total_k,
+    const int i_start,
+    const int i_end,
+    const int n_limit,
+    const uint32_t *aDigits_base,
+    const uint32_t *bDigits_base,
+    const int a_offset,
+    const int b_offset,
+    uint64_t &xx_sum_low,
+    uint64_t &xx_sum_high,
+    uint64_t &xy_sum_low,
+    uint64_t &xy_sum_high,
+    uint64_t &yy_sum_low,
+    uint64_t &yy_sum_high,
+    uint32_t *shared_data,
+    const uint32_t *x_diff_abs = nullptr,
+    const uint32_t *y_diff_abs = nullptr) {
+    // ---------------- optional CTA pipelined-shared path ----------------
+    constexpr int Krt = SharkFloatParams::GlobalThreadsPerBlock;
+    const int stride = Krt * ExecutionNumBlocks;
+    const int k0_base = RelativeBlockIndex * Krt + outerIteration * stride;
+    const bool fullCTA = (k0_base + Krt - 1) < total_k;
+
+    if constexpr (UsePipeliningWithShared) {
+        // Per-recursion buffer in shared for pipelined shared-memory version
+        uint32_t *pipeline_buffer =
+            GetRecursionPipelineBuffer<SharkFloatParams, RecursionDepth>(shared_data);
+
+        if (fullCTA) {
+            ProcessConvolutionBatchPipelined<
+                SharkFloatParams, BatchSize, UseConditionalAccess, RecursionDepth>(
+                    grid, block, RelativeBlockIndex, outerIteration,
+                    k, i_start, i_end, n_limit,
+                    aDigits_base, bDigits_base, a_offset, b_offset,
+                    xx_sum_low, xx_sum_high,
+                    xy_sum_low, xy_sum_high,
+                    yy_sum_low, yy_sum_high,
+                    pipeline_buffer,
+                    x_diff_abs, y_diff_abs);
             return;
         }
-
-        if (i < i_aligned) {
-            accumulate_scalar_span<UseConditionalAccess>(
-                i, i_aligned - 1, k,
-                aDigits_base, bDigits_base, a_offset, b_offset,
-                x_diff_abs, y_diff_abs,
-                xx_sum_low, xx_sum_high, xy_sum_low, xy_sum_high, yy_sum_low, yy_sum_high);
-            i = i_aligned;
-        }
-
-        // Steady-state: vectorized register pipeline on aligned windows
-        while (i + 3 <= i_end) {
-            const int remaining = i_end - i + 1;
-            const int nFull = remaining / 4;   // >= 1
-            const int vecBlocks = nFull;           // how many 4-wide steps
-
-            // Four fixed, compile-time-addressable buffers
-            uint32_t ax0[4], bx0[4], ay0[4], by0[4], cy0[4], dy0[4];
-            uint32_t ax1[4], bx1[4], ay1[4], by1[4], cy1[4], dy1[4];
-            uint32_t ax2[4], bx2[4], ay2[4], by2[4], cy2[4], dy2[4];
-            uint32_t ax3[4], bx3[4], ay3[4], by3[4], cy3[4], dy3[4];
-
-            // Fast aligned vector loader (PTX)
-            auto loadA = [&](int base_i, uint32_t(&ax)[4], uint32_t(&bx)[4],
-                uint32_t(&ay)[4], uint32_t(&by)[4],
-                uint32_t(&cy)[4], uint32_t(&dy)[4]) {
-                    load_buf_ptx<true, UseConditionalAccess, 4>(
-                        base_i, k, aDigits_base, bDigits_base, a_offset, b_offset,
-                        x_diff_abs, y_diff_abs,
-                        ax, bx, ay, by, cy, dy);
-                };
-            // (If you want a safety fallback for a rare misaligned block inside the loop,
-            // you can add a quick check+call to Aligned=false version here.)
-
-            auto compute = [&](uint32_t(&ax)[4], uint32_t(&bx)[4],
-                uint32_t(&ay)[4], uint32_t(&by)[4],
-                uint32_t(&cy)[4], uint32_t(&dy)[4]) {
-#pragma unroll
-                    for (int j = 0; j < 4; ++j) {
-                        const uint64_t xx_a = (uint64_t)ax[j], xx_b = (uint64_t)bx[j];
-                        const uint64_t xy_a = (uint64_t)ay[j], xy_b = (uint64_t)by[j];
-                        const uint64_t yy_a = (uint64_t)cy[j], yy_b = (uint64_t)dy[j];
-                        uint64_t p;
-                        p = xx_a * xx_b; xx_sum_low += p; if (xx_sum_low < p) xx_sum_high += 1;
-                        p = xy_a * xy_b; xy_sum_low += p; if (xy_sum_low < p) xy_sum_high += 1;
-                        p = yy_a * yy_b; yy_sum_low += p; if (yy_sum_low < p) yy_sum_high += 1;
-                    }
-                };
-
-            if (vecBlocks == 1) {
-                loadA(i, ax0, bx0, ay0, by0, cy0, dy0);
-                compute(ax0, bx0, ay0, by0, cy0, dy0);
-                i += 4;
-            } else if (vecBlocks == 2) {
-                loadA(i + 0 * 4, ax0, bx0, ay0, by0, cy0, dy0);
-                loadA(i + 1 * 4, ax1, bx1, ay1, by1, cy1, dy1);
-                compute(ax0, bx0, ay0, by0, cy0, dy0);
-                compute(ax1, bx1, ay1, by1, cy1, dy1);
-                i += 8;
-            } else if (vecBlocks == 3) {
-                loadA(i + 0 * 4, ax0, bx0, ay0, by0, cy0, dy0);
-                loadA(i + 1 * 4, ax1, bx1, ay1, by1, cy1, dy1);
-                loadA(i + 2 * 4, ax2, bx2, ay2, by2, cy2, dy2);
-                compute(ax0, bx0, ay0, by0, cy0, dy0);
-                compute(ax1, bx1, ay1, by1, cy1, dy1);
-                compute(ax2, bx2, ay2, by2, cy2, dy2);
-                i += 12;
-            } else {
-                // vecBlocks >= 4 → 4-stage steady-state, prefetch while computing
-                loadA(i + 0 * 4, ax0, bx0, ay0, by0, cy0, dy0);
-                loadA(i + 1 * 4, ax1, bx1, ay1, by1, cy1, dy1);
-                loadA(i + 2 * 4, ax2, bx2, ay2, by2, cy2, dy2);
-                loadA(i + 3 * 4, ax3, bx3, ay3, by3, cy3, dy3);
-
-                int next = 4;
-                const int rounds = vecBlocks / 4;
-                const int rem = vecBlocks % 4;
-
-                for (int r = 0; r < rounds; ++r) {
-                    compute(ax0, bx0, ay0, by0, cy0, dy0);
-                    if (next < vecBlocks) loadA(i + next * 4, ax0, bx0, ay0, by0, cy0, dy0), ++next;
-
-                    compute(ax1, bx1, ay1, by1, cy1, dy1);
-                    if (next < vecBlocks) loadA(i + next * 4, ax1, bx1, ay1, by1, cy1, dy1), ++next;
-
-                    compute(ax2, bx2, ay2, by2, cy2, dy2);
-                    if (next < vecBlocks) loadA(i + next * 4, ax2, bx2, ay2, by2, cy2, dy2), ++next;
-
-                    compute(ax3, bx3, ay3, by3, cy3, dy3);
-                    if (next < vecBlocks) loadA(i + next * 4, ax3, bx3, ay3, by3, cy3, dy3), ++next;
-                }
-                if (rem >= 1) compute(ax0, bx0, ay0, by0, cy0, dy0);
-                if (rem >= 2) compute(ax1, bx1, ay1, by1, cy1, dy1);
-                if (rem >= 3) compute(ax2, bx2, ay2, by2, cy2, dy2);
-
-                i += vecBlocks * 4;
-            }
-
-            // Try to realign again if we still have >=4 left but somehow lost alignment
-            if (i + 3 <= i_end) {
-                const int again = find_aligned_start4<UseConditionalAccess>(
-                    i, i_end, k, aDigits_base, bDigits_base, a_offset, b_offset, x_diff_abs, y_diff_abs);
-                if (again == -1) break;
-                if (again > i) {
-                    // scalar from i..again-1, then continue
-                    accumulate_scalar_span<UseConditionalAccess>(
-                        i, again - 1, k,
-                        aDigits_base, bDigits_base, a_offset, b_offset,
-                        x_diff_abs, y_diff_abs,
-                        xx_sum_low, xx_sum_high, xy_sum_low, xy_sum_high, yy_sum_low, yy_sum_high);
-                    i = again;
-                }
-            }
-        }
-
-        // Epilogue scalar
-        if (i <= i_end) {
-            accumulate_scalar_span<UseConditionalAccess>(
-                i, i_end, k,
-                aDigits_base, bDigits_base, a_offset, b_offset,
-                x_diff_abs, y_diff_abs,
-                xx_sum_low, xx_sum_high, xy_sum_low, xy_sum_high, yy_sum_low, yy_sum_high);
-        }
     }
+
+    ProcessConvolutionDirectLoad<
+        SharkFloatParams,
+        BatchSize,
+        UseConditionalAccess,
+        RecursionDepth,
+        ExecutionBlockBase,
+        ExecutionNumBlocks>(
+            grid, block, RelativeBlockIndex, outerIteration,
+            k, total_k, i_start, i_end, n_limit,
+            aDigits_base, bDigits_base, a_offset, b_offset,
+            xx_sum_low, xx_sum_high,
+            xy_sum_low, xy_sum_high,
+            yy_sum_low, yy_sum_high,
+            shared_data,
+            x_diff_abs, y_diff_abs);
 }
 
 
@@ -2687,7 +2368,8 @@ template<
     int ExecutionNumBlocks,
     int NewNumBlocks,
     int TempBase>
-static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
+__device__ SharkForceInlineReleaseOnly static void
+MultiplyDigitsOnly(
     uint32_t *SharkRestrict shared_data,
     const HpSharkFloat<SharkFloatParams> *SharkRestrict A,
     const HpSharkFloat<SharkFloatParams> *SharkRestrict B,
@@ -3006,11 +2688,11 @@ static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
             cg::wait(block);
         }
 
-        //constexpr bool UsePipelining = !SharkLoadAllInShared && (SharkKaratsubaBatchSize >= 4);
-        constexpr bool UsePipelining = false;
+        //constexpr bool UsePipeliningWithShared = !SharkLoadAllInShared && (SharkKaratsubaBatchSize >= 4);
+        constexpr bool UsePipeliningWithShared = false;
 
         // A single loop that covers 2*total_k elements
-        if constexpr (UsePipelining) {
+        if constexpr (UsePipeliningWithShared) {
             for (int idx = tid, outerIteration = 0; idx < total_k; idx += stride, outerIteration++) {
                 // Z0 partial sums
                 uint64_t xx_sum_low = 0ULL, xx_sum_high = 0ULL;
@@ -3023,7 +2705,7 @@ static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                 ProcessConvolutionBatch<
                     SharkFloatParams,
                     SharkKaratsubaBatchSize,
-                    UsePipelining,
+                    UsePipeliningWithShared,
                     ConditionalAccess::False,
                     RecursionDepth,
                     ExecutionBlockBase,
@@ -3073,7 +2755,7 @@ static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                 ProcessConvolutionBatch<
                     SharkFloatParams,
                     SharkKaratsubaBatchSize,
-                    UsePipelining,
+                    UsePipeliningWithShared,
                     ConditionalAccess::False,
                     RecursionDepth,
                     ExecutionBlockBase,
@@ -3122,7 +2804,7 @@ static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                 ProcessConvolutionBatch<
                     SharkFloatParams,
                     SharkKaratsubaBatchSize,
-                    UsePipelining,
+                    UsePipeliningWithShared,
                     ConditionalAccess::True,
                     RecursionDepth,
                     ExecutionBlockBase,
@@ -3180,7 +2862,7 @@ static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                     ProcessConvolutionBatch<
                         SharkFloatParams,
                         SharkKaratsubaBatchSize,
-                        UsePipelining,
+                        UsePipeliningWithShared,
                         ConditionalAccess::False,
                         RecursionDepth,
                         ExecutionBlockBase,
@@ -3229,7 +2911,7 @@ static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                     ProcessConvolutionBatch<
                         SharkFloatParams,
                         SharkKaratsubaBatchSize,
-                        UsePipelining,
+                        UsePipeliningWithShared,
                         ConditionalAccess::False,
                         RecursionDepth,
                         ExecutionBlockBase,
@@ -3277,7 +2959,7 @@ static __device__ SharkForceInlineReleaseOnly void MultiplyDigitsOnly(
                     ProcessConvolutionBatch<
                         SharkFloatParams,
                         SharkKaratsubaBatchSize,
-                        UsePipelining,
+                        UsePipeliningWithShared,
                         ConditionalAccess::True,
                         RecursionDepth,
                         ExecutionBlockBase,

@@ -1381,600 +1381,10 @@ StoreCurrentDebugState (
         record, useConvolution, grid, block, arrayToChecksum, arraySize, Purpose, RecursionDepth, CallIndex);
 }
 
-template<class SharkFloatParams>
-__device__ SharkForceInlineReleaseOnly static void
-compiler_barrier () {
-
-    //
-    // This implementation is more than just a compiler barrier.
-    // It's a memory fence that ensures all memory operations
-    // are completed before any subsequent operations.
-    // 
-    // But that's more than we need here.
-    // 
-    // Unfortunately, the compiler doesn't provide a direct
-    // way to enforce this at the language level as near as I can tell.
-    //
-
-    unsigned mask = __activemask();
-    __syncwarp(mask);
-}
-
 enum class ConditionalAccess {
     False,
     True
 };
-
-// Collaborative loading helper for warp-level cooperation
-template<ConditionalAccess UseConditionalAccess>
-__device__ SharkForceInlineReleaseOnly static void
-LoadBatchCollaborative (
-    uint64_t *buffer,
-    const int base_i,
-    const int batch_size,
-    const int k,
-    const uint32_t *aDigits_base,
-    const uint32_t *bDigits_base,
-    const int a_offset,
-    const int b_offset,
-    const uint32_t *x_diff_abs,
-    const uint32_t *y_diff_abs,
-    const int tid,
-    const int blockDim)
-{
-    // Collaborative loading pattern - each thread loads multiple elements
-    constexpr int ElementsPerItem = 6; // xx_a, xx_b, xy_a, xy_b, yy_a, yy_b
-
-    for (int j = tid; j < batch_size * ElementsPerItem; j += blockDim) {
-        int item_idx = j / ElementsPerItem;
-        int element_idx = j % ElementsPerItem;
-
-        if (item_idx >= batch_size) {
-            continue;
-        }
-
-        int idx = base_i + item_idx;
-        uint64_t value;
-
-        if constexpr (UseConditionalAccess == ConditionalAccess::True) {
-            // Z1_temp case with conditional access
-            switch (element_idx) {
-                case 0: value = x_diff_abs[idx]; break;
-                case 1: value = x_diff_abs[k - idx]; break;
-                case 2: value = x_diff_abs[idx]; break;
-                case 3: value = y_diff_abs[k - idx]; break;
-                case 4: value = y_diff_abs[idx]; break;
-                case 5: value = y_diff_abs[k - idx]; break;
-            }
-        } else {
-            // Z0 and Z2 cases with direct array access
-            switch (element_idx) {
-                case 0: value = aDigits_base[idx + a_offset]; break;
-                case 1: value = aDigits_base[k - idx + a_offset]; break;
-                case 2: value = aDigits_base[idx + a_offset]; break;
-                case 3: value = bDigits_base[k - idx + b_offset]; break;
-                case 4: value = bDigits_base[idx + a_offset]; break;
-                case 5: value = bDigits_base[k - idx + b_offset]; break;
-            }
-        }
-
-        buffer[j] = value;
-    }
-}
-
-// Direct processing fallback for non-pipelined cases
-template<
-    class SharkFloatParams,
-    ConditionalAccess UseConditionalAccess
->
-__device__ SharkForceInlineReleaseOnly static void
-ProcessBatchDirect(
-    cg::grid_group &grid,
-    cg::thread_block &block,
-    DebugMultiplyCount<SharkFloatParams> *debugMultiplyCounts,
-    int k, int i_start, int i_end, int n_limit,
-    const uint32_t *aDigits_base, const uint32_t *bDigits_base,
-    int a_offset, int b_offset,
-    uint64_t &xx_sum_low, uint64_t &xx_sum_high,
-    uint64_t &xy_sum_low, uint64_t &xy_sum_high,
-    uint64_t &yy_sum_low, uint64_t &yy_sum_high,
-    const uint32_t *x_diff_abs, const uint32_t *y_diff_abs) {
-
-    // Original direct computation approach
-    for (int i = i_start; i <= i_end; i++) {
-        uint64_t xx_a, xx_b, xy_a, xy_b, yy_a, yy_b;
-
-        if constexpr (UseConditionalAccess == ConditionalAccess::True) {
-            xx_a = x_diff_abs[i];
-            xx_b = x_diff_abs[k - i];
-            xy_a = x_diff_abs[i];
-            xy_b = y_diff_abs[k - i];
-            yy_a = y_diff_abs[i];
-            yy_b = y_diff_abs[k - i];
-        } else {
-            xx_a = aDigits_base[i + a_offset];
-            xx_b = aDigits_base[k - i + a_offset];
-            xy_a = aDigits_base[i + a_offset];
-            xy_b = bDigits_base[k - i + b_offset];
-            yy_a = bDigits_base[i + b_offset];
-            yy_b = bDigits_base[k - i + b_offset];
-        }
-
-        uint64_t xx_product = xx_a * xx_b;
-        uint64_t xy_product = xy_a * xy_b;
-        uint64_t yy_product = yy_a * yy_b;
-
-        DebugMultiplyIncrement<SharkFloatParams>(debugMultiplyCounts, grid, block, 3);
-
-        xx_sum_low += xx_product;
-        if (xx_sum_low < xx_product) xx_sum_high += 1;
-
-        xy_sum_low += xy_product;
-        if (xy_sum_low < xy_product) xy_sum_high += 1;
-
-        yy_sum_low += yy_product;
-        if (yy_sum_low < yy_product) yy_sum_high += 1;
-    }
-}
-
-// Pipelined via banded, *tiled* prefetch (CTA scope) with uniform barriers per tile.
-// Preconditions: caller only enters this path when all threads in the CTA participate
-// in the same iteration (so CTA-wide block.sync() is safe).
-template<class SharkFloatParams, int BatchSize, ConditionalAccess UseConditionalAccess, int RecursionDepth>
-__device__ SharkForceInlineReleaseOnly static void
-ProcessConvolutionBatchPipelined (
-    cg::grid_group &grid,
-    cg::thread_block &block,
-    DebugMultiplyCount<SharkFloatParams> *debugMultiplyCounts,
-    const int /*RelativeBlockIndex*/,     // unused here
-    const int /*outerIteration*/,         // unused here
-    const int k,                          // this thread's k
-    const int i_start,                    // this thread's i-range for k
-    const int i_end,
-    const int n_limit,                    // digits per half (n1/n2/MaxHalfN)
-    const uint32_t *aDigits_base,
-    const uint32_t *bDigits_base,
-    const int a_offset,
-    const int b_offset,
-    uint64_t &xx_sum_low, uint64_t &xx_sum_high,
-    uint64_t &xy_sum_low, uint64_t &xy_sum_high,
-    uint64_t &yy_sum_low, uint64_t &yy_sum_high,
-    uint32_t *shared_data,                // recursion's pipeline buffer (u32*)
-    const uint32_t *x_diff_abs = nullptr,
-    const uint32_t *y_diff_abs = nullptr) {
-    // Runtime block size and small tile size (keep shared footprint tiny and predictable)
-    const int K = block.dim_threads().x;
-    const int B = (BatchSize < 8) ? BatchSize : 8;
-
-    // Contiguous-k assumption for this iteration:
-    // Each thread owns k_t = k0 + threadIdx.x  (so k0 is CTA-uniform)
-    const int k0 = k - block.thread_index().x;
-
-    // Block-wide i window implied by k_t in [k0 .. k0+K-1]
-    const int first_k_this_block = k0;
-    const int last_k_this_block = k0 + K - 1;
-    const int blk_i_start = (first_k_this_block < n_limit) ? 0 : (first_k_this_block - (n_limit - 1));
-    const int blk_i_end = (last_k_this_block < n_limit) ? last_k_this_block : (n_limit - 1);
-
-    // Degenerate block-wide window: nothing to compute ⇒ fall back (no CTA syncs)
-    if (blk_i_start > blk_i_end) {
-        ProcessBatchDirect<UseConditionalAccess>(
-            grid,
-            block,
-            debugMultiplyCounts,
-            k, i_start, i_end, n_limit,
-            aDigits_base, bDigits_base, a_offset, b_offset,
-            xx_sum_low, xx_sum_high, xy_sum_low, xy_sum_high, yy_sum_low, yy_sum_high,
-            x_diff_abs, y_diff_abs);
-        return;
-    }
-
-    // Capacity of this recursion’s pipeline slice (in u32)
-    const int cap_u32 =
-        SharedMemoryLayout<SharkFloatParams, RecursionDepth>::PipelineBufferSize / sizeof(uint32_t);
-    uint32_t *const sh_base = shared_data;
-
-    // Tile over the block-wide i range
-    for (int s = blk_i_start; s <= blk_i_end; s += B) {
-        const int count = min(B, blk_i_end - s + 1);   // # of idx on direct side (for this tile)
-
-        // Union mirror window for this tile across *all* threads’ k_t = k0..k0+K-1:
-        // For i in [s .. s+count-1], idx2 = k_t - i ∈ [k0 - (s+count-1) .. (k0+K-1) - s]
-        int min_m = k0 - (s + count - 1);
-        int max_m = (k0 + K - 1) - s;
-
-        // Clamp to valid digit indices
-        if (min_m < 0)            min_m = 0;
-        if (max_m > n_limit - 1)  max_m = n_limit - 1;
-
-        int M = 0;
-        bool has_mirror = (max_m >= min_m);
-        if (has_mirror) {
-            M = max_m - min_m + 1;
-        }
-
-        // Shared layout pointers (only used when do_prefetch==true)
-        uint32_t *A_idx = sh_base;
-        uint32_t *B_idx = A_idx + count;
-        uint32_t *A_mir = B_idx + count;
-        uint32_t *B_mir = A_mir + (has_mirror ? M : 0);
-
-        // Decide if this tile fits in the recursion’s slice
-        const int values_needed = has_mirror ? (2 * count + 2 * M) : (2 * count);
-        const bool do_prefetch = has_mirror && (values_needed <= cap_u32);
-
-        // ---------------------- Phase A: cooperative loads (or dummy) ----------------------
-        if (do_prefetch) {
-            // idx-side (i = s .. s+count-1)
-            for (int j = block.thread_index().x; j < count; j += K) {
-                const int idx = s + j;
-                if constexpr (UseConditionalAccess == ConditionalAccess::True) {
-                    A_idx[j] = x_diff_abs[idx];
-                    B_idx[j] = y_diff_abs[idx];
-                } else {
-                    A_idx[j] = aDigits_base[idx + a_offset];
-                    B_idx[j] = bDigits_base[idx + b_offset];   // NOTE: b_offset is correct for B
-                }
-            }
-
-            // mirror-side (idx2 = min_m .. max_m)
-            for (int m = block.thread_index().x; m < M; m += K) {
-                const int idx2 = min_m + m;
-                if constexpr (UseConditionalAccess == ConditionalAccess::True) {
-                    A_mir[m] = x_diff_abs[idx2];
-                    B_mir[m] = y_diff_abs[idx2];
-                } else {
-                    A_mir[m] = aDigits_base[idx2 + a_offset];
-                    B_mir[m] = bDigits_base[idx2 + b_offset];
-                }
-            }
-        }
-        // Uniform barrier: every thread reaches this regardless of do_prefetch
-        block.sync();
-
-        // ---------------------- Phase B: compute this tile ----------------------
-        const int ts = max(i_start, s);
-        const int te = min(i_end, s + count - 1);
-
-        if (ts <= te) {
-            if (do_prefetch) {
-                // Use cached A_idx/B_idx and A_mir/B_mir
-                for (int i = ts; i <= te; ++i) {
-                    const int j = i - s;        // 0..count-1
-                    const int idx2 = k - i;        // mirror index for this (k,i)
-                    const int m = idx2 - min_m; // 0..M-1
-
-                    // Defensive bounds (should hold by construction)
-                    if ((unsigned)j >= (unsigned)count || (unsigned)m >= (unsigned)M) continue;
-
-                    const uint64_t xx_a = (uint64_t)A_idx[j];
-                    const uint64_t xx_b = (uint64_t)A_mir[m];
-                    const uint64_t xy_a = xx_a;
-                    const uint64_t xy_b = (uint64_t)B_mir[m];
-                    const uint64_t yy_a = (uint64_t)B_idx[j];
-                    const uint64_t yy_b = (uint64_t)B_mir[m];
-
-                    uint64_t p;
-                    p = xx_a * xx_b; xx_sum_low += p; if (xx_sum_low < p) xx_sum_high += 1;
-                    p = xy_a * xy_b; xy_sum_low += p; if (xy_sum_low < p) xy_sum_high += 1;
-                    p = yy_a * yy_b; yy_sum_low += p; if (yy_sum_low < p) yy_sum_high += 1;
-
-                    DebugMultiplyIncrement<SharkFloatParams>(debugMultiplyCounts, grid, block, 3);
-                }
-            } else {
-                // Tile doesn't fit (or has no mirror span) -> compute this tile’s slice directly.
-                ProcessBatchDirect<UseConditionalAccess>(
-                    grid,
-                    block,
-                    debugMultiplyCounts,
-                    k, ts, te, n_limit,
-                    aDigits_base, bDigits_base, a_offset, b_offset,
-                    xx_sum_low, xx_sum_high, xy_sum_low, xy_sum_high, yy_sum_low, yy_sum_high,
-                    x_diff_abs, y_diff_abs);
-            }
-        }
-
-        // Uniform barrier: phase boundary before reusing shared for next tile
-        block.sync();
-    }
-}
-
-__device__ SharkForceInlineReleaseOnly static void
-touch_clock_guard() {
-    volatile unsigned t;
-    // Read the SM cycle counter (or use %globaltimer for 64-bit)
-    asm volatile ("mov.u32 %0, %%clock;" : "=r"(t));
-
-    //// If t == 0 (essentially never), increment the sink.
-    //asm volatile (
-    //    "{ .reg .pred p;            \n\t"
-    //    "  setp.eq.u32 p, %1, 0;   \n\t"
-    //    "  @p add.s32 %0, %0, 1;   \n\t"
-    //    "}"
-    //    : "+r"(sink)        // %0
-    //    : "r"(t)            // %1
-    //    : "cc");
-}
-
-
-template<ConditionalAccess Cond>
-__device__ SharkForceInlineReleaseOnly static void
-load_buf_ptx_regs_4_global_unaligned(
-    int base_i, int k,
-    const uint32_t *__restrict__ aDigits_base,
-    const uint32_t *__restrict__ bDigits_base,
-    int a_offset, int b_offset,
-    const uint32_t *__restrict__ global_x_diff_abs,
-    const uint32_t *__restrict__ global_y_diff_abs,
-    uint32_t(&ax)[4], uint32_t(&bx)[4],
-    uint32_t(&ay)[4], uint32_t(&by)[4],
-    uint32_t(&cy)[4], uint32_t(&dy)[4]) {
-    // Select sources and byte offsets
-    const uint32_t *AXsrc, *BXsrc, *AYsrc, *BYsrc, *CYsrc, *DYsrc;
-    uint32_t a_off = 0u, b_off = 0u;
-
-    if constexpr (Cond == ConditionalAccess::True) {
-        AXsrc = global_x_diff_abs;  BXsrc = global_x_diff_abs;
-        AYsrc = global_x_diff_abs;  BYsrc = global_y_diff_abs;
-        CYsrc = global_y_diff_abs;  DYsrc = global_y_diff_abs;
-    } else {
-        AXsrc = aDigits_base;       BXsrc = aDigits_base;
-        AYsrc = aDigits_base;       BYsrc = bDigits_base;
-        CYsrc = bDigits_base;       DYsrc = bDigits_base;
-        a_off = static_cast<uint32_t>(a_offset);
-        b_off = static_cast<uint32_t>(b_offset);
-    }
-
-    const unsigned long long a_off_bytes = static_cast<unsigned long long>(a_off) << 2; // *4
-    const unsigned long long b_off_bytes = static_cast<unsigned long long>(b_off) << 2;
-
-    // PTX loads into 24 scalar outputs (they will live in registers).
-    uint32_t ax0, bx0, ay0, by0, cy0, dy0;
-    uint32_t ax1, bx1, ay1, by1, cy1, dy1;
-    uint32_t ax2, bx2, ay2, by2, cy2, dy2;
-    uint32_t ax3, bx3, ay3, by3, cy3, dy3;
-
-    asm volatile(
-        "{\n\t"
-        // Temps
-        ".reg .u32 bi, kk, idx, idx2;\n\t"
-        ".reg .u64 pAX, pBX, pAY, pBY, pCY, pDY, addr, offA, offB;\n\t"
-
-        // Load inputs
-        "mov.u32  bi,   %24;\n\t"      // base_i
-        "mov.u32  kk,   %25;\n\t"      // k
-        "mov.u64  offA, %26;\n\t"      // a_off_bytes
-        "mov.u64  offB, %27;\n\t"      // b_off_bytes
-        "mov.u64  pAX,  %28;\n\t"
-        "mov.u64  pBX,  %29;\n\t"
-        "mov.u64  pAY,  %30;\n\t"
-        "mov.u64  pBY,  %31;\n\t"
-        "mov.u64  pCY,  %32;\n\t"
-        "mov.u64  pDY,  %33;\n\t"
-
-        // ---------------- j = 0 ----------------
-        "add.u32  idx,  bi, 0;\n\t"
-        "sub.u32  idx2, kk, idx;\n\t"
-
-        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pAX;\n\t"
-        "ld.weak.global.u32 %0,  [addr];\n\t"     // ax0
-
-        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pBX;\n\t"
-        "ld.weak.global.u32 %1,  [addr];\n\t"     // bx0
-
-        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pAY;\n\t"
-        "ld.weak.global.u32 %2,  [addr];\n\t"     // ay0
-
-        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pBY;\n\t"
-        "ld.weak.global.u32 %3,  [addr];\n\t"     // by0
-
-        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pCY;\n\t"
-        "ld.weak.global.u32 %4,  [addr];\n\t"     // cy0
-
-        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pDY;\n\t"
-        "ld.weak.global.u32 %5,  [addr];\n\t"     // dy0
-
-        // ---------------- j = 1 ----------------
-        "add.u32  idx,  bi, 1;\n\t"
-        "sub.u32  idx2, kk, idx;\n\t"
-
-        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pAX;\n\t"
-        "ld.weak.global.u32 %6,  [addr];\n\t"     // ax1
-
-        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pBX;\n\t"
-        "ld.weak.global.u32 %7,  [addr];\n\t"     // bx1
-
-        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pAY;\n\t"
-        "ld.weak.global.u32 %8,  [addr];\n\t"     // ay1
-
-        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pBY;\n\t"
-        "ld.weak.global.u32 %9,  [addr];\n\t"     // by1
-
-        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pCY;\n\t"
-        "ld.weak.global.u32 %10, [addr];\n\t"     // cy1
-
-        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pDY;\n\t"
-        "ld.weak.global.u32 %11, [addr];\n\t"     // dy1
-
-        // ---------------- j = 2 ----------------
-        "add.u32  idx,  bi, 2;\n\t"
-        "sub.u32  idx2, kk, idx;\n\t"
-
-        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pAX;\n\t"
-        "ld.weak.global.u32 %12, [addr];\n\t"     // ax2
-
-        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pBX;\n\t"
-        "ld.weak.global.u32 %13, [addr];\n\t"     // bx2
-
-        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pAY;\n\t"
-        "ld.weak.global.u32 %14, [addr];\n\t"     // ay2
-
-        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pBY;\n\t"
-        "ld.weak.global.u32 %15, [addr];\n\t"     // by2
-
-        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pCY;\n\t"
-        "ld.weak.global.u32 %16, [addr];\n\t"     // cy2
-
-        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pDY;\n\t"
-        "ld.weak.global.u32 %17, [addr];\n\t"     // dy2
-
-        // ---------------- j = 3 ----------------
-        "add.u32  idx,  bi, 3;\n\t"
-        "sub.u32  idx2, kk, idx;\n\t"
-
-        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pAX;\n\t"
-        "ld.weak.global.u32 %18, [addr];\n\t"     // ax3
-
-        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pBX;\n\t"
-        "ld.weak.global.u32 %19, [addr];\n\t"     // bx3
-
-        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offA; add.u64 addr, addr, pAY;\n\t"
-        "ld.weak.global.u32 %20, [addr];\n\t"     // ay3
-
-        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pBY;\n\t"
-        "ld.weak.global.u32 %21, [addr];\n\t"     // by3
-
-        "cvt.u64.u32 addr, idx;  shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pCY;\n\t"
-        "ld.weak.global.u32 %22, [addr];\n\t"     // cy3
-
-        "cvt.u64.u32 addr, idx2; shl.b64 addr, addr, 2;  add.u64 addr, addr, offB; add.u64 addr, addr, pDY;\n\t"
-        "ld.weak.global.u32 %23, [addr];\n\t"     // dy3
-        "}\n\t"
-        // ---- outputs (24) ----
-        : "=r"(ax0), "=r"(bx0), "=r"(ay0), "=r"(by0), "=r"(cy0), "=r"(dy0),
-        "=r"(ax1), "=r"(bx1), "=r"(ay1), "=r"(by1), "=r"(cy1), "=r"(dy1),
-        "=r"(ax2), "=r"(bx2), "=r"(ay2), "=r"(by2), "=r"(cy2), "=r"(dy2),
-        "=r"(ax3), "=r"(bx3), "=r"(ay3), "=r"(by3), "=r"(cy3), "=r"(dy3)
-        // ---- inputs (10) ----
-        : "r"(base_i), "r"(k),
-        "l"(a_off_bytes), "l"(b_off_bytes),
-        "l"(AXsrc), "l"(BXsrc), "l"(AYsrc), "l"(BYsrc), "l"(CYsrc), "l"(DYsrc)
-        : "memory"
-        );
-
-    // Move results into your fixed arrays (still constant indices → keep in registers)
-    ax[0] = ax0; bx[0] = bx0; ay[0] = ay0; by[0] = by0; cy[0] = cy0; dy[0] = dy0;
-    ax[1] = ax1; bx[1] = bx1; ay[1] = ay1; by[1] = by1; cy[1] = cy1; dy[1] = dy1;
-    ax[2] = ax2; bx[2] = bx2; ay[2] = ay2; by[2] = by2; cy[2] = cy2; dy[2] = dy2;
-    ax[3] = ax3; bx[3] = bx3; ay[3] = ay3; by[3] = by3; cy[3] = cy3; dy[3] = dy3;
-}
-
-// Assumes 16B alignment for all six pointers passed below.
-// BatchSize == 4 version (vector loads).
-template<ConditionalAccess Cond>
-__device__ SharkForceInlineReleaseOnly static void
-load_buf_ptx_regs_4_global_aligned(
-    int base_i, int k,
-    const uint32_t *__restrict__ aDigits_base,
-    const uint32_t *__restrict__ bDigits_base,
-    int a_offset, int b_offset,
-    const uint32_t *__restrict__ global_x_diff_abs,
-    const uint32_t *__restrict__ global_y_diff_abs,
-    uint32_t(&ax)[4], uint32_t(&bx)[4],
-    uint32_t(&ay)[4], uint32_t(&by)[4],
-    uint32_t(&cy)[4], uint32_t(&dy)[4]) {
-    // Select sources
-    const uint32_t *AXsrc, *BXsrc, *AYsrc, *BYsrc, *CYsrc, *DYsrc;
-    int a_off = 0, b_off = 0;
-
-    if constexpr (Cond == ConditionalAccess::True) {
-        AXsrc = global_x_diff_abs;  BXsrc = global_x_diff_abs;
-        AYsrc = global_x_diff_abs;  BYsrc = global_y_diff_abs;
-        CYsrc = global_y_diff_abs;  DYsrc = global_y_diff_abs;
-    } else {
-        AXsrc = aDigits_base;       BXsrc = aDigits_base;
-        AYsrc = aDigits_base;       BYsrc = bDigits_base;
-        CYsrc = bDigits_base;       DYsrc = bDigits_base;
-        a_off = a_offset;           b_off = b_offset;
-    }
-
-    // Forward indices (ascending)
-    const int i0 = base_i;             // j = 0..3 → i0 + j
-
-    // Mirror indices (descending). Vector load reads ascending [n-3..n], then we reverse.
-    const int n = k - base_i;          // j = 0..3 → n - j
-    const int n_start = n - 3;         // load {n-3,n-2,n-1,n}
-
-    // Final pointers (assumed 16B aligned)
-    const uint32_t *pAX = AXsrc + (a_off + i0);
-    const uint32_t *pAY = AYsrc + (a_off + i0);
-    const uint32_t *pCY = CYsrc + (b_off + i0);
-    const uint32_t *pBX = BXsrc + (a_off + n_start);
-    const uint32_t *pBY = BYsrc + (b_off + n_start);
-    const uint32_t *pDY = DYsrc + (b_off + n_start);
-
-    // Temp regs for mirrored vectors (we’ll reverse after the load)
-    uint32_t axv0, axv1, axv2, axv3;
-    uint32_t ayv0, ayv1, ayv2, ayv3;
-    uint32_t cyv0, cyv1, cyv2, cyv3;
-    uint32_t bxv0, bxv1, bxv2, bxv3;
-    uint32_t byv0, byv1, byv2, byv3;
-    uint32_t dyv0, dyv1, dyv2, dyv3;
-
-    // Single asm block with 6 vector loads; keep them together.
-    asm volatile(
-        "{\n\t"
-        "ld.global.ca.v4.u32 {%0,%1,%2,%3},  [%24];\n\t"  // AX forward
-        "ld.global.ca.v4.u32 {%4,%5,%6,%7},  [%25];\n\t"  // AY forward
-        "ld.global.ca.v4.u32 {%8,%9,%10,%11},[%26];\n\t"  // CY forward
-        "ld.global.ca.v4.u32 {%12,%13,%14,%15},[%27];\n\t"// BX mirror (asc chunk)
-        "ld.global.ca.v4.u32 {%16,%17,%18,%19},[%28];\n\t"// BY mirror (asc chunk)
-        "ld.global.ca.v4.u32 {%20,%21,%22,%23},[%29];\n\t"// DY mirror (asc chunk)
-        "}\n\t"
-        : // 0..23 outputs
-    "=r"(axv0), "=r"(axv1), "=r"(axv2), "=r"(axv3),
-        "=r"(ayv0), "=r"(ayv1), "=r"(ayv2), "=r"(ayv3),
-        "=r"(cyv0), "=r"(cyv1), "=r"(cyv2), "=r"(cyv3),
-        "=r"(bxv0), "=r"(bxv1), "=r"(bxv2), "=r"(bxv3),
-        "=r"(byv0), "=r"(byv1), "=r"(byv2), "=r"(byv3),
-        "=r"(dyv0), "=r"(dyv1), "=r"(dyv2), "=r"(dyv3)
-        : // 24..29 inputs
-        "l"(pAX), "l"(pAY), "l"(pCY), "l"(pBX), "l"(pBY), "l"(pDY)
-        : "memory"
-        );
-
-    // Store forward streams directly
-    ax[0] = axv0; ax[1] = axv1; ax[2] = axv2; ax[3] = axv3;
-    ay[0] = ayv0; ay[1] = ayv1; ay[2] = ayv2; ay[3] = ayv3;
-    cy[0] = cyv0; cy[1] = cyv1; cy[2] = cyv2; cy[3] = cyv3;
-
-    // Reverse mirrored streams
-    bx[0] = bxv3; bx[1] = bxv2; bx[2] = bxv1; bx[3] = bxv0;
-    by[0] = byv3; by[1] = byv2; by[2] = byv1; by[3] = byv0;
-    dy[0] = dyv3; dy[1] = dyv2; dy[2] = dyv1; dy[3] = dyv0;
-
-    // Keep following compute from hoisting above loads
-    asm volatile ("" ::: "memory");
-}
-
-
-// ---- Tiny wrapper so it’s a drop-in for load_buf_ptx<...,4>(...) -------------
-template<bool Aligned, ConditionalAccess Cond, int BatchSize>
-__device__ SharkForceInlineReleaseOnly static void
-load_buf_ptx(
-    int base_i, int k,
-    const uint32_t *__restrict__ aDigits_base,
-    const uint32_t *__restrict__ bDigits_base,
-    int a_offset, int b_offset,
-    const uint32_t *__restrict__ global_x_diff_abs,
-    const uint32_t *__restrict__ global_y_diff_abs,
-    uint32_t(&ax)[BatchSize], uint32_t(&bx)[BatchSize],
-    uint32_t(&ay)[BatchSize], uint32_t(&by)[BatchSize],
-    uint32_t(&cy)[BatchSize], uint32_t(&dy)[BatchSize]) {
-    static_assert(BatchSize == 4, "This PTX loader specialization expects BatchSize == 4");
-
-    if constexpr (Aligned) {
-        load_buf_ptx_regs_4_global_aligned<Cond>(
-            base_i, k, aDigits_base, bDigits_base, a_offset, b_offset,
-            global_x_diff_abs, global_y_diff_abs,
-            ax, bx, ay, by, cy, dy);
-    } else {
-        load_buf_ptx_regs_4_global_unaligned<Cond>(
-            base_i, k, aDigits_base, bDigits_base, a_offset, b_offset,
-            global_x_diff_abs, global_y_diff_abs,
-            ax, bx, ay, by, cy, dy);
-    }
-}
 
 // Unified scalar accumulator used for BOTH prologue and epilogue
 template<
@@ -2042,10 +1452,10 @@ template<
     int ExecutionBlockBase,
     int ExecutionNumBlocks>
 __device__ SharkForceInlineReleaseOnly static void
-ProcessConvolutionDirectLoad (
+ProcessConvolutionBatch (
     cg::grid_group &grid,
     cg::thread_block &block,
-    DebugMultiplyCount<SharkFloatParams> *SharkRestrict debugMultiplyCounts,
+    DebugMultiplyCount<SharkFloatParams> *debugMultiplyCounts,
     const int RelativeBlockIndex,
     const int outerIteration,
     const int k,
@@ -2053,8 +1463,8 @@ ProcessConvolutionDirectLoad (
     const int i_start,
     const int i_end,
     const int n_limit,
-    const uint32_t *SharkRestrict aDigits_base,
-    const uint32_t *SharkRestrict bDigits_base,
+    const uint32_t *aDigits_base,
+    const uint32_t *bDigits_base,
     const int a_offset,
     const int b_offset,
     uint64_t &xx_sum_low,
@@ -2064,8 +1474,9 @@ ProcessConvolutionDirectLoad (
     uint64_t &yy_sum_low,
     uint64_t &yy_sum_high,
     uint32_t *shared_data,
-    const uint32_t *SharkRestrict x_diff_abs = nullptr,
-    const uint32_t *SharkRestrict y_diff_abs = nullptr) {
+    const uint32_t *x_diff_abs = nullptr,
+    const uint32_t *y_diff_abs = nullptr) {
+
 
     // ---------------- scalar-only fast path when BatchSize==1 ----------------
     if constexpr (BatchSize == 1) {
@@ -2226,8 +1637,13 @@ ProcessConvolutionDirectLoad (
         SharkInnerLoopOption == InnerLoopOption::TryUnalignedLoads2 ||
         SharkInnerLoopOption == InnerLoopOption::TryUnalignedLoads2Shared) {
 
-        ProcessConvolutionDirectLoad_Unaligned2<SharkFloatParams, 16, UseConditionalAccess,
-            RecursionDepth, ExecutionBlockBase, ExecutionNumBlocks>(
+        ProcessConvolutionDirectLoad_Unaligned2<
+            SharkFloatParams,
+            16,
+            UseConditionalAccess,
+            RecursionDepth,
+            ExecutionBlockBase,
+            ExecutionNumBlocks>(
                 grid,
                 block,
                 debugMultiplyCounts,
@@ -2261,16 +1677,16 @@ ProcessConvolutionDirectLoad (
             RecursionDepth,
             ExecutionBlockBase,
             ExecutionNumBlocks>(
-            grid,
-            block,
-            debugMultiplyCounts,
-            i, i_end, k,
-            aDigits_base, bDigits_base,
-            a_offset, b_offset,
-            xx_sum_low, xx_sum_high,
-            xy_sum_low, xy_sum_high,
-            yy_sum_low, yy_sum_high,
-            x_diff_abs, y_diff_abs);
+                grid,
+                block,
+                debugMultiplyCounts,
+                i, i_end, k,
+                aDigits_base, bDigits_base,
+                a_offset, b_offset,
+                xx_sum_low, xx_sum_high,
+                xy_sum_low, xy_sum_high,
+                yy_sum_low, yy_sum_high,
+                x_diff_abs, y_diff_abs);
         return;
     }
 
@@ -2293,87 +1709,6 @@ ProcessConvolutionDirectLoad (
                 x_diff_abs, y_diff_abs);
         return;
     }
-}
-
-template<
-    class SharkFloatParams,
-    int BatchSize,
-    bool UsePipeliningWithShared,
-    ConditionalAccess UseConditionalAccess,
-    int RecursionDepth,
-    int ExecutionBlockBase,
-    int ExecutionNumBlocks>
-__device__ SharkForceInlineReleaseOnly static void
-ProcessConvolutionBatch (
-    cg::grid_group &grid,
-    cg::thread_block &block,
-    DebugMultiplyCount<SharkFloatParams> *debugMultiplyCounts,
-    const int RelativeBlockIndex,
-    const int outerIteration,
-    const int k,
-    const int total_k,
-    const int i_start,
-    const int i_end,
-    const int n_limit,
-    const uint32_t *aDigits_base,
-    const uint32_t *bDigits_base,
-    const int a_offset,
-    const int b_offset,
-    uint64_t &xx_sum_low,
-    uint64_t &xx_sum_high,
-    uint64_t &xy_sum_low,
-    uint64_t &xy_sum_high,
-    uint64_t &yy_sum_low,
-    uint64_t &yy_sum_high,
-    uint32_t *shared_data,
-    const uint32_t *x_diff_abs = nullptr,
-    const uint32_t *y_diff_abs = nullptr) {
-    // ---------------- optional CTA pipelined-shared path ----------------
-    constexpr int Krt = SharkFloatParams::GlobalThreadsPerBlock;
-    const int stride = Krt * ExecutionNumBlocks;
-    const int k0_base = RelativeBlockIndex * Krt + outerIteration * stride;
-    const bool fullCTA = (k0_base + Krt - 1) < total_k;
-
-    if constexpr (UsePipeliningWithShared) {
-        // Per-recursion buffer in shared for pipelined shared-memory version
-        uint32_t *pipeline_buffer =
-            GetRecursionPipelineBuffer<SharkFloatParams, RecursionDepth>(shared_data);
-
-        if (fullCTA) {
-            ProcessConvolutionBatchPipelined<
-                SharkFloatParams, BatchSize, UseConditionalAccess, RecursionDepth>(
-                    grid,
-                    block,
-                    debugMultiplyCounts,
-                    RelativeBlockIndex, outerIteration,
-                    k, i_start, i_end, n_limit,
-                    aDigits_base, bDigits_base, a_offset, b_offset,
-                    xx_sum_low, xx_sum_high,
-                    xy_sum_low, xy_sum_high,
-                    yy_sum_low, yy_sum_high,
-                    pipeline_buffer,
-                    x_diff_abs, y_diff_abs);
-            return;
-        }
-    }
-
-    ProcessConvolutionDirectLoad<
-        SharkFloatParams,
-        BatchSize,
-        UseConditionalAccess,
-        RecursionDepth,
-        ExecutionBlockBase,
-        ExecutionNumBlocks>(
-            grid, block,
-            debugMultiplyCounts,
-            RelativeBlockIndex, outerIteration,
-            k, total_k, i_start, i_end, n_limit,
-            aDigits_base, bDigits_base, a_offset, b_offset,
-            xx_sum_low, xx_sum_high,
-            xy_sum_low, xy_sum_high,
-            yy_sum_low, yy_sum_high,
-            shared_data,
-            x_diff_abs, y_diff_abs);
 }
 
 
@@ -2699,7 +2034,6 @@ MultiplyDigitsOnly(
             cg::wait(block);
         }
 
-        constexpr bool UsePipeliningWithShared = false;
         constexpr int outerIteration = 0;
         for (int idx = tid; idx < total_k * 3; idx += stride) {
 
@@ -2718,7 +2052,6 @@ MultiplyDigitsOnly(
                 ProcessConvolutionBatch<
                     SharkFloatParams,
                     SharkKaratsubaBatchSize,
-                    UsePipeliningWithShared,
                     ConditionalAccess::False,
                     RecursionDepth,
                     ExecutionBlockBase,
@@ -2768,7 +2101,6 @@ MultiplyDigitsOnly(
                 ProcessConvolutionBatch<
                     SharkFloatParams,
                     SharkKaratsubaBatchSize,
-                    UsePipeliningWithShared,
                     ConditionalAccess::False,
                     RecursionDepth,
                     ExecutionBlockBase,
@@ -2817,7 +2149,6 @@ MultiplyDigitsOnly(
                 ProcessConvolutionBatch<
                     SharkFloatParams,
                     SharkKaratsubaBatchSize,
-                    UsePipeliningWithShared,
                     ConditionalAccess::True,
                     RecursionDepth,
                     ExecutionBlockBase,

@@ -37,7 +37,7 @@ static constexpr bool SharkDebug = false;
 #ifdef _DEBUG
 #define ENABLE_BASIC_CORRECTNESS 0
 #else
-#define ENABLE_BASIC_CORRECTNESS 0
+#define ENABLE_BASIC_CORRECTNESS 2
 #endif
 
 #ifdef ENABLE_ADD_KERNEL
@@ -68,7 +68,7 @@ static constexpr bool SharkTestGpu = (SharkEnableAddKernel || SharkEnableMultipl
 #endif
 
 static constexpr auto SharkTestComicalThreadCount = 13;
-static constexpr auto SharkTestIterCount = SharkDebug ? 5 : 50;
+static constexpr auto SharkTestIterCount = SharkDebug ? 5 : 50000;
 
 // Set to true to use a custom stream for the kernel launch
 static constexpr auto SharkCustomStream = true;
@@ -95,7 +95,7 @@ static constexpr auto SharkBatchSize = SharkDebug ? 8 : 512;
 static constexpr auto SharkKaratsubaBatchSize = SharkLoadAllInShared ? 1 : 4;
 
 static constexpr bool SharkDebugChecksums = (ENABLE_BASIC_CORRECTNESS != 2) ? SharkDebug : false;
-static constexpr bool SharkPrintMultiplyCounts = true;
+static constexpr bool SharkPrintMultiplyCounts = SharkDebugChecksums; // SharkDebugChecksums;
 
 #if ENABLE_BASIC_CORRECTNESS == 2
 static constexpr bool SharkTestCorrectness = SharkDebug;
@@ -105,7 +105,7 @@ static constexpr bool SharkTestCorrectness = true;
 
 static constexpr bool SharkTestInfiniteCorrectness = SharkTestCorrectness ? true : false;
 static constexpr auto SharkTestForceSameSign = false;
-static constexpr bool SharkTestBenchmarkAgainstHost = true;
+static constexpr bool SharkTestBenchmarkAgainstHost = false;
 static constexpr bool SharkTestInitCudaMemory = true;
 
 template<

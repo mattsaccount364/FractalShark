@@ -672,11 +672,13 @@ void ChecksumsCheck (
         if (totalGpu != debugHostCombo.MultiplyCounts.count) {
             std::cerr << "Error: GPU total count does not match host count!" << std::endl;
             ChecksumFailure = true;
+            DebugBreak();
         }
 
         if (totalResults != SharkFloatParams::GlobalThreadsPerBlock * SharkFloatParams::GlobalNumBlocks) {
             std::cerr << "Error: Total results does not match expected number of threads!" << std::endl;
             ChecksumFailure = true;
+            DebugBreak();
         }
 
         // Print full array

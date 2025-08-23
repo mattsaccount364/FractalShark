@@ -2699,19 +2699,21 @@ MultiplyDigitsOnly(
             cg::wait(block);
         }
 
-        //constexpr bool UsePipeliningWithShared = !SharkLoadAllInShared && (SharkKaratsubaBatchSize >= 4);
         constexpr bool UsePipeliningWithShared = false;
+        constexpr int outerIteration = 0;
+        for (int idx = tid; idx < total_k * 3; idx += stride) {
 
-        // A single loop that covers 2*total_k elements
-        if constexpr (UsePipeliningWithShared) {
-            for (int idx = tid, outerIteration = 0; idx < total_k; idx += stride, outerIteration++) {
+            // Check if idx < total_k => handle Z0, else handle Z2
+            if (idx < total_k) {
                 // Z0 partial sums
+                const int k_base = idx;
+                int k = k_base; // shift to [0..total_k-1]
                 uint64_t xx_sum_low = 0ULL, xx_sum_high = 0ULL;
                 uint64_t xy_sum_low = 0ULL, xy_sum_high = 0ULL;
                 uint64_t yy_sum_low = 0ULL, yy_sum_high = 0ULL;
 
-                int i_start = (idx < n1) ? 0 : (idx - (n1 - 1));
-                int i_end = (idx < n1) ? idx : (n1 - 1);
+                int i_start = (k < n1) ? 0 : (k - (n1 - 1));
+                int i_end = (k < n1) ? k : (n1 - 1);
 
                 ProcessConvolutionBatch<
                     SharkFloatParams,
@@ -2727,7 +2729,7 @@ MultiplyDigitsOnly(
                     debugMultiplyCounts,
                     RelativeBlockIndex,
                     outerIteration,
-                    idx,
+                    k,
                     total_k,
                     i_start,
                     i_end,
@@ -2744,25 +2746,24 @@ MultiplyDigitsOnly(
                     yy_sum_high,
                     shared_data);
 
-                int out_idx = idx * 2;
+                int out_idx = k * 2;
                 Z0_OutDigitsXX[out_idx] = xx_sum_low;
                 Z0_OutDigitsXX[out_idx + 1] = xx_sum_high;
                 Z0_OutDigitsXY[out_idx] = xy_sum_low;
                 Z0_OutDigitsXY[out_idx + 1] = xy_sum_high;
                 Z0_OutDigitsYY[out_idx] = yy_sum_low;
                 Z0_OutDigitsYY[out_idx + 1] = yy_sum_high;
-            }
-
-            block.sync();
-
-            for (int idx = tid, outerIteration = 0; idx < total_k; idx += stride, outerIteration++) {
+            } else if (idx < 2 * total_k) {
                 // Z2 partial sums
+                const int k_base = idx - total_k; // shift to [0..total_k-1]
+                //int k = (k_base + total_k / 3) % total_k;
+                int k = k_base;
                 uint64_t xx_sum_low = 0ULL, xx_sum_high = 0ULL;
                 uint64_t xy_sum_low = 0ULL, xy_sum_high = 0ULL;
                 uint64_t yy_sum_low = 0ULL, yy_sum_high = 0ULL;
 
-                int i_start = (idx < n2) ? 0 : (idx - (n2 - 1));
-                int i_end = (idx < n2) ? idx : (n2 - 1);
+                int i_start = (k < n2) ? 0 : (k - (n2 - 1));
+                int i_end = (k < n2) ? k : (n2 - 1);
 
                 ProcessConvolutionBatch<
                     SharkFloatParams,
@@ -2778,7 +2779,7 @@ MultiplyDigitsOnly(
                     debugMultiplyCounts,
                     RelativeBlockIndex,
                     outerIteration,
-                    idx,
+                    k,
                     total_k,
                     i_start,
                     i_end,
@@ -2795,24 +2796,23 @@ MultiplyDigitsOnly(
                     yy_sum_high,
                     shared_data);
 
-                int out_idx = idx * 2;
+                int out_idx = k * 2;
                 Z2_OutDigitsXX[out_idx] = xx_sum_low;
                 Z2_OutDigitsXX[out_idx + 1] = xx_sum_high;
                 Z2_OutDigitsXY[out_idx] = xy_sum_low;
                 Z2_OutDigitsXY[out_idx + 1] = xy_sum_high;
                 Z2_OutDigitsYY[out_idx] = yy_sum_low;
                 Z2_OutDigitsYY[out_idx + 1] = yy_sum_high;
-            }
-
-            block.sync();
-
-            for (int idx = tid, outerIteration = 0; idx < total_k; idx += stride, outerIteration++) {
+            } else {
+                const int k_base = idx - 2 * total_k; // shift to [0..total_k-1]
+                //int k = (k_base + 2 * total_k / 3) % total_k;
+                int k = k_base;
                 uint64_t xx_sum_low = 0ULL, xx_sum_high = 0ULL;
                 uint64_t xy_sum_low = 0ULL, xy_sum_high = 0ULL;
                 uint64_t yy_sum_low = 0ULL, yy_sum_high = 0ULL;
 
-                int i_start = (idx < MaxHalfN) ? 0 : (idx - (MaxHalfN - 1));
-                int i_end = (idx < MaxHalfN) ? idx : (MaxHalfN - 1);
+                int i_start = (k < MaxHalfN) ? 0 : (k - (MaxHalfN - 1));
+                int i_end = (k < MaxHalfN) ? k : (MaxHalfN - 1);
 
                 ProcessConvolutionBatch<
                     SharkFloatParams,
@@ -2828,7 +2828,7 @@ MultiplyDigitsOnly(
                     debugMultiplyCounts,
                     RelativeBlockIndex,
                     outerIteration,
-                    idx,
+                    k,
                     total_k,
                     i_start,
                     i_end,
@@ -2847,173 +2847,13 @@ MultiplyDigitsOnly(
                     SharkLoadAllInShared ? x_diff_abs : global_x_diff_abs,
                     SharkLoadAllInShared ? y_diff_abs : global_y_diff_abs);
 
-                int out_idx = idx * 2;
+                int out_idx = k * 2;
                 Z1_temp_digitsXX[out_idx] = xx_sum_low;
                 Z1_temp_digitsXX[out_idx + 1] = xx_sum_high;
                 Z1_temp_digitsXY[out_idx] = xy_sum_low;
                 Z1_temp_digitsXY[out_idx + 1] = xy_sum_high;
                 Z1_temp_digitsYY[out_idx] = yy_sum_low;
                 Z1_temp_digitsYY[out_idx + 1] = yy_sum_high;
-            }
-
-            block.sync();
-
-        } else {
-            constexpr int outerIteration = 0;
-            for (int idx = tid; idx < total_k * 3; idx += stride) {
-
-                // Check if idx < total_k => handle Z0, else handle Z2
-                if (idx < total_k) {
-                    // Z0 partial sums
-                    const int k_base = idx;
-                    int k = k_base; // shift to [0..total_k-1]
-                    uint64_t xx_sum_low = 0ULL, xx_sum_high = 0ULL;
-                    uint64_t xy_sum_low = 0ULL, xy_sum_high = 0ULL;
-                    uint64_t yy_sum_low = 0ULL, yy_sum_high = 0ULL;
-
-                    int i_start = (k < n1) ? 0 : (k - (n1 - 1));
-                    int i_end = (k < n1) ? k : (n1 - 1);
-
-                    ProcessConvolutionBatch<
-                        SharkFloatParams,
-                        SharkKaratsubaBatchSize,
-                        UsePipeliningWithShared,
-                        ConditionalAccess::False,
-                        RecursionDepth,
-                        ExecutionBlockBase,
-                        ExecutionNumBlocks>(
-
-                        grid,
-                        block,
-                        debugMultiplyCounts,
-                        RelativeBlockIndex,
-                        outerIteration,
-                        k,
-                        total_k,
-                        i_start,
-                        i_end,
-                        n1,
-                        aDigits,
-                        bDigits,
-                        0,
-                        0,  // Z0 uses base arrays with no offset
-                        xx_sum_low,
-                        xx_sum_high,
-                        xy_sum_low,
-                        xy_sum_high,
-                        yy_sum_low,
-                        yy_sum_high,
-                        shared_data);
-
-                    int out_idx = k * 2;
-                    Z0_OutDigitsXX[out_idx] = xx_sum_low;
-                    Z0_OutDigitsXX[out_idx + 1] = xx_sum_high;
-                    Z0_OutDigitsXY[out_idx] = xy_sum_low;
-                    Z0_OutDigitsXY[out_idx + 1] = xy_sum_high;
-                    Z0_OutDigitsYY[out_idx] = yy_sum_low;
-                    Z0_OutDigitsYY[out_idx + 1] = yy_sum_high;
-                } else if (idx < 2 * total_k) {
-                    // Z2 partial sums
-                    const int k_base = idx - total_k; // shift to [0..total_k-1]
-                    //int k = (k_base + total_k / 3) % total_k;
-                    int k = k_base;
-                    uint64_t xx_sum_low = 0ULL, xx_sum_high = 0ULL;
-                    uint64_t xy_sum_low = 0ULL, xy_sum_high = 0ULL;
-                    uint64_t yy_sum_low = 0ULL, yy_sum_high = 0ULL;
-
-                    int i_start = (k < n2) ? 0 : (k - (n2 - 1));
-                    int i_end = (k < n2) ? k : (n2 - 1);
-
-                    ProcessConvolutionBatch<
-                        SharkFloatParams,
-                        SharkKaratsubaBatchSize,
-                        UsePipeliningWithShared,
-                        ConditionalAccess::False,
-                        RecursionDepth,
-                        ExecutionBlockBase,
-                        ExecutionNumBlocks>(
-
-                        grid,
-                        block,
-                        debugMultiplyCounts,
-                        RelativeBlockIndex,
-                        outerIteration,
-                        k,
-                        total_k,
-                        i_start,
-                        i_end,
-                        n2,
-                        aDigits,
-                        bDigits,
-                        n1,
-                        n1,  // Z2 uses arrays with n1 offset
-                        xx_sum_low,
-                        xx_sum_high,
-                        xy_sum_low,
-                        xy_sum_high,
-                        yy_sum_low,
-                        yy_sum_high,
-                        shared_data);
-
-                    int out_idx = k * 2;
-                    Z2_OutDigitsXX[out_idx] = xx_sum_low;
-                    Z2_OutDigitsXX[out_idx + 1] = xx_sum_high;
-                    Z2_OutDigitsXY[out_idx] = xy_sum_low;
-                    Z2_OutDigitsXY[out_idx + 1] = xy_sum_high;
-                    Z2_OutDigitsYY[out_idx] = yy_sum_low;
-                    Z2_OutDigitsYY[out_idx + 1] = yy_sum_high;
-                } else {
-                    const int k_base = idx - 2 * total_k; // shift to [0..total_k-1]
-                    //int k = (k_base + 2 * total_k / 3) % total_k;
-                    int k = k_base;
-                    uint64_t xx_sum_low = 0ULL, xx_sum_high = 0ULL;
-                    uint64_t xy_sum_low = 0ULL, xy_sum_high = 0ULL;
-                    uint64_t yy_sum_low = 0ULL, yy_sum_high = 0ULL;
-
-                    int i_start = (k < MaxHalfN) ? 0 : (k - (MaxHalfN - 1));
-                    int i_end = (k < MaxHalfN) ? k : (MaxHalfN - 1);
-
-                    ProcessConvolutionBatch<
-                        SharkFloatParams,
-                        SharkKaratsubaBatchSize,
-                        UsePipeliningWithShared,
-                        ConditionalAccess::True,
-                        RecursionDepth,
-                        ExecutionBlockBase,
-                        ExecutionNumBlocks>(
-
-                        grid,
-                        block,
-                        debugMultiplyCounts,
-                        RelativeBlockIndex,
-                        outerIteration,
-                        k,
-                        total_k,
-                        i_start,
-                        i_end,
-                        MaxHalfN,
-                        nullptr,
-                        nullptr,
-                        0,
-                        0,  // Not used for Z1_temp
-                        xx_sum_low,
-                        xx_sum_high,
-                        xy_sum_low,
-                        xy_sum_high,
-                        yy_sum_low,
-                        yy_sum_high,
-                        shared_data,
-                        SharkLoadAllInShared ? x_diff_abs : global_x_diff_abs,
-                        SharkLoadAllInShared ? y_diff_abs : global_y_diff_abs);
-
-                    int out_idx = k * 2;
-                    Z1_temp_digitsXX[out_idx] = xx_sum_low;
-                    Z1_temp_digitsXX[out_idx + 1] = xx_sum_high;
-                    Z1_temp_digitsXY[out_idx] = xy_sum_low;
-                    Z1_temp_digitsXY[out_idx + 1] = xy_sum_high;
-                    Z1_temp_digitsYY[out_idx] = yy_sum_low;
-                    Z1_temp_digitsYY[out_idx + 1] = yy_sum_high;
-                }
             }
         }
     } else {

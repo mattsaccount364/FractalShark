@@ -12,7 +12,9 @@ struct DebugMultiplyCount {
     __device__ 
     void DebugMultiplyErase ()
     {
-        Data = {};
+        if constexpr (SharkPrintMultiplyCounts) {
+            Data = {};
+        }
     }
 
     __device__
@@ -21,9 +23,11 @@ struct DebugMultiplyCount {
         int blockIdx,
         int threadIdx)
     {
-        Data.count += count;
-        Data.blockIdx = blockIdx;
-        Data.threadIdx = threadIdx;
+        if constexpr (SharkPrintMultiplyCounts) {
+            Data.count += count;
+            Data.blockIdx = blockIdx;
+            Data.threadIdx = threadIdx;
+        }
     }
 
     DebugMultiplyCountRaw Data;

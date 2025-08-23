@@ -281,7 +281,9 @@ void InvokeHpSharkReferenceKernelCorrectness(
                 &d_tempProducts[AdditionalChecksumsOffset],
                 SharkFloatParams::NumDebugStates * sizeof(DebugStateRaw),
                 cudaMemcpyDeviceToHost);
+        }
 
+        if constexpr (SharkPrintMultiplyCounts) {
             debugCombo->MultiplyCounts.resize(SharkFloatParams::NumDebugMultiplyCounts);
             cudaMemcpy(
                 debugCombo->MultiplyCounts.data(),
@@ -348,7 +350,9 @@ void InvokeMultiplyKernelCorrectness(
                 &d_tempProducts[AdditionalChecksumsOffset],
                 SharkFloatParams::NumDebugStates * sizeof(DebugStateRaw),
                 cudaMemcpyDeviceToHost);
+        }
 
+        if constexpr (SharkPrintMultiplyCounts) {
             debugCombo->MultiplyCounts.resize(SharkFloatParams::NumDebugMultiplyCounts);
             cudaMemcpy(
                 debugCombo->MultiplyCounts.data(),
@@ -407,7 +411,9 @@ void InvokeAddKernelCorrectness(
                 &g_extResult[AdditionalChecksumsOffset],
                 SharkFloatParams::NumDebugStates * sizeof(DebugStateRaw),
                 cudaMemcpyDeviceToHost);
+        }
 
+        if constexpr (SharkPrintMultiplyCounts) {
             debugCombo->MultiplyCounts.resize(SharkFloatParams::NumDebugMultiplyCounts);
             cudaMemcpy(
                 debugCombo->MultiplyCounts.data(),

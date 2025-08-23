@@ -3328,6 +3328,12 @@ static __device__ void MultiplyHelperKaratsubaV2Separates(
         memset(shared_data, 0xcd, AvailableShared);
     }*/
 
+    if constexpr (SharkPrintMultiplyCounts) {
+        const auto CurBlock = block.group_index().x;
+        const auto CurThread = block.thread_index().x;
+        debugMultiplyCounts[CurBlock * SharkFloatParams::GlobalThreadsPerBlock + CurThread].DebugMultiplyErase();
+    }
+
     if constexpr (SharkDebugChecksums) {
         const auto CurBlock = block.group_index().x;
         const auto CurThread = block.thread_index().x;

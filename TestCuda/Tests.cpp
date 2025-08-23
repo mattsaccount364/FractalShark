@@ -649,53 +649,52 @@ void ChecksumsCheck (
 {
     // Compare debugResultsCuda against debugResultsHost
     bool ChecksumFailure = false;
-    const auto &debugResultsHost = debugHostCombo.States;
+    if constexpr (SharkTestGpu && SharkPrintMultiplyCounts) {
+        std::map<int, int> countOfCounts;
+        for (size_t i = 0; i < debugGpuCombo.MultiplyCounts.size(); ++i) {
+            countOfCounts[debugGpuCombo.MultiplyCounts[i].count]++;
+        }
+
+        // Print distribution of counts
+        size_t totalGpu{};
+        size_t totalResults{};
+        std::cerr << "MultiplyCount distribution:" << std::endl;
+        for (const auto &pair : countOfCounts) {
+            std::cerr << "Count: " << pair.first << " occurred " << pair.second << " times" << std::endl;
+            totalGpu += pair.first * pair.second;
+            totalResults += pair.second;
+        }
+
+        std::cerr << "GPU total count: " << totalGpu << std::endl;
+        std::cerr << "GPU result count (should be total num threads): " << totalResults << std::endl;
+        std::cerr << "Host count: " << debugHostCombo.MultiplyCounts.count << std::endl;
+
+        if (totalGpu != debugHostCombo.MultiplyCounts.count) {
+            std::cerr << "Error: GPU total count does not match host count!" << std::endl;
+            ChecksumFailure = true;
+        }
+
+        if (totalResults != SharkFloatParams::GlobalThreadsPerBlock * SharkFloatParams::GlobalNumBlocks) {
+            std::cerr << "Error: Total results does not match expected number of threads!" << std::endl;
+            ChecksumFailure = true;
+        }
+
+        // Print full array
+        if (ChecksumFailure) {
+            for (size_t i = 0; i < debugGpuCombo.MultiplyCounts.size(); ++i) {
+                std::cerr << "MultiplyCount[" << i << "]: ";
+                std::cerr << "Block: " << debugGpuCombo.MultiplyCounts[i].blockIdx << ", ";
+                std::cerr << "Thread: " << debugGpuCombo.MultiplyCounts[i].threadIdx << ", ";
+                std::cerr << "Count: " << debugGpuCombo.MultiplyCounts[i].count << std::endl;
+            }
+
+            DebugBreak();
+        }
+    }
 
     if constexpr (SharkTestGpu && SharkDebugChecksums) {
+        const auto &debugResultsHost = debugHostCombo.States;
         assert(debugResultsHost.size() <= debugGpuCombo.States.size());
-
-        if constexpr (SharkPrintMultiplyCounts) {
-            std::map<int, int> countOfCounts;
-            for (size_t i = 0; i < debugGpuCombo.MultiplyCounts.size(); ++i) {
-                countOfCounts[debugGpuCombo.MultiplyCounts[i].count]++;
-            }
-
-            // Print distribution of counts
-            size_t totalGpu{};
-            size_t totalResults{};
-            std::cerr << "MultiplyCount distribution:" << std::endl;
-            for (const auto &pair : countOfCounts) {
-                std::cerr << "Count: " << pair.first << " occurred " << pair.second << " times" << std::endl;
-                totalGpu += pair.first * pair.second;
-                totalResults += pair.second;
-            }
-
-            std::cerr << "GPU total count: " << totalGpu << std::endl;
-            std::cerr << "GPU result count (should be total num threads): " << totalResults << std::endl;
-            std::cerr << "Host count: " << debugHostCombo.MultiplyCounts.count << std::endl;
-
-            if (totalGpu != debugHostCombo.MultiplyCounts.count) {
-                std::cerr << "Error: GPU total count does not match host count!" << std::endl;
-                ChecksumFailure = true;
-            }
-
-            if (totalResults != SharkFloatParams::GlobalThreadsPerBlock * SharkFloatParams::GlobalNumBlocks) {
-                std::cerr << "Error: Total results does not match expected number of threads!" << std::endl;
-                ChecksumFailure = true;
-            }
-
-            // Print full array
-            if (ChecksumFailure) {
-                for (size_t i = 0; i < debugGpuCombo.MultiplyCounts.size(); ++i) {
-                    std::cerr << "MultiplyCount[" << i << "]: ";
-                    std::cerr << "Block: " << debugGpuCombo.MultiplyCounts[i].blockIdx << ", ";
-                    std::cerr << "Thread: " << debugGpuCombo.MultiplyCounts[i].threadIdx << ", ";
-                    std::cerr << "Count: " << debugGpuCombo.MultiplyCounts[i].count << std::endl;
-                }
-
-                DebugBreak();
-            }
-        }
 
         // Note that the hosts results should be exactly the right size, whereas
         // the CUDA results may be larger due to the way the kernel is written.

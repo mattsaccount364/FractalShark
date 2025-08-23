@@ -37,7 +37,7 @@ static constexpr bool SharkDebug = false;
 #ifdef _DEBUG
 #define ENABLE_BASIC_CORRECTNESS 0
 #else
-#define ENABLE_BASIC_CORRECTNESS 2
+#define ENABLE_BASIC_CORRECTNESS 0
 #endif
 
 #ifdef ENABLE_ADD_KERNEL
@@ -95,7 +95,7 @@ static constexpr auto SharkBatchSize = SharkDebug ? 8 : 512;
 static constexpr auto SharkKaratsubaBatchSize = SharkLoadAllInShared ? 1 : 4;
 
 static constexpr bool SharkDebugChecksums = (ENABLE_BASIC_CORRECTNESS != 2) ? SharkDebug : false;
-static constexpr bool SharkPrintMultiplyCounts = SharkDebugChecksums;
+static constexpr bool SharkPrintMultiplyCounts = true;
 
 #if ENABLE_BASIC_CORRECTNESS == 2
 static constexpr bool SharkTestCorrectness = SharkDebug;
@@ -170,7 +170,7 @@ static constexpr auto AdditionalUInt64PerFrame = 256;
 static constexpr auto MaxBlocks = 256;
 
 static constexpr auto AdditionalGlobalSyncSpace = 128 * MaxBlocks;
-static constexpr auto AdditionalGlobalMultipliesPerThread = SharkDebugChecksums ? 1024 * 1024 : 0;
+static constexpr auto AdditionalGlobalMultipliesPerThread = SharkPrintMultiplyCounts ? 1024 * 1024 : 0;
 static constexpr auto AdditionalGlobalChecksumSpace = SharkDebugChecksums ? 1024 * 1024 : 0;
 
 static constexpr auto AdditionalGlobalSyncSpaceOffset = 0;
@@ -238,7 +238,7 @@ constexpr auto StupidMult = 1;
 //using TestPerSharkParams1 = GenericSharkFloatParams<64, 128>;
 //using TestPerSharkParams1 = GenericSharkFloatParams<96, 81>;
 //using TestPerSharkParams1 = GenericSharkFloatParams<128 * StupidMult, 108, 7776, 9>;
-using TestPerSharkParams1 = GenericSharkFloatParams<128, 108, 77760, 9>;
+using TestPerSharkParams1 = GenericSharkFloatParams<128, 108, 7776, 9>;
 using TestPerSharkParams2 = GenericSharkFloatParams<64 * StupidMult, 108, 7776, 9>;
 using TestPerSharkParams3 = GenericSharkFloatParams<32 * StupidMult, 108, 7776, 9>;
 using TestPerSharkParams4 = GenericSharkFloatParams<16 * StupidMult, 108, 7776, 9>;

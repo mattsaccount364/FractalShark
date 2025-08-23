@@ -112,7 +112,6 @@ void ComputeHpSharkReferenceGpu(void *kernelArgs[]) {
 template<class SharkFloatParams>
 void ComputeHpSharkReferenceGpuLoop(cudaStream_t &stream, void *kernelArgs[]) {
 
-    constexpr auto ExpandedNumDigits = SharkFloatParams::GlobalNumUint32;
     constexpr auto sharedAmountBytes = CalculateMultiplySharedMemorySize<SharkFloatParams>();
 
     if constexpr (SharkCustomStream) {

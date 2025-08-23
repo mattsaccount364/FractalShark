@@ -21,6 +21,8 @@ using cudaStream_t = CUstream_st *;
 
 class BenchmarkTimer;
 
+class DebugGpuCombo;
+
 enum class Operator;
 
 template<class SharkFloatParams>
@@ -45,16 +47,16 @@ template<class SharkFloatParams>
 void InvokeHpSharkReferenceKernelCorrectness(
     BenchmarkTimer &timer,
     HpSharkReferenceResults<SharkFloatParams> &combo,
-    std::vector<DebugStateRaw> *debugResults);
+    DebugGpuCombo *debugCombo);
 
 template<class SharkFloatParams>
 void InvokeMultiplyKernelCorrectness(
     BenchmarkTimer &timer,
     HpSharkComboResults<SharkFloatParams> &combo,
-    std::vector<DebugStateRaw> *debugResults);
+    DebugGpuCombo *debugCombo);
 
 template<class SharkFloatParams>
 void InvokeAddKernelCorrectness(
     BenchmarkTimer &timer,
     HpSharkAddComboResults<SharkFloatParams> &combo,
-    std::vector<DebugStateRaw> *debugResults);
+    DebugGpuCombo *debugCombo);

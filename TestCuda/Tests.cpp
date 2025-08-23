@@ -643,20 +643,65 @@ bool CheckAgainstHost(
 
 template<class SharkFloatParams>
 void ChecksumsCheck (
-    const std::vector<DebugStateHost<SharkFloatParams>> &debugResultsHost,
-    const std::vector<DebugStateRaw> &debugStatesCuda
+    const DebugHostCombo<SharkFloatParams> &debugHostCombo,
+    const DebugGpuCombo &debugGpuCombo
 )
 {
     // Compare debugResultsCuda against debugResultsHost
     bool ChecksumFailure = false;
+    const auto &debugResultsHost = debugHostCombo.States;
+
     if constexpr (SharkTestGpu && SharkDebugChecksums) {
-        assert(debugResultsHost.size() <= debugStatesCuda.size());
+        assert(debugResultsHost.size() <= debugGpuCombo.States.size());
+
+        if constexpr (SharkPrintMultiplyCounts) {
+            std::map<int, int> countOfCounts;
+            for (size_t i = 0; i < debugGpuCombo.MultiplyCounts.size(); ++i) {
+                countOfCounts[debugGpuCombo.MultiplyCounts[i].count]++;
+            }
+
+            // Print distribution of counts
+            size_t totalGpu{};
+            size_t totalResults{};
+            std::cerr << "MultiplyCount distribution:" << std::endl;
+            for (const auto &pair : countOfCounts) {
+                std::cerr << "Count: " << pair.first << " occurred " << pair.second << " times" << std::endl;
+                totalGpu += pair.first * pair.second;
+                totalResults += pair.second;
+            }
+
+            std::cerr << "GPU total count: " << totalGpu << std::endl;
+            std::cerr << "GPU result count (should be total num threads): " << totalResults << std::endl;
+            std::cerr << "Host count: " << debugHostCombo.MultiplyCounts.count << std::endl;
+
+            if (totalGpu != debugHostCombo.MultiplyCounts.count) {
+                std::cerr << "Error: GPU total count does not match host count!" << std::endl;
+                ChecksumFailure = true;
+            }
+
+            if (totalResults != SharkFloatParams::GlobalThreadsPerBlock * SharkFloatParams::GlobalNumBlocks) {
+                std::cerr << "Error: Total results does not match expected number of threads!" << std::endl;
+                ChecksumFailure = true;
+            }
+
+            // Print full array
+            if (ChecksumFailure) {
+                for (size_t i = 0; i < debugGpuCombo.MultiplyCounts.size(); ++i) {
+                    std::cerr << "MultiplyCount[" << i << "]: ";
+                    std::cerr << "Block: " << debugGpuCombo.MultiplyCounts[i].blockIdx << ", ";
+                    std::cerr << "Thread: " << debugGpuCombo.MultiplyCounts[i].threadIdx << ", ";
+                    std::cerr << "Count: " << debugGpuCombo.MultiplyCounts[i].count << std::endl;
+                }
+
+                DebugBreak();
+            }
+        }
 
         // Note that the hosts results should be exactly the right size, whereas
         // the CUDA results may be larger due to the way the kernel is written.
         for (size_t i = 0; i < debugResultsHost.size(); ++i) {
             const auto &host = debugResultsHost[i];
-            const auto &cuda = debugStatesCuda[i];
+            const auto &cuda = debugGpuCombo.States[i];
 
             const auto maxHostArraySize = std::max(host.ArrayToChecksum32.size(), host.ArrayToChecksum64.size());
 
@@ -789,7 +834,7 @@ void TestCoreAdd (
         const HpSharkFloat<SharkFloatParams> &eNum,
         const mpf_t &mpfHostResultXY1,
         const mpf_t &mpfHostResultXY2,
-        std::vector<DebugStateHost<SharkFloatParams>> &debugStates) -> bool {
+        DebugHostCombo<SharkFloatParams> &debugHostCombo) -> bool {
 
             HpSharkFloat<SharkFloatParams> hostAddResult1;
             HpSharkFloat<SharkFloatParams> hostAddResult2;
@@ -802,7 +847,7 @@ void TestCoreAdd (
                 &eNum,
                 &hostAddResult1,
                 &hostAddResult2,
-                debugStates
+                debugHostCombo
             );
 
             auto OutputAdd = [&](const char *desc, [[maybe_unused]] const HpSharkFloat<SharkFloatParams> &out) {
@@ -869,7 +914,7 @@ void TestCoreAdd (
         std::cout << "" << MpfToHexString(mpfHostResultXY2) << std::endl;
     }
 
-    std::vector<DebugStateRaw> debugStatesCuda{};
+    DebugGpuCombo debugGpuCombo{};
     if constexpr (SharkTestGpu) {
         BenchmarkTimer timer;
 
@@ -883,7 +928,7 @@ void TestCoreAdd (
         InvokeAddKernelCorrectness<SharkFloatParams>(
             timer,
             combo,
-            &debugStatesCuda);
+            &debugGpuCombo);
 
         gpuResultXY1 = combo.Result1_A_B_C;
         gpuResultXY2 = combo.Result2_D_E;
@@ -895,7 +940,7 @@ void TestCoreAdd (
         }
     }
 
-    std::vector<DebugStateHost<SharkFloatParams>> debugResultsHost;
+    DebugHostCombo<SharkFloatParams> debugHostCombo{};
 
     bool testSucceeded = TestHostAdd(
         testNum,
@@ -906,7 +951,7 @@ void TestCoreAdd (
         eNum,
         mpfHostResultXY1,
         mpfHostResultXY2,
-        debugResultsHost);
+        debugHostCombo);
 
     if (SharkVerbose == VerboseMode::Debug) {
         if (!testSucceeded) {
@@ -917,8 +962,8 @@ void TestCoreAdd (
     }
 
     ChecksumsCheck<SharkFloatParams>(
-        debugResultsHost,
-        debugStatesCuda);
+        debugHostCombo,
+        debugGpuCombo);
 
     if constexpr (SharkTestGpu) {
         testSucceeded = true;
@@ -964,7 +1009,7 @@ void TestCoreMultiply(
         const mpf_t &mpfHostResultXX,
         const mpf_t &mpfHostResultXY1,
         const mpf_t &mpfHostResultYY,
-        std::vector<DebugStateHost<SharkFloatParams>> &debugStates) -> bool {
+        DebugHostCombo<SharkFloatParams> &debugHostCombo) -> bool {
 
             HpSharkFloat<SharkFloatParams> hostKaratsubaOutXXV2;
             HpSharkFloat<SharkFloatParams> hostKaratsubaOutXYV2;
@@ -976,7 +1021,7 @@ void TestCoreMultiply(
                 &hostKaratsubaOutXXV2,
                 &hostKaratsubaOutXYV2,
                 &hostKaratsubaOutYYV2,
-                debugStates
+                debugHostCombo
             );
 
             auto OutputV2 = [&]([[maybe_unused]] const HpSharkFloat<SharkFloatParams> &out) {
@@ -1055,7 +1100,7 @@ void TestCoreMultiply(
         std::cout << "" << MpfToHexString(mpfHostResultYY) << std::endl;
     }
 
-    std::vector<DebugStateRaw> debugStatesCuda{};
+    DebugGpuCombo debugGpuCombo{};
     if constexpr (SharkTestGpu) {
         BenchmarkTimer timer;
 
@@ -1066,7 +1111,7 @@ void TestCoreMultiply(
         InvokeMultiplyKernelCorrectness<SharkFloatParams>(
             timer,
             combo,
-            &debugStatesCuda);
+            &debugGpuCombo);
 
         gpuResultXX = combo.ResultX2;
         gpuResultXY1 = combo.Result2XY;
@@ -1079,7 +1124,7 @@ void TestCoreMultiply(
         }
     }
 
-    std::vector<DebugStateHost<SharkFloatParams>> debugResultsHost;
+    DebugHostCombo<SharkFloatParams> debugHostCombo{};
 
     bool testSucceeded = false;
     testSucceeded = TestHostKaratsuba(
@@ -1089,7 +1134,7 @@ void TestCoreMultiply(
         mpfHostResultXX,
         mpfHostResultXY1,
         mpfHostResultYY,
-        debugResultsHost);
+        debugHostCombo);
 
     if (!testSucceeded) {
         std::cout << "Custom High Precision failed" << std::endl;
@@ -1098,8 +1143,8 @@ void TestCoreMultiply(
     }
 
     ChecksumsCheck<SharkFloatParams>(
-        debugResultsHost,
-        debugStatesCuda);
+        debugHostCombo,
+        debugGpuCombo);
 
     if constexpr (SharkTestGpu) {
         testSucceeded = true;
@@ -1199,7 +1244,7 @@ void TestCoreReferenceOrbit(
         std::cout << "" << MpfToHexString(mpfHostResultY) << std::endl;
     }
 
-    std::vector<DebugStateRaw> debugStatesCuda{};
+    DebugGpuCombo debugGpuCombo{};
     if constexpr (SharkTestGpu) {
         BenchmarkTimer timer;
 
@@ -1212,7 +1257,7 @@ void TestCoreReferenceOrbit(
         InvokeHpSharkReferenceKernelCorrectness<SharkFloatParams>(
             timer,
             combo,
-            &debugStatesCuda);
+            &debugGpuCombo);
 
         // gpuResultXX = combo.Add.Result1_A_B_C;
         // gpuResultYY = combo.Add.Result2_D_E;

@@ -6,11 +6,11 @@ struct PosEnabled : std::bool_constant<(P < Valid)> {};
 template<ConditionalAccess Cond, int Valid>
 __device__ __forceinline__ void load_slot_scalar(
     int base_i, int k,
-    const uint32_t *__restrict__ aDigits_base,
-    const uint32_t *__restrict__ bDigits_base,
+    const uint32_t *SharkRestrict aDigits_base,
+    const uint32_t *SharkRestrict bDigits_base,
     int a_offset, int b_offset,
-    const uint32_t *__restrict__ x_diff_abs,
-    const uint32_t *__restrict__ y_diff_abs,
+    const uint32_t *SharkRestrict x_diff_abs,
+    const uint32_t *SharkRestrict y_diff_abs,
     uint32_t(&ax)[8], uint32_t(&bx)[8],
     uint32_t(&ay)[8], uint32_t(&by)[8],
     uint32_t(&cy)[8], uint32_t(&dy)[8]) {
@@ -37,8 +37,11 @@ __device__ __forceinline__ void load_slot_scalar(
 #undef DO_POS
 }
 
-template<int Valid>
+template<class SharkFloatParams, int Valid>
 __device__ __forceinline__ void compute_slot_scalar(
+    cg::grid_group &grid,
+    cg::thread_block &block,
+    DebugMultiplyCount<SharkFloatParams> *debugMultiplyCounts,
     const uint32_t(&ax)[8], const uint32_t(&bx)[8],
     const uint32_t(&ay)[8], const uint32_t(&by)[8],
     const uint32_t(&cy)[8], const uint32_t(&dy)[8],
@@ -54,6 +57,7 @@ __device__ __forceinline__ void compute_slot_scalar(
         p = xx_a * xx_b; xx_low += p; if (xx_low < p) xx_high += 1;            \
         p = xy_a * xy_b; xy_low += p; if (xy_low < p) xy_high += 1;            \
         p = yy_a * yy_b; yy_low += p; if (yy_low < p) yy_high += 1;            \
+        DebugMultiplyIncrement<SharkFloatParams>(debugMultiplyCounts, grid, block, 3); \
     }
 
     LANE(0) LANE(1) LANE(2) LANE(3)
@@ -69,7 +73,7 @@ __device__ __forceinline__ void compute_slot_scalar(
         SLOT_AX, SLOT_BX, SLOT_AY, SLOT_BY, SLOT_CY, SLOT_DY)
 
 #define COMPUTE_SLOT_VALID(VALID_, SLOT_AX,SLOT_BX,SLOT_AY,SLOT_BY,SLOT_CY,SLOT_DY)       \
-    compute_slot_scalar<VALID_>(                                                          \
+    compute_slot_scalar<SharkFloatParams, VALID_>(                                        \
         SLOT_AX, SLOT_BX, SLOT_AY, SLOT_BY, SLOT_CY, SLOT_DY,                             \
         xx_sum_low, xx_sum_high, xy_sum_low, xy_sum_high, yy_sum_low, yy_sum_high)
 
@@ -83,15 +87,18 @@ template<
     int ExecutionBlockBase,
     int ExecutionNumBlocks>
 __device__ SharkForceInlineReleaseOnly static void ProcessConvolutionDirectLoad_Unaligned(
+    cg::grid_group &grid,
+    cg::thread_block &block,
+    DebugMultiplyCount<SharkFloatParams> *debugMultiplyCounts,
     int &i, const int i_end, const int k,
-    const uint32_t *__restrict__ aDigits_base,
-    const uint32_t *__restrict__ bDigits_base,
+    const uint32_t *SharkRestrict aDigits_base,
+    const uint32_t *SharkRestrict bDigits_base,
     const int a_offset, const int b_offset,
     uint64_t &xx_sum_low, uint64_t &xx_sum_high,
     uint64_t &xy_sum_low, uint64_t &xy_sum_high,
     uint64_t &yy_sum_low, uint64_t &yy_sum_high,
-    const uint32_t *__restrict__ x_diff_abs,
-    const uint32_t *__restrict__ y_diff_abs) {
+    const uint32_t *SharkRestrict x_diff_abs,
+    const uint32_t *SharkRestrict y_diff_abs) {
     static_assert(BatchSize == 8, "This path expects BatchSize == 8");
 
     if (i > i_end) return;
@@ -194,13 +201,16 @@ template<
     int RecursionDepth,
     int ExecutionBlockBase,
     int ExecutionNumBlocks>
-__device__ SharkForceInlineReleaseOnly static void ProcessConvolutionDirectLoad_Unaligned2(
+__device__ SharkForceInlineReleaseOnly static void ProcessConvolutionDirectLoad_Unaligned2 (
+    cg::grid_group &grid,
+    cg::thread_block &block,
+    DebugMultiplyCount<SharkFloatParams> *debugMultiplyCounts,
     int &i,
     const int i_start,
     const int i_end,
     const int k,
-    const uint32_t *__restrict__ aDigits_base,
-    const uint32_t *__restrict__ bDigits_base,
+    const uint32_t *SharkRestrict aDigits_base,
+    const uint32_t *SharkRestrict bDigits_base,
     const int a_offset,
     const int b_offset,
     uint64_t &xx_sum_low,
@@ -209,8 +219,8 @@ __device__ SharkForceInlineReleaseOnly static void ProcessConvolutionDirectLoad_
     uint64_t &xy_sum_high,
     uint64_t &yy_sum_low,
     uint64_t &yy_sum_high,
-    const uint32_t *__restrict__ x_diff_abs,
-    const uint32_t *__restrict__ y_diff_abs) {
+    const uint32_t *SharkRestrict x_diff_abs,
+    const uint32_t *SharkRestrict y_diff_abs) {
 
     // Generic non-4 batching → just use your existing scalar-batched fallback
     for (int base_i = i_start; base_i <= i_end; ) {
@@ -265,10 +275,16 @@ __device__ SharkForceInlineReleaseOnly static void ProcessConvolutionDirectLoad_
                 yy_sum_low += p;
                 if (yy_sum_low < p)
                     yy_sum_high += 1;
+
+                DebugMultiplyIncrement<SharkFloatParams>(debugMultiplyCounts, grid, block, 3);
             }
+
         } else {
             // scalar tail
-            accumulate_scalar_span<UseConditionalAccess>(
+            accumulate_scalar_span<SharkFloatParams, UseConditionalAccess>(
+                grid,
+                block,
+                debugMultiplyCounts,
                 base_i,
                 base_i + bsz - 1,
                 k,

@@ -228,7 +228,7 @@ template<class SharkFloatParams>
 void InvokeHpSharkReferenceKernelCorrectness(
     BenchmarkTimer &timer,
     HpSharkReferenceResults<SharkFloatParams> &combo,
-    std::vector<DebugStateRaw> *debugResults) {
+    DebugGpuCombo *debugCombo) {
 
     // Prepare kernel arguments
     // Allocate memory for carryOuts and cumulativeCarries
@@ -273,13 +273,20 @@ void InvokeHpSharkReferenceKernelCorrectness(
 
     cudaMemcpy(&combo, comboGpu, sizeof(HpSharkReferenceResults<SharkFloatParams>), cudaMemcpyDeviceToHost);
 
-    if (debugResults != nullptr) {
+    if (debugCombo != nullptr) {
         if constexpr (SharkDebugChecksums) {
-            debugResults->resize(SharkFloatParams::NumDebugStates);
+            debugCombo->States.resize(SharkFloatParams::NumDebugStates);
             cudaMemcpy(
-                debugResults->data(),
-                &d_tempProducts[AdditionalGlobalSyncSpace],
+                debugCombo->States.data(),
+                &d_tempProducts[AdditionalChecksumsOffset],
                 SharkFloatParams::NumDebugStates * sizeof(DebugStateRaw),
+                cudaMemcpyDeviceToHost);
+
+            debugCombo->MultiplyCounts.resize(SharkFloatParams::NumDebugMultiplyCounts);
+            cudaMemcpy(
+                debugCombo->MultiplyCounts.data(),
+                &d_tempProducts[AdditionalMultipliesOffset],
+                SharkFloatParams::NumDebugMultiplyCounts * sizeof(DebugMultiplyCountRaw),
                 cudaMemcpyDeviceToHost);
         }
     }
@@ -292,7 +299,7 @@ template<class SharkFloatParams>
 void InvokeMultiplyKernelCorrectness(
     BenchmarkTimer &timer,
     HpSharkComboResults<SharkFloatParams> &combo,
-    std::vector<DebugStateRaw> *debugResults) {
+    DebugGpuCombo *debugCombo) {
 
     // Prepare kernel arguments
     // Allocate memory for carryOuts and cumulativeCarries
@@ -333,13 +340,20 @@ void InvokeMultiplyKernelCorrectness(
 
     cudaMemcpy(&combo, comboGpu, sizeof(HpSharkComboResults<SharkFloatParams>), cudaMemcpyDeviceToHost);
 
-    if (debugResults != nullptr) {
+    if (debugCombo != nullptr) {
         if constexpr (SharkDebugChecksums) {
-            debugResults->resize(SharkFloatParams::NumDebugStates);
+            debugCombo->States.resize(SharkFloatParams::NumDebugStates);
             cudaMemcpy(
-                debugResults->data(),
-                &d_tempProducts[AdditionalGlobalSyncSpace],
+                debugCombo->States.data(),
+                &d_tempProducts[AdditionalChecksumsOffset],
                 SharkFloatParams::NumDebugStates * sizeof(DebugStateRaw),
+                cudaMemcpyDeviceToHost);
+
+            debugCombo->MultiplyCounts.resize(SharkFloatParams::NumDebugMultiplyCounts);
+            cudaMemcpy(
+                debugCombo->MultiplyCounts.data(),
+                &d_tempProducts[AdditionalMultipliesOffset],
+                SharkFloatParams::NumDebugMultiplyCounts * sizeof(DebugMultiplyCountRaw),
                 cudaMemcpyDeviceToHost);
         }
     }
@@ -352,7 +366,7 @@ template<class SharkFloatParams>
 void InvokeAddKernelCorrectness(
     BenchmarkTimer &timer,
     HpSharkAddComboResults<SharkFloatParams> &combo,
-    std::vector<DebugStateRaw> *debugResults) {
+    DebugGpuCombo *debugCombo) {
 
     // Perform the calculation on the GPU
     HpSharkAddComboResults<SharkFloatParams> *comboResults;
@@ -385,13 +399,20 @@ void InvokeAddKernelCorrectness(
 
     cudaMemcpy(&combo, comboResults, sizeof(HpSharkAddComboResults<SharkFloatParams>), cudaMemcpyDeviceToHost);
 
-    if (debugResults != nullptr) {
+    if (debugCombo != nullptr) {
         if constexpr (SharkDebugChecksums) {
-            debugResults->resize(SharkFloatParams::NumDebugStates);
+            debugCombo->States.resize(SharkFloatParams::NumDebugStates);
             cudaMemcpy(
-                debugResults->data(),
-                &g_extResult[AdditionalGlobalSyncSpace],
+                debugCombo->States.data(),
+                &g_extResult[AdditionalChecksumsOffset],
                 SharkFloatParams::NumDebugStates * sizeof(DebugStateRaw),
+                cudaMemcpyDeviceToHost);
+
+            debugCombo->MultiplyCounts.resize(SharkFloatParams::NumDebugMultiplyCounts);
+            cudaMemcpy(
+                debugCombo->MultiplyCounts.data(),
+                &g_extResult[AdditionalMultipliesOffset],
+                SharkFloatParams::NumDebugMultiplyCounts * sizeof(DebugMultiplyCountRaw),
                 cudaMemcpyDeviceToHost);
         }
     }
@@ -409,7 +430,7 @@ void InvokeAddKernelCorrectness(
     template void InvokeAddKernelCorrectness<SharkFloatParams>( \
         BenchmarkTimer &timer, \
         HpSharkAddComboResults<SharkFloatParams> &combo, \
-        std::vector<DebugStateRaw> *debugResults);
+        DebugGpuCombo *debugCombo);
 #else
 #define ExplicitlyInstantiateAdd(SharkFloatParams) ;
 #endif
@@ -423,7 +444,7 @@ void InvokeAddKernelCorrectness(
     template void InvokeMultiplyKernelCorrectness<SharkFloatParams>( \
         BenchmarkTimer &timer, \
         HpSharkComboResults<SharkFloatParams> &combo, \
-        std::vector<DebugStateRaw> *debugResults);
+        DebugGpuCombo *debugCombo);
 #else
 #define ExplicitlyInstantiateMultiply(SharkFloatParams) ;
 #endif
@@ -437,7 +458,7 @@ void InvokeAddKernelCorrectness(
     template void InvokeHpSharkReferenceKernelCorrectness<SharkFloatParams>( \
         BenchmarkTimer &timer, \
         HpSharkReferenceResults<SharkFloatParams> &combo, \
-        std::vector<DebugStateRaw> *debugResults);
+        DebugGpuCombo *debugCombo);
 #else
 #define ExplicitlyInstantiateHpSharkReference(SharkFloatParams) ;
 #endif

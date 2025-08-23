@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 #include <array>
+#include <vector>
 
 enum class UseConvolution {
     No,
@@ -123,4 +124,16 @@ struct DebugStateRaw {
     int RecursionDepth;
     int CallIndex;
     UseConvolution Convolution;
+};
+
+struct DebugMultiplyCountRaw {
+    int blockIdx;
+    int threadIdx;
+    int count;
+};
+
+class DebugGpuCombo {
+public:
+    std::vector<DebugStateRaw> States;
+    std::vector<DebugMultiplyCountRaw> MultiplyCounts;
 };

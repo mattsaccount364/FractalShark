@@ -38,12 +38,16 @@ void Subtract128 (
     result_high = a_high - b_high - borrow;
 }
 
+template<class SharkFloatParams>
 static void NativeMultiply64 (
+    DebugHostCombo<SharkFloatParams> &debugHostCombo,
     int n,
     int total_k,
     const std::vector<uint32_t> &A,
     const std::vector<uint32_t> &B,
     std::vector<uint64_t> &Res) {
+
+    auto &debugMultiplyCounts = debugHostCombo.MultiplyCounts;
 
     assert(n == A.size());
     assert(n == B.size());
@@ -69,6 +73,8 @@ static void NativeMultiply64 (
 
             // 64-bit product
             uint64_t product = a * b;
+
+            debugMultiplyCounts.DebugMultiplyIncrement(1);
 
             // Add product to the 128-bit accumulator
             // sum_128 = sum_128 + product (treating product as 64-bit low, 0 high)
@@ -218,9 +224,11 @@ void KaratsubaRecursiveDigits (
     std::vector<uint64_t> &final128XX,
     std::vector<uint64_t> &final128XY,
     std::vector<uint64_t> &final128YY,
-    std::vector<DebugStateHost<SharkFloatParams>> &debugStates
+    DebugHostCombo<SharkFloatParams> &debugHostCombo
 )
 {
+    auto &debugStates = debugHostCombo.States;
+
     const int NewN = static_cast<int>(A_digits.size());
 
     {
@@ -400,10 +408,12 @@ void KaratsubaRecursiveDigits (
 
         assert(A_low.size() == B_low.size());
 
-        NativeMultiply64(NewN1, total_k, A_low, A_low, Z0XX);
-        NativeMultiply64(NewN1, total_k, A_low, B_low, Z0XY);
-        NativeMultiply64(NewN1, total_k, B_low, B_low, Z0YY);
-
+        NativeMultiply64<SharkFloatParams>(
+            debugHostCombo, NewN1, total_k, A_low, A_low, Z0XX);
+        NativeMultiply64<SharkFloatParams>(
+            debugHostCombo, NewN1, total_k, A_low, B_low, Z0XY);
+        NativeMultiply64<SharkFloatParams>(
+            debugHostCombo, NewN1, total_k, B_low, B_low, Z0YY);
 
         auto ProcessOneZ0 = [&]<auto DebugPurpose>(
             [[maybe_unused]] const char *name,
@@ -428,9 +438,12 @@ void KaratsubaRecursiveDigits (
 
         assert(A_high.size() == B_high.size());
 
-        NativeMultiply64(NewN2, total_k, A_high, A_high, Z2XX);
-        NativeMultiply64(NewN2, total_k, A_high, B_high, Z2XY);
-        NativeMultiply64(NewN2, total_k, B_high, B_high, Z2YY);
+        NativeMultiply64<SharkFloatParams>(
+            debugHostCombo, NewN2, total_k, A_high, A_high, Z2XX);
+        NativeMultiply64<SharkFloatParams>(
+            debugHostCombo, NewN2, total_k, A_high, B_high, Z2XY);
+        NativeMultiply64<SharkFloatParams>(
+            debugHostCombo, NewN2, total_k, B_high, B_high, Z2YY);
 
         auto ProcessOneZ2 = [&]<auto DebugPurpose>(
             [[maybe_unused]] const char *name,
@@ -454,9 +467,12 @@ void KaratsubaRecursiveDigits (
 
         assert(x_diff.size() == y_diff.size());
 
-        NativeMultiply64(MaxHalfN, total_k, x_diff, x_diff, Z1_tempXX);
-        NativeMultiply64(MaxHalfN, total_k, x_diff, y_diff, Z1_tempXY);
-        NativeMultiply64(MaxHalfN, total_k, y_diff, y_diff, Z1_tempYY);
+        NativeMultiply64<SharkFloatParams>(
+            debugHostCombo, MaxHalfN, total_k, x_diff, x_diff, Z1_tempXX);
+        NativeMultiply64<SharkFloatParams>(
+            debugHostCombo, MaxHalfN, total_k, x_diff, y_diff, Z1_tempXY);
+        NativeMultiply64<SharkFloatParams>(
+            debugHostCombo, MaxHalfN, total_k, y_diff, y_diff, Z1_tempYY);
 
         auto ProcessOneZ1Temp = [&]<auto DebugPurpose>(
             [[maybe_unused]] const char *name,
@@ -489,7 +505,7 @@ void KaratsubaRecursiveDigits (
             Z0XX,
             Z0XY,
             Z0YY,
-            debugStates);
+            debugHostCombo);
 
         auto ProcessOneZ0 = [&]<auto DebugPurpose>(
             [[maybe_unused]] const char *name,
@@ -522,7 +538,7 @@ void KaratsubaRecursiveDigits (
                 Z2XX,
                 Z2XY,
                 Z2YY,
-                debugStates);
+                debugHostCombo);
 
         auto ProcessOneZ2 = [&]<auto DebugPurpose>(
             [[maybe_unused]] const char *name,
@@ -554,7 +570,7 @@ void KaratsubaRecursiveDigits (
                 Z1_tempXX,
                 Z1_tempXY,
                 Z1_tempYY,
-                debugStates);
+                debugHostCombo);
 
         auto ProcessOneZ1Temp = [&]<auto DebugPurpose>(
             [[maybe_unused]] const char *name,
@@ -743,9 +759,10 @@ void MultiplyHelperKaratsubaV2 (
     HpSharkFloat<SharkFloatParams> *OutXX,
     HpSharkFloat<SharkFloatParams> *OutXY,
     HpSharkFloat<SharkFloatParams> *OutYY,
-    std::vector<DebugStateHost<SharkFloatParams>> &debugStates
+    DebugHostCombo<SharkFloatParams> &debugHostCombo
 ) {
     constexpr int N = SharkFloatParams::GlobalNumUint32;
+    auto &debugStates = debugHostCombo.States;
 
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << std::endl;
@@ -766,13 +783,6 @@ void MultiplyHelperKaratsubaV2 (
     constexpr auto CallIndex = 0;
     constexpr auto RecursionDepth = 0;
     using DebugState = DebugStateHost<SharkFloatParams>;
-    //DebugState debugAState{ A->Digits, SharkFloatParams::GlobalNumUint32, DebugStatePurpose::ADigits, CallIndex };
-    //debugStates.push_back(debugAState);
-
-    //DebugState debugBState{ B->Digits, SharkFloatParams::GlobalNumUint32, DebugStatePurpose::BDigits, CallIndex };
-    //debugStates.push_back(debugBState);
-
-    //debugStates.resize(SharkFloatParams::NumDebugStates);
 
     {
         // 1) Possibly do sign logic, exponent logic, etc.
@@ -805,7 +815,7 @@ void MultiplyHelperKaratsubaV2 (
             final128XX,
             final128XY,
             final128YY,
-            debugStates);
+            debugHostCombo);
     }
 
     // Assume final128 is arranged as pairs: final128[0], final128[1] form the first pair (sum_low, sum_high),
@@ -982,6 +992,6 @@ void MultiplyHelperKaratsubaV2 (
         HpSharkFloat<SharkFloatParams> *, \
         HpSharkFloat<SharkFloatParams> *, \
         HpSharkFloat<SharkFloatParams> *, \
-        std::vector<DebugStateHost<SharkFloatParams>> &debugStates);
+        DebugHostCombo<SharkFloatParams> &debugHostCombo);
 
 ExplicitInstantiateAll();

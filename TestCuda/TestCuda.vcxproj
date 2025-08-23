@@ -122,14 +122,18 @@
     <ClInclude Include="MultiplyHelperVectorLoads.cuh" />
     <ClInclude Include="TestVerbose.h" />
     <ClInclude Include="ThreeWayMagnitude.h" />
-    <CudaCompile Include="Add.cu" />
+    <ClInclude Include="Add.cu">
+      <FileType>Document</FileType>
+    </ClInclude>
     <ClInclude Include="Add_ABC.cuh" />
     <ClInclude Include="Add_DE.cuh" />
     <CudaCompile Include="AddTestKernels.cu" />
     <CudaCompile Include="HpSharkFloat.cu" />
     <CudaCompile Include="HpSharkReferenceOrbit.cu" />
     <CudaCompile Include="KernelInvoke.cu" />
-    <CudaCompile Include="Multiply.cu" />
+    <ClInclude Include="Multiply.cu">
+      <FileType>Document</FileType>
+    </ClInclude>
     <CudaCompile Include="Archived\MultiplyKaratsubaV1.cu">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>

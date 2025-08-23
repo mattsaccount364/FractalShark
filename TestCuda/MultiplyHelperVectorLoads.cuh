@@ -110,6 +110,9 @@ template<
     int ExecutionBlockBase,
     int ExecutionNumBlocks>
 __device__ SharkForceInlineReleaseOnly static void ProcessConvolutionDirectLoad_BS8_FwdAligned(
+    cg::grid_group &grid,
+    cg::thread_block &block,
+    DebugMultiplyCount<SharkFloatParams> *debugMultiplyCounts,
     int &i, const int i_end, const int k,
     const uint32_t *aDigits_base, const uint32_t *bDigits_base,
     const int a_offset, const int b_offset,
@@ -140,7 +143,10 @@ __device__ SharkForceInlineReleaseOnly static void ProcessConvolutionDirectLoad_
         }
         if (shift > 0) {
             const int pro_end = min(i_end, i + shift - 1);
-            accumulate_scalar_span<UseConditionalAccess>(
+            accumulate_scalar_span<SharkFloatParams, UseConditionalAccess>(
+                grid,
+                block,
+                debugMultiplyCounts,
                 i, pro_end, k,
                 aDigits_base, bDigits_base, a_offset, b_offset,
                 x_diff_abs, y_diff_abs,

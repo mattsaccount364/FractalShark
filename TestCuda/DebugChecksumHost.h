@@ -8,6 +8,18 @@
 #include "DebugChecksum.cuh"
 
 template <class SharkFloatParams>
+struct DebugMultiplyCountHost {
+    DebugMultiplyCountHost() : count{} {}
+
+    void DebugMultiplyIncrement(int incomingCount) {
+        this->count += incomingCount;
+    }
+
+    int count;
+};
+
+
+template <class SharkFloatParams>
 struct DebugStateHost {
 
     // CRC64 polynomial (ISO 3309 standard)
@@ -315,3 +327,9 @@ std::string DebugStateHost<SharkFloatParams>::GetStr() const
 
     return ss.str();
 }
+
+template <class SharkFloatParams>
+struct DebugHostCombo {
+    std::vector<DebugStateHost<SharkFloatParams>> States;
+    DebugMultiplyCountHost<SharkFloatParams> MultiplyCounts;
+};

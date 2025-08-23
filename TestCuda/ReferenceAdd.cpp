@@ -1009,8 +1009,10 @@ AddHelper (
     const HpSharkFloat<SharkFloatParams> *E_B,
     HpSharkFloat<SharkFloatParams> *OutXY1,
     HpSharkFloat<SharkFloatParams> *OutXY2,
-    std::vector<DebugStateHost<SharkFloatParams>> &debugStates
+    DebugHostCombo<SharkFloatParams> &debugHostCombo
 ) {
+    auto &debugStates = debugHostCombo.States;
+
     if constexpr (SharkDebugChecksums) {
         constexpr auto NewDebugStateSize = static_cast<int>(DebugStatePurpose::NumPurposes);
         debugStates.resize(NewDebugStateSize);
@@ -1442,6 +1444,6 @@ AddHelper (
         const HpSharkFloat<SharkFloatParams> *, \
         HpSharkFloat<SharkFloatParams> *, \
         HpSharkFloat<SharkFloatParams> *, \
-        std::vector<DebugStateHost<SharkFloatParams>> &debugStates);
+        DebugHostCombo<SharkFloatParams> &debugHostCombo);
 
 ExplicitInstantiateAll();

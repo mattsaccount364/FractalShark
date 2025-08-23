@@ -26,8 +26,8 @@ static constexpr bool SharkDebug = false;
 
 // Comment out to disable specific kernels
 //#define ENABLE_ADD_KERNEL
-//#define ENABLE_MULTIPLY_KERNEL
-#define ENABLE_REFERENCE_KERNEL
+#define ENABLE_MULTIPLY_KERNEL
+//#define ENABLE_REFERENCE_KERNEL
 
 // 0 = just one correctness test, intended for fast re-compile of a specific failure
 // 1 = all basic correctness tests/all basic perf tests
@@ -35,7 +35,7 @@ static constexpr bool SharkDebug = false;
 // 3 = all basic correctness tests + comical tests
 // See ExplicitInstantiate.h for more information
 #ifdef _DEBUG
-#define ENABLE_BASIC_CORRECTNESS 1
+#define ENABLE_BASIC_CORRECTNESS 0
 #else
 #define ENABLE_BASIC_CORRECTNESS 2
 #endif
@@ -68,7 +68,7 @@ static constexpr bool SharkTestGpu = (SharkEnableAddKernel || SharkEnableMultipl
 #endif
 
 static constexpr auto SharkTestComicalThreadCount = 13;
-static constexpr auto SharkTestIterCount = SharkDebug ? 5 : 50000;
+static constexpr auto SharkTestIterCount = SharkDebug ? 5 : 50;
 
 // Set to true to use a custom stream for the kernel launch
 static constexpr auto SharkCustomStream = true;
@@ -95,7 +95,7 @@ static constexpr auto SharkBatchSize = SharkDebug ? 8 : 512;
 static constexpr auto SharkKaratsubaBatchSize = SharkLoadAllInShared ? 1 : 4;
 
 static constexpr bool SharkDebugChecksums = (ENABLE_BASIC_CORRECTNESS != 2) ? SharkDebug : false;
-static constexpr bool SharkDebugRandomDelays = false;
+static constexpr bool SharkPrintMultiplyCounts = SharkDebugChecksums;
 
 #if ENABLE_BASIC_CORRECTNESS == 2
 static constexpr bool SharkTestCorrectness = SharkDebug;
@@ -134,6 +134,7 @@ struct GenericSharkFloatParams {
     static constexpr auto ConvolutionLimit = pConvolutionLimit;
 
     static constexpr auto NumDebugStates = ((ConvolutionLimit + 1) * 3 * static_cast<int>(DebugStatePurpose::NumPurposes));
+    static constexpr auto NumDebugMultiplyCounts = GlobalThreadsPerBlock * GlobalNumBlocks;
 
     static std::string GetDescription() {
         std::string desc = "GlobalThreadsPerBlock: " + std::to_string(GlobalThreadsPerBlock) +
@@ -169,17 +170,26 @@ static constexpr auto AdditionalUInt64PerFrame = 256;
 static constexpr auto MaxBlocks = 256;
 
 static constexpr auto AdditionalGlobalSyncSpace = 128 * MaxBlocks;
-static constexpr auto AdditionalGlobalRandomSpace = SharkDebugRandomDelays ? 1024 * 1024 : 0;
+static constexpr auto AdditionalGlobalMultipliesPerThread = SharkDebugChecksums ? 1024 * 1024 : 0;
 static constexpr auto AdditionalGlobalChecksumSpace = SharkDebugChecksums ? 1024 * 1024 : 0;
+
+static constexpr auto AdditionalGlobalSyncSpaceOffset = 0;
+static constexpr auto AdditionalMultipliesOffset = AdditionalGlobalSyncSpaceOffset + AdditionalGlobalSyncSpace;
+static constexpr auto AdditionalChecksumsOffset = AdditionalMultipliesOffset + AdditionalGlobalMultipliesPerThread;
 
 // Use the order of these three variables being added as the
 // definition of how they are laid out in memory.
 static constexpr auto AdditionalUInt64Global =
-    AdditionalGlobalSyncSpace + AdditionalGlobalRandomSpace + AdditionalGlobalChecksumSpace;
+    AdditionalGlobalSyncSpace +
+    AdditionalGlobalMultipliesPerThread +
+    AdditionalGlobalChecksumSpace;
 
 template<class SharkFloatParams>
 static constexpr auto CalculateMultiplyFrameSize() {
-    constexpr auto retval = ScratchMemoryArraysForMultiply * SharkFloatParams::GlobalNumUint32 + AdditionalUInt64PerFrame;
+    constexpr auto retval =
+        ScratchMemoryArraysForMultiply *
+        SharkFloatParams::GlobalNumUint32 +
+        AdditionalUInt64PerFrame;
     constexpr auto alignAt16BytesConstant = (retval % 16 == 0) ? 0 : (16 - retval % 16);
     return retval + alignAt16BytesConstant;
 }
@@ -214,7 +224,8 @@ static constexpr auto LowPrec = 32;
 
 
 // If you add a new one, search for one of the other types and copy/paste
-using Test8x1SharkParams = GenericSharkFloatParams<8, 1>; // Use for ENABLE_BASIC_CORRECTNESS==1
+using Test8x1SharkParams = GenericSharkFloatParams<128, 108, 7776, 9>;
+//using Test8x1SharkParams = GenericSharkFloatParams<8, 1>; // Use for ENABLE_BASIC_CORRECTNESS==1
 using Test4x36SharkParams = GenericSharkFloatParams<4, 6, 32>;
 using Test4x12SharkParams = GenericSharkFloatParams<3, 18, 50>;
 using Test4x9SharkParams = GenericSharkFloatParams<5, 12, 80>;
@@ -227,7 +238,7 @@ constexpr auto StupidMult = 1;
 //using TestPerSharkParams1 = GenericSharkFloatParams<64, 128>;
 //using TestPerSharkParams1 = GenericSharkFloatParams<96, 81>;
 //using TestPerSharkParams1 = GenericSharkFloatParams<128 * StupidMult, 108, 7776, 9>;
-using TestPerSharkParams1 = GenericSharkFloatParams<128, 108, 7776, 9>;
+using TestPerSharkParams1 = GenericSharkFloatParams<128, 108, 77760, 9>;
 using TestPerSharkParams2 = GenericSharkFloatParams<64 * StupidMult, 108, 7776, 9>;
 using TestPerSharkParams3 = GenericSharkFloatParams<32 * StupidMult, 108, 7776, 9>;
 using TestPerSharkParams4 = GenericSharkFloatParams<16 * StupidMult, 108, 7776, 9>;
@@ -329,6 +340,8 @@ bool HpSharkFloat<SharkFloatParams>::GetNegative() const {
     return IsNegative;
 }
 
+#pragma warning(push)
+#pragma warning(disable:4324)
 template<class SharkFloatParams>
 struct alignas(16) HpSharkComboResults{
     alignas(16) HpSharkFloat<SharkFloatParams> A;
@@ -354,6 +367,7 @@ struct HpSharkReferenceResults {
     alignas(16) HpSharkComboResults<SharkFloatParams> Multiply;
     alignas(16) HpSharkAddComboResults<SharkFloatParams> Add;
 };
+#pragma warning(pop)
 
 template<class SharkFloatParams>
 std::string MpfToString(const mpf_t mpf_val, size_t precInBits);

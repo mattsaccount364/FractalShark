@@ -4,7 +4,7 @@
 #include <vector>
 
 template <class SharkFloatParams>
-struct DebugStateHost;
+struct DebugHostCombo;
 
 template<class SharkFloatParams>
 struct HpSharkFloat;
@@ -16,5 +16,5 @@ void MultiplyHelperKaratsubaV2(
     HpSharkFloat<SharkFloatParams> *OutXX,
     HpSharkFloat<SharkFloatParams> *OutXY,
     HpSharkFloat<SharkFloatParams> *OutYY,
-    std::vector<DebugStateHost<SharkFloatParams>> &debugStates
+    DebugHostCombo<SharkFloatParams> &debugHostCombo
 );

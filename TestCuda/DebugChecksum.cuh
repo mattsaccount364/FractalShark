@@ -8,13 +8,50 @@
 #include <cooperative_groups.h>
 
 template <class SharkFloatParams>
+struct DebugMultiplyCount {
+    __device__ 
+    void DebugMultiplyErase ()
+    {
+        Data = {};
+    }
+
+    __device__
+    void DebugMultiplyIncrement (
+        int count,
+        int blockIdx,
+        int threadIdx)
+    {
+        Data.count += count;
+        Data.blockIdx = blockIdx;
+        Data.threadIdx = threadIdx;
+    }
+
+    DebugMultiplyCountRaw Data;
+};
+
+template <class SharkFloatParams>
+__device__ void DebugMultiplyIncrement (
+    DebugMultiplyCount<SharkFloatParams> *array,
+    cooperative_groups::grid_group &grid,
+    cooperative_groups::thread_block &block,
+    int count)
+{
+    if constexpr (SharkPrintMultiplyCounts) {
+        array[block.group_index().x * SharkFloatParams::GlobalThreadsPerBlock + block.thread_index().x].DebugMultiplyIncrement(
+            count,
+            block.group_index().x,
+            block.thread_index().x);
+    }
+}
+
+template <class SharkFloatParams>
 struct DebugState {
 
     // CRC64 polynomial (ISO 3309 standard)
     static constexpr uint64_t CRC64_POLY = 0x42F0E1EBA9EA3693ULL;
     static constexpr uint32_t CRC32_POLY = 0xEDB88320UL;
 
-    __device__ void Reset(
+    __device__ void Reset (
         RecordIt record,
         UseConvolution useConvolution,
         cooperative_groups::grid_group &grid,
@@ -26,7 +63,7 @@ struct DebugState {
         int callIndex
         );
 
-    __device__ void Reset(
+    __device__ void Reset (
         RecordIt record,
         UseConvolution useConvolution,
         cooperative_groups::grid_group &grid,
@@ -38,7 +75,7 @@ struct DebugState {
         int callIndex
     );
 
-    __device__ void Erase(
+    __device__ void Erase (
         RecordIt record,
         cooperative_groups::grid_group &grid,
         cooperative_groups::thread_block &block,
@@ -47,12 +84,12 @@ struct DebugState {
         int callIndex
     );
 
-    static __device__ uint64_t ComputeCRC64(
+    static __device__ uint64_t ComputeCRC64 (
         const uint32_t *data,
         size_t size,
         uint64_t initialCrc);
 
-    static __device__ uint64_t ComputeCRC64(
+    static __device__ uint64_t ComputeCRC64 (
         const uint64_t *data,
         size_t size,
         uint64_t initialCrc);
@@ -63,7 +100,7 @@ struct DebugState {
 
 // Function to compute CRC64 for a single data chunk
 template <class SharkFloatParams>
-__device__ uint64_t DebugState<SharkFloatParams>::ComputeCRC64(
+__device__ uint64_t DebugState<SharkFloatParams>::ComputeCRC64 (
     const uint32_t *data,
     size_t size,
     uint64_t initialCrc) {
@@ -85,7 +122,7 @@ __device__ uint64_t DebugState<SharkFloatParams>::ComputeCRC64(
 
 // Function to compute CRC64 for a single data chunk
 template <class SharkFloatParams>
-__device__ uint64_t DebugState<SharkFloatParams>::ComputeCRC64(
+__device__ uint64_t DebugState<SharkFloatParams>::ComputeCRC64 (
     const uint64_t *data,
     size_t size,
     uint64_t initialCrc) {
@@ -106,7 +143,7 @@ __device__ uint64_t DebugState<SharkFloatParams>::ComputeCRC64(
 }
 
 template <class SharkFloatParams>
-__device__ void DebugState<SharkFloatParams>::Reset(
+__device__ void DebugState<SharkFloatParams>::Reset (
     RecordIt record,
     UseConvolution useConvolution,
     cooperative_groups::grid_group &grid,
@@ -140,7 +177,7 @@ __device__ void DebugState<SharkFloatParams>::Reset(
 }
 
 template <class SharkFloatParams>
-__device__ void DebugState<SharkFloatParams>::Reset(
+__device__ void DebugState<SharkFloatParams>::Reset (
     RecordIt record,
     UseConvolution useConvolution,
     cooperative_groups::grid_group &grid,
@@ -174,7 +211,7 @@ __device__ void DebugState<SharkFloatParams>::Reset(
 }
 
 template <class SharkFloatParams>
-__device__ void DebugState<SharkFloatParams>::Erase(
+__device__ void DebugState<SharkFloatParams>::Erase (
     RecordIt record,
     cooperative_groups::grid_group &grid,
     cooperative_groups::thread_block &block,

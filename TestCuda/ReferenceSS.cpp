@@ -587,6 +587,91 @@ static void finalize_to_digits(const uint64_t *final128, size_t Ddigits,
     }
 }
 
+// Normalize directly from Final128 (lo64,hi64 per 32-bit digit position).
+// Does not allocate; does two passes over Final128 to (1) find 'significant',
+// then (2) write the window and set the Karatsuba-style exponent.
+// NOTE: Does not set sign; do that at the call site.
+template<class P>
+static void NormalizeFromFinal128LikeKaratsuba(
+    HpSharkFloat<P> &Out,
+    const HpSharkFloat<P> &A,
+    const HpSharkFloat<P> &B,
+    const uint64_t *final128,   // len = 2*Ddigits
+    size_t Ddigits,             // number of 32-bit positions represented in Final128
+    int32_t additionalFactorOfTwo // 0 for XX/YY; 1 for XY if you did NOT shift digits
+) {
+    constexpr int N = P::GlobalNumUint32;
+
+    auto pass_once = [&](bool write_window, size_t start, size_t needN) -> std::pair<int, int> {
+        uint64_t carry_lo = 0, carry_hi = 0;
+        size_t idx = 0;              // index in base-2^32 digits being produced
+        int highest_nonzero = -1;    // last non-zero digit index seen
+        int out_written = 0;
+
+        // Helper to emit one 32-bit digit (optionally writing into Out.Digits)
+        auto emit_digit = [&](uint32_t dig) {
+            if (dig != 0) highest_nonzero = (int)idx;
+            if (write_window && idx >= start && out_written < (int)needN) {
+                Out.Digits[out_written++] = dig;
+            }
+            ++idx;
+            };
+
+        // Main Ddigits loop
+        for (size_t d = 0; d < Ddigits; ++d) {
+            uint64_t lo = final128[2 * d + 0];
+            uint64_t hi = final128[2 * d + 1];
+
+            uint64_t s_lo = lo + carry_lo;
+            uint64_t c0 = (s_lo < lo) ? 1ull : 0ull;
+            uint64_t s_hi = hi + carry_hi + c0;
+
+            emit_digit(static_cast<uint32_t>(s_lo & 0xffffffffull));
+
+            carry_lo = (s_lo >> 32) | (s_hi << 32);
+            carry_hi = (s_hi >> 32);
+        }
+
+        // Flush remaining carry into more digits
+        while (carry_lo || carry_hi) {
+            emit_digit(static_cast<uint32_t>(carry_lo & 0xffffffffull));
+            uint64_t nlo = (carry_lo >> 32) | (carry_hi << 32);
+            uint64_t nhi = (carry_hi >> 32);
+            carry_lo = nlo;
+            carry_hi = nhi;
+        }
+
+        // If we were asked to write a window and didn't fill all N yet, pad zeros
+        if (write_window) {
+            while (out_written < (int)needN) {
+                Out.Digits[out_written++] = 0u;
+            }
+        }
+
+        return { highest_nonzero, out_written };
+        };
+
+    // Pass 1: find 'significant' (last non-zero + 1)
+    auto [highest_nonzero, _] = pass_once(/*write_window=*/false, /*start=*/0, /*needN=*/0);
+    if (highest_nonzero < 0) {
+        // Zero result
+        std::memset(Out.Digits, 0, N * sizeof(uint32_t));
+        Out.Exponent = A.Exponent + B.Exponent; // Karatsuba zero convention
+        return;
+    }
+    const int significant = highest_nonzero + 1;
+    int shift_digits = significant - N;
+    if (shift_digits < 0) shift_digits = 0;
+
+    // Karatsuba-style exponent
+    Out.Exponent = /*A.Exponent + B.Exponent +*/ 32 * shift_digits + additionalFactorOfTwo;
+
+    // Pass 2: write exactly N digits starting at shift_digits
+    (void)pass_once(/*write_window=*/true, /*start=*/(size_t)shift_digits, /*needN=*/(size_t)N);
+}
+
+
+
 // ============================================================================
 // Public API (drop-in): MultiplyHelperKaratsubaV2 (CPU, single-thread, S–S)
 // ============================================================================
@@ -784,12 +869,12 @@ void MultiplyHelperSS(
         }
         FFT_inverse(Ftmp, pl, Scratch, Ninv, Prod2K);
         unpack_to_final128(Ftmp, pl, Final128, Ddigits);
-        finalize_to_digits<P>(Final128, Ddigits, OutXX);
+        //finalize_to_digits<P>(Final128, Ddigits, OutXX);
 
         // --- NEW: set sign & exponent like Karatsuba ---
         constexpr auto additionalFactorOfTwoXX = 0;
         OutXX->SetNegative(false);
-        OutXX->Exponent = A->Exponent * 2 + additionalFactorOfTwoXX;
+        NormalizeFromFinal128LikeKaratsuba<P>(*OutXX, *A, *A, Final128, Ddigits, additionalFactorOfTwoXX);
     }
 
     // ============================================================
@@ -803,11 +888,11 @@ void MultiplyHelperSS(
         }
         FFT_inverse(Ftmp, pl, Scratch, Ninv, Prod2K);
         unpack_to_final128(Ftmp, pl, Final128, Ddigits);
-        finalize_to_digits<P>(Final128, Ddigits, OutYY);
+        //finalize_to_digits<P>(Final128, Ddigits, OutYY);
 
         constexpr auto additionalFactorOfTwoYY = 0;
         OutYY->SetNegative(false);
-        OutYY->Exponent = B->Exponent * 2 + additionalFactorOfTwoYY;
+        NormalizeFromFinal128LikeKaratsuba<P>(*OutYY, *B, *B, Final128, Ddigits, additionalFactorOfTwoYY);
     }
 
     // ============================================================
@@ -822,12 +907,12 @@ void MultiplyHelperSS(
         }
         FFT_inverse(Ftmp, pl, Scratch, Ninv, Prod2K);
         unpack_to_final128(Ftmp, pl, Final128, Ddigits);
-        final128_shl1(Final128, Ddigits);               // ×2
-        finalize_to_digits<P>(Final128, Ddigits, OutXY);
+        //final128_shl1(Final128, Ddigits);               // ×2
+        //finalize_to_digits<P>(Final128, Ddigits, OutXY);
 
         constexpr auto additionalFactorOfTwoXY = 1;
         OutXY->SetNegative(A->GetNegative() ^ B->GetNegative());
-        OutXY->Exponent = A->Exponent + B->Exponent + additionalFactorOfTwoXY;
+        NormalizeFromFinal128LikeKaratsuba<P>(*OutXY, *A, *B, Final128, Ddigits, additionalFactorOfTwoXY);
     }
 }
 

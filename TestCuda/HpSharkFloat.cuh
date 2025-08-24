@@ -26,7 +26,8 @@ static constexpr bool SharkDebug = false;
 
 // Comment out to disable specific kernels
 //#define ENABLE_ADD_KERNEL
-#define ENABLE_MULTIPLY_KERNEL
+//#define ENABLE_MULTIPLY_KARATSUBA_KERNEL
+#define ENABLE_MULTIPLY_SS_KERNEL
 //#define ENABLE_REFERENCE_KERNEL
 
 // 0 = just one correctness test, intended for fast re-compile of a specific failure
@@ -46,10 +47,16 @@ static constexpr auto SharkEnableAddKernel = true;
 static constexpr auto SharkEnableAddKernel = false;
 #endif
 
-#ifdef ENABLE_MULTIPLY_KERNEL
+#ifdef ENABLE_MULTIPLY_KARATSUBA_KERNEL
 static constexpr auto SharkEnableMultiplyKernel = true;
 #else
 static constexpr auto SharkEnableMultiplyKernel = false;
+#endif
+
+#ifdef ENABLE_MULTIPLY_SS_KERNEL
+static constexpr auto SharkEnableMultiplySSKernel = true;
+#else
+static constexpr auto SharkEnableMultiplySSKernel = false;
 #endif
 
 #ifdef ENABLE_REFERENCE_KERNEL
@@ -58,8 +65,6 @@ static constexpr auto SharkEnableReferenceKernel = true;
 static constexpr auto SharkEnableReferenceKernel = false;
 #endif
 
-static constexpr bool SharkTestGpu = (SharkEnableAddKernel || SharkEnableMultiplyKernel || SharkEnableReferenceKernel);
-
 #ifdef _DEBUG
 #define SharkForceInlineReleaseOnly
 #else
@@ -67,7 +72,13 @@ static constexpr bool SharkTestGpu = (SharkEnableAddKernel || SharkEnableMultipl
 #define SharkForceInlineReleaseOnly __forceinline__
 #endif
 
+static constexpr bool SharkUsePow2SizesOnly = SharkEnableMultiplySSKernel;
+
+// static constexpr bool SharkTestGpu = (SharkEnableAddKernel || SharkEnableMultiplyKernel || SharkEnableMultiplySSKernel || SharkEnableReferenceKernel);
+static constexpr bool SharkTestGpu = false;
+
 static constexpr auto SharkTestComicalThreadCount = 13;
+
 static constexpr auto SharkTestIterCount = SharkDebug ? 5 : 50000;
 
 // Set to true to use a custom stream for the kernel launch
@@ -84,17 +95,22 @@ enum class InnerLoopOption {
 
 static constexpr InnerLoopOption SharkInnerLoopOption =
     InnerLoopOption::TryUnalignedLoads2;
+
 static constexpr auto SharkLoadAllInShared =
     (SharkInnerLoopOption == InnerLoopOption::BasicAllInShared) ||
     (SharkInnerLoopOption == InnerLoopOption::TryUnalignedLoads2Shared);
 
 // Set to true to use shared memory for the incoming numbers
 static constexpr auto SharkRegisterLimit = 255;
+
 static constexpr auto SharkConstantSharedRequiredBytes = 0;
+
 static constexpr auto SharkBatchSize = SharkDebug ? 8 : 512;
+
 static constexpr auto SharkKaratsubaBatchSize = SharkLoadAllInShared ? 1 : 4;
 
 static constexpr bool SharkDebugChecksums = (ENABLE_BASIC_CORRECTNESS != 2) ? SharkDebug : false;
+
 static constexpr bool SharkPrintMultiplyCounts = SharkDebugChecksums; // SharkDebugChecksums;
 
 #if ENABLE_BASIC_CORRECTNESS == 2
@@ -224,8 +240,8 @@ static constexpr auto LowPrec = 32;
 
 
 // If you add a new one, search for one of the other types and copy/paste
-using Test8x1SharkParams = GenericSharkFloatParams<128, 108, 7776, 9>;
-//using Test8x1SharkParams = GenericSharkFloatParams<8, 1>; // Use for ENABLE_BASIC_CORRECTNESS==1
+//using Test8x1SharkParams = GenericSharkFloatParams<128, 108, 7776, 9>;
+using Test8x1SharkParams = GenericSharkFloatParams<8, 1>; // Use for ENABLE_BASIC_CORRECTNESS==1
 using Test4x36SharkParams = GenericSharkFloatParams<4, 6, 32>;
 using Test4x12SharkParams = GenericSharkFloatParams<3, 18, 50>;
 using Test4x9SharkParams = GenericSharkFloatParams<5, 12, 80>;

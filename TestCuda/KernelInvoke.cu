@@ -9,6 +9,7 @@
 #include "Multiply.cuh"
 #include "HpSharkReferenceOrbit.cuh"
 #include "ReferenceKaratsuba.h"
+#include "ReferenceSS.h"
 #include "DebugChecksumHost.h"
 
 #include <iostream>
@@ -441,7 +442,7 @@ void InvokeAddKernelCorrectness(
 #define ExplicitlyInstantiateAdd(SharkFloatParams) ;
 #endif
 
-#ifdef ENABLE_MULTIPLY_KERNEL
+#ifdef ENABLE_MULTIPLY_KARATSUBA_KERNEL
 #define ExplicitlyInstantiateMultiply(SharkFloatParams) \
     template void InvokeMultiplyKernelPerf<SharkFloatParams>( \
         BenchmarkTimer &timer, \

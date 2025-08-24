@@ -5,6 +5,7 @@
 
 #include "Tests.h"
 #include "ReferenceKaratsuba.h"
+#include "ReferenceSS.h"
 #include "ReferenceAdd.h"
 #include "DebugChecksumHost.h"
 
@@ -403,7 +404,8 @@ void TestPerf (
                 mpf_sub(mpfHostResultXY1, mpfX, mpfY);
                 mpf_add(mpfHostResultXY1, mpfHostResultXY1, mpfZ);
                 mpf_add(mpfHostResultXY2, mpfX, mpfY);
-            } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
+            } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2 ||
+                                 sharkOperator == Operator::MultiplySS) {
                 mpf_mul(mpfHostResultXX, mpfX, mpfX);
                 mpf_mul(mpfHostResultXY1, mpfX, mpfY);
                 mpf_mul_ui(mpfHostResultXY1, mpfHostResultXY1, 2);
@@ -985,7 +987,7 @@ void TestCoreAdd (
     mpf_clear(mpfHostResultYY);
 }
 
-template<class SharkFloatParams>
+template<class SharkFloatParams, Operator sharkOperator>
 void TestCoreMultiply(
     int testNum,
     const std::vector<HpSharkFloat<SharkFloatParams>> &inputX,
@@ -1016,25 +1018,40 @@ void TestCoreMultiply(
             HpSharkFloat<SharkFloatParams> hostKaratsubaOutXYV2;
             HpSharkFloat<SharkFloatParams> hostKaratsubaOutYYV2;
 
-            MultiplyHelperKaratsubaV2<SharkFloatParams>(
-                &aNum,
-                &bNum,
-                &hostKaratsubaOutXXV2,
-                &hostKaratsubaOutXYV2,
-                &hostKaratsubaOutYYV2,
-                debugHostCombo
-            );
-
-            auto OutputV2 = [&]([[maybe_unused]] const HpSharkFloat<SharkFloatParams> &out) {
+            auto OutputV2 = [&](std::string alg, [[maybe_unused]] const HpSharkFloat<SharkFloatParams> &out) {
                 if (SharkVerbose == VerboseMode::Debug) {
-                    std::cout << "KaratsubaV2 result: " << out.ToString() << std::endl;
-                    std::cout << "KaratsubaV2 hex: " << out.ToHexString() << std::endl;
+                    std::cout << alg << " result: " << out.ToString() << std::endl;
+                    std::cout << alg << " hex: " << out.ToHexString() << std::endl;
                 }
-                };
+            };
 
-            OutputV2(hostKaratsubaOutXXV2);
-            OutputV2(hostKaratsubaOutXYV2);
-            OutputV2(hostKaratsubaOutYYV2);
+            if constexpr (sharkOperator == Operator::MultiplySS) {
+                MultiplyHelperSS<SharkFloatParams>(
+                    &aNum,
+                    &bNum,
+                    &hostKaratsubaOutXXV2,
+                    &hostKaratsubaOutXYV2,
+                    &hostKaratsubaOutYYV2,
+                    debugHostCombo
+                );
+
+                OutputV2("Strassen XX", hostKaratsubaOutXXV2);
+                OutputV2("Strassen XY", hostKaratsubaOutXYV2);
+                OutputV2("Strassen YY", hostKaratsubaOutYYV2);
+            } else {
+                MultiplyHelperKaratsubaV2<SharkFloatParams>(
+                    &aNum,
+                    &bNum,
+                    &hostKaratsubaOutXXV2,
+                    &hostKaratsubaOutXYV2,
+                    &hostKaratsubaOutYYV2,
+                    debugHostCombo
+                );
+
+                OutputV2("KaratsubaV2 XX", hostKaratsubaOutXXV2);
+                OutputV2("KaratsubaV2 XY", hostKaratsubaOutXYV2);
+                OutputV2("KaratsubaV2 YY", hostKaratsubaOutYYV2);
+            }
 
             bool res = true;
             constexpr auto numTerms = 2;
@@ -1324,8 +1341,11 @@ void TestTernaryOperatorTwoNumbersRawNoSignChange(
             inputX,
             mpfInputX,
             mpfInputLen);
-    } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
-        TestCoreMultiply<SharkFloatParams>(
+    } else if constexpr (
+        sharkOperator == Operator::MultiplyKaratsubaV2 ||
+        sharkOperator == Operator::MultiplySS) {
+
+        TestCoreMultiply<SharkFloatParams, sharkOperator>(
             testNum,
             inputX,
             mpfInputX,
@@ -2339,12 +2359,20 @@ bool TestBinaryOperatorPerf([[maybe_unused]] int testBase) {
 #define ADD_KERNEL(SharkFloatParams) ;
 #endif
 
-#ifdef ENABLE_MULTIPLY_KERNEL
-#define MULTIPLY_KERNEL(SharkFloatParams) \
+#ifdef ENABLE_MULTIPLY_KARATSUBA_KERNEL
+#define MULTIPLY_KERNEL_KARATSUBA(SharkFloatParams) \
     template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyKaratsubaV2>(int testBase); \
     template bool TestBinaryOperatorPerf<Operator::MultiplyKaratsubaV2>(int testBase);
 #else
-#define MULTIPLY_KERNEL(SharkFloatParams) ;
+#define MULTIPLY_KERNEL_KARATSUBA(SharkFloatParams) ;
+#endif
+
+#ifdef ENABLE_MULTIPLY_SS_KERNEL
+#define MULTIPLY_KERNEL_SS(SharkFloatParams) \
+    template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplySS>(int testBase); \
+    template bool TestBinaryOperatorPerf<Operator::MultiplySS>(int testBase);
+#else
+#define MULTIPLY_KERNEL_SS(SharkFloatParams) ;
 #endif
 
 #ifdef ENABLE_REFERENCE_KERNEL
@@ -2357,7 +2385,8 @@ bool TestBinaryOperatorPerf([[maybe_unused]] int testBase) {
 
 #define ExplicitlyInstantiate(SharkFloatParams) \
     ADD_KERNEL(SharkFloatParams) \
-    MULTIPLY_KERNEL(SharkFloatParams) \
+    MULTIPLY_KERNEL_KARATSUBA(SharkFloatParams) \
+    MULTIPLY_KERNEL_SS(SharkFloatParams) \
     REFERENCE_KERNEL(SharkFloatParams)
 
 ExplicitInstantiateAll();

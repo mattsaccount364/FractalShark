@@ -105,6 +105,17 @@ bool CorrectnessTests() {
         }
     }
 
+    if constexpr (SharkEnableMultiplySSKernel) {
+        testBase = 8000;
+        res = TestAllBinaryOp<TestSharkParams, Operator::MultiplySS>(testBase);
+        if (!res) {
+            auto q = PressKey();
+            if (q == 'q') {
+                return false;
+            }
+        }
+    }
+
     return true;
 }
 
@@ -245,8 +256,19 @@ int main(int /*argc*/, char * /*argv*/[]) {
         }
     }
 
-    if constexpr (SharkEnableReferenceKernel) {
+    if constexpr (SharkEnableMultiplySSKernel) {
         testBase = 12000;
+        res = TestBinaryOperatorPerf<Operator::MultiplySS>(testBase);
+        if (!res) {
+            auto q = PressKey();
+            if (q == 'q') {
+                return 0;
+            }
+        }
+    }
+
+    if constexpr (SharkEnableReferenceKernel) {
+        testBase = 13000;
         res = TestBinaryOperatorPerf<Operator::ReferenceOrbit>(testBase);
         if (!res) {
             auto q = PressKey();

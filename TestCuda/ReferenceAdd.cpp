@@ -1,5 +1,4 @@
 ﻿#include "TestVerbose.h"
-#include "ReferenceKaratsuba.h"
 #include "HpSharkFloat.cuh"
 #include "DebugChecksumHost.h"
 #include "DebugChecksum.cuh"

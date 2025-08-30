@@ -25,9 +25,10 @@ static constexpr bool SharkDebug = false;
 #endif
 
 // Comment out to disable specific kernels
+//#define ENABLE_CONVERSION_TESTS
 //#define ENABLE_ADD_KERNEL
 //#define ENABLE_MULTIPLY_KARATSUBA_KERNEL
-#define ENABLE_MULTIPLY_SS_KERNEL
+#define ENABLE_MULTIPLY_FFT_KERNEL
 //#define ENABLE_REFERENCE_KERNEL
 
 // 0 = just one correctness test, intended for fast re-compile of a specific failure
@@ -39,6 +40,12 @@ static constexpr bool SharkDebug = false;
 #define ENABLE_BASIC_CORRECTNESS 0
 #else
 #define ENABLE_BASIC_CORRECTNESS 2
+#endif
+
+#ifdef ENABLE_CONVERSION_TESTS
+static constexpr auto SharkEnableConversionTests = true;
+#else
+static constexpr auto SharkEnableConversionTests = false;
 #endif
 
 #ifdef ENABLE_ADD_KERNEL
@@ -53,10 +60,10 @@ static constexpr auto SharkEnableMultiplyKernel = true;
 static constexpr auto SharkEnableMultiplyKernel = false;
 #endif
 
-#ifdef ENABLE_MULTIPLY_SS_KERNEL
-static constexpr auto SharkEnableMultiplySSKernel = true;
+#ifdef ENABLE_MULTIPLY_FFT_KERNEL
+static constexpr auto SharkEnableMultiplyFFTKernel = true;
 #else
-static constexpr auto SharkEnableMultiplySSKernel = false;
+static constexpr auto SharkEnableMultiplyFFTKernel = false;
 #endif
 
 #ifdef ENABLE_REFERENCE_KERNEL
@@ -72,9 +79,9 @@ static constexpr auto SharkEnableReferenceKernel = false;
 #define SharkForceInlineReleaseOnly __forceinline__
 #endif
 
-static constexpr bool SharkUsePow2SizesOnly = SharkEnableMultiplySSKernel;
+static constexpr bool SharkUsePow2SizesOnly = SharkEnableMultiplyFFTKernel;
 
-// static constexpr bool SharkTestGpu = (SharkEnableAddKernel || SharkEnableMultiplyKernel || SharkEnableMultiplySSKernel || SharkEnableReferenceKernel);
+// static constexpr bool SharkTestGpu = (SharkEnableAddKernel || SharkEnableMultiplyKernel || SharkEnableMultiplyFFTKernel || SharkEnableReferenceKernel);
 static constexpr bool SharkTestGpu = false;
 
 static constexpr auto SharkTestComicalThreadCount = 13;

@@ -9,7 +9,7 @@
 #include "Multiply.cuh"
 #include "HpSharkReferenceOrbit.cuh"
 #include "ReferenceKaratsuba.h"
-#include "ReferenceSS.h"
+#include "ReferenceFFT.h"
 #include "DebugChecksumHost.h"
 
 #include <iostream>

@@ -10,7 +10,7 @@ template<class SharkFloatParams>
 struct HpSharkFloat;
 
 template<class SharkFloatParams>
-void MultiplyHelperSS(
+void MultiplyHelperFFT(
     const HpSharkFloat<SharkFloatParams> *A,
     const HpSharkFloat<SharkFloatParams> *B,
     HpSharkFloat<SharkFloatParams> *OutXX,

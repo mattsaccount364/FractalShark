@@ -5,7 +5,7 @@
 
 #include "Tests.h"
 #include "ReferenceKaratsuba.h"
-#include "ReferenceSS.h"
+#include "ReferenceFFT.h"
 #include "ReferenceAdd.h"
 #include "DebugChecksumHost.h"
 
@@ -234,11 +234,19 @@ bool DiffAgainstHost(
     }
 
     // 2) Convert host mpf_t --> HpSharkFloat via MpfToHpGpu
+    if (SharkVerbose == VerboseMode::Debug) {
+        std::cout << "Correct answer follows after converting to HpSharkFloat: " << std::endl;
+    }
+
     HpSharkFloat<SharkFloatParams> hostShark;
     hostShark.MpfToHpGpu(
         mpfHostResult,
         HpSharkFloat<SharkFloatParams>::DefaultPrecBits
     );
+
+    if (SharkVerbose == VerboseMode::Debug) {
+        std::cout << std::endl;
+    }
 
     // 3) Build absolute-difference mpf: |host - gpu|
     mpf_t mpfXGpu;
@@ -405,7 +413,7 @@ void TestPerf (
                 mpf_add(mpfHostResultXY1, mpfHostResultXY1, mpfZ);
                 mpf_add(mpfHostResultXY2, mpfX, mpfY);
             } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2 ||
-                                 sharkOperator == Operator::MultiplySS) {
+                                 sharkOperator == Operator::MultiplyFFT) {
                 mpf_mul(mpfHostResultXX, mpfX, mpfX);
                 mpf_mul(mpfHostResultXY1, mpfX, mpfY);
                 mpf_mul_ui(mpfHostResultXY1, mpfHostResultXY1, 2);
@@ -1025,8 +1033,8 @@ void TestCoreMultiply(
                 }
             };
 
-            if constexpr (sharkOperator == Operator::MultiplySS) {
-                MultiplyHelperSS<SharkFloatParams>(
+            if constexpr (sharkOperator == Operator::MultiplyFFT) {
+                MultiplyHelperFFT<SharkFloatParams>(
                     &aNum,
                     &bNum,
                     &hostKaratsubaOutXXV2,
@@ -1035,9 +1043,9 @@ void TestCoreMultiply(
                     debugHostCombo
                 );
 
-                OutputV2("Strassen XX", hostKaratsubaOutXXV2);
-                OutputV2("Strassen XY", hostKaratsubaOutXYV2);
-                OutputV2("Strassen YY", hostKaratsubaOutYYV2);
+                OutputV2("FFT XX", hostKaratsubaOutXXV2);
+                OutputV2("FFT XY", hostKaratsubaOutXYV2);
+                OutputV2("FFT YY", hostKaratsubaOutYYV2);
             } else {
                 MultiplyHelperKaratsubaV2<SharkFloatParams>(
                     &aNum,
@@ -1154,10 +1162,12 @@ void TestCoreMultiply(
         mpfHostResultYY,
         debugHostCombo);
 
-    if (!testSucceeded) {
-        std::cout << "Custom High Precision failed" << std::endl;
-    } else {
-        std::cout << "Custom High Precision succeeded" << std::endl;
+    if (SharkVerbose == VerboseMode::Debug) {
+        if (!testSucceeded) {
+            std::cout << "Custom High Precision failed" << std::endl;
+        } else {
+            std::cout << "Custom High Precision succeeded" << std::endl;
+        }
     }
 
     ChecksumsCheck<SharkFloatParams>(
@@ -1343,7 +1353,7 @@ void TestTernaryOperatorTwoNumbersRawNoSignChange(
             mpfInputLen);
     } else if constexpr (
         sharkOperator == Operator::MultiplyKaratsubaV2 ||
-        sharkOperator == Operator::MultiplySS) {
+        sharkOperator == Operator::MultiplyFFT) {
 
         TestCoreMultiply<SharkFloatParams, sharkOperator>(
             testNum,
@@ -2367,10 +2377,10 @@ bool TestBinaryOperatorPerf([[maybe_unused]] int testBase) {
 #define MULTIPLY_KERNEL_KARATSUBA(SharkFloatParams) ;
 #endif
 
-#ifdef ENABLE_MULTIPLY_SS_KERNEL
+#ifdef ENABLE_MULTIPLY_FFT_KERNEL
 #define MULTIPLY_KERNEL_SS(SharkFloatParams) \
-    template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplySS>(int testBase); \
-    template bool TestBinaryOperatorPerf<Operator::MultiplySS>(int testBase);
+    template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyFFT>(int testBase); \
+    template bool TestBinaryOperatorPerf<Operator::MultiplyFFT>(int testBase);
 #else
 #define MULTIPLY_KERNEL_SS(SharkFloatParams) ;
 #endif

@@ -312,34 +312,18 @@ HpSharkFloat<SharkFloatParams>::MpfToHpGpu(
 
     static_assert(sizeof(mp_limb_t) == sizeof(uint64_t), "mp_limb_t is not 64 bits");
 
-    {
-        if (SharkVerbose == VerboseMode::Debug) {
-            auto originalDataStr = VectorUintToHexString(dataCopy);
-            auto shiftedDataStr = VectorUintToHexString(data);
-            std::cout << "Original data: " << originalDataStr << std::endl;
-            std::cout << "Shifted data: " << shiftedDataStr << ", shiftBits: " << shiftBits << std::endl;
-            std::cout << "Shift bits: " << shiftBits << std::endl;
-        }
+    if (SharkVerbose == VerboseMode::Debug) {
+        auto originalDataStr = VectorUintToHexString(dataCopy);
+        auto shiftedDataStr = VectorUintToHexString(data);
+        std::cout << "Original data: " << originalDataStr << std::endl;
+        std::cout << "Shifted data: " << shiftedDataStr << ", shiftBits: " << shiftBits << std::endl;
+        std::cout << "Shift bits: " << shiftBits << std::endl;
     }
 
     auto countInBytes = N * sizeof(uint32_t);
 
     // Copy data into digits array
     memset(Digits, 0, SharkFloatParams::GlobalNumUint32 * sizeof(uint32_t));
-
-    // If count is greater than NumUint32, move forward by count - NumUint32
-    // because the most significant digits are at the end of the array
-
-    //auto startOffset =
-    //    (countInBytes > SharkFloatParams::GlobalNumUint32 * sizeof(uint32_t)) ?
-    //    countInBytes - SharkFloatParams::GlobalNumUint32 * sizeof(uint32_t) :
-    //    0;
-    //auto numBytesToCopy = std::min(
-    //    countInBytes,
-    //    SharkFloatParams::GlobalNumUint32 * sizeof(uint32_t));
-    //numBytesToCopy = std::min(numBytesToCopy, absMpirSize * sizeof(mp_limb_t));
-
-    //memcpy(Digits, reinterpret_cast<uint8_t *>(data.data()) + startOffset, numBytesToCopy);
 
     // Now compute how to right-align 'data' into our fixed-width buffer:
     {
@@ -382,23 +366,6 @@ HpSharkFloat<SharkFloatParams>::MpfToHpGpu(
 
             Exponent = E;
         }
-
-        //// set exponent from MPIR *then* subtract our normalization shift
-        //{
-        //    using ExpT = typename HpSharkFloat<SharkFloatParams>::ExpT;
-        //    ExpT bytesCopied = static_cast<ExpT>(toCopy);
-        //    ExpT byteShiftLog = static_cast<ExpT>(srcOffset)   // dropped low-order bytes --> mantissa >> (srcOffset*8)
-        //        - static_cast<ExpT>(destOffset);  // zero-padded high-order bytes --> mantissa << (destOffset*8)
-
-        //    // base exponent from MPIR (depends on how many raw mantissa bytes)
-        //    const auto mpirExponentInPow2 = static_cast<ExpT>(mpf_value[0]._mp_exp * sizeof(mp_limb_t) * 8);
-        //    ExpT E = mpirExponentInPow2 - bytesCopied * 8;
-
-        //    // subtract the bit-normalization shift, then adjust for our memcpy shift
-        //    Exponent = E
-        //        - static_cast<ExpT>(shiftBits)
-        //        + bytesShiftLog * 8;
-        //}
     }
 
     // The high-order bit of Digits should be set, or the entire array should be 0.
@@ -412,10 +379,9 @@ HpSharkFloat<SharkFloatParams>::MpfToHpGpu(
         assert((Digits[SharkFloatParams::GlobalNumUint32 - 1] & 0x8000'0000u) != 0);
     }
 
-    //{
-    //    auto exportedFinalData = Uint32ArrayToHexString(Digits, SharkFloatParams::GlobalNumUint32);
-    //    std::cout << "Exported Final data: " << exportedFinalData << ", exponent: " << Exponent << std::endl;
-    //}
+    if (SharkVerbose == VerboseMode::Debug) {
+        std::cout << ToHexString() << std::endl;
+    }
 
     //mpf_clear(scaled_val);
     mpf_clear(abs_val);

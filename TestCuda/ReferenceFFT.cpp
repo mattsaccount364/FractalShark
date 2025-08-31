@@ -7,6 +7,8 @@
 #include <iostream>
 #include <span>
 #include <assert.h>
+#include <cassert>
+#include <cstdio>
 
 #if defined(_MSC_VER)
 #include <intrin.h>
@@ -166,10 +168,8 @@ struct Plan {
 //    2*b + log2(N) + margin <= Kbits
 // The "+1" covers exact-boundary cases; keep margin>=1 (I use 2).
 static inline void AssertNoOverflowByParameters(const Plan &pl, int margin_bits = 2) {
-#ifndef NDEBUG
     const int need = 2 * pl.b + pl.stages + margin_bits;
     assert(need <= pl.Kbits && "Ring too small: 2*b + log2(N) exceeds Kbits headroom (lower b or raise Kbits).");
-#endif
 }
 
 // Build the K-bit vector for 2^{e}. (All Kbits % 64 done already in your plan.)
@@ -200,11 +200,9 @@ static inline bool is_half_plus_one(const uint64_t *x, int W64, int Kbits) {
 // under tiny roundoff/bug and is exactly the kind of pattern you saw with
 // specific limbs like 0xFFFFFFFF.)
 static inline void AssertNotAtBalancedBoundary(const uint64_t *x, const Plan &pl) {
-#ifndef NDEBUG
     if (is_half_plus_one(x, pl.W64, pl.Kbits)) {
         assert(false && "Coefficient reached magnitude 2^{K-1} (2^{K-1}+1 in Z/(2^K+1)); decrease b or increase Kbits.");
     }
-#endif
 }
 
 template<class P>
@@ -287,8 +285,12 @@ static Plan build_plan(int n32) {
     }
 
     // Use w = 2^( (2*Kbits)/N ), so baseShift is (2*K)/N.
-    pl.baseShift = (/*2u * */ (uint64_t)pl.Kbits) / (uint64_t)pl.N;
+    pl.baseShift = ((uint64_t)2 * pl.Kbits) / (uint64_t)pl.N;
     pl.stages = ceil_log2_u32((uint32_t)pl.N);
+
+    // Assert: baseShift should be correct for negacyclic FFT
+    assert(pl.baseShift * pl.N == 2u * pl.Kbits && "baseShift calculation error - should be (2*Kbits)/N");
+    assert(pl.Kbits % pl.N == 0 && "Kbits must be divisible by N");
 
     pl.ok = (pl.N >= 2) && (pl.W64 >= 1);
 
@@ -351,6 +353,10 @@ static inline void add_mod(const uint64_t *a, const uint64_t *b, uint64_t *out, 
             out[i] = v - borrow;
             borrow = (v < borrow) ? 1ull : 0ull;
         }
+
+        if (W64 == 1) {
+            assert(out[0] != 0x8000000000000001ULL && "add_mod produced invalid result in Z/(2^64+1)");
+        }
     }
 }
 
@@ -358,15 +364,33 @@ static inline void add_mod(const uint64_t *a, const uint64_t *b, uint64_t *out, 
 // out = -a mod (2^K + 1). Convention: 0 -> 0; else (~a)+2 within K bits
 static inline void neg_mod(const uint64_t *a, uint64_t *out, int W64) {
     if (kbits_is_zero(a, W64)) { kbits_zero(out, W64); return; }
+
+    if (SharkVerbose == VerboseMode::Debug && W64 == 1) {
+        std::cout << "neg_mod input: 0x" << std::hex << a[0] << std::dec << std::endl;
+    }
+
     for (int i = 0; i < W64; ++i) out[i] = ~a[i];
     add1_kbits(out, W64);
     add1_kbits(out, W64);
+
+    if (SharkVerbose == VerboseMode::Debug && W64 == 1) {
+        std::cout << "neg_mod output: 0x" << std::hex << out[0] << std::dec << std::endl;
+    }
 }
 
-// K-bit subtraction modulo (2^K + 1):
-// out = a - b (mod 2^K+1).
-// Compute K-bit diff s with borrow d. Then out = s + d (i.e., add 1 if underflow).
+// Enhanced sub_mod with edge case debugging
 static inline void sub_mod(const uint64_t *a, const uint64_t *b, uint64_t *out, int W64) {
+    bool debug_this = false;
+    if (SharkVerbose == VerboseMode::Debug && W64 == 1) {
+        debug_this = (a[0] <= 0x100 && b[0] <= 0x100);
+
+        if (debug_this) {
+            std::cout << "=== DETAILED sub_mod DEBUG ===" << std::endl;
+            std::cout << "  Computing: 0x" << std::hex << a[0]
+                << " - 0x" << b[0] << " mod (2^64+1)" << std::dec << std::endl;
+        }
+    }
+
     uint64_t borrow = 0;
     for (int i = 0; i < W64; ++i) {
         uint64_t ai = a[i], bi = b[i];
@@ -379,9 +403,20 @@ static inline void sub_mod(const uint64_t *a, const uint64_t *b, uint64_t *out, 
 
         out[i] = s2;
         borrow = (d1 | d2);
+
+        if (debug_this) {
+            std::cout << "  Step " << i << ": ai=0x" << std::hex << ai
+                << " bi=0x" << bi << " s=0x" << s
+                << " s2=0x" << s2 << " borrow=" << std::dec << borrow << std::endl;
+        }
     }
 
     if (borrow) {
+        if (debug_this) {
+            std::cout << "  BORROW case: adding 1 to handle underflow in Z/(2^K+1)" << std::endl;
+            std::cout << "  Before compensation: 0x" << std::hex << out[0] << std::dec << std::endl;
+        }
+
         // add 1 modulo 2^K
         uint64_t carry = 1ull;
         for (int i = 0; i < W64 && carry; ++i) {
@@ -390,6 +425,24 @@ static inline void sub_mod(const uint64_t *a, const uint64_t *b, uint64_t *out, 
             out[i] = s;
             carry = (s < v) ? 1ull : 0ull;
         }
+
+        if (debug_this) {
+            std::cout << "  After compensation: 0x" << std::hex << out[0] << std::dec << std::endl;
+        }
+
+        if (W64 == 1) {
+            if (out[0] == 0x8000000000000001ULL) {
+                std::cout << "CRITICAL: sub_mod produced invalid result 0x8000000000000001 in Z/(2^64+1)" << std::endl;
+                std::cout << "This represents -2^63 which should not occur in normal negacyclic arithmetic" << std::endl;
+                assert(false && "sub_mod produced invalid result in Z/(2^64+1)");
+            }
+        }
+    } else if (debug_this) {
+        std::cout << "  NO BORROW: direct subtraction result 0x" << std::hex << out[0] << std::dec << std::endl;
+    }
+
+    if (debug_this) {
+        std::cout << "=== END sub_mod DEBUG ===" << std::endl;
     }
 }
 
@@ -433,6 +486,11 @@ static inline void mul_pow2(
     uint64_t *tmpB,             // W64 scratch
     int W64) {
 
+    if (SharkVerbose == VerboseMode::Debug && W64 == 1) {
+        std::cout << "mul_pow2: x=0x" << std::hex << x[0] << " e=" << std::dec << e
+            << " Kbits=" << Kbits << std::endl;
+    }
+
     const uint64_t twoK = (uint64_t)(2 * Kbits);
     e %= twoK;
 
@@ -440,14 +498,23 @@ static inline void mul_pow2(
     const bool neg = (e >= (uint64_t)Kbits);
     const int  r = (int)(neg ? (e - (uint64_t)Kbits) : e);
 
+    if (SharkVerbose == VerboseMode::Debug && W64 == 1) {
+        std::cout << "  reduced e=" << e << " neg=" << neg << " r=" << r << std::endl;
+    }
+
     if (r == 0) {
         // 2^0 == 1; 2^K == -1 handled by 'neg' below
         kbits_copy(out, x, W64);
     } else {
         // y = (x << r) - (x >> (K - r))  in Z/(2^K+1)
-        // NOTE: your shl_kbits/shr_kbits take (in, shift, out, W64)
         shl_kbits(x, r, tmpA, W64);        // tmpA = x << r  (within K bits)
         shr_kbits(x, Kbits - r, tmpB, W64);        // tmpB = x >> (K-r)
+
+        if (SharkVerbose == VerboseMode::Debug && W64 == 1) {
+            std::cout << "    shl result: 0x" << std::hex << tmpA[0] << std::dec << std::endl;
+            std::cout << "    shr result: 0x" << std::hex << tmpB[0] << std::dec << std::endl;
+        }
+
         sub_mod(tmpA, tmpB, out, W64);               // out = tmpA - tmpB (mod 2^K+1)
     }
 
@@ -455,6 +522,14 @@ static inline void mul_pow2(
         // multiply by (-1): out = (0 - out) mod (2^K+1)
         for (int i = 0; i < W64; ++i) tmpA[i] = 0ull;
         sub_mod(tmpA, out, out, W64);
+
+        if (SharkVerbose == VerboseMode::Debug && W64 == 1) {
+            std::cout << "  after negation: 0x" << std::hex << out[0] << std::dec << std::endl;
+        }
+    }
+
+    if (SharkVerbose == VerboseMode::Debug && W64 == 1) {
+        std::cout << "mul_pow2 final result: 0x" << std::hex << out[0] << std::dec << std::endl;
     }
 }
 
@@ -462,39 +537,155 @@ static inline void mul_pow2(
 // prod length is 2*W64 64-bit words
 static inline void mul_kbits_schoolbook(const uint64_t *a, const uint64_t *b,
     uint64_t *prod, int W64) {
-    std::memset(prod, 0, size_t(2 * W64) * 8);
+    std::memset(prod, 0, size_t(2 * W64) * sizeof(uint64_t));
     for (int i = 0; i < W64; ++i) {
         uint64_t carry = 0;
         for (int j = 0; j < W64; ++j) {
             U128 p = mul_64x64_128(a[i], b[j]);
-            uint64_t s = prod[i + j] + p.lo;
-            uint64_t c1 = (s < prod[i + j]) ? 1ull : 0ull;
-            prod[i + j] = s;
-            uint64_t s1 = prod[i + j + 1] + p.hi + c1 + carry;
-            uint64_t c2 = (s1 < prod[i + j + 1]) ? 1ull : 0ull;
-            prod[i + j + 1] = s1;
-            carry = c2;
+
+            // Low limb: prod[i+j] += p.lo
+            uint64_t t0 = prod[i + j];
+            uint64_t s0 = t0 + p.lo;
+            uint64_t c1 = (s0 < t0) ? 1ull : 0ull;   // carry from low add
+            prod[i + j] = s0;
+
+            // High limb with full carry chain:
+            // prod[i+j+1] += p.hi + c1 + carry
+            uint64_t t1 = prod[i + j + 1];
+
+            // Pre-compute the three potential carry sources BEFORE we mutate u
+            //  1) hi add overflow, 2) low-limb carry (c1), 3) incoming carry
+            uint64_t hi_over_pre = ((uint64_t)(~t1) < p.hi) ? 1ull : 0ull; // overflow check for t1 + p.hi
+            uint64_t multi_sources = hi_over_pre + c1 + carry;
+
+            if (multi_sources > 1ull) {
+                std::fprintf(stderr,
+                    "[mul_kbits_schoolbook] multi-source carry detected at i=%d j=%d "
+                    "(hi_over=%llu, c1=%llu, carry_in=%llu) "
+                    "t0=%016llx s0=%016llx t1=%016llx hi=%016llx lo=%016llx\n",
+                    i, j,
+                    (unsigned long long)hi_over_pre,
+                    (unsigned long long)c1,
+                    (unsigned long long)carry,
+                    (unsigned long long)t0,
+                    (unsigned long long)s0,
+                    (unsigned long long)t1,
+                    (unsigned long long)p.hi,
+                    (unsigned long long)p.lo);
+                assert(multi_sources <= 1ull && "multi-source carry occurred; need robust 128-bit accumulate");
+            }
+
+            uint64_t u = t1 + p.hi;
+            uint64_t c2 = (u < t1) ? 1ull : 0ull;
+            u += c1;                  c2 += (u < c1) ? 1ull : 0ull;
+            u += carry;               c2 += (u < carry) ? 1ull : 0ull;
+
+            if (c2 > 1ull) {
+                std::fprintf(stderr,
+                    "[mul_kbits_schoolbook] aggregated high carry >1 at i=%d j=%d: c2=%llu\n",
+                    i, j, (unsigned long long)c2);
+                assert(c2 <= 1ull && "aggregated carry grew >1; need robust 128-bit accumulate");
+            }
+
+            prod[i + j + 1] = u;
+            carry = c2; // keep original behavior (no saturation) so symptom remains identical unless assert fires
         }
+
+        // Sanity: we only ever expect final carry 0/1 in this algorithm
+        if (carry > 1ull) {
+            std::fprintf(stderr,
+                "[mul_kbits_schoolbook] tail carry >1 at i=%d: carry=%llu\n",
+                i, (unsigned long long)carry);
+            assert(false && "tail carry >1; need robust 128-bit accumulate");
+        }
+
+        // Any leftover carry goes to the next limb after (i+W64)
         int k = i + W64 + 1;
+
+        assert(k <= 2 * W64 && "initial tail-carry index out of bounds");
         while (carry) {
-            uint64_t p = prod[k];
-            prod[k] += carry;
-            carry = (prod[k] < p) ? 1ull : 0ull;
+            uint64_t t = prod[k];
+            prod[k] += carry;                    // original behavior preserved
+            carry = (prod[k] < t) ? 1ull : 0ull; // becomes 1 only on overflow
             ++k;
+
+            assert(k <= 2 * W64 && "carry propagation ran past output buffer");
         }
     }
 }
 
-// out = (low - high) mod (2^K+1), where prod = [low(0..W-1) | high(W..2W-1)]
+
+
+// Enhanced reduce_mod_2k1 with detailed debugging
 static inline void reduce_mod_2k1(const uint64_t *prod, uint64_t *out, int W64) {
+    bool debug_this = false;
+    if (SharkVerbose == VerboseMode::Debug && W64 == 1) {
+        // Debug when we have a simple case that might reveal the issue
+        debug_this = (prod[0] <= 0x100 && prod[1] == 0) ||
+            (prod[0] == 0x2 && prod[1] == 0);
+
+        if (debug_this) {
+            std::cout << "=== DETAILED reduce_mod_2k1 DEBUG ===" << std::endl;
+            std::cout << "  Input: low=0x" << std::hex << prod[0]
+                << " high=0x" << prod[1] << std::dec << std::endl;
+        }
+    }
+
     sub_mod(prod, prod + W64, out, W64);
+
+    if (debug_this) {
+        std::cout << "  sub_mod(low, high) result: 0x" << std::hex << out[0] << std::dec << std::endl;
+
+        // For the specific failing case (2, 0) -> should give 2
+        if (prod[0] == 0x2 && prod[1] == 0x0) {
+            if (out[0] != 0x2) {
+                std::cout << "  CRITICAL ERROR: (2 - 0) mod (2^64+1) should be 2, got 0x"
+                    << std::hex << out[0] << std::dec << std::endl;
+            } else {
+                std::cout << "  OK: (2 - 0) mod (2^64+1) = 2 as expected" << std::endl;
+            }
+        }
+
+        std::cout << "=== END reduce_mod_2k1 DEBUG ===" << std::endl;
+    }
 }
 
 static inline void mul_mod(const uint64_t *a, const uint64_t *b,
     uint64_t *out, uint64_t *prod2W, int W64) {
+
+    // Enhanced debug: capture inputs for specific problematic cases
+    bool debug_this_call = false;
+    if (SharkVerbose == VerboseMode::Debug) {
+        // Trigger detailed debug for small values that might cause issues
+        debug_this_call = (a[0] <= 0x100 || b[0] <= 0x100) && (W64 == 1);
+
+        if (debug_this_call) {
+            std::cout << "=== DETAILED mul_mod DEBUG ===" << std::endl;
+            std::cout << "  mul_mod inputs: a=0x" << std::hex << a[0]
+                << " b=0x" << b[0] << std::dec << std::endl;
+        }
+    }
+
     mul_kbits_schoolbook(a, b, prod2W, W64);
 
-    if (SharkVerbose == VerboseMode::Debug) {
+    if (debug_this_call) {
+        std::cout << "  schoolbook result (2K-bit): low=0x" << std::hex << prod2W[0]
+            << " high=0x" << prod2W[1] << std::dec << std::endl;
+
+        // Check for specific patterns that might cause issues
+        uint64_t low = prod2W[0];
+        uint64_t high = prod2W[1];
+
+        if (high == 0 && low <= 0x100) {
+            std::cout << "  PATTERN: Small multiplication (high=0, low <= 0x100)" << std::endl;
+        }
+
+        if (low == 0x2 && high == 0) {
+            std::cout << "  EXACT CASE: This is the 1*2 = 2 case that's failing!" << std::endl;
+        }
+    }
+
+    if (SharkVerbose == VerboseMode::Debug && !debug_this_call) {
         std::cout << "  mul_mod: a = ";
         for (int i = W64 - 1; i >= 0; --i) { std::cout << std::hex << a[i] << " "; }
         std::cout << std::endl;
@@ -508,7 +699,40 @@ static inline void mul_mod(const uint64_t *a, const uint64_t *b,
 
     reduce_mod_2k1(prod2W, out, W64);
 
-    if (SharkVerbose == VerboseMode::Debug) {
+    if (debug_this_call) {
+        std::cout << "  reduce_mod_2k1 result: 0x" << std::hex << out[0] << std::dec << std::endl;
+
+        // Validate the reduction manually for K=64
+        if (W64 == 1) {
+            uint64_t expected_manual = prod2W[0] - prod2W[1];  // (low - high) mod 2^64
+
+            // Handle underflow in 64-bit arithmetic
+            if (prod2W[0] < prod2W[1]) {
+                // In Z/(2^64+1), underflow means we add 1
+                expected_manual = (prod2W[0] - prod2W[1]) + 1;  // This will wrap naturally
+                std::cout << "  UNDERFLOW detected: low < high, adding compensation" << std::endl;
+            }
+
+            std::cout << "  Manual calculation: (0x" << std::hex << prod2W[0]
+                << " - 0x" << prod2W[1] << ") = 0x" << expected_manual << std::dec << std::endl;
+
+            if (out[0] != expected_manual) {
+                std::cout << "  ERROR: reduce_mod_2k1 result doesn't match manual calculation!" << std::endl;
+                std::cout << "  Got: 0x" << std::hex << out[0] << std::endl;
+                std::cout << "  Expected: 0x" << expected_manual << std::dec << std::endl;
+            }
+        }
+
+        // Check for the problematic pattern
+        if (out[0] == 0x8000000000000002ULL) {
+            std::cout << "  CRITICAL: Produced the problematic value 0x8000000000000002!" << std::endl;
+            std::cout << "  This suggests incorrect negacyclic reduction" << std::endl;
+        }
+
+        std::cout << "=== END DETAILED mul_mod DEBUG ===" << std::endl;
+    }
+
+    if (SharkVerbose == VerboseMode::Debug && !debug_this_call) {
         std::cout << "  mul_mod: out= ";
         for (int i = W64 - 1; i >= 0; --i) { std::cout << std::hex << out[i] << " "; }
         std::cout << std::endl;
@@ -562,78 +786,306 @@ static void FFT_pow2(
     uint64_t *diff = scratch64 + 4 * pl.W64;
     uint64_t *swp = scratch64 + 5 * pl.W64;
 
+    // --- helpers -------------------------------------------------------------
+
+    auto trace_coeff5 = [&](const char *stage) {
+        if (SharkVerbose == VerboseMode::Debug) {
+            const uint64_t *c5 = elem_ptr(A, 5, pl.W64);
+            std::cout << "Coeff[5] " << stage << ": 0x"
+                << std::hex << c5[0] << std::dec << std::endl;
+        }
+        };
+
+    auto dump_nonzero_coeffs = [&](const char *stage) {
+        if (SharkVerbose == VerboseMode::Debug) {
+            std::cout << "=== " << stage << " - Non-zero coefficients ===" << std::endl;
+            for (int i = 0; i < pl.N; ++i) {
+                const uint64_t *ci = elem_ptr(A, i, pl.W64);
+                if (ci[0] != 0) {
+                    std::cout << "  A[" << i << "] = 0x" << std::hex << ci[0] << std::dec;
+                    if (ci[0] <= 0x100) std::cout << " (decimal: " << ci[0] << ")";
+                    if (ci[0] == 0x8000000000000002ULL) {
+                        std::cout << " *** PROBLEMATIC VALUE ***";
+                    }
+                    std::cout << std::endl;
+                }
+            }
+            std::cout << "=== End " << stage << " ===" << std::endl;
+        }
+        };
+
+    auto validate_coeff_range = [&](const char *stage) {
+        if (SharkVerbose == VerboseMode::Debug) {
+            bool found_issue = false;
+            for (int i = 0; i < pl.N; ++i) {
+                const uint64_t *ci = elem_ptr(A, i, pl.W64);
+                if (ci[0] >= 0x8000000000000000ULL && ci[0] != 0x8000000000000000ULL) {
+                    if (!found_issue) {
+                        std::cout << "=== RANGE VALIDATION ISSUES at " << stage << " ===" << std::endl;
+                        found_issue = true;
+                    }
+                    std::cout << "  A[" << i << "] = 0x" << std::hex << ci[0]
+                        << " (>= 2^63, possible negative representation)"
+                        << std::dec << std::endl;
+                }
+            }
+            if (found_issue) {
+                std::cout << "=== End Range Validation ===" << std::endl;
+            }
+        }
+        };
+
+    // Equality / zero helpers over pl.W64 limbs
+    auto kbits_equal = [&](const uint64_t *x, const uint64_t *y) {
+        for (int w = 0; w < pl.W64; ++w) if (x[w] != y[w]) return false;
+        return true;
+        };
+    auto kbits_is_zero = [&](const uint64_t *x) {
+        for (int w = 0; w < pl.W64; ++w) if (x[w] != 0) return false;
+        return true;
+        };
+    auto set_one_into = [&](uint64_t *x) {
+        for (int w = 0; w < pl.W64; ++w) x[w] = 0;
+        x[0] = 1;
+        };
+
+    // --- prologue ------------------------------------------------------------
+
+    if (SharkVerbose == VerboseMode::Debug) {
+        std::cout << "\n=== FFT_pow2 START (Inverse=" << Inverse << ") ===" << std::endl;
+        std::cout << "Plan: N=" << pl.N
+            << ", Kbits=" << pl.Kbits
+            << ", stages=" << pl.stages << std::endl;
+    }
+
+    dump_nonzero_coeffs("Initial Input");
+    validate_coeff_range("Initial Input");
+
     // --- Permutation placement (DIT butterflies) ---
     if constexpr (!Inverse) {
         // Forward DIT: expects bit-reversed input, emits natural order.
+        trace_coeff5("before bit_reverse");
         bit_reverse_inplace(A, pl.N, pl.stages, pl.W64, swp);
+        trace_coeff5("after bit_reverse");
+        dump_nonzero_coeffs("After Bit Reverse (Forward)");
     } else {
-        // Inverse DIT: also expects bit-reversed input, emits natural order.
-        // The spectra coming from the forward are in natural order,
-        // so reverse them up front — and DO NOT reverse again at the end.
+        // Inverse DIT: input is in natural order (from forward),
+        // so reverse up front and DO NOT reverse again at the end.
+        trace_coeff5("before bit_reverse (inverse)");
         bit_reverse_inplace(A, pl.N, pl.stages, pl.W64, swp);
+        trace_coeff5("after bit_reverse (inverse)");
+        dump_nonzero_coeffs("After Bit Reverse (Inverse)");
     }
 
     const uint64_t twoK = (uint64_t)2 * (uint64_t)pl.Kbits;
 
+    // --- main stages ---------------------------------------------------------
+
     for (int s = 1; s <= pl.stages; ++s) {
         const uint32_t m = 1u << s;
         const uint32_t half = m >> 1;
-        const uint64_t stride = (uint64_t)(2 * pl.Kbits) / (uint64_t)m; // <-- FIX
+        const uint64_t stride = (uint64_t)(2 * pl.Kbits) / (uint64_t)m;
 
+        if (SharkVerbose == VerboseMode::Debug) {
+            std::cout << "\n--- FFT Stage " << s << " ---" << std::endl;
+            std::cout << "  m=" << m << ", half=" << half << ", stride=" << stride << std::endl;
+        }
+
+        trace_coeff5("start of stage");
         assert(stride * m == twoK);
 
         for (uint32_t k = 0; k < (uint32_t)pl.N; k += m) {
             uint64_t tw = 0;
+
             for (uint32_t j = 0; j < half; ++j) {
                 uint64_t *U = elem_ptr(A, (int)(k + j), pl.W64);
                 uint64_t *V = elem_ptr(A, (int)(k + j + half), pl.W64);
-                if constexpr (!Inverse) {
-                    mul_pow2(V, tw, (uint32_t)pl.Kbits, t, tmpA, tmpB, pl.W64);
-                } else {
-                    mul_pow2(V, (twoK - tw), (uint32_t)pl.Kbits, t, tmpA, tmpB, pl.W64);
+
+                // Lightweight debug filter
+                bool affects_coeff5 = ((k + j) == 5) || ((k + j + half) == 5);
+                bool debug_butterfly = affects_coeff5 ||
+                    (U[0] != 0 && U[0] <= 0x100) ||
+                    (V[0] != 0 && V[0] <= 0x100);
+
+                if (SharkVerbose == VerboseMode::Debug && debug_butterfly) {
+                    std::cout << "\n=== BUTTERFLY DEBUG (Stage " << s << ") ===" << std::endl;
+                    std::cout << "  Indices: U[" << (k + j) << "] <-> V[" << (k + j + half) << "]" << std::endl;
+                    std::cout << "  Before: U=0x" << std::hex << U[0] << ", V=0x" << V[0] << std::dec << std::endl;
+                    std::cout << "  Twiddle exponent: tw=" << tw << std::endl;
+                    if (affects_coeff5) std::cout << "  *** AFFECTS COEFFICIENT 5 ***" << std::endl;
                 }
 
+                // Twiddle
+                if constexpr (!Inverse) {
+                    if (SharkVerbose == VerboseMode::Debug && debug_butterfly) {
+                        std::cout << "  Forward: Computing V * 2^" << tw
+                            << " mod (2^" << pl.Kbits << "+1)" << std::endl;
+                    }
+                    mul_pow2(V, tw, (uint32_t)pl.Kbits, t, tmpA, tmpB, pl.W64);
+                } else {
+                    // inverse: multiply by 2^{-tw} ≡ 2^{2K - tw}
+                    uint64_t inv_tw = (tw == 0) ? 0 : (twoK - tw);
+                    if (SharkVerbose == VerboseMode::Debug && debug_butterfly) {
+                        std::cout << "  Inverse: Computing V * 2^" << inv_tw
+                            << " (i.e., 2^{-tw}) mod (2^" << pl.Kbits << "+1)"
+                            << "  [tw=" << tw << ", twoK=" << twoK << "]" << std::endl;
+                    }
+                    mul_pow2(V, inv_tw, (uint32_t)pl.Kbits, t, tmpA, tmpB, pl.W64);
+                }
+
+                if (SharkVerbose == VerboseMode::Debug && debug_butterfly) {
+                    std::cout << "  After twiddle: t=0x" << std::hex << t[0] << std::dec << std::endl;
+                    if (t[0] == 0x8000000000000002ULL) {
+                        std::cout << "  *** CRITICAL: Twiddle produced problematic value! ***" << std::endl;
+                    }
+                }
+
+                // Butterfly: (U, V) -> (U+t, U-t)
                 add_mod(U, t, sum, pl.W64);
                 sub_mod(U, t, diff, pl.W64);
-                
+
+                if (SharkVerbose == VerboseMode::Debug && debug_butterfly) {
+                    std::cout << "  Butterfly results: sum=0x" << std::hex << sum[0]
+                        << ", diff=0x" << diff[0] << std::dec << std::endl;
+                    if (sum[0] == 0x8000000000000002ULL)
+                        std::cout << "  *** CRITICAL: sum produced problematic value! ***" << std::endl;
+                    if (diff[0] == 0x8000000000000002ULL)
+                        std::cout << "  *** CRITICAL: diff produced problematic value! ***" << std::endl;
+                }
+
+                // Range guard
                 AssertNotAtBalancedBoundary(sum, pl);
                 AssertNotAtBalancedBoundary(diff, pl);
 
+                // --- Representation-aware algebra sanity check (debug only) ---
+                if (SharkVerbose == VerboseMode::Debug) {
+                    // twoU = 2U ; twoT = 2t
+                    add_mod(U, U, tmpA, pl.W64);  // tmpA := 2U
+                    add_mod(t, t, tmpB, pl.W64);  // tmpB := 2t
+
+                    // Check identity 1: (U+t)+(U-t) == 2U
+                    add_mod(sum, diff, swp, pl.W64);   // swp := sum+diff
+                    bool id1_ok = kbits_equal(swp, tmpA);
+
+                    // Check identity 2: (U+t)-(U-t) == 2t
+                    sub_mod(sum, diff, swp, pl.W64);   // swp := sum-diff
+                    bool id2_ok = kbits_equal(swp, tmpB);
+
+                    // Correct for collapsed (-1 ≡ 2^K) when diff==0 but U!=t
+                    if ((!id1_ok || !id2_ok) && kbits_is_zero(diff) && !kbits_equal(U, t)) {
+                        // Re-evaluate id1 as (sum - 1) == 2U
+                        if (!id1_ok) {
+                            set_one_into(tmpA);                 // tmpA := 1
+                            sub_mod(sum, tmpA, swp, pl.W64);    // swp := sum - 1  (≡ sum + 2^K)
+                            add_mod(U, U, tmpA, pl.W64);        // tmpA := 2U (recompute)
+                            id1_ok = kbits_equal(swp, tmpA);
+                        }
+                        // Re-evaluate id2 as (sum + 1) == 2t
+                        if (!id2_ok) {
+                            set_one_into(tmpA);                 // tmpA := 1
+                            add_mod(sum, tmpA, swp, pl.W64);    // swp := sum + 1  (≡ sum - 2^K)
+                            id2_ok = kbits_equal(swp, tmpB);    // tmpB still holds 2t
+                        }
+                    }
+
+                    if (!id1_ok || !id2_ok) {
+                        std::cerr << "Butterfly identity FAIL at stage " << s
+                            << " (m=" << m << ", half=" << half
+                            << ", stride=" << stride << ")"
+                            << " k=" << k << " j=" << j << "  tw=" << tw
+                            << (Inverse ? " (inv)" : " (fwd)") << "\n"
+                            << "  U=" << std::hex << U[0]
+                            << "  V=" << V[0]
+                            << "  t=" << t[0]
+                            << "  sum=" << sum[0]
+                            << "  diff=" << diff[0] << std::dec << "\n";
+                        assert(false && "Butterfly identities violated");
+                    }
+                }
+                // ----------------------------------------------------------------
+
+                // Store outputs
                 kbits_copy(U, sum, pl.W64);
                 kbits_copy(V, diff, pl.W64);
+
+                if (SharkVerbose == VerboseMode::Debug && debug_butterfly) {
+                    std::cout << "  Final: U[" << (k + j) << "]=0x" << std::hex << U[0]
+                        << ", V[" << (k + j + half) << "]=0x" << V[0]
+                        << std::dec << std::endl;
+                    std::cout << "=== END BUTTERFLY DEBUG ===" << std::endl;
+                }
+
                 tw += stride;
             }
         }
+
+        if (SharkVerbose == VerboseMode::Debug) {
+            trace_coeff5("end of stage");
+            std::cout << "--- End Stage " << s << " ---" << std::endl;
+            dump_nonzero_coeffs(("After Stage " + std::to_string(s)).c_str());
+            validate_coeff_range(("After Stage " + std::to_string(s)).c_str());
+        }
     }
+
+    // --- inverse scale -------------------------------------------------------
 
     if constexpr (Inverse) {
-        // Scale by N^{-1} = -2^{K - log2(N)}  in Z/(2^K+1)
+        // Scale by N^{-1} = -2^{K - log2(N)} in Z/(2^K+1)
         if (SharkVerbose == VerboseMode::Debug) {
-            std::cout << "iFFT: scaling by Ninv = ";
-            for (int i = pl.W64 - 1; i >= 0; --i) { std::cout << std::hex << Ninv[i] << " "; }
-            std::cout << std::dec << std::endl;
+            std::cout << "\n=== INVERSE FFT SCALING ===" << std::endl;
+            std::cout << "Scaling by Ninv = 0x" << std::hex << Ninv[0] << std::dec << std::endl;
         }
+
+        trace_coeff5("before final scaling");
+        dump_nonzero_coeffs("Before iFFT Scaling");
 
         for (int i = 0; i < pl.N; ++i) {
-            if (SharkVerbose == VerboseMode::Debug) {
-                std::cout << "Index: " << i << std::endl;
+            uint64_t *Xi = elem_ptr(A, i, pl.W64);
+            uint64_t orig_value = Xi[0];
+
+            bool debug_this = (SharkVerbose == VerboseMode::Debug) &&
+                (i == 5 || (orig_value != 0 && orig_value <= 0x100));
+
+            if (debug_this) {
+                std::cout << "  Scaling A[" << i << "]: 0x" << std::hex << orig_value
+                    << " * 0x" << Ninv[0] << std::dec << std::endl;
             }
 
-            uint64_t *Xi = elem_ptr(A, i, pl.W64);
             mul_mod(Xi, Ninv, Xi, prod2W, pl.W64);
+
+            if (debug_this) {
+                std::cout << "    Result: 0x" << std::hex << Xi[0] << std::dec << std::endl;
+                if (Xi[0] == 0x8000000000000002ULL) {
+                    std::cout << "    *** CRITICAL: iFFT scaling produced problematic value! ***"
+                        << "  (input 0x" << std::hex << orig_value << std::dec << ")\n";
+                }
+            }
         }
 
+        trace_coeff5("after final scaling");
+        dump_nonzero_coeffs("After iFFT Scaling");
+        validate_coeff_range("After iFFT Scaling");
+
         if (SharkVerbose == VerboseMode::Debug) {
-            std::cout << "iFFT: scaled output:\n";
+            std::cout << "=== Final iFFT output summary ===" << std::endl;
             for (int i = 0; i < pl.N; ++i) {
                 const uint64_t *Xi = elem_ptr(A, i, pl.W64);
-                std::cout << "  X[" << i << "] = ";
-                for (int j = pl.W64 - 1; j >= 0; --j) { std::cout << std::hex << Xi[j] << " "; }
-                std::cout << std::dec << std::endl;
+                if (Xi[0] != 0) {
+                    std::cout << "  X[" << i << "] = 0x" << std::hex << Xi[0] << std::dec;
+                    if (Xi[0] <= 0x100) std::cout << " (decimal: " << Xi[0] << ")";
+                    if (Xi[0] == 0x8000000000000002ULL) std::cout << " *** PROBLEMATIC ***";
+                    std::cout << std::endl;
+                }
             }
         }
     }
+
+    if (SharkVerbose == VerboseMode::Debug) {
+        std::cout << "=== FFT_pow2 END (Inverse=" << Inverse << ") ===\n" << std::endl;
+    }
 }
+
+
 
 
 // ============================================================================
@@ -1149,7 +1601,7 @@ void MultiplyHelperFFT(
     HpSharkFloat<SharkFloatParams> *OutXX,
     HpSharkFloat<SharkFloatParams> *OutXY,
     HpSharkFloat<SharkFloatParams> *OutYY,
-    DebugHostCombo<SharkFloatParams> &debugCombo) {
+    DebugHostCombo<SharkFloatParams> & /*debugCombo*/) {
 
     using P = SharkFloatParams;
     const Plan pl = build_plan<P>(P::GlobalNumUint32);
@@ -1355,8 +1807,47 @@ void MultiplyHelperFFT(
             std::vector<uint64_t> tmp(pl.N * pl.W64);
             std::memcpy(tmp.data(), src, tmp.size() * 8);
 
+            // Add debug output for the specific failing case
+            if (SharkVerbose == VerboseMode::Debug) {
+                std::cout << "=== FFT Roundtrip Debug ===" << std::endl;
+                std::cout << "Input data:" << std::endl;
+                for (int i = 0; i < pl.N; ++i) {
+                    const uint64_t *ci = elem_ptr(src, i, pl.W64);
+                    if (ci[0] != 0 || i == 5) {  // Always show index 5
+                        std::cout << "  src[" << i << "] = 0x" << std::hex << ci[0] << std::dec << std::endl;
+                    }
+                }
+            }
+
+            // Assert pre-conditions
+            assert(pl.W64 == 1 && "Expected W64=1 for this debug");
+            assert(pl.Kbits == 64 && "Expected Kbits=64 for this debug");
+
+            // Forward FFT
             FFT_pow2<false>(tmp.data(), pl, Scratch, /*Ninv*/nullptr, /*Prod2K*/nullptr);
+
+            if (SharkVerbose == VerboseMode::Debug) {
+                std::cout << "After forward FFT:" << std::endl;
+                for (int i = 0; i < pl.N; ++i) {
+                    const uint64_t *ci = elem_ptr(tmp.data(), i, pl.W64);
+                    if (ci[0] != 0 || i == 5) {
+                        std::cout << "  fwd[" << i << "] = 0x" << std::hex << ci[0] << std::dec << std::endl;
+                    }
+                }
+            }
+
+            // Inverse FFT
             FFT_pow2<true >(tmp.data(), pl, Scratch, Ninv, Prod2K);
+
+            if (SharkVerbose == VerboseMode::Debug) {
+                std::cout << "After inverse FFT:" << std::endl;
+                for (int i = 0; i < pl.N; ++i) {
+                    const uint64_t *ci = elem_ptr(tmp.data(), i, pl.W64);
+                    if (ci[0] != 0 || i == 5) {
+                        std::cout << "  inv[" << i << "] = 0x" << std::hex << ci[0] << std::dec << std::endl;
+                    }
+                }
+            }
 
             const uint64_t *ref = src;
             for (int i = 0; i < pl.N; ++i) {
@@ -1364,8 +1855,25 @@ void MultiplyHelperFFT(
                 const uint64_t *ri = elem_ptr(ref, i, pl.W64);
                 for (int w = 0; w < pl.W64; ++w) {
                     if (xi[w] != ri[w]) {
-                        std::cout << "Roundtrip mismatch at i=" << i << " w=" << w
-                            << " got=" << std::hex << xi[w] << " ref=" << ri[w] << std::dec << "\n";
+                        // Enhanced debug for the mismatch
+                        std::cout << "=== MISMATCH DETECTED ===" << std::endl;
+                        std::cout << "Index: " << i << ", Word: " << w << std::endl;
+                        std::cout << "Got:      0x" << std::hex << xi[w] << std::dec << std::endl;
+                        std::cout << "Expected: 0x" << std::hex << ri[w] << std::dec << std::endl;
+                        std::cout << "Plan details: N=" << pl.N << ", Kbits=" << pl.Kbits << ", stages=" << pl.stages << std::endl;
+
+                        // Check if this looks like a sign flip in the negacyclic ring
+                        if (pl.Kbits == 64 && xi[w] == (~ri[w] + 2)) {
+                            std::cout << "ERROR: This looks like incorrect negacyclic reduction!" << std::endl;
+                            std::cout << "Got value appears to be -ref in Z/(2^64+1)" << std::endl;
+                        }
+
+                        // Check for common bit patterns
+                        if (xi[w] & 0x8000000000000000ULL) {
+                            std::cout << "WARNING: Result has high bit set (value >= 2^63)" << std::endl;
+                        }
+
+                        assert(false && "FFT roundtrip mismatch - check negacyclic ring arithmetic");
                         return false;
                     }
                 }

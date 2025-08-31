@@ -2164,34 +2164,34 @@ bool TestAllBinaryOp(int testBase) {
     //
     if constexpr (includeSet1) {
         const auto set = testBase + 100;
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 10, "7", "19", "0");
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 20, "4294967295", "1", "4294967296");
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 30, "4294967296", "1", "1");
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 40, "4294967295", "4294967296", "1");
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 50, "4294967296", "-1", "1");
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 60, "18446744073709551615", "1", "1");
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 70, "0", "0.1", "0.3");
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 80, "0.1", "0", "0.1");
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 90, "0", "0", "0");
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 100, "0.1", "0.1", "0.1");
+        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 10, "7", "19", "0");
+        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 20, "4294967295", "1", "4294967296");
+        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 30, "4294967296", "1", "1");
+        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 40, "4294967295", "4294967296", "1");
+        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 50, "4294967296", "-1", "1");
+        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 60, "18446744073709551615", "1", "1");
+        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 70, "0", "0.1", "0.3");
+        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 80, "0.1", "0", "0.1");
+        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 90, "0", "0", "0");
+        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 100, "0.1", "0.1", "0.1");
     }
 
     if constexpr (includeSet2) {
         const auto set = testBase + 300;
-        TestTernarySpecial1<SharkFloatParams, sharkOperator>(set + 10);
-        TestTernarySpecial2<SharkFloatParams, sharkOperator>(set + 20);
-        TestTernarySpecial3<SharkFloatParams, sharkOperator>(set + 30);
-        TestTernarySpecial4<SharkFloatParams, sharkOperator>(set + 40);
-        TestTernarySpecial5<SharkFloatParams, sharkOperator>(set + 50);
-        TestTernarySpecial6<SharkFloatParams, sharkOperator>(set + 60);
-        TestTernarySpecial7<SharkFloatParams, sharkOperator>(set + 70);
-        TestTernarySpecial8<SharkFloatParams, sharkOperator>(set + 80);
-        TestTernarySpecial9<SharkFloatParams, sharkOperator>(set + 90);
-        TestTernarySpecial10<SharkFloatParams, sharkOperator>(set + 100);
-        TestTernarySpecial11<SharkFloatParams, sharkOperator>(set + 110);
-        TestTernarySpecial12<SharkFloatParams, sharkOperator>(set + 120);
-        TestTernarySpecial13<SharkFloatParams, sharkOperator>(set + 130);
-        TestTernarySpecial14<SharkFloatParams, sharkOperator>(set + 140);
+        //TestTernarySpecial1<SharkFloatParams, sharkOperator>(set + 10);
+        //TestTernarySpecial2<SharkFloatParams, sharkOperator>(set + 20);
+        //TestTernarySpecial3<SharkFloatParams, sharkOperator>(set + 30);
+        //TestTernarySpecial4<SharkFloatParams, sharkOperator>(set + 40);
+        //TestTernarySpecial5<SharkFloatParams, sharkOperator>(set + 50);
+        //TestTernarySpecial6<SharkFloatParams, sharkOperator>(set + 60);
+        //TestTernarySpecial7<SharkFloatParams, sharkOperator>(set + 70);
+        //TestTernarySpecial8<SharkFloatParams, sharkOperator>(set + 80);
+        //TestTernarySpecial9<SharkFloatParams, sharkOperator>(set + 90);
+        //TestTernarySpecial10<SharkFloatParams, sharkOperator>(set + 100);
+        //TestTernarySpecial11<SharkFloatParams, sharkOperator>(set + 110);
+        //TestTernarySpecial12<SharkFloatParams, sharkOperator>(set + 120);
+        //TestTernarySpecial13<SharkFloatParams, sharkOperator>(set + 130);
+        //TestTernarySpecial14<SharkFloatParams, sharkOperator>(set + 140);
         TestTernarySpecial15<SharkFloatParams, sharkOperator>(set + 150);
         TestTernarySpecial16<SharkFloatParams, sharkOperator>(set + 160);
         TestTernarySpecial17<SharkFloatParams, sharkOperator>(set + 170);

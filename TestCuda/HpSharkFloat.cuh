@@ -28,7 +28,8 @@ static constexpr bool SharkDebug = false;
 //#define ENABLE_CONVERSION_TESTS
 //#define ENABLE_ADD_KERNEL
 //#define ENABLE_MULTIPLY_KARATSUBA_KERNEL
-#define ENABLE_MULTIPLY_FFT_KERNEL
+//#define ENABLE_MULTIPLY_FFT_KERNEL
+#define ENABLE_MULTIPLY_FFT2_KERNEL
 //#define ENABLE_REFERENCE_KERNEL
 
 // 0 = just one correctness test, intended for fast re-compile of a specific failure
@@ -37,7 +38,7 @@ static constexpr bool SharkDebug = false;
 // 3 = all basic correctness tests + comical tests
 // See ExplicitInstantiate.h for more information
 #ifdef _DEBUG
-#define ENABLE_BASIC_CORRECTNESS 0
+#define ENABLE_BASIC_CORRECTNESS 1
 #else
 #define ENABLE_BASIC_CORRECTNESS 2
 #endif
@@ -66,6 +67,12 @@ static constexpr auto SharkEnableMultiplyFFTKernel = true;
 static constexpr auto SharkEnableMultiplyFFTKernel = false;
 #endif
 
+#ifdef ENABLE_MULTIPLY_FFT2_KERNEL
+static constexpr auto SharkEnableMultiplyFFT2Kernel = true;
+#else
+static constexpr auto SharkEnableMultiplyFFT2Kernel = false;
+#endif
+
 #ifdef ENABLE_REFERENCE_KERNEL
 static constexpr auto SharkEnableReferenceKernel = true;
 #else
@@ -79,9 +86,8 @@ static constexpr auto SharkEnableReferenceKernel = false;
 #define SharkForceInlineReleaseOnly __forceinline__
 #endif
 
-static constexpr bool SharkUsePow2SizesOnly = SharkEnableMultiplyFFTKernel;
-
-// static constexpr bool SharkTestGpu = (SharkEnableAddKernel || SharkEnableMultiplyKernel || SharkEnableMultiplyFFTKernel || SharkEnableReferenceKernel);
+// static constexpr bool SharkTestGpu =
+// (SharkEnableAddKernel || SharkEnableMultiplyKernel || SharkEnableMultiplyFFTKernel || SharkEnableMultiplyFFT2Kernel || SharkEnableReferenceKernel);
 static constexpr bool SharkTestGpu = false;
 
 static constexpr auto SharkTestComicalThreadCount = 13;
@@ -131,18 +137,51 @@ static constexpr auto SharkTestForceSameSign = false;
 static constexpr bool SharkTestBenchmarkAgainstHost = false;
 static constexpr bool SharkTestInitCudaMemory = true;
 
+// ---- detail helpers (fallback for pre-C++20) ----
+namespace HpShark {
+    constexpr uint32_t
+    ceil_pow2_u32(uint32_t v)
+    {
+        // returns 1 for v==0; otherwise rounds up to the next power of two (ceil)
+        if (v <= 1)
+            return 1u;
+        v--;
+        v |= v >> 1;
+        v |= v >> 2;
+        v |= v >> 4;
+        v |= v >> 8;
+        v |= v >> 16;
+        v++;
+        return v;
+    }
+    constexpr bool
+    is_pow2_u32(uint32_t v)
+    {
+        return v && ((v & (v - 1u)) == 0u);
+    }
+} // namespace detail
+
 template<
     int32_t pThreadsPerBlock,
     int32_t pNumBlocks,
     int32_t pNumDigits = pThreadsPerBlock * pNumBlocks,
     int32_t pConvolutionLimit = 9>
 struct GenericSharkFloatParams {
+    static constexpr bool SharkUsePow2SizesOnly =
+        SharkEnableMultiplyFFTKernel || SharkEnableMultiplyFFT2Kernel;
+
     static constexpr int32_t GlobalThreadsPerBlock = pThreadsPerBlock;
     static constexpr int32_t GlobalNumBlocks = pNumBlocks;
     static constexpr int32_t SharkBatchSize = ::SharkBatchSize;
     // Fixed number of uint32_t values
     static constexpr int32_t Guard = 4;
-    static constexpr int32_t GlobalNumUint32 = pNumDigits;
+
+    static constexpr int32_t GlobalNumUint32 =
+        SharkUsePow2SizesOnly ?
+            static_cast<int32_t>(
+                HpShark::ceil_pow2_u32(static_cast<uint32_t>(pNumDigits)))
+            : pNumDigits;
+
     static constexpr int32_t HalfLimbsRoundedUp = (GlobalNumUint32 + 1) / 2;
 
     // If these are set to false they produce wrong answers but can be useful

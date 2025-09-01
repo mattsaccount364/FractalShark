@@ -413,7 +413,8 @@ void TestPerf (
                 mpf_add(mpfHostResultXY1, mpfHostResultXY1, mpfZ);
                 mpf_add(mpfHostResultXY2, mpfX, mpfY);
             } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2 ||
-                                 sharkOperator == Operator::MultiplyFFT) {
+                                 sharkOperator == Operator::MultiplyFFT ||
+                                 sharkOperator == Operator::MultiplyFFT2) {
                 mpf_mul(mpfHostResultXX, mpfX, mpfX);
                 mpf_mul(mpfHostResultXY1, mpfX, mpfY);
                 mpf_mul_ui(mpfHostResultXY1, mpfHostResultXY1, 2);
@@ -1046,6 +1047,19 @@ void TestCoreMultiply(
                 OutputV2("FFT XX", hostKaratsubaOutXXV2);
                 OutputV2("FFT XY", hostKaratsubaOutXYV2);
                 OutputV2("FFT YY", hostKaratsubaOutYYV2);
+            } else if constexpr (sharkOperator == Operator::MultiplyFFT2) {
+                MultiplyHelperFFT2<SharkFloatParams>(
+                    &aNum,
+                    &bNum,
+                    &hostKaratsubaOutXXV2,
+                    &hostKaratsubaOutXYV2,
+                    &hostKaratsubaOutYYV2,
+                    debugHostCombo
+                );
+
+                OutputV2("FFT XX", hostKaratsubaOutXXV2);
+                OutputV2("FFT XY", hostKaratsubaOutXYV2);
+                OutputV2("FFT YY", hostKaratsubaOutYYV2);
             } else {
                 MultiplyHelperKaratsubaV2<SharkFloatParams>(
                     &aNum,
@@ -1353,7 +1367,8 @@ void TestTernaryOperatorTwoNumbersRawNoSignChange(
             mpfInputLen);
     } else if constexpr (
         sharkOperator == Operator::MultiplyKaratsubaV2 ||
-        sharkOperator == Operator::MultiplyFFT) {
+        sharkOperator == Operator::MultiplyFFT ||
+        sharkOperator == Operator::MultiplyFFT2) {
 
         TestCoreMultiply<SharkFloatParams, sharkOperator>(
             testNum,
@@ -2164,34 +2179,34 @@ bool TestAllBinaryOp(int testBase) {
     //
     if constexpr (includeSet1) {
         const auto set = testBase + 100;
-        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 10, "7", "19", "0");
-        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 20, "4294967295", "1", "4294967296");
-        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 30, "4294967296", "1", "1");
-        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 40, "4294967295", "4294967296", "1");
-        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 50, "4294967296", "-1", "1");
-        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 60, "18446744073709551615", "1", "1");
-        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 70, "0", "0.1", "0.3");
-        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 80, "0.1", "0", "0.1");
-        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 90, "0", "0", "0");
-        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 100, "0.1", "0.1", "0.1");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 10, "7", "19", "0");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 20, "4294967295", "1", "4294967296");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 30, "4294967296", "1", "1");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 40, "4294967295", "4294967296", "1");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 50, "4294967296", "-1", "1");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 60, "18446744073709551615", "1", "1");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 70, "0", "0.1", "0.3");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 80, "0.1", "0", "0.1");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 90, "0", "0", "0");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 100, "0.1", "0.1", "0.1");
     }
 
     if constexpr (includeSet2) {
         const auto set = testBase + 300;
-        //TestTernarySpecial1<SharkFloatParams, sharkOperator>(set + 10);
-        //TestTernarySpecial2<SharkFloatParams, sharkOperator>(set + 20);
-        //TestTernarySpecial3<SharkFloatParams, sharkOperator>(set + 30);
-        //TestTernarySpecial4<SharkFloatParams, sharkOperator>(set + 40);
-        //TestTernarySpecial5<SharkFloatParams, sharkOperator>(set + 50);
-        //TestTernarySpecial6<SharkFloatParams, sharkOperator>(set + 60);
-        //TestTernarySpecial7<SharkFloatParams, sharkOperator>(set + 70);
-        //TestTernarySpecial8<SharkFloatParams, sharkOperator>(set + 80);
-        //TestTernarySpecial9<SharkFloatParams, sharkOperator>(set + 90);
-        //TestTernarySpecial10<SharkFloatParams, sharkOperator>(set + 100);
-        //TestTernarySpecial11<SharkFloatParams, sharkOperator>(set + 110);
-        //TestTernarySpecial12<SharkFloatParams, sharkOperator>(set + 120);
-        //TestTernarySpecial13<SharkFloatParams, sharkOperator>(set + 130);
-        //TestTernarySpecial14<SharkFloatParams, sharkOperator>(set + 140);
+        TestTernarySpecial1<SharkFloatParams, sharkOperator>(set + 10);
+        TestTernarySpecial2<SharkFloatParams, sharkOperator>(set + 20);
+        TestTernarySpecial3<SharkFloatParams, sharkOperator>(set + 30);
+        TestTernarySpecial4<SharkFloatParams, sharkOperator>(set + 40);
+        TestTernarySpecial5<SharkFloatParams, sharkOperator>(set + 50);
+        TestTernarySpecial6<SharkFloatParams, sharkOperator>(set + 60);
+        TestTernarySpecial7<SharkFloatParams, sharkOperator>(set + 70);
+        TestTernarySpecial8<SharkFloatParams, sharkOperator>(set + 80);
+        TestTernarySpecial9<SharkFloatParams, sharkOperator>(set + 90);
+        TestTernarySpecial10<SharkFloatParams, sharkOperator>(set + 100);
+        TestTernarySpecial11<SharkFloatParams, sharkOperator>(set + 110);
+        TestTernarySpecial12<SharkFloatParams, sharkOperator>(set + 120);
+        TestTernarySpecial13<SharkFloatParams, sharkOperator>(set + 130);
+        TestTernarySpecial14<SharkFloatParams, sharkOperator>(set + 140);
         TestTernarySpecial15<SharkFloatParams, sharkOperator>(set + 150);
         TestTernarySpecial16<SharkFloatParams, sharkOperator>(set + 160);
         TestTernarySpecial17<SharkFloatParams, sharkOperator>(set + 170);
@@ -2378,11 +2393,19 @@ bool TestBinaryOperatorPerf([[maybe_unused]] int testBase) {
 #endif
 
 #ifdef ENABLE_MULTIPLY_FFT_KERNEL
-#define MULTIPLY_KERNEL_SS(SharkFloatParams) \
+#define MULTIPLY_KERNEL_FFT(SharkFloatParams) \
     template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyFFT>(int testBase); \
     template bool TestBinaryOperatorPerf<Operator::MultiplyFFT>(int testBase);
 #else
-#define MULTIPLY_KERNEL_SS(SharkFloatParams) ;
+#define MULTIPLY_KERNEL_FFT(SharkFloatParams) ;
+#endif
+
+#ifdef ENABLE_MULTIPLY_FFT2_KERNEL
+#define MULTIPLY_KERNEL_FFT2(SharkFloatParams)                                                            \
+    template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyFFT2>(int testBase);               \
+    template bool TestBinaryOperatorPerf<Operator::MultiplyFFT2>(int testBase);
+#else
+#define MULTIPLY_KERNEL_FFT2(SharkFloatParams) ;
 #endif
 
 #ifdef ENABLE_REFERENCE_KERNEL
@@ -2396,7 +2419,8 @@ bool TestBinaryOperatorPerf([[maybe_unused]] int testBase) {
 #define ExplicitlyInstantiate(SharkFloatParams) \
     ADD_KERNEL(SharkFloatParams) \
     MULTIPLY_KERNEL_KARATSUBA(SharkFloatParams) \
-    MULTIPLY_KERNEL_SS(SharkFloatParams) \
+    MULTIPLY_KERNEL_FFT(SharkFloatParams) \
+    MULTIPLY_KERNEL_FFT2(SharkFloatParams) \
     REFERENCE_KERNEL(SharkFloatParams)
 
 ExplicitInstantiateAll();

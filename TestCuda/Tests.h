@@ -4,6 +4,7 @@ enum class Operator {
     Add,
     MultiplyKaratsubaV2,
     MultiplyFFT,
+    MultiplyFFT2,
     ReferenceOrbit
 };
 

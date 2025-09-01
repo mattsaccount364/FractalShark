@@ -108,8 +108,19 @@ bool CorrectnessTests() {
     }
 
     if constexpr (SharkEnableMultiplyFFTKernel) {
-        testBase = 8000;
+        testBase = 6000;
         res = TestAllBinaryOp<TestSharkParams, Operator::MultiplyFFT>(testBase);
+        if (!res) {
+            auto q = PressKey();
+            if (q == 'q') {
+                return false;
+            }
+        }
+    }
+
+    if constexpr (SharkEnableMultiplyFFT2Kernel) {
+        testBase = 6000;
+        res = TestAllBinaryOp<TestSharkParams, Operator::MultiplyFFT2>(testBase);
         if (!res) {
             auto q = PressKey();
             if (q == 'q') {
@@ -260,7 +271,18 @@ int main(int /*argc*/, char * /*argv*/[]) {
 
     if constexpr (SharkEnableMultiplyFFTKernel) {
         testBase = 12000;
-        res = TestBinaryOperatorPerf<Operator::MultiplyFFT>(testBase);
+        res = TestBinaryOperatorPerf<Operator::MultiplyFFT2>(testBase);
+        if (!res) {
+            auto q = PressKey();
+            if (q == 'q') {
+                return 0;
+            }
+        }
+    }
+
+    if constexpr (SharkEnableMultiplyFFT2Kernel) {
+        testBase = 13000;
+        res = TestBinaryOperatorPerf<Operator::MultiplyFFT2>(testBase);
         if (!res) {
             auto q = PressKey();
             if (q == 'q') {
@@ -270,7 +292,7 @@ int main(int /*argc*/, char * /*argv*/[]) {
     }
 
     if constexpr (SharkEnableReferenceKernel) {
-        testBase = 13000;
+        testBase = 14000;
         res = TestBinaryOperatorPerf<Operator::ReferenceOrbit>(testBase);
         if (!res) {
             auto q = PressKey();

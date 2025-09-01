@@ -703,22 +703,20 @@ ReadBitsSimple(const HpSharkFloat<P>* X, int64_t q, int b)
 
 template <class SharkFloatParams>
 static void
-PackBase2bPrime(DebugHostCombo<SharkFloatParams>& debugCombo,
-                const HpSharkFloat<SharkFloatParams>* X,
-                const PlanPrime& plan,
-                std::vector<uint64_t>& outMont,          // size N, Montgomery form
-                std::vector<uint64_t>* outRaw = nullptr) // size L, raw mod p
+PackBase2bPrime_NoAlloc(DebugHostCombo<SharkFloatParams>& debugCombo,
+                        const HpSharkFloat<SharkFloatParams>* Xsrc,
+                        const PlanPrime& plan,
+                        std::span<uint64_t> outMont) // len >= plan.N
 {
-    outMont.assign((size_t)plan.N, SharkNTT::ToMontgomery(debugCombo, 0));
-    if (outRaw)
-        outRaw->assign((size_t)plan.L, 0ull);
+    using namespace SharkNTT;
+    const uint64_t zero_m = ToMontgomery(debugCombo, 0);
+    for (int i = 0; i < plan.N; ++i)
+        outMont[(size_t)i] = zero_m;
 
     for (int i = 0; i < plan.L; ++i) {
-        uint64_t coeff = ReadBitsSimple(X, (int64_t)i * plan.b, plan.b);
-        uint64_t cmod = coeff % SharkNTT::P;
-        if (outRaw)
-            (*outRaw)[(size_t)i] = cmod;
-        outMont[(size_t)i] = SharkNTT::ToMontgomery(debugCombo, cmod);
+        const uint64_t coeff = ReadBitsSimple(Xsrc, (int64_t)i * plan.b, plan.b);
+        const uint64_t cmod = coeff % P;
+        outMont[(size_t)i] = ToMontgomery(debugCombo, cmod);
     }
 }
 
@@ -909,6 +907,23 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams>* A,
     assert(plan.N >= 2 * plan.L && "No-wrap condition violated: need N >= 2*L");
     assert((PHI % (2ull * (uint64_t)plan.N)) == 0ull);
 
+    // Compute Final128 digit budget once
+    const uint32_t Ddigits = ((uint64_t)((2 * plan.L - 2) * plan.b + 64) + 31u) / 32u + 2u;
+
+    // ---- Single allocation for entire core path ----
+    const size_t buf_count = (size_t)2 * (size_t)plan.N     // X + Y
+                             + (size_t)2 * (size_t)Ddigits; // Final128 (lo,hi per 32-bit slot)
+    std::unique_ptr<uint64_t[]> buffer(new uint64_t[buf_count]);
+
+    // Slice buffer into spans
+    size_t off = 0;
+    std::span<uint64_t> X{buffer.get() + off, (size_t)plan.N};
+    off += (size_t)plan.N;
+    std::span<uint64_t> Y{buffer.get() + off, (size_t)plan.N};
+    off += (size_t)plan.N;
+    std::span<uint64_t> Final128{buffer.get() + off, (size_t)2 * Ddigits};
+    off += (size_t)2 * Ddigits;
+
     RootCache root_cache;
     const RootTables& T = root_cache.get(debugCombo, (uint32_t)plan.N, (uint32_t)plan.stages);
 
@@ -925,80 +940,47 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams>* A,
                         const HpSharkFloat<P>& inB,
                         int addFactorOfTwo,
                         bool isNegative) {
-        // 1) Pack
-        std::vector<uint64_t> X, Y;
-        X.reserve(plan.N);
-        Y.reserve(plan.N);
-        std::vector<uint64_t> RawA, RawB;
-        RawA.reserve(plan.L);
-        RawB.reserve(plan.L);
-        PackBase2bPrime(debugCombo, a, plan, X, &RawA);
-        PackBase2bPrime(debugCombo, b, plan, Y, &RawB);
+        // ============================
+        // HOT PATH (single allocation)
+        // ============================
+
+        // 1) Pack (into X and Y)
+        PackBase2bPrime_NoAlloc(debugCombo, a, plan, X);
+        PackBase2bPrime_NoAlloc(debugCombo, b, plan, Y);
 
         // 2) Twist by ψ^i
         for (int i = 0; i < plan.N; ++i)
-            X[i] = MontgomeryMul(debugCombo, X[i], T.psi_pows[(size_t)i]);
+            X[(size_t)i] = MontgomeryMul(debugCombo, X[(size_t)i], T.psi_pows[(size_t)i]);
         for (int i = 0; i < plan.N; ++i)
-            Y[i] = MontgomeryMul(debugCombo, Y[i], T.psi_pows[(size_t)i]);
+            Y[(size_t)i] = MontgomeryMul(debugCombo, Y[(size_t)i], T.psi_pows[(size_t)i]);
 
-        { // Roundtrip twisted X (sanity)
-            std::vector<uint64_t> Xchk = X, Xorig = X;
-            BitReverseInplace64(Xchk.data(), (uint32_t)plan.N, (uint32_t)plan.stages);
-            NTTRadix2(debugCombo, Xchk.data(), (uint32_t)plan.N, (uint32_t)plan.stages, T.stage_omegas);
-            BitReverseInplace64(Xchk.data(), (uint32_t)plan.N, (uint32_t)plan.stages);
-            NTTRadix2(
-                debugCombo, Xchk.data(), (uint32_t)plan.N, (uint32_t)plan.stages, T.stage_omegas_inv);
-            for (int i = 0; i < plan.N; ++i)
-                Xchk[(size_t)i] = MontgomeryMul(debugCombo, Xchk[(size_t)i], T.Ninvm_mont);
-            for (int i = 0; i < plan.N; ++i)
-                assert(Xchk[(size_t)i] == Xorig[(size_t)i]);
-        }
-
-        // 3) Forward NTT
+        // 3) Forward NTT (in place)
         BitReverseInplace64(X.data(), (uint32_t)plan.N, (uint32_t)plan.stages);
         BitReverseInplace64(Y.data(), (uint32_t)plan.N, (uint32_t)plan.stages);
         NTTRadix2(debugCombo, X.data(), (uint32_t)plan.N, (uint32_t)plan.stages, T.stage_omegas);
         NTTRadix2(debugCombo, Y.data(), (uint32_t)plan.N, (uint32_t)plan.stages, T.stage_omegas);
 
-        // 4) Pointwise multiply in NTT domain
+        // 4) Pointwise multiply (X *= Y)
         for (int i = 0; i < plan.N; ++i)
-            X[i] = MontgomeryMul(debugCombo, X[i], Y[i]);
+            X[(size_t)i] = MontgomeryMul(debugCombo, X[(size_t)i], Y[(size_t)i]);
 
-        // 5) Inverse NTT
+        // 5) Inverse NTT (in place on X)
         BitReverseInplace64(X.data(), (uint32_t)plan.N, (uint32_t)plan.stages);
         NTTRadix2(debugCombo, X.data(), (uint32_t)plan.N, (uint32_t)plan.stages, T.stage_omegas_inv);
 
-        // 6) Untwist + scale by N^{-1}
+        // 6) Untwist + scale by N^{-1} (write back into X)
         for (int i = 0; i < plan.N; ++i) {
-            uint64_t v = MontgomeryMul(debugCombo, X[i], T.psi_inv_pows[(size_t)i]);
-            X[i] = MontgomeryMul(debugCombo, v, T.Ninvm_mont);
+            uint64_t v = MontgomeryMul(debugCombo, X[(size_t)i], T.psi_inv_pows[(size_t)i]);
+            X[(size_t)i] = MontgomeryMul(debugCombo, v, T.Ninvm_mont);
         }
 
-        // 7) Convert out of Montgomery
-        std::vector<uint64_t> X_norm((size_t)plan.N);
+        // 7) Convert out of Montgomery: reuse Y as normal-domain buffer
         for (int i = 0; i < plan.N; ++i)
-            X_norm[(size_t)i] = FromMontgomery(debugCombo, X[i]);
+            Y[(size_t)i] = FromMontgomery(debugCombo, X[(size_t)i]);
 
-        { // Full coefficient check vs direct convolution (mod p)
-            const int Kmax = 2 * plan.L - 1;
-            for (int k = 0; k < Kmax; ++k) {
-                uint64_t cref_m = ToMontgomery(debugCombo, 0);
-                int i0 = std::max(0, k - (plan.L - 1));
-                int i1 = std::min(k, plan.L - 1);
-                for (int i = i0; i <= i1; ++i) {
-                    uint64_t ai_m = ToMontgomery(debugCombo, RawA[(size_t)i]);
-                    uint64_t bj_m = ToMontgomery(debugCombo, RawB[(size_t)(k - i)]);
-                    cref_m = AddP(cref_m, MontgomeryMul(debugCombo, ai_m, bj_m));
-                }
-                uint64_t cref = FromMontgomery(debugCombo, cref_m);
-                assert(X_norm[(size_t)k] == cref && "Convolution mismatch");
-            }
-        }
-
-        // 8) Unpack to Final128 and normalize
-        const size_t Ddigits = ((size_t)((2 * plan.L - 2) * (int64_t)plan.b + 64) + 31) / 32 + 2;
-        std::vector<uint64_t> Final128(2ull * Ddigits, 0ull);
-        UnpackPrimeToFinal128(X_norm.data(), plan, Final128.data(), Ddigits);
+        // 8) Unpack -> Final128 -> Normalize
+        std::fill_n(Final128.data(), Final128.size(), 0ull);
+        UnpackPrimeToFinal128(Y.data(), plan, Final128.data(), Ddigits);
         out->SetNegative(isNegative);
         Normalize<P>(*out, inA, inB, Final128.data(), Ddigits, addFactorOfTwo);
     };

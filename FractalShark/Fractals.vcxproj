@@ -203,6 +203,7 @@
     </ClCompile>
     <ClCompile Include="JobObject.cpp" />
     <ClCompile Include="MainWindow.cpp" />
+    <ClCompile Include="ReferenceNTT2.cpp" />
     <ClCompile Include="StdAfx.cpp">
       <Optimization Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Disabled</Optimization>
       <BasicRuntimeChecks Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">EnableFastChecks</BasicRuntimeChecks>

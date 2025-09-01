@@ -9,9 +9,6 @@
 #include "Multiply.cuh"
 #include "MultiplyNTT.cuh"
 #include "HpSharkReferenceOrbit.cuh"
-#include "ReferenceKaratsuba.h"
-#include "ReferenceFFT.h"
-#include "DebugChecksumHost.h"
 
 #include <iostream>
 #include <vector>

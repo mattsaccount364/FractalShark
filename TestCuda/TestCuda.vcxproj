@@ -117,6 +117,7 @@
     <ClCompile Include="ReferenceAdd.cpp" />
     <ClCompile Include="ReferenceKaratsuba.cpp" />
     <ClCompile Include="ReferenceFFT.cpp" />
+    <ClCompile Include="ReferenceNTT2.cpp" />
     <ClCompile Include="TestVerbose.cpp" />
     <ClInclude Include="HpSharkReferenceOrbit.cuh" />
     <ClInclude Include="MultiplyHelperGlobalUnaligned.cuh" />
@@ -124,6 +125,7 @@
     <ClInclude Include="MultiplyNTT.cuh" />
     <ClInclude Include="MultiplyNTTTestKernels.cuh" />
     <ClInclude Include="ReferenceFFT.h" />
+    <ClInclude Include="ReferenceNTT2.h" />
     <ClInclude Include="TestVerbose.h" />
     <ClInclude Include="ThreeWayMagnitude.h" />
     <ClInclude Include="Add.cu">

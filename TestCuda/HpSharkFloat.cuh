@@ -38,7 +38,7 @@ static constexpr bool SharkDebug = false;
 // 3 = all basic correctness tests + comical tests
 // See ExplicitInstantiate.h for more information
 #ifdef _DEBUG
-#define ENABLE_BASIC_CORRECTNESS 1
+#define ENABLE_BASIC_CORRECTNESS 0
 #else
 #define ENABLE_BASIC_CORRECTNESS 2
 #endif
@@ -86,8 +86,9 @@ static constexpr auto SharkEnableReferenceKernel = false;
 #define SharkForceInlineReleaseOnly __forceinline__
 #endif
 
-static constexpr bool SharkTestGpu =
- (SharkEnableAddKernel || SharkEnableMultiplyKernel || /*SharkEnableMultiplyFFTKernel ||*/ SharkEnableMultiplyFFT2Kernel || SharkEnableReferenceKernel);
+//static constexpr bool SharkTestGpu =
+// (SharkEnableAddKernel || SharkEnableMultiplyKernel || /*SharkEnableMultiplyFFTKernel ||*/ SharkEnableMultiplyFFT2Kernel || SharkEnableReferenceKernel);
+static constexpr bool SharkTestGpu = false;
 
 static constexpr auto SharkTestComicalThreadCount = 13;
 

@@ -24,17 +24,26 @@
 
 namespace SharkNTT {
 
+//--------------------------------------------------------------------------------------------------
+// Bit utilities
+//--------------------------------------------------------------------------------------------------
+
+// Reverse the lowest `bit_count` bits of a 32-bit value (manual since MSVC lacks
+// __builtin_bitreverse32).
 static inline uint32_t
-ReverseBits32(uint32_t x, int bits)
+ReverseBits32(uint32_t value, int bit_count)
 {
-    // Perform full 32-bit bit reversal manually since MSVC doesn't have __builtin_bitreverse32
-    x = (x >> 16) | (x << 16);
-    x = ((x & 0x00ff00ffu) << 8) | ((x & 0xff00ff00u) >> 8);
-    x = ((x & 0x0f0f0f0fu) << 4) | ((x & 0xf0f0f0f0u) >> 4);
-    x = ((x & 0x33333333u) << 2) | ((x & 0xccccccccu) >> 2);
-    x = ((x & 0x55555555u) << 1) | ((x & 0xaaaaaaaau) >> 1);
-    return x >> (32 - bits);
+    value = (value >> 16) | (value << 16);
+    value = ((value & 0x00ff00ffu) << 8) | ((value & 0xff00ff00u) >> 8);
+    value = ((value & 0x0f0f0f0fu) << 4) | ((value & 0xf0f0f0f0u) >> 4);
+    value = ((value & 0x33333333u) << 2) | ((value & 0xccccccccu) >> 2);
+    value = ((value & 0x55555555u) << 1) | ((value & 0xaaaaaaaau) >> 1);
+    return value >> (32 - bit_count);
 }
+
+//--------------------------------------------------------------------------------------------------
+// Normalization (final carry propagation and windowing into HpSharkFloat<P>)
+//--------------------------------------------------------------------------------------------------
 
 // Normalize directly from Final128 (lo64,hi64 per 32-bit digit position).
 // Does not allocate; does two passes over Final128 to (1) find 'significant',
@@ -42,13 +51,12 @@ ReverseBits32(uint32_t x, int bits)
 // NOTE: Does not set sign; do that at the call site.
 template <class P>
 static void
-Normalize(
-    HpSharkFloat<P>& Out,
-    const HpSharkFloat<P>& A,
-    const HpSharkFloat<P>& B,
-    const uint64_t* final128,     // len = 2*Ddigits
-    size_t Ddigits,               // number of 32-bit positions represented in Final128
-    int32_t additionalFactorOfTwo // 0 for XX/YY; 1 for XY if you did NOT shift digits
+Normalize(HpSharkFloat<P>& out,
+          const HpSharkFloat<P>& a,
+          const HpSharkFloat<P>& b,
+          const uint64_t* final128,     // len = 2*Ddigits
+          size_t Ddigits,               // number of 32-bit positions represented in final128
+          int32_t additionalFactorOfTwo // 0 for XX/YY; 1 for XY if you did NOT shift digits
 )
 {
     constexpr int N = P::GlobalNumUint32;
@@ -59,12 +67,12 @@ Normalize(
         int highest_nonzero = -1; // last non-zero digit index seen
         int out_written = 0;
 
-        // Helper to emit one 32-bit digit (optionally writing into Out.Digits)
+        // Helper to emit one 32-bit digit (optionally writing into out.Digits)
         auto emit_digit = [&](uint32_t dig) {
             if (dig != 0)
                 highest_nonzero = (int)idx;
             if (write_window && idx >= start && out_written < (int)needN) {
-                Out.Digits[out_written++] = dig;
+                out.Digits[out_written++] = dig;
             }
             ++idx;
         };
@@ -96,7 +104,7 @@ Normalize(
         // If we were asked to write a window and didn't fill all N yet, pad zeros
         if (write_window) {
             while (out_written < (int)needN) {
-                Out.Digits[out_written++] = 0u;
+                out.Digits[out_written++] = 0u;
             }
         }
 
@@ -107,8 +115,8 @@ Normalize(
     auto [highest_nonzero, _] = pass_once(/*write_window=*/false, /*start=*/0, /*needN=*/0);
     if (highest_nonzero < 0) {
         // Zero result
-        std::memset(Out.Digits, 0, N * sizeof(uint32_t));
-        Out.Exponent = A.Exponent + B.Exponent; // Karatsuba zero convention
+        std::memset(out.Digits, 0, N * sizeof(uint32_t));
+        out.Exponent = a.Exponent + b.Exponent; // Karatsuba zero convention
         return;
     }
     const int significant = highest_nonzero + 1;
@@ -117,44 +125,28 @@ Normalize(
         shift_digits = 0;
 
     // Karatsuba-style exponent
-    Out.Exponent = A.Exponent + B.Exponent + 32 * shift_digits + additionalFactorOfTwo;
+    out.Exponent = a.Exponent + b.Exponent + 32 * shift_digits + additionalFactorOfTwo;
 
     // Pass 2: write exactly N digits starting at shift_digits
     (void)pass_once(/*write_window=*/true, /*start=*/(size_t)shift_digits, /*needN=*/(size_t)N);
 }
 
+//--------------------------------------------------------------------------------------------------
+// 64-bit Goldilocks prime, helpers, and Montgomery arithmetic
+//--------------------------------------------------------------------------------------------------
 
 struct u128_lohi {
     uint64_t lo, hi;
 };
-
-// Drop-in replacement: MultiplyHelperFFT2 — NTT over the 64-bit Goldilocks prime (MSVC-safe)
-// -----------------------------------------------------------------------------
-// This implements negacyclic convolution using a radix-2 NTT modulo
-//   p = 0xFFFFFFFF00000001 = 2^64 - 2^32 + 1 ("Goldilocks").
-// It mirrors the structure and PUBLIC SIGNATURE of the existing MultiplyHelperFFT:
-//   template<class SharkFloatParams>
-//   void MultiplyHelperFFT2(
-//       const HpSharkFloat<SharkFloatParams> *A,
-//       const HpSharkFloat<SharkFloatParams> *B,
-//       HpSharkFloat<SharkFloatParams> *OutXX,
-//       HpSharkFloat<SharkFloatParams> *OutXY,
-//       HpSharkFloat<SharkFloatParams> *OutYY,
-//       DebugHostCombo<SharkFloatParams> &debugCombo)
-//
-// Runtime self-checks integrated:
-//   • Root orders for the chosen N (ψ^(2N)=1, ω^N=1)
-//   • NTT round-trip on the twisted X
-//   • Full coefficient-by-coefficient equality vs direct linear convolution (O(L^2))
-//
 
 // Goldilocks prime p = 2^64 - 2^32 + 1
 static constexpr uint64_t P = 0xFFFF'FFFF'0000'0001ull;
 static constexpr uint64_t NINV = 0xFFFF'FFFE'FFFF'FFFFull; // -p^{-1} mod 2^64
 static constexpr uint64_t R2 = 0xFFFF'FFFE'0000'0001ull;   // (2^64)^2 mod p
 
+// Portable 64x64→128 multiply (by-hand 32-bit partials)
 constexpr u128_lohi
-MulU64xU64to128(uint64_t a, uint64_t b)
+Mul64x64To128(uint64_t a, uint64_t b)
 {
     const uint64_t a0 = static_cast<uint32_t>(a);
     const uint64_t a1 = a >> 32;
@@ -166,16 +158,14 @@ MulU64xU64to128(uint64_t a, uint64_t b)
     const uint64_t p10 = a1 * b0; // 32x32 -> 64
     const uint64_t p11 = a1 * b1; // 32x32 -> 64
 
-    // Assemble:
-    const uint64_t mid =
-        p01 + p10; // may overflow 64? sum of two 64-bit <= ~2^65; but for 32x32 products it's safe in 64
+    const uint64_t mid = p01 + p10;
     uint64_t lo = p00 + (mid << 32);
-    uint64_t carry = (lo < p00); // carry from adding shifted mid
+    uint64_t carry = (lo < p00);
     uint64_t hi = p11 + (mid >> 32) + carry;
     return {lo, hi};
 }
 
-// ---------- Reduce (hi:lo) mod p, using 2^64 ≡ 2^32 - 1 (mod p) ----------
+// Reduce (hi:lo) mod p, using 2^64 ≡ 2^32 - 1 (mod p).
 constexpr uint64_t
 ReduceModP(uint64_t hi, uint64_t lo)
 {
@@ -193,7 +183,7 @@ ReduceModP(uint64_t hi, uint64_t lo)
 constexpr uint64_t
 MulModP(uint64_t a, uint64_t b)
 {
-    const auto prod = MulU64xU64to128(a, b);
+    const auto prod = Mul64x64To128(a, b);
     return ReduceModP(prod.hi, prod.lo);
 }
 
@@ -228,11 +218,11 @@ IsPrimitiveRoot(uint64_t g)
     return true;
 }
 
-// --------- Compile-time search (bounded) ----------
+// --------- Compile-time generator search (bounded) ----------
 consteval uint64_t
-FindGenerator()
+FindGeneratorConstexpr()
 {
-    // Try small integers; Goldilocks has small generators (e.g. 7)
+    // Try small integers; Goldilocks has small generators (e.g., 7)
     for (uint64_t g = 7; g < 2000; ++g) {
         if (IsPrimitiveRoot(g))
             return g;
@@ -242,18 +232,17 @@ FindGenerator()
 }
 
 static constexpr uint64_t GoldilocksP = SharkNTT::P;
-static constexpr uint64_t GoldilocksGenerator = SharkNTT::FindGenerator();
+static constexpr uint64_t GoldilocksGenerator = SharkNTT::FindGeneratorConstexpr();
 
 // Optional compile-time sanity checks:
 static_assert(GoldilocksGenerator != 0, "Failed to find generator at compile time");
-static_assert(SharkNTT::PowModP(GoldilocksGenerator, SharkNTT::PHI / 2) != 1,
-              "Not primitive: factor 2");
-static_assert(SharkNTT::PowModP(GoldilocksGenerator, SharkNTT::PHI / 3) != 1,
-              "Not primitive: factor 3");
+static_assert(SharkNTT::PowModP(GoldilocksGenerator, SharkNTT::PHI / 2) != 1, "Not primitive: factor 2");
+static_assert(SharkNTT::PowModP(GoldilocksGenerator, SharkNTT::PHI / 3) != 1, "Not primitive: factor 3");
 
-// =========================================================================================
-//                           64×64→128 helpers (portable)
-// =========================================================================================
+//--------------------------------------------------------------------------------------------------
+// 64×64→128 helpers (compiler/ABI specific intrinsics)
+//--------------------------------------------------------------------------------------------------
+
 static inline void
 Mul64Wide(uint64_t a, uint64_t b, uint64_t& lo, uint64_t& hi)
 {
@@ -265,6 +254,7 @@ Mul64Wide(uint64_t a, uint64_t b, uint64_t& lo, uint64_t& hi)
     hi = (uint64_t)(t >> 64);
 #endif
 }
+
 static inline uint64_t
 Add64WithCarry(uint64_t a, uint64_t b, uint64_t& carry)
 {
@@ -275,9 +265,9 @@ Add64WithCarry(uint64_t a, uint64_t b, uint64_t& carry)
     return out;
 }
 
-// =========================================================================================
-//                               Prime + Montgomery core
-// =========================================================================================
+//--------------------------------------------------------------------------------------------------
+// Prime field ops + Montgomery core
+//--------------------------------------------------------------------------------------------------
 
 static inline uint64_t
 AddP(uint64_t a, uint64_t b)
@@ -287,6 +277,7 @@ AddP(uint64_t a, uint64_t b)
         s -= P;
     return s;
 }
+
 static inline uint64_t
 SubP(uint64_t a, uint64_t b)
 {
@@ -295,10 +286,9 @@ SubP(uint64_t a, uint64_t b)
 
 template <class SharkFloatParams>
 static inline uint64_t
-MongomeryMultiply(DebugHostCombo<SharkFloatParams>& debugCombo, uint64_t a, uint64_t b)
+MontgomeryMul(DebugHostCombo<SharkFloatParams>& debugCombo, uint64_t a, uint64_t b)
 {
-    // We'll count 128-bit multiplications here as 3x64
-    // So 3 + 3 + 1
+    // We'll count 128-bit multiplications here as 3x64  (so 3 + 3 + 1)
     debugCombo.MultiplyCounts.DebugMultiplyIncrement(7);
 
     // t = a*b (128-bit)
@@ -321,9 +311,9 @@ MongomeryMultiply(DebugHostCombo<SharkFloatParams>& debugCombo, uint64_t a, uint
     uint64_t carry1 = carry0;
     uint64_t u_hi = Add64WithCarry(t_hi, mp_hi, carry1); // returns sum, updates carry1
 
-    // r = u / 2^64; ensure r < P
+    // r = u / 2^64; ensure r < P (include the high-limb carry-out)
     uint64_t r = u_hi;
-    if (carry1 || r >= SharkNTT::P) // <-- include the high-limb carry-out
+    if (carry1 || r >= SharkNTT::P)
         r -= SharkNTT::P;
 
     return r;
@@ -333,13 +323,14 @@ template <class SharkFloatParams>
 static inline uint64_t
 ToMontgomery(DebugHostCombo<SharkFloatParams>& debugCombo, uint64_t x)
 {
-    return MongomeryMultiply(debugCombo, x, R2);
+    return MontgomeryMul(debugCombo, x, R2);
 }
+
 template <class SharkFloatParams>
 static inline uint64_t
 FromMontgomery(DebugHostCombo<SharkFloatParams>& debugCombo, uint64_t x)
 {
-    return MongomeryMultiply(debugCombo, x, 1);
+    return MontgomeryMul(debugCombo, x, 1);
 }
 
 template <class SharkFloatParams>
@@ -350,19 +341,23 @@ MontgomeryPow(DebugHostCombo<SharkFloatParams>& debugCombo, uint64_t a_mont, uin
     uint64_t y = a_mont;
     while (e) {
         if (e & 1)
-            x = MongomeryMultiply(debugCombo, x, y);
-        y = MongomeryMultiply(debugCombo, y, y);
+            x = MontgomeryMul(debugCombo, x, y);
+        y = MontgomeryMul(debugCombo, y, y);
         e >>= 1;
     }
     return x;
 }
+
+//--------------------------------------------------------------------------------------------------
+// Root tables & utilities
+//--------------------------------------------------------------------------------------------------
 
 struct RootTables {
     std::vector<uint64_t> stage_omegas;     // [stages]
     std::vector<uint64_t> stage_omegas_inv; // [stages]
     std::vector<uint64_t> psi_pows;         // [N]
     std::vector<uint64_t> psi_inv_pows;     // [N]
-    uint64_t Ninvm_mont{0};                 // N^{-1}
+    uint64_t Ninvm_mont{0};                 // N^{-1} in Montgomery form
 };
 
 static inline bool
@@ -371,6 +366,8 @@ IsPow2(uint32_t x)
     return x && (0 == (x & (x - 1)));
 }
 
+// Runtime generator search (bounded). Used only for debug prints; correctness is guarded by table
+// checks.
 template <class SharkFloatParams>
 static uint64_t
 FindGenerator(DebugHostCombo<SharkFloatParams>& debugCombo)
@@ -411,52 +408,52 @@ BuildRoots(DebugHostCombo<SharkFloatParams>& debugCombo, uint32_t N, uint32_t st
     assert((PHI % (2ull * (uint64_t)N)) == 0ull && "2N must divide p-1 for PHI to exist");
 
     if (SharkVerbose == VerboseMode::Debug) {
-        std::cout << "=== Root Building Debug ===" << std::endl;
-        std::cout << "N = " << N << ", stages = " << stages << std::endl;
-        std::cout << "PHI = 0x" << std::hex << PHI << std::dec << std::endl;
-        std::cout << "P = 0x" << std::hex << P << std::dec << std::endl;
-        std::cout << "2N = " << (2 * N) << std::endl;
-        std::cout << "PHI / (2N) = " << (PHI / (2ull * N)) << std::endl;
+        std::cout << "=== Root Building Debug ===\n";
+        std::cout << "N = " << N << ", stages = " << stages << "\n";
+        std::cout << "PHI = 0x" << std::hex << PHI << std::dec << "\n";
+        std::cout << "P   = 0x" << std::hex << P << std::dec << "\n";
+        std::cout << "2N = " << (2 * N) << "\n";
+        std::cout << "PHI / (2N) = " << (PHI / (2ull * N)) << "\n";
     }
 
-    const uint64_t generator = SharkNTT::FindGenerator();
+    const uint64_t generator = SharkNTT::FindGeneratorConstexpr();
     const uint64_t g_m = ToMontgomery(debugCombo, generator);
     const uint64_t exponent = PHI / (2ull * N);
     const uint64_t psi_m = MontgomeryPow(debugCombo, g_m, exponent);
 
     if (SharkVerbose == VerboseMode::Debug) {
-        std::cout << "Generator g = " << generator << std::endl;
-        std::cout << "g in Montgomery = 0x" << std::hex << g_m << std::dec << std::endl;
-        std::cout << "Exponent for psi = " << exponent << std::endl;
-        std::cout << "psi in Montgomery = 0x" << std::hex << psi_m << std::dec << std::endl;
-        std::cout << "psi (normal) = " << FromMontgomery(debugCombo, psi_m) << std::endl;
+        std::cout << "Generator g = " << generator << "\n";
+        std::cout << "g in Montgomery = 0x" << std::hex << g_m << std::dec << "\n";
+        std::cout << "Exponent for psi = " << exponent << "\n";
+        std::cout << "psi in Montgomery = 0x" << std::hex << psi_m << std::dec << "\n";
+        std::cout << "psi (normal) = " << FromMontgomery(debugCombo, psi_m) << "\n";
     }
 
-    // Test psi^(2N) = 1 before proceeding
+    // Test ψ^(2N) = 1 before proceeding
     uint64_t psi_test = MontgomeryPow(debugCombo, psi_m, 2ull * (uint64_t)N);
     uint64_t one_m = ToMontgomery(debugCombo, 1);
 
     if (SharkVerbose == VerboseMode::Debug) {
-        std::cout << "Testing psi^(2N):" << std::endl;
-        std::cout << "  psi^(2N) in Montgomery = 0x" << std::hex << psi_test << std::dec << std::endl;
-        std::cout << "  psi^(2N) (normal) = " << std::hex << FromMontgomery(debugCombo, psi_test) << std::dec
-                  << std::endl;
-        std::cout << "  Expected 1 in Montgomery = 0x" << std::hex << one_m << std::dec << std::endl;
-        std::cout << "  Expected 1 (normal) = " << std::hex << FromMontgomery(debugCombo, one_m) << std::dec
-                  << std::endl;
+        std::cout << "Testing psi^(2N):\n";
+        std::cout << "  psi^(2N) in Montgomery = 0x" << std::hex << psi_test << std::dec << "\n";
+        std::cout << "  psi^(2N) (normal) = " << std::hex << FromMontgomery(debugCombo, psi_test)
+                  << std::dec << "\n";
+        std::cout << "  Expected 1 in Montgomery = 0x" << std::hex << one_m << std::dec << "\n";
+        std::cout << "  Expected 1 (normal) = " << std::hex << FromMontgomery(debugCombo, one_m)
+                  << std::dec << "\n";
     }
 
     if (psi_test != one_m) {
         if (SharkVerbose == VerboseMode::Debug) {
-            std::cout << "ERROR: psi does not have order 2N!" << std::endl;
+            std::cout << "ERROR: psi does not have order 2N!\n";
 
             // Try some other orders to see what we actually have
             for (uint64_t test_order = 1; test_order <= 4 * N; test_order *= 2) {
                 uint64_t test_result = MontgomeryPow(debugCombo, psi_m, test_order);
                 std::cout << "  psi^" << std::hex << test_order << " = "
-                          << FromMontgomery(debugCombo, test_result) << std::dec << std::endl;
+                          << FromMontgomery(debugCombo, test_result) << std::dec << "\n";
                 if (test_result == one_m) {
-                    std::cout << "  ^ This equals 1! Actual order divides " << test_order << std::endl;
+                    std::cout << "  ^ This equals 1! Actual order divides " << test_order << "\n";
                     break;
                 }
             }
@@ -465,7 +462,7 @@ BuildRoots(DebugHostCombo<SharkFloatParams>& debugCombo, uint32_t N, uint32_t st
     }
 
     const uint64_t psi_inv_m = MontgomeryPow(debugCombo, psi_m, PHI - 1ull);
-    const uint64_t omega_m = MongomeryMultiply(debugCombo, psi_m, psi_m);
+    const uint64_t omega_m = MontgomeryMul(debugCombo, psi_m, psi_m); // ω = ψ^2 (Montgomery)
     const uint64_t omega_inv_m = MontgomeryPow(debugCombo, omega_m, PHI - 1ull);
 
     for (uint32_t s = 1; s <= stages; ++s) {
@@ -478,18 +475,19 @@ BuildRoots(DebugHostCombo<SharkFloatParams>& debugCombo, uint32_t N, uint32_t st
     T.psi_pows[0] = ToMontgomery(debugCombo, 1);
     T.psi_inv_pows[0] = ToMontgomery(debugCombo, 1);
     for (uint32_t i = 1; i < N; ++i) {
-        T.psi_pows[i] = MongomeryMultiply(debugCombo, T.psi_pows[i - 1], psi_m);
-        T.psi_inv_pows[i] = MongomeryMultiply(debugCombo, T.psi_inv_pows[i - 1], psi_inv_m);
+        T.psi_pows[i] = MontgomeryMul(debugCombo, T.psi_pows[i - 1], psi_m);
+        T.psi_inv_pows[i] = MontgomeryMul(debugCombo, T.psi_inv_pows[i - 1], psi_inv_m);
     }
 
+    // N^{-1} in Montgomery form: (1/2)^stages
     uint64_t inv2_m = ToMontgomery(debugCombo, (P + 1) >> 1); // (p+1)/2
     uint64_t Ninvm = ToMontgomery(debugCombo, 1);
     for (uint32_t i = 0; i < stages; ++i)
-        Ninvm = MongomeryMultiply(debugCombo, Ninvm, inv2_m);
+        Ninvm = MontgomeryMul(debugCombo, Ninvm, inv2_m);
     T.Ninvm_mont = Ninvm;
 
     if (SharkVerbose == VerboseMode::Debug) {
-        std::cout << "=== End Root Building Debug ===" << std::endl;
+        std::cout << "=== End Root Building Debug ===\n";
     }
 }
 
@@ -511,6 +509,10 @@ struct RootCache {
     }
 };
 
+//--------------------------------------------------------------------------------------------------
+// In-place bit-reversal permutation on Montgomery residues (64-bit words)
+//--------------------------------------------------------------------------------------------------
+
 static void
 BitReverseInplace64(uint64_t* A, uint32_t N, uint32_t stages)
 {
@@ -521,13 +523,17 @@ BitReverseInplace64(uint64_t* A, uint32_t N, uint32_t stages)
     }
 }
 
+//--------------------------------------------------------------------------------------------------
+// Iterative radix-2 NTT (Cooley–Tukey) over Montgomery domain
+//--------------------------------------------------------------------------------------------------
+
 template <class SharkFloatParams>
 static void
 NTTRadix2(DebugHostCombo<SharkFloatParams>& debugCombo,
-           uint64_t* A,
-           uint32_t N,
-           uint32_t stages,
-           const std::vector<uint64_t>& stage_base)
+          uint64_t* A,
+          uint32_t N,
+          uint32_t stages,
+          const std::vector<uint64_t>& stage_base)
 {
     for (uint32_t s = 1; s <= stages; ++s) {
         uint32_t m = 1u << s;
@@ -538,10 +544,10 @@ NTTRadix2(DebugHostCombo<SharkFloatParams>& debugCombo,
             for (uint32_t j = 0; j < half; ++j) {
                 uint64_t U = A[k + j];
                 uint64_t V = A[k + j + half];
-                uint64_t t = MongomeryMultiply(debugCombo, V, w);
+                uint64_t t = MontgomeryMul(debugCombo, V, w);
                 A[k + j] = AddP(U, t);
                 A[k + j + half] = SubP(U, t);
-                w = MongomeryMultiply(debugCombo, w, w_m);
+                w = MontgomeryMul(debugCombo, w, w_m);
             }
         }
     }
@@ -549,15 +555,15 @@ NTTRadix2(DebugHostCombo<SharkFloatParams>& debugCombo,
 
 } // namespace SharkNTT
 
-// =========================================================================================
+//==================================================================================================
 //                                    Planner (prime)
-// =========================================================================================
+//==================================================================================================
 struct PlanPrime {
-    int n32 = 0;
-    int b = 0;
-    int L = 0;
-    int N = 0;
-    int stages = 0;
+    int n32 = 0;    // number of 32-bit digits in HpSharkFloat<P>
+    int b = 0;      // base = 2^b (packing chunk size in bits)
+    int L = 0;      // number of packed coefficients (ceil(totalBits / b))
+    int N = 0;      // transform size
+    int stages = 0; // log2(N)
     bool ok = false;
 
     void
@@ -583,11 +589,13 @@ NextPow2U32(uint32_t x)
     x |= x >> 16;
     return x + 1;
 }
+
 static inline uint32_t
 CeilDivU32(uint32_t a, uint32_t b)
 {
     return (a + b - 1u) / b;
 }
+
 static inline int
 CeilLog2U32(uint32_t x)
 {
@@ -604,27 +612,34 @@ static PlanPrime
 BuildPlanPrime(int n32, int b_hint = 26, int margin = 2)
 {
     using namespace SharkNTT;
-    PlanPrime pl{};
-    pl.ok = false;
-    pl.n32 = n32;
+    PlanPrime plan{};
+    plan.ok = false;
+    plan.n32 = n32;
+
     const uint64_t totalBits = (uint64_t)n32 * 32ull;
+
     int b = b_hint;
     if (b < 16)
         b = 16;
     if (b > 30)
         b = 30;
+
     uint32_t L = CeilDivU32((uint32_t)totalBits, (uint32_t)b);
     uint32_t N = NextPow2U32(2u * L);
     int lgN = CeilLog2U32(N);
+
+    // Enough headroom for negacyclic wrap-free convolution (b + b + lgN + margin <= 64)
     int bmax = (64 - margin - lgN) / 2;
     if (b > bmax)
         b = bmax;
     if (b < 16)
         b = 16;
+
     L = CeilDivU32((uint32_t)totalBits, (uint32_t)b);
     N = NextPow2U32(2u * L);
     lgN = CeilLog2U32(N);
 
+    // Ensure 2N | (p-1) to admit ψ of order 2N
     if ((PHI % (2ull * (uint64_t)N)) != 0ull) {
         int b_up_max = std::min(bmax, 30);
         bool fixed = false;
@@ -643,37 +658,42 @@ BuildPlanPrime(int n32, int b_hint = 26, int margin = 2)
         (void)fixed;
     }
     assert((PHI % (2ull * (uint64_t)N)) == 0ull && "2N must divide p-1 for PHI to exist");
+
     int need = 2 * b + lgN + margin;
-    pl.ok = (need <= 64) && (N >= 2);
-    pl.b = b;
-    pl.L = (int)L;
-    pl.N = (int)N;
-    pl.stages = lgN;
-    return pl;
+    plan.ok = (need <= 64) && (N >= 2);
+    plan.b = b;
+    plan.L = (int)L;
+    plan.N = (int)N;
+    plan.stages = lgN;
+    return plan;
 }
 
-// =========================================================================================
+//==================================================================================================
 //                       Pack (base-2^b) and Unpack (to Final128)
-// =========================================================================================
+//==================================================================================================
 
 template <class P>
-static uint64_t
+[[nodiscard]] static uint64_t
 ReadBitsSimple(const HpSharkFloat<P>* X, int64_t q, int b)
 {
     const int B = P::GlobalNumUint32 * 32;
     if (q >= B || q < 0)
         return 0;
+
     uint64_t v = 0;
     int need = b;
     int outPos = 0;
     int64_t bit = q;
+
     while (need > 0 && bit < B) {
         int64_t w = bit / 32;
         int off = (int)(bit % 32);
         uint32_t limb = (w >= 0) ? X->Digits[(int)w] : 0u;
         uint32_t chunk = (off ? (limb >> off) : limb);
         int take = std::min(32 - off, need);
+
         v |= (uint64_t)(chunk & ((take == 32) ? 0xFFFFFFFFu : ((1u << take) - 1u))) << outPos;
+
         outPos += take;
         need -= take;
         bit += take;
@@ -684,44 +704,53 @@ ReadBitsSimple(const HpSharkFloat<P>* X, int64_t q, int b)
 template <class SharkFloatParams>
 static void
 PackBase2bPrime(DebugHostCombo<SharkFloatParams>& debugCombo,
-                  const HpSharkFloat<SharkFloatParams>* X,
-                  const PlanPrime& pl,
-                  std::vector<uint64_t>& Out,
-                  std::vector<uint64_t>* RawOut = nullptr)
+                const HpSharkFloat<SharkFloatParams>* X,
+                const PlanPrime& plan,
+                std::vector<uint64_t>& outMont,          // size N, Montgomery form
+                std::vector<uint64_t>* outRaw = nullptr) // size L, raw mod p
 {
-    Out.assign((size_t)pl.N, SharkNTT::ToMontgomery(debugCombo, 0));
-    if (RawOut)
-        RawOut->assign((size_t)pl.L, 0ull);
+    outMont.assign((size_t)plan.N, SharkNTT::ToMontgomery(debugCombo, 0));
+    if (outRaw)
+        outRaw->assign((size_t)plan.L, 0ull);
 
-    for (int i = 0; i < pl.L; ++i) {
-        uint64_t coeff = ReadBitsSimple(X, (int64_t)i * pl.b, pl.b);
+    for (int i = 0; i < plan.L; ++i) {
+        uint64_t coeff = ReadBitsSimple(X, (int64_t)i * plan.b, plan.b);
         uint64_t cmod = coeff % SharkNTT::P;
-        if (RawOut)
-            (*RawOut)[(size_t)i] = cmod;
-        Out[(size_t)i] = SharkNTT::ToMontgomery(debugCombo, cmod); // qualify helpers too
+        if (outRaw)
+            (*outRaw)[(size_t)i] = cmod;
+        outMont[(size_t)i] = SharkNTT::ToMontgomery(debugCombo, cmod);
     }
 }
 
 static void
-UnpackPrimeToFinal128(const uint64_t* A_norm, const PlanPrime& pl, uint64_t* Final128, size_t Ddigits)
+UnpackPrimeToFinal128(const uint64_t* A_norm, const PlanPrime& plan, uint64_t* Final128, size_t Ddigits)
 {
     using namespace SharkNTT;
     std::memset(Final128, 0, sizeof(uint64_t) * 2 * Ddigits);
+
     const uint64_t HALF = (P - 1ull) >> 1;
-    const int Imax = std::min(pl.N, 2 * pl.L - 1);
+    const int Imax = std::min(plan.N, 2 * plan.L - 1);
+
     for (int i = 0; i < Imax; ++i) {
         uint64_t v = A_norm[i];
         if (!v)
             continue;
+
         bool neg = (v > HALF);
         uint64_t mag64 = neg ? (P - v) : v;
-        const uint64_t sBits = (uint64_t)i * (uint64_t)pl.b;
+
+        const uint64_t sBits = (uint64_t)i * (uint64_t)plan.b;
         const size_t q = (size_t)(sBits >> 5);
         const int r = (int)(sBits & 31);
+
         const uint64_t lo64 = (r ? (mag64 << r) : mag64);
         const uint64_t hi64 = (r ? (mag64 >> (64 - r)) : 0ull);
-        uint32_t d0 = (uint32_t)(lo64 & 0xffffffffu), d1 = (uint32_t)((lo64 >> 32) & 0xffffffffu),
-                 d2 = (uint32_t)(hi64 & 0xffffffffu), d3 = (uint32_t)((hi64 >> 32) & 0xffffffffu);
+
+        uint32_t d0 = (uint32_t)(lo64 & 0xffffffffu);
+        uint32_t d1 = (uint32_t)((lo64 >> 32) & 0xffffffffu);
+        uint32_t d2 = (uint32_t)(hi64 & 0xffffffffu);
+        uint32_t d3 = (uint32_t)((hi64 >> 32) & 0xffffffffu);
+
         auto add32 = [&](size_t j, uint32_t add) {
             if (!add)
                 return;
@@ -743,6 +772,7 @@ UnpackPrimeToFinal128(const uint64_t* A_norm, const PlanPrime& pl, uint64_t* Fin
             if (old < (uint64_t)sub)
                 hi -= 1ull;
         };
+
         if (!neg) {
             add32(q + 0, d0);
             add32(q + 1, d1);
@@ -757,26 +787,30 @@ UnpackPrimeToFinal128(const uint64_t* A_norm, const PlanPrime& pl, uint64_t* Fin
     }
 }
 
+//--------------------------------------------------------------------------------------------------
+// Diagnostics
+//--------------------------------------------------------------------------------------------------
+
 template <typename SharkFloatParams>
 bool
 VerifyMontgomeryConstants(DebugHostCombo<SharkFloatParams>& debugCombo,
-                          uint64_t P,
-                          uint64_t NINV,
-                          uint64_t R2)
+                          uint64_t Pval,
+                          uint64_t NINVval,
+                          uint64_t R2val)
 {
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "=== Enhanced Montgomery Verification ===\n";
-        std::cout << "P = 0x" << std::hex << P << std::dec << "\n";
-        std::cout << "NINV = 0x" << std::hex << NINV << std::dec << "\n";
-        std::cout << "R2 = 0x" << std::hex << R2 << std::dec << "\n";
+        std::cout << "P   = 0x" << std::hex << Pval << std::dec << "\n";
+        std::cout << "NINV= 0x" << std::hex << NINVval << std::dec << "\n";
+        std::cout << "R2  = 0x" << std::hex << R2val << std::dec << "\n";
 
         // Test 1: Basic Montgomery property (P * NINV ≡ 2^64-1 mod 2^64)
-        uint64_t test1 = P * NINV; // unsigned wrap is modulo 2^64
+        uint64_t test1 = Pval * NINVval; // unsigned wrap is modulo 2^64
         std::cout << "P * NINV = 0x" << std::hex << test1 << std::dec;
         if (test1 == 0xFFFFFFFFFFFFFFFFull) {
-            std::cout << " CORRECT\n";
+            std::cout << "  CORRECT\n";
         } else {
-            std::cout << " INCORRECT (should be 0xFFFFFFFFFFFFFFFF)\n";
+            std::cout << "  INCORRECT (should be 0xFFFFFFFFFFFFFFFF)\n";
             return false;
         }
 
@@ -784,27 +818,27 @@ VerifyMontgomeryConstants(DebugHostCombo<SharkFloatParams>& debugCombo,
         uint64_t one_m = SharkNTT::ToMontgomery(debugCombo, 1);
         std::cout << "ToMontgomery(1) = 0x" << std::hex << one_m << std::dec << "\n";
 
-        uint64_t one_squared = SharkNTT::MongomeryMultiply(debugCombo, one_m, one_m);
-        std::cout << "MongomeryMultiply(ToMontgomery(1), ToMontgomery(1)) = 0x" << std::hex << one_squared << std::dec
-                  << "\n";
+        uint64_t one_squared = SharkNTT::MontgomeryMul(debugCombo, one_m, one_m);
+        std::cout << "MontgomeryMul(ToMontgomery(1), ToMontgomery(1)) = 0x" << std::hex << one_squared
+                  << std::dec << "\n";
 
         uint64_t back_to_one = SharkNTT::FromMontgomery(debugCombo, one_squared);
         std::cout << "FromMontgomery(result) = " << std::hex << back_to_one << std::dec;
         if (back_to_one == 1) {
-            std::cout << " CORRECT\n";
+            std::cout << "  CORRECT\n";
         } else {
-            std::cout << " INCORRECT\n";
+            std::cout << "  INCORRECT\n";
             return false;
         }
 
-        // Test 3: Verify R2 is correct (MongomeryMultiply(1, R2) == ToMontgomery(1))
-        uint64_t mont_1 = SharkNTT::MongomeryMultiply(debugCombo, 1, R2);
+        // Test 3: Verify R2 is correct (MontgomeryMul(1, R2) == ToMontgomery(1))
+        uint64_t mont_1 = SharkNTT::MontgomeryMul(debugCombo, 1, R2val);
         if (mont_1 == one_m) {
             std::cout << "R2 verification: CORRECT\n";
         } else {
             std::cout << "R2 verification: INCORRECT\n";
-            std::cout << "  MongomeryMultiply(1, R2) = 0x" << std::hex << mont_1 << std::dec << "\n";
-            std::cout << "  ToMontgomery(1) = 0x" << std::hex << one_m << std::dec << "\n";
+            std::cout << "  MontgomeryMul(1, R2) = 0x" << std::hex << mont_1 << std::dec << "\n";
+            std::cout << "  ToMontgomery(1)      = 0x" << std::hex << one_m << std::dec << "\n";
             return false;
         }
     }
@@ -815,38 +849,38 @@ VerifyMontgomeryConstants(DebugHostCombo<SharkFloatParams>& debugCombo,
 template <class SharkFloatParams>
 static void
 VerifyNTTRoots(DebugHostCombo<SharkFloatParams>& debugCombo,
-                 const SharkNTT::RootTables& T,
-                 const PlanPrime& pl)
+               const SharkNTT::RootTables& T,
+               const PlanPrime& plan)
 {
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "  NINV = 0x" << std::hex << SharkNTT::NINV << std::dec << "\n";
         std::cout << "  R2   = 0x" << std::hex << SharkNTT::R2 << std::dec << "\n";
-        std::cout << "  Generator g = 0x" << std::hex << SharkNTT::FindGenerator(debugCombo)
-                  << std::dec << "\n";
+        std::cout << "  Generator g = 0x" << std::hex << SharkNTT::FindGenerator(debugCombo) << std::dec
+                  << "\n";
         std::cout << "  psi = 0x" << std::hex << SharkNTT::FromMontgomery(debugCombo, T.psi_pows[1])
-                  << std::dec << " (order " << (2 * pl.N) << ")\n";
+                  << std::dec << " (order " << (2 * plan.N) << ")\n";
         std::cout << "  omega = 0x" << std::hex
                   << SharkNTT::FromMontgomery(
-                         debugCombo, SharkNTT::MongomeryMultiply(debugCombo, T.psi_pows[1], T.psi_pows[1]))
-                  << std::dec << " (order " << pl.N << ")\n";
+                         debugCombo, SharkNTT::MontgomeryMul(debugCombo, T.psi_pows[1], T.psi_pows[1]))
+                  << std::dec << " (order " << plan.N << ")\n";
     }
 
     // Use the table's own 1 in Montgomery domain
     const uint64_t one_m = T.psi_pows[0];
 
     // ψ is T.psi_pows[1] (Montgomery). Check ψ^(2N) = 1
-    uint64_t psi2N = SharkNTT::MontgomeryPow(debugCombo, T.psi_pows[1], 2ull * (uint64_t)pl.N);
+    uint64_t psi2N = SharkNTT::MontgomeryPow(debugCombo, T.psi_pows[1], 2ull * (uint64_t)plan.N);
     assert(psi2N == one_m && "psi^(2N) != 1 (check N and roots)");
 
     // ω = ψ^2. Check ω^N = 1
-    uint64_t omega = SharkNTT::MongomeryMultiply(debugCombo, T.psi_pows[1], T.psi_pows[1]);
-    uint64_t omegaN = SharkNTT::MontgomeryPow(debugCombo, omega, (uint64_t)pl.N);
+    uint64_t omega = SharkNTT::MontgomeryMul(debugCombo, T.psi_pows[1], T.psi_pows[1]);
+    uint64_t omegaN = SharkNTT::MontgomeryPow(debugCombo, omega, (uint64_t)plan.N);
     assert(omegaN == one_m && "omega^N != 1 (check N and roots)");
 }
 
-// =========================================================================================
+//==================================================================================================
 //                          MultiplyHelperFFT2 (prime backend)
-// =========================================================================================
+//==================================================================================================
 
 template <class SharkFloatParams>
 void
@@ -857,7 +891,6 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams>* A,
                    HpSharkFloat<SharkFloatParams>* OutYY,
                    DebugHostCombo<SharkFloatParams>& debugCombo)
 {
-
     using P = SharkFloatParams;
     using namespace SharkNTT;
 
@@ -869,89 +902,93 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams>* A,
                   "GlobalNumUint32 must be a power of 2");
 
     // --------- Plan and tables ---------
-    PlanPrime pl = BuildPlanPrime(P::GlobalNumUint32, /*b_hint=*/26, /*margin=*/2);
-    pl.Print();
+    PlanPrime plan = BuildPlanPrime(P::GlobalNumUint32, /*b_hint=*/26, /*margin=*/2);
+    plan.Print();
 
-    assert(pl.ok && "Prime plan build failed (check b/N headroom constraints)");
-    assert(pl.N >= 2 * pl.L && "No-wrap condition violated: need N >= 2*L");
-    assert((PHI % (2ull * (uint64_t)pl.N)) == 0ull);
+    assert(plan.ok && "Prime plan build failed (check b/N headroom constraints)");
+    assert(plan.N >= 2 * plan.L && "No-wrap condition violated: need N >= 2*L");
+    assert((PHI % (2ull * (uint64_t)plan.N)) == 0ull);
 
     RootCache root_cache;
-    const RootTables& T = root_cache.get(debugCombo, (uint32_t)pl.N, (uint32_t)pl.stages);
+    const RootTables& T = root_cache.get(debugCombo, (uint32_t)plan.N, (uint32_t)plan.stages);
 
-    // assuming you have `debugCombo` (your context) and constants already:
+    // Verify constants and roots
     const bool constants_ok =
         VerifyMontgomeryConstants(debugCombo, SharkNTT::P, SharkNTT::NINV, SharkNTT::R2);
     assert(constants_ok && "Montgomery constants verification failed");
+    VerifyNTTRoots(debugCombo, T, plan);
 
-    VerifyNTTRoots(debugCombo, T, pl);
-
-    auto run_conv = [&](const HpSharkFloat<P>* XA,
-                        const HpSharkFloat<P>* XB,
-                        HpSharkFloat<P>* OUT,
+    auto run_conv = [&](const HpSharkFloat<P>* a,
+                        const HpSharkFloat<P>* b,
+                        HpSharkFloat<P>* out,
                         const HpSharkFloat<P>& inA,
                         const HpSharkFloat<P>& inB,
                         int addFactorOfTwo,
                         bool isNegative) {
         // 1) Pack
         std::vector<uint64_t> X, Y;
-        X.reserve(pl.N);
-        Y.reserve(pl.N);
+        X.reserve(plan.N);
+        Y.reserve(plan.N);
         std::vector<uint64_t> RawA, RawB;
-        RawA.reserve(pl.L);
-        RawB.reserve(pl.L);
-        PackBase2bPrime(debugCombo, XA, pl, X, &RawA);
-        PackBase2bPrime(debugCombo, XB, pl, Y, &RawB);
-        // 2) Twist
-        for (int i = 0; i < pl.N; ++i) {
-            X[i] = MongomeryMultiply(debugCombo, X[i], T.psi_pows[(size_t)i]);
-        }
-        for (int i = 0; i < pl.N; ++i) {
-            Y[i] = MongomeryMultiply(debugCombo, Y[i], T.psi_pows[(size_t)i]);
-        }
-        { // Roundtrip twisted X
+        RawA.reserve(plan.L);
+        RawB.reserve(plan.L);
+        PackBase2bPrime(debugCombo, a, plan, X, &RawA);
+        PackBase2bPrime(debugCombo, b, plan, Y, &RawB);
+
+        // 2) Twist by ψ^i
+        for (int i = 0; i < plan.N; ++i)
+            X[i] = MontgomeryMul(debugCombo, X[i], T.psi_pows[(size_t)i]);
+        for (int i = 0; i < plan.N; ++i)
+            Y[i] = MontgomeryMul(debugCombo, Y[i], T.psi_pows[(size_t)i]);
+
+        { // Roundtrip twisted X (sanity)
             std::vector<uint64_t> Xchk = X, Xorig = X;
-            BitReverseInplace64(Xchk.data(), (uint32_t)pl.N, (uint32_t)pl.stages);
-            NTTRadix2(debugCombo, Xchk.data(), (uint32_t)pl.N, (uint32_t)pl.stages, T.stage_omegas);
-            BitReverseInplace64(Xchk.data(), (uint32_t)pl.N, (uint32_t)pl.stages);
-            NTTRadix2(debugCombo, Xchk.data(), (uint32_t)pl.N, (uint32_t)pl.stages, T.stage_omegas_inv);
-            for (int i = 0; i < pl.N; ++i)
-                Xchk[(size_t)i] = MongomeryMultiply(debugCombo, Xchk[(size_t)i], T.Ninvm_mont);
-            for (int i = 0; i < pl.N; ++i)
+            BitReverseInplace64(Xchk.data(), (uint32_t)plan.N, (uint32_t)plan.stages);
+            NTTRadix2(debugCombo, Xchk.data(), (uint32_t)plan.N, (uint32_t)plan.stages, T.stage_omegas);
+            BitReverseInplace64(Xchk.data(), (uint32_t)plan.N, (uint32_t)plan.stages);
+            NTTRadix2(
+                debugCombo, Xchk.data(), (uint32_t)plan.N, (uint32_t)plan.stages, T.stage_omegas_inv);
+            for (int i = 0; i < plan.N; ++i)
+                Xchk[(size_t)i] = MontgomeryMul(debugCombo, Xchk[(size_t)i], T.Ninvm_mont);
+            for (int i = 0; i < plan.N; ++i)
                 assert(Xchk[(size_t)i] == Xorig[(size_t)i]);
         }
 
         // 3) Forward NTT
-        BitReverseInplace64(X.data(), (uint32_t)pl.N, (uint32_t)pl.stages);
-        BitReverseInplace64(Y.data(), (uint32_t)pl.N, (uint32_t)pl.stages);
-        NTTRadix2(debugCombo, X.data(), (uint32_t)pl.N, (uint32_t)pl.stages, T.stage_omegas);
-        NTTRadix2(debugCombo, Y.data(), (uint32_t)pl.N, (uint32_t)pl.stages, T.stage_omegas);
-        // 4) Pointwise
-        for (int i = 0; i < pl.N; ++i)
-            X[i] = MongomeryMultiply(debugCombo, X[i], Y[i]);
+        BitReverseInplace64(X.data(), (uint32_t)plan.N, (uint32_t)plan.stages);
+        BitReverseInplace64(Y.data(), (uint32_t)plan.N, (uint32_t)plan.stages);
+        NTTRadix2(debugCombo, X.data(), (uint32_t)plan.N, (uint32_t)plan.stages, T.stage_omegas);
+        NTTRadix2(debugCombo, Y.data(), (uint32_t)plan.N, (uint32_t)plan.stages, T.stage_omegas);
+
+        // 4) Pointwise multiply in NTT domain
+        for (int i = 0; i < plan.N; ++i)
+            X[i] = MontgomeryMul(debugCombo, X[i], Y[i]);
+
         // 5) Inverse NTT
-        BitReverseInplace64(X.data(), (uint32_t)pl.N, (uint32_t)pl.stages);
-        NTTRadix2(debugCombo, X.data(), (uint32_t)pl.N, (uint32_t)pl.stages, T.stage_omegas_inv);
-        // 6) Untwist + scale
-        for (int i = 0; i < pl.N; ++i) {
-            uint64_t v = MongomeryMultiply(debugCombo, X[i], T.psi_inv_pows[(size_t)i]);
-            X[i] = MongomeryMultiply(debugCombo, v, T.Ninvm_mont);
+        BitReverseInplace64(X.data(), (uint32_t)plan.N, (uint32_t)plan.stages);
+        NTTRadix2(debugCombo, X.data(), (uint32_t)plan.N, (uint32_t)plan.stages, T.stage_omegas_inv);
+
+        // 6) Untwist + scale by N^{-1}
+        for (int i = 0; i < plan.N; ++i) {
+            uint64_t v = MontgomeryMul(debugCombo, X[i], T.psi_inv_pows[(size_t)i]);
+            X[i] = MontgomeryMul(debugCombo, v, T.Ninvm_mont);
         }
+
         // 7) Convert out of Montgomery
-        std::vector<uint64_t> X_norm((size_t)pl.N);
-        for (int i = 0; i < pl.N; ++i)
+        std::vector<uint64_t> X_norm((size_t)plan.N);
+        for (int i = 0; i < plan.N; ++i)
             X_norm[(size_t)i] = FromMontgomery(debugCombo, X[i]);
 
         { // Full coefficient check vs direct convolution (mod p)
-            const int Kmax = 2 * pl.L - 1;
+            const int Kmax = 2 * plan.L - 1;
             for (int k = 0; k < Kmax; ++k) {
                 uint64_t cref_m = ToMontgomery(debugCombo, 0);
-                int i0 = std::max(0, k - (pl.L - 1));
-                int i1 = std::min(k, pl.L - 1);
+                int i0 = std::max(0, k - (plan.L - 1));
+                int i1 = std::min(k, plan.L - 1);
                 for (int i = i0; i <= i1; ++i) {
                     uint64_t ai_m = ToMontgomery(debugCombo, RawA[(size_t)i]);
                     uint64_t bj_m = ToMontgomery(debugCombo, RawB[(size_t)(k - i)]);
-                    cref_m = AddP(cref_m, MongomeryMultiply(debugCombo, ai_m, bj_m));
+                    cref_m = AddP(cref_m, MontgomeryMul(debugCombo, ai_m, bj_m));
                 }
                 uint64_t cref = FromMontgomery(debugCombo, cref_m);
                 assert(X_norm[(size_t)k] == cref && "Convolution mismatch");
@@ -959,11 +996,11 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams>* A,
         }
 
         // 8) Unpack to Final128 and normalize
-        const size_t Ddigits = ((size_t)((2 * pl.L - 2) * (int64_t)pl.b + 64) + 31) / 32 + 2;
+        const size_t Ddigits = ((size_t)((2 * plan.L - 2) * (int64_t)plan.b + 64) + 31) / 32 + 2;
         std::vector<uint64_t> Final128(2ull * Ddigits, 0ull);
-        UnpackPrimeToFinal128(X_norm.data(), pl, Final128.data(), Ddigits);
-        OUT->SetNegative(isNegative);
-        Normalize<P>(*OUT, inA, inB, Final128.data(), Ddigits, addFactorOfTwo);
+        UnpackPrimeToFinal128(X_norm.data(), plan, Final128.data(), Ddigits);
+        out->SetNegative(isNegative);
+        Normalize<P>(*out, inA, inB, Final128.data(), Ddigits, addFactorOfTwo);
     };
 
     // XX = A^2
@@ -980,13 +1017,12 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams>* A,
              /*isNegative=*/(A->GetNegative() ^ B->GetNegative()));
 }
 
-
-#define ExplicitlyInstantiate(SharkFloatParams) \
-template void MultiplyHelperFFT2<SharkFloatParams>(const HpSharkFloat<SharkFloatParams>*, \
-                                                   const HpSharkFloat<SharkFloatParams>*, \
-                                                   HpSharkFloat<SharkFloatParams>*, \
-                                                   HpSharkFloat<SharkFloatParams>*, \
-                                                   HpSharkFloat<SharkFloatParams>*, \
-                                                   DebugHostCombo<SharkFloatParams>&); \
+#define ExplicitlyInstantiate(SharkFloatParams)                                                         \
+    template void MultiplyHelperFFT2<SharkFloatParams>(const HpSharkFloat<SharkFloatParams>*,           \
+                                                       const HpSharkFloat<SharkFloatParams>*,           \
+                                                       HpSharkFloat<SharkFloatParams>*,                 \
+                                                       HpSharkFloat<SharkFloatParams>*,                 \
+                                                       HpSharkFloat<SharkFloatParams>*,                 \
+                                                       DebugHostCombo<SharkFloatParams>&);
 
 ExplicitInstantiateAll();

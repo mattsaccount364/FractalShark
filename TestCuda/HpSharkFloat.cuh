@@ -124,7 +124,7 @@ static constexpr auto SharkKaratsubaBatchSize = SharkLoadAllInShared ? 1 : 4;
 
 static constexpr bool SharkDebugChecksums = (ENABLE_BASIC_CORRECTNESS != 2) ? SharkDebug : false;
 
-static constexpr bool SharkPrintMultiplyCounts = SharkDebugChecksums; // SharkDebugChecksums;
+static constexpr bool SharkPrintMultiplyCounts = true; //SharkDebugChecksums; // SharkDebugChecksums;
 
 #if ENABLE_BASIC_CORRECTNESS == 2
 static constexpr bool SharkTestCorrectness = SharkDebug;

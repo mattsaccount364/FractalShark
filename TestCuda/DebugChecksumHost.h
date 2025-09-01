@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <sstream>
 
+#include "HpSharkFloat.cuh"
 #include "DebugChecksum.cuh"
 
 template <class SharkFloatParams>

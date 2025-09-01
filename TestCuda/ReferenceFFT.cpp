@@ -1,33 +1,145 @@
-﻿#include <cstdint>
-#include <cstddef>
-#include <cstring>
-#include <memory>
-#include <algorithm>
-#include <cmath>
-#include <iostream>
-#include <span>
+﻿#include <algorithm>
 #include <assert.h>
 #include <cassert>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
+#include <cstring>
+#include <iostream>
+#include <memory>
+#include <span>
 #include <unordered_map>
+
+#include <array>
+#include <cstdint>
+#include <type_traits>
 
 #if defined(_MSC_VER)
 #include <intrin.h>
 #endif
 
-#include "TestVerbose.h"
-#include "ReferenceFFT.h"
-#include "HpSharkFloat.cuh"   // your header (provides HpSharkFloat<>, DebugStateHost<>)
 #include "DebugChecksumHost.h"
+#include "HpSharkFloat.cuh" // your header (provides HpSharkFloat<>, DebugStateHost<>)
+#include "ReferenceFFT.h"
+#include "TestVerbose.h"
+
+static inline uint32_t
+reverse_bits32(uint32_t x, int bits)
+{
+    // Perform full 32-bit bit reversal manually since MSVC doesn't have __builtin_bitreverse32
+    x = (x >> 16) | (x << 16);
+    x = ((x & 0x00ff00ffu) << 8) | ((x & 0xff00ff00u) >> 8);
+    x = ((x & 0x0f0f0f0fu) << 4) | ((x & 0xf0f0f0f0u) >> 4);
+    x = ((x & 0x33333333u) << 2) | ((x & 0xccccccccu) >> 2);
+    x = ((x & 0x55555555u) << 1) | ((x & 0xaaaaaaaau) >> 1);
+    return x >> (32 - bits);
+}
+
+// Normalize directly from Final128 (lo64,hi64 per 32-bit digit position).
+// Does not allocate; does two passes over Final128 to (1) find 'significant',
+// then (2) write the window and set the Karatsuba-style exponent.
+// NOTE: Does not set sign; do that at the call site.
+template <class P>
+static void
+NormalizeFromFinal128LikeKaratsuba(
+    HpSharkFloat<P>& Out,
+    const HpSharkFloat<P>& A,
+    const HpSharkFloat<P>& B,
+    const uint64_t* final128,     // len = 2*Ddigits
+    size_t Ddigits,               // number of 32-bit positions represented in Final128
+    int32_t additionalFactorOfTwo // 0 for XX/YY; 1 for XY if you did NOT shift digits
+)
+{
+    constexpr int N = P::GlobalNumUint32;
+
+    auto pass_once = [&](bool write_window, size_t start, size_t needN) -> std::pair<int, int> {
+        uint64_t carry_lo = 0, carry_hi = 0;
+        size_t idx = 0;           // index in base-2^32 digits being produced
+        int highest_nonzero = -1; // last non-zero digit index seen
+        int out_written = 0;
+
+        // Helper to emit one 32-bit digit (optionally writing into Out.Digits)
+        auto emit_digit = [&](uint32_t dig) {
+            if (dig != 0)
+                highest_nonzero = (int)idx;
+            if (write_window && idx >= start && out_written < (int)needN) {
+                Out.Digits[out_written++] = dig;
+            }
+            ++idx;
+        };
+
+        // Main Ddigits loop
+        for (size_t d = 0; d < Ddigits; ++d) {
+            uint64_t lo = final128[2 * d + 0];
+            uint64_t hi = final128[2 * d + 1];
+
+            uint64_t s_lo = lo + carry_lo;
+            uint64_t c0 = (s_lo < lo) ? 1ull : 0ull;
+            uint64_t s_hi = hi + carry_hi + c0;
+
+            emit_digit(static_cast<uint32_t>(s_lo & 0xffffffffull));
+
+            carry_lo = (s_lo >> 32) | (s_hi << 32);
+            carry_hi = (s_hi >> 32);
+        }
+
+        // Flush remaining carry into more digits
+        while (carry_lo || carry_hi) {
+            emit_digit(static_cast<uint32_t>(carry_lo & 0xffffffffull));
+            uint64_t nlo = (carry_lo >> 32) | (carry_hi << 32);
+            uint64_t nhi = (carry_hi >> 32);
+            carry_lo = nlo;
+            carry_hi = nhi;
+        }
+
+        // If we were asked to write a window and didn't fill all N yet, pad zeros
+        if (write_window) {
+            while (out_written < (int)needN) {
+                Out.Digits[out_written++] = 0u;
+            }
+        }
+
+        return {highest_nonzero, out_written};
+    };
+
+    // Pass 1: find 'significant' (last non-zero + 1)
+    auto [highest_nonzero, _] = pass_once(/*write_window=*/false, /*start=*/0, /*needN=*/0);
+    if (highest_nonzero < 0) {
+        // Zero result
+        std::memset(Out.Digits, 0, N * sizeof(uint32_t));
+        Out.Exponent = A.Exponent + B.Exponent; // Karatsuba zero convention
+        return;
+    }
+    const int significant = highest_nonzero + 1;
+    int shift_digits = significant - N;
+    if (shift_digits < 0)
+        shift_digits = 0;
+
+    // Karatsuba-style exponent
+    Out.Exponent = A.Exponent + B.Exponent + 32 * shift_digits + additionalFactorOfTwo;
+
+    // Pass 2: write exactly N digits starting at shift_digits
+    (void)pass_once(/*write_window=*/true, /*start=*/(size_t)shift_digits, /*needN=*/(size_t)N);
+}
+
+namespace FirstFailingAttempt {
 
 // ============================================================================
 // Helpers: 64x64->128 multiply (MSVC-friendly) and tiny utils
 // ============================================================================
-struct U128 { uint64_t lo, hi; };
 
-static inline U128 mul_64x64_128(uint64_t a, uint64_t b) {
+struct U128 {
+    uint64_t lo, hi;
+};
+
+static inline U128
+mul_64x64_128(uint64_t a, uint64_t b)
+{
 #if defined(_MSC_VER) && defined(_M_X64)
-    U128 r; r.lo = _umul128(a, b, &r.hi); return r;
+    U128 r;
+    r.lo = _umul128(a, b, &r.hi);
+    return r;
 #else
     const uint64_t a0 = (uint32_t)a, a1 = a >> 32;
     const uint64_t b0 = (uint32_t)b, b1 = b >> 32;
@@ -43,20 +155,27 @@ static inline U128 mul_64x64_128(uint64_t a, uint64_t b) {
 #endif
 }
 
-static inline uint32_t reverse_bits32(uint32_t x, int bits) {
-    // Perform full 32-bit bit reversal manually since MSVC doesn't have __builtin_bitreverse32
-    x = (x >> 16) | (x << 16);
-    x = ((x & 0x00ff00ffu) << 8) | ((x & 0xff00ff00u) >> 8);
-    x = ((x & 0x0f0f0f0fu) << 4) | ((x & 0xf0f0f0f0u) >> 4);
-    x = ((x & 0x33333333u) << 2) | ((x & 0xccccccccu) >> 2);
-    x = ((x & 0x55555555u) << 1) | ((x & 0xaaaaaaaau) >> 1);
-    return x >> (32 - bits);
+static inline uint64_t
+gcd_u64(uint64_t a, uint64_t b)
+{
+    while (b) {
+        uint64_t t = a % b;
+        a = b;
+        b = t;
+    }
+    return a;
+}
+static inline uint64_t
+lcm_u64(uint64_t a, uint64_t b)
+{
+    return (a / gcd_u64(a, b)) * b;
 }
 
-static inline uint64_t gcd_u64(uint64_t a, uint64_t b) { while (b) { uint64_t t = a % b; a = b; b = t; } return a; }
-static inline uint64_t lcm_u64(uint64_t a, uint64_t b) { return (a / gcd_u64(a, b)) * b; }
-
-static inline size_t align_up(size_t x, size_t A) { return (x + (A - 1)) & ~(A - 1); }
+static inline size_t
+align_up(size_t x, size_t A)
+{
+    return (x + (A - 1)) & ~(A - 1);
+}
 
 struct Plan {
     // n32 — number of 32-bit limbs in each input mantissa window we pack.
@@ -148,7 +267,9 @@ struct Plan {
     // If any of these fail we mark ok=false and the caller can fall back.
     bool ok = false;
 
-    void print() const {
+    void
+    print() const
+    {
         std::cout << "Plan: " << std::endl;
         std::cout << " n32 = " << n32 << std::endl;
         std::cout << " b = " << b << std::endl;
@@ -162,26 +283,33 @@ struct Plan {
     }
 };
 
-
 // ---------- Headroom / overflow guards (no 128-bit temporaries) ----------
 
 // Asserts a sufficient theoretical bound: during FFT butterflies you need
 //    2*b + log2(N) + margin <= Kbits
 // The "+1" covers exact-boundary cases; keep margin>=1 (I use 2).
-static inline void AssertNoOverflowByParameters(const Plan &pl, int margin_bits = 2) {
+static inline void
+AssertNoOverflowByParameters(const Plan& pl, int margin_bits = 2)
+{
     const int need = 2 * pl.b + pl.stages + margin_bits;
-    assert(need <= pl.Kbits && "Ring too small: 2*b + log2(N) exceeds Kbits headroom (lower b or raise Kbits).");
+    assert(need <= pl.Kbits &&
+           "Ring too small: 2*b + log2(N) exceeds Kbits headroom (lower b or raise Kbits).");
 }
 
 // Build the K-bit vector for 2^{e}. (All Kbits % 64 done already in your plan.)
-static inline void set_pow2_kbits(uint64_t *x, int W64, int Kbits, int e) {
+static inline void
+set_pow2_kbits(uint64_t* x, int W64, int Kbits, int e)
+{
     std::memset(x, 0, size_t(W64) * 8);
-    if (e < 0 || e >= Kbits) return;
+    if (e < 0 || e >= Kbits)
+        return;
     x[e >> 6] = (1ull << (e & 63));
 }
 
 // Returns true iff x == 2^{K-1}+1 (the "worst" balanced magnitude, i.e., |x| = 2^{K-1})
-static inline bool is_half_plus_one(const uint64_t *x, int W64, int Kbits) {
+static inline bool
+is_half_plus_one(const uint64_t* x, int W64, int Kbits)
+{
     // danger = 2^{K-1} + 1
     std::vector<uint64_t> danger(W64);
     set_pow2_kbits(danger.data(), W64, Kbits, Kbits - 1);
@@ -192,7 +320,9 @@ static inline bool is_half_plus_one(const uint64_t *x, int W64, int Kbits) {
         danger[i] += c;
         c = (danger[i] < p) ? 1ull : 0ull;
     }
-    for (int i = 0; i < W64; ++i) if (x[i] != danger[i]) return false;
+    for (int i = 0; i < W64; ++i)
+        if (x[i] != danger[i])
+            return false;
     return true;
 }
 
@@ -200,77 +330,101 @@ static inline bool is_half_plus_one(const uint64_t *x, int W64, int Kbits) {
 // (Hitting this means zero headroom; it’s the first value that can flip sign
 // under tiny roundoff/bug and is exactly the kind of pattern you saw with
 // specific limbs like 0xFFFFFFFF.)
-static inline void AssertNotAtBalancedBoundary(const uint64_t *x, const Plan &pl) {
+static inline void
+AssertNotAtBalancedBoundary(const uint64_t* x, const Plan& pl)
+{
     if (is_half_plus_one(x, pl.W64, pl.Kbits)) {
-        assert(false && "Coefficient reached magnitude 2^{K-1} (2^{K-1}+1 in Z/(2^K+1)); decrease b or increase Kbits.");
+        assert(false && "Coefficient reached magnitude 2^{K-1} (2^{K-1}+1 in Z/(2^K+1)); decrease b or "
+                        "increase Kbits.");
     }
 }
 
-template<class P>
-static Plan build_plan(int n32) {
+template <class P>
+static Plan
+build_plan(int n32)
+{
     Plan pl{};
     pl.ok = false;
     pl.n32 = n32;
 
-    auto next_pow2 = [](uint32_t x)->uint32_t {
-        if (x <= 1) return 1u;
-        --x; x |= x >> 1; x |= x >> 2; x |= x >> 4; x |= x >> 8; x |= x >> 16;
+    auto next_pow2 = [](uint32_t x) -> uint32_t {
+        if (x <= 1)
+            return 1u;
+        --x;
+        x |= x >> 1;
+        x |= x >> 2;
+        x |= x >> 4;
+        x |= x >> 8;
+        x |= x >> 16;
         return x + 1;
-        };
-    auto ceil_div_u32 = [](uint32_t a, uint32_t b)->uint32_t {
-        return (a + b - 1u) / b;
-        };
-    auto gcd_u64 = [](uint64_t a, uint64_t b)->uint64_t {
-        while (b) { uint64_t t = a % b; a = b; b = t; }
+    };
+    auto ceil_div_u32 = [](uint32_t a, uint32_t b) -> uint32_t { return (a + b - 1u) / b; };
+    auto gcd_u64 = [](uint64_t a, uint64_t b) -> uint64_t {
+        while (b) {
+            uint64_t t = a % b;
+            a = b;
+            b = t;
+        }
         return a;
-        };
-    auto lcm_u64 = [&](uint64_t a, uint64_t b)->uint64_t {
-        if (!a || !b) return 0;
+    };
+    auto lcm_u64 = [&](uint64_t a, uint64_t b) -> uint64_t {
+        if (!a || !b)
+            return 0;
         return (a / gcd_u64(a, b)) * b;
-        };
-    auto ceil_log2_u32 = [](uint32_t x)->int {
-        int l = 0; uint32_t v = x - 1u; while (v) { v >>= 1; ++l; } return l;
-        };
+    };
+    auto ceil_log2_u32 = [](uint32_t x) -> int {
+        int l = 0;
+        uint32_t v = x - 1u;
+        while (v) {
+            v >>= 1;
+            ++l;
+        }
+        return l;
+    };
 
     // Conservative, safe b selector: 2*b + ceil_log2(N) + margin <= Kbits
-    auto select_b_safely = [&](int Kbits, int N, int b_hint = 26, int margin = 2)->int {
+    auto select_b_safely = [&](int Kbits, int N, int b_hint = 26, int margin = 2) -> int {
         const int lgN = ceil_log2_u32((uint32_t)N);
         const int bmax = (Kbits - margin - lgN) / 2;
         int b = b_hint;
-        if (b > bmax) b = bmax;
-        if (b < 16)   b = 16;
-        if (b > 30)   b = 30;
+        if (b > bmax)
+            b = bmax;
+        if (b < 16)
+            b = 16;
+        if (b > 30)
+            b = 30;
         return b;
-        };
+    };
 
     // -------- Pass 0: crude seed ----------
     const uint32_t totalBits = (uint32_t)pl.n32 * 32u;
     int b_guess = 26;
     int L_guess = (int)ceil_div_u32(totalBits, (uint32_t)b_guess);
-    uint32_t N = next_pow2((uint32_t)(2 * L_guess));  // no-wrap target
+    uint32_t N = next_pow2((uint32_t)(2 * L_guess)); // no-wrap target
 
     // Choose K as multiple of lcm(64, N) so baseShift = K/N is integer
     uint64_t step = lcm_u64(64ull, (uint64_t)N);
     // Lower bound for K: log2(2N) + 2*b + small margin
     double rhs_log2 = std::log2(2.0 * (double)N) + 2.0 * (double)b_guess + 1.0;
     uint64_t Kmin = (uint64_t)std::ceil(rhs_log2);
-    uint64_t K = ((Kmin + step - 1) / step) * step;   // quantize
+    uint64_t K = ((Kmin + step - 1) / step) * step; // quantize
 
     // -------- Pass 1: compute b, L, N with (Kbits,N) consistent ----------
     pl.Kbits = (int)K;
     pl.W64 = (int)(K / 64ull);
-    pl.b = select_b_safely(pl.Kbits, (int)N, /*b_hint*/26);
+    pl.b = select_b_safely(pl.Kbits, (int)N, /*b_hint*/ 26);
     pl.L = (int)ceil_div_u32(totalBits, (uint32_t)pl.b);
-    pl.N = (int)next_pow2((uint32_t)(2 * pl.L));       // ensure 2L-1 <= N
+    pl.N = (int)next_pow2((uint32_t)(2 * pl.L)); // ensure 2L-1 <= N
 
     // Because N may have changed, re-quantize K so K%N==0, then recompute b/L/N once more.
     step = lcm_u64(64ull, (uint64_t)pl.N);
-    if ((K % step) != 0) K = ((K + step - 1) / step) * step;
+    if ((K % step) != 0)
+        K = ((K + step - 1) / step) * step;
     pl.Kbits = (int)K;
     pl.W64 = (int)(K / 64ull);
-    pl.b = select_b_safely(pl.Kbits, pl.N, /*b_hint*/26);
+    pl.b = select_b_safely(pl.Kbits, pl.N, /*b_hint*/ 26);
     pl.L = (int)ceil_div_u32(totalBits, (uint32_t)pl.b);
-    pl.N = (int)next_pow2((uint32_t)(2 * pl.L));       // final N
+    pl.N = (int)next_pow2((uint32_t)(2 * pl.L)); // final N
 
     // Final sanity: baseShift integral and no-wrap must hold now
     if (pl.Kbits % pl.N != 0) {
@@ -290,7 +444,8 @@ static Plan build_plan(int n32) {
     pl.stages = ceil_log2_u32((uint32_t)pl.N);
 
     // Assert: baseShift should be correct for negacyclic FFT
-    assert(pl.baseShift * pl.N == 2u * pl.Kbits && "baseShift calculation error - should be (2*Kbits)/N");
+    assert(pl.baseShift * pl.N == 2u * pl.Kbits &&
+           "baseShift calculation error - should be (2*Kbits)/N");
     assert(pl.Kbits % pl.N == 0 && "Kbits must be divisible by N");
 
     pl.ok = (pl.N >= 2) && (pl.W64 >= 1);
@@ -307,17 +462,30 @@ static Plan build_plan(int n32) {
 // ============================================================================
 // Ring ops on raw K-bit words (arrays of length W64)
 // ============================================================================
-static inline void kbits_zero(uint64_t *x, int W64) { std::memset(x, 0, size_t(W64) * 8); }
-static inline bool kbits_is_zero(const uint64_t *x, int W64) {
-    for (int i = 0; i < W64; ++i) if (x[i]) return false; return true;
+static inline void
+kbits_zero(uint64_t* x, int W64)
+{
+    std::memset(x, 0, size_t(W64) * 8);
+}
+static inline bool
+kbits_is_zero(const uint64_t* x, int W64)
+{
+    for (int i = 0; i < W64; ++i)
+        if (x[i])
+            return false;
+    return true;
 }
 
-static inline void kbits_copy(uint64_t *dst, const uint64_t *src, int W64) {
+static inline void
+kbits_copy(uint64_t* dst, const uint64_t* src, int W64)
+{
     std::memcpy(dst, src, size_t(W64) * 8);
 }
 
 // K-bit increment by one (wrap)
-static inline void add1_kbits(uint64_t *x, int W64) {
+static inline void
+add1_kbits(uint64_t* x, int W64)
+{
     uint64_t c = 1ull;
     for (int i = 0; i < W64 && c; ++i) {
         uint64_t p = x[i];
@@ -329,7 +497,9 @@ static inline void add1_kbits(uint64_t *x, int W64) {
 // K-bit addition modulo (2^K + 1):
 // out = a + b (mod 2^K+1).
 // Compute K-bit sum s with carry c. Then out = s - c (i.e., subtract 1 if overflow).
-static inline void add_mod(const uint64_t *a, const uint64_t *b, uint64_t *out, int W64) {
+static inline void
+add_mod(const uint64_t* a, const uint64_t* b, uint64_t* out, int W64)
+{
     uint64_t carry = 0;
     for (int i = 0; i < W64; ++i) {
         uint64_t ai = a[i], bi = b[i];
@@ -361,16 +531,21 @@ static inline void add_mod(const uint64_t *a, const uint64_t *b, uint64_t *out, 
     }
 }
 
-
 // out = -a mod (2^K + 1). Convention: 0 -> 0; else (~a)+2 within K bits
-static inline void neg_mod(const uint64_t *a, uint64_t *out, int W64) {
-    if (kbits_is_zero(a, W64)) { kbits_zero(out, W64); return; }
+static inline void
+neg_mod(const uint64_t* a, uint64_t* out, int W64)
+{
+    if (kbits_is_zero(a, W64)) {
+        kbits_zero(out, W64);
+        return;
+    }
 
     if (SharkVerbose == VerboseMode::Debug && W64 == 1) {
         std::cout << "neg_mod input: 0x" << std::hex << a[0] << std::dec << std::endl;
     }
 
-    for (int i = 0; i < W64; ++i) out[i] = ~a[i];
+    for (int i = 0; i < W64; ++i)
+        out[i] = ~a[i];
     add1_kbits(out, W64);
     add1_kbits(out, W64);
 
@@ -380,15 +555,17 @@ static inline void neg_mod(const uint64_t *a, uint64_t *out, int W64) {
 }
 
 // Enhanced sub_mod with edge case debugging
-static inline void sub_mod(const uint64_t *a, const uint64_t *b, uint64_t *out, int W64) {
+static inline void
+sub_mod(const uint64_t* a, const uint64_t* b, uint64_t* out, int W64)
+{
     bool debug_this = false;
     if (SharkVerbose == VerboseMode::Debug && W64 == 1) {
         debug_this = (a[0] <= 0x100 && b[0] <= 0x100);
 
         if (debug_this) {
             std::cout << "=== DETAILED sub_mod DEBUG ===" << std::endl;
-            std::cout << "  Computing: 0x" << std::hex << a[0]
-                << " - 0x" << b[0] << " mod (2^64+1)" << std::dec << std::endl;
+            std::cout << "  Computing: 0x" << std::hex << a[0] << " - 0x" << b[0] << " mod (2^64+1)"
+                      << std::dec << std::endl;
         }
     }
 
@@ -406,9 +583,8 @@ static inline void sub_mod(const uint64_t *a, const uint64_t *b, uint64_t *out, 
         borrow = (d1 | d2);
 
         if (debug_this) {
-            std::cout << "  Step " << i << ": ai=0x" << std::hex << ai
-                << " bi=0x" << bi << " s=0x" << s
-                << " s2=0x" << s2 << " borrow=" << std::dec << borrow << std::endl;
+            std::cout << "  Step " << i << ": ai=0x" << std::hex << ai << " bi=0x" << bi << " s=0x" << s
+                      << " s2=0x" << s2 << " borrow=" << std::dec << borrow << std::endl;
         }
     }
 
@@ -433,13 +609,17 @@ static inline void sub_mod(const uint64_t *a, const uint64_t *b, uint64_t *out, 
 
         if (W64 == 1) {
             if (out[0] == 0x8000000000000001ULL) {
-                std::cout << "CRITICAL: sub_mod produced invalid result 0x8000000000000001 in Z/(2^64+1)" << std::endl;
-                std::cout << "This represents -2^63 which should not occur in normal negacyclic arithmetic" << std::endl;
+                std::cout << "CRITICAL: sub_mod produced invalid result 0x8000000000000001 in Z/(2^64+1)"
+                          << std::endl;
+                std::cout
+                    << "This represents -2^63 which should not occur in normal negacyclic arithmetic"
+                    << std::endl;
                 assert(false && "sub_mod produced invalid result in Z/(2^64+1)");
             }
         }
     } else if (debug_this) {
-        std::cout << "  NO BORROW: direct subtraction result 0x" << std::hex << out[0] << std::dec << std::endl;
+        std::cout << "  NO BORROW: direct subtraction result 0x" << std::hex << out[0] << std::dec
+                  << std::endl;
     }
 
     if (debug_this) {
@@ -448,48 +628,61 @@ static inline void sub_mod(const uint64_t *a, const uint64_t *b, uint64_t *out, 
 }
 
 // K-bit left shift by r (0<=r<K)
-static inline void shl_kbits(const uint64_t *x, uint32_t r, uint64_t *out, int W64) {
-    if (r == 0) { kbits_copy(out, x, W64); return; }
+static inline void
+shl_kbits(const uint64_t* x, uint32_t r, uint64_t* out, int W64)
+{
+    if (r == 0) {
+        kbits_copy(out, x, W64);
+        return;
+    }
     uint32_t ws = r >> 6, bs = r & 63u;
     for (int i = W64 - 1; i >= 0; --i) {
         uint64_t lo = 0, hi = 0;
         int s = i - (int)ws;
         if (s >= 0) {
             lo = x[s] << bs;
-            if (bs && s > 0) hi = (x[s - 1] >> (64 - bs));
+            if (bs && s > 0)
+                hi = (x[s - 1] >> (64 - bs));
         }
         out[i] = lo | hi;
     }
 }
 
 // K-bit right shift by r (0<=r<K)
-static inline void shr_kbits(const uint64_t *x, uint32_t r, uint64_t *out, int W64) {
-    if (r == 0) { kbits_copy(out, x, W64); return; }
+static inline void
+shr_kbits(const uint64_t* x, uint32_t r, uint64_t* out, int W64)
+{
+    if (r == 0) {
+        kbits_copy(out, x, W64);
+        return;
+    }
     uint32_t ws = r >> 6, bs = r & 63u;
     for (int i = 0; i < W64; ++i) {
         uint64_t lo = 0, hi = 0;
         uint32_t s = i + ws;
         if (s < (uint32_t)W64) {
             lo = x[s] >> bs;
-            if (bs && (s + 1) < (uint32_t)W64) hi = (x[s + 1] << (64 - bs));
+            if (bs && (s + 1) < (uint32_t)W64)
+                hi = (x[s + 1] << (64 - bs));
         }
         out[i] = lo | hi;
     }
 }
 
 // Multiply by 2^e (mod 2^K + 1). Assumes Kbits == 64*W64.
-static inline void mul_pow2(
-    const uint64_t *x,
-    uint64_t e,
-    int Kbits,                  // keep for e reduction
-    uint64_t *out,
-    uint64_t *tmpA,             // W64 scratch
-    uint64_t *tmpB,             // W64 scratch
-    int W64) {
+static inline void
+mul_pow2(const uint64_t* x,
+         uint64_t e,
+         int Kbits, // keep for e reduction
+         uint64_t* out,
+         uint64_t* tmpA, // W64 scratch
+         uint64_t* tmpB, // W64 scratch
+         int W64)
+{
 
     if (SharkVerbose == VerboseMode::Debug && W64 == 1) {
-        std::cout << "mul_pow2: x=0x" << std::hex << x[0] << " e=" << std::dec << e
-            << " Kbits=" << Kbits << std::endl;
+        std::cout << "mul_pow2: x=0x" << std::hex << x[0] << " e=" << std::dec << e << " Kbits=" << Kbits
+                  << std::endl;
     }
 
     const uint64_t twoK = (uint64_t)(2 * Kbits);
@@ -497,7 +690,7 @@ static inline void mul_pow2(
 
     // e = q*K + r with q in {0,1}, r in [0, K)
     const bool neg = (e >= (uint64_t)Kbits);
-    const int  r = (int)(neg ? (e - (uint64_t)Kbits) : e);
+    const int r = (int)(neg ? (e - (uint64_t)Kbits) : e);
 
     if (SharkVerbose == VerboseMode::Debug && W64 == 1) {
         std::cout << "  reduced e=" << e << " neg=" << neg << " r=" << r << std::endl;
@@ -508,20 +701,21 @@ static inline void mul_pow2(
         kbits_copy(out, x, W64);
     } else {
         // y = (x << r) - (x >> (K - r))  in Z/(2^K+1)
-        shl_kbits(x, r, tmpA, W64);        // tmpA = x << r  (within K bits)
-        shr_kbits(x, Kbits - r, tmpB, W64);        // tmpB = x >> (K-r)
+        shl_kbits(x, r, tmpA, W64);         // tmpA = x << r  (within K bits)
+        shr_kbits(x, Kbits - r, tmpB, W64); // tmpB = x >> (K-r)
 
         if (SharkVerbose == VerboseMode::Debug && W64 == 1) {
             std::cout << "    shl result: 0x" << std::hex << tmpA[0] << std::dec << std::endl;
             std::cout << "    shr result: 0x" << std::hex << tmpB[0] << std::dec << std::endl;
         }
 
-        sub_mod(tmpA, tmpB, out, W64);               // out = tmpA - tmpB (mod 2^K+1)
+        sub_mod(tmpA, tmpB, out, W64); // out = tmpA - tmpB (mod 2^K+1)
     }
 
     if (neg) {
         // multiply by (-1): out = (0 - out) mod (2^K+1)
-        for (int i = 0; i < W64; ++i) tmpA[i] = 0ull;
+        for (int i = 0; i < W64; ++i)
+            tmpA[i] = 0ull;
         sub_mod(tmpA, out, out, W64);
 
         if (SharkVerbose == VerboseMode::Debug && W64 == 1) {
@@ -536,8 +730,9 @@ static inline void mul_pow2(
 
 // Schoolbook: prod[0..2W-1] = a*b (full 2K-bit)
 // prod length is 2*W64 64-bit words
-static inline void mul_kbits_schoolbook(const uint64_t *a, const uint64_t *b,
-    uint64_t *prod, int W64) {
+static inline void
+mul_kbits_schoolbook(const uint64_t* a, const uint64_t* b, uint64_t* prod, int W64)
+{
     std::memset(prod, 0, size_t(2 * W64) * sizeof(uint64_t));
     for (int i = 0; i < W64; ++i) {
         uint64_t carry = 0;
@@ -547,7 +742,7 @@ static inline void mul_kbits_schoolbook(const uint64_t *a, const uint64_t *b,
             // Low limb: prod[i+j] += p.lo
             uint64_t t0 = prod[i + j];
             uint64_t s0 = t0 + p.lo;
-            uint64_t c1 = (s0 < t0) ? 1ull : 0ull;   // carry from low add
+            uint64_t c1 = (s0 < t0) ? 1ull : 0ull; // carry from low add
             prod[i + j] = s0;
 
             // High limb with full carry chain:
@@ -556,47 +751,56 @@ static inline void mul_kbits_schoolbook(const uint64_t *a, const uint64_t *b,
 
             // Pre-compute the three potential carry sources BEFORE we mutate u
             //  1) hi add overflow, 2) low-limb carry (c1), 3) incoming carry
-            uint64_t hi_over_pre = ((uint64_t)(~t1) < p.hi) ? 1ull : 0ull; // overflow check for t1 + p.hi
+            uint64_t hi_over_pre =
+                ((uint64_t)(~t1) < p.hi) ? 1ull : 0ull; // overflow check for t1 + p.hi
             uint64_t multi_sources = hi_over_pre + c1 + carry;
 
             if (multi_sources > 1ull) {
                 std::fprintf(stderr,
-                    "[mul_kbits_schoolbook] multi-source carry detected at i=%d j=%d "
-                    "(hi_over=%llu, c1=%llu, carry_in=%llu) "
-                    "t0=%016llx s0=%016llx t1=%016llx hi=%016llx lo=%016llx\n",
-                    i, j,
-                    (unsigned long long)hi_over_pre,
-                    (unsigned long long)c1,
-                    (unsigned long long)carry,
-                    (unsigned long long)t0,
-                    (unsigned long long)s0,
-                    (unsigned long long)t1,
-                    (unsigned long long)p.hi,
-                    (unsigned long long)p.lo);
-                assert(multi_sources <= 1ull && "multi-source carry occurred; need robust 128-bit accumulate");
+                             "[mul_kbits_schoolbook] multi-source carry detected at i=%d j=%d "
+                             "(hi_over=%llu, c1=%llu, carry_in=%llu) "
+                             "t0=%016llx s0=%016llx t1=%016llx hi=%016llx lo=%016llx\n",
+                             i,
+                             j,
+                             (unsigned long long)hi_over_pre,
+                             (unsigned long long)c1,
+                             (unsigned long long)carry,
+                             (unsigned long long)t0,
+                             (unsigned long long)s0,
+                             (unsigned long long)t1,
+                             (unsigned long long)p.hi,
+                             (unsigned long long)p.lo);
+                assert(multi_sources <= 1ull &&
+                       "multi-source carry occurred; need robust 128-bit accumulate");
             }
 
             uint64_t u = t1 + p.hi;
             uint64_t c2 = (u < t1) ? 1ull : 0ull;
-            u += c1;                  c2 += (u < c1) ? 1ull : 0ull;
-            u += carry;               c2 += (u < carry) ? 1ull : 0ull;
+            u += c1;
+            c2 += (u < c1) ? 1ull : 0ull;
+            u += carry;
+            c2 += (u < carry) ? 1ull : 0ull;
 
             if (c2 > 1ull) {
                 std::fprintf(stderr,
-                    "[mul_kbits_schoolbook] aggregated high carry >1 at i=%d j=%d: c2=%llu\n",
-                    i, j, (unsigned long long)c2);
+                             "[mul_kbits_schoolbook] aggregated high carry >1 at i=%d j=%d: c2=%llu\n",
+                             i,
+                             j,
+                             (unsigned long long)c2);
                 assert(c2 <= 1ull && "aggregated carry grew >1; need robust 128-bit accumulate");
             }
 
             prod[i + j + 1] = u;
-            carry = c2; // keep original behavior (no saturation) so symptom remains identical unless assert fires
+            carry = c2; // keep original behavior (no saturation) so symptom remains identical unless
+                        // assert fires
         }
 
         // Sanity: we only ever expect final carry 0/1 in this algorithm
         if (carry > 1ull) {
             std::fprintf(stderr,
-                "[mul_kbits_schoolbook] tail carry >1 at i=%d: carry=%llu\n",
-                i, (unsigned long long)carry);
+                         "[mul_kbits_schoolbook] tail carry >1 at i=%d: carry=%llu\n",
+                         i,
+                         (unsigned long long)carry);
             assert(false && "tail carry >1; need robust 128-bit accumulate");
         }
 
@@ -615,20 +819,19 @@ static inline void mul_kbits_schoolbook(const uint64_t *a, const uint64_t *b,
     }
 }
 
-
-
 // Enhanced reduce_mod_2k1 with detailed debugging
-static inline void reduce_mod_2k1(const uint64_t *prod, uint64_t *out, int W64) {
+static inline void
+reduce_mod_2k1(const uint64_t* prod, uint64_t* out, int W64)
+{
     bool debug_this = false;
     if (SharkVerbose == VerboseMode::Debug && W64 == 1) {
         // Debug when we have a simple case that might reveal the issue
-        debug_this = (prod[0] <= 0x100 && prod[1] == 0) ||
-            (prod[0] == 0x2 && prod[1] == 0);
+        debug_this = (prod[0] <= 0x100 && prod[1] == 0) || (prod[0] == 0x2 && prod[1] == 0);
 
         if (debug_this) {
             std::cout << "=== DETAILED reduce_mod_2k1 DEBUG ===" << std::endl;
-            std::cout << "  Input: low=0x" << std::hex << prod[0]
-                << " high=0x" << prod[1] << std::dec << std::endl;
+            std::cout << "  Input: low=0x" << std::hex << prod[0] << " high=0x" << prod[1] << std::dec
+                      << std::endl;
         }
     }
 
@@ -640,8 +843,8 @@ static inline void reduce_mod_2k1(const uint64_t *prod, uint64_t *out, int W64) 
         // For the specific failing case (2, 0) -> should give 2
         if (prod[0] == 0x2 && prod[1] == 0x0) {
             if (out[0] != 0x2) {
-                std::cout << "  CRITICAL ERROR: (2 - 0) mod (2^64+1) should be 2, got 0x"
-                    << std::hex << out[0] << std::dec << std::endl;
+                std::cout << "  CRITICAL ERROR: (2 - 0) mod (2^64+1) should be 2, got 0x" << std::hex
+                          << out[0] << std::dec << std::endl;
             } else {
                 std::cout << "  OK: (2 - 0) mod (2^64+1) = 2 as expected" << std::endl;
             }
@@ -651,8 +854,9 @@ static inline void reduce_mod_2k1(const uint64_t *prod, uint64_t *out, int W64) 
     }
 }
 
-static inline void mul_mod(const uint64_t *a, const uint64_t *b,
-    uint64_t *out, uint64_t *prod2W, int W64) {
+static inline void
+mul_mod(const uint64_t* a, const uint64_t* b, uint64_t* out, uint64_t* prod2W, int W64)
+{
 
     // Enhanced debug: capture inputs for specific problematic cases
     bool debug_this_call = false;
@@ -662,16 +866,16 @@ static inline void mul_mod(const uint64_t *a, const uint64_t *b,
 
         if (debug_this_call) {
             std::cout << "=== DETAILED mul_mod DEBUG ===" << std::endl;
-            std::cout << "  mul_mod inputs: a=0x" << std::hex << a[0]
-                << " b=0x" << b[0] << std::dec << std::endl;
+            std::cout << "  mul_mod inputs: a=0x" << std::hex << a[0] << " b=0x" << b[0] << std::dec
+                      << std::endl;
         }
     }
 
     mul_kbits_schoolbook(a, b, prod2W, W64);
 
     if (debug_this_call) {
-        std::cout << "  schoolbook result (2K-bit): low=0x" << std::hex << prod2W[0]
-            << " high=0x" << prod2W[1] << std::dec << std::endl;
+        std::cout << "  schoolbook result (2K-bit): low=0x" << std::hex << prod2W[0] << " high=0x"
+                  << prod2W[1] << std::dec << std::endl;
 
         // Check for specific patterns that might cause issues
         uint64_t low = prod2W[0];
@@ -688,13 +892,19 @@ static inline void mul_mod(const uint64_t *a, const uint64_t *b,
 
     if (SharkVerbose == VerboseMode::Debug && !debug_this_call) {
         std::cout << "  mul_mod: a = ";
-        for (int i = W64 - 1; i >= 0; --i) { std::cout << std::hex << a[i] << " "; }
+        for (int i = W64 - 1; i >= 0; --i) {
+            std::cout << std::hex << a[i] << " ";
+        }
         std::cout << std::endl;
         std::cout << "  mul_mod: b = ";
-        for (int i = W64 - 1; i >= 0; --i) { std::cout << std::hex << b[i] << " "; }
+        for (int i = W64 - 1; i >= 0; --i) {
+            std::cout << std::hex << b[i] << " ";
+        }
         std::cout << std::endl;
         std::cout << "  mul_mod: prod= ";
-        for (int i = 2 * W64 - 1; i >= 0; --i) { std::cout << std::hex << prod2W[i] << " "; }
+        for (int i = 2 * W64 - 1; i >= 0; --i) {
+            std::cout << std::hex << prod2W[i] << " ";
+        }
         std::cout << std::endl;
     }
 
@@ -705,20 +915,21 @@ static inline void mul_mod(const uint64_t *a, const uint64_t *b,
 
         // Validate the reduction manually for K=64
         if (W64 == 1) {
-            uint64_t expected_manual = prod2W[0] - prod2W[1];  // (low - high) mod 2^64
+            uint64_t expected_manual = prod2W[0] - prod2W[1]; // (low - high) mod 2^64
 
             // Handle underflow in 64-bit arithmetic
             if (prod2W[0] < prod2W[1]) {
                 // In Z/(2^64+1), underflow means we add 1
-                expected_manual = (prod2W[0] - prod2W[1]) + 1;  // This will wrap naturally
+                expected_manual = (prod2W[0] - prod2W[1]) + 1; // This will wrap naturally
                 std::cout << "  UNDERFLOW detected: low < high, adding compensation" << std::endl;
             }
 
-            std::cout << "  Manual calculation: (0x" << std::hex << prod2W[0]
-                << " - 0x" << prod2W[1] << ") = 0x" << expected_manual << std::dec << std::endl;
+            std::cout << "  Manual calculation: (0x" << std::hex << prod2W[0] << " - 0x" << prod2W[1]
+                      << ") = 0x" << expected_manual << std::dec << std::endl;
 
             if (out[0] != expected_manual) {
-                std::cout << "  ERROR: reduce_mod_2k1 result doesn't match manual calculation!" << std::endl;
+                std::cout << "  ERROR: reduce_mod_2k1 result doesn't match manual calculation!"
+                          << std::endl;
                 std::cout << "  Got: 0x" << std::hex << out[0] << std::endl;
                 std::cout << "  Expected: 0x" << expected_manual << std::dec << std::endl;
             }
@@ -735,7 +946,9 @@ static inline void mul_mod(const uint64_t *a, const uint64_t *b,
 
     if (SharkVerbose == VerboseMode::Debug && !debug_this_call) {
         std::cout << "  mul_mod: out= ";
-        for (int i = W64 - 1; i >= 0; --i) { std::cout << std::hex << out[i] << " "; }
+        for (int i = W64 - 1; i >= 0; --i) {
+            std::cout << std::hex << out[i] << " ";
+        }
         std::cout << std::endl;
     }
 }
@@ -743,26 +956,32 @@ static inline void mul_mod(const uint64_t *a, const uint64_t *b,
 // ============================================================================
 // FFT over arrays of K-bit coefficients (AoS: element i at base + i*W64)
 // ============================================================================
-static inline uint64_t *elem_ptr(uint64_t *base, int idx, int W64) {
+static inline uint64_t*
+elem_ptr(uint64_t* base, int idx, int W64)
+{
     return base + size_t(idx) * size_t(W64);
 }
 
-static inline const uint64_t *elem_ptr(const uint64_t *base, int idx, int W64) {
+static inline const uint64_t*
+elem_ptr(const uint64_t* base, int idx, int W64)
+{
     return base + size_t(idx) * size_t(W64);
 }
 
-static void bit_reverse_inplace(uint64_t *A, int N, int stages, int W64, uint64_t *tmpSwap) {
+static void
+bit_reverse_inplace(uint64_t* A, int N, int stages, int W64, uint64_t* tmpSwap)
+{
     // Preconditions
-    assert(N > 0 && (N & (N - 1)) == 0);           // N is power of two
-    assert((1u << stages) == (uint32_t)N);         // stages matches N
-    (void)W64;                                     // W64 >= 1 by construction
+    assert(N > 0 && (N & (N - 1)) == 0);   // N is power of two
+    assert((1u << stages) == (uint32_t)N); // stages matches N
+    (void)W64;                             // W64 >= 1 by construction
 
     for (int i = 0; i < N; ++i) {
         uint32_t j = reverse_bits32((uint32_t)i, stages);
-        j &= (uint32_t)(N - 1);                    // belt & suspenders
+        j &= (uint32_t)(N - 1); // belt & suspenders
         if (j > (uint32_t)i) {
-            uint64_t *pi = elem_ptr(A, i, W64);
-            uint64_t *pj = elem_ptr(A, (int)j, W64);
+            uint64_t* pi = elem_ptr(A, i, W64);
+            uint64_t* pj = elem_ptr(A, (int)j, W64);
             // swap W64 words using tmpSwap (must hold W64 uint64_t)
             std::memcpy(tmpSwap, pi, size_t(W64) * 8);
             std::memcpy(pi, pj, size_t(W64) * 8);
@@ -771,40 +990,40 @@ static void bit_reverse_inplace(uint64_t *A, int N, int stages, int W64, uint64_
     }
 }
 
-template<bool Inverse>
-static void FFT_pow2(
-    uint64_t *A,
-    const Plan &pl,
-    uint64_t *scratch64,
-    const uint64_t *Ninv,   // required when Inverse=true
-    uint64_t *prod2W)       // required when Inverse=true
+template <bool Inverse>
+static void
+FFT_pow2(uint64_t* A,
+         const Plan& pl,
+         uint64_t* scratch64,
+         const uint64_t* Ninv, // required when Inverse=true
+         uint64_t* prod2W)     // required when Inverse=true
 {
     // scratch aliases: [tmpA | tmpB | t | sum | diff | swap]
-    uint64_t *tmpA = scratch64;
-    uint64_t *tmpB = scratch64 + pl.W64;
-    uint64_t *t = scratch64 + 2 * pl.W64;
-    uint64_t *sum = scratch64 + 3 * pl.W64;
-    uint64_t *diff = scratch64 + 4 * pl.W64;
-    uint64_t *swp = scratch64 + 5 * pl.W64;
+    uint64_t* tmpA = scratch64;
+    uint64_t* tmpB = scratch64 + pl.W64;
+    uint64_t* t = scratch64 + 2 * pl.W64;
+    uint64_t* sum = scratch64 + 3 * pl.W64;
+    uint64_t* diff = scratch64 + 4 * pl.W64;
+    uint64_t* swp = scratch64 + 5 * pl.W64;
 
     // --- helpers -------------------------------------------------------------
 
-    auto trace_coeff5 = [&](const char *stage) {
+    auto trace_coeff5 = [&](const char* stage) {
         if (SharkVerbose == VerboseMode::Debug) {
-            const uint64_t *c5 = elem_ptr(A, 5, pl.W64);
-            std::cout << "Coeff[5] " << stage << ": 0x"
-                << std::hex << c5[0] << std::dec << std::endl;
+            const uint64_t* c5 = elem_ptr(A, 5, pl.W64);
+            std::cout << "Coeff[5] " << stage << ": 0x" << std::hex << c5[0] << std::dec << std::endl;
         }
-        };
+    };
 
-    auto dump_nonzero_coeffs = [&](const char *stage) {
+    auto dump_nonzero_coeffs = [&](const char* stage) {
         if (SharkVerbose == VerboseMode::Debug) {
             std::cout << "=== " << stage << " - Non-zero coefficients ===" << std::endl;
             for (int i = 0; i < pl.N; ++i) {
-                const uint64_t *ci = elem_ptr(A, i, pl.W64);
+                const uint64_t* ci = elem_ptr(A, i, pl.W64);
                 if (ci[0] != 0) {
                     std::cout << "  A[" << i << "] = 0x" << std::hex << ci[0] << std::dec;
-                    if (ci[0] <= 0x100) std::cout << " (decimal: " << ci[0] << ")";
+                    if (ci[0] <= 0x100)
+                        std::cout << " (decimal: " << ci[0] << ")";
                     if (ci[0] == 0x8000000000000002ULL) {
                         std::cout << " *** PROBLEMATIC VALUE ***";
                     }
@@ -813,50 +1032,53 @@ static void FFT_pow2(
             }
             std::cout << "=== End " << stage << " ===" << std::endl;
         }
-        };
+    };
 
-    auto validate_coeff_range = [&](const char *stage) {
+    auto validate_coeff_range = [&](const char* stage) {
         if (SharkVerbose == VerboseMode::Debug) {
             bool found_issue = false;
             for (int i = 0; i < pl.N; ++i) {
-                const uint64_t *ci = elem_ptr(A, i, pl.W64);
+                const uint64_t* ci = elem_ptr(A, i, pl.W64);
                 if (ci[0] >= 0x8000000000000000ULL && ci[0] != 0x8000000000000000ULL) {
                     if (!found_issue) {
                         std::cout << "=== RANGE VALIDATION ISSUES at " << stage << " ===" << std::endl;
                         found_issue = true;
                     }
                     std::cout << "  A[" << i << "] = 0x" << std::hex << ci[0]
-                        << " (>= 2^63, possible negative representation)"
-                        << std::dec << std::endl;
+                              << " (>= 2^63, possible negative representation)" << std::dec << std::endl;
                 }
             }
             if (found_issue) {
                 std::cout << "=== End Range Validation ===" << std::endl;
             }
         }
-        };
+    };
 
     // Equality / zero helpers over pl.W64 limbs
-    auto kbits_equal = [&](const uint64_t *x, const uint64_t *y) {
-        for (int w = 0; w < pl.W64; ++w) if (x[w] != y[w]) return false;
+    auto kbits_equal = [&](const uint64_t* x, const uint64_t* y) {
+        for (int w = 0; w < pl.W64; ++w)
+            if (x[w] != y[w])
+                return false;
         return true;
-        };
-    auto kbits_is_zero = [&](const uint64_t *x) {
-        for (int w = 0; w < pl.W64; ++w) if (x[w] != 0) return false;
+    };
+    auto kbits_is_zero = [&](const uint64_t* x) {
+        for (int w = 0; w < pl.W64; ++w)
+            if (x[w] != 0)
+                return false;
         return true;
-        };
-    auto set_one_into = [&](uint64_t *x) {
-        for (int w = 0; w < pl.W64; ++w) x[w] = 0;
+    };
+    auto set_one_into = [&](uint64_t* x) {
+        for (int w = 0; w < pl.W64; ++w)
+            x[w] = 0;
         x[0] = 1;
-        };
+    };
 
     // --- prologue ------------------------------------------------------------
 
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "\n=== FFT_pow2 START (Inverse=" << Inverse << ") ===" << std::endl;
-        std::cout << "Plan: N=" << pl.N
-            << ", Kbits=" << pl.Kbits
-            << ", stages=" << pl.stages << std::endl;
+        std::cout << "Plan: N=" << pl.N << ", Kbits=" << pl.Kbits << ", stages=" << pl.stages
+                  << std::endl;
     }
 
     dump_nonzero_coeffs("Initial Input");
@@ -899,28 +1121,30 @@ static void FFT_pow2(
             uint64_t tw = 0;
 
             for (uint32_t j = 0; j < half; ++j) {
-                uint64_t *U = elem_ptr(A, (int)(k + j), pl.W64);
-                uint64_t *V = elem_ptr(A, (int)(k + j + half), pl.W64);
+                uint64_t* U = elem_ptr(A, (int)(k + j), pl.W64);
+                uint64_t* V = elem_ptr(A, (int)(k + j + half), pl.W64);
 
                 // Lightweight debug filter
                 bool affects_coeff5 = ((k + j) == 5) || ((k + j + half) == 5);
-                bool debug_butterfly = affects_coeff5 ||
-                    (U[0] != 0 && U[0] <= 0x100) ||
-                    (V[0] != 0 && V[0] <= 0x100);
+                bool debug_butterfly =
+                    affects_coeff5 || (U[0] != 0 && U[0] <= 0x100) || (V[0] != 0 && V[0] <= 0x100);
 
                 if (SharkVerbose == VerboseMode::Debug && debug_butterfly) {
                     std::cout << "\n=== BUTTERFLY DEBUG (Stage " << s << ") ===" << std::endl;
-                    std::cout << "  Indices: U[" << (k + j) << "] <-> V[" << (k + j + half) << "]" << std::endl;
-                    std::cout << "  Before: U=0x" << std::hex << U[0] << ", V=0x" << V[0] << std::dec << std::endl;
+                    std::cout << "  Indices: U[" << (k + j) << "] <-> V[" << (k + j + half) << "]"
+                              << std::endl;
+                    std::cout << "  Before: U=0x" << std::hex << U[0] << ", V=0x" << V[0] << std::dec
+                              << std::endl;
                     std::cout << "  Twiddle exponent: tw=" << tw << std::endl;
-                    if (affects_coeff5) std::cout << "  *** AFFECTS COEFFICIENT 5 ***" << std::endl;
+                    if (affects_coeff5)
+                        std::cout << "  *** AFFECTS COEFFICIENT 5 ***" << std::endl;
                 }
 
                 // Twiddle
                 if constexpr (!Inverse) {
                     if (SharkVerbose == VerboseMode::Debug && debug_butterfly) {
-                        std::cout << "  Forward: Computing V * 2^" << tw
-                            << " mod (2^" << pl.Kbits << "+1)" << std::endl;
+                        std::cout << "  Forward: Computing V * 2^" << tw << " mod (2^" << pl.Kbits
+                                  << "+1)" << std::endl;
                     }
                     mul_pow2(V, tw, (uint32_t)pl.Kbits, t, tmpA, tmpB, pl.W64);
                 } else {
@@ -928,8 +1152,8 @@ static void FFT_pow2(
                     uint64_t inv_tw = (tw == 0) ? 0 : (twoK - tw);
                     if (SharkVerbose == VerboseMode::Debug && debug_butterfly) {
                         std::cout << "  Inverse: Computing V * 2^" << inv_tw
-                            << " (i.e., 2^{-tw}) mod (2^" << pl.Kbits << "+1)"
-                            << "  [tw=" << tw << ", twoK=" << twoK << "]" << std::endl;
+                                  << " (i.e., 2^{-tw}) mod (2^" << pl.Kbits << "+1)"
+                                  << "  [tw=" << tw << ", twoK=" << twoK << "]" << std::endl;
                     }
                     mul_pow2(V, inv_tw, (uint32_t)pl.Kbits, t, tmpA, tmpB, pl.W64);
                 }
@@ -937,7 +1161,8 @@ static void FFT_pow2(
                 if (SharkVerbose == VerboseMode::Debug && debug_butterfly) {
                     std::cout << "  After twiddle: t=0x" << std::hex << t[0] << std::dec << std::endl;
                     if (t[0] == 0x8000000000000002ULL) {
-                        std::cout << "  *** CRITICAL: Twiddle produced problematic value! ***" << std::endl;
+                        std::cout << "  *** CRITICAL: Twiddle produced problematic value! ***"
+                                  << std::endl;
                     }
                 }
 
@@ -946,8 +1171,8 @@ static void FFT_pow2(
                 sub_mod(U, t, diff, pl.W64);
 
                 if (SharkVerbose == VerboseMode::Debug && debug_butterfly) {
-                    std::cout << "  Butterfly results: sum=0x" << std::hex << sum[0]
-                        << ", diff=0x" << diff[0] << std::dec << std::endl;
+                    std::cout << "  Butterfly results: sum=0x" << std::hex << sum[0] << ", diff=0x"
+                              << diff[0] << std::dec << std::endl;
                     if (sum[0] == 0x8000000000000002ULL)
                         std::cout << "  *** CRITICAL: sum produced problematic value! ***" << std::endl;
                     if (diff[0] == 0x8000000000000002ULL)
@@ -961,45 +1186,41 @@ static void FFT_pow2(
                 // --- Representation-aware algebra sanity check (debug only) ---
                 if (SharkVerbose == VerboseMode::Debug) {
                     // twoU = 2U ; twoT = 2t
-                    add_mod(U, U, tmpA, pl.W64);  // tmpA := 2U
-                    add_mod(t, t, tmpB, pl.W64);  // tmpB := 2t
+                    add_mod(U, U, tmpA, pl.W64); // tmpA := 2U
+                    add_mod(t, t, tmpB, pl.W64); // tmpB := 2t
 
                     // Check identity 1: (U+t)+(U-t) == 2U
-                    add_mod(sum, diff, swp, pl.W64);   // swp := sum+diff
+                    add_mod(sum, diff, swp, pl.W64); // swp := sum+diff
                     bool id1_ok = kbits_equal(swp, tmpA);
 
                     // Check identity 2: (U+t)-(U-t) == 2t
-                    sub_mod(sum, diff, swp, pl.W64);   // swp := sum-diff
+                    sub_mod(sum, diff, swp, pl.W64); // swp := sum-diff
                     bool id2_ok = kbits_equal(swp, tmpB);
 
                     // Correct for collapsed (-1 ≡ 2^K) when diff==0 but U!=t
                     if ((!id1_ok || !id2_ok) && kbits_is_zero(diff) && !kbits_equal(U, t)) {
                         // Re-evaluate id1 as (sum - 1) == 2U
                         if (!id1_ok) {
-                            set_one_into(tmpA);                 // tmpA := 1
-                            sub_mod(sum, tmpA, swp, pl.W64);    // swp := sum - 1  (≡ sum + 2^K)
-                            add_mod(U, U, tmpA, pl.W64);        // tmpA := 2U (recompute)
+                            set_one_into(tmpA);              // tmpA := 1
+                            sub_mod(sum, tmpA, swp, pl.W64); // swp := sum - 1  (≡ sum + 2^K)
+                            add_mod(U, U, tmpA, pl.W64);     // tmpA := 2U (recompute)
                             id1_ok = kbits_equal(swp, tmpA);
                         }
                         // Re-evaluate id2 as (sum + 1) == 2t
                         if (!id2_ok) {
-                            set_one_into(tmpA);                 // tmpA := 1
-                            add_mod(sum, tmpA, swp, pl.W64);    // swp := sum + 1  (≡ sum - 2^K)
-                            id2_ok = kbits_equal(swp, tmpB);    // tmpB still holds 2t
+                            set_one_into(tmpA);              // tmpA := 1
+                            add_mod(sum, tmpA, swp, pl.W64); // swp := sum + 1  (≡ sum - 2^K)
+                            id2_ok = kbits_equal(swp, tmpB); // tmpB still holds 2t
                         }
                     }
 
                     if (!id1_ok || !id2_ok) {
-                        std::cerr << "Butterfly identity FAIL at stage " << s
-                            << " (m=" << m << ", half=" << half
-                            << ", stride=" << stride << ")"
-                            << " k=" << k << " j=" << j << "  tw=" << tw
-                            << (Inverse ? " (inv)" : " (fwd)") << "\n"
-                            << "  U=" << std::hex << U[0]
-                            << "  V=" << V[0]
-                            << "  t=" << t[0]
-                            << "  sum=" << sum[0]
-                            << "  diff=" << diff[0] << std::dec << "\n";
+                        std::cerr << "Butterfly identity FAIL at stage " << s << " (m=" << m
+                                  << ", half=" << half << ", stride=" << stride << ")"
+                                  << " k=" << k << " j=" << j << "  tw=" << tw
+                                  << (Inverse ? " (inv)" : " (fwd)") << "\n"
+                                  << "  U=" << std::hex << U[0] << "  V=" << V[0] << "  t=" << t[0]
+                                  << "  sum=" << sum[0] << "  diff=" << diff[0] << std::dec << "\n";
                         assert(false && "Butterfly identities violated");
                     }
                 }
@@ -1010,9 +1231,8 @@ static void FFT_pow2(
                 kbits_copy(V, diff, pl.W64);
 
                 if (SharkVerbose == VerboseMode::Debug && debug_butterfly) {
-                    std::cout << "  Final: U[" << (k + j) << "]=0x" << std::hex << U[0]
-                        << ", V[" << (k + j + half) << "]=0x" << V[0]
-                        << std::dec << std::endl;
+                    std::cout << "  Final: U[" << (k + j) << "]=0x" << std::hex << U[0] << ", V["
+                              << (k + j + half) << "]=0x" << V[0] << std::dec << std::endl;
                     std::cout << "=== END BUTTERFLY DEBUG ===" << std::endl;
                 }
 
@@ -1041,15 +1261,15 @@ static void FFT_pow2(
         dump_nonzero_coeffs("Before iFFT Scaling");
 
         for (int i = 0; i < pl.N; ++i) {
-            uint64_t *Xi = elem_ptr(A, i, pl.W64);
+            uint64_t* Xi = elem_ptr(A, i, pl.W64);
             uint64_t orig_value = Xi[0];
 
             bool debug_this = (SharkVerbose == VerboseMode::Debug) &&
-                (i == 5 || (orig_value != 0 && orig_value <= 0x100));
+                              (i == 5 || (orig_value != 0 && orig_value <= 0x100));
 
             if (debug_this) {
-                std::cout << "  Scaling A[" << i << "]: 0x" << std::hex << orig_value
-                    << " * 0x" << Ninv[0] << std::dec << std::endl;
+                std::cout << "  Scaling A[" << i << "]: 0x" << std::hex << orig_value << " * 0x"
+                          << Ninv[0] << std::dec << std::endl;
             }
 
             mul_mod(Xi, Ninv, Xi, prod2W, pl.W64);
@@ -1058,7 +1278,7 @@ static void FFT_pow2(
                 std::cout << "    Result: 0x" << std::hex << Xi[0] << std::dec << std::endl;
                 if (Xi[0] == 0x8000000000000002ULL) {
                     std::cout << "    *** CRITICAL: iFFT scaling produced problematic value! ***"
-                        << "  (input 0x" << std::hex << orig_value << std::dec << ")\n";
+                              << "  (input 0x" << std::hex << orig_value << std::dec << ")\n";
                 }
             }
         }
@@ -1070,11 +1290,13 @@ static void FFT_pow2(
         if (SharkVerbose == VerboseMode::Debug) {
             std::cout << "=== Final iFFT output summary ===" << std::endl;
             for (int i = 0; i < pl.N; ++i) {
-                const uint64_t *Xi = elem_ptr(A, i, pl.W64);
+                const uint64_t* Xi = elem_ptr(A, i, pl.W64);
                 if (Xi[0] != 0) {
                     std::cout << "  X[" << i << "] = 0x" << std::hex << Xi[0] << std::dec;
-                    if (Xi[0] <= 0x100) std::cout << " (decimal: " << Xi[0] << ")";
-                    if (Xi[0] == 0x8000000000000002ULL) std::cout << " *** PROBLEMATIC ***";
+                    if (Xi[0] <= 0x100)
+                        std::cout << " (decimal: " << Xi[0] << ")";
+                    if (Xi[0] == 0x8000000000000002ULL)
+                        std::cout << " *** PROBLEMATIC ***";
                     std::cout << std::endl;
                 }
             }
@@ -1086,17 +1308,16 @@ static void FFT_pow2(
     }
 }
 
-
-
-
 // ============================================================================
 // Pack / Unpack and finalization
 // ============================================================================
 
 // Helper: read a b-bit window starting at absolute bit index q from (Digits[], Exponent)
 // This applies the inverse of the normalization shift implicitly.
-template<class P>
-static uint64_t read_bits_with_exponent(const HpSharkFloat<P> *X, int64_t q, int b) {
+template <class P>
+static uint64_t
+read_bits_with_exponent(const HpSharkFloat<P>* X, int64_t q, int b)
+{
     // Effective bit index inside the mantissa = q + shiftBack
     // shiftBack is the inverse of the left-shift used at construction.
     // It places the value’s LSB at absolute bit 0.
@@ -1105,11 +1326,13 @@ static uint64_t read_bits_with_exponent(const HpSharkFloat<P> *X, int64_t q, int
     // Using the same logic that prints your “Shifted data: … shiftBits: S”, we need to shift BACK by S.
     // That “S” is (DefaultPrecBits - LowPrec) - 1 - (X->Exponent_lowlevel_mapping).
     // Rather than rely on private details, we compute S from the visible pair (Digits, Exponent):
-    // Find where the value’s bit 0 sits relative to the mantissa by combining Exponent with the mantissa’s placement.
+    // Find where the value’s bit 0 sits relative to the mantissa by combining Exponent with the
+    // mantissa’s placement.
     //
     // Practically: compute the bit index of the mantissa’s MSB (mm) and the value’s MSB (vv).
     // The inverse shift is: shiftBack = vv - mm. For integers, vv = floor(log2(value)).
-    // Because we don’t want to touch GMP here, we scan the mantissa to get mm and use X->Exponent to get vv.
+    // Because we don’t want to touch GMP here, we scan the mantissa to get mm and use X->Exponent to get
+    // vv.
 
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "read_bits_with_exponent entry: q=" << q << " b=" << b << std::endl;
@@ -1117,14 +1340,15 @@ static uint64_t read_bits_with_exponent(const HpSharkFloat<P> *X, int64_t q, int
 
     // For now, just extract bits directly from the mantissa without exponent adjustment
     // This will work for testing the FFT pipeline itself
-    const int B = P::GlobalNumUint32 * 32;  // mantissa width in bits
+    const int B = P::GlobalNumUint32 * 32; // mantissa width in bits
 
     // Simple direct bit extraction from mantissa
-    int64_t bit = q;  // Start at bit position q
+    int64_t bit = q; // Start at bit position q
 
     if (bit >= B || bit < 0) {
         if (SharkVerbose == VerboseMode::Debug) {
-            std::cout << "  read_bits_with_exponent: bit position " << bit << " outside mantissa range [0, " << B << ")" << std::endl;
+            std::cout << "  read_bits_with_exponent: bit position " << bit
+                      << " outside mantissa range [0, " << B << ")" << std::endl;
         }
 
         return 0;
@@ -1153,83 +1377,95 @@ static uint64_t read_bits_with_exponent(const HpSharkFloat<P> *X, int64_t q, int
     return v & ((b == 64) ? ~0ull : ((1ull << b) - 1ull));
 }
 
-template<class P>
-static void pack_base2b_exponent_aware(const HpSharkFloat<P> *X, const Plan &pl, uint64_t *out /*N*W64*/) {
+template <class P>
+static void
+pack_base2b_exponent_aware(const HpSharkFloat<P>* X, const Plan& pl, uint64_t* out /*N*W64*/)
+{
     std::memset(out, 0, size_t(pl.N) * size_t(pl.W64) * 8);
     for (int i = 0; i < pl.L; ++i) {
         // Read the i-th base-2^b window starting at bit q = i*b of the *value* (not the raw mantissa)
 
         if (SharkVerbose == VerboseMode::Debug) {
-            std::cout << "pack_base2b_exponent_aware: i=" << i << " reading bits at q=" << (int64_t)i * pl.b << std::endl;
+            std::cout << "pack_base2b_exponent_aware: i=" << i
+                      << " reading bits at q=" << (int64_t)i * pl.b << std::endl;
         }
 
         uint64_t coeff = read_bits_with_exponent(X, /*q=*/(int64_t)i * pl.b, /*b=*/pl.b);
-        uint64_t *ci = out + size_t(i) * size_t(pl.W64);
-        ci[0] = coeff;                 // low word; higher words remain zero for chosen b
+        uint64_t* ci = out + size_t(i) * size_t(pl.W64);
+        ci[0] = coeff; // low word; higher words remain zero for chosen b
         // (if you later let b > 64, you’d spill into more words)
 
         if (SharkVerbose == VerboseMode::Debug) {
-            std::cout
-                << "  pack_base2b_exponent_aware: i=" << i
-                << std::hex << " coeff=0x" << coeff << std::dec << std::endl;
+            std::cout << "  pack_base2b_exponent_aware: i=" << i << std::hex << " coeff=0x" << coeff
+                      << std::dec << std::endl;
         }
     }
     // Remaining coeffs [pl.L..pl.N-1] are zero (already zeroed)
 }
 
-
 // Accumulate a 32-bit add into interleaved 128-bit buckets at digit index d
-static inline void add32_to_final128(uint64_t *final128 /*len=2*D*/, size_t Ddigits,
-    uint32_t d, uint32_t add32) {
-    if (d >= Ddigits) return; // safety
-    uint64_t &lo = final128[2ull * d + 0];
-    uint64_t &hi = final128[2ull * d + 1];
+static inline void
+add32_to_final128(uint64_t* final128 /*len=2*D*/, size_t Ddigits, uint32_t d, uint32_t add32)
+{
+    if (d >= Ddigits)
+        return; // safety
+    uint64_t& lo = final128[2ull * d + 0];
+    uint64_t& hi = final128[2ull * d + 1];
     uint64_t prev = lo;
     lo += (uint64_t)add32;
     hi += (lo < prev) ? 1ull : 0ull;
 }
 
-static inline void final128_accum_add32(uint64_t *final128, size_t Ddigits, size_t j, uint32_t add) {
-    if (j >= Ddigits || add == 0) return;
-    uint64_t *lo = &final128[2 * j + 0];
-    uint64_t *hi = &final128[2 * j + 1];
+static inline void
+final128_accum_add32(uint64_t* final128, size_t Ddigits, size_t j, uint32_t add)
+{
+    if (j >= Ddigits || add == 0)
+        return;
+    uint64_t* lo = &final128[2 * j + 0];
+    uint64_t* hi = &final128[2 * j + 1];
     uint64_t old = *lo;
     uint64_t sum = old + (uint64_t)add;
     *lo = sum;
-    if (sum < old) (*hi) += 1ull;          // carry into hi64
+    if (sum < old)
+        (*hi) += 1ull; // carry into hi64
 }
 
-static inline void final128_accum_sub32(uint64_t *final128, size_t Ddigits, size_t j, uint32_t sub) {
-    if (j >= Ddigits || sub == 0) return;
-    uint64_t *lo = &final128[2 * j + 0];
-    uint64_t *hi = &final128[2 * j + 1];
+static inline void
+final128_accum_sub32(uint64_t* final128, size_t Ddigits, size_t j, uint32_t sub)
+{
+    if (j >= Ddigits || sub == 0)
+        return;
+    uint64_t* lo = &final128[2 * j + 0];
+    uint64_t* hi = &final128[2 * j + 1];
     uint64_t old = *lo;
     uint64_t dif = old - (uint64_t)sub;
     *lo = dif;
-    if (old < (uint64_t)sub) {             // borrow out of lo64
+    if (old < (uint64_t)sub) { // borrow out of lo64
         (*hi) -= 1ull;
     }
 }
 
-static void unpack_to_final128(const uint64_t *A, const Plan &pl,
-    uint64_t *Final128, size_t Ddigits) {
+static void
+unpack_to_final128(const uint64_t* A, const Plan& pl, uint64_t* Final128, size_t Ddigits)
+{
     std::memset(Final128, 0, sizeof(uint64_t) * 2 * Ddigits);
 
-    const uint64_t HALF = (pl.Kbits == 64) ? (1ull << 63) : 0ull;   // K=64 in your plan
+    const uint64_t HALF = (pl.Kbits == 64) ? (1ull << 63) : 0ull; // K=64 in your plan
     std::span<const uint64_t> Aspan(A, pl.N * pl.W64);
     std::span<const uint64_t> FinalSpan(Final128, 2 * Ddigits);
 
     for (int i = 0; i < pl.N; ++i) {
-        const uint64_t *ci = elem_ptr(A, i, pl.W64);
-        uint64_t v = ci[0];               // Kbits=64 => one word
+        const uint64_t* ci = elem_ptr(A, i, pl.W64);
+        uint64_t v = ci[0]; // Kbits=64 => one word
 
-        if (v == 0) continue;
+        if (v == 0)
+            continue;
 
         // ----- balanced lift in Z/(2^K+1) -----
         bool neg = (pl.Kbits == 64) && (v > HALF);
         uint64_t mag64;
         if (!neg) {
-            mag64 = v;                    // positive: magnitude = v
+            mag64 = v; // positive: magnitude = v
         } else {
             // magnitude m = (2^K + 1) - v = (~v) + 2 (since 2^K ≡ 0 in 64-bit)
             mag64 = ~v;
@@ -1238,8 +1474,8 @@ static void unpack_to_final128(const uint64_t *A, const Plan &pl,
 
         // bit offset for coefficient i: s = i*b
         const uint64_t sBits = (uint64_t)i * (uint64_t)pl.b;
-        const size_t   q = (size_t)(sBits >> 5);   // /32
-        const int      r = (int)(sBits & 31);      // %32
+        const size_t q = (size_t)(sBits >> 5); // /32
+        const int r = (int)(sBits & 31);       // %32
 
         const uint64_t lo64 = (r ? (mag64 << r) : mag64);
         const uint64_t hi64 = (r ? (mag64 >> (64 - r)) : 0ull);
@@ -1263,105 +1499,21 @@ static void unpack_to_final128(const uint64_t *A, const Plan &pl,
         }
 
         if (SharkVerbose == VerboseMode::Debug) {
-            std::cout << "  unpack_to_final128: i=" << i << " coeff=" << v
-                << (neg ? " (neg)" : " (pos)")
-                << " => mag=0x" << std::hex << mag64 << std::dec
-                << " lo64=0x" << std::hex << lo64 << std::dec
-                << " hi64=0x" << std::hex << hi64 << std::dec
-                << " d32=[" << d0 << "," << d1 << "," << d2 << "," << d3 << "]"
-                << " at q=" << q << " r=" << r
-                << std::endl;
+            std::cout << "  unpack_to_final128: i=" << i << " coeff=" << v << (neg ? " (neg)" : " (pos)")
+                      << " => mag=0x" << std::hex << mag64 << std::dec << " lo64=0x" << std::hex << lo64
+                      << std::dec << " hi64=0x" << std::hex << hi64 << std::dec << " d32=[" << d0 << ","
+                      << d1 << "," << d2 << "," << d3 << "]"
+                      << " at q=" << q << " r=" << r << std::endl;
         }
     }
 }
-
-// Normalize directly from Final128 (lo64,hi64 per 32-bit digit position).
-// Does not allocate; does two passes over Final128 to (1) find 'significant',
-// then (2) write the window and set the Karatsuba-style exponent.
-// NOTE: Does not set sign; do that at the call site.
-template<class P>
-static void NormalizeFromFinal128LikeKaratsuba(
-    HpSharkFloat<P> &Out,
-    const HpSharkFloat<P> &A,
-    const HpSharkFloat<P> &B,
-    const uint64_t *final128,   // len = 2*Ddigits
-    size_t Ddigits,             // number of 32-bit positions represented in Final128
-    int32_t additionalFactorOfTwo // 0 for XX/YY; 1 for XY if you did NOT shift digits
-) {
-    constexpr int N = P::GlobalNumUint32;
-
-    auto pass_once = [&](bool write_window, size_t start, size_t needN) -> std::pair<int, int> {
-        uint64_t carry_lo = 0, carry_hi = 0;
-        size_t idx = 0;              // index in base-2^32 digits being produced
-        int highest_nonzero = -1;    // last non-zero digit index seen
-        int out_written = 0;
-
-        // Helper to emit one 32-bit digit (optionally writing into Out.Digits)
-        auto emit_digit = [&](uint32_t dig) {
-            if (dig != 0) highest_nonzero = (int)idx;
-            if (write_window && idx >= start && out_written < (int)needN) {
-                Out.Digits[out_written++] = dig;
-            }
-            ++idx;
-            };
-
-        // Main Ddigits loop
-        for (size_t d = 0; d < Ddigits; ++d) {
-            uint64_t lo = final128[2 * d + 0];
-            uint64_t hi = final128[2 * d + 1];
-
-            uint64_t s_lo = lo + carry_lo;
-            uint64_t c0 = (s_lo < lo) ? 1ull : 0ull;
-            uint64_t s_hi = hi + carry_hi + c0;
-
-            emit_digit(static_cast<uint32_t>(s_lo & 0xffffffffull));
-
-            carry_lo = (s_lo >> 32) | (s_hi << 32);
-            carry_hi = (s_hi >> 32);
-        }
-
-        // Flush remaining carry into more digits
-        while (carry_lo || carry_hi) {
-            emit_digit(static_cast<uint32_t>(carry_lo & 0xffffffffull));
-            uint64_t nlo = (carry_lo >> 32) | (carry_hi << 32);
-            uint64_t nhi = (carry_hi >> 32);
-            carry_lo = nlo;
-            carry_hi = nhi;
-        }
-
-        // If we were asked to write a window and didn't fill all N yet, pad zeros
-        if (write_window) {
-            while (out_written < (int)needN) {
-                Out.Digits[out_written++] = 0u;
-            }
-        }
-
-        return { highest_nonzero, out_written };
-        };
-
-    // Pass 1: find 'significant' (last non-zero + 1)
-    auto [highest_nonzero, _] = pass_once(/*write_window=*/false, /*start=*/0, /*needN=*/0);
-    if (highest_nonzero < 0) {
-        // Zero result
-        std::memset(Out.Digits, 0, N * sizeof(uint32_t));
-        Out.Exponent = A.Exponent + B.Exponent; // Karatsuba zero convention
-        return;
-    }
-    const int significant = highest_nonzero + 1;
-    int shift_digits = significant - N;
-    if (shift_digits < 0) shift_digits = 0;
-
-    // Karatsuba-style exponent
-    Out.Exponent = A.Exponent + B.Exponent + 32 * shift_digits + additionalFactorOfTwo;
-
-    // Pass 2: write exactly N digits starting at shift_digits
-    (void)pass_once(/*write_window=*/true, /*start=*/(size_t)shift_digits, /*needN=*/(size_t)N);
-}
-
 
 // Check function for bit_reverse_inplace
-static bool check_bit_reverse_inplace(int N, int stages) {
-    if (SharkVerbose != VerboseMode::Debug) return true;
+static bool
+check_bit_reverse_inplace(int N, int stages)
+{
+    if (SharkVerbose != VerboseMode::Debug)
+        return true;
 
     // Create test data
     std::vector<uint64_t> test_data(N);
@@ -1402,13 +1554,12 @@ static bool check_bit_reverse_inplace(int N, int stages) {
         uint64_t expected_value = original_data[expected_j];
 
         if (test_data[i] != expected_value) {
-            std::cout << "  MISMATCH at i=" << i << ": got " << test_data[i]
-                << ", expected " << expected_value
-                << " (from original[" << expected_j << "])" << std::endl;
+            std::cout << "  MISMATCH at i=" << i << ": got " << test_data[i] << ", expected "
+                      << expected_value << " (from original[" << expected_j << "])" << std::endl;
             success = false;
         } else {
-            std::cout << "  OK: test_data[" << i << "] = " << test_data[i]
-                << " (from original[" << expected_j << "])" << std::endl;
+            std::cout << "  OK: test_data[" << i << "] = " << test_data[i] << " (from original["
+                      << expected_j << "])" << std::endl;
         }
     }
 
@@ -1425,7 +1576,7 @@ static bool check_bit_reverse_inplace(int N, int stages) {
     for (int i = 0; i < N; ++i) {
         if (test_data[i] != original_data[i]) {
             std::cout << "  DOUBLE REVERSAL FAILED at i=" << i << ": got " << test_data[i]
-                << ", expected " << original_data[i] << std::endl;
+                      << ", expected " << original_data[i] << std::endl;
             success = false;
         }
     }
@@ -1435,8 +1586,11 @@ static bool check_bit_reverse_inplace(int N, int stages) {
 }
 
 // Also create a function to check reverse_bits32
-static bool check_reverse_bits32() {
-    if (SharkVerbose != VerboseMode::Debug) return true;
+static bool
+check_reverse_bits32()
+{
+    if (SharkVerbose != VerboseMode::Debug)
+        return true;
 
     std::cout << "Testing reverse_bits32:" << std::endl;
 
@@ -1447,26 +1601,26 @@ static bool check_reverse_bits32() {
     };
 
     TestCase tests[] = {
-        {0, 4, 0},           // 0000 -> 0000
-        {1, 4, 8},           // 0001 -> 1000
-        {2, 4, 4},           // 0010 -> 0100
-        {3, 4, 12},          // 0011 -> 1100
-        {8, 4, 1},           // 1000 -> 0001
-        {0, 5, 0},           // 00000 -> 00000
-        {1, 5, 16},          // 00001 -> 10000
-        {16, 5, 1},          // 10000 -> 00001
+        {0, 4, 0},  // 0000 -> 0000
+        {1, 4, 8},  // 0001 -> 1000
+        {2, 4, 4},  // 0010 -> 0100
+        {3, 4, 12}, // 0011 -> 1100
+        {8, 4, 1},  // 1000 -> 0001
+        {0, 5, 0},  // 00000 -> 00000
+        {1, 5, 16}, // 00001 -> 10000
+        {16, 5, 1}, // 10000 -> 00001
     };
 
     bool success = true;
-    for (const auto &test : tests) {
+    for (const auto& test : tests) {
         uint32_t result = reverse_bits32(test.input, test.bits);
         if (result != test.expected) {
-            std::cout << "  FAIL: reverse_bits32(" << test.input << ", " << test.bits
-                << ") = " << result << ", expected " << test.expected << std::endl;
+            std::cout << "  FAIL: reverse_bits32(" << test.input << ", " << test.bits << ") = " << result
+                      << ", expected " << test.expected << std::endl;
             success = false;
         } else {
-            std::cout << "  OK: reverse_bits32(" << test.input << ", " << test.bits
-                << ") = " << result << std::endl;
+            std::cout << "  OK: reverse_bits32(" << test.input << ", " << test.bits << ") = " << result
+                      << std::endl;
         }
     }
 
@@ -1479,34 +1633,44 @@ static bool check_reverse_bits32() {
 //  (1) Ninv == -2^(K - m)           (additive form)
 //  (2) (2^m) * Ninv ≡ 1             (multiplicative form)
 //  (3) ((X * Ninv) * 2^m) == X      (round-trip on a few patterns, incl. 0xFFFFFFFF)
-static bool SelfCheckNinv(const Plan &pl, const uint64_t *Ninv) {
-    const int  m = pl.stages;   // N = 2^m
-    const int  Kbits = pl.Kbits;
-    const int  W64 = pl.W64;
+static bool
+SelfCheckNinv(const Plan& pl, const uint64_t* Ninv)
+{
+    const int m = pl.stages; // N = 2^m
+    const int Kbits = pl.Kbits;
+    const int W64 = pl.W64;
 
-    auto dump_kbits = [&](const char *tag, const uint64_t *x) {
-        if (SharkVerbose != VerboseMode::Debug) return;
+    auto dump_kbits = [&](const char* tag, const uint64_t* x) {
+        if (SharkVerbose != VerboseMode::Debug)
+            return;
         std::cout << tag << " = ";
-        for (int i = W64 - 1; i >= 0; --i) std::cout << std::hex << x[i] << " ";
+        for (int i = W64 - 1; i >= 0; --i)
+            std::cout << std::hex << x[i] << " ";
         std::cout << std::dec << "\n";
-        };
+    };
 
-    auto kbits_equal = [&](const uint64_t *a, const uint64_t *b) -> bool {
-        for (int i = 0; i < W64; ++i) if (a[i] != b[i]) return false;
+    auto kbits_equal = [&](const uint64_t* a, const uint64_t* b) -> bool {
+        for (int i = 0; i < W64; ++i)
+            if (a[i] != b[i])
+                return false;
         return true;
-        };
+    };
 
-    auto kzero = [&](uint64_t *x) { std::memset(x, 0, size_t(W64) * 8); };
-    auto kone = [&](uint64_t *x) { kzero(x); x[0] = 1ull; };
+    auto kzero = [&](uint64_t* x) { std::memset(x, 0, size_t(W64) * 8); };
+    auto kone = [&](uint64_t* x) {
+        kzero(x);
+        x[0] = 1ull;
+    };
 
     // x = 2^e as a K-bit vector (0 <= e < Kbits)
-    auto set_pow2 = [&](uint64_t *x, int e) {
+    auto set_pow2 = [&](uint64_t* x, int e) {
         kzero(x);
-        if (e < 0 || e >= Kbits) return;  // defensive
+        if (e < 0 || e >= Kbits)
+            return; // defensive
         const int word = e >> 6;
         const int bit = e & 63;
         x[word] = (1ull << bit);
-        };
+    };
 
     bool ok = true;
 
@@ -1515,8 +1679,8 @@ static bool SelfCheckNinv(const Plan &pl, const uint64_t *Ninv) {
     std::vector<uint64_t> Tmp2W(2 * W64), tA(W64), tB(W64);
 
     // --- (1) Additive form: Ninv must equal -2^{K-m} ---------------------
-    set_pow2(P.data(), Kbits - m);           // P = 2^{K-m}
-    neg_mod(P.data(), M.data(), W64);        // M = -2^{K-m} in Z/(2^K+1)
+    set_pow2(P.data(), Kbits - m);    // P = 2^{K-m}
+    neg_mod(P.data(), M.data(), W64); // M = -2^{K-m} in Z/(2^K+1)
     if (!kbits_equal(Ninv, M.data())) {
         dump_kbits("Expected -2^{K-m}", M.data());
         dump_kbits("Built Ninv        ", Ninv);
@@ -1541,7 +1705,7 @@ static bool SelfCheckNinv(const Plan &pl, const uint64_t *Ninv) {
         std::cout << "SelfCheckNinv: " << std::endl;
     }
 
-    mul_mod(TwoToM.data(), Ninv, Check.data(), Tmp2W.data(), W64);  // Check = (2^m)*Ninv
+    mul_mod(TwoToM.data(), Ninv, Check.data(), Tmp2W.data(), W64); // Check = (2^m)*Ninv
     if (!kbits_equal(Check.data(), One.data())) {
         dump_kbits("(2^m)*Ninv", Check.data());
         dump_kbits("Expected 1", One.data());
@@ -1549,8 +1713,7 @@ static bool SelfCheckNinv(const Plan &pl, const uint64_t *Ninv) {
     }
 
     // Also cross-check via mul_pow2 (should give 1 as well)
-    mul_pow2(const_cast<uint64_t *>(Ninv), (uint64_t)m, Kbits,
-        Check.data(), tA.data(), tB.data(), W64);
+    mul_pow2(const_cast<uint64_t*>(Ninv), (uint64_t)m, Kbits, Check.data(), tA.data(), tB.data(), W64);
     if (!kbits_equal(Check.data(), One.data())) {
         dump_kbits("mul_pow2(Ninv, m)", Check.data());
         dump_kbits("Expected 1        ", One.data());
@@ -1564,17 +1727,34 @@ static bool SelfCheckNinv(const Plan &pl, const uint64_t *Ninv) {
             std::vector<uint64_t> X(W64), Y(W64), Z(W64);
             kzero(X.data());
             switch (trial) {
-            case 0: X[0] = 0xFFFFFFFFull; break;                  // your corner case
-            case 1: X[0] = 0x8000000000000000ull; break;          // high bit
-            case 2: X[0] = 0x123456789ABCDEF0ull; break;          // randomish
-            case 3: if (W64 > 1) { X[1] = 1ull; } else { X[0] = 1ull; } break; // cross-word
-            case 4:
-                if (W64 > 1) { X[0] = 0xAAAAAAAAAAAAAAAAull; X[1] = 0x5555555555555555ull; } else { X[0] = 0xAAAAAAAAAAAAAAAAull; }
-                break;
+                case 0:
+                    X[0] = 0xFFFFFFFFull;
+                    break; // your corner case
+                case 1:
+                    X[0] = 0x8000000000000000ull;
+                    break; // high bit
+                case 2:
+                    X[0] = 0x123456789ABCDEF0ull;
+                    break; // randomish
+                case 3:
+                    if (W64 > 1) {
+                        X[1] = 1ull;
+                    } else {
+                        X[0] = 1ull;
+                    }
+                    break; // cross-word
+                case 4:
+                    if (W64 > 1) {
+                        X[0] = 0xAAAAAAAAAAAAAAAAull;
+                        X[1] = 0x5555555555555555ull;
+                    } else {
+                        X[0] = 0xAAAAAAAAAAAAAAAAull;
+                    }
+                    break;
             }
 
-            mul_mod(X.data(), Ninv, Y.data(), Tmp2W.data(), W64);                           // Y = X * Ninv
-            mul_pow2(Y.data(), (uint64_t)m, Kbits, Z.data(), tA.data(), tB.data(), W64);    // Z = Y * 2^m
+            mul_mod(X.data(), Ninv, Y.data(), Tmp2W.data(), W64);                        // Y = X * Ninv
+            mul_pow2(Y.data(), (uint64_t)m, Kbits, Z.data(), tA.data(), tB.data(), W64); // Z = Y * 2^m
 
             if (!kbits_equal(X.data(), Z.data())) {
                 dump_kbits("X               ", X.data());
@@ -1590,20 +1770,21 @@ static bool SelfCheckNinv(const Plan &pl, const uint64_t *Ninv) {
     return ok;
 }
 
-
+} // namespace FirstFailingAttempt
 
 // ============================================================================
 // Public API (drop-in): MultiplyHelperKaratsubaV2 (CPU, single-thread, S–S)
 // ============================================================================
-template<class SharkFloatParams>
-void MultiplyHelperFFT(
-    const HpSharkFloat<SharkFloatParams> *A,
-    const HpSharkFloat<SharkFloatParams> *B,
-    HpSharkFloat<SharkFloatParams> *OutXX,
-    HpSharkFloat<SharkFloatParams> *OutXY,
-    HpSharkFloat<SharkFloatParams> *OutYY,
-    DebugHostCombo<SharkFloatParams> & /*debugCombo*/) {
-
+template <class SharkFloatParams>
+void
+MultiplyHelperFFT(const HpSharkFloat<SharkFloatParams>* A,
+                  const HpSharkFloat<SharkFloatParams>* B,
+                  HpSharkFloat<SharkFloatParams>* OutXX,
+                  HpSharkFloat<SharkFloatParams>* OutXY,
+                  HpSharkFloat<SharkFloatParams>* OutYY,
+                  DebugHostCombo<SharkFloatParams>& /*debugCombo*/)
+{
+    using namespace FirstFailingAttempt;
     using P = SharkFloatParams;
     const Plan pl = build_plan<P>(P::GlobalNumUint32);
     AssertNoOverflowByParameters(pl);
@@ -1617,7 +1798,7 @@ void MultiplyHelperFFT(
 
     // ---- Single arena allocation (64B aligned slices) ----
     const size_t W64 = (size_t)pl.W64;
-    const size_t coeffWords = (size_t)pl.N * W64; // words per coeff array
+    const size_t coeffWords = (size_t)pl.N * W64;                   // words per coeff array
     const size_t Ddigits = ((size_t)pl.N * (size_t)pl.b + 31) / 32; // final128 digits
 
     if (SharkVerbose == VerboseMode::Debug) {
@@ -1625,11 +1806,8 @@ void MultiplyHelperFFT(
 
         pl.print();
 
-        std::cout
-            << "W64=" << W64
-            << " coeffWords=" << coeffWords
-            << " Ddigits=" << Ddigits
-            << std::endl;
+        std::cout << "W64=" << W64 << " coeffWords=" << coeffWords << " Ddigits=" << Ddigits
+                  << std::endl;
     }
 
     // Byte sizes
@@ -1640,46 +1818,52 @@ void MultiplyHelperFFT(
     const size_t bytesScratch = (6 * W64) * sizeof(uint64_t); // tmpA,tmpB,t,sum,diff,swap
 
     if (SharkVerbose == VerboseMode::Debug) {
-        std::cout
-            << " bytesCoeff=" << bytesCoeff
-            << " bytesFinal128=" << bytesFinal128
-            << " bytesProd2K=" << bytesProd2K
-            << " bytesNinv=" << bytesNinv
-            << " bytesScratch=" << bytesScratch
-            << std::endl;
+        std::cout << " bytesCoeff=" << bytesCoeff << " bytesFinal128=" << bytesFinal128
+                  << " bytesProd2K=" << bytesProd2K << " bytesNinv=" << bytesNinv
+                  << " bytesScratch=" << bytesScratch << std::endl;
     }
 
     // We keep: Apacked, Bpacked, Awork, Bwork, Ftmp (5 coeff arrays)
     size_t off = 0;
-    off = align_up(off, 64); size_t off_Apacked = off; off += bytesCoeff;
-    off = align_up(off, 64); size_t off_Bpacked = off; off += bytesCoeff;
-    off = align_up(off, 64); size_t off_Awork = off; off += bytesCoeff;
-    off = align_up(off, 64); size_t off_Bwork = off; off += bytesCoeff;
-    off = align_up(off, 64); size_t off_Ftmp = off; off += bytesCoeff;
+    off = align_up(off, 64);
+    size_t off_Apacked = off;
+    off += bytesCoeff;
+    off = align_up(off, 64);
+    size_t off_Bpacked = off;
+    off += bytesCoeff;
+    off = align_up(off, 64);
+    size_t off_Awork = off;
+    off += bytesCoeff;
+    off = align_up(off, 64);
+    size_t off_Bwork = off;
+    off += bytesCoeff;
+    off = align_up(off, 64);
+    size_t off_Ftmp = off;
+    off += bytesCoeff;
 
     if (SharkVerbose == VerboseMode::Debug) {
-        std::cout
-            << " off_Apacked=" << off_Apacked
-            << " off_Bpacked=" << off_Bpacked
-            << " off_Awork=" << off_Awork
-            << " off_Bwork=" << off_Bwork
-            << " off_Ftmp=" << off_Ftmp
-            << std::endl;
+        std::cout << " off_Apacked=" << off_Apacked << " off_Bpacked=" << off_Bpacked
+                  << " off_Awork=" << off_Awork << " off_Bwork=" << off_Bwork << " off_Ftmp=" << off_Ftmp
+                  << std::endl;
     }
 
-    off = align_up(off, 64); size_t off_Final128 = off; off += bytesFinal128;
+    off = align_up(off, 64);
+    size_t off_Final128 = off;
+    off += bytesFinal128;
 
-    off = align_up(off, 64); size_t off_Prod2K = off; off += bytesProd2K;
-    off = align_up(off, 64); size_t off_Ninv = off; off += bytesNinv;
-    off = align_up(off, 64); size_t off_Scratch = off; off += bytesScratch;
+    off = align_up(off, 64);
+    size_t off_Prod2K = off;
+    off += bytesProd2K;
+    off = align_up(off, 64);
+    size_t off_Ninv = off;
+    off += bytesNinv;
+    off = align_up(off, 64);
+    size_t off_Scratch = off;
+    off += bytesScratch;
 
     if (SharkVerbose == VerboseMode::Debug) {
-        std::cout
-            << " off_Final128=" << off_Final128
-            << " off_Prod2K=" << off_Prod2K
-            << " off_Ninv=" << off_Ninv
-            << " off_Scratch=" << off_Scratch
-            << std::endl;
+        std::cout << " off_Final128=" << off_Final128 << " off_Prod2K=" << off_Prod2K
+                  << " off_Ninv=" << off_Ninv << " off_Scratch=" << off_Scratch << std::endl;
     }
 
     const size_t arenaBytes = align_up(off, 64);
@@ -1690,17 +1874,17 @@ void MultiplyHelperFFT(
     }
 
     // Slices
-    auto Apacked = reinterpret_cast<uint64_t *>(arena.get() + off_Apacked);
-    auto Bpacked = reinterpret_cast<uint64_t *>(arena.get() + off_Bpacked);
-    auto Awork = reinterpret_cast<uint64_t *>(arena.get() + off_Awork);
-    auto Bwork = reinterpret_cast<uint64_t *>(arena.get() + off_Bwork);
-    auto Ftmp = reinterpret_cast<uint64_t *>(arena.get() + off_Ftmp);
+    auto Apacked = reinterpret_cast<uint64_t*>(arena.get() + off_Apacked);
+    auto Bpacked = reinterpret_cast<uint64_t*>(arena.get() + off_Bpacked);
+    auto Awork = reinterpret_cast<uint64_t*>(arena.get() + off_Awork);
+    auto Bwork = reinterpret_cast<uint64_t*>(arena.get() + off_Bwork);
+    auto Ftmp = reinterpret_cast<uint64_t*>(arena.get() + off_Ftmp);
 
-    auto Final128 = reinterpret_cast<uint64_t *>(arena.get() + off_Final128);
+    auto Final128 = reinterpret_cast<uint64_t*>(arena.get() + off_Final128);
 
-    auto Prod2K = reinterpret_cast<uint64_t *>(arena.get() + off_Prod2K);
-    auto Ninv = reinterpret_cast<uint64_t *>(arena.get() + off_Ninv);
-    auto Scratch = reinterpret_cast<uint64_t *>(arena.get() + off_Scratch);
+    auto Prod2K = reinterpret_cast<uint64_t*>(arena.get() + off_Prod2K);
+    auto Ninv = reinterpret_cast<uint64_t*>(arena.get() + off_Ninv);
+    auto Scratch = reinterpret_cast<uint64_t*>(arena.get() + off_Scratch);
 
     const auto ApackedSize = off_Bpacked - off_Apacked;
     std::span<uint64_t> span_Apacked(Apacked, ApackedSize);
@@ -1730,21 +1914,11 @@ void MultiplyHelperFFT(
     std::span<uint64_t> span_Scratch(Scratch, ScratchSize);
 
     if (SharkVerbose == VerboseMode::Debug) {
-        std::cout
-            << " Apacked @" << (void *)Apacked
-            << " Bpacked @" << (void *)Bpacked
-            << " Awork @" << (void *)Awork
-            << " Bwork @" << (void *)Bwork
-            << " Ftmp @" << (void *)Ftmp
-            << std::endl;
-        std::cout
-            << " Final128 @" << (void *)Final128
-            << std::endl;
-        std::cout
-            << " Prod2K @" << (void *)Prod2K
-            << " Ninv @" << (void *)Ninv
-            << " Scratch @" << (void *)Scratch
-            << std::endl;
+        std::cout << " Apacked @" << (void*)Apacked << " Bpacked @" << (void*)Bpacked << " Awork @"
+                  << (void*)Awork << " Bwork @" << (void*)Bwork << " Ftmp @" << (void*)Ftmp << std::endl;
+        std::cout << " Final128 @" << (void*)Final128 << std::endl;
+        std::cout << " Prod2K @" << (void*)Prod2K << " Ninv @" << (void*)Ninv << " Scratch @"
+                  << (void*)Scratch << std::endl;
     }
 
     // ---- Build N^{-1} = -2^{K-m} (bits [K-m .. K-1] set) ----
@@ -1783,14 +1957,14 @@ void MultiplyHelperFFT(
     pack_base2b_exponent_aware<P>(B, pl, Bpacked);
 
     if (SharkVerbose == VerboseMode::Debug) {
-        auto printPacked = [&](const char *name, const uint64_t *Xpacked) {
+        auto printPacked = [&](const char* name, const uint64_t* Xpacked) {
             std::cout << name << " packed: " << std::endl;
             for (int i = 0; i < pl.N; ++i) {
                 std::cout << i << ":";
                 std::cout << std::hex << "0x" << Xpacked[i] << std::dec << std::endl;
             }
             std::cout << std::dec << std::endl;
-            };
+        };
 
         printPacked("A", Apacked);
         printPacked("B", Bpacked);
@@ -1804,7 +1978,7 @@ void MultiplyHelperFFT(
         bool bit_reverse_inplace_ok = check_bit_reverse_inplace(pl.N, pl.stages);
         assert(bit_reverse_inplace_ok);
 
-        auto fft_roundtrip_check = [&](const uint64_t *src) {
+        auto fft_roundtrip_check = [&](const uint64_t* src) {
             std::vector<uint64_t> tmp(pl.N * pl.W64);
             std::memcpy(tmp.data(), src, tmp.size() * 8);
 
@@ -1813,9 +1987,10 @@ void MultiplyHelperFFT(
                 std::cout << "=== FFT Roundtrip Debug ===" << std::endl;
                 std::cout << "Input data:" << std::endl;
                 for (int i = 0; i < pl.N; ++i) {
-                    const uint64_t *ci = elem_ptr(src, i, pl.W64);
-                    if (ci[0] != 0 || i == 5) {  // Always show index 5
-                        std::cout << "  src[" << i << "] = 0x" << std::hex << ci[0] << std::dec << std::endl;
+                    const uint64_t* ci = elem_ptr(src, i, pl.W64);
+                    if (ci[0] != 0 || i == 5) { // Always show index 5
+                        std::cout << "  src[" << i << "] = 0x" << std::hex << ci[0] << std::dec
+                                  << std::endl;
                     }
                 }
             }
@@ -1825,35 +2000,37 @@ void MultiplyHelperFFT(
             assert(pl.Kbits == 64 && "Expected Kbits=64 for this debug");
 
             // Forward FFT
-            FFT_pow2<false>(tmp.data(), pl, Scratch, /*Ninv*/nullptr, /*Prod2K*/nullptr);
+            FFT_pow2<false>(tmp.data(), pl, Scratch, /*Ninv*/ nullptr, /*Prod2K*/ nullptr);
 
             if (SharkVerbose == VerboseMode::Debug) {
                 std::cout << "After forward FFT:" << std::endl;
                 for (int i = 0; i < pl.N; ++i) {
-                    const uint64_t *ci = elem_ptr(tmp.data(), i, pl.W64);
+                    const uint64_t* ci = elem_ptr(tmp.data(), i, pl.W64);
                     if (ci[0] != 0 || i == 5) {
-                        std::cout << "  fwd[" << i << "] = 0x" << std::hex << ci[0] << std::dec << std::endl;
+                        std::cout << "  fwd[" << i << "] = 0x" << std::hex << ci[0] << std::dec
+                                  << std::endl;
                     }
                 }
             }
 
             // Inverse FFT
-            FFT_pow2<true >(tmp.data(), pl, Scratch, Ninv, Prod2K);
+            FFT_pow2<true>(tmp.data(), pl, Scratch, Ninv, Prod2K);
 
             if (SharkVerbose == VerboseMode::Debug) {
                 std::cout << "After inverse FFT:" << std::endl;
                 for (int i = 0; i < pl.N; ++i) {
-                    const uint64_t *ci = elem_ptr(tmp.data(), i, pl.W64);
+                    const uint64_t* ci = elem_ptr(tmp.data(), i, pl.W64);
                     if (ci[0] != 0 || i == 5) {
-                        std::cout << "  inv[" << i << "] = 0x" << std::hex << ci[0] << std::dec << std::endl;
+                        std::cout << "  inv[" << i << "] = 0x" << std::hex << ci[0] << std::dec
+                                  << std::endl;
                     }
                 }
             }
 
-            const uint64_t *ref = src;
+            const uint64_t* ref = src;
             for (int i = 0; i < pl.N; ++i) {
-                const uint64_t *xi = elem_ptr(tmp.data(), i, pl.W64);
-                const uint64_t *ri = elem_ptr(ref, i, pl.W64);
+                const uint64_t* xi = elem_ptr(tmp.data(), i, pl.W64);
+                const uint64_t* ri = elem_ptr(ref, i, pl.W64);
                 for (int w = 0; w < pl.W64; ++w) {
                     if (xi[w] != ri[w]) {
                         // Enhanced debug for the mismatch
@@ -1861,11 +2038,13 @@ void MultiplyHelperFFT(
                         std::cout << "Index: " << i << ", Word: " << w << std::endl;
                         std::cout << "Got:      0x" << std::hex << xi[w] << std::dec << std::endl;
                         std::cout << "Expected: 0x" << std::hex << ri[w] << std::dec << std::endl;
-                        std::cout << "Plan details: N=" << pl.N << ", Kbits=" << pl.Kbits << ", stages=" << pl.stages << std::endl;
+                        std::cout << "Plan details: N=" << pl.N << ", Kbits=" << pl.Kbits
+                                  << ", stages=" << pl.stages << std::endl;
 
                         // Check if this looks like a sign flip in the negacyclic ring
                         if (pl.Kbits == 64 && xi[w] == (~ri[w] + 2)) {
-                            std::cout << "ERROR: This looks like incorrect negacyclic reduction!" << std::endl;
+                            std::cout << "ERROR: This looks like incorrect negacyclic reduction!"
+                                      << std::endl;
                             std::cout << "Got value appears to be -ref in Z/(2^64+1)" << std::endl;
                         }
 
@@ -1880,7 +2059,7 @@ void MultiplyHelperFFT(
                 }
             }
             return true;
-            };
+        };
 
         // Check on the packed time-domain inputs (or on a saved copy of Awork/Bwork if you want).
         bool okA = fft_roundtrip_check(Apacked);
@@ -1901,7 +2080,7 @@ void MultiplyHelperFFT(
         if (SharkVerbose == VerboseMode::Debug) {
             std::cout << "FFT roundtrip A=" << okA << " B=" << okB << "\n";
         }
-        };
+    };
 
     verifyFunction();
 
@@ -1909,17 +2088,17 @@ void MultiplyHelperFFT(
     std::memcpy(Awork, Apacked, bytesCoeff);
     std::memcpy(Bwork, Bpacked, bytesCoeff);
 
-    auto beforeForwardFFT = [](const char *name, const uint64_t *Apacked, const Plan &pl) {
+    auto beforeForwardFFT = [](const char* name, const uint64_t* Apacked, const Plan& pl) {
         if (SharkVerbose == VerboseMode::Debug) {
             std::cout << "Before forward FFT - packed coefficients: " << name << std::endl;
             for (int i = 0; i < pl.N; ++i) {
-                const uint64_t *ci = elem_ptr(Apacked, i, pl.W64);
+                const uint64_t* ci = elem_ptr(Apacked, i, pl.W64);
                 if (ci[0] != 0) {
                     std::cout << "Apacked[" << i << "] = " << std::hex << ci[0] << std::dec << std::endl;
                 }
             }
         }
-        };
+    };
 
     beforeForwardFFT("A", Awork, pl);
     beforeForwardFFT("B", Bwork, pl);
@@ -1927,58 +2106,58 @@ void MultiplyHelperFFT(
     FFT_pow2<false>(Awork, pl, Scratch, nullptr, nullptr);
     FFT_pow2<false>(Bwork, pl, Scratch, nullptr, nullptr);
 
-    auto dumpSpectral = [&](const char *name, uint64_t *W) {
-        if (SharkVerbose != VerboseMode::Debug) return;
+    auto dumpSpectral = [&](const char* name, uint64_t* W) {
+        if (SharkVerbose != VerboseMode::Debug)
+            return;
 
         std::cout << name << "[0]=" << std::hex << elem_ptr(W, 0, pl.W64)[0]
-            << " [1]=" << elem_ptr(W, 1, pl.W64)[0]
-            << " [N/2]=" << elem_ptr(W, pl.N / 2, pl.W64)[0]
-            << " [N-1]=" << elem_ptr(W, pl.N - 1, pl.W64)[0] << std::dec << "\n";
+                  << " [1]=" << elem_ptr(W, 1, pl.W64)[0]
+                  << " [N/2]=" << elem_ptr(W, pl.N / 2, pl.W64)[0]
+                  << " [N-1]=" << elem_ptr(W, pl.N - 1, pl.W64)[0] << std::dec << "\n";
     };
     dumpSpectral("Awork", Awork);
     dumpSpectral("Bwork", Bwork);
 
-    auto printDebug = [](const char *name, const uint64_t *Ftmp, int N, int W64) {
+    auto printDebug = [](const char* name, const uint64_t* Ftmp, int N, int W64) {
         if (SharkVerbose == VerboseMode::Debug) {
             std::cout << name << ": After pointwise multiplication (Ftmp):" << std::endl;
             for (int i = 0; i < N; ++i) {
-                const uint64_t *fi = elem_ptr(Ftmp, i, W64);
+                const uint64_t* fi = elem_ptr(Ftmp, i, W64);
                 if (fi[0] != 0) {
                     std::cout << "Ftmp[" << i << "] = " << std::hex << fi[0] << std::dec << std::endl;
                 }
             }
         }
-        };
+    };
 
     // Lambda to compute FFT-based multiplication and finalize result
-    auto computeProduct = [&](
-        const uint64_t *workA,
-        const uint64_t *workB,
-        const char *debugName,
-        HpSharkFloat<P> *output,
-        const HpSharkFloat<P> &inputA,
-        const HpSharkFloat<P> &inputB,
-        int32_t additionalFactorOfTwo,
-        bool isNegative
-        ) {
-            // Pointwise multiplication in frequency domain
-            for (int i = 0; i < pl.N; ++i) {
-                const uint64_t *ai = elem_ptr(workA, i, pl.W64);
-                const uint64_t *bi = elem_ptr(workB, i, pl.W64);
-                uint64_t *fo = elem_ptr(Ftmp, i, pl.W64);
-                mul_mod(ai, bi, fo, Prod2K, pl.W64);
-                AssertNotAtBalancedBoundary(fo, pl);
-            }
-            printDebug(debugName, Ftmp, pl.N, pl.W64);
+    auto computeProduct = [&](const uint64_t* workA,
+                              const uint64_t* workB,
+                              const char* debugName,
+                              HpSharkFloat<P>* output,
+                              const HpSharkFloat<P>& inputA,
+                              const HpSharkFloat<P>& inputB,
+                              int32_t additionalFactorOfTwo,
+                              bool isNegative) {
+        // Pointwise multiplication in frequency domain
+        for (int i = 0; i < pl.N; ++i) {
+            const uint64_t* ai = elem_ptr(workA, i, pl.W64);
+            const uint64_t* bi = elem_ptr(workB, i, pl.W64);
+            uint64_t* fo = elem_ptr(Ftmp, i, pl.W64);
+            mul_mod(ai, bi, fo, Prod2K, pl.W64);
+            AssertNotAtBalancedBoundary(fo, pl);
+        }
+        printDebug(debugName, Ftmp, pl.N, pl.W64);
 
-            // Inverse FFT
-            FFT_pow2<true>(Ftmp, pl, Scratch, Ninv, Prod2K);
-            unpack_to_final128(Ftmp, pl, Final128, Ddigits);
+        // Inverse FFT
+        FFT_pow2<true>(Ftmp, pl, Scratch, Ninv, Prod2K);
+        unpack_to_final128(Ftmp, pl, Final128, Ddigits);
 
-            // Set sign and normalize with Karatsuba-style exponent handling
-            output->SetNegative(isNegative);
-            NormalizeFromFinal128LikeKaratsuba<P>(*output, inputA, inputB, Final128, Ddigits, additionalFactorOfTwo);
-        };
+        // Set sign and normalize with Karatsuba-style exponent handling
+        output->SetNegative(isNegative);
+        NormalizeFromFinal128LikeKaratsuba<P>(
+            *output, inputA, inputB, Final128, Ddigits, additionalFactorOfTwo);
+    };
 
     // ============================================================
     // XX = A^2
@@ -2016,10 +2195,121 @@ void MultiplyHelperFFT(
 //   • Full coefficient-by-coefficient equality vs direct linear convolution (O(L^2))
 //
 
+namespace GoldilocksNTT {
+
+// Goldilocks prime p = 2^64 - 2^32 + 1
+static constexpr uint64_t P = 0xFFFF'FFFF'0000'0001ull;
+static constexpr uint64_t NINV = 0xFFFF'FFFE'FFFF'FFFFull; // -p^{-1} mod 2^64
+static constexpr uint64_t R2 = 0xFFFF'FFFE'0000'0001ull;   // (2^64)^2 mod p
+
+// ---------- 64x64 -> 128 via 32-bit chunks (constexpr, portable) ----------
+struct u128_lohi {
+    uint64_t lo, hi;
+};
+
+constexpr u128_lohi
+mul_u64x_u64_to_u128(uint64_t a, uint64_t b)
+{
+    const uint64_t a0 = static_cast<uint32_t>(a);
+    const uint64_t a1 = a >> 32;
+    const uint64_t b0 = static_cast<uint32_t>(b);
+    const uint64_t b1 = b >> 32;
+
+    const uint64_t p00 = a0 * b0; // 32x32 -> 64
+    const uint64_t p01 = a0 * b1; // 32x32 -> 64
+    const uint64_t p10 = a1 * b0; // 32x32 -> 64
+    const uint64_t p11 = a1 * b1; // 32x32 -> 64
+
+    // Assemble:
+    const uint64_t mid =
+        p01 + p10; // may overflow 64? sum of two 64-bit <= ~2^65; but for 32x32 products it's safe in 64
+    uint64_t lo = p00 + (mid << 32);
+    uint64_t carry = (lo < p00); // carry from adding shifted mid
+    uint64_t hi = p11 + (mid >> 32) + carry;
+    return {lo, hi};
+}
+
+// ---------- Reduce (hi:lo) mod p, using 2^64 ≡ 2^32 - 1 (mod p) ----------
+constexpr uint64_t
+reduce_p(uint64_t hi, uint64_t lo)
+{
+    // r = lo + (hi << 32) - hi  (mod 2^64), then correct into [0, p)
+    uint64_t r = lo + (hi << 32);
+    r -= hi;
+    // Up to two corrections suffice for this p
+    if (r >= P)
+        r -= P;
+    if (r >= P)
+        r -= P;
+    return r;
+}
+
+constexpr uint64_t
+mul_mod_p(uint64_t a, uint64_t b)
+{
+    const auto prod = mul_u64x_u64_to_u128(a, b);
+    return reduce_p(prod.hi, prod.lo);
+}
+
+constexpr uint64_t
+pow_mod_p(uint64_t a, uint64_t e)
+{
+    uint64_t base = (a >= P ? a % P : a);
+    uint64_t r = 1;
+    while (e) {
+        if (e & 1ull)
+            r = mul_mod_p(r, base);
+        base = mul_mod_p(base, base);
+        e >>= 1;
+    }
+    return r;
+}
+
+// Prime factorization of phi = p-1 = 2^32 * (2^32 - 1), and 2^32 - 1 = 3*5*17*257*65537
+constexpr std::array<uint64_t, 6> PHI_PRIME_FACTORS = {2ull, 3ull, 5ull, 17ull, 257ull, 65537ull};
+constexpr uint64_t PHI = 0xFFFF'FFFF'0000'0000ull;
+
+constexpr bool
+is_primitive_root(uint64_t g)
+{
+    if (g <= 1 || g >= P)
+        return false;
+    for (uint64_t q : PHI_PRIME_FACTORS) {
+        const uint64_t e = PHI / q;
+        if (pow_mod_p(g, e) == 1ull)
+            return false;
+    }
+    return true;
+}
+
+// --------- Compile-time search (bounded) ----------
+consteval uint64_t
+find_generator()
+{
+    // Try small integers; Goldilocks has small generators (e.g. 7)
+    for (uint64_t g = 7; g < 2000; ++g) {
+        if (is_primitive_root(g))
+            return g;
+    }
+    // If we ever get here, widen the bound or seed with a known generator.
+    return 0; // signals failure at compile time
+}
+
+// ======== Usage ========
+static constexpr uint64_t GoldilocksP = GoldilocksNTT::P;
+static constexpr uint64_t GoldilocksGenerator = GoldilocksNTT::find_generator();
+
+// Optional compile-time sanity checks:
+static_assert(GoldilocksGenerator != 0, "Failed to find generator at compile time");
+static_assert(GoldilocksNTT::pow_mod_p(GoldilocksGenerator, GoldilocksNTT::PHI / 2) != 1,
+              "Not primitive: factor 2");
+static_assert(GoldilocksNTT::pow_mod_p(GoldilocksGenerator, GoldilocksNTT::PHI / 3) != 1,
+              "Not primitive: factor 3");
+// …repeat asserts for other factors if you like
+
 // =========================================================================================
 //                           64×64→128 helpers (portable)
 // =========================================================================================
-namespace Wide {
 static inline void
 mul64wide(uint64_t a, uint64_t b, uint64_t& lo, uint64_t& hi)
 {
@@ -2040,17 +2330,10 @@ add64carry(uint64_t a, uint64_t b, uint64_t& carry)
     carry = c | (out < s);
     return out;
 }
-} // namespace Wide
 
 // =========================================================================================
 //                               Prime + Montgomery core
 // =========================================================================================
-namespace GoldilocksNTT {
-
-// p = 2^64 - 2^32 + 1 ("Goldilocks prime")
-static constexpr uint64_t P = 0xFFFF'FFFF'0000'0001ull;
-static constexpr uint64_t NINV = 0xFFFF'FFFE'FFFF'FFFFull; // -p^{-1} mod 2^64
-static constexpr uint64_t R2 = 0xFFFF'FFFE'0000'0001ull; // (2^64)^2 mod p
 
 static inline uint64_t
 add_p(uint64_t a, uint64_t b)
@@ -2066,10 +2349,13 @@ sub_p(uint64_t a, uint64_t b)
     return (a >= b) ? (a - b) : (a + P - b);
 }
 
+template <class SharkFloatParams>
 static inline uint64_t
-mont_mul(uint64_t a, uint64_t b)
+mont_mul(DebugHostCombo<SharkFloatParams>& debugCombo, uint64_t a, uint64_t b)
 {
-    using namespace Wide;
+    // We'll count 128-bit multiplications here as 3x64
+    // So 3 + 3 + 1
+    debugCombo.MultiplyCounts.DebugMultiplyIncrement(7);
 
     // t = a*b (128-bit)
     uint64_t t_lo, t_hi;
@@ -2085,11 +2371,11 @@ mont_mul(uint64_t a, uint64_t b)
     // u = t + m*P
     // low 64 + carry0
     uint64_t carry0 = 0;
-    (void)Wide::add64carry(t_lo, mp_lo, carry0); // updates carry0
+    (void)add64carry(t_lo, mp_lo, carry0); // updates carry0
 
     // high 64 + carry0  -> also track carry-out (carry1)
     uint64_t carry1 = carry0;
-    uint64_t u_hi = Wide::add64carry(t_hi, mp_hi, carry1); // returns sum, updates carry1
+    uint64_t u_hi = add64carry(t_hi, mp_hi, carry1); // returns sum, updates carry1
 
     // r = u / 2^64; ensure r < P
     uint64_t r = u_hi;
@@ -2099,32 +2385,35 @@ mont_mul(uint64_t a, uint64_t b)
     return r;
 }
 
+template <class SharkFloatParams>
+static inline uint64_t
+to_mont(DebugHostCombo<SharkFloatParams>& debugCombo, uint64_t x)
+{
+    return mont_mul(debugCombo, x, R2);
+}
+template <class SharkFloatParams>
+static inline uint64_t
+from_mont(DebugHostCombo<SharkFloatParams>& debugCombo, uint64_t x)
+{
+    return mont_mul(debugCombo, x, 1);
+}
 
-static inline uint64_t
-to_mont(uint64_t x)
-{
-    return mont_mul(x, R2);
-}
-static inline uint64_t
-from_mont(uint64_t x)
-{
-    return mont_mul(x, 1);
-}
 static inline uint64_t
 neg_p(uint64_t a)
 {
     return a ? (P - a) : 0;
 }
 
+template <class SharkFloatParams>
 static inline uint64_t
-mont_pow(uint64_t a_mont, uint64_t e)
+mont_pow(DebugHostCombo<SharkFloatParams>& debugCombo, uint64_t a_mont, uint64_t e)
 {
-    uint64_t x = to_mont(1);
+    uint64_t x = to_mont(debugCombo, 1);
     uint64_t y = a_mont;
     while (e) {
         if (e & 1)
-            x = mont_mul(x, y);
-        y = mont_mul(y, y);
+            x = mont_mul(debugCombo, x, y);
+        y = mont_mul(debugCombo, y, y);
         e >>= 1;
     }
     return x;
@@ -2144,22 +2433,22 @@ is_power_of_two(uint32_t x)
     return x && (0 == (x & (x - 1)));
 }
 
+template <class SharkFloatParams>
 static uint64_t
-find_generator()
+find_generator(DebugHostCombo<SharkFloatParams>& debugCombo)
 {
     using namespace GoldilocksNTT;
     // p-1 = 2^32 * (2^32 - 1), with distinct prime factors:
     // {2, 3, 5, 17, 257, 65537}
     static const uint64_t factors[] = {2ull, 3ull, 5ull, 17ull, 257ull, 65537ull};
-    const uint64_t PHI = 0xFFFFFFFF00000000ull; // p-1
 
     for (uint64_t g = 3; g < 1'000; ++g) {
-        uint64_t g_m = to_mont(g);
+        uint64_t g_m = to_mont(debugCombo, g);
         bool ok = true;
         for (uint64_t q : factors) {
             // if g^{(p-1)/q} == 1, then g is NOT a generator
-            uint64_t t = mont_pow(g_m, PHI / q);
-            if (t == to_mont(1)) {
+            uint64_t t = mont_pow(debugCombo, g_m, PHI / q);
+            if (t == to_mont(debugCombo, 1)) {
                 ok = false;
                 break;
             }
@@ -2171,8 +2460,9 @@ find_generator()
     return 7ull;
 }
 
+template <class SharkFloatParams>
 static void
-build_roots(uint32_t N, uint32_t stages, RootTables& T)
+build_roots(DebugHostCombo<SharkFloatParams>& debugCombo, uint32_t N, uint32_t stages, RootTables& T)
 {
     assert(is_power_of_two(N));
     T.stage_omegas.resize(stages);
@@ -2180,7 +2470,6 @@ build_roots(uint32_t N, uint32_t stages, RootTables& T)
     T.psi_pows.resize(N);
     T.psi_inv_pows.resize(N);
 
-    const uint64_t PHI = 0xFFFFFFFF00000000ull; // p-1
     assert((PHI % (2ull * (uint64_t)N)) == 0ull && "2N must divide p-1 for PHI to exist");
 
     if (SharkVerbose == VerboseMode::Debug) {
@@ -2192,30 +2481,31 @@ build_roots(uint32_t N, uint32_t stages, RootTables& T)
         std::cout << "PHI / (2N) = " << (PHI / (2ull * N)) << std::endl;
     }
 
-    const uint64_t generator = find_generator();
-    const uint64_t g_m = to_mont(generator);
+    const uint64_t generator = GoldilocksNTT::find_generator();
+    const uint64_t g_m = to_mont(debugCombo, generator);
     const uint64_t exponent = PHI / (2ull * N);
-    const uint64_t psi_m = mont_pow(g_m, exponent);
+    const uint64_t psi_m = mont_pow(debugCombo, g_m, exponent);
 
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "Generator g = " << generator << std::endl;
         std::cout << "g in Montgomery = 0x" << std::hex << g_m << std::dec << std::endl;
         std::cout << "Exponent for psi = " << exponent << std::endl;
         std::cout << "psi in Montgomery = 0x" << std::hex << psi_m << std::dec << std::endl;
-        std::cout << "psi (normal) = " << from_mont(psi_m) << std::endl;
+        std::cout << "psi (normal) = " << from_mont(debugCombo, psi_m) << std::endl;
     }
 
     // Test psi^(2N) = 1 before proceeding
-    uint64_t psi_test = mont_pow(psi_m, 2ull * (uint64_t)N);
-    uint64_t one_m = to_mont(1);
+    uint64_t psi_test = mont_pow(debugCombo, psi_m, 2ull * (uint64_t)N);
+    uint64_t one_m = to_mont(debugCombo, 1);
 
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "Testing psi^(2N):" << std::endl;
         std::cout << "  psi^(2N) in Montgomery = 0x" << std::hex << psi_test << std::dec << std::endl;
-        std::cout << "  psi^(2N) (normal) = " << std::hex << from_mont(psi_test) << std::dec
+        std::cout << "  psi^(2N) (normal) = " << std::hex << from_mont(debugCombo, psi_test) << std::dec
                   << std::endl;
         std::cout << "  Expected 1 in Montgomery = 0x" << std::hex << one_m << std::dec << std::endl;
-        std::cout << "  Expected 1 (normal) = " << std::hex << from_mont(one_m) << std::dec << std::endl;
+        std::cout << "  Expected 1 (normal) = " << std::hex << from_mont(debugCombo, one_m) << std::dec
+                  << std::endl;
     }
 
     if (psi_test != one_m) {
@@ -2224,8 +2514,9 @@ build_roots(uint32_t N, uint32_t stages, RootTables& T)
 
             // Try some other orders to see what we actually have
             for (uint64_t test_order = 1; test_order <= 4 * N; test_order *= 2) {
-                uint64_t test_result = mont_pow(psi_m, test_order);
-                std::cout << "  psi^" << std::hex << test_order << " = " << from_mont(test_result) << std::dec << std::endl;
+                uint64_t test_result = mont_pow(debugCombo, psi_m, test_order);
+                std::cout << "  psi^" << std::hex << test_order << " = "
+                          << from_mont(debugCombo, test_result) << std::dec << std::endl;
                 if (test_result == one_m) {
                     std::cout << "  ^ This equals 1! Actual order divides " << test_order << std::endl;
                     break;
@@ -2235,28 +2526,28 @@ build_roots(uint32_t N, uint32_t stages, RootTables& T)
         assert(false && "psi does not have order 2N");
     }
 
-    const uint64_t psi_inv_m = mont_pow(psi_m, PHI - 1ull);
-    const uint64_t omega_m = mont_mul(psi_m, psi_m);
-    const uint64_t omega_inv_m = mont_pow(omega_m, PHI - 1ull);
+    const uint64_t psi_inv_m = mont_pow(debugCombo, psi_m, PHI - 1ull);
+    const uint64_t omega_m = mont_mul(debugCombo, psi_m, psi_m);
+    const uint64_t omega_inv_m = mont_pow(debugCombo, omega_m, PHI - 1ull);
 
     for (uint32_t s = 1; s <= stages; ++s) {
         uint32_t m = 1u << s;
         uint64_t e = (uint64_t)N / (uint64_t)m;
-        T.stage_omegas[s - 1] = mont_pow(omega_m, e);
-        T.stage_omegas_inv[s - 1] = mont_pow(omega_inv_m, e);
+        T.stage_omegas[s - 1] = mont_pow(debugCombo, omega_m, e);
+        T.stage_omegas_inv[s - 1] = mont_pow(debugCombo, omega_inv_m, e);
     }
 
-    T.psi_pows[0] = to_mont(1);
-    T.psi_inv_pows[0] = to_mont(1);
+    T.psi_pows[0] = to_mont(debugCombo, 1);
+    T.psi_inv_pows[0] = to_mont(debugCombo, 1);
     for (uint32_t i = 1; i < N; ++i) {
-        T.psi_pows[i] = mont_mul(T.psi_pows[i - 1], psi_m);
-        T.psi_inv_pows[i] = mont_mul(T.psi_inv_pows[i - 1], psi_inv_m);
+        T.psi_pows[i] = mont_mul(debugCombo, T.psi_pows[i - 1], psi_m);
+        T.psi_inv_pows[i] = mont_mul(debugCombo, T.psi_inv_pows[i - 1], psi_inv_m);
     }
 
-    uint64_t inv2_m = to_mont((P + 1) >> 1); // (p+1)/2
-    uint64_t Ninvm = to_mont(1);
+    uint64_t inv2_m = to_mont(debugCombo, (P + 1) >> 1); // (p+1)/2
+    uint64_t Ninvm = to_mont(debugCombo, 1);
     for (uint32_t i = 0; i < stages; ++i)
-        Ninvm = mont_mul(Ninvm, inv2_m);
+        Ninvm = mont_mul(debugCombo, Ninvm, inv2_m);
     T.Ninvm_mont = Ninvm;
 
     if (SharkVerbose == VerboseMode::Debug) {
@@ -2266,14 +2557,16 @@ build_roots(uint32_t N, uint32_t stages, RootTables& T)
 
 struct RootCache {
     std::unordered_map<uint32_t, std::unique_ptr<RootTables>> map;
+
+    template <class SharkFloatParams>
     const RootTables&
-    get(uint32_t N, uint32_t stages)
+    get(DebugHostCombo<SharkFloatParams>& debugCombo, uint32_t N, uint32_t stages)
     {
         auto it = map.find(N);
         if (it != map.end())
             return *(it->second);
         auto ptr = std::make_unique<RootTables>();
-        build_roots(N, stages, *ptr);
+        build_roots<SharkFloatParams>(debugCombo, N, stages, *ptr);
         auto* raw = ptr.get();
         map.emplace(N, std::move(ptr));
         return *raw;
@@ -2290,22 +2583,27 @@ bit_reverse_inplace_u64(uint64_t* A, uint32_t N, uint32_t stages)
     }
 }
 
+template <class SharkFloatParams>
 static void
-ntt_radix2(uint64_t* A, uint32_t N, uint32_t stages, const std::vector<uint64_t>& stage_base)
+ntt_radix2(DebugHostCombo<SharkFloatParams>& debugCombo,
+           uint64_t* A,
+           uint32_t N,
+           uint32_t stages,
+           const std::vector<uint64_t>& stage_base)
 {
     for (uint32_t s = 1; s <= stages; ++s) {
         uint32_t m = 1u << s;
         uint32_t half = m >> 1;
         uint64_t w_m = stage_base[s - 1];
         for (uint32_t k = 0; k < N; k += m) {
-            uint64_t w = to_mont(1);
+            uint64_t w = to_mont(debugCombo, 1);
             for (uint32_t j = 0; j < half; ++j) {
                 uint64_t U = A[k + j];
                 uint64_t V = A[k + j + half];
-                uint64_t t = mont_mul(V, w);
+                uint64_t t = mont_mul(debugCombo, V, w);
                 A[k + j] = add_p(U, t);
                 A[k + j + half] = sub_p(U, t);
-                w = mont_mul(w, w_m);
+                w = mont_mul(debugCombo, w, w_m);
             }
         }
     }
@@ -2389,7 +2687,6 @@ build_plan_prime(int n32, int b_hint = 26, int margin = 2)
     N = next_pow2_u32(2u * L);
     lgN = ceil_log2_u32(N);
 
-    const uint64_t PHI = 0xFFFFFFFF00000000ull; // p-1
     if ((PHI % (2ull * (uint64_t)N)) != 0ull) {
         int b_up_max = std::min(bmax, 30);
         bool fixed = false;
@@ -2446,23 +2743,24 @@ read_bits_simple(const HpSharkFloat<P>* X, int64_t q, int b)
     return (b == 64) ? v : (v & ((1ull << b) - 1ull));
 }
 
-template <class P>
+template <class SharkFloatParams>
 static void
-pack_base2b_prime(const HpSharkFloat<P>* X,
+pack_base2b_prime(DebugHostCombo<SharkFloatParams>& debugCombo,
+                  const HpSharkFloat<SharkFloatParams>* X,
                   const PlanPrime& pl,
                   std::vector<uint64_t>& Out,
                   std::vector<uint64_t>* RawOut = nullptr)
 {
-    Out.assign((size_t)pl.N, GoldilocksNTT::to_mont(0));
+    Out.assign((size_t)pl.N, GoldilocksNTT::to_mont(debugCombo, 0));
     if (RawOut)
         RawOut->assign((size_t)pl.L, 0ull);
 
     for (int i = 0; i < pl.L; ++i) {
         uint64_t coeff = read_bits_simple(X, (int64_t)i * pl.b, pl.b);
-        uint64_t cmod = coeff % GoldilocksNTT::P; // <-- qualify P
+        uint64_t cmod = coeff % GoldilocksNTT::P;
         if (RawOut)
             (*RawOut)[(size_t)i] = cmod;
-        Out[(size_t)i] = GoldilocksNTT::to_mont(cmod); // qualify helpers too
+        Out[(size_t)i] = GoldilocksNTT::to_mont(debugCombo, cmod); // qualify helpers too
     }
 }
 
@@ -2521,6 +2819,93 @@ unpack_prime_to_final128(const uint64_t* A_norm, const PlanPrime& pl, uint64_t* 
     }
 }
 
+template <typename SharkFloatParams>
+bool
+VerifyMontgomeryConstants(DebugHostCombo<SharkFloatParams>& debugCombo,
+                          uint64_t P,
+                          uint64_t NINV,
+                          uint64_t R2)
+{
+    if (SharkVerbose == VerboseMode::Debug) {
+        std::cout << "=== Enhanced Montgomery Verification ===\n";
+        std::cout << "P = 0x" << std::hex << P << std::dec << "\n";
+        std::cout << "NINV = 0x" << std::hex << NINV << std::dec << "\n";
+        std::cout << "R2 = 0x" << std::hex << R2 << std::dec << "\n";
+
+        // Test 1: Basic Montgomery property (P * NINV ≡ 2^64-1 mod 2^64)
+        uint64_t test1 = P * NINV; // unsigned wrap is modulo 2^64
+        std::cout << "P * NINV = 0x" << std::hex << test1 << std::dec;
+        if (test1 == 0xFFFFFFFFFFFFFFFFull) {
+            std::cout << " CORRECT\n";
+        } else {
+            std::cout << " INCORRECT (should be 0xFFFFFFFFFFFFFFFF)\n";
+            return false;
+        }
+
+        // Test 2: Montgomery multiplication of 1
+        uint64_t one_m = GoldilocksNTT::to_mont(debugCombo, 1);
+        std::cout << "to_mont(1) = 0x" << std::hex << one_m << std::dec << "\n";
+
+        uint64_t one_squared = GoldilocksNTT::mont_mul(debugCombo, one_m, one_m);
+        std::cout << "mont_mul(to_mont(1), to_mont(1)) = 0x" << std::hex << one_squared << std::dec
+                  << "\n";
+
+        uint64_t back_to_one = GoldilocksNTT::from_mont(debugCombo, one_squared);
+        std::cout << "from_mont(result) = " << std::hex << back_to_one << std::dec;
+        if (back_to_one == 1) {
+            std::cout << " CORRECT\n";
+        } else {
+            std::cout << " INCORRECT\n";
+            return false;
+        }
+
+        // Test 3: Verify R2 is correct (mont_mul(1, R2) == to_mont(1))
+        uint64_t mont_1 = GoldilocksNTT::mont_mul(debugCombo, 1, R2);
+        if (mont_1 == one_m) {
+            std::cout << "R2 verification: CORRECT\n";
+        } else {
+            std::cout << "R2 verification: INCORRECT\n";
+            std::cout << "  mont_mul(1, R2) = 0x" << std::hex << mont_1 << std::dec << "\n";
+            std::cout << "  to_mont(1) = 0x" << std::hex << one_m << std::dec << "\n";
+            return false;
+        }
+    }
+
+    return true;
+}
+
+template <class SharkFloatParams>
+static void
+verify_ntt_roots(DebugHostCombo<SharkFloatParams>& debugCombo,
+                 const GoldilocksNTT::RootTables& T,
+                 const PlanPrime& pl)
+{
+    if (SharkVerbose == VerboseMode::Debug) {
+        std::cout << "  NINV = 0x" << std::hex << GoldilocksNTT::NINV << std::dec << "\n";
+        std::cout << "  R2   = 0x" << std::hex << GoldilocksNTT::R2 << std::dec << "\n";
+        std::cout << "  Generator g = 0x" << std::hex << GoldilocksNTT::find_generator(debugCombo)
+                  << std::dec << "\n";
+        std::cout << "  psi = 0x" << std::hex << GoldilocksNTT::from_mont(debugCombo, T.psi_pows[1])
+                  << std::dec << " (order " << (2 * pl.N) << ")\n";
+        std::cout << "  omega = 0x" << std::hex
+                  << GoldilocksNTT::from_mont(
+                         debugCombo, GoldilocksNTT::mont_mul(debugCombo, T.psi_pows[1], T.psi_pows[1]))
+                  << std::dec << " (order " << pl.N << ")\n";
+    }
+
+    // Use the table's own 1 in Montgomery domain
+    const uint64_t one_m = T.psi_pows[0];
+
+    // ψ is T.psi_pows[1] (Montgomery). Check ψ^(2N) = 1
+    uint64_t psi2N = GoldilocksNTT::mont_pow(debugCombo, T.psi_pows[1], 2ull * (uint64_t)pl.N);
+    assert(psi2N == one_m && "psi^(2N) != 1 (check N and roots)");
+
+    // ω = ψ^2. Check ω^N = 1
+    uint64_t omega = GoldilocksNTT::mont_mul(debugCombo, T.psi_pows[1], T.psi_pows[1]);
+    uint64_t omegaN = GoldilocksNTT::mont_pow(debugCombo, omega, (uint64_t)pl.N);
+    assert(omegaN == one_m && "omega^N != 1 (check N and roots)");
+}
+
 // =========================================================================================
 //                          MultiplyHelperFFT2 (prime backend)
 // =========================================================================================
@@ -2537,15 +2922,13 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams>* A,
 
     using P = SharkFloatParams;
     using namespace GoldilocksNTT;
-    (void)debugCombo;
 
     // x must be a positive constant expression
 
     // Verify power of 2
-    static_assert(
-        SharkFloatParams::GlobalNumUint32 > 0 &&
+    static_assert(SharkFloatParams::GlobalNumUint32 > 0 &&
                       (SharkFloatParams::GlobalNumUint32 & (SharkFloatParams::GlobalNumUint32 - 1)) == 0,
-        "GlobalNumUint32 must be a power of 2");
+                  "GlobalNumUint32 must be a power of 2");
 
     // --------- Plan and tables ---------
     PlanPrime pl = build_plan_prime(P::GlobalNumUint32, /*b_hint=*/26, /*margin=*/2);
@@ -2553,91 +2936,17 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams>* A,
 
     assert(pl.ok && "Prime plan build failed (check b/N headroom constraints)");
     assert(pl.N >= 2 * pl.L && "No-wrap condition violated: need N >= 2*L");
-    const uint64_t PHI = 0xFFFFFFFF00000000ull;
     assert((PHI % (2ull * (uint64_t)pl.N)) == 0ull);
 
     RootCache root_cache;
-    const RootTables& T = root_cache.get((uint32_t)pl.N, (uint32_t)pl.stages);
+    const RootTables& T = root_cache.get(debugCombo, (uint32_t)pl.N, (uint32_t)pl.stages);
 
-    // Enhanced verification inside verify_constants()
-    auto verify_constants = [&]() {
-        if (SharkVerbose == VerboseMode::Debug) {
-            std::cout << "=== Enhanced Montgomery Verification ===" << std::endl;
-            std::cout << "P = 0x" << std::hex << GoldilocksNTT::P << std::dec << std::endl;
-            std::cout << "NINV = 0x" << std::hex << NINV << std::dec << std::endl;
-            std::cout << "R2 = 0x" << std::hex << R2 << std::dec << std::endl;
-
-            // Test 1: Basic Montgomery property
-            uint64_t test1 = GoldilocksNTT::P * NINV;
-            std::cout << "GoldilocksNTT::P * NINV = 0x" << std::hex << test1 << std::dec;
-            if (test1 == 0xFFFFFFFFFFFFFFFFull) {
-                std::cout << " CORRECT" << std::endl;
-            } else {
-                std::cout << " INCORRECT (should be 0xFFFFFFFFFFFFFFFF)" << std::endl;
-                return false;
-            }
-
-            // Test 2: Montgomery multiplication of 1
-            uint64_t one_m = to_mont(1);
-            std::cout << "to_mont(1) = 0x" << std::hex << one_m << std::dec << std::endl;
-
-            uint64_t one_squared = mont_mul(one_m, one_m);
-            std::cout << "mont_mul(to_mont(1), to_mont(1)) = 0x" << std::hex << one_squared << std::dec
-                      << std::endl;
-
-            uint64_t back_to_one = from_mont(one_squared);
-            std::cout << "from_mont(result) = " << std::hex << back_to_one << std::dec;
-            if (back_to_one == 1) {
-                std::cout << " CORRECT" << std::endl;
-            } else {
-                std::cout << " INCORRECT" << std::endl;
-                return false;
-            }
-
-            // Test 3: Verify R2 is correct
-            uint64_t mont_1 = mont_mul(1, R2); // Should equal to_mont(1)
-            if (mont_1 == one_m) {
-                std::cout << "R2 verification: CORRECT" << std::endl;
-            } else {
-                std::cout << "R2 verification: INCORRECT" << std::endl;
-                std::cout << "  mont_mul(1, R2) = 0x" << std::hex << mont_1 << std::dec << std::endl;
-                std::cout << "  to_mont(1) = 0x" << std::hex << one_m << std::dec << std::endl;
-                return false;
-            }
-
-            return true;
-        }
-        return true;
-    };
-
-    // Call this and assert it passes
-    bool constants_ok = verify_constants();
+    // assuming you have `debugCombo` (your context) and constants already:
+    const bool constants_ok =
+        VerifyMontgomeryConstants(debugCombo, GoldilocksNTT::P, GoldilocksNTT::NINV, GoldilocksNTT::R2);
     assert(constants_ok && "Montgomery constants verification failed");
 
-    {
-        if (SharkVerbose == VerboseMode::Debug) {
-            std::cout << "  NINV = 0x" << std::hex << GoldilocksNTT::NINV << std::dec << "\n";
-            std::cout << "  R2   = 0x" << std::hex << GoldilocksNTT::R2 << std::dec << "\n";
-            std::cout << "  Generator g = 0x" << std::hex << find_generator() << std::dec << "\n";
-            std::cout << "  psi = 0x" << std::hex << from_mont(T.psi_pows[1]) << std::dec
-                      << " (order " << (2 * pl.N) << ")\n";
-            std::cout << "  omega = 0x" << std::hex << from_mont(mont_mul(T.psi_pows[1], T.psi_pows[1]))
-                      << std::dec
-                      << " (order " << pl.N << ")\n";
-        }
-
-        // Use the table’s own 1 in Montgomery domain
-        const uint64_t one_m = T.psi_pows[0];
-
-        // ψ is T.psi_pows[1] (Montgomery). Check ψ^(2N) = 1
-        uint64_t psi2N = GoldilocksNTT::mont_pow(T.psi_pows[1], 2ull * (uint64_t)pl.N);
-        assert(psi2N == one_m && "psi^(2N) != 1 (check N and roots)");
-
-        // ω = ψ^2. Check ω^N = 1
-        uint64_t omega = GoldilocksNTT::mont_mul(T.psi_pows[1], T.psi_pows[1]);
-        uint64_t omegaN = GoldilocksNTT::mont_pow(omega, (uint64_t)pl.N);
-        assert(omegaN == one_m && "omega^N != 1 (check N and roots)");
-    }
+    verify_ntt_roots(debugCombo, T, pl);
 
     auto run_conv = [&](const HpSharkFloat<P>* XA,
                         const HpSharkFloat<P>* XB,
@@ -2653,23 +2962,23 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams>* A,
         std::vector<uint64_t> RawA, RawB;
         RawA.reserve(pl.L);
         RawB.reserve(pl.L);
-        pack_base2b_prime(XA, pl, X, &RawA);
-        pack_base2b_prime(XB, pl, Y, &RawB);
+        pack_base2b_prime(debugCombo, XA, pl, X, &RawA);
+        pack_base2b_prime(debugCombo, XB, pl, Y, &RawB);
         // 2) Twist
         for (int i = 0; i < pl.N; ++i) {
-            X[i] = mont_mul(X[i], T.psi_pows[(size_t)i]);
+            X[i] = mont_mul(debugCombo, X[i], T.psi_pows[(size_t)i]);
         }
         for (int i = 0; i < pl.N; ++i) {
-            Y[i] = mont_mul(Y[i], T.psi_pows[(size_t)i]);
+            Y[i] = mont_mul(debugCombo, Y[i], T.psi_pows[(size_t)i]);
         }
         { // Roundtrip twisted X
             std::vector<uint64_t> Xchk = X, Xorig = X;
             bit_reverse_inplace_u64(Xchk.data(), (uint32_t)pl.N, (uint32_t)pl.stages);
-            ntt_radix2(Xchk.data(), (uint32_t)pl.N, (uint32_t)pl.stages, T.stage_omegas);
+            ntt_radix2(debugCombo, Xchk.data(), (uint32_t)pl.N, (uint32_t)pl.stages, T.stage_omegas);
             bit_reverse_inplace_u64(Xchk.data(), (uint32_t)pl.N, (uint32_t)pl.stages);
-            ntt_radix2(Xchk.data(), (uint32_t)pl.N, (uint32_t)pl.stages, T.stage_omegas_inv);
+            ntt_radix2(debugCombo, Xchk.data(), (uint32_t)pl.N, (uint32_t)pl.stages, T.stage_omegas_inv);
             for (int i = 0; i < pl.N; ++i)
-                Xchk[(size_t)i] = mont_mul(Xchk[(size_t)i], T.Ninvm_mont);
+                Xchk[(size_t)i] = mont_mul(debugCombo, Xchk[(size_t)i], T.Ninvm_mont);
             for (int i = 0; i < pl.N; ++i)
                 assert(Xchk[(size_t)i] == Xorig[(size_t)i]);
         }
@@ -2677,36 +2986,36 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams>* A,
         // 3) Forward NTT
         bit_reverse_inplace_u64(X.data(), (uint32_t)pl.N, (uint32_t)pl.stages);
         bit_reverse_inplace_u64(Y.data(), (uint32_t)pl.N, (uint32_t)pl.stages);
-        ntt_radix2(X.data(), (uint32_t)pl.N, (uint32_t)pl.stages, T.stage_omegas);
-        ntt_radix2(Y.data(), (uint32_t)pl.N, (uint32_t)pl.stages, T.stage_omegas);
+        ntt_radix2(debugCombo, X.data(), (uint32_t)pl.N, (uint32_t)pl.stages, T.stage_omegas);
+        ntt_radix2(debugCombo, Y.data(), (uint32_t)pl.N, (uint32_t)pl.stages, T.stage_omegas);
         // 4) Pointwise
         for (int i = 0; i < pl.N; ++i)
-            X[i] = mont_mul(X[i], Y[i]);
+            X[i] = mont_mul(debugCombo, X[i], Y[i]);
         // 5) Inverse NTT
         bit_reverse_inplace_u64(X.data(), (uint32_t)pl.N, (uint32_t)pl.stages);
-        ntt_radix2(X.data(), (uint32_t)pl.N, (uint32_t)pl.stages, T.stage_omegas_inv);
+        ntt_radix2(debugCombo, X.data(), (uint32_t)pl.N, (uint32_t)pl.stages, T.stage_omegas_inv);
         // 6) Untwist + scale
         for (int i = 0; i < pl.N; ++i) {
-            uint64_t v = mont_mul(X[i], T.psi_inv_pows[(size_t)i]);
-            X[i] = mont_mul(v, T.Ninvm_mont);
+            uint64_t v = mont_mul(debugCombo, X[i], T.psi_inv_pows[(size_t)i]);
+            X[i] = mont_mul(debugCombo, v, T.Ninvm_mont);
         }
         // 7) Convert out of Montgomery
         std::vector<uint64_t> X_norm((size_t)pl.N);
         for (int i = 0; i < pl.N; ++i)
-            X_norm[(size_t)i] = from_mont(X[i]);
+            X_norm[(size_t)i] = from_mont(debugCombo, X[i]);
 
         { // Full coefficient check vs direct convolution (mod p)
             const int Kmax = 2 * pl.L - 1;
             for (int k = 0; k < Kmax; ++k) {
-                uint64_t cref_m = to_mont(0);
+                uint64_t cref_m = to_mont(debugCombo, 0);
                 int i0 = std::max(0, k - (pl.L - 1));
                 int i1 = std::min(k, pl.L - 1);
                 for (int i = i0; i <= i1; ++i) {
-                    uint64_t ai_m = to_mont(RawA[(size_t)i]);
-                    uint64_t bj_m = to_mont(RawB[(size_t)(k - i)]);
-                    cref_m = add_p(cref_m, mont_mul(ai_m, bj_m));
+                    uint64_t ai_m = to_mont(debugCombo, RawA[(size_t)i]);
+                    uint64_t bj_m = to_mont(debugCombo, RawB[(size_t)(k - i)]);
+                    cref_m = add_p(cref_m, mont_mul(debugCombo, ai_m, bj_m));
                 }
-                uint64_t cref = from_mont(cref_m);
+                uint64_t cref = from_mont(debugCombo, cref_m);
                 assert(X_norm[(size_t)k] == cref && "Convolution mismatch");
             }
         }
@@ -2741,12 +3050,11 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams>* A,
         HpSharkFloat<SharkFloatParams>*,                                                                \
         HpSharkFloat<SharkFloatParams>*,                                                                \
         DebugHostCombo<SharkFloatParams>& debugHostCombo);                                              \
-    template void MultiplyHelperFFT2<SharkFloatParams>(                                                 \
-        const HpSharkFloat<SharkFloatParams>*,                                                          \
-        const HpSharkFloat<SharkFloatParams>*,                                                          \
-        HpSharkFloat<SharkFloatParams>*,                                                                \
-        HpSharkFloat<SharkFloatParams>*,                                                                \
-        HpSharkFloat<SharkFloatParams>*,                                                                \
-        DebugHostCombo<SharkFloatParams>&);
+    template void MultiplyHelperFFT2<SharkFloatParams>(const HpSharkFloat<SharkFloatParams>*,           \
+                                                       const HpSharkFloat<SharkFloatParams>*,           \
+                                                       HpSharkFloat<SharkFloatParams>*,                 \
+                                                       HpSharkFloat<SharkFloatParams>*,                 \
+                                                       HpSharkFloat<SharkFloatParams>*,                 \
+                                                       DebugHostCombo<SharkFloatParams>&);
 
 ExplicitInstantiateAll();

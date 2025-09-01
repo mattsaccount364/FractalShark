@@ -21,6 +21,7 @@
 
 #include "Add.cuh"
 #include "Multiply.cuh"
+#include "MultiplyNTT.cuh"
 
 #define NOMINMAX
 #include <windows.h>
@@ -1148,10 +1149,14 @@ void TestCoreMultiply(
         combo.A = aNum;
         combo.B = bNum;
 
-        InvokeMultiplyKernelCorrectness<SharkFloatParams>(
-            timer,
-            combo,
-            &debugGpuCombo);
+        if constexpr (SharkEnableMultiplyKernel) {
+            InvokeMultiplyKaratsubaKernelCorrectness<SharkFloatParams>(
+                timer,
+                combo,
+                &debugGpuCombo);
+        } else if constexpr (SharkEnableMultiplyFFT2Kernel) {
+            InvokeMultiplyNTTKernelCorrectness<SharkFloatParams>(timer, combo, &debugGpuCombo);
+        }
 
         gpuResultXX = combo.ResultX2;
         gpuResultXY1 = combo.Result2XY;

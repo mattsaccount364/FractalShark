@@ -1,5 +1,6 @@
 #pragma once
 
+#include "HpSharkFloat.cuh"
 #include "DebugStateRaw.h"
 
 #ifdef __CUDACC__

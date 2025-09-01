@@ -121,6 +121,8 @@
     <ClInclude Include="HpSharkReferenceOrbit.cuh" />
     <ClInclude Include="MultiplyHelperGlobalUnaligned.cuh" />
     <ClInclude Include="MultiplyHelperVectorLoads.cuh" />
+    <ClInclude Include="MultiplyNTT.cuh" />
+    <ClInclude Include="MultiplyNTTTestKernels.cuh" />
     <ClInclude Include="ReferenceFFT.h" />
     <ClInclude Include="TestVerbose.h" />
     <ClInclude Include="ThreeWayMagnitude.h" />
@@ -144,6 +146,8 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </CudaCompile>
+    <CudaCompile Include="MultiplyNTT.cu" />
+    <CudaCompile Include="MultiplyNTTTestKernels.cu" />
     <CudaCompile Include="MultiplyTestKernels.cu" />
     <CudaCompile Include="NullKernel.cu" />
     <ClCompile Include="MainTestCuda.cpp" />

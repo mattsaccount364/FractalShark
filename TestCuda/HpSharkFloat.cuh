@@ -86,9 +86,8 @@ static constexpr auto SharkEnableReferenceKernel = false;
 #define SharkForceInlineReleaseOnly __forceinline__
 #endif
 
-// static constexpr bool SharkTestGpu =
-// (SharkEnableAddKernel || SharkEnableMultiplyKernel || SharkEnableMultiplyFFTKernel || SharkEnableMultiplyFFT2Kernel || SharkEnableReferenceKernel);
-static constexpr bool SharkTestGpu = false;
+static constexpr bool SharkTestGpu =
+ (SharkEnableAddKernel || SharkEnableMultiplyKernel || /*SharkEnableMultiplyFFTKernel ||*/ SharkEnableMultiplyFFT2Kernel || SharkEnableReferenceKernel);
 
 static constexpr auto SharkTestComicalThreadCount = 13;
 

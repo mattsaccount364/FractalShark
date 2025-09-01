@@ -7,6 +7,7 @@
 #include "HpSharkFloat.cuh"
 #include "Add.cuh"
 #include "Multiply.cuh"
+#include "MultiplyNTT.cuh"
 #include "HpSharkReferenceOrbit.cuh"
 #include "ReferenceKaratsuba.h"
 #include "ReferenceFFT.h"
@@ -189,6 +190,84 @@ void InvokeMultiplyKernelPerf(
     cudaFree(d_tempProducts);
 }
 
+template <class SharkFloatParams>
+void
+InvokeMultiplyNTTKernelPerf(BenchmarkTimer& timer,
+                         HpSharkComboResults<SharkFloatParams>& combo,
+                         uint64_t numIters)
+{
+
+    // Prepare kernel arguments
+    // Allocate memory for carryOuts and cumulativeCarries
+    uint64_t* d_tempProducts;
+    constexpr auto BytesToAllocate =
+        (AdditionalUInt64Global + ScratchMemoryCopies * CalculateMultiplyFrameSize<SharkFloatParams>()) *
+        sizeof(uint64_t);
+    cudaMalloc(&d_tempProducts, BytesToAllocate);
+
+    HpSharkComboResults<SharkFloatParams>* comboGpu;
+    cudaMalloc(&comboGpu, sizeof(HpSharkComboResults<SharkFloatParams>));
+    cudaMemcpy(comboGpu, &combo, sizeof(HpSharkComboResults<SharkFloatParams>), cudaMemcpyHostToDevice);
+
+    void* kernelArgs[] = {(void*)&comboGpu, (void*)&numIters, (void*)&d_tempProducts};
+
+    cudaStream_t stream = nullptr;
+
+    if constexpr (SharkCustomStream) {
+        cudaStreamCreate(&stream); // Create a stream
+    }
+
+    cudaDeviceProp prop;
+    int device_id = 0;
+
+    if constexpr (SharkCustomStream) {
+        cudaGetDeviceProperties(&prop, device_id);
+        cudaDeviceSetLimit(cudaLimitPersistingL2CacheSize,
+                           prop.persistingL2CacheMaxSize); /* Set aside max possible size of L2 cache for
+                                                              persisting accesses */
+
+        auto setAccess = [&](void* ptr, size_t num_bytes) {
+            cudaStreamAttrValue stream_attribute; // Stream level attributes data structure
+            stream_attribute.accessPolicyWindow.base_ptr =
+                reinterpret_cast<void*>(ptr); // Global Memory data pointer
+            stream_attribute.accessPolicyWindow.num_bytes =
+                num_bytes; // Number of bytes for persisting accesses.
+            // (Must be less than cudaDeviceProp::accessPolicyMaxWindowSize)
+            stream_attribute.accessPolicyWindow.hitRatio =
+                1.0; // Hint for L2 cache hit ratio for persisting accesses in the num_bytes region
+            stream_attribute.accessPolicyWindow.hitProp =
+                cudaAccessPropertyPersisting; // Type of access property on cache hit
+            stream_attribute.accessPolicyWindow.missProp =
+                cudaAccessPropertyStreaming; // Type of access property on cache miss.
+
+            // Set the attributes to a CUDA stream of type cudaStream_t
+            cudaError_t err =
+                cudaStreamSetAttribute(stream, cudaStreamAttributeAccessPolicyWindow, &stream_attribute);
+            if (err != cudaSuccess) {
+                std::cerr << "CUDA error in setting stream attribute: " << cudaGetErrorString(err)
+                          << std::endl;
+            }
+        };
+
+        setAccess(comboGpu, sizeof(HpSharkComboResults<SharkFloatParams>));
+        setAccess(d_tempProducts, 32 * SharkFloatParams::GlobalNumUint32 * sizeof(uint64_t));
+    }
+
+    {
+        ScopedBenchmarkStopper stopper{timer};
+        ComputeMultiplyNTTGpuTestLoop<SharkFloatParams>(stream, kernelArgs);
+    }
+
+    cudaMemcpy(&combo, comboGpu, sizeof(HpSharkComboResults<SharkFloatParams>), cudaMemcpyDeviceToHost);
+
+    if constexpr (SharkCustomStream) {
+        cudaStreamDestroy(stream); // Destroy the stream
+    }
+
+    cudaFree(comboGpu);
+    cudaFree(d_tempProducts);
+}
+
 template<class SharkFloatParams>
 void InvokeAddKernelPerf(
     BenchmarkTimer &timer,
@@ -299,7 +378,7 @@ void InvokeHpSharkReferenceKernelCorrectness(
 }
 
 template<class SharkFloatParams>
-void InvokeMultiplyKernelCorrectness(
+void InvokeMultiplyKaratsubaKernelCorrectness(
     BenchmarkTimer &timer,
     HpSharkComboResults<SharkFloatParams> &combo,
     DebugGpuCombo *debugCombo) {
@@ -360,6 +439,72 @@ void InvokeMultiplyKernelCorrectness(
                 &d_tempProducts[AdditionalMultipliesOffset],
                 SharkFloatParams::NumDebugMultiplyCounts * sizeof(DebugMultiplyCountRaw),
                 cudaMemcpyDeviceToHost);
+        }
+    }
+
+    cudaFree(comboGpu);
+    cudaFree(d_tempProducts);
+}
+
+template <class SharkFloatParams>
+void
+InvokeMultiplyNTTKernelCorrectness(BenchmarkTimer& timer,
+                                         HpSharkComboResults<SharkFloatParams>& combo,
+                                         DebugGpuCombo* debugCombo)
+{
+
+    // Prepare kernel arguments
+    // Allocate memory for carryOuts and cumulativeCarries
+    uint64_t* d_tempProducts;
+    constexpr auto BytesToAllocate =
+        (AdditionalUInt64Global + ScratchMemoryCopies * CalculateMultiplyFrameSize<SharkFloatParams>()) *
+        sizeof(uint64_t);
+    cudaMalloc(&d_tempProducts, BytesToAllocate);
+
+    if constexpr (!SharkTestInitCudaMemory) {
+        cudaMemset(d_tempProducts, 0, BytesToAllocate);
+    } else {
+        cudaMemset(d_tempProducts, 0xCD, BytesToAllocate);
+    }
+
+    HpSharkComboResults<SharkFloatParams>* comboGpu;
+    cudaMalloc(&comboGpu, sizeof(HpSharkComboResults<SharkFloatParams>));
+    cudaMemcpy(comboGpu, &combo, sizeof(HpSharkComboResults<SharkFloatParams>), cudaMemcpyHostToDevice);
+
+    if constexpr (!SharkTestInitCudaMemory) {
+        cudaMemset(&comboGpu->ResultX2, 0, sizeof(HpSharkFloat<SharkFloatParams>));
+        cudaMemset(&comboGpu->Result2XY, 0, sizeof(HpSharkFloat<SharkFloatParams>));
+        cudaMemset(&comboGpu->ResultY2, 0, sizeof(HpSharkFloat<SharkFloatParams>));
+    } else {
+        cudaMemset(&comboGpu->ResultX2, 0xCD, sizeof(HpSharkFloat<SharkFloatParams>));
+        cudaMemset(&comboGpu->Result2XY, 0xCD, sizeof(HpSharkFloat<SharkFloatParams>));
+        cudaMemset(&comboGpu->ResultY2, 0xCD, sizeof(HpSharkFloat<SharkFloatParams>));
+    }
+
+    void* kernelArgs[] = {(void*)&comboGpu, (void*)&d_tempProducts};
+
+    {
+        ScopedBenchmarkStopper stopper{timer};
+        ComputeMultiplyNTTGpu<SharkFloatParams>(kernelArgs);
+    }
+
+    cudaMemcpy(&combo, comboGpu, sizeof(HpSharkComboResults<SharkFloatParams>), cudaMemcpyDeviceToHost);
+
+    if (debugCombo != nullptr) {
+        if constexpr (SharkDebugChecksums) {
+            debugCombo->States.resize(SharkFloatParams::NumDebugStates);
+            cudaMemcpy(debugCombo->States.data(),
+                       &d_tempProducts[AdditionalChecksumsOffset],
+                       SharkFloatParams::NumDebugStates * sizeof(DebugStateRaw),
+                       cudaMemcpyDeviceToHost);
+        }
+
+        if constexpr (SharkPrintMultiplyCounts) {
+            debugCombo->MultiplyCounts.resize(SharkFloatParams::NumDebugMultiplyCounts);
+            cudaMemcpy(debugCombo->MultiplyCounts.data(),
+                       &d_tempProducts[AdditionalMultipliesOffset],
+                       SharkFloatParams::NumDebugMultiplyCounts * sizeof(DebugMultiplyCountRaw),
+                       cudaMemcpyDeviceToHost);
         }
     }
 
@@ -448,13 +593,26 @@ void InvokeAddKernelCorrectness(
         BenchmarkTimer &timer, \
         HpSharkComboResults<SharkFloatParams> &combo, \
         uint64_t numIters); \
-    template void InvokeMultiplyKernelCorrectness<SharkFloatParams>( \
+    template void InvokeMultiplyKaratsubaKernelCorrectness<SharkFloatParams>( \
         BenchmarkTimer &timer, \
         HpSharkComboResults<SharkFloatParams> &combo, \
         DebugGpuCombo *debugCombo);
 #else
 #define ExplicitlyInstantiateMultiply(SharkFloatParams) ;
 #endif
+
+#ifdef ENABLE_MULTIPLY_FFT2_KERNEL
+#define ExplicitlyInstantiateMultiplyNTT(SharkFloatParams)                                                 \
+    template void InvokeMultiplyNTTKernelPerf<SharkFloatParams>(                                           \
+        BenchmarkTimer & timer, HpSharkComboResults<SharkFloatParams> & combo, uint64_t numIters);      \
+    template void InvokeMultiplyNTTKernelCorrectness<SharkFloatParams>(                           \
+        BenchmarkTimer & timer,                                                                         \
+        HpSharkComboResults<SharkFloatParams> & combo,                                                  \
+        DebugGpuCombo * debugCombo);
+#else
+#define ExplicitlyInstantiateMultiplyNTT(SharkFloatParams) ;
+#endif
+
 
 #ifdef ENABLE_REFERENCE_KERNEL
 #define ExplicitlyInstantiateHpSharkReference(SharkFloatParams) \
@@ -473,6 +631,7 @@ void InvokeAddKernelCorrectness(
 #define ExplicitlyInstantiate(SharkFloatParams) \
     ExplicitlyInstantiateAdd(SharkFloatParams) \
     ExplicitlyInstantiateMultiply(SharkFloatParams) \
+    ExplicitlyInstantiateMultiplyNTT(SharkFloatParams) \
     ExplicitlyInstantiateHpSharkReference(SharkFloatParams)
 
 ExplicitInstantiateAll();

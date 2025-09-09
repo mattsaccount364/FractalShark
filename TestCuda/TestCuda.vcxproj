@@ -114,6 +114,9 @@
     </CudaLink>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <CudaCompile Include="MultiplyNTTCudaSetup.cu">
+      <FileType>Document</FileType>
+    </CudaCompile>
     <ClCompile Include="ReferenceAdd.cpp" />
     <ClCompile Include="ReferenceKaratsuba.cpp" />
     <ClCompile Include="ReferenceFFT.cpp" />
@@ -123,7 +126,9 @@
     <ClInclude Include="MultiplyHelperGlobalUnaligned.cuh" />
     <ClInclude Include="MultiplyHelperVectorLoads.cuh" />
     <ClInclude Include="MultiplyNTT.cuh" />
+    <ClInclude Include="MultiplyNTTCudaSetup.h" />
     <ClInclude Include="MultiplyNTTTestKernels.cuh" />
+    <ClInclude Include="NTTConstexprGenerator.h" />
     <ClInclude Include="ReferenceFFT.h" />
     <ClInclude Include="ReferenceNTT2.h" />
     <ClInclude Include="TestVerbose.h" />

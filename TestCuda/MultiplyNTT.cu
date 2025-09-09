@@ -1,4 +1,4 @@
-#include "MultiplyNTT.cuh"
+﻿#include "MultiplyNTT.cuh"
 
 #include <cuda_runtime.h>
 #include <curand.h>
@@ -16,13 +16,453 @@
 #include <iostream>
 #include <sstream>
 #include <vector>
+#include <span>
 
 #include <cooperative_groups.h>
 #include <cooperative_groups/memcpy_async.h>
 #include <cuda/barrier>
 
+#include "NTTConstexprGenerator.h"
+
+//#define TEMP_DISABLEALL
+
 namespace cg = cooperative_groups;
 
+static constexpr auto
+CalcAlign16Bytes64BitIndex(uint64_t Sixty4BitIndex)
+{
+    return Sixty4BitIndex % 2 == 0 ? 0 : 1;
+}
+
+static constexpr auto
+CalcAlign16Bytes32BitIndex(uint64_t Thirty2BitIndex)
+{
+    return 4 - (Thirty2BitIndex % 4);
+}
+
+#ifndef TEMP_DISABLEALL
+
+namespace SharkNTT {
+
+//--------------------------------------------------------------------------------------------------
+// Bit utilities
+//--------------------------------------------------------------------------------------------------
+
+// Reverse the lowest `bit_count` bits of a 32-bit value (manual since MSVC lacks
+// __builtin_bitreverse32).
+static __device__ SharkForceInlineReleaseOnly uint32_t
+ReverseBits32(uint32_t value, int bit_count)
+{
+    value = (value >> 16) | (value << 16);
+    value = ((value & 0x00ff00ffu) << 8) | ((value & 0xff00ff00u) >> 8);
+    value = ((value & 0x0f0f0f0fu) << 4) | ((value & 0xf0f0f0f0u) >> 4);
+    value = ((value & 0x33333333u) << 2) | ((value & 0xccccccccu) >> 2);
+    value = ((value & 0x55555555u) << 1) | ((value & 0xaaaaaaaau) >> 1);
+    return value >> (32 - bit_count);
+}
+
+//--------------------------------------------------------------------------------------------------
+// Normalization (final carry propagation and windowing into HpSharkFloat<P>)
+//--------------------------------------------------------------------------------------------------
+
+// Normalize directly from Final128 (lo64,hi64 per 32-bit digit position).
+// Does not allocate; does two passes over Final128 to (1) find 'significant',
+// then (2) write the window and set the Karatsuba-style exponent.
+// NOTE: Does not set sign; do that at the call site.
+template <class P>
+static __device__ void
+Normalize(HpSharkFloat<P>& out,
+          const HpSharkFloat<P>& a,
+          const HpSharkFloat<P>& b,
+          const uint64_t* final128,     // len = 2*Ddigits
+          size_t Ddigits,               // number of 32-bit positions represented in final128
+          int32_t additionalFactorOfTwo // 0 for XX/YY; 1 for XY if you did NOT shift digits
+)
+{
+    constexpr int N = P::GlobalNumUint32;
+
+    auto pass_once = [&](bool write_window, size_t start, size_t needN) -> std::pair<int, int> {
+        uint64_t carry_lo = 0, carry_hi = 0;
+        size_t idx = 0;           // index in base-2^32 digits being produced
+        int highest_nonzero = -1; // last non-zero digit index seen
+        int out_written = 0;
+
+        // Helper to emit one 32-bit digit (optionally writing into out.Digits)
+        auto emit_digit = [&](uint32_t dig) {
+            if (dig != 0)
+                highest_nonzero = (int)idx;
+            if (write_window && idx >= start && out_written < (int)needN) {
+                out.Digits[out_written++] = dig;
+            }
+            ++idx;
+        };
+
+        // Main Ddigits loop
+        for (size_t d = 0; d < Ddigits; ++d) {
+            uint64_t lo = final128[2 * d + 0];
+            uint64_t hi = final128[2 * d + 1];
+
+            uint64_t s_lo = lo + carry_lo;
+            uint64_t c0 = (s_lo < lo) ? 1ull : 0ull;
+            uint64_t s_hi = hi + carry_hi + c0;
+
+            emit_digit(static_cast<uint32_t>(s_lo & 0xffffffffull));
+
+            carry_lo = (s_lo >> 32) | (s_hi << 32);
+            carry_hi = (s_hi >> 32);
+        }
+
+        // Flush remaining carry into more digits
+        while (carry_lo || carry_hi) {
+            emit_digit(static_cast<uint32_t>(carry_lo & 0xffffffffull));
+            uint64_t nlo = (carry_lo >> 32) | (carry_hi << 32);
+            uint64_t nhi = (carry_hi >> 32);
+            carry_lo = nlo;
+            carry_hi = nhi;
+        }
+
+        // If we were asked to write a window and didn't fill all N yet, pad zeros
+        if (write_window) {
+            while (out_written < (int)needN) {
+                out.Digits[out_written++] = 0u;
+            }
+        }
+
+        return {highest_nonzero, out_written};
+    };
+
+    // Pass 1: find 'significant' (last non-zero + 1)
+    auto [highest_nonzero, _] = pass_once(/*write_window=*/false, /*start=*/0, /*needN=*/0);
+    if (highest_nonzero < 0) {
+        // Zero result
+        std::memset(out.Digits, 0, N * sizeof(uint32_t));
+        out.Exponent = a.Exponent + b.Exponent; // Karatsuba zero convention
+        return;
+    }
+    const int significant = highest_nonzero + 1;
+    int shift_digits = significant - N;
+    if (shift_digits < 0)
+        shift_digits = 0;
+
+    // Karatsuba-style exponent
+    out.Exponent = a.Exponent + b.Exponent + 32 * shift_digits + additionalFactorOfTwo;
+
+    // Pass 2: write exactly N digits starting at shift_digits
+    (void)pass_once(/*write_window=*/true, /*start=*/(size_t)shift_digits, /*needN=*/(size_t)N);
+}
+
+//--------------------------------------------------------------------------------------------------
+// 64×64→128 helpers (compiler/ABI specific intrinsics)
+//--------------------------------------------------------------------------------------------------
+
+static __device__ SharkForceInlineReleaseOnly void
+Mul64Wide(uint64_t a, uint64_t b, uint64_t& lo, uint64_t& hi)
+{
+    lo = a * b;
+    hi = __umulhi(a, b);
+}
+
+static __device__ SharkForceInlineReleaseOnly uint64_t
+Add64WithCarry(uint64_t a, uint64_t b, uint64_t& carry)
+{
+    uint64_t s = a + b;
+    uint64_t c = (s < a);
+    uint64_t out = s + carry;
+    carry = c | (out < s);
+    return out;
+}
+
+//--------------------------------------------------------------------------------------------------
+// Prime field ops + Montgomery core
+//--------------------------------------------------------------------------------------------------
+
+static __device__ SharkForceInlineReleaseOnly uint64_t
+AddP(uint64_t a, uint64_t b)
+{
+    uint64_t s = a + b;
+    if (s < a || s >= P)
+        s -= P;
+    return s;
+}
+
+static __device__ SharkForceInlineReleaseOnly uint64_t
+SubP(uint64_t a, uint64_t b)
+{
+    return (a >= b) ? (a - b) : (a + P - b);
+}
+
+template <class SharkFloatParams>
+static __device__ SharkForceInlineReleaseOnly uint64_t
+MontgomeryMul(DebugMultiplyCount<SharkFloatParams>* debugCombo,
+              uint64_t a,
+              uint64_t b)
+{
+    // We'll count 128-bit multiplications here as 3x64  (so 3 + 3 + 1)
+    //if constexpr (SharkPrintMultiplyCounts) {
+    //    DebugMultiplyIncrement<SharkFloatParams>(
+    //        debugCombo, cg::this_grid(), cg::this_thread_block(), 7);
+    //}
+
+    // t = a*b (128-bit)
+    uint64_t t_lo, t_hi;
+    Mul64Wide(a, b, t_lo, t_hi); do we ever get non-zero here?  conditional bp not working :()
+
+    // m = (t_lo * NINV) mod 2^64
+    uint64_t m = t_lo * SharkNTT::NINV;
+
+    // m*P (128-bit)
+    uint64_t mp_lo, mp_hi;
+    Mul64Wide(m, SharkNTT::P, mp_lo, mp_hi);
+
+    // u = t + m*P
+    // low 64 + carry0
+    uint64_t carry0 = 0;
+    (void)Add64WithCarry(t_lo, mp_lo, carry0); // updates carry0
+
+    // high 64 + carry0  -> also track carry-out (carry1)
+    uint64_t carry1 = carry0;
+    uint64_t u_hi = Add64WithCarry(t_hi, mp_hi, carry1); // returns sum, updates carry1
+
+    // r = u / 2^64; ensure r < P (include the high-limb carry-out)
+    uint64_t r = u_hi;
+    if (carry1 || r >= SharkNTT::P)
+        r -= SharkNTT::P;
+
+    return r;
+}
+
+template <class SharkFloatParams>
+static __device__ SharkForceInlineReleaseOnly uint64_t
+ToMontgomery(DebugMultiplyCount<SharkFloatParams>* debugCombo, uint64_t x)
+{
+    return MontgomeryMul(debugCombo, x, R2);
+}
+
+template <class SharkFloatParams>
+static __device__ SharkForceInlineReleaseOnly uint64_t
+FromMontgomery(DebugMultiplyCount<SharkFloatParams>* debugCombo, uint64_t x)
+{
+    return MontgomeryMul(debugCombo, x, 1);
+}
+
+template <class SharkFloatParams>
+static __device__ SharkForceInlineReleaseOnly uint64_t
+MontgomeryPow(DebugMultiplyCount<SharkFloatParams>* debugCombo, uint64_t a_mont, uint64_t e)
+{
+    uint64_t x = ToMontgomery(debugCombo, 1);
+    uint64_t y = a_mont;
+    while (e) {
+        if (e & 1)
+            x = MontgomeryMul(debugCombo, x, y);
+        y = MontgomeryMul(debugCombo, y, y);
+        e >>= 1;
+    }
+    return x;
+}
+
+//--------------------------------------------------------------------------------------------------
+// Root tables & utilities
+//--------------------------------------------------------------------------------------------------
+
+static __device__ SharkForceInlineReleaseOnly bool
+IsPow2(uint32_t x)
+{
+    return x && (0 == (x & (x - 1)));
+}
+
+// Runtime generator search (bounded). Used only for debug prints; correctness is guarded by table
+// checks.
+template <class SharkFloatParams>
+static __device__ uint64_t
+FindGenerator(DebugMultiplyCount<SharkFloatParams>* debugCombo)
+{
+    using namespace SharkNTT;
+    // p-1 = 2^32 * (2^32 - 1), with distinct prime factors:
+    // {2, 3, 5, 17, 257, 65537}
+    static const uint64_t factors[] = {2ull, 3ull, 5ull, 17ull, 257ull, 65537ull};
+
+    for (uint64_t g = 3; g < 1'000; ++g) {
+        uint64_t g_m = ToMontgomery(debugCombo, g);
+        bool ok = true;
+        for (uint64_t q : factors) {
+            // if g^{(p-1)/q} == 1, then g is NOT a generator
+            uint64_t t = MontgomeryPow(debugCombo, g_m, PHI / q);
+            if (t == ToMontgomery(debugCombo, 1)) {
+                ok = false;
+                break;
+            }
+        }
+        if (ok)
+            return g; // found a primitive root
+    }
+    // Fallback (shouldn't happen): 7 is often fine, but order-checks will catch issues.
+    return 7ull;
+}
+
+//--------------------------------------------------------------------------------------------------
+// In-place bit-reversal permutation on Montgomery residues (64-bit words)
+//--------------------------------------------------------------------------------------------------
+
+static __device__ void
+BitReverseInplace64(uint64_t* A, uint32_t N, uint32_t stages)
+{
+    for (uint32_t i = 0; i < N; ++i) {
+        uint32_t j = ReverseBits32(i, stages) & (N - 1);
+        if (j > i)
+            std::swap(A[i], A[j]);
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+// Iterative radix-2 NTT (Cooley–Tukey) over Montgomery domain
+//--------------------------------------------------------------------------------------------------
+
+template <class SharkFloatParams>
+static __device__ void
+NTTRadix2(DebugMultiplyCount<SharkFloatParams>* debugCombo,
+          uint64_t* A,
+          uint32_t N,
+          uint32_t stages,
+          const uint64_t *stage_base)
+{
+    for (uint32_t s = 1; s <= stages; ++s) {
+        uint32_t m = 1u << s;
+        uint32_t half = m >> 1;
+        uint64_t w_m = stage_base[s - 1];
+        for (uint32_t k = 0; k < N; k += m) {
+            uint64_t w = ToMontgomery(debugCombo, 1);
+            for (uint32_t j = 0; j < half; ++j) {
+                uint64_t U = A[k + j];
+                uint64_t V = A[k + j + half];
+                uint64_t t = MontgomeryMul(debugCombo, V, w);
+                A[k + j] = AddP(U, t);
+                A[k + j + half] = SubP(U, t);
+                w = MontgomeryMul(debugCombo, w, w_m);
+            }
+        }
+    }
+}
+
+//==================================================================================================
+//                       Pack (base-2^b) and Unpack (to Final128)
+//==================================================================================================
+
+template <class P>
+[[nodiscard]] static __device__ uint64_t
+ReadBitsSimple(const HpSharkFloat<P>* Z0_OutDigits, int64_t q, int b)
+{
+    const int B = P::GlobalNumUint32 * 32;
+    if (q >= B || q < 0)
+        return 0;
+
+    uint64_t v = 0;
+    int need = b;
+    int outPos = 0;
+    int64_t bit = q;
+
+    while (need > 0 && bit < B) {
+        int64_t w = bit / 32;
+        int off = (int)(bit % 32);
+        uint32_t limb = (w >= 0) ? Z0_OutDigits->Digits[(int)w] : 0u;
+        uint32_t chunk = (off ? (limb >> off) : limb);
+        int take = std::min(32 - off, need);
+
+        v |= (uint64_t)(chunk & ((take == 32) ? 0xFFFFFFFFu : ((1u << take) - 1u))) << outPos;
+
+        outPos += take;
+        need -= take;
+        bit += take;
+    }
+    return (b == 64) ? v : (v & ((1ull << b) - 1ull));
+}
+
+template <class SharkFloatParams>
+static __device__ void
+PackBase2bPrime_NoAlloc(DebugMultiplyCount<SharkFloatParams>* debugCombo,
+                        const HpSharkFloat<SharkFloatParams>* Xsrc,
+                        const PlanPrime& plan,
+                        uint64_t *outMont) // len >= plan.N
+{
+    using namespace SharkNTT;
+    const uint64_t zero_m = ToMontgomery(debugCombo, 0);
+    for (int i = 0; i < plan.N; ++i)
+        outMont[(size_t)i] = zero_m;
+
+    for (int i = 0; i < plan.L; ++i) {
+        const uint64_t coeff = ReadBitsSimple(Xsrc, (int64_t)i * plan.b, plan.b);
+        const uint64_t cmod = coeff % P;
+        outMont[(size_t)i] = ToMontgomery(debugCombo, cmod);
+    }
+}
+
+static __device__ void
+UnpackPrimeToFinal128(const uint64_t* A_norm, const PlanPrime& plan, uint64_t* Final128, size_t Ddigits)
+{
+    using namespace SharkNTT;
+    std::memset(Final128, 0, sizeof(uint64_t) * 2 * Ddigits);
+
+    const uint64_t HALF = (P - 1ull) >> 1;
+    const int Imax = std::min(plan.N, 2 * plan.L - 1);
+
+    for (int i = 0; i < Imax; ++i) {
+        uint64_t v = A_norm[i];
+        if (!v)
+            continue;
+
+        bool neg = (v > HALF);
+        uint64_t mag64 = neg ? (P - v) : v;
+
+        const uint64_t sBits = (uint64_t)i * (uint64_t)plan.b;
+        const size_t q = (size_t)(sBits >> 5);
+        const int r = (int)(sBits & 31);
+
+        const uint64_t lo64 = (r ? (mag64 << r) : mag64);
+        const uint64_t hi64 = (r ? (mag64 >> (64 - r)) : 0ull);
+
+        uint32_t d0 = (uint32_t)(lo64 & 0xffffffffu);
+        uint32_t d1 = (uint32_t)((lo64 >> 32) & 0xffffffffu);
+        uint32_t d2 = (uint32_t)(hi64 & 0xffffffffu);
+        uint32_t d3 = (uint32_t)((hi64 >> 32) & 0xffffffffu);
+
+        auto add32 = [&](size_t j, uint32_t add) {
+            if (!add)
+                return;
+            uint64_t& lo = Final128[2 * j + 0];
+            uint64_t& hi = Final128[2 * j + 1];
+            uint64_t old = lo;
+            lo += (uint64_t)add;
+            if (lo < old)
+                hi += 1ull;
+        };
+        auto sub32 = [&](size_t j, uint32_t sub) {
+            if (!sub)
+                return;
+            uint64_t& lo = Final128[2 * j + 0];
+            uint64_t& hi = Final128[2 * j + 1];
+            uint64_t old = lo;
+            uint64_t dif = old - (uint64_t)sub;
+            lo = dif;
+            if (old < (uint64_t)sub)
+                hi -= 1ull;
+        };
+
+        if (!neg) {
+            add32(q + 0, d0);
+            add32(q + 1, d1);
+            add32(q + 2, d2);
+            add32(q + 3, d3);
+        } else {
+            sub32(q + 0, d0);
+            sub32(q + 1, d1);
+            sub32(q + 2, d2);
+            sub32(q + 3, d3);
+        }
+    }
+}
+
+} // namespace SharkNTT
+
+#endif
 
 template <class SharkFloatParams, DebugStatePurpose Purpose>
 __device__ SharkForceInlineReleaseOnly static void
@@ -39,16 +479,93 @@ EraseCurrentDebugState(RecordIt record,
         record, grid, block, Purpose, RecursionDepth, CallIndex);
 }
 
+// Look for CalculateMultiplyFrameSize and ScratchMemoryArraysForMultiply
+// and make sure the number of NewN arrays we're using here fits within that limit.
+// The list here should go up to ScratchMemoryArraysForMultiply.
+static_assert(AdditionalUInt64PerFrame == 256, "See below");
+#define DefineTempProductsOffsets()                                                            \
+    const int threadIdxGlobal =                                                                         \
+        block.group_index().x * SharkFloatParams::GlobalThreadsPerBlock + block.thread_index().x;       \
+    constexpr auto NewN = SharkFloatParams::GlobalNumUint32;                                            \
+    constexpr int TestMultiplier = 1;                                                                   \
+    constexpr auto Multiplies_offset = AdditionalGlobalSyncSpace;                                       \
+    constexpr auto Checksum_offset = Multiplies_offset + AdditionalGlobalMultipliesPerThread;           \
+    constexpr auto GlobalsDoneOffset = Checksum_offset + AdditionalGlobalChecksumSpace;                 \
+    constexpr auto Z0_offsetXX = GlobalsDoneOffset; \
+    constexpr auto Z0_offsetXY = Z0_offsetXX + 4 * NewN * TestMultiplier +                              \
+                                 CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 4 */         \
+    constexpr auto Z0_offsetYY = Z0_offsetXY + 4 * NewN * TestMultiplier +                              \
+                                 CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 8 */         \
+    constexpr auto Z2_offsetXX = Z0_offsetYY + 4 * NewN * TestMultiplier +                              \
+                                 CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 12 */        \
+    constexpr auto Z2_offsetXY = Z2_offsetXX + 4 * NewN * TestMultiplier +                              \
+                                 CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 16 */        \
+    constexpr auto Z2_offsetYY = Z2_offsetXY + 4 * NewN * TestMultiplier +                              \
+                                 CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 20 */        \
+    constexpr auto Z1_temp_offsetXX = Z2_offsetYY + 4 * NewN * TestMultiplier +                         \
+                                      CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 24 */   \
+    constexpr auto Z1_temp_offsetXY = Z1_temp_offsetXX + 4 * NewN * TestMultiplier +                    \
+                                      CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 28 */   \
+    constexpr auto Z1_temp_offsetYY = Z1_temp_offsetXY + 4 * NewN * TestMultiplier +                    \
+                                      CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 32 */   \
+    constexpr auto Z1_offsetXX = Z1_temp_offsetYY + 4 * NewN * TestMultiplier +                         \
+                                 CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 36 */        \
+    constexpr auto Z1_offsetXY = Z1_offsetXX + 4 * NewN * TestMultiplier +                              \
+                                 CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 40 */        \
+    constexpr auto Z1_offsetYY = Z1_offsetXY + 4 * NewN * TestMultiplier +                              \
+                                 CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 44 */        \
+    constexpr auto Convolution_offsetXX =                                                               \
+        Z1_offsetYY + 4 * NewN * TestMultiplier +                                                       \
+        CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 48 */                                 \
+    constexpr auto Convolution_offsetXY =                                                               \
+        Convolution_offsetXX + 4 * NewN * TestMultiplier +                                              \
+        CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 52 */                                 \
+    constexpr auto Convolution_offsetYY =                                                               \
+        Convolution_offsetXY + 4 * NewN * TestMultiplier +                                              \
+        CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 56 */                                 \
+    constexpr auto Result_offsetXX = Convolution_offsetYY + 4 * NewN * TestMultiplier +                 \
+                                     CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 60 */    \
+    constexpr auto Result_offsetXY = Result_offsetXX + 4 * NewN * TestMultiplier +                      \
+                                     CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 64 */    \
+    constexpr auto Result_offsetYY = Result_offsetXY + 4 * NewN * TestMultiplier +                      \
+                                     CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 68 */    \
+    constexpr auto XDiff_offset = Result_offsetYY + 2 * NewN * TestMultiplier +                         \
+                                  CalcAlign16Bytes64BitIndex(2 * NewN * TestMultiplier); /* 70 */       \
+    constexpr auto YDiff_offset = XDiff_offset + 1 * NewN * TestMultiplier +                            \
+                                  CalcAlign16Bytes64BitIndex(1 * NewN * TestMultiplier); /* 71 */       \
+    constexpr auto GlobalCarryOffset = YDiff_offset + 1 * NewN * TestMultiplier +                       \
+                                       CalcAlign16Bytes64BitIndex(1 * NewN * TestMultiplier); /* 72 */  \
+    constexpr auto SubtractionOffset1 = GlobalCarryOffset + 1 * NewN * TestMultiplier +                 \
+                                        CalcAlign16Bytes64BitIndex(1 * NewN * TestMultiplier); /* 73 */ \
+    constexpr auto SubtractionOffset2 = SubtractionOffset1 + 1 * NewN * TestMultiplier +                \
+                                        CalcAlign16Bytes64BitIndex(1 * NewN * TestMultiplier); /* 74 */ \
+    constexpr auto SubtractionOffset3 = SubtractionOffset2 + 1 * NewN * TestMultiplier +                \
+                                        CalcAlign16Bytes64BitIndex(1 * NewN * TestMultiplier); /* 75 */ \
+    constexpr auto SubtractionOffset4 = SubtractionOffset3 + 1 * NewN * TestMultiplier +                \
+                                        CalcAlign16Bytes64BitIndex(1 * NewN * TestMultiplier); /* 76 */ \
+    constexpr auto SubtractionOffset5 = SubtractionOffset4 + 1 * NewN * TestMultiplier +                \
+                                        CalcAlign16Bytes64BitIndex(1 * NewN * TestMultiplier); /* 77 */ \
+    constexpr auto SubtractionOffset6 = SubtractionOffset5 + 1 * NewN * TestMultiplier +                \
+                                        CalcAlign16Bytes64BitIndex(1 * NewN * TestMultiplier); /* 78 */ \
+    constexpr auto CarryInsOffset =                                                                     \
+        SubtractionOffset6 + 1 * NewN * TestMultiplier +                                                \
+        CalcAlign16Bytes64BitIndex(1 * NewN * TestMultiplier); /* requires 3xNewN 79 */                 \
+    constexpr auto CarryInsEnd = CarryInsOffset + 3 * NewN + CalcAlign16Bytes64BitIndex(3 * NewN); \
+
+
+
 template <class SharkFloatParams>
 static __device__ void
-MultiplyHelperNTTV2Separates(const HpSharkFloat<SharkFloatParams>* SharkRestrict A,
-                                   const HpSharkFloat<SharkFloatParams>* SharkRestrict B,
-                                   HpSharkFloat<SharkFloatParams>* SharkRestrict OutXX,
-                                   HpSharkFloat<SharkFloatParams>* SharkRestrict OutXY,
-                                   HpSharkFloat<SharkFloatParams>* SharkRestrict OutYY,
-                                   cg::grid_group& grid,
-                                   cg::thread_block& block,
-                                   uint64_t* SharkRestrict tempProducts)
+MultiplyHelperNTTV2Separates(const SharkNTT::PlanPrime &plan,
+                             const SharkNTT::RootTables &roots,
+                             const HpSharkFloat<SharkFloatParams>* SharkRestrict A,
+                             const HpSharkFloat<SharkFloatParams>* SharkRestrict B,
+                             HpSharkFloat<SharkFloatParams>* SharkRestrict OutXX,
+                             HpSharkFloat<SharkFloatParams>* SharkRestrict OutXY,
+                             HpSharkFloat<SharkFloatParams>* SharkRestrict OutYY,
+                             cg::grid_group& grid,
+                             cg::thread_block& block,
+                             uint64_t* SharkRestrict tempProducts)
 {
 
     extern __shared__ uint32_t shared_data[];
@@ -56,11 +573,13 @@ MultiplyHelperNTTV2Separates(const HpSharkFloat<SharkFloatParams>* SharkRestrict
     constexpr auto ExecutionBlockBase = 0;
     constexpr auto ExecutionNumBlocks = SharkFloatParams::GlobalNumBlocks;
 
+    DefineTempProductsOffsets();
+
     // TODO: indexes
     auto* SharkRestrict debugMultiplyCounts =
-        reinterpret_cast<DebugMultiplyCount<SharkFloatParams>*>(&tempProducts[0]);
+        reinterpret_cast<DebugMultiplyCount<SharkFloatParams>*>(&tempProducts[Multiplies_offset]);
     auto* SharkRestrict debugStates =
-        reinterpret_cast<DebugState<SharkFloatParams>*>(&tempProducts[0]);
+        reinterpret_cast<DebugState<SharkFloatParams>*>(&tempProducts[Checksum_offset]);
 
     if constexpr (SharkPrintMultiplyCounts) {
         const auto CurBlock = block.group_index().x;
@@ -163,6 +682,120 @@ MultiplyHelperNTTV2Separates(const HpSharkFloat<SharkFloatParams>* SharkRestrict
         static_assert(static_cast<int32_t>(DebugStatePurpose::NumPurposes) == 41,
                       "Unexpected number of purposes");
     }
+
+#ifndef TEMP_DISABLEALL
+    if (block.thread_index().x == 0 && block.group_index().x == 0) {
+        using P = SharkFloatParams;
+        using namespace SharkNTT;
+
+        // x must be a positive constant expression
+
+        // Verify power of 2
+        static_assert(
+            SharkFloatParams::GlobalNumUint32 > 0 &&
+                (SharkFloatParams::GlobalNumUint32 & (SharkFloatParams::GlobalNumUint32 - 1)) == 0,
+            "GlobalNumUint32 must be a power of 2");
+
+        // Compute Final128 digit budget once
+        const uint32_t Ddigits = ((uint64_t)((2 * plan.L - 2) * plan.b + 64) + 31u) / 32u + 2u;
+
+        // ---- Single allocation for entire core path ----
+        uint64_t* buffer = &tempProducts[GlobalsDoneOffset];
+        const size_t buf_count = (size_t)2 * (size_t)plan.N     // Z0_OutDigits + Z2_OutDigits
+                                 + (size_t)2 * (size_t)Ddigits; // Final128 (lo,hi per 32-bit slot)
+
+        // Slice buffer into spans
+        size_t off = 0;
+        uint64_t *Z0_OutDigits = buffer + off; // plan.N
+        off += (size_t)plan.N;
+        uint64_t* Z2_OutDigits = buffer + off; // plan.N
+        off += (size_t)plan.N;
+        uint64_t *Final128 = buffer + off; // (size_t)2 * Ddigits
+        off += (size_t)2 * Ddigits;        
+
+        auto run_conv = [&](const HpSharkFloat<P>* a,
+                            const HpSharkFloat<P>* b,
+                            HpSharkFloat<P>* out,
+                            const HpSharkFloat<P>& inA,
+                            const HpSharkFloat<P>& inB,
+                            int addFactorOfTwo,
+                            bool isNegative) {
+            // ============================
+            // HOT PATH (single allocation)
+            // ============================
+
+            // 1) Pack (into Z0_OutDigits and Z2_OutDigits)
+            PackBase2bPrime_NoAlloc(debugMultiplyCounts, a, plan, Z0_OutDigits);
+            PackBase2bPrime_NoAlloc(debugMultiplyCounts, b, plan, Z2_OutDigits);
+
+            // 2) Twist by ψ^i
+            for (int i = 0; i < plan.N; ++i)
+                Z0_OutDigits[(size_t)i] =
+                    MontgomeryMul(debugMultiplyCounts, Z0_OutDigits[(size_t)i], roots.psi_pows[(size_t)i]);
+            for (int i = 0; i < plan.N; ++i)
+                Z2_OutDigits[(size_t)i] =
+                    MontgomeryMul(debugMultiplyCounts, Z2_OutDigits[(size_t)i], roots.psi_pows[(size_t)i]);
+
+            // 3) Forward NTT (in place)
+            BitReverseInplace64(Z0_OutDigits, (uint32_t)plan.N, (uint32_t)plan.stages);
+            BitReverseInplace64(Z2_OutDigits, (uint32_t)plan.N, (uint32_t)plan.stages);
+            NTTRadix2(debugMultiplyCounts,
+                      Z0_OutDigits,
+                      (uint32_t)plan.N,
+                      (uint32_t)plan.stages,
+                      roots.stage_omegas);
+            NTTRadix2(debugMultiplyCounts,
+                      Z2_OutDigits,
+                      (uint32_t)plan.N,
+                      (uint32_t)plan.stages,
+                      roots.stage_omegas);
+
+            // 4) Pointwise multiply (Z0_OutDigits *= Z2_OutDigits)
+            for (int i = 0; i < plan.N; ++i)
+                Z0_OutDigits[(size_t)i] = MontgomeryMul(debugMultiplyCounts, Z0_OutDigits[(size_t)i], Z2_OutDigits[(size_t)i]);
+
+            // 5) Inverse NTT (in place on Z0_OutDigits)
+            BitReverseInplace64(Z0_OutDigits, (uint32_t)plan.N, (uint32_t)plan.stages);
+            NTTRadix2(debugMultiplyCounts,
+                      Z0_OutDigits,
+                      (uint32_t)plan.N,
+                      (uint32_t)plan.stages,
+                      roots.stage_omegas_inv);
+
+            // 6) Untwist + scale by N^{-1} (write back into Z0_OutDigits)
+            for (int i = 0; i < plan.N; ++i) {
+                uint64_t v =
+                    MontgomeryMul(debugMultiplyCounts, Z0_OutDigits[(size_t)i], roots.psi_inv_pows[(size_t)i]);
+                Z0_OutDigits[(size_t)i] = MontgomeryMul(debugMultiplyCounts, v, roots.Ninvm_mont);
+            }
+
+            // 7) Convert out of Montgomery: reuse Z2_OutDigits as normal-domain buffer
+            for (int i = 0; i < plan.N; ++i)
+                Z2_OutDigits[(size_t)i] = FromMontgomery(debugMultiplyCounts, Z0_OutDigits[(size_t)i]);
+
+            // 8) Unpack -> Final128 -> Normalize
+            //std::fill_n(Final128, Final128.size(), 0ull);
+            UnpackPrimeToFinal128(Z2_OutDigits, plan, Final128, Ddigits);
+            out->SetNegative(isNegative);
+            Normalize<P>(*out, inA, inB, Final128, Ddigits, addFactorOfTwo);
+        };
+
+        // XX = A^2
+        run_conv(A, A, OutXX, *A, *A, /*additionalFactorOfTwo=*/0, /*isNegative=*/false);
+        // YY = B^2
+        run_conv(B, B, OutYY, *B, *B, /*additionalFactorOfTwo=*/0, /*isNegative=*/false);
+        // XY = 2*(A*B)
+        run_conv(A,
+                 B,
+                 OutXY,
+                 *A,
+                 *B,
+                 /*additionalFactorOfTwo=*/1,
+                 /*isNegative=*/(A->GetNegative() ^ B->GetNegative()));
+    }
+
+    grid.sync();
+#endif
 }
 
 template <class SharkFloatParams>
@@ -280,17 +913,18 @@ PrintMaxActiveBlocks(void* kernelFn, int sharedAmountBytes)
 template <class SharkFloatParams>
 static __device__ void
 MultiplyHelperNTT(HpSharkComboResults<SharkFloatParams>* SharkRestrict combo,
-                          cg::grid_group& grid,
-                          cg::thread_block& block,
-                          uint64_t* SharkRestrict tempProducts)
+                  cg::grid_group& grid,
+                  cg::thread_block& block,
+                  uint64_t* SharkRestrict tempProducts)
 {
-
-    MultiplyHelperNTTV2Separates<SharkFloatParams>(&combo->A,
-                                                         &combo->B,
-                                                         &combo->ResultX2,
-                                                         &combo->Result2XY,
-                                                         &combo->ResultY2,
-                                                         grid,
-                                                         block,
-                                                         tempProducts);
+    MultiplyHelperNTTV2Separates<SharkFloatParams>(combo->Plan,
+                                                   combo->Roots,
+                                                   &combo->A,
+                                                   &combo->B,
+                                                   &combo->ResultX2,
+                                                   &combo->Result2XY,
+                                                   &combo->ResultY2,
+                                                   grid,
+                                                   block,
+                                                   tempProducts);
 }

@@ -468,6 +468,19 @@ InvokeMultiplyNTTKernelCorrectness(BenchmarkTimer& timer,
     cudaMalloc(&comboGpu, sizeof(HpSharkComboResults<SharkFloatParams>));
     cudaMemcpy(comboGpu, &combo, sizeof(HpSharkComboResults<SharkFloatParams>), cudaMemcpyHostToDevice);
 
+    {
+        SharkNTT::PlanPrime NTTPlan;
+        SharkNTT::RootTables NTTRoots;
+
+        NTTPlan =
+            SharkNTT::BuildPlanPrime(SharkFloatParams::GlobalNumUint32, /*b_hint=*/26, /*margin=*/2);
+        SharkNTT::BuildRoots<SharkFloatParams>(
+            SharkFloatParams::GlobalNumUint32, NTTPlan.stages, NTTRoots);
+
+        CopyRootsToCuda<SharkFloatParams>(comboGpu->Roots, NTTRoots);
+        cudaMemcpy(&comboGpu->Plan, &NTTPlan, sizeof(SharkNTT::PlanPrime), cudaMemcpyHostToDevice);
+    }
+
     if constexpr (!SharkTestInitCudaMemory) {
         cudaMemset(&comboGpu->ResultX2, 0, sizeof(HpSharkFloat<SharkFloatParams>));
         cudaMemset(&comboGpu->Result2XY, 0, sizeof(HpSharkFloat<SharkFloatParams>));
@@ -503,6 +516,11 @@ InvokeMultiplyNTTKernelCorrectness(BenchmarkTimer& timer,
                        SharkFloatParams::NumDebugMultiplyCounts * sizeof(DebugMultiplyCountRaw),
                        cudaMemcpyDeviceToHost);
         }
+    }
+
+
+    {
+        SharkNTT::DestroyRoots<SharkFloatParams>(true, comboGpu->Roots);
     }
 
     cudaFree(comboGpu);

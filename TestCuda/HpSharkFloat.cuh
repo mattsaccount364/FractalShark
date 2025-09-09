@@ -2,6 +2,7 @@
 
 #include "CudaCrap.h"
 #include "DebugStateRaw.h"
+#include "MultiplyNTTCudaSetup.h"
 
 #include <string>
 #include <gmp.h>
@@ -86,9 +87,9 @@ static constexpr auto SharkEnableReferenceKernel = false;
 #define SharkForceInlineReleaseOnly __forceinline__
 #endif
 
-//static constexpr bool SharkTestGpu =
-// (SharkEnableAddKernel || SharkEnableMultiplyKernel || /*SharkEnableMultiplyFFTKernel ||*/ SharkEnableMultiplyFFT2Kernel || SharkEnableReferenceKernel);
-static constexpr bool SharkTestGpu = false;
+static constexpr bool SharkTestGpu =
+    (SharkEnableAddKernel || SharkEnableMultiplyKernel || /*SharkEnableMultiplyFFTKernel ||*/ SharkEnableMultiplyFFT2Kernel || SharkEnableReferenceKernel);
+//static constexpr bool SharkTestGpu = false;
 
 static constexpr auto SharkTestComicalThreadCount = 13;
 
@@ -406,6 +407,8 @@ bool HpSharkFloat<SharkFloatParams>::GetNegative() const {
 #pragma warning(disable:4324)
 template<class SharkFloatParams>
 struct alignas(16) HpSharkComboResults{
+    SharkNTT::PlanPrime Plan;
+    SharkNTT::RootTables Roots;
     alignas(16) HpSharkFloat<SharkFloatParams> A;
     alignas(16) HpSharkFloat<SharkFloatParams> B;
     alignas(16) HpSharkFloat<SharkFloatParams> ResultX2;

@@ -73,7 +73,7 @@
       <SplitCompileCustomThreads>
       </SplitCompileCustomThreads>
       <CodeGeneration>compute_75,sm_75;compute_89,sm_89;</CodeGeneration>
-      <SplitCompile>MaxThreads</SplitCompile>
+      <SplitCompile>Default</SplitCompile>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -142,7 +142,7 @@
     <CudaCompile Include="HpSharkFloat.cu" />
     <CudaCompile Include="HpSharkReferenceOrbit.cu" />
     <CudaCompile Include="KernelInvoke.cu" />
-    <ClInclude Include="Multiply.cu">
+    <ClInclude Include="MultiplyKaratsuba.cu">
       <FileType>Document</FileType>
     </ClInclude>
     <CudaCompile Include="Archived\MultiplyKaratsubaV1.cu">
@@ -172,7 +172,7 @@
     <ClInclude Include="HpSharkFloat.cuh" />
     <ClInclude Include="KernelInvoke.cuh" />
     <ClInclude Include="MainTestCuda.h" />
-    <ClInclude Include="Multiply.cuh" />
+    <ClInclude Include="MultiplyKaratsuba.cuh" />
     <ClInclude Include="MultiplyInternal.cuh" />
     <ClInclude Include="NullKernel.cuh" />
     <ClInclude Include="ReferenceAdd.h" />

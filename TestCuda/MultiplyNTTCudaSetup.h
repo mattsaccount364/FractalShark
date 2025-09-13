@@ -37,10 +37,6 @@ uint32_t CeilDivU32(uint32_t a, uint32_t b);
 
 int CeilLog2U32(uint32_t x);
 
-void Mul64Wide(uint64_t a, uint64_t b, uint64_t& lo, uint64_t& hi);
-
-uint64_t Add64WithCarry(uint64_t a, uint64_t b, uint64_t& carry);
-
 template <class SharkFloatParams> uint64_t MontgomeryMul(uint64_t a, uint64_t b);
 
 template <class SharkFloatParams>

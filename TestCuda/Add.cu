@@ -380,7 +380,6 @@ EraseCurrentDebugState (
 
 template<
     class SharkFloatParams,
-    int32_t CallIndex,
     DebugStatePurpose Purpose,
     typename ArrayType>
 static __device__ SharkForceInlineReleaseOnly void
@@ -395,6 +394,7 @@ StoreCurrentDebugState (
     constexpr auto CurPurpose = static_cast<int32_t>(Purpose);
     constexpr auto RecursionDepth = 0;
     constexpr auto UseConvolutionHere = UseConvolution::No;
+    constexpr auto CallIndex = 0;
 
     debugStates[CurPurpose].Reset(
         record, UseConvolutionHere, grid, block, arrayToChecksum, arraySize, Purpose, RecursionDepth, CallIndex);
@@ -658,15 +658,15 @@ static __device__ void AddHelperSeparates(
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Result_Add2>(record, debugStates, grid, block);
         static_assert(static_cast<int32_t>(DebugStatePurpose::NumPurposes) == 41, "Unexpected number of purposes");
 
-        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::ADigits, uint32_t>(
+        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::ADigits, uint32_t>(
             record, debugStates, grid, block, A_X2->Digits, NewN);
-        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::BDigits, uint32_t>(
+        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::BDigits, uint32_t>(
             record, debugStates, grid, block, B_Y2->Digits, NewN);
-        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::CDigits, uint32_t>(
+        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::CDigits, uint32_t>(
             record, debugStates, grid, block, C_A->Digits, NewN);
-        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::DDigits, uint32_t>(
+        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::DDigits, uint32_t>(
             record, debugStates, grid, block, D_2X->Digits, NewN);
-        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::EDigits, uint32_t>(
+        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::EDigits, uint32_t>(
             record, debugStates, grid, block, E_B->Digits, NewN);
 
         grid.sync();
@@ -853,11 +853,11 @@ static __device__ void AddHelperSeparates(
 
     if constexpr (SharkDebugChecksums) {
         grid.sync();
-        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::FinalAdd1, uint64_t>(
+        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::FinalAdd1, uint64_t>(
             record, debugStates, grid, block, extResultTrue, numActualDigitsPlusGuard);
-        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::FinalAdd2, uint64_t>(
+        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::FinalAdd2, uint64_t>(
             record, debugStates, grid, block, extResultFalse, numActualDigitsPlusGuard);
-        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::FinalAdd3, uint64_t>(
+        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::FinalAdd3, uint64_t>(
             record, debugStates, grid, block, final128_DE, numActualDigitsPlusGuard);
         grid.sync();
     } else {
@@ -926,9 +926,9 @@ static __device__ void AddHelperSeparates(
 
     if constexpr (SharkDebugChecksums) {
         grid.sync();
-        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Result_Add1, uint32_t>(
+        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Result_Add1, uint32_t>(
             record, debugStates, grid, block, Out_A_B_C->Digits, numActualDigits);
-        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Result_Add2, uint32_t>(
+        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Result_Add2, uint32_t>(
             record, debugStates, grid, block, Out_D_E->Digits, numActualDigits);
         grid.sync();
     } else {

@@ -6,7 +6,7 @@
 #include "Tests.h"
 #include "HpSharkFloat.cuh"
 #include "Add.cuh"
-#include "Multiply.cuh"
+#include "MultiplyKaratsuba.cuh"
 #include "MultiplyNTT.cuh"
 #include "HpSharkReferenceOrbit.cuh"
 
@@ -475,7 +475,7 @@ InvokeMultiplyNTTKernelCorrectness(BenchmarkTimer& timer,
         NTTPlan =
             SharkNTT::BuildPlanPrime(SharkFloatParams::GlobalNumUint32, /*b_hint=*/26, /*margin=*/2);
         SharkNTT::BuildRoots<SharkFloatParams>(
-            SharkFloatParams::GlobalNumUint32, NTTPlan.stages, NTTRoots);
+            NTTPlan.N, NTTPlan.stages, NTTRoots);
 
         CopyRootsToCuda<SharkFloatParams>(comboGpu->Roots, NTTRoots);
         cudaMemcpy(&comboGpu->Plan, &NTTPlan, sizeof(SharkNTT::PlanPrime), cudaMemcpyHostToDevice);

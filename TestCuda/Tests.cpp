@@ -21,7 +21,7 @@
 #include <assert.h>
 
 #include "Add.cuh"
-#include "Multiply.cuh"
+#include "MultiplyKaratsuba.cuh"
 #include "MultiplyNTT.cuh"
 
 #define NOMINMAX
@@ -655,10 +655,9 @@ bool CheckAgainstHost(
 }
 
 template<class SharkFloatParams>
-void ChecksumsCheck (
-    const DebugHostCombo<SharkFloatParams> &debugHostCombo,
-    const DebugGpuCombo &debugGpuCombo
-)
+void
+ChecksumsCheck(const DebugHostCombo<SharkFloatParams>& debugHostCombo,
+               const DebugGpuCombo& debugGpuCombo)
 {
     // Compare debugResultsCuda against debugResultsHost
     bool ChecksumFailure = false;
@@ -672,7 +671,7 @@ void ChecksumsCheck (
         size_t totalGpu{};
         size_t totalResults{};
         std::cerr << "MultiplyCount distribution:" << std::endl;
-        for (const auto &pair : countOfCounts) {
+        for (const auto& pair : countOfCounts) {
             std::cerr << "Count: " << pair.first << " occurred " << pair.second << " times" << std::endl;
             totalGpu += pair.first * pair.second;
             totalResults += pair.second;
@@ -688,7 +687,8 @@ void ChecksumsCheck (
             DebugBreak();
         }
 
-        if (totalResults != SharkFloatParams::GlobalThreadsPerBlock * SharkFloatParams::GlobalNumBlocks) {
+        if (totalResults !=
+            SharkFloatParams::GlobalThreadsPerBlock * SharkFloatParams::GlobalNumBlocks) {
             std::cerr << "Error: Total results does not match expected number of threads!" << std::endl;
             ChecksumFailure = true;
             DebugBreak();
@@ -708,21 +708,20 @@ void ChecksumsCheck (
     }
 
     if constexpr (SharkTestGpu && SharkDebugChecksums) {
-        const auto &debugResultsHost = debugHostCombo.States;
+        const auto& debugResultsHost = debugHostCombo.States;
         assert(debugResultsHost.size() <= debugGpuCombo.States.size());
 
         // Note that the hosts results should be exactly the right size, whereas
         // the CUDA results may be larger due to the way the kernel is written.
         for (size_t i = 0; i < debugResultsHost.size(); ++i) {
-            const auto &host = debugResultsHost[i];
-            const auto &cuda = debugGpuCombo.States[i];
+            const auto& host = debugResultsHost[i];
+            const auto& cuda = debugGpuCombo.States[i];
 
-            const auto maxHostArraySize = std::max(host.ArrayToChecksum32.size(), host.ArrayToChecksum64.size());
+            const auto maxHostArraySize =
+                std::max(host.ArrayToChecksum32.size(), host.ArrayToChecksum64.size());
 
-            if (host.Initialized != (cuda.Initialized == 1) ||
-                host.Checksum != cuda.Checksum ||
-                host.ChecksumPurpose != cuda.ChecksumPurpose ||
-                host.CallIndex != cuda.CallIndex ||
+            if (host.Initialized != (cuda.Initialized == 1) || host.Checksum != cuda.Checksum ||
+                host.ChecksumPurpose != cuda.ChecksumPurpose || host.CallIndex != cuda.CallIndex ||
                 maxHostArraySize != cuda.ArraySize) {
 
                 std::cerr << "======================================" << std::endl;
@@ -738,7 +737,8 @@ void ChecksumsCheck (
 
                 std::cerr << "Checksum: 0x" << std::hex << cuda.Checksum << std::dec << std::endl;
                 std::cerr << "ChecksumPurpose: " << static_cast<int>(cuda.ChecksumPurpose) << std::endl;
-                std::cerr << "ChecksumPurpose: " << DebugStatePurposeToString(cuda.ChecksumPurpose) << std::endl;
+                std::cerr << "ChecksumPurpose: " << DebugStatePurposeToString(cuda.ChecksumPurpose)
+                          << std::endl;
 
                 std::cerr << "RecursionDepth: " << cuda.RecursionDepth << std::endl;
                 std::cerr << "CallIndex: " << cuda.CallIndex << std::endl;
@@ -766,7 +766,8 @@ void ChecksumsCheck (
 
                 std::cerr << "Checksum: 0x" << std::hex << host.Checksum << std::dec << std::endl;
                 std::cerr << "ChecksumPurpose: " << static_cast<int>(host.ChecksumPurpose) << std::endl;
-                std::cerr << "ChecksumPurpose: " << DebugStatePurposeToString(host.ChecksumPurpose) << std::endl;
+                std::cerr << "ChecksumPurpose: " << DebugStatePurposeToString(host.ChecksumPurpose)
+                          << std::endl;
 
                 std::cerr << "RecursionDepth: " << host.RecursionDepth << std::endl;
                 std::cerr << "CallIndex: " << host.CallIndex << std::endl;
@@ -777,6 +778,15 @@ void ChecksumsCheck (
                 DebugBreak();
             }
         }
+    }
+
+    if (!ChecksumFailure) {
+        if (SharkVerbose == VerboseMode::Debug) {
+            std::cout << "Checksum test passed" << std::endl;
+        }
+    } else {
+        std::cerr << "Checksum test failed" << std::endl; 
+        DebugBreak();
     }
 }
 

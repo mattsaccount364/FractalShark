@@ -1,4 +1,4 @@
-#include "Multiply.cu"
+#include "MultiplyKaratsuba.cu"
 
 template<class SharkFloatParams>
 __maxnreg__(SharkRegisterLimit)

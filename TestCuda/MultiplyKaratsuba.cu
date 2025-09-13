@@ -1,4 +1,4 @@
-﻿#include "Multiply.cuh"
+﻿#include "MultiplyKaratsuba.cuh"
 
 #include <cuda_runtime.h>
 #include <curand.h>
@@ -2695,6 +2695,12 @@ static __device__ void MultiplyHelperKaratsubaV2Separates(
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2XX>(record, debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2XY>(record, debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2YY>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z3XX>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z3XY>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z3YY>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z4XX>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z4XY>(record, debugStates, grid, block);
+        EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z4YY>(record, debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2_Perm1>(record, debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2_Perm2>(record, debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z2_Perm3>(record, debugStates, grid, block);

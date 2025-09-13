@@ -210,7 +210,6 @@ BuildPlanPrime(int n32, int b_hint, int margin)
     // Ensure 2N | (p-1) to admit ψ of order 2N
     if ((PHI % (2ull * (uint64_t)N)) != 0ull) {
         int b_up_max = std::min(bmax, 30);
-        bool fixed = false;
         for (int b_try = b + 1; b_try <= b_up_max; ++b_try) {
             uint32_t L2 = CeilDivU32((uint32_t)totalBits, (uint32_t)b_try);
             uint32_t N2 = NextPow2U32(2u * L2);
@@ -219,11 +218,9 @@ BuildPlanPrime(int n32, int b_hint, int margin)
                 L = L2;
                 N = N2;
                 lgN = CeilLog2U32(N2);
-                fixed = true;
                 break;
             }
         }
-        (void)fixed;
     }
 
     int need = 2 * b + lgN + margin;
@@ -253,10 +250,6 @@ BuildRoots(uint32_t N, uint32_t stages, RootTables& roots)
     const uint64_t exponent = PHI / (2ull * N);
     const uint64_t psi_m = MontgomeryPow<SharkFloatParams>(g_m, exponent);
 
-    // Test ψ^(2N) = 1 before proceeding
-    uint64_t psi_test = MontgomeryPow<SharkFloatParams>(psi_m, 2ull * (uint64_t)N);
-    uint64_t one_m = ToMontgomery<SharkFloatParams>(1);
-
     const uint64_t psi_inv_m = MontgomeryPow<SharkFloatParams>(psi_m, PHI - 1ull);
     const uint64_t omega_m = MontgomeryMul<SharkFloatParams>(psi_m, psi_m); // ω = ψ^2 (Montgomery)
     const uint64_t omega_inv_m = MontgomeryPow<SharkFloatParams>(omega_m, PHI - 1ull);
@@ -281,6 +274,21 @@ BuildRoots(uint32_t N, uint32_t stages, RootTables& roots)
     for (uint32_t i = 0; i < stages; ++i)
         Ninvm = MontgomeryMul<SharkFloatParams>(Ninvm, inv2_m);
     roots.Ninvm_mont = Ninvm;
+
+    if (SharkVerbose == VerboseMode::Debug) {
+        std::cout << "Roots for N=" << N << " stages=" << stages << std::endl;
+        for (uint32_t s = 1; s <= stages; ++s) {
+            std::cout << "Stage " << s << " omega: " << roots.stage_omegas[s - 1]
+                      << " omega_inv: " << roots.stage_omegas_inv[s - 1] << std::endl;
+        }
+
+        for (uint32_t i = 0; i < N; ++i) {
+            std::cout << "psi_pows[" << i << "] = " << roots.psi_pows[i] << " psi_inv_pows[" << i
+                      << "] = " << roots.psi_inv_pows[i] << std::endl;
+        }
+
+        std::cout << "Ninvm_mont = " << roots.Ninvm_mont << std::endl;
+    }
 }
 
 template <class SharkFloatParams>

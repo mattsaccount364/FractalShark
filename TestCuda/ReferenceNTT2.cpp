@@ -19,9 +19,10 @@
 
 #include "DebugChecksumHost.h"
 #include "HpSharkFloat.cuh" // your header (provides HpSharkFloat<>, DebugStateHost<>)
+#include "MultiplyNTTCudaSetup.h"
+#include "NTTConstexprGenerator.h"
 #include "ReferenceNTT2.h"
 #include "TestVerbose.h"
-#include "NTTConstexprGenerator.h"
 
 namespace SharkNTT {
 
@@ -153,21 +154,11 @@ SubP(uint64_t a, uint64_t b)
     return (a >= b) ? (a - b) : (a + P - b);
 }
 
-//--------------------------------------------------------------------------------------------------
-// Root tables & utilities
-//--------------------------------------------------------------------------------------------------
-
-static inline bool
-IsPow2(uint32_t x)
-{
-    return x && (0 == (x & (x - 1)));
-}
-
 // Runtime generator search (bounded). Used only for debug prints; correctness is guarded by table
 // checks.
 template <class SharkFloatParams>
 static uint64_t
-FindGenerator(DebugHostCombo<SharkFloatParams>& debugCombo)
+FindGenerator()
 {
     using namespace SharkNTT;
     // p-1 = 2^32 * (2^32 - 1), with distinct prime factors:
@@ -175,12 +166,12 @@ FindGenerator(DebugHostCombo<SharkFloatParams>& debugCombo)
     static const uint64_t factors[] = {2ull, 3ull, 5ull, 17ull, 257ull, 65537ull};
 
     for (uint64_t g = 3; g < 1'000; ++g) {
-        uint64_t g_m = ToMontgomery(debugCombo, g);
+        uint64_t g_m = ToMontgomery<SharkFloatParams>(g);
         bool ok = true;
         for (uint64_t q : factors) {
             // if g^{(p-1)/q} == 1, then g is NOT a generator
-            uint64_t t = MontgomeryPow(debugCombo, g_m, PHI / q);
-            if (t == ToMontgomery(debugCombo, 1)) {
+            uint64_t t = MontgomeryPow<SharkFloatParams>(g_m, PHI / q);
+            if (t == ToMontgomery<SharkFloatParams>(1)) {
                 ok = false;
                 break;
             }
@@ -216,7 +207,7 @@ NTTRadix2(DebugHostCombo<SharkFloatParams>& debugCombo,
           uint64_t* A,
           uint32_t N,
           uint32_t stages,
-          const uint64_t *stage_base)
+          const uint64_t* stage_base)
 {
     for (uint32_t s = 1; s <= stages; ++s) {
         uint32_t m = 1u << s;
@@ -242,7 +233,7 @@ NTTRadix2(DebugHostCombo<SharkFloatParams>& debugCombo,
 
 template <class P>
 [[nodiscard]] static uint64_t
-ReadBitsSimple(const HpSharkFloat<P>* X, int64_t q, int b)
+ReadBitsSimple(const HpSharkFloat<P> &X, int64_t q, int b)
 {
     const int B = P::GlobalNumUint32 * 32;
     if (q >= B || q < 0)
@@ -256,7 +247,7 @@ ReadBitsSimple(const HpSharkFloat<P>* X, int64_t q, int b)
     while (need > 0 && bit < B) {
         int64_t w = bit / 32;
         int off = (int)(bit % 32);
-        uint32_t limb = (w >= 0) ? X->Digits[(int)w] : 0u;
+        uint32_t limb = (w >= 0) ? X.Digits[(int)w] : 0u;
         uint32_t chunk = (off ? (limb >> off) : limb);
         int take = std::min(32 - off, need);
 
@@ -272,7 +263,7 @@ ReadBitsSimple(const HpSharkFloat<P>* X, int64_t q, int b)
 template <class SharkFloatParams>
 static void
 PackBase2bPrime_NoAlloc(DebugHostCombo<SharkFloatParams>& debugCombo,
-                        const HpSharkFloat<SharkFloatParams>* Xsrc,
+                        const HpSharkFloat<SharkFloatParams> &Xsrc,
                         const PlanPrime& plan,
                         std::span<uint64_t> outMont) // len >= plan.N
 {
@@ -359,10 +350,7 @@ UnpackPrimeToFinal128(const uint64_t* A_norm, const PlanPrime& plan, uint64_t* F
 
 template <typename SharkFloatParams>
 bool
-VerifyMontgomeryConstants(DebugHostCombo<SharkFloatParams>& debugCombo,
-                          uint64_t Pval,
-                          uint64_t NINVval,
-                          uint64_t R2val)
+VerifyMontgomeryConstants(uint64_t Pval, uint64_t NINVval, uint64_t R2val)
 {
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "=== Enhanced Montgomery Verification ===\n";
@@ -381,14 +369,14 @@ VerifyMontgomeryConstants(DebugHostCombo<SharkFloatParams>& debugCombo,
         }
 
         // Test 2: Montgomery multiplication of 1
-        uint64_t one_m = SharkNTT::ToMontgomery(debugCombo, 1);
+        uint64_t one_m = SharkNTT::ToMontgomery<SharkFloatParams>(1);
         std::cout << "ToMontgomery(1) = 0x" << std::hex << one_m << std::dec << "\n";
 
-        uint64_t one_squared = SharkNTT::MontgomeryMul(debugCombo, one_m, one_m);
+        uint64_t one_squared = SharkNTT::MontgomeryMul<SharkFloatParams>(one_m, one_m);
         std::cout << "MontgomeryMul(ToMontgomery(1), ToMontgomery(1)) = 0x" << std::hex << one_squared
                   << std::dec << "\n";
 
-        uint64_t back_to_one = SharkNTT::FromMontgomery(debugCombo, one_squared);
+        uint64_t back_to_one = SharkNTT::FromMontgomery<SharkFloatParams>(one_squared);
         std::cout << "FromMontgomery(result) = " << std::hex << back_to_one << std::dec;
         if (back_to_one == 1) {
             std::cout << "  CORRECT\n";
@@ -398,7 +386,7 @@ VerifyMontgomeryConstants(DebugHostCombo<SharkFloatParams>& debugCombo,
         }
 
         // Test 3: Verify R2 is correct (MontgomeryMul(1, R2) == ToMontgomery(1))
-        uint64_t mont_1 = SharkNTT::MontgomeryMul(debugCombo, 1, R2val);
+        uint64_t mont_1 = SharkNTT::MontgomeryMul<SharkFloatParams>(1, R2val);
         if (mont_1 == one_m) {
             std::cout << "R2 verification: CORRECT\n";
         } else {
@@ -414,20 +402,18 @@ VerifyMontgomeryConstants(DebugHostCombo<SharkFloatParams>& debugCombo,
 
 template <class SharkFloatParams>
 static void
-VerifyNTTRoots(DebugHostCombo<SharkFloatParams>& debugCombo,
-               const SharkNTT::RootTables& roots,
-               const PlanPrime& plan)
+VerifyNTTRoots(const SharkNTT::RootTables& roots, const PlanPrime& plan)
 {
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "  NINV = 0x" << std::hex << SharkNTT::NINV << std::dec << "\n";
         std::cout << "  R2   = 0x" << std::hex << SharkNTT::R2 << std::dec << "\n";
-        std::cout << "  Generator g = 0x" << std::hex << SharkNTT::FindGenerator(debugCombo) << std::dec
+        std::cout << "  Generator g = 0x" << std::hex << FindGenerator<SharkFloatParams>() << std::dec
                   << "\n";
-        std::cout << "  psi = 0x" << std::hex << SharkNTT::FromMontgomery(debugCombo, roots.psi_pows[1])
+        std::cout << "  psi = 0x" << std::hex << FromMontgomery<SharkFloatParams>(roots.psi_pows[1])
                   << std::dec << " (order " << (2 * plan.N) << ")\n";
         std::cout << "  omega = 0x" << std::hex
-                  << SharkNTT::FromMontgomery(
-                         debugCombo, SharkNTT::MontgomeryMul(debugCombo, roots.psi_pows[1], roots.psi_pows[1]))
+                  << FromMontgomery<SharkFloatParams>(
+                         MontgomeryMul<SharkFloatParams>(roots.psi_pows[1], roots.psi_pows[1]))
                   << std::dec << " (order " << plan.N << ")\n";
     }
 
@@ -435,16 +421,34 @@ VerifyNTTRoots(DebugHostCombo<SharkFloatParams>& debugCombo,
     const uint64_t one_m = roots.psi_pows[0];
 
     // ψ is roots.psi_pows[1] (Montgomery). Check ψ^(2N) = 1
-    uint64_t psi2N = SharkNTT::MontgomeryPow(debugCombo, roots.psi_pows[1], 2ull * (uint64_t)plan.N);
+    uint64_t psi2N =
+        SharkNTT::MontgomeryPow<SharkFloatParams>(roots.psi_pows[1], 2ull * (uint64_t)plan.N);
     assert(psi2N == one_m && "psi^(2N) != 1 (check N and roots)");
 
     // ω = ψ^2. Check ω^N = 1
-    uint64_t omega = SharkNTT::MontgomeryMul(debugCombo, roots.psi_pows[1], roots.psi_pows[1]);
-    uint64_t omegaN = SharkNTT::MontgomeryPow(debugCombo, omega, (uint64_t)plan.N);
+    uint64_t omega = SharkNTT::MontgomeryMul<SharkFloatParams>(roots.psi_pows[1], roots.psi_pows[1]);
+    uint64_t omegaN = SharkNTT::MontgomeryPow<SharkFloatParams>(omega, (uint64_t)plan.N);
     assert(omegaN == one_m && "omega^N != 1 (check N and roots)");
 }
 
 } // namespace SharkNTT
+
+template <class SharkFloatParams, DebugStatePurpose Purpose, typename ArrayType>
+const DebugStateHost<SharkFloatParams>&
+GetCurrentDebugState(std::vector<DebugStateHost<SharkFloatParams>>& debugStates,
+                     const ArrayType* arrayToChecksum,
+                     size_t arraySize)
+{
+
+    constexpr auto curPurpose = static_cast<int>(Purpose);
+    constexpr auto CallIndex = 0;
+    constexpr auto RecursionDepth = 0;
+    constexpr auto UseConvolution = UseConvolution::No;
+
+    auto& retval = debugStates[curPurpose];
+    retval.Reset(arrayToChecksum, arraySize, Purpose, RecursionDepth, CallIndex, UseConvolution);
+    return retval;
+}
 
 //==================================================================================================
 //                          MultiplyHelperFFT2 (prime backend)
@@ -462,6 +466,13 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams>* A,
     using P = SharkFloatParams;
     using namespace SharkNTT;
 
+    auto& debugStates = debugCombo.States;
+
+    if constexpr (SharkDebugChecksums) {
+        constexpr auto NewDebugStateSize = static_cast<int>(DebugStatePurpose::NumPurposes);
+        debugStates.resize(NewDebugStateSize);
+    }
+
     // x must be a positive constant expression
 
     // Verify power of 2
@@ -476,6 +487,18 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams>* A,
     assert(plan.ok && "Prime plan build failed (check b/N headroom constraints)");
     assert(plan.N >= 2 * plan.L && "No-wrap condition violated: need N >= 2*L");
     assert((PHI % (2ull * (uint64_t)plan.N)) == 0ull);
+
+    if constexpr (SharkDebugChecksums) {
+        const auto& debugAState = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::ADigits>(
+            debugStates, A->Digits, SharkFloatParams::GlobalNumUint32);
+        const auto& debugBState = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::BDigits>(
+            debugStates, B->Digits, SharkFloatParams::GlobalNumUint32);
+
+        if (SharkVerbose == VerboseMode::Debug) {
+            std::cout << "debugAState checksum: " << debugAState.GetStr() << "\n";
+            std::cout << "debugBState checksum: " << debugBState.GetStr() << "\n";
+        }
+    }
 
     // Compute Final128 digit budget once
     const uint32_t Ddigits = ((uint64_t)((2 * plan.L - 2) * plan.b + 64) + 31u) / 32u + 2u;
@@ -499,34 +522,63 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams>* A,
 
     // Verify constants and roots
     const bool constants_ok =
-        VerifyMontgomeryConstants(debugCombo, SharkNTT::P, SharkNTT::NINV, SharkNTT::R2);
+        VerifyMontgomeryConstants<SharkFloatParams>(SharkNTT::P, SharkNTT::NINV, SharkNTT::R2);
     assert(constants_ok && "Montgomery constants verification failed");
-    VerifyNTTRoots(debugCombo, roots, plan);
+    VerifyNTTRoots<SharkFloatParams>(roots, plan);
 
-    auto run_conv = [&](const HpSharkFloat<P>* a,
-                        const HpSharkFloat<P>* b,
-                        HpSharkFloat<P>* out,
-                        const HpSharkFloat<P>& inA,
-                        const HpSharkFloat<P>& inB,
-                        int addFactorOfTwo,
-                        bool isNegative) {
+    auto run_conv = [&]<DebugStatePurpose step1X,
+                        DebugStatePurpose step1Y,
+                        DebugStatePurpose step2X,
+                        DebugStatePurpose step2Y>(HpSharkFloat<P>* out,
+                                                  const HpSharkFloat<P>& inA,
+                                                  const HpSharkFloat<P>& inB,
+                                                  int addFactorOfTwo,
+                                                  bool isNegative) {
         // ============================
         // HOT PATH (single allocation)
         // ============================
 
         // 1) Pack (into X and Y)
-        PackBase2bPrime_NoAlloc(debugCombo, a, plan, X);
-        PackBase2bPrime_NoAlloc(debugCombo, b, plan, Y);
+        PackBase2bPrime_NoAlloc(debugCombo, inA, plan, X);
+        PackBase2bPrime_NoAlloc(debugCombo, inB, plan, Y);
+
+        if constexpr (SharkDebugChecksums) {
+            const auto& debugXState =
+                GetCurrentDebugState<SharkFloatParams, step1X>(debugStates, X.data(), (size_t)plan.N);
+            const auto& debugYState =
+                GetCurrentDebugState<SharkFloatParams, step1Y>(debugStates, Y.data(), (size_t)plan.N);
+
+            if (SharkVerbose == VerboseMode::Debug) {
+                std::cout << "After twist, debugXState checksum: " << debugXState.GetStr() << "\n";
+                std::cout << "After twist, debugYState checksum: " << debugYState.GetStr() << "\n";
+            }
+        }
 
         // 2) Twist by ψ^i
-        for (int i = 0; i < plan.N; ++i)
+        for (int i = 0; i < plan.N; ++i) {
             X[(size_t)i] = MontgomeryMul(debugCombo, X[(size_t)i], roots.psi_pows[(size_t)i]);
-        for (int i = 0; i < plan.N; ++i)
+        }
+
+        for (int i = 0; i < plan.N; ++i) {
             Y[(size_t)i] = MontgomeryMul(debugCombo, Y[(size_t)i], roots.psi_pows[(size_t)i]);
+        }
+
+        if constexpr (SharkDebugChecksums) {
+            const auto& debugXState =
+                GetCurrentDebugState<SharkFloatParams, step2X>(debugStates, X.data(), (size_t)plan.N);
+            const auto& debugYState =
+                GetCurrentDebugState<SharkFloatParams, step2Y>(debugStates, Y.data(), (size_t)plan.N);
+
+            if (SharkVerbose == VerboseMode::Debug) {
+                std::cout << "After NTT, debugXState checksum: " << debugXState.GetStr() << "\n";
+                std::cout << "After NTT, debugYState checksum: " << debugYState.GetStr() << "\n";
+            }
+        }
 
         // 3) Forward NTT (in place)
         BitReverseInplace64(X.data(), (uint32_t)plan.N, (uint32_t)plan.stages);
         BitReverseInplace64(Y.data(), (uint32_t)plan.N, (uint32_t)plan.stages);
+
         NTTRadix2(debugCombo, X.data(), (uint32_t)plan.N, (uint32_t)plan.stages, roots.stage_omegas);
         NTTRadix2(debugCombo, Y.data(), (uint32_t)plan.N, (uint32_t)plan.stages, roots.stage_omegas);
 
@@ -549,24 +601,36 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams>* A,
             Y[(size_t)i] = FromMontgomery(debugCombo, X[(size_t)i]);
 
         // 8) Unpack -> Final128 -> Normalize
-        //std::fill_n(Final128.data(), Final128.size(), 0ull);
+        // std::fill_n(Final128.data(), Final128.size(), 0ull);
         UnpackPrimeToFinal128(Y.data(), plan, Final128.data(), Ddigits);
         out->SetNegative(isNegative);
         Normalize<P>(*out, inA, inB, Final128.data(), Ddigits, addFactorOfTwo);
     };
 
     // XX = A^2
-    run_conv(A, A, OutXX, *A, *A, /*additionalFactorOfTwo=*/0, /*isNegative=*/false);
+    const auto noAdditionalFactorOfTwo = 0;
+    const auto squaresNegative = false;
+    run_conv.template operator()<DebugStatePurpose::Z0XX,
+                                 DebugStatePurpose::Z1XX,
+                                 DebugStatePurpose::Z2XX,
+                                 DebugStatePurpose::Z3XX>(
+        OutXX, *A, *A, noAdditionalFactorOfTwo, squaresNegative);
+
     // YY = B^2
-    run_conv(B, B, OutYY, *B, *B, /*additionalFactorOfTwo=*/0, /*isNegative=*/false);
+    run_conv.template operator()<DebugStatePurpose::Z0YY,
+                                 DebugStatePurpose::Z1YY,
+                                 DebugStatePurpose::Z2YY,
+                                 DebugStatePurpose::Z3YY>(
+        OutYY, *B, *B, noAdditionalFactorOfTwo, squaresNegative);
+
     // XY = 2*(A*B)
-    run_conv(A,
-             B,
-             OutXY,
-             *A,
-             *B,
-             /*additionalFactorOfTwo=*/1,
-             /*isNegative=*/(A->GetNegative() ^ B->GetNegative()));
+    const auto includeAdditionalFactorOfTwo = 1;
+    const auto OutXYIsNegative = (A->GetNegative() ^ B->GetNegative());
+    run_conv.template operator()<DebugStatePurpose::Z0XY,
+                                 DebugStatePurpose::Z1XY,
+                                 DebugStatePurpose::Z2XY,
+                                 DebugStatePurpose::Z3XY>(
+        OutXY, *A, *B, includeAdditionalFactorOfTwo, OutXYIsNegative);
 
     DestroyRoots<SharkFloatParams>(false, roots);
 }

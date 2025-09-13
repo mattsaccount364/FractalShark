@@ -470,6 +470,165 @@ UnpackPrimeToFinal128(const uint64_t* A_norm, const PlanPrime& plan, uint64_t* F
     }
 }
 
+//// Compute A once -> writes to (XX1, XX2, XY1)
+//// Compute B once -> writes to (YY1, YY2, XY2)
+//// Assumes SINGLE-THREADED caller. Loops minimized by combining phases.
+//template <class SharkFloatParams>
+//static __device__ inline void
+//PackTwistFwdNTT_Fused_AB_ToSixOutputs(cooperative_groups::grid_group& grid,
+//                                      cooperative_groups::thread_block& block,
+//                                      DebugMultiplyCount<SharkFloatParams>* debugMultiplyCounts,
+//                                      const HpSharkFloat<SharkFloatParams>& inA,
+//                                      const HpSharkFloat<SharkFloatParams>& inB,
+//                                      const SharkNTT::PlanPrime& plan,
+//                                      const SharkNTT::RootTables& roots,
+//                                      // six outputs (Montgomery domain, length plan.N)
+//                                      uint64_t* SharkRestrict tempDigitsXX1,
+//                                      uint64_t* SharkRestrict tempDigitsXX2,
+//                                      uint64_t* SharkRestrict tempDigitsYY1,
+//                                      uint64_t* SharkRestrict tempDigitsYY2,
+//                                      uint64_t* SharkRestrict tempDigitsXY1,
+//                                      uint64_t* SharkRestrict tempDigitsXY2)
+//{
+//    using namespace SharkNTT;
+//    const uint32_t N = static_cast<uint32_t>(plan.N);
+//    const uint32_t L = static_cast<uint32_t>(plan.L);
+//    const uint64_t zero_m = ToMontgomery(grid, block, debugMultiplyCounts, 0ull);
+//
+//    // -------------------- Loop #1: A pack+twist with tail zero --------------------
+//    for (uint32_t i = 0; i < N; ++i) {
+//        if (i < L) {
+//            const uint64_t coeff = ReadBitsSimple(inA, (int64_t)i * plan.b, plan.b);
+//            const uint64_t cmod = coeff % MagicPrime; // match original reduction
+//            const uint64_t xm = ToMontgomery(grid, block, debugMultiplyCounts, cmod);
+//            const uint64_t psik = roots.psi_pows[(size_t)i]; // Montgomery
+//            tempDigitsXX1[(size_t)i] = MontgomeryMul(grid, block, debugMultiplyCounts, xm, psik);
+//        } else {
+//            tempDigitsXX1[(size_t)i] = zero_m;
+//        }
+//    }
+//
+//    // A: forward NTT (in place)
+//    BitReverseInplace64(tempDigitsXX1, N, (uint32_t)plan.stages);
+//    NTTRadix2(
+//        grid, block, debugMultiplyCounts, tempDigitsXX1, N, (uint32_t)plan.stages, roots.stage_omegas);
+//
+//    // -------------------- Loop #2: replicate A spectrum AND B pack+twist/zero --------------------
+//    for (uint32_t i = 0; i < N; ++i) {
+//        // Replicate A -> (XX2, XY1)
+//        const uint64_t vA = tempDigitsXX1[(size_t)i];
+//        tempDigitsXX2[(size_t)i] = vA;
+//        tempDigitsXY1[(size_t)i] = vA;
+//
+//        // Prepare B -> YY1 (pack+twist with tail zero)
+//        if (i < L) {
+//            const uint64_t coeffB = ReadBitsSimple(inB, (int64_t)i * plan.b, plan.b);
+//            const uint64_t cmodB = coeffB % MagicPrime;
+//            const uint64_t xmB = ToMontgomery(grid, block, debugMultiplyCounts, cmodB);
+//            const uint64_t psiB = roots.psi_pows[(size_t)i]; // Montgomery
+//            tempDigitsYY1[(size_t)i] = MontgomeryMul(grid, block, debugMultiplyCounts, xmB, psiB);
+//        } else {
+//            tempDigitsYY1[(size_t)i] = zero_m;
+//        }
+//    }
+//
+//    // B: forward NTT (in place)
+//    BitReverseInplace64(tempDigitsYY1, N, (uint32_t)plan.stages);
+//    NTTRadix2(
+//        grid, block, debugMultiplyCounts, tempDigitsYY1, N, (uint32_t)plan.stages, roots.stage_omegas);
+//
+//    // -------------------- Loop #3: replicate B spectrum --------------------
+//    for (uint32_t i = 0; i < N; ++i) {
+//        const uint64_t vB = tempDigitsYY1[(size_t)i];
+//        tempDigitsYY2[(size_t)i] = vB;
+//        tempDigitsXY2[(size_t)i] = vB;
+//    }
+//}
+
+// Grid-strided version: minimize distinct loops, add grid.sync between phases.
+// A once -> (XX1, XX2, XY1), then B once -> (YY1, YY2, XY2)
+template <class SharkFloatParams>
+static __device__ inline void
+PackTwistFwdNTT_Fused_AB_ToSixOutputs(cooperative_groups::grid_group& grid,
+                                      cooperative_groups::thread_block& block,
+                                      DebugMultiplyCount<SharkFloatParams>* debugMultiplyCounts,
+                                      const HpSharkFloat<SharkFloatParams>& inA,
+                                      const HpSharkFloat<SharkFloatParams>& inB,
+                                      const SharkNTT::PlanPrime& plan,
+                                      const SharkNTT::RootTables& roots,
+                                      // six outputs (Montgomery domain, length plan.N)
+                                      uint64_t* SharkRestrict tempDigitsXX1,
+                                      uint64_t* SharkRestrict tempDigitsXX2,
+                                      uint64_t* SharkRestrict tempDigitsYY1,
+                                      uint64_t* SharkRestrict tempDigitsYY2,
+                                      uint64_t* SharkRestrict tempDigitsXY1,
+                                      uint64_t* SharkRestrict tempDigitsXY2)
+{
+    const uint32_t N = static_cast<uint32_t>(plan.N);
+    const uint32_t L = static_cast<uint32_t>(plan.L);
+    const size_t gsize = grid.size();
+    const size_t grank = grid.thread_rank();
+
+    const uint64_t zero_m = ToMontgomery(grid, block, debugMultiplyCounts, 0ull);
+
+    // -------------------- Phase A: pack+twist with tail zero (grid-stride) --------------------
+    for (size_t i = grank; i < (size_t)N; i += gsize) {
+        if (i < L) {
+            const uint64_t coeff = ReadBitsSimple(inA, (int64_t)i * plan.b, plan.b);
+            const uint64_t cmod = coeff % MagicPrime; // match original
+            const uint64_t xm = ToMontgomery(grid, block, debugMultiplyCounts, cmod);
+            const uint64_t psik = roots.psi_pows[i]; // Montgomery domain
+            tempDigitsXX1[i] = MontgomeryMul(grid, block, debugMultiplyCounts, xm, psik);
+        } else {
+            tempDigitsXX1[i] = zero_m;
+        }
+    }
+    grid.sync();
+
+    // A: forward NTT (grid-wide helpers)
+    BitReverseInplace64(tempDigitsXX1, N, (uint32_t)plan.stages);
+    NTTRadix2(
+        grid, block, debugMultiplyCounts, tempDigitsXX1, N, (uint32_t)plan.stages, roots.stage_omegas);
+    grid.sync();
+
+    // -------------------- Combined Loop: replicate A AND prepare B (grid-stride) --------------------
+    for (size_t i = grank; i < (size_t)N; i += gsize) {
+        // Replicate A spectrum
+        const uint64_t vA = tempDigitsXX1[i];
+        tempDigitsXX2[i] = vA;
+        tempDigitsXY1[i] = vA;
+
+        // Prepare B (pack+twist or zero)
+        if (i < L) {
+            const uint64_t coeffB = ReadBitsSimple(inB, (int64_t)i * plan.b, plan.b);
+            const uint64_t cmodB = coeffB % MagicPrime;
+            const uint64_t xmB = ToMontgomery(grid, block, debugMultiplyCounts, cmodB);
+            const uint64_t psiB = roots.psi_pows[i]; // Montgomery domain
+            tempDigitsYY1[i] = MontgomeryMul(grid, block, debugMultiplyCounts, xmB, psiB);
+        } else {
+            tempDigitsYY1[i] = zero_m;
+        }
+    }
+    grid.sync();
+
+    // B: forward NTT (grid-wide helpers)
+    BitReverseInplace64(tempDigitsYY1, N, (uint32_t)plan.stages);
+    NTTRadix2(
+        grid, block, debugMultiplyCounts, tempDigitsYY1, N, (uint32_t)plan.stages, roots.stage_omegas);
+    grid.sync();
+
+    // -------------------- Final replicate of B (grid-stride) --------------------
+    for (size_t i = grank; i < (size_t)N; i += gsize) {
+        const uint64_t vB = tempDigitsYY1[i];
+        tempDigitsYY2[i] = vB;
+        tempDigitsXY2[i] = vB;
+    }
+    grid.sync(); // ready for immediate consumers
+}
+
+
+
+
 } // namespace SharkNTT
 
 #endif
@@ -590,6 +749,7 @@ static_assert(AdditionalUInt64PerFrame == 256, "See below");
 
 
 
+
 template <class SharkFloatParams>
 static __device__ void
 RunNTT_3Way_Multiply(HpSharkFloat<SharkFloatParams>* outXX,
@@ -615,114 +775,146 @@ RunNTT_3Way_Multiply(HpSharkFloat<SharkFloatParams>* outXX,
          uint64_t* Final128_XY,
          size_t Ddigits)
 {
-    // 1) Pack (into Z0_OutDigits and Z2_OutDigits)
-    SharkNTT::PackBase2bPrime_NoAlloc(grid, block, debugMultiplyCounts, inA, plan, tempDigitsXX1);
-    SharkNTT::PackBase2bPrime_NoAlloc(grid, block, debugMultiplyCounts, inA, plan, tempDigitsXX2);
-    SharkNTT::PackBase2bPrime_NoAlloc(grid, block, debugMultiplyCounts, inB, plan, tempDigitsYY1);
-    SharkNTT::PackBase2bPrime_NoAlloc(grid, block, debugMultiplyCounts, inB, plan, tempDigitsYY2);
-    SharkNTT::PackBase2bPrime_NoAlloc(grid, block, debugMultiplyCounts, inA, plan, tempDigitsXY1);
-    SharkNTT::PackBase2bPrime_NoAlloc(grid, block, debugMultiplyCounts, inB, plan, tempDigitsXY2);
+    constexpr bool useNewCode = true;
 
-    if constexpr (SharkDebugChecksums) {
-        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z0XX, uint64_t>(
-            record, debugStates, grid, block, tempDigitsXX1, plan.N);
-        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z1XX, uint64_t>(
-            record, debugStates, grid, block, tempDigitsXX2, plan.N);
-        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z0YY, uint64_t>(
-            record, debugStates, grid, block, tempDigitsYY1, plan.N);
-        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z1YY, uint64_t>(
-            record, debugStates, grid, block, tempDigitsYY2, plan.N);
-        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z0XY, uint64_t>(
-            record, debugStates, grid, block, tempDigitsXY1, plan.N);
-        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z1XY, uint64_t>(
-            record, debugStates, grid, block, tempDigitsXY2, plan.N);
+    if constexpr (useNewCode) {
+        PackTwistFwdNTT_Fused_AB_ToSixOutputs<SharkFloatParams>(grid,
+                                                                block,
+                                                                debugMultiplyCounts,
+                                                                inA,
+                                                                inB,
+                                                                plan,
+                                                                roots,
+                                                                tempDigitsXX1,
+                                                                tempDigitsXX2,
+                                                                tempDigitsYY1,
+                                                                tempDigitsYY2,
+                                                                tempDigitsXY1,
+                                                                tempDigitsXY2);
+
+        grid.sync();
+    } else {
+
+        if (block.thread_index().x != 0 || block.group_index().x != 0) {
+            return;
+        }
+
+
+        // 1) Pack (into Z0_OutDigits and Z2_OutDigits)
+        SharkNTT::PackBase2bPrime_NoAlloc(grid, block, debugMultiplyCounts, inA, plan, tempDigitsXX1);
+        SharkNTT::PackBase2bPrime_NoAlloc(grid, block, debugMultiplyCounts, inA, plan, tempDigitsXX2);
+        SharkNTT::PackBase2bPrime_NoAlloc(grid, block, debugMultiplyCounts, inB, plan, tempDigitsYY1);
+        SharkNTT::PackBase2bPrime_NoAlloc(grid, block, debugMultiplyCounts, inB, plan, tempDigitsYY2);
+        SharkNTT::PackBase2bPrime_NoAlloc(grid, block, debugMultiplyCounts, inA, plan, tempDigitsXY1);
+        SharkNTT::PackBase2bPrime_NoAlloc(grid, block, debugMultiplyCounts, inB, plan, tempDigitsXY2);
+
+        if constexpr (SharkDebugChecksums) {
+            StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z0XX, uint64_t>(
+                record, debugStates, grid, block, tempDigitsXX1, plan.N);
+            StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z1XX, uint64_t>(
+                record, debugStates, grid, block, tempDigitsXX2, plan.N);
+            StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z0YY, uint64_t>(
+                record, debugStates, grid, block, tempDigitsYY1, plan.N);
+            StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z1YY, uint64_t>(
+                record, debugStates, grid, block, tempDigitsYY2, plan.N);
+            StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z0XY, uint64_t>(
+                record, debugStates, grid, block, tempDigitsXY1, plan.N);
+            StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z1XY, uint64_t>(
+                record, debugStates, grid, block, tempDigitsXY2, plan.N);
+        }
+
+        // 2) Twist by ψ^i
+        for (int i = 0; i < plan.N; ++i) {
+            tempDigitsXX1[(size_t)i] = SharkNTT::MontgomeryMul(
+                grid, block, debugMultiplyCounts, tempDigitsXX1[(size_t)i], roots.psi_pows[(size_t)i]);
+            tempDigitsXX2[(size_t)i] = SharkNTT::MontgomeryMul(
+                grid, block, debugMultiplyCounts, tempDigitsXX2[(size_t)i], roots.psi_pows[(size_t)i]);
+
+            tempDigitsYY1[(size_t)i] = SharkNTT::MontgomeryMul(
+                grid, block, debugMultiplyCounts, tempDigitsYY1[(size_t)i], roots.psi_pows[(size_t)i]);
+            tempDigitsYY2[(size_t)i] = SharkNTT::MontgomeryMul(
+                grid, block, debugMultiplyCounts, tempDigitsYY2[(size_t)i], roots.psi_pows[(size_t)i]);
+
+            tempDigitsXY1[(size_t)i] = SharkNTT::MontgomeryMul(
+                grid, block, debugMultiplyCounts, tempDigitsXY1[(size_t)i], roots.psi_pows[(size_t)i]);
+            tempDigitsXY2[(size_t)i] = SharkNTT::MontgomeryMul(
+                grid, block, debugMultiplyCounts, tempDigitsXY2[(size_t)i], roots.psi_pows[(size_t)i]);
+        }
+
+        if constexpr (SharkDebugChecksums) {
+            StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2XX, uint64_t>(
+                record, debugStates, grid, block, tempDigitsXX1, plan.N);
+            StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z3XX, uint64_t>(
+                record, debugStates, grid, block, tempDigitsXX2, plan.N);
+            StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2YY, uint64_t>(
+                record, debugStates, grid, block, tempDigitsYY1, plan.N);
+            StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z3YY, uint64_t>(
+                record, debugStates, grid, block, tempDigitsYY2, plan.N);
+            StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2XY, uint64_t>(
+                record, debugStates, grid, block, tempDigitsXY1, plan.N);
+            StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z3XY, uint64_t>(
+                record, debugStates, grid, block, tempDigitsXY2, plan.N);
+        }
+
+        // 3) Forward NTT (in place)
+        SharkNTT::BitReverseInplace64(tempDigitsXX1, (uint32_t)plan.N, (uint32_t)plan.stages);
+        SharkNTT::BitReverseInplace64(tempDigitsXX2, (uint32_t)plan.N, (uint32_t)plan.stages);
+        SharkNTT::BitReverseInplace64(tempDigitsYY1, (uint32_t)plan.N, (uint32_t)plan.stages);
+        SharkNTT::BitReverseInplace64(tempDigitsYY2, (uint32_t)plan.N, (uint32_t)plan.stages);
+        SharkNTT::BitReverseInplace64(tempDigitsXY1, (uint32_t)plan.N, (uint32_t)plan.stages);
+        SharkNTT::BitReverseInplace64(tempDigitsXY2, (uint32_t)plan.N, (uint32_t)plan.stages);
+
+        SharkNTT::NTTRadix2(grid,
+                            block,
+                            debugMultiplyCounts,
+                            tempDigitsXX1,
+                            (uint32_t)plan.N,
+                            (uint32_t)plan.stages,
+                            roots.stage_omegas);
+        SharkNTT::NTTRadix2(grid,
+                            block,
+                            debugMultiplyCounts,
+                            tempDigitsXX2,
+                            (uint32_t)plan.N,
+                            (uint32_t)plan.stages,
+                            roots.stage_omegas);
+
+        SharkNTT::NTTRadix2(grid,
+                            block,
+                            debugMultiplyCounts,
+                            tempDigitsYY1,
+                            (uint32_t)plan.N,
+                            (uint32_t)plan.stages,
+                            roots.stage_omegas);
+        SharkNTT::NTTRadix2(grid,
+                            block,
+                            debugMultiplyCounts,
+                            tempDigitsYY2,
+                            (uint32_t)plan.N,
+                            (uint32_t)plan.stages,
+                            roots.stage_omegas);
+
+        SharkNTT::NTTRadix2(grid,
+                            block,
+                            debugMultiplyCounts,
+                            tempDigitsXY1,
+                            (uint32_t)plan.N,
+                            (uint32_t)plan.stages,
+                            roots.stage_omegas);
+        SharkNTT::NTTRadix2(grid,
+                            block,
+                            debugMultiplyCounts,
+                            tempDigitsXY2,
+                            (uint32_t)plan.N,
+                            (uint32_t)plan.stages,
+                            roots.stage_omegas);
     }
 
-    // 2) Twist by ψ^i
-    for (int i = 0; i < plan.N; ++i) {
-        tempDigitsXX1[(size_t)i] = SharkNTT::MontgomeryMul(
-            grid, block, debugMultiplyCounts, tempDigitsXX1[(size_t)i], roots.psi_pows[(size_t)i]);
-        tempDigitsXX2[(size_t)i] = SharkNTT::MontgomeryMul(
-            grid, block, debugMultiplyCounts, tempDigitsXX2[(size_t)i], roots.psi_pows[(size_t)i]);
-
-        tempDigitsYY1[(size_t)i] = SharkNTT::MontgomeryMul(
-            grid, block, debugMultiplyCounts, tempDigitsYY1[(size_t)i], roots.psi_pows[(size_t)i]);
-        tempDigitsYY2[(size_t)i] = SharkNTT::MontgomeryMul(
-            grid, block, debugMultiplyCounts, tempDigitsYY2[(size_t)i], roots.psi_pows[(size_t)i]);
-
-        tempDigitsXY1[(size_t)i] = SharkNTT::MontgomeryMul(
-            grid, block, debugMultiplyCounts, tempDigitsXY1[(size_t)i], roots.psi_pows[(size_t)i]);
-        tempDigitsXY2[(size_t)i] = SharkNTT::MontgomeryMul(
-            grid, block, debugMultiplyCounts, tempDigitsXY2[(size_t)i], roots.psi_pows[(size_t)i]);
+    if constexpr (!useNewCode) {
+        if (block.thread_index().x != 0 || block.group_index().x != 0) {
+            return;
+        }
     }
-
-    if constexpr (SharkDebugChecksums) {
-        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2XX, uint64_t>(
-            record, debugStates, grid, block, tempDigitsXX1, plan.N);
-        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z3XX, uint64_t>(
-            record, debugStates, grid, block, tempDigitsXX2, plan.N);
-        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2YY, uint64_t>(
-            record, debugStates, grid, block, tempDigitsYY1, plan.N);
-        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z3YY, uint64_t>(
-            record, debugStates, grid, block, tempDigitsYY2, plan.N);
-        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2XY, uint64_t>(
-            record, debugStates, grid, block, tempDigitsXY1, plan.N);
-        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z3XY, uint64_t>(
-            record, debugStates, grid, block, tempDigitsXY2, plan.N);
-    }
-
-    // 3) Forward NTT (in place)
-    SharkNTT::BitReverseInplace64(tempDigitsXX1, (uint32_t)plan.N, (uint32_t)plan.stages);
-    SharkNTT::BitReverseInplace64(tempDigitsXX2, (uint32_t)plan.N, (uint32_t)plan.stages);
-    SharkNTT::BitReverseInplace64(tempDigitsYY1, (uint32_t)plan.N, (uint32_t)plan.stages);
-    SharkNTT::BitReverseInplace64(tempDigitsYY2, (uint32_t)plan.N, (uint32_t)plan.stages);
-    SharkNTT::BitReverseInplace64(tempDigitsXY1, (uint32_t)plan.N, (uint32_t)plan.stages);
-    SharkNTT::BitReverseInplace64(tempDigitsXY2, (uint32_t)plan.N, (uint32_t)plan.stages);
-
-    SharkNTT::NTTRadix2(grid,
-                        block,
-                        debugMultiplyCounts,
-                        tempDigitsXX1,
-                        (uint32_t)plan.N,
-                        (uint32_t)plan.stages,
-                        roots.stage_omegas);
-    SharkNTT::NTTRadix2(grid,
-                        block,
-                        debugMultiplyCounts,
-                        tempDigitsXX2,
-                        (uint32_t)plan.N,
-                        (uint32_t)plan.stages,
-                        roots.stage_omegas);
-
-    SharkNTT::NTTRadix2(grid,
-                        block,
-                        debugMultiplyCounts,
-                        tempDigitsYY1,
-                        (uint32_t)plan.N,
-                        (uint32_t)plan.stages,
-                        roots.stage_omegas);
-    SharkNTT::NTTRadix2(grid,
-                        block,
-                        debugMultiplyCounts,
-                        tempDigitsYY2,
-                        (uint32_t)plan.N,
-                        (uint32_t)plan.stages,
-                        roots.stage_omegas);
-
-    SharkNTT::NTTRadix2(grid,
-                        block,
-                        debugMultiplyCounts,
-                        tempDigitsXY1,
-                        (uint32_t)plan.N,
-                        (uint32_t)plan.stages,
-                        roots.stage_omegas);
-    SharkNTT::NTTRadix2(grid,
-                        block,
-                        debugMultiplyCounts,
-                        tempDigitsXY2,
-                        (uint32_t)plan.N,
-                        (uint32_t)plan.stages,
-                        roots.stage_omegas);
 
     // 4) Pointwise multiply (Z0_OutDigits *= Z2_OutDigits)
     for (int i = 0; i < plan.N; ++i) {
@@ -971,78 +1163,73 @@ MultiplyHelperNTTV2Separates(const SharkNTT::PlanPrime &plan,
     }
 
 #ifndef TEMP_DISABLEALL
-    if (block.thread_index().x == 0 && block.group_index().x == 0) {
-        using SharkFloatParams = SharkFloatParams;
-        using namespace SharkNTT;
+    // x must be a positive constant expression
 
-        // x must be a positive constant expression
+    // Verify power of 2
+    static_assert(
+        SharkFloatParams::GlobalNumUint32 > 0 &&
+            (SharkFloatParams::GlobalNumUint32 & (SharkFloatParams::GlobalNumUint32 - 1)) == 0,
+        "GlobalNumUint32 must be a power of 2");
 
-        // Verify power of 2
-        static_assert(
-            SharkFloatParams::GlobalNumUint32 > 0 &&
-                (SharkFloatParams::GlobalNumUint32 & (SharkFloatParams::GlobalNumUint32 - 1)) == 0,
-            "GlobalNumUint32 must be a power of 2");
+    // Compute Final128 digit budget once
+    const uint32_t Ddigits = ((uint64_t)((2 * plan.L - 2) * plan.b + 64) + 31u) / 32u + 2u;
 
-        // Compute Final128 digit budget once
-        const uint32_t Ddigits = ((uint64_t)((2 * plan.L - 2) * plan.b + 64) + 31u) / 32u + 2u;
+    // ---- Single allocation for entire core path ----
+    uint64_t* buffer = &tempProducts[GlobalsDoneOffset];
 
-        // ---- Single allocation for entire core path ----
-        uint64_t* buffer = &tempProducts[GlobalsDoneOffset];
+    // TODO: Assert or something somewhere
+    //const size_t buf_count = (size_t)2 * (size_t)plan.N     // Z0_OutDigits + Z2_OutDigits
+    //                         + (size_t)2 * (size_t)Ddigits; // Final128 (lo,hi per 32-bit slot)
 
-        // TODO: Assert or something somewhere
-        //const size_t buf_count = (size_t)2 * (size_t)plan.N     // Z0_OutDigits + Z2_OutDigits
-        //                         + (size_t)2 * (size_t)Ddigits; // Final128 (lo,hi per 32-bit slot)
+    // Slice buffer into spans
+    size_t off = 0;
+    uint64_t *tempDigitsXX1 = buffer + off; // plan.N
+    off += (size_t)plan.N;
+    uint64_t* tempDigitsXX2 = buffer + off; // plan.N
+    off += (size_t)plan.N;
 
-        // Slice buffer into spans
-        size_t off = 0;
-        uint64_t *tempDigitsXX1 = buffer + off; // plan.N
-        off += (size_t)plan.N;
-        uint64_t* tempDigitsXX2 = buffer + off; // plan.N
-        off += (size_t)plan.N;
+    uint64_t* tempDigitsYY1 = buffer + off; // plan.N
+    off += (size_t)plan.N;
+    uint64_t* tempDigitsYY2 = buffer + off; // plan.N
+    off += (size_t)plan.N;
 
-        uint64_t* tempDigitsYY1 = buffer + off; // plan.N
-        off += (size_t)plan.N;
-        uint64_t* tempDigitsYY2 = buffer + off; // plan.N
-        off += (size_t)plan.N;
+    uint64_t* tempDigitsXY1 = buffer + off; // plan.N
+    off += (size_t)plan.N;
+    uint64_t* tempDigitsXY2 = buffer + off; // plan.N
+    off += (size_t)plan.N;
 
-        uint64_t* tempDigitsXY1 = buffer + off; // plan.N
-        off += (size_t)plan.N;
-        uint64_t* tempDigitsXY2 = buffer + off; // plan.N
-        off += (size_t)plan.N;
+    uint64_t *Final128_XX = buffer + off; // (size_t)2 * Ddigits
+    off += (size_t)2 * Ddigits;
 
-        uint64_t *Final128_XX = buffer + off; // (size_t)2 * Ddigits
-        off += (size_t)2 * Ddigits;
+    uint64_t* Final128_YY = buffer + off; // (size_t)2 * Ddigits
+    off += (size_t)2 * Ddigits;
 
-        uint64_t* Final128_YY = buffer + off; // (size_t)2 * Ddigits
-        off += (size_t)2 * Ddigits;
+    uint64_t* Final128_XY = buffer + off; // (size_t)2 * Ddigits
+    off += (size_t)2 * Ddigits;
 
-        uint64_t* Final128_XY = buffer + off; // (size_t)2 * Ddigits
-        off += (size_t)2 * Ddigits;
-
-        // XX = A^2
-        RunNTT_3Way_Multiply<SharkFloatParams>(OutXX,
-                                               OutYY,
-                                               OutXY,
-                                               *A,
-                                               *B,
-                                               plan,
-                                               roots,
-                                               grid,
-                                               block,
-                                               debugMultiplyCounts,
-                                               debugStates,
-                                               record,
-                                               tempDigitsXX1,
-                                               tempDigitsXX2,
-                                               tempDigitsYY1,
-                                               tempDigitsYY2,
-                                               tempDigitsXY1,
-                                               tempDigitsXY2,
-                                               Final128_XX,
-                                               Final128_YY,
-                                               Final128_XY,
-                                               Ddigits);
-    }
+    // XX = A^2
+    RunNTT_3Way_Multiply<SharkFloatParams>(OutXX,
+                                            OutYY,
+                                            OutXY,
+                                            *A,
+                                            *B,
+                                            plan,
+                                            roots,
+                                            grid,
+                                            block,
+                                            debugMultiplyCounts,
+                                            debugStates,
+                                            record,
+                                            tempDigitsXX1,
+                                            tempDigitsXX2,
+                                            tempDigitsYY1,
+                                            tempDigitsYY2,
+                                            tempDigitsXY1,
+                                            tempDigitsXY2,
+                                            Final128_XX,
+                                            Final128_YY,
+                                            Final128_XY,
+                                            Ddigits);
 
     grid.sync();
 #endif

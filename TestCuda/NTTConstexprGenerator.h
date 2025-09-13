@@ -3,8 +3,8 @@
 namespace SharkNTT {
 
 // Goldilocks prime p = 2^64 - 2^32 + 1
-static constexpr uint64_t P = 0xFFFF'FFFF'0000'0001ull;
-static constexpr uint64_t NINV = 0xFFFF'FFFE'FFFF'FFFFull; // -p^{-1} mod 2^64
+static constexpr uint64_t MagicPrime = 0xFFFF'FFFF'0000'0001ull;
+static constexpr uint64_t MagicPrimeInv = 0xFFFF'FFFE'FFFF'FFFFull; // -p^{-1} mod 2^64
 static constexpr uint64_t R2 = 0xFFFF'FFFE'0000'0001ull;   // (2^64)^2 mod p
 
 
@@ -41,10 +41,10 @@ ReduceModP(uint64_t hi, uint64_t lo)
     uint64_t r = lo + (hi << 32);
     r -= hi;
     // Up to two corrections suffice for this p
-    if (r >= P)
-        r -= P;
-    if (r >= P)
-        r -= P;
+    if (r >= MagicPrime)
+        r -= MagicPrime;
+    if (r >= MagicPrime)
+        r -= MagicPrime;
     return r;
 }
 
@@ -58,7 +58,7 @@ MulModP(uint64_t a, uint64_t b)
 constexpr uint64_t
 PowModP(uint64_t a, uint64_t e)
 {
-    uint64_t base = (a >= P ? a % P : a);
+    uint64_t base = (a >= MagicPrime ? a % MagicPrime : a);
     uint64_t r = 1;
     while (e) {
         if (e & 1ull)
@@ -76,7 +76,7 @@ constexpr uint64_t PHI = 0xFFFF'FFFF'0000'0000ull;
 constexpr bool
 IsPrimitiveRoot(uint64_t g)
 {
-    if (g <= 1 || g >= P)
+    if (g <= 1 || g >= MagicPrime)
         return false;
     for (uint64_t q : PHI_PRIME_FACTORS) {
         const uint64_t e = PHI / q;
@@ -99,7 +99,6 @@ FindGeneratorConstexpr()
     return 0; // signals failure at compile time
 }
 
-static constexpr uint64_t GoldilocksP = SharkNTT::P;
 static constexpr uint64_t GoldilocksGenerator = SharkNTT::FindGeneratorConstexpr();
 
 // Optional compile-time sanity checks:

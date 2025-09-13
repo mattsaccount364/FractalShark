@@ -84,13 +84,13 @@ MontgomeryMul(uint64_t a, uint64_t b)
     Mul64Wide(a, b, t_lo, t_hi);
 
     // m = (t_lo * NINV) mod 2^64
-    uint64_t m = t_lo * SharkNTT::NINV;
+    uint64_t m = t_lo * SharkNTT::MagicPrimeInv;
 
-    // m*P (128-bit)
+    // m*SharkNTT::MagicPrime (128-bit)
     uint64_t mp_lo, mp_hi;
-    Mul64Wide(m, SharkNTT::P, mp_lo, mp_hi);
+    Mul64Wide(m, SharkNTT::MagicPrime, mp_lo, mp_hi);
 
-    // u = t + m*P
+    // u = t + m*SharkNTT::MagicPrime
     // low 64 + carry0
     uint64_t carry0 = 0;
     (void)Add64WithCarry(t_lo, mp_lo, carry0); // updates carry0
@@ -99,10 +99,10 @@ MontgomeryMul(uint64_t a, uint64_t b)
     uint64_t carry1 = carry0;
     uint64_t u_hi = Add64WithCarry(t_hi, mp_hi, carry1); // returns sum, updates carry1
 
-    // r = u / 2^64; ensure r < P (include the high-limb carry-out)
+    // r = u / 2^64; ensure r < SharkNTT::MagicPrime (include the high-limb carry-out)
     uint64_t r = u_hi;
-    if (carry1 || r >= SharkNTT::P)
-        r -= SharkNTT::P;
+    if (carry1 || r >= SharkNTT::MagicPrime)
+        r -= SharkNTT::MagicPrime;
 
     return r;
 }
@@ -269,7 +269,7 @@ BuildRoots(uint32_t N, uint32_t stages, RootTables& roots)
     }
 
     // N^{-1} in Montgomery form: (1/2)^stages
-    uint64_t inv2_m = ToMontgomery<SharkFloatParams>((P + 1) >> 1); // (p+1)/2
+    uint64_t inv2_m = ToMontgomery<SharkFloatParams>((SharkNTT::MagicPrime + 1) >> 1); // (p+1)/2
     uint64_t Ninvm = ToMontgomery<SharkFloatParams>(1);
     for (uint32_t i = 0; i < stages; ++i)
         Ninvm = MontgomeryMul<SharkFloatParams>(Ninvm, inv2_m);

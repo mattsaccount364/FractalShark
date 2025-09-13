@@ -44,24 +44,24 @@ ReverseBits32(uint32_t value, int bit_count)
 }
 
 //--------------------------------------------------------------------------------------------------
-// Normalization (final carry propagation and windowing into HpSharkFloat<P>)
+// Normalization (final carry propagation and windowing into HpSharkFloat<SharkFloatParams>)
 //--------------------------------------------------------------------------------------------------
 
 // Normalize directly from Final128 (lo64,hi64 per 32-bit digit position).
 // Does not allocate; does two passes over Final128 to (1) find 'significant',
 // then (2) write the window and set the Karatsuba-style exponent.
 // NOTE: Does not set sign; do that at the call site.
-template <class P>
+template <class SharkFloatParams>
 static void
-Normalize(HpSharkFloat<P>& out,
-          const HpSharkFloat<P>& a,
-          const HpSharkFloat<P>& b,
+Normalize(HpSharkFloat<SharkFloatParams>& out,
+          const HpSharkFloat<SharkFloatParams>& a,
+          const HpSharkFloat<SharkFloatParams>& b,
           const uint64_t* final128,     // len = 2*Ddigits
           size_t Ddigits,               // number of 32-bit positions represented in final128
           int32_t additionalFactorOfTwo // 0 for XX/YY; 1 for XY if you did NOT shift digits
 )
 {
-    constexpr int N = P::GlobalNumUint32;
+    constexpr int N = SharkFloatParams::GlobalNumUint32;
 
     auto pass_once = [&](bool write_window, size_t start, size_t needN) -> std::pair<int, int> {
         uint64_t carry_lo = 0, carry_hi = 0;
@@ -143,15 +143,15 @@ static inline uint64_t
 AddP(uint64_t a, uint64_t b)
 {
     uint64_t s = a + b;
-    if (s < a || s >= P)
-        s -= P;
+    if (s < a || s >= SharkNTT::MagicPrime)
+        s -= SharkNTT::MagicPrime;
     return s;
 }
 
 static inline uint64_t
 SubP(uint64_t a, uint64_t b)
 {
-    return (a >= b) ? (a - b) : (a + P - b);
+    return (a >= b) ? (a - b) : (a + SharkNTT::MagicPrime - b);
 }
 
 // Runtime generator search (bounded). Used only for debug prints; correctness is guarded by table
@@ -231,11 +231,11 @@ NTTRadix2(DebugHostCombo<SharkFloatParams>& debugCombo,
 //                       Pack (base-2^b) and Unpack (to Final128)
 //==================================================================================================
 
-template <class P>
+template <class SharkFloatParams>
 [[nodiscard]] static uint64_t
-ReadBitsSimple(const HpSharkFloat<P> &X, int64_t q, int b)
+ReadBitsSimple(const HpSharkFloat<SharkFloatParams>& X, int64_t q, int b)
 {
-    const int B = P::GlobalNumUint32 * 32;
+    const int B = SharkFloatParams::GlobalNumUint32 * 32;
     if (q >= B || q < 0)
         return 0;
 
@@ -274,7 +274,7 @@ PackBase2bPrime_NoAlloc(DebugHostCombo<SharkFloatParams>& debugCombo,
 
     for (int i = 0; i < plan.L; ++i) {
         const uint64_t coeff = ReadBitsSimple(Xsrc, (int64_t)i * plan.b, plan.b);
-        const uint64_t cmod = coeff % P;
+        const uint64_t cmod = coeff % SharkNTT::MagicPrime;
         outMont[(size_t)i] = ToMontgomery(debugCombo, cmod);
     }
 }
@@ -285,7 +285,7 @@ UnpackPrimeToFinal128(const uint64_t* A_norm, const PlanPrime& plan, uint64_t* F
     using namespace SharkNTT;
     std::memset(Final128, 0, sizeof(uint64_t) * 2 * Ddigits);
 
-    const uint64_t HALF = (P - 1ull) >> 1;
+    const uint64_t HALF = (SharkNTT::MagicPrime - 1ull) >> 1;
     const int Imax = std::min(plan.N, 2 * plan.L - 1);
 
     for (int i = 0; i < Imax; ++i) {
@@ -294,7 +294,7 @@ UnpackPrimeToFinal128(const uint64_t* A_norm, const PlanPrime& plan, uint64_t* F
             continue;
 
         bool neg = (v > HALF);
-        uint64_t mag64 = neg ? (P - v) : v;
+        uint64_t mag64 = neg ? (SharkNTT::MagicPrime - v) : v;
 
         const uint64_t sBits = (uint64_t)i * (uint64_t)plan.b;
         const size_t q = (size_t)(sBits >> 5);
@@ -354,13 +354,13 @@ VerifyMontgomeryConstants(uint64_t Pval, uint64_t NINVval, uint64_t R2val)
 {
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "=== Enhanced Montgomery Verification ===\n";
-        std::cout << "P   = 0x" << std::hex << Pval << std::dec << "\n";
+        std::cout << "SharkNTT::MagicPrime   = 0x" << std::hex << Pval << std::dec << "\n";
         std::cout << "NINV= 0x" << std::hex << NINVval << std::dec << "\n";
         std::cout << "R2  = 0x" << std::hex << R2val << std::dec << "\n";
 
-        // Test 1: Basic Montgomery property (P * NINV ≡ 2^64-1 mod 2^64)
+        // Test 1: Basic Montgomery property (SharkNTT::MagicPrime * NINV ≡ 2^64-1 mod 2^64)
         uint64_t test1 = Pval * NINVval; // unsigned wrap is modulo 2^64
-        std::cout << "P * NINV = 0x" << std::hex << test1 << std::dec;
+        std::cout << "SharkNTT::MagicPrime * NINV = 0x" << std::hex << test1 << std::dec;
         if (test1 == 0xFFFFFFFFFFFFFFFFull) {
             std::cout << "  CORRECT\n";
         } else {
@@ -405,7 +405,7 @@ static void
 VerifyNTTRoots(const SharkNTT::RootTables& roots, const PlanPrime& plan)
 {
     if (SharkVerbose == VerboseMode::Debug) {
-        std::cout << "  NINV = 0x" << std::hex << SharkNTT::NINV << std::dec << "\n";
+        std::cout << "  NINV = 0x" << std::hex << SharkNTT::MagicPrimeInv << std::dec << "\n";
         std::cout << "  R2   = 0x" << std::hex << SharkNTT::R2 << std::dec << "\n";
         std::cout << "  Generator g = 0x" << std::hex << FindGenerator<SharkFloatParams>() << std::dec
                   << "\n";
@@ -463,7 +463,6 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams>* A,
                    HpSharkFloat<SharkFloatParams>* OutYY,
                    DebugHostCombo<SharkFloatParams>& debugCombo)
 {
-    using P = SharkFloatParams;
     using namespace SharkNTT;
 
     auto& debugStates = debugCombo.States;
@@ -481,7 +480,7 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams>* A,
                   "GlobalNumUint32 must be a power of 2");
 
     // --------- Plan and tables ---------
-    PlanPrime plan = BuildPlanPrime(P::GlobalNumUint32, /*b_hint=*/26, /*margin=*/2);
+    PlanPrime plan = BuildPlanPrime(SharkFloatParams::GlobalNumUint32, /*b_hint=*/26, /*margin=*/2);
     plan.Print();
 
     assert(plan.ok && "Prime plan build failed (check b/N headroom constraints)");
@@ -522,16 +521,16 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams>* A,
 
     // Verify constants and roots
     const bool constants_ok =
-        VerifyMontgomeryConstants<SharkFloatParams>(SharkNTT::P, SharkNTT::NINV, SharkNTT::R2);
+        VerifyMontgomeryConstants<SharkFloatParams>(SharkNTT::MagicPrime, SharkNTT::MagicPrimeInv, SharkNTT::R2);
     assert(constants_ok && "Montgomery constants verification failed");
     VerifyNTTRoots<SharkFloatParams>(roots, plan);
 
     auto run_conv = [&]<DebugStatePurpose step1X,
                         DebugStatePurpose step1Y,
                         DebugStatePurpose step2X,
-                        DebugStatePurpose step2Y>(HpSharkFloat<P>* out,
-                                                  const HpSharkFloat<P>& inA,
-                                                  const HpSharkFloat<P>& inB,
+                        DebugStatePurpose step2Y>(HpSharkFloat<SharkFloatParams>* out,
+                                                  const HpSharkFloat<SharkFloatParams>& inA,
+                                                  const HpSharkFloat<SharkFloatParams>& inB,
                                                   int addFactorOfTwo,
                                                   bool isNegative) {
         // ============================
@@ -604,7 +603,7 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams>* A,
         // std::fill_n(Final128.data(), Final128.size(), 0ull);
         UnpackPrimeToFinal128(Y.data(), plan, Final128.data(), Ddigits);
         out->SetNegative(isNegative);
-        Normalize<P>(*out, inA, inB, Final128.data(), Ddigits, addFactorOfTwo);
+        Normalize<SharkFloatParams>(*out, inA, inB, Final128.data(), Ddigits, addFactorOfTwo);
     };
 
     // XX = A^2

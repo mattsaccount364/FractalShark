@@ -503,7 +503,9 @@ void TestPerf (
                 testSucceeded &= CheckDiff(testNum, numTerms, "GPU", mpfHostResultXY2, gpuResultXY2);
             }
 
-        } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
+        } else if constexpr (
+            sharkOperator == Operator::MultiplyKaratsubaV2 ||
+            sharkOperator == Operator::MultiplyFFT2) {
 
             auto combo = std::make_unique<HpSharkComboResults<SharkFloatParams>>();
             combo->A = *xNum;
@@ -515,10 +517,15 @@ void TestPerf (
 
             {
                 BenchmarkTimer timer;
-                InvokeMultiplyKernelPerf<SharkFloatParams>(
-                    timer,
-                    *combo,
-                    numIters);
+
+                if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
+                    InvokeMultiplyKernelPerf<SharkFloatParams>(timer, *combo, numIters);
+                } else if constexpr (sharkOperator == Operator::MultiplyFFT2) {
+                    InvokeMultiplyNTTKernelPerf<SharkFloatParams>(timer, *combo, numIters);
+                } else {
+                    DebugBreak();
+                }
+
                 Tests.AddTime(testNum, timer.GetDeltaInMs());
                 std::cout << "GPU iter time: " << timer.GetDeltaInMs() << " ms" << std::endl;
 

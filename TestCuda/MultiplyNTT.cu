@@ -67,113 +67,80 @@ CarryGlobalToIndex(const bool PriorIndex, const int block_idx)
     return (block_idx - (PriorIndex ? 1 : 0)) * 3;
 }
 
-//
-// Iterative, grid-synchronized carry propagation across threads/blocks.
-// No prefix-scan; we do one full pass, grid.sync(), and repeat while carries remain.
-// Produces base-2^32 digits in resultXX/XY/YY from the 128-bit partial sums final128{XX,XY,YY}.
-//
-// Requirements/assumptions:
-// - Each thread handles a contiguous digit range [thread_start_idx, thread_end_idx).
-// - shared_data provides enough space for 3 carry slots per thread (XX,XY,YY).
-// - block_carry_outs has 3 carry slots per block (XX,XY,YY) for inter-block forwarding.
-// - globalCarryCheck is a single 64-bit counter used to detect if any carries remain.
-//
-// Carry format:
-// - We model carry as a 128-bit value (carry_lo, carry_hi).
-// - Initial pass consumes final128 (lo,hi) per digit and emits digits + local carry-out.
-// - Iterative passes only add the *incoming* carry to already-written digits, advancing carry by 32 bits
-// per digit.
-//
+// CHANGES:
+//  - Add ProducedDigits and Ddigits to the signature.
+//  - Initial pass: if idx >= Ddigits, treat final128 lo/hi as 0.
+//  - Partitioning is over [0, ProducedDigits).
 template <class SharkFloatParams>
 __device__ SharkForceInlineReleaseOnly static void
-CarryPropagationFinal(uint64_t* SharkRestrict shared_data, // shared_carries buffer (3 * threads)
+CarryPropagationFinal(uint64_t* SharkRestrict shared_data,
                  cg::grid_group& grid,
                  cg::thread_block& block,
                  int thread_start_idx,
                  int thread_end_idx,
-                 const uint64_t* SharkRestrict final128XX, // len >= 2 * total_result_digits
+                 int ProducedDigits, // NEW: total positions to process (Ddigits + 4)
+                 int Ddigits,        // NEW: valid final128 positions
+                 const uint64_t* SharkRestrict final128XX,
                  const uint64_t* SharkRestrict final128XY,
                  const uint64_t* SharkRestrict final128YY,
-                 uint64_t* SharkRestrict resultXX, // base-2^32 digits (stored as uint64_t low32)
+                 uint64_t* SharkRestrict resultXX, // length >= ProducedDigits (low 32 bits used)
                  uint64_t* SharkRestrict resultXY,
                  uint64_t* SharkRestrict resultYY,
-                 uint64_t* SharkRestrict block_carry_outs, // 3 per block (XX,XY,YY)
-                 uint64_t* SharkRestrict globalCarryCheck) // single 64-bit counter
+                 uint64_t* SharkRestrict block_carry_outs,
+                 uint64_t* SharkRestrict globalCarryCheck)
 {
-    // Shared carry buffer layout: 3 words per thread (XX, XY, YY) for the *carry_lo*.
-    // We also need to propagate the high carry; we pack the 128-bit carry across two slots:
-    //   [XX_lo, XX_hi, XY_lo, XY_hi, YY_lo, YY_hi] per thread would double usage.
-    // To keep memory small, we store only carry_lo in shared and reconstruct carry_hi flow:
-    // We still need both; so store both lo and hi in adjacent rows.
-    // For clarity and correctness, we allocate 6 uint64_t per thread in the same linear array:
-    //   index = threadIdx * 6 + {0..5} : [XX_lo, XX_hi, XY_lo, XY_hi, YY_lo, YY_hi]
     auto* SharkRestrict shared_carries = shared_data;
-
     const int tIdx = block.thread_index().x;
     const int tDim = block.dim_threads().x;
 
-    // Helper to compute base index into shared for this thread
     auto CarrySharedBase = [&](int thr) -> int { return thr * 6; };
 
-    // ---------- INITIAL PASS: consume final128 and write initial digits; produce local carry-out
-    // ----------
+    // ---- INITIAL PASS: consume final128 (zero-extend past Ddigits), emit digits + local carry ----
     uint64_t carry_xx_lo = 0ull, carry_xx_hi = 0ull;
     uint64_t carry_xy_lo = 0ull, carry_xy_hi = 0ull;
     uint64_t carry_yy_lo = 0ull, carry_yy_hi = 0ull;
 
     for (int idx = thread_start_idx; idx < thread_end_idx; ++idx) {
+        const bool in = (idx < Ddigits);
         const int s = idx * 2;
 
-        // XX channel
+        const uint64_t xx_lo = in ? final128XX[s + 0] : 0ull;
+        const uint64_t xx_hi = in ? final128XX[s + 1] : 0ull;
+        const uint64_t xy_lo = in ? final128XY[s + 0] : 0ull;
+        const uint64_t xy_hi = in ? final128XY[s + 1] : 0ull;
+        const uint64_t yy_lo = in ? final128YY[s + 0] : 0ull;
+        const uint64_t yy_hi = in ? final128YY[s + 1] : 0ull;
+
+        // XX
         {
-            const uint64_t lo = final128XX[s + 0];
-            const uint64_t hi = final128XX[s + 1];
-
-            const uint64_t s_lo = lo + carry_xx_lo;
-            const uint64_t c0 = (s_lo < lo) ? 1ull : 0ull;
-            const uint64_t s_hi = hi + carry_xx_hi + c0;
-
-            const uint32_t dig = static_cast<uint32_t>(s_lo & 0xffffffffull);
-            resultXX[idx] = static_cast<uint64_t>(dig);
-
+            const uint64_t s_lo = xx_lo + carry_xx_lo;
+            const uint64_t c0 = (s_lo < xx_lo) ? 1ull : 0ull;
+            const uint64_t s_hi = xx_hi + carry_xx_hi + c0;
+            resultXX[idx] = static_cast<uint32_t>(s_lo);
             carry_xx_lo = (s_lo >> 32) | (s_hi << 32);
             carry_xx_hi = (s_hi >> 32);
         }
-
-        // XY channel
+        // XY
         {
-            const uint64_t lo = final128XY[s + 0];
-            const uint64_t hi = final128XY[s + 1];
-
-            const uint64_t s_lo = lo + carry_xy_lo;
-            const uint64_t c0 = (s_lo < lo) ? 1ull : 0ull;
-            const uint64_t s_hi = hi + carry_xy_hi + c0;
-
-            const uint32_t dig = static_cast<uint32_t>(s_lo & 0xffffffffull);
-            resultXY[idx] = static_cast<uint64_t>(dig);
-
+            const uint64_t s_lo = xy_lo + carry_xy_lo;
+            const uint64_t c0 = (s_lo < xy_lo) ? 1ull : 0ull;
+            const uint64_t s_hi = xy_hi + carry_xy_hi + c0;
+            resultXY[idx] = static_cast<uint32_t>(s_lo);
             carry_xy_lo = (s_lo >> 32) | (s_hi << 32);
             carry_xy_hi = (s_hi >> 32);
         }
-
-        // YY channel
+        // YY
         {
-            const uint64_t lo = final128YY[s + 0];
-            const uint64_t hi = final128YY[s + 1];
-
-            const uint64_t s_lo = lo + carry_yy_lo;
-            const uint64_t c0 = (s_lo < lo) ? 1ull : 0ull;
-            const uint64_t s_hi = hi + carry_yy_hi + c0;
-
-            const uint32_t dig = static_cast<uint32_t>(s_lo & 0xffffffffull);
-            resultYY[idx] = static_cast<uint64_t>(dig);
-
+            const uint64_t s_lo = yy_lo + carry_yy_lo;
+            const uint64_t c0 = (s_lo < yy_lo) ? 1ull : 0ull;
+            const uint64_t s_hi = yy_hi + carry_yy_hi + c0;
+            resultYY[idx] = static_cast<uint32_t>(s_lo);
             carry_yy_lo = (s_lo >> 32) | (s_hi << 32);
             carry_yy_hi = (s_hi >> 32);
         }
     }
 
-    // Publish local carry-out to shared; last thread in block also writes to global per-block slot
+    // Publish this thread’s carry-out
     {
         const int base = CarrySharedBase(tIdx);
         shared_carries[base + 0] = carry_xx_lo;
@@ -183,46 +150,35 @@ CarryPropagationFinal(uint64_t* SharkRestrict shared_data, // shared_carries buf
         shared_carries[base + 4] = carry_yy_lo;
         shared_carries[base + 5] = carry_yy_hi;
     }
-    // Last thread of this block => inter-block handoff
     if (tIdx == tDim - 1) {
-        const int gBase = CarryGlobalToIndex(false, block.group_index().x); // returns 3-slot base
-        block_carry_outs[gBase + 0] =
-            carry_xx_lo; // for XX_lo (hi is expected to be zero at block boundary after enough passes)
+        const int gBase = CarryGlobalToIndex(false, block.group_index().x);
+        block_carry_outs[gBase + 0] = carry_xx_lo;
         block_carry_outs[gBase + 1] = carry_xy_lo;
         block_carry_outs[gBase + 2] = carry_yy_lo;
-        // NOTE: hi parts will shift into lo via the iterative passes; no need to store separately
-        // globally.
     }
 
-    // ========== ITERATIVE PROPAGATION PASSES ==========
-    constexpr int MaxPasses = 4096; // safety bound
+    // ---- Iterative passes (unchanged structure), but over [thread_start_idx, thread_end_idx) inside
+    // ProducedDigits ----
+    constexpr int MaxPasses = 4096;
     int pass = 0;
 
     while (true) {
         grid.sync();
 
-        // Reset global "carries remaining" once per pass (single leader)
-        if (block.group_index().x == 0 && tIdx == 0) {
+        if (block.group_index().x == 0 && tIdx == 0)
             *globalCarryCheck = 0ull;
-        }
         grid.sync();
 
-        // Obtain incoming carry for this thread from its left neighbor (thread or block)
-        uint64_t in_xx_lo = 0ull, in_xx_hi = 0ull;
-        uint64_t in_xy_lo = 0ull, in_xy_hi = 0ull;
-        uint64_t in_yy_lo = 0ull, in_yy_hi = 0ull;
-
+        // incoming from left neighbor (thread or prior block), same as your code…
+        uint64_t in_xx_lo = 0, in_xx_hi = 0, in_xy_lo = 0, in_xy_hi = 0, in_yy_lo = 0, in_yy_hi = 0;
         if (tIdx == 0) {
             if (block.group_index().x > 0) {
-                // incoming from previous block's carry-out (lo only; hi will be propagated across
-                // passes)
-                const int gPrev = CarryGlobalToIndex(true, block.group_index().x); // "read" index
+                const int gPrev = CarryGlobalToIndex(true, block.group_index().x);
                 in_xx_lo = block_carry_outs[gPrev + 0];
                 in_xy_lo = block_carry_outs[gPrev + 1];
                 in_yy_lo = block_carry_outs[gPrev + 2];
             }
         } else {
-            // incoming from previous thread in same block
             const int basePrev = CarrySharedBase(tIdx - 1);
             in_xx_lo = shared_carries[basePrev + 0];
             in_xx_hi = shared_carries[basePrev + 1];
@@ -232,24 +188,14 @@ CarryPropagationFinal(uint64_t* SharkRestrict shared_data, // shared_carries buf
             in_yy_hi = shared_carries[basePrev + 5];
         }
 
-        // Consume incoming carry across our digit window, updating digits in-place and
-        // advancing the 128-bit carry by 32 bits per digit.
-        // For each digit:
-        //    sum = digit + (uint32_t)carry_lo
-        //    digit = low32(sum)
-        //    carry_advance = sum >> 32
-        //    carry_lo = (carry_lo >> 32) | (carry_hi << 32)
-        //    carry_hi = (carry_hi >> 32)
-        //    carry_lo += carry_advance
+        // sweep our range; advance the 128-bit carry by 32 bits per digit
         for (int idx = thread_start_idx; idx < thread_end_idx; ++idx) {
             // XX
             {
-                const uint64_t add32 = static_cast<uint64_t>(static_cast<uint32_t>(in_xx_lo));
-                const uint64_t dig = static_cast<uint64_t>(static_cast<uint32_t>(resultXX[idx]));
-                const uint64_t sum = dig + add32;
-                resultXX[idx] = static_cast<uint64_t>(static_cast<uint32_t>(sum));
+                const uint64_t add32 = static_cast<uint32_t>(in_xx_lo);
+                const uint64_t sum = static_cast<uint32_t>(resultXX[idx]) + add32;
+                resultXX[idx] = static_cast<uint32_t>(sum);
                 const uint64_t c32 = (sum >> 32);
-
                 const uint64_t next_lo = (in_xx_lo >> 32) | (in_xx_hi << 32);
                 const uint64_t next_hi = (in_xx_hi >> 32);
                 in_xx_lo = next_lo + c32;
@@ -257,12 +203,10 @@ CarryPropagationFinal(uint64_t* SharkRestrict shared_data, // shared_carries buf
             }
             // XY
             {
-                const uint64_t add32 = static_cast<uint64_t>(static_cast<uint32_t>(in_xy_lo));
-                const uint64_t dig = static_cast<uint64_t>(static_cast<uint32_t>(resultXY[idx]));
-                const uint64_t sum = dig + add32;
-                resultXY[idx] = static_cast<uint64_t>(static_cast<uint32_t>(sum));
+                const uint64_t add32 = static_cast<uint32_t>(in_xy_lo);
+                const uint64_t sum = static_cast<uint32_t>(resultXY[idx]) + add32;
+                resultXY[idx] = static_cast<uint32_t>(sum);
                 const uint64_t c32 = (sum >> 32);
-
                 const uint64_t next_lo = (in_xy_lo >> 32) | (in_xy_hi << 32);
                 const uint64_t next_hi = (in_xy_hi >> 32);
                 in_xy_lo = next_lo + c32;
@@ -270,12 +214,10 @@ CarryPropagationFinal(uint64_t* SharkRestrict shared_data, // shared_carries buf
             }
             // YY
             {
-                const uint64_t add32 = static_cast<uint64_t>(static_cast<uint32_t>(in_yy_lo));
-                const uint64_t dig = static_cast<uint64_t>(static_cast<uint32_t>(resultYY[idx]));
-                const uint64_t sum = dig + add32;
-                resultYY[idx] = static_cast<uint64_t>(static_cast<uint32_t>(sum));
+                const uint64_t add32 = static_cast<uint32_t>(in_yy_lo);
+                const uint64_t sum = static_cast<uint32_t>(resultYY[idx]) + add32;
+                resultYY[idx] = static_cast<uint32_t>(sum);
                 const uint64_t c32 = (sum >> 32);
-
                 const uint64_t next_lo = (in_yy_lo >> 32) | (in_yy_hi << 32);
                 const uint64_t next_hi = (in_yy_hi >> 32);
                 in_yy_lo = next_lo + c32;
@@ -283,7 +225,7 @@ CarryPropagationFinal(uint64_t* SharkRestrict shared_data, // shared_carries buf
             }
         }
 
-        // Publish carry-out from this thread for next pass
+        // publish carry-out for next pass
         {
             const int base = CarrySharedBase(tIdx);
             shared_carries[base + 0] = in_xx_lo;
@@ -293,8 +235,6 @@ CarryPropagationFinal(uint64_t* SharkRestrict shared_data, // shared_carries buf
             shared_carries[base + 4] = in_yy_lo;
             shared_carries[base + 5] = in_yy_hi;
         }
-
-        // Last thread updates per-block carry-outs (lo parts)
         if (tIdx == tDim - 1) {
             const int gBase = CarryGlobalToIndex(false, block.group_index().x);
             block_carry_outs[gBase + 0] = in_xx_lo;
@@ -302,23 +242,17 @@ CarryPropagationFinal(uint64_t* SharkRestrict shared_data, // shared_carries buf
             block_carry_outs[gBase + 2] = in_yy_lo;
         }
 
-        // If any channel has a non-zero carry-out, mark that carries remain
-        if (in_xx_lo | in_xx_hi | in_xy_lo | in_xy_hi | in_yy_lo | in_yy_hi) {
+        if (in_xx_lo | in_xx_hi | in_xy_lo | in_xy_hi | in_yy_lo | in_yy_hi)
             atomicAdd(globalCarryCheck, 1ull);
-        }
 
         grid.sync();
-
-        // Stop when no thread reported carries
         if (*globalCarryCheck == 0ull)
             break;
         if (++pass >= MaxPasses)
             break;
     }
-
-    // Optional: final carry-out to an extra digit slot (if desired by caller)
-    // Caller can check last block’s block_carry_outs to handle overflow digit(s) if needed.
 }
+
 
 
 //--------------------------------------------------------------------------------------------------
@@ -411,154 +345,262 @@ Normalize(HpSharkFloat<SharkFloatParams>& out,
     (void)pass_once(/*write_window=*/true, /*start=*/(size_t)shift_digits, /*needN=*/(size_t)N);
 }
 
-// Fused normalize for XX, YY, XY in one go.
-// - Uses iterative grid-synced carry propagation (no scans) via CarryPropagation<…>
-// - Then finds shift/exponent (single-thread) and grid-stride writes N-digit windows.
-//
-// Workspace requirements:
-//   * shared_data: dynamic shared mem >= 6 * blockDim.x * sizeof(uint64_t)
-//   * block_carry_outs: 3 * gridDim.x uint64_t (per-block carry lo for XX,XY,YY)
-//   * globalCarryCheck: 1 uint64_t (used as per-pass "any carry?" flag)
-//   * resultXX/YY/XY: scratch arrays of length 2*N32 (uint64_t; low 32 bits used)
-//
-// final128XX/YY/XY: arrays of length 2*Ddigits (lo,hi per 32-bit position), NORMAL domain.
-//
-// NOTE: does not set signs; set them at the call site if you track them separately.
 template <class SharkFloatParams>
 static __device__ inline void
 Normalize_GridStride_3Way(cooperative_groups::grid_group& grid,
-                          cooperative_groups::thread_block& block,
+                          cooperative_groups::thread_block& /*block*/,
                           // outputs
                           HpSharkFloat<SharkFloatParams>& outXX,
                           HpSharkFloat<SharkFloatParams>& outYY,
                           HpSharkFloat<SharkFloatParams>& outXY,
-                          // input exponents (for Karatsuba-style exponent math)
+                          // input exponents
                           const HpSharkFloat<SharkFloatParams>& inA,
                           const HpSharkFloat<SharkFloatParams>& inB,
-                          // convolution sums (lo,hi per 32-bit position)
+                          // convolution sums (lo,hi per 32-bit position), NORMAL domain
                           const uint64_t* SharkRestrict final128XX,
                           const uint64_t* SharkRestrict final128YY,
                           const uint64_t* SharkRestrict final128XY,
                           size_t Ddigits,
-                          // exponent tweaks (0 for XX/YY; 1 for XY if you did NOT pre-shift digits)
-                          int32_t addFactorOfTwoXX,
-                          int32_t addFactorOfTwoYY,
-                          int32_t addFactorOfTwoXY,
-                          // workspaces
-                          uint64_t* SharkRestrict shared_data,      // >= 6 * blockDim.x uint64_t
-                          uint64_t* SharkRestrict block_carry_outs, // 3 * gridDim.x
-                          uint64_t* SharkRestrict globalCarryCheck, // 1
-                          uint64_t* SharkRestrict resultXX,         // len = 2*N32, low 32 bits used
-                          uint64_t* SharkRestrict resultYY,         // len = 2*N32
-                          uint64_t* SharkRestrict resultXY)         // len = 2*N32
+                          int32_t addTwoXX,
+                          int32_t addTwoYY,
+                          int32_t addTwoXY,
+                          // global workspaces (NOT shared memory)
+                          uint64_t* SharkRestrict shared_data,          // >= 6 + 6*lanes u64
+                          uint64_t* SharkRestrict /*block_carry_outs*/, // unused here
+                          uint64_t* SharkRestrict globalCarryCheck,     // 1 u64
+                          uint64_t* SharkRestrict resultXX,             // len >= ProducedDigits
+                          uint64_t* SharkRestrict resultYY,             // len >= ProducedDigits
+                          uint64_t* SharkRestrict resultXY)             // len >= ProducedDigits
 {
     constexpr int N32 = SharkFloatParams::GlobalNumUint32;
-    const int T = static_cast<int>(grid.size());
-    const int tid = static_cast<int>(grid.thread_rank());
-    const int start = (2 * N32 * tid) / T;
-    const int end = (2 * N32 * (tid + 1)) / T;
 
-    // 0) Zero output windows up-front (grid-stride). Cheap and avoids tail cleanup later.
-    for (int i = tid; i < N32; i += T) {
+    // Produce all input digits plus 128-bit tail room (<= 4 base-2^32 digits).
+    const int ProducedDigits = static_cast<int>(Ddigits) + 4;
+
+    const int T_all = static_cast<int>(grid.size());
+    const int tid = static_cast<int>(grid.thread_rank());
+
+    // Compact the pipeline to active lanes only to avoid empty-thread gaps.
+    const int lanes = ProducedDigits < T_all ? ProducedDigits : T_all;
+    const bool active = (tid < lanes);
+    const int lane = tid; // 0..lanes-1 for active threads
+
+    // --- 0) Zero output windows up-front (grid-stride across ALL threads) ---
+    for (int i = tid; i < N32; i += T_all) {
         outXX.Digits[i] = 0u;
         outYY.Digits[i] = 0u;
         outXY.Digits[i] = 0u;
     }
     grid.sync();
 
-    // 1) Iterative grid-synced carry propagation to produce base-2^32 digits.
-    CarryPropagationFinal<SharkFloatParams>(
-        /*shared_data       */ shared_data,
-        /*grid              */ grid,
-        /*block             */ block,
-        /*thread_start_idx  */ start,
-        /*thread_end_idx    */ end,
-        /*final128XX        */ final128XX,
-        /*final128XY        */ final128XY,
-        /*final128YY        */ final128YY,
-        /*resultXX          */ resultXX,
-        /*resultXY          */ resultXY,
-        /*resultYY          */ resultYY,
-        /*block_carry_outs  */ block_carry_outs,
-        /*globalCarryCheck  */ globalCarryCheck);
+    // Linear partition of [0, ProducedDigits) across 'lanes' active participants.
+    const int start = active ? (ProducedDigits * lane) / lanes : 0;
+    const int end = active ? (ProducedDigits * (lane + 1)) / lanes : 0;
 
+    // --- 1) Initial pass (zero-extend beyond Ddigits) ---
+    uint64_t carry_xx_lo = 0ull, carry_xx_hi = 0ull;
+    uint64_t carry_yy_lo = 0ull, carry_yy_hi = 0ull;
+    uint64_t carry_xy_lo = 0ull, carry_xy_hi = 0ull;
+
+    if (active) {
+        for (int idx = start; idx < end; ++idx) {
+            const bool in = (idx < static_cast<int>(Ddigits));
+            const int s = idx * 2;
+
+            // XX
+            {
+                const uint64_t lo = in ? final128XX[s + 0] : 0ull;
+                const uint64_t hi = in ? final128XX[s + 1] : 0ull;
+
+                const uint64_t s_lo = lo + carry_xx_lo;
+                const uint64_t c0 = (s_lo < lo) ? 1ull : 0ull;
+                const uint64_t s_hi = hi + carry_xx_hi + c0;
+
+                resultXX[idx] = static_cast<uint32_t>(s_lo);
+                carry_xx_lo = (s_lo >> 32) | (s_hi << 32);
+                carry_xx_hi = (s_hi >> 32);
+            }
+            // YY
+            {
+                const uint64_t lo = in ? final128YY[s + 0] : 0ull;
+                const uint64_t hi = in ? final128YY[s + 1] : 0ull;
+
+                const uint64_t s_lo = lo + carry_yy_lo;
+                const uint64_t c0 = (s_lo < lo) ? 1ull : 0ull;
+                const uint64_t s_hi = hi + carry_yy_hi + c0;
+
+                resultYY[idx] = static_cast<uint32_t>(s_lo);
+                carry_yy_lo = (s_lo >> 32) | (s_hi << 32);
+                carry_yy_hi = (s_hi >> 32);
+            }
+            // XY
+            {
+                const uint64_t lo = in ? final128XY[s + 0] : 0ull;
+                const uint64_t hi = in ? final128XY[s + 1] : 0ull;
+
+                const uint64_t s_lo = lo + carry_xy_lo;
+                const uint64_t c0 = (s_lo < lo) ? 1ull : 0ull;
+                const uint64_t s_hi = hi + carry_xy_hi + c0;
+
+                resultXY[idx] = static_cast<uint32_t>(s_lo);
+                carry_xy_lo = (s_lo >> 32) | (s_hi << 32);
+                carry_xy_hi = (s_hi >> 32);
+            }
+        }
+    }
+
+    // Global workspace layout:
+    // [0..5] broadcast (shiftXX,shiftYY,shiftXY,zeroXX,zeroYY,zeroXY)
+    // per-lane carries from base = 6 + lane*6: [XX_lo,XX_hi, XY_lo,XY_hi, YY_lo,YY_hi]
+    if (active) {
+        const int base = 6 + lane * 6;
+        shared_data[base + 0] = carry_xx_lo;
+        shared_data[base + 1] = carry_xx_hi;
+        shared_data[base + 2] = carry_xy_lo;
+        shared_data[base + 3] = carry_xy_hi;
+        shared_data[base + 4] = carry_yy_lo;
+        shared_data[base + 5] = carry_yy_hi;
+    }
     grid.sync();
 
-    // 2) Determine highest_nonzero (significant) per channel.
-    //    Simple single-thread sweep is fine (tiny cost vs carry propagation).
-    int highest_nonzero_xx = -1;
-    int highest_nonzero_yy = -1;
-    int highest_nonzero_xy = -1;
+    // --- 2) Iterative carry propagation (grid-synced) ---
+    constexpr int MaxPasses = 4096;
+    int pass = 0;
+    while (true) {
+        if (tid == 0)
+            *globalCarryCheck = 0ull;
+        grid.sync();
 
-    if (grid.thread_rank() == 0) {
-        // Scan from top once for each channel
-        for (int i = 2 * N32 - 1; i >= 0; --i) {
-            if (highest_nonzero_xx < 0 && static_cast<uint32_t>(resultXX[i]) != 0u)
-                highest_nonzero_xx = i;
-            if (highest_nonzero_yy < 0 && static_cast<uint32_t>(resultYY[i]) != 0u)
-                highest_nonzero_yy = i;
-            if (highest_nonzero_xy < 0 && static_cast<uint32_t>(resultXY[i]) != 0u)
-                highest_nonzero_xy = i;
-            if (highest_nonzero_xx >= 0 && highest_nonzero_yy >= 0 && highest_nonzero_xy >= 0)
+        uint64_t in_xx_lo = 0ull, in_xx_hi = 0ull;
+        uint64_t in_yy_lo = 0ull, in_yy_hi = 0ull;
+        uint64_t in_xy_lo = 0ull, in_xy_hi = 0ull;
+
+        if (active) {
+            if (lane > 0) {
+                const int prev = 6 + (lane - 1) * 6;
+                in_xx_lo = shared_data[prev + 0];
+                in_xx_hi = shared_data[prev + 1];
+                in_xy_lo = shared_data[prev + 2];
+                in_xy_hi = shared_data[prev + 3];
+                in_yy_lo = shared_data[prev + 4];
+                in_yy_hi = shared_data[prev + 5];
+            }
+
+            for (int idx = start; idx < end; ++idx) {
+                // XX
+                {
+                    const uint64_t add32 = static_cast<uint32_t>(in_xx_lo);
+                    const uint64_t sum = static_cast<uint32_t>(resultXX[idx]) + add32;
+                    resultXX[idx] = static_cast<uint32_t>(sum);
+                    const uint64_t c32 = (sum >> 32);
+                    const uint64_t next_lo = (in_xx_lo >> 32) | (in_xx_hi << 32);
+                    const uint64_t next_hi = (in_xx_hi >> 32);
+                    in_xx_lo = next_lo + c32;
+                    in_xx_hi = next_hi;
+                }
+                // YY
+                {
+                    const uint64_t add32 = static_cast<uint32_t>(in_yy_lo);
+                    const uint64_t sum = static_cast<uint32_t>(resultYY[idx]) + add32;
+                    resultYY[idx] = static_cast<uint32_t>(sum);
+                    const uint64_t c32 = (sum >> 32);
+                    const uint64_t next_lo = (in_yy_lo >> 32) | (in_yy_hi << 32);
+                    const uint64_t next_hi = (in_yy_hi >> 32);
+                    in_yy_lo = next_lo + c32;
+                    in_yy_hi = next_hi;
+                }
+                // XY
+                {
+                    const uint64_t add32 = static_cast<uint32_t>(in_xy_lo);
+                    const uint64_t sum = static_cast<uint32_t>(resultXY[idx]) + add32;
+                    resultXY[idx] = static_cast<uint32_t>(sum);
+                    const uint64_t c32 = (sum >> 32);
+                    const uint64_t next_lo = (in_xy_lo >> 32) | (in_xy_hi << 32);
+                    const uint64_t next_hi = (in_xy_hi >> 32);
+                    in_xy_lo = next_lo + c32;
+                    in_xy_hi = next_hi;
+                }
+            }
+
+            const int base = 6 + lane * 6;
+            shared_data[base + 0] = in_xx_lo;
+            shared_data[base + 1] = in_xx_hi;
+            shared_data[base + 2] = in_xy_lo;
+            shared_data[base + 3] = in_xy_hi;
+            shared_data[base + 4] = in_yy_lo;
+            shared_data[base + 5] = in_yy_hi;
+
+            if (in_xx_lo | in_xx_hi | in_xy_lo | in_xy_hi | in_yy_lo | in_yy_hi)
+                atomicAdd(globalCarryCheck, 1ull);
+        }
+
+        grid.sync();
+        if (*globalCarryCheck == 0ull)
+            break;
+        if (++pass >= MaxPasses)
+            break;
+    }
+
+    // --- 3) Highest-nonzero over PRODUCED range; compute shifts/exponents (single thread) ---
+    int h_xx = -1, h_yy = -1, h_xy = -1;
+    if (tid == 0) {
+        for (int i = ProducedDigits - 1; i >= 0; --i) {
+            if (h_xx < 0 && static_cast<uint32_t>(resultXX[i]) != 0u)
+                h_xx = i;
+            if (h_yy < 0 && static_cast<uint32_t>(resultYY[i]) != 0u)
+                h_yy = i;
+            if (h_xy < 0 && static_cast<uint32_t>(resultXY[i]) != 0u)
+                h_xy = i;
+            if (h_xx >= 0 && h_yy >= 0 && h_xy >= 0)
                 break;
         }
 
-        // Compute shifts and exponents
-        auto compute_shift_and_exp = [&](int highest_nonzero,
-                                         int32_t addTwo,
-                                         int32_t expA,
-                                         int32_t expB) -> std::pair<int, int32_t> {
-            if (highest_nonzero < 0) {
-                return {0, expA + expB}; // zero result
-            }
-            const int significant = highest_nonzero + 1;
-            int shift_digits = significant - N32;
-            if (shift_digits < 0)
-                shift_digits = 0;
-            const int32_t exponent = expA + expB + 32 * shift_digits + addTwo;
-            return {shift_digits, exponent};
+        auto shift_exp = [&](int h, int32_t add, int32_t ea, int32_t eb) -> std::pair<int, int32_t> {
+            if (h < 0)
+                return {0, ea + eb};
+            const int significant = h + 1;
+            int shift = significant - N32;
+            if (shift < 0)
+                shift = 0;
+            return {shift, ea + eb + 32 * shift + add};
         };
 
-        auto [shiftXX, expXX] =
-            compute_shift_and_exp(highest_nonzero_xx, addFactorOfTwoXX, inA.Exponent, inA.Exponent);
-        auto [shiftYY, expYY] =
-            compute_shift_and_exp(highest_nonzero_yy, addFactorOfTwoYY, inB.Exponent, inB.Exponent);
-        auto [shiftXY, expXY] =
-            compute_shift_and_exp(highest_nonzero_xy, addFactorOfTwoXY, inA.Exponent, inB.Exponent);
+        auto [sXX, eXX] = shift_exp(h_xx, addTwoXX, inA.Exponent, inA.Exponent);
+        auto [sYY, eYY] = shift_exp(h_yy, addTwoYY, inB.Exponent, inB.Exponent);
+        auto [sXY, eXY] = shift_exp(h_xy, addTwoXY, inA.Exponent, inB.Exponent);
 
-        outXX.Exponent = expXX;
-        outYY.Exponent = expYY;
-        outXY.Exponent = expXY;
+        outXX.Exponent = eXX;
+        outYY.Exponent = eYY;
+        outXY.Exponent = eXY;
 
-        // Stash shifts in the first three entries of shared_data for broadcast (reuse).
-        shared_data[0] = static_cast<uint64_t>(shiftXX);
-        shared_data[1] = static_cast<uint64_t>(shiftYY);
-        shared_data[2] = static_cast<uint64_t>(shiftXY);
-        shared_data[3] = static_cast<uint64_t>(highest_nonzero_xx < 0); // flags (zero)
-        shared_data[4] = static_cast<uint64_t>(highest_nonzero_yy < 0);
-        shared_data[5] = static_cast<uint64_t>(highest_nonzero_xy < 0);
+        // Broadcast shifts + zero flags
+        shared_data[0] = static_cast<uint64_t>(sXX);
+        shared_data[1] = static_cast<uint64_t>(sYY);
+        shared_data[2] = static_cast<uint64_t>(sXY);
+        shared_data[3] = static_cast<uint64_t>(h_xx < 0);
+        shared_data[4] = static_cast<uint64_t>(h_yy < 0);
+        shared_data[5] = static_cast<uint64_t>(h_xy < 0);
     }
     grid.sync();
 
-    const int shiftXX = static_cast<int>(shared_data[0]);
-    const int shiftYY = static_cast<int>(shared_data[1]);
-    const int shiftXY = static_cast<int>(shared_data[2]);
-    const bool zeroXX = (shared_data[3] != 0);
-    const bool zeroYY = (shared_data[4] != 0);
-    const bool zeroXY = (shared_data[5] != 0);
+    const int sXX = static_cast<int>(shared_data[0]);
+    const int sYY = static_cast<int>(shared_data[1]);
+    const int sXY = static_cast<int>(shared_data[2]);
+    const bool zXX = (shared_data[3] != 0);
+    const bool zYY = (shared_data[4] != 0);
+    const bool zXY = (shared_data[5] != 0);
 
-    // 3) Grid-stride write the N-digit windows for each channel.
-    //    If a channel is zero, digits are already zero from step (0).
-    for (int i = tid; i < N32; i += T) {
-        if (!zeroXX)
-            outXX.Digits[i] = static_cast<uint32_t>(resultXX[shiftXX + i]);
-        if (!zeroYY)
-            outYY.Digits[i] = static_cast<uint32_t>(resultYY[shiftYY + i]);
-        if (!zeroXY)
-            outXY.Digits[i] = static_cast<uint32_t>(resultXY[shiftXY + i]);
+    // --- 4) Grid-stride write the N32-digit windows (bounds-safe) ---
+    for (int i = tid; i < N32; i += T_all) {
+        if (!zXX)
+            outXX.Digits[i] = (sXX + i < ProducedDigits) ? static_cast<uint32_t>(resultXX[sXX + i]) : 0u;
+        if (!zYY)
+            outYY.Digits[i] = (sYY + i < ProducedDigits) ? static_cast<uint32_t>(resultYY[sYY + i]) : 0u;
+        if (!zXY)
+            outXY.Digits[i] = (sXY + i < ProducedDigits) ? static_cast<uint32_t>(resultXY[sXY + i]) : 0u;
     }
 
-    grid.sync(); // all digits/exponents ready
+    grid.sync();
 }
 
 
@@ -917,36 +959,58 @@ NTTRadix2(cooperative_groups::grid_group& grid,
     }
 }
 
-// Grid-stride Cooley–Tukey radix-2 NTT (in-place), with the inner w-update
-// identical in structure to the original (w starts at 1 and is multiplied by w_m each j).
-// Parallelizes over k-blocks; each thread processes full butterflies for its k.
+// Grid-stride Cooley–Tukey radix-2 NTT (in-place) with *warp-strided twiddles*.
+// Each logical warp (32 lanes) cooperatively processes a k-block. Lane ℓ handles
+// j = ℓ, ℓ+warpSize, … so the per-thread twiddle advances by w_stride = w_m^warpSize.
+// This breaks the long w = w * w_m dependency chain into ~1/warpSize the length.
+//
+// Correctness: identical transform as the original (same butterflies, same w_j = w_m^j).
+// Performance: far fewer dependent twiddle updates per thread; higher ILP.
 template <class SharkFloatParams>
 static __device__ void
-NTTRadix2_GridStride(cooperative_groups::grid_group& grid,
-                     cooperative_groups::thread_block& block,
-                     DebugMultiplyCount<SharkFloatParams>* debugCombo,
-                     uint64_t* SharkRestrict A,
-                     uint32_t N,
-                     uint32_t stages,
-                     const uint64_t* SharkRestrict stage_base)
+NTTRadix2_GridStride_WarpStrided(cooperative_groups::grid_group& grid,
+                                 cooperative_groups::thread_block& block,
+                                 DebugMultiplyCount<SharkFloatParams>* debugCombo,
+                                 uint64_t* SharkRestrict A,
+                                 uint32_t N,
+                                 uint32_t stages,
+                                 const uint64_t* SharkRestrict stage_base)
 {
     const uint64_t one_m = ToMontgomery(grid, block, debugCombo, 1ull);
+    constexpr uint32_t W = 32u; // warpSize (assumed 32)
+
+    // Logical warp indexing across the whole cooperative grid
+    const size_t gsize = grid.size();
+    const size_t grank = grid.thread_rank();
+    const uint32_t lane = static_cast<uint32_t>(grank % W);
+    const size_t warp_rank = grank / W;
+    const size_t warp_count = (gsize + (W - 1)) / W; // number of logical warps
 
     for (uint32_t s = 1; s <= stages; ++s) {
         const uint32_t m = 1u << s;             // span
         const uint32_t half = m >> 1;           // butterflies per span
-        const uint64_t w_m = stage_base[s - 1]; // stage increment (Montgomery)
-        const uint32_t nblocks = N / m;         // number of k-blocks this stage
+        const uint64_t w_m = stage_base[s - 1]; // stage twiddle base (Montgomery)
+        const uint32_t nblocks = N / m;         // number of k-blocks at this stage
 
-        // Grid-stride over k-blocks; each thread does the full inner j-loop for its k.
-        const size_t gsize = grid.size();
-        const size_t grank = grid.thread_rank();
-        for (size_t blk = grank; blk < nblocks; blk += gsize) {
+        // Precompute the per-lane starting twiddle: w_lane = w_m^lane (times 1 in Montgomery).
+        uint64_t w_lane = one_m;
+        for (uint32_t t = 0; t < lane; ++t) {
+            w_lane = MontgomeryMul(grid, block, debugCombo, w_lane, w_m);
+        }
+
+        // Precompute the stride twiddle: w_stride = w_m^warpSize
+        uint64_t w_stride = one_m;
+        for (uint32_t t = 0; t < W; ++t) {
+            w_stride = MontgomeryMul(grid, block, debugCombo, w_stride, w_m);
+        }
+
+        // Each *logical warp* processes a sequence of k-blocks.
+        for (size_t blk = warp_rank; blk < nblocks; blk += warp_count) {
             const uint32_t k = static_cast<uint32_t>(blk) * m;
 
-            // ---- Inner loop identical to original: w increments by w_m each j ----
-            uint64_t w = one_m;
-            for (uint32_t j = 0; j < half; ++j) {
+            // Each lane handles j = lane, lane+W, lane+2W, ...
+            uint64_t w = w_lane;
+            for (uint32_t j = lane; j < half; j += W) {
                 const uint32_t i0 = k + j;
                 const uint32_t i1 = i0 + half;
 
@@ -957,14 +1021,111 @@ NTTRadix2_GridStride(cooperative_groups::grid_group& grid,
                 A[i0] = AddP(U, t);
                 A[i1] = SubP(U, t);
 
-                w = MontgomeryMul(grid, block, debugCombo, w, w_m);
+                // Advance twiddle by warp stride (equivalent to W successive multiplies by w_m)
+                w = MontgomeryMul(grid, block, debugCombo, w, w_stride);
             }
         }
 
-        // All butterflies for this stage must complete before advancing to next stage
+        // All butterflies for this stage must complete before advancing
         grid.sync();
     }
 }
+
+
+// Grid-stride Cooley–Tukey radix-2 NTT (in-place) for THREE arrays with *warp-strided twiddles*.
+// A logical warp cooperatively processes each k-block. Lane ℓ handles j = ℓ, ℓ+warpSize, …
+// Twiddle per lane starts at w_lane = w_m^lane and advances by w_stride = w_m^warpSize.
+//
+// Correctness: identical spectrum to the original (w_j = w_m^j).
+// Performance: breaks the long w *= w_m dependency chain; higher ILP across lanes.
+template <class SharkFloatParams>
+static __device__ void
+NTTRadix2_GridStride_3Way_WarpStrided(cooperative_groups::grid_group& grid,
+                                      cooperative_groups::thread_block& block,
+                                      DebugMultiplyCount<SharkFloatParams>* debugCombo,
+                                      uint64_t* SharkRestrict A,
+                                      uint64_t* SharkRestrict B,
+                                      uint64_t* SharkRestrict C,
+                                      uint32_t N,
+                                      uint32_t stages,
+                                      const uint64_t* SharkRestrict stage_base)
+{
+    const uint64_t one_m = ToMontgomery(grid, block, debugCombo, 1ull);
+    constexpr uint32_t W = 32u; // CUDA warp size
+
+    // Logical warp indexing across the whole cooperative grid
+    const size_t gsize = grid.size();
+    const size_t grank = grid.thread_rank();
+    const uint32_t lane = static_cast<uint32_t>(grank % W);
+    const size_t warp_rank = grank / W;
+    const size_t warp_count = (gsize + (W - 1)) / W;
+
+    for (uint32_t s = 1; s <= stages; ++s) {
+        const uint32_t m = 1u << s;             // span
+        const uint32_t half = m >> 1;           // butterflies per span
+        const uint64_t w_m = stage_base[s - 1]; // stage twiddle base (Montgomery)
+        const uint32_t nblocks = N / m;         // number of k-blocks at this stage
+
+        // Per-lane starting twiddle: w_lane = w_m^lane (in Montgomery domain)
+        uint64_t w_lane = one_m;
+        for (uint32_t t = 0; t < lane; ++t) {
+            w_lane = MontgomeryMul(grid, block, debugCombo, w_lane, w_m);
+        }
+
+        // Stride twiddle: w_stride = w_m^warpSize
+        uint64_t w_stride = one_m;
+        for (uint32_t t = 0; t < W; ++t) {
+            w_stride = MontgomeryMul(grid, block, debugCombo, w_stride, w_m);
+        }
+
+        // Each logical warp walks k-blocks grid-stride.
+        for (size_t blk = warp_rank; blk < nblocks; blk += warp_count) {
+            const uint32_t k = static_cast<uint32_t>(blk) * m;
+
+            // Lane-strided j loop: j = lane, lane+W, lane+2W, ...
+            uint64_t w = w_lane;
+            for (uint32_t j = lane; j < half; j += W) {
+                const uint32_t i0 = k + j;
+                const uint32_t i1 = i0 + half;
+
+                // ---- A channel ----
+                {
+                    const uint64_t U = A[i0];
+                    const uint64_t V = A[i1];
+                    const uint64_t t = MontgomeryMul(grid, block, debugCombo, V, w);
+                    A[i0] = AddP(U, t);
+                    A[i1] = SubP(U, t);
+                }
+
+                // ---- B channel ----
+                {
+                    const uint64_t U = B[i0];
+                    const uint64_t V = B[i1];
+                    const uint64_t t = MontgomeryMul(grid, block, debugCombo, V, w);
+                    B[i0] = AddP(U, t);
+                    B[i1] = SubP(U, t);
+                }
+
+                // ---- C channel ----
+                {
+                    const uint64_t U = C[i0];
+                    const uint64_t V = C[i1];
+                    const uint64_t t = MontgomeryMul(grid, block, debugCombo, V, w);
+                    C[i0] = AddP(U, t);
+                    C[i1] = SubP(U, t);
+                }
+
+                // Advance twiddle by warp stride (equivalent to W successive multiplies by w_m)
+                w = MontgomeryMul(grid, block, debugCombo, w, w_stride);
+            }
+        }
+
+        // Barrier between stages
+        grid.sync();
+    }
+}
+
+
 
 
 
@@ -1280,7 +1441,7 @@ PackTwistFwdNTT_Fused_AB_ToSixOutputs(cooperative_groups::grid_group& grid,
     BitReverseInplace64_GridStride(grid, tempDigitsXX1, N, (uint32_t)plan.stages);
     grid.sync();
 
-    NTTRadix2_GridStride(
+    NTTRadix2_GridStride_WarpStrided(
         grid, block, debugMultiplyCounts, tempDigitsXX1, N, (uint32_t)plan.stages, roots.stage_omegas);
     grid.sync();
 
@@ -1308,7 +1469,7 @@ PackTwistFwdNTT_Fused_AB_ToSixOutputs(cooperative_groups::grid_group& grid,
     BitReverseInplace64_GridStride(grid, tempDigitsYY1, N, (uint32_t)plan.stages);
     grid.sync();
     
-    NTTRadix2_GridStride(
+    NTTRadix2_GridStride_WarpStrided(
         grid, block, debugMultiplyCounts, tempDigitsYY1, N, (uint32_t)plan.stages, roots.stage_omegas);
     grid.sync();
 
@@ -1526,6 +1687,7 @@ RunNTT_3Way_Multiply(
          uint64_t* Final128_YY,
          uint64_t* Final128_XY,
          uint64_t* CarryPropagationBuffer,
+         uint64_t* CarryPropagationBuffer2,
          uint64_t* CarryPropagationSync,
          size_t Ddigits)
 {
@@ -1598,29 +1760,16 @@ RunNTT_3Way_Multiply(
     //                        roots.stage_omegas_inv);
     //}
 
-    SharkNTT::NTTRadix2_GridStride(grid,
+    SharkNTT::NTTRadix2_GridStride_3Way_WarpStrided(grid,
                             block,
                             debugMultiplyCounts,
                             tempDigitsXX1,
-                            (uint32_t)plan.N,
-                            (uint32_t)plan.stages,
-                            roots.stage_omegas_inv);
-
-        SharkNTT::NTTRadix2_GridStride(grid,
-                            block,
-                            debugMultiplyCounts,
                             tempDigitsYY1,
-                            (uint32_t)plan.N,
-                            (uint32_t)plan.stages,
-                            roots.stage_omegas_inv);
-
-        SharkNTT::NTTRadix2_GridStride(grid,
-                            block,
-                            debugMultiplyCounts,
                             tempDigitsXY1,
                             (uint32_t)plan.N,
                             (uint32_t)plan.stages,
                             roots.stage_omegas_inv);
+
     
     // --- After inverse NTTs (XX1 / YY1 / XY1 are in Montgomery domain) ---
     grid.sync(); // make sure prior writes (inv-NTT) are visible
@@ -1706,7 +1855,7 @@ RunNTT_3Way_Multiply(
     const auto addFactorOfTwoYY = 0;
     const auto addFactorOfTwoXY = 1;
 
-    #if 1
+    #if 0
     SharkNTT::Normalize_GridStride<SharkFloatParams>(
         grid, *outXX, inA, inA, Final128_XX, Ddigits, addFactorOfTwoXX);
     SharkNTT::Normalize_GridStride<SharkFloatParams>(
@@ -1740,7 +1889,7 @@ RunNTT_3Way_Multiply(
                                                 /* addTwoXX    */ addFactorOfTwoXX,
                                                 /* addTwoYY    */ addFactorOfTwoYY,
                                                 /* addTwoXY    */ addFactorOfTwoXY,
-                                                /* shared_data      */ reinterpret_cast<uint64_t*>(shared_data),
+                                                /* shared_data      */ CarryPropagationBuffer2,
                                                 /* block_carry_outs */ CarryPropagationBuffer,
                                                 /* globalCarryCheck */ CarryPropagationSync,
                                                 /* resultXX scratch */ resultXX,
@@ -1954,6 +2103,9 @@ MultiplyHelperNTTV2Separates(const SharkNTT::PlanPrime &plan,
     uint64_t* CarryPropagationBuffer = buffer + off; // 3 * NewN
     off += 3 * NewN;
 
+    uint64_t* CarryPropagationBuffer2 = buffer + off; // 3 * NewN
+    off += 6 + grid.size() * 6;
+
     uint64_t* CarryPropagationSync = &tempProducts[0];
 
     // XX = A^2
@@ -1980,6 +2132,7 @@ MultiplyHelperNTTV2Separates(const SharkNTT::PlanPrime &plan,
                                             Final128_YY,
                                             Final128_XY,
                                             CarryPropagationBuffer,
+                                            CarryPropagationBuffer2,
                                             CarryPropagationSync,
                                             Ddigits);
 

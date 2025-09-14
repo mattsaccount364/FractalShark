@@ -190,80 +190,107 @@ void InvokeMultiplyKernelPerf(
 template <class SharkFloatParams>
 void
 InvokeMultiplyNTTKernelPerf(BenchmarkTimer& timer,
-                         HpSharkComboResults<SharkFloatParams>& combo,
-                         uint64_t numIters)
+                            HpSharkComboResults<SharkFloatParams>& combo,
+                            uint64_t numIters)
 {
-
-    // Prepare kernel arguments
-    // Allocate memory for carryOuts and cumulativeCarries
-    uint64_t* d_tempProducts;
-    constexpr auto BytesToAllocate =
+    // --- 0) Scratch arena (global) ---------------------------------------------------------
+    uint64_t* d_tempProducts = nullptr;
+    constexpr size_t BytesToAllocate =
         (AdditionalUInt64Global + ScratchMemoryCopies * CalculateMultiplyFrameSize<SharkFloatParams>()) *
         sizeof(uint64_t);
     cudaMalloc(&d_tempProducts, BytesToAllocate);
 
-    HpSharkComboResults<SharkFloatParams>* comboGpu;
+    if constexpr (!SharkTestInitCudaMemory) {
+        cudaMemset(d_tempProducts, 0, BytesToAllocate);
+    } else {
+        cudaMemset(d_tempProducts, 0xCD, BytesToAllocate);
+    }
+
+    // --- 1) Stage combo struct, plan and roots on device -----------------------------------
+    HpSharkComboResults<SharkFloatParams>* comboGpu = nullptr;
     cudaMalloc(&comboGpu, sizeof(HpSharkComboResults<SharkFloatParams>));
     cudaMemcpy(comboGpu, &combo, sizeof(HpSharkComboResults<SharkFloatParams>), cudaMemcpyHostToDevice);
 
-    void* kernelArgs[] = {(void*)&comboGpu, (void*)&numIters, (void*)&d_tempProducts};
+    // Build NTT plan + roots exactly like correctness path
+    {
+        SharkNTT::PlanPrime NTTPlan;
+        SharkNTT::RootTables NTTRoots;
 
+        NTTPlan =
+            SharkNTT::BuildPlanPrime(SharkFloatParams::GlobalNumUint32, /*b_hint=*/26, /*margin=*/2);
+        SharkNTT::BuildRoots<SharkFloatParams>(NTTPlan.N, NTTPlan.stages, NTTRoots);
+
+        CopyRootsToCuda<SharkFloatParams>(comboGpu->Roots, NTTRoots);
+        cudaMemcpy(&comboGpu->Plan, &NTTPlan, sizeof(SharkNTT::PlanPrime), cudaMemcpyHostToDevice);
+    }
+
+    // Clear result slots (matches correctness init semantics)
+    {
+        const uint8_t pat = SharkTestInitCudaMemory ? 0xCD : 0x00;
+        cudaMemset(&comboGpu->ResultX2, pat, sizeof(HpSharkFloat<SharkFloatParams>));
+        cudaMemset(&comboGpu->Result2XY, pat, sizeof(HpSharkFloat<SharkFloatParams>));
+        cudaMemset(&comboGpu->ResultY2, pat, sizeof(HpSharkFloat<SharkFloatParams>));
+    }
+
+    // --- 2) Stream + persisting L2 window (identical policy to correctness) ----------------
     cudaStream_t stream = nullptr;
 
     if constexpr (SharkCustomStream) {
-        cudaStreamCreate(&stream); // Create a stream
-    }
+        auto res = cudaStreamCreate(&stream);
+        if (res != cudaSuccess) {
+            std::cerr << "CUDA error in creating stream: " << cudaGetErrorString(res) << std::endl;
+        }
 
-    cudaDeviceProp prop;
-    int device_id = 0;
-
-    if constexpr (SharkCustomStream) {
+        cudaDeviceProp prop{};
+        int device_id = 0;
         cudaGetDeviceProperties(&prop, device_id);
-        cudaDeviceSetLimit(cudaLimitPersistingL2CacheSize,
-                           prop.persistingL2CacheMaxSize); /* Set aside max possible size of L2 cache for
-                                                              persisting accesses */
+        // Reserve as much L2 as driver allows for persisting window
+        cudaDeviceSetLimit(cudaLimitPersistingL2CacheSize, prop.persistingL2CacheMaxSize);
 
         auto setAccess = [&](void* ptr, size_t num_bytes) {
-            cudaStreamAttrValue stream_attribute; // Stream level attributes data structure
-            stream_attribute.accessPolicyWindow.base_ptr =
-                reinterpret_cast<void*>(ptr); // Global Memory data pointer
-            stream_attribute.accessPolicyWindow.num_bytes =
-                num_bytes; // Number of bytes for persisting accesses.
-            // (Must be less than cudaDeviceProp::accessPolicyMaxWindowSize)
-            stream_attribute.accessPolicyWindow.hitRatio =
-                1.0; // Hint for L2 cache hit ratio for persisting accesses in the num_bytes region
-            stream_attribute.accessPolicyWindow.hitProp =
-                cudaAccessPropertyPersisting; // Type of access property on cache hit
-            stream_attribute.accessPolicyWindow.missProp =
-                cudaAccessPropertyStreaming; // Type of access property on cache miss.
+            cudaStreamAttrValue attr{};
+            attr.accessPolicyWindow.base_ptr = ptr;
+            attr.accessPolicyWindow.num_bytes = num_bytes; // must be <= accessPolicyMaxWindowSize
+            attr.accessPolicyWindow.hitRatio = 1.0;        // hint
+            attr.accessPolicyWindow.hitProp = cudaAccessPropertyPersisting;
+            attr.accessPolicyWindow.missProp = cudaAccessPropertyStreaming;
 
-            // Set the attributes to a CUDA stream of type cudaStream_t
             cudaError_t err =
-                cudaStreamSetAttribute(stream, cudaStreamAttributeAccessPolicyWindow, &stream_attribute);
+                cudaStreamSetAttribute(stream, cudaStreamAttributeAccessPolicyWindow, &attr);
             if (err != cudaSuccess) {
-                std::cerr << "CUDA error in setting stream attribute: " << cudaGetErrorString(err)
-                          << std::endl;
+                std::cerr << "cudaStreamSetAttribute: " << cudaGetErrorString(err) << std::endl;
             }
         };
 
+        // Keep the hot state resident
         setAccess(comboGpu, sizeof(HpSharkComboResults<SharkFloatParams>));
-        setAccess(d_tempProducts, 32 * SharkFloatParams::GlobalNumUint32 * sizeof(uint64_t));
+        // Big scratch window (enough to cover typical working set)
+        setAccess(d_tempProducts, 32ull * SharkFloatParams::GlobalNumUint32 * sizeof(uint64_t));
     }
+
+    // --- 3) Launch (mirror correctness: test-loop entry + same arg order) ------------------
+    void* kernelArgs[] = {(void*)&comboGpu, (void*)&numIters, (void*)&d_tempProducts};
 
     {
         ScopedBenchmarkStopper stopper{timer};
+        // Use the *looping* entry so numIters lives on device (same as correctness)
         ComputeMultiplyNTTGpuTestLoop<SharkFloatParams>(stream, kernelArgs);
     }
 
+    // --- 4) Copy results back, teardown -----------------------------------------------------
     cudaMemcpy(&combo, comboGpu, sizeof(HpSharkComboResults<SharkFloatParams>), cudaMemcpyDeviceToHost);
 
+    // Roots were device-allocated in CopyRootsToCuda; destroy like correctness does
+    SharkNTT::DestroyRoots<SharkFloatParams>(true, comboGpu->Roots);
+
     if constexpr (SharkCustomStream) {
-        cudaStreamDestroy(stream); // Destroy the stream
+        cudaStreamDestroy(stream);
     }
 
     cudaFree(comboGpu);
     cudaFree(d_tempProducts);
 }
+
 
 template<class SharkFloatParams>
 void InvokeAddKernelPerf(

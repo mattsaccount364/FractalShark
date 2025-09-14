@@ -14,6 +14,10 @@ const char *OperatorToString() {
         return "Operator::Add";
     } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
         return "Operator::MultiplyKaratsubaV2";
+    } else if constexpr (sharkOperator == Operator::MultiplyFFT) {
+        return "Operator::MultiplyFFT";
+    } else if constexpr (sharkOperator == Operator::MultiplyFFT2) {
+        return "Operator::MultiplyFFT2";
     } else if constexpr (sharkOperator == Operator::ReferenceOrbit) {
         return "Operator::ReferenceOrbit";
     } else {

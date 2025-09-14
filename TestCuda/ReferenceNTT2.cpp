@@ -418,16 +418,16 @@ VerifyNTTRoots(const SharkNTT::RootTables& roots, const PlanPrime& plan)
     }
 
     // Use the table's own 1 in Montgomery domain
-    const uint64_t one_m = roots.psi_pows[0];
+    [[maybe_unused]] const uint64_t one_m = roots.psi_pows[0];
 
     // ψ is roots.psi_pows[1] (Montgomery). Check ψ^(2N) = 1
-    uint64_t psi2N =
+    [[maybe_unused]] uint64_t psi2N =
         SharkNTT::MontgomeryPow<SharkFloatParams>(roots.psi_pows[1], 2ull * (uint64_t)plan.N);
     assert(psi2N == one_m && "psi^(2N) != 1 (check N and roots)");
 
     // ω = ψ^2. Check ω^N = 1
-    uint64_t omega = SharkNTT::MontgomeryMul<SharkFloatParams>(roots.psi_pows[1], roots.psi_pows[1]);
-    uint64_t omegaN = SharkNTT::MontgomeryPow<SharkFloatParams>(omega, (uint64_t)plan.N);
+    [[maybe_unused]] uint64_t omega = SharkNTT::MontgomeryMul<SharkFloatParams>(roots.psi_pows[1], roots.psi_pows[1]);
+    [[maybe_unused]] uint64_t omegaN = SharkNTT::MontgomeryPow<SharkFloatParams>(omega, (uint64_t)plan.N);
     assert(omegaN == one_m && "omega^N != 1 (check N and roots)");
 }
 
@@ -520,7 +520,7 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams>* A,
     BuildRoots<SharkFloatParams>(plan.N, plan.stages, roots);
 
     // Verify constants and roots
-    const bool constants_ok =
+    [[maybe_unused]] const bool constants_ok =
         VerifyMontgomeryConstants<SharkFloatParams>(SharkNTT::MagicPrime, SharkNTT::MagicPrimeInv, SharkNTT::R2);
     assert(constants_ok && "Montgomery constants verification failed");
     VerifyNTTRoots<SharkFloatParams>(roots, plan);

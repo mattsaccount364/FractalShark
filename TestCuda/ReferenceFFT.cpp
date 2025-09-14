@@ -291,7 +291,7 @@ struct Plan {
 static inline void
 AssertNoOverflowByParameters(const Plan& pl, int margin_bits = 2)
 {
-    const int need = 2 * pl.b + pl.stages + margin_bits;
+    [[maybe_unused]] const int need = 2 * pl.b + pl.stages + margin_bits;
     assert(need <= pl.Kbits &&
            "Ring too small: 2*b + log2(N) exceeds Kbits headroom (lower b or raise Kbits).");
 }
@@ -1949,7 +1949,7 @@ MultiplyHelperFFT(const HpSharkFloat<SharkFloatParams>* A,
     }
 
     // Verify Ninv is exactly what we think it is.
-    bool ninv_ok = SelfCheckNinv(pl, Ninv);
+    [[maybe_unused]] bool ninv_ok = SelfCheckNinv(pl, Ninv);
     assert(ninv_ok);
 
     // ---- Pack inputs ----
@@ -1972,10 +1972,10 @@ MultiplyHelperFFT(const HpSharkFloat<SharkFloatParams>* A,
 
     auto verifyFunction = [&]() {
         // First check the bit reversal functions
-        bool bit_reverse_ok = check_reverse_bits32();
+        [[maybe_unused]] bool bit_reverse_ok = check_reverse_bits32();
         assert(bit_reverse_ok);
 
-        bool bit_reverse_inplace_ok = check_bit_reverse_inplace(pl.N, pl.stages);
+        [[maybe_unused]] bool bit_reverse_inplace_ok = check_bit_reverse_inplace(pl.N, pl.stages);
         assert(bit_reverse_inplace_ok);
 
         auto fft_roundtrip_check = [&](const uint64_t* src) {

@@ -17,7 +17,7 @@
 // Assuming that SharkFloatParams::GlobalNumUint32 can be large and doesn't fit in shared memory
 // We'll use the provided global memory buffers for large intermediates
 #define SharkRestrict __restrict__
-// #define SharkRestrict
+//#define SharkRestrict
 
 #ifdef _DEBUG
 static constexpr bool SharkDebug = true;
@@ -93,7 +93,7 @@ static constexpr bool SharkTestGpu =
 
 static constexpr auto SharkTestComicalThreadCount = 13;
 
-static constexpr auto SharkTestIterCount = SharkDebug ? 5 : 50000;
+static constexpr auto SharkTestIterCount = SharkDebug ? 5 : 500;
 
 // Set to true to use a custom stream for the kernel launch
 static constexpr auto SharkCustomStream = true;
@@ -136,7 +136,7 @@ static constexpr bool SharkTestCorrectness = true;
 
 static constexpr bool SharkTestInfiniteCorrectness = SharkTestCorrectness ? true : false;
 static constexpr auto SharkTestForceSameSign = false;
-static constexpr bool SharkTestBenchmarkAgainstHost = false;
+static constexpr bool SharkTestBenchmarkAgainstHost = true;
 static constexpr bool SharkTestInitCudaMemory = true;
 
 // ---- detail helpers (fallback for pre-C++20) ----
@@ -288,10 +288,11 @@ static constexpr auto LowPrec = 32;
 
 
 // If you add a new one, search for one of the other types and copy/paste
+//using Test8x1SharkParams = GenericSharkFloatParams<128, 128, 8192, 9>;
 //using Test8x1SharkParams = GenericSharkFloatParams<128, 108, 7776, 9>;
-using Test8x1SharkParams = GenericSharkFloatParams<8, 128, 1024, 9>;
+//using Test8x1SharkParams = GenericSharkFloatParams<8, 128, 1024, 9>;
 //using Test8x1SharkParams = GenericSharkFloatParams<8, 1>; // Use for ENABLE_BASIC_CORRECTNESS==1
-//using Test8x1SharkParams = GenericSharkFloatParams<32, 2>;
+using Test8x1SharkParams = GenericSharkFloatParams<32, 2>;
 using Test4x36SharkParams = GenericSharkFloatParams<4, 6, 32>;
 using Test4x12SharkParams = GenericSharkFloatParams<3, 18, 50>;
 using Test4x9SharkParams = GenericSharkFloatParams<5, 12, 80>;

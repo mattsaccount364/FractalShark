@@ -39,7 +39,7 @@ static constexpr bool SharkDebug = false;
 // 3 = all basic correctness tests + comical tests
 // See ExplicitInstantiate.h for more information
 #ifdef _DEBUG
-#define ENABLE_BASIC_CORRECTNESS 2
+#define ENABLE_BASIC_CORRECTNESS 0
 #else
 #define ENABLE_BASIC_CORRECTNESS 2
 #endif
@@ -93,7 +93,7 @@ static constexpr bool SharkTestGpu =
 
 static constexpr auto SharkTestComicalThreadCount = 13;
 
-static constexpr auto SharkTestIterCount = SharkDebug ? 5 : 50;
+static constexpr auto SharkTestIterCount = SharkDebug ? 5 : 1000;
 
 // Set to true to use a custom stream for the kernel launch
 static constexpr auto SharkCustomStream = true;

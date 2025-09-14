@@ -167,7 +167,7 @@ Normalize_GridStride_3Way(cooperative_groups::grid_group& grid,
                           int32_t addTwoYY,
                           int32_t addTwoXY,
                           // global workspaces (NOT shared memory)
-                          uint64_t* SharkRestrict shared_data,          // >= 6 + 6*lanes u64
+                          uint64_t* SharkRestrict CarryPropagationBuffer2, // >= 6 + 6*lanes u64
                           uint64_t* SharkRestrict /*block_carry_outs*/, // unused
                           uint64_t* SharkRestrict globalCarryCheck,     // 1 u64
                           uint64_t* SharkRestrict resultXX,             // len >= Ddigits
@@ -262,12 +262,12 @@ Normalize_GridStride_3Way(cooperative_groups::grid_group& grid,
         }
 
         const int base = 6 + lane * 6;
-        shared_data[base + 0] = carry_xx_lo;
-        shared_data[base + 1] = carry_xx_hi;
-        shared_data[base + 2] = carry_xy_lo;
-        shared_data[base + 3] = carry_xy_hi;
-        shared_data[base + 4] = carry_yy_lo;
-        shared_data[base + 5] = carry_yy_hi;
+        CarryPropagationBuffer2[base + 0] = carry_xx_lo;
+        CarryPropagationBuffer2[base + 1] = carry_xx_hi;
+        CarryPropagationBuffer2[base + 2] = carry_xy_lo;
+        CarryPropagationBuffer2[base + 3] = carry_xy_hi;
+        CarryPropagationBuffer2[base + 4] = carry_yy_lo;
+        CarryPropagationBuffer2[base + 5] = carry_yy_hi;
     }
     grid.sync();
 
@@ -284,12 +284,12 @@ Normalize_GridStride_3Way(cooperative_groups::grid_group& grid,
         if (active) {
             if (lane > 0) {
                 const int prev = 6 + (lane - 1) * 6;
-                in_xx_lo = shared_data[prev + 0];
-                in_xx_hi = shared_data[prev + 1];
-                in_xy_lo = shared_data[prev + 2];
-                in_xy_hi = shared_data[prev + 3];
-                in_yy_lo = shared_data[prev + 4];
-                in_yy_hi = shared_data[prev + 5];
+                in_xx_lo = CarryPropagationBuffer2[prev + 0];
+                in_xx_hi = CarryPropagationBuffer2[prev + 1];
+                in_xy_lo = CarryPropagationBuffer2[prev + 2];
+                in_xy_hi = CarryPropagationBuffer2[prev + 3];
+                in_yy_lo = CarryPropagationBuffer2[prev + 4];
+                in_yy_hi = CarryPropagationBuffer2[prev + 5];
             }
 
             for (int idx = start; idx < end; ++idx) {
@@ -336,12 +336,12 @@ Normalize_GridStride_3Way(cooperative_groups::grid_group& grid,
             }
 
             const int base = 6 + lane * 6;
-            shared_data[base + 0] = in_xx_lo;
-            shared_data[base + 1] = in_xx_hi;
-            shared_data[base + 2] = in_xy_lo;
-            shared_data[base + 3] = in_xy_hi;
-            shared_data[base + 4] = in_yy_lo;
-            shared_data[base + 5] = in_yy_hi;
+            CarryPropagationBuffer2[base + 0] = in_xx_lo;
+            CarryPropagationBuffer2[base + 1] = in_xx_hi;
+            CarryPropagationBuffer2[base + 2] = in_xy_lo;
+            CarryPropagationBuffer2[base + 3] = in_xy_hi;
+            CarryPropagationBuffer2[base + 4] = in_yy_lo;
+            CarryPropagationBuffer2[base + 5] = in_yy_hi;
 
             // Only signal continuation if something remains to hand to the *next* lane.
             if (in_xx_lo | in_xx_hi | in_xy_lo | in_xy_hi | in_yy_lo | in_yy_hi)
@@ -388,21 +388,21 @@ Normalize_GridStride_3Way(cooperative_groups::grid_group& grid,
         outXY.Exponent = eXY;
 
         // Broadcast shifts + zero flags
-        shared_data[0] = static_cast<uint64_t>(sXX);
-        shared_data[1] = static_cast<uint64_t>(sYY);
-        shared_data[2] = static_cast<uint64_t>(sXY);
-        shared_data[3] = static_cast<uint64_t>(h_xx < 0);
-        shared_data[4] = static_cast<uint64_t>(h_yy < 0);
-        shared_data[5] = static_cast<uint64_t>(h_xy < 0);
+        CarryPropagationBuffer2[0] = static_cast<uint64_t>(sXX);
+        CarryPropagationBuffer2[1] = static_cast<uint64_t>(sYY);
+        CarryPropagationBuffer2[2] = static_cast<uint64_t>(sXY);
+        CarryPropagationBuffer2[3] = static_cast<uint64_t>(h_xx < 0);
+        CarryPropagationBuffer2[4] = static_cast<uint64_t>(h_yy < 0);
+        CarryPropagationBuffer2[5] = static_cast<uint64_t>(h_xy < 0);
     }
     grid.sync();
 
-    const int sXX = static_cast<int>(shared_data[0]);
-    const int sYY = static_cast<int>(shared_data[1]);
-    const int sXY = static_cast<int>(shared_data[2]);
-    const bool zXX = (shared_data[3] != 0);
-    const bool zYY = (shared_data[4] != 0);
-    const bool zXY = (shared_data[5] != 0);
+    const int sXX = static_cast<int>(CarryPropagationBuffer2[0]);
+    const int sYY = static_cast<int>(CarryPropagationBuffer2[1]);
+    const int sXY = static_cast<int>(CarryPropagationBuffer2[2]);
+    const bool zXX = (CarryPropagationBuffer2[3] != 0);
+    const bool zYY = (CarryPropagationBuffer2[4] != 0);
+    const bool zXY = (CarryPropagationBuffer2[5] != 0);
 
     // --- 4) Grid-stride write the N32-digit windows (bounds-safe into [0, Ddigits)) ---
     for (int i = tid; i < N32; i += T_all) {
@@ -746,75 +746,185 @@ NTTRadix2(cooperative_groups::grid_group& grid,
     }
 }
 
-// Grid-stride Cooley–Tukey radix-2 NTT (in-place) with *warp-strided twiddles*.
-// Each logical warp (32 lanes) cooperatively processes a k-block. Lane ℓ handles
-// j = ℓ, ℓ+warpSize, … so the per-thread twiddle advances by w_stride = w_m^warpSize.
-// This breaks the long w = w * w_m dependency chain into ~1/warpSize the length.
-//
-// Correctness: identical transform as the original (same butterflies, same w_j = w_m^j).
-// Performance: far fewer dependent twiddle updates per thread; higher ILP.
 template <class SharkFloatParams>
 static __device__ void
-NTTRadix2_GridStride_WarpStrided(cooperative_groups::grid_group& grid,
+NTTRadix2_GridStride_WarpStrided(uint64_t *shared_data,
+                                 cooperative_groups::grid_group& grid,
                                  cooperative_groups::thread_block& block,
                                  DebugMultiplyCount<SharkFloatParams>* debugCombo,
+                                 uint64_t* SharkRestrict globalSync,
                                  uint64_t* SharkRestrict A,
                                  uint32_t N,
                                  uint32_t stages,
                                  const uint64_t* SharkRestrict stage_base)
 {
     const uint64_t one_m = ToMontgomery(grid, block, debugCombo, 1ull);
-    constexpr uint32_t W = 32u; // warpSize (assumed 32)
+    constexpr uint32_t W = 32u;   // warpSize
+    constexpr uint32_t TS = 4096u; // tile size for early microkernel (first 12 stages)
 
-    // Logical warp indexing across the whole cooperative grid
     const size_t gsize = grid.size();
     const size_t grank = grid.thread_rank();
     const uint32_t lane = static_cast<uint32_t>(grank % W);
     const size_t warp_rank = grank / W;
-    const size_t warp_count = (gsize + (W - 1)) / W; // number of logical warps
+    const size_t warp_count = (gsize + (W - 1)) / W;
 
-    for (uint32_t s = 1; s <= stages; ++s) {
-        const uint32_t m = 1u << s;             // span
-        const uint32_t half = m >> 1;           // butterflies per span
-        const uint64_t w_m = stage_base[s - 1]; // stage twiddle base (Montgomery)
-        const uint32_t nblocks = N / m;         // number of k-blocks at this stage
-
-        // Precompute the per-lane starting twiddle: w_lane = w_m^lane (times 1 in Montgomery).
-        uint64_t w_lane = one_m;
-        for (uint32_t t = 0; t < lane; ++t) {
-            w_lane = MontgomeryMul(grid, block, debugCombo, w_lane, w_m);
+    // ---- tiny 32-bit mont-pow (for early twiddles inside the tile) ----
+    auto mont_pow_u32 = [&](uint64_t base, uint32_t exp) {
+        uint64_t acc = one_m, cur = base;
+        uint32_t e = exp;
+        while (e) {
+            if (e & 1u)
+                acc = MontgomeryMul(grid, block, debugCombo, acc, cur);
+            cur = MontgomeryMul(grid, block, debugCombo, cur, cur);
+            e >>= 1u;
         }
+        return acc;
+    };
 
-        // Precompute the stride twiddle: w_stride = w_m^warpSize
-        uint64_t w_stride = one_m;
-        for (uint32_t t = 0; t < W; ++t) {
-            w_stride = MontgomeryMul(grid, block, debugCombo, w_stride, w_m);
-        }
+    // =========================
+    // Phase 1: early stages (<= 4096 uint64) in shared memory
+    // =========================
+    const uint32_t S0 = stages < 12u ? stages : 12u; // up to m=4096
+    if (S0 > 0) {
+        // ceil division so N<4096 works (single partial tile)
+        const uint32_t tiles = (N + TS - 1u) / TS;
 
-        // Each *logical warp* processes a sequence of k-blocks.
-        for (size_t blk = warp_rank; blk < nblocks; blk += warp_count) {
-            const uint32_t k = static_cast<uint32_t>(blk) * m;
+        // Block-stride over tiles using CUDA builtins
+        for (uint32_t tile = blockIdx.x; tile < tiles; tile += gridDim.x) {
+            const uint32_t base = tile * TS;
+            const uint32_t len = std::min<uint32_t>(TS, N - base);
+            if (len == 0)
+                break;
 
-            // Each lane handles j = lane, lane+W, lane+2W, ...
-            uint64_t w = w_lane;
-            for (uint32_t j = lane; j < half; j += W) {
-                const uint32_t i0 = k + j;
-                const uint32_t i1 = i0 + half;
-
-                const uint64_t U = A[i0];
-                const uint64_t V = A[i1];
-                const uint64_t t = MontgomeryMul(grid, block, debugCombo, V, w);
-
-                A[i0] = AddP(U, t);
-                A[i1] = SubP(U, t);
-
-                // Advance twiddle by warp stride (equivalent to W successive multiplies by w_m)
-                w = MontgomeryMul(grid, block, debugCombo, w, w_stride);
+            // Load
+            for (uint32_t t = block.thread_index().x; t < len; t += block.size()) {
+                shared_data[t] = A[base + t];
             }
+            block.sync();
+
+            // Stages 1..S0 entirely in shared, with one-writer-per-pair to avoid RAW hazards
+            for (uint32_t s = 1; s <= S0; ++s) {
+                const uint32_t m = 1u << s;   // span
+                const uint32_t half = m >> 1; // butterflies per span
+                if (len < m)
+                    break; // (only possible when N<4096)
+                const uint64_t w_m = stage_base[s - 1];
+
+                for (uint32_t idx = block.thread_index().x; idx < len; idx += block.size()) {
+                    // Only the lower element of each pair does the butterfly and writes BOTH outputs
+                    if ((idx & half) == 0) {
+                        const uint32_t j = idx & (half - 1u); // j in [0, half)
+                        const uint32_t i0 = idx;
+                        const uint32_t i1 = idx + half; // mate = idx ^ half, but lower ⇒ +half
+                        const uint64_t Uin = shared_data[i0];
+                        const uint64_t Vin = shared_data[i1];
+                        const uint64_t wj = mont_pow_u32(w_m, j);
+                        const uint64_t t = MontgomeryMul(grid, block, debugCombo, Vin, wj);
+                        shared_data[i0] = AddP(Uin, t);
+                        shared_data[i1] = SubP(Uin, t);
+                    }
+                }
+                block.sync(); // stage barrier within tile
+            }
+
+            // Store
+            for (uint32_t t = block.thread_index().x; t < len; t += block.size()) {
+                A[base + t] = shared_data[t];
+            }
+            // no block.sync() needed here
         }
 
-        // All butterflies for this stage must complete before advancing
+        // Global barrier before later stages
         grid.sync();
+    }
+
+// =========================
+    // Phase 2: two-axis flattening with a persistent task queue (U fixed to 1)
+    // Tasks T enumerate (blk_id × j_chunk). Warps pull tasks from a stage-local
+    // global counter to avoid tail effects when nblocks is small.
+    // NOTE: Requires a TU-level device symbol:
+    //   __device__ unsigned int g_ntt_stage_task_counter;
+    // =========================
+    {
+        // 32-bit montgomery pow helper (local to this scope)
+        auto mont_pow_u32 = [&](uint64_t base, uint32_t exp) {
+            uint64_t acc = one_m, cur = base;
+            uint32_t e = exp;
+            while (e) {
+                if (e & 1u)
+                    acc = MontgomeryMul(grid, block, debugCombo, acc, cur);
+                cur = MontgomeryMul(grid, block, debugCombo, cur, cur);
+                e >>= 1u;
+            }
+            return acc;
+        };
+
+        for (uint32_t s = S0 + 1; s <= stages; ++s) {
+            const uint32_t m = 1u << s;
+            const uint32_t half = m >> 1;
+            const uint64_t w_m = stage_base[s - 1];
+            const uint32_t nblocks = N / m;
+
+            // Number of warp-sized j steps per k-block (U = 1)
+            const uint32_t J_total = (half + (W - 1u)) / W; // ceil(half / W)
+            const size_t total_tasks = static_cast<size_t>(nblocks) * static_cast<size_t>(J_total);
+
+            // Precompute strides and per-lane base twiddle
+            const uint64_t w_strideW = mont_pow_u32(w_m, W); // w_m^W
+            const uint64_t w_lane_base = mont_pow_u32(w_m, lane);
+
+            // Reset the stage-local global counter once per stage
+            if (grid.thread_rank() == 0) {
+                *globalSync = 0u;
+            }
+            grid.sync();
+
+            // Persistent queue: each warp repeatedly pops the next task T
+            const unsigned mask = __activemask();
+            while (true) {
+                // Warp-aggregated atomic fetch (lane 0 does the atomicAdd)
+                unsigned int T;
+                if (lane == 0) {
+                    T = atomicAdd(globalSync, 1u);
+                }
+                T = __shfl_sync(mask, T, 0);
+
+                if (static_cast<size_t>(T) >= total_tasks)
+                    break;
+
+                // Decode task -> (blk_id, j_chunk)
+                const uint32_t blk_id = static_cast<uint32_t>(T / J_total);
+                const uint32_t j_chunk = static_cast<uint32_t>(T % J_total);
+
+                const uint32_t k = blk_id * m;
+                const uint32_t j0 = lane + j_chunk * W; // one j per task (U == 1)
+
+                // Guard inactive lanes uniformly (keeps a single, predictable iteration)
+                const bool active = (j0 < half);
+
+                // Twiddle for this j0: w = (w_m^lane) * (w_m^W)^(j_chunk)
+                uint64_t w = w_lane_base;
+                if (j_chunk) {
+                    const uint64_t w_strideW_pow = mont_pow_u32(w_strideW, j_chunk);
+                    w = MontgomeryMul(grid, block, debugCombo, w, w_strideW_pow);
+                }
+
+                if (active) {
+                    const uint32_t i0 = k + j0;
+                    const uint32_t i1 = i0 + half;
+
+                    const uint64_t Uv = A[i0];
+                    const uint64_t Vv = A[i1];
+                    const uint64_t t = MontgomeryMul(grid, block, debugCombo, Vv, w);
+
+                    A[i0] = AddP(Uv, t);
+                    A[i1] = SubP(Uv, t);
+                }
+            }
+
+            // Stage barrier (now with balanced work across all warps)
+            grid.sync();
+        }
     }
 }
 
@@ -1188,13 +1298,15 @@ UnpackPrimeToFinal128_3Way(cooperative_groups::grid_group& grid,
 // A once -> (XX1, XX2, XY1), then B once -> (YY1, YY2, XY2)
 template <class SharkFloatParams>
 static __device__ inline void
-PackTwistFwdNTT_Fused_AB_ToSixOutputs(cooperative_groups::grid_group& grid,
+PackTwistFwdNTT_Fused_AB_ToSixOutputs(uint64_t *shared_data,
+                                      cooperative_groups::grid_group& grid,
                                       cooperative_groups::thread_block& block,
                                       DebugMultiplyCount<SharkFloatParams>* debugMultiplyCounts,
                                       const HpSharkFloat<SharkFloatParams>& inA,
                                       const HpSharkFloat<SharkFloatParams>& inB,
                                       const SharkNTT::PlanPrime& plan,
                                       const SharkNTT::RootTables& roots,
+                                      uint64_t* carryPropagationSync,
                                       // six outputs (Montgomery domain, length plan.N)
                                       uint64_t* SharkRestrict tempDigitsXX1,
                                       uint64_t* SharkRestrict tempDigitsXX2,
@@ -1228,8 +1340,15 @@ PackTwistFwdNTT_Fused_AB_ToSixOutputs(cooperative_groups::grid_group& grid,
     BitReverseInplace64_GridStride(grid, tempDigitsXX1, N, (uint32_t)plan.stages);
     grid.sync();
 
-    NTTRadix2_GridStride_WarpStrided(
-        grid, block, debugMultiplyCounts, tempDigitsXX1, N, (uint32_t)plan.stages, roots.stage_omegas);
+    NTTRadix2_GridStride_WarpStrided(shared_data,
+                                     grid,
+                                     block,
+                                     debugMultiplyCounts,
+                                     carryPropagationSync,
+                                     tempDigitsXX1,
+                                     N,
+                                     (uint32_t)plan.stages,
+                                     roots.stage_omegas);
     grid.sync();
 
     // -------------------- Combined Loop: replicate A AND prepare B (grid-stride) --------------------
@@ -1256,8 +1375,15 @@ PackTwistFwdNTT_Fused_AB_ToSixOutputs(cooperative_groups::grid_group& grid,
     BitReverseInplace64_GridStride(grid, tempDigitsYY1, N, (uint32_t)plan.stages);
     grid.sync();
     
-    NTTRadix2_GridStride_WarpStrided(
-        grid, block, debugMultiplyCounts, tempDigitsYY1, N, (uint32_t)plan.stages, roots.stage_omegas);
+    NTTRadix2_GridStride_WarpStrided(shared_data,
+                                     grid,
+                                     block,
+                                     debugMultiplyCounts,
+                                     carryPropagationSync,
+                                     tempDigitsYY1,
+                                     N,
+                                     (uint32_t)plan.stages,
+                                     roots.stage_omegas);
     grid.sync();
 
     // -------------------- Final replicate of B (grid-stride) --------------------
@@ -1448,7 +1574,7 @@ static_assert(AdditionalUInt64PerFrame == 256, "See below");
 template <class SharkFloatParams>
 static __device__ void
 RunNTT_3Way_Multiply(
-    uint32_t *shared_data,
+    uint64_t *shared_data,
     HpSharkFloat<SharkFloatParams>* outXX,
          HpSharkFloat<SharkFloatParams>* outYY,
          HpSharkFloat<SharkFloatParams>* outXY,
@@ -1475,13 +1601,15 @@ RunNTT_3Way_Multiply(
          uint64_t* CarryPropagationSync,
          size_t Ddigits)
 {
-    PackTwistFwdNTT_Fused_AB_ToSixOutputs<SharkFloatParams>(grid,
+    PackTwistFwdNTT_Fused_AB_ToSixOutputs<SharkFloatParams>(shared_data,
+                                                            grid,
                                                             block,
                                                             debugMultiplyCounts,
                                                             inA,
                                                             inB,
                                                             plan,
                                                             roots,
+                                                            CarryPropagationSync,
                                                             tempDigitsXX1,
                                                             tempDigitsXX2,
                                                             tempDigitsYY1,
@@ -1697,7 +1825,7 @@ MultiplyHelperNTTV2Separates(const SharkNTT::PlanPrime &plan,
                              uint64_t* SharkRestrict tempProducts)
 {
 
-    extern __shared__ uint32_t shared_data[];
+    extern __shared__ uint64_t shared_data[];
 
     constexpr auto ExecutionBlockBase = 0;
     constexpr auto ExecutionNumBlocks = SharkFloatParams::GlobalNumBlocks;

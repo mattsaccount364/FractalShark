@@ -39,7 +39,7 @@ static constexpr bool SharkDebug = false;
 // 3 = all basic correctness tests + comical tests
 // See ExplicitInstantiate.h for more information
 #ifdef _DEBUG
-#define ENABLE_BASIC_CORRECTNESS 0
+#define ENABLE_BASIC_CORRECTNESS 2
 #else
 #define ENABLE_BASIC_CORRECTNESS 2
 #endif
@@ -93,7 +93,7 @@ static constexpr bool SharkTestGpu =
 
 static constexpr auto SharkTestComicalThreadCount = 13;
 
-static constexpr auto SharkTestIterCount = SharkDebug ? 5 : 500;
+static constexpr auto SharkTestIterCount = SharkDebug ? 5 : 50;
 
 // Set to true to use a custom stream for the kernel launch
 static constexpr auto SharkCustomStream = true;
@@ -286,6 +286,15 @@ constexpr int32_t CalculateMultiplySharedMemorySize() {
     return sharedAmountBytes;
 }
 
+template <class SharkFloatParams>
+constexpr int32_t
+CalculateNTTSharedMemorySize()
+{
+    // SharkConstantSharedRequiredBytes
+    constexpr auto sharedAmountBytes = 4096 * sizeof(uint64_t);
+    return sharedAmountBytes;
+}
+
 template<class SharkFloatParams>
 static constexpr auto CalculateAddFrameSize() {
     return ScratchMemoryArraysForAdd * SharkFloatParams::GlobalNumUint32 + AdditionalUInt64PerFrame;
@@ -315,7 +324,8 @@ constexpr auto StupidMult = 1;
 //using TestPerSharkParams1 = GenericSharkFloatParams<64, 128>;
 //using TestPerSharkParams1 = GenericSharkFloatParams<96, 81>;
 //using TestPerSharkParams1 = GenericSharkFloatParams<128 * StupidMult, 108, 7776, 9>;
-using TestPerSharkParams1 = GenericSharkFloatParams<128, 108, 77760, 9>;
+//using TestPerSharkParams1 = GenericSharkFloatParams<128, 108, 7776, 9>;
+using TestPerSharkParams1 = GenericSharkFloatParams<128, 128, 8192>;
 using TestPerSharkParams2 = GenericSharkFloatParams<64 * StupidMult, 108, 7776, 9>;
 using TestPerSharkParams3 = GenericSharkFloatParams<32 * StupidMult, 108, 7776, 9>;
 using TestPerSharkParams4 = GenericSharkFloatParams<16 * StupidMult, 108, 7776, 9>;

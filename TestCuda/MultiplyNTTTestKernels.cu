@@ -47,7 +47,7 @@ ComputeMultiplyNTTGpu(void* kernelArgs[])
 
     cudaError_t err;
 
-    constexpr auto sharedAmountBytes = CalculateMultiplySharedMemorySize<SharkFloatParams>();
+    constexpr auto sharedAmountBytes = CalculateNTTSharedMemorySize<SharkFloatParams>();
 
     if constexpr (SharkCustomStream) {
         cudaFuncSetAttribute(MultiplyKernelNTT<SharkFloatParams>,
@@ -84,7 +84,7 @@ void
 ComputeMultiplyNTTGpuTestLoop(cudaStream_t& stream, void* kernelArgs[])
 {
 
-    constexpr auto sharedAmountBytes = CalculateMultiplySharedMemorySize<SharkFloatParams>();
+    constexpr auto sharedAmountBytes = CalculateNTTSharedMemorySize<SharkFloatParams>();
 
     if constexpr (SharkCustomStream) {
         cudaFuncSetAttribute(MultiplyKernelNTTTestLoop<SharkFloatParams>,

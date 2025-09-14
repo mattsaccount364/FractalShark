@@ -282,10 +282,10 @@ BuildRoots(uint32_t N, uint32_t stages, RootTables& roots)
                       << " omega_inv: " << roots.stage_omegas_inv[s - 1] << std::endl;
         }
 
-        for (uint32_t i = 0; i < N; ++i) {
-            std::cout << "psi_pows[" << i << "] = " << roots.psi_pows[i] << " psi_inv_pows[" << i
-                      << "] = " << roots.psi_inv_pows[i] << std::endl;
-        }
+        //for (uint32_t i = 0; i < N; ++i) {
+        //    std::cout << "psi_pows[" << i << "] = " << roots.psi_pows[i] << " psi_inv_pows[" << i
+        //              << "] = " << roots.psi_inv_pows[i] << std::endl;
+        //}
 
         std::cout << "Ninvm_mont = " << roots.Ninvm_mont << std::endl;
     }

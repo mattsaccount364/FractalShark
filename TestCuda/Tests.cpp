@@ -240,8 +240,8 @@ bool DiffAgainstHost(
         std::cout << "Correct answer follows after converting to HpSharkFloat: " << std::endl;
     }
 
-    HpSharkFloat<SharkFloatParams> hostShark;
-    hostShark.MpfToHpGpu(
+    auto hostShark = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+    hostShark->MpfToHpGpu(
         mpfHostResult,
         HpSharkFloat<SharkFloatParams>::DefaultPrecBits
     );

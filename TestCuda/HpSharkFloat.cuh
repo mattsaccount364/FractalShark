@@ -249,7 +249,7 @@ static constexpr auto AdditionalUInt64Global =
     AdditionalGlobalChecksumSpace;
 
 template<class SharkFloatParams>
-static constexpr auto CalculateMultiplyFrameSize() {
+static constexpr auto CalculateKaratsubaFrameSize() {
     constexpr auto retval =
         ScratchMemoryArraysForMultiply *
         SharkFloatParams::GlobalNumUint32 +
@@ -257,6 +257,16 @@ static constexpr auto CalculateMultiplyFrameSize() {
     constexpr auto alignAt16BytesConstant = (retval % 16 == 0) ? 0 : (16 - retval % 16);
     return retval + alignAt16BytesConstant;
 }
+
+template <class SharkFloatParams>
+static constexpr auto CalculateNTTFrameSize()
+{
+    constexpr auto retval =
+        ScratchMemoryArraysForMultiply * SharkFloatParams::GlobalNumUint32 + AdditionalUInt64PerFrame;
+    constexpr auto alignAt16BytesConstant = (retval % 16 == 0) ? 0 : (16 - retval % 16);
+    return retval + alignAt16BytesConstant;
+}
+
 
 template<class SharkFloatParams>
 constexpr int32_t CalculateMultiplySharedMemorySize() {
@@ -305,7 +315,7 @@ constexpr auto StupidMult = 1;
 //using TestPerSharkParams1 = GenericSharkFloatParams<64, 128>;
 //using TestPerSharkParams1 = GenericSharkFloatParams<96, 81>;
 //using TestPerSharkParams1 = GenericSharkFloatParams<128 * StupidMult, 108, 7776, 9>;
-using TestPerSharkParams1 = GenericSharkFloatParams<128, 108, 7776, 9>;
+using TestPerSharkParams1 = GenericSharkFloatParams<128, 108, 77760, 9>;
 using TestPerSharkParams2 = GenericSharkFloatParams<64 * StupidMult, 108, 7776, 9>;
 using TestPerSharkParams3 = GenericSharkFloatParams<32 * StupidMult, 108, 7776, 9>;
 using TestPerSharkParams4 = GenericSharkFloatParams<16 * StupidMult, 108, 7776, 9>;

@@ -24,8 +24,6 @@
 
 #include "NTTConstexprGenerator.h"
 
-//#define TEMP_DISABLEALL
-
 namespace cg = cooperative_groups;
 
 static constexpr auto [[maybe_unused]]
@@ -39,8 +37,6 @@ CalcAlign16Bytes32BitIndex(uint64_t Thirty2BitIndex)
 {
     return 4 - (Thirty2BitIndex % 4);
 }
-
-#ifndef TEMP_DISABLEALL
 
 namespace SharkNTT {
 
@@ -60,200 +56,6 @@ ReverseBits32(uint32_t value, int bit_count)
     value = ((value & 0x55555555u) << 1) | ((value & 0xaaaaaaaau) >> 1);
     return value >> (32 - bit_count);
 }
-
-static __device__ int
-CarryGlobalToIndex(const bool PriorIndex, const int block_idx)
-{
-    return (block_idx - (PriorIndex ? 1 : 0)) * 3;
-}
-
-// CHANGES:
-//  - Add ProducedDigits and Ddigits to the signature.
-//  - Initial pass: if idx >= Ddigits, treat final128 lo/hi as 0.
-//  - Partitioning is over [0, ProducedDigits).
-template <class SharkFloatParams>
-__device__ SharkForceInlineReleaseOnly static void
-CarryPropagationFinal(uint64_t* SharkRestrict shared_data,
-                 cg::grid_group& grid,
-                 cg::thread_block& block,
-                 int thread_start_idx,
-                 int thread_end_idx,
-                 int ProducedDigits, // NEW: total positions to process (Ddigits + 4)
-                 int Ddigits,        // NEW: valid final128 positions
-                 const uint64_t* SharkRestrict final128XX,
-                 const uint64_t* SharkRestrict final128XY,
-                 const uint64_t* SharkRestrict final128YY,
-                 uint64_t* SharkRestrict resultXX, // length >= ProducedDigits (low 32 bits used)
-                 uint64_t* SharkRestrict resultXY,
-                 uint64_t* SharkRestrict resultYY,
-                 uint64_t* SharkRestrict block_carry_outs,
-                 uint64_t* SharkRestrict globalCarryCheck)
-{
-    auto* SharkRestrict shared_carries = shared_data;
-    const int tIdx = block.thread_index().x;
-    const int tDim = block.dim_threads().x;
-
-    auto CarrySharedBase = [&](int thr) -> int { return thr * 6; };
-
-    // ---- INITIAL PASS: consume final128 (zero-extend past Ddigits), emit digits + local carry ----
-    uint64_t carry_xx_lo = 0ull, carry_xx_hi = 0ull;
-    uint64_t carry_xy_lo = 0ull, carry_xy_hi = 0ull;
-    uint64_t carry_yy_lo = 0ull, carry_yy_hi = 0ull;
-
-    for (int idx = thread_start_idx; idx < thread_end_idx; ++idx) {
-        const bool in = (idx < Ddigits);
-        const int s = idx * 2;
-
-        const uint64_t xx_lo = in ? final128XX[s + 0] : 0ull;
-        const uint64_t xx_hi = in ? final128XX[s + 1] : 0ull;
-        const uint64_t xy_lo = in ? final128XY[s + 0] : 0ull;
-        const uint64_t xy_hi = in ? final128XY[s + 1] : 0ull;
-        const uint64_t yy_lo = in ? final128YY[s + 0] : 0ull;
-        const uint64_t yy_hi = in ? final128YY[s + 1] : 0ull;
-
-        // XX
-        {
-            const uint64_t s_lo = xx_lo + carry_xx_lo;
-            const uint64_t c0 = (s_lo < xx_lo) ? 1ull : 0ull;
-            const uint64_t s_hi = xx_hi + carry_xx_hi + c0;
-            resultXX[idx] = static_cast<uint32_t>(s_lo);
-            carry_xx_lo = (s_lo >> 32) | (s_hi << 32);
-            carry_xx_hi = (s_hi >> 32);
-        }
-        // XY
-        {
-            const uint64_t s_lo = xy_lo + carry_xy_lo;
-            const uint64_t c0 = (s_lo < xy_lo) ? 1ull : 0ull;
-            const uint64_t s_hi = xy_hi + carry_xy_hi + c0;
-            resultXY[idx] = static_cast<uint32_t>(s_lo);
-            carry_xy_lo = (s_lo >> 32) | (s_hi << 32);
-            carry_xy_hi = (s_hi >> 32);
-        }
-        // YY
-        {
-            const uint64_t s_lo = yy_lo + carry_yy_lo;
-            const uint64_t c0 = (s_lo < yy_lo) ? 1ull : 0ull;
-            const uint64_t s_hi = yy_hi + carry_yy_hi + c0;
-            resultYY[idx] = static_cast<uint32_t>(s_lo);
-            carry_yy_lo = (s_lo >> 32) | (s_hi << 32);
-            carry_yy_hi = (s_hi >> 32);
-        }
-    }
-
-    // Publish this thread’s carry-out
-    {
-        const int base = CarrySharedBase(tIdx);
-        shared_carries[base + 0] = carry_xx_lo;
-        shared_carries[base + 1] = carry_xx_hi;
-        shared_carries[base + 2] = carry_xy_lo;
-        shared_carries[base + 3] = carry_xy_hi;
-        shared_carries[base + 4] = carry_yy_lo;
-        shared_carries[base + 5] = carry_yy_hi;
-    }
-    if (tIdx == tDim - 1) {
-        const int gBase = CarryGlobalToIndex(false, block.group_index().x);
-        block_carry_outs[gBase + 0] = carry_xx_lo;
-        block_carry_outs[gBase + 1] = carry_xy_lo;
-        block_carry_outs[gBase + 2] = carry_yy_lo;
-    }
-
-    // ---- Iterative passes (unchanged structure), but over [thread_start_idx, thread_end_idx) inside
-    // ProducedDigits ----
-    constexpr int MaxPasses = 4096;
-    int pass = 0;
-
-    while (true) {
-        grid.sync();
-
-        if (block.group_index().x == 0 && tIdx == 0)
-            *globalCarryCheck = 0ull;
-        grid.sync();
-
-        // incoming from left neighbor (thread or prior block), same as your code…
-        uint64_t in_xx_lo = 0, in_xx_hi = 0, in_xy_lo = 0, in_xy_hi = 0, in_yy_lo = 0, in_yy_hi = 0;
-        if (tIdx == 0) {
-            if (block.group_index().x > 0) {
-                const int gPrev = CarryGlobalToIndex(true, block.group_index().x);
-                in_xx_lo = block_carry_outs[gPrev + 0];
-                in_xy_lo = block_carry_outs[gPrev + 1];
-                in_yy_lo = block_carry_outs[gPrev + 2];
-            }
-        } else {
-            const int basePrev = CarrySharedBase(tIdx - 1);
-            in_xx_lo = shared_carries[basePrev + 0];
-            in_xx_hi = shared_carries[basePrev + 1];
-            in_xy_lo = shared_carries[basePrev + 2];
-            in_xy_hi = shared_carries[basePrev + 3];
-            in_yy_lo = shared_carries[basePrev + 4];
-            in_yy_hi = shared_carries[basePrev + 5];
-        }
-
-        // sweep our range; advance the 128-bit carry by 32 bits per digit
-        for (int idx = thread_start_idx; idx < thread_end_idx; ++idx) {
-            // XX
-            {
-                const uint64_t add32 = static_cast<uint32_t>(in_xx_lo);
-                const uint64_t sum = static_cast<uint32_t>(resultXX[idx]) + add32;
-                resultXX[idx] = static_cast<uint32_t>(sum);
-                const uint64_t c32 = (sum >> 32);
-                const uint64_t next_lo = (in_xx_lo >> 32) | (in_xx_hi << 32);
-                const uint64_t next_hi = (in_xx_hi >> 32);
-                in_xx_lo = next_lo + c32;
-                in_xx_hi = next_hi;
-            }
-            // XY
-            {
-                const uint64_t add32 = static_cast<uint32_t>(in_xy_lo);
-                const uint64_t sum = static_cast<uint32_t>(resultXY[idx]) + add32;
-                resultXY[idx] = static_cast<uint32_t>(sum);
-                const uint64_t c32 = (sum >> 32);
-                const uint64_t next_lo = (in_xy_lo >> 32) | (in_xy_hi << 32);
-                const uint64_t next_hi = (in_xy_hi >> 32);
-                in_xy_lo = next_lo + c32;
-                in_xy_hi = next_hi;
-            }
-            // YY
-            {
-                const uint64_t add32 = static_cast<uint32_t>(in_yy_lo);
-                const uint64_t sum = static_cast<uint32_t>(resultYY[idx]) + add32;
-                resultYY[idx] = static_cast<uint32_t>(sum);
-                const uint64_t c32 = (sum >> 32);
-                const uint64_t next_lo = (in_yy_lo >> 32) | (in_yy_hi << 32);
-                const uint64_t next_hi = (in_yy_hi >> 32);
-                in_yy_lo = next_lo + c32;
-                in_yy_hi = next_hi;
-            }
-        }
-
-        // publish carry-out for next pass
-        {
-            const int base = CarrySharedBase(tIdx);
-            shared_carries[base + 0] = in_xx_lo;
-            shared_carries[base + 1] = in_xx_hi;
-            shared_carries[base + 2] = in_xy_lo;
-            shared_carries[base + 3] = in_xy_hi;
-            shared_carries[base + 4] = in_yy_lo;
-            shared_carries[base + 5] = in_yy_hi;
-        }
-        if (tIdx == tDim - 1) {
-            const int gBase = CarryGlobalToIndex(false, block.group_index().x);
-            block_carry_outs[gBase + 0] = in_xx_lo;
-            block_carry_outs[gBase + 1] = in_xy_lo;
-            block_carry_outs[gBase + 2] = in_yy_lo;
-        }
-
-        if (in_xx_lo | in_xx_hi | in_xy_lo | in_xy_hi | in_yy_lo | in_yy_hi)
-            atomicAdd(globalCarryCheck, 1ull);
-
-        grid.sync();
-        if (*globalCarryCheck == 0ull)
-            break;
-        if (++pass >= MaxPasses)
-            break;
-    }
-}
-
-
 
 //--------------------------------------------------------------------------------------------------
 // Normalization (final carry propagation and windowing into HpSharkFloat<SharkFloatParams>)
@@ -366,26 +168,26 @@ Normalize_GridStride_3Way(cooperative_groups::grid_group& grid,
                           int32_t addTwoXY,
                           // global workspaces (NOT shared memory)
                           uint64_t* SharkRestrict shared_data,          // >= 6 + 6*lanes u64
-                          uint64_t* SharkRestrict /*block_carry_outs*/, // unused here
+                          uint64_t* SharkRestrict /*block_carry_outs*/, // unused
                           uint64_t* SharkRestrict globalCarryCheck,     // 1 u64
-                          uint64_t* SharkRestrict resultXX,             // len >= ProducedDigits
-                          uint64_t* SharkRestrict resultYY,             // len >= ProducedDigits
-                          uint64_t* SharkRestrict resultXY)             // len >= ProducedDigits
+                          uint64_t* SharkRestrict resultXX,             // len >= Ddigits
+                          uint64_t* SharkRestrict resultYY,             // len >= Ddigits
+                          uint64_t* SharkRestrict resultXY)             // len >= Ddigits
 {
     constexpr int N32 = SharkFloatParams::GlobalNumUint32;
 
-    // Produce all input digits plus 128-bit tail room (<= 4 base-2^32 digits).
-    const int ProducedDigits = static_cast<int>(Ddigits) + 4;
+    // We only ever produce digits in [0, Ddigits).
+    const int ProducedDigits = static_cast<int>(Ddigits);
 
     const int T_all = static_cast<int>(grid.size());
     const int tid = static_cast<int>(grid.thread_rank());
 
-    // Compact the pipeline to active lanes only to avoid empty-thread gaps.
-    const int lanes = ProducedDigits < T_all ? ProducedDigits : T_all;
+    // Active participants are min(ProducedDigits, T_all)
+    const int lanes = (ProducedDigits < T_all) ? ProducedDigits : T_all;
     const bool active = (tid < lanes);
     const int lane = tid; // 0..lanes-1 for active threads
 
-    // --- 0) Zero output windows up-front (grid-stride across ALL threads) ---
+    // --- 0) Grid-stride zero the output windows up-front ---
     for (int i = tid; i < N32; i += T_all) {
         outXX.Digits[i] = 0u;
         outYY.Digits[i] = 0u;
@@ -393,19 +195,22 @@ Normalize_GridStride_3Way(cooperative_groups::grid_group& grid,
     }
     grid.sync();
 
-    // Linear partition of [0, ProducedDigits) across 'lanes' active participants.
-    const int start = active ? (ProducedDigits * lane) / lanes : 0;
-    const int end = active ? (ProducedDigits * (lane + 1)) / lanes : 0;
+    // Linear partition of [0, ProducedDigits) across 'lanes'
+    const int64_t PD = static_cast<int64_t>(ProducedDigits);
+    const int64_t LNS = static_cast<int64_t>(lanes);
+    const int64_t LN = static_cast<int64_t>(lane);
+    const int start = active ? static_cast<int>((PD * LN) / LNS) : 0;
+    const int end = active ? static_cast<int>((PD * (LN + 1)) / LNS) : 0;
 
-    // --- 1) Initial pass (zero-extend beyond Ddigits) ---
+    // --- 1) Initial pass over our slice (no tail beyond Ddigits) ---
     uint64_t carry_xx_lo = 0ull, carry_xx_hi = 0ull;
     uint64_t carry_yy_lo = 0ull, carry_yy_hi = 0ull;
     uint64_t carry_xy_lo = 0ull, carry_xy_hi = 0ull;
 
     if (active) {
         for (int idx = start; idx < end; ++idx) {
-            const bool in = (idx < static_cast<int>(Ddigits));
-            const int s = idx * 2;
+            const bool in = (idx < ProducedDigits);
+            const size_t s = static_cast<size_t>(idx) * 2u;
 
             // XX
             {
@@ -447,12 +252,15 @@ Normalize_GridStride_3Way(cooperative_groups::grid_group& grid,
                 carry_xy_hi = (s_hi >> 32);
             }
         }
-    }
 
-    // Global workspace layout:
-    // [0..5] broadcast (shiftXX,shiftYY,shiftXY,zeroXX,zeroYY,zeroXY)
-    // per-lane carries from base = 6 + lane*6: [XX_lo,XX_hi, XY_lo,XY_hi, YY_lo,YY_hi]
-    if (active) {
+        // Publish residual to the next lane except for the **last lane**.
+        // By design (matches simplified scalar), we DROP any residual that would flow beyond Ddigits.
+        if (lane == lanes - 1) {
+            carry_xx_lo = carry_xx_hi = 0ull;
+            carry_xy_lo = carry_xy_hi = 0ull;
+            carry_yy_lo = carry_yy_hi = 0ull;
+        }
+
         const int base = 6 + lane * 6;
         shared_data[base + 0] = carry_xx_lo;
         shared_data[base + 1] = carry_xx_hi;
@@ -463,9 +271,7 @@ Normalize_GridStride_3Way(cooperative_groups::grid_group& grid,
     }
     grid.sync();
 
-    // --- 2) Iterative carry propagation (grid-synced) ---
-    constexpr int MaxPasses = 4096;
-    int pass = 0;
+    // --- 2) Iterative carry propagation within [0, Ddigits) (drop at right edge) ---
     while (true) {
         if (tid == 0)
             *globalCarryCheck = 0ull;
@@ -522,6 +328,13 @@ Normalize_GridStride_3Way(cooperative_groups::grid_group& grid,
                 }
             }
 
+            // Drop residual at the right boundary (last lane), publish otherwise.
+            if (lane == lanes - 1) {
+                in_xx_lo = in_xx_hi = 0ull;
+                in_xy_lo = in_xy_hi = 0ull;
+                in_yy_lo = in_yy_hi = 0ull;
+            }
+
             const int base = 6 + lane * 6;
             shared_data[base + 0] = in_xx_lo;
             shared_data[base + 1] = in_xx_hi;
@@ -530,18 +343,19 @@ Normalize_GridStride_3Way(cooperative_groups::grid_group& grid,
             shared_data[base + 4] = in_yy_lo;
             shared_data[base + 5] = in_yy_hi;
 
+            // Only signal continuation if something remains to hand to the *next* lane.
             if (in_xx_lo | in_xx_hi | in_xy_lo | in_xy_hi | in_yy_lo | in_yy_hi)
                 atomicAdd(globalCarryCheck, 1ull);
         }
 
         grid.sync();
-        if (*globalCarryCheck == 0ull)
+        // Atomic read to avoid any visibility doubt
+        if (atomicAdd(globalCarryCheck, 0ull) == 0ull)
             break;
-        if (++pass >= MaxPasses)
-            break;
+        grid.sync();
     }
 
-    // --- 3) Highest-nonzero over PRODUCED range; compute shifts/exponents (single thread) ---
+    // --- 3) Scan [0, Ddigits) for highest-nonzero; compute shifts/exponents (single thread) ---
     int h_xx = -1, h_yy = -1, h_xy = -1;
     if (tid == 0) {
         for (int i = ProducedDigits - 1; i >= 0; --i) {
@@ -590,7 +404,7 @@ Normalize_GridStride_3Way(cooperative_groups::grid_group& grid,
     const bool zYY = (shared_data[4] != 0);
     const bool zXY = (shared_data[5] != 0);
 
-    // --- 4) Grid-stride write the N32-digit windows (bounds-safe) ---
+    // --- 4) Grid-stride write the N32-digit windows (bounds-safe into [0, Ddigits)) ---
     for (int i = tid; i < N32; i += T_all) {
         if (!zXX)
             outXX.Digits[i] = (sXX + i < ProducedDigits) ? static_cast<uint32_t>(resultXX[sXX + i]) : 0u;
@@ -658,19 +472,6 @@ Normalize_GridStride(cooperative_groups::grid_group& grid,
             carry_hi = (s_hi >> 32);
         }
 
-        // Flush remaining carry into more digits
-        while (carry_lo || carry_hi) {
-            const uint32_t dig = static_cast<uint32_t>(carry_lo & 0xffffffffull);
-            if (dig != 0)
-                highest_nonzero = static_cast<int>(idx);
-            ++idx;
-
-            const uint64_t nlo = (carry_lo >> 32) | (carry_hi << 32);
-            const uint64_t nhi = (carry_hi >> 32);
-            carry_lo = nlo;
-            carry_hi = nhi;
-        }
-
         if (highest_nonzero < 0) {
             // Zero result: exponent is sum; digits already zeroed grid-wide.
             out.Exponent = a.Exponent + b.Exponent; // Karatsuba zero convention
@@ -708,20 +509,6 @@ Normalize_GridStride(cooperative_groups::grid_group& grid,
 
                 carry_lo = (s_lo >> 32) | (s_hi << 32);
                 carry_hi = (s_hi >> 32);
-            }
-
-            // Flush remaining carry into the window
-            while ((carry_lo || carry_hi) && out_written < N) {
-                const uint32_t dig = static_cast<uint32_t>(carry_lo & 0xffffffffull);
-                if (idx >= start && out_written < N) {
-                    out.Digits[out_written++] = dig;
-                }
-                ++idx;
-
-                const uint64_t nlo = (carry_lo >> 32) | (carry_hi << 32);
-                const uint64_t nhi = (carry_hi >> 32);
-                carry_lo = nlo;
-                carry_hi = nhi;
             }
 
             // Any remaining tail (if window exceeded produced digits) is already zero
@@ -1479,7 +1266,6 @@ PackTwistFwdNTT_Fused_AB_ToSixOutputs(cooperative_groups::grid_group& grid,
         tempDigitsYY2[i] = vB;
         tempDigitsXY2[i] = vB;
     }
-    grid.sync(); // ready for immediate consumers
 }
 
 // Fused grid-stride: untwist by psi^{-i}, scale by N^{-1} (Montgomery),
@@ -1542,8 +1328,6 @@ UntwistScaleFromMont_3Way_GridStride(cooperative_groups::grid_group& grid,
 
 } // namespace SharkNTT
 
-#endif
-
 template <class SharkFloatParams, DebugStatePurpose Purpose>
 __device__ SharkForceInlineReleaseOnly static void
 EraseCurrentDebugState(RecordIt record,
@@ -1585,7 +1369,7 @@ StoreCurrentDebugState(RecordIt record,
 }
 
 
-// Look for CalculateMultiplyFrameSize and ScratchMemoryArraysForMultiply
+// Look for CalculateNTTFrameSize
 // and make sure the number of NewN arrays we're using here fits within that limit.
 // The list here should go up to ScratchMemoryArraysForMultiply.
 static_assert(AdditionalUInt64PerFrame == 256, "See below");
@@ -2055,7 +1839,6 @@ MultiplyHelperNTTV2Separates(const SharkNTT::PlanPrime &plan,
             record, debugStates, grid, block, B->Digits, NewN);
     }
 
-#ifndef TEMP_DISABLEALL
     // x must be a positive constant expression
 
     // Verify power of 2
@@ -2137,7 +1920,6 @@ MultiplyHelperNTTV2Separates(const SharkNTT::PlanPrime &plan,
                                             Ddigits);
 
     grid.sync();
-#endif
 }
 
 template <class SharkFloatParams>

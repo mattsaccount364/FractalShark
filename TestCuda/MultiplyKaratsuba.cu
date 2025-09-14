@@ -1272,7 +1272,7 @@ CarryPropagation (
     }
 }
 
-// Look for CalculateMultiplyFrameSize and ScratchMemoryArraysForMultiply
+// Look for CalculateKaratsubaFrameSize and ScratchMemoryArraysForMultiply
 // and make sure the number of NewN arrays we're using here fits within that limit.
 // The list here should go up to ScratchMemoryArraysForMultiply.
 static_assert(AdditionalUInt64PerFrame == 256, "See below");
@@ -1282,7 +1282,7 @@ static_assert(AdditionalUInt64PerFrame == 256, "See below");
     constexpr auto Multiplies_offset = AdditionalGlobalSyncSpace; \
     constexpr auto Checksum_offset = Multiplies_offset + AdditionalGlobalMultipliesPerThread; \
     /* Start from AdditionalUInt64PerFrame next, global state is above */ \
-    constexpr auto CallOffset = Checksum_offset + AdditionalGlobalChecksumSpace + CallIndex * CalculateMultiplyFrameSize<SharkFloatParams>(); \
+    constexpr auto CallOffset = Checksum_offset + AdditionalGlobalChecksumSpace + CallIndex * CalculateKaratsubaFrameSize<SharkFloatParams>(); \
     constexpr auto TempBase = 0; \
     constexpr auto TempBaseOffset = TempBase + CallOffset; \
     constexpr auto Z0_offsetXX = TempBaseOffset + AdditionalUInt64PerFrame + CalcAlign16Bytes64BitIndex(TempBaseOffset + AdditionalUInt64PerFrame); /* 0 */ \
@@ -2606,8 +2606,8 @@ static __device__ void MultiplyHelperKaratsubaV2Separates(
     // Frame end you already computed:
     constexpr auto FrameEnd = CarryInsEnd;
     static_assert(
-        FrameEnd <= TempBaseOffset + CalculateMultiplyFrameSize<SharkFloatParams>(),
-        "Per-frame buffers overflow CalculateMultiplyFrameSize"
+        FrameEnd <= TempBaseOffset + CalculateKaratsubaFrameSize<SharkFloatParams>(),
+        "Per-frame buffers overflow CalculateKaratsubaFrameSize"
         );
 
     // Also ensure we never intrude into the global region

@@ -30,7 +30,7 @@ void InvokeHpSharkReferenceKernelPerf(
     // Allocate memory for carryOuts and cumulativeCarries
     uint64_t *d_tempProducts;
     constexpr auto BytesToAllocate =
-        (AdditionalUInt64Global + ScratchMemoryCopies * CalculateMultiplyFrameSize<SharkFloatParams>()) * sizeof(uint64_t);
+        (AdditionalUInt64Global + ScratchMemoryCopies * CalculateKaratsubaFrameSize<SharkFloatParams>()) * sizeof(uint64_t);
     cudaMalloc(&d_tempProducts, BytesToAllocate);
 
     if constexpr (!SharkTestInitCudaMemory) {
@@ -126,7 +126,7 @@ void InvokeMultiplyKernelPerf(
     // Allocate memory for carryOuts and cumulativeCarries
     uint64_t *d_tempProducts;
     constexpr auto BytesToAllocate =
-        (AdditionalUInt64Global + ScratchMemoryCopies * CalculateMultiplyFrameSize<SharkFloatParams>()) * sizeof(uint64_t);
+        (AdditionalUInt64Global + ScratchMemoryCopies * CalculateKaratsubaFrameSize<SharkFloatParams>()) * sizeof(uint64_t);
     cudaMalloc(&d_tempProducts, BytesToAllocate);
 
     HpSharkComboResults<SharkFloatParams> *comboGpu;
@@ -196,8 +196,10 @@ InvokeMultiplyNTTKernelPerf(BenchmarkTimer& timer,
     // --- 0) Scratch arena (global) ---------------------------------------------------------
     uint64_t* d_tempProducts = nullptr;
     constexpr size_t BytesToAllocate =
-        (AdditionalUInt64Global + ScratchMemoryCopies * CalculateMultiplyFrameSize<SharkFloatParams>()) *
+        (AdditionalUInt64Global + CalculateNTTFrameSize<SharkFloatParams>()) *
         sizeof(uint64_t);
+    std::cout << " Allocating " << BytesToAllocate << " bytes for d_tempProducts "
+              << std::endl;
     cudaMalloc(&d_tempProducts, BytesToAllocate);
 
     if constexpr (!SharkTestInitCudaMemory) {
@@ -341,7 +343,7 @@ void InvokeHpSharkReferenceKernelCorrectness(
     // TODO checksum handled
     uint64_t *d_tempProducts;
     constexpr auto BytesToAllocate =
-        (AdditionalUInt64Global + ScratchMemoryCopies * CalculateMultiplyFrameSize<SharkFloatParams>()) * sizeof(uint64_t);
+        (AdditionalUInt64Global + ScratchMemoryCopies * CalculateKaratsubaFrameSize<SharkFloatParams>()) * sizeof(uint64_t);
     cudaMalloc(&d_tempProducts, BytesToAllocate);
 
     if constexpr (!SharkTestInitCudaMemory) {
@@ -411,7 +413,7 @@ void InvokeMultiplyKaratsubaKernelCorrectness(
     // Allocate memory for carryOuts and cumulativeCarries
     uint64_t *d_tempProducts;
     constexpr auto BytesToAllocate =
-        (AdditionalUInt64Global + ScratchMemoryCopies * CalculateMultiplyFrameSize<SharkFloatParams>()) * sizeof(uint64_t);
+        (AdditionalUInt64Global + ScratchMemoryCopies * CalculateKaratsubaFrameSize<SharkFloatParams>()) * sizeof(uint64_t);
     cudaMalloc(&d_tempProducts, BytesToAllocate);
 
     if constexpr (!SharkTestInitCudaMemory) {
@@ -481,8 +483,9 @@ InvokeMultiplyNTTKernelCorrectness(BenchmarkTimer& timer,
     // Allocate memory for carryOuts and cumulativeCarries
     uint64_t* d_tempProducts;
     constexpr auto BytesToAllocate =
-        (AdditionalUInt64Global + ScratchMemoryCopies * CalculateMultiplyFrameSize<SharkFloatParams>()) *
+        (AdditionalUInt64Global + CalculateNTTFrameSize<SharkFloatParams>()) *
         sizeof(uint64_t);
+    std::cout << " Allocating " << BytesToAllocate << " bytes for d_tempProducts " << std::endl;
     cudaMalloc(&d_tempProducts, BytesToAllocate);
 
     if constexpr (!SharkTestInitCudaMemory) {

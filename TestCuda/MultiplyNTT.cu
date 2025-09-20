@@ -41,21 +41,6 @@ CalcAlign16Bytes32BitIndex(uint64_t Thirty2BitIndex)
 namespace SharkNTT {
 
 //--------------------------------------------------------------------------------------------------
-// Bit utilities
-//--------------------------------------------------------------------------------------------------
-
-// Fast 32-bit bit-reverse using CUDA intrinsic.
-// Reverses the lowest `bit_count` bits of `value`.
-// Precondition: 0 < bit_count <= 32.
-static __device__ SharkForceInlineReleaseOnly uint32_t
-ReverseBits32(uint32_t value, int bit_count)
-{
-    const uint32_t sh = 32u - static_cast<uint32_t>(bit_count);
-    return __brev(value) >> sh; // reverse all 32, then drop the high (32 - bit_count)
-}
-
-
-//--------------------------------------------------------------------------------------------------
 // Normalization (final carry propagation and windowing into HpSharkFloat<SharkFloatParams>)
 //--------------------------------------------------------------------------------------------------
 
@@ -733,7 +718,6 @@ BitReverseInplace64_GridStride(cooperative_groups::grid_group &grid,
     }
 }
 
-
 //--------------------------------------------------------------------------------------------------
 // Iterative radix-2 NTT (Cooley–Tukey) over Montgomery domain
 //--------------------------------------------------------------------------------------------------
@@ -766,22 +750,21 @@ NTTRadix2(cooperative_groups::grid_group &grid,
     }
 }
 
-template <class SharkFloatParams, Multiway OneTwoThree>
+template <class SharkFloatParams, Multiway OneTwoThree, uint32_t TS_log>
 static __device__ inline uint32_t
-phase1_threeway(uint64_t *shared_data,
-                cooperative_groups::grid_group &grid,
-                cooperative_groups::thread_block &block,
-                DebugMultiplyCount<SharkFloatParams> *debugCombo,
-                uint64_t *__restrict A,
-                uint64_t *__restrict B,
-                uint64_t *__restrict C,
-                uint32_t N,
-                uint32_t stages,
-                const uint64_t *__restrict stage_base,
-                uint32_t TS_log)
+SmallRadixPhase1(uint64_t *shared_data,
+                 cooperative_groups::grid_group &grid,
+                 cooperative_groups::thread_block &block,
+                 DebugMultiplyCount<SharkFloatParams> *debugCombo,
+                 uint64_t *__restrict A,
+                 uint64_t *__restrict B,
+                 uint64_t *__restrict C,
+                 uint32_t N,
+                 uint32_t stages,
+                 const uint64_t *__restrict stage_base)
 {
     const uint64_t one_m = ToMontgomery(grid, block, debugCombo, 1ull);
-    const uint32_t TS = 1u << TS_log;
+    constexpr uint32_t TS = 1u << TS_log;
 
     auto ctz_u32 = [](uint32_t x) -> uint32_t {
         uint32_t c = 0;
@@ -801,8 +784,10 @@ phase1_threeway(uint64_t *shared_data,
 
     const uint32_t tiles = (N + TS - 1u) / TS;
 
-    // Carve header + tile base from shared_data (A lives in shared)
-    uint64_t *const s_data_base = reinterpret_cast<uint64_t *>(shared_data + 1);
+    // Carve tile base from shared_data (A lives in shared)
+    auto *const s_dataA = reinterpret_cast<uint64_t *>(shared_data);
+    auto *const s_dataB = reinterpret_cast<uint64_t *>(shared_data) + TS;
+    auto *const s_dataC = reinterpret_cast<uint64_t *>(shared_data) + 2 * TS;
 
     auto mont_pow_u32 = [&](uint64_t base, uint32_t exp) {
         uint64_t acc = one_m, cur = base;
@@ -821,8 +806,21 @@ phase1_threeway(uint64_t *shared_data,
         const uint32_t len = is_last ? tail_len : TS; // divisible by 2^S1
 
         // Load A tile only (keep B,C in global)
-        for (uint32_t t = block.thread_index().x; t < len; t += block.size())
-            s_data_base[t] = A[tile * TS + t];
+        for (uint32_t t = block.thread_index().x; t < len; t += block.size()) {
+            if constexpr (OneTwoThree == Multiway::OneWay || OneTwoThree == Multiway::TwoWay ||
+                          OneTwoThree == Multiway::ThreeWay) {
+                s_dataA[t] = A[tile * TS + t];
+            }
+
+            if constexpr (OneTwoThree == Multiway::TwoWay || OneTwoThree == Multiway::ThreeWay) {
+                s_dataB[t] = B[tile * TS + t];
+            }
+
+            if constexpr (OneTwoThree == Multiway::ThreeWay) {
+                s_dataC[t] = C[tile * TS + t];
+            }
+        }
+
         block.sync();
 
         // Stages s=1..S1 — single set of loops; reuse the same syncs for all three
@@ -844,43 +842,77 @@ phase1_threeway(uint64_t *shared_data,
                 const uint64_t wj = mont_pow_u32(w_m, j);
 
                 // ---- A (shared) ----
-                {
-                    const uint64_t U = s_data_base[i0];
-                    const uint64_t V = s_data_base[i1];
-                    const uint64_t t = MontgomeryMul(grid, block, debugCombo, V, wj);
-                    s_data_base[i0] = AddP(U, t);
-                    s_data_base[i1] = SubP(U, t);
+                if constexpr (OneTwoThree == Multiway::OneWay) {
+                    const uint64_t U1 = s_dataA[i0];
+                    const uint64_t V1 = s_dataA[i1];
+                    
+                    const uint64_t t = MontgomeryMul(grid, block, debugCombo, V1, wj);
+
+                    s_dataA[i0] = AddP(U1, t);
+                    s_dataA[i1] = SubP(U1, t);
                 }
 
-                // Global indices for B,C
-                if constexpr (OneTwoThree == Multiway::TwoWay || OneTwoThree == Multiway::ThreeWay) {
+                if constexpr (OneTwoThree == Multiway::TwoWay) {
+                    const uint64_t U1 = s_dataA[i0];
+                    const uint64_t V1 = s_dataA[i1];
 
-                    const uint32_t gi0 = tile * TS + i0;
-                    const uint32_t gi1 = gi0 + half;
+                    const uint64_t U2 = s_dataB[i0];
+                    const uint64_t V2 = s_dataB[i1];
 
-                    // ---- B (global) ----
-                    const uint64_t U = B[gi0];
-                    const uint64_t V = B[gi1];
-                    const uint64_t t = MontgomeryMul(grid, block, debugCombo, V, wj);
-                    B[gi0] = AddP(U, t);
-                    B[gi1] = SubP(U, t);
 
-                    // ---- C (global) ----
-                    if constexpr (OneTwoThree == Multiway::ThreeWay) {
-                        const uint64_t U = C[gi0];
-                        const uint64_t V = C[gi1];
-                        const uint64_t t = MontgomeryMul(grid, block, debugCombo, V, wj);
-                        C[gi0] = AddP(U, t);
-                        C[gi1] = SubP(U, t);
-                    }
+                    const uint64_t t1 = MontgomeryMul(grid, block, debugCombo, V1, wj);
+
+                    const uint64_t t2 = MontgomeryMul(grid, block, debugCombo, V2, wj);
+
+                    s_dataA[i0] = AddP(U1, t1);
+                    s_dataA[i1] = SubP(U1, t1);
+
+                    s_dataB[i0] = AddP(U2, t2);
+                    s_dataB[i1] = SubP(U2, t2);
+                }
+
+                if constexpr (OneTwoThree == Multiway::ThreeWay) {
+                    const uint64_t U1 = s_dataA[i0];
+                    const uint64_t V1 = s_dataA[i1];
+
+                    const uint64_t U2 = s_dataB[i0];
+                    const uint64_t V2 = s_dataB[i1];
+
+                    const uint64_t U3 = s_dataC[i0];
+                    const uint64_t V3 = s_dataC[i1];
+
+                    const uint64_t t1 = MontgomeryMul(grid, block, debugCombo, V1, wj);
+                    const uint64_t t2 = MontgomeryMul(grid, block, debugCombo, V2, wj);
+                    const uint64_t t3 = MontgomeryMul(grid, block, debugCombo, V3, wj);
+
+                    s_dataA[i0] = AddP(U1, t1);
+                    s_dataA[i1] = SubP(U1, t1);
+
+                    s_dataB[i0] = AddP(U2, t2);
+                    s_dataB[i1] = SubP(U2, t2);
+
+                    s_dataC[i0] = AddP(U3, t3);
+                    s_dataC[i1] = SubP(U3, t3);
                 }
             }
             block.sync();
         }
 
         // Store A
-        for (uint32_t t = block.thread_index().x; t < len; t += block.size())
-            A[tile * TS + t] = s_data_base[t];
+        for (uint32_t t = block.thread_index().x; t < len; t += block.size()) {
+            if constexpr (OneTwoThree == Multiway::OneWay || OneTwoThree == Multiway::TwoWay ||
+                          OneTwoThree == Multiway::ThreeWay) {
+                A[tile * TS + t] = s_dataA[t];
+            }
+
+            if constexpr (OneTwoThree == Multiway::TwoWay || OneTwoThree == Multiway::ThreeWay) {
+                B[tile * TS + t] = s_dataB[t];
+            }
+
+            if constexpr (OneTwoThree == Multiway::ThreeWay) {
+                C[tile * TS + t] = s_dataC[t];
+            }
+        }
     }
 
     grid.sync();
@@ -928,24 +960,15 @@ NTTRadix2_GridStride(uint64_t *shared_data,
     uint32_t S0;
     {
         if constexpr (OneTwoThree == Multiway::OneWay) {
-            S0 = phase1_threeway<SharkFloatParams, Multiway::OneWay>(shared_data,
-                                                                     grid,
-                                                                     block,
-                                                                     debugCombo,
-                                                                     A,
-                                                                     nullptr,
-                                                                     nullptr,
-                                                                     N,
-                                                                     stages,
-                                                                     stage_base,
-                                                                     TS_log);
+            S0 = SmallRadixPhase1<SharkFloatParams, Multiway::OneWay, TS_log>(
+                shared_data, grid, block, debugCombo, A, nullptr, nullptr, N, stages, stage_base);
         } else if constexpr (OneTwoThree == Multiway::TwoWay) {
-            S0 = phase1_threeway<SharkFloatParams, Multiway::TwoWay>(
-                shared_data, grid, block, debugCombo, A, B, nullptr, N, stages, stage_base, TS_log);
+            S0 = SmallRadixPhase1<SharkFloatParams, Multiway::TwoWay, TS_log>(
+                shared_data, grid, block, debugCombo, A, B, nullptr, N, stages, stage_base);
         } else if constexpr (OneTwoThree == Multiway::ThreeWay) {
             // ThreeWay=true: run A (shared) + B,C (global) in lockstep, reusing the same block.sync()s
-            S0 = phase1_threeway<SharkFloatParams, Multiway::ThreeWay>(
-                shared_data, grid, block, debugCombo, A, B, C, N, stages, stage_base, TS_log);
+            S0 = SmallRadixPhase1<SharkFloatParams, Multiway::ThreeWay, TS_log>(
+                shared_data, grid, block, debugCombo, A, B, C, N, stages, stage_base);
         }
     }
 

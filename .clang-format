@@ -164,8 +164,8 @@ UseCRLF: false
 UseTab: Never
 
 # Pointer alignment
-PointerAlignment: Left
-ReferenceAlignment: Pointer
+PointerAlignment: Right
+ReferenceAlignment: Right
 
 # Other settings
 KeepEmptyLinesAtTheStartOfBlocks: true

@@ -291,7 +291,7 @@ constexpr int32_t
 CalculateNTTSharedMemorySize()
 {
     // SharkConstantSharedRequiredBytes
-    constexpr auto sharedAmountBytes = 4096 * sizeof(uint64_t);
+    constexpr auto sharedAmountBytes = 3 * 2048 * sizeof(uint64_t);
     return sharedAmountBytes;
 }
 
@@ -326,7 +326,7 @@ constexpr auto StupidMult = 1;
 //using TestPerSharkParams1 = GenericSharkFloatParams<128 * StupidMult, 108, 7776, 9>;
 //using TestPerSharkParams1 = GenericSharkFloatParams<128, 108, 7776, 9>;
 //using TestPerSharkParams1 = GenericSharkFloatParams<256, 256, 131072>;
-using TestPerSharkParams1 = GenericSharkFloatParams<256, 256, 8192>;
+using TestPerSharkParams1 = GenericSharkFloatParams<256, 128, 8192>;
 using TestPerSharkParams2 = GenericSharkFloatParams<64 * StupidMult, 108, 7776, 9>;
 using TestPerSharkParams3 = GenericSharkFloatParams<32 * StupidMult, 108, 7776, 9>;
 using TestPerSharkParams4 = GenericSharkFloatParams<16 * StupidMult, 108, 7776, 9>;

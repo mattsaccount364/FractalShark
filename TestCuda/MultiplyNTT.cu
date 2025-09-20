@@ -44,18 +44,16 @@ namespace SharkNTT {
 // Bit utilities
 //--------------------------------------------------------------------------------------------------
 
-// Reverse the lowest `bit_count` bits of a 32-bit value (manual since MSVC lacks
-// __builtin_bitreverse32).
+// Fast 32-bit bit-reverse using CUDA intrinsic.
+// Reverses the lowest `bit_count` bits of `value`.
+// Precondition: 0 < bit_count <= 32.
 static __device__ SharkForceInlineReleaseOnly uint32_t
 ReverseBits32(uint32_t value, int bit_count)
 {
-    value = (value >> 16) | (value << 16);
-    value = ((value & 0x00ff00ffu) << 8) | ((value & 0xff00ff00u) >> 8);
-    value = ((value & 0x0f0f0f0fu) << 4) | ((value & 0xf0f0f0f0u) >> 4);
-    value = ((value & 0x33333333u) << 2) | ((value & 0xccccccccu) >> 2);
-    value = ((value & 0x55555555u) << 1) | ((value & 0xaaaaaaaau) >> 1);
-    return value >> (32 - bit_count);
+    const uint32_t sh = 32u - static_cast<uint32_t>(bit_count);
+    return __brev(value) >> sh; // reverse all 32, then drop the high (32 - bit_count)
 }
+
 
 //--------------------------------------------------------------------------------------------------
 // Normalization (final carry propagation and windowing into HpSharkFloat<SharkFloatParams>)
@@ -663,30 +661,78 @@ FindGenerator(DebugMultiplyCount<SharkFloatParams> *debugCombo)
     return 7ull;
 }
 
+enum class Multiway { OneWay, TwoWay, ThreeWay };
+
 // Grid-stride in-place bit-reversal permutation (uint64 elements).
 // Safe without atomics: each index participates in exactly one swap pair (i, j=rev(i));
 // only the lower index performs the swap (j > i), so pairs are disjoint.
+template <Multiway OneTwoThree>
 static __device__ inline void
 BitReverseInplace64_GridStride(cooperative_groups::grid_group &grid,
                                uint64_t *SharkRestrict A,
+                               uint64_t *SharkRestrict B,
+                               uint64_t *SharkRestrict C,
                                uint32_t N,
                                uint32_t stages)
 {
-    const size_t gsize = grid.size();
-    const size_t grank = grid.thread_rank();
-    const uint32_t mask = N - 1u; // N must be a power of two
+    // Compile-time selection of which arrays to process
+    constexpr bool DoA = true;
+    constexpr bool DoB = (OneTwoThree != Multiway::OneWay);
+    constexpr bool DoC = (OneTwoThree == Multiway::ThreeWay);
 
-    for (size_t i = grank; i < static_cast<size_t>(N); i += gsize) {
-        const uint32_t ii = static_cast<uint32_t>(i);
-        const uint32_t j = ReverseBits32(ii, stages) & mask;
-        if (j > ii) {
-            const uint64_t ai = A[ii];
-            const uint64_t aj = A[j];
-            A[ii] = aj;
-            A[j] = ai;
-        }
+    const uint32_t gsz = static_cast<uint32_t>(grid.size());
+    const uint32_t tid = static_cast<uint32_t>(grid.thread_rank());
+
+    // Reverse the lowest `stages` bits via __brev; drop the high bits.
+    const uint32_t sh = 32u - stages; // assumes N <= 2^32
+
+    // Swap helper for one array (loads to registers first to avoid rereads).
+    auto swap_one = [](uint64_t *SharkRestrict arr, uint32_t i, uint32_t j) {
+        const uint64_t ai = arr[i];
+        const uint64_t aj = arr[j];
+        arr[i] = aj;
+        arr[j] = ai;
+    };
+
+    // Process helper for a single index/pair across the enabled arrays.
+    auto process_idx = [&](uint32_t i, uint32_t j) {
+        if (i >= N)
+            return;
+        if (i == j)
+            return; // fixed point
+        if (i > j)
+            return; // only one owner does the swap
+
+        if constexpr (DoA)
+            swap_one(A, i, j);
+        if constexpr (DoB)
+            swap_one(B, i, j);
+        if constexpr (DoC)
+            swap_one(C, i, j);
+    };
+
+    // Grid-stride loop, unrolled by 4 when possible.
+    const uint32_t step4 = gsz << 2; // 4 * gsz
+    for (uint32_t base = tid; base < N; base += step4) {
+        const uint32_t i0 = base;
+        const uint32_t i1 = i0 + gsz;
+        const uint32_t i2 = i1 + gsz;
+        const uint32_t i3 = i2 + gsz;
+
+        // Fast compute of reversed partners using __brev (32-bit path).
+        const uint32_t j0 = __brev(i0) >> sh;
+        const uint32_t j1 = (i1 < N) ? (__brev(i1) >> sh) : 0u;
+        const uint32_t j2 = (i2 < N) ? (__brev(i2) >> sh) : 0u;
+        const uint32_t j3 = (i3 < N) ? (__brev(i3) >> sh) : 0u;
+
+        // Handle up to 4 indices per iteration.
+        process_idx(i0, j0);
+        process_idx(i1, j1);
+        process_idx(i2, j2);
+        process_idx(i3, j3);
     }
 }
+
 
 //--------------------------------------------------------------------------------------------------
 // Iterative radix-2 NTT (Cooley–Tukey) over Montgomery domain
@@ -720,9 +766,7 @@ NTTRadix2(cooperative_groups::grid_group &grid,
     }
 }
 
-enum class NTTRadix { OneWay, TwoWay, ThreeWay };
-
-template <class SharkFloatParams, NTTRadix OneTwoThree>
+template <class SharkFloatParams, Multiway OneTwoThree>
 static __device__ inline uint32_t
 phase1_threeway(uint64_t *shared_data,
                 cooperative_groups::grid_group &grid,
@@ -809,7 +853,7 @@ phase1_threeway(uint64_t *shared_data,
                 }
 
                 // Global indices for B,C
-                if constexpr (OneTwoThree == NTTRadix::TwoWay || OneTwoThree == NTTRadix::ThreeWay) {
+                if constexpr (OneTwoThree == Multiway::TwoWay || OneTwoThree == Multiway::ThreeWay) {
 
                     const uint32_t gi0 = tile * TS + i0;
                     const uint32_t gi1 = gi0 + half;
@@ -822,7 +866,7 @@ phase1_threeway(uint64_t *shared_data,
                     B[gi1] = SubP(U, t);
 
                     // ---- C (global) ----
-                    if constexpr (OneTwoThree == NTTRadix::ThreeWay) {
+                    if constexpr (OneTwoThree == Multiway::ThreeWay) {
                         const uint64_t U = C[gi0];
                         const uint64_t V = C[gi1];
                         const uint64_t t = MontgomeryMul(grid, block, debugCombo, V, wj);
@@ -847,7 +891,7 @@ phase1_threeway(uint64_t *shared_data,
 // early shared-memory microkernel, and Phase-2 persistent task queue.
 // ThreeWay=false: operates on A only (matches 1-way behavior)
 // ThreeWay=true : operates on A, B, C in lockstep
-template <class SharkFloatParams, NTTRadix OneTwoThree>
+template <class SharkFloatParams, Multiway OneTwoThree>
 static __device__ void
 NTTRadix2_GridStride(uint64_t *shared_data,
                      cooperative_groups::grid_group &grid,
@@ -883,8 +927,8 @@ NTTRadix2_GridStride(uint64_t *shared_data,
 
     uint32_t S0;
     {
-        if constexpr (OneTwoThree == NTTRadix::OneWay) {
-            S0 = phase1_threeway<SharkFloatParams, NTTRadix::OneWay>(shared_data,
+        if constexpr (OneTwoThree == Multiway::OneWay) {
+            S0 = phase1_threeway<SharkFloatParams, Multiway::OneWay>(shared_data,
                                                                      grid,
                                                                      block,
                                                                      debugCombo,
@@ -895,12 +939,12 @@ NTTRadix2_GridStride(uint64_t *shared_data,
                                                                      stages,
                                                                      stage_base,
                                                                      TS_log);
-        } else if constexpr (OneTwoThree == NTTRadix::TwoWay) {
-            S0 = phase1_threeway<SharkFloatParams, NTTRadix::TwoWay>(
+        } else if constexpr (OneTwoThree == Multiway::TwoWay) {
+            S0 = phase1_threeway<SharkFloatParams, Multiway::TwoWay>(
                 shared_data, grid, block, debugCombo, A, B, nullptr, N, stages, stage_base, TS_log);
-        } else if constexpr (OneTwoThree == NTTRadix::ThreeWay) {
+        } else if constexpr (OneTwoThree == Multiway::ThreeWay) {
             // ThreeWay=true: run A (shared) + B,C (global) in lockstep, reusing the same block.sync()s
-            S0 = phase1_threeway<SharkFloatParams, NTTRadix::ThreeWay>(
+            S0 = phase1_threeway<SharkFloatParams, Multiway::ThreeWay>(
                 shared_data, grid, block, debugCombo, A, B, C, N, stages, stage_base, TS_log);
         }
     }
@@ -952,8 +996,8 @@ NTTRadix2_GridStride(uint64_t *shared_data,
                 const uint32_t i0 = k + j0;
                 const uint32_t i1 = i0 + half;
 
-                if constexpr (OneTwoThree == NTTRadix::OneWay || OneTwoThree == NTTRadix::TwoWay ||
-                              OneTwoThree == NTTRadix::ThreeWay) {
+                if constexpr (OneTwoThree == Multiway::OneWay || OneTwoThree == Multiway::TwoWay ||
+                              OneTwoThree == Multiway::ThreeWay) {
 
                     // A
                     const uint64_t Uv = A[i0];
@@ -963,7 +1007,7 @@ NTTRadix2_GridStride(uint64_t *shared_data,
                     A[i1] = SubP(Uv, t);
                 }
 
-                if constexpr (OneTwoThree == NTTRadix::TwoWay || OneTwoThree == NTTRadix::ThreeWay) {
+                if constexpr (OneTwoThree == Multiway::TwoWay || OneTwoThree == Multiway::ThreeWay) {
                     // B
                     const uint64_t Uv = B[i0];
                     const uint64_t Vv = B[i1];
@@ -972,7 +1016,7 @@ NTTRadix2_GridStride(uint64_t *shared_data,
                     B[i1] = SubP(Uv, t);
                 }
 
-                if constexpr (OneTwoThree == NTTRadix::ThreeWay) {
+                if constexpr (OneTwoThree == Multiway::ThreeWay) {
                     // C
                     const uint64_t Uv = C[i0];
                     const uint64_t Vv = C[i1];
@@ -1242,12 +1286,12 @@ PackTwistFwdNTT_Fused_AB_ToSixOutputs(uint64_t *shared_data,
     grid.sync();
 
     // A: forward NTT (grid-wide helpers)
-    BitReverseInplace64_GridStride(grid, tempDigitsXX1, N, (uint32_t)plan.stages);
-    BitReverseInplace64_GridStride(grid, tempDigitsYY1, N, (uint32_t)plan.stages);
+    BitReverseInplace64_GridStride<Multiway::TwoWay>(
+        grid, tempDigitsXX1, tempDigitsYY1, nullptr, N, (uint32_t)plan.stages);
 
     grid.sync();
 
-    NTTRadix2_GridStride<SharkFloatParams, NTTRadix::TwoWay>(shared_data,
+    NTTRadix2_GridStride<SharkFloatParams, Multiway::TwoWay>(shared_data,
                                                              grid,
                                                              block,
                                                              debugMultiplyCounts,
@@ -1513,16 +1557,12 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
     grid.sync();
 
     // 5) Inverse NTT (in place on Z0_OutDigits)
-    SharkNTT::BitReverseInplace64_GridStride(
-        grid, tempDigitsXX1, (uint32_t)plan.N, (uint32_t)plan.stages);
-    SharkNTT::BitReverseInplace64_GridStride(
-        grid, tempDigitsYY1, (uint32_t)plan.N, (uint32_t)plan.stages);
-    SharkNTT::BitReverseInplace64_GridStride(
-        grid, tempDigitsXY1, (uint32_t)plan.N, (uint32_t)plan.stages);
+    SharkNTT::BitReverseInplace64_GridStride<SharkNTT::Multiway::ThreeWay>(
+        grid, tempDigitsXX1, tempDigitsYY1, tempDigitsXY1, (uint32_t)plan.N, (uint32_t)plan.stages);
 
     grid.sync();
 
-    SharkNTT::NTTRadix2_GridStride<SharkFloatParams, SharkNTT::NTTRadix::ThreeWay>(
+    SharkNTT::NTTRadix2_GridStride<SharkFloatParams, SharkNTT::Multiway::ThreeWay>(
         shared_data,
         grid,
         block,

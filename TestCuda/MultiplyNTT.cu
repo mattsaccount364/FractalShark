@@ -752,7 +752,220 @@ NTTRadix2(cooperative_groups::grid_group &grid,
 
 template <class SharkFloatParams, Multiway OneTwoThree, uint32_t TS_log>
 static __device__ inline uint32_t
-SmallRadixPhase1(uint64_t *shared_data,
+SmallRadixPhase1_Warp(uint64_t *shared_data,
+                      cooperative_groups::grid_group &grid,
+                      cooperative_groups::thread_block &block,
+                      DebugMultiplyCount<SharkFloatParams> *debugCombo,
+                      uint64_t *__restrict A,
+                      uint64_t *__restrict B,
+                      uint64_t *__restrict C,
+                      uint32_t N,
+                      uint32_t startStage, // stages already completed
+                      uint32_t stages,     // total stages allowed in Phase 1
+                      const uint64_t *__restrict stage_base)
+{
+    namespace cg = cooperative_groups;
+
+    // ---- constants / helpers ----
+    constexpr uint32_t TS = 1u << TS_log;
+    constexpr uint32_t PAD_STRIDE = 16;
+    auto smem_idx_pad16 = [](uint32_t i) -> uint32_t { return i + (i >> 4); };
+    auto ctz_u32 = [](uint32_t x) -> uint32_t {
+        uint32_t c = 0;
+        while ((x & 1u) == 0u) {
+            x >>= 1u;
+            ++c;
+        }
+        return c;
+    };
+
+    const uint64_t one_m = ToMontgomery(grid, block, debugCombo, 1ull);
+    auto mont_pow_u32 = [&](uint64_t base, uint32_t exp) {
+        uint64_t acc = one_m, cur = base;
+        uint32_t e = exp;
+        while (e) {
+            if (e & 1u)
+                acc = MontgomeryMul(grid, block, debugCombo, acc, cur);
+            cur = MontgomeryMul(grid, block, debugCombo, cur, cur);
+            e >>= 1u;
+        }
+        return acc;
+    };
+
+    // ---- stage limits for this pass (warp-only, m<=32) ----
+    const uint32_t stages_left = (stages > startStage) ? (stages - startStage) : 0;
+
+    const uint32_t rem = (N & (TS - 1u));
+    const uint32_t tail_len = (rem == 0u) ? TS : rem;
+    const uint32_t tail_cap = (rem == 0u) ? TS_log : ctz_u32(tail_len);
+
+    const uint32_t tail_left = (tail_cap > startStage) ? (tail_cap - startStage) : 0;
+    uint32_t ts_left = (TS_log > startStage) ? (TS_log - startStage) : 0;
+
+    // warp path supports only s <= 5 (m = 2..32)
+    ts_left = min(ts_left, 5u);
+
+    const uint32_t run = min(stages_left, min(tail_left, ts_left));
+
+    // ---- require full-warp blocks; otherwise skip warp pass gracefully ----
+    constexpr uint32_t WARP = 32;
+    const uint32_t blockSize = block.size();
+    const bool fullWarpBlock = (blockSize >= WARP) && ((blockSize % WARP) == 0);
+
+    // shared layout (padded) — sized for TS
+    constexpr uint32_t TS_PAD = TS + (TS >> 4);
+    uint64_t *const sA = reinterpret_cast<uint64_t *>(shared_data);
+    uint64_t *const sB = sA + TS_PAD;
+    uint64_t *const sC = sB + TS_PAD;
+
+    uint32_t nextStage = startStage; // default if we skip
+
+    if (fullWarpBlock && run > 0) {
+        const uint32_t warpsPerBlock = blockSize / WARP; // >= 1
+        const uint32_t lane = threadIdx.x & (WARP - 1);
+        const uint32_t warp = threadIdx.x >> 5;
+
+        const uint32_t tiles = (N + TS - 1u) / TS;
+        for (uint32_t tile = blockIdx.x; tile < tiles; tile += gridDim.x) {
+            const uint32_t len = ((tile == tiles - 1) ? tail_len : TS);
+            const uint32_t baseG = tile * TS;
+
+            // ---- LOAD gmem -> smem (padded), chunked by 16 elements ----
+#if __CUDA_ARCH__ >= 800
+            for (uint32_t b = 0; b < len; b += PAD_STRIDE) {
+                const uint32_t chunk = min(PAD_STRIDE, len - b);
+                const size_t nbytes = size_t(chunk) * sizeof(uint64_t);
+                if constexpr (OneTwoThree == Multiway::OneWay || OneTwoThree == Multiway::TwoWay ||
+                              OneTwoThree == Multiway::ThreeWay)
+                    cg::memcpy_async(block, sA + smem_idx_pad16(b), A + baseG + b, nbytes);
+                if constexpr (OneTwoThree == Multiway::TwoWay || OneTwoThree == Multiway::ThreeWay)
+                    cg::memcpy_async(block, sB + smem_idx_pad16(b), B + baseG + b, nbytes);
+                if constexpr (OneTwoThree == Multiway::ThreeWay)
+                    cg::memcpy_async(block, sC + smem_idx_pad16(b), C + baseG + b, nbytes);
+            }
+            cg::wait(block);
+            block.sync();
+#else
+            for (uint32_t t = block.thread_index().x; t < len; t += block.size()) {
+                const uint32_t sp = smem_idx_pad16(t);
+                if constexpr (OneTwoThree == Multiway::OneWay || OneTwoThree == Multiway::TwoWay ||
+                              OneTwoThree == Multiway::ThreeWay)
+                    sA[sp] = A[baseG + t];
+                if constexpr (OneTwoThree == Multiway::TwoWay || OneTwoThree == Multiway::ThreeWay)
+                    sB[sp] = B[baseG + t];
+                if constexpr (OneTwoThree == Multiway::ThreeWay)
+                    sC[sp] = C[baseG + t];
+            }
+            block.sync();
+#endif
+
+            // ---- stages: s = startStage+1 .. startStage+run (guaranteed m<=32) ----
+            for (uint32_t s = startStage + 1; s <= startStage + run; ++s) {
+                const uint32_t m = 1u << s;
+                if (m > WARP)
+                    break; // safety (shouldn't happen due to run clamp)
+                const uint32_t half = m >> 1;
+                const uint64_t w_m = stage_base[s - 1];
+
+                const uint32_t groupsPerWarp = WARP / m;                       // ∈ {1,2,4,8,16}
+                const uint32_t warpStride = warpsPerBlock * groupsPerWarp * m; // == blockSize
+                // (now strictly > 0; no deadlock)
+
+                const uint32_t j_lane = (lane & (m - 1u));
+                const bool upper = ((j_lane & half) != 0);
+                const uint32_t j_tw = (j_lane & (half - 1u));
+                const uint64_t wj = mont_pow_u32(w_m, j_tw);
+
+                for (uint32_t base = warp * groupsPerWarp * m; base < len; base += warpStride) {
+#pragma unroll
+                    for (uint32_t g = 0; g < groupsPerWarp; ++g) {
+                        const uint32_t i = base + g * m + j_lane;
+                        if (i >= len)
+                            continue;
+
+                        const uint32_t ip = smem_idx_pad16(i);
+
+                        uint64_t a1 = 0, b1 = 0, c1 = 0;
+                        if constexpr (OneTwoThree == Multiway::OneWay ||
+                                      OneTwoThree == Multiway::TwoWay ||
+                                      OneTwoThree == Multiway::ThreeWay)
+                            a1 = sA[ip];
+                        if constexpr (OneTwoThree == Multiway::TwoWay ||
+                                      OneTwoThree == Multiway::ThreeWay)
+                            b1 = sB[ip];
+                        if constexpr (OneTwoThree == Multiway::ThreeWay)
+                            c1 = sC[ip];
+
+                        const unsigned mask = __activemask();
+                        const uint64_t a_partner = __shfl_xor_sync(mask, a1, half, m);
+                        uint64_t b_partner = 0, c_partner = 0;
+                        if constexpr (OneTwoThree != Multiway::OneWay)
+                            b_partner = __shfl_xor_sync(mask, b1, half, m);
+                        if constexpr (OneTwoThree == Multiway::ThreeWay)
+                            c_partner = __shfl_xor_sync(mask, c1, half, m);
+
+                        if (!upper) {
+                            const uint64_t tA = MontgomeryMul(grid, block, debugCombo, a_partner, wj);
+                            if constexpr (OneTwoThree == Multiway::OneWay ||
+                                          OneTwoThree == Multiway::TwoWay ||
+                                          OneTwoThree == Multiway::ThreeWay)
+                                sA[ip] = AddP(a1, tA);
+                            if constexpr (OneTwoThree != Multiway::OneWay) {
+                                const uint64_t tB =
+                                    MontgomeryMul(grid, block, debugCombo, b_partner, wj);
+                                sB[ip] = AddP(b1, tB);
+                            }
+                            if constexpr (OneTwoThree == Multiway::ThreeWay) {
+                                const uint64_t tC =
+                                    MontgomeryMul(grid, block, debugCombo, c_partner, wj);
+                                sC[ip] = AddP(c1, tC);
+                            }
+                        } else {
+                            const uint64_t tA = MontgomeryMul(grid, block, debugCombo, a1, wj);
+                            if constexpr (OneTwoThree == Multiway::OneWay ||
+                                          OneTwoThree == Multiway::TwoWay ||
+                                          OneTwoThree == Multiway::ThreeWay)
+                                sA[ip] = SubP(a_partner, tA);
+                            if constexpr (OneTwoThree != Multiway::OneWay) {
+                                const uint64_t tB = MontgomeryMul(grid, block, debugCombo, b1, wj);
+                                sB[ip] = SubP(b_partner, tB);
+                            }
+                            if constexpr (OneTwoThree == Multiway::ThreeWay) {
+                                const uint64_t tC = MontgomeryMul(grid, block, debugCombo, c1, wj);
+                                sC[ip] = SubP(c_partner, tC);
+                            }
+                        }
+                    }
+                }
+                block.sync(); // stage fence
+            }
+
+            // write back results of warp stages
+            for (uint32_t t = block.thread_index().x; t < len; t += block.size()) {
+                const uint32_t sp = smem_idx_pad16(t);
+                const uint32_t g = baseG + t;
+                if constexpr (OneTwoThree == Multiway::OneWay || OneTwoThree == Multiway::TwoWay ||
+                              OneTwoThree == Multiway::ThreeWay)
+                    A[g] = sA[sp];
+                if constexpr (OneTwoThree == Multiway::TwoWay || OneTwoThree == Multiway::ThreeWay)
+                    B[g] = sB[sp];
+                if constexpr (OneTwoThree == Multiway::ThreeWay)
+                    C[g] = sC[sp];
+            }
+        }
+
+        nextStage = startStage + run;
+    }
+
+    // unified barrier to match peers in the kernel
+    grid.sync();
+    return nextStage;
+}
+
+
+template <class SharkFloatParams, Multiway OneTwoThree, uint32_t TS_log>
+static __device__ inline uint32_t
+SmallRadixPhase1_SM(uint64_t *shared_data,
                  cooperative_groups::grid_group &grid,
                  cooperative_groups::thread_block &block,
                  DebugMultiplyCount<SharkFloatParams> *debugCombo,
@@ -760,6 +973,7 @@ SmallRadixPhase1(uint64_t *shared_data,
                  uint64_t *__restrict B,
                  uint64_t *__restrict C,
                  uint32_t N,
+                 uint32_t startStage,
                  uint32_t stages,
                  const uint64_t *__restrict stage_base)
 {
@@ -806,25 +1020,24 @@ SmallRadixPhase1(uint64_t *shared_data,
         const uint32_t len = is_last ? tail_len : TS; // divisible by 2^S1
 
         // Load A tile only (keep B,C in global)
-        for (uint32_t t = block.thread_index().x; t < len; t += block.size()) {
-            if constexpr (OneTwoThree == Multiway::OneWay || OneTwoThree == Multiway::TwoWay ||
-                          OneTwoThree == Multiway::ThreeWay) {
-                s_dataA[t] = A[tile * TS + t];
-            }
-
-            if constexpr (OneTwoThree == Multiway::TwoWay || OneTwoThree == Multiway::ThreeWay) {
-                s_dataB[t] = B[tile * TS + t];
-            }
-
-            if constexpr (OneTwoThree == Multiway::ThreeWay) {
-                s_dataC[t] = C[tile * TS + t];
-            }
+        if constexpr (OneTwoThree == Multiway::OneWay || OneTwoThree == Multiway::TwoWay ||
+                      OneTwoThree == Multiway::ThreeWay) {
+            cg::memcpy_async(block, s_dataA, &A[tile * TS], len * sizeof(uint64_t));
         }
 
-        block.sync();
+        if constexpr (OneTwoThree == Multiway::TwoWay || OneTwoThree == Multiway::ThreeWay) {
+            cg::memcpy_async(block, s_dataB, &B[tile * TS], len * sizeof(uint64_t));
+        }
 
+        if constexpr (OneTwoThree == Multiway::ThreeWay) {
+            cg::memcpy_async(block, s_dataC, &C[tile * TS], len * sizeof(uint64_t));
+        }
+
+        cg::wait(block);
+        block.sync();
+        
         // Stages s=1..S1 — single set of loops; reuse the same syncs for all three
-        for (uint32_t s = 1; s <= S1; ++s) {
+        for (uint32_t s = startStage + 1; s <= S1; ++s) {
             const uint32_t m = 1u << s;
             const uint32_t half = m >> 1;
             const uint64_t w_m = stage_base[s - 1];
@@ -939,7 +1152,8 @@ NTTRadix2_GridStride(uint64_t *shared_data,
 {
     const uint64_t one_m = ToMontgomery(grid, block, debugCombo, 1ull);
     constexpr uint32_t W = 32u; // warpSize
-    constexpr auto TS_log = 11u;
+    constexpr auto TS_logWarp = 9u;
+    constexpr auto TS_log = 9u;
     const size_t gsize = grid.size();
     const size_t grank = grid.thread_rank();
     const uint32_t lane = static_cast<uint32_t>(grank % W);
@@ -957,18 +1171,23 @@ NTTRadix2_GridStride(uint64_t *shared_data,
         return acc;
     };
 
-    uint32_t S0;
+    uint32_t S0 = 0;
     {
         if constexpr (OneTwoThree == Multiway::OneWay) {
-            S0 = SmallRadixPhase1<SharkFloatParams, Multiway::OneWay, TS_log>(
-                shared_data, grid, block, debugCombo, A, nullptr, nullptr, N, stages, stage_base);
+            //S0 = SmallRadixPhase1_Warp<SharkFloatParams, Multiway::OneWay, TS_logWarp>(
+            //    shared_data, grid, block, debugCombo, A, nullptr, nullptr, N, S0, stages, stage_base);
+            S0 = SmallRadixPhase1_SM<SharkFloatParams, Multiway::OneWay, TS_log>(
+                shared_data, grid, block, debugCombo, A, nullptr, nullptr, N, S0, stages, stage_base);
         } else if constexpr (OneTwoThree == Multiway::TwoWay) {
-            S0 = SmallRadixPhase1<SharkFloatParams, Multiway::TwoWay, TS_log>(
-                shared_data, grid, block, debugCombo, A, B, nullptr, N, stages, stage_base);
+            //S0 = SmallRadixPhase1_Warp<SharkFloatParams, Multiway::TwoWay, TS_logWarp>(
+            //    shared_data, grid, block, debugCombo, A, B, nullptr, N, S0, stages, stage_base);
+            S0 = SmallRadixPhase1_SM<SharkFloatParams, Multiway::TwoWay, TS_log>(
+                shared_data, grid, block, debugCombo, A, B, nullptr, N, S0, stages, stage_base);
         } else if constexpr (OneTwoThree == Multiway::ThreeWay) {
-            // ThreeWay=true: run A (shared) + B,C (global) in lockstep, reusing the same block.sync()s
-            S0 = SmallRadixPhase1<SharkFloatParams, Multiway::ThreeWay, TS_log>(
-                shared_data, grid, block, debugCombo, A, B, C, N, stages, stage_base);
+            //S0 = SmallRadixPhase1_Warp<SharkFloatParams, Multiway::ThreeWay, TS_logWarp>(
+            //    shared_data, grid, block, debugCombo, A, B, C, N, S0, stages, stage_base);
+            S0 = SmallRadixPhase1_SM<SharkFloatParams, Multiway::ThreeWay, TS_log>(
+                shared_data, grid, block, debugCombo, A, B, C, N, S0, stages, stage_base);
         }
     }
 

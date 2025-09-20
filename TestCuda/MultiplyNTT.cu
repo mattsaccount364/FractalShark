@@ -389,12 +389,17 @@ Normalize_GridStride_3Way(cooperative_groups::grid_group &grid,
 
     // --- 4) Grid-stride write the N32-digit windows (bounds-safe into [0, Ddigits)) ---
     for (int i = tid; i < N32; i += T_all) {
-        if (!zXX)
-            outXX.Digits[i] = (sXX + i < ProducedDigits) ? static_cast<uint32_t>(resultXX[sXX + i]) : 0u;
-        if (!zYY)
-            outYY.Digits[i] = (sYY + i < ProducedDigits) ? static_cast<uint32_t>(resultYY[sYY + i]) : 0u;
-        if (!zXY)
-            outXY.Digits[i] = (sXY + i < ProducedDigits) ? static_cast<uint32_t>(resultXY[sXY + i]) : 0u;
+        // XX
+        outXX.Digits[i] =
+            zXX ? 0u : ((sXX + i < ProducedDigits) ? static_cast<uint32_t>(resultXX[sXX + i]) : 0u);
+
+        // YY
+        outYY.Digits[i] =
+            zYY ? 0u : ((sYY + i < ProducedDigits) ? static_cast<uint32_t>(resultYY[sYY + i]) : 0u);
+
+        // XY
+        outXY.Digits[i] =
+            zXY ? 0u : ((sXY + i < ProducedDigits) ? static_cast<uint32_t>(resultXY[sXY + i]) : 0u);
     }
 
     grid.sync();
@@ -753,16 +758,16 @@ NTTRadix2(cooperative_groups::grid_group &grid,
 template <class SharkFloatParams, Multiway OneTwoThree, uint32_t TS_log>
 static __device__ inline uint32_t
 SmallRadixPhase1_SM(uint64_t *shared_data,
-                 cooperative_groups::grid_group &grid,
-                 cooperative_groups::thread_block &block,
-                 DebugMultiplyCount<SharkFloatParams> *debugCombo,
-                 uint64_t *__restrict A,
-                 uint64_t *__restrict B,
-                 uint64_t *__restrict C,
-                 uint32_t N,
-                 uint32_t startStage,
-                 uint32_t stages,
-                 const uint64_t *__restrict stage_base)
+                    cooperative_groups::grid_group &grid,
+                    cooperative_groups::thread_block &block,
+                    DebugMultiplyCount<SharkFloatParams> *debugCombo,
+                    uint64_t *__restrict A,
+                    uint64_t *__restrict B,
+                    uint64_t *__restrict C,
+                    uint32_t N,
+                    uint32_t startStage,
+                    uint32_t stages,
+                    const uint64_t *__restrict stage_base)
 {
     const uint64_t one_m = ToMontgomery(grid, block, debugCombo, 1ull);
     constexpr uint32_t TS = 1u << TS_log;
@@ -822,7 +827,7 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
 
         cg::wait(block);
         block.sync();
-        
+
         // Stages s=1..S1 — single set of loops; reuse the same syncs for all three
         for (uint32_t s = startStage + 1; s <= S1; ++s) {
             const uint32_t m = 1u << s;
@@ -845,7 +850,7 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
                 if constexpr (OneTwoThree == Multiway::OneWay) {
                     const uint64_t U1 = s_dataA[i0];
                     const uint64_t V1 = s_dataA[i1];
-                    
+
                     const uint64_t t = MontgomeryMul(grid, block, debugCombo, V1, wj);
 
                     s_dataA[i0] = AddP(U1, t);
@@ -858,7 +863,6 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
 
                     const uint64_t U2 = s_dataB[i0];
                     const uint64_t V2 = s_dataB[i1];
-
 
                     const uint64_t t1 = MontgomeryMul(grid, block, debugCombo, V1, wj);
 

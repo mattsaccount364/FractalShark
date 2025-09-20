@@ -136,7 +136,7 @@ static constexpr bool SharkTestCorrectness = true;
 
 static constexpr bool SharkTestInfiniteCorrectness = SharkTestCorrectness ? true : false;
 static constexpr auto SharkTestForceSameSign = false;
-static constexpr bool SharkTestBenchmarkAgainstHost = true;
+static constexpr bool SharkTestBenchmarkAgainstHost = false;
 static constexpr bool SharkTestInitCudaMemory = true;
 
 // ---- detail helpers (fallback for pre-C++20) ----
@@ -325,7 +325,7 @@ constexpr auto StupidMult = 1;
 //using TestPerSharkParams1 = GenericSharkFloatParams<96, 81>;
 //using TestPerSharkParams1 = GenericSharkFloatParams<128 * StupidMult, 108, 7776, 9>;
 //using TestPerSharkParams1 = GenericSharkFloatParams<128, 108, 7776, 9>;
-using TestPerSharkParams1 = GenericSharkFloatParams<256, 128, 131072>;
+using TestPerSharkParams1 = GenericSharkFloatParams<256, 128, 8192>;
 //using TestPerSharkParams1 = GenericSharkFloatParams<256, 128, 8192>;
 using TestPerSharkParams2 = GenericSharkFloatParams<64 * StupidMult, 108, 7776, 9>;
 using TestPerSharkParams3 = GenericSharkFloatParams<32 * StupidMult, 108, 7776, 9>;

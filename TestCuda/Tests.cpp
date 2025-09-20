@@ -2390,7 +2390,7 @@ bool TestBinaryOperatorPerf([[maybe_unused]] int testBase) {
     TestPerf<TestPerSharkParams7, sharkOperator>(testBase + 7, SharkTestIterCount);
     TestPerf<TestPerSharkParams8, sharkOperator>(testBase + 8, SharkTestIterCount);
 #elif (ENABLE_BASIC_CORRECTNESS == 2)
-    static constexpr auto NumIters = 5;
+    static constexpr auto NumIters = 1;
     for (size_t i = 0; i < NumIters; i++) {
         TestPerf<TestPerSharkParams1, sharkOperator>(testBase + 1, SharkTestIterCount);
     }

@@ -2377,21 +2377,20 @@ bool TestAllBinaryOp(int testBase) {
 }
 
 template<Operator sharkOperator>
-bool TestBinaryOperatorPerf([[maybe_unused]] int testBase) {
+bool TestBinaryOperatorPerf([[maybe_unused]] int testBase, int numIters, int internalTestLoopCount) {
 #if (ENABLE_BASIC_CORRECTNESS == 1) || (ENABLE_BASIC_CORRECTNESS == 3)
-    TestPerf<TestPerSharkParams1, sharkOperator>(testBase + 1, SharkTestIterCount);
-    TestPerf<TestPerSharkParams2, sharkOperator>(testBase + 2, SharkTestIterCount);
-    TestPerf<TestPerSharkParams3, sharkOperator>(testBase + 3, SharkTestIterCount);
-    TestPerf<TestPerSharkParams4, sharkOperator>(testBase + 4, SharkTestIterCount);
+    TestPerf<TestPerSharkParams1, sharkOperator>(testBase + 1, internalTestLoopCount);
+    TestPerf<TestPerSharkParams2, sharkOperator>(testBase + 2, internalTestLoopCount);
+    TestPerf<TestPerSharkParams3, sharkOperator>(testBase + 3, internalTestLoopCount);
+    TestPerf<TestPerSharkParams4, sharkOperator>(testBase + 4, internalTestLoopCount);
 
-    TestPerf<TestPerSharkParams5, sharkOperator>(testBase + 5, SharkTestIterCount);
-    TestPerf<TestPerSharkParams6, sharkOperator>(testBase + 6, SharkTestIterCount);
-    TestPerf<TestPerSharkParams7, sharkOperator>(testBase + 7, SharkTestIterCount);
-    TestPerf<TestPerSharkParams8, sharkOperator>(testBase + 8, SharkTestIterCount);
+    TestPerf<TestPerSharkParams5, sharkOperator>(testBase + 5, internalTestLoopCount);
+    TestPerf<TestPerSharkParams6, sharkOperator>(testBase + 6, internalTestLoopCount);
+    TestPerf<TestPerSharkParams7, sharkOperator>(testBase + 7, internalTestLoopCount);
+    TestPerf<TestPerSharkParams8, sharkOperator>(testBase + 8, internalTestLoopCount);
 #elif (ENABLE_BASIC_CORRECTNESS == 2)
-    static constexpr auto NumIters = 5;
-    for (size_t i = 0; i < NumIters; i++) {
-        TestPerf<TestPerSharkParams1, sharkOperator>(testBase + 1, SharkTestIterCount);
+    for (size_t i = 0; i < numIters; i++) {
+        TestPerf<TestPerSharkParams1, sharkOperator>(testBase + 1, internalTestLoopCount);
     }
 #endif
     return Tests.CheckAllTestsPassed();
@@ -2401,7 +2400,8 @@ bool TestBinaryOperatorPerf([[maybe_unused]] int testBase) {
 #ifdef ENABLE_ADD_KERNEL
 #define ADD_KERNEL(SharkFloatParams) \
     template bool TestAllBinaryOp<SharkFloatParams, Operator::Add>(int testBase); \
-    template bool TestBinaryOperatorPerf<Operator::Add>(int testBase);
+    template bool TestBinaryOperatorPerf<Operator::Add>(                                                \
+        int testBase, int numIters, int internalTestLoopCount);
 #else
 #define ADD_KERNEL(SharkFloatParams) ;
 #endif
@@ -2409,7 +2409,8 @@ bool TestBinaryOperatorPerf([[maybe_unused]] int testBase) {
 #ifdef ENABLE_MULTIPLY_KARATSUBA_KERNEL
 #define MULTIPLY_KERNEL_KARATSUBA(SharkFloatParams) \
     template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyKaratsubaV2>(int testBase); \
-    template bool TestBinaryOperatorPerf<Operator::MultiplyKaratsubaV2>(int testBase);
+    template bool TestBinaryOperatorPerf<Operator::MultiplyKaratsubaV2>(                                \
+        int testBase, int numIters, int internalTestLoopCount);
 #else
 #define MULTIPLY_KERNEL_KARATSUBA(SharkFloatParams) ;
 #endif
@@ -2417,7 +2418,8 @@ bool TestBinaryOperatorPerf([[maybe_unused]] int testBase) {
 #ifdef ENABLE_MULTIPLY_FFT_KERNEL
 #define MULTIPLY_KERNEL_FFT(SharkFloatParams) \
     template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyFFT>(int testBase); \
-    template bool TestBinaryOperatorPerf<Operator::MultiplyFFT>(int testBase);
+    template bool TestBinaryOperatorPerf<Operator::MultiplyFFT>(                                        \
+        int testBase, int numIters, int internalTestLoopCount);
 #else
 #define MULTIPLY_KERNEL_FFT(SharkFloatParams) ;
 #endif
@@ -2425,7 +2427,8 @@ bool TestBinaryOperatorPerf([[maybe_unused]] int testBase) {
 #ifdef ENABLE_MULTIPLY_FFT2_KERNEL
 #define MULTIPLY_KERNEL_FFT2(SharkFloatParams)                                                            \
     template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyFFT2>(int testBase);               \
-    template bool TestBinaryOperatorPerf<Operator::MultiplyFFT2>(int testBase);
+    template bool TestBinaryOperatorPerf<Operator::MultiplyFFT2>(                                       \
+        int testBase, int numIters, int internalTestLoopCount);
 #else
 #define MULTIPLY_KERNEL_FFT2(SharkFloatParams) ;
 #endif
@@ -2433,7 +2436,8 @@ bool TestBinaryOperatorPerf([[maybe_unused]] int testBase) {
 #ifdef ENABLE_REFERENCE_KERNEL
 #define REFERENCE_KERNEL(SharkFloatParams) \
     template bool TestAllBinaryOp<SharkFloatParams, Operator::ReferenceOrbit>(int testBase); \
-    template bool TestBinaryOperatorPerf<Operator::ReferenceOrbit>(int testBase);
+    template bool TestBinaryOperatorPerf<Operator::ReferenceOrbit>(                                     \
+        int testBase, int numIters, int internalTestLoopCount);
 #else
 #define REFERENCE_KERNEL(SharkFloatParams) ;
 #endif

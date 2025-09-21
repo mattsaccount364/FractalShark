@@ -32,4 +32,4 @@ template<class SharkFloatParams, Operator sharkOperator>
 bool TestAllBinaryOp(int testBase);
 
 template<Operator sharkOperator>
-bool TestBinaryOperatorPerf(int testBase);
+bool TestBinaryOperatorPerf(int testBase, int numIters, int internalTestLoopCount);

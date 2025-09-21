@@ -213,7 +213,8 @@ int PromptIntWithTimeout(
 int main(int /*argc*/, char * /*argv*/[]) {
     bool res = false;
 
-    int verboseInput = PromptIntWithTimeout("Verbose? (0 = No, 1 = Yes):", /*default=*/1, /*timeoutSec=*/3);
+    constexpr auto timeoutInSec = 3;
+    int verboseInput = PromptIntWithTimeout("Verbose? (0 = No, 1 = Yes):", /*default=*/1, timeoutInSec);
     if (verboseInput == 1) {
         SetVerboseMode(VerboseMode::Debug);
     } else {
@@ -246,10 +247,13 @@ int main(int /*argc*/, char * /*argv*/[]) {
     }
 
 #if (ENABLE_BASIC_CORRECTNESS == 2) || (ENABLE_BASIC_CORRECTNESS == 1)
+    int numIters = PromptIntWithTimeout("NumIters? Default 5", /*default=*/5, timeoutInSec);
+    int internalTestLoopCount = PromptIntWithTimeout("CUDA iteration count? Default 1000", /*default=*/1000, timeoutInSec);
+
     int testBase = 0;
     if constexpr (SharkEnableAddKernel) {
         testBase = 10000;
-        res = TestBinaryOperatorPerf<Operator::Add>(testBase);
+        res = TestBinaryOperatorPerf<Operator::Add>(testBase, numIters, internalTestLoopCount);
         if (!res) {
             auto q = PressKey();
             if (q == 'q') {
@@ -260,7 +264,8 @@ int main(int /*argc*/, char * /*argv*/[]) {
 
     if constexpr (SharkEnableMultiplyKernel) {
         testBase = 11000;
-        res = TestBinaryOperatorPerf<Operator::MultiplyKaratsubaV2>(testBase);
+        res = TestBinaryOperatorPerf<Operator::MultiplyKaratsubaV2>(
+            testBase, numIters, internalTestLoopCount);
         if (!res) {
             auto q = PressKey();
             if (q == 'q') {
@@ -271,7 +276,7 @@ int main(int /*argc*/, char * /*argv*/[]) {
 
     if constexpr (SharkEnableMultiplyFFTKernel) {
         testBase = 12000;
-        res = TestBinaryOperatorPerf<Operator::MultiplyFFT2>(testBase);
+        res = TestBinaryOperatorPerf<Operator::MultiplyFFT2>(testBase, numIters, internalTestLoopCount);
         if (!res) {
             auto q = PressKey();
             if (q == 'q') {
@@ -282,7 +287,7 @@ int main(int /*argc*/, char * /*argv*/[]) {
 
     if constexpr (SharkEnableMultiplyFFT2Kernel) {
         testBase = 13000;
-        res = TestBinaryOperatorPerf<Operator::MultiplyFFT2>(testBase);
+        res = TestBinaryOperatorPerf<Operator::MultiplyFFT2>(testBase, numIters, internalTestLoopCount);
         if (!res) {
             auto q = PressKey();
             if (q == 'q') {
@@ -293,7 +298,8 @@ int main(int /*argc*/, char * /*argv*/[]) {
 
     if constexpr (SharkEnableReferenceKernel) {
         testBase = 14000;
-        res = TestBinaryOperatorPerf<Operator::ReferenceOrbit>(testBase);
+        res =
+            TestBinaryOperatorPerf<Operator::ReferenceOrbit>(testBase, numIters, internalTestLoopCount);
         if (!res) {
             auto q = PressKey();
             if (q == 'q') {

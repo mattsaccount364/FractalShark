@@ -628,7 +628,7 @@ enum class Multiway { OneWay, TwoWay, ThreeWay };
 // Safe without atomics: each index participates in exactly one swap pair (i, j=rev(i));
 // only the lower index performs the swap (j > i), so pairs are disjoint.
 template <Multiway OneTwoThree>
-static __device__ inline void
+static __device__ SharkForceInlineReleaseOnly void
 BitReverseInplace64_GridStride(cooperative_groups::grid_group &grid,
                                uint64_t *SharkRestrict A,
                                uint64_t *SharkRestrict B,
@@ -699,7 +699,7 @@ BitReverseInplace64_GridStride(cooperative_groups::grid_group &grid,
 //--------------------------------------------------------------------------------------------------
 
 template <class SharkFloatParams>
-static __device__ void
+static __device__ SharkForceInlineReleaseOnly void
 NTTRadix2(cooperative_groups::grid_group &grid,
           cooperative_groups::thread_block &block,
           DebugMultiplyCount<SharkFloatParams> *debugCombo,
@@ -727,7 +727,7 @@ NTTRadix2(cooperative_groups::grid_group &grid,
 }
 
 template <class SharkFloatParams, Multiway OneTwoThree, uint32_t TS_log>
-static __device__ inline uint32_t
+static __device__ SharkForceInlineReleaseOnly uint32_t
 SmallRadixPhase1_SM(uint64_t *shared_data,
                     cooperative_groups::grid_group &grid,
                     cooperative_groups::thread_block &block,
@@ -853,7 +853,7 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
 // ThreeWay=false: operates on A only (matches 1-way behavior)
 // ThreeWay=true : operates on A, B, C in lockstep
 template <class SharkFloatParams, Multiway OneTwoThree>
-static __device__ void
+static __device__ SharkForceInlineReleaseOnly void
 NTTRadix2_GridStride(uint64_t *shared_data,
                      cooperative_groups::grid_group &grid,
                      cooperative_groups::thread_block &block,
@@ -1127,7 +1127,7 @@ NTTRadix2_GridStride(uint64_t *shared_data,
 //==================================================================================================
 
 template <class SharkFloatParams>
-[[nodiscard]] static __device__ uint64_t
+[[nodiscard]] static __device__ SharkForceInlineReleaseOnly uint64_t
 ReadBitsSimple(const HpSharkFloat<SharkFloatParams> &Z0_OutDigits, int64_t q, int b)
 {
     const int B = SharkFloatParams::GlobalNumUint32 * 32;
@@ -1168,7 +1168,7 @@ ReadBitsSimple(const HpSharkFloat<SharkFloatParams> &Z0_OutDigits, int64_t q, in
 //  - plan.b is the limb bit-width (<=32).
 //  - MagicPrime, HALF, etc., follow your existing defs.
 //
-static __device__ inline void
+static __device__ SharkForceInlineReleaseOnly void
 UnpackPrimeToFinal128_3Way(cooperative_groups::grid_group &grid,
                            const SharkNTT::PlanPrime &plan,
                            // inputs (normal domain)
@@ -1327,7 +1327,7 @@ UnpackPrimeToFinal128_3Way(cooperative_groups::grid_group &grid,
 // Grid-strided version: minimize distinct loops, add grid.sync between phases.
 // A once -> (XX1, XX2, XY1), then B once -> (YY1, YY2, XY2)
 template <class SharkFloatParams>
-static __device__ inline void
+static __device__ SharkForceInlineReleaseOnly void
 PackTwistFwdNTT_Fused_AB_ToSixOutputs(uint64_t *shared_data,
                                       cooperative_groups::grid_group &grid,
                                       cooperative_groups::thread_block &block,
@@ -1420,7 +1420,7 @@ PackTwistFwdNTT_Fused_AB_ToSixOutputs(uint64_t *shared_data,
 // Requires psi_inv_pows[] and Ninvm_mont to be in Montgomery domain.
 // Adds a grid sync at the end to make results visible to subsequent phases.
 template <class SharkFloatParams>
-static __device__ inline void
+static __device__ SharkForceInlineReleaseOnly void
 UntwistScaleFromMont_3Way_GridStride(cooperative_groups::grid_group &grid,
                                      cooperative_groups::thread_block &block,
                                      DebugMultiplyCount<SharkFloatParams> *debugMultiplyCounts,
@@ -1579,7 +1579,7 @@ static_assert(AdditionalUInt64PerFrame == 256, "See below");
     constexpr auto CarryInsEnd = CarryInsOffset + 3 * NewN + CalcAlign16Bytes64BitIndex(3 * NewN);
 
 template <class SharkFloatParams>
-static __device__ void
+static __device__ SharkForceInlineReleaseOnly void
 RunNTT_3Way_Multiply(uint64_t *shared_data,
                      HpSharkFloat<SharkFloatParams> *outXX,
                      HpSharkFloat<SharkFloatParams> *outYY,
@@ -1739,7 +1739,7 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
 }
 
 template <class SharkFloatParams>
-static __device__ void
+static __device__ SharkForceInlineReleaseOnly void
 MultiplyHelperNTTV2Separates(const SharkNTT::PlanPrime &plan,
                              const SharkNTT::RootTables &roots,
                              const HpSharkFloat<SharkFloatParams> *SharkRestrict A,

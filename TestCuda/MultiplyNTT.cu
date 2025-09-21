@@ -757,14 +757,6 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
     uint64_t *const sB = reinterpret_cast<uint64_t *>(shared_data) + 1u * TS;
     uint64_t *const sC = reinterpret_cast<uint64_t *>(shared_data) + 2u * TS;
 
-//#define ENABLE_WARP_OPTIMIZATION
-#ifdef ENABLE_WARP_OPTIMIZATION
-    uint64_t tw2[5][5];
-    const uint32_t lane = threadIdx.x & 31u;
-    const uint32_t warpId = threadIdx.x >> 5; // warp id within this block
-    const uint32_t WPB = blockDim.x >> 5;     // warps per block
-#endif
-
     const uint32_t tiles = (N + TS - 1u) / TS;
 
     for (uint32_t tile = blockIdx.x; tile < tiles; tile += gridDim.x) {
@@ -788,128 +780,7 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
 
         cg::wait(block);
         block.sync();
-
-#ifdef ENABLE_WARP_OPTIMIZATION
-        // ---- Phase 1a: early stages via warp shuffles over the shared tile ----
-        // Limit to stages where half <= 16 (i.e., s <= 4). These are strictly intra-warp.
-        const uint32_t last_warp_stage = min(S1 - 1u, 4u);
-        const uint32_t warp_stage_count =
-            (last_warp_stage >= 0) ? (last_warp_stage - 1u) : 0u;
-
-        // Precompute squarings for all warp-handled stages once per tile: tw2[s_idx][k]
-        if (warp_stage_count) {
-            #pragma unroll
-            for (uint32_t si = 0; si < 5; ++si) {
-                if (si >= warp_stage_count)
-                    break;
-                const uint32_t s = si;
-                uint64_t w = stage_base[s];
-                tw2[si][0] = w; // w^(1)
-                #pragma unroll
-                for (int k = 1; k < 5; ++k) {
-                    w = MontgomeryMul(grid, block, debugCombo, w, w); // square
-                    tw2[si][k] = w;                                   // w^(2^k)
-                }
-            }
-        }
-
-        for (uint32_t s = 0; s <= last_warp_stage; ++s) {
-            const uint32_t m = 1u << (s + 1u);
-            const uint32_t half = m >> 1; // 1,2,4,8,16
-            const uint64_t w_m = stage_base[s];
-
-            // Pick the precomputed row for this stage
-            uint64_t w2[5];
-
-            switch (s) {
-                case 0:
-                    #pragma unroll
-                    for (int k = 0; k < 5; ++k) {
-                        w2[k] = tw2[0][k];
-                    }
-                    break;
-                case 1:
-                    #pragma unroll
-                    for (int k = 0; k < 5; ++k) {
-                        w2[k] = tw2[1][k];
-                    }
-                    break;
-                case 2:
-                    #pragma unroll
-                    for (int k = 0; k < 5; ++k) {
-                        w2[k] = tw2[2][k];
-                    }
-                    break;
-                case 3:
-                    #pragma unroll
-                    for (int k = 0; k < 5; ++k) {
-                        w2[k] = tw2[3][k];
-                    }
-                    break;
-                case 4:
-                    #pragma unroll
-                    for (int k = 0; k < 5; ++k) {
-                        w2[k] = tw2[4][k];
-                    }
-                    break;
-            }
-
-            // Each warp processes 32-wide stripes inside this tile
-            for (uint32_t t0 = warpId * 32u; t0 < tile_len; t0 += WPB * 32u) {
-                const uint32_t t = t0 + lane;
-                if (t >= tile_len)
-                    continue;
-
-                // lane-local twiddle exponent depends only on lane for half<=16
-                const uint32_t j_lane = lane & (half - 1u);
-
-                // Build wj from pre-squared table; at most 4 multiplies
-                uint64_t wj = one_m; // Montgomery 1
-                #pragma unroll
-                for (int k = 0; k < 5; ++k) {
-                    const uint32_t bit = 1u << k;
-                    if (j_lane & bit) {
-                        wj = MontgomeryMul(grid, block, debugCombo, wj, w2[k]);
-                    }
-                }
-
-                // ---- A ----
-                {
-                    uint64_t x = sA[t];
-                    uint64_t mate = __shfl_xor_sync(0xFFFFFFFFu, x, half);
-                    const bool is_low = ((lane & half) == 0u);
-                    const uint64_t U = is_low ? x : mate;
-                    const uint64_t V = is_low ? mate : x;
-                    const uint64_t ttw = MontgomeryMul(grid, block, debugCombo, V, wj);
-                    sA[t] = is_low ? AddP(U, ttw) : SubP(U, ttw);
-                }
-                // ---- B ----
-                if constexpr (DoB) {
-                    uint64_t x = sB[t];
-                    uint64_t mate = __shfl_xor_sync(0xFFFFFFFFu, x, half);
-                    const bool is_low = ((lane & half) == 0u);
-                    const uint64_t U = is_low ? x : mate;
-                    const uint64_t V = is_low ? mate : x;
-                    const uint64_t ttw = MontgomeryMul(grid, block, debugCombo, V, wj);
-                    sB[t] = is_low ? AddP(U, ttw) : SubP(U, ttw);
-                }
-                // ---- C ----
-                if constexpr (DoC) {
-                    uint64_t x = sC[t];
-                    uint64_t mate = __shfl_xor_sync(0xFFFFFFFFu, x, half);
-                    const bool is_low = ((lane & half) == 0u);
-                    const uint64_t U = is_low ? x : mate;
-                    const uint64_t V = is_low ? mate : x;
-                    const uint64_t ttw = MontgomeryMul(grid, block, debugCombo, V, wj);
-                    sC[t] = is_low ? AddP(U, ttw) : SubP(U, ttw);
-                }
-            }
-
-            __syncwarp();
-        }
-#else
         const uint32_t last_warp_stage = 0;
-#endif // ENABLE_WARP_OPTIMIZATION
 
         // ---- Phase 1b: remaining stages in shared (classic butterfly) ----
         // Cross-warp reads happen here, so we use block.sync() between stages.

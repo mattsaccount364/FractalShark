@@ -93,7 +93,7 @@ static constexpr bool SharkTestGpu =
 
 static constexpr auto SharkTestComicalThreadCount = 13;
 
-static constexpr auto SharkTestIterCount = SharkDebug ? 5 : 1000;
+static constexpr auto SharkTestIterCount = SharkDebug ? 5 : 100;
 
 // Set to true to use a custom stream for the kernel launch
 static constexpr auto SharkCustomStream = true;

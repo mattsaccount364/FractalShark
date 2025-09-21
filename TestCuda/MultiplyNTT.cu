@@ -609,7 +609,7 @@ MontgomeryPow(cooperative_groups::grid_group &grid,
               cooperative_groups::thread_block &block,
               DebugMultiplyCount<SharkFloatParams> *debugCombo,
               uint64_t a_mont,
-              uint64_t e)
+              uint32_t e)
 {
     uint64_t x = ToMontgomery(grid, block, debugCombo, 1);
     uint64_t y = a_mont;
@@ -620,35 +620,6 @@ MontgomeryPow(cooperative_groups::grid_group &grid,
         e >>= 1;
     }
     return x;
-}
-
-// Runtime generator search (bounded). Used only for debug prints; correctness is guarded by table
-// checks.
-template <class SharkFloatParams>
-static __device__ uint64_t
-FindGenerator(DebugMultiplyCount<SharkFloatParams> *debugCombo)
-{
-    using namespace SharkNTT;
-    // p-1 = 2^32 * (2^32 - 1), with distinct prime factors:
-    // {2, 3, 5, 17, 257, 65537}
-    static const uint64_t factors[] = {2ull, 3ull, 5ull, 17ull, 257ull, 65537ull};
-
-    for (uint64_t g = 3; g < 1'000; ++g) {
-        uint64_t g_m = ToMontgomery(debugCombo, g);
-        bool ok = true;
-        for (uint64_t q : factors) {
-            // if g^{(p-1)/q} == 1, then g is NOT a generator
-            uint64_t t = MontgomeryPow(debugCombo, g_m, PHI / q);
-            if (t == ToMontgomery(debugCombo, 1)) {
-                ok = false;
-                break;
-            }
-        }
-        if (ok)
-            return g; // found a primitive root
-    }
-    // Fallback (shouldn't happen): 7 is often fine, but order-checks will catch issues.
-    return 7ull;
 }
 
 enum class Multiway { OneWay, TwoWay, ThreeWay };
@@ -793,18 +764,6 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
     const uint32_t warpId = threadIdx.x >> 5; // warp id within this block
     const uint32_t WPB = blockDim.x >> 5;     // warps per block
 #endif
-
-    auto mont_pow_u32 = [&](uint64_t base, uint32_t exp) {
-        uint64_t acc = one_m, cur = base;
-        uint32_t e = exp;
-        while (e) {
-            if (e & 1u)
-                acc = MontgomeryMul(grid, block, debugCombo, acc, cur);
-            cur = MontgomeryMul(grid, block, debugCombo, cur, cur);
-            e >>= 1u;
-        }
-        return acc;
-    };
 
     const uint32_t tiles = (N + TS - 1u) / TS;
 
@@ -966,7 +925,7 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
                 const uint32_t i0 = group * m + j;
                 const uint32_t i1 = i0 + half;
 
-                const uint64_t wj = mont_pow_u32(w_m, j);
+                const uint64_t wj = MontgomeryPow(grid, block, debugCombo, w_m, j);
 
                 // A
                 {
@@ -1043,19 +1002,6 @@ NTTRadix2_GridStride(uint64_t *shared_data,
     const size_t grank = grid.thread_rank();
     const uint32_t lane = static_cast<uint32_t>(grank % W);
 
-    // small 32-bit mont-pow
-    auto mont_pow_u32 = [&](uint64_t base, uint32_t exp) {
-        uint64_t acc = one_m, cur = base;
-        uint32_t e = exp;
-        while (e) {
-            if (e & 1u)
-                acc = MontgomeryMul(grid, block, debugCombo, acc, cur);
-            cur = MontgomeryMul(grid, block, debugCombo, cur, cur);
-            e >>= 1u;
-        }
-        return acc;
-    };
-
     uint32_t S0 = 0;
     {
         if constexpr (OneTwoThree == Multiway::OneWay) {
@@ -1081,8 +1027,8 @@ NTTRadix2_GridStride(uint64_t *shared_data,
         const uint32_t J_total = (half + (W - 1u)) / W; // ceil(half/W)
         const size_t total_tasks = static_cast<size_t>(nblocks) * static_cast<size_t>(J_total);
 
-        const uint64_t w_strideW = mont_pow_u32(w_m, W);      // w_m^W
-        const uint64_t w_lane_base = mont_pow_u32(w_m, lane); // w_m^lane
+        const uint64_t w_strideW = MontgomeryPow(grid, block, debugCombo, w_m, W);
+        const uint64_t w_lane_base = MontgomeryPow(grid, block, debugCombo, w_m, lane);
 
         // reset queue
         if (grid.thread_rank() == 0)
@@ -1109,7 +1055,7 @@ NTTRadix2_GridStride(uint64_t *shared_data,
             // w = (w_m^lane) * (w_m^W)^(j_chunk)
             uint64_t w = w_lane_base;
             if (j_chunk) {
-                const uint64_t jump = mont_pow_u32(w_strideW, j_chunk);
+                const uint64_t jump = MontgomeryPow(grid, block, debugCombo, w_strideW, j_chunk);
                 w = MontgomeryMul(grid, block, debugCombo, w, jump);
             }
 

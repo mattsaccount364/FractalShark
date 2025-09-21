@@ -727,7 +727,7 @@ NTTRadix2(cooperative_groups::grid_group &grid,
 }
 
 template <class SharkFloatParams, Multiway OneTwoThree, uint32_t TS_log>
-static __device__ SharkForceInlineReleaseOnly uint32_t
+static __device__ inline uint32_t
 SmallRadixPhase1_SM(uint64_t *shared_data,
                     cooperative_groups::grid_group &grid,
                     cooperative_groups::thread_block &block,
@@ -739,118 +739,145 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
                     uint32_t stages,
                     const uint64_t *__restrict stage_base)
 {
-    namespace cg = cooperative_groups;
-    constexpr uint32_t TS = 1u << TS_log;
-    constexpr bool DoB = (OneTwoThree != Multiway::OneWay);
-    constexpr bool DoC = (OneTwoThree == Multiway::ThreeWay);
-
-    const uint32_t remaining = (stages > 0u) ? (stages - 0u) : 0u;
-    const uint32_t S1 = (remaining < TS_log) ? remaining : TS_log;
-    if (S1 == 0u)
-        return 0u;
-
     const uint64_t one_m = ToMontgomery(grid, block, debugCombo, 1ull);
+    constexpr uint32_t TS = 1u << TS_log;
 
-    // Shared tile views (contiguous slabs of length TS)
-    uint64_t *const sA = reinterpret_cast<uint64_t *>(shared_data) + 0u * TS;
-    uint64_t *const sB = reinterpret_cast<uint64_t *>(shared_data) + 1u * TS;
-    uint64_t *const sC = reinterpret_cast<uint64_t *>(shared_data) + 2u * TS;
+    auto ctz_u32 = [](uint32_t x) -> uint32_t {
+        uint32_t c = 0;
+        while ((x & 1u) == 0u) {
+            x >>= 1u;
+            ++c;
+        }
+        return c;
+    };
+    const uint32_t S0 = stages < TS_log ? stages : TS_log;
+    const uint32_t rem = (N & (TS - 1u));
+    const uint32_t tail_len = (rem == 0u) ? TS : rem;
+    const uint32_t tail_cap = (rem == 0u) ? TS_log : ctz_u32(tail_len);
+    const uint32_t S1 = (S0 < tail_cap) ? S0 : tail_cap;
+    if (S1 == 0)
+        return 0;
 
     const uint32_t tiles = (N + TS - 1u) / TS;
 
-    for (uint32_t tile = blockIdx.x; tile < tiles; tile += gridDim.x) {
-        const uint32_t gbase = tile * TS;
-        const uint32_t tile_len = (gbase + TS <= N) ? TS : (N - gbase);
+    // Carve tile base from shared_data (A lives in shared)
+    auto *const s_dataA = reinterpret_cast<uint64_t *>(shared_data);
+    auto *const s_dataB = reinterpret_cast<uint64_t *>(shared_data) + TS;
+    auto *const s_dataC = reinterpret_cast<uint64_t *>(shared_data) + 2 * TS;
 
-        // ---- Load global -> shared (contiguous) ----
+    for (uint32_t tile = blockIdx.x; tile < tiles; tile += gridDim.x) {
+        const bool is_last = (tile == tiles - 1);
+        const uint32_t len = is_last ? tail_len : TS; // divisible by 2^S1
+
+        // Load A tile only (keep B,C in global)
         if constexpr (OneTwoThree == Multiway::OneWay || OneTwoThree == Multiway::TwoWay ||
                       OneTwoThree == Multiway::ThreeWay) {
-            cg::memcpy_async(block, sA, &A[gbase], tile_len * sizeof(uint64_t));
+            cg::memcpy_async(block, s_dataA, &A[tile * TS], len * sizeof(uint64_t));
         }
+
         if constexpr (OneTwoThree == Multiway::TwoWay || OneTwoThree == Multiway::ThreeWay) {
-            cg::memcpy_async(block, sB, &B[gbase], tile_len * sizeof(uint64_t));
+            cg::memcpy_async(block, s_dataB, &B[tile * TS], len * sizeof(uint64_t));
         }
+
         if constexpr (OneTwoThree == Multiway::ThreeWay) {
-            cg::memcpy_async(block, sC, &C[gbase], tile_len * sizeof(uint64_t));
+            cg::memcpy_async(block, s_dataC, &C[tile * TS], len * sizeof(uint64_t));
         }
 
         cg::wait(block);
         block.sync();
-        const uint32_t last_warp_stage = 0;
 
-        // ---- Phase 1b: remaining stages in shared (classic butterfly) ----
-        for (uint32_t s = last_warp_stage + 1u; s < S1; ++s) {
-            const uint32_t m = 1u << (s + 1u);
+        // Stages s=1..S1 — single set of loops; reuse the same syncs for all three
+        for (uint32_t s = 1; s <= S1; ++s) {
+            const uint32_t m = 1u << s;
             const uint32_t half = m >> 1;
-            const uint64_t w_m = stage_base[s];
+            const uint64_t w_m = stage_base[s - 1];
 
-            const uint32_t P = tile_len >> 1;
-            const uint32_t d = blockDim.x;
+            const uint32_t total_pairs = (len >> 1);
+            const uint32_t tid = block.thread_index().x;
+            const uint32_t step = block.size();
 
-            for (uint32_t p = threadIdx.x; p < P; p += d) {
+            for (uint32_t p = tid; p < total_pairs; p += step) {
                 const uint32_t group = p / half;
                 const uint32_t j = p - group * half; // p % half
                 const uint32_t i0 = group * m + j;
                 const uint32_t i1 = i0 + half;
 
-                // 1) Compute twiddle once
-                const uint64_t wj = (j == 0u) ? one_m : MontgomeryPow(grid, block, debugCombo, w_m, j);
+                const uint64_t wj = MontgomeryPow(grid, block, debugCombo, w_m, j);
 
-                // 2) Preload all operands from shared (independent of wj)
-                const uint64_t U_A = sA[i0];
-                const uint64_t V_A = sA[i1];
+                // ---- A (shared) ----
+                if constexpr (OneTwoThree == Multiway::OneWay) {
+                    const uint64_t U1 = s_dataA[i0];
+                    const uint64_t V1 = s_dataA[i1];
 
-                uint64_t U_B = 0, V_B = 0, U_C = 0, V_C = 0;
-                if constexpr (DoB) {
-                    U_B = sB[i0];
-                    V_B = sB[i1];
-                }
-                if constexpr (DoC) {
-                    U_C = sC[i0];
-                    V_C = sC[i1];
+                    const uint64_t t = MontgomeryMul(grid, block, debugCombo, V1, wj);
+
+                    s_dataA[i0] = AddP(U1, t);
+                    s_dataA[i1] = SubP(U1, t);
                 }
 
-                // 3) LAUNCH ALL MULS FIRST (don’t consume their results yet)
-                const uint64_t ttw_A = MontgomeryMul(grid, block, debugCombo, V_A, wj);
-                uint64_t ttw_B = 0, ttw_C = 0;
-                if constexpr (DoB)
-                    ttw_B = MontgomeryMul(grid, block, debugCombo, V_B, wj);
-                if constexpr (DoC)
-                    ttw_C = MontgomeryMul(grid, block, debugCombo, V_C, wj);
+                if constexpr (OneTwoThree == Multiway::TwoWay) {
+                    const uint64_t U1 = s_dataA[i0];
+                    const uint64_t V1 = s_dataA[i1];
 
-                // 4) Now CONSUME results (use time while the other muls are still retiring)
-                sA[i0] = AddP(U_A, ttw_A);
-                sA[i1] = SubP(U_A, ttw_A);
+                    const uint64_t U2 = s_dataB[i0];
+                    const uint64_t V2 = s_dataB[i1];
 
-                if constexpr (DoB) {
-                    sB[i0] = AddP(U_B, ttw_B);
-                    sB[i1] = SubP(U_B, ttw_B);
+                    const uint64_t t1 = MontgomeryMul(grid, block, debugCombo, V1, wj);
+
+                    const uint64_t t2 = MontgomeryMul(grid, block, debugCombo, V2, wj);
+
+                    s_dataA[i0] = AddP(U1, t1);
+                    s_dataA[i1] = SubP(U1, t1);
+
+                    s_dataB[i0] = AddP(U2, t2);
+                    s_dataB[i1] = SubP(U2, t2);
                 }
-                if constexpr (DoC) {
-                    sC[i0] = AddP(U_C, ttw_C);
-                    sC[i1] = SubP(U_C, ttw_C);
+
+                if constexpr (OneTwoThree == Multiway::ThreeWay) {
+                    const uint64_t U1 = s_dataA[i0];
+                    const uint64_t V1 = s_dataA[i1];
+
+                    const uint64_t U2 = s_dataB[i0];
+                    const uint64_t V2 = s_dataB[i1];
+
+                    const uint64_t U3 = s_dataC[i0];
+                    const uint64_t V3 = s_dataC[i1];
+
+                    const uint64_t t1 = MontgomeryMul(grid, block, debugCombo, V1, wj);
+                    const uint64_t t2 = MontgomeryMul(grid, block, debugCombo, V2, wj);
+                    const uint64_t t3 = MontgomeryMul(grid, block, debugCombo, V3, wj);
+
+                    s_dataA[i0] = AddP(U1, t1);
+                    s_dataA[i1] = SubP(U1, t1);
+
+                    s_dataB[i0] = AddP(U2, t2);
+                    s_dataB[i1] = SubP(U2, t2);
+
+                    s_dataC[i0] = AddP(U3, t3);
+                    s_dataC[i1] = SubP(U3, t3);
                 }
             }
             block.sync();
         }
 
-        // ---- Store shared -> global ----
-        const bool all_done_in_warp = (last_warp_stage + 1u == S1);
-        if (all_done_in_warp) {
-            block.sync();
-        }
+        // Store A
+        for (uint32_t t = block.thread_index().x; t < len; t += block.size()) {
+            if constexpr (OneTwoThree == Multiway::OneWay || OneTwoThree == Multiway::TwoWay ||
+                          OneTwoThree == Multiway::ThreeWay) {
+                A[tile * TS + t] = s_dataA[t];
+            }
 
-        for (uint32_t t = threadIdx.x; t < tile_len; t += blockDim.x) {
-            const uint32_t gi = gbase + t;
-            A[gi] = sA[t];
-            if constexpr (DoB)
-                B[gi] = sB[t];
-            if constexpr (DoC)
-                C[gi] = sC[t];
+            if constexpr (OneTwoThree == Multiway::TwoWay || OneTwoThree == Multiway::ThreeWay) {
+                B[tile * TS + t] = s_dataB[t];
+            }
+
+            if constexpr (OneTwoThree == Multiway::ThreeWay) {
+                C[tile * TS + t] = s_dataC[t];
+            }
         }
-        block.sync();
     }
 
+    grid.sync();
     return S1;
 }
 
@@ -874,7 +901,6 @@ NTTRadix2_GridStride(uint64_t *shared_data,
                      const uint64_t *SharkRestrict stage_base)
 {
     const uint64_t one_m = ToMontgomery(grid, block, debugCombo, 1ull);
-    constexpr uint32_t W = 32u; // warpSize
     constexpr auto TS_log = 9u;
     const size_t gsize = grid.size();
     const size_t grank = grid.thread_rank();

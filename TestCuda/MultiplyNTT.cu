@@ -1017,56 +1017,43 @@ NTTRadix2_GridStride(uint64_t *shared_data,
     }
 
 // =========================
-    // Phase 2: persistent task queue with dynamic warp-burst tickets (U==1)
-    //          + micro-tiling over j_chunk (no arrays → no local spills)
+    // Phase 2: static contiguous striping by warp (no atomics)
+    //          + scalarized micro-tiling (register-only, U=4/2)
     // =========================
     for (uint32_t s = S0 + 1; s <= stages; ++s) {
         const uint32_t m = 1u << s;
         const uint32_t half = m >> 1;
         const uint64_t w_m = stage_base[s - 1];
-        const uint32_t nblocks = N / m;
+
+        // Per-stage tiling in j: J_total = ceil(half / W)
+        constexpr uint32_t W = 32u;
         const uint32_t J_total = (half + (W - 1u)) / W; // ceil(half/W)
-        const size_t total_tasks = static_cast<size_t>(nblocks) * static_cast<size_t>(J_total);
+        const uint32_t nblocks = N / m;
+        const size_t total_tasks =
+            static_cast<size_t>(nblocks) * static_cast<size_t>(J_total); // == N/64, invariant in s
 
         // Per-warp/per-lane constants
+        const size_t gsize = grid.size();
+        const size_t grank = grid.thread_rank();
+        const uint32_t lane = static_cast<uint32_t>(grank % W);
+        const uint32_t warp_id = static_cast<uint32_t>(grank / W);
+        const uint32_t warp_count = static_cast<uint32_t>(gsize / W);
+
         const uint64_t w_strideW = MontgomeryPow(grid, block, debugCombo, w_m, W);      // w_m^W
         const uint64_t w_lane_base = MontgomeryPow(grid, block, debugCombo, w_m, lane); // w_m^lane
 
-        // Reset global ticket counter for this stage and latch
-        if (grid.thread_rank() == 0)
-            *globalSync = 0ull;
-        grid.sync();
+        // -------- Static contiguous partition: each warp gets one equal-sized range --------
+        const size_t tasks_per_warp = (total_tasks + warp_count - 1ull) / warp_count; // ceil
+        size_t T0 = static_cast<size_t>(warp_id) * tasks_per_warp;
+        size_t Tend = min(total_tasks, T0 + tasks_per_warp);
 
-        const unsigned mask = __activemask();
-        const uint32_t warp_count = static_cast<uint32_t>(gsize / W);
-
-        // Heuristic GRAB (keep your simple shift; cap to be safe)
-        uint32_t GRAB = std::max((1u << stages) / (1u << 15), 1u);
-        GRAB = std::min(64u, GRAB);
-
-        // Micro-tiling width (register-friendly): 4 for OneWay, 2 for Two/ThreeWay
-        constexpr int U = (OneTwoThree == Multiway::OneWay ? 4 : 2);
-
-        while (true) {
-            // lane 0 grabs a chunk of tickets
-            unsigned baseT;
-            if (lane == 0)
-                baseT = atomicAdd(reinterpret_cast<unsigned int *>(globalSync), GRAB);
-            baseT = __shfl_sync(mask, baseT, 0);
-
-            if (static_cast<size_t>(baseT) >= total_tasks)
-                break;
-
-            size_t remaining = total_tasks - baseT;
-            if (remaining > GRAB)
-                remaining = GRAB;
-
-            // Decode start-of-chunk once
-            uint32_t blk_id = static_cast<uint32_t>(baseT / J_total);
+        if (T0 < Tend) {
+            // Decode the first ticket in our contiguous range
+            uint32_t blk_id = static_cast<uint32_t>(T0 / J_total);
             uint32_t j_chunk =
-                static_cast<uint32_t>(baseT - static_cast<size_t>(blk_id) * J_total); // no %
+                static_cast<uint32_t>(T0 - static_cast<size_t>(blk_id) * J_total); // faster than %
 
-            // Twiddle at chunk start (one-time Pow if j_chunk != 0)
+            // Twiddle at start of our range: w = w_lane_base * (w_strideW ^ j_chunk)
             uint64_t w = (j_chunk == 0)
                              ? w_lane_base
                              : MontgomeryMul(grid,
@@ -1076,21 +1063,25 @@ NTTRadix2_GridStride(uint64_t *shared_data,
                                              MontgomeryPow(grid, block, debugCombo, w_strideW, j_chunk));
 
             uint32_t k_base = blk_id * m;
+            size_t remaining = Tend - T0;
 
-            // -------- process this burst with micro-tiles (scalarized) --------
-            for (size_t r = 0; r < remaining;) {
-                // Tile cannot cross block boundary
+            // Micro-tiling width: 4 for OneWay, 2 for Two/ThreeWay (keeps regs in check)
+            constexpr int U = (OneTwoThree == Multiway::OneWay ? 4 : 2);
+
+            // ------------- process our contiguous slice -------------
+            while (remaining) {
+                // Tile cannot cross block boundary or our assigned range
                 const uint32_t room_in_block = J_total - j_chunk;
-                const uint32_t items_left = static_cast<uint32_t>(remaining - r);
-                const uint32_t tile = (U == 4)
-                                          ? std::min<uint32_t>(4u, std::min(room_in_block, items_left))
-                                          : std::min<uint32_t>(2u, std::min(room_in_block, items_left));
+                const uint32_t span = static_cast<uint32_t>(std::min<size_t>(remaining, room_in_block));
+                const uint32_t tile =
+                    (U == 4) ? std::min<uint32_t>(4u, span) : std::min<uint32_t>(2u, span);
 
-                // ---- position 0 ----
+                // ===== position 0 =====
                 const uint32_t j0_0 = lane + j_chunk * W;
                 const bool a0 = (j0_0 < half);
                 uint32_t i0_0 = 0, i1_0 = 0;
                 uint64_t Au0 = 0, Av0 = 0, Bu0 = 0, Bv0 = 0, Cu0 = 0, Cv0 = 0;
+
                 if (a0) {
                     i0_0 = k_base + j0_0;
                     i1_0 = i0_0 + half;
@@ -1107,11 +1098,13 @@ NTTRadix2_GridStride(uint64_t *shared_data,
                 }
                 const uint64_t tw0 = w;
 
-                // ---- position 1 (if any) ----
+                // Pre-advance twiddle and optionally prefetch pos1 operands
+                uint64_t tw1 = MontgomeryMul(grid, block, debugCombo, tw0, w_strideW);
+
+                // ===== position 1 (if any) =====
+                bool a1 = false;
                 uint32_t i0_1 = 0, i1_1 = 0;
                 uint64_t Au1 = 0, Av1 = 0, Bu1 = 0, Bv1 = 0, Cu1 = 0, Cv1 = 0;
-                bool a1 = false;
-                uint64_t tw1 = 0;
                 if (tile >= 2) {
                     const uint32_t j0_1 = j0_0 + W;
                     a1 = (j0_1 < half);
@@ -1129,15 +1122,16 @@ NTTRadix2_GridStride(uint64_t *shared_data,
                             }
                         }
                     }
-                    tw1 = MontgomeryMul(grid, block, debugCombo, tw0, w_strideW);
                 }
 
-                // ---- position 2 (OneWay only) ----
-                uint32_t i0_2 = 0, i1_2 = 0;
-                uint64_t Au2 = 0, Av2 = 0;
-                bool a2 = false;
-                uint64_t tw2 = 0;
+                // ===== position 2/3 (OneWay only) =====
+                uint32_t i0_2 = 0, i1_2 = 0, i0_3 = 0, i1_3 = 0;
+                uint64_t Au2 = 0, Av2 = 0, Au3 = 0, Av3 = 0;
+                bool a2 = false, a3 = false;
+                uint64_t tw2 = 0, tw3 = 0;
+
                 if constexpr (U == 4) {
+                    tw2 = MontgomeryMul(grid, block, debugCombo, tw1, w_strideW);
                     if (tile >= 3) {
                         const uint32_t j0_2 = j0_0 + 2u * W;
                         a2 = (j0_2 < half);
@@ -1147,16 +1141,9 @@ NTTRadix2_GridStride(uint64_t *shared_data,
                             Au2 = A[i0_2];
                             Av2 = A[i1_2];
                         }
-                        tw2 = MontgomeryMul(grid, block, debugCombo, tw1, w_strideW); // = w * (w^W)^2
+                        if (tile >= 4)
+                            tw3 = MontgomeryMul(grid, block, debugCombo, tw2, w_strideW);
                     }
-                }
-
-                // ---- position 3 (OneWay only) ----
-                uint32_t i0_3 = 0, i1_3 = 0;
-                uint64_t Au3 = 0, Av3 = 0;
-                bool a3 = false;
-                uint64_t tw3 = 0;
-                if constexpr (U == 4) {
                     if (tile >= 4) {
                         const uint32_t j0_3 = j0_0 + 3u * W;
                         a3 = (j0_3 < half);
@@ -1166,7 +1153,6 @@ NTTRadix2_GridStride(uint64_t *shared_data,
                             Au3 = A[i0_3];
                             Av3 = A[i1_3];
                         }
-                        tw3 = MontgomeryMul(grid, block, debugCombo, tw2, w_strideW); // = w * (w^W)^3
                     }
                 }
 
@@ -1177,96 +1163,90 @@ NTTRadix2_GridStride(uint64_t *shared_data,
                         A[i0_0] = AddP(Au0, t0);
                         A[i1_0] = SubP(Au0, t0);
                     } else if constexpr (OneTwoThree == Multiway::TwoWay) {
-                        const uint64_t t1a = MontgomeryMul(grid, block, debugCombo, Av0, tw0);
-                        const uint64_t t1b = MontgomeryMul(grid, block, debugCombo, Bv0, tw0);
-                        A[i0_0] = AddP(Au0, t1a);
-                        A[i1_0] = SubP(Au0, t1a);
-                        B[i0_0] = AddP(Bu0, t1b);
-                        B[i1_0] = SubP(Bu0, t1b);
-                    } else { // ThreeWay
-                        const uint64_t t1a = MontgomeryMul(grid, block, debugCombo, Av0, tw0);
-                        const uint64_t t1b = MontgomeryMul(grid, block, debugCombo, Bv0, tw0);
-                        const uint64_t t1c = MontgomeryMul(grid, block, debugCombo, Cv0, tw0);
-                        A[i0_0] = AddP(Au0, t1a);
-                        A[i1_0] = SubP(Au0, t1a);
-                        B[i0_0] = AddP(Bu0, t1b);
-                        B[i1_0] = SubP(Bu0, t1b);
-                        C[i0_0] = AddP(Cu0, t1c);
-                        C[i1_0] = SubP(Cu0, t1c);
+                        const uint64_t tA0 = MontgomeryMul(grid, block, debugCombo, Av0, tw0);
+                        const uint64_t tB0 = MontgomeryMul(grid, block, debugCombo, Bv0, tw0);
+                        A[i0_0] = AddP(Au0, tA0);
+                        A[i1_0] = SubP(Au0, tA0);
+                        B[i0_0] = AddP(Bu0, tB0);
+                        B[i1_0] = SubP(Bu0, tB0);
+                    } else {
+                        const uint64_t tA0 = MontgomeryMul(grid, block, debugCombo, Av0, tw0);
+                        const uint64_t tB0 = MontgomeryMul(grid, block, debugCombo, Bv0, tw0);
+                        const uint64_t tC0 = MontgomeryMul(grid, block, debugCombo, Cv0, tw0);
+                        A[i0_0] = AddP(Au0, tA0);
+                        A[i1_0] = SubP(Au0, tA0);
+                        B[i0_0] = AddP(Bu0, tB0);
+                        B[i1_0] = SubP(Bu0, tB0);
+                        C[i0_0] = AddP(Cu0, tC0);
+                        C[i1_0] = SubP(Cu0, tC0);
                     }
                 }
 
                 // ---- compute/store: position 1 ----
                 if (tile >= 2 && a1) {
                     if constexpr (OneTwoThree == Multiway::OneWay) {
-                        const uint64_t t = MontgomeryMul(grid, block, debugCombo, Av1, tw1);
-                        A[i0_1] = AddP(Au1, t);
-                        A[i1_1] = SubP(Au1, t);
+                        const uint64_t t1 = MontgomeryMul(grid, block, debugCombo, Av1, tw1);
+                        A[i0_1] = AddP(Au1, t1);
+                        A[i1_1] = SubP(Au1, t1);
                     } else if constexpr (OneTwoThree == Multiway::TwoWay) {
-                        const uint64_t tA = MontgomeryMul(grid, block, debugCombo, Av1, tw1);
-                        const uint64_t tB = MontgomeryMul(grid, block, debugCombo, Bv1, tw1);
-                        A[i0_1] = AddP(Au1, tA);
-                        A[i1_1] = SubP(Au1, tA);
-                        B[i0_1] = AddP(Bu1, tB);
-                        B[i1_1] = SubP(Bu1, tB);
+                        const uint64_t tA1 = MontgomeryMul(grid, block, debugCombo, Av1, tw1);
+                        const uint64_t tB1 = MontgomeryMul(grid, block, debugCombo, Bv1, tw1);
+                        A[i0_1] = AddP(Au1, tA1);
+                        A[i1_1] = SubP(Au1, tA1);
+                        B[i0_1] = AddP(Bu1, tB1);
+                        B[i1_1] = SubP(Bu1, tB1);
                     } else {
-                        const uint64_t tA = MontgomeryMul(grid, block, debugCombo, Av1, tw1);
-                        const uint64_t tB = MontgomeryMul(grid, block, debugCombo, Bv1, tw1);
-                        const uint64_t tC = MontgomeryMul(grid, block, debugCombo, Cv1, tw1);
-                        A[i0_1] = AddP(Au1, tA);
-                        A[i1_1] = SubP(Au1, tA);
-                        B[i0_1] = AddP(Bu1, tB);
-                        B[i1_1] = SubP(Bu1, tB);
-                        C[i0_1] = AddP(Cu1, tC);
-                        C[i1_1] = SubP(Cu1, tC);
+                        const uint64_t tA1 = MontgomeryMul(grid, block, debugCombo, Av1, tw1);
+                        const uint64_t tB1 = MontgomeryMul(grid, block, debugCombo, Bv1, tw1);
+                        const uint64_t tC1 = MontgomeryMul(grid, block, debugCombo, Cv1, tw1);
+                        A[i0_1] = AddP(Au1, tA1);
+                        A[i1_1] = SubP(Au1, tA1);
+                        B[i0_1] = AddP(Bu1, tB1);
+                        B[i1_1] = SubP(Bu1, tB1);
+                        C[i0_1] = AddP(Cu1, tC1);
+                        C[i1_1] = SubP(Cu1, tC1);
                     }
                 }
 
                 // ---- compute/store: positions 2 & 3 (OneWay only) ----
                 if constexpr (U == 4) {
                     if (tile >= 3 && a2) {
-                        const uint64_t t = MontgomeryMul(grid, block, debugCombo, Av2, tw2);
-                        A[i0_2] = AddP(Au2, t);
-                        A[i1_2] = SubP(Au2, t);
+                        const uint64_t t2 = MontgomeryMul(grid, block, debugCombo, Av2, tw2);
+                        A[i0_2] = AddP(Au2, t2);
+                        A[i1_2] = SubP(Au2, t2);
                     }
                     if (tile >= 4 && a3) {
-                        const uint64_t t = MontgomeryMul(grid, block, debugCombo, Av3, tw3);
-                        A[i0_3] = AddP(Au3, t);
-                        A[i1_3] = SubP(Au3, t);
+                        const uint64_t t3 = MontgomeryMul(grid, block, debugCombo, Av3, tw3);
+                        A[i0_3] = AddP(Au3, t3);
+                        A[i1_3] = SubP(Au3, t3);
                     }
                 }
 
-                // Advance within block by 'tile' (twiddle jumps done via chaining above)
+                // ---- advance within block by 'tile' ----
                 j_chunk += tile;
+                remaining -= tile;
+
                 if (j_chunk == J_total) {
+                    // wrap to next block
                     j_chunk = 0;
                     blk_id += 1;
                     k_base += m;
-                    w = w_lane_base; // reset base twiddle on wrap
+                    w = w_lane_base;
                 } else {
-                    // Seed 'w' for the *next* tile start:
-                    // we already have twN = w * (w_strideW)^tile, so reuse:
+                    // seed twiddle for next tile start
                     if (tile == 1)
-                        w = tw1; // defined only if tile>=2, else recompute:
+                        w = tw1;
                     else if (tile == 2)
-                        w = tw2; // defined only for U==4; for U==2 we never come here
+                        w = MontgomeryMul(grid, block, debugCombo, tw1, w_strideW);
                     else if (tile == 3)
-                        w = tw3;
-                    else /*tile==4*/ {
-                        // for completeness; could also do 3 chained muls here on next loop head
+                        w = tw3; // built above when U==4
+                    else         /*tile==4*/
                         w = MontgomeryMul(grid, block, debugCombo, tw3, w_strideW);
-                    }
-                    // For cases where variable isn't defined (e.g., tile==1 for U==2), fall back:
-                    if ((U == 2 && tile == 1)) {
-                        w = MontgomeryMul(grid, block, debugCombo, w, w_strideW);
-                    }
                 }
+            } // while (remaining)
+        } // if (T0<Tend)
 
-                r += tile;
-            } // end burst processing
-        } // while bursts
-
-        // One grid-wide barrier per stage
+        // One grid-wide barrier per stage (still required for correctness)
         grid.sync();
     }
 }

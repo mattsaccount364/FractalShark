@@ -214,7 +214,7 @@ int main(int /*argc*/, char * /*argv*/[]) {
     bool res = false;
 
     constexpr auto timeoutInSec = 3;
-    int verboseInput = PromptIntWithTimeout("Verbose? (0 = No, 1 = Yes):", /*default=*/1, timeoutInSec);
+    int verboseInput = PromptIntWithTimeout("Verbose? Default=0. (0 = No, 1 = Yes):", /*default=*/0, timeoutInSec);
     if (verboseInput == 1) {
         SetVerboseMode(VerboseMode::Debug);
     } else {

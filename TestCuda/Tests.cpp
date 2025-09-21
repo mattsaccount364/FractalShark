@@ -5,7 +5,6 @@
 
 #include "Tests.h"
 #include "ReferenceKaratsuba.h"
-#include "ReferenceFFT.h"
 #include "ReferenceNTT2.h"
 #include "ReferenceAdd.h"
 #include "DebugChecksumHost.h"

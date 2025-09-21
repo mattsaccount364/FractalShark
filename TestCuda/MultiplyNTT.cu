@@ -1017,9 +1017,7 @@ NTTRadix2_GridStride(uint64_t *shared_data,
     }
 
     // =========================
-    // Phase 2: persistent task queue with warp-burst tickets (U==1)
-    //          Each warp grabs GRAB consecutive tasks with a single atomicAdd,
-    //          then walks them with cheap twiddle updates (no MontgomeryPow in steady state).
+    // Phase 2: persistent task queue with dynamic warp-burst tickets (U==1)
     // =========================
     for (uint32_t s = S0 + 1; s <= stages; ++s) {
         const uint32_t m = 1u << s;
@@ -1039,7 +1037,18 @@ NTTRadix2_GridStride(uint64_t *shared_data,
         grid.sync();
 
         const unsigned mask = __activemask();
-        constexpr unsigned GRAB = 1; // tune: 8–32 usually good
+        const uint32_t warp_count = static_cast<uint32_t>(gsize / W);
+
+        // Note: does not consider occupancy.  The choice here has a big impact
+        // on perf.
+        // Experiment: RTX 4090 indicates GRAB=8 is good for 131072 input limbs
+        // and 1 for 8192 input limbs.
+        uint32_t GRAB = std::max((1 << stages) / (1 << 15), 1);
+
+        // // ~ ceil((N/64) / (warp_count * 8)) = tasks_per_warp / target_bursts
+        // uint32_t GRAB = (((1u << stages) >> 6) + (warp_count << 3) - 1) / (warp_count << 3);
+        // GRAB = max(1u, min(64u, GRAB));
+        // // optional: if (GRAB >= 8) GRAB = nearest_pow2(GRAB);
 
         while (true) {
             // lane 0 grabs a chunk of tickets

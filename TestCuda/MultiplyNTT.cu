@@ -1017,8 +1017,9 @@ NTTRadix2_GridStride(uint64_t *shared_data,
     }
 
     // =========================
-    // Phase 2: persistent task queue over (blk_id × j_chunk), U==1
-    //          2-stage warp pipeline: {prefetch next task + twiddle} || {compute current}
+    // Phase 2: persistent task queue with warp-burst tickets (U==1)
+    //          Each warp grabs GRAB consecutive tasks with a single atomicAdd,
+    //          then walks them with cheap twiddle updates (no MontgomeryPow in steady state).
     // =========================
     for (uint32_t s = S0 + 1; s <= stages; ++s) {
         const uint32_t m = 1u << s;
@@ -1028,144 +1029,98 @@ NTTRadix2_GridStride(uint64_t *shared_data,
         const uint32_t J_total = (half + (W - 1u)) / W; // ceil(half/W)
         const size_t total_tasks = static_cast<size_t>(nblocks) * static_cast<size_t>(J_total);
 
-        // Per-warp constants
+        // Per-warp constants (per stage)
         const uint64_t w_strideW = MontgomeryPow(grid, block, debugCombo, w_m, W);      // w_m^W
         const uint64_t w_lane_base = MontgomeryPow(grid, block, debugCombo, w_m, lane); // w_m^lane
 
-        // reset queue
+        // Reset global ticket counter for this stage
         if (grid.thread_rank() == 0)
             *globalSync = 0ull;
         grid.sync();
 
         const unsigned mask = __activemask();
+        constexpr unsigned GRAB = 1; // tune: 8–32 usually good
 
-        // ------------ Stage A bootstrap: acquire first task and compute its twiddle ------------
-        unsigned int T_curr;
-        if (lane == 0)
-            T_curr = atomicAdd(reinterpret_cast<unsigned int *>(globalSync), 1u);
-        T_curr = __shfl_sync(mask, T_curr, 0);
-        if (static_cast<size_t>(T_curr) < total_tasks) {
-            // Decode current task
-            uint32_t blk_id_curr = static_cast<uint32_t>(T_curr / J_total);
-            uint32_t j_chunk_curr = static_cast<uint32_t>(T_curr % J_total);
+        while (true) {
+            // lane 0 grabs a chunk of tickets
+            unsigned baseT;
+            if (lane == 0)
+                baseT = atomicAdd(reinterpret_cast<unsigned int *>(globalSync), GRAB);
+            baseT = __shfl_sync(mask, baseT, 0);
 
-            // Compute w for current (cheap: either base or base * (w_strideW^j_chunk))
-            // Because we start at an arbitrary j_chunk, do a small binary exp once.
-            uint64_t w_curr =
-                (j_chunk_curr == 0)
-                    ? w_lane_base
-                    : MontgomeryMul(grid,
-                                    block,
-                                    debugCombo,
-                                    w_lane_base,
-                                    MontgomeryPow(grid, block, debugCombo, w_strideW, j_chunk_curr));
+            if (static_cast<size_t>(baseT) >= total_tasks)
+                break;
 
-            // Pre-decode indices for current
-            const uint32_t j0_curr = lane + j_chunk_curr * W;
-            const bool active_curr = (j0_curr < half);
-            const uint32_t k_curr = blk_id_curr * m;
-            const uint32_t i0_curr = k_curr + j0_curr;
-            const uint32_t i1_curr = i0_curr + half;
+            size_t remaining = total_tasks - baseT;
+            if (remaining > GRAB)
+                remaining = GRAB;
 
-            // ------------ Main pipelined loop ------------
-            while (true) {
-                // Prefetch next task (Stage A for next)
-                unsigned int T_next;
-                if (lane == 0)
-                    T_next = atomicAdd(reinterpret_cast<unsigned int *>(globalSync), 1u);
-                T_next = __shfl_sync(mask, T_next, 0);
+            // Decode start-of-chunk once
+            uint32_t blk_id = static_cast<uint32_t>(baseT / J_total);
+            uint32_t j_chunk =
+                static_cast<uint32_t>(baseT - static_cast<size_t>(blk_id) * J_total); // faster than %
 
-                // Decode & precompute next task *lightly* (no global loads yet)
-                bool have_next = (static_cast<size_t>(T_next) < total_tasks);
-                uint32_t blk_id_next = 0, j_chunk_next = 0;
-                uint32_t j0_next = 0, k_next = 0, i0_next = 0, i1_next = 0;
-                bool active_next = false;
-                uint64_t w_next = 0;
+            // One-time twiddle init for the chunk start
+            uint64_t w = (j_chunk == 0)
+                             ? w_lane_base
+                             : MontgomeryMul(grid,
+                                             block,
+                                             debugCombo,
+                                             w_lane_base,
+                                             MontgomeryPow(grid, block, debugCombo, w_strideW, j_chunk));
 
-                if (have_next) {
-                    blk_id_next = static_cast<uint32_t>(T_next / J_total);
-                    j_chunk_next = static_cast<uint32_t>(T_next % J_total);
+            // Process the grabbed tasks with cheap updates
+            for (size_t r = 0; r < remaining; ++r) {
+                const uint32_t j0 = lane + j_chunk * W;
+                if (j0 < half) {
+                    const uint32_t k = blk_id * m;
+                    const uint32_t i0 = k + j0;
+                    const uint32_t i1 = i0 + half;
 
-                    // Fast twiddle update: contiguous tasks only
-                    // j_chunk_next == j_chunk_curr + 1  (same blk)  => multiply by w_strideW
-                    // j_chunk_next == 0                  (wrap)     => reset to w_lane_base
-                    // There are no other cases for a warp because atomicAdd hands out consecutive T.
-                    if (j_chunk_next == 0) {
-                        w_next = w_lane_base; // reset on wrap
-                    } else {
-                        w_next = MontgomeryMul(grid, block, debugCombo, w_curr, w_strideW);
-                    }
-
-                    j0_next = lane + j_chunk_next * W;
-                    active_next = (j0_next < half);
-                    k_next = blk_id_next * m;
-                    i0_next = k_next + j0_next;
-                    i1_next = i0_next + half;
-                }
-
-                // ---------------- Stage B: compute CURRENT task ----------------
-                if (active_curr) {
                     if constexpr (OneTwoThree == Multiway::OneWay) {
-                        const uint64_t Uv = A[i0_curr];
-                        const uint64_t Vv = A[i1_curr];
-                        const uint64_t t = MontgomeryMul(grid, block, debugCombo, Vv, w_curr);
-                        A[i0_curr] = AddP(Uv, t);
-                        A[i1_curr] = SubP(Uv, t);
-                    }
-                    if constexpr (OneTwoThree == Multiway::TwoWay) {
-                        const uint64_t Uv1 = A[i0_curr], Vv1 = A[i1_curr];
-                        const uint64_t Uv2 = B[i0_curr], Vv2 = B[i1_curr];
-                        const uint64_t t1 = MontgomeryMul(grid, block, debugCombo, Vv1, w_curr);
-                        const uint64_t t2 = MontgomeryMul(grid, block, debugCombo, Vv2, w_curr);
-                        A[i0_curr] = AddP(Uv1, t1);
-                        A[i1_curr] = SubP(Uv1, t1);
-                        B[i0_curr] = AddP(Uv2, t2);
-                        B[i1_curr] = SubP(Uv2, t2);
-                    }
-                    if constexpr (OneTwoThree == Multiway::ThreeWay) {
-                        const uint64_t Uv1 = A[i0_curr], Vv1 = A[i1_curr];
-                        const uint64_t Uv2 = B[i0_curr], Vv2 = B[i1_curr];
-                        const uint64_t Uv3 = C[i0_curr], Vv3 = C[i1_curr];
-                        const uint64_t t1 = MontgomeryMul(grid, block, debugCombo, Vv1, w_curr);
-                        const uint64_t t2 = MontgomeryMul(grid, block, debugCombo, Vv2, w_curr);
-                        const uint64_t t3 = MontgomeryMul(grid, block, debugCombo, Vv3, w_curr);
-                        A[i0_curr] = AddP(Uv1, t1);
-                        A[i1_curr] = SubP(Uv1, t1);
-                        B[i0_curr] = AddP(Uv2, t2);
-                        B[i1_curr] = SubP(Uv2, t2);
-                        C[i0_curr] = AddP(Uv3, t3);
-                        C[i1_curr] = SubP(Uv3, t3);
+                        const uint64_t Uv = A[i0];
+                        const uint64_t Vv = A[i1];
+                        const uint64_t t = MontgomeryMul(grid, block, debugCombo, Vv, w);
+                        A[i0] = AddP(Uv, t);
+                        A[i1] = SubP(Uv, t);
+                    } else if constexpr (OneTwoThree == Multiway::TwoWay) {
+                        const uint64_t U1 = A[i0], V1 = A[i1];
+                        const uint64_t U2 = B[i0], V2 = B[i1];
+                        const uint64_t t1 = MontgomeryMul(grid, block, debugCombo, V1, w);
+                        const uint64_t t2 = MontgomeryMul(grid, block, debugCombo, V2, w);
+                        A[i0] = AddP(U1, t1);
+                        A[i1] = SubP(U1, t1);
+                        B[i0] = AddP(U2, t2);
+                        B[i1] = SubP(U2, t2);
+                    } else { // Multiway::ThreeWay
+                        const uint64_t U1 = A[i0], V1 = A[i1];
+                        const uint64_t U2 = B[i0], V2 = B[i1];
+                        const uint64_t U3 = C[i0], V3 = C[i1];
+                        const uint64_t t1 = MontgomeryMul(grid, block, debugCombo, V1, w);
+                        const uint64_t t2 = MontgomeryMul(grid, block, debugCombo, V2, w);
+                        const uint64_t t3 = MontgomeryMul(grid, block, debugCombo, V3, w);
+                        A[i0] = AddP(U1, t1);
+                        A[i1] = SubP(U1, t1);
+                        B[i0] = AddP(U2, t2);
+                        B[i1] = SubP(U2, t2);
+                        C[i0] = AddP(U3, t3);
+                        C[i1] = SubP(U3, t3);
                     }
                 }
 
-                // Advance pipeline (make "next" become "current")
-                if (!have_next)
-                    break;
-                T_curr = T_next;
-                blk_id_curr = blk_id_next;
-                j_chunk_curr = j_chunk_next;
-                w_curr = w_next;
-
-                // reuse predecoded indices
-                // (keep names with _curr to match above)
-                // i0/i1/j0/active/k updated from next
-                // Note: we intentionally keep these as separate variables to help the compiler.
-                const uint32_t _i0 = i0_next, _i1 = i1_next, _k = k_next, _j0 = j0_next;
-                const bool _active = active_next;
-                // rebind
-                (void)_k;
-                (void)_j0; // silence unused warnings if needed
-                // Assign to curr versions
-                // (We keep explicit vars; if you prefer, replace above compute block to write directly.)
-                // But here we’ll just shadow the names:
-                // NOTE: For clarity, we rewrite locals:
-                // (Compiler should optimize this away.)
-                *(uint32_t *)&i0_curr = _i0;
-                *(uint32_t *)&i1_curr = _i1;
-                *(bool *)&active_curr = _active;
+                // Advance to next ticket in the chunk (contiguous)
+                j_chunk++;
+                if (j_chunk == J_total) {
+                    j_chunk = 0;
+                    blk_id++;
+                    w = w_lane_base; // reset twiddle on wrap
+                } else {
+                    w = MontgomeryMul(grid, block, debugCombo, w, w_strideW); // cheap update
+                }
             }
         }
 
+        // Single global barrier per stage for correctness
         grid.sync();
     }
 }

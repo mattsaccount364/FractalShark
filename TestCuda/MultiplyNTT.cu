@@ -878,7 +878,6 @@ NTTRadix2_GridStride(uint64_t *shared_data,
     constexpr auto TS_log = 9u;
     const size_t gsize = grid.size();
     const size_t grank = grid.thread_rank();
-    const uint32_t lane = static_cast<uint32_t>(grank % W);
 
     uint32_t S0 = 0;
     {

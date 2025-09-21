@@ -1119,10 +1119,10 @@ void TestCoreMultiply(
         };
 
     // Perform the calculation on the using MPIR
-    HpSharkFloat<SharkFloatParams> gpuResultXX{};
-    HpSharkFloat<SharkFloatParams> gpuResultXY1{};
-    HpSharkFloat<SharkFloatParams> gpuResultXY2{};
-    HpSharkFloat<SharkFloatParams> gpuResultYY{};
+    auto gpuResultXX  = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+    auto gpuResultXY1 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+    auto gpuResultXY2 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+    auto gpuResultYY  = std::make_unique<HpSharkFloat<SharkFloatParams>>();
 
     mpf_t mpfHostResultXX;
     mpf_t mpfHostResultXY1;
@@ -1161,17 +1161,17 @@ void TestCoreMultiply(
     if constexpr (SharkTestGpu) {
         BenchmarkTimer timer;
 
-        HpSharkComboResults<SharkFloatParams> combo;
-        combo.A = aNum;
-        combo.B = bNum;
+        auto combo = std::make_unique<HpSharkComboResults<SharkFloatParams>>();
+        combo->A = aNum;
+        combo->B = bNum;
 
         if constexpr (SharkEnableMultiplyFFT2Kernel) {
-            InvokeMultiplyNTTKernelCorrectness<SharkFloatParams>(timer, combo, &debugGpuCombo);
+            InvokeMultiplyNTTKernelCorrectness<SharkFloatParams>(timer, *combo, &debugGpuCombo);
         }
 
-        gpuResultXX = combo.ResultX2;
-        gpuResultXY1 = combo.Result2XY;
-        gpuResultYY = combo.ResultY2;
+        *gpuResultXX = combo->ResultX2;
+        *gpuResultXY1 = combo->Result2XY;
+        *gpuResultYY = combo->ResultY2;
 
         Tests.AddTime(testNum, timer.GetDeltaInMs());
 
@@ -1210,13 +1210,13 @@ void TestCoreMultiply(
         constexpr auto numTerms = 2;
 
         testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::MultiplyKaratsubaV2>(
-            testNum, numTerms, "GPU", mpfHostResultXX, gpuResultXX);
+            testNum, numTerms, "GPU", mpfHostResultXX, *gpuResultXX);
 
         testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::MultiplyKaratsubaV2>(
-            testNum, numTerms, "GPU", mpfHostResultXY1, gpuResultXY1);
+            testNum, numTerms, "GPU", mpfHostResultXY1, *gpuResultXY1);
 
         testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::MultiplyKaratsubaV2>(
-            testNum, numTerms, "GPU", mpfHostResultYY, gpuResultYY);
+            testNum, numTerms, "GPU", mpfHostResultYY, *gpuResultYY);
     }
 
     // Clean up MPIR variables
@@ -2371,7 +2371,8 @@ bool TestAllBinaryOp(int testBase) {
 }
 
 template<Operator sharkOperator>
-bool TestBinaryOperatorPerf([[maybe_unused]] int testBase, int numIters, [[maybe_unused]] int internalTestLoopCount) {
+bool TestBinaryOperatorPerf([[maybe_unused]] int testBase, [[maybe_unused]] int numIters, [[maybe_unused]] int internalTestLoopCount)
+{
 #if (ENABLE_BASIC_CORRECTNESS == 1) || (ENABLE_BASIC_CORRECTNESS == 3)
     TestPerf<TestPerSharkParams1, sharkOperator>(testBase + 1, internalTestLoopCount);
     TestPerf<TestPerSharkParams2, sharkOperator>(testBase + 2, internalTestLoopCount);

@@ -293,8 +293,7 @@ static constexpr auto LowPrec = 32;
 //using Test8x1SharkParams = GenericSharkFloatParams<128, 128, 8192, 9>;
 //using Test8x1SharkParams = GenericSharkFloatParams<128, 108, 7776, 9>;
 //using Test8x1SharkParams = GenericSharkFloatParams<8, 128, 1024, 9>;
-//using Test8x1SharkParams = GenericSharkFloatParams<8, 1>; // Use for ENABLE_BASIC_CORRECTNESS==1
-using Test8x1SharkParams = GenericSharkFloatParams<32, 2>;
+using Test8x1SharkParams = GenericSharkFloatParams<8, 1>; // Use for ENABLE_BASIC_CORRECTNESS==1
 using Test4x36SharkParams = GenericSharkFloatParams<4, 6, 32>;
 using Test4x12SharkParams = GenericSharkFloatParams<3, 18, 50>;
 using Test4x9SharkParams = GenericSharkFloatParams<5, 12, 80>;

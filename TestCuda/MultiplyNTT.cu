@@ -744,11 +744,10 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
     constexpr bool DoB = (OneTwoThree != Multiway::OneWay);
     constexpr bool DoC = (OneTwoThree == Multiway::ThreeWay);
 
-    const uint32_t remaining = (stages > 0) ? (stages - 0) : 0u;
+    const uint32_t remaining = (stages > 0u) ? (stages - 0u) : 0u;
     const uint32_t S1 = (remaining < TS_log) ? remaining : TS_log;
-    if (S1 == 0u) {
+    if (S1 == 0u)
         return 0u;
-    }
 
     const uint64_t one_m = ToMontgomery(grid, block, debugCombo, 1ull);
 
@@ -764,16 +763,13 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
         const uint32_t tile_len = (gbase + TS <= N) ? TS : (N - gbase);
 
         // ---- Load global -> shared (contiguous) ----
-        // Load A tile only (keep B,C in global)
         if constexpr (OneTwoThree == Multiway::OneWay || OneTwoThree == Multiway::TwoWay ||
                       OneTwoThree == Multiway::ThreeWay) {
             cg::memcpy_async(block, sA, &A[gbase], tile_len * sizeof(uint64_t));
         }
-        
         if constexpr (OneTwoThree == Multiway::TwoWay || OneTwoThree == Multiway::ThreeWay) {
             cg::memcpy_async(block, sB, &B[gbase], tile_len * sizeof(uint64_t));
         }
-
         if constexpr (OneTwoThree == Multiway::ThreeWay) {
             cg::memcpy_async(block, sC, &C[gbase], tile_len * sizeof(uint64_t));
         }
@@ -783,51 +779,62 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
         const uint32_t last_warp_stage = 0;
 
         // ---- Phase 1b: remaining stages in shared (classic butterfly) ----
-        // Cross-warp reads happen here, so we use block.sync() between stages.
         for (uint32_t s = last_warp_stage + 1u; s < S1; ++s) {
             const uint32_t m = 1u << (s + 1u);
             const uint32_t half = m >> 1;
             const uint64_t w_m = stage_base[s];
 
             const uint32_t P = tile_len >> 1;
-            for (uint32_t p = threadIdx.x; p < P; p += blockDim.x) {
+            const uint32_t d = blockDim.x;
+
+            for (uint32_t p = threadIdx.x; p < P; p += d) {
                 const uint32_t group = p / half;
                 const uint32_t j = p - group * half; // p % half
                 const uint32_t i0 = group * m + j;
                 const uint32_t i1 = i0 + half;
 
-                const uint64_t wj = MontgomeryPow(grid, block, debugCombo, w_m, j);
+                // 1) Compute twiddle once
+                const uint64_t wj = (j == 0u) ? one_m : MontgomeryPow(grid, block, debugCombo, w_m, j);
 
-                // A
-                {
-                    const uint64_t U = sA[i0];
-                    const uint64_t V = sA[i1];
-                    const uint64_t ttw = MontgomeryMul(grid, block, debugCombo, V, wj);
-                    sA[i0] = AddP(U, ttw);
-                    sA[i1] = SubP(U, ttw);
-                }
+                // 2) Preload all operands from shared (independent of wj)
+                const uint64_t U_A = sA[i0];
+                const uint64_t V_A = sA[i1];
+
+                uint64_t U_B = 0, V_B = 0, U_C = 0, V_C = 0;
                 if constexpr (DoB) {
-                    const uint64_t U = sB[i0];
-                    const uint64_t V = sB[i1];
-                    const uint64_t ttw = MontgomeryMul(grid, block, debugCombo, V, wj);
-                    sB[i0] = AddP(U, ttw);
-                    sB[i1] = SubP(U, ttw);
+                    U_B = sB[i0];
+                    V_B = sB[i1];
                 }
                 if constexpr (DoC) {
-                    const uint64_t U = sC[i0];
-                    const uint64_t V = sC[i1];
-                    const uint64_t ttw = MontgomeryMul(grid, block, debugCombo, V, wj);
-                    sC[i0] = AddP(U, ttw);
-                    sC[i1] = SubP(U, ttw);
+                    U_C = sC[i0];
+                    V_C = sC[i1];
+                }
+
+                // 3) LAUNCH ALL MULS FIRST (don’t consume their results yet)
+                const uint64_t ttw_A = MontgomeryMul(grid, block, debugCombo, V_A, wj);
+                uint64_t ttw_B = 0, ttw_C = 0;
+                if constexpr (DoB)
+                    ttw_B = MontgomeryMul(grid, block, debugCombo, V_B, wj);
+                if constexpr (DoC)
+                    ttw_C = MontgomeryMul(grid, block, debugCombo, V_C, wj);
+
+                // 4) Now CONSUME results (use time while the other muls are still retiring)
+                sA[i0] = AddP(U_A, ttw_A);
+                sA[i1] = SubP(U_A, ttw_A);
+
+                if constexpr (DoB) {
+                    sB[i0] = AddP(U_B, ttw_B);
+                    sB[i1] = SubP(U_B, ttw_B);
+                }
+                if constexpr (DoC) {
+                    sC[i0] = AddP(U_C, ttw_C);
+                    sC[i1] = SubP(U_C, ttw_C);
                 }
             }
             block.sync();
         }
 
         // ---- Store shared -> global ----
-        
-        // If all stages were done in the warp-level path, we still need a block barrier
-        // before the final store to ensure all warps have finished updating sA/sB/sC.
         const bool all_done_in_warp = (last_warp_stage + 1u == S1);
         if (all_done_in_warp) {
             block.sync();

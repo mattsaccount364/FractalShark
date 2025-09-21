@@ -6,7 +6,6 @@
 #include "Tests.h"
 #include "HpSharkFloat.cuh"
 #include "Add.cuh"
-#include "MultiplyKaratsuba.cuh"
 #include "MultiplyNTT.cuh"
 #include "HpSharkReferenceOrbit.cuh"
 
@@ -632,20 +631,6 @@ void InvokeAddKernelCorrectness(
 #define ExplicitlyInstantiateAdd(SharkFloatParams) ;
 #endif
 
-#ifdef ENABLE_MULTIPLY_KARATSUBA_KERNEL
-#define ExplicitlyInstantiateMultiply(SharkFloatParams) \
-    template void InvokeMultiplyKernelPerf<SharkFloatParams>( \
-        BenchmarkTimer &timer, \
-        HpSharkComboResults<SharkFloatParams> &combo, \
-        uint64_t numIters); \
-    template void InvokeMultiplyKaratsubaKernelCorrectness<SharkFloatParams>( \
-        BenchmarkTimer &timer, \
-        HpSharkComboResults<SharkFloatParams> &combo, \
-        DebugGpuCombo *debugCombo);
-#else
-#define ExplicitlyInstantiateMultiply(SharkFloatParams) ;
-#endif
-
 #ifdef ENABLE_MULTIPLY_FFT2_KERNEL
 #define ExplicitlyInstantiateMultiplyNTT(SharkFloatParams)                                                 \
     template void InvokeMultiplyNTTKernelPerf<SharkFloatParams>(                                           \
@@ -675,7 +660,6 @@ void InvokeAddKernelCorrectness(
 
 #define ExplicitlyInstantiate(SharkFloatParams) \
     ExplicitlyInstantiateAdd(SharkFloatParams) \
-    ExplicitlyInstantiateMultiply(SharkFloatParams) \
     ExplicitlyInstantiateMultiplyNTT(SharkFloatParams) \
     ExplicitlyInstantiateHpSharkReference(SharkFloatParams)
 

@@ -20,7 +20,6 @@
 #include <assert.h>
 
 #include "Add.cuh"
-#include "MultiplyKaratsuba.cuh"
 #include "MultiplyNTT.cuh"
 
 #define NOMINMAX
@@ -1166,12 +1165,7 @@ void TestCoreMultiply(
         combo.A = aNum;
         combo.B = bNum;
 
-        if constexpr (SharkEnableMultiplyKernel) {
-            InvokeMultiplyKaratsubaKernelCorrectness<SharkFloatParams>(
-                timer,
-                combo,
-                &debugGpuCombo);
-        } else if constexpr (SharkEnableMultiplyFFT2Kernel) {
+        if constexpr (SharkEnableMultiplyFFT2Kernel) {
             InvokeMultiplyNTTKernelCorrectness<SharkFloatParams>(timer, combo, &debugGpuCombo);
         }
 
@@ -2377,7 +2371,7 @@ bool TestAllBinaryOp(int testBase) {
 }
 
 template<Operator sharkOperator>
-bool TestBinaryOperatorPerf([[maybe_unused]] int testBase, int numIters, int internalTestLoopCount) {
+bool TestBinaryOperatorPerf([[maybe_unused]] int testBase, int numIters, [[maybe_unused]] int internalTestLoopCount) {
 #if (ENABLE_BASIC_CORRECTNESS == 1) || (ENABLE_BASIC_CORRECTNESS == 3)
     TestPerf<TestPerSharkParams1, sharkOperator>(testBase + 1, internalTestLoopCount);
     TestPerf<TestPerSharkParams2, sharkOperator>(testBase + 2, internalTestLoopCount);
@@ -2406,24 +2400,6 @@ bool TestBinaryOperatorPerf([[maybe_unused]] int testBase, int numIters, int int
 #define ADD_KERNEL(SharkFloatParams) ;
 #endif
 
-#ifdef ENABLE_MULTIPLY_KARATSUBA_KERNEL
-#define MULTIPLY_KERNEL_KARATSUBA(SharkFloatParams) \
-    template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyKaratsubaV2>(int testBase); \
-    template bool TestBinaryOperatorPerf<Operator::MultiplyKaratsubaV2>(                                \
-        int testBase, int numIters, int internalTestLoopCount);
-#else
-#define MULTIPLY_KERNEL_KARATSUBA(SharkFloatParams) ;
-#endif
-
-#ifdef ENABLE_MULTIPLY_FFT_KERNEL
-#define MULTIPLY_KERNEL_FFT(SharkFloatParams) \
-    template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyFFT>(int testBase); \
-    template bool TestBinaryOperatorPerf<Operator::MultiplyFFT>(                                        \
-        int testBase, int numIters, int internalTestLoopCount);
-#else
-#define MULTIPLY_KERNEL_FFT(SharkFloatParams) ;
-#endif
-
 #ifdef ENABLE_MULTIPLY_FFT2_KERNEL
 #define MULTIPLY_KERNEL_FFT2(SharkFloatParams)                                                            \
     template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyFFT2>(int testBase);               \
@@ -2444,8 +2420,6 @@ bool TestBinaryOperatorPerf([[maybe_unused]] int testBase, int numIters, int int
 
 #define ExplicitlyInstantiate(SharkFloatParams) \
     ADD_KERNEL(SharkFloatParams) \
-    MULTIPLY_KERNEL_KARATSUBA(SharkFloatParams) \
-    MULTIPLY_KERNEL_FFT(SharkFloatParams) \
     MULTIPLY_KERNEL_FFT2(SharkFloatParams) \
     REFERENCE_KERNEL(SharkFloatParams)
 

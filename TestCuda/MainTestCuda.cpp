@@ -96,28 +96,6 @@ bool CorrectnessTests() {
         }
     }
 
-    if constexpr (SharkEnableMultiplyKernel) {
-        testBase = 6000;
-        res = TestAllBinaryOp<TestSharkParams, Operator::MultiplyKaratsubaV2>(testBase);
-        if (!res) {
-            auto q = PressKey();
-            if (q == 'q') {
-                return false;
-            }
-        }
-    }
-
-    if constexpr (SharkEnableMultiplyFFTKernel) {
-        testBase = 6000;
-        res = TestAllBinaryOp<TestSharkParams, Operator::MultiplyFFT>(testBase);
-        if (!res) {
-            auto q = PressKey();
-            if (q == 'q') {
-                return false;
-            }
-        }
-    }
-
     if constexpr (SharkEnableMultiplyFFT2Kernel) {
         testBase = 6000;
         res = TestAllBinaryOp<TestSharkParams, Operator::MultiplyFFT2>(testBase);
@@ -254,29 +232,6 @@ int main(int /*argc*/, char * /*argv*/[]) {
     if constexpr (SharkEnableAddKernel) {
         testBase = 10000;
         res = TestBinaryOperatorPerf<Operator::Add>(testBase, numIters, internalTestLoopCount);
-        if (!res) {
-            auto q = PressKey();
-            if (q == 'q') {
-                return 0;
-            }
-        }
-    }
-
-    if constexpr (SharkEnableMultiplyKernel) {
-        testBase = 11000;
-        res = TestBinaryOperatorPerf<Operator::MultiplyKaratsubaV2>(
-            testBase, numIters, internalTestLoopCount);
-        if (!res) {
-            auto q = PressKey();
-            if (q == 'q') {
-                return 0;
-            }
-        }
-    }
-
-    if constexpr (SharkEnableMultiplyFFTKernel) {
-        testBase = 12000;
-        res = TestBinaryOperatorPerf<Operator::MultiplyFFT2>(testBase, numIters, internalTestLoopCount);
         if (!res) {
             auto q = PressKey();
             if (q == 'q') {

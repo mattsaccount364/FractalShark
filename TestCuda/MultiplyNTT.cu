@@ -1483,7 +1483,8 @@ EraseCurrentDebugState(RecordIt record,
     constexpr auto RecursionDepth = 0;
     constexpr auto CallIndex = 0;
     constexpr auto curPurpose = static_cast<int>(Purpose);
-    debugStates[curPurpose].Erase(record, grid, block, Purpose, RecursionDepth, CallIndex);
+    debugStates[curPurpose].Erase(
+        record, grid, block, Purpose, RecursionDepth, CallIndex);
 }
 
 template <class SharkFloatParams, DebugStatePurpose Purpose, typename ArrayType>

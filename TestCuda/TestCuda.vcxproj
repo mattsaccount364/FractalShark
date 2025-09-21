@@ -140,9 +140,6 @@
     <CudaCompile Include="HpSharkFloat.cu" />
     <CudaCompile Include="HpSharkReferenceOrbit.cu" />
     <CudaCompile Include="KernelInvoke.cu" />
-    <ClInclude Include="MultiplyKaratsuba.cu">
-      <FileType>Document</FileType>
-    </ClInclude>
     <CudaCompile Include="Archived\MultiplyKaratsubaV1.cu">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
@@ -153,7 +150,6 @@
     </CudaCompile>
     <CudaCompile Include="MultiplyNTT.cu" />
     <CudaCompile Include="MultiplyNTTTestKernels.cu" />
-    <CudaCompile Include="MultiplyTestKernels.cu" />
     <CudaCompile Include="NullKernel.cu" />
     <ClCompile Include="MainTestCuda.cpp" />
   </ItemGroup>
@@ -170,7 +166,6 @@
     <ClInclude Include="HpSharkFloat.cuh" />
     <ClInclude Include="KernelInvoke.cuh" />
     <ClInclude Include="MainTestCuda.h" />
-    <ClInclude Include="MultiplyKaratsuba.cuh" />
     <ClInclude Include="MultiplyInternal.cuh" />
     <ClInclude Include="NullKernel.cuh" />
     <ClInclude Include="ReferenceAdd.h" />

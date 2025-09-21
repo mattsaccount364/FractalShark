@@ -1,4 +1,4 @@
-#include "MultiplyKaratsuba.cu"
+#include "MultiplyNTT.cu"
 #include "Add.cu"
 
 template<class SharkFloatParams>
@@ -14,7 +14,7 @@ __device__ void ReferenceHelper (
     // B = Z_imaginary
     //
     
-    MultiplyHelperKaratsubaV2Separates<SharkFloatParams>(
+    MultiplyHelperNTTV2Separates<SharkFloatParams>(
         &reference->Multiply.A,
         &reference->Multiply.B,
         &reference->Multiply.ResultX2,

@@ -114,6 +114,12 @@
     </CudaLink>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <CudaCompile Include="KernelInvokeAddCorrectness.cu" />
+    <CudaCompile Include="KernelInvokeAddPerf.cu" />
+    <CudaCompile Include="KernelInvokeNTTCorrectness.cu" />
+    <CudaCompile Include="KernelInvokeNTTPerf.cu" />
+    <CudaCompile Include="KernelInvokeReferencePerf.cu" />
+    <CudaCompile Include="KernelInvokeReferenceCorrectness.cu" />
     <CudaCompile Include="MultiplyNTTCudaSetup.cu">
       <FileType>Document</FileType>
     </CudaCompile>
@@ -122,6 +128,7 @@
     <ClCompile Include="ReferenceNTT2.cpp" />
     <ClCompile Include="TestVerbose.cpp" />
     <ClInclude Include="HpSharkReferenceOrbit.cuh" />
+    <ClInclude Include="KernelInvokeInternal.cuh" />
     <ClInclude Include="MontgomeryCoreConstexpr.cuh" />
     <ClInclude Include="MultiplyHelperGlobalUnaligned.cuh" />
     <ClInclude Include="MultiplyHelperVectorLoads.cuh" />

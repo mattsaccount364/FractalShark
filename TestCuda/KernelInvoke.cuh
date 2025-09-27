@@ -31,12 +31,6 @@ void InvokeHpSharkReferenceKernelPerf(
     HpSharkReferenceResults<SharkFloatParams> &combo,
     uint64_t numIters);
 
-template<class SharkFloatParams>
-void InvokeMultiplyKernelPerf(
-    BenchmarkTimer &timer,
-    HpSharkComboResults<SharkFloatParams> &combo,
-    uint64_t numIters);
-
 template <class SharkFloatParams>
 void InvokeMultiplyNTTKernelPerf(BenchmarkTimer& timer,
                               HpSharkComboResults<SharkFloatParams>& combo,
@@ -54,13 +48,6 @@ void InvokeHpSharkReferenceKernelCorrectness(
     BenchmarkTimer &timer,
     HpSharkReferenceResults<SharkFloatParams> &combo,
     DebugGpuCombo *debugCombo);
-
-template<class SharkFloatParams>
-void InvokeMultiplyKaratsubaKernelCorrectness(
-    BenchmarkTimer &timer,
-    HpSharkComboResults<SharkFloatParams> &combo,
-    DebugGpuCombo *debugCombo);
-
 
 
 template <class SharkFloatParams>

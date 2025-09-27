@@ -15,6 +15,7 @@ __device__ void ReferenceHelper (
     //
     
     MultiplyHelperNTTV2Separates<SharkFloatParams>(
+        reference->Multiply.Roots,
         &reference->Multiply.A,
         &reference->Multiply.B,
         &reference->Multiply.ResultX2,
@@ -74,7 +75,7 @@ __global__ void HpSharkReferenceGpuLoop(
 template<class SharkFloatParams>
 void ComputeHpSharkReferenceGpu(void *kernelArgs[]) {
 
-    constexpr auto sharedAmountBytes = CalculateMultiplySharedMemorySize<SharkFloatParams>();
+    constexpr auto sharedAmountBytes = CalculateNTTSharedMemorySize<SharkFloatParams>();
 
     if constexpr (SharkCustomStream) {
         cudaFuncSetAttribute(
@@ -112,7 +113,7 @@ void ComputeHpSharkReferenceGpu(void *kernelArgs[]) {
 template<class SharkFloatParams>
 void ComputeHpSharkReferenceGpuLoop(cudaStream_t &stream, void *kernelArgs[]) {
 
-    constexpr auto sharedAmountBytes = CalculateMultiplySharedMemorySize<SharkFloatParams>();
+    constexpr auto sharedAmountBytes = CalculateNTTSharedMemorySize<SharkFloatParams>();
 
     if constexpr (SharkCustomStream) {
         cudaFuncSetAttribute(

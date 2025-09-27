@@ -29,8 +29,8 @@ static constexpr bool SharkDebug = false;
 // Comment out to disable specific kernels
 //#define ENABLE_CONVERSION_TESTS
 //#define ENABLE_ADD_KERNEL
-#define ENABLE_MULTIPLY_FFT2_KERNEL
-//#define ENABLE_REFERENCE_KERNEL
+//#define ENABLE_MULTIPLY_FFT2_KERNEL
+#define ENABLE_REFERENCE_KERNEL
 
 // 0 = just one correctness test, intended for fast re-compile of a specific failure
 // 1 = all basic correctness tests/all basic perf tests
@@ -205,7 +205,7 @@ struct GenericSharkFloatParams {
 
 // This one should account for maximum call index, e.g. if we generate 500 calls
 // recursively then we need this to be at 500.
-static constexpr auto ScratchMemoryCopies = 256;
+static constexpr auto ScratchMemoryCopies = 256llu;
 
 // Number of arrays of digits on each frame
 static constexpr auto ScratchMemoryArraysForMultiply = 96;

@@ -53,6 +53,15 @@ void InvokeHpSharkReferenceKernelPerf(
     cudaMemset(&comboGpu->Multiply.Result2XY, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
     cudaMemset(&comboGpu->Multiply.ResultY2, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
 
+    // Build NTT plan + roots exactly like correctness path
+    {
+        SharkNTT::RootTables NTTRoots;
+        SharkNTT::BuildRoots<SharkFloatParams>(
+            SharkFloatParams::NTTPlan.N, SharkFloatParams::NTTPlan.stages, NTTRoots);
+
+        CopyRootsToCuda<SharkFloatParams>(comboGpu->Multiply.Roots, NTTRoots);
+    }
+
     void *kernelArgs[] = {
         (void *)&comboGpu,
         (void *)&numIters,
@@ -102,6 +111,9 @@ void InvokeHpSharkReferenceKernelPerf(
     }
 
     cudaMemcpy(&combo, comboGpu, sizeof(HpSharkReferenceResults<SharkFloatParams>), cudaMemcpyDeviceToHost);
+
+    // Roots were device-allocated in CopyRootsToCuda; destroy like correctness does
+    SharkNTT::DestroyRoots<SharkFloatParams>(true, comboGpu->Multiply.Roots);
 
     cudaFree(comboGpu);
     cudaFree(d_tempProducts);
@@ -362,6 +374,15 @@ void InvokeHpSharkReferenceKernelCorrectness(
     cudaMemset(&comboGpu->Multiply.Result2XY, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
     cudaMemset(&comboGpu->Multiply.ResultY2, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
 
+    // Build NTT plan + roots exactly like correctness path
+    {
+        SharkNTT::RootTables NTTRoots;
+        SharkNTT::BuildRoots<SharkFloatParams>(
+            SharkFloatParams::NTTPlan.N, SharkFloatParams::NTTPlan.stages, NTTRoots);
+
+        CopyRootsToCuda<SharkFloatParams>(comboGpu->Multiply.Roots, NTTRoots);
+    }
+
     void *kernelArgs[] = {
         (void *)&comboGpu,
         (void *)&d_tempProducts
@@ -393,6 +414,9 @@ void InvokeHpSharkReferenceKernelCorrectness(
                 cudaMemcpyDeviceToHost);
         }
     }
+
+    // Roots were device-allocated in CopyRootsToCuda; destroy like correctness does
+    SharkNTT::DestroyRoots<SharkFloatParams>(true, comboGpu->Multiply.Roots);
 
     cudaFree(comboGpu);
     cudaFree(d_tempProducts);
@@ -538,10 +562,7 @@ InvokeMultiplyNTTKernelCorrectness(BenchmarkTimer& timer,
         }
     }
 
-
-    {
-        SharkNTT::DestroyRoots<SharkFloatParams>(true, comboGpu->Roots);
-    }
+    SharkNTT::DestroyRoots<SharkFloatParams>(true, comboGpu->Roots);
 
     cudaFree(comboGpu);
     cudaFree(d_tempProducts);

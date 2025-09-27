@@ -19,10 +19,6 @@
     <ClInclude Include="BLA.h" />
     <ClInclude Include="BLAS.h" />
     <ClInclude Include="Callstacks.h" />
-    <ClInclude Include="CudaDblflt.h" />
-    <ClInclude Include="dbldbl.cuh" />
-    <ClInclude Include="dblflt.cuh" />
-    <ClInclude Include="dblflt.h" />
     <ClInclude Include="DrawThreadSync.h" />
     <ClInclude Include="Exceptions.h" />
     <ClInclude Include="FloatComplex.h" />
@@ -33,12 +29,9 @@
     <ClInclude Include="GPU_LAReference.h" />
     <ClInclude Include="GPU_Render.h" />
     <ClInclude Include="GPU_Types.h" />
-    <ClInclude Include="HDRFloat.h" />
-    <ClInclude Include="HDRFloatComplex.h" />
     <ClInclude Include="heap_allocator\include\heap.h" />
     <ClInclude Include="heap_allocator\include\HeapCpp.h" />
     <ClInclude Include="heap_allocator\include\llist.h" />
-    <ClInclude Include="HighPrecision.h" />
     <ClInclude Include="ImaginaOrbit.h" />
     <ClInclude Include="Introspection.h" />
     <ClInclude Include="ItersMemoryContainer.h" />
@@ -48,7 +41,6 @@
     <ClInclude Include="LAReference.h" />
     <ClInclude Include="LargeCoords.h" />
     <ClInclude Include="LAstep.h" />
-    <ClInclude Include="MpirSerialization.h" />
     <ClInclude Include="OpenGLContext.h" />
     <ClInclude Include="OrbitParameterPack.h" />
     <ClInclude Include="PerturbationResults.h" />
@@ -84,14 +76,12 @@
     <ClCompile Include="Exceptions.cpp" />
     <ClCompile Include="Fractal.cpp" />
     <ClCompile Include="CrummyTest.cpp" />
-    <ClCompile Include="HDRFloat.cpp" />
     <ClCompile Include="heap_allocator\HeapCpp.cpp" />
     <ClCompile Include="heap_allocator\llist.cpp" />
     <ClCompile Include="ImaginaOrbit.cpp" />
     <ClCompile Include="ItersMemoryContainer.cpp" />
     <ClCompile Include="LAParameters.cpp" />
     <ClCompile Include="LAReference.cpp" />
-    <ClCompile Include="MpirSerialization.cpp" />
     <ClCompile Include="OpenGLContext.cpp" />
     <ClCompile Include="OrbitParameterPack.cpp" />
     <ClCompile Include="PerturbationResults.cpp" />
@@ -148,7 +138,7 @@
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions> _CRT_SECURE_NO_WARNINGS;WIN32;WIN64;SHARK_ALLOC=1;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalIncludeDirectories>..;..\mpir\lib\x64\Debug;..\WPngImage;..\QuadDouble\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..;..\HpSharkFloatLib;..\mpir\lib\x64\Debug;..\WPngImage;..\QuadDouble\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
@@ -171,7 +161,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions> _CRT_SECURE_NO_WARNINGS;WIN32;WIN64;SHARK_ALLOC=1;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalIncludeDirectories>..;..\mpir\lib\x64\Release;..\WPngImage;..\QuadDouble\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..;..\HpSharkFloatLib;..\mpir\lib\x64\Release;..\WPngImage;..\QuadDouble\inc;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpplatest</LanguageStandard>
       <EnableEnhancedInstructionSet>AdvancedVectorExtensions2</EnableEnhancedInstructionSet>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>

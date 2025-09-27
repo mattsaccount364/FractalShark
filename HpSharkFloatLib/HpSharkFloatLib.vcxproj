@@ -24,13 +24,21 @@
     <ClInclude Include="Add_ABC.cuh" />
     <ClInclude Include="Add_DE.cuh" />
     <ClInclude Include="CudaCrap.h" />
+    <ClInclude Include="CudaDblflt.h" />
+    <ClInclude Include="dbldbl.cuh" />
+    <ClInclude Include="dblflt.cuh" />
+    <ClInclude Include="dblflt.h" />
     <ClInclude Include="DebugChecksum.cuh" />
     <ClInclude Include="DebugChecksumHost.h" />
     <ClInclude Include="DebugStateRaw.h" />
     <ClInclude Include="ExplicitInstantiate.h" />
+    <ClInclude Include="HDRFloat.h" />
+    <ClInclude Include="HDRFloatComplex.h" />
+    <ClInclude Include="HighPrecision.h" />
     <ClInclude Include="HpSharkFloat.cuh" />
     <ClInclude Include="HpSharkReferenceOrbit.cuh" />
     <ClInclude Include="MontgomeryCoreConstexpr.cuh" />
+    <ClInclude Include="MpirSerialization.h" />
     <ClInclude Include="MultiplyNTT.cuh" />
     <ClInclude Include="MultiplyNTTCudaSetup.h" />
     <ClInclude Include="MultiplyNTTPlanBuilder.cuh" />
@@ -39,6 +47,8 @@
     <ClInclude Include="ThreeWayMagnitude.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="HDRFloat.cpp" />
+    <ClCompile Include="MpirSerialization.cpp" />
     <ClCompile Include="TestVerbose.cpp" />
     <ClCompile Include="WorkaroundVcxAnnoyingCudaBug.cpp" />
   </ItemGroup>

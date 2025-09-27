@@ -4,6 +4,7 @@
 #include <math.h>
 #include <type_traits>
 #include <fstream>
+#include <format>
 
 #include "HighPrecision.h"
 #include "CudaDblflt.h"

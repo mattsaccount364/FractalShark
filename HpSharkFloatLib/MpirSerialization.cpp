@@ -1,4 +1,3 @@
-#include "stdafx.h"
 #include "MpirSerialization.h"
 
 namespace MpirSerialization {

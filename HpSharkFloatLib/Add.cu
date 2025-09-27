@@ -1,8 +1,4 @@
 ﻿#include "HpSharkFloat.cuh"
-#include "BenchmarkTimer.h"
-#include "TestTracker.h"
-#include "KernelInvoke.cuh"
-#include "Tests.h"
 #include "DebugChecksum.cuh"
 
 #include <cuda.h>

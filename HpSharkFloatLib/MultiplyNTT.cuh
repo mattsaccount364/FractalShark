@@ -7,8 +7,7 @@ template <class SharkFloatParams> struct HpSharkFloat;
 
 template <class SharkFloatParams> struct HpSharkComboResults;
 
-#include "KernelInvoke.cuh"
-#include "Tests.h"
+//#include "KernelInvoke.cuh"
 
 template <class SharkFloatParams> void ComputeMultiplyNTTGpu(void* kernelArgs[]);
 

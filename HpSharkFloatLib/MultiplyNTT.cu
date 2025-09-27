@@ -4,7 +4,6 @@
 #include <curand.h>
 #include <curand_kernel.h>
 
-#include "BenchmarkTimer.h"
 #include "DebugChecksum.cuh"
 #include "HpSharkFloat.cuh"
 

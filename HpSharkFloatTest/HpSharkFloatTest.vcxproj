@@ -12,8 +12,9 @@
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{7DB056B4-D4D1-4273-872C-37EBEDD8AB0B}</ProjectGuid>
-    <RootNamespace>TestCuda</RootNamespace>
+    <RootNamespace>HpSharkFloatTest</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <ProjectName>HpSharkFloatTest</ProjectName>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
@@ -54,7 +55,7 @@
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>WIN32;WIN64;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>..\mpir\lib\x64\Debug;%(AdditionalIncludeDirectories);$(CudaToolkitIncludeDir)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\mpir\lib\x64\Debug;..\HpSharkFloatLib;%(AdditionalIncludeDirectories);$(CudaToolkitIncludeDir)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
@@ -83,7 +84,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>WIN32;WIN64;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>..\mpir\lib\x64\Release;%(AdditionalIncludeDirectories);$(CudaToolkitIncludeDir)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\mpir\lib\x64\Release;..\HpSharkFloatLib;%(AdditionalIncludeDirectories);$(CudaToolkitIncludeDir)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
@@ -120,35 +121,11 @@
     <CudaCompile Include="KernelInvokeNTTPerf.cu" />
     <CudaCompile Include="KernelInvokeReferencePerf.cu" />
     <CudaCompile Include="KernelInvokeReferenceCorrectness.cu" />
-    <CudaCompile Include="MultiplyNTTCudaSetup.cu">
-      <FileType>Document</FileType>
-    </CudaCompile>
     <ClCompile Include="ReferenceAdd.cpp" />
     <ClCompile Include="ReferenceKaratsuba.cpp" />
     <ClCompile Include="ReferenceNTT2.cpp" />
-    <ClCompile Include="TestVerbose.cpp" />
-    <ClInclude Include="HpSharkReferenceOrbit.cuh" />
     <ClInclude Include="KernelInvokeInternal.cuh" />
-    <ClInclude Include="MontgomeryCoreConstexpr.cuh" />
-    <ClInclude Include="MultiplyHelperGlobalUnaligned.cuh" />
-    <ClInclude Include="MultiplyHelperVectorLoads.cuh" />
-    <ClInclude Include="MultiplyNTT.cuh" />
-    <ClInclude Include="MultiplyNTTCudaSetup.h" />
-    <ClInclude Include="MultiplyNTTPlanBuilder.cuh" />
-    <ClInclude Include="MultiplyNTTTestKernels.cuh" />
-    <ClInclude Include="NTTConstexprGenerator.h" />
     <ClInclude Include="ReferenceNTT2.h" />
-    <ClInclude Include="TestVerbose.h" />
-    <ClInclude Include="ThreeWayMagnitude.h" />
-    <ClInclude Include="Add.cu">
-      <FileType>Document</FileType>
-    </ClInclude>
-    <ClInclude Include="Add_ABC.cuh" />
-    <ClInclude Include="Add_DE.cuh" />
-    <CudaCompile Include="AddTestKernels.cu" />
-    <CudaCompile Include="HpSharkFloat.cu" />
-    <CudaCompile Include="HpSharkReferenceOrbit.cu" />
-    <CudaCompile Include="KernelInvoke.cu" />
     <CudaCompile Include="Archived\MultiplyKaratsubaV1.cu">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
@@ -157,25 +134,15 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </CudaCompile>
-    <CudaCompile Include="MultiplyNTT.cu" />
-    <CudaCompile Include="MultiplyNTTTestKernels.cu" />
     <CudaCompile Include="NullKernel.cu" />
     <ClCompile Include="MainTestCuda.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Add.cuh" />
     <ClInclude Include="Archived\ScaledKernels.cuh" />
     <ClInclude Include="BenchmarkTimer.h" />
     <ClInclude Include="Conversion.cuh" />
-    <ClInclude Include="CudaCrap.h" />
-    <ClInclude Include="DebugChecksum.cuh" />
-    <ClInclude Include="DebugChecksumHost.h" />
-    <ClInclude Include="DebugStateRaw.h" />
-    <ClInclude Include="ExplicitInstantiate.h" />
-    <ClInclude Include="HpSharkFloat.cuh" />
     <ClInclude Include="KernelInvoke.cuh" />
     <ClInclude Include="MainTestCuda.h" />
-    <ClInclude Include="MultiplyInternal.cuh" />
     <ClInclude Include="NullKernel.cuh" />
     <ClInclude Include="ReferenceAdd.h" />
     <ClInclude Include="ReferenceKaratsuba.h" />
@@ -198,6 +165,11 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="..\.clang-format" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\HpSharkFloatLib\HpSharkFloatLib.vcxproj">
+      <Project>{e46d1897-0f30-3518-ed23-26ed5ff35747}</Project>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

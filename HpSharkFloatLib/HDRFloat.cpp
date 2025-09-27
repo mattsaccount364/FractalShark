@@ -1,5 +1,7 @@
 #include "HDRFloat.h"
 
+#include <math.h>
+
 double twoPowExpDataDbl[2048];
 float twoPowExpDataFlt[256];
 double *twoPowExpDbl;

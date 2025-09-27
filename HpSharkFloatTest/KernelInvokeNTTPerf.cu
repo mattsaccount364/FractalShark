@@ -102,7 +102,7 @@ InvokeMultiplyNTTKernelPerf(BenchmarkTimer &timer,
 }
 
 
-#ifdef ENABLE_MULTIPLY_FFT2_KERNEL
+#ifdef ENABLE_MULTIPLY_NTT2_KERNEL
 #define ExplicitlyInstantiateMultiplyNTT(SharkFloatParams)                                              \
     template void InvokeMultiplyNTTKernelPerf<SharkFloatParams>(                                        \
         BenchmarkTimer & timer, HpSharkComboResults<SharkFloatParams> & combo, uint64_t numIters);

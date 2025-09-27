@@ -29,7 +29,7 @@ static constexpr bool SharkDebug = false;
 // Comment out to disable specific kernels
 //#define ENABLE_CONVERSION_TESTS
 //#define ENABLE_ADD_KERNEL
-//#define ENABLE_MULTIPLY_FFT2_KERNEL
+//#define ENABLE_MULTIPLY_NTT2_KERNEL
 #define ENABLE_REFERENCE_KERNEL
 
 // 0 = just one correctness test, intended for fast re-compile of a specific failure
@@ -55,10 +55,10 @@ static constexpr auto SharkEnableAddKernel = true;
 static constexpr auto SharkEnableAddKernel = false;
 #endif
 
-#ifdef ENABLE_MULTIPLY_FFT2_KERNEL
-static constexpr auto SharkEnableMultiplyFFT2Kernel = true;
+#ifdef ENABLE_MULTIPLY_NTT2_KERNEL
+static constexpr auto SharkEnableMultiplyNTT2Kernel = true;
 #else
-static constexpr auto SharkEnableMultiplyFFT2Kernel = false;
+static constexpr auto SharkEnableMultiplyNTT2Kernel = false;
 #endif
 
 #ifdef ENABLE_REFERENCE_KERNEL
@@ -75,7 +75,7 @@ static constexpr auto SharkEnableReferenceKernel = false;
 #endif
 
 static constexpr bool SharkTestGpu =
-    (SharkEnableAddKernel || SharkEnableMultiplyFFT2Kernel || SharkEnableReferenceKernel);
+    (SharkEnableAddKernel || SharkEnableMultiplyNTT2Kernel || SharkEnableReferenceKernel);
 //static constexpr bool SharkTestGpu = false;
 
 static constexpr auto SharkTestComicalThreadCount = 13;
@@ -154,7 +154,7 @@ template<
     int32_t pNumDigits = pThreadsPerBlock * pNumBlocks,
     int32_t pConvolutionLimit = 9>
 struct GenericSharkFloatParams {
-    static constexpr bool SharkUsePow2SizesOnly = SharkEnableMultiplyFFT2Kernel;
+    static constexpr bool SharkUsePow2SizesOnly = SharkEnableMultiplyNTT2Kernel;
 
     static constexpr int32_t GlobalThreadsPerBlock = pThreadsPerBlock;
     static constexpr int32_t GlobalNumBlocks = pNumBlocks;

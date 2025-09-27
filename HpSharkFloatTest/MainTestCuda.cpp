@@ -96,7 +96,7 @@ bool CorrectnessTests() {
         }
     }
 
-    if constexpr (SharkEnableMultiplyFFT2Kernel) {
+    if constexpr (SharkEnableMultiplyNTT2Kernel) {
         testBase = 6000;
         res = TestAllBinaryOp<TestSharkParams, Operator::MultiplyFFT2>(testBase);
         if (!res) {
@@ -240,7 +240,7 @@ int main(int /*argc*/, char * /*argv*/[]) {
         }
     }
 
-    if constexpr (SharkEnableMultiplyFFT2Kernel) {
+    if constexpr (SharkEnableMultiplyNTT2Kernel) {
         testBase = 13000;
         res = TestBinaryOperatorPerf<Operator::MultiplyFFT2>(testBase, numIters, internalTestLoopCount);
         if (!res) {

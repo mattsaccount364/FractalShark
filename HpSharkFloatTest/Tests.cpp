@@ -1165,7 +1165,7 @@ void TestCoreMultiply(
         combo->A = aNum;
         combo->B = bNum;
 
-        if constexpr (SharkEnableMultiplyFFT2Kernel) {
+        if constexpr (SharkEnableMultiplyNTT2Kernel) {
             InvokeMultiplyNTTKernelCorrectness<SharkFloatParams>(timer, *combo, &debugGpuCombo);
         }
 
@@ -2401,7 +2401,7 @@ bool TestBinaryOperatorPerf([[maybe_unused]] int testBase, [[maybe_unused]] int 
 #define ADD_KERNEL(SharkFloatParams) ;
 #endif
 
-#ifdef ENABLE_MULTIPLY_FFT2_KERNEL
+#ifdef ENABLE_MULTIPLY_NTT2_KERNEL
 #define MULTIPLY_KERNEL_FFT2(SharkFloatParams)                                                            \
     template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyFFT2>(int testBase);               \
     template bool TestBinaryOperatorPerf<Operator::MultiplyFFT2>(                                       \

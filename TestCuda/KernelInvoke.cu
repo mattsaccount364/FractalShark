@@ -214,15 +214,11 @@ InvokeMultiplyNTTKernelPerf(BenchmarkTimer& timer,
 
     // Build NTT plan + roots exactly like correctness path
     {
-        SharkNTT::PlanPrime NTTPlan;
         SharkNTT::RootTables NTTRoots;
-
-        NTTPlan =
-            SharkNTT::BuildPlanPrime(SharkFloatParams::GlobalNumUint32, /*b_hint=*/26, /*margin=*/2);
-        SharkNTT::BuildRoots<SharkFloatParams>(NTTPlan.N, NTTPlan.stages, NTTRoots);
+        SharkNTT::BuildRoots<SharkFloatParams>(
+            SharkFloatParams::NTTPlan.N, SharkFloatParams::NTTPlan.stages, NTTRoots);
 
         CopyRootsToCuda<SharkFloatParams>(comboGpu->Roots, NTTRoots);
-        cudaMemcpy(&comboGpu->Plan, &NTTPlan, sizeof(SharkNTT::PlanPrime), cudaMemcpyHostToDevice);
     }
 
     // Clear result slots (matches correctness init semantics)
@@ -498,16 +494,11 @@ InvokeMultiplyNTTKernelCorrectness(BenchmarkTimer& timer,
     cudaMemcpy(comboGpu, &combo, sizeof(HpSharkComboResults<SharkFloatParams>), cudaMemcpyHostToDevice);
 
     {
-        SharkNTT::PlanPrime NTTPlan;
         SharkNTT::RootTables NTTRoots;
-
-        NTTPlan =
-            SharkNTT::BuildPlanPrime(SharkFloatParams::GlobalNumUint32, /*b_hint=*/26, /*margin=*/2);
         SharkNTT::BuildRoots<SharkFloatParams>(
-            NTTPlan.N, NTTPlan.stages, NTTRoots);
+            SharkFloatParams::NTTPlan.N, SharkFloatParams::NTTPlan.stages, NTTRoots);
 
         CopyRootsToCuda<SharkFloatParams>(comboGpu->Roots, NTTRoots);
-        cudaMemcpy(&comboGpu->Plan, &NTTPlan, sizeof(SharkNTT::PlanPrime), cudaMemcpyHostToDevice);
     }
 
     if constexpr (!SharkTestInitCudaMemory) {

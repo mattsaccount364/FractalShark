@@ -1,5 +1,7 @@
 ﻿#pragma once
 
+#include <array>
+
 namespace SharkNTT {
 
 // Goldilocks prime p = 2^64 - 2^32 + 1

@@ -122,10 +122,12 @@
     <ClCompile Include="ReferenceNTT2.cpp" />
     <ClCompile Include="TestVerbose.cpp" />
     <ClInclude Include="HpSharkReferenceOrbit.cuh" />
+    <ClInclude Include="MontgomeryCoreConstexpr.cuh" />
     <ClInclude Include="MultiplyHelperGlobalUnaligned.cuh" />
     <ClInclude Include="MultiplyHelperVectorLoads.cuh" />
     <ClInclude Include="MultiplyNTT.cuh" />
     <ClInclude Include="MultiplyNTTCudaSetup.h" />
+    <ClInclude Include="MultiplyNTTPlanBuilder.cuh" />
     <ClInclude Include="MultiplyNTTTestKernels.cuh" />
     <ClInclude Include="NTTConstexprGenerator.h" />
     <ClInclude Include="ReferenceNTT2.h" />

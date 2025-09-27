@@ -20,39 +20,6 @@ PlanPrime::Print()
     }
 }
 
-uint32_t
-NextPow2U32(uint32_t x)
-{
-    if (x <= 1)
-        return 1u;
-    --x;
-    x |= x >> 1;
-    x |= x >> 2;
-    x |= x >> 4;
-    x |= x >> 8;
-    x |= x >> 16;
-    return x + 1;
-}
-
-uint32_t
-CeilDivU32(uint32_t a, uint32_t b)
-{
-    return (a + b - 1u) / b;
-}
-
-int
-CeilLog2U32(uint32_t x)
-{
-    int l = 0;
-    uint32_t v = x - 1;
-    while (v) {
-        v >>= 1;
-        ++l;
-    }
-    return l;
-}
-
-
 void
 Mul64Wide(uint64_t a, uint64_t b, uint64_t& lo, uint64_t& hi)
 {
@@ -174,62 +141,6 @@ MontgomeryPow(uint64_t a_mont, uint64_t e)
         e >>= 1;
     }
     return x;
-}
-
-PlanPrime
-BuildPlanPrime(int n32, int b_hint, int margin)
-{
-    using namespace SharkNTT;
-    PlanPrime plan{};
-    plan.ok = false;
-    plan.n32 = n32;
-
-    const uint64_t totalBits = (uint64_t)n32 * 32ull;
-
-    int b = b_hint;
-    if (b < 16)
-        b = 16;
-    if (b > 30)
-        b = 30;
-
-    uint32_t L = CeilDivU32((uint32_t)totalBits, (uint32_t)b);
-    uint32_t N = NextPow2U32(2u * L);
-    int lgN = CeilLog2U32(N);
-
-    // Enough headroom for negacyclic wrap-free convolution (b + b + lgN + margin <= 64)
-    int bmax = (64 - margin - lgN) / 2;
-    if (b > bmax)
-        b = bmax;
-    if (b < 16)
-        b = 16;
-
-    L = CeilDivU32((uint32_t)totalBits, (uint32_t)b);
-    N = NextPow2U32(2u * L);
-    lgN = CeilLog2U32(N);
-
-    // Ensure 2N | (p-1) to admit ψ of order 2N
-    if ((PHI % (2ull * (uint64_t)N)) != 0ull) {
-        int b_up_max = std::min(bmax, 30);
-        for (int b_try = b + 1; b_try <= b_up_max; ++b_try) {
-            uint32_t L2 = CeilDivU32((uint32_t)totalBits, (uint32_t)b_try);
-            uint32_t N2 = NextPow2U32(2u * L2);
-            if ((PHI % (2ull * (uint64_t)N2)) == 0ull) {
-                b = b_try;
-                L = L2;
-                N = N2;
-                lgN = CeilLog2U32(N2);
-                break;
-            }
-        }
-    }
-
-    int need = 2 * b + lgN + margin;
-    plan.ok = (need <= 64) && (N >= 2);
-    plan.b = b;
-    plan.L = (int)L;
-    plan.N = (int)N;
-    plan.stages = lgN;
-    return plan;
 }
 
 template <class SharkFloatParams>

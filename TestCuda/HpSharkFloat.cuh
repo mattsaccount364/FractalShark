@@ -3,6 +3,7 @@
 #include "CudaCrap.h"
 #include "DebugStateRaw.h"
 #include "MultiplyNTTCudaSetup.h"
+#include "MultiplyNTTPlanBuilder.cuh"
 
 #include <string>
 #include <gmp.h>
@@ -198,6 +199,8 @@ struct GenericSharkFloatParams {
         GenericSharkFloatParams<GlobalThreadsPerBlock, GlobalNumBlocks>
         >
     >;
+
+    static constexpr SharkNTT::PlanPrime NTTPlan = SharkNTT::BuildPlanPrime(GlobalNumUint32, 26, 2);
 };
 
 // This one should account for maximum call index, e.g. if we generate 500 calls
@@ -307,8 +310,8 @@ constexpr auto StupidMult = 1;
 //using TestPerSharkParams1 = GenericSharkFloatParams<96, 81>;
 //using TestPerSharkParams1 = GenericSharkFloatParams<128 * StupidMult, 108, 7776, 9>;
 //using TestPerSharkParams1 = GenericSharkFloatParams<128, 108, 7776, 9>;
-using TestPerSharkParams1 = GenericSharkFloatParams<256, 128, 8192>;
-//using TestPerSharkParams1 = GenericSharkFloatParams<256, 128, 131072>;
+//using TestPerSharkParams1 = GenericSharkFloatParams<256, 128, 8192>;
+using TestPerSharkParams1 = GenericSharkFloatParams<256, 128, 131072>;
 using TestPerSharkParams2 = GenericSharkFloatParams<64 * StupidMult, 108, 7776, 9>;
 using TestPerSharkParams3 = GenericSharkFloatParams<32 * StupidMult, 108, 7776, 9>;
 using TestPerSharkParams4 = GenericSharkFloatParams<16 * StupidMult, 108, 7776, 9>;
@@ -414,7 +417,6 @@ bool HpSharkFloat<SharkFloatParams>::GetNegative() const {
 #pragma warning(disable:4324)
 template<class SharkFloatParams>
 struct alignas(16) HpSharkComboResults{
-    SharkNTT::PlanPrime Plan;
     SharkNTT::RootTables Roots;
     alignas(16) HpSharkFloat<SharkFloatParams> A;
     alignas(16) HpSharkFloat<SharkFloatParams> B;

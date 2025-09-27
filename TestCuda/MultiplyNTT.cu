@@ -23,6 +23,7 @@
 #include <cuda/barrier>
 
 #include "NTTConstexprGenerator.h"
+#include "MontgomeryCoreConstexpr.cuh"
 
 namespace cg = cooperative_groups;
 
@@ -611,7 +612,7 @@ MontgomeryPow(cooperative_groups::grid_group &grid,
               uint64_t a_mont,
               uint32_t e)
 {
-    uint64_t x = ToMontgomery(grid, block, debugCombo, 1);
+    uint64_t x = ToMontgomeryConstexpr(1);
     uint64_t y = a_mont;
     while (e) {
         if (e & 1)
@@ -713,7 +714,7 @@ NTTRadix2(cooperative_groups::grid_group &grid,
         uint32_t half = m >> 1;
         uint64_t w_m = stage_base[s - 1];
         for (uint32_t k = 0; k < N; k += m) {
-            uint64_t w = ToMontgomery(grid, block, debugCombo, 1);
+            uint64_t w = ToMontgomeryConstexpr(1);
             for (uint32_t j = 0; j < half; ++j) {
                 uint64_t U = A[k + j];
                 uint64_t V = A[k + j + half];
@@ -739,7 +740,6 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
                     uint32_t stages,
                     const uint64_t *__restrict stage_base)
 {
-    const uint64_t one_m = ToMontgomery(grid, block, debugCombo, 1ull);
     constexpr uint32_t TS = 1u << TS_log;
 
     auto ctz_u32 = [](uint32_t x) -> uint32_t {
@@ -900,7 +900,6 @@ NTTRadix2_GridStride(uint64_t *shared_data,
                      uint32_t stages,
                      const uint64_t *SharkRestrict stage_base)
 {
-    const uint64_t one_m = ToMontgomery(grid, block, debugCombo, 1ull);
     constexpr auto TS_log = 9u;
     const size_t gsize = grid.size();
     const size_t grank = grid.thread_rank();
@@ -1197,12 +1196,12 @@ ReadBitsSimple(const HpSharkFloat<SharkFloatParams> &Z0_OutDigits, int64_t q, in
 // Preconditions:
 //  - AXX_norm / AYY_norm / AXY_norm are in NORMAL domain (not Montgomery).
 //  - Ddigits is the number of 32-bit words in the destination (covers all q..q+3).
-//  - plan.b is the limb bit-width (<=32).
+//  - SharkFloatParams::NTTPlan.b is the limb bit-width (<=32).
 //  - MagicPrime, HALF, etc., follow your existing defs.
 //
+template <class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly void
 UnpackPrimeToFinal128_3Way(cooperative_groups::grid_group &grid,
-                           const SharkNTT::PlanPrime &plan,
                            // inputs (normal domain)
                            const uint64_t *SharkRestrict AXX_norm,
                            const uint64_t *SharkRestrict AYY_norm,
@@ -1243,7 +1242,7 @@ UnpackPrimeToFinal128_3Way(cooperative_groups::grid_group &grid,
     };
 
     const uint64_t HALF = (SharkNTT::MagicPrime - 1ull) >> 1;
-    const int Imax = min(plan.N, 2 * plan.L - 1); // same bound as original
+    const int Imax = min(SharkFloatParams::NTTPlan.N, 2 * SharkFloatParams::NTTPlan.L - 1); // same bound as original
 
     // Grid-stride over output word indices j (each thread owns distinct j).
     for (size_t j = grank; j < Ddigits; j += gsize) {
@@ -1259,8 +1258,8 @@ UnpackPrimeToFinal128_3Way(cooperative_groups::grid_group &grid,
             if ((int)j - t < 0)
                 continue;
             const uint64_t k = (uint64_t)((int)j - t);
-            const uint64_t i_lo = ceil_div_u64(32ull * k, (uint32_t)plan.b);
-            const uint64_t i_hi_raw = ceil_div_u64(32ull * (k + 1ull), (uint32_t)plan.b);
+            const uint64_t i_lo = ceil_div_u64(32ull * k, (uint32_t)SharkFloatParams::NTTPlan.b);
+            const uint64_t i_hi_raw = ceil_div_u64(32ull * (k + 1ull), (uint32_t)SharkFloatParams::NTTPlan.b);
             uint64_t i_hi = (i_hi_raw == 0 ? 0 : (i_hi_raw - 1ull));
             if ((int64_t)i_lo > (int64_t)(Imax - 1))
                 continue;
@@ -1271,7 +1270,7 @@ UnpackPrimeToFinal128_3Way(cooperative_groups::grid_group &grid,
 
             for (uint64_t iu = i_lo; iu <= i_hi; ++iu) {
                 const int i = (int)iu;
-                const uint64_t sBits = (uint64_t)i * (uint64_t)plan.b;
+                const uint64_t sBits = (uint64_t)i * (uint64_t)SharkFloatParams::NTTPlan.b;
                 const int r = (int)(sBits & 31);          // shift amount within 32-bit word
                 const uint64_t lsh = (r ? (64 - r) : 64); // guard; (mag >> 64)==0 if r==0
 
@@ -1366,10 +1365,9 @@ PackTwistFwdNTT_Fused_AB_ToSixOutputs(uint64_t *shared_data,
                                       DebugMultiplyCount<SharkFloatParams> *debugMultiplyCounts,
                                       const HpSharkFloat<SharkFloatParams> &inA,
                                       const HpSharkFloat<SharkFloatParams> &inB,
-                                      const SharkNTT::PlanPrime &plan,
                                       const SharkNTT::RootTables &roots,
                                       uint64_t *carryPropagationSync,
-                                      // six outputs (Montgomery domain, length plan.N)
+                                      // six outputs (Montgomery domain, length SharkFloatParams::NTTPlan.N)
                                       uint64_t *SharkRestrict tempDigitsXX1,
                                       uint64_t *SharkRestrict tempDigitsXX2,
                                       uint64_t *SharkRestrict tempDigitsYY1,
@@ -1377,17 +1375,17 @@ PackTwistFwdNTT_Fused_AB_ToSixOutputs(uint64_t *shared_data,
                                       uint64_t *SharkRestrict tempDigitsXY1,
                                       uint64_t *SharkRestrict tempDigitsXY2)
 {
-    const uint32_t N = static_cast<uint32_t>(plan.N);
-    const uint32_t L = static_cast<uint32_t>(plan.L);
+    const uint32_t N = static_cast<uint32_t>(SharkFloatParams::NTTPlan.N);
+    const uint32_t L = static_cast<uint32_t>(SharkFloatParams::NTTPlan.L);
     const size_t gsize = grid.size();
     const size_t grank = grid.thread_rank();
 
-    const uint64_t zero_m = ToMontgomery(grid, block, debugMultiplyCounts, 0ull);
+    const uint64_t zero_m = ToMontgomeryConstexpr(0ull);
 
     // -------------------- Phase A: pack+twist with tail zero (grid-stride) --------------------
     for (size_t i = grank; i < (size_t)N; i += gsize) {
         if (i < L) {
-            const uint64_t coeff = ReadBitsSimple(inA, (int64_t)i * plan.b, plan.b);
+            const uint64_t coeff = ReadBitsSimple(inA, (int64_t)i * SharkFloatParams::NTTPlan.b, SharkFloatParams::NTTPlan.b);
             const uint64_t cmod = coeff % MagicPrime; // match original
             const uint64_t xm = ToMontgomery(grid, block, debugMultiplyCounts, cmod);
             const uint64_t psik = roots.psi_pows[i]; // Montgomery domain
@@ -1397,7 +1395,7 @@ PackTwistFwdNTT_Fused_AB_ToSixOutputs(uint64_t *shared_data,
         }
 
         if (i < L) {
-            const uint64_t coeffB = ReadBitsSimple(inB, (int64_t)i * plan.b, plan.b);
+            const uint64_t coeffB = ReadBitsSimple(inB, (int64_t)i * SharkFloatParams::NTTPlan.b, SharkFloatParams::NTTPlan.b);
             const uint64_t cmodB = coeffB % MagicPrime;
             const uint64_t xmB = ToMontgomery(grid, block, debugMultiplyCounts, cmodB);
             const uint64_t psiB = roots.psi_pows[i]; // Montgomery domain
@@ -1410,7 +1408,7 @@ PackTwistFwdNTT_Fused_AB_ToSixOutputs(uint64_t *shared_data,
 
     // A: forward NTT (grid-wide helpers)
     BitReverseInplace64_GridStride<Multiway::TwoWay>(
-        grid, tempDigitsXX1, tempDigitsYY1, nullptr, N, (uint32_t)plan.stages);
+        grid, tempDigitsXX1, tempDigitsYY1, nullptr, N, (uint32_t)SharkFloatParams::NTTPlan.stages);
 
     grid.sync();
 
@@ -1423,7 +1421,7 @@ PackTwistFwdNTT_Fused_AB_ToSixOutputs(uint64_t *shared_data,
                                                              tempDigitsYY1,
                                                              nullptr,
                                                              N,
-                                                             (uint32_t)plan.stages,
+                                                             (uint32_t)SharkFloatParams::NTTPlan.stages,
                                                              roots.stage_omegas);
 
     grid.sync();
@@ -1456,7 +1454,6 @@ static __device__ SharkForceInlineReleaseOnly void
 UntwistScaleFromMont_3Way_GridStride(cooperative_groups::grid_group &grid,
                                      cooperative_groups::thread_block &block,
                                      DebugMultiplyCount<SharkFloatParams> *debugMultiplyCounts,
-                                     const SharkNTT::PlanPrime &plan,
                                      const SharkNTT::RootTables &roots,
                                      uint64_t *SharkRestrict tempDigitsXX1,
                                      uint64_t *SharkRestrict tempDigitsYY1,
@@ -1464,7 +1461,7 @@ UntwistScaleFromMont_3Way_GridStride(cooperative_groups::grid_group &grid,
 {
     using namespace SharkNTT;
 
-    const size_t N = static_cast<size_t>(plan.N);
+    const size_t N = static_cast<size_t>(SharkFloatParams::NTTPlan.N);
     const size_t gsize = grid.size();
     const size_t grank = grid.thread_rank();
 
@@ -1619,7 +1616,6 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
                      HpSharkFloat<SharkFloatParams> *outXY,
                      const HpSharkFloat<SharkFloatParams> &inA,
                      const HpSharkFloat<SharkFloatParams> &inB,
-                     const SharkNTT::PlanPrime &plan,
                      const SharkNTT::RootTables &roots,
                      cg::grid_group &grid,
                      cg::thread_block &block,
@@ -1646,7 +1642,6 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
                                                             debugMultiplyCounts,
                                                             inA,
                                                             inB,
-                                                            plan,
                                                             roots,
                                                             CarryPropagationSync,
                                                             tempDigitsXX1,
@@ -1660,7 +1655,7 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
     // is grid-wide and the next loop operates on the same data per-thread
     // so there is no hazard.
 
-    const size_t N = static_cast<size_t>(plan.N);
+    const size_t N = static_cast<size_t>(SharkFloatParams::NTTPlan.N);
     const size_t gsize = grid.size();
     const size_t grank = grid.thread_rank();
 
@@ -1682,7 +1677,7 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
 
     // 5) Inverse NTT (in place on Z0_OutDigits)
     SharkNTT::BitReverseInplace64_GridStride<SharkNTT::Multiway::ThreeWay>(
-        grid, tempDigitsXX1, tempDigitsYY1, tempDigitsXY1, (uint32_t)plan.N, (uint32_t)plan.stages);
+        grid, tempDigitsXX1, tempDigitsYY1, tempDigitsXY1, (uint32_t)SharkFloatParams::NTTPlan.N, (uint32_t)SharkFloatParams::NTTPlan.stages);
 
     grid.sync();
 
@@ -1695,8 +1690,8 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
         tempDigitsXX1,
         tempDigitsYY1,
         tempDigitsXY1,
-        (uint32_t)plan.N,
-        (uint32_t)plan.stages,
+        (uint32_t)SharkFloatParams::NTTPlan.N,
+        (uint32_t)SharkFloatParams::NTTPlan.stages,
         roots.stage_omegas_inv);
 
     // --- After inverse NTTs (XX1 / YY1 / XY1 are in Montgomery domain) ---
@@ -1705,7 +1700,6 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
     UntwistScaleFromMont_3Way_GridStride<SharkFloatParams>(grid,
                                                            block,
                                                            debugMultiplyCounts,
-                                                           plan,
                                                            roots,
                                                            /* XX1 */ tempDigitsXX1,
                                                            /* YY1 */ tempDigitsYY1,
@@ -1717,8 +1711,7 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
     // At this point, tempDigitsXX1/YY1/XY1 are back in the normal domain (not Montgomery).
 
     // 8) Unpack (fused 3-way) -> Final128 -> Normalize
-    UnpackPrimeToFinal128_3Way(grid,
-                               plan,
+    SharkNTT::UnpackPrimeToFinal128_3Way<SharkFloatParams>(grid,
                                /* AXX_norm */ tempDigitsXX1,
                                /* AYY_norm */ tempDigitsYY1,
                                /* AXY_norm */ tempDigitsXY1,
@@ -1773,8 +1766,7 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
 
 template <class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly void
-MultiplyHelperNTTV2Separates(const SharkNTT::PlanPrime &plan,
-                             const SharkNTT::RootTables &roots,
+MultiplyHelperNTTV2Separates(const SharkNTT::RootTables &roots,
                              const HpSharkFloat<SharkFloatParams> *SharkRestrict A,
                              const HpSharkFloat<SharkFloatParams> *SharkRestrict B,
                              HpSharkFloat<SharkFloatParams> *SharkRestrict OutXX,
@@ -1931,31 +1923,34 @@ MultiplyHelperNTTV2Separates(const SharkNTT::PlanPrime &plan,
                   "GlobalNumUint32 must be a power of 2");
 
     // Compute Final128 digit budget once
-    const uint32_t Ddigits = ((uint64_t)((2 * plan.L - 2) * plan.b + 64) + 31u) / 32u + 2u;
+    const uint32_t Ddigits =
+        ((uint64_t)((2 * SharkFloatParams::NTTPlan.L - 2) * SharkFloatParams::NTTPlan.b + 64) + 31u) /
+            32u +
+        2u;
 
     // ---- Single allocation for entire core path ----
     uint64_t *buffer = &tempProducts[GlobalsDoneOffset];
 
     // TODO: Assert or something somewhere
-    // const size_t buf_count = (size_t)2 * (size_t)plan.N     // Z0_OutDigits + Z2_OutDigits
+    // const size_t buf_count = (size_t)2 * (size_t)SharkFloatParams::NTTPlan.N     // Z0_OutDigits + Z2_OutDigits
     //                         + (size_t)2 * (size_t)Ddigits; // Final128 (lo,hi per 32-bit slot)
 
     // Slice buffer into spans
     size_t off = 0;
-    uint64_t *tempDigitsXX1 = buffer + off; // plan.N
-    off += (size_t)plan.N;
-    uint64_t *tempDigitsXX2 = buffer + off; // plan.N
-    off += (size_t)plan.N;
+    uint64_t *tempDigitsXX1 = buffer + off; // SharkFloatParams::NTTPlan.N
+    off += (size_t)SharkFloatParams::NTTPlan.N;
+    uint64_t *tempDigitsXX2 = buffer + off; // SharkFloatParams::NTTPlan.N
+    off += (size_t)SharkFloatParams::NTTPlan.N;
 
-    uint64_t *tempDigitsYY1 = buffer + off; // plan.N
-    off += (size_t)plan.N;
-    uint64_t *tempDigitsYY2 = buffer + off; // plan.N
-    off += (size_t)plan.N;
+    uint64_t *tempDigitsYY1 = buffer + off; // SharkFloatParams::NTTPlan.N
+    off += (size_t)SharkFloatParams::NTTPlan.N;
+    uint64_t *tempDigitsYY2 = buffer + off; // SharkFloatParams::NTTPlan.N
+    off += (size_t)SharkFloatParams::NTTPlan.N;
 
-    uint64_t *tempDigitsXY1 = buffer + off; // plan.N
-    off += (size_t)plan.N;
-    uint64_t *tempDigitsXY2 = buffer + off; // plan.N
-    off += (size_t)plan.N;
+    uint64_t *tempDigitsXY1 = buffer + off; // SharkFloatParams::NTTPlan.N
+    off += (size_t)SharkFloatParams::NTTPlan.N;
+    uint64_t *tempDigitsXY2 = buffer + off; // SharkFloatParams::NTTPlan.N
+    off += (size_t)SharkFloatParams::NTTPlan.N;
 
     uint64_t *Final128_XX = buffer + off; // (size_t)2 * Ddigits
     off += (size_t)2 * Ddigits;
@@ -1981,7 +1976,6 @@ MultiplyHelperNTTV2Separates(const SharkNTT::PlanPrime &plan,
                                            OutXY,
                                            *A,
                                            *B,
-                                           plan,
                                            roots,
                                            grid,
                                            block,
@@ -2124,8 +2118,7 @@ MultiplyHelperNTT(HpSharkComboResults<SharkFloatParams> *SharkRestrict combo,
                   cg::thread_block &block,
                   uint64_t *SharkRestrict tempProducts)
 {
-    MultiplyHelperNTTV2Separates<SharkFloatParams>(combo->Plan,
-                                                   combo->Roots,
+    MultiplyHelperNTTV2Separates<SharkFloatParams>(combo->Roots,
                                                    &combo->A,
                                                    &combo->B,
                                                    &combo->ResultX2,

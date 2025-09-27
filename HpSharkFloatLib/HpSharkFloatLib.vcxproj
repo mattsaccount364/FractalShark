@@ -43,6 +43,7 @@
     <ClInclude Include="MultiplyNTTCudaSetup.h" />
     <ClInclude Include="MultiplyNTTPlanBuilder.cuh" />
     <ClInclude Include="NTTConstexprGenerator.h" />
+    <ClInclude Include="PeriodicityChecker.cuh" />
     <ClInclude Include="TestVerbose.h" />
     <ClInclude Include="ThreeWayMagnitude.h" />
   </ItemGroup>

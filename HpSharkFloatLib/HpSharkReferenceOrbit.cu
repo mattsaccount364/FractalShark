@@ -1,5 +1,6 @@
 #include "MultiplyNTT.cu"
 #include "Add.cu"
+#include "PeriodicityChecker.cuh"
 
 template<class SharkFloatParams>
 __device__ void ReferenceHelper (

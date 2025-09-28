@@ -386,9 +386,13 @@ public:
 
     template<bool GetExpAmt = false>
     CUDA_CRAP constexpr HDRFloat &Reduce(TExp *DestExp = nullptr) & {
-        //if (Base::mantissa == 0) {
-        //    return;
-        //}
+        if (Base::mantissa == 0) {
+
+            if constexpr (GetExpAmt) {
+                *DestExp = 0;
+            }
+            return *this;
+        }
 
         if constexpr (std::is_same<T, double>::value) {
             const auto bits = bit_cast<uint64_t>(this->Base::mantissa);

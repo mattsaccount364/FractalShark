@@ -53,6 +53,7 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <SDLCheck>false</SDLCheck>
       <DisableLanguageExtensions>true</DisableLanguageExtensions>
+      <ConformanceMode>true</ConformanceMode>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -83,6 +84,7 @@
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <SDLCheck>false</SDLCheck>
       <DisableLanguageExtensions>true</DisableLanguageExtensions>
+      <ConformanceMode>true</ConformanceMode>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>

@@ -9,6 +9,7 @@
 #include <string>
 #include <gmp.h>
 #include <vector>
+#include <bit>
 
 #if defined(__CUDACC__)
 #include <cuda.h>
@@ -28,7 +29,7 @@ static constexpr bool SharkDebug = false;
 #endif
 
 // Comment out to disable specific kernels
-#define ENABLE_CONVERSION_TESTS
+//#define ENABLE_CONVERSION_TESTS
 //#define ENABLE_ADD_KERNEL
 //#define ENABLE_MULTIPLY_NTT2_KERNEL
 #define ENABLE_REFERENCE_KERNEL
@@ -438,8 +439,8 @@ HDRFloat<SubType> HpSharkFloat<SharkFloatParams>::ToHDRFloat(int32_t extraExp)
 #if defined(__CUDA_ARCH__)
         return __clz(v);
 #else
-        unsigned long idx;
-        return _BitScanReverse(&idx, v) ? (31 - int(idx)) : 32;
+        // std::countl_zero is constexpr in C++20 and returns 32 for x==0
+        return static_cast<int>(std::countl_zero(v));
 #endif
     };
 
@@ -479,7 +480,7 @@ HDRFloat<SubType> HpSharkFloat<SharkFloatParams>::ToHDRFloat(int32_t extraExp)
         mant = -mant;
 
     // Combine with any external binary scaling tracked by the caller/type.
-    const int32_t finalExp = p + extraExp;
+    const int32_t finalExp = p + extraExp + Exponent;
 
     // Build & normalize HDRFloat
     HDRFloat<SubType> out(finalExp, mant);

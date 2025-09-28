@@ -1,51 +1,60 @@
-﻿#include "TestVerbose.h"
-#include "ReferenceKaratsuba.h"
-#include "HpSharkFloat.cuh"
+﻿#include "ReferenceKaratsuba.h"
 #include "DebugChecksumHost.h"
+#include "HpSharkFloat.cuh"
+#include "TestVerbose.h"
 
 #include "DebugChecksum.cuh"
 
-#include <cstdint>
 #include <algorithm>
-#include <cstring> // for memset
-#include <vector>
-#include <iostream>
 #include <assert.h>
+#include <cstdint>
+#include <cstring> // for memset
+#include <iostream>
+#include <vector>
 
-void Add128 (
-    uint64_t a_low, uint64_t a_high,
-    uint64_t b_low, uint64_t b_high,
-    uint64_t &result_low, uint64_t &result_high) {
+void
+Add128(uint64_t a_low,
+       uint64_t a_high,
+       uint64_t b_low,
+       uint64_t b_high,
+       uint64_t &result_low,
+       uint64_t &result_high)
+{
 
     result_low = a_low + b_low;
     uint64_t carry = (result_low < a_low) ? 1 : 0;
     result_high = a_high + b_high + carry;
 }
 
-void Subtract128 (
-    uint64_t a_low, uint64_t a_high,
-    uint64_t b_low, uint64_t b_high,
-    uint64_t &result_low, uint64_t &result_high) {
+void
+Subtract128(uint64_t a_low,
+            uint64_t a_high,
+            uint64_t b_low,
+            uint64_t b_high,
+            uint64_t &result_low,
+            uint64_t &result_high)
+{
 
     uint64_t borrow = 0;
 
     // Subtract low parts
     result_low = a_low - b_low;
     borrow = (a_low < b_low) ? 1 : 0;
-    //result_low += (borrow << 32);
+    // result_low += (borrow << 32);
 
     // Subtract high parts with borrow
     result_high = a_high - b_high - borrow;
 }
 
-template<class SharkFloatParams>
-static void NativeMultiply64 (
-    DebugHostCombo<SharkFloatParams> &debugHostCombo,
-    int n,
-    int total_k,
-    const std::vector<uint32_t> &A,
-    const std::vector<uint32_t> &B,
-    std::vector<uint64_t> &Res) {
+template <class SharkFloatParams>
+static void
+NativeMultiply64(DebugHostCombo<SharkFloatParams> &debugHostCombo,
+                 int n,
+                 int total_k,
+                 const std::vector<uint32_t> &A,
+                 const std::vector<uint32_t> &B,
+                 std::vector<uint64_t> &Res)
+{
 
     auto &debugMultiplyCounts = debugHostCombo.MultiplyCounts;
 
@@ -98,19 +107,22 @@ static void NativeMultiply64 (
 }
 
 // Helper to add two 64-bit values plus a carry-in, produce sum and carry-out
-static inline void add64withCarry (uint64_t x, uint64_t y, uint64_t carry_in,
-    uint64_t &sum, uint64_t &carry_out) {
+static inline void
+add64withCarry(uint64_t x, uint64_t y, uint64_t carry_in, uint64_t &sum, uint64_t &carry_out)
+{
     uint64_t low = x + carry_in;
     carry_out = (low < x) ? 1ULL : 0ULL;
     uint64_t old = low;
     low += y;
-    if (low < old) carry_out += 1ULL;
+    if (low < old)
+        carry_out += 1ULL;
     sum = low;
 }
 
-template<class SharkFloatParams>
+template <class SharkFloatParams>
 int32_t
-CompareDigits (const std::vector<uint32_t> &highArray, const std::vector<uint32_t> &lowArray) {
+CompareDigits(const std::vector<uint32_t> &highArray, const std::vector<uint32_t> &lowArray)
+{
     // The biggest possible "digit index" is one less
     // than the max of the two sizes.
     int maxLen = static_cast<int>(std::max(highArray.size(), lowArray.size()));
@@ -122,7 +134,7 @@ CompareDigits (const std::vector<uint32_t> &highArray, const std::vector<uint32_
         uint32_t b_val = (i < static_cast<int>(lowArray.size())) ? lowArray[i] : 0u;
 
         if (a_val > b_val) {
-            return 1;  // A is bigger
+            return 1; // A is bigger
         } else if (a_val < b_val) {
             return -1; // B is bigger
         }
@@ -135,12 +147,12 @@ CompareDigits (const std::vector<uint32_t> &highArray, const std::vector<uint32_
     return 0;
 }
 
-template<class SharkFloatParams>
+template <class SharkFloatParams>
 uint32_t
-SubtractDigitsSerial (
-    const std::vector<uint32_t> &A_,
-    const std::vector<uint32_t> &B_,
-    std::vector<uint32_t> &Res) {
+SubtractDigitsSerial(const std::vector<uint32_t> &A_,
+                     const std::vector<uint32_t> &B_,
+                     std::vector<uint32_t> &Res)
+{
 
     const auto n1 = static_cast<int>(A_.size());
     const auto n2 = static_cast<int>(B_.size());
@@ -163,7 +175,7 @@ SubtractDigitsSerial (
         }
 
         uint64_t b_val;
-        
+
         if (i >= n2) {
             b_val = 0;
         } else {
@@ -190,42 +202,38 @@ SubtractDigitsSerial (
     return (uint32_t)borrow;
 }
 
-template<
-    class SharkFloatParams,
-    int RecursionDepth,
-    int CallIndex,
-    DebugStatePurpose Purpose,
-    typename ArrayType>
+template <class SharkFloatParams,
+          int RecursionDepth,
+          int CallIndex,
+          DebugStatePurpose Purpose,
+          typename ArrayType>
 const DebugStateHost<SharkFloatParams> &
-GetCurrentDebugState (
-    std::vector<DebugStateHost<SharkFloatParams>> &debugStates,
-    UseConvolution useConvolution,
-    const ArrayType *arrayToChecksum,
-    size_t arraySize) {
+GetCurrentDebugState(std::vector<DebugStateHost<SharkFloatParams>> &debugStates,
+                     UseConvolution useConvolution,
+                     const ArrayType *arrayToChecksum,
+                     size_t arraySize)
+{
 
     constexpr auto maxPurposes = static_cast<int>(DebugStatePurpose::NumPurposes);
     constexpr auto curPurpose = static_cast<int>(Purpose);
     const auto index = CallIndex * maxPurposes + curPurpose;
 
     auto &retval = debugStates[index];
-    retval.Reset(
-        arrayToChecksum, arraySize, Purpose, RecursionDepth, CallIndex, useConvolution);
+    retval.Reset(arrayToChecksum, arraySize, Purpose, RecursionDepth, CallIndex, useConvolution);
     return retval;
 }
 
-template<
-    class SharkFloatParams,
-    int NewNumBlocks,
-    int RecursionDepth,
-    int CallIndex>
-void KaratsubaRecursiveDigits (
-    const std::vector<uint32_t> &A_digits,  // pointer to A's digits
-    const std::vector<uint32_t> &B_digits,
-    std::vector<uint64_t> &final128XX,
-    std::vector<uint64_t> &final128XY,
-    std::vector<uint64_t> &final128YY,
-    DebugHostCombo<SharkFloatParams> &debugHostCombo
-)
+template <class SharkFloatParams,
+          int NewNumBlocks,
+          int RecursionDepth,
+          int CallIndex>
+void
+KaratsubaRecursiveDigits(const std::vector<uint32_t> &A_digits, // pointer to A's digits
+                         const std::vector<uint32_t> &B_digits,
+                         std::vector<uint64_t> &final128XX,
+                         std::vector<uint64_t> &final128XY,
+                         std::vector<uint64_t> &final128YY,
+                         DebugHostCombo<SharkFloatParams> &debugHostCombo)
 {
     auto &debugStates = debugHostCombo.States;
 
@@ -242,8 +250,9 @@ void KaratsubaRecursiveDigits (
     using DebugState = DebugStateHost<SharkFloatParams>;
 
     constexpr bool UseConvolutionBool =
-        (NewNumBlocks <= std::max(SharkFloatParams::GlobalNumBlocks / SharkFloatParams::ConvolutionLimit, 1) ||
-            (NewNumBlocks % 3 != 0));
+        (NewNumBlocks <=
+             std::max(SharkFloatParams::GlobalNumBlocks / SharkFloatParams::ConvolutionLimit, 1) ||
+         (NewNumBlocks % 3 != 0));
     constexpr auto UseConvolutionHere = UseConvolutionBool ? UseConvolution::Yes : UseConvolution::No;
 
     constexpr auto NewSize = (CallIndex + 1) * static_cast<int>(DebugStatePurpose::NumPurposes);
@@ -251,10 +260,12 @@ void KaratsubaRecursiveDigits (
         debugStates.resize(NewSize);
     }
 
-    const auto &debugAState = GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::ADigits>(
-        debugStates, UseConvolutionHere, A_digits.data(), A_digits.size());
-    const auto &debugBState = GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BDigits>(
-        debugStates, UseConvolutionHere, B_digits.data(), B_digits.size());
+    const auto &debugAState =
+        GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::ADigits>(
+            debugStates, UseConvolutionHere, A_digits.data(), A_digits.size());
+    const auto &debugBState =
+        GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BDigits>(
+            debugStates, UseConvolutionHere, B_digits.data(), B_digits.size());
 
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "KaratsubaRecursiveDigits (index: " << CallIndex << "):" << std::endl;
@@ -302,18 +313,18 @@ void KaratsubaRecursiveDigits (
     }
 
     GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::AHalfHigh>(
-            debugStates, UseConvolutionHere, A_high.data(), A_high.size());
+        debugStates, UseConvolutionHere, A_high.data(), A_high.size());
     GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::AHalfLow>(
-            debugStates, UseConvolutionHere, A_low.data(), A_low.size());
+        debugStates, UseConvolutionHere, A_low.data(), A_low.size());
     GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BHalfHigh>(
-            debugStates, UseConvolutionHere, B_high.data(), B_high.size());
+        debugStates, UseConvolutionHere, B_high.data(), B_high.size());
     GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::BHalfLow>(
-            debugStates, UseConvolutionHere, B_low.data(), B_low.size());
+        debugStates, UseConvolutionHere, B_low.data(), B_low.size());
 
     const auto initValue64 = 0xCDCDCDCDCDCDCDCDULL;
     const auto initValue32 = 0xCDCDCDCDU;
-    //const auto initValue64 = 0;
-    //const auto initValue32 = 0;
+    // const auto initValue64 = 0;
+    // const auto initValue32 = 0;
 
     int x_cmp = CompareDigits<SharkFloatParams>(A_high, A_low);
     bool x_diff_neg = false;
@@ -378,28 +389,25 @@ void KaratsubaRecursiveDigits (
     }
 
     assert(A_low.size() == B_low.size());
-    const auto FinalZ0Size =
-        (UseConvolutionHere == UseConvolution::Yes) ?
-        (total_k * 2) :  // (2 * A_low.size() - 1) * 2
-        (2 * 2 * A_low.size());
+    const auto FinalZ0Size = (UseConvolutionHere == UseConvolution::Yes) ? (total_k * 2)
+                                                                         : // (2 * A_low.size() - 1) * 2
+                                 (2 * 2 * A_low.size());
     std::vector<uint64_t> Z0XX(FinalZ0Size, initValue64);
     std::vector<uint64_t> Z0XY(FinalZ0Size, initValue64);
     std::vector<uint64_t> Z0YY(FinalZ0Size, initValue64);
 
     assert(A_high.size() == B_high.size());
-    const auto FinalZ2Size =
-        (UseConvolutionHere == UseConvolution::Yes) ?
-        total_k * 2 : // (2 * A_high.size() - 1) * 2
-        (2 * 2 * A_high.size());
+    const auto FinalZ2Size = (UseConvolutionHere == UseConvolution::Yes) ? total_k * 2
+                                                                         : // (2 * A_high.size() - 1) * 2
+                                 (2 * 2 * A_high.size());
     std::vector<uint64_t> Z2XX(FinalZ2Size, initValue64);
     std::vector<uint64_t> Z2XY(FinalZ2Size, initValue64);
     std::vector<uint64_t> Z2YY(FinalZ2Size, initValue64);
 
     assert(x_diff.size() == y_diff.size());
-    const auto FinalZ1TempSize = 
-        (UseConvolutionHere == UseConvolution::Yes) ?
-        total_k * 2 : // (2 * MaxHalfN - 1) * 2
-        (2 * 2 * x_diff.size());
+    const auto FinalZ1TempSize = (UseConvolutionHere == UseConvolution::Yes) ? total_k * 2
+                                                                             : // (2 * MaxHalfN - 1) * 2
+                                     (2 * 2 * x_diff.size());
     std::vector<uint64_t> Z1_tempXX(FinalZ1TempSize, initValue64);
     std::vector<uint64_t> Z1_tempXY(FinalZ1TempSize, initValue64);
     std::vector<uint64_t> Z1_tempYY(FinalZ1TempSize, initValue64);
@@ -408,109 +416,12 @@ void KaratsubaRecursiveDigits (
 
         assert(A_low.size() == B_low.size());
 
-        NativeMultiply64<SharkFloatParams>(
-            debugHostCombo, NewN1, total_k, A_low, A_low, Z0XX);
-        NativeMultiply64<SharkFloatParams>(
-            debugHostCombo, NewN1, total_k, A_low, B_low, Z0XY);
-        NativeMultiply64<SharkFloatParams>(
-            debugHostCombo, NewN1, total_k, B_low, B_low, Z0YY);
+        NativeMultiply64<SharkFloatParams>(debugHostCombo, NewN1, total_k, A_low, A_low, Z0XX);
+        NativeMultiply64<SharkFloatParams>(debugHostCombo, NewN1, total_k, A_low, B_low, Z0XY);
+        NativeMultiply64<SharkFloatParams>(debugHostCombo, NewN1, total_k, B_low, B_low, Z0YY);
 
-        auto ProcessOneZ0 = [&]<auto DebugPurpose>(
-            [[maybe_unused]] const char *name,
-            const std::vector<uint64_t> &Z0) {
-
-            const auto &Z0Checksum =
-                GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugPurpose>(
-                    debugStates, UseConvolutionHere, Z0.data(), Z0.size());
-
-            if (SharkVerbose == VerboseMode::Debug) {
-                std::cout << name << ": " << VectorUintToHexString(Z0) << std::endl;
-                std::cout << name << " checksum: " << Z0Checksum.GetStr() << std::endl;
-            }
-            };
-
-        ProcessOneZ0.template operator()<DebugStatePurpose::Z0XX>(
-            "Z0XX", Z0XX);
-        ProcessOneZ0.template operator()<DebugStatePurpose::Z0XY>(
-            "Z0XY", Z0XY);
-        ProcessOneZ0.template operator()<DebugStatePurpose::Z0YY>(
-            "Z0YY", Z0YY);
-
-        assert(A_high.size() == B_high.size());
-
-        NativeMultiply64<SharkFloatParams>(
-            debugHostCombo, NewN2, total_k, A_high, A_high, Z2XX);
-        NativeMultiply64<SharkFloatParams>(
-            debugHostCombo, NewN2, total_k, A_high, B_high, Z2XY);
-        NativeMultiply64<SharkFloatParams>(
-            debugHostCombo, NewN2, total_k, B_high, B_high, Z2YY);
-
-        auto ProcessOneZ2 = [&]<auto DebugPurpose>(
-            [[maybe_unused]] const char *name,
-            const std::vector<uint64_t> &Z2) {
-
-            const auto &Z2Checksum =
-                GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugPurpose>(
-                    debugStates, UseConvolutionHere, Z2.data(), Z2.size());
-            if (SharkVerbose == VerboseMode::Debug) {
-                std::cout << name << ": " << VectorUintToHexString(Z2) << std::endl;
-                std::cout << name << " checksum: " << Z2Checksum.GetStr() << std::endl;
-            }
-            };
-        
-        ProcessOneZ2.template operator()<DebugStatePurpose::Z2XX>(
-            "Z2XX", Z2XX);
-        ProcessOneZ2.template operator()<DebugStatePurpose::Z2XY>(
-            "Z2XY", Z2XY);
-        ProcessOneZ2.template operator()<DebugStatePurpose::Z2YY>(
-            "Z2YY", Z2YY);
-
-        assert(x_diff.size() == y_diff.size());
-
-        NativeMultiply64<SharkFloatParams>(
-            debugHostCombo, MaxHalfN, total_k, x_diff, x_diff, Z1_tempXX);
-        NativeMultiply64<SharkFloatParams>(
-            debugHostCombo, MaxHalfN, total_k, x_diff, y_diff, Z1_tempXY);
-        NativeMultiply64<SharkFloatParams>(
-            debugHostCombo, MaxHalfN, total_k, y_diff, y_diff, Z1_tempYY);
-
-        auto ProcessOneZ1Temp = [&]<auto DebugPurpose>(
-            [[maybe_unused]] const char *name,
-            const std::vector<uint64_t> &Z1_temp) {
-
-            const auto &Z1TempChecksum =
-                GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugPurpose>(
-                    debugStates, UseConvolutionHere, Z1_temp.data(), Z1_temp.size());
-            if (SharkVerbose == VerboseMode::Debug) {
-                std::cout << name << ": " << VectorUintToHexString(Z1_temp) << std::endl;
-                std::cout << name << " checksum: " << Z1TempChecksum.GetStr() << std::endl;
-            }
-            };
-
-        ProcessOneZ1Temp.template operator()<DebugStatePurpose::Z1_offsetXX>(
-            "Z1_tempXX", Z1_tempXX);
-        ProcessOneZ1Temp.template operator()<DebugStatePurpose::Z1_offsetXY>(
-            "Z1_tempXY", Z1_tempXY);
-        ProcessOneZ1Temp.template operator()<DebugStatePurpose::Z1_offsetYY>(
-            "Z1_tempYY", Z1_tempYY);
-    } else {
-        
-        KaratsubaRecursiveDigits<
-            SharkFloatParams,
-            NewNumBlocks / 3,
-            RecursionDepth + 1,
-            CallIndex * 3 - 1>(
-            A_low,
-            B_low,
-            Z0XX,
-            Z0XY,
-            Z0YY,
-            debugHostCombo);
-
-        auto ProcessOneZ0 = [&]<auto DebugPurpose>(
-            [[maybe_unused]] const char *name,
-            std::vector<uint64_t> &Z0) {
-
+        auto ProcessOneZ0 = [&]<auto DebugPurpose>([[maybe_unused]] const char *name,
+                                                   const std::vector<uint64_t> &Z0) {
             const auto &Z0Checksum =
                 GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugPurpose>(
                     debugStates, UseConvolutionHere, Z0.data(), Z0.size());
@@ -521,29 +432,18 @@ void KaratsubaRecursiveDigits (
             }
         };
 
-        ProcessOneZ0.template operator()<DebugStatePurpose::Z0XX>(
-            "Z0XX", Z0XX);
-        ProcessOneZ0.template operator()<DebugStatePurpose::Z0XY>(
-            "Z0XY", Z0XY);
-        ProcessOneZ0.template operator()<DebugStatePurpose::Z0YY>(
-            "Z0YY", Z0YY);
+        ProcessOneZ0.template operator()<DebugStatePurpose::Z0XX>("Z0XX", Z0XX);
+        ProcessOneZ0.template operator()<DebugStatePurpose::Z0XY>("Z0XY", Z0XY);
+        ProcessOneZ0.template operator()<DebugStatePurpose::Z0YY>("Z0YY", Z0YY);
 
-        KaratsubaRecursiveDigits<
-            SharkFloatParams,
-            NewNumBlocks / 3,
-            RecursionDepth + 1,
-            CallIndex * 3>(
-                A_high,
-                B_high,
-                Z2XX,
-                Z2XY,
-                Z2YY,
-                debugHostCombo);
+        assert(A_high.size() == B_high.size());
 
-        auto ProcessOneZ2 = [&]<auto DebugPurpose>(
-            [[maybe_unused]] const char *name,
-            std::vector<uint64_t> &Z2) {
+        NativeMultiply64<SharkFloatParams>(debugHostCombo, NewN2, total_k, A_high, A_high, Z2XX);
+        NativeMultiply64<SharkFloatParams>(debugHostCombo, NewN2, total_k, A_high, B_high, Z2XY);
+        NativeMultiply64<SharkFloatParams>(debugHostCombo, NewN2, total_k, B_high, B_high, Z2YY);
 
+        auto ProcessOneZ2 = [&]<auto DebugPurpose>([[maybe_unused]] const char *name,
+                                                   const std::vector<uint64_t> &Z2) {
             const auto &Z2Checksum =
                 GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugPurpose>(
                     debugStates, UseConvolutionHere, Z2.data(), Z2.size());
@@ -551,31 +451,20 @@ void KaratsubaRecursiveDigits (
                 std::cout << name << ": " << VectorUintToHexString(Z2) << std::endl;
                 std::cout << name << " checksum: " << Z2Checksum.GetStr() << std::endl;
             }
-            };
+        };
 
-        ProcessOneZ2.template operator()<DebugStatePurpose::Z2XX>(
-            "Z2XX", Z2XX);
-        ProcessOneZ2.template operator()<DebugStatePurpose::Z2XY>(
-            "Z2XY", Z2XY);
-        ProcessOneZ2.template operator()<DebugStatePurpose::Z2YY>(
-            "Z2YY", Z2YY);
+        ProcessOneZ2.template operator()<DebugStatePurpose::Z2XX>("Z2XX", Z2XX);
+        ProcessOneZ2.template operator()<DebugStatePurpose::Z2XY>("Z2XY", Z2XY);
+        ProcessOneZ2.template operator()<DebugStatePurpose::Z2YY>("Z2YY", Z2YY);
 
-        KaratsubaRecursiveDigits<
-            SharkFloatParams,
-            NewNumBlocks / 3,
-            RecursionDepth + 1,
-            CallIndex * 3 + 1>(
-                x_diff,
-                y_diff,
-                Z1_tempXX,
-                Z1_tempXY,
-                Z1_tempYY,
-                debugHostCombo);
+        assert(x_diff.size() == y_diff.size());
 
-        auto ProcessOneZ1Temp = [&]<auto DebugPurpose>(
-            [[maybe_unused]] const char *name,
-            std::vector<uint64_t> &Z1_temp) {
+        NativeMultiply64<SharkFloatParams>(debugHostCombo, MaxHalfN, total_k, x_diff, x_diff, Z1_tempXX);
+        NativeMultiply64<SharkFloatParams>(debugHostCombo, MaxHalfN, total_k, x_diff, y_diff, Z1_tempXY);
+        NativeMultiply64<SharkFloatParams>(debugHostCombo, MaxHalfN, total_k, y_diff, y_diff, Z1_tempYY);
 
+        auto ProcessOneZ1Temp = [&]<auto DebugPurpose>([[maybe_unused]] const char *name,
+                                                       const std::vector<uint64_t> &Z1_temp) {
             const auto &Z1TempChecksum =
                 GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugPurpose>(
                     debugStates, UseConvolutionHere, Z1_temp.data(), Z1_temp.size());
@@ -583,14 +472,72 @@ void KaratsubaRecursiveDigits (
                 std::cout << name << ": " << VectorUintToHexString(Z1_temp) << std::endl;
                 std::cout << name << " checksum: " << Z1TempChecksum.GetStr() << std::endl;
             }
-            };
+        };
 
-        ProcessOneZ1Temp.template operator()<DebugStatePurpose::Z1_offsetXX>(
-            "Z1_tempXX", Z1_tempXX);
-        ProcessOneZ1Temp.template operator()<DebugStatePurpose::Z1_offsetXY>(
-            "Z1_tempXY", Z1_tempXY);
-        ProcessOneZ1Temp.template operator()<DebugStatePurpose::Z1_offsetYY>(
-            "Z1_tempYY", Z1_tempYY);
+        ProcessOneZ1Temp.template operator()<DebugStatePurpose::Z1_offsetXX>("Z1_tempXX", Z1_tempXX);
+        ProcessOneZ1Temp.template operator()<DebugStatePurpose::Z1_offsetXY>("Z1_tempXY", Z1_tempXY);
+        ProcessOneZ1Temp.template operator()<DebugStatePurpose::Z1_offsetYY>("Z1_tempYY", Z1_tempYY);
+    } else {
+
+        KaratsubaRecursiveDigits<SharkFloatParams,
+                                 NewNumBlocks / 3,
+                                 RecursionDepth + 1,
+                                 CallIndex * 3 - 1>(A_low, B_low, Z0XX, Z0XY, Z0YY, debugHostCombo);
+
+        auto ProcessOneZ0 = [&]<auto DebugPurpose>([[maybe_unused]] const char *name,
+                                                   std::vector<uint64_t> &Z0) {
+            const auto &Z0Checksum =
+                GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugPurpose>(
+                    debugStates, UseConvolutionHere, Z0.data(), Z0.size());
+
+            if (SharkVerbose == VerboseMode::Debug) {
+                std::cout << name << ": " << VectorUintToHexString(Z0) << std::endl;
+                std::cout << name << " checksum: " << Z0Checksum.GetStr() << std::endl;
+            }
+        };
+
+        ProcessOneZ0.template operator()<DebugStatePurpose::Z0XX>("Z0XX", Z0XX);
+        ProcessOneZ0.template operator()<DebugStatePurpose::Z0XY>("Z0XY", Z0XY);
+        ProcessOneZ0.template operator()<DebugStatePurpose::Z0YY>("Z0YY", Z0YY);
+
+        KaratsubaRecursiveDigits<SharkFloatParams, NewNumBlocks / 3, RecursionDepth + 1, CallIndex * 3>(
+            A_high, B_high, Z2XX, Z2XY, Z2YY, debugHostCombo);
+
+        auto ProcessOneZ2 = [&]<auto DebugPurpose>([[maybe_unused]] const char *name,
+                                                   std::vector<uint64_t> &Z2) {
+            const auto &Z2Checksum =
+                GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugPurpose>(
+                    debugStates, UseConvolutionHere, Z2.data(), Z2.size());
+            if (SharkVerbose == VerboseMode::Debug) {
+                std::cout << name << ": " << VectorUintToHexString(Z2) << std::endl;
+                std::cout << name << " checksum: " << Z2Checksum.GetStr() << std::endl;
+            }
+        };
+
+        ProcessOneZ2.template operator()<DebugStatePurpose::Z2XX>("Z2XX", Z2XX);
+        ProcessOneZ2.template operator()<DebugStatePurpose::Z2XY>("Z2XY", Z2XY);
+        ProcessOneZ2.template operator()<DebugStatePurpose::Z2YY>("Z2YY", Z2YY);
+
+        KaratsubaRecursiveDigits<SharkFloatParams,
+                                 NewNumBlocks / 3,
+                                 RecursionDepth + 1,
+                                 CallIndex * 3 + 1>(
+            x_diff, y_diff, Z1_tempXX, Z1_tempXY, Z1_tempYY, debugHostCombo);
+
+        auto ProcessOneZ1Temp = [&]<auto DebugPurpose>([[maybe_unused]] const char *name,
+                                                       std::vector<uint64_t> &Z1_temp) {
+            const auto &Z1TempChecksum =
+                GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugPurpose>(
+                    debugStates, UseConvolutionHere, Z1_temp.data(), Z1_temp.size());
+            if (SharkVerbose == VerboseMode::Debug) {
+                std::cout << name << ": " << VectorUintToHexString(Z1_temp) << std::endl;
+                std::cout << name << " checksum: " << Z1TempChecksum.GetStr() << std::endl;
+            }
+        };
+
+        ProcessOneZ1Temp.template operator()<DebugStatePurpose::Z1_offsetXX>("Z1_tempXX", Z1_tempXX);
+        ProcessOneZ1Temp.template operator()<DebugStatePurpose::Z1_offsetXY>("Z1_tempXY", Z1_tempXY);
+        ProcessOneZ1Temp.template operator()<DebugStatePurpose::Z1_offsetYY>("Z1_tempYY", Z1_tempYY);
     }
 
     const int z1_signXX = (x_diff_neg ^ x_diff_neg) ? 1 : 0;
@@ -604,14 +551,12 @@ void KaratsubaRecursiveDigits (
     std::vector<uint64_t> Z1XY(2 * total_k_full, 0ULL);
     std::vector<uint64_t> Z1YY(2 * total_k_full, 0ULL);
 
-    auto ProcessOneZ1 = [&]<auto DebugPurpose>(
-        [[maybe_unused]] const char *name,
-        const int z1_sign,
-        std::vector<uint64_t> &Z1,
-        const std::vector<uint64_t> &Z0,
-        const std::vector<uint64_t> &Z2,
-        const std::vector<uint64_t> &Z1_temp) {
-
+    auto ProcessOneZ1 = [&]<auto DebugPurpose>([[maybe_unused]] const char *name,
+                                               const int z1_sign,
+                                               std::vector<uint64_t> &Z1,
+                                               const std::vector<uint64_t> &Z0,
+                                               const std::vector<uint64_t> &Z2,
+                                               const std::vector<uint64_t> &Z1_temp) {
         // For each "digit" k, we compute Z1[k] = (Z2[k] + Z0[k])  +/-  Z1_temp[k]
         // Each "digit" is two 64-bit values: low and high
         for (int k = 0; k < total_k_full; ++k) {
@@ -645,14 +590,12 @@ void KaratsubaRecursiveDigits (
                 // Convert temp_low to hex string:
                 std::string temp_low_hex = UintToHexString(temp_low);
 
-                std::cout << addOrSubtract <<
-                    " temp_low: " << UintToHexString(temp_low) <<
-                    ", temp_high: " << UintToHexString(temp_high) <<
-                    ", z1t_low: " << UintToHexString(z1t_low) <<
-                    ", z1t_high: " << UintToHexString(z1t_high) <<
-                    ", z1_low: " << UintToHexString(z1_low) <<
-                    ", z1_high : " << UintToHexString(z1_high) <<
-                    std::endl;
+                std::cout << addOrSubtract << " temp_low: " << UintToHexString(temp_low)
+                          << ", temp_high: " << UintToHexString(temp_high)
+                          << ", z1t_low: " << UintToHexString(z1t_low)
+                          << ", z1t_high: " << UintToHexString(z1t_high)
+                          << ", z1_low: " << UintToHexString(z1_low)
+                          << ", z1_high : " << UintToHexString(z1_high) << std::endl;
             }
 
             Z1[idx_low] = z1_low;
@@ -667,7 +610,7 @@ void KaratsubaRecursiveDigits (
             std::cout << name << ": " << VectorUintToHexString(Z1) << std::endl;
             std::cout << name << " checksum: " << Z1Checksum.GetStr() << std::endl;
         }
-        };
+    };
 
     ProcessOneZ1.template operator()<DebugStatePurpose::Z1XX>(
         "Z1XX", z1_signXX, Z1XX, Z0XX, Z2XX, Z1_tempXX);
@@ -677,19 +620,18 @@ void KaratsubaRecursiveDigits (
         "Z1YY", z1_signYY, Z1YY, Z0YY, Z2YY, Z1_tempYY);
 
     // Now Z1 matches the per-digit computation that CUDA performs.
-    // The subsequent steps (carry propagation, final combination) should produce identical results to CUDA.
+    // The subsequent steps (carry propagation, final combination) should produce identical results to
+    // CUDA.
 
     // final=Z0+(Z1<<(32*n))+(Z2<<(64*n))
     // N even means (32*n) bits = n/2 64-bit words
     // (64*n) bits = n 64-bit words
 
-    auto ProcessOneFinal128 = [&]<auto DebugPurpose>(
-        [[maybe_unused]] const char *name,
-        std::vector<uint64_t> &final128,
-        const std::vector<uint64_t> &Z0,
-        const std::vector<uint64_t> &Z1,
-        const std::vector<uint64_t> &Z2) {
-
+    auto ProcessOneFinal128 = [&]<auto DebugPurpose>([[maybe_unused]] const char *name,
+                                                     std::vector<uint64_t> &final128,
+                                                     const std::vector<uint64_t> &Z0,
+                                                     const std::vector<uint64_t> &Z1,
+                                                     const std::vector<uint64_t> &Z2) {
         const int total_result_digits = 2 * NewN;
 
         // If the input array is larger, then the high-order entries
@@ -739,7 +681,9 @@ void KaratsubaRecursiveDigits (
                 debugStates, UseConvolutionHere, final128.data(), total_result_digits * 2);
 
         if (SharkVerbose == VerboseMode::Debug) {
-            std::cout << name << " after Z2: " << VectorUintToHexString(final128.data(), total_result_digits * 2) << std::endl;
+            std::cout << name
+                      << " after Z2: " << VectorUintToHexString(final128.data(), total_result_digits * 2)
+                      << std::endl;
             std::cout << name << " checksum: " << Final128Checksum.GetStr() << std::endl;
         }
     };
@@ -752,21 +696,23 @@ void KaratsubaRecursiveDigits (
         "final128YY", final128YY, Z0YY, Z1YY, Z2YY);
 }
 
-template<class SharkFloatParams>
-void MultiplyHelperKaratsubaV2 (
-    const HpSharkFloat<SharkFloatParams> *A,
-    const HpSharkFloat<SharkFloatParams> *B,
-    HpSharkFloat<SharkFloatParams> *OutXX,
-    HpSharkFloat<SharkFloatParams> *OutXY,
-    HpSharkFloat<SharkFloatParams> *OutYY,
-    DebugHostCombo<SharkFloatParams> &debugHostCombo
-) {
+template <class SharkFloatParams>
+void
+MultiplyHelperKaratsubaV2(const HpSharkFloat<SharkFloatParams> *A,
+                          const HpSharkFloat<SharkFloatParams> *B,
+                          HpSharkFloat<SharkFloatParams> *OutXX,
+                          HpSharkFloat<SharkFloatParams> *OutXY,
+                          HpSharkFloat<SharkFloatParams> *OutYY,
+                          DebugHostCombo<SharkFloatParams> &debugHostCombo)
+{
     constexpr int N = SharkFloatParams::GlobalNumUint32;
     auto &debugStates = debugHostCombo.States;
 
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << std::endl;
-        std::cout << "Will perform Karatsuba multiplication on host, running function MultiplyHelperKaratsubaV2." << std::endl;
+        std::cout << "Will perform Karatsuba multiplication on host, running function "
+                     "MultiplyHelperKaratsubaV2."
+                  << std::endl;
     }
 
     // 3) Allocate array for up to 2*N digits result
@@ -775,7 +721,7 @@ void MultiplyHelperKaratsubaV2 (
     std::vector<uint64_t> final128XX;
     std::vector<uint64_t> final128XY;
     std::vector<uint64_t> final128YY;
-    
+
     final128XX.resize(total_result_digits * 2);
     final128XY.resize(total_result_digits * 2);
     final128YY.resize(total_result_digits * 2);
@@ -805,31 +751,23 @@ void MultiplyHelperKaratsubaV2 (
         }
 
         // 4) Call KaratsubaRecursiveDigits
-        KaratsubaRecursiveDigits<
-            SharkFloatParams,
-            SharkFloatParams::GlobalNumBlocks,
-            RecursionDepth + 1,
-            CallIndex + 1>(
-            A_vector,
-            B_vector,
-            final128XX,
-            final128XY,
-            final128YY,
-            debugHostCombo);
+        KaratsubaRecursiveDigits<SharkFloatParams,
+                                 SharkFloatParams::GlobalNumBlocks,
+                                 RecursionDepth + 1,
+                                 CallIndex + 1>(
+            A_vector, B_vector, final128XX, final128XY, final128YY, debugHostCombo);
     }
 
-    // Assume final128 is arranged as pairs: final128[0], final128[1] form the first pair (sum_low, sum_high),
-    // final128[2], final128[3] the second pair, and so forth.
-    // Each pair corresponds to one "digit position" before final normalization.
+    // Assume final128 is arranged as pairs: final128[0], final128[1] form the first pair (sum_low,
+    // sum_high), final128[2], final128[3] the second pair, and so forth. Each pair corresponds to one
+    // "digit position" before final normalization.
 
     std::vector<uint32_t> tempDigitsXX;
     std::vector<uint32_t> tempDigitsXY;
     std::vector<uint32_t> tempDigitsYY;
 
-    auto ProcessOneTempDigits = [&] (
-        std::vector<uint32_t> &tempDigits,
-        const std::vector<uint64_t> &final128) {
-
+    auto ProcessOneTempDigits = [&](std::vector<uint32_t> &tempDigits,
+                                    const std::vector<uint64_t> &final128) {
         tempDigits.reserve(total_result_digits); // At least one digit per pair
         uint64_t local_carry = 0ULL;
         for (int idx = 0; idx < total_result_digits; ++idx) {
@@ -873,7 +811,7 @@ void MultiplyHelperKaratsubaV2 (
                 local_carry += sum_high << 32;
             }
         }
-        };
+    };
 
     ProcessOneTempDigits(tempDigitsXX, final128XX);
     ProcessOneTempDigits(tempDigitsXY, final128XY);
@@ -884,9 +822,8 @@ void MultiplyHelperKaratsubaV2 (
     // in the same manner as the CUDA version does.
 
     auto PrintOneTempDigits = [&]<auto DebugPurpose>(
-        [[maybe_unused]] const std::vector<uint32_t> &tempDigits,
-        [[maybe_unused]] const std::string &name) {
-
+                                  [[maybe_unused]] const std::vector<uint32_t> &tempDigits,
+                                  [[maybe_unused]] const std::string &name) {
         [[maybe_unused]] const auto &resultDigitsChecksumXY =
             GetCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugPurpose>(
                 debugStates, UseConvolution::No, tempDigits.data(), 2 * N);
@@ -897,25 +834,23 @@ void MultiplyHelperKaratsubaV2 (
         }
     };
 
-    PrintOneTempDigits.template operator()<DebugStatePurpose::Result_offsetXX>(
-        tempDigitsXX, "tempDigitsXX");
-    PrintOneTempDigits.template operator()<DebugStatePurpose::Result_offsetXY>(
-        tempDigitsXY, "tempDigitsXY");
-    PrintOneTempDigits.template operator()<DebugStatePurpose::Result_offsetYY>(
-        tempDigitsYY, "tempDigitsYY");
+    PrintOneTempDigits.template operator()<DebugStatePurpose::Result_offsetXX>(tempDigitsXX,
+                                                                               "tempDigitsXX");
+    PrintOneTempDigits.template operator()<DebugStatePurpose::Result_offsetXY>(tempDigitsXY,
+                                                                               "tempDigitsXY");
+    PrintOneTempDigits.template operator()<DebugStatePurpose::Result_offsetYY>(tempDigitsYY,
+                                                                               "tempDigitsYY");
 
     // tempDigits now contains a properly carry-normalized array of 32-bit digits.
     // You can then adjust the exponent and choose exactly N digits for the final output.
 
     // Normalize result
 
-    auto NormalizeOne = [&](
-        HpSharkFloat<SharkFloatParams> &Out,
-        const HpSharkFloat<SharkFloatParams> &A,
-        const HpSharkFloat<SharkFloatParams> &B,
-        const std::vector<uint32_t> &tempDigits,
-        const int32_t additionalFactorsOfTwo) {
-
+    auto NormalizeOne = [&](HpSharkFloat<SharkFloatParams> &Out,
+                            const HpSharkFloat<SharkFloatParams> &A,
+                            const HpSharkFloat<SharkFloatParams> &B,
+                            const std::vector<uint32_t> &tempDigits,
+                            const int32_t additionalFactorsOfTwo) {
         int highest_nonzero_index = (int)tempDigits.size() - 1;
         while (highest_nonzero_index >= 0 && tempDigits[highest_nonzero_index] == 0) {
             highest_nonzero_index--;
@@ -943,7 +878,7 @@ void MultiplyHelperKaratsubaV2 (
         // Match CUDA behavior: If we have fewer than N significant digits, do not shift negatively
         if (shift_digits < 0) {
             shift_digits = 0;
-            //assert(false);
+            // assert(false);
         }
 
         if (SharkVerbose == VerboseMode::Debug) {
@@ -969,7 +904,7 @@ void MultiplyHelperKaratsubaV2 (
                 std::cout << state.GetStr() << std::endl;
             }
         }
-        };
+    };
 
     constexpr auto additionalFactorOfTwoXX = 0;
     NormalizeOne(*OutXX, *A, *A, tempDigitsXX, additionalFactorOfTwoXX);
@@ -984,14 +919,13 @@ void MultiplyHelperKaratsubaV2 (
     OutYY->SetNegative(false);
 }
 
-
-#define ExplicitlyInstantiate(SharkFloatParams) \
-    template void MultiplyHelperKaratsubaV2<SharkFloatParams>( \
-        const HpSharkFloat<SharkFloatParams> *, \
-        const HpSharkFloat<SharkFloatParams> *, \
-        HpSharkFloat<SharkFloatParams> *, \
-        HpSharkFloat<SharkFloatParams> *, \
-        HpSharkFloat<SharkFloatParams> *, \
+#define ExplicitlyInstantiate(SharkFloatParams)                                                         \
+    template void MultiplyHelperKaratsubaV2<SharkFloatParams>(                                          \
+        const HpSharkFloat<SharkFloatParams> *,                                                         \
+        const HpSharkFloat<SharkFloatParams> *,                                                         \
+        HpSharkFloat<SharkFloatParams> *,                                                               \
+        HpSharkFloat<SharkFloatParams> *,                                                               \
+        HpSharkFloat<SharkFloatParams> *,                                                               \
         DebugHostCombo<SharkFloatParams> &debugHostCombo);
 
 ExplicitInstantiateAll();

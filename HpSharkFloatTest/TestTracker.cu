@@ -1,22 +1,16 @@
-#include "TestTracker.h"
 #include "HpSharkFloat.cuh"
+#include "TestTracker.h"
 
-#include <iostream>
 #include <assert.h>
+#include <iostream>
 
-TestTracker::PerTest::PerTest()
-    :
-    DescToFailure{},
-    TestMs{},
-    RelativeError{},
-    AcceptableError{} {
-}
- 
-TestTracker::TestTracker()
-    : m_Tests(NumTests) {
-}
+TestTracker::PerTest::PerTest() : DescToFailure{}, TestMs{}, RelativeError{}, AcceptableError{} {}
 
-bool TestTracker::CheckAllTestsPassed() const {
+TestTracker::TestTracker() : m_Tests(NumTests) {}
+
+bool
+TestTracker::CheckAllTestsPassed() const
+{
     std::map<std::string, size_t> DescToFailureCount;
 
     size_t totalTests = 0;
@@ -50,10 +44,9 @@ bool TestTracker::CheckAllTestsPassed() const {
         }
 
         if (anyFailed) {
-            std::cout << "Test " << std::dec << i << " failed!  " <<
-                combinedDesc << ", " <<
-                "Error: " << m_Tests[i].RelativeError << " " <<
-                "Acceptable error: " << m_Tests[i].AcceptableError << std::endl;
+            std::cout << "Test " << std::dec << i << " failed!  " << combinedDesc << ", "
+                      << "Error: " << m_Tests[i].RelativeError << " "
+                      << "Acceptable error: " << m_Tests[i].AcceptableError << std::endl;
         }
     }
 
@@ -82,13 +75,15 @@ bool TestTracker::CheckAllTestsPassed() const {
     return true;
 }
 
-void TestTracker::AddTime(size_t testIndex, uint64_t ms) {
+void
+TestTracker::AddTime(size_t testIndex, uint64_t ms)
+{
     m_Tests[testIndex].TestMs = ms;
 }
 
-void TestTracker::MarkSuccess(
-    size_t testIndex,
-    const std::string &description) {
+void
+TestTracker::MarkSuccess(size_t testIndex, const std::string &description)
+{
 
     if (testIndex >= NumTests) {
         std::cout << "Test index out of range!" << std::endl;
@@ -98,11 +93,12 @@ void TestTracker::MarkSuccess(
     m_Tests[testIndex].DescToFailure[description] = false;
 }
 
-void TestTracker::MarkFailed(
-    size_t testIndex,
-    const std::string &description,
-    const std::string &relativeError,
-    const std::string &acceptableError) {
+void
+TestTracker::MarkFailed(size_t testIndex,
+                        const std::string &description,
+                        const std::string &relativeError,
+                        const std::string &acceptableError)
+{
 
     if (testIndex >= NumTests) {
         std::cout << "Test index out of range!" << std::endl;

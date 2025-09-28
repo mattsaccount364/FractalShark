@@ -96,7 +96,6 @@ InvokeHpSharkReferenceKernelCorrectness(BenchmarkTimer &timer,
 #define ExplicitlyInstantiateHpSharkReference(SharkFloatParams) ;
 #endif
 
-#define ExplicitlyInstantiate(SharkFloatParams)                                                         \
-    ExplicitlyInstantiateHpSharkReference(SharkFloatParams)
+#define ExplicitlyInstantiate(SharkFloatParams) ExplicitlyInstantiateHpSharkReference(SharkFloatParams)
 
 ExplicitInstantiateAll();

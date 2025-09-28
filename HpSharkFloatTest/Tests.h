@@ -1,15 +1,11 @@
 #pragma once
 
-enum class Operator {
-    Add,
-    MultiplyKaratsubaV2,
-    MultiplyFFT,
-    MultiplyFFT2,
-    ReferenceOrbit
-};
+enum class Operator { Add, MultiplyKaratsubaV2, MultiplyFFT, MultiplyFFT2, ReferenceOrbit };
 
-template<Operator sharkOperator>
-const char *OperatorToString() {
+template <Operator sharkOperator>
+const char *
+OperatorToString()
+{
     if constexpr (sharkOperator == Operator::Add) {
         return "Operator::Add";
     } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
@@ -25,11 +21,10 @@ const char *OperatorToString() {
     }
 }
 
-template<class SharkFloatParams, Operator sharkOperator>
+template <class SharkFloatParams, Operator sharkOperator>
 void TestBinOperatorTwoNumbers(int testNum, const char *num1, const char *num2);
 
-template<class SharkFloatParams, Operator sharkOperator>
-bool TestAllBinaryOp(int testBase);
+template <class SharkFloatParams, Operator sharkOperator> bool TestAllBinaryOp(int testBase);
 
-template<Operator sharkOperator>
+template <Operator sharkOperator>
 bool TestBinaryOperatorPerf(int testBase, int numIters, int internalTestLoopCount);

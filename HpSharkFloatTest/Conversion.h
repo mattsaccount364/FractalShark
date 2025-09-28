@@ -1,4 +1,3 @@
 #pragma once
 
-template<class SharkFloatParams>
-bool TestConversion(int testBase);
+template <class SharkFloatParams> bool TestConversion(int testBase);

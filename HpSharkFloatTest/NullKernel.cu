@@ -1,22 +1,26 @@
+#include "BenchmarkTimer.h"
 #include <cstdio>
 #include <cuda_runtime.h>
-#include "BenchmarkTimer.h"
 
 #include <iostream>
 
-__global__ void trivial_kernel(int *output) {
+__global__ void
+trivial_kernel(int *output)
+{
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     output[idx] = idx;
 }
 
-void TestNullKernel() {
+void
+TestNullKernel()
+{
     const int N = 256;
     const auto NumIterations = 100000;
     int *d_output;
     cudaMalloc(&d_output, N * sizeof(int));
 
     // Warm-up kernel to mitigate startup overhead
-    trivial_kernel << <1, N >> > (d_output);
+    trivial_kernel<<<1, N>>>(d_output);
     cudaDeviceSynchronize();
 
     BenchmarkTimer timer;
@@ -26,7 +30,7 @@ void TestNullKernel() {
         for (int i = 0; i < NumIterations; ++i) {
 
             // Launch the trivial kernel
-            trivial_kernel << <1, N >> > (d_output);
+            trivial_kernel<<<1, N>>>(d_output);
 
             // Ensure the kernel has completed
             cudaDeviceSynchronize();

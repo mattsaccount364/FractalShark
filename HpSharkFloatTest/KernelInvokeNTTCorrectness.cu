@@ -87,7 +87,6 @@ InvokeMultiplyNTTKernelCorrectness(BenchmarkTimer &timer,
 #define ExplicitlyInstantiateMultiplyNTT(SharkFloatParams) ;
 #endif
 
-#define ExplicitlyInstantiate(SharkFloatParams)                                                         \
-    ExplicitlyInstantiateMultiplyNTT(SharkFloatParams)
+#define ExplicitlyInstantiate(SharkFloatParams) ExplicitlyInstantiateMultiplyNTT(SharkFloatParams)
 
 ExplicitInstantiateAll();

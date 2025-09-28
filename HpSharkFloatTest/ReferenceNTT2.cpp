@@ -53,10 +53,10 @@ ReverseBits32(uint32_t value, int bit_count)
 // NOTE: Does not set sign; do that at the call site.
 template <class SharkFloatParams>
 static void
-Normalize(HpSharkFloat<SharkFloatParams>& out,
-          const HpSharkFloat<SharkFloatParams>& a,
-          const HpSharkFloat<SharkFloatParams>& b,
-          const uint64_t* final128,     // len = 2*Ddigits
+Normalize(HpSharkFloat<SharkFloatParams> &out,
+          const HpSharkFloat<SharkFloatParams> &a,
+          const HpSharkFloat<SharkFloatParams> &b,
+          const uint64_t *final128,     // len = 2*Ddigits
           size_t Ddigits,               // number of 32-bit positions represented in final128
           int32_t additionalFactorOfTwo // 0 for XX/YY; 1 for XY if you did NOT shift digits
 )
@@ -188,7 +188,7 @@ FindGenerator()
 //--------------------------------------------------------------------------------------------------
 
 static void
-BitReverseInplace64(uint64_t* A, uint32_t N, uint32_t stages)
+BitReverseInplace64(uint64_t *A, uint32_t N, uint32_t stages)
 {
     for (uint32_t i = 0; i < N; ++i) {
         uint32_t j = ReverseBits32(i, stages) & (N - 1);
@@ -203,11 +203,11 @@ BitReverseInplace64(uint64_t* A, uint32_t N, uint32_t stages)
 
 template <class SharkFloatParams>
 static void
-NTTRadix2(DebugHostCombo<SharkFloatParams>& debugCombo,
-          uint64_t* A,
+NTTRadix2(DebugHostCombo<SharkFloatParams> &debugCombo,
+          uint64_t *A,
           uint32_t N,
           uint32_t stages,
-          const uint64_t* stage_base)
+          const uint64_t *stage_base)
 {
     for (uint32_t s = 1; s <= stages; ++s) {
         uint32_t m = 1u << s;
@@ -233,7 +233,7 @@ NTTRadix2(DebugHostCombo<SharkFloatParams>& debugCombo,
 
 template <class SharkFloatParams>
 [[nodiscard]] static uint64_t
-ReadBitsSimple(const HpSharkFloat<SharkFloatParams>& X, int64_t q, int b)
+ReadBitsSimple(const HpSharkFloat<SharkFloatParams> &X, int64_t q, int b)
 {
     const int B = SharkFloatParams::GlobalNumUint32 * 32;
     if (q >= B || q < 0)
@@ -262,9 +262,9 @@ ReadBitsSimple(const HpSharkFloat<SharkFloatParams>& X, int64_t q, int b)
 
 template <class SharkFloatParams>
 static void
-PackBase2bPrime_NoAlloc(DebugHostCombo<SharkFloatParams>& debugCombo,
+PackBase2bPrime_NoAlloc(DebugHostCombo<SharkFloatParams> &debugCombo,
                         const HpSharkFloat<SharkFloatParams> &Xsrc,
-                        const PlanPrime& plan,
+                        const PlanPrime &plan,
                         std::span<uint64_t> outMont) // len >= plan.N
 {
     using namespace SharkNTT;
@@ -280,7 +280,7 @@ PackBase2bPrime_NoAlloc(DebugHostCombo<SharkFloatParams>& debugCombo,
 }
 
 static void
-UnpackPrimeToFinal128(const uint64_t* A_norm, const PlanPrime& plan, uint64_t* Final128, size_t Ddigits)
+UnpackPrimeToFinal128(const uint64_t *A_norm, const PlanPrime &plan, uint64_t *Final128, size_t Ddigits)
 {
     using namespace SharkNTT;
     std::memset(Final128, 0, sizeof(uint64_t) * 2 * Ddigits);
@@ -311,8 +311,8 @@ UnpackPrimeToFinal128(const uint64_t* A_norm, const PlanPrime& plan, uint64_t* F
         auto add32 = [&](size_t j, uint32_t add) {
             if (!add)
                 return;
-            uint64_t& lo = Final128[2 * j + 0];
-            uint64_t& hi = Final128[2 * j + 1];
+            uint64_t &lo = Final128[2 * j + 0];
+            uint64_t &hi = Final128[2 * j + 1];
             uint64_t old = lo;
             lo += (uint64_t)add;
             if (lo < old)
@@ -321,8 +321,8 @@ UnpackPrimeToFinal128(const uint64_t* A_norm, const PlanPrime& plan, uint64_t* F
         auto sub32 = [&](size_t j, uint32_t sub) {
             if (!sub)
                 return;
-            uint64_t& lo = Final128[2 * j + 0];
-            uint64_t& hi = Final128[2 * j + 1];
+            uint64_t &lo = Final128[2 * j + 0];
+            uint64_t &hi = Final128[2 * j + 1];
             uint64_t old = lo;
             uint64_t dif = old - (uint64_t)sub;
             lo = dif;
@@ -402,7 +402,7 @@ VerifyMontgomeryConstants(uint64_t Pval, uint64_t NINVval, uint64_t R2val)
 
 template <class SharkFloatParams>
 static void
-VerifyNTTRoots(const SharkNTT::RootTables& roots, const PlanPrime& plan)
+VerifyNTTRoots(const SharkNTT::RootTables &roots, const PlanPrime &plan)
 {
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "  NINV = 0x" << std::hex << SharkNTT::MagicPrimeInv << std::dec << "\n";
@@ -426,17 +426,19 @@ VerifyNTTRoots(const SharkNTT::RootTables& roots, const PlanPrime& plan)
     assert(psi2N == one_m && "psi^(2N) != 1 (check N and roots)");
 
     // ω = ψ^2. Check ω^N = 1
-    [[maybe_unused]] uint64_t omega = SharkNTT::MontgomeryMul<SharkFloatParams>(roots.psi_pows[1], roots.psi_pows[1]);
-    [[maybe_unused]] uint64_t omegaN = SharkNTT::MontgomeryPow<SharkFloatParams>(omega, (uint64_t)plan.N);
+    [[maybe_unused]] uint64_t omega =
+        SharkNTT::MontgomeryMul<SharkFloatParams>(roots.psi_pows[1], roots.psi_pows[1]);
+    [[maybe_unused]] uint64_t omegaN =
+        SharkNTT::MontgomeryPow<SharkFloatParams>(omega, (uint64_t)plan.N);
     assert(omegaN == one_m && "omega^N != 1 (check N and roots)");
 }
 
 } // namespace SharkNTT
 
 template <class SharkFloatParams, DebugStatePurpose Purpose, typename ArrayType>
-const DebugStateHost<SharkFloatParams>&
-GetCurrentDebugState(std::vector<DebugStateHost<SharkFloatParams>>& debugStates,
-                     const ArrayType* arrayToChecksum,
+const DebugStateHost<SharkFloatParams> &
+GetCurrentDebugState(std::vector<DebugStateHost<SharkFloatParams>> &debugStates,
+                     const ArrayType *arrayToChecksum,
                      size_t arraySize)
 {
 
@@ -445,7 +447,7 @@ GetCurrentDebugState(std::vector<DebugStateHost<SharkFloatParams>>& debugStates,
     constexpr auto RecursionDepth = 0;
     constexpr auto UseConvolution = UseConvolution::No;
 
-    auto& retval = debugStates[curPurpose];
+    auto &retval = debugStates[curPurpose];
     retval.Reset(arrayToChecksum, arraySize, Purpose, RecursionDepth, CallIndex, UseConvolution);
     return retval;
 }
@@ -456,16 +458,16 @@ GetCurrentDebugState(std::vector<DebugStateHost<SharkFloatParams>>& debugStates,
 
 template <class SharkFloatParams>
 void
-MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams>* A,
-                   const HpSharkFloat<SharkFloatParams>* B,
-                   HpSharkFloat<SharkFloatParams>* OutXX,
-                   HpSharkFloat<SharkFloatParams>* OutXY,
-                   HpSharkFloat<SharkFloatParams>* OutYY,
-                   DebugHostCombo<SharkFloatParams>& debugCombo)
+MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
+                   const HpSharkFloat<SharkFloatParams> *B,
+                   HpSharkFloat<SharkFloatParams> *OutXX,
+                   HpSharkFloat<SharkFloatParams> *OutXY,
+                   HpSharkFloat<SharkFloatParams> *OutYY,
+                   DebugHostCombo<SharkFloatParams> &debugCombo)
 {
     using namespace SharkNTT;
 
-    auto& debugStates = debugCombo.States;
+    auto &debugStates = debugCombo.States;
 
     if constexpr (SharkDebugChecksums) {
         constexpr auto NewDebugStateSize = static_cast<int>(DebugStatePurpose::NumPurposes);
@@ -488,9 +490,9 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams>* A,
     assert((PHI % (2ull * (uint64_t)plan.N)) == 0ull);
 
     if constexpr (SharkDebugChecksums) {
-        const auto& debugAState = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::ADigits>(
+        const auto &debugAState = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::ADigits>(
             debugStates, A->Digits, SharkFloatParams::GlobalNumUint32);
-        const auto& debugBState = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::BDigits>(
+        const auto &debugBState = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::BDigits>(
             debugStates, B->Digits, SharkFloatParams::GlobalNumUint32);
 
         if (SharkVerbose == VerboseMode::Debug) {
@@ -520,17 +522,17 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams>* A,
     BuildRoots<SharkFloatParams>(plan.N, plan.stages, roots);
 
     // Verify constants and roots
-    [[maybe_unused]] const bool constants_ok =
-        VerifyMontgomeryConstants<SharkFloatParams>(SharkNTT::MagicPrime, SharkNTT::MagicPrimeInv, SharkNTT::R2);
+    [[maybe_unused]] const bool constants_ok = VerifyMontgomeryConstants<SharkFloatParams>(
+        SharkNTT::MagicPrime, SharkNTT::MagicPrimeInv, SharkNTT::R2);
     assert(constants_ok && "Montgomery constants verification failed");
     VerifyNTTRoots<SharkFloatParams>(roots, plan);
 
     auto run_conv = [&]<DebugStatePurpose step1X,
                         DebugStatePurpose step1Y,
                         DebugStatePurpose step2X,
-                        DebugStatePurpose step2Y>(HpSharkFloat<SharkFloatParams>* out,
-                                                  const HpSharkFloat<SharkFloatParams>& inA,
-                                                  const HpSharkFloat<SharkFloatParams>& inB,
+                        DebugStatePurpose step2Y>(HpSharkFloat<SharkFloatParams> *out,
+                                                  const HpSharkFloat<SharkFloatParams> &inA,
+                                                  const HpSharkFloat<SharkFloatParams> &inB,
                                                   int addFactorOfTwo,
                                                   bool isNegative) {
         // ============================
@@ -542,9 +544,9 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams>* A,
         PackBase2bPrime_NoAlloc(debugCombo, inB, plan, Y);
 
         if constexpr (SharkDebugChecksums) {
-            const auto& debugXState =
+            const auto &debugXState =
                 GetCurrentDebugState<SharkFloatParams, step1X>(debugStates, X.data(), (size_t)plan.N);
-            const auto& debugYState =
+            const auto &debugYState =
                 GetCurrentDebugState<SharkFloatParams, step1Y>(debugStates, Y.data(), (size_t)plan.N);
 
             if (SharkVerbose == VerboseMode::Debug) {
@@ -563,9 +565,9 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams>* A,
         }
 
         if constexpr (SharkDebugChecksums) {
-            const auto& debugXState =
+            const auto &debugXState =
                 GetCurrentDebugState<SharkFloatParams, step2X>(debugStates, X.data(), (size_t)plan.N);
-            const auto& debugYState =
+            const auto &debugYState =
                 GetCurrentDebugState<SharkFloatParams, step2Y>(debugStates, Y.data(), (size_t)plan.N);
 
             if (SharkVerbose == VerboseMode::Debug) {
@@ -635,11 +637,11 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams>* A,
 }
 
 #define ExplicitlyInstantiate(SharkFloatParams)                                                         \
-    template void MultiplyHelperFFT2<SharkFloatParams>(const HpSharkFloat<SharkFloatParams>*,           \
-                                                       const HpSharkFloat<SharkFloatParams>*,           \
-                                                       HpSharkFloat<SharkFloatParams>*,                 \
-                                                       HpSharkFloat<SharkFloatParams>*,                 \
-                                                       HpSharkFloat<SharkFloatParams>*,                 \
-                                                       DebugHostCombo<SharkFloatParams>&);
+    template void MultiplyHelperFFT2<SharkFloatParams>(const HpSharkFloat<SharkFloatParams> *,          \
+                                                       const HpSharkFloat<SharkFloatParams> *,          \
+                                                       HpSharkFloat<SharkFloatParams> *,                \
+                                                       HpSharkFloat<SharkFloatParams> *,                \
+                                                       HpSharkFloat<SharkFloatParams> *,                \
+                                                       DebugHostCombo<SharkFloatParams> &);
 
 ExplicitInstantiateAll();

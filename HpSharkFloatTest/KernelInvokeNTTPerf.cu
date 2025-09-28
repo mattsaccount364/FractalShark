@@ -101,7 +101,6 @@ InvokeMultiplyNTTKernelPerf(BenchmarkTimer &timer,
     cudaFree(d_tempProducts);
 }
 
-
 #ifdef ENABLE_MULTIPLY_NTT2_KERNEL
 #define ExplicitlyInstantiateMultiplyNTT(SharkFloatParams)                                              \
     template void InvokeMultiplyNTTKernelPerf<SharkFloatParams>(                                        \
@@ -110,7 +109,6 @@ InvokeMultiplyNTTKernelPerf(BenchmarkTimer &timer,
 #define ExplicitlyInstantiateMultiplyNTT(SharkFloatParams) ;
 #endif
 
-#define ExplicitlyInstantiate(SharkFloatParams)                                                         \
-    ExplicitlyInstantiateMultiplyNTT(SharkFloatParams)
+#define ExplicitlyInstantiate(SharkFloatParams) ExplicitlyInstantiateMultiplyNTT(SharkFloatParams)
 
 ExplicitInstantiateAll();

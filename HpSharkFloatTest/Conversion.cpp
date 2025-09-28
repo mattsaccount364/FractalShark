@@ -2,21 +2,20 @@
 
 #include <cuda_runtime.h>
 
-#include "HpSharkFloat.cuh"
 #include "BenchmarkTimer.h"
+#include "HpSharkFloat.cuh"
 #include "TestTracker.h"
 
-#include <iostream>
-#include <vector>
-#include <gmp.h>
-#include <cstring>
-#include <sstream>
-#include <iomanip>
-#include <cmath>
 #include <algorithm>
+#include <cmath>
+#include <cstring>
+#include <gmp.h>
+#include <iomanip>
+#include <iostream>
+#include <sstream>
+#include <vector>
 
 #include <assert.h>
-
 
 static TestTracker Tests;
 
@@ -135,7 +134,7 @@ TestConvertNumber(int testNum, const char *numberStr)
                   << MpfToString<SharkFloatParams>(mpf_x_hdrd, SF::DefaultPrecBits) << "\n";
     }
 
-// ---------------- Epsilons based on magnitude (ULP-scaled) ----------------
+    // ---------------- Epsilons based on magnitude (ULP-scaled) ----------------
     constexpr long P_full = static_cast<long>(SF::DefaultMpirBits - 1); // your working precision
     constexpr long P_f = 23;                                            // float fraction bits
     constexpr long P_d = 52;                                            // double fraction bits
@@ -209,11 +208,13 @@ TestConvertNumber(int testNum, const char *numberStr)
     mpf_clear(mpf_x);
 }
 
-template<class SharkFloatParams>
-bool TestConversion(int testBase) {
+template <class SharkFloatParams>
+bool
+TestConversion(int testBase)
+{
     const auto set1 = testBase + 10;
-    //TestConvertNumber<SharkFloatParams>(set1 + 1, "0.0");
-    //TestConvertNumber<SharkFloatParams>(set1 + 2, "1.0");
+    // TestConvertNumber<SharkFloatParams>(set1 + 1, "0.0");
+    // TestConvertNumber<SharkFloatParams>(set1 + 2, "1.0");
     TestConvertNumber<SharkFloatParams>(set1 + 3, "2.0");
     TestConvertNumber<SharkFloatParams>(set1 + 4, "3.0");
 
@@ -276,7 +277,7 @@ bool TestConversion(int testBase) {
     return Tests.CheckAllTestsPassed();
 }
 
-#define ExplicitlyInstantiate(SharkFloatParams) \
+#define ExplicitlyInstantiate(SharkFloatParams)                                                         \
     template bool TestConversion<SharkFloatParams>(int testBase);
 
 ExplicitInstantiateAll();

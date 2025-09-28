@@ -44,7 +44,6 @@ InvokeAddKernelPerf(BenchmarkTimer &timer,
 #define ExplicitlyInstantiateAdd(SharkFloatParams) ;
 #endif
 
-#define ExplicitlyInstantiate(SharkFloatParams)                                                         \
-    ExplicitlyInstantiateAdd(SharkFloatParams)
+#define ExplicitlyInstantiate(SharkFloatParams) ExplicitlyInstantiateAdd(SharkFloatParams)
 
 ExplicitInstantiateAll();

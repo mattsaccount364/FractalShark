@@ -1,21 +1,21 @@
-﻿#include "TestVerbose.h"
-#include "NullKernel.cuh"
-#include "Conversion.h"
+﻿#include "Conversion.h"
 #include "HpSharkFloat.cuh"
+#include "NullKernel.cuh"
+#include "TestVerbose.h"
 #include "Tests.h"
 
-#include <cuda_runtime.h> 
+#include <cuda_runtime.h>
 
-#include <iostream>
-#include <stdarg.h>
-#include <mpir.h>
-#include <conio.h>
 #include "MainTestCuda.h"
+#include <conio.h>
+#include <iostream>
+#include <mpir.h>
+#include <stdarg.h>
 
+#include <chrono>  // steady_clock
+#include <conio.h> // _kbhit()
 #include <iostream>
 #include <string>
-#include <conio.h>      // _kbhit()
-#include <chrono>       // steady_clock
 
 #define NOMINMAX
 #include <windows.h> // Sleep()
@@ -23,7 +23,9 @@
 #include "HDRFloat.h"
 
 // Function to perform the calculation on the host using MPIR
-void computeNextXY_host(mpf_t x, mpf_t y, mpf_t a, mpf_t b, int num_iter) {
+void
+computeNextXY_host(mpf_t x, mpf_t y, mpf_t a, mpf_t b, int num_iter)
+{
     mpf_t x_squared, y_squared, two_xy, temp_x, temp_y;
     mpf_init(x_squared);
     mpf_init(y_squared);
@@ -32,9 +34,9 @@ void computeNextXY_host(mpf_t x, mpf_t y, mpf_t a, mpf_t b, int num_iter) {
     mpf_init(temp_y);
 
     for (int iter = 0; iter < num_iter; ++iter) {
-        mpf_mul(x_squared, x, x); // x^2
-        mpf_mul(y_squared, y, y); // y^2
-        mpf_mul(temp_y, x, y);    // xy
+        mpf_mul(x_squared, x, x);      // x^2
+        mpf_mul(y_squared, y, y);      // y^2
+        mpf_mul(temp_y, x, y);         // xy
         mpf_mul_ui(two_xy, temp_y, 2); // 2xy
 
         mpf_sub(temp_x, x_squared, y_squared); // x^2 - y^2
@@ -52,7 +54,9 @@ void computeNextXY_host(mpf_t x, mpf_t y, mpf_t a, mpf_t b, int num_iter) {
     mpf_clear(temp_y);
 }
 
-char PressKey() {
+char
+PressKey()
+{
     // Press any key to continue (win32)
     // on console, don't require a newline
     std::cout << "Press any key to continue...";
@@ -60,10 +64,12 @@ char PressKey() {
     return (char)_getch();
 }
 
-template<typename TestSharkParams>
-bool CorrectnessTests() {
-    //TestNullKernel();
-    //PressKey();
+template <typename TestSharkParams>
+bool
+CorrectnessTests()
+{
+    // TestNullKernel();
+    // PressKey();
 
     int testBase = 0;
 
@@ -115,7 +121,9 @@ bool CorrectnessTests() {
     return true;
 }
 
-int RunCorrectnessTest() {
+int
+RunCorrectnessTest()
+{
     std::atomic<uint64_t> testCount = 0;
 
 #if (ENABLE_BASIC_CORRECTNESS == 0) || (ENABLE_BASIC_CORRECTNESS == 1) || (ENABLE_BASIC_CORRECTNESS == 3)
@@ -158,12 +166,12 @@ int RunCorrectnessTest() {
 /// Prompts the user with `promptText`, waits up to `timeoutSec` seconds for a line
 /// on stdin, and returns the parsed integer. If the user types nothing within the
 /// timeout, returns `defaultValue`.
-int PromptIntWithTimeout(
-    const std::string &promptText,
-    int defaultValue = 1,
-    int timeoutSec = 3,
-    int sleepIntervalMs = 50
-) {
+int
+PromptIntWithTimeout(const std::string &promptText,
+                     int defaultValue = 1,
+                     int timeoutSec = 3,
+                     int sleepIntervalMs = 50)
+{
     std::cout << promptText << " " << std::flush;
     auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(timeoutSec);
     std::string line;
@@ -178,28 +186,28 @@ int PromptIntWithTimeout(
     }
 
     if (line.empty()) {
-        std::cout << "\n( no input in " << timeoutSec
-            << "s, defaulting to " << defaultValue << " )\n";
+        std::cout << "\n( no input in " << timeoutSec << "s, defaulting to " << defaultValue << " )\n";
         return defaultValue;
     }
 
     try {
         return std::stoi(line);
-    }
-    catch (...) {
-        std::cout << "( couldn’t parse “" << line
-            << "”, defaulting to " << defaultValue << " )\n";
+    } catch (...) {
+        std::cout << "( couldn’t parse “" << line << "”, defaulting to " << defaultValue << " )\n";
         return defaultValue;
     }
 }
 
-int main(int /*argc*/, char * /*argv*/[]) {
+int
+main(int /*argc*/, char * /*argv*/[])
+{
     bool res = false;
 
     InitStatics();
 
     constexpr auto timeoutInSec = 3;
-    int verboseInput = PromptIntWithTimeout("Verbose? Default=0. (0 = No, 1 = Yes):", /*default=*/0, timeoutInSec);
+    int verboseInput =
+        PromptIntWithTimeout("Verbose? Default=0. (0 = No, 1 = Yes):", /*default=*/0, timeoutInSec);
     if (verboseInput == 1) {
         SetVerboseMode(VerboseMode::Debug);
     } else {
@@ -212,17 +220,19 @@ int main(int /*argc*/, char * /*argv*/[]) {
     for (int i = 0; i < deviceCount; ++i) {
         cudaDeviceProp prop;
         cudaGetDeviceProperties(&prop, i);
-        std::cout << "Device " << i << ": " << prop.sharedMemPerMultiprocessor << " bytes of shared memory per block." << std::endl;
+        std::cout << "Device " << i << ": " << prop.sharedMemPerMultiprocessor
+                  << " bytes of shared memory per block." << std::endl;
 
         // persistingL2CacheMaxSize
-        std::cout << "Device " << i << ": " << prop.persistingL2CacheMaxSize << " bytes of L2 cache." << std::endl;
+        std::cout << "Device " << i << ": " << prop.persistingL2CacheMaxSize << " bytes of L2 cache."
+                  << std::endl;
     }
 
-    //TestNullKernel();
-    //q = PressKey();
-    //if (q == 'q') {
-    //    return 0;
-    //}
+    // TestNullKernel();
+    // q = PressKey();
+    // if (q == 'q') {
+    //     return 0;
+    // }
 
     if constexpr (SharkTestCorrectness) {
         res = RunCorrectnessTest();
@@ -233,7 +243,8 @@ int main(int /*argc*/, char * /*argv*/[]) {
 
 #if (ENABLE_BASIC_CORRECTNESS == 2) || (ENABLE_BASIC_CORRECTNESS == 1)
     int numIters = PromptIntWithTimeout("NumIters? Default 5", /*default=*/5, timeoutInSec);
-    int internalTestLoopCount = PromptIntWithTimeout("CUDA iteration count? Default 1000", /*default=*/1000, timeoutInSec);
+    int internalTestLoopCount =
+        PromptIntWithTimeout("CUDA iteration count? Default 1000", /*default=*/1000, timeoutInSec);
 
     int testBase = 0;
     if constexpr (SharkEnableAddKernel) {

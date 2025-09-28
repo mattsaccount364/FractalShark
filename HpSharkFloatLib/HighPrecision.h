@@ -17,8 +17,6 @@ class HDRFloat;
 
 #include "MpirSerialization.h"
 
-#include <mpir.h>
-
 #include <string>
 #include <assert.h>
 #include <iostream>

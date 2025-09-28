@@ -2,6 +2,7 @@
 #include "BenchmarkData.h"
 #include "WaitCursor.h"
 
+#define NOMINMAX
 #include <windows.h>
 
 BenchmarkData::BenchmarkData() :

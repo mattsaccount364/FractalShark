@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdarg.h>
 #include <mpir.h>
 #include <vector>
 

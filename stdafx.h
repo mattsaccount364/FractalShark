@@ -73,6 +73,7 @@ void *operator new(size_t size);
 
 #include <GL/gl.h>      /* OpenGL header file */
 #include <GL/glu.h>     /* OpenGL utilities header file */
+#include <mpir.h>
 
 // Local Header Files
 #include "OpenGLContext.h"

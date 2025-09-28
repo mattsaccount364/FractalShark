@@ -1,12 +1,13 @@
 ﻿#include "TestVerbose.h"
 #include "NullKernel.cuh"
-#include "Conversion.cuh"
+#include "Conversion.h"
 #include "HpSharkFloat.cuh"
 #include "Tests.h"
 
 #include <cuda_runtime.h> 
 
 #include <iostream>
+#include <stdarg.h>
 #include <mpir.h>
 #include <conio.h>
 #include "MainTestCuda.h"
@@ -14,8 +15,12 @@
 #include <iostream>
 #include <string>
 #include <conio.h>      // _kbhit()
-#include <windows.h>    // Sleep()
 #include <chrono>       // steady_clock
+
+#define NOMINMAX
+#include <windows.h> // Sleep()
+
+#include "HDRFloat.h"
 
 // Function to perform the calculation on the host using MPIR
 void computeNextXY_host(mpf_t x, mpf_t y, mpf_t a, mpf_t b, int num_iter) {
@@ -190,6 +195,8 @@ int PromptIntWithTimeout(
 
 int main(int /*argc*/, char * /*argv*/[]) {
     bool res = false;
+
+    InitStatics();
 
     constexpr auto timeoutInSec = 3;
     int verboseInput = PromptIntWithTimeout("Verbose? Default=0. (0 = No, 1 = Yes):", /*default=*/0, timeoutInSec);

@@ -1,5 +1,6 @@
 #include "BenchmarkTimer.h"
 
+#define NOMINMAX
 #include <windows.h>
 
 BenchmarkTimer::BenchmarkTimer() :

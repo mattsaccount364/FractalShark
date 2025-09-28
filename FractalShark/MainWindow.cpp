@@ -12,7 +12,6 @@
 #include "Exceptions.h"
 
 #include <minidumpapiset.h>
-#include <mpir.h>
 #include <commdlg.h>
 
 struct MainWindow::SavedLocation {

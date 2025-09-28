@@ -62,6 +62,30 @@ void TestConvertNumber (
 
     x_num.HpGpuToMpf(mpf_x_gpu_result);
 
+    // Convert to HDRFloat using ToHDRFloat
+    auto hdrFloat = x_num.ToHDRFloat<float>();
+    auto hdrDouble = x_num.ToHDRFloat<double>();
+    if (SharkVerbose == VerboseMode::Debug) {
+        auto fstr = hdrFloat.ToString<false>();
+        auto dstr = hdrDouble.ToString<false>();
+        std::cout << "\nHDRFloat representations:" << std::endl;
+        std::cout << "HDRFloat<float>: " << fstr << std::endl;
+        std::cout << "HDRFloat<double>: " << dstr << std::endl;
+    }
+
+    HpSharkFloat<SharkFloatParams> lowPrecisionSharkFloat;
+    HpSharkFloat<SharkFloatParams> lowPrecisionSharkDouble;
+
+    lowPrecisionSharkFloat.FromHDRFloat(hdrFloat);
+    lowPrecisionSharkDouble.FromHDRFloat(hdrDouble);
+    if (SharkVerbose == VerboseMode::Debug) {
+        auto fstr = hdrFloat.ToString<false>();
+        auto dstr = hdrDouble.ToString<false>();
+        std::cout << "\nLow-precision HpSharkFloat representations from HDRFloat:" << std::endl;
+        std::cout << "From HDRFloat<float>: " << lowPrecisionSharkFloat.ToString() << std::endl;
+        std::cout << "From HDRFloat<double>: " << lowPrecisionSharkDouble.ToString() << std::endl;
+    }
+
     // Compute the differences between host and GPU results
     mpf_t mpf_diff;
     mpf_init(mpf_diff);
@@ -193,6 +217,7 @@ bool TestConversion(int testBase) {
     TestConvertNumber<SharkFloatParams>(set7 + 1, "4294967297.0000152587890625"); // 2^32 + 1 + 1/2^16
     TestConvertNumber<SharkFloatParams>(set7 + 2, "18446744073709551617.0000152587890625");
     TestConvertNumber<SharkFloatParams>(set7 + 3, "55340232221128654849.0000152587890625");
+
     return Tests.CheckAllTestsPassed();
 }
 

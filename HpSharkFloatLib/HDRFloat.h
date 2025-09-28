@@ -5,6 +5,7 @@
 #include <type_traits>
 #include <fstream>
 #include <format>
+#include <algorithm>
 
 #include "HighPrecision.h"
 #include "CudaDblflt.h"
@@ -122,9 +123,8 @@ public:
     static constexpr int MaxFloatExponent = 127;
     static constexpr int MinFloatExponent = -126;
 
-#ifndef __CUDACC__ 
     template<bool IntegerOutput>
-    CUDA_CRAP std::string ToString() const {
+    std::string ToString() const {
         constexpr bool isDblFlt =
             std::is_same<T, CudaDblflt<dblflt>>::value ||
             std::is_same<T, CudaDblflt<MattDblflt>>::value;
@@ -156,7 +156,7 @@ public:
     }
 
     template<bool IntegerOutput>
-    CUDA_CRAP void FromIStream(std::istream &is) {
+    void FromIStream(std::istream &is) {
         constexpr bool isDblFlt =
             std::is_same<T, CudaDblflt<dblflt>>::value ||
             std::is_same<T, CudaDblflt<MattDblflt>>::value;
@@ -186,7 +186,6 @@ public:
             }
         }
     }
-#endif
 
     CUDA_CRAP constexpr HDRFloat() {
         Base::mantissa = T{};
@@ -452,7 +451,7 @@ public:
             }
 
             if (scaleFactor >= 128) {
-                return (T)INFINITY;
+                return std::numeric_limits<T>::max();
             }
 
             return (T)twoPowExpFlt[(int)scaleFactor - MinFloatExponent];
@@ -462,7 +461,7 @@ public:
             }
 
             if (scaleFactor >= 1024) {
-                return (T)INFINITY;
+                return std::numeric_limits<T>::max();
             }
 
             return (T)twoPowExpDbl[(int)scaleFactor - MinDoubleExponent];

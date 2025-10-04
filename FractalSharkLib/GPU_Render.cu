@@ -24,6 +24,8 @@
 
 #include "GPU_LAInfoDeep.h"
 #include "LAReference.h"
+#include "InitStatics.cuh"
+#include "InitStaticsInternal.cuh"
 
 #include <type_traits>
 #include <stdint.h>
@@ -79,7 +81,6 @@ ConvertLocToIndex(size_t X, size_t Y, size_t OriginalWidth) {
     return Y * RoundedWidth + X;
 }
 
-#include "InitStatics.cuh"
 #include "BLA.cuh"
 #include "Perturb.cuh"
 #include "PerturbResultsCollection.cuh"
@@ -753,8 +754,6 @@ uint32_t GPURenderer::Render(
             HDRFloat<CudaDblflt<dblflt>> dx2{ dx };
             HDRFloat<CudaDblflt<dblflt>> dy2{ dy };
 
-            mandel_1xHDR_InitStatics << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > ();
-
             switch (iteration_precision) {
             case 1:
                 mandel_hdr_float<IterType, 1> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
@@ -1058,8 +1057,6 @@ uint32_t GPURenderer::RenderPerturbLAv2(
         if constexpr (
             EnableGpuHDRx32PerturbedLAv2 && std::is_same<HDRFloat<float>, T>::value) {
 
-            mandel_1xHDR_InitStatics << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > ();
-
             mandel_1xHDR_float_perturb_lav2<
                 IterType,
                 HDRFloat<float>,
@@ -1084,8 +1081,6 @@ uint32_t GPURenderer::RenderPerturbLAv2(
 
         if constexpr (
             EnableGpuHDRx64PerturbedLAv2 && std::is_same<HDRFloat<double>, T>::value) {
-
-            mandel_1xHDR_InitStatics << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > ();
 
             mandel_1xHDR_float_perturb_lav2<
                 IterType,
@@ -1119,8 +1114,6 @@ uint32_t GPURenderer::RenderPerturbLAv2(
 
             HDRFloat<CudaDblflt<dblflt>> centerX2{ centerX };
             HDRFloat<CudaDblflt<dblflt>> centerY2{ centerY };
-
-            mandel_1xHDR_InitStatics << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > ();
 
             mandel_1xHDR_float_perturb_lav2<
                 IterType,
@@ -1314,8 +1307,6 @@ uint32_t GPURenderer::RenderPerturbBLAScaled(
         }
     } else if (algorithm == RenderAlgorithmEnum::GpuHDRx32PerturbedScaled) {
         if constexpr (EnableGpuHDRx32PerturbedScaled && std::is_same<T, HDRFloat<float>>::value) {
-            mandel_1xHDR_InitStatics << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > ();
-
             mandel_1x_float_perturb_scaled<IterType, T> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                 static_cast<IterType *>(OutputIterMatrix),
                 OutputColorMatrix,
@@ -1435,8 +1426,6 @@ uint32_t GPURenderer::RenderPerturbBLA(
                     return result;
                 }
 
-                mandel_1xHDR_InitStatics << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > ();
-
                 mandel_1xHDR_float_perturb_bla<IterType, HDRFloat<float>, LM2> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                     static_cast<IterType *>(OutputIterMatrix),
                     OutputColorMatrix,
@@ -1472,8 +1461,6 @@ uint32_t GPURenderer::RenderPerturbBLA(
                     return result;
                 }
 
-                mandel_1xHDR_InitStatics << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > ();
-
                 mandel_1xHDR_float_perturb_bla<IterType, HDRFloat<double>, LM2> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (
                     static_cast<IterType *>(OutputIterMatrix),
                     OutputColorMatrix,
@@ -1508,8 +1495,6 @@ uint32_t GPURenderer::RenderPerturbBLA(
                 if (result != 0) {
                     return result;
                 }
-
-                mandel_1xHDR_InitStatics << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > ();
 
                 // doubleOnly
                 mandel_1x_double_perturb_bla<IterType, LM2> << <DEFAULT_KERNEL_LAUNCH_PARAMS >> > (

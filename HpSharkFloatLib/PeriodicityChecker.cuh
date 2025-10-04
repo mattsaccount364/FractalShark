@@ -1,17 +1,47 @@
+
+//
+// Return true if we should continue iterating, false if we should stop (period found).
+//
+
 template <class SharkFloatParams>
 static __device__ bool
 PeriodicityChecker(cg::grid_group &grid,
     cg::thread_block &block,
-    const HpSharkFloat<SharkFloatParams> *A_X2,
-    const HpSharkFloat<SharkFloatParams> *B_Y2,
-    const HpSharkFloat<SharkFloatParams> *C_A,
-    const HpSharkFloat<SharkFloatParams> *D_2X,
-    const HpSharkFloat<SharkFloatParams> *E_B,
-    HpSharkFloat<SharkFloatParams> *Out_A_B_C,
-    HpSharkFloat<SharkFloatParams> *Out_D_E,
+    HpSharkReferenceResults<SharkFloatParams> *SharkRestrict reference,
+    uint64_t currentIteration,
     uint64_t *tempData) {
 
-#if 0
+    auto *ConstantReal = &reference->Add.C_A;
+    auto *ConstantImaginary = &reference->Add.E_B;
+    auto *Out_A_B_C = &reference->Multiply.A;
+    auto *Out_D_E = &reference->Multiply.B;
+    auto radiusY = reference->RadiusY;
+
+    using HdrType = SharkFloatParams::Float;
+    HdrType dzdcX{1};
+    HdrType dzdcY{0};
+
+    HdrType cx_cast = ConstantReal->ToHDRFloat<SharkFloatParams::SubType>(0);
+    HdrType cy_cast = ConstantImaginary->ToHDRFloat<SharkFloatParams::SubType>(0);
+
+    // Now lets do periodicity checking and store the results
+    HdrType double_zx;
+    HdrType double_zy;
+
+    double_zx = Out_A_B_C->ToHDRFloat<SharkFloatParams::SubType>(0);
+    double_zy = Out_D_E->ToHDRFloat<SharkFloatParams::SubType>(0);
+
+    // x^2+2*I*x*y-y^2
+    // dzdc = 2.0 * z * dzdc + real(1.0);
+    // dzdc = 2.0 * (zx + zy * i) * (dzdcX + dzdcY * i) + HighPrecision(1.0);
+    // dzdc = 2.0 * (zx * dzdcX + zx * dzdcY * i + zy * i * dzdcX + zy * i * dzdcY * i) +
+    // HighPrecision(1.0); dzdc = 2.0 * zx * dzdcX + 2.0 * zx * dzdcY * i + 2.0 * zy * i * dzdcX
+    // + 2.0 * zy * i * dzdcY * i + HighPrecision(1.0); dzdc = 2.0 * zx * dzdcX + 2.0 * zx * dzdcY *
+    // i + 2.0 * zy * i * dzdcX - 2.0 * zy * dzdcY + HighPrecision(1.0);
+    //
+    // dzdcX = 2.0 * zx * dzdcX - 2.0 * zy * dzdcY + HighPrecision(1.0)
+    // dzdcY = 2.0 * zx * dzdcY + 2.0 * zy * dzdcX
+
     HdrReduce(dzdcX);
     auto dzdcX1 = HdrAbs(dzdcX);
 
@@ -24,22 +54,40 @@ PeriodicityChecker(cg::grid_group &grid,
     HdrReduce(double_zy);
     auto zyCopy1 = HdrAbs(double_zy);
 
-    T n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
+    HdrType n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
 
-    T r0 = HdrMaxPositiveReduced(dzdcX1, dzdcY1);
-    auto n3 = results->GetMaxRadius() * r0 * HighTwo; // TODO optimize HDRFloat *2.
+    const HdrType HighTwo{2.0f};
+    const HdrType HighOne{1.0f};
+    const HdrType TwoFiftySix{256.0f};
+
+    HdrType r0 = HdrMaxPositiveReduced(dzdcX1, dzdcY1);
+    auto n3 = radiusY * r0 * HighTwo;
     HdrReduce(n3);
 
     if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
-        if constexpr (BenchmarkState == BenchmarkMode::Disable) {
-            periodicity_should_break = true;
-        }
+        reference->Period = currentIteration;
+        reference->EscapedIteration = currentIteration;
+        return false;
     } else {
         auto dzdcXOrig = dzdcX;
         dzdcX = HighTwo * (double_zx * dzdcX - double_zy * dzdcY) + HighOne;
         dzdcY = HighTwo * (double_zx * dzdcY + double_zy * dzdcXOrig);
     }
-#endif
 
-    return false;
+    HdrType tempZX = double_zx + cx_cast;
+    HdrType tempZY = double_zy + cy_cast;
+    HdrType zn_size = tempZX * tempZX + tempZY * tempZY;
+
+    if (HdrCompareToBothPositiveReducedGT(zn_size, TwoFiftySix)) {
+
+        //
+        // Escaped
+        //
+
+        reference->Period = 0;
+        reference->EscapedIteration = currentIteration;
+        return false;
+    }
+
+    return true;
 }

@@ -37,6 +37,10 @@
     <ClInclude Include="HighPrecision.h" />
     <ClInclude Include="HpSharkFloat.cuh" />
     <ClInclude Include="HpSharkReferenceOrbit.cuh" />
+    <ClInclude Include="InitStaticsInternal.cuh">
+      <FileType>Document</FileType>
+    </ClInclude>
+    <ClInclude Include="InitStatics.cuh" />
     <ClInclude Include="MontgomeryCoreConstexpr.cuh" />
     <ClInclude Include="MpirSerialization.h" />
     <ClInclude Include="MultiplyNTT.cuh" />

@@ -4,6 +4,8 @@
 #include "Callstacks.h"
 #include "heap_allocator\include\HeapCpp.h"
 
+#include "InitStatics.cuh"
+
 void InitStatics();
 
 int APIENTRY WinMain(_In_ HINSTANCE hInstance,
@@ -14,6 +16,7 @@ int APIENTRY WinMain(_In_ HINSTANCE hInstance,
     MSG msg{};
 
     InitStatics();
+    InitHdrStaticsOnGpu();
     GlobalCallstacks->InitCallstacks();
 
     {

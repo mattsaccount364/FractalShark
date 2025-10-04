@@ -23,8 +23,7 @@ template <class SharkFloatParams>
 void
 TestConvertNumber(int testNum, const char *numberStr)
 {
-    using SF = HpSharkFloat<SharkFloatParams>;
-    mpf_set_default_prec(SF::DefaultMpirBits);
+    mpf_set_default_prec(HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
 
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "\n\n=== Test " << testNum
@@ -32,7 +31,9 @@ TestConvertNumber(int testNum, const char *numberStr)
     }
 
     // ---------------- Lambdas ----------------
-    auto mpf_init_prec = [&](mpf_t &v) { mpf_init2(v, SF::DefaultMpirBits); };
+    auto mpf_init_prec = [&](mpf_t &v) {
+        mpf_init2(v, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
+    };
 
     // set v = 2^k  (k can be negative)
     auto set_two_pow = [&](mpf_t v, long k) {
@@ -54,9 +55,12 @@ TestConvertNumber(int testNum, const char *numberStr)
         const bool ok = (mpf_cmp(adiff, eps) <= 0);
 
         if (SharkVerbose == VerboseMode::Debug) {
-            std::cout << "\n[" << label
-                      << "] |delta| = " << MpfToString<SharkFloatParams>(adiff, SF::DefaultPrecBits)
-                      << "  <=?  eps = " << MpfToString<SharkFloatParams>(eps, SF::DefaultPrecBits)
+            std::cout << "\n[" << label << "] |delta| = "
+                      << MpfToString<SharkFloatParams>(adiff,
+                                                       HpSharkFloat<SharkFloatParams>::DefaultPrecBits)
+                      << "  <=?  eps = "
+                      << MpfToString<SharkFloatParams>(eps,
+                                                       HpSharkFloat<SharkFloatParams>::DefaultPrecBits)
                       << (ok ? "  [OK]\n" : "  [FAIL]\n");
         }
 
@@ -80,18 +84,21 @@ TestConvertNumber(int testNum, const char *numberStr)
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "Original input values:\n";
         std::cout << "  numberStr: " << numberStr << "\n";
-        std::cout << "  X (mpf): " << MpfToString<SharkFloatParams>(mpf_x, SF::DefaultPrecBits) << "\n";
+        std::cout << "  X (mpf): "
+                  << MpfToString<SharkFloatParams>(mpf_x,
+                                                   HpSharkFloat<SharkFloatParams>::DefaultPrecBits)
+                  << "\n";
         std::cout << "  X hex  : " << MpfToHexString(mpf_x) << "\n";
     }
 
     // ---------------- Build HpSharkFloat from mpf ----------------
-    SF x_num{};
-    x_num.MpfToHpGpu(mpf_x, SF::DefaultPrecBits);
+    auto x_num = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+    x_num->MpfToHpGpu(mpf_x, HpSharkFloat<SharkFloatParams>::DefaultPrecBits);
 
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "\nHighPrecisionNumber representations:\n";
-        std::cout << "  X: " << x_num.ToString() << "\n";
-        std::cout << "  X hex: " << x_num.ToHexString() << "\n";
+        std::cout << "  X: " << x_num->ToString() << "\n";
+        std::cout << "  X hex: " << x_num->ToHexString() << "\n";
     }
 
     long e2 = 0;
@@ -105,13 +112,17 @@ TestConvertNumber(int testNum, const char *numberStr)
     // ---------------- Convert HpSharkFloat back to mpf (full path) ----------------
     mpf_t mpf_x_gpu;
     mpf_init_prec(mpf_x_gpu);
-    x_num.HpGpuToMpf(mpf_x_gpu);
+    x_num->HpGpuToMpf(mpf_x_gpu);
 
     // ---------------- HDR round-trips ----------------
-    const auto hdrFloat = x_num.template ToHDRFloat<float>();
-    const auto hdrDouble = x_num.template ToHDRFloat<double>();
+    const auto hdrFloat = x_num->template ToHDRFloat<float>();
+    const auto hdrDouble = x_num->template ToHDRFloat<double>();
 
-    SF from_hdr_f, from_hdr_d;
+    auto from_hdr_f_ptr = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+    auto from_hdr_d_ptr = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+
+    auto &from_hdr_f = *from_hdr_f_ptr;
+    auto &from_hdr_d = *from_hdr_d_ptr;
     from_hdr_f.FromHDRFloat(hdrFloat);
     from_hdr_d.FromHDRFloat(hdrDouble);
 
@@ -129,15 +140,20 @@ TestConvertNumber(int testNum, const char *numberStr)
 
         std::cout << "\nRound-trip via HDR -> HpSharkFloat -> mpf:\n";
         std::cout << "  from HDR<float>  : "
-                  << MpfToString<SharkFloatParams>(mpf_x_hdrf, SF::DefaultPrecBits) << "\n";
+                  << MpfToString<SharkFloatParams>(mpf_x_hdrf,
+                                                   HpSharkFloat<SharkFloatParams>::DefaultPrecBits)
+                  << "\n";
         std::cout << "  from HDR<double> : "
-                  << MpfToString<SharkFloatParams>(mpf_x_hdrd, SF::DefaultPrecBits) << "\n";
+                  << MpfToString<SharkFloatParams>(mpf_x_hdrd,
+                                                   HpSharkFloat<SharkFloatParams>::DefaultPrecBits)
+                  << "\n";
     }
 
     // ---------------- Epsilons based on magnitude (ULP-scaled) ----------------
-    constexpr long P_full = static_cast<long>(SF::DefaultMpirBits - 1); // your working precision
-    constexpr long P_f = 23;                                            // float fraction bits
-    constexpr long P_d = 52;                                            // double fraction bits
+    constexpr long P_full =
+        static_cast<long>(HpSharkFloat<SharkFloatParams>::DefaultMpirBits - 1); // your working precision
+    constexpr long P_f = 23;                                                    // float fraction bits
+    constexpr long P_d = 52;                                                    // double fraction bits
 
     mpf_t eps_full;
     mpf_init_prec(eps_full);
@@ -154,11 +170,17 @@ TestConvertNumber(int testNum, const char *numberStr)
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "\nEpsilons (ULP-scaled at |x|):\n";
         std::cout << "  e2(|x|)   : " << e2 << "\n";
-        std::cout << "  eps_full  : " << MpfToString<SharkFloatParams>(eps_full, SF::DefaultPrecBits)
+        std::cout << "  eps_full  : "
+                  << MpfToString<SharkFloatParams>(eps_full,
+                                                   HpSharkFloat<SharkFloatParams>::DefaultPrecBits)
                   << "  (~1 ULP @ " << P_full << " bits)\n";
-        std::cout << "  eps_hdrf  : " << MpfToString<SharkFloatParams>(eps_hdrf, SF::DefaultPrecBits)
+        std::cout << "  eps_hdrf  : "
+                  << MpfToString<SharkFloatParams>(eps_hdrf,
+                                                   HpSharkFloat<SharkFloatParams>::DefaultPrecBits)
                   << "  (~1 ULP @ float)\n";
-        std::cout << "  eps_hdrd  : " << MpfToString<SharkFloatParams>(eps_hdrd, SF::DefaultPrecBits)
+        std::cout << "  eps_hdrd  : "
+                  << MpfToString<SharkFloatParams>(eps_hdrd,
+                                                   HpSharkFloat<SharkFloatParams>::DefaultPrecBits)
                   << "  (~1 ULP @ double)\n";
     }
 
@@ -169,30 +191,33 @@ TestConvertNumber(int testNum, const char *numberStr)
 
     // ---------------- Mark results ----------------
     if (!ok_full) {
-        Tests.MarkFailed(testNum,
-                         "conversion/full",
-                         "abs error exceeded eps",
-                         MpfToString<SharkFloatParams>(eps_full, SF::DefaultPrecBits));
+        Tests.MarkFailed(
+            testNum,
+            "conversion/full",
+            "abs error exceeded eps",
+            MpfToString<SharkFloatParams>(eps_full, HpSharkFloat<SharkFloatParams>::DefaultPrecBits));
         assert(false);
     } else {
         Tests.MarkSuccess(testNum, "conversion/full");
     }
 
     if (!ok_hdr_f) {
-        Tests.MarkFailed(testNum,
-                         "conversion/hdr_float",
-                         "abs error exceeded eps",
-                         MpfToString<SharkFloatParams>(eps_hdrf, SF::DefaultPrecBits));
+        Tests.MarkFailed(
+            testNum,
+            "conversion/hdr_float",
+            "abs error exceeded eps",
+            MpfToString<SharkFloatParams>(eps_hdrf, HpSharkFloat<SharkFloatParams>::DefaultPrecBits));
         assert(false);
     } else {
         Tests.MarkSuccess(testNum, "conversion/hdr_float");
     }
 
     if (!ok_hdr_d) {
-        Tests.MarkFailed(testNum,
-                         "conversion/hdr_double",
-                         "abs error exceeded eps",
-                         MpfToString<SharkFloatParams>(eps_hdrd, SF::DefaultPrecBits));
+        Tests.MarkFailed(
+            testNum,
+            "conversion/hdr_double",
+            "abs error exceeded eps",
+            MpfToString<SharkFloatParams>(eps_hdrd, HpSharkFloat<SharkFloatParams>::DefaultPrecBits));
         assert(false);
     } else {
         Tests.MarkSuccess(testNum, "conversion/hdr_double");

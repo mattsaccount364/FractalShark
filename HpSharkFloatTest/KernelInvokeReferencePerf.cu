@@ -1,6 +1,11 @@
 #include "KernelInvoke.cuh"
 #include "KernelInvokeInternal.cuh"
 
+//
+// This test is also something of a correctness test because
+// it keeps track of the period and checks it subsequently.
+//
+
 template <class SharkFloatParams>
 void
 InvokeHpSharkReferenceKernelPerf(BenchmarkTimer &timer,
@@ -11,10 +16,8 @@ InvokeHpSharkReferenceKernelPerf(BenchmarkTimer &timer,
     // Prepare kernel arguments
     // Allocate memory for carryOuts and cumulativeCarries
     uint64_t *d_tempProducts;
-    constexpr auto BytesToAllocate =
-        (AdditionalUInt64Global +
-         ScratchMemoryCopies * CalculateKaratsubaFrameSize<SharkFloatParams>()) *
-        sizeof(uint64_t);
+    constexpr size_t BytesToAllocate =
+        (AdditionalUInt64Global + CalculateNTTFrameSize<SharkFloatParams>()) * sizeof(uint64_t);
     cudaMalloc(&d_tempProducts, BytesToAllocate);
 
     if constexpr (!SharkTestInitCudaMemory) {

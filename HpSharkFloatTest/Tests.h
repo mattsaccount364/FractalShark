@@ -28,3 +28,6 @@ template <class SharkFloatParams, Operator sharkOperator> bool TestAllBinaryOp(i
 
 template <Operator sharkOperator>
 bool TestBinaryOperatorPerf(int testBase, int numIters, int internalTestLoopCount);
+
+template <Operator sharkOperator>
+bool TestFullReferencePerf(int testBase, int internalTestLoopCount);

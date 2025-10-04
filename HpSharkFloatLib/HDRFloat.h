@@ -386,15 +386,15 @@ public:
 
     template<bool GetExpAmt = false>
     CUDA_CRAP constexpr HDRFloat &Reduce(TExp *DestExp = nullptr) & {
-        if (Base::mantissa == 0) {
-
-            if constexpr (GetExpAmt) {
-                *DestExp = 0;
-            }
-            return *this;
-        }
-
         if constexpr (std::is_same<T, double>::value) {
+            if (Base::mantissa == 0) {
+
+                if constexpr (GetExpAmt) {
+                    *DestExp = 0;
+                }
+                return *this;
+            }
+
             const auto bits = bit_cast<uint64_t>(this->Base::mantissa);
             const auto f_exp =
                 static_cast<TExp>(((bits & 0x7FF0'0000'0000'0000UL) >> 52UL)) + MIN_SMALL_EXPONENT_INT_DOUBLE();
@@ -407,6 +407,14 @@ public:
                 *DestExp = f_exp;
             }
         } else if constexpr (std::is_same<T, float>::value) {
+            if (Base::mantissa == 0) {
+
+                if constexpr (GetExpAmt) {
+                    *DestExp = 0;
+                }
+                return *this;
+            }
+
             const auto bits = bit_cast<uint32_t>(this->Base::mantissa);
             const auto f_exp =
                 static_cast<TExp>(((bits & 0x7F80'0000UL) >> 23UL)) + MIN_SMALL_EXPONENT_INT_FLOAT();
@@ -419,6 +427,14 @@ public:
                 *DestExp = f_exp;
             }
         } else if constexpr (std::is_same<T, CudaDblflt<dblflt>>::value) {
+            if (Base::mantissa.d.head == 0 && Base::mantissa.d.tail == 0) {
+
+                if constexpr (GetExpAmt) {
+                    *DestExp = 0;
+                }
+                return *this;
+            }
+
             const auto bits_y = bit_cast<uint32_t>(this->Base::mantissa.d.head);
             const auto bits_x = bit_cast<uint32_t>(this->Base::mantissa.d.tail);
             const auto f_exp_y =

@@ -664,16 +664,16 @@ HpSharkFloat<SharkFloatParams>::HpGpuToMpf (
     mpz_init(mpz_value);
 
     // This is not performant but let's assume we're not doing this often
-    HpSharkFloat<SharkFloatParams> copyOfThis;
-    copyOfThis.DeepCopySameDevice(*this);
-    copyOfThis.Normalize();
+    auto copyOfThis = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+    copyOfThis->DeepCopySameDevice(*this);
+    copyOfThis->Normalize();
 
     // Import the digits array into the mpz_t integer
     // Note: mpz_import expects the least significant word first
-    mpz_import(mpz_value, SharkFloatParams::GlobalNumUint32, -1, sizeof(uint32_t), 0, 0, copyOfThis.Digits);
+    mpz_import(mpz_value, SharkFloatParams::GlobalNumUint32, -1, sizeof(uint32_t), 0, 0, copyOfThis->Digits);
 
     // Adjust for sign
-    if (copyOfThis.IsNegative) {
+    if (copyOfThis->IsNegative) {
         mpz_neg(mpz_value, mpz_value);
     }
 
@@ -682,7 +682,7 @@ HpSharkFloat<SharkFloatParams>::HpGpuToMpf (
 
     // Adjust the exponent
     // Since the exponent is in base 2^32, adjust by multiplying/dividing by 2^(exponent * 32)
-    int64_t total_bits = (int64_t)(copyOfThis.Exponent); // Exponent is already in bits
+    int64_t total_bits = (int64_t)(copyOfThis->Exponent); // Exponent is already in bits
     if (total_bits > 0) {
         mpf_mul_2exp(mpf_val, mpf_val, (mp_bitcnt_t)total_bits);
     } else if (total_bits < 0) {

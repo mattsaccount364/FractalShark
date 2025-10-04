@@ -1,6 +1,10 @@
 #include "KernelInvoke.cuh"
 #include "KernelInvokeInternal.cuh"
 
+//
+// Note: This test ignores the period because it executes only one iteration.
+//
+
 template <class SharkFloatParams>
 void
 InvokeHpSharkReferenceKernelCorrectness(BenchmarkTimer &timer,
@@ -28,10 +32,16 @@ InvokeHpSharkReferenceKernelCorrectness(BenchmarkTimer &timer,
 
     HpSharkReferenceResults<SharkFloatParams> *comboGpu;
     cudaMalloc(&comboGpu, sizeof(HpSharkReferenceResults<SharkFloatParams>));
+
+    uint8_t byteToSet = SharkTestInitCudaMemory ? 0xCD : 0;
+
     cudaMemcpy(
         comboGpu, &combo, sizeof(HpSharkReferenceResults<SharkFloatParams>), cudaMemcpyHostToDevice);
 
-    uint8_t byteToSet = SharkTestInitCudaMemory ? 0xCD : 0;
+    cudaMemcpy(&comboGpu->RadiusY,
+               &combo.RadiusY,
+               sizeof(HDRFloat<typename SharkFloatParams::SubType>),
+               cudaMemcpyHostToDevice);
 
     cudaMemset(&comboGpu->Add.A_X2, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
     cudaMemset(&comboGpu->Add.B_Y2, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
@@ -41,6 +51,8 @@ InvokeHpSharkReferenceKernelCorrectness(BenchmarkTimer &timer,
     cudaMemset(&comboGpu->Multiply.ResultX2, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
     cudaMemset(&comboGpu->Multiply.Result2XY, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
     cudaMemset(&comboGpu->Multiply.ResultY2, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
+    cudaMemset(&comboGpu->Period, byteToSet, sizeof(uint64_t));
+    cudaMemset(&comboGpu->EscapedIteration, byteToSet, sizeof(uint64_t));
 
     // Build NTT plan + roots exactly like correctness path
     {

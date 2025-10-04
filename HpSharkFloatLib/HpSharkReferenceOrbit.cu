@@ -1,11 +1,17 @@
 #include "Add.cu"
 #include "MultiplyNTT.cu"
 #include "PeriodicityChecker.cuh"
+#include "InitStaticsInternal.cuh"
+
+//
+// Returns true if we should continue iterating, false if we should stop (period found).
+//
 
 template <class SharkFloatParams>
-__device__ void
+__device__ [[nodiscard]] bool
 ReferenceHelper(cg::grid_group &grid,
                 cg::thread_block &block,
+                uint64_t currentIteration,
                 HpSharkReferenceResults<SharkFloatParams> *SharkRestrict reference,
                 uint64_t *tempData)
 {
@@ -43,6 +49,23 @@ ReferenceHelper(cg::grid_group &grid,
         &reference->Multiply.A,         // Real result = Z_real
         &reference->Multiply.B,         // Imaginary result = Z_imaginary
         tempData);
+
+    //
+    // All threads do periodicity checking and update the period if found.
+    //
+
+    if constexpr (SharkFloatParams::Periodicity) {
+        const auto shouldContinue =
+            PeriodicityChecker(grid, block, reference, currentIteration, tempData);
+
+        if (!shouldContinue) {
+            return false;
+        }
+
+        return true;
+    } else {
+        return true;
+    }
 }
 
 template <class SharkFloatParams>
@@ -56,7 +79,9 @@ HpSharkReferenceGpuKernel(HpSharkReferenceResults<SharkFloatParams> *SharkRestri
     cg::thread_block block = cg::this_thread_block();
 
     // Call the AddHelper function
-    ReferenceHelper<SharkFloatParams>(grid, block, combo, tempData);
+    constexpr auto currentIteration = 0;
+    const auto [[maybe_unused]] shouldContinue =
+        ReferenceHelper<SharkFloatParams>(grid, block, currentIteration, combo, tempData);
 }
 
 template <class SharkFloatParams>
@@ -70,8 +95,11 @@ HpSharkReferenceGpuLoop(HpSharkReferenceResults<SharkFloatParams> *SharkRestrict
     cg::grid_group grid = cg::this_grid();
     cg::thread_block block = cg::this_thread_block();
 
-    for (int32_t i = 0; i < numIters; ++i) {
-        ReferenceHelper(grid, block, combo, tempData);
+    for (uint64_t i = 0; i < numIters; ++i) {
+        const auto shouldContinue = ReferenceHelper(grid, block, i, combo, tempData);
+        if (!shouldContinue) {
+            break;
+        }
     }
 }
 

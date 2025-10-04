@@ -331,9 +331,11 @@ TestPerf(int testNum,
          const char *num1,
          const char *num2,
          const char *num3,
+         const char *radiusY,
          const mpf_t mpfX,
          const mpf_t mpfY,
          const mpf_t mpfZ,
+         const typename SharkFloatParams::Float &hdrRadiusY,
          uint64_t numIters)
 {
 
@@ -352,6 +354,7 @@ TestPerf(int testNum,
         std::cout << "Z: "
                   << MpfToString<SharkFloatParams>(mpfZ, HpSharkFloat<SharkFloatParams>::DefaultPrecBits)
                   << std::endl;
+        std::cout << "radiusY: " << radiusY << std::endl;
     }
 
     auto desc = SharkFloatParams::GetDescription();
@@ -394,15 +397,35 @@ TestPerf(int testNum,
     mpf_init(ySquared);
     mpf_init(twoXY);
 
+    // Periodicity:
+    mpf_t zx2, zy2;
+    mpf_init(zx2);
+    mpf_init(zy2);
+
     mpf_init(recurrenceX);
     mpf_init(recurrenceY);
-    mpf_set_ui(recurrenceX, 0);
-    mpf_set_ui(recurrenceY, 0);
+    mpf_set(recurrenceX, mpfX);
+    mpf_set(recurrenceY, mpfY);
 
     BenchmarkTimer hostTimer;
 
+    uint64_t discoveredPeriodHost = 0;
+    uint64_t discoveredEscapeIterationHost = 0;
+
     if constexpr (SharkTestBenchmarkAgainstHost) {
         ScopedBenchmarkStopper hostStopper{hostTimer};
+
+        using HdrType = SharkFloatParams::Float;
+
+        HdrType dzdcX{1};
+        HdrType dzdcY{0};
+
+        const HdrType cx_cast{mpfX};
+        const HdrType cy_cast{mpfY};
+
+        const HdrType HighTwo{2.0f};
+        const HdrType HighOne{1.0f};
+        const HdrType TwoFiftySix{256.0f};
 
         for (int i = 0; i < numIters; ++i) {
             if constexpr (sharkOperator == Operator::Add) {
@@ -420,6 +443,14 @@ TestPerf(int testNum,
                 // x_(n + 1) = x_n * x_n - y_n * y_n + a
                 // y_(n + 1) = 2 * x_n * y_n + b
 
+                HdrType double_zx;
+                HdrType double_zy;
+
+                if constexpr (SharkFloatParams::Periodicity) {
+                    double_zx = HdrType{recurrenceX};
+                    double_zy = HdrType{recurrenceY};
+                }
+
                 mpf_mul(xSquared, recurrenceX, recurrenceX); // x^2
                 mpf_mul(ySquared, recurrenceY, recurrenceY); // y^2
                 mpf_mul(twoXY, recurrenceX, recurrenceY);    // xy
@@ -428,6 +459,62 @@ TestPerf(int testNum,
                 mpf_add(recurrenceX, tempX, mpfX);           // x^2 - y^2 + a
                 mpf_add(recurrenceY, twoXY, mpfY);           // 2xy + b
 
+                if constexpr (SharkFloatParams::Periodicity) {
+                    // x^2+2*I*x*y-y^2
+                    // dzdc = 2.0 * z * dzdc + real(1.0);
+                    // dzdc = 2.0 * (zx + zy * i) * (dzdcX + dzdcY * i) + HighPrecision(1.0);
+                    // dzdc = 2.0 * (zx * dzdcX + zx * dzdcY * i + zy * i * dzdcX + zy * i * dzdcY * i) +
+                    // HighPrecision(1.0); dzdc = 2.0 * zx * dzdcX + 2.0 * zx * dzdcY * i + 2.0 * zy * i
+                    // * dzdcX + 2.0 * zy * i * dzdcY * i + HighPrecision(1.0); dzdc = 2.0 * zx * dzdcX
+                    // + 2.0 * zx * dzdcY * i + 2.0 * zy * i * dzdcX - 2.0 * zy * dzdcY +
+                    // HighPrecision(1.0);
+                    //
+                    // dzdcX = 2.0 * zx * dzdcX - 2.0 * zy * dzdcY + HighPrecision(1.0)
+                    // dzdcY = 2.0 * zx * dzdcY + 2.0 * zy * dzdcX
+
+                    HdrReduce(dzdcX);
+                    auto dzdcX1 = HdrAbs(dzdcX);
+
+                    HdrReduce(dzdcY);
+                    auto dzdcY1 = HdrAbs(dzdcY);
+
+                    HdrReduce(double_zx);
+                    auto zxCopy1 = HdrAbs(double_zx);
+
+                    HdrReduce(double_zy);
+                    auto zyCopy1 = HdrAbs(double_zy);
+
+                    HdrType n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
+
+                    HdrType r0 = HdrMaxPositiveReduced(dzdcX1, dzdcY1);
+                    auto n3 = hdrRadiusY * r0 * HighTwo;
+                    HdrReduce(n3);
+
+                    if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
+                        discoveredPeriodHost = i;
+                        discoveredEscapeIterationHost = i;
+                        break;
+                    } else {
+                        auto dzdcXOrig = dzdcX;
+                        dzdcX = HighTwo * (double_zx * dzdcX - double_zy * dzdcY) + HighOne;
+                        dzdcY = HighTwo * (double_zx * dzdcY + double_zy * dzdcXOrig);
+                    }
+                }
+
+                HdrType tempZX = double_zx + cx_cast;
+                HdrType tempZY = double_zy + cy_cast;
+                HdrType zn_size = tempZX * tempZX + tempZY * tempZY;
+
+                if (HdrCompareToBothPositiveReducedGT(zn_size, TwoFiftySix)) {
+
+                    //
+                    // Escaped
+                    //
+
+                    discoveredPeriodHost = 0;
+                    discoveredEscapeIterationHost = i;
+                    break;
+                }
             } else {
                 std::cerr << "Unknown operator in TestPerf" << std::endl;
                 return;
@@ -532,11 +619,13 @@ TestPerf(int testNum,
             }
         } else if constexpr (sharkOperator == Operator::ReferenceOrbit) {
             auto combo = std::make_unique<HpSharkReferenceResults<SharkFloatParams>>();
+            auto tempEmpty = std::make_unique<HpSharkFloat<SharkFloatParams>>();
 
             combo->Add.C_A = *xNum;
             combo->Add.E_B = *yNum;
-            combo->Multiply.A = {};
-            combo->Multiply.B = {};
+            combo->Multiply.A = *tempEmpty;
+            combo->Multiply.B = *tempEmpty;
+            combo->RadiusY = hdrRadiusY;
 
             const auto &gpuResultX = combo->Multiply.A;
             const auto &gpuResultY = combo->Multiply.B;
@@ -560,6 +649,18 @@ TestPerf(int testNum,
                 constexpr auto numTerms = 2;
                 testSucceeded &= CheckDiff(testNum, numTerms, "GPU", mpfHostResultXX, gpuResultX);
                 testSucceeded &= CheckDiff(testNum, numTerms, "GPU", mpfHostResultYY, gpuResultY);
+
+                if (combo->EscapedIteration != discoveredEscapeIterationHost) {
+                    std::cout << "Escape iteration mismatch: host=" << discoveredEscapeIterationHost
+                              << " gpu=" << combo->EscapedIteration << std::endl;
+                    DebugBreak();
+                }
+
+                if (combo->Period != discoveredPeriodHost) {
+                    std::cout << "Periodicity mismatch: host=" << discoveredPeriodHost
+                              << " gpu=" << combo->Period << std::endl;
+                    DebugBreak();
+                }
             }
         }
     }
@@ -585,7 +686,6 @@ template <class SharkFloatParams, Operator sharkOperator>
 void
 TestPerf(int testNum, uint64_t numIters)
 {
-
     auto xNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
     auto yNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
     auto zNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
@@ -613,8 +713,9 @@ TestPerf(int testNum, uint64_t numIters)
     auto num2 = yNum->ToString();
     auto num3 = zNum->ToString();
 
+    using HdrType = typename SharkFloatParams::Float;
     TestPerf<SharkFloatParams, sharkOperator>(
-        testNum, num1.c_str(), num2.c_str(), num3.c_str(), mpfX, mpfY, mpfZ, numIters);
+        testNum, num1.c_str(), num2.c_str(), num3.c_str(), "0.0", mpfX, mpfY, mpfZ, HdrType{}, numIters);
 
     mpf_clear(mpfX);
     mpf_clear(mpfY);
@@ -1185,8 +1286,8 @@ TestCoreReferenceOrbit(int testNum,
     // calculate the second iteration.
 
     // Perform the calculation on the using MPIR
-    HpSharkFloat<SharkFloatParams> gpuResultXX{};
-    HpSharkFloat<SharkFloatParams> gpuResultYY{};
+    auto gpuResultXX = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+    auto gpuResultYY = std::make_unique<HpSharkFloat<SharkFloatParams>>();
 
     mpf_t mpfHostResultX;
     mpf_t mpfHostResultY;
@@ -1239,18 +1340,19 @@ TestCoreReferenceOrbit(int testNum,
     if constexpr (SharkTestGpu) {
         BenchmarkTimer timer;
 
-        HpSharkReferenceResults<SharkFloatParams> combo{};
-        combo.Add.C_A = aNum;
-        combo.Add.E_B = bNum;
-        combo.Multiply.A = aNum;
-        combo.Multiply.B = bNum;
+        auto combo = std::make_unique<HpSharkReferenceResults<SharkFloatParams>>();
+        combo->Add.C_A = aNum;
+        combo->Add.E_B = bNum;
+        combo->Multiply.A = aNum;
+        combo->Multiply.B = bNum;
+        combo->RadiusY = {};
 
-        InvokeHpSharkReferenceKernelCorrectness<SharkFloatParams>(timer, combo, &debugGpuCombo);
+        InvokeHpSharkReferenceKernelCorrectness<SharkFloatParams>(timer, *combo, &debugGpuCombo);
 
-        // gpuResultXX = combo.Add.Result1_A_B_C;
-        // gpuResultYY = combo.Add.Result2_D_E;
-        gpuResultXX = combo.Multiply.A;
-        gpuResultYY = combo.Multiply.B;
+        // *gpuResultXX = combo.Add.Result1_A_B_C;
+        // *gpuResultYY = combo.Add.Result2_D_E;
+        *gpuResultXX = combo->Multiply.A;
+        *gpuResultYY = combo->Multiply.B;
 
         Tests.AddTime(testNum, timer.GetDeltaInMs());
 
@@ -1267,10 +1369,10 @@ TestCoreReferenceOrbit(int testNum,
         constexpr auto numTerms = 2;
 
         testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::ReferenceOrbit>(
-            testNum, numTerms, "GPU", mpfHostResultX, gpuResultXX);
+            testNum, numTerms, "GPU", mpfHostResultX, *gpuResultXX);
 
         testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::ReferenceOrbit>(
-            testNum, numTerms, "GPU", mpfHostResultY, gpuResultYY);
+            testNum, numTerms, "GPU", mpfHostResultY, *gpuResultYY);
     }
 
     // Clean up MPIR variables
@@ -2580,6 +2682,68 @@ TestBinaryOperatorPerf([[maybe_unused]] int testBase,
     return Tests.CheckAllTestsPassed();
 }
 
+template <Operator sharkOperator>
+bool
+TestFullReferencePerf(int testBase, int internalTestLoopCount)
+{
+    static_assert(sharkOperator == Operator::ReferenceOrbit, "Only ReferenceOrbit is supported");
+
+    int testNum = testBase + 1;
+
+    const char *num1 = "-5."
+                       "48205748070475708458212567546733029376699274622882453824444834594995999680895291"
+                       "29972505947379718e-01";
+    const char *num2 = "-5."
+                       "77570838903603842805108982201850558675551728458255317158378952895736909832155423"
+                       "61901805676878083e-01";
+    const char *num3 = "0";
+    const char *radiusYStr =
+        "0."
+        "00000000000000000000000000000000000000000000401444147896341553391537310767676"
+        "870110653199358192656";
+    const auto maxIters = 20000;
+
+    mpf_t mpfX;
+    mpf_t mpfY;
+    mpf_t mpfZ;
+    mpf_t mpfRadiusY;
+
+    mpf_init(mpfX);
+    mpf_init(mpfY);
+    mpf_init(mpfZ);
+    mpf_init(mpfRadiusY);
+
+    auto res = mpf_set_str(mpfX, num1, 10);
+    if (res == -1) {
+        std::cout << "Error setting mpfX" << std::endl;
+    }
+
+    res = mpf_set_str(mpfY, num2, 10);
+    if (res == -1) {
+        std::cout << "Error setting mpfY" << std::endl;
+    }
+
+    res = mpf_set_str(mpfZ, num3, 10);
+    if (res == -1) {
+        std::cout << "Error setting mpfZ" << std::endl;
+    }
+
+    res = mpf_set_str(mpfRadiusY, radiusYStr, 10);
+    if (res == -1) {
+        std::cout << "Error setting mpfRadiusY" << std::endl;
+    }
+
+    using HdrType = typename TestPerSharkParams1::Float;
+    const HdrType hdrRadiusY{mpfRadiusY};
+
+    for (size_t i = 0; i < internalTestLoopCount; i++) {
+        TestPerf<TestPerSharkParams1, sharkOperator>(
+            testNum, num1, num2, num3, radiusYStr, mpfX, mpfY, mpfZ, hdrRadiusY, maxIters);
+    }
+
+    return true;
+}
+
 // Explicitly instantiate TestAllBinaryOp
 #ifdef ENABLE_ADD_KERNEL
 #define ADD_KERNEL(SharkFloatParams)                                                                    \
@@ -2603,7 +2767,9 @@ TestBinaryOperatorPerf([[maybe_unused]] int testBase,
 #define REFERENCE_KERNEL(SharkFloatParams)                                                              \
     template bool TestAllBinaryOp<SharkFloatParams, Operator::ReferenceOrbit>(int testBase);            \
     template bool TestBinaryOperatorPerf<Operator::ReferenceOrbit>(                                     \
-        int testBase, int numIters, int internalTestLoopCount);
+        int testBase, int numIters, int internalTestLoopCount);                                         \
+    template bool TestFullReferencePerf<Operator::ReferenceOrbit>(int testBase,                         \
+                                                                  int internalTestLoopCount);
 #else
 #define REFERENCE_KERNEL(SharkFloatParams) ;
 #endif

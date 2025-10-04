@@ -21,6 +21,7 @@
 #include <windows.h> // Sleep()
 
 #include "HDRFloat.h"
+#include "InitStatics.cuh"
 
 // Function to perform the calculation on the host using MPIR
 void
@@ -85,17 +86,6 @@ CorrectnessTests()
         }
     }
 
-    if constexpr (SharkEnableReferenceKernel) {
-        testBase = 2000;
-        res = TestAllBinaryOp<TestSharkParams, Operator::ReferenceOrbit>(testBase);
-        if (!res) {
-            auto q = PressKey();
-            if (q == 'q') {
-                return false;
-            }
-        }
-    }
-
     if constexpr (SharkEnableAddKernel) {
         testBase = 4000;
         res = TestAllBinaryOp<TestSharkParams, Operator::Add>(testBase);
@@ -110,6 +100,17 @@ CorrectnessTests()
     if constexpr (SharkEnableMultiplyNTT2Kernel) {
         testBase = 6000;
         res = TestAllBinaryOp<TestSharkParams, Operator::MultiplyFFT2>(testBase);
+        if (!res) {
+            auto q = PressKey();
+            if (q == 'q') {
+                return false;
+            }
+        }
+    }
+
+    if constexpr (SharkEnableReferenceKernel) {
+        testBase = 2000;
+        res = TestAllBinaryOp<TestSharkParams, Operator::ReferenceOrbit>(testBase);
         if (!res) {
             auto q = PressKey();
             if (q == 'q') {
@@ -204,6 +205,7 @@ main(int /*argc*/, char * /*argv*/[])
     bool res = false;
 
     InitStatics();
+    InitHdrStaticsOnGpu();
 
     constexpr auto timeoutInSec = 3;
     int verboseInput =
@@ -273,6 +275,17 @@ main(int /*argc*/, char * /*argv*/[])
         testBase = 14000;
         res =
             TestBinaryOperatorPerf<Operator::ReferenceOrbit>(testBase, numIters, internalTestLoopCount);
+        if (!res) {
+            auto q = PressKey();
+            if (q == 'q') {
+                return 0;
+            }
+        }
+    }
+
+    if constexpr (SharkEnableFullKernel) {
+        testBase = 16000;
+        res = TestFullReferencePerf<Operator::ReferenceOrbit>(testBase, internalTestLoopCount);
         if (!res) {
             auto q = PressKey();
             if (q == 'q') {

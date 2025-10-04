@@ -38,9 +38,10 @@ static constexpr bool SharkDebug = false;
 // 1 = all basic correctness tests/all basic perf tests
 // 2 = setup for profiling only, one kernel
 // 3 = all basic correctness tests + comical tests
+// 4 = known reference orbit tests specifically for reference kernel
 // See ExplicitInstantiate.h for more information
 #ifdef _DEBUG
-#define ENABLE_BASIC_CORRECTNESS 0
+#define ENABLE_BASIC_CORRECTNESS 2
 #else
 #define ENABLE_BASIC_CORRECTNESS 2
 #endif
@@ -64,9 +65,11 @@ static constexpr auto SharkEnableMultiplyNTT2Kernel = false;
 #endif
 
 #ifdef ENABLE_REFERENCE_KERNEL
-static constexpr auto SharkEnableReferenceKernel = true;
+static constexpr auto SharkEnableReferenceKernel = false;
+static constexpr auto SharkEnableFullKernel = true;
 #else
 static constexpr auto SharkEnableReferenceKernel = false;
+static constexpr auto SharkEnableFullKernel = false;
 #endif
 
 #ifdef _DEBUG
@@ -76,8 +79,8 @@ static constexpr auto SharkEnableReferenceKernel = false;
 #define SharkForceInlineReleaseOnly __forceinline__
 #endif
 
-static constexpr bool SharkTestGpu =
-    (SharkEnableAddKernel || SharkEnableMultiplyNTT2Kernel || SharkEnableReferenceKernel);
+static constexpr bool SharkTestGpu = (SharkEnableAddKernel || SharkEnableMultiplyNTT2Kernel ||
+                                      SharkEnableReferenceKernel || SharkEnableFullKernel);
 //static constexpr bool SharkTestGpu = false;
 
 static constexpr auto SharkTestComicalThreadCount = 13;
@@ -110,6 +113,7 @@ static constexpr auto SharkBatchSize = SharkDebug ? 8 : 512;
 
 static constexpr auto SharkKaratsubaBatchSize = SharkLoadAllInShared ? 1 : 4;
 
+// TODO we should get this shit to work
 //static constexpr bool SharkDebugChecksums = (ENABLE_BASIC_CORRECTNESS != 2) ? SharkDebug : false;
 static constexpr bool SharkDebugChecksums = false;
 
@@ -123,7 +127,7 @@ static constexpr bool SharkTestCorrectness = true;
 
 static constexpr bool SharkTestInfiniteCorrectness = SharkTestCorrectness ? true : false;
 static constexpr auto SharkTestForceSameSign = false;
-static constexpr bool SharkTestBenchmarkAgainstHost = false;
+static constexpr bool SharkTestBenchmarkAgainstHost = true;
 static constexpr bool SharkTestInitCudaMemory = true;
 
 // ---- detail helpers (fallback for pre-C++20) ----
@@ -156,6 +160,9 @@ template<
     int32_t pNumDigits = pThreadsPerBlock * pNumBlocks,
     int32_t pConvolutionLimit = 9>
 struct GenericSharkFloatParams {
+    using Float = HDRFloat<float>;
+    using SubType = float;
+
     static constexpr bool SharkUsePow2SizesOnly = SharkEnableMultiplyNTT2Kernel;
 
     static constexpr int32_t GlobalThreadsPerBlock = pThreadsPerBlock;
@@ -203,6 +210,7 @@ struct GenericSharkFloatParams {
     >;
 
     static constexpr SharkNTT::PlanPrime NTTPlan = SharkNTT::BuildPlanPrime(GlobalNumUint32, 26, 2);
+    static constexpr bool Periodicity = true;
 };
 
 // This one should account for maximum call index, e.g. if we generate 500 calls
@@ -312,8 +320,9 @@ constexpr auto StupidMult = 1;
 //using TestPerSharkParams1 = GenericSharkFloatParams<96, 81>;
 //using TestPerSharkParams1 = GenericSharkFloatParams<128 * StupidMult, 108, 7776, 9>;
 //using TestPerSharkParams1 = GenericSharkFloatParams<128, 108, 7776, 9>;
+using TestPerSharkParams1 = GenericSharkFloatParams<32, 2, 64>;
 //using TestPerSharkParams1 = GenericSharkFloatParams<256, 128, 8192>;
-using TestPerSharkParams1 = GenericSharkFloatParams<256, 128, 131072>;
+//using TestPerSharkParams1 = GenericSharkFloatParams<256, 128, 131072>;
 using TestPerSharkParams2 = GenericSharkFloatParams<64 * StupidMult, 108, 7776, 9>;
 using TestPerSharkParams3 = GenericSharkFloatParams<32 * StupidMult, 108, 7776, 9>;
 using TestPerSharkParams4 = GenericSharkFloatParams<16 * StupidMult, 108, 7776, 9>;
@@ -395,7 +404,7 @@ struct HpSharkFloat {
     // - Exponent is unbiased binary exponent: value = mantissa * 2^exp, mantissa ∈ [1,2) or [-2,-1].
     // - 'extraExp' lets callers add any external binary scaling they track separately.
     template <class SubType> CUDA_CRAP_BOTH
-    HDRFloat<SubType> ToHDRFloat(int32_t extraExp = 0);
+    HDRFloat<SubType> ToHDRFloat(int32_t extraExp = 0) const;
 
     template <class SubType> CUDA_CRAP_BOTH
     void FromHDRFloat(const HDRFloat<SubType> &h);
@@ -429,7 +438,7 @@ bool HpSharkFloat<SharkFloatParams>::GetNegative() const {
 template <class SharkFloatParams>
 template <class SubType>
 CUDA_CRAP_BOTH
-HDRFloat<SubType> HpSharkFloat<SharkFloatParams>::ToHDRFloat(int32_t extraExp)
+HDRFloat<SubType> HpSharkFloat<SharkFloatParams>::ToHDRFloat(int32_t extraExp) const
 {
     static_assert(std::is_same<SubType, float>::value || std::is_same<SubType, double>::value,
                   "ToHDRFloat: SubType must be float or double");
@@ -591,8 +600,11 @@ struct HpSharkAddComboResults {
 
 template<class SharkFloatParams>
 struct HpSharkReferenceResults {
+    alignas(16) HDRFloat<typename SharkFloatParams::SubType> RadiusY;
     alignas(16) HpSharkComboResults<SharkFloatParams> Multiply;
     alignas(16) HpSharkAddComboResults<SharkFloatParams> Add;
+    alignas(16) uint64_t Period;
+    alignas(16) uint64_t EscapedIteration;
 };
 #pragma warning(pop)
 

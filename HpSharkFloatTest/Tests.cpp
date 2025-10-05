@@ -435,9 +435,7 @@ TestPerf(int testNum,
                 mpf_sub(mpfHostResultXY1, mpfX, mpfY);
                 mpf_add(mpfHostResultXY1, mpfHostResultXY1, mpfZ);
                 mpf_add(mpfHostResultXY2, mpfX, mpfY);
-            } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2 ||
-                                 sharkOperator == Operator::MultiplyFFT ||
-                                 sharkOperator == Operator::MultiplyFFT2) {
+            } else if constexpr (sharkOperator == Operator::MultiplyFFT2) {
                 mpf_mul(mpfHostResultXX, mpfX, mpfX);
                 mpf_mul(mpfHostResultXY1, mpfX, mpfY);
                 mpf_mul_ui(mpfHostResultXY1, mpfHostResultXY1, 2);
@@ -583,8 +581,7 @@ TestPerf(int testNum,
                 testSucceeded &= CheckDiff(testNum, numTerms, "GPU", mpfHostResultXY2, gpuResultXY2);
             }
 
-        } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2 ||
-                             sharkOperator == Operator::MultiplyFFT2) {
+        } else if constexpr (sharkOperator == Operator::MultiplyFFT2) {
 
             auto combo = std::make_unique<HpSharkComboResults<SharkFloatParams>>();
             combo->A = *xNum;
@@ -597,9 +594,7 @@ TestPerf(int testNum,
             {
                 BenchmarkTimer timer;
 
-                if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
-                    InvokeMultiplyKernelPerf<SharkFloatParams>(timer, *combo, numIters);
-                } else if constexpr (sharkOperator == Operator::MultiplyFFT2) {
+                if constexpr (sharkOperator == Operator::MultiplyFFT2) {
                     InvokeMultiplyNTTKernelPerf<SharkFloatParams>(timer, *combo, numIters);
                 } else {
                     DebugBreak();
@@ -1106,18 +1101,7 @@ TestCoreMultiply(int testNum,
             }
         };
 
-        if constexpr (sharkOperator == Operator::MultiplyFFT) {
-            MultiplyHelperFFT<SharkFloatParams>(&aNum,
-                                                &bNum,
-                                                &hostKaratsubaOutXXV2,
-                                                &hostKaratsubaOutXYV2,
-                                                &hostKaratsubaOutYYV2,
-                                                debugHostCombo);
-
-            OutputV2("FFT XX", hostKaratsubaOutXXV2);
-            OutputV2("FFT XY", hostKaratsubaOutXYV2);
-            OutputV2("FFT YY", hostKaratsubaOutYYV2);
-        } else if constexpr (sharkOperator == Operator::MultiplyFFT2) {
+        if constexpr (sharkOperator == Operator::MultiplyFFT2) {
             MultiplyHelperFFT2<SharkFloatParams>(&aNum,
                                                  &bNum,
                                                  &hostKaratsubaOutXXV2,
@@ -1143,13 +1127,13 @@ TestCoreMultiply(int testNum,
 
         bool res = true;
         constexpr auto numTerms = 2;
-        res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyKaratsubaV2>(
+        res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyFFT2>(
             testNum, numTerms, "CustomHighPrecisionV2XX", mpfHostResultXX, hostKaratsubaOutXXV2);
 
-        res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyKaratsubaV2>(
+        res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyFFT2>(
             testNum, numTerms, "CustomHighPrecisionV2XY", mpfHostResultXY1, hostKaratsubaOutXYV2);
 
-        res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyKaratsubaV2>(
+        res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyFFT2>(
             testNum, numTerms, "CustomHighPrecisionV2YY", mpfHostResultYY, hostKaratsubaOutYYV2);
 
         return res;
@@ -1244,13 +1228,13 @@ TestCoreMultiply(int testNum,
 
         constexpr auto numTerms = 2;
 
-        testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::MultiplyKaratsubaV2>(
+        testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::MultiplyFFT2>(
             testNum, numTerms, "GPU", mpfHostResultXX, *gpuResultXX);
 
-        testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::MultiplyKaratsubaV2>(
+        testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::MultiplyFFT2>(
             testNum, numTerms, "GPU", mpfHostResultXY1, *gpuResultXY1);
 
-        testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::MultiplyKaratsubaV2>(
+        testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::MultiplyFFT2>(
             testNum, numTerms, "GPU", mpfHostResultYY, *gpuResultYY);
     }
 
@@ -1419,10 +1403,7 @@ TestTernaryOperatorTwoNumbersRawNoSignChange(int testNum,
 
     if constexpr (sharkOperator == Operator::Add) {
         TestCoreAdd<SharkFloatParams>(testNum, inputX, mpfInputX, mpfInputLen);
-    } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2 ||
-                         sharkOperator == Operator::MultiplyFFT ||
-                         sharkOperator == Operator::MultiplyFFT2) {
-
+    } else if constexpr (sharkOperator == Operator::MultiplyFFT2) {
         TestCoreMultiply<SharkFloatParams, sharkOperator>(testNum, inputX, mpfInputX, mpfInputLen);
     } else if constexpr (sharkOperator == Operator::ReferenceOrbit) {
         TestCoreReferenceOrbit<SharkFloatParams>(testNum, inputX, mpfInputX, mpfInputLen);
@@ -2681,6 +2662,8 @@ TestBinaryOperatorPerf([[maybe_unused]] int testBase,
     TestPerf<TestPerSharkParams7, sharkOperator>(testBase + 7, internalTestLoopCount);
     TestPerf<TestPerSharkParams8, sharkOperator>(testBase + 8, internalTestLoopCount);
 #elif (ENABLE_BASIC_CORRECTNESS == 2)
+    static_assert(sharkOperator == Operator::Add || sharkOperator == MultiplyFFT2);
+
     for (size_t i = 0; i < numIters; i++) {
         TestPerf<TestPerSharkParams1, sharkOperator>(testBase + 1, internalTestLoopCount);
     }
@@ -2743,9 +2726,12 @@ TestFullReferencePerf(int testBase, int internalTestLoopCount)
     }
 
     // Convert mpfX/mpfY/mpfZ back to strings
-    auto convertedMpfX = MpfToString<TestPerSharkParams1>(mpfX, HpSharkFloat<TestPerSharkParams1>::DefaultMpirBits);
-    auto convertedMpfY = MpfToString<TestPerSharkParams1>(mpfY, HpSharkFloat<TestPerSharkParams1>::DefaultMpirBits);
-    auto convertedMpfZ = MpfToString<TestPerSharkParams1>(mpfZ, HpSharkFloat<TestPerSharkParams1>::DefaultMpirBits);
+    auto convertedMpfX =
+        MpfToString<TestPerSharkParams1>(mpfX, HpSharkFloat<TestPerSharkParams1>::DefaultMpirBits);
+    auto convertedMpfY =
+        MpfToString<TestPerSharkParams1>(mpfY, HpSharkFloat<TestPerSharkParams1>::DefaultMpirBits);
+    auto convertedMpfZ =
+        MpfToString<TestPerSharkParams1>(mpfZ, HpSharkFloat<TestPerSharkParams1>::DefaultMpirBits);
 
     using HdrType = typename TestPerSharkParams1::Float;
     const HdrType hdrRadiusY{mpfRadiusY};

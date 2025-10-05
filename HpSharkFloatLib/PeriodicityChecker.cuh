@@ -8,6 +8,8 @@ static __device__ bool
 PeriodicityChecker(cg::grid_group &grid,
     cg::thread_block &block,
     uint64_t currentIteration,
+    typename SharkFloatParams::Float *SharkRestrict cx_cast,
+    typename SharkFloatParams::Float *SharkRestrict cy_cast,
     typename SharkFloatParams::Float *SharkRestrict dzdcX,
     typename SharkFloatParams::Float *SharkRestrict dzdcY,
     HpSharkReferenceResults<SharkFloatParams> *SharkRestrict reference,
@@ -20,8 +22,6 @@ PeriodicityChecker(cg::grid_group &grid,
     auto radiusY = reference->RadiusY;
 
     using HdrType = typename SharkFloatParams::Float;
-    HdrType cx_cast = ConstantReal->ToHDRFloat<SharkFloatParams::SubType>(0);
-    HdrType cy_cast = ConstantImaginary->ToHDRFloat<SharkFloatParams::SubType>(0);
 
     // Now lets do periodicity checking and store the results
     HdrType double_zx;
@@ -73,8 +73,8 @@ PeriodicityChecker(cg::grid_group &grid,
         *dzdcY = HighTwo * (double_zx * *dzdcY + double_zy * dzdcXOrig);
     }
 
-    HdrType tempZX = double_zx + cx_cast;
-    HdrType tempZY = double_zy + cy_cast;
+    HdrType tempZX = double_zx + *cx_cast;
+    HdrType tempZY = double_zy + *cy_cast;
     HdrType zn_size = tempZX * tempZX + tempZY * tempZY;
 
     if (HdrCompareToBothPositiveReducedGT(zn_size, TwoFiftySix)) {

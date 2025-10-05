@@ -1,6 +1,6 @@
 #pragma once
 
-enum class Operator { Add, MultiplyKaratsubaV2, MultiplyFFT, MultiplyFFT2, ReferenceOrbit };
+enum class Operator { Add, MultiplyFFT, MultiplyFFT2, ReferenceOrbit };
 
 template <Operator sharkOperator>
 const char *
@@ -8,10 +8,6 @@ OperatorToString()
 {
     if constexpr (sharkOperator == Operator::Add) {
         return "Operator::Add";
-    } else if constexpr (sharkOperator == Operator::MultiplyKaratsubaV2) {
-        return "Operator::MultiplyKaratsubaV2";
-    } else if constexpr (sharkOperator == Operator::MultiplyFFT) {
-        return "Operator::MultiplyFFT";
     } else if constexpr (sharkOperator == Operator::MultiplyFFT2) {
         return "Operator::MultiplyFFT2";
     } else if constexpr (sharkOperator == Operator::ReferenceOrbit) {

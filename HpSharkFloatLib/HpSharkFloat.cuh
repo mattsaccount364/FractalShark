@@ -41,7 +41,7 @@ static constexpr bool SharkDebug = false;
 // 4 = known reference orbit tests specifically for reference kernel
 // See ExplicitInstantiate.h for more information
 #ifdef _DEBUG
-#define ENABLE_BASIC_CORRECTNESS 2
+#define ENABLE_BASIC_CORRECTNESS 0
 #else
 #define ENABLE_BASIC_CORRECTNESS 2
 #endif
@@ -299,7 +299,6 @@ static constexpr auto CalculateAddFrameSize() {
 static constexpr auto LowPrec = 32;
 
 #include "ExplicitInstantiate.h"
-
 
 
 // If you add a new one, search for one of the other types and copy/paste

@@ -12,6 +12,8 @@ __device__ [[nodiscard]] bool
 ReferenceHelper(cg::grid_group &grid,
                 cg::thread_block &block,
                 uint64_t currentIteration,
+                typename SharkFloatParams::Float *SharkRestrict cx_cast,
+                typename SharkFloatParams::Float *SharkRestrict cy_cast,
                 typename SharkFloatParams::Float *SharkRestrict dzdcX,
                 typename SharkFloatParams::Float *SharkRestrict dzdcY,
                 HpSharkReferenceResults<SharkFloatParams> *SharkRestrict reference,
@@ -22,8 +24,8 @@ ReferenceHelper(cg::grid_group &grid,
     //
 
     if constexpr (SharkFloatParams::Periodicity) {
-        const auto shouldContinue =
-            PeriodicityChecker(grid, block, currentIteration, dzdcX, dzdcY, reference, tempData);
+        const auto shouldContinue = PeriodicityChecker(
+            grid, block, currentIteration, cx_cast, cy_cast, dzdcX, dzdcY, reference, tempData);
 
         if (!shouldContinue) {
             return false;
@@ -84,10 +86,12 @@ HpSharkReferenceGpuKernel(HpSharkReferenceResults<SharkFloatParams> *SharkRestri
     constexpr auto currentIteration = 0;
 
     if constexpr (SharkFloatParams::Periodicity) {
+        // This path is not supported: running one iteration with periodicity checking is pointless.
+        // Correctness checking of all this should take place via the integrated loop version just below.
         return;
     } else {
         const auto [[maybe_unused]] shouldContinue = ReferenceHelper<SharkFloatParams>(
-            grid, block, currentIteration, nullptr, nullptr, combo, tempData);
+            grid, block, currentIteration, nullptr, nullptr, nullptr, nullptr, combo, tempData);
     }
 }
 
@@ -105,8 +109,12 @@ HpSharkReferenceGpuLoop(HpSharkReferenceResults<SharkFloatParams> *SharkRestrict
     typename SharkFloatParams::Float dzdcX{1};
     typename SharkFloatParams::Float dzdcY{0};
 
+    typename SharkFloatParams::Float cx_cast = combo->Add.C_A.ToHDRFloat<SharkFloatParams::SubType>(0);
+    typename SharkFloatParams::Float cy_cast = combo->Add.E_B.ToHDRFloat<SharkFloatParams::SubType>(0);
+
     for (uint64_t i = 0; i < numIters; ++i) {
-        const auto shouldContinue = ReferenceHelper(grid, block, i, &dzdcX, &dzdcY, combo, tempData);
+        const auto shouldContinue =
+            ReferenceHelper(grid, block, i, &cx_cast, &cy_cast, &dzdcX, &dzdcY, combo, tempData);
         if (!shouldContinue) {
             break;
         }

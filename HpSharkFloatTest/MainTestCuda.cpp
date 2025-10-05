@@ -99,7 +99,7 @@ CorrectnessTests()
 
     if constexpr (SharkEnableMultiplyNTT2Kernel) {
         testBase = 6000;
-        res = TestAllBinaryOp<TestSharkParams, Operator::MultiplyFFT2>(testBase);
+        res = TestAllBinaryOp<TestSharkParams, Operator::MultiplyNTT>(testBase);
         if (!res) {
             auto q = PressKey();
             if (q == 'q') {
@@ -262,7 +262,7 @@ main(int /*argc*/, char * /*argv*/[])
 
     if constexpr (SharkEnableMultiplyNTT2Kernel) {
         testBase = 13000;
-        res = TestBinaryOperatorPerf<Operator::MultiplyFFT2>(testBase, numIters, internalTestLoopCount);
+        res = TestBinaryOperatorPerf<Operator::MultiplyNTT>(testBase, numIters, internalTestLoopCount);
         if (!res) {
             auto q = PressKey();
             if (q == 'q') {

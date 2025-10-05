@@ -435,7 +435,7 @@ TestPerf(int testNum,
                 mpf_sub(mpfHostResultXY1, mpfX, mpfY);
                 mpf_add(mpfHostResultXY1, mpfHostResultXY1, mpfZ);
                 mpf_add(mpfHostResultXY2, mpfX, mpfY);
-            } else if constexpr (sharkOperator == Operator::MultiplyFFT2) {
+            } else if constexpr (sharkOperator == Operator::MultiplyNTT) {
                 mpf_mul(mpfHostResultXX, mpfX, mpfX);
                 mpf_mul(mpfHostResultXY1, mpfX, mpfY);
                 mpf_mul_ui(mpfHostResultXY1, mpfHostResultXY1, 2);
@@ -581,7 +581,7 @@ TestPerf(int testNum,
                 testSucceeded &= CheckDiff(testNum, numTerms, "GPU", mpfHostResultXY2, gpuResultXY2);
             }
 
-        } else if constexpr (sharkOperator == Operator::MultiplyFFT2) {
+        } else if constexpr (sharkOperator == Operator::MultiplyNTT) {
 
             auto combo = std::make_unique<HpSharkComboResults<SharkFloatParams>>();
             combo->A = *xNum;
@@ -594,7 +594,7 @@ TestPerf(int testNum,
             {
                 BenchmarkTimer timer;
 
-                if constexpr (sharkOperator == Operator::MultiplyFFT2) {
+                if constexpr (sharkOperator == Operator::MultiplyNTT) {
                     InvokeMultiplyNTTKernelPerf<SharkFloatParams>(timer, *combo, numIters);
                 } else {
                     DebugBreak();
@@ -1101,7 +1101,7 @@ TestCoreMultiply(int testNum,
             }
         };
 
-        if constexpr (sharkOperator == Operator::MultiplyFFT2) {
+        if constexpr (sharkOperator == Operator::MultiplyNTT) {
             MultiplyHelperFFT2<SharkFloatParams>(&aNum,
                                                  &bNum,
                                                  &hostKaratsubaOutXXV2,
@@ -1127,13 +1127,13 @@ TestCoreMultiply(int testNum,
 
         bool res = true;
         constexpr auto numTerms = 2;
-        res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyFFT2>(
+        res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyNTT>(
             testNum, numTerms, "CustomHighPrecisionV2XX", mpfHostResultXX, hostKaratsubaOutXXV2);
 
-        res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyFFT2>(
+        res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyNTT>(
             testNum, numTerms, "CustomHighPrecisionV2XY", mpfHostResultXY1, hostKaratsubaOutXYV2);
 
-        res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyFFT2>(
+        res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyNTT>(
             testNum, numTerms, "CustomHighPrecisionV2YY", mpfHostResultYY, hostKaratsubaOutYYV2);
 
         return res;
@@ -1228,13 +1228,13 @@ TestCoreMultiply(int testNum,
 
         constexpr auto numTerms = 2;
 
-        testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::MultiplyFFT2>(
+        testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::MultiplyNTT>(
             testNum, numTerms, "GPU", mpfHostResultXX, *gpuResultXX);
 
-        testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::MultiplyFFT2>(
+        testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::MultiplyNTT>(
             testNum, numTerms, "GPU", mpfHostResultXY1, *gpuResultXY1);
 
-        testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::MultiplyFFT2>(
+        testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::MultiplyNTT>(
             testNum, numTerms, "GPU", mpfHostResultYY, *gpuResultYY);
     }
 
@@ -1403,7 +1403,7 @@ TestTernaryOperatorTwoNumbersRawNoSignChange(int testNum,
 
     if constexpr (sharkOperator == Operator::Add) {
         TestCoreAdd<SharkFloatParams>(testNum, inputX, mpfInputX, mpfInputLen);
-    } else if constexpr (sharkOperator == Operator::MultiplyFFT2) {
+    } else if constexpr (sharkOperator == Operator::MultiplyNTT) {
         TestCoreMultiply<SharkFloatParams, sharkOperator>(testNum, inputX, mpfInputX, mpfInputLen);
     } else if constexpr (sharkOperator == Operator::ReferenceOrbit) {
         TestCoreReferenceOrbit<SharkFloatParams>(testNum, inputX, mpfInputX, mpfInputLen);
@@ -2662,7 +2662,7 @@ TestBinaryOperatorPerf([[maybe_unused]] int testBase,
     TestPerf<TestPerSharkParams7, sharkOperator>(testBase + 7, internalTestLoopCount);
     TestPerf<TestPerSharkParams8, sharkOperator>(testBase + 8, internalTestLoopCount);
 #elif (ENABLE_BASIC_CORRECTNESS == 2)
-    static_assert(sharkOperator == Operator::Add || sharkOperator == MultiplyFFT2);
+    static_assert(sharkOperator == Operator::Add || sharkOperator == MultiplyNTT);
 
     for (size_t i = 0; i < numIters; i++) {
         TestPerf<TestPerSharkParams1, sharkOperator>(testBase + 1, internalTestLoopCount);
@@ -2764,8 +2764,8 @@ TestFullReferencePerf(int testBase, int internalTestLoopCount)
 
 #ifdef ENABLE_MULTIPLY_NTT2_KERNEL
 #define MULTIPLY_KERNEL_FFT2(SharkFloatParams)                                                          \
-    template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyFFT2>(int testBase);              \
-    template bool TestBinaryOperatorPerf<Operator::MultiplyFFT2>(                                       \
+    template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyNTT>(int testBase);              \
+    template bool TestBinaryOperatorPerf<Operator::MultiplyNTT>(                                       \
         int testBase, int numIters, int internalTestLoopCount);
 #else
 #define MULTIPLY_KERNEL_FFT2(SharkFloatParams) ;

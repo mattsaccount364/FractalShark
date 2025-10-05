@@ -427,6 +427,9 @@ TestPerf(int testNum,
         const HdrType HighOne{1.0f};
         const HdrType TwoFiftySix{256.0f};
 
+        // Init to 1 because we initially store a zero
+        uint64_t keptIterationCounter = 1;
+
         for (int i = 0; i < numIters; ++i) {
             if constexpr (sharkOperator == Operator::Add) {
                 mpf_sub(mpfHostResultXY1, mpfX, mpfY);
@@ -451,13 +454,8 @@ TestPerf(int testNum,
                     double_zy = HdrType{recurrenceY};
                 }
 
-                mpf_mul(xSquared, recurrenceX, recurrenceX); // x^2
-                mpf_mul(ySquared, recurrenceY, recurrenceY); // y^2
-                mpf_mul(twoXY, recurrenceX, recurrenceY);    // xy
-                mpf_mul_ui(twoXY, twoXY, 2);                 // 2xy
-                mpf_sub(tempX, xSquared, ySquared);          // x^2 - y^2
-                mpf_add(recurrenceX, tempX, mpfX);           // x^2 - y^2 + a
-                mpf_add(recurrenceY, twoXY, mpfY);           // 2xy + b
+                // Increment before periodicity
+                keptIterationCounter++;
 
                 if constexpr (SharkFloatParams::Periodicity) {
                     // x^2+2*I*x*y-y^2
@@ -491,8 +489,8 @@ TestPerf(int testNum,
                     HdrReduce(n3);
 
                     if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
-                        discoveredPeriodHost = i;
-                        discoveredEscapeIterationHost = i;
+                        discoveredPeriodHost = keptIterationCounter;
+                        discoveredEscapeIterationHost = keptIterationCounter;
                         break;
                     } else {
                         auto dzdcXOrig = dzdcX;
@@ -500,6 +498,14 @@ TestPerf(int testNum,
                         dzdcY = HighTwo * (double_zx * dzdcY + double_zy * dzdcXOrig);
                     }
                 }
+
+                mpf_mul(xSquared, recurrenceX, recurrenceX); // x^2
+                mpf_mul(ySquared, recurrenceY, recurrenceY); // y^2
+                mpf_mul(twoXY, recurrenceX, recurrenceY);    // xy
+                mpf_mul_ui(twoXY, twoXY, 2);                 // 2xy
+                mpf_sub(tempX, xSquared, ySquared);          // x^2 - y^2
+                mpf_add(recurrenceX, tempX, mpfX);           // x^2 - y^2 + a
+                mpf_add(recurrenceY, twoXY, mpfY);           // 2xy + b
 
                 HdrType tempZX = double_zx + cx_cast;
                 HdrType tempZY = double_zy + cy_cast;
@@ -512,7 +518,7 @@ TestPerf(int testNum,
                     //
 
                     discoveredPeriodHost = 0;
-                    discoveredEscapeIterationHost = i;
+                    discoveredEscapeIterationHost = keptIterationCounter;
                     break;
                 }
             } else {
@@ -2688,6 +2694,9 @@ TestFullReferencePerf(int testBase, int internalTestLoopCount)
 {
     static_assert(sharkOperator == Operator::ReferenceOrbit, "Only ReferenceOrbit is supported");
 
+    mpf_set_default_prec(
+        HpSharkFloat<TestPerSharkParams1>::DefaultMpirBits); // Set precision for MPIR floating point
+
     int testNum = testBase + 1;
 
     const char *num1 = "-5."
@@ -2733,12 +2742,25 @@ TestFullReferencePerf(int testBase, int internalTestLoopCount)
         std::cout << "Error setting mpfRadiusY" << std::endl;
     }
 
+    // Convert mpfX/mpfY/mpfZ back to strings
+    auto convertedMpfX = MpfToString<TestPerSharkParams1>(mpfX, HpSharkFloat<TestPerSharkParams1>::DefaultMpirBits);
+    auto convertedMpfY = MpfToString<TestPerSharkParams1>(mpfY, HpSharkFloat<TestPerSharkParams1>::DefaultMpirBits);
+    auto convertedMpfZ = MpfToString<TestPerSharkParams1>(mpfZ, HpSharkFloat<TestPerSharkParams1>::DefaultMpirBits);
+
     using HdrType = typename TestPerSharkParams1::Float;
     const HdrType hdrRadiusY{mpfRadiusY};
 
     for (size_t i = 0; i < internalTestLoopCount; i++) {
-        TestPerf<TestPerSharkParams1, sharkOperator>(
-            testNum, num1, num2, num3, radiusYStr, mpfX, mpfY, mpfZ, hdrRadiusY, maxIters);
+        TestPerf<TestPerSharkParams1, sharkOperator>(testNum,
+                                                     convertedMpfX.c_str(),
+                                                     convertedMpfY.c_str(),
+                                                     convertedMpfZ.c_str(),
+                                                     radiusYStr,
+                                                     mpfX,
+                                                     mpfY,
+                                                     mpfZ,
+                                                     hdrRadiusY,
+                                                     maxIters);
     }
 
     return true;

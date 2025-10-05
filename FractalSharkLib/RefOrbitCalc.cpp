@@ -368,9 +368,8 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
         mpf_t zy;
         mpf_init(zy);
 
-        mpf_t zx2, zy2;
+        mpf_t zx2;
         mpf_init(zx2);
-        mpf_init(zy2);
 
         mpf_t temp_mpf;
         mpf_init(temp_mpf);
@@ -427,7 +426,6 @@ void RefOrbitCalc::AddPerturbationReferencePointST(HighPrecision cx, HighPrecisi
 
         for (i = 0; i < m_Fractal.GetNumIterations<IterType>(); i++) {
             mpf_mul_2exp(zx2, zx, 1); // Multiply by 2
-            mpf_mul_2exp(zy2, zy, 1);
 
             T double_zx;
             T double_zy;
@@ -1525,9 +1523,8 @@ void RefOrbitCalc::AddPerturbationReferencePointMT3(HighPrecision cx, HighPrecis
         mpf_t zy;
         mpf_init(zy);
 
-        mpf_t zx2, zy2;
+        mpf_t zx2;
         mpf_init(zx2);
-        mpf_init(zy2);
 
         mpf_t temp_mpf;
         mpf_init(temp_mpf);

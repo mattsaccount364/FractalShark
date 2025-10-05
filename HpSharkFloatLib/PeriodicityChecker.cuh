@@ -13,8 +13,8 @@ PeriodicityChecker(cg::grid_group &grid,
     typename SharkFloatParams::Float *SharkRestrict dzdcX,
     typename SharkFloatParams::Float *SharkRestrict dzdcY,
     HpSharkReferenceResults<SharkFloatParams> *SharkRestrict reference,
-    uint64_t *tempData) {
-
+    typename SharkFloatParams::ReferenceIterT *SharkRestrict gpuReferenceIters)
+{
     auto *ConstantReal = &reference->Add.C_A;
     auto *ConstantImaginary = &reference->Add.E_B;
     auto *Out_A_B_C = &reference->Multiply.A;
@@ -29,6 +29,9 @@ PeriodicityChecker(cg::grid_group &grid,
 
     double_zx = Out_A_B_C->ToHDRFloat<SharkFloatParams::SubType>(0);
     double_zy = Out_D_E->ToHDRFloat<SharkFloatParams::SubType>(0);
+
+    gpuReferenceIters[currentIteration + 1].x = double_zx;
+    gpuReferenceIters[currentIteration + 1].y = double_zy;
 
     // x^2+2*I*x*y-y^2
     // dzdc = 2.0 * z * dzdc + real(1.0);
@@ -64,8 +67,8 @@ PeriodicityChecker(cg::grid_group &grid,
     HdrReduce(n3);
 
     if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
-        reference->Period = currentIteration;
-        reference->EscapedIteration = currentIteration;
+        reference->Period = currentIteration + 2;
+        reference->EscapedIteration = currentIteration + 2;
         return false;
     } else {
         auto dzdcXOrig = *dzdcX;
@@ -84,7 +87,7 @@ PeriodicityChecker(cg::grid_group &grid,
         //
 
         reference->Period = 0;
-        reference->EscapedIteration = currentIteration;
+        reference->EscapedIteration = currentIteration + 2;
         return false;
     }
 

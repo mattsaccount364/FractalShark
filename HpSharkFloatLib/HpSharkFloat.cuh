@@ -5,6 +5,7 @@
 #include "MultiplyNTTCudaSetup.h"
 #include "MultiplyNTTPlanBuilder.cuh"
 #include "HDRFloat.h"
+#include "GPU_ReferenceIter.h"
 
 #include <string>
 #include <gmp.h>
@@ -41,7 +42,7 @@ static constexpr bool SharkDebug = false;
 // 4 = known reference orbit tests specifically for reference kernel
 // See ExplicitInstantiate.h for more information
 #ifdef _DEBUG
-#define ENABLE_BASIC_CORRECTNESS 0
+#define ENABLE_BASIC_CORRECTNESS 2
 #else
 #define ENABLE_BASIC_CORRECTNESS 2
 #endif
@@ -79,7 +80,6 @@ static constexpr auto SharkEnableFullKernel = false;
 #ifdef _DEBUG
 #define SharkForceInlineReleaseOnly
 #else
-// #define SharkForceInlineReleaseOnly __forceinline__
 #define SharkForceInlineReleaseOnly __forceinline__
 #endif
 
@@ -208,6 +208,8 @@ struct GenericSharkFloatParams {
 
     static constexpr SharkNTT::PlanPrime NTTPlan = SharkNTT::BuildPlanPrime(GlobalNumUint32, 26, 2);
     static constexpr bool Periodicity = SharkEnablePeriodicity;
+
+    using ReferenceIterT = GPUReferenceIter<Float, PerturbExtras::Disable>;
 };
 
 // This one should account for maximum call index, e.g. if we generate 500 calls
@@ -601,6 +603,7 @@ struct HpSharkReferenceResults {
     alignas(16) HpSharkAddComboResults<SharkFloatParams> Add;
     alignas(16) uint64_t Period;
     alignas(16) uint64_t EscapedIteration;
+    alignas(16) typename SharkFloatParams::ReferenceIterT *OutputIters;
 };
 #pragma warning(pop)
 

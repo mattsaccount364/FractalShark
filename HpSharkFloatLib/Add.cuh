@@ -1,13 +1,11 @@
 #pragma once
 
 #include "CudaCrap.h"
+#include "HpSharkFloat.cuh"
 #include <stdint.h>
 
 template<class SharkFloatParams>
 struct HpSharkFloat;
-
-#include "KernelInvoke.cuh"
-#include "Tests.h"
 
 bool CheckAllTestsPassed();
 

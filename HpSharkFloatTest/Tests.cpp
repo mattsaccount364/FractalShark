@@ -21,6 +21,7 @@
 
 #include "Add.cuh"
 #include "MultiplyNTT.cuh"
+#include "KernelInvoke.cuh"
 
 #define NOMINMAX
 #include <windows.h>
@@ -622,18 +623,21 @@ TestPerf(int testNum,
             auto combo = std::make_unique<HpSharkReferenceResults<SharkFloatParams>>();
             auto tempEmpty = std::make_unique<HpSharkFloat<SharkFloatParams>>();
 
+            combo->RadiusY = hdrRadiusY;
             combo->Add.C_A = *xNum;
             combo->Add.E_B = *yNum;
             combo->Multiply.A = *xNum;
             combo->Multiply.B = *yNum;
-            combo->RadiusY = hdrRadiusY;
+            combo->Period = 0;
+            combo->EscapedIteration = 0;
+            combo->OutputIters = nullptr;
 
             const auto &gpuResultX = combo->Multiply.A;
             const auto &gpuResultY = combo->Multiply.B;
 
             {
                 BenchmarkTimer timer;
-                InvokeHpSharkReferenceKernelPerf<SharkFloatParams>(timer, *combo, numIters);
+                InvokeHpSharkReferenceKernelPerf<SharkFloatParams>(&timer, *combo, numIters);
                 Tests.AddTime(testNum, timer.GetDeltaInMs());
                 std::cout << "GPU iter time: " << timer.GetDeltaInMs() << " ms" << std::endl;
 
@@ -2662,8 +2666,6 @@ TestBinaryOperatorPerf([[maybe_unused]] int testBase,
     TestPerf<TestPerSharkParams7, sharkOperator>(testBase + 7, internalTestLoopCount);
     TestPerf<TestPerSharkParams8, sharkOperator>(testBase + 8, internalTestLoopCount);
 #elif (ENABLE_BASIC_CORRECTNESS == 2)
-    static_assert(sharkOperator == Operator::Add || sharkOperator == MultiplyNTT);
-
     for (size_t i = 0; i < numIters; i++) {
         TestPerf<TestPerSharkParams1, sharkOperator>(testBase + 1, internalTestLoopCount);
     }

@@ -6,9 +6,6 @@
 template<class SharkFloatParams>
 struct HpSharkFloat;
 
-#include "KernelInvoke.cuh"
-#include "Tests.h"
-
 bool CheckAllTestsPassed();
 
 template<class SharkFloatParams>

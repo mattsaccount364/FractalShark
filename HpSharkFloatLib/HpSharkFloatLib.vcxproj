@@ -15,11 +15,17 @@
       <FileType>Document</FileType>
     </ClInclude>
     <CudaCompile Include="AddTestKernels.cu" />
+    <CudaCompile Include="BenchmarkTimer.cu" />
     <CudaCompile Include="HpSharkFloat.cu" />
     <CudaCompile Include="HpSharkReferenceOrbit.cu" />
+    <ClInclude Include="BenchmarkTimer.h" />
+    <ClInclude Include="GPU_ReferenceIter.h" />
+    <ClInclude Include="KernelInvoke.cuh" />
+    <ClInclude Include="KernelInvokeInternal.cuh" />
     <ClInclude Include="MultiplyNTT.cu">
       <FileType>Document</FileType>
     </ClInclude>
+    <CudaCompile Include="KernelInvokeReferencePerf.cu" />
     <CudaCompile Include="MultiplyNTTCudaSetup.cu" />
     <CudaCompile Include="MultiplyNTTTestKernels.cu" />
   </ItemGroup>

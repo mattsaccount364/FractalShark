@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CudaCrap.h"
+#include <cuda_runtime.h>
 #include <stdint.h>
 
 template <class SharkFloatParams> struct HpSharkFloat;

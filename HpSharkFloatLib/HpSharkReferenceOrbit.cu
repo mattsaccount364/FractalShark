@@ -17,15 +17,23 @@ ReferenceHelper(cg::grid_group &grid,
                 typename SharkFloatParams::Float *SharkRestrict dzdcX,
                 typename SharkFloatParams::Float *SharkRestrict dzdcY,
                 HpSharkReferenceResults<SharkFloatParams> *SharkRestrict reference,
-                uint64_t *tempData)
+                uint64_t *tempData,
+                typename SharkFloatParams::ReferenceIterT *gpuReferenceIters)
 {
     //
     // All threads do periodicity checking and update the period if found.
     //
 
     if constexpr (SharkFloatParams::Periodicity) {
-        const auto shouldContinue = PeriodicityChecker(
-            grid, block, currentIteration, cx_cast, cy_cast, dzdcX, dzdcY, reference, tempData);
+        const auto shouldContinue = PeriodicityChecker(grid,
+                                                       block,
+                                                       currentIteration,
+                                                       cx_cast,
+                                                       cy_cast,
+                                                       dzdcX,
+                                                       dzdcY,
+                                                       reference,
+                                                       gpuReferenceIters);
 
         if (!shouldContinue) {
             return false;
@@ -91,7 +99,7 @@ HpSharkReferenceGpuKernel(HpSharkReferenceResults<SharkFloatParams> *SharkRestri
         return;
     } else {
         const auto [[maybe_unused]] shouldContinue = ReferenceHelper<SharkFloatParams>(
-            grid, block, currentIteration, nullptr, nullptr, nullptr, nullptr, combo, tempData);
+            grid, block, currentIteration, nullptr, nullptr, nullptr, nullptr, combo, tempData, nullptr);
     }
 }
 
@@ -99,7 +107,8 @@ template <class SharkFloatParams>
 __global__ void
 HpSharkReferenceGpuLoop(HpSharkReferenceResults<SharkFloatParams> *SharkRestrict combo,
                         uint64_t numIters,
-                        uint64_t *tempData)
+                        uint64_t *tempData,
+                        typename SharkFloatParams::ReferenceIterT *gpuReferenceIters)
 {
 
     // Initialize cooperative grid group
@@ -112,9 +121,15 @@ HpSharkReferenceGpuLoop(HpSharkReferenceResults<SharkFloatParams> *SharkRestrict
     typename SharkFloatParams::Float cx_cast = combo->Add.C_A.ToHDRFloat<SharkFloatParams::SubType>(0);
     typename SharkFloatParams::Float cy_cast = combo->Add.E_B.ToHDRFloat<SharkFloatParams::SubType>(0);
 
+    if constexpr (SharkFloatParams::Periodicity) {
+    
+        gpuReferenceIters[0].x = {};
+        gpuReferenceIters[0].y = {};
+    }
+
     for (uint64_t i = 0; i < numIters; ++i) {
-        const auto shouldContinue =
-            ReferenceHelper(grid, block, i, &cx_cast, &cy_cast, &dzdcX, &dzdcY, combo, tempData);
+        const auto shouldContinue = ReferenceHelper(
+            grid, block, i, &cx_cast, &cy_cast, &dzdcX, &dzdcY, combo, tempData, gpuReferenceIters);
         if (!shouldContinue) {
             break;
         }

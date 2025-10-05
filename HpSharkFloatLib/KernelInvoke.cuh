@@ -1,5 +1,6 @@
 #pragma once
 
+#include <mpir.h>
 #include <functional>
 
 template<class SharkFloatParams>
@@ -27,9 +28,15 @@ enum class Operator;
 
 template<class SharkFloatParams>
 void InvokeHpSharkReferenceKernelPerf(
-    BenchmarkTimer &timer,
+    BenchmarkTimer *timer,
     HpSharkReferenceResults<SharkFloatParams> &combo,
     uint64_t numIters);
+
+template <class SharkFloatParams>
+void InvokeHpSharkReferenceKernelProd(HpSharkReferenceResults<SharkFloatParams> &combo,
+                                      mpf_t srcX,
+                                      mpf_t srcY,
+                                      uint64_t numIters);
 
 template <class SharkFloatParams>
 void InvokeMultiplyNTTKernelPerf(BenchmarkTimer& timer,

@@ -124,12 +124,10 @@
     <CudaCompile Include="KernelInvokeAddPerf.cu" />
     <CudaCompile Include="KernelInvokeNTTCorrectness.cu" />
     <CudaCompile Include="KernelInvokeNTTPerf.cu" />
-    <CudaCompile Include="KernelInvokeReferencePerf.cu" />
     <CudaCompile Include="KernelInvokeReferenceCorrectness.cu" />
     <ClCompile Include="ReferenceAdd.cpp" />
     <ClCompile Include="ReferenceKaratsuba.cpp" />
     <ClCompile Include="ReferenceNTT2.cpp" />
-    <ClInclude Include="KernelInvokeInternal.cuh" />
     <ClInclude Include="ReferenceNTT2.h" />
     <CudaCompile Include="Archived\MultiplyKaratsubaV1.cu">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
@@ -144,9 +142,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Archived\ScaledKernels.cuh" />
-    <ClInclude Include="BenchmarkTimer.h" />
     <ClInclude Include="Conversion.h" />
-    <ClInclude Include="KernelInvoke.cuh" />
     <ClInclude Include="MainTestCuda.h" />
     <ClInclude Include="NullKernel.cuh" />
     <ClInclude Include="ReferenceAdd.h" />
@@ -155,9 +151,6 @@
     <ClInclude Include="TestTracker.h" />
   </ItemGroup>
   <ItemGroup>
-    <CudaCompile Include="BenchmarkTimer.cu">
-      <FileType>Document</FileType>
-    </CudaCompile>
     <ClCompile Include="Conversion.cpp">
       <FileType>Document</FileType>
     </ClCompile>

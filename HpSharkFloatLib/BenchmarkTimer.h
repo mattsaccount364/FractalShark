@@ -27,10 +27,21 @@ private:
 };
 
 struct ScopedBenchmarkStopper {
-    ScopedBenchmarkStopper(BenchmarkTimer &data) : m_Data(data) { m_Data.StartTimer(); }
+    ScopedBenchmarkStopper(BenchmarkTimer &data) : m_Data{&data} { m_Data->StartTimer(); }
+    ScopedBenchmarkStopper(BenchmarkTimer *data) : m_Data{data}
+    {
+        if (m_Data != nullptr) {
+            m_Data->StartTimer();
+        }
+    }
 
-    ~ScopedBenchmarkStopper() { m_Data.StopTimer(); }
+    ~ScopedBenchmarkStopper()
+    {
+        if (m_Data != nullptr) {
+            m_Data->StopTimer();
+        }
+    }
 
 private:
-    BenchmarkTimer &m_Data;
+    BenchmarkTimer *m_Data;
 };

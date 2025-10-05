@@ -31,7 +31,7 @@ static constexpr bool SharkDebug = false;
 // Comment out to disable specific kernels
 //#define ENABLE_CONVERSION_TESTS
 //#define ENABLE_ADD_KERNEL
-//#define ENABLE_MULTIPLY_NTT2_KERNEL
+//#define ENABLE_MULTIPLY_NTT_KERNEL
 #define ENABLE_REFERENCE_KERNEL
 
 // 0 = just one correctness test, intended for fast re-compile of a specific failure
@@ -46,6 +46,8 @@ static constexpr bool SharkDebug = false;
 #define ENABLE_BASIC_CORRECTNESS 2
 #endif
 
+static constexpr auto SharkBasicCorrectness = ENABLE_BASIC_CORRECTNESS;
+
 #ifdef ENABLE_CONVERSION_TESTS
 static constexpr auto SharkEnableConversionTests = true;
 #else
@@ -58,15 +60,17 @@ static constexpr auto SharkEnableAddKernel = true;
 static constexpr auto SharkEnableAddKernel = false;
 #endif
 
-#ifdef ENABLE_MULTIPLY_NTT2_KERNEL
-static constexpr auto SharkEnableMultiplyNTT2Kernel = true;
+#ifdef ENABLE_MULTIPLY_NTT_KERNEL
+static constexpr auto SharkEnableMultiplyNTTKernel = true;
 #else
-static constexpr auto SharkEnableMultiplyNTT2Kernel = false;
+static constexpr auto SharkEnableMultiplyNTTKernel = false;
 #endif
 
 #ifdef ENABLE_REFERENCE_KERNEL
-static constexpr auto SharkEnableReferenceKernel = false;
+static constexpr auto SharkEnableReferenceKernel = true;
 static constexpr auto SharkEnableFullKernel = true;
+static constexpr auto SharkEnablePeriodicity =
+    (SharkBasicCorrectness == 2) ? true : false;
 #else
 static constexpr auto SharkEnableReferenceKernel = false;
 static constexpr auto SharkEnableFullKernel = false;
@@ -79,7 +83,7 @@ static constexpr auto SharkEnableFullKernel = false;
 #define SharkForceInlineReleaseOnly __forceinline__
 #endif
 
-static constexpr bool SharkTestGpu = (SharkEnableAddKernel || SharkEnableMultiplyNTT2Kernel ||
+static constexpr bool SharkTestGpu = (SharkEnableAddKernel || SharkEnableMultiplyNTTKernel ||
                                       SharkEnableReferenceKernel || SharkEnableFullKernel);
 //static constexpr bool SharkTestGpu = false;
 
@@ -116,15 +120,8 @@ static constexpr auto SharkKaratsubaBatchSize = SharkLoadAllInShared ? 1 : 4;
 // TODO we should get this shit to work
 //static constexpr bool SharkDebugChecksums = (ENABLE_BASIC_CORRECTNESS != 2) ? SharkDebug : false;
 static constexpr bool SharkDebugChecksums = false;
-
-static constexpr bool SharkPrintMultiplyCounts = false; //SharkDebugChecksums; // SharkDebugChecksums;
-
-#if ENABLE_BASIC_CORRECTNESS == 2
-static constexpr bool SharkTestCorrectness = SharkDebug;
-#else
-static constexpr bool SharkTestCorrectness = true;
-#endif
-
+static constexpr bool SharkPrintMultiplyCounts = false; // SharkDebugChecksums;
+static constexpr bool SharkTestCorrectness = (SharkBasicCorrectness == 2) ? SharkDebug : true;
 static constexpr bool SharkTestInfiniteCorrectness = SharkTestCorrectness ? true : false;
 static constexpr auto SharkTestForceSameSign = false;
 static constexpr bool SharkTestBenchmarkAgainstHost = true;
@@ -163,7 +160,7 @@ struct GenericSharkFloatParams {
     using Float = HDRFloat<float>;
     using SubType = float;
 
-    static constexpr bool SharkUsePow2SizesOnly = SharkEnableMultiplyNTT2Kernel;
+    static constexpr bool SharkUsePow2SizesOnly = SharkEnableMultiplyNTTKernel;
 
     static constexpr int32_t GlobalThreadsPerBlock = pThreadsPerBlock;
     static constexpr int32_t GlobalNumBlocks = pNumBlocks;
@@ -210,7 +207,7 @@ struct GenericSharkFloatParams {
     >;
 
     static constexpr SharkNTT::PlanPrime NTTPlan = SharkNTT::BuildPlanPrime(GlobalNumUint32, 26, 2);
-    static constexpr bool Periodicity = true;
+    static constexpr bool Periodicity = SharkEnablePeriodicity;
 };
 
 // This one should account for maximum call index, e.g. if we generate 500 calls

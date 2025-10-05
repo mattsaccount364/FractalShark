@@ -1192,7 +1192,7 @@ TestCoreMultiply(int testNum,
         combo->A = aNum;
         combo->B = bNum;
 
-        if constexpr (SharkEnableMultiplyNTT2Kernel) {
+        if constexpr (SharkEnableMultiplyNTTKernel) {
             InvokeMultiplyNTTKernelCorrectness<SharkFloatParams>(timer, *combo, &debugGpuCombo);
         }
 
@@ -2673,8 +2673,9 @@ TestBinaryOperatorPerf([[maybe_unused]] int testBase,
 
 template <Operator sharkOperator>
 bool
-TestFullReferencePerf(int testBase, int internalTestLoopCount)
+TestFullReferencePerf([[maybe_unused]] int testBase, [[maybe_unused]] int internalTestLoopCount)
 {
+#if (ENABLE_BASIC_CORRECTNESS == 2)
     static_assert(sharkOperator == Operator::ReferenceOrbit, "Only ReferenceOrbit is supported");
 
     mpf_set_default_prec(
@@ -2748,7 +2749,7 @@ TestFullReferencePerf(int testBase, int internalTestLoopCount)
                                                      hdrRadiusY,
                                                      maxIters);
     }
-
+#endif
     return true;
 }
 
@@ -2762,13 +2763,13 @@ TestFullReferencePerf(int testBase, int internalTestLoopCount)
 #define ADD_KERNEL(SharkFloatParams) ;
 #endif
 
-#ifdef ENABLE_MULTIPLY_NTT2_KERNEL
-#define MULTIPLY_KERNEL_FFT2(SharkFloatParams)                                                          \
+#ifdef ENABLE_MULTIPLY_NTT_KERNEL
+#define MULTIPLY_KERNEL_NTT(SharkFloatParams)                                                          \
     template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyNTT>(int testBase);              \
     template bool TestBinaryOperatorPerf<Operator::MultiplyNTT>(                                       \
         int testBase, int numIters, int internalTestLoopCount);
 #else
-#define MULTIPLY_KERNEL_FFT2(SharkFloatParams) ;
+#define MULTIPLY_KERNEL_NTT(SharkFloatParams) ;
 #endif
 
 #ifdef ENABLE_REFERENCE_KERNEL
@@ -2784,7 +2785,7 @@ TestFullReferencePerf(int testBase, int internalTestLoopCount)
 
 #define ExplicitlyInstantiate(SharkFloatParams)                                                         \
     ADD_KERNEL(SharkFloatParams)                                                                        \
-    MULTIPLY_KERNEL_FFT2(SharkFloatParams)                                                              \
+    MULTIPLY_KERNEL_NTT(SharkFloatParams)                                                              \
     REFERENCE_KERNEL(SharkFloatParams)
 
 ExplicitInstantiateAll();

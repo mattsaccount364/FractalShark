@@ -101,7 +101,7 @@ InvokeMultiplyNTTKernelPerf(BenchmarkTimer &timer,
     cudaFree(d_tempProducts);
 }
 
-#ifdef ENABLE_MULTIPLY_NTT2_KERNEL
+#ifdef ENABLE_MULTIPLY_NTT_KERNEL
 #define ExplicitlyInstantiateMultiplyNTT(SharkFloatParams)                                              \
     template void InvokeMultiplyNTTKernelPerf<SharkFloatParams>(                                        \
         BenchmarkTimer & timer, HpSharkComboResults<SharkFloatParams> & combo, uint64_t numIters);

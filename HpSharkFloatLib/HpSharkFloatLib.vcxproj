@@ -11,11 +11,15 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <CudaCompile Include="Add.cu" />
+    <ClInclude Include="Add.cu">
+      <FileType>Document</FileType>
+    </ClInclude>
     <CudaCompile Include="AddTestKernels.cu" />
     <CudaCompile Include="HpSharkFloat.cu" />
     <CudaCompile Include="HpSharkReferenceOrbit.cu" />
-    <CudaCompile Include="MultiplyNTT.cu" />
+    <ClInclude Include="MultiplyNTT.cu">
+      <FileType>Document</FileType>
+    </ClInclude>
     <CudaCompile Include="MultiplyNTTCudaSetup.cu" />
     <CudaCompile Include="MultiplyNTTTestKernels.cu" />
   </ItemGroup>

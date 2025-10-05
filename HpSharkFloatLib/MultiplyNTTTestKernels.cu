@@ -115,6 +115,6 @@ ComputeMultiplyNTTGpuTestLoop(cudaStream_t& stream, void* kernelArgs[])
     template void ComputeMultiplyNTTGpuTestLoop<SharkFloatParams>(cudaStream_t & stream,                \
                                                                   void* kernelArgs[]);
 
-#if defined(ENABLE_MULTIPLY_NTT2_KERNEL)
+#if defined(ENABLE_MULTIPLY_NTT_KERNEL)
 ExplicitInstantiateAll();
 #endif

@@ -58,7 +58,7 @@
       <AdditionalIncludeDirectories>..\mpir\lib\x64\Debug;..\HpSharkFloatLib;%(AdditionalIncludeDirectories);$(CudaToolkitIncludeDir)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp20</LanguageStandard>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
-      <AdditionalOptions>/bigobj /analyze:stacksize 16384 %(AdditionalOptions)</AdditionalOptions>
+      <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <ConformanceMode>true</ConformanceMode>
       <AssemblerOutput>AssemblyAndSourceCode</AssemblerOutput>

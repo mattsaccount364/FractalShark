@@ -77,7 +77,7 @@ InvokeMultiplyNTTKernelCorrectness(BenchmarkTimer &timer,
     cudaFree(d_tempProducts);
 }
 
-#ifdef ENABLE_MULTIPLY_NTT2_KERNEL
+#ifdef ENABLE_MULTIPLY_NTT_KERNEL
 #define ExplicitlyInstantiateMultiplyNTT(SharkFloatParams)                                              \
     template void InvokeMultiplyNTTKernelCorrectness<SharkFloatParams>(                                 \
         BenchmarkTimer & timer,                                                                         \

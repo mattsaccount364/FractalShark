@@ -97,7 +97,7 @@ CorrectnessTests()
         }
     }
 
-    if constexpr (SharkEnableMultiplyNTT2Kernel) {
+    if constexpr (SharkEnableMultiplyNTTKernel) {
         testBase = 6000;
         res = TestAllBinaryOp<TestSharkParams, Operator::MultiplyNTT>(testBase);
         if (!res) {
@@ -260,7 +260,7 @@ main(int /*argc*/, char * /*argv*/[])
         }
     }
 
-    if constexpr (SharkEnableMultiplyNTT2Kernel) {
+    if constexpr (SharkEnableMultiplyNTTKernel) {
         testBase = 13000;
         res = TestBinaryOperatorPerf<Operator::MultiplyNTT>(testBase, numIters, internalTestLoopCount);
         if (!res) {

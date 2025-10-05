@@ -1,7 +1,7 @@
 #include "Add.cu"
+#include "InitStaticsInternal.cuh"
 #include "MultiplyNTT.cu"
 #include "PeriodicityChecker.cuh"
-#include "InitStaticsInternal.cuh"
 
 //
 // Returns true if we should continue iterating, false if we should stop (period found).
@@ -12,9 +12,26 @@ __device__ [[nodiscard]] bool
 ReferenceHelper(cg::grid_group &grid,
                 cg::thread_block &block,
                 uint64_t currentIteration,
+                typename SharkFloatParams::Float *SharkRestrict dzdcX,
+                typename SharkFloatParams::Float *SharkRestrict dzdcY,
                 HpSharkReferenceResults<SharkFloatParams> *SharkRestrict reference,
                 uint64_t *tempData)
 {
+    //
+    // All threads do periodicity checking and update the period if found.
+    //
+
+    if constexpr (SharkFloatParams::Periodicity) {
+        const auto shouldContinue =
+            PeriodicityChecker(grid, block, currentIteration, dzdcX, dzdcY, reference, tempData);
+
+        if (!shouldContinue) {
+            return false;
+        }
+    }
+
+    // Note: no synchronization needed here because periodicity checker
+    // does not rely on any output before the next grid.sync inside multiply.
 
     //
     // Note: the multiply doesn't depend on the constants.
@@ -50,22 +67,7 @@ ReferenceHelper(cg::grid_group &grid,
         &reference->Multiply.B,         // Imaginary result = Z_imaginary
         tempData);
 
-    //
-    // All threads do periodicity checking and update the period if found.
-    //
-
-    if constexpr (SharkFloatParams::Periodicity) {
-        const auto shouldContinue =
-            PeriodicityChecker(grid, block, reference, currentIteration, tempData);
-
-        if (!shouldContinue) {
-            return false;
-        }
-
-        return true;
-    } else {
-        return true;
-    }
+    return true;
 }
 
 template <class SharkFloatParams>
@@ -80,8 +82,13 @@ HpSharkReferenceGpuKernel(HpSharkReferenceResults<SharkFloatParams> *SharkRestri
 
     // Call the AddHelper function
     constexpr auto currentIteration = 0;
-    const auto [[maybe_unused]] shouldContinue =
-        ReferenceHelper<SharkFloatParams>(grid, block, currentIteration, combo, tempData);
+
+    if constexpr (SharkFloatParams::Periodicity) {
+        return;
+    } else {
+        const auto [[maybe_unused]] shouldContinue = ReferenceHelper<SharkFloatParams>(
+            grid, block, currentIteration, nullptr, nullptr, combo, tempData);
+    }
 }
 
 template <class SharkFloatParams>
@@ -95,8 +102,11 @@ HpSharkReferenceGpuLoop(HpSharkReferenceResults<SharkFloatParams> *SharkRestrict
     cg::grid_group grid = cg::this_grid();
     cg::thread_block block = cg::this_thread_block();
 
+    typename SharkFloatParams::Float dzdcX{1};
+    typename SharkFloatParams::Float dzdcY{0};
+
     for (uint64_t i = 0; i < numIters; ++i) {
-        const auto shouldContinue = ReferenceHelper(grid, block, i, combo, tempData);
+        const auto shouldContinue = ReferenceHelper(grid, block, i, &dzdcX, &dzdcY, combo, tempData);
         if (!shouldContinue) {
             break;
         }

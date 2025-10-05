@@ -7,8 +7,10 @@ template <class SharkFloatParams>
 static __device__ bool
 PeriodicityChecker(cg::grid_group &grid,
     cg::thread_block &block,
-    HpSharkReferenceResults<SharkFloatParams> *SharkRestrict reference,
     uint64_t currentIteration,
+    typename SharkFloatParams::Float *SharkRestrict dzdcX,
+    typename SharkFloatParams::Float *SharkRestrict dzdcY,
+    HpSharkReferenceResults<SharkFloatParams> *SharkRestrict reference,
     uint64_t *tempData) {
 
     auto *ConstantReal = &reference->Add.C_A;
@@ -17,10 +19,7 @@ PeriodicityChecker(cg::grid_group &grid,
     auto *Out_D_E = &reference->Multiply.B;
     auto radiusY = reference->RadiusY;
 
-    using HdrType = SharkFloatParams::Float;
-    HdrType dzdcX{1};
-    HdrType dzdcY{0};
-
+    using HdrType = typename SharkFloatParams::Float;
     HdrType cx_cast = ConstantReal->ToHDRFloat<SharkFloatParams::SubType>(0);
     HdrType cy_cast = ConstantImaginary->ToHDRFloat<SharkFloatParams::SubType>(0);
 
@@ -42,11 +41,11 @@ PeriodicityChecker(cg::grid_group &grid,
     // dzdcX = 2.0 * zx * dzdcX - 2.0 * zy * dzdcY + HighPrecision(1.0)
     // dzdcY = 2.0 * zx * dzdcY + 2.0 * zy * dzdcX
 
-    HdrReduce(dzdcX);
-    auto dzdcX1 = HdrAbs(dzdcX);
+    HdrReduce(*dzdcX);
+    auto dzdcX1 = HdrAbs(*dzdcX);
 
-    HdrReduce(dzdcY);
-    auto dzdcY1 = HdrAbs(dzdcY);
+    HdrReduce(*dzdcY);
+    auto dzdcY1 = HdrAbs(*dzdcY);
 
     HdrReduce(double_zx);
     auto zxCopy1 = HdrAbs(double_zx);
@@ -69,9 +68,9 @@ PeriodicityChecker(cg::grid_group &grid,
         reference->EscapedIteration = currentIteration;
         return false;
     } else {
-        auto dzdcXOrig = dzdcX;
-        dzdcX = HighTwo * (double_zx * dzdcX - double_zy * dzdcY) + HighOne;
-        dzdcY = HighTwo * (double_zx * dzdcY + double_zy * dzdcXOrig);
+        auto dzdcXOrig = *dzdcX;
+        *dzdcX = HighTwo * (double_zx * *dzdcX - double_zy * *dzdcY) + HighOne;
+        *dzdcY = HighTwo * (double_zx * *dzdcY + double_zy * dzdcXOrig);
     }
 
     HdrType tempZX = double_zx + cx_cast;

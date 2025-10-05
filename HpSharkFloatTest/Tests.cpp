@@ -629,8 +629,8 @@ TestPerf(int testNum,
 
             combo->Add.C_A = *xNum;
             combo->Add.E_B = *yNum;
-            combo->Multiply.A = *tempEmpty;
-            combo->Multiply.B = *tempEmpty;
+            combo->Multiply.A = *xNum;
+            combo->Multiply.B = *yNum;
             combo->RadiusY = hdrRadiusY;
 
             const auto &gpuResultX = combo->Multiply.A;

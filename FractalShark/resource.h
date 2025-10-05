@@ -400,6 +400,8 @@
 #define ID_CHOOSERENDERALGORITHM_TESTS  33199
 #define ID_TESTS_RUNVIEW                33200
 #define IDM_TEST_27                     33201
+#define ID_PERTURBATION_GPU             33202
+#define IDM_PERTURBATION_GPU            33203
 #define IDM_VIEW1                       34001
 #define IDM_VIEW2                       34002
 #define IDM_VIEW3                       34003
@@ -492,7 +494,7 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NEXT_RESOURCE_VALUE        135
-#define _APS_NEXT_COMMAND_VALUE         33202
+#define _APS_NEXT_COMMAND_VALUE         33204
 #define _APS_NEXT_CONTROL_VALUE         1004
 #define _APS_NEXT_SYMED_VALUE           110
 #endif

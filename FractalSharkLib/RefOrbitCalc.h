@@ -135,6 +135,7 @@ public:
         MTPeriodicity3PerturbMTHighMTMed3,
         MTPeriodicity3PerturbMTHighMTMed4,
         MTPeriodicity5,
+        GPU,
         Auto
     };
 
@@ -285,6 +286,15 @@ private:
 
     template<typename IterType, class T, class SubType, bool Periodicity, BenchmarkMode BenchmarkState, PerturbExtras PExtras, ReuseMode Reuse>
     void AddPerturbationReferencePointMT5(HighPrecision initX, HighPrecision initY);
+
+    template <typename IterType,
+              class T,
+              class SubType,
+              bool Periodicity,
+              RefOrbitCalc::BenchmarkMode BenchmarkState,
+              PerturbExtras PExtras,
+              RefOrbitCalc::ReuseMode Reuse>
+    void AddPerturbationReferencePointGPU(HighPrecision cx, HighPrecision cy);
 
     template<typename IterType, class T, bool Authoritative, PerturbExtras PExtras>
     PerturbationResults<IterType, T, PExtras> *GetUsefulPerturbationResultsMutable();

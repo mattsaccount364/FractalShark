@@ -13,6 +13,9 @@
 #include "OrbitParameterPack.h"
 #include "MpirSerialization.h"
 
+#include "HpSharkFloat.cuh"
+#include "KernelInvoke.cuh"
+
 #include <vector>
 #include <memory>
 #include <math.h>
@@ -297,6 +300,15 @@ void RefOrbitCalc::AddPerturbationReferencePoint() {
         AddPerturbationReferencePointMT5<IterType, T, SubType, true, BenchmarkState, PExtras, ReuseMode::DontSaveForReuse>(
             m_PerturbationGuessCalcX,
             m_PerturbationGuessCalcY);
+    } else if (GetPerturbationAlg() == PerturbationAlg::GPU) {
+        AddPerturbationReferencePointGPU<uint64_t,
+                                         HDRFloat<float>,
+                                         float,
+                                         true,
+                                         BenchmarkState,
+                                         PerturbExtras::Disable,
+                                         ReuseMode::DontSaveForReuse>(m_PerturbationGuessCalcX,
+                                                                      m_PerturbationGuessCalcY);
     }
 }
 
@@ -2086,6 +2098,46 @@ template<
 void RefOrbitCalc::AddPerturbationReferencePointMT5(HighPrecision cx, HighPrecision cy) {
     ::MessageBox(nullptr, L"AddPerturbationReferencePointMT5 disabled, using MT3", L"", MB_OK | MB_APPLMODAL);
     AddPerturbationReferencePointMT3<IterType, T, SubType, Periodicity, BenchmarkState, PExtras, Reuse>(cx, cy);
+}
+
+template <typename IterType,
+          class T,
+          class SubType,
+          bool Periodicity,
+          RefOrbitCalc::BenchmarkMode BenchmarkState,
+          PerturbExtras PExtras,
+          RefOrbitCalc::ReuseMode Reuse>
+void
+RefOrbitCalc::AddPerturbationReferencePointGPU(HighPrecision cx, HighPrecision cy)
+{
+    auto newArray = std::make_unique<PerturbationResults<IterType, T, PExtras>>(
+        m_RefOrbitOptions, GetNextGenerationNumber());
+    PushbackResults(std::move(newArray));
+    auto *results = GetLast<IterType, T, PExtras>();
+
+    InitResults<IterType, T, decltype(*results), PExtras, Reuse>(*results, cx, cy);
+
+    mpf_t cx_mpf;
+    mpf_init(cx_mpf);
+    mpf_set(cx_mpf, cx.backend());
+
+    mpf_t cy_mpf;
+    mpf_init(cy_mpf);
+    mpf_set(cy_mpf, cy.backend());
+
+    auto comboResults = std::make_unique<HpSharkReferenceResults<TestPerSharkParams1>>();
+    comboResults->RadiusY = results->GetMaxRadius();
+    InvokeHpSharkReferenceKernelProd(
+        *comboResults, cx_mpf, cy_mpf, m_Fractal.GetNumIterations<IterType>());
+
+    // TODO
+    for (size_t i = 0; i < comboResults->Period; i++) {
+        results->AddUncompressedIteration(comboResults->OutputIters[i]);
+    }
+
+    delete[] comboResults->OutputIters;
+
+    m_GuessReserveSize = results->GetCompressedOrUncompressedOrbitSize();
 }
 
 template<

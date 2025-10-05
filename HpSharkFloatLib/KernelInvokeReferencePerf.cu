@@ -151,7 +151,7 @@ InvokeHpSharkReferenceKernelPerf(BenchmarkTimer *timer,
     }
 
     {
-        ScopedBenchmarkStopper stopper{*timer};
+        ScopedBenchmarkStopper stopper{timer};
         ComputeHpSharkReferenceGpuLoop<SharkFloatParams>(stream, kernelArgs);
     }
 

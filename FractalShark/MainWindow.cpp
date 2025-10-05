@@ -1051,6 +1051,11 @@ LRESULT MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam) {
             break;
         }
 
+        case IDM_PERTURBATION_GPU: {
+            gFractal->SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::GPU);
+            break;
+        }
+
         case IDM_PERTURBATION_SAVE:
         {
             gFractal->SavePerturbationOrbits();

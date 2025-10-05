@@ -17,8 +17,7 @@ struct HpSharkReferenceResults;
 
 struct DebugStateRaw;
 
-struct CUstream_st;
-using cudaStream_t = CUstream_st *;
+using cudaStream_t = void *;
 
 class BenchmarkTimer;
 

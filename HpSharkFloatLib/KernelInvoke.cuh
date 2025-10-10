@@ -17,8 +17,6 @@ struct HpSharkReferenceResults;
 
 struct DebugStateRaw;
 
-using cudaStream_t = void *;
-
 class BenchmarkTimer;
 
 class DebugGpuCombo;

@@ -21,7 +21,6 @@
 #include <windows.h> // Sleep()
 
 #include "HDRFloat.h"
-#include "InitStatics.cuh"
 
 // Function to perform the calculation on the host using MPIR
 void
@@ -203,9 +202,6 @@ int
 main(int /*argc*/, char * /*argv*/[])
 {
     bool res = false;
-
-    InitStatics();
-    InitHdrStaticsOnGpu();
 
     constexpr auto timeoutInSec = 3;
     int verboseInput =

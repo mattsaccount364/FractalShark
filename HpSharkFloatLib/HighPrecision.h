@@ -445,11 +445,7 @@ public:
 #ifdef __CUDA_ARCH__
 #define CUDA_CRAP __device__
 #define CUDA_CRAP_BOTH __host__ __device__
-__device__ double *__restrict__ twoPowExpDbl;
-__device__ float *__restrict__ twoPowExpFlt;
 #else
 #define CUDA_CRAP
 #define CUDA_CRAP_BOTH
-extern double *twoPowExpDbl;
-extern float *twoPowExpFlt;
 #endif

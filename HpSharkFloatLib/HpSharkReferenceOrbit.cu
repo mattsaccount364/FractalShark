@@ -1,5 +1,4 @@
 #include "Add.cu"
-#include "InitStaticsInternal.cuh"
 #include "MultiplyNTT.cu"
 #include "PeriodicityChecker.cuh"
 

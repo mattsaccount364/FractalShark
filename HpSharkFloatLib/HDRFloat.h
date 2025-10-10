@@ -28,8 +28,6 @@ class HDRFloatComplex;
 template<class T>
 class FloatComplex;
 
-CUDA_CRAP void InitStatics();
-
 //#ifndef __CUDA_ARCH__
 //#define MYALIGN __declspec(align(4))
 //#else
@@ -474,7 +472,7 @@ public:
                 return std::numeric_limits<T>::max();
             }
 
-            return (T)twoPowExpFlt[(int)scaleFactor - MinFloatExponent];
+            return (T)scalbnf(1.0f, (int)scaleFactor);
         } else if constexpr (std::is_same<T, double>::value) {
             if (scaleFactor <= MIN_SMALL_EXPONENT_DOUBLE()) {
                 return T{};
@@ -484,7 +482,7 @@ public:
                 return std::numeric_limits<T>::max();
             }
 
-            return (T)twoPowExpDbl[(int)scaleFactor - MinDoubleExponent];
+            return scalbn(1.0, (int)scaleFactor);
         }
     }
 
@@ -505,7 +503,7 @@ public:
                 }
             }
 
-            return twoPowExpDbl[(int)scaleFactor - MinDoubleExponent];
+            return scalbn(1.0, scaleFactor);
         } else {
             if constexpr (IncludeCheck) {
                 if (scaleFactor <= MIN_SMALL_EXPONENT_FLOAT()) {
@@ -513,8 +511,7 @@ public:
                 }
             }
 
-            //return scalbnf(1.0, scaleFactor);
-            return T{ twoPowExpFlt[(int)scaleFactor - MinFloatExponent] };
+            return (T)scalbnf(1.0f, scaleFactor);
         }
     }
 

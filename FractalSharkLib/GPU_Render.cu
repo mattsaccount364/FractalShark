@@ -24,8 +24,6 @@
 
 #include "GPU_LAInfoDeep.h"
 #include "LAReference.h"
-#include "InitStatics.cuh"
-#include "InitStaticsInternal.cuh"
 
 #include <type_traits>
 #include <stdint.h>

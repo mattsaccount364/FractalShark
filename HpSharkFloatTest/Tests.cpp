@@ -19,9 +19,10 @@
 #include <sstream>
 #include <vector>
 
+#include "KernelInvoke.cuh"
+
 #include "Add.cuh"
 #include "MultiplyNTT.cuh"
-#include "KernelInvoke.cuh"
 
 #define NOMINMAX
 #include <windows.h>
@@ -659,12 +660,20 @@ TestPerf(int testNum,
                     std::cout << "Escape iteration mismatch: host=" << discoveredEscapeIterationHost
                               << " gpu=" << combo->EscapedIteration << std::endl;
                     DebugBreak();
+                } else {
+                    std::cout << "Escape iteration match: "
+                              << " host=" << discoveredEscapeIterationHost
+                              << " gpu=" << combo->EscapedIteration << std::endl;
                 }
 
                 if (combo->Period != discoveredPeriodHost) {
                     std::cout << "Periodicity mismatch: host=" << discoveredPeriodHost
                               << " gpu=" << combo->Period << std::endl;
                     DebugBreak();
+                } else {
+                    std::cout << "Periodicity match : "
+                              << " host=" << discoveredPeriodHost << " gpu=" << combo->Period
+                              << std::endl;
                 }
             }
         }

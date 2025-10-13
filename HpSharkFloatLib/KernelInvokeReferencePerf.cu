@@ -29,8 +29,8 @@ InvokeHpSharkReferenceKernelProd(HpSharkReferenceResults<SharkFloatParams> &comb
     auto inputY = std::make_unique<HpSharkFloat<SharkFloatParams>>();
 
     // Convert srcX and srcY to HpSharkFloat
-    inputX->MpfToHpGpu(srcX, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
-    inputY->MpfToHpGpu(srcY, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
+    inputX->MpfToHpGpu(srcX, HpSharkFloat<SharkFloatParams>::DefaultMpirBits, InjectNoiseInLowOrder::Enable);
+    inputY->MpfToHpGpu(srcY, HpSharkFloat<SharkFloatParams>::DefaultMpirBits, InjectNoiseInLowOrder::Enable);
 
     combo.Add.C_A = *inputX;
     combo.Add.E_B = *inputY;

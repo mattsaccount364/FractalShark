@@ -5,38 +5,34 @@
 #include <gmp.h>
 #include <iostream>
 
-#include <random>
-#include <cstdint>
 #include <assert.h>
+#include <cstdint>
+#include <random>
 
-//static_assert(sizeof(HpSharkFloat<SharkFloatParams>) == 4096, "HpSharkFloat<SharkFloatParams> size is not 4096 bytes");
+// static_assert(sizeof(HpSharkFloat<SharkFloatParams>) == 4096, "HpSharkFloat<SharkFloatParams> size is
+// not 4096 bytes");
 
-template<class SharkFloatParams>
+template <class SharkFloatParams>
 HpSharkFloat<SharkFloatParams>::HpSharkFloat()
-    : Digits{},
-    Exponent{ std::numeric_limits<ExpT>::min() },
-    IsNegative{} {
+    : Digits{}, Exponent{std::numeric_limits<ExpT>::min()}, IsNegative{}
+{
 
     // exponent is most negative int32_t
 }
 
-//template<class SharkFloatParams>
-//HpSharkFloat<SharkFloatParams>::HpSharkFloat(uint32_t numDigits)
-//    : Digits{},
-//    Exponent{ std::numeric_limits<ExpT>::min() },
-//    IsNegative{} {
+// template<class SharkFloatParams>
+// HpSharkFloat<SharkFloatParams>::HpSharkFloat(uint32_t numDigits)
+//     : Digits{},
+//     Exponent{ std::numeric_limits<ExpT>::min() },
+//     IsNegative{} {
 //
-//    std::fill(Digits, Digits + NumUint32, 0);
-//}
+//     std::fill(Digits, Digits + NumUint32, 0);
+// }
 
-template<class SharkFloatParams>
-HpSharkFloat<SharkFloatParams>::HpSharkFloat(
-    const uint32_t *digitsIn,
-    int32_t expIn,
-    bool isNegative)
-    : Digits{},
-    Exponent{ expIn },
-    IsNegative{ isNegative } {
+template <class SharkFloatParams>
+HpSharkFloat<SharkFloatParams>::HpSharkFloat(const uint32_t *digitsIn, int32_t expIn, bool isNegative)
+    : Digits{}, Exponent{expIn}, IsNegative{isNegative}
+{
 
     memcpy(Digits, digitsIn, sizeof(uint32_t) * NumUint32);
 
@@ -44,8 +40,10 @@ HpSharkFloat<SharkFloatParams>::HpSharkFloat(
 }
 
 // Function to convert mpf_t to string
-template<class SharkFloatParams>
-std::string MpfToString<SharkFloatParams>(const mpf_t mpf_val, size_t precInBits) {
+template <class SharkFloatParams>
+std::string
+MpfToString<SharkFloatParams>(const mpf_t mpf_val, size_t precInBits)
+{
     char *str = NULL;
 
     if (precInBits == HpSharkFloat<SharkFloatParams>::DefaultPrecBits) {
@@ -54,7 +52,8 @@ std::string MpfToString<SharkFloatParams>(const mpf_t mpf_val, size_t precInBits
         free(str);
         return result;
     } else {
-        const auto decimalDigits = static_cast<uint32_t>(precInBits / HpSharkFloat<SharkFloatParams>::ConvertBitsToDecimals);
+        const auto decimalDigits =
+            static_cast<uint32_t>(precInBits / HpSharkFloat<SharkFloatParams>::ConvertBitsToDecimals);
         gmp_asprintf(&str, "%.*Fe", decimalDigits, mpf_val);
         std::string result(str);
         free(str);
@@ -74,9 +73,11 @@ std::string MpfToString<SharkFloatParams>(const mpf_t mpf_val, size_t precInBits
 //   mp_exp_t _mp_exp;   //  Exponent, in the base of `mp_limb_t'.
 //   mp_limb_t *_mp_d;   //  Pointer to the limbs.
 // } __mpf_struct;
-// 
+//
 // typedef __mpf_struct mpf_t[1];
-std::string MpfToHexString(const mpf_t mpf_val) {
+std::string
+MpfToHexString(const mpf_t mpf_val)
+{
     std::string result;
     mp_exp_t exponent;
     mp_limb_t *limbs = mpf_val[0]._mp_d;
@@ -109,9 +110,10 @@ std::string MpfToHexString(const mpf_t mpf_val) {
     return result;
 }
 
-template<class IntT>
+template <class IntT>
 std::string
-UintArrayToHexString(const IntT *array, size_t numElements) {
+UintArrayToHexString(const IntT *array, size_t numElements)
+{
 
     std::string result;
 
@@ -136,9 +138,10 @@ UintArrayToHexString(const IntT *array, size_t numElements) {
     return result;
 }
 
-template<class IntT>
+template <class IntT>
 std::string
-UintToHexString(IntT val) {
+UintToHexString(IntT val)
+{
 
     char buffer[32];
 
@@ -153,25 +156,27 @@ UintToHexString(IntT val) {
     return buffer;
 }
 
-template<class IntT>
+template <class IntT>
 std::string
-VectorUintToHexString(const std::vector<IntT> &arr) {
+VectorUintToHexString(const std::vector<IntT> &arr)
+{
 
     return UintArrayToHexString<IntT>(arr.data(), arr.size());
 }
 
-template<class IntT>
+template <class IntT>
 std::string
-VectorUintToHexString(const IntT *arr, size_t numElements) {
+VectorUintToHexString(const IntT *arr, size_t numElements)
+{
 
     return UintArrayToHexString<IntT>(arr, numElements);
 }
 
 // Explicitly instantiate
-#define ExplicitlyInstantiateUintArrayToHexString(IntT) \
-    template std::string UintArrayToHexString<IntT>(const IntT *array, size_t numElements); \
-    template std::string VectorUintToHexString<IntT>(const std::vector<IntT> &arr); \
-    template std::string VectorUintToHexString<IntT>(const IntT *arr, size_t numElements); \
+#define ExplicitlyInstantiateUintArrayToHexString(IntT)                                                 \
+    template std::string UintArrayToHexString<IntT>(const IntT *array, size_t numElements);             \
+    template std::string VectorUintToHexString<IntT>(const std::vector<IntT> &arr);                     \
+    template std::string VectorUintToHexString<IntT>(const IntT *arr, size_t numElements);              \
     template std::string UintToHexString<IntT>(IntT val);
 
 ExplicitlyInstantiateUintArrayToHexString(uint32_t);
@@ -180,20 +185,19 @@ ExplicitlyInstantiateUintArrayToHexString(uint64_t);
 ExplicitlyInstantiateUintArrayToHexString(int32_t);
 ExplicitlyInstantiateUintArrayToHexString(int64_t);
 
-template<class SharkFloatParams>
+template <class SharkFloatParams>
 mp_exp_t
-HpSharkFloat<SharkFloatParams>::HpGpuExponentToMpfExponent(
-    size_t numBytesToCopy) const {
+HpSharkFloat<SharkFloatParams>::HpGpuExponentToMpfExponent(size_t numBytesToCopy) const
+{
 
     assert(Exponent % 32 == 0);
     const auto hpExponentInPow2 = static_cast<mp_exp_t>(Exponent + numBytesToCopy * 8);
     return hpExponentInPow2 / (sizeof(mp_limb_t) * 8);
 }
 
-template<class SharkFloatParams>
+template <class SharkFloatParams>
 HpSharkFloat<SharkFloatParams> &
-HpSharkFloat<SharkFloatParams>::operator= (
-    const HpSharkFloat<SharkFloatParams> &other)
+HpSharkFloat<SharkFloatParams>::operator=(const HpSharkFloat<SharkFloatParams> &other)
 {
     if (this != &other) {
         memcpy(Digits, other.Digits, sizeof(uint32_t) * NumUint32);
@@ -204,14 +208,13 @@ HpSharkFloat<SharkFloatParams>::operator= (
     return *this;
 }
 
-
-
 // Function to convert mpf_t to HpSharkFloat<SharkFloatParams>
-template<class SharkFloatParams>
+template <class SharkFloatParams>
 void
-HpSharkFloat<SharkFloatParams>::MpfToHpGpu(
-    const mpf_t mpf_value,
-    int prec_bits) {
+HpSharkFloat<SharkFloatParams>::MpfToHpGpu(const mpf_t mpf_value,
+                                           int prec_bits,
+                                           InjectNoiseInLowOrder injectNoise)
+{
 
     // Get the absolute value of mpf_value
     mpf_t abs_val;
@@ -253,11 +256,12 @@ HpSharkFloat<SharkFloatParams>::MpfToHpGpu(
     auto countLZ32 = [&](uint32_t x) {
         int32_t c = 0;
         for (int32_t b = 31; b >= 0; --b) {
-            if (x & (1u << b)) break;
+            if (x & (1u << b))
+                break;
             ++c;
         }
         return c;
-        };
+    };
 
     // 2) shift one 32-bit word of the array left by L bits:
     auto shiftLeftWord = [&](int32_t L, int32_t idx) -> uint32_t {
@@ -265,18 +269,15 @@ HpSharkFloat<SharkFloatParams>::MpfToHpGpu(
         const int32_t shiftBitsMod = L % 32;
         int32_t srcIdx = idx - shiftWords;
 
-        uint32_t lower = (srcIdx >= 0 && srcIdx < N)
-            ? data[srcIdx] : 0;
-        uint32_t upper = (srcIdx - 1 >= 0 && srcIdx - 1 < N)
-            ? data[srcIdx - 1] : 0;
+        uint32_t lower = (srcIdx >= 0 && srcIdx < N) ? data[srcIdx] : 0;
+        uint32_t upper = (srcIdx - 1 >= 0 && srcIdx - 1 < N) ? data[srcIdx - 1] : 0;
 
         if (shiftBitsMod == 0) {
             return lower;
         } else {
-            return (lower << shiftBitsMod)
-                | (upper >> (32 - shiftBitsMod));
+            return (lower << shiftBitsMod) | (upper >> (32 - shiftBitsMod));
         }
-        };
+    };
 
     // 3) shift the entire data[] vector left by L bits
     auto shiftLeftArray = [&](int32_t L) {
@@ -285,7 +286,7 @@ HpSharkFloat<SharkFloatParams>::MpfToHpGpu(
             tmp[i] = shiftLeftWord(L, i);
         }
         data = std::move(tmp);
-        };
+    };
 
     // 3) normalize so the top-most 1 ends up in bit (N*32-1)
     //    returns how many bits we shifted
@@ -293,18 +294,23 @@ HpSharkFloat<SharkFloatParams>::MpfToHpGpu(
         // find highest nonzero limb
         int32_t msd = -1;
         for (int32_t i = N - 1; i >= 0; --i) {
-            if (data[i] != 0) { msd = i; break; }
+            if (data[i] != 0) {
+                msd = i;
+                break;
+            }
         }
-        if (msd < 0) return 0;  // all zero --> no shift
+        if (msd < 0)
+            return 0; // all zero --> no shift
 
         // count leading zeros in that limb
         int32_t lz = countLZ32(data[msd]);
         int32_t bitIndex = msd * 32 + (31 - lz);
         int32_t target = N * 32 - 1;
         int32_t shiftL = target - bitIndex;
-        if (shiftL > 0) shiftLeftArray(shiftL);
+        if (shiftL > 0)
+            shiftLeftArray(shiftL);
         return shiftL;
-        };
+    };
 
     // run normalization on the raw data[]
     auto dataCopy = data; // keep a copy for debugging
@@ -328,20 +334,32 @@ HpSharkFloat<SharkFloatParams>::MpfToHpGpu(
     // Now compute how to right-align 'data' into our fixed-width buffer:
     {
         size_t blockBytes = SharkFloatParams::GlobalNumUint32 * sizeof(uint32_t);
-        size_t srcOffset = (countInBytes > blockBytes)
-            ? (countInBytes - blockBytes)
-            : 0;
+        size_t srcOffset = (countInBytes > blockBytes) ? (countInBytes - blockBytes) : 0;
         size_t toCopy = std::min(countInBytes, blockBytes);
         // if toCopy < blockBytes, destOffset > 0 --> move data into the high-order end
-        size_t destOffset = (countInBytes > blockBytes)
-            ? 0
-            : (blockBytes - toCopy);
+        size_t destOffset = (countInBytes > blockBytes) ? 0 : (blockBytes - toCopy);
 
-        memcpy(
-            reinterpret_cast<uint8_t *>(Digits) + destOffset,
-            reinterpret_cast<uint8_t *>(data.data()) + srcOffset,
-            toCopy
-        );
+        //if (injectNoise == InjectNoiseInLowOrder::Enable && toCopy != 0) {
+        //    // Use a random device to seed the random number generator
+        //    std::random_device rd;
+        //    std::mt19937 generator(rd()); // Mersenne Twister for high-quality randomness
+        //    std::uniform_int_distribution<uint32_t> distributionRand(
+        //        0, std::numeric_limits<uint8_t>::max());
+
+        //    constexpr auto extraZeros = 4 * sizeof(uint32_t);
+        //    if (destOffset > extraZeros) {
+        //        destOffset -= extraZeros;
+
+        //        for (size_t i = 0; i < destOffset; i++) {
+        //            *(reinterpret_cast<uint8_t *>(Digits) + i) =
+        //                static_cast<uint8_t>(distributionRand(generator));
+        //        }
+        //    }
+        //}
+
+        memcpy(reinterpret_cast<uint8_t *>(Digits) + destOffset,
+               reinterpret_cast<uint8_t *>(data.data()) + srcOffset,
+               toCopy);
 
         // now recompute Exponent (inlined MpirExponentToHPExponent + fixes)
         {
@@ -360,8 +378,7 @@ HpSharkFloat<SharkFloatParams>::MpfToHpGpu(
             // 3) adjust for bytes dropped/padded by memcpy:
             //      - srcOffset bytes => mantissa>>=(srcOffset*8)  => add srcOffset*8
             //      - destOffset bytes => mantissa<<=(destOffset*8) => subtract destOffset*8
-            ExpT byteOffset = static_cast<ExpT>(srcOffset)
-                - static_cast<ExpT>(destOffset);
+            ExpT byteOffset = static_cast<ExpT>(srcOffset) - static_cast<ExpT>(destOffset);
             E += byteOffset * static_cast<ExpT>(8);
 
             Exponent = E;
@@ -383,13 +400,14 @@ HpSharkFloat<SharkFloatParams>::MpfToHpGpu(
         std::cout << ToHexString() << std::endl;
     }
 
-    //mpf_clear(scaled_val);
+    // mpf_clear(scaled_val);
     mpf_clear(abs_val);
 }
 
-template<class SharkFloatParams>
+template <class SharkFloatParams>
 std::string
-HpSharkFloat<SharkFloatParams>::ToHexString() const {
+HpSharkFloat<SharkFloatParams>::ToHexString() const
+{
 
     std::string result;
 
@@ -413,7 +431,7 @@ HpSharkFloat<SharkFloatParams>::ToHexString() const {
     return result;
 }
 
-template<class SharkFloatParams>
+template <class SharkFloatParams>
 std::string
 HpSharkFloat<SharkFloatParams>::ToString() const
 {
@@ -435,13 +453,13 @@ HpSharkFloat<SharkFloatParams>::ToString() const
     return result;
 }
 
-template<class SharkFloatParams>
+template <class SharkFloatParams>
 void
 HpSharkFloat<SharkFloatParams>::GenerateRandomNumber()
 {
     // Use a random device to seed the random number generator
     std::random_device rd;
-    std::mt19937 generator(rd());  // Mersenne Twister for high-quality randomness
+    std::mt19937 generator(rd()); // Mersenne Twister for high-quality randomness
 
     std::uniform_int_distribution<uint32_t> distributionCases(0, 4);
     std::uniform_int_distribution<uint32_t> distributionSmall(0, 16);
@@ -450,25 +468,25 @@ HpSharkFloat<SharkFloatParams>::GenerateRandomNumber()
     // Fill uint32_t Digits[NumUint32] with completely random numbers
     for (size_t i = 0; i < NumUint32; ++i) {
         switch (distributionCases(generator)) {
-        case 0:
-            Digits[i] = distributionRand(generator);
-            break;
-        case 1:
-            Digits[i] = std::numeric_limits<uint32_t>::min();
-            break;
-        case 2:
-            Digits[i] = std::numeric_limits<uint32_t>::max();
-            break;
-        case 3:
-            Digits[i] = std::numeric_limits<uint32_t>::max() - distributionSmall(generator);
-            break;
-        case 4:
-            Digits[i] = std::numeric_limits<uint32_t>::min() + distributionSmall(generator);
-            break;
-        default:
-            i--;
-            assert(false);
-            continue;
+            case 0:
+                Digits[i] = distributionRand(generator);
+                break;
+            case 1:
+                Digits[i] = std::numeric_limits<uint32_t>::min();
+                break;
+            case 2:
+                Digits[i] = std::numeric_limits<uint32_t>::max();
+                break;
+            case 3:
+                Digits[i] = std::numeric_limits<uint32_t>::max() - distributionSmall(generator);
+                break;
+            case 4:
+                Digits[i] = std::numeric_limits<uint32_t>::min() + distributionSmall(generator);
+                break;
+            default:
+                i--;
+                assert(false);
+                continue;
         }
     }
 
@@ -480,7 +498,7 @@ HpSharkFloat<SharkFloatParams>::GenerateRandomNumber()
     std::uniform_int_distribution<int> exp_distribution(
         -PrecBitsInt * 4, // arbitrary, not related to int size
         PrecBitsInt * 4);
-    //Exponent = exp_distribution(generator);
+    // Exponent = exp_distribution(generator);
     Exponent = 0;
 
     // Random boolean for IsNegative
@@ -490,12 +508,13 @@ HpSharkFloat<SharkFloatParams>::GenerateRandomNumber()
     Normalize();
 }
 
-template<class SharkFloatParams>
+template <class SharkFloatParams>
 void
-HpSharkFloat<SharkFloatParams>::GenerateRandomNumber2() {
+HpSharkFloat<SharkFloatParams>::GenerateRandomNumber2()
+{
     // Use a random device to seed the random number generator
     std::random_device rd;
-    std::mt19937 generator(rd());  // Mersenne Twister for high-quality randomness
+    std::mt19937 generator(rd()); // Mersenne Twister for high-quality randomness
 
     std::uniform_int_distribution<uint32_t> distributionRand(0, std::numeric_limits<uint32_t>::max());
 
@@ -504,10 +523,10 @@ HpSharkFloat<SharkFloatParams>::GenerateRandomNumber2() {
     mpf_init2(mpf_value, DefaultPrecBits);
     mpf_set_d(mpf_value, 1.0);
     mpf_div_ui(mpf_value, mpf_value, distributionRand(generator) + 1);
-    //mpf_sqrt(mpf_value, mpf_value);
+    // mpf_sqrt(mpf_value, mpf_value);
 
     // Convert MPF to HpSharkFloat<SharkFloatParams>
-    MpfToHpGpu(mpf_value, DefaultPrecBits);
+    MpfToHpGpu(mpf_value, DefaultPrecBits, InjectNoiseInLowOrder::Disable);
 
     mpf_clear(mpf_value);
 
@@ -518,27 +537,26 @@ HpSharkFloat<SharkFloatParams>::GenerateRandomNumber2() {
     Normalize();
 }
 
-template<class SharkFloatParams>
+template <class SharkFloatParams>
 void
 HpSharkFloat<SharkFloatParams>::Negate()
 {
     IsNegative = !IsNegative;
 }
 
-template<class SharkFloatParams>
-CUDA_CRAP
-void
-HpSharkFloat<SharkFloatParams>::DeepCopySameDevice(
-    const HpSharkFloat<SharkFloatParams> &other)
+template <class SharkFloatParams>
+CUDA_CRAP void
+HpSharkFloat<SharkFloatParams>::DeepCopySameDevice(const HpSharkFloat<SharkFloatParams> &other)
 {
     memcpy(Digits, other.Digits, sizeof(uint32_t) * NumUint32);
     Exponent = other.Exponent;
     IsNegative = other.IsNegative;
 }
 
-template<class SharkFloatParams>
+template <class SharkFloatParams>
 void
-HpSharkFloat<SharkFloatParams>::Normalize() {
+HpSharkFloat<SharkFloatParams>::Normalize()
+{
     // 1) find the most-significant non-zero limb
     int32_t firstNonZeroIndex = -1;
     for (int32_t i = NumUint32 - 1; i >= 0; --i) {
@@ -557,14 +575,16 @@ HpSharkFloat<SharkFloatParams>::Normalize() {
 
     // portable count-leading-zeros
     auto countLeadingZeros = [](uint32_t x) -> int32_t {
-        if (x == 0) return 32;
+        if (x == 0)
+            return 32;
         int32_t n = 0;
         for (int32_t b = 31; b >= 0; --b) {
-            if (x & (1u << b)) break;
+            if (x & (1u << b))
+                break;
             ++n;
         }
         return n;
-        };
+    };
 
     // 2) how many whole-words, and how many extra bits?
     int32_t bitShift = countLeadingZeros(Digits[firstNonZeroIndex]);
@@ -584,8 +604,7 @@ HpSharkFloat<SharkFloatParams>::Normalize() {
     // 4) bit-level shift with carry between limbs
     if (bitShift > 0) {
         for (int32_t i = NumUint32 - 1; i > 0; --i) {
-            Digits[i] = (Digits[i] << bitShift)
-                | (Digits[i - 1] >> (32 - bitShift));
+            Digits[i] = (Digits[i] << bitShift) | (Digits[i - 1] >> (32 - bitShift));
         }
         Digits[0] <<= bitShift;
     }
@@ -597,13 +616,13 @@ HpSharkFloat<SharkFloatParams>::Normalize() {
     }
 
     // 6) sanity check: top bit should now be set (unless true zero)
-    assert((Digits[NumUint32 - 1] & 0x8000'0000u) != 0
-        || Exponent == -100'000'000);
+    assert((Digits[NumUint32 - 1] & 0x8000'0000u) != 0 || Exponent == -100'000'000);
 }
 
-template<class SharkFloatParams>
+template <class SharkFloatParams>
 void
-HpSharkFloat<SharkFloatParams>::DenormalizeLosePrecision() {
+HpSharkFloat<SharkFloatParams>::DenormalizeLosePrecision()
+{
     // We want Exponent to end up as a multiple of 64
     // by shifting our mantissa right and compensating in the exponent.
     // This is useful for converting to mpf_t, which expects
@@ -612,22 +631,22 @@ HpSharkFloat<SharkFloatParams>::DenormalizeLosePrecision() {
 
     // 1) Compute rem = Exponent mod 64 in [0..63]
     int32_t rem = Exponent % 64;
-    if (rem < 0) rem += 64;
+    if (rem < 0)
+        rem += 64;
 
     // 2) How many bits to shift right so (Exponent + bitOffset) % 64 == 0
-    int32_t bitOffset = (64 - rem) % 64;  // in [0..63]
+    int32_t bitOffset = (64 - rem) % 64; // in [0..63]
 
     if (bitOffset > 0) {
         // 3a) split into whole-word shifts and small-bit shifts
-        int32_t wordShift = bitOffset / 32;        // 0 or 1
-        int32_t smallShift = bitOffset % 32;        // 0..31
+        int32_t wordShift = bitOffset / 32;  // 0 or 1
+        int32_t smallShift = bitOffset % 32; // 0..31
 
         // 3b) first do the small-bit right-shift across words
         if (smallShift > 0) {
             int32_t inv = 32 - smallShift;
             for (int32_t i = 0; i < NumUint32 - 1; ++i) {
-                Digits[i] = (Digits[i] >> smallShift)
-                    | (Digits[i + 1] << inv);
+                Digits[i] = (Digits[i] >> smallShift) | (Digits[i + 1] << inv);
             }
             Digits[NumUint32 - 1] >>= smallShift;
         }
@@ -651,13 +670,10 @@ HpSharkFloat<SharkFloatParams>::DenormalizeLosePrecision() {
     // Note: the top limb (Digits[NumUint32-1]) may now be zero.
 }
 
-
-
 // Function to convert HpSharkFloat<SharkFloatParams> to mpf_t
-template<class SharkFloatParams>
+template <class SharkFloatParams>
 void
-HpSharkFloat<SharkFloatParams>::HpGpuToMpf (
-    mpf_t &mpf_val) const
+HpSharkFloat<SharkFloatParams>::HpGpuToMpf(mpf_t &mpf_val) const
 {
     // Initialize an mpz_t integer to hold the significand
     mpz_t mpz_value;
@@ -670,7 +686,8 @@ HpSharkFloat<SharkFloatParams>::HpGpuToMpf (
 
     // Import the digits array into the mpz_t integer
     // Note: mpz_import expects the least significant word first
-    mpz_import(mpz_value, SharkFloatParams::GlobalNumUint32, -1, sizeof(uint32_t), 0, 0, copyOfThis->Digits);
+    mpz_import(
+        mpz_value, SharkFloatParams::GlobalNumUint32, -1, sizeof(uint32_t), 0, 0, copyOfThis->Digits);
 
     // Adjust for sign
     if (copyOfThis->IsNegative) {
@@ -696,12 +713,10 @@ HpSharkFloat<SharkFloatParams>::HpGpuToMpf (
 
 // Function to convert uint32_t array to mpf_t
 // pow2Exponent is the exponent in base 2
-template<class SharkFloatParams>
+template <class SharkFloatParams>
 std::string
-Uint32ToMpf (
-    const uint32_t *array,
-    int32_t pow64Exponent,
-    mpf_t &mpf_val) {
+Uint32ToMpf(const uint32_t *array, int32_t pow64Exponent, mpf_t &mpf_val)
+{
 
     std::vector<uint64_t> data;
     for (size_t i = 0; i < SharkFloatParams::HalfLimbsRoundedUp; ++i) {
@@ -729,11 +744,10 @@ Uint32ToMpf (
 }
 
 // Explicit instantiation
-#define ExplicitlyInstantiate(SharkFloatParams)                                              \
-    template class HpSharkFloat<SharkFloatParams>;                                           \
-    template std::string Uint32ToMpf<SharkFloatParams>(                                       \
-        const uint32_t *array, int32_t pow64Exponent, mpf_t &mpf_val);                       \
-    template std::string MpfToString<SharkFloatParams>(                                       \
-        const mpf_t mpf_val, size_t precInBits);
+#define ExplicitlyInstantiate(SharkFloatParams)                                                         \
+    template class HpSharkFloat<SharkFloatParams>;                                                      \
+    template std::string Uint32ToMpf<SharkFloatParams>(                                                 \
+        const uint32_t *array, int32_t pow64Exponent, mpf_t &mpf_val);                                  \
+    template std::string MpfToString<SharkFloatParams>(const mpf_t mpf_val, size_t precInBits);
 
 ExplicitInstantiateAll();

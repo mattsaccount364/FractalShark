@@ -93,7 +93,8 @@ TestConvertNumber(int testNum, const char *numberStr)
 
     // ---------------- Build HpSharkFloat from mpf ----------------
     auto x_num = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-    x_num->MpfToHpGpu(mpf_x, HpSharkFloat<SharkFloatParams>::DefaultPrecBits);
+    x_num->MpfToHpGpu<InjectNoiseInLowOrder::Disable>(
+        mpf_x, HpSharkFloat<SharkFloatParams>::DefaultPrecBits, InjectNoiseInLowOrder::Disable);
 
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "\nHighPrecisionNumber representations:\n";

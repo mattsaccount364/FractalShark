@@ -238,7 +238,8 @@ DiffAgainstHost(int testNum,
     }
 
     auto hostShark = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-    hostShark->MpfToHpGpu(mpfHostResult, HpSharkFloat<SharkFloatParams>::DefaultPrecBits);
+    hostShark->MpfToHpGpu(
+        mpfHostResult, HpSharkFloat<SharkFloatParams>::DefaultPrecBits, InjectNoiseInLowOrder::Disable);
 
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << std::endl;
@@ -368,9 +369,9 @@ TestPerf(int testNum,
     auto zNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
 
     auto resultNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-    xNum->MpfToHpGpu(mpfX, HpSharkFloat<SharkFloatParams>::DefaultPrecBits);
-    yNum->MpfToHpGpu(mpfY, HpSharkFloat<SharkFloatParams>::DefaultPrecBits);
-    zNum->MpfToHpGpu(mpfZ, HpSharkFloat<SharkFloatParams>::DefaultPrecBits);
+    xNum->MpfToHpGpu(mpfX, HpSharkFloat<SharkFloatParams>::DefaultPrecBits, InjectNoiseInLowOrder::Disable);
+    yNum->MpfToHpGpu(mpfY, HpSharkFloat<SharkFloatParams>::DefaultPrecBits, InjectNoiseInLowOrder::Disable);
+    zNum->MpfToHpGpu(mpfZ, HpSharkFloat<SharkFloatParams>::DefaultPrecBits, InjectNoiseInLowOrder::Disable);
 
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "\nConverted HpSharkFloat<SharkFloatParams> representations:" << std::endl;
@@ -1643,7 +1644,9 @@ TestTernaryOperatorTwoNumbers(int testNum,
         assert(xNumCopy.size() == num.size());
 
         for (size_t i = 0; i < num.size(); ++i) {
-            xNumCopy[i].MpfToHpGpu(mpfCopy[i], HpSharkFloat<SharkFloatParams>::DefaultPrecBits);
+            xNumCopy[i].MpfToHpGpu(mpfCopy[i],
+                                   HpSharkFloat<SharkFloatParams>::DefaultPrecBits,
+                                   InjectNoiseInLowOrder::Disable);
         }
 
         TestTernaryOperatorTwoNumbersRaw<SharkFloatParams, sharkOperator, false>(

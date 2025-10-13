@@ -411,6 +411,11 @@ using ProdSharkParams10 = GenericSharkFloatParams<256, 128, 131072>;
 using ProdSharkParams11 = GenericSharkFloatParams<256, 128, 262144>;
 using ProdSharkParams12 = GenericSharkFloatParams<256, 128, 524288>;
 
+enum class InjectNoiseInLowOrder {
+    Disable,
+    Enable
+};
+
 // Struct to hold both integer and fractional parts of the high-precision number
 template<class SharkFloatParams>
 struct HpSharkFloat {
@@ -468,7 +473,7 @@ struct HpSharkFloat {
     constexpr static auto DefaultMpirBits = DefaultPrecBits;
 
     void HpGpuToMpf(mpf_t &mpf_val) const;
-    void MpfToHpGpu(const mpf_t mpf_val, int prec_bits);
+    void MpfToHpGpu(const mpf_t mpf_val, int prec_bits, InjectNoiseInLowOrder injectNoise);
 
     // Convert an HpSharkFloat<Params> to HDRFloat<SubType> (SubType = double or float).
     // - Single pass: scans from high→low once to detect zero and find MS non-zero limb.

@@ -27,11 +27,13 @@ PeriodicityChecker(cg::grid_group &grid,
     HdrType double_zx;
     HdrType double_zy;
 
+    // Note: first iteration (currentIteration==0) requires Out_A_B_C
+    // and Out_D_E to be initialized to 0.
     double_zx = Out_A_B_C->ToHDRFloat<SharkFloatParams::SubType>(0);
     double_zy = Out_D_E->ToHDRFloat<SharkFloatParams::SubType>(0);
 
-    gpuReferenceIters[currentIteration + 1].x = double_zx;
-    gpuReferenceIters[currentIteration + 1].y = double_zy;
+    gpuReferenceIters[currentIteration].x = double_zx;
+    gpuReferenceIters[currentIteration].y = double_zy;
 
     // x^2+2*I*x*y-y^2
     // dzdc = 2.0 * z * dzdc + real(1.0);
@@ -67,8 +69,8 @@ PeriodicityChecker(cg::grid_group &grid,
     HdrReduce(n3);
 
     if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
-        reference->Period = currentIteration + 2;
-        reference->EscapedIteration = currentIteration + 2;
+        reference->Period = currentIteration + 1;
+        reference->EscapedIteration = currentIteration + 1;
         return false;
     } else {
         auto dzdcXOrig = *dzdcX;
@@ -87,7 +89,7 @@ PeriodicityChecker(cg::grid_group &grid,
         //
 
         reference->Period = 0;
-        reference->EscapedIteration = currentIteration + 2;
+        reference->EscapedIteration = currentIteration + 1;
         return false;
     }
 

@@ -281,7 +281,7 @@ main(int /*argc*/, char * /*argv*/[])
 
     if constexpr (SharkEnableFullKernel) {
         testBase = 16000;
-        res = TestFullReferencePerf<Operator::ReferenceOrbit>(testBase, internalTestLoopCount);
+        res = TestFullReferencePerf<Operator::ReferenceOrbit>(testBase, numIters);
         if (!res) {
             auto q = PressKey();
             if (q == 'q') {

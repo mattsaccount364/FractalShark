@@ -32,8 +32,13 @@ InvokeHpSharkReferenceKernelProd(HpSharkReferenceResults<SharkFloatParams> &comb
     inputX->MpfToHpGpu(srcX, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
     inputY->MpfToHpGpu(srcY, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
 
+    combo.Add.C_A = *inputX;
+    combo.Add.E_B = *inputY;
+    combo.Multiply.A = *inputX;
+    combo.Multiply.B = *inputY;
     combo.Period = 0;
     combo.EscapedIteration = 0;
+    combo.OutputIters = nullptr;
     assert(combo.OutputIters == nullptr);
     assert(memcmp(&combo.Add.C_A, &combo.Multiply.A, sizeof(HpSharkFloat<SharkFloatParams>)) == 0);
     assert(memcmp(&combo.Add.E_B, &combo.Multiply.B, sizeof(HpSharkFloat<SharkFloatParams>)) == 0);

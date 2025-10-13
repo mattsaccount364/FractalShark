@@ -429,8 +429,7 @@ TestPerf(int testNum,
         const HdrType HighOne{1.0f};
         const HdrType TwoFiftySix{256.0f};
 
-        // Init to 1 because we initially store a zero
-        uint64_t keptIterationCounter = 1;
+        uint64_t keptIterationCounter = 0;
 
         for (int i = 0; i < numIters; ++i) {
             if constexpr (sharkOperator == Operator::Add) {
@@ -2684,7 +2683,7 @@ TestBinaryOperatorPerf([[maybe_unused]] int testBase,
 
 template <Operator sharkOperator>
 bool
-TestFullReferencePerf([[maybe_unused]] int testBase, [[maybe_unused]] int internalTestLoopCount)
+TestFullReferencePerf([[maybe_unused]] int testBase, [[maybe_unused]] int numIters)
 {
 #if (ENABLE_BASIC_CORRECTNESS == 2)
     static_assert(sharkOperator == Operator::ReferenceOrbit, "Only ReferenceOrbit is supported");
@@ -2748,7 +2747,7 @@ TestFullReferencePerf([[maybe_unused]] int testBase, [[maybe_unused]] int intern
     using HdrType = typename TestPerSharkParams1::Float;
     const HdrType hdrRadiusY{mpfRadiusY};
 
-    for (size_t i = 0; i < internalTestLoopCount; i++) {
+    for (size_t i = 0; i < numIters; i++) {
         TestPerf<TestPerSharkParams1, sharkOperator>(testNum,
                                                      convertedMpfX.c_str(),
                                                      convertedMpfY.c_str(),
@@ -2775,9 +2774,9 @@ TestFullReferencePerf([[maybe_unused]] int testBase, [[maybe_unused]] int intern
 #endif
 
 #ifdef ENABLE_MULTIPLY_NTT_KERNEL
-#define MULTIPLY_KERNEL_NTT(SharkFloatParams)                                                          \
-    template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyNTT>(int testBase);              \
-    template bool TestBinaryOperatorPerf<Operator::MultiplyNTT>(                                       \
+#define MULTIPLY_KERNEL_NTT(SharkFloatParams)                                                           \
+    template bool TestAllBinaryOp<SharkFloatParams, Operator::MultiplyNTT>(int testBase);               \
+    template bool TestBinaryOperatorPerf<Operator::MultiplyNTT>(                                        \
         int testBase, int numIters, int internalTestLoopCount);
 #else
 #define MULTIPLY_KERNEL_NTT(SharkFloatParams) ;
@@ -2788,15 +2787,14 @@ TestFullReferencePerf([[maybe_unused]] int testBase, [[maybe_unused]] int intern
     template bool TestAllBinaryOp<SharkFloatParams, Operator::ReferenceOrbit>(int testBase);            \
     template bool TestBinaryOperatorPerf<Operator::ReferenceOrbit>(                                     \
         int testBase, int numIters, int internalTestLoopCount);                                         \
-    template bool TestFullReferencePerf<Operator::ReferenceOrbit>(int testBase,                         \
-                                                                  int internalTestLoopCount);
+    template bool TestFullReferencePerf<Operator::ReferenceOrbit>(int testBase, int numIters);
 #else
 #define REFERENCE_KERNEL(SharkFloatParams) ;
 #endif
 
 #define ExplicitlyInstantiate(SharkFloatParams)                                                         \
     ADD_KERNEL(SharkFloatParams)                                                                        \
-    MULTIPLY_KERNEL_NTT(SharkFloatParams)                                                              \
+    MULTIPLY_KERNEL_NTT(SharkFloatParams)                                                               \
     REFERENCE_KERNEL(SharkFloatParams)
 
 ExplicitInstantiateAll();

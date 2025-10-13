@@ -120,11 +120,11 @@ HpSharkReferenceGpuLoop(HpSharkReferenceResults<SharkFloatParams> *SharkRestrict
     typename SharkFloatParams::Float cx_cast = combo->Add.C_A.ToHDRFloat<SharkFloatParams::SubType>(0);
     typename SharkFloatParams::Float cy_cast = combo->Add.E_B.ToHDRFloat<SharkFloatParams::SubType>(0);
 
-    if constexpr (SharkFloatParams::Periodicity) {
-    
-        gpuReferenceIters[0].x = {};
-        gpuReferenceIters[0].y = {};
-    }
+    // if constexpr (SharkFloatParams::Periodicity) {
+    // 
+    //     gpuReferenceIters[0].x = {};
+    //     gpuReferenceIters[0].y = {};
+    // }
 
     for (uint64_t i = 0; i < numIters; ++i) {
         const auto shouldContinue = ReferenceHelper(

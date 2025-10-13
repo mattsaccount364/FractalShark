@@ -2782,7 +2782,7 @@ TestFullReferencePerf([[maybe_unused]] int testBase, [[maybe_unused]] int numIte
 #define MULTIPLY_KERNEL_NTT(SharkFloatParams) ;
 #endif
 
-#ifdef ENABLE_REFERENCE_KERNEL
+#if defined(ENABLE_REFERENCE_KERNEL) || defined(ENABLE_FULL_KERNEL)
 #define REFERENCE_KERNEL(SharkFloatParams)                                                              \
     template bool TestAllBinaryOp<SharkFloatParams, Operator::ReferenceOrbit>(int testBase);            \
     template bool TestBinaryOperatorPerf<Operator::ReferenceOrbit>(                                     \

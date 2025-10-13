@@ -195,7 +195,22 @@
 #elif ENABLE_BASIC_CORRECTNESS == 2
 #define ExplicitInstantiateAll() \
         ExplicitlyInstantiate(TestPerSharkParams1);
+#elif ENABLE_BASIC_CORRECTNESS == 4
+#define ExplicitInstantiateAll() \
+    ExplicitlyInstantiate(ProdSharkParams1);                                                         \
+    ExplicitlyInstantiate(ProdSharkParams2);                                                         \
+    ExplicitlyInstantiate(ProdSharkParams3);                                                         \
+    ExplicitlyInstantiate(ProdSharkParams4);                                                         \
+    ExplicitlyInstantiate(ProdSharkParams5);                                                         \
+    ExplicitlyInstantiate(ProdSharkParams6);                                                         \
+    ExplicitlyInstantiate(ProdSharkParams7);                                                         \
+    ExplicitlyInstantiate(ProdSharkParams8);                                                         \
+    ExplicitlyInstantiate(ProdSharkParams9);                                                         \
+    ExplicitlyInstantiate(ProdSharkParams10);                                                        \
+    ExplicitlyInstantiate(ProdSharkParams11);                                                        \
+    ExplicitlyInstantiate(ProdSharkParams12);
 #endif
+
 
 #if ENABLE_BASIC_CORRECTNESS == 3
 #define ComicalCorrectness() \

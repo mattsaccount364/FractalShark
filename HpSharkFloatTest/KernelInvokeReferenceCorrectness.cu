@@ -98,7 +98,7 @@ InvokeHpSharkReferenceKernelCorrectness(BenchmarkTimer &timer,
     cudaFree(d_tempProducts);
 }
 
-#ifdef ENABLE_REFERENCE_KERNEL
+#if defined(ENABLE_REFERENCE_KERNEL) || defined(ENABLE_FULL_KERNEL)
 #define ExplicitlyInstantiateHpSharkReference(SharkFloatParams)                                         \
     template void InvokeHpSharkReferenceKernelCorrectness<SharkFloatParams>(                            \
         BenchmarkTimer & timer,                                                                         \

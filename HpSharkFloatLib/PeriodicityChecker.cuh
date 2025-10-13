@@ -8,29 +8,26 @@ static __device__ bool
 PeriodicityChecker(cg::grid_group &grid,
     cg::thread_block &block,
     uint64_t currentIteration,
-    typename SharkFloatParams::Float *SharkRestrict cx_cast,
-    typename SharkFloatParams::Float *SharkRestrict cy_cast,
+    const typename SharkFloatParams::Float *SharkRestrict cx_cast,
+    const typename SharkFloatParams::Float *SharkRestrict cy_cast,
     typename SharkFloatParams::Float *SharkRestrict dzdcX,
     typename SharkFloatParams::Float *SharkRestrict dzdcY,
     HpSharkReferenceResults<SharkFloatParams> *SharkRestrict reference,
     typename SharkFloatParams::ReferenceIterT *SharkRestrict gpuReferenceIters)
 {
-    auto *ConstantReal = &reference->Add.C_A;
-    auto *ConstantImaginary = &reference->Add.E_B;
-    auto *Out_A_B_C = &reference->Multiply.A;
-    auto *Out_D_E = &reference->Multiply.B;
-    auto radiusY = reference->RadiusY;
+    const auto *ConstantReal = &reference->Add.C_A;
+    const auto *ConstantImaginary = &reference->Add.E_B;
+    const auto *Out_A_B_C = &reference->Multiply.A;
+    const auto *Out_D_E = &reference->Multiply.B;
+    const auto radiusY = reference->RadiusY;
 
     using HdrType = typename SharkFloatParams::Float;
 
     // Now lets do periodicity checking and store the results
-    HdrType double_zx;
-    HdrType double_zy;
-
     // Note: first iteration (currentIteration==0) requires Out_A_B_C
     // and Out_D_E to be initialized to 0.
-    double_zx = Out_A_B_C->ToHDRFloat<SharkFloatParams::SubType>(0);
-    double_zy = Out_D_E->ToHDRFloat<SharkFloatParams::SubType>(0);
+    HdrType double_zx = Out_A_B_C->ToHDRFloat<SharkFloatParams::SubType>(0);
+    HdrType double_zy = Out_D_E->ToHDRFloat<SharkFloatParams::SubType>(0);
 
     gpuReferenceIters[currentIteration].x = double_zx;
     gpuReferenceIters[currentIteration].y = double_zy;

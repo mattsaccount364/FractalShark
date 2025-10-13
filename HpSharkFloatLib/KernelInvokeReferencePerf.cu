@@ -186,7 +186,7 @@ InvokeHpSharkReferenceKernelPerf(BenchmarkTimer *timer,
     }
 }
 
-#ifdef ENABLE_REFERENCE_KERNEL
+#if defined(ENABLE_REFERENCE_KERNEL) || defined(ENABLE_FULL_KERNEL)
 #define ExplicitlyInstantiateHpSharkReference(SharkFloatParams)                                         \
     template void InvokeHpSharkReferenceKernelProd<SharkFloatParams>(                                   \
         HpSharkReferenceResults<SharkFloatParams> &, mpf_t, mpf_t, uint64_t);                           \

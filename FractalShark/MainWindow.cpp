@@ -1748,7 +1748,7 @@ void MainWindow::MenuResetIterations() {
 }
 
 void MainWindow::MenuGetCurPos() {
-    constexpr size_t numBytes = 32768;
+    constexpr size_t numBytes = 4 * 1024 * 1024;
 
     BOOL ret = OpenClipboard(hWnd);
     if (ret == 0) {
@@ -1800,7 +1800,11 @@ void MainWindow::MenuGetCurPos() {
 
     CloseClipboard();
 
-    ::MessageBoxA(hWnd, shortStr.c_str(), "", MB_OK | MB_APPLMODAL);
+    if (shortStr.length() < 5000) {
+        ::MessageBoxA(hWnd, shortStr.c_str(), "", MB_OK | MB_APPLMODAL);
+    } else {
+        ::MessageBoxA(hWnd, "Location copied to clipboard.", "", MB_OK | MB_APPLMODAL);
+    }
 }
 
 void MainWindow::MenuPaletteRotation() {

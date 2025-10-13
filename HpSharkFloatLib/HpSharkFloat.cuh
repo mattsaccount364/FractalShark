@@ -29,22 +29,78 @@ static constexpr bool SharkDebug = true;
 static constexpr bool SharkDebug = false;
 #endif
 
+// Suggested combinations.
+// For testing, define:
+//  - ENABLE_ADD_KERNEL, ENABLE_MULTIPLY_NTT_KERNEL, or ENABLE_REFERENCE_KERNEL
+//  - undefine HP_FRACTAL_SHARK
+//  - _DEBUG
+//  - Ensure ENABLE_BASIC_CORRECTNESS == 0
+// For profiling, define:
+//  - ENABLE_ADD_KERNEL, ENABLE_MULTIPLY_NTT_KERNEL, or ENABLE_REFERENCE_KERNEL
+//  - undefine HP_FRACTAL_SHARK
+//  - Release
+//  - Ensure ENABLE_BASIC_CORRECTNESS == 2
+// For E2E test:
+//  - ENABLE_FULL_KERNEL
+//  - undefine HP_FRACTAL_SHARK
+//  - Debug or release
+//  - Ensure ENABLE_BASIC_CORRECTNESS == 2
+//      When it runs, it'll take a minute, verify iteration count matches reference CPU kernel.
+// For FractalShark, define:
+//  - ENABLE_FULL_KERNEL
+//  - Define HP_FRACTAL_SHARK
+//  - Ensure ENABLE_BASIC_CORRECTNESS == 4
+// 
+// TODO:
+//  - ENABLE_REFERENCE_KERNEL is slightly busted on profiling and will say there's an error
+// 
+
 // Comment out to disable specific kernels
 //#define ENABLE_CONVERSION_TESTS
 //#define ENABLE_ADD_KERNEL
 //#define ENABLE_MULTIPLY_NTT_KERNEL
-#define ENABLE_REFERENCE_KERNEL
+//#define ENABLE_REFERENCE_KERNEL
+#define ENABLE_FULL_KERNEL
+
+// Comment this to enable the HpSharkFloat test program.
+// Uncomment for use in FractalShark
+#define HP_FRACTAL_SHARK
+
+// Uncomment this to enable the HpSharkFloat test program.
+// Comment for use in FractalShark
+// #define HP_SHARK_FLOAT_TEST
+
+#ifdef HP_SHARK_FLOAT_TEST // Defined by test program build system
+#ifdef HP_FRACTAL_SHARK
+static_assert(false, "HP_SHARK_FLOAT_TEST and HP_FRACTAL_SHARK cannot both be defined");
+#endif
+#endif
+
+#if !defined(HP_SHARK_FLOAT_TEST) && !defined(HP_FRACTAL_SHARK)
+static_assert(false, "Either HP_SHARK_FLOAT_TEST or HP_FRACTAL_SHARK must be defined");
+#endif
 
 // 0 = just one correctness test, intended for fast re-compile of a specific failure
 // 1 = all basic correctness tests/all basic perf tests
 // 2 = setup for profiling only, one kernel
 // 3 = all basic correctness tests + comical tests
-// 4 = known reference orbit tests specifically for reference kernel
+// 4 = "production" kernels, include periodicity. This is what we use in FractalShark.
 // See ExplicitInstantiate.h for more information
+
 #ifdef _DEBUG
+#ifdef HP_SHARK_FLOAT_TEST
+// Test path - this is what we use with HpSharkFloatTest
 #define ENABLE_BASIC_CORRECTNESS 2
 #else
+// Production path - this is what we use in FractalShark
+#define ENABLE_BASIC_CORRECTNESS 4
+#endif
+#else // not debug
+#ifdef HP_SHARK_FLOAT_TEST
 #define ENABLE_BASIC_CORRECTNESS 2
+#else
+#define ENABLE_BASIC_CORRECTNESS 4
+#endif
 #endif
 
 static constexpr auto SharkBasicCorrectness = ENABLE_BASIC_CORRECTNESS;
@@ -69,13 +125,17 @@ static constexpr auto SharkEnableMultiplyNTTKernel = false;
 
 #ifdef ENABLE_REFERENCE_KERNEL
 static constexpr auto SharkEnableReferenceKernel = true;
-static constexpr auto SharkEnableFullKernel = true;
-static constexpr auto SharkEnablePeriodicity =
-    (SharkBasicCorrectness == 2) ? true : false;
 #else
 static constexpr auto SharkEnableReferenceKernel = false;
+#endif
+
+#ifdef ENABLE_FULL_KERNEL
+static constexpr auto SharkEnableFullKernel = true;
+#else
 static constexpr auto SharkEnableFullKernel = false;
 #endif
+
+static constexpr auto SharkEnablePeriodicity = SharkEnableFullKernel;
 
 #ifdef _DEBUG
 #define SharkForceInlineReleaseOnly
@@ -118,7 +178,7 @@ static constexpr auto SharkBatchSize = SharkDebug ? 8 : 512;
 static constexpr auto SharkKaratsubaBatchSize = SharkLoadAllInShared ? 1 : 4;
 
 // TODO we should get this shit to work
-//static constexpr bool SharkDebugChecksums = (ENABLE_BASIC_CORRECTNESS != 2) ? SharkDebug : false;
+//static constexpr bool SharkDebugChecksums = (SharkBasicCorrectness != 2) ? SharkDebug : false;
 static constexpr bool SharkDebugChecksums = false;
 static constexpr bool SharkPrintMultiplyCounts = false; // SharkDebugChecksums;
 static constexpr bool SharkTestCorrectness = (SharkBasicCorrectness == 2) ? SharkDebug : true;
@@ -336,6 +396,20 @@ using TestCorrectnessSharkParams2 = Test4x36SharkParams;
 using TestCorrectnessSharkParams3 = Test4x9SharkParams;
 using TestCorrectnessSharkParams4 = Test4x12SharkParams;
 using TestCorrectnessSharkParams5 = Test4x6SharkParams;
+
+// FractalShark production sizes
+using ProdSharkParams1 = GenericSharkFloatParams<256, 1>; // 256
+using ProdSharkParams2 = GenericSharkFloatParams<256, 2>; // 512
+using ProdSharkParams3 = GenericSharkFloatParams<256, 4>; // 1024
+using ProdSharkParams4 = GenericSharkFloatParams<256, 8>; // 2048
+using ProdSharkParams5 = GenericSharkFloatParams<256, 16>; // 4096
+using ProdSharkParams6 = GenericSharkFloatParams<256, 32>; // 8192
+using ProdSharkParams7 = GenericSharkFloatParams<256, 64>; // 16384
+using ProdSharkParams8 = GenericSharkFloatParams<256, 128>; // 32768
+using ProdSharkParams9 = GenericSharkFloatParams<256, 128, 65536>;
+using ProdSharkParams10 = GenericSharkFloatParams<256, 128, 131072>;
+using ProdSharkParams11 = GenericSharkFloatParams<256, 128, 262144>;
+using ProdSharkParams12 = GenericSharkFloatParams<256, 128, 524288>;
 
 // Struct to hold both integer and fractional parts of the high-precision number
 template<class SharkFloatParams>

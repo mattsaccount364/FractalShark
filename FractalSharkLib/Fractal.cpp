@@ -632,12 +632,12 @@ void Fractal::Zoom2(size_t scrnX, size_t scrnY, double factor) {
 
 void Fractal::InitialDefaultViewAndSettings(int width, int height) {
     //SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2));
-    //SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2));
+    SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2));
     //SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2));
     //SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Gpu2x32PerturbedLAv2));
     //SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Gpu2x32PerturbedLAv2LAO));
-    SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::AUTO));
     //SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2));
+    // SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::AUTO));
 
     SetIterationPrecision(1);
 
@@ -647,7 +647,8 @@ void Fractal::InitialDefaultViewAndSettings(int width, int height) {
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed4);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::Auto);
     //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::STPeriodicity);
-    m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3);
+    //m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3);
+    m_RefOrbit.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::GPU);
     m_RefOrbit.ResetGuess();
 
     DefaultCompressionErrorExp(CompressionError::Low);
@@ -657,14 +658,15 @@ void Fractal::InitialDefaultViewAndSettings(int width, int height) {
     } else {
         ResetDimensions(MAXSIZE_T, MAXSIZE_T, 1);
     }
-    //SetIterType(IterTypeEnum::Bits64);
-    SetIterType(IterTypeEnum::Bits32);
+    
+    SetIterType(IterTypeEnum::Bits64);
+    //SetIterType(IterTypeEnum::Bits32);
 
     SetResultsAutosave(AddPointOptions::EnableWithoutSave);
     //SetResultsAutosave(AddPointOptions::DontSave);
     LoadPerturbationOrbits();
-    //View(0);
-    View(5);
+    View(0);
+    //View(5);
     //View(11);
     //View(14);
     //View(27); // extremely hard
@@ -1328,7 +1330,7 @@ void Fractal::View(size_t view, bool includeMsgBox) {
         minY = convert.GetMinY();
         maxX = convert.GetMaxX();
         maxY = convert.GetMaxY();
-        SetNumIterations<IterTypeFull>(171'461'632);
+        SetNumIterations<IterTypeFull>(200'000'000);
         break;
     }
 

@@ -1021,14 +1021,22 @@ public:
 
     template<HDROrder OtherOrder>
     CUDA_CRAP constexpr int compareToBothPositiveReduced(HDRFloat<T, OtherOrder> compareTo) const {
-        if (Base::exp > compareTo.exp) {
+        // Create local copies to reduce if needed
+        HDRFloat lhs = *this;
+        HDRFloat<T, OtherOrder> rhs = compareTo;
+        
+        // Reduce both numbers to ensure mantissas are in [1.0, 2.0)
+        lhs.Reduce();
+        rhs.Reduce();
+        
+        if (lhs.exp > rhs.exp) {
             return 1;
-        } else if (Base::exp < compareTo.exp) {
+        } else if (lhs.exp < rhs.exp) {
             return -1;
         } else {
-            if (Base::mantissa > compareTo.mantissa) {
+            if (lhs.mantissa > rhs.mantissa) {
                 return 1;
-            } else if (Base::mantissa < compareTo.mantissa) {
+            } else if (lhs.mantissa < rhs.mantissa) {
                 return -1;
             } else {
                 return 0;
@@ -1054,14 +1062,22 @@ public:
     // Matt: be sure both numbers are reduced
     template<HDROrder OtherOrder>
     CUDA_CRAP constexpr int compareToBothPositive(HDRFloat<T, OtherOrder> compareTo) const {
-        if (Base::exp > compareTo.exp) {
+        // Create local copies to reduce if needed
+        HDRFloat lhs = *this;
+        HDRFloat<T, OtherOrder> rhs = compareTo;
+        
+        // Reduce both numbers to ensure mantissas are in [1.0, 2.0)
+        lhs.Reduce();
+        rhs.Reduce();
+        
+        if (lhs.exp > rhs.exp) {
             return 1;
-        } else if (Base::exp < compareTo.exp) {
+        } else if (lhs.exp < rhs.exp) {
             return -1;
         } else {
-            if (Base::mantissa > compareTo.mantissa) {
+            if (lhs.mantissa > rhs.mantissa) {
                 return 1;
-            } else if (Base::mantissa < compareTo.mantissa) {
+            } else if (lhs.mantissa < rhs.mantissa) {
                 return -1;
             } else {
                 return 0;

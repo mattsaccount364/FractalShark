@@ -40,6 +40,8 @@ private:
     std::string m_MaxXStr, m_MaxYStr;
     std::string m_PtXStr, m_PtYStr;
     std::string m_ZoomFactorStr;
+    std::string m_RadiusStr;
+    std::string m_DeltaYStr;
 
     static constexpr bool m_Test = true;
 };

@@ -133,6 +133,13 @@ HpSharkReferenceGpuLoop(HpSharkReferenceResults<SharkFloatParams> *SharkRestrict
             break;
         }
     }
+
+    // Store the escaped iteration if we didn't find it yet
+    if (block.thread_index().x == 0 && block.group_index().x == 0) {
+        if (combo->EscapedIteration == 0) {
+            combo->EscapedIteration = numIters;
+        }
+    }
 }
 
 template <class SharkFloatParams>

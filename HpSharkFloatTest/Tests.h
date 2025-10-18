@@ -26,4 +26,7 @@ template <Operator sharkOperator>
 bool TestBinaryOperatorPerf(int testBase, int numIters, int internalTestLoopCount);
 
 template <Operator sharkOperator>
-bool TestFullReferencePerf(int testBase, int internalTestLoopCount);
+bool TestFullReferencePerfView5(int testBase, int numIters, int internalTestLoopCount);
+
+template <Operator sharkOperator>
+bool TestFullReferencePerfView30(int testBase, int numIters, int internalTestLoopCount);

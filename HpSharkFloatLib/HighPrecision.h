@@ -24,6 +24,14 @@ class HDRFloat;
 #include <memory>
 
 
+std::string MpfToHex32String(const mpf_t mpf_val);
+
+std::string MpfToHex64StringInvertable(const mpf_t mpf_val);
+
+void Hex64StringToMpf_Exact(const std::string &s, mpf_t out);
+
+void MpfNormalize(mpf_t val);
+
 template<HPDestructor Destructor>
 class HighPrecisionT {
 public:
@@ -175,7 +183,13 @@ public:
 
     explicit HighPrecisionT(std::string data) {
         InitMpf();
+
+        //
+        // Normalize the result of mpf_set_str -- maybe a bug in MPIR?
+        //
+
         mpf_set_str(m_Data, data.c_str(), 10);
+        MpfNormalize(m_Data);
     }
 
     template<typename Type, HDROrder Order, typename TExp>
@@ -200,16 +214,6 @@ public:
         mpf_set_d(m_Data, data);
         return *this;
     }
-
-    //HighPrecisionT &operator=(const char *data) {
-    //    mpf_set_str(m_Data, data, 10);
-    //    return *this;
-    //}
-
-    //HighPrecisionT &operator=(const std::string &data) {
-    //    mpf_set_str(m_Data, data.c_str(), 10);
-    //    return *this;
-    //}
 
     HighPrecisionT &operator+=(const HighPrecisionT &data) {
         mpf_add(m_Data, m_Data, data.m_Data);
@@ -366,6 +370,7 @@ To Convert(From data) {
         return 0;
     }
 }
+
 #else // __CUDACC__
 
 //

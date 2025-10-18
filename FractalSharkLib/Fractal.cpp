@@ -1315,14 +1315,12 @@ void Fractal::View(size_t view, bool includeMsgBox) {
 
     case 30:
     {
-        std::string strX;
-        std::string strY;
 
 #include "LargeCoords.h"
 
         PointZoomBBConverter convert{
-            HighPrecision{ strX.c_str() },
-            HighPrecision{ strY.c_str() },
+            HighPrecision{ strX/*.c_str()*/ },
+            HighPrecision{ strY/*.c_str()*/ },
             HighPrecision{ "1.36733731087e+114514" }
         };
 

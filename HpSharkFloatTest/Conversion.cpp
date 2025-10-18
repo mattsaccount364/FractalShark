@@ -88,12 +88,12 @@ TestConvertNumber(int testNum, const char *numberStr)
                   << MpfToString<SharkFloatParams>(mpf_x,
                                                    HpSharkFloat<SharkFloatParams>::DefaultPrecBits)
                   << "\n";
-        std::cout << "  X hex  : " << MpfToHexString(mpf_x) << "\n";
+        std::cout << "  X hex  : " << MpfToHex32String(mpf_x) << "\n";
     }
 
     // ---------------- Build HpSharkFloat from mpf ----------------
     auto x_num = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-    x_num->MpfToHpGpu<InjectNoiseInLowOrder::Disable>(
+    x_num->MpfToHpGpu(
         mpf_x, HpSharkFloat<SharkFloatParams>::DefaultPrecBits, InjectNoiseInLowOrder::Disable);
 
     if (SharkVerbose == VerboseMode::Debug) {
@@ -222,6 +222,59 @@ TestConvertNumber(int testNum, const char *numberStr)
         assert(false);
     } else {
         Tests.MarkSuccess(testNum, "conversion/hdr_double");
+    }
+
+    // Now we'll convert the number to a hex string and back
+    {
+        std::string hexStr = MpfToHex64StringInvertable(mpf_x);
+
+        if (SharkVerbose == VerboseMode::Debug) {
+            std::cout << "\nHex string conversion:\n";
+            std::cout << "  Hex string: " << hexStr << "\n";
+        }
+
+        mpf_t outX;
+        Hex64StringToMpf_Exact(hexStr, outX);
+
+        if (SharkVerbose == VerboseMode::Debug) {
+            std::cout << "  RoundTripX hex  : " << MpfToHex64StringInvertable(outX) << "\n";
+        }
+
+        const bool ok_hex = compare_within_eps(mpf_x, outX, eps_full, "conversion/full");
+        if (!ok_hex) {
+            Tests.MarkFailed(
+                testNum,
+                "conversion/hex_string_roundtrip",
+                "abs error exceeded eps",
+                MpfToString<SharkFloatParams>(eps_full,
+                                             HpSharkFloat<SharkFloatParams>::DefaultPrecBits));
+            assert(false);
+        } else {
+            Tests.MarkSuccess(testNum, "conversion/hex_string_roundtrip");
+        }
+    }
+
+    // Now normalize the number and verify it's the same
+    {
+        mpf_t mpf_x_normalized;
+        mpf_init_prec(mpf_x_normalized);
+        mpf_set(mpf_x_normalized, mpf_x);
+        MpfNormalize(mpf_x_normalized);
+
+        const bool ok_normalize = compare_within_eps(mpf_x, mpf_x_normalized, eps_full, "conversion/normalize");
+        if (!ok_normalize) {
+            Tests.MarkFailed(
+                testNum,
+                "conversion/normalize",
+                "abs error exceeded eps",
+                MpfToString<SharkFloatParams>(eps_full,
+                                             HpSharkFloat<SharkFloatParams>::DefaultPrecBits));
+            assert(false);
+        } else {
+            Tests.MarkSuccess(testNum, "conversion/normalize");
+        }
+
+        mpf_clear(mpf_x_normalized);
     }
 
     // ---------------- Cleanup ----------------

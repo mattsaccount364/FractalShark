@@ -61,55 +61,6 @@ MpfToString<SharkFloatParams>(const mpf_t mpf_val, size_t precInBits)
     }
 }
 
-// typedef struct
-// {
-//   int _mp_prec;       // Max precision, in number of `mp_limb_t's.
-//                       // Set by mpf_init and modified by
-//                       // mpf_set_prec.  The area pointed to by the
-//                       // _mp_d field contains `prec' + 1 limbs.
-//   int _mp_size;       // abs(_mp_size) is the number of limbs the
-//                       // last field points to.  If _mp_size is
-//                       // negative this is a negative number.
-//   mp_exp_t _mp_exp;   //  Exponent, in the base of `mp_limb_t'.
-//   mp_limb_t *_mp_d;   //  Pointer to the limbs.
-// } __mpf_struct;
-//
-// typedef __mpf_struct mpf_t[1];
-std::string
-MpfToHexString(const mpf_t mpf_val)
-{
-    std::string result;
-    mp_exp_t exponent;
-    mp_limb_t *limbs = mpf_val[0]._mp_d;
-    auto prec = mpf_val[0]._mp_prec;
-    auto numLimbs = prec + 1;
-
-    // First put a plus or minus depending on sign of _mp_size
-    if (mpf_val[0]._mp_size < 0) {
-        result += "-";
-    } else {
-        result += "+";
-    }
-
-    // Convert each limb to hex and append to result
-    for (int i = 0; i < numLimbs; ++i) {
-        char buffer[32];
-
-        // Break lim into two 32-bit values and output individually, low then high
-        uint32_t lowOrder = limbs[i] & 0xFFFFFFFF;
-        uint32_t highOrder = limbs[i] >> 32;
-
-        snprintf(buffer, sizeof(buffer), "0x%08X 0x%08X ", lowOrder, highOrder);
-        result += buffer;
-    }
-
-    // Finally append exponent
-    exponent = mpf_val[0]._mp_exp;
-    result += "2^64^(0n" + std::to_string(exponent) + ")";
-
-    return result;
-}
-
 template <class IntT>
 std::string
 UintArrayToHexString(const IntT *array, size_t numElements)

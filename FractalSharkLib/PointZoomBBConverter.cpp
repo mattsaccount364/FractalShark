@@ -24,6 +24,7 @@ PointZoomBBConverter::PointZoomBBConverter(
     m_MaxX = ptX + (HighPrecision{ factor } / m_ZoomFactor);
     m_MaxY = ptY + (HighPrecision{ factor } / m_ZoomFactor);
 
+    auto deltaY = m_MaxY - m_MinY;
     if constexpr (m_Test) {
         m_MinXStr = m_MinX.str();
         m_MinYStr = m_MinY.str();
@@ -32,6 +33,8 @@ PointZoomBBConverter::PointZoomBBConverter(
         m_PtXStr = m_PtX.str();
         m_PtYStr = m_PtY.str();
         m_ZoomFactorStr = m_ZoomFactor.str();
+        m_RadiusStr = ((m_MaxY - m_MinY) / HighPrecision{2}).str();
+        m_DeltaYStr = deltaY.str();
     }
 }
 
@@ -47,7 +50,6 @@ PointZoomBBConverter::PointZoomBBConverter(
     m_PtX{ (minX + maxX) / HighPrecision(2) },
     m_PtY{ (minY + maxY) / HighPrecision(2) } {
 
-    //auto deltaX = m_MaxX - m_MinX;
     auto deltaY = m_MaxY - m_MinY;
 
     if constexpr (m_Test) {
@@ -62,8 +64,8 @@ PointZoomBBConverter::PointZoomBBConverter(
         m_MaxYStr = m_MaxY.str();
         m_PtXStr = m_PtX.str();
         m_PtYStr = m_PtY.str();
-
-        std::string deltaYStr = deltaY.str();
+        m_RadiusStr = ((m_MaxY - m_MinY) / HighPrecision{2}).str();
+        m_DeltaYStr = deltaY.str();
     }
 
     if (/*deltaX == 0 || */deltaY == HighPrecision{ 0 }) {
@@ -136,6 +138,7 @@ void PointZoomBBConverter::SetPrecision(uint64_t precInBits) {
         m_PtXStr = m_PtX.str();
         m_PtYStr = m_PtY.str();
         m_ZoomFactorStr = m_ZoomFactor.str();
+        m_RadiusStr = ((m_MaxY - m_MinY) / HighPrecision{2}).str();
     }
 }
 

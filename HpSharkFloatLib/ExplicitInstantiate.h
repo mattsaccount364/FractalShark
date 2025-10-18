@@ -194,7 +194,8 @@
         InstantiateComicalCorrectness();
 #elif ENABLE_BASIC_CORRECTNESS == 2
 #define ExplicitInstantiateAll() \
-        ExplicitlyInstantiate(TestPerSharkParams1);
+        ExplicitlyInstantiate(TestPerSharkParams1); \
+        ExplicitlyInstantiate(TestPerSharkParams2);
 #elif ENABLE_BASIC_CORRECTNESS == 4
 #define ExplicitInstantiateAll() \
     ExplicitlyInstantiate(ProdSharkParams1);                                                         \

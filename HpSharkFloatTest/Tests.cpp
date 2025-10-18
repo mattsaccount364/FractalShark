@@ -527,6 +527,10 @@ TestPerf(int testNum,
             }
         }
 
+        if (discoveredEscapeIterationHost == 0) {
+            discoveredEscapeIterationHost = numIters;
+        }
+
         hostTimer.StopTimer();
 
         std::cout << "Host iter time: " << hostTimer.GetDeltaInMs() << " ms" << std::endl;
@@ -1011,13 +1015,13 @@ TestCoreAdd(int testNum,
                                                    HpSharkFloat<SharkFloatParams>::DefaultPrecBits)
                   << std::endl;
         std::cout << "Correct MPIR hex XY1: " << std::endl;
-        std::cout << "" << MpfToHexString(mpfHostResultXY1) << std::endl;
+        std::cout << "" << MpfToHex32String(mpfHostResultXY1) << std::endl;
         std::cout << "Correct MPIR result XY2: "
                   << MpfToString<SharkFloatParams>(mpfHostResultXY2,
                                                    HpSharkFloat<SharkFloatParams>::DefaultPrecBits)
                   << std::endl;
         std::cout << "Correct MPIR hex XY2: " << std::endl;
-        std::cout << "" << MpfToHexString(mpfHostResultXY2) << std::endl;
+        std::cout << "" << MpfToHex32String(mpfHostResultXY2) << std::endl;
     }
 
     DebugGpuCombo debugGpuCombo{};
@@ -1190,11 +1194,11 @@ TestCoreMultiply(int testNum,
                   << std::endl;
 
         std::cout << "Correct MPIR hex XX: " << std::endl;
-        std::cout << "" << MpfToHexString(mpfHostResultXX) << std::endl;
+        std::cout << "" << MpfToHex32String(mpfHostResultXX) << std::endl;
         std::cout << "Correct MPIR hex XY: " << std::endl;
-        std::cout << "" << MpfToHexString(mpfHostResultXY1) << std::endl;
+        std::cout << "" << MpfToHex32String(mpfHostResultXY1) << std::endl;
         std::cout << "Correct MPIR hex YY: " << std::endl;
-        std::cout << "" << MpfToHexString(mpfHostResultYY) << std::endl;
+        std::cout << "" << MpfToHex32String(mpfHostResultYY) << std::endl;
     }
 
     DebugGpuCombo debugGpuCombo{};
@@ -1334,9 +1338,9 @@ TestCoreReferenceOrbit(int testNum,
                   << std::endl;
 
         std::cout << "Correct MPIR hex X: " << std::endl;
-        std::cout << "" << MpfToHexString(mpfHostResultX) << std::endl;
+        std::cout << "" << MpfToHex32String(mpfHostResultX) << std::endl;
         std::cout << "Correct MPIR hex Y: " << std::endl;
-        std::cout << "" << MpfToHexString(mpfHostResultY) << std::endl;
+        std::cout << "" << MpfToHex32String(mpfHostResultY) << std::endl;
     }
 
     DebugGpuCombo debugGpuCombo{};
@@ -1779,6 +1783,10 @@ TestTernaryOperatorTwoNumbers(int testNum, const char *num1, const char *num2, c
     if (res == -1) {
         std::cout << "Error setting mpfZ" << std::endl;
     }
+
+    MpfNormalize(mpfs[0]);
+    MpfNormalize(mpfs[1]);
+    MpfNormalize(mpfs[2]);
 
     {
         std::vector<const char *> strs(3);
@@ -2686,7 +2694,9 @@ TestBinaryOperatorPerf([[maybe_unused]] int testBase,
 
 template <Operator sharkOperator>
 bool
-TestFullReferencePerf([[maybe_unused]] int testBase, [[maybe_unused]] int numIters)
+TestFullReferencePerfView5([[maybe_unused]] int testBase,
+                           [[maybe_unused]] int numIters,
+                           int internalTestLoopCount)
 {
 #if (ENABLE_BASIC_CORRECTNESS == 2)
     static_assert(sharkOperator == Operator::ReferenceOrbit, "Only ReferenceOrbit is supported");
@@ -2707,7 +2717,7 @@ TestFullReferencePerf([[maybe_unused]] int testBase, [[maybe_unused]] int numIte
         "0."
         "00000000000000000000000000000000000000000000401444147896341553391537310767676"
         "870110653199358192656";
-    const auto maxIters = 20000;
+    const auto maxIters = (internalTestLoopCount != 0) ? internalTestLoopCount : 20000;
 
     mpf_t mpfX;
     mpf_t mpfY;
@@ -2739,6 +2749,11 @@ TestFullReferencePerf([[maybe_unused]] int testBase, [[maybe_unused]] int numIte
         std::cout << "Error setting mpfRadiusY" << std::endl;
     }
 
+    MpfNormalize(mpfX);
+    MpfNormalize(mpfY);
+    MpfNormalize(mpfZ);
+    MpfNormalize(mpfRadiusY);
+
     // Convert mpfX/mpfY/mpfZ back to strings
     auto convertedMpfX =
         MpfToString<TestPerSharkParams1>(mpfX, HpSharkFloat<TestPerSharkParams1>::DefaultMpirBits);
@@ -2766,6 +2781,108 @@ TestFullReferencePerf([[maybe_unused]] int testBase, [[maybe_unused]] int numIte
     return true;
 }
 
+
+template <Operator sharkOperator>
+bool
+TestFullReferencePerfView30([[maybe_unused]] int testBase, [[maybe_unused]] int numIters, int internalTestLoopCount)
+{
+
+    // TODO: this is kind of cheesy, it'd be nice to share the test
+    // view parameters in FractalShark with the test in some reasonable way
+    #include "..\FractalSharkLib\LargeCoords.h"
+
+#if (ENABLE_BASIC_CORRECTNESS == 2)
+    static_assert(sharkOperator == Operator::ReferenceOrbit, "Only ReferenceOrbit is supported");
+
+    mpf_set_default_prec(
+        HpSharkFloat<TestPerSharkParams2>::DefaultMpirBits); // Set precision for MPIR floating point
+
+    int testNum = testBase + 1;
+
+    const char *num1 = strX;//.c_str();
+    const char *num2 = strY; //.c_str();
+    const char *num3 = "0";
+    const char *radiusYStr = "1.46269686645751934186e-114514";
+    const auto maxIters = (internalTestLoopCount != 0) ? internalTestLoopCount : 600'000;
+
+    mpf_t mpfX;
+    mpf_t mpfY;
+    mpf_t mpfZ;
+    mpf_t mpfRadiusY;
+    mpf_t mpfTwo;
+
+    mpf_init(mpfX);
+    mpf_init(mpfY);
+    mpf_init(mpfZ);
+    mpf_init(mpfRadiusY);
+    mpf_init(mpfTwo);
+
+    Hex64StringToMpf_Exact(strXHex, mpfX);
+    Hex64StringToMpf_Exact(strYHex, mpfY);
+
+    auto res = mpf_set_str(mpfZ, num3, 10);
+    if (res == -1) {
+        std::cout << "Error setting mpfZ" << std::endl;
+    }
+
+    res = mpf_set_str(mpfRadiusY, radiusYStr, 10);
+    if (res == -1) {
+        std::cout << "Error setting mpfRadiusY" << std::endl;
+    }
+
+    res = mpf_set_str(mpfTwo, "2", 10);
+    if (res == -1) {
+        std::cout << "Error setting mpfTwo" << std::endl;
+    }
+
+    // Note: radiusY needs to be doubled because of the way we copied it here.
+    mpf_mul(mpfRadiusY, mpfTwo, mpfRadiusY);
+
+    if (SharkVerbose == VerboseMode::Debug) {
+        auto mpfXConvertStr = MpfToHex64StringInvertable(mpfX);
+        std::cout << "Correct MPIR hex X: " << std::endl;
+        std::cout << "" << mpfXConvertStr;
+
+        auto mpfYConvertStr = MpfToHex64StringInvertable(mpfY);
+        std::cout << "Correct MPIR hex Y: " << std::endl;
+        std::cout << "" << mpfYConvertStr;
+
+        assert(mpfXConvertStr == strXHex);
+        assert(mpfYConvertStr == strYHex);
+    }
+
+    MpfNormalize(mpfX);
+    MpfNormalize(mpfY);
+    MpfNormalize(mpfZ);
+    MpfNormalize(mpfRadiusY);
+
+    using HdrType = typename TestPerSharkParams2::Float;
+    HdrType hdrRadiusY{mpfRadiusY};
+    HdrReduce(hdrRadiusY);
+
+    for (size_t i = 0; i < numIters; i++) {
+        TestPerf<TestPerSharkParams2, sharkOperator>(testNum,
+                                                     num1,
+                                                     num2,
+                                                     num3,
+                                                     radiusYStr,
+                                                     mpfX,
+                                                     mpfY,
+                                                     mpfZ,
+                                                     hdrRadiusY,
+                                                     maxIters);
+    }
+
+    mpf_clear(mpfX);
+    mpf_clear(mpfY);
+    mpf_clear(mpfZ);
+    mpf_clear(mpfRadiusY);
+    mpf_clear(mpfTwo);
+#endif
+
+    return true;
+}
+
 // Explicitly instantiate TestAllBinaryOp
 #ifdef ENABLE_ADD_KERNEL
 #define ADD_KERNEL(SharkFloatParams)                                                                    \
@@ -2790,7 +2907,9 @@ TestFullReferencePerf([[maybe_unused]] int testBase, [[maybe_unused]] int numIte
     template bool TestAllBinaryOp<SharkFloatParams, Operator::ReferenceOrbit>(int testBase);            \
     template bool TestBinaryOperatorPerf<Operator::ReferenceOrbit>(                                     \
         int testBase, int numIters, int internalTestLoopCount);                                         \
-    template bool TestFullReferencePerf<Operator::ReferenceOrbit>(int testBase, int numIters);
+    template bool TestFullReferencePerfView5<Operator::ReferenceOrbit>(int testBase, int numIters, int internalTestLoopCount); \
+    template bool TestFullReferencePerfView30<Operator::ReferenceOrbit>(                                \
+        int testBase, int numIters, int internalTestLoopCount);
 #else
 #define REFERENCE_KERNEL(SharkFloatParams) ;
 #endif

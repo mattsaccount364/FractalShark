@@ -32,23 +32,19 @@ static constexpr bool SharkDebug = false;
 // Suggested combinations.
 // For testing, define:
 //  - ENABLE_ADD_KERNEL, ENABLE_MULTIPLY_NTT_KERNEL, or ENABLE_REFERENCE_KERNEL
-//  - undefine HP_FRACTAL_SHARK
 //  - _DEBUG
 //  - Ensure ENABLE_BASIC_CORRECTNESS == 0
 // For profiling, define:
 //  - ENABLE_ADD_KERNEL, ENABLE_MULTIPLY_NTT_KERNEL, or ENABLE_REFERENCE_KERNEL
-//  - undefine HP_FRACTAL_SHARK
 //  - Release
 //  - Ensure ENABLE_BASIC_CORRECTNESS == 2
 // For E2E test:
 //  - ENABLE_FULL_KERNEL
-//  - undefine HP_FRACTAL_SHARK
 //  - Debug or release
 //  - Ensure ENABLE_BASIC_CORRECTNESS == 2
 //      When it runs, it'll take a minute, verify iteration count matches reference CPU kernel.
 // For FractalShark, define:
 //  - ENABLE_FULL_KERNEL
-//  - Define HP_FRACTAL_SHARK
 //  - Ensure ENABLE_BASIC_CORRECTNESS == 4
 // 
 // TODO:
@@ -62,23 +58,9 @@ static constexpr bool SharkDebug = false;
 //#define ENABLE_REFERENCE_KERNEL
 #define ENABLE_FULL_KERNEL
 
-// Comment this to enable the HpSharkFloat test program.
-// Uncomment for use in FractalShark
-#define HP_FRACTAL_SHARK
-
 // Uncomment this to enable the HpSharkFloat test program.
 // Comment for use in FractalShark
-// #define HP_SHARK_FLOAT_TEST
-
-#ifdef HP_SHARK_FLOAT_TEST // Defined by test program build system
-#ifdef HP_FRACTAL_SHARK
-static_assert(false, "HP_SHARK_FLOAT_TEST and HP_FRACTAL_SHARK cannot both be defined");
-#endif
-#endif
-
-#if !defined(HP_SHARK_FLOAT_TEST) && !defined(HP_FRACTAL_SHARK)
-static_assert(false, "Either HP_SHARK_FLOAT_TEST or HP_FRACTAL_SHARK must be defined");
-#endif
+//#define HP_SHARK_FLOAT_TEST
 
 // 0 = just one correctness test, intended for fast re-compile of a specific failure
 // 1 = all basic correctness tests/all basic perf tests
@@ -380,8 +362,9 @@ constexpr auto StupidMult = 1;
 //using TestPerSharkParams1 = GenericSharkFloatParams<128, 108, 7776, 9>;
 using TestPerSharkParams1 = GenericSharkFloatParams<32, 2, 64>;
 //using TestPerSharkParams1 = GenericSharkFloatParams<256, 128, 8192>;
-//using TestPerSharkParams1 = GenericSharkFloatParams<256, 128, 131072>;
-using TestPerSharkParams2 = GenericSharkFloatParams<64 * StupidMult, 108, 7776, 9>;
+//using TestPerSharkParams2 = GenericSharkFloatParams<256, 128, 131072>;
+using TestPerSharkParams2 = GenericSharkFloatParams<256, 64, 16384>;
+//using TestPerSharkParams2 = GenericSharkFloatParams<64 * StupidMult, 108, 7776, 9>;
 using TestPerSharkParams3 = GenericSharkFloatParams<32 * StupidMult, 108, 7776, 9>;
 using TestPerSharkParams4 = GenericSharkFloatParams<16 * StupidMult, 108, 7776, 9>;
 
@@ -686,10 +669,7 @@ struct HpSharkReferenceResults {
 };
 #pragma warning(pop)
 
-template<class SharkFloatParams>
-std::string MpfToString(const mpf_t mpf_val, size_t precInBits);
-
-std::string MpfToHexString(const mpf_t mpf_val);
+template <class SharkFloatParams> std::string MpfToString(const mpf_t mpf_val, size_t precInBits);
 
 template<class SharkFloatParams>
 std::string Uint32ToMpf(const uint32_t *array, int32_t pow64Exponent, mpf_t &mpf_val);

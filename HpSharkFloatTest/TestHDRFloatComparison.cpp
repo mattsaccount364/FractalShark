@@ -143,7 +143,7 @@ void TestHDRFloatComparisons() {
         std::cout << "SUCCESS: All HDRFloat comparison tests passed!" << std::endl;
     } else {
         std::cout << "FAILURE: " << (totalTests - testsPassed) << " test(s) failed!" << std::endl;
-        exit(1);
+        assert(false && "HDRFloat comparison tests failed");
     }
 }
 

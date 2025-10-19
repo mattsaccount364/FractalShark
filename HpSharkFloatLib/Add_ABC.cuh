@@ -378,13 +378,16 @@ CarryPropagation_ABC(
     bool need2 = true;
     bool need3 = true;
 
+    // static constexpr auto NumRequiredIters = SharkFloatParams::LogNumUint32 / 2;
+    static constexpr auto NumRequiredIters = -1;
+
     for (int32_t iter = 0; iter < maxIter; ++iter) {
         // ── barrier 1: reset convergence mask ──
-        if (iter > 3 && *global64 == prevCount) {
+        if (iter > 0 && *global64 == prevCount) { //  TODO
             break;
         }
 
-        if (iter > 3) {
+        if (iter > NumRequiredIters) {
             prevCount = *global64;
             prevCount1 = prevCount & FIELD_MASK;
             prevCount2 = (prevCount >> SHIFT1) & FIELD_MASK;
@@ -448,7 +451,7 @@ CarryPropagation_ABC(
         }
 
         // atomic pack of all three flags
-        if (iter > 3) {
+        if (iter > NumRequiredIters) {
             if (localMask) {
                 atomicAdd(global64, localMask);
             }
@@ -476,10 +479,8 @@ CarryPropagation_ABC(
             std::swap(curC3, nextC3);
         }
 
-        if (iter > 3) {
-            // ── barrier 3: ready for next iteration ──
-            grid.sync();
-        }
+        // ── barrier 3: ready for next iteration ──
+        grid.sync();
     }
 
     // final carry extraction

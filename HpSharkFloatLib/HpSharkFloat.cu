@@ -290,24 +290,24 @@ HpSharkFloat<SharkFloatParams>::MpfToHpGpu(const mpf_t mpf_value,
         // if toCopy < blockBytes, destOffset > 0 --> move data into the high-order end
         size_t destOffset = (countInBytes > blockBytes) ? 0 : (blockBytes - toCopy);
 
-        if (injectNoise == InjectNoiseInLowOrder::Enable && toCopy != 0) {
-            // Use a random device to seed the random number generator
-            std::random_device rd;
-            std::mt19937 generator(rd()); // Mersenne Twister for high-quality randomness
-            std::uniform_int_distribution<uint32_t> distributionRand(
-                0, std::numeric_limits<uint8_t>::max());
+        //if (injectNoise == InjectNoiseInLowOrder::Enable && toCopy != 0) {
+        //    // Use a random device to seed the random number generator
+        //    std::random_device rd;
+        //    std::mt19937 generator(rd()); // Mersenne Twister for high-quality randomness
+        //    std::uniform_int_distribution<uint32_t> distributionRand(
+        //        0, std::numeric_limits<uint8_t>::max());
 
-            auto modifiedOffset = destOffset;
-            constexpr auto extraZeros = 4 * sizeof(uint32_t);
-            if (modifiedOffset > extraZeros) {
-                modifiedOffset -= extraZeros;
+        //    auto modifiedOffset = destOffset;
+        //    constexpr auto extraZeros = 4 * sizeof(uint32_t);
+        //    if (modifiedOffset > extraZeros) {
+        //        modifiedOffset -= extraZeros;
 
-                for (size_t i = 0; i < modifiedOffset; i++) {
-                    *(reinterpret_cast<uint8_t *>(Digits) + i) =
-                        static_cast<uint8_t>(distributionRand(generator));
-                }
-            }
-        }
+        //        for (size_t i = 0; i < modifiedOffset; i++) {
+        //            *(reinterpret_cast<uint8_t *>(Digits) + i) =
+        //                static_cast<uint8_t>(distributionRand(generator));
+        //        }
+        //    }
+        //}
 
         memcpy(reinterpret_cast<uint8_t *>(Digits) + destOffset,
                reinterpret_cast<uint8_t *>(data.data()) + srcOffset,

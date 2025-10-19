@@ -216,6 +216,13 @@ struct GenericSharkFloatParams {
                 HpShark::ceil_pow2_u32(static_cast<uint32_t>(pNumDigits)))
             : pNumDigits;
 
+    constexpr static int32_t
+    NumberOfBits(int32_t x) {
+        return x < 2 ? x : 1 + NumberOfBits(x >> 1);
+    }
+    constexpr static auto LogNumUint32 = NumberOfBits(GlobalNumUint32);
+
+
     static constexpr int32_t HalfLimbsRoundedUp = (GlobalNumUint32 + 1) / 2;
 
     // If these are set to false they produce wrong answers but can be useful

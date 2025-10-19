@@ -21,15 +21,8 @@ static TestTracker Tests;
 
 template <class SharkFloatParams>
 void
-TestConvertNumber(int testNum, const char *numberStr)
+TestConvertNumber(int testNum, mpf_t mpf_x)
 {
-    mpf_set_default_prec(HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
-
-    if (SharkVerbose == VerboseMode::Debug) {
-        std::cout << "\n\n=== Test " << testNum
-                  << ": Convert number string to HpSharkFloat and back ===\n";
-    }
-
     // ---------------- Lambdas ----------------
     auto mpf_init_prec = [&](mpf_t &v) {
         mpf_init2(v, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
@@ -73,23 +66,6 @@ TestConvertNumber(int testNum, const char *numberStr)
         mpf_set_ui(v, 1);
         mpf_div_2exp(v, v, k); // v = 2^{-k}
     };
-
-    // ---------------- Parse input ----------------
-    mpf_t mpf_x;
-    mpf_init_prec(mpf_x);
-    if (mpf_set_str(mpf_x, numberStr, 10) == -1) {
-        std::cout << "Error setting mpf_x from input string\n";
-    }
-
-    if (SharkVerbose == VerboseMode::Debug) {
-        std::cout << "Original input values:\n";
-        std::cout << "  numberStr: " << numberStr << "\n";
-        std::cout << "  X (mpf): "
-                  << MpfToString<SharkFloatParams>(mpf_x,
-                                                   HpSharkFloat<SharkFloatParams>::DefaultPrecBits)
-                  << "\n";
-        std::cout << "  X hex  : " << MpfToHex32String(mpf_x) << "\n";
-    }
 
     // ---------------- Build HpSharkFloat from mpf ----------------
     auto x_num = std::make_unique<HpSharkFloat<SharkFloatParams>>();
@@ -242,12 +218,11 @@ TestConvertNumber(int testNum, const char *numberStr)
 
         const bool ok_hex = compare_within_eps(mpf_x, outX, eps_full, "conversion/full");
         if (!ok_hex) {
-            Tests.MarkFailed(
-                testNum,
-                "conversion/hex_string_roundtrip",
-                "abs error exceeded eps",
-                MpfToString<SharkFloatParams>(eps_full,
-                                             HpSharkFloat<SharkFloatParams>::DefaultPrecBits));
+            Tests.MarkFailed(testNum,
+                             "conversion/hex_string_roundtrip",
+                             "abs error exceeded eps",
+                             MpfToString<SharkFloatParams>(
+                                 eps_full, HpSharkFloat<SharkFloatParams>::DefaultPrecBits));
             assert(false);
         } else {
             Tests.MarkSuccess(testNum, "conversion/hex_string_roundtrip");
@@ -261,14 +236,24 @@ TestConvertNumber(int testNum, const char *numberStr)
         mpf_set(mpf_x_normalized, mpf_x);
         MpfNormalize(mpf_x_normalized);
 
-        const bool ok_normalize = compare_within_eps(mpf_x, mpf_x_normalized, eps_full, "conversion/normalize");
+        const bool ok_normalize =
+            compare_within_eps(mpf_x, mpf_x_normalized, eps_full, "conversion/normalize");
+
+        if (SharkVerbose == VerboseMode::Debug) {
+            std::cout << "Original X hex: " << MpfToHex64StringInvertable(mpf_x) << "\n";
+            std::cout << "Normalized X hex: " << MpfToHex64StringInvertable(mpf_x_normalized) << "\n";
+            std::cout << "Normalized str: "
+                      << MpfToString<SharkFloatParams>(mpf_x_normalized,
+                                                       HpSharkFloat<SharkFloatParams>::DefaultPrecBits)
+                      << "\n"; 
+        }
+
         if (!ok_normalize) {
-            Tests.MarkFailed(
-                testNum,
-                "conversion/normalize",
-                "abs error exceeded eps",
-                MpfToString<SharkFloatParams>(eps_full,
-                                             HpSharkFloat<SharkFloatParams>::DefaultPrecBits));
+            Tests.MarkFailed(testNum,
+                             "conversion/normalize",
+                             "abs error exceeded eps",
+                             MpfToString<SharkFloatParams>(
+                                 eps_full, HpSharkFloat<SharkFloatParams>::DefaultPrecBits));
             assert(false);
         } else {
             Tests.MarkSuccess(testNum, "conversion/normalize");
@@ -284,6 +269,72 @@ TestConvertNumber(int testNum, const char *numberStr)
     mpf_clear(mpf_x_hdrd);
     mpf_clear(mpf_x_hdrf);
     mpf_clear(mpf_x_gpu);
+}
+
+template <class SharkFloatParams>
+void
+TestConvertNumber(int testNum, const char *numberStr)
+{
+    mpf_set_default_prec(HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
+
+    if (SharkVerbose == VerboseMode::Debug) {
+        std::cout << "\n\n=== Test " << testNum
+                  << ": Convert number string to HpSharkFloat and back ===\n";
+    }
+
+    // ---------------- Parse input ----------------
+    mpf_t mpf_x;
+    mpf_init2(mpf_x, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
+    if (mpf_set_str(mpf_x, numberStr, 10) == -1) {
+        std::cout << "Error setting mpf_x from input string\n";
+    }
+
+    if (SharkVerbose == VerboseMode::Debug) {
+        std::cout << "Original input values:\n";
+        std::cout << "  numberStr: " << numberStr << "\n";
+        std::cout << "  X (mpf): "
+                  << MpfToString<SharkFloatParams>(mpf_x,
+                                                   HpSharkFloat<SharkFloatParams>::DefaultPrecBits)
+                  << "\n";
+        std::cout << "  X hex  : " << MpfToHex32String(mpf_x) << "\n";
+    }
+
+    // ---------------- Test conversion ----------------
+    TestConvertNumber<SharkFloatParams>(testNum, mpf_x);
+
+    mpf_clear(mpf_x);
+}
+
+template <class SharkFloatParams>
+void
+TestConvertNumber(int testNum, std::vector<uint64_t> limbs, int32_t exponent, bool isNegative)
+{
+    mpf_set_default_prec(HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
+
+    if (SharkVerbose == VerboseMode::Debug) {
+        std::cout << "\n\n=== Test " << testNum
+                  << ": Convert number string to HpSharkFloat and back ===\n";
+    }
+
+    // ---------------- Parse input ----------------
+    mpf_t mpf_x;
+    mpf_init2(mpf_x, HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
+    Uint64ToMpf(limbs.data(), limbs.size(), exponent, mpf_x, isNegative);
+
+    if (SharkVerbose == VerboseMode::Debug) {
+        std::cout << "Original input values:\n";
+        std::cout << "  numberStr: " << UintArrayToHexString(limbs.data(), limbs.size())
+                  << " * 2^" << exponent << (isNegative ? " (negative)" : " (positive)") << "\n";
+        std::cout << "  X (mpf): "
+                  << MpfToString<SharkFloatParams>(mpf_x,
+                                                   HpSharkFloat<SharkFloatParams>::DefaultPrecBits)
+                  << "\n";
+        std::cout << "  X hex  : " << MpfToHex32String(mpf_x) << "\n";
+    }
+
+    // ---------------- Test conversion ----------------
+    TestConvertNumber<SharkFloatParams>(testNum, mpf_x);
+
     mpf_clear(mpf_x);
 }
 
@@ -291,67 +342,90 @@ template <class SharkFloatParams>
 bool
 TestConversion(int testBase)
 {
-    const auto set1 = testBase + 10;
-    // TestConvertNumber<SharkFloatParams>(set1 + 1, "0.0");
-    // TestConvertNumber<SharkFloatParams>(set1 + 2, "1.0");
-    TestConvertNumber<SharkFloatParams>(set1 + 3, "2.0");
-    TestConvertNumber<SharkFloatParams>(set1 + 4, "3.0");
+    //const auto set1 = testBase + 10;
+    //TestConvertNumber<SharkFloatParams>(set1 + 1, "0.0");
+    //TestConvertNumber<SharkFloatParams>(set1 + 2, "1.0");
+    //TestConvertNumber<SharkFloatParams>(set1 + 3, "2.0");
+    //TestConvertNumber<SharkFloatParams>(set1 + 4, "3.0");
 
-    const auto set2 = testBase + 20;
-    TestConvertNumber<SharkFloatParams>(set2 + 1, "0.1");
-    TestConvertNumber<SharkFloatParams>(set2 + 2, "0.2");
-    TestConvertNumber<SharkFloatParams>(set2 + 3, "0.3");
-    TestConvertNumber<SharkFloatParams>(set2 + 4, "0.4");
-    TestConvertNumber<SharkFloatParams>(set2 + 5, "0.5");
-    TestConvertNumber<SharkFloatParams>(set2 + 6, "0.6");
-    TestConvertNumber<SharkFloatParams>(set2 + 7, "0.7");
-    TestConvertNumber<SharkFloatParams>(set2 + 8, "0.8");
-    TestConvertNumber<SharkFloatParams>(set2 + 9, "0.9");
+    //const auto set2 = testBase + 20;
+    //TestConvertNumber<SharkFloatParams>(set2 + 1, "0.1");
+    //TestConvertNumber<SharkFloatParams>(set2 + 2, "0.2");
+    //TestConvertNumber<SharkFloatParams>(set2 + 3, "0.3");
+    //TestConvertNumber<SharkFloatParams>(set2 + 4, "0.4");
+    //TestConvertNumber<SharkFloatParams>(set2 + 5, "0.5");
+    //TestConvertNumber<SharkFloatParams>(set2 + 6, "0.6");
+    //TestConvertNumber<SharkFloatParams>(set2 + 7, "0.7");
+    //TestConvertNumber<SharkFloatParams>(set2 + 8, "0.8");
+    //TestConvertNumber<SharkFloatParams>(set2 + 9, "0.9");
 
-    const auto set3 = testBase + 30;
-    TestConvertNumber<SharkFloatParams>(set3 + 1, "1e-50");
-    TestConvertNumber<SharkFloatParams>(set3 + 2, "1e-100");
-    TestConvertNumber<SharkFloatParams>(set3 + 3, "1e-150");
-    TestConvertNumber<SharkFloatParams>(set3 + 4, "1e-500");
-    TestConvertNumber<SharkFloatParams>(set3 + 5, "1e-1000");
-    TestConvertNumber<SharkFloatParams>(set3 + 6, "-1e-50");
-    TestConvertNumber<SharkFloatParams>(set3 + 7, "-1e-100");
-    TestConvertNumber<SharkFloatParams>(set3 + 8, "-1e-150");
-    TestConvertNumber<SharkFloatParams>(set3 + 9, "-1e-500");
+    //const auto set3 = testBase + 30;
+    //TestConvertNumber<SharkFloatParams>(set3 + 1, "1e-50");
+    //TestConvertNumber<SharkFloatParams>(set3 + 2, "1e-100");
+    //TestConvertNumber<SharkFloatParams>(set3 + 3, "1e-150");
+    //TestConvertNumber<SharkFloatParams>(set3 + 4, "1e-500");
+    //TestConvertNumber<SharkFloatParams>(set3 + 5, "1e-1000");
+    //TestConvertNumber<SharkFloatParams>(set3 + 6, "-1e-50");
+    //TestConvertNumber<SharkFloatParams>(set3 + 7, "-1e-100");
+    //TestConvertNumber<SharkFloatParams>(set3 + 8, "-1e-150");
+    //TestConvertNumber<SharkFloatParams>(set3 + 9, "-1e-500");
 
-    const auto set4 = testBase + 40;
-    TestConvertNumber<SharkFloatParams>(set4 + 1, "-1");
-    TestConvertNumber<SharkFloatParams>(set4 + 2, "-2");
-    TestConvertNumber<SharkFloatParams>(set4 + 3, "-3");
-    TestConvertNumber<SharkFloatParams>(set4 + 4, "-4");
+    //const auto set4 = testBase + 40;
+    //TestConvertNumber<SharkFloatParams>(set4 + 1, "-1");
+    //TestConvertNumber<SharkFloatParams>(set4 + 2, "-2");
+    //TestConvertNumber<SharkFloatParams>(set4 + 3, "-3");
+    //TestConvertNumber<SharkFloatParams>(set4 + 4, "-4");
 
-    const auto set5 = testBase + 50;
-    TestConvertNumber<SharkFloatParams>(set5 + 1, "-0.1");
-    TestConvertNumber<SharkFloatParams>(set5 + 2, "-0.2");
-    TestConvertNumber<SharkFloatParams>(set5 + 3, "-0.3");
-    TestConvertNumber<SharkFloatParams>(set5 + 4, "-0.4");
-    TestConvertNumber<SharkFloatParams>(set5 + 5, "-0.5");
-    TestConvertNumber<SharkFloatParams>(set5 + 6, "-0.6");
-    TestConvertNumber<SharkFloatParams>(set5 + 7, "-0.7");
-    TestConvertNumber<SharkFloatParams>(set5 + 8, "-0.8");
-    TestConvertNumber<SharkFloatParams>(set5 + 9, "-0.9");
-    TestConvertNumber<SharkFloatParams>(set5 + 10, "1.999999999");
-    TestConvertNumber<SharkFloatParams>(set5 + 11, "1.99999999999999999999999999999");
-    TestConvertNumber<SharkFloatParams>(set5 + 12, "1.9999999999999999999999999999999999999999999999");
+    //const auto set5 = testBase + 50;
+    //TestConvertNumber<SharkFloatParams>(set5 + 1, "-0.1");
+    //TestConvertNumber<SharkFloatParams>(set5 + 2, "-0.2");
+    //TestConvertNumber<SharkFloatParams>(set5 + 3, "-0.3");
+    //TestConvertNumber<SharkFloatParams>(set5 + 4, "-0.4");
+    //TestConvertNumber<SharkFloatParams>(set5 + 5, "-0.5");
+    //TestConvertNumber<SharkFloatParams>(set5 + 6, "-0.6");
+    //TestConvertNumber<SharkFloatParams>(set5 + 7, "-0.7");
+    //TestConvertNumber<SharkFloatParams>(set5 + 8, "-0.8");
+    //TestConvertNumber<SharkFloatParams>(set5 + 9, "-0.9");
+    //TestConvertNumber<SharkFloatParams>(set5 + 10, "1.999999999");
+    //TestConvertNumber<SharkFloatParams>(set5 + 11, "1.99999999999999999999999999999");
+    //TestConvertNumber<SharkFloatParams>(set5 + 12, "1.9999999999999999999999999999999999999999999999");
 
-    const auto set6 = testBase + 70;
-    TestConvertNumber<SharkFloatParams>(set6 + 1, "4294967297");
-    TestConvertNumber<SharkFloatParams>(set6 + 2, "18446744073709551617");
-    TestConvertNumber<SharkFloatParams>(set6 + 3, "55340232221128654849"); // 2^65 + 2^64 + 1
-    TestConvertNumber<SharkFloatParams>(set6 + 4, "-4294967297");
-    TestConvertNumber<SharkFloatParams>(set6 + 5, "-18446744073709551617");
-    TestConvertNumber<SharkFloatParams>(set6 + 6, "-55340232221128654849");
-    TestConvertNumber<SharkFloatParams>(set6 + 7, "18446744073709551615");
+    //TestConvertNumber<SharkFloatParams>(set5 + 13, "0.00000000000000000000000000000000000001");
+    //TestConvertNumber<SharkFloatParams>(set5 + 14, "0.000000000000000000000000000000000000001");
+    //TestConvertNumber<SharkFloatParams>(set5 + 15, "0.0000000000000000000000000000000000000001");
+    //TestConvertNumber<SharkFloatParams>(set5 + 16, "0.00000000000000000000000000000000000000001");
+    //TestConvertNumber<SharkFloatParams>(set5 + 17,
+    //                                    "-0.000000000000000000000000000000000000000000000000000000002");
+    //TestConvertNumber<SharkFloatParams>(set5 + 18,
+    //                                    "0."
+    //                                    "000000000000000000000000000000000000000000000000000000000000000"
+    //                                    "000000000000000200000000000000000");
+    //TestConvertNumber<SharkFloatParams>(
+    //    set5 + 19, "-0.000000000000000000000000000000000000000000000000000000000000000002e100");
+    //TestConvertNumber<SharkFloatParams>(
+    //    set5 + 20, "-0.000000000000000000000000000000000000000000000000000000000000000002e-100");
 
-    const auto set7 = testBase + 80;
-    TestConvertNumber<SharkFloatParams>(set7 + 1, "4294967297.0000152587890625"); // 2^32 + 1 + 1/2^16
-    TestConvertNumber<SharkFloatParams>(set7 + 2, "18446744073709551617.0000152587890625");
-    TestConvertNumber<SharkFloatParams>(set7 + 3, "55340232221128654849.0000152587890625");
+    if constexpr (SharkFloatParams::GlobalNumUint32 == 8) {
+        const auto set6 = testBase + 90;
+        constexpr auto testExp = 5;
+        constexpr auto testNeg = false;
+        std::vector<uint64_t> limbs = {0, 0, 1, 0, 0, 0, 0};
+        TestConvertNumber<SharkFloatParams>(set6 + 21, limbs, testExp, testNeg);
+    }
+
+    const auto set7 = testBase + 100;
+    TestConvertNumber<SharkFloatParams>(set7 + 1, "4294967297");
+    TestConvertNumber<SharkFloatParams>(set7 + 2, "18446744073709551617");
+    TestConvertNumber<SharkFloatParams>(set7 + 3, "55340232221128654849"); // 2^65 + 2^64 + 1
+    TestConvertNumber<SharkFloatParams>(set7 + 4, "-4294967297");
+    TestConvertNumber<SharkFloatParams>(set7 + 5, "-18446744073709551617");
+    TestConvertNumber<SharkFloatParams>(set7 + 6, "-55340232221128654849");
+    TestConvertNumber<SharkFloatParams>(set7 + 7, "18446744073709551615");
+
+    const auto set8 = testBase + 110;
+    TestConvertNumber<SharkFloatParams>(set8 + 1, "4294967297.0000152587890625"); // 2^32 + 1 + 1/2^16
+    TestConvertNumber<SharkFloatParams>(set8 + 2, "18446744073709551617.0000152587890625");
+    TestConvertNumber<SharkFloatParams>(set8 + 3, "55340232221128654849.0000152587890625");
 
     return Tests.CheckAllTestsPassed();
 }

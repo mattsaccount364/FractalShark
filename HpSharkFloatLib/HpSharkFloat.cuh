@@ -60,7 +60,7 @@ static constexpr bool SharkDebug = false;
 
 // Uncomment this to enable the HpSharkFloat test program.
 // Comment for use in FractalShark
-//#define HP_SHARK_FLOAT_TEST
+#define HP_SHARK_FLOAT_TEST
 
 // 0 = just one correctness test, intended for fast re-compile of a specific failure
 // 1 = all basic correctness tests/all basic perf tests
@@ -673,6 +673,9 @@ template <class SharkFloatParams> std::string MpfToString(const mpf_t mpf_val, s
 
 template<class SharkFloatParams>
 std::string Uint32ToMpf(const uint32_t *array, int32_t pow64Exponent, mpf_t &mpf_val);
+
+void Uint64ToMpf(
+    const uint64_t *array, size_t numElts, int32_t pow64Exponent, mpf_t &mpf_val, bool isNegative);
 
 template<class IntT>
 std::string

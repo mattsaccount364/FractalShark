@@ -47,7 +47,7 @@ void ComputeAddGpu(void *kernelArgs[]) {
 
     if (err != cudaSuccess) {
         std::cerr << "CUDA error in ComputeAddGpu: " << cudaGetErrorString(err) << std::endl;
-        DebugBreak();
+        assert(false);
     }
 }
 
@@ -70,7 +70,7 @@ void ComputeAddGpuTestLoop(void *kernelArgs[]) {
 
     if (err != cudaSuccess) {
         std::cerr << "CUDA error in ComputeAddGpuTestLoop: " << cudaGetErrorString(err) << std::endl;
-        DebugBreak();
+        assert(false);
     }
 }
 

@@ -369,9 +369,9 @@ TestPerf(int testNum,
     auto zNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
 
     auto resultNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
-    xNum->MpfToHpGpu(mpfX, HpSharkFloat<SharkFloatParams>::DefaultPrecBits, InjectNoiseInLowOrder::Disable);
-    yNum->MpfToHpGpu(mpfY, HpSharkFloat<SharkFloatParams>::DefaultPrecBits, InjectNoiseInLowOrder::Disable);
-    zNum->MpfToHpGpu(mpfZ, HpSharkFloat<SharkFloatParams>::DefaultPrecBits, InjectNoiseInLowOrder::Disable);
+    xNum->MpfToHpGpu(mpfX, HpSharkFloat<SharkFloatParams>::DefaultPrecBits, InjectNoiseInLowOrder::Enable);
+    yNum->MpfToHpGpu(mpfY, HpSharkFloat<SharkFloatParams>::DefaultPrecBits, InjectNoiseInLowOrder::Enable);
+    zNum->MpfToHpGpu(mpfZ, HpSharkFloat<SharkFloatParams>::DefaultPrecBits, InjectNoiseInLowOrder::Enable);
 
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "\nConverted HpSharkFloat<SharkFloatParams> representations:" << std::endl;

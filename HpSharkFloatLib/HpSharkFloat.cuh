@@ -53,10 +53,10 @@ static constexpr bool SharkDebug = false;
 
 // Comment out to disable specific kernels
 //#define ENABLE_CONVERSION_TESTS
-//#define ENABLE_ADD_KERNEL
+#define ENABLE_ADD_KERNEL
 //#define ENABLE_MULTIPLY_NTT_KERNEL
 //#define ENABLE_REFERENCE_KERNEL
-#define ENABLE_FULL_KERNEL
+//#define ENABLE_FULL_KERNEL
 
 // Uncomment this to enable the HpSharkFloat test program.
 // Comment for use in FractalShark
@@ -72,7 +72,7 @@ static constexpr bool SharkDebug = false;
 #ifdef _DEBUG
 #ifdef HP_SHARK_FLOAT_TEST
 // Test path - this is what we use with HpSharkFloatTest
-#define ENABLE_BASIC_CORRECTNESS 2
+#define ENABLE_BASIC_CORRECTNESS 0
 #else
 // Production path - this is what we use in FractalShark
 #define ENABLE_BASIC_CORRECTNESS 4

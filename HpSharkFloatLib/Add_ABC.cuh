@@ -380,16 +380,18 @@ CarryPropagation_ABC(
 
     for (int32_t iter = 0; iter < maxIter; ++iter) {
         // ── barrier 1: reset convergence mask ──
-        if (iter > 0 && *global64 == prevCount) {
+        if (iter > 3 && *global64 == prevCount) {
             break;
         }
 
-        prevCount = *global64;
-        prevCount1 = prevCount & FIELD_MASK;
-        prevCount2 = (prevCount >> SHIFT1) & FIELD_MASK;
-        prevCount3 = (prevCount >> SHIFT2) & FIELD_MASK;
+        if (iter > 3) {
+            prevCount = *global64;
+            prevCount1 = prevCount & FIELD_MASK;
+            prevCount2 = (prevCount >> SHIFT1) & FIELD_MASK;
+            prevCount3 = (prevCount >> SHIFT2) & FIELD_MASK;
 
-        grid.sync();
+            grid.sync();
+        }
 
         // per‐thread packed flag
         uint64_t localMask = 0ULL;
@@ -446,18 +448,20 @@ CarryPropagation_ABC(
         }
 
         // atomic pack of all three flags
-        if (localMask) {
-            atomicAdd(global64, localMask);
+        if (iter > 3) {
+            if (localMask) {
+                atomicAdd(global64, localMask);
+            }
+
+            // ── barrier 2: ensure all atomicAdds done before reading ──
+            grid.sync();
+
+            const uint64_t allCounts = *global64;
+
+            need1 = ((allCounts >> 0) & FIELD_MASK) != prevCount1;
+            need2 = ((allCounts >> SHIFT1) & FIELD_MASK) != prevCount2;
+            need3 = ((allCounts >> SHIFT2) & FIELD_MASK) != prevCount3;
         }
-
-        // ── barrier 2: ensure all atomicAdds done before reading ──
-        grid.sync();
-
-        const uint64_t allCounts = *global64;
-
-        need1 = ((allCounts >> 0) & FIELD_MASK) != prevCount1;
-        need2 = ((allCounts >> SHIFT1) & FIELD_MASK) != prevCount2;
-        need3 = ((allCounts >> SHIFT2) & FIELD_MASK) != prevCount3;
 
         // swap only the active streams
         if (need1) {
@@ -472,8 +476,10 @@ CarryPropagation_ABC(
             std::swap(curC3, nextC3);
         }
 
-        // ── barrier 3: ready for next iteration ──
-        grid.sync();
+        if (iter > 3) {
+            // ── barrier 3: ready for next iteration ──
+            grid.sync();
+        }
     }
 
     // final carry extraction

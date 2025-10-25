@@ -81,6 +81,7 @@ ReferenceHelper(cg::grid_group &grid,
 
 template <class SharkFloatParams>
 __global__ void
+__maxnreg__(SharkRegisterLimit)
 HpSharkReferenceGpuKernel(HpSharkReferenceResults<SharkFloatParams> *SharkRestrict combo,
                           uint64_t *tempData)
 {
@@ -104,6 +105,7 @@ HpSharkReferenceGpuKernel(HpSharkReferenceResults<SharkFloatParams> *SharkRestri
 
 template <class SharkFloatParams>
 __global__ void
+__maxnreg__(SharkRegisterLimit)
 HpSharkReferenceGpuLoop(HpSharkReferenceResults<SharkFloatParams> *SharkRestrict combo,
                         uint64_t numIters,
                         uint64_t *tempData,

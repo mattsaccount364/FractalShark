@@ -631,6 +631,12 @@ static __device__ void AddHelperSeparates(
         EraseCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::Z2XX>(record, debugStates, grid, block);
         EraseCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::Z2XY>(record, debugStates, grid, block);
         EraseCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::Z2YY>(record, debugStates, grid, block);
+        EraseCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::Z3XX>(record, debugStates, grid, block);
+        EraseCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::Z3XY>(record, debugStates, grid, block);
+        EraseCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::Z3YY>(record, debugStates, grid, block);
+        EraseCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::Z4XX>(record, debugStates, grid, block);
+        EraseCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::Z4XY>(record, debugStates, grid, block);
+        EraseCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::Z4YY>(record, debugStates, grid, block);
         EraseCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::Z2_Perm1>(record, debugStates, grid, block);
         EraseCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::Z2_Perm2>(record, debugStates, grid, block);
         EraseCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::Z2_Perm3>(record, debugStates, grid, block);
@@ -651,7 +657,7 @@ static __device__ void AddHelperSeparates(
         EraseCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::Result_offsetYY>(record, debugStates, grid, block);
         EraseCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::Result_Add1>(record, debugStates, grid, block);
         EraseCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::Result_Add2>(record, debugStates, grid, block);
-        static_assert(static_cast<int32_t>(DebugStatePurpose::NumPurposes) == 41, "Unexpected number of purposes");
+        static_assert(static_cast<int32_t>(DebugStatePurpose::NumPurposes) == 47, "Unexpected number of purposes");
 
         StoreCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::ADigits, uint32_t>(
             record, debugStates, grid, block, A_X2->Digits, NewN);

@@ -2,7 +2,9 @@
 
 
 template<class SharkFloatParams>
-__global__ void AddKernel(
+__global__ void
+__maxnreg__(SharkRegisterLimit)
+AddKernel(
     HpSharkAddComboResults<SharkFloatParams> *SharkRestrict combo,
     uint64_t *tempData) {
 
@@ -15,7 +17,9 @@ __global__ void AddKernel(
 }
 
 template<class SharkFloatParams>
-__global__ void AddKernelTestLoop(
+__global__ void
+__maxnreg__(SharkRegisterLimit)
+AddKernelTestLoop(
     HpSharkAddComboResults<SharkFloatParams> *SharkRestrict combo,
     uint64_t numIters,
     uint64_t *tempData) {
@@ -33,7 +37,7 @@ template<class SharkFloatParams>
 void ComputeAddGpu(void *kernelArgs[]) {
 
     constexpr auto ExpandedNumDigits = SharkFloatParams::GlobalNumUint32;
-    constexpr size_t SharedMemSize = sizeof(uint32_t) * ExpandedNumDigits; // Adjust as necessary
+    constexpr size_t SharedMemSize = 0;
     cudaError_t err = cudaLaunchCooperativeKernel(
         (void *)AddKernel<SharkFloatParams>,
         dim3(SharkFloatParams::GlobalNumBlocks),
@@ -55,7 +59,7 @@ template<class SharkFloatParams>
 void ComputeAddGpuTestLoop(void *kernelArgs[]) {
 
     constexpr auto ExpandedNumDigits = SharkFloatParams::GlobalNumUint32;
-    constexpr size_t SharedMemSize = sizeof(uint32_t) * ExpandedNumDigits; // Adjust as necessary
+    constexpr size_t SharedMemSize = 0;
 
     cudaError_t err = cudaLaunchCooperativeKernel(
         (void *)AddKernelTestLoop<SharkFloatParams>,

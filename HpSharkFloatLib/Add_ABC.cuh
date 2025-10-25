@@ -226,9 +226,9 @@ void Phase1_ABC (
 
     if constexpr (SharkDebugChecksums) {
         grid.sync();
-        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z2_Perm1, uint64_t>(
+        StoreCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::Z2_Perm1, uint64_t>(
             record, debugStates, grid, block, extResultTrue, numActualDigitsPlusGuard);
-        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z2_Perm2, uint64_t>(
+        StoreCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::Z2_Perm2, uint64_t>(
             record, debugStates, grid, block, extResultFalse, numActualDigitsPlusGuard);
         grid.sync();
     }
@@ -335,7 +335,6 @@ CarryPropagation_ABC(
     cg::thread_block &block,
     cg::grid_group &grid
 ) {
-    constexpr int32_t  maxIter = 1000;
     constexpr uint64_t SHIFT1 = 21;
     constexpr uint64_t SHIFT2 = 42;
     constexpr uint64_t FIELD_MASK = (1ULL << 21) - 1;
@@ -378,23 +377,91 @@ CarryPropagation_ABC(
     bool need2 = true;
     bool need3 = true;
 
-    // static constexpr auto NumRequiredIters = SharkFloatParams::LogNumUint32 / 2;
-    static constexpr auto NumRequiredIters = -1;
+    static constexpr auto NumRequiredIters = SharkFloatParams::LogNumUint32 / 2;
+    for (int32_t iter = 0; iter < NumRequiredIters; ++iter) {
+        for (int32_t i = idx; i < N; i += stride) {
+            // ABC_True
+            {
+                const int32_t in1 = (i == 0 ? 0 : static_cast<int32_t>(curC1[i]));
+                const int64_t limb1 = static_cast<int64_t>(extResultTrue[i]);
+                const int64_t sum1 = limb1 + in1;
+                const uint32_t lo1 = static_cast<uint32_t>(sum1);
+                extResultTrue[i] = lo1;
+                const int32_t new1 = int32_t((sum1 - static_cast<int64_t>(lo1)) >> 32);
+                if (i < N - 1) {
+                    nextC1[i + 1] = static_cast<uint32_t>(new1);
+                } else {
+                    nextC1[i + 1] = curC1[i + 1] + static_cast<uint32_t>(new1);
+                }
+            }
 
-    for (int32_t iter = 0; iter < maxIter; ++iter) {
+            // ABC_False
+            {
+                const int32_t in2 = (i == 0 ? 0 : static_cast<int32_t>(curC2[i]));
+                const int64_t limb2 = static_cast<int64_t>(extResultFalse[i]);
+                const int64_t sum2 = limb2 + in2;
+                const uint32_t lo2 = static_cast<uint32_t>(sum2);
+                extResultFalse[i] = lo2;
+                const int32_t new2 = int32_t((sum2 - static_cast<int64_t>(lo2)) >> 32);
+                if (i < N - 1) {
+                    nextC2[i + 1] = static_cast<uint32_t>(new2);
+                } else {
+                    nextC2[i + 1] = curC2[i + 1] + static_cast<uint32_t>(new2);
+                }
+            }
+
+            // D+E (DE)
+            {
+                const int32_t in3 = (i == 0 ? 0u : static_cast<int32_t>(curC3[i]));
+                const int64_t limb3 = static_cast<int64_t>(final128_DE[i]);
+                const int64_t sum3 = limb3 + in3;
+                const uint32_t lo3 = static_cast<uint32_t>(sum3);
+                final128_DE[i] = lo3;
+                const int32_t new3 = int32_t((sum3 - static_cast<int64_t>(lo3)) >> 32);
+                if (i < N - 1) {
+                    nextC3[i + 1] = new3;
+                } else {
+                    nextC3[i + 1] = curC3[i + 1] + new3;
+                }
+            }
+        }
+
+        std::swap(curC1, nextC1);
+        std::swap(curC2, nextC2);
+        std::swap(curC3, nextC3);
+        
+        grid.sync();
+    }
+
+    int32_t intermediateCarry1 = 0;
+    int32_t intermediateCarry2 = 0;
+    int32_t intermediateCarry3 = 0;
+
+    if (idx == N - 1) {
+        intermediateCarry1 = std::max(static_cast<int32_t>(curC1[N]), static_cast<int32_t>(nextC1[N]));
+        intermediateCarry2 = std::max(static_cast<int32_t>(curC2[N]), static_cast<int32_t>(nextC2[N]));
+        intermediateCarry3 = std::max(static_cast<int32_t>(curC3[N]), static_cast<int32_t>(nextC3[N]));
+
+        curC1[N] = intermediateCarry1;
+        curC2[N] = intermediateCarry2;
+        curC3[N] = intermediateCarry3;
+        nextC1[N] = intermediateCarry1;
+        nextC2[N] = intermediateCarry2;
+        nextC3[N] = intermediateCarry3;
+    }
+
+    for (int32_t iter = 0;; ++iter) {
         // ── barrier 1: reset convergence mask ──
         if (iter > 0 && *global64 == prevCount) { //  TODO
             break;
         }
 
-        if (iter > NumRequiredIters) {
-            prevCount = *global64;
-            prevCount1 = prevCount & FIELD_MASK;
-            prevCount2 = (prevCount >> SHIFT1) & FIELD_MASK;
-            prevCount3 = (prevCount >> SHIFT2) & FIELD_MASK;
+        prevCount = *global64;
+        prevCount1 = prevCount & FIELD_MASK;
+        prevCount2 = (prevCount >> SHIFT1) & FIELD_MASK;
+        prevCount3 = (prevCount >> SHIFT2) & FIELD_MASK;
 
-            grid.sync();
-        }
+        grid.sync();
 
         // per‐thread packed flag
         uint64_t localMask = 0ULL;
@@ -451,20 +518,18 @@ CarryPropagation_ABC(
         }
 
         // atomic pack of all three flags
-        if (iter > NumRequiredIters) {
-            if (localMask) {
-                atomicAdd(global64, localMask);
-            }
-
-            // ── barrier 2: ensure all atomicAdds done before reading ──
-            grid.sync();
-
-            const uint64_t allCounts = *global64;
-
-            need1 = ((allCounts >> 0) & FIELD_MASK) != prevCount1;
-            need2 = ((allCounts >> SHIFT1) & FIELD_MASK) != prevCount2;
-            need3 = ((allCounts >> SHIFT2) & FIELD_MASK) != prevCount3;
+        if (localMask) {
+            atomicAdd(global64, localMask);
         }
+
+        // ── barrier 2: ensure all atomicAdds done before reading ──
+        grid.sync();
+
+        const uint64_t allCounts = *global64;
+
+        need1 = ((allCounts >> 0) & FIELD_MASK) != prevCount1;
+        need2 = ((allCounts >> SHIFT1) & FIELD_MASK) != prevCount2;
+        need3 = ((allCounts >> SHIFT2) & FIELD_MASK) != prevCount3;
 
         // swap only the active streams
         if (need1) {

@@ -186,7 +186,7 @@ Phase1_DE (
 
     if constexpr (SharkDebugChecksums) {
         grid.sync();
-        StoreCurrentDebugState<SharkFloatParams, CallIndex, DebugStatePurpose::Z2XY, uint64_t>(
+        StoreCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::Z2XY, uint64_t>(
             record, debugStates, grid, block, final128, numActualDigitsPlusGuard);
         grid.sync();
     } else {

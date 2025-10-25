@@ -53,14 +53,14 @@ static constexpr bool SharkDebug = false;
 
 // Comment out to disable specific kernels
 //#define ENABLE_CONVERSION_TESTS
-//#define ENABLE_ADD_KERNEL
+#define ENABLE_ADD_KERNEL
 //#define ENABLE_MULTIPLY_NTT_KERNEL
 //#define ENABLE_REFERENCE_KERNEL
-#define ENABLE_FULL_KERNEL
+//#define ENABLE_FULL_KERNEL
 
 // Uncomment this to enable the HpSharkFloat test program.
 // Comment for use in FractalShark
-//#define HP_SHARK_FLOAT_TEST
+#define HP_SHARK_FLOAT_TEST
 
 // 0 = just one correctness test, intended for fast re-compile of a specific failure
 // 1 = all basic correctness tests/all basic perf tests
@@ -151,7 +151,7 @@ static constexpr auto SharkLoadAllInShared =
     (SharkInnerLoopOption == InnerLoopOption::TryUnalignedLoads2Shared);
 
 // Set to true to use shared memory for the incoming numbers
-static constexpr auto SharkRegisterLimit = 255;
+static constexpr auto SharkRegisterLimit = 127;
 
 static constexpr auto SharkConstantSharedRequiredBytes = 0;
 
@@ -166,7 +166,7 @@ static constexpr bool SharkPrintMultiplyCounts = false; // SharkDebugChecksums;
 static constexpr bool SharkTestCorrectness = (SharkBasicCorrectness == 2) ? SharkDebug : true;
 static constexpr bool SharkTestInfiniteCorrectness = SharkTestCorrectness ? true : false;
 static constexpr auto SharkTestForceSameSign = false;
-static constexpr bool SharkTestBenchmarkAgainstHost = true;
+static constexpr bool SharkTestBenchmarkAgainstHost = false;
 static constexpr bool SharkTestInitCudaMemory = true;
 
 // ---- detail helpers (fallback for pre-C++20) ----
@@ -350,10 +350,11 @@ static constexpr auto LowPrec = 32;
 
 
 // If you add a new one, search for one of the other types and copy/paste
+using Test8x1SharkParams = GenericSharkFloatParams<256, 64, 16384>;
 //using Test8x1SharkParams = GenericSharkFloatParams<128, 128, 8192, 9>;
 //using Test8x1SharkParams = GenericSharkFloatParams<128, 108, 7776, 9>;
 //using Test8x1SharkParams = GenericSharkFloatParams<8, 128, 1024, 9>;
-using Test8x1SharkParams = GenericSharkFloatParams<8, 1>; // Use for ENABLE_BASIC_CORRECTNESS==1
+//using Test8x1SharkParams = GenericSharkFloatParams<8, 1>; // Use for ENABLE_BASIC_CORRECTNESS==1
 using Test4x36SharkParams = GenericSharkFloatParams<4, 6, 32>;
 using Test4x12SharkParams = GenericSharkFloatParams<3, 18, 50>;
 using Test4x9SharkParams = GenericSharkFloatParams<5, 12, 80>;

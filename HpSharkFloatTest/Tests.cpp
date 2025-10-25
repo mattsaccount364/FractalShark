@@ -960,11 +960,17 @@ TestCoreAdd(int testNum,
                           const mpf_t &mpfHostResultXY1,
                           const mpf_t &mpfHostResultXY2,
                           DebugHostCombo<SharkFloatParams> &debugHostCombo) -> bool {
-        HpSharkFloat<SharkFloatParams> hostAddResult1;
-        HpSharkFloat<SharkFloatParams> hostAddResult2;
+        auto hostAddResult1 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
+        auto hostAddResult2 = std::make_unique<HpSharkFloat<SharkFloatParams>>();
 
-        AddHelper<SharkFloatParams>(
-            &aNum, &bNum, &cNum, &dNum, &eNum, &hostAddResult1, &hostAddResult2, debugHostCombo);
+        AddHelper<SharkFloatParams>(&aNum,
+                                    &bNum,
+                                    &cNum,
+                                    &dNum,
+                                    &eNum,
+                                    hostAddResult1.get(),
+                                    hostAddResult2.get(),
+                                    debugHostCombo);
 
         auto OutputAdd = [&](const char *desc,
                              [[maybe_unused]] const HpSharkFloat<SharkFloatParams> &out) {
@@ -974,17 +980,17 @@ TestCoreAdd(int testNum,
             }
         };
 
-        OutputAdd("Add result 1: ", hostAddResult1);
-        OutputAdd("Add result 2: ", hostAddResult2);
+        OutputAdd("Add result 1: ", *hostAddResult1);
+        OutputAdd("Add result 2: ", *hostAddResult2);
 
         bool res = true;
         constexpr auto numTermsPartABC = 3;
         res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(
-            testNum, numTermsPartABC, "CustomHighPrecisionV2XY1", mpfHostResultXY1, hostAddResult1);
+            testNum, numTermsPartABC, "CustomHighPrecisionV2XY1", mpfHostResultXY1, *hostAddResult1);
 
         constexpr auto numTermsPartDE = 2;
         res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(
-            testNum, numTermsPartDE, "CustomHighPrecisionV2XY2", mpfHostResultXY2, hostAddResult2);
+            testNum, numTermsPartDE, "CustomHighPrecisionV2XY2", mpfHostResultXY2, *hostAddResult2);
 
         return res;
     };
@@ -2450,7 +2456,7 @@ TestAllBinaryOp(int testBase)
 
     // 2000s is multiply
     // 4000s is add
-    //
+    
     if constexpr (includeSet1) {
         const auto set = testBase + 100;
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(set + 10, "7", "19", "0");

@@ -679,6 +679,9 @@ TestPerf(int testNum,
                               << " host=" << discoveredPeriodHost << " gpu=" << combo->Period
                               << std::endl;
                 }
+            } else {
+                std::cout << "Escape iteration: " << combo->EscapedIteration << std::endl;
+                std::cout << "Periodicity: " << combo->Period << std::endl;
             }
         }
     }

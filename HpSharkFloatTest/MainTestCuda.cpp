@@ -295,15 +295,15 @@ main(int /*argc*/, char * /*argv*/[])
             }
         }
 
-        testBase = 16010;
-        res = TestFullReferencePerfView5<Operator::ReferenceOrbit>(
-            testBase, numIters, internalTestLoopCount);
-        if (!res) {
-            auto q = PressKey();
-            if (q == 'q') {
-                return 0;
-            }
-        }
+        //testBase = 16010;
+        //res = TestFullReferencePerfView5<Operator::ReferenceOrbit>(
+        //    testBase, numIters, internalTestLoopCount);
+        //if (!res) {
+        //    auto q = PressKey();
+        //    if (q == 'q') {
+        //        return 0;
+        //    }
+        //}
     }
 #endif
 

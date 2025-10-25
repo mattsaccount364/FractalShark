@@ -1318,9 +1318,16 @@ void Fractal::View(size_t view, bool includeMsgBox) {
 
 #include "LargeCoords.h"
 
+        //mpf_t mpfX, mpfY;
+        //mpf_init(mpfX);
+        //mpf_init(mpfY);
+        
+        //Hex64StringToMpf_Exact(strXHex, mpfX);
+        //Hex64StringToMpf_Exact(strYHex, mpfY);
+
         PointZoomBBConverter convert{
-            HighPrecision{ strX/*.c_str()*/ },
-            HighPrecision{ strY/*.c_str()*/ },
+            HighPrecision{ strX /*mpfX*/ },
+            HighPrecision{ strY /*mpfY*/ },
             HighPrecision{ "1.36733731087e+114514" }
         };
 
@@ -1328,6 +1335,7 @@ void Fractal::View(size_t view, bool includeMsgBox) {
         minY = convert.GetMinY();
         maxX = convert.GetMaxX();
         maxY = convert.GetMaxY();
+        ///SetNumIterations<IterTypeFull>(700'000);
         SetNumIterations<IterTypeFull>(200'000'000);
         break;
     }

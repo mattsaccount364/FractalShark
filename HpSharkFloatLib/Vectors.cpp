@@ -1,10 +1,11 @@
-#include "stdafx.h"
+#include "DbgHeap.h"
 #include "Vectors.h"
 
-#include "Fractal.h"
-#include "GPU_Render.h"
+//#include "Fractal.h"
+//#include "GPU_Render.h"
 #include "HDRFloat.h"
 #include "LAInfoDeep.h"
+#include "GPU_ReferenceIter.h"
 
 #include "Exceptions.h"
 #include "Callstacks.h"
@@ -15,7 +16,7 @@
 
 #pragma comment(lib, "ntdll")
 
-typedef uint32_t NTSTATUS;
+//typedef uint32_t NTSTATUS;
 
 typedef enum _SECTION_INHERIT {
     ViewShare = 1,
@@ -193,8 +194,7 @@ GrowableVector<EltT>::GrowableVector(
 
     auto ret = GetPhysicallyInstalledSystemMemory(&m_PhysicalMemoryCapacityKB);
     if (ret == FALSE) {
-        ::MessageBox(nullptr, L"Failed to get system memory", L"", MB_OK | MB_APPLMODAL);
-        return;
+        throw FractalSharkSeriousException("Failed to get system memory");
     }
 
     if (m_AddPointOptions == AddPointOptions::OpenExistingWithSave) {
@@ -748,12 +748,11 @@ void GrowableVector<EltT>::MutableReserve(size_t new_reserved_bytes) {
     GlobalCallstacks->LogReserveCallstack(new_reserved_bytes, res);
 
     if (res == nullptr) {
-        std::wstring err = L"Failed to reserve memory: ";
+        std::string err = "Failed to reserve memory: ";
         auto code = GetLastError();
-        err += std::to_wstring(code);
+        err += std::to_string(code);
 
-        ::MessageBox(nullptr, err.c_str(), L"", MB_OK | MB_APPLMODAL);
-        return;
+        throw FractalSharkSeriousException(err);
     }
 
     m_Data = static_cast<EltT *>(res);

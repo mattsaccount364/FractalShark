@@ -1,4 +1,3 @@
-#include "stdafx.h"
 #include "Exceptions.h"
 
 std::string GetCallStack(const std::stacktrace &stack) {

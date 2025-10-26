@@ -377,78 +377,78 @@ CarryPropagation_ABC(
     bool need2 = true;
     bool need3 = true;
 
-    static constexpr auto NumRequiredIters = SharkFloatParams::LogNumUint32 / 2;
-    for (int32_t iter = 0; iter < NumRequiredIters; ++iter) {
-        for (int32_t i = idx; i < N; i += stride) {
-            // ABC_True
-            {
-                const int32_t in1 = (i == 0 ? 0 : static_cast<int32_t>(curC1[i]));
-                const int64_t limb1 = static_cast<int64_t>(extResultTrue[i]);
-                const int64_t sum1 = limb1 + in1;
-                const uint32_t lo1 = static_cast<uint32_t>(sum1);
-                extResultTrue[i] = lo1;
-                const int32_t new1 = int32_t((sum1 - static_cast<int64_t>(lo1)) >> 32);
-                if (i < N - 1) {
-                    nextC1[i + 1] = static_cast<uint32_t>(new1);
-                } else {
-                    nextC1[i + 1] = curC1[i + 1] + static_cast<uint32_t>(new1);
-                }
-            }
+    //static constexpr auto NumRequiredIters = SharkFloatParams::LogNumUint32 / 2;
+    //for (int32_t iter = 0; iter < NumRequiredIters; ++iter) {
+    //    for (int32_t i = idx; i < N; i += stride) {
+    //        // ABC_True
+    //        {
+    //            const int32_t in1 = (i == 0 ? 0 : static_cast<int32_t>(curC1[i]));
+    //            const int64_t limb1 = static_cast<int64_t>(extResultTrue[i]);
+    //            const int64_t sum1 = limb1 + in1;
+    //            const uint32_t lo1 = static_cast<uint32_t>(sum1);
+    //            extResultTrue[i] = lo1;
+    //            const int32_t new1 = int32_t((sum1 - static_cast<int64_t>(lo1)) >> 32);
+    //            if (i < N - 1) {
+    //                nextC1[i + 1] = static_cast<uint32_t>(new1);
+    //            } else {
+    //                nextC1[i + 1] = curC1[i + 1] + static_cast<uint32_t>(new1);
+    //            }
+    //        }
 
-            // ABC_False
-            {
-                const int32_t in2 = (i == 0 ? 0 : static_cast<int32_t>(curC2[i]));
-                const int64_t limb2 = static_cast<int64_t>(extResultFalse[i]);
-                const int64_t sum2 = limb2 + in2;
-                const uint32_t lo2 = static_cast<uint32_t>(sum2);
-                extResultFalse[i] = lo2;
-                const int32_t new2 = int32_t((sum2 - static_cast<int64_t>(lo2)) >> 32);
-                if (i < N - 1) {
-                    nextC2[i + 1] = static_cast<uint32_t>(new2);
-                } else {
-                    nextC2[i + 1] = curC2[i + 1] + static_cast<uint32_t>(new2);
-                }
-            }
+    //        // ABC_False
+    //        {
+    //            const int32_t in2 = (i == 0 ? 0 : static_cast<int32_t>(curC2[i]));
+    //            const int64_t limb2 = static_cast<int64_t>(extResultFalse[i]);
+    //            const int64_t sum2 = limb2 + in2;
+    //            const uint32_t lo2 = static_cast<uint32_t>(sum2);
+    //            extResultFalse[i] = lo2;
+    //            const int32_t new2 = int32_t((sum2 - static_cast<int64_t>(lo2)) >> 32);
+    //            if (i < N - 1) {
+    //                nextC2[i + 1] = static_cast<uint32_t>(new2);
+    //            } else {
+    //                nextC2[i + 1] = curC2[i + 1] + static_cast<uint32_t>(new2);
+    //            }
+    //        }
 
-            // D+E (DE)
-            {
-                const int32_t in3 = (i == 0 ? 0u : static_cast<int32_t>(curC3[i]));
-                const int64_t limb3 = static_cast<int64_t>(final128_DE[i]);
-                const int64_t sum3 = limb3 + in3;
-                const uint32_t lo3 = static_cast<uint32_t>(sum3);
-                final128_DE[i] = lo3;
-                const int32_t new3 = int32_t((sum3 - static_cast<int64_t>(lo3)) >> 32);
-                if (i < N - 1) {
-                    nextC3[i + 1] = new3;
-                } else {
-                    nextC3[i + 1] = curC3[i + 1] + new3;
-                }
-            }
-        }
+    //        // D+E (DE)
+    //        {
+    //            const int32_t in3 = (i == 0 ? 0u : static_cast<int32_t>(curC3[i]));
+    //            const int64_t limb3 = static_cast<int64_t>(final128_DE[i]);
+    //            const int64_t sum3 = limb3 + in3;
+    //            const uint32_t lo3 = static_cast<uint32_t>(sum3);
+    //            final128_DE[i] = lo3;
+    //            const int32_t new3 = int32_t((sum3 - static_cast<int64_t>(lo3)) >> 32);
+    //            if (i < N - 1) {
+    //                nextC3[i + 1] = new3;
+    //            } else {
+    //                nextC3[i + 1] = curC3[i + 1] + new3;
+    //            }
+    //        }
+    //    }
 
-        std::swap(curC1, nextC1);
-        std::swap(curC2, nextC2);
-        std::swap(curC3, nextC3);
-        
-        grid.sync();
-    }
+    //    std::swap(curC1, nextC1);
+    //    std::swap(curC2, nextC2);
+    //    std::swap(curC3, nextC3);
+    //    
+    //    grid.sync();
+    //}
 
-    int32_t intermediateCarry1 = 0;
-    int32_t intermediateCarry2 = 0;
-    int32_t intermediateCarry3 = 0;
+    //int32_t intermediateCarry1 = 0;
+    //int32_t intermediateCarry2 = 0;
+    //int32_t intermediateCarry3 = 0;
 
-    if (idx == N - 1) {
-        intermediateCarry1 = std::max(static_cast<int32_t>(curC1[N]), static_cast<int32_t>(nextC1[N]));
-        intermediateCarry2 = std::max(static_cast<int32_t>(curC2[N]), static_cast<int32_t>(nextC2[N]));
-        intermediateCarry3 = std::max(static_cast<int32_t>(curC3[N]), static_cast<int32_t>(nextC3[N]));
+    //if (idx == N - 1) {
+    //    intermediateCarry1 = std::max(static_cast<int32_t>(curC1[N]), static_cast<int32_t>(nextC1[N]));
+    //    intermediateCarry2 = std::max(static_cast<int32_t>(curC2[N]), static_cast<int32_t>(nextC2[N]));
+    //    intermediateCarry3 = std::max(static_cast<int32_t>(curC3[N]), static_cast<int32_t>(nextC3[N]));
 
-        curC1[N] = intermediateCarry1;
-        curC2[N] = intermediateCarry2;
-        curC3[N] = intermediateCarry3;
-        nextC1[N] = intermediateCarry1;
-        nextC2[N] = intermediateCarry2;
-        nextC3[N] = intermediateCarry3;
-    }
+    //    curC1[N] = intermediateCarry1;
+    //    curC2[N] = intermediateCarry2;
+    //    curC3[N] = intermediateCarry3;
+    //    nextC1[N] = intermediateCarry1;
+    //    nextC2[N] = intermediateCarry2;
+    //    nextC3[N] = intermediateCarry3;
+    //}
 
     for (int32_t iter = 0;; ++iter) {
         // ── barrier 1: reset convergence mask ──

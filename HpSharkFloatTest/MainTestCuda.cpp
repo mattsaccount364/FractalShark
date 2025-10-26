@@ -1,4 +1,5 @@
-﻿#include "Conversion.h"
+﻿#include "DbgHeap.h"
+#include "Conversion.h"
 #include "HpSharkFloat.cuh"
 #include "NullKernel.cuh"
 #include "TestVerbose.h"
@@ -17,10 +18,14 @@
 #include <iostream>
 #include <string>
 
+#include "Callstacks.h"
+
 #define NOMINMAX
 #include <windows.h> // Sleep()
 
 #include "HDRFloat.h"
+
+#include "heap_allocator\include\HeapCpp.h"
 
 // Function to perform the calculation on the host using MPIR
 void
@@ -129,43 +134,44 @@ RunCorrectnessTest()
     // This kernel has periodicity checking and is incompatible with existing tests.
     if constexpr (SharkEnableFullKernel) {
         return 1;
-    }
+    } else {
 
 #if (ENABLE_BASIC_CORRECTNESS == 0) || (ENABLE_BASIC_CORRECTNESS == 1) || (ENABLE_BASIC_CORRECTNESS == 3)
-    do {
-        if (!CorrectnessTests<TestCorrectnessSharkParams1>()) {
-            return 0;
-        }
+        do {
+            if (!CorrectnessTests<TestCorrectnessSharkParams1>()) {
+                return 0;
+            }
 
 #if (ENABLE_BASIC_CORRECTNESS == 1) || (ENABLE_BASIC_CORRECTNESS == 3)
-        if (!CorrectnessTests<TestCorrectnessSharkParams2>()) {
-            return 0;
-        }
+            if (!CorrectnessTests<TestCorrectnessSharkParams2>()) {
+                return 0;
+            }
 
-        if (!CorrectnessTests<TestCorrectnessSharkParams3>()) {
-            return 0;
-        }
+            if (!CorrectnessTests<TestCorrectnessSharkParams3>()) {
+                return 0;
+            }
 
-        if (!CorrectnessTests<TestCorrectnessSharkParams4>()) {
-            return 0;
-        }
+            if (!CorrectnessTests<TestCorrectnessSharkParams4>()) {
+                return 0;
+            }
 
-        if (!CorrectnessTests<TestCorrectnessSharkParams5>()) {
+            if (!CorrectnessTests<TestCorrectnessSharkParams5>()) {
+                return 0;
+            }
+#endif
+
+            ComicalCorrectness();
+
+            testCount++;
+        } while (SharkTestInfiniteCorrectness);
+
+        if (PressKey() == 'q') {
             return 0;
         }
 #endif
 
-        ComicalCorrectness();
-
-        testCount++;
-    } while (SharkTestInfiniteCorrectness);
-
-    if (PressKey() == 'q') {
-        return 0;
+        return 1;
     }
-#endif
-
-    return 1;
 }
 
 /// Prompts the user with `promptText`, waits up to `timeoutSec` seconds for a line
@@ -207,6 +213,8 @@ int
 main(int /*argc*/, char * /*argv*/[])
 {
     bool res = false;
+
+    GlobalCallstacks->InitCallstacks();
 
     constexpr auto timeoutInSec = 3;
     int verboseInput =
@@ -300,11 +308,11 @@ main(int /*argc*/, char * /*argv*/[])
             return 0;
         }
 
-        testBase = 16000;
+        testBase = 16020;
         res = TestFullReferencePerfView30<Operator::ReferenceOrbit>(
             testBase, numIters, internalTestLoopCount);
         if (!res) {
-            auto q = PressKey();
+            q = PressKey();
             if (q == 'q') {
                 return 0;
             }
@@ -323,6 +331,8 @@ main(int /*argc*/, char * /*argv*/[])
             return 0;
         }
     }
+
+    GlobalCallstacks->FreeCallstacks();
 
     return 0;
 }

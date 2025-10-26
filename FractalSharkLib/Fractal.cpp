@@ -1319,8 +1319,6 @@ void Fractal::View(size_t view, bool includeMsgBox) {
 #include "LargeCoords.h"
 
         mpf_t mpfX, mpfY;
-        mpf_init(mpfX);
-        mpf_init(mpfY);
 
         Hex64StringToMpf_Exact(strXHex, mpfX);
         Hex64StringToMpf_Exact(strYHex, mpfY);

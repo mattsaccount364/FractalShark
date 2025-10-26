@@ -1,3 +1,4 @@
+#include "DbgHeap.h"
 #include "KernelInvoke.cuh"
 #include "KernelInvokeInternal.cuh"
 

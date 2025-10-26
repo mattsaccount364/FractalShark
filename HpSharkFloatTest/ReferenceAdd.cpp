@@ -1,4 +1,5 @@
-﻿#include "ReferenceAdd.h"
+﻿#include "DbgHeap.h"
+#include "ReferenceAdd.h"
 #include "DebugChecksum.cuh"
 #include "DebugChecksumHost.h"
 #include "HpSharkFloat.cuh"

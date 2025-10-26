@@ -1,4 +1,5 @@
-﻿#include "TestVerbose.h"
+﻿#include "DbgHeap.h"
+#include "TestVerbose.h"
 
 #include <cuda_runtime.h>
 
@@ -17,11 +18,9 @@
 
 #include <assert.h>
 
-static TestTracker Tests;
-
 template <class SharkFloatParams>
 void
-TestConvertNumber(int testNum, mpf_t mpf_x)
+TestConvertNumber(TestTracker &Tests, int testNum, mpf_t mpf_x)
 {
     // ---------------- Lambdas ----------------
     auto mpf_init_prec = [&](mpf_t &v) {
@@ -273,7 +272,7 @@ TestConvertNumber(int testNum, mpf_t mpf_x)
 
 template <class SharkFloatParams>
 void
-TestConvertNumber(int testNum, const char *numberStr)
+TestConvertNumber(TestTracker &Tests, int testNum, const char *numberStr)
 {
     mpf_set_default_prec(HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
 
@@ -300,7 +299,7 @@ TestConvertNumber(int testNum, const char *numberStr)
     }
 
     // ---------------- Test conversion ----------------
-    TestConvertNumber<SharkFloatParams>(testNum, mpf_x);
+    TestConvertNumber<SharkFloatParams>(Tests, testNum, mpf_x);
 
     mpf_clear(mpf_x);
 }
@@ -342,90 +341,92 @@ template <class SharkFloatParams>
 bool
 TestConversion(int testBase)
 {
-    //const auto set1 = testBase + 10;
-    //TestConvertNumber<SharkFloatParams>(set1 + 1, "0.0");
-    //TestConvertNumber<SharkFloatParams>(set1 + 2, "1.0");
-    //TestConvertNumber<SharkFloatParams>(set1 + 3, "2.0");
-    //TestConvertNumber<SharkFloatParams>(set1 + 4, "3.0");
+    TestTracker Tests;
 
-    //const auto set2 = testBase + 20;
-    //TestConvertNumber<SharkFloatParams>(set2 + 1, "0.1");
-    //TestConvertNumber<SharkFloatParams>(set2 + 2, "0.2");
-    //TestConvertNumber<SharkFloatParams>(set2 + 3, "0.3");
-    //TestConvertNumber<SharkFloatParams>(set2 + 4, "0.4");
-    //TestConvertNumber<SharkFloatParams>(set2 + 5, "0.5");
-    //TestConvertNumber<SharkFloatParams>(set2 + 6, "0.6");
-    //TestConvertNumber<SharkFloatParams>(set2 + 7, "0.7");
-    //TestConvertNumber<SharkFloatParams>(set2 + 8, "0.8");
-    //TestConvertNumber<SharkFloatParams>(set2 + 9, "0.9");
+    const auto set1 = testBase + 10;
+    TestConvertNumber<SharkFloatParams>(Tests, set1 + 1, "0.0");
+    TestConvertNumber<SharkFloatParams>(Tests, set1 + 2, "1.0");
+    TestConvertNumber<SharkFloatParams>(Tests, set1 + 3, "2.0");
+    TestConvertNumber<SharkFloatParams>(Tests, set1 + 4, "3.0");
 
-    //const auto set3 = testBase + 30;
-    //TestConvertNumber<SharkFloatParams>(set3 + 1, "1e-50");
-    //TestConvertNumber<SharkFloatParams>(set3 + 2, "1e-100");
-    //TestConvertNumber<SharkFloatParams>(set3 + 3, "1e-150");
-    //TestConvertNumber<SharkFloatParams>(set3 + 4, "1e-500");
-    //TestConvertNumber<SharkFloatParams>(set3 + 5, "1e-1000");
-    //TestConvertNumber<SharkFloatParams>(set3 + 6, "-1e-50");
-    //TestConvertNumber<SharkFloatParams>(set3 + 7, "-1e-100");
-    //TestConvertNumber<SharkFloatParams>(set3 + 8, "-1e-150");
-    //TestConvertNumber<SharkFloatParams>(set3 + 9, "-1e-500");
+    const auto set2 = testBase + 20;
+    TestConvertNumber<SharkFloatParams>(Tests, set2 + 1, "0.1");
+    TestConvertNumber<SharkFloatParams>(Tests, set2 + 2, "0.2");
+    TestConvertNumber<SharkFloatParams>(Tests, set2 + 3, "0.3");
+    TestConvertNumber<SharkFloatParams>(Tests, set2 + 4, "0.4");
+    TestConvertNumber<SharkFloatParams>(Tests, set2 + 5, "0.5");
+    TestConvertNumber<SharkFloatParams>(Tests, set2 + 6, "0.6");
+    TestConvertNumber<SharkFloatParams>(Tests, set2 + 7, "0.7");
+    TestConvertNumber<SharkFloatParams>(Tests, set2 + 8, "0.8");
+    TestConvertNumber<SharkFloatParams>(Tests, set2 + 9, "0.9");
 
-    //const auto set4 = testBase + 40;
-    //TestConvertNumber<SharkFloatParams>(set4 + 1, "-1");
-    //TestConvertNumber<SharkFloatParams>(set4 + 2, "-2");
-    //TestConvertNumber<SharkFloatParams>(set4 + 3, "-3");
-    //TestConvertNumber<SharkFloatParams>(set4 + 4, "-4");
+    const auto set3 = testBase + 30;
+    TestConvertNumber<SharkFloatParams>(Tests, set3 + 1, "1e-50");
+    TestConvertNumber<SharkFloatParams>(Tests, set3 + 2, "1e-100");
+    TestConvertNumber<SharkFloatParams>(Tests, set3 + 3, "1e-150");
+    TestConvertNumber<SharkFloatParams>(Tests, set3 + 4, "1e-500");
+    TestConvertNumber<SharkFloatParams>(Tests, set3 + 5, "1e-1000");
+    TestConvertNumber<SharkFloatParams>(Tests, set3 + 6, "-1e-50");
+    TestConvertNumber<SharkFloatParams>(Tests, set3 + 7, "-1e-100");
+    TestConvertNumber<SharkFloatParams>(Tests, set3 + 8, "-1e-150");
+    TestConvertNumber<SharkFloatParams>(Tests, set3 + 9, "-1e-500");
 
-    //const auto set5 = testBase + 50;
-    //TestConvertNumber<SharkFloatParams>(set5 + 1, "-0.1");
-    //TestConvertNumber<SharkFloatParams>(set5 + 2, "-0.2");
-    //TestConvertNumber<SharkFloatParams>(set5 + 3, "-0.3");
-    //TestConvertNumber<SharkFloatParams>(set5 + 4, "-0.4");
-    //TestConvertNumber<SharkFloatParams>(set5 + 5, "-0.5");
-    //TestConvertNumber<SharkFloatParams>(set5 + 6, "-0.6");
-    //TestConvertNumber<SharkFloatParams>(set5 + 7, "-0.7");
-    //TestConvertNumber<SharkFloatParams>(set5 + 8, "-0.8");
-    //TestConvertNumber<SharkFloatParams>(set5 + 9, "-0.9");
-    //TestConvertNumber<SharkFloatParams>(set5 + 10, "1.999999999");
-    //TestConvertNumber<SharkFloatParams>(set5 + 11, "1.99999999999999999999999999999");
-    //TestConvertNumber<SharkFloatParams>(set5 + 12, "1.9999999999999999999999999999999999999999999999");
+    const auto set4 = testBase + 40;
+    TestConvertNumber<SharkFloatParams>(Tests, set4 + 1, "-1");
+    TestConvertNumber<SharkFloatParams>(Tests, set4 + 2, "-2");
+    TestConvertNumber<SharkFloatParams>(Tests, set4 + 3, "-3");
+    TestConvertNumber<SharkFloatParams>(Tests, set4 + 4, "-4");
 
-    //TestConvertNumber<SharkFloatParams>(set5 + 13, "0.00000000000000000000000000000000000001");
-    //TestConvertNumber<SharkFloatParams>(set5 + 14, "0.000000000000000000000000000000000000001");
-    //TestConvertNumber<SharkFloatParams>(set5 + 15, "0.0000000000000000000000000000000000000001");
-    //TestConvertNumber<SharkFloatParams>(set5 + 16, "0.00000000000000000000000000000000000000001");
-    //TestConvertNumber<SharkFloatParams>(set5 + 17,
-    //                                    "-0.000000000000000000000000000000000000000000000000000000002");
-    //TestConvertNumber<SharkFloatParams>(set5 + 18,
-    //                                    "0."
-    //                                    "000000000000000000000000000000000000000000000000000000000000000"
-    //                                    "000000000000000200000000000000000");
-    //TestConvertNumber<SharkFloatParams>(
-    //    set5 + 19, "-0.000000000000000000000000000000000000000000000000000000000000000002e100");
-    //TestConvertNumber<SharkFloatParams>(
-    //    set5 + 20, "-0.000000000000000000000000000000000000000000000000000000000000000002e-100");
+    const auto set5 = testBase + 50;
+    TestConvertNumber<SharkFloatParams>(Tests, set5 + 1, "-0.1");
+    TestConvertNumber<SharkFloatParams>(Tests, set5 + 2, "-0.2");
+    TestConvertNumber<SharkFloatParams>(Tests, set5 + 3, "-0.3");
+    TestConvertNumber<SharkFloatParams>(Tests, set5 + 4, "-0.4");
+    TestConvertNumber<SharkFloatParams>(Tests, set5 + 5, "-0.5");
+    TestConvertNumber<SharkFloatParams>(Tests, set5 + 6, "-0.6");
+    TestConvertNumber<SharkFloatParams>(Tests, set5 + 7, "-0.7");
+    TestConvertNumber<SharkFloatParams>(Tests, set5 + 8, "-0.8");
+    TestConvertNumber<SharkFloatParams>(Tests, set5 + 9, "-0.9");
+    TestConvertNumber<SharkFloatParams>(Tests, set5 + 10, "1.999999999");
+    TestConvertNumber<SharkFloatParams>(Tests, set5 + 11, "1.99999999999999999999999999999");
+    TestConvertNumber<SharkFloatParams>(Tests, set5 + 12, "1.9999999999999999999999999999999999999999999999");
+
+    TestConvertNumber<SharkFloatParams>(Tests, set5 + 13, "0.00000000000000000000000000000000000001");
+    TestConvertNumber<SharkFloatParams>(Tests, set5 + 14, "0.000000000000000000000000000000000000001");
+    TestConvertNumber<SharkFloatParams>(Tests, set5 + 15, "0.0000000000000000000000000000000000000001");
+    TestConvertNumber<SharkFloatParams>(Tests, set5 + 16, "0.00000000000000000000000000000000000000001");
+    TestConvertNumber<SharkFloatParams>(Tests, set5 + 17,
+                                        "-0.000000000000000000000000000000000000000000000000000000002");
+    TestConvertNumber<SharkFloatParams>(Tests, set5 + 18,
+                                        "0."
+                                        "000000000000000000000000000000000000000000000000000000000000000"
+                                        "000000000000000200000000000000000");
+    TestConvertNumber<SharkFloatParams>(Tests, 
+        set5 + 19, "-0.000000000000000000000000000000000000000000000000000000000000000002e100");
+    TestConvertNumber<SharkFloatParams>(Tests, 
+        set5 + 20, "-0.000000000000000000000000000000000000000000000000000000000000000002e-100");
 
     if constexpr (SharkFloatParams::GlobalNumUint32 == 8) {
         const auto set6 = testBase + 90;
         constexpr auto testExp = 5;
         constexpr auto testNeg = false;
         std::vector<uint64_t> limbs = {0, 0, 1, 0, 0, 0, 0};
-        TestConvertNumber<SharkFloatParams>(set6 + 21, limbs, testExp, testNeg);
+        TestConvertNumber<SharkFloatParams>(Tests, set6 + 21, limbs, testExp, testNeg);
     }
 
     const auto set7 = testBase + 100;
-    TestConvertNumber<SharkFloatParams>(set7 + 1, "4294967297");
-    TestConvertNumber<SharkFloatParams>(set7 + 2, "18446744073709551617");
-    TestConvertNumber<SharkFloatParams>(set7 + 3, "55340232221128654849"); // 2^65 + 2^64 + 1
-    TestConvertNumber<SharkFloatParams>(set7 + 4, "-4294967297");
-    TestConvertNumber<SharkFloatParams>(set7 + 5, "-18446744073709551617");
-    TestConvertNumber<SharkFloatParams>(set7 + 6, "-55340232221128654849");
-    TestConvertNumber<SharkFloatParams>(set7 + 7, "18446744073709551615");
+    TestConvertNumber<SharkFloatParams>(Tests, set7 + 1, "4294967297");
+    TestConvertNumber<SharkFloatParams>(Tests, set7 + 2, "18446744073709551617");
+    TestConvertNumber<SharkFloatParams>(Tests, set7 + 3, "55340232221128654849"); // 2^65 + 2^64 + 1
+    TestConvertNumber<SharkFloatParams>(Tests, set7 + 4, "-4294967297");
+    TestConvertNumber<SharkFloatParams>(Tests, set7 + 5, "-18446744073709551617");
+    TestConvertNumber<SharkFloatParams>(Tests, set7 + 6, "-55340232221128654849");
+    TestConvertNumber<SharkFloatParams>(Tests, set7 + 7, "18446744073709551615");
 
     const auto set8 = testBase + 110;
-    TestConvertNumber<SharkFloatParams>(set8 + 1, "4294967297.0000152587890625"); // 2^32 + 1 + 1/2^16
-    TestConvertNumber<SharkFloatParams>(set8 + 2, "18446744073709551617.0000152587890625");
-    TestConvertNumber<SharkFloatParams>(set8 + 3, "55340232221128654849.0000152587890625");
+    TestConvertNumber<SharkFloatParams>(Tests, set8 + 1, "4294967297.0000152587890625"); // 2^32 + 1 + 1/2^16
+    TestConvertNumber<SharkFloatParams>(Tests, set8 + 2, "18446744073709551617.0000152587890625");
+    TestConvertNumber<SharkFloatParams>(Tests, set8 + 3, "55340232221128654849.0000152587890625");
 
     return Tests.CheckAllTestsPassed();
 }

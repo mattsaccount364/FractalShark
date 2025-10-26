@@ -1,4 +1,3 @@
-#include "stdafx.h"
 #include "LAParameters.h"
 
 #include <fstream>

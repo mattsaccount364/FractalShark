@@ -1867,7 +1867,7 @@ MultiplyHelperFFT(const HpSharkFloat<SharkFloatParams>* A,
     }
 
     const size_t arenaBytes = align_up(off, 64);
-    std::unique_ptr<std::byte[]> arena(new std::byte[arenaBytes]);
+    auto arena = std::make_unique<std::byte[]>(arenaBytes);
 
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << " arenaBytes=" << arenaBytes << std::endl;

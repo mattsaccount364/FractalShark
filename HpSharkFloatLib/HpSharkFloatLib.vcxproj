@@ -14,12 +14,28 @@
     <ClInclude Include="Add.cu">
       <FileType>Document</FileType>
     </ClInclude>
+    <ClInclude Include="ATInfo.h" />
+    <ClInclude Include="ATResult.h" />
+    <ClInclude Include="Callstacks.h" />
+    <ClInclude Include="Exceptions.h" />
+    <ClInclude Include="FloatComplex.h" />
+    <ClInclude Include="LAInfoDeep.h" />
+    <ClInclude Include="LAInfoI.h" />
+    <ClInclude Include="LAParameters.h" />
+    <ClInclude Include="LAstep.h" />
+    <ClInclude Include="Vectors.h" />
     <CudaCompile Include="AddTestKernels.cu" />
-    <CudaCompile Include="BenchmarkTimer.cu" />
+    <ClCompile Include="BenchmarkTimer.cpp">
+      <FileType>Document</FileType>
+    </ClCompile>
     <CudaCompile Include="HpSharkFloat.cu" />
     <CudaCompile Include="HpSharkReferenceOrbit.cu" />
     <ClInclude Include="BenchmarkTimer.h" />
+    <ClInclude Include="DbgHeap.h" />
     <ClInclude Include="GPU_ReferenceIter.h" />
+    <ClInclude Include="heap_allocator\include\heap.h" />
+    <ClInclude Include="heap_allocator\include\HeapCpp.h" />
+    <ClInclude Include="heap_allocator\include\llist.h" />
     <ClInclude Include="KernelInvoke.cuh" />
     <ClInclude Include="KernelInvokeInternal.cuh" />
     <ClInclude Include="MultiplyNTT.cu">
@@ -58,10 +74,19 @@
     <ClInclude Include="ThreeWayMagnitude.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="Callstacks.cpp" />
+    <ClCompile Include="Exceptions.cpp" />
+    <ClCompile Include="heap_allocator\HeapCpp.cpp" />
+    <ClCompile Include="heap_allocator\llist.cpp" />
     <ClCompile Include="HighPrecision.cpp" />
+    <ClCompile Include="LAParameters.cpp" />
     <ClCompile Include="MpirSerialization.cpp" />
     <ClCompile Include="TestVerbose.cpp" />
+    <ClCompile Include="Vectors.cpp" />
     <ClCompile Include="WorkaroundVcxAnnoyingCudaBug.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="heap_allocator\Heap.md" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <ProjectGuid>{E46D1897-0F30-3518-ED23-26ED5FF35747}</ProjectGuid>
@@ -72,14 +97,14 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
     <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>true</UseDebugLibraries>
-    <CharacterSet>MultiByte</CharacterSet>
+    <CharacterSet>Unicode</CharacterSet>
     <PlatformToolset>v143</PlatformToolset>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
     <ConfigurationType>StaticLibrary</ConfigurationType>
     <UseDebugLibraries>false</UseDebugLibraries>
     <WholeProgramOptimization>true</WholeProgramOptimization>
-    <CharacterSet>MultiByte</CharacterSet>
+    <CharacterSet>Unicode</CharacterSet>
     <PlatformToolset>v143</PlatformToolset>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
@@ -108,7 +133,7 @@
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>WIN32;WIN64;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\mpir\lib\x64\Debug;%(AdditionalIncludeDirectories);$(CudaToolkitIncludeDir)</AdditionalIncludeDirectories>
-      <LanguageStandard>stdcpp20</LanguageStandard>
+      <LanguageStandard>stdcpp23</LanguageStandard>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
       <ConformanceMode>true</ConformanceMode>
     </ClCompile>
@@ -132,7 +157,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>WIN32;WIN64;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\mpir\lib\x64\Release;%(AdditionalIncludeDirectories);$(CudaToolkitIncludeDir)</AdditionalIncludeDirectories>
-      <LanguageStandard>stdcpp20</LanguageStandard>
+      <LanguageStandard>stdcpp23</LanguageStandard>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
       <ConformanceMode>true</ConformanceMode>
     </ClCompile>

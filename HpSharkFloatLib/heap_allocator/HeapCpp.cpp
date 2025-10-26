@@ -1,10 +1,12 @@
-#include "stdafx.h"
+#include "include\HeapCpp.h" // Include your wrapper header
+#include "..\DbgHeap.h"
+#include "include\llist.h"
 #include <cstdlib>
 
-#include "include\HeapCpp.h" // Include your wrapper header
 #include "..\Vectors.h"
 
-#include "include\llist.h"
+#define NOMINMAX
+#include <windows.h>
 
 static int offset = sizeof(uintptr_t) * 2;
 static constexpr auto PAGE_SIZE = 0x1000;
@@ -19,22 +21,23 @@ static constexpr bool FullDebugOut = false;
 // with a stack overflow. The solution is to use a global heap that is initialized
 // before the C runtime library is initialized. This is done by defining a global
 // instance of the HeapCpp class.
-// 
+//
 // When the first attempt is made to allocate memory, the global heap is initialized.
 // This initialization takes place during the C runtime library initialization, and is
 // before any static constructors are called.  This has implications for the order of
 // initialization of static objects and the "meaning" of static objects.
-// 
+//
 // What we do here is call a constructor ourselves manually
 //
 
 // Define a global Heap instance
 static HeapCpp globalHeap;
 
-
 void VectorStaticInit();
 
-void HeapCpp::InitGlobalHeap() {
+void
+HeapCpp::InitGlobalHeap()
+{
     // Initialize the global heap
     if (globalHeap.Initialized) {
         return;
@@ -44,50 +47,56 @@ void HeapCpp::InitGlobalHeap() {
     static_assert(sizeof(GrowableVector<uint8_t>) <= GrowableVectorSize);
 
     // GrowableVector<uint8_t>(AddPointOptions::EnableWithoutSave, L"HeapFile.bin");
-    globalHeap.Growable = std::construct_at(
-        reinterpret_cast<GrowableVector<uint8_t> *>(globalHeap.GrowableVectorMemory),
-        AddPointOptions::EnableWithoutSave,
-        L"HeapFile.bin");
+    globalHeap.Growable =
+        std::construct_at(reinterpret_cast<GrowableVector<uint8_t> *>(globalHeap.GrowableVectorMemory),
+                          AddPointOptions::EnableWithoutSave,
+                          L"HeapFile.bin");
 
     globalHeap.Growable->MutableResize(GrowByAmtBytes);
     globalHeap.Init();
 }
 
-HeapCpp::HeapCpp() {
+HeapCpp::HeapCpp()
+{
     // It's very important that we don't do anything here, because this heap
     // may be used before its static constructor is called.
 }
 
-HeapCpp::~HeapCpp() {
+HeapCpp::~HeapCpp()
+{
 
     // So this is pretty excellent.  We don't want to touch anything here,
     // because this heap may still be used after it's destroyed.
 
     auto totalAllocs = CountAllocations();
-    
+
     // Check if debugger attached.  Note this isn't necessarily the
     // end of the program, but it's a good place to check because one would
     // expect that it's close.
     if (IsDebuggerPresent()) {
         // Output totalAllocs to debug console in Visual Studio
-        if constexpr (LimitedDebugOut) {
-            char buffer[256];
-            sprintf_s(buffer, "Total allocations remaining = %zu\n", totalAllocs);
-            OutputDebugStringA(buffer);
+        char buffer[256];
+        sprintf_s(buffer, "Total allocations remaining = %zu\n", totalAllocs);
+        OutputDebugStringA(buffer);
 
-            // Print Stats
-            sprintf_s(buffer, "BytesAllocated = %zu\n", Stats.BytesAllocated);
-            OutputDebugStringA(buffer);
+        // Print Stats
+        sprintf_s(buffer, "BytesAllocated = %zu\n", Stats.BytesAllocated);
+        OutputDebugStringA(buffer);
 
-            sprintf_s(buffer, "BytesFreed = %zu\n", Stats.BytesFreed);
-            OutputDebugStringA(buffer);
+        sprintf_s(buffer, "BytesFreed = %zu\n", Stats.BytesFreed);
+        OutputDebugStringA(buffer);
 
-            sprintf_s(buffer, "Allocations = %zu\n", Stats.Allocations);
-            OutputDebugStringA(buffer);
+        sprintf_s(buffer, "Delta bytes allocated = %zu\n", Stats.BytesAllocated - Stats.BytesFreed);
+        OutputDebugStringA(buffer);
 
-            sprintf_s(buffer, "Frees = %zu\n", Stats.Frees);
-            OutputDebugStringA(buffer);
-        }
+        sprintf_s(buffer, "Allocations = %zu\n", Stats.Allocations);
+        OutputDebugStringA(buffer);
+
+        sprintf_s(buffer, "Frees = %zu\n", Stats.Frees);
+        OutputDebugStringA(buffer);
+
+        sprintf_s(buffer, "Delta allocations = %zu\n", Stats.Allocations - Stats.Frees);
+        OutputDebugStringA(buffer);
     }
 
     // Growable->Clear();
@@ -103,9 +112,11 @@ HeapCpp::~HeapCpp() {
 // how large the heap is so make sure the same constant
 // is used when allocating memory for your heap!
 // ========================================================
-void HeapCpp::Init() {
+void
+HeapCpp::Init()
+{
     // Initialize the heap
-    for (size_t i = 0; i < BIN_COUNT; i++) {
+    for (size_t i = 0; i < HEAP_BIN_COUNT; i++) {
         Heap.bins[i] = &Heap.binMemory[i];
     }
 
@@ -114,7 +125,7 @@ void HeapCpp::Init() {
     // first we create the initial region, this is the "wilderness" chunk
     // the heap starts as just one big chunk of allocatable memory
     init_region->hole = 1;
-    init_region->size = (HEAP_INIT_SIZE)-sizeof(node_t) - sizeof(footer_t);
+    init_region->size = (HEAP_INIT_SIZE) - sizeof(node_t) - sizeof(footer_t);
 
     CreateFooter(init_region); // create a foot (size must be defined)
 
@@ -130,13 +141,15 @@ void HeapCpp::Init() {
 
 // ========================================================
 // this is the allocation function of the heap, it takes
-// the heap struct pointer and the size of the chunk we 
-// want. this function will search through the bins until 
+// the heap struct pointer and the size of the chunk we
+// want. this function will search through the bins until
 // it finds a suitable chunk. it will then split the chunk
 // if neccesary and return the start of the chunk
 // ========================================================
 
-void *HeapCpp::Allocate(size_t size) {
+void *
+HeapCpp::Allocate(size_t size)
+{
     // We'll assume single-threaded initialization and that no races
     // occur here.  If you want to use this in a multi-threaded environment,
     // you'll need to add a mutex here.
@@ -149,7 +162,7 @@ void *HeapCpp::Allocate(size_t size) {
     size = (size + 0xF) & ~0xF;
 
     std::unique_lock<std::mutex> lock(Mutex);
-    
+
     auto TryOnce = [&]() -> void * {
         // first get the bin index that this chunk size should be in
         auto index = GetBinIndex(size);
@@ -160,7 +173,7 @@ void *HeapCpp::Allocate(size_t size) {
         // while no chunk if found advance through the bins until we
         // find a chunk or get to the wilderness
         while (found == NULL) {
-            if (index + 1 >= BIN_COUNT)
+            if (index + 1 >= HEAP_BIN_COUNT)
                 return NULL;
 
             temp = Heap.bins[++index];
@@ -183,11 +196,11 @@ void *HeapCpp::Allocate(size_t size) {
             auto new_idx = GetBinIndex(split->size);
             add_node(Heap.bins[new_idx], split);
 
-            found->size = size; // set the found chunks size
+            found->size = size;  // set the found chunks size
             CreateFooter(found); // since size changed, remake foot
         }
 
-        found->hole = 0; // not a hole anymore
+        found->hole = 0;                      // not a hole anymore
         remove_node(Heap.bins[index], found); // remove it from its bin
 
         // ==========================================
@@ -232,19 +245,21 @@ void *HeapCpp::Allocate(size_t size) {
 }
 
 // ========================================================
-// this is the free function of the heap, it takes the 
+// this is the free function of the heap, it takes the
 // heap struct pointer and the pointer provided by the
 // heap_alloc function. the given chunk will be possibly
 // coalesced  and then placed in the correct bin
 // ========================================================
-void HeapCpp::Deallocate(void *ptr) {
+void
+HeapCpp::Deallocate(void *ptr)
+{
     if (!ptr) {
         return;
     }
 
     std::unique_lock<std::mutex> lock(Mutex);
     assert(Initialized);
-        
+
     bin_t *list;
 
     // the actual head of the node is not p, it is p minus the size
@@ -264,7 +279,7 @@ void HeapCpp::Deallocate(void *ptr) {
 
     // these are the next and previous nodes in the heap, not the prev and next
     // in a bin. to find prev we just get subtract from the start of the head node
-    // to get the footer of the previous node (which gives us the header pointer). 
+    // to get the footer of the previous node (which gives us the header pointer).
     // to get the next node we simply get the footer and add the sizeof(footer_t).
     node_t *next = (node_t *)((char *)GetFooter(head) + sizeof(footer_t));
     node_t *prev = (node_t *)*((uintptr_t *)((char *)head - sizeof(footer_t)));
@@ -309,7 +324,9 @@ void HeapCpp::Deallocate(void *ptr) {
     add_node(Heap.bins[GetBinIndex(head->size)], head);
 }
 
-bool HeapCpp::Expand(size_t deltaSizeBytes) {
+bool
+HeapCpp::Expand(size_t deltaSizeBytes)
+{
     // Mutex must be held
 
     // Grow by a minimum of a megabyte
@@ -350,7 +367,7 @@ bool HeapCpp::Expand(size_t deltaSizeBytes) {
         // If the wilderness block is not free, create a new free block at the old heap end.
         node_t *new_free_block = (node_t *)Heap.end;
         new_free_block->size = size - overhead; // New block size, minus overhead (header and footer).
-        new_free_block->hole = 1; // Mark it as a free block (hole).
+        new_free_block->hole = 1;               // Mark it as a free block (hole).
 
         // Create the footer for the new free block.
         CreateFooter(new_free_block);
@@ -366,9 +383,11 @@ bool HeapCpp::Expand(size_t deltaSizeBytes) {
     return true;
 }
 
-bool HeapCpp::Contract(size_t size) {
+bool
+HeapCpp::Contract(size_t size)
+{
     // Mutex must be held
-    
+
     // Ensure the size to contract is aligned to page size (0x1000).
     size = (size + 0xFFF) & ~0xFFF;
 
@@ -392,7 +411,9 @@ bool HeapCpp::Contract(size_t size) {
     return true;
 }
 
-size_t HeapCpp::CountAllocations() const {
+size_t
+HeapCpp::CountAllocations() const
+{
     size_t count = 0;
 
     // Start at the beginning of the heap
@@ -417,22 +438,25 @@ size_t HeapCpp::CountAllocations() const {
 
 // ========================================================
 // this function is the hashing function that converts
-// size => bin index. changing this function will change 
-// the binning policy of the heap. right now it just 
+// size => bin index. changing this function will change
+// the binning policy of the heap. right now it just
 // places any allocation < 8 in bin 0 and then for anything
 // above 8 it bins using the log base 2 of the size
 // ========================================================
-uint64_t HeapCpp::GetBinIndex(size_t size) {
+uint64_t
+HeapCpp::GetBinIndex(size_t size)
+{
     int index = 0;
     constexpr auto minAlignment = 16;
     size = size < minAlignment ? minAlignment : size;
 
-    while (size >>= 1) index++;
+    while (size >>= 1)
+        index++;
     index -= 4;
 
-    if (index > BIN_MAX_IDX) {
+    if (index > HEAP_BIN_MAX_IDX) {
         assert(false);
-        index = BIN_MAX_IDX;
+        index = HEAP_BIN_MAX_IDX;
     }
     return index;
 }
@@ -441,35 +465,42 @@ uint64_t HeapCpp::GetBinIndex(size_t size) {
 // this function will create a footer given a node
 // the node's size must be set to the correct value!
 // ========================================================
-void HeapCpp::CreateFooter(node_t *head) {
+void
+HeapCpp::CreateFooter(node_t *head)
+{
     footer_t *foot = GetFooter(head);
     foot->header = head;
-
 }
 
 // ========================================================
 // this function will get the footer pointer given a node
 // ========================================================
-footer_t *HeapCpp::GetFooter(node_t *head) {
+footer_t *
+HeapCpp::GetFooter(node_t *head)
+{
     return (footer_t *)((char *)head + sizeof(node_t) + head->size);
 }
 
 // ========================================================
-// this function will get the wilderness node given a 
+// this function will get the wilderness node given a
 // heap struct pointer
 //
 // NOTE: this function banks on the heap's end field being
-// correct, it simply uses the footer at the end of the 
+// correct, it simply uses the footer at the end of the
 // heap because that is always the wilderness
 // ========================================================
-node_t *HeapCpp::GetWilderness() {
+node_t *
+HeapCpp::GetWilderness()
+{
     footer_t *wild_foot = (footer_t *)((char *)Heap.end - sizeof(footer_t));
     return wild_foot->header;
 }
 
 //////////////////////////////////////////////////////////////////////////
 
-void *CppMalloc(size_t size) {
+void *
+CppMalloc(size_t size)
+{
     auto *res = globalHeap.Allocate(size);
 
     // Output res in hex to debug console in Visual Studio
@@ -482,7 +513,9 @@ void *CppMalloc(size_t size) {
     return res;
 }
 
-void CppFree(void *ptr) {
+void
+CppFree(void *ptr)
+{
     // Output ptr in hex to debug console in Visual Studio
     if constexpr (FullDebugOut) {
         char buffer[256];
@@ -493,7 +526,9 @@ void CppFree(void *ptr) {
     globalHeap.Deallocate(ptr);
 }
 
-void *CppRealloc(void *ptr, size_t newSize) {
+void *
+CppRealloc(void *ptr, size_t newSize)
+{
     if (!ptr) {
         return CppMalloc(newSize);
     }
@@ -509,8 +544,7 @@ void *CppRealloc(void *ptr, size_t newSize) {
     }
 
     // Find the old size:
-    const auto node = reinterpret_cast<node_t *>(
-        reinterpret_cast<uintptr_t>(ptr) - offset);
+    const auto node = reinterpret_cast<node_t *>(reinterpret_cast<uintptr_t>(ptr) - offset);
 
     // Assume the size is stored somehow, or manage separately in the Heap class
     std::memcpy(newPtr, ptr, std::min(node->size, newSize));
@@ -520,102 +554,117 @@ void *CppRealloc(void *ptr, size_t newSize) {
 
 // Override global malloc, free, and realloc functions
 extern "C" {
-    __declspec(restrict)
-    void *malloc(size_t size) {
-        return CppMalloc(size);
-    }
+__declspec(restrict) void *
+malloc(size_t size)
+{
+    return CppMalloc(size);
+}
 
-    // We rely on linking with /force:multiple to avoid LNK2005
+// We rely on linking with /force:multiple to avoid LNK2005
 #ifdef _DEBUG
-    void *_malloc_dbg(
-        size_t size,
-        int /*blockType*/,
-        const char * /*filename*/,
-        int /*line*/) {
+void *
+_malloc_dbg(size_t size, int /*blockType*/, const char * /*filename*/, int /*line*/)
+{
 
-        return CppMalloc(size);
-    }
+    return CppMalloc(size);
+}
 #endif
 
-    __declspec(restrict)
-    void *calloc(size_t num, size_t size) {
-        auto *res = CppMalloc(num * size);
-        if (res) {
-            std::memset(res, 0, num * size);
-        }
-        return res;
+__declspec(restrict) void *
+calloc(size_t num, size_t size)
+{
+    auto *res = CppMalloc(num * size);
+    if (res) {
+        std::memset(res, 0, num * size);
     }
+    return res;
+}
 
 #ifdef _DEBUG
-    // We rely on linking with /force:multiple to avoid LNK2005
-    void *_calloc_dbg(
-        size_t num,
-        size_t size,
-        int /*blockType*/,
-        const char * /*filename*/,
-        int /*line*/) {
+// We rely on linking with /force:multiple to avoid LNK2005
+void *
+_calloc_dbg(size_t num, size_t size, int /*blockType*/, const char * /*filename*/, int /*line*/)
+{
 
-        return calloc(num, size);
-    }
+    return calloc(num, size);
+}
 #endif
 
-    __declspec(restrict)
-    void *aligned_alloc(size_t alignment, size_t size) {
-        auto res = CppMalloc(size);
-        assert(reinterpret_cast<uintptr_t>(res) % alignment == 0);
-        return res;
-    }
+__declspec(restrict) void *
+aligned_alloc(size_t alignment, size_t size)
+{
+    auto res = CppMalloc(size);
+    assert(reinterpret_cast<uintptr_t>(res) % alignment == 0);
+    return res;
+}
 
-    void free(void *ptr) {
-        CppFree(ptr);
-    }
+void
+free(void *ptr)
+{
+    CppFree(ptr);
+}
+
+//void __cdecl _free_base(void *const block) { CppFree(block); }
 
 #ifdef _DEBUG
-    void _free_dbg(void *ptr, int /*blockType*/) {
-        CppFree(ptr);
-    }
+void
+_free_dbg(void *ptr, int /*blockType*/)
+{
+    CppFree(ptr);
+}
 #endif
 
-    __declspec(restrict)
-    void *realloc(void *ptr, size_t newSize) {
-        return CppRealloc(ptr, newSize);
-    }
+__declspec(restrict) void *
+realloc(void *ptr, size_t newSize)
+{
+    return CppRealloc(ptr, newSize);
+}
 
-    char *strdup(const char *s) {
-        size_t len = strlen(s) + 1;
-        char *d = (char *)malloc(len);
-        if (d) {
-            memcpy(d, s, len);
-        }
-        return d;
+char *
+strdup(const char *s)
+{
+    size_t len = strlen(s) + 1;
+    char *d = (char *)malloc(len);
+    if (d) {
+        memcpy(d, s, len);
     }
+    return d;
+}
 
-    __declspec(restrict)
-    char *strndup(const char *s, size_t n) {
-        size_t len = strnlen(s, n);
-        char *d = (char *)malloc(len + 1);
-        if (d) {
-            memcpy(d, s, len);
-            d[len] = '\0';
-        }
-        return d;
+__declspec(restrict) char *
+strndup(const char *s, size_t n)
+{
+    size_t len = strnlen(s, n);
+    char *d = (char *)malloc(len + 1);
+    if (d) {
+        memcpy(d, s, len);
+        d[len] = '\0';
     }
+    return d;
+}
 
-    __declspec(restrict)
-    char *realpath(const char *fname, char *resolved_name) {
-        return _fullpath(resolved_name, fname, _MAX_PATH);
-    }
+__declspec(restrict) char *
+realpath(const char *fname, char *resolved_name)
+{
+    return _fullpath(resolved_name, fname, _MAX_PATH);
+}
 } // extern "C"
 
-void   operator delete(void *ptr) {
+void
+operator delete(void *ptr)
+{
     free(ptr);
 }
 
-void operator delete[](void *ptr) {
+void
+operator delete[](void *ptr)
+{
     free(ptr);
 }
 
-void *operator new(size_t size) noexcept(false) {
+void *
+operator new(size_t size) noexcept(false)
+{
     auto *res = malloc(size);
     if (!res) {
         throw std::bad_alloc();
@@ -624,30 +673,44 @@ void *operator new(size_t size) noexcept(false) {
 }
 
 // Array form of new:
-void *operator new[](size_t size) {
+void *
+operator new[](size_t size)
+{
     return operator new(size);
 }
 
-void *operator new(std::size_t n, std::align_val_t align) noexcept(false) {
+void *
+operator new(std::size_t n, std::align_val_t align) noexcept(false)
+{
     return aligned_alloc(static_cast<size_t>(align), n);
 }
 
-void *operator new[](std::size_t n, std::align_val_t align) noexcept(false) {
+void *
+operator new[](std::size_t n, std::align_val_t align) noexcept(false)
+{
     return aligned_alloc(static_cast<size_t>(align), n);
 }
 
-void *operator new (std::size_t count, const std::nothrow_t &/*tag*/) noexcept {
+void *
+operator new(std::size_t count, const std::nothrow_t & /*tag*/) noexcept
+{
     return malloc(count);
 }
 
-void *operator new[](std::size_t count, const std::nothrow_t &/*tag*/) noexcept {
+void *
+operator new[](std::size_t count, const std::nothrow_t & /*tag*/) noexcept
+{
     return malloc(count);
 }
 
-void *operator new  (std::size_t count, std::align_val_t al, const std::nothrow_t &) noexcept {
+void *
+operator new(std::size_t count, std::align_val_t al, const std::nothrow_t &) noexcept
+{
     return aligned_alloc(static_cast<size_t>(al), count);
 }
 
-void *operator new[](std::size_t count, std::align_val_t al, const std::nothrow_t &) noexcept {
+void *
+operator new[](std::size_t count, std::align_val_t al, const std::nothrow_t &) noexcept
+{
     return aligned_alloc(static_cast<size_t>(al), count);
 }

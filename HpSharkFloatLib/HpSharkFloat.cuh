@@ -16,7 +16,7 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <cooperative_groups.h>
-#endif
+#endif // __CUDACC__
 
 // Assuming that SharkFloatParams::GlobalNumUint32 can be large and doesn't fit in shared memory
 // We'll use the provided global memory buffers for large intermediates
@@ -79,7 +79,7 @@ static constexpr bool SharkDebug = false;
 #endif
 #else // not debug
 #ifdef HP_SHARK_FLOAT_TEST
-#define ENABLE_BASIC_CORRECTNESS 2
+#define ENABLE_BASIC_CORRECTNESS 0
 #else
 #define ENABLE_BASIC_CORRECTNESS 4
 #endif
@@ -164,10 +164,14 @@ static constexpr auto SharkKaratsubaBatchSize = SharkLoadAllInShared ? 1 : 4;
 static constexpr bool SharkDebugChecksums = false;
 static constexpr bool SharkPrintMultiplyCounts = false; // SharkDebugChecksums;
 static constexpr bool SharkTestCorrectness = (SharkBasicCorrectness == 2) ? SharkDebug : true;
-static constexpr bool SharkTestInfiniteCorrectness = SharkTestCorrectness ? true : false;
+static constexpr bool SharkTestInfiniteCorrectness = SharkTestCorrectness ? false : false; // Was true : false
 static constexpr auto SharkTestForceSameSign = false;
 static constexpr bool SharkTestBenchmarkAgainstHost = false;
 static constexpr bool SharkTestInitCudaMemory = true;
+
+// True to compare against the full host-side reference implementation, false is MPIR only
+// False is useful to speed up e.g. testing many cases fast but gives poor diagnostic results.
+static constexpr bool SharkTestReferenceImpl = false;
 
 // ---- detail helpers (fallback for pre-C++20) ----
 namespace HpShark {

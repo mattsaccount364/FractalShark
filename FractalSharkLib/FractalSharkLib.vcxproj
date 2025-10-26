@@ -12,16 +12,11 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\stdafx.h" />
-    <ClInclude Include="ATInfo.h" />
-    <ClInclude Include="ATResult.h" />
     <ClInclude Include="BenchmarkData.h" />
     <ClInclude Include="BenchmarkDataCollection.h" />
     <ClInclude Include="BLA.h" />
     <ClInclude Include="BLAS.h" />
-    <ClInclude Include="Callstacks.h" />
     <ClInclude Include="DrawThreadSync.h" />
-    <ClInclude Include="Exceptions.h" />
-    <ClInclude Include="FloatComplex.h" />
     <ClInclude Include="Fractal.h" />
     <ClInclude Include="CrummyTest.h" />
     <ClInclude Include="GPU_BLAS.h" />
@@ -29,18 +24,11 @@
     <ClInclude Include="GPU_LAReference.h" />
     <ClInclude Include="GPU_Render.h" />
     <ClInclude Include="GPU_Types.h" />
-    <ClInclude Include="heap_allocator\include\heap.h" />
-    <ClInclude Include="heap_allocator\include\HeapCpp.h" />
-    <ClInclude Include="heap_allocator\include\llist.h" />
     <ClInclude Include="ImaginaOrbit.h" />
     <ClInclude Include="Introspection.h" />
     <ClInclude Include="ItersMemoryContainer.h" />
-    <ClInclude Include="LAInfoDeep.h" />
-    <ClInclude Include="LAInfoI.h" />
-    <ClInclude Include="LAParameters.h" />
     <ClInclude Include="LAReference.h" />
     <ClInclude Include="LargeCoords.h" />
-    <ClInclude Include="LAstep.h" />
     <ClInclude Include="OpenGLContext.h" />
     <ClInclude Include="OrbitParameterPack.h" />
     <ClInclude Include="PerturbationResults.h" />
@@ -64,7 +52,6 @@
     <ClInclude Include="RenderAlgorithm.h" />
     <ClInclude Include="ScopedMpir.h" />
     <ClInclude Include="Utilities.h" />
-    <ClInclude Include="Vectors.h" />
     <ClInclude Include="WaitCursor.h" />
     <ClInclude Include="WPngImage\lodepng.h" />
     <ClInclude Include="WPngImage\WPngImage.hh" />
@@ -72,15 +59,10 @@
   <ItemGroup>
     <ClCompile Include="BenchmarkData.cpp" />
     <ClCompile Include="BLAS.cpp" />
-    <ClCompile Include="Callstacks.cpp" />
-    <ClCompile Include="Exceptions.cpp" />
     <ClCompile Include="Fractal.cpp" />
     <ClCompile Include="CrummyTest.cpp" />
-    <ClCompile Include="heap_allocator\HeapCpp.cpp" />
-    <ClCompile Include="heap_allocator\llist.cpp" />
     <ClCompile Include="ImaginaOrbit.cpp" />
     <ClCompile Include="ItersMemoryContainer.cpp" />
-    <ClCompile Include="LAParameters.cpp" />
     <ClCompile Include="LAReference.cpp" />
     <ClCompile Include="OpenGLContext.cpp" />
     <ClCompile Include="OrbitParameterPack.cpp" />
@@ -97,7 +79,6 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="Utilities.cpp" />
-    <ClCompile Include="Vectors.cpp" />
     <ClCompile Include="WaitCursor.cpp" />
     <ClCompile Include="WPngImage\lodepng.cpp" />
     <ClCompile Include="WPngImage\WPngImage.cc" />

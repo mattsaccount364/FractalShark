@@ -1,4 +1,4 @@
-#include "stdafx.h"
+#include "..\DbgHeap.h"
 #include "include/llist.h"
 
 void add_node(bin_t *bin, node_t* node) {

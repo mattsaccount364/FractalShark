@@ -10,8 +10,8 @@
 #define MIN_WILDERNESS 0x2000
 #define MAX_WILDERNESS 0x1000000
 
-#define BIN_COUNT 31
-#define BIN_MAX_IDX (BIN_COUNT - 1)
+#define HEAP_BIN_COUNT 31
+#define HEAP_BIN_MAX_IDX (HEAP_BIN_COUNT - 1)
 
 typedef struct node_t {
     uint64_t hole;
@@ -33,8 +33,8 @@ typedef struct {
 typedef struct {
     uintptr_t start;
     uintptr_t end;
-    bin_t binMemory[BIN_COUNT];
-    bin_t *bins[BIN_COUNT];
+    bin_t binMemory[HEAP_BIN_COUNT];
+    bin_t *bins[HEAP_BIN_COUNT];
 } heap_t;
 
 static uint64_t overhead = sizeof(footer_t) + sizeof(node_t);

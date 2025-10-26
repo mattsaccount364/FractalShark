@@ -1,4 +1,3 @@
-#include "stdafx.h"
 #include "Exceptions.h"
 #include "Callstacks.h"
 

@@ -56,8 +56,8 @@ __device__ void MultiplyHelperN2(
     uint64_t *carryOuts_phase6 = carryOuts_phase3 + 2 * SharkFloatParams::GlobalNumUint32;
     uint64_t *carryIns = carryOuts_phase6 + 2 * SharkFloatParams::GlobalNumUint32;
 
-    static constexpr int32_t BATCH_SIZE_A = SharkBatchSize;
-    static constexpr int32_t BATCH_SIZE_B = SharkBatchSize;
+    static constexpr int32_t BATCH_SIZE_A = HpShark::BatchSize;
+    static constexpr int32_t BATCH_SIZE_B = HpShark::BatchSize;
 
     // Compute k_min and k_max
     const int k_min = 2 * blockIdx.x * SharkFloatParams::GlobalThreadsPerBlock;

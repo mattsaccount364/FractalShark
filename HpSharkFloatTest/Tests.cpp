@@ -6,7 +6,6 @@
 
 #include "DebugChecksumHost.h"
 #include "ReferenceAdd.h"
-#include "ReferenceKaratsuba.h"
 #include "ReferenceNTT2.h"
 #include "Tests.h"
 
@@ -477,7 +476,7 @@ TestPerf(TestTracker &Tests,
     uint64_t discoveredPeriodHost = 0;
     uint64_t discoveredEscapeIterationHost = 0;
 
-    if constexpr (SharkTestBenchmarkAgainstHost) {
+    if constexpr (HpShark::TestBenchmarkAgainstHost) {
         ScopedBenchmarkStopper hostStopper{hostTimer};
 
         using HdrType = SharkFloatParams::Float;
@@ -598,7 +597,7 @@ TestPerf(TestTracker &Tests,
         std::cout << "Host iter time: " << hostTimer.GetDeltaInMs() << " ms" << std::endl;
     }
 
-    if constexpr (SharkTestGpu) {
+    if constexpr (HpShark::TestGpu) {
 
         auto CheckDiff = [&](TestTracker &Tests,
                              const int testNum,
@@ -643,7 +642,7 @@ TestPerf(TestTracker &Tests,
                 }
             }
 
-            if constexpr (SharkTestBenchmarkAgainstHost) {
+            if constexpr (HpShark::TestBenchmarkAgainstHost) {
                 bool testSucceeded = true;
                 constexpr auto numTerms = 3;
                 testSucceeded &= CheckDiff(Tests, testNum, numTerms, "GPU", mpfHostResultXY1, gpuResultXY1);
@@ -680,7 +679,7 @@ TestPerf(TestTracker &Tests,
                 }
             }
 
-            if constexpr (SharkTestBenchmarkAgainstHost) {
+            if constexpr (HpShark::TestBenchmarkAgainstHost) {
                 bool testSucceeded = true;
                 constexpr auto numTerms = 2;
                 testSucceeded &= CheckDiff(testNum, numTerms, "GPU", mpfHostResultXX, gpuResult2XX);
@@ -719,7 +718,7 @@ TestPerf(TestTracker &Tests,
 
             // HpSharkReferenceResultsToFile<SharkFloatParams>("HpSharkPerfResults.txt", *combo);
 
-            if constexpr (SharkTestBenchmarkAgainstHost) {
+            if constexpr (HpShark::TestBenchmarkAgainstHost) {
                 bool testSucceeded = true;
                 constexpr auto numTerms = 2;
                 testSucceeded &= CheckDiff(testNum, numTerms, "GPU", mpfHostResultXX, gpuResultX);
@@ -840,7 +839,7 @@ ChecksumsCheck(const DebugHostCombo<SharkFloatParams> &debugHostCombo,
 {
     // Compare debugResultsCuda against debugResultsHost
     bool ChecksumFailure = false;
-    if constexpr (SharkTestGpu && SharkPrintMultiplyCounts) {
+    if constexpr (HpShark::TestGpu && HpShark::PrintMultiplyCounts) {
         std::map<int, int> countOfCounts;
         for (size_t i = 0; i < debugGpuCombo.MultiplyCounts.size(); ++i) {
             countOfCounts[debugGpuCombo.MultiplyCounts[i].count]++;
@@ -886,7 +885,7 @@ ChecksumsCheck(const DebugHostCombo<SharkFloatParams> &debugHostCombo,
         }
     }
 
-    if constexpr (SharkTestGpu && SharkDebugChecksums) {
+    if constexpr (HpShark::TestGpu && HpShark::DebugChecksums) {
         const auto &debugResultsHost = debugHostCombo.States;
         assert(debugResultsHost.size() <= debugGpuCombo.States.size());
 
@@ -1112,7 +1111,7 @@ TestCoreAdd(TestTracker &Tests,
     }
 
     DebugGpuCombo debugGpuCombo{};
-    if constexpr (SharkTestGpu) {
+    if constexpr (HpShark::TestGpu) {
         BenchmarkTimer timer;
 
         HpSharkAddComboResults<SharkFloatParams> combo;
@@ -1134,7 +1133,7 @@ TestCoreAdd(TestTracker &Tests,
         }
     }
 
-    if constexpr (SharkTestReferenceImpl) {
+    if constexpr (HpShark::TestReferenceImpl) {
         DebugHostCombo<SharkFloatParams> debugHostCombo{};
 
         bool testSucceeded = TestHostAdd(Tests,
@@ -1159,7 +1158,7 @@ TestCoreAdd(TestTracker &Tests,
         ChecksumsCheck<SharkFloatParams>(debugHostCombo, debugGpuCombo);
     }
 
-    if constexpr (SharkTestGpu) {
+    if constexpr (HpShark::TestGpu) {
         auto testSucceeded = true;
 
         constexpr auto numTermsABC = 3;
@@ -1301,14 +1300,14 @@ TestCoreMultiply(TestTracker &Tests,
     }
 
     DebugGpuCombo debugGpuCombo{};
-    if constexpr (SharkTestGpu) {
+    if constexpr (HpShark::TestGpu) {
         BenchmarkTimer timer;
 
         auto combo = std::make_unique<HpSharkComboResults<SharkFloatParams>>();
         combo->A = aNum;
         combo->B = bNum;
 
-        if constexpr (SharkEnableMultiplyNTTKernel) {
+        if constexpr (HpShark::EnableMultiplyNTTKernel) {
             InvokeMultiplyNTTKernelCorrectness<SharkFloatParams>(timer, *combo, &debugGpuCombo);
         }
 
@@ -1323,7 +1322,7 @@ TestCoreMultiply(TestTracker &Tests,
         }
     }
 
-    if constexpr (SharkTestReferenceImpl) {
+    if constexpr (HpShark::TestReferenceImpl) {
         DebugHostCombo<SharkFloatParams> debugHostCombo{};
 
         bool testSucceeded = false;
@@ -1341,7 +1340,7 @@ TestCoreMultiply(TestTracker &Tests,
         ChecksumsCheck<SharkFloatParams>(debugHostCombo, debugGpuCombo);
     }
 
-    if constexpr (SharkTestGpu) {
+    if constexpr (HpShark::TestGpu) {
         auto testSucceeded = true;
 
         constexpr auto numTerms = 2;
@@ -1446,7 +1445,7 @@ TestCoreReferenceOrbit(TestTracker &Tests,
     }
 
     DebugGpuCombo debugGpuCombo{};
-    if constexpr (SharkTestGpu) {
+    if constexpr (HpShark::TestGpu) {
         BenchmarkTimer timer;
 
         auto combo = std::make_unique<HpSharkReferenceResults<SharkFloatParams>>();
@@ -1472,7 +1471,7 @@ TestCoreReferenceOrbit(TestTracker &Tests,
 
     std::vector<DebugStateHost<SharkFloatParams>> debugResultsHost;
 
-    if constexpr (SharkTestGpu) {
+    if constexpr (HpShark::TestGpu) {
         bool testSucceeded = true;
 
         constexpr auto numTerms = 2;
@@ -1528,7 +1527,7 @@ TestTernaryOperatorTwoNumbersRawNoSignChange(TestTracker &Tests,
     } else if constexpr (sharkOperator == Operator::ReferenceOrbit) {
         TestCoreReferenceOrbit<SharkFloatParams>(Tests, testNum, inputX, mpfInputX, mpfInputLen);
     } else {
-        static_assert(SharkTestForceSameSign,
+        static_assert(HpShark::TestForceSameSign,
                       "Unsupported operator for TestTernaryOperatorTwoNumbersRawNoSignChange");
     }
 }
@@ -1598,7 +1597,7 @@ TestTernaryOperatorTwoNumbersRaw(TestTracker &Tests,
 
         if constexpr (EnableTestSign2) {
             resetCopy();
-            if constexpr (!SharkTestForceSameSign) {
+            if constexpr (!HpShark::TestForceSameSign) {
                 negateMpfAndHp(mpfXCopy[0], xNumCopy[0]);
 
                 negateMpfAndHp(mpfXCopy[3], xNumCopy[3]);
@@ -1612,7 +1611,7 @@ TestTernaryOperatorTwoNumbersRaw(TestTracker &Tests,
 
         if constexpr (EnableTestSign3) {
             resetCopy();
-            if constexpr (!SharkTestForceSameSign) {
+            if constexpr (!HpShark::TestForceSameSign) {
                 negateMpfAndHp(mpfXCopy[1], xNumCopy[1]);
 
                 negateMpfAndHp(mpfXCopy[4], xNumCopy[4]);
@@ -1640,7 +1639,7 @@ TestTernaryOperatorTwoNumbersRaw(TestTracker &Tests,
 
         if constexpr (EnableTestSign5) {
             resetCopy();
-            if constexpr (!SharkTestForceSameSign) {
+            if constexpr (!HpShark::TestForceSameSign) {
                 negateMpfAndHp(mpfXCopy[2], xNumCopy[2]);
             }
 
@@ -1652,7 +1651,7 @@ TestTernaryOperatorTwoNumbersRaw(TestTracker &Tests,
 
         if constexpr (EnableTestSign6) {
             resetCopy();
-            if constexpr (!SharkTestForceSameSign) {
+            if constexpr (!HpShark::TestForceSameSign) {
                 negateMpfAndHp(mpfXCopy[0], xNumCopy[0]);
                 negateMpfAndHp(mpfXCopy[2], xNumCopy[2]);
 
@@ -1666,7 +1665,7 @@ TestTernaryOperatorTwoNumbersRaw(TestTracker &Tests,
 
         if constexpr (EnableTestSign7) {
             resetCopy();
-            if constexpr (!SharkTestForceSameSign) {
+            if constexpr (!HpShark::TestForceSameSign) {
                 negateMpfAndHp(mpfXCopy[1], xNumCopy[1]);
                 negateMpfAndHp(mpfXCopy[2], xNumCopy[2]);
 
@@ -1804,7 +1803,7 @@ TestTernaryOperatorTwoNumbers(
         printTest(testNum);
         resetCopy();
 
-        if constexpr (!SharkTestForceSameSign) {
+        if constexpr (!HpShark::TestForceSameSign) {
             mpf_neg(mpfCopy[0], mpfCopy[0]);
         }
         curTest();
@@ -1813,7 +1812,7 @@ TestTernaryOperatorTwoNumbers(
     if constexpr (EnableTestSign3) {
         printTest(testNum);
         resetCopy();
-        if constexpr (!SharkTestForceSameSign) {
+        if constexpr (!HpShark::TestForceSameSign) {
             mpf_neg(mpfCopy[1], mpfCopy[1]);
         }
         curTest();
@@ -1829,7 +1828,7 @@ TestTernaryOperatorTwoNumbers(
     if constexpr (EnableTestSign5) {
         printTest(testNum);
         resetCopy();
-        if constexpr (!SharkTestForceSameSign) {
+        if constexpr (!HpShark::TestForceSameSign) {
             mpf_neg(mpfCopy[2], mpfCopy[2]);
         }
         curTest();
@@ -1845,7 +1844,7 @@ TestTernaryOperatorTwoNumbers(
     if constexpr (EnableTestSign7) {
         printTest(testNum);
         resetCopy();
-        if constexpr (!SharkTestForceSameSign) {
+        if constexpr (!HpShark::TestForceSameSign) {
             mpf_neg(mpfCopy[1], mpfCopy[1]);
             mpf_neg(mpfCopy[2], mpfCopy[2]);
         }
@@ -1855,7 +1854,7 @@ TestTernaryOperatorTwoNumbers(
     if constexpr (EnableTestSign8) {
         printTest(testNum);
         resetCopy();
-        if constexpr (!SharkTestForceSameSign) {
+        if constexpr (!HpShark::TestForceSameSign) {
             mpf_neg(mpfCopy[0], mpfCopy[0]);
             mpf_neg(mpfCopy[1], mpfCopy[1]);
             mpf_neg(mpfCopy[2], mpfCopy[2]);

@@ -184,7 +184,7 @@ Phase1_DE (
         final128[i] = prelim;
     }
 
-    if constexpr (SharkDebugChecksums) {
+    if constexpr (HpShark::DebugChecksums) {
         grid.sync();
         StoreCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::Z2XY, uint64_t>(
             record, debugStates, grid, block, final128, numActualDigitsPlusGuard);

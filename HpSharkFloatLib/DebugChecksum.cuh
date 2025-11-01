@@ -13,7 +13,7 @@ struct DebugMultiplyCount {
     __device__ 
     void DebugMultiplyErase ()
     {
-        if constexpr (SharkPrintMultiplyCounts) {
+        if constexpr (HpShark::PrintMultiplyCounts) {
             Data = {};
         }
     }
@@ -24,7 +24,7 @@ struct DebugMultiplyCount {
         int blockIdx,
         int threadIdx)
     {
-        if constexpr (SharkPrintMultiplyCounts) {
+        if constexpr (HpShark::PrintMultiplyCounts) {
             Data.count += count;
             Data.blockIdx = blockIdx;
             Data.threadIdx = threadIdx;
@@ -41,7 +41,7 @@ __device__ void DebugMultiplyIncrement (
     cooperative_groups::thread_block &block,
     int count)
 {
-    if constexpr (SharkPrintMultiplyCounts) {
+    if constexpr (HpShark::PrintMultiplyCounts) {
         array[block.group_index().x * SharkFloatParams::GlobalThreadsPerBlock + block.thread_index().x].DebugMultiplyIncrement(
             count,
             block.group_index().x,
@@ -159,7 +159,7 @@ __device__ void DebugState<SharkFloatParams>::Reset (
     int recursionDepth,
     int callIndex)
 {
-    if constexpr (SharkDebugChecksums) {
+    if constexpr (HpShark::DebugChecksums) {
         if (record == RecordIt::Yes) {
             // Initialize the checksum to zero
             Data.Initialized = 1;
@@ -193,7 +193,7 @@ __device__ void DebugState<SharkFloatParams>::Reset (
     int recursionDepth,
     int callIndex)
 {
-    if constexpr (SharkDebugChecksums) {
+    if constexpr (HpShark::DebugChecksums) {
         if (record == RecordIt::Yes) {
             // Initialize the checksum to zero
             Data.Initialized = 1;
@@ -224,7 +224,7 @@ __device__ void DebugState<SharkFloatParams>::Erase (
     int recursionDepth,
     int callIndex)
 {
-    if constexpr (SharkDebugChecksums) {
+    if constexpr (HpShark::DebugChecksums) {
         if (record == RecordIt::Yes) {
             // Initialize the checksum to zero
             Data.Initialized = 0;

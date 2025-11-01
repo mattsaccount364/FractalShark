@@ -102,14 +102,14 @@ struct SharedMemoryLayout {
     // ---- Existing shared layout components (unchanged here) ----
     static constexpr int SyncVarsSize = 2 * sizeof(uint32_t);
 
-    static constexpr int BaseSharedMemory = SharkLoadAllInShared
+    static constexpr int BaseSharedMemory = HpShark::LoadAllInShared
         ? (SharkFloatParams::GlobalNumUint32 * 4 * 2  // aDigits + bDigits
             + SharkFloatParams::GlobalNumUint32 * 2    // x_diff_abs + y_diff_abs
             + 1024)                                    // misc padding/other
         : (2048 + SyncVarsSize);                      // minimum when not loading all in shared + sync vars
 
     // ---- New pipeline buffer size expressed via the constants above ----
-    static constexpr int PipelineBufferSize = !SharkLoadAllInShared
+    static constexpr int PipelineBufferSize = !HpShark::LoadAllInShared
         ? kDoubleBufferBytes                 // double-buffered worst-case tile
         : 0;
 
@@ -130,7 +130,7 @@ __device__ uint32_t *GetRecursionSyncVars(uint32_t *base_shared_data) {
 // Get pipeline buffer for specific recursion depth (when not loading all in shared)
 template<class SharkFloatParams, int RecursionDepth>
 __device__ uint32_t *GetRecursionPipelineBuffer(uint32_t *base_shared_data) {
-    if constexpr (SharkLoadAllInShared) {
+    if constexpr (HpShark::LoadAllInShared) {
         return nullptr; // No pipeline buffer needed
     } else {
         constexpr int base_offset = SharedMemoryLayout<SharkFloatParams, RecursionDepth>::RecursionOffset;
@@ -387,7 +387,7 @@ SubtractDigitsParallel(
         pass++;
     } while (pass < MaxPasses);
 
-    if constexpr (SharkDebug) {
+    if constexpr (HpShark::Debug) {
         if (pass == MaxPasses && block.group_index().x == 0) {
             // This will deadlock the kernel because this problem is hard to diagnose
             grid.sync();
@@ -434,7 +434,7 @@ SubtractDigitsParallelImproved3(
 
     // Note: steps on this.
     auto *SharkRestrict sharedBorrowAny =
-        SharkLoadAllInShared ?
+        HpShark::LoadAllInShared ?
         x_diff_abs :
         &x_diff_abs[block.group_index().x];
 
@@ -1496,9 +1496,9 @@ ProcessConvolutionBatch (
     // ---------------- main path (BatchSize>=2; vectorized steady-state when 4) ----------------
     int i = i_start;
 
-    // If all data already in shared (SharkLoadAllInShared), we can skip alignment steering
+    // If all data already in shared (HpShark::LoadAllInShared), we can skip alignment steering
     // and simply use the 4-stage register pipeline with scalar loads from shared.
-    if constexpr (SharkLoadAllInShared) {
+    if constexpr (HpShark::LoadAllInShared) {
         // Prologue: scalar until we have >= BatchSize items
         const int pro_end = min(i_end, i + ((i_end - i + 1) % BatchSize) - 1);
         if (pro_end >= i) {
@@ -1634,8 +1634,8 @@ ProcessConvolutionBatch (
 
     // ---------------- global-memory path with alignment steering (BatchSize==4) ----------------
     if constexpr (
-        SharkInnerLoopOption == InnerLoopOption::TryUnalignedLoads2 ||
-        SharkInnerLoopOption == InnerLoopOption::TryUnalignedLoads2Shared) {
+        SharkInnerLoopOption == HpShark::InnerLoopOption::TryUnalignedLoads2 ||
+        SharkInnerLoopOption == HpShark::InnerLoopOption::TryUnalignedLoads2Shared) {
 
         ProcessConvolutionDirectLoad_Unaligned2<
             SharkFloatParams,
@@ -1657,7 +1657,7 @@ ProcessConvolutionBatch (
         return;
     }
 
-    if constexpr (SharkInnerLoopOption == InnerLoopOption::TryVectorLoads) {
+    if constexpr (SharkInnerLoopOption == HpShark::InnerLoopOption::TryVectorLoads) {
         //
         // This implementation uses BatchSize==8 and vector loads.  It
         // imperfectly handles weird cases where digits don't match number of
@@ -1690,7 +1690,7 @@ ProcessConvolutionBatch (
         return;
     }
 
-    if constexpr (SharkInnerLoopOption == InnerLoopOption::TryUnalignedLoads) {
+    if constexpr (SharkInnerLoopOption == HpShark::InnerLoopOption::TryUnalignedLoads) {
         //
         // This implementation uses BatchSize==8 and unaligned loads.
         //
@@ -1766,7 +1766,7 @@ MultiplyDigitsOnly(
         RecordIt::Yes :
         RecordIt::No;
 
-    if constexpr (SharkDebugChecksums) {
+    if constexpr (HpShark::DebugChecksums) {
         grid.sync();
 
         EraseCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Invalid>(
@@ -1822,7 +1822,7 @@ MultiplyDigitsOnly(
     const auto *SharkRestrict a_low = aDigits;
     const auto *SharkRestrict b_low = bDigits;
 
-    if constexpr (SharkDebugChecksums) {
+    if constexpr (HpShark::DebugChecksums) {
         grid.sync();
 
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::AHalfHigh>(
@@ -1982,7 +1982,7 @@ MultiplyDigitsOnly(
 
     grid.sync();
 
-    if constexpr (SharkDebugChecksums) {
+    if constexpr (HpShark::DebugChecksums) {
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::XDiff>(
             record, UseConvolutionHere, debugStates, grid, block, global_x_diff_abs, MaxHalfN);
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::YDiff>(
@@ -2021,7 +2021,7 @@ MultiplyDigitsOnly(
 
     if constexpr (UseConvolutionHere == UseConvolution::Yes) {
         // Replace A and B in shared memory with their absolute differences
-        if constexpr (SharkLoadAllInShared) {
+        if constexpr (HpShark::LoadAllInShared) {
             cg::memcpy_async(block, const_cast<uint32_t *>(x_diff_abs), global_x_diff_abs, sizeof(uint32_t) * MaxHalfN);
             cg::memcpy_async(block, const_cast<uint32_t *>(y_diff_abs), global_y_diff_abs, sizeof(uint32_t) * MaxHalfN);
         }
@@ -2029,7 +2029,7 @@ MultiplyDigitsOnly(
         const int tid = RelativeBlockIndex * block.dim_threads().x + block.thread_index().x;
         const int stride = block.dim_threads().x * ExecutionNumBlocks;
 
-        if constexpr (SharkLoadAllInShared) {
+        if constexpr (HpShark::LoadAllInShared) {
             // Wait for the first batch of A to be loaded
             cg::wait(block);
         }
@@ -2175,8 +2175,8 @@ MultiplyDigitsOnly(
                     yy_sum_low,
                     yy_sum_high,
                     shared_data,
-                    SharkLoadAllInShared ? x_diff_abs : global_x_diff_abs,
-                    SharkLoadAllInShared ? y_diff_abs : global_y_diff_abs);
+                    HpShark::LoadAllInShared ? x_diff_abs : global_x_diff_abs,
+                    HpShark::LoadAllInShared ? y_diff_abs : global_y_diff_abs);
 
                 int out_idx = k * 2;
                 Z1_temp_digitsXX[out_idx] = xx_sum_low;
@@ -2253,7 +2253,7 @@ MultiplyDigitsOnly(
 
             if (ExecuteAtAll) {
                 // Replace A and B in shared memory with their absolute differences
-                if constexpr (SharkLoadAllInShared) {
+                if constexpr (HpShark::LoadAllInShared) {
                     cg::memcpy_async(block,
                         const_cast<uint32_t *>(aDigits),
                         global_x_diff_abs,
@@ -2279,8 +2279,8 @@ MultiplyDigitsOnly(
                         shared_data,
                         A,
                         B,
-                        SharkLoadAllInShared ? aDigits : global_x_diff_abs,
-                        SharkLoadAllInShared ? bDigits : global_y_diff_abs,
+                        HpShark::LoadAllInShared ? aDigits : global_x_diff_abs,
+                        HpShark::LoadAllInShared ? bDigits : global_y_diff_abs,
                         x_diff_abs,
                         y_diff_abs,
                         Z1_temp_digitsXX,
@@ -2290,7 +2290,7 @@ MultiplyDigitsOnly(
                         block,
                         tempProducts);
 
-                if constexpr (SharkLoadAllInShared) {
+                if constexpr (HpShark::LoadAllInShared) {
                     cg::memcpy_async(block,
                         const_cast<uint32_t *>(aDigits),
                         A->Digits,
@@ -2307,7 +2307,7 @@ MultiplyDigitsOnly(
 
     grid.sync();
 
-    if constexpr (SharkDebugChecksums) {
+    if constexpr (HpShark::DebugChecksums) {
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z0XX>(
             record, UseConvolutionHere, debugStates, grid, block, Z0_OutDigitsXX, FinalZ0Size);
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z0XY>(
@@ -2443,7 +2443,7 @@ MultiplyDigitsOnly(
             Z1_digitsYY[z1_idx + 1] = yy_z1_high;
         }
 
-        if constexpr (SharkDebugChecksums) {
+        if constexpr (HpShark::DebugChecksums) {
             grid.sync();
 
             StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Z1XX>(
@@ -2536,7 +2536,7 @@ MultiplyDigitsOnly(
             final128YY[result_idx + 1] = yy_sum_high;
         }
 
-        if constexpr (SharkDebugChecksums) {
+        if constexpr (HpShark::DebugChecksums) {
             grid.sync();
 
             StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Final128XX>(
@@ -2635,23 +2635,23 @@ static __device__ void MultiplyHelperKaratsubaV2Separates(
     auto *SharkRestrict debugStates = reinterpret_cast<DebugState<SharkFloatParams>*>(&tempProducts[Checksum_offset]);
 
     auto *SharkRestrict aDigits =
-        SharkLoadAllInShared ?
+        HpShark::LoadAllInShared ?
         (shared_data) :
         const_cast<uint32_t *>(A->Digits);
     auto *SharkRestrict bDigits =
-        SharkLoadAllInShared ?
+        HpShark::LoadAllInShared ?
         (aDigits + NewN + CalcAlign16Bytes32BitIndex(NewN)) :
         const_cast<uint32_t *>(B->Digits);
     auto *SharkRestrict x_diff_abs =
-        SharkLoadAllInShared ?
+        HpShark::LoadAllInShared ?
         reinterpret_cast<uint32_t *>(bDigits + NewN + CalcAlign16Bytes32BitIndex(NewN)) :
         reinterpret_cast<uint32_t *>(&tempProducts[XDiff_offset]);
     auto *SharkRestrict y_diff_abs =
-        SharkLoadAllInShared ?
+        HpShark::LoadAllInShared ?
         reinterpret_cast<uint32_t *>(x_diff_abs + (NewN + 1) / 2 + CalcAlign16Bytes32BitIndex((NewN + 1) / 2)) :
         reinterpret_cast<uint32_t *>(&tempProducts[YDiff_offset]);
 
-    if constexpr (SharkLoadAllInShared) {
+    if constexpr (HpShark::LoadAllInShared) {
         cg::memcpy_async(block, aDigits, A->Digits, sizeof(uint32_t) * NewN);
         cg::memcpy_async(block, bDigits, B->Digits, sizeof(uint32_t) * NewN);
     }/* else {
@@ -2659,13 +2659,13 @@ static __device__ void MultiplyHelperKaratsubaV2Separates(
         memset(shared_data, 0xcd, AvailableShared);
     }*/
 
-    if constexpr (SharkPrintMultiplyCounts) {
+    if constexpr (HpShark::PrintMultiplyCounts) {
         const auto CurBlock = block.group_index().x;
         const auto CurThread = block.thread_index().x;
         debugMultiplyCounts[CurBlock * SharkFloatParams::GlobalThreadsPerBlock + CurThread].DebugMultiplyErase();
     }
 
-    if constexpr (SharkDebugChecksums) {
+    if constexpr (HpShark::DebugChecksums) {
         const auto CurBlock = block.group_index().x;
         const auto CurThread = block.thread_index().x;
         debugMultiplyCounts[CurBlock * SharkFloatParams::GlobalThreadsPerBlock + CurThread].DebugMultiplyErase();
@@ -2827,7 +2827,7 @@ static __device__ void MultiplyHelperKaratsubaV2Separates(
         RecordIt::Yes :
         RecordIt::No;
 
-    if constexpr (SharkDebugChecksums) {
+    if constexpr (HpShark::DebugChecksums) {
         grid.sync();
 
         StoreCurrentDebugState<SharkFloatParams, RecursionDepth, CallIndex, DebugStatePurpose::Result_offsetXX>(

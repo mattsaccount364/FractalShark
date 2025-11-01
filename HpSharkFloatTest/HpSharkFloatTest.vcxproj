@@ -130,7 +130,6 @@
     <ClCompile Include="KernelInvokeNTTPerf.cpp" />
     <ClCompile Include="KernelInvokeReferenceCorrectness.cpp" />
     <ClCompile Include="ReferenceAdd.cpp" />
-    <ClCompile Include="ReferenceKaratsuba.cpp" />
     <ClCompile Include="ReferenceNTT2.cpp" />
     <ClInclude Include="ReferenceNTT2.h" />
     <CudaCompile Include="Archived\MultiplyKaratsubaV1.cu">
@@ -150,7 +149,6 @@
     <ClInclude Include="MainTestCuda.h" />
     <ClInclude Include="NullKernel.cuh" />
     <ClInclude Include="ReferenceAdd.h" />
-    <ClInclude Include="ReferenceKaratsuba.h" />
     <ClInclude Include="Tests.h" />
     <ClInclude Include="TestTracker.h" />
   </ItemGroup>

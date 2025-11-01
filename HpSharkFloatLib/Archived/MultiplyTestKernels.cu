@@ -1,7 +1,7 @@
 #include "MultiplyKaratsuba.cu"
 
 template<class SharkFloatParams>
-__maxnreg__(SharkRegisterLimit)
+__maxnreg__(HpShark::RegisterLimit)
 __global__ void MultiplyKernelKaratsubaV2(
     HpSharkComboResults<SharkFloatParams> *combo,
     uint64_t *tempProducts) {
@@ -21,7 +21,7 @@ __global__ void MultiplyKernelKaratsubaV2(
 
 template<class SharkFloatParams>
 __global__ void
-__maxnreg__(SharkRegisterLimit)
+__maxnreg__(HpShark::RegisterLimit)
 MultiplyKernelKaratsubaV2TestLoop(
     HpSharkComboResults<SharkFloatParams> *combo,
     uint64_t numIters,
@@ -48,7 +48,7 @@ void ComputeMultiplyKaratsubaV2Gpu(void *kernelArgs[]) {
 
     constexpr auto sharedAmountBytes = CalculateMultiplySharedMemorySize<SharkFloatParams>();
 
-    if constexpr (SharkCustomStream) {
+    if constexpr (HpShark::CustomStream) {
         cudaFuncSetAttribute(
             MultiplyKernelKaratsubaV2<SharkFloatParams>,
             cudaFuncAttributeMaxDynamicSharedMemorySize,
@@ -86,7 +86,7 @@ void ComputeMultiplyKaratsubaV2GpuTestLoop(cudaStream_t &stream, void *kernelArg
 
     constexpr auto sharedAmountBytes = CalculateMultiplySharedMemorySize<SharkFloatParams>();
 
-    if constexpr (SharkCustomStream) {
+    if constexpr (HpShark::CustomStream) {
         cudaFuncSetAttribute(
             MultiplyKernelKaratsubaV2TestLoop<SharkFloatParams>,
             cudaFuncAttributeMaxDynamicSharedMemorySize,

@@ -1,7 +1,7 @@
 #include "MultiplyNTT.cu"
 
 template <class SharkFloatParams>
-__maxnreg__(SharkRegisterLimit) __global__
+__maxnreg__(HpShark::RegisterLimit) __global__
     void MultiplyKernelNTT(HpSharkComboResults<SharkFloatParams>* combo, uint64_t* tempProducts)
 {
 
@@ -20,7 +20,7 @@ __maxnreg__(SharkRegisterLimit) __global__
 
 template <class SharkFloatParams>
 __global__ void
-__maxnreg__(SharkRegisterLimit)
+__maxnreg__(HpShark::RegisterLimit)
     MultiplyKernelNTTTestLoop(HpSharkComboResults<SharkFloatParams>* combo,
                                       uint64_t numIters,
                                       uint64_t* tempProducts)
@@ -49,7 +49,7 @@ ComputeMultiplyNTTGpu(void* kernelArgs[])
 
     constexpr auto sharedAmountBytes = CalculateNTTSharedMemorySize<SharkFloatParams>();
 
-    if constexpr (SharkCustomStream) {
+    if constexpr (HpShark::CustomStream) {
         cudaFuncSetAttribute(MultiplyKernelNTT<SharkFloatParams>,
                              cudaFuncAttributeMaxDynamicSharedMemorySize,
                              sharedAmountBytes);
@@ -86,7 +86,7 @@ ComputeMultiplyNTTGpuTestLoop(cudaStream_t& stream, void* kernelArgs[])
 
     constexpr auto sharedAmountBytes = CalculateNTTSharedMemorySize<SharkFloatParams>();
 
-    if constexpr (SharkCustomStream) {
+    if constexpr (HpShark::CustomStream) {
         cudaFuncSetAttribute(MultiplyKernelNTTTestLoop<SharkFloatParams>,
                              cudaFuncAttributeMaxDynamicSharedMemorySize,
                              sharedAmountBytes);

@@ -23,12 +23,6 @@
 #define SharkRestrict __restrict__
 //#define SharkRestrict
 
-#ifdef _DEBUG
-static constexpr bool SharkDebug = true;
-#else
-static constexpr bool SharkDebug = false;
-#endif
-
 // Suggested combinations.
 // For testing, define:
 //  - ENABLE_ADD_KERNEL, ENABLE_MULTIPLY_NTT_KERNEL, or ENABLE_REFERENCE_KERNEL
@@ -85,96 +79,99 @@ static constexpr bool SharkDebug = false;
 #endif
 #endif
 
-static constexpr auto SharkBasicCorrectness = ENABLE_BASIC_CORRECTNESS;
-
-#ifdef ENABLE_CONVERSION_TESTS
-static constexpr auto SharkEnableConversionTests = true;
-#else
-static constexpr auto SharkEnableConversionTests = false;
-#endif
-
-#ifdef ENABLE_ADD_KERNEL
-static constexpr auto SharkEnableAddKernel = true;
-#else
-static constexpr auto SharkEnableAddKernel = false;
-#endif
-
-#ifdef ENABLE_MULTIPLY_NTT_KERNEL
-static constexpr auto SharkEnableMultiplyNTTKernel = true;
-#else
-static constexpr auto SharkEnableMultiplyNTTKernel = false;
-#endif
-
-#ifdef ENABLE_REFERENCE_KERNEL
-static constexpr auto SharkEnableReferenceKernel = true;
-#else
-static constexpr auto SharkEnableReferenceKernel = false;
-#endif
-
-#ifdef ENABLE_FULL_KERNEL
-static constexpr auto SharkEnableFullKernel = true;
-#else
-static constexpr auto SharkEnableFullKernel = false;
-#endif
-
-static constexpr auto SharkEnablePeriodicity = SharkEnableFullKernel;
-
-#ifdef _DEBUG
-#define SharkForceInlineReleaseOnly
-#else
-#define SharkForceInlineReleaseOnly __forceinline__
-#endif
-
-static constexpr bool SharkTestGpu = (SharkEnableAddKernel || SharkEnableMultiplyNTTKernel ||
-                                      SharkEnableReferenceKernel || SharkEnableFullKernel);
-//static constexpr bool SharkTestGpu = false;
-
-static constexpr auto SharkTestComicalThreadCount = 13;
-
-// Set to true to use a custom stream for the kernel launch
-static constexpr auto SharkCustomStream = true;
-
-enum class InnerLoopOption {
-    BasicGlobal,
-    BasicAllInShared,
-    TryVectorLoads,
-    TryUnalignedLoads,
-    TryUnalignedLoads2,
-    TryUnalignedLoads2Shared
-};
-
-static constexpr InnerLoopOption SharkInnerLoopOption =
-    InnerLoopOption::TryUnalignedLoads2;
-
-static constexpr auto SharkLoadAllInShared =
-    (SharkInnerLoopOption == InnerLoopOption::BasicAllInShared) ||
-    (SharkInnerLoopOption == InnerLoopOption::TryUnalignedLoads2Shared);
-
-// Set to true to use shared memory for the incoming numbers
-static constexpr auto SharkRegisterLimit = 127;
-
-static constexpr auto SharkConstantSharedRequiredBytes = 0;
-
-static constexpr auto SharkBatchSize = SharkDebug ? 8 : 512;
-
-static constexpr auto SharkKaratsubaBatchSize = SharkLoadAllInShared ? 1 : 4;
-
-// TODO we should get this shit to work
-static constexpr bool SharkDebugChecksums = (SharkBasicCorrectness != 2) ? SharkDebug : false;
-//static constexpr bool SharkDebugChecksums = false;
-static constexpr bool SharkPrintMultiplyCounts = false; // SharkDebugChecksums;
-static constexpr bool SharkTestCorrectness = (SharkBasicCorrectness == 2) ? SharkDebug : true;
-static constexpr bool SharkTestInfiniteCorrectness = SharkTestCorrectness ? true : false; // Was true : false
-static constexpr auto SharkTestForceSameSign = false;
-static constexpr bool SharkTestBenchmarkAgainstHost = false;
-static constexpr bool SharkTestInitCudaMemory = true;
-
-// True to compare against the full host-side reference implementation, false is MPIR only
-// False is useful to speed up e.g. testing many cases fast but gives poor diagnostic results.
-static constexpr bool SharkTestReferenceImpl = false;
-
-// ---- detail helpers (fallback for pre-C++20) ----
 namespace HpShark {
+
+    #ifdef _DEBUG
+    static constexpr bool Debug = true;
+    #else
+    static constexpr bool Debug = false;
+    #endif
+
+    static constexpr auto BasicCorrectness = ENABLE_BASIC_CORRECTNESS;
+
+    #ifdef ENABLE_CONVERSION_TESTS
+    static constexpr auto EnableConversionTests = true;
+    #else
+    static constexpr auto EnableConversionTests = false;
+    #endif
+
+    #ifdef ENABLE_ADD_KERNEL
+    static constexpr auto EnableAddKernel = true;
+    #else
+    static constexpr auto EnableAddKernel = false;
+    #endif
+
+    #ifdef ENABLE_MULTIPLY_NTT_KERNEL
+    static constexpr auto EnableMultiplyNTTKernel = true;
+    #else
+    static constexpr auto EnableMultiplyNTTKernel = false;
+    #endif
+
+    #ifdef ENABLE_REFERENCE_KERNEL
+    static constexpr auto EnableReferenceKernel = true;
+    #else
+    static constexpr auto EnableReferenceKernel = false;
+    #endif
+
+    #ifdef ENABLE_FULL_KERNEL
+    static constexpr auto EnableFullKernel = true;
+    #else
+    static constexpr auto EnableFullKernel = false;
+    #endif
+
+    static constexpr auto EnablePeriodicity = EnableFullKernel;
+
+    #ifdef _DEBUG
+    #define SharkForceInlineReleaseOnly
+    #else
+    #define SharkForceInlineReleaseOnly __forceinline__
+    #endif
+
+    static constexpr bool TestGpu = (EnableAddKernel || EnableMultiplyNTTKernel ||
+                                          EnableReferenceKernel || EnableFullKernel);
+    //static constexpr bool TestGpu = false;
+
+    static constexpr auto TestComicalThreadCount = 13;
+
+    // Set to true to use a custom stream for the kernel launch
+    static constexpr auto CustomStream = true;
+
+    enum class InnerLoopOption {
+        BasicGlobal,
+        BasicAllInShared,
+        TryVectorLoads,
+        TryUnalignedLoads,
+        TryUnalignedLoads2,
+        TryUnalignedLoads2Shared
+    };
+
+    static constexpr InnerLoopOption SharkInnerLoopOption =
+        InnerLoopOption::TryUnalignedLoads2;
+
+    static constexpr auto LoadAllInShared =
+        (SharkInnerLoopOption == InnerLoopOption::BasicAllInShared) ||
+        (SharkInnerLoopOption == InnerLoopOption::TryUnalignedLoads2Shared);
+
+
+    // Set to true to use shared memory for the incoming numbers
+    static constexpr auto RegisterLimit = 127;
+
+    static constexpr auto ConstantSharedRequiredBytes = 0;
+
+    // TODO we should get this shit to work
+    static constexpr bool DebugChecksums = (BasicCorrectness != 2) ? Debug : false;
+    //static constexpr bool DebugChecksums = false;
+    static constexpr bool PrintMultiplyCounts = false; // DebugChecksums;
+    static constexpr bool TestCorrectness = (BasicCorrectness == 2) ? Debug : true;
+    static constexpr bool TestInfiniteCorrectness = TestCorrectness ? true : false; // Was true : false
+    static constexpr auto TestForceSameSign = false;
+    static constexpr bool TestBenchmarkAgainstHost = false;
+    static constexpr bool TestInitCudaMemory = true;
+
+    // True to compare against the full host-side reference implementation, false is MPIR only
+    // False is useful to speed up e.g. testing many cases fast but gives poor diagnostic results.
+    static constexpr bool TestReferenceImpl = false;
+
     constexpr uint32_t
     ceil_pow2_u32(uint32_t v)
     {
@@ -195,22 +192,21 @@ namespace HpShark {
     {
         return v && ((v & (v - 1u)) == 0u);
     }
-} // namespace detail
+}
 
 template<
     int32_t pThreadsPerBlock,
     int32_t pNumBlocks,
-    int32_t pNumDigits = pThreadsPerBlock * pNumBlocks,
-    int32_t pConvolutionLimit = 9>
+    int32_t pNumDigits = pThreadsPerBlock * pNumBlocks>
 struct GenericSharkFloatParams {
     using Float = HDRFloat<float>;
     using SubType = float;
 
-    static constexpr bool SharkUsePow2SizesOnly = SharkEnableMultiplyNTTKernel;
+    static constexpr bool SharkUsePow2SizesOnly = HpShark::EnableMultiplyNTTKernel;
 
     static constexpr int32_t GlobalThreadsPerBlock = pThreadsPerBlock;
     static constexpr int32_t GlobalNumBlocks = pNumBlocks;
-    static constexpr int32_t SharkBatchSize = ::SharkBatchSize;
+
     // Fixed number of uint32_t values
     static constexpr int32_t Guard = 4;
 
@@ -237,16 +233,12 @@ struct GenericSharkFloatParams {
     static constexpr bool DisableFinalConstruction = false;
     static constexpr bool ForceNoOp = false;
 
-    // 1, 3, 9, 27, 81
-    static constexpr auto ConvolutionLimit = pConvolutionLimit;
-
-    static constexpr auto NumDebugStates = ((ConvolutionLimit + 1) * 3 * static_cast<int>(DebugStatePurpose::NumPurposes));
+    static constexpr auto NumDebugStates = (3 * static_cast<int>(DebugStatePurpose::NumPurposes));
     static constexpr auto NumDebugMultiplyCounts = GlobalThreadsPerBlock * GlobalNumBlocks;
 
     static std::string GetDescription() {
         std::string desc = "GlobalThreadsPerBlock: " + std::to_string(GlobalThreadsPerBlock) +
-            ", GlobalNumBlocks: " + std::to_string(GlobalNumBlocks) +
-            ", SharkBatchSize: " + std::to_string(SharkBatchSize);
+            ", GlobalNumBlocks: " + std::to_string(GlobalNumBlocks);
         return desc;
     }
 
@@ -260,7 +252,7 @@ struct GenericSharkFloatParams {
     >;
 
     static constexpr SharkNTT::PlanPrime NTTPlan = SharkNTT::BuildPlanPrime(GlobalNumUint32, 26, 2);
-    static constexpr bool Periodicity = SharkEnablePeriodicity;
+    static constexpr bool Periodicity = HpShark::EnablePeriodicity;
 
     using ReferenceIterT = GPUReferenceIter<Float, PerturbExtras::Disable>;
 };
@@ -282,8 +274,8 @@ static constexpr auto AdditionalUInt64PerFrame = 256;
 static constexpr auto MaxBlocks = 256;
 
 static constexpr auto AdditionalGlobalSyncSpace = 128 * MaxBlocks;
-static constexpr auto AdditionalGlobalMultipliesPerThread = SharkPrintMultiplyCounts ? 1024 * 1024 : 0;
-static constexpr auto AdditionalGlobalChecksumSpace = SharkDebugChecksums ? 1024 * 1024 : 0;
+static constexpr auto AdditionalGlobalMultipliesPerThread = HpShark::PrintMultiplyCounts ? 1024 * 1024 : 0;
+static constexpr auto AdditionalGlobalChecksumSpace = HpShark::DebugChecksums ? 1024 * 1024 : 0;
 
 static constexpr auto AdditionalGlobalSyncSpaceOffset = 0;
 static constexpr auto AdditionalMultipliesOffset = AdditionalGlobalSyncSpaceOffset + AdditionalGlobalSyncSpace;
@@ -325,9 +317,9 @@ constexpr int32_t CalculateMultiplySharedMemorySize() {
     // everything into shared memory and instead using a constant amount.
     constexpr auto sharedRequired = SharkFloatParams::GlobalThreadsPerBlock * sizeof(uint64_t) * 3;
 
-    //SharkConstantSharedRequiredBytes
+    //HpShark::ConstantSharedRequiredBytes
     constexpr auto sharedAmountBytes =
-        SharkLoadAllInShared ?
+        HpShark::LoadAllInShared ?
         (2 * NewN + 2 * n) * sizeof(uint32_t) :
         sharedRequired;
 
@@ -338,7 +330,7 @@ template <class SharkFloatParams>
 constexpr int32_t
 CalculateNTTSharedMemorySize()
 {
-    // SharkConstantSharedRequiredBytes
+    // HpShark::ConstantSharedRequiredBytes
     constexpr auto sharedAmountBytes = 3 * 2048 * sizeof(uint64_t);
     return sharedAmountBytes;
 }
@@ -377,13 +369,13 @@ using TestPerSharkParams1 = GenericSharkFloatParams<32, 2, 64>;
 //using TestPerSharkParams2 = GenericSharkFloatParams<256, 128, 131072>;
 using TestPerSharkParams2 = GenericSharkFloatParams<256, 64, 16384>;
 //using TestPerSharkParams2 = GenericSharkFloatParams<64 * StupidMult, 108, 7776, 9>;
-using TestPerSharkParams3 = GenericSharkFloatParams<32 * StupidMult, 108, 7776, 9>;
-using TestPerSharkParams4 = GenericSharkFloatParams<16 * StupidMult, 108, 7776, 9>;
+using TestPerSharkParams3 = GenericSharkFloatParams<32 * StupidMult, 108, 7776>;
+using TestPerSharkParams4 = GenericSharkFloatParams<16 * StupidMult, 108, 7776>;
 
-using TestPerSharkParams5 = GenericSharkFloatParams<128 * StupidMult, 108, 7776, 27>;
-using TestPerSharkParams6 = GenericSharkFloatParams<64 * StupidMult, 108, 7776, 27>;
-using TestPerSharkParams7 = GenericSharkFloatParams<32 * StupidMult,  108, 7776, 27>;
-using TestPerSharkParams8 = GenericSharkFloatParams<16 * StupidMult,  108, 7776, 27>;
+using TestPerSharkParams5 = GenericSharkFloatParams<128 * StupidMult, 108, 7776>;
+using TestPerSharkParams6 = GenericSharkFloatParams<64 * StupidMult, 108, 7776>;
+using TestPerSharkParams7 = GenericSharkFloatParams<32 * StupidMult,  108, 7776>;
+using TestPerSharkParams8 = GenericSharkFloatParams<16 * StupidMult,  108, 7776>;
 
 // Correctness test sizes
 using TestCorrectnessSharkParams1 = Test8x1SharkParams;

@@ -609,7 +609,7 @@ static __device__ void AddHelperSeparates(
 
     static constexpr auto CallIndex = 0;
 
-    if constexpr (SharkDebugChecksums) {
+    if constexpr (HpShark::DebugChecksums) {
         EraseCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::Invalid>(record, debugStates, grid, block);
         EraseCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::ADigits>(record, debugStates, grid, block);
         EraseCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::BDigits>(record, debugStates, grid, block);
@@ -852,7 +852,7 @@ static __device__ void AddHelperSeparates(
             grid);
     }
 
-    if constexpr (SharkDebugChecksums) {
+    if constexpr (HpShark::DebugChecksums) {
         grid.sync();
         StoreCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::FinalAdd1, uint64_t>(
             record, debugStates, grid, block, extResultTrue, numActualDigitsPlusGuard);
@@ -925,7 +925,7 @@ static __device__ void AddHelperSeparates(
     //    outExponent_DE
     //     );
 
-    if constexpr (SharkDebugChecksums) {
+    if constexpr (HpShark::DebugChecksums) {
         grid.sync();
         StoreCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::Result_Add1, uint32_t>(
             record, debugStates, grid, block, Out_A_B_C->Digits, numActualDigits);

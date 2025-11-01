@@ -60,7 +60,7 @@ InvokeHpSharkReferenceKernelPerf(BenchmarkTimer *timer,
 
     typename SharkFloatParams::ReferenceIterT *gpuReferenceIters;
     cudaMalloc(&gpuReferenceIters, sizeof(SharkFloatParams::ReferenceIterT) * numIters);
-    if constexpr (SharkTestInitCudaMemory) {
+    if constexpr (HpShark::TestInitCudaMemory) {
         cudaMemset(gpuReferenceIters, 0xCD, sizeof(SharkFloatParams::ReferenceIterT) * numIters);
     } else {
         cudaMemset(gpuReferenceIters, 0, sizeof(SharkFloatParams::ReferenceIterT) * numIters);
@@ -73,7 +73,7 @@ InvokeHpSharkReferenceKernelPerf(BenchmarkTimer *timer,
         (AdditionalUInt64Global + CalculateNTTFrameSize<SharkFloatParams>()) * sizeof(uint64_t);
     cudaMalloc(&d_tempProducts, BytesToAllocate);
 
-    if constexpr (!SharkTestInitCudaMemory) {
+    if constexpr (!HpShark::TestInitCudaMemory) {
         cudaMemset(d_tempProducts, 0, BytesToAllocate);
     } else {
         cudaMemset(d_tempProducts, 0xCD, BytesToAllocate);
@@ -85,7 +85,7 @@ InvokeHpSharkReferenceKernelPerf(BenchmarkTimer *timer,
         comboGpu, &combo, sizeof(HpSharkReferenceResults<SharkFloatParams>), cudaMemcpyHostToDevice);
     assert(combo.OutputIters == nullptr); // Should not be set on input
 
-    uint8_t byteToSet = SharkTestInitCudaMemory ? 0xCD : 0;
+    uint8_t byteToSet = HpShark::TestInitCudaMemory ? 0xCD : 0;
 
     // Note: we're clearing a specific set of members here, not the whole struct.
     cudaMemset(&comboGpu->Add.A_X2, byteToSet, sizeof(HpSharkFloat<SharkFloatParams>));
@@ -112,7 +112,7 @@ InvokeHpSharkReferenceKernelPerf(BenchmarkTimer *timer,
 
     cudaStream_t stream = nullptr;
 
-    if constexpr (SharkCustomStream) {
+    if constexpr (HpShark::CustomStream) {
         auto res = cudaStreamCreate(&stream); // Create a stream
 
         if (res != cudaSuccess) {
@@ -123,7 +123,7 @@ InvokeHpSharkReferenceKernelPerf(BenchmarkTimer *timer,
     cudaDeviceProp prop;
     int device_id = 0;
 
-    if constexpr (SharkCustomStream) {
+    if constexpr (HpShark::CustomStream) {
         cudaGetDeviceProperties(&prop, device_id);
         cudaDeviceSetLimit(cudaLimitPersistingL2CacheSize,
                            prop.persistingL2CacheMaxSize); /* Set aside max possible size of L2 cache for
@@ -178,7 +178,7 @@ InvokeHpSharkReferenceKernelPerf(BenchmarkTimer *timer,
     cudaFree(d_tempProducts);
     cudaFree(gpuReferenceIters);
 
-    if constexpr (SharkCustomStream) {
+    if constexpr (HpShark::CustomStream) {
         auto res = cudaStreamDestroy(stream); // Destroy the stream
 
         if (res != cudaSuccess) {

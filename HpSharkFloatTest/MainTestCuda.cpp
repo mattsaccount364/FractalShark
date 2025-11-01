@@ -80,7 +80,7 @@ CorrectnessTests()
 
     bool res;
 
-    if constexpr (SharkEnableConversionTests) {
+    if constexpr (HpShark::EnableConversionTests) {
         res = TestConversion<TestSharkParams>(0);
         if (!res) {
             auto q = PressKey();
@@ -90,7 +90,7 @@ CorrectnessTests()
         }
     }
 
-    if constexpr (SharkEnableAddKernel) {
+    if constexpr (HpShark::EnableAddKernel) {
         testBase = 4000;
         res = TestAllBinaryOp<TestSharkParams, Operator::Add>(testBase);
         if (!res) {
@@ -101,7 +101,7 @@ CorrectnessTests()
         }
     }
 
-    if constexpr (SharkEnableMultiplyNTTKernel) {
+    if constexpr (HpShark::EnableMultiplyNTTKernel) {
         testBase = 6000;
         res = TestAllBinaryOp<TestSharkParams, Operator::MultiplyNTT>(testBase);
         if (!res) {
@@ -112,7 +112,7 @@ CorrectnessTests()
         }
     }
 
-    if constexpr (SharkEnableReferenceKernel) {
+    if constexpr (HpShark::EnableReferenceKernel) {
         testBase = 2000;
         res = TestAllBinaryOp<TestSharkParams, Operator::ReferenceOrbit>(testBase);
         if (!res) {
@@ -132,7 +132,7 @@ RunCorrectnessTest()
     std::atomic<uint64_t> testCount = 0;
 
     // This kernel has periodicity checking and is incompatible with existing tests.
-    if constexpr (SharkEnableFullKernel) {
+    if constexpr (HpShark::EnableFullKernel) {
         return 1;
     } else {
 
@@ -163,7 +163,7 @@ RunCorrectnessTest()
             ComicalCorrectness();
 
             testCount++;
-        } while (SharkTestInfiniteCorrectness);
+        } while (HpShark::TestInfiniteCorrectness);
 
         if (PressKey() == 'q') {
             return 0;
@@ -245,7 +245,7 @@ main(int /*argc*/, char * /*argv*/[])
     //     return 0;
     // }
 
-    if constexpr (SharkTestCorrectness) {
+    if constexpr (HpShark::TestCorrectness) {
         res = RunCorrectnessTest();
         if (!res) {
             return 0;
@@ -258,7 +258,7 @@ main(int /*argc*/, char * /*argv*/[])
         PromptIntWithTimeout("CUDA iteration count? Default 1000", /*default=*/1000, timeoutInSec);
 
     int testBase = 0;
-    if constexpr (SharkEnableAddKernel) {
+    if constexpr (HpShark::EnableAddKernel) {
         testBase = 10000;
         res = TestBinaryOperatorPerf<Operator::Add>(testBase, numIters, internalTestLoopCount);
         if (!res) {
@@ -269,7 +269,7 @@ main(int /*argc*/, char * /*argv*/[])
         }
     }
 
-    if constexpr (SharkEnableMultiplyNTTKernel) {
+    if constexpr (HpShark::EnableMultiplyNTTKernel) {
         testBase = 13000;
         res = TestBinaryOperatorPerf<Operator::MultiplyNTT>(testBase, numIters, internalTestLoopCount);
         if (!res) {
@@ -280,7 +280,7 @@ main(int /*argc*/, char * /*argv*/[])
         }
     }
 
-    if constexpr (SharkEnableReferenceKernel) {
+    if constexpr (HpShark::EnableReferenceKernel) {
         testBase = 14000;
         res =
             TestBinaryOperatorPerf<Operator::ReferenceOrbit>(testBase, numIters, internalTestLoopCount);
@@ -292,7 +292,7 @@ main(int /*argc*/, char * /*argv*/[])
         }
     }
 
-    if constexpr (SharkEnableFullKernel) {
+    if constexpr (HpShark::EnableFullKernel) {
         testBase = 16010;
         res = TestFullReferencePerfView5<Operator::ReferenceOrbit>(
             testBase, numIters, internalTestLoopCount);
@@ -320,7 +320,7 @@ main(int /*argc*/, char * /*argv*/[])
     }
 #endif
 
-    if constexpr (!SharkTestCorrectness) {
+    if constexpr (!HpShark::TestCorrectness) {
         auto q = PressKey();
         if (q == 'q') {
             return 0;

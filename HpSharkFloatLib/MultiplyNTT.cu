@@ -548,7 +548,7 @@ MontgomeryMul(cooperative_groups::grid_group &grid,
               uint64_t b)
 {
     // We'll count 128-bit multiplications here as 3x64  (so 3 + 3 + 1)
-    if constexpr (SharkPrintMultiplyCounts) {
+    if constexpr (HpShark::PrintMultiplyCounts) {
         DebugMultiplyIncrement<SharkFloatParams>(debugCombo, grid, block, 7);
     }
 
@@ -1789,14 +1789,14 @@ MultiplyHelperNTTV2Separates(const SharkNTT::RootTables &roots,
     auto *SharkRestrict debugStates =
         reinterpret_cast<DebugState<SharkFloatParams> *>(&tempProducts[Checksum_offset]);
 
-    if constexpr (SharkPrintMultiplyCounts) {
+    if constexpr (HpShark::PrintMultiplyCounts) {
         const auto CurBlock = block.group_index().x;
         const auto CurThread = block.thread_index().x;
         debugMultiplyCounts[CurBlock * SharkFloatParams::GlobalThreadsPerBlock + CurThread]
             .DebugMultiplyErase();
     }
 
-    if constexpr (SharkDebugChecksums) {
+    if constexpr (HpShark::DebugChecksums) {
         const auto CurBlock = block.group_index().x;
         const auto CurThread = block.thread_index().x;
         debugMultiplyCounts[CurBlock * SharkFloatParams::GlobalThreadsPerBlock + CurThread]
@@ -1907,7 +1907,7 @@ MultiplyHelperNTTV2Separates(const SharkNTT::RootTables &roots,
                                 ? RecordIt::Yes
                                 : RecordIt::No;
 
-    if constexpr (SharkDebugChecksums) {
+    if constexpr (HpShark::DebugChecksums) {
         StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::ADigits, uint32_t>(
             record, debugStates, grid, block, A->Digits, NewN);
         StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::BDigits, uint32_t>(

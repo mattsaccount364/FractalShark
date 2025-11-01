@@ -224,7 +224,7 @@ void Phase1_ABC (
     outExpTrue_Orig = baseExp - bias;
     outExpFalse_Orig = baseExp - bias;
 
-    if constexpr (SharkDebugChecksums) {
+    if constexpr (HpShark::DebugChecksums) {
         grid.sync();
         StoreCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::Z2_Perm1, uint64_t>(
             record, debugStates, grid, block, extResultTrue, numActualDigitsPlusGuard);

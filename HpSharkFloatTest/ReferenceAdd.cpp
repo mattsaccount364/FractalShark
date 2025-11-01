@@ -623,7 +623,7 @@ Phase1_DE(const bool DIsBiggerMagnitude,
         }
     }
 
-    if constexpr (SharkDebugChecksums) {
+    if constexpr (HpShark::DebugChecksums) {
         const auto &debugResultState =
             GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2XY, uint64_t>(
                 debugStates, extResult_D_E.data(), numActualDigitsPlusGuard);
@@ -854,7 +854,7 @@ Phase1_ABC(const bool IsNegativeA,
         std::cout << "extResultFalse: " << VectorUintToHexString(extResultFalse) << "\n";
     }
 
-    if constexpr (SharkDebugChecksums) {
+    if constexpr (HpShark::DebugChecksums) {
         const auto &debugResultState1 =
             GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::Z2_Perm1, uint64_t>(
                 debugStates, extResultTrue.data(), numActualDigitsPlusGuard);
@@ -995,7 +995,7 @@ AddHelper(const HpSharkFloat<SharkFloatParams> *A_X2,
 {
     auto &debugStates = debugHostCombo.States;
 
-    if constexpr (SharkDebugChecksums) {
+    if constexpr (HpShark::DebugChecksums) {
         constexpr auto NewDebugStateSize = static_cast<int>(DebugStatePurpose::NumPurposes);
         debugStates.resize(NewDebugStateSize);
     }
@@ -1051,7 +1051,7 @@ AddHelper(const HpSharkFloat<SharkFloatParams> *A_X2,
         std::cout << "ext_E_B sign: " << (IsNegativeE ? "-" : "+") << std::endl;
     }
 
-    if constexpr (SharkDebugChecksums) {
+    if constexpr (HpShark::DebugChecksums) {
         // Compute checksums for the extended arrays.
         // Note: we use the actual digits (not the extended size) for the checksum.
 
@@ -1310,7 +1310,7 @@ AddHelper(const HpSharkFloat<SharkFloatParams> *A_X2,
         std::cout << "carry_DE out: 0x" << std::hex << carry_DE << std::endl;
     }
 
-    if constexpr (SharkDebugChecksums) {
+    if constexpr (HpShark::DebugChecksums) {
         const auto &debugPropagatedResultTrue =
             GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::FinalAdd1, uint64_t>(
                 debugStates, propagatedResultTrue.data(), numActualDigitsPlusGuard);
@@ -1380,7 +1380,7 @@ AddHelper(const HpSharkFloat<SharkFloatParams> *A_X2,
         std::cout << "OutXY2: " << OutXY2->ToHexString() << std::endl;
     }
 
-    if constexpr (SharkDebugChecksums) {
+    if constexpr (HpShark::DebugChecksums) {
         const auto &debugResultState_ABC =
             GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::Result_Add1, uint32_t>(
                 debugStates, OutXY1->Digits, SharkFloatParams::GlobalNumUint32);

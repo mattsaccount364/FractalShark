@@ -17,7 +17,7 @@ InvokeMultiplyNTTKernelCorrectness(BenchmarkTimer &timer,
     std::cout << " Allocating " << BytesToAllocate << " bytes for d_tempProducts " << std::endl;
     cudaMalloc(&d_tempProducts, BytesToAllocate);
 
-    if constexpr (!SharkTestInitCudaMemory) {
+    if constexpr (!HpShark::TestInitCudaMemory) {
         cudaMemset(d_tempProducts, 0, BytesToAllocate);
     } else {
         cudaMemset(d_tempProducts, 0xCD, BytesToAllocate);
@@ -36,7 +36,7 @@ InvokeMultiplyNTTKernelCorrectness(BenchmarkTimer &timer,
         SharkNTT::DestroyRoots<SharkFloatParams>(false, NTTRoots);
     }
 
-    if constexpr (!SharkTestInitCudaMemory) {
+    if constexpr (!HpShark::TestInitCudaMemory) {
         cudaMemset(&comboGpu->ResultX2, 0, sizeof(HpSharkFloat<SharkFloatParams>));
         cudaMemset(&comboGpu->Result2XY, 0, sizeof(HpSharkFloat<SharkFloatParams>));
         cudaMemset(&comboGpu->ResultY2, 0, sizeof(HpSharkFloat<SharkFloatParams>));
@@ -56,7 +56,7 @@ InvokeMultiplyNTTKernelCorrectness(BenchmarkTimer &timer,
     cudaMemcpy(&combo, comboGpu, sizeof(HpSharkComboResults<SharkFloatParams>), cudaMemcpyDeviceToHost);
 
     if (debugCombo != nullptr) {
-        if constexpr (SharkDebugChecksums) {
+        if constexpr (HpShark::DebugChecksums) {
             debugCombo->States.resize(SharkFloatParams::NumDebugStates);
             cudaMemcpy(debugCombo->States.data(),
                        &d_tempProducts[AdditionalChecksumsOffset],
@@ -64,7 +64,7 @@ InvokeMultiplyNTTKernelCorrectness(BenchmarkTimer &timer,
                        cudaMemcpyDeviceToHost);
         }
 
-        if constexpr (SharkPrintMultiplyCounts) {
+        if constexpr (HpShark::PrintMultiplyCounts) {
             debugCombo->MultiplyCounts.resize(SharkFloatParams::NumDebugMultiplyCounts);
             cudaMemcpy(debugCombo->MultiplyCounts.data(),
                        &d_tempProducts[AdditionalMultipliesOffset],

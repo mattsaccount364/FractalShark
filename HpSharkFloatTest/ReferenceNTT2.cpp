@@ -471,7 +471,7 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
 
     auto &debugStates = debugCombo.States;
 
-    if constexpr (SharkDebugChecksums) {
+    if constexpr (HpShark::DebugChecksums) {
         constexpr auto NewDebugStateSize = static_cast<int>(DebugStatePurpose::NumPurposes);
         debugStates.resize(NewDebugStateSize);
     }
@@ -491,7 +491,7 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
     assert(plan.N >= 2 * plan.L && "No-wrap condition violated: need N >= 2*L");
     assert((PHI % (2ull * (uint64_t)plan.N)) == 0ull);
 
-    if constexpr (SharkDebugChecksums) {
+    if constexpr (HpShark::DebugChecksums) {
         const auto &debugAState = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::ADigits>(
             debugStates, A->Digits, SharkFloatParams::GlobalNumUint32);
         const auto &debugBState = GetCurrentDebugState<SharkFloatParams, DebugStatePurpose::BDigits>(
@@ -545,7 +545,7 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
         PackBase2bPrime_NoAlloc(debugCombo, inA, plan, X);
         PackBase2bPrime_NoAlloc(debugCombo, inB, plan, Y);
 
-        if constexpr (SharkDebugChecksums) {
+        if constexpr (HpShark::DebugChecksums) {
             const auto &debugXState =
                 GetCurrentDebugState<SharkFloatParams, step1X>(debugStates, X.data(), (size_t)plan.N);
             const auto &debugYState =
@@ -566,7 +566,7 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
             Y[(size_t)i] = MontgomeryMul(debugCombo, Y[(size_t)i], roots.psi_pows[(size_t)i]);
         }
 
-        if constexpr (SharkDebugChecksums) {
+        if constexpr (HpShark::DebugChecksums) {
             const auto &debugXState =
                 GetCurrentDebugState<SharkFloatParams, step2X>(debugStates, X.data(), (size_t)plan.N);
             const auto &debugYState =

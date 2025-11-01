@@ -3,7 +3,7 @@
 
 template<class SharkFloatParams>
 __global__ void
-__maxnreg__(SharkRegisterLimit)
+__maxnreg__(HpShark::RegisterLimit)
 AddKernel(
     HpSharkAddComboResults<SharkFloatParams> *SharkRestrict combo,
     uint64_t *tempData) {
@@ -18,7 +18,7 @@ AddKernel(
 
 template<class SharkFloatParams>
 __global__ void
-__maxnreg__(SharkRegisterLimit)
+__maxnreg__(HpShark::RegisterLimit)
 AddKernelTestLoop(
     HpSharkAddComboResults<SharkFloatParams> *SharkRestrict combo,
     uint64_t numIters,

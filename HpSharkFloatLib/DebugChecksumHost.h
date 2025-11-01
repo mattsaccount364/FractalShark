@@ -52,7 +52,7 @@ struct DebugStateHost {
 
     /**
      * @brief Constructs a DebugStateHost by copying the data from
-     *        a raw pointer and length. If SharkDebugChecksums is enabled
+     *        a raw pointer and length. If HpShark::DebugChecksums is enabled
      *        in the template param, it also computes the CRC64.
      *
      * @param data     Pointer to the source data.
@@ -227,7 +227,7 @@ DebugStateHost<SharkFloatParams>::DebugStateHost(
     , CallIndex(callIndex)
     , Convolution(useConvolution)
 {
-    if constexpr (SharkDebugChecksums) {
+    if constexpr (HpShark::DebugChecksums) {
         // Copy data if valid
         if (data != nullptr && size > 0) {
             ArrayToChecksum32.assign(data, data + size);
@@ -254,7 +254,7 @@ DebugStateHost<SharkFloatParams>::DebugStateHost(
     , CallIndex(callIndex)
     , Convolution(useConvolution)
 {
-    if constexpr (SharkDebugChecksums) {
+    if constexpr (HpShark::DebugChecksums) {
         // Copy data if valid
         if (data != nullptr && size > 0) {
             ArrayToChecksum64.assign(data, data + size);
@@ -272,7 +272,7 @@ void DebugStateHost<SharkFloatParams>::Reset(
     int callIndex,
     UseConvolution useConvolution
 ) {
-    if constexpr (SharkDebugChecksums) {
+    if constexpr (HpShark::DebugChecksums) {
         Initialized = true;
         ArrayToChecksum32.assign(arrayToChecksum, arrayToChecksum + arraySize);
         Checksum = ComputeCRC64(ArrayToChecksum32, 0);
@@ -294,7 +294,7 @@ void DebugStateHost<SharkFloatParams>::Reset(
     int callIndex,
     UseConvolution useConvolution
 ) {
-    if constexpr (SharkDebugChecksums) {
+    if constexpr (HpShark::DebugChecksums) {
         Initialized = true;
         ArrayToChecksum64.assign(arrayToChecksum, arrayToChecksum + arraySize);
         Checksum = ComputeCRC64(ArrayToChecksum64, 0);

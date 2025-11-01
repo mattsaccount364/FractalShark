@@ -81,7 +81,7 @@ ReferenceHelper(cg::grid_group &grid,
 
 template <class SharkFloatParams>
 __global__ void
-__maxnreg__(SharkRegisterLimit)
+__maxnreg__(HpShark::RegisterLimit)
 HpSharkReferenceGpuKernel(HpSharkReferenceResults<SharkFloatParams> *SharkRestrict combo,
                           uint64_t *tempData)
 {
@@ -105,7 +105,7 @@ HpSharkReferenceGpuKernel(HpSharkReferenceResults<SharkFloatParams> *SharkRestri
 
 template <class SharkFloatParams>
 __global__ void
-__maxnreg__(SharkRegisterLimit)
+__maxnreg__(HpShark::RegisterLimit)
 HpSharkReferenceGpuLoop(HpSharkReferenceResults<SharkFloatParams> *SharkRestrict combo,
                         uint64_t numIters,
                         uint64_t *tempData,
@@ -151,7 +151,7 @@ ComputeHpSharkReferenceGpu(void *kernelArgs[])
 
     constexpr auto sharedAmountBytes = CalculateNTTSharedMemorySize<SharkFloatParams>();
 
-    if constexpr (SharkCustomStream) {
+    if constexpr (HpShark::CustomStream) {
         cudaFuncSetAttribute(HpSharkReferenceGpuLoop<SharkFloatParams>,
                              cudaFuncAttributeMaxDynamicSharedMemorySize,
                              sharedAmountBytes);
@@ -188,7 +188,7 @@ ComputeHpSharkReferenceGpuLoop(cudaStream_t &stream, void *kernelArgs[])
 
     constexpr auto sharedAmountBytes = CalculateNTTSharedMemorySize<SharkFloatParams>();
 
-    if constexpr (SharkCustomStream) {
+    if constexpr (HpShark::CustomStream) {
         cudaFuncSetAttribute(HpSharkReferenceGpuLoop<SharkFloatParams>,
                              cudaFuncAttributeMaxDynamicSharedMemorySize,
                              sharedAmountBytes);

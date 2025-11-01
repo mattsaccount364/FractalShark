@@ -15,7 +15,7 @@ InvokeMultiplyNTTKernelPerf(BenchmarkTimer &timer,
     std::cout << " Allocating " << BytesToAllocate << " bytes for d_tempProducts " << std::endl;
     cudaMalloc(&d_tempProducts, BytesToAllocate);
 
-    if constexpr (!SharkTestInitCudaMemory) {
+    if constexpr (!HpShark::TestInitCudaMemory) {
         cudaMemset(d_tempProducts, 0, BytesToAllocate);
     } else {
         cudaMemset(d_tempProducts, 0xCD, BytesToAllocate);
@@ -33,11 +33,12 @@ InvokeMultiplyNTTKernelPerf(BenchmarkTimer &timer,
             SharkFloatParams::NTTPlan.N, SharkFloatParams::NTTPlan.stages, NTTRoots);
 
         CopyRootsToCuda<SharkFloatParams>(comboGpu->Roots, NTTRoots);
+        SharkNTT::DestroyRoots<SharkFloatParams>(false, NTTRoots);
     }
 
     // Clear result slots (matches correctness init semantics)
     {
-        const uint8_t pat = SharkTestInitCudaMemory ? 0xCD : 0x00;
+        const uint8_t pat = HpShark::TestInitCudaMemory ? 0xCD : 0x00;
         cudaMemset(&comboGpu->ResultX2, pat, sizeof(HpSharkFloat<SharkFloatParams>));
         cudaMemset(&comboGpu->Result2XY, pat, sizeof(HpSharkFloat<SharkFloatParams>));
         cudaMemset(&comboGpu->ResultY2, pat, sizeof(HpSharkFloat<SharkFloatParams>));
@@ -46,7 +47,7 @@ InvokeMultiplyNTTKernelPerf(BenchmarkTimer &timer,
     // --- 2) Stream + persisting L2 window (identical policy to correctness) ----------------
     cudaStream_t stream = nullptr;
 
-    if constexpr (SharkCustomStream) {
+    if constexpr (HpShark::CustomStream) {
         auto res = cudaStreamCreate(&stream);
         if (res != cudaSuccess) {
             std::cerr << "CUDA error in creating stream: " << cudaGetErrorString(res) << std::endl;
@@ -94,7 +95,7 @@ InvokeMultiplyNTTKernelPerf(BenchmarkTimer &timer,
     // Roots were device-allocated in CopyRootsToCuda; destroy like correctness does
     SharkNTT::DestroyRoots<SharkFloatParams>(true, comboGpu->Roots);
 
-    if constexpr (SharkCustomStream) {
+    if constexpr (HpShark::CustomStream) {
         cudaStreamDestroy(stream);
     }
 

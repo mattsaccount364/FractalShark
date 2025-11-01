@@ -47,10 +47,10 @@
 
 // Comment out to disable specific kernels
 //#define ENABLE_CONVERSION_TESTS
-//#define ENABLE_ADD_KERNEL
+#define ENABLE_ADD_KERNEL
 //#define ENABLE_MULTIPLY_NTT_KERNEL
 //#define ENABLE_REFERENCE_KERNEL
-#define ENABLE_FULL_KERNEL
+//#define ENABLE_FULL_KERNEL
 
 // Uncomment this to enable the HpSharkFloat test program.
 // Comment for use in FractalShark
@@ -73,7 +73,7 @@
 #endif
 #else // not debug
 #ifdef HP_SHARK_FLOAT_TEST
-#define ENABLE_BASIC_CORRECTNESS 2
+#define ENABLE_BASIC_CORRECTNESS 0
 #else
 #define ENABLE_BASIC_CORRECTNESS 4
 #endif
@@ -159,18 +159,18 @@ namespace HpShark {
     static constexpr auto ConstantSharedRequiredBytes = 0;
 
     // TODO we should get this shit to work
-    static constexpr bool DebugChecksums = (BasicCorrectness != 2) ? Debug : false;
-    //static constexpr bool DebugChecksums = false;
+    //static constexpr bool DebugChecksums = (BasicCorrectness != 2) ? Debug : false;
+    static constexpr bool DebugChecksums = true;
     static constexpr bool PrintMultiplyCounts = false; // DebugChecksums;
     static constexpr bool TestCorrectness = (BasicCorrectness == 2) ? Debug : true;
     static constexpr bool TestInfiniteCorrectness = TestCorrectness ? true : false; // Was true : false
     static constexpr auto TestForceSameSign = false;
-    static constexpr bool TestBenchmarkAgainstHost = false;
+    static constexpr bool TestBenchmarkAgainstHost = true;
     static constexpr bool TestInitCudaMemory = true;
 
     // True to compare against the full host-side reference implementation, false is MPIR only
     // False is useful to speed up e.g. testing many cases fast but gives poor diagnostic results.
-    static constexpr bool TestReferenceImpl = false;
+    static constexpr bool TestReferenceImpl = true;
 
     constexpr uint32_t
     ceil_pow2_u32(uint32_t v)

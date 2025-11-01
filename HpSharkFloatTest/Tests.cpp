@@ -751,7 +751,7 @@ TestPerf(TestTracker &Tests,
             }
 
             if (expectedPeriod != -1) {
-                if (combo->Period != expectedPeriod) {
+                if (combo->Period != static_cast<uint64_t>(expectedPeriod)) {
                     std::cout << "Error: Expected period " << expectedPeriod << " but got "
                               << combo->Period << std::endl;
                     DebugBreak();
@@ -759,7 +759,7 @@ TestPerf(TestTracker &Tests,
             }
 
             if (expectedEscape != -1) {
-                if (combo->EscapedIteration != expectedEscape) {
+                if (combo->EscapedIteration != static_cast<uint64_t>(expectedEscape)) {
                     std::cout << "Error: Expected escape iteration " << expectedEscape << " but got "
                               << combo->EscapedIteration << std::endl;
                     DebugBreak();
@@ -2629,7 +2629,7 @@ TestAllBinaryOp(int testBase)
         const auto set = testBase + 100;
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(Tests, set + 10, "7", "19", "0");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-            Tests, set + 20, "4294967295", "1", "4294967296"); // +21 allocs adding this one
+            Tests, set + 20, "4294967295", "1", "4294967296");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
             Tests, set + 30, "4294967296", "1", "1");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(

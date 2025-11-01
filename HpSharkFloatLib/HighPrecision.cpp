@@ -208,8 +208,8 @@ MpfNormalize(mpf_t x)
     mp_limb_t *d = p->_mp_d;
 
     // Current used limb count (magnitude)
-    mp_size_t s = (p->_mp_size >= 0) ? p->_mp_size : -p->_mp_size;
-    mp_size_t n = s;
+    int s = (p->_mp_size >= 0) ? p->_mp_size : -p->_mp_size;
+    int n = s;
 
     // Trim zeros at the *high* end of the used window
     while (n > 0 && d[n - 1] == 0)
@@ -225,7 +225,7 @@ MpfNormalize(mpf_t x)
     // If we trimmed t = (s - n) high zero limbs, reduce exponent by t
     // to preserve value: value = (sum d[i] B^i) * B^(exp - used)
     // After trimming used->n, we need exp' - n == exp - s  =>  exp' = exp - (s - n)
-    mp_size_t trimmed = s - n;
+    int trimmed = s - n;
     if (trimmed)
         p->_mp_exp -= (mp_exp_t)trimmed;
 

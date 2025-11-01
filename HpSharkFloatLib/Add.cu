@@ -602,10 +602,7 @@ static __device__ void AddHelperSeparates(
     auto *SharkRestrict carry6 =
         reinterpret_cast<uint32_t *>(&tempData[Carry6_offset]);
 
-    const RecordIt record =
-        (block.thread_index().x == 0 && block.group_index().x == 0) ?
-        RecordIt::Yes :
-        RecordIt::No;
+    const RecordIt record = RecordIt::Yes;
 
     static constexpr auto CallIndex = 0;
 

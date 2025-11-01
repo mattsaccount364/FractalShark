@@ -306,7 +306,8 @@ TestConvertNumber(TestTracker &Tests, int testNum, const char *numberStr)
 
 template <class SharkFloatParams>
 void
-TestConvertNumber(int testNum, std::vector<uint64_t> limbs, int32_t exponent, bool isNegative)
+TestConvertNumber(
+    TestTracker &Tests, int testNum, std::vector<uint64_t> limbs, int32_t exponent, bool isNegative)
 {
     mpf_set_default_prec(HpSharkFloat<SharkFloatParams>::DefaultMpirBits);
 
@@ -332,7 +333,7 @@ TestConvertNumber(int testNum, std::vector<uint64_t> limbs, int32_t exponent, bo
     }
 
     // ---------------- Test conversion ----------------
-    TestConvertNumber<SharkFloatParams>(testNum, mpf_x);
+    TestConvertNumber<SharkFloatParams>(Tests, testNum, mpf_x);
 
     mpf_clear(mpf_x);
 }

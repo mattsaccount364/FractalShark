@@ -143,42 +143,60 @@ DebugStateHost<SharkFloatParams>::DebugStateHost()
 }
 
 template <class SharkFloatParams>
-uint64_t DebugStateHost<SharkFloatParams>::ComputeCRC64(
-    const std::vector<uint32_t> &arrayToChecksum,
-    uint64_t initialCrc
-) {
-    uint64_t crc = initialCrc;
-    for (uint64_t word : arrayToChecksum) {
-        crc ^= word;
-        for (int bit = 0; bit < 64; ++bit) {
-            if (crc & 1ULL) {
-                crc = (crc >> 1) ^ CRC64_POLY;
-            } else {
-                crc >>= 1;
-            }
-        }
+uint64_t
+DebugStateHost<SharkFloatParams>::ComputeCRC64(const std::vector<uint32_t> &arrayToChecksum,
+                                               uint64_t initialCrc)
+{
+    // Fletcher-64 over 32-bit words with seed packed as (s2<<32 | s1)
+    constexpr uint64_t M = 0xFFFFFFFFull; // 2^32 - 1
+    auto foldM = [](uint64_t v) -> uint32_t {
+        v = (v & M) + (v >> 32); // end-around carry fold
+        if (v >= M)
+            v -= M; // single subtract suffices
+        return static_cast<uint32_t>(v);
+    };
+
+    uint32_t s1 = static_cast<uint32_t>(initialCrc & 0xFFFFFFFFull);
+    uint32_t s2 = static_cast<uint32_t>(initialCrc >> 32);
+
+    for (uint32_t x : arrayToChecksum) {
+        s1 = foldM(uint64_t(s1) + uint64_t(x));
+        s2 = foldM(uint64_t(s2) + uint64_t(s1));
     }
-    return crc;
+
+    return (uint64_t(s2) << 32) | uint64_t(s1);
 }
 
 template <class SharkFloatParams>
-uint64_t DebugStateHost<SharkFloatParams>::ComputeCRC64(
-    const std::vector<uint64_t> &arrayToChecksum,
-    uint64_t initialCrc
-)
+uint64_t
+DebugStateHost<SharkFloatParams>::ComputeCRC64(const std::vector<uint64_t> &arrayToChecksum,
+                                               uint64_t initialCrc)
 {
-    uint64_t crc = initialCrc;
-    for (uint64_t word : arrayToChecksum) {
-        crc ^= word;
-        for (int bit = 0; bit < 64; ++bit) {
-            if (crc & 1ULL) {
-                crc = (crc >> 1) ^ CRC64_POLY;
-            } else {
-                crc >>= 1;
-            }
-        }
+    // Fletcher-64 treating each 64-bit word as two consecutive 32-bit words:
+    // low 32 bits, then high 32 bits (matches device little-endian split)
+    constexpr uint64_t M = 0xFFFFFFFFull; // 2^32 - 1
+    auto foldM = [](uint64_t v) -> uint32_t {
+        v = (v & M) + (v >> 32);
+        if (v >= M)
+            v -= M;
+        return static_cast<uint32_t>(v);
+    };
+
+    uint32_t s1 = static_cast<uint32_t>(initialCrc & 0xFFFFFFFFull);
+    uint32_t s2 = static_cast<uint32_t>(initialCrc >> 32);
+
+    for (uint64_t w : arrayToChecksum) {
+        uint32_t lo = static_cast<uint32_t>(w & 0xFFFFFFFFull);
+        uint32_t hi = static_cast<uint32_t>(w >> 32);
+
+        s1 = foldM(uint64_t(s1) + uint64_t(lo));
+        s2 = foldM(uint64_t(s2) + uint64_t(s1));
+
+        s1 = foldM(uint64_t(s1) + uint64_t(hi));
+        s2 = foldM(uint64_t(s2) + uint64_t(s1));
     }
-    return crc;
+
+    return (uint64_t(s2) << 32) | uint64_t(s1);
 }
 
 

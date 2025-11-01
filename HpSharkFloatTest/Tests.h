@@ -1,6 +1,10 @@
 #pragma once
 
-enum class Operator { Add, MultiplyFFT, MultiplyNTT, ReferenceOrbit };
+enum class Operator {
+    Add,
+    MultiplyNTT,
+    ReferenceOrbit,
+};
 
 template <Operator sharkOperator>
 const char *

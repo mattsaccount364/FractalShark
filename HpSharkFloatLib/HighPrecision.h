@@ -28,7 +28,7 @@ std::string MpfToHex32String(const mpf_t mpf_val);
 
 std::string MpfToHex64StringInvertable(const mpf_t mpf_val);
 
-void Hex64StringToMpf_Exact(const std::string &s, mpf_t &out);
+void Hex64StringToMpf_Exact(const std::string &s, mpf_t out);
 
 void MpfNormalize(mpf_t val);
 

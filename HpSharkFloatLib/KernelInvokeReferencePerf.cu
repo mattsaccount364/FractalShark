@@ -104,6 +104,7 @@ InvokeHpSharkReferenceKernelPerf(BenchmarkTimer *timer,
             SharkFloatParams::NTTPlan.N, SharkFloatParams::NTTPlan.stages, NTTRoots);
 
         CopyRootsToCuda<SharkFloatParams>(comboGpu->Multiply.Roots, NTTRoots);
+        SharkNTT::DestroyRoots<SharkFloatParams>(false, NTTRoots);
     }
 
     void *kernelArgs[] = {

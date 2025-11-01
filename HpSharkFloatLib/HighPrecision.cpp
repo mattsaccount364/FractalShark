@@ -91,7 +91,7 @@ MpfToHex64StringInvertable(const mpf_t mpf_val)
 }
 
 void
-Hex64StringToMpf_Exact(const std::string &s, mpf_t &out)
+Hex64StringToMpf_Exact(const std::string &s, mpf_t out)
 {
     static_assert(sizeof(mp_limb_t) == 8, "This function expects 64-bit GMP limbs.");
 

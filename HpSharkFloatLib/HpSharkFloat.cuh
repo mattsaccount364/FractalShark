@@ -79,7 +79,7 @@ static constexpr bool SharkDebug = false;
 #endif
 #else // not debug
 #ifdef HP_SHARK_FLOAT_TEST
-#define ENABLE_BASIC_CORRECTNESS 0
+#define ENABLE_BASIC_CORRECTNESS 2
 #else
 #define ENABLE_BASIC_CORRECTNESS 4
 #endif
@@ -160,11 +160,11 @@ static constexpr auto SharkBatchSize = SharkDebug ? 8 : 512;
 static constexpr auto SharkKaratsubaBatchSize = SharkLoadAllInShared ? 1 : 4;
 
 // TODO we should get this shit to work
-//static constexpr bool SharkDebugChecksums = (SharkBasicCorrectness != 2) ? SharkDebug : false;
-static constexpr bool SharkDebugChecksums = false;
+static constexpr bool SharkDebugChecksums = (SharkBasicCorrectness != 2) ? SharkDebug : false;
+//static constexpr bool SharkDebugChecksums = false;
 static constexpr bool SharkPrintMultiplyCounts = false; // SharkDebugChecksums;
 static constexpr bool SharkTestCorrectness = (SharkBasicCorrectness == 2) ? SharkDebug : true;
-static constexpr bool SharkTestInfiniteCorrectness = SharkTestCorrectness ? false : false; // Was true : false
+static constexpr bool SharkTestInfiniteCorrectness = SharkTestCorrectness ? true : false; // Was true : false
 static constexpr auto SharkTestForceSameSign = false;
 static constexpr bool SharkTestBenchmarkAgainstHost = false;
 static constexpr bool SharkTestInitCudaMemory = true;

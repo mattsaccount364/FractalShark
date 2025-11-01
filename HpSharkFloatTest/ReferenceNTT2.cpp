@@ -635,7 +635,7 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
                                  DebugStatePurpose::Z3XY>(
         OutXY, *A, *B, includeAdditionalFactorOfTwo, OutXYIsNegative);
 
-    DestroyRoots<SharkFloatParams>(false, roots);
+    SharkNTT::DestroyRoots<SharkFloatParams>(false, roots);
 }
 
 #define ExplicitlyInstantiate(SharkFloatParams)                                                         \

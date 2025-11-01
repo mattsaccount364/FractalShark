@@ -453,24 +453,24 @@ TestPerf(TestTracker &Tests,
     mpf_init(mpfHostResultXY2);
     mpf_init(mpfHostResultYY);
 
-    // Reference orbit:
-    mpf_t tempX, tempY, xSquared, ySquared, twoXY;
     mpf_t recurrenceX, recurrenceY;
-    mpf_init(tempX);
-    mpf_init(tempY);
-    mpf_init(xSquared);
-    mpf_init(ySquared);
-    mpf_init(twoXY);
+    mpf_init(recurrenceX);
+    mpf_init(recurrenceY);
+    mpf_set(recurrenceX, mpfX);
+    mpf_set(recurrenceY, mpfY);
 
     // Periodicity:
     mpf_t zx2, zy2;
     mpf_init(zx2);
     mpf_init(zy2);
 
-    mpf_init(recurrenceX);
-    mpf_init(recurrenceY);
-    mpf_set(recurrenceX, mpfX);
-    mpf_set(recurrenceY, mpfY);
+    // Reference orbit:
+    mpf_t tempX, tempY, xSquared, ySquared, twoXY;
+    mpf_init(tempX);
+    mpf_init(tempY);
+    mpf_init(xSquared);
+    mpf_init(ySquared);
+    mpf_init(twoXY);
 
     BenchmarkTimer hostTimer;
 
@@ -600,13 +600,14 @@ TestPerf(TestTracker &Tests,
 
     if constexpr (SharkTestGpu) {
 
-        auto CheckDiff = [&](const int testNum,
+        auto CheckDiff = [&](TestTracker &Tests,
+                             const int testNum,
                              const int numTerms,
                              const char *hostCustomOrGpu,
                              const mpf_t &mpfHostResult,
                              const HpSharkFloat<SharkFloatParams> &gpuResult) {
             auto testSucceeded = DiffAgainstHost<SharkFloatParams, sharkOperator>(
-                testNum, numTerms, hostCustomOrGpu, mpfHostResult, gpuResult);
+                Tests, testNum, numTerms, hostCustomOrGpu, mpfHostResult, gpuResult);
             if (!testSucceeded) {
                 std::cout << "Perf correctness test failed" << std::endl;
             } else {
@@ -645,8 +646,8 @@ TestPerf(TestTracker &Tests,
             if constexpr (SharkTestBenchmarkAgainstHost) {
                 bool testSucceeded = true;
                 constexpr auto numTerms = 3;
-                testSucceeded &= CheckDiff(testNum, numTerms, "GPU", mpfHostResultXY1, gpuResultXY1);
-                testSucceeded &= CheckDiff(testNum, numTerms, "GPU", mpfHostResultXY2, gpuResultXY2);
+                testSucceeded &= CheckDiff(Tests, testNum, numTerms, "GPU", mpfHostResultXY1, gpuResultXY1);
+                testSucceeded &= CheckDiff(Tests, testNum, numTerms, "GPU", mpfHostResultXY2, gpuResultXY2);
             }
 
         } else if constexpr (sharkOperator == Operator::MultiplyNTT) {
@@ -776,7 +777,7 @@ TestPerf(TestTracker &Tests,
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestPerf(int testNum, uint64_t numIters)
+TestPerf(TestTracker &Tests, int testNum, uint64_t numIters)
 {
     auto xNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
     auto yNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
@@ -807,7 +808,7 @@ TestPerf(int testNum, uint64_t numIters)
 
     using HdrType = typename SharkFloatParams::Float;
     TestPerf<SharkFloatParams, sharkOperator>(
-        testNum, num1.c_str(), num2.c_str(), num3.c_str(), "0.0", mpfX, mpfY, mpfZ, HdrType{}, numIters);
+        Tests, testNum, num1.c_str(), num2.c_str(), num3.c_str(), "0.0", mpfX, mpfY, mpfZ, HdrType{}, numIters);
 
     mpf_clear(mpfX);
     mpf_clear(mpfY);
@@ -1196,7 +1197,8 @@ TestCoreMultiply(TestTracker &Tests,
     const auto &mpfA = mpfInputX[0];
     const auto &mpfB = mpfInputX[1];
 
-    auto TestHostKaratsuba = [](int testNum,
+    auto TestHostKaratsuba = [](TestTracker &Tests,
+                                int testNum,
                                 const HpSharkFloat<SharkFloatParams> &aNum,
                                 const HpSharkFloat<SharkFloatParams> &bNum,
                                 const mpf_t &mpfHostResultXX,
@@ -1242,13 +1244,13 @@ TestCoreMultiply(TestTracker &Tests,
         bool res = true;
         constexpr auto numTerms = 2;
         res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyNTT>(
-            testNum, numTerms, "CustomHighPrecisionV2XX", mpfHostResultXX, hostKaratsubaOutXXV2);
+            Tests, testNum, numTerms, "CustomHighPrecisionV2XX", mpfHostResultXX, hostKaratsubaOutXXV2);
 
         res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyNTT>(
-            testNum, numTerms, "CustomHighPrecisionV2XY", mpfHostResultXY1, hostKaratsubaOutXYV2);
+            Tests, testNum, numTerms, "CustomHighPrecisionV2XY", mpfHostResultXY1, hostKaratsubaOutXYV2);
 
         res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyNTT>(
-            testNum, numTerms, "CustomHighPrecisionV2YY", mpfHostResultYY, hostKaratsubaOutYYV2);
+            Tests, testNum, numTerms, "CustomHighPrecisionV2YY", mpfHostResultYY, hostKaratsubaOutYYV2);
 
         return res;
     };
@@ -1326,7 +1328,7 @@ TestCoreMultiply(TestTracker &Tests,
 
         bool testSucceeded = false;
         testSucceeded = TestHostKaratsuba(
-            testNum, aNum, bNum, mpfHostResultXX, mpfHostResultXY1, mpfHostResultYY, debugHostCombo);
+            Tests, testNum, aNum, bNum, mpfHostResultXX, mpfHostResultXY1, mpfHostResultYY, debugHostCombo);
 
         if (SharkVerbose == VerboseMode::Debug) {
             if (!testSucceeded) {
@@ -1732,6 +1734,9 @@ TestTernaryOperatorTwoNumbers(
 
     // Copy mpfX and mpfY
     auto mpfCopy = std::make_unique<mpf_t[]>(mpfInLen);
+    for (size_t i = 0; i < mpfInLen; ++i) {
+        mpf_init(mpfCopy[i]);
+    }
 
     ClearConsole();
 
@@ -1773,6 +1778,7 @@ TestTernaryOperatorTwoNumbers(
 
     auto resetCopy = [&]() {
         for (size_t i = 0; i < mpfInLen; ++i) {
+            mpf_clear(mpfCopy[i]);
             mpf_init(mpfCopy[i]);
             mpf_set(mpfCopy[i], mpfIn[i]);
         }
@@ -2593,25 +2599,22 @@ TestAllBinaryOp(int testBase)
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(Tests, set + 10, "7", "19", "0");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
             Tests, set + 20, "4294967295", "1", "4294967296"); // +21 allocs adding this one
-        so idea is to fix the leaks, then run a stress test, and isolate the source of fuckup with the reference orbit.
-            either multiply, add, or the extra ref orbit logic is broken
-        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-        //    Tests, set + 30, "4294967296", "1", "1");
-        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-        //    Tests, set + 40, "4294967295", "4294967296", "1");
-        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-        //    Tests, set + 50, "4294967296", "-1", "1");
-        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-        //    Tests, set + 60, "18446744073709551615", "1", "1");
-        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-        //    Tests, set + 70, "0", "0.1", "0.3");
-        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-        //    Tests, set + 80, "0.1", "0", "0.1");
-        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(Tests, set + 90, "0", "0", "0");
-        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-        //    Tests, set + 100, "0.1", "0.1", "0.1");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests, set + 30, "4294967296", "1", "1");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests, set + 40, "4294967295", "4294967296", "1");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests, set + 50, "4294967296", "-1", "1");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests, set + 60, "18446744073709551615", "1", "1");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests, set + 70, "0", "0.1", "0.3");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests, set + 80, "0.1", "0", "0.1");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(Tests, set + 90, "0", "0", "0");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests, set + 100, "0.1", "0.1", "0.1");
     }
-    #if 0
 
     if constexpr (includeSet2) {
         const auto set = testBase + 300;
@@ -2830,31 +2833,31 @@ TestAllBinaryOp(int testBase)
                 Tests, 0, x_str.c_str(), y_str.c_str(), z_str.c_str());
         }
     }
-    #endif
 
     return Tests.CheckAllTestsPassed();
 }
 
 template <Operator sharkOperator>
 bool
-TestBinaryOperatorPerf(TestTracker &Tests,
-                       [[maybe_unused]] int testBase,
+TestBinaryOperatorPerf([[maybe_unused]] int testBase,
                        [[maybe_unused]] int numIters,
                        [[maybe_unused]] int internalTestLoopCount)
 {
-#if (ENABLE_BASIC_CORRECTNESS == 1) || (ENABLE_BASIC_CORRECTNESS == 3)
-    TestPerf<TestPerSharkParams1, sharkOperator>(testBase + 1, internalTestLoopCount);
-    TestPerf<TestPerSharkParams2, sharkOperator>(testBase + 2, internalTestLoopCount);
-    TestPerf<TestPerSharkParams3, sharkOperator>(testBase + 3, internalTestLoopCount);
-    TestPerf<TestPerSharkParams4, sharkOperator>(testBase + 4, internalTestLoopCount);
+    TestTracker Tests;
 
-    TestPerf<TestPerSharkParams5, sharkOperator>(testBase + 5, internalTestLoopCount);
-    TestPerf<TestPerSharkParams6, sharkOperator>(testBase + 6, internalTestLoopCount);
-    TestPerf<TestPerSharkParams7, sharkOperator>(testBase + 7, internalTestLoopCount);
-    TestPerf<TestPerSharkParams8, sharkOperator>(testBase + 8, internalTestLoopCount);
+#if (ENABLE_BASIC_CORRECTNESS == 1) || (ENABLE_BASIC_CORRECTNESS == 3)
+    TestPerf<TestPerSharkParams1, sharkOperator>(Tests, testBase + 1, internalTestLoopCount);
+    TestPerf<TestPerSharkParams2, sharkOperator>(Tests, testBase + 2, internalTestLoopCount);
+    TestPerf<TestPerSharkParams3, sharkOperator>(Tests, testBase + 3, internalTestLoopCount);
+    TestPerf<TestPerSharkParams4, sharkOperator>(Tests, testBase + 4, internalTestLoopCount);
+
+    TestPerf<TestPerSharkParams5, sharkOperator>(Tests, testBase + 5, internalTestLoopCount);
+    TestPerf<TestPerSharkParams6, sharkOperator>(Tests, testBase + 6, internalTestLoopCount);
+    TestPerf<TestPerSharkParams7, sharkOperator>(Tests, testBase + 7, internalTestLoopCount);
+    TestPerf<TestPerSharkParams8, sharkOperator>(Tests, testBase + 8, internalTestLoopCount);
 #elif (ENABLE_BASIC_CORRECTNESS == 2)
     for (size_t i = 0; i < numIters; i++) {
-        TestPerf<TestPerSharkParams1, sharkOperator>(testBase + 1, internalTestLoopCount);
+        TestPerf<TestPerSharkParams1, sharkOperator>(Tests, testBase + 1, internalTestLoopCount);
     }
 #endif
     return Tests.CheckAllTestsPassed();
@@ -2867,6 +2870,7 @@ TestFullReferencePerfView5([[maybe_unused]] int testBase,
                            int internalTestLoopCount)
 {
 #if (ENABLE_BASIC_CORRECTNESS == 2)
+    TestTracker Tests;
     static_assert(sharkOperator == Operator::ReferenceOrbit, "Only ReferenceOrbit is supported");
 
     mpf_set_default_prec(
@@ -2934,7 +2938,8 @@ TestFullReferencePerfView5([[maybe_unused]] int testBase,
     const HdrType hdrRadiusY{mpfRadiusY};
 
     for (size_t i = 0; i < numIters; i++) {
-        TestPerf<TestPerSharkParams1, sharkOperator>(testNum,
+        TestPerf<TestPerSharkParams1, sharkOperator>(Tests,
+                                                     testNum,
                                                      convertedMpfX.c_str(),
                                                      convertedMpfY.c_str(),
                                                      convertedMpfZ.c_str(),
@@ -2960,12 +2965,13 @@ TestFullReferencePerfView30([[maybe_unused]] int testBase,
                             [[maybe_unused]] int numIters,
                             int internalTestLoopCount)
 {
-
-// TODO: this is kind of cheesy, it'd be nice to share the test
-// view parameters in FractalShark with the test in some reasonable way
-#include "..\FractalSharkLib\LargeCoords.h"
-
 #if (ENABLE_BASIC_CORRECTNESS == 2)
+
+    // TODO: this is kind of cheesy, it'd be nice to share the test
+    // view parameters in FractalShark with the test in some reasonable way
+    #include "..\FractalSharkLib\LargeCoords.h"
+
+    TestTracker Tests;
     static_assert(sharkOperator == Operator::ReferenceOrbit, "Only ReferenceOrbit is supported");
 
     mpf_set_default_prec(
@@ -3035,7 +3041,7 @@ TestFullReferencePerfView30([[maybe_unused]] int testBase,
 
     for (size_t i = 0; i < numIters; i++) {
         TestPerf<TestPerSharkParams2, sharkOperator>(
-            testNum, num1, num2, num3, radiusYStr, mpfX, mpfY, mpfZ, hdrRadiusY, maxIters);
+            Tests, testNum, num1, num2, num3, radiusYStr, mpfX, mpfY, mpfZ, hdrRadiusY, maxIters);
     }
 
     mpf_clear(mpfX);

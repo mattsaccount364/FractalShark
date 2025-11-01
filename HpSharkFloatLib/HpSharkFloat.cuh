@@ -47,10 +47,10 @@
 
 // Comment out to disable specific kernels
 //#define ENABLE_CONVERSION_TESTS
-#define ENABLE_ADD_KERNEL
+//#define ENABLE_ADD_KERNEL
 //#define ENABLE_MULTIPLY_NTT_KERNEL
 //#define ENABLE_REFERENCE_KERNEL
-//#define ENABLE_FULL_KERNEL
+#define ENABLE_FULL_KERNEL
 
 // Uncomment this to enable the HpSharkFloat test program.
 // Comment for use in FractalShark
@@ -365,6 +365,7 @@ constexpr auto StupidMult = 1;
 //using TestPerSharkParams1 = GenericSharkFloatParams<128 * StupidMult, 108, 7776, 9>;
 //using TestPerSharkParams1 = GenericSharkFloatParams<128, 108, 7776, 9>;
 using TestPerSharkParams1 = GenericSharkFloatParams<32, 2, 64>;
+//using TestPerSharkParams1 = GenericSharkFloatParams<256, 64, 16384>;
 //using TestPerSharkParams1 = GenericSharkFloatParams<256, 128, 8192>;
 //using TestPerSharkParams2 = GenericSharkFloatParams<256, 128, 131072>;
 using TestPerSharkParams2 = GenericSharkFloatParams<256, 64, 16384>;
@@ -440,7 +441,7 @@ struct HpSharkFloat {
     std::string ToString() const;
     std::string ToHexString() const;
     void GenerateRandomNumber();
-    void GenerateRandomNumber2();
+    void GenerateRandomNumber2(bool clearLowOrder = false);
     void Negate();
     void Normalize();
     void DenormalizeLosePrecision();

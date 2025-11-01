@@ -462,7 +462,7 @@ HpSharkFloat<SharkFloatParams>::GenerateRandomNumber()
 
 template <class SharkFloatParams>
 void
-HpSharkFloat<SharkFloatParams>::GenerateRandomNumber2()
+HpSharkFloat<SharkFloatParams>::GenerateRandomNumber2(bool clearLowOrder)
 {
     // Use a random device to seed the random number generator
     std::random_device rd;
@@ -479,6 +479,14 @@ HpSharkFloat<SharkFloatParams>::GenerateRandomNumber2()
 
     // Convert MPF to HpSharkFloat<SharkFloatParams>
     MpfToHpGpu(mpf_value, DefaultPrecBits, InjectNoiseInLowOrder::Disable);
+
+    if (clearLowOrder) {
+        // Clear the low-order 1/4 of digits to 0
+        size_t numToClear = NumUint32 / 4;
+        for (size_t i = 0; i < numToClear; ++i) {
+            Digits[i] = 0;
+        }
+    }
 
     mpf_clear(mpf_value);
 

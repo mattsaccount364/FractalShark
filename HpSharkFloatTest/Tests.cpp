@@ -397,7 +397,9 @@ TestPerf(TestTracker &Tests,
          const mpf_t mpfY,
          const mpf_t mpfZ,
          const typename SharkFloatParams::Float &hdrRadiusY,
-         uint64_t numIters)
+         uint64_t numIters,
+         int64_t expectedPeriod,
+         int64_t expectedEscape)
 {
 
     // Print the original input values
@@ -682,9 +684,9 @@ TestPerf(TestTracker &Tests,
             if constexpr (HpShark::TestBenchmarkAgainstHost) {
                 bool testSucceeded = true;
                 constexpr auto numTerms = 2;
-                testSucceeded &= CheckDiff(testNum, numTerms, "GPU", mpfHostResultXX, gpuResult2XX);
-                testSucceeded &= CheckDiff(testNum, numTerms, "GPU", mpfHostResultXY1, gpuResult2XY);
-                testSucceeded &= CheckDiff(testNum, numTerms, "GPU", mpfHostResultYY, gpuResult2YY);
+                testSucceeded &= CheckDiff(Tests, testNum, numTerms, "GPU", mpfHostResultXX, gpuResult2XX);
+                testSucceeded &= CheckDiff(Tests, testNum, numTerms, "GPU", mpfHostResultXY1, gpuResult2XY);
+                testSucceeded &= CheckDiff(Tests, testNum, numTerms, "GPU", mpfHostResultYY, gpuResult2YY);
             }
         } else if constexpr (sharkOperator == Operator::ReferenceOrbit) {
             auto combo = std::make_unique<HpSharkReferenceResults<SharkFloatParams>>();
@@ -721,8 +723,8 @@ TestPerf(TestTracker &Tests,
             if constexpr (HpShark::TestBenchmarkAgainstHost) {
                 bool testSucceeded = true;
                 constexpr auto numTerms = 2;
-                testSucceeded &= CheckDiff(testNum, numTerms, "GPU", mpfHostResultXX, gpuResultX);
-                testSucceeded &= CheckDiff(testNum, numTerms, "GPU", mpfHostResultYY, gpuResultY);
+                testSucceeded &= CheckDiff(Tests, testNum, numTerms, "GPU", mpfHostResultXX, gpuResultX);
+                testSucceeded &= CheckDiff(Tests, testNum, numTerms, "GPU", mpfHostResultYY, gpuResultY);
 
                 if (combo->EscapedIteration != discoveredEscapeIterationHost) {
                     std::cout << "Escape iteration mismatch: host=" << discoveredEscapeIterationHost
@@ -746,6 +748,22 @@ TestPerf(TestTracker &Tests,
             } else {
                 std::cout << "Escape iteration: " << combo->EscapedIteration << std::endl;
                 std::cout << "Periodicity: " << combo->Period << std::endl;
+            }
+
+            if (expectedPeriod != -1) {
+                if (combo->Period != expectedPeriod) {
+                    std::cout << "Error: Expected period " << expectedPeriod << " but got "
+                              << combo->Period << std::endl;
+                    DebugBreak();
+                }
+            }
+
+            if (expectedEscape != -1) {
+                if (combo->EscapedIteration != expectedEscape) {
+                    std::cout << "Error: Expected escape iteration " << expectedEscape << " but got "
+                              << combo->EscapedIteration << std::endl;
+                    DebugBreak();
+                }
             }
 
             assert(combo->OutputIters != nullptr);
@@ -776,7 +794,7 @@ TestPerf(TestTracker &Tests,
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestPerf(TestTracker &Tests, int testNum, uint64_t numIters)
+TestPerfRandom(TestTracker &Tests, int testNum, uint64_t numIters)
 {
     auto xNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
     auto yNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
@@ -805,9 +823,23 @@ TestPerf(TestTracker &Tests, int testNum, uint64_t numIters)
     auto num2 = yNum->ToString();
     auto num3 = zNum->ToString();
 
+    const auto unknownPeriod = -1;
+    const auto unknownEscape = -1;
+
     using HdrType = typename SharkFloatParams::Float;
-    TestPerf<SharkFloatParams, sharkOperator>(
-        Tests, testNum, num1.c_str(), num2.c_str(), num3.c_str(), "0.0", mpfX, mpfY, mpfZ, HdrType{}, numIters);
+    TestPerf<SharkFloatParams, sharkOperator>(Tests,
+                                              testNum,
+                                              num1.c_str(),
+                                              num2.c_str(),
+                                              num3.c_str(),
+                                              "0.0",
+                                              mpfX,
+                                              mpfY,
+                                              mpfZ,
+                                              HdrType{},
+                                              numIters,
+                                              unknownPeriod,
+                                              unknownEscape);
 
     mpf_clear(mpfX);
     mpf_clear(mpfY);
@@ -2845,18 +2877,19 @@ TestBinaryOperatorPerf([[maybe_unused]] int testBase,
     TestTracker Tests;
 
 #if (ENABLE_BASIC_CORRECTNESS == 1) || (ENABLE_BASIC_CORRECTNESS == 3)
-    TestPerf<TestPerSharkParams1, sharkOperator>(Tests, testBase + 1, internalTestLoopCount);
-    TestPerf<TestPerSharkParams2, sharkOperator>(Tests, testBase + 2, internalTestLoopCount);
-    TestPerf<TestPerSharkParams3, sharkOperator>(Tests, testBase + 3, internalTestLoopCount);
-    TestPerf<TestPerSharkParams4, sharkOperator>(Tests, testBase + 4, internalTestLoopCount);
+    TestPerfRandom<TestPerSharkParams1, sharkOperator>(Tests, testBase + 1, internalTestLoopCount);
+    TestPerfRandom<TestPerSharkParams2, sharkOperator>(Tests, testBase + 2, internalTestLoopCount);
+    TestPerfRandom<TestPerSharkParams3, sharkOperator>(Tests, testBase + 3, internalTestLoopCount);
+    TestPerfRandom<TestPerSharkParams4, sharkOperator>(Tests, testBase + 4, internalTestLoopCount);
 
-    TestPerf<TestPerSharkParams5, sharkOperator>(Tests, testBase + 5, internalTestLoopCount);
-    TestPerf<TestPerSharkParams6, sharkOperator>(Tests, testBase + 6, internalTestLoopCount);
-    TestPerf<TestPerSharkParams7, sharkOperator>(Tests, testBase + 7, internalTestLoopCount);
-    TestPerf<TestPerSharkParams8, sharkOperator>(Tests, testBase + 8, internalTestLoopCount);
+    TestPerfRandom<TestPerSharkParams5, sharkOperator>(Tests, testBase + 5, internalTestLoopCount);
+    TestPerfRandom<TestPerSharkParams6, sharkOperator>(Tests, testBase + 6, internalTestLoopCount);
+    TestPerfRandom<TestPerSharkParams7, sharkOperator>(Tests, testBase + 7, internalTestLoopCount);
+    TestPerfRandom<TestPerSharkParams8, sharkOperator>(Tests, testBase + 8, internalTestLoopCount);
 #elif (ENABLE_BASIC_CORRECTNESS == 2)
     for (size_t i = 0; i < numIters; i++) {
-        TestPerf<TestPerSharkParams1, sharkOperator>(Tests, testBase + 1, internalTestLoopCount);
+        TestPerfRandom<TestPerSharkParams1, sharkOperator>(
+            Tests, testBase + 1, internalTestLoopCount);
     }
 #endif
     return Tests.CheckAllTestsPassed();
@@ -2889,6 +2922,8 @@ TestFullReferencePerfView5([[maybe_unused]] int testBase,
         "00000000000000000000000000000000000000000000401444147896341553391537310767676"
         "870110653199358192656";
     const auto maxIters = (internalTestLoopCount != 0) ? internalTestLoopCount : 20000;
+    constexpr auto expectedPeriod = 16045;
+    const auto expectedEscape = (maxIters > expectedPeriod) ? expectedPeriod : maxIters;
 
     mpf_t mpfX;
     mpf_t mpfY;
@@ -2936,8 +2971,9 @@ TestFullReferencePerfView5([[maybe_unused]] int testBase,
     using HdrType = typename TestPerSharkParams1::Float;
     const HdrType hdrRadiusY{mpfRadiusY};
 
+    // TODO: TestPerSharkParams2 is more precision than we need
     for (size_t i = 0; i < numIters; i++) {
-        TestPerf<TestPerSharkParams1, sharkOperator>(Tests,
+        TestPerf<TestPerSharkParams2, sharkOperator>(Tests,
                                                      testNum,
                                                      convertedMpfX.c_str(),
                                                      convertedMpfY.c_str(),
@@ -2947,7 +2983,9 @@ TestFullReferencePerfView5([[maybe_unused]] int testBase,
                                                      mpfY,
                                                      mpfZ,
                                                      hdrRadiusY,
-                                                     maxIters);
+                                                     maxIters,
+                                                     expectedPeriod,
+                                                     expectedEscape);
     }
 
     mpf_clear(mpfX);
@@ -2982,7 +3020,9 @@ TestFullReferencePerfView30([[maybe_unused]] int testBase,
     const char *num2 = strY; //.c_str();
     const char *num3 = "0";
     const char *radiusYStr = "1.46269686645751934186e-114514";
-    const auto maxIters = (internalTestLoopCount != 0) ? internalTestLoopCount : 600'000;
+    const auto maxIters = (internalTestLoopCount != 0) ? internalTestLoopCount : 700'000;
+    const auto expectedPeriod = 669772;
+    const auto expectedEscape = (maxIters > expectedPeriod) ? expectedPeriod : maxIters;
 
     mpf_t mpfX;
     mpf_t mpfY;
@@ -3039,8 +3079,19 @@ TestFullReferencePerfView30([[maybe_unused]] int testBase,
     HdrReduce(hdrRadiusY);
 
     for (size_t i = 0; i < numIters; i++) {
-        TestPerf<TestPerSharkParams2, sharkOperator>(
-            Tests, testNum, num1, num2, num3, radiusYStr, mpfX, mpfY, mpfZ, hdrRadiusY, maxIters);
+        TestPerf<TestPerSharkParams2, sharkOperator>(Tests,
+                                                     testNum,
+                                                     num1,
+                                                     num2,
+                                                     num3,
+                                                     radiusYStr,
+                                                     mpfX,
+                                                     mpfY,
+                                                     mpfZ,
+                                                     hdrRadiusY,
+                                                     maxIters,
+                                                     expectedPeriod,
+                                                     expectedEscape);
     }
 
     mpf_clear(mpfX);

@@ -532,7 +532,9 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
     auto run_conv = [&]<DebugStatePurpose step1X,
                         DebugStatePurpose step1Y,
                         DebugStatePurpose step2X,
-                        DebugStatePurpose step2Y>(HpSharkFloat<SharkFloatParams> *out,
+                        DebugStatePurpose step2Y,
+                        DebugStatePurpose step3,
+                        DebugStatePurpose step4>(HpSharkFloat<SharkFloatParams> *out,
                                                   const HpSharkFloat<SharkFloatParams> &inA,
                                                   const HpSharkFloat<SharkFloatParams> &inB,
                                                   int addFactorOfTwo,
@@ -544,6 +546,15 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
         // 1) Pack (into X and Y)
         PackBase2bPrime_NoAlloc(debugCombo, inA, plan, X);
         PackBase2bPrime_NoAlloc(debugCombo, inB, plan, Y);
+
+        // 2) Twist by ψ^i
+        for (int i = 0; i < plan.N; ++i) {
+            X[(size_t)i] = MontgomeryMul(debugCombo, X[(size_t)i], roots.psi_pows[(size_t)i]);
+        }
+
+        for (int i = 0; i < plan.N; ++i) {
+            Y[(size_t)i] = MontgomeryMul(debugCombo, Y[(size_t)i], roots.psi_pows[(size_t)i]);
+        }
 
         if constexpr (HpShark::DebugChecksums) {
             const auto &debugXState =
@@ -557,14 +568,12 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
             }
         }
 
-        // 2) Twist by ψ^i
-        for (int i = 0; i < plan.N; ++i) {
-            X[(size_t)i] = MontgomeryMul(debugCombo, X[(size_t)i], roots.psi_pows[(size_t)i]);
-        }
+        // 3) Forward NTT (in place)
+        BitReverseInplace64(X.data(), (uint32_t)plan.N, (uint32_t)plan.stages);
+        BitReverseInplace64(Y.data(), (uint32_t)plan.N, (uint32_t)plan.stages);
 
-        for (int i = 0; i < plan.N; ++i) {
-            Y[(size_t)i] = MontgomeryMul(debugCombo, Y[(size_t)i], roots.psi_pows[(size_t)i]);
-        }
+        NTTRadix2(debugCombo, X.data(), (uint32_t)plan.N, (uint32_t)plan.stages, roots.stage_omegas);
+        NTTRadix2(debugCombo, Y.data(), (uint32_t)plan.N, (uint32_t)plan.stages, roots.stage_omegas);
 
         if constexpr (HpShark::DebugChecksums) {
             const auto &debugXState =
@@ -578,19 +587,22 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
             }
         }
 
-        // 3) Forward NTT (in place)
-        BitReverseInplace64(X.data(), (uint32_t)plan.N, (uint32_t)plan.stages);
-        BitReverseInplace64(Y.data(), (uint32_t)plan.N, (uint32_t)plan.stages);
-
-        NTTRadix2(debugCombo, X.data(), (uint32_t)plan.N, (uint32_t)plan.stages, roots.stage_omegas);
-        NTTRadix2(debugCombo, Y.data(), (uint32_t)plan.N, (uint32_t)plan.stages, roots.stage_omegas);
-
         // 4) Pointwise multiply (X *= Y)
         for (int i = 0; i < plan.N; ++i)
             X[(size_t)i] = MontgomeryMul(debugCombo, X[(size_t)i], Y[(size_t)i]);
 
         // 5) Inverse NTT (in place on X)
         BitReverseInplace64(X.data(), (uint32_t)plan.N, (uint32_t)plan.stages);
+
+        if constexpr (HpShark::DebugChecksums) {
+            const auto &debugXState =
+                GetCurrentDebugState<SharkFloatParams, step3>(debugStates, X.data(), (size_t)plan.N);
+
+            if (SharkVerbose == VerboseMode::Debug) {
+                std::cout << "After bit reverse, debugXState checksum: " << debugXState.GetStr() << "\n";
+            }
+        }
+
         NTTRadix2(debugCombo, X.data(), (uint32_t)plan.N, (uint32_t)plan.stages, roots.stage_omegas_inv);
 
         // 6) Untwist + scale by N^{-1} (write back into X)
@@ -602,6 +614,15 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
         // 7) Convert out of Montgomery: reuse Y as normal-domain buffer
         for (int i = 0; i < plan.N; ++i)
             Y[(size_t)i] = FromMontgomery(debugCombo, X[(size_t)i]);
+
+        if constexpr (HpShark::DebugChecksums) {
+            const auto &debugXState =
+                GetCurrentDebugState<SharkFloatParams, step4>(debugStates, Y.data(), (size_t)plan.N);
+
+            if (SharkVerbose == VerboseMode::Debug) {
+                std::cout << "After untwist, debugXState checksum: " << debugXState.GetStr() << "\n";
+            }
+        }
 
         // 8) Unpack -> Final128 -> Normalize
         // std::fill_n(Final128.data(), Final128.size(), 0ull);
@@ -616,14 +637,18 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
     run_conv.template operator()<DebugStatePurpose::Z0XX,
                                  DebugStatePurpose::Z1XX,
                                  DebugStatePurpose::Z2XX,
-                                 DebugStatePurpose::Z3XX>(
+                                 DebugStatePurpose::Z3XX,
+                                 DebugStatePurpose::Z2_Perm1,
+                                 DebugStatePurpose::Z2_Perm4>(
         OutXX, *A, *A, noAdditionalFactorOfTwo, squaresNegative);
 
     // YY = B^2
     run_conv.template operator()<DebugStatePurpose::Z0YY,
                                  DebugStatePurpose::Z1YY,
                                  DebugStatePurpose::Z2YY,
-                                 DebugStatePurpose::Z3YY>(
+                                 DebugStatePurpose::Z3YY,
+                                 DebugStatePurpose::Z2_Perm2,
+                                 DebugStatePurpose::Z2_Perm5>(
         OutYY, *B, *B, noAdditionalFactorOfTwo, squaresNegative);
 
     // XY = 2*(A*B)
@@ -632,7 +657,9 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
     run_conv.template operator()<DebugStatePurpose::Z0XY,
                                  DebugStatePurpose::Z1XY,
                                  DebugStatePurpose::Z2XY,
-                                 DebugStatePurpose::Z3XY>(
+                                 DebugStatePurpose::Z3XY,
+                                 DebugStatePurpose::Z2_Perm3,
+                                 DebugStatePurpose::Z2_Perm6>(
         OutXY, *A, *B, includeAdditionalFactorOfTwo, OutXYIsNegative);
 
     SharkNTT::DestroyRoots<SharkFloatParams>(false, roots);

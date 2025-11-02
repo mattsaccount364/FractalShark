@@ -9,11 +9,6 @@ enum class UseConvolution {
     Yes
 };
 
-enum class RecordIt {
-    No,
-    Yes
-};
-
 enum class DebugStatePurpose {
     Invalid,
     ADigits,

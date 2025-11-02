@@ -47,8 +47,8 @@
 
 // Comment out to disable specific kernels
 //#define ENABLE_CONVERSION_TESTS
-#define ENABLE_ADD_KERNEL
-//#define ENABLE_MULTIPLY_NTT_KERNEL
+//#define ENABLE_ADD_KERNEL
+#define ENABLE_MULTIPLY_NTT_KERNEL
 //#define ENABLE_REFERENCE_KERNEL
 //#define ENABLE_FULL_KERNEL
 

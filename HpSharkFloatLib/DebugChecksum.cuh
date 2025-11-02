@@ -180,11 +180,17 @@ template <class SharkFloatParams> struct DebugState {
         hi = lo + q + (tid < r ? 1ull : 0ull);
     }
 
-    // ---------- Your existing API ----------
+    __device__ void
+    Reset(DebugStatePurpose purpose, DebugState<SharkFloatParams> &other)
+    {
+        if constexpr (HpShark::DebugChecksums) {
+            Data = other.Data;
+            Data.ChecksumPurpose = purpose;
+        }
+    }
 
     __device__ void
-    Reset(RecordIt record,
-          UseConvolution useConvolution,
+    Reset(UseConvolution useConvolution,
           cooperative_groups::grid_group &grid,
           cooperative_groups::thread_block &block,
           const uint32_t *arrayToChecksum,
@@ -202,10 +208,7 @@ template <class SharkFloatParams> struct DebugState {
             Data.ChecksumPurpose = purpose;
 
             auto res = ComputeCRC64(grid, block, arrayToChecksum, arraySize, 0);
-            if (grid.thread_rank() == 0) {
-                Data.Checksum = res;
-            }
-
+            Data.Checksum = res;
             Data.RecursionDepth = recursionDepth;
             Data.CallIndex = callIndex;
             Data.Convolution = useConvolution;
@@ -213,8 +216,7 @@ template <class SharkFloatParams> struct DebugState {
     }
 
     __device__ void
-    Reset(RecordIt record,
-          UseConvolution useConvolution,
+    Reset(UseConvolution useConvolution,
           cooperative_groups::grid_group &grid,
           cooperative_groups::thread_block &block,
           const uint64_t *arrayToChecksum,
@@ -232,10 +234,7 @@ template <class SharkFloatParams> struct DebugState {
             Data.ChecksumPurpose = purpose;
 
             auto res = ComputeCRC64(grid, block, arrayToChecksum, arraySize, 0);
-            if (grid.thread_rank() == 0) {
-                Data.Checksum = res;
-            }
-
+            Data.Checksum = res;
             Data.RecursionDepth = recursionDepth;
             Data.CallIndex = callIndex;
             Data.Convolution = useConvolution;
@@ -243,8 +242,7 @@ template <class SharkFloatParams> struct DebugState {
     }
 
     __device__ void
-    Erase(RecordIt record,
-          cooperative_groups::grid_group &grid,
+    Erase(cooperative_groups::grid_group &grid,
           cooperative_groups::thread_block &block,
           DebugStatePurpose purpose,
           int recursionDepth,

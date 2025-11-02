@@ -89,7 +89,6 @@ static __device__ SharkForceInlineReleaseOnly
 void Phase1_ABC (
     cg::thread_block &block,
     cg::grid_group &grid,
-    const RecordIt record,
     const int32_t idx,
     const ThreeWayLargestOrdering ordering,
     const bool IsNegativeA,
@@ -227,9 +226,9 @@ void Phase1_ABC (
     if constexpr (HpShark::DebugChecksums) {
         grid.sync();
         StoreCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::Z2_Perm1, uint64_t>(
-            record, debugStates, grid, block, extResultTrue, numActualDigitsPlusGuard);
+            debugStates, grid, block, extResultTrue, numActualDigitsPlusGuard);
         StoreCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::Z2_Perm2, uint64_t>(
-            record, debugStates, grid, block, extResultFalse, numActualDigitsPlusGuard);
+            debugStates, grid, block, extResultFalse, numActualDigitsPlusGuard);
         grid.sync();
     }
 }

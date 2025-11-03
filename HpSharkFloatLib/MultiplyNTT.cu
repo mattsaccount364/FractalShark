@@ -133,7 +133,8 @@ Normalize(HpSharkFloat<SharkFloatParams> &out,
 template <class SharkFloatParams>
 static __device__ inline void
 Normalize_GridStride_3Way(cooperative_groups::grid_group &grid,
-                          cooperative_groups::thread_block & /*block*/,
+                          cooperative_groups::thread_block &block,
+                          DebugState<SharkFloatParams> *debugStates,
                           // outputs
                           HpSharkFloat<SharkFloatParams> &outXX,
                           HpSharkFloat<SharkFloatParams> &outYY,
@@ -258,7 +259,6 @@ Normalize_GridStride_3Way(cooperative_groups::grid_group &grid,
     while (true) {
         if (tid == 0)
             *globalCarryCheck = 0ull;
-        grid.sync();
 
         uint64_t in_xx_lo = 0ull, in_xx_hi = 0ull;
         uint64_t in_yy_lo = 0ull, in_yy_hi = 0ull;
@@ -274,7 +274,11 @@ Normalize_GridStride_3Way(cooperative_groups::grid_group &grid,
                 in_yy_lo = CarryPropagationBuffer2[prev + 4];
                 in_yy_hi = CarryPropagationBuffer2[prev + 5];
             }
+        }
 
+        grid.sync();
+
+        if (active) {
             for (int idx = start; idx < end; ++idx) {
                 // XX
                 {
@@ -402,7 +406,18 @@ Normalize_GridStride_3Way(cooperative_groups::grid_group &grid,
             zXY ? 0u : ((sXY + i < ProducedDigits) ? static_cast<uint32_t>(resultXY[sXY + i]) : 0u);
     }
 
-    grid.sync();
+    if constexpr (HpShark::DebugChecksums) {
+        grid.sync();
+        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Final128XX, uint32_t>(
+            debugStates, grid, block, outXX.Digits, SharkFloatParams::GlobalNumUint32);
+        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Final128YY, uint32_t>(
+            debugStates, grid, block, outYY.Digits, SharkFloatParams::GlobalNumUint32);
+        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Final128XY, uint32_t>(
+            debugStates, grid, block, outXY.Digits, SharkFloatParams::GlobalNumUint32);
+        grid.sync();
+    } else {
+        grid.sync();
+    }
 }
 
 // Normalize directly from Final128 (lo64,hi64 per 32-bit digit position).
@@ -1805,6 +1820,7 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
     // ---- Single fused normalize for XX, YY, XY ----
     SharkNTT::Normalize_GridStride_3Way<SharkFloatParams>(grid,
                                                           block,
+                                                          debugStates,
                                                           /* outXX */ *outXX,
                                                           /* outYY */ *outYY,
                                                           /* outXY */ *outXY,

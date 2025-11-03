@@ -8,7 +8,7 @@
 #define NOMINMAX
 #include <windows.h>
 
-static int offset = sizeof(uintptr_t) * 2;
+static int offset = node_t::OffsetOfNext;
 static constexpr auto PAGE_SIZE = 0x1000;
 
 // sprintf etc use heap allocations in debug mode, so we can't use them here.
@@ -126,6 +126,7 @@ HeapCpp::Init()
     // the heap starts as just one big chunk of allocatable memory
     init_region->hole = 1;
     init_region->size = (HEAP_INIT_SIZE) - sizeof(node_t) - sizeof(footer_t);
+    init_region->magic = node_t::ClearedMagic;
 
     CreateFooter(init_region); // create a foot (size must be defined)
 
@@ -137,6 +138,29 @@ HeapCpp::Init()
     Heap.end = start + HEAP_INIT_SIZE;
 
     Initialized = true;
+}
+
+void
+SetMagicAtEnd(void *newBuffer, size_t bufferSize)
+{
+    // Set magic at end of buffer to detect overruns
+    uint64_t *magicPtr = reinterpret_cast<uint64_t *>((char *)newBuffer + bufferSize - 2 * sizeof(uint64_t));
+    magicPtr[0] = node_t::Magic;
+    magicPtr[1] = node_t::Magic;
+}
+
+void
+VerifyAndClearMagicAtEnd(void *buffer, size_t bufferSize)
+{
+    // Verify magic at end of buffer to detect overruns
+    uint64_t *magicPtr = reinterpret_cast<uint64_t *>((char *)buffer + bufferSize - 2 * sizeof(uint64_t));
+    if (magicPtr[0] != node_t::Magic || magicPtr[1] != node_t::Magic) {
+        throw std::exception();
+    }
+
+    // Clear magic to avoid double-free issues
+    magicPtr[0] = node_t::ClearedMagic;
+    magicPtr[1] = node_t::ClearedMagic;
 }
 
 // ========================================================
@@ -160,6 +184,9 @@ HeapCpp::Allocate(size_t size)
 
     // Round up to nearest 16 bytes
     size = (size + 0xF) & ~0xF;
+
+    // Add 16 bytes at end for another magic number to detect buffer overruns
+    size += 16;
 
     std::unique_lock<std::mutex> lock(Mutex);
 
@@ -210,6 +237,9 @@ HeapCpp::Allocate(size_t size)
         // address of the next field
         found->prev = NULL;
         found->next = NULL;
+        found->magic = node_t::Magic;
+
+        SetMagicAtEnd(&found->next, found->size);
         return &found->next;
     };
 
@@ -276,6 +306,12 @@ HeapCpp::Deallocate(void *ptr)
         add_node(Heap.bins[GetBinIndex(head->size)], head);
         return;
     }
+
+    if (head->magic != node_t::Magic) {
+        throw std::exception();
+    }
+
+    VerifyAndClearMagicAtEnd(ptr, head->size);
 
     // these are the next and previous nodes in the heap, not the prev and next
     // in a bin. to find prev we just get subtract from the start of the head node

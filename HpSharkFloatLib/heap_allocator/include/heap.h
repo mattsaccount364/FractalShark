@@ -16,6 +16,14 @@
 typedef struct node_t {
     uint64_t hole;
     uint64_t size;
+
+    static constexpr auto Magic = 0xDEADBEEFDEADBEEFllu;
+    static constexpr auto ClearedMagic = 0x0llu;
+    uint64_t magic;
+    uint64_t checksum;
+
+    static constexpr auto OffsetOfNext = sizeof(uint64_t) * 4;
+
     struct node_t* next;
     struct node_t* prev;
 } node_t;

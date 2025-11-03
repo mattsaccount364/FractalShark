@@ -534,7 +534,8 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
                         DebugStatePurpose step2X,
                         DebugStatePurpose step2Y,
                         DebugStatePurpose step3,
-                        DebugStatePurpose step4>(HpSharkFloat<SharkFloatParams> *out,
+                        DebugStatePurpose step4,
+                        DebugStatePurpose step5>(HpSharkFloat<SharkFloatParams> *out,
                                                   const HpSharkFloat<SharkFloatParams> &inA,
                                                   const HpSharkFloat<SharkFloatParams> &inB,
                                                   int addFactorOfTwo,
@@ -629,6 +630,15 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
         UnpackPrimeToFinal128(Y.data(), plan, Final128.data(), Ddigits);
         out->SetNegative(isNegative);
         Normalize<SharkFloatParams>(*out, inA, inB, Final128.data(), Ddigits, addFactorOfTwo);
+
+        if constexpr (HpShark::DebugChecksums) {
+            const auto &debugXState = GetCurrentDebugState<SharkFloatParams, step5>(
+                debugStates, out->Digits, SharkFloatParams::GlobalNumUint32);
+
+            if (SharkVerbose == VerboseMode::Debug) {
+                std::cout << "After normalize, debugXState checksum: " << debugXState.GetStr() << "\n";
+            }
+        }
     };
 
     // XX = A^2
@@ -639,7 +649,8 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
                                  DebugStatePurpose::Z2XX,
                                  DebugStatePurpose::Z3XX,
                                  DebugStatePurpose::Z2_Perm1,
-                                 DebugStatePurpose::Z2_Perm4>(
+                                 DebugStatePurpose::Z2_Perm4,
+                                 DebugStatePurpose::Final128XX>(
         OutXX, *A, *A, noAdditionalFactorOfTwo, squaresNegative);
 
     // YY = B^2
@@ -648,7 +659,8 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
                                  DebugStatePurpose::Z2YY,
                                  DebugStatePurpose::Z3YY,
                                  DebugStatePurpose::Z2_Perm2,
-                                 DebugStatePurpose::Z2_Perm5>(
+                                 DebugStatePurpose::Z2_Perm5,
+                                 DebugStatePurpose::Final128YY>(
         OutYY, *B, *B, noAdditionalFactorOfTwo, squaresNegative);
 
     // XY = 2*(A*B)
@@ -659,7 +671,8 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
                                  DebugStatePurpose::Z2XY,
                                  DebugStatePurpose::Z3XY,
                                  DebugStatePurpose::Z2_Perm3,
-                                 DebugStatePurpose::Z2_Perm6>(
+                                 DebugStatePurpose::Z2_Perm6,
+                                 DebugStatePurpose::Final128XY>(
         OutXY, *A, *B, includeAdditionalFactorOfTwo, OutXYIsNegative);
 
     SharkNTT::DestroyRoots<SharkFloatParams>(false, roots);

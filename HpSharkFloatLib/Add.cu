@@ -824,6 +824,7 @@ static __device__ void AddHelperSeparates(
     if constexpr (!SharkFloatParams::DisableCarryPropagation) {
         CarryPropagation_ABC<SharkFloatParams>(
             globalSync,
+            reinterpret_cast<uint64_t*>(sharedData),
             idx,
             numActualDigitsPlusGuard,
             extResultTrue,

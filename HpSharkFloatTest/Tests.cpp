@@ -750,7 +750,7 @@ TestPerf(TestTracker &Tests,
                 std::cout << "Periodicity: " << combo->Period << std::endl;
             }
 
-            if (expectedPeriod != -1) {
+            if (expectedPeriod != -1 && static_cast<uint64_t>(expectedPeriod) <= numIters) {
                 if (combo->Period != static_cast<uint64_t>(expectedPeriod)) {
                     std::cout << "Error: Expected period " << expectedPeriod << " but got "
                               << combo->Period << std::endl;
@@ -758,7 +758,7 @@ TestPerf(TestTracker &Tests,
                 }
             }
 
-            if (expectedEscape != -1) {
+            if (expectedEscape != -1 && static_cast<uint64_t>(expectedEscape) <= numIters) {
                 if (combo->EscapedIteration != static_cast<uint64_t>(expectedEscape)) {
                     std::cout << "Error: Expected escape iteration " << expectedEscape << " but got "
                               << combo->EscapedIteration << std::endl;
@@ -2625,182 +2625,184 @@ TestAllBinaryOp(int testBase)
     // 2000s is multiply
     // 4000s is add
 
-    //if constexpr (includeSet1) {
-    //    const auto set = testBase + 100;
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(Tests, set + 10, "7", "19", "0");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-    //        Tests, set + 20, "4294967295", "1", "4294967296");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-    //        Tests, set + 30, "4294967296", "1", "1");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-    //        Tests, set + 40, "4294967295", "4294967296", "1");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-    //        Tests, set + 50, "4294967296", "-1", "1");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-    //        Tests, set + 60, "18446744073709551615", "1", "1");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-    //        Tests, set + 70, "0", "0.1", "0.3");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-    //        Tests, set + 80, "0.1", "0", "0.1");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(Tests, set + 90, "0", "0", "0");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-    //        Tests, set + 100, "0.1", "0.1", "0.1");
-    //}
+    //#if 0
+    if constexpr (includeSet1) {
+        const auto set = testBase + 100;
+        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(Tests, set + 10, "7", "19", "0");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests, set + 20, "4294967295", "1", "4294967296");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests, set + 30, "4294967296", "1", "1");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests, set + 40, "4294967295", "4294967296", "1");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests, set + 50, "4294967296", "-1", "1");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests, set + 60, "18446744073709551615", "1", "1");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests, set + 70, "0", "0.1", "0.3");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests, set + 80, "0.1", "0", "0.1");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(Tests, set + 90, "0", "0", "0");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests, set + 100, "0.1", "0.1", "0.1");
+    }
 
-    //if constexpr (includeSet2) {
-    //    const auto set = testBase + 300;
-    //    TestTernarySpecial1<SharkFloatParams, sharkOperator>(Tests, set + 10);
-    //    TestTernarySpecial2<SharkFloatParams, sharkOperator>(Tests, set + 20);
-    //    TestTernarySpecial3<SharkFloatParams, sharkOperator>(Tests, set + 30);
-    //    TestTernarySpecial4<SharkFloatParams, sharkOperator>(Tests, set + 40);
-    //    TestTernarySpecial5<SharkFloatParams, sharkOperator>(Tests, set + 50);
-    //    TestTernarySpecial6<SharkFloatParams, sharkOperator>(Tests, set + 60);
-    //    TestTernarySpecial7<SharkFloatParams, sharkOperator>(Tests, set + 70);
-    //    TestTernarySpecial8<SharkFloatParams, sharkOperator>(Tests, set + 80);
-    //    TestTernarySpecial9<SharkFloatParams, sharkOperator>(Tests, set + 90);
-    //    TestTernarySpecial10<SharkFloatParams, sharkOperator>(Tests, set + 100);
-    //    TestTernarySpecial11<SharkFloatParams, sharkOperator>(Tests, set + 110);
-    //    TestTernarySpecial12<SharkFloatParams, sharkOperator>(Tests, set + 120);
-    //    TestTernarySpecial13<SharkFloatParams, sharkOperator>(Tests, set + 130);
-    //    TestTernarySpecial14<SharkFloatParams, sharkOperator>(Tests, set + 140);
-    //    TestTernarySpecial15<SharkFloatParams, sharkOperator>(Tests, set + 150);
-    //    TestTernarySpecial16<SharkFloatParams, sharkOperator>(Tests, set + 160);
-    //    TestTernarySpecial17<SharkFloatParams, sharkOperator>(Tests, set + 170);
-    //    TestTernarySpecial18<SharkFloatParams, sharkOperator>(Tests, set + 180);
-    //    TestTernarySpecial19<SharkFloatParams, sharkOperator>(Tests, set + 190);
-    //    TestTernarySpecial20<SharkFloatParams, sharkOperator>(Tests, set + 200);
-    //    TestTernarySpecial21<SharkFloatParams, sharkOperator>(Tests, set + 210);
-    //    TestTernarySpecial22<SharkFloatParams, sharkOperator>(Tests, set + 220);
-    //    TestTernarySpecial23<SharkFloatParams, sharkOperator>(Tests, set + 230);
-    //    TestTernarySpecial24<SharkFloatParams, sharkOperator>(Tests, set + 240);
-    //    TestTernarySpecial25<SharkFloatParams, sharkOperator>(Tests, set + 250);
-    //}
+    if constexpr (includeSet2) {
+        const auto set = testBase + 300;
+        TestTernarySpecial1<SharkFloatParams, sharkOperator>(Tests, set + 10);
+        TestTernarySpecial2<SharkFloatParams, sharkOperator>(Tests, set + 20);
+        TestTernarySpecial3<SharkFloatParams, sharkOperator>(Tests, set + 30);
+        TestTernarySpecial4<SharkFloatParams, sharkOperator>(Tests, set + 40);
+        TestTernarySpecial5<SharkFloatParams, sharkOperator>(Tests, set + 50);
+        TestTernarySpecial6<SharkFloatParams, sharkOperator>(Tests, set + 60);
+        TestTernarySpecial7<SharkFloatParams, sharkOperator>(Tests, set + 70);
+        TestTernarySpecial8<SharkFloatParams, sharkOperator>(Tests, set + 80);
+        TestTernarySpecial9<SharkFloatParams, sharkOperator>(Tests, set + 90);
+        TestTernarySpecial10<SharkFloatParams, sharkOperator>(Tests, set + 100);
+        TestTernarySpecial11<SharkFloatParams, sharkOperator>(Tests, set + 110);
+        TestTernarySpecial12<SharkFloatParams, sharkOperator>(Tests, set + 120);
+        TestTernarySpecial13<SharkFloatParams, sharkOperator>(Tests, set + 130);
+        TestTernarySpecial14<SharkFloatParams, sharkOperator>(Tests, set + 140);
+        TestTernarySpecial15<SharkFloatParams, sharkOperator>(Tests, set + 150);
+        TestTernarySpecial16<SharkFloatParams, sharkOperator>(Tests, set + 160);
+        TestTernarySpecial17<SharkFloatParams, sharkOperator>(Tests, set + 170);
+        TestTernarySpecial18<SharkFloatParams, sharkOperator>(Tests, set + 180);
+        TestTernarySpecial19<SharkFloatParams, sharkOperator>(Tests, set + 190);
+        TestTernarySpecial20<SharkFloatParams, sharkOperator>(Tests, set + 200);
+        TestTernarySpecial21<SharkFloatParams, sharkOperator>(Tests, set + 210);
+        TestTernarySpecial22<SharkFloatParams, sharkOperator>(Tests, set + 220);
+        TestTernarySpecial23<SharkFloatParams, sharkOperator>(Tests, set + 230);
+        TestTernarySpecial24<SharkFloatParams, sharkOperator>(Tests, set + 240);
+        TestTernarySpecial25<SharkFloatParams, sharkOperator>(Tests, set + 250);
+    }
 
-    //if constexpr (includeSet3) {
-    //    const auto set = testBase + 600;
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-    //        Tests, set + 10, "2", "0.1", "0.3");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-    //        Tests, set + 20, "0.2", "0.1", "0.3");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-    //        Tests, set + 30, "0.5", "1.2", "1.7");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-    //        Tests, set + 40, "0.6", "1.3", "1.9");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-    //        Tests, set + 50, "0.7", "1.4", "2.1");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-    //        Tests, set + 60, "0.1", "1.99999999999999999999999999999", "2.1");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(Tests,
-    //                                                                   set + 70,
-    //                                                                   "0.123124561464451654461",
-    //                                                                   "1.2395123123127298375982735",
-    //                                                                   "1.187236498176923871462938");
-    //}
+    if constexpr (includeSet3) {
+        const auto set = testBase + 600;
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests, set + 10, "2", "0.1", "0.3");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests, set + 20, "0.2", "0.1", "0.3");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests, set + 30, "0.5", "1.2", "1.7");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests, set + 40, "0.6", "1.3", "1.9");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests, set + 50, "0.7", "1.4", "2.1");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests, set + 60, "0.1", "1.99999999999999999999999999999", "2.1");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(Tests,
+                                                                       set + 70,
+                                                                       "0.123124561464451654461",
+                                                                       "1.2395123123127298375982735",
+                                                                       "1.187236498176923871462938");
+    }
 
-    //if constexpr (includeSet4) {
-    //    const auto set = testBase + 700;
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-    //        Tests, set + 10, "-0.5", "1.2", "0.7");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-    //        Tests, set + 20, "-0.6", "1.3", "0.7");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-    //        Tests, set + 30, "-0.7", "1.4", "0.3");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-    //        Tests, set + 40, "-0.1", "1.99999999999999999999999999999", "0.9");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-    //        Tests, set + 50, "-0.123124561464451654461", "1.2395123123127298375982735", "0.1");
-    //}
+    if constexpr (includeSet4) {
+        const auto set = testBase + 700;
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests, set + 10, "-0.5", "1.2", "0.7");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests, set + 20, "-0.6", "1.3", "0.7");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests, set + 30, "-0.7", "1.4", "0.3");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests, set + 40, "-0.1", "1.99999999999999999999999999999", "0.9");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests, set + 50, "-0.123124561464451654461", "1.2395123123127298375982735", "0.1");
+    }
 
-    //if constexpr (includeSet5) {
-    //    const auto set = testBase + 800;
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-    //        Tests, set + 10, "-0.51", "-1.29", "-1.49");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-    //        Tests, set + 20, "-0.61", "-1.39", "-0.599");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-    //        Tests, set + 30, "-0.71", "-1.49", "-0.799");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-    //        Tests,
-    //        set + 40,
-    //        "-0.11",
-    //        "-1.99999999999999999999999999999",
-    //        "-0.89999999999999999999999999999");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(Tests,
-    //                                                                   set + 50,
-    //                                                                   "-0.123124561464451654461",
-    //                                                                   "-1.2395123123127298375982735",
-    //                                                                   "-1.1123877508482781861362735");
-    //}
+    if constexpr (includeSet5) {
+        const auto set = testBase + 800;
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests, set + 10, "-0.51", "-1.29", "-1.49");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests, set + 20, "-0.61", "-1.39", "-0.599");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests, set + 30, "-0.71", "-1.49", "-0.799");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests,
+            set + 40,
+            "-0.11",
+            "-1.99999999999999999999999999999",
+            "-0.89999999999999999999999999999");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(Tests,
+                                                                       set + 50,
+                                                                       "-0.123124561464451654461",
+                                                                       "-1.2395123123127298375982735",
+                                                                       "-1.1123877508482781861362735");
+    }
 
-    //if constexpr (includeSet6) {
-    //    const auto set = testBase + 900;
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-    //        Tests,
-    //        set + 10,
-    //        "0.5265542653452654526545625456254565446654545645649789871322131213156435546435",
-    //        "-1."
-    //        "2634683757879587749854733454356324153342452684769284546534432341646587766348547465845321866"
-    //        "39173047328910730217803271839216",
-    //        "0.12987461239874619237469187236948716928374691827364");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-    //        Tests,
-    //        set + 20,
-    //        "0.2999999999965542653452654526545625456254565446654545645649789871322131213156435546435",
-    //        "-1."
-    //        "2634683757879587749854733454356324153342452684769284546534432341646587766348547465845321866"
-    //        "39173047328910730217803271839216",
-    //        "1.12374861283467182367518476235481675234862e2334");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-    //        Tests,
-    //        set + 30,
-    //        "0.1265542653452654526545625456254565446654545645649789871322131213156435546435",
-    //        "-1."
-    //        "2634683757879587749854733454356324153342452684769284546534432341646587766348547465845321866"
-    //        "391730473289107302178039999999999999271839216",
-    //        "1234671987263941876239487162398746e18239");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-    //        Tests,
-    //        set + 40,
-    //        "0.0265542653452654526545625456254565446654545645649789871322131213156435546435",
-    //        "-1."
-    //        "2634683757879587749854733454356324153342452684769284546534432341646587766348547465845321866"
-    //        "39173047328910730217803271839216",
-    //        "1023949123e389274");
-    //    TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-    //        Tests,
-    //        set + 50,
-    //        "0."
-    //        "0000000000000000026554265345265452654562545625456544665454564564978987132213121315643554643"
-    //        "5",
-    //        "-1."
-    //        "2634683757879587749854733454356324153342452684769284546534432341646587766348547465845321866"
-    //        "39173047328910730217803271839216",
-    //        "7236.34234e5234523");
-    //}
+    if constexpr (includeSet6) {
+        const auto set = testBase + 900;
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests,
+            set + 10,
+            "0.5265542653452654526545625456254565446654545645649789871322131213156435546435",
+            "-1."
+            "2634683757879587749854733454356324153342452684769284546534432341646587766348547465845321866"
+            "39173047328910730217803271839216",
+            "0.12987461239874619237469187236948716928374691827364");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests,
+            set + 20,
+            "0.2999999999965542653452654526545625456254565446654545645649789871322131213156435546435",
+            "-1."
+            "2634683757879587749854733454356324153342452684769284546534432341646587766348547465845321866"
+            "39173047328910730217803271839216",
+            "1.12374861283467182367518476235481675234862e2334");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests,
+            set + 30,
+            "0.1265542653452654526545625456254565446654545645649789871322131213156435546435",
+            "-1."
+            "2634683757879587749854733454356324153342452684769284546534432341646587766348547465845321866"
+            "391730473289107302178039999999999999271839216",
+            "1234671987263941876239487162398746e18239");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests,
+            set + 40,
+            "0.0265542653452654526545625456254565446654545645649789871322131213156435546435",
+            "-1."
+            "2634683757879587749854733454356324153342452684769284546534432341646587766348547465845321866"
+            "39173047328910730217803271839216",
+            "1023949123e389274");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests,
+            set + 50,
+            "0."
+            "0000000000000000026554265345265452654562545625456544665454564564978987132213121315643554643"
+            "5",
+            "-1."
+            "2634683757879587749854733454356324153342452684769284546534432341646587766348547465845321866"
+            "39173047328910730217803271839216",
+            "7236.34234e5234523");
+    }
 
-    //if constexpr (sharkOperator == Operator::Add && SharkFloatParams::GlobalNumUint32 == 8) {
-    //    static constexpr auto SpecificTest1 = -129;
-    //    static constexpr auto SpecificTest2 = -128;
-    //    static constexpr auto SpecificTest3 = -127;
-    //    static constexpr auto SpecificTest4 = 127;
-    //    static constexpr auto SpecificTest5 = 255;
-    //    static constexpr auto SpecificTest6 = 256;
+    if constexpr (sharkOperator == Operator::Add && SharkFloatParams::GlobalNumUint32 == 8) {
+        static constexpr auto SpecificTest1 = -129;
+        static constexpr auto SpecificTest2 = -128;
+        static constexpr auto SpecificTest3 = -127;
+        static constexpr auto SpecificTest4 = 127;
+        static constexpr auto SpecificTest5 = 255;
+        static constexpr auto SpecificTest6 = 256;
 
-    //    TestTernarySpecial21<SharkFloatParams, sharkOperator>(Tests, 0, SpecificTest1);
-    //    TestTernarySpecial21<SharkFloatParams, sharkOperator>(Tests, 0, SpecificTest2);
-    //    TestTernarySpecial21<SharkFloatParams, sharkOperator>(Tests, 0, SpecificTest3);
-    //    TestTernarySpecial21<SharkFloatParams, sharkOperator>(Tests, 0, SpecificTest4);
-    //    TestTernarySpecial21<SharkFloatParams, sharkOperator>(Tests, 0, SpecificTest5);
-    //    TestTernarySpecial21<SharkFloatParams, sharkOperator>(Tests, 0, SpecificTest6);
+        TestTernarySpecial21<SharkFloatParams, sharkOperator>(Tests, 0, SpecificTest1);
+        TestTernarySpecial21<SharkFloatParams, sharkOperator>(Tests, 0, SpecificTest2);
+        TestTernarySpecial21<SharkFloatParams, sharkOperator>(Tests, 0, SpecificTest3);
+        TestTernarySpecial21<SharkFloatParams, sharkOperator>(Tests, 0, SpecificTest4);
+        TestTernarySpecial21<SharkFloatParams, sharkOperator>(Tests, 0, SpecificTest5);
+        TestTernarySpecial21<SharkFloatParams, sharkOperator>(Tests, 0, SpecificTest6);
 
-    //    for (auto i = -512; i < 512; i++) {
-    //        if (SharkVerbose == VerboseMode::Debug) {
-    //            std::cout << "Exponent adjustment: " << i << std::endl;
-    //        }
+        for (auto i = -512; i < 512; i++) {
+            if (SharkVerbose == VerboseMode::Debug) {
+                std::cout << "Exponent adjustment: " << i << std::endl;
+            }
 
-    //        TestTernarySpecial21<SharkFloatParams, sharkOperator>(Tests, 0, i);
-    //    }
-    //}
+            TestTernarySpecial21<SharkFloatParams, sharkOperator>(Tests, 0, i);
+        }
+    }
+    //#endif
 
     if constexpr (includeSet10) {
         const auto set10 = testBase + 1000;

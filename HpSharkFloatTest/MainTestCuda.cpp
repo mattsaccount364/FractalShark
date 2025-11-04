@@ -303,16 +303,18 @@ main(int /*argc*/, char * /*argv*/[])
             }
         }
 
-        auto q = PressKey();
-        if (q == 'q') {
-            return 0;
+        {
+            auto q = PressKey();
+            if (q == 'q') {
+                return 0;
+            }
         }
 
         testBase = 16020;
         res = TestFullReferencePerfView30<Operator::ReferenceOrbit>(
             testBase, numIters, internalTestLoopCount);
         if (!res) {
-            q = PressKey();
+            auto q = PressKey();
             if (q == 'q') {
                 return 0;
             }

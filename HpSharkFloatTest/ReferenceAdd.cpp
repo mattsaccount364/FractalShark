@@ -324,155 +324,157 @@ CompareMagnitudes3Way(const int32_t effExpA,
     }
 }
 
-// A small structure to hold the generate/propagate pair for a digit.
-struct GenProp {
-    uint32_t g; // generate: indicates that this digit produces a carry regardless of incoming carry.
-    uint32_t p; // propagate: indicates that if an incoming carry exists, it will be passed along.
-};
 
-// The combine operator for two GenProp pairs.
-// If you have a block with operator f(x) = g OR (p AND x),
-// then the combination for two adjacent blocks is given by:
-inline GenProp
-Combine(const GenProp &left, const GenProp &right)
-{
-    GenProp out;
-    out.g = right.g | (right.p & left.g);
-    out.p = right.p & left.p;
-    return out;
-}
-
-// Unified CarryPropagationPP_DE.
-// If sameSign is true, this is the addition branch;
-// if false, it is the subtraction branch (we guarantee that the final result is positive).
+// Propagates raw 64-bit extended results into 32-bit digits with signed carry support.
 template <class SharkFloatParams>
 void
-CarryPropagationPP_DE(const bool sameSign,
-                      const int32_t numActualDigitsPlusGuard,
-                      const std::vector<uint64_t> extResultVector,
-                      uint32_t &carry,
-                      std::vector<uint32_t> &propagatedResultVector)
+CarryPropagation_ABC(const int32_t numActualDigitsPlusGuard,
+                     const std::vector<uint64_t> &extResult,       // raw signed limbs from Phase1_ABC
+                     int32_t &carryAcc,                      // signed carry-in/out (init to 0)
+                     std::vector<uint64_t> &propagatedResult // size numActualDigitsPlusGuard
+)
 {
-    // Check that the sizes are as expected.
-    assert(extResultVector.size() == numActualDigitsPlusGuard);
-    const auto *extResult = extResultVector.data();
-    assert(propagatedResultVector.size() == numActualDigitsPlusGuard);
-    uint32_t *propagatedResult = propagatedResultVector.data();
+    // Start with zero carry/borrow
+    carryAcc = 0;
 
-    // Step 1. Build the sigma vector (per-digit signals).
-    std::vector<GenProp> working(numActualDigitsPlusGuard);
-    for (int i = 0; i < numActualDigitsPlusGuard; i++) {
-        if (sameSign) {
-            // Addition case.
-            uint32_t lo = static_cast<uint32_t>(extResult[i] & 0xFFFFFFFFULL);
-            uint32_t hi = static_cast<uint32_t>(extResult[i] >> 32);
-            working[i].g = hi; // generates a carry if the high half is nonzero.
-            working[i].p =
-                (lo == 0xFFFFFFFFUL) ? 1 : 0; // propagates incoming carry if low half is full.
-        } else {
-            // Subtraction case.
-            int64_t raw = static_cast<int64_t>(extResult[i]);
-            working[i].g = (raw < 0) ? 1 : 0; // generate a borrow if the raw difference is negative.
-            // For borrow propagation, a digit will propagate a borrow if it's exactly 0
-            // (if we subtract 1 from 0, we need to borrow)
-            uint32_t lo = static_cast<uint32_t>(extResult[i] & 0xFFFFFFFFULL);
-            uint32_t hi = static_cast<uint32_t>(extResult[i] >> 32);
-            working[i].p = (lo == 0 && hi == 0) ? 1 : 0; // propagate if the entire digit is 0
-        }
+    assert(numActualDigitsPlusGuard == static_cast<int32_t>(extResult.size()));
+    assert(propagatedResult.size() == numActualDigitsPlusGuard);
+
+    for (int32_t i = 0; i < numActualDigitsPlusGuard; ++i) {
+        // reinterpret the 64-bit limb as signed
+        int64_t limb = static_cast<int64_t>(extResult[i]);
+
+        // add in the previous carry (or borrow, if negative)
+        int64_t sum = limb + carryAcc;
+
+        // low 32 bits become the output digit
+        uint32_t low32 = static_cast<uint32_t>(sum & 0xFFFFFFFFULL);
+        propagatedResult[i] = low32;
+
+        // compute next carryAcc = floor(sum/2^32)
+        // (sum - low32) is a multiple of 2^32, so this division is exact
+        carryAcc = (sum - static_cast<int64_t>(low32)) >> 32;
+        // -or equivalently-
+        // carryAcc = (sum - static_cast<int64_t>(low32)) / (1LL << 32);
     }
 
+    // On exit, carryAcc may be positive (overflow) or negative (net borrow).
+    // You can inspect it to adjust exponent / final sign:
     if (SharkVerbose == VerboseMode::Debug) {
-        std::cout << "CarryPropagationPP_DE Working array:" << std::endl;
-        for (int i = 0; i < numActualDigitsPlusGuard; i++) {
-            std::cout << "  " << i << ": g = " << working[i].g << ", p = " << working[i].p << std::endl;
-        }
-    }
-
-    // Step 2. Perform an inclusive (upsweep) scan on the per-digit signals.
-    // The inclusive array at index i contains the combined operator for sigma[0..i].
-    assert(working.size() == numActualDigitsPlusGuard);
-    std::vector<GenProp> scratch(
-        numActualDigitsPlusGuard); // one scratch array of size numActualDigitsPlusGuard
-
-    // Use raw pointers that point to the current input and output buffers.
-    GenProp *in = working.data();
-    GenProp *out = scratch.data();
-
-    // Perform the upsweep (inclusive scan) in log2(numActualDigitsPlusGuard) passes.
-    for (int offset = 1; offset < numActualDigitsPlusGuard; offset *= 2) {
-        for (int i = 0; i < numActualDigitsPlusGuard; i++) {
-            if (i >= offset)
-                out[i] = Combine(in[i - offset], in[i]);
-            else
-                out[i] = in[i];
-        }
-        // Swap the roles for the next pass.
-        std::swap(in, out);
-    }
-
-    // Now "in" points to the final inclusive scan result for indices 0 .. numActualDigitsPlusGuard-1.
-    const GenProp *inclusive = in;
-
-    if (SharkVerbose == VerboseMode::Debug) {
-        std::cout << "CarryPropagationPP_DE Inclusive array:" << std::endl;
-        for (int i = 0; i < numActualDigitsPlusGuard; i++) {
-            std::cout << "  " << i << ": g = " << inclusive[i].g << ", p = " << inclusive[i].p
-                      << std::endl;
-        }
-    }
-
-    // Step 3. Compute the carries (or borrows) via an exclusive scan.
-    // The exclusive operator for digit i is taken to be:
-    //   - For digit 0: use the identity operator {0, 1}.
-    //   - For digit i (i>=1): use inclusive[i-1].
-    // Then the carry/borrow applied to the digit is: op.g OR (op.p AND initialCarry).
-    // We assume an initial carry (or borrow) of 0.
-    GenProp identity = {0, 1};
-    constexpr auto initialValue = 0;
-    std::vector<uint32_t> carries(numActualDigitsPlusGuard + 1, 0);
-    carries[0] = initialValue;
-    for (int i = 1; i <= numActualDigitsPlusGuard; i++) {
-        carries[i] = inclusive[i - 1].g | (inclusive[i - 1].p & initialValue);
-    }
-
-    if (SharkVerbose == VerboseMode::Debug) {
-        std::cout << "CarryPropagationPP_DE Carries array:" << std::endl;
-        for (int i = 0; i <= numActualDigitsPlusGuard; i++) {
-            std::cout << "  " << i << ": " << carries[i] << std::endl;
-        }
-    }
-
-    // Step 4. Apply the computed carry/borrow to get the final 32-bit result.
-    if (sameSign) {
-        // Addition: add the carry.
-        for (int i = 0; i < numActualDigitsPlusGuard; i++) {
-            uint64_t sum = extResult[i] + carries[i];
-            propagatedResult[i] = static_cast<uint32_t>(sum & 0xFFFFFFFFULL);
-        }
-    } else {
-        // Subtraction: subtract the borrow.
-        // (By construction, the final overall borrow is guaranteed to be zero.)
-        for (int i = 0; i < numActualDigitsPlusGuard; i++) {
-            int64_t diff = static_cast<int64_t>(extResult[i]) - carries[i];
-            propagatedResult[i] = static_cast<uint32_t>(diff & 0xFFFFFFFFULL);
-        }
-    }
-
-    if (SharkVerbose == VerboseMode::Debug) {
-        std::cout << "CarryPropagationPP_DE Propagated result:" << std::endl;
-        for (int i = 0; i < numActualDigitsPlusGuard; i++) {
-            std::cout << "  " << i << ": " << propagatedResult[i] << std::endl;
-        }
-    }
-
-    // The final element (at position numActualDigitsPlusGuard in the carries array)
-    // is the overall carry (or borrow). For subtraction we expect this to be 0.
-    carry = carries[numActualDigitsPlusGuard];
-
-    if (SharkVerbose == VerboseMode::Debug) {
-        std::cout << "CarryPropagationPP_DE Final carry: " << carry << std::endl;
+        // assert(carryAcc >= 0);
+        std::cout << "CarryPropagation3 final carryAcc = " << carryAcc << std::endl;
     }
 }
+
+template <class SharkFloatParams>
+void
+CarryPropagationPP_ABC(const int32_t n,
+                       const std::vector<uint64_t> &extResultVector,
+                       int32_t &finalCarryOut,
+                       std::vector<uint64_t> &propagatedResultVector)
+{
+    assert(extResultVector.size() == size_t(n));
+    assert(propagatedResultVector.size() == size_t(n));
+
+    if (n == 0) {
+        finalCarryOut = 0;
+        return;
+    }
+
+    auto nextPow2 = [](int x) {
+        int p = 1;
+        while (p < x)
+            p <<= 1;
+        return p;
+    };
+
+    auto toSigned64 = [](uint64_t u) -> int64_t {
+        int64_t s;
+        std::memcpy(&s, &u, sizeof(s));
+        return s;
+    };
+
+    struct Pair {
+        int64_t c;
+        uint32_t d;
+    };
+
+    const Pair Z{0, 0};
+
+    auto combine = [](const Pair &a, const Pair &b) -> Pair {
+        uint64_t sum32 = uint64_t(a.d) + uint64_t(b.d);
+        uint32_t new_d = static_cast<uint32_t>(sum32);
+        int64_t k = static_cast<int64_t>(sum32 >> 32);
+        int64_t new_c = a.c + b.c + k;
+        return Pair{new_c, new_d};
+    };
+
+    // -------- CORRECTED decomposition --------
+    std::vector<Pair> elems(n);
+    for (int i = 0; i < n; ++i) {
+        const int64_t limb = toSigned64(extResultVector[i]);
+        const uint32_t d_i = static_cast<uint32_t>(limb & 0xFFFFFFFFULL);
+
+        // Compute c_i such that limb = (c_i << 32) + d_i
+        // This matches the serial version's: carryAcc = (sum - low32) >> 32
+        const int64_t c_i = (limb - static_cast<int64_t>(d_i)) >> 32;
+
+        elems[i] = Pair{c_i, d_i};
+    }
+
+    const int m = nextPow2(n);
+    std::vector<Pair> scan(m, Z);
+    for (int i = 0; i < n; ++i)
+        scan[i] = elems[i];
+
+    // upsweep
+    for (int offset = 1; offset < m; offset <<= 1) {
+        for (int i = (offset << 1) - 1; i < m; i += (offset << 1)) {
+            scan[i] = combine(scan[i - offset], scan[i]);
+        }
+    }
+
+    // downsweep
+    scan[m - 1] = Z;
+    for (int offset = (m >> 1); offset >= 1; offset >>= 1) {
+        for (int i = (offset << 1) - 1; i < m; i += (offset << 1)) {
+            Pair left = scan[i - offset];
+            Pair right = scan[i];
+            scan[i - offset] = right;
+            scan[i] = combine(left, right);
+        }
+    }
+
+// emit results (use carry-in = scan[i].c, not low32(P_i))
+    for (int i = 0; i < n; ++i) {
+        const int64_t limb_i = toSigned64(extResultVector[i]);
+        const int64_t carry_in = scan[i].c;    // = floor(P_{i-1}/2^32)
+        const int64_t sum = limb_i + carry_in; // matches the serial step
+        propagatedResultVector[i] = static_cast<uint64_t>(static_cast<uint32_t>(sum & 0xFFFFFFFFULL));
+    }
+
+    // final carry-out is floor(P_{n-1}/2^32)
+    {
+        Pair S_last = combine(scan[n - 1], elems[n - 1]); // inclusive prefix for the last element
+        finalCarryOut = static_cast<int32_t>(S_last.c);
+    }
+
+    // verification (can be removed after testing)
+    {
+        int32_t tempFinalCarryOut;
+        std::vector<uint64_t> tempPropagatedResultVector(n);
+
+        CarryPropagation_ABC<SharkFloatParams>(
+            n, extResultVector, tempFinalCarryOut, tempPropagatedResultVector);
+
+        for (int i = 0; i < n; ++i) {
+            assert(tempPropagatedResultVector[i] == propagatedResultVector[i]);
+        }
+        assert(tempFinalCarryOut == finalCarryOut);
+    }
+}
+
+
 
 // Applies straightforward carry or borrow propagation across multi-word signed results.
 template <class SharkFloatParams>
@@ -633,47 +635,6 @@ Phase1_DE(const bool DIsBiggerMagnitude,
             std::cout << "extResult_D_E after arithmetic: " << VectorUintToHexString(extResult_D_E)
                       << std::endl;
         }
-    }
-}
-
-// Propagates raw 64-bit extended results into 32-bit digits with signed carry support.
-template <class SharkFloatParams>
-void
-CarryPropagation_ABC(const int32_t numActualDigitsPlusGuard,
-                     std::vector<uint64_t> &extResult,       // raw signed limbs from Phase1_ABC
-                     int32_t &carryAcc,                      // signed carry-in/out (init to 0)
-                     std::vector<uint64_t> &propagatedResult // size numActualDigitsPlusGuard
-)
-{
-    // Start with zero carry/borrow
-    carryAcc = 0;
-
-    assert(numActualDigitsPlusGuard == static_cast<int32_t>(extResult.size()));
-    assert(propagatedResult.size() == numActualDigitsPlusGuard);
-
-    for (int32_t i = 0; i < numActualDigitsPlusGuard; ++i) {
-        // reinterpret the 64-bit limb as signed
-        int64_t limb = static_cast<int64_t>(extResult[i]);
-
-        // add in the previous carry (or borrow, if negative)
-        int64_t sum = limb + carryAcc;
-
-        // low 32 bits become the output digit
-        uint32_t low32 = static_cast<uint32_t>(sum & 0xFFFFFFFFULL);
-        propagatedResult[i] = low32;
-
-        // compute next carryAcc = floor(sum/2^32)
-        // (sum - low32) is a multiple of 2^32, so this division is exact
-        carryAcc = (sum - static_cast<int64_t>(low32)) >> 32;
-        // -or equivalently-
-        // carryAcc = (sum - static_cast<int64_t>(low32)) / (1LL << 32);
-    }
-
-    // On exit, carryAcc may be positive (overflow) or negative (net borrow).
-    // You can inspect it to adjust exponent / final sign:
-    if (SharkVerbose == VerboseMode::Debug) {
-        // assert(carryAcc >= 0);
-        std::cout << "CarryPropagation3 final carryAcc = " << carryAcc << std::endl;
     }
 }
 
@@ -1270,11 +1231,15 @@ AddHelper(const HpSharkFloat<SharkFloatParams> *A_X2,
 
     // Result after propagation
     if constexpr (UseBellochPropagation) {
-        CarryPropagationPP_DE<SharkFloatParams>(
-            sameSignDE, numActualDigitsPlusGuard, extResult_D_E, carry_DE, propagatedResult_DE);
 
-        // Need _ABC version?
-        assert(false);
+        CarryPropagationPP_ABC<SharkFloatParams>(
+            numActualDigitsPlusGuard, extResultTrue, carryTrue, propagatedResultTrue);
+        
+        CarryPropagationPP_ABC<SharkFloatParams>(
+            numActualDigitsPlusGuard, extResultFalse, carryFalse, propagatedResultFalse);
+
+        CarryPropagationPP_ABC<SharkFloatParams>(
+            numActualDigitsPlusGuard, extResult_D_E, carry_DE, propagatedResult_DE);
     } else {
         CarryPropagation_ABC<SharkFloatParams>(
             numActualDigitsPlusGuard, extResultTrue, carryTrue, propagatedResultTrue);

@@ -47,8 +47,8 @@
 
 // Comment out to disable specific kernels
 //#define ENABLE_CONVERSION_TESTS
-//#define ENABLE_ADD_KERNEL
-#define ENABLE_MULTIPLY_NTT_KERNEL
+#define ENABLE_ADD_KERNEL
+//#define ENABLE_MULTIPLY_NTT_KERNEL
 //#define ENABLE_REFERENCE_KERNEL
 //#define ENABLE_FULL_KERNEL
 
@@ -158,12 +158,11 @@ namespace HpShark {
 
     static constexpr auto ConstantSharedRequiredBytes = 0;
 
-    // TODO we should get this shit to work
-    //static constexpr bool DebugChecksums = (BasicCorrectness != 2) ? Debug : false;
-    static constexpr bool DebugChecksums = true;
-    static constexpr bool PrintMultiplyCounts = false; // DebugChecksums;
+    static constexpr bool DebugChecksums = (BasicCorrectness != 2) ? Debug : false;
+    //static constexpr bool DebugChecksums = true;
+    static constexpr bool PrintMultiplyCounts = false; // DebugChecksums;  TODO This one is currently busted
     static constexpr bool TestCorrectness = (BasicCorrectness == 2) ? Debug : true;
-    static constexpr bool TestInfiniteCorrectness = TestCorrectness ? true : false; // Was true : false
+    static constexpr bool TestInfiniteCorrectness = TestCorrectness ? true : false;
     static constexpr auto TestForceSameSign = false;
     static constexpr bool TestBenchmarkAgainstHost = true;
     static constexpr bool TestInitCudaMemory = true;
@@ -346,10 +345,10 @@ static constexpr auto LowPrec = 32;
 
 
 // If you add a new one, search for one of the other types and copy/paste
-using Test8x1SharkParams = GenericSharkFloatParams<256, 64, 16384>;
+//using Test8x1SharkParams = GenericSharkFloatParams<256, 64, 16384>;
 //using Test8x1SharkParams = GenericSharkFloatParams<128, 128, 8192, 9>;
 //using Test8x1SharkParams = GenericSharkFloatParams<128, 108, 7776, 9>;
-//using Test8x1SharkParams = GenericSharkFloatParams<8, 128, 1024, 9>;
+using Test8x1SharkParams = GenericSharkFloatParams<32, 1, 32>;
 //using Test8x1SharkParams = GenericSharkFloatParams<8, 1>; // Use for ENABLE_BASIC_CORRECTNESS==1
 using Test4x36SharkParams = GenericSharkFloatParams<4, 6, 32>;
 using Test4x12SharkParams = GenericSharkFloatParams<3, 18, 50>;

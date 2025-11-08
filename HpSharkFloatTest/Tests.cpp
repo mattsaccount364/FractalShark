@@ -1825,11 +1825,11 @@ TestTernaryOperatorTwoNumbers(
     // With three numbers, there are 8 combinations of signs
     //
 
-    if constexpr (EnableTestSign1) {
-        printTest(testNum);
-        resetCopy();
-        curTest();
-    }
+    //if constexpr (EnableTestSign1) {
+    //    printTest(testNum);
+    //    resetCopy();
+    //    curTest();
+    //}
 
     if constexpr (EnableTestSign2) {
         printTest(testNum);
@@ -1965,6 +1965,9 @@ TestTernarySpecial(TestTracker &Tests, int testNum,
 
     static constexpr size_t NumMpfs = 5;
     std::vector<HpSharkFloat<SharkFloatParams>> xNumCopy(NumMpfs);
+
+    mpf_set_default_prec(
+        HpSharkFloat<SharkFloatParams>::DefaultMpirBits); // Set precision for MPIR floating point
     mpf_t mpfXCopy[NumMpfs];
 
     xNumCopy[0].DeepCopySameDevice(xNum);
@@ -2607,6 +2610,242 @@ TestTernarySpecial25(TestTracker &Tests, int testNum)
     TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(Tests, testNum, a, b, c, a, b);
 }
 
+
+template <Operator sharkOperator>
+bool
+TestBinaryOperatorPerf([[maybe_unused]] int testBase,
+                       [[maybe_unused]] int numIters,
+                       [[maybe_unused]] int internalTestLoopCount)
+{
+    TestTracker Tests;
+
+#if (ENABLE_BASIC_CORRECTNESS == 1) || (ENABLE_BASIC_CORRECTNESS == 3)
+    TestPerfRandom<TestPerSharkParams1, sharkOperator>(Tests, testBase + 1, internalTestLoopCount);
+    TestPerfRandom<TestPerSharkParams2, sharkOperator>(Tests, testBase + 2, internalTestLoopCount);
+    TestPerfRandom<TestPerSharkParams3, sharkOperator>(Tests, testBase + 3, internalTestLoopCount);
+    TestPerfRandom<TestPerSharkParams4, sharkOperator>(Tests, testBase + 4, internalTestLoopCount);
+
+    TestPerfRandom<TestPerSharkParams5, sharkOperator>(Tests, testBase + 5, internalTestLoopCount);
+    TestPerfRandom<TestPerSharkParams6, sharkOperator>(Tests, testBase + 6, internalTestLoopCount);
+    TestPerfRandom<TestPerSharkParams7, sharkOperator>(Tests, testBase + 7, internalTestLoopCount);
+    TestPerfRandom<TestPerSharkParams8, sharkOperator>(Tests, testBase + 8, internalTestLoopCount);
+#elif (ENABLE_BASIC_CORRECTNESS == 2)
+    for (size_t i = 0; i < numIters; i++) {
+        TestPerfRandom<TestPerSharkParams1, sharkOperator>(Tests, testBase + 1, internalTestLoopCount);
+    }
+#endif
+    return Tests.CheckAllTestsPassed();
+}
+
+template <Operator sharkOperator>
+bool
+TestFullReferencePerfView5([[maybe_unused]] int testBase,
+                           [[maybe_unused]] int numIters,
+                           int internalTestLoopCount)
+{
+#if (ENABLE_BASIC_CORRECTNESS == 2)
+    TestTracker Tests;
+    static_assert(sharkOperator == Operator::ReferenceOrbit, "Only ReferenceOrbit is supported");
+
+    mpf_set_default_prec(
+        HpSharkFloat<TestPerSharkParams1>::DefaultMpirBits); // Set precision for MPIR floating point
+
+    int testNum = testBase + 1;
+
+    const char *num1 = "-5."
+                       "48205748070475708458212567546733029376699274622882453824444834594995999680895291"
+                       "29972505947379718e-01";
+    const char *num2 = "-5."
+                       "77570838903603842805108982201850558675551728458255317158378952895736909832155423"
+                       "61901805676878083e-01";
+    const char *num3 = "0";
+    const char *radiusYStr =
+        "0."
+        "00000000000000000000000000000000000000000000401444147896341553391537310767676"
+        "870110653199358192656";
+    const auto maxIters = (internalTestLoopCount != 0) ? internalTestLoopCount : 20000;
+    constexpr auto expectedPeriod = 16045;
+    const auto expectedEscape = (maxIters > expectedPeriod) ? expectedPeriod : maxIters;
+
+    mpf_t mpfX;
+    mpf_t mpfY;
+    mpf_t mpfZ;
+    mpf_t mpfRadiusY;
+
+    mpf_init(mpfX);
+    mpf_init(mpfY);
+    mpf_init(mpfZ);
+    mpf_init(mpfRadiusY);
+
+    auto res = mpf_set_str(mpfX, num1, 10);
+    if (res == -1) {
+        std::cout << "Error setting mpfX" << std::endl;
+    }
+
+    res = mpf_set_str(mpfY, num2, 10);
+    if (res == -1) {
+        std::cout << "Error setting mpfY" << std::endl;
+    }
+
+    res = mpf_set_str(mpfZ, num3, 10);
+    if (res == -1) {
+        std::cout << "Error setting mpfZ" << std::endl;
+    }
+
+    res = mpf_set_str(mpfRadiusY, radiusYStr, 10);
+    if (res == -1) {
+        std::cout << "Error setting mpfRadiusY" << std::endl;
+    }
+
+    MpfNormalize(mpfX);
+    MpfNormalize(mpfY);
+    MpfNormalize(mpfZ);
+    MpfNormalize(mpfRadiusY);
+
+    // Convert mpfX/mpfY/mpfZ back to strings
+    auto convertedMpfX =
+        MpfToString<TestPerSharkParams1>(mpfX, HpSharkFloat<TestPerSharkParams1>::DefaultMpirBits);
+    auto convertedMpfY =
+        MpfToString<TestPerSharkParams1>(mpfY, HpSharkFloat<TestPerSharkParams1>::DefaultMpirBits);
+    auto convertedMpfZ =
+        MpfToString<TestPerSharkParams1>(mpfZ, HpSharkFloat<TestPerSharkParams1>::DefaultMpirBits);
+
+    using HdrType = typename TestPerSharkParams1::Float;
+    const HdrType hdrRadiusY{mpfRadiusY};
+
+    // TODO: TestPerSharkParams2 is more precision than we need
+    for (size_t i = 0; i < numIters; i++) {
+        TestPerf<TestPerSharkParams2, sharkOperator>(Tests,
+                                                     testNum,
+                                                     convertedMpfX.c_str(),
+                                                     convertedMpfY.c_str(),
+                                                     convertedMpfZ.c_str(),
+                                                     radiusYStr,
+                                                     mpfX,
+                                                     mpfY,
+                                                     mpfZ,
+                                                     hdrRadiusY,
+                                                     maxIters,
+                                                     expectedPeriod,
+                                                     expectedEscape);
+    }
+
+    mpf_clear(mpfX);
+    mpf_clear(mpfY);
+    mpf_clear(mpfZ);
+    mpf_clear(mpfRadiusY);
+#endif
+    return true;
+}
+
+template <Operator sharkOperator>
+bool
+TestFullReferencePerfView30([[maybe_unused]] int testBase,
+                            [[maybe_unused]] int numIters,
+                            int internalTestLoopCount)
+{
+#if (ENABLE_BASIC_CORRECTNESS == 2)
+
+// TODO: this is kind of cheesy, it'd be nice to share the test
+// view parameters in FractalShark with the test in some reasonable way
+#include "..\FractalSharkLib\LargeCoords.h"
+
+    TestTracker Tests;
+    static_assert(sharkOperator == Operator::ReferenceOrbit, "Only ReferenceOrbit is supported");
+
+    mpf_set_default_prec(
+        HpSharkFloat<TestPerSharkParams2>::DefaultMpirBits); // Set precision for MPIR floating point
+
+    int testNum = testBase + 1;
+
+    const char *num1 = strX; //.c_str();
+    const char *num2 = strY; //.c_str();
+    const char *num3 = "0";
+    const char *radiusYStr = "1.46269686645751934186e-114514";
+    const auto maxIters = (internalTestLoopCount != 0) ? internalTestLoopCount : 700'000;
+    const auto expectedPeriod = 669772;
+    const auto expectedEscape = (maxIters > expectedPeriod) ? expectedPeriod : maxIters;
+
+    mpf_t mpfX;
+    mpf_t mpfY;
+    mpf_t mpfZ;
+    mpf_t mpfRadiusY;
+    mpf_t mpfTwo;
+
+    // mpfX/mpfY are initialized inside Hex64StringToMpf_Exact
+    mpf_init(mpfZ);
+    mpf_init(mpfRadiusY);
+    mpf_init(mpfTwo);
+
+    Hex64StringToMpf_Exact(strXHex, mpfX);
+    Hex64StringToMpf_Exact(strYHex, mpfY);
+
+    auto res = mpf_set_str(mpfZ, num3, 10);
+    if (res == -1) {
+        std::cout << "Error setting mpfZ" << std::endl;
+    }
+
+    res = mpf_set_str(mpfRadiusY, radiusYStr, 10);
+    if (res == -1) {
+        std::cout << "Error setting mpfRadiusY" << std::endl;
+    }
+
+    res = mpf_set_str(mpfTwo, "2", 10);
+    if (res == -1) {
+        std::cout << "Error setting mpfTwo" << std::endl;
+    }
+
+    // Note: radiusY needs to be doubled because of the way we copied it here.
+    mpf_mul(mpfRadiusY, mpfTwo, mpfRadiusY);
+
+    if (SharkVerbose == VerboseMode::Debug) {
+        auto mpfXConvertStr = MpfToHex64StringInvertable(mpfX);
+        std::cout << "Correct MPIR hex X: " << std::endl;
+        std::cout << "" << mpfXConvertStr;
+
+        auto mpfYConvertStr = MpfToHex64StringInvertable(mpfY);
+        std::cout << "Correct MPIR hex Y: " << std::endl;
+        std::cout << "" << mpfYConvertStr;
+
+        assert(mpfXConvertStr == strXHex);
+        assert(mpfYConvertStr == strYHex);
+    }
+
+    MpfNormalize(mpfX);
+    MpfNormalize(mpfY);
+    MpfNormalize(mpfZ);
+    MpfNormalize(mpfRadiusY);
+
+    using HdrType = typename TestPerSharkParams2::Float;
+    HdrType hdrRadiusY{mpfRadiusY};
+    HdrReduce(hdrRadiusY);
+
+    for (size_t i = 0; i < numIters; i++) {
+        TestPerf<TestPerSharkParams2, sharkOperator>(Tests,
+                                                     testNum,
+                                                     num1,
+                                                     num2,
+                                                     num3,
+                                                     radiusYStr,
+                                                     mpfX,
+                                                     mpfY,
+                                                     mpfZ,
+                                                     hdrRadiusY,
+                                                     maxIters,
+                                                     expectedPeriod,
+                                                     expectedEscape);
+    }
+
+    mpf_clear(mpfX);
+    mpf_clear(mpfY);
+    mpf_clear(mpfZ);
+    mpf_clear(mpfRadiusY);
+    mpf_clear(mpfTwo);
+#endif
+
+    return true;
+}
+
 template <class SharkFloatParams, Operator sharkOperator>
 bool
 TestAllBinaryOp(int testBase)
@@ -2628,7 +2867,7 @@ TestAllBinaryOp(int testBase)
     //#if 0
     if constexpr (includeSet1) {
         const auto set = testBase + 100;
-        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(Tests, set + 10, "7", "19", "0");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(Tests, set + 10, "7", "19", "0");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
             Tests, set + 20, "4294967295", "1", "4294967296");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
@@ -2868,242 +3107,6 @@ TestAllBinaryOp(int testBase)
     }
 
     return Tests.CheckAllTestsPassed();
-}
-
-template <Operator sharkOperator>
-bool
-TestBinaryOperatorPerf([[maybe_unused]] int testBase,
-                       [[maybe_unused]] int numIters,
-                       [[maybe_unused]] int internalTestLoopCount)
-{
-    TestTracker Tests;
-
-#if (ENABLE_BASIC_CORRECTNESS == 1) || (ENABLE_BASIC_CORRECTNESS == 3)
-    TestPerfRandom<TestPerSharkParams1, sharkOperator>(Tests, testBase + 1, internalTestLoopCount);
-    TestPerfRandom<TestPerSharkParams2, sharkOperator>(Tests, testBase + 2, internalTestLoopCount);
-    TestPerfRandom<TestPerSharkParams3, sharkOperator>(Tests, testBase + 3, internalTestLoopCount);
-    TestPerfRandom<TestPerSharkParams4, sharkOperator>(Tests, testBase + 4, internalTestLoopCount);
-
-    TestPerfRandom<TestPerSharkParams5, sharkOperator>(Tests, testBase + 5, internalTestLoopCount);
-    TestPerfRandom<TestPerSharkParams6, sharkOperator>(Tests, testBase + 6, internalTestLoopCount);
-    TestPerfRandom<TestPerSharkParams7, sharkOperator>(Tests, testBase + 7, internalTestLoopCount);
-    TestPerfRandom<TestPerSharkParams8, sharkOperator>(Tests, testBase + 8, internalTestLoopCount);
-#elif (ENABLE_BASIC_CORRECTNESS == 2)
-    for (size_t i = 0; i < numIters; i++) {
-        TestPerfRandom<TestPerSharkParams1, sharkOperator>(
-            Tests, testBase + 1, internalTestLoopCount);
-    }
-#endif
-    return Tests.CheckAllTestsPassed();
-}
-
-template <Operator sharkOperator>
-bool
-TestFullReferencePerfView5([[maybe_unused]] int testBase,
-                           [[maybe_unused]] int numIters,
-                           int internalTestLoopCount)
-{
-#if (ENABLE_BASIC_CORRECTNESS == 2)
-    TestTracker Tests;
-    static_assert(sharkOperator == Operator::ReferenceOrbit, "Only ReferenceOrbit is supported");
-
-    mpf_set_default_prec(
-        HpSharkFloat<TestPerSharkParams1>::DefaultMpirBits); // Set precision for MPIR floating point
-
-    int testNum = testBase + 1;
-
-    const char *num1 = "-5."
-                       "48205748070475708458212567546733029376699274622882453824444834594995999680895291"
-                       "29972505947379718e-01";
-    const char *num2 = "-5."
-                       "77570838903603842805108982201850558675551728458255317158378952895736909832155423"
-                       "61901805676878083e-01";
-    const char *num3 = "0";
-    const char *radiusYStr =
-        "0."
-        "00000000000000000000000000000000000000000000401444147896341553391537310767676"
-        "870110653199358192656";
-    const auto maxIters = (internalTestLoopCount != 0) ? internalTestLoopCount : 20000;
-    constexpr auto expectedPeriod = 16045;
-    const auto expectedEscape = (maxIters > expectedPeriod) ? expectedPeriod : maxIters;
-
-    mpf_t mpfX;
-    mpf_t mpfY;
-    mpf_t mpfZ;
-    mpf_t mpfRadiusY;
-
-    mpf_init(mpfX);
-    mpf_init(mpfY);
-    mpf_init(mpfZ);
-    mpf_init(mpfRadiusY);
-
-    auto res = mpf_set_str(mpfX, num1, 10);
-    if (res == -1) {
-        std::cout << "Error setting mpfX" << std::endl;
-    }
-
-    res = mpf_set_str(mpfY, num2, 10);
-    if (res == -1) {
-        std::cout << "Error setting mpfY" << std::endl;
-    }
-
-    res = mpf_set_str(mpfZ, num3, 10);
-    if (res == -1) {
-        std::cout << "Error setting mpfZ" << std::endl;
-    }
-
-    res = mpf_set_str(mpfRadiusY, radiusYStr, 10);
-    if (res == -1) {
-        std::cout << "Error setting mpfRadiusY" << std::endl;
-    }
-
-    MpfNormalize(mpfX);
-    MpfNormalize(mpfY);
-    MpfNormalize(mpfZ);
-    MpfNormalize(mpfRadiusY);
-
-    // Convert mpfX/mpfY/mpfZ back to strings
-    auto convertedMpfX =
-        MpfToString<TestPerSharkParams1>(mpfX, HpSharkFloat<TestPerSharkParams1>::DefaultMpirBits);
-    auto convertedMpfY =
-        MpfToString<TestPerSharkParams1>(mpfY, HpSharkFloat<TestPerSharkParams1>::DefaultMpirBits);
-    auto convertedMpfZ =
-        MpfToString<TestPerSharkParams1>(mpfZ, HpSharkFloat<TestPerSharkParams1>::DefaultMpirBits);
-
-    using HdrType = typename TestPerSharkParams1::Float;
-    const HdrType hdrRadiusY{mpfRadiusY};
-
-    // TODO: TestPerSharkParams2 is more precision than we need
-    for (size_t i = 0; i < numIters; i++) {
-        TestPerf<TestPerSharkParams2, sharkOperator>(Tests,
-                                                     testNum,
-                                                     convertedMpfX.c_str(),
-                                                     convertedMpfY.c_str(),
-                                                     convertedMpfZ.c_str(),
-                                                     radiusYStr,
-                                                     mpfX,
-                                                     mpfY,
-                                                     mpfZ,
-                                                     hdrRadiusY,
-                                                     maxIters,
-                                                     expectedPeriod,
-                                                     expectedEscape);
-    }
-
-    mpf_clear(mpfX);
-    mpf_clear(mpfY);
-    mpf_clear(mpfZ);
-    mpf_clear(mpfRadiusY);
-#endif
-    return true;
-}
-
-template <Operator sharkOperator>
-bool
-TestFullReferencePerfView30([[maybe_unused]] int testBase,
-                            [[maybe_unused]] int numIters,
-                            int internalTestLoopCount)
-{
-#if (ENABLE_BASIC_CORRECTNESS == 2)
-
-    // TODO: this is kind of cheesy, it'd be nice to share the test
-    // view parameters in FractalShark with the test in some reasonable way
-    #include "..\FractalSharkLib\LargeCoords.h"
-
-    TestTracker Tests;
-    static_assert(sharkOperator == Operator::ReferenceOrbit, "Only ReferenceOrbit is supported");
-
-    mpf_set_default_prec(
-        HpSharkFloat<TestPerSharkParams2>::DefaultMpirBits); // Set precision for MPIR floating point
-
-    int testNum = testBase + 1;
-
-    const char *num1 = strX; //.c_str();
-    const char *num2 = strY; //.c_str();
-    const char *num3 = "0";
-    const char *radiusYStr = "1.46269686645751934186e-114514";
-    const auto maxIters = (internalTestLoopCount != 0) ? internalTestLoopCount : 700'000;
-    const auto expectedPeriod = 669772;
-    const auto expectedEscape = (maxIters > expectedPeriod) ? expectedPeriod : maxIters;
-
-    mpf_t mpfX;
-    mpf_t mpfY;
-    mpf_t mpfZ;
-    mpf_t mpfRadiusY;
-    mpf_t mpfTwo;
-
-    // mpfX/mpfY are initialized inside Hex64StringToMpf_Exact
-    mpf_init(mpfZ);
-    mpf_init(mpfRadiusY);
-    mpf_init(mpfTwo);
-
-    Hex64StringToMpf_Exact(strXHex, mpfX);
-    Hex64StringToMpf_Exact(strYHex, mpfY);
-
-    auto res = mpf_set_str(mpfZ, num3, 10);
-    if (res == -1) {
-        std::cout << "Error setting mpfZ" << std::endl;
-    }
-
-    res = mpf_set_str(mpfRadiusY, radiusYStr, 10);
-    if (res == -1) {
-        std::cout << "Error setting mpfRadiusY" << std::endl;
-    }
-
-    res = mpf_set_str(mpfTwo, "2", 10);
-    if (res == -1) {
-        std::cout << "Error setting mpfTwo" << std::endl;
-    }
-
-    // Note: radiusY needs to be doubled because of the way we copied it here.
-    mpf_mul(mpfRadiusY, mpfTwo, mpfRadiusY);
-
-    if (SharkVerbose == VerboseMode::Debug) {
-        auto mpfXConvertStr = MpfToHex64StringInvertable(mpfX);
-        std::cout << "Correct MPIR hex X: " << std::endl;
-        std::cout << "" << mpfXConvertStr;
-
-        auto mpfYConvertStr = MpfToHex64StringInvertable(mpfY);
-        std::cout << "Correct MPIR hex Y: " << std::endl;
-        std::cout << "" << mpfYConvertStr;
-
-        assert(mpfXConvertStr == strXHex);
-        assert(mpfYConvertStr == strYHex);
-    }
-
-    MpfNormalize(mpfX);
-    MpfNormalize(mpfY);
-    MpfNormalize(mpfZ);
-    MpfNormalize(mpfRadiusY);
-
-    using HdrType = typename TestPerSharkParams2::Float;
-    HdrType hdrRadiusY{mpfRadiusY};
-    HdrReduce(hdrRadiusY);
-
-    for (size_t i = 0; i < numIters; i++) {
-        TestPerf<TestPerSharkParams2, sharkOperator>(Tests,
-                                                     testNum,
-                                                     num1,
-                                                     num2,
-                                                     num3,
-                                                     radiusYStr,
-                                                     mpfX,
-                                                     mpfY,
-                                                     mpfZ,
-                                                     hdrRadiusY,
-                                                     maxIters,
-                                                     expectedPeriod,
-                                                     expectedEscape);
-    }
-
-    mpf_clear(mpfX);
-    mpf_clear(mpfY);
-    mpf_clear(mpfZ);
-    mpf_clear(mpfRadiusY);
-    mpf_clear(mpfTwo);
-#endif
-
-    return true;
 }
 
 // Explicitly instantiate TestAllBinaryOp

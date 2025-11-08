@@ -46,19 +46,12 @@ MpfToString<SharkFloatParams>(const mpf_t mpf_val, size_t precInBits)
 {
     char *str = NULL;
 
-    if (precInBits == HpSharkFloat<SharkFloatParams>::DefaultPrecBits) {
-        gmp_asprintf(&str, "%.Fe", mpf_val);
-        std::string result(str);
-        free(str);
-        return result;
-    } else {
-        const auto decimalDigits =
-            static_cast<uint32_t>(precInBits / HpSharkFloat<SharkFloatParams>::ConvertBitsToDecimals);
-        gmp_asprintf(&str, "%.*Fe", decimalDigits, mpf_val);
-        std::string result(str);
-        free(str);
-        return result;
-    }
+    const auto decimalDigits =
+        static_cast<uint32_t>(precInBits / HpSharkFloat<SharkFloatParams>::ConvertBitsToDecimals);
+    gmp_asprintf(&str, "%.*Fe", decimalDigits, mpf_val);
+    std::string result(str);
+    free(str);
+    return result;
 }
 
 template <class IntT>

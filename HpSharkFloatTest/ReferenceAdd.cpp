@@ -1259,19 +1259,14 @@ AddHelper(const HpSharkFloat<SharkFloatParams> *A_X2,
     if (SharkVerbose == VerboseMode::Debug) {
         std::cout << "propagatedResultTrue after arithmetic: "
                   << VectorUintToHexString(propagatedResultTrue) << std::endl;
-        std::cout << "propagatedResultTrue: " << VectorUintToHexString(propagatedResultTrue)
-                  << std::endl;
         std::cout << "carryTrue out: 0x" << std::hex << carryTrue << std::endl;
 
         std::cout << "propagatedResultFalse after arithmetic: "
                   << VectorUintToHexString(propagatedResultFalse) << std::endl;
-        std::cout << "propagatedResultFalse: " << VectorUintToHexString(propagatedResultFalse)
-                  << std::endl;
         std::cout << "carryFalse out: 0x" << std::hex << carryFalse << std::endl;
 
         std::cout << "propagatedResult_DE after arithmetic: "
                   << VectorUintToHexString(propagatedResult_DE) << std::endl;
-        std::cout << "propagatedResult_DE: " << VectorUintToHexString(propagatedResult_DE) << std::endl;
         std::cout << "carry_DE out: 0x" << std::hex << carry_DE << std::endl;
     }
 

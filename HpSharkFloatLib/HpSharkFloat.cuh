@@ -47,10 +47,10 @@
 
 // Comment out to disable specific kernels
 //#define ENABLE_CONVERSION_TESTS
-#define ENABLE_ADD_KERNEL
+//#define ENABLE_ADD_KERNEL
 //#define ENABLE_MULTIPLY_NTT_KERNEL
 //#define ENABLE_REFERENCE_KERNEL
-//#define ENABLE_FULL_KERNEL
+#define ENABLE_FULL_KERNEL
 
 // Uncomment this to enable the HpSharkFloat test program.
 // Comment for use in FractalShark
@@ -66,14 +66,14 @@
 #ifdef _DEBUG
 #ifdef HP_SHARK_FLOAT_TEST
 // Test path - this is what we use with HpSharkFloatTest
-#define ENABLE_BASIC_CORRECTNESS 0
+#define ENABLE_BASIC_CORRECTNESS 2
 #else
 // Production path - this is what we use in FractalShark
 #define ENABLE_BASIC_CORRECTNESS 4
 #endif
 #else // not debug
 #ifdef HP_SHARK_FLOAT_TEST
-#define ENABLE_BASIC_CORRECTNESS 0
+#define ENABLE_BASIC_CORRECTNESS 2
 #else
 #define ENABLE_BASIC_CORRECTNESS 4
 #endif
@@ -164,7 +164,7 @@ namespace HpShark {
     static constexpr bool TestCorrectness = (BasicCorrectness == 2) ? Debug : true;
     static constexpr bool TestInfiniteCorrectness = TestCorrectness ? true : false;
     static constexpr auto TestForceSameSign = false;
-    static constexpr bool TestBenchmarkAgainstHost = true;
+    static constexpr bool TestBenchmarkAgainstHost = false;
     static constexpr bool TestInitCudaMemory = true;
 
     // True to compare against the full host-side reference implementation, false is MPIR only
@@ -348,8 +348,8 @@ static constexpr auto LowPrec = 32;
 //using Test8x1SharkParams = GenericSharkFloatParams<256, 64, 16384>;
 //using Test8x1SharkParams = GenericSharkFloatParams<128, 128, 8192, 9>;
 //using Test8x1SharkParams = GenericSharkFloatParams<128, 108, 7776, 9>;
-using Test8x1SharkParams = GenericSharkFloatParams<32, 1, 32>;
-//using Test8x1SharkParams = GenericSharkFloatParams<8, 1>; // Use for ENABLE_BASIC_CORRECTNESS==1
+//using Test8x1SharkParams = GenericSharkFloatParams<64, 1, 64>;
+using Test8x1SharkParams = GenericSharkFloatParams<8, 1>; // Use for ENABLE_BASIC_CORRECTNESS==1
 using Test4x36SharkParams = GenericSharkFloatParams<4, 6, 32>;
 using Test4x12SharkParams = GenericSharkFloatParams<3, 18, 50>;
 using Test4x9SharkParams = GenericSharkFloatParams<5, 12, 80>;
@@ -363,8 +363,8 @@ constexpr auto StupidMult = 1;
 //using TestPerSharkParams1 = GenericSharkFloatParams<96, 81>;
 //using TestPerSharkParams1 = GenericSharkFloatParams<128 * StupidMult, 108, 7776, 9>;
 //using TestPerSharkParams1 = GenericSharkFloatParams<128, 108, 7776, 9>;
-using TestPerSharkParams1 = GenericSharkFloatParams<32, 2, 64>;
-//using TestPerSharkParams1 = GenericSharkFloatParams<256, 64, 16384>;
+//using TestPerSharkParams1 = GenericSharkFloatParams<32, 2, 64>;
+using TestPerSharkParams1 = GenericSharkFloatParams<256, 64, 16384>;
 //using TestPerSharkParams1 = GenericSharkFloatParams<256, 128, 8192>;
 //using TestPerSharkParams2 = GenericSharkFloatParams<256, 128, 131072>;
 using TestPerSharkParams2 = GenericSharkFloatParams<256, 64, 16384>;

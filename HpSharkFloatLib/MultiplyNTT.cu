@@ -171,14 +171,6 @@ Normalize_GridStride_3Way(cooperative_groups::grid_group &grid,
     const bool active = (tid < lanes);
     const int lane = tid; // 0..lanes-1 for active threads
 
-    //// --- 0) Grid-stride zero the output windows up-front ---
-    // for (int i = tid; i < N32; i += T_all) {
-    //     outXX.Digits[i] = 0u;
-    //     outYY.Digits[i] = 0u;
-    //     outXY.Digits[i] = 0u;
-    // }
-    // grid.sync();
-
     // Linear partition of [0, ProducedDigits) across 'lanes'
     const int64_t PD = static_cast<int64_t>(ProducedDigits);
     const int64_t LNS = static_cast<int64_t>(lanes);

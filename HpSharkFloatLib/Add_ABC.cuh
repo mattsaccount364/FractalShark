@@ -396,6 +396,41 @@ CarryPropagationSmall_ABC(uint32_t *globalSync,                   // [0] holds c
     grid.sync();
 }
 
+template <class SharkFloatParams>
+static __device__ SharkForceInlineReleaseOnly void
+ProcessStreamABC(
+    const int32_t numActualDigitsPlusGuard,
+    int32_t base,
+    int32_t lane,
+    int64_t &limb,
+    int32_t inStep,
+    int32_t &r,
+    int32_t &c_out,
+    uint64_t *extResult,
+    uint32_t maskBit,
+    uint32_t &changedMask)
+{
+    const auto N = numActualDigitsPlusGuard;
+    constexpr auto warpSz = 32;
+    const int64_t sum = limb + inStep;
+    const uint32_t lo = static_cast<uint32_t>(sum);
+
+    if (base + lane < N) {
+        c_out = static_cast<int32_t>(sum >> 32);
+
+        if ((lane == warpSz - 1) || (base + lane == N - 1)) {
+            r += c_out;
+        } else {
+            r = c_out;
+        }
+
+        limb = static_cast<int64_t>(lo);
+        extResult[base + lane] = static_cast<uint64_t>(limb);
+    }
+
+    if (c_out != 0 && (base + lane < N - 1))
+        changedMask |= maskBit;
+}
 
 template<class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly void
@@ -465,7 +500,7 @@ CarryPropagation_ABC(
 
     // --- geometry ---
     const int N = numActualDigitsPlusGuard;
-    const int warpSz = 32;
+    constexpr int warpSz = 32;
     const int tid = blockIdx.x * blockDim.x + threadIdx.x;
     const int lane = threadIdx.x & (warpSz - 1);
     const int totalThreads = gridDim.x * blockDim.x;
@@ -490,73 +525,47 @@ CarryPropagation_ABC(
 
     // warp-tile processor: all three streams in one 32-step loop
     struct Triple {
-        uint32_t o1, o2, o3;
+        int32_t o1, o2, o3;
         uint32_t changedMask;
     };
 
     auto warp_process_tile_32_all3 =
         [&](int tileIndex, uint32_t in1, uint32_t in2, uint32_t in3) -> Triple {
         const int base = tileIndex * warpSz;
-        const bool inRange = (base + lane < N);
 
         int64_t limb1 = 0, limb2 = 0, limb3 = 0;
-        if (inRange) {
-            limb1 = static_cast<int64_t>(extResultTrue[base + lane]);
-            limb2 = static_cast<int64_t>(extResultFalse[base + lane]);
-            limb3 = static_cast<int64_t>(final128_DE[base + lane]);
-        }
 
-        uint32_t r1 = in1, r2 = in2, r3 = in3;
+        int32_t r1 = 0, r2 = 0, r3 = 0;
         uint32_t changedMask = 0u; // bit0=True, bit1=False, bit2=DE
 
-#pragma unroll
+        int32_t c_out1;
+        int32_t c_out2;
+        int32_t c_out3;
+
+        limb1 = static_cast<int64_t>(extResultTrue[base + lane]);
+        limb2 = static_cast<int64_t>(extResultFalse[base + lane]);
+        limb3 = static_cast<int64_t>(final128_DE[base + lane]);
+
         for (int step = 0; step < warpSz; ++step) {
-            if (base + step >= N)
-                break;
+            int32_t inStep1 = __shfl_up_sync(fullMask, r1, 1);
+            int32_t inStep2 = __shfl_up_sync(fullMask, r2, 1);
+            int32_t inStep3 = __shfl_up_sync(fullMask, r3, 1);
 
-            const int32_t inStep1 = __shfl_sync(fullMask, r1, step, warpSz);
-            const int32_t inStep2 = __shfl_sync(fullMask, r2, step, warpSz);
-            const int32_t inStep3 = __shfl_sync(fullMask, r3, step, warpSz);
-
-            if (lane == step) {
-                // TRUE
-                {
-                    const int64_t sum1 = limb1 + static_cast<int64_t>(inStep1);
-                    const uint32_t lo1 = static_cast<uint32_t>(sum1);
-                    extResultTrue[base + step] = static_cast<uint64_t>(lo1);
-                    const int32_t c_out1 =
-                        static_cast<int32_t>((sum1 - static_cast<int64_t>(lo1)) >> 32);
-                    r1 = c_out1;
-                    if (c_out1 != 0)
-                        changedMask |= 0x1u;
-                }
-                // FALSE
-                {
-                    const int64_t sum2 = limb2 + static_cast<int64_t>(inStep2);
-                    const uint32_t lo2 = static_cast<uint32_t>(sum2);
-                    extResultFalse[base + step] = static_cast<uint64_t>(lo2);
-                    const int32_t c_out2 =
-                        static_cast<int32_t>((sum2 - static_cast<int64_t>(lo2)) >> 32);
-                    r2 = c_out2;
-                    if (c_out2 != 0)
-                        changedMask |= 0x2u;
-                }
-                // DE
-                {
-                    const int64_t sum3 = limb3 + static_cast<int64_t>(inStep3);
-                    const uint32_t lo3 = static_cast<uint32_t>(sum3);
-                    final128_DE[base + step] = static_cast<uint64_t>(lo3);
-                    const int32_t c_out3 =
-                        static_cast<int32_t>((sum3 - static_cast<int64_t>(lo3)) >> 32);
-                    r3 = c_out3;
-                    if (c_out3 != 0)
-                        changedMask |= 0x4u;
+            if (lane == 0) {
+                if (step == 0) {
+                    inStep1 = in1;
+                    inStep2 = in2;
+                    inStep3 = in3;
+                } else {
+                    inStep1 = 0;
+                    inStep2 = 0;
+                    inStep3 = 0;
                 }
             }
 
-            r1 = __shfl_sync(fullMask, r1, step, warpSz);
-            r2 = __shfl_sync(fullMask, r2, step, warpSz);
-            r3 = __shfl_sync(fullMask, r3, step, warpSz);
+            ProcessStreamABC<SharkFloatParams>(N, base, lane, limb1, inStep1, r1, c_out1, extResultTrue, 0x1u, changedMask);
+            ProcessStreamABC<SharkFloatParams>(N, base, lane, limb2, inStep2, r2, c_out2, extResultFalse, 0x2u, changedMask);
+            ProcessStreamABC<SharkFloatParams>(N, base, lane, limb3, inStep3, r3, c_out3, final128_DE, 0x4u, changedMask);
         }
 
         // OR reduce the mask within the warp
@@ -569,43 +578,45 @@ CarryPropagation_ABC(
         return {r1, r2, r3, changedMask};
     };
 
-    // ===== iterative passes =====
-    grid.sync();
-
     while (true) {
         // Reset global flag (your required sequence)
         *globalSync = 0u;
         grid.sync();
 
-        // Each warp walks its tiles in round-robin: tile = warpId, warpId+totalWarps, ...
+        // Each warp walks its tiles in round-robin: tile = warpId, warpId+totalWarps
+        // Note: do not propagate from one tile to next in this loop!  That's another
+        // global iteration.
         for (int tile = warpId; tile < numTiles; tile += totalWarps) {
             // Load incoming carry for the first digit in this tile
             const int base = tile * warpSz;
-            const int tileLen = min(warpSz, N - base);
-            const uint32_t in1 = (base == 0 ? 0u : cur1[base]);
-            const uint32_t in2 = (base == 0 ? 0u : cur2[base]);
-            const uint32_t in3 = (base == 0 ? 0u : cur3[base]);
+            const uint32_t in1 = cur1[base];
+            const uint32_t in2 = cur2[base];
+            const uint32_t in3 = cur3[base];
+
+            cur1[base] = 0;
+            cur2[base] = 0;
+            cur3[base] = 0;
 
             const Triple tout = warp_process_tile_32_all3(tile, in1, in2, in3);
 
             // Outgoing carry index is the digit just after the tile (or N for the high slot)
-            const int outIdx = min(base + tileLen, N);
+            const int outIdx = min(base + warpSz, N);
 
-            if (lane == 0) {
+            if (lane == warpSz - 1 || (base + lane == N - 1)) {
                 if (outIdx < N) {
-                    next1[outIdx] = tout.o1;
-                    next2[outIdx] = tout.o2;
-                    next3[outIdx] = tout.o3;
+                    next1[outIdx] = static_cast<uint32_t>(tout.o1);
+                    next2[outIdx] = static_cast<uint32_t>(tout.o2);
+                    next3[outIdx] = static_cast<uint32_t>(tout.o3);
                 } else { // outIdx == N
-                    next1[N] = cur1[N] + tout.o1;
-                    next2[N] = cur2[N] + tout.o2;
-                    next3[N] = cur3[N] + tout.o3;
+                    next1[N] = static_cast<uint32_t>(cur1[N] + tout.o1);
+                    next2[N] = static_cast<uint32_t>(cur2[N] + tout.o2);
+                    next3[N] = static_cast<uint32_t>(cur3[N] + tout.o3);
+                }
+
+                if (tout.changedMask) {
+                    atomicOr(globalSync, tout.changedMask); // bits per stream
                 }
             }
-
-            // Convergence bit (any non-zero c_out in this tile)
-            if (lane == 0 && tout.changedMask)
-                atomicOr(globalSync, tout.changedMask); // bits per stream
         }
 
         grid.sync(); // all next*[N] writes are visible
@@ -615,7 +626,6 @@ CarryPropagation_ABC(
             cur2[N] = next2[N];
             cur3[N] = next3[N];
         }
-        grid.sync();
 
         // Check convergence and do per-stream conditional swaps
         const uint32_t mask = *globalSync; // 0 -> all settled
@@ -644,10 +654,9 @@ CarryPropagation_ABC(
     }
 
     // Final carries are in cur*[N] (unchanged for streams that didn't need swapping)
+    grid.sync();
     carryAcc_ABC_True = cur1[N];
     carryAcc_ABC_False = cur2[N];
     carryAcc_DE = cur3[N];
-
-    grid.sync();
 #endif
 }

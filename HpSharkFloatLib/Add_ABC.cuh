@@ -578,10 +578,15 @@ CarryPropagation_ABC(
         return {r1, r2, r3, changedMask};
     };
 
+    constexpr auto MinIters = 2;
+    int32_t iteration = 0;
     while (true) {
         // Reset global flag (your required sequence)
         *globalSync = 0u;
-        grid.sync();
+
+        if (iteration >= MinIters) {
+            grid.sync();
+        }
 
         // Each warp walks its tiles in round-robin: tile = warpId, warpId+totalWarps
         // Note: do not propagate from one tile to next in this loop!  That's another
@@ -627,8 +632,12 @@ CarryPropagation_ABC(
             cur3[N] = next3[N];
         }
 
-        // Check convergence and do per-stream conditional swaps
-        const uint32_t mask = *globalSync; // 0 -> all settled
+        uint32_t mask = 0xFFFFFFFF;
+        if (iteration >= MinIters) {
+
+            // Check convergence and do per-stream conditional swaps
+            mask = *globalSync; // 0 -> all settled
+        }
 
         // Swap only the active streams (mirror of your original logic)
         auto swap2 = [](uint32_t *&a, uint32_t *&b) {
@@ -647,10 +656,14 @@ CarryPropagation_ABC(
             swap2(cur3, next3);
         } // DE updated this pass
 
-        if (mask == 0u)
-            break; // nothing changed in any stream → done
+        if (iteration >= MinIters) {
+            if (mask == 0u)
+                break; // nothing changed in any stream → done
 
-        grid.sync();
+            grid.sync();
+        }
+
+        iteration++;
     }
 
     // Final carries are in cur*[N] (unchanged for streams that didn't need swapping)

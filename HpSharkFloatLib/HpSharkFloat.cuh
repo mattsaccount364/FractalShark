@@ -160,7 +160,7 @@ namespace HpShark {
 
     static constexpr bool DebugChecksums = (BasicCorrectness != 2) ? Debug : false;
     //static constexpr bool DebugChecksums = true;
-    static constexpr bool PrintMultiplyCounts = false; // DebugChecksums;  TODO This one is currently busted
+    static constexpr bool DebugGlobalState = false; // TODO: A bit broken right now.
     static constexpr bool TestCorrectness = (BasicCorrectness == 2) ? Debug : true;
     static constexpr bool TestInfiniteCorrectness = TestCorrectness ? true : false;
     static constexpr auto TestForceSameSign = false;
@@ -273,18 +273,18 @@ static constexpr auto AdditionalUInt64PerFrame = 256;
 static constexpr auto MaxBlocks = 256;
 
 static constexpr auto AdditionalGlobalSyncSpace = 128 * (MaxBlocks + 1);
-static constexpr auto AdditionalGlobalMultipliesPerThread = HpShark::PrintMultiplyCounts ? 1024 * 1024 : 0;
+static constexpr auto AdditionalGlobalDebugPerThread = HpShark::DebugGlobalState ? 1024 * 1024 : 0;
 static constexpr auto AdditionalGlobalChecksumSpace = HpShark::DebugChecksums ? 1024 * 1024 : 0;
 
 static constexpr auto AdditionalGlobalSyncSpaceOffset = 0;
 static constexpr auto AdditionalMultipliesOffset = AdditionalGlobalSyncSpaceOffset + AdditionalGlobalSyncSpace;
-static constexpr auto AdditionalChecksumsOffset = AdditionalMultipliesOffset + AdditionalGlobalMultipliesPerThread;
+static constexpr auto AdditionalChecksumsOffset = AdditionalMultipliesOffset + AdditionalGlobalDebugPerThread;
 
 // Use the order of these three variables being added as the
 // definition of how they are laid out in memory.
 static constexpr auto AdditionalUInt64Global =
     AdditionalGlobalSyncSpace +
-    AdditionalGlobalMultipliesPerThread +
+    AdditionalGlobalDebugPerThread +
     AdditionalGlobalChecksumSpace;
 
 template<class SharkFloatParams>

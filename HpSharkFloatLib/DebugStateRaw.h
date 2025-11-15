@@ -133,14 +133,15 @@ struct DebugStateRaw {
     UseConvolution Convolution;
 };
 
-struct DebugMultiplyCountRaw {
+struct DebugGlobalCountRaw {
     int blockIdx;
     int threadIdx;
-    int count;
+    uint64_t multiplyCount;
+    uint64_t carryCount;
 };
 
 class DebugGpuCombo {
 public:
     std::vector<DebugStateRaw> States;
-    std::vector<DebugMultiplyCountRaw> MultiplyCounts;
+    std::vector<DebugGlobalCountRaw> MultiplyCounts;
 };

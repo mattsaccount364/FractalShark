@@ -27,7 +27,8 @@ template<class SharkFloatParams>
 void InvokeHpSharkReferenceKernelPerf(
     BenchmarkTimer *timer,
     HpSharkReferenceResults<SharkFloatParams> &combo,
-    uint64_t numIters);
+    uint64_t numIters,
+    DebugGpuCombo *debugCombo);
 
 template <class SharkFloatParams>
 void InvokeHpSharkReferenceKernelProd(HpSharkReferenceResults<SharkFloatParams> &combo,

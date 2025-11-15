@@ -550,12 +550,12 @@ template <class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly uint64_t
 MontgomeryMul(cooperative_groups::grid_group &grid,
               cooperative_groups::thread_block &block,
-              DebugMultiplyCount<SharkFloatParams> *debugCombo,
+              DebugGlobalCount<SharkFloatParams> *debugCombo,
               uint64_t a,
               uint64_t b)
 {
     // We'll count 128-bit multiplications here as 3x64  (so 3 + 3 + 1)
-    if constexpr (HpShark::PrintMultiplyCounts) {
+    if constexpr (HpShark::DebugGlobalState) {
         DebugMultiplyIncrement<SharkFloatParams>(debugCombo, grid, block, 7);
     }
 
@@ -594,7 +594,7 @@ template <class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly uint64_t
 ToMontgomery(cooperative_groups::grid_group &grid,
              cooperative_groups::thread_block &block,
-             DebugMultiplyCount<SharkFloatParams> *debugCombo,
+             DebugGlobalCount<SharkFloatParams> *debugCombo,
              uint64_t x)
 {
     return MontgomeryMul(grid, block, debugCombo, x, R2);
@@ -604,7 +604,7 @@ template <class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly uint64_t
 FromMontgomery(cooperative_groups::grid_group &grid,
                cooperative_groups::thread_block &block,
-               DebugMultiplyCount<SharkFloatParams> *debugCombo,
+               DebugGlobalCount<SharkFloatParams> *debugCombo,
                uint64_t x)
 {
     return MontgomeryMul(grid, block, debugCombo, x, 1);
@@ -614,7 +614,7 @@ template <class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly uint64_t
 MontgomeryPow(cooperative_groups::grid_group &grid,
               cooperative_groups::thread_block &block,
-              DebugMultiplyCount<SharkFloatParams> *debugCombo,
+              DebugGlobalCount<SharkFloatParams> *debugCombo,
               uint64_t a_mont,
               uint32_t e)
 {
@@ -709,7 +709,7 @@ template <class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly void
 NTTRadix2(cooperative_groups::grid_group &grid,
           cooperative_groups::thread_block &block,
-          DebugMultiplyCount<SharkFloatParams> *debugCombo,
+          DebugGlobalCount<SharkFloatParams> *debugCombo,
           uint64_t *A,
           uint32_t N,
           uint32_t stages,
@@ -738,7 +738,7 @@ static __device__ inline uint32_t
 SmallRadixPhase1_SM(uint64_t *shared_data,
                     cooperative_groups::grid_group &grid,
                     cooperative_groups::thread_block &block,
-                    DebugMultiplyCount<SharkFloatParams> *debugCombo,
+                    DebugGlobalCount<SharkFloatParams> *debugCombo,
                     uint64_t *__restrict A,
                     uint64_t *__restrict B,
                     uint64_t *__restrict C,
@@ -897,7 +897,7 @@ static __device__ SharkForceInlineReleaseOnly void
 NTTRadix2_GridStride(uint64_t *shared_data,
                      cooperative_groups::grid_group &grid,
                      cooperative_groups::thread_block &block,
-                     DebugMultiplyCount<SharkFloatParams> *debugCombo,
+                     DebugGlobalCount<SharkFloatParams> *debugCombo,
                      uint64_t *SharkRestrict globalSync1,
                      uint64_t *SharkRestrict A,
                      uint64_t *SharkRestrict B,
@@ -1369,7 +1369,7 @@ PackTwistFwdNTT_Fused_AB_ToSixOutputs(uint64_t *shared_data,
                                       cooperative_groups::grid_group &grid,
                                       cooperative_groups::thread_block &block,
                                       DebugState<SharkFloatParams> *debugStates,
-                                      DebugMultiplyCount<SharkFloatParams> *debugMultiplyCounts,
+                                      DebugGlobalCount<SharkFloatParams> *debugGlobalState,
                                       const HpSharkFloat<SharkFloatParams> &inA,
                                       const HpSharkFloat<SharkFloatParams> &inB,
                                       const SharkNTT::RootTables &roots,
@@ -1394,9 +1394,9 @@ PackTwistFwdNTT_Fused_AB_ToSixOutputs(uint64_t *shared_data,
         if (i < L) {
             const uint64_t coeff = ReadBitsSimple(inA, (int64_t)i * SharkFloatParams::NTTPlan.b, SharkFloatParams::NTTPlan.b);
             const uint64_t cmod = coeff % MagicPrime; // match original
-            const uint64_t xm = ToMontgomery(grid, block, debugMultiplyCounts, cmod);
+            const uint64_t xm = ToMontgomery(grid, block, debugGlobalState, cmod);
             const uint64_t psik = roots.psi_pows[i]; // Montgomery domain
-            tempDigitsXX1[i] = MontgomeryMul(grid, block, debugMultiplyCounts, xm, psik);
+            tempDigitsXX1[i] = MontgomeryMul(grid, block, debugGlobalState, xm, psik);
         } else {
             tempDigitsXX1[i] = zero_m;
         }
@@ -1404,9 +1404,9 @@ PackTwistFwdNTT_Fused_AB_ToSixOutputs(uint64_t *shared_data,
         if (i < L) {
             const uint64_t coeffB = ReadBitsSimple(inB, (int64_t)i * SharkFloatParams::NTTPlan.b, SharkFloatParams::NTTPlan.b);
             const uint64_t cmodB = coeffB % MagicPrime;
-            const uint64_t xmB = ToMontgomery(grid, block, debugMultiplyCounts, cmodB);
+            const uint64_t xmB = ToMontgomery(grid, block, debugGlobalState, cmodB);
             const uint64_t psiB = roots.psi_pows[i]; // Montgomery domain
-            tempDigitsYY1[i] = MontgomeryMul(grid, block, debugMultiplyCounts, xmB, psiB);
+            tempDigitsYY1[i] = MontgomeryMul(grid, block, debugGlobalState, xmB, psiB);
         } else {
             tempDigitsYY1[i] = zero_m;
         }
@@ -1446,7 +1446,7 @@ PackTwistFwdNTT_Fused_AB_ToSixOutputs(uint64_t *shared_data,
     NTTRadix2_GridStride<SharkFloatParams, Multiway::TwoWay>(shared_data,
                                                              grid,
                                                              block,
-                                                             debugMultiplyCounts,
+                                                             debugGlobalState,
                                                              carryPropagationSync,
                                                              tempDigitsXX1,
                                                              tempDigitsYY1,
@@ -1502,7 +1502,7 @@ template <class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly void
 UntwistScaleFromMont_3Way_GridStride(cooperative_groups::grid_group &grid,
                                      cooperative_groups::thread_block &block,
-                                     DebugMultiplyCount<SharkFloatParams> *debugMultiplyCounts,
+                                     DebugGlobalCount<SharkFloatParams> *debugGlobalState,
                                      const SharkNTT::RootTables &roots,
                                      uint64_t *SharkRestrict tempDigitsXX1,
                                      uint64_t *SharkRestrict tempDigitsYY1,
@@ -1521,23 +1521,23 @@ UntwistScaleFromMont_3Way_GridStride(cooperative_groups::grid_group &grid,
 
         // XX
         {
-            uint64_t v = MontgomeryMul(grid, block, debugMultiplyCounts, tempDigitsXX1[i], psi_inv_i);
-            v = MontgomeryMul(grid, block, debugMultiplyCounts, v, Ninvm);
-            tempDigitsXX1[i] = FromMontgomery(grid, block, debugMultiplyCounts, v);
+            uint64_t v = MontgomeryMul(grid, block, debugGlobalState, tempDigitsXX1[i], psi_inv_i);
+            v = MontgomeryMul(grid, block, debugGlobalState, v, Ninvm);
+            tempDigitsXX1[i] = FromMontgomery(grid, block, debugGlobalState, v);
         }
 
         // YY
         {
-            uint64_t v = MontgomeryMul(grid, block, debugMultiplyCounts, tempDigitsYY1[i], psi_inv_i);
-            v = MontgomeryMul(grid, block, debugMultiplyCounts, v, Ninvm);
-            tempDigitsYY1[i] = FromMontgomery(grid, block, debugMultiplyCounts, v);
+            uint64_t v = MontgomeryMul(grid, block, debugGlobalState, tempDigitsYY1[i], psi_inv_i);
+            v = MontgomeryMul(grid, block, debugGlobalState, v, Ninvm);
+            tempDigitsYY1[i] = FromMontgomery(grid, block, debugGlobalState, v);
         }
 
         // XY
         {
-            uint64_t v = MontgomeryMul(grid, block, debugMultiplyCounts, tempDigitsXY1[i], psi_inv_i);
-            v = MontgomeryMul(grid, block, debugMultiplyCounts, v, Ninvm);
-            tempDigitsXY1[i] = FromMontgomery(grid, block, debugMultiplyCounts, v);
+            uint64_t v = MontgomeryMul(grid, block, debugGlobalState, tempDigitsXY1[i], psi_inv_i);
+            v = MontgomeryMul(grid, block, debugGlobalState, v, Ninvm);
+            tempDigitsXY1[i] = FromMontgomery(grid, block, debugGlobalState, v);
         }
     }
 }
@@ -1590,9 +1590,9 @@ static_assert(AdditionalUInt64PerFrame == 256, "See below");
         block.group_index().x * SharkFloatParams::GlobalThreadsPerBlock + block.thread_index().x;       \
     constexpr auto NewN = SharkFloatParams::GlobalNumUint32;                                            \
     constexpr int TestMultiplier = 1;                                                                   \
-    constexpr auto Multiplies_offset = AdditionalGlobalSyncSpace;                                       \
-    constexpr auto Checksum_offset = Multiplies_offset + AdditionalGlobalMultipliesPerThread;           \
-    constexpr auto GlobalsDoneOffset = Checksum_offset + AdditionalGlobalChecksumSpace;                 \
+    constexpr auto DebugGlobals_offset = AdditionalGlobalSyncSpace;                                       \
+    constexpr auto DebugChecksum_offset = DebugGlobals_offset + AdditionalGlobalDebugPerThread;           \
+    constexpr auto GlobalsDoneOffset = DebugChecksum_offset + AdditionalGlobalChecksumSpace;                 \
     constexpr auto Z0_offsetXX = GlobalsDoneOffset;                                                     \
     constexpr auto Z0_offsetXY = Z0_offsetXX + 4 * NewN * TestMultiplier +                              \
                                  CalcAlign16Bytes64BitIndex(4 * NewN * TestMultiplier); /* 4 */         \
@@ -1665,7 +1665,7 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
                      const SharkNTT::RootTables &roots,
                      cg::grid_group &grid,
                      cg::thread_block &block,
-                     DebugMultiplyCount<SharkFloatParams> *debugMultiplyCounts,
+                     DebugGlobalCount<SharkFloatParams> *debugGlobalState,
                      DebugState<SharkFloatParams> *debugStates,
                      uint64_t *tempDigitsXX1,
                      uint64_t *tempDigitsXX2,
@@ -1685,7 +1685,7 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
                                                             grid,
                                                             block,
                                                             debugStates,
-                                                            debugMultiplyCounts,
+                                                            debugGlobalState,
                                                             inA,
                                                             inB,
                                                             roots,
@@ -1708,15 +1708,15 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
     for (size_t i = grank; i < N; i += gsize) {
         const uint64_t aXX = tempDigitsXX1[i];
         const uint64_t bXX = tempDigitsXX2[i];
-        tempDigitsXX1[i] = SharkNTT::MontgomeryMul(grid, block, debugMultiplyCounts, aXX, bXX);
+        tempDigitsXX1[i] = SharkNTT::MontgomeryMul(grid, block, debugGlobalState, aXX, bXX);
 
         const uint64_t aYY = tempDigitsYY1[i];
         const uint64_t bYY = tempDigitsYY2[i];
-        tempDigitsYY1[i] = SharkNTT::MontgomeryMul(grid, block, debugMultiplyCounts, aYY, bYY);
+        tempDigitsYY1[i] = SharkNTT::MontgomeryMul(grid, block, debugGlobalState, aYY, bYY);
 
         const uint64_t aXY = tempDigitsXY1[i];
         const uint64_t bXY = tempDigitsXY2[i];
-        tempDigitsXY1[i] = SharkNTT::MontgomeryMul(grid, block, debugMultiplyCounts, aXY, bXY);
+        tempDigitsXY1[i] = SharkNTT::MontgomeryMul(grid, block, debugGlobalState, aXY, bXY);
     }
 
     grid.sync();
@@ -1742,7 +1742,7 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
         shared_data,
         grid,
         block,
-        debugMultiplyCounts,
+        debugGlobalState,
         CarryPropagationSync,
         tempDigitsXX1,
         tempDigitsYY1,
@@ -1756,7 +1756,7 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
 
     UntwistScaleFromMont_3Way_GridStride<SharkFloatParams>(grid,
                                                            block,
-                                                           debugMultiplyCounts,
+                                                           debugGlobalState,
                                                            roots,
                                                            /* XX1 */ tempDigitsXX1,
                                                            /* YY1 */ tempDigitsYY1,
@@ -1853,24 +1853,21 @@ MultiplyHelperNTTV2Separates(const SharkNTT::RootTables &roots,
     DefineTempProductsOffsets();
 
     // TODO: indexes
-    auto *SharkRestrict debugMultiplyCounts =
-        reinterpret_cast<DebugMultiplyCount<SharkFloatParams> *>(&tempProducts[Multiplies_offset]);
+    auto *SharkRestrict debugGlobalState =
+        reinterpret_cast<DebugGlobalCount<SharkFloatParams> *>(&tempProducts[DebugGlobals_offset]);
     auto *SharkRestrict debugStates =
-        reinterpret_cast<DebugState<SharkFloatParams> *>(&tempProducts[Checksum_offset]);
+        reinterpret_cast<DebugState<SharkFloatParams> *>(&tempProducts[DebugChecksum_offset]);
 
-    if constexpr (HpShark::PrintMultiplyCounts) {
+#ifdef ENABLE_MULTIPLY_NTT_KERNEL
+    if constexpr (HpShark::DebugGlobalState) {
         const auto CurBlock = block.group_index().x;
         const auto CurThread = block.thread_index().x;
-        debugMultiplyCounts[CurBlock * SharkFloatParams::GlobalThreadsPerBlock + CurThread]
+        debugGlobalState[CurBlock * SharkFloatParams::GlobalThreadsPerBlock + CurThread]
             .DebugMultiplyErase();
     }
+#endif
 
     if constexpr (HpShark::DebugChecksums) {
-        const auto CurBlock = block.group_index().x;
-        const auto CurThread = block.thread_index().x;
-        debugMultiplyCounts[CurBlock * SharkFloatParams::GlobalThreadsPerBlock + CurThread]
-            .DebugMultiplyErase();
-
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::Invalid>(
             debugStates, grid, block);
         EraseCurrentDebugState<SharkFloatParams, DebugStatePurpose::ADigits>(
@@ -2040,7 +2037,7 @@ MultiplyHelperNTTV2Separates(const SharkNTT::RootTables &roots,
                                            roots,
                                            grid,
                                            block,
-                                           debugMultiplyCounts,
+                                           debugGlobalState,
                                            debugStates,
                                            tempDigitsXX1,
                                            tempDigitsXX2,

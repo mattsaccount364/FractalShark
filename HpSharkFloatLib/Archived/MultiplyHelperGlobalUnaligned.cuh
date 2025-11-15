@@ -41,7 +41,7 @@ template<class SharkFloatParams, int Valid>
 __device__ __forceinline__ void compute_slot_scalar(
     cg::grid_group &grid,
     cg::thread_block &block,
-    DebugMultiplyCount<SharkFloatParams> *debugMultiplyCounts,
+    DebugGlobalCount<SharkFloatParams> *debugGlobalState,
     const uint32_t(&ax)[8], const uint32_t(&bx)[8],
     const uint32_t(&ay)[8], const uint32_t(&by)[8],
     const uint32_t(&cy)[8], const uint32_t(&dy)[8],
@@ -57,7 +57,7 @@ __device__ __forceinline__ void compute_slot_scalar(
         p = xx_a * xx_b; xx_low += p; if (xx_low < p) xx_high += 1;            \
         p = xy_a * xy_b; xy_low += p; if (xy_low < p) xy_high += 1;            \
         p = yy_a * yy_b; yy_low += p; if (yy_low < p) yy_high += 1;            \
-        DebugMultiplyIncrement<SharkFloatParams>(debugMultiplyCounts, grid, block, 3); \
+        DebugMultiplyIncrement<SharkFloatParams>(debugGlobalState, grid, block, 3); \
     }
 
     LANE(0) LANE(1) LANE(2) LANE(3)
@@ -89,7 +89,7 @@ template<
 __device__ SharkForceInlineReleaseOnly static void ProcessConvolutionDirectLoad_Unaligned(
     cg::grid_group &grid,
     cg::thread_block &block,
-    DebugMultiplyCount<SharkFloatParams> *debugMultiplyCounts,
+    DebugGlobalCount<SharkFloatParams> *debugGlobalState,
     int &i, const int i_end, const int k,
     const uint32_t *SharkRestrict aDigits_base,
     const uint32_t *SharkRestrict bDigits_base,
@@ -204,7 +204,7 @@ template<
 __device__ SharkForceInlineReleaseOnly static void ProcessConvolutionDirectLoad_Unaligned2 (
     cg::grid_group &grid,
     cg::thread_block &block,
-    DebugMultiplyCount<SharkFloatParams> *debugMultiplyCounts,
+    DebugGlobalCount<SharkFloatParams> *debugGlobalState,
     int &i,
     const int i_start,
     const int i_end,
@@ -276,7 +276,7 @@ __device__ SharkForceInlineReleaseOnly static void ProcessConvolutionDirectLoad_
                 if (yy_sum_low < p)
                     yy_sum_high += 1;
 
-                DebugMultiplyIncrement<SharkFloatParams>(debugMultiplyCounts, grid, block, 3);
+                DebugMultiplyIncrement<SharkFloatParams>(debugGlobalState, grid, block, 3);
             }
 
         } else {
@@ -284,7 +284,7 @@ __device__ SharkForceInlineReleaseOnly static void ProcessConvolutionDirectLoad_
             accumulate_scalar_span<SharkFloatParams, UseConditionalAccess>(
                 grid,
                 block,
-                debugMultiplyCounts,
+                debugGlobalState,
                 base_i,
                 base_i + bsz - 1,
                 k,

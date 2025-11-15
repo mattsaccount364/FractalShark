@@ -10,13 +10,13 @@
 
 template <class SharkFloatParams>
 struct DebugMultiplyCountHost {
-    DebugMultiplyCountHost() : count{} {}
+    DebugMultiplyCountHost() : multiplyCount{} {}
 
     void DebugMultiplyIncrement(int incomingCount) {
-        this->count += incomingCount;
+        this->multiplyCount += incomingCount;
     }
 
-    int count;
+    uint64_t multiplyCount;
 };
 
 

@@ -57,7 +57,7 @@ NativeMultiply64(DebugHostCombo<SharkFloatParams> &debugHostCombo,
                  std::vector<uint64_t> &Res)
 {
 
-    auto &debugMultiplyCounts = debugHostCombo.MultiplyCounts;
+    auto &debugGlobalState = debugHostCombo.MultiplyCounts;
 
     assert(n == A.size());
     assert(n == B.size());
@@ -84,7 +84,7 @@ NativeMultiply64(DebugHostCombo<SharkFloatParams> &debugHostCombo,
             // 64-bit product
             uint64_t product = a * b;
 
-            debugMultiplyCounts.DebugMultiplyIncrement(1);
+            debugGlobalState.DebugMultiplyIncrement(1);
 
             // Add product to the 128-bit accumulator
             // sum_128 = sum_128 + product (treating product as 64-bit low, 0 high)

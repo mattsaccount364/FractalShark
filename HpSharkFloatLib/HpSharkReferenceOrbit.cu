@@ -122,11 +122,23 @@ HpSharkReferenceGpuLoop(HpSharkReferenceResults<SharkFloatParams> *SharkRestrict
     typename SharkFloatParams::Float cx_cast = combo->Add.C_A.ToHDRFloat<SharkFloatParams::SubType>(0);
     typename SharkFloatParams::Float cy_cast = combo->Add.E_B.ToHDRFloat<SharkFloatParams::SubType>(0);
 
-    // if constexpr (SharkFloatParams::Periodicity) {
-    // 
-    //     gpuReferenceIters[0].x = {};
-    //     gpuReferenceIters[0].y = {};
-    // }
+#ifdef ENABLE_FULL_KERNEL
+    // Erase this global debug state if needed.
+    if constexpr (HpShark::DebugGlobalState) {
+        constexpr auto DebugGlobals_offset = AdditionalGlobalSyncSpace;
+        constexpr auto DebugChecksum_offset = DebugGlobals_offset + AdditionalGlobalDebugPerThread;
+
+        //auto *SharkRestrict debugStates =
+        //    reinterpret_cast<DebugState<SharkFloatParams> *>(&tempData[DebugChecksum_offset]);
+        auto *SharkRestrict debugGlobalState =
+            reinterpret_cast<DebugGlobalCount<SharkFloatParams> *>(&tempData[DebugGlobals_offset]);
+
+        const auto CurBlock = block.group_index().x;
+        const auto CurThread = block.thread_index().x;
+        debugGlobalState[CurBlock * SharkFloatParams::GlobalThreadsPerBlock + CurThread]
+            .DebugMultiplyErase();
+    }
+#endif
 
     for (uint64_t i = 0; i < numIters; ++i) {
         const auto shouldContinue = ReferenceHelper(

@@ -557,7 +557,8 @@ static __device__ void AddHelperSeparates(
     constexpr auto GlobalSync1_offset = 0;
     constexpr auto GlobalSync2_offset = 128 / sizeof(uint64_t);
     constexpr auto GlobalSync3_offset = GlobalSync2_offset + 128 / sizeof(uint64_t);
-    constexpr auto Checksum_offset = AdditionalGlobalSyncSpace;
+    constexpr auto DebugGlobals_offset = AdditionalGlobalSyncSpace;
+    constexpr auto DebugChecksum_offset = DebugGlobals_offset + AdditionalGlobalDebugPerThread;
     constexpr auto Final128Offset_ABC_True = AdditionalUInt64Global;
     constexpr auto Final128Offset_ABC_False = Final128Offset_ABC_True + 2 * SharkFloatParams::GlobalNumUint32;
     constexpr auto Final128Offset_DE = Final128Offset_ABC_False + 2 * SharkFloatParams::GlobalNumUint32;
@@ -580,7 +581,9 @@ static __device__ void AddHelperSeparates(
     auto *SharkRestrict globalSync3 =
         reinterpret_cast<uint32_t *>(&tempData[GlobalSync3_offset]);
     auto *SharkRestrict debugStates =
-        reinterpret_cast<DebugState<SharkFloatParams>*>(&tempData[Checksum_offset]);
+        reinterpret_cast<DebugState<SharkFloatParams>*>(&tempData[DebugChecksum_offset]);
+    auto *SharkRestrict debugGlobalState =
+        reinterpret_cast<DebugGlobalCount<SharkFloatParams>*>(&tempData[DebugGlobals_offset]);
     auto *SharkRestrict extResultTrue =
         reinterpret_cast<uint64_t *>(&tempData[Final128Offset_ABC_True]);
     auto *SharkRestrict extResultFalse =
@@ -607,6 +610,15 @@ static __device__ void AddHelperSeparates(
         reinterpret_cast<uint32_t *>(&tempData[Carry6_offset]);
 
     static constexpr auto CallIndex = 0;
+#ifdef ENABLE_ADD_KERNEL
+    if constexpr (HpShark::DebugGlobalState) {
+        const auto CurBlock = block.group_index().x;
+        const auto CurThread = block.thread_index().x;
+        debugGlobalState[CurBlock * SharkFloatParams::GlobalThreadsPerBlock + CurThread]
+            .DebugMultiplyErase();
+    }
+#endif
+
     if constexpr (HpShark::DebugChecksums) {
         EraseCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::Invalid>(debugStates, grid, block);
         EraseCurrentDebugStateAdd<SharkFloatParams, DebugStatePurpose::ADigits>(debugStates, grid, block);
@@ -848,7 +860,8 @@ static __device__ void AddHelperSeparates(
             carryAcc_ABC_False,
             carryAcc_DE,
             block,
-            grid);
+            grid,
+            debugGlobalState);
     }
 
     if constexpr (HpShark::DebugChecksums) {

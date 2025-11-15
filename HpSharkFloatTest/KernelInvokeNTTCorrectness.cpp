@@ -64,11 +64,11 @@ InvokeMultiplyNTTKernelCorrectness(BenchmarkTimer &timer,
                        cudaMemcpyDeviceToHost);
         }
 
-        if constexpr (HpShark::PrintMultiplyCounts) {
+        if constexpr (HpShark::DebugGlobalState) {
             debugCombo->MultiplyCounts.resize(SharkFloatParams::NumDebugMultiplyCounts);
             cudaMemcpy(debugCombo->MultiplyCounts.data(),
                        &d_tempProducts[AdditionalMultipliesOffset],
-                       SharkFloatParams::NumDebugMultiplyCounts * sizeof(DebugMultiplyCountRaw),
+                       SharkFloatParams::NumDebugMultiplyCounts * sizeof(DebugGlobalCountRaw),
                        cudaMemcpyDeviceToHost);
         }
     }

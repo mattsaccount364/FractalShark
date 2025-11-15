@@ -1279,10 +1279,10 @@ static_assert(AdditionalUInt64PerFrame == 256, "See below");
 #define DefineTempProductsOffsets(CallIndex) \
     const int threadIdxGlobal = block.group_index().x * SharkFloatParams::GlobalThreadsPerBlock + block.thread_index().x; \
     constexpr int TestMultiplier = 1; \
-    constexpr auto Multiplies_offset = AdditionalGlobalSyncSpace; \
-    constexpr auto Checksum_offset = Multiplies_offset + AdditionalGlobalMultipliesPerThread; \
+    constexpr auto DebugGlobals_offset = AdditionalGlobalSyncSpace; \
+    constexpr auto DebugChecksum_offset = DebugGlobals_offset + AdditionalGlobalDebugPerThread; \
     /* Start from AdditionalUInt64PerFrame next, global state is above */ \
-    constexpr auto CallOffset = Checksum_offset + AdditionalGlobalChecksumSpace + CallIndex * CalculateKaratsubaFrameSize<SharkFloatParams>(); \
+    constexpr auto CallOffset = DebugChecksum_offset + AdditionalGlobalChecksumSpace + CallIndex * CalculateKaratsubaFrameSize<SharkFloatParams>(); \
     constexpr auto TempBase = 0; \
     constexpr auto TempBaseOffset = TempBase + CallOffset; \
     constexpr auto Z0_offsetXX = TempBaseOffset + AdditionalUInt64PerFrame + CalcAlign16Bytes64BitIndex(TempBaseOffset + AdditionalUInt64PerFrame); /* 0 */ \
@@ -1395,7 +1395,7 @@ __device__ SharkForceInlineReleaseOnly static void
 accumulate_scalar_span (
     cg::grid_group &grid,
     cg::thread_block &block,
-    DebugMultiplyCount<SharkFloatParams> *debugMultiplyCounts,
+    DebugGlobalCount<SharkFloatParams> *debugGlobalState,
     int i_lo, int i_hi, int k,
     const uint32_t *__restrict__ aDigits_base,
     const uint32_t *__restrict__ bDigits_base,
@@ -1427,7 +1427,7 @@ accumulate_scalar_span (
         p = xy_a * xy_b; xy_low += p; if (xy_low < p) xy_high += 1;
         p = yy_a * yy_b; yy_low += p; if (yy_low < p) yy_high += 1;
 
-        DebugMultiplyIncrement<SharkFloatParams>(debugMultiplyCounts, grid, block, 3);
+        DebugMultiplyIncrement<SharkFloatParams>(debugGlobalState, grid, block, 3);
     }
 }
 
@@ -1455,7 +1455,7 @@ __device__ SharkForceInlineReleaseOnly static void
 ProcessConvolutionBatch (
     cg::grid_group &grid,
     cg::thread_block &block,
-    DebugMultiplyCount<SharkFloatParams> *debugMultiplyCounts,
+    DebugGlobalCount<SharkFloatParams> *debugGlobalState,
     const int RelativeBlockIndex,
     const int outerIteration,
     const int k,
@@ -1483,7 +1483,7 @@ ProcessConvolutionBatch (
         accumulate_scalar_span<SharkFloatParams, UseConditionalAccess>(
             grid,
             block,
-            debugMultiplyCounts,
+            debugGlobalState,
             i_start, i_end, k,
             aDigits_base, bDigits_base, a_offset, b_offset,
             x_diff_abs, y_diff_abs,
@@ -1505,7 +1505,7 @@ ProcessConvolutionBatch (
             accumulate_scalar_span<SharkFloatParams, UseConditionalAccess>(
                 grid,
                 block,
-                debugMultiplyCounts,
+                debugGlobalState,
                 i, pro_end, k,
                 aDigits_base, bDigits_base, a_offset, b_offset,
                 x_diff_abs, y_diff_abs,
@@ -1563,7 +1563,7 @@ ProcessConvolutionBatch (
                         p = xy_a * xy_b; xy_sum_low += p; if (xy_sum_low < p) xy_sum_high += 1;
                         p = yy_a * yy_b; yy_sum_low += p; if (yy_sum_low < p) yy_sum_high += 1;
 
-                        DebugMultiplyIncrement<SharkFloatParams>(debugMultiplyCounts, grid, block, 3);
+                        DebugMultiplyIncrement<SharkFloatParams>(debugGlobalState, grid, block, 3);
                     }
                 };
 
@@ -1623,7 +1623,7 @@ ProcessConvolutionBatch (
             accumulate_scalar_span<SharkFloatParams, UseConditionalAccess>(
                 grid,
                 block,
-                debugMultiplyCounts,
+                debugGlobalState,
                 i, i_end, k,
                 aDigits_base, bDigits_base, a_offset, b_offset,
                 x_diff_abs, y_diff_abs,
@@ -1646,7 +1646,7 @@ ProcessConvolutionBatch (
             ExecutionNumBlocks>(
                 grid,
                 block,
-                debugMultiplyCounts,
+                debugGlobalState,
                 i, i_start, i_end, k,
                 aDigits_base, bDigits_base,
                 a_offset, b_offset,
@@ -1679,7 +1679,7 @@ ProcessConvolutionBatch (
             ExecutionNumBlocks>(
                 grid,
                 block,
-                debugMultiplyCounts,
+                debugGlobalState,
                 i, i_end, k,
                 aDigits_base, bDigits_base,
                 a_offset, b_offset,
@@ -1699,7 +1699,7 @@ ProcessConvolutionBatch (
             RecursionDepth, ExecutionBlockBase, ExecutionNumBlocks>(
                 grid,
                 block,
-                debugMultiplyCounts,
+                debugGlobalState,
                 i, i_end, k,
                 aDigits_base, bDigits_base,
                 a_offset, b_offset,
@@ -1748,8 +1748,8 @@ MultiplyDigitsOnly(
     DefineTempProductsOffsets(CallIndex);
     TempProductsGlobals(TempBase, CallIndex);
 
-    auto *SharkRestrict debugMultiplyCounts = reinterpret_cast<DebugMultiplyCount<SharkFloatParams>*>(&tempProducts[Multiplies_offset]);
-    auto *SharkRestrict debugStates = reinterpret_cast<DebugState<SharkFloatParams>*>(&tempProducts[Checksum_offset]);
+    auto *SharkRestrict debugGlobalState = reinterpret_cast<DebugGlobalCount<SharkFloatParams>*>(&tempProducts[DebugGlobals_offset]);
+    auto *SharkRestrict debugStates = reinterpret_cast<DebugState<SharkFloatParams>*>(&tempProducts[DebugChecksum_offset]);
 
     constexpr auto MaxHalfN = std::max(n1, n2);
     constexpr int total_k = MaxHalfN * 2 - 1; // Total number of k values
@@ -2059,7 +2059,7 @@ MultiplyDigitsOnly(
 
                     grid,
                     block,
-                    debugMultiplyCounts,
+                    debugGlobalState,
                     RelativeBlockIndex,
                     outerIteration,
                     k,
@@ -2108,7 +2108,7 @@ MultiplyDigitsOnly(
 
                     grid,
                     block,
-                    debugMultiplyCounts,
+                    debugGlobalState,
                     RelativeBlockIndex,
                     outerIteration,
                     k,
@@ -2156,7 +2156,7 @@ MultiplyDigitsOnly(
 
                     grid,
                     block,
-                    debugMultiplyCounts,
+                    debugGlobalState,
                     RelativeBlockIndex,
                     outerIteration,
                     k,
@@ -2612,7 +2612,7 @@ static __device__ void MultiplyHelperKaratsubaV2Separates(
 
     // Also ensure we never intrude into the global region
     static_assert(
-        TempBaseOffset >= (Checksum_offset + AdditionalGlobalChecksumSpace),
+        TempBaseOffset >= (DebugChecksum_offset + AdditionalGlobalChecksumSpace),
         "Per-frame region overlaps global header"
         );
 
@@ -2631,8 +2631,8 @@ static __device__ void MultiplyHelperKaratsubaV2Separates(
     static_assert((Z0_offsetYY % 2) == 0, "Z0_offsetYY must be 16-byte aligned");
 
 
-    auto *SharkRestrict debugMultiplyCounts = reinterpret_cast<DebugMultiplyCount<SharkFloatParams>*>(&tempProducts[Multiplies_offset]);
-    auto *SharkRestrict debugStates = reinterpret_cast<DebugState<SharkFloatParams>*>(&tempProducts[Checksum_offset]);
+    auto *SharkRestrict debugGlobalState = reinterpret_cast<DebugGlobalCount<SharkFloatParams>*>(&tempProducts[DebugGlobals_offset]);
+    auto *SharkRestrict debugStates = reinterpret_cast<DebugState<SharkFloatParams>*>(&tempProducts[DebugChecksum_offset]);
 
     auto *SharkRestrict aDigits =
         HpShark::LoadAllInShared ?
@@ -2659,17 +2659,13 @@ static __device__ void MultiplyHelperKaratsubaV2Separates(
         memset(shared_data, 0xcd, AvailableShared);
     }*/
 
-    if constexpr (HpShark::PrintMultiplyCounts) {
+    if constexpr (HpShark::DebugGlobalState) {
         const auto CurBlock = block.group_index().x;
         const auto CurThread = block.thread_index().x;
-        debugMultiplyCounts[CurBlock * SharkFloatParams::GlobalThreadsPerBlock + CurThread].DebugMultiplyErase();
+        debugGlobalState[CurBlock * SharkFloatParams::GlobalThreadsPerBlock + CurThread].DebugMultiplyErase();
     }
 
     if constexpr (HpShark::DebugChecksums) {
-        const auto CurBlock = block.group_index().x;
-        const auto CurThread = block.thread_index().x;
-        debugMultiplyCounts[CurBlock * SharkFloatParams::GlobalThreadsPerBlock + CurThread].DebugMultiplyErase();
-
         const RecordIt record =
             (block.thread_index().x == 0 && block.group_index().x == ExecutionBlockBase) ?
             RecordIt::Yes :

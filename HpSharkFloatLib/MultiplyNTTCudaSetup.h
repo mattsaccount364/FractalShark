@@ -4,7 +4,7 @@
 
 #include "MultiplyNTTPlanBuilder.cuh"
 
-template <class SharkFloatParams> struct DebugMultiplyCount;
+template <class SharkFloatParams> struct DebugGlobalCount;
 
 template <class SharkFloatParams> struct DebugHostCombo;
 

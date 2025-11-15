@@ -600,6 +600,10 @@ TestPerf(TestTracker &Tests,
     }
 
     if constexpr (HpShark::TestGpu) {
+        std::unique_ptr<DebugGpuCombo> debugGpuCombo;
+        if constexpr (HpShark::DebugGlobalState) {
+            debugGpuCombo = std::make_unique<DebugGpuCombo>();
+        }
 
         auto CheckDiff = [&](TestTracker &Tests,
                              const int testNum,
@@ -706,7 +710,9 @@ TestPerf(TestTracker &Tests,
 
             {
                 BenchmarkTimer timer;
-                InvokeHpSharkReferenceKernelPerf<SharkFloatParams>(&timer, *combo, numIters);
+                InvokeHpSharkReferenceKernelPerf<SharkFloatParams>(
+                    &timer, *combo, numIters, debugGpuCombo.get());
+
                 Tests.AddTime(testNum, timer.GetDeltaInMs());
                 std::cout << "GPU iter time: " << timer.GetDeltaInMs() << " ms" << std::endl;
 
@@ -764,6 +770,11 @@ TestPerf(TestTracker &Tests,
                               << combo->EscapedIteration << std::endl;
                     DebugBreak();
                 }
+            }
+
+            if constexpr (HpShark::DebugGlobalState) {
+                DebugHostCombo<SharkFloatParams> debugHostCombo;
+                ChecksumsCheck<SharkFloatParams>(debugHostCombo, *debugGpuCombo);
             }
 
             assert(combo->OutputIters != nullptr);
@@ -871,33 +882,40 @@ ChecksumsCheck(const DebugHostCombo<SharkFloatParams> &debugHostCombo,
 {
     // Compare debugResultsCuda against debugResultsHost
     bool ChecksumFailure = false;
-    if constexpr (HpShark::TestGpu && HpShark::PrintMultiplyCounts) {
-        std::map<int, int> countOfCounts;
+    if constexpr (HpShark::TestGpu && HpShark::DebugGlobalState) {
+        std::map<uint64_t, int> countOfCountsMultiply;
         for (size_t i = 0; i < debugGpuCombo.MultiplyCounts.size(); ++i) {
-            countOfCounts[debugGpuCombo.MultiplyCounts[i].count]++;
+            countOfCountsMultiply[debugGpuCombo.MultiplyCounts[i].multiplyCount]++;
+        }
+
+        uint64_t carryCount = 0;
+        for (size_t i = 0; i < debugGpuCombo.MultiplyCounts.size(); ++i) {
+            carryCount += debugGpuCombo.MultiplyCounts[i].carryCount;
         }
 
         // Print distribution of counts
-        size_t totalGpu{};
-        size_t totalResults{};
+        uint64_t totalMultiplyCountGpu{};
+        uint64_t totalMultiplyCountResults{};
         std::cerr << "MultiplyCount distribution:" << std::endl;
-        for (const auto &pair : countOfCounts) {
+        for (const auto &pair : countOfCountsMultiply) {
             std::cerr << "Count: " << pair.first << " occurred " << pair.second << " times" << std::endl;
-            totalGpu += pair.first * pair.second;
-            totalResults += pair.second;
+            totalMultiplyCountGpu += pair.first * pair.second;
+            totalMultiplyCountResults += pair.second;
         }
 
-        std::cerr << "GPU total count: " << totalGpu << std::endl;
-        std::cerr << "GPU result count (should be total num threads): " << totalResults << std::endl;
-        std::cerr << "Host count: " << debugHostCombo.MultiplyCounts.count << std::endl;
+        std::cerr << "GPU total carry count: " << carryCount << std::endl;
 
-        if (totalGpu != debugHostCombo.MultiplyCounts.count) {
+        std::cerr << "GPU total multiply count: " << totalMultiplyCountGpu << std::endl;
+        std::cerr << "GPU result count (should be total num threads): " << totalMultiplyCountResults << std::endl;
+        std::cerr << "Host count: " << debugHostCombo.MultiplyCounts.multiplyCount << std::endl;
+
+        if (totalMultiplyCountGpu != debugHostCombo.MultiplyCounts.multiplyCount) {
             std::cerr << "Error: GPU total count does not match host count!" << std::endl;
             ChecksumFailure = true;
             DebugBreak();
         }
 
-        if (totalResults !=
+        if (totalMultiplyCountResults !=
             SharkFloatParams::GlobalThreadsPerBlock * SharkFloatParams::GlobalNumBlocks) {
             std::cerr << "Error: Total results does not match expected number of threads!" << std::endl;
             ChecksumFailure = true;
@@ -905,16 +923,17 @@ ChecksumsCheck(const DebugHostCombo<SharkFloatParams> &debugHostCombo,
         }
 
         // Print full array
-        if (ChecksumFailure) {
-            for (size_t i = 0; i < debugGpuCombo.MultiplyCounts.size(); ++i) {
-                std::cerr << "MultiplyCount[" << i << "]: ";
-                std::cerr << "Block: " << debugGpuCombo.MultiplyCounts[i].blockIdx << ", ";
-                std::cerr << "Thread: " << debugGpuCombo.MultiplyCounts[i].threadIdx << ", ";
-                std::cerr << "Count: " << debugGpuCombo.MultiplyCounts[i].count << std::endl;
-            }
+        //if (ChecksumFailure) {
+        //    for (size_t i = 0; i < debugGpuCombo.MultiplyCounts.size(); ++i) {
+        //        std::cerr << "MultiplyCount[" << i << "]: ";
+        //        std::cerr << "Block: " << debugGpuCombo.MultiplyCounts[i].blockIdx << ", ";
+        //        std::cerr << "Thread: " << debugGpuCombo.MultiplyCounts[i].threadIdx << ", ";
+        //        std::cerr << "Multiply count: " << debugGpuCombo.MultiplyCounts[i].multiplyCount << std::endl;
+        //        std::cerr << "Carry count: " << debugGpuCombo.MultiplyCounts[i].carryCount << std::endl;
+        //    }
 
-            DebugBreak();
-        }
+        //    DebugBreak();
+        //}
     }
 
     if constexpr (HpShark::TestGpu && HpShark::DebugChecksums) {

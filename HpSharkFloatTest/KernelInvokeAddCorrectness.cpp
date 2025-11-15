@@ -48,11 +48,11 @@ InvokeAddKernelCorrectness(BenchmarkTimer &timer,
                        cudaMemcpyDeviceToHost);
         }
 
-        if constexpr (HpShark::PrintMultiplyCounts) {
+        if constexpr (HpShark::DebugGlobalState) {
             debugCombo->MultiplyCounts.resize(SharkFloatParams::NumDebugMultiplyCounts);
             cudaMemcpy(debugCombo->MultiplyCounts.data(),
                        &g_extResult[AdditionalMultipliesOffset],
-                       SharkFloatParams::NumDebugMultiplyCounts * sizeof(DebugMultiplyCountRaw),
+                       SharkFloatParams::NumDebugMultiplyCounts * sizeof(DebugGlobalCountRaw),
                        cudaMemcpyDeviceToHost);
         }
     }

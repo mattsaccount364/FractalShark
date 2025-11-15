@@ -251,7 +251,8 @@ CarryPropagationSmall_ABC(uint32_t *globalSync1,                   // [0] holds 
                      int32_t &carryAcc_ABC_False,            // out: final signed carry/borrow
                      int32_t &carryAcc_DE,                   // out: final unsigned carry
                      cg::thread_block &block,
-                     cg::grid_group &grid)
+                     cg::grid_group &grid,
+                     DebugGlobalCount<SharkFloatParams> *debugGlobalState)
 {
     constexpr uint64_t SHIFT1 = 21;
     constexpr uint64_t SHIFT2 = 42;
@@ -387,6 +388,10 @@ CarryPropagationSmall_ABC(uint32_t *globalSync1,                   // [0] holds 
 
         // ── barrier 3: ready for next iteration ──
         grid.sync();
+
+        if constexpr (HpShark::DebugGlobalState) {
+            DebugCarryIncrement<SharkFloatParams>(debugGlobalState, grid, block, 1);
+        }
     }
 
     // final carry extraction
@@ -412,10 +417,10 @@ ProcessStreamABC(
 {
     const auto N = numActualDigitsPlusGuard;
     constexpr auto warpSz = 32;
-    const int64_t sum = limb + inStep;
-    const uint32_t lo = static_cast<uint32_t>(sum);
 
     if (base + lane < N) {
+        const int64_t sum = limb + inStep;
+        const uint32_t lo = static_cast<uint32_t>(sum);
         c_out = static_cast<int32_t>(sum >> 32);
 
         if ((lane == warpSz - 1) || (base + lane == N - 1)) {
@@ -454,7 +459,8 @@ CarryPropagation_ABC(
     int32_t &carryAcc_ABC_False,        // out: final signed carry/borrow
     int32_t &carryAcc_DE,               // out: final unsigned carry
     cg::thread_block &block,
-    cg::grid_group &grid
+    cg::grid_group &grid,
+    DebugGlobalCount<SharkFloatParams> *debugGlobalState
 ) {
 
 //#define OVERRIDE_CARRY_IMPL
@@ -476,7 +482,8 @@ CarryPropagation_ABC(
                                                 carryAcc_ABC_False, // out: final signed carry/borrow
                                                 carryAcc_DE,        // out: final unsigned carry
                                                 block,
-                                                grid);
+                                                grid,
+                                                debugGlobalState);
     return;
 #else
     if (grid.size() % 32 != 0) {
@@ -496,7 +503,8 @@ CarryPropagation_ABC(
                                   carryAcc_ABC_False,            // out: final signed carry/borrow
                                   carryAcc_DE,                   // out: final unsigned carry
                                   block,
-                                  grid);
+                                  grid,
+                                  debugGlobalState);
         return;
     }
 
@@ -553,21 +561,17 @@ CarryPropagation_ABC(
             int32_t inStep2 = __shfl_up_sync(fullMask, r2, 1);
             int32_t inStep3 = __shfl_up_sync(fullMask, r3, 1);
 
-            if (lane == 0) {
-                if (step == 0) {
-                    inStep1 = in1;
-                    inStep2 = in2;
-                    inStep3 = in3;
-                } else {
-                    inStep1 = 0;
-                    inStep2 = 0;
-                    inStep3 = 0;
-                }
-            }
+            inStep1 = (lane == 0 && step == 0) ? in1 : ((lane == 0) ? 0 : inStep1);
+            ProcessStreamABC<SharkFloatParams>(
+                N, base, lane, limb1, inStep1, r1, c_out1, extResultTrue, 0x1u, changedMask);
 
-            ProcessStreamABC<SharkFloatParams>(N, base, lane, limb1, inStep1, r1, c_out1, extResultTrue, 0x1u, changedMask);
-            ProcessStreamABC<SharkFloatParams>(N, base, lane, limb2, inStep2, r2, c_out2, extResultFalse, 0x2u, changedMask);
-            ProcessStreamABC<SharkFloatParams>(N, base, lane, limb3, inStep3, r3, c_out3, final128_DE, 0x4u, changedMask);
+            inStep2 = (lane == 0 && step == 0) ? in2 : ((lane == 0) ? 0 : inStep2);
+            ProcessStreamABC<SharkFloatParams>(
+                N, base, lane, limb2, inStep2, r2, c_out2, extResultFalse, 0x2u, changedMask);
+
+            inStep3 = (lane == 0 && step == 0) ? in3 : ((lane == 0) ? 0 : inStep3);
+            ProcessStreamABC<SharkFloatParams>(
+                N, base, lane, limb3, inStep3, r3, c_out3, final128_DE, 0x4u, changedMask);
         }
 
         // OR reduce the mask within the warp
@@ -591,10 +595,6 @@ CarryPropagation_ABC(
     uint32_t loadedResult2 = std::numeric_limits<uint32_t>::max() - 1;
     int32_t iteration = 0;
     bool assignedTermination = false;
-
-    uint32_t cur1N;
-    uint32_t cur2N;
-    uint32_t cur3N;
 
     while (true) {
         prevResult2 = loadedResult1;
@@ -664,9 +664,13 @@ CarryPropagation_ABC(
         swap2(cur3, next3);
         
         iteration++;
+
+        if constexpr (HpShark::DebugGlobalState) {
+            DebugCarryIncrement<SharkFloatParams>(debugGlobalState, grid, block, 1);
+        }
     }
 
-    grid.sync();
+    //grid.sync();
 
     carryAcc_ABC_True = next1[N];
     carryAcc_ABC_False = next2[N];

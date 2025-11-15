@@ -293,8 +293,8 @@ main(int /*argc*/, char * /*argv*/[])
     }
 
     if constexpr (HpShark::EnableFullKernel) {
-        testBase = 16010;
-        res = TestFullReferencePerfView5<Operator::ReferenceOrbit>(
+        testBase = 16020;
+        res = TestFullReferencePerfView30<Operator::ReferenceOrbit>(
             testBase, numIters, internalTestLoopCount);
         if (!res) {
             auto q = PressKey();
@@ -310,8 +310,8 @@ main(int /*argc*/, char * /*argv*/[])
             }
         }
 
-        testBase = 16020;
-        res = TestFullReferencePerfView30<Operator::ReferenceOrbit>(
+        testBase = 16010;
+        res = TestFullReferencePerfView5<Operator::ReferenceOrbit>(
             testBase, numIters, internalTestLoopCount);
         if (!res) {
             auto q = PressKey();

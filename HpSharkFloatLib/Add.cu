@@ -554,7 +554,9 @@ static __device__ void AddHelperSeparates(
     const bool IsNegativeD = D_2X->GetNegative();
     const bool IsNegativeE = E_B->GetNegative();
 
-    constexpr auto GlobalSync_offset = 0;
+    constexpr auto GlobalSync1_offset = 0;
+    constexpr auto GlobalSync2_offset = 128 / sizeof(uint64_t);
+    constexpr auto GlobalSync3_offset = GlobalSync2_offset + 128 / sizeof(uint64_t);
     constexpr auto Checksum_offset = AdditionalGlobalSyncSpace;
     constexpr auto Final128Offset_ABC_True = AdditionalUInt64Global;
     constexpr auto Final128Offset_ABC_False = Final128Offset_ABC_True + 2 * SharkFloatParams::GlobalNumUint32;
@@ -571,8 +573,12 @@ static __device__ void AddHelperSeparates(
     constexpr auto TotalGlobalNumUint32Multiple = 2 + 2 + 2 + 2 + 2 + 2 + 6 * 4;
     static_assert(TotalGlobalNumUint32Multiple == 36);
 
-    auto *SharkRestrict globalSync =
-        reinterpret_cast<uint32_t *>(&tempData[GlobalSync_offset]);
+    auto *SharkRestrict globalSync1 =
+        reinterpret_cast<uint32_t *>(&tempData[GlobalSync1_offset]);
+    auto *SharkRestrict globalSync2 =
+        reinterpret_cast<uint32_t *>(&tempData[GlobalSync2_offset]);
+    auto *SharkRestrict globalSync3 =
+        reinterpret_cast<uint32_t *>(&tempData[GlobalSync3_offset]);
     auto *SharkRestrict debugStates =
         reinterpret_cast<DebugState<SharkFloatParams>*>(&tempData[Checksum_offset]);
     auto *SharkRestrict extResultTrue =
@@ -823,7 +829,9 @@ static __device__ void AddHelperSeparates(
 
     if constexpr (!SharkFloatParams::DisableCarryPropagation) {
         CarryPropagation_ABC<SharkFloatParams>(
-            globalSync,
+            globalSync1,
+            globalSync2,
+            globalSync3,
             reinterpret_cast<uint64_t*>(sharedData),
             idx,
             numActualDigitsPlusGuard,

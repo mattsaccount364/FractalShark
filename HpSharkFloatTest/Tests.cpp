@@ -1825,11 +1825,11 @@ TestTernaryOperatorTwoNumbers(
     // With three numbers, there are 8 combinations of signs
     //
 
-    //if constexpr (EnableTestSign1) {
-    //    printTest(testNum);
-    //    resetCopy();
-    //    curTest();
-    //}
+    if constexpr (EnableTestSign1) {
+        printTest(testNum);
+        resetCopy();
+        curTest();
+    }
 
     if constexpr (EnableTestSign2) {
         printTest(testNum);

@@ -4,7 +4,7 @@ template <class SharkFloatParams>
 __device__ SharkForceInlineReleaseOnly void
 SerialCarryPropagation (
     uint32_t *sharedData,
-    uint32_t *globalSync,
+    uint32_t *globalSync1,
     uint64_t *final128,
     const int32_t numActualDigitsPlusGuard,
     uint32_t *carry,      // global memory array for intermediate carries (length numActualDigitsPlusGuard+1)
@@ -196,7 +196,7 @@ Phase1_DE (
 template <class SharkFloatParams>
 __device__ inline void CarryPropagationPP3_DE (
     uint32_t *sharedData,   // allocated with at least 2*n*sizeof(uint32_t); unused here.
-    uint32_t *globalSync,   // unused (provided for interface compatibility)
+    uint32_t *globalSync1,   // unused (provided for interface compatibility)
     uint64_t *final128,     // the extended result digits
     const int32_t numActualDigitsPlusGuard,  // number of digits in final128 to process
     uint32_t *carry1,         // will be reinterpreted as an array of GenProp (working vector)
@@ -210,7 +210,7 @@ __device__ inline void CarryPropagationPP3_DE (
     const int32_t   globalIdx = block.thread_index().x + block.group_index().x * blockDim.x;
     const int32_t   stride = grid.size();
     constexpr int32_t maxIter = 1000;
-    auto *carries_remaining = &globalSync[0];
+    auto *carries_remaining = &globalSync1[0];
     uint32_t *curCarry = carry1;
     uint32_t *nextCarry = carry2;
 
@@ -331,7 +331,7 @@ __device__ inline void CarryPropagationPP3_DE (
     //
 
     // Set an initial nonzero carry flag.
-    auto *carries_remaining_global = &globalSync[0];
+    auto *carries_remaining_global = &globalSync1[0];
     if (block.group_index().x == 0 && block.thread_index().x == 0) {
         *carries_remaining_global = 1;
     }
@@ -498,7 +498,7 @@ __device__ inline void CarryPropagationPP3_DE (
 template <class SharkFloatParams>
 __device__ inline void CarryPropagationPP2_DE(
     uint32_t *sharedData,   // allocated with at least 2*n*sizeof(uint32_t); unused here.
-    uint32_t *globalSync,   // unused (provided for interface compatibility)
+    uint32_t *globalSync1,   // unused (provided for interface compatibility)
     uint64_t *final128,     // the extended result digits
     const int32_t numActualDigitsPlusGuard,  // number of digits in final128 to process
     uint32_t *carry1,         // will be reinterpreted as an array of GenProp (working vector)
@@ -616,7 +616,7 @@ template <class SharkFloatParams>
 __device__ SharkForceInlineReleaseOnly void
 CarryPropagationPPTry1Buggy_DE (
     uint32_t *sharedData,  // must be allocated with at least 2*n*sizeof(uint32_t)
-    uint32_t *globalSync,  // unused in this version (still provided for interface compatibility)
+    uint32_t *globalSync1,  // unused in this version (still provided for interface compatibility)
     uint64_t *final128,
     const int32_t numActualDigitsPlusGuard,
     uint32_t *carry1,
@@ -855,7 +855,7 @@ template <class SharkFloatParams>
 __device__ SharkForceInlineReleaseOnly void
 CarryPropagationDE (
     uint32_t *sharedData,
-    uint32_t *globalSync,   // global sync array; element 0 is used for borrow/carry count
+    uint32_t *globalSync1,   // global sync array; element 0 is used for borrow/carry count
     uint64_t *final128,
     const int32_t numActualDigitsPlusGuard,
     uint32_t *carry1,        // global memory array for intermediate carries/borrows (length numActualDigitsPlusGuard+1)
@@ -873,7 +873,7 @@ CarryPropagationDE (
     constexpr int32_t maxIter = 1000;
 
     // Pointer to a single global counter used for convergence.
-    auto *carries_remaining_global = &globalSync[0];
+    auto *carries_remaining_global = &globalSync1[0];
     auto *curCarry = carry1;
     auto *nextCarry = carry2;
 

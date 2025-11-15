@@ -235,7 +235,7 @@ void Phase1_ABC (
 
 template <class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly void
-CarryPropagationSmall_ABC(uint32_t *globalSync,                   // [0] holds convergence counter
+CarryPropagationSmall_ABC(uint32_t *globalSync1,                   // [0] holds convergence counter
                      const int32_t idx,                      // this thread’s global index
                      const int32_t numActualDigitsPlusGuard, // N
                      uint64_t *extResultTrue,                // Phase1_ABC “true” limbs
@@ -259,7 +259,7 @@ CarryPropagationSmall_ABC(uint32_t *globalSync,                   // [0] holds c
 
     const int32_t N = numActualDigitsPlusGuard;
     const int32_t stride = grid.size();
-    auto *global64 = reinterpret_cast<uint64_t *>(globalSync);
+    auto *global64 = reinterpret_cast<uint64_t *>(globalSync1);
 
     // six carry buffers
     uint32_t *cur1 = carry1;
@@ -435,7 +435,9 @@ ProcessStreamABC(
 template<class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly void
 CarryPropagation_ABC(
-    uint32_t *globalSync,                // [0] holds convergence counter
+    uint32_t *globalSync1, // [0] holds convergence counter
+    uint32_t *globalSync2,
+    uint32_t *globalSync3,
     uint64_t *sharedData,
     const int32_t    idx,                       // this thread’s global index
     const int32_t    numActualDigitsPlusGuard,  // N
@@ -458,7 +460,7 @@ CarryPropagation_ABC(
 //#define OVERRIDE_CARRY_IMPL
 
 #ifdef OVERRIDE_CARRY_IMPL
-    CarryPropagationSmall_ABC<SharkFloatParams>(globalSync, // [0] holds convergence counter
+    CarryPropagationSmall_ABC<SharkFloatParams>(globalSync1, // [0] holds convergence counter
                                                 idx,        // this thread’s global index
                                                 numActualDigitsPlusGuard, // N
                                                 extResultTrue,            // Phase1_ABC “true” limbs
@@ -478,7 +480,7 @@ CarryPropagation_ABC(
     return;
 #else
     if (grid.size() % 32 != 0) {
-        CarryPropagationSmall_ABC<SharkFloatParams>(globalSync,                   // [0] holds convergence counter
+        CarryPropagationSmall_ABC<SharkFloatParams>(globalSync1,                   // [0] holds convergence counter
                                   idx,                      // this thread’s global index
                                   numActualDigitsPlusGuard, // N
                                   extResultTrue,                // Phase1_ABC “true” limbs
@@ -578,16 +580,19 @@ CarryPropagation_ABC(
         return {r1, r2, r3, changedMask};
     };
 
-    constexpr auto MinIters = 2;
+    *globalSync1 = 0;
+    *globalSync2 = std::numeric_limits<uint32_t>::max();
+    *globalSync3 = 0;
+    grid.sync();
+
+    uint32_t prevResult1 = std::numeric_limits<uint32_t>::max();
+    uint32_t prevResult2 = std::numeric_limits<uint32_t>::max();
+    uint32_t loadedResult1 = std::numeric_limits<uint32_t>::max();
+    uint32_t loadedResult2 = std::numeric_limits<uint32_t>::max();
     int32_t iteration = 0;
+    bool assignedTermination = false;
+
     while (true) {
-        // Reset global flag (your required sequence)
-        *globalSync = 0u;
-
-        if (iteration >= MinIters) {
-            grid.sync();
-        }
-
         // Each warp walks its tiles in round-robin: tile = warpId, warpId+totalWarps
         // Note: do not propagate from one tile to next in this loop!  That's another
         // global iteration.
@@ -619,24 +624,31 @@ CarryPropagation_ABC(
                 }
 
                 if (tout.changedMask) {
-                    atomicOr(globalSync, tout.changedMask); // bits per stream
+                    atomicAdd(globalSync1, 1);
                 }
             }
         }
 
         grid.sync(); // all next*[N] writes are visible
 
+        prevResult1 = prevResult2;
+        prevResult2 = loadedResult1;
+        loadedResult1 = *globalSync1;
+        loadedResult2 = *globalSync2;
+
         if (grid.thread_rank() == 0) {
             cur1[N] = next1[N];
             cur2[N] = next2[N];
             cur3[N] = next3[N];
+
+            if (loadedResult1 == prevResult2 && !assignedTermination) {
+                *globalSync2 = iteration + 1;
+                assignedTermination = true;
+            }
         }
 
-        uint32_t mask = 0xFFFFFFFF;
-        if (iteration >= MinIters) {
-
-            // Check convergence and do per-stream conditional swaps
-            mask = *globalSync; // 0 -> all settled
+        if (iteration == loadedResult2) {
+            break;
         }
 
         // Swap only the active streams (mirror of your original logic)
@@ -646,23 +658,10 @@ CarryPropagation_ABC(
             b = t;
         };
 
-        if (mask & 0x1u) {
-            swap2(cur1, next1);
-        } // TRUE updated this pass
-        if (mask & 0x2u) {
-            swap2(cur2, next2);
-        } // FALSE updated this pass
-        if (mask & 0x4u) {
-            swap2(cur3, next3);
-        } // DE updated this pass
-
-        if (iteration >= MinIters) {
-            if (mask == 0u)
-                break; // nothing changed in any stream → done
-
-            grid.sync();
-        }
-
+        swap2(cur1, next1);
+        swap2(cur2, next2);
+        swap2(cur3, next3);
+        
         iteration++;
     }
 

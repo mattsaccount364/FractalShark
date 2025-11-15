@@ -66,7 +66,7 @@
 #ifdef _DEBUG
 #ifdef HP_SHARK_FLOAT_TEST
 // Test path - this is what we use with HpSharkFloatTest
-#define ENABLE_BASIC_CORRECTNESS 2
+#define ENABLE_BASIC_CORRECTNESS 0
 #else
 // Production path - this is what we use in FractalShark
 #define ENABLE_BASIC_CORRECTNESS 4
@@ -272,7 +272,7 @@ static constexpr auto AdditionalUInt64PerFrame = 256;
 // Units are uint64_t
 static constexpr auto MaxBlocks = 256;
 
-static constexpr auto AdditionalGlobalSyncSpace = 128 * MaxBlocks;
+static constexpr auto AdditionalGlobalSyncSpace = 128 * (MaxBlocks + 1);
 static constexpr auto AdditionalGlobalMultipliesPerThread = HpShark::PrintMultiplyCounts ? 1024 * 1024 : 0;
 static constexpr auto AdditionalGlobalChecksumSpace = HpShark::DebugChecksums ? 1024 * 1024 : 0;
 
@@ -345,11 +345,11 @@ static constexpr auto LowPrec = 32;
 
 
 // If you add a new one, search for one of the other types and copy/paste
-//using Test8x1SharkParams = GenericSharkFloatParams<256, 64, 16384>;
+using Test8x1SharkParams = GenericSharkFloatParams<256, 64, 16384>;
 //using Test8x1SharkParams = GenericSharkFloatParams<128, 128, 8192, 9>;
 //using Test8x1SharkParams = GenericSharkFloatParams<128, 108, 7776, 9>;
 //using Test8x1SharkParams = GenericSharkFloatParams<64, 1, 64>;
-using Test8x1SharkParams = GenericSharkFloatParams<8, 1>; // Use for ENABLE_BASIC_CORRECTNESS==1
+//using Test8x1SharkParams = GenericSharkFloatParams<8, 1>; // Use for ENABLE_BASIC_CORRECTNESS==1
 using Test4x36SharkParams = GenericSharkFloatParams<4, 6, 32>;
 using Test4x12SharkParams = GenericSharkFloatParams<3, 18, 50>;
 using Test4x9SharkParams = GenericSharkFloatParams<5, 12, 80>;

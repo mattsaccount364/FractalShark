@@ -1,7 +1,6 @@
 ﻿#include "DbgHeap.h"
 #include "Conversion.h"
 #include "HpSharkFloat.cuh"
-#include "NullKernel.cuh"
 #include "TestVerbose.h"
 #include "Tests.h"
 
@@ -73,9 +72,6 @@ template <typename TestSharkParams>
 bool
 CorrectnessTests()
 {
-    // TestNullKernel();
-    // PressKey();
-
     int testBase = 0;
 
     bool res;
@@ -238,12 +234,6 @@ main(int /*argc*/, char * /*argv*/[])
         std::cout << "Device " << i << ": " << prop.persistingL2CacheMaxSize << " bytes of L2 cache."
                   << std::endl;
     }
-
-    // TestNullKernel();
-    // q = PressKey();
-    // if (q == 'q') {
-    //     return 0;
-    // }
 
     if constexpr (HpShark::TestCorrectness) {
         res = RunCorrectnessTest();

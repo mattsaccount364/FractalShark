@@ -140,14 +140,12 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
     </CudaCompile>
-    <CudaCompile Include="NullKernel.cu" />
     <ClCompile Include="MainTestCuda.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Archived\ScaledKernels.cuh" />
     <ClInclude Include="Conversion.h" />
     <ClInclude Include="MainTestCuda.h" />
-    <ClInclude Include="NullKernel.cuh" />
     <ClInclude Include="ReferenceAdd.h" />
     <ClInclude Include="Tests.h" />
     <ClInclude Include="TestTracker.h" />

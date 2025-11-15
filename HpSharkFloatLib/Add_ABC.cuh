@@ -580,19 +580,27 @@ CarryPropagation_ABC(
         return {r1, r2, r3, changedMask};
     };
 
+    // The way we initialize all this is very important to ensure the loop converges
     *globalSync1 = 0;
-    *globalSync2 = std::numeric_limits<uint32_t>::max();
+    *globalSync2 = std::numeric_limits<uint32_t>::max() - 1;
     *globalSync3 = 0;
     grid.sync();
 
-    uint32_t prevResult1 = std::numeric_limits<uint32_t>::max();
-    uint32_t prevResult2 = std::numeric_limits<uint32_t>::max();
-    uint32_t loadedResult1 = std::numeric_limits<uint32_t>::max();
-    uint32_t loadedResult2 = std::numeric_limits<uint32_t>::max();
+    uint32_t prevResult2 = std::numeric_limits<uint32_t>::max() - 1;
+    uint32_t loadedResult1 = std::numeric_limits<uint32_t>::max() - 2;
+    uint32_t loadedResult2 = std::numeric_limits<uint32_t>::max() - 1;
     int32_t iteration = 0;
     bool assignedTermination = false;
 
+    uint32_t cur1N;
+    uint32_t cur2N;
+    uint32_t cur3N;
+
     while (true) {
+        prevResult2 = loadedResult1;
+        loadedResult1 = *globalSync1;
+        loadedResult2 = *globalSync2;
+
         // Each warp walks its tiles in round-robin: tile = warpId, warpId+totalWarps
         // Note: do not propagate from one tile to next in this loop!  That's another
         // global iteration.
@@ -629,27 +637,20 @@ CarryPropagation_ABC(
             }
         }
 
-        grid.sync(); // all next*[N] writes are visible
+        if (iteration - 1 == loadedResult2) {
+            break;
+        }
 
-        prevResult1 = prevResult2;
-        prevResult2 = loadedResult1;
-        loadedResult1 = *globalSync1;
-        loadedResult2 = *globalSync2;
-
+        // Tell everyone when to exit
         if (grid.thread_rank() == 0) {
-            cur1[N] = next1[N];
-            cur2[N] = next2[N];
-            cur3[N] = next3[N];
-
             if (loadedResult1 == prevResult2 && !assignedTermination) {
-                *globalSync2 = iteration + 1;
+                *globalSync2 = iteration;
                 assignedTermination = true;
             }
         }
 
-        if (iteration == loadedResult2) {
-            break;
-        }
+        // all next*[N] writes are visible
+        grid.sync();
 
         // Swap only the active streams (mirror of your original logic)
         auto swap2 = [](uint32_t *&a, uint32_t *&b) {
@@ -665,10 +666,10 @@ CarryPropagation_ABC(
         iteration++;
     }
 
-    // Final carries are in cur*[N] (unchanged for streams that didn't need swapping)
     grid.sync();
-    carryAcc_ABC_True = cur1[N];
-    carryAcc_ABC_False = cur2[N];
-    carryAcc_DE = cur3[N];
+
+    carryAcc_ABC_True = next1[N];
+    carryAcc_ABC_False = next2[N];
+    carryAcc_DE = next3[N];
 #endif
 }

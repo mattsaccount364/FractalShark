@@ -49,10 +49,7 @@ ReverseBits32(uint32_t value, int bit_count)
 // Normalization (final carry propagation and windowing into HpSharkFloat<SharkFloatParams>)
 //--------------------------------------------------------------------------------------------------
 
-// Normalize directly from Final128 (lo64,hi64 per 32-bit digit position).
-// Does not allocate; does two passes over Final128 to (1) find 'significant',
-// then (2) write the window and set the Karatsuba-style exponent.
-// NOTE: Does not set sign; do that at the call site.
+
 template <class SharkFloatParams>
 static void
 Normalize(HpSharkFloat<SharkFloatParams> &out,
@@ -63,77 +60,84 @@ Normalize(HpSharkFloat<SharkFloatParams> &out,
           int32_t additionalFactorOfTwo // 0 for XX/YY; 1 for XY if you did NOT shift digits
 )
 {
+    using u32 = uint32_t;
+    using u64 = uint64_t;
+
     constexpr int N = SharkFloatParams::GlobalNumUint32;
 
-    auto pass_once = [&](bool write_window, size_t start, size_t needN) -> std::pair<int, int> {
-        uint64_t carry_lo = 0, carry_hi = 0;
-        size_t idx = 0;           // index in base-2^32 digits being produced
-        int highest_nonzero = -1; // last non-zero digit index seen
-        int out_written = 0;
+    // Scratch buffer for all generated base-2^32 digits.
+    // Upper bound is Ddigits + a small constant; reserve to reduce reallocs.
+    std::vector<u32> digits;
+    digits.reserve(Ddigits + 4);
 
-        // Helper to emit one 32-bit digit (optionally writing into out.Digits)
-        auto emit_digit = [&](uint32_t dig) {
-            if (dig != 0)
-                highest_nonzero = (int)idx;
-            if (write_window && idx >= start && out_written < (int)needN) {
-                out.Digits[out_written++] = dig;
-            }
-            ++idx;
-        };
+    u64 carry_lo = 0;
+    u64 carry_hi = 0;
+    int highest_nonzero = -1; // last non-zero digit index
 
-        // Main Ddigits loop
-        for (size_t d = 0; d < Ddigits; ++d) {
-            uint64_t lo = final128[2 * d + 0];
-            uint64_t hi = final128[2 * d + 1];
+    const u64 *p = final128;
+    const u64 *end = final128 + 2 * Ddigits;
 
-            uint64_t s_lo = lo + carry_lo;
-            uint64_t c0 = (s_lo < lo) ? 1ull : 0ull;
-            uint64_t s_hi = hi + carry_hi + c0;
+    // Main loop: consume 128-bit limbs, propagate carry, emit 32-bit digits.
+    while (p != end) {
+        const u64 lo = p[0];
+        const u64 hi = p[1];
+        p += 2;
 
-            emit_digit(static_cast<uint32_t>(s_lo & 0xffffffffull));
+        const u64 s_lo = lo + carry_lo;
+        const u64 c0 = (s_lo < lo) ? 1u : 0u;
+        const u64 s_hi = hi + carry_hi + c0;
 
-            carry_lo = (s_lo >> 32) | (s_hi << 32);
-            carry_hi = (s_hi >> 32);
-        }
+        const u32 dig = static_cast<u32>(s_lo & 0xffffffffu);
+        digits.push_back(dig);
 
-        // Flush remaining carry into more digits
-        while (carry_lo || carry_hi) {
-            emit_digit(static_cast<uint32_t>(carry_lo & 0xffffffffull));
-            uint64_t nlo = (carry_lo >> 32) | (carry_hi << 32);
-            uint64_t nhi = (carry_hi >> 32);
-            carry_lo = nlo;
-            carry_hi = nhi;
-        }
+        const size_t idx = digits.size() - 1;
+        if (dig != 0)
+            highest_nonzero = static_cast<int>(idx);
 
-        // If we were asked to write a window and didn't fill all N yet, pad zeros
-        if (write_window) {
-            while (out_written < (int)needN) {
-                out.Digits[out_written++] = 0u;
-            }
-        }
+        carry_lo = (s_lo >> 32) | (s_hi << 32);
+        carry_hi = (s_hi >> 32);
+    }
 
-        return {highest_nonzero, out_written};
-    };
+    // Flush remaining carry (at most a few extra digits).
+    while (carry_lo || carry_hi) {
+        const u32 dig = static_cast<u32>(carry_lo & 0xffffffffu);
+        digits.push_back(dig);
 
-    // Pass 1: find 'significant' (last non-zero + 1)
-    auto [highest_nonzero, _] = pass_once(/*write_window=*/false, /*start=*/0, /*needN=*/0);
+        const size_t idx = digits.size() - 1;
+        if (dig != 0)
+            highest_nonzero = static_cast<int>(idx);
+
+        const u64 nlo = (carry_lo >> 32) | (carry_hi << 32);
+        const u64 nhi = (carry_hi >> 32);
+        carry_lo = nlo;
+        carry_hi = nhi;
+    }
+
+    // All digits zero → zero result, Karatsuba zero convention for exponent.
     if (highest_nonzero < 0) {
-        // Zero result
-        std::memset(out.Digits, 0, N * sizeof(uint32_t));
-        out.Exponent = a.Exponent + b.Exponent; // Karatsuba zero convention
+        std::fill_n(out.Digits, N, u32{0});
+        out.Exponent = a.Exponent + b.Exponent;
         return;
     }
+
     const int significant = highest_nonzero + 1;
     int shift_digits = significant - N;
     if (shift_digits < 0)
         shift_digits = 0;
 
-    // Karatsuba-style exponent
+    // Karatsuba-style exponent (same as original).
     out.Exponent = a.Exponent + b.Exponent + 32 * shift_digits + additionalFactorOfTwo;
 
-    // Pass 2: write exactly N digits starting at shift_digits
-    (void)pass_once(/*write_window=*/true, /*start=*/(size_t)shift_digits, /*needN=*/(size_t)N);
+    // Copy exactly N digits from the shifted window, zero-padding if needed.
+    const size_t start = static_cast<size_t>(shift_digits);
+    const size_t total = digits.size();
+
+    for (int i = 0; i < N; ++i) {
+        const size_t src_idx = start + static_cast<size_t>(i);
+        out.Digits[i] = (src_idx < total) ? digits[src_idx] : u32{0};
+    }
 }
+
 
 //--------------------------------------------------------------------------------------------------
 // 64-bit Goldilocks prime, helpers, and Montgomery arithmetic

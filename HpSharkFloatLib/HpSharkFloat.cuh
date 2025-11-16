@@ -48,9 +48,9 @@
 // Comment out to disable specific kernels
 //#define ENABLE_CONVERSION_TESTS
 //#define ENABLE_ADD_KERNEL
-//#define ENABLE_MULTIPLY_NTT_KERNEL
+#define ENABLE_MULTIPLY_NTT_KERNEL
 //#define ENABLE_REFERENCE_KERNEL
-#define ENABLE_FULL_KERNEL
+//#define ENABLE_FULL_KERNEL
 
 // Uncomment this to enable the HpSharkFloat test program.
 // Comment for use in FractalShark
@@ -164,7 +164,7 @@ namespace HpShark {
     static constexpr bool TestCorrectness = (BasicCorrectness == 2) ? Debug : true;
     static constexpr bool TestInfiniteCorrectness = TestCorrectness ? true : false;
     static constexpr auto TestForceSameSign = false;
-    static constexpr bool TestBenchmarkAgainstHost = false;
+    static constexpr bool TestBenchmarkAgainstHost = true;
     static constexpr bool TestInitCudaMemory = true;
 
     // True to compare against the full host-side reference implementation, false is MPIR only

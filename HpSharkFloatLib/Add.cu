@@ -556,7 +556,7 @@ static __device__ void AddHelperSeparates(
 
     constexpr auto GlobalSync1_offset = 0;
     constexpr auto GlobalSync2_offset = 128 / sizeof(uint64_t);
-    constexpr auto GlobalSync3_offset = GlobalSync2_offset + 128 / sizeof(uint64_t);
+    //constexpr auto GlobalSync3_offset = GlobalSync2_offset + 128 / sizeof(uint64_t);
     constexpr auto DebugGlobals_offset = AdditionalGlobalSyncSpace;
     constexpr auto DebugChecksum_offset = DebugGlobals_offset + AdditionalGlobalDebugPerThread;
     constexpr auto Final128Offset_ABC_True = AdditionalUInt64Global;
@@ -578,8 +578,8 @@ static __device__ void AddHelperSeparates(
         reinterpret_cast<uint32_t *>(&tempData[GlobalSync1_offset]);
     auto *SharkRestrict globalSync2 =
         reinterpret_cast<uint32_t *>(&tempData[GlobalSync2_offset]);
-    auto *SharkRestrict globalSync3 =
-        reinterpret_cast<uint32_t *>(&tempData[GlobalSync3_offset]);
+    //auto *SharkRestrict globalSync3 =
+    //    reinterpret_cast<uint32_t *>(&tempData[GlobalSync3_offset]);
     auto *SharkRestrict debugStates =
         reinterpret_cast<DebugState<SharkFloatParams>*>(&tempData[DebugChecksum_offset]);
     auto *SharkRestrict debugGlobalState =
@@ -843,7 +843,6 @@ static __device__ void AddHelperSeparates(
         CarryPropagation_ABC<SharkFloatParams>(
             globalSync1,
             globalSync2,
-            globalSync3,
             reinterpret_cast<uint64_t*>(sharedData),
             idx,
             numActualDigitsPlusGuard,

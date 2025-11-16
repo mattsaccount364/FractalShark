@@ -10,14 +10,15 @@ CompareMagnitudes3Way (
     const int32_t shiftA,
     const int32_t shiftB,
     const int32_t shiftC,
-    const uint32_t *extA,
-    const uint32_t *extB,
-    const uint32_t *extC,
+    const uint32_t *SharkRestrict extA,
+    const uint32_t *SharkRestrict extB,
+    const uint32_t *SharkRestrict extC,
     int32_t &outExp
 ) {
     // Helper: returns true if "first" is strictly bigger than "second"
-    auto cmp = [&](const uint32_t *e1, int32_t s1, int32_t exp1,
-        const uint32_t *e2, int32_t s2, int32_t exp2) {
+    auto cmp = [&](
+        const uint32_t *SharkRestrict e1, int32_t s1, int32_t exp1,
+        const uint32_t *SharkRestrict e2, int32_t s2, int32_t exp2) {
             if (exp1 != exp2)
                 return exp1 > exp2;
             // exponents equal -> compare normalized digits high->low
@@ -96,9 +97,9 @@ void Phase1_ABC (
     const bool IsNegativeC,
     const int32_t  numActualDigitsPlusGuard,
     const int32_t  actualDigits,
-    const uint32_t *extA,
-    const uint32_t *extB,
-    const uint32_t *extC,
+    const uint32_t *SharkRestrict extA,
+    const uint32_t *SharkRestrict extB,
+    const uint32_t *SharkRestrict extC,
     const int32_t  shiftA,
     const int32_t  shiftB,
     const int32_t  shiftC,
@@ -111,11 +112,10 @@ void Phase1_ABC (
     bool &outSignFalse,     // sign when X_gtY == false
     int32_t &outExpTrue_Orig,  // exponent before bias for true-branch
     int32_t &outExpFalse_Orig, // exponent before bias for false-branch
-    uint64_t *extResultTrue,   // result limbs for X_gtY == true
-    uint64_t *extResultFalse,   // result limbs for X_gtY == false
+    uint64_t *SharkRestrict extResultTrue,   // result limbs for X_gtY == true
+    uint64_t *SharkRestrict extResultFalse,   // result limbs for X_gtY == false
 
-    DebugState<SharkFloatParams> *debugStates
-)
+    DebugState<SharkFloatParams> *SharkRestrict debugStates)
 {
     outSignTrue = false;
     outSignFalse = false;
@@ -143,7 +143,9 @@ void Phase1_ABC (
     int32_t diffC = baseExp - effExpC;
 
     // 4) pick pointers, signs, shifts and diffs in “X, Y, Z” order
-    const uint32_t *extX, *extY, *extZ;
+    const uint32_t *SharkRestrict extX;
+    const uint32_t *SharkRestrict extY;
+    const uint32_t *SharkRestrict extZ;
     bool  sX, sY, sZ;
     int32_t shX, shY, shZ, diffY, diffZ;
 
@@ -235,24 +237,24 @@ void Phase1_ABC (
 
 template <class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly void
-CarryPropagationSmall_ABC(uint32_t *globalSync1,                   // [0] holds convergence counter
+CarryPropagationSmall_ABC(uint32_t *SharkRestrict globalSync1,    // [0] holds convergence counter
                      const int32_t idx,                      // this thread’s global index
                      const int32_t numActualDigitsPlusGuard, // N
-                     uint64_t *extResultTrue,                // Phase1_ABC “true” limbs
-                     uint64_t *extResultFalse,               // Phase1_ABC “false” limbs
-                     uint64_t *final128_DE,                  // Phase1_DE limbs
-                     uint32_t *carry1,                       // length N+1
-                     uint32_t *carry2,                       // length N+1
-                     uint32_t *carry3,                       // length N+1
-                     uint32_t *carry4,                       // length N+1
-                     uint32_t *carry5,                       // length N+1
-                     uint32_t *carry6,                       // length N+1
+                     uint64_t *SharkRestrict extResultTrue,                // Phase1_ABC “true” limbs
+                     uint64_t *SharkRestrict extResultFalse,               // Phase1_ABC “false” limbs
+                     uint64_t *SharkRestrict final128_DE,                  // Phase1_DE limbs
+                     uint32_t *SharkRestrict carry1,                       // length N+1
+                     uint32_t *SharkRestrict carry2,                       // length N+1
+                     uint32_t *SharkRestrict carry3,                       // length N+1
+                     uint32_t *SharkRestrict carry4,                       // length N+1
+                     uint32_t *SharkRestrict carry5,                       // length N+1
+                     uint32_t *SharkRestrict carry6,                       // length N+1
                      int32_t &carryAcc_ABC_True,             // out: final signed carry/borrow
                      int32_t &carryAcc_ABC_False,            // out: final signed carry/borrow
                      int32_t &carryAcc_DE,                   // out: final unsigned carry
                      cg::thread_block &block,
                      cg::grid_group &grid,
-                     DebugGlobalCount<SharkFloatParams> *debugGlobalState)
+                     DebugGlobalCount<SharkFloatParams> *SharkRestrict debugGlobalState)
 {
     constexpr uint64_t SHIFT1 = 21;
     constexpr uint64_t SHIFT2 = 42;
@@ -260,15 +262,15 @@ CarryPropagationSmall_ABC(uint32_t *globalSync1,                   // [0] holds 
 
     const int32_t N = numActualDigitsPlusGuard;
     const int32_t stride = grid.size();
-    auto *global64 = reinterpret_cast<uint64_t *>(globalSync1);
+    auto *SharkRestrict global64 = reinterpret_cast<uint64_t *>(globalSync1);
 
     // six carry buffers
-    uint32_t *cur1 = carry1;
-    uint32_t *next1 = carry2;
-    uint32_t *cur2 = carry3;
-    uint32_t *next2 = carry4;
-    uint32_t *cur3 = carry5;
-    uint32_t *next3 = carry6;
+    uint32_t *SharkRestrict cur1 = carry1;
+    uint32_t *SharkRestrict next1 = carry2;
+    uint32_t *SharkRestrict cur2 = carry3;
+    uint32_t *SharkRestrict next2 = carry4;
+    uint32_t *SharkRestrict cur3 = carry5;
+    uint32_t *SharkRestrict next3 = carry6;
 
     // one‐time zeroing
     if (block.group_index().x == 0 && block.thread_index().x == 0) {
@@ -401,40 +403,102 @@ CarryPropagationSmall_ABC(uint32_t *globalSync1,                   // [0] holds 
     grid.sync();
 }
 
+// warp-tile processor: all three streams in one 32-step loop
+struct WarpProcessTriple {
+    int32_t o1, o2, o3;
+    uint32_t changedMask;
+};
+
 template <class SharkFloatParams>
-static __device__ SharkForceInlineReleaseOnly void
-ProcessStreamABC(
+static __device__ SharkForceInlineReleaseOnly
+WarpProcessTriple
+warp_process_tile_32_all3(
+    unsigned fullMask,
     const int32_t numActualDigitsPlusGuard,
-    int32_t base,
-    int32_t lane,
-    int64_t &limb,
-    int32_t inStep,
-    int32_t &r,
-    int32_t &c_out,
-    uint64_t *extResult,
-    uint32_t maskBit,
-    uint32_t &changedMask)
+    const int lane,
+    const int tileIndex,
+    const uint32_t in1,
+    const uint32_t in2,
+    const uint32_t in3,
+    int64_t &limb1,
+    int64_t &limb2,
+    int64_t &limb3)
 {
-    const auto N = numActualDigitsPlusGuard;
     constexpr auto warpSz = 32;
+    const int base = tileIndex * warpSz;
+    const auto basePlusLane = base + lane;
 
-    if (base + lane < N) {
-        const int64_t sum = limb + inStep;
-        const uint32_t lo = static_cast<uint32_t>(sum);
-        c_out = static_cast<int32_t>(sum >> 32);
+    int32_t r1 = 0, r2 = 0, r3 = 0;
+    uint32_t changedMask = 0u; // bit0=True, bit1=False, bit2=DE
 
-        if ((lane == warpSz - 1) || (base + lane == N - 1)) {
-            r += c_out;
-        } else {
-            r = c_out;
+    const bool isLastLaneInTile = (lane == warpSz - 1);
+    const bool isLastDigit = (basePlusLane == numActualDigitsPlusGuard - 1);
+
+#pragma unroll
+    for (int step = 0; step < warpSz; ++step) {
+        int32_t inStep1 = __shfl_up_sync(fullMask, r1, 1);
+        int32_t inStep2 = __shfl_up_sync(fullMask, r2, 1);
+        int32_t inStep3 = __shfl_up_sync(fullMask, r3, 1);
+
+        inStep1 = (lane == 0 && step == 0) ? in1 : ((lane == 0) ? 0 : inStep1);
+        inStep2 = (lane == 0 && step == 0) ? in2 : ((lane == 0) ? 0 : inStep2);
+        inStep3 = (lane == 0 && step == 0) ? in3 : ((lane == 0) ? 0 : inStep3);
+
+        int32_t c_out1 = 0;
+        int32_t c_out2 = 0;
+        int32_t c_out3 = 0;
+
+        if (basePlusLane < numActualDigitsPlusGuard) {
+            const int64_t sum1 = limb1 + inStep1;
+            const uint32_t lo1 = static_cast<uint32_t>(sum1);
+            c_out1 = static_cast<int32_t>(sum1 >> 32);
+
+            const int64_t sum2 = limb2 + inStep2; 
+            const uint32_t lo2 = static_cast<uint32_t>(sum2);
+            c_out2 = static_cast<int32_t>(sum2 >> 32);
+
+            const int64_t sum3 = limb3 + inStep3;
+            const uint32_t lo3 = static_cast<uint32_t>(sum3);
+            c_out3 = static_cast<int32_t>(sum3 >> 32);
+
+            if (isLastLaneInTile || isLastDigit) {
+                r1 += c_out1;
+                r2 += c_out2;
+                r3 += c_out3;
+            } else {
+                r1 = c_out1;
+                r2 = c_out2;
+                r3 = c_out3;
+            }
+
+            limb1 = static_cast<int64_t>(lo1);
+            limb2 = static_cast<int64_t>(lo2);
+            limb3 = static_cast<int64_t>(lo3);
         }
 
-        limb = static_cast<int64_t>(lo);
-        extResult[base + lane] = static_cast<uint64_t>(limb);
+        if (basePlusLane < numActualDigitsPlusGuard - 1) {
+            if (c_out1 != 0) {
+                changedMask |= 0x1u;
+            }
+
+            if (c_out2 != 0) {
+                changedMask |= 0x2u;
+            }
+
+            if (c_out3 != 0) {
+                changedMask |= 0x4u;
+            }
+        }
     }
 
-    if (c_out != 0 && (base + lane < N - 1))
-        changedMask |= maskBit;
+    // OR reduce the mask within the warp
+    changedMask |= __shfl_xor_sync(fullMask, changedMask, 16);
+    changedMask |= __shfl_xor_sync(fullMask, changedMask, 8);
+    changedMask |= __shfl_xor_sync(fullMask, changedMask, 4);
+    changedMask |= __shfl_xor_sync(fullMask, changedMask, 2);
+    changedMask |= __shfl_xor_sync(fullMask, changedMask, 1);
+
+    return {r1, r2, r3, changedMask};
 }
 
 template<class SharkFloatParams>
@@ -442,25 +506,24 @@ static __device__ SharkForceInlineReleaseOnly void
 CarryPropagation_ABC(
     uint32_t *globalSync1, // [0] holds convergence counter
     uint32_t *globalSync2,
-    uint32_t *globalSync3,
-    uint64_t *sharedData,
+    uint64_t *SharkRestrict sharedData,
     const int32_t    idx,                       // this thread’s global index
     const int32_t    numActualDigitsPlusGuard,  // N
-    uint64_t *extResultTrue,         // Phase1_ABC “true” limbs
-    uint64_t *extResultFalse,        // Phase1_ABC “false” limbs
-    uint64_t *final128_DE,               // Phase1_DE limbs
-    uint32_t *carry1,                    // length N+1
-    uint32_t *carry2,                    // length N+1
-    uint32_t *carry3,                    // length N+1
-    uint32_t *carry4,                    // length N+1
-    uint32_t *carry5,                    // length N+1
-    uint32_t *carry6,                    // length N+1
+    uint64_t *SharkRestrict extResultTrue,         // Phase1_ABC “true” limbs
+    uint64_t *SharkRestrict extResultFalse,        // Phase1_ABC “false” limbs
+    uint64_t *SharkRestrict final128_DE,               // Phase1_DE limbs
+    uint32_t *SharkRestrict cur1,                    // length N+1
+    uint32_t *SharkRestrict next1,                    // length N+1
+    uint32_t *SharkRestrict cur2,                    // length N+1
+    uint32_t *SharkRestrict next2,                    // length N+1
+    uint32_t *SharkRestrict cur3,                    // length N+1
+    uint32_t *SharkRestrict next3,                    // length N+1
     int32_t &carryAcc_ABC_True,         // out: final signed carry/borrow
     int32_t &carryAcc_ABC_False,        // out: final signed carry/borrow
     int32_t &carryAcc_DE,               // out: final unsigned carry
     cg::thread_block &block,
     cg::grid_group &grid,
-    DebugGlobalCount<SharkFloatParams> *debugGlobalState
+    DebugGlobalCount<SharkFloatParams> *SharkRestrict debugGlobalState
 ) {
 
 //#define OVERRIDE_CARRY_IMPL
@@ -472,12 +535,12 @@ CarryPropagation_ABC(
                                                 extResultTrue,            // Phase1_ABC “true” limbs
                                                 extResultFalse,           // Phase1_ABC “false” limbs
                                                 final128_DE,              // Phase1_DE limbs
-                                                carry1,                   // length N+1
-                                                carry2,                   // length N+1
-                                                carry3,                   // length N+1
-                                                carry4,                   // length N+1
-                                                carry5,                   // length N+1
-                                                carry6,                   // length N+1
+                                                cur1,                     // length N+1
+                                                next1,                    // length N+1
+                                                cur2,                     // length N+1
+                                                next2,                    // length N+1
+                                                cur3,                     // length N+1
+                                                next3,                    // length N+1
                                                 carryAcc_ABC_True,  // out: final signed carry/borrow
                                                 carryAcc_ABC_False, // out: final signed carry/borrow
                                                 carryAcc_DE,        // out: final unsigned carry
@@ -493,12 +556,12 @@ CarryPropagation_ABC(
                                   extResultTrue,                // Phase1_ABC “true” limbs
                                   extResultFalse,               // Phase1_ABC “false” limbs
                                   final128_DE,                  // Phase1_DE limbs
-                                  carry1,                       // length N+1
-                                  carry2,                       // length N+1
-                                  carry3,                       // length N+1
-                                  carry4,                       // length N+1
-                                  carry5,                       // length N+1
-                                  carry6,                       // length N+1
+                                  cur1,                       // length N+1
+                                  next1,                       // length N+1
+                                  cur2,                       // length N+1
+                                  next2,                       // length N+1
+                                  cur3,                       // length N+1
+                                  next3,                       // length N+1
                                   carryAcc_ABC_True,             // out: final signed carry/borrow
                                   carryAcc_ABC_False,            // out: final signed carry/borrow
                                   carryAcc_DE,                   // out: final unsigned carry
@@ -509,85 +572,25 @@ CarryPropagation_ABC(
     }
 
     // --- geometry ---
-    const int N = numActualDigitsPlusGuard;
     constexpr int warpSz = 32;
+    const unsigned fullMask = __activemask();
     const int tid = blockIdx.x * blockDim.x + threadIdx.x;
     const int lane = threadIdx.x & (warpSz - 1);
     const int totalThreads = gridDim.x * blockDim.x;
     const int totalWarps = max(1, totalThreads / warpSz);
     const int warpId = tid / warpSz;
-    const unsigned fullMask = __activemask();
-    const int numTiles = (N + warpSz - 1) / warpSz;
+    const int numTiles = (numActualDigitsPlusGuard + warpSz - 1) / warpSz;
 
-    // reinterpret carry buffers as int32
-    uint32_t *cur1 = carry1;
-    uint32_t *next1 = carry2;
-    uint32_t *cur2 = carry3;
-    uint32_t *next2 = carry4;
-    uint32_t *cur3 = carry5;
-    uint32_t *next3 = carry6;
-
-    // init cur/next = 0 (length N+1 to include high slot)
-    for (int i = tid; i <= N; i += totalThreads) {
+    // init cur/next = 0 (length numActualDigitsPlusGuard+1 to include high slot)
+    for (int i = tid; i <= numActualDigitsPlusGuard; i += totalThreads) {
         cur1[i] = cur2[i] = cur3[i] = 0;
         next1[i] = next2[i] = next3[i] = 0;
     }
 
-    // warp-tile processor: all three streams in one 32-step loop
-    struct Triple {
-        int32_t o1, o2, o3;
-        uint32_t changedMask;
-    };
-
-    auto warp_process_tile_32_all3 =
-        [&](int tileIndex, uint32_t in1, uint32_t in2, uint32_t in3) -> Triple {
-        const int base = tileIndex * warpSz;
-
-        int64_t limb1 = 0, limb2 = 0, limb3 = 0;
-
-        int32_t r1 = 0, r2 = 0, r3 = 0;
-        uint32_t changedMask = 0u; // bit0=True, bit1=False, bit2=DE
-
-        int32_t c_out1;
-        int32_t c_out2;
-        int32_t c_out3;
-
-        limb1 = static_cast<int64_t>(extResultTrue[base + lane]);
-        limb2 = static_cast<int64_t>(extResultFalse[base + lane]);
-        limb3 = static_cast<int64_t>(final128_DE[base + lane]);
-
-        for (int step = 0; step < warpSz; ++step) {
-            int32_t inStep1 = __shfl_up_sync(fullMask, r1, 1);
-            int32_t inStep2 = __shfl_up_sync(fullMask, r2, 1);
-            int32_t inStep3 = __shfl_up_sync(fullMask, r3, 1);
-
-            inStep1 = (lane == 0 && step == 0) ? in1 : ((lane == 0) ? 0 : inStep1);
-            ProcessStreamABC<SharkFloatParams>(
-                N, base, lane, limb1, inStep1, r1, c_out1, extResultTrue, 0x1u, changedMask);
-
-            inStep2 = (lane == 0 && step == 0) ? in2 : ((lane == 0) ? 0 : inStep2);
-            ProcessStreamABC<SharkFloatParams>(
-                N, base, lane, limb2, inStep2, r2, c_out2, extResultFalse, 0x2u, changedMask);
-
-            inStep3 = (lane == 0 && step == 0) ? in3 : ((lane == 0) ? 0 : inStep3);
-            ProcessStreamABC<SharkFloatParams>(
-                N, base, lane, limb3, inStep3, r3, c_out3, final128_DE, 0x4u, changedMask);
-        }
-
-        // OR reduce the mask within the warp
-        changedMask |= __shfl_xor_sync(fullMask, changedMask, 16);
-        changedMask |= __shfl_xor_sync(fullMask, changedMask, 8);
-        changedMask |= __shfl_xor_sync(fullMask, changedMask, 4);
-        changedMask |= __shfl_xor_sync(fullMask, changedMask, 2);
-        changedMask |= __shfl_xor_sync(fullMask, changedMask, 1);
-
-        return {r1, r2, r3, changedMask};
-    };
-
     // The way we initialize all this is very important to ensure the loop converges
     *globalSync1 = 0;
     *globalSync2 = std::numeric_limits<uint32_t>::max() - 1;
-    *globalSync3 = 0;
+
     grid.sync();
 
     uint32_t prevResult2 = std::numeric_limits<uint32_t>::max() - 1;
@@ -607,28 +610,51 @@ CarryPropagation_ABC(
         for (int tile = warpId; tile < numTiles; tile += totalWarps) {
             // Load incoming carry for the first digit in this tile
             const int base = tile * warpSz;
-            const uint32_t in1 = cur1[base];
-            const uint32_t in2 = cur2[base];
-            const uint32_t in3 = cur3[base];
+            const auto in1 = cur1[base];
+            const auto in2 = cur2[base];
+            const auto in3 = cur3[base];
+
+            const auto basePlusLane = base + lane;
+            auto limb1 = static_cast<int64_t>(extResultTrue[basePlusLane]);
+            auto limb2 = static_cast<int64_t>(extResultFalse[basePlusLane]);
+            auto limb3 = static_cast<int64_t>(final128_DE[basePlusLane]);
 
             cur1[base] = 0;
             cur2[base] = 0;
             cur3[base] = 0;
 
-            const Triple tout = warp_process_tile_32_all3(tile, in1, in2, in3);
+            const WarpProcessTriple tout =
+                warp_process_tile_32_all3<SharkFloatParams>(
+                    fullMask,
+                    numActualDigitsPlusGuard,
+                    lane,
+                    tile,
+                    in1,
+                    in2,
+                    in3,
+                    limb1,
+                    limb2,
+                    limb3);
 
-            // Outgoing carry index is the digit just after the tile (or N for the high slot)
-            const int outIdx = min(base + warpSz, N);
+            extResultTrue[basePlusLane] = static_cast<uint64_t>(limb1);
+            extResultFalse[basePlusLane] = static_cast<uint64_t>(limb2);
+            final128_DE[basePlusLane] = static_cast<uint64_t>(limb3);
 
-            if (lane == warpSz - 1 || (base + lane == N - 1)) {
-                if (outIdx < N) {
+            // Outgoing carry index is the digit just after the tile (or numActualDigitsPlusGuard for the high slot)
+            const int outIdx = min(base + warpSz, numActualDigitsPlusGuard);
+
+            if (lane == warpSz - 1 || (base + lane == numActualDigitsPlusGuard - 1)) {
+                if (outIdx < numActualDigitsPlusGuard) {
                     next1[outIdx] = static_cast<uint32_t>(tout.o1);
                     next2[outIdx] = static_cast<uint32_t>(tout.o2);
                     next3[outIdx] = static_cast<uint32_t>(tout.o3);
-                } else { // outIdx == N
-                    next1[N] = static_cast<uint32_t>(cur1[N] + tout.o1);
-                    next2[N] = static_cast<uint32_t>(cur2[N] + tout.o2);
-                    next3[N] = static_cast<uint32_t>(cur3[N] + tout.o3);
+                } else { // outIdx == numActualDigitsPlusGuard
+                    next1[numActualDigitsPlusGuard] =
+                        static_cast<uint32_t>(cur1[numActualDigitsPlusGuard] + tout.o1);
+                    next2[numActualDigitsPlusGuard] =
+                        static_cast<uint32_t>(cur2[numActualDigitsPlusGuard] + tout.o2);
+                    next3[numActualDigitsPlusGuard] =
+                        static_cast<uint32_t>(cur3[numActualDigitsPlusGuard] + tout.o3);
                 }
 
                 if (tout.changedMask) {
@@ -649,7 +675,7 @@ CarryPropagation_ABC(
             }
         }
 
-        // all next*[N] writes are visible
+        // all next*[numActualDigitsPlusGuard] writes are visible
         grid.sync();
 
         // Swap only the active streams (mirror of your original logic)
@@ -669,11 +695,11 @@ CarryPropagation_ABC(
             DebugCarryIncrement<SharkFloatParams>(debugGlobalState, grid, block, 1);
         }
     }
+    
+    // Note: no grid.sync() here
 
-    //grid.sync();
-
-    carryAcc_ABC_True = next1[N];
-    carryAcc_ABC_False = next2[N];
-    carryAcc_DE = next3[N];
+    carryAcc_ABC_True = next1[numActualDigitsPlusGuard];
+    carryAcc_ABC_False = next2[numActualDigitsPlusGuard];
+    carryAcc_DE = next3[numActualDigitsPlusGuard];
 #endif
 }

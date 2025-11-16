@@ -2667,7 +2667,7 @@ TestFullReferencePerfView5([[maybe_unused]] int testBase,
     static_assert(sharkOperator == Operator::ReferenceOrbit, "Only ReferenceOrbit is supported");
 
     mpf_set_default_prec(
-        HpSharkFloat<TestPerSharkParams1>::DefaultMpirBits); // Set precision for MPIR floating point
+        HpSharkFloat<TestPerSharkParams2>::DefaultMpirBits); // Set precision for MPIR floating point
 
     int testNum = testBase + 1;
 
@@ -2723,13 +2723,13 @@ TestFullReferencePerfView5([[maybe_unused]] int testBase,
 
     // Convert mpfX/mpfY/mpfZ back to strings
     auto convertedMpfX =
-        MpfToString<TestPerSharkParams1>(mpfX, HpSharkFloat<TestPerSharkParams1>::DefaultMpirBits);
+        MpfToString<TestPerSharkParams2>(mpfX, HpSharkFloat<TestPerSharkParams2>::DefaultMpirBits);
     auto convertedMpfY =
-        MpfToString<TestPerSharkParams1>(mpfY, HpSharkFloat<TestPerSharkParams1>::DefaultMpirBits);
+        MpfToString<TestPerSharkParams2>(mpfY, HpSharkFloat<TestPerSharkParams2>::DefaultMpirBits);
     auto convertedMpfZ =
-        MpfToString<TestPerSharkParams1>(mpfZ, HpSharkFloat<TestPerSharkParams1>::DefaultMpirBits);
+        MpfToString<TestPerSharkParams2>(mpfZ, HpSharkFloat<TestPerSharkParams2>::DefaultMpirBits);
 
-    using HdrType = typename TestPerSharkParams1::Float;
+    using HdrType = typename TestPerSharkParams2::Float;
     const HdrType hdrRadiusY{mpfRadiusY};
 
     // TODO: TestPerSharkParams2 is more precision than we need

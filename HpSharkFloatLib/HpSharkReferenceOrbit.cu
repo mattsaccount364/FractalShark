@@ -126,7 +126,7 @@ HpSharkReferenceGpuLoop(HpSharkReferenceResults<SharkFloatParams> *SharkRestrict
     // Erase this global debug state if needed.
     if constexpr (HpShark::DebugGlobalState) {
         constexpr auto DebugGlobals_offset = AdditionalGlobalSyncSpace;
-        constexpr auto DebugChecksum_offset = DebugGlobals_offset + AdditionalGlobalDebugPerThread;
+        //constexpr auto DebugChecksum_offset = DebugGlobals_offset + AdditionalGlobalDebugPerThread;
 
         //auto *SharkRestrict debugStates =
         //    reinterpret_cast<DebugState<SharkFloatParams> *>(&tempData[DebugChecksum_offset]);

@@ -164,7 +164,7 @@ namespace HpShark {
     static constexpr bool TestCorrectness = (BasicCorrectness == 2) ? Debug : true;
     static constexpr bool TestInfiniteCorrectness = TestCorrectness ? true : false;
     static constexpr auto TestForceSameSign = false;
-    static constexpr bool TestBenchmarkAgainstHost = true;
+    static constexpr bool TestBenchmarkAgainstHost = false;
     static constexpr bool TestInitCudaMemory = true;
 
     // True to compare against the full host-side reference implementation, false is MPIR only
@@ -358,16 +358,18 @@ using Test4x6SharkParams = GenericSharkFloatParams<7, 9, 74>;
 // Use for ENABLE_BASIC_CORRECTNESS==2
 
 // Performance test sizes
+// ! TODO NOTE: 65 blocks! 1 for guard (perf improvement)
+
 constexpr auto StupidMult = 1;
 //using TestPerSharkParams1 = GenericSharkFloatParams<64, 128>;
 //using TestPerSharkParams1 = GenericSharkFloatParams<96, 81>;
 //using TestPerSharkParams1 = GenericSharkFloatParams<128 * StupidMult, 108, 7776, 9>;
 //using TestPerSharkParams1 = GenericSharkFloatParams<128, 108, 7776, 9>;
-//using TestPerSharkParams1 = GenericSharkFloatParams<32, 2, 64>;
-using TestPerSharkParams1 = GenericSharkFloatParams<256, 64, 16384>;
+using TestPerSharkParams1 = GenericSharkFloatParams<32, 2, 64>;
+//using TestPerSharkParams1 = GenericSharkFloatParams<256, 64, 16384>;
 //using TestPerSharkParams1 = GenericSharkFloatParams<256, 128, 8192>;
 //using TestPerSharkParams2 = GenericSharkFloatParams<256, 128, 131072>;
-using TestPerSharkParams2 = GenericSharkFloatParams<256, 64, 16384>;
+using TestPerSharkParams2 = GenericSharkFloatParams<256, 65, 16384>;
 //using TestPerSharkParams2 = GenericSharkFloatParams<64 * StupidMult, 108, 7776, 9>;
 using TestPerSharkParams3 = GenericSharkFloatParams<32 * StupidMult, 108, 7776>;
 using TestPerSharkParams4 = GenericSharkFloatParams<16 * StupidMult, 108, 7776>;

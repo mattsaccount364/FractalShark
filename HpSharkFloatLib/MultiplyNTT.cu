@@ -131,6 +131,114 @@ Normalize(HpSharkFloat<SharkFloatParams> &out,
 }
 
 template <class SharkFloatParams>
+static __device__ SharkForceInlineReleaseOnly void
+FinalizeNormalize(cooperative_groups::grid_group &grid,
+                  cooperative_groups::thread_block &block,
+                  DebugState<SharkFloatParams> *debugStates,
+                  // outputs
+                  HpSharkFloat<SharkFloatParams> &outXX,
+                  HpSharkFloat<SharkFloatParams> &outYY,
+                  HpSharkFloat<SharkFloatParams> &outXY,
+                  // input exponents
+                  const HpSharkFloat<SharkFloatParams> &inA,
+                  const HpSharkFloat<SharkFloatParams> &inB,
+                  // convolution sums (lo,hi per 32-bit position), NORMAL domain
+                  const size_t Ddigits,
+                  const int32_t addTwoXX,
+                  const int32_t addTwoYY,
+                  const int32_t addTwoXY,
+                  // global workspaces (NOT shared memory)
+                  uint64_t *SharkRestrict CarryPropagationBuffer2, // >= 6 + 6*lanes u64
+                  uint64_t *SharkRestrict CarryPropagationBuffer,
+                  uint64_t *SharkRestrict globalCarryCheck, // 1 u64
+                  uint64_t *SharkRestrict resultXX,         // len >= Ddigits
+                  uint64_t *SharkRestrict resultYY,         // len >= Ddigits
+                  uint64_t *SharkRestrict resultXY)         // len >= Ddigits
+{
+    // We only ever produce digits in [0, Ddigits).
+    const int T_all = static_cast<int>(grid.size());
+    const int tid = static_cast<int>(grid.thread_rank());
+
+    // --- 3) Scan [0, Ddigits) for highest-nonzero; compute shifts/exponents (single thread) ---
+    int h_xx = -1, h_yy = -1, h_xy = -1;
+    if (tid == 0) {
+        for (int i = Ddigits - 1; i >= 0; --i) {
+            if (h_xx < 0 && static_cast<uint32_t>(resultXX[i]) != 0u)
+                h_xx = i;
+            if (h_yy < 0 && static_cast<uint32_t>(resultYY[i]) != 0u)
+                h_yy = i;
+            if (h_xy < 0 && static_cast<uint32_t>(resultXY[i]) != 0u)
+                h_xy = i;
+            if (h_xx >= 0 && h_yy >= 0 && h_xy >= 0)
+                break;
+        }
+
+        auto shift_exp = [&](int h, int32_t add, int32_t ea, int32_t eb) -> std::pair<int, int32_t> {
+            if (h < 0)
+                return {0, ea + eb};
+            const int significant = h + 1;
+            int shift = significant - SharkFloatParams::GlobalNumUint32;
+            if (shift < 0)
+                shift = 0;
+            return {shift, ea + eb + 32 * shift + add};
+        };
+
+        auto [sXX, eXX] = shift_exp(h_xx, addTwoXX, inA.Exponent, inA.Exponent);
+        auto [sYY, eYY] = shift_exp(h_yy, addTwoYY, inB.Exponent, inB.Exponent);
+        auto [sXY, eXY] = shift_exp(h_xy, addTwoXY, inA.Exponent, inB.Exponent);
+
+        outXX.Exponent = eXX;
+        outYY.Exponent = eYY;
+        outXY.Exponent = eXY;
+
+        // Broadcast shifts + zero flags
+        CarryPropagationBuffer2[0] = static_cast<uint64_t>(sXX);
+        CarryPropagationBuffer2[1] = static_cast<uint64_t>(sYY);
+        CarryPropagationBuffer2[2] = static_cast<uint64_t>(sXY);
+        CarryPropagationBuffer2[3] = static_cast<uint64_t>(h_xx < 0);
+        CarryPropagationBuffer2[4] = static_cast<uint64_t>(h_yy < 0);
+        CarryPropagationBuffer2[5] = static_cast<uint64_t>(h_xy < 0);
+    }
+    grid.sync();
+    
+
+    const int sXX = static_cast<int>(CarryPropagationBuffer2[0]);
+    const int sYY = static_cast<int>(CarryPropagationBuffer2[1]);
+    const int sXY = static_cast<int>(CarryPropagationBuffer2[2]);
+    const bool zXX = (CarryPropagationBuffer2[3] != 0);
+    const bool zYY = (CarryPropagationBuffer2[4] != 0);
+    const bool zXY = (CarryPropagationBuffer2[5] != 0);
+
+    // --- 4) Grid-stride write the SharkFloatParams::GlobalNumUint32-digit windows (bounds-safe into [0, Ddigits)) ---
+    for (int i = tid; i < SharkFloatParams::GlobalNumUint32; i += T_all) {
+        // XX
+        outXX.Digits[i] =
+            zXX ? 0u : ((sXX + i < Ddigits) ? static_cast<uint32_t>(resultXX[sXX + i]) : 0u);
+
+        // YY
+        outYY.Digits[i] =
+            zYY ? 0u : ((sYY + i < Ddigits) ? static_cast<uint32_t>(resultYY[sYY + i]) : 0u);
+
+        // XY
+        outXY.Digits[i] =
+            zXY ? 0u : ((sXY + i < Ddigits) ? static_cast<uint32_t>(resultXY[sXY + i]) : 0u);
+    }
+
+    if constexpr (HpShark::DebugChecksums) {
+        grid.sync();
+        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Final128XX, uint32_t>(
+            debugStates, grid, block, outXX.Digits, SharkFloatParams::GlobalNumUint32);
+        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Final128YY, uint32_t>(
+            debugStates, grid, block, outYY.Digits, SharkFloatParams::GlobalNumUint32);
+        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Final128XY, uint32_t>(
+            debugStates, grid, block, outXY.Digits, SharkFloatParams::GlobalNumUint32);
+        grid.sync();
+    } else {
+        grid.sync();
+    }
+}
+
+template <class SharkFloatParams>
 static __device__ inline void
 Normalize_GridStride_3Way(cooperative_groups::grid_group &grid,
                           cooperative_groups::thread_block &block,
@@ -146,37 +254,29 @@ Normalize_GridStride_3Way(cooperative_groups::grid_group &grid,
                           const uint64_t *SharkRestrict final128XX,
                           const uint64_t *SharkRestrict final128YY,
                           const uint64_t *SharkRestrict final128XY,
-                          size_t Ddigits,
-                          int32_t addTwoXX,
-                          int32_t addTwoYY,
-                          int32_t addTwoXY,
+                          const size_t Ddigits,
+                          const int32_t addTwoXX,
+                          const int32_t addTwoYY,
+                          const int32_t addTwoXY,
                           // global workspaces (NOT shared memory)
                           uint64_t *SharkRestrict CarryPropagationBuffer2, // >= 6 + 6*lanes u64
-                          uint64_t *SharkRestrict /*block_carry_outs*/,    // unused
+                          uint64_t *SharkRestrict CarryPropagationBuffer,
                           uint64_t *SharkRestrict globalCarryCheck,        // 1 u64
                           uint64_t *SharkRestrict resultXX,                // len >= Ddigits
                           uint64_t *SharkRestrict resultYY,                // len >= Ddigits
                           uint64_t *SharkRestrict resultXY)                // len >= Ddigits
 {
-    constexpr int N32 = SharkFloatParams::GlobalNumUint32;
-
     // We only ever produce digits in [0, Ddigits).
-    const int ProducedDigits = static_cast<int>(Ddigits);
-
     const int T_all = static_cast<int>(grid.size());
     const int tid = static_cast<int>(grid.thread_rank());
 
-    // Active participants are min(ProducedDigits, T_all)
-    const int lanes = (ProducedDigits < T_all) ? ProducedDigits : T_all;
+    // Active participants are min(Ddigits, T_all)
+    const int lanes = (Ddigits < T_all) ? Ddigits : T_all;
     const bool active = (tid < lanes);
-    const int lane = tid; // 0..lanes-1 for active threads
 
-    // Linear partition of [0, ProducedDigits) across 'lanes'
-    const int64_t PD = static_cast<int64_t>(ProducedDigits);
-    const int64_t LNS = static_cast<int64_t>(lanes);
-    const int64_t LN = static_cast<int64_t>(lane);
-    const int start = active ? static_cast<int>((PD * LN) / LNS) : 0;
-    const int end = active ? static_cast<int>((PD * (LN + 1)) / LNS) : 0;
+    // Linear partition of [0, Ddigits) across 'lanes'
+    const int start = active ? ((Ddigits * tid) / lanes) : 0;
+    const int end = active ? ((Ddigits * (tid + 1)) / lanes) : 0;
 
     // --- 1) Initial pass over our slice (no tail beyond Ddigits) ---
     uint64_t carry_xx_lo = 0ull, carry_xx_hi = 0ull;
@@ -185,7 +285,7 @@ Normalize_GridStride_3Way(cooperative_groups::grid_group &grid,
 
     if (active) {
         for (int idx = start; idx < end; ++idx) {
-            const bool in = (idx < ProducedDigits);
+            const bool in = (idx < Ddigits);
             const size_t s = static_cast<size_t>(idx) * 2u;
 
             // XX
@@ -231,13 +331,13 @@ Normalize_GridStride_3Way(cooperative_groups::grid_group &grid,
 
         // Publish residual to the next lane except for the **last lane**.
         // By design (matches simplified scalar), we DROP any residual that would flow beyond Ddigits.
-        if (lane == lanes - 1) {
+        if (tid == lanes - 1) {
             carry_xx_lo = carry_xx_hi = 0ull;
             carry_xy_lo = carry_xy_hi = 0ull;
             carry_yy_lo = carry_yy_hi = 0ull;
         }
 
-        const int base = 6 + lane * 6;
+        const int base = 6 + tid * 6;
         CarryPropagationBuffer2[base + 0] = carry_xx_lo;
         CarryPropagationBuffer2[base + 1] = carry_xx_hi;
         CarryPropagationBuffer2[base + 2] = carry_xy_lo;
@@ -257,8 +357,8 @@ Normalize_GridStride_3Way(cooperative_groups::grid_group &grid,
         uint64_t in_xy_lo = 0ull, in_xy_hi = 0ull;
 
         if (active) {
-            if (lane > 0) {
-                const int prev = 6 + (lane - 1) * 6;
+            if (tid > 0) {
+                const int prev = 6 + (tid - 1) * 6;
                 in_xx_lo = CarryPropagationBuffer2[prev + 0];
                 in_xx_hi = CarryPropagationBuffer2[prev + 1];
                 in_xy_lo = CarryPropagationBuffer2[prev + 2];
@@ -307,14 +407,14 @@ Normalize_GridStride_3Way(cooperative_groups::grid_group &grid,
                 }
             }
 
-            // Drop residual at the right boundary (last lane), publish otherwise.
-            if (lane == lanes - 1) {
+            // Drop residual at the right boundary (last tid), publish otherwise.
+            if (tid == lanes - 1) {
                 in_xx_lo = in_xx_hi = 0ull;
                 in_xy_lo = in_xy_hi = 0ull;
                 in_yy_lo = in_yy_hi = 0ull;
             }
 
-            const int base = 6 + lane * 6;
+            const int base = 6 + tid * 6;
             CarryPropagationBuffer2[base + 0] = in_xx_lo;
             CarryPropagationBuffer2[base + 1] = in_xx_hi;
             CarryPropagationBuffer2[base + 2] = in_xy_lo;
@@ -322,7 +422,7 @@ Normalize_GridStride_3Way(cooperative_groups::grid_group &grid,
             CarryPropagationBuffer2[base + 4] = in_yy_lo;
             CarryPropagationBuffer2[base + 5] = in_yy_hi;
 
-            // Only signal continuation if something remains to hand to the *next* lane.
+            // Only signal continuation if something remains to hand to the *next* tid.
             if (in_xx_lo | in_xx_hi | in_xy_lo | in_xy_hi | in_yy_lo | in_yy_hi)
                 atomicAdd(globalCarryCheck, 1ull);
         }
@@ -334,82 +434,25 @@ Normalize_GridStride_3Way(cooperative_groups::grid_group &grid,
         grid.sync();
     }
 
-    // --- 3) Scan [0, Ddigits) for highest-nonzero; compute shifts/exponents (single thread) ---
-    int h_xx = -1, h_yy = -1, h_xy = -1;
-    if (tid == 0) {
-        for (int i = ProducedDigits - 1; i >= 0; --i) {
-            if (h_xx < 0 && static_cast<uint32_t>(resultXX[i]) != 0u)
-                h_xx = i;
-            if (h_yy < 0 && static_cast<uint32_t>(resultYY[i]) != 0u)
-                h_yy = i;
-            if (h_xy < 0 && static_cast<uint32_t>(resultXY[i]) != 0u)
-                h_xy = i;
-            if (h_xx >= 0 && h_yy >= 0 && h_xy >= 0)
-                break;
-        }
-
-        auto shift_exp = [&](int h, int32_t add, int32_t ea, int32_t eb) -> std::pair<int, int32_t> {
-            if (h < 0)
-                return {0, ea + eb};
-            const int significant = h + 1;
-            int shift = significant - N32;
-            if (shift < 0)
-                shift = 0;
-            return {shift, ea + eb + 32 * shift + add};
-        };
-
-        auto [sXX, eXX] = shift_exp(h_xx, addTwoXX, inA.Exponent, inA.Exponent);
-        auto [sYY, eYY] = shift_exp(h_yy, addTwoYY, inB.Exponent, inB.Exponent);
-        auto [sXY, eXY] = shift_exp(h_xy, addTwoXY, inA.Exponent, inB.Exponent);
-
-        outXX.Exponent = eXX;
-        outYY.Exponent = eYY;
-        outXY.Exponent = eXY;
-
-        // Broadcast shifts + zero flags
-        CarryPropagationBuffer2[0] = static_cast<uint64_t>(sXX);
-        CarryPropagationBuffer2[1] = static_cast<uint64_t>(sYY);
-        CarryPropagationBuffer2[2] = static_cast<uint64_t>(sXY);
-        CarryPropagationBuffer2[3] = static_cast<uint64_t>(h_xx < 0);
-        CarryPropagationBuffer2[4] = static_cast<uint64_t>(h_yy < 0);
-        CarryPropagationBuffer2[5] = static_cast<uint64_t>(h_xy < 0);
-    }
-    grid.sync();
-
-    const int sXX = static_cast<int>(CarryPropagationBuffer2[0]);
-    const int sYY = static_cast<int>(CarryPropagationBuffer2[1]);
-    const int sXY = static_cast<int>(CarryPropagationBuffer2[2]);
-    const bool zXX = (CarryPropagationBuffer2[3] != 0);
-    const bool zYY = (CarryPropagationBuffer2[4] != 0);
-    const bool zXY = (CarryPropagationBuffer2[5] != 0);
-
-    // --- 4) Grid-stride write the N32-digit windows (bounds-safe into [0, Ddigits)) ---
-    for (int i = tid; i < N32; i += T_all) {
-        // XX
-        outXX.Digits[i] =
-            zXX ? 0u : ((sXX + i < ProducedDigits) ? static_cast<uint32_t>(resultXX[sXX + i]) : 0u);
-
-        // YY
-        outYY.Digits[i] =
-            zYY ? 0u : ((sYY + i < ProducedDigits) ? static_cast<uint32_t>(resultYY[sYY + i]) : 0u);
-
-        // XY
-        outXY.Digits[i] =
-            zXY ? 0u : ((sXY + i < ProducedDigits) ? static_cast<uint32_t>(resultXY[sXY + i]) : 0u);
-    }
-
-    if constexpr (HpShark::DebugChecksums) {
-        grid.sync();
-        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Final128XX, uint32_t>(
-            debugStates, grid, block, outXX.Digits, SharkFloatParams::GlobalNumUint32);
-        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Final128YY, uint32_t>(
-            debugStates, grid, block, outYY.Digits, SharkFloatParams::GlobalNumUint32);
-        StoreCurrentDebugState<SharkFloatParams, DebugStatePurpose::Final128XY, uint32_t>(
-            debugStates, grid, block, outXY.Digits, SharkFloatParams::GlobalNumUint32);
-        grid.sync();
-    } else {
-        grid.sync();
-    }
+    FinalizeNormalize<SharkFloatParams>(
+        grid,
+        block,
+        debugStates,
+        outXX,
+        outYY,
+        outXY,
+        inA,
+        inB,
+        Ddigits,
+        addTwoXX,
+        addTwoYY,
+        addTwoXY,
+        CarryPropagationBuffer2,
+        CarryPropagationBuffer,
+        globalCarryCheck,
+        resultXX,
+        resultYY,
+        resultXY);
 }
 
 // Normalize directly from Final128 (lo64,hi64 per 32-bit digit position).
@@ -924,7 +967,7 @@ NTTRadix2_GridStride(uint64_t *shared_data,
         }
     }
 
-// =========================
+    // =========================
     // Phase 2: static contiguous striping by warp (no atomics)
     //          + scalarized micro-tiling (register-only, U=4/2)
     // =========================
@@ -1804,12 +1847,15 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
     // dynamic shared mem: need >= 6 * blockDim.x * sizeof(uint64_t)
     //   - you already pass dynamic SMEM at launch; just alias it here
 
-    // scratch result digits (2*N32 per channel, uint64_t each; low 32 bits used)
-    uint64_t *resultXX = tempDigitsXX1; /* device buffer length 2*N32 */
-    uint64_t *resultYY = tempDigitsYY1; /* device buffer length 2*N32 */
-    uint64_t *resultXY = tempDigitsXY1; /* device buffer length 2*N32 */
+    // scratch result digits (2*SharkFloatParams::GlobalNumUint32 per channel, uint64_t each; low 32 bits used)
+    uint64_t *resultXX = tempDigitsXX1; /* device buffer length 2*SharkFloatParams::GlobalNumUint32 */
+    uint64_t *resultYY = tempDigitsYY1; /* device buffer length 2*SharkFloatParams::GlobalNumUint32 */
+    uint64_t *resultXY = tempDigitsXY1; /* device buffer length 2*SharkFloatParams::GlobalNumUint32 */
 
     // ---- Single fused normalize for XX, YY, XY ----
+    #define FORCE_ORIGINAL_NORMALIZE
+
+#ifdef FORCE_ORIGINAL_NORMALIZE
     SharkNTT::Normalize_GridStride_3Way<SharkFloatParams>(grid,
                                                           block,
                                                           debugStates,
@@ -1831,6 +1877,9 @@ RunNTT_3Way_Multiply(uint64_t *shared_data,
                                                           /* resultXX scratch */ resultXX,
                                                           /* resultYY scratch */ resultYY,
                                                           /* resultXY scratch */ resultXY);
+#else
+
+#endif
 }
 
 template <class SharkFloatParams>

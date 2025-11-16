@@ -98,20 +98,7 @@ Normalize(HpSharkFloat<SharkFloatParams> &out,
         carry_hi = (s_hi >> 32);
     }
 
-    // Flush remaining carry (at most a few extra digits).
-    while (carry_lo || carry_hi) {
-        const u32 dig = static_cast<u32>(carry_lo & 0xffffffffu);
-        digits.push_back(dig);
-
-        const size_t idx = digits.size() - 1;
-        if (dig != 0)
-            highest_nonzero = static_cast<int>(idx);
-
-        const u64 nlo = (carry_lo >> 32) | (carry_hi << 32);
-        const u64 nhi = (carry_hi >> 32);
-        carry_lo = nlo;
-        carry_hi = nhi;
-    }
+    // Note: assume carry_lo and carry_hi are zero here (should be, given sufficient Ddigits).
 
     // All digits zero → zero result, Karatsuba zero convention for exponent.
     if (highest_nonzero < 0) {

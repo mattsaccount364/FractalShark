@@ -20,29 +20,6 @@ struct DebugGlobalCount {
         }
     }
 
-    __device__
-    void DebugMultiplyIncrement (
-        uint32_t count,
-        int blockIdx,
-        int threadIdx)
-    {
-        if constexpr (HpShark::DebugGlobalState) {
-            Data.multiplyCount += count;
-            Data.blockIdx = blockIdx;
-            Data.threadIdx = threadIdx;
-        }
-    }
-
-    __device__ void
-    DebugCarryIncrement(uint32_t carryCount, int blockIdx, int threadIdx)
-    {
-        if constexpr (HpShark::DebugGlobalState) {
-            Data.carryCount += carryCount;
-            Data.blockIdx = blockIdx;
-            Data.threadIdx = threadIdx;
-        }
-    }
-
     DebugGlobalCountRaw Data;
 };
 
@@ -54,10 +31,10 @@ __device__ void DebugMultiplyIncrement (
     uint32_t count)
 {
     if constexpr (HpShark::DebugGlobalState) {
-        array[block.group_index().x * SharkFloatParams::GlobalThreadsPerBlock + block.thread_index().x].DebugMultiplyIncrement(
-            count,
-            block.group_index().x,
-            block.thread_index().x);
+        auto &index = array[block.group_index().x * SharkFloatParams::GlobalThreadsPerBlock + block.thread_index().x];
+        index.Data.multiplyCount += count;
+        index.Data.blockIdx = block.group_index().x;
+        index.Data.threadIdx = block.thread_index().x;
     }
 }
 
@@ -69,8 +46,27 @@ DebugCarryIncrement(DebugGlobalCount<SharkFloatParams> *array,
                     uint32_t count)
 {
     if constexpr (HpShark::DebugGlobalState) {
-        array[block.group_index().x * SharkFloatParams::GlobalThreadsPerBlock + block.thread_index().x]
-            .DebugCarryIncrement(count, block.group_index().x, block.thread_index().x);
+        auto &index = array[block.group_index().x * SharkFloatParams::GlobalThreadsPerBlock +
+                            block.thread_index().x];
+        index.Data.carryCount += count;
+        index.Data.blockIdx = block.group_index().x;
+        index.Data.threadIdx = block.thread_index().x;
+    }
+}
+
+template <class SharkFloatParams>
+__device__ void
+DebugNormalizeIncrement(DebugGlobalCount<SharkFloatParams> *array,
+                        cooperative_groups::grid_group &grid,
+                        cooperative_groups::thread_block &block,
+                        uint32_t count)
+{
+    if constexpr (HpShark::DebugGlobalState) {
+        auto &index = array[block.group_index().x * SharkFloatParams::GlobalThreadsPerBlock +
+                            block.thread_index().x];
+        index.Data.normalizeCount += count;
+        index.Data.blockIdx = block.group_index().x;
+        index.Data.threadIdx = block.thread_index().x;
     }
 }
 

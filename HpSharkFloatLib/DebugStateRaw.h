@@ -138,6 +138,7 @@ struct DebugGlobalCountRaw {
     int threadIdx;
     uint64_t multiplyCount;
     uint64_t carryCount;
+    uint64_t normalizeCount;
 };
 
 class DebugGpuCombo {

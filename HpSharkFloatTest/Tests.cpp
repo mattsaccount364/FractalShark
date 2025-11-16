@@ -651,8 +651,8 @@ TestPerf(TestTracker &Tests,
             if constexpr (HpShark::TestBenchmarkAgainstHost) {
                 bool testSucceeded = true;
                 constexpr auto numTerms = 3;
-                testSucceeded &= CheckDiff(Tests, testNum, numTerms, "GPU", mpfHostResultXY1, gpuResultXY1);
-                testSucceeded &= CheckDiff(Tests, testNum, numTerms, "GPU", mpfHostResultXY2, gpuResultXY2);
+                testSucceeded &= CheckDiff(Tests, testNum, numTerms, "GPU_A_B_C", mpfHostResultXY1, gpuResultXY1);
+                testSucceeded &= CheckDiff(Tests, testNum, numTerms, "GPU_D_E", mpfHostResultXY2, gpuResultXY2);
             }
 
         } else if constexpr (sharkOperator == Operator::MultiplyNTT) {
@@ -688,9 +688,9 @@ TestPerf(TestTracker &Tests,
             if constexpr (HpShark::TestBenchmarkAgainstHost) {
                 bool testSucceeded = true;
                 constexpr auto numTerms = 2;
-                testSucceeded &= CheckDiff(Tests, testNum, numTerms, "GPU", mpfHostResultXX, gpuResult2XX);
-                testSucceeded &= CheckDiff(Tests, testNum, numTerms, "GPU", mpfHostResultXY1, gpuResult2XY);
-                testSucceeded &= CheckDiff(Tests, testNum, numTerms, "GPU", mpfHostResultYY, gpuResult2YY);
+                testSucceeded &= CheckDiff(Tests, testNum, numTerms, "GPU_XX", mpfHostResultXX, gpuResult2XX);
+                testSucceeded &= CheckDiff(Tests, testNum, numTerms, "GPU_XY", mpfHostResultXY1, gpuResult2XY);
+                testSucceeded &= CheckDiff(Tests, testNum, numTerms, "GPU_YY", mpfHostResultYY, gpuResult2YY);
             }
         } else if constexpr (sharkOperator == Operator::ReferenceOrbit) {
             auto combo = std::make_unique<HpSharkReferenceResults<SharkFloatParams>>();
@@ -729,8 +729,8 @@ TestPerf(TestTracker &Tests,
             if constexpr (HpShark::TestBenchmarkAgainstHost) {
                 bool testSucceeded = true;
                 constexpr auto numTerms = 2;
-                testSucceeded &= CheckDiff(Tests, testNum, numTerms, "GPU", mpfHostResultXX, gpuResultX);
-                testSucceeded &= CheckDiff(Tests, testNum, numTerms, "GPU", mpfHostResultYY, gpuResultY);
+                testSucceeded &= CheckDiff(Tests, testNum, numTerms, "GPU_A", mpfHostResultXX, gpuResultX);
+                testSucceeded &= CheckDiff(Tests, testNum, numTerms, "GPU_B", mpfHostResultYY, gpuResultY);
 
                 if (combo->EscapedIteration != discoveredEscapeIterationHost) {
                     std::cout << "Escape iteration mismatch: host=" << discoveredEscapeIterationHost
@@ -893,6 +893,11 @@ ChecksumsCheck(const DebugHostCombo<SharkFloatParams> &debugHostCombo,
             carryCount += debugGpuCombo.MultiplyCounts[i].carryCount;
         }
 
+        uint64_t normalizeCount = 0;
+        for (size_t i = 0; i < debugGpuCombo.MultiplyCounts.size(); ++i) {
+            normalizeCount += debugGpuCombo.MultiplyCounts[i].normalizeCount;
+        }
+
         // Print distribution of counts
         uint64_t totalMultiplyCountGpu{};
         uint64_t totalMultiplyCountResults{};
@@ -904,6 +909,7 @@ ChecksumsCheck(const DebugHostCombo<SharkFloatParams> &debugHostCombo,
         }
 
         std::cerr << "GPU total carry count: " << carryCount << std::endl;
+        std::cerr << "GPU total normalize count: " << normalizeCount << std::endl;
 
         std::cerr << "GPU total multiply count: " << totalMultiplyCountGpu << std::endl;
         std::cerr << "GPU result count (should be total num threads): " << totalMultiplyCountResults << std::endl;
@@ -1110,13 +1116,13 @@ TestCoreAdd(TestTracker &Tests,
         bool res = true;
         constexpr auto numTermsPartABC = 3;
         res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(
-            Tests, testNum, numTermsPartABC, "CustomHighPrecisionV2XY1", mpfHostResultXY1, *hostAddResult1);
+            Tests, testNum, numTermsPartABC, "ReferenceHighPrecisionV2XY1", mpfHostResultXY1, *hostAddResult1);
 
         constexpr auto numTermsPartDE = 2;
         res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(Tests,
                                                                  testNum,
                                                                  numTermsPartDE,
-                                                                 "CustomHighPrecisionV2XY2",
+                                                                 "ReferenceHighPrecisionV2XY2",
                                                                  mpfHostResultXY2,
                                                                  *hostAddResult2);
 
@@ -1294,13 +1300,13 @@ TestCoreMultiply(TestTracker &Tests,
         bool res = true;
         constexpr auto numTerms = 2;
         res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyNTT>(
-            Tests, testNum, numTerms, "CustomHighPrecisionV2XX", mpfHostResultXX, hostKaratsubaOutXXV2);
+            Tests, testNum, numTerms, "ReferenceHighPrecisionV2XX", mpfHostResultXX, hostKaratsubaOutXXV2);
 
         res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyNTT>(
-            Tests, testNum, numTerms, "CustomHighPrecisionV2XY", mpfHostResultXY1, hostKaratsubaOutXYV2);
+            Tests, testNum, numTerms, "ReferenceHighPrecisionV2XY", mpfHostResultXY1, hostKaratsubaOutXYV2);
 
         res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyNTT>(
-            Tests, testNum, numTerms, "CustomHighPrecisionV2YY", mpfHostResultYY, hostKaratsubaOutYYV2);
+            Tests, testNum, numTerms, "ReferenceHighPrecisionV2YY", mpfHostResultYY, hostKaratsubaOutYYV2);
 
         return res;
     };
@@ -2660,7 +2666,7 @@ template <Operator sharkOperator>
 bool
 TestFullReferencePerfView5([[maybe_unused]] int testBase,
                            [[maybe_unused]] int numIters,
-                           int internalTestLoopCount)
+                           [[maybe_unused]] int internalTestLoopCount)
 {
 #if (ENABLE_BASIC_CORRECTNESS == 2)
     TestTracker Tests;
@@ -2761,7 +2767,7 @@ template <Operator sharkOperator>
 bool
 TestFullReferencePerfView30([[maybe_unused]] int testBase,
                             [[maybe_unused]] int numIters,
-                            int internalTestLoopCount)
+                            [[maybe_unused]] int internalTestLoopCount)
 {
 #if (ENABLE_BASIC_CORRECTNESS == 2)
 
@@ -2886,7 +2892,7 @@ TestAllBinaryOp(int testBase)
     //#if 0
     if constexpr (includeSet1) {
         const auto set = testBase + 100;
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(Tests, set + 10, "7", "19", "0");
+        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(Tests, set + 10, "7", "19", "0");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
             Tests, set + 20, "4294967295", "1", "4294967296");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(

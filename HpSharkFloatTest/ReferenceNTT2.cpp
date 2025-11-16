@@ -98,6 +98,22 @@ Normalize(HpSharkFloat<SharkFloatParams> &out,
         carry_hi = (s_hi >> 32);
     }
 
+    if constexpr (HpShark::DebugChecksums) {
+        if (SharkVerbose == VerboseMode::Debug) {
+            std::cout << std::endl;
+            std::cout << "=== Normalize Debug Output ===" << std::endl;
+            std::cout << "Intermediate normalize" << std::endl;
+
+            // Print digits1
+            std::cout << "  Digits (" << digits.size() << "):" << std::endl;
+            for (size_t i = 0; i < digits.size(); ++i) {
+                std::cout << " 0x" << std::hex << digits[i] << std::dec;
+            }
+
+            std::cout << std::endl;
+        }
+    }
+
     // Note: assume carry_lo and carry_hi are zero here (should be, given sufficient Ddigits).
 
     // All digits zero → zero result, Karatsuba zero convention for exponent.
@@ -619,6 +635,18 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
         // 8) Unpack -> Final128 -> Normalize
         // std::fill_n(Final128.data(), Final128.size(), 0ull);
         UnpackPrimeToFinal128(Y.data(), plan, Final128.data(), Ddigits);
+
+        if (SharkVerbose == VerboseMode::Debug) {
+            std::cout << std::endl;
+            std::cout << "=== Final128 Dump ===" << std::endl;
+            for (size_t i = 0; i < Ddigits; ++i) {
+                std::cout << " 0x" << std::hex << Final128[2 * i + 0] << " 0x"
+                          << Final128[2 * i + 1] << " " << std::dec;
+            }
+
+            std::cout << std::endl;
+        }
+
         out->SetNegative(isNegative);
         Normalize<SharkFloatParams>(*out, inA, inB, Final128.data(), Ddigits, addFactorOfTwo);
 
@@ -632,6 +660,13 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
         }
     };
 
+    if (SharkVerbose == VerboseMode::Debug) {
+        std::cout << "=== MultiplyHelperFFT2 Debug Output ===" << std::endl;
+        std::cout << "==============================" << std::endl;
+        std::cout << "XX:" << std::endl;
+        std::cout << "==============================" << std::endl;
+    }
+
     // XX = A^2
     const auto noAdditionalFactorOfTwo = 0;
     const auto squaresNegative = false;
@@ -644,6 +679,12 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
                                  DebugStatePurpose::Final128XX>(
         OutXX, *A, *A, noAdditionalFactorOfTwo, squaresNegative);
 
+    if (SharkVerbose == VerboseMode::Debug) {
+        std::cout << "==============================" << std::endl;
+        std::cout << "YY:" << std::endl;
+        std::cout << "==============================" << std::endl;
+    }
+
     // YY = B^2
     run_conv.template operator()<DebugStatePurpose::Z0YY,
                                  DebugStatePurpose::Z1YY,
@@ -653,6 +694,12 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
                                  DebugStatePurpose::Z2_Perm5,
                                  DebugStatePurpose::Final128YY>(
         OutYY, *B, *B, noAdditionalFactorOfTwo, squaresNegative);
+
+    if (SharkVerbose == VerboseMode::Debug) {
+        std::cout << "==============================" << std::endl;
+        std::cout << "XY:" << std::endl;
+        std::cout << "==============================" << std::endl;
+    }
 
     // XY = 2*(A*B)
     const auto includeAdditionalFactorOfTwo = 1;

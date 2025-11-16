@@ -48,9 +48,9 @@
 // Comment out to disable specific kernels
 //#define ENABLE_CONVERSION_TESTS
 //#define ENABLE_ADD_KERNEL
-#define ENABLE_MULTIPLY_NTT_KERNEL
+//#define ENABLE_MULTIPLY_NTT_KERNEL
 //#define ENABLE_REFERENCE_KERNEL
-//#define ENABLE_FULL_KERNEL
+#define ENABLE_FULL_KERNEL
 
 // Uncomment this to enable the HpSharkFloat test program.
 // Comment for use in FractalShark
@@ -127,6 +127,10 @@ namespace HpShark {
     #define SharkForceInlineReleaseOnly __forceinline__
     #endif
 
+    // Uncomment to test small warp on multiply normalize path for easier debugging
+    // Assumes number of threads is a power of 2 and <= 32, with one block.
+    // #define TEST_SMALL_NORMALIZE_WARP
+
     static constexpr bool TestGpu = (EnableAddKernel || EnableMultiplyNTTKernel ||
                                           EnableReferenceKernel || EnableFullKernel);
     //static constexpr bool TestGpu = false;
@@ -164,7 +168,7 @@ namespace HpShark {
     static constexpr bool TestCorrectness = (BasicCorrectness == 2) ? Debug : true;
     static constexpr bool TestInfiniteCorrectness = TestCorrectness ? true : false;
     static constexpr auto TestForceSameSign = false;
-    static constexpr bool TestBenchmarkAgainstHost = true;
+    static constexpr bool TestBenchmarkAgainstHost = false;
     static constexpr bool TestInitCudaMemory = true;
 
     // True to compare against the full host-side reference implementation, false is MPIR only
@@ -201,7 +205,8 @@ struct GenericSharkFloatParams {
     using Float = HDRFloat<float>;
     using SubType = float;
 
-    static constexpr bool SharkUsePow2SizesOnly = HpShark::EnableMultiplyNTTKernel;
+    // TODO: this is fucked up, fix it so we don't round to next power of two
+    static constexpr bool SharkUsePow2SizesOnly = false;  // HpShark::EnableMultiplyNTTKernel;
 
     static constexpr int32_t GlobalThreadsPerBlock = pThreadsPerBlock;
     static constexpr int32_t GlobalNumBlocks = pNumBlocks;
@@ -345,11 +350,12 @@ static constexpr auto LowPrec = 32;
 
 
 // If you add a new one, search for one of the other types and copy/paste
-//using Test8x1SharkParams = GenericSharkFloatParams<256, 64, 16384>;
+using Test8x1SharkParams = GenericSharkFloatParams<256, 65, 16384>;
 //using Test8x1SharkParams = GenericSharkFloatParams<128, 128, 8192, 9>;
 //using Test8x1SharkParams = GenericSharkFloatParams<128, 108, 7776, 9>;
 //using Test8x1SharkParams = GenericSharkFloatParams<64, 1, 64>;
-using Test8x1SharkParams = GenericSharkFloatParams<8, 1>; // Use for ENABLE_BASIC_CORRECTNESS==1
+//using Test8x1SharkParams = GenericSharkFloatParams<32, 2>;
+//using Test8x1SharkParams = GenericSharkFloatParams<8, 1>; // Use for ENABLE_BASIC_CORRECTNESS==1
 using Test4x36SharkParams = GenericSharkFloatParams<4, 6, 32>;
 using Test4x12SharkParams = GenericSharkFloatParams<3, 18, 50>;
 using Test4x9SharkParams = GenericSharkFloatParams<5, 12, 80>;

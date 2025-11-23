@@ -377,11 +377,8 @@ Normalize_GridStride_3WayV1(cooperative_groups::grid_group &grid,
 
 struct WarpNormalizeTriple {
     uint64_t carry_lo_xx;
-    uint64_t carry_hi_xx;
     uint64_t carry_lo_yy;
-    uint64_t carry_hi_yy;
     uint64_t carry_lo_xy;
-    uint64_t carry_hi_xy;
     uint32_t changedMask; // bit0=XX, bit1=YY, bit2=XY
 };
 
@@ -391,20 +388,15 @@ WarpNormalizeTile(unsigned fullMask,
                   const int32_t numActualDigitsPlusGuard, // total digits (N + guard), base-2^32
                   const int lane,          // 0..31
                   const int tileIndex,     // which 32-digit tile
+                  const int iteration,
                   // per-lane 128-bit limb for each triple: (lo,hi) in registers
                   uint64_t &loXX,
-                  uint64_t &hiXX,
                   uint64_t &loYY,
-                  uint64_t &hiYY,
                   uint64_t &loXY,
-                  uint64_t &hiXY,
                   // incoming 128-bit carry at the start of this tile
                   const uint64_t carry_lo_xx_in,
-                  const uint64_t carry_hi_xx_in,
                   const uint64_t carry_lo_yy_in,
-                  const uint64_t carry_hi_yy_in,
-                  const uint64_t carry_lo_xy_in,
-                  const uint64_t carry_hi_xy_in)
+                  const uint64_t carry_lo_xy_in)
 {
 #ifdef TEST_SMALL_NORMALIZE_WARP
     constexpr int warpSz = SharkFloatParams::GlobalNumUint32;
@@ -418,19 +410,13 @@ WarpNormalizeTile(unsigned fullMask,
     const bool isLastDigit = (basePlusLane == numActualDigitsPlusGuard - 1);
 
     uint64_t r1 = 0;
-    uint64_t r2 = 0;
     uint64_t r3 = 0;
-    uint64_t r4 = 0;
     uint64_t r5 = 0;
-    uint64_t r6 = 0;
 
-    // Running 128-bit carry for each stream, replicated in all lanes
+    // Running 64-bit carry for each stream, replicated in all lanes
     uint64_t carry_lo_xx;
-    uint64_t carry_hi_xx;
     uint64_t carry_lo_yy;
-    uint64_t carry_hi_yy;
     uint64_t carry_lo_xy;
-    uint64_t carry_hi_xy;
 
     uint32_t changedMaskLocal = 0u;
 
@@ -438,38 +424,32 @@ WarpNormalizeTile(unsigned fullMask,
     for (int step = 0; step < warpSz; ++step) {
         // Broadcast current carry from a canonical lane (lane 0)
         uint64_t cur_lo_xx = __shfl_up_sync(fullMask, r1, 1);
-        uint64_t cur_hi_xx = __shfl_up_sync(fullMask, r2, 1);
         uint64_t cur_lo_yy = __shfl_up_sync(fullMask, r3, 1);
-        uint64_t cur_hi_yy = __shfl_up_sync(fullMask, r4, 1);
         uint64_t cur_lo_xy = __shfl_up_sync(fullMask, r5, 1);
-        uint64_t cur_hi_xy = __shfl_up_sync(fullMask, r6, 1);
 
-        cur_lo_xx = ((lane == 0 && step == 0) ? carry_lo_xx_in : ((lane == 0) ? 0 : cur_lo_xx));
-        cur_hi_xx = ((lane == 0 && step == 0) ? carry_hi_xx_in : ((lane == 0) ? 0 : cur_hi_xx));
-        cur_lo_yy = ((lane == 0 && step == 0) ? carry_lo_yy_in : ((lane == 0) ? 0 : cur_lo_yy));
-        cur_hi_yy = ((lane == 0 && step == 0) ? carry_hi_yy_in : ((lane == 0) ? 0 : cur_hi_yy));
-        cur_lo_xy = ((lane == 0 && step == 0) ? carry_lo_xy_in : ((lane == 0) ? 0 : cur_lo_xy));
-        cur_hi_xy = ((lane == 0 && step == 0) ? carry_hi_xy_in : ((lane == 0) ? 0 : cur_hi_xy));
+        if (iteration > 0) {
+            cur_lo_xx = ((lane == 0 && step == 0) ? carry_lo_xx_in : ((lane == 0) ? 0 : cur_lo_xx));
+            cur_lo_yy = ((lane == 0 && step == 0) ? carry_lo_yy_in : ((lane == 0) ? 0 : cur_lo_yy));
+            cur_lo_xy = ((lane == 0 && step == 0) ? carry_lo_xy_in : ((lane == 0) ? 0 : cur_lo_xy));
+        } else {
+            cur_lo_xx = ((step == 0) ? carry_lo_xx_in : ((lane == 0) ? 0 : cur_lo_xx));
+            cur_lo_yy = ((step == 0) ? carry_lo_yy_in : ((lane == 0) ? 0 : cur_lo_yy));
+            cur_lo_xy = ((step == 0) ? carry_lo_xy_in : ((lane == 0) ? 0 : cur_lo_xy));
+        }
 
         auto process_channel = [&](uint64_t &lo,
-                                   uint64_t &hi,
                                    uint64_t &cur_lo,
-                                   uint64_t &cur_hi,
                                    uint64_t &carry_lo,
-                                   uint64_t &carry_hi,
                                    uint64_t &r_lo_accum,
-                                   uint64_t &r_hi_accum,
                                    uint32_t &r_decider) {
             const uint64_t s_lo = lo + cur_lo;
             const uint64_t c0 = (s_lo < lo) ? 1ull : 0ull;
-            const uint64_t s_hi = hi + cur_hi + c0;
+            const uint64_t s_hi = c0;
 
             const uint32_t dig = static_cast<uint32_t>(s_lo & 0xffffffffu);
             lo = static_cast<uint64_t>(dig);
-            hi = 0;
 
             carry_lo = (s_lo >> 32) | (s_hi << 32);
-            carry_hi = (s_hi >> 32);
 
             if (isLastLaneInTile || isLastDigit) {
                 uint64_t carry = 0;
@@ -484,32 +464,19 @@ WarpNormalizeTile(unsigned fullMask,
                     r_decider |= (s != 0);
                 }
 
-                const auto t = carry_hi + carry;
+                const auto t = carry;
                 r_decider |= (t != 0);
-                r_hi_accum += t;
             } else {
                 r_lo_accum = carry_lo;
-                r_hi_accum = carry_hi;
-
-                //r_decider |= (r_lo_accum != 0) || (r_hi_accum != 0);
             }
         };
 
         if (basePlusLane < numActualDigitsPlusGuard) {
 
             uint32_t r_decider = 0;
-
-            // XX
-            process_channel(
-                loXX, hiXX, cur_lo_xx, cur_hi_xx, carry_lo_xx, carry_hi_xx, r1, r2, r_decider);
-
-            // YY
-            process_channel(
-                loYY, hiYY, cur_lo_yy, cur_hi_yy, carry_lo_yy, carry_hi_yy, r3, r4, r_decider);
-
-            // XY
-            process_channel(
-                loXY, hiXY, cur_lo_xy, cur_hi_xy, carry_lo_xy, carry_hi_xy, r5, r6, r_decider);
+            process_channel(loXX, cur_lo_xx, carry_lo_xx, r1, r_decider);
+            process_channel(loYY, cur_lo_yy, carry_lo_yy, r3, r_decider);
+            process_channel(loXY, cur_lo_xy, carry_lo_xy, r5, r_decider);
 
             // Track whether any non-zero outgoing carry needs further propagation.
             // We do NOT set bits on the very last produced digit (it will not propagate beyond).
@@ -528,7 +495,7 @@ WarpNormalizeTile(unsigned fullMask,
     changedMask |= __shfl_xor_sync(fullMask, changedMask, 2);
     changedMask |= __shfl_xor_sync(fullMask, changedMask, 1);
 
-    return {r1, r2, r3, r4, r5, r6, changedMask};
+    return {r1, r3, r5, changedMask};
 }
 
 template <class SharkFloatParams>
@@ -587,11 +554,8 @@ Normalize_GridStride_3WayV2(cooperative_groups::grid_group &grid,
     }
 
     uint64_t carry_lo_xx;
-    uint64_t carry_hi_xx;
     uint64_t carry_lo_yy;
-    uint64_t carry_hi_yy;
     uint64_t carry_lo_xy;
-    uint64_t carry_hi_xy;
 
     // We run the tile chain in a single warp for now (warp 0) so that tile
     // carries are propagated correctly and in order. Other warps do nothing.
@@ -599,75 +563,122 @@ Normalize_GridStride_3WayV2(cooperative_groups::grid_group &grid,
     int32_t iteration = 0;
     *globalSync1 = 0;
 
+    grid.sync();
+
+    for (int index = tid; index < Ddigits; index += totalThreads) {
+        uint64_t carry_loXX = 0;
+        uint64_t carry_loYY = 0;
+        uint64_t carry_loXY = 0;
+
+        const auto indexT2 = 2 * index;
+
+        auto ProcessOneStart = [&](size_t indexT2,
+                                   uint64_t *final128,
+                                   uint32_t &outDig,
+                                   uint64_t &outLow) -> void {
+            const uint64_t lo = final128[indexT2];
+            const uint64_t hi = final128[indexT2 + 1];
+            const uint64_t s_lo = lo;
+            const uint64_t s_hi = hi;
+            const uint32_t dig = static_cast<uint32_t>(s_lo & 0xffffffffu);
+
+            outDig = dig;
+            outLow = (s_lo >> 32) | (s_hi << 32);
+        };
+
+        uint32_t outXXDig, outYYDig, outXYDig;
+
+        ProcessOneStart(indexT2, final128XX, outXXDig, carry_loXX);
+        ProcessOneStart(indexT2, final128YY, outYYDig, carry_loYY);
+        ProcessOneStart(indexT2, final128XY, outXYDig, carry_loXY);
+
+        resultXX[index] = outXXDig;
+        cur[index * 3 + 3 + 0] = carry_loXX;
+
+        resultYY[index] = outYYDig;
+        cur[index * 3 + 3 + 1] = carry_loYY;
+
+        resultXY[index] = outXYDig;
+        cur[index * 3 + 3 + 2] = carry_loXY;
+    }
+
+    grid.sync();
+
+    for (int index = tid; index < Ddigits; index += totalThreads) {
+        const auto indexT2 = 2 * index;
+        final128XX[indexT2] = static_cast<uint64_t>(resultXX[index]);
+        final128XX[indexT2 + 1] = 0;
+
+        final128YY[indexT2] = static_cast<uint64_t>(resultYY[index]);
+        final128YY[indexT2 + 1] = 0;
+
+        final128XY[indexT2] = static_cast<uint64_t>(resultXY[index]);
+        final128XY[indexT2 + 1] = 0;
+    }
+
+    grid.sync();
+
     for (;;) {
 
         grid.sync();
 
         for (int tile = warpId; tile < numTiles; tile += totalWarps) {
             const int base = tile * warpSz;
-            carry_lo_xx = cur[base + 0];
-            carry_hi_xx = cur[base + 1];
-            carry_lo_yy = cur[base + 2];
-            carry_hi_yy = cur[base + 3];
-            carry_lo_xy = cur[base + 4];
-            carry_hi_xy = cur[base + 5];
-
             const auto basePlusLane = base + lane;
+
+            if (iteration > 0) {
+                if (lane == 0) {
+                    carry_lo_xx = cur[base + 0];
+                    carry_lo_yy = cur[base + 2];
+                    carry_lo_xy = cur[base + 4];
+                } else {
+                    carry_lo_xx = 0;
+                    carry_lo_yy = 0;
+                    carry_lo_xy = 0;
+                }
+            } else {
+                // Use carries produced above.
+                carry_lo_xx = cur[basePlusLane * 3 + 0];
+                carry_lo_yy = cur[basePlusLane * 3 + 1];
+                carry_lo_xy = cur[basePlusLane * 3 + 2];
+                cur[basePlusLane * 3 + 0] = 0;
+                cur[basePlusLane * 3 + 1] = 0;
+                cur[basePlusLane * 3 + 2] = 0;
+            }
 
             // Per-lane 128-bit limb registers for this tile.
             auto loXX = final128XX[basePlusLane * 2];
-            auto hiXX = final128XX[basePlusLane * 2 + 1];
             auto loYY = final128YY[basePlusLane * 2];
-            auto hiYY = final128YY[basePlusLane * 2 + 1];
             auto loXY = final128XY[basePlusLane * 2];
-            auto hiXY = final128XY[basePlusLane * 2 + 1];
 
             // Warp-tiled normalize for this tile; operates purely in registers.
             const WarpNormalizeTriple tout = WarpNormalizeTile<SharkFloatParams>(fullMask,
-                                                                              Ddigits,
-                                                                              lane,
-                                                                              tile,
-                                                                              loXX,
-                                                                              hiXX,
-                                                                              loYY,
-                                                                              hiYY,
-                                                                              loXY,
-                                                                              hiXY,
-                                                                              carry_lo_xx,
-                                                                              carry_hi_xx,
-                                                                              carry_lo_yy,
-                                                                              carry_hi_yy,
-                                                                              carry_lo_xy,
-                                                                              carry_hi_xy);
-
-            //resultXX[basePlusLane] = static_cast<uint64_t>(static_cast<uint32_t>(loXX));
-            //resultYY[basePlusLane] = static_cast<uint64_t>(static_cast<uint32_t>(loYY));
-            //resultXY[basePlusLane] = static_cast<uint64_t>(static_cast<uint32_t>(loXY));
+                                                                                 Ddigits,
+                                                                                 lane,
+                                                                                 tile,
+                                                                                 iteration,
+                                                                                 loXX,
+                                                                                 loYY,
+                                                                                 loXY,
+                                                                                 carry_lo_xx,
+                                                                                 carry_lo_yy,
+                                                                                 carry_lo_xy);
 
             final128XX[basePlusLane * 2] = loXX;
-            final128XX[basePlusLane * 2 + 1] = hiXX;
             final128YY[basePlusLane * 2] = loYY;
-            final128YY[basePlusLane * 2 + 1] = hiYY;
             final128XY[basePlusLane * 2] = loXY;
-            final128XY[basePlusLane * 2 + 1] = hiXY;
 
             // Update tile-to-tile 128-bit carries (identical on all lanes).
             const int outIdx = min(base + warpSz, Ddigits);
             if (lane == warpSz - 1 || (base + lane == Ddigits - 1)) {
                 if (outIdx < Ddigits) {
                     next[outIdx + 0] = tout.carry_lo_xx;
-                    next[outIdx + 1] = tout.carry_hi_xx;
                     next[outIdx + 2] = tout.carry_lo_yy;
-                    next[outIdx + 3] = tout.carry_hi_yy;
                     next[outIdx + 4] = tout.carry_lo_xy;
-                    next[outIdx + 5] = tout.carry_hi_xy;
                 } else {
                     next[outIdx + 0] += tout.carry_lo_xx;
-                    next[outIdx + 1] += tout.carry_hi_xx;
                     next[outIdx + 2] += tout.carry_lo_yy;
-                    next[outIdx + 3] += tout.carry_hi_yy;
                     next[outIdx + 4] += tout.carry_lo_xy;
-                    next[outIdx + 5] += tout.carry_hi_xy;
                 }
 
                 if (tout.changedMask) {
@@ -2374,11 +2385,11 @@ MultiplyHelperNTTV2Separates(const SharkNTT::RootTables &roots,
     uint64_t *Final128_XY = buffer + off; // (size_t)2 * Ddigits
     off += (size_t)2 * Ddigits;
 
-    uint64_t *CarryPropagationBuffer = buffer + off; // 3 * NewN
-    off += 3 * NewN;
+    uint64_t *CarryPropagationBuffer = buffer + off;
+    off += 6 * Ddigits;
 
-    uint64_t *CarryPropagationBuffer2 = buffer + off; // 3 * NewN
-    off += 6 + grid.size() * 6;
+    uint64_t *CarryPropagationBuffer2 = buffer + off;
+    off += 6 * Ddigits;
 
     uint64_t *CarryPropagationSync = &tempProducts[0];
     uint64_t *CarryPropagationSync2 = &tempProducts[16];

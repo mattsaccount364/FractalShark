@@ -476,27 +476,10 @@ warp_process_tile_32_all3(
             limb3 = static_cast<int64_t>(lo3);
         }
 
-        if (basePlusLane < numActualDigitsPlusGuard - 1) {
-            if (c_out1 != 0) {
-                changedMask |= 0x1u;
-            }
-
-            if (c_out2 != 0) {
-                changedMask |= 0x2u;
-            }
-
-            if (c_out3 != 0) {
-                changedMask |= 0x4u;
-            }
+        if ((isLastLaneInTile || isLastDigit) && (basePlusLane < numActualDigitsPlusGuard - 1)) {
+            changedMask |= c_out1 | c_out2 | c_out3;
         }
     }
-
-    // OR reduce the mask within the warp
-    changedMask |= __shfl_xor_sync(fullMask, changedMask, 16);
-    changedMask |= __shfl_xor_sync(fullMask, changedMask, 8);
-    changedMask |= __shfl_xor_sync(fullMask, changedMask, 4);
-    changedMask |= __shfl_xor_sync(fullMask, changedMask, 2);
-    changedMask |= __shfl_xor_sync(fullMask, changedMask, 1);
 
     return {r1, r2, r3, changedMask};
 }

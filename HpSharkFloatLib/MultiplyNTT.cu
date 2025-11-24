@@ -486,16 +486,7 @@ WarpNormalizeTile(unsigned fullMask,
         }
     }
 
-    // Warp-wide OR reduction of changedMaskLocal: determines if any lane produced
-    // a non-zero carry fragment that must seed the next tile iteration.
-    uint32_t changedMask = changedMaskLocal;
-    changedMask |= __shfl_xor_sync(fullMask, changedMask, 16);
-    changedMask |= __shfl_xor_sync(fullMask, changedMask, 8);
-    changedMask |= __shfl_xor_sync(fullMask, changedMask, 4);
-    changedMask |= __shfl_xor_sync(fullMask, changedMask, 2);
-    changedMask |= __shfl_xor_sync(fullMask, changedMask, 1);
-
-    return {r1, r3, r5, changedMask};
+    return {r1, r3, r5, changedMaskLocal};
 }
 
 template <class SharkFloatParams>
@@ -615,8 +606,6 @@ Normalize_GridStride_3WayV2(cooperative_groups::grid_group &grid,
         final128XY[indexT2] = static_cast<uint64_t>(resultXY[index]);
         final128XY[indexT2 + 1] = 0;
     }
-
-    grid.sync();
 
     for (;;) {
 
@@ -2347,10 +2336,13 @@ MultiplyHelperNTTV2Separates(const SharkNTT::RootTables &roots,
                   "GlobalNumUint32 must be a power of 2");
 
     // Compute Final128 digit budget once
-    const uint32_t Ddigits =
-        ((uint64_t)((2 * SharkFloatParams::NTTPlan.L - 2) * SharkFloatParams::NTTPlan.b + 64) + 31u) /
-            32u +
-        2u;
+    const auto Ddigits =
+        (((2 * SharkFloatParams::NTTPlan.L - 2) * SharkFloatParams::NTTPlan.b + 64) + 31) /
+            32 +
+        2;
+
+    const auto LameHackBufferSizeWhatShouldItBe =
+        std::max(Ddigits, SharkFloatParams::NTTPlan.N);
 
     // ---- Single allocation for entire core path ----
     uint64_t *buffer = &tempProducts[GlobalsDoneOffset];
@@ -2362,19 +2354,19 @@ MultiplyHelperNTTV2Separates(const SharkNTT::RootTables &roots,
     // Slice buffer into spans
     size_t off = 0;
     uint64_t *tempDigitsXX1 = buffer + off; // SharkFloatParams::NTTPlan.N
-    off += (size_t)SharkFloatParams::NTTPlan.N;
+    off += LameHackBufferSizeWhatShouldItBe;
     uint64_t *tempDigitsXX2 = buffer + off; // SharkFloatParams::NTTPlan.N
-    off += (size_t)SharkFloatParams::NTTPlan.N;
+    off += LameHackBufferSizeWhatShouldItBe;
 
     uint64_t *tempDigitsYY1 = buffer + off; // SharkFloatParams::NTTPlan.N
-    off += (size_t)SharkFloatParams::NTTPlan.N;
+    off += LameHackBufferSizeWhatShouldItBe;
     uint64_t *tempDigitsYY2 = buffer + off; // SharkFloatParams::NTTPlan.N
-    off += (size_t)SharkFloatParams::NTTPlan.N;
+    off += LameHackBufferSizeWhatShouldItBe;
 
     uint64_t *tempDigitsXY1 = buffer + off; // SharkFloatParams::NTTPlan.N
-    off += (size_t)SharkFloatParams::NTTPlan.N;
+    off += LameHackBufferSizeWhatShouldItBe;
     uint64_t *tempDigitsXY2 = buffer + off; // SharkFloatParams::NTTPlan.N
-    off += (size_t)SharkFloatParams::NTTPlan.N;
+    off += LameHackBufferSizeWhatShouldItBe;
 
     uint64_t *Final128_XX = buffer + off; // (size_t)2 * Ddigits
     off += (size_t)2 * Ddigits;

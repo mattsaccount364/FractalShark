@@ -447,12 +447,11 @@ WarpNormalizeTile(unsigned fullMask,
                                    uint32_t &r_decider) {
             const uint64_t s_lo = lo + cur_lo;
             const uint64_t c0 = (s_lo < lo) ? 1ull : 0ull;
-            const uint64_t s_hi = c0;
 
             const uint32_t dig = static_cast<uint32_t>(s_lo & 0xffffffffu);
             lo = static_cast<uint64_t>(dig);
 
-            carry_lo = (s_lo >> 32) | (s_hi << 32);
+            carry_lo = (s_lo >> 32) | (c0 << 32);
 
             // Note: we really only need this on the last lane
             // of the tile or last digit but we get slightly 
@@ -554,6 +553,12 @@ Normalize_GridStride_3WayV2(cooperative_groups::grid_group &grid,
     *globalSync1 = 0;
     *globalSync2 = 0;
 
+    auto swap2 = [](uint64_t *&a, uint64_t *&b) {
+        auto *t = a;
+        a = b;
+        b = t;
+    };
+
     grid.sync();
 
     for (int index = tid; index < Ddigits; index += totalThreads) {
@@ -563,18 +568,16 @@ Normalize_GridStride_3WayV2(cooperative_groups::grid_group &grid,
 
         const auto indexT2 = 2 * index;
 
-        auto ProcessOneStart = [&](size_t indexT2,
-                                   uint64_t *final128,
-                                   uint32_t &outDig,
-                                   uint64_t &outLow) -> void {
+        auto ProcessOneStart = [](size_t indexT2,
+                                  uint64_t *final128,
+                                  uint32_t &outDig,
+                                  uint64_t &outCarry) -> void {
             const uint64_t lo = final128[indexT2];
             const uint64_t hi = final128[indexT2 + 1];
-            const uint64_t s_lo = lo;
-            const uint64_t s_hi = hi;
-            const uint32_t dig = static_cast<uint32_t>(s_lo & 0xffffffffu);
+            const uint32_t dig = static_cast<uint32_t>(lo & 0xffffffffu);
 
             outDig = dig;
-            outLow = (s_lo >> 32) | (s_hi << 32);
+            outCarry = (lo >> 32) | (hi << 32);
         };
 
         uint32_t outXXDig, outYYDig, outXYDig;
@@ -591,6 +594,79 @@ Normalize_GridStride_3WayV2(cooperative_groups::grid_group &grid,
 
         resultXY[index] = outXYDig;
         cur[index * 3 + 3 + 2] = carry_loXY;
+    }
+
+    grid.sync();
+
+    for (int index = tid; index < Ddigits; index += totalThreads) {
+        const uint64_t carry_loXX = cur[index * 3 + 0];
+        const uint64_t carry_loYY = cur[index * 3 + 1];
+        const uint64_t carry_loXY = cur[index * 3 + 2];
+
+        auto ProcessOneStart =
+            [](const size_t index,
+               const uint64_t *result,
+               uint32_t &outDig,
+               const uint64_t carryIn,
+               uint64_t &carryOut) -> void {
+            const uint64_t inDig = result[index]; // 32-bit digit in low bits
+            const uint64_t fullDig = inDig + carryIn;
+            const uint64_t c0 = (fullDig < inDig) ? 1ull : 0ull;
+            outDig = fullDig & 0xffffffffu;
+            carryOut = fullDig >> 32 + (c0 << 32);
+        };
+
+        uint32_t outXXDig, outYYDig, outXYDig;
+        uint64_t carry_outXX, carry_outYY, carry_outXY;
+
+        ProcessOneStart(index, resultXX, outXXDig, carry_loXX, carry_outXX);
+        ProcessOneStart(index, resultYY, outYYDig, carry_loYY, carry_outYY);
+        ProcessOneStart(index, resultXY, outXYDig, carry_loXY, carry_outXY);
+
+        resultXX[index] = outXXDig;
+        next[index * 3 + 3 + 0] = carry_outXX;
+
+        resultYY[index] = outYYDig;
+        next[index * 3 + 3 + 1] = carry_outYY;
+
+        resultXY[index] = outXYDig;
+        next[index * 3 + 3 + 2] = carry_outXY;
+    }
+
+    grid.sync();
+
+    for (int index = tid; index < Ddigits; index += totalThreads) {
+        const uint64_t carry_loXX = next[index * 3 + 0];
+        const uint64_t carry_loYY = next[index * 3 + 1];
+        const uint64_t carry_loXY = next[index * 3 + 2];
+
+        auto ProcessOneStart = [](const size_t index,
+                                  const uint64_t *result,
+                                  uint32_t &outDig,
+                                  const uint64_t carryIn,
+                                  uint64_t &carryOut) -> void {
+            // This stage cannot overflow
+            const uint64_t inDig = result[index]; // 32-bit digit in low bits
+            const uint64_t fullDig = inDig + carryIn;
+            outDig = fullDig & 0xffffffffu;
+            carryOut = fullDig >> 32; // 0 or 1 yay
+        };
+
+        uint32_t outXXDig, outYYDig, outXYDig;
+        uint64_t carry_outXX, carry_outYY, carry_outXY;
+
+        ProcessOneStart(index, resultXX, outXXDig, carry_loXX, carry_outXX);
+        ProcessOneStart(index, resultYY, outYYDig, carry_loYY, carry_outYY);
+        ProcessOneStart(index, resultXY, outXYDig, carry_loXY, carry_outXY);
+
+        resultXX[index] = outXXDig;
+        cur[index * 3 + 3 + 0] = carry_outXX;
+
+        resultYY[index] = outYYDig;
+        cur[index * 3 + 3 + 1] = carry_outYY;
+
+        resultXY[index] = outXYDig;
+        cur[index * 3 + 3 + 2] = carry_outXY;
     }
 
     grid.sync();
@@ -675,12 +751,6 @@ Normalize_GridStride_3WayV2(cooperative_groups::grid_group &grid,
             prevGlobalSync1 = temp;
 
             // Swap only the active streams (mirror of your original logic)
-            auto swap2 = [](uint64_t *&a, uint64_t *&b) {
-                auto *t = a;
-                a = b;
-                b = t;
-            };
-
             swap2(cur, next);
             iteration++;
         }

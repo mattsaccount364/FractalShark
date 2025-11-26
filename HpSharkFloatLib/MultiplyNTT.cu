@@ -426,15 +426,18 @@ WarpNormalizeTile(unsigned fullMask,
         uint64_t cur_lo_xx = __shfl_up_sync(fullMask, r1, 1);
         uint64_t cur_lo_yy = __shfl_up_sync(fullMask, r3, 1);
         uint64_t cur_lo_xy = __shfl_up_sync(fullMask, r5, 1);
+        const bool laneIsZero = (lane == 0);
+        const bool stepIsZero = (step == 0);
+        const bool laneAndStepIsZero = laneIsZero && stepIsZero;
 
         if (iteration > 0) {
-            cur_lo_xx = ((lane == 0 && step == 0) ? carry_lo_xx_in : ((lane == 0) ? 0 : cur_lo_xx));
-            cur_lo_yy = ((lane == 0 && step == 0) ? carry_lo_yy_in : ((lane == 0) ? 0 : cur_lo_yy));
-            cur_lo_xy = ((lane == 0 && step == 0) ? carry_lo_xy_in : ((lane == 0) ? 0 : cur_lo_xy));
+            cur_lo_xx = (laneAndStepIsZero ? carry_lo_xx_in : (laneIsZero ? 0 : cur_lo_xx));
+            cur_lo_yy = (laneAndStepIsZero ? carry_lo_yy_in : (laneIsZero ? 0 : cur_lo_yy));
+            cur_lo_xy = (laneAndStepIsZero ? carry_lo_xy_in : (laneIsZero ? 0 : cur_lo_xy));
         } else {
-            cur_lo_xx = ((step == 0) ? carry_lo_xx_in : ((lane == 0) ? 0 : cur_lo_xx));
-            cur_lo_yy = ((step == 0) ? carry_lo_yy_in : ((lane == 0) ? 0 : cur_lo_yy));
-            cur_lo_xy = ((step == 0) ? carry_lo_xy_in : ((lane == 0) ? 0 : cur_lo_xy));
+            cur_lo_xx = (stepIsZero ? carry_lo_xx_in : (laneIsZero ? 0 : cur_lo_xx));
+            cur_lo_yy = (stepIsZero ? carry_lo_yy_in : (laneIsZero ? 0 : cur_lo_yy));
+            cur_lo_xy = (stepIsZero ? carry_lo_xy_in : (laneIsZero ? 0 : cur_lo_xy));
         }
 
         auto process_channel = [&](uint64_t &lo,
@@ -451,38 +454,34 @@ WarpNormalizeTile(unsigned fullMask,
 
             carry_lo = (s_lo >> 32) | (s_hi << 32);
 
-            if (isLastLaneInTile || isLastDigit) {
-                uint64_t carry = 0;
+            // Note: we really only need this on the last lane
+            // of the tile or last digit but we get slightly 
+            // better performance by doing it every time.
 
-                {
-                    uint64_t s = r_lo_accum + carry_lo;
-                    uint64_t c0 = (s < r_lo_accum) ? 1ull : 0ull;
-                    s += carry;
-                    uint64_t c1 = (s < carry) ? 1ull : 0ull;
-                    carry = c0 + c1;
-                    r_lo_accum = s;
-                    r_decider |= (s != 0);
-                }
+            {
+                uint64_t s = r_lo_accum + carry_lo;
+                uint64_t c0 = (s < r_lo_accum) ? 1ull : 0ull;
+                r_lo_accum = s;
+                r_decider |= (s | c0);
+            }
 
-                const auto t = carry;
-                r_decider |= (t != 0);
-            } else {
+
+            if (!(isLastLaneInTile || isLastDigit)) {
                 r_lo_accum = carry_lo;
             }
         };
 
+        uint32_t r_decider = 0;
         if (basePlusLane < numActualDigitsPlusGuard) {
-
-            uint32_t r_decider = 0;
             process_channel(loXX, cur_lo_xx, carry_lo_xx, r1, r_decider);
             process_channel(loYY, cur_lo_yy, carry_lo_yy, r3, r_decider);
             process_channel(loXY, cur_lo_xy, carry_lo_xy, r5, r_decider);
+        }
 
-            // Track whether any non-zero outgoing carry needs further propagation.
-            // We do NOT set bits on the very last produced digit (it will not propagate beyond).
-            if (basePlusLane < numActualDigitsPlusGuard - 1) {
-                changedMaskLocal |= r_decider;
-            }
+        // Track whether any non-zero outgoing carry needs further propagation.
+        // We do NOT set bits on the very last produced digit (it will not propagate beyond).
+        if (basePlusLane < numActualDigitsPlusGuard - 1) {
+            changedMaskLocal |= r_decider;
         }
     }
 
@@ -553,6 +552,7 @@ Normalize_GridStride_3WayV2(cooperative_groups::grid_group &grid,
     uint64_t prevGlobalSync1 = std::numeric_limits<uint64_t>::max();
     int32_t iteration = 0;
     *globalSync1 = 0;
+    *globalSync2 = 0;
 
     grid.sync();
 
@@ -595,18 +595,6 @@ Normalize_GridStride_3WayV2(cooperative_groups::grid_group &grid,
 
     grid.sync();
 
-    for (int index = tid; index < Ddigits; index += totalThreads) {
-        const auto indexT2 = 2 * index;
-        final128XX[indexT2] = static_cast<uint64_t>(resultXX[index]);
-        final128XX[indexT2 + 1] = 0;
-
-        final128YY[indexT2] = static_cast<uint64_t>(resultYY[index]);
-        final128YY[indexT2 + 1] = 0;
-
-        final128XY[indexT2] = static_cast<uint64_t>(resultXY[index]);
-        final128XY[indexT2 + 1] = 0;
-    }
-
     for (;;) {
 
         grid.sync();
@@ -636,9 +624,9 @@ Normalize_GridStride_3WayV2(cooperative_groups::grid_group &grid,
             }
 
             // Per-lane 128-bit limb registers for this tile.
-            auto loXX = final128XX[basePlusLane * 2];
-            auto loYY = final128YY[basePlusLane * 2];
-            auto loXY = final128XY[basePlusLane * 2];
+            auto loXX = resultXX[basePlusLane];
+            auto loYY = resultYY[basePlusLane];
+            auto loXY = resultXY[basePlusLane];
 
             // Warp-tiled normalize for this tile; operates purely in registers.
             const WarpNormalizeTriple tout = WarpNormalizeTile<SharkFloatParams>(fullMask,
@@ -653,9 +641,9 @@ Normalize_GridStride_3WayV2(cooperative_groups::grid_group &grid,
                                                                                  carry_lo_yy,
                                                                                  carry_lo_xy);
 
-            final128XX[basePlusLane * 2] = loXX;
-            final128YY[basePlusLane * 2] = loYY;
-            final128XY[basePlusLane * 2] = loXY;
+            resultXX[basePlusLane] = loXX;
+            resultYY[basePlusLane] = loYY;
+            resultXY[basePlusLane] = loXY;
 
             // Update tile-to-tile 128-bit carries (identical on all lanes).
             const int outIdx = min(base + warpSz, Ddigits);
@@ -700,15 +688,6 @@ Normalize_GridStride_3WayV2(cooperative_groups::grid_group &grid,
         if constexpr (HpShark::DebugGlobalState) {
             DebugNormalizeIncrement<SharkFloatParams>(debugGlobalState, grid, block, 1);
         }
-    }
-
-    grid.sync();
-
-    // init cur/next = 0 (length Ddigits+1 to include high slot)
-    for (int i = tid; i < Ddigits; i += totalThreads) {
-        resultXX[i] = final128XX[i * 2];
-        resultYY[i] = final128YY[i * 2];
-        resultXY[i] = final128XY[i * 2];
     }
 
     grid.sync();

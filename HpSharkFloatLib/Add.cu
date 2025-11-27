@@ -487,7 +487,11 @@ NormalizeAndCopyResult(
     extABC[N] = static_cast<uint32_t>(carryABC);
     extDE[N] = static_cast<uint32_t>(carryDE);
 
-    constexpr auto OriginalImpl = false;
+#ifdef TEST_SMALL_NORMALIZE_WARP
+    static constexpr bool OriginalImpl = true;
+#else
+    static constexpr bool OriginalImpl = false;
+#endif
 
     int32_t msdA = 0, msdD = 0;
     if constexpr (OriginalImpl) {

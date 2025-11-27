@@ -363,8 +363,13 @@ using Test4x6SharkParams = GenericSharkFloatParams<7, 9, 74>;
 
 // Use for ENABLE_BASIC_CORRECTNESS==2
 
+//
 // Performance test sizes
 // ! TODO NOTE: 65 blocks! 1 for guard (perf improvement)
+// 
+// Best perf for view 30/16384 limb
+// using TestPerSharkParams2 = GenericSharkFloatParams<256, 128, 16384>;
+//
 
 constexpr auto StupidMult = 1;
 //using TestPerSharkParams1 = GenericSharkFloatParams<64, 128>;

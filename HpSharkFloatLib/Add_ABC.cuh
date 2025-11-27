@@ -1,5 +1,69 @@
 ﻿#include "ThreeWayMagnitude.h"
 
+static __device__ SharkForceInlineReleaseOnly bool
+cmp_magnitude_warp(const uint32_t *SharkRestrict e1,
+                   int32_t s1,
+                   int32_t exp1,
+                   const uint32_t *SharkRestrict e2,
+                   int32_t s2,
+                   int32_t exp2,
+                   const int32_t actualDigits,
+                   const int32_t numActualDigitsPlusGuard)
+{
+    const int lane = threadIdx.x & 31;
+    const unsigned fullMask = __activemask();
+
+    // 1) Exponent compare: same as scalar version
+    if (exp1 != exp2) {
+        return exp1 > exp2;
+    }
+
+    // 2) Exponents equal → compare digits high→low in warp tiles of 32
+    const int32_t highestIndex = numActualDigitsPlusGuard - 1; // top digit index
+    const int32_t totalDigits = numActualDigitsPlusGuard;      // indices 0..highestIndex
+    const int32_t numTiles = (totalDigits + 31) / 32;
+
+    bool decidedGreater = false; // true => e1 > e2
+    bool decided = false;        // true once we find a differing digit
+
+    for (int32_t tile = 0; tile < numTiles && !decided; ++tile) {
+        const int32_t idxFromTop = tile * 32 + lane;
+        const int32_t i = highestIndex - idxFromTop; // walk high→low
+
+        uint32_t d1 = 0u, d2 = 0u;
+        if (i >= 0) {
+            d1 = GetNormalizedDigit(e1, actualDigits, numActualDigitsPlusGuard, s1, i);
+            d2 = GetNormalizedDigit(e2, actualDigits, numActualDigitsPlusGuard, s2, i);
+        }
+
+        // Per-lane comparisons
+        const bool gt = (d1 > d2);
+        const bool lt = (d1 < d2);
+        const bool ne = gt || lt;
+
+        // Warp-wide: where do they differ?
+        const unsigned maskDiff = __ballot_sync(fullMask, ne);
+
+        if (maskDiff != 0u) {
+            // Find the *first* differing digit from the top.
+            // Mapping: tile=0,lane=0 => highest index; so "topmost" is
+            // the smallest lane index with ne==true -> LSB of maskDiff.
+            const int firstLane = __ffs(maskDiff) - 1; // 0..31
+
+            const unsigned bit = 1u << firstLane;
+
+            // Which side is larger at that digit?
+            const unsigned maskGT = __ballot_sync(fullMask, gt);
+            // maskGT and (maskDiff ^ maskGT) are disjoint; only one has 'bit' set.
+            decidedGreater = (maskGT & bit) != 0u;
+            decided = true;
+        }
+    }
+
+    // If never decided, all digits equal => "not greater"
+    return decided && decidedGreater;
+}
+
 static __device__ SharkForceInlineReleaseOnly ThreeWayLargestOrdering
 CompareMagnitudes3Way (
     const int32_t effExpA,
@@ -15,10 +79,20 @@ CompareMagnitudes3Way (
     const uint32_t *SharkRestrict extC,
     int32_t &outExp
 ) {
-    // Helper: returns true if "first" is strictly bigger than "second"
-    auto cmp = [&](
-        const uint32_t *SharkRestrict e1, int32_t s1, int32_t exp1,
-        const uint32_t *SharkRestrict e2, int32_t s2, int32_t exp2) {
+#ifdef TEST_SMALL_NORMALIZE_WARP
+    static constexpr bool OriginalImpl = true;
+#else
+    static constexpr bool OriginalImpl = false;
+#endif
+
+    if constexpr (OriginalImpl) {
+        // Helper: returns true if "first" is strictly bigger than "second"
+        auto cmp = [&](const uint32_t *SharkRestrict e1,
+                       int32_t s1,
+                       int32_t exp1,
+                       const uint32_t *SharkRestrict e2,
+                       int32_t s2,
+                       int32_t exp2) {
             if (exp1 != exp2)
                 return exp1 > exp2;
             // exponents equal -> compare normalized digits high->low
@@ -28,21 +102,50 @@ CompareMagnitudes3Way (
                 if (d1 != d2)
                     return d1 > d2;
             }
-            return false;  // treat exact equality as "not greater"
+            return false; // treat exact equality as "not greater"
         };
 
-    // 1) Is A the strict max?
-    if (cmp(extA, shiftA, effExpA, extB, shiftB, effExpB) &&
-        cmp(extA, shiftA, effExpA, extC, shiftC, effExpC)) {
-        return ThreeWayLargestOrdering::A_GT_AllOthers;
-    }
-    // 2) Is B the strict max?
-    else if (cmp(extB, shiftB, effExpB, extA, shiftA, effExpA) &&
-        cmp(extB, shiftB, effExpB, extC, shiftC, effExpC)) {
-        return ThreeWayLargestOrdering::B_GT_AllOthers;
-    }
-    // 3) Otherwise C is the (strict) max
-    else {
+        // 1) Is A the strict max?
+        if (cmp(extA, shiftA, effExpA, extB, shiftB, effExpB) &&
+            cmp(extA, shiftA, effExpA, extC, shiftC, effExpC)) {
+            return ThreeWayLargestOrdering::A_GT_AllOthers;
+        }
+        // 2) Is B the strict max?
+        else if (cmp(extB, shiftB, effExpB, extA, shiftA, effExpA) &&
+                 cmp(extB, shiftB, effExpB, extC, shiftC, effExpC)) {
+            return ThreeWayLargestOrdering::B_GT_AllOthers;
+        }
+        // 3) Otherwise C is the (strict) max
+        else {
+            return ThreeWayLargestOrdering::C_GT_AllOthers;
+        }
+    } else {
+        // 1) Is A the strict max?
+        const bool A_gt_B = cmp_magnitude_warp(
+            extA, shiftA, effExpA, extB, shiftB, effExpB, actualDigits, numActualDigitsPlusGuard);
+
+        const bool A_gt_C = cmp_magnitude_warp(
+            extA, shiftA, effExpA, extC, shiftC, effExpC, actualDigits, numActualDigitsPlusGuard);
+
+        if (A_gt_B && A_gt_C) {
+            outExp = effExpA;
+            return ThreeWayLargestOrdering::A_GT_AllOthers;
+        }
+
+        // 2) Is B the strict max?
+        const bool B_gt_A = cmp_magnitude_warp(
+            extB, shiftB, effExpB, extA, shiftA, effExpA, actualDigits, numActualDigitsPlusGuard);
+
+        const bool B_gt_C = cmp_magnitude_warp(
+            extB, shiftB, effExpB, extC, shiftC, effExpC, actualDigits, numActualDigitsPlusGuard);
+
+        if (B_gt_A && B_gt_C) {
+            outExp = effExpB;
+            return ThreeWayLargestOrdering::B_GT_AllOthers;
+        }
+
+        // 3) Otherwise C is the (strict) max (or tied)
+        outExp = effExpC;
         return ThreeWayLargestOrdering::C_GT_AllOthers;
     }
 }

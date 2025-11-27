@@ -2892,23 +2892,19 @@ TestAllBinaryOp(int testBase)
     //#if 0
     if constexpr (includeSet1) {
         const auto set = testBase + 100;
-        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(Tests, set + 10, "7", "19", "0");
-        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-        //    Tests, set + 20, "4294967295", "1", "4294967296");
-        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-        //    Tests, set + 30, "4294967296", "1", "1");
-        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-        //    Tests, set + 40, "4294967295", "4294967296", "1");
-        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-        //    Tests, set + 50, "4294967296", "-1", "1");
-        //TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-        //    Tests, set + 60, "18446744073709551615", "1", "1");
-
-        /*TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-            Tests, set + 70, "0", "0.1", "0.3");*/
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(Tests, set + 10, "7", "19", "0");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-            Tests, set + 70, "0.3", "0.3", "0.3");
-
+            Tests, set + 20, "4294967295", "1", "4294967296");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests, set + 30, "4294967296", "1", "1");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests, set + 40, "4294967295", "4294967296", "1");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests, set + 50, "4294967296", "-1", "1");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests, set + 60, "18446744073709551615", "1", "1");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            Tests, set + 70, "0", "0.1", "0.3");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
             Tests, set + 80, "0.1", "0", "0.1");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(Tests, set + 90, "0", "0", "0");

@@ -424,7 +424,13 @@ warp_process_tile_32_all3(
     int64_t &limb2,
     int64_t &limb3)
 {
+#ifdef TEST_SMALL_NORMALIZE_WARP
+    // untested
+    constexpr auto warpSz = SharkFloatParams::GlobalThreadsPerBlock;
+#else
     constexpr auto warpSz = 32;
+#endif
+
     const int base = tileIndex * warpSz;
     const auto basePlusLane = base + lane;
 
@@ -555,9 +561,15 @@ CarryPropagation_ABC(
     }
 
     // --- geometry ---
-    constexpr int warpSz = 32;
+#ifdef TEST_SMALL_NORMALIZE_WARP
+    // untested
+    constexpr auto warpSz = SharkFloatParams::GlobalThreadsPerBlock;
+#else
+    constexpr auto warpSz = 32;
+#endif
+
     const unsigned fullMask = __activemask();
-    const int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    const int32_t tid = block.thread_index().x + block.group_index().x * block.dim_threads().x;
     const int lane = threadIdx.x & (warpSz - 1);
     const int totalThreads = gridDim.x * blockDim.x;
     const int totalWarps = max(1, totalThreads / warpSz);
@@ -651,7 +663,7 @@ CarryPropagation_ABC(
         }
 
         // Tell everyone when to exit
-        if (grid.thread_rank() == 0) {
+        if (tid == 0) {
             if (loadedResult1 == prevResult2 && !assignedTermination) {
                 *globalSync2 = iteration;
                 assignedTermination = true;

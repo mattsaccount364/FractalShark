@@ -207,7 +207,7 @@ __device__ inline void CarryPropagationPP3_DE (
     cg::thread_block &block,
     cg::grid_group &grid) {
     // ==== boilerplate from your original ====
-    const int32_t   globalIdx = block.thread_index().x + block.group_index().x * blockDim.x;
+    const int32_t globalIdx = block.thread_index().x + block.group_index().x * block.dim_threads().x;
     const int32_t   stride = grid.size();
     constexpr int32_t maxIter = 1000;
     auto *carries_remaining = &globalSync1[0];
@@ -215,7 +215,8 @@ __device__ inline void CarryPropagationPP3_DE (
     uint32_t *nextCarry = carry2;
 
     // initialize the global counter
-    if (grid.thread_rank() == 0) *carries_remaining = 1;
+    if (globalIdx == 0)
+        *carries_remaining = 1;
 
     // zero out both carry buffers
     for (int32_t i = globalIdx; i <= numActualDigitsPlusGuard; i += stride) {
@@ -263,7 +264,7 @@ __device__ inline void CarryPropagationPP3_DE (
             const auto chunksRequired = (numActualDigitsPlusGuard + grid.size() - 1) / grid.size();
 
             // each thread's flat ID
-            const auto tid = block.thread_index().x + block.group_index().x * blockDim.x;
+            const int32_t tid = block.thread_index().x + block.group_index().x * block.dim_threads().x;
             const auto tidInBlock = block.thread_index().x;
             const auto warpId = physicalWarpsPerBlock * block.group_index().x;
             const auto warpIdInBlock = tidInBlock / W;
@@ -510,7 +511,7 @@ __device__ inline void CarryPropagationPP2_DE(
     cg::grid_group &grid) {
     // Determine grid-stride parameters.
     const int32_t totalThreads = grid.size();
-    const int32_t tid = block.thread_index().x + block.group_index().x * blockDim.x;
+    const int32_t tid = block.thread_index().x + block.group_index().x * block.dim_threads().x;
 
     // Reinterpret carry1 and carry2 as arrays of GenProp.
     GenProp *working = reinterpret_cast<GenProp *>(carry1);  // working array
@@ -639,7 +640,7 @@ CarryPropagationPPTry1Buggy_DE (
     static constexpr auto SequentialBits = true;
 
     const int32_t totalThreads = grid.size();
-    int32_t tid = block.thread_index().x + block.group_index().x * blockDim.x;
+    const int32_t tid = block.thread_index().x + block.group_index().x * block.dim_threads().x;
 
     if (sameSign) {
         // --- Initialization ---
@@ -708,9 +709,11 @@ CarryPropagationPPTry1Buggy_DE (
         // --- Downsweep phase (exclusive scan for addition) ---
         // Now perform the downsweep: update only indices k satisfying ((k+1) mod (2*d)) == 0.
         if constexpr (!SequentialBits) {
+            const int32_t tid = block.thread_index().x + block.group_index().x * block.dim_threads().x;
+
             for (int32_t d = n / 2; d >= 1; d /= 2) {
                 // Use grid-stride loops to cover all indices.
-                for (int32_t k = block.thread_index().x + block.group_index().x * blockDim.x;
+                for (int32_t k = tid;
                     k < n;
                     k += grid.size()) {
                     // Check if k is the last index of its block of 2*d elements.
@@ -818,13 +821,15 @@ CarryPropagationPPTry1Buggy_DE (
         }
         grid.sync();
 
+        const int32_t tid = block.thread_index().x + block.group_index().x * block.dim_threads().x;
+
         // --- Downsweep phase using custom operator ---
         // Parallel Hillis–Steele inclusive scan using CombineBorrow.
         // Note: 'I' is the identity for our CombineBorrow operator; for our encoding, we take I = 2.
         // (Assumes numActualDigitsPlusGuard is <= the number of elements in s_g.)
         for (int32_t d = 1; d < numActualDigitsPlusGuard; d *= 2) {
             // Each thread processes indices in grid stride.
-            for (int32_t i = block.thread_index().x + block.group_index().x * blockDim.x;
+            for (int32_t i = tid;
                 i < numActualDigitsPlusGuard;
                 i += grid.size()) {
                 // For indices with i >= d, combine the element from i-d with s_g[i].
@@ -866,7 +871,7 @@ CarryPropagationDE (
     cg::grid_group &grid) {
 
     // Compute a grid-global thread id and stride.
-    const int32_t globalIdx = block.thread_index().x + block.group_index().x * blockDim.x;
+    const int32_t globalIdx = block.thread_index().x + block.group_index().x * block.dim_threads().x;
     const int32_t stride = grid.size();
 
     // We'll use a fixed number of iterations.

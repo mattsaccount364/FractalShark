@@ -539,7 +539,7 @@ static __device__ void AddHelperSeparates(
     constexpr int32_t guard = SharkFloatParams::Guard;
     constexpr int32_t numActualDigits = SharkFloatParams::GlobalNumUint32;
     constexpr int32_t numActualDigitsPlusGuard = SharkFloatParams::GlobalNumUint32 + guard;
-    int32_t idx = grid.thread_rank();
+    const int32_t idx = block.thread_index().x + block.group_index().x * block.dim_threads().x;
     constexpr int32_t NewN = SharkFloatParams::GlobalNumUint32;
 
     const auto *ext_A_X2 = A_X2->Digits;

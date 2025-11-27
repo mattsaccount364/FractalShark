@@ -292,7 +292,7 @@ template <class SharkFloatParams> struct DebugState {
         using namespace DebugChecksumGlobals;
 
         // Partition using block/thread linearization to match reduction order
-        const uint64_t tid = uint64_t(blockIdx.x) * blockDim.x + threadIdx.x;
+        const auto tid = block.thread_index().x + block.group_index().x * blockDim.x;
         const uint64_t T = uint64_t(gridDim.x) * blockDim.x;
         const uint64_t Nw = static_cast<uint64_t>(size);
 
@@ -420,7 +420,7 @@ template <class SharkFloatParams> struct DebugState {
             }
 
             // After the loop, block 0 holds the full concatenation in d_block_*[0].
-            if (grid.thread_rank() == 0) {
+            if (tid == 0) {
                 uint32_t gs1 = DebugChecksumGlobals::d_block_s1[0];
                 uint32_t gs2 = DebugChecksumGlobals::d_block_s2[0];
                 uint32_t glm = DebugChecksumGlobals::d_block_lm[0];
@@ -446,7 +446,7 @@ template <class SharkFloatParams> struct DebugState {
     {
         using namespace DebugChecksumGlobals;
 
-        const uint64_t tid = uint64_t(blockIdx.x) * blockDim.x + threadIdx.x;
+        const auto tid = block.thread_index().x + block.group_index().x * blockDim.x;
         const uint64_t T = uint64_t(gridDim.x) * blockDim.x;
         const uint64_t Nw = static_cast<uint64_t>(size) * 2ull;
 
@@ -570,7 +570,7 @@ template <class SharkFloatParams> struct DebugState {
             }
 
             // After the loop, block 0 holds the full concatenation in d_block_*[0].
-            if (grid.thread_rank() == 0) {
+            if (tid == 0) {
                 uint32_t gs1 = DebugChecksumGlobals::d_block_s1[0];
                 uint32_t gs2 = DebugChecksumGlobals::d_block_s2[0];
                 uint32_t glm = DebugChecksumGlobals::d_block_lm[0];
@@ -594,7 +594,7 @@ template <class SharkFloatParams> struct DebugState {
     // ---------- uint32_t* overload: single-thread (rank 0) Fletcher-64 ----------
     __device__ uint64_t
     ComputeCRC64(cooperative_groups::grid_group &grid,
-                                               cooperative_groups::thread_block & /*block*/,
+                                               cooperative_groups::thread_block &block,
                                                const uint32_t *data,
                                                size_t size,
                                                uint64_t initialCrc)
@@ -604,8 +604,9 @@ template <class SharkFloatParams> struct DebugState {
         // Seed packed as (s2<<32 | s1), same as host
         uint32_t s1 = static_cast<uint32_t>(initialCrc & 0xFFFFFFFFull);
         uint32_t s2 = static_cast<uint32_t>(initialCrc >> 32);
+        const auto tid = block.thread_index().x + block.group_index().x * blockDim.x;
 
-        if (grid.thread_rank() == 0) {
+        if (tid == 0) {
             constexpr uint64_t M = 0xFFFFFFFFull; // 2^32 - 1
             auto foldM = [](uint64_t v) -> uint32_t {
                 v = (v & M) + (v >> 32); // end-around carry fold
@@ -642,8 +643,9 @@ template <class SharkFloatParams> struct DebugState {
 
         uint32_t s1 = static_cast<uint32_t>(initialCrc & 0xFFFFFFFFull);
         uint32_t s2 = static_cast<uint32_t>(initialCrc >> 32);
+        const auto tid = block.thread_index().x + block.group_index().x * blockDim.x;
 
-        if (grid.thread_rank() == 0) {
+        if (tid == 0) {
             constexpr uint64_t M = 0xFFFFFFFFull; // 2^32 - 1
             auto foldM = [](uint64_t v) -> uint32_t {
                 v = (v & M) + (v >> 32);

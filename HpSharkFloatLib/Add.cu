@@ -396,6 +396,53 @@ StoreCurrentDebugStateAdd (
 #include "Add_ABC.cuh"
 #include "Add_DE.cuh"
 
+static __device__ inline void
+find_msd_warp_ABC_DE(const uint64_t *extABC,
+                     const uint64_t *extDE,
+                     int32_t N,     // highest valid digit index (0..N)
+                     int32_t &msdA, // out
+                     int32_t &msdD) // out
+{
+    const int lane = threadIdx.x & 31;
+    const unsigned fullMask = __activemask();
+
+    msdA = 0;
+    msdD = 0;
+
+    const int32_t totalDigits = N + 1; // indices 0..N inclusive
+    const int32_t numTiles = (totalDigits + 31) / 32;
+
+    // Scan from top: tile 0 is highest 32 digits, tile 1 next 32, etc.
+    for (int32_t tile = 0; tile < numTiles && (msdA == 0 || msdD == 0); ++tile) {
+        const int32_t idxFromTop = tile * 32 + lane;
+        const int32_t i = N - idxFromTop;
+
+        uint32_t a = 0u, d = 0u;
+        if (i >= 0) {
+            a = static_cast<uint32_t>(extABC[i]);
+            d = static_cast<uint32_t>(extDE[i]);
+        }
+
+        const unsigned maskA = __ballot_sync(fullMask, a != 0u);
+        const unsigned maskD = __ballot_sync(fullMask, d != 0u);
+
+        // Use LSB (smallest lane index) – matches N..0 descent.
+        if (msdA == 0 && maskA != 0u) {
+            const int lsbLaneA = __ffs(maskA) - 1; // 0..31
+            msdA = N - (tile * 32 + lsbLaneA);
+        }
+
+        if (msdD == 0 && maskD != 0u) {
+            const int lsbLaneD = __ffs(maskD) - 1;
+            msdD = N - (tile * 32 + lsbLaneD);
+        }
+    }
+
+    // Optional clean-up if you want a different sentinel:
+    // if (msdA == 0) msdA = -1;
+    // if (msdD == 0) msdD = -1;
+}
+
 
 template<class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly void
@@ -440,19 +487,33 @@ NormalizeAndCopyResult(
     extABC[N] = static_cast<uint32_t>(carryABC);
     extDE[N] = static_cast<uint32_t>(carryDE);
 
-    // 2) find MSB index in each (all threads may do it, but it's cheap)
+    constexpr auto OriginalImpl = false;
+
     int32_t msdA = 0, msdD = 0;
-    for (int32_t i = N; i >= 0; --i) {
-        // cast down to 32 bits — that’s exactly what FunnelShift32 will see
-        uint32_t a = static_cast<uint32_t>(extABC[i]);
-        uint32_t d = static_cast<uint32_t>(extDE[i]);
+    if constexpr (OriginalImpl) {
+        // 2) find MSB index in each (all threads may do it, but it's cheap)
+        for (int32_t i = N; i >= 0; --i) {
+            // cast down to 32 bits — that’s exactly what FunnelShift32 will see
+            uint32_t a = static_cast<uint32_t>(extABC[i]);
+            uint32_t d = static_cast<uint32_t>(extDE[i]);
 
-        if (msdA == 0 && a != 0u) msdA = i;
-        if (msdD == 0 && d != 0u) msdD = i;
+            if (msdA == 0 && a != 0u)
+                msdA = i;
+            if (msdD == 0 && d != 0u)
+                msdD = i;
 
-        // once *both* are non-zero, we’re done
-        if (msdA != 0 && msdD != 0)
-            break;
+            // once *both* are non-zero, we’re done
+            if (msdA != 0 && msdD != 0)
+                break;
+        }
+    } else {
+        // New parallel MSB finder
+        find_msd_warp_ABC_DE(
+            extABC,
+            extDE,
+            N,
+            msdA,
+            msdD);
     }
 
     // 3) compute total shiftNeeded for each and update exponents

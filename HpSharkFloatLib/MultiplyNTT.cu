@@ -871,14 +871,21 @@ Normalize_GridStride_3WaySeqV2(cooperative_groups::grid_group &grid,
 // 64×64→128 helpers (compiler/ABI specific intrinsics)
 //--------------------------------------------------------------------------------------------------
 
-static __device__ SharkForceInlineReleaseOnly uint64_t
-Add64WithCarry(uint64_t a, uint64_t b, uint64_t &carry)
+static __device__ SharkForceInlineReleaseOnly
+uint64_t Add64WithCarry(uint64_t a, uint64_t b, uint64_t &carry)
 {
-    uint64_t s = a + b;
-    uint64_t c = (s < a);
-    uint64_t out = s + carry;
+    const uint64_t s = a + b;
+    const uint64_t c = (s < a);
+    const uint64_t out = s + carry;
     carry = c | (out < s);
     return out;
+}
+
+static __device__ SharkForceInlineReleaseOnly void
+Add64WithCarryVoid(uint64_t a, uint64_t b, uint64_t &carry)
+{
+    const uint64_t s = a + b;
+    carry = (s < a);
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -914,30 +921,25 @@ MontgomeryMul(cooperative_groups::grid_group &grid,
     }
 
     // t = a*b (128-bit)
-    uint64_t t_lo, t_hi;
-
-    t_lo = a * b;
-    t_hi = __umul64hi(a, b);
+    const uint64_t t_lo = a * b;
+    const uint64_t t_hi = __umul64hi(a, b);
 
     // m = (t_lo * NINV) mod 2^64
-    uint64_t m = t_lo * SharkNTT::MagicPrimeInv;
+    const uint64_t m = t_lo * SharkNTT::MagicPrimeInv;
 
     // m*SharkNTT::MagicPrime (128-bit)
-    uint64_t mp_lo, mp_hi;
-    mp_lo = m * SharkNTT::MagicPrime;
-    mp_hi = __umul64hi(m, SharkNTT::MagicPrime);
+    const uint64_t mp_lo = m * SharkNTT::MagicPrime;
+    const uint64_t mp_hi = __umul64hi(m, SharkNTT::MagicPrime);
 
     // u = t + m*SharkNTT::MagicPrime
     // low 64 + carry0
-    uint64_t carry0 = 0;
-    (void)Add64WithCarry(t_lo, mp_lo, carry0); // updates carry0
+    uint64_t carry1;
+    Add64WithCarryVoid(t_lo, mp_lo, carry1); // updates carry0
 
     // high 64 + carry0  -> also track carry-out (carry1)
-    uint64_t carry1 = carry0;
-    uint64_t u_hi = Add64WithCarry(t_hi, mp_hi, carry1); // returns sum, updates carry1
+    uint64_t r = Add64WithCarry(t_hi, mp_hi, carry1); // returns sum, updates carry1
 
     // r = u / 2^64; ensure r < SharkNTT::MagicPrime (include the high-limb carry-out)
-    uint64_t r = u_hi;
     if (carry1 || r >= SharkNTT::MagicPrime)
         r -= SharkNTT::MagicPrime;
 
@@ -1099,7 +1101,7 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
                     uint64_t *__restrict C,
                     uint32_t N,
                     uint32_t stages,
-                    const uint64_t *__restrict stage_base)
+                    const uint64_t *__restrict s_stages)
 {
     constexpr uint32_t TS = 1u << TS_log;
 
@@ -1122,10 +1124,10 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
     const uint32_t tiles = (N + TS - 1u) / TS;
 
     // Carve tile base from shared_data (A lives in shared)
-    auto *const s_dataA = reinterpret_cast<uint64_t *>(shared_data);
-    auto *const s_dataB = reinterpret_cast<uint64_t *>(shared_data) + TS;
-    auto *const s_dataC = reinterpret_cast<uint64_t *>(shared_data) + 2 * TS;
-
+    auto *const s_dataA = reinterpret_cast<uint64_t *>(shared_data) + stages;
+    auto *const s_dataB = s_dataA + TS;
+    auto *const s_dataC = s_dataB + TS;
+    
     for (uint32_t tile = blockIdx.x; tile < tiles; tile += gridDim.x) {
         const bool is_last = (tile == tiles - 1);
         const uint32_t len = is_last ? tail_len : TS; // divisible by 2^S1
@@ -1151,7 +1153,7 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
         for (uint32_t s = 1; s <= S1; ++s) {
             const uint32_t m = 1u << s;
             const uint32_t half = m >> 1;
-            const uint64_t w_m = stage_base[s - 1];
+            const uint64_t w_m = s_stages[s - 1]; // stage_base[s - 1];
 
             const uint32_t total_pairs = (len >> 1);
             const uint32_t tid = block.thread_index().x;
@@ -1266,16 +1268,22 @@ NTTRadix2_GridStride(uint64_t *shared_data,
     const auto grank = block.thread_index().x + block.group_index().x * blockDim.x;
 
     uint32_t S0 = 0;
+
+    auto *s_stages = shared_data;
+
+    cg::memcpy_async(block, s_stages, stage_base, stages * sizeof(uint64_t));
+    cg::wait(block);
+
     {
         if constexpr (OneTwoThree == Multiway::OneWay) {
             S0 = SmallRadixPhase1_SM<SharkFloatParams, Multiway::OneWay, TS_log>(
-                shared_data, grid, block, debugCombo, A, nullptr, nullptr, N, stages, stage_base);
+                shared_data, grid, block, debugCombo, A, nullptr, nullptr, N, stages, s_stages);
         } else if constexpr (OneTwoThree == Multiway::TwoWay) {
             S0 = SmallRadixPhase1_SM<SharkFloatParams, Multiway::TwoWay, TS_log>(
-                shared_data, grid, block, debugCombo, A, B, nullptr, N, stages, stage_base);
+                shared_data, grid, block, debugCombo, A, B, nullptr, N, stages, s_stages);
         } else if constexpr (OneTwoThree == Multiway::ThreeWay) {
             S0 = SmallRadixPhase1_SM<SharkFloatParams, Multiway::ThreeWay, TS_log>(
-                shared_data, grid, block, debugCombo, A, B, C, N, stages, stage_base);
+                shared_data, grid, block, debugCombo, A, B, C, N, stages, s_stages);
         }
     }
 
@@ -1286,7 +1294,7 @@ NTTRadix2_GridStride(uint64_t *shared_data,
     for (uint32_t s = S0 + 1; s <= stages; ++s) {
         const uint32_t m = 1u << s;
         const uint32_t half = m >> 1;
-        const uint64_t w_m = stage_base[s - 1];
+        const uint64_t w_m = s_stages[s - 1];
 
         // Per-stage tiling in j: J_total = ceil(half / W)
         constexpr uint32_t W = 32u;

@@ -129,7 +129,7 @@ namespace HpShark {
 
     // Uncomment to test small warp on multiply normalize path for easier debugging
     // Assumes number of threads is a power of 2 and <= 32, with one block.
-    //#define TEST_SMALL_NORMALIZE_WARP
+    // #define TEST_SMALL_NORMALIZE_WARP
 
     static constexpr bool TestGpu = (EnableAddKernel || EnableMultiplyNTTKernel ||
                                           EnableReferenceKernel || EnableFullKernel);
@@ -355,7 +355,7 @@ static constexpr auto LowPrec = 32;
 //using Test8x1SharkParams = GenericSharkFloatParams<128, 108, 7776, 9>;
 //using Test8x1SharkParams = GenericSharkFloatParams<64, 1, 64>;
 using Test8x1SharkParams = GenericSharkFloatParams<32, 2>;
-//using Test8x1SharkParams = GenericSharkFloatParams<8, 1>; // Use for ENABLE_BASIC_CORRECTNESS==1
+//using Test8x1SharkParams = GenericSharkFloatParams<8, 2>; // Use for ENABLE_BASIC_CORRECTNESS==1
 using Test4x36SharkParams = GenericSharkFloatParams<4, 6, 32>;
 using Test4x12SharkParams = GenericSharkFloatParams<3, 18, 50>;
 using Test4x9SharkParams = GenericSharkFloatParams<5, 12, 80>;

@@ -398,6 +398,11 @@ WarpNormalizeTile(unsigned fullMask,
     constexpr int warpSz = 32;
 #endif
 
+    //
+    // If you want to fuss with this, also update WarpProcessTileCarry
+    // Similar logic.  Here we have only 0/1 carries, no negatives.
+    //
+
     const int base = tileIndex * warpSz;
     const auto basePlusLane = base + lane;
     const bool isLastLaneInTile = (lane == warpSz - 1);
@@ -424,24 +429,33 @@ WarpNormalizeTile(unsigned fullMask,
 
         const bool laneIsZero = (lane == 0);
         const bool stepIsZero = (step == 0);
-        const bool laneAndStepIsZero = laneIsZero && stepIsZero;
 
-        if (iteration > 0) {
-            carryIn_xx = (laneAndStepIsZero ? tileCarryIn_xx : (laneIsZero ? 0 : carryIn_xx));
-            carryIn_yy = (laneAndStepIsZero ? tileCarryIn_yy : (laneIsZero ? 0 : carryIn_yy));
-            carryIn_xy = (laneAndStepIsZero ? tileCarryIn_xy : (laneIsZero ? 0 : carryIn_xy));
+        if (laneIsZero) {
+            // Lane 0: inject tileCarryIn at step 0, zero otherwise
+            if (stepIsZero) {
+                carryIn_xx = tileCarryIn_xx;
+                carryIn_yy = tileCarryIn_yy;
+                carryIn_xy = tileCarryIn_xy;
+            } else {
+                carryIn_xx = 0;
+                carryIn_yy = 0;
+                carryIn_xy = 0;
+            }
         } else {
-            carryIn_xx = (stepIsZero ? tileCarryIn_xx : (laneIsZero ? 0 : carryIn_xx));
-            carryIn_yy = (stepIsZero ? tileCarryIn_yy : (laneIsZero ? 0 : carryIn_yy));
-            carryIn_xy = (stepIsZero ? tileCarryIn_xy : (laneIsZero ? 0 : carryIn_xy));
+            // Other lanes: special only for iteration==0, step==0
+            if (iteration == 0 && stepIsZero) {
+                carryIn_xx = tileCarryIn_xx;
+                carryIn_yy = tileCarryIn_yy;
+                carryIn_xy = tileCarryIn_xy;
+            }
+            // else: keep the propagated carryIn_* from the shuffle
         }
 
         auto process_channel = [](uint32_t &lo,
                                   const uint32_t carryIn,
                                   uint32_t &carryOut,
                                   uint32_t &r1,
-                                  const uint32_t shift,
-                                  uint32_t &r_decider) {
+                                  const uint32_t shift) {
             const uint64_t s_lo = static_cast<uint64_t>(lo) + carryIn;
             carryOut = (s_lo >> 32);
             lo = static_cast<uint32_t>(s_lo & 0xffffffffu);
@@ -451,24 +465,20 @@ WarpNormalizeTile(unsigned fullMask,
             // better performance by doing it every time.
 
             r1 |= carryOut << shift;
-            r_decider |= carryOut << shift;
         };
 
-        uint32_t r_decider = 0;
         if (!(isLastLaneInTile || isLastDigit)) {
             r1 = 0;
         }
 
-        if (basePlusLane < numActualDigitsPlusGuard) {
-            process_channel(loXX, carryIn_xx, carryOut_xx, r1, 0, r_decider);
-            process_channel(loYY, carryIn_yy, carryOut_yy, r1, 1, r_decider);
-            process_channel(loXY, carryIn_xy, carryOut_xy, r1, 2, r_decider);
-        }
+        process_channel(loXX, carryIn_xx, carryOut_xx, r1, 0);
+        process_channel(loYY, carryIn_yy, carryOut_yy, r1, 1);
+        process_channel(loXY, carryIn_xy, carryOut_xy, r1, 2);
 
         // Track whether any non-zero outgoing carry needs further propagation.
         // We do NOT set bits on the very last produced digit (it will not propagate beyond).
         if (basePlusLane < numActualDigitsPlusGuard - 1) {
-            changedMaskLocal |= r_decider;
+            changedMaskLocal |= carryOut_xx | carryOut_yy | carryOut_xy;
         }
     }
 

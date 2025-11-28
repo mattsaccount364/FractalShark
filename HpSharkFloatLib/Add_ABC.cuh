@@ -508,7 +508,7 @@ CarryPropagationSmall_ABC(uint32_t *SharkRestrict globalSync1,    // [0] holds c
 
 // warp-tile processor: all three streams in one 32-step loop
 struct WarpProcessTriple {
-    uint32_t o1;
+    int32_t o1, o2, o3;
     uint32_t changedMask;
 };
 
@@ -538,105 +538,77 @@ WarpProcessTileCarry(
     const int base = tileIndex * warpSz;
     const auto basePlusLane = base + lane;
 
-    uint32_t r1 = 0x15;        // 010101b : initial carry-in = 0 for all three streams
+    int32_t r1 = 0, r2 = 0, r3 = 0;        // 010101b : initial carry-in = 0 for all three streams
     uint32_t changedMask = 0u; // bit0=True, bit1=False, bit2=DE
 
     const bool isLastLaneInTile = (lane == warpSz - 1);
     const bool isLastDigit = (basePlusLane == numActualDigitsPlusGuard - 1);
+    const bool laneIsZero = (lane == 0);
 
 #pragma unroll
     for (int step = 0; step < warpSz; ++step) {
-        uint32_t inStep = __shfl_up_sync(fullMask, r1, 1);
+        int32_t inStep1 = __shfl_up_sync(fullMask, r1, 1);
+        int32_t inStep2 = __shfl_up_sync(fullMask, r2, 1);
+        int32_t inStep3 = __shfl_up_sync(fullMask, r3, 1);
 
-        int32_t originalR_1, originalR_2, originalR_3;
-        originalR_1 = (r1 & 0x3) - 1;
-        originalR_2 = ((r1 >> 2) & 0x3) - 1;
-        originalR_3 = ((r1 >> 4) & 0x3) - 1;
+        const bool stepIsZero = (step == 0);
 
-        int32_t inStep1, inStep2, inStep3;
-        inStep1 = (inStep & 0x3) - 1;
-        inStep2 = ((inStep >> 2) & 0x3) - 1;
-        inStep3 = ((inStep >> 4) & 0x3) - 1;
-
-        if (iteration > 0) {
-            inStep1 = (lane == 0 && step == 0) ? in1 : ((lane == 0) ? 0 : inStep1);
-            inStep2 = (lane == 0 && step == 0) ? in2 : ((lane == 0) ? 0 : inStep2);
-            inStep3 = (lane == 0 && step == 0) ? in3 : ((lane == 0) ? 0 : inStep3);
+        if (laneIsZero) {
+            // Lane 0: always inject at step 0, zero otherwise
+            inStep1 = stepIsZero ? static_cast<int32_t>(in1) : 0;
+            inStep2 = stepIsZero ? static_cast<int32_t>(in2) : 0;
+            inStep3 = stepIsZero ? static_cast<int32_t>(in3) : 0;
         } else {
-            inStep1 = (step == 0) ? in1 : ((lane == 0) ? 0 : inStep1);
-            inStep2 = (step == 0) ? in2 : ((lane == 0) ? 0 : inStep2);
-            inStep3 = (step == 0) ? in3 : ((lane == 0) ? 0 : inStep3);
+            // Other lanes: only special for iteration==0, step==0
+            if (iteration == 0 && stepIsZero) {
+                inStep1 = static_cast<int32_t>(in1);
+                inStep2 = static_cast<int32_t>(in2);
+                inStep3 = static_cast<int32_t>(in3);
+            }
+            // else: keep shuffled values
         }
 
         int32_t c_out1 = 0;
         int32_t c_out2 = 0;
         int32_t c_out3 = 0;
 
-        if (basePlusLane < numActualDigitsPlusGuard) {
-            const int64_t sum1 = static_cast<int64_t>(limb1) + inStep1;
-            const uint32_t lo1 = static_cast<uint32_t>(sum1);
-            c_out1 = static_cast<int32_t>(sum1 >> 32);
+        const int64_t sum1 = static_cast<int64_t>(limb1) + inStep1;
+        const uint32_t lo1 = static_cast<uint32_t>(sum1);
+        c_out1 = static_cast<int32_t>(sum1 >> 32);
 
-            const int64_t sum2 = static_cast<int64_t>(limb2) + inStep2; 
-            const uint32_t lo2 = static_cast<uint32_t>(sum2);
-            c_out2 = static_cast<int32_t>(sum2 >> 32);
+        const int64_t sum2 = static_cast<int64_t>(limb2) + inStep2; 
+        const uint32_t lo2 = static_cast<uint32_t>(sum2);
+        c_out2 = static_cast<int32_t>(sum2 >> 32);
 
-            const int64_t sum3 = static_cast<int64_t>(limb3) + inStep3;
-            const uint32_t lo3 = static_cast<uint32_t>(sum3);
-            c_out3 = static_cast<int32_t>(sum3 >> 32);
+        const int64_t sum3 = static_cast<int64_t>(limb3) + inStep3;
+        const uint32_t lo3 = static_cast<uint32_t>(sum3);
+        c_out3 = static_cast<int32_t>(sum3 >> 32);
 
-            if (isLastLaneInTile || isLastDigit) {
-                // Add c_outs to the packed value
-                // Saturate at 2 (i.e. max carry of 1)
-                // Mapping: -1 to 0, 0 to 1, 1 to 2
-                // So we add 1 to originalInStep before adding c_out
-
-                int32_t newR1_1 = (originalR_1 + c_out1);
-                if (newR1_1 > 1) {
-                    newR1_1 = 1;
-                } else if (newR1_1 < -1) {
-                    newR1_1 = -1;
-                }
-
-                newR1_1 += 1;
-
-                int32_t newR1_2 = (originalR_2 + c_out2);
-                if (newR1_2 > 1) {
-                    newR1_2 = 1;
-                } else if (newR1_2 < -1) {
-                    newR1_2 = -1;
-                }
-
-                newR1_2 += 1;
-
-                int32_t newR1_3 = (originalR_3 + c_out3);
-                if (newR1_3 > 1) {
-                    newR1_3 = 1;
-                } else if (newR1_3 < -1) {
-                    newR1_3 = -1;
-                }
-
-                newR1_3 += 1;
-
-                const uint32_t newR1 = newR1_1 | (newR1_2 << 2) | (newR1_3 << 4);
-                r1 = newR1;
-            } else {
-                r1 = ((c_out1 + 1) & 0x3) |
-                     (((c_out2 + 1) & 0x3) << 2) |
-                     (((c_out3 + 1) & 0x3) << 4);
-            }
-
-            limb1 = static_cast<int64_t>(lo1);
-            limb2 = static_cast<int64_t>(lo2);
-            limb3 = static_cast<int64_t>(lo3);
+        if (!(isLastLaneInTile || isLastDigit)) {
+            r1 = 0;
+            r2 = 0;
+            r3 = 0;
         }
 
-        if ((isLastLaneInTile || isLastDigit) && (basePlusLane < numActualDigitsPlusGuard - 1)) {
+        // Add c_outs to the packed value
+        // Saturate at 2 (i.e. max carry of 1)
+        // Mapping: -1 to 0, 0 to 1, 1 to 2
+        // So we add 1 to originalInStep before adding c_out
+
+        r1 += c_out1;
+        r2 += c_out2;
+        r3 += c_out3;
+
+        limb1 = static_cast<int64_t>(lo1);
+        limb2 = static_cast<int64_t>(lo2);
+        limb3 = static_cast<int64_t>(lo3);
+
+        if (basePlusLane < numActualDigitsPlusGuard - 1) {
             changedMask |= c_out1 | c_out2 | c_out3;
         }
     }
 
-    return {r1, changedMask};
+    return {r1, r2, r3, changedMask};
 }
 
 template<class SharkFloatParams>
@@ -833,9 +805,9 @@ CarryPropagation_ABC(
             const int outIdx = min(base + warpSz, numActualDigitsPlusGuard);
 
             if (lane == warpSz - 1 || (base + lane == numActualDigitsPlusGuard - 1)) {
-                const auto o1 = static_cast<int32_t>((tout.o1 & 0x3) - 1);
-                const auto o2 = static_cast<int32_t>(((tout.o1 >> 2) & 0x3) - 1);
-                const auto o3 = static_cast<int32_t>(((tout.o1 >> 4) & 0x3) - 1);
+                const auto o1 = tout.o1;
+                const auto o2 = tout.o2;
+                const auto o3 = tout.o3;
 
                 if (outIdx < numActualDigitsPlusGuard) {
                     next1[outIdx] = static_cast<uint32_t>(o1);

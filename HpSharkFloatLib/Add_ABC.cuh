@@ -591,9 +591,8 @@ WarpProcessTileCarry(
         }
 
         // Add c_outs to the packed value
-        // Saturate at 2 (i.e. max carry of 1)
-        // Mapping: -1 to 0, 0 to 1, 1 to 2
-        // So we add 1 to originalInStep before adding c_out
+        // Note that we don't explicitly saturate these counters, by
+        // construction they should be capped in the range of [-1, 1]
 
         r1 += c_out1;
         r2 += c_out2;

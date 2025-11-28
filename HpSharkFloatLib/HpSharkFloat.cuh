@@ -398,14 +398,14 @@ using TestCorrectnessSharkParams4 = Test4x12SharkParams;
 using TestCorrectnessSharkParams5 = Test4x6SharkParams;
 
 // FractalShark production sizes
-using ProdSharkParams1 = GenericSharkFloatParams<256, 1>; // 256
-using ProdSharkParams2 = GenericSharkFloatParams<256, 2>; // 512
-using ProdSharkParams3 = GenericSharkFloatParams<256, 4>; // 1024
-using ProdSharkParams4 = GenericSharkFloatParams<256, 8>; // 2048
-using ProdSharkParams5 = GenericSharkFloatParams<256, 16>; // 4096
-using ProdSharkParams6 = GenericSharkFloatParams<256, 32>; // 8192
-using ProdSharkParams7 = GenericSharkFloatParams<256, 64>; // 16384
-using ProdSharkParams8 = GenericSharkFloatParams<256, 128>; // 32768
+using ProdSharkParams1 = GenericSharkFloatParams<256, 2, 256>;
+using ProdSharkParams2 = GenericSharkFloatParams<256, 4, 512>;
+using ProdSharkParams3 = GenericSharkFloatParams<256, 8, 1024>;
+using ProdSharkParams4 = GenericSharkFloatParams<256, 16, 2048>;
+using ProdSharkParams5 = GenericSharkFloatParams<256, 32, 4096>;
+using ProdSharkParams6 = GenericSharkFloatParams<256, 64, 8192>;
+using ProdSharkParams7 = GenericSharkFloatParams<256, 128, 16384>;
+using ProdSharkParams8 = GenericSharkFloatParams<256, 128, 32768>;
 using ProdSharkParams9 = GenericSharkFloatParams<256, 128, 65536>;
 using ProdSharkParams10 = GenericSharkFloatParams<256, 128, 131072>;
 using ProdSharkParams11 = GenericSharkFloatParams<256, 128, 262144>;

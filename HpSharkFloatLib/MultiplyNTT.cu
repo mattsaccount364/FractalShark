@@ -147,343 +147,9 @@ FinalizeNormalize(cooperative_groups::grid_group &grid,
     }
 }
 
-template <class SharkFloatParams>
-static __device__ inline void
-Normalize_GridStride_3WayV1(cooperative_groups::grid_group &grid,
-                            cooperative_groups::thread_block &block,
-                            DebugGlobalCount<SharkFloatParams> *debugGlobalState,
-                            DebugState<SharkFloatParams> *debugStates,
-                            // outputs
-                            HpSharkFloat<SharkFloatParams> &outXX,
-                            HpSharkFloat<SharkFloatParams> &outYY,
-                            HpSharkFloat<SharkFloatParams> &outXY,
-                            // input exponents
-                            const HpSharkFloat<SharkFloatParams> &inA,
-                            const HpSharkFloat<SharkFloatParams> &inB,
-                            // convolution sums (lo,hi per 32-bit position), NORMAL domain
-                            const uint64_t *SharkRestrict final128XX,
-                            const uint64_t *SharkRestrict final128YY,
-                            const uint64_t *SharkRestrict final128XY,
-                            const uint32_t Ddigits,
-                            const int32_t addTwoXX,
-                            const int32_t addTwoYY,
-                            const int32_t addTwoXY,
-                            // global workspaces (NOT shared memory)
-                            uint64_t *SharkRestrict CarryPropagationBuffer2, // >= 6 + 6*lanes u64
-                            uint64_t *SharkRestrict CarryPropagationBuffer,
-                            uint64_t *SharkRestrict globalCarryCheck,        // 1 u64
-                            uint64_t *SharkRestrict resultXX,                // len >= Ddigits
-                            uint64_t *SharkRestrict resultYY,                // len >= Ddigits
-                            uint64_t *SharkRestrict resultXY)                // len >= Ddigits
-{
-    // We only ever produce digits in [0, Ddigits).
-    const int T_all = static_cast<int>(grid.size());
-    const auto tid = block.thread_index().x + block.group_index().x * blockDim.x;
-
-    // Active participants are min(Ddigits, T_all)
-    const int lanes = (Ddigits < T_all) ? Ddigits : T_all;
-    const bool active = (tid < lanes);
-
-    // Linear partition of [0, Ddigits) across 'lanes'
-    const int start = active ? ((Ddigits * tid) / lanes) : 0;
-    const int end = active ? ((Ddigits * (tid + 1)) / lanes) : 0;
-
-    // --- 1) Initial pass over our slice (no tail beyond Ddigits) ---
-    uint64_t carry_xx_lo = 0ull, carry_xx_hi = 0ull;
-    uint64_t carry_yy_lo = 0ull, carry_yy_hi = 0ull;
-    uint64_t carry_xy_lo = 0ull, carry_xy_hi = 0ull;
-
-    if (active) {
-        for (int idx = start; idx < end; ++idx) {
-            const bool in = (idx < Ddigits);
-            const size_t s = static_cast<size_t>(idx) * 2u;
-
-            // XX
-            {
-                const uint64_t lo = in ? final128XX[s + 0] : 0ull;
-                const uint64_t hi = in ? final128XX[s + 1] : 0ull;
-
-                const uint64_t s_lo = lo + carry_xx_lo;
-                const uint64_t c0 = (s_lo < lo) ? 1ull : 0ull;
-                const uint64_t s_hi = hi + carry_xx_hi + c0;
-
-                resultXX[idx] = static_cast<uint32_t>(s_lo);
-                carry_xx_lo = (s_lo >> 32) | (s_hi << 32);
-                carry_xx_hi = (s_hi >> 32);
-            }
-            // YY
-            {
-                const uint64_t lo = in ? final128YY[s + 0] : 0ull;
-                const uint64_t hi = in ? final128YY[s + 1] : 0ull;
-
-                const uint64_t s_lo = lo + carry_yy_lo;
-                const uint64_t c0 = (s_lo < lo) ? 1ull : 0ull;
-                const uint64_t s_hi = hi + carry_yy_hi + c0;
-
-                resultYY[idx] = static_cast<uint32_t>(s_lo);
-                carry_yy_lo = (s_lo >> 32) | (s_hi << 32);
-                carry_yy_hi = (s_hi >> 32);
-            }
-            // XY
-            {
-                const uint64_t lo = in ? final128XY[s + 0] : 0ull;
-                const uint64_t hi = in ? final128XY[s + 1] : 0ull;
-
-                const uint64_t s_lo = lo + carry_xy_lo;
-                const uint64_t c0 = (s_lo < lo) ? 1ull : 0ull;
-                const uint64_t s_hi = hi + carry_xy_hi + c0;
-
-                resultXY[idx] = static_cast<uint32_t>(s_lo);
-                carry_xy_lo = (s_lo >> 32) | (s_hi << 32);
-                carry_xy_hi = (s_hi >> 32);
-            }
-        }
-
-        // Publish residual to the next lane except for the **last lane**.
-        // By design (matches simplified scalar), we DROP any residual that would flow beyond Ddigits.
-        if (tid == lanes - 1) {
-            carry_xx_lo = carry_xx_hi = 0ull;
-            carry_xy_lo = carry_xy_hi = 0ull;
-            carry_yy_lo = carry_yy_hi = 0ull;
-        }
-
-        const int base = 6 + tid * 6;
-        CarryPropagationBuffer2[base + 0] = carry_xx_lo;
-        CarryPropagationBuffer2[base + 1] = carry_xx_hi;
-        CarryPropagationBuffer2[base + 2] = carry_xy_lo;
-        CarryPropagationBuffer2[base + 3] = carry_xy_hi;
-        CarryPropagationBuffer2[base + 4] = carry_yy_lo;
-        CarryPropagationBuffer2[base + 5] = carry_yy_hi;
-    }
-
-    if constexpr (HpShark::DebugGlobalState) {
-        DebugNormalizeIncrement<SharkFloatParams>(debugGlobalState, grid, block, 1);
-    }
-
-    grid.sync();
-
-    // --- 2) Iterative carry propagation within [0, Ddigits) (drop at right edge) ---
-    while (true) {
-        if (tid == 0)
-            *globalCarryCheck = 0ull;
-
-        uint64_t in_xx_lo = 0ull, in_xx_hi = 0ull;
-        uint64_t in_yy_lo = 0ull, in_yy_hi = 0ull;
-        uint64_t in_xy_lo = 0ull, in_xy_hi = 0ull;
-
-        if (active) {
-            if (tid > 0) {
-                const int prev = 6 + (tid - 1) * 6;
-                in_xx_lo = CarryPropagationBuffer2[prev + 0];
-                in_xx_hi = CarryPropagationBuffer2[prev + 1];
-                in_xy_lo = CarryPropagationBuffer2[prev + 2];
-                in_xy_hi = CarryPropagationBuffer2[prev + 3];
-                in_yy_lo = CarryPropagationBuffer2[prev + 4];
-                in_yy_hi = CarryPropagationBuffer2[prev + 5];
-            }
-        }
-
-        grid.sync();
-
-        if (active) {
-            for (int idx = start; idx < end; ++idx) {
-                // XX
-                {
-                    const uint64_t add32 = static_cast<uint32_t>(in_xx_lo);
-                    const uint64_t sum = static_cast<uint32_t>(resultXX[idx]) + add32;
-                    resultXX[idx] = static_cast<uint32_t>(sum);
-                    const uint64_t c32 = (sum >> 32);
-                    const uint64_t next_lo = (in_xx_lo >> 32) | (in_xx_hi << 32);
-                    const uint64_t next_hi = (in_xx_hi >> 32);
-                    in_xx_lo = next_lo + c32;
-                    in_xx_hi = next_hi;
-                }
-                // YY
-                {
-                    const uint64_t add32 = static_cast<uint32_t>(in_yy_lo);
-                    const uint64_t sum = static_cast<uint32_t>(resultYY[idx]) + add32;
-                    resultYY[idx] = static_cast<uint32_t>(sum);
-                    const uint64_t c32 = (sum >> 32);
-                    const uint64_t next_lo = (in_yy_lo >> 32) | (in_yy_hi << 32);
-                    const uint64_t next_hi = (in_yy_hi >> 32);
-                    in_yy_lo = next_lo + c32;
-                    in_yy_hi = next_hi;
-                }
-                // XY
-                {
-                    const uint64_t add32 = static_cast<uint32_t>(in_xy_lo);
-                    const uint64_t sum = static_cast<uint32_t>(resultXY[idx]) + add32;
-                    resultXY[idx] = static_cast<uint32_t>(sum);
-                    const uint64_t c32 = (sum >> 32);
-                    const uint64_t next_lo = (in_xy_lo >> 32) | (in_xy_hi << 32);
-                    const uint64_t next_hi = (in_xy_hi >> 32);
-                    in_xy_lo = next_lo + c32;
-                    in_xy_hi = next_hi;
-                }
-            }
-
-            // Drop residual at the right boundary (last tid), publish otherwise.
-            if (tid == lanes - 1) {
-                in_xx_lo = in_xx_hi = 0ull;
-                in_xy_lo = in_xy_hi = 0ull;
-                in_yy_lo = in_yy_hi = 0ull;
-            }
-
-            const int base = 6 + tid * 6;
-            CarryPropagationBuffer2[base + 0] = in_xx_lo;
-            CarryPropagationBuffer2[base + 1] = in_xx_hi;
-            CarryPropagationBuffer2[base + 2] = in_xy_lo;
-            CarryPropagationBuffer2[base + 3] = in_xy_hi;
-            CarryPropagationBuffer2[base + 4] = in_yy_lo;
-            CarryPropagationBuffer2[base + 5] = in_yy_hi;
-
-            // Only signal continuation if something remains to hand to the *next* tid.
-            if (in_xx_lo | in_xx_hi | in_xy_lo | in_xy_hi | in_yy_lo | in_yy_hi)
-                atomicAdd(globalCarryCheck, 1ull);
-        }
-
-        grid.sync();
-
-        if constexpr (HpShark::DebugGlobalState) {
-            DebugNormalizeIncrement<SharkFloatParams>(debugGlobalState, grid, block, 1);
-        }
-
-        // Atomic read to avoid any visibility doubt
-        if (atomicAdd(globalCarryCheck, 0ull) == 0ull)
-            break;
-        grid.sync();
-    }
-
-    FinalizeNormalize<SharkFloatParams>(
-        grid,
-        block,
-        debugStates,
-        outXX,
-        outYY,
-        outXY,
-        inA,
-        inB,
-        Ddigits,
-        addTwoXX,
-        addTwoYY,
-        addTwoXY,
-        CarryPropagationBuffer2,
-        CarryPropagationBuffer,
-        resultXX,
-        resultYY,
-        resultXY);
-}
-
-
-struct WarpNormalizeTriple {
-    uint32_t carry_lo;
-    uint32_t changedMask; // bit0=XX, bit1=YY, bit2=XY
-};
-
-template <class SharkFloatParams>
-static __device__ SharkForceInlineReleaseOnly WarpNormalizeTriple
-WarpNormalizeTile(unsigned fullMask,
-                  const int32_t numActualDigitsPlusGuard, // total digits (N + guard), base-2^32
-                  const int lane,          // 0..31
-                  const int tileIndex,     // which 32-digit tile
-                  const int iteration,
-                  uint32_t &loXX,
-                  uint32_t &loYY,
-                  uint32_t &loXY,
-                  const uint32_t tileCarryIn)
-{
-#ifdef TEST_SMALL_NORMALIZE_WARP
-    constexpr int warpSz = SharkFloatParams::GlobalThreadsPerBlock;
-#else
-    constexpr int warpSz = 32;
-#endif
-
-    //
-    // If you want to fuss with this, also update WarpProcessTileCarry
-    // Similar logic.  Here we have only 0/1 carries, no negatives.
-    //
-
-    const int base = tileIndex * warpSz;
-    const auto basePlusLane = base + lane;
-    const bool isLastLaneInTile = (lane == warpSz - 1);
-    const bool isLastDigit = (basePlusLane == numActualDigitsPlusGuard - 1);
-
-    uint32_t r1 = 0;
-
-    uint32_t carryOut_xx;
-    uint32_t carryOut_yy;
-    uint32_t carryOut_xy;
-
-    const uint32_t tileCarryIn_xx = tileCarryIn & 0x1;
-    const uint32_t tileCarryIn_yy = (tileCarryIn >> 1) & 0x1;
-    const uint32_t tileCarryIn_xy = (tileCarryIn >> 2) & 0x1;
-
-    uint32_t changedMaskLocal = 0u;
-
-#pragma unroll
-    for (int step = 0; step < warpSz; ++step) {
-        uint32_t carryIn = __shfl_up_sync(fullMask, r1, 1);
-        uint32_t carryIn_xx = carryIn & 0x1;
-        uint32_t carryIn_yy = (carryIn >> 1) & 0x1;
-        uint32_t carryIn_xy = (carryIn >> 2) & 0x1;
-
-        const bool laneIsZero = (lane == 0);
-        const bool stepIsZero = (step == 0);
-
-        if (laneIsZero) {
-            // Lane 0: inject tileCarryIn at step 0, zero otherwise
-            if (stepIsZero) {
-                carryIn_xx = tileCarryIn_xx;
-                carryIn_yy = tileCarryIn_yy;
-                carryIn_xy = tileCarryIn_xy;
-            } else {
-                carryIn_xx = 0;
-                carryIn_yy = 0;
-                carryIn_xy = 0;
-            }
-        } else {
-            // Other lanes: special only for iteration==0, step==0
-            if (iteration == 0 && stepIsZero) {
-                carryIn_xx = tileCarryIn_xx;
-                carryIn_yy = tileCarryIn_yy;
-                carryIn_xy = tileCarryIn_xy;
-            }
-            // else: keep the propagated carryIn_* from the shuffle
-        }
-
-        auto process_channel = [](uint32_t &lo,
-                                  const uint32_t carryIn,
-                                  uint32_t &carryOut,
-                                  uint32_t &r1,
-                                  const uint32_t shift) {
-            const uint64_t s_lo = static_cast<uint64_t>(lo) + carryIn;
-            carryOut = (s_lo >> 32);
-            lo = static_cast<uint32_t>(s_lo & 0xffffffffu);
-
-            // Note: we really only need this on the last lane
-            // of the tile or last digit but we get slightly 
-            // better performance by doing it every time.
-
-            r1 |= carryOut << shift;
-        };
-
-        if (!(isLastLaneInTile || isLastDigit)) {
-            r1 = 0;
-        }
-
-        process_channel(loXX, carryIn_xx, carryOut_xx, r1, 0);
-        process_channel(loYY, carryIn_yy, carryOut_yy, r1, 1);
-        process_channel(loXY, carryIn_xy, carryOut_xy, r1, 2);
-
-        // Track whether any non-zero outgoing carry needs further propagation.
-        // We do NOT set bits on the very last produced digit (it will not propagate beyond).
-        if (basePlusLane < numActualDigitsPlusGuard - 1) {
-            changedMaskLocal |= carryOut_xx | carryOut_yy | carryOut_xy;
-        }
-    }
-
-    return {r1, changedMaskLocal};
-}
+#include "MultiplyNTT_NormalizeV1.cuh"
+#include "MultiplyNTT_NormalizeWarpTiledV2.cuh"
+#include "MultiplyNTT_NormalizePPv3.cuh"
 
 template <class SharkFloatParams>
 static __device__ inline void
@@ -675,6 +341,7 @@ Normalize_GridStride_3WayV2(cooperative_groups::grid_group &grid,
 
     const auto globalResult = *globalSync2;
 
+#ifdef TILE_VERSION
     if (globalResult != 0) {
 
         uint32_t carry_lo;
@@ -751,6 +418,19 @@ Normalize_GridStride_3WayV2(cooperative_groups::grid_group &grid,
             grid.sync();
         }
     }
+#else
+    if (globalResult != 0) {
+        // Reinterpret your existing carry buffers as transfer- and prefix-scan storage.
+        auto *digitXfer = reinterpret_cast<DigitTransfer3 *>(final128XX);
+        auto *scanTemp = reinterpret_cast<DigitTransfer3 *>(final128XY);
+
+        // Use the "front" of CarryPropagationBuffer2 as carryInMask (3 bits per entry).
+        auto *carryInMask = reinterpret_cast<uint32_t *>(final128YY);
+
+        ParallelPrefixNormalize3WayV3<SharkFloatParams>(
+            grid, block, cur, Ddigits, resultXX, resultYY, resultXY, digitXfer, scanTemp, carryInMask);
+    }
+#endif
 
     FinalizeNormalize<SharkFloatParams>(grid,
                                         block,
@@ -932,7 +612,6 @@ MontgomeryMul(cooperative_groups::grid_group &grid,
 
     // t = a*b (128-bit)
     const uint64_t t_lo = a * b;
-    const uint64_t t_hi = __umul64hi(a, b);
 
     // m = (t_lo * NINV) mod 2^64
     const uint64_t m = t_lo * SharkNTT::MagicPrimeInv;
@@ -947,6 +626,7 @@ MontgomeryMul(cooperative_groups::grid_group &grid,
     Add64WithCarryVoid(t_lo, mp_lo, carry1); // updates carry0
 
     // high 64 + carry0  -> also track carry-out (carry1)
+    const uint64_t t_hi = __umul64hi(a, b);
     uint64_t r = Add64WithCarry(t_hi, mp_hi, carry1); // returns sum, updates carry1
 
     // r = u / 2^64; ensure r < SharkNTT::MagicPrime (include the high-limb carry-out)

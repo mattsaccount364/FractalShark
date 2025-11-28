@@ -23,6 +23,9 @@
     <ClInclude Include="LAInfoI.h" />
     <ClInclude Include="LAParameters.h" />
     <ClInclude Include="LAstep.h" />
+    <ClInclude Include="MultiplyNTT_NormalizeV1.cuh" />
+    <ClInclude Include="MultiplyNTT_NormalizePPv3.cuh" />
+    <ClInclude Include="MultiplyNTT_NormalizeWarpTiledV2.cuh" />
     <ClInclude Include="Vectors.h" />
     <CudaCompile Include="AddTestKernels.cu" />
     <ClCompile Include="BenchmarkTimer.cpp">

@@ -610,9 +610,410 @@ WarpProcessTileCarry(
     return {r1, r2, r3, changedMask};
 }
 
+struct PPTransfer3 {
+    // We use 64 bits now; only the low 18 bits are needed for the S→S mapping
+    // (3 streams × 3 input states × 2 bits).
+    uint64_t bits;
+};
+
+__device__ SharkForceInlineReleaseOnly uint32_t
+PPencode_carry(int32_t c) // c ∈ {-1,0,1} -> {0,1,2}
+{
+    return static_cast<uint32_t>(c + 1);
+}
+
+__device__ SharkForceInlineReleaseOnly int32_t
+PPdecode_carry(uint32_t enc) // enc ∈ {0,1,2} -> {-1,0,1}
+{
+    return static_cast<int32_t>(enc) - 1;
+}
+
+__device__ SharkForceInlineReleaseOnly int
+PPstate_index_for_carry(int32_t c)
+{
+    // c ∈ {-1,0,1} -> 0,1,2
+    return c + 1;
+}
+
+// Layout for the *block-level* transfer (not per-digit):
+// We store, for each stream and each incoming carry c_in,
+//     c_out = f_block(stream, c_in)
+// in 2 bits, exactly like your original per-digit mapping:
+//
+// fieldIdx = streamIdx * 3 + stateIdx (stateIdx = c_in + 1)
+// bit range: [2*fieldIdx + 1 : 2*fieldIdx]
+//
+__device__ SharkForceInlineReleaseOnly uint32_t
+PPget_field(uint64_t bits, int streamIdx, int32_t c_in)
+{
+    const int stateIdx = PPstate_index_for_carry(c_in); // 0..2
+    const int fieldIdx = streamIdx * 3 + stateIdx;      // 0..8
+    const uint32_t shift = static_cast<uint32_t>(fieldIdx * 2);
+    return static_cast<uint32_t>((bits >> shift) & 0x3ull);
+}
+
+__device__ SharkForceInlineReleaseOnly void
+PPset_field(uint64_t &bits, int streamIdx, int32_t c_in, int32_t c_out)
+{
+    const int stateIdx = PPstate_index_for_carry(c_in); // 0..2
+    const int fieldIdx = streamIdx * 3 + stateIdx;      // 0..8
+    const uint32_t shift = static_cast<uint32_t>(fieldIdx * 2);
+    const uint64_t mask = 0x3ull << shift;
+    const uint64_t enc = static_cast<uint64_t>(PPencode_carry(c_out) & 0x3u);
+    bits = (bits & ~mask) | (enc << shift);
+}
+
+// Evaluate transfer on a carry in {-1,0,1} for a given stream
+__device__ SharkForceInlineReleaseOnly int32_t
+PPeval_transfer(const PPTransfer3 &t, int streamIdx, int32_t c_in)
+{
+    const uint32_t enc = PPget_field(t.bits, streamIdx, c_in);
+    return PPdecode_carry(enc);
+}
+
+// Composition: g = b ∘ a, i.e. apply a then b, for ALL streams in one go
+// Here f_a and f_b are *block-level* transfer functions:
+//    c_mid = a(stream, c_in)
+//    c_out = b(stream, c_mid)
+// r is their composition.
+__device__ SharkForceInlineReleaseOnly PPTransfer3
+PPcompose_transfer(const PPTransfer3 &a, const PPTransfer3 &b)
+{
+    PPTransfer3 r;
+    r.bits = 0ull;
+
+#pragma unroll
+    for (int streamIdx = 0; streamIdx < 3; ++streamIdx) {
+#pragma unroll
+        for (int c_in = -1; c_in <= 1; ++c_in) {
+            const int32_t cmid = PPeval_transfer(a, streamIdx, c_in);
+            const int32_t c_out = PPeval_transfer(b, streamIdx, cmid);
+            PPset_field(r.bits, streamIdx, c_in, c_out);
+        }
+    }
+
+    return r;
+}
+
+constexpr int DIGITS_PER_BLOCK = 3;
+
+// Build block-level transfer for a block of up to 3 digits:
+// for each stream and c_in ∈ {-1,0,1}, simulate 3 digits in sequence.
+__device__ SharkForceInlineReleaseOnly PPTransfer3
+PPbuild_block_transfer_3digits(const uint64_t *extResultTrue,
+                               const uint64_t *extResultFalse,
+                               const uint64_t *final128_DE,
+                               const int32_t *cur1,
+                               const int32_t *cur2,
+                               const int32_t *cur3,
+                               int baseDigit,
+                               int len)
+{
+    PPTransfer3 t{};
+    t.bits = 0ull;
+
+#pragma unroll
+    for (int streamIdx = 0; streamIdx < 3; ++streamIdx) {
+#pragma unroll
+        for (int c_in = -1; c_in <= 1; ++c_in) {
+            int32_t c = c_in;
+
+#pragma unroll
+            for (int k = 0; k < DIGITS_PER_BLOCK; ++k) {
+                if (k >= len)
+                    break; // tail block safety
+                const int i = baseDigit + k;
+
+                const uint32_t d = (streamIdx == 0)   ? static_cast<uint32_t>(extResultTrue[i])
+                                   : (streamIdx == 1) ? static_cast<uint32_t>(extResultFalse[i])
+                                                      : static_cast<uint32_t>(final128_DE[i]);
+
+                const int32_t cur = (streamIdx == 0) ? cur1[i] : (streamIdx == 1) ? cur2[i] : cur3[i];
+
+                const int32_t in = c + cur;
+                const int64_t sum = static_cast<int64_t>(d) + static_cast<int64_t>(in);
+                c = static_cast<int32_t>(sum >> 32); // in [-1,1]
+            }
+
+            PPset_field(t.bits, streamIdx, c_in, c);
+        }
+    }
+
+    return t;
+}
+
+// constexpr helper that mirrors PPset_field, but usable at compile time.
+// NOTE: no __device__ here; this is purely a host-side constexpr function.
+constexpr uint64_t
+PPset_field_constexpr(uint64_t bits, int streamIdx, int c_in, int c_out)
+{
+    // c_in ∈ {-1,0,1} -> stateIdx ∈ {0,1,2}
+    const int stateIdx = c_in + 1;
+    const int fieldIdx = streamIdx * 3 + stateIdx; // 0..8
+    const uint64_t shift = static_cast<uint64_t>(fieldIdx) * 2ull;
+    const uint64_t mask = 0x3ull << shift;
+    const uint64_t enc = static_cast<uint64_t>((c_out + 1) & 0x3); // encode {-1,0,1}→{0,1,2}
+    return (bits & ~mask) | (enc << shift);
+}
+
+// C++17/20 constexpr builder: runs entirely at compile time.
+constexpr PPTransfer3
+make_PPIdentity()
+{
+    uint64_t bits = 0ull;
+
+    // C++17 constexpr allows loops; everything here is integral / literal.
+    for (int s = 0; s < 3; ++s) {
+        for (int c = -1; c <= 1; ++c) {
+            bits = PPset_field_constexpr(bits, s, c, c); // identity: f(c) = c
+        }
+    }
+
+    return PPTransfer3{bits};
+}
+
+
+template <class SharkFloatParams>
+static __device__ SharkForceInlineReleaseOnly void
+CarryPropagation_ABC_TiledV2(uint32_t *globalSync1, // [0] holds convergence counter
+                     uint32_t *globalSync2,
+                     uint64_t *SharkRestrict sharedData,
+                     const int32_t idx,                      // this thread’s global index
+                     const int32_t numActualDigitsPlusGuard, // N
+                     uint64_t *SharkRestrict extResultTrue,  // Phase1_ABC “true” limbs
+                     uint64_t *SharkRestrict extResultFalse, // Phase1_ABC “false” limbs
+                     uint64_t *SharkRestrict final128_DE,    // Phase1_DE limbs
+                     uint32_t *SharkRestrict cur1,           // length N+1
+                     uint32_t *SharkRestrict next1,          // length N+1
+                     uint32_t *SharkRestrict cur2,           // length N+1
+                     uint32_t *SharkRestrict next2,          // length N+1
+                     uint32_t *SharkRestrict cur3,           // length N+1
+                     uint32_t *SharkRestrict next3,          // length N+1
+                     int32_t &carryAcc_ABC_True,             // out: final signed carry/borrow
+                     int32_t &carryAcc_ABC_False,            // out: final signed carry/borrow
+                     int32_t &carryAcc_DE,                   // out: final unsigned carry
+                     cg::thread_block &block,
+                     cg::grid_group &grid,
+                     DebugGlobalCount<SharkFloatParams> *SharkRestrict debugGlobalState)
+{
+
+    if (grid.size() % 32 != 0) {
+        CarryPropagationSmall_ABC<SharkFloatParams>(globalSync1, // [0] holds convergence counter
+                                                    idx,         // this thread’s global index
+                                                    numActualDigitsPlusGuard, // N
+                                                    extResultTrue,            // Phase1_ABC “true” limbs
+                                                    extResultFalse,           // Phase1_ABC “false” limbs
+                                                    final128_DE,              // Phase1_DE limbs
+                                                    cur1,                     // length N+1
+                                                    next1,                    // length N+1
+                                                    cur2,                     // length N+1
+                                                    next2,                    // length N+1
+                                                    cur3,                     // length N+1
+                                                    next3,                    // length N+1
+                                                    carryAcc_ABC_True,  // out: final signed carry/borrow
+                                                    carryAcc_ABC_False, // out: final signed carry/borrow
+                                                    carryAcc_DE,        // out: final unsigned carry
+                                                    block,
+                                                    grid,
+                                                    debugGlobalState);
+        return;
+    }
+
+    // --- geometry ---
+#ifdef TEST_SMALL_NORMALIZE_WARP
+    // untested
+    constexpr auto warpSz = SharkFloatParams::GlobalThreadsPerBlock;
+#else
+    constexpr auto warpSz = 32;
+#endif
+
+    const unsigned fullMask = __activemask();
+    const int32_t tid = block.thread_index().x + block.group_index().x * block.dim_threads().x;
+    const int totalThreads = gridDim.x * blockDim.x;
+    const int totalWarps = max(1, totalThreads / warpSz);
+
+    // init cur/next = 0 (length numActualDigitsPlusGuard+1 to include high slot)
+    for (int i = tid; i <= numActualDigitsPlusGuard; i += totalThreads) {
+        cur1[i] = cur2[i] = cur3[i] = 0;
+        next1[i] = next2[i] = next3[i] = 0;
+    }
+
+    // The way we initialize all this is very important to ensure the loop converges
+    *globalSync1 = 0;
+    *globalSync2 = std::numeric_limits<uint32_t>::max() - 1;
+
+    grid.sync();
+
+    // grid‐stride per‐digit work
+    for (int32_t i = tid; i < numActualDigitsPlusGuard; i += totalThreads) {
+        // ABC_True
+        auto AddPhase = [](uint64_t *extResult, uint32_t *next, int32_t i) {
+            const uint64_t limb = extResult[i];
+            const uint32_t lo1 = static_cast<uint32_t>(limb & 0xFFFFFFFFULL);
+            const uint32_t hi1 = static_cast<uint32_t>(limb >> 32);
+            extResult[i] = lo1;
+            next[i + 1] = hi1;
+        };
+
+        AddPhase(extResultTrue, next1, i);
+        AddPhase(extResultFalse, next2, i);
+        AddPhase(final128_DE, next3, i);
+    }
+
+    grid.sync();
+
+    // grid‐stride per‐digit work
+    for (int32_t i = tid; i < numActualDigitsPlusGuard; i += totalThreads) {
+        // ABC_True
+        auto AddPhase = [](int32_t numActualDigitsPlusGuard,
+                           uint64_t *extResult,
+                           uint32_t *next,
+                           uint32_t *cur,
+                           int32_t i) {
+            const int64_t limb = static_cast<int64_t>(extResult[i]) + static_cast<int32_t>(next[i]);
+            next[i] = 0;
+
+            const uint32_t lo1 = static_cast<uint32_t>(limb & 0xFFFFFFFFULL);
+            const uint32_t hi1 = static_cast<uint32_t>(limb >> 32);
+            extResult[i] = lo1;
+
+            if (i == numActualDigitsPlusGuard - 1) {
+                cur[i + 1] = hi1 + next[i + 1];
+            } else {
+                cur[i + 1] = hi1;
+            }
+        };
+
+        AddPhase(numActualDigitsPlusGuard, extResultTrue, next1, cur1, i);
+        AddPhase(numActualDigitsPlusGuard, extResultFalse, next2, cur2, i);
+        AddPhase(numActualDigitsPlusGuard, final128_DE, next3, cur3, i);
+    }
+
+    grid.sync();
+
+    const int warpId = tid / warpSz;
+    const int lane = threadIdx.x & (warpSz - 1);
+    const int numTiles = (numActualDigitsPlusGuard + warpSz - 1) / warpSz;
+
+    uint32_t prevResult2 = std::numeric_limits<uint32_t>::max() - 1;
+    uint32_t loadedResult1 = std::numeric_limits<uint32_t>::max() - 2;
+    uint32_t loadedResult2 = std::numeric_limits<uint32_t>::max() - 1;
+    int32_t iteration = 0;
+    bool assignedTermination = false;
+
+    while (true) {
+        prevResult2 = loadedResult1;
+        loadedResult1 = *globalSync1;
+        loadedResult2 = *globalSync2;
+
+        // Each warp walks its tiles in round-robin: tile = warpId, warpId+totalWarps
+        // Note: do not propagate from one tile to next in this loop!  That's another
+        // global iteration.
+        for (int tile = warpId; tile < numTiles; tile += totalWarps) {
+            // Load incoming carry for the first digit in this tile
+            const int base = tile * warpSz;
+            const auto basePlusLane = base + lane;
+            const auto in1 = static_cast<int32_t>(cur1[basePlusLane]);
+            const auto in2 = static_cast<int32_t>(cur2[basePlusLane]);
+            const auto in3 = static_cast<int32_t>(cur3[basePlusLane]);
+            auto limb1 = static_cast<int64_t>(extResultTrue[basePlusLane]);
+            auto limb2 = static_cast<int64_t>(extResultFalse[basePlusLane]);
+            auto limb3 = static_cast<int64_t>(final128_DE[basePlusLane]);
+
+            if (basePlusLane != numActualDigitsPlusGuard) { // ...
+                cur1[basePlusLane] = 0;
+                cur2[basePlusLane] = 0;
+                cur3[basePlusLane] = 0;
+            }
+
+            const WarpProcessTriple tout =
+                WarpProcessTileCarry<SharkFloatParams>(iteration,
+                                                       fullMask,
+                                                       numActualDigitsPlusGuard,
+                                                       lane,
+                                                       tile,
+                                                       in1,
+                                                       in2,
+                                                       in3,
+                                                       limb1,
+                                                       limb2,
+                                                       limb3);
+
+            extResultTrue[basePlusLane] = static_cast<uint64_t>(limb1);
+            extResultFalse[basePlusLane] = static_cast<uint64_t>(limb2);
+            final128_DE[basePlusLane] = static_cast<uint64_t>(limb3);
+
+            // Outgoing carry index is the digit just after the tile (or numActualDigitsPlusGuard for the
+            // high slot)
+            const int outIdx = min(base + warpSz, numActualDigitsPlusGuard);
+
+            if (lane == warpSz - 1 || (base + lane == numActualDigitsPlusGuard - 1)) {
+                const auto o1 = tout.o1;
+                const auto o2 = tout.o2;
+                const auto o3 = tout.o3;
+
+                if (outIdx < numActualDigitsPlusGuard) {
+                    next1[outIdx] = static_cast<uint32_t>(o1);
+                    next2[outIdx] = static_cast<uint32_t>(o2);
+                    next3[outIdx] = static_cast<uint32_t>(o3);
+                } else { // outIdx == numActualDigitsPlusGuard
+                    next1[numActualDigitsPlusGuard] =
+                        static_cast<uint32_t>(cur1[numActualDigitsPlusGuard] + o1);
+                    next2[numActualDigitsPlusGuard] =
+                        static_cast<uint32_t>(cur2[numActualDigitsPlusGuard] + o2);
+                    next3[numActualDigitsPlusGuard] =
+                        static_cast<uint32_t>(cur3[numActualDigitsPlusGuard] + o3);
+                }
+
+                if (tout.changedMask) {
+                    atomicAdd(globalSync1, 1);
+                }
+            }
+        }
+
+        if (iteration - 1 == loadedResult2) {
+            break;
+        }
+
+        // Tell everyone when to exit
+        if (tid == 0) {
+            if (loadedResult1 == prevResult2 && !assignedTermination) {
+                *globalSync2 = iteration;
+                assignedTermination = true;
+            }
+        }
+
+        // all next*[numActualDigitsPlusGuard] writes are visible
+        grid.sync();
+
+        // Swap only the active streams (mirror of your original logic)
+        auto swap2 = [](uint32_t *&a, uint32_t *&b) {
+            auto *t = a;
+            a = b;
+            b = t;
+        };
+
+        swap2(cur1, next1);
+        swap2(cur2, next2);
+        swap2(cur3, next3);
+
+        iteration++;
+
+        if constexpr (HpShark::DebugGlobalState) {
+            DebugCarryIncrement<SharkFloatParams>(debugGlobalState, grid, block, 1);
+        }
+    }
+
+    // Note: no grid.sync() here
+    carryAcc_ABC_True = next1[numActualDigitsPlusGuard];
+    carryAcc_ABC_False = next2[numActualDigitsPlusGuard];
+    carryAcc_DE = next3[numActualDigitsPlusGuard];
+}
+
+
 template<class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly void
-CarryPropagation_ABC(
+CarryPropagation_ABC_PPv3(
     uint32_t *globalSync1, // [0] holds convergence counter
     uint32_t *globalSync2,
     uint64_t *SharkRestrict sharedData,
@@ -635,29 +1036,6 @@ CarryPropagation_ABC(
     DebugGlobalCount<SharkFloatParams> *SharkRestrict debugGlobalState
 ) {
 
-//#define OVERRIDE_CARRY_IMPL
-
-#ifdef OVERRIDE_CARRY_IMPL
-    CarryPropagationSmall_ABC<SharkFloatParams>(globalSync1, // [0] holds convergence counter
-                                                idx,        // this thread’s global index
-                                                numActualDigitsPlusGuard, // N
-                                                extResultTrue,            // Phase1_ABC “true” limbs
-                                                extResultFalse,           // Phase1_ABC “false” limbs
-                                                final128_DE,              // Phase1_DE limbs
-                                                cur1,                     // length N+1
-                                                next1,                    // length N+1
-                                                cur2,                     // length N+1
-                                                next2,                    // length N+1
-                                                cur3,                     // length N+1
-                                                next3,                    // length N+1
-                                                carryAcc_ABC_True,  // out: final signed carry/borrow
-                                                carryAcc_ABC_False, // out: final signed carry/borrow
-                                                carryAcc_DE,        // out: final unsigned carry
-                                                block,
-                                                grid,
-                                                debugGlobalState);
-    return;
-#else
     if (grid.size() % 32 != 0) {
         CarryPropagationSmall_ABC<SharkFloatParams>(globalSync1,                   // [0] holds convergence counter
                                   idx,                      // this thread’s global index
@@ -690,11 +1068,8 @@ CarryPropagation_ABC(
 
     const unsigned fullMask = __activemask();
     const int32_t tid = block.thread_index().x + block.group_index().x * block.dim_threads().x;
-    const int lane = threadIdx.x & (warpSz - 1);
     const int totalThreads = gridDim.x * blockDim.x;
     const int totalWarps = max(1, totalThreads / warpSz);
-    const int warpId = tid / warpSz;
-    const int numTiles = (numActualDigitsPlusGuard + warpSz - 1) / warpSz;
 
     // init cur/next = 0 (length numActualDigitsPlusGuard+1 to include high slot)
     for (int i = tid; i <= numActualDigitsPlusGuard; i += totalThreads) {
@@ -751,119 +1126,249 @@ CarryPropagation_ABC(
 
     grid.sync();
 
-    uint32_t prevResult2 = std::numeric_limits<uint32_t>::max() - 1;
-    uint32_t loadedResult1 = std::numeric_limits<uint32_t>::max() - 2;
-    uint32_t loadedResult2 = std::numeric_limits<uint32_t>::max() - 1;
-    int32_t iteration = 0;
-    bool assignedTermination = false;
+    // ----------------------------------------------------------------------
+    // Parallel prefix-scan over per-block carry-transfer functions,
+    // with ALL THREE streams packed into PPTransfer3, and each block
+    // representing 3 digits per stream (9 scalar digits total).
+    // ----------------------------------------------------------------------
 
-    while (true) {
-        prevResult2 = loadedResult1;
-        loadedResult1 = *globalSync1;
-        loadedResult2 = *globalSync2;
+    // Reinterpret scratch as a PPTransfer3 array (one per block of 3 digits)
+    auto *SharkRestrict tfBlock = reinterpret_cast<PPTransfer3 *>(next1);
 
-        // Each warp walks its tiles in round-robin: tile = warpId, warpId+totalWarps
-        // Note: do not propagate from one tile to next in this loop!  That's another
-        // global iteration.
-        for (int tile = warpId; tile < numTiles; tile += totalWarps) {
-            // Load incoming carry for the first digit in this tile
-            const int base = tile * warpSz;
-            const auto basePlusLane = base + lane;
-            const auto in1 = static_cast<int32_t>(cur1[basePlusLane]);
-            const auto in2 = static_cast<int32_t>(cur2[basePlusLane]);
-            const auto in3 = static_cast<int32_t>(cur3[basePlusLane]);
-            auto limb1 = static_cast<int64_t>(extResultTrue[basePlusLane]);
-            auto limb2 = static_cast<int64_t>(extResultFalse[basePlusLane]);
-            auto limb3 = static_cast<int64_t>(final128_DE[basePlusLane]);
+    const int32_t numDigits = numActualDigitsPlusGuard;
+    const int32_t numBlocks = (numDigits + DIGITS_PER_BLOCK - 1) / DIGITS_PER_BLOCK;
 
-            if (basePlusLane != numActualDigitsPlusGuard) { // ...
-                cur1[basePlusLane] = 0;
-                cur2[basePlusLane] = 0;
-                cur3[basePlusLane] = 0;
+    // ----------------------------
+    // Step 1: build per-block transfer functions F_block
+    // ----------------------------
+    for (int32_t blockIdx = tid; blockIdx < numBlocks; blockIdx += totalThreads) {
+        const int base = blockIdx * DIGITS_PER_BLOCK;
+        const int remaining = numDigits - base;
+        const int len = (remaining > DIGITS_PER_BLOCK) ? DIGITS_PER_BLOCK : remaining;
+        if (len <= 0)
+            continue;
+
+        tfBlock[blockIdx] = PPbuild_block_transfer_3digits(extResultTrue,
+                                                           extResultFalse,
+                                                           final128_DE,
+                                                           reinterpret_cast<const int32_t *>(cur1),
+                                                           reinterpret_cast<const int32_t *>(cur2),
+                                                           reinterpret_cast<const int32_t *>(cur3),
+                                                           base,
+                                                           len);
+    }
+
+    grid.sync();
+
+// ----------------------------
+    // Step 2: hierarchical scan over tfBlock (block-level transfers)
+    //         using sharedData for all shared memory.
+    // ----------------------------
+
+    {
+        const int numCTAs = gridDim.x;
+        const int cta = block.group_index().x;
+        const int threadsInBlock = block.dim_threads().x;
+        const int tidBlock = threadIdx.x;
+
+        // Partition tfBlock into numCTAs contiguous chunks.
+        const int chunkSize = (numBlocks + numCTAs - 1) / numCTAs; // ceil(numBlocks / numCTAs)
+
+        const int start = cta * chunkSize;
+        const int end = min(start + chunkSize, numBlocks);
+        const int len = max(end - start, 0);
+
+        // We'll use sharedData as a PPTransfer3 buffer:
+        // [0 .. chunkSize-1] for per-CTA local scan
+        // [chunkSize .. chunkSize+numCTAs-1] for CTA-level scan (used only in CTA 0)
+        auto *shAll = reinterpret_cast<PPTransfer3 *>(sharedData);
+        PPTransfer3 *sh_scan = shAll;            // size >= chunkSize
+        PPTransfer3 *sh_cta = shAll + chunkSize; // size >= numCTAs
+
+        // Global scratch for CTA totals (aggregates), one per CTA.
+        // This is in global memory, NOT shared.
+        PPTransfer3 *tfCTA = reinterpret_cast<PPTransfer3 *>(next2); // ensure next2 is sized for numCTAs
+
+        // ----------------------------------------------------------
+        // Step 2A: Each CTA scans its own chunk in shared memory
+        // ----------------------------------------------------------
+
+        if (len > 0) {
+            // Load tfBlock[start..end) into shared memory
+            for (int i = tidBlock; i < len; i += threadsInBlock) {
+                sh_scan[i] = tfBlock[start + i];
             }
+            block.sync();
 
-            const WarpProcessTriple tout =
-                WarpProcessTileCarry<SharkFloatParams>(
-                    iteration,
-                    fullMask,
-                    numActualDigitsPlusGuard,
-                    lane,
-                    tile,
-                    in1,
-                    in2,
-                    in3,
-                    limb1,
-                    limb2,
-                    limb3);
-
-            extResultTrue[basePlusLane] = static_cast<uint64_t>(limb1);
-            extResultFalse[basePlusLane] = static_cast<uint64_t>(limb2);
-            final128_DE[basePlusLane] = static_cast<uint64_t>(limb3);
-
-            // Outgoing carry index is the digit just after the tile (or numActualDigitsPlusGuard for the high slot)
-            const int outIdx = min(base + warpSz, numActualDigitsPlusGuard);
-
-            if (lane == warpSz - 1 || (base + lane == numActualDigitsPlusGuard - 1)) {
-                const auto o1 = tout.o1;
-                const auto o2 = tout.o2;
-                const auto o3 = tout.o3;
-
-                if (outIdx < numActualDigitsPlusGuard) {
-                    next1[outIdx] = static_cast<uint32_t>(o1);
-                    next2[outIdx] = static_cast<uint32_t>(o2);
-                    next3[outIdx] = static_cast<uint32_t>(o3);
-                } else { // outIdx == numActualDigitsPlusGuard
-                    next1[numActualDigitsPlusGuard] =
-                        static_cast<uint32_t>(cur1[numActualDigitsPlusGuard] + o1);
-                    next2[numActualDigitsPlusGuard] =
-                        static_cast<uint32_t>(cur2[numActualDigitsPlusGuard] + o2);
-                    next3[numActualDigitsPlusGuard] =
-                        static_cast<uint32_t>(cur3[numActualDigitsPlusGuard] + o3);
+            // In-CTA inclusive scan over sh_scan[0..len)
+            for (int offset = 1; offset < len; offset <<= 1) {
+                for (int i = tidBlock; i < len; i += threadsInBlock) {
+                    if (i >= offset) {
+                        sh_scan[i] = PPcompose_transfer(sh_scan[i - offset], sh_scan[i]);
+                    }
                 }
+                block.sync();
+            }
 
-                if (tout.changedMask) {
-                    atomicAdd(globalSync1, 1);
+            // Write back local prefix-scan results
+            for (int i = tidBlock; i < len; i += threadsInBlock) {
+                tfBlock[start + i] = sh_scan[i];
+            }
+
+            // The last element in this chunk is the CTA's total transfer
+            if (tidBlock == 0) {
+                tfCTA[cta] = sh_scan[len - 1];
+            }
+        } else {
+            // No blocks belong to this CTA: its total is identity
+            if (tidBlock == 0) {
+                tfCTA[cta] = make_PPIdentity();
+            }
+        }
+
+        // Wait for all CTAs to write tfCTA[cta]
+        grid.sync(); // 1st global barrier
+
+        // ----------------------------------------------------------
+        // Step 2B: CTA 0 scans the CTA-level aggregates in shared mem
+        // ----------------------------------------------------------
+
+        if (cta == 0) {
+            // Load tfCTA[0..numCTAs) into shared memory
+            for (int i = tidBlock; i < numCTAs; i += threadsInBlock) {
+                sh_cta[i] = tfCTA[i];
+            }
+            block.sync();
+
+            // Inclusive scan over CTA totals
+            for (int offset = 1; offset < numCTAs; offset <<= 1) {
+                for (int i = tidBlock; i < numCTAs; i += threadsInBlock) {
+                    if (i >= offset) {
+                        sh_cta[i] = PPcompose_transfer(sh_cta[i - offset], sh_cta[i]);
+                    }
                 }
+                block.sync();
+            }
+
+            // Write back the CTA prefix results
+            for (int i = tidBlock; i < numCTAs; i += threadsInBlock) {
+                tfCTA[i] = sh_cta[i];
             }
         }
 
-        if (iteration - 1 == loadedResult2) {
-            break;
-        }
+        grid.sync(); // 2nd global barrier: tfCTA now holds CTA prefix transfers
 
-        // Tell everyone when to exit
-        if (tid == 0) {
-            if (loadedResult1 == prevResult2 && !assignedTermination) {
-                *globalSync2 = iteration;
-                assignedTermination = true;
+        // ----------------------------------------------------------
+        // Step 2C: Apply CTA-level prefix to each CTA's local scan
+        // ----------------------------------------------------------
+
+        if (len > 0) {
+            // Prefix contribution from all previous CTAs.
+            // For cta == 0, there is no previous CTA; prefix is identity.
+            PPTransfer3 prefix = make_PPIdentity();
+            if (cta > 0) {
+                prefix = tfCTA[cta - 1]; // prefix over chunks [0 .. cta-1]
+            }
+
+            // Compose prefix ∘ local-scan(tfBlock[start..end))
+            for (int i = tidBlock; i < len; i += threadsInBlock) {
+                const int globalIdx = start + i;
+                tfBlock[globalIdx] = PPcompose_transfer(prefix, tfBlock[globalIdx]);
             }
         }
 
-        // all next*[numActualDigitsPlusGuard] writes are visible
-        grid.sync();
+        grid.sync(); // 3rd global barrier: tfBlock[k] is now full prefix F_block_prefix[k]
+    }
 
-        // Swap only the active streams (mirror of your original logic)
-        auto swap2 = [](uint32_t *&a, uint32_t *&b) {
-            auto *t = a;
-            a = b;
-            b = t;
-        };
 
-        swap2(cur1, next1);
-        swap2(cur2, next2);
-        swap2(cur3, next3);
-        
-        iteration++;
+    // ----------------------------
+    // Step 3: use block prefix functions to compute per-digit incoming carries
+    //         and apply them to digits.
+    // ----------------------------
+
+    for (int32_t blockIdx = tid; blockIdx < numBlocks; blockIdx += totalThreads) {
+        const int base = blockIdx * DIGITS_PER_BLOCK;
+        const int remaining = numDigits - base;
+        const int len = (remaining > DIGITS_PER_BLOCK) ? DIGITS_PER_BLOCK : remaining;
+        if (len <= 0)
+            continue;
+
+        // Carry entering this block in each stream: F_block_prefix
+        int32_t c1 = (blockIdx > 0) ? PPeval_transfer(tfBlock[blockIdx - 1], 0, 0) : 0;
+        int32_t c2 = (blockIdx > 0) ? PPeval_transfer(tfBlock[blockIdx - 1], 1, 0) : 0;
+        int32_t c3 = (blockIdx > 0) ? PPeval_transfer(tfBlock[blockIdx - 1], 2, 0) : 0;
+
+#pragma unroll
+        for (int k = 0; k < DIGITS_PER_BLOCK; ++k) {
+            if (k >= len)
+                break;
+            const int i = base + k;
+
+            const int32_t in1 = c1 + static_cast<int32_t>(cur1[i]);
+            const int32_t in2 = c2 + static_cast<int32_t>(cur2[i]);
+            const int32_t in3 = c3 + static_cast<int32_t>(cur3[i]);
+
+            // Stream 0: extResultTrue
+            {
+                const int64_t sum1 = static_cast<int64_t>(extResultTrue[i]) + static_cast<int64_t>(in1);
+                const uint32_t lo1 = static_cast<uint32_t>(sum1);
+                extResultTrue[i] = static_cast<uint64_t>(lo1);
+                c1 = static_cast<int32_t>(sum1 >> 32);
+            }
+
+            // Stream 1: extResultFalse
+            {
+                const int64_t sum2 = static_cast<int64_t>(extResultFalse[i]) + static_cast<int64_t>(in2);
+                const uint32_t lo2 = static_cast<uint32_t>(sum2);
+                extResultFalse[i] = static_cast<uint64_t>(lo2);
+                c2 = static_cast<int32_t>(sum2 >> 32);
+            }
+
+            // Stream 2: final128_DE
+            {
+                const int64_t sum3 = static_cast<int64_t>(final128_DE[i]) + static_cast<int64_t>(in3);
+                const uint32_t lo3 = static_cast<uint32_t>(sum3);
+                final128_DE[i] = static_cast<uint64_t>(lo3);
+                c3 = static_cast<int32_t>(sum3 >> 32);
+            }
+        }
+    }
+
+    grid.sync();
+
+    // ----------------------------
+    // Step 4: final high-slot carry
+    // ----------------------------
+    if (tid == 0) {
+        const int32_t N = numDigits;
+
+        int32_t c1_N = 0;
+        int32_t c2_N = 0;
+        int32_t c3_N = 0;
+
+        if (numBlocks > 0) {
+            const int lastBlock = numBlocks - 1;
+            c1_N = PPeval_transfer(tfBlock[lastBlock], 0, 0);
+            c2_N = PPeval_transfer(tfBlock[lastBlock], 1, 0);
+            c3_N = PPeval_transfer(tfBlock[lastBlock], 2, 0);
+        }
+
+        const int32_t final1 = c1_N + static_cast<int32_t>(cur1[N]);
+        const int32_t final2 = c2_N + static_cast<int32_t>(cur2[N]);
+        const int32_t final3 = c3_N + static_cast<int32_t>(cur3[N]);
+
+        cur1[N] = static_cast<uint32_t>(final1);
+        cur2[N] = static_cast<uint32_t>(final2);
+        cur3[N] = static_cast<uint32_t>(final3);
 
         if constexpr (HpShark::DebugGlobalState) {
             DebugCarryIncrement<SharkFloatParams>(debugGlobalState, grid, block, 1);
         }
     }
-    
-    // Note: no grid.sync() here
 
-    carryAcc_ABC_True = next1[numActualDigitsPlusGuard];
-    carryAcc_ABC_False = next2[numActualDigitsPlusGuard];
-    carryAcc_DE = next3[numActualDigitsPlusGuard];
-#endif
+    grid.sync();
+
+    carryAcc_ABC_True  = static_cast<int32_t>(cur1[numDigits]);
+    carryAcc_ABC_False = static_cast<int32_t>(cur2[numDigits]);
+    carryAcc_DE        = static_cast<int32_t>(cur3[numDigits]);
 }

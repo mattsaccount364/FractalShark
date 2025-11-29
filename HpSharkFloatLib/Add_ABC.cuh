@@ -777,7 +777,7 @@ template <class SharkFloatParams>
 static __device__ SharkForceInlineReleaseOnly void
 CarryPropagation_ABC_TiledV2(uint32_t *globalSync1, // [0] holds convergence counter
                      uint32_t *globalSync2,
-                     uint64_t *SharkRestrict sharedData,
+                     uint64_t *SharkRestrict shared_data,
                      const int32_t idx,                      // this thread’s global index
                      const int32_t numActualDigitsPlusGuard, // N
                      uint64_t *SharkRestrict extResultTrue,  // Phase1_ABC “true” limbs
@@ -1016,7 +1016,7 @@ static __device__ SharkForceInlineReleaseOnly void
 CarryPropagation_ABC_PPv3(
     uint32_t *globalSync1, // [0] holds convergence counter
     uint32_t *globalSync2,
-    uint64_t *SharkRestrict sharedData,
+    uint64_t *SharkRestrict shared_data,
     const int32_t    idx,                       // this thread’s global index
     const int32_t    numActualDigitsPlusGuard,  // N
     uint64_t *SharkRestrict extResultTrue,         // Phase1_ABC “true” limbs
@@ -1162,7 +1162,7 @@ CarryPropagation_ABC_PPv3(
 
 // ----------------------------
     // Step 2: hierarchical scan over tfBlock (block-level transfers)
-    //         using sharedData for all shared memory.
+    //         using shared_data for all shared memory.
     // ----------------------------
 
     {
@@ -1178,10 +1178,10 @@ CarryPropagation_ABC_PPv3(
         const int end = min(start + chunkSize, numBlocks);
         const int len = max(end - start, 0);
 
-        // We'll use sharedData as a PPTransfer3 buffer:
+        // We'll use shared_data as a PPTransfer3 buffer:
         // [0 .. chunkSize-1] for per-CTA local scan
         // [chunkSize .. chunkSize+numCTAs-1] for CTA-level scan (used only in CTA 0)
-        auto *shAll = reinterpret_cast<PPTransfer3 *>(sharedData);
+        auto *shAll = reinterpret_cast<PPTransfer3 *>(shared_data);
         PPTransfer3 *sh_scan = shAll;            // size >= chunkSize
         PPTransfer3 *sh_cta = shAll + chunkSize; // size >= numCTAs
 

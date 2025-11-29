@@ -3,7 +3,7 @@
 template <class SharkFloatParams>
 __device__ SharkForceInlineReleaseOnly void
 SerialCarryPropagation (
-    uint32_t *sharedData,
+    uint32_t *shared_data,
     uint32_t *globalSync1,
     uint64_t *final128,
     const int32_t numActualDigitsPlusGuard,
@@ -195,7 +195,7 @@ Phase1_DE (
 
 template <class SharkFloatParams>
 __device__ inline void CarryPropagationPP3_DE (
-    uint32_t *sharedData,   // allocated with at least 2*n*sizeof(uint32_t); unused here.
+    uint32_t *shared_data,   // allocated with at least 2*n*sizeof(uint32_t); unused here.
     uint32_t *globalSync1,   // unused (provided for interface compatibility)
     uint64_t *final128,     // the extended result digits
     const int32_t numActualDigitsPlusGuard,  // number of digits in final128 to process
@@ -498,7 +498,7 @@ __device__ inline void CarryPropagationPP3_DE (
 
 template <class SharkFloatParams>
 __device__ inline void CarryPropagationPP2_DE(
-    uint32_t *sharedData,   // allocated with at least 2*n*sizeof(uint32_t); unused here.
+    uint32_t *shared_data,   // allocated with at least 2*n*sizeof(uint32_t); unused here.
     uint32_t *globalSync1,   // unused (provided for interface compatibility)
     uint64_t *final128,     // the extended result digits
     const int32_t numActualDigitsPlusGuard,  // number of digits in final128 to process
@@ -616,7 +616,7 @@ __device__ inline void CarryPropagationPP2_DE(
 template <class SharkFloatParams>
 __device__ SharkForceInlineReleaseOnly void
 CarryPropagationPPTry1Buggy_DE (
-    uint32_t *sharedData,  // must be allocated with at least 2*n*sizeof(uint32_t)
+    uint32_t *shared_data,  // must be allocated with at least 2*n*sizeof(uint32_t)
     uint32_t *globalSync1,  // unused in this version (still provided for interface compatibility)
     uint64_t *final128,
     const int32_t numActualDigitsPlusGuard,
@@ -630,7 +630,7 @@ CarryPropagationPPTry1Buggy_DE (
     // We assume that numActualDigitsPlusGuard is small. Let n be the next power of two >= numActualDigitsPlusGuard.
     const auto n = numActualDigitsPlusGuard;
 
-    // We use sharedData to hold two arrays (each of length n):
+    // We use shared_data to hold two arrays (each of length n):
     // s_g[0..n-1] will hold the "generate" flag (0 or 1) for each digit,
     // s_p[0..n-1] will hold the "propagate" flag (0 or 1).
     // (For the exclusive scan we use the Blelloch algorithm.)
@@ -859,7 +859,7 @@ CarryPropagationPPTry1Buggy_DE (
 template <class SharkFloatParams>
 __device__ SharkForceInlineReleaseOnly void
 CarryPropagationDE (
-    uint32_t *sharedData,
+    uint32_t *shared_data,
     uint32_t *globalSync1,   // global sync array; element 0 is used for borrow/carry count
     uint64_t *final128,
     const int32_t numActualDigitsPlusGuard,

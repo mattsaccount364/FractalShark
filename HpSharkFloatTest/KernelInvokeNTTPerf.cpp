@@ -4,7 +4,8 @@
 
 template <class SharkFloatParams>
 void
-InvokeMultiplyNTTKernelPerf(BenchmarkTimer &timer,
+InvokeMultiplyNTTKernelPerf(const SharkLaunchParams &launchParams,
+    BenchmarkTimer &timer,
                             HpSharkComboResults<SharkFloatParams> &combo,
                             uint64_t numIters)
 {
@@ -86,7 +87,7 @@ InvokeMultiplyNTTKernelPerf(BenchmarkTimer &timer,
     {
         ScopedBenchmarkStopper stopper{timer};
         // Use the *looping* entry so numIters lives on device (same as correctness)
-        ComputeMultiplyNTTGpuTestLoop<SharkFloatParams>(stream, kernelArgs);
+        ComputeMultiplyNTTGpuTestLoop<SharkFloatParams>(launchParams, stream, kernelArgs);
     }
 
     // --- 4) Copy results back, teardown -----------------------------------------------------
@@ -106,7 +107,10 @@ InvokeMultiplyNTTKernelPerf(BenchmarkTimer &timer,
 #ifdef ENABLE_MULTIPLY_NTT_KERNEL
 #define ExplicitlyInstantiateMultiplyNTT(SharkFloatParams)                                              \
     template void InvokeMultiplyNTTKernelPerf<SharkFloatParams>(                                        \
-        BenchmarkTimer & timer, HpSharkComboResults<SharkFloatParams> & combo, uint64_t numIters);
+        const SharkLaunchParams &launchParams,                                                         \
+        BenchmarkTimer & timer,                                                                         \
+        HpSharkComboResults<SharkFloatParams> & combo,                                                  \
+        uint64_t numIters);
 #else
 #define ExplicitlyInstantiateMultiplyNTT(SharkFloatParams) ;
 #endif

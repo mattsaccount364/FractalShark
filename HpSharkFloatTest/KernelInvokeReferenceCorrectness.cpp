@@ -8,7 +8,8 @@
 
 template <class SharkFloatParams>
 void
-InvokeHpSharkReferenceKernelCorrectness(BenchmarkTimer &timer,
+InvokeHpSharkReferenceKernelCorrectness(const SharkLaunchParams &launchParams,
+                                        BenchmarkTimer &timer,
                                         HpSharkReferenceResults<SharkFloatParams> &combo,
                                         DebugGpuCombo *debugCombo)
 {
@@ -69,7 +70,7 @@ InvokeHpSharkReferenceKernelCorrectness(BenchmarkTimer &timer,
 
     {
         ScopedBenchmarkStopper stopper{timer};
-        ComputeHpSharkReferenceGpu<SharkFloatParams>(kernelArgs);
+        ComputeHpSharkReferenceGpu<SharkFloatParams>(launchParams, kernelArgs);
     }
 
     cudaMemcpy(
@@ -103,6 +104,7 @@ InvokeHpSharkReferenceKernelCorrectness(BenchmarkTimer &timer,
 #if defined(ENABLE_REFERENCE_KERNEL) || defined(ENABLE_FULL_KERNEL)
 #define ExplicitlyInstantiateHpSharkReference(SharkFloatParams)                                         \
     template void InvokeHpSharkReferenceKernelCorrectness<SharkFloatParams>(                            \
+        const SharkLaunchParams &launchParams,                                                        \
         BenchmarkTimer & timer,                                                                         \
         HpSharkReferenceResults<SharkFloatParams> & combo,                                              \
         DebugGpuCombo * debugCombo);

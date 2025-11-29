@@ -530,7 +530,7 @@ WarpProcessTileCarry(
 {
 #ifdef TEST_SMALL_NORMALIZE_WARP
     // untested
-    constexpr auto warpSz = SharkFloatParams::GlobalThreadsPerBlock;
+    constexpr auto warpSz = block.dim_threads().x;
 #else
     constexpr auto warpSz = 32;
 #endif
@@ -822,7 +822,7 @@ CarryPropagation_ABC_TiledV2(uint32_t *globalSync1, // [0] holds convergence cou
     // --- geometry ---
 #ifdef TEST_SMALL_NORMALIZE_WARP
     // untested
-    constexpr auto warpSz = SharkFloatParams::GlobalThreadsPerBlock;
+    constexpr auto warpSz = block.dim_threads().x;
 #else
     constexpr auto warpSz = 32;
 #endif
@@ -1061,7 +1061,7 @@ CarryPropagation_ABC_PPv3(
     // --- geometry ---
 #ifdef TEST_SMALL_NORMALIZE_WARP
     // untested
-    constexpr auto warpSz = SharkFloatParams::GlobalThreadsPerBlock;
+    constexpr auto warpSz = block.dim_threads().x;
 #else
     constexpr auto warpSz = 32;
 #endif

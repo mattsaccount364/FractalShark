@@ -4,7 +4,8 @@
 
 template <class SharkFloatParams>
 void
-InvokeAddKernelPerf(BenchmarkTimer &timer,
+InvokeAddKernelPerf(const SharkLaunchParams &launchParams,
+                    BenchmarkTimer &timer,
                     HpSharkAddComboResults<SharkFloatParams> &combo,
                     uint64_t numIters)
 {
@@ -26,7 +27,7 @@ InvokeAddKernelPerf(BenchmarkTimer &timer,
     // Launch the cooperative kernel
     {
         ScopedBenchmarkStopper stopper{timer};
-        ComputeAddGpuTestLoop<SharkFloatParams>(kernelArgs);
+        ComputeAddGpuTestLoop<SharkFloatParams>(launchParams, kernelArgs);
     }
 
     cudaMemcpy(
@@ -40,7 +41,7 @@ InvokeAddKernelPerf(BenchmarkTimer &timer,
 #ifdef ENABLE_ADD_KERNEL
 #define ExplicitlyInstantiateAdd(SharkFloatParams)                                                      \
     template void InvokeAddKernelPerf<SharkFloatParams>(                                                \
-        BenchmarkTimer & timer, HpSharkAddComboResults<SharkFloatParams> & combo, uint64_t numIters);
+        const SharkLaunchParams &launchParams, BenchmarkTimer & timer, HpSharkAddComboResults<SharkFloatParams> & combo, uint64_t numIters);
 #else
 #define ExplicitlyInstantiateAdd(SharkFloatParams) ;
 #endif

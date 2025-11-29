@@ -54,7 +54,8 @@ struct IntSignCombo {
 
 template <class SharkFloatParams, Operator sharkOperator>
 bool
-DiffAgainstHostNonZero(TestTracker &Tests,
+DiffAgainstHostNonZero(const SharkLaunchParams & /*launchParams*/,
+                       TestTracker &Tests,
                        int testNum,
                        int /*numTerms*/,
                        std::string hostCustomOrGpu,
@@ -217,7 +218,8 @@ DiffAgainstHostNonZero(TestTracker &Tests,
 
 template <class SharkFloatParams, Operator sharkOperator>
 bool
-DiffAgainstHost(TestTracker &Tests,
+DiffAgainstHost(const SharkLaunchParams &launchParams,
+                TestTracker &Tests,
                 int testNum,
                 int numTerms, // 2 or 3
                 std::string hostCustomOrGpu,
@@ -259,7 +261,7 @@ DiffAgainstHost(TestTracker &Tests,
     mpf_abs(mpfDiffAbs, mpfDiff);
 
     // 4) Quick check: is host exactly zero?
-    bool hostIsZero{false}; 
+    bool hostIsZero{false};
     {
         mpf_t mpfZero;
         mpf_init(mpfZero);
@@ -328,7 +330,7 @@ DiffAgainstHost(TestTracker &Tests,
     mpf_clear(mpfDiffAbs);
 
     return DiffAgainstHostNonZero<SharkFloatParams, sharkOperator>(
-        Tests, testNum, numTerms, hostCustomOrGpu, mpfHostResult, gpuResult);
+        launchParams, Tests, testNum, numTerms, hostCustomOrGpu, mpfHostResult, gpuResult);
 }
 
 template <class SharkFloatParams>
@@ -387,7 +389,8 @@ HpSharkReferenceResultsToFile(const std::string &filename,
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestPerf(TestTracker &Tests,
+TestPerf(const SharkLaunchParams &launchParams,
+         TestTracker &Tests,
          int testNum,
          const char *num1,
          const char *num2,
@@ -605,14 +608,15 @@ TestPerf(TestTracker &Tests,
             debugGpuCombo = std::make_unique<DebugGpuCombo>();
         }
 
-        auto CheckDiff = [&](TestTracker &Tests,
+        auto CheckDiff = [&](const SharkLaunchParams &launchParams,
+                             TestTracker &Tests,
                              const int testNum,
                              const int numTerms,
                              const char *hostCustomOrGpu,
                              const mpf_t &mpfHostResult,
                              const HpSharkFloat<SharkFloatParams> &gpuResult) {
             auto testSucceeded = DiffAgainstHost<SharkFloatParams, sharkOperator>(
-                Tests, testNum, numTerms, hostCustomOrGpu, mpfHostResult, gpuResult);
+                launchParams, Tests, testNum, numTerms, hostCustomOrGpu, mpfHostResult, gpuResult);
             if (!testSucceeded) {
                 std::cout << "Perf correctness test failed" << std::endl;
             } else {
@@ -636,7 +640,7 @@ TestPerf(TestTracker &Tests,
 
             {
                 BenchmarkTimer timer;
-                InvokeAddKernelPerf<SharkFloatParams>(timer, *combo, numIters);
+                InvokeAddKernelPerf<SharkFloatParams>(launchParams, timer, *combo, numIters);
                 Tests.AddTime(testNum, timer.GetDeltaInMs());
                 std::cout << "GPU iter time: " << timer.GetDeltaInMs() << " ms" << std::endl;
 
@@ -651,8 +655,10 @@ TestPerf(TestTracker &Tests,
             if constexpr (HpShark::TestBenchmarkAgainstHost) {
                 bool testSucceeded = true;
                 constexpr auto numTerms = 3;
-                testSucceeded &= CheckDiff(Tests, testNum, numTerms, "GPU_A_B_C", mpfHostResultXY1, gpuResultXY1);
-                testSucceeded &= CheckDiff(Tests, testNum, numTerms, "GPU_D_E", mpfHostResultXY2, gpuResultXY2);
+                testSucceeded &= CheckDiff(
+                    launchParams, Tests, testNum, numTerms, "GPU_A_B_C", mpfHostResultXY1, gpuResultXY1);
+                testSucceeded &= CheckDiff(
+                    launchParams, Tests, testNum, numTerms, "GPU_D_E", mpfHostResultXY2, gpuResultXY2);
             }
 
         } else if constexpr (sharkOperator == Operator::MultiplyNTT) {
@@ -669,7 +675,7 @@ TestPerf(TestTracker &Tests,
                 BenchmarkTimer timer;
 
                 if constexpr (sharkOperator == Operator::MultiplyNTT) {
-                    InvokeMultiplyNTTKernelPerf<SharkFloatParams>(timer, *combo, numIters);
+                    InvokeMultiplyNTTKernelPerf<SharkFloatParams>(launchParams, timer, *combo, numIters);
                 } else {
                     DebugBreak();
                 }
@@ -688,9 +694,12 @@ TestPerf(TestTracker &Tests,
             if constexpr (HpShark::TestBenchmarkAgainstHost) {
                 bool testSucceeded = true;
                 constexpr auto numTerms = 2;
-                testSucceeded &= CheckDiff(Tests, testNum, numTerms, "GPU_XX", mpfHostResultXX, gpuResult2XX);
-                testSucceeded &= CheckDiff(Tests, testNum, numTerms, "GPU_XY", mpfHostResultXY1, gpuResult2XY);
-                testSucceeded &= CheckDiff(Tests, testNum, numTerms, "GPU_YY", mpfHostResultYY, gpuResult2YY);
+                testSucceeded &= CheckDiff(
+                    launchParams, Tests, testNum, numTerms, "GPU_XX", mpfHostResultXX, gpuResult2XX);
+                testSucceeded &= CheckDiff(
+                    launchParams, Tests, testNum, numTerms, "GPU_XY", mpfHostResultXY1, gpuResult2XY);
+                testSucceeded &= CheckDiff(
+                    launchParams, Tests, testNum, numTerms, "GPU_YY", mpfHostResultYY, gpuResult2YY);
             }
         } else if constexpr (sharkOperator == Operator::ReferenceOrbit) {
             auto combo = std::make_unique<HpSharkReferenceResults<SharkFloatParams>>();
@@ -711,7 +720,7 @@ TestPerf(TestTracker &Tests,
             {
                 BenchmarkTimer timer;
                 InvokeHpSharkReferenceKernelPerf<SharkFloatParams>(
-                    &timer, *combo, numIters, debugGpuCombo.get());
+                    launchParams, &timer, *combo, numIters, debugGpuCombo.get());
 
                 Tests.AddTime(testNum, timer.GetDeltaInMs());
                 std::cout << "GPU iter time: " << timer.GetDeltaInMs() << " ms" << std::endl;
@@ -729,8 +738,10 @@ TestPerf(TestTracker &Tests,
             if constexpr (HpShark::TestBenchmarkAgainstHost) {
                 bool testSucceeded = true;
                 constexpr auto numTerms = 2;
-                testSucceeded &= CheckDiff(Tests, testNum, numTerms, "GPU_A", mpfHostResultXX, gpuResultX);
-                testSucceeded &= CheckDiff(Tests, testNum, numTerms, "GPU_B", mpfHostResultYY, gpuResultY);
+                testSucceeded &= CheckDiff(
+                    launchParams, Tests, testNum, numTerms, "GPU_A", mpfHostResultXX, gpuResultX);
+                testSucceeded &= CheckDiff(
+                    launchParams, Tests, testNum, numTerms, "GPU_B", mpfHostResultYY, gpuResultY);
 
                 if (combo->EscapedIteration != discoveredEscapeIterationHost) {
                     std::cout << "Escape iteration mismatch: host=" << discoveredEscapeIterationHost
@@ -805,7 +816,7 @@ TestPerf(TestTracker &Tests,
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestPerfRandom(TestTracker &Tests, int testNum, uint64_t numIters)
+TestPerfRandom(const SharkLaunchParams &launchParams, TestTracker &Tests, int testNum, uint64_t numIters)
 {
     auto xNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
     auto yNum = std::make_unique<HpSharkFloat<SharkFloatParams>>();
@@ -838,7 +849,8 @@ TestPerfRandom(TestTracker &Tests, int testNum, uint64_t numIters)
     const auto unknownEscape = -1;
 
     using HdrType = typename SharkFloatParams::Float;
-    TestPerf<SharkFloatParams, sharkOperator>(Tests,
+    TestPerf<SharkFloatParams, sharkOperator>(launchParams,
+                                              Tests,
                                               testNum,
                                               num1.c_str(),
                                               num2.c_str(),
@@ -859,7 +871,8 @@ TestPerfRandom(TestTracker &Tests, int testNum, uint64_t numIters)
 
 template <class SharkFloatParams, Operator sharkOperator>
 bool
-CheckAgainstHost(TestTracker &Tests,
+CheckAgainstHost(const SharkLaunchParams &launchParams,
+                 TestTracker &Tests,
                  int testNum,
                  int numTerms,
                  const char *name,
@@ -867,7 +880,7 @@ CheckAgainstHost(TestTracker &Tests,
                  const HpSharkFloat<SharkFloatParams> &gpuResult)
 {
     bool res = DiffAgainstHost<SharkFloatParams, sharkOperator>(
-        Tests, testNum, numTerms, name, mpfHostResult, gpuResult);
+        launchParams, Tests, testNum, numTerms, name, mpfHostResult, gpuResult);
     if (!res) {
         DebugBreak();
     };
@@ -877,7 +890,8 @@ CheckAgainstHost(TestTracker &Tests,
 
 template <class SharkFloatParams>
 void
-ChecksumsCheck(const DebugHostCombo<SharkFloatParams> &debugHostCombo,
+ChecksumsCheck(const SharkLaunchParams &launchParams,
+               const DebugHostCombo<SharkFloatParams> &debugHostCombo,
                const DebugGpuCombo &debugGpuCombo)
 {
     // Compare debugResultsCuda against debugResultsHost
@@ -912,7 +926,8 @@ ChecksumsCheck(const DebugHostCombo<SharkFloatParams> &debugHostCombo,
         std::cerr << "GPU total normalize count: " << normalizeCount << std::endl;
 
         std::cerr << "GPU total multiply count: " << totalMultiplyCountGpu << std::endl;
-        std::cerr << "GPU result count (should be total num threads): " << totalMultiplyCountResults << std::endl;
+        std::cerr << "GPU result count (should be total num threads): " << totalMultiplyCountResults
+                  << std::endl;
         std::cerr << "Host count: " << debugHostCombo.MultiplyCounts.multiplyCount << std::endl;
 
         if (totalMultiplyCountGpu != debugHostCombo.MultiplyCounts.multiplyCount) {
@@ -921,21 +936,21 @@ ChecksumsCheck(const DebugHostCombo<SharkFloatParams> &debugHostCombo,
             DebugBreak();
         }
 
-        if (totalMultiplyCountResults !=
-            SharkFloatParams::GlobalThreadsPerBlock * SharkFloatParams::GlobalNumBlocks) {
+        if (totalMultiplyCountResults != launchParams.TotalThreads) {
             std::cerr << "Error: Total results does not match expected number of threads!" << std::endl;
             ChecksumFailure = true;
             DebugBreak();
         }
 
         // Print full array
-        //if (ChecksumFailure) {
+        // if (ChecksumFailure) {
         //    for (size_t i = 0; i < debugGpuCombo.MultiplyCounts.size(); ++i) {
         //        std::cerr << "MultiplyCount[" << i << "]: ";
         //        std::cerr << "Block: " << debugGpuCombo.MultiplyCounts[i].blockIdx << ", ";
         //        std::cerr << "Thread: " << debugGpuCombo.MultiplyCounts[i].threadIdx << ", ";
-        //        std::cerr << "Multiply count: " << debugGpuCombo.MultiplyCounts[i].multiplyCount << std::endl;
-        //        std::cerr << "Carry count: " << debugGpuCombo.MultiplyCounts[i].carryCount << std::endl;
+        //        std::cerr << "Multiply count: " << debugGpuCombo.MultiplyCounts[i].multiplyCount <<
+        //        std::endl; std::cerr << "Carry count: " << debugGpuCombo.MultiplyCounts[i].carryCount
+        //        << std::endl;
         //    }
 
         //    DebugBreak();
@@ -1027,14 +1042,16 @@ ChecksumsCheck(const DebugHostCombo<SharkFloatParams> &debugHostCombo,
 
 template <class SharkFloatParams, Operator sharkOperator>
 bool
-CheckGPUResult(TestTracker &Tests, int testNum,
+CheckGPUResult(const SharkLaunchParams &launchParams,
+               TestTracker &Tests,
+               int testNum,
                int numTerms,
                const char *name,
                const mpf_t &mpfHostResult,
                const HpSharkFloat<SharkFloatParams> &gpuResult)
 {
     auto testSucceeded = DiffAgainstHost<SharkFloatParams, sharkOperator>(
-        Tests, testNum, numTerms, name, mpfHostResult, gpuResult);
+        launchParams, Tests, testNum, numTerms, name, mpfHostResult, gpuResult);
 
     if (SharkVerbose == VerboseMode::Debug) {
         if (!testSucceeded) {
@@ -1054,7 +1071,8 @@ CheckGPUResult(TestTracker &Tests, int testNum,
 
 template <class SharkFloatParams>
 void
-TestCoreAdd(TestTracker &Tests,
+TestCoreAdd(const SharkLaunchParams &launchParams,
+            TestTracker &Tests,
             int testNum,
             const std::vector<HpSharkFloat<SharkFloatParams>> &inputX,
             const mpf_t *mpfInputX,
@@ -1081,7 +1099,9 @@ TestCoreAdd(TestTracker &Tests,
 
     constexpr auto sharkOperator = Operator::Add;
 
-    auto TestHostAdd = [](TestTracker &Tests, int testNum,
+    auto TestHostAdd = [](const SharkLaunchParams &launchParams,
+                          TestTracker &Tests,
+                          int testNum,
                           const HpSharkFloat<SharkFloatParams> &aNum,
                           const HpSharkFloat<SharkFloatParams> &bNum,
                           const HpSharkFloat<SharkFloatParams> &cNum,
@@ -1115,11 +1135,17 @@ TestCoreAdd(TestTracker &Tests,
 
         bool res = true;
         constexpr auto numTermsPartABC = 3;
-        res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(
-            Tests, testNum, numTermsPartABC, "ReferenceHighPrecisionV2XY1", mpfHostResultXY1, *hostAddResult1);
+        res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(launchParams,
+                                                                 Tests,
+                                                                 testNum,
+                                                                 numTermsPartABC,
+                                                                 "ReferenceHighPrecisionV2XY1",
+                                                                 mpfHostResultXY1,
+                                                                 *hostAddResult1);
 
         constexpr auto numTermsPartDE = 2;
-        res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(Tests,
+        res &= CheckAgainstHost<SharkFloatParams, sharkOperator>(launchParams,
+                                                                 Tests,
                                                                  testNum,
                                                                  numTermsPartDE,
                                                                  "ReferenceHighPrecisionV2XY2",
@@ -1178,7 +1204,7 @@ TestCoreAdd(TestTracker &Tests,
         combo.D_2X = dNum;
         combo.E_B = eNum;
 
-        InvokeAddKernelCorrectness<SharkFloatParams>(timer, combo, &debugGpuCombo);
+        InvokeAddKernelCorrectness<SharkFloatParams>(launchParams, timer, combo, &debugGpuCombo);
 
         gpuResultXY1 = combo.Result1_A_B_C;
         gpuResultXY2 = combo.Result2_D_E;
@@ -1193,7 +1219,8 @@ TestCoreAdd(TestTracker &Tests,
     if constexpr (HpShark::TestReferenceImpl) {
         DebugHostCombo<SharkFloatParams> debugHostCombo{};
 
-        bool testSucceeded = TestHostAdd(Tests,
+        bool testSucceeded = TestHostAdd(launchParams,
+                                         Tests,
                                          testNum,
                                          aNum,
                                          bNum,
@@ -1212,7 +1239,7 @@ TestCoreAdd(TestTracker &Tests,
             }
         }
 
-        ChecksumsCheck<SharkFloatParams>(debugHostCombo, debugGpuCombo);
+        ChecksumsCheck<SharkFloatParams>(launchParams, debugHostCombo, debugGpuCombo);
     }
 
     if constexpr (HpShark::TestGpu) {
@@ -1220,11 +1247,11 @@ TestCoreAdd(TestTracker &Tests,
 
         constexpr auto numTermsABC = 3;
         testSucceeded &= CheckGPUResult<SharkFloatParams, sharkOperator>(
-            Tests, testNum, numTermsABC, "GPU", mpfHostResultXY1, gpuResultXY1);
+            launchParams, Tests, testNum, numTermsABC, "GPU", mpfHostResultXY1, gpuResultXY1);
 
         constexpr auto numTermsDE = 2;
         testSucceeded &= CheckGPUResult<SharkFloatParams, sharkOperator>(
-            Tests, testNum, numTermsDE, "GPU", mpfHostResultXY2, gpuResultXY2);
+            launchParams, Tests, testNum, numTermsDE, "GPU", mpfHostResultXY2, gpuResultXY2);
     }
 
     // Clean up MPIR variables
@@ -1236,7 +1263,8 @@ TestCoreAdd(TestTracker &Tests,
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestCoreMultiply(TestTracker &Tests,
+TestCoreMultiply(const SharkLaunchParams &launchParams,
+                 TestTracker &Tests,
                  int testNum,
                  const std::vector<HpSharkFloat<SharkFloatParams>> &inputX,
                  const mpf_t *mpfInputX,
@@ -1253,7 +1281,8 @@ TestCoreMultiply(TestTracker &Tests,
     const auto &mpfA = mpfInputX[0];
     const auto &mpfB = mpfInputX[1];
 
-    auto TestHostKaratsuba = [](TestTracker &Tests,
+    auto TestHostKaratsuba = [](const SharkLaunchParams &launchParams,
+                                TestTracker &Tests,
                                 int testNum,
                                 const HpSharkFloat<SharkFloatParams> &aNum,
                                 const HpSharkFloat<SharkFloatParams> &bNum,
@@ -1299,14 +1328,29 @@ TestCoreMultiply(TestTracker &Tests,
 
         bool res = true;
         constexpr auto numTerms = 2;
-        res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyNTT>(
-            Tests, testNum, numTerms, "ReferenceHighPrecisionV2XX", mpfHostResultXX, hostKaratsubaOutXXV2);
+        res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyNTT>(launchParams,
+                                                                         Tests,
+                                                                         testNum,
+                                                                         numTerms,
+                                                                         "ReferenceHighPrecisionV2XX",
+                                                                         mpfHostResultXX,
+                                                                         hostKaratsubaOutXXV2);
 
-        res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyNTT>(
-            Tests, testNum, numTerms, "ReferenceHighPrecisionV2XY", mpfHostResultXY1, hostKaratsubaOutXYV2);
+        res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyNTT>(launchParams,
+                                                                         Tests,
+                                                                         testNum,
+                                                                         numTerms,
+                                                                         "ReferenceHighPrecisionV2XY",
+                                                                         mpfHostResultXY1,
+                                                                         hostKaratsubaOutXYV2);
 
-        res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyNTT>(
-            Tests, testNum, numTerms, "ReferenceHighPrecisionV2YY", mpfHostResultYY, hostKaratsubaOutYYV2);
+        res &= CheckAgainstHost<SharkFloatParams, Operator::MultiplyNTT>(launchParams,
+                                                                         Tests,
+                                                                         testNum,
+                                                                         numTerms,
+                                                                         "ReferenceHighPrecisionV2YY",
+                                                                         mpfHostResultYY,
+                                                                         hostKaratsubaOutYYV2);
 
         return res;
     };
@@ -1365,7 +1409,8 @@ TestCoreMultiply(TestTracker &Tests,
         combo->B = bNum;
 
         if constexpr (HpShark::EnableMultiplyNTTKernel) {
-            InvokeMultiplyNTTKernelCorrectness<SharkFloatParams>(timer, *combo, &debugGpuCombo);
+            InvokeMultiplyNTTKernelCorrectness<SharkFloatParams>(
+                launchParams, timer, *combo, &debugGpuCombo);
         }
 
         *gpuResultXX = combo->ResultX2;
@@ -1383,8 +1428,15 @@ TestCoreMultiply(TestTracker &Tests,
         DebugHostCombo<SharkFloatParams> debugHostCombo{};
 
         bool testSucceeded = false;
-        testSucceeded = TestHostKaratsuba(
-            Tests, testNum, aNum, bNum, mpfHostResultXX, mpfHostResultXY1, mpfHostResultYY, debugHostCombo);
+        testSucceeded = TestHostKaratsuba(launchParams,
+                                          Tests,
+                                          testNum,
+                                          aNum,
+                                          bNum,
+                                          mpfHostResultXX,
+                                          mpfHostResultXY1,
+                                          mpfHostResultYY,
+                                          debugHostCombo);
 
         if (SharkVerbose == VerboseMode::Debug) {
             if (!testSucceeded) {
@@ -1394,7 +1446,7 @@ TestCoreMultiply(TestTracker &Tests,
             }
         }
 
-        ChecksumsCheck<SharkFloatParams>(debugHostCombo, debugGpuCombo);
+        ChecksumsCheck<SharkFloatParams>(launchParams, debugHostCombo, debugGpuCombo);
     }
 
     if constexpr (HpShark::TestGpu) {
@@ -1403,13 +1455,13 @@ TestCoreMultiply(TestTracker &Tests,
         constexpr auto numTerms = 2;
 
         testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::MultiplyNTT>(
-            Tests, testNum, numTerms, "GPU XX", mpfHostResultXX, *gpuResultXX);
+            launchParams, Tests, testNum, numTerms, "GPU XX", mpfHostResultXX, *gpuResultXX);
 
         testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::MultiplyNTT>(
-            Tests, testNum, numTerms, "GPU XY", mpfHostResultXY1, *gpuResultXY1);
+            launchParams, Tests, testNum, numTerms, "GPU XY", mpfHostResultXY1, *gpuResultXY1);
 
         testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::MultiplyNTT>(
-            Tests, testNum, numTerms, "GPU YY", mpfHostResultYY, *gpuResultYY);
+            launchParams, Tests, testNum, numTerms, "GPU YY", mpfHostResultYY, *gpuResultYY);
     }
 
     // Clean up MPIR variables
@@ -1421,7 +1473,8 @@ TestCoreMultiply(TestTracker &Tests,
 
 template <class SharkFloatParams>
 void
-TestCoreReferenceOrbit(TestTracker &Tests,
+TestCoreReferenceOrbit(const SharkLaunchParams &launchParams,
+                       TestTracker &Tests,
                        int testNum,
                        const std::vector<HpSharkFloat<SharkFloatParams>> &inputX,
                        const mpf_t *mpfInputX,
@@ -1512,7 +1565,8 @@ TestCoreReferenceOrbit(TestTracker &Tests,
         combo->Multiply.B = bNum;
         combo->RadiusY = {};
 
-        InvokeHpSharkReferenceKernelCorrectness<SharkFloatParams>(timer, *combo, &debugGpuCombo);
+        InvokeHpSharkReferenceKernelCorrectness<SharkFloatParams>(
+            launchParams, timer, *combo, &debugGpuCombo);
 
         // *gpuResultXX = combo.Add.Result1_A_B_C;
         // *gpuResultYY = combo.Add.Result2_D_E;
@@ -1534,10 +1588,10 @@ TestCoreReferenceOrbit(TestTracker &Tests,
         constexpr auto numTerms = 2;
 
         testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::ReferenceOrbit>(
-            Tests, testNum, numTerms, "GPU", mpfHostResultX, *gpuResultXX);
+            launchParams, Tests, testNum, numTerms, "GPU", mpfHostResultX, *gpuResultXX);
 
         testSucceeded &= CheckGPUResult<SharkFloatParams, Operator::ReferenceOrbit>(
-            Tests, testNum, numTerms, "GPU", mpfHostResultY, *gpuResultYY);
+            launchParams, Tests, testNum, numTerms, "GPU", mpfHostResultY, *gpuResultYY);
     }
 
     // Clean up MPIR variables
@@ -1553,7 +1607,8 @@ TestCoreReferenceOrbit(TestTracker &Tests,
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestTernaryOperatorTwoNumbersRawNoSignChange(TestTracker &Tests,
+TestTernaryOperatorTwoNumbersRawNoSignChange(const SharkLaunchParams &launchParams,
+                                             TestTracker &Tests,
                                              int testNum,
                                              const std::vector<HpSharkFloat<SharkFloatParams>> &inputX,
                                              const mpf_t *mpfInputX,
@@ -1578,11 +1633,13 @@ TestTernaryOperatorTwoNumbersRawNoSignChange(TestTracker &Tests,
     }
 
     if constexpr (sharkOperator == Operator::Add) {
-        TestCoreAdd<SharkFloatParams>(Tests, testNum, inputX, mpfInputX, mpfInputLen);
+        TestCoreAdd<SharkFloatParams>(launchParams, Tests, testNum, inputX, mpfInputX, mpfInputLen);
     } else if constexpr (sharkOperator == Operator::MultiplyNTT) {
-        TestCoreMultiply<SharkFloatParams, sharkOperator>(Tests, testNum, inputX, mpfInputX, mpfInputLen);
+        TestCoreMultiply<SharkFloatParams, sharkOperator>(
+            launchParams, Tests, testNum, inputX, mpfInputX, mpfInputLen);
     } else if constexpr (sharkOperator == Operator::ReferenceOrbit) {
-        TestCoreReferenceOrbit<SharkFloatParams>(Tests, testNum, inputX, mpfInputX, mpfInputLen);
+        TestCoreReferenceOrbit<SharkFloatParams>(
+            launchParams, Tests, testNum, inputX, mpfInputX, mpfInputLen);
     } else {
         static_assert(HpShark::TestForceSameSign,
                       "Unsupported operator for TestTernaryOperatorTwoNumbersRawNoSignChange");
@@ -1591,8 +1648,9 @@ TestTernaryOperatorTwoNumbersRawNoSignChange(TestTracker &Tests,
 
 template <class SharkFloatParams, Operator sharkOperator, bool IncludeSigns>
 void
-TestTernaryOperatorTwoNumbersRaw(TestTracker &Tests,
-    int testNum,
+TestTernaryOperatorTwoNumbersRaw(const SharkLaunchParams &launchParams,
+                                 TestTracker &Tests,
+                                 int testNum,
                                  const std::vector<HpSharkFloat<SharkFloatParams>> &inputX,
                                  const mpf_t *mpfInputX,
                                  size_t mpfInputLen)
@@ -1648,7 +1706,7 @@ TestTernaryOperatorTwoNumbersRaw(TestTracker &Tests,
             resetCopy();
             printTest(testNum);
             TestTernaryOperatorTwoNumbersRawNoSignChange<SharkFloatParams, sharkOperator>(
-                Tests, testNum, xNumCopy, mpfXCopy.get(), mpfInputLen);
+                launchParams, Tests, testNum, xNumCopy, mpfXCopy.get(), mpfInputLen);
             testNum++;
         }
 
@@ -1662,7 +1720,7 @@ TestTernaryOperatorTwoNumbersRaw(TestTracker &Tests,
 
             printTest(testNum);
             TestTernaryOperatorTwoNumbersRawNoSignChange<SharkFloatParams, sharkOperator>(
-                Tests, testNum, xNumCopy, mpfXCopy.get(), mpfInputLen);
+                launchParams, Tests, testNum, xNumCopy, mpfXCopy.get(), mpfInputLen);
             testNum++;
         }
 
@@ -1676,7 +1734,7 @@ TestTernaryOperatorTwoNumbersRaw(TestTracker &Tests,
 
             printTest(testNum);
             TestTernaryOperatorTwoNumbersRawNoSignChange<SharkFloatParams, sharkOperator>(
-                Tests, testNum, xNumCopy, mpfXCopy.get(), mpfInputLen);
+                launchParams, Tests, testNum, xNumCopy, mpfXCopy.get(), mpfInputLen);
             testNum++;
         }
 
@@ -1690,7 +1748,7 @@ TestTernaryOperatorTwoNumbersRaw(TestTracker &Tests,
 
             printTest(testNum);
             TestTernaryOperatorTwoNumbersRawNoSignChange<SharkFloatParams, sharkOperator>(
-                Tests, testNum, xNumCopy, mpfXCopy.get(), mpfInputLen);
+                launchParams, Tests, testNum, xNumCopy, mpfXCopy.get(), mpfInputLen);
             testNum++;
         }
 
@@ -1702,7 +1760,7 @@ TestTernaryOperatorTwoNumbersRaw(TestTracker &Tests,
 
             printTest(testNum);
             TestTernaryOperatorTwoNumbersRawNoSignChange<SharkFloatParams, sharkOperator>(
-                Tests, testNum, xNumCopy, mpfXCopy.get(), mpfInputLen);
+                launchParams, Tests, testNum, xNumCopy, mpfXCopy.get(), mpfInputLen);
             testNum++;
         }
 
@@ -1717,7 +1775,7 @@ TestTernaryOperatorTwoNumbersRaw(TestTracker &Tests,
 
             printTest(testNum);
             TestTernaryOperatorTwoNumbersRawNoSignChange<SharkFloatParams, sharkOperator>(
-                Tests, testNum, xNumCopy, mpfXCopy.get(), mpfInputLen);
+                launchParams, Tests, testNum, xNumCopy, mpfXCopy.get(), mpfInputLen);
         }
 
         if constexpr (EnableTestSign7) {
@@ -1731,7 +1789,7 @@ TestTernaryOperatorTwoNumbersRaw(TestTracker &Tests,
 
             printTest(testNum);
             TestTernaryOperatorTwoNumbersRawNoSignChange<SharkFloatParams, sharkOperator>(
-                Tests, testNum, xNumCopy, mpfXCopy.get(), mpfInputLen);
+                launchParams, Tests, testNum, xNumCopy, mpfXCopy.get(), mpfInputLen);
         }
 
         if constexpr (EnableTestSign8) {
@@ -1745,12 +1803,12 @@ TestTernaryOperatorTwoNumbersRaw(TestTracker &Tests,
 
             printTest(testNum);
             TestTernaryOperatorTwoNumbersRawNoSignChange<SharkFloatParams, sharkOperator>(
-                Tests, testNum, xNumCopy, mpfXCopy.get(), mpfInputLen);
+                launchParams, Tests, testNum, xNumCopy, mpfXCopy.get(), mpfInputLen);
         }
 
     } else {
         TestTernaryOperatorTwoNumbersRawNoSignChange<SharkFloatParams, sharkOperator>(
-            Tests, testNum, inputX, mpfXCopy.get(), mpfInputLen);
+            launchParams, Tests, testNum, inputX, mpfXCopy.get(), mpfInputLen);
     }
 
     for (size_t i = 0; i < mpfInputLen; ++i) {
@@ -1784,8 +1842,12 @@ ClearConsole()
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestTernaryOperatorTwoNumbers(
-    TestTracker &Tests, int testNum, const std::vector<const char *> &num, mpf_t *mpfIn, size_t mpfInLen)
+TestTernaryOperatorTwoNumbers(const SharkLaunchParams &launchParams,
+                              TestTracker &Tests,
+                              int testNum,
+                              const std::vector<const char *> &num,
+                              mpf_t *mpfIn,
+                              size_t mpfInLen)
 {
 
     // Copy mpfX and mpfY
@@ -1827,7 +1889,7 @@ TestTernaryOperatorTwoNumbers(
         }
 
         TestTernaryOperatorTwoNumbersRaw<SharkFloatParams, sharkOperator, false>(
-            Tests, testNum, xNumCopy, mpfCopy.get(), mpfInLen);
+            launchParams, Tests, testNum, xNumCopy, mpfCopy.get(), mpfInLen);
 
         testNum++;
     };
@@ -1926,8 +1988,12 @@ TestTernaryOperatorTwoNumbers(
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestTernaryOperatorTwoNumbers(
-    TestTracker &Tests, int testNum, const char *num1, const char *num2, const char *num3)
+TestTernaryOperatorTwoNumbers(const SharkLaunchParams &launchParams,
+                              TestTracker &Tests,
+                              int testNum,
+                              const char *num1,
+                              const char *num2,
+                              const char *num3)
 {
 
     std::cout << std::endl;
@@ -1970,7 +2036,7 @@ TestTernaryOperatorTwoNumbers(
         strs[2] = num3;
 
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-            Tests, testNum, strs, mpfs, NumMpfs);
+            launchParams, Tests, testNum, strs, mpfs, NumMpfs);
     }
 
     for (size_t i = 0; i < NumMpfs; ++i) {
@@ -1980,7 +2046,9 @@ TestTernaryOperatorTwoNumbers(
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestTernarySpecial(TestTracker &Tests, int testNum,
+TestTernarySpecial(const SharkLaunchParams &launchParams,
+                   TestTracker &Tests,
+                   int testNum,
                    const HpSharkFloat<SharkFloatParams> &xNum,
                    const HpSharkFloat<SharkFloatParams> &yNum,
                    const HpSharkFloat<SharkFloatParams> &zNum,
@@ -2012,7 +2080,7 @@ TestTernarySpecial(TestTracker &Tests, int testNum,
     yNum2.HpGpuToMpf(mpfXCopy[4]);
 
     TestTernaryOperatorTwoNumbersRaw<SharkFloatParams, sharkOperator, true>(
-        Tests, testNum, xNumCopy, mpfXCopy, NumMpfs);
+        launchParams, Tests, testNum, xNumCopy, mpfXCopy, NumMpfs);
 
     // Clean up
     for (size_t i = 0; i < NumMpfs; ++i) {
@@ -2022,7 +2090,9 @@ TestTernarySpecial(TestTracker &Tests, int testNum,
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestTernarySpecialHelper(TestTracker &Tests, int testNum,
+TestTernarySpecialHelper(const SharkLaunchParams &launchParams,
+                         TestTracker &Tests,
+                         int testNum,
                          const IntSignCombo &testData1,
                          const IntSignCombo &testData2,
                          const IntSignCombo &testData3,
@@ -2059,18 +2129,22 @@ TestTernarySpecialHelper(TestTracker &Tests, int testNum,
     auto yNum2{std::make_unique<HpSharkFloat<SharkFloatParams>>(
         testData5Copy.Digits.data(), testData5Copy.Exponent, testData5Copy.Negative)};
 
-    TestTernarySpecial<SharkFloatParams, sharkOperator>(Tests, testNum, *xNum, *yNum, *zNum, *xNum2, *yNum2);
+    TestTernarySpecial<SharkFloatParams, sharkOperator>(
+        launchParams, Tests, testNum, *xNum, *yNum, *zNum, *xNum2, *yNum2);
 }
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestTernarySpecialHelper(TestTracker &Tests,
+TestTernarySpecialHelper(const SharkLaunchParams &launchParams,
+                         TestTracker &Tests,
                          int testNum,
                          const std::vector<uint32_t> &testData1,
                          const std::vector<uint32_t> &testData2,
                          const std::vector<uint32_t> &testData3)
 {
-    TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(Tests, testNum,
+    TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(launchParams,
+                                                              Tests,
+                                                              testNum,
                                                               testData1,
                                                               testData2,
                                                               testData3,
@@ -2080,14 +2154,16 @@ TestTernarySpecialHelper(TestTracker &Tests,
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestTernarySpecial(TestTracker &Tests,
+TestTernarySpecial(const SharkLaunchParams &launchParams,
+                   TestTracker &Tests,
                    int testNum,
                    const HpSharkFloat<SharkFloatParams> &xNum,
                    const HpSharkFloat<SharkFloatParams> &yNum,
                    const HpSharkFloat<SharkFloatParams> &zNum)
 {
 
-    TestTernarySpecial<SharkFloatParams, sharkOperator>(Tests,
+    TestTernarySpecial<SharkFloatParams, sharkOperator>(launchParams,
+                                                        Tests,
                                                         testNum,
                                                         xNum,
                                                         yNum,
@@ -2098,7 +2174,7 @@ TestTernarySpecial(TestTracker &Tests,
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestTernarySpecial1(TestTracker &Tests, int testNum)
+TestTernarySpecial1(const SharkLaunchParams &launchParams, TestTracker &Tests, int testNum)
 {
     std::vector<uint32_t> testData;
     for (size_t i = 0; i < SharkFloatParams::GlobalNumUint32; ++i) {
@@ -2108,12 +2184,13 @@ TestTernarySpecial1(TestTracker &Tests, int testNum)
     assert(testData.size() == SharkFloatParams::GlobalNumUint32);
     testData[testData.size() - 1] = 0x80000000;
 
-    TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(Tests, testNum, testData, testData, testData);
+    TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(
+        launchParams, Tests, testNum, testData, testData, testData);
 }
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestTernarySpecial2(TestTracker &Tests, int testNum)
+TestTernarySpecial2(const SharkLaunchParams &launchParams, TestTracker &Tests, int testNum)
 {
     std::vector<uint32_t> testData;
     for (size_t i = 0; i < SharkFloatParams::GlobalNumUint32; ++i) {
@@ -2124,12 +2201,12 @@ TestTernarySpecial2(TestTracker &Tests, int testNum)
     testData[testData.size() - 1] = 0xC0000000;
 
     TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(
-        Tests, testNum, testData, testData, testData);
+        launchParams, Tests, testNum, testData, testData, testData);
 }
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestTernarySpecial3(TestTracker &Tests, int testNum)
+TestTernarySpecial3(const SharkLaunchParams &launchParams, TestTracker &Tests, int testNum)
 {
     std::vector<uint32_t> testData;
     for (size_t i = 0; i < SharkFloatParams::GlobalNumUint32; ++i) {
@@ -2140,14 +2217,16 @@ TestTernarySpecial3(TestTracker &Tests, int testNum)
     testData[testData.size() - 1] = 0xFFFFFFFF;
 
     TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(
-        Tests, testNum, testData, testData, testData);
+        launchParams, Tests, testNum, testData, testData, testData);
 }
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestTernarySpecial4(TestTracker &Tests, int testNum)
+TestTernarySpecial4(const SharkLaunchParams &launchParams, TestTracker &Tests, int testNum)
 {
-    TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(Tests, testNum,
+    TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(launchParams,
+                                                              Tests,
+                                                              testNum,
                                                               std::vector<uint32_t>{0xF26D37FC,
                                                                                     0xA96025CE,
                                                                                     0xB03FC716,
@@ -2176,9 +2255,10 @@ TestTernarySpecial4(TestTracker &Tests, int testNum)
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestTernarySpecial5(TestTracker &Tests, int testNum)
+TestTernarySpecial5(const SharkLaunchParams &launchParams, TestTracker &Tests, int testNum)
 {
     TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(
+        launchParams,
         Tests,
         testNum,
         std::vector<uint32_t>{0, 0, 0, 0, 0, 0, 0, 0xFFFFFFFF},
@@ -2188,9 +2268,10 @@ TestTernarySpecial5(TestTracker &Tests, int testNum)
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestTernarySpecial6(TestTracker &Tests, int testNum)
+TestTernarySpecial6(const SharkLaunchParams &launchParams, TestTracker &Tests, int testNum)
 {
     TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(
+        launchParams,
         Tests,
         testNum,
         std::vector<uint32_t>{0xFFFFFFFF, 0xFFFFFFFF},
@@ -2200,9 +2281,10 @@ TestTernarySpecial6(TestTracker &Tests, int testNum)
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestTernarySpecial7(TestTracker &Tests, int testNum)
+TestTernarySpecial7(const SharkLaunchParams &launchParams, TestTracker &Tests, int testNum)
 {
     TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(
+        launchParams,
         Tests,
         testNum,
         std::vector<uint32_t>{0, 0xFFFFFFFF, 0xFFFFFFFF},
@@ -2212,10 +2294,11 @@ TestTernarySpecial7(TestTracker &Tests, int testNum)
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestTernarySpecial8(TestTracker &Tests, int testNum)
+TestTernarySpecial8(const SharkLaunchParams &launchParams, TestTracker &Tests, int testNum)
 {
 
     TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(
+        launchParams,
         Tests,
         testNum,
         std::vector<uint32_t>{0, 0, 0xFFFFFFFF, 0xFFFFFFFF},
@@ -2225,10 +2308,11 @@ TestTernarySpecial8(TestTracker &Tests, int testNum)
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestTernarySpecial9(TestTracker &Tests, int testNum)
+TestTernarySpecial9(const SharkLaunchParams &launchParams, TestTracker &Tests, int testNum)
 {
 
     TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(
+        launchParams,
         Tests,
         testNum,
         std::vector<uint32_t>{0xFF000000, 0xFFFFFFFF},
@@ -2238,10 +2322,11 @@ TestTernarySpecial9(TestTracker &Tests, int testNum)
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestTernarySpecial10(TestTracker &Tests, int testNum)
+TestTernarySpecial10(const SharkLaunchParams &launchParams, TestTracker &Tests, int testNum)
 {
 
-    TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(Tests,
+    TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(launchParams,
+                                                              Tests,
                                                               testNum,
                                                               std::vector<uint32_t>{0, 0, 0, 0x2, 0x3},
                                                               std::vector<uint32_t>{0, 0, 0, 0x5, 0x7},
@@ -2250,10 +2335,11 @@ TestTernarySpecial10(TestTracker &Tests, int testNum)
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestTernarySpecial11(TestTracker &Tests, int testNum)
+TestTernarySpecial11(const SharkLaunchParams &launchParams, TestTracker &Tests, int testNum)
 {
 
     TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(
+        launchParams,
         Tests,
         testNum,
         std::vector<uint32_t>{0, 0x2, 0, 0, 0, 0, 0x3},
@@ -2263,10 +2349,11 @@ TestTernarySpecial11(TestTracker &Tests, int testNum)
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestTernarySpecial12(TestTracker &Tests, int testNum)
+TestTernarySpecial12(const SharkLaunchParams &launchParams, TestTracker &Tests, int testNum)
 {
 
     TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(
+        launchParams,
         Tests,
         testNum,
         std::vector<uint32_t>{0xFF000000, 0xFFFFFFFF},
@@ -2276,10 +2363,11 @@ TestTernarySpecial12(TestTracker &Tests, int testNum)
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestTernarySpecial13(TestTracker &Tests, int testNum)
+TestTernarySpecial13(const SharkLaunchParams &launchParams, TestTracker &Tests, int testNum)
 {
 
     TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(
+        launchParams,
         Tests,
         testNum,
         std::vector<uint32_t>{0xFF000000, 0xFFFFFFFF},
@@ -2289,10 +2377,11 @@ TestTernarySpecial13(TestTracker &Tests, int testNum)
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestTernarySpecial14(TestTracker &Tests, int testNum)
+TestTernarySpecial14(const SharkLaunchParams &launchParams, TestTracker &Tests, int testNum)
 {
 
     TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(
+        launchParams,
         Tests,
         testNum,
         std::vector<uint32_t>{0xFF000000, 0xFFFFFFFF},
@@ -2302,10 +2391,11 @@ TestTernarySpecial14(TestTracker &Tests, int testNum)
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestTernarySpecial15(TestTracker &Tests, int testNum)
+TestTernarySpecial15(const SharkLaunchParams &launchParams, TestTracker &Tests, int testNum)
 {
 
     TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(
+        launchParams,
         Tests,
         testNum,
         std::vector<uint32_t>{
@@ -2318,10 +2408,11 @@ TestTernarySpecial15(TestTracker &Tests, int testNum)
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestTernarySpecial16(TestTracker &Tests, int testNum)
+TestTernarySpecial16(const SharkLaunchParams &launchParams, TestTracker &Tests, int testNum)
 {
 
-    TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(Tests,
+    TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(launchParams,
+                                                              Tests,
                                                               testNum,
                                                               std::vector<uint32_t>{0x0000000C,
                                                                                     0xFFFFFFF0,
@@ -2351,10 +2442,11 @@ TestTernarySpecial16(TestTracker &Tests, int testNum)
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestTernarySpecial17(TestTracker &Tests, int testNum)
+TestTernarySpecial17(const SharkLaunchParams &launchParams, TestTracker &Tests, int testNum)
 {
 
-    TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(Tests,
+    TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(launchParams,
+                                                              Tests,
                                                               testNum,
                                                               std::vector<uint32_t>{0x00000000,
                                                                                     0xFFFFFFFF,
@@ -2384,10 +2476,11 @@ TestTernarySpecial17(TestTracker &Tests, int testNum)
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestTernarySpecial18(TestTracker &Tests, int testNum)
+TestTernarySpecial18(const SharkLaunchParams &launchParams, TestTracker &Tests, int testNum)
 {
 
-    TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(Tests,
+    TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(launchParams,
+                                                              Tests,
                                                               testNum,
                                                               std::vector<uint32_t>{0x00000001,
                                                                                     0xFFFFFFFF,
@@ -2417,10 +2510,11 @@ TestTernarySpecial18(TestTracker &Tests, int testNum)
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestTernarySpecial19(TestTracker &Tests, int testNum)
+TestTernarySpecial19(const SharkLaunchParams &launchParams, TestTracker &Tests, int testNum)
 {
 
-    TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(Tests,
+    TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(launchParams,
+                                                              Tests,
                                                               testNum,
                                                               std::vector<uint32_t>{0x685940F0,
                                                                                     0x00000000,
@@ -2450,10 +2544,11 @@ TestTernarySpecial19(TestTracker &Tests, int testNum)
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestTernarySpecial20(TestTracker &Tests, int testNum)
+TestTernarySpecial20(const SharkLaunchParams &launchParams, TestTracker &Tests, int testNum)
 {
 
     TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(
+        launchParams,
         Tests,
         testNum,
         std::vector<uint32_t>{0xFFFFFFFF, 0x556B0E43, 0x4EECA55A, 0x0000000E, 0xFFFFFFFF, 0x00000000,
@@ -2472,10 +2567,11 @@ TestTernarySpecial20(TestTracker &Tests, int testNum)
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestTernarySpecial21(TestTracker &Tests, int testNum)
+TestTernarySpecial21(const SharkLaunchParams &launchParams, TestTracker &Tests, int testNum)
 {
 
-    TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(Tests,
+    TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(launchParams,
+                                                              Tests,
                                                               testNum,
                                                               std::vector<uint32_t>{0xFFFFFFFD,
                                                                                     0x0000000B,
@@ -2505,7 +2601,10 @@ TestTernarySpecial21(TestTracker &Tests, int testNum)
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestTernarySpecial21(TestTracker &Tests, int testNum, int exponentOverride2)
+TestTernarySpecial21(const SharkLaunchParams &launchParams,
+                     TestTracker &Tests,
+                     int testNum,
+                     int exponentOverride2)
 {
 
     std::vector<uint32_t> allFs{};
@@ -2528,14 +2627,16 @@ TestTernarySpecial21(TestTracker &Tests, int testNum, int exponentOverride2)
         std::make_unique<HpSharkFloat<SharkFloatParams>>(justOne.data(), exponentOverride2, false);
     auto zNum = std::make_unique<HpSharkFloat<SharkFloatParams>>(allFs.data(), 0, false);
 
-    TestTernarySpecial<SharkFloatParams, sharkOperator>(Tests, testNum, *xNum, *yNum, *zNum);
+    TestTernarySpecial<SharkFloatParams, sharkOperator>(
+        launchParams, Tests, testNum, *xNum, *yNum, *zNum);
 }
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestTernarySpecial22(TestTracker &Tests, int testNum)
+TestTernarySpecial22(const SharkLaunchParams &launchParams, TestTracker &Tests, int testNum)
 {
-    TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(Tests,
+    TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(launchParams,
+                                                              Tests,
                                                               testNum,
                                                               IntSignCombo{false, 0, {5}},
                                                               IntSignCombo{false, 0, {17}},
@@ -2546,9 +2647,10 @@ TestTernarySpecial22(TestTracker &Tests, int testNum)
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestTernarySpecial23(TestTracker &Tests, int testNum)
+TestTernarySpecial23(const SharkLaunchParams &launchParams, TestTracker &Tests, int testNum)
 {
-    TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(Tests,
+    TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(launchParams,
+                                                              Tests,
                                                               testNum,
                                                               std::vector<uint32_t>{5},
                                                               std::vector<uint32_t>{17},
@@ -2559,7 +2661,7 @@ TestTernarySpecial23(TestTracker &Tests, int testNum)
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestTernarySpecial24(TestTracker &Tests, int testNum)
+TestTernarySpecial24(const SharkLaunchParams &launchParams, TestTracker &Tests, int testNum)
 {
 
     IntSignCombo a{true,
@@ -2593,12 +2695,13 @@ TestTernarySpecial24(TestTracker &Tests, int testNum)
                                          0x00000000,
                                          0xFFFFFFFF}};
 
-    TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(Tests, testNum, a, b, c, a, b);
+    TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(
+        launchParams, Tests, testNum, a, b, c, a, b);
 }
 
 template <class SharkFloatParams, Operator sharkOperator>
 void
-TestTernarySpecial25(TestTracker &Tests, int testNum)
+TestTernarySpecial25(const SharkLaunchParams &launchParams, TestTracker &Tests, int testNum)
 {
 
     IntSignCombo a{true,
@@ -2632,9 +2735,9 @@ TestTernarySpecial25(TestTracker &Tests, int testNum)
                                          0xffffffff,
                                          0xfffffffe}};
 
-    TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(Tests, testNum, a, b, c, a, b);
+    TestTernarySpecialHelper<SharkFloatParams, sharkOperator>(
+        launchParams, Tests, testNum, a, b, c, a, b);
 }
-
 
 template <Operator sharkOperator>
 bool
@@ -2643,20 +2746,30 @@ TestBinaryOperatorPerf([[maybe_unused]] int testBase,
                        [[maybe_unused]] int internalTestLoopCount)
 {
     TestTracker Tests;
+    SharkLaunchParams launchParams{128, 256};
 
-#if (ENABLE_BASIC_CORRECTNESS == 1) || (ENABLE_BASIC_CORRECTNESS == 3)
-    TestPerfRandom<TestPerSharkParams1, sharkOperator>(Tests, testBase + 1, internalTestLoopCount);
-    TestPerfRandom<TestPerSharkParams2, sharkOperator>(Tests, testBase + 2, internalTestLoopCount);
-    TestPerfRandom<TestPerSharkParams3, sharkOperator>(Tests, testBase + 3, internalTestLoopCount);
-    TestPerfRandom<TestPerSharkParams4, sharkOperator>(Tests, testBase + 4, internalTestLoopCount);
+#if (ENABLE_BASIC_CORRECTNESS == 3)
+    TestPerfRandom<TestPerSharkParams1, sharkOperator>(
+        launchParams, Tests, testBase + 1, internalTestLoopCount);
+    TestPerfRandom<TestPerSharkParams2, sharkOperator>(
+        launchParams, Tests, testBase + 2, internalTestLoopCount);
+    TestPerfRandom<TestPerSharkParams3, sharkOperator>(
+        launchParams, Tests, testBase + 3, internalTestLoopCount);
+    TestPerfRandom<TestPerSharkParams4, sharkOperator>(
+        launchParams, Tests, testBase + 4, internalTestLoopCount);
 
-    TestPerfRandom<TestPerSharkParams5, sharkOperator>(Tests, testBase + 5, internalTestLoopCount);
-    TestPerfRandom<TestPerSharkParams6, sharkOperator>(Tests, testBase + 6, internalTestLoopCount);
-    TestPerfRandom<TestPerSharkParams7, sharkOperator>(Tests, testBase + 7, internalTestLoopCount);
-    TestPerfRandom<TestPerSharkParams8, sharkOperator>(Tests, testBase + 8, internalTestLoopCount);
+    TestPerfRandom<TestPerSharkParams5, sharkOperator>(
+        launchParams, Tests, testBase + 5, internalTestLoopCount);
+    TestPerfRandom<TestPerSharkParams6, sharkOperator>(
+        launchParams, Tests, testBase + 6, internalTestLoopCount);
+    TestPerfRandom<TestPerSharkParams7, sharkOperator>(
+        launchParams, Tests, testBase + 7, internalTestLoopCount);
+    TestPerfRandom<TestPerSharkParams8, sharkOperator>(
+        launchParams, Tests, testBase + 8, internalTestLoopCount);
 #elif (ENABLE_BASIC_CORRECTNESS == 2)
     for (size_t i = 0; i < numIters; i++) {
-        TestPerfRandom<TestPerSharkParams1, sharkOperator>(Tests, testBase + 1, internalTestLoopCount);
+        TestPerfRandom<TestPerSharkParams1, sharkOperator>(
+            launchParams, Tests, testBase + 1, internalTestLoopCount);
     }
 #endif
     return Tests.CheckAllTestsPassed();
@@ -2664,12 +2777,15 @@ TestBinaryOperatorPerf([[maybe_unused]] int testBase,
 
 template <Operator sharkOperator>
 bool
-TestFullReferencePerfView5([[maybe_unused]] int testBase,
+TestFullReferencePerfView5(int numBlocks, int numThreads,
+    [[maybe_unused]] int testBase,
                            [[maybe_unused]] int numIters,
                            [[maybe_unused]] int internalTestLoopCount)
 {
-#if (ENABLE_BASIC_CORRECTNESS == 2)
+#if (ENABLE_BASIC_CORRECTNESS == 2) || (ENABLE_BASIC_CORRECTNESS == 1)
     TestTracker Tests;
+    SharkLaunchParams launchParams{numBlocks, numThreads};
+
     static_assert(sharkOperator == Operator::ReferenceOrbit, "Only ReferenceOrbit is supported");
 
     mpf_set_default_prec(
@@ -2740,7 +2856,8 @@ TestFullReferencePerfView5([[maybe_unused]] int testBase,
 
     // TODO: TestPerSharkParams2 is more precision than we need
     for (size_t i = 0; i < numIters; i++) {
-        TestPerf<TestPerSharkParams2, sharkOperator>(Tests,
+        TestPerf<TestPerSharkParams2, sharkOperator>(launchParams,
+                                                     Tests,
                                                      testNum,
                                                      convertedMpfX.c_str(),
                                                      convertedMpfY.c_str(),
@@ -2765,16 +2882,19 @@ TestFullReferencePerfView5([[maybe_unused]] int testBase,
 
 template <Operator sharkOperator>
 bool
-TestFullReferencePerfView30([[maybe_unused]] int testBase,
+TestFullReferencePerfView30(int numBlocks,
+                            int numThreads,
+                            [[maybe_unused]] int testBase,
                             [[maybe_unused]] int numIters,
                             [[maybe_unused]] int internalTestLoopCount)
 {
-#if (ENABLE_BASIC_CORRECTNESS == 2)
+#if (ENABLE_BASIC_CORRECTNESS == 2) || (ENABLE_BASIC_CORRECTNESS == 1)
 
 // TODO: this is kind of cheesy, it'd be nice to share the test
 // view parameters in FractalShark with the test in some reasonable way
 #include "..\FractalSharkLib\LargeCoords.h"
 
+    SharkLaunchParams launchParams{numBlocks, numThreads};
     TestTracker Tests;
     static_assert(sharkOperator == Operator::ReferenceOrbit, "Only ReferenceOrbit is supported");
 
@@ -2846,7 +2966,8 @@ TestFullReferencePerfView30([[maybe_unused]] int testBase,
     HdrReduce(hdrRadiusY);
 
     for (size_t i = 0; i < numIters; i++) {
-        TestPerf<TestPerSharkParams2, sharkOperator>(Tests,
+        TestPerf<TestPerSharkParams2, sharkOperator>(launchParams,
+                                                     Tests,
                                                      testNum,
                                                      num1,
                                                      num2,
@@ -2875,6 +2996,7 @@ template <class SharkFloatParams, Operator sharkOperator>
 bool
 TestAllBinaryOp(int testBase)
 {
+    SharkLaunchParams launchParams{2, 32};
     TestTracker Tests;
 
     constexpr bool includeSet1 = true;
@@ -2889,73 +3011,76 @@ TestAllBinaryOp(int testBase)
     // 2000s is multiply
     // 4000s is add
 
-    //#if 0
+    // #if 0
     if constexpr (includeSet1) {
         const auto set = testBase + 100;
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(Tests, set + 10, "7", "19", "0");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-            Tests, set + 20, "4294967295", "1", "4294967296");
+            launchParams, Tests, set + 10, "7", "19", "0");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-            Tests, set + 30, "4294967296", "1", "1");
+            launchParams, Tests, set + 20, "4294967295", "1", "4294967296");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-            Tests, set + 40, "4294967295", "4294967296", "1");
+            launchParams, Tests, set + 30, "4294967296", "1", "1");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-            Tests, set + 50, "4294967296", "-1", "1");
+            launchParams, Tests, set + 40, "4294967295", "4294967296", "1");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-            Tests, set + 60, "18446744073709551615", "1", "1");
+            launchParams, Tests, set + 50, "4294967296", "-1", "1");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-            Tests, set + 70, "0", "0.1", "0.3");
+            launchParams, Tests, set + 60, "18446744073709551615", "1", "1");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-            Tests, set + 80, "0.1", "0", "0.1");
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(Tests, set + 90, "0", "0", "0");
+            launchParams, Tests, set + 70, "0", "0.1", "0.3");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-            Tests, set + 100, "0.1", "0.1", "0.1");
+            launchParams, Tests, set + 80, "0.1", "0", "0.1");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            launchParams, Tests, set + 90, "0", "0", "0");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            launchParams, Tests, set + 100, "0.1", "0.1", "0.1");
     }
 
     if constexpr (includeSet2) {
         const auto set = testBase + 300;
-        TestTernarySpecial1<SharkFloatParams, sharkOperator>(Tests, set + 10);
-        TestTernarySpecial2<SharkFloatParams, sharkOperator>(Tests, set + 20);
-        TestTernarySpecial3<SharkFloatParams, sharkOperator>(Tests, set + 30);
-        TestTernarySpecial4<SharkFloatParams, sharkOperator>(Tests, set + 40);
-        TestTernarySpecial5<SharkFloatParams, sharkOperator>(Tests, set + 50);
-        TestTernarySpecial6<SharkFloatParams, sharkOperator>(Tests, set + 60);
-        TestTernarySpecial7<SharkFloatParams, sharkOperator>(Tests, set + 70);
-        TestTernarySpecial8<SharkFloatParams, sharkOperator>(Tests, set + 80);
-        TestTernarySpecial9<SharkFloatParams, sharkOperator>(Tests, set + 90);
-        TestTernarySpecial10<SharkFloatParams, sharkOperator>(Tests, set + 100);
-        TestTernarySpecial11<SharkFloatParams, sharkOperator>(Tests, set + 110);
-        TestTernarySpecial12<SharkFloatParams, sharkOperator>(Tests, set + 120);
-        TestTernarySpecial13<SharkFloatParams, sharkOperator>(Tests, set + 130);
-        TestTernarySpecial14<SharkFloatParams, sharkOperator>(Tests, set + 140);
-        TestTernarySpecial15<SharkFloatParams, sharkOperator>(Tests, set + 150);
-        TestTernarySpecial16<SharkFloatParams, sharkOperator>(Tests, set + 160);
-        TestTernarySpecial17<SharkFloatParams, sharkOperator>(Tests, set + 170);
-        TestTernarySpecial18<SharkFloatParams, sharkOperator>(Tests, set + 180);
-        TestTernarySpecial19<SharkFloatParams, sharkOperator>(Tests, set + 190);
-        TestTernarySpecial20<SharkFloatParams, sharkOperator>(Tests, set + 200);
-        TestTernarySpecial21<SharkFloatParams, sharkOperator>(Tests, set + 210);
-        TestTernarySpecial22<SharkFloatParams, sharkOperator>(Tests, set + 220);
-        TestTernarySpecial23<SharkFloatParams, sharkOperator>(Tests, set + 230);
-        TestTernarySpecial24<SharkFloatParams, sharkOperator>(Tests, set + 240);
-        TestTernarySpecial25<SharkFloatParams, sharkOperator>(Tests, set + 250);
+        TestTernarySpecial1<SharkFloatParams, sharkOperator>(launchParams, Tests, set + 10);
+        TestTernarySpecial2<SharkFloatParams, sharkOperator>(launchParams, Tests, set + 20);
+        TestTernarySpecial3<SharkFloatParams, sharkOperator>(launchParams, Tests, set + 30);
+        TestTernarySpecial4<SharkFloatParams, sharkOperator>(launchParams, Tests, set + 40);
+        TestTernarySpecial5<SharkFloatParams, sharkOperator>(launchParams, Tests, set + 50);
+        TestTernarySpecial6<SharkFloatParams, sharkOperator>(launchParams, Tests, set + 60);
+        TestTernarySpecial7<SharkFloatParams, sharkOperator>(launchParams, Tests, set + 70);
+        TestTernarySpecial8<SharkFloatParams, sharkOperator>(launchParams, Tests, set + 80);
+        TestTernarySpecial9<SharkFloatParams, sharkOperator>(launchParams, Tests, set + 90);
+        TestTernarySpecial10<SharkFloatParams, sharkOperator>(launchParams, Tests, set + 100);
+        TestTernarySpecial11<SharkFloatParams, sharkOperator>(launchParams, Tests, set + 110);
+        TestTernarySpecial12<SharkFloatParams, sharkOperator>(launchParams, Tests, set + 120);
+        TestTernarySpecial13<SharkFloatParams, sharkOperator>(launchParams, Tests, set + 130);
+        TestTernarySpecial14<SharkFloatParams, sharkOperator>(launchParams, Tests, set + 140);
+        TestTernarySpecial15<SharkFloatParams, sharkOperator>(launchParams, Tests, set + 150);
+        TestTernarySpecial16<SharkFloatParams, sharkOperator>(launchParams, Tests, set + 160);
+        TestTernarySpecial17<SharkFloatParams, sharkOperator>(launchParams, Tests, set + 170);
+        TestTernarySpecial18<SharkFloatParams, sharkOperator>(launchParams, Tests, set + 180);
+        TestTernarySpecial19<SharkFloatParams, sharkOperator>(launchParams, Tests, set + 190);
+        TestTernarySpecial20<SharkFloatParams, sharkOperator>(launchParams, Tests, set + 200);
+        TestTernarySpecial21<SharkFloatParams, sharkOperator>(launchParams, Tests, set + 210);
+        TestTernarySpecial22<SharkFloatParams, sharkOperator>(launchParams, Tests, set + 220);
+        TestTernarySpecial23<SharkFloatParams, sharkOperator>(launchParams, Tests, set + 230);
+        TestTernarySpecial24<SharkFloatParams, sharkOperator>(launchParams, Tests, set + 240);
+        TestTernarySpecial25<SharkFloatParams, sharkOperator>(launchParams, Tests, set + 250);
     }
 
     if constexpr (includeSet3) {
         const auto set = testBase + 600;
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-            Tests, set + 10, "2", "0.1", "0.3");
+            launchParams, Tests, set + 10, "2", "0.1", "0.3");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-            Tests, set + 20, "0.2", "0.1", "0.3");
+            launchParams, Tests, set + 20, "0.2", "0.1", "0.3");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-            Tests, set + 30, "0.5", "1.2", "1.7");
+            launchParams, Tests, set + 30, "0.5", "1.2", "1.7");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-            Tests, set + 40, "0.6", "1.3", "1.9");
+            launchParams, Tests, set + 40, "0.6", "1.3", "1.9");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-            Tests, set + 50, "0.7", "1.4", "2.1");
+            launchParams, Tests, set + 50, "0.7", "1.4", "2.1");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-            Tests, set + 60, "0.1", "1.99999999999999999999999999999", "2.1");
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(Tests,
+            launchParams, Tests, set + 60, "0.1", "1.99999999999999999999999999999", "2.1");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(launchParams,
+                                                                       Tests,
                                                                        set + 70,
                                                                        "0.123124561464451654461",
                                                                        "1.2395123123127298375982735",
@@ -2965,32 +3090,38 @@ TestAllBinaryOp(int testBase)
     if constexpr (includeSet4) {
         const auto set = testBase + 700;
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-            Tests, set + 10, "-0.5", "1.2", "0.7");
+            launchParams, Tests, set + 10, "-0.5", "1.2", "0.7");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-            Tests, set + 20, "-0.6", "1.3", "0.7");
+            launchParams, Tests, set + 20, "-0.6", "1.3", "0.7");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-            Tests, set + 30, "-0.7", "1.4", "0.3");
+            launchParams, Tests, set + 30, "-0.7", "1.4", "0.3");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-            Tests, set + 40, "-0.1", "1.99999999999999999999999999999", "0.9");
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-            Tests, set + 50, "-0.123124561464451654461", "1.2395123123127298375982735", "0.1");
+            launchParams, Tests, set + 40, "-0.1", "1.99999999999999999999999999999", "0.9");
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(launchParams,
+                                                                       Tests,
+                                                                       set + 50,
+                                                                       "-0.123124561464451654461",
+                                                                       "1.2395123123127298375982735",
+                                                                       "0.1");
     }
 
     if constexpr (includeSet5) {
         const auto set = testBase + 800;
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-            Tests, set + 10, "-0.51", "-1.29", "-1.49");
+            launchParams, Tests, set + 10, "-0.51", "-1.29", "-1.49");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-            Tests, set + 20, "-0.61", "-1.39", "-0.599");
+            launchParams, Tests, set + 20, "-0.61", "-1.39", "-0.599");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-            Tests, set + 30, "-0.71", "-1.49", "-0.799");
+            launchParams, Tests, set + 30, "-0.71", "-1.49", "-0.799");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            launchParams,
             Tests,
             set + 40,
             "-0.11",
             "-1.99999999999999999999999999999",
             "-0.89999999999999999999999999999");
-        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(Tests,
+        TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(launchParams,
+                                                                       Tests,
                                                                        set + 50,
                                                                        "-0.123124561464451654461",
                                                                        "-1.2395123123127298375982735",
@@ -3000,6 +3131,7 @@ TestAllBinaryOp(int testBase)
     if constexpr (includeSet6) {
         const auto set = testBase + 900;
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            launchParams,
             Tests,
             set + 10,
             "0.5265542653452654526545625456254565446654545645649789871322131213156435546435",
@@ -3008,6 +3140,7 @@ TestAllBinaryOp(int testBase)
             "39173047328910730217803271839216",
             "0.12987461239874619237469187236948716928374691827364");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            launchParams,
             Tests,
             set + 20,
             "0.2999999999965542653452654526545625456254565446654545645649789871322131213156435546435",
@@ -3016,6 +3149,7 @@ TestAllBinaryOp(int testBase)
             "39173047328910730217803271839216",
             "1.12374861283467182367518476235481675234862e2334");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            launchParams,
             Tests,
             set + 30,
             "0.1265542653452654526545625456254565446654545645649789871322131213156435546435",
@@ -3024,6 +3158,7 @@ TestAllBinaryOp(int testBase)
             "391730473289107302178039999999999999271839216",
             "1234671987263941876239487162398746e18239");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            launchParams,
             Tests,
             set + 40,
             "0.0265542653452654526545625456254565446654545645649789871322131213156435546435",
@@ -3032,6 +3167,7 @@ TestAllBinaryOp(int testBase)
             "39173047328910730217803271839216",
             "1023949123e389274");
         TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
+            launchParams,
             Tests,
             set + 50,
             "0."
@@ -3051,22 +3187,22 @@ TestAllBinaryOp(int testBase)
         static constexpr auto SpecificTest5 = 255;
         static constexpr auto SpecificTest6 = 256;
 
-        TestTernarySpecial21<SharkFloatParams, sharkOperator>(Tests, 0, SpecificTest1);
-        TestTernarySpecial21<SharkFloatParams, sharkOperator>(Tests, 0, SpecificTest2);
-        TestTernarySpecial21<SharkFloatParams, sharkOperator>(Tests, 0, SpecificTest3);
-        TestTernarySpecial21<SharkFloatParams, sharkOperator>(Tests, 0, SpecificTest4);
-        TestTernarySpecial21<SharkFloatParams, sharkOperator>(Tests, 0, SpecificTest5);
-        TestTernarySpecial21<SharkFloatParams, sharkOperator>(Tests, 0, SpecificTest6);
+        TestTernarySpecial21<SharkFloatParams, sharkOperator>(launchParams, Tests, 0, SpecificTest1);
+        TestTernarySpecial21<SharkFloatParams, sharkOperator>(launchParams, Tests, 0, SpecificTest2);
+        TestTernarySpecial21<SharkFloatParams, sharkOperator>(launchParams, Tests, 0, SpecificTest3);
+        TestTernarySpecial21<SharkFloatParams, sharkOperator>(launchParams, Tests, 0, SpecificTest4);
+        TestTernarySpecial21<SharkFloatParams, sharkOperator>(launchParams, Tests, 0, SpecificTest5);
+        TestTernarySpecial21<SharkFloatParams, sharkOperator>(launchParams, Tests, 0, SpecificTest6);
 
         for (auto i = -512; i < 512; i++) {
             if (SharkVerbose == VerboseMode::Debug) {
                 std::cout << "Exponent adjustment: " << i << std::endl;
             }
 
-            TestTernarySpecial21<SharkFloatParams, sharkOperator>(Tests, 0, i);
+            TestTernarySpecial21<SharkFloatParams, sharkOperator>(launchParams, Tests, 0, i);
         }
     }
-    //#endif
+    // #endif
 
     if constexpr (includeSet10) {
         const auto set10 = testBase + 1000;
@@ -3096,7 +3232,7 @@ TestAllBinaryOp(int testBase)
             const std::string z_str = z->ToString();
 
             TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-                Tests, set10 + i, x_str.c_str(), y_str.c_str(), z_str.c_str());
+                launchParams, Tests, set10 + i, x_str.c_str(), y_str.c_str(), z_str.c_str());
         }
     }
 
@@ -3127,7 +3263,7 @@ TestAllBinaryOp(int testBase)
             const std::string z_str = z->ToString();
 
             TestTernaryOperatorTwoNumbers<SharkFloatParams, sharkOperator>(
-                Tests, 0, x_str.c_str(), y_str.c_str(), z_str.c_str());
+                launchParams, Tests, 0, x_str.c_str(), y_str.c_str(), z_str.c_str());
         }
     }
 
@@ -3159,9 +3295,9 @@ TestAllBinaryOp(int testBase)
     template bool TestBinaryOperatorPerf<Operator::ReferenceOrbit>(                                     \
         int testBase, int numIters, int internalTestLoopCount);                                         \
     template bool TestFullReferencePerfView5<Operator::ReferenceOrbit>(                                 \
-        int testBase, int numIters, int internalTestLoopCount);                                         \
+        int numBlocks, int numThreads, int testBase, int numIters, int internalTestLoopCount);         \
     template bool TestFullReferencePerfView30<Operator::ReferenceOrbit>(                                \
-        int testBase, int numIters, int internalTestLoopCount);
+        int numBlocks, int numThreads, int testBase, int numIters, int internalTestLoopCount);
 #else
 #define REFERENCE_KERNEL(SharkFloatParams) ;
 #endif

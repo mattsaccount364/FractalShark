@@ -73,7 +73,7 @@
 #endif
 #else // not debug
 #ifdef HP_SHARK_FLOAT_TEST
-#define ENABLE_BASIC_CORRECTNESS 2
+#define ENABLE_BASIC_CORRECTNESS 1
 #else
 #define ENABLE_BASIC_CORRECTNESS 4
 #endif
@@ -168,7 +168,7 @@ namespace HpShark {
     static constexpr bool TestCorrectness = (BasicCorrectness == 2) ? Debug : true;
     static constexpr bool TestInfiniteCorrectness = TestCorrectness ? true : false;
     static constexpr auto TestForceSameSign = false;
-    static constexpr bool TestBenchmarkAgainstHost = false;
+    static constexpr bool TestBenchmarkAgainstHost = true;
     static constexpr bool TestInitCudaMemory = true;
 
     // True to compare against the full host-side reference implementation, false is MPIR only
@@ -197,19 +197,25 @@ namespace HpShark {
     }
 }
 
-template<
-    int32_t pThreadsPerBlock,
-    int32_t pNumBlocks,
-    int32_t pNumDigits = pThreadsPerBlock * pNumBlocks>
+struct SharkLaunchParams {
+    SharkLaunchParams(int32_t numBlocksIn, int32_t threadsPerBlockIn)
+        : NumBlocks{numBlocksIn}, ThreadsPerBlock{threadsPerBlockIn},
+          TotalThreads{numBlocksIn * threadsPerBlockIn}
+    {
+    }
+
+    const int32_t NumBlocks;
+    const int32_t ThreadsPerBlock;
+    const int32_t TotalThreads;
+};
+
+template<int32_t pNumDigits>
 struct GenericSharkFloatParams {
     using Float = HDRFloat<float>;
     using SubType = float;
 
     // TODO: this is fucked up, fix it so we don't round to next power of two
     static constexpr bool SharkUsePow2SizesOnly = false;  // HpShark::EnableMultiplyNTTKernel;
-
-    static constexpr int32_t GlobalThreadsPerBlock = pThreadsPerBlock;
-    static constexpr int32_t GlobalNumBlocks = pNumBlocks;
 
     // Fixed number of uint32_t values
     static constexpr int32_t Guard = 4;
@@ -238,22 +244,16 @@ struct GenericSharkFloatParams {
     static constexpr bool ForceNoOp = false;
 
     static constexpr auto NumDebugStates = (3 * static_cast<int>(DebugStatePurpose::NumPurposes));
-    static constexpr auto NumDebugMultiplyCounts = GlobalThreadsPerBlock * GlobalNumBlocks;
 
-    static std::string GetDescription() {
-        std::string desc = "GlobalThreadsPerBlock: " + std::to_string(GlobalThreadsPerBlock) +
-            ", GlobalNumBlocks: " + std::to_string(GlobalNumBlocks);
-        return desc;
+    static constexpr auto MaxBlocks = 256;
+    static constexpr auto MaxThreads = 256;
+    static constexpr auto NumDebugMultiplyCounts = MaxThreads * MaxBlocks;
+
+    static std::string
+    GetDescription()
+    {
+        return std::string("Number of digits: ") + std::to_string(GlobalNumUint32);
     }
-
-    using GetHalf = typename std::conditional_t<
-        (GlobalThreadsPerBlock > 2),
-        GenericSharkFloatParams<GlobalThreadsPerBlock / 2, GlobalNumBlocks>,
-        typename std::conditional_t<(GlobalNumBlocks > 2),
-        GenericSharkFloatParams<GlobalThreadsPerBlock, GlobalNumBlocks / 2>,
-        GenericSharkFloatParams<GlobalThreadsPerBlock, GlobalNumBlocks>
-        >
-    >;
 
     static constexpr SharkNTT::PlanPrime NTTPlan = SharkNTT::BuildPlanPrime(GlobalNumUint32, 26, 2);
     static constexpr bool Periodicity = HpShark::EnablePeriodicity;
@@ -311,25 +311,6 @@ static constexpr auto CalculateNTTFrameSize()
     return retval + alignAt16BytesConstant;
 }
 
-
-template<class SharkFloatParams>
-constexpr int32_t CalculateMultiplySharedMemorySize() {
-    constexpr int NewN = SharkFloatParams::GlobalNumUint32;
-    constexpr auto n = (NewN + 1) / 2;              // Half of NewN
-
-    // Figure out how much shared memory to allocate if we're not loading
-    // everything into shared memory and instead using a constant amount.
-    constexpr auto sharedRequired = SharkFloatParams::GlobalThreadsPerBlock * sizeof(uint64_t) * 3;
-
-    //HpShark::ConstantSharedRequiredBytes
-    constexpr auto sharedAmountBytes =
-        HpShark::LoadAllInShared ?
-        (2 * NewN + 2 * n) * sizeof(uint32_t) :
-        sharedRequired;
-
-    return sharedAmountBytes;
-}
-
 template <class SharkFloatParams>
 constexpr int32_t
 CalculateNTTSharedMemorySize()
@@ -350,45 +331,20 @@ static constexpr auto LowPrec = 32;
 
 
 // If you add a new one, search for one of the other types and copy/paste
-//using Test8x1SharkParams = GenericSharkFloatParams<256, 65, 16384>;
-//using Test8x1SharkParams = GenericSharkFloatParams<128, 128, 8192, 9>;
-//using Test8x1SharkParams = GenericSharkFloatParams<128, 108, 7776, 9>;
-//using Test8x1SharkParams = GenericSharkFloatParams<64, 1, 64>;
-using Test8x1SharkParams = GenericSharkFloatParams<32, 2>;
-//using Test8x1SharkParams = GenericSharkFloatParams<8, 2>; // Use for ENABLE_BASIC_CORRECTNESS==1
-using Test4x36SharkParams = GenericSharkFloatParams<4, 6, 32>;
-using Test4x12SharkParams = GenericSharkFloatParams<3, 18, 50>;
-using Test4x9SharkParams = GenericSharkFloatParams<5, 12, 80>;
-using Test4x6SharkParams = GenericSharkFloatParams<7, 9, 74>;
+using Test8x1SharkParams = GenericSharkFloatParams<8>;
+using Test4x36SharkParams = GenericSharkFloatParams<16>;
+using Test4x12SharkParams = GenericSharkFloatParams<32>;
+using Test4x9SharkParams = GenericSharkFloatParams<64>;
+using Test4x6SharkParams = GenericSharkFloatParams<128>;
 
-// Use for ENABLE_BASIC_CORRECTNESS==2
-
-//
-// Performance test sizes
-// ! TODO NOTE: 65 blocks! 1 for guard (perf improvement)
-// 
-// Best perf for view 30/16384 limb
-// using TestPerSharkParams2 = GenericSharkFloatParams<256, 128, 16384>;
-//
-
-constexpr auto StupidMult = 1;
-//using TestPerSharkParams1 = GenericSharkFloatParams<64, 128>;
-//using TestPerSharkParams1 = GenericSharkFloatParams<96, 81>;
-//using TestPerSharkParams1 = GenericSharkFloatParams<128 * StupidMult, 108, 7776, 9>;
-//using TestPerSharkParams1 = GenericSharkFloatParams<128, 108, 7776, 9>;
-using TestPerSharkParams1 = GenericSharkFloatParams<32, 2, 64>;
-//using TestPerSharkParams1 = GenericSharkFloatParams<256, 64, 16384>;
-//using TestPerSharkParams1 = GenericSharkFloatParams<256, 128, 8192>;
-//using TestPerSharkParams2 = GenericSharkFloatParams<256, 128, 131072>;
-using TestPerSharkParams2 = GenericSharkFloatParams<256, 65, 16384>;
-//using TestPerSharkParams2 = GenericSharkFloatParams<64 * StupidMult, 108, 7776, 9>;
-using TestPerSharkParams3 = GenericSharkFloatParams<32 * StupidMult, 108, 7776>;
-using TestPerSharkParams4 = GenericSharkFloatParams<16 * StupidMult, 108, 7776>;
-
-using TestPerSharkParams5 = GenericSharkFloatParams<128 * StupidMult, 108, 7776>;
-using TestPerSharkParams6 = GenericSharkFloatParams<64 * StupidMult, 108, 7776>;
-using TestPerSharkParams7 = GenericSharkFloatParams<32 * StupidMult,  108, 7776>;
-using TestPerSharkParams8 = GenericSharkFloatParams<16 * StupidMult,  108, 7776>;
+using TestPerSharkParams1 = GenericSharkFloatParams<8192>;
+using TestPerSharkParams2 = GenericSharkFloatParams<16384>;
+using TestPerSharkParams3 = GenericSharkFloatParams<32768>;
+using TestPerSharkParams4 = GenericSharkFloatParams<65536>;
+using TestPerSharkParams5 = GenericSharkFloatParams<131072>;
+using TestPerSharkParams6 = GenericSharkFloatParams<262144>;
+using TestPerSharkParams7 = GenericSharkFloatParams<524288>;
+using TestPerSharkParams8 = GenericSharkFloatParams<1048576>;
 
 // Correctness test sizes
 using TestCorrectnessSharkParams1 = Test8x1SharkParams;
@@ -398,18 +354,18 @@ using TestCorrectnessSharkParams4 = Test4x12SharkParams;
 using TestCorrectnessSharkParams5 = Test4x6SharkParams;
 
 // FractalShark production sizes
-using ProdSharkParams1 = GenericSharkFloatParams<256, 2, 256>;
-using ProdSharkParams2 = GenericSharkFloatParams<256, 4, 512>;
-using ProdSharkParams3 = GenericSharkFloatParams<256, 8, 1024>;
-using ProdSharkParams4 = GenericSharkFloatParams<256, 16, 2048>;
-using ProdSharkParams5 = GenericSharkFloatParams<256, 32, 4096>;
-using ProdSharkParams6 = GenericSharkFloatParams<256, 64, 8192>;
-using ProdSharkParams7 = GenericSharkFloatParams<256, 128, 16384>;
-using ProdSharkParams8 = GenericSharkFloatParams<256, 128, 32768>;
-using ProdSharkParams9 = GenericSharkFloatParams<256, 128, 65536>;
-using ProdSharkParams10 = GenericSharkFloatParams<256, 128, 131072>;
-using ProdSharkParams11 = GenericSharkFloatParams<256, 128, 262144>;
-using ProdSharkParams12 = GenericSharkFloatParams<256, 128, 524288>;
+using ProdSharkParams1 = GenericSharkFloatParams<256>;
+using ProdSharkParams2 = GenericSharkFloatParams<512>;
+using ProdSharkParams3 = GenericSharkFloatParams<1024>;
+using ProdSharkParams4 = GenericSharkFloatParams<2048>;
+using ProdSharkParams5 = GenericSharkFloatParams<4096>;
+using ProdSharkParams6 = GenericSharkFloatParams<8192>;
+using ProdSharkParams7 = GenericSharkFloatParams<16384>;
+using ProdSharkParams8 = GenericSharkFloatParams<32768>;
+using ProdSharkParams9 = GenericSharkFloatParams<65536>;
+using ProdSharkParams10 = GenericSharkFloatParams<131072>;
+using ProdSharkParams11 = GenericSharkFloatParams<262144>;
+using ProdSharkParams12 = GenericSharkFloatParams<524288>;
 
 enum class InjectNoiseInLowOrder {
     Disable,

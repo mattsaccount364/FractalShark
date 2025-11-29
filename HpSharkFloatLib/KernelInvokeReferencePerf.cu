@@ -20,7 +20,8 @@
 
 template <class SharkFloatParams>
 void
-InvokeHpSharkReferenceKernelProd(HpSharkReferenceResults<SharkFloatParams> &combo,
+InvokeHpSharkReferenceKernelProd(const SharkLaunchParams &launchParams,
+                                 HpSharkReferenceResults<SharkFloatParams> &combo,
                                  mpf_t srcX,
                                  mpf_t srcY,
                                  uint64_t numIters)
@@ -44,7 +45,7 @@ InvokeHpSharkReferenceKernelProd(HpSharkReferenceResults<SharkFloatParams> &comb
     assert(memcmp(&combo.Add.E_B, &combo.Multiply.B, sizeof(HpSharkFloat<SharkFloatParams>)) == 0);
     assert(combo.RadiusY.mantissa != 0); // RadiusY must be set.  Does 0 have any useful meaning here?
 
-    InvokeHpSharkReferenceKernelPerf<SharkFloatParams>(nullptr, combo, numIters, nullptr);
+    InvokeHpSharkReferenceKernelPerf<SharkFloatParams>(launchParams, nullptr, combo, numIters, nullptr);
 }
 
 //
@@ -53,7 +54,8 @@ InvokeHpSharkReferenceKernelProd(HpSharkReferenceResults<SharkFloatParams> &comb
 //
 template <class SharkFloatParams>
 void
-InvokeHpSharkReferenceKernelPerf(BenchmarkTimer *timer,
+InvokeHpSharkReferenceKernelPerf(const SharkLaunchParams &launchParams,
+                                 BenchmarkTimer *timer,
                                  HpSharkReferenceResults<SharkFloatParams> &combo,
                                  uint64_t numIters,
                                  DebugGpuCombo *debugCombo)
@@ -159,7 +161,7 @@ InvokeHpSharkReferenceKernelPerf(BenchmarkTimer *timer,
 
     {
         ScopedBenchmarkStopper stopper{timer};
-        ComputeHpSharkReferenceGpuLoop<SharkFloatParams>(stream, kernelArgs);
+        ComputeHpSharkReferenceGpuLoop<SharkFloatParams>(launchParams, stream, kernelArgs);
     }
 
     cudaMemcpy(
@@ -201,9 +203,14 @@ InvokeHpSharkReferenceKernelPerf(BenchmarkTimer *timer,
 #if defined(ENABLE_REFERENCE_KERNEL) || defined(ENABLE_FULL_KERNEL)
 #define ExplicitlyInstantiateHpSharkReference(SharkFloatParams)                                         \
     template void InvokeHpSharkReferenceKernelProd<SharkFloatParams>(                                   \
-        HpSharkReferenceResults<SharkFloatParams> &, mpf_t, mpf_t, uint64_t);                           \
+        const SharkLaunchParams &launchParams,                                                          \
+        HpSharkReferenceResults<SharkFloatParams> &,                                                    \
+        mpf_t,                                                                                          \
+        mpf_t,                                                                                          \
+        uint64_t);                           \
     template void InvokeHpSharkReferenceKernelPerf<SharkFloatParams>(                                   \
-        BenchmarkTimer * timer,                                                                         \
+        const SharkLaunchParams &launchParams,                                                          \
+        BenchmarkTimer *timer,                                                                         \
         HpSharkReferenceResults<SharkFloatParams> & combo,                                              \
         uint64_t numIters,                                                                              \
         DebugGpuCombo *debugCombo);

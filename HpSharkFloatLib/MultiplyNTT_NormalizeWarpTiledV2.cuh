@@ -16,7 +16,7 @@ WarpNormalizeTile(unsigned fullMask,
                   const uint32_t tileCarryIn)
 {
 #ifdef TEST_SMALL_NORMALIZE_WARP
-    constexpr int warpSz = SharkFloatParams::GlobalThreadsPerBlock;
+    constexpr int warpSz = block.dim_threads().x;
 #else
     constexpr int warpSz = 32;
 #endif

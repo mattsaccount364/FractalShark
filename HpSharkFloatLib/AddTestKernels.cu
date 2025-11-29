@@ -34,14 +34,14 @@ AddKernelTestLoop(
 }
 
 template<class SharkFloatParams>
-void ComputeAddGpu(void *kernelArgs[]) {
+void ComputeAddGpu(const SharkLaunchParams &launchParams, void *kernelArgs[]) {
 
     constexpr auto ExpandedNumDigits = SharkFloatParams::GlobalNumUint32;
     constexpr size_t SharedMemSize = 0;
     cudaError_t err = cudaLaunchCooperativeKernel(
         (void *)AddKernel<SharkFloatParams>,
-        dim3(SharkFloatParams::GlobalNumBlocks),
-        dim3(SharkFloatParams::GlobalThreadsPerBlock),
+        dim3(launchParams.NumBlocks),
+        dim3(launchParams.ThreadsPerBlock),
         kernelArgs,
         SharedMemSize, // Shared memory size
         0 // Stream
@@ -56,15 +56,15 @@ void ComputeAddGpu(void *kernelArgs[]) {
 }
 
 template<class SharkFloatParams>
-void ComputeAddGpuTestLoop(void *kernelArgs[]) {
+void ComputeAddGpuTestLoop(const SharkLaunchParams &launchParams, void *kernelArgs[]) {
 
     constexpr auto ExpandedNumDigits = SharkFloatParams::GlobalNumUint32;
     constexpr size_t SharedMemSize = 0;
 
     cudaError_t err = cudaLaunchCooperativeKernel(
         (void *)AddKernelTestLoop<SharkFloatParams>,
-        dim3(SharkFloatParams::GlobalNumBlocks),
-        dim3(SharkFloatParams::GlobalThreadsPerBlock),
+        dim3(launchParams.NumBlocks),
+        dim3(launchParams.ThreadsPerBlock),
         kernelArgs,
         SharedMemSize, // Shared memory size
         0 // Stream
@@ -79,8 +79,10 @@ void ComputeAddGpuTestLoop(void *kernelArgs[]) {
 }
 
 #define ExplicitlyInstantiate(SharkFloatParams) \
-    template void ComputeAddGpu<SharkFloatParams>(void *kernelArgs[]); \
-    template void ComputeAddGpuTestLoop<SharkFloatParams>(void *kernelArgs[]);
+    template void ComputeAddGpu<SharkFloatParams>(const SharkLaunchParams &launchParams,                \
+                                                  void *kernelArgs[]); \
+    template void ComputeAddGpuTestLoop<SharkFloatParams>(const SharkLaunchParams &launchParams,        \
+                                                          void *kernelArgs[]);
 
 #ifdef ENABLE_ADD_KERNEL
 ExplicitInstantiateAll();

@@ -24,15 +24,8 @@ ReferenceHelper(cg::grid_group &grid,
     //
 
     if constexpr (SharkFloatParams::Periodicity) {
-        const auto shouldContinue = PeriodicityChecker(grid,
-                                                       block,
-                                                       currentIteration,
-                                                       cx_cast,
-                                                       cy_cast,
-                                                       dzdcX,
-                                                       dzdcY,
-                                                       reference,
-                                                       gpuReferenceIters);
+        const auto shouldContinue = PeriodicityChecker(
+            grid, block, currentIteration, cx_cast, cy_cast, dzdcX, dzdcY, reference, gpuReferenceIters);
 
         if (!shouldContinue) {
             return false;
@@ -82,8 +75,8 @@ ReferenceHelper(cg::grid_group &grid,
 template <class SharkFloatParams>
 __global__ void
 __maxnreg__(HpShark::RegisterLimit)
-HpSharkReferenceGpuKernel(HpSharkReferenceResults<SharkFloatParams> *SharkRestrict combo,
-                          uint64_t *tempData)
+    HpSharkReferenceGpuKernel(HpSharkReferenceResults<SharkFloatParams> *SharkRestrict combo,
+                              uint64_t *tempData)
 {
 
     // Initialize cooperative grid group
@@ -106,10 +99,10 @@ HpSharkReferenceGpuKernel(HpSharkReferenceResults<SharkFloatParams> *SharkRestri
 template <class SharkFloatParams>
 __global__ void
 __maxnreg__(HpShark::RegisterLimit)
-HpSharkReferenceGpuLoop(HpSharkReferenceResults<SharkFloatParams> *SharkRestrict combo,
-                        uint64_t numIters,
-                        uint64_t *tempData,
-                        typename SharkFloatParams::ReferenceIterT *gpuReferenceIters)
+    HpSharkReferenceGpuLoop(HpSharkReferenceResults<SharkFloatParams> *SharkRestrict combo,
+                            uint64_t numIters,
+                            uint64_t *tempData,
+                            typename SharkFloatParams::ReferenceIterT *gpuReferenceIters)
 {
 
     // Initialize cooperative grid group
@@ -126,17 +119,16 @@ HpSharkReferenceGpuLoop(HpSharkReferenceResults<SharkFloatParams> *SharkRestrict
     // Erase this global debug state if needed.
     if constexpr (HpShark::DebugGlobalState) {
         constexpr auto DebugGlobals_offset = AdditionalGlobalSyncSpace;
-        //constexpr auto DebugChecksum_offset = DebugGlobals_offset + AdditionalGlobalDebugPerThread;
+        // constexpr auto DebugChecksum_offset = DebugGlobals_offset + AdditionalGlobalDebugPerThread;
 
-        //auto *SharkRestrict debugStates =
-        //    reinterpret_cast<DebugState<SharkFloatParams> *>(&tempData[DebugChecksum_offset]);
+        // auto *SharkRestrict debugStates =
+        //     reinterpret_cast<DebugState<SharkFloatParams> *>(&tempData[DebugChecksum_offset]);
         auto *SharkRestrict debugGlobalState =
             reinterpret_cast<DebugGlobalCount<SharkFloatParams> *>(&tempData[DebugGlobals_offset]);
 
         const auto CurBlock = block.group_index().x;
         const auto CurThread = block.thread_index().x;
-        debugGlobalState[CurBlock * SharkFloatParams::GlobalThreadsPerBlock + CurThread]
-            .DebugMultiplyErase();
+        debugGlobalState[CurBlock * block.dim_threads().x + CurThread].DebugMultiplyErase();
     }
 #endif
 
@@ -158,7 +150,7 @@ HpSharkReferenceGpuLoop(HpSharkReferenceResults<SharkFloatParams> *SharkRestrict
 
 template <class SharkFloatParams>
 void
-ComputeHpSharkReferenceGpu(void *kernelArgs[])
+ComputeHpSharkReferenceGpu(const SharkLaunchParams &launchParams, void *kernelArgs[])
 {
 
     constexpr auto sharedAmountBytes = CalculateNTTSharedMemorySize<SharkFloatParams>();
@@ -168,13 +160,13 @@ ComputeHpSharkReferenceGpu(void *kernelArgs[])
                              cudaFuncAttributeMaxDynamicSharedMemorySize,
                              sharedAmountBytes);
 
-        PrintMaxActiveBlocks<SharkFloatParams>(HpSharkReferenceGpuLoop<SharkFloatParams>,
-                                               sharedAmountBytes);
+        PrintMaxActiveBlocks<SharkFloatParams>(
+            launchParams, HpSharkReferenceGpuLoop<SharkFloatParams>, sharedAmountBytes);
     }
 
     cudaError_t err = cudaLaunchCooperativeKernel((void *)HpSharkReferenceGpuKernel<SharkFloatParams>,
-                                                  dim3(SharkFloatParams::GlobalNumBlocks),
-                                                  dim3(SharkFloatParams::GlobalThreadsPerBlock),
+                                                  dim3(launchParams.NumBlocks),
+                                                  dim3(launchParams.ThreadsPerBlock),
                                                   kernelArgs,
                                                   sharedAmountBytes,
                                                   0 // Stream
@@ -195,7 +187,9 @@ ComputeHpSharkReferenceGpu(void *kernelArgs[])
 
 template <class SharkFloatParams>
 void
-ComputeHpSharkReferenceGpuLoop(cudaStream_t &stream, void *kernelArgs[])
+ComputeHpSharkReferenceGpuLoop(const SharkLaunchParams &launchParams,
+                               cudaStream_t &stream,
+                               void *kernelArgs[])
 {
 
     constexpr auto sharedAmountBytes = CalculateNTTSharedMemorySize<SharkFloatParams>();
@@ -205,13 +199,13 @@ ComputeHpSharkReferenceGpuLoop(cudaStream_t &stream, void *kernelArgs[])
                              cudaFuncAttributeMaxDynamicSharedMemorySize,
                              sharedAmountBytes);
 
-        PrintMaxActiveBlocks<SharkFloatParams>(HpSharkReferenceGpuLoop<SharkFloatParams>,
+        PrintMaxActiveBlocks<SharkFloatParams>(launchParams, HpSharkReferenceGpuLoop<SharkFloatParams>,
                                                sharedAmountBytes);
     }
 
     cudaError_t err = cudaLaunchCooperativeKernel((void *)HpSharkReferenceGpuLoop<SharkFloatParams>,
-                                                  dim3(SharkFloatParams::GlobalNumBlocks),
-                                                  dim3(SharkFloatParams::GlobalThreadsPerBlock),
+                                                  dim3(launchParams.NumBlocks),
+                                                  dim3(launchParams.ThreadsPerBlock),
                                                   kernelArgs,
                                                   sharedAmountBytes,
                                                   stream // Stream
@@ -231,9 +225,10 @@ ComputeHpSharkReferenceGpuLoop(cudaStream_t &stream, void *kernelArgs[])
 }
 
 #define ExplicitlyInstantiate(SharkFloatParams)                                                         \
-    template void ComputeHpSharkReferenceGpu<SharkFloatParams>(void *kernelArgs[]);                     \
-    template void ComputeHpSharkReferenceGpuLoop<SharkFloatParams>(cudaStream_t & stream,               \
-                                                                   void *kernelArgs[]);
+    template void ComputeHpSharkReferenceGpu<SharkFloatParams>(const SharkLaunchParams &launchParams,   \
+                                                               void *kernelArgs[]);                     \
+    template void ComputeHpSharkReferenceGpuLoop<SharkFloatParams>(                                     \
+        const SharkLaunchParams &launchParams, cudaStream_t &stream, void *kernelArgs[]);
 
 #if defined(ENABLE_REFERENCE_KERNEL) || defined(ENABLE_FULL_KERNEL)
 ExplicitInstantiateAll();

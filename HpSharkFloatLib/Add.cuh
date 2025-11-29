@@ -10,10 +10,10 @@ struct HpSharkFloat;
 bool CheckAllTestsPassed();
 
 template<class SharkFloatParams>
-void ComputeAddGpuTestLoop(void *kernelArgs[]);
+void ComputeAddGpuTestLoop(const SharkLaunchParams &launchParams, void *kernelArgs[]);
 
 template<class SharkFloatParams>
-void ComputeAddGpu(void *kernelArgs[]);
+void ComputeAddGpu(const SharkLaunchParams &launchParams, void *kernelArgs[]);
 
 template<class SharkFloatParams>
 CUDA_GLOBAL void AddKernel(

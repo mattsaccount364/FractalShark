@@ -173,29 +173,33 @@
 #if ENABLE_BASIC_CORRECTNESS == 0
 #define ExplicitInstantiateAll() \
         ExplicitlyInstantiate(Test8x1SharkParams);
-#elif ENABLE_BASIC_CORRECTNESS == 1 || ENABLE_BASIC_CORRECTNESS == 3
-    #define ExplicitInstantiateAll() \
-        ExplicitlyInstantiate(Test4x9SharkParams); \
-        ExplicitlyInstantiate(Test4x12SharkParams); \
-        ExplicitlyInstantiate(Test8x1SharkParams); \
-        ExplicitlyInstantiate(Test4x36SharkParams); \
-        ExplicitlyInstantiate(Test4x6SharkParams); \
-    \
-        ExplicitlyInstantiate(TestPerSharkParams1); \
-        ExplicitlyInstantiate(TestPerSharkParams2); \
-        ExplicitlyInstantiate(TestPerSharkParams3); \
-        ExplicitlyInstantiate(TestPerSharkParams4); \
-    \
-        ExplicitlyInstantiate(TestPerSharkParams5); \
-        ExplicitlyInstantiate(TestPerSharkParams6); \
-        ExplicitlyInstantiate(TestPerSharkParams7); \
-        ExplicitlyInstantiate(TestPerSharkParams8); \
-    \
-        InstantiateComicalCorrectness();
+#elif ENABLE_BASIC_CORRECTNESS == 1
+#define ExplicitInstantiateAll()                                                                        \
+    ExplicitlyInstantiate(TestPerSharkParams1);                                                         \
+    ExplicitlyInstantiate(TestPerSharkParams2);
 #elif ENABLE_BASIC_CORRECTNESS == 2
+#define ExplicitInstantiateAll()                                                                        \
+    ExplicitlyInstantiate(TestPerSharkParams1);                                                         \
+    ExplicitlyInstantiate(TestPerSharkParams2);
+#elif ENABLE_BASIC_CORRECTNESS == 3
 #define ExplicitInstantiateAll() \
-        ExplicitlyInstantiate(TestPerSharkParams1); \
-        ExplicitlyInstantiate(TestPerSharkParams2);
+    ExplicitlyInstantiate(Test4x9SharkParams); \
+    ExplicitlyInstantiate(Test4x12SharkParams); \
+    ExplicitlyInstantiate(Test8x1SharkParams); \
+    ExplicitlyInstantiate(Test4x36SharkParams); \
+    ExplicitlyInstantiate(Test4x6SharkParams); \
+\
+    ExplicitlyInstantiate(TestPerSharkParams1); \
+    ExplicitlyInstantiate(TestPerSharkParams2); \
+    ExplicitlyInstantiate(TestPerSharkParams3); \
+    ExplicitlyInstantiate(TestPerSharkParams4); \
+\
+    ExplicitlyInstantiate(TestPerSharkParams5); \
+    ExplicitlyInstantiate(TestPerSharkParams6); \
+    ExplicitlyInstantiate(TestPerSharkParams7); \
+    ExplicitlyInstantiate(TestPerSharkParams8); \
+\
+    InstantiateComicalCorrectness();
 #elif ENABLE_BASIC_CORRECTNESS == 4
 #define ExplicitInstantiateAll() \
     ExplicitlyInstantiate(ProdSharkParams1);                                                         \

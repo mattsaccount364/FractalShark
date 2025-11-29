@@ -31,7 +31,7 @@ __device__ void DebugMultiplyIncrement (
     uint32_t count)
 {
     if constexpr (HpShark::DebugGlobalState) {
-        auto &index = array[block.group_index().x * SharkFloatParams::GlobalThreadsPerBlock + block.thread_index().x];
+        auto &index = array[block.group_index().x * block.dim_threads().x + block.thread_index().x];
         index.Data.multiplyCount += count;
         index.Data.blockIdx = block.group_index().x;
         index.Data.threadIdx = block.thread_index().x;
@@ -46,7 +46,7 @@ DebugCarryIncrement(DebugGlobalCount<SharkFloatParams> *array,
                     uint32_t count)
 {
     if constexpr (HpShark::DebugGlobalState) {
-        auto &index = array[block.group_index().x * SharkFloatParams::GlobalThreadsPerBlock +
+        auto &index = array[block.group_index().x * block.dim_threads().x +
                             block.thread_index().x];
         index.Data.carryCount += count;
         index.Data.blockIdx = block.group_index().x;
@@ -62,7 +62,7 @@ DebugNormalizeIncrement(DebugGlobalCount<SharkFloatParams> *array,
                         uint32_t count)
 {
     if constexpr (HpShark::DebugGlobalState) {
-        auto &index = array[block.group_index().x * SharkFloatParams::GlobalThreadsPerBlock +
+        auto &index = array[block.group_index().x * block.dim_threads().x +
                             block.thread_index().x];
         index.Data.normalizeCount += count;
         index.Data.blockIdx = block.group_index().x;

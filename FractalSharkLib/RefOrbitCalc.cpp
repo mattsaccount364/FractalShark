@@ -2178,7 +2178,7 @@ RefOrbitCalc::AddPerturbationReferencePointGPU(HighPrecision cx, HighPrecision c
     auto lamb = [&]<class P>(HpSharkReferenceResults<P> &combo) {
         combo.RadiusY = results->GetMaxRadius();
 
-        InvokeHpSharkReferenceKernelProd(combo, cx_mpf, cy_mpf, NumIters);
+        InvokeHpSharkReferenceKernelProd(launchParams, combo, cx_mpf, cy_mpf, NumIters);
 
         for (size_t i = 0; i < combo.EscapedIteration; ++i) {
             results->AddUncompressedIteration(combo.OutputIters[i]);

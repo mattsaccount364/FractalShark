@@ -4,7 +4,8 @@
 
 template <class SharkFloatParams>
 void
-InvokeMultiplyNTTKernelCorrectness(BenchmarkTimer &timer,
+InvokeMultiplyNTTKernelCorrectness(const SharkLaunchParams &launchParams,
+                                   BenchmarkTimer &timer,
                                    HpSharkComboResults<SharkFloatParams> &combo,
                                    DebugGpuCombo *debugCombo)
 {
@@ -50,7 +51,7 @@ InvokeMultiplyNTTKernelCorrectness(BenchmarkTimer &timer,
 
     {
         ScopedBenchmarkStopper stopper{timer};
-        ComputeMultiplyNTTGpu<SharkFloatParams>(kernelArgs);
+        ComputeMultiplyNTTGpu<SharkFloatParams>(launchParams, kernelArgs);
     }
 
     cudaMemcpy(&combo, comboGpu, sizeof(HpSharkComboResults<SharkFloatParams>), cudaMemcpyDeviceToHost);
@@ -82,6 +83,7 @@ InvokeMultiplyNTTKernelCorrectness(BenchmarkTimer &timer,
 #ifdef ENABLE_MULTIPLY_NTT_KERNEL
 #define ExplicitlyInstantiateMultiplyNTT(SharkFloatParams)                                              \
     template void InvokeMultiplyNTTKernelCorrectness<SharkFloatParams>(                                 \
+        const SharkLaunchParams &launchParams,                                                         \
         BenchmarkTimer & timer,                                                                         \
         HpSharkComboResults<SharkFloatParams> & combo,                                                  \
         DebugGpuCombo * debugCombo);

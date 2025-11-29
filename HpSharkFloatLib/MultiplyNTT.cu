@@ -183,7 +183,7 @@ Normalize_GridStride_3WayV2(cooperative_groups::grid_group &grid,
 {
     // We only ever produce digits in [0, Ddigits).
 #ifdef TEST_SMALL_NORMALIZE_WARP
-    constexpr int warpSz = SharkFloatParams::GlobalThreadsPerBlock;
+    constexpr int warpSz = block.dim_threads().x;
 #else
     constexpr int warpSz = 32;
 #endif
@@ -194,8 +194,6 @@ Normalize_GridStride_3WayV2(cooperative_groups::grid_group &grid,
     const int totalWarps = max(1, totalThreads / warpSz);
     const unsigned fullMask = __activemask();
     const int lane = block.thread_index().x & (warpSz - 1);
-    const int warpId = tid / warpSz;
-    const int numTiles = (Ddigits + warpSz - 1) / warpSz;
 
     auto *cur = CarryPropagationBuffer;
     auto *next = CarryPropagationBuffer2;
@@ -209,7 +207,6 @@ Normalize_GridStride_3WayV2(cooperative_groups::grid_group &grid,
     // We run the tile chain in a single warp for now (warp 0) so that tile
     // carries are propagated correctly and in order. Other warps do nothing.
     uint64_t prevGlobalSync1 = std::numeric_limits<uint64_t>::max();
-    int32_t iteration = 0;
     *globalSync1 = 0;
     *globalSync2 = 0;
 
@@ -342,6 +339,11 @@ Normalize_GridStride_3WayV2(cooperative_groups::grid_group &grid,
     const auto globalResult = *globalSync2;
 
 #ifdef TILE_VERSION
+    int32_t iteration = 0;
+
+    const int warpId = tid / warpSz;
+    const int numTiles = (Ddigits + warpSz - 1) / warpSz;
+
     if (globalResult != 0) {
 
         uint32_t carry_lo;
@@ -1641,7 +1643,7 @@ StoreCurrentDebugState(DebugState<SharkFloatParams> *SharkRestrict debugStates,
 static_assert(AdditionalUInt64PerFrame == 256, "See below");
 #define DefineTempProductsOffsets()                                                                     \
     const int threadIdxGlobal =                                                                         \
-        block.group_index().x * SharkFloatParams::GlobalThreadsPerBlock + block.thread_index().x;       \
+        block.group_index().x * block.dim_threads().x + block.thread_index().x;       \
     constexpr auto NewN = SharkFloatParams::GlobalNumUint32;                                            \
     constexpr int TestMultiplier = 1;                                                                   \
     constexpr auto DebugGlobals_offset = AdditionalGlobalSyncSpace;                                       \
@@ -1933,8 +1935,6 @@ MultiplyHelperNTTV2Separates(const SharkNTT::RootTables &roots,
 
     extern __shared__ uint64_t shared_data[];
 
-    constexpr auto ExecutionNumBlocks = SharkFloatParams::GlobalNumBlocks;
-
     DefineTempProductsOffsets();
 
     // TODO: indexes
@@ -1947,7 +1947,7 @@ MultiplyHelperNTTV2Separates(const SharkNTT::RootTables &roots,
     if constexpr (HpShark::DebugGlobalState) {
         const auto CurBlock = block.group_index().x;
         const auto CurThread = block.thread_index().x;
-        debugGlobalState[CurBlock * SharkFloatParams::GlobalThreadsPerBlock + CurThread]
+        debugGlobalState[CurBlock * block.dim_threads().x + CurThread]
             .DebugMultiplyErase();
     }
 #endif
@@ -2148,7 +2148,7 @@ MultiplyHelperNTTV2Separates(const SharkNTT::RootTables &roots,
 
 template <class SharkFloatParams>
 void
-PrintMaxActiveBlocks(void *kernelFn, int sharedAmountBytes)
+PrintMaxActiveBlocks(const SharkLaunchParams &launchParams, void *kernelFn, int sharedAmountBytes)
 {
     std::cout << "Shared memory size: " << sharedAmountBytes << std::endl;
 
@@ -2161,7 +2161,7 @@ PrintMaxActiveBlocks(void *kernelFn, int sharedAmountBytes)
         // in the shared memory
 
         const auto err = cudaOccupancyMaxActiveBlocksPerMultiprocessor(
-            &numBlocks, kernelFn, SharkFloatParams::GlobalThreadsPerBlock, sharedAmountBytes);
+            &numBlocks, kernelFn, launchParams.ThreadsPerBlock, sharedAmountBytes);
 
         if (err != cudaSuccess) {
             std::cerr << "CUDA error in cudaOccupancyMaxActiveBlocksPerMultiprocessor: "
@@ -2175,7 +2175,7 @@ PrintMaxActiveBlocks(void *kernelFn, int sharedAmountBytes)
     {
         size_t availableSharedMemory = 0;
         const auto err = cudaOccupancyAvailableDynamicSMemPerBlock(
-            &availableSharedMemory, kernelFn, numBlocks, SharkFloatParams::GlobalThreadsPerBlock);
+            &availableSharedMemory, kernelFn, numBlocks, launchParams.ThreadsPerBlock);
 
         if (err != cudaSuccess) {
             std::cerr << "CUDA error in cudaOccupancyAvailableDynamicSMemPerBlock: "
@@ -2204,7 +2204,7 @@ PrintMaxActiveBlocks(void *kernelFn, int sharedAmountBytes)
     int maxConcurrentBlocks = numSM * numBlocks;
 
     std::cout << "Max concurrent blocks: " << maxConcurrentBlocks << std::endl;
-    if (maxConcurrentBlocks < SharkFloatParams::GlobalNumBlocks) {
+    if (maxConcurrentBlocks < launchParams.NumBlocks) {
         std::cout << "Warning: Max concurrent blocks exceeds the number of blocks requested."
                   << std::endl;
     }

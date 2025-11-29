@@ -132,13 +132,13 @@ RunCorrectnessTest()
         return 1;
     } else {
 
-#if (ENABLE_BASIC_CORRECTNESS == 0) || (ENABLE_BASIC_CORRECTNESS == 1) || (ENABLE_BASIC_CORRECTNESS == 3)
+#if (ENABLE_BASIC_CORRECTNESS == 0) || (ENABLE_BASIC_CORRECTNESS == 3)
         do {
             if (!CorrectnessTests<TestCorrectnessSharkParams1>()) {
                 return 0;
             }
 
-#if (ENABLE_BASIC_CORRECTNESS == 1) || (ENABLE_BASIC_CORRECTNESS == 3)
+#if (ENABLE_BASIC_CORRECTNESS == 3)
             if (!CorrectnessTests<TestCorrectnessSharkParams2>()) {
                 return 0;
             }
@@ -282,10 +282,52 @@ main(int /*argc*/, char * /*argv*/[])
         }
     }
 
+
+#if (ENABLE_BASIC_CORRECTNESS == 1)
     if constexpr (HpShark::EnableFullKernel) {
+        for (int numBlocks = 16; numBlocks <= 256; numBlocks *= 2) {
+            for (int numThreads = 64; numThreads <= 512; numThreads *= 2) {
+                std::cout << "Testing Full Reference Orbit with "
+                          << numBlocks << " blocks and "
+                          << numThreads << " threads per block." << std::endl;
+
+                testBase = 16020;
+                res = TestFullReferencePerfView30<Operator::ReferenceOrbit>(
+                    numBlocks, numThreads, testBase, numIters, internalTestLoopCount);
+                if (!res) {
+                    auto q = PressKey();
+                    if (q == 'q') {
+                        return 0;
+                    }
+                }
+
+                {
+                    auto q = PressKey();
+                    if (q == 'q') {
+                        return 0;
+                    }
+                }
+
+                testBase = 16010;
+                res = TestFullReferencePerfView5<Operator::ReferenceOrbit>(
+                    numBlocks, numThreads, testBase, numIters, internalTestLoopCount);
+                if (!res) {
+                    auto q = PressKey();
+                    if (q == 'q') {
+                        return 0;
+                    }
+                }
+            }
+        }
+    }
+#elif (ENABLE_BASIC_CORRECTNESS == 2)
+    if constexpr (HpShark::EnableFullKernel) {
+        int numBlocks = 65;
+        int numThreads = 256;
+
         testBase = 16020;
         res = TestFullReferencePerfView30<Operator::ReferenceOrbit>(
-            testBase, numIters, internalTestLoopCount);
+            numBlocks, numThreads, testBase, numIters, internalTestLoopCount);
         if (!res) {
             auto q = PressKey();
             if (q == 'q') {
@@ -302,7 +344,7 @@ main(int /*argc*/, char * /*argv*/[])
 
         testBase = 16010;
         res = TestFullReferencePerfView5<Operator::ReferenceOrbit>(
-            testBase, numIters, internalTestLoopCount);
+            numBlocks, numThreads, testBase, numIters, internalTestLoopCount);
         if (!res) {
             auto q = PressKey();
             if (q == 'q') {
@@ -310,6 +352,7 @@ main(int /*argc*/, char * /*argv*/[])
             }
         }
     }
+#endif
 #endif
 
     if constexpr (!HpShark::TestCorrectness) {

@@ -598,7 +598,7 @@ static __device__ void AddHelperSeparates(
     HpSharkFloat<SharkFloatParams> *Out_D_E,
     uint64_t *tempData)
 {
-    extern __shared__ uint32_t shared_data[];
+    extern __shared__ uint64_t shared_data[];
 
     // --- Constants and Parameters ---
     constexpr int32_t guard = SharkFloatParams::Guard;
@@ -679,7 +679,8 @@ static __device__ void AddHelperSeparates(
     if constexpr (HpShark::DebugGlobalState) {
         const auto CurBlock = block.group_index().x;
         const auto CurThread = block.thread_index().x;
-        debugGlobalState[CurBlock * SharkFloatParams::GlobalThreadsPerBlock + CurThread]
+        const auto ThreadsPerBlock = block.dim_threads().x;
+        debugGlobalState[CurBlock * ThreadsPerBlock + CurThread]
             .DebugMultiplyErase();
     }
 #endif
@@ -908,7 +909,7 @@ static __device__ void AddHelperSeparates(
         CarryPropagation_ABC_PPv3<SharkFloatParams>(
             globalSync1,
             globalSync2,
-            reinterpret_cast<uint64_t*>(shared_data),
+            shared_data,
             idx,
             numActualDigitsPlusGuard,
             extResultTrue,

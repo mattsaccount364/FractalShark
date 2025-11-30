@@ -333,12 +333,14 @@ main(int /*argc*/, char * /*argv*/[])
     }
 #elif (ENABLE_BASIC_CORRECTNESS == 2)
     if constexpr (HpShark::EnableFullKernel) {
+        TestTracker Tests;
+
         int numBlocks = 65;
         int numThreads = 256;
 
         testBase = 16020;
         res = TestFullReferencePerfView30<Operator::ReferenceOrbit>(
-            numBlocks, numThreads, testBase, numIters, internalTestLoopCount);
+            Tests, numBlocks, numThreads, testBase, numIters, internalTestLoopCount);
         if (!res) {
             auto q = PressKey();
             if (q == 'q') {
@@ -355,7 +357,7 @@ main(int /*argc*/, char * /*argv*/[])
 
         testBase = 16010;
         res = TestFullReferencePerfView5<Operator::ReferenceOrbit>(
-            numBlocks, numThreads, testBase, numIters, internalTestLoopCount);
+            Tests, numBlocks, numThreads, testBase, numIters, internalTestLoopCount);
         if (!res) {
             auto q = PressKey();
             if (q == 'q') {

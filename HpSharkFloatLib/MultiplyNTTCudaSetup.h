@@ -12,14 +12,24 @@ namespace SharkNTT {
 
 struct RootTables {
     int32_t stages;
-    uint64_t *stage_omegas;     // [stages]
-    uint64_t *stage_omegas_inv; // [stages]
+    uint64_t *stage_omegas;     // [stages], Montgomery domain
+    uint64_t *stage_omegas_inv; // [stages], Montgomery domain
 
     int32_t N;
-    uint64_t *psi_pows;     // [N]
-    uint64_t *psi_inv_pows; // [N]
+    uint64_t *psi_pows;     // [N],  psi^i in Montgomery domain
+    uint64_t *psi_inv_pows; // [N], (psi^{-1})^i in Montgomery
     uint64_t Ninvm_mont;    // N^{-1} in Montgomery form
+
+    // Flat table of per-stage twiddles in Montgomery domain:
+    // For stage s (1-based), indices j = 0 .. (2^(s-1) - 1) live at:
+    //   stage_twiddles[ stage_twiddle_offset[s] + j ]
+    uint64_t *stage_twiddles_fwd; // built from stage_omegas
+    uint64_t *stage_twiddles_inv; // built from stage_omegas_inv
+
+    // Total number of twiddle entries, for convenience
+    uint32_t total_twiddles;
 };
+
 
 template <class SharkFloatParams> uint64_t MontgomeryMul(uint64_t a, uint64_t b);
 

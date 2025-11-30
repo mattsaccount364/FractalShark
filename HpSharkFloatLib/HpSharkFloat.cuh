@@ -73,7 +73,7 @@
 #endif
 #else // not debug
 #ifdef HP_SHARK_FLOAT_TEST
-#define ENABLE_BASIC_CORRECTNESS 1
+#define ENABLE_BASIC_CORRECTNESS 2
 #else
 #define ENABLE_BASIC_CORRECTNESS 4
 #endif

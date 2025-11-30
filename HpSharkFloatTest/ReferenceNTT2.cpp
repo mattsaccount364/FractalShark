@@ -210,31 +210,71 @@ BitReverseInplace64(uint64_t *A, uint32_t N, uint32_t stages)
 // Iterative radix-2 NTT (Cooley–Tukey) over Montgomery domain
 //--------------------------------------------------------------------------------------------------
 
-template <class SharkFloatParams>
+template <class SharkFloatParams, bool inverse>
 static void
 NTTRadix2(DebugHostCombo<SharkFloatParams> &debugCombo,
           uint64_t *A,
           uint32_t N,
           uint32_t stages,
-          const uint64_t *stage_base)
+          RootTables &rootTables)
 {
+    uint64_t *stage_omegas;
+    uint64_t *stage_twiddles;
+
+    if constexpr (inverse) {
+        stage_omegas = rootTables.stage_omegas_inv;
+        stage_twiddles = rootTables.stage_twiddles_inv;
+    } else {
+        stage_omegas = rootTables.stage_omegas;
+        stage_twiddles = rootTables.stage_twiddles_fwd;
+    }
+
     for (uint32_t s = 1; s <= stages; ++s) {
-        uint32_t m = 1u << s;
-        uint32_t half = m >> 1;
-        uint64_t w_m = stage_base[s - 1];
+        const uint32_t m = 1u << s;
+        const uint32_t half = m >> 1;
+
+        const uint64_t w_m = stage_omegas[s - 1];
+
+        const uint32_t numTwid = (1u << (s - 1)); // number of twiddles at this stage
+        const uint32_t tw_base = numTwid - 1u;    // = (1u << (s - 1)) - 1u
+
         for (uint32_t k = 0; k < N; k += m) {
-            uint64_t w = ToMontgomery(debugCombo, 1);
             for (uint32_t j = 0; j < half; ++j) {
-                uint64_t U = A[k + j];
-                uint64_t V = A[k + j + half];
-                uint64_t t = MontgomeryMul(debugCombo, V, w);
-                A[k + j] = AddP(U, t);
-                A[k + j + half] = SubP(U, t);
-                w = MontgomeryMul(debugCombo, w, w_m);
+                const uint32_t i0 = k + j;
+                const uint32_t i1 = i0 + half;
+
+                const uint64_t U = A[i0];
+                const uint64_t V = A[i1];
+
+                const uint64_t w = stage_twiddles[tw_base + j]; // fwd or inv
+
+                // Optional: stage-local cross-check (only in debug)
+                {
+                    static thread_local bool checked_stage[64] = {false};
+                    if (!checked_stage[s - 1] && j + 1 == half) {
+                        uint64_t w_inc = ToMontgomery(debugCombo, 1);
+                        for (uint32_t jj = 0; jj < half; ++jj) {
+                            const uint64_t w_tab = stage_twiddles[tw_base + jj];
+                            if (w_tab != w_inc) {
+                                std::cerr << (inverse ? "Inv" : "Fwd")
+                                          << " twiddle mismatch at stage "
+                                          << s << " j=" << jj << std::endl;
+                                break;
+                            }
+                            w_inc = MontgomeryMul(debugCombo, w_inc, w_m);
+                        }
+                        checked_stage[s - 1] = true;
+                    }
+                }
+
+                const uint64_t t = MontgomeryMul(debugCombo, V, w);
+                A[i0] = AddP(U, t);
+                A[i1] = SubP(U, t);
             }
         }
     }
 }
+
 
 //==================================================================================================
 //                       Pack (base-2^b) and Unpack (to Final128)
@@ -580,8 +620,8 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
         BitReverseInplace64(X.data(), (uint32_t)plan.N, (uint32_t)plan.stages);
         BitReverseInplace64(Y.data(), (uint32_t)plan.N, (uint32_t)plan.stages);
 
-        NTTRadix2(debugCombo, X.data(), (uint32_t)plan.N, (uint32_t)plan.stages, roots.stage_omegas);
-        NTTRadix2(debugCombo, Y.data(), (uint32_t)plan.N, (uint32_t)plan.stages, roots.stage_omegas);
+        NTTRadix2<SharkFloatParams, false>(debugCombo, X.data(), (uint32_t)plan.N, (uint32_t)plan.stages, roots);
+        NTTRadix2<SharkFloatParams, false>(debugCombo, Y.data(), (uint32_t)plan.N, (uint32_t)plan.stages, roots);
 
         if constexpr (HpShark::DebugChecksums) {
             const auto &debugXState =
@@ -611,7 +651,7 @@ MultiplyHelperFFT2(const HpSharkFloat<SharkFloatParams> *A,
             }
         }
 
-        NTTRadix2(debugCombo, X.data(), (uint32_t)plan.N, (uint32_t)plan.stages, roots.stage_omegas_inv);
+        NTTRadix2<SharkFloatParams, true>(debugCombo, X.data(), (uint32_t)plan.N, (uint32_t)plan.stages, roots);
 
         // 6) Untwist + scale by N^{-1} (write back into X)
         for (int i = 0; i < plan.N; ++i) {

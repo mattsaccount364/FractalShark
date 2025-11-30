@@ -1,6 +1,7 @@
 #include "DbgHeap.h"
 #include "KernelInvoke.cuh"
 #include "KernelInvokeInternal.cuh"
+#include "TestVerbose.h"
 
 template <class SharkFloatParams>
 void
@@ -15,7 +16,11 @@ InvokeMultiplyNTTKernelCorrectness(const SharkLaunchParams &launchParams,
     uint64_t *d_tempProducts;
     constexpr auto BytesToAllocate =
         (AdditionalUInt64Global + CalculateNTTFrameSize<SharkFloatParams>()) * sizeof(uint64_t);
-    std::cout << " Allocating " << BytesToAllocate << " bytes for d_tempProducts " << std::endl;
+
+    if (SharkVerbose == VerboseMode::Debug) {
+        std::cout << " Allocating " << BytesToAllocate << " bytes for d_tempProducts " << std::endl;
+    }
+
     cudaMalloc(&d_tempProducts, BytesToAllocate);
 
     if constexpr (!HpShark::TestInitCudaMemory) {

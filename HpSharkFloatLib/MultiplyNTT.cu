@@ -796,6 +796,8 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
                     const uint64_t *__restrict s_stages,
                     const uint64_t *__restrict stage_twiddles)
 {
+    namespace cg = cooperative_groups;
+
     // Toggle this to select implementation:
     //   true  -> original MontgomeryPow recurrence on device
     //   false -> use precomputed flattened twiddle tables
@@ -821,10 +823,41 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
 
     const uint32_t tiles = (N + TS - 1u) / TS;
 
-    // Carve tile base from shared_data (A lives in shared)
+    // Carve tile base from shared_data (A/B/C live in shared)
     auto *const s_dataA = reinterpret_cast<uint64_t *>(shared_data) + stages;
     auto *const s_dataB = s_dataA + TS;
     auto *const s_dataC = s_dataB + TS;
+
+    // ----------------------------------------------------------------------
+    // Shared twiddle cache for the *first few stages* (e.g. first 6).
+    // We copy all needed twiddles for those stages once, up front.
+    // Global flattened layout: stage s uses indices
+    //   [tw_base .. tw_base + half-1], tw_base = 2^(s-1) - 1, half = 2^(s-1).
+    // Total twiddles for stages 1..K = 2^K - 1.
+    // ----------------------------------------------------------------------
+    constexpr uint32_t MaxCachedStages = 6;
+    constexpr uint32_t MaxCachedTwiddles = (1u << MaxCachedStages) - 1; // = 63
+
+    // Reserve shared space for cached twiddles after C.
+    auto *const s_twiddles_cached = s_dataC + TS; // needs +MaxCachedTwiddles uint64_t in smem
+
+    // Only cache for precomputed-table mode, and only up to S1.
+    const uint32_t cachedStages =
+        (!UseMontPow && S1 > 0) ? ((S1 < MaxCachedStages) ? S1 : MaxCachedStages) : 0u;
+
+    const uint32_t cachedTwiddles = (cachedStages > 0) ? ((1u << cachedStages) - 1u) : 0u;
+
+    if constexpr (!UseMontPow) {
+        if (cachedTwiddles > 0) {
+            // Copy all twiddles for stages 1..cachedStages in one shot:
+            // these are stage_twiddles[0 .. cachedTwiddles-1].
+            cg::memcpy_async(
+                block, s_twiddles_cached, stage_twiddles, cachedTwiddles * sizeof(uint64_t));
+        }
+    }
+
+    const uint32_t tid = block.thread_index().x;
+    const uint32_t step = block.size();
 
     for (uint32_t tile = blockIdx.x; tile < tiles; tile += gridDim.x) {
         const bool is_last = (tile == tiles - 1);
@@ -859,8 +892,13 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
             const uint32_t tw_base = half - 1u;
 
             const uint32_t total_pairs = (len >> 1);
-            const uint32_t tid = block.thread_index().x;
-            const uint32_t step = block.size();
+
+            // For stages we cached, point into shared twiddle cache;
+            // otherwise, fall back to global stage_twiddles.
+            const bool useSharedTwiddles = (!UseMontPow && s <= cachedStages && cachedTwiddles > 0u);
+
+            const uint64_t *SharkRestrict twiddleBaseForStage =
+                useSharedTwiddles ? (s_twiddles_cached + tw_base) : (stage_twiddles + tw_base);
 
             for (uint32_t p = tid; p < total_pairs; p += step) {
                 const uint32_t group = p / half;
@@ -872,8 +910,8 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
                 if constexpr (UseMontPow) {
                     wj = MontgomeryPow(grid, block, debugCombo, w_m, j);
                 } else {
-                    // precomputed w_m^j from flattened table
-                    wj = stage_twiddles[tw_base + j];
+                    // from shared cache for s <= cachedStages, else from global
+                    wj = twiddleBaseForStage[j];
                 }
 
                 // ---- A (shared) ----
@@ -928,6 +966,8 @@ SmallRadixPhase1_SM(uint64_t *shared_data,
                     s_dataC[i1] = SubP(U3, t3);
                 }
             }
+
+            // Original per-stage barrier
             block.sync();
         }
 
